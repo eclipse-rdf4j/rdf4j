@@ -18,8 +18,18 @@ import static org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbNativeAggregateCompiler
 
 import java.io.IOException;
 import java.util.Arrays;
+import java.util.HashSet;
+import java.util.Set;
 
 import org.eclipse.rdf4j.common.annotation.Experimental;
+import org.eclipse.rdf4j.model.Value;
+import org.eclipse.rdf4j.query.BindingSet;
+import org.eclipse.rdf4j.query.algebra.Lateral;
+import org.eclipse.rdf4j.query.algebra.evaluation.QueryBindingSet;
+import org.eclipse.rdf4j.query.algebra.evaluation.impl.BindingFrameBindings;
+import org.eclipse.rdf4j.query.algebra.evaluation.impl.BindingSetQueryEvaluationContext;
+import org.eclipse.rdf4j.query.algebra.evaluation.impl.GraphFrameBindings;
+import org.eclipse.rdf4j.query.algebra.evaluation.impl.QueryEvaluationContext;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.codegen.KernelRuntime;
 
 @Experimental
@@ -808,28 +818,118 @@ final class SuffixFilterCursor implements RowCursor {
 	}
 }
 
+/** Prepared transition for a direct LATERAL's selected generic right recipient. */
+@Experimental
+final class LateralOwnerInputRecipe {
+	final Lateral occurrence;
+	final GenericEvalPlan recipient;
+	private final NativeSlotLayout layout;
+	private final BindingFrameBindings.ConditionInputs owners;
+	private final Set<String> declared;
+	final QueryEvaluationContext context;
+
+	LateralOwnerInputRecipe(Lateral occurrence, GenericEvalPlan recipient, NativeSlotLayout layout,
+			BindingFrameBindings.ConditionInputs owners, QueryEvaluationContext context) {
+		this.occurrence = occurrence;
+		this.recipient = recipient;
+		this.layout = layout;
+		this.owners = owners;
+		this.declared = Set.copyOf(occurrence.getRightInputBindingNames());
+		this.context = BindingFrameBindings.dynamicSubstitutionContext(new BindingSetQueryEvaluationContext(context));
+	}
+
+	boolean hasOwnerInput(BindingSet input) {
+		return owners.hasBorrowedInput(input);
+	}
+
+	boolean admits(BindingSet input) {
+		if (!hasOwnerInput(input) || BindingFrameBindings.substitutionDomain(input) != null
+				|| GraphFrameBindings.from(input) != GraphFrameBindings.EMPTY
+				|| BindingFrameBindings.materializeWithheldInputs(input) != input) {
+			return false;
+		}
+		for (String name : input.getBindingNames()) {
+			if (input.getValue(name) == null) {
+				return false;
+			}
+		}
+		return true;
+	}
+
+	/** Mirrors the generic LATERAL's input filtering after the selected left cursor has produced its row. */
+	BindingSet rightInput(RowState row) {
+		if (row.layout != layout) {
+			throw new IllegalStateException("LATERAL input recipe used with another slot layout");
+		}
+		BindingSet left = owners.materialize(row.view);
+		QueryBindingSet input = NativeEntryBindings.copyValues(row.base);
+		for (String name : declared) {
+			if (!input.hasBinding(name)) {
+				Value value = left.getValue(name);
+				if (value != null) {
+					input.setBinding(name, value);
+				}
+			}
+		}
+		Set<String> domain = new HashSet<>();
+		for (String name : declared) {
+			if (input.getValue(name) != null) {
+				domain.add(name);
+			}
+		}
+		Set<String> privateInputs = new HashSet<>(declared);
+		privateInputs.removeAll(row.base.getBindingNames());
+		BindingSet invocation = BindingFrameBindings.withLateralDomain(input, domain, privateInputs, context);
+		return NativeEntryBindings.immutableSnapshot(invocation);
+	}
+}
+
 @Experimental
 final class LateralPlan implements SlotPlan {
 	final SlotPlan left;
 	final SlotPlan right;
 	final long rightInputMask;
 	final long producedMask;
+	final GenericEvalPlan semanticEntry;
+	final LateralOwnerInputRecipe ownerInput;
 
 	LateralPlan(SlotPlan left, SlotPlan right, long rightInputMask) {
+		this(left, right, rightInputMask, null);
+	}
+
+	LateralPlan(SlotPlan left, SlotPlan right, long rightInputMask, GenericEvalPlan semanticEntry) {
+		this(left, right, rightInputMask, semanticEntry, null);
+	}
+
+	LateralPlan(SlotPlan left, SlotPlan right, long rightInputMask, GenericEvalPlan semanticEntry,
+			LateralOwnerInputRecipe ownerInput) {
 		this.left = left;
 		this.right = right;
 		this.rightInputMask = rightInputMask;
+		this.semanticEntry = semanticEntry;
+		this.ownerInput = ownerInput;
 		this.producedMask = left.producedMask() | right.producedMask();
+	}
+
+	boolean needsSemanticEntry(RowState row) {
+		return semanticEntry != null && row != null && BindingFrameBindings.substitutionDomain(row.view) != null;
 	}
 
 	@Override
 	public RowCursor open(RowState row) throws IOException {
+		if (needsSemanticEntry(row)) {
+			return semanticEntry.open(row);
+		}
 		long entryMask = row.boundMask();
-		return new LateralCursor(left.open(row), right, rightInputMask | entryMask, row);
+		LateralOwnerInputRecipe recipe = row.admittedOwnerLateral == this ? ownerInput : null;
+		return new LateralCursor(left.open(row), right, rightInputMask | entryMask, row, recipe);
 	}
 
 	@Override
 	public BatchCursor openBatch(RowState row, int capacity) throws IOException {
+		if (needsSemanticEntry(row)) {
+			return new RowBatchCursor(LmdbNativeFactorAlgebra.logical(semanticEntry.open(row), row), row);
+		}
 		if (right instanceof PatternPlan pattern) {
 			BatchCursor wildcard = LmdbWildcardPredicateBatch.tryOpenLateral(left, pattern, rightInputMask, row,
 					capacity);
@@ -848,11 +948,17 @@ final class LateralPlan implements SlotPlan {
 
 	@Override
 	public LmdbNativeWork estimateWork(RowState row, long boundMask) {
+		if (needsSemanticEntry(row)) {
+			return LmdbNativeWork.UNKNOWN;
+		}
 		return LmdbNativeWork.probeChain(left, right, row, boundMask);
 	}
 
 	@Override
 	public double estimateRows(RowState row, long boundMask) {
+		if (needsSemanticEntry(row)) {
+			return Double.NaN;
+		}
 		double leftRows = LmdbNativeWork.rowsOut(left, row, boundMask);
 		double rightRows = LmdbNativeWork.rowsOut(right, row, boundMask | rightInputMask);
 		if (Double.isNaN(leftRows) || Double.isNaN(rightRows)) {
@@ -976,6 +1082,7 @@ final class LateralCursor implements FactorizedRowCursor {
 	private final SlotPlan rightPlan;
 	private final long visibleInputMask;
 	private final RowState row;
+	private final LateralOwnerInputRecipe ownerInput;
 	private final JoinWeightDelivery weights = new JoinWeightDelivery();
 	private final int[] hiddenSlots;
 	private final long[] hiddenValues;
@@ -988,12 +1095,18 @@ final class LateralCursor implements FactorizedRowCursor {
 	private int pollTick;
 
 	LateralCursor(RowCursor left, SlotPlan rightPlan, long visibleInputMask, RowState row) {
+		this(left, rightPlan, visibleInputMask, row, null);
+	}
+
+	LateralCursor(RowCursor left, SlotPlan rightPlan, long visibleInputMask, RowState row,
+			LateralOwnerInputRecipe ownerInput) {
 		this.left = row.encounterOrderRequired || !SlotPlan.encounterOrderReplaySafe(rightPlan)
 				? LmdbNativeFactorAlgebra.logical(left, row)
 				: left;
 		this.rightPlan = rightPlan;
 		this.visibleInputMask = visibleInputMask;
 		this.row = row;
+		this.ownerInput = ownerInput;
 		this.hiddenSlots = new int[row.slots.length];
 		this.hiddenValues = new long[row.slots.length];
 	}
@@ -1050,7 +1163,8 @@ final class LateralCursor implements FactorizedRowCursor {
 			weights.left(left);
 			captureAndHideLeftBindings();
 			rightLexicalInputMask = row.boundMask();
-			RowState.LateralOccurrence nextOccurrence = row.newLateralOccurrence();
+			RowState.LateralOccurrence nextOccurrence = ownerInput == null ? row.newLateralOccurrence()
+					: row.newLateralOccurrence(ownerInput.recipient, ownerInput.rightInput(row), ownerInput.context);
 			lateralOccurrence = nextOccurrence;
 			long previousScope = row.enterLexicalScope(rightLexicalInputMask);
 			try {
@@ -1147,6 +1261,11 @@ record JoinSweepEstimates(long entryBoundMask, double expectedProbes, double per
 		}
 		long boundMask = row.boundMask();
 		double expectedProbes = LmdbNativeWork.rowsOut(left, row, boundMask);
+		if (right instanceof NativeSubqueryPlan subquery && subquery.independentSweep() != null) {
+			// An independent operand's ordinary replay checks its complete output for each left row.
+			double replayRows = subquery.independentSweep().rows();
+			return new JoinSweepEstimates(boundMask, expectedProbes, replayRows, replayRows);
+		}
 		double perProbeRows = RightMemoProbe.fragmentRowsForMask(right, row, boundMask | left.producedMask());
 		// Correlated slots are unbound at open time, so this estimates the key-unbound fragment sweep.
 		double sweepEstimate = LmdbNativeWork.rowsOut(right, row, boundMask);
@@ -1336,6 +1455,7 @@ final class JoinCursor implements FactorizedRowCursor {
 	boolean pathMemoInitialized;
 	/** Reused for the common correlated PatternPlan right side. Binding/batching lives in this cursor too. */
 	final PatternPlan patternRight;
+	PatternPlan selectedPatternRight;
 	PatternCursor patternCursor;
 	boolean patternRightActive;
 	LmdbAdaptiveLongArray patternBatchMemory;
@@ -1492,7 +1612,8 @@ final class JoinCursor implements FactorizedRowCursor {
 				if (patternCursor == null) {
 					patternCursor = new PatternCursor();
 				}
-				PatternCursor raw = patternRight.openRaw(row, rightProbe, patternCursor);
+				selectedPatternRight = patternRight.effectivePattern(row);
+				PatternCursor raw = selectedPatternRight.openRaw(row, rightProbe, patternCursor);
 				if (raw == PatternCursor.EMPTY) {
 					return EmptyCursor.INSTANCE;
 				}
@@ -1576,7 +1697,7 @@ final class JoinCursor implements FactorizedRowCursor {
 
 	private boolean bindPattern(long[] quad, int offset) {
 		int mark = row.mark();
-		if (patternRight.bind(quad, offset, row)) {
+		if (selectedPatternRight.bind(quad, offset, row)) {
 			patternMark = mark;
 			return true;
 		}

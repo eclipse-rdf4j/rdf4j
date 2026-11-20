@@ -17,6 +17,7 @@ import java.util.function.Supplier;
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.common.iteration.ConvertingIteration;
 import org.eclipse.rdf4j.common.iteration.EmptyIteration;
+import org.eclipse.rdf4j.common.transaction.QueryEvaluationMode;
 import org.eclipse.rdf4j.federated.FederationContext;
 import org.eclipse.rdf4j.federated.algebra.ExclusiveTupleExpr;
 import org.eclipse.rdf4j.federated.algebra.FilterValueExpr;
@@ -33,6 +34,7 @@ import org.eclipse.rdf4j.federated.monitoring.Monitoring;
 import org.eclipse.rdf4j.federated.structures.QueryInfo;
 import org.eclipse.rdf4j.federated.structures.QueryType;
 import org.eclipse.rdf4j.federated.util.FedXUtil;
+import org.eclipse.rdf4j.federated.util.FilterUtils;
 import org.eclipse.rdf4j.federated.util.QueryStringUtil;
 import org.eclipse.rdf4j.model.BNode;
 import org.eclipse.rdf4j.model.IRI;
@@ -55,11 +57,14 @@ import org.eclipse.rdf4j.query.QueryResult;
 import org.eclipse.rdf4j.query.TupleQuery;
 import org.eclipse.rdf4j.query.TupleQueryResult;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryBindingSet;
+import org.eclipse.rdf4j.query.algebra.evaluation.impl.BindingFrameBindings;
 import org.eclipse.rdf4j.query.impl.EmptyBindingSet;
 import org.eclipse.rdf4j.query.impl.MapBindingSet;
 import org.eclipse.rdf4j.query.impl.RemoteBNode;
+import org.eclipse.rdf4j.query.parser.ParsedTupleQuery;
 import org.eclipse.rdf4j.repository.RepositoryConnection;
 import org.eclipse.rdf4j.repository.RepositoryException;
+import org.eclipse.rdf4j.repository.sail.SailTupleQuery;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -105,7 +110,8 @@ public abstract class TripleSourceBase implements TripleSource {
 						resultHolder.set(new EmptyIteration<>());
 					} else {
 						evaluate = tQuery.evaluate();
-						resultHolder.set(identity.incoming(((TupleQueryResult) evaluate), queryBindings));
+						resultHolder.set(retainInvocationFrame(identity.incoming(((TupleQueryResult) evaluate),
+								queryBindings), queryBindings));
 					}
 					return;
 				case CONSTRUCT:
@@ -117,8 +123,9 @@ public abstract class TripleSourceBase implements TripleSource {
 					applyMaxExecutionTimeUpperBound(gQuery);
 					configureInference(gQuery, queryInfo);
 					evaluate = gQuery.evaluate();
-					resultHolder.set(identity.incoming(
-							new GraphToBindingSetConversionIteration(((GraphQueryResult) evaluate)), queryBindings));
+					resultHolder.set(retainInvocationFrame(identity.incoming(
+							new GraphToBindingSetConversionIteration(((GraphQueryResult) evaluate)), queryBindings),
+							queryBindings));
 					return;
 				case ASK:
 					monitorRemoteRequest();
@@ -131,7 +138,7 @@ public abstract class TripleSourceBase implements TripleSource {
 						configureInference(bQuery, queryInfo);
 						hasResults = bQuery.evaluate();
 					}
-					resultHolder.set(booleanToBindingSetIteration(hasResults));
+					resultHolder.set(retainInvocationFrame(booleanToBindingSetIteration(hasResults), queryBindings));
 					return;
 				default:
 					throw new UnsupportedOperationException("Operation not supported for query type " + queryType);
@@ -182,23 +189,40 @@ public abstract class TripleSourceBase implements TripleSource {
 			TupleQuery query = conn.prepareTupleQuery(QueryLanguage.SPARQL, preparedQuery, null);
 			query.setDataset(dataset);
 			evaluatePreparedQuery(query, preparedQuery, outgoing, conn, bindings, filterExpr,
-					queryInfo, resultHolder, identity);
+					queryInfo, resultHolder, identity, null, null);
 		});
 	}
 
 	/** Preserve the selected graph's RDF value through the connection's ordinary query binding contract. */
 	CloseableIteration<BindingSet> getStatements(NativeGraphQuery.Prepared preparedQuery, QueryInfo queryInfo) {
+		return getStatements(preparedQuery, queryInfo, null, null);
+	}
+
+	CloseableIteration<BindingSet> getStatements(NativeGraphQuery.Prepared preparedQuery, QueryInfo queryInfo,
+			FilterUtils.RemoteCapabilities capabilities, QueryEvaluationMode mode) {
+		if (capabilities != null && preparedQuery.filter() != null) {
+			throw new QueryEvaluationException("Cannot defer a captured endpoint group filter");
+		}
 		EndpointIdentity identity = new EndpointIdentity(endpoint, queryInfo);
 		if (identity.hasForeignLocalValue(preparedQuery.graphBindings())) {
 			return new EmptyIteration<>();
 		}
 		Dataset originalDataset = FedXUtil.toRdfDataset(queryInfo.getDataset());
 		Dataset selectedDataset = FedXUtil.toRdfDataset(preparedQuery.dataset());
-		Dataset validatedDataset = identity.outgoingDataset(originalDataset);
-		Dataset dataset = selectedDataset == originalDataset ? validatedDataset
-				: identity.outgoingDataset(selectedDataset);
+		Dataset dataset;
+		if (capabilities != null) {
+			dataset = identity.outgoingDataset(selectedDataset);
+		} else {
+			Dataset validatedDataset = identity.outgoingDataset(originalDataset);
+			dataset = selectedDataset == originalDataset ? validatedDataset : identity.outgoingDataset(selectedDataset);
+		}
 		FederationEvaluationStrategy strategy = queryInfo.getStrategy();
 		RemoteGraphSnapshot snapshot = strategy == null ? null : strategy.getGraphSnapshot(endpoint);
+		boolean localAlgebra = capabilities != null
+				&& (snapshot != null || EndpointIdentity.localStore(endpoint) != null);
+		ParsedTupleQuery parsed = localAlgebra
+				? PreparedExclusiveGroup.localAlgebra(preparedQuery.queryString(), capabilities, mode)
+				: null;
 		QueryBindingSet outgoing = new QueryBindingSet(preparedQuery.graphBindings().size());
 		for (Binding binding : preparedQuery.graphBindings()) {
 			if (!RemoteGraphSnapshot.belongsTo(binding.getValue(), endpoint.getId())) {
@@ -209,12 +233,18 @@ public abstract class TripleSourceBase implements TripleSource {
 		}
 		return withConnection((conn, resultHolder) -> {
 			TupleQuery query = conn.prepareTupleQuery(QueryLanguage.SPARQL, preparedQuery.queryString(), null);
+			if (parsed != null && snapshot == null) {
+				if (!(query instanceof SailTupleQuery sailQuery)) {
+					throw new QueryEvaluationException("Endpoint connection cannot execute captured group algebra");
+				}
+				sailQuery.getParsedQuery().setTupleExpr(parsed.getTupleExpr());
+			}
 			if (dataset != null) {
 				query.setDataset(dataset);
 			}
 			evaluatePreparedQuery(query, preparedQuery.queryString(), outgoing, conn,
 					preparedQuery.resultBindings(), preparedQuery.filter(), queryInfo,
-					resultHolder, identity);
+					resultHolder, identity, parsed, mode);
 			if (preparedQuery.existenceCheck()) {
 				try (CloseableIteration<BindingSet> rows = resultHolder.get()) {
 					resultHolder.set(rows.hasNext() ? new SingleBindingSetIteration(preparedQuery.resultBindings())
@@ -251,7 +281,7 @@ public abstract class TripleSourceBase implements TripleSource {
 	private void evaluatePreparedQuery(TupleQuery query, String text, BindingSet nativeBindings,
 			RepositoryConnection conn, BindingSet bindings,
 			FilterValueExpr filterExpr, QueryInfo queryInfo, ResultHolder<BindingSet> resultHolder,
-			EndpointIdentity identity) {
+			EndpointIdentity identity, ParsedTupleQuery parsed, QueryEvaluationMode mode) {
 		applyMaxExecutionTimeUpperBound(query);
 		configureInference(query, queryInfo);
 
@@ -265,7 +295,11 @@ public abstract class TripleSourceBase implements TripleSource {
 				monitorRemoteRequest();
 				res = query.evaluate();
 			} else {
-				res = snapshot.evaluate(text, query, nativeBindings, federationContext.getFederatedServiceResolver());
+				res = parsed == null
+						? snapshot.evaluate(text, query, nativeBindings,
+								federationContext.getFederatedServiceResolver())
+						: snapshot.evaluate(parsed, query, nativeBindings,
+								federationContext.getFederatedServiceResolver(), mode);
 			}
 			if (snapshot == null) {
 				res = identity.incoming(res, bindings);
@@ -273,6 +307,7 @@ public abstract class TripleSourceBase implements TripleSource {
 			if (!nativeBindings.isEmpty()) {
 				res = withoutParameters(res, nativeBindings);
 			}
+			res = retainInvocationFrame(res, bindings);
 
 			resultHolder.set(res);
 
@@ -323,6 +358,23 @@ public abstract class TripleSourceBase implements TripleSource {
 					}
 				}
 				return row;
+			}
+		};
+	}
+
+	/** A backend's private frames do not become owners in the caller's algebra. */
+	static CloseableIteration<BindingSet> retainInvocationFrame(CloseableIteration<BindingSet> rows,
+			BindingSet invocation) {
+		var frame = BindingFrameBindings.from(invocation);
+		return new ConvertingIteration<BindingSet, BindingSet>(rows) {
+			@Override
+			protected BindingSet convert(BindingSet row) {
+				if (BindingFrameBindings.from(row) == frame) {
+					return row;
+				}
+				QueryBindingSet restored = new QueryBindingSet(row);
+				restored.setBindingFrame(frame);
+				return restored;
 			}
 		};
 	}

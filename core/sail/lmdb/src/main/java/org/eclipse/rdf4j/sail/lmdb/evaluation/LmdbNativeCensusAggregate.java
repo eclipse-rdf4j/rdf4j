@@ -518,6 +518,16 @@ final class LmdbNativeCensusAggregate implements NativeAggregateAlternative {
 		if (!(input instanceof StatementPattern pattern)) {
 			return null;
 		}
+		Var patternContext = pattern.getContextVar();
+		if (patternContext != null && pattern.getScope() == StatementPattern.Scope.DEFAULT_CONTEXTS
+				&& context != null && (context.getActiveGraph() != null
+						|| patternContext.hasValue()
+								&& LmdbNativeAggregateCompiler.isNullContextValue(patternContext.getValue())
+								&& context.getDataset() != null
+								&& !context.getDataset().getDefaultGraphResources().isEmpty())) {
+			// Neither the active GRAPH override nor lexical NIL membership is represented by the census context id.
+			return null;
+		}
 		Var[] vars = { pattern.getSubjectVar(), pattern.getPredicateVar(), pattern.getObjectVar(),
 				pattern.getContextVar() != null ? pattern.getContextVar() : graphContext };
 		// a Graph node the fusion pass kept (the dataset names rdf4j:nil, or the graph is rdf4j:nil itself) scopes

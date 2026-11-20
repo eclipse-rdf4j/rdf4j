@@ -17,6 +17,7 @@ import org.eclipse.rdf4j.common.iteration.CooperativeCancellation;
 import org.eclipse.rdf4j.common.iteration.LookAheadIteration;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryEvaluationStep;
+import org.eclipse.rdf4j.query.algebra.evaluation.impl.BindingFrameBindings;
 import org.eclipse.rdf4j.query.algebra.evaluation.iterator.CancellationPoints;
 
 final class BoundStatementPatternGuardJoinIteration extends LookAheadIteration<BindingSet> {
@@ -64,7 +65,7 @@ final class BoundStatementPatternGuardJoinIteration extends LookAheadIteration<B
 			}
 
 			BindingSet leftBindings = leftIteration.next();
-			long statementCount = guardCounter.count(leftBindings);
+			long statementCount = BindingFrameBindings.hasFrame(leftBindings) ? -1 : guardCounter.count(leftBindings);
 			if (statementCount < 0) {
 				fallbackIteration = fallbackRightPrepared.evaluate(leftBindings);
 				continue;

@@ -240,3 +240,172 @@ final class MultiValuePatternCursor implements RowCursor {
 		}
 	}
 }
+
+/** An exact pattern probe that emits the original VALUES row as well as the matched statement bindings. */
+@Experimental
+final class SharedValuesPatternPlan implements SlotPlan {
+	private final ValuesPlan witnesses;
+	private final PatternPlan pattern;
+	private final NativeBooleanFilter condition;
+	final int witnessSlot;
+	final int constrainedSlot;
+	private final PatternPlan[] probes;
+	private final long[] witnessIds;
+	private final double unboundEstimate;
+
+	SharedValuesPatternPlan(ValuesPlan witnesses, PatternPlan pattern, NativeBooleanFilter condition,
+			int witnessSlot, int constrainedSlot, PatternPlan[] probes, long[] witnessIds) {
+		this(witnesses, pattern, condition, witnessSlot, constrainedSlot, probes, witnessIds,
+				unboundEstimate(witnesses, pattern, probes));
+	}
+
+	private SharedValuesPatternPlan(ValuesPlan witnesses, PatternPlan pattern, NativeBooleanFilter condition,
+			int witnessSlot, int constrainedSlot, PatternPlan[] probes, long[] witnessIds, double unboundEstimate) {
+		this.witnesses = witnesses;
+		this.pattern = pattern;
+		this.condition = condition;
+		this.witnessSlot = witnessSlot;
+		this.constrainedSlot = constrainedSlot;
+		this.probes = probes;
+		this.witnessIds = witnessIds;
+		this.unboundEstimate = unboundEstimate;
+	}
+
+	private static double unboundEstimate(ValuesPlan witnesses, PatternPlan pattern, PatternPlan[] probes) {
+		if ((witnesses.producedMask() & pattern.producedMask()) != 0L) {
+			return Double.NaN;
+		}
+		double rows = 0D;
+		for (PatternPlan probe : probes) {
+			rows += probe.staticEstimate;
+		}
+		return Double.isFinite(rows) ? rows : Double.NaN;
+	}
+
+	SharedValuesPatternPlan borrow(NativeFilterLease lease) {
+		return new SharedValuesPatternPlan(witnesses, pattern, lease.borrow(condition), witnessSlot, constrainedSlot,
+				probes, witnessIds, unboundEstimate);
+	}
+
+	@Override
+	public long producedMask() {
+		return witnesses.producedMask() | pattern.producedMask();
+	}
+
+	@Override
+	public double estimateRows(RowState row, long boundMask) {
+		return (boundMask & producedMask()) == 0L ? unboundEstimate : Double.NaN;
+	}
+
+	int witnessCount() {
+		return probes.length;
+	}
+
+	@Override
+	public RowCursor open(RowState row) {
+		return new WitnessCursor(row);
+	}
+
+	private final class WitnessCursor implements RowCursor {
+		private final RowState row;
+		private final ValuesCursor witness;
+		private final int entryMark;
+		private RowCursor current;
+		private NativeBooleanFilter fallbackCondition;
+		private RecordingNativeBooleanFilter fallbackRecording;
+		private boolean closed;
+
+		private WitnessCursor(RowState row) {
+			this.row = row;
+			this.witness = new ValuesCursor(witnesses.rows, row);
+			this.entryMark = row.mark();
+		}
+
+		@Override
+		public boolean next() throws IOException {
+			if (closed) {
+				return false;
+			}
+			try {
+				while (true) {
+					row.cancellation.check();
+					if (current != null) {
+						boolean present = current.next();
+						row.cancellation.check();
+						if (present) {
+							return true;
+						}
+						closeProbe();
+					}
+					LmdbNativeProbeDeadline.poll(0);
+					row.cancellation.check();
+					if (!witness.next()) {
+						return false;
+					}
+					row.cancellation.check();
+					int index = witness.index - 1;
+					if (row.slots[constrainedSlot] != UNKNOWN || row.slots[witnessSlot] != witnessIds[index]) {
+						// Retain the selected pattern's binding and comparison rules for an occupied operand.
+						NativeBooleanFilter fallback = fallbackCondition();
+						current = pattern.open(row);
+						current = new FilterCursor(current, fallback, row);
+					} else {
+						current = probes[index].open(row);
+						if (row.exactValuesMetrics != null) {
+							row.exactValuesMetrics.recordProbes(1L);
+						}
+					}
+				}
+			} catch (IOException | RuntimeException | Error failure) {
+				Throwable combined = JoinCleanup.close(this, failure);
+				if (combined != failure) {
+					NativeContextClosingIteration.throwFailure(combined);
+				}
+				throw failure;
+			}
+		}
+
+		private NativeBooleanFilter fallbackCondition() {
+			if (fallbackCondition == null) {
+				if (condition instanceof RecordingNativeBooleanFilter recording) {
+					// The certified two-slot comparison is immutable. Only this cursor owns the outcome counters.
+					fallbackRecording = new RecordingNativeBooleanFilter(recording.delegate::accept, recording.filter,
+							recording.statistics, recording.adaptive);
+					fallbackCondition = fallbackRecording::accept;
+				} else {
+					fallbackCondition = condition::accept;
+				}
+			}
+			return fallbackCondition;
+		}
+
+		private void closeProbe() {
+			RowCursor owned = current;
+			current = null;
+			if (owned != null) {
+				owned.close();
+			}
+		}
+
+		@Override
+		public void close() {
+			if (closed) {
+				return;
+			}
+			closed = true;
+			Throwable failure = JoinCleanup.close(this::closeProbe, null);
+			failure = JoinCleanup.close(witness, failure);
+			// A compatibility lookup can fail after binding only part of a VALUES row.
+			failure = JoinCleanup.close(() -> row.rollback(entryMark), failure);
+			if (fallbackRecording != null) {
+				failure = JoinCleanup.close(fallbackRecording::close, failure);
+			}
+			if (row.exactValuesMetrics != null) {
+				failure = JoinCleanup.close(row.exactValuesMetrics::publish, failure);
+			}
+			if (failure != null) {
+				NativeContextClosingIteration.throwFailure(failure);
+			}
+		}
+	}
+}

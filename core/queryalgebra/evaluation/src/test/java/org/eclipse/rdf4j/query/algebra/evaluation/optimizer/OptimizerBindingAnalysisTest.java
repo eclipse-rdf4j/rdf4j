@@ -62,7 +62,10 @@ import org.eclipse.rdf4j.query.algebra.evaluation.QueryBindingSet;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.DefaultEvaluationStrategy;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.EmptyTripleSource;
 import org.eclipse.rdf4j.query.algebra.helpers.QueryAlgebraBindingAnalysis;
+import org.eclipse.rdf4j.query.algebra.helpers.QueryModelTreeToGenericPlanNode;
 import org.eclipse.rdf4j.query.algebra.helpers.TupleExprs;
+import org.eclipse.rdf4j.query.explanation.GenericPlanNode;
+import org.eclipse.rdf4j.query.explanation.TelemetryMetricNames;
 import org.eclipse.rdf4j.query.impl.EmptyBindingSet;
 import org.eclipse.rdf4j.query.impl.MapBindingSet;
 import org.eclipse.rdf4j.query.parser.ParsedTupleQuery;
@@ -283,16 +286,16 @@ class OptimizerBindingAnalysisTest {
 	}
 
 	@Test
-	void outputTransferUsesTheSameJoinChildFrameAsContextAt() {
+	void outputTransferUsesTheSameLateralChildFrameAsContextAt() {
 		BindingSetAssignment left = values("x", VF.createIRI("urn:x"));
 		Extension right = new Extension(new SingletonSet(), new ExtensionElem(Var.of("x"), "y"));
-		Join join = new Join(left, right);
-		QueryAlgebraBindingAnalysis analysis = QueryAlgebraBindingAnalysis.withBindingValues(join,
+		Lateral lateral = new Lateral(left, right, Set.of("x"));
+		QueryAlgebraBindingAnalysis analysis = QueryAlgebraBindingAnalysis.withBindingValues(lateral,
 				EmptyBindingSet.getInstance());
 
 		QueryAlgebraBindingAnalysis.ReadOnlyContext expressionInput = analysis
 				.contextAt(right.getElements().getFirst().getExpr());
-		QueryAlgebraBindingAnalysis.OutputFacts joinOutput = analysis.outputFacts(join, analysis.rootContext());
+		QueryAlgebraBindingAnalysis.OutputFacts joinOutput = analysis.outputFacts(lateral, analysis.rootContext());
 
 		assertThat(expressionInput.guaranteedNames()).contains("x");
 		assertThat(expressionInput.fixedValues().get("x")).isEqualTo(VF.createIRI("urn:x"));
@@ -301,23 +304,37 @@ class OptimizerBindingAnalysisTest {
 	}
 
 	@Test
+	void ordinaryJoinLabelsDoNotCorrelateIndependentAssignments() {
+		for (String algorithm : List.of("", "JoinIterator", "HashJoinIteration", "ScopedCorrelatedJoinIterator",
+				"ExtensionJoinIteration")) {
+			Extension right = new Extension(new SingletonSet(), new ExtensionElem(Var.of("x"), "y"));
+			Join join = new Join(values("x", VF.createIRI("urn:x")), right);
+			join.setAlgorithm(algorithm);
+			QueryAlgebraBindingAnalysis analysis = QueryAlgebraBindingAnalysis.withBindingValues(join,
+					EmptyBindingSet.getInstance());
+			var expressionInput = analysis.contextAt(right.getElements().getFirst().getExpr());
+			assertThat(expressionInput.guaranteedNames()).doesNotContain("x");
+			assertThat(expressionInput.fixedValues()).doesNotContainKey("x");
+			var output = analysis.outputFacts(join);
+			assertThat(output.guaranteedOutputs()).contains("x").doesNotContain("y");
+			assertThat(output.fixedValues()).doesNotContainKey("y");
+		}
+	}
+
+	@Test
 	void mergeJoinRightInputDoesNotIncludeLeftRows() {
 		Join join = new Join(values("leftOnly", VF.createIRI("urn:left")),
-				values("rightOnly", VF.createIRI("urn:right")));
+				new StatementPattern(Var.of("leftOnly"), Var.of("rightOnly"), Var.of("externalOnly")));
 		join.setMergeJoin(true);
 		MapBindingSet incoming = new MapBindingSet();
 		incoming.addBinding("externalOnly", VF.createIRI("urn:external"));
-		QueryAlgebraBindingAnalysis analysis = QueryAlgebraBindingAnalysis.withBindingValues(join,
-				incoming);
-
-		QueryAlgebraBindingAnalysis.ReadOnlyContext rightInput = analysis.contextAt(join.getRightArg());
-		assertThat(rightInput.guaranteedNames())
+		QueryAlgebraBindingAnalysis lexical = QueryAlgebraBindingAnalysis.withBindingValues(join, incoming);
+		assertThat(lexical.contextAt(join.getRightArg()).fixedValues())
+				.containsEntry("externalOnly", VF.createIRI("urn:external"));
+		assertThat(explainRightInputState(join, incoming.getBindingNames(), "externalOnly")).isEqualTo("bound");
+		assertThat(explainRightInputState(join, incoming.getBindingNames(), "leftOnly"))
 				.as("InnerMergeJoinIterator evaluates both inputs with the incoming frame")
-				.contains("externalOnly")
-				.doesNotContain("leftOnly");
-		assertThat(rightInput.maybeBoundNames())
-				.contains("externalOnly")
-				.doesNotContain("leftOnly");
+				.isEqualTo("unbound");
 	}
 
 	@Test
@@ -329,17 +346,14 @@ class OptimizerBindingAnalysisTest {
 			Join join = new Join(values("endpoint", VF.createIRI("urn:service")), service);
 			join.setMergeJoin(true);
 			join.setAlgorithm(algorithm);
-			QueryAlgebraBindingAnalysis analysis = QueryAlgebraBindingAnalysis.withBindingValues(join,
-					EmptyBindingSet.getInstance());
-			assertThat(analysis.bindingState(service.getServiceRef(), analysis.contextAt(service)))
+			assertThat(explainRightInputState(join, Set.of(), "endpoint"))
 					.as("the prepared %s contract passes left rows despite the earlier merge candidate flag", algorithm)
-					.isEqualTo(QueryAlgebraBindingAnalysis.BindingState.BOUND);
+					.isEqualTo("bound");
 
 			join.setAlgorithm("HashJoinIteration");
-			analysis = QueryAlgebraBindingAnalysis.withBindingValues(join, EmptyBindingSet.getInstance());
-			assertThat(analysis.bindingState(service.getServiceRef(), analysis.contextAt(service)))
+			assertThat(explainRightInputState(join, Set.of(), "endpoint"))
 					.as("an independently evaluated right operand does not receive left rows")
-					.isEqualTo(QueryAlgebraBindingAnalysis.BindingState.UNBOUND);
+					.isEqualTo("unbound");
 		}
 	}
 
@@ -355,6 +369,7 @@ class OptimizerBindingAnalysisTest {
 		assertThat(analysis.bindingState(service.getServiceRef(), analysis.contextAt(service)))
 				.as("physical preparation selects ServiceJoinIterator before considering merge joins")
 				.isEqualTo(QueryAlgebraBindingAnalysis.BindingState.BOUND);
+		assertThat(explainRightInputState(join, Set.of(), "endpoint")).isEqualTo("bound");
 	}
 
 	@Test
@@ -752,6 +767,37 @@ class OptimizerBindingAnalysisTest {
 	}
 
 	@Test
+	void optionalValuesOutputIsWithheldFromRuntimeInput() {
+		assertOptionalValuesInputContext(values("x", VF.createIRI("urn:local")));
+	}
+
+	@Test
+	void independentOptionalValuesOutputIsWithheldFromRuntimeInput() {
+		Projection right = new Projection(values("x", VF.createIRI("urn:local")),
+				new ProjectionElemList(new ProjectionElem("x")), true);
+		assertOptionalValuesInputContext(right);
+	}
+
+	private static void assertOptionalValuesInputContext(TupleExpr right) {
+		LeftJoin optional = new LeftJoin(new SingletonSet(), right);
+		MapBindingSet bindings = new MapBindingSet();
+		Value api = VF.createIRI("urn:api");
+		Value unrelated = VF.createIRI("urn:unrelated");
+		bindings.addBinding("x", api);
+		bindings.addBinding("unrelated", unrelated);
+		QueryAlgebraBindingAnalysis runtime = QueryAlgebraBindingAnalysis.withBindingValues(optional, bindings);
+		QueryAlgebraBindingAnalysis assignment = QueryAlgebraBindingAnalysis.forBindingAssignment(optional, bindings);
+
+		QueryAlgebraBindingAnalysis.ReadOnlyContext runtimeInput = runtime.contextAt(right);
+		assertThat(runtimeInput.guaranteedNames()).doesNotContain("x").contains("unrelated");
+		assertThat(runtimeInput.maybeBoundNames()).doesNotContain("x");
+		assertThat(runtimeInput.fixedValues()).doesNotContainKey("x").containsEntry("unrelated", unrelated);
+		assertThat(runtimeInput.externalValues()).doesNotContainKey("x").containsEntry("unrelated", unrelated);
+		assertThat(assignment.contextAt(right).externalValues()).containsEntry("x", api)
+				.containsEntry("unrelated", unrelated);
+	}
+
+	@Test
 	void lateralContextRetainsDeclaredNullableInputsWithoutGuaranteeingThem() {
 		Value value = VF.createIRI("urn:nullable");
 		Union nullableLeft = new Union(values("x", value), new SingletonSet());
@@ -792,6 +838,26 @@ class OptimizerBindingAnalysisTest {
 		row.addBinding(name, value);
 		assignment.setBindingSets(List.of(row));
 		return assignment;
+	}
+
+	private static String explainRightInputState(Join join, Set<String> incomingNames, String name) {
+		GenericPlanNode plan = new QueryModelTreeToGenericPlanNode(join, incomingNames).getGenericPlanNode();
+		return explainedBindingState(plan.getPlans().get(1), name);
+	}
+
+	private static String explainedBindingState(GenericPlanNode node, String name) {
+		if (node.getType().startsWith("Var") && node.getType().contains("name=" + name)) {
+			return node.getStringMetricActual(TelemetryMetricNames.BINDING_STATE);
+		}
+		if (node.getPlans() != null) {
+			for (GenericPlanNode child : node.getPlans()) {
+				String state = explainedBindingState(child, name);
+				if (state != null) {
+					return state;
+				}
+			}
+		}
+		return null;
 	}
 
 	private static final class UnknownTupleExpr extends AbstractQueryModelNode implements TupleExpr {

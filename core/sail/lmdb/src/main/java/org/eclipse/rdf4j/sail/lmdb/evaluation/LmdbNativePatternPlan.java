@@ -23,9 +23,13 @@ import java.util.OptionalLong;
 
 import org.eclipse.rdf4j.common.annotation.Experimental;
 import org.eclipse.rdf4j.common.order.StatementOrder;
+import org.eclipse.rdf4j.model.Value;
+import org.eclipse.rdf4j.model.vocabulary.RDF4J;
+import org.eclipse.rdf4j.model.vocabulary.SESAME;
 import org.eclipse.rdf4j.sail.lmdb.LmdbKeyRange;
 import org.eclipse.rdf4j.sail.lmdb.RecordIterator;
 import org.eclipse.rdf4j.sail.lmdb.TripleIndex;
+import org.eclipse.rdf4j.sail.lmdb.ValuePosition;
 
 @Experimental
 final class PatternPlan implements SlotPlan {
@@ -41,6 +45,9 @@ final class PatternPlan implements SlotPlan {
 	final long producedMask;
 	final double staticEstimate;
 	final NativeLmdbQuerySource.IndexAccessProfile accessProfile;
+	final DynamicContext dynamicContext;
+	private final PatternPlan rdf4jNilPattern;
+	private final PatternPlan sesameNilPattern;
 
 	PatternPlan(Term s, Term p, Term o, Term c, ContextConstraint contexts, boolean namedContextScope,
 			double staticEstimate) {
@@ -65,6 +72,21 @@ final class PatternPlan implements SlotPlan {
 	PatternPlan(Term s, Term p, Term o, Term c, ContextConstraint contexts, boolean namedContextScope,
 			StatementOrder statementOrder, String indexName, LmdbKeyRange range, double staticEstimate,
 			NativeLmdbQuerySource.IndexAccessProfile accessProfile) {
+		this(s, p, o, c, contexts, namedContextScope, statementOrder, indexName, range, staticEstimate, accessProfile,
+				null);
+	}
+
+	PatternPlan(Term s, Term p, Term o, Term c, ContextConstraint contexts, boolean namedContextScope,
+			StatementOrder statementOrder, String indexName, LmdbKeyRange range, double staticEstimate,
+			NativeLmdbQuerySource.IndexAccessProfile accessProfile, DynamicContext dynamicContext) {
+		this(s, p, o, c, contexts, namedContextScope, statementOrder, indexName, range, staticEstimate, accessProfile,
+				dynamicContext, true);
+	}
+
+	private PatternPlan(Term s, Term p, Term o, Term c, ContextConstraint contexts, boolean namedContextScope,
+			StatementOrder statementOrder, String indexName, LmdbKeyRange range, double staticEstimate,
+			NativeLmdbQuerySource.IndexAccessProfile accessProfile, DynamicContext dynamicContext,
+			boolean prepareVariants) {
 		this.s = s;
 		this.p = p;
 		this.o = o;
@@ -90,6 +112,131 @@ final class PatternPlan implements SlotPlan {
 		this.producedMask = mask;
 		this.staticEstimate = staticEstimate;
 		this.accessProfile = accessProfile;
+		this.dynamicContext = dynamicContext;
+		if (dynamicContext != null && prepareVariants) {
+			this.rdf4jNilPattern = contextVariant(dynamicContext.rdf4jMember);
+			this.sesameNilPattern = contextVariant(dynamicContext.sesameMember);
+		} else {
+			this.rdf4jNilPattern = null;
+			this.sesameNilPattern = null;
+		}
+	}
+
+	/** Dataset membership of the two distinct lexical aliases, captured on the accepted pattern. */
+	static final class DynamicContext {
+		final int slot;
+		final boolean fixedDataset;
+		final boolean rdf4jMember;
+		final boolean sesameMember;
+		final long rdf4jId;
+		final long sesameId;
+		final Object lookupScope;
+
+		DynamicContext(int slot, boolean fixedDataset, boolean rdf4jMember, boolean sesameMember, long rdf4jId,
+				long sesameId, Object lookupScope) {
+			this.slot = slot;
+			this.fixedDataset = fixedDataset;
+			this.rdf4jMember = rdf4jMember;
+			this.sesameMember = sesameMember;
+			this.rdf4jId = rdf4jId;
+			this.sesameId = sesameId;
+			this.lookupScope = lookupScope;
+		}
+	}
+
+	private PatternPlan contextVariant(boolean member) {
+		Term contextTerm = c;
+		ContextConstraint selected = contexts;
+		boolean named = namedContextScope;
+		if (dynamicContext.fixedDataset) {
+			selected = member ? ContextConstraint.UNRESTRICTED : ContextConstraint.EMPTY;
+		} else {
+			contextTerm = Term.constant(NULL_CONTEXT_ID);
+			named = false;
+		}
+		return new PatternPlan(s, p, o, contextTerm, selected, named, statementOrder, indexName, range,
+				staticEstimate, accessProfile, dynamicContext, false);
+	}
+
+	/** Selects once at a lexical pattern entry; physical compatibility probes do not grant that authority. */
+	PatternPlan effectivePattern(RowState row) {
+		return effectivePattern(row, row.lexicalInputMask);
+	}
+
+	PatternPlan effectivePattern(RowState row, long authorityMask) {
+		if (rdf4jNilPattern == null || (authorityMask & (1L << dynamicContext.slot)) == 0L) {
+			return this;
+		}
+		long id = row.slots[dynamicContext.slot];
+		if (id == UNKNOWN || id == NULL_CONTEXT_ID) {
+			return this;
+		}
+		if (c.bindConstant && !c.agreesWithBoundSlot(row)) {
+			return this;
+		}
+		int alias = contextAlias(row, id);
+		if (alias == 1) {
+			return rdf4jNilPattern;
+		}
+		return alias == 2 ? sesameNilPattern : this;
+	}
+
+	boolean isContextAlias(RowState row, long id) {
+		return contextAlias(row, id) != 0;
+	}
+
+	private int contextAlias(RowState row, long id) {
+		if (dynamicContext == null || id == UNKNOWN || id == NULL_CONTEXT_ID) {
+			return 0;
+		}
+		if (dynamicContext.lookupScope != null && dynamicContext.lookupScope == row.source.valueLookupScope()) {
+			int known = id == dynamicContext.rdf4jId ? 1 : id == dynamicContext.sesameId ? 2 : 0;
+			if ((known != 0 || !(row.source instanceof SyntheticValueSource synthetic) || !synthetic.synthetic(id))
+					&& dynamicContext.lookupScope == row.source.valueLookupScope()) {
+				return known;
+			}
+		}
+		Value value = row.source.lazyValue(id, row.layout.positionMask(dynamicContext.slot));
+		return RDF4J.NIL.equals(value) ? 1 : SESAME.NIL.equals(value) ? 2 : 0;
+	}
+
+	/** Raw shortcuts may run only when they preserve this pattern's context choice and lexical key. */
+	boolean supportsContextShortcut(RowState row, long possibleInputMask, long unboundMask) {
+		return supportsContextShortcut(row, possibleInputMask, unboundMask,
+				row == null ? 0L : row.lexicalInputMask);
+	}
+
+	/** An ordinary closure over this same lexical input may add a context compatibility key. */
+	boolean supportsSiblingContextKey(RowState row) {
+		return dynamicContext != null && !c.isConstant()
+				&& (row.lexicalInputMask & (1L << dynamicContext.slot)) == 0L;
+	}
+
+	boolean supportsContextShortcut(RowState row, long possibleInputMask, long unboundMask, long authorityMask) {
+		if (dynamicContext == null) {
+			return true;
+		}
+		long contextMask = 1L << dynamicContext.slot;
+		if ((unboundMask & contextMask) != 0L) {
+			return false;
+		}
+		if ((possibleInputMask & contextMask) == 0L) {
+			return true;
+		}
+		return row != null && (row.boundMask() & contextMask) != 0L && c.agreesWithBoundSlot(row)
+				&& effectivePattern(row, authorityMask) == this;
+	}
+
+	/** A subplan sweep with no exact leaf facts cannot erase a possibly contextual key. */
+	static boolean supportsContextUnbinding(NativeSlotLayout layout, long unboundMask) {
+		while (unboundMask != 0L) {
+			int slot = Long.numberOfTrailingZeros(unboundMask);
+			unboundMask &= unboundMask - 1L;
+			if ((layout.positionMask(slot) & ValuePosition.CONTEXT) != 0) {
+				return false;
+			}
+		}
+		return true;
 	}
 
 	/**
@@ -99,24 +246,36 @@ final class PatternPlan implements SlotPlan {
 	 */
 	PatternPlan withOrder(StatementOrder order, String selectedIndex) {
 		return new PatternPlan(s, p, o, c, contexts, namedContextScope, order, selectedIndex, range, staticEstimate,
-				accessProfile);
+				accessProfile, dynamicContext);
 	}
 
 	@Override
 	public RowCursor open(RowState row) throws IOException {
+		PatternPlan effective = effectivePattern(row);
+		PatternCursor cursor = effective.openRaw(row);
+		return cursor == PatternCursor.EMPTY ? EmptyCursor.INSTANCE : new PatternRowCursor(effective, row, cursor);
+	}
+
+	RowCursor openCommittedGroup(RowState row) throws IOException {
+		PatternPlan effective = effectivePattern(row);
+		if (effective != this) {
+			throw new IllegalStateException("Direct Group input cannot change the selected pattern context");
+		}
 		PatternCursor cursor = openRaw(row);
-		return cursor == PatternCursor.EMPTY ? EmptyCursor.INSTANCE : new PatternRowCursor(this, row, cursor);
+		return cursor == PatternCursor.EMPTY ? EmptyCursor.INSTANCE : new PatternRowCursor(this, row, cursor, true);
 	}
 
 	@Override
 	public BatchCursor openBatch(RowState row, int capacity) throws IOException {
-		BatchCursor wildcard = LmdbWildcardPredicateBatch.tryOpenPayload(this, row, capacity);
+		PatternPlan effective = effectivePattern(row);
+		BatchCursor wildcard = effective == this ? LmdbWildcardPredicateBatch.tryOpenPayload(this, row, capacity)
+				: null;
 		if (wildcard != null) {
 			return wildcard;
 		}
-		PatternCursor cursor = openRaw(row);
+		PatternCursor cursor = effective.openRaw(row);
 		return cursor == PatternCursor.EMPTY ? EmptyBatchCursor.INSTANCE
-				: new PatternBatchCursor(this, row, cursor, capacity);
+				: new PatternBatchCursor(effective, row, cursor, capacity);
 	}
 
 	/** The raw quad cursor for this pattern under the current row, without the row-binding wrapper. */
@@ -202,7 +361,8 @@ final class PatternPlan implements SlotPlan {
 	 * derive identical ids from their identically seeded rows.
 	 */
 	long[] partitionableScanQuad(RowState row) {
-		if (statementOrder != null || range != null || contexts.isEmpty()) {
+		if (statementOrder != null || range != null || contexts.isEmpty()
+				|| !supportsContextShortcut(row, row.boundMask(), 0L)) {
 			return null;
 		}
 		long subj = s.lookup(row.slots);
@@ -406,8 +566,9 @@ final class PatternPlan implements SlotPlan {
 
 	/** Probe-aware row cursor, used by JoinCursor to retain scan machinery across its left rows. */
 	RowCursor open(RowState row, NativeLmdbQuerySource.NativeProbe probe) throws IOException {
-		PatternCursor cursor = openRaw(row, probe);
-		return cursor == PatternCursor.EMPTY ? EmptyCursor.INSTANCE : new PatternRowCursor(this, row, cursor);
+		PatternPlan effective = effectivePattern(row);
+		PatternCursor cursor = effective.openRaw(row, probe);
+		return cursor == PatternCursor.EMPTY ? EmptyCursor.INSTANCE : new PatternRowCursor(effective, row, cursor);
 	}
 
 	/** Produced slots that are still unbound in the given mask, i.e. bound freshly by this pattern. */
@@ -891,13 +1052,19 @@ final class PatternRowCursor implements RowCursor {
 	final PatternPlan pattern;
 	final RowState row;
 	final PatternCursor cursor;
+	private final boolean committedGroup;
 	int activeMark = -1;
 	int cancellationPollTick;
 
 	PatternRowCursor(PatternPlan pattern, RowState row, PatternCursor cursor) {
+		this(pattern, row, cursor, false);
+	}
+
+	PatternRowCursor(PatternPlan pattern, RowState row, PatternCursor cursor, boolean committedGroup) {
 		this.pattern = pattern;
 		this.row = row;
 		this.cursor = cursor;
+		this.committedGroup = committedGroup;
 	}
 
 	@Override
@@ -911,7 +1078,7 @@ final class PatternRowCursor implements RowCursor {
 			int tick = ++this.cancellationPollTick;
 			LmdbNativeProbeDeadline.poll(tick);
 			row.cancellation.poll(tick);
-			long[] quad = cursor.next();
+			long[] quad = cursor.next(committedGroup);
 			if (quad == null) {
 				LmdbNativeProbeDeadline.poll(0);
 				row.cancellation.check();

@@ -530,6 +530,9 @@ record LmdbNativeWork(double low, double high) {
 			return planningProbeChain(leftJoin.left, leftJoin.right, row, boundMask);
 		}
 		if (plan instanceof LateralPlan lateral) {
+			if (lateral.needsSemanticEntry(row)) {
+				return UNKNOWN;
+			}
 			return planningProbeChain(lateral.left, lateral.right, row, boundMask);
 		}
 		if (plan instanceof MinusPlan minus) {

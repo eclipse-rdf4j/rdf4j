@@ -54,6 +54,10 @@ final class NativeRowSeeder {
 			return true;
 		}
 		for (int slot = 0; slot < layout.slotNames().length; slot++) {
+			if (base.hasBinding(layout.slotNames()[slot])
+					&& NativeEntryBindings.hasProtectedAuthority(base.getValue(layout.slotNames()[slot]))) {
+				return false;
+			}
 			if (resolve(slot, layout, base, source) == UNKNOWN && base.hasBinding(layout.slotNames()[slot])) {
 				return false;
 			}

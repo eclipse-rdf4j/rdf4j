@@ -37,8 +37,11 @@ import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.model.vocabulary.RDF;
+import org.eclipse.rdf4j.model.vocabulary.RDF4J;
+import org.eclipse.rdf4j.model.vocabulary.SESAME;
 import org.eclipse.rdf4j.model.vocabulary.XSD;
 import org.eclipse.rdf4j.query.BindingSet;
+import org.eclipse.rdf4j.query.Dataset;
 import org.eclipse.rdf4j.query.MalformedQueryException;
 import org.eclipse.rdf4j.query.QueryLanguage;
 import org.eclipse.rdf4j.query.UnsupportedQueryLanguageException;
@@ -52,6 +55,7 @@ import org.eclipse.rdf4j.query.algebra.Compare.CompareOp;
 import org.eclipse.rdf4j.query.algebra.CompareAll;
 import org.eclipse.rdf4j.query.algebra.CompareAny;
 import org.eclipse.rdf4j.query.algebra.Count;
+import org.eclipse.rdf4j.query.algebra.Distinct;
 import org.eclipse.rdf4j.query.algebra.EmptySet;
 import org.eclipse.rdf4j.query.algebra.Exists;
 import org.eclipse.rdf4j.query.algebra.Extension;
@@ -59,6 +63,7 @@ import org.eclipse.rdf4j.query.algebra.ExtensionElem;
 import org.eclipse.rdf4j.query.algebra.Filter;
 import org.eclipse.rdf4j.query.algebra.FunctionCall;
 import org.eclipse.rdf4j.query.algebra.Group;
+import org.eclipse.rdf4j.query.algebra.GroupElem;
 import org.eclipse.rdf4j.query.algebra.Join;
 import org.eclipse.rdf4j.query.algebra.LeftJoin;
 import org.eclipse.rdf4j.query.algebra.ListMemberOperator;
@@ -69,10 +74,13 @@ import org.eclipse.rdf4j.query.algebra.ProjectionElem;
 import org.eclipse.rdf4j.query.algebra.ProjectionElemList;
 import org.eclipse.rdf4j.query.algebra.QueryModelNode;
 import org.eclipse.rdf4j.query.algebra.QueryRoot;
+import org.eclipse.rdf4j.query.algebra.Reduced;
 import org.eclipse.rdf4j.query.algebra.SameTerm;
 import org.eclipse.rdf4j.query.algebra.SingletonSet;
 import org.eclipse.rdf4j.query.algebra.StatementPattern;
+import org.eclipse.rdf4j.query.algebra.Str;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
+import org.eclipse.rdf4j.query.algebra.Union;
 import org.eclipse.rdf4j.query.algebra.ValueConstant;
 import org.eclipse.rdf4j.query.algebra.ValueExpr;
 import org.eclipse.rdf4j.query.algebra.Var;
@@ -90,6 +98,7 @@ import org.eclipse.rdf4j.query.algebra.helpers.FilterBindingScope;
 import org.eclipse.rdf4j.query.explanation.TelemetryMetricNames;
 import org.eclipse.rdf4j.query.impl.EmptyBindingSet;
 import org.eclipse.rdf4j.query.impl.MapBindingSet;
+import org.eclipse.rdf4j.query.impl.SimpleDataset;
 import org.eclipse.rdf4j.query.parser.ParsedQuery;
 import org.eclipse.rdf4j.query.parser.QueryParserUtil;
 import org.junit.jupiter.api.Test;
@@ -99,6 +108,547 @@ public class FilterOptimizerTest extends QueryOptimizerTest {
 	@Override
 	public FilterOptimizer getOptimizer() {
 		return new FilterOptimizer();
+	}
+
+	@Test
+	public void outerFilterKeepsItsBindingsAcrossGroupedDistinctSubquery() throws Exception {
+		String query = "SELECT ?x ?y ?count WHERE { ?s <urn:x> ?x; <urn:y> ?y . "
+				+ "BIND(?s AS ?key) { SELECT DISTINCT ?key (COUNT(?v) AS ?count) WHERE { "
+				+ "?key <urn:item> ?v } GROUP BY ?key } FILTER(?x != ?y) }";
+		ValueFactory vf = SimpleValueFactory.getInstance();
+		IRI subject = vf.createIRI("urn:subject");
+		TripleSource source = statementListTripleSource(
+				vf.createStatement(subject, vf.createIRI("urn:x"), vf.createLiteral(1)),
+				vf.createStatement(subject, vf.createIRI("urn:y"), vf.createLiteral(2)),
+				vf.createStatement(subject, vf.createIRI("urn:item"), vf.createIRI("urn:item:1")),
+				vf.createStatement(subject, vf.createIRI("urn:item"), vf.createIRI("urn:item:2")));
+		MapBindingSet expected = new MapBindingSet();
+		expected.addBinding("x", vf.createLiteral(1));
+		expected.addBinding("y", vf.createLiteral(2));
+		expected.addBinding("count", vf.createLiteral("2", XSD.INTEGER));
+		TupleExpr original = parseTupleExpr(query);
+		assertThat(evaluate(original.clone(), source)).containsExactly(expected);
+		TupleExpr optimized = optimizeWithStandardPipeline(original.clone(), source);
+		assertThat(evaluate(optimized, source)).containsExactly(expected);
+	}
+
+	@Test
+	public void defaultContextVariableDoesNotDischargeAFilterOwner() throws Exception {
+		ValueFactory vf = SimpleValueFactory.getInstance();
+		IRI subject = vf.createIRI("urn:context:subject");
+		IRI predicate = vf.createIRI("urn:context:predicate");
+		Value object = vf.createLiteral("object");
+		Value other = vf.createLiteral("other");
+		IRI first = vf.createIRI("urn:context:first");
+		IRI second = vf.createIRI("urn:context:second");
+		TripleSource source = statementListTripleSource(vf.createStatement(subject, predicate, object));
+		MapBindingSet firstOwner = new MapBindingSet();
+		firstOwner.addBinding("g", first);
+		MapBindingSet secondOwner = new MapBindingSet();
+		secondOwner.addBinding("g", second);
+		BindingSetAssignment owners = new BindingSetAssignment();
+		owners.setBindingNames(Set.of("g"));
+		owners.setBindingSets(List.of(firstOwner, secondOwner));
+		StatementPattern statement = new StatementPattern(StatementPattern.Scope.DEFAULT_CONTEXTS,
+				Var.of("subject", subject, true, true), Var.of("predicate", predicate, true, true), Var.of("o"),
+				Var.of("g"));
+		Union union = new Union(statement, singleValueBindingSetAssignment("y", other));
+		Filter filter = new Filter(union,
+				new Compare(Var.of("g"), new ValueConstant(vf.createIRI("urn:context:excluded")), CompareOp.NE));
+		QueryRoot original = new QueryRoot(new Join(owners, filter));
+		List<BindingSet> expected = new ArrayList<>();
+		for (IRI graph : List.of(first, second)) {
+			MapBindingSet statementRow = new MapBindingSet();
+			statementRow.addBinding("g", graph);
+			statementRow.addBinding("o", object);
+			expected.add(statementRow);
+			MapBindingSet otherRow = new MapBindingSet();
+			otherRow.addBinding("g", graph);
+			otherRow.addBinding("y", other);
+			expected.add(otherRow);
+		}
+		assertThat(evaluate(original.clone(), source)).containsExactlyInAnyOrderElementsOf(expected);
+		TupleExpr optimized = original.clone();
+		getOptimizer().optimize(optimized, null, EmptyBindingSet.getInstance());
+		assertThat(evaluate(optimized, source)).containsExactlyInAnyOrderElementsOf(expected);
+	}
+
+	@Test
+	public void relocatedFilterIdentityDoesNotReuseItsOldOutputAssurance() throws Exception {
+		ValueFactory vf = SimpleValueFactory.getInstance();
+		BindingSetAssignment left = singleValueBindingSetAssignment("x", vf.createLiteral(1));
+		MapBindingSet y2 = new MapBindingSet();
+		y2.addBinding("y", vf.createLiteral(2));
+		MapBindingSet y3 = new MapBindingSet();
+		y3.addBinding("y", vf.createLiteral(3));
+		BindingSetAssignment right = new BindingSetAssignment();
+		right.setBindingNames(Set.of("y"));
+		right.setBindingSets(List.of(y2, y3));
+		Distinct scoped = new Distinct(right);
+		scoped.setVariableScopeChange(true);
+		Join originalArgument = new Join(left, scoped);
+		Filter moved = new Filter(originalArgument,
+				new Compare(Var.of("y"), new ValueConstant(vf.createLiteral(3)), CompareOp.LT));
+		Filter outer = new Filter(moved, new Compare(Var.of("x"), Var.of("y"), CompareOp.LT));
+		QueryRoot root = new QueryRoot(outer);
+		MapBindingSet expected = new MapBindingSet();
+		expected.addBinding("x", vf.createLiteral(1));
+		expected.addBinding("y", vf.createLiteral(2));
+		assertThat(evaluate(root.clone())).containsExactly(expected);
+		getOptimizer().optimize(root, null, EmptyBindingSet.getInstance());
+		assertThat(moved.getArg()).as("the existing Filter identity must move off its old Join")
+				.isNotSameAs(originalArgument);
+		assertThat(evaluate(root)).containsExactly(expected);
+	}
+
+	@Test
+	public void namedContextAndOwnerKeepTheirCompatibleValues() throws Exception {
+		ValueFactory vf = SimpleValueFactory.getInstance();
+		IRI subject = vf.createIRI("urn:context:subject");
+		IRI predicate = vf.createIRI("urn:context:predicate");
+		IRI first = vf.createIRI("urn:context:first");
+		IRI second = vf.createIRI("urn:context:second");
+		Value object = vf.createLiteral("object");
+		Value other = vf.createLiteral("other");
+		TripleSource source = statementListTripleSource(vf.createStatement(subject, predicate, object, first));
+		MapBindingSet firstOwner = new MapBindingSet();
+		firstOwner.addBinding("g", first);
+		MapBindingSet secondOwner = new MapBindingSet();
+		secondOwner.addBinding("g", second);
+		BindingSetAssignment owners = new BindingSetAssignment();
+		owners.setBindingNames(Set.of("g"));
+		owners.setBindingSets(List.of(firstOwner, secondOwner));
+		StatementPattern statement = new StatementPattern(StatementPattern.Scope.NAMED_CONTEXTS,
+				Var.of("subject", subject, true, true), Var.of("predicate", predicate, true, true), Var.of("o"),
+				Var.of("g"));
+		Filter filter = new Filter(new Union(statement, singleValueBindingSetAssignment("y", other)),
+				new Compare(Var.of("g"), new ValueConstant(vf.createIRI("urn:context:excluded")), CompareOp.NE));
+		QueryRoot original = new QueryRoot(new Join(owners, filter));
+		MapBindingSet statementRow = new MapBindingSet();
+		statementRow.addBinding("g", first);
+		statementRow.addBinding("o", object);
+		MapBindingSet firstOther = new MapBindingSet();
+		firstOther.addBinding("g", first);
+		firstOther.addBinding("y", other);
+		MapBindingSet secondOther = new MapBindingSet();
+		secondOther.addBinding("g", second);
+		secondOther.addBinding("y", other);
+		List<BindingSet> expected = List.of(statementRow, firstOther, secondOther);
+		assertThat(evaluate(original.clone(), source)).containsExactlyInAnyOrderElementsOf(expected);
+		TupleExpr optimized = original.clone();
+		getOptimizer().optimize(optimized, null, EmptyBindingSet.getInstance());
+		assertThat(evaluate(optimized, source)).containsExactlyInAnyOrderElementsOf(expected);
+	}
+
+	@Test
+	public void localFilterDoesNotParameterizeAScopedStatementProducer() throws Exception {
+		ValueFactory vf = SimpleValueFactory.getInstance();
+		IRI subject = vf.createIRI("urn:scope:s");
+		IRI predicate = vf.createIRI("urn:scope:p");
+		IRI absentGraph = vf.createIRI("urn:scope:absentGraph");
+		Value object = vf.createLiteral("keep");
+		TripleSource source = statementListTripleSource(vf.createStatement(subject, predicate, object));
+		BindingSetAssignment left = singleValueBindingSetAssignment("g", absentGraph);
+		StatementPattern right = new StatementPattern(StatementPattern.Scope.DEFAULT_CONTEXTS,
+				Var.of("subject", subject, true, true), Var.of("predicate", predicate, true, true), Var.of("o"),
+				Var.of("g"));
+		right.setVariableScopeChange(true);
+		Filter filter = new Filter(new Join(left, right),
+				new Compare(new Str(Var.of("o")), new ValueConstant(object), CompareOp.EQ));
+		QueryRoot root = new QueryRoot(filter);
+		MapBindingSet expected = new MapBindingSet();
+		expected.addBinding("g", absentGraph);
+		expected.addBinding("o", object);
+		assertThat(evaluate(root.clone(), source)).containsExactly(expected);
+		getOptimizer().optimize(root, null, EmptyBindingSet.getInstance());
+		assertThat(evaluate(root, source)).containsExactly(expected);
+	}
+
+	@Test
+	public void localFilterCanMoveOntoAnUnscopedStatementProducer() throws Exception {
+		ValueFactory vf = SimpleValueFactory.getInstance();
+		IRI subject = vf.createIRI("urn:scope:s");
+		IRI predicate = vf.createIRI("urn:scope:p");
+		IRI owner = vf.createIRI("urn:scope:owner");
+		Value object = vf.createLiteral("keep");
+		TripleSource source = statementListTripleSource(vf.createStatement(subject, predicate, object));
+		StatementPattern right = new StatementPattern(Var.of("subject", subject, true, true),
+				Var.of("predicate", predicate, true, true), Var.of("o"));
+		Filter filter = new Filter(new Join(singleValueBindingSetAssignment("g", owner), right),
+				new Compare(new Str(Var.of("o")), new ValueConstant(object), CompareOp.EQ));
+		QueryRoot root = new QueryRoot(filter);
+		MapBindingSet expected = new MapBindingSet();
+		expected.addBinding("g", owner);
+		expected.addBinding("o", object);
+		assertThat(evaluate(root.clone(), source)).containsExactly(expected);
+		getOptimizer().optimize(root, null, EmptyBindingSet.getInstance());
+		assertThat(evaluate(root, source)).containsExactly(expected);
+		assertThat(filter.getArg()).isSameAs(right);
+	}
+
+	@Test
+	public void existingFilterDoesNotHideScopedJoinProducer() throws Exception {
+		ValueFactory vf = SimpleValueFactory.getInstance();
+		IRI subject = vf.createIRI("urn:scope:s");
+		IRI predicate = vf.createIRI("urn:scope:p");
+		IRI absentGraph = vf.createIRI("urn:scope:absentGraph");
+		Value object = vf.createLiteral("keep");
+		Value three = vf.createLiteral(3);
+		TripleSource source = statementListTripleSource(vf.createStatement(subject, predicate, object));
+		StatementPattern statement = new StatementPattern(StatementPattern.Scope.DEFAULT_CONTEXTS,
+				Var.of("subject", subject, true, true), Var.of("predicate", predicate, true, true), Var.of("o"),
+				Var.of("g"));
+		Join scoped = new Join(statement, singleValueBindingSetAssignment("z", three));
+		scoped.setVariableScopeChange(true);
+		Filter filter = new Filter(scoped,
+				new Compare(new Str(Var.of("o")), new ValueConstant(object), CompareOp.EQ));
+		QueryRoot root = new QueryRoot(new Join(singleValueBindingSetAssignment("g", absentGraph), filter));
+		MapBindingSet expected = new MapBindingSet();
+		expected.addBinding("g", absentGraph);
+		expected.addBinding("o", object);
+		expected.addBinding("z", three);
+		assertThat(evaluate(root.clone(), source)).containsExactly(expected);
+		getOptimizer().optimize(root, null, EmptyBindingSet.getInstance());
+		assertThat(evaluate(root, source)).containsExactly(expected);
+	}
+
+	@Test
+	public void existingFilterDoesNotHideScopedStatementProducer() throws Exception {
+		ValueFactory vf = SimpleValueFactory.getInstance();
+		IRI subject = vf.createIRI("urn:scope:s");
+		IRI predicate = vf.createIRI("urn:scope:p");
+		IRI absentGraph = vf.createIRI("urn:scope:absentGraph");
+		Value object = vf.createLiteral("keep");
+		TripleSource source = statementListTripleSource(vf.createStatement(subject, predicate, object));
+		StatementPattern statement = new StatementPattern(StatementPattern.Scope.DEFAULT_CONTEXTS,
+				Var.of("subject", subject, true, true), Var.of("predicate", predicate, true, true), Var.of("o"),
+				Var.of("g"));
+		statement.setVariableScopeChange(true);
+		Filter filter = new Filter(statement, new Bound(Var.of("h")));
+		MapBindingSet leftRow = new MapBindingSet();
+		leftRow.addBinding("g", absentGraph);
+		leftRow.addBinding("h", vf.createLiteral("owner"));
+		BindingSetAssignment left = new BindingSetAssignment();
+		left.setBindingNames(Set.of("g", "h"));
+		left.setBindingSets(List.of(leftRow));
+		QueryRoot root = new QueryRoot(new Join(left, filter));
+		MapBindingSet expected = new MapBindingSet();
+		expected.addBinding("g", absentGraph);
+		expected.addBinding("h", vf.createLiteral("owner"));
+		expected.addBinding("o", object);
+		assertThat(evaluate(root.clone(), source)).containsExactly(expected);
+		getOptimizer().optimize(root, null, EmptyBindingSet.getInstance());
+		assertThat(evaluate(root, source)).containsExactly(expected);
+	}
+
+	@Test
+	public void ownerFilterPreservesScopedInputThroughTransparentWrappers() throws Exception {
+		ValueFactory vf = SimpleValueFactory.getInstance();
+		IRI subject = vf.createIRI("urn:scope:s");
+		IRI predicate = vf.createIRI("urn:scope:p");
+		IRI absentGraph = vf.createIRI("urn:scope:absentGraph");
+		Value object = vf.createLiteral("keep");
+		Value owner = vf.createLiteral("owner");
+		TripleSource source = statementListTripleSource(vf.createStatement(subject, predicate, object));
+		for (int kind = 0; kind < 5; kind++) {
+			StatementPattern statement = new StatementPattern(StatementPattern.Scope.DEFAULT_CONTEXTS,
+					Var.of("subject", subject, true, true), Var.of("predicate", predicate, true, true), Var.of("o"),
+					Var.of("g"));
+			statement.setVariableScopeChange(true);
+			TupleExpr wrapped = switch (kind) {
+			case 0 -> new Filter(new Filter(statement,
+					new Compare(new Str(Var.of("o")), new ValueConstant(object), CompareOp.EQ)),
+					new Bound(Var.of("o")));
+			case 1 -> new Distinct(statement);
+			case 2 -> new Reduced(statement);
+			case 3 -> new Order(statement, new OrderElem(Var.of("o")));
+			default -> new Extension(statement, new ExtensionElem(Var.of("g"), "copy"));
+			};
+			MapBindingSet both = new MapBindingSet();
+			both.addBinding("g", absentGraph);
+			both.addBinding("h", owner);
+			MapBindingSet noOwner = new MapBindingSet();
+			noOwner.addBinding("g", absentGraph);
+			BindingSetAssignment left = new BindingSetAssignment();
+			left.setBindingNames(Set.of("g", "h"));
+			left.setBindingSets(List.of(both, noOwner, both));
+			QueryRoot root = new QueryRoot(new Join(left, new Filter(wrapped, new Bound(Var.of("h")))));
+			Map<String, Value> expected = Map.of("g", absentGraph, "h", owner, "o", object);
+			assertThat(evaluate(root.clone(), source).stream().map(FilterOptimizerTest::rdfBindings))
+					.as("unoptimized wrapper %s", kind)
+					.containsExactlyInAnyOrder(expected, expected);
+			getOptimizer().optimize(root, null, EmptyBindingSet.getInstance());
+			assertThat(evaluate(root, source).stream().map(FilterOptimizerTest::rdfBindings))
+					.as("optimized wrapper %s", kind)
+					.containsExactlyInAnyOrder(expected, expected);
+		}
+	}
+
+	@Test
+	public void optionalConditionsKeepOwnerAndScopedProducerSeparate() throws Exception {
+		ValueFactory vf = SimpleValueFactory.getInstance();
+		IRI subject = vf.createIRI("urn:scope:s");
+		IRI predicate = vf.createIRI("urn:scope:p");
+		IRI absentGraph = vf.createIRI("urn:scope:absentGraph");
+		Value object = vf.createLiteral("keep");
+		Value owner = vf.createLiteral("owner");
+		TripleSource source = statementListTripleSource(vf.createStatement(subject, predicate, object));
+		for (int kind = 0; kind < 3; kind++) {
+			StatementPattern statement = new StatementPattern(StatementPattern.Scope.DEFAULT_CONTEXTS,
+					Var.of("subject", subject, true, true), Var.of("predicate", predicate, true, true), Var.of("o"),
+					Var.of("g"));
+			statement.setVariableScopeChange(true);
+			MapBindingSet both = new MapBindingSet();
+			both.addBinding("g", absentGraph);
+			both.addBinding("h", owner);
+			MapBindingSet noOwner = new MapBindingSet();
+			noOwner.addBinding("g", absentGraph);
+			BindingSetAssignment left = new BindingSetAssignment();
+			left.setBindingNames(Set.of("g", "h"));
+			left.setBindingSets(List.of(both, noOwner, both));
+			ValueExpr condition = kind == 0 ? new ValueConstant(vf.createLiteral(true))
+					: kind == 1 ? new ValueConstant(vf.createLiteral(false))
+							: new Compare(Var.of("missing"), new ValueConstant(vf.createLiteral(1)), CompareOp.EQ);
+			QueryRoot root = new QueryRoot(new LeftJoin(left, new Filter(statement, new Bound(Var.of("h"))),
+					condition));
+			Map<String, Value> ownerRow = kind == 0 ? Map.of("g", absentGraph, "h", owner, "o", object)
+					: Map.of("g", absentGraph, "h", owner);
+			List<Map<String, Value>> expected = List.of(ownerRow, Map.of("g", absentGraph), ownerRow);
+			assertThat(evaluate(root.clone(), source).stream().map(FilterOptimizerTest::rdfBindings))
+					.as("unoptimized OPTIONAL condition %s", kind)
+					.containsExactlyInAnyOrderElementsOf(expected);
+			getOptimizer().optimize(root, null, EmptyBindingSet.getInstance());
+			assertThat(evaluate(root, source).stream().map(FilterOptimizerTest::rdfBindings))
+					.as("optimized OPTIONAL condition %s", kind)
+					.containsExactlyInAnyOrderElementsOf(expected);
+		}
+	}
+
+	@Test
+	public void unscopedNullableContextPreservesCompatibleRowsAndApiInput() throws Exception {
+		ValueFactory vf = SimpleValueFactory.getInstance();
+		IRI subject = vf.createIRI("urn:scope:s");
+		IRI predicate = vf.createIRI("urn:scope:p");
+		IRI absentGraph = vf.createIRI("urn:scope:absentGraph");
+		Value object = vf.createLiteral("keep");
+		TripleSource source = statementListTripleSource(vf.createStatement(subject, predicate, object));
+		StatementPattern statement = new StatementPattern(StatementPattern.Scope.DEFAULT_CONTEXTS,
+				Var.of("subject", subject, true, true), Var.of("predicate", predicate, true, true), Var.of("o"),
+				Var.of("g"));
+		MapBindingSet outer = new MapBindingSet();
+		outer.addBinding("g", absentGraph);
+		assertThat(evaluate(statement.clone(), source).stream().map(FilterOptimizerTest::rdfBindings))
+				.containsExactly(Map.of("o", object));
+		assertThat(evaluate(statement.clone(), source, outer)).isEmpty();
+		BindingSetAssignment left = new BindingSetAssignment();
+		left.setBindingNames(Set.of("g"));
+		left.setBindingSets(List.of(outer, new MapBindingSet(), outer));
+		QueryRoot root = new QueryRoot(new Join(left, statement));
+		assertThat(evaluate(root, source).stream().map(FilterOptimizerTest::rdfBindings))
+				.containsExactlyInAnyOrder(Map.of("g", absentGraph, "o", object), Map.of("o", object),
+						Map.of("g", absentGraph, "o", object));
+	}
+
+	@Test
+	public void ownerFilterCannotBorrowNullableContextFromItsSibling() throws Exception {
+		ValueFactory vf = SimpleValueFactory.getInstance();
+		IRI subject = vf.createIRI("urn:scope:s");
+		IRI predicate = vf.createIRI("urn:scope:p");
+		IRI absentGraph = vf.createIRI("urn:scope:absentGraph");
+		Value object = vf.createLiteral("keep");
+		Value owner = vf.createLiteral("owner");
+		TripleSource source = statementListTripleSource(vf.createStatement(subject, predicate, object));
+		StatementPattern statement = new StatementPattern(StatementPattern.Scope.DEFAULT_CONTEXTS,
+				Var.of("subject", subject, true, true), Var.of("predicate", predicate, true, true), Var.of("o"),
+				Var.of("g"));
+		MapBindingSet both = new MapBindingSet();
+		both.addBinding("g", absentGraph);
+		both.addBinding("h", owner);
+		MapBindingSet noOwner = new MapBindingSet();
+		noOwner.addBinding("g", absentGraph);
+		MapBindingSet noGraph = new MapBindingSet();
+		noGraph.addBinding("h", owner);
+		BindingSetAssignment left = new BindingSetAssignment();
+		left.setBindingNames(Set.of("g", "h"));
+		left.setBindingSets(List.of(both, noOwner, both, noGraph));
+		QueryRoot root = new QueryRoot(new Join(left, new Filter(statement, new Bound(Var.of("h")))));
+		assertThat(evaluate(root, source).stream().map(FilterOptimizerTest::rdfBindings))
+				.containsExactlyInAnyOrder(Map.of("g", absentGraph, "h", owner, "o", object),
+						Map.of("g", absentGraph, "h", owner, "o", object), Map.of("h", owner, "o", object));
+	}
+
+	@Test
+	public void nullableContextFilterFallsBackToItsDeclaredOwner() throws Exception {
+		ValueFactory vf = SimpleValueFactory.getInstance();
+		IRI subject = vf.createIRI("urn:scope:s");
+		IRI predicate = vf.createIRI("urn:scope:p");
+		IRI absentGraph = vf.createIRI("urn:scope:absentGraph");
+		Value object = vf.createLiteral("keep");
+		TripleSource source = statementListTripleSource(vf.createStatement(subject, predicate, object));
+		StatementPattern statement = new StatementPattern(StatementPattern.Scope.DEFAULT_CONTEXTS,
+				Var.of("subject", subject, true, true), Var.of("predicate", predicate, true, true), Var.of("o"),
+				Var.of("g"));
+		MapBindingSet owner = new MapBindingSet();
+		owner.addBinding("g", absentGraph);
+		BindingSetAssignment left = new BindingSetAssignment();
+		left.setBindingNames(Set.of("g"));
+		left.setBindingSets(List.of(owner, new MapBindingSet()));
+		QueryRoot root = new QueryRoot(new Join(left, new Filter(statement, new Bound(Var.of("g")))));
+		assertThat(evaluate(root.clone(), source).stream().map(FilterOptimizerTest::rdfBindings))
+				.containsExactly(Map.of("g", absentGraph, "o", object));
+		getOptimizer().optimize(root, null, EmptyBindingSet.getInstance());
+		assertThat(evaluate(root, source).stream().map(FilterOptimizerTest::rdfBindings))
+				.containsExactly(Map.of("g", absentGraph, "o", object));
+	}
+
+	@Test
+	public void namedContextSentinelsCannotIntroduceDefaultRowsThroughJoin() throws Exception {
+		ValueFactory vf = SimpleValueFactory.getInstance();
+		IRI subject = vf.createIRI("urn:scope:s");
+		IRI predicate = vf.createIRI("urn:scope:p");
+		IRI namedGraph = vf.createIRI("urn:scope:named");
+		Value defaultObject = vf.createLiteral("default");
+		Value namedObject = vf.createLiteral("named");
+		TripleSource source = statementListTripleSource(vf.createStatement(subject, predicate, defaultObject),
+				vf.createStatement(subject, predicate, namedObject, namedGraph));
+		StatementPattern statement = new StatementPattern(StatementPattern.Scope.NAMED_CONTEXTS,
+				Var.of("subject", subject, true, true), Var.of("predicate", predicate, true, true), Var.of("o"),
+				Var.of("g"));
+		assertThat(evaluate(statement.clone(), source).stream().map(FilterOptimizerTest::rdfBindings))
+				.containsExactly(Map.of("g", namedGraph, "o", namedObject));
+		for (IRI sentinel : List.of(RDF4J.NIL, SESAME.NIL)) {
+			QueryRoot root = new QueryRoot(new Join(singleValueBindingSetAssignment("g", sentinel), statement.clone()));
+			assertThat(evaluate(root, source).stream().map(FilterOptimizerTest::rdfBindings)).isEmpty();
+		}
+	}
+
+	@Test
+	public void namedContextSentinelCannotBypassRepeatedVariableEquality() throws Exception {
+		ValueFactory vf = SimpleValueFactory.getInstance();
+		IRI predicate = vf.createIRI("urn:scope:p");
+		IRI namedGraph = vf.createIRI("urn:scope:named");
+		Value defaultObject = vf.createLiteral("default");
+		Value namedObject = vf.createLiteral("named");
+		TripleSource source = statementListTripleSource(vf.createStatement(RDF4J.NIL, predicate, defaultObject),
+				vf.createStatement(SESAME.NIL, predicate, defaultObject),
+				vf.createStatement(namedGraph, predicate, namedObject, namedGraph));
+		StatementPattern statement = new StatementPattern(StatementPattern.Scope.NAMED_CONTEXTS, Var.of("g"),
+				Var.of("predicate", predicate, true, true), Var.of("o"), Var.of("g"));
+		assertThat(evaluate(statement.clone(), source).stream().map(FilterOptimizerTest::rdfBindings))
+				.containsExactly(Map.of("g", namedGraph, "o", namedObject));
+		for (IRI sentinel : List.of(RDF4J.NIL, SESAME.NIL)) {
+			QueryRoot root = new QueryRoot(new Join(singleValueBindingSetAssignment("g", sentinel), statement.clone()));
+			assertThat(evaluate(root, source).stream().map(FilterOptimizerTest::rdfBindings)).isEmpty();
+		}
+	}
+
+	@Test
+	public void valuedContextRemainsALogicalOutputEvenForNil() throws Exception {
+		ValueFactory vf = SimpleValueFactory.getInstance();
+		IRI subject = vf.createIRI("urn:scope:s");
+		IRI predicate = vf.createIRI("urn:scope:p");
+		Value object = vf.createLiteral("keep");
+		TripleSource source = statementListTripleSource(vf.createStatement(subject, predicate, object));
+		for (StatementPattern.Scope scope : StatementPattern.Scope.values()) {
+			StatementPattern valued = new StatementPattern(scope, Var.of("subject", subject, true, true),
+					Var.of("predicate", predicate, true, true), Var.of("o"),
+					Var.of("g", RDF4J.NIL, false, false));
+			assertThat(evaluate(valued.clone(), source).stream().map(FilterOptimizerTest::rdfBindings))
+					.containsExactly(Map.of("g", RDF4J.NIL, "o", object));
+			MapBindingSet conflicting = new MapBindingSet();
+			conflicting.addBinding("g", vf.createIRI("urn:scope:other"));
+			assertThat(evaluate(valued.clone(), source, conflicting)).isEmpty();
+			StatementPattern constant = new StatementPattern(scope, Var.of("subject", subject, true, true),
+					Var.of("predicate", predicate, true, true), Var.of("o"),
+					Var.of("g", RDF4J.NIL, true, true));
+			assertThat(evaluate(constant, source).stream().map(FilterOptimizerTest::rdfBindings))
+					.containsExactly(Map.of("o", object));
+		}
+	}
+
+	@Test
+	public void namedDatasetNilLeavesContextUnboundForOwnerFallback() throws Exception {
+		ValueFactory vf = SimpleValueFactory.getInstance();
+		IRI subject = vf.createIRI("urn:scope:s");
+		IRI predicate = vf.createIRI("urn:scope:p");
+		IRI absentGraph = vf.createIRI("urn:scope:absentGraph");
+		Value object = vf.createLiteral("keep");
+		TripleSource source = statementListTripleSource(vf.createStatement(subject, predicate, object));
+		for (IRI sentinel : List.of(RDF4J.NIL, SESAME.NIL)) {
+			SimpleDataset dataset = new SimpleDataset();
+			dataset.addNamedGraph(sentinel);
+			StatementPattern statement = new StatementPattern(StatementPattern.Scope.NAMED_CONTEXTS,
+					Var.of("subject", subject, true, true), Var.of("predicate", predicate, true, true), Var.of("o"),
+					Var.of("g"));
+			assertThat(evaluate(statement.clone(), source, EmptyBindingSet.getInstance(), dataset).stream()
+					.map(FilterOptimizerTest::rdfBindings)).containsExactly(Map.of("o", object));
+			QueryRoot root = new QueryRoot(new Join(singleValueBindingSetAssignment("g", absentGraph),
+					new Filter(statement, new Bound(Var.of("g")))));
+			assertThat(evaluate(root, source, EmptyBindingSet.getInstance(), dataset).stream()
+					.map(FilterOptimizerTest::rdfBindings)).containsExactly(Map.of("g", absentGraph, "o", object));
+		}
+	}
+
+	@Test
+	public void projectedNullableContextFallsBackToAliasOwner() throws Exception {
+		ValueFactory vf = SimpleValueFactory.getInstance();
+		IRI subject = vf.createIRI("urn:scope:s");
+		IRI predicate = vf.createIRI("urn:scope:p");
+		IRI absentGraph = vf.createIRI("urn:scope:absentGraph");
+		Value object = vf.createLiteral("keep");
+		TripleSource source = statementListTripleSource(vf.createStatement(subject, predicate, object));
+		StatementPattern statement = new StatementPattern(StatementPattern.Scope.DEFAULT_CONTEXTS,
+				Var.of("subject", subject, true, true), Var.of("predicate", predicate, true, true), Var.of("o"),
+				Var.of("g"));
+		Projection projection = new Projection(statement,
+				new ProjectionElemList(new ProjectionElem("g", "alias"), new ProjectionElem("o")), false);
+		QueryRoot root = new QueryRoot(new Join(singleValueBindingSetAssignment("alias", absentGraph),
+				new Filter(projection, new Bound(Var.of("alias")))));
+		assertThat(evaluate(root.clone(), source).stream().map(FilterOptimizerTest::rdfBindings))
+				.containsExactly(Map.of("alias", absentGraph, "o", object));
+		getOptimizer().optimize(root, null, EmptyBindingSet.getInstance());
+		assertThat(evaluate(root, source).stream().map(FilterOptimizerTest::rdfBindings))
+				.containsExactly(Map.of("alias", absentGraph, "o", object));
+	}
+
+	@Test
+	public void groupedNullableContextCountsOnlyLocalBindings() throws Exception {
+		ValueFactory vf = SimpleValueFactory.getInstance();
+		IRI subject = vf.createIRI("urn:scope:s");
+		IRI predicate = vf.createIRI("urn:scope:p");
+		IRI absentGraph = vf.createIRI("urn:scope:absentGraph");
+		TripleSource source = statementListTripleSource(
+				vf.createStatement(subject, predicate, vf.createLiteral("keep")));
+		StatementPattern statement = new StatementPattern(StatementPattern.Scope.DEFAULT_CONTEXTS,
+				Var.of("subject", subject, true, true), Var.of("predicate", predicate, true, true), Var.of("o"),
+				Var.of("g"));
+		Group group = new Group(statement);
+		group.addGroupElement(new GroupElem("count", new Count(Var.of("g"))));
+		QueryRoot root = new QueryRoot(new Join(singleValueBindingSetAssignment("g", absentGraph), group));
+		assertThat(evaluate(root, source).stream().map(FilterOptimizerTest::rdfBindings))
+				.containsExactly(Map.of("g", absentGraph, "count", vf.createLiteral("0", XSD.INTEGER)));
+	}
+
+	@Test
+	public void genuineNamedGraphInputsKeepIriAndBlankNodeAuthority() throws Exception {
+		ValueFactory vf = SimpleValueFactory.getInstance();
+		IRI subject = vf.createIRI("urn:scope:s");
+		IRI predicate = vf.createIRI("urn:scope:p");
+		Resource iriGraph = vf.createIRI("urn:scope:graph");
+		Resource blankGraph = vf.createBNode("scope-graph");
+		Value iriObject = vf.createLiteral("iri");
+		Value blankObject = vf.createLiteral("blank");
+		TripleSource source = statementListTripleSource(vf.createStatement(subject, predicate, iriObject, iriGraph),
+				vf.createStatement(subject, predicate, blankObject, blankGraph));
+		StatementPattern statement = new StatementPattern(StatementPattern.Scope.NAMED_CONTEXTS,
+				Var.of("subject", subject, true, true), Var.of("predicate", predicate, true, true), Var.of("o"),
+				Var.of("g"));
+		for (Map.Entry<Resource, Value> selected : Map.of(iriGraph, iriObject, blankGraph, blankObject).entrySet()) {
+			MapBindingSet input = new MapBindingSet();
+			input.addBinding("g", selected.getKey());
+			assertThat(evaluate(statement.clone(), source, input).stream().map(FilterOptimizerTest::rdfBindings))
+					.containsExactly(Map.of("g", selected.getKey(), "o", selected.getValue()));
+		}
 	}
 
 	@Test
@@ -866,7 +1416,7 @@ public class FilterOptimizerTest extends QueryOptimizerTest {
 		Extension overwrite = new Extension(new SingletonSet(),
 				new ExtensionElem(new ValueConstant(SimpleValueFactory.getInstance().createLiteral("new")), "x"));
 
-		assertJoinFilterObservesOverwrittenValue(overwrite);
+		assertJoinFilterRejectsConflictingOverwrite(overwrite);
 	}
 
 	@Test
@@ -874,21 +1424,76 @@ public class FilterOptimizerTest extends QueryOptimizerTest {
 		ValueFactory valueFactory = SimpleValueFactory.getInstance();
 		IRI subject = valueFactory.createIRI("urn:subject");
 		IRI predicate = valueFactory.createIRI("urn:probe");
+		Value leftValue = valueFactory.createLiteral(1);
+		Value rightValue = valueFactory.createLiteral(10);
 		TripleSource tripleSource = statementListTripleSource(
-				valueFactory.createStatement(subject, predicate, valueFactory.createLiteral(1)));
+				valueFactory.createStatement(subject, predicate, leftValue));
 		StatementPattern left = new StatementPattern(
 				Var.of("s"), new Var("p", predicate), Var.of("x"));
 		Extension optionalRight = new Extension(new SingletonSet(),
-				new ExtensionElem(new ValueConstant(valueFactory.createLiteral(10)), "x"));
-		QueryRoot original = new QueryRoot(new Filter(new LeftJoin(left, optionalRight),
+				new ExtensionElem(new ValueConstant(rightValue), "x"));
+
+		MapBindingSet originalLeftMapping = new MapBindingSet();
+		originalLeftMapping.addBinding("s", subject);
+		originalLeftMapping.addBinding("p", predicate);
+		originalLeftMapping.addBinding("x", leftValue);
+		List<BindingSet> expectedLeft = List.of(originalLeftMapping);
+
+		QueryRoot bareOptional = new QueryRoot(new LeftJoin(left.clone(), optionalRight.clone()));
+		assertThat(evaluate(bareOptional.clone(), tripleSource)).containsExactlyInAnyOrderElementsOf(expectedLeft);
+		TupleExpr optimizedBareOptional = optimizeWithStandardPipeline(bareOptional.clone(), tripleSource);
+		assertThat(evaluate(optimizedBareOptional, tripleSource)).containsExactlyInAnyOrderElementsOf(expectedLeft);
+
+		for (CompareOp operation : List.of(CompareOp.GT, CompareOp.LT)) {
+			QueryRoot original = new QueryRoot(new Filter(new LeftJoin(left.clone(), optionalRight.clone()),
+					new Compare(Var.of("x"), new ValueConstant(valueFactory.createLiteral(5)), operation)));
+			List<BindingSet> expected = operation == CompareOp.GT ? List.of() : expectedLeft;
+
+			assertThat(evaluate(original.clone(), tripleSource)).containsExactlyInAnyOrderElementsOf(expected);
+			TupleExpr optimized = optimizeWithStandardPipeline(original.clone(), tripleSource);
+			assertThat(evaluate(optimized, tripleSource)).containsExactlyInAnyOrderElementsOf(expected);
+		}
+	}
+
+	@Test
+	public void optionalFilterSeesLocallyOverwrittenNullableValue() throws Exception {
+		ValueFactory valueFactory = SimpleValueFactory.getInstance();
+		Value matchId = valueFactory.createLiteral("match");
+		Value fallbackId = valueFactory.createLiteral("fallback");
+		Value originalValue = valueFactory.createLiteral(1);
+		Value overwrittenValue = valueFactory.createLiteral(10);
+
+		MapBindingSet matchingLeft = new MapBindingSet();
+		matchingLeft.addBinding("id", matchId);
+		MapBindingSet fallbackLeft = new MapBindingSet();
+		fallbackLeft.addBinding("id", fallbackId);
+		fallbackLeft.addBinding("x", originalValue);
+		BindingSetAssignment nullableLeft = new BindingSetAssignment();
+		nullableLeft.setBindingNames(Set.of("id", "x"));
+		nullableLeft.setBindingSets(List.of(matchingLeft, fallbackLeft));
+
+		Extension optionalRight = new Extension(singleValueBindingSetAssignment("x", originalValue),
+				new ExtensionElem(new ValueConstant(overwrittenValue), "x"));
+		QueryRoot bareOptional = new QueryRoot(new LeftJoin(nullableLeft, optionalRight));
+		MapBindingSet expectedMatch = new MapBindingSet();
+		expectedMatch.addBinding("id", matchId);
+		expectedMatch.addBinding("x", overwrittenValue);
+		MapBindingSet expectedFallback = new MapBindingSet();
+		expectedFallback.addBinding("id", fallbackId);
+		expectedFallback.addBinding("x", originalValue);
+		List<BindingSet> expectedOptional = List.of(expectedMatch, expectedFallback);
+
+		assertThat(evaluate(bareOptional.clone())).containsExactlyInAnyOrderElementsOf(expectedOptional);
+		TupleExpr optimizedBareOptional = optimizeWithStandardPipeline(bareOptional.clone(), new EmptyTripleSource());
+		assertThat(evaluate(optimizedBareOptional)).containsExactlyInAnyOrderElementsOf(expectedOptional);
+
+		QueryRoot original = new QueryRoot(new Filter(new LeftJoin(nullableLeft.clone(), optionalRight.clone()),
 				new Compare(Var.of("x"), new ValueConstant(valueFactory.createLiteral(5)), CompareOp.GT)));
-		List<BindingSet> expected = evaluate(original.clone(), tripleSource);
-		assertThat(expected).singleElement()
-				.satisfies(row -> assertThat(row.getValue("x")).isEqualTo(valueFactory.createLiteral(10)));
+		List<BindingSet> expectedFiltered = List.of(expectedMatch);
+		assertThat(evaluate(original.clone())).containsExactlyInAnyOrderElementsOf(expectedFiltered);
 
-		TupleExpr optimized = optimizeWithStandardPipeline(original.clone(), tripleSource);
-
-		assertThat(evaluate(optimized, tripleSource)).containsExactlyInAnyOrderElementsOf(expected);
+		TupleExpr optimized = optimizeWithStandardPipeline(original.clone(), new EmptyTripleSource());
+		assertThat(evaluate(optimized)).containsExactlyInAnyOrderElementsOf(expectedFiltered);
 		assertThat(findAll(optimized, Filter.class)).singleElement()
 				.satisfies(filter -> assertThat(filter.getArg()).isInstanceOf(LeftJoin.class));
 	}
@@ -944,30 +1549,83 @@ public class FilterOptimizerTest extends QueryOptimizerTest {
 		Extension overwrite = new Extension(new SingletonSet(),
 				new ExtensionElem(new ValueConstant(SimpleValueFactory.getInstance().createLiteral("new")), "x"));
 
-		assertJoinFilterObservesOverwrittenValue(new Join(new SingletonSet(), overwrite));
+		assertJoinFilterRejectsConflictingOverwrite(new Join(new SingletonSet(), overwrite));
 	}
 
-	private void assertJoinFilterObservesOverwrittenValue(TupleExpr rightArg) throws Exception {
+	@Test
+	public void preservesFilterValueFromLocalOverwriteBesideJoinSibling() throws Exception {
+		assertJoinFilterObservesLocalOverwrite(false);
+	}
+
+	@Test
+	public void preservesFilterValueFromNestedLocalOverwriteBesideJoinSibling() throws Exception {
+		assertJoinFilterObservesLocalOverwrite(true);
+	}
+
+	private void assertJoinFilterRejectsConflictingOverwrite(TupleExpr rightArg) throws Exception {
 		Value oldValue = SimpleValueFactory.getInstance().createLiteral("old");
 		Value newValue = SimpleValueFactory.getInstance().createLiteral("new");
 		QueryRoot original = new QueryRoot(new Filter(
 				new Join(singleValueBindingSetAssignment("x", oldValue), rightArg),
 				new Compare(Var.of("x"), new ValueConstant(newValue), CompareOp.EQ)));
-		List<BindingSet> originalResults = evaluate(original);
-		assertThat(originalResults).singleElement()
-				.satisfies(result -> assertThat(result.getValue("x")).isEqualTo(newValue));
+		assertThat(evaluate(original.clone())).isEmpty();
 
 		for (FilterOptimizer optimizer : filterOptimizerConfigurations()) {
 			QueryRoot optimized = original.clone();
 			optimizer.optimize(optimized, null, EmptyBindingSet.getInstance());
-			assertThat(evaluate(optimized)).containsExactlyInAnyOrderElementsOf(originalResults);
-
-			assertThat(findAll(optimized, Filter.class)).singleElement()
-					.satisfies(filter -> assertThat(filter.getArg())
-							.as("the x = new filter cannot run directly on the old-value input")
-							.isNotInstanceOf(BindingSetAssignment.class)
-							.isNotInstanceOf(SingletonSet.class));
+			assertThat(evaluate(optimized)).isEmpty();
 		}
+	}
+
+	private void assertJoinFilterObservesLocalOverwrite(boolean nested) throws Exception {
+		Value siblingValue = SimpleValueFactory.getInstance().createLiteral("sibling");
+		Value oldValue = SimpleValueFactory.getInstance().createLiteral("old");
+		Value newValue = SimpleValueFactory.getInstance().createLiteral("new");
+		Extension overwrite = new Extension(singleValueBindingSetAssignment("x", oldValue),
+				new ExtensionElem(new ValueConstant(newValue), "x"));
+		TupleExpr rightArg = nested ? new Join(new SingletonSet(), overwrite) : overwrite;
+		QueryRoot original = new QueryRoot(new Filter(
+				new Join(singleValueBindingSetAssignment("marker", siblingValue), rightArg),
+				new Compare(Var.of("x"), new ValueConstant(newValue), CompareOp.EQ)));
+
+		MapBindingSet expectedRow = new MapBindingSet();
+		expectedRow.addBinding("marker", siblingValue);
+		expectedRow.addBinding("x", newValue);
+		List<BindingSet> expected = List.of(expectedRow);
+		assertThat(evaluate(original.clone())).containsExactlyInAnyOrderElementsOf(expected);
+
+		for (FilterOptimizer optimizer : filterOptimizerConfigurations()) {
+			QueryRoot optimized = original.clone();
+			optimizer.optimize(optimized, null, EmptyBindingSet.getInstance());
+			assertThat(evaluate(optimized)).containsExactlyInAnyOrderElementsOf(expected);
+
+			List<Filter> placedFilters = findAll(optimized, Filter.class);
+			assertThat(placedFilters).hasSize(1);
+			Filter placedFilter = placedFilters.getFirst();
+			Extension placedOverwrite = findAll(optimized, Extension.class).getFirst();
+			assertThat(placedOverwrite.getElements()).singleElement()
+					.satisfies(element -> assertThat(element.getName()).isEqualTo("x"));
+			if (!isAncestorOf(placedFilter, placedOverwrite)) {
+				assertThat(isAncestorOf(placedOverwrite, placedFilter))
+						.as("a relocated filter must stay in the Extension that overwrites x:\n%s", optimized)
+						.isTrue();
+				assertThat(placedFilter.getCondition()).isInstanceOf(Compare.class);
+				Compare constantComparison = (Compare) placedFilter.getCondition();
+				assertThat(constantComparison.getLeftArg()).isInstanceOf(ValueConstant.class);
+				assertThat(((ValueConstant) constantComparison.getLeftArg()).getValue()).isEqualTo(newValue);
+				assertThat(constantComparison.getRightArg()).isInstanceOf(ValueConstant.class);
+				assertThat(((ValueConstant) constantComparison.getRightArg()).getValue()).isEqualTo(newValue);
+			}
+		}
+	}
+
+	private static boolean isAncestorOf(QueryModelNode ancestor, QueryModelNode node) {
+		for (QueryModelNode current = node.getParentNode(); current != null; current = current.getParentNode()) {
+			if (current == ancestor) {
+				return true;
+			}
+		}
+		return false;
 	}
 
 	@Test
@@ -1708,10 +2366,26 @@ public class FilterOptimizerTest extends QueryOptimizerTest {
 		return evaluate(tupleExpr, new EmptyTripleSource());
 	}
 
+	private static Map<String, Value> rdfBindings(BindingSet row) {
+		Map<String, Value> result = new HashMap<>();
+		row.forEach(binding -> result.put(binding.getName(), binding.getValue()));
+		return result;
+	}
+
 	private static List<BindingSet> evaluate(TupleExpr tupleExpr, TripleSource tripleSource) throws Exception {
-		DefaultEvaluationStrategy strategy = new DefaultEvaluationStrategy(tripleSource, null);
+		return evaluate(tupleExpr, tripleSource, EmptyBindingSet.getInstance());
+	}
+
+	private static List<BindingSet> evaluate(TupleExpr tupleExpr, TripleSource tripleSource, BindingSet input)
+			throws Exception {
+		return evaluate(tupleExpr, tripleSource, input, null);
+	}
+
+	private static List<BindingSet> evaluate(TupleExpr tupleExpr, TripleSource tripleSource, BindingSet input,
+			Dataset dataset) throws Exception {
+		DefaultEvaluationStrategy strategy = new DefaultEvaluationStrategy(tripleSource, dataset, null);
 		List<BindingSet> results = new ArrayList<>();
-		try (CloseableIteration<BindingSet> iteration = strategy.evaluate(tupleExpr, EmptyBindingSet.getInstance())) {
+		try (CloseableIteration<BindingSet> iteration = strategy.evaluate(tupleExpr, input)) {
 			while (iteration.hasNext()) {
 				results.add(iteration.next());
 			}

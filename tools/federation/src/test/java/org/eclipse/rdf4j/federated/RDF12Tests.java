@@ -19,9 +19,22 @@ import java.util.Set;
 import java.util.stream.Collectors;
 
 import org.eclipse.rdf4j.common.iteration.Iterations;
+import org.eclipse.rdf4j.federated.algebra.TripleRefStatementPattern;
+import org.eclipse.rdf4j.federated.evaluation.FederationEvaluationStatistics;
+import org.eclipse.rdf4j.federated.structures.QueryInfo;
+import org.eclipse.rdf4j.federated.structures.QueryType;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.TripleTerm;
 import org.eclipse.rdf4j.model.util.Values;
+import org.eclipse.rdf4j.model.vocabulary.RDF;
+import org.eclipse.rdf4j.query.algebra.Extension;
+import org.eclipse.rdf4j.query.algebra.Join;
+import org.eclipse.rdf4j.query.algebra.QueryRoot;
+import org.eclipse.rdf4j.query.algebra.StatementPattern;
+import org.eclipse.rdf4j.query.algebra.TripleRef;
+import org.eclipse.rdf4j.query.algebra.Var;
+import org.eclipse.rdf4j.query.algebra.helpers.AbstractQueryModelVisitor;
+import org.eclipse.rdf4j.query.impl.EmptyBindingSet;
 import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -40,6 +53,35 @@ public class RDF12Tests extends SPARQLBaseTest {
 		super.initFedXConfig();
 
 		fedxRule.withConfiguration(config -> config.withEnableTripleRefSupport(true));
+	}
+
+	@Test
+	public void scopedTripleRefJoinKeepsSpecializedRouteAndResult() throws Exception {
+		prepareTest(Arrays.asList("/tests/rdf1_2/data01endpoint1.ttl", "/tests/rdf1_2/data01endpoint2.ttl"));
+		TripleRef reference = new TripleRef(Var.of("ts", ex("bob"), true, true),
+				Var.of("tp", ex("jobTitle"), true, true), Var.of("jobTitle"), Var.of("triple"));
+		StatementPattern statement = new StatementPattern(Var.of("node"),
+				Var.of("predicate", RDF.REIFIES, true, true), Var.of("triple"));
+		Join join = new Join(reference, statement);
+		join.setVariableScopeChange(true);
+		var federation = fedxRule.getRepository().getFederationContext();
+		var strategy = federation.createStrategy(null);
+		var queryInfo = new QueryInfo(null, null, QueryType.SELECT, 0, false, federation, strategy, null);
+		var optimized = strategy.optimize(new QueryRoot(join), new FederationEvaluationStatistics(queryInfo, null),
+				EmptyBindingSet.getInstance());
+		var rows = Iterations.asList(strategy.evaluate(optimized, EmptyBindingSet.getInstance()));
+		assertThat(rows).extracting(row -> row.getValue("jobTitle")).containsExactly(Values.literal("Designer"));
+		boolean[] scopedSpecialization = { false };
+		optimized.visit(new AbstractQueryModelVisitor<RuntimeException>() {
+			@Override
+			public void meet(Extension node) {
+				if (node.isVariableScopeChange() && node.getArg() instanceof TripleRefStatementPattern) {
+					scopedSpecialization[0] = true;
+				}
+				super.meet(node);
+			}
+		});
+		assertThat(scopedSpecialization[0]).as(optimized.toString()).isTrue();
 	}
 
 	@Test

@@ -44,13 +44,23 @@ class LmdbNativePathPlannerTest {
 		planner.slot("x");
 		Var endpoint = Var.of("x");
 		StatementPattern step = new StatementPattern(endpoint.clone(),
-				Var.of("p", SimpleValueFactory.getInstance().createIRI("http://example.com/p"), true),
+				Var.of("p", SimpleValueFactory.getInstance().createIRI("http://example.com/p"), true, true),
 				endpoint.clone());
 		ArbitraryLengthPath path = new ArbitraryLengthPath(endpoint.clone(), step, endpoint.clone(), 1L);
 
 		assertThat(planner.compilePath(path)).isInstanceOf(PathPlan.class);
 		assertThat(planner.compilePath(new ArbitraryLengthPath(endpoint.clone(), step.clone(), endpoint.clone(), 2L)))
 				.isNull();
+	}
+
+	@Test
+	void sameVariablePathWithPredicateOutputIsNotAnEndpointOnlyPlan() {
+		LmdbNativeAggregatePlanner planner = planner();
+		Var endpoint = Var.of("x");
+		StatementPattern step = new StatementPattern(endpoint.clone(),
+				Var.of("p", SimpleValueFactory.getInstance().createIRI("http://example.com/p"), true),
+				endpoint.clone());
+		assertThat(planner.compilePath(new ArbitraryLengthPath(endpoint.clone(), step, endpoint.clone(), 1L))).isNull();
 	}
 
 	@Test

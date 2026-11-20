@@ -45,6 +45,7 @@ import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryEvaluationStep;
 import org.eclipse.rdf4j.query.algebra.evaluation.function.lmdb.LmdbIndexOrderFunction;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.QueryEvaluationContext;
+import org.eclipse.rdf4j.query.algebra.evaluation.util.QueryEvaluationUtility.PreparedFilterScope;
 import org.eclipse.rdf4j.query.algebra.evaluation.util.ValueComparator;
 
 /**
@@ -76,6 +77,12 @@ final class NativeRootPipeline {
 
 	static QueryEvaluationStep tryCompile(TupleExpr expr, QueryEvaluationContext context,
 			LmdbNativeEvaluationStrategy strategy, NativeLmdbQuerySource source, boolean rootEvaluationScoped) {
+		return tryCompile(expr, context, strategy, source, rootEvaluationScoped, Map.of());
+	}
+
+	static QueryEvaluationStep tryCompile(TupleExpr expr, QueryEvaluationContext context,
+			LmdbNativeEvaluationStrategy strategy, NativeLmdbQuerySource source, boolean rootEvaluationScoped,
+			Map<TupleExpr, PreparedFilterScope> scopes) {
 		TupleExpr node = expr;
 		if (node instanceof QueryRoot) {
 			node = ((QueryRoot) node).getArg();
@@ -100,6 +107,7 @@ final class NativeRootPipeline {
 		}
 
 		LmdbNativeAggregatePlanner planner = new LmdbNativeAggregatePlanner(context, strategy, source);
+		planner.preparedFilterScopes = scopes;
 		planner.rootEvaluationScoped = rootEvaluationScoped;
 		QueryEvaluationStep step = planner.compileAggregateRoot(node);
 		if (step == null) {

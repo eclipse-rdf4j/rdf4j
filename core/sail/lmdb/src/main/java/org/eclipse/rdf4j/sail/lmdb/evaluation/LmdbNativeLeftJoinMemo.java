@@ -17,6 +17,7 @@ import static org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbNativeAggregateCompiler
 import static org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbNativeAggregateCompiler.LEFTJOIN_SWEEP_BUILDS;
 import static org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbNativeAggregateCompiler.LEFTJOIN_SWEEP_ENABLED;
 import static org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbNativeAggregateCompiler.LEFTJOIN_SWEEP_MAX_ROWS;
+import static org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbNativeAggregateCompiler.NULL_CONTEXT_ID;
 import static org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbNativeAggregateCompiler.UNKNOWN;
 import static org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbNativeAggregateCompiler.slotsOf;
 
@@ -26,6 +27,7 @@ import java.util.HashMap;
 import java.util.Map;
 
 import org.eclipse.rdf4j.common.annotation.Experimental;
+import org.eclipse.rdf4j.sail.lmdb.evaluation.codegen.KernelRuntime;
 
 @Experimental
 final class RightMemoProbe {
@@ -38,6 +40,8 @@ final class RightMemoProbe {
 	final int[] replaySlots;
 	final HashMap<GroupKey, long[][]> rowsByKey = new HashMap<>();
 	final GroupKey probeKey;
+	private final NativeTermAuthority sweepAuthority;
+	private KernelRuntime.AggregateMemory sweepMemory;
 	/**
 	 * Plan-09 work item 5.3: when the left-side row estimate makes per-key fragment runs cost at least one key-unbound
 	 * sweep of the fragment, the fragment is executed ONCE with the correlated slots unbound and every probe (hit or
@@ -49,10 +53,15 @@ final class RightMemoProbe {
 	boolean sweepPending;
 
 	RightMemoProbe(SlotPlan right, int[] keySlots, int[] replaySlots) {
+		this(right, keySlots, replaySlots, null);
+	}
+
+	private RightMemoProbe(SlotPlan right, int[] keySlots, int[] replaySlots, NativeTermAuthority sweepAuthority) {
 		this.right = right;
 		this.keySlots = keySlots;
 		this.replaySlots = replaySlots;
 		this.probeKey = new GroupKey(new long[keySlots.length]);
+		this.sweepAuthority = sweepAuthority;
 	}
 
 	static RightMemoProbe tryCreate(SlotPlan right, long leftProducedMask, long readMask, RowState row,
@@ -63,7 +72,7 @@ final class RightMemoProbe {
 
 	static RightMemoProbe tryCreate(SlotPlan right, long leftProducedMask, long readMask, RowState row,
 			long entryBoundMask, double expectedProbes, double perProbeRows, double sweepEstimate) {
-		if (!Boolean.parseBoolean(System.getProperty(LEFTJOIN_MEMO_ENABLED, "true"))) {
+		if (!memoEnabled()) {
 			return null;
 		}
 		if (readMask < 0L || (readMask & leftProducedMask) == 0L) {
@@ -84,6 +93,7 @@ final class RightMemoProbe {
 		// slots are constant for this cursor, so the per-key memo already answers them in one fragment run.
 		if (sweepEnabled() && correlatedMask != 0L && Long.bitCount(correlatedMask) <= MAX_SWEEP_KEY_SLOTS
 				&& (correlatedMask & entryBoundMask) == 0L && (correlatedMask & ~right.producedMask()) == 0L
+				&& PatternPlan.supportsContextUnbinding(row.layout, correlatedMask)
 				&& sweepJustified(expectedProbes, perProbeRows, sweepEstimate)) {
 			probe.sweepKeySlots = slotsOf(correlatedMask);
 			probe.sweepPending = true;
@@ -104,13 +114,43 @@ final class RightMemoProbe {
 
 	static RightMemoProbe tryCreateSweepOnly(SlotPlan right, long leftProducedMask, long readMask, RowState row,
 			long entryBoundMask, double expectedProbes, double perProbeRows, double sweepEstimate) {
+		if (right instanceof NativeSubqueryPlan subquery) {
+			return tryCreateIndependentSweep(subquery, leftProducedMask, row, entryBoundMask,
+					expectedProbes, perProbeRows, sweepEstimate);
+		}
 		RightMemoProbe probe = tryCreate(right, leftProducedMask, readMask, row, entryBoundMask, expectedProbes,
 				perProbeRows, sweepEstimate);
 		return probe != null && probe.sweepPending ? probe : null;
 	}
 
+	private static RightMemoProbe tryCreateIndependentSweep(NativeSubqueryPlan right, long leftProducedMask,
+			RowState row, long entryBoundMask, double expectedProbes, double perProbeRows, double sweepEstimate) {
+		NativeSubqueryPlan.IndependentSweep capability = right.independentSweep();
+		long keys = leftProducedMask & right.producedMask();
+		if (capability == null || !sweepEnabled() || !memoEnabled() || row.encounterOrderRequired
+				|| keys == 0L || Long.bitCount(keys) > MAX_SWEEP_KEY_SLOTS || (keys & entryBoundMask) != 0L
+				|| (keys & ~capability.assuredKeys()) != 0L
+				|| !sweepJustified(expectedProbes, perProbeRows, sweepEstimate)) {
+			return null;
+		}
+		NativeTermAuthority authority = row.termAuthority();
+		if (authority == null || !authority.supportsCanonicalTermKeys()) {
+			return null;
+		}
+		int[] keySlots = slotsOf(keys);
+		// A matching key is already installed on the left. Replay only the right payload, preserving the left IDs.
+		RightMemoProbe probe = new RightMemoProbe(right, keySlots, slotsOf(right.producedMask() & ~keys), authority);
+		probe.sweepKeySlots = keySlots;
+		probe.sweepPending = true;
+		return probe;
+	}
+
 	static boolean sweepEnabled() {
 		return Boolean.parseBoolean(System.getProperty(LEFTJOIN_SWEEP_ENABLED, "false"));
+	}
+
+	private static boolean memoEnabled() {
+		return Boolean.parseBoolean(System.getProperty(LEFTJOIN_MEMO_ENABLED, "true"));
 	}
 
 	/**
@@ -163,6 +203,9 @@ final class RightMemoProbe {
 	}
 
 	RowCursor open(RowState row) throws IOException {
+		if (sweepAuthority != null && !usableSweepKey(row)) {
+			return null;
+		}
 		if (sweepPending) {
 			sweep(row);
 		}
@@ -173,8 +216,12 @@ final class RightMemoProbe {
 					return null;
 				}
 			}
-			long[][] cached = sweptRows.get(sweepProbeKey.refill(row.slots, sweepKeySlots));
+			long[][] cached = sweptRows.get(sweepKey(sweepProbeKey, row.slots));
 			return cached == null ? EmptyCursor.INSTANCE : new MemoReplayCursor(row, replaySlots, cached);
+		}
+		if (sweepAuthority != null) {
+			// The independent producer retains its own replay, including rows that have no usable index key.
+			return null;
 		}
 		probeKey.refill(row.slots, keySlots);
 		long[][] cached = rowsByKey.get(probeKey);
@@ -195,6 +242,24 @@ final class RightMemoProbe {
 	 */
 	private void sweep(RowState row) throws IOException {
 		sweepPending = false;
+		if (sweepAuthority == null) {
+			buildSweep(row);
+			return;
+		}
+		sweepMemory = KernelRuntime.AggregateMemory.forLedger(row.memoryScope.ledger(LmdbNativeHashJoin.queryMemory()));
+		try {
+			if (sweepMemory.tryReserve(1024L + 160L * row.slots.length)) {
+				// Clearing join keys changes only this private output row. The subquery still opens on its own entry.
+				buildSweep(row.fork());
+			}
+		} finally {
+			if (sweptRows == null) {
+				closeSweepMemory();
+			}
+		}
+	}
+
+	private void buildSweep(RowState row) throws IOException {
 		long maxRows = sweepMaxRows();
 		long[] savedKeys = new long[sweepKeySlots.length];
 		for (int i = 0; i < sweepKeySlots.length; i++) {
@@ -227,10 +292,14 @@ final class RightMemoProbe {
 			return;
 		}
 		HashMap<GroupKey, long[][]> table = new HashMap<>(collected.size() * 2);
+		int copied = 0;
 		for (Map.Entry<GroupKey, ArrayList<long[]>> entry : collected.entrySet()) {
+			LmdbNativeProbeDeadline.poll(++copied);
+			row.cancellation.poll(copied);
 			ArrayList<long[]> bucket = entry.getValue();
 			table.put(entry.getKey(), bucket.toArray(new long[bucket.size()][]));
 		}
+		row.cancellation.check();
 		sweptRows = table;
 		sweepProbeKey = scratch;
 		LEFTJOIN_SWEEP_BUILDS.incrementAndGet();
@@ -252,10 +321,35 @@ final class RightMemoProbe {
 				if (!keyKnown || ++total > maxRows) {
 					return false;
 				}
+				if (sweepAuthority != null && !reserveIndependentRow(row)) {
+					return false;
+				}
 				record(row.slots, collected, scratch);
 			}
 		}
 		return true;
+	}
+
+	private boolean usableSweepKey(RowState row) {
+		for (int slot : sweepKeySlots) {
+			if (row.slots[slot] == UNKNOWN || row.slots[slot] == NULL_CONTEXT_ID || row.summaryCell(slot) != null) {
+				return false;
+			}
+		}
+		return true;
+	}
+
+	private boolean reserveIndependentRow(RowState row) {
+		if (!usableSweepKey(row)) {
+			return false;
+		}
+		for (int slot : replaySlots) {
+			if (row.summaryCell(slot) != null) {
+				return false;
+			}
+		}
+		// Allow for the key, map entry, row array and the transient list-to-array publication of each bucket.
+		return sweepMemory.tryReserve(256L + Long.BYTES * (sweepKeySlots.length + replaySlots.length));
 	}
 
 	/** Batch-path sweep drain: one merge/hash-joined pass over the key-unbound fragment. Returns false on abort. */
@@ -287,7 +381,7 @@ final class RightMemoProbe {
 	}
 
 	private void record(long[] slots, HashMap<GroupKey, ArrayList<long[]>> collected, GroupKey scratch) {
-		ArrayList<long[]> bucket = collected.get(scratch.refill(slots, sweepKeySlots));
+		ArrayList<long[]> bucket = collected.get(sweepKey(scratch, slots));
 		if (bucket == null) {
 			bucket = new ArrayList<>();
 			collected.put(scratch.storedCopy(), bucket);
@@ -299,11 +393,30 @@ final class RightMemoProbe {
 		bucket.add(values);
 	}
 
+	private GroupKey sweepKey(GroupKey scratch, long[] slots) {
+		if (sweepAuthority == null) {
+			return scratch.refill(slots, sweepKeySlots);
+		}
+		for (int i = 0; i < sweepKeySlots.length; i++) {
+			scratch.ids[i] = sweepAuthority.canonicalTermKey(slots[sweepKeySlots[i]]);
+		}
+		scratch.rehash();
+		return scratch;
+	}
+
+	private void closeSweepMemory() {
+		if (sweepMemory != null) {
+			sweepMemory.close();
+			sweepMemory = null;
+		}
+	}
+
 	void close() {
 		rowsByKey.clear();
 		if (sweptRows != null) {
 			sweptRows.clear();
 		}
+		closeSweepMemory();
 	}
 }
 

@@ -22,7 +22,10 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 
+import org.eclipse.rdf4j.collection.factory.impl.DefaultCollectionFactory;
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
+import org.eclipse.rdf4j.common.iteration.ConvertingIteration;
+import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.query.Binding;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.algebra.BindingSetAssignment;
@@ -34,33 +37,42 @@ import org.eclipse.rdf4j.query.algebra.GroupElem;
 import org.eclipse.rdf4j.query.algebra.Lateral;
 import org.eclipse.rdf4j.query.algebra.MultiProjection;
 import org.eclipse.rdf4j.query.algebra.Order;
+import org.eclipse.rdf4j.query.algebra.PrivateGraphContextRole;
 import org.eclipse.rdf4j.query.algebra.Projection;
 import org.eclipse.rdf4j.query.algebra.ProjectionElem;
 import org.eclipse.rdf4j.query.algebra.ProjectionElemList;
 import org.eclipse.rdf4j.query.algebra.Reduced;
 import org.eclipse.rdf4j.query.algebra.SingletonSet;
 import org.eclipse.rdf4j.query.algebra.Slice;
+import org.eclipse.rdf4j.query.algebra.StatementPattern;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.algebra.UnaryTupleOperator;
 import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.query.algebra.evaluation.EvaluationStrategy;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryBindingSet;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryEvaluationStep;
+import org.eclipse.rdf4j.query.algebra.evaluation.impl.BindingFrameBindings;
+import org.eclipse.rdf4j.query.algebra.evaluation.impl.BindingFrameReplay;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.BindingSetQueryEvaluationContext;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.GraphFrameBindings;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.QueryEvaluationContext;
 import org.eclipse.rdf4j.query.algebra.evaluation.iterator.LateralIterator;
 import org.eclipse.rdf4j.query.algebra.helpers.AbstractSimpleQueryModelVisitor;
 import org.eclipse.rdf4j.query.algebra.helpers.TupleExprs;
-import org.eclipse.rdf4j.query.impl.EmptyBindingSet;
 
 public final class LateralQueryEvaluationStep implements QueryEvaluationStep {
 	private final QueryEvaluationStep left;
 	private final QueryEvaluationStep right;
 	private final EvaluationStrategy strategy;
-	private final TupleExpr rightArg;
 	private final QueryEvaluationContext context;
+	private final QueryEvaluationContext invocationContext;
 	private final Set<String> rightInputBindingNames;
+	private final Set<String> outputBindingNames;
+	private final BindingFrameBindings.ConditionInputs ownerInputs;
+	private final Set<String> deferredWithheldInputs;
+	private final List<BindingFrameBindings.TupleParameterEdge> tupleParameterEdges;
+	private final boolean directProjection;
+	private final Set<String> directProjectionOutputs;
 
 	public static QueryEvaluationStep supply(EvaluationStrategy strategy, Lateral lateral,
 			QueryEvaluationContext context) {
@@ -72,19 +84,38 @@ public final class LateralQueryEvaluationStep implements QueryEvaluationStep {
 		this.left = left;
 		this.right = right;
 		this.strategy = null;
-		this.rightArg = null;
-		this.context = null;
+		this.context = new QueryEvaluationContext.Minimal(null);
+		this.invocationContext = BindingFrameBindings.dynamicSubstitutionContext(flexibleContext(context));
 		this.rightInputBindingNames = lateral.getRightInputBindingNames();
+		BindingFrameBindings.DeferredParameterInputs deferred = deferredInputs(right, rightInputBindingNames);
+		this.deferredWithheldInputs = deferred == null ? Set.of() : deferred.deferredWithheldInputs();
+		this.tupleParameterEdges = deferred == null ? List.of()
+				: BindingFrameBindings.tupleParameterEdges(
+						deferred.tupleParameterGrants(), rightInputBindingNames, deferredWithheldInputs);
+		this.outputBindingNames = Set.copyOf(lateral.getBindingNames());
+		this.ownerInputs = BindingFrameBindings.parameterInputs(lateral, rightInputBindingNames, true);
+		this.directProjection = hasDirectProjection(lateral.getRightArg());
+		this.directProjectionOutputs = directProjection ? Set.copyOf(lateral.getRightArg().getBindingNames())
+				: Set.of();
 	}
 
 	private LateralQueryEvaluationStep(QueryEvaluationStep left, EvaluationStrategy strategy, TupleExpr rightArg,
 			QueryEvaluationContext context, Lateral lateral) {
 		this.left = left;
 		this.strategy = strategy;
-		this.rightArg = rightArg;
 		this.context = context;
-		this.right = prepareRightStep(rightArg, context);
+		this.invocationContext = BindingFrameBindings.dynamicSubstitutionContext(flexibleContext(context));
 		this.rightInputBindingNames = lateral.getRightInputBindingNames();
+		this.ownerInputs = BindingFrameBindings.parameterInputs(lateral, rightInputBindingNames, true);
+		this.directProjection = hasDirectProjection(rightArg);
+		this.directProjectionOutputs = directProjection ? Set.copyOf(rightArg.getBindingNames()) : Set.of();
+		this.right = prepareRightStep(rightArg, invocationContext);
+		BindingFrameBindings.DeferredParameterInputs deferred = deferredInputs(this.right, rightInputBindingNames);
+		this.deferredWithheldInputs = deferred == null ? Set.of() : deferred.deferredWithheldInputs();
+		this.tupleParameterEdges = deferred == null ? List.of()
+				: BindingFrameBindings.tupleParameterEdges(
+						deferred.tupleParameterGrants(), rightInputBindingNames, deferredWithheldInputs);
+		this.outputBindingNames = Set.copyOf(lateral.getBindingNames());
 	}
 
 	@Override
@@ -92,24 +123,90 @@ public final class LateralQueryEvaluationStep implements QueryEvaluationStep {
 		// Evaluate left side
 		CloseableIteration<BindingSet> leftResults = left.evaluate(bindings);
 
-		if (strategy == null || rightInputBindingNames.isEmpty()) {
-			return LateralIterator.getInstance(leftResults, right, rightInputBindingNames, bindings);
+		CloseableIteration<BindingSet> results = LateralIterator.getInstance(leftResults, leftBindings -> {
+			Set<String> deferred = rightInputBindingNames.isEmpty() ? Set.of() : deferredWithheldInputs;
+			BindingSet original = strategy != null && BindingFrameBindings.hasFrame(bindings)
+					? invocationInput(bindings, leftBindings, deferred)
+					: bindings;
+			BindingSet input = filterRightInput(original, leftBindings, deferred);
+			return BindingFrameReplay.fresh(right, lateralInvocationInput(original, input, leftBindings),
+					strategy == null ? DefaultCollectionFactory::new : strategy.getCollectionFactory(),
+					invocationContext);
+		});
+		if (!BindingFrameBindings.hasFrame(bindings)) {
+			return results;
 		}
-
-		QueryEvaluationStep rightForBindings = prepareRight(bindings);
-		return LateralIterator.getInstance(leftResults,
-				leftBindings -> rightForBindings.evaluate(filterRightInput(bindings, leftBindings)));
+		return new ConvertingIteration<BindingSet, BindingSet>(results) {
+			@Override
+			protected BindingSet convert(BindingSet row) {
+				return BindingFrameBindings.produced(bindings, row, outputBindingNames, invocationContext);
+			}
+		};
 	}
 
-	private QueryEvaluationStep prepareRight(BindingSet originalBindings) {
-		TupleExpr prepared = prepareRightScope(rightArg, rightInputBindingNames, originalBindings.getBindingNames());
-		return prepared == rightArg ? right
-				: prepareRightStep(prepared, new BindingSetQueryEvaluationContext(context));
+	private static QueryEvaluationContext flexibleContext(QueryEvaluationContext context) {
+		// These implementations already copy and access arbitrary names without a fixed slot layout.
+		if (context.getClass() == QueryEvaluationContext.Minimal.class
+				|| context instanceof BindingSetQueryEvaluationContext) {
+			return context;
+		}
+		return new BindingSetQueryEvaluationContext(context);
+	}
+
+	/** A LATERAL RHS receives its bound declared inputs as a new invocation above any enclosing EXISTS domain. */
+	private BindingSet lateralInvocationInput(BindingSet original, BindingSet input, BindingSet currentEntry) {
+		Set<String> domain = BindingFrameBindings.substitutionDomain(input);
+		if (domain == null) {
+			domain = context.getSubstitutionBindingNames();
+		}
+		Set<String> extended = new HashSet<>(domain);
+		Set<String> privateInputs = new HashSet<>(BindingFrameBindings.lateralPrivateInputs(input));
+		Set<String> newlyDeclared = new HashSet<>(rightInputBindingNames);
+		newlyDeclared.removeAll(original.getBindingNames());
+		if (!directProjection || directProjectionOutputs.containsAll(newlyDeclared)) {
+			privateInputs.addAll(newlyDeclared);
+		}
+		for (String name : rightInputBindingNames) {
+			if (input.getValue(name) != null) {
+				extended.add(name);
+			}
+		}
+		return BindingFrameBindings.withLateralDomain(input, extended, privateInputs, currentEntry,
+				tupleParameterEdges, invocationContext);
+	}
+
+	private static boolean hasDirectProjection(TupleExpr rightArg) {
+		TupleExpr node = rightArg;
+		while (node instanceof Slice || node instanceof Order || node instanceof Distinct || node instanceof Reduced) {
+			node = ((UnaryTupleOperator) node).getArg();
+		}
+		return node instanceof Projection;
+	}
+
+	private BindingSet invocationInput(BindingSet original, BindingSet leftBindings, Set<String> deferred) {
+		leftBindings = ownerInputs.materialize(leftBindings);
+		QueryBindingSet supplied = null;
+		for (String name : rightInputBindingNames) {
+			if (!deferred.contains(name) && original.getValue(name) == null && leftBindings.getValue(name) == null) {
+				Value value = BindingFrameBindings.currentEntryWithheldInput(leftBindings, name);
+				if (value != null) {
+					if (supplied == null) {
+						supplied = new QueryBindingSet(original);
+					}
+					supplied.setBinding(name, value);
+				}
+			}
+		}
+		return supplied == null ? original : supplied;
 	}
 
 	private QueryEvaluationStep prepareRightStep(TupleExpr expression, QueryEvaluationContext evaluationContext) {
 		QueryEvaluationStep tupleGroup = TupleFunctionGroupQueryEvaluationStep.tryPrepare(expression, strategy,
 				evaluationContext);
+		if (tupleGroup instanceof TupleFunctionGroupQueryEvaluationStep group
+				&& deferredInputs(group, rightInputBindingNames) == null) {
+			return strategy.precompile(expression, evaluationContext);
+		}
 		return tupleGroup != null ? tupleGroup : strategy.precompile(expression, evaluationContext);
 	}
 
@@ -134,13 +231,17 @@ public final class LateralQueryEvaluationStep implements QueryEvaluationStep {
 		return scopedLateral.getRightArg();
 	}
 
-	private BindingSet filterRightInput(BindingSet originalBindings, BindingSet leftBindings) {
+	private BindingSet filterRightInput(BindingSet originalBindings, BindingSet leftBindings, Set<String> deferred) {
 		if (rightInputBindingNames.isEmpty()) {
-			return originalBindings.isEmpty() ? EmptyBindingSet.getInstance() : originalBindings;
+			return originalBindings;
 		}
+		leftBindings = ownerInputs.materialize(leftBindings);
+		Set<String> withheldNames = new HashSet<>(rightInputBindingNames);
+		withheldNames.removeAll(deferred);
+		leftBindings = BindingFrameBindings.materializeWithheldInputs(leftBindings, withheldNames);
 
 		if (originalBindings.isEmpty()) {
-			return filterLateralInputBindings(EmptyBindingSet.getInstance(), leftBindings);
+			return filterLateralInputBindings(originalBindings, leftBindings);
 		}
 
 		QueryBindingSet filtered = new QueryBindingSet(originalBindings.size() + rightInputBindingNames.size());
@@ -154,6 +255,21 @@ public final class LateralQueryEvaluationStep implements QueryEvaluationStep {
 		return filtered;
 	}
 
+	private static BindingFrameBindings.DeferredParameterInputs deferredInputs(QueryEvaluationStep prepared,
+			Set<String> declaredInputs) {
+		BindingFrameBindings.DeferredParameterInputs capability = BindingFrameBindings.unframedCapability(prepared,
+				BindingFrameBindings.DeferredParameterInputs.class);
+		if (capability == null || !capability.supportsDeferredInputs(declaredInputs)) {
+			return null;
+		}
+		Set<String> uncovered = new HashSet<>(capability.deferredArgumentInputs());
+		uncovered.retainAll(declaredInputs);
+		for (BindingFrameBindings.TupleParameterGrant grant : capability.tupleParameterGrants()) {
+			uncovered.removeAll(grant.names());
+		}
+		return uncovered.isEmpty() ? capability : null;
+	}
+
 	private BindingSet filterLateralInputBindings(BindingSet originalBindings, BindingSet leftBindings) {
 		QueryBindingSet filtered = new QueryBindingSet(Math.min(leftBindings.size(), rightInputBindingNames.size()));
 		for (String bindingName : rightInputBindingNames) {
@@ -162,7 +278,8 @@ public final class LateralQueryEvaluationStep implements QueryEvaluationStep {
 				filtered.addBinding(binding);
 			}
 		}
-		return filtered.isEmpty() ? EmptyBindingSet.getInstance() : filtered;
+		return BindingFrameBindings.preserve(originalBindings,
+				GraphFrameBindings.preserve(originalBindings, filtered));
 	}
 
 	private static final class HiddenLateralBindingRenamer extends AbstractSimpleQueryModelVisitor<RuntimeException> {
@@ -181,11 +298,15 @@ public final class LateralQueryEvaluationStep implements QueryEvaluationStep {
 			if (node.getProjectionContext() != null) {
 				node.getProjectionContext().visit(this);
 			}
-			String parameter = replacementName(node.getInheritedGraphParameter());
+			Map<String, String> replacements = hiddenProjectionSourceBindings(node.getProjectionElemList());
+			String parameter = parameterReplacement(node.getInheritedGraphParameter(), replacements);
 			if (parameter != null) {
 				node.setInheritedGraphParameter(parameter);
 			}
-			Map<String, String> replacements = hiddenProjectionSourceBindings(node.getProjectionElemList());
+			String fixedParameter = parameterReplacement(node.getFixedGraphParameter(), replacements);
+			if (fixedParameter != null) {
+				node.setFixedGraphParameter(fixedParameter);
+			}
 			// Heads and output aliases belong to the surrounding environment. Only the argument introduces
 			// new private names, selected using the original source heads above.
 			node.getProjectionElemList().visit(this);
@@ -211,6 +332,18 @@ public final class LateralQueryEvaluationStep implements QueryEvaluationStep {
 		public void meet(Filter node) {
 			node.setConditionBindingScope(node.getConditionBindingScope().mapBindingNames(this::renamedName));
 			node.visitChildren(this);
+		}
+
+		@Override
+		public void meet(StatementPattern node) {
+			String publicContext = PrivateGraphContextRole.publicContextName(node, node.getContextVar());
+			if (publicContext != null) {
+				String replacement = replacementName(publicContext);
+				if (replacement != null) {
+					PrivateGraphContextRole.mark(node, node.getContextVar(), replacement);
+				}
+			}
+			super.meet(node);
 		}
 
 		@Override
@@ -282,7 +415,7 @@ public final class LateralQueryEvaluationStep implements QueryEvaluationStep {
 					}
 					replacement.setVariableScopeChange(var.isVariableScopeChange());
 					replacement.setGraphContextDepth(var.getGraphContextDepth());
-					var.replaceWith(replacement);
+					PrivateGraphContextRole.replacePreservingRole(var, replacement);
 				}
 			}
 		}
@@ -344,6 +477,11 @@ public final class LateralQueryEvaluationStep implements QueryEvaluationStep {
 			return null;
 		}
 
+		private String parameterReplacement(String name, Map<String, String> local) {
+			String replacement = local.get(name);
+			return replacement != null ? replacement : replacementName(name);
+		}
+
 		private String renamedName(String name) {
 			String replacement = replacementName(name);
 			return replacement == null ? name : replacement;
@@ -398,7 +536,7 @@ public final class LateralQueryEvaluationStep implements QueryEvaluationStep {
 								GraphFrameBindings.supply(renamed, replacement, original.getValue(name));
 							}
 						}
-						return renamed;
+						return BindingFrameBindings.preserve(original, renamed);
 					}
 
 					@Override

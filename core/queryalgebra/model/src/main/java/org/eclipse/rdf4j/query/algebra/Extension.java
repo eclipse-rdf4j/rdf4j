@@ -16,17 +16,22 @@ import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Set;
 
+import org.eclipse.rdf4j.common.annotation.InternalUseOnly;
+
 /**
  * An extension operator that can be used to add bindings to solutions whose values are defined by {@link ValueExpr
  * value expressions}.
  */
 public class Extension extends UnaryTupleOperator {
+	private static final long serialVersionUID = -3107520793338733462L;
 
 	/*-----------*
 	 * Variables *
 	 *-----------*/
 
 	private List<ExtensionElem> elements = new ArrayList<>();
+	/** A lowered GRAPH retains its own scope separately from any scope on its body. */
+	private boolean graphScopeBoundary;
 
 	/*--------------*
 	 * Constructors *
@@ -47,6 +52,28 @@ public class Extension extends UnaryTupleOperator {
 	public Extension(TupleExpr arg, Iterable<ExtensionElem> elements) {
 		this(arg);
 		addElements(elements);
+	}
+
+	/** Creates the scope retained when an eligible GRAPH becomes a named-context pattern. */
+	@InternalUseOnly
+	public static Extension graphScope(TupleExpr arg) {
+		Extension boundary = new Extension(arg);
+		boundary.setVariableScopeChange(true);
+		boundary.graphScopeBoundary = true;
+		return boundary;
+	}
+
+	@InternalUseOnly
+	public boolean isGraphScopeBoundary() {
+		return graphScopeBoundary;
+	}
+
+	@Override
+	public void setVariableScopeChange(boolean changesScope) {
+		super.setVariableScopeChange(changesScope);
+		if (!changesScope) {
+			graphScopeBoundary = false;
+		}
 	}
 
 	/*---------*
@@ -124,14 +151,14 @@ public class Extension extends UnaryTupleOperator {
 	public boolean equals(Object other) {
 		if (other instanceof Extension && super.equals(other)) {
 			Extension o = (Extension) other;
-			return elements.equals(o.getElements());
+			return graphScopeBoundary == o.graphScopeBoundary && elements.equals(o.getElements());
 		}
 		return false;
 	}
 
 	@Override
 	public int hashCode() {
-		return super.hashCode() ^ elements.hashCode();
+		return super.hashCode() ^ elements.hashCode() ^ (graphScopeBoundary ? "GraphScope".hashCode() : 0);
 	}
 
 	@Override

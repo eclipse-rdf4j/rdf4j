@@ -14,6 +14,7 @@ package org.eclipse.rdf4j.sail.lmdb;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertInstanceOf;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -22,10 +23,19 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Set;
 
+import org.eclipse.rdf4j.common.iteration.CloseableIteration;
+import org.eclipse.rdf4j.common.iteration.CloseableIteratorIteration;
+import org.eclipse.rdf4j.common.iteration.SingletonIteration;
+import org.eclipse.rdf4j.model.IRI;
+import org.eclipse.rdf4j.model.Resource;
+import org.eclipse.rdf4j.model.Statement;
+import org.eclipse.rdf4j.model.Value;
+import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.algebra.BindingSetAssignment;
 import org.eclipse.rdf4j.query.algebra.Compare;
+import org.eclipse.rdf4j.query.algebra.EmptySet;
 import org.eclipse.rdf4j.query.algebra.Extension;
 import org.eclipse.rdf4j.query.algebra.ExtensionElem;
 import org.eclipse.rdf4j.query.algebra.Filter;
@@ -41,13 +51,73 @@ import org.eclipse.rdf4j.query.algebra.Union;
 import org.eclipse.rdf4j.query.algebra.ValueConstant;
 import org.eclipse.rdf4j.query.algebra.ValueExpr;
 import org.eclipse.rdf4j.query.algebra.Var;
+import org.eclipse.rdf4j.query.algebra.evaluation.TripleSource;
+import org.eclipse.rdf4j.query.algebra.evaluation.function.TupleFunctionRegistry;
+import org.eclipse.rdf4j.query.algebra.evaluation.function.tuple.AbstractTupleFunction;
+import org.eclipse.rdf4j.query.algebra.evaluation.impl.DefaultEvaluationStrategy;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.EvaluationStatistics;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.TupleFunctionMagicPropertyOptimizer;
+import org.eclipse.rdf4j.query.impl.EmptyBindingSet;
 import org.eclipse.rdf4j.query.impl.MapBindingSet;
 import org.junit.jupiter.api.Test;
 
 class LmdbUnionFilterDistributorTest {
 
 	private static final SimpleValueFactory VF = SimpleValueFactory.getInstance();
+
+	@Test
+	void distributionKeepsFinitePrefixOutsideGraphBoundary() {
+		String uri = "urn:graph:distributed-magic";
+		TupleFunctionRegistry registry = new TupleFunctionRegistry();
+		registry.add(new AbstractTupleFunction() {
+			@Override
+			public String getURI() {
+				return uri;
+			}
+
+			@Override
+			protected CloseableIteration<? extends List<? extends Value>> rows(ValueFactory factory, Value[] args) {
+				return new SingletonIteration<>(List.of(args[0]));
+			}
+		});
+		Extension graph = Extension.graphScope(statementPattern("u", uri, "x"));
+		Union union = new Union(graph, new EmptySet());
+		union.setVariableScopeChange(true);
+		BindingSetAssignment prefix = values("u", "input");
+		TupleExpr original = new Join(prefix.clone(), union.clone());
+		TupleExpr distributed = LmdbUnionFilterDistributor.tryDistribute(List.of(prefix, union), List.of(), Set.of(),
+				(tupleExpr, ignored) -> tupleExpr, Join::new, (root, ignored, placement) -> root);
+		assertNotNull(distributed, "the finite-prefix route should remain usable");
+		new TupleFunctionMagicPropertyOptimizer(registry).optimize(original, null, EmptyBindingSet.getInstance());
+		new TupleFunctionMagicPropertyOptimizer(registry).optimize(distributed, null, EmptyBindingSet.getInstance());
+		TripleSource source = new TripleSource() {
+			@Override
+			public CloseableIteration<? extends Statement> getStatements(Resource subject, IRI predicate, Value object,
+					Resource... contexts) {
+				return new CloseableIteratorIteration<>(List.<Statement>of().iterator());
+			}
+
+			@Override
+			public ValueFactory getValueFactory() {
+				return VF;
+			}
+		};
+		DefaultEvaluationStrategy strategy = new DefaultEvaluationStrategy(source, null, null, 0,
+				new EvaluationStatistics(), false, registry);
+		assertEquals(List.of(), evaluate(strategy, original));
+		assertEquals(List.of(), evaluate(strategy, distributed));
+	}
+
+	private static List<BindingSet> evaluate(DefaultEvaluationStrategy strategy, TupleExpr expression) {
+		List<BindingSet> rows = new ArrayList<>();
+		try (CloseableIteration<BindingSet> iteration = strategy.precompile(expression)
+				.evaluate(EmptyBindingSet.getInstance())) {
+			while (iteration.hasNext()) {
+				rows.add(iteration.next());
+			}
+		}
+		return rows;
+	}
 
 	@Test
 	void treatsUnknownFunctionFilteredValuesAsJoinOrderSeparator() {

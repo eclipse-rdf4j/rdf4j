@@ -22,6 +22,8 @@ import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.QueryEvaluationException;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryBindingSet;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryEvaluationStep;
+import org.eclipse.rdf4j.query.algebra.evaluation.impl.BindingFrameBindings;
+import org.eclipse.rdf4j.query.algebra.evaluation.impl.GraphFrameBindings;
 import org.eclipse.rdf4j.query.impl.EmptyBindingSet;
 
 /**
@@ -146,8 +148,9 @@ public class LateralIterator extends LookAheadIteration<BindingSet> {
 
 	private BindingSet filterRightInput(BindingSet bindings) {
 		if (rightInputBindingNames.isEmpty()) {
-			return originalBindings.isEmpty() ? EmptyBindingSet.getInstance() : originalBindings;
+			return originalBindings;
 		}
+		bindings = BindingFrameBindings.materializeWithheldInputs(bindings, rightInputBindingNames);
 
 		if (originalBindings.isEmpty()) {
 			return filterLateralInputBindings(bindings);
@@ -161,7 +164,7 @@ public class LateralIterator extends LookAheadIteration<BindingSet> {
 				filtered.addBinding(binding);
 			}
 		}
-		return filtered;
+		return BindingFrameBindings.preserve(bindings, GraphFrameBindings.preserve(bindings, filtered));
 	}
 
 	private BindingSet filterLateralInputBindings(BindingSet bindings) {
@@ -183,7 +186,7 @@ public class LateralIterator extends LookAheadIteration<BindingSet> {
 				filtered.addBinding(binding);
 			}
 		}
-		return filtered;
+		return BindingFrameBindings.preserve(bindings, GraphFrameBindings.preserve(bindings, filtered));
 	}
 
 	private static BindingSet merge(BindingSet leftBindings, BindingSet rightBindings) {

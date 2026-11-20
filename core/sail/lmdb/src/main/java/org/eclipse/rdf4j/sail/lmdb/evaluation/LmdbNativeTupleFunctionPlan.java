@@ -13,16 +13,27 @@
 package org.eclipse.rdf4j.sail.lmdb.evaluation;
 
 import java.io.IOException;
+import java.util.ArrayList;
+import java.util.Iterator;
+import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Set;
 
 import org.eclipse.rdf4j.common.annotation.Experimental;
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.ValueFactory;
+import org.eclipse.rdf4j.query.AbstractBindingSet;
+import org.eclipse.rdf4j.query.Binding;
+import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.QueryEvaluationException;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryValueEvaluationStep;
 import org.eclipse.rdf4j.query.algebra.evaluation.ValueExprEvaluationException;
 import org.eclipse.rdf4j.query.algebra.evaluation.function.TupleFunction;
+import org.eclipse.rdf4j.query.algebra.evaluation.impl.BindingFrame;
+import org.eclipse.rdf4j.query.algebra.evaluation.impl.BindingFrameBindings;
+import org.eclipse.rdf4j.query.algebra.evaluation.impl.GraphFrameBindings;
+import org.eclipse.rdf4j.query.impl.SimpleBinding;
 
 /** Stateful/external-SPI tuple function execution on the semantic native row tier. */
 @Experimental
@@ -32,15 +43,19 @@ final class TupleFunctionPlan implements SlotPlan {
 	private final ValueFactory valueFactory;
 	private final int[] resultSlots;
 	private final Value[] resultConstants;
+	private final Set<String> argumentNames;
+	private final BindingFrameBindings.TupleParameterGrant argumentGrant;
 	private final long producedMask;
 
 	TupleFunctionPlan(TupleFunction function, QueryValueEvaluationStep[] arguments, ValueFactory valueFactory,
-			int[] resultSlots, Value[] resultConstants) {
+			int[] resultSlots, Value[] resultConstants, Set<String> argumentNames) {
 		this.function = function;
 		this.arguments = arguments;
 		this.valueFactory = valueFactory;
 		this.resultSlots = resultSlots;
 		this.resultConstants = resultConstants;
+		this.argumentNames = argumentNames;
+		this.argumentGrant = new BindingFrameBindings.TupleParameterGrant(argumentNames);
 		long mask = 0L;
 		for (int slot : resultSlots) {
 			mask |= 1L << slot;
@@ -53,8 +68,17 @@ final class TupleFunctionPlan implements SlotPlan {
 		Value[] values = new Value[arguments.length];
 		CloseableIteration<? extends List<? extends Value>> results;
 		try {
+			BindingSet input = row.view;
+			if (BindingFrameBindings.hasFrame(input)) {
+				for (String name : argumentNames) {
+					if (input.getValue(name) == null && argumentGrant.value(input, name) != null) {
+						input = new ArgumentInput(input, argumentNames, argumentGrant);
+						break;
+					}
+				}
+			}
 			for (int i = 0; i < arguments.length; i++) {
-				values[i] = arguments[i].evaluate(row.view);
+				values[i] = arguments[i].evaluate(input);
 			}
 			results = function.evaluate(valueFactory, values);
 		} catch (ValueExprEvaluationException e) {
@@ -68,6 +92,80 @@ final class TupleFunctionPlan implements SlotPlan {
 	@Override
 	public long producedMask() {
 		return producedMask;
+	}
+
+	BindingFrameBindings.TupleParameterGrant argumentGrant() {
+		return argumentGrant;
+	}
+
+	/** A read-only argument view; result compatibility continues to use the unchanged native row. */
+	private static final class ArgumentInput extends AbstractBindingSet
+			implements BindingFrameBindings.Carrier, GraphFrameBindings.Carrier {
+		private final BindingSet logical;
+		private final Set<String> names;
+		private final BindingFrameBindings.TupleParameterGrant grant;
+
+		private ArgumentInput(BindingSet logical, Set<String> names,
+				BindingFrameBindings.TupleParameterGrant grant) {
+			this.logical = logical;
+			this.names = names;
+			this.grant = grant;
+		}
+
+		@Override
+		public Value getValue(String name) {
+			Value value = logical.getValue(name);
+			return value != null || !names.contains(name) ? value : grant.value(logical, name);
+		}
+
+		@Override
+		public Binding getBinding(String name) {
+			Value value = getValue(name);
+			return value == null ? null : new SimpleBinding(name, value);
+		}
+
+		@Override
+		public boolean hasBinding(String name) {
+			return getValue(name) != null;
+		}
+
+		@Override
+		public Set<String> getBindingNames() {
+			Set<String> present = new LinkedHashSet<>();
+			for (String name : names) {
+				if (getValue(name) != null) {
+					present.add(name);
+				}
+			}
+			return present;
+		}
+
+		@Override
+		public Iterator<Binding> iterator() {
+			List<Binding> bindings = new ArrayList<>();
+			for (String name : names) {
+				Binding binding = getBinding(name);
+				if (binding != null) {
+					bindings.add(binding);
+				}
+			}
+			return bindings.iterator();
+		}
+
+		@Override
+		public int size() {
+			return getBindingNames().size();
+		}
+
+		@Override
+		public BindingFrame getBindingFrame() {
+			return BindingFrameBindings.from(logical);
+		}
+
+		@Override
+		public GraphFrameBindings getGraphFrameBindings() {
+			return GraphFrameBindings.from(logical);
+		}
 	}
 }
 

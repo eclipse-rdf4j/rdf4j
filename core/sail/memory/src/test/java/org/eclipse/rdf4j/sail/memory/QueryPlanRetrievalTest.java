@@ -279,7 +279,7 @@ public class QueryPlanRetrievalTest {
 		try (SailRepositoryConnection connection = sailRepository.getConnection()) {
 			Query query = connection.prepareTupleQuery(sparql);
 			String actual = query.explain(Explanation.Level.Optimized).toString();
-			assertExplainTextEqualsIgnoringAnnotations(actual, "Join (JoinIterator)\n" +
+			assertExplainTextEqualsIgnoringAnnotations(actual, "Join (HashJoinIteration)\n" +
 					"╠══ Filter [left]\n" +
 					"║  ├── Compare (>)\n" +
 					"║  │     Var (name=s)\n" +
@@ -357,7 +357,7 @@ public class QueryPlanRetrievalTest {
 					║     ProjectionElem "o"
 					║     ProjectionElem "o2"
 					║     ProjectionElem "g"
-					╚══ LeftJoin (LeftJoinIterator)
+					╚══ LeftJoin (ScopedLeftJoinIterator)
 					      Compare (>)
 					      ╠══ PinnedFunctionCall (http://www.w3.org/2005/xpath-functions#string-length)
 					      ║     Str
@@ -482,7 +482,7 @@ public class QueryPlanRetrievalTest {
 							║     ProjectionElem "o"
 							║     ProjectionElem "score"
 							║     ProjectionElem "lvl"
-							╚══ Join (JoinIterator)
+							╚══ Join (HashJoinIteration)
 							   ├── BindingSetAssignment ([[s=http://example.com/A], [s=http://example.com/B], [s=http://example.com/C]]) (costEstimate=0, resultSizeEstimate=1.00) [left]
 							   └── Join (JoinIterator) [right]
 							      ╠══ Filter (new scope) (costEstimate=1.00, resultSizeEstimate=1.00) [left]
@@ -683,7 +683,7 @@ public class QueryPlanRetrievalTest {
 					"   │  ║        s: Var (name=d)\n" +
 					"   │  ║        p: Var (name=e)\n" +
 					"   │  ║        o: Var (name=f)\n" +
-					"   │  ╚══ Join (JoinIterator) [right]\n" +
+					"   │  ╚══ Join (ScopedCorrelatedJoinIterator) [right]\n" +
 					"   │     ├── Filter [left]\n" +
 					"   │     │  ╠══ Compare (!=)\n" +
 					"   │     │  ║     Var (name=c)\n" +
@@ -761,7 +761,7 @@ public class QueryPlanRetrievalTest {
 					"   │  ║        s: Var (name=d)\n" +
 					"   │  ║        p: Var (name=e)\n" +
 					"   │  ║        o: Var (name=f)\n" +
-					"   │  ╚══ Join (JoinIterator) (resultSizeActual=2) [right]\n" +
+					"   │  ╚══ Join (ScopedCorrelatedJoinIterator) (resultSizeActual=2) [right]\n" +
 					"   │     ├── Filter (resultSizeActual=48) [left]\n" +
 					"   │     │  ╠══ Compare (!=)\n" +
 					"   │     │  ║     Var (name=c)\n" +
@@ -813,7 +813,7 @@ public class QueryPlanRetrievalTest {
 					"   │  ║        s: Var (name=d)\n" +
 					"   │  ║        p: Var (name=e)\n" +
 					"   │  ║        o: Var (name=f)\n" +
-					"   │  ╚══ Join (JoinIterator) (resultSizeActual=2) [right]\n" +
+					"   │  ╚══ Join (ScopedCorrelatedJoinIterator) (resultSizeActual=2) [right]\n" +
 					"   │     ├── Filter (resultSizeActual=48) [left]\n" +
 					"   │     │  ╠══ Compare (!=)\n" +
 					"   │     │  ║     Var (name=c)\n" +
@@ -1227,7 +1227,7 @@ public class QueryPlanRetrievalTest {
 					"   │  ║        s: Var (name=d)\n" +
 					"   │  ║        p: Var (name=e)\n" +
 					"   │  ║        o: Var (name=f)\n" +
-					"   │  ╚══ Join (JoinIterator) (resultSizeActual=1) [right]\n" +
+					"   │  ╚══ Join (ScopedCorrelatedJoinIterator) (resultSizeActual=1) [right]\n" +
 					"   │     ├── Filter (resultSizeActual=3) [left]\n" +
 					"   │     │  ╠══ Compare (!=)\n" +
 					"   │     │  ║     Var (name=c)\n" +
@@ -1288,7 +1288,7 @@ public class QueryPlanRetrievalTest {
 					"      ║  │  ║        s: Var (name=d)\n" +
 					"      ║  │  ║        p: Var (name=e)\n" +
 					"      ║  │  ║        o: Var (name=f)\n" +
-					"      ║  │  ╚══ Join (JoinIterator) (resultSizeActual=2) [right]\n" +
+					"      ║  │  ╚══ Join (ScopedCorrelatedJoinIterator) (resultSizeActual=2) [right]\n" +
 					"      ║  │     ├── Filter (resultSizeActual=48) [left]\n" +
 					"      ║  │     │  ╠══ Compare (!=)\n" +
 					"      ║  │     │  ║     Var (name=c)\n" +
@@ -1376,7 +1376,7 @@ public class QueryPlanRetrievalTest {
 					"      ║  │        s: Var (name=d)\n" +
 					"      ║  │        p: Var (name=e)\n" +
 					"      ║  │        o: Var (name=f)\n" +
-					"      ║  └── Join (JoinIterator) (resultSizeActual=2) [right]\n" +
+					"      ║  └── Join (ScopedCorrelatedJoinIterator) (resultSizeActual=2) [right]\n" +
 					"      ║     ╠══ Filter (resultSizeActual=48) [left]\n" +
 					"      ║     ║  ├── Compare (!=)\n" +
 					"      ║     ║  │     Var (name=c)\n" +
@@ -1769,7 +1769,7 @@ public class QueryPlanRetrievalTest {
 					+
 					"\n" +
 					"}\n" +
-					"   UUID [label=<<table BORDER=\"0\" CELLBORDER=\"1\" CELLSPACING=\"0\" CELLPADDING=\"3\" ><tr><td COLSPAN=\"2\" BGCOLOR=\"#FFFFFF\"><U>Join</U></td></tr> <tr><td>Algorithm</td><td>JoinIterator</td></tr></table>> shape=plaintext];\n"
+					"   UUID [label=<<table BORDER=\"0\" CELLBORDER=\"1\" CELLSPACING=\"0\" CELLPADDING=\"3\" ><tr><td COLSPAN=\"2\" BGCOLOR=\"#FFFFFF\"><U>Join</U></td></tr> <tr><td>Algorithm</td><td>ScopedCorrelatedJoinIterator</td></tr></table>> shape=plaintext];\n"
 					+
 					"   UUID -> UUID [label=\"left\"] ;\n" +
 					"   UUID -> UUID [label=\"right\"] ;\n" +

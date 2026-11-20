@@ -16,6 +16,7 @@ package org.eclipse.rdf4j.query.algebra.evaluation.impl.evaluationsteps;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.Comparator;
+import java.util.HashSet;
 import java.util.IdentityHashMap;
 import java.util.Iterator;
 import java.util.List;
@@ -59,8 +60,10 @@ import org.eclipse.rdf4j.query.algebra.Union;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryEvaluationStep;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryValueEvaluationStep;
 import org.eclipse.rdf4j.query.algebra.evaluation.TripleSource;
+import org.eclipse.rdf4j.query.algebra.evaluation.impl.BindingFrameBindings;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.DefaultEvaluationStrategy;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.EvaluationStatistics;
+import org.eclipse.rdf4j.query.algebra.evaluation.impl.GraphFrameBindings;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.QueryEvaluationContext;
 import org.eclipse.rdf4j.query.algebra.evaluation.iterator.FilterCondition;
 import org.eclipse.rdf4j.query.algebra.evaluation.iterator.FilterIterator;
@@ -68,7 +71,10 @@ import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.FilterPlacementAnaly
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.FilterPlacementAnalyzer.Alternative;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.FilterPlacementAnalyzer.Envelope;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.FilterPlacementAnalyzer.Site;
+import org.eclipse.rdf4j.query.algebra.evaluation.util.QueryEvaluationUtility;
 import org.eclipse.rdf4j.query.algebra.helpers.AbstractSimpleQueryModelVisitor;
+import org.eclipse.rdf4j.query.algebra.helpers.BindingScopePolicy;
+import org.eclipse.rdf4j.query.algebra.helpers.FilterBindingScope;
 import org.eclipse.rdf4j.query.algebra.helpers.QueryAlgebraBindingAnalysis;
 import org.eclipse.rdf4j.query.algebra.helpers.QueryAlgebraBindingAnalysis.ReadOnlyContext;
 import org.eclipse.rdf4j.query.algebra.helpers.QueryAlgebraBindingAnalysis.ValueKind;
@@ -89,6 +95,7 @@ public final class AdaptiveFilterEvaluationStep implements QueryEvaluationStep {
 	private final Node body;
 	private final FilterPlan[] filters;
 	private final ReadOnlyContext expectedInput;
+	private final Set<String> safeLookupInputs;
 	private final QueryEvaluationStep fallback;
 
 	private AdaptiveFilterEvaluationStep(TupleExpr root, Node body, FilterPlan[] filters,
@@ -97,7 +104,27 @@ public final class AdaptiveFilterEvaluationStep implements QueryEvaluationStep {
 		this.body = body;
 		this.filters = filters;
 		this.expectedInput = expectedInput;
+		this.safeLookupInputs = safeLookupInputs(root, filters);
 		this.fallback = fallback;
+	}
+
+	/** Proves physical lookup inputs once, including the reads of every movable condition. */
+	private static Set<String> safeLookupInputs(TupleExpr root, FilterPlan[] filters) {
+		Set<String> candidates = new HashSet<>(root.getBindingNames());
+		for (FilterPlan filter : filters) {
+			FilterBindingScope.ConditionBindingReads reads = FilterBindingScope
+					.conditionBindingReads(filter.filter.getCondition());
+			if (!reads.complete()) {
+				return Set.of();
+			}
+			candidates.removeAll(reads.bindingNames());
+			for (BindingScopePolicy.FilterInputEdge edge : BindingScopePolicy.filterInputEdges(filter.filter)) {
+				candidates.removeAll(edge.names());
+			}
+		}
+		candidates.removeIf(name -> !QueryEvaluationUtility.permitsBindingInjection(root, Set.of(name)));
+		return candidates.isEmpty() || !QueryEvaluationUtility.permitsBindingInjection(root, candidates) ? Set.of()
+				: Set.copyOf(candidates);
 	}
 
 	/** Indexes the final algebra once. Queries without filters retain their ordinary runtime steps. */
@@ -160,6 +187,18 @@ public final class AdaptiveFilterEvaluationStep implements QueryEvaluationStep {
 		return decorator.apply(step);
 	}
 
+	/** Preserves a semantic decorator on both the tracked and untracked child-rebinding routes. */
+	public static QueryEvaluationStep decorateSemantic(QueryEvaluationStep step,
+			Function<QueryEvaluationStep, QueryEvaluationStep> decorator) {
+		if (step instanceof PhysicalOperator physical) {
+			return new PhysicalOperator(physical.kind, decorator.apply(physical.step), physical.rebind == null ? null
+					: (left, right) -> decorator.apply(physical.rebind.apply(left, right)),
+					physical.untrackedRebind == null ? null
+							: (left, right) -> decorator.apply(physical.untrackedRebind.apply(left, right)));
+		}
+		return decorator.apply(step);
+	}
+
 	/** Exposes only our marker's actual delegate to existing raw-step guard selection. Custom wrappers stay opaque. */
 	public static QueryEvaluationStep standardPrepared(QueryEvaluationStep step) {
 		return step instanceof PhysicalOperator physical ? physical.step : step;
@@ -202,10 +241,14 @@ public final class AdaptiveFilterEvaluationStep implements QueryEvaluationStep {
 		if (!(context instanceof PlanningContext planning) || !planning.compiledRegion) {
 			return step;
 		}
-		return bindings -> {
+		BindingFrameBindings.TupleParameterConsumer consumer = BindingFrameBindings.unframedCapability(step,
+				BindingFrameBindings.TupleParameterConsumer.class);
+		BindingFrameBindings.TupleParameterGrant grant = consumer == null ? null : consumer.tupleParameterGrant();
+		QueryEvaluationStep scoped = bindings -> {
 			Execution execution = new Execution();
 			return execution.call(() -> new ScopedIteration(step.evaluate(bindings), execution));
 		};
+		return grant == null ? scoped : BindingFrameBindings.tupleParameterConsumer(scoped, grant);
 	}
 
 	/** Null means that standard physical preparation must retain ownership of this operator. */
@@ -316,9 +359,9 @@ public final class AdaptiveFilterEvaluationStep implements QueryEvaluationStep {
 
 	@Override
 	public CloseableIteration<BindingSet> evaluate(BindingSet bindings) {
-		// Admit normal correlated invocations only when the complete incoming frame satisfies the compile-time
-		// proof. An extra external binding can otherwise turn an EXISTS-local name into an injected binding.
-		if (!matchesInput(bindings, expectedInput)) {
+		// Additional lookup inputs are admitted only by the precomputed injection and condition-read proofs. A retained
+		// frame takes the standard path, which executes every frame-sensitive boundary.
+		if (BindingFrameBindings.hasFrame(bindings) || !matchesInput(bindings, expectedInput, safeLookupInputs)) {
 			if (root.isRuntimeTelemetryEnabled()) {
 				root.setStringMetricActual("adaptiveFilterBoundaryActual",
 						"Invocation differs from the proven input frame");
@@ -342,9 +385,14 @@ public final class AdaptiveFilterEvaluationStep implements QueryEvaluationStep {
 		}
 	}
 
-	private static boolean matchesInput(BindingSet bindings, ReadOnlyContext expected) {
-		if (!expected.bindingDomainKnown() || !expected.maybeBoundNames().containsAll(bindings.getBindingNames())) {
+	private static boolean matchesInput(BindingSet bindings, ReadOnlyContext expected, Set<String> safeLookupInputs) {
+		if (!expected.bindingDomainKnown()) {
 			return false;
+		}
+		for (String name : bindings.getBindingNames()) {
+			if (!expected.maybeBoundNames().contains(name) && !safeLookupInputs.contains(name)) {
+				return false;
+			}
 		}
 		for (String name : expected.guaranteedNames()) {
 			if (bindings.getValue(name) == null) {
@@ -452,7 +500,7 @@ public final class AdaptiveFilterEvaluationStep implements QueryEvaluationStep {
 	}
 
 	private static boolean transparent(Filter filter) {
-		if (TupleExprs.isVariableScopeChange(filter)) {
+		if (TupleExprs.isVariableScopeChange(filter) || !BindingScopePolicy.filterInputEdges(filter).isEmpty()) {
 			return false;
 		}
 		if (filter.getArg() instanceof Join join && join.getRightArg() instanceof BindingSetAssignment) {
@@ -1256,11 +1304,13 @@ public final class AdaptiveFilterEvaluationStep implements QueryEvaluationStep {
 				return;
 			}
 			analysis = QueryAlgebraBindingAnalysis.withBindingValues(root, EmptyBindingSet.getInstance());
+			var localOutputs = QueryEvaluationUtility.preparedFilterPlacementFacts(root);
 			for (TupleExpr islandRoot : FilterPlacementAnalyzer.snapshotRoots(root)) {
-				FilterPlacementAnalyzer analyzer = new FilterPlacementAnalyzer(islandRoot, analysis);
+				FilterPlacementAnalyzer analyzer = new FilterPlacementAnalyzer(islandRoot, analysis, localOutputs);
 				for (Envelope envelope : analyzer.analyzeAll()) {
 					Filter filter = envelope.filter();
-					if (!envelope.repeatable() || envelope.singletonAlternatives().size() < 2) {
+					if (!BindingScopePolicy.filterInputEdges(filter).isEmpty()
+							|| !envelope.repeatable() || envelope.singletonAlternatives().size() < 2) {
 						continue;
 					}
 					islandRoots.put(filter, islandRoot);
@@ -1389,7 +1439,8 @@ public final class AdaptiveFilterEvaluationStep implements QueryEvaluationStep {
 
 		@Override
 		public MutableBindingSet createBindingSet(BindingSet bindings) {
-			return delegate.createBindingSet(bindings);
+			return BindingFrameBindings.preserve(bindings,
+					GraphFrameBindings.preserve(bindings, delegate.createBindingSet(bindings)));
 		}
 
 		@Override

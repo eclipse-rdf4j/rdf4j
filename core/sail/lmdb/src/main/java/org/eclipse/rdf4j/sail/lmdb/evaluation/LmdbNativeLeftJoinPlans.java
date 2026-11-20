@@ -19,10 +19,15 @@ import static org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbNativeAggregateCompiler
 import static org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbNativeAggregateCompiler.slotsOf;
 
 import java.io.IOException;
+import java.util.Arrays;
+import java.util.HashSet;
+import java.util.Set;
 
 import org.eclipse.rdf4j.common.annotation.Experimental;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.query.QueryEvaluationException;
+import org.eclipse.rdf4j.query.algebra.evaluation.impl.BindingFrameBindings;
+import org.eclipse.rdf4j.query.algebra.evaluation.impl.GraphFrameBindings;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.codegen.KernelRuntime;
 
 @Experimental
@@ -44,6 +49,10 @@ final class LeftJoinPlan implements SlotPlan {
 	final boolean lexicalHashKeys;
 	/** Optional variables removed from a non-well-designed OPTIONAL's dynamic entry frame. */
 	final int[] lexicalProblemSlots;
+	/** Condition evaluated after an independently materialized right row joins a left row. */
+	final NativeBooleanFilter lexicalCondition;
+	/** Static invocation names apply only when no newer per-invocation domain is present. */
+	final Set<String> lexicalStaticInputs;
 
 	LeftJoinPlan(SlotPlan left, SlotPlan right) {
 		this(left, right, null, false, null);
@@ -59,12 +68,24 @@ final class LeftJoinPlan implements SlotPlan {
 
 	LeftJoinPlan(SlotPlan left, SlotPlan right, int[] lexicalSharedSlots, boolean lexicalHashKeys,
 			int[] lexicalProblemSlots) {
+		this(left, right, lexicalSharedSlots, lexicalHashKeys, lexicalProblemSlots, null);
+	}
+
+	LeftJoinPlan(SlotPlan left, SlotPlan right, int[] lexicalSharedSlots, boolean lexicalHashKeys,
+			int[] lexicalProblemSlots, NativeBooleanFilter lexicalCondition) {
+		this(left, right, lexicalSharedSlots, lexicalHashKeys, lexicalProblemSlots, lexicalCondition, Set.of());
+	}
+
+	LeftJoinPlan(SlotPlan left, SlotPlan right, int[] lexicalSharedSlots, boolean lexicalHashKeys,
+			int[] lexicalProblemSlots, NativeBooleanFilter lexicalCondition, Set<String> lexicalStaticInputs) {
 		this.left = left;
 		this.right = right;
 		this.producedMask = left.producedMask() | right.producedMask();
 		this.lexicalSharedSlots = lexicalSharedSlots;
 		this.lexicalHashKeys = lexicalHashKeys;
 		this.lexicalProblemSlots = lexicalProblemSlots;
+		this.lexicalCondition = lexicalCondition;
+		this.lexicalStaticInputs = Set.copyOf(lexicalStaticInputs);
 	}
 
 	@Override
@@ -108,10 +129,11 @@ final class LeftJoinPlan implements SlotPlan {
 		if (grouped != null)
 			return LmdbNativeFactorRows.asRows(grouped, row);
 		if (lexicalProblemSlots != null) {
-			return new LexicalFrameLeftJoinCursor(left, right, lexicalProblemSlots, row);
+			return new LexicalFrameLeftJoinCursor(left, right, lexicalProblemSlots, lexicalSharedSlots,
+					lexicalCondition, lexicalStaticInputs, row);
 		}
 		if (lexicalSharedSlots != null) {
-			return new LexicalLeftJoinCursor(left, right, lexicalSharedSlots, row);
+			return new LexicalLeftJoinCursor(left, right, lexicalSharedSlots, lexicalCondition, row);
 		}
 		JoinSweepEstimates estimates = JoinSweepEstimates.forPlans(left, right, row);
 		RowCursor leftCursor = left.open(row);
@@ -127,7 +149,9 @@ final class LeftJoinPlan implements SlotPlan {
 	@Override
 	public BatchCursor openBatch(RowState row, int capacity) throws IOException {
 		if (lexicalSharedSlots != null || lexicalProblemSlots != null) {
-			return null;
+			// Keep the lexical operator's row boundary when a surrounding pipeline transports batches.
+			return SlotPlan.requiresPhysicalCells(this) ? null
+					: new RowBatchCursor(LmdbNativeFactorAlgebra.logical(open(row), row), row);
 		}
 		if (right instanceof PatternPlan pattern) {
 			BatchCursor wildcard = LmdbWildcardPredicateBatch.tryOpenOptional(left, pattern, row, capacity);
@@ -176,60 +200,82 @@ final class LeftJoinPlan implements SlotPlan {
 
 /**
  * Semantic native equivalent of RDF4J's badly-designed OPTIONAL iterator. Optional variables already bound by the
- * physical entry row are hidden from both arms. Compatible right rows are produced with those values restored; if the
- * correlated probe has no match, an independent existence probe distinguishes a genuinely empty right side (emit the
- * left fallback) from right rows that exist but are all incompatible (suppress the fallback).
+ * physical entry row are hidden from both arms. The local result is joined with the withheld entry mapping only after
+ * the right operand has produced it. A nonempty right arm suppresses the local fallback even when all of its rows are
+ * incompatible with that mapping.
  */
 @Experimental
 final class LexicalFrameLeftJoinCursor implements RowCursor {
-	private final SlotPlan rightPlan;
 	private final RowState row;
-	private final int[] problemSlots;
-	private final long[] problemValues;
-	private final int problemCount;
-	private final RowCursor left;
-	private final RowCursor plain;
-	private RowCursor right;
-	private boolean rightMatched;
-	private boolean fallbackEmitted;
+	private final RowState frame;
+	private final int[] outputSlots;
+	private final RowCursor delegate;
+	private int outputMark = -1;
 	private boolean closed;
-	private int pollTick;
 
 	LexicalFrameLeftJoinCursor(SlotPlan leftPlan, SlotPlan rightPlan, int[] candidateProblemSlots, RowState row)
 			throws IOException {
-		this.rightPlan = rightPlan;
+		this(leftPlan, rightPlan, candidateProblemSlots, null, null, row);
+	}
+
+	LexicalFrameLeftJoinCursor(SlotPlan leftPlan, SlotPlan rightPlan, int[] candidateProblemSlots,
+			int[] lexicalSharedSlots, NativeBooleanFilter condition, RowState row) throws IOException {
+		this(leftPlan, rightPlan, candidateProblemSlots, lexicalSharedSlots, condition, Set.of(), row);
+	}
+
+	LexicalFrameLeftJoinCursor(SlotPlan leftPlan, SlotPlan rightPlan, int[] candidateProblemSlots,
+			int[] lexicalSharedSlots, NativeBooleanFilter condition, Set<String> staticInputs, RowState row)
+			throws IOException {
 		this.row = row;
-		this.problemSlots = new int[candidateProblemSlots.length];
-		this.problemValues = new long[candidateProblemSlots.length];
-		int count = 0;
+		this.outputSlots = slotsOf(leftPlan.producedMask() | rightPlan.producedMask());
+		Set<String> visible = new HashSet<>(row.base.getBindingNames());
+		visible.addAll(Arrays.asList(row.layout.slotNames()));
+		Set<String> domain = BindingFrameBindings.substitutionDomain(row.view);
+		GraphFrameBindings graphFrame = GraphFrameBindings.from(row.view);
+		Set<String> graphNames = graphFrame == GraphFrameBindings.EMPTY ? Set.of() : new HashSet<>();
+		if (graphFrame != GraphFrameBindings.EMPTY) {
+			graphFrame.visit((name, value) -> graphNames.add(name));
+		}
+		boolean hidden = false;
 		for (int slot : candidateProblemSlots) {
 			long value = row.slots[slot];
-			if (row.lexicalScopeDepth > 0 && (row.lexicalInputMask & 1L << slot) != 0L) {
-				// Correlated scope inputs are part of this OPTIONAL's semantic entry mapping. Hiding them would
-				// turn OPTIONAL inside EXISTS/LATERAL into an independent badly-designed OPTIONAL.
+			String name = row.layout.slotName(slot);
+			boolean suppliedGraph = GraphFrameBindings.isSupplied(row.view, name);
+			boolean legacyScopeInput = domain == null && row.lexicalScopeDepth > 0
+					&& (row.lexicalInputMask & 1L << slot) != 0L
+					&& (!graphNames.contains(name) || suppliedGraph || row.activeLateralOccurrence() != null);
+			if (suppliedGraph || (domain == null ? staticInputs.contains(name) || legacyScopeInput
+					: domain.contains(name))) {
 				continue;
 			}
+			visible.remove(name);
 			if (value != UNKNOWN) {
-				problemSlots[count] = slot;
-				problemValues[count] = value;
-				row.replaceSlot(slot, UNKNOWN);
-				count++;
+				row.requireRdfTerm(slot);
+				hidden = true;
 			}
 		}
-		this.problemCount = count;
-		try {
-			if (count == 0) {
-				this.left = null;
-				this.plain = new LeftJoinCursor(leftPlan.open(row), rightPlan, row, leftPlan.producedMask(),
+		if (!hidden) {
+			this.frame = null;
+			this.delegate = openLocal(leftPlan, rightPlan, lexicalSharedSlots, condition, row);
+		} else {
+			this.frame = row.withholdOptionalInputs(visible);
+			try {
+				this.delegate = openLocal(leftPlan, rightPlan, lexicalSharedSlots, condition, frame);
+			} catch (IOException | RuntimeException | Error failure) {
+				KernelRuntime.closeResource(frame::closeDecodedInputs, failure);
+				KernelRuntime.closeResource(((SyntheticValueSource) frame.source).executionContext(), failure);
+				throw failure;
+			}
+		}
+	}
+
+	private static RowCursor openLocal(SlotPlan left, SlotPlan right, int[] sharedSlots,
+			NativeBooleanFilter condition, RowState frame) throws IOException {
+		RowCursor local = sharedSlots != null
+				? new LexicalLeftJoinCursor(left, right, sharedSlots, condition, frame)
+				: new LeftJoinCursor(left.open(frame), right, frame, left.producedMask(),
 						Double.NaN, Double.NaN, Double.NaN);
-			} else {
-				this.left = leftPlan.open(row);
-				this.plain = null;
-			}
-		} catch (IOException | RuntimeException | Error problem) {
-			restoreProblemValues();
-			throw problem;
-		}
+		return LmdbNativeFactorAlgebra.logical(local, frame);
 	}
 
 	@Override
@@ -237,52 +283,45 @@ final class LexicalFrameLeftJoinCursor implements RowCursor {
 		if (closed || row.cancellation.isCancellationRequested()) {
 			return false;
 		}
-		if (plain != null) {
-			return plain.next();
+		if (frame == null) {
+			return delegate.next();
 		}
-		if (fallbackEmitted) {
-			clearProblemValues();
-			fallbackEmitted = false;
-		}
-		while (true) {
-			if (right != null) {
-				if (right.next()) {
-					LmdbNativeProbeDeadline.poll(++pollTick);
-					rightMatched = true;
+		try {
+			releaseOutput();
+			while (delegate.next()) {
+				if (mergeFrame()) {
 					return true;
 				}
-				right.close();
-				right = null;
-				clearProblemValues();
-				if (!rightMatched) {
-					try (RowCursor independent = rightPlan.open(row)) {
-						if (!independent.next()) {
-							restoreProblemValues();
-							fallbackEmitted = true;
-							return true;
-						}
-					}
-				}
-				rightMatched = false;
 			}
-			if (!left.next()) {
-				close();
+			close();
+			return false;
+		} catch (IOException | RuntimeException | Error failure) {
+			KernelRuntime.closeResource(this, failure);
+			throw failure;
+		}
+	}
+
+	private boolean mergeFrame() {
+		int mark = row.mark();
+		for (int slot : outputSlots) {
+			NativeResultCell summary = frame.summaryCell(slot);
+			if (summary != null) {
+				if (row.summaryCell(slot) != summary) {
+					row.bindSummary(slot, summary);
+				}
+			} else if (frame.slots[slot] != UNKNOWN && !row.bindOrCheckTerm(slot, frame.slots[slot])) {
+				row.rollback(mark);
 				return false;
 			}
-			restoreProblemValues();
-			right = rightPlan.open(row);
 		}
+		outputMark = mark;
+		return true;
 	}
 
-	private void clearProblemValues() {
-		for (int i = 0; i < problemCount; i++) {
-			row.replaceSlot(problemSlots[i], UNKNOWN);
-		}
-	}
-
-	private void restoreProblemValues() {
-		for (int i = 0; i < problemCount; i++) {
-			row.replaceSlot(problemSlots[i], problemValues[i]);
+	private void releaseOutput() {
+		if (outputMark >= 0) {
+			row.rollback(outputMark);
+			outputMark = -1;
 		}
 	}
 
@@ -292,35 +331,14 @@ final class LexicalFrameLeftJoinCursor implements RowCursor {
 			return;
 		}
 		closed = true;
-		Throwable failure = null;
-		try {
-			if (right != null) {
-				right.close();
-			}
-			if (plain != null) {
-				plain.close();
-			}
-		} catch (RuntimeException | Error problem) {
-			failure = problem;
+		Throwable failure = KernelRuntime.closeResource(this::releaseOutput, null);
+		failure = KernelRuntime.closeResource(delegate, failure);
+		if (frame != null) {
+			failure = KernelRuntime.closeResource(frame::closeDecodedInputs, failure);
+			failure = KernelRuntime.closeResource(((SyntheticValueSource) frame.source).executionContext(), failure);
 		}
-		try {
-			if (left != null) {
-				left.close();
-			}
-		} catch (RuntimeException | Error problem) {
-			if (failure == null) {
-				failure = problem;
-			} else if (failure != problem) {
-				failure.addSuppressed(problem);
-			}
-		} finally {
-			restoreProblemValues();
-		}
-		if (failure instanceof RuntimeException runtimeException) {
-			throw runtimeException;
-		}
-		if (failure instanceof Error error) {
-			throw error;
+		if (failure != null) {
+			NativeContextClosingIteration.throwFailure(failure);
 		}
 	}
 }
@@ -337,6 +355,7 @@ final class LexicalFrameLeftJoinCursor implements RowCursor {
 final class LexicalLeftJoinCursor implements RowCursor {
 	private final RowState row;
 	private final RowCursor left;
+	private final NativeBooleanFilter condition;
 	private final int[] sharedSlots;
 	private final int[] rightSlots;
 	private final NativeResultReplay rightRows;
@@ -350,12 +369,18 @@ final class LexicalLeftJoinCursor implements RowCursor {
 
 	LexicalLeftJoinCursor(SlotPlan leftPlan, SlotPlan rightPlan, int[] sharedSlots, RowState row)
 			throws IOException {
+		this(leftPlan, rightPlan, sharedSlots, null, row);
+	}
+
+	LexicalLeftJoinCursor(SlotPlan leftPlan, SlotPlan rightPlan, int[] sharedSlots, NativeBooleanFilter condition,
+			RowState row) throws IOException {
 		this.row = row;
+		this.condition = condition;
 		this.sharedSlots = sharedSlots;
 		this.rightSlots = slotsOf(rightPlan.producedMask());
 		this.rightRows = materializeRight(rightPlan);
 		try {
-			this.left = leftPlan.open(row);
+			this.left = LmdbNativeFactorAlgebra.logical(leftPlan.open(row), row);
 		} catch (IOException | RuntimeException | Error failure) {
 			closeSuppressing(rightRows, failure);
 			throw failure;
@@ -379,7 +404,7 @@ final class LexicalLeftJoinCursor implements RowCursor {
 						.resolvingStoreTermsWith(row.source);
 		int entryMark = row.mark();
 		try {
-			try (RowCursor cursor = rightPlan.open(row)) {
+			try (RowCursor cursor = LmdbNativeFactorAlgebra.logical(rightPlan.open(row), row)) {
 				while (true) {
 					check();
 					boolean next = cursor.next();
@@ -427,8 +452,11 @@ final class LexicalLeftJoinCursor implements RowCursor {
 					while ((values = right.next()) != null) {
 						check();
 						if (sharedKeyMatches(values) && bindRight(values)) {
-							matchedLeft = true;
-							return true;
+							if (condition == null || condition.accept(row)) {
+								matchedLeft = true;
+								return true;
+							}
+							releaseRight();
 						}
 					}
 					check();
@@ -546,6 +574,9 @@ final class LexicalLeftJoinCursor implements RowCursor {
 		right = null;
 		failure = KernelRuntime.closeResource(rightRows, failure);
 		failure = KernelRuntime.closeResource(left, failure);
+		if (condition != null) {
+			failure = KernelRuntime.closeResource(condition::close, failure);
+		}
 		if (failure != null) {
 			if (terminalFailure == null) {
 				terminalFailure = failure;
@@ -559,6 +590,61 @@ final class LexicalLeftJoinCursor implements RowCursor {
 	}
 }
 
+/** Evaluates an OPTIONAL condition against its merged operands and genuine invocation entry only. */
+@Experimental
+final class ScopedOptionalConditionFilter implements NativeBooleanFilter {
+	private final Set<String> operandNames;
+	private final NativeBooleanFilter delegate;
+
+	ScopedOptionalConditionFilter(Set<String> operandNames, NativeBooleanFilter delegate) {
+		this.operandNames = Set.copyOf(operandNames);
+		this.delegate = delegate;
+	}
+
+	@Override
+	public NativePredicateCapabilities capabilities() {
+		NativePredicateCapabilities proof = delegate.capabilities();
+		return new NativePredicateCapabilities(-1L, proof.effects(), true, proof.replaySafe(),
+				proof.workerBindable(), proof.requiresQueryScope(), true);
+	}
+
+	@Override
+	public boolean accept(RowState row) {
+		Set<String> visible = new HashSet<>(operandNames);
+		visible.addAll(row.base.getBindingNames());
+		if (row.lexicalScopeDepth > 0) {
+			long inputs = row.lexicalInputMask;
+			while (inputs != 0L) {
+				int slot = Long.numberOfTrailingZeros(inputs);
+				visible.add(row.layout.slotName(slot));
+				inputs &= inputs - 1;
+			}
+		}
+		RowState projected = row.projectConditionInput(visible);
+		try {
+			return delegate.accept(projected);
+		} finally {
+			projected.closeDecodedInputs();
+		}
+	}
+
+	@Override
+	public boolean parallelWorkerForkable() {
+		return delegate.parallelWorkerForkable();
+	}
+
+	@Override
+	public NativeBooleanFilter forkForParallelWorker(NativeScalarPlan.WorkerContext context) {
+		NativeBooleanFilter worker = delegate.forkForParallelWorker(context);
+		return worker == null ? null : new ScopedOptionalConditionFilter(operandNames, worker);
+	}
+
+	@Override
+	public void close() {
+		delegate.close();
+	}
+}
+
 @Experimental
 final class LeftJoinCursor implements FactorizedRowCursor {
 	final RowCursor leftCursor;
@@ -568,6 +654,7 @@ final class LeftJoinCursor implements FactorizedRowCursor {
 	final PatternPayloadProbe payloadProbe;
 	final RightMemoProbe rightMemo;
 	final PatternPlan patternRight;
+	PatternPlan selectedPatternRight;
 	RowCursor rightCursor;
 	NativeLmdbQuerySource.NativeProbe rightProbe;
 	PatternCursor patternCursor;
@@ -728,7 +815,8 @@ final class LeftJoinCursor implements FactorizedRowCursor {
 			if (patternCursor == null) {
 				patternCursor = new PatternCursor();
 			}
-			PatternCursor raw = patternRight.openRaw(row, rightProbe, patternCursor);
+			selectedPatternRight = patternRight.effectivePattern(row);
+			PatternCursor raw = selectedPatternRight.openRaw(row, rightProbe, patternCursor);
 			if (!rightProbeCacheBacked && AdjacencyIntersectionProbe.enabled() && rightProbe.adjacencyCacheBacked()) {
 				rightProbeCacheBacked = true;
 			}
@@ -805,7 +893,7 @@ final class LeftJoinCursor implements FactorizedRowCursor {
 
 	private boolean bindPattern(long[] quad, int offset) {
 		int mark = row.mark();
-		if (patternRight.bind(quad, offset, row)) {
+		if (selectedPatternRight.bind(quad, offset, row)) {
 			patternMark = mark;
 			return true;
 		}

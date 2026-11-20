@@ -24,6 +24,7 @@ import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.atomic.AtomicLong;
 
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Literal;
@@ -383,23 +384,22 @@ class LmdbNativeIrAggregateParallelTest {
 
 	@Test
 	void lexicalExistsAggregatesKeepIndependentWorkerFrames() {
-		long subqueriesBefore = NativeSubqueryPlan.WORKER_BINDINGS.get();
-		long graphsBefore = NativeGraphPlan.WORKER_BINDINGS.get();
 		String subquery = "{ SELECT ?m ?probe WHERE { ?m <" + EX + "q2> ?probe } }";
+		String aggregate = "SELECT (COUNT(?v) AS ?count) WHERE { ?s <" + EX + "p> ?m . ?m <" + EX
+				+ "q> ?v . FILTER(";
+		assertAllExecutionRungs(aggregate + "EXISTS { " + subquery + " FILTER(?probe = ?v) }) }",
+				NativeSubqueryPlan.WORKER_BINDINGS);
+		assertAllExecutionRungs(aggregate + "EXISTS { GRAPH ?graph { " + subquery + " } FILTER(?probe = ?v) }) }",
+				NativeGraphPlan.WORKER_BINDINGS);
 		for (String predicate : List.of(
-				"EXISTS { " + subquery + " FILTER(?probe = ?v) }",
 				"EXISTS { GRAPH <" + EX + "graph> { ?m <" + EX + "q2> ?probe } FILTER(?probe = ?v) }",
-				"EXISTS { GRAPH ?graph { " + subquery + " } FILTER(?probe = ?v) }",
 				"EXISTS { ?m <" + EX + "q2> ?probe OPTIONAL { " + subquery
 						+ " FILTER(?probe = ?v) } FILTER(?probe = ?v) }",
 				"NOT EXISTS { ?m <" + EX + "q2> ?probe FILTER(?probe != ?v) MINUS { " + subquery
 						+ " FILTER(?probe = ?v) } }",
 				"EXISTS { FILTER NOT EXISTS { ?m <" + EX + "q2> ?probe FILTER(?probe != ?v) } }")) {
-			assertAllExecutionRungs("SELECT (COUNT(?v) AS ?count) WHERE { ?s <" + EX + "p> ?m . ?m <" + EX
-					+ "q> ?v . FILTER(" + predicate + ") }");
+			assertAllExecutionRungs(aggregate + predicate + ") }");
 		}
-		assertThat(NativeSubqueryPlan.WORKER_BINDINGS.get()).isGreaterThan(subqueriesBefore);
-		assertThat(NativeGraphPlan.WORKER_BINDINGS.get()).isGreaterThan(graphsBefore);
 	}
 
 	@Test
@@ -413,23 +413,18 @@ class LmdbNativeIrAggregateParallelTest {
 				System.setProperty("rdf4j.lmdb.nativeQueryEngine.enabled", "false");
 				assertThat(count(query, null)).as("the independent evaluator must preserve the witness inputs")
 						.isEqualTo(600L);
-				long workersBefore = NativeSubqueryPlan.WORKER_BINDINGS.get();
 				try {
-					assertAllExecutionRungs(query);
+					assertAllExecutionRungs(query, NativeSubqueryPlan.WORKER_BINDINGS);
 				} catch (QueryEvaluationException failure) {
 					throw new AssertionError("The forced worker-local witness query failed:\n" + query + "\n"
 							+ explain(query), failure);
 				}
-				assertThat(NativeSubqueryPlan.WORKER_BINDINGS.get())
-						.as("both parallel rungs must bind worker-local lexical witness recipes")
-						.isGreaterThan(workersBefore);
 			}
 		}
 	}
 
 	@Test
 	void lateralLexicalWitnessesRebindGraphAndNullableEntryDomainsInEveryWorkerRung() {
-		long subqueriesBefore = NativeSubqueryPlan.WORKER_BINDINGS.get();
 		String query = "SELECT (COUNT(?v) AS ?c) WHERE { ?s <" + EX + "p> ?m . ?m <" + EX
 				+ "q> ?v . FILTER EXISTS { VALUES (?graph ?marker) { (<" + EX + "graph> UNDEF) (<" + EX
 				+ "graph> 1) } LATERAL { SELECT ?m ?probe ?graph WHERE { GRAPH ?graph { ?m <" + EX
@@ -439,14 +434,11 @@ class LmdbNativeIrAggregateParallelTest {
 		assertThat(count(query, null)).as("the generic graph-scoped witness must accept the 600 equal-value rows")
 				.isEqualTo(600L);
 		try {
-			assertAllExecutionRungs(query);
+			assertAllExecutionRungs(query, NativeSubqueryPlan.WORKER_BINDINGS);
 		} catch (QueryEvaluationException failure) {
 			throw new AssertionError("The LATERAL worker candidate must have a proved legal path:\n" + explain(query),
 					failure);
 		}
-		assertThat(NativeSubqueryPlan.WORKER_BINDINGS.get())
-				.as("the actual workers must prepare the LATERAL lexical producer")
-				.isGreaterThan(subqueriesBefore);
 	}
 
 	@Test
@@ -480,9 +472,15 @@ class LmdbNativeIrAggregateParallelTest {
 
 	@Test
 	void lexicalGraphProducersBindWithinPartitionedOptionalKernels() {
-		assertAllExecutionRungs("SELECT (COUNT(?probe) AS ?count) WHERE { ?s <" + EX
+		String query = "SELECT (COUNT(?probe) AS ?count) WHERE { ?s <" + EX
 				+ "p> ?m . ?m <" + EX + "q> ?v . OPTIONAL { GRAPH <" + EX + "graph> { ?m <" + EX
-				+ "q2> ?probe } FILTER(?probe != ?v) } }");
+				+ "q2> ?probe } FILTER(?probe != ?v) } }";
+		try {
+			assertAllExecutionRungs(query);
+		} catch (QueryEvaluationException failure) {
+			throw new AssertionError("The OPTIONAL worker requires a partitionable left producer:\n" + explain(query),
+					failure);
+		}
 	}
 
 	@Test
@@ -707,7 +705,7 @@ class LmdbNativeIrAggregateParallelTest {
 	 * Exercise every aggregate execution rung explicitly. The parallel assertions must observe a worker run, so this
 	 * helper catches a scheduler that silently falls back to a sequential result with the same bindings.
 	 */
-	private void assertAllExecutionRungs(String query) {
+	private void assertAllExecutionRungs(String query, AtomicLong... lexicalWorkers) {
 		System.setProperty("rdf4j.lmdb.nativeQueryEngine.enabled", "false");
 		List<String> expected = rows(query);
 		assertThat(expected).as("the generic evaluator must answer the query").isNotEmpty();
@@ -724,8 +722,10 @@ class LmdbNativeIrAggregateParallelTest {
 		System.setProperty("rdf4j.lmdb.parallel.enabled", "true");
 		System.setProperty("rdf4j.lmdb.janinoCodegen.enabled", "true");
 		long parallelBefore = LmdbNativeParallelKernelAggregate.PARALLEL_RUNS.get();
+		long[] lexicalBefore = workerCounts(lexicalWorkers);
 		List<String> generatedParallel = rows(query, LmdbNativeAttemptMetrics.PATH_IR_AGGREGATE_PARALLEL);
 		long generatedParallelRuns = LmdbNativeParallelKernelAggregate.PARALLEL_RUNS.get();
+		long[] generatedLexical = workerCounts(lexicalWorkers);
 		System.setProperty("rdf4j.lmdb.janinoCodegen.enabled", "false");
 		List<String> interpretedParallel = rows(query,
 				LmdbNativeAttemptMetrics.PATH_IR_AGGREGATE_PARALLEL_INTERPRETED);
@@ -746,6 +746,20 @@ class LmdbNativeIrAggregateParallelTest {
 		assertThat(interpretedParallelRuns)
 				.as("the interpreted route must execute through the parallel aggregate scheduler: %s", query)
 				.isGreaterThan(generatedParallelRuns);
+		for (int i = 0; i < lexicalWorkers.length; i++) {
+			assertThat(generatedLexical[i]).as("generated workers select a native lexical producer: %s", query)
+					.isGreaterThan(lexicalBefore[i]);
+			assertThat(lexicalWorkers[i].get()).as("interpreted workers select a native lexical producer: %s", query)
+					.isGreaterThan(generatedLexical[i]);
+		}
+	}
+
+	private static long[] workerCounts(AtomicLong[] counters) {
+		long[] counts = new long[counters.length];
+		for (int i = 0; i < counts.length; i++) {
+			counts[i] = counters[i].get();
+		}
+		return counts;
 	}
 
 	private long count(String query, String forcedStrategy) {

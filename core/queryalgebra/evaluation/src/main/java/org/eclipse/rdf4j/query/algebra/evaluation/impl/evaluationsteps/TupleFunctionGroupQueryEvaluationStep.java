@@ -15,13 +15,18 @@ package org.eclipse.rdf4j.query.algebra.evaluation.impl.evaluationsteps;
 
 import java.util.ArrayDeque;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.Deque;
+import java.util.HashMap;
+import java.util.HashSet;
 import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 
 import org.eclipse.rdf4j.common.annotation.InternalUseOnly;
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
+import org.eclipse.rdf4j.common.iteration.CooperativeCancellation;
 import org.eclipse.rdf4j.common.iteration.LookAheadIteration;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.algebra.Join;
@@ -33,8 +38,10 @@ import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.query.algebra.evaluation.EvaluationStrategy;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryEvaluationStep;
 import org.eclipse.rdf4j.query.algebra.evaluation.ValueExprEvaluationException;
+import org.eclipse.rdf4j.query.algebra.evaluation.impl.BindingFrameBindings;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.QueryEvaluationContext;
 import org.eclipse.rdf4j.query.algebra.evaluation.iterator.CancellationPoints;
+import org.eclipse.rdf4j.query.algebra.helpers.FilterBindingScope;
 
 /**
  * The tuple-only right arm of a magic-property LATERAL. Argument availability is a property of each input mapping,
@@ -47,13 +54,73 @@ import org.eclipse.rdf4j.query.algebra.evaluation.iterator.CancellationPoints;
  * the solution and never aborts the query.
  */
 @InternalUseOnly
-public final class TupleFunctionGroupQueryEvaluationStep implements QueryEvaluationStep {
+public final class TupleFunctionGroupQueryEvaluationStep implements BindingFrameBindings.DeferredParameterInputs {
 	private final QueryEvaluationStep[] calls;
 	private final String[][] requiredNames;
+	private final Set<String> deferredWithheldInputs;
+	private final Set<String> deferredArgumentInputs;
+	private final BindingFrameBindings.TupleParameterGrant[] grants;
+	private final List<BindingFrameBindings.TupleParameterGrant> recipients;
+	private final Set<String> missingDeferredArgumentInputs;
+	private final boolean incompleteArgumentReads;
 
-	private TupleFunctionGroupQueryEvaluationStep(QueryEvaluationStep[] calls, String[][] requiredNames) {
+	private TupleFunctionGroupQueryEvaluationStep(QueryEvaluationStep[] calls, String[][] requiredNames,
+			List<Set<String>> argumentReads, boolean[] completeReads, Set<String> deferredWithheldInputs) {
 		this.calls = calls;
 		this.requiredNames = requiredNames;
+		this.deferredWithheldInputs = deferredWithheldInputs;
+		this.grants = new BindingFrameBindings.TupleParameterGrant[calls.length];
+		List<BindingFrameBindings.TupleParameterGrant> recipients = new ArrayList<>();
+		Set<String> deferredArguments = new HashSet<>();
+		Set<String> missingArguments = new HashSet<>();
+		boolean incomplete = false;
+		for (int i = 0; i < calls.length; i++) {
+			BindingFrameBindings.TupleParameterConsumer consumer = BindingFrameBindings.unframedCapability(calls[i],
+					BindingFrameBindings.TupleParameterConsumer.class);
+			grants[i] = consumer == null ? null : consumer.tupleParameterGrant();
+			if (grants[i] != null) {
+				recipients.add(grants[i]);
+			}
+			incomplete |= !completeReads[i];
+			for (String name : argumentReads.get(i)) {
+				if (deferredWithheldInputs.contains(name)) {
+					deferredArguments.add(name);
+					if (grants[i] == null || !grants[i].names().contains(name)) {
+						missingArguments.add(name);
+					}
+				}
+			}
+		}
+		this.recipients = List.copyOf(recipients);
+		this.deferredArgumentInputs = Set.copyOf(deferredArguments);
+		this.missingDeferredArgumentInputs = Set.copyOf(missingArguments);
+		this.incompleteArgumentReads = incomplete;
+	}
+
+	@Override
+	public Set<String> deferredWithheldInputs() {
+		return deferredWithheldInputs;
+	}
+
+	@Override
+	public Set<String> deferredArgumentInputs() {
+		return deferredArgumentInputs;
+	}
+
+	@Override
+	public List<BindingFrameBindings.TupleParameterGrant> tupleParameterGrants() {
+		return recipients;
+	}
+
+	@Override
+	public boolean supportsDeferredInputs(Set<String> declaredInputs) {
+		for (String name : declaredInputs) {
+			if (missingDeferredArgumentInputs.contains(name)
+					|| incompleteArgumentReads && deferredWithheldInputs.contains(name)) {
+				return false;
+			}
+		}
+		return true;
 	}
 
 	/**
@@ -92,26 +159,124 @@ public final class TupleFunctionGroupQueryEvaluationStep implements QueryEvaluat
 		}
 		QueryEvaluationStep[] calls = new QueryEvaluationStep[functions.size()];
 		String[][] names = new String[functions.size()][];
+		List<Set<String>> argumentReads = new ArrayList<>(functions.size());
+		boolean[] completeReads = new boolean[functions.size()];
 		for (int i = 0; i < functions.size(); i++) {
 			TupleFunctionCall call = functions.get(i);
 			Set<String> arguments = new LinkedHashSet<>();
+			Set<String> reads = new HashSet<>();
+			boolean complete = true;
 			for (ValueExpr argument : call.getArgs()) {
+				FilterBindingScope.ConditionBindingReads facts = FilterBindingScope.conditionBindingReads(argument);
+				reads.addAll(facts.bindingNames());
+				complete &= facts.complete();
 				if (argument instanceof Var var) {
 					if (!var.hasValue()) {
 						arguments.add(var.getName());
 					}
-				} else if (!(argument instanceof ValueConstant)) {
+				} else if (!(argument instanceof ValueConstant) && functions.size() != 1) {
 					// Only magic-property term arguments use this path; arbitrary expression calls keep normal
 					// semantics.
 					return null;
 				}
 			}
 			names[i] = arguments.toArray(String[]::new);
+			argumentReads.add(Set.copyOf(reads));
+			completeReads[i] = complete;
 		}
 		for (int i = 0; i < functions.size(); i++) {
 			calls[i] = strategy.precompile(functions.get(i), context);
 		}
-		return new TupleFunctionGroupQueryEvaluationStep(calls, names);
+		return new TupleFunctionGroupQueryEvaluationStep(calls, names, argumentReads, completeReads,
+				deferredOutputs(functions, names));
+	}
+
+	/** Preserve the existing deterministic fallback for multi-call dependency cycles. */
+	private static Set<String> deferredOutputs(List<TupleFunctionCall> calls, String[][] requiredNames) {
+		int count = calls.size();
+		List<Set<String>> outputs = new ArrayList<>(count);
+		Map<String, List<Integer>> producers = new HashMap<>();
+		List<List<Integer>> edges = new ArrayList<>(count);
+		List<List<Integer>> reverse = new ArrayList<>(count);
+		for (int i = 0; i < count; i++) {
+			Set<String> names = Set.copyOf(calls.get(i).getBindingNames());
+			outputs.add(names);
+			for (String name : names) {
+				producers.computeIfAbsent(name, ignored -> new ArrayList<>()).add(i);
+			}
+			edges.add(new ArrayList<>());
+			reverse.add(new ArrayList<>());
+		}
+		for (int consumer = 0; consumer < count; consumer++) {
+			for (String name : requiredNames[consumer]) {
+				for (int producer : producers.getOrDefault(name, List.of())) {
+					if (producer != consumer) {
+						edges.get(producer).add(consumer);
+						reverse.get(consumer).add(producer);
+					}
+				}
+			}
+		}
+		boolean[] visited = new boolean[count];
+		List<Integer> order = new ArrayList<>(count);
+		Deque<Integer> pending = new ArrayDeque<>();
+		for (int start = 0; start < count; start++) {
+			if (visited[start]) {
+				continue;
+			}
+			pending.push(start);
+			while (!pending.isEmpty()) {
+				int current = pending.pop();
+				if (current < 0) {
+					order.add(~current);
+				} else if (!visited[current]) {
+					visited[current] = true;
+					pending.push(~current);
+					for (int next : edges.get(current)) {
+						if (!visited[next]) {
+							pending.push(next);
+						}
+					}
+				}
+			}
+		}
+		Arrays.fill(visited, false);
+		Set<String> deferred = new HashSet<>();
+		outputs.forEach(deferred::addAll);
+		Set<String> cyclic = new HashSet<>();
+		for (int index = order.size() - 1; index >= 0; index--) {
+			int start = order.get(index);
+			if (visited[start]) {
+				continue;
+			}
+			List<Integer> component = new ArrayList<>();
+			pending.push(start);
+			visited[start] = true;
+			while (!pending.isEmpty()) {
+				int current = pending.pop();
+				component.add(current);
+				for (int next : reverse.get(current)) {
+					if (!visited[next]) {
+						visited[next] = true;
+						pending.push(next);
+					}
+				}
+			}
+			if (component.size() > 1) {
+				Set<Integer> members = Set.copyOf(component);
+				for (int consumer : component) {
+					for (String name : requiredNames[consumer]) {
+						for (int producer : producers.getOrDefault(name, List.of())) {
+							if (producer != consumer && members.contains(producer)) {
+								cyclic.add(name);
+							}
+						}
+					}
+				}
+			}
+		}
+		deferred.removeAll(cyclic);
+		return Set.copyOf(deferred);
 	}
 
 	@Override
@@ -120,9 +285,18 @@ public final class TupleFunctionGroupQueryEvaluationStep implements QueryEvaluat
 			private final Deque<Frame> frames = new ArrayDeque<>();
 			private final boolean[] selected = new boolean[calls.length];
 			private BindingSet pending = bindings;
+			private volatile Frame publishedFrames;
 
 			@Override
 			protected boolean forwardCancellation() {
+				List<Frame> open = new ArrayList<>();
+				for (Frame frame = publishedFrames; frame != null; frame = frame.previous) {
+					open.add(frame);
+				}
+				// Signal outer frames before the blocked innermost frame can release and close them.
+				for (int index = open.size() - 1; index >= 0; index--) {
+					open.get(index).forwardCancellation();
+				}
 				return true;
 			}
 
@@ -151,7 +325,12 @@ public final class TupleFunctionGroupQueryEvaluationStep implements QueryEvaluat
 								pending = null;
 								continue;
 							}
-							frames.push(new Frame(ready, results));
+							Frame frame = new Frame(ready, results, publishedFrames);
+							frames.push(frame);
+							publishedFrames = frame;
+							if (isCancellationRequested()) {
+								frame.forwardCancellation();
+							}
 							selected[ready] = true;
 							pending = null;
 						}
@@ -163,6 +342,7 @@ public final class TupleFunctionGroupQueryEvaluationStep implements QueryEvaluat
 							pending = frame.results.next();
 						} else {
 							frames.pop();
+							publishedFrames = frame.previous;
 							selected[frame.call] = false;
 							frame.results.close();
 						}
@@ -185,6 +365,7 @@ public final class TupleFunctionGroupQueryEvaluationStep implements QueryEvaluat
 				Throwable failure = null;
 				while (!frames.isEmpty()) {
 					Frame frame = frames.pop();
+					publishedFrames = frame.previous;
 					selected[frame.call] = false;
 					try {
 						frame.results.close();
@@ -207,13 +388,21 @@ public final class TupleFunctionGroupQueryEvaluationStep implements QueryEvaluat
 	}
 
 	private int readyCall(BindingSet bindings, boolean[] selected) {
+		int ready = readyCall(bindings, selected, false);
+		return ready >= 0 ? ready : readyCall(bindings, selected, true);
+	}
+
+	private int readyCall(BindingSet bindings, boolean[] selected, boolean allowWithheld) {
 		for (int i = 0; i < calls.length; i++) {
 			if (selected[i]) {
 				continue;
 			}
 			boolean ready = true;
 			for (String name : requiredNames[i]) {
-				if (!bindings.hasBinding(name)) {
+				// Match tuple parameter materialization: older invocation values do not make a call ready.
+				if (bindings.getValue(name) == null && (!allowWithheld || (grants[i] == null
+						? BindingFrameBindings.currentEntryWithheldInput(bindings, name)
+						: grants[i].value(bindings, name)) == null)) {
 					ready = false;
 					break;
 				}
@@ -225,6 +414,26 @@ public final class TupleFunctionGroupQueryEvaluationStep implements QueryEvaluat
 		return -1;
 	}
 
-	private record Frame(int call, CloseableIteration<BindingSet> results) {
+	private static final class Frame {
+		private final int call;
+		private final CloseableIteration<BindingSet> results;
+		private final Frame previous;
+		private boolean cancellationForwarded;
+
+		private Frame(int call, CloseableIteration<BindingSet> results, Frame previous) {
+			this.call = call;
+			this.results = results;
+			this.previous = previous;
+		}
+
+		private void forwardCancellation() {
+			synchronized (this) {
+				if (cancellationForwarded) {
+					return;
+				}
+				cancellationForwarded = true;
+			}
+			CooperativeCancellation.forward(results);
+		}
 	}
 }

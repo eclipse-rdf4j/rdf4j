@@ -23,19 +23,27 @@ import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
 import java.io.ObjectInputStream;
 import java.io.ObjectOutputStream;
+import java.util.HashMap;
 import java.util.Iterator;
 import java.util.List;
+import java.util.Map;
 import java.util.NoSuchElementException;
 import java.util.Set;
+import java.util.concurrent.atomic.AtomicInteger;
 
+import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.model.vocabulary.RDF;
 import org.eclipse.rdf4j.query.Binding;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.ArrayBindingBasedQueryEvaluationContext;
+import org.eclipse.rdf4j.query.algebra.evaluation.impl.BindingFrameBindings;
+import org.eclipse.rdf4j.query.algebra.evaluation.impl.GraphFrameBindings;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.QueryEvaluationContext;
+import org.eclipse.rdf4j.query.impl.EmptyBindingSet;
 import org.eclipse.rdf4j.query.impl.MapBindingSet;
+import org.eclipse.rdf4j.query.impl.SimpleBinding;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
@@ -92,6 +100,160 @@ public class ArrayBindingSetTest {
 		bs2.getDirectSetBinding("z").accept(RDF.FIRST, bs2);
 		assertEquals(bs1, bs2);
 		assertEquals(bs1.hashCode(), bs2.hashCode());
+	}
+
+	@Test
+	public void copyAcrossDifferentLayoutsUsesBindingNames() {
+		ArrayBindingSet original = new ArrayBindingSet("a", "g", "removed");
+		original.setBinding("a", RDF.ALT);
+		original.setBinding("removed", RDF.BAG);
+		ArrayBindingSet reordered = new ArrayBindingSet(original, new String[] { "g", "a", "added" });
+		assertEquals(RDF.ALT, reordered.getValue("a"));
+		assertNull(reordered.getValue("g"));
+		assertNull(reordered.getValue("added"));
+		assertEquals(Set.of("a"), reordered.getBindingNames());
+		assertEquals(1, reordered.size());
+		ArrayBindingSet shortened = new ArrayBindingSet(original, new String[] { "g", "a" });
+		assertEquals(RDF.ALT, shortened.getValue("a"));
+		assertNull(shortened.getValue("g"));
+		assertEquals(Set.of("a"), shortened.getBindingNames());
+		assertEquals(1, shortened.size());
+		assertEquals(Set.of("a", "removed"), original.getBindingNames());
+	}
+
+	@Test
+	public void evaluationContextAccessorsRespectDifferentArrayLayouts() {
+		ArrayBindingBasedQueryEvaluationContext context = new ArrayBindingBasedQueryEvaluationContext(
+				new QueryEvaluationContext.Minimal(null), new String[] { "g", "a" }, null);
+		ArrayBindingSet foreign = new ArrayBindingSet("a", "g");
+		foreign.setBinding("a", RDF.ALT);
+		assertNull(context.getValue("g").apply(foreign));
+		assertFalse(context.hasBinding("g").test(foreign));
+		assertEquals(RDF.ALT, context.getValue("a").apply(foreign));
+		assertEquals(RDF.ALT, context.getBinding("a").apply(foreign).getValue());
+		context.addBinding("g").accept(RDF.BAG, foreign);
+		context.setBinding("a").accept(RDF.FIRST, foreign);
+		assertEquals(RDF.BAG, foreign.getValue("g"));
+		assertEquals(RDF.FIRST, foreign.getValue("a"));
+		GraphFrameBindings.supply(foreign, "a", RDF.FIRST);
+		assertTrue(GraphFrameBindings.isSupplied(foreign, "a"));
+		context.setBinding("a").accept(RDF.FIRST, foreign);
+		assertFalse(GraphFrameBindings.isSupplied(foreign, "a"));
+		context.removeBinding("g").accept(foreign);
+		assertNull(foreign.getValue("g"));
+		ArrayBindingSet local = context.createBindingSet();
+		context.addBinding("g").accept(RDF.BAG, local);
+		context.setBinding("a").accept(RDF.FIRST, local);
+		assertEquals(RDF.BAG, context.getValue("g").apply(local));
+		assertEquals(RDF.FIRST, context.getValue("a").apply(local));
+	}
+
+	@Test
+	public void equalLayoutsAndEmptyProjectionRetainFrameMetadata() {
+		String[] names = { "g", "a" };
+		ArrayBindingSet original = new ArrayBindingSet(names);
+		GraphFrameBindings.supply(original, "g", RDF.NIL);
+		QueryBindingSet probe = new QueryBindingSet();
+		probe.addBinding("hidden", RDF.ALT);
+		BindingSet framed = BindingFrameBindings.push(new BindingFrameBindings.Scope(), EmptyBindingSet.getInstance(),
+				probe, new QueryEvaluationContext.Minimal(null));
+		original.setBindingFrame(BindingFrameBindings.from(framed));
+		ArrayBindingSet equalLayout = new ArrayBindingSet(original, names.clone());
+		assertEquals(RDF.NIL, equalLayout.getValue("g"));
+		assertTrue(GraphFrameBindings.isSupplied(equalLayout, "g"));
+		assertSame(BindingFrameBindings.from(original), BindingFrameBindings.from(equalLayout));
+		ArrayBindingSet projected = new ArrayBindingSet(original, new String[] { "a" });
+		assertTrue(projected.isEmpty());
+		assertSame(BindingFrameBindings.from(original), BindingFrameBindings.from(projected));
+		Map<String, Value> parameters = new HashMap<>();
+		GraphFrameBindings.from(projected).visit(parameters::put);
+		assertSame(RDF.NIL, parameters.get("g"));
+		assertNull(projected.getValue("g"));
+		projected.setBinding("a", RDF.BAG);
+		assertEquals(List.of("a"), projected.getSortedBindingNames());
+	}
+
+	@Test
+	public void sameLayoutCopyRecalculatesUnmaintainedSourceMask() {
+		String[] names = { "g", "a" };
+		ArrayBindingSet original = new ArrayBindingSet(names);
+		original.setBinding("a", RDF.ALT);
+		ArrayBindingBasedQueryEvaluationContext context = new ArrayBindingBasedQueryEvaluationContext(
+				new QueryEvaluationContext.Minimal(null), names, null);
+		ArrayBindingSet copied = context.createBindingSet(original);
+		assertEquals(RDF.ALT, copied.getValue("a"));
+		assertEquals(1, copied.size());
+		assertEquals(List.of("a"), copied.getSortedBindingNames());
+		copied.setBinding("g", RDF.BAG);
+		assertEquals(List.of("a", "g"), copied.getSortedBindingNames());
+	}
+
+	@Test
+	public void evaluationContextUsesVirtualAccessForArraySubclasses() {
+		String[] names = { "g", "a" };
+		ArrayBindingBasedQueryEvaluationContext context = new ArrayBindingBasedQueryEvaluationContext(
+				new QueryEvaluationContext.Minimal(null), names, null);
+		AtomicInteger writes = new AtomicInteger();
+		ArrayBindingSet subclass = new ArrayBindingSet(names) {
+			@Override
+			public Value getValue(String name) {
+				return name.equals("a") ? RDF.FIRST : super.getValue(name);
+			}
+
+			@Override
+			public Binding getBinding(String name) {
+				Value value = getValue(name);
+				return value == null ? null : new SimpleBinding(name, value);
+			}
+
+			@Override
+			public boolean hasBinding(String name) {
+				return getValue(name) != null;
+			}
+
+			@Override
+			public void setBinding(String name, Value value) {
+				writes.incrementAndGet();
+				super.setBinding(name, value);
+			}
+		};
+		subclass.setBinding("g", RDF.NIL);
+		writes.set(0);
+		assertEquals(RDF.FIRST, context.getValue("a").apply(subclass));
+		assertEquals(RDF.FIRST, context.getBinding("a").apply(subclass).getValue());
+		assertTrue(context.hasBinding("a").test(subclass));
+		ArrayBindingSet copied = new ArrayBindingSet(subclass, names.clone());
+		assertEquals(RDF.FIRST, copied.getValue("a"));
+		context.setBinding("g").accept(RDF.ALT, subclass);
+		assertEquals(1, writes.get());
+	}
+
+	@Test
+	public void foreignBindingsExposeNamesOutsideContextLayout() {
+		ArrayBindingBasedQueryEvaluationContext context = new ArrayBindingBasedQueryEvaluationContext(
+				new QueryEvaluationContext.Minimal(null), new String[] { "g", "a" }, null);
+		ArrayBindingSet foreign = new ArrayBindingSet("a", "g", "extra");
+		foreign.setBinding("extra", RDF.ALT);
+		QueryBindingSet flexible = new QueryBindingSet();
+		flexible.addBinding("extra", RDF.BAG);
+		for (BindingSet input : List.of(foreign, flexible)) {
+			assertTrue(context.hasBinding("extra").test(input));
+			assertEquals(input.getValue("extra"), context.getValue("extra").apply(input));
+			assertEquals(input.getBinding("extra"), context.getBinding("extra").apply(input));
+		}
+		context.setBinding("extra").accept(RDF.FIRST, foreign);
+		assertEquals(RDF.FIRST, foreign.getValue("extra"));
+		context.removeBinding("extra").accept(foreign);
+		assertNull(foreign.getValue("extra"));
+		context.addBinding("extra").accept(RDF.NIL, foreign);
+		assertEquals(RDF.NIL, foreign.getValue("extra"));
+		ArrayBindingSet local = context.createBindingSet();
+		assertFalse(context.hasBinding("extra").test(local));
+		assertNull(context.getValue("extra").apply(local));
+		assertNull(context.getBinding("extra").apply(local));
+		context.setBinding("extra").accept(RDF.ALT, local);
+		context.addBinding("extra").accept(RDF.ALT, local);
+		assertTrue(local.isEmpty());
 	}
 
 	@Test

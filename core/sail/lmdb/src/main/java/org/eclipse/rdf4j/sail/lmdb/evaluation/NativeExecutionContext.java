@@ -42,6 +42,7 @@ import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.QueryExecutionPolicy;
 import org.eclipse.rdf4j.query.algebra.Filter.ConditionBindingScope;
+import org.eclipse.rdf4j.query.algebra.evaluation.impl.BindingFrameBindings;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.QueryEvaluationContext;
 import org.eclipse.rdf4j.sail.lmdb.LmdbQueryMemoryManager;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.codegen.KernelRuntime;
@@ -478,6 +479,23 @@ final class NativeExecutionContext implements AutoCloseable {
 		return nativeState(new ConditionFrameKey(scope, source), () -> source.forConditionBindings(scope));
 	}
 
+	/** A FILTER condition also isolates physical probes when all logical names are retained. */
+	NativeExecutionContext forConditionBoundary(ConditionBindingScope scope) {
+		if (!scope.retainsAllBindings()) {
+			return forConditionBindings(scope);
+		}
+		if (!BindingFrameBindings.hasVisibleProbes(queryBase())) {
+			return this;
+		}
+		if (queryFrameOwner != this) {
+			return queryFrameOwner.forConditionBoundary(scope);
+		}
+		SyntheticValueSource source = evaluationSource();
+		return source == null ? this
+				: nativeState(new ConditionFrameKey(scope, source),
+						() -> source.forConditionBindings(scope));
+	}
+
 	private record ConditionFrameKey(ConditionBindingScope scope, SyntheticValueSource source) {
 	}
 
@@ -489,9 +507,7 @@ final class NativeExecutionContext implements AutoCloseable {
 		if (queryBase == null) {
 			synchronized (this) {
 				if (queryBase == null) {
-					queryBase = bindings == null || bindings.isEmpty()
-							? org.eclipse.rdf4j.query.impl.EmptyBindingSet.getInstance()
-							: NativeEntryBindings.snapshot(bindings);
+					queryBase = NativeEntryBindings.snapshot(bindings);
 				}
 			}
 		}

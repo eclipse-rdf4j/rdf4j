@@ -15,10 +15,13 @@ import java.lang.invoke.MethodHandles;
 import java.lang.invoke.VarHandle;
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.BitSet;
 import java.util.Collections;
+import java.util.HashMap;
 import java.util.Iterator;
 import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Map;
 import java.util.NoSuchElementException;
 import java.util.Objects;
 import java.util.Set;
@@ -32,8 +35,11 @@ import org.eclipse.rdf4j.query.AbstractBindingSet;
 import org.eclipse.rdf4j.query.Binding;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.MutableBindingSet;
+import org.eclipse.rdf4j.query.algebra.evaluation.impl.BindingFrame;
+import org.eclipse.rdf4j.query.algebra.evaluation.impl.BindingFrameBindings;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.GraphFrameBindings;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.GraphFrameBindings.MutableCarrier;
+import org.eclipse.rdf4j.query.impl.BindingSetImport;
 import org.eclipse.rdf4j.query.impl.SimpleBinding;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -44,7 +50,8 @@ import org.slf4j.LoggerFactory;
  * @author Jerven Bolleman
  */
 @InternalUseOnly
-public class ArrayBindingSet extends AbstractBindingSet implements MutableBindingSet, MutableCarrier {
+public class ArrayBindingSet extends AbstractBindingSet
+		implements MutableBindingSet, MutableCarrier, BindingFrameBindings.MutableCarrier, BindingSetImport {
 
 	private static final long serialVersionUID = -1L;
 
@@ -75,12 +82,28 @@ public class ArrayBindingSet extends AbstractBindingSet implements MutableBindin
 	private boolean empty;
 
 	private final Value[] values;
+	// A source mapping's null shadows are logical names, unlike locally installed UNDEF placeholders.
+	// Allocate only when a semantic copy actually imports such a name.
+	private BitSet nullBindings;
 	// Evaluation-context state: not part of the serialized form when rows are spilled to disk.
 	private final transient SortedBindingNamesCache sharedSortedBindingNamesCache;
 	private long activeBindingMask;
 	private int cachedSize = -1;
 	private int cachedHashCode;
 	private GraphFrameBindings graphFrames;
+	private BindingFrame bindingFrame;
+
+	@Override
+	@InternalUseOnly
+	public BindingFrame getBindingFrame() {
+		return bindingFrame;
+	}
+
+	@Override
+	@InternalUseOnly
+	public void setBindingFrame(BindingFrame frame) {
+		bindingFrame = frame;
+	}
 
 	@Override
 	@InternalUseOnly
@@ -132,18 +155,13 @@ public class ArrayBindingSet extends AbstractBindingSet implements MutableBindin
 		this.sharedSortedBindingNamesCache = sharedSortedBindingNamesCache;
 		int size = 0;
 		setGraphFrameBindings(GraphFrameBindings.from(toCopy));
+		setBindingFrame(BindingFrameBindings.from(toCopy));
 		for (int i = 0; i < this.bindingNames.length; i++) {
-			Binding binding = toCopy.getBinding(this.bindingNames[i]);
-
-			if (binding != null) {
-				this.values[i] = binding.getValue();
-				if (this.values[i] == null) {
-					this.values[i] = NULL_VALUE;
-				}
-			} else if (hasBinding(this.bindingNames[i])) {
-				this.values[i] = NULL_VALUE;
+			this.values[i] = toCopy.getValue(this.bindingNames[i]);
+			if (this.values[i] == null && toCopy.hasBinding(this.bindingNames[i])) {
+				setNullBinding(i, true);
 			}
-			if (isBoundValue(this.values[i])) {
+			if (isPresent(i)) {
 				size++;
 			}
 		}
@@ -163,21 +181,65 @@ public class ArrayBindingSet extends AbstractBindingSet implements MutableBindin
 	public ArrayBindingSet(ArrayBindingSet toCopy, String[] names,
 			SortedBindingNamesCache sharedSortedBindingNamesCache) {
 		this.bindingNames = names;
-		this.values = Arrays.copyOf(toCopy.values, toCopy.values.length);
 		this.sharedSortedBindingNamesCache = sharedSortedBindingNamesCache;
-		this.empty = toCopy.empty;
-		this.cachedSize = toCopy.cachedSize;
-		this.graphFrames = toCopy.graphFrames;
-		if (toCopy.bindingNames == names) {
+		setGraphFrameBindings(GraphFrameBindings.from(toCopy));
+		setBindingFrame(BindingFrameBindings.from(toCopy));
+		boolean exactArray = toCopy.getClass() == ArrayBindingSet.class;
+		boolean identicalLayout = exactArray && toCopy.bindingNames == names;
+		if (identicalLayout || exactArray && Arrays.equals(toCopy.bindingNames, names)) {
+			this.values = Arrays.copyOf(toCopy.values, names.length);
+			this.nullBindings = toCopy.nullBindings == null ? null : (BitSet) toCopy.nullBindings.clone();
+			this.empty = toCopy.empty;
+			this.cachedSize = toCopy.cachedSize;
+		} else {
+			this.values = new Value[names.length];
+			int size = 0;
+			Map<String, Integer> sourceIndexes = null;
+			if (exactArray) {
+				sourceIndexes = new HashMap<>();
+				for (int index = 0; index < toCopy.bindingNames.length; index++) {
+					sourceIndexes.putIfAbsent(toCopy.bindingNames[index], index);
+				}
+			}
+			for (int index = 0; index < names.length; index++) {
+				if (exactArray) {
+					Integer source = sourceIndexes.get(names[index]);
+					if (source != null) {
+						values[index] = toCopy.values[source];
+						if (toCopy.nullBindings != null && toCopy.nullBindings.get(source)) {
+							setNullBinding(index, true);
+						}
+					}
+				} else {
+					values[index] = toCopy.getValue(names[index]);
+					if (values[index] == null && toCopy.hasBinding(names[index])) {
+						setNullBinding(index, true);
+					}
+				}
+				if (isPresent(index)) {
+					size++;
+				}
+			}
+			this.empty = size == 0;
+			this.cachedSize = size;
+		}
+		if (identicalLayout) {
 			this.bindingNamesSetCache = toCopy.bindingNamesSetCache;
 			this.sortedBindingNames = toCopy.sortedBindingNames;
 			this.cachedHashCode = toCopy.cachedHashCode;
 		}
 		if (sharedSortedBindingNamesCache != null) {
-			this.activeBindingMask = toCopy.bindingNames == names ? toCopy.activeBindingMask
+			this.activeBindingMask = identicalLayout && toCopy.sharedSortedBindingNamesCache != null
+					? toCopy.activeBindingMask
 					: calculateActiveBindingMask();
 		}
 		assert !this.empty || size() == 0;
+	}
+
+	/** The indexed accessors are valid across rows only when they share this immutable layout. */
+	@InternalUseOnly
+	public boolean sharesLayoutWith(ArrayBindingSet other) {
+		return bindingNames == other.bindingNames;
 	}
 
 	/**
@@ -197,6 +259,7 @@ public class ArrayBindingSet extends AbstractBindingSet implements MutableBindin
 		}
 		return (v, a) -> {
 			a.forgetGraphFrame(bindingName);
+			a.setNullBinding(index, false);
 			a.values[index] = v == null ? NULL_VALUE : v;
 			a.empty = v == null ? a.calculateEmpty() : false;
 			a.updateActiveBindingMask(index, v != null);
@@ -214,6 +277,7 @@ public class ArrayBindingSet extends AbstractBindingSet implements MutableBindin
 		return (v, a) -> {
 			assert a.values[index] == null || a.values[index] == NULL_VALUE;
 			a.forgetGraphFrame(bindingName);
+			a.setNullBinding(index, false);
 			a.values[index] = v == null ? NULL_VALUE : v;
 			a.empty = v == null ? a.calculateEmpty() : false;
 			a.updateActiveBindingMask(index, v != null);
@@ -253,7 +317,7 @@ public class ArrayBindingSet extends AbstractBindingSet implements MutableBindin
 		if (index == -1) {
 			return null;
 		}
-		return a -> isBoundValue(a.values[index]);
+		return a -> a.isPresent(index);
 	}
 
 	private int getIndex(String bindingName) {
@@ -282,7 +346,7 @@ public class ArrayBindingSet extends AbstractBindingSet implements MutableBindin
 				this.bindingNamesSetCache = Collections.emptySet();
 			} else if (size == 1) {
 				for (int i = 0; i < this.bindingNames.length; i++) {
-					if (isBoundValue(values[i])) {
+					if (isPresent(i)) {
 						this.bindingNamesSetCache = Collections.singleton(bindingNames[i]);
 						break;
 					}
@@ -291,7 +355,7 @@ public class ArrayBindingSet extends AbstractBindingSet implements MutableBindin
 			} else {
 				LinkedHashSet<String> bindingNamesSetCache = new LinkedHashSet<>(size * 2);
 				for (int i = 0; i < this.bindingNames.length; i++) {
-					if (isBoundValue(values[i])) {
+					if (isPresent(i)) {
 						bindingNamesSetCache.add(bindingNames[i]);
 					}
 				}
@@ -350,7 +414,7 @@ public class ArrayBindingSet extends AbstractBindingSet implements MutableBindin
 		if (index == -1) {
 			return false;
 		}
-		return isBoundValue(values[index]);
+		return isPresent(index);
 	}
 
 	@Override
@@ -376,6 +440,9 @@ public class ArrayBindingSet extends AbstractBindingSet implements MutableBindin
 				if (isBoundValue(value)) {
 					size++;
 				}
+			}
+			if (nullBindings != null) {
+				size += nullBindings.cardinality();
 			}
 
 			cachedSize = size;
@@ -451,7 +518,7 @@ public class ArrayBindingSet extends AbstractBindingSet implements MutableBindin
 
 				if (size == 1) {
 					for (int i = 0; i < bindingNames.length; i++) {
-						if (isBoundValue(values[i])) {
+						if (isPresent(i)) {
 							sortedBindingNames = Collections.singletonList(bindingNames[i]);
 							break;
 						}
@@ -459,7 +526,7 @@ public class ArrayBindingSet extends AbstractBindingSet implements MutableBindin
 				} else {
 					ArrayList<String> names = new ArrayList<>(size);
 					for (int i = 0; i < bindingNames.length; i++) {
-						if (isBoundValue(values[i])) {
+						if (isPresent(i)) {
 							names.add(bindingNames[i]);
 						}
 					}
@@ -486,6 +553,7 @@ public class ArrayBindingSet extends AbstractBindingSet implements MutableBindin
 
 		assert this.values[index] == null || this.values[index] == NULL_VALUE;
 		forgetGraphFrame(binding.getName());
+		setNullBinding(index, false);
 		this.values[index] = value == null ? NULL_VALUE : value;
 		empty = value == null ? calculateEmpty() : false;
 		updateActiveBindingMask(index, value != null);
@@ -500,6 +568,7 @@ public class ArrayBindingSet extends AbstractBindingSet implements MutableBindin
 		}
 		Value value = binding.getValue();
 		forgetGraphFrame(binding.getName());
+		setNullBinding(index, false);
 		this.values[index] = value == null ? NULL_VALUE : value;
 		empty = value == null ? calculateEmpty() : false;
 		updateActiveBindingMask(index, value != null);
@@ -514,6 +583,7 @@ public class ArrayBindingSet extends AbstractBindingSet implements MutableBindin
 		}
 
 		forgetGraphFrame(name);
+		setNullBinding(index, false);
 		this.values[index] = value;
 		updateActiveBindingMask(index, isBoundValue(value));
 		this.empty = value == null ? calculateEmpty() : false;
@@ -523,6 +593,21 @@ public class ArrayBindingSet extends AbstractBindingSet implements MutableBindin
 	@Override
 	public void removeBinding(String name) {
 		setBinding(name, null);
+	}
+
+	@Override
+	@InternalUseOnly
+	public void setBindingFromCopy(String name, Value value) {
+		int index = getIndex(name);
+		if (index == -1) {
+			throw new IllegalArgumentException("Unknown binding name for semantic import: " + name);
+		}
+		forgetGraphFrame(name);
+		values[index] = value;
+		setNullBinding(index, value == null);
+		empty = false;
+		updateActiveBindingMask(index, true);
+		clearCache();
 	}
 
 	@Override
@@ -538,14 +623,16 @@ public class ArrayBindingSet extends AbstractBindingSet implements MutableBindin
 	}
 
 	public void addAll(ArrayBindingSet other) {
+		BindingFrame suppliedFrame = BindingFrameBindings.from(other);
 		GraphFrameBindings supplied = GraphFrameBindings.from(other);
 		if (graphFrames != null) {
 			other.getBindingNames().forEach(this::forgetGraphFrame);
 		}
-		if (other.bindingNames == bindingNames) {
+		if (other.getClass() == ArrayBindingSet.class && other.bindingNames == bindingNames) {
 			for (int i = 0; i < bindingNames.length; i++) {
-				if (isBoundValue(other.values[i])) {
+				if (other.isPresent(i)) {
 					this.values[i] = other.values[i];
+					setNullBinding(i, other.nullBindings != null && other.nullBindings.get(i));
 					this.empty = false;
 				}
 			}
@@ -553,13 +640,17 @@ public class ArrayBindingSet extends AbstractBindingSet implements MutableBindin
 			for (int i = 0; i < bindingNames.length; i++) {
 				if (other.hasBinding(bindingNames[i])) {
 					Value value = other.getValue(bindingNames[i]);
-					this.values[i] = value == null ? NULL_VALUE : value;
+					this.values[i] = value;
+					setNullBinding(i, value == null);
 					this.empty = false;
 				}
 			}
 		}
 
-		setGraphFrameBindings(GraphFrameBindings.from(this).merge(supplied));
+		setGraphFrameBindings(GraphFrameBindings.from(this).merge(supplied.forCopy(other, this)));
+		if (suppliedFrame != null) {
+			setBindingFrame(suppliedFrame);
+		}
 		clearCache();
 		if (sharedSortedBindingNamesCache != null) {
 			activeBindingMask = calculateActiveBindingMask();
@@ -583,7 +674,7 @@ public class ArrayBindingSet extends AbstractBindingSet implements MutableBindin
 	private long calculateActiveBindingMask() {
 		long mask = 0L;
 		for (int i = 0; i < values.length; i++) {
-			if (isBoundValue(values[i])) {
+			if (isPresent(i)) {
 				mask |= 1L << i;
 			}
 		}
@@ -591,6 +682,9 @@ public class ArrayBindingSet extends AbstractBindingSet implements MutableBindin
 	}
 
 	private boolean calculateEmpty() {
+		if (nullBindings != null) {
+			return false;
+		}
 		for (Value value : values) {
 			if (isBoundValue(value)) {
 				return false;
@@ -601,6 +695,24 @@ public class ArrayBindingSet extends AbstractBindingSet implements MutableBindin
 
 	private static boolean isBoundValue(Value value) {
 		return value != null && value != NULL_VALUE;
+	}
+
+	private boolean isPresent(int index) {
+		return isBoundValue(values[index]) || nullBindings != null && nullBindings.get(index);
+	}
+
+	private void setNullBinding(int index, boolean present) {
+		if (present) {
+			if (nullBindings == null) {
+				nullBindings = new BitSet();
+			}
+			nullBindings.set(index);
+		} else if (nullBindings != null) {
+			nullBindings.clear(index);
+			if (nullBindings.isEmpty()) {
+				nullBindings = null;
+			}
+		}
 	}
 
 	@Override
@@ -636,6 +748,9 @@ public class ArrayBindingSet extends AbstractBindingSet implements MutableBindin
 		}
 
 		if (bindingNames == o.bindingNames) {
+			if (!Objects.equals(nullBindings, o.nullBindings)) {
+				return false;
+			}
 			int valuesLength = values.length;
 			int startIndex = (int) LAST_EQUALS_MISMATCH_INDEX.getOpaque();
 			if (startIndex >= valuesLength) {

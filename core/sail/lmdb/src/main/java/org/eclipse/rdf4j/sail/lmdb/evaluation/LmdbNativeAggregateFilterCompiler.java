@@ -23,8 +23,10 @@ import static org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbNativeAggregateCompiler
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collections;
+import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 import java.util.function.Function;
 import java.util.function.Predicate;
@@ -47,6 +49,7 @@ import org.eclipse.rdf4j.query.algebra.ExtensionElem;
 import org.eclipse.rdf4j.query.algebra.Filter;
 import org.eclipse.rdf4j.query.algebra.Filter.ConditionBindingScope;
 import org.eclipse.rdf4j.query.algebra.Lang;
+import org.eclipse.rdf4j.query.algebra.Lateral;
 import org.eclipse.rdf4j.query.algebra.LeftJoin;
 import org.eclipse.rdf4j.query.algebra.ListMemberOperator;
 import org.eclipse.rdf4j.query.algebra.MathExpr;
@@ -62,18 +65,39 @@ import org.eclipse.rdf4j.query.algebra.ValueConstant;
 import org.eclipse.rdf4j.query.algebra.ValueExpr;
 import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.query.algebra.evaluation.ValueExprEvaluationException;
+import org.eclipse.rdf4j.query.algebra.evaluation.impl.BindingFrameBindings;
+import org.eclipse.rdf4j.query.algebra.evaluation.impl.BindingSetQueryEvaluationContext;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.QueryEvaluationContext;
 import org.eclipse.rdf4j.query.algebra.evaluation.iterator.FilterIterator;
 import org.eclipse.rdf4j.query.algebra.evaluation.util.QueryEvaluationUtility;
 import org.eclipse.rdf4j.query.algebra.helpers.AbstractQueryModelVisitor;
+import org.eclipse.rdf4j.query.algebra.helpers.BindingScopePolicy;
 import org.eclipse.rdf4j.query.algebra.helpers.FilterBindingScope;
 import org.eclipse.rdf4j.query.algebra.helpers.QueryAlgebraBindingAnalysis;
+import org.eclipse.rdf4j.query.algebra.helpers.QueryAlgebraBindingAnalysis.EntryCompatibilityKind;
+import org.eclipse.rdf4j.query.algebra.helpers.QueryAlgebraBindingAnalysis.NameDomain;
+import org.eclipse.rdf4j.query.algebra.helpers.QueryAlgebraBindingAnalysis.SemanticInvocationTransition;
 import org.eclipse.rdf4j.query.algebra.helpers.collectors.VarNameCollector;
 import org.eclipse.rdf4j.query.impl.EmptyBindingSet;
+import org.eclipse.rdf4j.sail.lmdb.evaluation.NativeGroupInvocationWitness.GraphClause;
+import org.eclipse.rdf4j.sail.lmdb.evaluation.NativeValuesElisions.Elisions;
+import org.eclipse.rdf4j.sail.lmdb.evaluation.NativeValuesElisions.Fragment;
 
 @Experimental
 abstract class LmdbNativeAggregateFilterCompiler extends LmdbNativeAggregateValuesCompiler {
 	QueryAlgebraBindingAnalysis lexicalBindingAnalysis;
+	private boolean compilingFilterCondition;
+
+	@Override
+	NativeBooleanFilter compileFilterBoolean(Filter filter, long assuredMask) {
+		boolean previous = compilingFilterCondition;
+		compilingFilterCondition = true;
+		try {
+			return compileBoolean(filter.getCondition(), assuredMask);
+		} finally {
+			compilingFilterCondition = previous;
+		}
+	}
 
 	/**
 	 * When set, {@link #compileExtensionCopies(Extension)} may compile a computed, non-inline BIND (e.g.
@@ -91,14 +115,20 @@ abstract class LmdbNativeAggregateFilterCompiler extends LmdbNativeAggregateValu
 	}
 
 	NativeBooleanFilter compileDirectExists(Exists exists) {
-		return compileDirectExists(exists, ConditionBindingScope.ALL);
+		return compileDirectExists(exists, ConditionBindingScope.ALL, compilingFilterCondition);
 	}
 
-	private NativeBooleanFilter compileDirectExists(Exists exists, ConditionBindingScope bindingScope) {
-		if (!(exists.getSubQuery() instanceof StatementPattern)) {
+	private NativeBooleanFilter compileDirectExists(Exists exists, ConditionBindingScope bindingScope,
+			boolean conditionBoundary) {
+		TupleExpr body = exists.getSubQuery();
+		StatementPattern pattern = body instanceof StatementPattern statement ? statement
+				: NativeGraphFusion.fixedScopedPattern(body);
+		if (pattern == null) {
 			return null;
 		}
-		StatementPattern pattern = (StatementPattern) exists.getSubQuery();
+		if (hasActiveContextOperand(pattern) || requiresPublicGraphBindingCheck(pattern)) {
+			return null;
+		}
 		Set<String> hidden = new HashSet<>();
 		for (Var var : pattern.getVarList()) {
 			if (!var.hasValue() && !bindingScope.retainsAllBindings()
@@ -114,12 +144,31 @@ abstract class LmdbNativeAggregateFilterCompiler extends LmdbNativeAggregateValu
 		Term s = compileCorrelatedTerm(pattern.getSubjectVar(), NativePatternField.SUBJECT, bindingScope);
 		Term p = compileCorrelatedTerm(pattern.getPredicateVar(), NativePatternField.PREDICATE, bindingScope);
 		Term o = compileCorrelatedTerm(pattern.getObjectVar(), NativePatternField.OBJECT, bindingScope);
+		Value lexicalContext = valuedContext(pattern);
 		Term c = compileCorrelatedTerm(pattern.getContextVar(), NativePatternField.CONTEXT, bindingScope);
 		if (s == null || p == null || o == null || c == null) {
 			return null;
 		}
-		return new StatementPatternExistsFilter(source, s, p, o, c, contexts,
-				pattern.getScope() == Scope.NAMED_CONTEXTS);
+		PatternContext selected = selectValuedContext(pattern, lexicalContext, c, contexts);
+		if (selected == null) {
+			return null;
+		}
+		c = selected.term();
+		contexts = selected.contexts();
+		boolean namedScope = isNamedContextScope(pattern, c);
+		PatternPlan contextPattern = new PatternPlan(s, p, o, c, contexts, namedScope, null, "", null,
+				Double.POSITIVE_INFINITY, null, dynamicContext(pattern, c, contexts));
+		Set<String> retainedReads = new HashSet<>();
+		for (Var var : pattern.getVarList()) {
+			if (!var.isConstant() && (bindingScope.retainsAllBindings()
+					|| bindingScope.bindingNames().contains(var.getName()))) {
+				retainedReads.add(var.getName());
+			}
+		}
+		return new StatementPatternExistsFilter(source, s, p, o, c, contexts, namedScope,
+				new StatementPatternExistsFilter.SemanticRecipe(exists.clone(), bindingScope, Set.copyOf(retainedReads),
+						strategy, context, conditionBoundary),
+				contextPattern);
 	}
 
 	Term compileCorrelatedTerm(Var var, NativePatternField field) {
@@ -157,7 +206,7 @@ abstract class LmdbNativeAggregateFilterCompiler extends LmdbNativeAggregateValu
 	 * after full enumeration. BIND extensions sitting between the filter and the left join's graph pattern are hoisted
 	 * above the join when nothing in R or the conditions reads their targets, which keeps the pattern set flattenable.
 	 */
-	SlotPlan compileLeftJoinFilterAsInnerJoin(Filter filter, boolean duplicateInsensitive) {
+	Fragment compileLeftJoinFilterAsInnerJoin(Filter filter, boolean duplicateInsensitive) {
 		if (!(filter.getArg() instanceof LeftJoin) || !isNativeRepeatable(filter.getCondition())) {
 			return null;
 		}
@@ -179,6 +228,8 @@ abstract class LmdbNativeAggregateFilterCompiler extends LmdbNativeAggregateValu
 		Set<String> previousRequired = requiredAggregateNames;
 		SlotPlan left;
 		SlotPlan right = null;
+		Fragment leftFragment;
+		Fragment rightFragment = null;
 		boolean conditionFolded = false;
 		try {
 			java.util.HashSet<String> required = new java.util.HashSet<>(previousRequired);
@@ -195,7 +246,8 @@ abstract class LmdbNativeAggregateFilterCompiler extends LmdbNativeAggregateValu
 				}
 			}
 			requiredAggregateNames = required;
-			left = compileTuple(leftArg, duplicateInsensitive);
+			leftFragment = compileTuple(leftArg, duplicateInsensitive);
+			left = leftFragment != null && leftFragment.elisions() == Elisions.NONE ? leftFragment.plan() : null;
 			if (left != null) {
 				Set<String> filterNames = VarNameCollector.process(filter.getCondition());
 				boolean rightOnlyFilter = leftJoin.getRightArg().getBindingNames().containsAll(filterNames);
@@ -223,7 +275,10 @@ abstract class LmdbNativeAggregateFilterCompiler extends LmdbNativeAggregateValu
 					}
 				}
 				if (right == null) {
-					right = compileTuple(leftJoin.getRightArg(), duplicateInsensitive);
+					rightFragment = compileTuple(leftJoin.getRightArg(), duplicateInsensitive);
+					right = rightFragment != null && rightFragment.elisions() == Elisions.NONE
+							? rightFragment.plan()
+							: null;
 				}
 			}
 		} finally {
@@ -232,7 +287,8 @@ abstract class LmdbNativeAggregateFilterCompiler extends LmdbNativeAggregateValu
 		if (left == null || right == null) {
 			return null;
 		}
-		SlotPlan plan = SlotPlan.join(left, right);
+		SlotPlan joined = SlotPlan.join(left, right);
+		SlotPlan plan = joined;
 		if (leftJoin.hasCondition()) {
 			NativeBooleanFilter joinCondition = compileBoolean(leftJoin.getCondition(), SlotPlan.assuredMask(plan));
 			if (joinCondition == null) {
@@ -240,13 +296,16 @@ abstract class LmdbNativeAggregateFilterCompiler extends LmdbNativeAggregateValu
 			}
 			plan = SlotPlan.filter(plan, joinCondition, placeableFilterMask(leftJoin.getCondition()));
 		}
+		NativeBooleanFilter gatePredicate = null;
+		long gateMask = -1L;
 		if (!conditionFolded) {
-			NativeBooleanFilter condition = compileBoolean(filter.getCondition(), SlotPlan.assuredMask(plan));
+			NativeBooleanFilter condition = compileFilterBoolean(filter, SlotPlan.assuredMask(plan));
 			if (condition == null) {
 				return null;
 			}
-			plan = SlotPlan.filter(plan, recordFilterOutcomes(filter, condition),
-					placeableFilterMask(filter));
+			gatePredicate = recordFilterOutcomes(filter, condition);
+			gateMask = placeableFilterMask(filter);
+			plan = SlotPlan.filter(plan, gatePredicate, gateMask);
 		}
 		for (int i = hoisted.size() - 1; i >= 0; i--) {
 			CopyBinding[] copies = compileExtensionCopies(hoisted.get(i));
@@ -256,7 +315,53 @@ abstract class LmdbNativeAggregateFilterCompiler extends LmdbNativeAggregateValu
 			plan = SlotPlan.extension(plan, copies);
 		}
 		LEFTJOIN_FILTER_INNER_JOIN_REWRITES.incrementAndGet();
-		return plan;
+		Fragment selected = Fragment.plain(plan);
+		// Null rejection alone does not justify seeding the rewritten RHS: an incompatible VALUES row can still
+		// trigger callbacks before OPTIONAL compatibility discards it. Only a pure selected pair receives evidence.
+		SemanticInvocationTransition optional = lexicalBindingAnalysis == null ? null
+				: lexicalBindingAnalysis.semanticInvocationTransition(leftJoin);
+		SemanticInvocationTransition gate = lexicalBindingAnalysis == null ? null
+				: lexicalBindingAnalysis.semanticInvocationTransition(filter);
+		if (conditionFolded || !hoisted.isEmpty() || optional == null || gate == null
+				|| leftFragment == null || rightFragment == null
+				|| leftFragment.invocationWitness() == null || rightFragment.invocationWitness() == null
+				|| !leftFragment.invocationWitness().represents(leftJoin.getLeftArg(), left)
+				|| !rightFragment.invocationWitness().represents(leftJoin.getRightArg(), right)
+				|| !QueryEvaluationUtility.isRepeatable(filter)
+				|| !QueryEvaluationUtility.canDiscardWithoutEvaluation(filter)
+				|| QueryEvaluationUtility.usesMappingParameterizedEvaluation(filter)
+				|| !FilterBindingScope.allowsAllConditionBindings(filter)) {
+			return selected;
+		}
+		NativeGroupInvocationWitness.Node leftInput = leftFragment.invocationWitness();
+		NativeGroupInvocationWitness.Node rightInput = rightFragment.invocationWitness();
+		boolean independentlyProjected = leftInput.graph != null && rightInput.graph != null
+				&& !leftInput.graph.pendingProjectionCompatibility()
+				&& rightInput.graph.pendingProjectionCompatibility();
+		boolean injectionSafe = QueryEvaluationUtility.preparedBindingInjectionProof(leftJoin.getRightArg())
+				.test(leftJoin.getLeftArg().getBindingNames());
+		NameDomain forbidden = gate.exposedReads()
+				.union(optional.exposedReads())
+				.union(leftInput.exposedReads)
+				.union(rightInput.exposedReads)
+				.intersect(optional.maskedInputs());
+		boolean graph = !leftJoin.hasCondition() && leftInput.graph != null && rightInput.graph != null
+				&& (injectionSafe || independentlyProjected)
+				&& optional.entryCompatibility() != null
+				&& optional.entryCompatibility().kind() == EntryCompatibilityKind.NORMAL_OPTIONAL
+				&& gate.entryCompatibility() != null
+				&& gate.entryCompatibility().kind() == EntryCompatibilityKind.OPTIONAL_GATE
+				&& gateMask >= 0L && gatePredicate != null;
+		if (!injectionSafe && !graph) {
+			return selected;
+		}
+		boolean entryOnly = leftInput.entryOnly || rightInput.entryOnly;
+		NativeGroupInvocationWitness.Node rewritten = new NativeGroupInvocationWitness.Node(optional,
+				graph ? joined : plan, List.of(leftInput, rightInput), forbidden, optional.noNames(), entryOnly, null,
+				injectionSafe, graph ? GraphClause.GATE_INPUT : null);
+		return selected.withInvocationWitness(new NativeGroupInvocationWitness.Node(gate, plan, List.of(rewritten),
+				gate.noNames(), gate.noNames(), entryOnly, null, injectionSafe,
+				graph ? new GraphClause(GraphClause.Kind.GATE, filter.getCondition(), gatePredicate, gateMask) : null));
 	}
 
 	/**
@@ -426,10 +531,10 @@ abstract class LmdbNativeAggregateFilterCompiler extends LmdbNativeAggregateValu
 				|| !nullRejects(filter.getCondition(), rightNames)) {
 			return null;
 		}
-		SlotPlan left = compileTuple(leftJoin.getLeftArg(), true);
-		SlotPlan right = compileTuple(leftJoin.getRightArg(), true);
+		SlotPlan left = compileTupleWithoutElisions(leftJoin.getLeftArg(), true);
+		SlotPlan right = compileTupleWithoutElisions(leftJoin.getRightArg(), true);
 		NativeBooleanFilter condition = left == null || right == null ? null
-				: compileBoolean(filter.getCondition(), SlotPlan.assuredMask(left) | SlotPlan.assuredMask(right));
+				: compileFilterBoolean(filter, SlotPlan.assuredMask(left) | SlotPlan.assuredMask(right));
 		if (left == null || right == null || condition == null) {
 			return null;
 		}
@@ -474,7 +579,8 @@ abstract class LmdbNativeAggregateFilterCompiler extends LmdbNativeAggregateValu
 		// purpose — never raw-id-compare a plan-local synthetic id against store ids — is enforced recursively at every
 		// non-EXISTS leaf compiler. Exempting only an EXISTS at the root poisoned a surrounding AND/OR into one
 		// unintrospectable generic predicate, hiding both its ordinary local conditions and its witness sub-plan.
-		if (!containsExists(expr) && !syntheticVarNames.isEmpty()
+		// BOUND only tests presence and accepts synthetic as well as store RDF value IDs.
+		if (!(expr instanceof Bound) && !containsExists(expr) && !syntheticVarNames.isEmpty()
 				&& !Collections.disjoint(VarNameCollector.process(expr), syntheticVarNames)) {
 			// raw-id shortcuts (IN, sameTerm, = against constants) must never compare a plan-local
 			// synthetic id against a real store id; the generic path materializes values instead
@@ -528,7 +634,17 @@ abstract class LmdbNativeAggregateFilterCompiler extends LmdbNativeAggregateValu
 				if (direct != null) {
 					return direct;
 				}
-				SlotPlan subPlan = compileTuple(exists.getSubQuery(), false);
+				if (QueryEvaluationUtility.existsSubstitutionInputs(exists.getSubQuery()).needsDynamicDomain()) {
+					return compileSemanticBoolean(exists);
+				}
+				boolean conditionBoundary = compilingFilterCondition;
+				SlotPlan subPlan;
+				compilingFilterCondition = false;
+				try {
+					subPlan = compileTupleWithoutElisions(exists.getSubQuery(), false);
+				} finally {
+					compilingFilterCondition = conditionBoundary;
+				}
 				if (subPlan == null && Boolean.getBoolean("rdf4j.lmdb.janinoCodegen.debug")) {
 					System.err.println("[exists-compile] decline: sub-plan " + exists.getSubQuery().getSignature());
 				}
@@ -537,7 +653,11 @@ abstract class LmdbNativeAggregateFilterCompiler extends LmdbNativeAggregateValu
 							+ " worker=" + NativeWorkerPlanBinder.canBind(subPlan) + " plan="
 							+ LmdbNativeExplain.describe(subPlan, slotNames.toArray(String[]::new), 0L));
 				}
-				return subPlan == null ? null : new ExistsFilter(subPlan);
+				return subPlan == null ? null
+						: new ExistsFilter(subPlan, null,
+								new StatementPatternExistsFilter.SemanticRecipe(exists.clone(),
+										ConditionBindingScope.ALL,
+										null, strategy, context, conditionBoundary));
 			} finally {
 				valueGuardsSupported = previousValueGuardsSupported;
 			}
@@ -641,6 +761,7 @@ abstract class LmdbNativeAggregateFilterCompiler extends LmdbNativeAggregateValu
 
 	NativeBooleanFilter compileSemanticBoolean(ValueExpr expr) {
 		GenericSubplanDescriptor descriptor = GenericSubplanDescriptor.create(expr, strategy);
+		boolean filterBoundary = compilingFilterCondition;
 		if (!descriptor.shareableAcrossEvaluations()) {
 			// The condition carries query-scope state (NOW/BNODE/volatiles): compile its predicate once per
 			// evaluation through the execution context, so a retained compiled step observes a fresh query scope
@@ -649,24 +770,34 @@ abstract class LmdbNativeAggregateFilterCompiler extends LmdbNativeAggregateValu
 			requiresExecutionContext = true;
 			long readMask = genericReadMask(expr);
 			LmdbNativeEvaluationStrategy compilingStrategy = strategy;
-			QueryEvaluationContext compileContext = context;
+			QueryEvaluationContext compileContext = descriptor.scopedContext(context);
 			NativeSlotLayout layoutSnapshot = layout;
 			ValueExpr pinned = descriptor.pinnedExpr();
 			Function<NativeExecutionContext, NativeBindingSetValueEvaluator> perEvaluation = executionContext -> {
 				QueryEvaluationContext scoped = executionContext
 						.genericContext(compileContext, compilingStrategy);
-				return compileSemanticValue(compilingStrategy, pinned,
-						new SlotAwareQueryEvaluationContext(scoped, layoutSnapshot));
+				return filterBoundary
+						? compileConditionValue(compilingStrategy, pinned, new BindingSetQueryEvaluationContext(scoped),
+								ConditionBindingScope.ALL)
+						: compileSemanticValue(compilingStrategy, pinned,
+								new SlotAwareQueryEvaluationContext(scoped, layoutSnapshot));
 			};
-			Supplier<NativeBindingSetValueEvaluator> sharedFallback = () -> descriptor.prepare(
-					() -> compileSemanticValue(compilingStrategy,
-							pinned, new SlotAwareQueryEvaluationContext(compileContext, layoutSnapshot)));
+			Supplier<NativeBindingSetValueEvaluator> sharedFallback = () -> descriptor.prepare(() -> filterBoundary
+					? compileConditionValue(compilingStrategy, pinned,
+							new BindingSetQueryEvaluationContext(compileContext),
+							ConditionBindingScope.ALL)
+					: compileSemanticValue(compilingStrategy, pinned,
+							new SlotAwareQueryEvaluationContext(compileContext, layoutSnapshot)));
 			return new NativeValueOutcomeBooleanFilter(descriptor, perEvaluation, sharedFallback, readMask);
 		}
 		// Preserve both the slot-aware reads and the evaluation source when semantic expressions re-enter native
 		// EXISTS.
-		return new NativeValueOutcomeBooleanFilter(compileSemanticValue(strategy, expr, slotAwareContext()),
-				genericReadMask(expr));
+		return new NativeValueOutcomeBooleanFilter(filterBoundary
+				? compileConditionValue(strategy, expr, new BindingSetQueryEvaluationContext(context),
+						ConditionBindingScope.ALL)
+				: compileSemanticValue(strategy, expr, slotAwareContext()),
+				genericReadMask(expr), semanticFilterWorkerFactory(descriptor, descriptor.scopedContext(context),
+						filterBoundary ? ConditionBindingScope.ALL : null));
 	}
 
 	/** A pinned condition projection cannot be represented by raw slot reads or fragment-local correlation. */
@@ -678,19 +809,44 @@ abstract class LmdbNativeAggregateFilterCompiler extends LmdbNativeAggregateValu
 		}
 		GenericSubplanDescriptor descriptor = GenericSubplanDescriptor.create(filter.getCondition(), strategy);
 		LmdbNativeEvaluationStrategy compilingStrategy = strategy;
-		QueryEvaluationContext compileContext = context;
+		QueryEvaluationContext compileContext = descriptor.scopedContext(context);
 		ValueExpr pinned = descriptor.pinnedExpr();
 		if (!descriptor.shareableAcrossEvaluations()) {
 			requiresExecutionContext = true;
-			Function<NativeExecutionContext, NativeBindingSetValueEvaluator> perEvaluation = executionContext -> compileProjectedValue(
+			Function<NativeExecutionContext, NativeBindingSetValueEvaluator> perEvaluation = executionContext -> compileConditionValue(
 					compilingStrategy, pinned,
 					executionContext.genericContext(compileContext, compilingStrategy), bindingScope);
 			Supplier<NativeBindingSetValueEvaluator> fallback = () -> descriptor
-					.prepare(() -> compileProjectedValue(compilingStrategy, pinned, compileContext, bindingScope));
+					.prepare(() -> compileConditionValue(compilingStrategy, pinned, compileContext, bindingScope));
 			return new NativeValueOutcomeBooleanFilter(descriptor, perEvaluation, fallback, -1L);
 		}
 		return new NativeValueOutcomeBooleanFilter(
-				compileProjectedValue(compilingStrategy, pinned, compileContext, bindingScope), -1L);
+				compileConditionValue(compilingStrategy, pinned, compileContext, bindingScope), -1L,
+				semanticFilterWorkerFactory(descriptor, compileContext, bindingScope));
+	}
+
+	private NativeValueOutcomeBooleanFilter.WorkerFactory semanticFilterWorkerFactory(
+			GenericSubplanDescriptor descriptor, QueryEvaluationContext compileContext, ConditionBindingScope scope) {
+		ValueExpr pinned = descriptor.pinnedExpr();
+		if (!descriptor.shareableAcrossEvaluations() || !QueryEvaluationUtility.canDiscardWithoutEvaluation(pinned)
+				|| !StatementPatternExistsFilter.SemanticRecipe.workerForkable(pinned, strategy)) {
+			return null;
+		}
+		LmdbNativeEvaluationStrategy preparingStrategy = strategy;
+		NativeSlotLayout workerLayout = layout;
+		return worker -> {
+			LmdbNativeEvaluationStrategy workerStrategy = preparingStrategy.forSemanticWorker(worker.source());
+			GenericSubplanDescriptor workerDescriptor = descriptor.forWorker(workerStrategy);
+			QueryEvaluationContext workerContext = worker.source() instanceof SyntheticValueSource synthetic
+					? synthetic.executionContext().genericContext(compileContext, workerStrategy)
+					: compileContext;
+			ValueExpr workerCondition = workerDescriptor.pinnedExpr();
+			return workerDescriptor.prepare(() -> scope == null
+					? compileSemanticValue(workerStrategy, workerCondition,
+							new SlotAwareQueryEvaluationContext(workerContext, workerLayout))
+					: compileConditionValue(workerStrategy, workerCondition,
+							new BindingSetQueryEvaluationContext(workerContext), scope));
+		};
 	}
 
 	/**
@@ -720,20 +876,33 @@ abstract class LmdbNativeAggregateFilterCompiler extends LmdbNativeAggregateValu
 
 	private NativeBooleanFilter compileProjectedBoolean(ValueExpr expression, ConditionBindingScope bindingScope) {
 		if (expression instanceof Exists exists) {
-			NativeBooleanFilter direct = compileDirectExists(exists, bindingScope);
+			NativeBooleanFilter direct = compileDirectExists(exists, bindingScope, true);
 			if (direct != null) {
 				return direct;
 			}
+			var requirements = QueryEvaluationUtility.existsSubstitutionInputs(exists.getSubQuery());
+			if (requirements.unknown() || needsLateralOptionalDomain(exists.getSubQuery())
+					|| (bindingScope.retainsAllBindings()
+							? !requirements.bindingNames().isEmpty()
+							: !Collections.disjoint(requirements.bindingNames(), bindingScope.bindingNames()))) {
+				return null;
+			}
 			boolean previousValueGuardsSupported = valueGuardsSupported;
+			boolean previousFilterCondition = compilingFilterCondition;
 			valueGuardsSupported = false;
+			compilingFilterCondition = false;
 			try {
-				SlotPlan subPlan = compileTuple(exists.getSubQuery(), false);
+				SlotPlan subPlan = compileTupleWithoutElisions(exists.getSubQuery(), false);
 				return subPlan != null && projectedNativeFrameSupported(subPlan)
 						? new ExistsFilter(subPlan,
-								bindingScope.retainsAllBindings() ? null : bindingScope.bindingNames())
+								bindingScope.retainsAllBindings() ? null : bindingScope.bindingNames(),
+								new StatementPatternExistsFilter.SemanticRecipe(exists.clone(), bindingScope,
+										bindingScope.retainsAllBindings() ? null : bindingScope.bindingNames(),
+										strategy, context, true))
 						: null;
 			} finally {
 				valueGuardsSupported = previousValueGuardsSupported;
+				compilingFilterCondition = previousFilterCondition;
 			}
 		}
 		if (expression instanceof Not not && cannotProduceError(not.getArg())) {
@@ -748,6 +917,65 @@ abstract class LmdbNativeAggregateFilterCompiler extends LmdbNativeAggregateValu
 					: new BooleanCombinationFilter(left, right, expression instanceof And);
 		}
 		return null;
+	}
+
+	/** A nested LATERAL can introduce a new OPTIONAL input even when the enclosing FILTER excludes that name. */
+	static boolean needsLateralOptionalDomain(TupleExpr body) {
+		var safety = QueryEvaluationUtility.querySafetySnapshot(body);
+		Map<String, Integer> lateralInputs = new HashMap<>();
+		boolean[] needed = { false };
+		body.visit(new AbstractQueryModelVisitor<RuntimeException>() {
+			@Override
+			public void meet(Lateral lateral) {
+				lateral.getLeftArg().visit(this);
+				for (String name : lateral.getRightInputBindingNames()) {
+					lateralInputs.merge(name, 1, Integer::sum);
+				}
+				try {
+					if (!needed[0]) {
+						lateral.getRightArg().visit(this);
+					}
+				} finally {
+					for (String name : lateral.getRightInputBindingNames()) {
+						lateralInputs.compute(name, (ignored, count) -> count == 1 ? null : count - 1);
+					}
+				}
+			}
+
+			@Override
+			public void meet(Exists nested) {
+				// The nested witness owns a new entry; do not transfer an enclosing LATERAL's domain into its proof.
+				Map<String, Integer> previous = new HashMap<>(lateralInputs);
+				lateralInputs.clear();
+				try {
+					if (!needed[0]) {
+						nested.getSubQuery().visit(this);
+					}
+				} finally {
+					lateralInputs.putAll(previous);
+				}
+			}
+
+			@Override
+			public void meet(LeftJoin optional) {
+				needed[0] |= !Collections.disjoint(lateralInputs.keySet(),
+						BindingScopePolicy.optionalInputNames(optional));
+				if (!needed[0]) {
+					super.meet(optional);
+				}
+			}
+
+			@Override
+			protected void meetNode(QueryModelNode node) {
+				if (!lateralInputs.isEmpty() && node instanceof TupleExpr tuple
+						&& safety.isUnknownTupleOperator(tuple)) {
+					needed[0] = true;
+				} else if (!needed[0]) {
+					super.meetNode(node);
+				}
+			}
+		});
+		return needed[0];
 	}
 
 	/**
@@ -780,12 +1008,56 @@ abstract class LmdbNativeAggregateFilterCompiler extends LmdbNativeAggregateValu
 
 	static NativeBindingSetValueEvaluator compileProjectedValue(LmdbNativeEvaluationStrategy strategy,
 			ValueExpr condition, QueryEvaluationContext context, ConditionBindingScope bindingScope) {
+		return compileProjectedValue(strategy, condition, context, bindingScope, false);
+	}
+
+	static NativeBindingSetValueEvaluator compileConditionValue(LmdbNativeEvaluationStrategy strategy,
+			ValueExpr condition, QueryEvaluationContext context, ConditionBindingScope bindingScope) {
+		return compileProjectedValue(strategy, condition, context, bindingScope, true);
+	}
+
+	/** Immutable FILTER permissions captured while the source's real owner edges still exist. */
+	record FilterConditionInputs(BindingFrameBindings.ConditionInputs owners, ConditionBindingScope scope) {
+	}
+
+	static FilterConditionInputs captureFilterConditionInputs(Filter filter) {
+		return new FilterConditionInputs(BindingFrameBindings.conditionInputs(filter),
+				FilterBindingScope.resolve(filter));
+	}
+
+	/** A FILTER admits only its declared owners before the condition's logical input is projected. */
+	static NativeBindingSetValueEvaluator compileFilterCondition(LmdbNativeEvaluationStrategy strategy,
+			FilterConditionInputs inputs, ValueExpr condition, QueryEvaluationContext context) {
+		BindingFrameBindings.ConditionInputs owners = inputs.owners();
+		NativeBindingSetValueEvaluator projected = compileConditionValue(strategy, condition,
+				new BindingSetQueryEvaluationContext(context), inputs.scope());
+		if (owners.isEmpty()) {
+			return projected;
+		}
+		return new NativeBindingSetValueEvaluator() {
+			@Override
+			public NativeValueOutcome evaluate(BindingSet bindings) {
+				return projected.evaluate(owners.materialize(bindings));
+			}
+
+			@Override
+			public NativeValueOutcome evaluate(BindingSet bindings, NativeExecutionContext executionContext) {
+				return projected.evaluate(owners.materialize(bindings), executionContext);
+			}
+		};
+	}
+
+	private static NativeBindingSetValueEvaluator compileProjectedValue(LmdbNativeEvaluationStrategy strategy,
+			ValueExpr condition, QueryEvaluationContext context, ConditionBindingScope bindingScope,
+			boolean conditionBoundary) {
 		// Use the ordinary context: slot-aware getters would bypass the projected mapping.
 		NativeBindingSetValueEvaluator evaluator = compileSemanticValue(strategy, condition, context);
-		if (bindingScope.retainsAllBindings()) {
+		if (bindingScope.retainsAllBindings() && !conditionBoundary) {
 			return evaluator;
 		}
-		Function<BindingSet, BindingSet> retain = FilterIterator.retainBindings(bindingScope.bindingNames(), context);
+		Function<BindingSet, BindingSet> retain = bindingScope.retainsAllBindings()
+				? BindingFrameBindings::isolateCondition
+				: FilterIterator.retainBindings(bindingScope.bindingNames(), context);
 		return new NativeBindingSetValueEvaluator() {
 			@Override
 			public NativeValueOutcome evaluate(BindingSet bindings) {
@@ -795,7 +1067,8 @@ abstract class LmdbNativeAggregateFilterCompiler extends LmdbNativeAggregateValu
 			@Override
 			public NativeValueOutcome evaluate(BindingSet bindings, NativeExecutionContext executionContext) {
 				NativeExecutionContext projectedContext = executionContext == null ? null
-						: executionContext.forConditionBindings(bindingScope);
+						: conditionBoundary ? executionContext.forConditionBoundary(bindingScope)
+								: executionContext.forConditionBindings(bindingScope);
 				return evaluator.evaluate(retain.apply(bindings), projectedContext);
 			}
 		};
@@ -1011,6 +1284,8 @@ abstract class LmdbNativeAggregateFilterCompiler extends LmdbNativeAggregateValu
 				value = ((ValueConstant) candidate).getValue();
 			} else if (candidate instanceof Var && ((Var) candidate).hasValue()) {
 				value = ((Var) candidate).getValue();
+			} else if (candidate instanceof Var) {
+				return compileAssuredListMember(list, assuredMask);
 			} else {
 				return null;
 			}
@@ -1030,6 +1305,31 @@ abstract class LmdbNativeAggregateFilterCompiler extends LmdbNativeAggregateValu
 				acceptedSize == acceptedValues.length ? acceptedValues
 						: Arrays.copyOf(acceptedValues, acceptedSize),
 				(assuredMask & 1L << slot) == 0L);
+	}
+
+	private NativeBooleanFilter compileAssuredListMember(ListMemberOperator list, long assuredMask) {
+		if (list.getClass() != ListMemberOperator.class) {
+			return null;
+		}
+		for (ValueExpr operand : list.getArguments()) {
+			if (operand.getClass() == ValueConstant.class) {
+				continue;
+			}
+			if (operand.getClass() != Var.class) {
+				return null;
+			}
+			Var var = (Var) operand;
+			if (!var.hasValue()) {
+				int slot = existingSlot(var.getName());
+				if (slot < 0 || (assuredMask & 1L << slot) == 0L) {
+					return null;
+				}
+			}
+		}
+		// Keep IN's strict equality and error handling, including a later match after an earlier type error.
+		NativeScalarPlan plan = NativeScalarPlan.create(list, this::existingSlot,
+				NativeScalarPlan.ResultKind.BOOLEAN, true, assuredMask, false, false);
+		return plan == null ? null : compileSemanticBoolean(list).plannedBy(plan);
 	}
 
 	NativeBooleanFilter compileCompare(Compare compare) {
@@ -1073,6 +1373,10 @@ abstract class LmdbNativeAggregateFilterCompiler extends LmdbNativeAggregateValu
 
 	NativeBooleanFilter cachedCompareIfPossible(Compare.CompareOp op, IdOperand left, IdOperand right,
 			Predicate<BindingSet> fallback) {
+		if ((left.isSlot() && right.isConstant() || left.isConstant() && right.isSlot())
+				&& source.nativeValueCodec() == null) {
+			return null;
+		}
 		boolean strict = strictCompare();
 		if (left.isSlot() && right.isConstant()) {
 			return new CachedCompareFilter(source, left.slot, right.constant, false, op, strict, fallback,

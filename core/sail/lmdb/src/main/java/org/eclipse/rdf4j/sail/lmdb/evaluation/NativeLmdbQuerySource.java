@@ -44,6 +44,17 @@ public interface NativeLmdbQuerySource {
 
 	long UNKNOWN_ID = org.eclipse.rdf4j.sail.lmdb.model.LmdbValue.UNKNOWN_ID;
 
+	/**
+	 * Whether an incomplete native read can be discarded and reopened on this source without changing RDF term
+	 * identity, result occurrences, query-visible effects, or query-fatal outcomes. This proof covers the source's
+	 * statement and dictionary reads for the lifetime of the prepared step; it does not prove the native plan or
+	 * algebra above those reads safe. Failures encountered during a read or close must still propagate. Unknown sources
+	 * decline, and decorators must opt in only when they preserve the proof of every source they use.
+	 */
+	default boolean readsAreRestartSafe() {
+		return false;
+	}
+
 	/** Poll the current native evaluation and speculative probe from an LMDB source operation. */
 	static void checkpointCancellation() {
 		NativeCancellationToken.checkCurrent();

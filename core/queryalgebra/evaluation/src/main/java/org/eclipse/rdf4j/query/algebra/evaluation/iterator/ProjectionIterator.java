@@ -28,6 +28,7 @@ import org.eclipse.rdf4j.query.algebra.ProjectionElem;
 import org.eclipse.rdf4j.query.algebra.ProjectionElemList;
 import org.eclipse.rdf4j.query.algebra.QueryModelNode;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryBindingSet;
+import org.eclipse.rdf4j.query.algebra.evaluation.impl.BindingFrameBindings;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.QueryEvaluationContext;
 
 public class ProjectionIterator extends ConvertingIteration<BindingSet, BindingSet> {
@@ -39,6 +40,7 @@ public class ProjectionIterator extends ConvertingIteration<BindingSet, BindingS
 	private final BiConsumer<MutableBindingSet, BindingSet> projector;
 
 	private final Supplier<MutableBindingSet> maker;
+	private final BindingSet parentBindings;
 
 	/*--------------*
 	 * Constructors *
@@ -66,6 +68,7 @@ public class ProjectionIterator extends ConvertingIteration<BindingSet, BindingS
 	public ProjectionIterator(Projection projection, CloseableIteration<BindingSet> iter,
 			BindingSet parentBindings, QueryEvaluationContext context) throws QueryEvaluationException {
 		super(iter);
+		this.parentBindings = parentBindings;
 		ProjectionElemList projectionElemList = projection.getProjectionElemList();
 		boolean isOuterProjection = !hasEnclosingProjection(projection, context);
 		boolean includeAllParentBindings = !isOuterProjection;
@@ -142,7 +145,7 @@ public class ProjectionIterator extends ConvertingIteration<BindingSet, BindingS
 	protected BindingSet convert(BindingSet sourceBindings) throws QueryEvaluationException {
 		MutableBindingSet qbs = maker.get();
 		projector.accept(qbs, sourceBindings);
-		return qbs;
+		return BindingFrameBindings.preserve(parentBindings, qbs);
 	}
 
 	public static BindingSet project(ProjectionElemList projElemList, BindingSet sourceBindings,
@@ -164,7 +167,7 @@ public class ProjectionIterator extends ConvertingIteration<BindingSet, BindingS
 			}
 		}
 
-		return resultBindings;
+		return BindingFrameBindings.preserve(parentBindings, resultBindings);
 	}
 
 	private static QueryBindingSet makeNewQueryBindings(BindingSet parentBindings, boolean includeAllParentBindings) {

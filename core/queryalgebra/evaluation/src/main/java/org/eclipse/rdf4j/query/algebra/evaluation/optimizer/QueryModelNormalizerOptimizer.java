@@ -12,11 +12,16 @@
 
 package org.eclipse.rdf4j.query.algebra.evaluation.optimizer;
 
+import java.util.ArrayDeque;
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.HashSet;
+import java.util.IdentityHashMap;
 import java.util.List;
 import java.util.Set;
 
+import org.eclipse.rdf4j.model.TripleTerm;
+import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.Dataset;
 import org.eclipse.rdf4j.query.algebra.And;
@@ -27,6 +32,7 @@ import org.eclipse.rdf4j.query.algebra.Filter;
 import org.eclipse.rdf4j.query.algebra.Group;
 import org.eclipse.rdf4j.query.algebra.Intersection;
 import org.eclipse.rdf4j.query.algebra.Join;
+import org.eclipse.rdf4j.query.algebra.Lateral;
 import org.eclipse.rdf4j.query.algebra.LeftJoin;
 import org.eclipse.rdf4j.query.algebra.Not;
 import org.eclipse.rdf4j.query.algebra.Or;
@@ -43,8 +49,8 @@ import org.eclipse.rdf4j.query.algebra.evaluation.QueryOptimizer;
 import org.eclipse.rdf4j.query.algebra.evaluation.util.QueryEvaluationUtility;
 import org.eclipse.rdf4j.query.algebra.helpers.AbstractQueryModelVisitor;
 import org.eclipse.rdf4j.query.algebra.helpers.AbstractSimpleQueryModelVisitor;
+import org.eclipse.rdf4j.query.algebra.helpers.BindingScopePolicy;
 import org.eclipse.rdf4j.query.algebra.helpers.QueryAlgebraBindingAnalysis;
-import org.eclipse.rdf4j.query.algebra.helpers.collectors.VarNameCollector;
 
 /**
  * A query optimizer that (partially) normalizes query models to a canonical form. Note: this implementation does not
@@ -290,8 +296,8 @@ public class QueryModelNormalizerOptimizer extends AbstractSimpleQueryModelVisit
 		QueryAlgebraBindingAnalysis.OutputFacts leftFacts = analysis.outputFacts(union.getLeftArg(), leftContext);
 		QueryAlgebraBindingAnalysis.OutputFacts rightFacts = analysis.outputFacts(union.getRightArg(), rightContext);
 		QueryAlgebraBindingAnalysis.OutputFacts repeatedFacts = analysis.outputFacts(repeatedArgument, repeatedContext);
-		return leftContext.scopeIdentity() == rightContext.scopeIdentity()
-				&& leftContext.scopeIdentity() == repeatedContext.scopeIdentity()
+		return leftContext.sameScopeAs(rightContext)
+				&& leftContext.sameScopeAs(repeatedContext)
 				&& leftFacts.possibleOutputsKnown() && leftFacts.guaranteedOutputsKnown()
 				&& rightFacts.possibleOutputsKnown() && rightFacts.guaranteedOutputsKnown()
 				&& repeatedFacts.possibleOutputsKnown() && repeatedFacts.guaranteedOutputsKnown();
@@ -316,7 +322,7 @@ public class QueryModelNormalizerOptimizer extends AbstractSimpleQueryModelVisit
 		QueryAlgebraBindingAnalysis.OutputFacts leftFacts = analysis.outputFacts(leftJoin.getLeftArg(), leftContext);
 		QueryAlgebraBindingAnalysis.OutputFacts rightFacts = analysis.outputFacts(leftJoin.getRightArg(), rightContext);
 		QueryAlgebraBindingAnalysis.OutputFacts inputFacts = analysis.outputFacts(newlyJoinedInput, inputContext);
-		if (leftContext.scopeIdentity() != inputContext.scopeIdentity()
+		if (!leftContext.sameScopeAs(inputContext)
 				|| !leftFacts.possibleOutputsKnown() || !leftFacts.guaranteedOutputsKnown()
 				|| !rightFacts.possibleOutputsKnown()
 				|| !inputFacts.possibleOutputsKnown()) {
@@ -334,6 +340,8 @@ public class QueryModelNormalizerOptimizer extends AbstractSimpleQueryModelVisit
 		inheritedAndRetained.retainAll(leftFacts.retainedInputNames());
 		inheritedAndRetained.removeAll(leftFacts.overwrittenInputNames());
 		guaranteedByLeft.addAll(inheritedAndRetained);
+		guaranteedByLeft.addAll(fixedCompatibleOptionalOutputs(leftJoin, newlyJoinedInput, overlappingNames,
+				analysis.contextAt(leftJoin), rightFacts, inputFacts));
 		Set<String> overwrittenOverlaps = new HashSet<>(rightFacts.overwrittenInputNames());
 		overwrittenOverlaps.retainAll(overlappingNames);
 		return guaranteedByLeft.containsAll(overlappingNames) && overwrittenOverlaps.isEmpty()
@@ -363,7 +371,7 @@ public class QueryModelNormalizerOptimizer extends AbstractSimpleQueryModelVisit
 
 		QueryAlgebraBindingAnalysis.ReadOnlyContext parentInput = analysis.contextAt(parentJoin);
 		QueryAlgebraBindingAnalysis.ReadOnlyContext sourceLeftJoinInput = analysis.contextAt(leftJoin);
-		if (sourceLeftJoinInput.scopeIdentity() != parentInput.scopeIdentity()) {
+		if (!sourceLeftJoinInput.sameScopeAs(parentInput)) {
 			return false;
 		}
 
@@ -406,8 +414,12 @@ public class QueryModelNormalizerOptimizer extends AbstractSimpleQueryModelVisit
 
 		if (!overlappingNames.isEmpty()) {
 			QueryAlgebraBindingAnalysis.ReadOnlyContext sourceRightInput = analysis.contextAt(leftJoin.getRightArg());
-			if (!bindingFactsStableAt(analysis, overlappingNames, sourceRightInput, movedRightInput[0],
-					analysis.outputFacts(new SingletonSet(), movedRightInput[0]), siblingFacts[0])) {
+			Set<String> unstableNames = new HashSet<>(overlappingNames);
+			unstableNames.removeAll(fixedCompatibleOptionalOutputs(leftJoin, newlyJoinedInput, overlappingNames,
+					parentInput, analysis.outputFacts(leftJoin.getRightArg(), sourceRightInput), siblingFacts[0]));
+			if (!unstableNames.isEmpty() && !bindingFactsStableAt(analysis, unstableNames, sourceRightInput,
+					movedRightInput[0], analysis.outputFacts(new SingletonSet(), movedRightInput[0]),
+					siblingFacts[0])) {
 				return false;
 			}
 		}
@@ -428,6 +440,59 @@ public class QueryModelNormalizerOptimizer extends AbstractSimpleQueryModelVisit
 			}
 		}
 		return true;
+	}
+
+	/**
+	 * A pure relation whose every row has the invocation's fixed value remains unchanged when that value is supplied
+	 * earlier. The crossed relation must also retain or produce that same value; otherwise moving it can change the
+	 * OPTIONAL's compatibility or introduce a fallback row. Equal blank nodes may carry different transport authority,
+	 * so fixed-value equality alone does not prove this for blank nodes or terms containing them.
+	 */
+	private Set<String> fixedCompatibleOptionalOutputs(LeftJoin leftJoin, TupleExpr sibling, Set<String> names,
+			QueryAlgebraBindingAnalysis.ReadOnlyContext entry, QueryAlgebraBindingAnalysis.OutputFacts right,
+			QueryAlgebraBindingAnalysis.OutputFacts crossed) {
+		if (!AlgebraEvaluationSafety.isPureRelational(leftJoin.getRightArg())
+				|| !AlgebraEvaluationSafety.isPureRelational(sibling)
+				|| !right.guaranteedOutputsKnown() || !crossed.guaranteedOutputsKnown()) {
+			return Set.of();
+		}
+		Set<String> safe = new HashSet<>();
+		for (String name : names) {
+			Value value = entry.fixedValues().get(name);
+			Value rightValue = right.fixedValues().get(name);
+			if (value == null || !right.guaranteedOutputs().contains(name)
+					|| !value.equals(rightValue) || containsBlankNode(value) || containsBlankNode(rightValue)
+					|| crossed.overwrittenInputNames().contains(name)) {
+				continue;
+			}
+			Value crossedValue = crossed.fixedValues().get(name);
+			if (crossed.retainedInputNames().contains(name) || crossed.guaranteedOutputs().contains(name)
+					&& value.equals(crossedValue) && !containsBlankNode(crossedValue)) {
+				safe.add(name);
+			}
+		}
+		return safe;
+	}
+
+	/** Inspects nested triple terms without recursion or collapsing equal nodes with different authority. */
+	private static boolean containsBlankNode(Value value) {
+		if (value == null || !value.isTripleTerm()) {
+			return value != null && value.isBNode();
+		}
+		ArrayDeque<Value> pending = new ArrayDeque<>();
+		Set<Value> seen = Collections.newSetFromMap(new IdentityHashMap<>());
+		pending.add(value);
+		while (!pending.isEmpty()) {
+			Value next = pending.removeLast();
+			if (next.isBNode()) {
+				return true;
+			}
+			if (next instanceof TripleTerm triple && seen.add(next)) {
+				pending.add(triple.getSubject());
+				pending.add(triple.getObject());
+			}
+		}
+		return false;
 	}
 
 	private List<ExpressionFrame> expressionFrames(QueryAlgebraBindingAnalysis analysis, TupleExpr rightArg,
@@ -452,7 +517,7 @@ public class QueryModelNormalizerOptimizer extends AbstractSimpleQueryModelVisit
 		}
 		// The prospective subtree is a structural clone. Scope ids assigned to its cloned scope owners differ, so
 		// compare binding facts without ids only when the source and destination are inside those cloned boundaries.
-		if (source.scopeIdentity() == destinationInput.scopeIdentity()) {
+		if (source.sameScopeAs(destinationInput)) {
 			return false;
 		}
 		return analysis.bindingFactsStableAt(names, source, destinationInput, destinationFacts, crossedSiblingFacts);
@@ -484,14 +549,7 @@ public class QueryModelNormalizerOptimizer extends AbstractSimpleQueryModelVisit
 	 * Preserves the legacy visitor behavior for callers that use this public optimizer as a query-model visitor.
 	 */
 	private boolean isWellDesignedWithoutBindingAnalysis(LeftJoin leftJoin) {
-		VarNameCollector optionalVarCollector = new VarNameCollector();
-		leftJoin.getRightArg().visit(optionalVarCollector);
-		if (leftJoin.hasCondition()) {
-			leftJoin.getCondition().visit(optionalVarCollector);
-		}
-
-		Set<String> leftBindingNames = leftJoin.getLeftArg().getBindingNames();
-		Set<String> problemVars = retainAll(optionalVarCollector.getVarNames(), leftBindingNames);
+		Set<String> problemVars = BindingScopePolicy.optionalInputNames(leftJoin);
 
 		if (problemVars.isEmpty()) {
 			return true;
@@ -511,7 +569,12 @@ public class QueryModelNormalizerOptimizer extends AbstractSimpleQueryModelVisit
 		boolean sourceChangesScope = source instanceof VariableScopeChange scope && scope.isVariableScopeChange();
 		boolean replacementChangesScope = replacement instanceof VariableScopeChange scope
 				&& scope.isVariableScopeChange();
-		if (sourceChangesScope && replacement instanceof VariableScopeChange replacementScope) {
+		if (sourceChangesScope && (replacement instanceof Lateral
+				|| replacement instanceof Extension extension && extension.isGraphScopeBoundary())) {
+			Extension boundary = new Extension((TupleExpr) replacement);
+			boundary.setVariableScopeChange(true);
+			replacement = boundary;
+		} else if (sourceChangesScope && replacement instanceof VariableScopeChange replacementScope) {
 			replacementScope.setVariableScopeChange(true);
 		} else if (sourceChangesScope != replacementChangesScope
 				&& replacement instanceof TupleExpr tupleExpr && !(tupleExpr instanceof EmptySet)) {
@@ -524,29 +587,6 @@ public class QueryModelNormalizerOptimizer extends AbstractSimpleQueryModelVisit
 		}
 		source.replaceWith(replacement);
 		invalidateAnalysis();
-	}
-
-	private Set<String> retainAll(Set<String> problemVars, Set<String> leftBindingNames) {
-		if (!leftBindingNames.isEmpty() && !problemVars.isEmpty()) {
-			if (leftBindingNames.size() > problemVars.size()) {
-				for (String problemVar : problemVars) {
-					if (leftBindingNames.contains(problemVar)) {
-						HashSet<String> ret = new HashSet<>(problemVars);
-						ret.removeAll(leftBindingNames);
-						return ret;
-					}
-				}
-			} else {
-				for (String leftBindingName : leftBindingNames) {
-					if (problemVars.contains(leftBindingName)) {
-						HashSet<String> ret = new HashSet<>(problemVars);
-						ret.removeAll(leftBindingNames);
-						return ret;
-					}
-				}
-			}
-		}
-		return problemVars;
 	}
 
 	private boolean checkAgainstParent(LeftJoin leftJoin, Set<String> problemVars) {

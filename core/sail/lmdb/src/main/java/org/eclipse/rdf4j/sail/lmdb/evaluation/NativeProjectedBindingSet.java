@@ -28,13 +28,18 @@ import org.eclipse.rdf4j.common.annotation.InternalUseOnly;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.query.AbstractBindingSet;
 import org.eclipse.rdf4j.query.Binding;
+import org.eclipse.rdf4j.query.BindingSet;
+import org.eclipse.rdf4j.query.algebra.evaluation.impl.BindingFrame;
+import org.eclipse.rdf4j.query.algebra.evaluation.impl.BindingFrameBindings;
+import org.eclipse.rdf4j.query.algebra.evaluation.impl.GraphFrameBindings;
 import org.eclipse.rdf4j.query.impl.SimpleBinding;
 import org.eclipse.rdf4j.sail.lmdb.model.LmdbValue;
 
 /** Immutable projected native ids that materialize RDF values only when a caller reads a binding. */
 @Experimental
 @InternalUseOnly
-public final class NativeProjectedBindingSet extends AbstractBindingSet {
+public final class NativeProjectedBindingSet extends AbstractBindingSet
+		implements BindingFrameBindings.Carrier, GraphFrameBindings.Carrier {
 
 	static final String ENABLED_PROPERTY = "rdf4j.lmdb.nativeLazyResults.enabled";
 	static final AtomicLong CREATED = new AtomicLong();
@@ -47,6 +52,24 @@ public final class NativeProjectedBindingSet extends AbstractBindingSet {
 	final int[] positionMasks;
 	final int size;
 	Set<String> bindingNames;
+	private BindingFrame bindingFrame;
+	private GraphFrameBindings graphFrames;
+
+	/** Attach immutable invocation metadata before publishing the projected row, without resolving its values. */
+	void preserveFrames(BindingSet base, GraphFrameBindings graphFrames) {
+		bindingFrame = BindingFrameBindings.from(base);
+		this.graphFrames = graphFrames;
+	}
+
+	@Override
+	public BindingFrame getBindingFrame() {
+		return bindingFrame;
+	}
+
+	@Override
+	public GraphFrameBindings getGraphFrameBindings() {
+		return graphFrames;
+	}
 
 	NativeProjectedBindingSet(NativeLmdbQuerySource source, String[] names, int[] sourceSlots, long[] row) {
 		this(source, ProjectionLayout.create(names, sourceSlots), row);

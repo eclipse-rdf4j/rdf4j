@@ -82,7 +82,7 @@ public class OrderLimitOptimizer implements QueryOptimizer {
 
 		private boolean orderKeysAreProjected(Order order, Projection projection) {
 			QueryAlgebraBindingAnalysis.ReadOnlyContext childContext = analysis.contextAt(projection.getArg());
-			if (analysis.contextAt(order).scopeIdentity() != childContext.scopeIdentity()) {
+			if (!analysis.contextAt(order).sameScopeAs(childContext)) {
 				return false;
 			}
 			QueryAlgebraBindingAnalysis.OutputFacts projectionFacts = analysis.outputFacts(projection,

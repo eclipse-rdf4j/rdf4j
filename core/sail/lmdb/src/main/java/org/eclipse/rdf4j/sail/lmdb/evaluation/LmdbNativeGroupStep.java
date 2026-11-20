@@ -22,9 +22,12 @@ import java.io.IOException;
 import java.math.BigInteger;
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.Collections;
 import java.util.HashMap;
 import java.util.IdentityHashMap;
 import java.util.Iterator;
+import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.NoSuchElementException;
@@ -39,25 +42,39 @@ import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.common.iteration.CooperativeCancellation;
 import org.eclipse.rdf4j.common.order.StatementOrder;
 import org.eclipse.rdf4j.model.Literal;
+import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
+import org.eclipse.rdf4j.model.vocabulary.RDF4J;
+import org.eclipse.rdf4j.model.vocabulary.SESAME;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.QueryEvaluationException;
 import org.eclipse.rdf4j.query.QueryExecutionPolicy;
+import org.eclipse.rdf4j.query.algebra.Group;
 import org.eclipse.rdf4j.query.algebra.MathExpr;
+import org.eclipse.rdf4j.query.algebra.PrivateGraphContextRole;
+import org.eclipse.rdf4j.query.algebra.StatementPattern;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.algebra.ValueExpr;
+import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryBindingSet;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryEvaluationStep;
 import org.eclipse.rdf4j.query.algebra.evaluation.ValueExprEvaluationException;
+import org.eclipse.rdf4j.query.algebra.evaluation.impl.BindingFrameBindings;
+import org.eclipse.rdf4j.query.algebra.evaluation.impl.GraphFrameBindings;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.QueryEvaluationContext;
 import org.eclipse.rdf4j.query.algebra.evaluation.util.MathUtil;
 import org.eclipse.rdf4j.query.algebra.evaluation.util.QueryEvaluationUtility;
+import org.eclipse.rdf4j.query.algebra.helpers.QueryAlgebraBindingAnalysis.OptionalCallerRequirement;
 import org.eclipse.rdf4j.query.explanation.QueryExplanationContext;
 import org.eclipse.rdf4j.query.impl.EmptyBindingSet;
 import org.eclipse.rdf4j.sail.lmdb.LmdbPrefixRunCursor;
 import org.eclipse.rdf4j.sail.lmdb.LmdbPrefixRunPlan;
 import org.eclipse.rdf4j.sail.lmdb.LmdbQueryMemoryManager;
+import org.eclipse.rdf4j.sail.lmdb.ValueIds;
+import org.eclipse.rdf4j.sail.lmdb.ValuePosition;
+import org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbNativeAggregateFilterCompiler.FilterConditionInputs;
+import org.eclipse.rdf4j.sail.lmdb.evaluation.NativeValuesElisions.Requirement;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.codegen.KernelQueryCancelledException;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.codegen.KernelRuntime;
 import org.slf4j.Logger;
@@ -70,12 +87,22 @@ final class NativeGroupStep implements NativeResultStep, LmdbNativePhysicalPlan 
 	final NativeSlotLayout layout;
 	final int[] groupSlots;
 	final AggregateSpec[] aggregates;
+	private final String[] outputNames;
 	final boolean strictCompare;
 	final LmdbNativeEvaluationStrategy strategy;
 	final NativeValuePositionAnalysis valuePositions;
 	final TupleExpr originalExpr;
 	final QueryEvaluationContext context;
 	final String[] optionalOnlyNames;
+	final OptionalCallerRequirement optionalCallerRequirement;
+	final Requirement valuesRequirement;
+	/** Exact-set equivalence for injecting caller names into the prepared Group input. */
+	final Predicate<Set<String>> inputInjectionProof;
+	/** Bound to the winning argument and frozen layout; ordinary copies and physical alternatives do not inherit it. */
+	NativeGroupInvocationWitness invocationWitness;
+	final Set<String> localAssignmentNames;
+	final boolean ambiguousLateralEntry;
+	final List<BindingFrameBindings.ConditionInputs> lateralOwnerInputs;
 	final PatternPlan prefixPattern;
 	final LmdbPrefixRunPlan prefixRunPlan;
 	final boolean prefixCountRunRows;
@@ -92,6 +119,14 @@ final class NativeGroupStep implements NativeResultStep, LmdbNativePhysicalPlan 
 	record Alternative(QueryEvaluationStep step, String tag) {
 	}
 
+	private record SemanticEntryDecision(String reason, NativeGroupInvocationWitness.Admission admission) {
+		private static final SemanticEntryDecision INJECTED = new SemanticEntryDecision(null, null);
+
+		private SemanticEntryDecision(String reason) {
+			this(reason, null);
+		}
+	}
+
 	/** The HAVING condition the caller enforces above this step, offered to the kernel as a sinkable pre-filter. */
 	final ValueExpr havingCondition;
 	final NativeAggregateDistinctPlan distinctPlan;
@@ -100,7 +135,12 @@ final class NativeGroupStep implements NativeResultStep, LmdbNativePhysicalPlan 
 	QueryEvaluationStep genericStep;
 	/** Root-host compiles only: one evaluate() is one query evaluation, so generic fallbacks may prepare per call. */
 	boolean rootEvaluationScoped;
+	/** The attached input certificate cannot establish visibility through an incoming binding frame. */
+	boolean certifiedFilterScope;
+	Set<String> certifiedContextEntryHazards = Set.of();
 	private GenericSubplanDescriptor genericFallbackDescriptor;
+	private GenericSubplanDescriptor graphAssignmentDescriptor;
+	private QueryEvaluationStep graphAssignmentStep;
 	Supplier<NativeGroupStep> fullValueCompiler;
 	private boolean fullValueCompiled;
 	private NativeGroupStep fullValueAlternative;
@@ -108,7 +148,10 @@ final class NativeGroupStep implements NativeResultStep, LmdbNativePhysicalPlan 
 	/** Compiles at most once, under its immutable FULL environment; the resulting plan owns no runtime state. */
 	synchronized NativeGroupStep fullValueAlternative() {
 		if (!fullValueCompiled) {
-			fullValueAlternative = fullValueCompiler == null ? null : fullValueCompiler.get();
+			NativeGroupStep candidate = fullValueCompiler == null ? null : fullValueCompiler.get();
+			fullValueAlternative = candidate != null && valuesRequirement.equals(candidate.valuesRequirement)
+					? candidate
+					: null;
 			fullValueCompiled = true;
 		}
 		return fullValueAlternative;
@@ -132,11 +175,97 @@ final class NativeGroupStep implements NativeResultStep, LmdbNativePhysicalPlan 
 			boolean prefixDistinctRuns, NativeBooleanFilter prefixRunFilter,
 			LmdbNativeTermKindFilter prefixRootKindFilter, long prefixMinRunCount,
 			LmdbNativeExistsIntersection existsIntersection, ValueExpr havingCondition) {
+		this(source, arg, layout, groupSlots, aggregates, strictCompare, strategy, originalExpr, context,
+				optionalOnlyNames, prefixPattern, prefixRunPlan, prefixCountRunRows, prefixDistinctRuns,
+				prefixRunFilter, prefixRootKindFilter, prefixMinRunCount, existsIntersection, havingCondition,
+				NativeEntryBindingVariant.NO_OPTIONAL_CALLER_REQUIREMENT);
+	}
+
+	NativeGroupStep(NativeLmdbQuerySource source, SlotPlan arg, NativeSlotLayout layout, int[] groupSlots,
+			AggregateSpec[] aggregates, boolean strictCompare, LmdbNativeEvaluationStrategy strategy,
+			TupleExpr originalExpr, QueryEvaluationContext context, Set<String> optionalOnlyNames,
+			PatternPlan prefixPattern, LmdbPrefixRunPlan prefixRunPlan, boolean prefixCountRunRows,
+			boolean prefixDistinctRuns, NativeBooleanFilter prefixRunFilter,
+			LmdbNativeTermKindFilter prefixRootKindFilter, long prefixMinRunCount,
+			LmdbNativeExistsIntersection existsIntersection, ValueExpr havingCondition,
+			OptionalCallerRequirement optionalCallerRequirement) {
+		this(source, arg, layout, groupSlots, aggregates, strictCompare, strategy, originalExpr, context,
+				optionalOnlyNames, prefixPattern, prefixRunPlan, prefixCountRunRows, prefixDistinctRuns,
+				prefixRunFilter, prefixRootKindFilter, prefixMinRunCount, existsIntersection, havingCondition,
+				optionalCallerRequirement, Requirement.NONE);
+	}
+
+	NativeGroupStep(NativeLmdbQuerySource source, SlotPlan arg, NativeSlotLayout layout, int[] groupSlots,
+			AggregateSpec[] aggregates, boolean strictCompare, LmdbNativeEvaluationStrategy strategy,
+			TupleExpr originalExpr, QueryEvaluationContext context, Set<String> optionalOnlyNames,
+			PatternPlan prefixPattern, LmdbPrefixRunPlan prefixRunPlan, boolean prefixCountRunRows,
+			boolean prefixDistinctRuns, NativeBooleanFilter prefixRunFilter,
+			LmdbNativeTermKindFilter prefixRootKindFilter, long prefixMinRunCount,
+			LmdbNativeExistsIntersection existsIntersection, ValueExpr havingCondition,
+			OptionalCallerRequirement optionalCallerRequirement, Requirement valuesRequirement) {
+		this(source, arg, layout, groupSlots, aggregates, strictCompare, strategy, originalExpr, context,
+				optionalOnlyNames, prefixPattern, prefixRunPlan, prefixCountRunRows, prefixDistinctRuns,
+				prefixRunFilter, prefixRootKindFilter, prefixMinRunCount, existsIntersection, havingCondition,
+				optionalCallerRequirement, valuesRequirement, null);
+	}
+
+	NativeGroupStep(NativeLmdbQuerySource source, SlotPlan arg, NativeSlotLayout layout, int[] groupSlots,
+			AggregateSpec[] aggregates, boolean strictCompare, LmdbNativeEvaluationStrategy strategy,
+			TupleExpr originalExpr, QueryEvaluationContext context, Set<String> optionalOnlyNames,
+			PatternPlan prefixPattern, LmdbPrefixRunPlan prefixRunPlan, boolean prefixCountRunRows,
+			boolean prefixDistinctRuns, NativeBooleanFilter prefixRunFilter,
+			LmdbNativeTermKindFilter prefixRootKindFilter, long prefixMinRunCount,
+			LmdbNativeExistsIntersection existsIntersection, ValueExpr havingCondition,
+			OptionalCallerRequirement optionalCallerRequirement, Requirement valuesRequirement,
+			Predicate<Set<String>> inputInjectionProof) {
+		this(source, arg, layout, groupSlots, aggregates, strictCompare, strategy, originalExpr, context,
+				optionalOnlyNames, prefixPattern, prefixRunPlan, prefixCountRunRows, prefixDistinctRuns,
+				prefixRunFilter, prefixRootKindFilter, prefixMinRunCount, existsIntersection, havingCondition,
+				optionalCallerRequirement, valuesRequirement, inputInjectionProof,
+				NativeEntryBindingVariant.localAssignmentNames(originalExpr), originalExpr);
+	}
+
+	NativeGroupStep(NativeLmdbQuerySource source, SlotPlan arg, NativeSlotLayout layout, int[] groupSlots,
+			AggregateSpec[] aggregates, boolean strictCompare, LmdbNativeEvaluationStrategy strategy,
+			TupleExpr originalExpr, QueryEvaluationContext context, Set<String> optionalOnlyNames,
+			PatternPlan prefixPattern, LmdbPrefixRunPlan prefixRunPlan, boolean prefixCountRunRows,
+			boolean prefixDistinctRuns, NativeBooleanFilter prefixRunFilter,
+			LmdbNativeTermKindFilter prefixRootKindFilter, long prefixMinRunCount,
+			LmdbNativeExistsIntersection existsIntersection, ValueExpr havingCondition,
+			OptionalCallerRequirement optionalCallerRequirement, Requirement valuesRequirement,
+			Predicate<Set<String>> inputInjectionProof, Set<String> localAssignmentNames,
+			TupleExpr semanticEntryExpr) {
+		this(source, arg, layout, groupSlots, aggregates, strictCompare, strategy, originalExpr, context,
+				optionalOnlyNames, prefixPattern, prefixRunPlan, prefixCountRunRows, prefixDistinctRuns,
+				prefixRunFilter, prefixRootKindFilter, prefixMinRunCount, existsIntersection, havingCondition,
+				optionalCallerRequirement, valuesRequirement, inputInjectionProof, localAssignmentNames,
+				semanticEntryExpr,
+				NativeEntryBindingVariant.lateralOwnerInputs(originalExpr));
+	}
+
+	NativeGroupStep(NativeLmdbQuerySource source, SlotPlan arg, NativeSlotLayout layout, int[] groupSlots,
+			AggregateSpec[] aggregates, boolean strictCompare, LmdbNativeEvaluationStrategy strategy,
+			TupleExpr originalExpr, QueryEvaluationContext context, Set<String> optionalOnlyNames,
+			PatternPlan prefixPattern, LmdbPrefixRunPlan prefixRunPlan, boolean prefixCountRunRows,
+			boolean prefixDistinctRuns, NativeBooleanFilter prefixRunFilter,
+			LmdbNativeTermKindFilter prefixRootKindFilter, long prefixMinRunCount,
+			LmdbNativeExistsIntersection existsIntersection, ValueExpr havingCondition,
+			OptionalCallerRequirement optionalCallerRequirement, Requirement valuesRequirement,
+			Predicate<Set<String>> inputInjectionProof, Set<String> localAssignmentNames,
+			TupleExpr semanticEntryExpr, List<BindingFrameBindings.ConditionInputs> lateralOwnerInputs) {
 		this.source = source;
 		this.arg = arg;
 		this.layout = layout;
 		this.groupSlots = groupSlots;
 		this.aggregates = aggregates;
+		LinkedHashSet<String> outputs = new LinkedHashSet<>();
+		for (int slot : groupSlots) {
+			outputs.add(layout.slotName(slot));
+		}
+		for (AggregateSpec aggregate : aggregates) {
+			outputs.add(aggregate.name);
+		}
+		this.outputNames = outputs.toArray(String[]::new);
 		this.strictCompare = strictCompare;
 		this.strategy = strategy;
 		this.valuePositions = strategy == null ? null : strategy.valuePositionSnapshot();
@@ -144,6 +273,12 @@ final class NativeGroupStep implements NativeResultStep, LmdbNativePhysicalPlan 
 		this.context = context;
 		this.optionalOnlyNames = optionalOnlyNames.isEmpty() ? NO_OPTIONAL_ONLY_NAMES
 				: optionalOnlyNames.toArray(String[]::new);
+		this.optionalCallerRequirement = optionalCallerRequirement;
+		this.valuesRequirement = valuesRequirement;
+		this.inputInjectionProof = inputInjectionProof;
+		this.localAssignmentNames = localAssignmentNames;
+		this.ambiguousLateralEntry = NativeEntryBindingVariant.ambiguousLateralEntry(semanticEntryExpr, arg);
+		this.lateralOwnerInputs = lateralOwnerInputs;
 		this.prefixPattern = prefixPattern;
 		this.prefixRunPlan = prefixRunPlan;
 		this.prefixCountRunRows = prefixCountRunRows;
@@ -168,17 +303,43 @@ final class NativeGroupStep implements NativeResultStep, LmdbNativePhysicalPlan 
 
 	@Override
 	public CloseableIteration<BindingSet> evaluate(BindingSet bindings) {
-		return evaluate(bindings, null);
+		return evaluate(bindings, null, null);
 	}
 
 	@Override
 	public NativeResultCursor evaluateNative(BindingSet bindings) {
-		return evaluateNative(bindings, null);
+		return evaluateNative(bindings, null, null);
 	}
 
-	private NativeResultCursor evaluateNative(BindingSet bindings, NativeGroupResultCursor.GroupingPlan fixedPlan) {
+	private NativeResultCursor evaluateNative(BindingSet bindings, NativeGroupResultCursor.GroupingPlan fixedPlan,
+			NativeEntryBindings.GraphInput graphInput) {
+		BindingSet logicalEntry = bindings;
+		String graphParameter = physicalGraphParameter(bindings, graphInput);
+		SemanticEntryDecision decision = semanticEntryDecision(bindings, graphParameter);
+		String semanticReason = decision.reason();
+		if (decision.admission() != null) {
+			// Decide before snapshotting removes the exact-entry wrapper. This candidate has only an ordinary serial
+			// result contract; a physical recipe or alternative cannot silently acquire its invocation evidence.
+			if (fixedPlan != null) {
+				return NativeResultSteps.open(ignored -> evaluateCaptured(logicalEntry, null, null,
+						"groupInput"), logicalEntry);
+			}
+			return NativeResultSteps.open(ignored -> evaluateCaptured(NativeEntryBindings.snapshot(logicalEntry),
+					null, null, null, decision.admission()), logicalEntry);
+		}
+		if (semanticReason == null && fixedPlan == null && requiresPhysicalResults()
+				&& forcedFullInputUnsafe(bindings)) {
+			semanticReason = "groupInput";
+		}
+		if (semanticReason != null) {
+			BindingSet entry = bindings;
+			String reason = semanticReason;
+			return NativeResultSteps.open(ignored -> evaluateCaptured(entry, null, null, reason), entry);
+		}
+		bindings = NativeEntryBindings.snapshot(bindings);
 		if (fixedPlan == null && !requiresPhysicalResults()) {
-			return NativeResultSteps.open(ignored -> evaluate(bindings), bindings);
+			BindingSet entry = bindings;
+			return NativeResultSteps.open(ignored -> evaluateCaptured(entry, null, null), entry);
 		}
 		if (hasOptionalOnlyBinding(bindings)) {
 			for (AggregateSpec aggregate : aggregates) {
@@ -186,7 +347,7 @@ final class NativeGroupStep implements NativeResultStep, LmdbNativePhysicalPlan 
 					throw new IllegalStateException("A generic aggregate boundary requires full RDF values");
 				}
 			}
-			CloseableIteration<BindingSet> iteration = evaluate(bindings);
+			CloseableIteration<BindingSet> iteration = evaluateCaptured(bindings, null, null);
 			NativeExecutionContext owner = NativeExecutionContextCarrier.contextOf(iteration);
 			NativeCancellationToken token = owner == null ? new NativeCancellationToken()
 					: new NativeCancellationToken(owner.cancellation());
@@ -220,6 +381,10 @@ final class NativeGroupStep implements NativeResultStep, LmdbNativePhysicalPlan 
 			strategy.captureEvaluationValues(evaluation);
 		}
 		initializeQueryBase(evaluation, bindings);
+		if (!NativeRowSeeder.supports(bindings, layout, evaluation)) {
+			return NativeResultSteps.open(ignored -> genericFallback(logicalEntry, evaluation, null, null,
+					"unrepresentableEntry"), logicalEntry);
+		}
 		NativeGroupIteration iteration = new NativeGroupIteration(evaluation, arg, layout, groupSlots, aggregates,
 				strictCompare, bindings, prefixPattern, prefixRunPlan, prefixCountRunRows, prefixDistinctRuns,
 				prefixRunFilter, prefixRootKindFilter, prefixMinRunCount, existsIntersection, adjacencyAggregate,
@@ -231,21 +396,35 @@ final class NativeGroupStep implements NativeResultStep, LmdbNativePhysicalPlan 
 			NativeAggregateExecutionEvent.Descriptor diagnostic = NativeAggregateExecutionEvent.describe(iteration,
 					fixedPlan.tag(), NativeAggregatePhysicalPlan.typed(fixedPlan, iteration));
 			try {
-				return diagnostic == null
+				NativeResultCursor cursor = diagnostic == null
 						? new NativeGroupResultCursor(null, iteration, evaluation.executionContext(), closeContext,
 								fixedPlan, true)
 						: diagnostic.open(() -> new NativeGroupResultCursor(null, iteration,
 								evaluation.executionContext(), closeContext, fixedPlan, true));
+				return restorePhysicalOutput(cursor, bindings);
 			} catch (IOException failure) {
 				throw new QueryEvaluationException(failure);
 			}
 		}
-		return new NativeGroupResultCursor(this, iteration, evaluation.executionContext(), closeContext);
+		return restorePhysicalOutput(new NativeGroupResultCursor(this, iteration, evaluation.executionContext(),
+				closeContext), bindings);
 	}
 
 	@Override
 	public NativePhysicalResultPlan physicalPlan(BindingSet bindings) {
-		if (hasOptionalOnlyBinding(bindings) || !NativeRowSeeder.supports(bindings, layout, source)) {
+		return physicalPlan(bindings, null);
+	}
+
+	NativePhysicalResultPlan physicalPlan(BindingSet bindings, NativeEntryBindings.GraphInput graphInput) {
+		String graphParameter = physicalGraphParameter(bindings, graphInput);
+		if (semanticEntryDecision(bindings, graphParameter).reason() != null || hasOptionalOnlyBinding(bindings)) {
+			return null;
+		}
+		if (!permitsInputInjection(bindings, Set.of(), graphParameter)) {
+			return null;
+		}
+		bindings = NativeEntryBindings.snapshot(bindings);
+		if (!NativeRowSeeder.supports(bindings, layout, source)) {
 			return null;
 		}
 		SyntheticValueSource planningSource = source instanceof SyntheticValueSource synthetic
@@ -317,7 +496,7 @@ final class NativeGroupStep implements NativeResultStep, LmdbNativePhysicalPlan 
 				NativePhysicalOutputEvidence evidence = NativePhysicalOutputEvidence.grouped(output, bound, iteration,
 						chosen.aggregatePhysicalPlan(), chosen.coldAnchor());
 				return physicalResult(bound, output, evidence, quotes.snapshot(iteration.forcedExecutionStrategy),
-						iteration.decisionPoint());
+						iteration.decisionPoint(), graphParameter == null ? null : graphInput);
 			}
 		} catch (IOException problem) {
 			QueryEvaluationException converted = new QueryEvaluationException(problem);
@@ -341,13 +520,40 @@ final class NativeGroupStep implements NativeResultStep, LmdbNativePhysicalPlan 
 		}
 	}
 
+	/** A supplied projection parameter may seed the exact private named-context slot already fixed by its pattern. */
+	private String physicalGraphParameter(BindingSet bindings, NativeEntryBindings.GraphInput graphInput) {
+		if (graphInput == null || !(originalExpr instanceof Group group)
+				|| !(group.getArg() instanceof StatementPattern statement) || !(arg instanceof PatternPlan pattern)
+				|| context == null || context.getActiveGraph() != null
+				|| BindingFrameBindings.hasDynamicSubstitution(context)
+				|| BindingFrameBindings.hasFrame(bindings)) {
+			return null;
+		}
+		String parameter = graphInput.directChildParameter(group);
+		Var occurrence = statement.getContextVar();
+		if (parameter == null || !PrivateGraphContextRole.isPrivateContext(statement, occurrence)
+				|| !parameter.equals(occurrence.getName()) || !occurrence.hasValue()
+				|| !GraphFrameBindings.isSupplied(bindings, parameter) || !pattern.c.bindConstant
+				|| !pattern.namedContextScope || !pattern.c.hasSlot() || !ValueIds.isReference(pattern.c.constant)
+				|| !Objects.equals(layout.slot(parameter), pattern.c.slot)
+				|| pattern.c.slot == pattern.s.slot || pattern.c.slot == pattern.p.slot
+				|| pattern.c.slot == pattern.o.slot) {
+			return null;
+		}
+		Value value = bindings.getValue(parameter);
+		return value instanceof Resource && !RDF4J.NIL.equals(value) && !SESAME.NIL.equals(value)
+				&& !NativeEntryBindings.hasProtectedAuthority(value)
+				&& source.idOf(value, ValuePosition.CONTEXT) == pattern.c.constant ? parameter : null;
+	}
+
 	private NativePhysicalResultPlan physicalResult(NativeGroupResultCursor.GroupingPlan bound,
 			NativeAggregateCostQuotes.Input output, NativePhysicalOutputEvidence evidence,
-			NativeAggregateCostQuotes.Snapshot snapshot, String decisionPoint) {
+			NativeAggregateCostQuotes.Snapshot snapshot, String decisionPoint,
+			NativeEntryBindings.GraphInput graphInput) {
 		NativeResultStep executable = new NativeResultStep() {
 			@Override
 			public NativeResultCursor evaluateNative(BindingSet input) {
-				return NativeGroupStep.this.evaluateNative(input, bound);
+				return NativeGroupStep.this.evaluateNative(input, bound, graphInput);
 			}
 
 			@Override
@@ -363,7 +569,7 @@ final class NativeGroupStep implements NativeResultStep, LmdbNativePhysicalPlan 
 		NativeResultStep selected = new NativeSelectedResultStep(executable, previewIdentity(), bound.input(),
 				originalExpr, snapshot, bound.tag(), decisionPoint);
 		return new NativePhysicalResultPlan(selected, output,
-				evidence == null || !NativeWorkerPlanBinder.canBind(bound.input()) ? null
+				graphInput != null || evidence == null || !NativeWorkerPlanBinder.canBind(bound.input()) ? null
 						: (prepared, worker, bindings) -> {
 							if (!(prepared instanceof NativeGroupStep actual)
 									|| !evidence.sourceFamilyMatches(actual.source)
@@ -372,6 +578,11 @@ final class NativeGroupStep implements NativeResultStep, LmdbNativePhysicalPlan 
 									|| queryExecutionPolicy() != actual.queryExecutionPolicy()
 									|| !Set.copyOf(Arrays.asList(optionalOnlyNames))
 											.equals(Set.copyOf(Arrays.asList(actual.optionalOnlyNames)))
+									|| !optionalCallerRequirement.equals(actual.optionalCallerRequirement)
+									|| !valuesRequirement.equals(actual.valuesRequirement)
+									|| certifiedFilterScope != actual.certifiedFilterScope
+									|| !certifiedContextEntryHazards.equals(actual.certifiedContextEntryHazards)
+									|| !actual.acceptsUnwrappedInput(bindings)
 									|| !evidence.matchesGrouping(actual.arg, actual.groupSlots, actual.aggregates,
 											actual.layout,
 											worker.source(), bindings)) {
@@ -382,7 +593,7 @@ final class NativeGroupStep implements NativeResultStep, LmdbNativePhysicalPlan 
 									: actual.physicalResult(new NativeGroupResultCursor.GroupingPlan(input,
 											bound.channels(), bound.streaming(), bound.tag()), output, evidence,
 											snapshot,
-											decisionPoint);
+											decisionPoint, null);
 						},
 				NativeAggregatePhysicalPlan.groupProperties(bound, groupSlots, aggregates), evidence);
 	}
@@ -406,18 +617,198 @@ final class NativeGroupStep implements NativeResultStep, LmdbNativePhysicalPlan 
 		return SlotPlan.requiresPhysicalCells(arg);
 	}
 
+	private static boolean needsOutputRestoration(BindingSet entry) {
+		return !entry.isEmpty() || BindingFrameBindings.hasFrame(entry)
+				|| GraphFrameBindings.from(entry) != GraphFrameBindings.EMPTY;
+	}
+
+	private CloseableIteration<BindingSet> restoreOutput(CloseableIteration<BindingSet> rows, BindingSet entry) {
+		if (!needsOutputRestoration(entry)) {
+			return rows;
+		}
+		try {
+			return new GroupOutputIteration(rows, entry, outputNames);
+		} catch (RuntimeException | Error failure) {
+			NativeContextClosingIteration.throwFailure(KernelRuntime.closeResource(rows, failure));
+			throw new AssertionError("unreachable");
+		}
+	}
+
+	private NativeResultCursor restorePhysicalOutput(NativeResultCursor rows, BindingSet entry) {
+		if (!needsOutputRestoration(entry)) {
+			return rows;
+		}
+		try {
+			PhysicalGroupOutput output = new PhysicalGroupOutput(entry, outputNames);
+			return NativeResultSteps.map(rows, output::restore);
+		} catch (RuntimeException | Error failure) {
+			NativeContextClosingIteration.throwFailure(KernelRuntime.closeResource(rows, failure));
+			throw new AssertionError("unreachable");
+		}
+	}
+
+	/** Group writes only bound keys and aggregate results over the captured invocation mapping. */
+	private static final class GroupOutputIteration
+			implements CloseableIteration<BindingSet>, CooperativeCancellation, NativeExecutionContextCarrier {
+		private final CloseableIteration<BindingSet> delegate;
+		private final BindingSet entry;
+		private final String[] outputs;
+		private final NativeExecutionContext executionContext;
+		private final NativeExecutionContext.Lease lease;
+		private volatile boolean closed;
+
+		private GroupOutputIteration(CloseableIteration<BindingSet> delegate, BindingSet entry, String[] outputs) {
+			this.delegate = delegate;
+			this.entry = entry;
+			this.outputs = outputs;
+			this.executionContext = NativeExecutionContextCarrier.contextOf(delegate);
+			this.lease = NativeExecutionContextCarrier.retain(delegate);
+		}
+
+		@Override
+		public boolean hasNext() {
+			if (closed) {
+				return false;
+			}
+			try {
+				boolean result = delegate.hasNext();
+				if (!result) {
+					close();
+				}
+				return result;
+			} catch (RuntimeException | Error failure) {
+				NativeContextClosingIteration.throwFailure(KernelRuntime.closeResource(this, failure));
+				throw new AssertionError("unreachable");
+			}
+		}
+
+		@Override
+		public BindingSet next() {
+			if (closed) {
+				throw new NoSuchElementException();
+			}
+			try {
+				BindingSet row = delegate.next();
+				QueryBindingSet result = new QueryBindingSet(entry);
+				for (String name : outputs) {
+					Value value = row.getValue(name);
+					if (value != null) {
+						result.setBinding(name, value);
+					}
+				}
+				result.setBindingFrame(BindingFrameBindings.restoreFrame(BindingFrameBindings.from(row),
+						BindingFrameBindings.from(entry)));
+				return result;
+			} catch (RuntimeException | Error failure) {
+				NativeContextClosingIteration.throwFailure(KernelRuntime.closeResource(this, failure));
+				throw new AssertionError("unreachable");
+			}
+		}
+
+		@Override
+		public boolean requestCancellation() {
+			return !closed && delegate instanceof CooperativeCancellation cancellation
+					&& cancellation.requestCancellation();
+		}
+
+		@Override
+		public NativeExecutionContext executionContext() {
+			return executionContext;
+		}
+
+		@Override
+		public synchronized void close() {
+			if (!closed) {
+				closed = true;
+				NativeExecutionContextCarrier.closeWithLease(delegate, lease);
+			}
+		}
+	}
+
+	/** Keeps physical aggregate cells intact while adding only the logical invocation mapping. */
+	private static final class PhysicalGroupOutput {
+		private final BindingSet entry;
+		private final String[] outputs;
+		private final int[] outputIndices;
+		private final NativeResultRow.Schema schema;
+		private final NativeResultCell[] baseCells;
+
+		private PhysicalGroupOutput(BindingSet entry, String[] outputs) {
+			this.entry = entry;
+			this.outputs = outputs;
+			Map<String, Integer> indices = new LinkedHashMap<>();
+			for (String name : entry.getBindingNames()) {
+				if (entry.getValue(name) != null) {
+					indices.put(name, indices.size());
+				}
+			}
+			outputIndices = new int[outputs.length];
+			for (int index = 0; index < outputs.length; index++) {
+				outputIndices[index] = indices.computeIfAbsent(outputs[index], ignored -> indices.size());
+			}
+			schema = new NativeResultRow.Schema(indices.keySet().toArray(String[]::new));
+			baseCells = new NativeResultCell[schema.size()];
+			Arrays.fill(baseCells, NativeResultCell.unbound());
+			for (int index = 0; index < baseCells.length; index++) {
+				Value value = entry.getValue(schema.name(index));
+				if (value != null) {
+					baseCells[index] = NativeResultCell.term(value);
+				}
+			}
+		}
+
+		private NativeResultRow restore(NativeResultRow row) {
+			NativeResultCell[] cells = baseCells.clone();
+			GraphFrameBindings graphs = GraphFrameBindings.from(entry);
+			for (int index = 0; index < outputs.length; index++) {
+				NativeResultCell value = row.cell(outputs[index]);
+				int target = outputIndices[index];
+				if (value.state() == NativeResultCell.State.BOUND) {
+					cells[target] = value;
+					graphs = graphs.without(outputs[index]);
+				} else if (cells[target].state() != NativeResultCell.State.BOUND) {
+					cells[target] = value;
+				}
+			}
+			return new NativeResultRow(schema, cells,
+					BindingFrameBindings.restoreFrame(row.bindingFrame(), BindingFrameBindings.from(entry)), graphs);
+		}
+	}
+
 	/**
 	 * Evaluates the group and applies a query-scope-sensitive HAVING predicate against the same per-evaluation context
 	 * used by generic bridges inside the group. The aggregate kernel may still apply a proven equivalent count guard as
 	 * an early-pruning optimization; this predicate remains the authoritative HAVING evaluation.
 	 */
 	CloseableIteration<BindingSet> evaluateWithScopedHaving(BindingSet bindings,
-			GenericSubplanDescriptor havingDescriptor) {
-		return evaluate(bindings, havingDescriptor);
+			GenericSubplanDescriptor havingDescriptor, FilterConditionInputs conditionInputs) {
+		return evaluate(bindings, havingDescriptor, conditionInputs);
 	}
 
 	private CloseableIteration<BindingSet> evaluate(BindingSet bindings,
-			GenericSubplanDescriptor havingDescriptor) {
+			GenericSubplanDescriptor havingDescriptor, FilterConditionInputs conditionInputs) {
+		SemanticEntryDecision decision = semanticEntryDecision(bindings);
+		String semanticReason = decision.reason();
+		BindingSet entry = "valuesEntry".equals(semanticReason) || "groupInput".equals(semanticReason)
+				|| "certifiedFilterFrame".equals(semanticReason) || "lateralOwnerInput".equals(semanticReason)
+						? bindings
+						: NativeEntryBindings.snapshot(bindings);
+		return evaluateCaptured(entry, havingDescriptor, conditionInputs, semanticReason, decision.admission());
+	}
+
+	private CloseableIteration<BindingSet> evaluateCaptured(BindingSet bindings,
+			GenericSubplanDescriptor havingDescriptor, FilterConditionInputs conditionInputs) {
+		return evaluateCaptured(bindings, havingDescriptor, conditionInputs, semanticEntryFallbackReason(bindings));
+	}
+
+	private CloseableIteration<BindingSet> evaluateCaptured(BindingSet bindings,
+			GenericSubplanDescriptor havingDescriptor, FilterConditionInputs conditionInputs, String semanticReason) {
+		return evaluateCaptured(bindings, havingDescriptor, conditionInputs, semanticReason, null);
+	}
+
+	private CloseableIteration<BindingSet> evaluateCaptured(BindingSet bindings,
+			GenericSubplanDescriptor havingDescriptor, FilterConditionInputs conditionInputs, String semanticReason,
+			NativeGroupInvocationWitness.Admission admission) {
 		NativeLmdbQuerySource evalSource = source instanceof SyntheticValueSource synthetic
 				? synthetic.forInvocation(generatedKeys, layout, bindings)
 				: source;
@@ -425,19 +816,22 @@ final class NativeGroupStep implements NativeResultStep, LmdbNativePhysicalPlan 
 			strategy.captureEvaluationValues(evalSource);
 		}
 		initializeQueryBase(evalSource, bindings);
+		if (semanticReason != null) {
+			return genericFallback(bindings, evalSource, havingDescriptor, conditionInputs, semanticReason, true);
+		}
 		NativeEntryBindingVariant variant = null;
 		BindingSet nativeBindings = bindings;
-		if (hasOptionalOnlyBinding(bindings)) {
-			variant = NativeEntryBindingVariant.tryCreate(evalSource, layout, bindings,
-					optionalOnlyNames);
+		Set<String> problemBindings = NativeEntryBindingVariant.problemBindings(bindings, optionalOnlyNames, context);
+		if (!problemBindings.isEmpty()) {
+			variant = NativeEntryBindingVariant.tryCreate(evalSource, layout, bindings, problemBindings);
 			if (variant == null) {
-				return genericFallback(bindings, evalSource, havingDescriptor, "optionalOnlyBinding");
+				return genericFallback(bindings, evalSource, havingDescriptor, conditionInputs, "optionalOnlyBinding");
 			}
 			LmdbNativeExplain.recordExecutionPath(originalExpr, variant.executionPath());
 			nativeBindings = variant.filteredBase;
 		}
 		if (!NativeRowSeeder.supports(nativeBindings, layout, evalSource)) {
-			return genericFallback(bindings, evalSource, havingDescriptor, "unrepresentableEntry");
+			return genericFallback(bindings, evalSource, havingDescriptor, conditionInputs, "unrepresentableEntry");
 		}
 		if (variant != null) {
 			QueryEvaluationContext evaluationContext = evaluationContext(evalSource);
@@ -445,7 +839,9 @@ final class NativeGroupStep implements NativeResultStep, LmdbNativePhysicalPlan 
 					groupSlots, aggregates,
 					strictCompare, variant.filteredBase, null, null, false, false, null, null, 0L, null,
 					null, havingCondition, originalExpr, forcedExecutionStrategyName(), evaluationContext);
-			return applyScopedHaving(withContextLifetime(iteration, evalSource), evalSource, havingDescriptor);
+			iteration = variant.restoreFrames(iteration, bindings);
+			iteration = restoreOutput(withContextLifetime(iteration, evalSource), bindings);
+			return applyScopedHaving(iteration, evalSource, havingDescriptor, conditionInputs);
 		}
 		QueryEvaluationContext evaluationContext = evaluationContext(evalSource);
 		NativeGroupIteration nativeIteration = new NativeGroupIteration(evalSource, arg, layout, groupSlots,
@@ -455,19 +851,44 @@ final class NativeGroupStep implements NativeResultStep, LmdbNativePhysicalPlan 
 				originalExpr, forcedExecutionStrategyName(), evaluationContext);
 		nativeIteration.typeMatrix = typeMatrix;
 		nativeIteration.alternatives = alternatives;
-		CloseableIteration<BindingSet> iteration = nativeIteration;
-		return applyScopedHaving(withContextLifetime(iteration, evalSource), evalSource, havingDescriptor);
+		nativeIteration.invocationAdmission = admission;
+		CloseableIteration<BindingSet> iteration = admission == null ? nativeIteration
+				: new NativeCommittedGroupIteration(nativeIteration);
+		iteration = restoreOutput(withContextLifetime(iteration, evalSource), bindings);
+		return applyScopedHaving(iteration, evalSource, havingDescriptor, conditionInputs);
 	}
 
 	@Override
 	public void explainStrategies() {
+		BindingSet entry = QueryExplanationContext.bindings();
+		String reason = semanticEntryFallbackReason(entry);
+		if (reason != null) {
+			LmdbNativeStrategyPreview.direct("GROUP BY dispatch", LmdbNativeAttemptMetrics.PATH_GENERIC_FALLBACK,
+					"The Group input requires semantic evaluation: " + reason, null);
+			LmdbNativeStrategyPreview.inspect(arg);
+			return;
+		}
+		if (hasOptionalOnlyBinding(entry)) {
+			LmdbNativeStrategyPreview.runtime("GROUP BY dispatch",
+					List.of(LmdbNativeAttemptMetrics.PATH_NATIVE_ENTRY_BINDING_VARIANT,
+							LmdbNativeAttemptMetrics.PATH_GENERIC_FALLBACK),
+					"The OPTIONAL compatibility transition must bind before the Group input is opened");
+			LmdbNativeStrategyPreview.inspect(arg);
+			return;
+		}
+		if (!permitsInputInjection(entry, Set.of()) && semanticInvocationAdmission(entry, Set.of()) != null) {
+			LmdbNativeStrategyPreview.direct("GROUP BY dispatch", LmdbNativeAttemptMetrics.PATH_NESTED_LOOP,
+					"The exact Group invocation commits to one serial input traversal", null);
+			LmdbNativeStrategyPreview.inspect(arg);
+			return;
+		}
 		NativeGroupIteration iteration = new NativeGroupIteration(source, arg, layout, groupSlots, aggregates,
-				strictCompare, QueryExplanationContext.bindings(), prefixPattern, prefixRunPlan, prefixCountRunRows,
+				strictCompare, entry, prefixPattern, prefixRunPlan, prefixCountRunRows,
 				prefixDistinctRuns, prefixRunFilter, prefixRootKindFilter, prefixMinRunCount, existsIntersection,
 				adjacencyAggregate, havingCondition, originalExpr, forcedExecutionStrategyName());
 		iteration.typeMatrix = typeMatrix;
 		iteration.alternatives = alternatives;
-		RowState row = new RowState(source, layout, QueryExplanationContext.bindings(), originalExpr);
+		RowState row = new RowState(source, layout, entry, originalExpr);
 		if (iteration.initialize(row)) {
 			if (requiresPhysicalResults()) {
 				try (NativeGroupResultCursor owner = new NativeGroupResultCursor(this, iteration, null, false)) {
@@ -506,7 +927,8 @@ final class NativeGroupStep implements NativeResultStep, LmdbNativePhysicalPlan 
 	}
 
 	private CloseableIteration<BindingSet> applyScopedHaving(CloseableIteration<BindingSet> iteration,
-			NativeLmdbQuerySource evalSource, GenericSubplanDescriptor havingDescriptor) {
+			NativeLmdbQuerySource evalSource, GenericSubplanDescriptor havingDescriptor,
+			FilterConditionInputs conditionInputs) {
 		if (havingDescriptor == null) {
 			return iteration;
 		}
@@ -519,8 +941,8 @@ final class NativeGroupStep implements NativeResultStep, LmdbNativePhysicalPlan 
 			NativeBindingSetValueEvaluator evaluator = executionContext.genericStep(havingDescriptor, () -> {
 				QueryEvaluationContext scoped = executionContext
 						.genericContext(context, strategy);
-				return LmdbNativeAggregateFilterCompiler.compileSemanticValue(strategy,
-						(ValueExpr) havingDescriptor.pinnedExpr(), new SlotAwareQueryEvaluationContext(scoped, layout));
+				return LmdbNativeAggregateFilterCompiler.compileFilterCondition(strategy, conditionInputs,
+						(ValueExpr) havingDescriptor.pinnedExpr(), havingDescriptor.scopedContext(scoped));
 			});
 			Predicate<BindingSet> predicate = bindings -> {
 				NativeValueOutcome outcome = evaluator.evaluate(bindings, executionContext);
@@ -545,19 +967,27 @@ final class NativeGroupStep implements NativeResultStep, LmdbNativePhysicalPlan 
 	}
 
 	private CloseableIteration<BindingSet> genericFallback(BindingSet bindings, NativeLmdbQuerySource evalSource,
-			GenericSubplanDescriptor havingDescriptor, String reason) {
+			GenericSubplanDescriptor havingDescriptor, FilterConditionInputs conditionInputs, String reason) {
+		return genericFallback(bindings, evalSource, havingDescriptor, conditionInputs, reason, false);
+	}
+
+	private CloseableIteration<BindingSet> genericFallback(BindingSet bindings, NativeLmdbQuerySource evalSource,
+			GenericSubplanDescriptor havingDescriptor, FilterConditionInputs conditionInputs, String reason,
+			boolean genericOnly) {
 		SyntheticValueSource synthetic = evalSource instanceof SyntheticValueSource existing ? existing
 				: SyntheticValueSource.forInvocation(evalSource, queryExecutionPolicy(), bindings);
 		initializeQueryBase(synthetic, bindings);
 		LmdbNativeExplain.recordExecutionPath(originalExpr,
 				LmdbNativeAttemptMetrics.PATH_GENERIC_FALLBACK + "(" + reason + ")");
 		CloseableIteration<BindingSet> rows = NativeExecutionContextCarrier.evaluate(() -> {
-			if (strategy == null && genericStep == null) {
+			if (strategy == null && (genericOnly || genericStep == null)) {
 				throw new IllegalStateException("unsupported native entry requires a semantic evaluation strategy");
 			}
-			return genericStep(synthetic.executionContext()).evaluate(bindings);
+			QueryEvaluationStep fallback = genericOnly ? graphAssignmentStep(synthetic.executionContext())
+					: genericStep(synthetic.executionContext());
+			return fallback.evaluate(bindings);
 		}, synthetic, !SyntheticValueSource.inheritedEvaluation(synthetic));
-		return applyScopedHaving(rows, synthetic, havingDescriptor);
+		return applyScopedHaving(rows, synthetic, havingDescriptor, conditionInputs);
 	}
 
 	/**
@@ -590,12 +1020,151 @@ final class NativeGroupStep implements NativeResultStep, LmdbNativePhysicalPlan 
 	}
 
 	boolean hasOptionalOnlyBinding(BindingSet bindings) {
-		for (String name : optionalOnlyNames) {
-			if (bindings.hasBinding(name)) {
-				return true;
+		return !NativeEntryBindingVariant.problemBindings(bindings, optionalOnlyNames, context).isEmpty();
+	}
+
+	String semanticEntryFallbackReason(BindingSet bindings) {
+		return semanticEntryDecision(bindings).reason();
+	}
+
+	private SemanticEntryDecision semanticEntryDecision(BindingSet bindings) {
+		return semanticEntryDecision(bindings, null);
+	}
+
+	private SemanticEntryDecision semanticEntryDecision(BindingSet bindings, String graphParameter) {
+		if (!valuesRequirement.admits(bindings)) {
+			return new SemanticEntryDecision("valuesEntry");
+		}
+		if (NativeEntryBindingVariant.hasLateralOwnerInput(lateralOwnerInputs, bindings)) {
+			return new SemanticEntryDecision("lateralOwnerInput");
+		}
+		if (certifiedFilterScope && BindingFrameBindings.hasFrame(bindings)) {
+			return new SemanticEntryDecision("certifiedFilterFrame");
+		}
+		if (bindings != null && !Collections.disjoint(certifiedContextEntryHazards, bindings.getBindingNames())) {
+			return new SemanticEntryDecision("certifiedContextInput");
+		}
+		if (NativeEntryBindingVariant.graphAssignmentNeedsSemanticEvaluation(bindings, localAssignmentNames)) {
+			return new SemanticEntryDecision("graphAssignment");
+		}
+		if (NativeEntryBindingVariant.assignmentOverwritesInput(bindings, localAssignmentNames)) {
+			return new SemanticEntryDecision("entryAssignment");
+		}
+		if (NativeEntryBindingVariant.optionalCallerRequiresSemanticEvaluation(bindings, optionalCallerRequirement,
+				context)) {
+			return new SemanticEntryDecision("optionalEntry");
+		}
+		if (ambiguousLateralEntry && BindingFrameBindings.substitutionDomain(bindings) != null) {
+			return new SemanticEntryDecision("semanticLateralEntry");
+		}
+		// These names are withheld only if the OPTIONAL compatibility variant is successfully constructed. If it
+		// cannot be constructed, evaluation declines before seeding. Supplied GRAPH and substitution inputs are never
+		// in this set and therefore remain part of the complete proof checked against the original logical mapping.
+		Set<String> withheld = NativeEntryBindingVariant.problemBindings(bindings, optionalOnlyNames, context);
+		if (permitsInputInjection(bindings, withheld, graphParameter)) {
+			return SemanticEntryDecision.INJECTED;
+		}
+		NativeGroupInvocationWitness.Admission admission = semanticInvocationAdmission(bindings, withheld);
+		return admission == null ? new SemanticEntryDecision("groupInput") : new SemanticEntryDecision(null, admission);
+	}
+
+	private NativeGroupInvocationWitness.Admission semanticInvocationAdmission(BindingSet bindings,
+			Set<String> withheld) {
+		if (invocationWitness == null || bindings == null || requiresPhysicalResults()) {
+			return null;
+		}
+		String forced = forcedExecutionStrategyName();
+		if (!LmdbNativeForceableStrategies.isNoForcing(forced)
+				&& !LmdbNativeForceableStrategies.options(forced)
+						.equals(List.of(LmdbNativeAttemptMetrics.PATH_NESTED_LOOP))) {
+			return null;
+		}
+		Set<String> seeded = new LinkedHashSet<>();
+		for (String name : layout.slotNames()) {
+			if (!withheld.contains(name) && bindings.hasBinding(name)) {
+				seeded.add(name);
 			}
 		}
-		return false;
+		boolean graphContextEligible = context != null && context.getActiveGraph() == null
+				&& !BindingFrameBindings.hasDynamicSubstitution(context)
+				&& context.getSubstitutionBindingNames().isEmpty();
+		return invocationWitness.admit(bindings, seeded, withheld, graphContextEligible);
+	}
+
+	private boolean permitsInputInjection(BindingSet bindings, Set<String> withheld) {
+		return permitsInputInjection(bindings, withheld, null);
+	}
+
+	private boolean permitsInputInjection(BindingSet bindings, Set<String> withheld, String graphParameter) {
+		if (bindings == null || bindings.isEmpty()) {
+			return true;
+		}
+		Set<String> names = null;
+		for (String name : layout.slotNames()) {
+			if (!name.equals(graphParameter) && !withheld.contains(name) && bindings.hasBinding(name)) {
+				// A present-null marker shadows older bindings but the row seeder represents it as a bound zero ID.
+				// It is not an RDF term whose injection can be justified by the prepared proof.
+				if (bindings.getValue(name) == null) {
+					return false;
+				}
+				if (inputInjectionProof == null) {
+					return false;
+				}
+				if (names == null) {
+					names = new LinkedHashSet<>();
+				}
+				names.add(name);
+			}
+		}
+		return names == null || inputInjectionProof.test(names);
+	}
+
+	/** An independently compiled candidate has no OPTIONAL compatibility wrapper. */
+	boolean acceptsUnwrappedInput(BindingSet bindings) {
+		return !hasOptionalOnlyBinding(bindings) && semanticEntryFallbackReason(bindings) == null
+				&& permitsInputInjection(bindings, Set.of());
+	}
+
+	private boolean forcedFullInputUnsafe(BindingSet bindings) {
+		List<String> forced = LmdbNativeForceableStrategies.options(forcedExecutionStrategyName());
+		if (forced.size() != 1 || !forced.get(0).endsWith("(fullValue)")) {
+			return false;
+		}
+		NativeGroupStep full = fullValueAlternative();
+		if (full == null) {
+			return false;
+		}
+		if (!full.acceptsUnwrappedInput(bindings)) {
+			return true;
+		}
+		// A forced-only FULL choice must fall back before opening if that candidate cannot seed its own layout.
+		// Use an invocation-scoped source so representable synthetic inputs are not rejected by the compile carrier.
+		SyntheticValueSource evaluation = full.source instanceof SyntheticValueSource synthetic
+				? synthetic.forInvocation(bindings)
+				: SyntheticValueSource.forEvaluation(full.source);
+		try {
+			return !NativeRowSeeder.supports(bindings, full.layout, evaluation);
+		} finally {
+			if (!SyntheticValueSource.inheritedEvaluation(evaluation)) {
+				evaluation.executionContext().close();
+			}
+		}
+	}
+
+	private synchronized QueryEvaluationStep graphAssignmentStep(NativeExecutionContext executionContext) {
+		if (graphAssignmentDescriptor == null) {
+			graphAssignmentDescriptor = GenericSubplanDescriptor.create(originalExpr, strategy, valuePositions);
+		}
+		if (!graphAssignmentDescriptor.shareableAcrossEvaluations()) {
+			return executionContext.genericStep(graphAssignmentDescriptor, () -> {
+				QueryEvaluationContext scoped = executionContext.genericContext(context, strategy);
+				return graphAssignmentDescriptor.precompile(strategy.genericOnlyView(), scoped);
+			});
+		}
+		if (graphAssignmentStep == null) {
+			graphAssignmentStep = graphAssignmentDescriptor.precompile(strategy.genericOnlyView(), context);
+		}
+		return graphAssignmentStep;
 	}
 
 	synchronized QueryEvaluationStep genericStep() {
@@ -679,6 +1248,43 @@ final class NativeGroupStep implements NativeResultStep, LmdbNativePhysicalPlan 
 	}
 }
 
+/** Closing waits for an in-flight committed pull; cancellation does not acquire the pull monitor. */
+final class NativeCommittedGroupIteration implements CloseableIteration<BindingSet>, CooperativeCancellation {
+	private final NativeGroupIteration delegate;
+
+	NativeCommittedGroupIteration(NativeGroupIteration delegate) {
+		this.delegate = delegate;
+	}
+
+	@Override
+	public synchronized boolean hasNext() {
+		return delegate.hasNext();
+	}
+
+	@Override
+	public synchronized BindingSet next() {
+		return delegate.next();
+	}
+
+	@Override
+	public synchronized void remove() {
+		delegate.remove();
+	}
+
+	@Override
+	public boolean requestCancellation() {
+		return delegate.requestCancellation();
+	}
+
+	@Override
+	public void close() {
+		delegate.requestCancellation();
+		synchronized (this) {
+			delegate.close();
+		}
+	}
+}
+
 @Experimental
 final class NativeGroupIteration implements CloseableIteration<BindingSet>, CooperativeCancellation {
 	final long diagnosticBoundaryId = NativeAggregateExecutionEvent.nextBoundaryId();
@@ -731,6 +1337,7 @@ final class NativeGroupIteration implements CloseableIteration<BindingSet>, Coop
 	final String forcedExecutionStrategy;
 	/** Runtime-only query scope supplied to worker-bound scalar compilers; never retained in the lowered plan. */
 	final QueryEvaluationContext evaluationContext;
+	NativeGroupInvocationWitness.Admission invocationAdmission;
 	Iterator<BindingSet> resultIterator;
 	BindingSet next;
 	private NativeResultRow.Schema physicalSchema;
@@ -889,6 +1496,10 @@ final class NativeGroupIteration implements CloseableIteration<BindingSet>, Coop
 		}
 		BindingSet result = next;
 		next = null;
+		if (BindingFrameBindings.hasFrame(base) || GraphFrameBindings.from(base) != GraphFrameBindings.EMPTY) {
+			return BindingFrameBindings.preserve(base,
+					GraphFrameBindings.preserve(base, new QueryBindingSet(result)));
+		}
 		return result;
 	}
 
@@ -973,7 +1584,10 @@ final class NativeGroupIteration implements CloseableIteration<BindingSet>, Coop
 			LmdbNativeExplain.recordExecutionPath(explainTarget, LmdbNativeAttemptMetrics.PATH_EMPTY_SEED);
 			return noInputResult();
 		}
-		row.runtimePlan = LmdbNativeExplain.recordRuntimeEntryPlan(explainTarget, arg, layout, row.boundMask());
+		NativeGroupInvocationWitness.Admission directInput = invocationAdmission != null
+				&& invocationAdmission.directGraph() ? invocationAdmission : null;
+		row.runtimePlan = LmdbNativeExplain.recordRuntimeEntryPlan(explainTarget, arg, layout, row.boundMask(),
+				directInput);
 		LmdbNativeExplain.addRuntimeMetric(explainTarget, "nativeInvocationsActual", 1L);
 		LmdbFusedSipFactorizedRuntime.Session inherited = LmdbFusedSipFactorizedRuntime.currentOrNull();
 		boolean ownsSession = inherited == null;
@@ -1040,6 +1654,32 @@ final class NativeGroupIteration implements CloseableIteration<BindingSet>, Coop
 	}
 
 	private List<BindingSet> evaluateInitialized(RowState row) {
+		if (invocationAdmission != null) {
+			if (!invocationAdmission.represents(arg, layout, aggregates)) {
+				throw new IllegalStateException("Group invocation evidence does not represent the selected input");
+			}
+			// Commit before arg.open: an effectful input must never enter speculative leases, adaptive alternatives,
+			// batch/parallel dispatch, or an encounter-order retry. The normal evaluateAll lifecycle owns cleanup.
+			row.encounterOrderRequired = true;
+			boolean directGraph = invocationAdmission.directGraph();
+			String path = directGraph ? LmdbNativeAttemptMetrics.PATH_DIRECT_NESTED_LOOP
+					: LmdbNativeAttemptMetrics.PATH_NESTED_LOOP;
+			if (row.runtimePlan != null && !directGraph) {
+				row.runtimePlan.activate(path, new SlotPlan[] { arg });
+			}
+			LmdbNativeExplain.recordExecutionPath(explainTarget, path);
+			LmdbNativeAttemptMetrics committed = LmdbNativeAttemptMetrics.root(explainTarget);
+			row.directGroupInput = directGraph ? invocationAdmission : null;
+			try {
+				List<BindingSet> results = evaluateSequential(row, new AggContext(source, strictCompare), committed,
+						arg);
+				cancellation.check();
+				committed.commitToParent();
+				return results;
+			} finally {
+				row.directGroupInput = null;
+			}
+		}
 		NativeFilterLease filterLease = new NativeFilterLease();
 		NativeGroupIteration speculative = withArg(filterLease.borrow(arg));
 		LmdbNativeAttemptMetrics metrics = LmdbNativeAttemptMetrics.root(explainTarget);
@@ -1169,7 +1809,7 @@ final class NativeGroupIteration implements CloseableIteration<BindingSet>, Coop
 	private LmdbNativeCostQuote wcojQuote(RowState row) {
 		double groups = groupSlots.length == 0 ? 1D : Double.NaN;
 		LmdbNativeLeapfrogQuote.Quote quote = LmdbNativeLeapfrogQuote
-				.quote(LmdbNativeLeapfrogJoin.shape(arg, row.boundMask()), row, row.boundMask());
+				.quote(LmdbNativeLeapfrogJoin.shape(arg, row), row, row.boundMask());
 		if (quote != null) {
 			return LmdbNativeCostQuote.streaming(quote.vector()
 					.plus(LmdbNativeCostVectors.perRow(LmdbNativeCostVector.Feature.GROUP_UPDATE, quote.rows())),
@@ -2020,7 +2660,8 @@ final class NativeGroupIteration implements CloseableIteration<BindingSet>, Coop
 				sequentialDistinctChannels, true, true);
 		try (table) {
 			try {
-				RowCursor opened = input.open(row);
+				RowCursor opened = row.directGroupInput == null ? input.open(row)
+						: NativeGroupDirectInput.openRoot(input, row);
 				try (RowCursor cursor = row.aggregateInput(
 						opaque ? LmdbNativeFactorAlgebra.logical(opened, row) : opened)) {
 					int probePollTick1 = 0;
@@ -2315,7 +2956,7 @@ final class NativeGroupIteration implements CloseableIteration<BindingSet>, Coop
 
 	/** True when a worst-case-optimal join could serve this row. Recognition only: it opens nothing. */
 	boolean wcojHandlesRow(RowState row) {
-		return AggregateSpec.allCounts(aggregates) && LmdbNativeLeapfrogJoin.canOpen(arg, row.boundMask());
+		return AggregateSpec.allCounts(aggregates) && LmdbNativeLeapfrogJoin.shape(arg, row) != null;
 	}
 
 	/**
@@ -2693,7 +3334,8 @@ final class NativeGroupIteration implements CloseableIteration<BindingSet>, Coop
 	 * producing values those filters read must stay below it as well; unrelated children may still hoist.
 	 */
 	static MultiJoinPlan reshapeLeftJoinForFactorization(LeftJoinPlan leftJoinPlan) {
-		if (!(leftJoinPlan.left instanceof MultiJoinPlan)) {
+		if (leftJoinPlan.lexicalSharedSlots != null || leftJoinPlan.lexicalProblemSlots != null
+				|| !(leftJoinPlan.left instanceof MultiJoinPlan)) {
 			return null;
 		}
 		long rightReads = memoReadMask(leftJoinPlan.right);
@@ -2740,7 +3382,8 @@ final class NativeGroupIteration implements CloseableIteration<BindingSet>, Coop
 		for (int i = 0; i < leftBag.children.length; i++) {
 			if (i == firstKeepIndex) {
 				children[at++] = new LeftJoinPlan(keepPlan, leftJoinPlan.right, leftJoinPlan.lexicalSharedSlots,
-						leftJoinPlan.lexicalHashKeys, leftJoinPlan.lexicalProblemSlots);
+						leftJoinPlan.lexicalHashKeys, leftJoinPlan.lexicalProblemSlots, leftJoinPlan.lexicalCondition,
+						leftJoinPlan.lexicalStaticInputs);
 			} else if (!kept[i]) {
 				children[at++] = leftBag.children[i];
 			}

@@ -24,6 +24,7 @@ import java.util.TreeSet;
 import java.util.function.Function;
 import java.util.function.IntFunction;
 
+import org.eclipse.rdf4j.common.annotation.InternalUseOnly;
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.common.iteration.CooperativeCancellation;
 import org.eclipse.rdf4j.common.iteration.LookAheadIteration;
@@ -35,6 +36,7 @@ import org.eclipse.rdf4j.query.algebra.Join;
 import org.eclipse.rdf4j.query.algebra.LeftJoin;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryBindingSet;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryEvaluationStep;
+import org.eclipse.rdf4j.query.algebra.evaluation.impl.GraphFrameBindings;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.QueryEvaluationContext;
 
 /**
@@ -50,6 +52,7 @@ public class HashJoinIteration extends LookAheadIteration<BindingSet> {
 	private final QueryEvaluationStep rightStep;
 	private final BindingSet rightBindings;
 	private final boolean leftJoin;
+	private final boolean preserveLeftInput;
 
 	private Iterator<BindingSet> scanList;
 	private CloseableIteration<BindingSet> restIter;
@@ -59,6 +62,7 @@ public class HashJoinIteration extends LookAheadIteration<BindingSet> {
 	private boolean currentMatched;
 	private PartialKeyHashLookup lookup;
 	private boolean noMatchesPossible;
+	private boolean scanIsLeft;
 
 	private final IntFunction<Map<BindingSetHashKey, List<BindingSet>>> mapMaker;
 
@@ -73,12 +77,25 @@ public class HashJoinIteration extends LookAheadIteration<BindingSet> {
 			BindingSet bindings,
 			boolean leftJoin, String[] joinAttributes, QueryEvaluationContext context)
 			throws QueryEvaluationException {
+		this(left, right, bindings, leftJoin, joinAttributes, context, false);
+	}
+
+	/** Creates an independent inner join whose result retains the logical left input's provenance. */
+	@InternalUseOnly
+	public static HashJoinIteration preservingLeftInput(QueryEvaluationStep left, QueryEvaluationStep right,
+			BindingSet bindings, String[] joinAttributes, QueryEvaluationContext context) {
+		return new HashJoinIteration(left, right, bindings, false, joinAttributes, context, true);
+	}
+
+	private HashJoinIteration(QueryEvaluationStep left, QueryEvaluationStep right, BindingSet bindings,
+			boolean leftJoin, String[] joinAttributes, QueryEvaluationContext context, boolean preserveLeftInput) {
 		this.leftIter = left.evaluate(bindings);
 		// The right side is evaluated only once the left side has a row.
 		this.rightStep = right;
 		this.rightBindings = bindings;
 		this.joinAttributes = PartialKeyHashLookup.capKeyNames(joinAttributes);
 		this.leftJoin = leftJoin;
+		this.preserveLeftInput = preserveLeftInput;
 		this.mapMaker = this::makeHashTable;
 		this.mapValueMaker = this::makeHashValue;
 		this.bsMaker = context::createBindingSet;
@@ -100,6 +117,7 @@ public class HashJoinIteration extends LookAheadIteration<BindingSet> {
 		joinAttributes = sharedNames(leftBindingNames, rightBindingNames);
 
 		this.leftJoin = leftJoin;
+		this.preserveLeftInput = false;
 		this.mapValueMaker = this::makeHashValue;
 		this.bsMaker = QueryBindingSet::new;
 	}
@@ -149,7 +167,10 @@ public class HashJoinIteration extends LookAheadIteration<BindingSet> {
 					continue;
 				}
 				currentMatched = true;
-				MutableBindingSet result = merge(bsMaker.apply(currentScanElem), candidate);
+				MutableBindingSet result = preserveLeftInput
+						? mergePreservingLeft(scanIsLeft ? currentScanElem : candidate,
+								scanIsLeft ? candidate : currentScanElem)
+						: merge(bsMaker.apply(currentScanElem), candidate);
 				if (!hashTableValues.hasNext()) {
 					clearCurrentHashValue();
 				}
@@ -177,6 +198,27 @@ public class HashJoinIteration extends LookAheadIteration<BindingSet> {
 						result.setBinding(name, value);
 					} else {
 						result.addBinding(name, value);
+					}
+				}
+			}
+		}
+		return result;
+	}
+
+	private static MutableBindingSet mergePreservingLeft(BindingSet left, BindingSet right) {
+		return mergeGraphFrames(new QueryBindingSet(left), right);
+	}
+
+	/** Retains GRAPH authority only for values actually chosen from the candidate. */
+	static MutableBindingSet mergeGraphFrames(MutableBindingSet result, BindingSet right) {
+		for (String name : right.getBindingNames()) {
+			if (result.getValue(name) == null) {
+				Value value = right.getValue(name);
+				if (value != null) {
+					if (GraphFrameBindings.isSupplied(right, name)) {
+						result = GraphFrameBindings.supply(result, name, value);
+					} else {
+						result.setBinding(name, value);
 					}
 				}
 			}
@@ -263,10 +305,12 @@ public class HashJoinIteration extends LookAheadIteration<BindingSet> {
 		Collection<BindingSet> smallestResult;
 
 		if (leftJoin || leftIter.hasNext()) { // leftArg is the greater relation
+			scanIsLeft = true;
 			smallestResult = rightArgResults;
 			scanList = leftArgResults.iterator();
 			restIter = leftIter;
 		} else { // rightArg is the greater relation (or they are equal)
+			scanIsLeft = false;
 			smallestResult = leftArgResults;
 			scanList = rightArgResults.iterator();
 			restIter = rightIter;
@@ -322,6 +366,9 @@ public class HashJoinIteration extends LookAheadIteration<BindingSet> {
 		if (isClosed()) {
 			// close() ran concurrently before the right side was published
 			iteration.close();
+		} else if (isCancellationRequested()) {
+			// A request can arrive while rightStep is opening, before forwardCancellation can see this input.
+			CooperativeCancellation.forward(iteration);
 		}
 		return iteration;
 	}

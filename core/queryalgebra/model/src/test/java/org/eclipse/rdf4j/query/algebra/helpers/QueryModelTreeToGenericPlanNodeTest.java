@@ -14,7 +14,9 @@ package org.eclipse.rdf4j.query.algebra.helpers;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.function.Predicate;
 
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
@@ -25,6 +27,7 @@ import org.eclipse.rdf4j.query.algebra.Bound;
 import org.eclipse.rdf4j.query.algebra.Count;
 import org.eclipse.rdf4j.query.algebra.DescribeOperator;
 import org.eclipse.rdf4j.query.algebra.Distinct;
+import org.eclipse.rdf4j.query.algebra.Exists;
 import org.eclipse.rdf4j.query.algebra.Extension;
 import org.eclipse.rdf4j.query.algebra.ExtensionElem;
 import org.eclipse.rdf4j.query.algebra.Filter;
@@ -39,9 +42,13 @@ import org.eclipse.rdf4j.query.algebra.Projection;
 import org.eclipse.rdf4j.query.algebra.ProjectionElem;
 import org.eclipse.rdf4j.query.algebra.ProjectionElemList;
 import org.eclipse.rdf4j.query.algebra.QueryModelNode;
+import org.eclipse.rdf4j.query.algebra.Service;
+import org.eclipse.rdf4j.query.algebra.SingletonSet;
 import org.eclipse.rdf4j.query.algebra.Slice;
 import org.eclipse.rdf4j.query.algebra.StatementPattern;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
+import org.eclipse.rdf4j.query.algebra.TupleFunctionCall;
+import org.eclipse.rdf4j.query.algebra.Union;
 import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.query.algebra.WithVarProvider;
 import org.eclipse.rdf4j.query.explanation.Explanation;
@@ -351,6 +358,173 @@ public class QueryModelTreeToGenericPlanNodeTest {
 	}
 
 	@Test
+	public void physicalLookupLabelsDoNotChangeLexicalScalarInputs() {
+		for (var contract : Map.of("JoinIterator", "bound", "HashJoinIteration", "unbound",
+				"MaterializedReplayJoinIterator", "unbound", "ScopedLeftJoinIterator", "unbound",
+				"ScopedCorrelatedJoinIterator", "unbound", "ExtensionJoinIteration", "unknown").entrySet()) {
+			StatementPattern lookup = pattern("x", "p", "api");
+			Bound scalar = new Bound(Var.of("hidden"));
+			Extension right = new Extension(lookup, new ExtensionElem(scalar, "seen"));
+			Join join = new Join(bindingSetAssignment(bindingSet("x", "hidden")), right);
+			join.setAlgorithm(contract.getKey());
+			QueryAlgebraBindingAnalysis lexical = QueryAlgebraBindingAnalysis.withGuaranteedInputNames(join,
+					Set.of("api"));
+			assertThat(lexical.bindingState(lookup.getSubjectVar(), lexical.contextAt(lookup)))
+					.as("%s cannot authorize a lexical lookup input through an independent extension",
+							contract.getKey())
+					.isEqualTo(QueryAlgebraBindingAnalysis.BindingState.UNBOUND);
+			assertThat(lexical.bindingState((Var) scalar.getArg(), lexical.contextAt(scalar.getArg())))
+					.isEqualTo(QueryAlgebraBindingAnalysis.BindingState.UNBOUND);
+
+			GenericPlanNode plan = explain(join, Set.of("api")).getPlans().get(1);
+			assertBindingState(plan.getPlans().getFirst(), "x", contract.getValue());
+			assertBindingState(plan.getPlans().getFirst(), "api", "bound");
+			assertBindingState(findFirstPlan(plan, node -> node.getType().startsWith("Bound")), "hidden", "unbound");
+		}
+	}
+
+	@Test
+	public void selectedLookupContractPreservesNullableInputsAndOverridesMergeCandidate() {
+		for (var contract : Map.of("JoinIterator", "possibly bound", "HashJoinIteration", "unbound",
+				"InnerMergeJoinIterator", "unbound", "ScopedLeftJoinIterator", "unbound",
+				"ScopedCorrelatedJoinIterator", "unbound", "ExtensionJoinIteration", "unknown").entrySet()) {
+			StatementPattern right = pattern("x", "p", "api");
+			Join join = new Join(bindingSetAssignment(bindingSet("x"), EmptyBindingSet.getInstance()), right);
+			join.setMergeJoin(true);
+			join.setAlgorithm(contract.getKey());
+			QueryAlgebraBindingAnalysis lexical = QueryAlgebraBindingAnalysis.withGuaranteedInputNames(join,
+					Set.of("api"));
+			assertThat(lexical.bindingState(right.getSubjectVar(), lexical.contextAt(right)))
+					.as("physical labels must not change the logical compatible-selection facts")
+					.isEqualTo(QueryAlgebraBindingAnalysis.BindingState.POSSIBLY_BOUND);
+			GenericPlanNode plan = explain(join, Set.of("api")).getPlans().get(1);
+			assertBindingState(plan, "x", contract.getValue());
+			assertBindingState(plan, "api", "bound");
+		}
+	}
+
+	@Test
+	public void nestedProjectionAndUnionForwardSelectedVisibleLookupInputs() {
+		for (var contract : Map.of("JoinIterator", "bound", "HashJoinIteration", "unbound",
+				"MaterializedReplayJoinIterator", "unbound", "ExtensionJoinIteration", "unknown").entrySet()) {
+			Union union = new Union(pattern("x", "p1", "api"), pattern("x", "p2", "api"));
+			union.setVariableScopeChange(true);
+			Projection projection = new Projection(union,
+					new ProjectionElemList(new ProjectionElem("x"), new ProjectionElem("api")), true);
+			Join join = new Join(bindingSetAssignment(bindingSet("x")), projection);
+			join.setAlgorithm(contract.getKey());
+			GenericPlanNode plan = findFirstPlan(explain(join, Set.of("api")),
+					node -> node.getType().startsWith("Union"));
+			for (GenericPlanNode arm : plan.getPlans()) {
+				assertBindingState(arm, "x", contract.getValue());
+				assertBindingState(arm, "api", "bound");
+			}
+		}
+	}
+
+	@Test
+	public void scalarExistsStartsFromItsLexicalSubstitutionRow() {
+		Exists exists = new Exists(pattern("hidden", "existsPredicate", "api"));
+		Extension right = new Extension(pattern("x", "p", "o"), new ExtensionElem(exists, "seen"));
+		Join join = new Join(bindingSetAssignment(bindingSet("x", "hidden")), right);
+		join.setAlgorithm("JoinIterator");
+		GenericPlanNode plan = explain(join, Set.of("api")).getPlans().get(1);
+		assertBindingState(plan.getPlans().getFirst(), "x", "bound");
+		GenericPlanNode body = findFirstPlan(plan, node -> node.getType().startsWith("Exists"));
+		assertBindingState(body, "hidden", "unbound");
+		assertBindingState(body, "api", "bound");
+	}
+
+	@Test
+	public void lookupAndScalarChildrenOfParameterizedOperatorsKeepTheirOwnPhases() {
+		Service service = new Service(Var.of("endpoint"),
+				new Extension(new SingletonSet(), new ExtensionElem(Var.of("endpoint"), "echo")),
+				"", Map.of(), null, false);
+		Join serviceJoin = new Join(bindingSetAssignment(bindingSet("endpoint")), service);
+		serviceJoin.setAlgorithm("HashJoinIteration");
+		GenericPlanNode servicePlan = explain(serviceJoin).getPlans().get(1);
+		assertBindingState(servicePlan, "endpoint", "unbound");
+		GenericPlanNode assignment = findFirstPlan(servicePlan, node -> node.getType().startsWith("ExtensionElem"));
+		assertBindingState(assignment, "endpoint", "bound");
+
+		TupleFunctionCall call = new TupleFunctionCall();
+		call.setURI("urn:tuple-function");
+		call.addArg(Var.of("x"));
+		call.addResultVar(Var.of("result"));
+		Join functionJoin = new Join(bindingSetAssignment(bindingSet("x")), call);
+		functionJoin.setAlgorithm("ExtensionJoinIteration");
+		assertBindingState(explain(functionJoin).getPlans().get(1), "x", "bound");
+	}
+
+	@Test
+	public void physicalLeftTransferUsesItsExactEntryAcrossProjectionRenameAndDrop() {
+		Projection projected = new Projection(pattern("seed", "leftPredicate", "local"),
+				new ProjectionElemList(new ProjectionElem("seed", "alias")), true);
+		Join inner = new Join(projected, pattern("alias", "seed", "hidden"));
+		inner.setAlgorithm("JoinIterator");
+		Join outer = new Join(bindingSetAssignment(bindingSet("seed", "hidden")), inner);
+		outer.setAlgorithm("JoinIterator");
+		GenericPlanNode lookup = explain(outer).getPlans().get(1).getPlans().get(1);
+		assertBindingState(lookup, "alias", "bound");
+		assertBindingState(lookup, "seed", "unbound");
+		assertBindingState(lookup, "hidden", "unbound");
+	}
+
+	@Test
+	public void optionalPhysicalInputsKeepProjectedEntryAndMergedConditionSeparate() {
+		for (var contract : Map.of("LeftJoinIterator", "bound", "BadlyDesignedLeftJoinIterator", "bound",
+				"ScopedLeftJoinIterator", "unbound", "MaterializedReplayJoinIterator", "unbound",
+				"ScopedCorrelatedJoinIterator", "unbound", "BatchCorrelatedJoinProvider", "unknown",
+				"ExtensionJoinIteration", "unknown").entrySet()) {
+			Union right = new Union(pattern("x", "api", "rightOnly"), new SingletonSet());
+			And condition = new And(new Bound(Var.of("x")), new Bound(Var.of("rightOnly")));
+			LeftJoin join = new LeftJoin(bindingSetAssignment(bindingSet("x")), right, condition);
+			join.setAlgorithm(contract.getKey());
+			GenericPlanNode plan = explain(join, Set.of("api", "rightOnly"));
+			GenericPlanNode lookup = findFirstPlan(plan, node -> node.getType().startsWith("StatementPattern"));
+			assertBindingState(lookup, "x", contract.getValue());
+			String projectedState = contract.getValue().equals("unknown") ? "unknown" : "unbound";
+			assertBindingState(lookup, "api", projectedState);
+			assertBindingState(lookup, "rightOnly", projectedState);
+			GenericPlanNode conditionPlan = findFirstPlan(plan, node -> node.getType().startsWith("And"));
+			assertBindingState(conditionPlan, "x", "bound");
+			assertBindingState(conditionPlan, "rightOnly", "possibly bound");
+		}
+	}
+
+	@Test
+	public void deepPhysicalInputTraversalReusesSharedTransferFacts() {
+		AtomicInteger reads = new AtomicInteger();
+		StatementPattern deepest = countingPattern("last", reads);
+		TupleExpr expression = deepest;
+		int depth = 48;
+		for (int i = 0; i < depth; i++) {
+			Projection projection = new Projection(expression,
+					new ProjectionElemList(new ProjectionElem("x")), true);
+			Join join = new Join(countingPattern("p" + i, reads), projection);
+			join.setAlgorithm("JoinIterator");
+			expression = join;
+		}
+		GenericPlanNode plan = explain(expression);
+		GenericPlanNode last = findFirstPlan(plan,
+				node -> node.getPlans() != null
+						&& node.getPlans().stream().anyMatch(child -> child.getType().contains("name=last")));
+		assertBindingState(last, "x", "bound");
+		assertThat(reads.get()).as("each statement transfer is shared across its three lookup operands")
+				.isLessThanOrEqualTo(8 * (depth + 1));
+	}
+
+	private static StatementPattern countingPattern(String predicate, AtomicInteger reads) {
+		return new StatementPattern(Var.of("x"), Var.of(predicate), Var.of("o")) {
+			@Override
+			public List<Var> getVarList() {
+				reads.incrementAndGet();
+				return super.getVarList();
+			}
+		};
+	}
+
+	@Test
 	public void annotatesAggregateHavingAndOrderAtTheirEvaluationPhases() {
 		Group group = new Group(bindingSetAssignment(bindingSet("x")));
 		group.addGroupBindingName("x");
@@ -583,9 +757,11 @@ public class QueryModelTreeToGenericPlanNodeTest {
 		return assignment;
 	}
 
-	private static BindingSet bindingSet(String name) {
-		MapBindingSet bindingSet = new MapBindingSet(1);
-		bindingSet.addBinding(name, SimpleValueFactory.getInstance().createIRI("urn:" + name));
+	private static BindingSet bindingSet(String... names) {
+		MapBindingSet bindingSet = new MapBindingSet(names.length);
+		for (String name : names) {
+			bindingSet.addBinding(name, SimpleValueFactory.getInstance().createIRI("urn:" + name));
+		}
 		return bindingSet;
 	}
 

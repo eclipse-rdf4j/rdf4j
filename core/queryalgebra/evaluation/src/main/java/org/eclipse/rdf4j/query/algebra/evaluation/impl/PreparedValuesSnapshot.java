@@ -13,31 +13,53 @@ package org.eclipse.rdf4j.query.algebra.evaluation.impl;
 
 import java.io.Serializable;
 import java.util.AbstractList;
+import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.Collections;
+import java.util.Deque;
+import java.util.HashMap;
 import java.util.IdentityHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Set;
 
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.algebra.ArbitraryLengthPath;
 import org.eclipse.rdf4j.query.algebra.BindingSetAssignment;
+import org.eclipse.rdf4j.query.algebra.Bound;
+import org.eclipse.rdf4j.query.algebra.Coalesce;
+import org.eclipse.rdf4j.query.algebra.DescribeOperator;
+import org.eclipse.rdf4j.query.algebra.Extension;
 import org.eclipse.rdf4j.query.algebra.ExtensionElem;
+import org.eclipse.rdf4j.query.algebra.Filter;
+import org.eclipse.rdf4j.query.algebra.Filter.ConditionBindingScope;
+import org.eclipse.rdf4j.query.algebra.Graph;
 import org.eclipse.rdf4j.query.algebra.GroupElem;
 import org.eclipse.rdf4j.query.algebra.Join;
+import org.eclipse.rdf4j.query.algebra.Lateral;
 import org.eclipse.rdf4j.query.algebra.LeftJoin;
+import org.eclipse.rdf4j.query.algebra.Not;
+import org.eclipse.rdf4j.query.algebra.Or;
+import org.eclipse.rdf4j.query.algebra.PrivateGraphContextRole;
 import org.eclipse.rdf4j.query.algebra.Projection;
 import org.eclipse.rdf4j.query.algebra.ProjectionElem;
 import org.eclipse.rdf4j.query.algebra.QueryModelNode;
+import org.eclipse.rdf4j.query.algebra.SameTerm;
+import org.eclipse.rdf4j.query.algebra.Service;
 import org.eclipse.rdf4j.query.algebra.StatementPattern;
+import org.eclipse.rdf4j.query.algebra.TripleRef;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
+import org.eclipse.rdf4j.query.algebra.TupleFunctionCall;
 import org.eclipse.rdf4j.query.algebra.Var;
+import org.eclipse.rdf4j.query.algebra.Window;
 import org.eclipse.rdf4j.query.algebra.ZeroLengthPath;
 import org.eclipse.rdf4j.query.algebra.evaluation.util.QueryEvaluationUtility.QueryModelPreparation;
 import org.eclipse.rdf4j.query.algebra.helpers.AbstractQueryModelVisitor;
+import org.eclipse.rdf4j.query.algebra.helpers.FilterBindingScope;
+import org.eclipse.rdf4j.query.algebra.helpers.TupleExprs;
 import org.eclipse.rdf4j.query.impl.EmptyBindingSet;
 import org.eclipse.rdf4j.query.impl.ListBindingSet;
 
@@ -117,46 +139,276 @@ final class PreparedValuesSnapshot {
 					if (projection.getInheritedGraphParameter() != null) {
 						names.add(projection.getInheritedGraphParameter());
 					}
+					if (projection.getFixedGraphParameter() != null) {
+						names.add(projection.getFixedGraphParameter());
+					}
 					super.meet(projection);
 				}
 			});
-			prepared.visit(new AbstractQueryModelVisitor<RuntimeException>() {
-				@Override
-				public void meet(Join join) {
-					lowerFrom(join.getRightArg(), join.getLeftArg());
-					lowerFrom(join.getLeftArg(), join.getRightArg());
-					super.meet(join);
-				}
+			GraphScopes scopes = new GraphScopes();
+			prepared.visit(scopes);
+			scopes.lower();
+			return prepared;
+		}
 
-				@Override
-				public void meet(LeftJoin join) {
-					lowerFrom(join.getRightArg(), join.getLeftArg());
-					super.meet(join);
-				}
+		/** Captures each visible context occurrence and SELECT lineage once before changing any names. */
+		private final class GraphScopes extends AbstractQueryModelVisitor<RuntimeException> {
+			private final Deque<QueryModelNode> traversal = new ArrayDeque<>();
+			private final Map<Integer, GraphScope> activeDomains = new HashMap<>();
+			private final List<GraphScope> scopes = new ArrayList<>();
+			private final Set<Projection> dynamicRequests = Collections.newSetFromMap(new IdentityHashMap<>());
+			private int selectDepth;
+			private int pathExpressionDepth;
+			private int opaqueDepth;
+			private long opaqueEpoch;
 
-				private void lowerFrom(TupleExpr dependent, TupleExpr carrier) {
-					Set<String> callerNames = null;
-					for (Projection projection : firstSubqueryProjections(dependent)) {
-						Var caller = projection.getProjectionContext();
-						if (caller != null && !caller.hasValue()
-								&& projection.getInheritedGraphParameter() == null) {
-							if (callerNames == null) {
-								callerNames = carrier.getBindingNames();
-							}
-							if (callerNames.contains(caller.getName())) {
-								lower(projection);
-							}
+			private boolean visible(QueryModelNode node) {
+				return traversal.isEmpty() || node.getParentNode() == traversal.peek();
+			}
+
+			@Override
+			public void meet(Projection projection) {
+				if (!visible(projection)) {
+					return;
+				}
+				if (!projection.isSubquery()) {
+					super.meet(projection);
+					return;
+				}
+				Var caller = projection.getProjectionContext();
+				int domain = caller == null ? 0 : caller.getGraphContextDepth() - selectDepth;
+				GraphScope previous = caller == null ? null : activeDomains.get(domain);
+				GraphScope scope = caller == null ? null
+						: new GraphScope(projection, sameLineage(caller, previous) ? previous : null);
+				long opaqueAtEntry = opaqueEpoch;
+				if (scope != null) {
+					scope.unsafe = opaqueDepth != 0;
+					scopes.add(scope);
+					activeDomains.put(domain, scope);
+				}
+				selectDepth++;
+				super.meet(projection);
+				selectDepth--;
+				if (scope != null) {
+					scope.unsafe |= opaqueEpoch != opaqueAtEntry;
+					if (previous == null) {
+						activeDomains.remove(domain);
+					} else {
+						activeDomains.put(domain, previous);
+					}
+				}
+			}
+
+			private boolean sameLineage(Var caller, GraphScope previous) {
+				if (previous == null || caller.getName() == null) {
+					return false;
+				}
+				Projection parent = previous.projection;
+				return Objects.equals(caller.getName(), parent.getProjectionContext().getName())
+						|| Objects.equals(caller.getName(), parent.getInheritedGraphParameter())
+						|| Objects.equals(caller.getName(), parent.getFixedGraphParameter());
+			}
+
+			@Override
+			public void meet(Join join) {
+				if (!visible(join)) {
+					return;
+				}
+				lowerFrom(join.getRightArg(), join.getLeftArg());
+				lowerFrom(join.getLeftArg(), join.getRightArg());
+				super.meet(join);
+			}
+
+			@Override
+			public void meet(LeftJoin join) {
+				if (!visible(join)) {
+					return;
+				}
+				lowerFrom(join.getRightArg(), join.getLeftArg());
+				super.meet(join);
+			}
+
+			private void lowerFrom(TupleExpr dependent, TupleExpr carrier) {
+				Set<String> callerNames = null;
+				for (Projection projection : firstSubqueryProjections(dependent)) {
+					Var caller = projection.getProjectionContext();
+					if (caller != null && caller.getName() != null && !caller.hasValue()
+							&& projection.getInheritedGraphParameter() == null) {
+						if (callerNames == null) {
+							callerNames = carrier.getBindingNames();
+						}
+						if (callerNames.contains(caller.getName())) {
+							dynamicRequests.add(projection);
 						}
 					}
 				}
+			}
 
-				@Override
-				protected void meetNode(QueryModelNode node) {
-					super.meetNode(node);
-					lowered.add(node);
+			@Override
+			public void meet(StatementPattern pattern) {
+				if (visible(pattern)) {
+					record(pattern, pattern.getContextVar());
+					super.meet(pattern);
 				}
-			});
-			return prepared;
+			}
+
+			@Override
+			public void meet(ArbitraryLengthPath path) {
+				if (visible(path)) {
+					record(path, path.getContextVar());
+					pathExpressionDepth++;
+					try {
+						super.meet(path);
+					} finally {
+						pathExpressionDepth--;
+					}
+				}
+			}
+
+			@Override
+			public void meet(ZeroLengthPath path) {
+				if (visible(path)) {
+					record(path, path.getContextVar());
+					super.meet(path);
+				}
+			}
+
+			private void record(QueryModelNode owner, Var context) {
+				if (context == null || context.isConstant() || context.getGraphContextDepth() == 0
+						|| context.getParentNode() != owner || !isDirectChild(owner, context)) {
+					return;
+				}
+				GraphScope scope = activeDomains.get(context.getGraphContextDepth() - selectDepth);
+				if (scope != null) {
+					scope.occurrences.add(new GraphOccurrence(owner, context, pathExpressionDepth == 0));
+					if (context.hasValue()) {
+						scope.hasFixed = true;
+					} else {
+						scope.hasDynamic = true;
+					}
+				}
+			}
+
+			private boolean isDirectChild(QueryModelNode owner, Var context) {
+				boolean[] found = { false };
+				owner.visitChildren(new AbstractQueryModelVisitor<RuntimeException>() {
+					@Override
+					protected void meetNode(QueryModelNode child) {
+						found[0] |= child == context;
+					}
+
+					@Override
+					public void meetOther(QueryModelNode child) {
+						found[0] |= child == context;
+					}
+				});
+				return found[0];
+			}
+
+			@Override
+			protected void meetNode(QueryModelNode node) {
+				if (!visible(node)) {
+					return;
+				}
+				boolean opaque = node instanceof TupleExpr tuple && !knownTuple(tuple);
+				if (opaque) {
+					opaqueEpoch++;
+					opaqueDepth++;
+				}
+				traversal.push(node);
+				try {
+					super.meetNode(node);
+				} finally {
+					traversal.pop();
+					if (opaque) {
+						opaqueDepth--;
+					}
+				}
+				lowered.add(node);
+			}
+
+			@Override
+			public void meetOther(QueryModelNode node) {
+				// Unknown dispatch cannot prove either its implicit reads or a descendant's SELECT ancestry.
+				if (visible(node) && node instanceof TupleExpr tuple && !knownTuple(tuple)) {
+					opaqueEpoch++;
+				}
+			}
+
+			private boolean knownTuple(TupleExpr tuple) {
+				Class<?> type = tuple.getClass();
+				return FilterBindingScope.tupleReadsAreExplicit(tuple) || type == ArbitraryLengthPath.class
+						|| type == ZeroLengthPath.class || type == Graph.class || type == Lateral.class
+						|| type == Service.class || type == DescribeOperator.class || type == Window.class
+						|| type == TripleRef.class || type == TupleFunctionCall.class;
+			}
+
+			private void lower() {
+				for (int i = scopes.size() - 1; i >= 0; i--) {
+					GraphScope scope = scopes.get(i);
+					if (scope.unsafe && scope.parent != null) {
+						scope.parent.unsafe = true;
+					}
+					if (scope.hasDynamic && scope.parent != null) {
+						scope.parent.hasDynamic = true;
+					}
+				}
+				for (GraphScope scope : scopes) {
+					if (scope.parent != null && scope.parent.unsafe) {
+						scope.unsafe = true;
+					}
+					if (scope.unsafe) {
+						continue;
+					}
+					Projection projection = scope.projection;
+					String dynamic = projection.getInheritedGraphParameter();
+					String fixed = projection.getFixedGraphParameter();
+					String parentDynamic = scope.parent == null ? null : scope.parent.dynamic;
+					if (dynamic == null && scope.hasDynamic
+							&& (parentDynamic != null || dynamicRequests.contains(projection))) {
+						dynamic = parentDynamic != null ? parentDynamic : fixed != null ? fixed : newParameter();
+						projection.setInheritedGraphParameter(dynamic);
+					}
+					if (scope.hasFixed && dynamic == null && fixed == null) {
+						fixed = parentDynamic != null ? parentDynamic : newParameter();
+						projection.setFixedGraphParameter(fixed);
+					}
+					scope.dynamic = dynamic;
+					scope.parameter = dynamic != null ? dynamic : fixed;
+					if (scope.parent != null && scope.parent.parameter != null
+							&& !Objects.equals(projection.getProjectionContext().getName(), scope.parent.parameter)) {
+						projection.setProjectionContext(
+								parameter(projection.getProjectionContext(), scope.parent.parameter));
+					}
+					for (GraphOccurrence occurrence : scope.occurrences) {
+						// A local join across inherited contexts still needs a shared GRAPH key when no external
+						// carrier is declared. Only the actual context occurrences of this caller share its fixed
+						// alias.
+						String target = occurrence.context.hasValue()
+								|| Objects.equals(occurrence.context.getName(), scope.callerName) ? scope.parameter
+										: dynamic;
+						if (target != null) {
+							Var context = occurrence.context;
+							if (!target.equals(context.getName())) {
+								boolean publish = dynamic == null && occurrence.emitsResult && context.getName() != null
+										&& !context.hasValue()
+										&& !PrivateGraphContextRole.isPrivateContext(occurrence.owner, context)
+										&& !occurrence.bindsOrdinaryName(context.getName());
+								context = parameter(context, target);
+								occurrence.replace(context);
+								if (publish) {
+									occurrence.publishGraphSelection(target);
+									if (occurrence.owner instanceof StatementPattern) {
+										PrivateGraphContextRole.mark(occurrence.owner, context,
+												occurrence.context.getName());
+									}
+								}
+							}
+							PrivateGraphContextRole.mark(occurrence.owner, context);
+						}
+					}
+				}
+			}
 		}
 
 		@Override
@@ -193,79 +445,89 @@ final class PreparedValuesSnapshot {
 			return subqueriesByNode.getOrDefault(expression, List.copyOf(found));
 		}
 
-		private void lower(Projection projection) {
+		private String newParameter() {
 			String parameter;
 			do {
 				parameter = "_rdf4j_graph_context_" + nextParameter++;
 			} while (!names.add(parameter));
-			String target = parameter;
-			int callerDepth = projection.getProjectionContext().getGraphContextDepth();
-			int[] changed = { 0 };
-			projection.getArg().visit(new AbstractQueryModelVisitor<RuntimeException>() {
-				private int nestedSelects;
+			return parameter;
+		}
 
-				@Override
-				public void meet(Projection nested) {
-					if (!nested.isSubquery()) {
-						super.meet(nested);
-						return;
-					}
-					int before = changed[0];
-					nestedSelects++;
-					super.meet(nested);
-					Var caller = nested.getProjectionContext();
-					if (changed[0] > before && caller != null
-							&& caller.getGraphContextDepth() == callerDepth + nestedSelects) {
-						nested.setProjectionContext(parameter(caller));
-						nested.setInheritedGraphParameter(target);
-					}
-					nestedSelects--;
-				}
+		private static Var parameter(Var original, String name) {
+			Var replacement = Var.of(name, original.getValue(), original.isAnonymous(), original.isConstant(),
+					original.isBNode());
+			if (original.hasApiInputOrigin()) {
+				replacement = replacement.withApiInputOrigin();
+			}
+			replacement.setGraphContextDepth(original.getGraphContextDepth());
+			replacement.setVariableScopeChange(original.isVariableScopeChange());
+			return replacement;
+		}
 
-				@Override
-				public void meet(StatementPattern pattern) {
-					Var context = inherited(pattern.getContextVar());
-					if (context != null) {
-						pattern.getContextVar().replaceWith(context);
-					}
-				}
+		private static final class GraphScope {
+			private final Projection projection;
+			private final GraphScope parent;
+			private final String callerName;
+			private final List<GraphOccurrence> occurrences = new ArrayList<>();
+			private boolean hasFixed;
+			private boolean hasDynamic;
+			private boolean unsafe;
+			private String dynamic;
+			private String parameter;
 
-				@Override
-				public void meet(ArbitraryLengthPath path) {
-					Var context = inherited(path.getContextVar());
-					if (context != null) {
-						path.setContextVar(context);
-					}
-					super.meet(path);
-				}
+			private GraphScope(Projection projection, GraphScope parent) {
+				this.projection = projection;
+				this.parent = parent;
+				this.callerName = projection.getProjectionContext().getName();
+			}
+		}
 
-				@Override
-				public void meet(ZeroLengthPath path) {
-					Var context = inherited(path.getContextVar());
-					if (context != null) {
-						path.setContextVar(context);
-					}
-				}
+		private record GraphOccurrence(QueryModelNode owner, Var context, boolean emitsResult) {
+			private void publishGraphSelection(String parameter) {
+				String name = context.getName();
+				// The unvalued context produced a regular result before lowering. Restore it only on that
+				// producer's rows. A fixed arm can contribute the private join key without publishing the name.
+				TupleExpr producer = (TupleExpr) owner;
+				Extension output = new Extension();
+				output.setVariableScopeChange(TupleExprs.isVariableScopeChange(producer));
+				ExtensionElem selection = new ExtensionElem(
+						new Coalesce(List.of(Var.of(name), Var.of(parameter))), name);
+				selection.setAnonymousTarget(context.isAnonymous());
+				output.addElement(selection);
+				producer.replaceWith(output);
+				// A valued or authorized private graph can differ from the ordinary incoming name. Keep
+				// the original context lookup's compatibility check before copying the selected value.
+				Filter compatible = new Filter(producer,
+						new Or(new Not(new Bound(Var.of(name))), new SameTerm(Var.of(name), Var.of(parameter))));
+				compatible.setVariableScopeChange(true);
+				compatible.setConditionBindingScope(ConditionBindingScope.retain(Set.of(name, parameter)));
+				output.setArg(compatible);
+			}
 
-				private Var inherited(Var context) {
-					if (context != null && !context.hasValue()
-							&& context.getGraphContextDepth() == callerDepth + 1 + nestedSelects) {
-						changed[0]++;
-						return parameter(context);
-					}
-					return null;
+			private boolean bindsOrdinaryName(String name) {
+				if (owner instanceof StatementPattern statement) {
+					return binds(statement.getSubjectVar(), name) || binds(statement.getPredicateVar(), name)
+							|| binds(statement.getObjectVar(), name);
 				}
+				if (owner instanceof ArbitraryLengthPath path) {
+					return binds(path.getSubjectVar(), name) || binds(path.getObjectVar(), name);
+				}
+				ZeroLengthPath path = (ZeroLengthPath) owner;
+				return binds(path.getSubjectVar(), name) || binds(path.getObjectVar(), name);
+			}
 
-				private Var parameter(Var original) {
-					Var replacement = Var.of(target, original.getValue(), true, original.isConstant(),
-							original.isBNode());
-					replacement.setGraphContextDepth(original.getGraphContextDepth());
-					replacement.setVariableScopeChange(original.isVariableScopeChange());
-					return replacement;
+			private static boolean binds(Var var, String name) {
+				return var != null && !var.isConstant() && name.equals(var.getName());
+			}
+
+			private void replace(Var replacement) {
+				if (owner instanceof StatementPattern) {
+					owner.replaceChildNode(context, replacement);
+				} else if (owner instanceof ArbitraryLengthPath path) {
+					path.setContextVar(replacement);
+				} else if (owner instanceof ZeroLengthPath path) {
+					path.setContextVar(replacement);
 				}
-			});
-			if (changed[0] > 0) {
-				projection.setInheritedGraphParameter(target);
 			}
 		}
 

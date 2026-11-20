@@ -25,6 +25,7 @@ import java.util.stream.Collectors;
 
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.common.iteration.CloseableIteratorIteration;
+import org.eclipse.rdf4j.common.iteration.SingletonIteration;
 import org.eclipse.rdf4j.common.order.StatementOrder;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Resource;
@@ -32,19 +33,42 @@ import org.eclipse.rdf4j.model.Statement;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
+import org.eclipse.rdf4j.model.vocabulary.RDF;
+import org.eclipse.rdf4j.model.vocabulary.RDF4J;
 import org.eclipse.rdf4j.query.BindingSet;
+import org.eclipse.rdf4j.query.Dataset;
 import org.eclipse.rdf4j.query.QueryEvaluationException;
 import org.eclipse.rdf4j.query.QueryLanguage;
+import org.eclipse.rdf4j.query.algebra.BindingSetAssignment;
+import org.eclipse.rdf4j.query.algebra.Bound;
+import org.eclipse.rdf4j.query.algebra.Exists;
+import org.eclipse.rdf4j.query.algebra.Extension;
+import org.eclipse.rdf4j.query.algebra.ExtensionElem;
+import org.eclipse.rdf4j.query.algebra.Filter;
+import org.eclipse.rdf4j.query.algebra.Join;
+import org.eclipse.rdf4j.query.algebra.Lateral;
+import org.eclipse.rdf4j.query.algebra.LeftJoin;
+import org.eclipse.rdf4j.query.algebra.Projection;
+import org.eclipse.rdf4j.query.algebra.QueryRoot;
 import org.eclipse.rdf4j.query.algebra.Service;
+import org.eclipse.rdf4j.query.algebra.SingletonSet;
 import org.eclipse.rdf4j.query.algebra.StatementPattern;
+import org.eclipse.rdf4j.query.algebra.TripleRef;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
+import org.eclipse.rdf4j.query.algebra.TupleFunctionCall;
+import org.eclipse.rdf4j.query.algebra.ValueExpr;
+import org.eclipse.rdf4j.query.algebra.Var;
+import org.eclipse.rdf4j.query.algebra.evaluation.QueryValueEvaluationStep;
 import org.eclipse.rdf4j.query.algebra.evaluation.TripleSource;
 import org.eclipse.rdf4j.query.algebra.evaluation.federation.FederatedService;
 import org.eclipse.rdf4j.query.algebra.evaluation.federation.FederatedServiceResolver;
+import org.eclipse.rdf4j.query.algebra.evaluation.function.TupleFunction;
+import org.eclipse.rdf4j.query.algebra.evaluation.function.TupleFunctionRegistry;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.QueryJoinOptimizer;
 import org.eclipse.rdf4j.query.algebra.helpers.AbstractQueryModelVisitor;
 import org.eclipse.rdf4j.query.impl.EmptyBindingSet;
 import org.eclipse.rdf4j.query.impl.MapBindingSet;
+import org.eclipse.rdf4j.query.impl.SimpleDataset;
 import org.eclipse.rdf4j.query.parser.ParsedTupleQuery;
 import org.eclipse.rdf4j.query.parser.QueryParserUtil;
 import org.junit.jupiter.api.Test;
@@ -173,6 +197,14 @@ class QueryJoinOptimizerConnectedDependencyTest {
 		List<BindingSet> expected = evaluateWithoutOptimization(query, source, rawResolver, incoming);
 		assertThat(bindingRows(expected)).isEmpty();
 		assertThat(rawResolver.requestedUrls).containsExactly("urn:test-service");
+		rawResolver.requestedUrls.clear();
+		assertThat(bindingRows(evaluateDetachedOptional(query, source, rawResolver, incoming)))
+				.containsExactly(Map.of("s", "urn:s1", "endpoint", "urn:api-service"));
+		assertThat(rawResolver.requestedUrls).containsExactly("urn:test-service");
+		BindingSet marked = emptySubstitutionDomain(incoming);
+		RecordingServiceResolver markedRawResolver = new RecordingServiceResolver();
+		assertThat(evaluateWithoutOptimization(query, source, markedRawResolver, marked)).isEmpty();
+		assertThat(markedRawResolver.requestedUrls).containsExactly("urn:test-service");
 
 		ParsedTupleQuery parsed = QueryParserUtil.parseTupleQuery(QueryLanguage.SPARQL, query, null);
 		EvaluationStatistics statistics = new EvaluationStatistics() {
@@ -215,6 +247,582 @@ class QueryJoinOptimizerConnectedDependencyTest {
 		List<BindingSet> results = collect(strategy.evaluate(parsed.getTupleExpr(), incoming));
 		assertThat(bindingRows(results)).containsExactlyElementsOf(bindingRows(expected));
 		assertThat(optimizedResolver.requestedUrls).containsExactly("urn:test-service");
+		optimizedResolver.requestedUrls.clear();
+		assertThat(collect(strategy.evaluate(parsed.getTupleExpr(), marked))).isEmpty();
+		assertThat(optimizedResolver.requestedUrls).containsExactly("urn:test-service");
+	}
+
+	@Test
+	void runtimeBindingIsMergedAfterIndependentOptionalOutput() throws Exception {
+		String query = "SELECT ?s ?endpoint ?tag WHERE { VALUES ?s { <urn:s1> } OPTIONAL { "
+				+ "{ SELECT ?endpoint ?tag WHERE { VALUES (?endpoint ?tag) { "
+				+ "(UNDEF \"unbound\") (UNDEF \"unbound\") (<urn:local> \"local\") } } } } }";
+		MapBindingSet input = new MapBindingSet();
+		input.addBinding("endpoint", iri("urn:api-service"));
+
+		List<BindingSet> rows = evaluateWithoutOptimization(query, new FiniteTripleSource(List.of()), null, input);
+
+		assertThat(bindingRows(rows)).containsExactlyInAnyOrder(
+				Map.of("s", "urn:s1", "endpoint", "urn:api-service", "tag", "unbound"),
+				Map.of("s", "urn:s1", "endpoint", "urn:api-service", "tag", "unbound"));
+	}
+
+	@Test
+	void incompatibleIndependentOptionalOutputDoesNotBecomeFallback() throws Exception {
+		String query = "SELECT ?s ?endpoint WHERE { VALUES ?s { <urn:s1> } OPTIONAL { "
+				+ "{ SELECT ?endpoint WHERE { VALUES ?endpoint { <urn:local> } } } } }";
+		MapBindingSet input = new MapBindingSet();
+		input.addBinding("endpoint", iri("urn:api-service"));
+
+		FiniteTripleSource source = new FiniteTripleSource(List.of());
+		assertThat(evaluateWithoutOptimization(query, source, null, input)).isEmpty();
+		assertThat(bindingRows(evaluateDetachedOptional(query, source, null, input)))
+				.containsExactly(Map.of("s", "urn:s1", "endpoint", "urn:api-service"));
+		BindingSet marked = emptySubstitutionDomain(input);
+		assertThat(evaluateWithoutOptimization(query, source, null, marked)).isEmpty();
+		TupleExpr optimized = QueryParserUtil.parseTupleQuery(QueryLanguage.SPARQL, query, null).getTupleExpr();
+		new QueryJoinOptimizer(new EvaluationStatistics(), source).optimize(optimized, null, input);
+		DefaultEvaluationStrategy strategy = new DefaultEvaluationStrategy(source, null);
+		assertThat(collect(strategy.evaluate(optimized, input))).isEmpty();
+		assertThat(collect(strategy.evaluate(optimized, marked))).isEmpty();
+	}
+
+	@Test
+	void compatibleIndependentOptionalOutputRetainsRuntimeBinding() throws Exception {
+		String query = "SELECT ?s ?endpoint WHERE { VALUES ?s { <urn:s1> } OPTIONAL { "
+				+ "{ SELECT ?endpoint WHERE { VALUES ?endpoint { <urn:local> } } } } }";
+		MapBindingSet input = new MapBindingSet();
+		input.addBinding("endpoint", iri("urn:local"));
+
+		assertThat(bindingRows(evaluateWithoutOptimization(query, new FiniteTripleSource(List.of()), null, input)))
+				.containsExactly(Map.of("s", "urn:s1", "endpoint", "urn:local"));
+	}
+
+	@Test
+	void emptyIndependentOptionalRestoresRuntimeBinding() throws Exception {
+		String query = "SELECT ?s ?endpoint WHERE { VALUES ?s { <urn:s1> } OPTIONAL { "
+				+ "{ SELECT ?endpoint WHERE { VALUES ?endpoint { } } } } }";
+		MapBindingSet input = new MapBindingSet();
+		input.addBinding("endpoint", iri("urn:api-service"));
+
+		assertThat(bindingRows(evaluateWithoutOptimization(query, new FiniteTripleSource(List.of()), null, input)))
+				.containsExactly(Map.of("s", "urn:s1", "endpoint", "urn:api-service"));
+	}
+
+	@Test
+	void optionalServiceCanUseAnInvocationOnlyEndpoint() throws Exception {
+		String query = "SELECT ?s ?endpoint ?remote WHERE { VALUES ?s { <urn:s1> } "
+				+ "OPTIONAL { SERVICE ?endpoint { ?s <urn:remote> ?remote } } }";
+		MapBindingSet input = new MapBindingSet();
+		input.addBinding("endpoint", iri("urn:test-service"));
+		RecordingServiceResolver resolver = new RecordingServiceResolver();
+
+		assertThat(bindingRows(evaluateWithoutOptimization(query, new FiniteTripleSource(List.of()), resolver, input)))
+				.containsExactly(Map.of("s", "urn:s1", "endpoint", "urn:test-service", "remote", "urn:remote-result"));
+		assertThat(resolver.requestedUrls).containsExactly("urn:test-service");
+	}
+
+	@Test
+	void optionalGraphCanUseAnInvocationOnlyDefaultAlias() throws Exception {
+		String query = "SELECT ?s ?g ?o WHERE { VALUES ?s { <urn:s1> } "
+				+ "OPTIONAL { GRAPH ?g { ?s <urn:p> ?o } } }";
+		MapBindingSet input = new MapBindingSet();
+		input.addBinding("g", RDF4J.NIL);
+		FiniteTripleSource source = new FiniteTripleSource(List.of(statement("urn:s1", "urn:p", "urn:o1")));
+
+		assertThat(bindingRows(evaluateWithoutOptimization(query, source, null, input)))
+				.containsExactly(Map.of("s", "urn:s1", "g", RDF4J.NIL.stringValue(), "o", "urn:o1"));
+	}
+
+	@Test
+	void withheldRuntimeBindingCannotReappearAsAnAncestorProbe() throws Exception {
+		String query = "SELECT ?s ?endpoint ?remote WHERE { VALUES ?s { <urn:s1> } "
+				+ "OPTIONAL { ?s <urn:endpoint> ?endpoint . "
+				+ "SERVICE ?endpoint { ?s <urn:remote> ?remote } } }";
+		MapBindingSet input = new MapBindingSet();
+		input.addBinding("endpoint", iri("urn:api-service"));
+		MapBindingSet parentProbe = new MapBindingSet();
+		parentProbe.addBinding("endpoint", iri("urn:api-service"));
+		QueryEvaluationContext context = new QueryEvaluationContext.Minimal((Dataset) null);
+		BindingSet framed = BindingFrameBindings.push(new BindingFrameBindings.Scope(), input, parentProbe, context);
+		BindingSet marked = emptySubstitutionDomain(framed);
+		List<Value> preservedProbes = new ArrayList<>();
+		BindingFrameBindings.visitFrames(BindingFrameBindings.from(marked), () -> {
+		}, (name, value) -> {
+			if (name.equals("endpoint")) {
+				preservedProbes.add(value);
+			}
+		});
+		assertThat(preservedProbes).containsExactly(iri("urn:api-service"));
+		FiniteTripleSource source = new FiniteTripleSource(List.of(
+				statement("urn:s1", "urn:endpoint", "urn:test-service")));
+		RecordingServiceResolver resolver = new RecordingServiceResolver();
+		ParsedTupleQuery parsed = QueryParserUtil.parseTupleQuery(QueryLanguage.SPARQL, query, null);
+		DefaultEvaluationStrategy strategy = new DefaultEvaluationStrategy(source, resolver);
+
+		assertEndpointBeforeService(parsed.getTupleExpr());
+		assertThat(collect(strategy.evaluate(parsed.getTupleExpr(), framed))).isEmpty();
+		assertThat(resolver.requestedUrls).containsExactly("urn:test-service");
+		resolver.requestedUrls.clear();
+		assertThat(bindingRows(evaluateDetachedOptional(query, source, resolver, framed)))
+				.containsExactly(Map.of("s", "urn:s1", "endpoint", "urn:api-service"));
+		assertThat(resolver.requestedUrls).containsExactly("urn:test-service");
+		resolver.requestedUrls.clear();
+		assertThat(collect(strategy.evaluate(parsed.getTupleExpr(), marked))).isEmpty();
+		assertThat(resolver.requestedUrls).containsExactly("urn:test-service");
+		TupleExpr optimized = QueryParserUtil.parseTupleQuery(QueryLanguage.SPARQL, query, null).getTupleExpr();
+		new QueryJoinOptimizer(new EvaluationStatistics(), source).optimize(optimized, null, input);
+		assertEndpointBeforeService(optimized);
+		resolver.requestedUrls.clear();
+		assertThat(collect(strategy.evaluate(optimized, framed))).isEmpty();
+		assertThat(resolver.requestedUrls).containsExactly("urn:test-service");
+		resolver.requestedUrls.clear();
+		assertThat(collect(strategy.evaluate(optimized, marked))).isEmpty();
+		assertThat(resolver.requestedUrls).containsExactly("urn:test-service");
+	}
+
+	@Test
+	void optionalUnionKeepsInvocationEndpointAtItsServiceBoundaryOnly() throws Exception {
+		String query = "SELECT ?s ?endpoint ?remote ?visible ?branch WHERE { VALUES ?s { <urn:s1> } "
+				+ "OPTIONAL { { BIND(BOUND(?endpoint) AS ?visible) "
+				+ "SERVICE ?endpoint { ?s <urn:remote> ?remote } BIND(\"input\" AS ?branch) } UNION { "
+				+ "?s <urn:endpoint> ?endpoint . SERVICE ?endpoint { ?s <urn:remote> ?remote } "
+				+ "BIND(\"local\" AS ?branch) } } }";
+		MapBindingSet input = new MapBindingSet();
+		input.addBinding("endpoint", iri("urn:api-service"));
+		FiniteTripleSource source = new FiniteTripleSource(List.of(
+				statement("urn:s1", "urn:endpoint", "urn:test-service")));
+		RecordingServiceResolver resolver = new RecordingServiceResolver();
+
+		assertThat(bindingRows(evaluateWithoutOptimization(query, source, resolver, input)))
+				.containsExactly(Map.of("s", "urn:s1", "endpoint", "urn:api-service", "remote", "urn:remote-result",
+						"visible", "false", "branch", "input"));
+		assertThat(resolver.requestedUrls).containsExactlyInAnyOrder("urn:api-service", "urn:test-service");
+	}
+
+	@Test
+	void optionalUnionKeepsInvocationGraphAtItsSelectorBoundaryOnly() throws Exception {
+		String query = "SELECT ?s ?g ?o ?visible WHERE { VALUES ?s { <urn:s1> } OPTIONAL { "
+				+ "{ BIND(BOUND(?g) AS ?visible) GRAPH ?g { ?s <urn:p> ?o } } UNION "
+				+ "{ VALUES ?g { <urn:g1> } GRAPH ?g { ?s <urn:p> ?o } } } }";
+		MapBindingSet input = new MapBindingSet();
+		input.addBinding("g", RDF4J.NIL);
+		FiniteTripleSource source = new FiniteTripleSource(List.of(
+				statement("urn:s1", "urn:p", "urn:alias", RDF4J.NIL.stringValue()),
+				statement("urn:s1", "urn:p", "urn:other", "urn:g1")));
+		SimpleDataset dataset = new SimpleDataset();
+		dataset.addNamedGraph(RDF4J.NIL);
+		dataset.addNamedGraph(iri("urn:g1"));
+		ParsedTupleQuery parsed = QueryParserUtil.parseTupleQuery(QueryLanguage.SPARQL, query, null);
+		DefaultEvaluationStrategy strategy = new DefaultEvaluationStrategy(source, dataset, null);
+
+		assertThat(bindingRows(collect(strategy.evaluate(parsed.getTupleExpr(), input))))
+				.containsExactly(Map.of("s", "urn:s1", "g", RDF4J.NIL.stringValue(), "o", "urn:alias",
+						"visible", "false"));
+	}
+
+	@Test
+	void optionalSubqueryServiceReceivesInvocationWithoutLeakingItToSiblingBind() throws Exception {
+		String query = "SELECT ?s ?endpoint ?remote ?visible WHERE { VALUES ?s { <urn:s1> } OPTIONAL { "
+				+ "BIND(BOUND(?endpoint) AS ?visible) "
+				+ "{ SELECT ?remote WHERE { SERVICE ?endpoint { <urn:s1> <urn:remote> ?remote } } } } }";
+		MapBindingSet input = new MapBindingSet();
+		input.addBinding("endpoint", iri("urn:api-service"));
+		RecordingServiceResolver resolver = new RecordingServiceResolver();
+
+		assertThat(bindingRows(evaluateWithoutOptimization(query, new FiniteTripleSource(List.of()), resolver, input)))
+				.containsExactly(Map.of("s", "urn:s1", "endpoint", "urn:api-service", "visible", "false",
+						"remote", "urn:remote-result"));
+		assertThat(resolver.requestedUrls).containsExactly("urn:api-service");
+	}
+
+	@Test
+	void optionalSubqueryGraphReceivesInvocationWithoutLeakingItToSiblingBind() throws Exception {
+		String query = "SELECT ?s ?g ?o ?visible WHERE { VALUES ?s { <urn:s1> } OPTIONAL { "
+				+ "BIND(BOUND(?g) AS ?visible) "
+				+ "{ SELECT ?o WHERE { GRAPH ?g { <urn:s1> <urn:p> ?o } } } } }";
+		MapBindingSet input = new MapBindingSet();
+		input.addBinding("g", RDF4J.NIL);
+		FiniteTripleSource source = new FiniteTripleSource(List.of(
+				statement("urn:s1", "urn:p", "urn:alias", RDF4J.NIL.stringValue())));
+		SimpleDataset dataset = new SimpleDataset();
+		dataset.addNamedGraph(RDF4J.NIL);
+		ParsedTupleQuery parsed = QueryParserUtil.parseTupleQuery(QueryLanguage.SPARQL, query, null);
+		DefaultEvaluationStrategy strategy = new DefaultEvaluationStrategy(source, dataset, null);
+
+		assertThat(bindingRows(collect(strategy.evaluate(parsed.getTupleExpr(), input))))
+				.containsExactly(Map.of("s", "urn:s1", "g", RDF4J.NIL.stringValue(), "visible", "false",
+						"o", "urn:alias"));
+	}
+
+	@Test
+	void optionalPathProducesLocalEndpointBeforeCompatibility() throws Exception {
+		String query = "SELECT ?s ?endpoint ?remote WHERE { VALUES ?s { <urn:s1> } OPTIONAL { "
+				+ "?s <urn:endpoint>+ ?endpoint . SERVICE ?endpoint { ?s <urn:remote> ?remote } } }";
+		MapBindingSet input = new MapBindingSet();
+		input.addBinding("endpoint", iri("urn:api-service"));
+		FiniteTripleSource source = new FiniteTripleSource(List.of(
+				statement("urn:s1", "urn:endpoint", "urn:test-service")));
+		RecordingServiceResolver resolver = new RecordingServiceResolver();
+
+		assertThat(evaluateWithoutOptimization(query, source, resolver, input)).isEmpty();
+		assertThat(resolver.requestedUrls).containsExactly("urn:test-service");
+		resolver.requestedUrls.clear();
+		assertThat(bindingRows(evaluateDetachedOptional(query, source, resolver, input)))
+				.containsExactly(Map.of("s", "urn:s1", "endpoint", "urn:api-service"));
+		assertThat(resolver.requestedUrls).containsExactly("urn:test-service");
+		BindingSet marked = emptySubstitutionDomain(input);
+		resolver.requestedUrls.clear();
+		assertThat(evaluateWithoutOptimization(query, source, resolver, marked)).isEmpty();
+		assertThat(resolver.requestedUrls).containsExactly("urn:test-service");
+		TupleExpr optimized = QueryParserUtil.parseTupleQuery(QueryLanguage.SPARQL, query, null).getTupleExpr();
+		new QueryJoinOptimizer(new EvaluationStatistics(), source).optimize(optimized, null, input);
+		DefaultEvaluationStrategy strategy = new DefaultEvaluationStrategy(source, resolver);
+		resolver.requestedUrls.clear();
+		assertThat(collect(strategy.evaluate(optimized, input))).isEmpty();
+		assertThat(resolver.requestedUrls).containsExactly("urn:test-service");
+		resolver.requestedUrls.clear();
+		assertThat(collect(strategy.evaluate(optimized, marked))).isEmpty();
+		assertThat(resolver.requestedUrls).containsExactly("urn:test-service");
+	}
+
+	@Test
+	void optionalExistsReceivesInvocationWithoutExposingItToSiblingBind() throws Exception {
+		String query = "SELECT ?s ?input ?visible ?matched WHERE { VALUES ?s { <urn:s1> } OPTIONAL { "
+				+ "BIND(BOUND(?input) AS ?visible) "
+				+ "BIND(EXISTS { ?input <urn:mark> <urn:yes> } AS ?matched) } }";
+		FiniteTripleSource source = new FiniteTripleSource(List.of(statement("urn:a", "urn:mark", "urn:yes")));
+		for (String name : List.of("urn:a", "urn:b")) {
+			MapBindingSet input = new MapBindingSet();
+			input.addBinding("input", iri(name));
+			assertThat(bindingRows(evaluateWithoutOptimization(query, source, null, input)))
+					.containsExactly(Map.of("s", "urn:s1", "input", name, "visible", "false",
+							"matched", name.equals("urn:a") ? "true" : "false"));
+		}
+	}
+
+	@Test
+	void optionalLateralReceivesDeclaredInvocationWithoutExposingItToSiblingBind() throws Exception {
+		TupleExpr before = new Extension(new SingletonSet(), new ExtensionElem(new Bound(Var.of("input")), "visible"));
+		TupleExpr lateral = new Lateral(new SingletonSet(),
+				new Extension(new SingletonSet(), new ExtensionElem(Var.of("input"), "copy")), Set.of("input"));
+		TupleExpr optional = new LeftJoin(new SingletonSet(), new Join(before, lateral));
+		MapBindingSet input = new MapBindingSet();
+		input.addBinding("input", iri("urn:a"));
+		DefaultEvaluationStrategy strategy = new DefaultEvaluationStrategy(new FiniteTripleSource(List.of()), null);
+
+		assertThat(bindingRows(collect(strategy.precompile(optional).evaluate(input))))
+				.containsExactly(Map.of("input", "urn:a", "visible", "false", "copy", "urn:a"));
+	}
+
+	@Test
+	void optionalLateralPrefersItsLocalInputBeforeCompatibility() throws Exception {
+		MapBindingSet local = new MapBindingSet();
+		local.addBinding("input", iri("urn:local"));
+		BindingSetAssignment provider = new BindingSetAssignment();
+		provider.setBindingSets(List.of(local));
+		TupleExpr before = new Extension(new SingletonSet(), new ExtensionElem(new Bound(Var.of("input")), "visible"));
+		TupleExpr lateral = new Lateral(provider,
+				new Extension(new SingletonSet(), new ExtensionElem(Var.of("input"), "copy")), Set.of("input"));
+		TupleExpr optional = new LeftJoin(new SingletonSet(), new Join(before, lateral));
+		MapBindingSet input = new MapBindingSet();
+		input.addBinding("input", iri("urn:api"));
+		FiniteTripleSource source = new FiniteTripleSource(List.of());
+		TupleExpr rhs = ((LeftJoin) optional).getRightArg().clone();
+		DefaultEvaluationStrategy witnessStrategy = new DefaultEvaluationStrategy(source, null);
+		assertThat(bindingRows(collect(witnessStrategy.precompile(rhs).evaluate(EmptyBindingSet.getInstance()))))
+				.containsExactly(Map.of("input", "urn:local", "copy", "urn:local", "visible", "false"));
+		BindingSet marked = emptySubstitutionDomain(input);
+		List<Value> observedBound = new ArrayList<>();
+		List<Value> observedCopy = new ArrayList<>();
+		DefaultEvaluationStrategy strategy = new DefaultEvaluationStrategy(source, null) {
+			@Override
+			public QueryValueEvaluationStep precompile(ValueExpr expression, QueryEvaluationContext context) {
+				QueryValueEvaluationStep prepared = super.precompile(expression, context);
+				if (expression instanceof Bound && expression.getParentNode() instanceof ExtensionElem element
+						&& "visible".equals(element.getName())) {
+					return observeValue(prepared, observedBound);
+				}
+				if (expression instanceof Var variable && "input".equals(variable.getName())
+						&& variable.getParentNode() instanceof ExtensionElem element
+						&& "copy".equals(element.getName())) {
+					return observeValue(prepared, observedCopy);
+				}
+				return prepared;
+			}
+		};
+		record LocalRun(boolean optimized, boolean marked, List<Map<String, String>> rows, List<Value> bound,
+				List<Value> copy) {
+		}
+		List<LocalRun> runs = new ArrayList<>();
+		for (boolean optimized : List.of(false, true)) {
+			TupleExpr expression = optimized ? optional.clone() : optional;
+			if (optimized) {
+				new QueryJoinOptimizer(new EvaluationStatistics(), source).optimize(expression, null, input);
+			}
+			var step = strategy.precompile(expression);
+			for (boolean isMarked : List.of(false, true)) {
+				observedBound.clear();
+				observedCopy.clear();
+				List<Map<String, String>> rows = bindingRows(collect(step.evaluate(isMarked ? marked : input)));
+				runs.add(new LocalRun(optimized, isMarked, rows, new ArrayList<>(observedBound),
+						new ArrayList<>(observedCopy)));
+			}
+		}
+		assertThat(runs).hasSize(4);
+		for (LocalRun run : runs) {
+			String scenario = "optimized=" + run.optimized() + ", empty domain=" + run.marked();
+			if (run.marked()) {
+				assertThat(run.rows()).as(scenario).isEmpty();
+			} else {
+				assertThat(run.rows()).as(scenario).containsExactly(Map.of("input", "urn:api"));
+			}
+			assertThat(run.bound()).as(scenario).containsExactly(VF.createLiteral(false));
+			assertThat(run.copy()).as(scenario).containsExactly(iri("urn:local"));
+		}
+	}
+
+	@Test
+	void optionalTupleFunctionReceivesInvocationAtItsArgumentBoundary() throws Exception {
+		String uri = "urn:optional-input:tuple-function";
+		TupleFunction function = new TupleFunction() {
+			@Override
+			public String getURI() {
+				return uri;
+			}
+
+			@Override
+			public CloseableIteration<? extends List<? extends Value>> evaluate(ValueFactory factory, Value... args) {
+				return new SingletonIteration<>(List.of(args[0]));
+			}
+		};
+		TupleFunctionRegistry registry = TupleFunctionRegistry.getInstance();
+		registry.add(function);
+		try {
+			TupleFunctionCall call = new TupleFunctionCall();
+			call.setURI(uri);
+			call.addArg(Var.of("input"));
+			call.addResultVar(Var.of("copy"));
+			TupleExpr before = new Extension(new SingletonSet(),
+					new ExtensionElem(new Bound(Var.of("input")), "visible"));
+			TupleExpr optional = new LeftJoin(new SingletonSet(), new Join(before, call));
+			MapBindingSet input = new MapBindingSet();
+			input.addBinding("input", iri("urn:a"));
+			DefaultEvaluationStrategy strategy = new DefaultEvaluationStrategy(new FiniteTripleSource(List.of()), null);
+
+			assertThat(bindingRows(collect(strategy.precompile(optional).evaluate(input))))
+					.containsExactly(Map.of("input", "urn:a", "visible", "false", "copy", "urn:a"));
+		} finally {
+			registry.remove(function);
+		}
+	}
+
+	@Test
+	void optionalTupleFunctionPrefersLocalProbeBeforeWithheldInvocation() throws Exception {
+		String uri = "urn:optional-input:tuple-function-local-probe";
+		List<Value> observed = new ArrayList<>();
+		TupleFunction function = new TupleFunction() {
+			@Override
+			public String getURI() {
+				return uri;
+			}
+
+			@Override
+			public CloseableIteration<? extends List<? extends Value>> evaluate(ValueFactory factory, Value... args) {
+				observed.add(args[0]);
+				return new SingletonIteration<>(List.of(args[0]));
+			}
+		};
+		TupleFunctionRegistry registry = TupleFunctionRegistry.getInstance();
+		registry.add(function);
+		try {
+			for (boolean optimized : List.of(false, true)) {
+				for (boolean marked : List.of(false, true)) {
+					observed.clear();
+					for (String local : List.of("urn:a", "urn:b")) {
+						MapBindingSet localRow = new MapBindingSet();
+						localRow.addBinding("input", iri(local));
+						BindingSetAssignment provider = new BindingSetAssignment();
+						provider.setBindingSets(List.of(localRow));
+						TupleFunctionCall call = new TupleFunctionCall();
+						call.setURI(uri);
+						call.addArg(Var.of("input"));
+						call.addResultVar(Var.of("copy"));
+						TupleExpr consumer = new Extension(call,
+								new ExtensionElem(new Bound(Var.of("input")), "visible"));
+						TupleExpr optional = new LeftJoin(new SingletonSet(), new Join(provider, consumer));
+						MapBindingSet input = new MapBindingSet();
+						input.addBinding("input", iri("urn:a"));
+						FiniteTripleSource source = new FiniteTripleSource(List.of());
+						if (optimized) {
+							new QueryJoinOptimizer(new EvaluationStatistics(), source).optimize(optional, null, input);
+						}
+						DefaultEvaluationStrategy strategy = new DefaultEvaluationStrategy(source, null);
+						BindingSet entry = marked ? emptySubstitutionDomain(input) : input;
+						List<Map<String, String>> rows = bindingRows(
+								collect(strategy.precompile(optional).evaluate(entry)));
+						if (local.equals("urn:a")) {
+							assertThat(rows)
+									.containsExactly(Map.of("input", "urn:a", "copy", "urn:a", "visible", "false"));
+						} else if (marked) {
+							assertThat(rows).isEmpty();
+						} else {
+							assertThat(rows).containsExactly(Map.of("input", "urn:a"));
+						}
+					}
+					assertThat(observed).containsExactly(iri("urn:a"), iri("urn:b"));
+				}
+			}
+			QueryEvaluationContext context = new QueryEvaluationContext.Minimal((Dataset) null);
+			MapBindingSet invocation = new MapBindingSet();
+			invocation.addBinding("input", iri("urn:a"));
+			BindingSet withheld = BindingFrameBindings.without(invocation, Set.of("input"), context);
+			BindingSet framed = BindingFrameBindings.push(new BindingFrameBindings.Scope(), withheld, invocation,
+					context);
+			TupleFunctionCall framedCall = new TupleFunctionCall();
+			framedCall.setURI(uri);
+			framedCall.addArg(Var.of("input"));
+			framedCall.addResultVar(Var.of("copy"));
+			DefaultEvaluationStrategy strategy = new DefaultEvaluationStrategy(new FiniteTripleSource(List.of()), null);
+			assertThat(bindingRows(collect(strategy.precompile(framedCall, context).evaluate(framed))))
+					.containsExactly(Map.of("copy", "urn:a"));
+			assertThat(observed).containsExactly(iri("urn:a"), iri("urn:b"), iri("urn:a"));
+		} finally {
+			registry.remove(function);
+		}
+	}
+
+	@Test
+	void optionalExistsUsesWithheldInvocationInsteadOfAnInvisibleProbe() throws Exception {
+		MapBindingSet local = new MapBindingSet();
+		local.addBinding("input", iri("urn:a"));
+		BindingSetAssignment provider = new BindingSetAssignment();
+		provider.setBindingSets(List.of(local));
+		StatementPattern pattern = new StatementPattern(Var.of("input"), Var.of("mark", iri("urn:mark")),
+				Var.of("yes", iri("urn:yes")));
+		TupleExpr consumer = new Extension(new SingletonSet(),
+				new ExtensionElem(new Bound(Var.of("input")), "visible"),
+				new ExtensionElem(new Exists(pattern), "matched"));
+		TupleExpr optional = new LeftJoin(new SingletonSet(), new Join(provider, consumer));
+		MapBindingSet input = new MapBindingSet();
+		input.addBinding("input", iri("urn:a"));
+		FiniteTripleSource source = new FiniteTripleSource(List.of(statement("urn:b", "urn:mark", "urn:yes")));
+		DefaultEvaluationStrategy strategy = new DefaultEvaluationStrategy(source, null);
+
+		assertThat(bindingRows(collect(strategy.precompile(optional).evaluate(input))))
+				.containsExactly(Map.of("input", "urn:a", "visible", "false", "matched", "false"));
+	}
+
+	@Test
+	void correlatedExistsUsesWithheldInvocationInsteadOfAnInvisibleProbe() {
+		QueryEvaluationContext context = new QueryEvaluationContext.Minimal((Dataset) null);
+		MapBindingSet invocation = new MapBindingSet();
+		invocation.addBinding("input", iri("urn:a"));
+		MapBindingSet localProbe = new MapBindingSet();
+		localProbe.addBinding("input", iri("urn:b"));
+		BindingSet withheld = BindingFrameBindings.without(invocation, Set.of("input"), context);
+		BindingSet framed = BindingFrameBindings.push(new BindingFrameBindings.Scope(), withheld, localProbe, context);
+		StatementPattern pattern = new StatementPattern(Var.of("input"), Var.of("mark", iri("urn:mark")),
+				Var.of("yes", iri("urn:yes")));
+		FiniteTripleSource source = new FiniteTripleSource(List.of(statement("urn:b", "urn:mark", "urn:yes")));
+		DefaultEvaluationStrategy strategy = new DefaultEvaluationStrategy(source, null);
+
+		assertThat(strategy.precompile(new Exists(pattern), context).evaluate(framed))
+				.isEqualTo(VF.createLiteral(false));
+	}
+
+	@Test
+	void correlatedExistsBoundSeesAnEqualWithheldInvocationThroughItsBoundary() {
+		QueryEvaluationContext context = new QueryEvaluationContext.Minimal((Dataset) null);
+		MapBindingSet invocation = new MapBindingSet();
+		invocation.addBinding("input", iri("urn:a"));
+		BindingSet withheld = BindingFrameBindings.without(invocation, Set.of("input"), context);
+		BindingSet framed = BindingFrameBindings.push(new BindingFrameBindings.Scope(), withheld, invocation, context);
+		TupleExpr subquery = new Filter(new SingletonSet(), new Bound(Var.of("input")));
+		DefaultEvaluationStrategy strategy = new DefaultEvaluationStrategy(new FiniteTripleSource(List.of()), null);
+
+		assertThat(strategy.precompile(new Exists(subquery), context).evaluate(framed))
+				.isEqualTo(VF.createLiteral(true));
+	}
+
+	@Test
+	void optionalTripleReferenceProducesCompatibleLocalOutput() throws Exception {
+		IRI reference = iri("urn:reference");
+		FiniteTripleSource source = new FiniteTripleSource(List.of(
+				VF.createStatement(reference, RDF.TYPE, RDF.PROPOSITION_FORM),
+				VF.createStatement(reference, RDF.PROPOSITION_FORM_SUBJECT, iri("urn:subject")),
+				VF.createStatement(reference, RDF.PROPOSITION_FORM_PREDICATE, iri("urn:predicate")),
+				VF.createStatement(reference, RDF.PROPOSITION_FORM_OBJECT, iri("urn:object"))));
+		TupleExpr before = new Extension(new SingletonSet(), new ExtensionElem(new Bound(Var.of("input")), "visible"));
+		TupleExpr triple = new TripleRef(Var.of("subject"), Var.of("predicate"), Var.of("object"), Var.of("input"));
+		TupleExpr optional = new LeftJoin(new SingletonSet(), new Join(before, triple));
+		MapBindingSet input = new MapBindingSet();
+		input.addBinding("input", reference);
+		DefaultEvaluationStrategy strategy = new DefaultEvaluationStrategy(source, null);
+
+		assertThat(bindingRows(collect(strategy.precompile(optional).evaluate(input))))
+				.containsExactly(Map.of("input", "urn:reference", "visible", "false", "subject", "urn:subject",
+						"predicate", "urn:predicate", "object", "urn:object"));
+	}
+
+	@Test
+	void directTripleReferenceReceivesInvocationAtItsLookupBoundary() throws Exception {
+		IRI reference = iri("urn:reference");
+		FiniteTripleSource source = new FiniteTripleSource(List.of(
+				VF.createStatement(reference, RDF.TYPE, RDF.PROPOSITION_FORM),
+				VF.createStatement(reference, RDF.PROPOSITION_FORM_SUBJECT, iri("urn:subject")),
+				VF.createStatement(reference, RDF.PROPOSITION_FORM_PREDICATE, iri("urn:predicate")),
+				VF.createStatement(reference, RDF.PROPOSITION_FORM_OBJECT, iri("urn:object"))));
+		TupleExpr triple = new TripleRef(Var.of("subject"), Var.of("predicate"), Var.of("object"), Var.of("input"));
+		MapBindingSet input = new MapBindingSet();
+		input.addBinding("input", reference);
+		DefaultEvaluationStrategy strategy = new DefaultEvaluationStrategy(source, null);
+
+		assertThat(bindingRows(collect(strategy.precompile(triple).evaluate(input))))
+				.containsExactly(
+						Map.of("input", "urn:reference", "subject", "urn:subject", "predicate", "urn:predicate",
+								"object", "urn:object"));
+		assertThat(source.requestedSubjects).first().isEqualTo(reference);
+	}
+
+	@Test
+	void optionalTripleReferenceProducesLocalEndpointBeforeCompatibility() throws Exception {
+		IRI reference = iri("urn:test-service");
+		FiniteTripleSource source = new FiniteTripleSource(List.of(
+				VF.createStatement(reference, RDF.TYPE, RDF.PROPOSITION_FORM),
+				VF.createStatement(reference, RDF.PROPOSITION_FORM_SUBJECT, iri("urn:subject")),
+				VF.createStatement(reference, RDF.PROPOSITION_FORM_PREDICATE, iri("urn:predicate")),
+				VF.createStatement(reference, RDF.PROPOSITION_FORM_OBJECT, iri("urn:object"))));
+		TupleExpr triple = new TripleRef(Var.of("subject"), Var.of("predicate"), Var.of("object"), Var.of("input"));
+		Service service = new Service(Var.of("input"),
+				new StatementPattern(Var.of("subject"), Var.of("remotePredicate", iri("urn:remote")), Var.of("remote")),
+				"SERVICE ?input { ?subject <urn:remote> ?remote }", Map.of(), null, false);
+		TupleExpr optional = new LeftJoin(new SingletonSet(), new Join(triple, service));
+		MapBindingSet input = new MapBindingSet();
+		input.addBinding("input", iri("urn:api-service"));
+		RecordingServiceResolver resolver = new RecordingServiceResolver();
+		DefaultEvaluationStrategy strategy = new DefaultEvaluationStrategy(source, resolver);
+
+		for (boolean optimized : List.of(false, true)) {
+			TupleExpr expression = optimized ? optional.clone() : optional;
+			if (optimized) {
+				new QueryJoinOptimizer(new EvaluationStatistics(), source).optimize(expression, null, input);
+			}
+			var step = strategy.precompile(expression);
+			for (boolean marked : List.of(false, true)) {
+				resolver.requestedUrls.clear();
+				source.requestedSubjects.clear();
+				BindingSet entry = marked ? emptySubstitutionDomain(input) : input;
+				List<Map<String, String>> rows = bindingRows(collect(step.evaluate(entry)));
+				if (marked) {
+					assertThat(rows).isEmpty();
+				} else {
+					assertThat(rows).containsExactly(Map.of("input", "urn:api-service"));
+				}
+				assertThat(resolver.requestedUrls).containsExactly("urn:test-service");
+				assertThat(source.requestedSubjects).contains(reference).doesNotContain(iri("urn:api-service"));
+			}
+		}
 	}
 
 	@Test
@@ -453,6 +1061,14 @@ class QueryJoinOptimizerConnectedDependencyTest {
 		return collect(strategy.evaluate(parsed.getTupleExpr(), bindings));
 	}
 
+	private static List<BindingSet> evaluateDetachedOptional(String query, TripleSource source,
+			FederatedServiceResolver resolver, BindingSet bindings) throws Exception {
+		ParsedTupleQuery parsed = QueryParserUtil.parseTupleQuery(QueryLanguage.SPARQL, query, null);
+		Projection select = (Projection) ((QueryRoot) parsed.getTupleExpr()).getArg();
+		LeftJoin optional = (LeftJoin) select.getArg();
+		return collect(new DefaultEvaluationStrategy(source, resolver).evaluate(optional, bindings));
+	}
+
 	private static String lateralEndpointQuery() {
 		return "SELECT ?s ?endpoint ?remote WHERE { VALUES ?s { <urn:s1> } "
 				+ "OPTIONAL { ?s <urn:missing-endpoint> ?endpoint } "
@@ -472,6 +1088,50 @@ class QueryJoinOptimizerConnectedDependencyTest {
 			}
 		}
 		return results;
+	}
+
+	private static QueryValueEvaluationStep observeValue(QueryValueEvaluationStep prepared, List<Value> observed) {
+		return new QueryValueEvaluationStep() {
+			@Override
+			public Value evaluate(BindingSet bindings) {
+				Value value = prepared.evaluate(bindings);
+				observed.add(value);
+				return value;
+			}
+
+			@Override
+			public boolean isConstant() {
+				return prepared.isConstant();
+			}
+		};
+	}
+
+	private static BindingSet emptySubstitutionDomain(BindingSet input) {
+		BindingSet marked = BindingFrameBindings.withSubstitutionDomain(input, Set.of(),
+				new QueryEvaluationContext.Minimal((Dataset) null));
+		assertThat(BindingFrameBindings.substitutionDomain(marked)).isEmpty();
+		return marked;
+	}
+
+	private static void assertEndpointBeforeService(TupleExpr expression) {
+		List<String> order = new ArrayList<>();
+		expression.visit(new AbstractQueryModelVisitor<RuntimeException>() {
+			@Override
+			public void meet(StatementPattern pattern) {
+				if (pattern.getPredicateVar().hasValue()
+						&& iri("urn:endpoint").equals(pattern.getPredicateVar().getValue())) {
+					order.add("endpoint");
+				}
+				super.meet(pattern);
+			}
+
+			@Override
+			public void meet(Service service) {
+				order.add("service");
+				super.meet(service);
+			}
+		});
+		assertThat(order).containsExactly("endpoint", "service");
 	}
 
 	private static Service findService(TupleExpr expression) {
@@ -529,6 +1189,7 @@ class QueryJoinOptimizerConnectedDependencyTest {
 
 	private static final class FiniteTripleSource implements TripleSource {
 		private final List<Statement> statements;
+		private final List<Resource> requestedSubjects = new ArrayList<>();
 		private long statementsYielded;
 
 		private FiniteTripleSource(List<Statement> statements) {
@@ -538,6 +1199,7 @@ class QueryJoinOptimizerConnectedDependencyTest {
 		@Override
 		public CloseableIteration<? extends Statement> getStatements(Resource subj, IRI pred, Value obj,
 				Resource... contexts) throws QueryEvaluationException {
+			requestedSubjects.add(subj);
 			List<Statement> matches = statements.stream()
 					.filter(statement -> subj == null || subj.equals(statement.getSubject()))
 					.filter(statement -> pred == null || pred.equals(statement.getPredicate()))

@@ -32,6 +32,7 @@ import org.eclipse.rdf4j.query.MutableBindingSet;
 import org.eclipse.rdf4j.query.QueryEvaluationException;
 import org.eclipse.rdf4j.query.algebra.BindingSetAssignment;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryEvaluationStep;
+import org.eclipse.rdf4j.query.algebra.evaluation.impl.BindingFrameBindings;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.QueryEvaluationContext;
 import org.eclipse.rdf4j.query.explanation.TelemetryMetricNames;
 import org.eclipse.rdf4j.query.impl.EmptyBindingSet;
@@ -81,7 +82,7 @@ public class BindingSetAssignmentQueryEvaluationStep implements QueryEvaluationS
 	public CloseableIteration<BindingSet> evaluate(BindingSet bindings) {
 		final Iterator<BindingSet> assignments = assignmentIterator();
 		CloseableIteration<BindingSet> result;
-		if (bindings.isEmpty()) {
+		if (bindings.isEmpty() && !BindingFrameBindings.hasFrame(bindings)) {
 			// Return ordinary rows without copying, but don't expose null slots as result bindings.
 			result = new LookAheadIteration<>() {
 

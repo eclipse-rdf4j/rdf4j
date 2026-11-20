@@ -117,10 +117,14 @@ final class LmdbNativeChunkPipeline {
 		if (!enabled() || flatCount == 0 || row.source == null) {
 			return null;
 		}
+		long possibleInputs = row.boundMask();
 		for (int d = 0; d < flatCount; d++) {
-			if (!(derived.order[d] instanceof PatternPlan)) {
+			if (!(derived.order[d] instanceof PatternPlan pattern)
+					|| !pattern.supportsContextShortcut(row, possibleInputs,
+							d == 0 ? 0L : possibleInputs & pattern.producedMask())) {
 				return null;
 			}
+			possibleInputs |= pattern.producedMask();
 		}
 		if (row.runtimePlan != null) {
 			row.runtimePlan.actualOrder(derived.order);
@@ -178,10 +182,14 @@ final class LmdbNativeChunkPipeline {
 		if (!enabled() || flatCount == 0 || row.source == null) {
 			return null;
 		}
+		long possibleInputs = row.boundMask();
 		for (int d = 0; d < flatCount; d++) {
-			if (!(derived.order[d] instanceof PatternPlan)) {
+			if (!(derived.order[d] instanceof PatternPlan pattern)
+					|| !pattern.supportsContextShortcut(row, possibleInputs,
+							d == 0 ? 0L : possibleInputs & pattern.producedMask())) {
 				return null;
 			}
+			possibleInputs |= pattern.producedMask();
 		}
 		LmdbNativeAttemptMetrics metrics = memoBudget.metrics;
 		BatchStage stage = null;

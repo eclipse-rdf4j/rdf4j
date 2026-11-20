@@ -211,14 +211,14 @@ class LmdbNativeCompoundExistsPlacementTest {
 		LmdbNativeAggregatePlanner planner = new LmdbNativeAggregatePlanner(
 				new QueryEvaluationContext.Minimal((Dataset) null), mock(LmdbNativeEvaluationStrategy.class),
 				mock(NativeLmdbQuerySource.class));
-		SlotPlan planned = planner.compileTuple(new Join(filter, pattern("c", "r", "a")), false);
+		SlotPlan planned = planner.compileTupleWithoutElisions(new Join(filter, pattern("c", "r", "a")), false);
 		assertThat(planned).isInstanceOf(JoinPlan.class);
 		assertThat(((JoinPlan) planned).left).isInstanceOf(FilterPlan.class);
 		assertThat(((FilterPlan) ((JoinPlan) planned).left).filterMask).isEqualTo(-1L);
 	}
 
 	@Test
-	void compilerRetainsScalarPlacementAssuredByAnAncestorJoin() {
+	void unpreparedAncestorJoinKeepsAnIslandWithoutScopeCertificate() {
 		Filter filter = new Filter(pattern("b", "q", "c"),
 				new Compare(new Var("a"), new Var("c"), Compare.CompareOp.NE));
 		Join tail = new Join(filter, pattern("c", "r", "a"));
@@ -228,8 +228,9 @@ class LmdbNativeCompoundExistsPlacementTest {
 		when(strategy.precompile(any(ValueExpr.class), any(QueryEvaluationContext.class))).thenReturn(value);
 		LmdbNativeAggregatePlanner planner = new LmdbNativeAggregatePlanner(
 				new QueryEvaluationContext.Minimal((Dataset) null), strategy, mock(NativeLmdbQuerySource.class));
-		SlotPlan planned = planner.compileTuple(input, false);
-		assertThat(planned).isInstanceOf(MultiJoinPlan.class);
+		SlotPlan planned = planner.compileTupleWithoutElisions(input, false);
+		// The raw planner has no attached PreparedFilterScope; it cannot certify the ancestor's binding.
+		assertThat(planned).isInstanceOf(GenericEvalPlan.class);
 	}
 
 	@Test
@@ -280,7 +281,7 @@ class LmdbNativeCompoundExistsPlacementTest {
 		LmdbNativeAggregatePlanner planner = new LmdbNativeAggregatePlanner(
 				new QueryEvaluationContext.Minimal((Dataset) null), mock(LmdbNativeEvaluationStrategy.class),
 				mock(NativeLmdbQuerySource.class));
-		SlotPlan planned = planner.compileTuple(filter, false);
+		SlotPlan planned = planner.compileTupleWithoutElisions(filter, false);
 		assertThat(planned).isInstanceOf(JoinPlan.class);
 		JoinPlan join = (JoinPlan) planned;
 		assertThat(join.right).isInstanceOf(UnionPlan.class);

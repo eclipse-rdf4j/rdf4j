@@ -151,6 +151,9 @@ final class LmdbNativeCostVectors {
 			return rowSpread(join.left, row, mask).times(rowSpread(join.right, row, mask | join.left.producedMask()));
 		}
 		if (plan instanceof LateralPlan join) {
+			if (join.needsSemanticEntry(row)) {
+				return LmdbNativeRowSpread.UNKNOWN;
+			}
 			return rowSpread(join.left, row, mask).times(rowSpread(join.right, row, mask | join.left.producedMask()));
 		}
 		if (plan instanceof UnionPlan union) {
@@ -262,6 +265,9 @@ final class LmdbNativeCostVectors {
 			return joinedBounds(join.left, join.right, row, mask);
 		}
 		if (plan instanceof LateralPlan join) {
+			if (join.needsSemanticEntry(row)) {
+				return LmdbNativeWork.RowBounds.UNKNOWN;
+			}
 			return joinedBounds(join.left, join.right, row, mask);
 		}
 		if (plan instanceof UnionPlan union) {
@@ -405,6 +411,9 @@ final class LmdbNativeCostVectors {
 			return unprovenProbe(leftJoin.left, leftJoin.right, row, boundMask, rowFeature);
 		}
 		if (plan instanceof LateralPlan lateral) {
+			if (lateral.needsSemanticEntry(row)) {
+				return unbounded();
+			}
 			return probe(lateral.left, lateral.right, row, boundMask, rowFeature);
 		}
 		if (plan instanceof MinusPlan minus) {

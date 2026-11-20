@@ -35,6 +35,15 @@ import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.Dataset;
 import org.eclipse.rdf4j.query.TupleQuery;
 import org.eclipse.rdf4j.query.TupleQueryResult;
+import org.eclipse.rdf4j.query.algebra.Difference;
+import org.eclipse.rdf4j.query.algebra.EmptySet;
+import org.eclipse.rdf4j.query.algebra.Join;
+import org.eclipse.rdf4j.query.algebra.LeftJoin;
+import org.eclipse.rdf4j.query.algebra.Projection;
+import org.eclipse.rdf4j.query.algebra.QueryRoot;
+import org.eclipse.rdf4j.query.algebra.SingletonSet;
+import org.eclipse.rdf4j.query.algebra.TupleExpr;
+import org.eclipse.rdf4j.query.algebra.Union;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.DefaultEvaluationStrategy;
 import org.eclipse.rdf4j.query.impl.MapBindingSet;
 import org.eclipse.rdf4j.query.impl.SimpleDataset;
@@ -121,6 +130,39 @@ class MemoryInitialBindingBindingParityTest {
 		assertOriginalApiBag(query, "s", VF.createBNode("optional-missing"), Map.of());
 		assertUnsupportedTransport("OPTIONAL", query, "s", VF.createBNode("optional-missing"),
 				bag(new MapBindingSet()), "OPTIONAL");
+	}
+
+	@Test
+	void rawOptionalEntryDistinguishesAnInvokedProjectionFromADetachedChild() {
+		Value missing = VF.createBNode("optional-missing");
+		String nested = "SELECT ?s ?o WHERE { { SELECT ?s ?o WHERE { OPTIONAL { ?s <urn:p> ?o } } } }";
+		assertOriginalApiBag(nested, "s", missing, Map.of());
+		String direct = "SELECT ?s ?o WHERE { OPTIONAL { ?s <urn:p> ?o } }";
+		var parsed = new SPARQLParser().parseQuery(direct, null);
+		Projection projection = (Projection) ((QueryRoot) parsed.getTupleExpr()).getArg();
+		// Invoking the OPTIONAL itself does not invoke the projection even when its parent pointer remains attached.
+		assertRawBag(projection.getArg(), parsed.getDataset(), "s", missing, bag(binding("s", missing)),
+				"detached OPTIONAL retains the unmatched current input");
+	}
+
+	@ParameterizedTest
+	@ValueSource(strings = { "union-left", "union-right", "join-left", "optional-left", "minus-left" })
+	void rawOptionalEntryRestoresThroughForwardingTupleOperands(String shape) {
+		String query = "SELECT ?s ?o WHERE { OPTIONAL { ?s <urn:p> ?o } }";
+		var parsed = new SPARQLParser().parseQuery(query, null);
+		QueryRoot root = (QueryRoot) parsed.getTupleExpr();
+		Projection projection = (Projection) root.getArg();
+		TupleExpr optional = projection.getArg().clone();
+		// Each added operand is neutral for the bag of the original OPTIONAL.
+		projection.setArg(switch (shape) {
+		case "union-left" -> new Union(optional, new EmptySet());
+		case "union-right" -> new Union(new EmptySet(), optional);
+		case "join-left" -> new Join(optional, new SingletonSet());
+		case "optional-left" -> new LeftJoin(optional, new EmptySet());
+		case "minus-left" -> new Difference(optional, new EmptySet());
+		default -> throw new IllegalArgumentException(shape);
+		});
+		assertRawBag(root, parsed.getDataset(), "s", VF.createBNode("optional-missing"), Map.of(), shape);
 	}
 
 	@Test
@@ -368,17 +410,23 @@ class MemoryInitialBindingBindingParityTest {
 
 	private void assertOriginalApiBag(String query, String bindingName, Value value,
 			Map<Map<String, Value>, Integer> expected) {
+		var parsed = new SPARQLParser().parseQuery(query, null);
+		assertRawBag(parsed.getTupleExpr(), parsed.getDataset(), bindingName, value, expected,
+				"original parsed algebra with the actual API frame: " + query);
+	}
+
+	private void assertRawBag(TupleExpr expression, Dataset dataset, String bindingName, Value value,
+			Map<Map<String, Value>, Integer> expected, String label) {
 		try (RepositoryConnection connection = repository.getConnection()) {
 			MapBindingSet input = new MapBindingSet(1);
 			input.addBinding(bindingName, value);
-			var parsed = new SPARQLParser().parseQuery(query, null);
 			DefaultEvaluationStrategy raw = new DefaultEvaluationStrategy(new RepositoryTripleSource(connection),
-					parsed.getDataset(), null);
+					dataset, null);
 			List<BindingSet> rows = new ArrayList<>();
-			try (var results = raw.precompile(parsed.getTupleExpr()).evaluate(input)) {
+			try (var results = raw.precompile(expression).evaluate(input)) {
 				results.forEachRemaining(rows::add);
 			}
-			assertEquals(expected, bag(rows), "original parsed algebra with the actual API frame: " + query);
+			assertEquals(expected, bag(rows), label);
 		}
 	}
 

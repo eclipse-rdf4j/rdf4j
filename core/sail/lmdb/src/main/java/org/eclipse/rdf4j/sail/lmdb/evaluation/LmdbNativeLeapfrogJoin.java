@@ -153,6 +153,48 @@ final class LmdbNativeLeapfrogJoin {
 			SlotPlan[] after, MaskedFilter[] chained, NativeBooleanFilter[] consumedFilters) {
 	}
 
+	/** A consumed witness cannot be priced or opened using IDs when it has a hidden invocation input. */
+	static boolean permits(Shape shape, RowState row) {
+		if (shape == null) {
+			return false;
+		}
+		long prefix = row.boundMask();
+		for (SlotPlan before : shape.before()) {
+			prefix |= before.producedMask();
+		}
+		PatternPlan[] core = shape.core();
+		long[] suffix = new long[core.length + 1];
+		for (int i = core.length - 1; i >= 0; i--) {
+			suffix[i] = suffix[i + 1] | core[i].producedMask();
+		}
+		long inputsBefore = prefix;
+		for (int i = 0; i < core.length; i++) {
+			if (!core[i].supportsContextShortcut(row, inputsBefore | suffix[i + 1], 0L)) {
+				return false;
+			}
+			inputsBefore |= core[i].producedMask();
+		}
+		long witnessInputs = inputsBefore;
+		for (SlotPlan after : shape.after()) {
+			witnessInputs |= after.producedMask();
+		}
+		for (NativeBooleanFilter filter : shape.consumedFilters()) {
+			StatementPatternExistsFilter exists = WcojInput.Builder.directExists(filter);
+			if (exists != null && (exists.hasWithheldInput(row)
+					|| exists.contextPattern != null
+							&& !exists.contextPattern.supportsContextShortcut(row, witnessInputs, 0L,
+									row.boundMask()))) {
+				return false;
+			}
+		}
+		return true;
+	}
+
+	static Shape shape(SlotPlan root, RowState row) {
+		Shape shape = shape(root, row.boundMask());
+		return permits(shape, row) ? shape : null;
+	}
+
 	/** The shape the join would open for {@code root}, or null when no eligible cyclic core exists. */
 	static Shape shape(SlotPlan root, long boundMask) {
 		if (!enabled()) {
@@ -226,7 +268,7 @@ final class LmdbNativeLeapfrogJoin {
 	}
 
 	static RowCursor tryOpen(SlotPlan root, RowState row) throws IOException {
-		Shape shape = shape(root, row.boundMask());
+		Shape shape = shape(root, row);
 		if (shape == null) {
 			return null;
 		}
@@ -316,8 +358,10 @@ final class LmdbNativeLeapfrogJoin {
 						if (!collect(filterPlan.arg)) {
 							return false;
 						}
-						addChild(new PatternPlan(exists.s, exists.p, exists.o, exists.c, exists.contexts,
-								exists.namedContextScope, Double.POSITIVE_INFINITY), true);
+						addChild(exists.contextPattern != null ? exists.contextPattern
+								: new PatternPlan(exists.s, exists.p, exists.o, exists.c, exists.contexts,
+										exists.namedContextScope, Double.POSITIVE_INFINITY),
+								true);
 						consumedFilters.add(filterPlan.filter);
 						existentialCount++;
 						return true;

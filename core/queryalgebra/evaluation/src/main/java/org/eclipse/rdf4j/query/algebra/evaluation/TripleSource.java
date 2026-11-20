@@ -18,6 +18,7 @@ import java.util.Set;
 import java.util.function.Function;
 
 import org.eclipse.rdf4j.common.annotation.Experimental;
+import org.eclipse.rdf4j.common.annotation.InternalUseOnly;
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.common.iteration.CooperativeCancellation;
 import org.eclipse.rdf4j.common.iteration.EmptyIteration;
@@ -38,6 +39,12 @@ import org.eclipse.rdf4j.query.QueryEvaluationException;
 public interface TripleSource extends AvailableStatementOrder {
 
 	EmptyIteration<? extends Statement> EMPTY_ITERATION = new EmptyIteration<>();
+
+	/** An exact point lookup in the same named-context set as {@link TripleSource#getContextIDs()}. */
+	@InternalUseOnly
+	interface NamedContextLookup {
+		boolean hasNamedContext(Resource context) throws QueryEvaluationException;
+	}
 
 	/**
 	 * Gets all statements that have a specific subject, predicate and/or object. All three parameters may be null to

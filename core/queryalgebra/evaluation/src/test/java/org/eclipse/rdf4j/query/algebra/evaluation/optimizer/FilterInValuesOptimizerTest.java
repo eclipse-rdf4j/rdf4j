@@ -127,10 +127,10 @@ class FilterInValuesOptimizerTest {
 			}
 		}
 		patients.add(VF.createIRI("urn:patient:1"));
-		Union fanout = new Union(pattern("patient", MEDICATION, "item"),
-				new Join(pattern("patient", ENCOUNTER, "encounter"),
-						pattern("encounter", OBSERVATION, "item")));
-		Filter flags = new Filter(pattern("patient", FLAGS, "code"), in("code", selected, selected));
+		Union fanout = new Union(constantPattern("patient", MEDICATION, "item"),
+				new Join(constantPattern("patient", ENCOUNTER, "encounter"),
+						constantPattern("encounter", OBSERVATION, "item")));
+		Filter flags = new Filter(constantPattern("patient", FLAGS, "code"), in("code", selected, selected));
 		QueryRoot original = new QueryRoot(
 				new Filter(new Join(immutableValues("patient", patients.toArray(Value[]::new)),
 						fanout), new Not(new Exists(flags))));
@@ -238,10 +238,11 @@ class FilterInValuesOptimizerTest {
 			}
 		}
 		patients.add(VF.createIRI("urn:patient:1"));
-		Filter flagCondition = new Filter(pattern("patient", FLAGS, "code"), in("code", selected, selected));
+		Filter flagCondition = new Filter(constantPattern("patient", FLAGS, "code"), in("code", selected, selected));
 		QueryRoot original = new QueryRoot(new Filter(
 				new Join(immutableValues("patient", patients.toArray(Value[]::new)),
-						new Union(pattern("patient", MEDICATION, "item"), pattern("patient", OBSERVATION, "item"))),
+						new Union(constantPattern("patient", MEDICATION, "item"),
+								constantPattern("patient", OBSERVATION, "item"))),
 				new Not(new Exists(flagCondition))));
 		List<BindingSet> expected = evaluate(original.clone(), EmptyBindingSet.getInstance(), source);
 		assertThat(expected).hasSize(10);
@@ -262,6 +263,73 @@ class FilterInValuesOptimizerTest {
 				.containsExactlyInAnyOrderElementsOf(expected);
 		assertThat(correlated.getFirst().filter().getStringMetricPlanned("adaptiveFilterPlacementPlanned"))
 				.isNotNull();
+	}
+
+	@Test
+	void independentlyConstructedConstantPredicatesPreserveTheIntendedUnionBag() throws Exception {
+		CountingSource source = new CountingSource();
+		IRI excluded = VF.createIRI("urn:patient:excluded");
+		IRI included = VF.createIRI("urn:patient:included");
+		IRI excludedEncounter = VF.createIRI("urn:encounter:excluded");
+		IRI includedEncounter = VF.createIRI("urn:encounter:included");
+		IRI medication = VF.createIRI("urn:item:medication");
+		IRI observation = VF.createIRI("urn:item:observation");
+		IRI selected = VF.createIRI("urn:selected");
+		for (IRI patient : List.of(excluded, included)) {
+			source.add(patient, MEDICATION, medication);
+		}
+		source.add(excluded, ENCOUNTER, excludedEncounter);
+		source.add(included, ENCOUNTER, includedEncounter);
+		source.add(excludedEncounter, OBSERVATION, observation);
+		source.add(includedEncounter, OBSERVATION, observation);
+		source.add(excluded, FLAGS, selected);
+
+		StatementPattern medicationArm = new StatementPattern(Var.of("patient"),
+				Var.of("medicationPredicate", MEDICATION, true, true), Var.of("item"));
+		StatementPattern encounter = new StatementPattern(Var.of("patient"),
+				Var.of("encounterPredicate", ENCOUNTER, true, true), Var.of("encounter"));
+		StatementPattern observationArm = new StatementPattern(Var.of("encounter"),
+				Var.of("observationPredicate", OBSERVATION, true, true), Var.of("item"));
+		StatementPattern flag = new StatementPattern(Var.of("patient"), Var.of("flagPredicate", FLAGS, true, true),
+				Var.of("code"));
+		TupleExpr body = new Join(immutableValues("patient", excluded, included, included),
+				new Union(medicationArm, new Join(encounter, observationArm)));
+		QueryRoot query = new QueryRoot(new Filter(body, new Not(new Exists(new Filter(flag, in("code", selected))))));
+		BindingSet medicationRow = new ListBindingSet(List.of("patient", "item"), included, medication);
+		BindingSet observationRow = new ListBindingSet(List.of("patient", "encounter", "item"), included,
+				includedEncounter, observation);
+		assertThat(evaluate(query, EmptyBindingSet.getInstance(), source))
+				.containsExactlyInAnyOrder(medicationRow, medicationRow, observationRow, observationRow);
+	}
+
+	@Test
+	void sameNamedValuedPredicateOccurrencesRequireOneValue() throws Exception {
+		CountingSource source = new CountingSource();
+		IRI patient = VF.createIRI("urn:patient:collision");
+		IRI medication = VF.createIRI("urn:item:medication");
+		IRI encounter = VF.createIRI("urn:item:encounter");
+		source.add(patient, MEDICATION, medication);
+		source.add(patient, ENCOUNTER, encounter);
+		StatementPattern medicationPattern = pattern("patient", MEDICATION, "medication");
+		StatementPattern encounterPattern = pattern("patient", ENCOUNTER, "encounter");
+		assertThat(medicationPattern.getPredicateVar().isConstant()).isFalse();
+		assertThat(encounterPattern.getPredicateVar().isConstant()).isFalse();
+		assertThat(medicationPattern.getPredicateVar().getName())
+				.isEqualTo(encounterPattern.getPredicateVar().getName());
+		assertThat(evaluate(new QueryRoot(medicationPattern.clone()), EmptyBindingSet.getInstance(), source))
+				.containsExactly(new ListBindingSet(List.of("patient", "predicate", "medication"), patient,
+						MEDICATION, medication));
+		assertThat(evaluate(new QueryRoot(encounterPattern.clone()), EmptyBindingSet.getInstance(), source))
+				.containsExactly(new ListBindingSet(List.of("patient", "predicate", "encounter"), patient, ENCOUNTER,
+						encounter));
+		assertThat(evaluate(new QueryRoot(new Join(medicationPattern, encounterPattern)),
+				EmptyBindingSet.getInstance(), source)).isEmpty();
+
+		StatementPattern firstEqual = pattern("patient", MEDICATION, "firstItem");
+		StatementPattern secondEqual = pattern("patient", MEDICATION, "secondItem");
+		assertThat(evaluate(new QueryRoot(new Join(firstEqual, secondEqual)), EmptyBindingSet.getInstance(), source))
+				.containsExactly(new ListBindingSet(List.of("patient", "predicate", "firstItem", "secondItem"), patient,
+						MEDICATION, medication, medication));
 	}
 
 	@Test
@@ -378,6 +446,10 @@ class FilterInValuesOptimizerTest {
 
 	private static StatementPattern pattern(String subject, IRI predicate, String object) {
 		return new StatementPattern(Var.of(subject), Var.of("predicate", predicate), Var.of(object));
+	}
+
+	private static StatementPattern constantPattern(String subject, IRI predicate, String object) {
+		return new StatementPattern(Var.of(subject), Var.of("predicate", predicate, true, true), Var.of(object));
 	}
 
 	private static final class CountingSource implements TripleSource {

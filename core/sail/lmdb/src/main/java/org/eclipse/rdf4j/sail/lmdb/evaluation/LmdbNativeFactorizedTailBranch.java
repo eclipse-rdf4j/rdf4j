@@ -320,6 +320,10 @@ final class Branch {
 		if (scanOnceRefused) {
 			return false;
 		}
+		if (varyingSlot < 0 || !pattern.supportsContextShortcut(row, row.boundMask(), 1L << varyingSlot)) {
+			scanOnceRefused = true;
+			return false;
+		}
 		LongCountMap table = new LongCountMap(budget);
 		if (!table.isAllocated()) {
 			scanOnceRefused = true;

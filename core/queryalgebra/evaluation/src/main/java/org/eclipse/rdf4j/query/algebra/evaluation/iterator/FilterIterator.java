@@ -47,7 +47,10 @@ import org.eclipse.rdf4j.query.algebra.evaluation.EvaluationStrategy;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryBindingSet;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryEvaluationStep;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryValueEvaluationStep;
+import org.eclipse.rdf4j.query.algebra.evaluation.impl.BindingFrameBindings;
+import org.eclipse.rdf4j.query.algebra.evaluation.impl.BindingFrameReplay;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.EvaluationStatistics;
+import org.eclipse.rdf4j.query.algebra.evaluation.impl.GraphFrameBindings;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.QueryEvaluationContext;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.evaluationsteps.AdaptiveFilterEvaluationStep;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.evaluationsteps.BatchCorrelatedJoinProvider;
@@ -74,10 +77,13 @@ public class FilterIterator extends FilterIteration<BindingSet> implements Index
 
 	public static QueryEvaluationStep supply(Filter filter, EvaluationStrategy strategy,
 			QueryEvaluationContext context, EvaluationStatistics evaluationStatistics) {
-		QueryEvaluationStep fusedAssignmentJoin = supplyFilteredBindingSetAssignmentJoin(filter, strategy, context,
-				evaluationStatistics);
-		if (fusedAssignmentJoin != null) {
-			return fusedAssignmentJoin;
+		BindingFrameBindings.ConditionInputs conditionInputs = BindingFrameBindings.conditionInputs(filter);
+		if (conditionInputs.isEmpty()) {
+			QueryEvaluationStep fusedAssignmentJoin = supplyFilteredBindingSetAssignmentJoin(filter, strategy, context,
+					evaluationStatistics);
+			if (fusedAssignmentJoin != null) {
+				return fusedAssignmentJoin;
+			}
 		}
 
 		QueryEvaluationStep arg = strategy.precompile(filter.getArg(), context);
@@ -91,12 +97,20 @@ public class FilterIterator extends FilterIteration<BindingSet> implements Index
 			return QueryEvaluationStep.EMPTY;
 		}
 		ConditionBindingScope bindingScope = FilterBindingScope.resolve(filter);
-		Function<BindingSet, BindingSet> retain = bindingScope.retainsAllBindings() ? Function.identity()
+		Function<BindingSet, BindingSet> visible = bindingScope.retainsAllBindings()
+				? BindingFrameBindings::isolateCondition
 				: retainBindings(bindingScope.bindingNames(), context);
+		Function<BindingSet, BindingSet> retain = conditionInputs.isEmpty() ? visible
+				: row -> visible.apply(conditionInputs.materialize(row));
 
-		QueryEvaluationStep generic = AdaptiveFilterEvaluationStep.filter(context,
-				(bs) -> new FilterIterator(filter, arg.evaluate(bs), ves, strategy, retain, evaluationStatistics,
-						context.getBlankNodeAllocationScope()));
+		QueryEvaluationStep generic = (bs) -> new FilterIterator(filter, arg.evaluate(bs), ves, strategy, retain,
+				evaluationStatistics, context.getBlankNodeAllocationScope());
+		generic = BindingFrameBindings.inheritPhysicalLookups(generic, arg);
+		if (!conditionInputs.isEmpty()) {
+			// Fused, batch and moved conditions do not own this exact ancestor-frame input contract.
+			return generic;
+		}
+		generic = AdaptiveFilterEvaluationStep.filter(context, generic);
 		QueryEvaluationStep batched = supplyBatchExistsFilter(filter, strategy, context, arg, generic, bindingScope);
 		return batched != null ? batched : generic;
 	}
@@ -159,14 +173,20 @@ public class FilterIterator extends FilterIteration<BindingSet> implements Index
 		}
 		Set<String> guardNames = new LinkedHashSet<>(subNames);
 		guardNames.removeAll(outerNames);
+		QueryEvaluationStep perRowSubquery = bindings -> BindingFrameReplay.fresh(subRaw, bindings,
+				strategy.getCollectionFactory(), context);
 		return bs -> {
+			if (BindingFrameBindings.hasFrame(bs)) {
+				return generic.evaluate(bs);
+			}
 			for (String name : guardNames) {
 				if (bs.hasBinding(name)) {
 					return generic.evaluate(bs);
 				}
 			}
 			return provider.tryBatchJoin(
-					new BatchCorrelatedJoinProvider.BatchCorrelationRequest(arg.evaluate(bs), bs, shared, mode, null),
+					new BatchCorrelatedJoinProvider.BatchCorrelationRequest(arg.evaluate(bs), bs, shared, mode, null,
+							perRowSubquery),
 					subRaw);
 		};
 	}
@@ -322,15 +342,19 @@ public class FilterIterator extends FilterIteration<BindingSet> implements Index
 		this.condition = condition;
 		this.strategy = strategy;
 		ConditionBindingScope bindingScope = FilterBindingScope.resolve(filter);
+		Function<BindingSet, BindingSet> visible;
 		if (bindingScope.retainsAllBindings()) {
-			this.retain = Function.identity();
+			visible = BindingFrameBindings::isolateCondition;
 		} else {
-			this.retain = (bs) -> {
+			visible = (bs) -> {
 				QueryBindingSet nbs = new QueryBindingSet(bs);
 				nbs.retainAll(bindingScope.bindingNames());
-				return nbs;
+				return BindingFrameBindings.isolateCondition(
+						BindingFrameBindings.retainWithheldInputs(bs, nbs, bindingScope.bindingNames()));
 			};
 		}
+		BindingFrameBindings.ConditionInputs inputs = BindingFrameBindings.conditionInputs(filter);
+		this.retain = inputs.isEmpty() ? visible : row -> visible.apply(inputs.materialize(row));
 	}
 
 	private FilterIterator(Filter filterNode, CloseableIteration<BindingSet> iter,
@@ -373,7 +397,8 @@ public class FilterIterator extends FilterIteration<BindingSet> implements Index
 					setBinding[i].accept(bs, nbs);
 				}
 			}
-			return nbs;
+			return BindingFrameBindings.isolateCondition(
+					BindingFrameBindings.retainWithheldInputs(bs, GraphFrameBindings.preserve(bs, nbs), bindingNames));
 		};
 	}
 

@@ -231,6 +231,9 @@ final class LmdbNativePlanExecutionProfile {
 			return repeated(price(join.left, mask, assuredMask), join.left, join.right, mask, assuredMask);
 		}
 		if (plan instanceof LateralPlan lateral) {
+			if (lateral.needsSemanticEntry(row)) {
+				return LmdbNativeCostVectors.unbounded();
+			}
 			return repeated(price(lateral.left, mask, assuredMask), lateral.left, lateral.right, mask, assuredMask);
 		}
 		if (plan instanceof MultiJoinPlan multiJoin) {
@@ -444,8 +447,9 @@ final class LmdbNativePlanExecutionProfile {
 					.plus(witness(combination.right, rows, mask, assuredMask, directWitness));
 		}
 		if (filter instanceof StatementPatternExistsFilter exists) {
-			PatternPlan pattern = new PatternPlan(exists.s, exists.p, exists.o, exists.c, exists.contexts,
-					exists.namedContextScope, 1D);
+			PatternPlan pattern = exists.contextPattern != null ? exists.contextPattern
+					: new PatternPlan(exists.s, exists.p, exists.o, exists.c, exists.contexts,
+							exists.namedContextScope, 1D);
 			if (directWitness) {
 				return kernelWitness(pattern, rows, mask);
 			}

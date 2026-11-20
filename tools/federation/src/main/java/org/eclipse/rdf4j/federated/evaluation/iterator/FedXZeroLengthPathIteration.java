@@ -44,6 +44,7 @@ import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.query.algebra.evaluation.EvaluationStrategy;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryBindingSet;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryEvaluationStep;
+import org.eclipse.rdf4j.query.algebra.evaluation.impl.BindingFrameBindings;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.QueryEvaluationContext;
 import org.eclipse.rdf4j.query.algebra.evaluation.iterator.CrossProductIteration;
 import org.eclipse.rdf4j.query.impl.BlankNodeAllocationScope;
@@ -127,9 +128,11 @@ public class FedXZeroLengthPathIteration extends LookAheadIteration<BindingSet> 
 		this.subj = subj;
 		this.obj = obj;
 		this.bindings = bindings;
+		Set<String> domain = BindingFrameBindings.substitutionDomain(bindings);
+		Set<String> substituted = domain == null ? context.getSubstitutionBindingNames() : domain;
 		this.requiresNodeMembership = !subjectVar.isConstant() && !objVar.isConstant()
-				&& !(subj != null && context.getSubstitutionBindingNames().contains(subjectVar.getName()))
-				&& !(obj != null && context.getSubstitutionBindingNames().contains(objVar.getName()));
+				&& !(subj != null && substituted.contains(subjectVar.getName()))
+				&& !(obj != null && substituted.contains(objVar.getName()));
 		this.subjectConstant = subjectVar.isConstant();
 		this.objectConstant = objVar.isConstant();
 		this.graphContextVar = contextVar;

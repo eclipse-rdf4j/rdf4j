@@ -23,11 +23,9 @@ import org.eclipse.rdf4j.query.Dataset;
 import org.eclipse.rdf4j.query.QueryEvaluationException;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.algebra.TupleFunctionCall;
-import org.eclipse.rdf4j.query.algebra.ValueExpr;
 import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.query.algebra.evaluation.EvaluationStrategy;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryEvaluationStep;
-import org.eclipse.rdf4j.query.algebra.evaluation.QueryValueEvaluationStep;
 import org.eclipse.rdf4j.query.algebra.evaluation.TripleSource;
 import org.eclipse.rdf4j.query.algebra.evaluation.federation.FederatedServiceResolver;
 import org.eclipse.rdf4j.query.algebra.evaluation.function.TupleFunction;
@@ -89,11 +87,7 @@ public class TupleFunctionEvaluationStrategy extends StrictEvaluationStrategy {
 	@Override
 	public QueryEvaluationStep precompile(TupleExpr expr, QueryEvaluationContext context)
 			throws QueryEvaluationException {
-		if (expr instanceof TupleFunctionCall) {
-			return prepare((TupleFunctionCall) expr, context);
-		} else {
-			return super.precompile(expr, context);
-		}
+		return super.precompile(expr, context);
 	}
 
 	@Deprecated(forRemoval = true)
@@ -107,25 +101,7 @@ public class TupleFunctionEvaluationStrategy extends StrictEvaluationStrategy {
 		TupleFunction func = tupleFuncRegistry.get(expr.getURI())
 				.orElseThrow(() -> new QueryEvaluationException("Unknown tuple function '" + expr.getURI() + "'"));
 
-		List<ValueExpr> args = expr.getArgs();
-		QueryValueEvaluationStep[] argEpresions = new QueryValueEvaluationStep[args.size()];
-		for (int i = 0; i < args.size(); i++) {
-			argEpresions[i] = precompile(args.get(i), context);
-		}
-
-		return captureResultValues(new QueryEvaluationStep() {
-
-			@Override
-			public CloseableIteration<BindingSet> evaluate(BindingSet bindings) {
-				Value[] argValues = new Value[args.size()];
-				for (int i = 0; i < args.size(); i++) {
-					argValues[i] = argEpresions[i].evaluate(bindings);
-				}
-
-				return TupleFunctionEvaluationStrategy.evaluate(func, expr.getResultVars(), bindings,
-						tripleSource.getValueFactory(), argValues);
-			}
-		});
+		return prepareTupleFunction(expr, context, func);
 	}
 
 	public static CloseableIteration<BindingSet> evaluate(TupleFunction func,

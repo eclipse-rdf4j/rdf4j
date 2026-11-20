@@ -192,6 +192,9 @@ final class LmdbNativeHashJoin {
 			return reject(row, "bushy-opaque-build");
 		}
 		long keyMask = probe.producedMask() & build.producedMask() & ~row.boundMask();
+		if (!probe.supportsContextShortcut(row, row.boundMask() | build.producedMask(), keyMask)) {
+			return reject(row, "context-choice");
+		}
 		int keyWidth = Long.bitCount(keyMask);
 		if (keyWidth == 0 || keyWidth > 4) {
 			return reject(row, "join-key-width");
@@ -276,6 +279,10 @@ final class LmdbNativeHashJoin {
 			return reject(row, "correlated-entry");
 		}
 		long keyMask = left.producedMask() & right.producedMask() & ~row.boundMask();
+		if (!left.supportsContextShortcut(row, row.boundMask() | right.producedMask(), keyMask)
+				|| !right.supportsContextShortcut(row, row.boundMask() | left.producedMask(), keyMask)) {
+			return reject(row, "context-choice");
+		}
 		int keyWidth = Long.bitCount(keyMask);
 		if (keyWidth == 0 || keyWidth > 4) {
 			return reject(row, "join-key-width");
@@ -339,6 +346,10 @@ final class LmdbNativeHashJoin {
 			return null;
 		}
 		long keyMask = left.producedMask() & right.producedMask() & ~row.boundMask();
+		if (!left.supportsContextShortcut(row, row.boundMask() | right.producedMask(), keyMask)
+				|| !right.supportsContextShortcut(row, row.boundMask() | left.producedMask(), keyMask)) {
+			return null;
+		}
 		int keyWidth = Long.bitCount(keyMask);
 		if (keyWidth == 0 || keyWidth > 4) {
 			return null;

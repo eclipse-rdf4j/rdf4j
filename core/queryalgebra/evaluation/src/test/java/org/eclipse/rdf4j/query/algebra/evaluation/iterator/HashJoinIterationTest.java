@@ -14,6 +14,7 @@ package org.eclipse.rdf4j.query.algebra.evaluation.iterator;
 import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -21,11 +22,15 @@ import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.Executors;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.common.iteration.CloseableIteratorIteration;
+import org.eclipse.rdf4j.common.iteration.CooperativeCancellation;
 import org.eclipse.rdf4j.common.iteration.Iterations;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Resource;
@@ -42,6 +47,8 @@ import org.eclipse.rdf4j.query.algebra.evaluation.EvaluationStrategy;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryBindingSet;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryEvaluationStep;
 import org.eclipse.rdf4j.query.algebra.evaluation.TripleSource;
+import org.eclipse.rdf4j.query.algebra.evaluation.impl.BindingFrameBindings;
+import org.eclipse.rdf4j.query.algebra.evaluation.impl.GraphFrameBindings;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.QueryEvaluationContext;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.StrictEvaluationStrategy;
 import org.eclipse.rdf4j.query.impl.EmptyBindingSet;
@@ -68,6 +75,104 @@ public class HashJoinIterationTest {
 			return null;
 		}
 	}, null);
+
+	@Test
+	public void independentMergeUsesLeftFrameAndOnlyAdoptedGraphOrigins() {
+		QueryEvaluationContext context = new QueryEvaluationContext.Minimal(null);
+		IRI graph = vf.createIRI("urn:graph");
+		QueryBindingSet leftEntry = new QueryBindingSet();
+		leftEntry.setBinding("adopted", null);
+		leftEntry.addBinding("collision", graph);
+		QueryBindingSet leftProbe = new QueryBindingSet();
+		leftProbe.addBinding("owner", vf.createLiteral("left"));
+		BindingSet left = BindingFrameBindings.push(new BindingFrameBindings.Scope(), leftEntry, leftProbe, context);
+		QueryBindingSet rightEntry = new QueryBindingSet();
+		GraphFrameBindings.supply(rightEntry, "adopted", graph);
+		GraphFrameBindings.supply(rightEntry, "collision", graph);
+		QueryBindingSet rightProbe = new QueryBindingSet();
+		rightProbe.addBinding("owner", vf.createLiteral("right"));
+		BindingSet right = BindingFrameBindings.push(new BindingFrameBindings.Scope(), rightEntry, rightProbe, context);
+		for (boolean leftIsLarger : List.of(false, true)) {
+			List<BindingSet> leftRows = leftIsLarger ? List.of(left, left) : List.of(left);
+			List<BindingSet> rightRows = leftIsLarger ? List.of(right) : List.of(right, right);
+			try (HashJoinIteration join = HashJoinIteration.preservingLeftInput(
+					ignored -> new CloseableIteratorIteration<>(leftRows.iterator()),
+					ignored -> new CloseableIteratorIteration<>(rightRows.iterator()), EmptyBindingSet.getInstance(),
+					new String[] { "collision" }, context)) {
+				List<BindingSet> rows = Iterations.asList(join);
+				assertEquals(2, rows.size());
+				for (BindingSet row : rows) {
+					assertSame(BindingFrameBindings.from(left), BindingFrameBindings.from(row));
+					assertEquals(vf.createLiteral("left"), BindingFrameBindings.probeValue(row, "owner"));
+					assertEquals(graph, row.getValue("adopted"));
+					assertTrue(GraphFrameBindings.isSupplied(row, "adopted"));
+					assertFalse(GraphFrameBindings.isSupplied(row, "collision"));
+				}
+			}
+		}
+	}
+
+	@Test
+	public void independentJoinCancelsRightPublishedAfterCancellation() throws Exception {
+		CountDownLatch opening = new CountDownLatch(1);
+		CountDownLatch finishOpening = new CountDownLatch(1);
+		CountDownLatch cancelled = new CountDownLatch(1);
+		class BlockingRight implements CloseableIteration<BindingSet>, CooperativeCancellation {
+			@Override
+			public boolean hasNext() {
+				try {
+					cancelled.await();
+					return false;
+				} catch (InterruptedException e) {
+					Thread.currentThread().interrupt();
+					throw new QueryEvaluationException(e);
+				}
+			}
+
+			@Override
+			public BindingSet next() {
+				throw new UnsupportedOperationException();
+			}
+
+			@Override
+			public boolean requestCancellation() {
+				cancelled.countDown();
+				return true;
+			}
+
+			@Override
+			public void close() {
+				cancelled.countDown();
+			}
+		}
+		QueryBindingSet left = new QueryBindingSet();
+		left.addBinding("left", vf.createLiteral("value"));
+		BlockingRight right = new BlockingRight();
+		try (var executor = Executors.newSingleThreadExecutor();
+				HashJoinIteration join = HashJoinIteration.preservingLeftInput(
+						ignored -> new CloseableIteratorIteration<>(List.<BindingSet>of(left).iterator()), ignored -> {
+							opening.countDown();
+							try {
+								finishOpening.await();
+							} catch (InterruptedException e) {
+								Thread.currentThread().interrupt();
+								throw new QueryEvaluationException(e);
+							}
+							return right;
+						}, EmptyBindingSet.getInstance(), new String[0], new QueryEvaluationContext.Minimal(null))) {
+			var result = executor.submit(join::hasNext);
+			try {
+				assertTrue(opening.await(10, TimeUnit.SECONDS), "right evaluation did not start");
+				assertTrue(join.requestCancellation());
+				finishOpening.countDown();
+				assertTrue(cancelled.await(10, TimeUnit.SECONDS), "newly published right input was not cancelled");
+				assertFalse(result.get(10, TimeUnit.SECONDS));
+			} finally {
+				finishOpening.countDown();
+				cancelled.countDown();
+			}
+		}
+	}
 
 	@Test
 	public void testCartesianJoin() throws QueryEvaluationException {

@@ -40,17 +40,23 @@ import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.MutableBindingSet;
 import org.eclipse.rdf4j.query.QueryResults;
+import org.eclipse.rdf4j.query.algebra.BNodeGenerator;
 import org.eclipse.rdf4j.query.algebra.BindingSetAssignment;
+import org.eclipse.rdf4j.query.algebra.Bound;
 import org.eclipse.rdf4j.query.algebra.Compare;
 import org.eclipse.rdf4j.query.algebra.Distinct;
 import org.eclipse.rdf4j.query.algebra.Extension;
 import org.eclipse.rdf4j.query.algebra.ExtensionElem;
+import org.eclipse.rdf4j.query.algebra.Filter;
 import org.eclipse.rdf4j.query.algebra.Join;
 import org.eclipse.rdf4j.query.algebra.LeftJoin;
+import org.eclipse.rdf4j.query.algebra.Not;
+import org.eclipse.rdf4j.query.algebra.Or;
 import org.eclipse.rdf4j.query.algebra.Projection;
 import org.eclipse.rdf4j.query.algebra.ProjectionElem;
 import org.eclipse.rdf4j.query.algebra.ProjectionElemList;
 import org.eclipse.rdf4j.query.algebra.QueryRoot;
+import org.eclipse.rdf4j.query.algebra.Reduced;
 import org.eclipse.rdf4j.query.algebra.SingletonSet;
 import org.eclipse.rdf4j.query.algebra.Slice;
 import org.eclipse.rdf4j.query.algebra.StatementPattern;
@@ -302,6 +308,7 @@ class ScopedModifierAndOptionalEvaluationTest {
 		List<BindingSet> results = evaluate(join);
 
 		assertThat(results).containsExactly(row("x", "a"), row("x", "a"));
+		assertThat(join.getAlgorithmName()).isEqualTo("HashJoinIteration");
 	}
 
 	@Test
@@ -314,6 +321,39 @@ class ScopedModifierAndOptionalEvaluationTest {
 
 		assertThat(results).containsExactly(row("x", "a"));
 		assertThat(join.getAlgorithmName()).isEqualTo("JoinIterator");
+	}
+
+	@Test
+	void reducedDoesNotUseCorrelatedEvaluationWhenItsInputHasSeparatedDuplicates() {
+		BindingSetAssignment left = values("x", row("x", "a"));
+		BindingSetAssignment rightValues = values("x", row("x", "a"), row("x", "b"), row("x", "a"));
+		Join join = new Join(left, new Reduced(rightValues));
+
+		List<BindingSet> results = evaluate(join);
+
+		assertThat(results).containsExactly(row("x", "a"), row("x", "a"));
+		assertThat(join.getAlgorithmName()).isEqualTo("HashJoinIteration");
+	}
+
+	@Test
+	void distinctPreservesJointFilterScopeAndVolatileEvaluation() {
+		// This FILTER remains inside the owning group through DISTINCT. The Join's left VALUES row binds both names,
+		// making both NOT(BOUND(...)) terms false; the owner-aware route must therefore produce an empty bag.
+		Filter jointCondition = new Filter(new SingletonSet(),
+				new Or(new Not(new Bound(Var.of("x"))), new Not(new Bound(Var.of("y")))));
+		Join jointUnsafe = new Join(values(Set.of("x", "y"), row("x", "a", "y", "b")),
+				new Distinct(jointCondition));
+		List<BindingSet> jointlyUnsafeResults = evaluate(jointUnsafe);
+		assertThat(jointlyUnsafeResults).isEmpty();
+		assertThat(jointUnsafe.getAlgorithmName()).isEqualTo("ScopedCorrelatedJoinIterator");
+
+		Join volatileChild = new Join(values("x", row("x", "a"), row("x", "b")),
+				new Distinct(new Extension(new SingletonSet(), new ExtensionElem(new BNodeGenerator(), "fresh"))));
+		List<BindingSet> volatileResults = evaluate(volatileChild);
+		assertThat(volatileResults).hasSize(2);
+		assertThat(volatileResults.get(0).getValue("fresh")).isNotNull()
+				.isEqualTo(volatileResults.get(1).getValue("fresh"));
+		assertThat(volatileChild.getAlgorithmName()).isEqualTo("HashJoinIteration");
 	}
 
 	@Test

@@ -50,6 +50,8 @@ final class NativeFilterLease {
 				filter = borrowed.entry.attempt;
 			} else if (filter instanceof PlannedNativeBooleanFilter planned) {
 				filter = planned.delegate;
+			} else if (filter instanceof CertifiedNativeBooleanFilter certified) {
+				filter = certified.delegate;
 			} else {
 				return filter;
 			}
@@ -73,7 +75,8 @@ final class NativeFilterLease {
 					recording.adaptive);
 			attempt = recorder;
 		} else if (original instanceof ExistsFilter exists) {
-			attempt = new ExistsFilter(borrow(exists.subPlan), exists.retainedBindingNames);
+			attempt = new ExistsFilter(borrow(exists.subPlan), exists.retainedBindingNames,
+					exists.semanticRecipe == null ? null : exists.semanticRecipe.copy());
 		} else {
 			attempt = original;
 		}
@@ -87,6 +90,9 @@ final class NativeFilterLease {
 	SlotPlan borrow(SlotPlan plan) {
 		if (plan instanceof MultiJoinPlan multiJoin) {
 			return borrow(multiJoin);
+		}
+		if (plan instanceof SharedValuesPatternPlan drive) {
+			return drive.borrow(this);
 		}
 		if (plan instanceof FilterPlan filter) {
 			return new FilterPlan(borrow(filter.arg), borrow(filter.filter), filter.filterMask, filter.termKindFilter);
@@ -106,9 +112,15 @@ final class NativeFilterLease {
 			// after the planner already produced a Janino-lowerable flat shape.
 			return SlotPlan.join(borrow(join.left), borrow(join.right));
 		}
+		if (plan instanceof LateralPlan lateral && lateral.semanticEntry != null) {
+			return new LateralPlan(borrow(lateral.left), borrow(lateral.right), lateral.rightInputMask,
+					lateral.semanticEntry);
+		}
 		if (plan instanceof LeftJoinPlan leftJoin) {
 			return new LeftJoinPlan(borrow(leftJoin.left), borrow(leftJoin.right), leftJoin.lexicalSharedSlots,
-					leftJoin.lexicalHashKeys, leftJoin.lexicalProblemSlots);
+					leftJoin.lexicalHashKeys, leftJoin.lexicalProblemSlots,
+					leftJoin.lexicalCondition == null ? null : borrow(leftJoin.lexicalCondition),
+					leftJoin.lexicalStaticInputs);
 		}
 		if (plan instanceof UnionPlan union) {
 			return new UnionPlan(borrow(union.left), borrow(union.right));

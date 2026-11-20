@@ -16,21 +16,25 @@ import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.common.iteration.CooperativeCancellation;
 import org.eclipse.rdf4j.common.iteration.LookAheadIteration;
 import org.eclipse.rdf4j.query.BindingSet;
+import org.eclipse.rdf4j.query.algebra.evaluation.QueryEvaluationStep;
+import org.eclipse.rdf4j.query.algebra.evaluation.impl.BindingFrameBindings;
 import org.eclipse.rdf4j.query.algebra.evaluation.iterator.CancellationPoints;
 
 final class BoundStatementPatternJoinIteration extends LookAheadIteration<BindingSet> {
 
 	private final CloseableIteration<BindingSet> leftIteration;
 	private final StatementPatternQueryEvaluationStep rightStatementPattern;
+	private final QueryEvaluationStep rightPrepared;
 
 	private CloseableIteration<BindingSet> fallbackIteration;
 	private BindingSet repeatedBindings;
 	private long remainingRepeats;
 
 	BoundStatementPatternJoinIteration(CloseableIteration<BindingSet> leftIteration,
-			StatementPatternQueryEvaluationStep rightStatementPattern) {
+			StatementPatternQueryEvaluationStep rightStatementPattern, QueryEvaluationStep rightPrepared) {
 		this.leftIteration = leftIteration;
 		this.rightStatementPattern = rightStatementPattern;
+		this.rightPrepared = rightPrepared;
 	}
 
 	@Override
@@ -55,16 +59,20 @@ final class BoundStatementPatternJoinIteration extends LookAheadIteration<Bindin
 				return null;
 			}
 
-			BindingSet leftBindings = rightStatementPattern.prepareBindings(leftIteration.next());
-			long statementCount = rightStatementPattern.getFullyBoundStatementCount(leftBindings);
+			BindingSet input = leftIteration.next();
+			if (BindingFrameBindings.hasFrame(input)) {
+				fallbackIteration = rightPrepared.evaluate(input);
+				continue;
+			}
+			long statementCount = rightStatementPattern.getFullyBoundStatementCount(input);
 			if (statementCount < 0) {
-				fallbackIteration = rightStatementPattern.evaluate(leftBindings);
+				fallbackIteration = rightPrepared.evaluate(input);
 				continue;
 			}
 			if (statementCount > 0) {
-				repeatedBindings = leftBindings;
+				repeatedBindings = input;
 				remainingRepeats = statementCount - 1;
-				return leftBindings;
+				return input;
 			}
 		}
 	}

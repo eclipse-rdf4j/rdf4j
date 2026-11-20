@@ -25,15 +25,17 @@ import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.query.AbstractBindingSet;
 import org.eclipse.rdf4j.query.Binding;
 import org.eclipse.rdf4j.query.BindingSet;
+import org.eclipse.rdf4j.query.algebra.evaluation.impl.BindingFrame;
+import org.eclipse.rdf4j.query.algebra.evaluation.impl.BindingFrameBindings;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.GraphFrameBindings;
-import org.eclipse.rdf4j.query.algebra.evaluation.impl.GraphFrameBindings.Carrier;
 import org.eclipse.rdf4j.query.impl.SimpleBinding;
 
 /**
  * BindingSet view over a native LMDB row's primitive slot ids.
  */
 @Experimental
-final class RowBindingSetView extends AbstractBindingSet implements Serializable, SlotBindingSetView, Carrier {
+final class RowBindingSetView extends AbstractBindingSet
+		implements Serializable, SlotBindingSetView, GraphFrameBindings.Carrier, BindingFrameBindings.Carrier {
 	private static final long serialVersionUID = 1L;
 
 	private static final long UNKNOWN = NativeLmdbQuerySource.UNKNOWN_ID;
@@ -56,6 +58,11 @@ final class RowBindingSetView extends AbstractBindingSet implements Serializable
 	@Override
 	public GraphFrameBindings getGraphFrameBindings() {
 		return GraphFrameBindings.from(base);
+	}
+
+	@Override
+	public BindingFrame getBindingFrame() {
+		return BindingFrameBindings.from(base);
 	}
 
 	RowBindingSetView(NativeLmdbQuerySource source, NativeSlotLayout layout, BindingSet base, long[] slots,

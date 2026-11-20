@@ -88,6 +88,13 @@ final class NativeExpressionFacts {
 				containsScopeChange(expression), reads.complete(), aliases);
 	}
 
+	/** Uses an already captured repeatability verdict without changing the prepared expression tree. */
+	static NativeExpressionFacts ofPrepared(ValueExpr expression, boolean repeatable) {
+		var reads = FilterBindingScope.conditionBindingReads(expression);
+		return new NativeExpressionFacts(expression, new HashSet<>(reads.bindingNames()), repeatable,
+				mayError(expression), containsScopeChange(expression), reads.complete(), Map.of());
+	}
+
 	Set<String> requiredNames() {
 		return requiredNames;
 	}

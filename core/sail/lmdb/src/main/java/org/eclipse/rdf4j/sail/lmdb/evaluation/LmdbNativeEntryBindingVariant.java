@@ -14,12 +14,36 @@ package org.eclipse.rdf4j.sail.lmdb.evaluation;
 import static org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbNativeAggregateCompiler.UNKNOWN;
 
 import java.io.IOException;
+import java.util.ArrayDeque;
+import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.Collections;
+import java.util.HashSet;
+import java.util.IdentityHashMap;
+import java.util.Iterator;
+import java.util.List;
+import java.util.Set;
 
 import org.eclipse.rdf4j.common.annotation.Experimental;
+import org.eclipse.rdf4j.common.iteration.CloseableIteration;
+import org.eclipse.rdf4j.common.iteration.ConvertingIteration;
 import org.eclipse.rdf4j.model.Value;
+import org.eclipse.rdf4j.query.AbstractBindingSet;
+import org.eclipse.rdf4j.query.Binding;
 import org.eclipse.rdf4j.query.BindingSet;
-import org.eclipse.rdf4j.query.algebra.evaluation.QueryBindingSet;
+import org.eclipse.rdf4j.query.Dataset;
+import org.eclipse.rdf4j.query.algebra.Exists;
+import org.eclipse.rdf4j.query.algebra.ExtensionElem;
+import org.eclipse.rdf4j.query.algebra.Lateral;
+import org.eclipse.rdf4j.query.algebra.QueryModelNode;
+import org.eclipse.rdf4j.query.algebra.TupleExpr;
+import org.eclipse.rdf4j.query.algebra.evaluation.impl.BindingFrame;
+import org.eclipse.rdf4j.query.algebra.evaluation.impl.BindingFrameBindings;
+import org.eclipse.rdf4j.query.algebra.evaluation.impl.BindingSetQueryEvaluationContext;
+import org.eclipse.rdf4j.query.algebra.evaluation.impl.GraphFrameBindings;
+import org.eclipse.rdf4j.query.algebra.evaluation.impl.QueryEvaluationContext;
+import org.eclipse.rdf4j.query.algebra.helpers.AbstractQueryModelVisitor;
+import org.eclipse.rdf4j.query.algebra.helpers.QueryAlgebraBindingAnalysis.OptionalCallerRequirement;
 
 /**
  * Per-evaluation native variant for a statically well-designed OPTIONAL whose right-only variable is supplied by the
@@ -30,6 +54,199 @@ import org.eclipse.rdf4j.query.algebra.evaluation.QueryBindingSet;
  */
 @Experimental
 final class NativeEntryBindingVariant {
+
+	static final OptionalCallerRequirement NO_OPTIONAL_CALLER_REQUIREMENT = new OptionalCallerRequirement(Set.of(),
+			false);
+
+	private record PlanEntry(SlotPlan plan, boolean changed) {
+	}
+
+	/** Capture owner permissions once while the real algebra occurrences still have their ancestry. */
+	static List<BindingFrameBindings.ConditionInputs> lateralOwnerInputs(TupleExpr expression) {
+		if (expression == null) {
+			return List.of();
+		}
+		List<BindingFrameBindings.ConditionInputs> inputs = new ArrayList<>();
+		ArrayDeque<QueryModelNode> pending = new ArrayDeque<>();
+		Set<QueryModelNode> visited = Collections.newSetFromMap(new IdentityHashMap<>());
+		AbstractQueryModelVisitor<RuntimeException> children = new AbstractQueryModelVisitor<>() {
+			@Override
+			protected void meetNode(QueryModelNode child) {
+				pending.addLast(child);
+			}
+		};
+		pending.add(expression);
+		while (!pending.isEmpty()) {
+			QueryModelNode node = pending.removeLast();
+			if (!visited.add(node)) {
+				continue;
+			}
+			if (node instanceof Lateral lateral) {
+				BindingFrameBindings.ConditionInputs owners = BindingFrameBindings.parameterInputs(lateral,
+						lateral.getRightInputBindingNames(), true);
+				if (!owners.isEmpty()) {
+					inputs.add(owners);
+				}
+			}
+			node.visitChildren(children);
+		}
+		return List.copyOf(inputs);
+	}
+
+	static boolean hasLateralOwnerInput(List<BindingFrameBindings.ConditionInputs> inputs, BindingSet bindings) {
+		if (!BindingFrameBindings.hasFrame(bindings)) {
+			return false;
+		}
+		for (BindingFrameBindings.ConditionInputs owners : inputs) {
+			if (owners.hasBorrowedInput(bindings)) {
+				return true;
+			}
+		}
+		return false;
+	}
+
+	/**
+	 * Proves that every guarded LATERAL in this fragment opens directly on its semantic invocation, before a native
+	 * sibling can change the row. EXISTS owns a fresh invocation and its compiler performs the corresponding proof for
+	 * that witness. Unknown plan nodes and unmatched algebra boundaries fail closed.
+	 */
+	static boolean ambiguousLateralEntry(TupleExpr expression, SlotPlan root) {
+		if (expression == null) {
+			return false;
+		}
+		int[] expected = { 0 };
+		expression.visit(new AbstractQueryModelVisitor<RuntimeException>() {
+			@Override
+			public void meet(Exists exists) {
+				// The witness captures its own invocation and is prepared under the dynamic-domain contract.
+			}
+
+			@Override
+			public void meet(Lateral lateral) {
+				if (LmdbNativeAggregateFilterCompiler.needsLateralOptionalDomain(lateral)) {
+					expected[0]++;
+				} else {
+					super.meet(lateral);
+				}
+			}
+		});
+		if (expected[0] == 0) {
+			return false;
+		}
+		ArrayDeque<PlanEntry> pending = new ArrayDeque<>();
+		pending.add(new PlanEntry(root, false));
+		int actual = 0;
+		while (!pending.isEmpty()) {
+			PlanEntry entry = pending.removeLast();
+			SlotPlan plan = entry.plan();
+			boolean changed = entry.changed();
+			if (plan instanceof LateralPlan lateral) {
+				if (lateral.semanticEntry != null) {
+					if (changed) {
+						return true;
+					}
+					actual++;
+				} else {
+					pending.add(new PlanEntry(lateral.left, changed));
+					pending.add(new PlanEntry(lateral.right, changed || lateral.left.producedMask() != 0L));
+				}
+			} else if (plan instanceof JoinPlan join) {
+				pending.add(new PlanEntry(join.left, changed));
+				pending.add(new PlanEntry(join.right, changed || join.left.producedMask() != 0L));
+			} else if (plan instanceof MultiJoinPlan join) {
+				int producers = 0;
+				for (SlotPlan child : join.children) {
+					if (child.producedMask() != 0L) {
+						producers++;
+					}
+				}
+				for (SlotPlan child : join.children) {
+					boolean otherProducer = producers > (child.producedMask() == 0L ? 0 : 1);
+					pending.add(new PlanEntry(child, changed || otherProducer));
+				}
+			} else if (plan instanceof LeftJoinPlan join) {
+				pending.add(new PlanEntry(join.left, changed));
+				pending.add(new PlanEntry(join.right, changed || join.left.producedMask() != 0L));
+			} else if (plan instanceof MinusPlan minus) {
+				pending.add(new PlanEntry(minus.left, changed));
+				pending.add(new PlanEntry(minus.right, changed || minus.left.producedMask() != 0L));
+			} else if (plan instanceof UnionPlan union) {
+				pending.add(new PlanEntry(union.left, changed));
+				pending.add(new PlanEntry(union.right, changed));
+			} else if (plan instanceof OrderedUnionPlan union) {
+				pending.add(new PlanEntry(union.left, changed));
+				pending.add(new PlanEntry(union.right, changed));
+			} else if (plan instanceof FilterPlan filter) {
+				pending.add(new PlanEntry(filter.arg, changed));
+			} else if (plan instanceof ExtensionPlan extension) {
+				pending.add(new PlanEntry(extension.arg, changed));
+			} else if (plan instanceof RowDistinctPlan distinct) {
+				pending.add(new PlanEntry(distinct.arg, changed));
+			} else if (plan instanceof EntryBindingCompatibilityPlan compatibility) {
+				pending.add(new PlanEntry(compatibility.arg, changed));
+			} else if (plan instanceof NativeAliasJoinPlan alias) {
+				pending.add(new PlanEntry(alias.original, changed));
+			} else if (plan instanceof NativeAliasJoinMemoPlan alias) {
+				pending.add(new PlanEntry(alias.original, changed));
+			} else if (plan instanceof NativeLogicalResultTransferPlan transfer) {
+				pending.add(new PlanEntry(transfer.input, changed));
+			} else if (!(plan instanceof EmptyPlan || plan instanceof SingletonPlan || plan instanceof ValuesPlan
+					|| plan instanceof PatternPlan || plan instanceof MultiValuePatternPlan || plan instanceof PathPlan
+					|| plan instanceof GeneralPathPlan || plan instanceof ZeroLengthPathPlan
+					|| plan instanceof TripleTermScanPlan || plan instanceof TupleFunctionPlan
+					|| plan instanceof GenericEvalPlan || plan instanceof NativeGraphPlan
+					|| plan instanceof NativeSubqueryPlan)) {
+				return true;
+			}
+		}
+		return actual != expected[0];
+	}
+
+	/** Assignment targets that can replace a supplied graph parameter inside this fragment. */
+	static Set<String> localAssignmentNames(TupleExpr expression) {
+		if (expression == null) {
+			return Set.of();
+		}
+		Set<String> names = new HashSet<>();
+		expression.visit(new AbstractQueryModelVisitor<RuntimeException>() {
+			@Override
+			public void meet(ExtensionElem element) {
+				names.add(element.getName());
+				super.meet(element);
+			}
+		});
+		return Set.copyOf(names);
+	}
+
+	/**
+	 * Native slots cannot prove whether an equal-valued assignment replaced a graph parameter. Test the frame's
+	 * declared names before opening the fragment, without inferring ownership from term or slot equality.
+	 */
+	static boolean graphAssignmentNeedsSemanticEvaluation(BindingSet input, Set<String> assignments) {
+		if (input == null || assignments.isEmpty()) {
+			return false;
+		}
+		GraphFrameBindings graph = GraphFrameBindings.from(input);
+		if (graph == GraphFrameBindings.EMPTY) {
+			return false;
+		}
+		boolean[] intersects = { false };
+		graph.visit((name, value) -> intersects[0] |= assignments.contains(name));
+		return intersects[0];
+	}
+
+	/** A local assignment may replace or remove an invocation binding, including on expression error. */
+	static boolean assignmentOverwritesInput(BindingSet input, Set<String> assignments) {
+		if (input == null || input.isEmpty() || assignments.isEmpty()) {
+			return false;
+		}
+		for (String name : assignments) {
+			if (input.hasBinding(name)) {
+				return true;
+			}
+		}
+		return false;
+	}
 
 	final BindingSet filteredBase;
 	final int[] slots;
@@ -50,13 +267,69 @@ final class NativeEntryBindingVariant {
 	 */
 	static NativeEntryBindingVariant tryCreate(NativeLmdbQuerySource source, NativeSlotLayout layout, BindingSet base,
 			String[] optionalOnlyNames) {
-		if (source == null || base == null || base.isEmpty() || optionalOnlyNames.length == 0) {
+		return tryCreate(source, layout, base, problemBindings(base, optionalOnlyNames, null));
+	}
+
+	/** Select the actual problem inputs once, with a nested invocation marker shadowing the static domain. */
+	static Set<String> problemBindings(BindingSet base, String[] optionalOnlyNames, QueryEvaluationContext context) {
+		if (base == null || base.isEmpty() || optionalOnlyNames.length == 0) {
+			return Set.of();
+		}
+		Set<String> domain = BindingFrameBindings.substitutionDomain(base);
+		if (domain == null) {
+			domain = context == null ? Set.of() : context.getSubstitutionBindingNames();
+		}
+		Set<String> problems = null;
+		for (String name : optionalOnlyNames) {
+			if (base.hasBinding(name) && !domain.contains(name) && !GraphFrameBindings.isSupplied(base, name)) {
+				if (problems == null) {
+					problems = new HashSet<>();
+				}
+				problems.add(name);
+			}
+		}
+		return problems == null ? Set.of() : problems;
+	}
+
+	/** Checks only logical entry values before any native lookup projection or entry variant can hide them. */
+	static boolean optionalCallerRequiresSemanticEvaluation(BindingSet input,
+			OptionalCallerRequirement requirement, QueryEvaluationContext context) {
+		if (requirement.gateAlways() || requirement.gateUnknown()) {
+			return true;
+		}
+		if (input == null || input.isEmpty()) {
+			return false;
+		}
+		// FILTER visibility is separate from OPTIONAL caller authority. Restored marker inputs and supplied GRAPH
+		// values are logical values at this gate even when they are not eligible for early match compatibility.
+		for (String name : requirement.gateNames()) {
+			if (input.getValue(name) != null) {
+				return true;
+			}
+		}
+		if (BindingFrameBindings.substitutionDomain(input) != null
+				|| !requirement.unknown() && requirement.names().isEmpty()) {
+			return false;
+		}
+		Set<String> staticInputs = context == null ? Set.of() : context.getSubstitutionBindingNames();
+		for (String name : input.getBindingNames()) {
+			if ((requirement.unknown() || requirement.names().contains(name)) && input.getValue(name) != null
+					&& !staticInputs.contains(name) && !GraphFrameBindings.isSupplied(input, name)) {
+				return true;
+			}
+		}
+		return false;
+	}
+
+	static NativeEntryBindingVariant tryCreate(NativeLmdbQuerySource source, NativeSlotLayout layout, BindingSet base,
+			Set<String> problemBindings) {
+		if (source == null || base == null || base.isEmpty() || problemBindings.isEmpty()) {
 			return null;
 		}
 		int count = 0;
 		String[] names = layout.slotNames();
 		for (String name : names) {
-			if (base.hasBinding(name) && contains(optionalOnlyNames, name)) {
+			if (problemBindings.contains(name)) {
 				count++;
 			}
 		}
@@ -65,15 +338,18 @@ final class NativeEntryBindingVariant {
 		}
 		int[] slots = new int[count];
 		long[] ids = new long[count];
-		QueryBindingSet filtered = new QueryBindingSet(base);
+		Set<String> withheldNames = new HashSet<>(count);
 		long slotMask = 0L;
 		int at = 0;
 		for (int slot = 0; slot < names.length; slot++) {
 			String name = names[slot];
-			if (!base.hasBinding(name) || !contains(optionalOnlyNames, name)) {
+			if (!problemBindings.contains(name)) {
 				continue;
 			}
 			Value value = base.getValue(name);
+			if (NativeEntryBindings.hasProtectedAuthority(value)) {
+				return null;
+			}
 			if (value == null) {
 				return null;
 			}
@@ -85,8 +361,12 @@ final class NativeEntryBindingVariant {
 			ids[at] = id;
 			at++;
 			slotMask |= 1L << slot;
-			filtered.removeBinding(name);
+			withheldNames.add(name);
 		}
+		QueryEvaluationContext context = new BindingSetQueryEvaluationContext(
+				new QueryEvaluationContext.Minimal((Dataset) null));
+		BindingSet filtered = NativeEntryBindings.preserve(base,
+				BindingFrameBindings.without(base, withheldNames, context));
 		return new NativeEntryBindingVariant(filtered, slots, ids, slotMask);
 	}
 
@@ -94,18 +374,75 @@ final class NativeEntryBindingVariant {
 		return new EntryBindingCompatibilityPlan(arg, slots, ids, slotMask);
 	}
 
+	/** Remove the temporary OPTIONAL input frame at the completed compatibility boundary. */
+	CloseableIteration<BindingSet> restoreFrames(CloseableIteration<BindingSet> rows, BindingSet original) {
+		BindingFrame frame = BindingFrameBindings.from(original);
+		return new ConvertingIteration<BindingSet, BindingSet>(rows) {
+			@Override
+			protected BindingSet convert(BindingSet row) {
+				return BindingFrameBindings.from(row) == frame ? row : new RestoredFrameBindings(row, frame);
+			}
+		};
+	}
+
 	String executionPath() {
 		return LmdbNativeAttemptMetrics.PATH_NATIVE_ENTRY_BINDING_VARIANT + "(mask=0x"
 				+ Long.toHexString(slotMask) + ")";
 	}
 
-	private static boolean contains(String[] values, String sought) {
-		for (String value : values) {
-			if (sought.equals(value)) {
-				return true;
-			}
-		}
-		return false;
+}
+
+/** Replaces only invocation metadata, without materializing lazy native result values. */
+@Experimental
+final class RestoredFrameBindings extends AbstractBindingSet
+		implements BindingFrameBindings.Carrier, GraphFrameBindings.Carrier {
+	private static final long serialVersionUID = 1L;
+	private final BindingSet delegate;
+	private final BindingFrame frame;
+
+	RestoredFrameBindings(BindingSet delegate, BindingFrame frame) {
+		this.delegate = delegate;
+		this.frame = frame;
+	}
+
+	@Override
+	public BindingFrame getBindingFrame() {
+		return frame;
+	}
+
+	@Override
+	public GraphFrameBindings getGraphFrameBindings() {
+		return GraphFrameBindings.from(delegate);
+	}
+
+	@Override
+	public Iterator<Binding> iterator() {
+		return delegate.iterator();
+	}
+
+	@Override
+	public Set<String> getBindingNames() {
+		return delegate.getBindingNames();
+	}
+
+	@Override
+	public Binding getBinding(String name) {
+		return delegate.getBinding(name);
+	}
+
+	@Override
+	public boolean hasBinding(String name) {
+		return delegate.hasBinding(name);
+	}
+
+	@Override
+	public Value getValue(String name) {
+		return delegate.getValue(name);
+	}
+
+	@Override
+	public int size() {
+		return delegate.size();
 	}
 }
 

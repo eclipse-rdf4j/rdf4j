@@ -77,7 +77,8 @@ public class ConjunctiveConstraintSplitterTest extends QueryOptimizerTest {
 		LeftJoin original = new LeftJoin(left, right, new SameTerm(Var.of("x"), new ValueConstant(oldValue)));
 
 		List<BindingSet> expected = evaluate(original.clone());
-		assertThat(expected).singleElement().satisfies(result -> assertThat(result.getValue("x")).isEqualTo(newValue));
+		// The independent right mapping conflicts with the left x, so OPTIONAL keeps the left row.
+		assertThat(expected).containsExactly(new ListBindingSet(List.of("x"), oldValue));
 
 		TupleExpr optimized = original.clone();
 		getOptimizer().optimize(optimized, null, EmptyBindingSet.getInstance());
@@ -98,7 +99,7 @@ public class ConjunctiveConstraintSplitterTest extends QueryOptimizerTest {
 						new ValueConstant(SimpleValueFactory.getInstance().createLiteral(true))));
 
 		List<BindingSet> expected = evaluate(original.clone());
-		assertThat(expected).singleElement().satisfies(result -> assertThat(result.getValue("x")).isEqualTo(newValue));
+		assertThat(expected).containsExactly(new ListBindingSet(List.of("x"), oldValue));
 
 		LeftJoin optimized = original.clone();
 		getOptimizer().optimize(optimized, null, EmptyBindingSet.getInstance());
@@ -106,6 +107,34 @@ public class ConjunctiveConstraintSplitterTest extends QueryOptimizerTest {
 		assertThat(optimized.getCondition()).isInstanceOf(SameTerm.class);
 		assertThat(optimized.getRightArg()).isInstanceOf(Filter.class);
 		assertThat(evaluate(optimized)).containsExactlyElementsOf(expected);
+	}
+
+	@Test
+	public void splitsOptionalConditionWithCompatibleLocalOverwriteAndDuplicates() throws Exception {
+		IRI oldValue = SimpleValueFactory.getInstance().createIRI("urn:old");
+		IRI newValue = SimpleValueFactory.getInstance().createIRI("urn:new");
+		BindingSet oldRow = new ListBindingSet(List.of("x"), oldValue);
+		BindingSetAssignment left = new BindingSetAssignment();
+		left.setBindingNames(Set.of("x"));
+		left.setBindingSets(List.of(oldRow, oldRow));
+		BindingSetAssignment local = new BindingSetAssignment();
+		local.setBindingNames(Set.of("x"));
+		local.setBindingSets(List.of(new ListBindingSet(List.of("x"), newValue)));
+		Extension right = new Extension(local, new ExtensionElem(new ValueConstant(oldValue), "x"),
+				new ExtensionElem(new ValueConstant(newValue), "matched"));
+		LeftJoin original = new LeftJoin(left, right,
+				new And(new SameTerm(Var.of("x"), new ValueConstant(oldValue)),
+						new ValueConstant(SimpleValueFactory.getInstance().createLiteral(true))));
+		BindingSet matched = new ListBindingSet(List.of("x", "matched"), oldValue, newValue);
+		List<BindingSet> expected = List.of(matched, matched);
+		assertThat(evaluate(original.clone())).containsExactlyInAnyOrderElementsOf(expected);
+
+		LeftJoin optimized = original.clone();
+		getOptimizer().optimize(optimized, null, EmptyBindingSet.getInstance());
+
+		assertThat(optimized.getCondition()).isInstanceOf(SameTerm.class);
+		assertThat(optimized.getRightArg()).isInstanceOf(Filter.class);
+		assertThat(evaluate(optimized)).containsExactlyInAnyOrderElementsOf(expected);
 	}
 
 	@Test

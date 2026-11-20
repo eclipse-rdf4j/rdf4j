@@ -15,12 +15,15 @@ import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.Dataset;
 import org.eclipse.rdf4j.query.algebra.BindingSetAssignment;
+import org.eclipse.rdf4j.query.algebra.PrivateGraphContextRole;
 import org.eclipse.rdf4j.query.algebra.Projection;
+import org.eclipse.rdf4j.query.algebra.QueryModelNode;
 import org.eclipse.rdf4j.query.algebra.Service;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryOptimizer;
 import org.eclipse.rdf4j.query.algebra.helpers.AbstractQueryModelVisitor;
+import org.eclipse.rdf4j.query.algebra.helpers.BindingScopePolicy;
 import org.eclipse.rdf4j.query.algebra.helpers.QueryAlgebraBindingAnalysis;
 
 /**
@@ -55,7 +58,8 @@ public class BindingSetAssignmentInlinerOptimizer implements QueryOptimizer {
 
 		@Override
 		public void meet(Var var) {
-			if (var.getName() == null || var.hasValue() || var.isConstant()) {
+			if (var.getName() == null || var.hasValue() || var.isConstant()
+					|| BindingScopePolicy.isNamedZeroLengthPathEndpoint(var)) {
 				return;
 			}
 			QueryAlgebraBindingAnalysis.ReadOnlyContext input = bindingAnalysis.contextAt(var);
@@ -66,9 +70,18 @@ public class BindingSetAssignmentInlinerOptimizer implements QueryOptimizer {
 			if (replacementValue != null) {
 				Var replacement = Var.of(var.getName(), replacementValue, var.isAnonymous(), var.isConstant(),
 						var.isBNode());
+				if (var.hasApiInputOrigin()) {
+					replacement = replacement.withApiInputOrigin();
+				}
 				replacement.setGraphContextDepth(var.getGraphContextDepth());
 				replacement.setVariableScopeChange(var.isVariableScopeChange());
+				QueryModelNode owner = var.getParentNode();
+				boolean privateContext = PrivateGraphContextRole.isPrivateContext(owner, var);
+				String publicContext = PrivateGraphContextRole.publicContextName(owner, var);
 				var.replaceWith(replacement);
+				if (privateContext) {
+					PrivateGraphContextRole.mark(owner, replacement, publicContext);
+				}
 				bindingAnalysis.invalidate(root);
 			}
 		}

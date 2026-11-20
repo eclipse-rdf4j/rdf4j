@@ -30,6 +30,7 @@ import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.algebra.Union;
 import org.eclipse.rdf4j.query.algebra.evaluation.util.QueryEvaluationUtility;
 import org.eclipse.rdf4j.query.algebra.helpers.AbstractSimpleQueryModelVisitor;
+import org.eclipse.rdf4j.query.algebra.helpers.TupleExprs;
 import org.eclipse.rdf4j.query.algebra.helpers.collectors.VarNameCollector;
 
 final class LmdbUnionFilterDistributor {
@@ -99,9 +100,9 @@ final class LmdbUnionFilterDistributor {
 		}
 
 		TupleExpr left = buildBranch(union.getLeftArg(), prefixFactors, branchFilters, outerBoundVars, branchOptimizer,
-				joinFactory, filterWrapper);
+				union.isVariableScopeChange(), joinFactory, filterWrapper);
 		TupleExpr right = buildBranch(union.getRightArg(), prefixFactors, branchFilters, outerBoundVars,
-				branchOptimizer,
+				branchOptimizer, union.isVariableScopeChange(),
 				joinFactory, filterWrapper);
 		Union distributed = new Union(left, right);
 		distributed.setVariableScopeChange(union.isVariableScopeChange());
@@ -131,14 +132,24 @@ final class LmdbUnionFilterDistributor {
 
 	private static TupleExpr buildBranch(TupleExpr branch, List<TupleExpr> prefixFactors,
 			List<DeferredFilter> filters, Set<String> outerBoundVars, BranchOptimizer branchOptimizer,
-			JoinFactory joinFactory, FilterWrapper filterWrapper) {
-		TupleExpr root = prependPrefix(branch.clone(), prefixFactors, joinFactory);
+			boolean unionChangesScope, JoinFactory joinFactory, FilterWrapper filterWrapper) {
+		TupleExpr root = prependPrefix(branch.clone(), prefixFactors, unionChangesScope, joinFactory);
 		root = filterWrapper.wrap(root, filters, "unionBranch");
 		root = branchOptimizer.optimize(root, outerBoundVars);
 		return root;
 	}
 
-	private static TupleExpr prependPrefix(TupleExpr branch, List<TupleExpr> prefixFactors, JoinFactory joinFactory) {
+	private static TupleExpr prependPrefix(TupleExpr branch, List<TupleExpr> prefixFactors, boolean unionChangesScope,
+			JoinFactory joinFactory) {
+		if (TupleExprs.containsGraphBoundary(branch)) {
+			if (unionChangesScope) {
+				// The prefix was outside this UNION. Keep the branch's original entry when moving it inside.
+				Extension branchScope = new Extension(branch);
+				branchScope.setVariableScopeChange(true);
+				branch = branchScope;
+			}
+			return joinPrefix(prefixFactors, branch, joinFactory);
+		}
 		if (prependPrefixIntoScopedFilter(branch, prefixFactors, joinFactory)) {
 			return branch;
 		}

@@ -12,25 +12,34 @@
 package org.eclipse.rdf4j.query.algebra.helpers;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.junit.jupiter.api.Assertions.assertAll;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 
+import org.assertj.core.api.SoftAssertions;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.query.algebra.BindingSetAssignment;
 import org.eclipse.rdf4j.query.algebra.Bound;
 import org.eclipse.rdf4j.query.algebra.Compare;
+import org.eclipse.rdf4j.query.algebra.EmptySet;
 import org.eclipse.rdf4j.query.algebra.Exists;
+import org.eclipse.rdf4j.query.algebra.Extension;
+import org.eclipse.rdf4j.query.algebra.ExtensionElem;
 import org.eclipse.rdf4j.query.algebra.Filter;
 import org.eclipse.rdf4j.query.algebra.Filter.ConditionBindingScope;
+import org.eclipse.rdf4j.query.algebra.Graph;
+import org.eclipse.rdf4j.query.algebra.Group;
 import org.eclipse.rdf4j.query.algebra.Join;
 import org.eclipse.rdf4j.query.algebra.Lateral;
 import org.eclipse.rdf4j.query.algebra.LeftJoin;
 import org.eclipse.rdf4j.query.algebra.Projection;
 import org.eclipse.rdf4j.query.algebra.ProjectionElem;
 import org.eclipse.rdf4j.query.algebra.ProjectionElemList;
+import org.eclipse.rdf4j.query.algebra.QueryRoot;
 import org.eclipse.rdf4j.query.algebra.SingletonSet;
 import org.eclipse.rdf4j.query.algebra.StatementPattern;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
@@ -41,6 +50,363 @@ import org.eclipse.rdf4j.query.impl.MapBindingSet;
 import org.junit.jupiter.api.Test;
 
 class QueryAlgebraBindingAnalysisSubqueryScopeTest {
+	@Test
+	void attachedLateralLeftReceivesItsSemanticCaller() {
+		Value caller = SimpleValueFactory.getInstance().createLiteral("caller");
+		SingletonSet left = new SingletonSet();
+		Lateral lateral = new Lateral(left, filter(new SingletonSet(), "x"), Set.of("x"));
+		QueryRoot root = new QueryRoot(new Group(lateral, List.of("x")));
+		QueryAlgebraBindingAnalysis analysis = QueryAlgebraBindingAnalysis.withBindingValues(root,
+				bindings("x", caller));
+		QueryAlgebraBindingAnalysis.ReadOnlyContext lateralInput = analysis.contextAt(lateral);
+		QueryAlgebraBindingAnalysis.ReadOnlyContext leftInput = analysis.contextAt(left);
+		QueryAlgebraBindingAnalysis.ReadOnlyContext explicit = analysis.childInput(lateral, left, lateralInput);
+
+		assertAll(
+				() -> assertThat(QueryAlgebraBindingAnalysis.callerInputEdge(lateral, left))
+						.isEqualTo(QueryAlgebraBindingAnalysis.CallerInputEdge.FORWARD),
+				() -> assertThat(leftInput).isEqualTo(explicit),
+				() -> assertThat(leftInput.bindingDomainKnown()).isTrue(),
+				() -> assertThat(leftInput.guaranteedNames()).contains("x"),
+				() -> assertThat(leftInput.fixedValues()).containsEntry("x", caller),
+				() -> assertThat(leftInput.externalValues()).containsEntry("x", caller));
+	}
+
+	@Test
+	void attachedLateralRightReceivesOnlyDeclaredLeftOutputsAndTheCaller() {
+		Value caller = SimpleValueFactory.getInstance().createLiteral("caller");
+		Value declared = SimpleValueFactory.getInstance().createLiteral("declared");
+		Value hidden = SimpleValueFactory.getInstance().createLiteral("hidden");
+		MapBindingSet leftRow = bindings("declared", declared);
+		leftRow.addBinding("hidden", hidden);
+		BindingSetAssignment left = new BindingSetAssignment();
+		left.setBindingNames(Set.of("declared", "hidden"));
+		left.setBindingSets(List.of(leftRow));
+		Filter right = filter(new SingletonSet(), "declared");
+		Lateral lateral = new Lateral(left, right, Set.of("declared"));
+		QueryRoot root = new QueryRoot(new Group(lateral, List.of("declared")));
+		QueryAlgebraBindingAnalysis analysis = QueryAlgebraBindingAnalysis.withBindingValues(root,
+				bindings("caller", caller));
+		QueryAlgebraBindingAnalysis.ReadOnlyContext lateralInput = analysis.contextAt(lateral);
+		QueryAlgebraBindingAnalysis.ReadOnlyContext leftInput = analysis.contextAt(left);
+		QueryAlgebraBindingAnalysis.ReadOnlyContext rightInput = analysis.contextAt(right);
+		QueryAlgebraBindingAnalysis.ReadOnlyContext explicit = analysis.childInput(lateral, right, lateralInput);
+
+		assertAll(
+				() -> assertThat(leftInput.fixedValues()).containsEntry("caller", caller),
+				() -> assertThat(rightInput).isEqualTo(explicit),
+				() -> assertThat(rightInput.fixedValues()).containsEntry("caller", caller)
+						.containsEntry("declared", declared),
+				() -> assertThat(rightInput.maybeBoundNames()).doesNotContain("hidden"));
+	}
+
+	@Test
+	void lateralEntryDistinguishesSiblingOwnerFromSemanticInput() {
+		Value fixed = SimpleValueFactory.getInstance().createLiteral("owner");
+		SingletonSet left = new SingletonSet();
+		Filter right = filter(new SingletonSet(), "x");
+		Lateral lateral = new Lateral(left, right, Set.of("x"));
+		Join root = new Join(values("x", fixed), lateral);
+		QueryAlgebraBindingAnalysis analysis = QueryAlgebraBindingAnalysis.withGuaranteedInputNames(root, Set.of());
+		assertThat(analysis.contextAt(left).maybeBoundNames()).doesNotContain("x");
+		assertThat(analysis.contextAt(right).fixedValues()).containsEntry("x", fixed);
+
+		SingletonSet scopedLeft = new SingletonSet();
+		Filter scopedRight = filter(new SingletonSet(), "x");
+		Lateral scopedLateral = new Lateral(scopedLeft, scopedRight, Set.of("x"));
+		Union union = new Union(scopedLateral, new EmptySet());
+		union.setVariableScopeChange(true);
+		Join scopedRoot = new Join(values("x", fixed), union);
+		QueryAlgebraBindingAnalysis scoped = QueryAlgebraBindingAnalysis.withGuaranteedInputNames(scopedRoot, Set.of());
+		assertThat(scoped.contextAt(scopedRight).maybeBoundNames()).doesNotContain("x");
+		QueryAlgebraBindingAnalysis api = QueryAlgebraBindingAnalysis.withBindingValues(scopedRoot,
+				bindings("x", fixed));
+		assertThat(api.contextAt(scopedRight).fixedValues()).containsEntry("x", fixed);
+
+		Filter groupedRight = filter(new SingletonSet(), "x");
+		Lateral groupedLateral = new Lateral(new SingletonSet(), groupedRight, Set.of("x"));
+		Extension groupBoundary = new Extension(groupedLateral);
+		groupBoundary.setVariableScopeChange(true);
+		Join groupedRoot = new Join(values("x", fixed), groupBoundary);
+		QueryAlgebraBindingAnalysis grouped = QueryAlgebraBindingAnalysis.withGuaranteedInputNames(groupedRoot,
+				Set.of());
+		assertThat(grouped.contextAt(groupedRight).maybeBoundNames()).doesNotContain("x");
+	}
+
+	@Test
+	void graphBoundaryKeepsOuterOwnerOutOfDirectLateral() {
+		Value graphValue = SimpleValueFactory.getInstance().createIRI("urn:scope:graph");
+		Value caller = SimpleValueFactory.getInstance().createLiteral("caller");
+		Value outside = SimpleValueFactory.getInstance().createLiteral("outside");
+		Value hidden = SimpleValueFactory.getInstance().createLiteral("hidden");
+		Value local = SimpleValueFactory.getInstance().createLiteral("local");
+		MapBindingSet ownerRow = bindings("outside", outside);
+		ownerRow.addBinding("hidden", hidden);
+		BindingSetAssignment owner = new BindingSetAssignment();
+		owner.setBindingSets(List.of(ownerRow));
+		BindingSetAssignment left = values("local", local);
+		Filter right = filter(new SingletonSet(), "local");
+		Lateral lateral = new Lateral(left, right, Set.of("local", "outside"));
+		Graph graph = new Graph(Var.of("g"), lateral);
+		QueryRoot root = new QueryRoot(new Join(owner, graph));
+		MapBindingSet entry = bindings("g", graphValue);
+		entry.addBinding("caller", caller);
+		QueryAlgebraBindingAnalysis analysis = QueryAlgebraBindingAnalysis.withBindingValues(root, entry);
+		QueryAlgebraBindingAnalysis.ReadOnlyContext leftInput = analysis.contextAt(left);
+		QueryAlgebraBindingAnalysis.ReadOnlyContext rightInput = analysis.contextAt(right);
+		SoftAssertions softly = new SoftAssertions();
+
+		softly.assertThat(BindingScopePolicy.parameterInputEdges(lateral, lateral.getRightInputBindingNames(), true))
+				.as("GRAPH blocks the outer owner")
+				.isEmpty();
+		softly.assertThat(leftInput.fixedValues()).as("left keeps the supplied graph").containsEntry("g", graphValue);
+		softly.assertThat(leftInput.fixedValues()).as("left keeps the semantic caller").containsEntry("caller", caller);
+		softly.assertThat(leftInput.maybeBoundNames())
+				.as("left excludes outer probes")
+				.doesNotContain("outside", "hidden");
+		softly.assertThat(rightInput.fixedValues()).as("right keeps the supplied graph").containsEntry("g", graphValue);
+		softly.assertThat(rightInput.fixedValues())
+				.as("right keeps the semantic caller")
+				.containsEntry("caller", caller);
+		softly.assertThat(rightInput.fixedValues())
+				.as("declared local input survives GRAPH")
+				.containsEntry("local", local);
+		softly.assertThat(rightInput.maybeBoundNames())
+				.as("right excludes outer probes")
+				.doesNotContain("outside", "hidden");
+		softly.assertAll();
+	}
+
+	@Test
+	void locallyRootedLateralWithMissingOwnerFrameStaysConservative() {
+		Value ownerValue = SimpleValueFactory.getInstance().createLiteral("owner");
+		Value caller = SimpleValueFactory.getInstance().createLiteral("caller");
+		SoftAssertions softly = new SoftAssertions();
+		for (boolean optional : List.of(false, true)) {
+			SingletonSet left = new SingletonSet();
+			Filter right = filter(new SingletonSet(), "x");
+			Lateral lateral = new Lateral(left, right, Set.of("x"));
+			TupleExpr owner = optional ? new LeftJoin(values("x", ownerValue), lateral)
+					: new Join(values("x", ownerValue), lateral);
+			new QueryRoot(owner);
+			QueryAlgebraBindingAnalysis seed = QueryAlgebraBindingAnalysis.withBindingValues(lateral,
+					bindings("caller", caller));
+			softly.assertThat(BindingScopePolicy.parameterInputEdges(lateral, Set.of("x"), true))
+					.as("owner is structurally attached; optional=%s", optional)
+					.extracting(BindingScopePolicy.FilterInputEdge::owner)
+					.containsExactly(owner);
+			for (boolean unknown : List.of(false, true)) {
+				QueryAlgebraBindingAnalysis.ReadOnlyContext input = unknown ? seed.rootContext().withUnknownDomain()
+						: seed.rootContext();
+				QueryAlgebraBindingAnalysis analysis = QueryAlgebraBindingAnalysis.withInputContextAndPossibleInputs(
+						lateral, input, Set.of());
+				QueryAlgebraBindingAnalysis.ReadOnlyContext rightInput = analysis.contextAt(right);
+				softly.assertThat(analysis.bindingState(Var.of("x"), rightInput))
+						.as("missing owner frame; optional=%s unknown=%s", optional, unknown)
+						.isIn(QueryAlgebraBindingAnalysis.BindingState.POSSIBLY_BOUND,
+								QueryAlgebraBindingAnalysis.BindingState.UNKNOWN);
+				softly.assertThat(rightInput.fixedValues())
+						.as("no invented owner value; optional=%s unknown=%s",
+								optional, unknown)
+						.doesNotContainKey("x");
+				softly.assertThat(rightInput.guaranteedNames())
+						.as("no guaranteed owner; optional=%s unknown=%s",
+								optional, unknown)
+						.doesNotContain("x");
+				softly.assertThat(rightInput.fixedValues())
+						.as("caller retained; optional=%s unknown=%s", optional,
+								unknown)
+						.containsEntry("caller", caller);
+			}
+		}
+		softly.assertAll();
+	}
+
+	@Test
+	void lateralJoinAndOptionalExposeOnlyDeclaredOwnerInputsToTheRight() {
+		Value caller = SimpleValueFactory.getInstance().createLiteral("caller");
+		Value declared = SimpleValueFactory.getInstance().createLiteral("declared");
+		Value hidden = SimpleValueFactory.getInstance().createLiteral("hidden");
+		SoftAssertions softly = new SoftAssertions();
+		for (boolean optional : List.of(false, true)) {
+			MapBindingSet ownerRow = bindings("x", declared);
+			ownerRow.addBinding("hidden", hidden);
+			BindingSetAssignment owner = new BindingSetAssignment();
+			owner.setBindingSets(List.of(ownerRow));
+			SingletonSet left = new SingletonSet();
+			Filter right = filter(new SingletonSet(), "x");
+			Lateral lateral = new Lateral(left, right, Set.of("x"));
+			TupleExpr host = optional ? new LeftJoin(owner, lateral) : new Join(owner, lateral);
+			QueryRoot root = new QueryRoot(host);
+			QueryAlgebraBindingAnalysis analysis = QueryAlgebraBindingAnalysis.withBindingValues(root,
+					bindings("caller", caller));
+			QueryAlgebraBindingAnalysis.ReadOnlyContext entry = analysis.contextAt(lateral);
+			QueryAlgebraBindingAnalysis.ReadOnlyContext leftInput = analysis.contextAt(left);
+			QueryAlgebraBindingAnalysis.ReadOnlyContext rightInput = analysis.contextAt(right);
+
+			softly.assertThat(entry.fixedValues())
+					.as("semantic entry; optional=%s", optional)
+					.containsEntry("caller", caller);
+			softly.assertThat(entry.fixedValues())
+					.as("no sibling at semantic entry; optional=%s", optional)
+					.doesNotContainKeys("x", "hidden");
+			softly.assertThat(leftInput.fixedValues())
+					.as("left caller; optional=%s", optional)
+					.containsEntry("caller", caller);
+			softly.assertThat(leftInput.fixedValues())
+					.as("no fixed sibling on left; optional=%s", optional)
+					.doesNotContainKeys("x", "hidden");
+			softly.assertThat(leftInput.maybeBoundNames())
+					.as("no sibling in left; optional=%s", optional)
+					.doesNotContain("x", "hidden");
+			softly.assertThat(rightInput.fixedValues())
+					.as("declared right input; optional=%s", optional)
+					.containsEntry("caller", caller);
+			softly.assertThat(rightInput.fixedValues())
+					.as("declared owner input; optional=%s", optional)
+					.containsEntry("x", declared);
+			softly.assertThat(rightInput.maybeBoundNames())
+					.as("undeclared owner; optional=%s", optional)
+					.doesNotContain("hidden");
+			softly.assertThat(QueryAlgebraBindingAnalysis.callerInputEdge(lateral, right))
+					.as("right symbolic transition remains unproved; optional=%s", optional)
+					.isEqualTo(QueryAlgebraBindingAnalysis.CallerInputEdge.UNKNOWN);
+		}
+		softly.assertAll();
+	}
+
+	@Test
+	void lateralJoinAndOptionalKeepNullableOwnerInputsNullable() {
+		Value ownerValue = SimpleValueFactory.getInstance().createLiteral("owner");
+		SoftAssertions softly = new SoftAssertions();
+		for (boolean optional : List.of(false, true)) {
+			BindingSetAssignment owner = new BindingSetAssignment();
+			owner.setBindingNames(Set.of("x"));
+			owner.setBindingSets(List.of(bindings("x", ownerValue), new MapBindingSet()));
+			SingletonSet left = new SingletonSet();
+			Filter right = filter(new SingletonSet(), "x");
+			Lateral lateral = new Lateral(left, right, Set.of("x"));
+			TupleExpr host = optional ? new LeftJoin(owner, lateral) : new Join(owner, lateral);
+			QueryAlgebraBindingAnalysis analysis = QueryAlgebraBindingAnalysis.withGuaranteedInputNames(
+					new QueryRoot(host), Set.of());
+			QueryAlgebraBindingAnalysis.ReadOnlyContext rightInput = analysis.contextAt(right);
+
+			softly.assertThat(analysis.bindingState(Var.of("x"), analysis.contextAt(left)))
+					.as("owner is not left input; optional=%s", optional)
+					.isEqualTo(QueryAlgebraBindingAnalysis.BindingState.UNBOUND);
+			softly.assertThat(analysis.bindingState(Var.of("x"), rightInput))
+					.as("UNDEF owner stays nullable; optional=%s", optional)
+					.isEqualTo(QueryAlgebraBindingAnalysis.BindingState.POSSIBLY_BOUND);
+			softly.assertThat(rightInput.fixedValues())
+					.as("no fixed nullable owner; optional=%s", optional)
+					.doesNotContainKey("x");
+		}
+		softly.assertAll();
+	}
+
+	@Test
+	void lateralCallerAndLocalOutputsPrecedeBorrowedOwnerInputs() {
+		Value caller = SimpleValueFactory.getInstance().createLiteral("caller");
+		Value local = SimpleValueFactory.getInstance().createLiteral("local");
+		Value ownerValue = SimpleValueFactory.getInstance().createLiteral("owner");
+		SoftAssertions softly = new SoftAssertions();
+		for (boolean optional : List.of(false, true)) {
+			Extension owner = new Extension(new SingletonSet(), new ExtensionElem(new ValueConstant(ownerValue), "x"));
+			Extension localLeft = new Extension(new SingletonSet(), new ExtensionElem(new ValueConstant(local), "x"));
+			Filter right = filter(new SingletonSet(), "x");
+			Lateral lateral = new Lateral(localLeft, right, Set.of("x"));
+			TupleExpr host = optional ? new LeftJoin(owner, lateral) : new Join(owner, lateral);
+			QueryRoot root = new QueryRoot(host);
+			QueryAlgebraBindingAnalysis noCaller = QueryAlgebraBindingAnalysis.withGuaranteedInputNames(root, Set.of());
+			QueryAlgebraBindingAnalysis withCaller = QueryAlgebraBindingAnalysis.withBindingValues(root,
+					bindings("x", caller));
+
+			softly.assertThat(noCaller.contextAt(localLeft).maybeBoundNames())
+					.as("owner is not local left input; optional=%s", optional)
+					.doesNotContain("x");
+			softly.assertThat(noCaller.contextAt(right).fixedValues())
+					.as("local value wins owner probe; optional=%s", optional)
+					.containsEntry("x", local);
+			softly.assertThat(withCaller.contextAt(localLeft).fixedValues())
+					.as("left receives the semantic caller; optional=%s", optional)
+					.containsEntry("x", caller);
+			softly.assertThat(withCaller.contextAt(right).fixedValues())
+					.as("caller wins local and owner; optional=%s", optional)
+					.containsEntry("x", caller);
+		}
+		softly.assertAll();
+	}
+
+	@Test
+	void lateralNestedOwnersPreferNearestBoundAndFallBackForUndef() {
+		Value outer = SimpleValueFactory.getInstance().createLiteral("outer");
+		Value inner = SimpleValueFactory.getInstance().createLiteral("inner");
+		SoftAssertions softly = new SoftAssertions();
+		for (boolean optional : List.of(false, true)) {
+			for (boolean nullable : List.of(false, true)) {
+				BindingSetAssignment near = new BindingSetAssignment();
+				near.setBindingNames(Set.of("x"));
+				near.setBindingSets(nullable ? List.of(bindings("x", inner), new MapBindingSet())
+						: List.of(bindings("x", inner)));
+				SingletonSet left = new SingletonSet();
+				Filter right = filter(new SingletonSet(), "x");
+				Lateral lateral = new Lateral(left, right, Set.of("x"));
+				TupleExpr innerHost = optional ? new LeftJoin(near, lateral) : new Join(near, lateral);
+				TupleExpr outerHost = optional ? new LeftJoin(values("x", outer), innerHost)
+						: new Join(values("x", outer), innerHost);
+				QueryAlgebraBindingAnalysis analysis = QueryAlgebraBindingAnalysis.withGuaranteedInputNames(
+						new QueryRoot(outerHost), Set.of());
+				QueryAlgebraBindingAnalysis.ReadOnlyContext rightInput = analysis.contextAt(right);
+
+				softly.assertThat(analysis.bindingState(Var.of("x"), analysis.contextAt(left)))
+						.as("nested probes do not reach lateral left; optional=%s nullable=%s", optional, nullable)
+						.isEqualTo(QueryAlgebraBindingAnalysis.BindingState.UNBOUND);
+				softly.assertThat(analysis.bindingState(Var.of("x"), rightInput))
+						.as("nearest or outer owner binds x; optional=%s nullable=%s", optional, nullable)
+						.isEqualTo(QueryAlgebraBindingAnalysis.BindingState.BOUND);
+				if (nullable) {
+					softly.assertThat(rightInput.fixedValues())
+							.as("UNDEF may select outer owner; optional=%s", optional)
+							.doesNotContainKey("x");
+				} else {
+					softly.assertThat(rightInput.fixedValues())
+							.as("nearest bound owner wins; optional=%s", optional)
+							.containsEntry("x", inner);
+				}
+			}
+		}
+		softly.assertAll();
+	}
+
+	@Test
+	void invalidationRefreshesAttachedLateralOwnerAndDeclaredInputs() {
+		Value first = SimpleValueFactory.getInstance().createLiteral("first");
+		Value second = SimpleValueFactory.getInstance().createLiteral("second");
+		BindingSetAssignment owner = values("x", first);
+		SingletonSet left = new SingletonSet();
+		Filter right = filter(new SingletonSet(), "x");
+		Lateral lateral = new Lateral(left, right, Set.of("x"));
+		QueryRoot root = new QueryRoot(new Join(owner, lateral));
+		QueryAlgebraBindingAnalysis analysis = QueryAlgebraBindingAnalysis.withGuaranteedInputNames(root, Set.of());
+
+		QueryAlgebraBindingAnalysis.ReadOnlyContext firstInput = analysis.contextAt(right);
+		owner.setBindingSets(List.of(bindings("x", second)));
+		analysis.invalidate();
+		QueryAlgebraBindingAnalysis.ReadOnlyContext secondInput = analysis.contextAt(right);
+		lateral.setRightInputBindingNames(Set.of("other"));
+		analysis.invalidate();
+		QueryAlgebraBindingAnalysis.ReadOnlyContext undeclaredInput = analysis.contextAt(right);
+		QueryAlgebraBindingAnalysis.ReadOnlyContext leftInput = analysis.contextAt(left);
+		assertAll(
+				() -> assertThat(firstInput.fixedValues()).containsEntry("x", first),
+				() -> assertThat(secondInput.fixedValues()).containsEntry("x", second),
+				() -> assertThat(analysis.bindingState(Var.of("x"), undeclaredInput))
+						.as("the old owner header must not survive invalidation")
+						.isEqualTo(QueryAlgebraBindingAnalysis.BindingState.UNBOUND),
+				() -> assertThat(analysis.bindingState(Var.of("x"), leftInput))
+						.isEqualTo(QueryAlgebraBindingAnalysis.BindingState.UNBOUND));
+	}
+
 	@Test
 	void retainedConditionScopeNameMappingPreservesModesAndCollapsesCollisions() {
 		ConditionBindingScope retained = ConditionBindingScope.retain(Set.of("x", "y"));
@@ -270,6 +636,61 @@ class QueryAlgebraBindingAnalysisSubqueryScopeTest {
 				.as("OPTIONAL subquery does not receive its left sibling row")
 				.isEqualTo(QueryAlgebraBindingAnalysis.BindingState.UNBOUND);
 		assertThat(filterInput.externalGuaranteedNames()).doesNotContain("entry");
+	}
+
+	@Test
+	void optionalSubqueryInsideExistsRetainsNullableEntryWithoutMakingItGuaranteed() {
+		Filter correlatedFilter = filter(new SingletonSet(), "entry");
+		Projection optionalSubquery = projection(correlatedFilter, "z");
+		LeftJoin optional = new LeftJoin(pattern("a", "b", "left"), optionalSubquery);
+		BindingSetAssignment entries = new BindingSetAssignment();
+		entries.setBindingSets(List.of(bindings("entry", SimpleValueFactory.getInstance().createLiteral(1)),
+				new MapBindingSet()));
+		Filter root = new Filter(entries, new Exists(optional));
+		QueryAlgebraBindingAnalysis analysis = QueryAlgebraBindingAnalysis.withGuaranteedInputNames(root, Set.of());
+		QueryAlgebraBindingAnalysis.ReadOnlyContext filterInput = analysis.contextAt(correlatedFilter);
+
+		assertThat(analysis.bindingState(Var.of("entry"), filterInput))
+				.isEqualTo(QueryAlgebraBindingAnalysis.BindingState.POSSIBLY_BOUND);
+		assertThat(analysis.bindingState(Var.of("left"), filterInput))
+				.isEqualTo(QueryAlgebraBindingAnalysis.BindingState.UNBOUND);
+		assertThat(filterInput.externalGuaranteedNames()).doesNotContain("entry");
+	}
+
+	@Test
+	void detachedOptionalRetainsItsEnclosingExistsEntry() {
+		Filter correlatedFilter = filter(new SingletonSet(), "entry");
+		Projection optionalSubquery = projection(correlatedFilter, "z");
+		LeftJoin optional = new LeftJoin(pattern("a", "b", "left"), optionalSubquery);
+		Filter root = new Filter(pattern("s", "p", "entry"), new Exists(optional));
+		QueryAlgebraBindingAnalysis original = QueryAlgebraBindingAnalysis.withGuaranteedInputNames(root, Set.of());
+		QueryAlgebraBindingAnalysis.ReadOnlyContext inherited = original.contextAt(optional);
+		LeftJoin copied = optional.clone();
+		Projection copiedProjection = (Projection) copied.getRightArg();
+		Filter copiedFilter = (Filter) copiedProjection.getArg();
+		QueryAlgebraBindingAnalysis fork = original.forClone(new QueryRoot(copied), inherited,
+				Map.of(copied, optional, copiedProjection, optionalSubquery, copiedFilter, correlatedFilter));
+
+		assertThat(fork.bindingState(Var.of("entry"), fork.contextAt(copiedFilter)))
+				.as("the detached analysis inherits the enclosing EXISTS invocation")
+				.isEqualTo(QueryAlgebraBindingAnalysis.BindingState.BOUND);
+		assertThat(fork.bindingState(Var.of("left"), fork.contextAt(copiedFilter)))
+				.isEqualTo(QueryAlgebraBindingAnalysis.BindingState.UNBOUND);
+	}
+
+	@Test
+	void emptyNestedExistsEntryDoesNotReuseItsOuterDomain() {
+		Filter innerFilter = filter(new SingletonSet(), "entry");
+		Projection innerProjection = projection(innerFilter, "z");
+		LeftJoin innerOptional = new LeftJoin(pattern("a", "b", "left"), innerProjection);
+		Projection clearsEntry = new Projection(new SingletonSet(), new ProjectionElemList(), true);
+		Filter outerBody = new Filter(clearsEntry, new Exists(innerOptional));
+		Filter root = new Filter(pattern("s", "p", "entry"), new Exists(outerBody));
+		QueryAlgebraBindingAnalysis analysis = QueryAlgebraBindingAnalysis.withGuaranteedInputNames(root, Set.of());
+
+		assertThat(analysis.bindingState(Var.of("entry"), analysis.contextAt(innerFilter)))
+				.as("the inner EXISTS has an empty entry and must not inherit the outer EXISTS domain")
+				.isEqualTo(QueryAlgebraBindingAnalysis.BindingState.UNBOUND);
 	}
 
 	@Test

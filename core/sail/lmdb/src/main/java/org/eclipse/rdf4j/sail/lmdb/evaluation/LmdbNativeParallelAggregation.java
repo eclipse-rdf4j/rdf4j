@@ -121,6 +121,14 @@ final class LmdbNativeParallelAggregation {
 		}
 		MultiJoinPlan.OrderedPlan derived = orderSelection.derived;
 		PatternPlan root = (PatternPlan) derived.order[0];
+		long possibleInputs = row.boundMask();
+		for (SlotPlan child : derived.order) {
+			PatternPlan pattern = (PatternPlan) child;
+			if (!pattern.supportsContextShortcut(row, possibleInputs, 0L)) {
+				return reject(it, "context-choice");
+			}
+			possibleInputs |= pattern.producedMask();
+		}
 		long preflightAggregateSlots = preflightAggregateSlots(it, plan, derived, root, row);
 		LmdbRootScanPartition[] partitions = null;
 		if (LmdbNativeParallelPipelines.rangePartitionEnabled()) {

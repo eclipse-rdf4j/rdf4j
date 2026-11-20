@@ -13,6 +13,7 @@ package org.eclipse.rdf4j.query.algebra.evaluation.optimizer;
 
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
 
@@ -29,6 +30,7 @@ import org.eclipse.rdf4j.query.algebra.ExtensionElem;
 import org.eclipse.rdf4j.query.algebra.Filter;
 import org.eclipse.rdf4j.query.algebra.Graph;
 import org.eclipse.rdf4j.query.algebra.NAryValueOperator;
+import org.eclipse.rdf4j.query.algebra.PrivateGraphContextRole;
 import org.eclipse.rdf4j.query.algebra.Projection;
 import org.eclipse.rdf4j.query.algebra.ProjectionElem;
 import org.eclipse.rdf4j.query.algebra.SameTerm;
@@ -42,6 +44,7 @@ import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryOptimizer;
 import org.eclipse.rdf4j.query.algebra.evaluation.util.QueryEvaluationUtility;
 import org.eclipse.rdf4j.query.algebra.helpers.AbstractSimpleQueryModelVisitor;
+import org.eclipse.rdf4j.query.algebra.helpers.BindingScopePolicy;
 import org.eclipse.rdf4j.query.algebra.helpers.FilterBindingScope;
 import org.eclipse.rdf4j.query.algebra.helpers.QueryAlgebraBindingAnalysis;
 import org.eclipse.rdf4j.query.algebra.helpers.collectors.VarNameCollector;
@@ -131,6 +134,7 @@ public class SameTermFilterOptimizer implements QueryOptimizer {
 				return;
 			}
 
+			BindingSetAssignmentCollector collector = new BindingSetAssignmentCollector();
 			if (leftArg instanceof Var || rightArg instanceof Var) {
 				if (filterArg instanceof ArbitraryLengthPath alp && leftArg instanceof Var && rightArg instanceof Var) {
 					final List<Var> sameTermArgs = Arrays.asList((Var) leftArg, (Var) rightArg);
@@ -143,7 +147,6 @@ public class SameTermFilterOptimizer implements QueryOptimizer {
 					}
 				}
 
-				BindingSetAssignmentCollector collector = new BindingSetAssignmentCollector();
 				filterArg.visit(collector);
 
 				for (BindingSetAssignment bsa : collector.getBindingSetAssignments()) {
@@ -178,8 +181,14 @@ public class SameTermFilterOptimizer implements QueryOptimizer {
 			if (leftValue != null && rightValue != null) {
 				// ConstantOptimizer should have taken care of this
 			} else if (leftValue != null && rightArg instanceof Var) {
+				if (collector.requiresVariable((Var) rightArg)) {
+					return;
+				}
 				bindVar((Var) rightArg, leftValue, hasApiInputOrigin(leftArg), filter);
 			} else if (rightValue != null && leftArg instanceof Var) {
+				if (collector.requiresVariable((Var) leftArg)) {
+					return;
+				}
 				bindVar((Var) leftArg, rightValue, hasApiInputOrigin(rightArg), filter);
 			} else if (leftArg instanceof Var && rightArg instanceof Var) {
 				// Two unbound variables, rename rightArg to leftArg
@@ -249,8 +258,9 @@ public class SameTermFilterOptimizer implements QueryOptimizer {
 				return;
 			}
 			TupleExpr renamedArgument = filter.getArg().clone();
-			renamedArgument.visit(new VarRenamer(oldVar, newVar));
-			if (renamedArgument.getBindingNames().contains(oldVar.getName())) {
+			VarRenamer renamer = new VarRenamer(oldVar, newVar);
+			renamedArgument.visit(renamer);
+			if (!renamer.rolePreserved || renamedArgument.getBindingNames().contains(oldVar.getName())) {
 				// Scope boundaries and output producers can keep exporting the original name. An Extension
 				// would overwrite that unconstrained value and fabricate equality, so retain the original tree.
 				return;
@@ -350,6 +360,8 @@ public class SameTermFilterOptimizer implements QueryOptimizer {
 
 		private final Var newVar;
 
+		private boolean rolePreserved = true;
+
 		public VarRenamer(Var oldVar, Var newVar) {
 			super(true);
 			this.oldVar = oldVar;
@@ -369,7 +381,12 @@ public class SameTermFilterOptimizer implements QueryOptimizer {
 		@Override
 		public void meet(Var var) {
 			if (var.equals(oldVar)) {
-				var.replaceWith(newVar.clone());
+				Var replacement = newVar.clone();
+				if (PrivateGraphContextRole.canPreserveRole(var, replacement)) {
+					PrivateGraphContextRole.replacePreservingRole(var, replacement);
+				} else {
+					rolePreserved = false;
+				}
 			}
 		}
 
@@ -384,6 +401,7 @@ public class SameTermFilterOptimizer implements QueryOptimizer {
 	private static class BindingSetAssignmentCollector extends AbstractSimpleQueryModelVisitor<RuntimeException> {
 
 		private final List<BindingSetAssignment> assignments = new ArrayList<>();
+		private final Set<ContextKey> variableOnlyOccurrences = new HashSet<>();
 
 		protected BindingSetAssignmentCollector() {
 			super(true);
@@ -394,8 +412,23 @@ public class SameTermFilterOptimizer implements QueryOptimizer {
 			assignments.add(bsa);
 		}
 
+		@Override
+		public void meet(Var var) {
+			if (PrivateGraphContextRole.isPrivateContext(var.getParentNode(), var)
+					|| BindingScopePolicy.isNamedZeroLengthPathEndpoint(var)) {
+				variableOnlyOccurrences.add(new ContextKey(var.getName(), var.getGraphContextDepth()));
+			}
+		}
+
+		private boolean requiresVariable(Var var) {
+			return variableOnlyOccurrences.contains(new ContextKey(var.getName(), var.getGraphContextDepth()));
+		}
+
 		public List<BindingSetAssignment> getBindingSetAssignments() {
 			return assignments;
+		}
+
+		private record ContextKey(String name, int graphDepth) {
 		}
 	}
 

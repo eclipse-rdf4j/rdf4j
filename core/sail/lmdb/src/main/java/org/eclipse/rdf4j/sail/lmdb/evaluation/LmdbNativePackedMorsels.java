@@ -127,7 +127,8 @@ final class LmdbNativePackedMorsels {
 			return partitionWork(extension.arg, row);
 		if (plan instanceof JoinPlan join)
 			return partitionWork(join.left, row);
-		if (plan instanceof LeftJoinPlan optional)
+		if (plan instanceof LeftJoinPlan optional && optional.lexicalSharedSlots == null
+				&& optional.lexicalProblemSlots == null)
 			return partitionWork(optional.left, row);
 		if (plan instanceof MultiJoinPlan multi && !patternsOnly(multi)) {
 			SlotPlan[] order = multi.derivedPlan(row).order;
@@ -297,7 +298,8 @@ final class LmdbNativePackedMorsels {
 			split(extension.arg, row, child -> continuation.apply(new ExtensionPlan(child, extension.copies)), jobs);
 		} else if (plan instanceof JoinPlan join) {
 			split(join.left, row, child -> continuation.apply(new JoinPlan(child, join.right)), jobs);
-		} else if (plan instanceof LeftJoinPlan optional) {
+		} else if (plan instanceof LeftJoinPlan optional && optional.lexicalSharedSlots == null
+				&& optional.lexicalProblemSlots == null) {
 			split(optional.left, row, child -> continuation.apply(new LeftJoinPlan(child, optional.right)), jobs);
 		} else if (plan instanceof MultiJoinPlan multi && !patternsOnly(multi)) {
 			// This is precisely the algebra leaf fallback's order/filter-depth construction. Never flatten a

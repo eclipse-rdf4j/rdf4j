@@ -201,6 +201,9 @@ final class NativeScalarCosts {
 			return join(join.left, join.right, row, mask, execution);
 		}
 		if (plan instanceof LateralPlan lateral) {
+			if (lateral.needsSemanticEntry(row)) {
+				return LmdbNativeCostVectors.unbounded();
+			}
 			return join(lateral.left, lateral.right, row, mask, execution);
 		}
 		if (plan instanceof MinusPlan minus) {

@@ -19,13 +19,11 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.lang.reflect.Constructor;
-import java.lang.reflect.Field;
 import java.lang.reflect.Method;
 import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.Deque;
-import java.util.HashMap;
 import java.util.HashSet;
 import java.util.Iterator;
 import java.util.LinkedHashMap;
@@ -68,6 +66,8 @@ import org.eclipse.rdf4j.query.algebra.LeftJoin;
 import org.eclipse.rdf4j.query.algebra.Order;
 import org.eclipse.rdf4j.query.algebra.OrderElem;
 import org.eclipse.rdf4j.query.algebra.Projection;
+import org.eclipse.rdf4j.query.algebra.ProjectionElem;
+import org.eclipse.rdf4j.query.algebra.ProjectionElemList;
 import org.eclipse.rdf4j.query.algebra.QueryModelNode;
 import org.eclipse.rdf4j.query.algebra.QueryModelVisitor;
 import org.eclipse.rdf4j.query.algebra.QueryRoot;
@@ -85,6 +85,7 @@ import org.eclipse.rdf4j.query.algebra.evaluation.federation.FederatedService;
 import org.eclipse.rdf4j.query.algebra.evaluation.federation.FederatedServiceResolver;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.QueryJoinOptimizer;
 import org.eclipse.rdf4j.query.algebra.helpers.AbstractQueryModelVisitor;
+import org.eclipse.rdf4j.query.algebra.helpers.BindingScopePolicy;
 import org.eclipse.rdf4j.query.impl.EmptyBindingSet;
 import org.eclipse.rdf4j.query.impl.MapBindingSet;
 import org.eclipse.rdf4j.query.parser.ParsedQuery;
@@ -1188,6 +1189,41 @@ public class QueryJoinOptimizerTest extends QueryOptimizerTest {
 	}
 
 	@Test
+	public void indexesNestedFilterOwnersWithinTheSameVisitBudget() {
+		CountingFunctionCall innerCondition = new CountingFunctionCall();
+		innerCondition.addArg(Var.of("inner"));
+		Filter innerFilter = new Filter(new SingletonSet(), innerCondition);
+		Join innerOwner = new Join(new StatementPattern(Var.of("outer"), Var.of("innerPredicate"),
+				Var.of("inner")), innerFilter);
+		Projection subquery = new Projection(innerOwner,
+				new ProjectionElemList(new ProjectionElem("outer")), true);
+
+		CountingFunctionCall outerCondition = new CountingFunctionCall();
+		outerCondition.addArg(Var.of("outer"));
+		Filter outerFilter = new Filter(new SingletonSet(), outerCondition);
+		Join outerOwner = new Join(subquery, outerFilter);
+		QueryRoot root = new QueryRoot(outerOwner);
+
+		List<BindingScopePolicy.FilterInputEdge> innerEdges = BindingScopePolicy.filterInputEdges(innerFilter);
+		List<BindingScopePolicy.FilterInputEdge> outerEdges = BindingScopePolicy.filterInputEdges(outerFilter);
+		assertThat(innerEdges).hasSize(1);
+		assertThat(innerEdges.get(0).owner()).isSameAs(innerOwner);
+		assertThat(outerEdges).hasSize(1);
+		assertThat(outerEdges.get(0).owner()).isSameAs(outerOwner);
+
+		innerCondition.visits = 0;
+		outerCondition.visits = 0;
+		getOptimizer().optimize(root, null, null);
+
+		assertThat(innerCondition.visits)
+				.as("inner filter read and owner facts are prepared once per snapshot")
+				.isLessThanOrEqualTo(8);
+		assertThat(outerCondition.visits)
+				.as("outer filter read and owner facts are prepared once per snapshot")
+				.isLessThanOrEqualTo(8);
+	}
+
+	@Test
 	public void testValues() throws RDF4JException {
 		String query = String.join("\n", "",
 				"prefix ex: <ex:> ",
@@ -1394,26 +1430,8 @@ public class QueryJoinOptimizerTest extends QueryOptimizerTest {
 		StatementPattern disconnected = new StatementPattern(new Var("x"),
 				new Var("pd", vf.createIRI("ex:pDisconnected")), new Var("y"));
 
-		List<TupleExpr> expressions = new ArrayList<>();
-		expressions.add(disconnected);
-		expressions.add(connected);
-
-		Map<TupleExpr, Double> cardinalityMap = Map.of(disconnected, 1.0, connected, 100.0);
-		Map<TupleExpr, List<Var>> varsMap = Map.of(disconnected, disconnected.getVarList(), connected,
-				connected.getVarList());
-		Map<Var, Integer> varFreqMap = new HashMap<>();
-		fillVarFreqMap(disconnected.getVarList(), varFreqMap);
-		fillVarFreqMap(connected.getVarList(), varFreqMap);
-
-		QueryJoinOptimizer optimizer = new QueryJoinOptimizer(new EvaluationStatistics(), new EmptyTripleSource());
-		Object joinVisitor = buildJoinVisitor(optimizer);
-		setBoundVars(joinVisitor, Set.of("s"));
-		Method selectNextTupleExpr = findDeclaredMethod(joinVisitor.getClass(), "selectNextTupleExpr", List.class,
-				Map.class, Map.class, Map.class);
-		selectNextTupleExpr.setAccessible(true);
-
-		TupleExpr selected = (TupleExpr) selectNextTupleExpr.invoke(joinVisitor, expressions, cardinalityMap, varsMap,
-				varFreqMap);
+		TupleExpr selected = selectAfterValuesPrefix(disconnected, connected,
+				Map.of("ex:pDisconnected", 1.0, "ex:pConnected", 100.0));
 
 		assertThat(getPredicateValue(selected)).isEqualTo("ex:pDisconnected");
 	}
@@ -1426,23 +1444,8 @@ public class QueryJoinOptimizerTest extends QueryOptimizerTest {
 		StatementPattern disconnected = new StatementPattern(Var.of("x"),
 				Var.of("pd", vf.createIRI("ex:pDisconnected")), Var.of("y"));
 
-		List<TupleExpr> expressions = new ArrayList<>(List.of(disconnected, connected));
-		Map<TupleExpr, Double> cardinalityMap = Map.of(disconnected, 10.0, connected, 10.0);
-		Map<TupleExpr, List<Var>> varsMap = Map.of(disconnected, disconnected.getVarList(), connected,
-				connected.getVarList());
-		Map<Var, Integer> varFreqMap = new HashMap<>();
-		fillVarFreqMap(disconnected.getVarList(), varFreqMap);
-		fillVarFreqMap(connected.getVarList(), varFreqMap);
-
-		EqualCostStatementOptimizer optimizer = new EqualCostStatementOptimizer();
-		Object joinVisitor = optimizer.newJoinVisitorForTest();
-		setBoundVars(joinVisitor, Set.of("s"));
-		Method selectNextTupleExpr = findDeclaredMethod(joinVisitor.getClass(), "selectNextTupleExpr", List.class,
-				Map.class, Map.class, Map.class);
-		selectNextTupleExpr.setAccessible(true);
-
-		TupleExpr selected = (TupleExpr) selectNextTupleExpr.invoke(joinVisitor, expressions, cardinalityMap, varsMap,
-				varFreqMap);
+		TupleExpr selected = selectAfterValuesPrefix(disconnected, connected,
+				Map.of("ex:pDisconnected", 10.0, "ex:pConnected", 10.0));
 
 		assertThat(getPredicateValue(selected)).isEqualTo("ex:pConnected");
 	}
@@ -1455,22 +1458,8 @@ public class QueryJoinOptimizerTest extends QueryOptimizerTest {
 		StatementPattern connected = new StatementPattern(new Var("s"),
 				new Var("pc", vf.createIRI("ex:pConnected")), new Var("o"));
 
-		List<TupleExpr> expressions = new ArrayList<>(List.of(connected, zeroCost));
-		Map<TupleExpr, Double> cardinalityMap = Map.of(connected, 100.0, zeroCost, 100.0);
-		Map<TupleExpr, List<Var>> varsMap = Map.of(connected, connected.getVarList(), zeroCost, zeroCost.getVarList());
-		Map<Var, Integer> varFreqMap = new HashMap<>();
-		fillVarFreqMap(connected.getVarList(), varFreqMap);
-		fillVarFreqMap(zeroCost.getVarList(), varFreqMap);
-
-		ZeroCostStatementOptimizer optimizer = new ZeroCostStatementOptimizer(new EvaluationStatistics());
-		Object joinVisitor = optimizer.newJoinVisitorForTest();
-		setBoundVars(joinVisitor, Set.of("s"));
-		Method selectNextTupleExpr = findDeclaredMethod(joinVisitor.getClass(), "selectNextTupleExpr", List.class,
-				Map.class, Map.class, Map.class);
-		selectNextTupleExpr.setAccessible(true);
-
-		TupleExpr selected = (TupleExpr) selectNextTupleExpr.invoke(joinVisitor, expressions, cardinalityMap, varsMap,
-				varFreqMap);
+		TupleExpr selected = selectAfterValuesPrefix(connected, zeroCost,
+				Map.of("ex:pConnected", 100.0, "ex:pZero", 0.0));
 
 		assertThat(getPredicateValue(selected)).isEqualTo("ex:pZero");
 	}
@@ -1954,34 +1943,6 @@ public class QueryJoinOptimizerTest extends QueryOptimizerTest {
 		return constructor.newInstance(optimizer);
 	}
 
-	private static void setBoundVars(Object joinVisitor, Set<String> boundVars) throws Exception {
-		Class<?> type = joinVisitor.getClass();
-		Field boundVarsField = null;
-		while (type != null && boundVarsField == null) {
-			try {
-				boundVarsField = type.getDeclaredField("boundVars");
-			} catch (NoSuchFieldException e) {
-				type = type.getSuperclass();
-			}
-		}
-		if (boundVarsField == null) {
-			throw new NoSuchFieldException("boundVars");
-		}
-		boundVarsField.setAccessible(true);
-		if (Set.class.isAssignableFrom(boundVarsField.getType())) {
-			boundVarsField.set(joinVisitor, boundVars);
-			return;
-		}
-
-		Object currentPrefix = boundVarsField.get(joinVisitor);
-		Field scopeIdentityField = currentPrefix.getClass().getDeclaredField("scopeIdentity");
-		scopeIdentityField.setAccessible(true);
-		Constructor<?> prefixConstructor = boundVarsField.getType().getDeclaredConstructor(long.class, Set.class);
-		prefixConstructor.setAccessible(true);
-		boundVarsField.set(joinVisitor,
-				prefixConstructor.newInstance(scopeIdentityField.getLong(currentPrefix), boundVars));
-	}
-
 	private static Method findDeclaredMethod(Class<?> type, String name, Class<?>... parameterTypes)
 			throws NoSuchMethodException {
 		while (type != null) {
@@ -2001,14 +1962,23 @@ public class QueryJoinOptimizerTest extends QueryOptimizerTest {
 		return (Set<String>) method.invoke(joinVisitor, tupleExpr);
 	}
 
-	private static void fillVarFreqMap(List<Var> vars, Map<Var, Integer> varFreqMap) {
-		for (Var var : vars) {
-			varFreqMap.merge(var, 1, Integer::sum);
-		}
-	}
-
 	private static String getPredicateValue(TupleExpr expr) {
 		return ((StatementPattern) expr).getPredicateVar().getValue().stringValue();
+	}
+
+	private static TupleExpr selectAfterValuesPrefix(StatementPattern first, StatementPattern second,
+			Map<String, Double> costs) {
+		MapBindingSet row = new MapBindingSet();
+		row.addBinding("s", VF.createIRI("urn:seed"));
+		BindingSetAssignment values = new BindingSetAssignment();
+		values.setBindingNames(Set.of("s"));
+		values.setBindingSets(List.of(row));
+		QueryRoot root = new QueryRoot(new Join(new Join(values, first), second));
+		SelectionProbeOptimizer optimizer = new SelectionProbeOptimizer(costs);
+		optimizer.optimizeWithHook(root);
+		assertThat(optimizer.selections).hasSize(3);
+		assertThat(optimizer.selections.getFirst()).isSameAs(values);
+		return optimizer.selections.get(1);
 	}
 
 	private static String joinArgKey(TupleExpr expr) {
@@ -2513,23 +2483,35 @@ public class QueryJoinOptimizerTest extends QueryOptimizerTest {
 		}
 	}
 
-	private static final class ZeroCostStatementOptimizer extends QueryJoinOptimizer {
-		private ZeroCostStatementOptimizer(EvaluationStatistics statistics) {
-			super(statistics, new EmptyTripleSource());
+	private static final class SelectionProbeOptimizer extends QueryJoinOptimizer {
+		private final Map<String, Double> costs;
+		private final List<TupleExpr> selections = new ArrayList<>();
+
+		private SelectionProbeOptimizer(Map<String, Double> costs) {
+			super(new EvaluationStatistics(), new EmptyTripleSource());
+			this.costs = costs;
 		}
 
-		private Object newJoinVisitorForTest() {
-			return new ZeroCostJoinVisitor();
+		private void optimizeWithHook(TupleExpr tupleExpr) {
+			tupleExpr.visit(new SelectionVisitor());
 		}
 
-		private class ZeroCostJoinVisitor extends JoinVisitor {
+		private class SelectionVisitor extends JoinVisitor {
 			@Override
 			protected double getTupleExprCost(TupleExpr tupleExpr, Map<TupleExpr, Double> cardinalityMap,
 					Map<TupleExpr, List<Var>> varsMap, Map<Var, Integer> varFreqMap) {
-				if (tupleExpr instanceof StatementPattern pattern && "ex:pZero".equals(predicate(pattern))) {
-					return 0;
+				if (tupleExpr instanceof StatementPattern pattern) {
+					return costs.get(predicate(pattern));
 				}
 				return super.getTupleExprCost(tupleExpr, cardinalityMap, varsMap, varFreqMap);
+			}
+
+			@Override
+			protected TupleExpr selectNextTupleExpr(List<TupleExpr> expressions, Map<TupleExpr, Double> cardinalityMap,
+					Map<TupleExpr, List<Var>> varsMap, Map<Var, Integer> varFreqMap) {
+				TupleExpr selected = super.selectNextTupleExpr(expressions, cardinalityMap, varsMap, varFreqMap);
+				selections.add(selected);
+				return selected;
 			}
 		}
 	}
@@ -2554,24 +2536,6 @@ public class QueryJoinOptimizerTest extends QueryOptimizerTest {
 					nestedCostHookInvocations++;
 				}
 				return super.getTupleExprCost(tupleExpr, cardinalityMap, varsMap, varFreqMap);
-			}
-		}
-	}
-
-	private static final class EqualCostStatementOptimizer extends QueryJoinOptimizer {
-		private EqualCostStatementOptimizer() {
-			super(new EvaluationStatistics(), new EmptyTripleSource());
-		}
-
-		private Object newJoinVisitorForTest() {
-			return new EqualCostJoinVisitor();
-		}
-
-		private class EqualCostJoinVisitor extends JoinVisitor {
-			@Override
-			protected double getTupleExprCost(TupleExpr tupleExpr, Map<TupleExpr, Double> cardinalityMap,
-					Map<TupleExpr, List<Var>> varsMap, Map<Var, Integer> varFreqMap) {
-				return 10;
 			}
 		}
 	}

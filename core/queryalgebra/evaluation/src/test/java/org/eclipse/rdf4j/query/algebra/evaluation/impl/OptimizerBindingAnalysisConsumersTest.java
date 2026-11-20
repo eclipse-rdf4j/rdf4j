@@ -147,12 +147,33 @@ class OptimizerBindingAnalysisConsumersTest {
 	}
 
 	@Test
-	void sharedAnalysisCarriesOrdinaryJoinLeftBindingsIntoRightExpressions() {
+	void sharedAnalysisKeepsOrdinaryJoinLeftBindingsOutOfRightExpressions() throws Exception {
 		BindingSetAssignment left = values("x", VF.createIRI("urn:x"));
 		Extension right = new Extension(new SingletonSet(), new ExtensionElem(new Bound(Var.of("x")), "wasBound"));
 		Join join = new Join(left, right);
 
-		assertThat(isGuaranteedAtBound(join, (Bound) right.getElements().getFirst().getExpr())).isTrue();
+		assertThat(isGuaranteedAtBound(join, (Bound) right.getElements().getFirst().getExpr())).isFalse();
+		MapBindingSet expected = new MapBindingSet();
+		expected.addBinding("x", VF.createIRI("urn:x"));
+		expected.addBinding("wasBound", BooleanLiteral.FALSE);
+		assertThat(evaluate(join, EmptyBindingSet.getInstance())).containsExactly(expected);
+	}
+
+	@Test
+	void sharedAnalysisCarriesDeclaredLateralInputsIntoRightExpressions() throws Exception {
+		IRI value = VF.createIRI("urn:x");
+		MapBindingSet row = new MapBindingSet();
+		row.addBinding("x", value);
+		BindingSetAssignment left = values("x", value);
+		left.setBindingSets(List.of(row, row));
+		Extension right = new Extension(new SingletonSet(), new ExtensionElem(new Bound(Var.of("x")), "wasBound"));
+		Lateral lateral = new Lateral(left, right, Set.of("x"));
+
+		assertThat(isGuaranteedAtBound(lateral, (Bound) right.getElements().getFirst().getExpr())).isTrue();
+		MapBindingSet expected = new MapBindingSet();
+		expected.addBinding("x", value);
+		expected.addBinding("wasBound", BooleanLiteral.TRUE);
+		assertThat(evaluate(lateral, EmptyBindingSet.getInstance())).containsExactly(expected, expected);
 	}
 
 	@Test
@@ -242,14 +263,41 @@ class OptimizerBindingAnalysisConsumersTest {
 		QueryRoot original = new QueryRoot(new Filter(new LeftJoin(left, right),
 				new SameTerm(Var.of("x"), new ValueConstant(oldValue))));
 		List<BindingSet> expected = evaluate(original.clone(), EmptyBindingSet.getInstance());
-		assertThat(expected)
-				.as("a matched right Extension overwrites the left x=old with x=new before the outer filter")
-				.isEmpty();
+		MapBindingSet fallback = new MapBindingSet();
+		fallback.addBinding("x", oldValue);
+		assertThat(expected).as("the incompatible right x leaves the OPTIONAL fallback")
+				.containsExactly(fallback);
 		QueryRoot candidate = original.clone();
 
 		new SameTermFilterOptimizer().optimize(candidate, null, EmptyBindingSet.getInstance());
 
 		assertThat(evaluate(candidate, EmptyBindingSet.getInstance())).containsExactlyElementsOf(expected);
+	}
+
+	@Test
+	void sameTermPreservesCompatibleLocalOverwriteAndDuplicateRows() throws Exception {
+		IRI oldValue = VF.createIRI("urn:old");
+		IRI newValue = VF.createIRI("urn:new");
+		MapBindingSet leftRow = new MapBindingSet();
+		leftRow.addBinding("x", oldValue);
+		BindingSetAssignment left = values("x", oldValue);
+		left.setBindingSets(List.of(leftRow, leftRow));
+		Extension right = new Extension(values("x", newValue),
+				new ExtensionElem(new ValueConstant(oldValue), "x"),
+				new ExtensionElem(new ValueConstant(newValue), "matched"));
+		QueryRoot original = new QueryRoot(new Filter(new LeftJoin(left, right),
+				new SameTerm(Var.of("x"), new ValueConstant(oldValue))));
+		MapBindingSet matched = new MapBindingSet();
+		matched.addBinding("x", oldValue);
+		matched.addBinding("matched", newValue);
+		List<BindingSet> expected = List.of(matched, matched);
+		assertThat(evaluate(original.clone(), EmptyBindingSet.getInstance()))
+				.containsExactlyInAnyOrderElementsOf(expected);
+		QueryRoot candidate = original.clone();
+
+		new SameTermFilterOptimizer().optimize(candidate, null, EmptyBindingSet.getInstance());
+
+		assertThat(evaluate(candidate, EmptyBindingSet.getInstance())).containsExactlyInAnyOrderElementsOf(expected);
 	}
 
 	@Test

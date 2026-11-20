@@ -453,6 +453,9 @@ final class NativeAliasJoinMemoPlan implements SlotPlan {
 		for (int slot : keys) {
 			keyMask |= 1L << slot;
 		}
+		if (!PatternPlan.supportsContextUnbinding(row.layout, keyMask)) {
+			return false;
+		}
 		long reads = memoReadMask(right);
 		if (reads < 0L || (reads & ~right.producedMask()) != 0L
 				|| (reads & left.producedMask()) != keyMask

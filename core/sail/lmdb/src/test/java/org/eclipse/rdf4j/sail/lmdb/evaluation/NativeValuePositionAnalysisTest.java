@@ -25,6 +25,7 @@ import org.eclipse.rdf4j.model.Statement;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
+import org.eclipse.rdf4j.query.algebra.ArbitraryLengthPath;
 import org.eclipse.rdf4j.query.algebra.Count;
 import org.eclipse.rdf4j.query.algebra.Filter;
 import org.eclipse.rdf4j.query.algebra.Graph;
@@ -267,6 +268,62 @@ class NativeValuePositionAnalysisTest {
 		TupleExpr root = new StatementPattern(named, constant, new Var("o"));
 		assertThat(masks(root, root).get("x")).isEqualTo(1);
 		assertThat(masks(root, root)).doesNotContainKey("constant");
+	}
+
+	@Test
+	void valuedAnonymousPatternOccurrencesRetainEveryPhysicalPosition() {
+		IRI value = SimpleValueFactory.getInstance().createIRI("urn:position:fixed");
+		for (boolean anonymous : List.of(false, true)) {
+			StatementPattern pattern = new StatementPattern(Var.of("subject", value, anonymous, false),
+					Var.of("predicate", value, anonymous, false), Var.of("object", value, anonymous, false),
+					Var.of("context", value, anonymous, false));
+			assertThat(masks(pattern, pattern)).as("anonymous=%s", anonymous)
+					.containsEntry("subject", 1)
+					.containsEntry("predicate", 2)
+					.containsEntry("object", 4)
+					.containsEntry("context", 8);
+			Var repeated = Var.of("repeated", value, anonymous, false);
+			StatementPattern all = new StatementPattern(repeated.clone(), repeated.clone(), repeated.clone(),
+					repeated.clone());
+			assertThat(masks(all, all).get("repeated")).as("repeated anonymous=%s", anonymous).isEqualTo(15);
+		}
+	}
+
+	@Test
+	void valuedAnonymousGraphAndPathContextsRetainTheirPhysicalPositions() {
+		IRI value = SimpleValueFactory.getInstance().createIRI("urn:position:graph");
+		Var graph = Var.of("privateGraph", value, true, false);
+		TupleExpr graphExpr = new Graph(graph.clone(), new SingletonSet());
+		assertThat(masks(graphExpr, graphExpr).get("privateGraph")).isEqualTo(8);
+		TupleExpr zero = new ZeroLengthPath(StatementPattern.Scope.NAMED_CONTEXTS,
+				Var.of("left", value, true, false), Var.of("right", value, true, false), graph.clone());
+		assertThat(masks(zero, zero)).containsEntry("left", 5)
+				.containsEntry("right", 5)
+				.containsEntry("privateGraph", 8);
+		StatementPattern edge = new StatementPattern(Var.of("edgeSubject"), Var.of("edgePredicate"),
+				Var.of("edgeObject"));
+		TupleExpr path = new ArbitraryLengthPath(StatementPattern.Scope.NAMED_CONTEXTS,
+				Var.of("left", value, true, false), edge, Var.of("right", value, true, false), graph.clone(), 1L);
+		assertThat(masks(path, path)).containsEntry("left", 1)
+				.containsEntry("right", 4)
+				.containsEntry("privateGraph", 8);
+	}
+
+	@Test
+	void queryConstantsDoNotDonatePositionsToSameNamedBindings() {
+		IRI value = SimpleValueFactory.getInstance().createIRI("urn:position:constant");
+		for (boolean anonymous : List.of(false, true)) {
+			Var constant = Var.of("shared", value, anonymous, true);
+			StatementPattern collision = new StatementPattern(constant.clone(), constant.clone(),
+					Var.of("shared", value, true, false), constant.clone());
+			assertThat(masks(collision, collision).get("shared")).as("anonymous constant=%s", anonymous)
+					.isEqualTo(4);
+			StatementPattern constants = new StatementPattern(Var.of("s", value, anonymous, true),
+					Var.of("p", value, anonymous, true), Var.of("o", value, anonymous, true),
+					Var.of("g", value, anonymous, true));
+			assertThat(masks(constants, constants)).as("anonymous constant=%s", anonymous)
+					.doesNotContainKeys("s", "p", "o", "g");
+		}
 	}
 
 	@Test

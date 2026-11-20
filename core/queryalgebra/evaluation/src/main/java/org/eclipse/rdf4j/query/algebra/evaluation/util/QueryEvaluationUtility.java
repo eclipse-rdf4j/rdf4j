@@ -16,12 +16,16 @@ import java.util.ArrayList;
 import java.util.Collections;
 import java.util.Deque;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.IdentityHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.Set;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.function.BiPredicate;
+import java.util.function.Predicate;
 import java.util.function.Supplier;
 
 import javax.xml.datatype.DatatypeConstants;
@@ -41,28 +45,48 @@ import org.eclipse.rdf4j.query.QueryExecutionPolicy;
 import org.eclipse.rdf4j.query.algebra.AggregateFunctionCall;
 import org.eclipse.rdf4j.query.algebra.ArbitraryLengthPath;
 import org.eclipse.rdf4j.query.algebra.BNodeGenerator;
+import org.eclipse.rdf4j.query.algebra.BinaryTupleOperator;
 import org.eclipse.rdf4j.query.algebra.BindingSetAssignment;
 import org.eclipse.rdf4j.query.algebra.Compare.CompareOp;
+import org.eclipse.rdf4j.query.algebra.DescribeOperator;
+import org.eclipse.rdf4j.query.algebra.Difference;
+import org.eclipse.rdf4j.query.algebra.Distinct;
 import org.eclipse.rdf4j.query.algebra.EmptySet;
+import org.eclipse.rdf4j.query.algebra.Exists;
 import org.eclipse.rdf4j.query.algebra.Extension;
 import org.eclipse.rdf4j.query.algebra.ExtensionElem;
 import org.eclipse.rdf4j.query.algebra.Filter;
 import org.eclipse.rdf4j.query.algebra.FunctionCall;
 import org.eclipse.rdf4j.query.algebra.Graph;
+import org.eclipse.rdf4j.query.algebra.Group;
+import org.eclipse.rdf4j.query.algebra.Intersection;
 import org.eclipse.rdf4j.query.algebra.Join;
 import org.eclipse.rdf4j.query.algebra.Lateral;
 import org.eclipse.rdf4j.query.algebra.LeftJoin;
+import org.eclipse.rdf4j.query.algebra.MultiProjection;
+import org.eclipse.rdf4j.query.algebra.Order;
+import org.eclipse.rdf4j.query.algebra.PrivateGraphContextRole;
 import org.eclipse.rdf4j.query.algebra.Projection;
+import org.eclipse.rdf4j.query.algebra.ProjectionElem;
+import org.eclipse.rdf4j.query.algebra.ProjectionElemList;
 import org.eclipse.rdf4j.query.algebra.QueryModelNode;
+import org.eclipse.rdf4j.query.algebra.QueryRoot;
+import org.eclipse.rdf4j.query.algebra.Reduced;
 import org.eclipse.rdf4j.query.algebra.Sample;
 import org.eclipse.rdf4j.query.algebra.Service;
 import org.eclipse.rdf4j.query.algebra.SingletonSet;
+import org.eclipse.rdf4j.query.algebra.Slice;
 import org.eclipse.rdf4j.query.algebra.StatementPattern;
+import org.eclipse.rdf4j.query.algebra.SubQueryValueOperator;
 import org.eclipse.rdf4j.query.algebra.TripleRef;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
+import org.eclipse.rdf4j.query.algebra.TupleFunctionCall;
+import org.eclipse.rdf4j.query.algebra.UnaryTupleOperator;
 import org.eclipse.rdf4j.query.algebra.Union;
+import org.eclipse.rdf4j.query.algebra.ValueConstant;
 import org.eclipse.rdf4j.query.algebra.ValueExpr;
 import org.eclipse.rdf4j.query.algebra.Var;
+import org.eclipse.rdf4j.query.algebra.Window;
 import org.eclipse.rdf4j.query.algebra.ZeroLengthPath;
 import org.eclipse.rdf4j.query.algebra.evaluation.function.Function;
 import org.eclipse.rdf4j.query.algebra.evaluation.function.FunctionRegistry;
@@ -125,6 +149,21 @@ import org.eclipse.rdf4j.query.algebra.evaluation.function.xsd.UnsignedLongCast;
 import org.eclipse.rdf4j.query.algebra.evaluation.function.xsd.UnsignedShortCast;
 import org.eclipse.rdf4j.query.algebra.helpers.AbstractQueryModelVisitor;
 import org.eclipse.rdf4j.query.algebra.helpers.AbstractSimpleQueryModelVisitor;
+import org.eclipse.rdf4j.query.algebra.helpers.BindingScopePolicy;
+import org.eclipse.rdf4j.query.algebra.helpers.FilterBindingScope;
+import org.eclipse.rdf4j.query.algebra.helpers.QueryAlgebraBindingAnalysis;
+import org.eclipse.rdf4j.query.algebra.helpers.QueryAlgebraBindingAnalysis.CallerInputEdge;
+import org.eclipse.rdf4j.query.algebra.helpers.QueryAlgebraBindingAnalysis.CallerOutputKind;
+import org.eclipse.rdf4j.query.algebra.helpers.QueryAlgebraBindingAnalysis.CapturedCallerNode;
+import org.eclipse.rdf4j.query.algebra.helpers.QueryAlgebraBindingAnalysis.EntryCompatibilityFacts;
+import org.eclipse.rdf4j.query.algebra.helpers.QueryAlgebraBindingAnalysis.EntryCompatibilityKind;
+import org.eclipse.rdf4j.query.algebra.helpers.QueryAlgebraBindingAnalysis.ExpressionInputNames;
+import org.eclipse.rdf4j.query.algebra.helpers.QueryAlgebraBindingAnalysis.NameDomain;
+import org.eclipse.rdf4j.query.algebra.helpers.QueryAlgebraBindingAnalysis.OptionalFilter;
+import org.eclipse.rdf4j.query.algebra.helpers.QueryAlgebraBindingAnalysis.OptionalInputNameProvider;
+import org.eclipse.rdf4j.query.algebra.helpers.QueryAlgebraBindingAnalysis.ProjectionName;
+import org.eclipse.rdf4j.query.algebra.helpers.TupleExprs;
+import org.eclipse.rdf4j.query.algebra.helpers.collectors.VarNameCollector;
 
 /**
  * This class will take over for QueryEvaluationUtil. Currently marked as InternalUseOnly because there may still be
@@ -383,6 +422,186 @@ public class QueryEvaluationUtility {
 		return active;
 	}
 
+	/** Shares the captured OPTIONAL names with a binding analysis in this preparation generation. */
+	@InternalUseOnly
+	public static OptionalInputNameProvider preparedOptionalInputNames(TupleExpr root) {
+		return snapshotFor(root).preparedOptionalInputNames(root);
+	}
+
+	/** Finds the top of the exact tuple edges that carry the same SELECT entry. */
+	@InternalUseOnly
+	public static TupleExpr preparedSelectEntryRoot(TupleExpr operand) {
+		QuerySafetySnapshot active = ACTIVE_SAFETY_SNAPSHOT.get();
+		if (active != null) {
+			return active.selectEntryRoot(operand);
+		}
+		TupleExpr parent;
+		while ((parent = forwardingSelectParent(operand)) != null) {
+			operand = parent;
+		}
+		return operand;
+	}
+
+	private static TupleExpr forwardingSelectParent(TupleExpr operand) {
+		return operand.getParentNode() instanceof TupleExpr parent
+				&& (BindingScopePolicy.firstForwardedSelectInput(parent) == operand
+						|| BindingScopePolicy.secondForwardedSelectInput(parent) == operand) ? parent : null;
+	}
+
+	/** An immutable, preparation-only index of distinct producers and scalar readers in one captured region. */
+	@InternalUseOnly
+	public static PreparedValuesScope preparedValuesScope(TupleExpr root, QueryAlgebraBindingAnalysis analysis) {
+		return snapshotFor(root).preparedValuesScope(root, analysis);
+	}
+
+	@InternalUseOnly
+	public static final class PreparedValuesScope {
+		private final boolean complete;
+		private final Map<String, UniqueOccurrence> producers;
+		private final Map<String, UniqueOccurrence> readers;
+		private final Map<Filter, Set<String>> assuredObservers;
+		private final Map<BindingSetAssignment, Set<String>> valuesNames;
+		private final Map<QueryModelNode, ValuesChoiceRegion> choiceRegions;
+		private final Set<String> candidateNames;
+		private final int visitedNodes;
+
+		private PreparedValuesScope(boolean complete, Map<String, UniqueOccurrence> producers,
+				Map<String, UniqueOccurrence> readers, Map<Filter, Set<String>> assuredObservers,
+				Map<BindingSetAssignment, Set<String>> valuesNames,
+				Map<QueryModelNode, ValuesChoiceRegion> choiceRegions,
+				Set<String> candidateNames, int visitedNodes) {
+			this.complete = complete;
+			this.producers = Map.copyOf(producers);
+			this.readers = Map.copyOf(readers);
+			this.assuredObservers = Collections.unmodifiableMap(new IdentityHashMap<>(assuredObservers));
+			this.valuesNames = Collections.unmodifiableMap(new IdentityHashMap<>(valuesNames));
+			this.choiceRegions = Collections.unmodifiableMap(new IdentityHashMap<>(choiceRegions));
+			this.candidateNames = Set.copyOf(candidateNames);
+			this.visitedNodes = visitedNodes;
+		}
+
+		public boolean complete() {
+			return complete;
+		}
+
+		public boolean soleProducer(String name, QueryModelNode occurrence) {
+			UniqueOccurrence found = producers.get(name);
+			return found != null && found.only(occurrence);
+		}
+
+		public boolean onlyReader(String name, QueryModelNode observer) {
+			UniqueOccurrence found = readers.get(name);
+			return observer == null ? found == null : found != null && found.only(observer);
+		}
+
+		/** Identifies the one producer and observer in every solution that can come from this occurrence. */
+		public boolean hasOnlyCompatibleOccurrences(String name, BindingSetAssignment values, Filter observer) {
+			if (!complete) {
+				return false;
+			}
+			if (soleProducer(name, values) && onlyReader(name, observer)) {
+				return true;
+			}
+			ValuesChoiceRegion region = choiceRegions.get(values);
+			if (region == null || observer != null && choiceRegions.get(observer) != region
+					|| region.conflictingNames.contains(name)) {
+				return false;
+			}
+			UniqueOccurrence producer = region.producers.get(name);
+			UniqueOccurrence reader = region.readers.get(name);
+			return producer != null && producer.only(values)
+					&& (observer == null ? reader == null : reader != null && reader.only(observer));
+		}
+
+		/** The existing captured FILTER-scope proof establishes this read at its exact local or owner input. */
+		public boolean observerReceives(Filter observer, String name) {
+			Set<String> names = assuredObservers.get(observer);
+			return names != null && names.contains(name);
+		}
+
+		public Set<String> valuesNames(BindingSetAssignment values) {
+			return valuesNames.get(values);
+		}
+
+		public Set<String> candidateNames() {
+			return candidateNames;
+		}
+
+		public int visitedNodes() {
+			return visitedNodes;
+		}
+	}
+
+	private static final class UniqueOccurrence {
+		private final QueryModelNode first;
+		private boolean multiple;
+
+		private UniqueOccurrence(QueryModelNode first) {
+			this.first = first;
+		}
+
+		private void add(QueryModelNode occurrence) {
+			multiple |= first != occurrence;
+		}
+
+		private boolean only(QueryModelNode occurrence) {
+			return !multiple && first == occurrence;
+		}
+	}
+
+	/** Preparation-local counts between forwarding UNION choices. Fixed before the scope is returned. */
+	private static final class ValuesChoiceRegion {
+		final Map<String, UniqueOccurrence> producers = new HashMap<>();
+		final Map<String, UniqueOccurrence> readers = new HashMap<>();
+		final List<ValuesChoice> choices = new ArrayList<>();
+		final Set<String> conflictingNames = new HashSet<>();
+	}
+
+	private record ValuesChoice(ValuesChoiceRegion left, ValuesChoiceRegion right) {
+	}
+
+	private record ValuesOccurrenceVisit(QueryModelNode node, ValuesChoiceRegion region) {
+	}
+
+	private static final class ValuesRegionOccurrence {
+		final ValuesChoiceRegion region;
+		ValuesRegionOccurrence next;
+
+		ValuesRegionOccurrence(ValuesChoiceRegion region) {
+			this.region = region;
+		}
+	}
+
+	/** A name remains present after its conflicting regions are removed from the eligible list. */
+	private static final class ValuesNameOccurrences {
+		private ValuesRegionOccurrence head;
+		private ValuesRegionOccurrence tail;
+
+		ValuesNameOccurrences(ValuesChoiceRegion region) {
+			head = tail = new ValuesRegionOccurrence(region);
+		}
+
+		void addAlternatives(ValuesNameOccurrences other) {
+			if (other.head == null) {
+				return;
+			}
+			if (head == null) {
+				head = other.head;
+			} else {
+				tail.next = other.head;
+			}
+			tail = other.tail;
+		}
+
+		void markConflicts(String name) {
+			while (head != null) {
+				head.region.conflictingNames.add(name);
+				head = head.next;
+			}
+			tail = null;
+		}
+	}
+
 	/**
 	 * Pins function implementations and classifies the resulting subtree within one atomic preparation step.
 	 */
@@ -417,6 +636,26 @@ public class QueryEvaluationUtility {
 			node.visit(visitor);
 			return node;
 		}
+	}
+
+	/**
+	 * Retain an already captured implementation on a private execution copy, including volatile functions. The returned
+	 * call is for prepared execution only; it must not be used as a serialized algebra contract.
+	 */
+	@InternalUseOnly
+	public static FunctionCall pinCapturedFunction(FunctionCall call, Function function) {
+		Objects.requireNonNull(call, "call");
+		Objects.requireNonNull(function, "function");
+		if (!Objects.equals(call.getURI(), function.getURI())) {
+			throw new IllegalArgumentException("Captured function does not match its call");
+		}
+		return new PinnedFunctionCall(call, function);
+	}
+
+	/** Whether an execution-only call still owns its exact captured implementation. */
+	@InternalUseOnly
+	public static boolean hasCapturedFunction(FunctionCall call) {
+		return call instanceof PinnedFunctionCall pinned && pinned.function != null;
 	}
 
 	/** Returns the implementation pinned for this call, or the current registry entry for an unpinned call. */
@@ -532,6 +771,28 @@ public class QueryEvaluationUtility {
 	}
 
 	/**
+	 * Whether the captured left-to-right parameter edge discharges every conditional right-side fatal effect. This is
+	 * only an empty-left guard proof for a join that actually carries that semantic parameter edge; it is not a general
+	 * proof that the right operand can be evaluated or discarded independently.
+	 */
+	@InternalUseOnly
+	public static boolean canDiscardParameterizedRightOnEmptyLeft(Join join) {
+		return snapshotFor(join).canDiscardParameterizedRightOnEmptyLeft(join);
+	}
+
+	/** The corresponding captured parameter-edge proof for a scoped OPTIONAL. */
+	@InternalUseOnly
+	public static boolean canDiscardParameterizedRightOnEmptyLeft(LeftJoin join) {
+		return snapshotFor(join).canDiscardParameterizedRightOnEmptyLeft(join);
+	}
+
+	/** The captured GRAPH carrier direction, or {@code null} when an opaque node prevents a proof. */
+	@InternalUseOnly
+	public static Boolean preparedGraphCarrierOnLeft(Join join) {
+		return snapshotFor(join).preparedGraphCarrierOnLeft(join);
+	}
+
+	/**
 	 * Returns whether pushing the given set of bindings into the subtree as evaluation-time input is proven equivalent
 	 * to evaluating the subtree independently and applying a compatible-mapping join afterwards (the binding-injection
 	 * contract behind physical bind joins). Injection safety is a JOINT property of the injected set, not a
@@ -555,6 +816,28 @@ public class QueryEvaluationUtility {
 	}
 
 	/**
+	 * Proves injection from the captured subtree alone, without capturing or changing its real ancestor chain. Callers
+	 * must separately establish the enclosing input and FILTER-owner contracts of a hypothetical subtree.
+	 */
+	@InternalUseOnly
+	public static boolean permitsBindingInjectionInSubtree(TupleExpr subtree, Set<String> injectedNames) {
+		return injectedNames.isEmpty()
+				|| localBindingInjectionSnapshot(subtree).permitsBindingInjection(subtree, injectedNames);
+	}
+
+	static QuerySafetySnapshot localBindingInjectionSnapshot(TupleExpr subtree) {
+		QuerySafetySnapshot snapshot = new QuerySafetySnapshot(null, activePolicy());
+		snapshot.ensureNode(subtree, false);
+		return snapshot;
+	}
+
+	/** Captures the exact-set injection proof for a prepared edge without retaining the planning snapshot. */
+	@InternalUseOnly
+	public static Predicate<Set<String>> preparedBindingInjectionProof(TupleExpr subtree) {
+		return snapshotFor(subtree).preparedBindingInjectionProof(subtree);
+	}
+
+	/**
 	 * Returns whether the subtree contains an operator whose RDF4J evaluation is intentionally a function of the input
 	 * mapping (mapping-parameterized): zero-length and arbitrary-length property paths (GH-3053 — an endpoint bound by
 	 * another part of the query matches itself even when the term does not occur in the graph), SERVICE (evaluated
@@ -570,15 +853,425 @@ public class QueryEvaluationUtility {
 		return snapshotFor(subtree).usesMappingParameterizedEvaluation(subtree);
 	}
 
+	/** A complete pure GRAPH operand only needs this sibling's mapping for selectors the sibling can supply. */
+	@InternalUseOnly
+	public static boolean needsSiblingMappingParameters(TupleExpr operand, TupleExpr sibling) {
+		return snapshotFor(operand).needsSiblingMappingParameters(operand, sibling);
+	}
+
+	/** Whether a producer entry boundary remains exposed through input-forwarding wrappers. */
+	@InternalUseOnly
+	public static boolean hasProducerInputBoundary(TupleExpr subtree) {
+		return snapshotFor(subtree).hasProducerInputBoundary(subtree);
+	}
+
+	/** Whether this tuple node itself is an unknown operator, rather than merely containing one. */
+	@Experimental
+	public static boolean isUnknownTupleOperator(TupleExpr node) {
+		return snapshotFor(node).isUnknownTupleOperator(node);
+	}
+
+	/** Names whose EXISTS entry origin affects a supported operator, or an opaque read with unknown inputs. */
+	@InternalUseOnly
+	public record ExistsSubstitutionInputs(Set<String> bindingNames, boolean unknown) {
+		public ExistsSubstitutionInputs {
+			bindingNames = Set.copyOf(bindingNames);
+		}
+
+		public boolean needsDynamicDomain() {
+			return unknown || !bindingNames.isEmpty();
+		}
+	}
+
+	/** Describes only this invocation; a nested EXISTS captures its own domain. */
+	@InternalUseOnly
+	public static ExistsSubstitutionInputs existsSubstitutionInputs(TupleExpr body) {
+		QuerySafetySnapshot snapshot = snapshotFor(body);
+		Set<String> names = new HashSet<>();
+		boolean[] unknown = { false };
+		int[] graphDepth = { 0 };
+		body.visit(new AbstractQueryModelVisitor<RuntimeException>() {
+			@Override
+			public void meet(Exists nested) {
+				// A nested witness captures a fresh substitution domain, but its reads are still inputs to an
+				// enclosing GRAPH, including VALUES columns hidden from the graph's output.
+				if (graphDepth[0] != 0) {
+					FilterBindingScope.ConditionBindingReads reads = FilterBindingScope.conditionBindingReads(nested);
+					names.addAll(reads.bindingNames());
+					unknown[0] |= !reads.complete();
+					nested.visit(new AbstractQueryModelVisitor<RuntimeException>() {
+						@Override
+						public void meet(Graph graph) {
+							if (!graph.getGraphName().isConstant()) {
+								names.add(graph.getGraphName().getName());
+							}
+							meetNode(graph);
+						}
+
+						@Override
+						public void meet(BindingSetAssignment assignment) {
+							unknown[0] |= !assignment.hasRepeatableBindingSets();
+						}
+					});
+				}
+			}
+
+			@Override
+			public void meet(BindingSetAssignment assignment) {
+				if (graphDepth[0] != 0) {
+					names.addAll(assignment.getBindingNames());
+					names.addAll(assignment.getPossibleBindingNames());
+				}
+				unknown[0] |= !assignment.hasRepeatableBindingSets();
+				super.meet(assignment);
+			}
+
+			@Override
+			public void meet(LeftJoin optional) {
+				names.addAll(BindingScopePolicy.optionalInputNames(optional));
+				super.meet(optional);
+			}
+
+			@Override
+			public void meet(ZeroLengthPath path) {
+				addEndpoint(path.getSubjectVar());
+				addEndpoint(path.getObjectVar());
+				super.meet(path);
+			}
+
+			@Override
+			public void meet(ArbitraryLengthPath path) {
+				addEndpoint(path.getSubjectVar());
+				addEndpoint(path.getObjectVar());
+				super.meet(path);
+			}
+
+			@Override
+			public void meet(Graph graph) {
+				if (!graph.getGraphName().isConstant()) {
+					// A named valued selector must still be compatible with its invocation binding.
+					names.add(graph.getGraphName().getName());
+				}
+				if (graphDepth[0]++ == 0) {
+					// The native GRAPH boundary must preserve any entry read, including implicit VALUES columns.
+					names.addAll(VarNameCollector.process(graph));
+					names.addAll(graph.getBindingNames());
+				}
+				try {
+					meetNode(graph);
+				} finally {
+					graphDepth[0]--;
+				}
+			}
+
+			@Override
+			protected void meetNode(QueryModelNode node) {
+				if (node instanceof TupleExpr tuple && snapshot.isUnknownTupleOperator(tuple)
+						|| node instanceof ValueExpr value && snapshot.hasUnknownLocalScalarReads(value)) {
+					unknown[0] = true;
+				}
+				super.meetNode(node);
+			}
+
+			private void addEndpoint(Var endpoint) {
+				if (!endpoint.isConstant()) {
+					names.add(endpoint.getName());
+				}
+			}
+		});
+		return new ExistsSubstitutionInputs(names, unknown[0]);
+	}
+
+	/** Whether a same-group FILTER condition reads an input from this join's preceding operand. */
+	@InternalUseOnly
+	public static boolean requiresScopedFilterInput(TupleExpr owner) {
+		return snapshotFor(owner).requiresScopedFilterInput(owner);
+	}
+
+	/** Whether a preceding sibling could become a new same-group FILTER input after a reorder. */
+	@InternalUseOnly
+	public static boolean mayIntroduceFilterInput(TupleExpr subtree, Set<String> siblingNames,
+			boolean unknownSiblingNames) {
+		return (unknownSiblingNames || !siblingNames.isEmpty())
+				&& snapshotFor(subtree).mayIntroduceFilterInput(subtree, siblingNames, unknownSiblingNames);
+	}
+
+	/** Whether a subtree contains an operator that must remain outside an independent replay region. */
+	@InternalUseOnly
+	public static boolean requiresBindingFrameReplayPartition(TupleExpr subtree) {
+		return snapshotFor(subtree).requiresBindingFrameReplayPartition(subtree);
+	}
+
+	/** A directly correlated FILTER may use a bind join when its argument is a repeatable relational leaf. */
+	@InternalUseOnly
+	public static boolean permitsDirectCorrelatedFilter(TupleExpr expression, Set<String> siblingNames) {
+		return snapshotFor(expression).permitsDirectCorrelatedFilter(expression, siblingNames);
+	}
+
+	/** Prepares the names that an owner may lend to physical lookups throughout its complete right operand. */
+	@InternalUseOnly
+	public static Predicate<String> preparedScopedLookupInputs(TupleExpr owner) {
+		return snapshotFor(owner).preparedScopedLookupInputs(owner);
+	}
+
+	/** Prepared output membership for a repeatable, discardable region that may avoid independent replay. */
+	@InternalUseOnly
+	public static Predicate<String> preparedReplayLookupNames(TupleExpr region) {
+		return snapshotFor(region).preparedReplayLookupNames(region);
+	}
+
+	/** Captures one immutable, identity-indexed view of proven non-null local outputs for this phase. */
+	@InternalUseOnly
+	public static BiPredicate<QueryModelNode, String> preparedLocalNonNullOutputs(QueryModelNode root) {
+		return preparedFilterPlacementFacts(root);
+	}
+
+	/** Phase-bound facts used to prove that a relocated FILTER preserves producer inputs. */
+	@InternalUseOnly
+	public interface PreparedFilterPlacementFacts extends BiPredicate<QueryModelNode, String> {
+		boolean cannotInjectIntoProducer(QueryModelNode node);
+
+		boolean stableFilterExpression(QueryModelNode node);
+	}
+
+	/** Captures placement facts once for all candidates in this algebra generation. */
+	@InternalUseOnly
+	public static PreparedFilterPlacementFacts preparedFilterPlacementFacts(QueryModelNode root) {
+		return snapshotFor(root).capturedFilterPlacementFacts(root);
+	}
+
+	/** Captures closed, compatible FILTER inputs for a prepared positive selection region. */
+	@InternalUseOnly
+	public static PreparedFilterScope preparedFilterScope(TupleExpr root) {
+		return snapshotFor(root).preparedFilterScope(root);
+	}
+
+	/** Captures disjoint positive regions reached by the actual tuple's forwarding input edges. */
+	@InternalUseOnly
+	public static Map<TupleExpr, PreparedFilterScope> preparedFilterScopes(TupleExpr root) {
+		return snapshotFor(root).preparedFilterScopes(root);
+	}
+
+	/** Exact reads of a FILTER directly above the right statement pattern of a positive join. */
+	@InternalUseOnly
+	public static PreparedJoinFilterInputs preparedJoinFilterInputs(Join join) {
+		return snapshotFor(join).preparedJoinFilterInputs(join);
+	}
+
+	@InternalUseOnly
+	public record PreparedJoinFilterInputs(Set<String> localNames, Set<String> ownerNames) {
+		public PreparedJoinFilterInputs {
+			localNames = Set.copyOf(localNames);
+			ownerNames = Set.copyOf(ownerNames);
+		}
+	}
+
+	/** The shared semantic output domain used to compare the operands of a prepared MINUS. */
+	@InternalUseOnly
+	public static Set<String> minusComparisonNames(TupleExpr left, TupleExpr right) {
+		QuerySafetySnapshot active = ACTIVE_SAFETY_SNAPSHOT.get();
+		QuerySafetySnapshot snapshot = active == null ? new QuerySafetySnapshot(null, activePolicy()) : active;
+		return snapshot.minusComparisonNames(left, right);
+	}
+
+	/** Immutable proof owned by one prepared algebra generation. */
+	@InternalUseOnly
+	public static final class PreparedFilterScope {
+		private final TupleExpr region;
+		private final Set<Join> joins;
+		private final Set<Join> scopedJoins;
+		private final Map<Filter, FilterInputs> filters;
+		private final Set<String> names;
+		private final Set<String> hazards;
+		private final Map<StatementPattern, String> contextOutputs;
+		private final Map<Join, NameDomain> receivedHazards;
+
+		private PreparedFilterScope(TupleExpr region, Set<Join> joins, Set<Join> scopedJoins,
+				Map<Filter, FilterInputs> filters,
+				Set<String> names, Set<String> hazards, Map<StatementPattern, String> contextOutputs,
+				Map<Join, NameDomain> receivedHazards) {
+			this.region = region;
+			this.joins = Collections.unmodifiableSet(joins);
+			this.scopedJoins = Collections.unmodifiableSet(scopedJoins);
+			this.filters = Collections.unmodifiableMap(filters);
+			this.names = Set.copyOf(names);
+			this.hazards = Set.copyOf(hazards);
+			this.contextOutputs = Collections.unmodifiableMap(contextOutputs);
+			this.receivedHazards = Collections.unmodifiableMap(receivedHazards);
+		}
+
+		public boolean isRegion(TupleExpr node) {
+			return node == region;
+		}
+
+		public Set<String> bindingNames() {
+			return names;
+		}
+
+		public boolean permitsCorrelation(Join join, Set<String> completePhysicalNames) {
+			return joins.contains(join) && names.containsAll(completePhysicalNames)
+					&& Collections.disjoint(hazards, completePhysicalNames);
+		}
+
+		/** A proved local result name is still unavailable as a physical input to a context lookup. */
+		public boolean permitsSelectedCorrelation(Join join, Set<String> receivedNames) {
+			if (!joins.contains(join) || !names.containsAll(receivedNames)) {
+				return false;
+			}
+			if (contextOutputs.isEmpty()) {
+				return Collections.disjoint(hazards, names);
+			}
+			NameDomain selectedRightHazards = receivedHazards.get(join);
+			return selectedRightHazards != null && receivedNames.stream().noneMatch(selectedRightHazards::contains);
+		}
+
+		public String pendingContextOutput(StatementPattern pattern) {
+			return contextOutputs.get(pattern);
+		}
+
+		public Set<String> contextEntryHazards() {
+			return contextOutputs.isEmpty() ? Set.of() : hazards;
+		}
+
+		public boolean requiresScopedInput(Join join) {
+			return scopedJoins.contains(join);
+		}
+
+		public Set<String> conditionReads(Filter filter) {
+			FilterInputs inputs = filters.get(filter);
+			return inputs == null ? null : inputs.reads();
+		}
+
+		public boolean conditionInputsAvailable(Filter filter, Set<String> localAssured,
+				BiPredicate<Join, String> ownerAssured) {
+			FilterInputs inputs = filters.get(filter);
+			if (inputs == null || !localAssured.containsAll(inputs.local())) {
+				return false;
+			}
+			for (Map.Entry<String, Join> owner : inputs.owners().entrySet()) {
+				if (!ownerAssured.test(owner.getValue(), owner.getKey())) {
+					return false;
+				}
+			}
+			return true;
+		}
+
+		private record FilterInputs(Set<String> reads, Set<String> local, Map<String, Join> owners) {
+			private FilterInputs {
+				reads = Set.copyOf(reads);
+				local = Set.copyOf(local);
+				owners = Map.copyOf(owners);
+			}
+		}
+	}
+
 	@Experimental
 	public static final class QuerySafetySnapshot {
 		private static final NodeSafetySummary[] NO_CHILDREN = new NodeSafetySummary[0];
+		private static final TupleHeaders UNKNOWN_TUPLE_HEADERS = new TupleHeaders(null, null, null, null);
 		private final QueryModelPreparation valuesPreparation;
 		private final QueryExecutionPolicy policy;
+		private final Set<QueryModelNode> analysisRoots = Collections.newSetFromMap(new IdentityHashMap<>());
+		private final Map<QueryModelNode, QueryModelNode> capturedParentByNode = new IdentityHashMap<>();
+		private final Map<QueryModelNode, CallerInputEdge> capturedCallerInputEdges = new IdentityHashMap<>();
+		private final Map<TupleExpr, CallerOutputKind> capturedCallerOutputs = new IdentityHashMap<>();
+		private final Map<TupleExpr, CallerWrites> capturedCallerWrites = new IdentityHashMap<>();
+		private final Map<QueryModelNode, Boolean> replayDependencyFacts = new IdentityHashMap<>();
 		private final Map<QueryModelNode, NodeSafetySummary> summaries = new IdentityHashMap<>();
 		private final Map<QueryModelNode, List<QueryModelNode>> childrenByNode = new IdentityHashMap<>();
+		private final Map<TupleExpr, TupleHeaders> tupleHeaders = new IdentityHashMap<>();
+		private final Map<QueryModelNode, CapturedScopeNode> capturedScopeNodes = new IdentityHashMap<>();
+		private final Map<QueryModelNode, ConditionSummary> conditionSummaries = new IdentityHashMap<>();
+		private final Map<QueryModelNode, Boolean> variableNameCaptureComplete = new IdentityHashMap<>();
 		private final Set<QueryModelNode> unknownNodes = Collections.newSetFromMap(new IdentityHashMap<>());
-		private final NameSetFactory nameSets = new NameSetFactory();
+		private final Set<QueryModelNode> filterInputOwners = Collections.newSetFromMap(new IdentityHashMap<>());
+		private final Set<QueryModelNode> replayDependentNodes = Collections.newSetFromMap(new IdentityHashMap<>());
+		private final Map<Filter, CapturedFilter> capturedFilters = new IdentityHashMap<>();
+		private final Map<QueryModelNode, NameSetNode> potentialFilterInputs = new IdentityHashMap<>();
+		private final Map<QueryModelNode, FilterLookupFacts> filterLookupFacts = new IdentityHashMap<>();
+		private final Map<Filter, ScopePath> filterScopePaths = new IdentityHashMap<>();
+		private final Set<Filter> subqueryFilters = Collections.newSetFromMap(new IdentityHashMap<>());
+		private final Set<QueryModelNode> unknownPotentialFilterInputs = Collections
+				.newSetFromMap(new IdentityHashMap<>());
+		private boolean scopedBindingFactsInitialized;
+		private NameSetFactory nameSets = new NameSetFactory();
+		private NameSetFactory headerSets = new NameSetFactory();
+		private OptionalInputNamesGeneration optionalInputNames = new OptionalInputNamesGeneration(headerSets);
+		private Map<TupleExpr, TupleExpr> selectEntryRoots;
+
+		private synchronized TupleExpr selectEntryRoot(TupleExpr operand) {
+			if (selectEntryRoots == null) {
+				selectEntryRoots = new IdentityHashMap<>();
+			}
+			TupleExpr current = operand;
+			TupleExpr root = selectEntryRoots.get(current);
+			while (root == null) {
+				TupleExpr parent = forwardingSelectParent(current);
+				if (parent == null) {
+					root = current;
+				} else {
+					current = parent;
+					root = selectEntryRoots.get(current);
+				}
+			}
+			// Compress the whole visited path so nested OPTIONAL steps share the same preparation walk.
+			while (selectEntryRoots.putIfAbsent(operand, root) == null && operand != current) {
+				operand = forwardingSelectParent(operand);
+			}
+			return root;
+		}
+
+		private synchronized PreparedFilterPlacementFacts capturedFilterPlacementFacts(QueryModelNode root) {
+			Map<QueryModelNode, NameSetNode> captured = new IdentityHashMap<>();
+			Set<QueryModelNode> nonInjectable = Collections.newSetFromMap(new IdentityHashMap<>());
+			Set<QueryModelNode> stableExpressions = Collections.newSetFromMap(new IdentityHashMap<>());
+			Set<QueryModelNode> visited = Collections.newSetFromMap(new IdentityHashMap<>());
+			Deque<QueryModelNode> pending = new ArrayDeque<>();
+			pending.push(root);
+			while (!pending.isEmpty()) {
+				QueryModelNode node = pending.pop();
+				if (!visited.add(node)) {
+					continue;
+				}
+				NodeSafetySummary summary = summaries.get(node);
+				if (summary == null) {
+					continue;
+				}
+				NameSetNode names = summary.localOutputs.nonNull();
+				if (names != null) {
+					captured.put(node, names);
+				}
+				boolean stable = summary.repeatable && !summary.mappingParameterized
+						&& !summary.mayRaiseQueryFatalError;
+				if (stable && node instanceof TupleExpr tuple && !summary.injectionShapeSafe
+						&& !BindingScopePolicy.isRelationalBindingLeaf(tuple)) {
+					nonInjectable.add(node);
+				} else if (stable && node instanceof ValueExpr && summary.graphInputs.known()
+						&& summary.graphInputs.callers() == null) {
+					stableExpressions.add(node);
+				}
+				pending.addAll(childrenByNode.getOrDefault(node, List.of()));
+			}
+			NameSetFactory generation = headerSets;
+			return new PreparedFilterPlacementFacts() {
+				@Override
+				public boolean test(QueryModelNode node, String name) {
+					synchronized (generation) {
+						return generation.contains(captured.get(node), name);
+					}
+				}
+
+				@Override
+				public boolean cannotInjectIntoProducer(QueryModelNode node) {
+					return nonInjectable.contains(node);
+				}
+
+				@Override
+				public boolean stableFilterExpression(QueryModelNode node) {
+					return stableExpressions.contains(node);
+				}
+			};
+		}
 
 		/** Creates an empty snapshot that lazily classifies the first queried node. */
 		public QuerySafetySnapshot() {
@@ -605,7 +1298,15 @@ public class QueryEvaluationUtility {
 		}
 
 		private QueryModelNode ensureNode(QueryModelNode node) {
+			return ensureNode(node, true);
+		}
+
+		private synchronized QueryModelNode ensureNode(QueryModelNode node, boolean registerAnalysisRoot) {
 			if (valuesPreparation == null && summaries.containsKey(node)) {
+				if (registerAnalysisRoot && !capturedScopeNodes.containsKey(node)) {
+					registerAnalysisRoot(node, hasAnalysisRootAncestor(node));
+					captureScopeNode(node);
+				}
 				return node;
 			}
 			QueryModelNode original = node;
@@ -614,7 +1315,7 @@ public class QueryEvaluationUtility {
 				node = preparation.prepare(node);
 			}
 			if (!summaries.containsKey(node)) {
-				analyzeMissingSubtree(node);
+				analyzeMissingSubtree(node, registerAnalysisRoot);
 			}
 			retainAliasFacts(original, node);
 			return node;
@@ -624,7 +1325,12 @@ public class QueryEvaluationUtility {
 			if (original != prepared) {
 				// A public read-only snapshot retains facts for the caller's root without retaining capture ownership.
 				summaries.put(original, summaries.get(prepared));
+				conditionSummaries.put(original, conditionSummaries.get(prepared));
+				variableNameCaptureComplete.put(original, variableNameCaptureComplete.get(prepared));
 				childrenByNode.put(original, childrenByNode.getOrDefault(prepared, List.of()));
+				if (original instanceof TupleExpr tuple) {
+					tupleHeaders.put(tuple, tupleHeaders.get(prepared));
+				}
 			}
 		}
 
@@ -636,18 +1342,87 @@ public class QueryEvaluationUtility {
 			return active == null ? null : active.valuesPreparation;
 		}
 
-		private void analyzeMissingSubtree(QueryModelNode root) {
+		private boolean hasAnalysisRootAncestor(QueryModelNode node) {
+			List<QueryModelNode> livePath = liveParentPath(node);
+			for (int index = 1; index < livePath.size(); index++) {
+				QueryModelNode ancestor = livePath.get(index);
+				if (analysisRoots.contains(ancestor)) {
+					return true;
+				}
+			}
+			return false;
+		}
+
+		private void registerAnalysisRoot(QueryModelNode root, boolean temporaryDescendant) {
+			analysisRoots.add(root);
+			List<QueryModelNode> ancestors = captureParentChain(root);
+			List<QueryModelNode> indexAncestors = temporaryDescendant ? List.of() : ancestors;
+			QueryModelNode child = root;
+			for (QueryModelNode ancestor : indexAncestors) {
+				capturedParentByNode.putIfAbsent(child, ancestor);
+				captureScopeNode(ancestor);
+				CapturedScopeNode scope = capturedScopeNodes.get(ancestor);
+				if (scope.right() == child && scope.left() != null) {
+					captureMissingHeaders(scope.left());
+				}
+				child = ancestor;
+			}
+			if (scopedBindingFactsInitialized) {
+				filterInputOwners.clear();
+				replayDependentNodes.clear();
+				potentialFilterInputs.clear();
+				filterLookupFacts.clear();
+				filterScopePaths.clear();
+				subqueryFilters.clear();
+				unknownPotentialFilterInputs.clear();
+				scopedBindingFactsInitialized = false;
+			}
+		}
+
+		private static List<QueryModelNode> liveParentPath(QueryModelNode node) {
+			List<QueryModelNode> path = new ArrayList<>();
+			Set<QueryModelNode> visited = Collections.newSetFromMap(new IdentityHashMap<>());
+			QueryModelNode child = node;
+			while (child != null && visited.add(child)) {
+				path.add(child);
+				QueryModelNode parent = child.getParentNode();
+				if (parent == null || !containsIdentity(childrenOf(parent), child)) {
+					break;
+				}
+				child = parent;
+			}
+			return List.copyOf(path);
+		}
+
+		private synchronized void analyzeMissingSubtree(QueryModelNode root, boolean registerAnalysisRoot) {
+			if (registerAnalysisRoot) {
+				registerAnalysisRoot(root, hasAnalysisRootAncestor(root));
+			}
 			Deque<QueryModelNode> path = new ArrayDeque<>();
 			Map<QueryModelNode, List<QueryModelNode>> discoveredChildren = new IdentityHashMap<>();
+			Set<Projection> typedProjections = identitySet();
 			root.visit(new AbstractQueryModelVisitor<RuntimeException>() {
+				@Override
+				public void meet(Projection projection) {
+					typedProjections.add(projection);
+					super.meet(projection);
+				}
+
 				@Override
 				protected void meetNode(QueryModelNode node) {
 					if (!path.isEmpty()) {
-						discoveredChildren.computeIfAbsent(path.peek(), key -> new ArrayList<>()).add(node);
+						QueryModelNode parent = path.peek();
+						discoveredChildren.computeIfAbsent(parent, key -> new ArrayList<>()).add(node);
+						capturedParentByNode.putIfAbsent(node, parent);
+						if (node instanceof TupleExpr) {
+							capturedCallerInputEdges.putIfAbsent(node,
+									QueryAlgebraBindingAnalysis.callerInputEdge(parent, node));
+						}
 					}
 					if (summaries.containsKey(node)) {
 						return;
 					}
+					captureScopeNode(node);
 					path.push(node);
 					try {
 						super.meetNode(node);
@@ -657,7 +1432,57 @@ public class QueryEvaluationUtility {
 					List<QueryModelNode> children = List.copyOf(
 							discoveredChildren.getOrDefault(node, List.of()));
 					childrenByNode.put(node, children);
-					summaries.put(node, summarize(node, children));
+					boolean inconsistentChildren = hasInconsistentChildren(node, children);
+					if (node instanceof ValueExpr && inconsistentChildren) {
+						// Retain the local verdict, independently of incomplete descendants such as a nested EXISTS.
+						unknownNodes.add(node);
+					}
+					if (node instanceof TupleExpr tuple) {
+						capturedCallerOutputs.put(tuple, QueryAlgebraBindingAnalysis.callerOutputKind(tuple));
+						if (inconsistentChildren && (tuple instanceof Join || tuple instanceof LeftJoin)) {
+							TupleExpr left = ((BinaryTupleOperator) tuple).getLeftArg();
+							if (!containsIdentity(children, left)) {
+								// An exposed right-side FILTER can still depend on the omitted owner's left header.
+								// Capture that header now, while the rest of this generation is being captured.
+								captureMissingHeaders(left);
+							}
+						}
+						captureTupleHeaders(tuple);
+						// Typed visitor dispatch declares the base operator contract. A contradictory leaf header or
+						// inconsistent child list makes that declaration insufficient to prove safety.
+						boolean inconsistentLeaf = (tuple instanceof SingletonSet || tuple instanceof EmptySet)
+								&& tupleHeaders.get(tuple).ordinary() != null;
+						if (inconsistentLeaf || inconsistentChildren) {
+							unknownNodes.add(tuple);
+						}
+					}
+					summaries.put(node, summarize(node, children, inconsistentChildren,
+							typedProjections.contains(node)));
+					captureConditionSummary(node, children, inconsistentChildren);
+					if (node instanceof LeftJoin leftJoin) {
+						captureOptionalInputNames(leftJoin);
+					}
+					if (node instanceof Filter filter) {
+						captureFilter(filter);
+					}
+					if (node instanceof TupleExpr tuple) {
+						CallerWrites writes = captureCallerWrites(tuple, capturedCallerOutputs.get(tuple));
+						capturedCallerWrites.put(tuple, writes);
+						List<TupleExpr> tupleChildren = new ArrayList<>();
+						for (QueryModelNode child : children) {
+							if (child instanceof TupleExpr tupleChild) {
+								tupleChildren.add(tupleChild);
+							}
+						}
+						LocalOutputs outputs = summaries.get(tuple).localOutputs;
+						optionalInputNames.putCallerNode(tuple, capturedParentByNode.get(tuple),
+								capturedCallerInputEdges.getOrDefault(tuple, CallerInputEdge.UNKNOWN),
+								capturedCallerOutputs.get(tuple), tupleChildren, outputs, writes,
+								captureEntryCompatibility(tuple, tupleChildren));
+					}
+					if (node instanceof ProjectionElemList elements) {
+						optionalInputNames.putProjection(elements);
+					}
 				}
 
 				@Override
@@ -675,59 +1500,1023 @@ public class QueryEvaluationUtility {
 			});
 		}
 
-		/** Recomputes one edited node and propagates only changed facts to its ancestors. */
-		public void refreshFrom(QueryModelNode changedNode) {
-			QueryModelNode original = changedNode;
+		/**
+		 * Starts a coherent safety generation after an explicit algebra refresh. The currently reachable enclosing
+		 * trees of retained roots and the changed node are prepared before any safety facts are rebuilt. Prepared
+		 * VALUES rows remain owned by the same preparation session.
+		 */
+		public synchronized void refreshFrom(QueryModelNode changedNode) {
+			Objects.requireNonNull(changedNode, "changedNode must not be null");
+			List<QueryModelNode> roots = enclosingAnalysisRoots(changedNode);
 			QueryModelPreparation preparation = preparationForAnalysis();
 			if (preparation != null) {
-				preparation.invalidate(changedNode);
-				changedNode = preparation.prepare(changedNode);
+				preparation.resetTraversal();
 			}
-			refreshFactsFrom(changedNode);
-			retainAliasFacts(original, changedNode);
+			List<QueryModelNode> preparedRoots = new ArrayList<>(roots.size());
+			for (QueryModelNode root : roots) {
+				preparedRoots.add(preparation == null ? root : preparation.prepare(root));
+			}
+			clearSafetyGeneration();
+			for (QueryModelNode preparedRoot : preparedRoots) {
+				ensureNode(preparedRoot, true);
+			}
 		}
 
-		private void refreshFactsFrom(QueryModelNode changedNode) {
-			boolean alreadySummarized = summaries.containsKey(changedNode);
-			ensureNode(changedNode);
-			QueryModelNode current = changedNode;
-			QueryModelNode changedChild = null;
-			while (current != null) {
-				List<QueryModelNode> currentChildren = current == changedNode && alreadySummarized
-						? childrenOf(current)
-						: childrenByNode.getOrDefault(current, List.of());
-				if (changedChild != null && !containsIdentity(currentChildren, changedChild)) {
-					currentChildren = childrenOf(current);
+		private List<QueryModelNode> enclosingAnalysisRoots(QueryModelNode changedNode) {
+			Set<QueryModelNode> seeds = identitySet();
+			seeds.addAll(analysisRoots);
+			seeds.add(changedNode);
+			Set<QueryModelNode> roots = identitySet();
+			for (QueryModelNode seed : seeds) {
+				List<QueryModelNode> path = liveParentPath(seed);
+				roots.add(path.get(path.size() - 1));
+			}
+			return List.copyOf(roots);
+		}
+
+		private void clearSafetyGeneration() {
+			selectEntryRoots = null;
+			analysisRoots.clear();
+			capturedParentByNode.clear();
+			capturedCallerInputEdges.clear();
+			capturedCallerOutputs.clear();
+			capturedCallerWrites.clear();
+			replayDependencyFacts.clear();
+			summaries.clear();
+			childrenByNode.clear();
+			tupleHeaders.clear();
+			capturedScopeNodes.clear();
+			conditionSummaries.clear();
+			variableNameCaptureComplete.clear();
+			unknownNodes.clear();
+			filterInputOwners.clear();
+			replayDependentNodes.clear();
+			capturedFilters.clear();
+			potentialFilterInputs.clear();
+			filterLookupFacts.clear();
+			filterScopePaths.clear();
+			subqueryFilters.clear();
+			unknownPotentialFilterInputs.clear();
+			scopedBindingFactsInitialized = false;
+			synchronized (nameSets) {
+				// Already prepared steps may still read immutable name tries from the preceding generation.
+				nameSets = new NameSetFactory();
+			}
+			synchronized (headerSets) {
+				// Compiled lookup proofs can still use this generation after a coherent refresh.
+				headerSets = new NameSetFactory();
+				optionalInputNames = new OptionalInputNamesGeneration(headerSets);
+			}
+		}
+
+		private static <T> Set<T> identitySet() {
+			return Collections.newSetFromMap(new IdentityHashMap<>());
+		}
+
+		private record TupleHeaders(NameSetNode ordinary, NameSetNode assured, NameSetNode semantic,
+				NameSetNode semanticAssured) {
+		}
+
+		private synchronized Set<String> minusComparisonNames(TupleExpr left, TupleExpr right) {
+			left = (TupleExpr) ensureNode(left, false);
+			right = (TupleExpr) ensureNode(right, false);
+			captureMissingHeaders(left);
+			captureMissingHeaders(right);
+			synchronized (headerSets) {
+				NameSetNode shared = headerSets.intersect(tupleHeaders.get(left).semantic(),
+						tupleHeaders.get(right).semantic());
+				Set<String> names = new HashSet<>();
+				headerSets.collectNames(shared, names);
+				return Set.copyOf(names);
+			}
+		}
+
+		private record CapturedScopeNode(boolean blocksInput, QueryModelNode right, TupleExpr left,
+				NameSetNode lateralInputs) {
+		}
+
+		private record ConditionSummary(NameSetNode variables, NameSetNode tupleReads, NameSetNode reads,
+				boolean complete, boolean containsSubQuery, boolean mayContainOptional) {
+		}
+
+		synchronized OptionalInputNameProvider preparedOptionalInputNames(TupleExpr root) {
+			ensureNode(root);
+			return optionalInputNames;
+		}
+
+		/** Derives local occurrence counts from this generation's existing identity DAG, without revisiting algebra. */
+		private synchronized PreparedValuesScope preparedValuesScope(TupleExpr root,
+				QueryAlgebraBindingAnalysis analysis) {
+			Map<String, UniqueOccurrence> producers = new HashMap<>();
+			Map<String, UniqueOccurrence> readers = new HashMap<>();
+			Map<Filter, Set<String>> assuredObservers = new IdentityHashMap<>();
+			Map<BindingSetAssignment, Set<String>> valuesNames = new IdentityHashMap<>();
+			Map<QueryModelNode, ValuesChoiceRegion> choiceRegions = new IdentityHashMap<>();
+			Set<String> candidateNames = new HashSet<>();
+			if (ensureNode(root) != root) {
+				return new PreparedValuesScope(false, producers, readers, assuredObservers, valuesNames, Map.of(),
+						candidateNames, 0);
+			}
+			Set<QueryModelNode> visited = identitySet();
+			Deque<ValuesOccurrenceVisit> pending = new ArrayDeque<>();
+			List<Filter> filters = new ArrayList<>();
+			ValuesChoiceRegion rootRegion = new ValuesChoiceRegion();
+			List<ValuesChoiceRegion> regions = new ArrayList<>();
+			regions.add(rootRegion);
+			pending.push(new ValuesOccurrenceVisit(root, rootRegion));
+			boolean complete = true;
+			while (!pending.isEmpty() && complete) {
+				ValuesOccurrenceVisit visit = pending.pop();
+				QueryModelNode node = visit.node();
+				ValuesChoiceRegion region = visit.region();
+				NodeSafetySummary summary = summaries.get(node);
+				if (!visited.add(node) || summary == null || unknownNodes.contains(node)) {
+					complete = false;
+					break;
 				}
-				for (QueryModelNode child : currentChildren) {
-					ensureNode(child);
+				if (node instanceof ValueExpr expression) {
+					ConditionSummary condition = conditionSummaries.get(expression);
+					if (condition == null || !condition.complete() || condition.containsSubQuery()) {
+						complete = false;
+						break;
+					}
+					QueryModelNode parent = capturedParentByNode.get(node);
+					QueryModelNode observer = parent instanceof Filter filter && filter.getCondition() == expression
+							? filter
+							: expression;
+					Set<String> names = new HashSet<>();
+					synchronized (headerSets) {
+						headerSets.collectNames(condition.reads(), names);
+					}
+					for (String name : names) {
+						addOccurrence(readers, name, observer);
+						addOccurrence(region.readers, name, observer);
+					}
+					continue;
 				}
-				childrenByNode.put(current, currentChildren);
-				NodeSafetySummary previous = summaries.get(current);
-				NodeSafetySummary updated = summarize(current, currentChildren);
-				if (updated.equals(previous)) {
-					// Preserve the generation identity used by captured ancestor name inputs.
-					if (current != changedNode || alreadySummarized) {
-						return;
+				NameOperation operation = summary.nameInputs.operation;
+				if (node instanceof TupleExpr tuple) {
+					if (!matchesCapturedTupleChildren(tuple)) {
+						complete = false;
+						break;
+					}
+					if (tuple instanceof Filter filter) {
+						CapturedFilter captured = capturedFilters.get(filter);
+						if (captured == null || !captured.represents(filter)) {
+							complete = false;
+							break;
+						}
+						filters.add(filter);
+						choiceRegions.put(filter, region);
+					}
+					if (operation == NameOperation.LEAF || operation == NameOperation.STATEMENT_PATTERN) {
+						// These captured leaf kinds have input-independent possible-output names. Reuse the root
+						// frame so indexing unrelated leaves does not materialize every join-prefix input.
+						var output = analysis.outputFacts(tuple, analysis.rootContext());
+						if (!output.possibleOutputsKnown()) {
+							complete = false;
+							break;
+						}
+						if (tuple instanceof BindingSetAssignment values) {
+							valuesNames.put(values, output.possibleOutputs());
+							candidateNames.addAll(output.possibleOutputs());
+							choiceRegions.put(values, region);
+						}
+						for (String name : output.possibleOutputs()) {
+							addOccurrence(producers, name, tuple);
+							addOccurrence(region.producers, name, tuple);
+						}
+						continue;
+					}
+					if (tuple instanceof Difference minus && tuple.getClass() == Difference.class) {
+						// A MINUS name may be observed when both rows bind it. This is a read even when UNDEF
+						// means that some comparisons have no shared binding at runtime.
+						for (String name : minusComparisonNames(minus.getLeftArg(), minus.getRightArg())) {
+							addOccurrence(readers, name, minus);
+							addOccurrence(region.readers, name, minus);
+						}
+					} else if (operation != NameOperation.JOIN && operation != NameOperation.UNION
+							&& operation != NameOperation.LEFT_JOIN && operation != NameOperation.FILTER
+							&& operation != NameOperation.EXTENSION
+							&& capturedCallerOutputs.get(tuple) != CallerOutputKind.UNARY) {
+						// This capture has no local producer/read classification for this operator.
+						complete = false;
+						break;
+					}
+				} else if (operation == NameOperation.EXTENSION_ELEMENT && summary.nameInputs.localName != null) {
+					addOccurrence(producers, summary.nameInputs.localName, node);
+					addOccurrence(region.producers, summary.nameInputs.localName, node);
+				}
+				if (node instanceof Union union && forwardsBothUnionArms(union)) {
+					ValuesChoiceRegion left = new ValuesChoiceRegion();
+					ValuesChoiceRegion right = new ValuesChoiceRegion();
+					region.choices.add(new ValuesChoice(left, right));
+					regions.add(left);
+					regions.add(right);
+					pending.push(new ValuesOccurrenceVisit(union.getRightArg(), right));
+					pending.push(new ValuesOccurrenceVisit(union.getLeftArg(), left));
+					continue;
+				}
+				for (QueryModelNode child : childrenByNode.getOrDefault(node, List.of())) {
+					if (child.getParentNode() != node || capturedParentByNode.get(child) != node) {
+						complete = false;
+						break;
+					}
+					pending.push(new ValuesOccurrenceVisit(child, region));
+				}
+			}
+			if (complete && !filters.isEmpty()) {
+				ensureScopedBindingFacts();
+				for (Filter filter : filters) {
+					ScopePath oldest = filterScopePaths.get(filter);
+					if (oldest == null) {
+						continue;
+					}
+					for (int level = oldest.jumps().length - 1; level >= 0; level--) {
+						if (level < oldest.jumps().length && oldest.jumps()[level] != null) {
+							oldest = oldest.jumps()[level];
+						}
+					}
+					if (!visited.contains(oldest.owner())) {
+						complete = false;
+						break;
+					}
+				}
+				if (complete) {
+					for (Filter filter : filters) {
+						PreparedFilterScope.FilterInputs inputs = preparedFilterInputs(filter, visited, Set.of());
+						if (inputs != null) {
+							assuredObservers.put(filter, inputs.reads());
+						}
+					}
+				}
+			}
+			if (complete && regions.size() > 1) {
+				captureValuesCooccurrence(regions);
+			} else {
+				choiceRegions.clear();
+			}
+			return new PreparedValuesScope(complete, producers, readers, assuredObservers, valuesNames, choiceRegions,
+					candidateNames, visited.size());
+		}
+
+		private boolean forwardsBothUnionArms(Union union) {
+			return union.getClass() == Union.class && !TupleExprs.isVariableScopeChange(union)
+					&& matchesCapturedTupleChildren(union)
+					&& capturedParentByNode.get(union.getLeftArg()) == union
+					&& capturedParentByNode.get(union.getRightArg()) == union
+					&& union.getLeftArg().getParentNode() == union && union.getRightArg().getParentNode() == union
+					&& capturedCallerInputEdges.get(union.getLeftArg()) == CallerInputEdge.FORWARD
+					&& capturedCallerInputEdges.get(union.getRightArg()) == CallerInputEdge.FORWARD;
+		}
+
+		/** Joins each pair of alternatives, then finds the names occurring at independent sites. */
+		private void captureValuesCooccurrence(List<ValuesChoiceRegion> regions) {
+			Map<ValuesChoiceRegion, Map<String, ValuesNameOccurrences>> descendants = new IdentityHashMap<>();
+			for (int i = regions.size() - 1; i >= 0; i--) {
+				ValuesChoiceRegion region = regions.get(i);
+				Map<String, ValuesNameOccurrences> names = new HashMap<>();
+				for (String name : region.producers.keySet()) {
+					names.put(name, new ValuesNameOccurrences(region));
+				}
+				for (String name : region.readers.keySet()) {
+					names.computeIfAbsent(name, key -> new ValuesNameOccurrences(region));
+				}
+				for (ValuesChoice choice : region.choices) {
+					Map<String, ValuesNameOccurrences> choiceNames = mergeValuesNames(descendants.remove(choice.left()),
+							descendants.remove(choice.right()), true);
+					names = mergeValuesNames(names, choiceNames, false);
+				}
+				descendants.put(region, names);
+			}
+		}
+
+		/** The maps have one parent. Move the smaller one, and retire each conflicting occurrence once. */
+		private static Map<String, ValuesNameOccurrences> mergeValuesNames(Map<String, ValuesNameOccurrences> first,
+				Map<String, ValuesNameOccurrences> second, boolean alternatives) {
+			Map<String, ValuesNameOccurrences> larger = first;
+			Map<String, ValuesNameOccurrences> smaller = second;
+			if (first.size() < second.size()) {
+				larger = second;
+				smaller = first;
+			}
+			for (Map.Entry<String, ValuesNameOccurrences> entry : smaller.entrySet()) {
+				String name = entry.getKey();
+				ValuesNameOccurrences added = entry.getValue();
+				ValuesNameOccurrences previous = larger.putIfAbsent(name, added);
+				if (previous != null) {
+					if (alternatives) {
+						previous.addAlternatives(added);
+					} else {
+						previous.markConflicts(name);
+						added.markConflicts(name);
+					}
+				}
+			}
+			return larger;
+		}
+
+		private boolean matchesCapturedTupleChildren(TupleExpr operator) {
+			CapturedCallerNode captured = optionalInputNames.callerNodes.get(operator);
+			return captured != null && captured.matchesTupleChildren(operator);
+		}
+
+		private static void addOccurrence(Map<String, UniqueOccurrence> index, String name,
+				QueryModelNode occurrence) {
+			UniqueOccurrence previous = index.putIfAbsent(name, new UniqueOccurrence(occurrence));
+			if (previous != null) {
+				previous.add(occurrence);
+			}
+		}
+
+		/** Each escaped provider retains its own immutable name-trie generation across refresh. */
+		private final class OptionalInputNamesGeneration implements OptionalInputNameProvider {
+			private final NameSetFactory factory;
+			private final Map<LeftJoin, NameDomain> captured = new IdentityHashMap<>();
+			private final Map<ValueExpr, ExpressionInputNames> expressions = new IdentityHashMap<>();
+			private final Map<ValueExpr, Boolean> scalarInvocations = new IdentityHashMap<>();
+			private final Map<ProjectionElemList, List<ProjectionName>> projections = new IdentityHashMap<>();
+			private final Map<LeftJoin, OptionalFilter> optionalFilters = new IdentityHashMap<>();
+			private final Map<TupleExpr, Boolean> optionalRegions = new IdentityHashMap<>();
+			private final Map<TupleExpr, CapturedCallerNode> callerNodes = new IdentityHashMap<>();
+			private long materializedCandidates;
+
+			private OptionalInputNamesGeneration(NameSetFactory factory) {
+				this.factory = factory;
+			}
+
+			private void put(LeftJoin leftJoin, NameSetNode names) {
+				captured.put(leftJoin, new CapturedNameDomain(factory, names, this));
+			}
+
+			private void putExpression(ValueExpr expression, ConditionSummary summary) {
+				expressions.put(expression, new ExpressionInputNames(
+						new CapturedNameDomain(factory, summary.reads()), summary.complete()));
+				scalarInvocations.put(expression, !summary.containsSubQuery());
+			}
+
+			private void putProjection(ProjectionElemList elements) {
+				List<ProjectionName> pairs = new ArrayList<>();
+				for (ProjectionElem element : elements.getElements()) {
+					String source = element.getName();
+					pairs.add(new ProjectionName(source, element.getProjectionAlias().orElse(source)));
+				}
+				projections.put(elements, List.copyOf(pairs));
+			}
+
+			private void putFilter(LeftJoin leftJoin, Filter filter, NameSetNode rightOnly, NameSetNode output,
+					boolean complete) {
+				optionalFilters.put(leftJoin, new OptionalFilter(filter, new CapturedNameDomain(factory, rightOnly),
+						new CapturedNameDomain(factory, output), complete));
+			}
+
+			private void putOptionalRegion(TupleExpr root, boolean possible) {
+				optionalRegions.put(root, possible);
+			}
+
+			private void putCallerNode(TupleExpr tuple, QueryModelNode parent, CallerInputEdge input,
+					CallerOutputKind output, List<TupleExpr> children, LocalOutputs outputs, CallerWrites writes,
+					EntryCompatibilityFacts entryCompatibility) {
+				NameDomain possible = outputs.possibleKnown()
+						? new CapturedNameDomain(factory, outputs.actualPossible())
+						: null;
+				NameDomain targets = writes.known() ? new CapturedNameDomain(factory, writes.targets()) : null;
+				callerNodes.put(tuple, new CapturedCallerNode(parent, input, output, children, possible, targets,
+						outputs.possibleKnown(), writes.known(), entryCompatibility,
+						tuple instanceof LeftJoin optional ? optional.getCondition() : null));
+			}
+
+			@Override
+			public NameDomain optionalInputNames(LeftJoin leftJoin) {
+				synchronized (QuerySafetySnapshot.this) {
+					return captured.get(leftJoin);
+				}
+			}
+
+			@Override
+			public NameDomain names(Set<String> names) {
+				synchronized (QuerySafetySnapshot.this) {
+					return new CapturedNameDomain(factory, factory.from(names));
+				}
+			}
+
+			@Override
+			public ExpressionInputNames expressionInputNames(ValueExpr expression) {
+				synchronized (QuerySafetySnapshot.this) {
+					return expressions.get(expression);
+				}
+			}
+
+			@Override
+			public boolean invocationReadsAreScalar(ValueExpr expression) {
+				synchronized (QuerySafetySnapshot.this) {
+					return Boolean.TRUE.equals(scalarInvocations.get(expression));
+				}
+			}
+
+			@Override
+			public List<ProjectionName> projectionNames(ProjectionElemList elements) {
+				synchronized (QuerySafetySnapshot.this) {
+					return projections.get(elements);
+				}
+			}
+
+			@Override
+			public OptionalFilter optionalFilter(LeftJoin leftJoin) {
+				synchronized (QuerySafetySnapshot.this) {
+					return optionalFilters.get(leftJoin);
+				}
+			}
+
+			@Override
+			public CapturedCallerNode callerNode(TupleExpr node) {
+				synchronized (QuerySafetySnapshot.this) {
+					return callerNodes.get(node);
+				}
+			}
+
+			@Override
+			public boolean mayContainOptional(TupleExpr root) {
+				synchronized (QuerySafetySnapshot.this) {
+					return !Boolean.FALSE.equals(optionalRegions.get(root));
+				}
+			}
+
+			@Override
+			public OptionalInputNameProvider forRoot(TupleExpr root) {
+				return preparedOptionalInputNames(root);
+			}
+
+			@Override
+			public OptionalInputNameProvider refresh(TupleExpr root) {
+				refreshFrom(root);
+				return preparedOptionalInputNames(root);
+			}
+		}
+
+		private final class CapturedNameDomain implements NameDomain {
+			private final NameSetFactory factory;
+			private final NameSetNode root;
+			private final OptionalInputNamesGeneration candidateOwner;
+			private Set<String> materialized;
+
+			private CapturedNameDomain(NameSetFactory factory, NameSetNode root) {
+				this(factory, root, null);
+			}
+
+			private CapturedNameDomain(NameSetFactory factory, NameSetNode root,
+					OptionalInputNamesGeneration candidateOwner) {
+				this.factory = factory;
+				this.root = root;
+				this.candidateOwner = candidateOwner;
+			}
+
+			private CapturedNameDomain sameGeneration(NameDomain domain) {
+				if (!(domain instanceof QuerySafetySnapshot.CapturedNameDomain other) || other.factory != factory) {
+					throw new IllegalArgumentException("Name domains belong to different preparation generations");
+				}
+				return other;
+			}
+
+			@Override
+			public NameDomain union(NameDomain other) {
+				synchronized (QuerySafetySnapshot.this) {
+					return new CapturedNameDomain(factory, factory.union(root, sameGeneration(other).root));
+				}
+			}
+
+			@Override
+			public NameDomain intersect(NameDomain other) {
+				synchronized (QuerySafetySnapshot.this) {
+					return new CapturedNameDomain(factory, factory.intersect(root, sameGeneration(other).root));
+				}
+			}
+
+			@Override
+			public NameDomain difference(NameDomain other) {
+				synchronized (QuerySafetySnapshot.this) {
+					return new CapturedNameDomain(factory, factory.difference(root, sameGeneration(other).root));
+				}
+			}
+
+			@Override
+			public boolean contains(String name) {
+				synchronized (QuerySafetySnapshot.this) {
+					return factory.contains(root, name);
+				}
+			}
+
+			@Override
+			public boolean isEmpty() {
+				return root == null;
+			}
+
+			@Override
+			public Set<String> names() {
+				synchronized (QuerySafetySnapshot.this) {
+					if (materialized == null) {
+						Set<String> names = new HashSet<>();
+						factory.collectNames(root, names);
+						materialized = Set.copyOf(names);
+						if (candidateOwner != null) {
+							candidateOwner.materializedCandidates++;
+						}
+					}
+					return materialized;
+				}
+			}
+		}
+
+		private void captureOptionalInputNames(LeftJoin leftJoin) {
+			ConditionSummary right = conditionSummaries.get(leftJoin.getRightArg());
+			ConditionSummary condition = leftJoin.hasCondition() ? conditionSummaries.get(leftJoin.getCondition())
+					: null;
+			TupleHeaders leftHeader = tupleHeaders.get(leftJoin.getLeftArg());
+			TupleHeaders rightHeader = tupleHeaders.get(leftJoin.getRightArg());
+			if (unknownNodes.contains(leftJoin) || right == null
+					|| !Boolean.TRUE.equals(variableNameCaptureComplete.get(leftJoin.getRightArg()))
+					|| leftHeader == null || rightHeader == null
+					|| leftJoin.hasCondition() && (condition == null
+							|| !Boolean.TRUE.equals(variableNameCaptureComplete.get(leftJoin.getCondition())))) {
+				return;
+			}
+			NameSetNode names = headerSets.union(right.variables(), rightHeader.ordinary());
+			if (condition != null) {
+				names = headerSets.union(names, condition.variables());
+			}
+			names = headerSets.difference(names, leftHeader.ordinary());
+			optionalInputNames.put(leftJoin, names);
+		}
+
+		/** Compose the entry law on the same postorder as OPTIONAL masks and local output capture. */
+		private EntryCompatibilityFacts captureEntryCompatibility(TupleExpr tuple, List<TupleExpr> children) {
+			NodeSafetySummary summary = summaries.get(tuple);
+			if (!summary.repeatable || summary.mayRaiseQueryFatalError || summary.mappingParameterized
+					|| summary.producerBoundary || !summary.localOutputs.possibleKnown()) {
+				return null;
+			}
+			Class<?> type = tuple.getClass();
+			NameDomain empty = new CapturedNameDomain(headerSets, null);
+			NameDomain declared = new CapturedNameDomain(headerSets, tupleHeaders.get(tuple).ordinary());
+			if (type == SingletonSet.class || type == BindingSetAssignment.class || type == StatementPattern.class) {
+				if (!children.isEmpty() || tuple instanceof StatementPattern pattern
+						&& (pattern.getContextVar() != null || pattern.getSubjectVar() == null
+								|| pattern.getPredicateVar() == null || pattern.getObjectVar() == null)) {
+					return null;
+				}
+				LocalOutputs outputs = summary.localOutputs;
+				NameDomain assured = new CapturedNameDomain(headerSets, outputs.nonNull());
+				NameDomain possible = new CapturedNameDomain(headerSets, outputs.actualPossible());
+				if (!possible.difference(declared).isEmpty() || !assured.difference(possible).isEmpty()) {
+					return null;
+				}
+				return new EntryCompatibilityFacts(EntryCompatibilityKind.COMPATIBLE_LEAF, declared, possible,
+						assured, empty, empty, empty, null, empty, true);
+			}
+			if (type == Projection.class) {
+				Projection projection = (Projection) tuple;
+				if (projection.isSubquery() || projection.getProjectionContext() != null
+						|| projection.getInheritedGraphParameter() != null || children.size() != 1
+						|| children.getFirst() != projection.getArg()) {
+					return null;
+				}
+				EntryCompatibilityFacts argument = childEntryCompatibility(projection.getArg());
+				if (argument == null || !argument.positiveOnly()) {
+					return null;
+				}
+				// Projection can drop or replace an input. Its output may be imported early only if a
+				// later independent OPTIONAL compares it to a left row that still preserves the entry.
+				NameDomain nonNull = new CapturedNameDomain(headerSets, summary.localOutputs.nonNull());
+				return new EntryCompatibilityFacts(EntryCompatibilityKind.PROJECTED_OUTPUT, declared, declared,
+						nonNull, empty, empty, empty, null, empty, false);
+			}
+			if (type == Join.class || type == LeftJoin.class) {
+				BinaryTupleOperator binary = (BinaryTupleOperator) tuple;
+				if (children.size() != 2 || children.get(0) != binary.getLeftArg()
+						|| children.get(1) != binary.getRightArg()) {
+					return null;
+				}
+				EntryCompatibilityFacts left = childEntryCompatibility(children.get(0));
+				EntryCompatibilityFacts right = childEntryCompatibility(children.get(1));
+				if (left == null || right == null
+						|| !left.possibleOutputs().intersect(right.addedInputVetoes()).isEmpty()) {
+					return null;
+				}
+				NameDomain possible = left.possibleOutputs().union(right.possibleOutputs());
+				NameDomain rootVetoes = left.rootVetoes().union(right.rootVetoes());
+				NameDomain masks = left.optionalMasks().union(right.optionalMasks());
+				NameDomain addedVetoes = left.addedInputVetoes().union(right.addedInputVetoes());
+				if (tuple instanceof LeftJoin optional) {
+					NameDomain mask = optionalInputNames.captured.get(optional);
+					if (mask == null || optional.hasCondition() || left.pendingProjectionCompatibility()) {
+						return null;
+					}
+					NameDomain fallback = BindingScopePolicy.optionalFallbackSensitiveNames(right.possibleOutputs(),
+							left.assuredOutputs(), NameDomain::difference);
+					return new EntryCompatibilityFacts(EntryCompatibilityKind.NORMAL_OPTIONAL, declared, possible,
+							left.assuredOutputs(), rootVetoes, masks.union(mask),
+							addedVetoes.union(mask).union(fallback),
+							null, empty, false);
+				}
+				if (right.pendingProjectionCompatibility()
+						|| left.pendingProjectionCompatibility() && !right.positiveOnly()) {
+					return null;
+				}
+				EntryCompatibilityKind kind = left.pendingProjectionCompatibility()
+						? EntryCompatibilityKind.PROJECTED_PREFIX
+						: EntryCompatibilityKind.POSITIVE_JOIN;
+				return new EntryCompatibilityFacts(kind, declared, possible,
+						left.assuredOutputs().union(right.assuredOutputs()), rootVetoes, masks, addedVetoes, null,
+						empty, left.positiveOnly() && right.positiveOnly());
+			}
+			if (type != Filter.class || children.size() != 1 || !(tuple instanceof Filter filter)
+					|| children.getFirst() != filter.getArg()) {
+				return null;
+			}
+			EntryCompatibilityFacts argument = childEntryCompatibility(filter.getArg());
+			OptionalFilter edge = optionalInputNames.optionalFilters.get(filter.getArg());
+			ConditionSummary condition = conditionSummaries.get(filter.getCondition());
+			if (argument == null || argument.kind() != EntryCompatibilityKind.NORMAL_OPTIONAL
+					|| edge == null || edge.filter() != filter || !edge.complete() || condition == null
+					|| !filter.getConditionBindingScope().isAuto()
+							&& !filter.getConditionBindingScope().retainsAllBindings()) {
+				return null;
+			}
+			NameDomain reads = new CapturedNameDomain(headerSets, condition.reads());
+			if (!reads.difference(edge.outputNames()).isEmpty()) {
+				return null;
+			}
+			NameDomain exposed = reads.difference(argument.assuredOutputs());
+			return new EntryCompatibilityFacts(EntryCompatibilityKind.OPTIONAL_GATE, declared,
+					argument.possibleOutputs(), argument.assuredOutputs(), argument.rootVetoes().union(exposed),
+					argument.optionalMasks(), argument.addedInputVetoes().union(exposed), filter.getCondition(), reads,
+					false);
+		}
+
+		private EntryCompatibilityFacts childEntryCompatibility(TupleExpr child) {
+			CapturedCallerNode captured = optionalInputNames.callerNodes.get(child);
+			return captured == null ? null : captured.entryCompatibility();
+		}
+
+		private record CapturedFilter(ConditionSummary conditionFacts,
+				Filter.ConditionBindingScope explicitScope, boolean scopeChange, TupleHeaders argument,
+				TupleExpr argumentNode, ValueExpr conditionNode, LocalOutputs argumentOutputs,
+				TupleExpr directExists, boolean opaque) {
+			boolean represents(Filter filter) {
+				return filter.getArg() == argumentNode && filter.getCondition() == conditionNode;
+			}
+		}
+
+		private void captureScopeNode(QueryModelNode node) {
+			if (capturedScopeNodes.containsKey(node)) {
+				return;
+			}
+			QueryModelNode right = null;
+			TupleExpr left = null;
+			NameSetNode lateralInputs = null;
+			if (node instanceof Join join) {
+				right = join.getRightArg();
+				left = join.getLeftArg();
+			} else if (node instanceof LeftJoin join) {
+				right = join.getRightArg();
+				left = join.getLeftArg();
+			} else if (node instanceof Lateral lateral) {
+				right = lateral.getRightArg();
+				lateralInputs = headerSets.from(lateral.getRightInputBindingNames());
+			}
+			capturedScopeNodes.put(node,
+					new CapturedScopeNode(BindingScopePolicy.blocksFilterInput(node), right, left, lateralInputs));
+		}
+
+		private void captureFilter(Filter filter) {
+			boolean opaque = unknownNodes.contains(filter);
+			ValueExpr conditionNode = filter.getCondition();
+			TupleExpr argumentNode = filter.getArg();
+			ConditionSummary condition = conditionSummaries.get(conditionNode);
+			if (condition == null) {
+				condition = new ConditionSummary(null, null, null, false, false, true);
+			} else if (opaque) {
+				condition = new ConditionSummary(condition.variables(), condition.tupleReads(), condition.reads(),
+						false, condition.containsSubQuery(), condition.mayContainOptional());
+			}
+			TupleHeaders argument = tupleHeaders.get(argumentNode);
+			if (argument == null) {
+				argument = UNKNOWN_TUPLE_HEADERS;
+			}
+			NodeSafetySummary argumentSummary = summaries.get(argumentNode);
+			LocalOutputs argumentOutputs = argumentSummary == null ? LocalOutputs.UNKNOWN
+					: argumentSummary.localOutputs;
+			TupleExpr directExists = !opaque && conditionNode instanceof Exists exists
+					? exists.getSubQuery()
+					: null;
+			capturedFilters.put(filter, new CapturedFilter(condition, filter.getConditionBindingScope(),
+					filter.isVariableScopeChange(), argument, argumentNode, conditionNode, argumentOutputs,
+					directExists, opaque));
+			if (argumentNode instanceof LeftJoin leftJoin) {
+				TupleHeaders left = tupleHeaders.get(leftJoin.getLeftArg());
+				TupleHeaders right = tupleHeaders.get(leftJoin.getRightArg());
+				if (left != null && right != null && argument != UNKNOWN_TUPLE_HEADERS) {
+					NameSetNode rightOnly = headerSets.difference(right.ordinary(), left.ordinary());
+					optionalInputNames.putFilter(leftJoin, filter, rightOnly, argument.ordinary(),
+							!opaque && condition.complete() && !condition.containsSubQuery());
+				}
+			}
+		}
+
+		private void captureConditionSummary(QueryModelNode node, List<QueryModelNode> children,
+				boolean inconsistentChildren) {
+			boolean opaque = node instanceof ValueExpr expression
+					&& (inconsistentChildren || unknownNodes.contains(node)
+							|| !FilterBindingScope.scalarReadsAreExplicit(expression))
+					|| node instanceof TupleExpr tuple && !FilterBindingScope.tupleReadsAreExplicit(tuple);
+			boolean complete = !opaque;
+			boolean mayContainOptional = node instanceof LeftJoin || unknownNodes.contains(node);
+			boolean completeVariableNames = !inconsistentChildren && !unknownNodes.contains(node);
+			if (node instanceof TupleExpr tuple && !FilterBindingScope.tupleReadsAreExplicit(tuple)
+					&& tuple.getClass() != Graph.class && tuple.getClass() != ArbitraryLengthPath.class
+					&& tuple.getClass() != ZeroLengthPath.class && tuple.getClass() != TripleRef.class) {
+				completeVariableNames = false;
+			}
+			boolean containsSubQuery = node instanceof SubQueryValueOperator;
+			NameSetNode variables = node instanceof Var variable && !variable.hasValue()
+					? headerSets.add(null, variable.getName())
+					: null;
+			NameSetNode tupleReads = null;
+			for (QueryModelNode child : children) {
+				ConditionSummary summary = conditionSummaries.get(child);
+				variables = headerSets.union(variables, summary.variables());
+				if (!opaque) {
+					tupleReads = headerSets.union(tupleReads, summary.tupleReads());
+				}
+				complete &= summary.complete();
+				mayContainOptional |= summary.mayContainOptional();
+				completeVariableNames &= Boolean.TRUE.equals(variableNameCaptureComplete.get(child));
+				containsSubQuery |= summary.containsSubQuery();
+			}
+			if (!opaque && node instanceof TupleExpr tuple) {
+				tupleReads = headerSets.union(tupleReads, tupleHeaders.get(tuple).ordinary());
+				if (tuple instanceof BindingSetAssignment) {
+					tupleReads = headerSets.union(tupleReads,
+							headerSets.from(summaries.get(node).nameInputs.possibleNames));
+				}
+			}
+			conditionSummaries.put(node, new ConditionSummary(variables, tupleReads,
+					headerSets.union(variables, tupleReads), complete, containsSubQuery, mayContainOptional));
+			if (node instanceof ValueExpr expression) {
+				optionalInputNames.putExpression(expression, conditionSummaries.get(node));
+			}
+			if (node instanceof TupleExpr tuple) {
+				optionalInputNames.putOptionalRegion(tuple, mayContainOptional);
+			}
+			variableNameCaptureComplete.put(node, completeVariableNames);
+		}
+
+		/** Captures exact headers bottom-up; unknown subclasses retain their own declared header semantics. */
+		private void captureTupleHeaders(TupleExpr tuple) {
+			if (tupleHeaders.containsKey(tuple)) {
+				return;
+			}
+			NameSetNode ordinary;
+			NameSetNode assured;
+			NameSetNode semantic;
+			NameSetNode semanticAssured;
+			Class<?> type = tuple.getClass();
+			if (type == Join.class || type == Union.class || type == Lateral.class
+					|| type == LeftJoin.class || type == Difference.class || type == Intersection.class) {
+				BinaryTupleOperator binary = (BinaryTupleOperator) tuple;
+				TupleHeaders left = tupleHeaders.get(binary.getLeftArg());
+				TupleHeaders right = tupleHeaders.get(binary.getRightArg());
+				if (type == Difference.class) {
+					ordinary = left.ordinary();
+					assured = left.assured();
+					semantic = left.semantic();
+					semanticAssured = left.semanticAssured();
+				} else if (type == Intersection.class) {
+					ordinary = headerSets.intersect(left.ordinary(), right.ordinary());
+					assured = headerSets.intersect(left.assured(), right.assured());
+					semantic = headerSets.intersect(left.semantic(), right.semantic());
+					semanticAssured = headerSets.intersect(left.semanticAssured(), right.semanticAssured());
+				} else {
+					ordinary = headerSets.union(left.ordinary(), right.ordinary());
+					assured = type == LeftJoin.class ? left.assured()
+							: type == Union.class ? headerSets.intersect(left.assured(), right.assured())
+									: headerSets.union(left.assured(), right.assured());
+					semantic = headerSets.union(left.semantic(), right.semantic());
+					semanticAssured = type == LeftJoin.class ? left.semanticAssured()
+							: type == Union.class
+									? headerSets.intersect(left.semanticAssured(), right.semanticAssured())
+									: headerSets.union(left.semanticAssured(), right.semanticAssured());
+				}
+			} else if (type == Filter.class) {
+				Filter filter = (Filter) tuple;
+				TupleHeaders argument = tupleHeaders.get(filter.getArg());
+				ordinary = argument.ordinary();
+				assured = argument.assured();
+				semantic = argument.semantic();
+				semanticAssured = argument.semanticAssured();
+				if (filter.getCondition() instanceof Exists exists) {
+					ordinary = headerSets.union(ordinary, tupleHeaders.get(exists.getSubQuery()).ordinary());
+				}
+			} else if (type == Extension.class) {
+				Extension extension = (Extension) tuple;
+				TupleHeaders argument = tupleHeaders.get(extension.getArg());
+				ordinary = argument.ordinary();
+				assured = argument.assured();
+				semantic = argument.semantic();
+				semanticAssured = argument.semanticAssured();
+				for (ExtensionElem element : extension.getElements()) {
+					ordinary = headerSets.add(ordinary, element.getName());
+					assured = headerSets.remove(assured, element.getName());
+					semantic = headerSets.add(semantic, element.getName());
+					semanticAssured = headerSets.remove(semanticAssured, element.getName());
+				}
+			} else if (type == Projection.class) {
+				Projection projection = (Projection) tuple;
+				TupleHeaders argument = tupleHeaders.get(projection.getArg());
+				ordinary = projectedNames(projection.getProjectionElemList(), null, false);
+				assured = projectedNames(projection.getProjectionElemList(), argument.assured(), true);
+				semantic = ordinary;
+				semanticAssured = projectedNames(projection.getProjectionElemList(), argument.semanticAssured(), true);
+			} else if (type == MultiProjection.class) {
+				MultiProjection projection = (MultiProjection) tuple;
+				TupleHeaders argument = tupleHeaders.get(projection.getArg());
+				ordinary = null;
+				assured = null;
+				semanticAssured = null;
+				boolean first = true;
+				for (ProjectionElemList elements : projection.getProjections()) {
+					ordinary = headerSets.union(ordinary, projectedNames(elements, null, false));
+					NameSetNode part = projectedNames(elements, argument.assured(), true);
+					assured = first ? part : headerSets.intersect(assured, part);
+					NameSetNode semanticPart = projectedNames(elements, argument.semanticAssured(), true);
+					semanticAssured = first ? semanticPart : headerSets.intersect(semanticAssured, semanticPart);
+					first = false;
+				}
+				semantic = ordinary;
+			} else if (type == Group.class) {
+				Group group = (Group) tuple;
+				NameSetNode names = headerSets.from(group.getGroupBindingNames());
+				ordinary = headerSets.union(names, headerSets.from(group.getAggregateBindingNames()));
+				assured = headerSets.intersect(names, tupleHeaders.get(group.getArg()).assured());
+				semantic = ordinary;
+				semanticAssured = headerSets.intersect(names, tupleHeaders.get(group.getArg()).semanticAssured());
+			} else if (type == Graph.class) {
+				Graph graph = (Graph) tuple;
+				TupleHeaders argument = tupleHeaders.get(graph.getArg());
+				ordinary = argument.ordinary();
+				assured = argument.assured();
+				semantic = argument.semantic();
+				semanticAssured = argument.semanticAssured();
+				if (!graph.getGraphName().isConstant()) {
+					ordinary = headerSets.add(ordinary, graph.getGraphName().getName());
+					assured = headerSets.add(assured, graph.getGraphName().getName());
+					semantic = headerSets.add(semantic, graph.getGraphName().getName());
+					semanticAssured = headerSets.add(semanticAssured, graph.getGraphName().getName());
+				}
+			} else if (type == Window.class) {
+				Window window = (Window) tuple;
+				TupleHeaders argument = tupleHeaders.get(window.getArg());
+				ordinary = headerSets.union(argument.ordinary(), headerSets.from(window.getWindowBindingNames()));
+				assured = argument.assured();
+				semantic = headerSets.union(argument.semantic(), headerSets.from(window.getWindowBindingNames()));
+				semanticAssured = argument.semanticAssured();
+			} else if (type == ArbitraryLengthPath.class) {
+				ArbitraryLengthPath path = (ArbitraryLengthPath) tuple;
+				assured = path.getPathExpression() == null ? null
+						: tupleHeaders.get(path.getPathExpression()).assured();
+				if (path.getSubjectVar() != null) {
+					assured = headerSets.add(assured, path.getSubjectVar().getName());
+				}
+				if (path.getObjectVar() != null) {
+					assured = headerSets.add(assured, path.getObjectVar().getName());
+				}
+				if (path.getContextVar() != null) {
+					assured = headerSets.add(assured, path.getContextVar().getName());
+				}
+				ordinary = assured;
+				semanticAssured = path.getPathExpression() == null ? null
+						: tupleHeaders.get(path.getPathExpression()).semanticAssured();
+				semanticAssured = addVariable(semanticAssured, path.getSubjectVar());
+				semanticAssured = addVariable(semanticAssured, path.getObjectVar());
+				if (!PrivateGraphContextRole.isPrivateContext(path, path.getContextVar())) {
+					semanticAssured = addVariable(semanticAssured, path.getContextVar());
+				}
+				semantic = semanticAssured;
+			} else if (type == StatementPattern.class || type == ZeroLengthPath.class) {
+				ordinary = headerSets.from(tuple.getBindingNames());
+				assured = headerSets.from(tuple.getAssuredBindingNames());
+				if (tuple instanceof StatementPattern pattern) {
+					Var context = pattern.getContextVar();
+					if (PrivateGraphContextRole.isPrivateContext(pattern, context)) {
+						semantic = addVariable(null, pattern.getSubjectVar());
+						semantic = addVariable(semantic, pattern.getPredicateVar());
+						semantic = addVariable(semantic, pattern.getObjectVar());
+						semanticAssured = addNonconstant(null, pattern.getSubjectVar());
+						semanticAssured = addNonconstant(semanticAssured, pattern.getPredicateVar());
+						semanticAssured = addNonconstant(semanticAssured, pattern.getObjectVar());
+					} else {
+						semantic = ordinary;
+						semanticAssured = assured;
 					}
 				} else {
-					summaries.put(current, updated);
+					ZeroLengthPath path = (ZeroLengthPath) tuple;
+					if (PrivateGraphContextRole.isPrivateContext(path, path.getContextVar())) {
+						semantic = addVariable(null, path.getSubjectVar());
+						semantic = addVariable(semantic, path.getObjectVar());
+					} else {
+						semantic = ordinary;
+					}
+					semanticAssured = semantic;
 				}
-				changedChild = current;
-				current = current.getParentNode();
+			} else if (type == Distinct.class || type == Reduced.class || type == Order.class || type == Slice.class
+					|| type == QueryRoot.class || type == Service.class || type == DescribeOperator.class) {
+				UnaryTupleOperator unary = (UnaryTupleOperator) tuple;
+				TupleHeaders argument = tupleHeaders.get(unary.getArg());
+				ordinary = argument.ordinary();
+				assured = argument.assured();
+				semantic = argument.semantic();
+				semanticAssured = argument.semanticAssured();
+			} else {
+				ordinary = headerSets.from(tuple.getBindingNames());
+				assured = headerSets.from(tuple.getAssuredBindingNames());
+				semantic = ordinary;
+				semanticAssured = assured;
 			}
+			tupleHeaders.put(tuple, new TupleHeaders(ordinary, assured, semantic, semanticAssured));
 		}
 
-		private NodeSafetySummary summarize(QueryModelNode node, List<QueryModelNode> children) {
+		private NameSetNode addVariable(NameSetNode names, Var var) {
+			return var == null || var.getName() == null ? names : headerSets.add(names, var.getName());
+		}
+
+		private NameSetNode addNonconstant(NameSetNode names, Var var) {
+			return var == null || var.isConstant() ? names : addVariable(names, var);
+		}
+
+		private NameSetNode projectedNames(ProjectionElemList list, NameSetNode source, boolean assuredOnly) {
+			NameSetNode result = null;
+			for (ProjectionElem element : list.getElements()) {
+				if (!assuredOnly || headerSets.contains(source, element.getName())) {
+					result = headerSets.add(result, element.getProjectionAlias().orElse(element.getName()));
+				}
+			}
+			return result;
+		}
+
+		private void captureMissingHeaders(TupleExpr root) {
+			if (tupleHeaders.containsKey(root)) {
+				return;
+			}
+			root.visit(new AbstractQueryModelVisitor<RuntimeException>() {
+				@Override
+				protected void meetNode(QueryModelNode node) {
+					if (node instanceof TupleExpr tuple && tupleHeaders.containsKey(tuple)) {
+						return;
+					}
+					super.meetNode(node);
+					if (node instanceof TupleExpr tuple) {
+						captureTupleHeaders(tuple);
+					}
+				}
+
+				@Override
+				public void meet(Graph graph) {
+					meetNode(graph);
+				}
+			});
+		}
+
+		private NodeSafetySummary summarize(QueryModelNode node, List<QueryModelNode> children,
+				boolean inconsistentChildren, boolean typedProjection) {
+			replayDependencyFacts.putIfAbsent(node,
+					node instanceof Projection projection && projection.getInheritedGraphParameter() != null);
 			boolean repeatable = !(node instanceof BNodeGenerator || node instanceof AggregateFunctionCall
 					|| node instanceof Sample || node instanceof Service);
-			boolean fatal = node instanceof Service service && !service.isSilent();
+			boolean unknownScalar = node instanceof ValueExpr && (inconsistentChildren || unknownNodes.contains(node));
 			boolean mappingParameterized = node instanceof ZeroLengthPath || node instanceof ArbitraryLengthPath
 					|| node instanceof Service || node instanceof Lateral || node instanceof TripleRef
 					|| node instanceof Graph
-					|| unknownNodes.contains(node);
+					|| unknownNodes.contains(node) && !(node instanceof ValueExpr);
+			boolean otherMappingInputs = unknownScalar || unknownNodes.contains(node)
+					|| mappingParameterized && !(node instanceof Graph) || node instanceof TupleFunctionCall;
+			NameSetNode graphSelectors = null;
+			if (node.getClass() == Graph.class && !((Graph) node).getGraphName().hasValue()) {
+				String selector = ((Graph) node).getGraphName().getName();
+				if (selector == null) {
+					otherMappingInputs = true;
+				} else {
+					graphSelectors = headerSets.add(null, selector);
+				}
+			}
 			boolean containsLateral = node instanceof Lateral;
 			boolean containsExtension = node instanceof Extension;
+			boolean producerBoundary = node instanceof TupleExpr tuple
+					&& BindingScopePolicy.isProducerInputBoundary(tuple);
+			if (node instanceof UnaryTupleOperator unary && !unknownNodes.contains(node)
+					&& BindingScopePolicy.forwardsProducerInput(unary)) {
+				NodeSafetySummary argument = summaries.get(unary.getArg());
+				producerBoundary |= argument != null && argument.producerBoundary;
+			}
 			NodeSafetySummary[] capturedChildren = children.isEmpty() ? NO_CHILDREN
 					: new NodeSafetySummary[children.size()];
 
@@ -736,10 +2525,9 @@ public class QueryEvaluationUtility {
 				NodeSafetySummary childSummary = summaries.get(child);
 				capturedChildren[i] = childSummary;
 				repeatable &= childSummary.repeatable;
-				if (!(node instanceof Service)) {
-					fatal |= childSummary.mayRaiseQueryFatalError;
-				}
 				mappingParameterized |= childSummary.mappingParameterized;
+				otherMappingInputs |= childSummary.otherMappingInputs;
+				graphSelectors = headerSets.union(graphSelectors, childSummary.graphSelectors);
 				containsLateral |= childSummary.containsLateral;
 				containsExtension |= childSummary.containsExtension;
 			}
@@ -754,30 +2542,369 @@ public class QueryEvaluationUtility {
 								: null;
 				repeatable &= function != null && QueryEvaluationUtility.isRepeatable(function, policy);
 			}
-			if (node instanceof TupleExpr && unknownNodes.contains(node)) {
+			if (node instanceof TupleExpr && unknownNodes.contains(node) || unknownScalar) {
 				repeatable = false;
-				fatal = true;
 			}
 
-			return new NodeSafetySummary(repeatable, fatal, mappingParameterized, containsLateral,
-					containsExtension, isBindingInjectionShape(node, capturedChildren),
+			GraphInputs graphInputs = captureGraphInputs(node, capturedChildren, typedProjection);
+			GraphCarrier graphCarrier = node instanceof Join join ? captureGraphCarrier(join) : GraphCarrier.NONE;
+			FatalEffects effects = captureFatalEffects(node, children, unknownScalar, graphCarrier);
+			LocalOutputs outputs = captureLocalOutputs(node);
+			return new NodeSafetySummary(repeatable, effects.hardFatal(), effects.endpointInputs(),
+					effects.rightSafeWhenLeftEmpty(), outputs, graphInputs, graphCarrier,
+					mappingParameterized, otherMappingInputs, graphSelectors, producerBoundary, containsLateral,
+					containsExtension, !unknownNodes.contains(node) && !unknownScalar
+							&& isBindingInjectionShape(node, capturedChildren),
 					captureNameInputs(node, capturedChildren));
 		}
 
+		private enum GraphCarrier {
+			NONE,
+			LEFT,
+			RIGHT,
+			UNKNOWN
+		}
+
+		/** First SELECT graph callers only; names are structurally shared for this capture generation. */
+		private record GraphInputs(NameSetNode callers, boolean known) {
+		}
+
+		private GraphInputs captureGraphInputs(QueryModelNode node, NodeSafetySummary[] children,
+				boolean typedProjection) {
+			boolean known = !unknownNodes.contains(node);
+			NameSetNode callers = null;
+			if (typedProjection && ((Projection) node).isSubquery()) {
+				Projection projection = (Projection) node;
+				Var caller = projection.getProjectionContext();
+				if (caller != null && !caller.hasValue() && projection.getInheritedGraphParameter() != null) {
+					if (caller.getName() == null) {
+						known = false;
+					} else {
+						callers = headerSets.add(null, caller.getName());
+					}
+				}
+				return new GraphInputs(callers, known);
+			}
+			for (NodeSafetySummary child : children) {
+				callers = headerSets.union(callers, child.graphInputs.callers());
+				known &= child.graphInputs.known();
+			}
+			return new GraphInputs(callers, known);
+		}
+
+		private GraphCarrier captureGraphCarrier(Join join) {
+			if (unknownNodes.contains(join)) {
+				return GraphCarrier.UNKNOWN;
+			}
+			NodeSafetySummary left = summaries.get(join.getLeftArg());
+			NodeSafetySummary right = summaries.get(join.getRightArg());
+			if (!left.graphInputs.known() || !right.graphInputs.known()) {
+				return GraphCarrier.UNKNOWN;
+			}
+			boolean rightDependsOnLeft = headerSets.intersects(right.graphInputs.callers(),
+					tupleHeaders.get(join.getLeftArg()).ordinary());
+			boolean leftDependsOnRight = headerSets.intersects(left.graphInputs.callers(),
+					tupleHeaders.get(join.getRightArg()).ordinary());
+			return rightDependsOnLeft ? GraphCarrier.LEFT : leftDependsOnRight ? GraphCarrier.RIGHT : GraphCarrier.NONE;
+		}
+
+		/** An unresolved name is fatal unless an enclosing, proven parameter edge supplies a local value. */
+		private record FatalEffects(boolean hardFatal, NameSetNode endpointInputs, boolean rightSafeWhenLeftEmpty) {
+			private FatalEffects(boolean hardFatal, NameSetNode endpointInputs) {
+				this(hardFatal, endpointInputs, false);
+			}
+		}
+
+		/** Names produced independently of an invocation input; possible names may be incomplete for opaque nodes. */
+		private record LocalOutputs(NameSetNode nonNull, NameSetNode possible, boolean possibleKnown,
+				NameSetNode actualPossible) {
+			private static final LocalOutputs UNKNOWN = new LocalOutputs(null, null, false);
+
+			private LocalOutputs(NameSetNode nonNull, NameSetNode possible, boolean possibleKnown) {
+				this(nonNull, possible, possibleKnown, possible);
+			}
+		}
+
+		private record CallerWrites(NameSetNode targets, boolean known) {
+			private static final CallerWrites EMPTY = new CallerWrites(null, true);
+			private static final CallerWrites UNKNOWN = new CallerWrites(null, false);
+		}
+
+		/** Replacement targets use the same output classification as the ordinary caller recipe. */
+		private CallerWrites captureCallerWrites(TupleExpr expression, CallerOutputKind kind) {
+			if (unknownNodes.contains(expression) || kind == null) {
+				return CallerWrites.UNKNOWN;
+			}
+			return switch (kind) {
+			case LEAF -> CallerWrites.EMPTY;
+			case LEFT ->
+				capturedCallerWrites.getOrDefault(((Difference) expression).getLeftArg(), CallerWrites.UNKNOWN);
+			case BINARY -> {
+				BinaryTupleOperator binary = (BinaryTupleOperator) expression;
+				CallerWrites left = capturedCallerWrites.getOrDefault(binary.getLeftArg(), CallerWrites.UNKNOWN);
+				CallerWrites right = capturedCallerWrites.getOrDefault(binary.getRightArg(), CallerWrites.UNKNOWN);
+				yield combineCallerWrites(left, right);
+			}
+			case OPTIONAL -> {
+				LeftJoin optional = (LeftJoin) expression;
+				CallerWrites left = capturedCallerWrites.getOrDefault(optional.getLeftArg(), CallerWrites.UNKNOWN);
+				CallerWrites right = capturedCallerWrites.getOrDefault(optional.getRightArg(), CallerWrites.UNKNOWN);
+				CallerWrites combined = combineCallerWrites(left, right);
+				NameDomain mask = optionalInputNames.captured.get(optional);
+				if (!combined.known() || !(mask instanceof CapturedNameDomain captured)) {
+					yield CallerWrites.UNKNOWN;
+				}
+				NameSetNode targets = headerSets.union(combined.targets(), captured.root);
+				yield targets == null ? CallerWrites.EMPTY : new CallerWrites(targets, true);
+			}
+			case UNARY, GRAPH -> capturedCallerWrites.getOrDefault(((UnaryTupleOperator) expression).getArg(),
+					CallerWrites.UNKNOWN);
+			case EXTENSION -> {
+				Extension extension = (Extension) expression;
+				CallerWrites base = capturedCallerWrites.getOrDefault(extension.getArg(), CallerWrites.UNKNOWN);
+				if (!base.known()) {
+					yield CallerWrites.UNKNOWN;
+				}
+				NameSetNode targets = base.targets();
+				for (ExtensionElem element : extension.getElements()) {
+					if (element.getName() != null && TupleExprs.isEvaluatedExtensionElement(element)) {
+						targets = headerSets.add(targets, element.getName());
+					}
+				}
+				yield targets == null ? CallerWrites.EMPTY : new CallerWrites(targets, true);
+			}
+			// Parent retention and aliases are not established by the ordinary MAY-dependency recipe.
+			case PROJECTION, MULTI_PROJECTION, UNKNOWN -> CallerWrites.UNKNOWN;
+			};
+		}
+
+		private CallerWrites combineCallerWrites(CallerWrites left, CallerWrites right) {
+			if (!left.known() || !right.known()) {
+				return CallerWrites.UNKNOWN;
+			}
+			NameSetNode targets = headerSets.union(left.targets(), right.targets());
+			return targets == null ? CallerWrites.EMPTY : new CallerWrites(targets, true);
+		}
+
+		private FatalEffects captureFatalEffects(QueryModelNode node, List<QueryModelNode> children,
+				boolean unknownScalar, GraphCarrier graphCarrier) {
+			boolean hard = unknownScalar || node instanceof TupleExpr && unknownNodes.contains(node);
+			NameSetNode pending = null;
+			if (node instanceof Service service) {
+				Var ref = service.getServiceRef();
+				NodeSafetySummary refFacts = ref == null ? null : summaries.get(ref);
+				// The remote body is governed by SERVICE's own SILENT behavior; its reference is evaluated locally.
+				hard |= !service.isSilent() || refFacts == null || !containsIdentity(children, ref)
+						|| refFacts.mayRaiseQueryFatalError;
+				if (service.isSilent() && ref != null && !ref.hasValue()) {
+					if (ref.getName() == null) {
+						hard = true;
+					} else {
+						pending = headerSets.add(null, ref.getName());
+					}
+				}
+				return new FatalEffects(hard, pending);
+			}
+
+			for (QueryModelNode child : children) {
+				NodeSafetySummary facts = summaries.get(child);
+				hard |= facts.hardFatal;
+				pending = headerSets.union(pending, facts.endpointInputs);
+			}
+			if (pending == null) {
+				return new FatalEffects(hard, null);
+			}
+			if (unknownNodes.contains(node) || !(node instanceof TupleExpr tuple)
+					|| !BindingScopePolicy.forwardsServiceEndpointInputs(tuple)) {
+				return new FatalEffects(true, null);
+			}
+			if (node instanceof Join || node instanceof LeftJoin) {
+				BinaryTupleOperator join = (BinaryTupleOperator) node;
+				NodeSafetySummary left = summaries.get(join.getLeftArg());
+				NodeSafetySummary right = summaries.get(join.getRightArg());
+				boolean carriesLeftInput = graphCarrier != GraphCarrier.RIGHT && graphCarrier != GraphCarrier.UNKNOWN;
+				NameSetNode remaining = carriesLeftInput
+						? headerSets.difference(right.endpointInputs, left.localOutputs.nonNull())
+						: right.endpointInputs;
+				// Only an actual non-null output at this parameter edge discharges a conditional effect. Do not
+				// confuse subsequently blocked/cleared names, effects of the left operand, or independent evaluation
+				// of the right operand with that edge-specific proof.
+				boolean rightSafeWhenLeftEmpty = carriesLeftInput && !right.hardFatal
+						&& right.endpointInputs != null && remaining == null;
+				if (graphCarrier == GraphCarrier.UNKNOWN && right.endpointInputs != null) {
+					hard = true;
+				}
+				if (remaining != null && !left.localOutputs.possibleKnown()) {
+					hard = true;
+					remaining = null;
+				} else if (headerSets.intersects(remaining, left.localOutputs.possible())) {
+					// A nullable or overwritten local value cannot be replaced by a different outer parameter as proof.
+					hard = true;
+					remaining = headerSets.difference(remaining, left.localOutputs.possible());
+				}
+				pending = headerSets.union(left.endpointInputs, remaining);
+				for (QueryModelNode child : children) {
+					if (child != join.getLeftArg() && child != join.getRightArg()
+							&& summaries.get(child).endpointInputs != null) {
+						hard = true;
+					}
+				}
+				return new FatalEffects(hard, pending, rightSafeWhenLeftEmpty);
+			}
+			if (node instanceof Union union) {
+				NameSetNode left = summaries.get(union.getLeftArg()).endpointInputs;
+				NameSetNode right = summaries.get(union.getRightArg()).endpointInputs;
+				return new FatalEffects(hard, headerSets.union(left, right));
+			}
+			if (node instanceof UnaryTupleOperator unary && (node instanceof Filter || node instanceof Extension
+					|| node instanceof QueryRoot || node instanceof Projection)) {
+				NameSetNode argument = summaries.get(unary.getArg()).endpointInputs;
+				for (QueryModelNode child : children) {
+					if (child != unary.getArg() && summaries.get(child).endpointInputs != null) {
+						hard = true;
+					}
+				}
+				if (node instanceof Projection projection) {
+					NameSetNode sources = null;
+					for (ProjectionElem element : projection.getProjectionElemList().getElements()) {
+						if (element.getName() != null) {
+							sources = headerSets.add(sources, element.getName());
+						}
+					}
+					hard |= headerSets.difference(argument, sources) != null;
+					argument = headerSets.intersect(argument, sources);
+				}
+				return new FatalEffects(hard, argument);
+			}
+			// No evidence that this operator carries the endpoint input through its own evaluation boundary.
+			return new FatalEffects(true, null);
+		}
+
+		private LocalOutputs captureLocalOutputs(QueryModelNode node) {
+			if (!(node instanceof TupleExpr tuple) || unknownNodes.contains(node)) {
+				return LocalOutputs.UNKNOWN;
+			}
+			if (tuple instanceof BindingSetAssignment assignment) {
+				TupleHeaders headers = tupleHeaders.get(tuple);
+				NameSetNode actualPossible = headerSets.from(assignment.getPossibleBindingNames());
+				NameSetNode possible = headerSets.union(headers.ordinary(), actualPossible);
+				return new LocalOutputs(headerSets.intersect(headers.assured(), headers.ordinary()), possible,
+						assignment.hasRepeatableBindingSets(), actualPossible);
+			}
+			if (tuple instanceof StatementPattern pattern) {
+				NameSetNode nonNull = addNonconstant(null, pattern.getSubjectVar());
+				nonNull = addNonconstant(nonNull, pattern.getPredicateVar());
+				nonNull = addNonconstant(nonNull, pattern.getObjectVar());
+				NameSetNode actualPossible = nonNull;
+				// A nonconstant valued Var is restored by statement evaluation, even for a null physical context.
+				// An unfixed context can instead produce no RDF binding, and query constants are never outputs.
+				Var context = pattern.getContextVar();
+				if (!PrivateGraphContextRole.isPrivateContext(pattern, context)) {
+					actualPossible = addNonconstant(actualPossible, context);
+					if (context != null && context.hasValue()) {
+						nonNull = addNonconstant(nonNull, context);
+					}
+				}
+				TupleHeaders headers = tupleHeaders.get(tuple);
+				return new LocalOutputs(nonNull, headers.ordinary(), true, actualPossible);
+			}
+			if (tuple instanceof SingletonSet || tuple instanceof EmptySet) {
+				return new LocalOutputs(null, null, true);
+			}
+			if (tuple instanceof Join join) {
+				LocalOutputs left = summaries.get(join.getLeftArg()).localOutputs;
+				LocalOutputs right = summaries.get(join.getRightArg()).localOutputs;
+				return new LocalOutputs(headerSets.union(left.nonNull(), right.nonNull()),
+						headerSets.union(left.possible(), right.possible()),
+						left.possibleKnown() && right.possibleKnown(),
+						headerSets.union(left.actualPossible(), right.actualPossible()));
+			}
+			if (tuple instanceof Union union) {
+				LocalOutputs left = summaries.get(union.getLeftArg()).localOutputs;
+				LocalOutputs right = summaries.get(union.getRightArg()).localOutputs;
+				return new LocalOutputs(headerSets.intersect(left.nonNull(), right.nonNull()),
+						headerSets.union(left.possible(), right.possible()),
+						left.possibleKnown() && right.possibleKnown(),
+						headerSets.union(left.actualPossible(), right.actualPossible()));
+			}
+			if (tuple instanceof LeftJoin join) {
+				LocalOutputs left = summaries.get(join.getLeftArg()).localOutputs;
+				LocalOutputs right = summaries.get(join.getRightArg()).localOutputs;
+				return new LocalOutputs(left.nonNull(), headerSets.union(left.possible(), right.possible()),
+						left.possibleKnown() && right.possibleKnown(),
+						headerSets.union(left.actualPossible(), right.actualPossible()));
+			}
+			if (tuple instanceof Projection projection) {
+				LocalOutputs argument = summaries.get(projection.getArg()).localOutputs;
+				return new LocalOutputs(projectedNames(projection.getProjectionElemList(), argument.nonNull(), true),
+						tupleHeaders.get(tuple).ordinary(), true);
+			}
+			if (tuple instanceof Extension extension) {
+				LocalOutputs argument = summaries.get(extension.getArg()).localOutputs;
+				NameSetNode nonNull = argument.nonNull();
+				NameSetNode possible = argument.possible();
+				NameSetNode actualPossible = argument.actualPossible();
+				for (ExtensionElem element : extension.getElements()) {
+					String target = element.getName();
+					if (target == null || !TupleExprs.isEvaluatedExtensionElement(element)) {
+						continue;
+					}
+					ValueExpr expression = element.getExpr();
+					boolean guaranteed = !unknownNodes.contains(expression)
+							&& (expression instanceof ValueConstant constant && constant.getValue() != null
+									|| expression instanceof Var variable && (variable.hasValue()
+											|| variable.getName() != null
+													&& headerSets.contains(nonNull, variable.getName())));
+					nonNull = headerSets.remove(nonNull, target);
+					possible = headerSets.add(possible, target);
+					actualPossible = headerSets.add(actualPossible, target);
+					if (guaranteed) {
+						nonNull = headerSets.add(nonNull, target);
+					}
+				}
+				return new LocalOutputs(nonNull, possible, argument.possibleKnown(), actualPossible);
+			}
+			if (tuple instanceof Filter || tuple instanceof QueryRoot || tuple instanceof Distinct
+					|| tuple instanceof Reduced || tuple instanceof org.eclipse.rdf4j.query.algebra.Order
+					|| tuple instanceof Slice) {
+				return summaries.get(((UnaryTupleOperator) tuple).getArg()).localOutputs;
+			}
+			// In particular, SILENT SERVICE can return only its input when its remote body fails.
+			return LocalOutputs.UNKNOWN;
+		}
+
 		private NameFactInputs captureNameInputs(QueryModelNode node, NodeSafetySummary[] children) {
+			if (node instanceof TupleExpr && unknownNodes.contains(node)) {
+				// Unknown operators can deliberately omit children. Their injection proof is already rejected, so
+				// never apply a base operator's assumptions to references the visitor did not expose.
+				return new NameFactInputs(NameOperation.OTHER, true, null, null, null, children,
+						null, null, null, ExtensionNameInput.NONE, false);
+			}
 			NameOperation operation = NameOperation.OTHER;
 			String localName = null;
 			Set<String> assuredNames = null;
+			Set<String> possibleNames = null;
 			NodeSafetySummary argument = null;
+			NodeSafetySummary rightArgument = null;
 			NodeSafetySummary condition = null;
 			ExtensionNameInput[] extensionElements = ExtensionNameInput.NONE;
 			if (node instanceof Var variable) {
 				operation = NameOperation.VARIABLE;
 				localName = variable.hasValue() ? null : variable.getName();
+			} else if (node instanceof SubQueryValueOperator) {
+				operation = NameOperation.SUBQUERY_VALUE;
 			} else if (node instanceof StatementPattern || node instanceof BindingSetAssignment
 					|| node instanceof SingletonSet || node instanceof EmptySet) {
-				operation = NameOperation.LEAF;
+				operation = node instanceof StatementPattern ? NameOperation.STATEMENT_PATTERN : NameOperation.LEAF;
+				if (node instanceof StatementPattern pattern) {
+					localName = BindingScopePolicy.statementContextBindingName(pattern);
+				}
 				assuredNames = Set.copyOf(((TupleExpr) node).getAssuredBindingNames());
+				Set<String> possible = new HashSet<>(((TupleExpr) node).getBindingNames());
+				if (node instanceof BindingSetAssignment assignment) {
+					possible.addAll(assignment.getPossibleBindingNames());
+				}
+				possibleNames = Set.copyOf(possible);
 			} else if (node instanceof Join) {
 				operation = NameOperation.JOIN;
 			} else if (node instanceof Union) {
@@ -789,6 +2916,7 @@ public class QueryEvaluationUtility {
 			} else if (node instanceof LeftJoin leftJoin) {
 				operation = NameOperation.LEFT_JOIN;
 				argument = summaries.get(leftJoin.getLeftArg());
+				rightArgument = summaries.get(leftJoin.getRightArg());
 				condition = leftJoin.hasCondition() ? summaries.get(leftJoin.getCondition()) : null;
 			} else if (node instanceof Extension extension) {
 				operation = NameOperation.EXTENSION;
@@ -803,16 +2931,18 @@ public class QueryEvaluationUtility {
 				localName = element.getName();
 			}
 			boolean tupleExpression = node instanceof TupleExpr;
-			if (children.length == 0) {
+			boolean producerBoundary = node instanceof TupleExpr tuple
+					&& BindingScopePolicy.isProducerInputBoundary(tuple);
+			if (children.length == 0 && !producerBoundary) {
 				if (!tupleExpression && localName == null && assuredNames == null) {
 					return NameFactInputs.EMPTY_VALUE;
 				}
-				if (operation == NameOperation.LEAF && assuredNames.isEmpty()) {
+				if (operation == NameOperation.LEAF && assuredNames.isEmpty() && possibleNames.isEmpty()) {
 					return NameFactInputs.EMPTY_TUPLE;
 				}
 			}
-			return new NameFactInputs(operation, tupleExpression, localName, assuredNames,
-					children, argument, condition, extensionElements);
+			return new NameFactInputs(operation, tupleExpression, localName, assuredNames, possibleNames,
+					children, argument, rightArgument, condition, extensionElements, producerBoundary);
 		}
 
 		private static List<QueryModelNode> childrenOf(QueryModelNode node) {
@@ -840,19 +2970,92 @@ public class QueryEvaluationUtility {
 			return false;
 		}
 
-		private static boolean isBindingInjectionShape(QueryModelNode node,
-				NodeSafetySummary[] children) {
-			if (!(node instanceof TupleExpr)) {
+		private boolean hasInconsistentChildren(QueryModelNode node, List<QueryModelNode> children) {
+			if (node instanceof FunctionCall call) {
+				return !FilterBindingScope.functionArgumentsMatchChildren(call, children);
+			}
+			if (!(node instanceof TupleExpr tuple)) {
+				return false;
+			}
+			if ((tuple instanceof SingletonSet || tuple instanceof EmptySet || tuple instanceof BindingSetAssignment)
+					&& !children.isEmpty()) {
 				return true;
 			}
-			if (node instanceof StatementPattern || node instanceof BindingSetAssignment
-					|| node instanceof SingletonSet) {
+			if (tuple instanceof StatementPattern pattern) {
+				Var subject = pattern.getSubjectVar();
+				Var predicate = pattern.getPredicateVar();
+				Var object = pattern.getObjectVar();
+				Var context = pattern.getContextVar();
+				if (subject != null && !containsIdentity(children, subject)
+						|| predicate != null && !containsIdentity(children, predicate)
+						|| object != null && !containsIdentity(children, object)
+						|| context != null && !containsIdentity(children, context)) {
+					return true;
+				}
+				for (QueryModelNode child : children) {
+					if (child != subject && child != predicate && child != object && child != context) {
+						return true;
+					}
+				}
+			}
+			if (tuple instanceof UnaryTupleOperator unary && !containsIdentity(children, unary.getArg())) {
+				return true;
+			}
+			if (tuple instanceof BinaryTupleOperator binary && (!containsIdentity(children, binary.getLeftArg())
+					|| !containsIdentity(children, binary.getRightArg()))) {
+				return true;
+			}
+			if (tuple instanceof Filter filter && !containsIdentity(children, filter.getCondition())) {
+				return true;
+			}
+			if (tuple instanceof LeftJoin leftJoin && leftJoin.hasCondition()
+					&& !containsIdentity(children, leftJoin.getCondition())) {
+				return true;
+			}
+			if (tuple instanceof Extension extension && !extension.getElements().isEmpty()) {
+				Set<QueryModelNode> directChildren = identitySet();
+				directChildren.addAll(children);
+				for (ExtensionElem element : extension.getElements()) {
+					List<QueryModelNode> expressionChildren = childrenByNode.get(element);
+					if (!directChildren.contains(element) || expressionChildren == null
+							|| !containsIdentity(expressionChildren, element.getExpr())) {
+						return true;
+					}
+				}
+			}
+			return false;
+		}
+
+		private boolean isBindingInjectionShape(QueryModelNode node,
+				NodeSafetySummary[] children) {
+			if (!(node instanceof TupleExpr)) {
+				if (node instanceof ValueExpr expression && !FilterBindingScope.scalarReadsAreExplicit(expression)) {
+					return false;
+				}
+				for (NodeSafetySummary child : children) {
+					if (!child.injectionShapeSafe) {
+						return false;
+					}
+				}
+				return true;
+			}
+			if (node instanceof BindingSetAssignment assignment && assignment.getBindingSets() != null
+					&& !assignment.hasRepeatableBindingSets()) {
+				// A streaming source may contain names that are not in its declared header.
+				return false;
+			}
+			if (BindingScopePolicy.isRelationalBindingLeaf((TupleExpr) node)) {
+				for (QueryModelNode child : childrenByNode.getOrDefault(node, List.of())) {
+					if (unknownNodes.contains(child) || !childrenByNode.getOrDefault(child, List.of()).isEmpty()) {
+						return false;
+					}
+				}
 				return true;
 			}
 			if (node instanceof Join || node instanceof Union || node instanceof LeftJoin || node instanceof Filter
 					|| node instanceof Extension) {
 				for (NodeSafetySummary child : children) {
-					if (child.nameInputs.tupleExpression && !child.injectionShapeSafe) {
+					if (!child.injectionShapeSafe) {
 						return false;
 					}
 				}
@@ -908,15 +3111,26 @@ public class QueryEvaluationUtility {
 					? nameSets.add(null, inputs.localName)
 					: null;
 			NameSetNode unsafe = null;
+			NameSetNode hardHazards = null;
 			NameSetNode targets = null;
 			NameSetNode assured = inputs.assuredNames == null ? null : nameSets.from(inputs.assuredNames);
+			NameSetNode possible = inputs.possibleNames == null ? null : nameSets.from(inputs.possibleNames);
+			NameSetNode lookups = null;
 			boolean firstTupleChild = true;
 			for (NodeSafetySummary child : inputs.children) {
 				BindingNameFacts facts = child.nameInputs.materialized;
 				referenced = nameSets.union(referenced, facts.referencedVariableNames);
 				if (child.nameInputs.tupleExpression) {
+					lookups = nameSets.union(lookups, facts.physicalLookupNames);
+					if (inputs.operation == NameOperation.SUBQUERY_VALUE) {
+						// EXISTS and comparison subqueries also correlate through declared VALUES columns, which do not
+						// necessarily have Var nodes. Keep every possible tuple name in the read proof.
+						referenced = nameSets.union(referenced, facts.possibleBindingNames);
+					}
 					unsafe = nameSets.union(unsafe, facts.unsafeInjectionNames);
+					hardHazards = nameSets.union(hardHazards, facts.hardInjectionHazards);
 					targets = nameSets.union(targets, facts.injectionTargets);
+					possible = nameSets.union(possible, facts.possibleBindingNames);
 					if (inputs.operation == NameOperation.JOIN) {
 						assured = nameSets.union(assured, facts.assuredBindingNames);
 					} else if (inputs.operation == NameOperation.UNION) {
@@ -926,46 +3140,738 @@ public class QueryEvaluationUtility {
 					firstTupleChild = false;
 				}
 			}
+			if (inputs.operation == NameOperation.STATEMENT_PATTERN) {
+				// Valued variables are fixed by the pattern and cannot consume a caller's lookup constraint.
+				lookups = referenced;
+				if (inputs.localName != null) {
+					// A default context can export no RDF binding, and NIL selectors can enter a default context even
+					// for a named-context scan. A borrowed context restriction is not an independent compatible join.
+					NameSetNode context = nameSets.add(null, inputs.localName);
+					unsafe = nameSets.union(unsafe, context);
+					hardHazards = nameSets.union(hardHazards, context);
+					lookups = nameSets.difference(lookups, context);
+				}
+			}
 			NameSetNode assuredByArg = inputs.argument == null ? null
 					: inputs.argument.nameInputs.materialized.assuredBindingNames;
 			if (inputs.operation == NameOperation.FILTER || inputs.operation == NameOperation.LEFT_JOIN) {
 				assured = assuredByArg;
 			}
 			if (inputs.condition != null) {
-				unsafe = nameSets.union(unsafe, nameSets.difference(
-						inputs.condition.nameInputs.materialized.referencedVariableNames, assuredByArg));
+				NameSetNode conditionHazards = nameSets.difference(
+						inputs.condition.nameInputs.materialized.referencedVariableNames, assuredByArg);
+				unsafe = nameSets.union(unsafe, conditionHazards);
+				if (inputs.operation != NameOperation.FILTER) {
+					hardHazards = nameSets.union(hardHazards, conditionHazards);
+				}
+			}
+			if (inputs.operation == NameOperation.LEFT_JOIN) {
+				NameSetNode rightPossible = inputs.rightArgument.nameInputs.materialized.possibleBindingNames;
+				NameSetNode fallback = BindingScopePolicy.optionalFallbackSensitiveNames(rightPossible,
+						assuredByArg, nameSets::difference);
+				unsafe = nameSets.union(unsafe, fallback);
+				hardHazards = nameSets.union(hardHazards, fallback);
 			}
 			if (inputs.operation == NameOperation.EXTENSION) {
 				assured = assuredByArg;
 				for (ExtensionNameInput element : inputs.extensionElements) {
 					assured = nameSets.remove(assured, element.target);
 					targets = nameSets.add(targets, element.target);
-					unsafe = nameSets.union(unsafe, nameSets.difference(
-							element.expression.nameInputs.materialized.referencedVariableNames, assuredByArg));
+					possible = nameSets.add(possible, element.target);
+					NameSetNode expressionHazards = nameSets.difference(
+							element.expression.nameInputs.materialized.referencedVariableNames, assuredByArg);
+					unsafe = nameSets.union(unsafe, expressionHazards);
+					hardHazards = nameSets.union(hardHazards, expressionHazards);
 				}
 			}
-			return new BindingNameFacts(unsafe, targets, assured, referenced);
+			if (inputs.producerBoundary) {
+				// The boundary belongs to this subtree, not its binary ancestors. Names used or produced inside it
+				// cannot be supplied by an outer sibling's ordinary input or physical probe.
+				NameSetNode privateNames = nameSets.union(possible, referenced);
+				unsafe = nameSets.union(unsafe, privateNames);
+				hardHazards = nameSets.union(hardHazards, privateNames);
+				lookups = nameSets.difference(lookups, privateNames);
+			}
+			return new BindingNameFacts(unsafe, hardHazards, targets, assured, possible, referenced, lookups);
 		}
 
-		public boolean isRepeatable(QueryModelNode node) {
+		public synchronized boolean isRepeatable(QueryModelNode node) {
 			node = ensureNode(node);
 			return summaries.get(node).repeatable;
 		}
 
-		public boolean mayRaiseQueryFatalError(QueryModelNode node) {
+		public synchronized boolean mayRaiseQueryFatalError(QueryModelNode node) {
 			node = ensureNode(node);
 			return summaries.get(node).mayRaiseQueryFatalError;
 		}
 
-		public boolean usesMappingParameterizedEvaluation(QueryModelNode node) {
+		private synchronized boolean canDiscardParameterizedRightOnEmptyLeft(BinaryTupleOperator join) {
+			return summaries.get(ensureNode(join)).rightSafeWhenLeftEmpty;
+		}
+
+		private synchronized Boolean preparedGraphCarrierOnLeft(Join join) {
+			GraphCarrier carrier = summaries.get(ensureNode(join)).graphCarrier;
+			return carrier == GraphCarrier.UNKNOWN ? null : carrier != GraphCarrier.RIGHT;
+		}
+
+		public synchronized boolean usesMappingParameterizedEvaluation(QueryModelNode node) {
 			node = ensureNode(node);
 			return summaries.get(node).mappingParameterized;
 		}
 
-		public boolean permitsBindingInjection(TupleExpr node, Set<String> injectedNames) {
+		private synchronized boolean needsSiblingMappingParameters(TupleExpr operand, TupleExpr sibling) {
+			NodeSafetySummary summary = summaries.get(ensureNode(operand));
+			if (!summary.mappingParameterized) {
+				return false;
+			}
+			if (summary.otherMappingInputs || !summary.repeatable || summary.mayRaiseQueryFatalError) {
+				return true;
+			}
+			if (summary.graphSelectors == null) {
+				return false;
+			}
+			captureMissingHeaders(sibling);
+			synchronized (headerSets) {
+				return headerSets.intersects(summary.graphSelectors, tupleHeaders.get(sibling).ordinary());
+			}
+		}
+
+		private synchronized boolean hasProducerInputBoundary(TupleExpr node) {
+			return summaries.get(ensureNode(node)).producerBoundary;
+		}
+
+		public synchronized boolean isUnknownTupleOperator(TupleExpr node) {
+			return unknownNodes.contains(ensureNode(node));
+		}
+
+		private synchronized boolean hasUnknownLocalScalarReads(ValueExpr node) {
+			// The body is captured before its substitution walk. A missing node must fail closed without recapturing
+			// each scalar subtree, which would also cross nested EXISTS invocation boundaries.
+			return !summaries.containsKey(node) || unknownNodes.contains(node)
+					|| !FilterBindingScope.scalarReadsAreExplicit(node);
+		}
+
+		public synchronized boolean requiresScopedFilterInput(TupleExpr owner) {
+			QueryModelNode prepared = ensureNode(owner);
+			ensureScopedBindingFacts();
+			return filterInputOwners.contains(prepared);
+		}
+
+		public synchronized boolean requiresBindingFrameReplayPartition(TupleExpr subtree) {
+			QueryModelNode prepared = ensureNode(subtree);
+			if (summaries.get(prepared).mappingParameterized) {
+				return true;
+			}
+			ensureScopedBindingFacts();
+			return replayDependentNodes.contains(prepared);
+		}
+
+		public synchronized boolean mayIntroduceFilterInput(TupleExpr subtree, Set<String> siblingNames,
+				boolean unknownSiblingNames) {
+			QueryModelNode prepared = ensureNode(subtree);
+			ensureScopedBindingFacts();
+			if (unknownPotentialFilterInputs.contains(prepared)) {
+				return unknownSiblingNames || !siblingNames.isEmpty();
+			}
+			synchronized (headerSets) {
+				if (unknownSiblingNames) {
+					return potentialFilterInputs.get(prepared) != null;
+				}
+				return headerSets.intersects(potentialFilterInputs.get(prepared), siblingNames);
+			}
+		}
+
+		private record OwnerDemand(NameSetNode names, boolean unknown, NameSetNode excluded) {
+		}
+
+		/** FILTER reads eligible for an enclosing physical restriction, plus independent non-dischargeable vetoes. */
+		private record FilterLookupFacts(NameSetNode unresolved, NameSetNode veto) {
+		}
+
+		/** Nearest-first lexical inputs with separate declaration and producer coverage blocks. */
+		private record ScopePath(QueryModelNode owner, NameSetNode declared, NameSetNode allNames,
+				NameSetNode possible, NameSetNode assured, boolean producersKnown, int size, ScopePath[] jumps,
+				NameSetNode[] blocks, NameSetNode[] producerBlocks) {
+		}
+
+		private synchronized void ensureScopedBindingFacts() {
+			if (scopedBindingFactsInitialized) {
+				return;
+			}
+			filterScopePaths.clear();
+			subqueryFilters.clear();
+			Map<QueryModelNode, List<QueryModelNode>> children = new IdentityHashMap<>();
+			Deque<QueryModelNode> pending = new ArrayDeque<>();
+			for (QueryModelNode node : capturedScopeNodes.keySet()) {
+				QueryModelNode parent = capturedParentByNode.get(node);
+				if (parent == null || !capturedScopeNodes.containsKey(parent)) {
+					pending.push(node);
+				} else {
+					children.computeIfAbsent(parent, ignored -> new ArrayList<>()).add(node);
+				}
+			}
+			List<QueryModelNode> order = new ArrayList<>(capturedScopeNodes.size());
+			while (!pending.isEmpty()) {
+				QueryModelNode node = pending.pop();
+				order.add(node);
+				pending.addAll(children.getOrDefault(node, List.of()));
+			}
+			Map<Filter, BindingScopePolicy.PotentialNameFacts<NameSetNode>> localInputs = new IdentityHashMap<>();
+			for (Map.Entry<Filter, CapturedFilter> entry : capturedFilters.entrySet()) {
+				CapturedFilter filter = entry.getValue();
+				boolean restricted = !filter.explicitScope().isAuto() && !filter.explicitScope().retainsAllBindings();
+				BindingScopePolicy.PotentialNameFacts<NameSetNode> potential = BindingScopePolicy.potentialFilterInputs(
+						filter.conditionFacts().reads(), filter.conditionFacts().complete(), restricted,
+						headerSets.from(filter.explicitScope().bindingNames()),
+						filter.argument().assured(), headerSets::intersect, headerSets::difference);
+				localInputs.put(entry.getKey(), potential);
+			}
+			Set<QueryModelNode> containsDemand = identitySet();
+			for (int i = order.size() - 1; i >= 0; i--) {
+				QueryModelNode node = order.get(i);
+				BindingScopePolicy.PotentialNameFacts<NameSetNode> local = localInputs.get(node);
+				if (local != null && (local.unknownNames() || local.names() != null)) {
+					containsDemand.add(node);
+				}
+				for (QueryModelNode child : children.getOrDefault(node, List.of())) {
+					if (containsDemand.contains(child)) {
+						containsDemand.add(node);
+					}
+				}
+			}
+			Map<QueryModelNode, NameSetNode> ownerContexts = new IdentityHashMap<>();
+			Map<QueryModelNode, ScopePath> scopeContexts = new IdentityHashMap<>();
+			Set<QueryModelNode> insideSubQuery = identitySet();
+			Map<Filter, OwnerDemand> localDemands = new IdentityHashMap<>();
+			for (QueryModelNode node : order) {
+				CapturedScopeNode currentScope = capturedScopeNodes.get(node);
+				NameSetNode context = currentScope.blocksInput() ? null : ownerContexts.get(node);
+				ScopePath scopePath = currentScope.blocksInput() ? null : scopeContexts.get(node);
+				if (node instanceof Filter filter) {
+					if (scopePath != null) {
+						filterScopePaths.put(filter, scopePath);
+					}
+					if (insideSubQuery.contains(node)) {
+						subqueryFilters.add(filter);
+					}
+				}
+				if (node instanceof Filter filter && context != null && capturedFilters.containsKey(filter)) {
+					CapturedFilter captured = capturedFilters.get(filter);
+					BindingScopePolicy.PotentialNameFacts<NameSetNode> potential = localInputs.get(filter);
+					NameSetNode assured = captured.argument().assured();
+					if (headerSets.intersects(context, potential.names())
+							|| potential.unknownNames() && headerSets.hasDifference(context, assured)) {
+						OwnerDemand demand = capturedOwnerDemand(captured, potential, insideSubQuery.contains(node),
+								scopePath);
+						if (matchesOwner(context, demand)) {
+							localDemands.put(filter, demand);
+							markReplayAncestors(filter);
+						}
+					}
+				}
+				for (QueryModelNode child : children.getOrDefault(node, List.of())) {
+					if (insideSubQuery.contains(node) || node instanceof SubQueryValueOperator) {
+						insideSubQuery.add(child);
+					}
+					if (!containsDemand.contains(child)) {
+						continue;
+					}
+					NameSetNode childContext = context;
+					ScopePath childScope = scopePath;
+					if (currentScope.right() == child) {
+						NameSetNode inputs = currentScope.left() == null ? currentScope.lateralInputs()
+								: tupleHeaders.get(currentScope.left()).ordinary();
+						if (currentScope.left() != null) {
+							childContext = headerSets.union(childContext, inputs);
+						}
+						NodeSafetySummary producer = currentScope.left() == null ? null
+								: summaries.get(currentScope.left());
+						LocalOutputs outputs = producer == null ? LocalOutputs.UNKNOWN : producer.localOutputs;
+						boolean known = currentScope.left() == null || outputs.possibleKnown();
+						NameSetNode possible = currentScope.left() == null ? inputs : outputs.actualPossible();
+						if (inputs != null || possible != null || !known) {
+							childScope = addScopeEvent(node, inputs, possible, outputs.nonNull(), known, childScope);
+						}
+					}
+					if (childContext != null) {
+						ownerContexts.put(child, childContext);
+					}
+					if (childScope != null) {
+						scopeContexts.put(child, childScope);
+					}
+				}
+			}
+			for (Map.Entry<QueryModelNode, Boolean> entry : replayDependencyFacts.entrySet()) {
+				if (entry.getValue()) {
+					markReplayAncestors(entry.getKey());
+				}
+			}
+			Map<QueryModelNode, OwnerDemand> demands = new IdentityHashMap<>();
+			for (int i = order.size() - 1; i >= 0; i--) {
+				QueryModelNode node = order.get(i);
+				CapturedScopeNode currentScope = capturedScopeNodes.get(node);
+				captureFilterLookupFacts(node, currentScope, children.getOrDefault(node, List.of()), localDemands);
+				OwnerDemand rightDemand = demands.get(currentScope.right());
+				if (currentScope.left() != null && rightDemand != null
+						&& matchesOwner(tupleHeaders.get(currentScope.left()).ordinary(), rightDemand)) {
+					filterInputOwners.add(node);
+				}
+				if (currentScope.blocksInput()) {
+					continue;
+				}
+				NameSetNode names = null;
+				boolean unknown = false;
+				OwnerDemand demand = null;
+				if (node instanceof Filter filter) {
+					BindingScopePolicy.PotentialNameFacts<NameSetNode> local = localInputs.get(filter);
+					if (local != null) {
+						names = local.names();
+						unknown = local.unknownNames();
+					}
+					demand = localDemands.get(filter);
+				}
+				for (QueryModelNode child : children.getOrDefault(node, List.of())) {
+					names = headerSets.union(names, potentialFilterInputs.get(child));
+					unknown |= unknownPotentialFilterInputs.contains(child);
+					demand = mergeDemands(demand, demands.get(child));
+				}
+				if (names != null) {
+					potentialFilterInputs.put(node, names);
+				}
+				if (unknown) {
+					unknownPotentialFilterInputs.add(node);
+				}
+				if (demand != null) {
+					demands.put(node, demand);
+				}
+			}
+			scopedBindingFactsInitialized = true;
+		}
+
+		private void captureFilterLookupFacts(QueryModelNode node, CapturedScopeNode scope,
+				List<QueryModelNode> children, Map<Filter, OwnerDemand> localDemands) {
+			NameSetNode unresolved = null;
+			NameSetNode veto = null;
+			if (node instanceof Filter filter) {
+				CapturedFilter captured = capturedFilters.get(filter);
+				if (captured != null) {
+					NameSetNode reads = headerSets.difference(captured.conditionFacts().reads(),
+							captured.argument().assured());
+					OwnerDemand local = localDemands.get(filter);
+					unresolved = local == null || local.unknown() ? null : headerSets.intersect(reads, local.names());
+					veto = headerSets.difference(reads, unresolved);
+				}
+			}
+			for (QueryModelNode child : children) {
+				if (!(child instanceof TupleExpr)) {
+					// A scalar subquery has its own invocation boundary. The enclosing operator's captured
+					// condition or assignment reads already account for its inputs and local assurance.
+					continue;
+				}
+				FilterLookupFacts facts = filterLookupFacts.get(child);
+				if (facts == null) {
+					continue;
+				}
+				NameSetNode childUnresolved = facts.unresolved();
+				veto = headerSets.union(veto, facts.veto());
+				if (scope.right() == child && scope.left() != null) {
+					TupleHeaders localOwner = tupleHeaders.get(scope.left());
+					NameSetNode nullable = headerSets.difference(localOwner.ordinary(), localOwner.assured());
+					// A locally assured nearer value is produced before its FILTER and survives an outer join
+					// only when compatible with the outer value. A nullable nearer owner may instead fall back
+					// to a different owner, so its same-name demand remains an outer lookup veto.
+					veto = headerSets.union(veto, headerSets.intersect(childUnresolved, nullable));
+					childUnresolved = headerSets.difference(childUnresolved, nullable);
+				}
+				unresolved = headerSets.union(unresolved, childUnresolved);
+			}
+			if (scope.blocksInput()) {
+				veto = headerSets.union(veto, unresolved);
+				unresolved = null;
+			}
+			if (unresolved != null || veto != null) {
+				filterLookupFacts.put(node, new FilterLookupFacts(unresolved, veto));
+			}
+		}
+
+		private OwnerDemand capturedOwnerDemand(CapturedFilter captured,
+				BindingScopePolicy.PotentialNameFacts<NameSetNode> potential, boolean insideSubQuery, ScopePath path) {
+			ConditionSummary condition = captured.conditionFacts();
+			NameSetNode assured = captured.argument().assured();
+			if (captured.opaque() || !captured.explicitScope().isAuto()
+					|| condition.complete() && condition.reads() == condition.variables()
+					|| insideSubQuery || !condition.containsSubQuery()
+							&& headerSets.containsAll(captured.argument().ordinary(), condition.variables())) {
+				return new OwnerDemand(potential.names(), potential.unknownNames(), assured);
+			}
+			NameSetNode directExists = captured.directExists() == null ? null
+					: tupleHeaders.get(captured.directExists()).ordinary();
+			FilterBindingScope.CapturedNameScope<NameSetNode> scope = FilterBindingScope.resolveCapturedNames(
+					condition.variables(), condition.containsSubQuery(), insideSubQuery, captured.scopeChange(),
+					captured.argument().ordinary(), directExists, true,
+					path == null ? null : path.allNames(), headerSets::union, headerSets::containsAll,
+					(left, right) -> headerSets.coveredByUnion(condition.variables(), left, right),
+					(retained, covers) -> completeScopePath(path, retained, covers));
+			if (scope.all()) {
+				return new OwnerDemand(potential.names(), potential.unknownNames(), assured);
+			}
+			NameSetNode names = condition.complete() ? headerSets.intersect(potential.names(), scope.names())
+					: headerSets.difference(scope.names(), assured);
+			return new OwnerDemand(names, false, null);
+		}
+
+		private ScopePath addScopeEvent(QueryModelNode owner, NameSetNode declared, NameSetNode possible,
+				NameSetNode assured, boolean known, ScopePath outer) {
+			int size = 1 + (outer == null ? 0 : outer.size());
+			int levels = Integer.SIZE - Integer.numberOfLeadingZeros(size);
+			ScopePath[] jumps = new ScopePath[levels];
+			NameSetNode[] blocks = new NameSetNode[levels];
+			NameSetNode[] producerBlocks = declared == possible
+					&& (outer == null || outer.producerBlocks() == outer.blocks())
+							? blocks
+							: new NameSetNode[levels];
+			jumps[0] = outer;
+			blocks[0] = declared;
+			producerBlocks[0] = possible;
+			for (int level = 1; level < levels; level++) {
+				ScopePath middle = jumps[level - 1];
+				blocks[level] = headerSets.union(blocks[level - 1], middle.blocks()[level - 1]);
+				if (producerBlocks != blocks) {
+					producerBlocks[level] = headerSets.union(producerBlocks[level - 1],
+							middle.producerBlocks()[level - 1]);
+				}
+				jumps[level] = middle.jumps()[level - 1];
+			}
+			return new ScopePath(owner, declared, headerSets.union(declared, outer == null ? null : outer.allNames()),
+					possible, assured, known && (outer == null || outer.producersKnown()), size, jumps, blocks,
+					producerBlocks);
+		}
+
+		private NameSetNode completeScopePath(ScopePath path, NameSetNode retained,
+				BiPredicate<NameSetNode, NameSetNode> covers) {
+			if (path == null) {
+				return retained;
+			}
+			ScopePath current = path;
+			for (int level = path.blocks().length - 1; level >= 0 && current != null; level--) {
+				if (level < current.blocks().length && !covers.test(retained, current.blocks()[level])) {
+					retained = headerSets.union(retained, current.blocks()[level]);
+					current = current.jumps()[level];
+				}
+			}
+			return current == null ? retained : headerSets.union(retained, current.declared());
+		}
+
+		private OwnerDemand mergeDemands(OwnerDemand left, OwnerDemand right) {
+			if (left == null) {
+				return right;
+			}
+			if (right == null) {
+				return left;
+			}
+			NameSetNode excluded = left.unknown() && right.unknown()
+					? headerSets.intersect(left.excluded(), right.excluded())
+					: left.unknown() ? left.excluded() : right.excluded();
+			return new OwnerDemand(headerSets.union(left.names(), right.names()), left.unknown() || right.unknown(),
+					excluded);
+		}
+
+		private boolean matchesOwner(NameSetNode names, OwnerDemand demand) {
+			return demand != null && (headerSets.intersects(names, demand.names())
+					|| demand.unknown() && headerSets.hasDifference(names, demand.excluded()));
+		}
+
+		private synchronized PreparedFilterScope preparedFilterScope(TupleExpr root) {
+			TupleExpr region = preparedFilterRegion(root);
+			return region == null ? null : capturePositiveFilterScope(region, false);
+		}
+
+		private synchronized Map<TupleExpr, PreparedFilterScope> preparedFilterScopes(TupleExpr root) {
+			TupleExpr region = preparedFilterRegion(root);
+			if (region == null) {
+				return Map.of();
+			}
+			Map<TupleExpr, PreparedFilterScope> scopes = new IdentityHashMap<>();
+			Set<TupleExpr> visited = identitySet();
+			Deque<TupleExpr> pending = new ArrayDeque<>();
+			pending.push(region);
+			while (!pending.isEmpty()) {
+				TupleExpr node = pending.pop();
+				if (!visited.add(node)) {
+					return Map.of();
+				}
+				if (!replayDependentNodes.contains(node) || unknownNodes.contains(node)) {
+					continue;
+				}
+				if (node instanceof Union union && forwardsBothUnionArms(union)) {
+					pending.push(union.getRightArg());
+					pending.push(union.getLeftArg());
+				} else if (node instanceof BinaryTupleOperator binary && matchesCapturedTupleChildren(binary)
+						&& (node.getClass() == Difference.class || node.getClass() == LeftJoin.class)
+						&& binary.getLeftArg().getParentNode() == node
+						&& capturedParentByNode.get(binary.getLeftArg()) == node) {
+					pending.push(binary.getLeftArg());
+				} else {
+					PreparedFilterScope scope = capturePositiveFilterScope(node, true);
+					if (scope != null) {
+						scopes.put(node, scope);
+					}
+				}
+			}
+			return Collections.unmodifiableMap(scopes);
+		}
+
+		private TupleExpr preparedFilterRegion(TupleExpr root) {
+			if (ensureNode(root) != root) {
+				return null;
+			}
+			ensureScopedBindingFacts();
+			for (QueryModelNode parent = capturedParentByNode.get(root); parent != null; parent = capturedParentByNode
+					.get(parent)) {
+				if (parent instanceof SubQueryValueOperator || parent instanceof Lateral || parent instanceof Graph
+						|| parent instanceof LeftJoin || parent instanceof Union || parent instanceof Difference
+						|| parent instanceof Projection projection && projection.isSubquery()) {
+					return null;
+				}
+			}
+			TupleExpr region = root;
+			while (region instanceof QueryRoot || region instanceof Distinct || region instanceof Reduced
+					|| region instanceof org.eclipse.rdf4j.query.algebra.Order || region instanceof Slice
+					|| region instanceof Projection) {
+				if (region instanceof Projection projection && projection.isSubquery()) {
+					return null;
+				}
+				TupleExpr child = ((UnaryTupleOperator) region).getArg();
+				if (child.getParentNode() != region || capturedParentByNode.get(child) != region) {
+					return null;
+				}
+				region = child;
+			}
+			return region;
+		}
+
+		private PreparedFilterScope capturePositiveFilterScope(TupleExpr region, boolean allowContextOutputs) {
+			if (!(region instanceof Join || region instanceof Filter)) {
+				return null;
+			}
+			Set<QueryModelNode> members = identitySet();
+			Set<Join> joins = identitySet();
+			Set<Join> scopedJoins = identitySet();
+			List<Filter> filters = new ArrayList<>();
+			Map<StatementPattern, String> contextOutputs = new IdentityHashMap<>();
+			Deque<TupleExpr> pending = new ArrayDeque<>();
+			pending.push(region);
+			boolean scoped = false;
+			while (!pending.isEmpty()) {
+				TupleExpr node = pending.pop();
+				if (!members.add(node)) {
+					return null;
+				}
+				NodeSafetySummary summary = summaries.get(node);
+				CapturedScopeNode scope = capturedScopeNodes.get(node);
+				if (summary == null || scope == null || scope.blocksInput() || unknownNodes.contains(node)
+						|| !summary.injectionShapeSafe || !summary.repeatable || summary.mayRaiseQueryFatalError
+						|| summary.mappingParameterized) {
+					return null;
+				}
+				if (node instanceof Join join) {
+					if (!matchesCapturedTupleChildren(join)) {
+						return null;
+					}
+					joins.add(join);
+					if (filterInputOwners.contains(join)) {
+						scopedJoins.add(join);
+						scoped = true;
+					}
+					pending.push(join.getRightArg());
+					pending.push(join.getLeftArg());
+				} else if (node instanceof Filter filter) {
+					CapturedFilter captured = capturedFilters.get(filter);
+					if (captured == null || !captured.represents(filter)) {
+						return null;
+					}
+					filters.add(filter);
+					pending.push(filter.getArg());
+				} else if (BindingScopePolicy.isRelationalBindingLeaf(node)) {
+					TupleHeaders headers = tupleHeaders.get(node);
+					LocalOutputs outputs = summary.localOutputs;
+					if (headers == null || !outputs.possibleKnown()
+							|| !headerSets.containsAll(headers.ordinary(), outputs.actualPossible())) {
+						return null;
+					}
+					// VALUES declarations include UNDEF-only columns. The certificate still requires assurance for
+					// those columns. A statement header can mention constants that never enter the mapping.
+					NameSetNode required = node instanceof BindingSetAssignment ? headers.ordinary()
+							: outputs.actualPossible();
+					if (!headerSets.containsAll(outputs.nonNull(), required)) {
+						if (!allowContextOutputs || !(node instanceof StatementPattern pattern)) {
+							return null;
+						}
+						String contextOutput = pendingNamedContextOutput(pattern);
+						if (contextOutput == null || !headerSets.containsAll(outputs.nonNull(),
+								headerSets.remove(required, contextOutput))) {
+							return null;
+						}
+						contextOutputs.put(pattern, contextOutput);
+					}
+				} else {
+					return null;
+				}
+			}
+			if (!scoped) {
+				return null;
+			}
+			Map<Filter, PreparedFilterScope.FilterInputs> conditions = new IdentityHashMap<>();
+			Set<String> possibleContextOutputs = Set.copyOf(contextOutputs.values());
+			for (Filter filter : filters) {
+				PreparedFilterScope.FilterInputs condition = preparedFilterInputs(filter, members,
+						possibleContextOutputs);
+				if (condition == null) {
+					return null;
+				}
+				conditions.put(filter, condition);
+			}
+			NodeSafetySummary regionSummary = summaries.get(region);
+			Set<String> names = new HashSet<>();
+			headerSets.collectNames(regionSummary.localOutputs.actualPossible(), names);
+			Set<String> hazards = new HashSet<>();
+			Map<Join, NameDomain> receivedHazards = new IdentityHashMap<>();
+			synchronized (nameSets) {
+				BindingNameFacts facts = nameFacts(regionSummary.nameInputs);
+				nameSets.collectNames(facts.hardInjectionHazards, hazards);
+				nameSets.collectNames(facts.injectionTargets, hazards);
+				if (!contextOutputs.isEmpty()) {
+					for (Join join : joins) {
+						BindingNameFacts right = nameFacts(summaries.get(join.getRightArg()).nameInputs);
+						receivedHazards.put(join, new CapturedNameDomain(nameSets,
+								nameSets.union(right.hardInjectionHazards, right.injectionTargets)));
+					}
+				}
+			}
+			return new PreparedFilterScope(region, joins, scopedJoins, conditions, names, hazards, contextOutputs,
+					receivedHazards);
+		}
+
+		private static String pendingNamedContextOutput(StatementPattern pattern) {
+			Var context = pattern.getContextVar();
+			if (pattern.getClass() != StatementPattern.class
+					|| pattern.getScope() != StatementPattern.Scope.NAMED_CONTEXTS
+					|| context == null || context.hasValue() || context.isConstant()
+					|| PrivateGraphContextRole.isPrivateContext(pattern, context)) {
+				return null;
+			}
+			return context.getName();
+		}
+
+		private PreparedFilterScope.FilterInputs preparedFilterInputs(Filter filter, Set<QueryModelNode> members,
+				Set<String> possibleContextOutputs) {
+			CapturedFilter captured = capturedFilters.get(filter);
+			if (captured == null || !captured.represents(filter) || captured.opaque() || captured.scopeChange()
+					|| subqueryFilters.contains(filter)
+					|| !captured.conditionFacts().complete() || captured.conditionFacts().containsSubQuery()) {
+				return null;
+			}
+			ConditionSummary condition = captured.conditionFacts();
+			ScopePath path = filterScopePaths.get(filter);
+			LocalOutputs argument = captured.argumentOutputs();
+			if (!argument.possibleKnown() || path != null && !path.producersKnown()) {
+				return null;
+			}
+			FilterBindingScope.CapturedNameScope<NameSetNode> scope;
+			if (captured.explicitScope().isAuto()) {
+				scope = FilterBindingScope.resolveCapturedNames(condition.variables(), false, false, false,
+						captured.argument().ordinary(), null, true, path == null ? null : path.allNames(),
+						headerSets::union, headerSets::containsAll,
+						(left, right) -> headerSets.coveredByUnion(condition.variables(), left, right),
+						(retained, covers) -> completeScopePath(path, retained, covers));
+			} else {
+				scope = new FilterBindingScope.CapturedNameScope<>(captured.explicitScope().retainsAllBindings(),
+						headerSets.from(captured.explicitScope().bindingNames()));
+			}
+			if (!scope.all() && !headerSets.containsAll(scope.names(), condition.reads())) {
+				return null;
+			}
+			Set<String> reads = new HashSet<>();
+			headerSets.collectNames(condition.reads(), reads);
+			Set<String> local = new HashSet<>();
+			Map<String, Join> owners = new HashMap<>();
+			for (String name : reads) {
+				if (headerSets.contains(argument.nonNull(), name)) {
+					local.add(name);
+					continue;
+				}
+				if (headerSets.contains(argument.actualPossible(), name)) {
+					// Do not consult an older owner when this exact operand can produce the name. The planner must
+					// prove the selected local context produces an RDF term before compiling the condition.
+					if (!possibleContextOutputs.contains(name)) {
+						return null;
+					}
+					local.add(name);
+					continue;
+				}
+				ScopePath owner = nearestScopeOwner(path, name);
+				if (owner == null || !(owner.owner() instanceof Join join) || !members.contains(join)
+						|| !headerSets.contains(owner.assured(), name) && !possibleContextOutputs.contains(name)) {
+					return null;
+				}
+				owners.put(name, join);
+			}
+			return new PreparedFilterScope.FilterInputs(reads, local, owners);
+		}
+
+		private ScopePath nearestScopeOwner(ScopePath path, String name) {
+			if (path == null) {
+				return null;
+			}
+			ScopePath current = path;
+			for (int level = path.producerBlocks().length - 1; level >= 0 && current != null; level--) {
+				if (level < current.producerBlocks().length
+						&& !headerSets.contains(current.producerBlocks()[level], name)) {
+					current = current.jumps()[level];
+				}
+			}
+			return current != null && headerSets.contains(current.possible(), name) ? current : null;
+		}
+
+		private synchronized PreparedJoinFilterInputs preparedJoinFilterInputs(Join join) {
+			if (join.getClass() != Join.class || join.getRightArg().getClass() != Filter.class
+					|| BindingScopePolicy.blocksFilterInput(join) || !matchesCapturedTupleChildren(join)
+					|| !filterInputOwners.contains(join)) {
+				return null;
+			}
+			Filter filter = (Filter) join.getRightArg();
+			if (filter.getArg().getClass() != StatementPattern.class
+					|| BindingScopePolicy.blocksFilterInput(filter)
+					|| !summaries.get(filter).repeatable || summaries.get(filter).mayRaiseQueryFatalError) {
+				return null;
+			}
+			PreparedFilterScope.FilterInputs inputs = preparedFilterInputs(filter, Set.of(join), Set.of());
+			if (inputs == null || inputs.owners().isEmpty()
+					|| inputs.owners().values().stream().anyMatch(owner -> owner != join)) {
+				return null;
+			}
+			return new PreparedJoinFilterInputs(inputs.local(), inputs.owners().keySet());
+		}
+
+		private void markReplayAncestors(QueryModelNode node) {
+			for (QueryModelNode current = node; current != null
+					&& replayDependentNodes.add(current); current = capturedParentByNode.get(current)) {
+				// Each ancestor is marked at most once per generation.
+			}
+		}
+
+		private static List<QueryModelNode> captureParentChain(QueryModelNode node) {
+			List<QueryModelNode> livePath = liveParentPath(node);
+			return livePath.size() <= 1 ? List.of() : List.copyOf(livePath.subList(1, livePath.size()));
+		}
+
+		public synchronized boolean permitsBindingInjection(TupleExpr node, Set<String> injectedNames) {
+			if (injectedNames.isEmpty()) {
+				return true;
+			}
 			node = (TupleExpr) ensureNode(node);
 			NodeSafetySummary summary = summaries.get(node);
-			if (!summary.injectionShapeSafe) {
+			if (!summary.injectionShapeSafe || summary.producerBoundary) {
 				return false;
 			}
 			synchronized (nameSets) {
@@ -975,12 +3881,128 @@ public class QueryEvaluationUtility {
 			}
 		}
 
-		public boolean containsLateral(QueryModelNode node) {
+		private synchronized boolean permitsDirectCorrelatedFilter(TupleExpr expression, Set<String> siblingNames) {
+			expression = (TupleExpr) ensureNode(expression);
+			if (!(expression instanceof Filter filter) || !BindingScopePolicy.isRelationalBindingLeaf(filter.getArg())
+					|| summaries.get(filter).producerBoundary || !summaries.get(filter).repeatable
+					|| !permitsBindingInjection(filter.getArg(), siblingNames)) {
+				return false;
+			}
+			QueryModelNode owner = capturedParentByNode.get(filter);
+			CapturedScopeNode ownerScope = capturedScopeNodes.get(owner);
+			if (ownerScope == null || ownerScope.right() != filter || ownerScope.left() == null) {
+				return false;
+			}
+			TupleExpr left = (TupleExpr) ensureNode(ownerScope.left(), false);
+			NodeSafetySummary leftSummary = summaries.get(left);
+			if (!leftSummary.injectionShapeSafe) {
+				return false;
+			}
+			// A row can carry undeclared output names. They are compatibility inputs, not FILTER owner authority.
+			// The direct path is valid only when its entire actual output domain is declared by this owner, and when
+			// the left cannot overwrite an existing semantic entry value before handing its row to the right.
+			synchronized (nameSets) {
+				BindingNameFacts facts = nameFacts(leftSummary.nameInputs);
+				if (!nameSets.isSubsetOf(facts.possibleBindingNames, siblingNames)
+						|| nameSets.intersects(facts.injectionTargets, siblingNames)) {
+					return false;
+				}
+			}
+			synchronized (headerSets) {
+				NameSetNode declared = tupleHeaders.get(left).ordinary();
+				for (String name : siblingNames) {
+					if (!headerSets.contains(declared, name)) {
+						return false;
+					}
+				}
+			}
+			return true;
+		}
+
+		private synchronized Predicate<String> preparedScopedLookupInputs(TupleExpr owner) {
+			owner = (TupleExpr) ensureNode(owner);
+			ensureScopedBindingFacts();
+			CapturedScopeNode scope = capturedScopeNodes.get(owner);
+			if (scope == null || scope.left() == null || !(scope.right() instanceof TupleExpr right)) {
+				return null;
+			}
+			TupleExpr left = (TupleExpr) ensureNode(scope.left(), false);
+			NodeSafetySummary leftSummary = summaries.get(left);
+			QueryModelNode preparedRight = ensureNode(right, false);
+			NodeSafetySummary rightSummary = summaries.get(preparedRight);
+			if (!rightSummary.injectionShapeSafe || rightSummary.producerBoundary || !rightSummary.repeatable
+					|| rightSummary.mayRaiseQueryFatalError || rightSummary.mappingParameterized) {
+				return null;
+			}
+			NameSetFactory generation = nameSets;
+			NameSetFactory headerGeneration = headerSets;
+			synchronized (generation) {
+				BindingNameFacts leftFacts = nameFacts(leftSummary.nameInputs);
+				BindingNameFacts rightFacts = nameFacts(rightSummary.nameInputs);
+				NameSetNode possible = generation.intersect(leftFacts.possibleBindingNames,
+						rightFacts.possibleBindingNames);
+				NameSetNode forbidden = generation.union(rightFacts.hardInjectionHazards, rightFacts.injectionTargets);
+				NameSetNode allowed = generation.difference(possible, forbidden);
+				if (allowed == null) {
+					return null;
+				}
+				FilterLookupFacts filters = filterLookupFacts.get(preparedRight);
+				NameSetNode filterForbidden = filters == null ? null
+						: headerGeneration.union(filters.veto(),
+								headerGeneration.difference(filters.unresolved(), tupleHeaders.get(left).ordinary()));
+				// Only FILTER demands attributable to this exact declared owner are discharged. Every other read,
+				// assignment and OPTIONAL fallback remains a veto on the complete borrowed set.
+				return name -> {
+					synchronized (generation) {
+						return generation.contains(allowed, name) && !headerGeneration.contains(filterForbidden, name);
+					}
+				};
+			}
+		}
+
+		private synchronized Predicate<String> preparedReplayLookupNames(TupleExpr region) {
+			region = (TupleExpr) ensureNode(region);
+			NodeSafetySummary summary = summaries.get(region);
+			if (!summary.injectionShapeSafe || summary.producerBoundary || !summary.repeatable
+					|| summary.mayRaiseQueryFatalError) {
+				return null;
+			}
+			NameSetFactory generation = nameSets;
+			synchronized (generation) {
+				NameSetNode lookups = nameFacts(summary.nameInputs).physicalLookupNames;
+				if (lookups == null) {
+					return null;
+				}
+				return name -> {
+					synchronized (generation) {
+						return generation.contains(lookups, name);
+					}
+				};
+			}
+		}
+
+		private synchronized Predicate<Set<String>> preparedBindingInjectionProof(TupleExpr node) {
+			node = (TupleExpr) ensureNode(node);
+			NodeSafetySummary summary = summaries.get(node);
+			if (!summary.injectionShapeSafe || summary.producerBoundary) {
+				return Set::isEmpty;
+			}
+			Set<String> forbidden = new HashSet<>();
+			synchronized (nameSets) {
+				BindingNameFacts facts = nameFacts(summary.nameInputs);
+				nameSets.collectNames(facts.unsafeInjectionNames, forbidden);
+				nameSets.collectNames(facts.injectionTargets, forbidden);
+			}
+			Set<String> immutable = Set.copyOf(forbidden);
+			return names -> Collections.disjoint(immutable, names);
+		}
+
+		public synchronized boolean containsLateral(QueryModelNode node) {
 			node = ensureNode(node);
 			return summaries.get(node).containsLateral;
 		}
 
-		public boolean containsExtension(QueryModelNode node) {
+		public synchronized boolean containsExtension(QueryModelNode node) {
 			node = ensureNode(node);
 			return summaries.get(node).containsExtension;
 		}
@@ -990,6 +4012,78 @@ public class QueryEvaluationUtility {
 				return nameSets.internedNodes.size() + nameSets.nameIds.size();
 			}
 		}
+
+		synchronized long optionalCandidateMaterializations() {
+			return optionalInputNames.materializedCandidates;
+		}
+
+		synchronized long retainedHeaderTrieNodes() {
+			return headerSets.internedNodes.size();
+		}
+
+		synchronized int capturedStructuralNodes() {
+			return childrenByNode.size();
+		}
+
+		synchronized long retainedTupleHeaderNameEntries() {
+			Set<Set<String>> retainedHeaders = Collections.newSetFromMap(new IdentityHashMap<>());
+			for (NodeSafetySummary summary : summaries.values()) {
+				if (summary.nameInputs.assuredNames != null) {
+					retainedHeaders.add(summary.nameInputs.assuredNames);
+				}
+				if (summary.nameInputs.possibleNames != null) {
+					retainedHeaders.add(summary.nameInputs.possibleNames);
+				}
+			}
+			long retained = headerSets.nameIds.size() + headerSets.namesById.size();
+			for (Set<String> names : retainedHeaders) {
+				retained += names.size();
+			}
+			return retained;
+		}
+
+		/** Counts retained names, trie slots and structural references for scale regressions. */
+		synchronized long retainedSnapshotStorageUnits() {
+			long retained = retainedTupleHeaderNameEntries();
+			retained += (long) (NameSetFactory.RADIX + 1)
+					* (headerSets.internedNodes.size() + nameSets.internedNodes.size());
+			retained += nameSets.nameIds.size() + nameSets.namesById.size();
+			retained += 2L * capturedParentByNode.size() + 5L * capturedScopeNodes.size()
+					+ 3L * tupleHeaders.size() + 7L * capturedFilters.size() + 15L * summaries.size()
+					+ 7L * conditionSummaries.size();
+			retained += 2L * capturedCallerInputEdges.size() + 2L * capturedCallerOutputs.size()
+					+ 2L * capturedCallerWrites.size() + 2L * optionalInputNames.callerNodes.size();
+			retained += 2L * childrenByNode.size() + analysisRoots.size() + unknownNodes.size()
+					+ replayDependencyFacts.size() + filterInputOwners.size() + replayDependentNodes.size()
+					+ 2L * potentialFilterInputs.size() + 4L * filterLookupFacts.size()
+					+ unknownPotentialFilterInputs.size() + 2L * filterScopePaths.size() + subqueryFilters.size();
+			retained += variableNameCaptureComplete.size() + optionalInputNames.captured.size()
+					+ optionalInputNames.expressions.size() + optionalInputNames.projections.size()
+					+ optionalInputNames.optionalFilters.size() + optionalInputNames.optionalRegions.size();
+			Set<ScopePath> paths = identitySet();
+			for (ScopePath path : filterScopePaths.values()) {
+				for (ScopePath current = path; current != null && paths.add(current); current = current.jumps()[0]) {
+					retained += 9L + current.jumps().length + current.blocks().length;
+					if (current.producerBlocks() != current.blocks()) {
+						retained += current.producerBlocks().length;
+					}
+				}
+			}
+			for (List<QueryModelNode> children : childrenByNode.values()) {
+				retained += children.size();
+			}
+			for (NodeSafetySummary summary : summaries.values()) {
+				retained += summary.nameInputs.children.length + 2L * summary.nameInputs.extensionElements.length;
+			}
+			Set<Set<String>> conditionSets = Collections.newSetFromMap(new IdentityHashMap<>());
+			for (CapturedFilter filter : capturedFilters.values()) {
+				conditionSets.add(filter.explicitScope().bindingNames());
+			}
+			for (Set<String> names : conditionSets) {
+				retained += names.size();
+			}
+			return retained;
+		}
 	}
 
 	/**
@@ -998,7 +4092,8 @@ public class QueryEvaluationUtility {
 	private static final class NameSetFactory {
 		private static final int RADIX = 16;
 		private static final int ID_DEPTH = 8;
-		private final Map<String, Integer> nameIds = new HashMap<>();
+		private final Map<String, Integer> nameIds = new ConcurrentHashMap<>();
+		private final List<String> namesById = new ArrayList<>();
 		private final Map<NameSetNode, NameSetNode> internedNodes = new HashMap<>();
 
 		private NameSetNode from(Iterable<String> names) {
@@ -1011,8 +4106,37 @@ public class QueryEvaluationUtility {
 
 		private NameSetNode add(NameSetNode root, String name) {
 			Objects.requireNonNull(name, "name must not be null");
-			int nameId = nameIds.computeIfAbsent(name, key -> nameIds.size() + 1);
+			int nameId = nameIds.computeIfAbsent(name, key -> {
+				namesById.add(key);
+				return namesById.size();
+			});
 			return add(root, nameId, 0);
+		}
+
+		private void collectNames(NameSetNode root, Set<String> names) {
+			if (root == null) {
+				return;
+			}
+			Deque<NameSetCursor> pending = new ArrayDeque<>();
+			pending.push(new NameSetCursor(root, 0, 0));
+			while (!pending.isEmpty()) {
+				NameSetCursor cursor = pending.pop();
+				if (cursor.depth == ID_DEPTH) {
+					if (cursor.node.terminal) {
+						names.add(namesById.get(cursor.nameId - 1));
+					}
+					continue;
+				}
+				for (int branch = 0; branch < RADIX; branch++) {
+					NameSetNode child = cursor.node.children[branch];
+					if (child != null) {
+						pending.push(new NameSetCursor(child, cursor.depth + 1, (cursor.nameId << 4) | branch));
+					}
+				}
+			}
+		}
+
+		private record NameSetCursor(NameSetNode node, int depth, int nameId) {
 		}
 
 		private NameSetNode add(NameSetNode node, int nameId, int depth) {
@@ -1043,6 +4167,25 @@ public class QueryEvaluationUtility {
 				node = node.children[nibble(nameId, depth)];
 			}
 			return node != null && node.terminal;
+		}
+
+		private boolean isSubsetOf(NameSetNode node, Set<String> names) {
+			return isSubsetOf(node, names, 0, 0);
+		}
+
+		private boolean isSubsetOf(NameSetNode node, Set<String> names, int depth, int nameId) {
+			if (node == null) {
+				return true;
+			}
+			if (depth == ID_DEPTH) {
+				return !node.terminal || names.contains(namesById.get(nameId - 1));
+			}
+			for (int branch = 0; branch < RADIX; branch++) {
+				if (!isSubsetOf(node.children[branch], names, depth + 1, (nameId << 4) | branch)) {
+					return false;
+				}
+			}
+			return true;
 		}
 
 		private NameSetNode union(NameSetNode left, NameSetNode right) {
@@ -1153,6 +4296,62 @@ public class QueryEvaluationUtility {
 			return false;
 		}
 
+		private boolean intersects(NameSetNode left, NameSetNode right) {
+			if (left == null || right == null) {
+				return false;
+			}
+			if (left == right || left.terminal && right.terminal) {
+				return true;
+			}
+			for (int i = 0; i < RADIX; i++) {
+				if (intersects(left.children[i], right.children[i])) {
+					return true;
+				}
+			}
+			return false;
+		}
+
+		private boolean containsAll(NameSetNode container, NameSetNode names) {
+			return !hasDifference(names, container);
+		}
+
+		/** Tests a tentative prefix without interning a union that may be rejected. */
+		private boolean coveredByUnion(NameSetNode required, NameSetNode left, NameSetNode right) {
+			if (required == null || required == left || required == right) {
+				return true;
+			}
+			if (left == null) {
+				return !hasDifference(required, right);
+			}
+			if (right == null) {
+				return !hasDifference(required, left);
+			}
+			if (required.terminal && !left.terminal && !right.terminal) {
+				return false;
+			}
+			for (int i = 0; i < RADIX; i++) {
+				if (!coveredByUnion(required.children[i], left.children[i], right.children[i])) {
+					return false;
+				}
+			}
+			return true;
+		}
+
+		private boolean hasDifference(NameSetNode left, NameSetNode right) {
+			if (left == null || left == right) {
+				return false;
+			}
+			if (right == null || left.terminal && !right.terminal) {
+				return true;
+			}
+			for (int i = 0; i < RADIX; i++) {
+				if (hasDifference(left.children[i], right.children[i])) {
+					return true;
+				}
+			}
+			return false;
+		}
+
 		private NameSetNode intern(boolean terminal, NameSetNode[] children) {
 			boolean empty = !terminal;
 			for (NameSetNode child : children) {
@@ -1163,6 +4362,12 @@ public class QueryEvaluationUtility {
 			}
 			NameSetNode candidate = new NameSetNode(terminal, children);
 			return internedNodes.computeIfAbsent(candidate, key -> key);
+		}
+
+		private void clear() {
+			nameIds.clear();
+			namesById.clear();
+			internedNodes.clear();
 		}
 
 		private static int nibble(int nameId, int depth) {
@@ -1210,7 +4415,9 @@ public class QueryEvaluationUtility {
 	private enum NameOperation {
 		OTHER,
 		VARIABLE,
+		SUBQUERY_VALUE,
 		LEAF,
+		STATEMENT_PATTERN,
 		JOIN,
 		UNION,
 		FILTER,
@@ -1238,38 +4445,48 @@ public class QueryEvaluationUtility {
 		private final boolean tupleExpression;
 		private final String localName;
 		private final Set<String> assuredNames;
+		private final Set<String> possibleNames;
 		private final NodeSafetySummary[] children;
 		private final NodeSafetySummary argument;
+		private final NodeSafetySummary rightArgument;
 		private final NodeSafetySummary condition;
 		private final ExtensionNameInput[] extensionElements;
+		private final boolean producerBoundary;
 		// Accessed only with the owning snapshot's NameSetFactory monitor held.
 		private BindingNameFacts materialized;
 
 		private static NameFactInputs empty(boolean tupleExpression) {
 			NameFactInputs result = new NameFactInputs(tupleExpression ? NameOperation.LEAF : NameOperation.OTHER,
-					tupleExpression, null, tupleExpression ? Set.of() : null, QuerySafetySnapshot.NO_CHILDREN,
-					null, null, ExtensionNameInput.NONE);
+					tupleExpression, null, tupleExpression ? Set.of() : null, tupleExpression ? Set.of() : null,
+					QuerySafetySnapshot.NO_CHILDREN, null, null, null, ExtensionNameInput.NONE, false);
 			result.materialized = BindingNameFacts.EMPTY;
 			return result;
 		}
 
 		private NameFactInputs(NameOperation operation, boolean tupleExpression, String localName,
-				Set<String> assuredNames, NodeSafetySummary[] children, NodeSafetySummary argument,
-				NodeSafetySummary condition, ExtensionNameInput[] extensionElements) {
+				Set<String> assuredNames, Set<String> possibleNames, NodeSafetySummary[] children,
+				NodeSafetySummary argument, NodeSafetySummary rightArgument, NodeSafetySummary condition,
+				ExtensionNameInput[] extensionElements, boolean producerBoundary) {
 			this.operation = operation;
 			this.tupleExpression = tupleExpression;
 			this.localName = localName;
 			this.assuredNames = assuredNames;
+			this.possibleNames = possibleNames;
 			this.children = children;
 			this.argument = argument;
+			this.rightArgument = rightArgument;
 			this.condition = condition;
 			this.extensionElements = extensionElements;
+			this.producerBoundary = producerBoundary;
 		}
 
 		private boolean sameInputs(NameFactInputs other) {
 			if (operation != other.operation || tupleExpression != other.tupleExpression
+					|| producerBoundary != other.producerBoundary
 					|| !Objects.equals(localName, other.localName) || !Objects.equals(assuredNames, other.assuredNames)
-					|| argument != other.argument || condition != other.condition
+					|| !Objects.equals(possibleNames, other.possibleNames)
+					|| argument != other.argument || rightArgument != other.rightArgument
+					|| condition != other.condition
 					|| children.length != other.children.length
 					|| extensionElements.length != other.extensionElements.length) {
 				return false;
@@ -1291,8 +4508,10 @@ public class QueryEvaluationUtility {
 		}
 
 		private int inputHashCode() {
-			int hash = Objects.hash(operation, tupleExpression, localName, assuredNames,
-					System.identityHashCode(argument), System.identityHashCode(condition));
+			int hash = Objects.hash(operation, tupleExpression, producerBoundary, localName, assuredNames,
+					possibleNames,
+					System.identityHashCode(argument), System.identityHashCode(rightArgument),
+					System.identityHashCode(condition));
 			for (NodeSafetySummary child : children) {
 				hash = 31 * hash + System.identityHashCode(child);
 			}
@@ -1304,36 +4523,65 @@ public class QueryEvaluationUtility {
 	}
 
 	private static final class BindingNameFacts {
-		private static final BindingNameFacts EMPTY = new BindingNameFacts(null, null, null, null);
+		private static final BindingNameFacts EMPTY = new BindingNameFacts(null, null, null, null, null, null, null);
 		private final NameSetNode unsafeInjectionNames;
+		private final NameSetNode hardInjectionHazards;
 		private final NameSetNode injectionTargets;
 		private final NameSetNode assuredBindingNames;
+		private final NameSetNode possibleBindingNames;
 		private final NameSetNode referencedVariableNames;
+		private final NameSetNode physicalLookupNames;
 
-		private BindingNameFacts(NameSetNode unsafeInjectionNames, NameSetNode injectionTargets,
-				NameSetNode assuredBindingNames, NameSetNode referencedVariableNames) {
+		private BindingNameFacts(NameSetNode unsafeInjectionNames, NameSetNode hardInjectionHazards,
+				NameSetNode injectionTargets,
+				NameSetNode assuredBindingNames, NameSetNode possibleBindingNames,
+				NameSetNode referencedVariableNames, NameSetNode physicalLookupNames) {
 			this.unsafeInjectionNames = unsafeInjectionNames;
+			this.hardInjectionHazards = hardInjectionHazards;
 			this.injectionTargets = injectionTargets;
 			this.assuredBindingNames = assuredBindingNames;
+			this.possibleBindingNames = possibleBindingNames;
 			this.referencedVariableNames = referencedVariableNames;
+			this.physicalLookupNames = physicalLookupNames;
 		}
 	}
 
 	private static final class NodeSafetySummary {
 		private final boolean repeatable;
+		private final boolean hardFatal;
+		private final NameSetNode endpointInputs;
+		private final boolean rightSafeWhenLeftEmpty;
+		private final QuerySafetySnapshot.LocalOutputs localOutputs;
+		private final QuerySafetySnapshot.GraphInputs graphInputs;
+		private final QuerySafetySnapshot.GraphCarrier graphCarrier;
 		private final boolean mayRaiseQueryFatalError;
 		private final boolean mappingParameterized;
+		private final boolean otherMappingInputs;
+		private final NameSetNode graphSelectors;
+		private final boolean producerBoundary;
 		private final boolean containsLateral;
 		private final boolean containsExtension;
 		private final boolean injectionShapeSafe;
 		private final NameFactInputs nameInputs;
 
-		private NodeSafetySummary(boolean repeatable, boolean mayRaiseQueryFatalError,
-				boolean mappingParameterized, boolean containsLateral, boolean containsExtension,
+		private NodeSafetySummary(boolean repeatable, boolean hardFatal, NameSetNode endpointInputs,
+				boolean rightSafeWhenLeftEmpty, QuerySafetySnapshot.LocalOutputs localOutputs,
+				QuerySafetySnapshot.GraphInputs graphInputs, QuerySafetySnapshot.GraphCarrier graphCarrier,
+				boolean mappingParameterized, boolean otherMappingInputs, NameSetNode graphSelectors,
+				boolean producerBoundary, boolean containsLateral, boolean containsExtension,
 				boolean injectionShapeSafe, NameFactInputs nameInputs) {
 			this.repeatable = repeatable;
-			this.mayRaiseQueryFatalError = mayRaiseQueryFatalError;
+			this.hardFatal = hardFatal;
+			this.endpointInputs = endpointInputs;
+			this.rightSafeWhenLeftEmpty = rightSafeWhenLeftEmpty;
+			this.localOutputs = localOutputs;
+			this.graphInputs = graphInputs;
+			this.graphCarrier = graphCarrier;
+			this.mayRaiseQueryFatalError = hardFatal || endpointInputs != null;
 			this.mappingParameterized = mappingParameterized;
+			this.otherMappingInputs = otherMappingInputs;
+			this.graphSelectors = graphSelectors;
+			this.producerBoundary = producerBoundary;
 			this.containsLateral = containsLateral;
 			this.containsExtension = containsExtension;
 			this.injectionShapeSafe = injectionShapeSafe;
@@ -1349,8 +4597,17 @@ public class QueryEvaluationUtility {
 				return false;
 			}
 			return repeatable == summary.repeatable
+					&& hardFatal == summary.hardFatal
+					&& endpointInputs == summary.endpointInputs
+					&& rightSafeWhenLeftEmpty == summary.rightSafeWhenLeftEmpty
+					&& localOutputs.equals(summary.localOutputs)
+					&& graphInputs.equals(summary.graphInputs)
+					&& graphCarrier == summary.graphCarrier
 					&& mayRaiseQueryFatalError == summary.mayRaiseQueryFatalError
 					&& mappingParameterized == summary.mappingParameterized
+					&& otherMappingInputs == summary.otherMappingInputs
+					&& graphSelectors == summary.graphSelectors
+					&& producerBoundary == summary.producerBoundary
 					&& containsLateral == summary.containsLateral
 					&& containsExtension == summary.containsExtension
 					&& injectionShapeSafe == summary.injectionShapeSafe
@@ -1359,8 +4616,12 @@ public class QueryEvaluationUtility {
 
 		@Override
 		public int hashCode() {
-			return Objects.hash(repeatable, mayRaiseQueryFatalError, mappingParameterized, containsLateral,
-					containsExtension, injectionShapeSafe, nameInputs.inputHashCode());
+			return Objects.hash(repeatable, hardFatal, System.identityHashCode(endpointInputs), rightSafeWhenLeftEmpty,
+					localOutputs, graphInputs, graphCarrier,
+					mayRaiseQueryFatalError, mappingParameterized, otherMappingInputs,
+					System.identityHashCode(graphSelectors), producerBoundary, containsLateral, containsExtension,
+					injectionShapeSafe,
+					nameInputs.inputHashCode());
 		}
 	}
 

@@ -88,10 +88,6 @@ public final class BindingSetQueryEvaluationContext implements QueryEvaluationCo
 
 	@Override
 	public MutableBindingSet createBindingSet(BindingSet bindings) {
-		QueryBindingSet copy = new QueryBindingSet(bindings.size());
-		for (String name : bindings.getBindingNames()) {
-			copy.setBinding(name, bindings.getValue(name));
-		}
-		return GraphFrameBindings.preserve(bindings, copy);
+		return new QueryBindingSet(bindings);
 	}
 }

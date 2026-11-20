@@ -29,10 +29,11 @@ import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.query.QueryEvaluationException;
 import org.eclipse.rdf4j.query.algebra.evaluation.TripleSource;
 import org.eclipse.rdf4j.sail.lmdb.RecordIterator;
+import org.eclipse.rdf4j.sail.lmdb.ValuePosition;
 import org.eclipse.rdf4j.sail.lmdb.model.RdfTermKey;
 
 /** Ordinary semantic operators over one worker's pinned source, never the query thread's read transaction. */
-final class NativeWorkerTripleSource implements TripleSource {
+final class NativeWorkerTripleSource implements TripleSource, TripleSource.NamedContextLookup {
 
 	final NativeLmdbQuerySource source;
 	private final ValueFactory valueFactory;
@@ -40,6 +41,23 @@ final class NativeWorkerTripleSource implements TripleSource {
 	NativeWorkerTripleSource(NativeLmdbQuerySource source, ValueFactory valueFactory) {
 		this.source = source;
 		this.valueFactory = valueFactory;
+	}
+
+	@Override
+	public boolean hasNamedContext(Resource context) {
+		NativeCancellationToken.forSource(source).check();
+		long id = source.idOf(context, ValuePosition.CONTEXT);
+		if (id <= NULL_CONTEXT_ID) {
+			return false;
+		}
+		try {
+			if (source.countsContextFromMetadata(id)) {
+				return source.count(UNKNOWN, UNKNOWN, UNKNOWN, id) > 0L;
+			}
+			return source.has(UNKNOWN, UNKNOWN, UNKNOWN, id);
+		} catch (IOException failure) {
+			throw new QueryEvaluationException(failure);
+		}
 	}
 
 	@Override

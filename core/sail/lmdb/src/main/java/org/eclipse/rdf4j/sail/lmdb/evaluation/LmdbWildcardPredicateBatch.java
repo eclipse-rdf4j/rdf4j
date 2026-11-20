@@ -267,6 +267,9 @@ final class LmdbWildcardPredicateBatch {
 				|| pattern.statementOrder != null || pattern.range != null || pattern.contexts.isEmpty()) {
 			return null;
 		}
+		if (!pattern.supportsContextShortcut(row, row.boundMask() | prefix.producedMask(), 0L)) {
+			return null;
+		}
 		long available = row.boundMask() | SlotPlan.assuredMask(prefix);
 		boolean subjectAvailable = Shape.available(pattern.s, available);
 		boolean objectAvailable = Shape.available(pattern.o, available);
@@ -303,6 +306,10 @@ final class LmdbWildcardPredicateBatch {
 			boolean outer, long constraintMask, long preservedMask, int capacity) throws IOException {
 		if (!enabled() || !NativeBatch.enabled() || !Shape.isWildcardPredicate(right)
 				|| right.statementOrder != null || right.range != null || right.contexts.isEmpty()) {
+			return null;
+		}
+		long visible = constraintMask == -1L ? left.producedMask() : left.producedMask() & constraintMask;
+		if (!right.supportsContextShortcut(row, row.boundMask() | visible, 0L)) {
 			return null;
 		}
 		BatchCursor leftBatch = left.openBatch(row, capacity);
@@ -650,6 +657,7 @@ final class LmdbWildcardPredicateBatch {
 				return null;
 			}
 			if (leftJoin.right instanceof PatternPlan pattern
+					&& pattern.supportsContextShortcut(row, row.boundMask() | leftJoin.left.producedMask(), 0L)
 					&& left instanceof FactorizedRowCursor factorized) {
 				long assuredLeft = SlotPlan.assuredMask(leftJoin.left);
 				RowCursor batched = Shape.isWildcardPredicate(pattern)
@@ -710,6 +718,7 @@ final class LmdbWildcardPredicateBatch {
 				return null;
 			}
 			if (join.right instanceof PatternPlan pattern && Shape.isWildcardPredicate(pattern)
+					&& pattern.supportsContextShortcut(row, row.boundMask() | join.left.producedMask(), 0L)
 					&& left instanceof FactorizedRowCursor factorized) {
 				RowCursor batched = WeightedWildcardPatternCursor.open(factorized, pattern, row,
 						SlotPlan.assuredMask(join.left), liveMask, false, capacity);
@@ -721,6 +730,9 @@ final class LmdbWildcardPredicateBatch {
 					capacity);
 		}
 		if (plan instanceof LateralPlan lateral) {
+			if (lateral.needsSemanticEntry(row)) {
+				return null;
+			}
 			long rightReads = LmdbNativeAggregateCompiler.memoReadMask(lateral.right);
 			if (rightReads < 0L) {
 				return null;
@@ -734,6 +746,8 @@ final class LmdbWildcardPredicateBatch {
 			}
 			long visibleInputMask = lateral.rightInputMask | entryMask;
 			if (lateral.right instanceof PatternPlan pattern && Shape.isWildcardPredicate(pattern)
+					&& pattern.supportsContextShortcut(row,
+							entryMask | (lateral.rightInputMask & lateral.left.producedMask()), 0L)
 					&& left instanceof FactorizedRowCursor factorized) {
 				RowCursor batched = WeightedWildcardPatternCursor.openLexical(factorized, pattern, row,
 						SlotPlan.assuredMask(lateral.left), liveMask, visibleInputMask,
@@ -1357,6 +1371,9 @@ final class LmdbWildcardPredicateBatch {
 				|| right.p.isConstant()) {
 			return null;
 		}
+		if (!right.supportsContextShortcut(row, row.boundMask() | left.producedMask(), sharedMask)) {
+			return null;
+		}
 		long retainedMask = sharedMask | row.lexicalInputMask;
 		if ((sharedMask & ~SlotPlan.assuredMask(right)) != 0L) {
 			return null;
@@ -1592,6 +1609,9 @@ final class LmdbWildcardPredicateBatch {
 					continue;
 				}
 				SlotPlan prefix = prefixWithout(join.children, wildcardIndex);
+				if (!wildcard.supportsContextShortcut(row, row.boundMask() | prefix.producedMask(), 0L)) {
+					continue;
+				}
 				long available = row.boundMask() | SlotPlan.assuredMask(prefix);
 				boolean subjectAvailable = available(wildcard.s, available);
 				boolean objectAvailable = available(wildcard.o, available);
@@ -1610,7 +1630,7 @@ final class LmdbWildcardPredicateBatch {
 						join.filters, demand);
 			}
 			if (join.children.length == 1 && join.children[0] instanceof PatternPlan wildcard
-					&& batchEligible(wildcard)) {
+					&& batchEligible(wildcard) && wildcard.supportsContextShortcut(row, row.boundMask(), 0L)) {
 				long subjectBit = wildcard.s.hasSlot() ? 1L << wildcard.s.slot : 0L;
 				long objectBit = wildcard.o.hasSlot() ? 1L << wildcard.o.slot : 0L;
 				boolean bySubject = (physicalDemand.liveMask & objectBit) == 0L

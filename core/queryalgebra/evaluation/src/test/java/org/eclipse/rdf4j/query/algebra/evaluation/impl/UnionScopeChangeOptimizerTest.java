@@ -13,9 +13,13 @@ package org.eclipse.rdf4j.query.algebra.evaluation.impl;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+import java.lang.management.ManagementFactory;
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.Collections;
 import java.util.HashMap;
+import java.util.IdentityHashMap;
+import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
@@ -41,6 +45,7 @@ import org.eclipse.rdf4j.query.algebra.Exists;
 import org.eclipse.rdf4j.query.algebra.Extension;
 import org.eclipse.rdf4j.query.algebra.ExtensionElem;
 import org.eclipse.rdf4j.query.algebra.Filter;
+import org.eclipse.rdf4j.query.algebra.Filter.ConditionBindingScope;
 import org.eclipse.rdf4j.query.algebra.FunctionCall;
 import org.eclipse.rdf4j.query.algebra.Join;
 import org.eclipse.rdf4j.query.algebra.LeftJoin;
@@ -63,7 +68,11 @@ import org.eclipse.rdf4j.query.algebra.evaluation.TripleSource;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.QueryJoinOptimizer;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.RegexAsStringFunctionOptimizer;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.UnionScopeChangeOptimizer;
+import org.eclipse.rdf4j.query.algebra.evaluation.util.QueryEvaluationUtility;
+import org.eclipse.rdf4j.query.algebra.evaluation.util.QueryEvaluationUtility.QueryModelPreparation;
 import org.eclipse.rdf4j.query.algebra.helpers.AbstractQueryModelVisitor;
+import org.eclipse.rdf4j.query.algebra.helpers.BindingScopePolicy;
+import org.eclipse.rdf4j.query.algebra.helpers.FilterBindingScope;
 import org.eclipse.rdf4j.query.algebra.helpers.QueryAlgebraBindingAnalysis;
 import org.eclipse.rdf4j.query.algebra.helpers.TupleExprs;
 import org.eclipse.rdf4j.query.impl.EmptyBindingSet;
@@ -72,6 +81,8 @@ import org.eclipse.rdf4j.query.parser.ParsedTupleQuery;
 import org.eclipse.rdf4j.query.parser.QueryParserUtil;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+
+import com.sun.management.ThreadMXBean;
 
 public class UnionScopeChangeOptimizerTest extends QueryOptimizerTest {
 
@@ -119,21 +130,81 @@ public class UnionScopeChangeOptimizerTest extends QueryOptimizerTest {
 	}
 
 	@Test
-	public void fixesScopeChangeOnSubselect1() {
-		union.setLeftArg(new Projection(new Extension(new SingletonSet())));
+	public void fixesScopeChangeOnSubselect1() throws Exception {
+		Projection select = new Projection(new Extension(new SingletonSet()));
+		union.setLeftArg(select);
 		union.setRightArg(new SingletonSet());
+		assertThat(select.isSubquery()).isTrue();
+		assertThat(evaluate(union)).containsExactlyInAnyOrder(Map.of(), Map.of());
 
 		subject.optimize(union, null, null);
+		assertThat(evaluate(union)).containsExactlyInAnyOrder(Map.of(), Map.of());
 		assertThat(union.isVariableScopeChange()).isFalse();
 	}
 
 	@Test
-	public void fixesScopeChangeOnSubselect2() {
+	public void fixesScopeChangeOnSubselect2() throws Exception {
 		union.setLeftArg(new SingletonSet());
-		union.setRightArg(new Projection(new Extension(new SingletonSet())));
+		Projection select = new Projection(new Extension(new SingletonSet()));
+		union.setRightArg(select);
+		assertThat(select.isSubquery()).isTrue();
+		assertThat(evaluate(union)).containsExactlyInAnyOrder(Map.of(), Map.of());
 
 		subject.optimize(union, null, null);
+		assertThat(evaluate(union)).containsExactlyInAnyOrder(Map.of(), Map.of());
 		assertThat(union.isVariableScopeChange()).isFalse();
+	}
+
+	@Test
+	public void detachedProjectionListKeepsUnionScoped() throws Exception {
+		assertMalformedProjectionListKeepsUnionScoped(false, false);
+	}
+
+	@Test
+	public void foreignProjectionListOwnerKeepsUnionScoped() throws Exception {
+		assertMalformedProjectionListKeepsUnionScoped(true, false);
+	}
+
+	@Test
+	public void detachedNonemptyProjectionListKeepsUnionScoped() throws Exception {
+		assertMalformedProjectionListKeepsUnionScoped(false, true);
+	}
+
+	@Test
+	public void ownedNonemptyProjectionListAllowsSafeUnionClearing() throws Exception {
+		ProjectionElemList elements = new ProjectionElemList(new ProjectionElem("missing"));
+		Projection select = new Projection(new SingletonSet(), elements, true);
+		Union current = new Union(select, new SingletonSet());
+		current.setVariableScopeChange(true);
+		assertThat(select.isSubquery()).isTrue();
+		assertThat(elements.getParentNode()).isSameAs(select);
+		assertThat(elements.getElements().getFirst().getParentNode()).isSameAs(elements);
+		assertThat(evaluate(current)).containsExactlyInAnyOrder(Map.of(), Map.of());
+		new UnionScopeChangeOptimizer().optimize(current, null, EmptyBindingSet.getInstance());
+		assertThat(evaluate(current)).containsExactlyInAnyOrder(Map.of(), Map.of());
+		assertThat(current.isVariableScopeChange()).isFalse();
+		assertThat(elements.getParentNode()).isSameAs(select);
+	}
+
+	private static void assertMalformedProjectionListKeepsUnionScoped(boolean foreignOwner, boolean nonempty)
+			throws Exception {
+		ProjectionElemList elements = nonempty ? new ProjectionElemList(new ProjectionElem("missing"))
+				: new ProjectionElemList();
+		Projection select = new Projection(new SingletonSet(), elements, true);
+		Projection other = new Projection(new SingletonSet(), new ProjectionElemList(), true);
+		elements.setParentNode(foreignOwner ? other : null);
+		Union current = new Union(select, new SingletonSet());
+		current.setVariableScopeChange(true);
+		assertThat(select.isSubquery()).isTrue();
+		assertThat(elements.getParentNode()).isSameAs(foreignOwner ? other : null);
+		if (nonempty) {
+			assertThat(elements.getElements().getFirst().getParentNode()).isSameAs(elements);
+		}
+		assertThat(evaluate(current)).containsExactlyInAnyOrder(Map.of(), Map.of());
+		new UnionScopeChangeOptimizer().optimize(current, null, EmptyBindingSet.getInstance());
+		assertThat(evaluate(current)).containsExactlyInAnyOrder(Map.of(), Map.of());
+		assertThat(current.isVariableScopeChange()).isTrue();
+		assertThat(elements.getParentNode()).isSameAs(foreignOwner ? other : null);
 	}
 
 	@Test
@@ -194,6 +265,107 @@ public class UnionScopeChangeOptimizerTest extends QueryOptimizerTest {
 				Map.of("seed", "urn:seed", "out", "urn:right"));
 
 		assertParsedUnionCase(query, expected, false, true);
+	}
+
+	@Test
+	public void attachedUnionCanClearScopeWhenItsActualSiblingIsIndependent() throws Exception {
+		String query = "SELECT ?seed ?out WHERE { VALUES ?seed { <urn:seed> } "
+				+ "{ BIND(<urn:left> AS ?out) } UNION { BIND(<urn:right> AS ?out) } }";
+		List<Map<String, String>> expected = List.of(
+				Map.of("seed", "urn:seed", "out", "urn:left"),
+				Map.of("seed", "urn:seed", "out", "urn:right"));
+		TupleExpr expression = parse(query);
+		assertThat(evaluate(expression)).containsExactlyInAnyOrderElementsOf(expected);
+		Union attached = findOnlyUnion(expression);
+		assertThat(attached.getParentNode()).isInstanceOf(Join.class);
+		new UnionScopeChangeOptimizer().optimize(attached, null, EmptyBindingSet.getInstance());
+		assertThat(evaluate(expression)).containsExactlyInAnyOrderElementsOf(expected);
+		assertThat(attached.isVariableScopeChange()).isFalse();
+	}
+
+	@Test
+	public void attachedUnionKeepsExternalFilterInputOutOfItsBranch() throws Exception {
+		String query = "SELECT ?x ?out WHERE { VALUES ?x { <urn:outer> } "
+				+ "{ FILTER(BOUND(?x)) BIND(<urn:left> AS ?out) } "
+				+ "UNION { BIND(<urn:right> AS ?out) } }";
+		List<Map<String, String>> expected = List.of(Map.of("x", "urn:outer", "out", "urn:right"));
+		TupleExpr expression = parse(query);
+		assertThat(evaluate(expression)).containsExactlyInAnyOrderElementsOf(expected);
+		Union attached = findOnlyUnion(expression);
+		assertThat(attached.getParentNode()).isInstanceOf(Join.class);
+		new UnionScopeChangeOptimizer().optimize(attached, null, EmptyBindingSet.getInstance());
+		assertThat(evaluate(expression)).containsExactlyInAnyOrderElementsOf(expected);
+		assertThat(attached.isVariableScopeChange()).isTrue();
+	}
+
+	@Test
+	public void attachedUnionPreservesItsExternalFilterOwner() throws Exception {
+		ValueFactory values = SimpleValueFactory.getInstance();
+		IRI seed = values.createIRI("urn:seed");
+		IRI left = values.createIRI("urn:left");
+		IRI right = values.createIRI("urn:right");
+		List<Map<String, String>> expected = List.of(
+				Map.of("seed", "urn:seed", "y", "urn:left"),
+				Map.of("seed", "urn:seed", "y", "urn:right"));
+		String parsedQuery = "SELECT ?seed ?y WHERE { VALUES ?seed { <urn:seed> } "
+				+ "{ VALUES ?y { <urn:left> } } UNION { VALUES ?y { <urn:right> } } FILTER(BOUND(?seed)) }";
+		assertThat(evaluate(parse(parsedQuery))).containsExactlyInAnyOrderElementsOf(expected);
+
+		Union attached = new Union(bindingAssignment("y", left), bindingAssignment("y", right));
+		attached.setVariableScopeChange(true);
+		Filter gate = new Filter(attached, new Bound(Var.of("seed")));
+		gate.setVariableScopeChange(false);
+		gate.setConditionBindingScope(ConditionBindingScope.retain(Set.of("seed", "y")));
+		Join owner = new Join(bindingAssignment("seed", seed), gate);
+		Join fullRoot = owner.clone();
+		Filter fullGate = (Filter) fullRoot.getRightArg();
+		Union fullUnion = (Union) fullGate.getArg();
+		assertExternalFilterOwner(gate, owner);
+		assertExternalFilterOwner(fullGate, fullRoot);
+		assertThat(evaluate(owner)).containsExactlyInAnyOrderElementsOf(expected);
+		assertThat(evaluate(fullRoot)).containsExactlyInAnyOrderElementsOf(expected);
+
+		new UnionScopeChangeOptimizer().optimize(attached, null, EmptyBindingSet.getInstance());
+		new UnionScopeChangeOptimizer().optimize(fullRoot, null, EmptyBindingSet.getInstance());
+		assertThat(gate.getArg()).isSameAs(attached);
+		assertThat(fullGate.getArg()).isSameAs(fullUnion);
+		assertExternalFilterOwner(gate, owner);
+		assertExternalFilterOwner(fullGate, fullRoot);
+		assertThat(evaluate(owner)).containsExactlyInAnyOrderElementsOf(expected);
+		assertThat(evaluate(fullRoot)).containsExactlyInAnyOrderElementsOf(expected);
+		System.out.printf("external-owner attachedScope=%s fullRootScope=%s%n",
+				attached.isVariableScopeChange(), fullUnion.isVariableScopeChange());
+	}
+
+	@Test
+	public void attachedUnionDoesNotExposeItsOrdinaryJoinSiblingToBind() throws Exception {
+		ValueFactory values = SimpleValueFactory.getInstance();
+		IRI seed = values.createIRI("urn:seed");
+		Extension readsSeed = new Extension(new SingletonSet(), new ExtensionElem(new Bound(Var.of("seed")), "seen"));
+		Extension falseValue = new Extension(new SingletonSet(),
+				new ExtensionElem(new ValueConstant(values.createLiteral(false)), "seen"));
+		Union attached = new Union(readsSeed, falseValue);
+		attached.setVariableScopeChange(true);
+		Join owner = new Join(bindingAssignment("seed", seed), attached);
+		List<Map<String, String>> expected = List.of(
+				Map.of("seed", "urn:seed", "seen", "false"),
+				Map.of("seed", "urn:seed", "seen", "false"));
+		assertThat(attached.getParentNode()).isSameAs(owner);
+		assertThat(evaluate(owner)).containsExactlyInAnyOrderElementsOf(expected);
+		new UnionScopeChangeOptimizer().optimize(attached, null, EmptyBindingSet.getInstance());
+		assertThat(attached.getParentNode()).isSameAs(owner);
+		assertThat(evaluate(owner)).containsExactlyInAnyOrderElementsOf(expected);
+		assertThat(attached.isVariableScopeChange()).isTrue();
+	}
+
+	private static void assertExternalFilterOwner(Filter gate, Join owner) {
+		assertThat(gate.getParentNode()).isSameAs(owner);
+		assertThat(gate.isVariableScopeChange()).isFalse();
+		assertThat(FilterBindingScope.resolve(gate)).isEqualTo(ConditionBindingScope.retain(Set.of("seed", "y")));
+		assertThat(BindingScopePolicy.filterInputEdges(gate)).singleElement().satisfies(edge -> {
+			assertThat(edge.owner()).isSameAs(owner);
+			assertThat(edge.names()).containsExactly("seed");
+		});
 	}
 
 	@Test
@@ -626,6 +798,277 @@ public class UnionScopeChangeOptimizerTest extends QueryOptimizerTest {
 		assertThat(optimizedUnion.isVariableScopeChange())
 				.as("projecting away ?x does not make the Filter's read of ?x independent")
 				.isTrue();
+	}
+
+	@Test
+	public void clearedInnerUnionDoesNotExposeOuterJoinInput() throws Exception {
+		ValueFactory values = SimpleValueFactory.getInstance();
+		Value two = values.createLiteral(2);
+		Value falseValue = values.createLiteral(false);
+		Extension readsX = new Extension(new SingletonSet(), new ExtensionElem(new Bound(Var.of("x")), "seen"));
+		Union inner = new Union(readsX, bindingAssignment("seen", falseValue));
+		inner.setVariableScopeChange(true);
+		Union isolated = inner.clone();
+		new UnionScopeChangeOptimizer().optimize(isolated, null, EmptyBindingSet.getInstance());
+		assertThat(isolated.isVariableScopeChange()).as("the inner alternative is safe in isolation").isFalse();
+
+		// Model the same inner boundary after admission; its enclosing boundary must still hide the ordinary sibling.
+		inner.setVariableScopeChange(false);
+		Union outer = new Union(inner, bindingAssignment("seen", falseValue));
+		outer.setVariableScopeChange(true);
+		TupleExpr root = new Join(bindingAssignment("x", two), outer);
+		List<Map<String, String>> expected = List.of(
+				Map.of("x", "2", "seen", "false"), Map.of("x", "2", "seen", "false"),
+				Map.of("x", "2", "seen", "false"));
+		assertThat(evaluate(root)).containsExactlyInAnyOrderElementsOf(expected);
+		new UnionScopeChangeOptimizer().optimize(root, null, EmptyBindingSet.getInstance());
+		assertThat(inner.isVariableScopeChange()).isFalse();
+		assertThat(outer.isVariableScopeChange()).as("the outer input would change BOUND(?x)").isTrue();
+		assertThat(evaluate(root)).containsExactlyInAnyOrderElementsOf(expected);
+	}
+
+	@Test
+	public void rejectedFilterCandidateDoesNotContaminateLaterUnionTrial() throws Exception {
+		ValueFactory values = SimpleValueFactory.getInstance();
+		IRI seed = values.createIRI("urn:seed");
+		Value falseValue = values.createLiteral(false);
+		Filter scopedFilter = new Filter(new SingletonSet(), new Not(new Bound(Var.of("seed"))));
+		scopedFilter.setVariableScopeChange(true);
+		ConditionBindingScope originalScope = scopedFilter.getConditionBindingScope();
+		Union unsafe = new Union(new Extension(scopedFilter, new ExtensionElem(new ValueConstant(falseValue), "seen")),
+				bindingAssignment("seen", falseValue));
+		unsafe.setVariableScopeChange(true);
+		Union safe = new Union(bindingAssignment("label", values.createIRI("urn:left")),
+				bindingAssignment("label", values.createIRI("urn:right")));
+		safe.setVariableScopeChange(true);
+		TupleExpr root = new Join(new Join(bindingAssignment("seed", seed), unsafe), safe);
+		List<Map<String, String>> expected = List.of(
+				Map.of("seed", "urn:seed", "seen", "false", "label", "urn:left"),
+				Map.of("seed", "urn:seed", "seen", "false", "label", "urn:left"),
+				Map.of("seed", "urn:seed", "seen", "false", "label", "urn:right"),
+				Map.of("seed", "urn:seed", "seen", "false", "label", "urn:right"));
+		assertThat(evaluate(root)).containsExactlyInAnyOrderElementsOf(expected);
+		new UnionScopeChangeOptimizer().optimize(root, null, EmptyBindingSet.getInstance());
+		assertThat(unsafe.isVariableScopeChange()).isTrue();
+		assertThat(scopedFilter.isVariableScopeChange()).isTrue();
+		assertThat(scopedFilter.getConditionBindingScope()).isEqualTo(originalScope);
+		assertThat(safe.isVariableScopeChange()).isFalse();
+		assertThat(evaluate(root)).containsExactlyInAnyOrderElementsOf(expected);
+	}
+
+	@Test
+	public void nestedCandidatePreparationReportsNAndTwiceNAllocations() {
+		long small = nestedCandidateAllocation(16);
+		long large = nestedCandidateAllocation(32);
+		System.out.printf("nested UNION optimizer allocation N=16 bytes=%d N=32 bytes=%d%n", small, large);
+	}
+
+	private static long nestedCandidateAllocation(int depth) {
+		TupleExpr branch = new StatementPattern(Var.of("s0"), Var.of("p0"), Var.of("o0"));
+		for (int i = 1; i <= depth; i++) {
+			Union next = new Union(branch,
+					new StatementPattern(Var.of("s" + i), Var.of("p" + i), Var.of("o" + i)));
+			next.setVariableScopeChange(true);
+			branch = next;
+		}
+		ThreadMXBean allocated = ManagementFactory.getThreadMXBean() instanceof ThreadMXBean bean
+				&& bean.isThreadAllocatedMemoryEnabled()
+						? bean
+						: null;
+		long thread = Thread.currentThread().threadId();
+		long before = allocated == null ? -1 : allocated.getThreadAllocatedBytes(thread);
+		new UnionScopeChangeOptimizer().optimize(branch, null, EmptyBindingSet.getInstance());
+		long bytes = allocated == null ? -1 : allocated.getThreadAllocatedBytes(thread) - before;
+		assertThat(findUnions(branch)).hasSize(depth).allMatch(union -> !union.isVariableScopeChange());
+		return bytes;
+	}
+
+	@Test
+	public void nonemptySiblingCandidatesReportActualOptimizerWork() throws Exception {
+		CandidateWork small = nonemptySiblingCandidateWork(16);
+		CandidateWork large = nonemptySiblingCandidateWork(32);
+		System.out.printf("real nonempty UNION optimizer N=16 %s N=32 %s%n", small, large);
+		assertThat(small.admitted()).isEqualTo(16);
+		assertThat(large.admitted()).isEqualTo(32);
+		assertThat(small.distinctCandidateRoots()).isEqualTo(16);
+		assertThat(large.distinctCandidateRoots()).isEqualTo(32);
+		assertThat(small.candidateRequests()).isGreaterThanOrEqualTo(16);
+		assertThat(large.candidateRequests()).isGreaterThanOrEqualTo(32);
+		assertThat(small.initialRootRequests()).isEqualTo(1);
+		assertThat(large.initialRootRequests()).isEqualTo(1);
+		assertThat(small.laterRootRequests()).isPositive();
+		assertThat(large.laterRootRequests()).isPositive();
+		assertThat(small.seedOpenings()).isPositive();
+		assertThat(large.seedOpenings()).isPositive();
+		assertThat(small.seedRows()).isPositive();
+		assertThat(large.seedRows()).isPositive();
+		assertThat(small.emptyOpenings()).isPositive();
+		assertThat(large.emptyOpenings()).isPositive();
+		assertThat(small.emptyRows()).isZero();
+		assertThat(large.emptyRows()).isZero();
+	}
+
+	private static CandidateWork nonemptySiblingCandidateWork(int count) throws Exception {
+		ValueFactory values = SimpleValueFactory.getInstance();
+		IRI seed = values.createIRI("urn:seed");
+		ValuesReads seedReads = new ValuesReads();
+		ValuesReads emptyReads = new ValuesReads();
+		BindingSet seedRow = new ListBindingSet(List.of("seed"), seed);
+		TupleExpr root = countedValues(Set.of("seed"), List.of(seedRow, seedRow), seedReads);
+		List<Union> candidates = new ArrayList<>();
+		List<Statement> statements = new ArrayList<>();
+		Map<String, String> expected = new HashMap<>();
+		expected.put("seed", "urn:seed");
+		for (int i = 0; i < count; i++) {
+			IRI subject = values.createIRI("urn:subject:" + i);
+			IRI predicate = values.createIRI("urn:predicate:" + i);
+			IRI object = values.createIRI("urn:object:" + i);
+			statements.add(values.createStatement(subject, predicate, object));
+			expected.put("subject" + i, subject.stringValue());
+			expected.put("object" + i, object.stringValue());
+			StatementPattern pattern = new StatementPattern(Var.of("subject" + i),
+					Var.of("predicate" + i, predicate, true, true), Var.of("object" + i));
+			Union candidate = new Union(pattern, countedValues(Set.of(), List.of(), emptyReads));
+			candidate.setVariableScopeChange(true);
+			candidates.add(candidate);
+			root = new Join(root, candidate);
+		}
+		List<Map<String, String>> expectedBag = List.of(Map.copyOf(expected), Map.copyOf(expected));
+		TripleSource source = tripleSource(statements);
+		assertThat(evaluate(root.clone(), source)).containsExactlyInAnyOrderElementsOf(expectedBag);
+		assertThat(candidates).allMatch(Union::isVariableScopeChange);
+
+		// Establish the actual sibling-output domains on a clone before measuring the untouched optimizer input.
+		TupleExpr inputCheck = root.clone();
+		QueryAlgebraBindingAnalysis analysis = QueryAlgebraBindingAnalysis.withBindingValues(inputCheck,
+				EmptyBindingSet.getInstance());
+		for (Union candidate : findUnions(inputCheck)) {
+			assertThat(candidate.getParentNode()).isInstanceOf(Join.class);
+			TupleExpr sibling = ((Join) candidate.getParentNode()).getLeftArg();
+			var outputs = analysis.outputFacts(sibling, analysis.contextAt(sibling));
+			assertThat(outputs.possibleOutputsKnown()).isTrue();
+			assertThat(outputs.possibleOutputs()).contains("seed");
+		}
+
+		TupleExpr original = root;
+		CountedPreparation preparation = new CountedPreparation(original, candidates);
+		CandidateWork work = QueryEvaluationUtility.withPreparedQuerySafetySnapshot(original, () -> preparation,
+				prepared -> {
+					assertThat(prepared).isSameAs(original);
+					assertThat(preparation.candidateRoots).isEmpty();
+					int initialRootRequests = preparation.rootRequests;
+					seedReads.clear();
+					emptyReads.clear();
+					ThreadMXBean allocated = ManagementFactory.getThreadMXBean() instanceof ThreadMXBean bean
+							&& bean.isThreadAllocatedMemoryEnabled() ? bean : null;
+					long thread = Thread.currentThread().threadId();
+					long before = allocated == null ? -1 : allocated.getThreadAllocatedBytes(thread);
+					new UnionScopeChangeOptimizer().optimize(prepared, null, EmptyBindingSet.getInstance());
+					long bytes = allocated == null ? -1 : allocated.getThreadAllocatedBytes(thread) - before;
+					long admitted = candidates.stream().filter(candidate -> !candidate.isVariableScopeChange()).count();
+					return new CandidateWork(admitted, preparation.candidateRequests, preparation.candidateRoots.size(),
+							initialRootRequests, preparation.rootRequests - initialRootRequests,
+							preparation.otherRequests,
+							preparation.resets,
+							seedReads.openings.get(), seedReads.rows.get(), emptyReads.openings.get(),
+							emptyReads.rows.get(),
+							bytes);
+				});
+		assertThat(preparation.closed).isTrue();
+		assertThat(evaluate(root, source)).containsExactlyInAnyOrderElementsOf(expectedBag);
+		return work;
+	}
+
+	private static BindingSetAssignment countedValues(Set<String> names, List<BindingSet> rows,
+			ValuesReads reads) {
+		BindingSetAssignment assignment = new BindingSetAssignment();
+		assignment.setDeclaredBindingNames(names);
+		BindingSetAssignment.RepeatableBindingSetSource repeatable = () -> {
+			reads.openings.incrementAndGet();
+			Iterator<BindingSet> delegate = rows.iterator();
+			return new Iterator<>() {
+				@Override
+				public boolean hasNext() {
+					return delegate.hasNext();
+				}
+
+				@Override
+				public BindingSet next() {
+					BindingSet row = delegate.next();
+					reads.rows.incrementAndGet();
+					return row;
+				}
+			};
+		};
+		assignment.setBindingSets(repeatable);
+		return assignment;
+	}
+
+	private static final class ValuesReads {
+		private final AtomicInteger openings = new AtomicInteger();
+		private final AtomicInteger rows = new AtomicInteger();
+
+		private void clear() {
+			openings.set(0);
+			rows.set(0);
+		}
+	}
+
+	private static final class CountedPreparation implements QueryModelPreparation {
+		private final QueryModelPreparation delegate = PreparedValuesSnapshot.newPreparation();
+		private final TupleExpr root;
+		private final Set<Union> originalCandidates = Collections.newSetFromMap(new IdentityHashMap<>());
+		private final Set<QueryModelNode> candidateRoots = Collections.newSetFromMap(new IdentityHashMap<>());
+		private int candidateRequests;
+		private int rootRequests;
+		private int otherRequests;
+		private int resets;
+		private boolean closed;
+
+		private CountedPreparation(TupleExpr root, List<Union> candidates) {
+			this.root = root;
+			originalCandidates.addAll(candidates);
+		}
+
+		@Override
+		public QueryModelNode prepare(QueryModelNode expression) {
+			if (expression == root) {
+				rootRequests++;
+			} else if (expression instanceof Union candidate && !originalCandidates.contains(candidate)) {
+				candidateRequests++;
+				candidateRoots.add(candidate);
+			} else {
+				otherRequests++;
+			}
+			return delegate.prepare(expression);
+		}
+
+		@Override
+		public List<Projection> firstSubqueryProjections(TupleExpr expression) {
+			return delegate.firstSubqueryProjections(expression);
+		}
+
+		@Override
+		public void resetTraversal() {
+			resets++;
+			delegate.resetTraversal();
+		}
+
+		@Override
+		public void invalidate(QueryModelNode changedNode) {
+			delegate.invalidate(changedNode);
+		}
+
+		@Override
+		public void close() {
+			delegate.close();
+			closed = true;
+		}
+	}
+
+	private record CandidateWork(long admitted, int candidateRequests, int distinctCandidateRoots,
+			int initialRootRequests, int laterRootRequests, int otherRequests, int resets, int seedOpenings,
+			int seedRows, int emptyOpenings, int emptyRows, long allocatedBytes) {
 	}
 
 	@Test

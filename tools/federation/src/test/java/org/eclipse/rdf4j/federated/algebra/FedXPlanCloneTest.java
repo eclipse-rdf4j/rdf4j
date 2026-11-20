@@ -12,32 +12,816 @@
 package org.eclipse.rdf4j.federated.algebra;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.junit.jupiter.api.Assertions.assertAll;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.ArgumentMatchers.nullable;
+import static org.mockito.ArgumentMatchers.same;
+import static org.mockito.Mockito.RETURNS_DEEP_STUBS;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.HashSet;
+import java.util.IdentityHashMap;
 import java.util.List;
+import java.util.Set;
+import java.util.concurrent.Executors;
+import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.function.Consumer;
 
+import org.eclipse.rdf4j.common.iteration.EmptyIteration;
 import org.eclipse.rdf4j.federated.EndpointManager;
 import org.eclipse.rdf4j.federated.FederationContext;
 import org.eclipse.rdf4j.federated.algebra.ConjunctiveFilterExpr;
 import org.eclipse.rdf4j.federated.algebra.StatementSource.StatementSourceType;
 import org.eclipse.rdf4j.federated.endpoint.Endpoint;
+import org.eclipse.rdf4j.federated.evaluation.FederationEvaluationStrategy;
+import org.eclipse.rdf4j.federated.evaluation.TripleSource;
+import org.eclipse.rdf4j.federated.optimizer.DefaultFedXCostModel;
+import org.eclipse.rdf4j.federated.optimizer.OptimizerUtil;
+import org.eclipse.rdf4j.federated.optimizer.StatementGroupAndJoinOptimizer;
+import org.eclipse.rdf4j.federated.optimizer.TripleRefJoinOptimizer;
 import org.eclipse.rdf4j.federated.structures.QueryInfo;
+import org.eclipse.rdf4j.federated.util.FilterUtils;
+import org.eclipse.rdf4j.federated.util.QueryStringUtil;
+import org.eclipse.rdf4j.model.TripleTerm;
+import org.eclipse.rdf4j.model.Value;
+import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.model.vocabulary.RDF4J;
+import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.Dataset;
+import org.eclipse.rdf4j.query.QueryEvaluationException;
+import org.eclipse.rdf4j.query.QueryLanguage;
 import org.eclipse.rdf4j.query.algebra.ArbitraryLengthPath;
+import org.eclipse.rdf4j.query.algebra.BindingSetAssignment;
+import org.eclipse.rdf4j.query.algebra.Bound;
+import org.eclipse.rdf4j.query.algebra.Compare;
+import org.eclipse.rdf4j.query.algebra.Compare.CompareOp;
 import org.eclipse.rdf4j.query.algebra.Exists;
+import org.eclipse.rdf4j.query.algebra.Extension;
+import org.eclipse.rdf4j.query.algebra.FunctionCall;
+import org.eclipse.rdf4j.query.algebra.Join;
+import org.eclipse.rdf4j.query.algebra.Not;
+import org.eclipse.rdf4j.query.algebra.QueryModelNode;
+import org.eclipse.rdf4j.query.algebra.QueryRoot;
 import org.eclipse.rdf4j.query.algebra.SingletonSet;
 import org.eclipse.rdf4j.query.algebra.StatementPattern;
 import org.eclipse.rdf4j.query.algebra.TripleRef;
+import org.eclipse.rdf4j.query.algebra.TupleExpr;
+import org.eclipse.rdf4j.query.algebra.ValueConstant;
+import org.eclipse.rdf4j.query.algebra.ValueExpr;
 import org.eclipse.rdf4j.query.algebra.Var;
+import org.eclipse.rdf4j.query.algebra.evaluation.QueryEvaluationStep;
+import org.eclipse.rdf4j.query.algebra.evaluation.function.Function;
+import org.eclipse.rdf4j.query.algebra.evaluation.function.FunctionRegistry;
+import org.eclipse.rdf4j.query.algebra.evaluation.util.QueryEvaluationUtility;
+import org.eclipse.rdf4j.query.algebra.helpers.AbstractQueryModelVisitor;
+import org.eclipse.rdf4j.query.impl.EmptyBindingSet;
 import org.eclipse.rdf4j.query.impl.SimpleDataset;
+import org.eclipse.rdf4j.query.parser.QueryParserUtil;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.function.Executable;
 
 public class FedXPlanCloneTest {
+	@Test
+	public void unscopedJoinPreparesAndEvaluatesWithoutRecursiveDispatch() {
+		FederationContext context = mock(FederationContext.class, RETURNS_DEEP_STUBS);
+		FederationEvaluationStrategy strategy = new FederationEvaluationStrategy(context);
+		QueryEvaluationStep prepared = strategy.precompile(new Join(new SingletonSet(), new SingletonSet()));
+		try (var rows = prepared.evaluate(EmptyBindingSet.getInstance())) {
+			assertThat(rows.hasNext()).isTrue();
+			assertThat(rows.next()).isEqualTo(EmptyBindingSet.getInstance());
+			assertThat(rows.hasNext()).isFalse();
+		}
+	}
+
+	@Test
+	public void sourceSelectionRetainsStatementLexicalScope() {
+		for (boolean scoped : List.of(false, true)) {
+			StatementPattern pattern = new StatementPattern(Var.of("s"), Var.of("p"), Var.of("o"));
+			pattern.setVariableScopeChange(scoped);
+			ExclusiveStatement selected = new ExclusiveStatement(pattern,
+					new StatementSource("member", StatementSourceType.REMOTE), mock(QueryInfo.class));
+			assertThat(selected.isVariableScopeChange()).isEqualTo(scoped);
+		}
+	}
+
+	@Test
+	public void statementScopeConversionRetainsLexicalScope() {
+		for (boolean scoped : List.of(false, true)) {
+			ExclusiveStatement selected = new ExclusiveStatement(
+					new StatementPattern(Var.of("s"), Var.of("p"), Var.of("o")),
+					new StatementSource("member", StatementSourceType.REMOTE), mock(QueryInfo.class));
+			selected.setVariableScopeChange(scoped);
+			FedXStatementPattern converted = selected.withScope(StatementPattern.Scope.NAMED_CONTEXTS, Var.of("g"));
+			assertThat(converted.isVariableScopeChange()).isEqualTo(scoped);
+		}
+	}
+
+	@Test
+	public void flatteningJoinsRetainsLexicalScopeLayers() {
+		QueryInfo query = mock(QueryInfo.class);
+		Join nested = new Join(new SingletonSet(), new SingletonSet());
+		nested.setVariableScopeChange(true);
+		Join outer = new Join(new SingletonSet(), nested);
+		NJoin flattened = OptimizerUtil.flattenJoin(outer, query);
+		assertThat(flattened.getArgs()).containsExactly(outer.getLeftArg(), nested);
+		assertThat(nested.isVariableScopeChange()).isTrue();
+	}
+
+	@Test
+	public void flatteningJoinRetainsRootLexicalScope() {
+		QueryInfo query = mock(QueryInfo.class);
+		Join scopedRoot = new Join(new SingletonSet(), new SingletonSet());
+		scopedRoot.setVariableScopeChange(true);
+		assertThat(OptimizerUtil.flattenJoin(scopedRoot, query).isVariableScopeChange()).isTrue();
+	}
+
+	@Test
+	public void optimizingNJoinKeepsItsOwnScopeAndGraphLayer() {
+		QueryInfo query = mock(QueryInfo.class);
+		NJoin scoped = new NJoin(new ArrayList<>(List.of(new SingletonSet(), new SingletonSet())), query);
+		scoped.setVariableScopeChange(true);
+		QueryRoot multiple = new QueryRoot(scoped);
+		new StatementGroupAndJoinOptimizer(query, DefaultFedXCostModel.INSTANCE).optimize(multiple);
+		assertThat(((NJoin) multiple.getArg()).isVariableScopeChange()).isTrue();
+	}
+
+	@Test
+	public void collapsingNJoinRetainsSeparateLexicalAndGraphScopes() {
+		QueryInfo query = mock(QueryInfo.class);
+		Extension graph = Extension.graphScope(new SingletonSet());
+		NJoin one = new NJoin(new ArrayList<>(List.of(graph)), query);
+		one.setVariableScopeChange(true);
+		QueryRoot single = new QueryRoot(one);
+		new StatementGroupAndJoinOptimizer(query, DefaultFedXCostModel.INSTANCE).optimize(single);
+		assertThat(single.getArg()).isInstanceOf(Extension.class);
+		Extension lexical = (Extension) single.getArg();
+		assertThat(lexical.isVariableScopeChange()).isTrue();
+		assertThat(lexical.isGraphScopeBoundary()).isFalse();
+		assertThat(lexical.getArg()).isSameAs(graph);
+	}
+
+	@Test
+	public void tripleRefFusionDoesNotEraseLexicalScopes() {
+		QueryInfo query = mock(QueryInfo.class);
+		List<Boolean> preserved = new ArrayList<>();
+		for (int scopedNode = 0; scopedNode < 2; scopedNode++) {
+			TripleRef reference = new TripleRef(Var.of("ts"), Var.of("tp"), Var.of("to"), Var.of("triple"));
+			StatementPattern statement = new StatementPattern(Var.of("s"), Var.of("p"), Var.of("triple"));
+			Join join = new Join(reference, statement);
+			if (scopedNode == 0) {
+				reference.setVariableScopeChange(true);
+			} else {
+				statement.setVariableScopeChange(true);
+			}
+			preserved.add(OptimizerUtil.flattenTripleRefJoins(join, query) == join);
+		}
+		Join plain = new Join(new TripleRef(Var.of("ts"), Var.of("tp"), Var.of("to"), Var.of("triple")),
+				new StatementPattern(Var.of("s"), Var.of("p"), Var.of("triple")));
+		assertThat(OptimizerUtil.flattenTripleRefJoins(plain, query)).isInstanceOf(TripleRefStatementPattern.class);
+		assertThat(preserved).containsExactly(true, true);
+	}
+
+	@Test
+	public void tripleRefFusionRetainsScopedRootAndSpecializedOperator() {
+		QueryInfo query = mock(QueryInfo.class);
+		Join scoped = new Join(new TripleRef(Var.of("ts"), Var.of("tp"), Var.of("to"), Var.of("triple")),
+				new StatementPattern(Var.of("s"), Var.of("p"), Var.of("triple")));
+		scoped.setVariableScopeChange(true);
+		assertThat(OptimizerUtil.flattenTripleRefJoins(scoped, query)).isInstanceOfSatisfying(Extension.class,
+				extension -> {
+					assertThat(extension.isVariableScopeChange()).isTrue();
+					assertThat(extension.isGraphScopeBoundary()).isFalse();
+					assertThat(extension.getArg()).isInstanceOf(TripleRefStatementPattern.class);
+				});
+	}
+
+	@Test
+	public void tripleRefOptimizerRetainsNJoinScope() {
+		QueryInfo query = mock(QueryInfo.class);
+		NJoin multiple = new NJoin(new ArrayList<>(List.of(new SingletonSet(), new SingletonSet())), query);
+		multiple.setVariableScopeChange(true);
+		QueryRoot root = new QueryRoot(multiple);
+		new TripleRefJoinOptimizer(query).optimize(root);
+		assertThat(((NJoin) root.getArg()).isVariableScopeChange()).isTrue();
+	}
+
+	@Test
+	public void tripleRefOptimizerRetainsSeparateSingleChildScopes() {
+		QueryInfo query = mock(QueryInfo.class);
+		Extension graph = Extension.graphScope(new SingletonSet());
+		NJoin one = new NJoin(new ArrayList<>(List.of(graph)), query);
+		one.setVariableScopeChange(true);
+		QueryRoot root = new QueryRoot(one);
+		new TripleRefJoinOptimizer(query).optimize(root);
+		assertThat(root.getArg()).isInstanceOfSatisfying(Extension.class, lexical -> {
+			assertThat(lexical.isVariableScopeChange()).isTrue();
+			assertThat(lexical.isGraphScopeBoundary()).isFalse();
+			assertThat(lexical.getArg()).isSameAs(graph);
+		});
+	}
+
+	@Test
+	public void graphScopeDoesNotFuseAnnotatedOrScopedStatements() {
+		List<Consumer<ExclusiveStatement>> changes = List.of(
+				statement -> statement.setVariableScopeChange(true),
+				statement -> statement.addFilterExpr(
+						new FilterExpr(new Bound(Var.of("outside")), new HashSet<>(Set.of("outside")))),
+				statement -> statement.addBoundFilter("s", SimpleValueFactory.getInstance().createIRI("urn:bound")),
+				statement -> statement.setUpperLimit(1),
+				statement -> statement.setExecutionDataset(new SimpleDataset()),
+				statement -> statement.setResolvedGraphSelection(new ResolvedGraphSelection(
+						SimpleValueFactory.getInstance().createIRI("urn:selected"), null, false)));
+		for (boolean changeGraphOperand : List.of(false, true)) {
+			for (int index = 0; index < changes.size(); index++) {
+				Consumer<ExclusiveStatement> change = changes.get(index);
+				QueryInfo query = queryForMember();
+				StatementSource source = new StatementSource("member", StatementSourceType.REMOTE);
+				ExclusiveStatement inside = new ExclusiveStatement(
+						new StatementPattern(Var.of("s"), Var.of("p1"), Var.of("o1")), source, query);
+				ExclusiveStatement outside = new ExclusiveStatement(
+						new StatementPattern(Var.of("s"), Var.of("p2"), Var.of("o2")), source, query);
+				change.accept(changeGraphOperand ? inside : outside);
+				ExclusiveStatement annotated = changeGraphOperand ? inside : outside;
+				FilterValueExpr originalFilter = annotated.getFilterExpr();
+				boolean originalScope = annotated.isVariableScopeChange();
+				Extension graph = Extension.graphScope(inside);
+				QueryRoot root = new QueryRoot(new NJoin(new ArrayList<>(List.of(graph, outside)), query));
+				new StatementGroupAndJoinOptimizer(query, DefaultFedXCostModel.INSTANCE).optimize(root);
+				if (index < 2) {
+					assertGraphFusionRetains(root, inside, inside, outside);
+					assertThat(annotated.isVariableScopeChange()).isEqualTo(originalScope);
+					assertThat(annotated.getFilterExpr()).isSameAs(originalFilter);
+				} else {
+					assertThat(root.getArg()).isInstanceOf(NJoin.class);
+					assertThat(((NJoin) root.getArg()).getArgs()).contains(graph, outside);
+				}
+			}
+		}
+	}
+
+	@Test
+	public void graphScopeDoesNotFuseAnnotatedOrScopedGroups() {
+		List<Consumer<ExclusiveGroup>> changes = List.of(
+				group -> group.setVariableScopeChange(true),
+				group -> group.addFilterExpr(
+						new FilterExpr(new Bound(Var.of("outside")), new HashSet<>(Set.of("outside")))),
+				group -> group.addBoundFilter("s", SimpleValueFactory.getInstance().createIRI("urn:bound")),
+				group -> group.setExecutionDataset(new SimpleDataset()),
+				group -> group.setResolvedGraphSelection(new ResolvedGraphSelection(
+						SimpleValueFactory.getInstance().createIRI("urn:selected"), null, false)));
+		for (int index = 0; index < changes.size(); index++) {
+			Consumer<ExclusiveGroup> change = changes.get(index);
+			QueryInfo query = queryForMember();
+			StatementSource source = new StatementSource("member", StatementSourceType.REMOTE);
+			ExclusiveStatement first = new ExclusiveStatement(
+					new StatementPattern(Var.of("s"), Var.of("p1"), Var.of("o1")), source, query);
+			ExclusiveStatement second = new ExclusiveStatement(
+					new StatementPattern(Var.of("s"), Var.of("p2"), Var.of("o2")), source, query);
+			ExclusiveGroup group = new ExclusiveGroup(List.of(first, second), source, query);
+			change.accept(group);
+			FilterValueExpr originalFilter = group.getFilterExpr();
+			boolean originalScope = group.isVariableScopeChange();
+			Extension graph = Extension.graphScope(group);
+			ExclusiveStatement outside = new ExclusiveStatement(
+					new StatementPattern(Var.of("s"), Var.of("p3"), Var.of("o3")), source, query);
+			QueryRoot root = new QueryRoot(new NJoin(new ArrayList<>(List.of(graph, outside)), query));
+			new StatementGroupAndJoinOptimizer(query, DefaultFedXCostModel.INSTANCE).optimize(root);
+			if (index < 2) {
+				assertGraphFusionRetains(root, group, group, first, second, outside);
+				assertThat(group.isVariableScopeChange()).isEqualTo(originalScope);
+				assertThat(group.getFilterExpr()).isSameAs(originalFilter);
+			} else {
+				assertThat(root.getArg()).isInstanceOf(NJoin.class);
+				assertThat(((NJoin) root.getArg()).getArgs()).contains(graph, outside);
+			}
+		}
+	}
+
+	@Test
+	public void graphScopeDoesNotRegroupAnnotatedStatements() {
+		List<Consumer<ExclusiveStatement>> changes = List.of(
+				statement -> statement.setVariableScopeChange(true),
+				statement -> statement.addFilterExpr(
+						new FilterExpr(new Bound(Var.of("outside")), new HashSet<>(Set.of("outside")))),
+				statement -> statement.addBoundFilter("s", SimpleValueFactory.getInstance().createIRI("urn:bound")),
+				statement -> statement.setUpperLimit(1),
+				statement -> statement.setExecutionDataset(new SimpleDataset()),
+				statement -> statement.setResolvedGraphSelection(new ResolvedGraphSelection(
+						SimpleValueFactory.getInstance().createIRI("urn:selected"), null, false)));
+		for (int index = 0; index < changes.size(); index++) {
+			Consumer<ExclusiveStatement> change = changes.get(index);
+			QueryInfo query = queryForMember();
+			StatementSource source = new StatementSource("member", StatementSourceType.REMOTE);
+			ExclusiveStatement inside = new ExclusiveStatement(
+					new StatementPattern(Var.of("s"), Var.of("p1"), Var.of("o1")), source, query);
+			ExclusiveStatement annotated = new ExclusiveStatement(
+					new StatementPattern(Var.of("s"), Var.of("p2"), Var.of("o2")), source, query);
+			ExclusiveStatement plain = new ExclusiveStatement(
+					new StatementPattern(Var.of("s"), Var.of("p3"), Var.of("o3")), source, query);
+			change.accept(annotated);
+			FilterValueExpr originalFilter = annotated.getFilterExpr();
+			boolean originalScope = annotated.isVariableScopeChange();
+			Extension graph = Extension.graphScope(inside);
+			QueryRoot root = new QueryRoot(new NJoin(new ArrayList<>(List.of(graph, annotated, plain)), query));
+			new StatementGroupAndJoinOptimizer(query, DefaultFedXCostModel.INSTANCE).optimize(root);
+			if (index < 2) {
+				assertGraphFusionRetains(root, inside, inside, annotated, plain);
+				assertThat(annotated.isVariableScopeChange()).isEqualTo(originalScope);
+				assertThat(annotated.getFilterExpr()).isSameAs(originalFilter);
+			} else {
+				assertThat(root.getArg()).isInstanceOf(NJoin.class);
+				assertThat(((NJoin) root.getArg()).getArgs()).contains(graph, annotated, plain);
+			}
+		}
+	}
+
+	private static void assertGraphFusionRetains(QueryRoot root, QueryModelNode graphOperand,
+			QueryModelNode... originalNodes) {
+		assertThat(root.getArg()).isInstanceOf(ExclusiveGroup.class);
+		Set<QueryModelNode> visited = Collections.newSetFromMap(new IdentityHashMap<>());
+		root.visit(new AbstractQueryModelVisitor<RuntimeException>() {
+			@Override
+			protected void meetNode(QueryModelNode node) {
+				visited.add(node);
+				super.meetNode(node);
+			}
+		});
+		for (QueryModelNode node : originalNodes) {
+			assertThat(visited.contains(node)).isTrue();
+		}
+		assertThat(graphOperand.getParentNode()).isInstanceOfSatisfying(ExclusiveGroup.class,
+				boundary -> assertThat(boundary.isVariableScopeChange()).isTrue());
+	}
+
+	@Test
+	public void graphGroupingRetainsOriginalQueryContextAuthority() {
+		QueryInfo query = queryForMember();
+		QueryInfo foreign = queryForMember();
+		StatementSource source = new StatementSource("member", StatementSourceType.REMOTE);
+		ExclusiveStatement inside = new ExclusiveStatement(
+				new StatementPattern(Var.of("s"), Var.of("p1"), Var.of("o1")), source, query);
+		ExclusiveStatement differentContext = new ExclusiveStatement(
+				new StatementPattern(Var.of("s"), Var.of("p2"), Var.of("o2")), source, foreign);
+		Extension graph = Extension.graphScope(inside);
+		QueryRoot root = new QueryRoot(new NJoin(new ArrayList<>(List.of(graph, differentContext)), query));
+		new StatementGroupAndJoinOptimizer(query, DefaultFedXCostModel.INSTANCE).optimize(root);
+		assertThat(root.getArg()).isInstanceOf(NJoin.class);
+		assertThat(differentContext.getQueryInfo()).isSameAs(foreign);
+	}
+
+	@Test
+	public void nestedGroupRendersItsFilterAtItsOwnBoundary() throws Exception {
+		QueryInfo query = queryForMember();
+		StatementSource source = new StatementSource("member", StatementSourceType.REMOTE);
+		ExclusiveStatement inner = new ExclusiveStatement(
+				new StatementPattern(Var.of("s"), Var.of("p1"), Var.of("o1")), source, query);
+		ExclusiveGroup nested = new ExclusiveGroup(List.of(inner), source, query);
+		nested.addFilterExpr(new FilterExpr(new Compare(Var.of("o1"),
+				new ValueConstant(SimpleValueFactory.getInstance().createLiteral("match")), CompareOp.EQ),
+				new HashSet<>(Set.of("o1"))));
+		ExclusiveStatement outer = new ExclusiveStatement(
+				new StatementPattern(Var.of("s"), Var.of("p2"), Var.of("o2")), source, query);
+		ExclusiveGroup combined = new ExclusiveGroup(List.of(nested, outer), source, query);
+		String text = QueryStringUtil.selectQueryString(combined, EmptyBindingSet.getInstance(), null,
+				new AtomicBoolean(), null);
+		assertThat(text).contains("FILTER").contains("?o1");
+		assertThat(QueryParserUtil.parseTupleQuery(QueryLanguage.SPARQL, text, null)).isNotNull();
+	}
+
+	@Test
+	public void nestedGroupNeverSilentlyDropsUnsupportedFilter() {
+		QueryInfo query = queryForMember();
+		StatementSource source = new StatementSource("member", StatementSourceType.REMOTE);
+		ExclusiveStatement inner = new ExclusiveStatement(
+				new StatementPattern(Var.of("s"), Var.of("p1"), Var.of("o1")), source, query);
+		ExclusiveGroup nested = new ExclusiveGroup(List.of(inner), source, query);
+		nested.addFilterExpr(new FilterExpr(new FunctionCall("urn:test:local-only"), new HashSet<>()));
+		ExclusiveStatement outer = new ExclusiveStatement(
+				new StatementPattern(Var.of("s"), Var.of("p2"), Var.of("o2")), source, query);
+		ExclusiveGroup combined = new ExclusiveGroup(List.of(nested, outer), source, query);
+		assertThatThrownBy(() -> QueryStringUtil.selectQueryString(combined, EmptyBindingSet.getInstance(), null,
+				new AtomicBoolean(), null)).isInstanceOf(QueryEvaluationException.class);
+	}
+
+	@Test
+	public void coveredNestedBindingsRenderAcrossSelectAskAndLimit() throws Exception {
+		ExclusiveGroup group = nestedBoundGroup("covered");
+		String select = QueryStringUtil.selectQueryString(group, EmptyBindingSet.getInstance(), null,
+				new AtomicBoolean(), null);
+		String ask = QueryStringUtil.askQueryString(group, EmptyBindingSet.getInstance(), null);
+		String limited = QueryStringUtil.selectQueryStringLimit1(group, EmptyBindingSet.getInstance(), null);
+		assertThat(QueryParserUtil.parseTupleQuery(QueryLanguage.SPARQL, select, null)).isNotNull();
+		assertThat(QueryParserUtil.parseBooleanQuery(QueryLanguage.SPARQL, ask, null)).isNotNull();
+		assertThat(QueryParserUtil.parseTupleQuery(QueryLanguage.SPARQL, limited, null)).isNotNull();
+	}
+
+	@Test
+	public void missingOrConflictingParentBindingStillRejectsNestedRendering() {
+		for (String variant : List.of("missing", "conflict")) {
+			ExclusiveGroup group = nestedBoundGroup(variant);
+			assertThatThrownBy(() -> QueryStringUtil.selectQueryString(group, EmptyBindingSet.getInstance(), null,
+					new AtomicBoolean(), null)).isInstanceOf(QueryEvaluationException.class);
+			assertThatThrownBy(() -> QueryStringUtil.askQueryString(group, EmptyBindingSet.getInstance(), null))
+					.isInstanceOf(QueryEvaluationException.class);
+			assertThatThrownBy(
+					() -> QueryStringUtil.selectQueryStringLimit1(group, EmptyBindingSet.getInstance(), null))
+							.isInstanceOf(QueryEvaluationException.class);
+		}
+	}
+
+	@Test
+	public void coveredNestedBindingTermsRoundTripWithoutForgingBlankNodeAuthority() throws Exception {
+		var factory = SimpleValueFactory.getInstance();
+		List<Value> terms = List.of(factory.createIRI("urn:bound"), factory.createIRI("urn:term:space and>delimiter"),
+				factory.createLiteral("quote' slash\\ and newline\n", "en"),
+				factory.createLiteral("quote\" slash\\", factory.createIRI("urn:custom-type")),
+				factory.createTripleTerm(factory.createIRI("urn:subject"), factory.createIRI("urn:predicate"),
+						factory.createLiteral("object")));
+		for (Value value : terms) {
+			String text = QueryStringUtil.selectQueryString(coveredObjectGroup(value), EmptyBindingSet.getInstance(),
+					null, new AtomicBoolean(), null);
+			List<Value> rendered = new ArrayList<>();
+			QueryParserUtil.parseTupleQuery(QueryLanguage.SPARQL, text, null)
+					.getTupleExpr()
+					.visit(new AbstractQueryModelVisitor<RuntimeException>() {
+						@Override
+						public void meet(BindingSetAssignment assignment) {
+							assignment.getBindingSets().forEach(row -> rendered.add(row.getValue("v")));
+						}
+					});
+			assertThat(rendered).isNotEmpty().allMatch(value::equals);
+		}
+		assertThatThrownBy(() -> QueryStringUtil.selectQueryString(coveredObjectGroup(factory.createBNode()),
+				EmptyBindingSet.getInstance(), null, new AtomicBoolean(), null))
+						.isInstanceOf(QueryEvaluationException.class);
+	}
+
+	@Test
+	public void statementRendererRoundTripsEscapedBoundTerms() {
+		var factory = SimpleValueFactory.getInstance();
+		List<Value> terms = List.of(factory.createIRI("urn:term:space and>delimiter"),
+				factory.createLiteral("quote' slash\\ and newline\n", "en"),
+				factory.createLiteral("quote\" slash\\", factory.createIRI("urn:custom-type")),
+				factory.createTripleTerm(factory.createIRI("urn:term:space and>delimiter"),
+						factory.createIRI("urn:predicate"), factory.createLiteral("object\\value")));
+		assertAll(terms.stream().map(value -> (Executable) () -> {
+			StatementPattern statement = new StatementPattern(Var.of("s"),
+					Var.of("p", factory.createIRI("urn:predicate")), Var.of("o", value));
+			String text = QueryStringUtil.selectQueryString(statement, EmptyBindingSet.getInstance(), null,
+					new AtomicBoolean(), null);
+			List<Value> constants = new ArrayList<>();
+			List<TripleRef> tripleRefs = new ArrayList<>();
+			QueryParserUtil.parseTupleQuery(QueryLanguage.SPARQL, text, null)
+					.getTupleExpr()
+					.visit(new AbstractQueryModelVisitor<RuntimeException>() {
+						@Override
+						public void meet(TripleRef tripleRef) {
+							tripleRefs.add(tripleRef);
+							super.meet(tripleRef);
+						}
+
+						@Override
+						public void meet(Var variable) {
+							if (variable.hasValue()) {
+								constants.add(variable.getValue());
+							}
+						}
+					});
+			if (value instanceof TripleTerm triple) {
+				assertThat(tripleRefs).singleElement().satisfies(ref -> {
+					assertThat(ref.getSubjectVar().getValue()).isEqualTo(triple.getSubject());
+					assertThat(ref.getPredicateVar().getValue()).isEqualTo(triple.getPredicate());
+					assertThat(ref.getObjectVar().getValue()).isEqualTo(triple.getObject());
+				});
+			} else {
+				assertThat(constants).contains(value);
+			}
+		}));
+	}
+
+	private ExclusiveGroup coveredObjectGroup(Value value) {
+		QueryInfo query = queryForMember();
+		StatementSource source = new StatementSource("member", StatementSourceType.REMOTE);
+		ExclusiveStatement first = new ExclusiveStatement(
+				new StatementPattern(Var.of("s"), Var.of("p1"), Var.of("v")), source, query);
+		ExclusiveStatement second = new ExclusiveStatement(
+				new StatementPattern(Var.of("s"), Var.of("p2"), Var.of("v")), source, query);
+		ExclusiveGroup group = new ExclusiveGroup(List.of(first, second), source, query);
+		group.addBoundFilter("v", value);
+		first.addBoundFilter("v", value);
+		second.addBoundFilter("v", value);
+		return group;
+	}
+
+	private ExclusiveGroup nestedBoundGroup(String variant) {
+		QueryInfo query = queryForMember();
+		StatementSource source = new StatementSource("member", StatementSourceType.REMOTE);
+		ExclusiveStatement first = new ExclusiveStatement(
+				new StatementPattern(Var.of("s"), Var.of("p1"), Var.of("o1")), source, query);
+		ExclusiveStatement second = new ExclusiveStatement(
+				new StatementPattern(Var.of("s"), Var.of("p2"), Var.of("o2")), source, query);
+		ExclusiveGroup group = new ExclusiveGroup(List.of(first, second), source, query);
+		if (!variant.equals("missing")) {
+			group.addBoundFilter("s", SimpleValueFactory.getInstance()
+					.createIRI(
+							variant.equals("conflict") ? "urn:other" : "urn:bound"));
+		}
+		first.addBoundFilter("s", SimpleValueFactory.getInstance().createIRI("urn:bound"));
+		second.addBoundFilter("s", SimpleValueFactory.getInstance().createIRI("urn:bound"));
+		return group;
+	}
+
+	@Test
+	public void nestedFilterRendererRoundTripsLiteralTerms() throws Exception {
+		var factory = SimpleValueFactory.getInstance();
+		List<Value> expected = List.of(factory.createLiteral("quote' backslash\\ and newline\n"),
+				factory.createLiteral("hello\nworld", "en"),
+				factory.createLiteral("17", factory.createIRI("urn:type")));
+		for (Value value : expected) {
+			FilterExpr filter = new FilterExpr(new Compare(Var.of("v"), new ValueConstant(value), CompareOp.EQ),
+					new HashSet<>(Set.of("v")));
+			String text = FilterUtils.toSparqlString(filter);
+			var parsed = QueryParserUtil.parseTupleQuery(QueryLanguage.SPARQL,
+					"SELECT * WHERE { ?s ?p ?v FILTER " + text + " }", null);
+			List<Value> constants = new ArrayList<>();
+			parsed.getTupleExpr().visit(new AbstractQueryModelVisitor<RuntimeException>() {
+				@Override
+				public void meet(ValueConstant constant) {
+					constants.add(constant.getValue());
+				}
+			});
+			assertThat(constants).contains(value);
+		}
+	}
+
+	@Test
+	public void filterRendererSupportsScopedBound() throws Exception {
+		FilterExpr filter = new FilterExpr(new Bound(Var.of("s")), new HashSet<>(Set.of("s")));
+		String text = FilterUtils.toSparqlString(filter);
+		assertThat(QueryParserUtil.parseTupleQuery(QueryLanguage.SPARQL,
+				"SELECT * WHERE { ?s ?p ?o FILTER " + text + " }", null)).isNotNull();
+	}
+
+	@Test
+	public void groupFilterConstraintsAreValidForEveryExpressionKind() throws Exception {
+		for (ValueExpr condition : List.of(new Not(new Bound(Var.of("o"))), Var.of("o"),
+				new ValueConstant(SimpleValueFactory.getInstance().createLiteral(true)),
+				new Compare(Var.of("o"), new ValueConstant(SimpleValueFactory.getInstance().createLiteral(1)),
+						CompareOp.EQ))) {
+			QueryInfo query = queryForMember();
+			StatementSource source = new StatementSource("member", StatementSourceType.REMOTE);
+			ExclusiveStatement statement = new ExclusiveStatement(
+					new StatementPattern(Var.of("s"), Var.of("p"), Var.of("o")), source, query);
+			ExclusiveGroup nested = new ExclusiveGroup(List.of(statement), source, query);
+			nested.addFilterExpr(new FilterExpr(condition, new HashSet<>(Set.of("o"))));
+			ExclusiveGroup group = new ExclusiveGroup(List.of(nested), source, query);
+			String text = QueryStringUtil.selectQueryString(group, EmptyBindingSet.getInstance(), null,
+					new AtomicBoolean(), null);
+			assertThat(QueryParserUtil.parseTupleQuery(QueryLanguage.SPARQL, text, null)).isNotNull();
+		}
+	}
+
+	@Test
+	public void filterRendererSupportsSparqlBuiltInCall() throws Exception {
+		FilterExpr filter = new FilterExpr(new Compare(new FunctionCall("RAND"),
+				new ValueConstant(SimpleValueFactory.getInstance().createLiteral(0)), CompareOp.GE), new HashSet<>());
+		String text = FilterUtils.toSparqlString(filter);
+		assertThat(QueryParserUtil.parseTupleQuery(QueryLanguage.SPARQL,
+				"SELECT * WHERE { ?s ?p ?o FILTER " + text + " }", null)).isNotNull();
+	}
+
+	@Test
+	public void filterRendererUsesCapturedBuiltinAcrossClonesAndRegistryReplacement() throws Exception {
+		FunctionRegistry registry = FunctionRegistry.getInstance();
+		Function original = registry.get("RAND").orElseThrow();
+		FunctionCall captured = QueryEvaluationUtility.pinCapturedFunction(new FunctionCall("RAND"), original);
+		FilterExpr filter = new FilterExpr(new Compare(captured,
+				new ValueConstant(SimpleValueFactory.getInstance().createLiteral(0)), CompareOp.GE), new HashSet<>());
+		registry.add(replacementRand());
+		try {
+			for (FilterExpr candidate : List.of(filter, filter.clone())) {
+				String text = FilterUtils.toSparqlString(candidate);
+				assertThat(text).contains("RAND()");
+				assertThat(QueryParserUtil.parseTupleQuery(QueryLanguage.SPARQL,
+						"SELECT * WHERE { ?s ?p ?o FILTER " + text + " }", null)).isNotNull();
+			}
+		} finally {
+			registry.add(original);
+		}
+	}
+
+	@Test
+	public void preparedNestedGroupCapturesBuiltinAcrossConcurrentReuse() throws Exception {
+		GroupRequestFixture fixture = groupRequestFixture();
+		QueryEvaluationStep prepared = fixture.strategy.precompile(fixture.group);
+		ExclusiveGroup nested = (ExclusiveGroup) fixture.group.getExclusiveExpressions().get(0);
+		FilterExpr originalFilter = (FilterExpr) nested.getFilterExpr();
+		originalFilter.replaceChildNode(originalFilter.getExpression(),
+				new ValueConstant(SimpleValueFactory.getInstance().createLiteral(false)));
+		FunctionRegistry registry = FunctionRegistry.getInstance();
+		Function original = registry.get("RAND").orElseThrow();
+		Function replacement = replacementRand();
+		registry.add(replacement);
+		try (var executor = Executors.newFixedThreadPool(2)) {
+			var first = executor.submit(() -> {
+				try (var rows = prepared.evaluate(EmptyBindingSet.getInstance())) {
+					assertThat(rows.hasNext()).isFalse();
+				}
+			});
+			var second = executor.submit(() -> {
+				try (var rows = prepared.evaluate(EmptyBindingSet.getInstance())) {
+					assertThat(rows.hasNext()).isFalse();
+				}
+			});
+			first.get();
+			second.get();
+			assertThat(fixture.requests).hasSize(2).allSatisfy(text -> assertThat(text).contains("RAND()"));
+		} finally {
+			registry.add(original);
+		}
+	}
+
+	@Test
+	public void directNestedGroupUsesPreparedBuiltin() throws Exception {
+		GroupRequestFixture fixture = groupRequestFixture();
+		try (var rows = fixture.group.evaluate(EmptyBindingSet.getInstance())) {
+			assertThat(rows.hasNext()).isFalse();
+		}
+		assertThat(fixture.requests).singleElement().asString().contains("RAND()");
+	}
+
+	@Test
+	public void overriddenBuiltinIsRejectedBeforeSourceOpen() {
+		GroupRequestFixture fixture = groupRequestFixture();
+		FunctionRegistry registry = FunctionRegistry.getInstance();
+		Function original = registry.get("RAND").orElseThrow();
+		registry.add(replacementRand());
+		try {
+			assertThatThrownBy(() -> fixture.strategy.precompile(fixture.group)
+					.evaluate(EmptyBindingSet.getInstance()))
+							.isInstanceOf(QueryEvaluationException.class);
+			verifyNoInteractions(fixture.source);
+		} finally {
+			registry.add(original);
+		}
+	}
+
+	private static Function replacementRand() {
+		return new Function() {
+			@Override
+			public String getURI() {
+				return "RAND";
+			}
+
+			@Override
+			public Value evaluate(ValueFactory valueFactory, Value... args) {
+				return valueFactory.createLiteral(-1);
+			}
+
+			@Override
+			public Determinism getDeterminism() {
+				return Determinism.VOLATILE;
+			}
+		};
+	}
+
+	private static GroupRequestFixture groupRequestFixture() {
+		FederationContext context = mock(FederationContext.class, RETURNS_DEEP_STUBS);
+		Endpoint endpoint = mock(Endpoint.class);
+		TripleSource source = mock(TripleSource.class);
+		when(context.getEndpointManager().getEndpoint("member")).thenReturn(endpoint);
+		when(endpoint.getTripleSource()).thenReturn(source);
+		FederationEvaluationStrategy strategy = new FederationEvaluationStrategy(context);
+		QueryInfo query = mock(QueryInfo.class);
+		when(query.getFederationContext()).thenReturn(context);
+		when(query.getStrategy()).thenReturn(strategy);
+		List<String> requests = Collections.synchronizedList(new ArrayList<>());
+		when(source.getStatements(anyString(), any(BindingSet.class), nullable(FilterValueExpr.class), same(query)))
+				.thenAnswer(invocation -> {
+					requests.add(invocation.getArgument(0));
+					return new EmptyIteration<>();
+				});
+		StatementSource owner = new StatementSource("member", StatementSourceType.REMOTE);
+		ExclusiveStatement inner = new ExclusiveStatement(
+				new StatementPattern(Var.of("s"), Var.of("p1"), Var.of("o1")), owner, query);
+		ExclusiveGroup nested = new ExclusiveGroup(List.of(inner), owner, query);
+		nested.addFilterExpr(new FilterExpr(new Compare(new FunctionCall("RAND"),
+				new ValueConstant(SimpleValueFactory.getInstance().createLiteral(0)), CompareOp.GE), new HashSet<>()));
+		ExclusiveStatement outer = new ExclusiveStatement(
+				new StatementPattern(Var.of("s"), Var.of("p2"), Var.of("o2")), owner, query);
+		ExclusiveGroup group = new ExclusiveGroup(List.of(nested, outer), owner, query);
+		return new GroupRequestFixture(strategy, group, source, requests);
+	}
+
+	private record GroupRequestFixture(FederationEvaluationStrategy strategy, ExclusiveGroup group, TripleSource source,
+			List<String> requests) {
+	}
+
+	private static QueryInfo queryForMember() {
+		QueryInfo query = mock(QueryInfo.class);
+		FederationContext federation = mock(FederationContext.class);
+		EndpointManager endpoints = mock(EndpointManager.class);
+		when(query.getFederationContext()).thenReturn(federation);
+		when(federation.getEndpointManager()).thenReturn(endpoints);
+		when(endpoints.getEndpoint("member")).thenReturn(mock(Endpoint.class));
+		return query;
+	}
+
+	@Test
+	public void ordinaryGroupingKeepsScopedOperandsSeparate() {
+		QueryInfo positiveQuery = queryForMember();
+		StatementSource positiveSource = new StatementSource("member", StatementSourceType.REMOTE);
+		ExclusiveStatement positiveLeft = new ExclusiveStatement(
+				new StatementPattern(Var.of("s"), Var.of("p1"), Var.of("o1")), positiveSource, positiveQuery);
+		ExclusiveStatement positiveRight = new ExclusiveStatement(
+				new StatementPattern(Var.of("s"), Var.of("p2"), Var.of("o2")), positiveSource, positiveQuery);
+		QueryRoot positive = new QueryRoot(new NJoin(new ArrayList<>(List.of(positiveLeft, positiveRight)),
+				positiveQuery));
+		new StatementGroupAndJoinOptimizer(positiveQuery, DefaultFedXCostModel.INSTANCE).optimize(positive);
+		assertThat(positive.getArg()).isInstanceOf(ExclusiveGroup.class);
+
+		List<Boolean> preserved = new ArrayList<>();
+		for (int variant = 0; variant < 4; variant++) {
+			QueryInfo query = queryForMember();
+			StatementSource source = new StatementSource("member", StatementSourceType.REMOTE);
+			ExclusiveStatement first = new ExclusiveStatement(
+					new StatementPattern(Var.of("s"), Var.of("p1"), Var.of("o1")), source, query);
+			ExclusiveStatement second = new ExclusiveStatement(
+					new StatementPattern(Var.of("s"), Var.of("p2"), Var.of("o2")), source, query);
+			TupleExpr scoped;
+			if (variant < 2) {
+				first.setVariableScopeChange(true);
+				scoped = first;
+			} else {
+				ExclusiveStatement inner = new ExclusiveStatement(
+						new StatementPattern(Var.of("s"), Var.of("p3"), Var.of("o3")), source, query);
+				ExclusiveGroup group = new ExclusiveGroup(List.of(first, inner), source, query);
+				if (variant == 2) {
+					group.setVariableScopeChange(true);
+				} else {
+					first.setVariableScopeChange(true);
+				}
+				scoped = group;
+			}
+			List<TupleExpr> operands = variant == 1 ? List.of(second, scoped) : List.of(scoped, second);
+			QueryRoot root = new QueryRoot(new NJoin(new ArrayList<>(operands), query));
+			new StatementGroupAndJoinOptimizer(query, DefaultFedXCostModel.INSTANCE).optimize(root);
+			preserved.add(root.getArg() instanceof NJoin result
+					&& result.getArgs().stream().anyMatch(arg -> arg == scoped)
+					&& result.getArgs().stream().anyMatch(arg -> arg == second));
+		}
+		assertThat(preserved).containsExactly(true, true, true, true);
+	}
+
+	@Test
+	public void tripleRefGroupingKeepsUnscopedSpecialization() {
+		QueryInfo query = queryForMember();
+		StatementSource source = new StatementSource("member", StatementSourceType.REMOTE);
+		TripleRefStatementPattern triple = new TripleRefStatementPattern(
+				new StatementPattern(Var.of("s"), Var.of("p1"), Var.of("triple")),
+				new TripleRef(Var.of("ts"), Var.of("tp"), Var.of("to"), Var.of("triple")), query);
+		triple.addStatementSource(source);
+		ExclusiveStatement statement = new ExclusiveStatement(
+				new StatementPattern(Var.of("s"), Var.of("p2"), Var.of("o2")), source, query);
+		QueryRoot root = new QueryRoot(new NJoin(new ArrayList<>(List.of(triple, statement)), query));
+		new TripleRefJoinOptimizer(query).optimize(root);
+		assertThat(root.getArg()).isInstanceOf(TripleRefJoinGroup.class);
+	}
+
+	@Test
+	public void tripleRefGroupingKeepsScopedOperandsSeparate() {
+		List<Boolean> preserved = new ArrayList<>();
+		for (int variant = 0; variant < 4; variant++) {
+			QueryInfo query = queryForMember();
+			StatementSource source = new StatementSource("member", StatementSourceType.REMOTE);
+			TripleRefStatementPattern triple = new TripleRefStatementPattern(
+					new StatementPattern(Var.of("s"), Var.of("p1"), Var.of("triple")),
+					new TripleRef(Var.of("ts"), Var.of("tp"), Var.of("to"), Var.of("triple")), query);
+			triple.addStatementSource(source);
+			ExclusiveStatement statement = new ExclusiveStatement(
+					new StatementPattern(Var.of("s"), Var.of("p2"), Var.of("o2")), source, query);
+			if (variant < 2) {
+				triple.setVariableScopeChange(true);
+			} else {
+				statement.setVariableScopeChange(true);
+			}
+			List<TupleExpr> operands = variant % 2 == 0 ? List.of(triple, statement) : List.of(statement, triple);
+			QueryRoot root = new QueryRoot(new NJoin(new ArrayList<>(operands), query));
+			new TripleRefJoinOptimizer(query).optimize(root);
+			preserved.add(root.getArg() instanceof NJoin result
+					&& result.getArgs().stream().anyMatch(arg -> arg == triple)
+					&& result.getArgs().stream().anyMatch(arg -> arg == statement));
+		}
+		assertThat(preserved).containsExactly(true, true, true, true);
+	}
+
 	@Test
 	public void exclusivePathCloneRetainsMetadataAndOwnsMutableChildren() {
 		QueryInfo query = mock(QueryInfo.class);

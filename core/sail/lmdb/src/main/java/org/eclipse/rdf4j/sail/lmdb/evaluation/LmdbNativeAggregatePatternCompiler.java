@@ -17,6 +17,7 @@ import static org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbNativeAggregateCompiler
 import static org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbNativeAggregateCompiler.UNKNOWN;
 import static org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbNativeAggregateCompiler.allSafeExactIds;
 import static org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbNativeAggregateCompiler.allValueProbeSafeIds;
+import static org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbNativeAggregateCompiler.isNullContextValue;
 import static org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbNativeAggregateCompiler.valueProbeSafeId;
 
 import java.nio.ByteBuffer;
@@ -24,15 +25,20 @@ import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
 import java.util.OptionalLong;
+import java.util.Set;
 
 import org.eclipse.rdf4j.common.annotation.Experimental;
 import org.eclipse.rdf4j.common.order.StatementOrder;
 import org.eclipse.rdf4j.common.transaction.QueryEvaluationMode;
 import org.eclipse.rdf4j.model.Literal;
+import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.base.CoreDatatype;
+import org.eclipse.rdf4j.model.vocabulary.RDF4J;
+import org.eclipse.rdf4j.model.vocabulary.SESAME;
 import org.eclipse.rdf4j.query.Binding;
 import org.eclipse.rdf4j.query.BindingSet;
+import org.eclipse.rdf4j.query.Dataset;
 import org.eclipse.rdf4j.query.algebra.BindingSetAssignment;
 import org.eclipse.rdf4j.query.algebra.Compare;
 import org.eclipse.rdf4j.query.algebra.Extension;
@@ -40,6 +46,7 @@ import org.eclipse.rdf4j.query.algebra.ExtensionElem;
 import org.eclipse.rdf4j.query.algebra.Join;
 import org.eclipse.rdf4j.query.algebra.ListMemberOperator;
 import org.eclipse.rdf4j.query.algebra.Or;
+import org.eclipse.rdf4j.query.algebra.PrivateGraphContextRole;
 import org.eclipse.rdf4j.query.algebra.StatementPattern;
 import org.eclipse.rdf4j.query.algebra.StatementPattern.Scope;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
@@ -51,6 +58,7 @@ import org.eclipse.rdf4j.query.explanation.TelemetryMetricNames;
 import org.eclipse.rdf4j.sail.lmdb.LmdbKeyRange;
 import org.eclipse.rdf4j.sail.lmdb.TripleIndex;
 import org.eclipse.rdf4j.sail.lmdb.ValueIds;
+import org.eclipse.rdf4j.sail.lmdb.ValuePosition;
 import org.eclipse.rdf4j.sail.lmdb.Varint;
 
 @Experimental
@@ -71,6 +79,8 @@ abstract class LmdbNativeAggregatePatternCompiler extends LmdbNativeAggregatePla
 			NativeLmdbQuerySource source) {
 		super(context, strategy, source);
 	}
+
+	abstract <T> T declineSemanticContext();
 
 	private NativeLmdbQuerySource.IndexAccessProfile accessProfile() {
 		if (!accessProfileCaptured) {
@@ -138,7 +148,8 @@ abstract class LmdbNativeAggregatePatternCompiler extends LmdbNativeAggregatePla
 	}
 
 	PatternPlan compileRangeFilterIntoStatementPattern(StatementPattern pattern, ValueExpr condition) {
-		if (!Boolean.parseBoolean(System.getProperty(RANGE_PUSHDOWN_ENABLED, "true"))) {
+		if (hasValuedNilContext(pattern)
+				|| !Boolean.parseBoolean(System.getProperty(RANGE_PUSHDOWN_ENABLED, "true"))) {
 			return null;
 		}
 		OrderedRangeFilter filter = extractOrderedRangeFilter(condition);
@@ -174,7 +185,7 @@ abstract class LmdbNativeAggregatePatternCompiler extends LmdbNativeAggregatePla
 		double estimate = rangedEstimate(base.staticEstimate, domain.minValue(), domain.maxValue(),
 				filter.operator, filter.constant);
 		return new PatternPlan(base.s, base.p, base.o, base.c, base.contexts, base.namedContextScope,
-				base.statementOrder, domain.indexFieldSeq(), range, estimate, base.accessProfile);
+				base.statementOrder, domain.indexFieldSeq(), range, estimate, base.accessProfile, base.dynamicContext);
 	}
 
 	/**
@@ -204,13 +215,13 @@ abstract class LmdbNativeAggregatePatternCompiler extends LmdbNativeAggregatePla
 			SlotPlan leftRange = compileTupleWithRangeFilter(join.getLeftArg(), condition, variable,
 					duplicateInsensitive);
 			if (leftRange != null) {
-				SlotPlan right = compileTuple(join.getRightArg(), duplicateInsensitive);
+				SlotPlan right = compileTupleWithoutElisions(join.getRightArg(), duplicateInsensitive);
 				return right == null ? null : SlotPlan.join(leftRange, right);
 			}
 			SlotPlan rightRange = compileTupleWithRangeFilter(join.getRightArg(), condition, variable,
 					duplicateInsensitive);
 			if (rightRange != null) {
-				SlotPlan left = compileTuple(join.getLeftArg(), duplicateInsensitive);
+				SlotPlan left = compileTupleWithoutElisions(join.getLeftArg(), duplicateInsensitive);
 				return left == null ? null : SlotPlan.join(rightRange, left);
 			}
 			return null;
@@ -442,11 +453,15 @@ abstract class LmdbNativeAggregatePatternCompiler extends LmdbNativeAggregatePla
 	}
 
 	boolean varNameEquals(Var var, String variable) {
-		return var != null && !var.hasValue() && !var.isConstant() && variable.equals(var.getName());
+		return NativeValuePositionAnalysis.isBindingOccurrence(var) && !var.hasValue()
+				&& variable.equals(var.getName());
 	}
 
 	PatternPlan compileStatementPatternWithConstant(StatementPattern sp, String variable, long constantId,
 			boolean keepBinding) {
+		if (hasActiveContextOperand(sp) || requiresPublicGraphBindingCheck(sp)) {
+			return declineSemanticContext();
+		}
 		ContextConstraint contexts = compileContextConstraint(sp, context.getDataset());
 		if (contexts == ContextConstraint.EMPTY) {
 			return null;
@@ -457,17 +472,48 @@ abstract class LmdbNativeAggregatePatternCompiler extends LmdbNativeAggregatePla
 				keepBinding);
 		Term o = compileTermWithConstant(sp.getObjectVar(), NativePatternField.OBJECT, variable, constantId,
 				keepBinding);
+		Value lexicalContext = valuedContext(sp);
 		Term c = compileTermWithConstant(sp.getContextVar(), NativePatternField.CONTEXT, variable, constantId,
 				keepBinding);
 		if (s == null || p == null || o == null || c == null) {
 			return null;
 		}
+		PatternContext selected = selectValuedContext(sp, lexicalContext, c, contexts);
+		if (selected == null) {
+			return null;
+		}
+		c = selected.term();
+		contexts = selected.contexts();
 		if (provablyEmptyByAdjacency(s, p, o)) {
 			return null;
 		}
 		return new PatternPlan(s, p, o, c, contexts, isNamedContextScope(sp, c),
 				sp.getStatementOrder(), indexName(sp.getStatementOrder(), s, p, o, c), null,
-				staticEstimate(s, p, o, c, contexts), accessProfile());
+				staticEstimate(s, p, o, c, contexts), accessProfile(), dynamicContext(sp, c, contexts));
+	}
+
+	/** Specializes the selected pattern without recompiling its dataset, ordering or binding occurrences. */
+	PatternPlan compileSelectedWitnessProbe(PatternPlan pattern, int slot, long id) {
+		if (pattern.dynamicContext != null || pattern.c.slot == slot || pattern.range != null
+				|| pattern.s.slot == slot && !validIdForField(id, NativePatternField.SUBJECT)
+				|| pattern.p.slot == slot && !validIdForField(id, NativePatternField.PREDICATE)) {
+			return null;
+		}
+		Term probe = Term.constantSlot(slot, id);
+		Term s = specializeWitnessTerm(pattern.s, probe);
+		Term p = specializeWitnessTerm(pattern.p, probe);
+		Term o = specializeWitnessTerm(pattern.o, probe);
+		if (s == null || p == null || o == null || s == pattern.s && p == pattern.p && o == pattern.o) {
+			return null;
+		}
+		String index = indexName(pattern.statementOrder, s, p, o, pattern.c);
+		return new PatternPlan(s, p, o, pattern.c, pattern.contexts, pattern.namedContextScope,
+				pattern.statementOrder, index, null, staticEstimate(s, p, o, pattern.c, pattern.contexts),
+				pattern.accessProfile);
+	}
+
+	private static Term specializeWitnessTerm(Term term, Term probe) {
+		return term.slot != probe.slot ? term : term.isConstant() ? null : probe;
 	}
 
 	SlotPlan compileMultiValueStatementPattern(StatementPattern pattern, String variable, long[] ids,
@@ -486,6 +532,14 @@ abstract class LmdbNativeAggregatePatternCompiler extends LmdbNativeAggregatePla
 
 	SlotPlan compileMultiValueStatementPattern(StatementPattern pattern, String variable, long[] ids, Value[] values,
 			boolean keepBinding, boolean allowPartial, boolean exactFilterRewrite, int exactProbeCount) {
+		if (hasActiveContextOperand(pattern) || requiresPublicGraphBindingCheck(pattern)) {
+			// This candidate needs its original semantic GRAPH context; it is not an empty alternative.
+			return declineSemanticContext();
+		}
+		if (isNullContextValue(valuedContext(pattern))) {
+			// Raw multi-probe alternatives do not carry the lexical context choice or its binding.
+			return null;
+		}
 		if (values != null ? !allValueProbeSafeIds(ids, values) : !allSafeExactIds(ids)) {
 			return null;
 		}
@@ -637,6 +691,13 @@ abstract class LmdbNativeAggregatePatternCompiler extends LmdbNativeAggregatePla
 	}
 
 	PatternPlan compileStatementPattern(StatementPattern sp) {
+		if (hasActiveContextOperand(sp)) {
+			return null;
+		}
+		if (requiresPublicGraphBindingCheck(sp)) {
+			// The ID layout does not represent an explicit-null shadow of the original public context.
+			return declineSemanticContext();
+		}
 		ContextConstraint contexts = compileContextConstraint(sp, context.getDataset());
 		if (contexts == ContextConstraint.EMPTY) {
 			return null;
@@ -644,20 +705,115 @@ abstract class LmdbNativeAggregatePatternCompiler extends LmdbNativeAggregatePla
 		Term s = compileTerm(sp.getSubjectVar(), NativePatternField.SUBJECT);
 		Term p = compileTerm(sp.getPredicateVar(), NativePatternField.PREDICATE);
 		Term o = compileTerm(sp.getObjectVar(), NativePatternField.OBJECT);
+		Value lexicalContext = valuedContext(sp);
 		Term c = compileTerm(sp.getContextVar(), NativePatternField.CONTEXT);
 		if (s == null || p == null || o == null || c == null) {
 			return null;
 		}
+		PatternContext selected = selectValuedContext(sp, lexicalContext, c, contexts);
+		if (selected == null) {
+			return null;
+		}
+		c = selected.term();
+		contexts = selected.contexts();
 		if (provablyEmptyByAdjacency(s, p, o)) {
 			return null;
 		}
 		return new PatternPlan(s, p, o, c, contexts, isNamedContextScope(sp, c),
 				sp.getStatementOrder(), indexName(sp.getStatementOrder(), s, p, o, c), null,
-				algebraEstimate(sp), accessProfile());
+				algebraEstimate(sp), accessProfile(), dynamicContext(sp, c, contexts));
+	}
+
+	boolean hasActiveContextOperand(StatementPattern pattern) {
+		return context.getActiveGraph() != null && pattern.getScope() == Scope.DEFAULT_CONTEXTS
+				&& pattern.getContextVar() != null;
+	}
+
+	static boolean requiresPublicGraphBindingCheck(StatementPattern pattern) {
+		return PrivateGraphContextRole.publicContextName(pattern, pattern.getContextVar()) != null;
+	}
+
+	record PatternContext(Term term, ContextConstraint contexts) {
+	}
+
+	static Value valuedContext(StatementPattern pattern) {
+		Var variable = pattern.getContextVar();
+		return variable == null ? null : variable.getValue();
+	}
+
+	PatternContext selectValuedContext(StatementPattern pattern, Value lexicalContext, Term term,
+			ContextConstraint contexts) {
+		if (!isNullContextValue(lexicalContext) || !contexts.isFixed()) {
+			return new PatternContext(term, contexts);
+		}
+		if (!datasetGraphs(pattern).contains(lexicalContext)) {
+			return new PatternContext(term, ContextConstraint.EMPTY);
+		}
+		long lexicalId = idOf(lexicalContext, ValuePosition.CONTEXT);
+		return lexicalId == UNKNOWN ? null
+				: new PatternContext(Term.constant(lexicalId), new ContextConstraint(new long[] { lexicalId }));
+	}
+
+	boolean unresolvedValuedContext(StatementPattern pattern) {
+		Value value = valuedContext(pattern);
+		if (!isNullContextValue(value)) {
+			return false;
+		}
+		ContextConstraint contexts = compileContextConstraint(pattern, context.getDataset());
+		return contexts.isFixed() && datasetGraphs(pattern).contains(value)
+				&& idOf(value, ValuePosition.CONTEXT) == UNKNOWN;
+	}
+
+	private Set<Resource> datasetGraphs(StatementPattern pattern) {
+		Dataset dataset = context.getDataset();
+		if (dataset == null) {
+			return Set.of();
+		}
+		return pattern.getScope() == Scope.DEFAULT_CONTEXTS ? dataset.getDefaultGraphResources()
+				: dataset.getNamedGraphResources();
+	}
+
+	PatternPlan.DynamicContext dynamicContext(StatementPattern pattern, Term c, ContextConstraint contexts) {
+		Var variable = pattern.getContextVar();
+		if (variable == null || variable.hasValue() || variable.isConstant() || !c.hasSlot()) {
+			return null;
+		}
+		Set<Resource> graphs = contexts.isFixed() ? datasetGraphs(pattern) : Set.of();
+		Object scope = source.valueLookupScope();
+		long rdf4jId = idOf(RDF4J.NIL, ValuePosition.CONTEXT);
+		long sesameId = idOf(SESAME.NIL, ValuePosition.CONTEXT);
+		if (scope != source.valueLookupScope()) {
+			scope = null;
+		}
+		return new PatternPlan.DynamicContext(c.slot, contexts.isFixed(), graphs.contains(RDF4J.NIL),
+				graphs.contains(SESAME.NIL), rdf4jId, sesameId, scope);
+	}
+
+	static boolean hasValuedNilContext(StatementPattern pattern) {
+		Var context = pattern.getContextVar();
+		return context != null && !context.isConstant() && context.hasValue()
+				&& isNullContextValue(context.getValue());
+	}
+
+	/** Restore the supplied RDF term independently of the context selected for the physical scan. */
+	SlotPlan restoreValuedNilContext(StatementPattern pattern, PatternPlan physical) {
+		if (!hasValuedNilContext(pattern)) {
+			return physical;
+		}
+		Var context = pattern.getContextVar();
+		if (context.getName() == null) {
+			return null;
+		}
+		long lexicalId = idOfExtensionConstant(context.getValue(), context.getName());
+		if (lexicalId == UNKNOWN) {
+			return null;
+		}
+		return SlotPlan.extension(physical,
+				new CopyBinding[] { CopyBinding.termCheckedConstant(slot(context.getName()), lexicalId) });
 	}
 
 	/** A parser-level {@code GRAPH rdf4j:nil} denotes the default graph despite its named-context algebra scope. */
-	private static boolean isNamedContextScope(StatementPattern pattern, Term contextTerm) {
+	static boolean isNamedContextScope(StatementPattern pattern, Term contextTerm) {
 		return pattern.getScope() == Scope.NAMED_CONTEXTS
 				&& !(contextTerm.isConstant() && contextTerm.constant == NULL_CONTEXT_ID);
 	}

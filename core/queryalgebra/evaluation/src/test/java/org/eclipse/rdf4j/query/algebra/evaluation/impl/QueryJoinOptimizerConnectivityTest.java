@@ -15,22 +15,225 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Set;
 import java.util.stream.Collectors;
 
+import org.eclipse.rdf4j.common.iteration.CloseableIteration;
+import org.eclipse.rdf4j.common.iteration.CloseableIteratorIteration;
+import org.eclipse.rdf4j.model.IRI;
+import org.eclipse.rdf4j.model.Resource;
+import org.eclipse.rdf4j.model.Statement;
+import org.eclipse.rdf4j.model.Value;
+import org.eclipse.rdf4j.model.ValueFactory;
+import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
+import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.QueryLanguage;
+import org.eclipse.rdf4j.query.algebra.BindingSetAssignment;
+import org.eclipse.rdf4j.query.algebra.Bound;
+import org.eclipse.rdf4j.query.algebra.Extension;
+import org.eclipse.rdf4j.query.algebra.ExtensionElem;
+import org.eclipse.rdf4j.query.algebra.Filter;
 import org.eclipse.rdf4j.query.algebra.Join;
 import org.eclipse.rdf4j.query.algebra.Lateral;
 import org.eclipse.rdf4j.query.algebra.QueryRoot;
+import org.eclipse.rdf4j.query.algebra.SingletonSet;
 import org.eclipse.rdf4j.query.algebra.StatementPattern;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.algebra.UnaryTupleOperator;
+import org.eclipse.rdf4j.query.algebra.ValueConstant;
+import org.eclipse.rdf4j.query.algebra.Var;
+import org.eclipse.rdf4j.query.algebra.evaluation.TripleSource;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.QueryJoinOptimizer;
 import org.eclipse.rdf4j.query.algebra.helpers.AbstractQueryModelVisitor;
+import org.eclipse.rdf4j.query.impl.EmptyBindingSet;
+import org.eclipse.rdf4j.query.impl.MapBindingSet;
 import org.eclipse.rdf4j.query.parser.ParsedQuery;
 import org.eclipse.rdf4j.query.parser.QueryParserUtil;
 import org.junit.jupiter.api.Test;
 
 public class QueryJoinOptimizerConnectivityTest {
+	private static final ValueFactory VF = SimpleValueFactory.getInstance();
+
+	@Test
+	public void selfContainedFilterRetainsCheaperNonSourceJoinOrder() {
+		StatementPattern anchor = statement("root", "ex:pAnchor", "shared");
+		StatementPattern connected = statement("shared", "ex:pConnected", "next");
+		StatementPattern disconnected = statement("other", "ex:pDisconnected", "value");
+		Filter filter = new Filter(connected, new Bound(Var.of("shared")));
+		QueryRoot root = new QueryRoot(new Join(new Join(anchor, filter), disconnected));
+		EvaluationStatistics costs = new EvaluationStatistics() {
+			private final EvaluationStatistics statements = new ConnectedJoinStatistics();
+
+			@Override
+			public double getCardinality(TupleExpr expression) {
+				return statements.getCardinality(expression instanceof Filter gate ? gate.getArg() : expression);
+			}
+		};
+		new QueryJoinOptimizer(costs, new EmptyTripleSource()).optimize(root, null, null);
+
+		assertThat(joinArgs(root).stream().map(QueryJoinOptimizerConnectivityTest::predicate))
+				.containsExactly("ex:pAnchor", "ex:pDisconnected", "ex:pConnected");
+		assertThat(connected.getParentNode()).isSameAs(filter);
+		assertThat(evaluate(root, List.of(
+				VF.createStatement(iri("root"), VF.createIRI("ex:pAnchor"), iri("shared")),
+				VF.createStatement(iri("shared"), VF.createIRI("ex:pConnected"), iri("next")),
+				VF.createStatement(iri("other"), VF.createIRI("ex:pDisconnected"), VF.createLiteral("value")))))
+						.containsExactly(bindings("root", iri("root"), "shared", iri("shared"), "next", iri("next"),
+								"other", iri("other"), "value", VF.createLiteral("value")));
+	}
+
+	@Test
+	public void conditionOwnerRemainsOneOperandWhileNeighborsReorderByCost() {
+		BindingSetAssignment values = new BindingSetAssignment();
+		values.setBindingSets(List.of(bindings("x", VF.createLiteral("outer"))));
+		Filter filter = new Filter(new Extension(new SingletonSet(),
+				new ExtensionElem(new ValueConstant(VF.createLiteral("z")), "z")), new Bound(Var.of("x")));
+		Join owner = new Join(values, filter);
+		StatementPattern third = statement("e", "ex:pThird", "f");
+		StatementPattern first = statement("a", "ex:pFirst", "b");
+		StatementPattern second = statement("c", "ex:pSecond", "d");
+		QueryRoot root = new QueryRoot(new Join(new Join(new Join(owner, third), first), second));
+		EvaluationStatistics costs = new EvaluationStatistics() {
+			@Override
+			public double getCardinality(TupleExpr expression) {
+				if (expression == owner) {
+					return 1000;
+				}
+				if (expression instanceof StatementPattern pattern) {
+					return switch (predicate(pattern)) {
+					case "ex:pFirst" -> 1;
+					case "ex:pSecond" -> 2;
+					case "ex:pThird" -> 3;
+					default -> throw new AssertionError("Unexpected predicate: " + predicate(pattern));
+					};
+				}
+				return super.getCardinality(expression);
+			}
+		};
+		new QueryJoinOptimizer(costs, new EmptyTripleSource()).optimize(root, null, null);
+
+		List<TupleExpr> operands = new ArrayList<>();
+		collectKeepingOwner(root, owner, operands);
+		assertThat(operands).containsExactly(first, second, third, owner);
+		assertThat(owner.getLeftArg()).isSameAs(values);
+		assertThat(owner.getRightArg()).isSameAs(filter);
+		assertThat(evaluate(root, List.of(
+				VF.createStatement(iri("a"), VF.createIRI("ex:pFirst"), iri("b")),
+				VF.createStatement(iri("c"), VF.createIRI("ex:pSecond"), iri("d")),
+				VF.createStatement(iri("e"), VF.createIRI("ex:pThird"), iri("f")))))
+						.containsExactly(bindings("x", VF.createLiteral("outer"), "z", VF.createLiteral("z"),
+								"a", iri("a"), "b", iri("b"), "c", iri("c"), "d", iri("d"), "e", iri("e"), "f",
+								iri("f")));
+	}
+
+	@Test
+	public void rightValuesDoNotBecomeNewInputsOfAnOriginallyLeftFilter() {
+		Filter filter = new Filter(new SingletonSet(), new Bound(Var.of("x")));
+		BindingSetAssignment values = new BindingSetAssignment();
+		values.setBindingSets(List.of(bindings("x", VF.createLiteral("right"))));
+		QueryRoot root = new QueryRoot(new Join(filter, values));
+		EvaluationStatistics costs = new EvaluationStatistics() {
+			@Override
+			public double getCardinality(TupleExpr expression) {
+				if (expression == filter) {
+					return 1000;
+				}
+				if (expression == values) {
+					return 1;
+				}
+				return super.getCardinality(expression);
+			}
+		};
+		new QueryJoinOptimizer(costs, new EmptyTripleSource()).optimize(root, null, null);
+
+		assertThat(root.getArg()).isInstanceOf(Join.class);
+		assertThat(((Join) root.getArg()).getLeftArg()).isSameAs(filter);
+		assertThat(((Join) root.getArg()).getRightArg()).isSameAs(values);
+		assertThat(evaluate(root, List.of())).isEmpty();
+	}
+
+	@Test
+	public void nullableOwnColumnDoesNotAuthorizeANewRightSiblingOwner() {
+		BindingSetAssignment nullable = new BindingSetAssignment();
+		nullable.setBindingSets(List.of(new MapBindingSet()));
+		nullable.setBindingNames(Set.of("x"));
+		Filter filter = new Filter(nullable, new Bound(Var.of("x")));
+		BindingSetAssignment right = new BindingSetAssignment();
+		right.setBindingSets(List.of(bindings("x", VF.createLiteral("right"))));
+		QueryRoot root = new QueryRoot(new Join(filter, right));
+		EvaluationStatistics costs = new EvaluationStatistics() {
+			@Override
+			public double getCardinality(TupleExpr expression) {
+				if (expression == filter) {
+					return 1000;
+				}
+				if (expression == right) {
+					return 1;
+				}
+				return super.getCardinality(expression);
+			}
+		};
+		new QueryJoinOptimizer(costs, new EmptyTripleSource()).optimize(root, null, null);
+
+		assertThat(root.getArg()).isInstanceOf(Join.class);
+		assertThat(((Join) root.getArg()).getLeftArg()).isSameAs(filter);
+		assertThat(((Join) root.getArg()).getRightArg()).isSameAs(right);
+		assertThat(evaluate(root, List.of())).isEmpty();
+	}
+
+	private static void collectKeepingOwner(TupleExpr expression, Join owner, List<TupleExpr> operands) {
+		if (expression == owner) {
+			operands.add(expression);
+		} else if (expression instanceof UnaryTupleOperator unary) {
+			collectKeepingOwner(unary.getArg(), owner, operands);
+		} else if (expression instanceof Join join) {
+			collectKeepingOwner(join.getLeftArg(), owner, operands);
+			collectKeepingOwner(join.getRightArg(), owner, operands);
+		} else {
+			operands.add(expression);
+		}
+	}
+
+	private static StatementPattern statement(String subject, String predicate, String object) {
+		return new StatementPattern(Var.of(subject), Var.of("predicate", VF.createIRI(predicate), false, true),
+				Var.of(object));
+	}
+
+	private static IRI iri(String name) {
+		return VF.createIRI("urn:connectivity:" + name);
+	}
+
+	private static MapBindingSet bindings(Object... pairs) {
+		MapBindingSet row = new MapBindingSet(pairs.length / 2);
+		for (int index = 0; index < pairs.length; index += 2) {
+			row.addBinding((String) pairs[index], (Value) pairs[index + 1]);
+		}
+		return row;
+	}
+
+	private static List<BindingSet> evaluate(TupleExpr expression, List<Statement> statements) {
+		TripleSource source = new TripleSource() {
+			@Override
+			public ValueFactory getValueFactory() {
+				return VF;
+			}
+
+			@Override
+			public CloseableIteration<? extends Statement> getStatements(Resource subject, IRI predicate, Value object,
+					Resource... contexts) {
+				return new CloseableIteratorIteration<>(statements.stream()
+						.filter(statement -> subject == null || subject.equals(statement.getSubject()))
+						.filter(statement -> predicate == null || predicate.equals(statement.getPredicate()))
+						.filter(statement -> object == null || object.equals(statement.getObject()))
+						.iterator());
+			}
+		};
+		DefaultEvaluationStrategy strategy = new DefaultEvaluationStrategy(source, null);
+		try (CloseableIteration<BindingSet> rows = strategy.precompile(expression)
+				.evaluate(EmptyBindingSet.getInstance())) {
+			return rows.stream().toList();
+		}
+	}
 
 	@Test
 	public void prefersCheaperCartesianCandidateOverMoreExpensiveConnectedCandidate() {

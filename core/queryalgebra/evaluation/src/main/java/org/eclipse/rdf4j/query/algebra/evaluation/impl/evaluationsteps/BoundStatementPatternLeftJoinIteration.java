@@ -17,11 +17,13 @@ import org.eclipse.rdf4j.common.iteration.CooperativeCancellation;
 import org.eclipse.rdf4j.common.iteration.LookAheadIteration;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryEvaluationStep;
+import org.eclipse.rdf4j.query.algebra.evaluation.impl.BindingFrameBindings;
 import org.eclipse.rdf4j.query.algebra.evaluation.iterator.JoinIterator;
 
 final class BoundStatementPatternLeftJoinIteration extends LookAheadIteration<BindingSet> {
 
 	private final StatementPatternQueryEvaluationStep leftStatementPattern;
+	private final QueryEvaluationStep leftPrepared;
 	private final QueryEvaluationStep rightPrepared;
 	private BindingSet bindings;
 
@@ -29,8 +31,9 @@ final class BoundStatementPatternLeftJoinIteration extends LookAheadIteration<Bi
 	private boolean initialized;
 
 	BoundStatementPatternLeftJoinIteration(StatementPatternQueryEvaluationStep leftStatementPattern,
-			QueryEvaluationStep rightPrepared, BindingSet bindings) {
+			QueryEvaluationStep leftPrepared, QueryEvaluationStep rightPrepared, BindingSet bindings) {
 		this.leftStatementPattern = leftStatementPattern;
+		this.leftPrepared = leftPrepared;
 		this.rightPrepared = rightPrepared;
 		this.bindings = bindings;
 	}
@@ -39,15 +42,18 @@ final class BoundStatementPatternLeftJoinIteration extends LookAheadIteration<Bi
 	protected BindingSet getNextElement() {
 		if (!initialized) {
 			initialized = true;
-			bindings = leftStatementPattern.prepareBindings(bindings);
-			long statementCount = leftStatementPattern.getFullyBoundStatementCount(bindings);
-			if (statementCount == 0) {
-				return null;
-			}
-			if (statementCount == 1) {
-				resultIteration = rightPrepared.evaluate(bindings);
+			if (BindingFrameBindings.hasFrame(bindings)) {
+				resultIteration = JoinIterator.getInstance(leftPrepared, rightPrepared, bindings);
 			} else {
-				resultIteration = JoinIterator.getInstance(leftStatementPattern, rightPrepared, bindings);
+				long statementCount = leftStatementPattern.getFullyBoundStatementCount(bindings);
+				if (statementCount == 0) {
+					return null;
+				}
+				if (statementCount == 1) {
+					resultIteration = rightPrepared.evaluate(bindings);
+				} else {
+					resultIteration = JoinIterator.getInstance(leftPrepared, rightPrepared, bindings);
+				}
 			}
 		}
 

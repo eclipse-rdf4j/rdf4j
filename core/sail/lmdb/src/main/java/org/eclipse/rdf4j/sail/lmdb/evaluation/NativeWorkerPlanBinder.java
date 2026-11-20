@@ -87,7 +87,8 @@ class NativeWorkerPlanBinder implements AutoCloseable {
 			return canBind(join.left) && canBind(join.right);
 		}
 		if (input instanceof LeftJoinPlan optional) {
-			return canBind(optional.left) && canBind(optional.right);
+			return canBind(optional.left) && canBind(optional.right)
+					&& (optional.lexicalCondition == null || optional.lexicalCondition.parallelWorkerForkable());
 		}
 		if (input instanceof UnionPlan union) {
 			return canBind(union.left) && canBind(union.right);
@@ -99,7 +100,8 @@ class NativeWorkerPlanBinder implements AutoCloseable {
 			return canBind(minus.left) && canBind(minus.right);
 		}
 		if (input instanceof LateralPlan lateral) {
-			return canBind(lateral.left) && canBind(lateral.right);
+			return lateral.semanticEntry == null && lateral.ownerInput == null && canBind(lateral.left)
+					&& canBind(lateral.right);
 		}
 		if (input instanceof RowDistinctPlan distinct) {
 			return canBind(distinct.arg);
@@ -164,7 +166,9 @@ class NativeWorkerPlanBinder implements AutoCloseable {
 		}
 		if (input instanceof LeftJoinPlan optional) {
 			return new LeftJoinPlan(bind(optional.left), bind(optional.right), optional.lexicalSharedSlots,
-					optional.lexicalHashKeys, optional.lexicalProblemSlots);
+					optional.lexicalHashKeys, optional.lexicalProblemSlots,
+					optional.lexicalCondition == null ? null : bindFilter(optional.lexicalCondition),
+					optional.lexicalStaticInputs);
 		}
 		if (input instanceof UnionPlan union) {
 			return new UnionPlan(bind(union.left), bind(union.right));
@@ -176,6 +180,9 @@ class NativeWorkerPlanBinder implements AutoCloseable {
 			return new MinusPlan(bind(minus.left), bind(minus.right), minus.sharedMask);
 		}
 		if (input instanceof LateralPlan lateral) {
+			if (lateral.semanticEntry != null) {
+				throw new QueryEvaluationException("conditional LATERAL entry has no worker-local semantic recipe");
+			}
 			return new LateralPlan(bind(lateral.left), bind(lateral.right), lateral.rightInputMask);
 		}
 		if (input instanceof RowDistinctPlan distinct) {

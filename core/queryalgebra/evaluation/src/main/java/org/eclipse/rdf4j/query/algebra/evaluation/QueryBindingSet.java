@@ -23,6 +23,8 @@ import org.eclipse.rdf4j.query.AbstractBindingSet;
 import org.eclipse.rdf4j.query.Binding;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.MutableBindingSet;
+import org.eclipse.rdf4j.query.algebra.evaluation.impl.BindingFrame;
+import org.eclipse.rdf4j.query.algebra.evaluation.impl.BindingFrameBindings;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.GraphFrameBindings;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.GraphFrameBindings.MutableCarrier;
 import org.eclipse.rdf4j.query.impl.MapBindingSet;
@@ -33,12 +35,26 @@ import org.eclipse.rdf4j.query.impl.SimpleBinding;
  * implementations differs from {@link MapBindingSet} in that it maps variable names to Value objects and that the
  * Binding objects are created lazily.
  */
-public class QueryBindingSet extends AbstractBindingSet implements MutableBindingSet, MutableCarrier {
+public class QueryBindingSet extends AbstractBindingSet
+		implements MutableBindingSet, MutableCarrier, BindingFrameBindings.MutableCarrier {
 
 	private static final long serialVersionUID = -2010715346095527301L;
 
 	private final Map<String, Value> bindings;
 	private GraphFrameBindings graphFrames;
+	private BindingFrame bindingFrame;
+
+	@Override
+	@InternalUseOnly
+	public BindingFrame getBindingFrame() {
+		return bindingFrame;
+	}
+
+	@Override
+	@InternalUseOnly
+	public void setBindingFrame(BindingFrame frame) {
+		bindingFrame = frame;
+	}
 
 	@Override
 	@InternalUseOnly
@@ -74,18 +90,27 @@ public class QueryBindingSet extends AbstractBindingSet implements MutableBindin
 	}
 
 	public void addAll(BindingSet bindingSet) {
+		BindingFrame suppliedFrame = BindingFrameBindings.from(bindingSet);
 		GraphFrameBindings supplied = GraphFrameBindings.from(bindingSet);
-		if (graphFrames != null) {
-			bindingSet.getBindingNames().forEach(this::forgetGraphFrame);
-		}
 		if (bindingSet instanceof QueryBindingSet) {
+			if (graphFrames != null) {
+				bindingSet.getBindingNames().forEach(this::forgetGraphFrame);
+			}
 			bindings.putAll(((QueryBindingSet) bindingSet).bindings);
 		} else {
-			for (Binding binding : bindingSet) {
-				this.addBinding(binding);
+			// RDF iteration omits explicit-null shadows; a semantic copy retains their logical names.
+			for (String name : bindingSet.getBindingNames()) {
+				Value value = bindingSet.getValue(name);
+				if (value != null || bindingSet.hasBinding(name)) {
+					forgetGraphFrame(name);
+					bindings.put(name, value);
+				}
 			}
 		}
-		setGraphFrameBindings(GraphFrameBindings.from(this).merge(supplied));
+		setGraphFrameBindings(GraphFrameBindings.from(this).merge(supplied.forCopy(bindingSet, this)));
+		if (suppliedFrame != null) {
+			setBindingFrame(suppliedFrame);
+		}
 	}
 
 	/**

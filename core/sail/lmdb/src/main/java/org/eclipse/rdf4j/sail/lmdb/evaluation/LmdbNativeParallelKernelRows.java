@@ -699,6 +699,7 @@ final class LmdbNativeParallelKernelRows {
 		LmdbNativeKernelBindings bindings = lowered.bindings;
 		RowState workerRow = new RowState(source, consumerRow.layout, consumerRow.base,
 				consumerRow.telemetryTarget, consumerRow.exactValuesMetrics, workerCancellation);
+		workerRow.lexicalInputMask = consumerRow.lexicalInputMask;
 		workerRow.memoryScope = consumerRow.memoryScope;
 		workerRow.enableDecodedInputAccounting();
 		NativeScalarPlan.WorkerContext workerContext = NativeScalarPlan.WorkerContext.forSource(source, null);
@@ -759,6 +760,7 @@ final class LmdbNativeParallelKernelRows {
 				// row with the packed columns bound on top (admission guarantees the entry is reproducible)
 				residualRow = new RowState(source, consumerRow.layout, consumerRow.base,
 						consumerRow.telemetryTarget, consumerRow.exactValuesMetrics, workerCancellation);
+				residualRow.lexicalInputMask = consumerRow.lexicalInputMask;
 				residualRow.memoryScope = consumerRow.memoryScope;
 				residualRow.enableDecodedInputAccounting();
 				if (!NativeRowSeeder.seed(residualRow.slots, consumerRow.layout, consumerRow.base, source)) {

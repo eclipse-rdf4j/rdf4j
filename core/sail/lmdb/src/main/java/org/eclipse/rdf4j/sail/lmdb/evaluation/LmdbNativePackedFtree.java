@@ -577,10 +577,12 @@ final class LmdbNativePackedFtree {
 		for (int i = 0; i < children.length; i++) {
 			if (!(input.children[i] instanceof PatternPlan pattern))
 				return null;
+			if (!pattern.supportsContextShortcut(row, row.boundMask(), 0L))
+				return null;
 			children[i] = new PatternPlan(specialize(pattern.s, row), specialize(pattern.p, row),
 					specialize(pattern.o, row), specialize(pattern.c, row), pattern.contexts,
 					pattern.namedContextScope, pattern.statementOrder, pattern.indexName, pattern.range,
-					pattern.staticEstimate, pattern.accessProfile);
+					pattern.staticEstimate, pattern.accessProfile, pattern.dynamicContext);
 		}
 		return new MultiJoinPlan(children, input.filters);
 	}
@@ -1946,9 +1948,21 @@ final class LmdbNativePackedFtree {
 			if (multiJoin.children.length == 0 || row.layout.slotNames().length > Long.SIZE) {
 				return null;
 			}
+			for (MaskedFilter filter : multiJoin.filters) {
+				NativeBooleanFilter inner = NativeFilterLease.inspect(filter.filter);
+				while (inner instanceof RecordingNativeBooleanFilter || inner instanceof NegatedNativeBooleanFilter) {
+					inner = NativeFilterLease.inspect(inner instanceof RecordingNativeBooleanFilter
+							? ((RecordingNativeBooleanFilter) inner).delegate
+							: ((NegatedNativeBooleanFilter) inner).delegate);
+				}
+				if (inner instanceof StatementPatternExistsFilter exists && exists.hasWithheldInput(row)) {
+					return null;
+				}
+			}
 			List<PatternPlan> patterns = new ArrayList<>(multiJoin.children.length);
 			for (SlotPlan child : multiJoin.children) {
-				if (!(child instanceof PatternPlan pattern) || !admissiblePattern(pattern)) {
+				if (!(child instanceof PatternPlan pattern) || !admissiblePattern(pattern)
+						|| !pattern.supportsContextShortcut(row, row.boundMask(), 0L)) {
 					return null;
 				}
 				patterns.add(pattern);

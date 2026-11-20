@@ -20,7 +20,6 @@ import java.util.Map;
 import java.util.NoSuchElementException;
 import java.util.Set;
 import java.util.function.BiConsumer;
-import java.util.function.Consumer;
 import java.util.function.Function;
 import java.util.function.Predicate;
 
@@ -46,20 +45,25 @@ import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.Dataset;
 import org.eclipse.rdf4j.query.MutableBindingSet;
 import org.eclipse.rdf4j.query.QueryEvaluationException;
+import org.eclipse.rdf4j.query.algebra.PrivateGraphContextRole;
 import org.eclipse.rdf4j.query.algebra.StatementPattern;
 import org.eclipse.rdf4j.query.algebra.StatementPattern.Scope;
 import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryEvaluationStep;
 import org.eclipse.rdf4j.query.algebra.evaluation.TripleSource;
+import org.eclipse.rdf4j.query.algebra.evaluation.impl.BindingFrameBindings;
+import org.eclipse.rdf4j.query.algebra.evaluation.impl.GraphFrameBindings;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.QueryEvaluationContext;
+import org.eclipse.rdf4j.query.algebra.helpers.BindingScopePolicy;
 import org.eclipse.rdf4j.query.explanation.TelemetryMetricNames;
+import org.eclipse.rdf4j.query.impl.EmptyBindingSet;
 import org.eclipse.rdf4j.query.impl.RemoteBNode;
 
 /**
  * Evaluate the StatementPattern - taking care of graph/datasets - avoiding redoing work every call of evaluate if
  * possible.
  */
-public class StatementPatternQueryEvaluationStep implements QueryEvaluationStep {
+public class StatementPatternQueryEvaluationStep implements BindingFrameBindings.PhysicalLookupCapability {
 
 	public static final EmptyIteration<? extends Statement> EMPTY_ITERATION = new EmptyIteration<>();
 
@@ -80,8 +84,14 @@ public class StatementPatternQueryEvaluationStep implements QueryEvaluationStep 
 	private final StatementOrder order;
 	private final Function<Value, Value> valuePreparer;
 	private final PreparedBindingAccess[] preparedBindingAccess;
+	private final QueryEvaluationStep framedLookup;
+	private final boolean hasBorrowedLookupInputs;
 
 	private final Predicate<BindingSet> unboundTest;
+	private final ValuedVariable[] valuedVariables;
+	private final OutputVariable[] outputVariables;
+	private final boolean conflictingFixedBindings;
+	private final boolean fixedRepeatedBinding;
 
 	private final Function<BindingSet, Value> getContextVar;
 	private final Function<BindingSet, Value> getSubjectVar;
@@ -135,6 +145,15 @@ public class StatementPatternQueryEvaluationStep implements QueryEvaluationStep 
 		Var predVar = statementPattern.getPredicateVar();
 		Var objVar = statementPattern.getObjectVar();
 		Var conVar = statementPattern.getContextVar();
+		List<ValuedVariable> valued = new ArrayList<>(4);
+		for (Var variable : new Var[] { subjVar, predVar, objVar, conVar }) {
+			if (variable != null && variable.hasValue() && !variable.isConstant()) {
+				valued.add(new ValuedVariable(variable.getName(), context.getValue(variable.getName()),
+						context.setBinding(variable.getName()), variable.getValue()));
+			}
+		}
+		valuedVariables = valued.toArray(ValuedVariable[]::new);
+		conflictingFixedBindings = hasConflictingFixedBindings(valuedVariables);
 
 		subjVar = replaceValueWithNewValue(subjVar, tripleSource.getValueFactory());
 		predVar = replaceValueWithNewValue(predVar, tripleSource.getValueFactory());
@@ -160,40 +179,42 @@ public class StatementPatternQueryEvaluationStep implements QueryEvaluationStep 
 
 		this.statementPattern = new StatementPattern(statementPattern.getScope(), subjVar, predVar, objVar, conVar);
 		this.statementPattern.setVariableScopeChange(statementPattern.isVariableScopeChange());
+		Var[] occurrences = { subjVar, predVar, objVar, conVar };
+		fixedRepeatedBinding = hasFixedRepeatedBinding(occurrences);
 
 		// First create the getters before removing duplicate vars since we need the getters when creating
 		// JoinStatementWithBindingSetIterator. If there are duplicate vars, for instance ?v1 as both subject and
 		// context then we still need to bind the value from ?v1 in the subject and context arguments of
 		// getStatement(...).
-		getContextVar = makeGetVarValue(conVar, context);
-		getSubjectVar = makeGetVarValue(subjVar, context);
-		getPredicateVar = makeGetVarValue(predVar, context);
-		getObjectVar = makeGetVarValue(objVar, context);
+		getContextVar = makeGetVarValue(conVar, occurrences, context);
+		getSubjectVar = makeGetVarValue(subjVar, occurrences, context);
+		getPredicateVar = makeGetVarValue(predVar, occurrences, context);
+		getObjectVar = makeGetVarValue(objVar, occurrences, context);
 
 		// then remove duplicate vars
 		if (subjVar != null) {
-			if (predVar != null && predVar.getName().equals(subjVar.getName())) {
+			if (sameBindingVariable(subjVar, predVar)) {
 				predVar = null;
 			}
-			if (objVar != null && objVar.getName().equals(subjVar.getName())) {
+			if (sameBindingVariable(subjVar, objVar)) {
 				objVar = null;
 			}
-			if (conVar != null && conVar.getName().equals(subjVar.getName())) {
+			if (sameBindingVariable(subjVar, conVar)) {
 				conVar = null;
 			}
 		}
 
 		if (predVar != null) {
-			if (objVar != null && objVar.getName().equals(predVar.getName())) {
+			if (sameBindingVariable(predVar, objVar)) {
 				objVar = null;
 			}
-			if (conVar != null && conVar.getName().equals(predVar.getName())) {
+			if (sameBindingVariable(predVar, conVar)) {
 				conVar = null;
 			}
 		}
 
 		if (objVar != null) {
-			if (conVar != null && conVar.getName().equals(objVar.getName())) {
+			if (sameBindingVariable(objVar, conVar)) {
 				conVar = null;
 			}
 		}
@@ -202,9 +223,29 @@ public class StatementPatternQueryEvaluationStep implements QueryEvaluationStep 
 		normalizedPredicateVar = predVar;
 		normalizedObjectVar = objVar;
 		normalizedContextVar = conVar;
+		List<OutputVariable> outputs = new ArrayList<>(4);
+		for (Var variable : new Var[] { subjVar, predVar, objVar, conVar }) {
+			if (variable != null && !variable.isConstant()) {
+				Value fixed = null;
+				for (ValuedVariable original : valuedVariables) {
+					if (original.name().equals(variable.getName())) {
+						fixed = original.value();
+						break;
+					}
+				}
+				outputs.add(new OutputVariable(variable.getName(), context.getValue(variable.getName()),
+						context.setBinding(variable.getName()), fixed));
+			}
+		}
+		outputVariables = outputs.toArray(OutputVariable[]::new);
 
-		unboundTest = getUnboundTest(context, normalizedSubjectVar, normalizedPredicateVar, normalizedObjectVar,
+		Predicate<BindingSet> positionalUnbound = getUnboundTest(context, normalizedSubjectVar, normalizedPredicateVar,
+				normalizedObjectVar,
 				normalizedContextVar);
+		String publicContext = PrivateGraphContextRole.publicContextName(statementPattern,
+				statementPattern.getContextVar());
+		unboundTest = publicContext == null ? positionalUnbound
+				: positionalUnbound.or(UnboundTest.c(context, Var.of(publicContext)));
 		if (valuePreparer == null) {
 			preparedBindingAccess = null;
 		} else {
@@ -217,7 +258,17 @@ public class StatementPatternQueryEvaluationStep implements QueryEvaluationStep 
 			}
 			preparedBindingAccess = accesses.toArray(PreparedBindingAccess[]::new);
 		}
+		Set<String> lookupNames = BindingScopePolicy.statementBorrowedLookupNames(statementPattern);
+		hasBorrowedLookupInputs = !lookupNames.isEmpty();
+		framedLookup = BindingFrameBindings.scopedLookup(this::evaluateInternal,
+				lookupNames,
+				statementPattern.getBindingNames(), context);
 
+	}
+
+	@Override
+	public boolean supportsPhysicalLookups() {
+		return getClass() == StatementPatternQueryEvaluationStep.class && hasBorrowedLookupInputs;
 	}
 
 	private Var replaceValueWithNewValue(Var var, ValueFactory valueFactory) {
@@ -276,6 +327,54 @@ public class StatementPatternQueryEvaluationStep implements QueryEvaluationStep 
 
 	private record PreparedBindingAccess(Function<BindingSet, Value> getter,
 			BiConsumer<Value, MutableBindingSet> setter) {
+	}
+
+	private record ValuedVariable(String name, Function<BindingSet, Value> getter,
+			BiConsumer<Value, MutableBindingSet> setter, Value value) {
+	}
+
+	private record OutputVariable(String name, Function<BindingSet, Value> getter,
+			BiConsumer<Value, MutableBindingSet> setter, Value fixed) {
+	}
+
+	private static boolean sameBindingVariable(Var left, Var right) {
+		return left != null && right != null && !left.isConstant() && !right.isConstant()
+				&& left.getName() != null && left.getName().equals(right.getName());
+	}
+
+	private static boolean hasFixedRepeatedBinding(Var[] occurrences) {
+		for (int i = 0; i < occurrences.length; i++) {
+			for (int j = i + 1; j < occurrences.length; j++) {
+				if (sameBindingVariable(occurrences[i], occurrences[j])
+						&& (occurrences[i].hasValue() || occurrences[j].hasValue())) {
+					return true;
+				}
+			}
+		}
+		return false;
+	}
+
+	private static boolean hasConflictingFixedBindings(ValuedVariable[] variables) {
+		for (int i = 0; i < variables.length; i++) {
+			for (int j = i + 1; j < variables.length; j++) {
+				if (variables[i].name().equals(variables[j].name())
+						&& !variables[i].value().equals(variables[j].value())) {
+					return true;
+				}
+			}
+		}
+		return false;
+	}
+
+	/** Inlined named variables are still subject to compatibility with the semantic input mapping. */
+	private boolean hasConflictingValuedVariable(BindingSet bindings) {
+		for (ValuedVariable variable : valuedVariables) {
+			Value input = variable.getter().apply(bindings);
+			if (input != null && !variable.value().equals(input)) {
+				return true;
+			}
+		}
+		return false;
 	}
 
 	/** Returns an owned copy only when a statement input requires a store-native replacement. */
@@ -354,20 +453,32 @@ public class StatementPatternQueryEvaluationStep implements QueryEvaluationStep 
 
 	}
 
-	private static Function<BindingSet, Value> makeGetVarValue(Var var, QueryEvaluationContext context) {
+	private static Function<BindingSet, Value> makeGetVarValue(Var var, Var[] occurrences,
+			QueryEvaluationContext context) {
 		if (var == null) {
 			return null;
 		} else if (var.hasValue()) {
 			Value value = var.getValue();
 			return b -> value;
-		} else {
-			return context.getValue(var.getName());
 		}
+		for (Var occurrence : occurrences) {
+			if (sameBindingVariable(var, occurrence) && occurrence.hasValue()) {
+				Value value = occurrence.getValue();
+				return b -> value;
+			}
+		}
+		return context.getValue(var.getName());
 	}
 
 	@Override
 	public CloseableIteration<BindingSet> evaluate(BindingSet bindings) {
-		if (emptyGraph) {
+		var frame = BindingFrameBindings.from(bindings);
+		return frame == null ? evaluateInternal(bindings, bindings)
+				: BindingFrameBindings.restore(frame, framedLookup.evaluate(bindings), context);
+	}
+
+	private CloseableIteration<BindingSet> evaluateInternal(BindingSet logical, BindingSet bindings) {
+		if (emptyGraph || conflictingFixedBindings) {
 			return QueryEvaluationStep.EMPTY_ITERATION;
 		} else if (bindings.isEmpty()) {
 			ConvertStatementToBindingSetIterator iteration = getIteration();
@@ -376,17 +487,43 @@ public class StatementPatternQueryEvaluationStep implements QueryEvaluationStep 
 			}
 			return iteration;
 
-		} else if (unboundTest.test(bindings)) {
-			// the variable must remain unbound for this solution see
-			// https://www.w3.org/TR/sparql11-query/#assignment
+		} else if (unboundTest.test(bindings) || hasConflictingValuedVariable(bindings)) {
+			// The input violates an unbound constraint or conflicts with an inlined variable.
 			return QueryEvaluationStep.EMPTY_ITERATION;
 		} else {
-			CloseableIteration<BindingSet> iteration = getIteration(prepareBindings(bindings));
+			BindingSet physical = prepareBindings(bindings);
+			CloseableIteration<BindingSet> iteration = getIteration(preparedNeutralInputs(logical, physical), physical);
 			if (iteration == null) {
 				return QueryEvaluationStep.EMPTY_ITERATION;
 			}
 			return iteration;
 		}
+	}
+
+	/** Prepared IRIs and literals carry no blank-node authority and retain the existing result representation. */
+	private BindingSet preparedNeutralInputs(BindingSet logical, BindingSet physical) {
+		if (valuePreparer == null || logical == physical || logical.isEmpty()) {
+			return logical;
+		}
+		MutableBindingSet result = null;
+		for (OutputVariable variable : outputVariables) {
+			Value original = variable.getter().apply(logical);
+			Value prepared = variable.getter().apply(physical);
+			if (original == null || prepared == null || original == prepared
+					|| !(original.isIRI() && prepared.isIRI() || original.isLiteral() && prepared.isLiteral())) {
+				continue;
+			}
+			if (result == null) {
+				result = BindingFrameBindings.preserve(logical,
+						GraphFrameBindings.preserve(logical, context.createBindingSet(logical)));
+			}
+			if (GraphFrameBindings.isSupplied(logical, variable.name())) {
+				result = GraphFrameBindings.supply(result, variable.name(), prepared);
+			} else {
+				variable.setter().accept(prepared, result);
+			}
+		}
+		return result == null ? logical : result;
 	}
 
 	/**
@@ -399,7 +536,7 @@ public class StatementPatternQueryEvaluationStep implements QueryEvaluationStep 
 				|| iteration instanceof JoinStatementWithBindingSetIterator;
 	}
 
-	private CloseableIteration<BindingSet> getIteration(BindingSet bindings) {
+	private CloseableIteration<BindingSet> getIteration(BindingSet logical, BindingSet bindings) {
 		final Value contextValue = getContextVar != null ? getContextVar.apply(bindings) : null;
 
 		Resource[] contexts = contextSup.apply(contextValue);
@@ -422,26 +559,29 @@ public class StatementPatternQueryEvaluationStep implements QueryEvaluationStep 
 
 		Value object = getObjectVar != null ? getObjectVar.apply(bindings) : null;
 		DirectLookupKey directLookupKey = getDirectLookupKey((Resource) subject, (IRI) predicate, object, contexts);
+		BindingSet reusable = directLookupKey == null ? null : reusableLookupOutput(logical, bindings);
 		DirectLookupCacheEntry cachedDirectLookup = getCachedDirectLookup(directLookupKey);
 		if (cachedDirectLookup != null) {
 			if (cachedDirectLookup.statementCount == 0) {
 				return null;
 			}
-			if (canReuseBindingsWithoutConversion(bindings, contextValue, subject, predicate, object)) {
-				return new RepeatedBindingSetIteration(cachedDirectLookup.statementCount, bindings);
+			if (reusable != null
+					&& canReuseBindingsWithoutConversion(reusable, contextValue, subject, predicate, object)) {
+				return new RepeatedBindingSetIteration(cachedDirectLookup.statementCount, reusable);
 			}
 			if (cachedDirectLookup.statements == null) {
-				return new JoinStatementWithBindingSetIterator(
+				return convertLookupStatements(
 						reopenUncachedIteration((Resource) subject, (IRI) predicate, object, contexts),
-						getConverter(), bindings, context);
+						logical);
 			}
-			return new JoinStatementWithBindingSetIterator(
+			return convertLookupStatements(
 					new CloseableIteratorIteration<>(cachedDirectLookup.statements.iterator()),
-					getConverter(), bindings, context);
+					logical);
 		}
 
 		if (directLookupKey != null
-				&& canReuseBindingsWithoutConversion(bindings, contextValue, subject, predicate, object)
+				&& reusable != null
+				&& canReuseBindingsWithoutConversion(reusable, contextValue, subject, predicate, object)
 				&& filterContextOrEqualVariables(statementPattern, (Resource) subject, (IRI) predicate, object,
 						contexts) == null) {
 			try {
@@ -449,7 +589,7 @@ public class StatementPatternQueryEvaluationStep implements QueryEvaluationStep 
 				long statementCount = tripleSource.getStatementCount((Resource) subject, (IRI) predicate, object,
 						contexts);
 				putCachedDirectLookup(directLookupKey, DirectLookupCacheEntry.count(statementCount));
-				return statementCount == 0 ? null : new RepeatedBindingSetIteration(statementCount, bindings);
+				return statementCount == 0 ? null : new RepeatedBindingSetIteration(statementCount, reusable);
 			} catch (Throwable t) {
 				if (t instanceof InterruptedException) {
 					Thread.currentThread().interrupt();
@@ -484,17 +624,18 @@ public class StatementPatternQueryEvaluationStep implements QueryEvaluationStep 
 				DirectLookupResult directLookupResult = cacheDirectLookupIfSmall(directLookupKey, (Resource) subject,
 						(IRI) predicate, object, contexts, iteration);
 				if (directLookupResult.cachedStatementCount >= 0
-						&& canReuseBindingsWithoutConversion(bindings, contextValue, subject, predicate, object)) {
+						&& reusable != null
+						&& canReuseBindingsWithoutConversion(reusable, contextValue, subject, predicate, object)) {
 					if (directLookupResult.cachedStatementCount == 0) {
 						return null;
 					}
-					return new RepeatedBindingSetIteration(directLookupResult.cachedStatementCount, bindings);
+					return new RepeatedBindingSetIteration(directLookupResult.cachedStatementCount, reusable);
 				}
 				iteration = directLookupResult.iteration;
 			}
 
 			// Return an iterator that converts the statements to var bindings
-			return new JoinStatementWithBindingSetIterator(iteration, getConverter(), bindings, context);
+			return convertLookupStatements(iteration, logical);
 		} catch (Throwable t) {
 			if (iteration != null) {
 				iteration.close();
@@ -506,14 +647,42 @@ public class StatementPatternQueryEvaluationStep implements QueryEvaluationStep 
 		}
 	}
 
+	/** A count lookup witnesses simple RDF terms; terms with possible hidden authority need a statement row. */
+	private BindingSet reusableLookupOutput(BindingSet logical, BindingSet physical) {
+		for (OutputVariable variable : outputVariables) {
+			if (variable.getter().apply(logical) == null) {
+				Value value = variable.fixed() != null ? variable.fixed() : variable.getter().apply(physical);
+				if (value == null || variable.fixed() == null && !value.isIRI() && !value.isLiteral()) {
+					return null;
+				}
+			}
+		}
+		MutableBindingSet result = null;
+		for (OutputVariable variable : outputVariables) {
+			if (variable.getter().apply(logical) == null) {
+				if (result == null) {
+					result = context.createBindingSet(logical);
+				}
+				Value value = variable.fixed() != null ? variable.fixed() : variable.getter().apply(physical);
+				variable.setter().accept(value, result);
+			}
+		}
+		return result == null ? logical : result;
+	}
+
+	private CloseableIteration<BindingSet> convertLookupStatements(CloseableIteration<? extends Statement> rows,
+			BindingSet logical) {
+		return logical.isEmpty()
+				? new ConvertStatementToBindingSetIterator(rows, getConvertStatementConverter(), context)
+				: new JoinStatementWithBindingSetIterator(rows, getConverter(), logical, context);
+	}
+
 	@Experimental
 	public boolean hasStatement(BindingSet bindings) {
-		if (emptyGraph) {
+		if (emptyGraph || conflictingFixedBindings) {
 			return false;
 		}
-		if (unboundTest.test(bindings)) {
-			// the variable must remain unbound for this solution see
-			// https://www.w3.org/TR/sparql11-query/#assignment
+		if (unboundTest.test(bindings) || hasConflictingValuedVariable(bindings)) {
 			return false;
 		}
 
@@ -572,15 +741,13 @@ public class StatementPatternQueryEvaluationStep implements QueryEvaluationStep 
 	}
 
 	long getFullyBoundStatementCount(BindingSet bindings) {
-		if (emptyGraph) {
+		if (emptyGraph || conflictingFixedBindings) {
 			return 0;
 		}
 		if (bindings.isEmpty()) {
 			return -1;
 		}
-		if (unboundTest.test(bindings)) {
-			// the variable must remain unbound for this solution see
-			// https://www.w3.org/TR/sparql11-query/#assignment
+		if (unboundTest.test(bindings) || hasConflictingValuedVariable(bindings)) {
 			return 0;
 		}
 		bindings = prepareBindings(bindings);
@@ -735,25 +902,29 @@ public class StatementPatternQueryEvaluationStep implements QueryEvaluationStep 
 	private ConvertStatementToBindingSetIterator getIteration() {
 
 		Var contextVar = statementPattern.getContextVar();
-		Resource[] contexts = contextSup.apply(contextVar != null ? contextVar.getValue() : null);
+		BindingSet empty = fixedRepeatedBinding ? EmptyBindingSet.getInstance() : null;
+		Value contextValue = contextVar == null ? null
+				: fixedRepeatedBinding ? getContextVar.apply(empty) : contextVar.getValue();
+		Resource[] contexts = contextSup.apply(contextValue);
 
 		if (contexts == null) {
 			return null;
 		}
 
-		Value subject = statementPattern.getSubjectVar().getValue();
+		Value subject = fixedRepeatedBinding ? getSubjectVar.apply(empty) : statementPattern.getSubjectVar().getValue();
 
 		if (subject != null && !subject.isResource()) {
 			return null;
 		}
 
-		Value predicate = statementPattern.getPredicateVar().getValue();
+		Value predicate = fixedRepeatedBinding ? getPredicateVar.apply(empty)
+				: statementPattern.getPredicateVar().getValue();
 
 		if (predicate != null && !predicate.isIRI()) {
 			return null;
 		}
 
-		Value object = statementPattern.getObjectVar().getValue();
+		Value object = fixedRepeatedBinding ? getObjectVar.apply(empty) : statementPattern.getObjectVar().getValue();
 
 		CloseableIteration<? extends Statement> iteration = null;
 		try {
@@ -820,23 +991,22 @@ public class StatementPatternQueryEvaluationStep implements QueryEvaluationStep 
 
 	private BiConsumer<MutableBindingSet, Statement> preservePreboundValues(
 			BiConsumer<MutableBindingSet, Statement> converter) {
-		List<Consumer<MutableBindingSet>> originalValues = new ArrayList<>(4);
-		for (Var variable : new Var[] { normalizedSubjectVar, normalizedPredicateVar,
-				normalizedObjectVar, normalizedContextVar }) {
-			if (variable != null && variable.hasValue() && !variable.isConstant()) {
-				BiConsumer<Value, MutableBindingSet> setter = context.setBinding(variable.getName());
-				Value original = variable.getValue();
-				originalValues.add(row -> setter.accept(original, row));
-			}
-		}
-		if (originalValues.isEmpty()) {
+		if (valuedVariables.length == 0) {
 			return converter;
 		}
 		return (row, statement) -> {
+			int missing = 0;
+			for (int i = 0; i < valuedVariables.length; i++) {
+				if (valuedVariables[i].getter().apply(row) == null) {
+					missing |= 1 << i;
+				}
+			}
 			converter.accept(row, statement);
-			// Optimizer-inlined bindings retain their captured values and authority, even with an empty input row.
-			for (int i = 0; i < originalValues.size(); i++) {
-				originalValues.get(i).accept(row);
+			for (int i = 0; i < valuedVariables.length; i++) {
+				if ((missing & 1 << i) != 0) {
+					ValuedVariable original = valuedVariables[i];
+					original.setter().accept(original.value(), row);
+				}
 			}
 		};
 	}
@@ -883,24 +1053,24 @@ public class StatementPatternQueryEvaluationStep implements QueryEvaluationStep 
 		Var conVar = statementPattern.getContextVar();
 
 		if (subjVar != null && subjValue == null) {
-			boolean subEqPredVar = subjVar.equals(predVar);
-			boolean subEqObjVar = subjVar.equals(objVar);
-			boolean subEqConVar = subjVar.equals(conVar);
+			boolean subEqPredVar = sameBindingVariable(subjVar, predVar);
+			boolean subEqObjVar = sameBindingVariable(subjVar, objVar);
+			boolean subEqConVar = sameBindingVariable(subjVar, conVar);
 			if (subEqPredVar || subEqObjVar || subEqConVar) {
 				filter = andThen(filter, subjectVariableHasEquals(subEqPredVar, subEqObjVar, subEqConVar));
 			}
 		}
 
 		if (predVar != null && predValue == null) {
-			boolean predEqObjVar = predVar.equals(objVar);
-			boolean predEqConVar = predVar.equals(conVar);
+			boolean predEqObjVar = sameBindingVariable(predVar, objVar);
+			boolean predEqConVar = sameBindingVariable(predVar, conVar);
 			if (predEqObjVar || predEqConVar) {
 				filter = andThen(filter, predicateVariableHasEquals(predEqObjVar, predEqConVar));
 			}
 		}
 
 		if (objVar != null && objValue == null) {
-			boolean objEqConVar = objVar.equals(conVar);
+			boolean objEqConVar = sameBindingVariable(objVar, conVar);
 			if (objEqConVar) {
 				filter = andThen(filter, st -> {
 					Value obj = st.getObject();

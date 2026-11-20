@@ -19,6 +19,7 @@ import java.util.concurrent.atomic.AtomicReference;
 
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.common.iteration.CloseableIteratorIteration;
+import org.eclipse.rdf4j.common.transaction.QueryEvaluationMode;
 import org.eclipse.rdf4j.federated.structures.QueryInfo;
 import org.eclipse.rdf4j.model.BNode;
 import org.eclipse.rdf4j.model.IRI;
@@ -42,6 +43,7 @@ import org.eclipse.rdf4j.query.algebra.evaluation.federation.FederatedServiceRes
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.DefaultEvaluationStrategy;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.EvaluationStatistics;
 import org.eclipse.rdf4j.query.impl.RemoteBNode;
+import org.eclipse.rdf4j.query.parser.ParsedTupleQuery;
 import org.eclipse.rdf4j.query.parser.QueryParserUtil;
 import org.eclipse.rdf4j.repository.RepositoryConnection;
 
@@ -180,8 +182,13 @@ final class RemoteGraphSnapshot implements NativeTripleTermSource {
 
 	CloseableIteration<BindingSet> evaluate(String text, TupleQuery query, BindingSet nativeBindings,
 			FederatedServiceResolver resolver) {
+		return evaluate(QueryParserUtil.parseTupleQuery(QueryLanguage.SPARQL, text, null), query, nativeBindings,
+				resolver, null);
+	}
+
+	CloseableIteration<BindingSet> evaluate(ParsedTupleQuery parsed, TupleQuery query, BindingSet nativeBindings,
+			FederatedServiceResolver resolver, QueryEvaluationMode mode) {
 		checkOpen();
-		var parsed = QueryParserUtil.parseTupleQuery(QueryLanguage.SPARQL, text, null);
 		Dataset dataset = query.getDataset() == null ? parsed.getDataset() : query.getDataset();
 		QueryBindingSet bindings = new QueryBindingSet(query.getBindings());
 		for (Binding binding : nativeBindings) {
@@ -193,6 +200,9 @@ final class RemoteGraphSnapshot implements NativeTripleTermSource {
 			}
 		}
 		DefaultEvaluationStrategy strategy = new DefaultEvaluationStrategy(this, dataset, resolver);
+		if (mode != null) {
+			strategy.setQueryEvaluationMode(mode);
+		}
 		var expression = strategy.optimize(parsed.getTupleExpr(), new EvaluationStatistics(), bindings);
 		return strategy.precompile(expression).evaluate(bindings);
 	}

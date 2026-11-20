@@ -15,11 +15,14 @@ package org.eclipse.rdf4j.sail.lmdb.evaluation;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import java.io.File;
+import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.function.Supplier;
 import java.util.stream.Collectors;
 
+import org.assertj.core.api.SoftAssertions;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.Value;
@@ -29,12 +32,18 @@ import org.eclipse.rdf4j.model.vocabulary.XSD;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.QueryResults;
 import org.eclipse.rdf4j.query.TupleQuery;
+import org.eclipse.rdf4j.query.algebra.StatementPattern;
+import org.eclipse.rdf4j.query.algebra.Var;
+import org.eclipse.rdf4j.query.algebra.evaluation.impl.DefaultEvaluationStrategy;
+import org.eclipse.rdf4j.query.impl.MapBindingSet;
+import org.eclipse.rdf4j.repository.evaluation.RepositoryTripleSource;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
 import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
 import org.eclipse.rdf4j.repository.sail.SailTupleQuery;
 import org.eclipse.rdf4j.sail.lmdb.LmdbStore;
 import org.eclipse.rdf4j.sail.lmdb.config.LmdbStoreConfig;
 import org.eclipse.rdf4j.sail.lmdb.model.RdfTermKey;
+import org.eclipse.rdf4j.sail.memory.MemoryStore;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -665,6 +674,194 @@ public class LmdbNativeScopeAndValuesRegressionTest {
 				.isGreaterThan(compiledBefore);
 		assertThat(nativeRows).isEqualTo(rows(query, false, null, null));
 		assertThat(nativeRows).containsExactly("[s=http://example.org/optionalSubject;value=\"target\"]");
+	}
+
+	@Test
+	public void groupedSubselectAliasHasIndependentExactBag() {
+		String prefixes = "PREFIX ex: <urn:subselect:> PREFIX dcat: <http://www.w3.org/ns/dcat#> "
+				+ "PREFIX dct: <http://purl.org/dc/terms/> ";
+		String outer = "?a a ?type2 . ?b a ?type1; dcat:dataset ?a . "
+				+ "?a dcat:distribution ?mbox; dct:language ?language; dct:identifier ?identifier . "
+				+ "FILTER(?type1 != ?type2) ";
+		String inner = "{ SELECT DISTINCT ?c (COUNT(?dist) AS ?count) ?language2 WHERE { "
+				+ "?c a ?type2; dcat:distribution ?dist; dct:language ?language2 . } "
+				+ "GROUP BY ?c ?language2 HAVING(?count > 2) }";
+		String projected = "?type1 ?type2 ?language2 ?mbox ?count ?identifier2";
+		String bind = "BIND(?a AS ?c) ";
+		String join = prefixes + "SELECT " + projected + " WHERE { " + outer + bind + inner + " }";
+		String full = join + " GROUP BY " + projected + " ORDER BY " + projected;
+		ValueFactory vf = repository.getValueFactory();
+		List<BindingSet> expectedFinal = new ArrayList<>();
+		List<BindingSet> expectedOuter = new ArrayList<>();
+		List<BindingSet> expectedBind = new ArrayList<>();
+		for (String distribution : List.of("d1", "d2", "d3")) {
+			IRI mbox = vf.createIRI("urn:subselect:" + distribution);
+			expectedFinal.add(oracleRow("type1", vf.createIRI("urn:subselect:Catalog"),
+					"type2", vf.createIRI("urn:subselect:Dataset"), "language2", vf.createIRI("urn:subselect:en"),
+					"mbox", mbox, "count", vf.createLiteral("3", XSD.INTEGER)));
+			expectedOuter.add(oracleRow("a", vf.createIRI("urn:subselect:a"), "type1",
+					vf.createIRI("urn:subselect:Catalog"), "type2", vf.createIRI("urn:subselect:Dataset"), "mbox",
+					mbox));
+			expectedBind.add(oracleRow("a", vf.createIRI("urn:subselect:a"), "c", vf.createIRI("urn:subselect:a"),
+					"type1", vf.createIRI("urn:subselect:Catalog"), "type2", vf.createIRI("urn:subselect:Dataset"),
+					"mbox", mbox));
+		}
+		Map<String, List<BindingSet>> cases = new LinkedHashMap<>();
+		cases.put(prefixes + "SELECT ?a ?type1 ?type2 ?mbox WHERE { " + outer + "}", expectedOuter);
+		cases.put(prefixes + "SELECT ?a ?c ?type1 ?type2 ?mbox WHERE { " + outer + bind + "}", expectedBind);
+		cases.put(prefixes + "SELECT * WHERE { " + inner + " }", List.of(oracleRow("c", vf.createIRI("urn:subselect:a"),
+				"count", vf.createLiteral("3", XSD.INTEGER), "language2", vf.createIRI("urn:subselect:en"))));
+		cases.put(join, expectedFinal);
+		cases.put(full, expectedFinal);
+		cases.put(full.replace("?c a ?type2;", "?c a ?localType;"), expectedFinal);
+		cases.put(full.replace("HAVING(?count > 2)", ""), expectedFinal);
+		cases.put(full.replace("HAVING(?count > 2)", "HAVING(COUNT(?dist) > 2)"), expectedFinal);
+		cases.put(prefixes + "SELECT " + projected + " WHERE { " + outer.replace("?a", "?c") + inner + " } GROUP BY "
+				+ projected + " ORDER BY " + projected, expectedFinal);
+
+		SailRepository memory = new SailRepository(new MemoryStore());
+		memory.init();
+		try (SailRepositoryConnection memoryConnection = memory.getConnection();
+				SailRepositoryConnection lmdbConnection = repository.getConnection()) {
+			loadGroupedSubselectFixture(memoryConnection);
+			loadGroupedSubselectFixture(lmdbConnection);
+			SoftAssertions softly = new SoftAssertions();
+			for (Map.Entry<String, List<BindingSet>> entry : cases.entrySet()) {
+				softly.assertThat(QueryResults.asList(memoryConnection.prepareTupleQuery(entry.getKey()).evaluate()))
+						.as("Memory: %s", entry.getKey())
+						.containsExactlyInAnyOrderElementsOf(entry.getValue());
+				softly.assertThat(bindings(entry.getKey(), false, null, null, null))
+						.as("generic LMDB: %s", entry.getKey())
+						.containsExactlyInAnyOrderElementsOf(entry.getValue());
+				softly.assertThat(bindings(entry.getKey(), true, null, null, null))
+						.as("native-enabled LMDB: %s", entry.getKey())
+						.containsExactlyInAnyOrderElementsOf(entry.getValue());
+			}
+			System.out.println("Memory full query plan:\n" + memoryConnection.prepareTupleQuery(full)
+					.explain(org.eclipse.rdf4j.query.explanation.Explanation.Level.Executed));
+			System.out.println("LMDB full query plan:\n" + lmdbConnection.prepareTupleQuery(full)
+					.explain(org.eclipse.rdf4j.query.explanation.Explanation.Level.Executed));
+			softly.assertAll();
+		} finally {
+			memory.shutDown();
+		}
+	}
+
+	private static void loadGroupedSubselectFixture(SailRepositoryConnection connection) {
+		ValueFactory vf = connection.getValueFactory();
+		IRI a = vf.createIRI("urn:subselect:a");
+		IRI b = vf.createIRI("urn:subselect:b");
+		IRI distribution = vf.createIRI("http://www.w3.org/ns/dcat#distribution");
+		connection.add(b, RDF.TYPE, vf.createIRI("urn:subselect:Catalog"));
+		connection.add(b, vf.createIRI("http://www.w3.org/ns/dcat#dataset"), a);
+		connection.add(a, RDF.TYPE, vf.createIRI("urn:subselect:Dataset"));
+		for (String name : List.of("d1", "d2", "d3")) {
+			connection.add(a, distribution, vf.createIRI("urn:subselect:" + name));
+		}
+		connection.add(a, vf.createIRI("http://purl.org/dc/terms/language"), vf.createIRI("urn:subselect:en"));
+		connection.add(a, vf.createIRI("http://purl.org/dc/terms/identifier"), vf.createLiteral("id"));
+	}
+
+	private static MapBindingSet oracleRow(Object... pairs) {
+		MapBindingSet result = new MapBindingSet();
+		for (int i = 0; i < pairs.length; i += 2) {
+			result.addBinding((String) pairs[i], (Value) pairs[i + 1]);
+		}
+		return result;
+	}
+
+	@Test
+	public void valuedNamedStatementVariableRespectsConflictingInput() {
+		SailRepository memory = new SailRepository(new MemoryStore());
+		memory.init();
+		try (SailRepositoryConnection memoryConnection = memory.getConnection();
+				SailRepositoryConnection lmdbConnection = repository.getConnection()) {
+			loadOptionalPredicateFixture(memoryConnection);
+			loadOptionalPredicateFixture(lmdbConnection);
+			SoftAssertions softly = new SoftAssertions();
+			for (SailRepositoryConnection connection : List.of(memoryConnection, lmdbConnection)) {
+				ValueFactory vf = connection.getValueFactory();
+				IRI subject = vf.createIRI(EX, "a");
+				IRI prop1 = vf.createIRI(EX, "prop1");
+				IRI label = vf.createIRI("http://www.w3.org/2000/01/rdf-schema#label");
+				Value first = vf.createLiteral("first");
+				DefaultEvaluationStrategy strategy = new DefaultEvaluationStrategy(
+						new RepositoryTripleSource(connection), null);
+				for (boolean preboundObject : List.of(false, true)) {
+					MapBindingSet conflict = oracleRow("s", subject, "p", label);
+					MapBindingSet compatible = oracleRow("s", subject, "p", prop1);
+					if (preboundObject) {
+						conflict.addBinding("opt", first);
+						compatible.addBinding("opt", first);
+					}
+					StatementPattern pattern = new StatementPattern(Var.of("s"), Var.of("p", prop1, false, false),
+							Var.of("opt"));
+					softly.assertThat(QueryResults.asList(strategy.precompile(pattern).evaluate(conflict)))
+							.as("conflicting named value, prebound object=%s", preboundObject)
+							.isEmpty();
+					softly.assertThat(QueryResults.asList(strategy.precompile(pattern).evaluate(compatible)))
+							.as("compatible named value, prebound object=%s", preboundObject)
+							.containsExactly(oracleRow("s", subject, "p", prop1, "opt", first));
+				}
+			}
+			softly.assertAll();
+		} finally {
+			memory.shutDown();
+		}
+	}
+
+	@Test
+	public void nestedUnionOptionalUsesMappingCompatibilityOracle() {
+		String query = "PREFIX ex: <" + EX + "> PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#> "
+				+ "SELECT * { { ex:a ?p ?prop1 FILTER (?p = ex:prop1) } UNION { "
+				+ "?s ex:p ex:A ; { { ?s ?p ?l . FILTER (?p = rdfs:label) } "
+				+ "OPTIONAL { ?s ?p ?opt1 . FILTER (?p = ex:prop1) } "
+				+ "OPTIONAL { ?s ?p ?opt2 . FILTER (?p = ex:prop2) } } } }";
+		ValueFactory vf = repository.getValueFactory();
+		List<BindingSet> expected = List.of(
+				oracleRow("p", vf.createIRI(EX, "prop1"), "prop1", vf.createLiteral("first")),
+				oracleRow("s", vf.createIRI(EX, "a"), "p", vf.createIRI("http://www.w3.org/2000/01/rdf-schema#label"),
+						"l", vf.createLiteral("label")));
+		SailRepository memory = new SailRepository(new MemoryStore());
+		memory.init();
+		try (SailRepositoryConnection memoryConnection = memory.getConnection();
+				SailRepositoryConnection lmdbConnection = repository.getConnection()) {
+			loadOptionalPredicateFixture(memoryConnection);
+			loadOptionalPredicateFixture(lmdbConnection);
+			SoftAssertions softly = new SoftAssertions();
+			softly.assertThat(QueryResults.asList(memoryConnection.prepareTupleQuery(query).evaluate()))
+					.as("Memory independent bag")
+					.containsExactlyInAnyOrderElementsOf(expected);
+			softly.assertThat(bindings(query, false, null, null, null))
+					.as("generic LMDB independent bag")
+					.containsExactlyInAnyOrderElementsOf(expected);
+			softly.assertThat(bindings(query, true, null, null, null))
+					.as("native-enabled LMDB independent bag")
+					.containsExactlyInAnyOrderElementsOf(expected);
+			softly.assertThat(withProperty(JANINO_ENABLED, "true", () -> withProperty(JANINO_THRESHOLD_ROWS, "0",
+					() -> withProperty(JANINO_SYNCHRONOUS, "true",
+							() -> bindings(query, true, null, null, LmdbNativeAttemptMetrics.PATH_IR_KERNEL)))))
+					.as("compiled native kernel independent bag")
+					.containsExactlyInAnyOrderElementsOf(expected);
+			softly.assertThat(withProperty(JANINO_ENABLED, "false",
+					() -> bindings(query, true, null, null, LmdbNativeAttemptMetrics.PATH_IR_KERNEL_INTERPRETED)))
+					.as("interpreted native kernel independent bag")
+					.containsExactlyInAnyOrderElementsOf(expected);
+			System.out.println("Memory OPTIONAL plan:\n" + memoryConnection.prepareTupleQuery(query)
+					.explain(org.eclipse.rdf4j.query.explanation.Explanation.Level.Executed));
+			softly.assertAll();
+		} finally {
+			memory.shutDown();
+		}
+	}
+
+	private static void loadOptionalPredicateFixture(SailRepositoryConnection connection) {
+		ValueFactory vf = connection.getValueFactory();
+		IRI subject = vf.createIRI(EX, "a");
+		connection.add(subject, vf.createIRI(EX, "p"), vf.createIRI(EX, "A"));
+		connection.add(subject, vf.createIRI("http://www.w3.org/2000/01/rdf-schema#label"), vf.createLiteral("label"));
+		connection.add(subject, vf.createIRI(EX, "prop1"), vf.createLiteral("first"));
+		connection.add(subject, vf.createIRI(EX, "prop2"), vf.createLiteral("second"));
 	}
 
 	@Test

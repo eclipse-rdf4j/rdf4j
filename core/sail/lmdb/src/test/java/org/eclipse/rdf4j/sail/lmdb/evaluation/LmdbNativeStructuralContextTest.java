@@ -25,6 +25,9 @@ import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.query.Dataset;
 import org.eclipse.rdf4j.query.MutableBindingSet;
 import org.eclipse.rdf4j.query.QueryEvaluationException;
+import org.eclipse.rdf4j.query.algebra.Projection;
+import org.eclipse.rdf4j.query.algebra.ProjectionElemList;
+import org.eclipse.rdf4j.query.algebra.SingletonSet;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.QueryEvaluationContext;
 import org.eclipse.rdf4j.query.impl.BlankNodeAllocationScope;
 import org.junit.jupiter.api.Test;
@@ -59,6 +62,63 @@ class LmdbNativeStructuralContextTest {
 			assertThat(row.hasBinding("x")).isFalse();
 		}
 		assertThat(removals).hasValue(2);
+	}
+
+	@Test
+	void detachedProjectionContextRetainsStructuralAndEvaluationOwnership() {
+		AtomicInteger removals = new AtomicInteger();
+		QueryEvaluationContext structural = structural(removals, false);
+		QueryWideVarLayout layout = new QueryWideVarLayout(new String[] { "x" });
+		QueryEvaluationContext queryContext = new LmdbQueryEvaluationContext(structural, layout);
+		SingletonSet attached = new SingletonSet();
+		new Projection(attached, new ProjectionElemList());
+		GenericSubplanDescriptor descriptor = GenericSubplanDescriptor.create(attached);
+		QueryEvaluationContext scoped = descriptor.scopedContext(queryContext);
+		assertThat(queryContext.hasEnclosingProjection()).isFalse();
+		assertThat(scoped.hasEnclosingProjection()).isTrue();
+		assertThat(LmdbQueryEvaluationContext.layoutOf(scoped)).isSameAs(layout);
+		assertThat(scoped.getActiveGraph()).isSameAs(structural.getActiveGraph());
+		assertThat(scoped.getSubstitutionBindingNames()).isSameAs(structural.getSubstitutionBindingNames());
+		assertThat(scoped.getBlankNodeAllocationScope()).isSameAs(structural.getBlankNodeAllocationScope());
+		assertThat(scoped.getDataset()).isSameAs(structural.getDataset());
+		assertThat(scoped.getComparator()).isSameAs(structural.getComparator());
+		assertThat(scoped.getNow()).isSameAs(structural.getNow());
+		Value value = SimpleValueFactory.getInstance().createLiteral("value");
+		MutableBindingSet row = scoped.createBindingSet();
+		scoped.setBinding("x").accept(value, row);
+		assertThat(scoped.hasBinding("x").test(row)).isTrue();
+		assertThat(scoped.getValue("x").apply(row)).isSameAs(value);
+		assertThat(scoped.getBinding("x").apply(row).getValue()).isSameAs(value);
+		assertThat(scoped.createBindingSet(row).getValue("x")).isSameAs(value);
+		AtomicInteger captures = new AtomicInteger();
+		Function<Value, Value> capture = original -> {
+			captures.incrementAndGet();
+			return original;
+		};
+		assertThat(scoped.captureConstant(value, capture)).isSameAs(structural.captureConstant(value, capture));
+		assertThat(captures).hasValue(1);
+		assertThat(scoped.getOrCreateBNode("label", row, SimpleValueFactory.getInstance()))
+				.isSameAs(structural.getOrCreateBNode("label", row, SimpleValueFactory.getInstance()));
+		scoped.removeBinding("x").accept(row);
+		assertThat(row.hasBinding("x")).isFalse();
+		assertThat(removals).hasValue(1);
+		GenericSubplanDescriptor detached = GenericSubplanDescriptor.create(new SingletonSet());
+		assertThat(detached.scopedContext(queryContext)).isSameAs(queryContext);
+		QueryEvaluationContext alreadyScoped = structural(new AtomicInteger());
+		assertThat(descriptor.scopedContext(alreadyScoped)).isSameAs(alreadyScoped);
+
+		NativeExecutionContext owner = new NativeExecutionContext();
+		try {
+			QueryEvaluationContext evaluation = owner.genericContext(queryContext, null);
+			QueryEvaluationContext scopedEvaluation = descriptor.scopedContext(evaluation);
+			assertThat(scopedEvaluation.hasEnclosingProjection()).isTrue();
+			assertThat(scopedEvaluation.getNow()).isSameAs(evaluation.getNow());
+			assertThat(scopedEvaluation.getBlankNodeAllocationScope())
+					.isSameAs(evaluation.getBlankNodeAllocationScope());
+			assertThat(scopedEvaluation.getActiveGraph()).isSameAs(evaluation.getActiveGraph());
+		} finally {
+			owner.close();
+		}
 	}
 
 	@Test
@@ -111,6 +171,10 @@ class LmdbNativeStructuralContextTest {
 	}
 
 	private static QueryEvaluationContext structural(AtomicInteger removals) {
+		return structural(removals, true);
+	}
+
+	private static QueryEvaluationContext structural(AtomicInteger removals, boolean enclosingProjection) {
 		return new QueryEvaluationContext.Minimal((Dataset) null) {
 			private final ActiveGraph graph = new ActiveGraph(SimpleValueFactory.getInstance().createIRI("urn:g"),
 					SimpleValueFactory.getInstance().createIRI("urn:physical"));
@@ -129,7 +193,7 @@ class LmdbNativeStructuralContextTest {
 
 			@Override
 			public boolean hasEnclosingProjection() {
-				return true;
+				return enclosingProjection;
 			}
 
 			@Override

@@ -407,7 +407,8 @@ public class LmdbNativeChunkPipelineTest {
 					.as("the chunk pipeline should have driven the flat prefix")
 					.isGreaterThan(engagedBefore);
 			assertThat(LmdbNativeChunkPipeline.HASH_BUILDS.get())
-					.as("the flooded multi-key stage should flip to a hash build")
+					.as(() -> "the flooded multi-key stage should flip to a hash build\n"
+							+ telemetry(multi, "factorizedRows", query))
 					.isGreaterThan(buildsBefore);
 			assertThat(LmdbNativeChunkPipeline.SIP_MASKS.get())
 					.as("both root-produced key slots (?a and ?p) should publish their own mask")

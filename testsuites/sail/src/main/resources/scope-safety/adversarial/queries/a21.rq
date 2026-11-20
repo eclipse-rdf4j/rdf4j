@@ -1,0 +1,8 @@
+# Nested OPTIONAL fallback: its COALESCE sees outer-only ?x as unbound.
+SELECT ?x ?o ?y WHERE {
+  VALUES ?x { "left" }
+  OPTIONAL {
+    VALUES ?o { "o" }
+    OPTIONAL { BIND(COALESCE(?x, "fallback") AS ?y) }
+  }
+}

@@ -1,0 +1,1 @@
+SELECT * { VALUES ?x { "left" } OPTIONAL { VALUES ?o { "o" } OPTIONAL { VALUES ?z { "z" } FILTER(BOUND(?x)) } } }

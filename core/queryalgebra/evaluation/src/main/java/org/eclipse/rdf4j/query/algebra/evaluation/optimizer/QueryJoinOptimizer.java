@@ -166,16 +166,16 @@ public class QueryJoinOptimizer implements QueryOptimizer {
 	 * {@link QueryAlgebraBindingAnalysis}: a name in this prefix is not proof that an expression is semantically bound.
 	 */
 	private static final class PhysicalCostPrefix {
-		private final long scopeIdentity;
+		private final QueryAlgebraBindingAnalysis.ReadOnlyContext scope;
 		private final Set<String> bindingNames;
 
-		private PhysicalCostPrefix(long scopeIdentity, Set<String> bindingNames) {
-			this.scopeIdentity = scopeIdentity;
+		private PhysicalCostPrefix(QueryAlgebraBindingAnalysis.ReadOnlyContext scope, Set<String> bindingNames) {
+			this.scope = scope;
 			this.bindingNames = new HashSet<>(bindingNames);
 		}
 
 		private PhysicalCostPrefix copy() {
-			return new PhysicalCostPrefix(scopeIdentity, bindingNames);
+			return new PhysicalCostPrefix(scope, bindingNames);
 		}
 
 		private void add(String name) {
@@ -228,7 +228,7 @@ public class QueryJoinOptimizer implements QueryOptimizer {
 			super(trackResultSize);
 			this.bindingAnalysis = bindingAnalysis;
 			this.currentContext = initialContext == null ? bindingAnalysis.rootContext() : initialContext;
-			this.boundVars = new PhysicalCostPrefix(currentContext.scopeIdentity(), currentContext.guaranteedNames());
+			this.boundVars = new PhysicalCostPrefix(currentContext, currentContext.guaranteedNames());
 			this.safetySnapshot = safetySnapshot;
 		}
 
@@ -357,8 +357,8 @@ public class QueryJoinOptimizer implements QueryOptimizer {
 			PhysicalCostPrefix previousBoundVars = boundVars;
 			try {
 				currentContext = bindingAnalysis.contextAt(child);
-				boundVars = new PhysicalCostPrefix(currentContext.scopeIdentity(), currentContext.guaranteedNames());
-				if (previousBoundVars.scopeIdentity == currentContext.scopeIdentity()) {
+				boundVars = new PhysicalCostPrefix(currentContext, currentContext.guaranteedNames());
+				if (previousBoundVars.scope.sameScopeAs(currentContext)) {
 					boundVars.addAll(previousBoundVars.snapshot());
 				}
 				child.visit(this);
@@ -377,7 +377,7 @@ public class QueryJoinOptimizer implements QueryOptimizer {
 
 			PhysicalCostPrefix saveBoundVars = boundVars;
 			try {
-				boundVars = new PhysicalCostPrefix(currentContext.scopeIdentity(), origBoundVars);
+				boundVars = new PhysicalCostPrefix(currentContext, origBoundVars);
 				visitAt(join);
 			} finally {
 				boundVars = saveBoundVars;
@@ -387,7 +387,8 @@ public class QueryJoinOptimizer implements QueryOptimizer {
 		@Override
 		public void meet(Join node) {
 			initializeFilterDiscounts(node);
-			if (containsLateral(node) || !isRepeatable(node) && !canReorderNonRepeatableJoin(node)) {
+			if (requiresFilterOrder(node) || containsLateral(node)
+					|| !isRepeatable(node) && !canReorderNonRepeatableJoin(node)) {
 				// This join keeps its order, but its operands are still optimized; the right operand is evaluated
 				// with the left operand's bindings, so they count as bound while it is ordered.
 				visitAt(node.getLeftArg());
@@ -635,6 +636,27 @@ public class QueryJoinOptimizer implements QueryOptimizer {
 					: safetySnapshot.isRepeatable(node);
 		}
 
+		private boolean ownsFilterInput(Join join) {
+			return safetySnapshot == null ? QueryEvaluationUtility.requiresScopedFilterInput(join)
+					: safetySnapshot.requiresScopedFilterInput(join);
+		}
+
+		private boolean requiresFilterOrder(Join join) {
+			if (ownsFilterInput(join)) {
+				return true;
+			}
+			QueryAlgebraBindingAnalysis.ReadOnlyContext input = bindingAnalysis.contextAt(join);
+			QueryAlgebraBindingAnalysis.OutputFacts right = bindingAnalysis.outputFacts(join.getRightArg(),
+					bindingAnalysis.childInput(join, join.getRightArg(), input));
+			Set<String> possible = right.possibleOutputsKnown() ? right.possibleOutputs()
+					: join.getRightArg().getBindingNames();
+			return safetySnapshot == null
+					? QueryEvaluationUtility.mayIntroduceFilterInput(join.getLeftArg(), possible,
+							!right.possibleOutputsKnown())
+					: safetySnapshot.mayIntroduceFilterInput(join.getLeftArg(), possible,
+							!right.possibleOutputsKnown());
+		}
+
 		private boolean canReorderNonRepeatableJoin(TupleExpr node) {
 			if (getExternalServiceVariables(node).isEmpty() && !containsSafeExtension(node)) {
 				return false;
@@ -742,7 +764,12 @@ public class QueryJoinOptimizer implements QueryOptimizer {
 		 * evaluate it with its sibling bindings injected.
 		 */
 		private void replacePreservingScope(Join node, TupleExpr replacement) {
-			if (node.isVariableScopeChange() && replacement instanceof VariableScopeChange scopeChange) {
+			if (node.isVariableScopeChange() && replacement instanceof Extension extension
+					&& extension.isGraphScopeBoundary()) {
+				Extension outerScope = new Extension(replacement);
+				outerScope.setVariableScopeChange(true);
+				replacement = outerScope;
+			} else if (node.isVariableScopeChange() && replacement instanceof VariableScopeChange scopeChange) {
 				scopeChange.setVariableScopeChange(true);
 			}
 			node.replaceWith(replacement);
@@ -1210,7 +1237,7 @@ public class QueryJoinOptimizer implements QueryOptimizer {
 
 			PhysicalCostPrefix previousBoundVars = boundVars;
 			double previousHighestCost = currentHighestCost;
-			boundVars = new PhysicalCostPrefix(currentContext.scopeIdentity(), prefixBindingNames);
+			boundVars = new PhysicalCostPrefix(currentContext, prefixBindingNames);
 			currentHighestCost = 1;
 			TupleExpr best = null;
 			double bestCost = Double.POSITIVE_INFINITY;
@@ -1373,8 +1400,7 @@ public class QueryJoinOptimizer implements QueryOptimizer {
 				double originalHighestCost = currentHighestCost;
 				try {
 					currentContext = bindingAnalysis.contextAt(subSelect);
-					boundVars = new PhysicalCostPrefix(currentContext.scopeIdentity(),
-							currentContext.guaranteedNames());
+					boundVars = new PhysicalCostPrefix(currentContext, currentContext.guaranteedNames());
 					currentHighestCost = 1;
 					subSelect.visit(this);
 				} finally {
@@ -1422,7 +1448,8 @@ public class QueryJoinOptimizer implements QueryOptimizer {
 		}
 
 		private <L extends List<TupleExpr>> L getJoinArgs(TupleExpr tupleExpr, L joinArgs, boolean rootJoin) {
-			if (tupleExpr instanceof Join join && (rootJoin || !join.isVariableScopeChange())) {
+			if (tupleExpr instanceof Join join
+					&& (rootJoin || !join.isVariableScopeChange() && !requiresFilterOrder(join))) {
 				// Optimize this join's children together, while retaining a nested operand's independent input frame.
 				getJoinArgs(join.getLeftArg(), joinArgs, false);
 				getJoinArgs(join.getRightArg(), joinArgs, false);
@@ -1471,7 +1498,8 @@ public class QueryJoinOptimizer implements QueryOptimizer {
 
 			List<TupleExpr> extensions = List.of();
 			for (TupleExpr expr : expressions) {
-				if (TupleExprs.containsExtension(expr)) {
+				// A GRAPH scope carrier has no value expression to run before its siblings.
+				if (TupleExprs.containsExtensionAssignment(expr)) {
 					if (extensions.isEmpty()) {
 						extensions = List.of(expr);
 					} else {
@@ -1500,7 +1528,7 @@ public class QueryJoinOptimizer implements QueryOptimizer {
 
 			List<TupleExpr> subselects = List.of();
 			for (TupleExpr expr : expressions) {
-				if (TupleExprs.containsSubquery(expr) || TupleExprs.containsGraphBoundary(expr)) {
+				if (TupleExprs.containsSubquery(expr) || TupleExprs.containsGraphSelection(expr)) {
 					if (subselects.isEmpty()) {
 						subselects = List.of(expr);
 					} else {

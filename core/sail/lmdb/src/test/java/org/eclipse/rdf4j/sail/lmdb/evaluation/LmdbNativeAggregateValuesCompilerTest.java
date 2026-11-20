@@ -122,7 +122,7 @@ class LmdbNativeAggregateValuesCompilerTest {
 		planner.collectSyntheticValues(mixed);
 		planner.valueGuardsSupported = true;
 
-		SlotPlan compiled = planner.compileTuple(mixed, false);
+		SlotPlan compiled = planner.compileTupleWithoutElisions(mixed, false);
 
 		assertThat(compiled).isInstanceOf(UnionPlan.class);
 		SlotPlan numericArm = ((UnionPlan) compiled).left;
@@ -142,7 +142,7 @@ class LmdbNativeAggregateValuesCompilerTest {
 		TupleExpr mandatoryJoin = new Join(mandatoryValues,
 				new StatementPattern(Var.of("subject"), Var.of("predicate", LINK, true), Var.of("term")));
 		LmdbNativeAggregatePlanner mandatoryPlanner = guardPlanner(mandatoryJoin);
-		SlotPlan mandatoryValuesPlan = mandatoryPlanner.compileTuple(mandatoryValues, false);
+		SlotPlan mandatoryValuesPlan = mandatoryPlanner.compileTupleWithoutElisions(mandatoryValues, false);
 		assertGuardRecorded(mandatoryPlanner);
 		assertThat(mandatoryValuesPlan).isInstanceOf(ValuesPlan.class);
 		boolean mandatorySafe = mandatoryPlanner.valueGuardsSafeFor(mandatoryJoin);
@@ -156,7 +156,7 @@ class LmdbNativeAggregateValuesCompilerTest {
 		TupleExpr unrelatedUnboundValues = unboundValues("other");
 		TupleExpr unionRoot = new Union(new Join(unionValues, valuedPattern), unrelatedUnboundValues);
 		LmdbNativeAggregatePlanner unionPlanner = guardPlanner(unionRoot);
-		SlotPlan unionValuesPlan = unionPlanner.compileTuple(unionValues, false);
+		SlotPlan unionValuesPlan = unionPlanner.compileTupleWithoutElisions(unionValues, false);
 		assertGuardRecorded(unionPlanner);
 		assertThat(unionValuesPlan).isInstanceOf(ValuesPlan.class);
 		boolean unionSafe = unionPlanner.valueGuardsSafeFor(unionRoot);
@@ -169,7 +169,7 @@ class LmdbNativeAggregateValuesCompilerTest {
 				new ProjectionElemList(new ProjectionElem("subject", "visible")), true);
 		TupleExpr optionalRoot = new LeftJoin(new SingletonSet(), projectedAlias);
 		LmdbNativeAggregatePlanner optionalPlanner = guardPlanner(optionalRoot);
-		SlotPlan optionalValuesPlan = optionalPlanner.compileTuple(optionalValues, false);
+		SlotPlan optionalValuesPlan = optionalPlanner.compileTupleWithoutElisions(optionalValues, false);
 		assertGuardRecorded(optionalPlanner);
 		assertThat(optionalValuesPlan).isInstanceOf(ValuesPlan.class);
 		boolean optionalSafe = optionalPlanner.valueGuardsSafeFor(optionalRoot);
@@ -351,6 +351,40 @@ class LmdbNativeAggregateValuesCompilerTest {
 			assertThat(predicate.accept(row)).as("excluded API columns remain witness-local: %s", witness).isTrue();
 			assertThat(row.view.getValue("hidden")).isEqualTo(NAME_2);
 			assertThat(row.view.getValue("other")).isEqualTo(NAME_2);
+		}
+	}
+
+	@Test
+	void projectedOptionalWitnessRespectsRetainedAndNullableInputs() {
+		for (ConditionBindingScope scope : List.of(ConditionBindingScope.ALL,
+				ConditionBindingScope.retain(Set.of("other")), ConditionBindingScope.retain(Set.of("subject")))) {
+			for (boolean bound : List.of(false, true)) {
+				LeftJoin optional = new LeftJoin(values("anchor", SUBJECT), values("other", NAME_1));
+				Filter witness = new Filter(optional,
+						new Compare(Var.of("other"), new ValueConstant(NAME_2), Compare.CompareOp.EQ));
+				Filter filter = new Filter(new SingletonSet(), new Exists(witness));
+				filter.setConditionBindingScope(scope);
+				LmdbNativeEvaluationStrategy strategy = new LmdbNativeEvaluationStrategy(new EmptyTripleSource(), null,
+						null, 0L, new EvaluationStatistics(), false);
+				LmdbNativeAggregatePlanner planner = new LmdbNativeAggregatePlanner(
+						new QueryEvaluationContext.Minimal((Dataset) null), strategy, new SingleStatementSource());
+				int slot = planner.slot("other");
+				NativeBooleanFilter predicate = planner.compileProjectedFilter(filter);
+				assertThat(predicate).isNotNull();
+				planner.layout.freeze(planner.slotNames);
+				MapBindingSet input = new MapBindingSet();
+				if (bound) {
+					input.addBinding("other", NAME_2);
+				}
+				RowState row = new RowState(planner.source, planner.layout, input);
+				if (bound) {
+					row.slots[slot] = NAME_2_ID;
+				}
+				row.recomputeBoundMask();
+				boolean retainsOther = scope.retainsAllBindings() || scope.bindingNames().contains("other");
+				assertThat(predicate.accept(row)).as("scope=%s, bound=%s", scope, bound)
+						.isEqualTo(bound && retainsOther);
+			}
 		}
 	}
 
@@ -590,7 +624,7 @@ class LmdbNativeAggregateValuesCompilerTest {
 
 	private static boolean guardIsSafeFor(TupleExpr root, BindingSetAssignment guardedValues) {
 		LmdbNativeAggregatePlanner planner = guardPlanner(root);
-		SlotPlan compiled = planner.compileTuple(guardedValues, false);
+		SlotPlan compiled = planner.compileTupleWithoutElisions(guardedValues, false);
 		assertGuardRecorded(planner);
 		assertThat(compiled).isInstanceOf(ValuesPlan.class);
 		return planner.valueGuardsSafeFor(root);

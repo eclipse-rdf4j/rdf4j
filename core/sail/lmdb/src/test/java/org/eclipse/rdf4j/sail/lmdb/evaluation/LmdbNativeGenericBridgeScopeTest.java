@@ -14,32 +14,51 @@ package org.eclipse.rdf4j.sail.lmdb.evaluation;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.mockito.AdditionalAnswers.delegatesTo;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyInt;
+import static org.mockito.ArgumentMatchers.anyLong;
+import static org.mockito.Mockito.doAnswer;
+import static org.mockito.Mockito.mock;
 
 import java.io.File;
+import java.io.IOException;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.function.Predicate;
 
+import org.assertj.core.api.SoftAssertions;
+import org.eclipse.rdf4j.collection.factory.impl.DefaultCollectionFactory;
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
+import org.eclipse.rdf4j.common.iteration.SingletonIteration;
 import org.eclipse.rdf4j.model.BNode;
 import org.eclipse.rdf4j.model.IRI;
+import org.eclipse.rdf4j.model.TripleTerm;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.model.impl.BooleanLiteral;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
+import org.eclipse.rdf4j.model.vocabulary.RDF4J;
+import org.eclipse.rdf4j.model.vocabulary.SESAME;
+import org.eclipse.rdf4j.model.vocabulary.XSD;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.Dataset;
+import org.eclipse.rdf4j.query.MutableBindingSet;
 import org.eclipse.rdf4j.query.QueryLanguage;
 import org.eclipse.rdf4j.query.QueryResults;
 import org.eclipse.rdf4j.query.TupleQuery;
 import org.eclipse.rdf4j.query.TupleQueryResult;
 import org.eclipse.rdf4j.query.algebra.And;
+import org.eclipse.rdf4j.query.algebra.ArbitraryLengthPath;
 import org.eclipse.rdf4j.query.algebra.BNodeGenerator;
 import org.eclipse.rdf4j.query.algebra.BindingSetAssignment;
 import org.eclipse.rdf4j.query.algebra.Bound;
+import org.eclipse.rdf4j.query.algebra.Coalesce;
+import org.eclipse.rdf4j.query.algebra.Compare;
 import org.eclipse.rdf4j.query.algebra.Compare.CompareOp;
 import org.eclipse.rdf4j.query.algebra.CompareAny;
 import org.eclipse.rdf4j.query.algebra.Count;
@@ -49,32 +68,56 @@ import org.eclipse.rdf4j.query.algebra.ExtensionElem;
 import org.eclipse.rdf4j.query.algebra.Filter;
 import org.eclipse.rdf4j.query.algebra.Filter.ConditionBindingScope;
 import org.eclipse.rdf4j.query.algebra.FunctionCall;
+import org.eclipse.rdf4j.query.algebra.Graph;
 import org.eclipse.rdf4j.query.algebra.Group;
 import org.eclipse.rdf4j.query.algebra.GroupElem;
 import org.eclipse.rdf4j.query.algebra.Intersection;
 import org.eclipse.rdf4j.query.algebra.Join;
+import org.eclipse.rdf4j.query.algebra.LeftJoin;
 import org.eclipse.rdf4j.query.algebra.Not;
+import org.eclipse.rdf4j.query.algebra.Or;
 import org.eclipse.rdf4j.query.algebra.Order;
 import org.eclipse.rdf4j.query.algebra.OrderElem;
 import org.eclipse.rdf4j.query.algebra.Projection;
 import org.eclipse.rdf4j.query.algebra.ProjectionElem;
 import org.eclipse.rdf4j.query.algebra.ProjectionElemList;
 import org.eclipse.rdf4j.query.algebra.QueryRoot;
+import org.eclipse.rdf4j.query.algebra.SameTerm;
 import org.eclipse.rdf4j.query.algebra.SingletonSet;
+import org.eclipse.rdf4j.query.algebra.Slice;
 import org.eclipse.rdf4j.query.algebra.StatementPattern;
+import org.eclipse.rdf4j.query.algebra.StatementPattern.Scope;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
+import org.eclipse.rdf4j.query.algebra.TupleFunctionCall;
+import org.eclipse.rdf4j.query.algebra.Union;
 import org.eclipse.rdf4j.query.algebra.ValueConstant;
+import org.eclipse.rdf4j.query.algebra.ValueExpr;
 import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryBindingSet;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryEvaluationStep;
+import org.eclipse.rdf4j.query.algebra.evaluation.QueryValueEvaluationStep;
 import org.eclipse.rdf4j.query.algebra.evaluation.ValueExprEvaluationException;
 import org.eclipse.rdf4j.query.algebra.evaluation.function.Function;
 import org.eclipse.rdf4j.query.algebra.evaluation.function.FunctionRegistry;
+import org.eclipse.rdf4j.query.algebra.evaluation.function.TupleFunction;
+import org.eclipse.rdf4j.query.algebra.evaluation.function.TupleFunctionRegistry;
+import org.eclipse.rdf4j.query.algebra.evaluation.impl.BindingFrameBindings;
+import org.eclipse.rdf4j.query.algebra.evaluation.impl.BindingFrameReplay;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.DefaultEvaluationStrategy;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.EvaluationStatistics;
+import org.eclipse.rdf4j.query.algebra.evaluation.impl.GraphFrameBindings;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.QueryEvaluationContext;
+import org.eclipse.rdf4j.query.algebra.evaluation.util.QueryEvaluationUtility;
+import org.eclipse.rdf4j.query.algebra.helpers.FilterBindingScope;
+import org.eclipse.rdf4j.query.explanation.Explanation;
+import org.eclipse.rdf4j.query.explanation.QueryExplanationContext;
+import org.eclipse.rdf4j.query.impl.BlankNodeAllocationScope;
 import org.eclipse.rdf4j.query.impl.EmptyBindingSet;
+import org.eclipse.rdf4j.query.impl.ListBindingSet;
 import org.eclipse.rdf4j.query.impl.MapBindingSet;
+import org.eclipse.rdf4j.query.impl.RemoteBNode;
+import org.eclipse.rdf4j.query.impl.RepositoryBNode;
+import org.eclipse.rdf4j.query.impl.SimpleDataset;
 import org.eclipse.rdf4j.query.parser.QueryParserUtil;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
 import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
@@ -83,11 +126,16 @@ import org.eclipse.rdf4j.sail.base.SailDataset;
 import org.eclipse.rdf4j.sail.base.SailDatasetTripleTermSource;
 import org.eclipse.rdf4j.sail.lmdb.LmdbStore;
 import org.eclipse.rdf4j.sail.lmdb.NativeQuerySourceAccess;
+import org.eclipse.rdf4j.sail.lmdb.RecordIterator;
 import org.eclipse.rdf4j.sail.lmdb.config.LmdbStoreConfig;
+import org.eclipse.rdf4j.sail.lmdb.evaluation.NativeLmdbQuerySource.AdjacencyAccessObserver;
+import org.eclipse.rdf4j.sail.lmdb.evaluation.NativeLmdbQuerySource.NativeProbe;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 
 /**
  * Query-scope correctness of generic bridges embedded in compiled native plans (M-A1a): a retained compiled step must
@@ -197,6 +245,2443 @@ public class LmdbNativeGenericBridgeScopeTest {
 		if (repository != null) {
 			repository.shutDown();
 		}
+	}
+
+	@Test
+	void detachedTupleDescriptorRetainsItsProjectionAncestorAcrossCallersAndWorkers() {
+		ValueFactory vf = SimpleValueFactory.getInstance();
+		Value a = vf.createIRI(EX, "descriptorA");
+		Value b = vf.createIRI(EX, "descriptorB");
+		Group group = descriptorProjectedGroup(a);
+		Projection outer = new Projection(group,
+				new ProjectionElemList(new ProjectionElem("x"), new ProjectionElem("n")));
+		new QueryRoot(outer);
+		QueryEvaluationContext context = new QueryEvaluationContext.Minimal((Dataset) null);
+		LmdbNativeEvaluationStrategy strategy = new LmdbNativeEvaluationStrategy(
+				new SailDatasetTripleTermSource(vf, dataset), null, null, 0L, new EvaluationStatistics(), false);
+		LmdbNativeEvaluationStrategy worker = strategy.forWorker((NativeLmdbQuerySource) dataset);
+		GenericSubplanDescriptor attached = GenericSubplanDescriptor.create(group, strategy);
+		GenericSubplanDescriptor detached = GenericSubplanDescriptor.create(group.clone(), strategy);
+		List<QueryEvaluationStep> attachedSteps = List.of(strategy.genericOnlyView().precompile(group, context),
+				attached.genericPrecompile(strategy.genericOnlyView(), context),
+				attached.precompile(strategy.genericOnlyView(), context),
+				attached.genericPrecompile(worker.genericOnlyView(),
+						new EvaluationScopedQueryEvaluationContext(context)));
+		List<QueryEvaluationStep> detachedSteps = List.of(strategy.genericOnlyView().precompile(group.clone(), context),
+				detached.genericPrecompile(strategy.genericOnlyView(), context));
+		BindingSet empty = EmptyBindingSet.getInstance();
+		BindingSet callerA = new ListBindingSet(List.of("x"), a);
+		BindingSet callerB = new ListBindingSet(List.of("x"), b);
+		for (BindingSet caller : List.of(empty, callerA, callerB, callerA)) {
+			Value attachedCount = vf.createLiteral(caller.isEmpty() ? "1" : "2", XSD.INTEGER);
+			BindingSet attachedExpected = caller.isEmpty() ? new ListBindingSet(List.of("n"), attachedCount)
+					: new ListBindingSet(List.of("x", "n"), caller.getValue("x"), attachedCount);
+			BindingSet detachedExpected = caller.isEmpty() ? attachedExpected
+					: new ListBindingSet(List.of("x", "n"), caller.getValue("x"), vf.createLiteral("1", XSD.INTEGER));
+			for (QueryEvaluationStep step : attachedSteps) {
+				assertThat(evaluateStep(step, caller)).as("attached projection, caller=%s", caller)
+						.containsExactly(attachedExpected);
+			}
+			for (QueryEvaluationStep step : detachedSteps) {
+				assertThat(evaluateStep(step, caller)).as("unmarked detached projection, caller=%s", caller)
+						.containsExactly(detachedExpected);
+			}
+		}
+	}
+
+	@ParameterizedTest(name = "unrelated quads={0}")
+	@ValueSource(ints = { 4, 128 })
+	void fixedWorkerGraphMembershipNeverReadsUnrelatedRows(int unrelatedQuads) {
+		ValueFactory vf = repository.getValueFactory();
+		IRI absent = vf.createIRI(EX, "absentContext");
+		IRI present = vf.createIRI(EX, "presentContext");
+		IRI unrelated = vf.createIRI(EX, "unrelatedContext");
+		IRI predicate = vf.createIRI(EX, "contextMembership");
+		dataset.close();
+		try (SailRepositoryConnection connection = repository.getConnection()) {
+			connection.begin();
+			connection.add(absent, predicate, absent);
+			connection.add(present, predicate, present, present);
+			for (int i = 0; i < unrelatedQuads; i++) {
+				connection.add(vf.createIRI(EX, "unrelatedContextSubject" + i), predicate, unrelated, unrelated);
+			}
+			connection.commit();
+		}
+		dataset = NativeQuerySourceAccess.openExplicitDataset(store);
+		NativeLmdbQuerySource raw = (NativeLmdbQuerySource) dataset;
+		assertThat(raw.idOf(absent)).as("the fixed graph term is already in the dictionary").isPositive();
+		AtomicInteger opens = new AtomicInteger();
+		AtomicInteger bound = new AtomicInteger();
+		AtomicInteger candidates = new AtomicInteger();
+		NativeLmdbQuerySource counted = countingNativeSource(raw, opens, bound, candidates);
+		LmdbNativeEvaluationStrategy strategy = new LmdbNativeEvaluationStrategy(
+				new SailDatasetTripleTermSource(vf, dataset), null, null, 0L, new EvaluationStatistics(), false)
+						.forSemanticWorker(counted);
+		QueryEvaluationContext context = new QueryEvaluationContext.Minimal((Dataset) null);
+		QueryEvaluationStep missing = strategy.precompile(new Graph(Var.of("g", absent, true, true),
+				new SingletonSet()), context);
+		QueryEvaluationStep available = strategy.precompile(new Graph(Var.of("g", present, true, true),
+				new SingletonSet()), context);
+		assertThat(evaluateStep(missing)).isEmpty();
+		assertThat(evaluateStep(available)).containsExactly(EmptyBindingSet.getInstance());
+		assertThat(opens).as("fixed graph membership performs no statement scan").hasValue(0);
+		assertThat(candidates).as("fixed graph membership does not decode any quad").hasValue(0);
+	}
+
+	@Test
+	void semanticWorkerLexicalFallbacksDoNotClaimNativeBindings() {
+		ValueFactory vf = repository.getValueFactory();
+		NativeLmdbQuerySource source = (NativeLmdbQuerySource) dataset;
+		LmdbNativeEvaluationStrategy strategy = new LmdbNativeEvaluationStrategy(
+				new SailDatasetTripleTermSource(vf, dataset), null, null, 0L, new EvaluationStatistics(), false)
+						.forSemanticWorker(source);
+		QueryEvaluationContext context = new QueryEvaluationContext.Minimal((Dataset) null);
+		long graphBindings = NativeGraphPlan.WORKER_BINDINGS.get();
+		Graph missing = new Graph(Var.of("g", vf.createIRI(EX, "unselectedGraph"), true, true), new SingletonSet());
+		assertThat(evaluateStep(strategy.precompile(missing, context))).isEmpty();
+		SoftAssertions softly = new SoftAssertions();
+		softly.assertThat(NativeGraphPlan.WORKER_BINDINGS.get())
+				.as("a missing graph never selects a native body")
+				.isEqualTo(graphBindings);
+
+		Intersection unsupported = new Intersection(new SingletonSet(), new SingletonSet());
+		Projection projection = new Projection(unsupported, new ProjectionElemList(), true);
+		long subqueryBindings = NativeSubqueryPlan.WORKER_BINDINGS.get();
+		AtomicInteger fallbackOpens = new AtomicInteger();
+		QueryEvaluationStep selected = NativeSubqueryPlan.bindSemanticWorker(projection, context, strategy, source,
+				() -> ignored -> {
+					fallbackOpens.incrementAndGet();
+					return new SingletonIteration<>(EmptyBindingSet.getInstance());
+				});
+		assertThat(evaluateStep(selected)).containsExactly(EmptyBindingSet.getInstance());
+		assertThat(fallbackOpens).hasValue(1);
+		softly.assertThat(NativeSubqueryPlan.WORKER_BINDINGS.get())
+				.as("a selected generic fallback is not a native worker producer")
+				.isEqualTo(subqueryBindings);
+		softly.assertAll();
+	}
+
+	@Test
+	void fixedCallerAliasKeepsAnExistingLocalAssignmentTarget() {
+		ValueFactory vf = repository.getValueFactory();
+		IRI leftPredicate = vf.createIRI(EX, "aliasTargetBeforeAssignment");
+		IRI rightPredicate = vf.createIRI(EX, "aliasTargetAfterAssignment");
+		IRI oldTarget = vf.createIRI(EX, "aliasOldTarget");
+		IRI assignedTarget = vf.createIRI(EX, "aliasAssignedTarget");
+		IRI shared = vf.createIRI(EX, "aliasShared");
+		dataset.close();
+		try (SailRepositoryConnection connection = repository.getConnection()) {
+			connection.begin();
+			connection.add(oldTarget, leftPredicate, shared);
+			connection.add(assignedTarget, rightPredicate, shared);
+			connection.commit();
+		}
+		dataset = NativeQuerySourceAccess.openExplicitDataset(store);
+		LmdbNativeEvaluationStrategy strategy = new LmdbNativeEvaluationStrategy(
+				new SailDatasetTripleTermSource(vf, dataset), null, null, 0L, new EvaluationStatistics(), false);
+		QueryEvaluationContext context = new QueryEvaluationContext.Minimal((Dataset) null);
+		StatementPattern leftPattern = new StatementPattern(Var.of("alias"),
+				Var.of("leftPredicate", leftPredicate, true, true), Var.of("owner"));
+		Extension left = new Extension(leftPattern,
+				new ExtensionElem(Var.of("originalCaller", assignedTarget).withApiInputOrigin(), "alias"));
+		StatementPattern rightPattern = new StatementPattern(Var.of("alias", assignedTarget).withApiInputOrigin(),
+				Var.of("rightPredicate", rightPredicate, true, true), Var.of("out"));
+		Join join = new Join(left, new Filter(rightPattern, new SameTerm(Var.of("owner"), Var.of("out"))));
+		QueryRoot root = new QueryRoot(new Projection(join, new ProjectionElemList(new ProjectionElem("alias"),
+				new ProjectionElem("owner"), new ProjectionElem("out"))));
+		BindingSet expected = new ListBindingSet(List.of("alias", "owner", "out"), assignedTarget, shared, shared);
+		assertThat(evaluateStep(strategy.genericOnlyView().precompile(root.clone(), context)))
+				.as("the existing local target is overwritten by Extend")
+				.containsExactly(expected);
+		assertThat(evaluateStep(strategy.precompile(root, context)))
+				.as("native-compatible compilation retains the assignment result")
+				.containsExactly(expected);
+	}
+
+	@Test
+	void fixedCallerAliasRetainsTheRepositoryBlankNodeReference() {
+		ValueFactory vf = repository.getValueFactory();
+		IRI input = vf.createIRI(EX, "protectedAliasInput");
+		IRI leftPredicate = vf.createIRI(EX, "protectedAliasLeft");
+		IRI rightPredicate = vf.createIRI(EX, "protectedAliasRight");
+		IRI shared = vf.createIRI(EX, "protectedAliasShared");
+		BNode stored = vf.createBNode("protected-alias-wire");
+		RepositoryBNode protectedInput = RepositoryBNode.fromNegotiatedResult(stored.getID(), "raw-reference", true);
+		dataset.close();
+		try (SailRepositoryConnection connection = repository.getConnection()) {
+			connection.begin();
+			connection.add(input, leftPredicate, shared);
+			connection.add(stored, rightPredicate, shared);
+			connection.commit();
+		}
+		dataset = NativeQuerySourceAccess.openExplicitDataset(store);
+		LmdbNativeEvaluationStrategy strategy = new LmdbNativeEvaluationStrategy(
+				new SailDatasetTripleTermSource(vf, dataset), null, null, 0L, new EvaluationStatistics(), false);
+		QueryEvaluationContext context = new QueryEvaluationContext.Minimal((Dataset) null);
+		StatementPattern leftPattern = new StatementPattern(Var.of("left"),
+				Var.of("leftPredicate", leftPredicate, true, true), Var.of("owner"));
+		Extension left = new Extension(leftPattern,
+				new ExtensionElem(Var.of("originalCaller", protectedInput).withApiInputOrigin(), "alias"));
+		StatementPattern rightPattern = new StatementPattern(Var.of("alias", stored).withApiInputOrigin(),
+				Var.of("rightPredicate", rightPredicate, true, true), Var.of("out"));
+		Join join = new Join(left, new Filter(rightPattern, new SameTerm(Var.of("owner"), Var.of("out"))));
+		QueryRoot root = new QueryRoot(new Projection(join, new ProjectionElemList(new ProjectionElem("alias"),
+				new ProjectionElem("owner"), new ProjectionElem("out"))));
+		BindingSet expected = new ListBindingSet(List.of("alias", "owner", "out"), protectedInput, shared, shared);
+		List<BindingSet> generic = evaluateStep(strategy.genericOnlyView().precompile(root.clone(), context));
+		assertThat(generic).containsExactly(expected);
+		assertThat(generic.getFirst().getValue("alias")).isSameAs(protectedInput);
+		List<BindingSet> actual = evaluateStep(strategy.precompile(root, context));
+		assertThat(actual).containsExactly(expected);
+		assertThat(actual.getFirst().getValue("alias")).isSameAs(protectedInput);
+	}
+
+	@Test
+	void projectedRawOptionalRestoresTheIncomingNameAfterMatching() {
+		ValueFactory vf = repository.getValueFactory();
+		LmdbNativeEvaluationStrategy nativeStrategy = new LmdbNativeEvaluationStrategy(
+				new SailDatasetTripleTermSource(vf, dataset), null, null, 0L, new EvaluationStatistics(), false);
+		String query = "SELECT ?s ?o WHERE { OPTIONAL { ?s <" + EX + "link> ?o } }";
+		TupleExpr root = QueryParserUtil.parseTupleQuery(QueryLanguage.SPARQL, query, null).getTupleExpr();
+		BindingSet conflict = new ListBindingSet(List.of("s"), vf.createIRI(EX, "generic"));
+		BindingSet matching = new ListBindingSet(List.of("s"), vf.createIRI(EX, "s0"));
+		BindingSet expected = new ListBindingSet(List.of("s", "o"), vf.createIRI(EX, "s0"), vf.createIRI(EX, "o0"));
+		SoftAssertions softly = new SoftAssertions();
+		for (LmdbNativeEvaluationStrategy strategy : List.of(nativeStrategy.genericOnlyView(), nativeStrategy)) {
+			QueryEvaluationStep projection = strategy.precompile(root.clone());
+			softly.assertThat(evaluateStep(projection, conflict)).isEmpty();
+			softly.assertThat(evaluateStep(projection, matching)).containsExactly(expected);
+		}
+		softly.assertAll();
+	}
+
+	@Test
+	void genericProjectionKeepsOptionalRestorationThroughNativeFallback() {
+		ValueFactory vf = repository.getValueFactory();
+		LmdbNativeEvaluationStrategy strategy = new LmdbNativeEvaluationStrategy(
+				new SailDatasetTripleTermSource(vf, dataset), null, null, 0L, new EvaluationStatistics(), false);
+		QueryEvaluationContext context = new QueryEvaluationContext.Minimal((Dataset) null);
+		String query = "SELECT ?s ?o WHERE { OPTIONAL { ?s <" + EX + "link> ?o } }";
+		QueryRoot root = (QueryRoot) QueryParserUtil.parseTupleQuery(QueryLanguage.SPARQL, query, null).getTupleExpr();
+		Projection projection = (Projection) root.getArg();
+		TupleExpr optional = projection.getArg();
+		optional.setRuntimeTelemetryEnabled(true);
+		BindingSet conflict = new ListBindingSet(List.of("s"), vf.createIRI(EX, "generic"));
+		BindingSet matching = new ListBindingSet(List.of("s"), vf.createIRI(EX, "s0"));
+		BindingSet expected = new ListBindingSet(List.of("s", "o"), vf.createIRI(EX, "s0"), vf.createIRI(EX, "o0"));
+
+		QueryEvaluationStep projected = strategy.genericPrecompile(projection, context);
+		List<BindingSet> result = evaluateStep(projected, conflict);
+		SoftAssertions softly = new SoftAssertions();
+		softly.assertThat(optional.getStringMetricActual(LmdbNativeExplain.EXECUTION_PATH))
+				.as("the generic SELECT invokes the native OPTIONAL's detached semantic fallback")
+				.contains("genericFallback(optionalEntry)");
+		softly.assertThat(result).as("raw SELECT checks the incoming name after the local match").isEmpty();
+		softly.assertThat(evaluateStep(projected, matching)).containsExactly(expected);
+		softly.assertThat(evaluateStep(strategy.precompile(optional, context), conflict))
+				.as("an attached child invoked directly still matches against the raw incoming name")
+				.containsExactly(conflict);
+		softly.assertAll();
+	}
+
+	@Test
+	void selectedInheritedGraphComesFromTheDynamicProducerOnBothRoutes() {
+		ValueFactory vf = repository.getValueFactory();
+		IRI graph = vf.createIRI(EX, "sharedGraph");
+		IRI other = vf.createIRI(EX, "otherGraph");
+		IRI fixedSubject = vf.createIRI(EX, "fixedSubject");
+		IRI matching = vf.createIRI(EX, "matchingSubject");
+		IRI different = vf.createIRI(EX, "differentSubject");
+		IRI leftPredicate = vf.createIRI(EX, "fixedGraphPredicate");
+		IRI rightPredicate = vf.createIRI(EX, "dynamicGraphPredicate");
+		IRI object = vf.createIRI(EX, "graphObject");
+		dataset.close();
+		try (SailRepositoryConnection connection = repository.getConnection()) {
+			connection.add(fixedSubject, leftPredicate, object, graph);
+			connection.add(matching, rightPredicate, object, graph);
+			connection.add(different, rightPredicate, object, other);
+		}
+		dataset = NativeQuerySourceAccess.openExplicitDataset(store);
+		Var fixedContext = Var.of("g", graph);
+		fixedContext.setGraphContextDepth(1);
+		Var dynamicContext = Var.of("g");
+		dynamicContext.setGraphContextDepth(1);
+		StatementPattern left = new StatementPattern(Scope.NAMED_CONTEXTS, Var.of("left"),
+				Var.of("p1", leftPredicate, true, true), Var.of("o1", object, true, true), fixedContext);
+		StatementPattern right = new StatementPattern(Scope.NAMED_CONTEXTS, Var.of("right"),
+				Var.of("p2", rightPredicate, true, true), Var.of("o2", object, true, true), dynamicContext);
+		LmdbNativeEvaluationStrategy nativeStrategy = new LmdbNativeEvaluationStrategy(
+				new SailDatasetTripleTermSource(vf, dataset), null, null, 0L, new EvaluationStatistics(), false);
+		SoftAssertions softly = new SoftAssertions();
+		for (boolean union : List.of(false, true)) {
+			TupleExpr body = union ? new Union(left.clone(), right.clone()) : new Join(left.clone(), right.clone());
+			Projection select = new Projection(body, new ProjectionElemList(new ProjectionElem("left"),
+					new ProjectionElem("right"), new ProjectionElem("g")), true);
+			select.setProjectionContext(Var.of("g"));
+			List<BindingSet> expected = union
+					? List.of(new ListBindingSet(List.of("left"), fixedSubject),
+							new ListBindingSet(List.of("right", "g"), matching, graph),
+							new ListBindingSet(List.of("right", "g"), different, other))
+					: List.of(new ListBindingSet(List.of("left", "right", "g"), fixedSubject, matching, graph));
+			for (LmdbNativeEvaluationStrategy strategy : List.of(nativeStrategy.genericOnlyView(), nativeStrategy)) {
+				softly.assertThat(evaluateStep(strategy.precompile(new QueryRoot(select.clone()))))
+						.as("native enabled=%s, union=%s", strategy == nativeStrategy, union)
+						.containsExactlyInAnyOrderElementsOf(expected);
+				Projection valued = select.clone();
+				valued.setProjectionContext(Var.of("g", graph));
+				QueryBindingSet shadow = new QueryBindingSet();
+				shadow.setBinding("g", null);
+				assertThat(shadow.hasBinding("g")).isTrue();
+				List<BindingSet> shadowed = union ? List.of(new ListBindingSet(List.of("left"), fixedSubject))
+						: List.of();
+				softly.assertThat(evaluateStep(strategy.precompile(new QueryRoot(valued)), shadow))
+						.as("explicit shadow, native enabled=%s, union=%s", strategy == nativeStrategy, union)
+						.containsExactlyElementsOf(shadowed);
+			}
+		}
+		softly.assertAll();
+	}
+
+	@Test
+	void nestedStarPathChecksNodeMembershipForAnOrdinarySiblingValue() {
+		assertNestedStarPathIdentity(false);
+	}
+
+	@Test
+	void nestedStarPathRetainsTheOuterQueryConstant() {
+		assertNestedStarPathIdentity(true);
+	}
+
+	private void assertNestedStarPathIdentity(boolean queryConstant) {
+		ValueFactory vf = repository.getValueFactory();
+		IRI predicateOnly = vf.createIRI(EX, "path-predicate-only");
+		IRI pathPredicate = vf.createIRI(EX, "scope-path-step");
+		IRI tag = vf.createIRI(EX, "scope-path-tag");
+		IRI a = vf.createIRI(EX, "scope-path-a");
+		IRI b = vf.createIRI(EX, "scope-path-b");
+		dataset.close();
+		try (SailRepositoryConnection connection = repository.getConnection()) {
+			connection.begin();
+			connection.add(a, predicateOnly, b);
+			if (!queryConstant) {
+				connection.add(a, pathPredicate, b);
+			}
+			connection.add(a, tag, b);
+			connection.add(b, tag, pathPredicate);
+			connection.commit();
+		}
+		dataset = NativeQuerySourceAccess.openExplicitDataset(store);
+		LmdbNativeEvaluationStrategy strategy = new LmdbNativeEvaluationStrategy(
+				new SailDatasetTripleTermSource(vf, dataset), null, null, 0L, new EvaluationStatistics(), false);
+		QueryEvaluationContext context = new QueryEvaluationContext.Minimal((Dataset) null);
+		BindingSetAssignment values = new BindingSetAssignment();
+		if (queryConstant) {
+			values.setBindingNames(Set.of("seed", "s"));
+			values.setBindingSets(List.of(new ListBindingSet(List.of("seed"), a)));
+		} else {
+			values.setBindingSets(List.of(new ListBindingSet(List.of("s"), predicateOnly)));
+		}
+		StatementPattern step = new StatementPattern(Var.of("s"), Var.of("p", pathPredicate, true, true),
+				Var.of("o"));
+		Var start = queryConstant ? Var.of("s", predicateOnly, false, true) : Var.of("s");
+		ArbitraryLengthPath path = new ArbitraryLengthPath(start, step, Var.of("o"), 0L);
+		StatementPattern trailer = new StatementPattern(Var.of("z"), Var.of("tag", tag, true, true), Var.of("v"));
+		QueryRoot root = new QueryRoot(new Projection(new Join(values, new Join(path, trailer)),
+				new ProjectionElemList(new ProjectionElem("s"), new ProjectionElem("o"))));
+		List<BindingSet> expected = queryConstant
+				? Collections.nCopies(2, new ListBindingSet(List.of("s", "o"), predicateOnly, predicateOnly))
+				: List.of();
+		assertThat(evaluateStep(strategy.genericOnlyView().precompile(root.clone(), context)))
+				.containsExactlyElementsOf(expected);
+		assertThat(evaluateStep(strategy.precompile(root, context)))
+				.as("only a query constant gives a predicate-only term a zero-length identity")
+				.containsExactlyElementsOf(expected);
+	}
+
+	@Test
+	void detachedValueDescriptorRetainsProjectionAncestorInScopedAndWorkerContexts() {
+		ValueFactory vf = SimpleValueFactory.getInstance();
+		Value a = vf.createIRI(EX, "descriptorA");
+		Value b = vf.createIRI(EX, "descriptorB");
+		Exists exists = descriptorProjectedExists(a);
+		Extension extension = new Extension(new SingletonSet(), new ExtensionElem(exists, "found"));
+		new QueryRoot(new Projection(extension, new ProjectionElemList(new ProjectionElem("found"))));
+		QueryEvaluationContext context = new QueryEvaluationContext.Minimal((Dataset) null);
+		LmdbNativeEvaluationStrategy strategy = new LmdbNativeEvaluationStrategy(
+				new SailDatasetTripleTermSource(vf, dataset), null, null, 0L, new EvaluationStatistics(), false);
+		LmdbNativeEvaluationStrategy worker = strategy.forWorker((NativeLmdbQuerySource) dataset);
+		GenericSubplanDescriptor attached = GenericSubplanDescriptor.create(exists, strategy);
+		GenericSubplanDescriptor detached = GenericSubplanDescriptor.create(exists.clone(), strategy);
+		List<QueryValueEvaluationStep> attachedSteps = List.of(strategy.genericOnlyView().precompile(exists, context),
+				attached.precompileValue(strategy.genericOnlyView(), context),
+				attached.precompileValue(worker.genericOnlyView(),
+						new EvaluationScopedQueryEvaluationContext(context)));
+		List<QueryValueEvaluationStep> detachedSteps = List.of(
+				strategy.genericOnlyView().precompile(exists.clone(), context),
+				detached.precompileValue(strategy.genericOnlyView(), context));
+		BindingSet empty = EmptyBindingSet.getInstance();
+		BindingSet callerA = new ListBindingSet(List.of("x"), a);
+		BindingSet callerB = new ListBindingSet(List.of("x"), b);
+		for (BindingSet caller : List.of(empty, callerA, callerB, callerA)) {
+			for (QueryValueEvaluationStep step : attachedSteps) {
+				assertThat(step.evaluate(caller)).as("attached scalar, caller=%s", caller)
+						.isEqualTo(caller.isEmpty() ? BooleanLiteral.FALSE : BooleanLiteral.TRUE);
+			}
+			for (QueryValueEvaluationStep step : detachedSteps) {
+				assertThat(step.evaluate(caller)).as("unmarked detached scalar, caller=%s", caller)
+						.isEqualTo(BooleanLiteral.FALSE);
+			}
+		}
+	}
+
+	@Test
+	void detachedTupleFunctionDescriptorRetainsProjectionAncestor() {
+		ValueFactory vf = SimpleValueFactory.getInstance();
+		Value a = vf.createIRI(EX, "descriptorA");
+		Value b = vf.createIRI(EX, "descriptorB");
+		String uri = EX + "descriptorBooleanArgument";
+		TupleFunction function = new TupleFunction() {
+			@Override
+			public String getURI() {
+				return uri;
+			}
+
+			@Override
+			public CloseableIteration<? extends List<? extends Value>> evaluate(ValueFactory factory, Value... args) {
+				return new SingletonIteration<>(List.of(args[0]));
+			}
+		};
+		TupleFunctionRegistry.getInstance().add(function);
+		try {
+			TupleFunctionCall call = new TupleFunctionCall();
+			call.setURI(uri);
+			call.addArg(new Exists(new Filter(descriptorProjectedValues(a),
+					new Compare(Var.of("x"), new ValueConstant(b), CompareOp.EQ))));
+			call.addResultVar(Var.of("observed"));
+			new QueryRoot(new Projection(call, new ProjectionElemList(new ProjectionElem("observed"))));
+			QueryEvaluationContext context = new QueryEvaluationContext.Minimal((Dataset) null);
+			LmdbNativeEvaluationStrategy strategy = new LmdbNativeEvaluationStrategy(
+					new SailDatasetTripleTermSource(vf, dataset), null, null, 0L, new EvaluationStatistics(), false);
+			LmdbNativeEvaluationStrategy worker = strategy.forWorker((NativeLmdbQuerySource) dataset);
+			GenericSubplanDescriptor attached = GenericSubplanDescriptor.create(call, strategy);
+			GenericSubplanDescriptor detached = GenericSubplanDescriptor.create(call.clone(), strategy);
+			FilterBindingScope.ConditionBindingReads reads = FilterBindingScope
+					.conditionBindingReads(call.getArgs().getFirst());
+			assertThat(reads.complete()).as("the tuple argument declares all of its reads").isTrue();
+			assertThat(reads.bindingNames()).as("the projected VALUES argument reads")
+					.containsExactlyInAnyOrder("h", "x");
+			QueryEvaluationStep direct = strategy.genericOnlyView().precompile(call, context);
+			BindingFrameBindings.TupleParameterGrant grant = tupleRecipient(direct);
+			assertThat(grant).as("the actual prepared tuple leaf exposes its grant").isNotNull();
+			assertThat(grant.names()).as("the grant covers the complete argument reads")
+					.isEqualTo(reads.bindingNames());
+			List<QueryEvaluationStep> attachedSteps = List.of(direct,
+					attached.genericTuplePrecompile(strategy, context, grant),
+					attached.genericTuplePrecompile(worker, new EvaluationScopedQueryEvaluationContext(context),
+							grant));
+			List<QueryEvaluationStep> detachedSteps = List.of(
+					strategy.genericOnlyView().precompile(call.clone(), context),
+					detached.genericTuplePrecompile(strategy, context, grant));
+			BindingSet caller = new ListBindingSet(List.of("x"), b);
+			for (QueryEvaluationStep step : attachedSteps) {
+				for (int i = 0; i < 2; i++) {
+					assertThat(evaluateStep(step, caller)).as("attached tuple-function scalar")
+							.containsExactly(new ListBindingSet(List.of("x", "observed"), b, BooleanLiteral.TRUE));
+				}
+			}
+			for (QueryEvaluationStep step : detachedSteps) {
+				assertThat(evaluateStep(step, caller)).as("unmarked detached tuple-function scalar")
+						.containsExactly(new ListBindingSet(List.of("x", "observed"), b, BooleanLiteral.FALSE));
+			}
+		} finally {
+			TupleFunctionRegistry.getInstance().remove(function);
+		}
+	}
+
+	@Test
+	void publicScalarExistsRetainsCallerBoundOptionalGateOnFallback() {
+		ValueFactory vf = SimpleValueFactory.getInstance();
+		IRI missingSubject = vf.createIRI(EX, "generic");
+		IRI matchingSubject = vf.createIRI(EX, "shared");
+		IRI outerHit = vf.createIRI(EX, "o0");
+		IRI localHit = vf.createIRI(EX, "sharedNativeObject");
+		QueryEvaluationContext context = new QueryEvaluationContext.Minimal((Dataset) null);
+		LmdbNativeEvaluationStrategy strategy = new LmdbNativeEvaluationStrategy(
+				new SailDatasetTripleTermSource(vf, dataset), null, null, 0L, new EvaluationStatistics(), false);
+		BindingSet missing = new ListBindingSet(List.of("s"), missingSubject);
+		BindingSet matching = new ListBindingSet(List.of("s"), matchingSubject);
+		MapBindingSet caller = new MapBindingSet();
+		caller.addBinding("s", missingSubject);
+		caller.addBinding("hit", outerHit);
+		MapBindingSet matchingCaller = new MapBindingSet();
+		matchingCaller.addBinding("s", matchingSubject);
+		matchingCaller.addBinding("hit", localHit);
+		MapBindingSet matchingConflict = new MapBindingSet();
+		matchingConflict.addBinding("s", matchingSubject);
+		matchingConflict.addBinding("hit", outerHit);
+		BindingSet markedConflict = BindingFrameBindings.withSubstitutionDomain(matchingConflict, Set.of(), context);
+		MapBindingSet graphEntry = new MapBindingSet();
+		graphEntry.addBinding("s", missingSubject);
+		BindingSet graphSupplied = GraphFrameBindings.supply(graphEntry, "hit", outerHit);
+		BindingSet marker = BindingFrameBindings.withSubstitutionDomain(caller, Set.of(), context);
+		BindingSet physicalProbe = new ListBindingSet(List.of("hit"), outerHit);
+		BindingSet probe = BindingFrameBindings.push(new BindingFrameBindings.Scope(),
+				missing, physicalProbe, context);
+		record Case(String name, IRI subject, BindingSet input, Value left, Value resultHit, boolean bareRow,
+				boolean exists, boolean requireNative, boolean requireFallback) {
+		}
+		List<Case> cases = List.of(
+				new Case("missing-unbound", missingSubject, missing, vf.createIRI(EX, "genericObject"),
+						null, true, false, true, false),
+				new Case("missing-caller", missingSubject, caller, vf.createIRI(EX, "genericObject"),
+						outerHit, true, true, false, true),
+				new Case("missing-empty-marker", missingSubject, marker, vf.createIRI(EX, "genericObject"),
+						outerHit, true, true, false, true),
+				new Case("missing-graph-supplied", missingSubject, graphSupplied, vf.createIRI(EX, "genericObject"),
+						outerHit, true, true, false, true),
+				new Case("missing-probe-only", missingSubject, probe, vf.createIRI(EX, "genericObject"),
+						null, true, false, true, false),
+				new Case("matched-unbound", matchingSubject, matching, vf.createIRI(EX, "sharedGenericObject"),
+						localHit, true, true, true, false),
+				new Case("matched-caller", matchingSubject, matchingCaller, vf.createIRI(EX, "sharedGenericObject"),
+						localHit, true, true, false, false),
+				new Case("matched-conflicting-empty-marker", matchingSubject, markedConflict,
+						vf.createIRI(EX, "sharedGenericObject"), null, false, true, false, true));
+		SoftAssertions softly = new SoftAssertions();
+		softly.assertThat(GraphFrameBindings.isSupplied(graphSupplied, "hit"))
+				.as("the internal graph-frame control carries supplied provenance")
+				.isTrue();
+		softly.assertThat(BindingFrameBindings.substitutionDomain(markedConflict))
+				.as("the conflicting matched control starts with an older empty marker")
+				.isEmpty();
+		for (Case test : cases) {
+			StatementPattern left = new StatementPattern(Var.of("s"),
+					Var.of("leftPredicate", vf.createIRI(EX, "genericLink"), true, true), Var.of("left"));
+			StatementPattern right = new StatementPattern(Var.of("s"),
+					Var.of("rightPredicate", vf.createIRI(EX, "nativeLink"), true, true), Var.of("hit"));
+			LeftJoin optional = new LeftJoin(left, right);
+			Filter witness = new Filter(optional, new Bound(Var.of("hit")));
+			witness.setRuntimeTelemetryEnabled(true);
+			softly.assertThat(FilterBindingScope.resolve(witness).retainsAllBindings())
+					.as("the gate sees the OPTIONAL's declared hit for " + test.name())
+					.isTrue();
+			List<BindingSet> bare = new ArrayList<>();
+			try (var rows = strategy.genericOnlyView().precompile(optional.clone(), context).evaluate(test.input())) {
+				while (rows.hasNext()) {
+					bare.add(rows.next());
+				}
+			}
+			BindingSet expectedBare = test.resultHit() == null
+					? new ListBindingSet(List.of("s", "left"), test.subject(), test.left())
+					: new ListBindingSet(List.of("s", "left", "hit"), test.subject(), test.left(), test.resultHit());
+			if (test.bareRow()) {
+				softly.assertThat(bare).as("bare OPTIONAL bag " + test.name()).containsExactly(expectedBare);
+			} else {
+				softly.assertThat(bare).as("bare OPTIONAL bag " + test.name()).isEmpty();
+			}
+			Value expected = BooleanLiteral.valueOf(test.exists());
+			Value generic = strategy.genericOnlyView()
+					.precompile(new Exists(witness.clone()), context)
+					.evaluate(test.input());
+			softly.assertThat(generic).as("generic scalar EXISTS " + test.name()).isEqualTo(expected);
+			QueryValueEvaluationStep publicStep = strategy.precompile(new Exists(witness), context);
+			long publicBefore = Math.max(0L, witness.getLongMetricActual("nativeInvocationsActual"));
+			Value actual = publicStep.evaluate(test.input());
+			long publicDelta = Math.max(0L, witness.getLongMetricActual("nativeInvocationsActual")) - publicBefore;
+			String publicPath = witness.getStringMetricActual(LmdbNativeExplain.EXECUTION_PATH);
+			String publicPlan = witness.getStringMetricActual("runtimePhysicalPlan");
+			System.out.printf("scalar-optional-gate public=%s domain=%s delta=%d path=%s plan=%s result=%s%n",
+					test.name(), BindingFrameBindings.substitutionDomain(test.input()), publicDelta, publicPath,
+					publicPlan, actual);
+			softly.assertThat(actual).as("public scalar EXISTS " + test.name()).isEqualTo(expected);
+			if (test.requireNative()) {
+				softly.assertThat(publicDelta).as("public native EXISTS invocation " + test.name()).isPositive();
+				softly.assertThat(publicPath)
+						.as("public native EXISTS route " + test.name())
+						.contains(LmdbNativeAttemptMetrics.PATH_BARE_EXISTS);
+				softly.assertThat(publicPlan)
+						.as("completed public EXISTS cursor " + test.name())
+						.contains("status: COMPLETED", "opens: 1");
+			}
+			if (test.requireFallback()) {
+				softly.assertThat(publicDelta).as("no native cursor for guarded EXISTS " + test.name()).isZero();
+				softly.assertThat(publicPath)
+						.as("public semantic fallback " + test.name())
+						.contains("genericFallback(optionalEntry)");
+			}
+			Filter directWitness = witness.clone();
+			directWitness.setRuntimeTelemetryEnabled(true);
+			QueryValueEvaluationStep direct = LmdbNativeAggregateCompiler.tryCompileExists(directWitness, context,
+					strategy, (NativeLmdbQuerySource) dataset);
+			softly.assertThat(direct)
+					.as("direct native scalar admission " + test.name())
+					.isInstanceOf(NativeExistsValueStep.class);
+			if (direct instanceof NativeExistsValueStep) {
+				long before = Math.max(0L, directWitness.getLongMetricActual("nativeInvocationsActual"));
+				Value directValue = direct.evaluate(test.input());
+				long delta = Math.max(0L, directWitness.getLongMetricActual("nativeInvocationsActual")) - before;
+				String path = directWitness.getStringMetricActual(LmdbNativeExplain.EXECUTION_PATH);
+				System.out.printf("scalar-optional-gate direct=%s delta=%d path=%s plan=%s result=%s%n", test.name(),
+						delta, path, directWitness.getStringMetricActual("runtimePhysicalPlan"), directValue);
+				softly.assertThat(directValue).as("direct scalar EXISTS " + test.name()).isEqualTo(expected);
+				if (test.requireNative()) {
+					softly.assertThat(delta).as("direct native EXISTS invocation " + test.name()).isPositive();
+					softly.assertThat(path)
+							.as("direct native EXISTS route " + test.name())
+							.contains(LmdbNativeAttemptMetrics.PATH_BARE_EXISTS);
+					softly.assertThat(directWitness.getStringMetricActual("runtimePhysicalPlan"))
+							.as("completed direct EXISTS cursor " + test.name())
+							.contains("status: COMPLETED", "opens: 1");
+				}
+				if (test.requireFallback()) {
+					softly.assertThat(delta).as("no direct native cursor for guarded EXISTS " + test.name()).isZero();
+					softly.assertThat(path)
+							.as("direct semantic fallback " + test.name())
+							.contains("genericFallback(optionalEntry)");
+				}
+			}
+		}
+		softly.assertAll();
+	}
+
+	@Test
+	void publicScalarExistsRetainsCurrentWithheldGateInput() {
+		ValueFactory vf = SimpleValueFactory.getInstance();
+		IRI subject = vf.createIRI(EX, "generic");
+		IRI hit = vf.createIRI(EX, "o0");
+		IRI competing = vf.createIRI(EX, "sharedNativeObject");
+		QueryEvaluationContext context = new QueryEvaluationContext.Minimal((Dataset) null);
+		LmdbNativeEvaluationStrategy strategy = new LmdbNativeEvaluationStrategy(
+				new SailDatasetTripleTermSource(vf, dataset), null, null, 0L, new EvaluationStatistics(), false);
+		MapBindingSet caller = new MapBindingSet();
+		caller.addBinding("s", subject);
+		caller.addBinding("hit", hit);
+		BindingSet marked = BindingFrameBindings.withSubstitutionDomain(caller, Set.of("s", "hit"), context);
+		BindingSet current = BindingFrameBindings.without(marked, Set.of("hit"), context);
+		BindingSet older = BindingFrameBindings.withSubstitutionDomain(
+				BindingFrameBindings.without(caller, Set.of("hit"), context), Set.of(), context);
+		BindingSet probe = new ListBindingSet(List.of("hit"), competing);
+		BindingSet currentWithProbe = BindingFrameBindings.push(new BindingFrameBindings.Scope(), current, probe,
+				context);
+		record Case(String name, BindingSet input, boolean authorized) {
+		}
+		List<Case> cases = List.of(new Case("current-above-marker", current, true),
+				new Case("older-below-empty-marker", older, false),
+				new Case("current-with-competing-probe", currentWithProbe, true));
+		SoftAssertions softly = new SoftAssertions();
+		softly.assertThat(BindingFrameBindings.substitutionDomain(current)).containsExactlyInAnyOrder("s", "hit");
+		softly.assertThat(BindingFrameBindings.substitutionDomain(older)).isEmpty();
+		softly.assertThat(BindingFrameBindings.probeValue(currentWithProbe, "hit")).isEqualTo(competing);
+		for (Case test : cases) {
+			softly.assertThat(test.input().getValue("hit")).as("logical hit " + test.name()).isNull();
+			softly.assertThat(BindingFrameBindings.currentEntryWithheldInput(test.input(), "hit"))
+					.as("current withheld authority " + test.name())
+					.isEqualTo(test.authorized() ? hit : null);
+			BindingSet invocation = BindingFrameBindings.materializeWithheldInputs(test.input(), Set.of("s", "hit"));
+			softly.assertThat(invocation.getValue("hit"))
+					.as("materialized scalar input " + test.name())
+					.isEqualTo(test.authorized() ? hit : null);
+			StatementPattern left = new StatementPattern(Var.of("s"),
+					Var.of("leftPredicate", vf.createIRI(EX, "genericLink"), true, true), Var.of("left"));
+			StatementPattern right = new StatementPattern(Var.of("s"),
+					Var.of("rightPredicate", vf.createIRI(EX, "nativeLink"), true, true), Var.of("hit"));
+			Filter witness = new Filter(new LeftJoin(left, right), new Bound(Var.of("hit")));
+			witness.setRuntimeTelemetryEnabled(true);
+			Value expected = BooleanLiteral.valueOf(test.authorized());
+			Value generic = strategy.genericOnlyView()
+					.precompile(new Exists(witness.clone()), context)
+					.evaluate(test.input());
+			softly.assertThat(generic).as("generic scalar EXISTS " + test.name()).isEqualTo(expected);
+			QueryValueEvaluationStep compiled = strategy.precompile(new Exists(witness), context);
+			long before = Math.max(0L, witness.getLongMetricActual("nativeInvocationsActual"));
+			Value actual = compiled.evaluate(test.input());
+			long delta = Math.max(0L, witness.getLongMetricActual("nativeInvocationsActual")) - before;
+			String path = witness.getStringMetricActual(LmdbNativeExplain.EXECUTION_PATH);
+			System.out.printf("scalar-withheld public=%s delta=%d path=%s result=%s%n", test.name(), delta, path,
+					actual);
+			softly.assertThat(actual).as("public scalar EXISTS " + test.name()).isEqualTo(expected);
+			Filter directWitness = witness.clone();
+			directWitness.setRuntimeTelemetryEnabled(true);
+			QueryValueEvaluationStep direct = LmdbNativeAggregateCompiler.tryCompileExists(directWitness, context,
+					strategy, (NativeLmdbQuerySource) dataset);
+			softly.assertThat(direct)
+					.as("direct native scalar admission " + test.name())
+					.isInstanceOf(NativeExistsValueStep.class);
+			if (direct instanceof NativeExistsValueStep) {
+				long directBefore = Math.max(0L, directWitness.getLongMetricActual("nativeInvocationsActual"));
+				Value directValue = direct.evaluate(invocation);
+				long directDelta = Math.max(0L, directWitness.getLongMetricActual("nativeInvocationsActual"))
+						- directBefore;
+				String directPath = directWitness.getStringMetricActual(LmdbNativeExplain.EXECUTION_PATH);
+				System.out.printf("scalar-withheld direct=%s delta=%d path=%s result=%s%n", test.name(), directDelta,
+						directPath, directValue);
+				softly.assertThat(directValue).as("direct scalar EXISTS " + test.name()).isEqualTo(expected);
+				if (test.authorized()) {
+					softly.assertThat(directDelta).as("guarded direct scalar " + test.name()).isZero();
+					softly.assertThat(directPath)
+							.as("direct scalar fallback " + test.name())
+							.contains("genericFallback(optionalEntry)");
+				} else {
+					softly.assertThat(directDelta).as("safe direct native scalar " + test.name()).isPositive();
+					softly.assertThat(directPath)
+							.as("safe direct native route " + test.name())
+							.contains(LmdbNativeAttemptMetrics.PATH_BARE_EXISTS);
+				}
+			}
+			if (test.authorized()) {
+				softly.assertThat(delta).as("guarded public scalar " + test.name()).isZero();
+				softly.assertThat(path)
+						.as("public scalar fallback " + test.name())
+						.contains("genericFallback(optionalEntry)");
+			} else {
+				softly.assertThat(delta).as("safe public native scalar " + test.name()).isPositive();
+				softly.assertThat(path)
+						.as("safe public native route " + test.name())
+						.contains(LmdbNativeAttemptMetrics.PATH_BARE_EXISTS);
+			}
+		}
+		softly.assertAll();
+	}
+
+	@Test
+	void framedDeferredTupleArgumentIsNotAScalarExistsInput() {
+		ValueFactory vf = SimpleValueFactory.getInstance();
+		IRI subject = vf.createIRI(EX, "generic");
+		IRI hit = vf.createIRI(EX, "o0");
+		IRI graph = vf.createIRI(EX, "s0");
+		QueryEvaluationContext context = new QueryEvaluationContext.Minimal((Dataset) null);
+		LmdbNativeEvaluationStrategy strategy = new LmdbNativeEvaluationStrategy(
+				new SailDatasetTripleTermSource(vf, dataset), null, null, 0L, new EvaluationStatistics(), false);
+		MapBindingSet caller = new MapBindingSet();
+		caller.addBinding("s", subject);
+		caller.addBinding("hit", hit);
+		BindingSet graphCaller = GraphFrameBindings.supply(caller, "g", graph);
+		BindingSet withheld = BindingFrameBindings.without(graphCaller, Set.of("hit"), context);
+		BindingFrameBindings.TupleParameterGrant recipient = new BindingFrameBindings.TupleParameterGrant(
+				Set.of("hit"));
+		BindingFrameBindings.TupleParameterGrant wrong = new BindingFrameBindings.TupleParameterGrant(Set.of("hit"));
+		BindingSet deferred = BindingFrameBindings.withLateralDomain(withheld, Set.of("s"), Set.of("hit"), withheld,
+				Set.of("hit"), Set.of("hit"), List.of(recipient), context);
+		BindingSet probeMarker = BindingFrameBindings.withLateralDomain(withheld, Set.of("s"), Set.of("hit"), context);
+		BindingSet probeOnly = BindingFrameBindings.push(new BindingFrameBindings.Scope(), probeMarker,
+				new ListBindingSet(List.of("hit"), hit), context);
+		record Case(String name, BindingSet input, boolean argument) {
+		}
+		List<Case> cases = List.of(new Case("deferred-argument", deferred, true),
+				new Case("probe-only-new-marker", probeOnly, false));
+		SoftAssertions softly = new SoftAssertions();
+		softly.assertThat(BindingFrameBindings.probeValue(probeOnly, "hit")).isEqualTo(hit);
+		for (Case test : cases) {
+			softly.assertThat(test.input().getValue("hit")).as("no logical hit " + test.name()).isNull();
+			softly.assertThat(BindingFrameBindings.currentEntryWithheldInput(test.input(), "hit"))
+					.as("no semantic withheld argument " + test.name())
+					.isNull();
+			softly.assertThat(recipient.value(test.input(), "hit"))
+					.as("exact tuple recipient " + test.name())
+					.isEqualTo(test.argument() ? hit : null);
+			softly.assertThat(wrong.value(test.input(), "hit")).as("wrong tuple recipient " + test.name()).isNull();
+			softly.assertThat(BindingFrameBindings.substitutionDomain(test.input()))
+					.as("argument does not extend logical domain " + test.name())
+					.containsExactly("s");
+			softly.assertThat(BindingFrameBindings.lateralPrivateInputs(test.input()))
+					.as("private LATERAL input " + test.name())
+					.containsExactly("hit");
+			softly.assertThat(GraphFrameBindings.isSupplied(test.input(), "g"))
+					.as("supplied graph authority " + test.name())
+					.isTrue();
+			softly.assertThat(test.input().getValue("g")).as("supplied graph value " + test.name()).isEqualTo(graph);
+			StatementPattern left = new StatementPattern(Var.of("s"),
+					Var.of("leftPredicate", vf.createIRI(EX, "genericLink"), true, true), Var.of("left"));
+			StatementPattern right = new StatementPattern(Var.of("s"),
+					Var.of("rightPredicate", vf.createIRI(EX, "nativeLink"), true, true), Var.of("hit"));
+			Filter witness = new Filter(new LeftJoin(left, right), new Bound(Var.of("hit")));
+			witness.setRuntimeTelemetryEnabled(true);
+			Value generic = strategy.genericOnlyView()
+					.precompile(new Exists(witness.clone()), context)
+					.evaluate(test.input());
+			softly.assertThat(generic)
+					.as("generic EXISTS cannot read argument-only inputs " + test.name())
+					.isEqualTo(BooleanLiteral.FALSE);
+			QueryValueEvaluationStep compiled = strategy.precompile(new Exists(witness), context);
+			long before = Math.max(0L, witness.getLongMetricActual("nativeInvocationsActual"));
+			Value actual = compiled.evaluate(test.input());
+			long delta = Math.max(0L, witness.getLongMetricActual("nativeInvocationsActual")) - before;
+			String path = witness.getStringMetricActual(LmdbNativeExplain.EXECUTION_PATH);
+			System.out.printf("scalar-argument-only public=%s delta=%d path=%s generic=%s result=%s%n", test.name(),
+					delta, path, generic, actual);
+			softly.assertThat(actual)
+					.as("public EXISTS cannot read argument-only inputs " + test.name())
+					.isEqualTo(BooleanLiteral.FALSE);
+			Filter directWitness = witness.clone();
+			directWitness.setRuntimeTelemetryEnabled(true);
+			QueryValueEvaluationStep direct = LmdbNativeAggregateCompiler.tryCompileExists(directWitness, context,
+					strategy, (NativeLmdbQuerySource) dataset);
+			softly.assertThat(direct)
+					.as("direct scalar admission " + test.name())
+					.isInstanceOf(NativeExistsValueStep.class);
+			if (direct instanceof NativeExistsValueStep) {
+				long directBefore = Math.max(0L, directWitness.getLongMetricActual("nativeInvocationsActual"));
+				Value directValue = direct.evaluate(test.input());
+				long directDelta = Math.max(0L, directWitness.getLongMetricActual("nativeInvocationsActual"))
+						- directBefore;
+				System.out.printf("scalar-argument-only direct=%s delta=%d path=%s result=%s%n", test.name(),
+						directDelta, directWitness.getStringMetricActual(LmdbNativeExplain.EXECUTION_PATH),
+						directValue);
+				softly.assertThat(directValue)
+						.as("direct EXISTS cannot read argument-only inputs " + test.name())
+						.isEqualTo(BooleanLiteral.FALSE);
+			}
+		}
+		softly.assertAll();
+	}
+
+	@Test
+	void nativeTupleRecipientSurvivesUnrepresentableEntryFallback() {
+		ValueFactory vf = SimpleValueFactory.getInstance();
+		String uri = EX + "privateTupleArgument";
+		Value first = vf.createIRI(EX, "o0");
+		Value second = vf.createIRI(EX, "o1");
+		Value local = vf.createIRI(EX, "o2");
+		Value witness = vf.createIRI(EX, "o3");
+		Value nativeSeed = vf.createIRI(EX, "native");
+		RemoteBNode protectedSeed = (RemoteBNode) RemoteBNode.newResponseScope(new BlankNodeAllocationScope(), vf,
+				new Object(), true).map(vf.createBNode("tupleProtectedSeed"));
+		List<List<Value>> observed = new ArrayList<>();
+		TupleFunction function = new TupleFunction() {
+			@Override
+			public String getURI() {
+				return uri;
+			}
+
+			@Override
+			public CloseableIteration<? extends List<? extends Value>> evaluate(ValueFactory factory, Value... args) {
+				observed.add(List.of(args));
+				return new SingletonIteration<>(List.of(local, witness, args[1]));
+			}
+		};
+		TupleFunctionRegistry.getInstance().add(function);
+		try {
+			QueryEvaluationContext context = new QueryEvaluationContext.Minimal((Dataset) null);
+			LmdbNativeEvaluationStrategy strategy = new LmdbNativeEvaluationStrategy(
+					new SailDatasetTripleTermSource(vf, dataset), null, null, 0L, new EvaluationStatistics(), false);
+			TupleFunctionCall call = new TupleFunctionCall();
+			call.setURI(uri);
+			call.addArg(Var.of("x"));
+			call.addArg(Var.of("seed"));
+			call.addResultVar(Var.of("x"));
+			call.addResultVar(Var.of("hit"));
+			call.addResultVar(Var.of("seed"));
+			call.setRuntimeTelemetryEnabled(true);
+			QueryEvaluationStep prepared = strategy.precompile(call, context);
+			BindingSet ordinary = new ListBindingSet(List.of("x", "seed"), local, nativeSeed);
+			long ordinaryBefore = Math.max(0L, call.getLongMetricActual("nativeInvocationsActual"));
+			List<BindingSet> ordinaryRows;
+			try (var result = prepared.evaluate(ordinary)) {
+				ordinaryRows = QueryResults.asList(result);
+			}
+			long ordinaryDelta = Math.max(0L, call.getLongMetricActual("nativeInvocationsActual")) - ordinaryBefore;
+			String ordinaryPath = call.getStringMetricActual(LmdbNativeExplain.EXECUTION_PATH);
+			String ordinaryPlan = call.getStringMetricActual("runtimePhysicalPlan");
+			List<List<Value>> ordinaryArguments = List.copyOf(observed);
+			System.out.printf("tuple-recipient ordinary prepared=%s delta=%d path=%s plan=%s args=%s rows=%s%n",
+					prepared.getClass().getName(), ordinaryDelta, ordinaryPath, ordinaryPlan, ordinaryArguments,
+					ordinaryRows);
+			observed.clear();
+			BindingSet ordinaryProtected = new ListBindingSet(List.of("x", "seed"), local, protectedSeed);
+			long protectedBefore = Math.max(0L, call.getLongMetricActual("nativeInvocationsActual"));
+			List<BindingSet> protectedRows;
+			try (var result = prepared.evaluate(ordinaryProtected)) {
+				protectedRows = QueryResults.asList(result);
+			}
+			long protectedDelta = Math.max(0L, call.getLongMetricActual("nativeInvocationsActual")) - protectedBefore;
+			String protectedPath = call.getStringMetricActual(LmdbNativeExplain.EXECUTION_PATH);
+			String protectedPlan = call.getStringMetricActual("runtimePhysicalPlan");
+			List<List<Value>> protectedArguments = List.copyOf(observed);
+			System.out.printf("tuple-recipient protected prepared=%s delta=%d path=%s plan=%s args=%s rows=%s%n",
+					prepared.getClass().getName(), protectedDelta, protectedPath, protectedPlan, protectedArguments,
+					protectedRows);
+			BindingFrameBindings.TupleParameterConsumer consumer = BindingFrameBindings.unframedCapability(prepared,
+					BindingFrameBindings.TupleParameterConsumer.class);
+			SoftAssertions preliminary = new SoftAssertions();
+			preliminary.assertThat(ordinaryRows)
+					.as("ordinary logical input exact bag")
+					.containsExactly(new ListBindingSet(List.of("seed", "x", "hit"), nativeSeed, local, witness));
+			preliminary.assertThat(ordinaryArguments)
+					.as("actual ordinary tuple arguments")
+					.containsExactly(List.of(local, nativeSeed));
+			preliminary.assertThat(ordinaryDelta)
+					.as("ordinary input actually invokes the native tuple plan")
+					.isPositive();
+			preliminary.assertThat(protectedRows)
+					.as("protected logical input exact bag")
+					.containsExactly(new ListBindingSet(List.of("seed", "x", "hit"), protectedSeed, local, witness));
+			preliminary.assertThat(protectedArguments)
+					.as("actual protected tuple arguments")
+					.containsExactly(List.of(local, protectedSeed));
+			preliminary.assertThat(protectedDelta).as("protected input declines native execution").isZero();
+			preliminary.assertThat(protectedPath)
+					.as("protected input uses the semantic fallback")
+					.contains("genericFallback(unrepresentableEntry)");
+			preliminary.assertThat(consumer).as("the prepared tuple exposes its exact recipient").isNotNull();
+			preliminary.assertAll();
+			BindingFrameBindings.TupleParameterGrant grant = consumer.tupleParameterGrant();
+			assertThat(grant).isNotNull();
+			observed.clear();
+			record Case(Value argument, Value seed, boolean fallback) {
+			}
+			List<Case> cases = List.of(new Case(first, nativeSeed, false), new Case(first, protectedSeed, true),
+					new Case(second, protectedSeed, true), new Case(first, protectedSeed, true));
+			for (Case test : cases) {
+				QueryBindingSet caller = new QueryBindingSet();
+				caller.addBinding("x", test.argument());
+				caller.addBinding("seed", test.seed());
+				BindingSet withheld = BindingFrameBindings.without(caller, Set.of("x"), context);
+				BindingSet input = BindingFrameBindings.withLateralDomain(withheld, Set.of("seed"), Set.of("x"),
+						withheld, Set.of("x"), Set.of("x"), List.of(grant), context);
+				assertThat(tupleRecipient(prepared)).as("the retained prepared recipient").isSameAs(grant);
+				assertThat(grant.value(input, "x")).as("the current private tuple argument")
+						.isEqualTo(test.argument());
+				long before = Math.max(0L, call.getLongMetricActual("nativeInvocationsActual"));
+				List<BindingSet> rows;
+				try (var result = prepared.evaluate(input)) {
+					rows = QueryResults.asList(result);
+				}
+				long delta = Math.max(0L, call.getLongMetricActual("nativeInvocationsActual")) - before;
+				String path = call.getStringMetricActual(LmdbNativeExplain.EXECUTION_PATH);
+				System.out.printf("tuple-recipient fallback=%s delta=%d path=%s rows=%s%n", test.fallback(), delta,
+						path, rows);
+				assertThat(rows).containsExactly(new ListBindingSet(List.of("seed", "x", "hit"), test.seed(), local,
+						witness));
+				assertThat(observed.getLast()).containsExactly(test.argument(), test.seed());
+				if (test.fallback()) {
+					assertThat(delta).isZero();
+					assertThat(path).contains("genericFallback(unrepresentableEntry)");
+				} else {
+					assertThat(delta).isPositive();
+					assertThat(path).contains(LmdbNativeAttemptMetrics.PATH_NESTED_LOOP);
+				}
+			}
+			assertThat(observed).hasSize(cases.size());
+		} finally {
+			TupleFunctionRegistry.getInstance().remove(function);
+		}
+	}
+
+	@Test
+	void bareNativeTupleEntryKeepsItsRecipient() {
+		ValueFactory vf = SimpleValueFactory.getInstance();
+		String uri = EX + "bareTupleRecipient";
+		Value input = vf.createIRI(EX, "o0");
+		Value local = vf.createIRI(EX, "o2");
+		Value seed = vf.createIRI(EX, "native");
+		List<List<Value>> observed = new ArrayList<>();
+		TupleFunction function = new TupleFunction() {
+			@Override
+			public String getURI() {
+				return uri;
+			}
+
+			@Override
+			public CloseableIteration<? extends List<? extends Value>> evaluate(ValueFactory factory, Value... args) {
+				observed.add(List.of(args));
+				return new SingletonIteration<>(List.of(local, args[1]));
+			}
+		};
+		TupleFunctionRegistry.getInstance().add(function);
+		try {
+			QueryEvaluationContext context = new QueryEvaluationContext.Minimal((Dataset) null);
+			LmdbNativeEvaluationStrategy strategy = new LmdbNativeEvaluationStrategy(
+					new SailDatasetTripleTermSource(vf, dataset), null, null, 0L, new EvaluationStatistics(), false);
+			TupleFunctionCall call = new TupleFunctionCall();
+			call.setURI(uri);
+			call.addArg(Var.of("x"));
+			call.addArg(Var.of("seed"));
+			call.addResultVar(Var.of("x"));
+			call.addResultVar(Var.of("seed"));
+			call.setRuntimeTelemetryEnabled(true);
+			LmdbNativeAggregatePlanner planner = new LmdbNativeAggregatePlanner(context, strategy,
+					(NativeLmdbQuerySource) dataset);
+			QueryEvaluationStep compiled = planner.compileBareRoot(call);
+			assertThat(compiled).isInstanceOf(NativeBareRowsStep.class);
+			NativeBareRowsStep bare = (NativeBareRowsStep) compiled;
+			BindingFrameBindings.TupleParameterGrant grant = bare.tupleParameterGrant();
+			assertThat(grant).isNotNull();
+			assertThat(grant.names()).containsExactlyInAnyOrder("x", "seed");
+			QueryBindingSet caller = new QueryBindingSet();
+			caller.addBinding("x", input);
+			caller.addBinding("seed", seed);
+			BindingSet withheld = BindingFrameBindings.without(caller, Set.of("x"), context);
+			BindingSet framed = BindingFrameBindings.withLateralDomain(withheld, Set.of("seed"), Set.of("x"),
+					withheld, Set.of("x"), Set.of("x"), List.of(grant), context);
+			long before = Math.max(0L, call.getLongMetricActual("nativeInvocationsActual"));
+			List<BindingSet> rows;
+			try (var result = bare.evaluate(framed)) {
+				rows = QueryResults.asList(result);
+			}
+			long delta = Math.max(0L, call.getLongMetricActual("nativeInvocationsActual")) - before;
+			String path = call.getStringMetricActual(LmdbNativeExplain.EXECUTION_PATH);
+			System.out.printf("tuple-recipient bare delta=%d path=%s rows=%s args=%s%n", delta, path, rows, observed);
+			assertThat(rows).containsExactly(new ListBindingSet(List.of("x", "seed"), local, seed));
+			assertThat(observed).containsExactly(List.of(input, seed));
+			assertThat(delta).isPositive();
+			assertThat(path).contains(LmdbNativeAttemptMetrics.PATH_BARE_DIRECT);
+		} finally {
+			TupleFunctionRegistry.getInstance().remove(function);
+		}
+	}
+
+	@Test
+	void nativeTupleRecipientDoesNotEscapeProjectionOrModifier() {
+		ValueFactory vf = SimpleValueFactory.getInstance();
+		String uri = EX + "tupleRecipientBoundary";
+		TupleFunction function = new TupleFunction() {
+			@Override
+			public String getURI() {
+				return uri;
+			}
+
+			@Override
+			public CloseableIteration<? extends List<? extends Value>> evaluate(ValueFactory factory, Value... args) {
+				return new SingletonIteration<>(List.of(args[0]));
+			}
+		};
+		TupleFunctionRegistry.getInstance().add(function);
+		try {
+			QueryEvaluationContext context = new QueryEvaluationContext.Minimal((Dataset) null);
+			LmdbNativeEvaluationStrategy strategy = new LmdbNativeEvaluationStrategy(
+					new SailDatasetTripleTermSource(vf, dataset), null, null, 0L, new EvaluationStatistics(), false);
+			TupleFunctionCall call = new TupleFunctionCall();
+			call.setURI(uri);
+			call.addArg(Var.of("x"));
+			call.addResultVar(Var.of("x"));
+			QueryEvaluationStep direct = strategy.precompile(call, context);
+			assertThat(tupleRecipient(direct)).as("the actual tuple entry").isNotNull();
+			Projection projection = new Projection(call.clone(), new ProjectionElemList(new ProjectionElem("x")));
+			QueryEvaluationStep projected = strategy.precompile(projection, context);
+			QueryEvaluationStep sliced = strategy.precompile(new Slice(call.clone(), 0, 1), context);
+			QueryEvaluationStep opaque = bindings -> direct.evaluate(bindings);
+			assertThat(tupleRecipient(projected)).as("projection owns a distinct result boundary").isNull();
+			assertThat(tupleRecipient(sliced)).as("slice owns a distinct result boundary").isNull();
+			assertThat(tupleRecipient(opaque)).as("an opaque wrapper is not unwrapped").isNull();
+		} finally {
+			TupleFunctionRegistry.getInstance().remove(function);
+		}
+	}
+
+	private static BindingFrameBindings.TupleParameterGrant tupleRecipient(QueryEvaluationStep step) {
+		BindingFrameBindings.TupleParameterConsumer consumer = BindingFrameBindings.unframedCapability(step,
+				BindingFrameBindings.TupleParameterConsumer.class);
+		return consumer == null ? null : consumer.tupleParameterGrant();
+	}
+
+	@Test
+	void scalarExistsRetainsOptionalWhenFilterAllowsUnmatchedRows() {
+		ValueFactory vf = SimpleValueFactory.getInstance();
+		IRI subject = vf.createIRI(EX, "generic");
+		IRI hit = vf.createIRI(EX, "o0");
+		QueryEvaluationContext context = new QueryEvaluationContext.Minimal((Dataset) null);
+		LmdbNativeEvaluationStrategy strategy = new LmdbNativeEvaluationStrategy(
+				new SailDatasetTripleTermSource(vf, dataset), null, null, 0L, new EvaluationStatistics(), false);
+		StatementPattern left = new StatementPattern(Var.of("s"),
+				Var.of("leftPredicate", vf.createIRI(EX, "genericLink"), true, true), Var.of("left"));
+		StatementPattern right = new StatementPattern(Var.of("s"),
+				Var.of("rightPredicate", vf.createIRI(EX, "nativeLink"), true, true), Var.of("hit"));
+		Filter witness = new Filter(new LeftJoin(left, right), new Or(new Not(new Bound(Var.of("hit"))),
+				new Compare(Var.of("hit"), new ValueConstant(hit), CompareOp.EQ)));
+		MapBindingSet caller = new MapBindingSet();
+		caller.addBinding("s", subject);
+		caller.addBinding("hit", hit);
+		BindingSet oldEmptyMarker = BindingFrameBindings.withSubstitutionDomain(caller, Set.of(), context);
+		Value generic = strategy.genericOnlyView()
+				.precompile(new Exists(witness.clone()), context)
+				.evaluate(oldEmptyMarker);
+		QueryValueEvaluationStep direct = LmdbNativeAggregateCompiler.tryCompileExists(witness.clone(), context,
+				strategy, (NativeLmdbQuerySource) dataset);
+		Value actual = strategy.precompile(new Exists(witness), context).evaluate(oldEmptyMarker);
+		assertThat(generic).isEqualTo(BooleanLiteral.TRUE);
+		assertThat(direct).as("a retained OPTIONAL is not a pattern-only witness").isNull();
+		assertThat(actual).isEqualTo(BooleanLiteral.TRUE);
+	}
+
+	@Test
+	void retainedScalarExistsAlternatesNativeAndSemanticEntries() {
+		ValueFactory vf = SimpleValueFactory.getInstance();
+		IRI missingSubject = vf.createIRI(EX, "generic");
+		IRI matchingSubject = vf.createIRI(EX, "shared");
+		IRI outerHit = vf.createIRI(EX, "o0");
+		RemoteBNode protectedSubject = (RemoteBNode) RemoteBNode.newResponseScope(new BlankNodeAllocationScope(), vf,
+				new Object(), true).map(vf.createBNode("protectedScalarInput"));
+		BindingSet safeMissing = new ListBindingSet(List.of("s"), missingSubject);
+		BindingSet safeMatch = new ListBindingSet(List.of("s"), matchingSubject);
+		BindingSet guarded = new ListBindingSet(List.of("s", "hit"), missingSubject, outerHit);
+		BindingSet unrepresentable = new ListBindingSet(List.of("s"), protectedSubject);
+		QueryEvaluationContext context = new QueryEvaluationContext.Minimal((Dataset) null);
+		LmdbNativeEvaluationStrategy strategy = new LmdbNativeEvaluationStrategy(
+				new SailDatasetTripleTermSource(vf, dataset), null, null, 0L, new EvaluationStatistics(), false);
+		StatementPattern left = new StatementPattern(Var.of("s"),
+				Var.of("leftPredicate", vf.createIRI(EX, "genericLink"), true, true), Var.of("left"));
+		StatementPattern right = new StatementPattern(Var.of("s"),
+				Var.of("rightPredicate", vf.createIRI(EX, "nativeLink"), true, true), Var.of("hit"));
+		Filter witness = new Filter(new LeftJoin(left, right), new Bound(Var.of("hit")));
+		witness.setRuntimeTelemetryEnabled(true);
+		QueryValueEvaluationStep generic = strategy.genericOnlyView().precompile(new Exists(witness.clone()), context);
+		QueryValueEvaluationStep compiled = strategy.precompile(new Exists(witness), context);
+		record Case(String name, BindingSet input, boolean expected, boolean nativeEntry, String fallback) {
+		}
+		List<Case> cases = List.of(
+				new Case("safe-missing", safeMissing, false, true, null),
+				new Case("guarded-first", guarded, true, false, "optionalEntry"),
+				new Case("safe-match", safeMatch, true, true, null),
+				new Case("unrepresentable", unrepresentable, false, false, "unrepresentableEntry"),
+				new Case("guarded-repeat", guarded, true, false, "optionalEntry"),
+				new Case("safe-repeat", safeMissing, false, true, null));
+		SoftAssertions softly = new SoftAssertions();
+		for (Case test : cases) {
+			Value expected = BooleanLiteral.valueOf(test.expected());
+			softly.assertThat(generic.evaluate(test.input())).as("generic scalar " + test.name()).isEqualTo(expected);
+			long before = Math.max(0L, witness.getLongMetricActual("nativeInvocationsActual"));
+			Value actual = compiled.evaluate(test.input());
+			long delta = Math.max(0L, witness.getLongMetricActual("nativeInvocationsActual")) - before;
+			String path = witness.getStringMetricActual(LmdbNativeExplain.EXECUTION_PATH);
+			System.out.printf("scalar-reused case=%s delta=%d paths=%s result=%s%n", test.name(), delta, path,
+					actual);
+			softly.assertThat(actual).as("same prepared scalar " + test.name()).isEqualTo(expected);
+			if (test.nativeEntry()) {
+				softly.assertThat(delta).as("native scalar invocation " + test.name()).isPositive();
+				softly.assertThat(path)
+						.as("native scalar path " + test.name())
+						.contains(LmdbNativeAttemptMetrics.PATH_BARE_EXISTS);
+			} else {
+				softly.assertThat(delta).as("no native scalar cursor " + test.name()).isZero();
+				softly.assertThat(path)
+						.as("recorded scalar fallback " + test.name())
+						.contains("genericFallback(" + test.fallback() + ")");
+			}
+		}
+		softly.assertAll();
+	}
+
+	@Test
+	void publicValueExistsPreparesNestedGraphBeforeNativeRecipeAndWorkerCopy() {
+		ValueFactory vf = SimpleValueFactory.getInstance();
+		IRI graph = vf.createIRI(EX, "directExistsGraph");
+		IRI local = vf.createIRI(EX, "directExistsLocal");
+		IRI innerPredicate = vf.createIRI(EX, "directExistsInner");
+		IRI outerPredicate = vf.createIRI(EX, "directExistsOuter");
+		dataset.close();
+		try (SailRepositoryConnection connection = repository.getConnection()) {
+			connection.add(local, innerPredicate, vf.createIRI(EX, "directExistsObject"), graph);
+			connection.add(vf.createIRI(EX, "directExistsDriver"), outerPredicate,
+					vf.createIRI(EX, "directExistsDriverObject"));
+		}
+		dataset = NativeQuerySourceAccess.openExplicitDataset(store);
+		Var inheritedGraph = Var.of("g", graph);
+		inheritedGraph.setGraphContextDepth(1);
+		StatementPattern nestedStatement = new StatementPattern(Scope.NAMED_CONTEXTS, Var.of("g"),
+				Var.of("innerPredicate", innerPredicate, true, true), Var.of("innerObject"), inheritedGraph);
+		Projection select = new Projection(nestedStatement, new ProjectionElemList(new ProjectionElem("g")), true);
+		select.setProjectionContext(Var.of("g"));
+		StatementPattern driver = new StatementPattern(Var.of("driver"),
+				Var.of("outerPredicate", outerPredicate, true, true), Var.of("driverObject"));
+		Filter witness = new Filter(driver, new Exists(select));
+		witness.setRuntimeTelemetryEnabled(true);
+		Exists expression = new Exists(witness);
+		QueryEvaluationContext context = new QueryEvaluationContext.Minimal((Dataset) null);
+		LmdbNativeEvaluationStrategy strategy = new LmdbNativeEvaluationStrategy(
+				new SailDatasetTripleTermSource(vf, dataset), null, null, 0L, new EvaluationStatistics(), false);
+		BindingSet first = new ListBindingSet(List.of("tag"), vf.createLiteral("first"));
+		BindingSet second = new ListBindingSet(List.of("tag"), vf.createLiteral("second"));
+		BindingSet missing = new ListBindingSet(List.of("tag", "driver"), vf.createLiteral("missing"), local);
+		List<BindingSet> input = List.of(first, first, second, missing);
+		long nativeBefore = Math.max(0, witness.getLongMetricActual("nativeInvocationsActual"));
+		QueryValueEvaluationStep step = strategy.precompile(expression, context);
+		List<BindingSet> actual = new ArrayList<>();
+		List<Value> verdicts = new ArrayList<>();
+		for (BindingSet candidate : input) {
+			Value verdict = step.evaluate(candidate);
+			verdicts.add(verdict);
+			if (BooleanLiteral.TRUE.equals(verdict)) {
+				actual.add(candidate);
+			}
+		}
+		long nativeAfter = Math.max(0, witness.getLongMetricActual("nativeInvocationsActual"));
+		String publicParameter = select.getFixedGraphParameter();
+		System.out.printf("public-exists nativeBefore=%d nativeAfter=%d fixedParameter=%s rows=%s%n",
+				nativeBefore, nativeAfter, publicParameter, actual);
+		SoftAssertions softly = new SoftAssertions();
+		softly.assertThat(verdicts)
+				.as("the missing driver has no witness")
+				.containsExactly(BooleanLiteral.TRUE, BooleanLiteral.TRUE, BooleanLiteral.TRUE, BooleanLiteral.FALSE);
+		softly.assertThat(actual)
+				.as("one independent witness preserves the positive input bag")
+				.containsExactly(first, first, second);
+		softly.assertThat(nativeAfter)
+				.as("the public scalar step actually opens native EXISTS")
+				.isGreaterThan(nativeBefore);
+		softly.assertThat(publicParameter).as("the public scalar entry prepares the inherited graph").isNotNull();
+
+		// Inspect and fork a separate compilation of the same witness. This calls the real worker recipe; its
+		// counter is kept separate from the public scalar invocation above, which executes on the calling thread.
+		QueryValueEvaluationStep raw = LmdbNativeAggregateCompiler.tryCompileExists(witness, context, strategy,
+				strategy.nativeSource());
+		softly.assertThat(raw)
+				.as("the witness remains eligible for the native EXISTS cursor")
+				.isInstanceOf(NativeExistsValueStep.class);
+		if (raw instanceof NativeExistsValueStep nativeExists) {
+			ExistsFilter nested = null;
+			for (NativeBooleanFilter filter : nativeExists.existsPlan.trailingFilters) {
+				while (filter instanceof RecordingNativeBooleanFilter recording) {
+					filter = recording.delegate;
+				}
+				if (filter instanceof ExistsFilter existsFilter) {
+					nested = existsFilter;
+				}
+			}
+			softly.assertThat(nested).as("native EXISTS contains a native lexical witness").isNotNull();
+			if (nested != null) {
+				softly.assertThat(nested.subPlan).isInstanceOf(NativeSubqueryPlan.class);
+				SyntheticValueSource source = SyntheticValueSource.forEvaluation(strategy.nativeSource());
+				source.executionContext().initializeQueryBase(EmptyBindingSet.getInstance());
+				long workersBefore = NativeSubqueryPlan.WORKER_BINDINGS.get();
+				NativeBooleanFilter worker = null;
+				try {
+					worker = nested.forkForParallelWorker(NativeScalarPlan.WorkerContext.forSource(source, context));
+					softly.assertThat(worker).as("the lexical recipe binds a real worker").isNotNull();
+					softly.assertThat(NativeSubqueryPlan.WORKER_BINDINGS.get()).isGreaterThan(workersBefore);
+					if (worker != null) {
+						try (SyntheticValueSource.EvaluationScope ignored = SyntheticValueSource
+								.attachEvaluation(source)) {
+							RowState row = new RowState(source, nativeExists.step.layout,
+									EmptyBindingSet.getInstance());
+							try {
+								boolean seeded = LmdbNativeAggregateCompiler.initializeRow(row,
+										EmptyBindingSet.getInstance(), source, nativeExists.step.layout);
+								softly.assertThat(seeded).as("the worker input is representable").isTrue();
+								if (seeded) {
+									softly.assertThat(worker.accept(row)).as("worker witness").isTrue();
+								}
+							} finally {
+								row.closeDecodedInputs();
+							}
+						}
+					}
+				} finally {
+					if (worker != null) {
+						worker.close();
+					}
+					source.executionContext().close();
+				}
+			}
+		}
+		softly.assertAll();
+	}
+
+	@Test
+	void publicValueExistsNativeDeclineCapturesOneShotValuesOnce() {
+		ValueFactory vf = SimpleValueFactory.getInstance();
+		AtomicInteger traversals = new AtomicInteger();
+		BindingSet row = new ListBindingSet(List.of("value"), vf.createIRI(EX, "oneShot"));
+		Iterable<BindingSet> oneShot = () -> {
+			if (traversals.incrementAndGet() != 1) {
+				throw new IllegalStateException("public EXISTS VALUES may only be traversed once");
+			}
+			return List.of(row).iterator();
+		};
+		BindingSetAssignment values = new BindingSetAssignment();
+		values.setBindingNames(Set.of("value"));
+		values.setBindingSets(oneShot);
+		LmdbNativeEvaluationStrategy strategy = new LmdbNativeEvaluationStrategy(
+				new SailDatasetTripleTermSource(vf, dataset), null, null, 0L, new EvaluationStatistics(), false);
+		QueryValueEvaluationStep prepared = strategy.precompile(new Exists(values),
+				new QueryEvaluationContext.Minimal((Dataset) null));
+		assertThat(prepared.evaluate(EmptyBindingSet.getInstance())).isEqualTo(BooleanLiteral.TRUE);
+		assertThat(prepared.evaluate(EmptyBindingSet.getInstance())).isEqualTo(BooleanLiteral.TRUE);
+		assertThat(traversals).hasValue(1);
+	}
+
+	@Test
+	void valuedNilContextsAndRepeatedSubjectsRetainTheirRdfTerms() {
+		ValueFactory vf = SimpleValueFactory.getInstance();
+		IRI predicate = vf.createIRI(EX, "valuedNilPredicate");
+		IRI object = vf.createIRI(EX, "valuedNilObject");
+		IRI ordinary = vf.createIRI(EX, "valuedNilSubject");
+		dataset.close();
+		try (SailRepositoryConnection connection = repository.getConnection()) {
+			connection.add(RDF4J.NIL, predicate, object);
+			connection.add(SESAME.NIL, predicate, object);
+			connection.add(ordinary, predicate, object);
+		}
+		dataset = NativeQuerySourceAccess.openExplicitDataset(store);
+		LmdbNativeEvaluationStrategy strategy = new LmdbNativeEvaluationStrategy(
+				new SailDatasetTripleTermSource(vf, dataset), null, null, 0L, new EvaluationStatistics(), false);
+		SoftAssertions softly = new SoftAssertions();
+		for (IRI nil : List.of(RDF4J.NIL, SESAME.NIL)) {
+			for (boolean repeated : List.of(false, true)) {
+				for (boolean nativeMode : List.of(false, true)) {
+					StatementPattern pattern = new StatementPattern(Scope.DEFAULT_CONTEXTS,
+							Var.of(repeated ? "g" : "s"), Var.of("p", predicate, true, true),
+							Var.of("o", object, true, true), Var.of("g", nil));
+					pattern.setRuntimeTelemetryEnabled(true);
+					QueryEvaluationContext context = new QueryEvaluationContext.Minimal((Dataset) null);
+					QueryEvaluationStep step = (nativeMode ? strategy : strategy.genericOnlyView())
+							.precompile(pattern, context);
+					List<BindingSet> actual = evaluateStep(step, EmptyBindingSet.getInstance());
+					List<BindingSet> expected = repeated
+							? List.of(new ListBindingSet(List.of("g"), nil))
+							: List.of(new ListBindingSet(List.of("s", "g"), RDF4J.NIL, nil),
+									new ListBindingSet(List.of("s", "g"), SESAME.NIL, nil),
+									new ListBindingSet(List.of("s", "g"), ordinary, nil));
+					String label = "nil=" + nil + ", repeated=" + repeated + ", native=" + nativeMode;
+					System.out.printf("valued-nil %s invocations=%d rows=%s%n", label,
+							pattern.getLongMetricActual("nativeInvocationsActual"), actual);
+					softly.assertThat(actual).as(label).containsExactlyInAnyOrderElementsOf(expected);
+					if (nativeMode) {
+						softly.assertThat(pattern.getLongMetricActual("nativeInvocationsActual"))
+								.as("actual native scan " + label)
+								.isPositive();
+					}
+				}
+			}
+		}
+		softly.assertAll();
+	}
+
+	@Test
+	void valuedNilContextIsVisibleAtItsProducerAndKeepsCallerCompatibility() {
+		ValueFactory vf = SimpleValueFactory.getInstance();
+		IRI subject = vf.createIRI(EX, "nilScopeSubject");
+		IRI predicate = vf.createIRI(EX, "nilScopePredicate");
+		IRI object = vf.createIRI(EX, "nilScopeObject");
+		Value anchor = vf.createLiteral("anchor");
+		dataset.close();
+		try (SailRepositoryConnection connection = repository.getConnection()) {
+			connection.add(subject, predicate, object);
+			connection.add(RDF4J.NIL, vf.createIRI(EX, "nilDictionary"), SESAME.NIL);
+			connection.add(SESAME.NIL, vf.createIRI(EX, "nilDictionary"), RDF4J.NIL);
+		}
+		dataset = NativeQuerySourceAccess.openExplicitDataset(store);
+		LmdbNativeEvaluationStrategy strategy = new LmdbNativeEvaluationStrategy(
+				new SailDatasetTripleTermSource(vf, dataset), null, null, 0L, new EvaluationStatistics(), false);
+		SoftAssertions softly = new SoftAssertions();
+		for (IRI nil : List.of(RDF4J.NIL, SESAME.NIL)) {
+			for (String shape : List.of("constant", "conflicting-caller", "filter", "optional")) {
+				for (boolean nativeMode : List.of(false, true)) {
+					Var graph = shape.equals("constant") ? Var.of("queryConstant", nil, true, true)
+							: Var.of("g", nil);
+					StatementPattern statement = new StatementPattern(Scope.DEFAULT_CONTEXTS, Var.of("s"),
+							Var.of("p", predicate, true, true), Var.of("o", object, true, true), graph);
+					TupleExpr expression = statement;
+					if (shape.equals("filter")) {
+						expression = new Filter(statement, new SameTerm(Var.of("g"), new ValueConstant(nil)));
+					} else if (shape.equals("optional")) {
+						BindingSetAssignment left = new BindingSetAssignment();
+						left.setBindingNames(Set.of("anchor"));
+						left.setBindingSets(List.of(new ListBindingSet(List.of("anchor"), anchor)));
+						expression = new LeftJoin(left, statement);
+					}
+					expression.setRuntimeTelemetryEnabled(true);
+					BindingSet input = shape.equals("conflicting-caller")
+							? new ListBindingSet(List.of("g"), nil.equals(RDF4J.NIL) ? SESAME.NIL : RDF4J.NIL)
+							: EmptyBindingSet.getInstance();
+					List<BindingSet> expected = switch (shape) {
+					case "constant" -> List.of(new ListBindingSet(List.of("s"), subject));
+					case "conflicting-caller" -> List.of();
+					case "filter" -> List.of(new ListBindingSet(List.of("s", "g"), subject, nil));
+					default -> List.of(new ListBindingSet(List.of("anchor", "s", "g"), anchor, subject, nil));
+					};
+					QueryEvaluationContext context = new QueryEvaluationContext.Minimal((Dataset) null);
+					QueryEvaluationStep step = (nativeMode ? strategy : strategy.genericOnlyView())
+							.precompile(expression, context);
+					List<BindingSet> actual = evaluateStep(step, input);
+					String label = "nil=" + nil + ", shape=" + shape + ", native=" + nativeMode;
+					long invocations = expression.getLongMetricActual("nativeInvocationsActual");
+					System.out.printf("nil-scope %s invocations=%d rows=%s%n", label, invocations, actual);
+					softly.assertThat(actual).as(label).containsExactlyElementsOf(expected);
+					if (nativeMode) {
+						softly.assertThat(invocations).as("actual native invocation " + label).isPositive();
+					}
+				}
+			}
+		}
+		softly.assertAll();
+	}
+
+	@Test
+	void valuedNilContextDoesNotRequireAStoredNilTerm() {
+		ValueFactory vf = SimpleValueFactory.getInstance();
+		IRI subject = vf.createIRI(EX, "unseededNilSubject");
+		IRI predicate = vf.createIRI(EX, "unseededNilPredicate");
+		IRI object = vf.createIRI(EX, "unseededNilObject");
+		Value anchor = vf.createLiteral("anchor");
+		dataset.close();
+		try (SailRepositoryConnection connection = repository.getConnection()) {
+			connection.add(subject, predicate, object);
+		}
+		dataset = NativeQuerySourceAccess.openExplicitDataset(store);
+		NativeLmdbQuerySource source = (NativeLmdbQuerySource) dataset;
+		assertThat(source.idOf(RDF4J.NIL)).as("RDF4J.NIL has no dictionary term")
+				.isEqualTo(NativeLmdbQuerySource.UNKNOWN_ID);
+		assertThat(source.idOf(SESAME.NIL)).as("SESAME.NIL has no dictionary term")
+				.isEqualTo(NativeLmdbQuerySource.UNKNOWN_ID);
+		LmdbNativeEvaluationStrategy strategy = new LmdbNativeEvaluationStrategy(
+				new SailDatasetTripleTermSource(vf, dataset), null, null, 0L, new EvaluationStatistics(), false);
+		SoftAssertions softly = new SoftAssertions();
+		for (IRI nil : List.of(RDF4J.NIL, SESAME.NIL)) {
+			for (String shape : List.of("leaf", "filter", "optional", "caller-match", "caller-conflict")) {
+				for (boolean nativeMode : List.of(false, true)) {
+					StatementPattern statement = new StatementPattern(Scope.DEFAULT_CONTEXTS, Var.of("s"),
+							Var.of("p", predicate, true, true), Var.of("o", object, true, true), Var.of("g", nil));
+					TupleExpr expression = statement;
+					if (shape.equals("filter")) {
+						expression = new Filter(statement, new SameTerm(Var.of("g"), new ValueConstant(nil)));
+					} else if (shape.equals("optional")) {
+						BindingSetAssignment left = new BindingSetAssignment();
+						left.setBindingNames(Set.of("anchor"));
+						left.setBindingSets(List.of(new ListBindingSet(List.of("anchor"), anchor)));
+						expression = new LeftJoin(left, statement);
+					}
+					expression.setRuntimeTelemetryEnabled(true);
+					BindingSet input = switch (shape) {
+					case "caller-match" -> new ListBindingSet(List.of("g"), nil);
+					case "caller-conflict" -> new ListBindingSet(List.of("g"),
+							nil.equals(RDF4J.NIL) ? SESAME.NIL : RDF4J.NIL);
+					default -> EmptyBindingSet.getInstance();
+					};
+					List<BindingSet> expected = switch (shape) {
+					case "caller-conflict" -> List.of();
+					case "optional" -> List.of(new ListBindingSet(List.of("anchor", "s", "g"), anchor, subject, nil));
+					default -> List.of(new ListBindingSet(List.of("s", "g"), subject, nil));
+					};
+					QueryEvaluationContext context = new QueryEvaluationContext.Minimal((Dataset) null);
+					QueryEvaluationStep step = (nativeMode ? strategy : strategy.genericOnlyView())
+							.precompile(expression, context);
+					List<BindingSet> actual = evaluateStep(step, input);
+					String label = "nil=" + nil + ", shape=" + shape + ", native=" + nativeMode;
+					long invocations = expression.getLongMetricActual("nativeInvocationsActual");
+					String selected = expression.getStringMetricActual(LmdbNativeExplain.EXECUTION_PATH);
+					System.out.printf("unseeded-nil %s invocations=%d selected=%s step=%s rows=%s%n", label,
+							invocations, selected, step.getClass().getSimpleName(), actual);
+					softly.assertThat(actual).as(label).containsExactlyElementsOf(expected);
+					if (nativeMode && !shape.startsWith("caller-")) {
+						softly.assertThat(invocations).as("actual native invocation " + label).isPositive();
+						softly.assertThat(selected)
+								.as("selected native route " + label)
+								.isNotBlank()
+								.doesNotContain("genericFallback");
+					}
+				}
+			}
+		}
+		assertThat(source.idOf(RDF4J.NIL)).isEqualTo(NativeLmdbQuerySource.UNKNOWN_ID);
+		assertThat(source.idOf(SESAME.NIL)).isEqualTo(NativeLmdbQuerySource.UNKNOWN_ID);
+		softly.assertAll();
+	}
+
+	@Test
+	void nativeStatementConsumesCertifiedProbeAndKeepsItsLogicalFrame() throws Exception {
+		ValueFactory vf = repository.getValueFactory();
+		StatementPattern pattern = new StatementPattern(Var.of("s"),
+				Var.of("p", vf.createIRI(EX, "link")), Var.of("o"));
+		pattern.setRuntimeTelemetryEnabled(true);
+		QueryEvaluationContext context = new QueryEvaluationContext.Minimal((Dataset) null);
+		AtomicInteger producerOpens = new AtomicInteger();
+		AtomicInteger boundOpens = new AtomicInteger();
+		AtomicInteger sourceCandidates = new AtomicInteger();
+		NativeLmdbQuerySource countedSource = countingNativeSource((NativeLmdbQuerySource) dataset, producerOpens,
+				boundOpens, sourceCandidates);
+		LmdbNativeEvaluationStrategy strategy = new LmdbNativeEvaluationStrategy(
+				new NativeWorkerTripleSource(countedSource, vf), null, null, 0L, new EvaluationStatistics(), false);
+		QueryEvaluationStep nativeStep = strategy.precompile(pattern, context);
+		QueryEvaluationStep genericStep = new DefaultEvaluationStrategy(new SailDatasetTripleTermSource(vf, dataset),
+				null).precompile(pattern.clone(), context);
+		IRI graph = vf.createIRI(EX, "suppliedGraph");
+		BindingSet semanticEntry = GraphFrameBindings.supply(new QueryBindingSet(), "g", graph);
+		BindingFrameBindings.Scope owner = new BindingFrameBindings.Scope();
+		try (BindingFrameReplay.Invocation invocation = new BindingFrameReplay.Invocation(DefaultCollectionFactory::new,
+				null)) {
+			invocation.root.registerLookupInputs(owner, "s"::equals);
+			for (int index : List.of(0, 2)) {
+				IRI selected = vf.createIRI(EX, "s" + index);
+				MapBindingSet probe = new MapBindingSet();
+				probe.addBinding("s", selected);
+				BindingSet framed = BindingFrameBindings.push(owner, semanticEntry, probe, context, invocation.root);
+				List<BindingSet> expected = evaluateStep(genericStep, framed);
+				assertThat(expected).hasSize(1);
+				List<BindingSet> actual = evaluateStep(nativeStep, framed);
+				System.out.printf("native-scoped-leaf selected=%s emitted=%d expected=%d nativeInvocations=%d "
+						+ "producerOpens=%d boundOpens=%d sourceCandidates=%d%n", selected, actual.size(),
+						expected.size(),
+						pattern.getLongMetricActual("nativeInvocationsActual"), producerOpens.get(), boundOpens.get(),
+						sourceCandidates.get());
+				assertThat(pattern.getLongMetricActual("nativeInvocationsActual")).isPositive();
+				assertThat(actual).containsExactlyElementsOf(expected);
+				assertThat(producerOpens).hasValue(index == 0 ? 1 : 2);
+				assertThat(boundOpens).hasValue(producerOpens.get());
+				assertThat(sourceCandidates).hasValue(producerOpens.get());
+				BindingSet row = actual.getFirst();
+				assertThat(GraphFrameBindings.isSupplied(row, "g")).isTrue();
+				assertThat(BindingFrameBindings.probeValue(row, "s")).isEqualTo(selected);
+			}
+			assertThat(BindingFrameBindings.supportsPhysicalLookups(nativeStep)).isTrue();
+			assertThat(evaluateStep(nativeStep, EmptyBindingSet.getInstance()))
+					.containsExactlyInAnyOrderElementsOf(evaluateStep(genericStep, EmptyBindingSet.getInstance()));
+		}
+	}
+
+	@Test
+	void nativeStatementDoesNotBorrowContextButKeepsLogicalAndSubjectInputs() {
+		ValueFactory vf = repository.getValueFactory();
+		IRI predicate = vf.createIRI(EX, "link");
+		IRI absentGraph = vf.createIRI(EX, "absentGraph");
+		StatementPattern pattern = new StatementPattern(StatementPattern.Scope.DEFAULT_CONTEXTS, Var.of("s"),
+				Var.of("p", predicate), Var.of("o"), Var.of("g"));
+		pattern.setRuntimeTelemetryEnabled(true);
+		QueryEvaluationContext context = new QueryEvaluationContext.Minimal((Dataset) null);
+		AtomicInteger producerOpens = new AtomicInteger();
+		AtomicInteger boundOpens = new AtomicInteger();
+		AtomicInteger sourceCandidates = new AtomicInteger();
+		NativeLmdbQuerySource countedSource = countingNativeSource((NativeLmdbQuerySource) dataset, producerOpens,
+				boundOpens, sourceCandidates);
+		LmdbNativeEvaluationStrategy strategy = new LmdbNativeEvaluationStrategy(
+				new NativeWorkerTripleSource(countedSource, vf), null, null, 0L, new EvaluationStatistics(), false);
+		QueryEvaluationStep nativeStep = strategy.precompile(pattern, context);
+		QueryEvaluationStep genericStep = new DefaultEvaluationStrategy(new SailDatasetTripleTermSource(vf, dataset),
+				null).precompile(pattern.clone(), context);
+		List<List<Value>> expected = List.of(
+				List.of(vf.createIRI(EX, "s0"), predicate, vf.createIRI(EX, "o0")),
+				List.of(vf.createIRI(EX, "s1"), predicate, vf.createIRI(EX, "o1")),
+				List.of(vf.createIRI(EX, "s2"), predicate, vf.createIRI(EX, "o2")));
+		assertThat(evaluateStep(genericStep).stream()
+				.map(row -> List.of(row.getValue("s"), row.getValue("p"), row.getValue("o"))))
+						.containsExactlyInAnyOrderElementsOf(expected);
+		BindingFrameBindings.Scope owner = new BindingFrameBindings.Scope();
+		try (BindingFrameReplay.Invocation invocation = new BindingFrameReplay.Invocation(DefaultCollectionFactory::new,
+				null)) {
+			invocation.root.registerLookupInputs(owner, ignored -> true);
+			for (int scenario = 0; scenario < 3; scenario++) {
+				MapBindingSet logical = new MapBindingSet();
+				MapBindingSet probe = new MapBindingSet();
+				if (scenario == 0) {
+					probe.addBinding("g", absentGraph);
+				} else if (scenario == 1) {
+					logical.addBinding("g", absentGraph);
+				} else {
+					probe.addBinding("s", vf.createIRI(EX, "s0"));
+				}
+				BindingSet framed = BindingFrameBindings.push(owner, logical, probe, context, invocation.root);
+				int previousBoundOpens = boundOpens.get();
+				int previousCandidates = sourceCandidates.get();
+				List<BindingSet> actual = evaluateStep(nativeStep, framed);
+				assertThat(pattern.getLongMetricActual("nativeInvocationsActual")).isPositive();
+				if (scenario == 0) {
+					assertThat(actual.stream()
+							.map(row -> List.of(row.getValue("s"), row.getValue("p"),
+									row.getValue("o")))).containsExactlyInAnyOrderElementsOf(expected);
+				} else if (scenario == 1) {
+					assertThat(actual).isEmpty();
+				} else {
+					assertThat(actual).hasSize(1);
+					assertThat(actual.getFirst().getValue("s")).isEqualTo(vf.createIRI(EX, "s0"));
+					assertThat(boundOpens).hasValue(previousBoundOpens + 1);
+					assertThat(sourceCandidates).hasValue(previousCandidates + 1);
+				}
+			}
+		}
+		StatementPattern contextOnly = new StatementPattern(StatementPattern.Scope.DEFAULT_CONTEXTS,
+				Var.of("s", vf.createIRI(EX, "s0")), Var.of("p", predicate),
+				Var.of("o", vf.createIRI(EX, "o0")), Var.of("g"));
+		contextOnly.setRuntimeTelemetryEnabled(true);
+		QueryEvaluationStep contextOnlyStep = strategy.precompile(contextOnly, context);
+		assertThat(BindingFrameBindings.unframedCapability(contextOnlyStep,
+				BindingFrameBindings.PhysicalLookupCapability.class)).isNotNull();
+		assertThat(BindingFrameBindings.supportsPhysicalLookups(contextOnlyStep)).isFalse();
+		assertThat(evaluateStep(contextOnlyStep)).hasSize(1);
+		assertThat(contextOnly.getLongMetricActual("nativeInvocationsActual")).isPositive();
+	}
+
+	@Test
+	void nativeStatementKeepsSuppliedGraphOriginWhenRestoringAuthority() {
+		ValueFactory vf = SimpleValueFactory.getInstance();
+		BNode graph = vf.createBNode("supplied-graph-authority");
+		IRI subject = vf.createIRI(EX, "graphAuthoritySubject");
+		IRI predicate = vf.createIRI(EX, "graphAuthorityPredicate");
+		IRI object = vf.createIRI(EX, "graphAuthorityObject");
+		dataset.close();
+		try (SailRepositoryConnection connection = repository.getConnection()) {
+			connection.add(subject, predicate, object, graph);
+		}
+		dataset = NativeQuerySourceAccess.openExplicitDataset(store);
+		SoftAssertions softly = new SoftAssertions();
+		for (boolean supplied : List.of(false, true)) {
+			Var graphVar = supplied ? Var.of("g") : Var.of("g", graph);
+			StatementPattern pattern = new StatementPattern(StatementPattern.Scope.NAMED_CONTEXTS,
+					Var.of("s", subject, true, true), Var.of("p", predicate, true, true),
+					Var.of("o", object, true, true), graphVar);
+			pattern.setRuntimeTelemetryEnabled(true);
+			QueryEvaluationContext context = new QueryEvaluationContext.Minimal((Dataset) null);
+			LmdbNativeEvaluationStrategy strategy = new LmdbNativeEvaluationStrategy(
+					new SailDatasetTripleTermSource(vf, dataset), null, null, 0L, new EvaluationStatistics(), false);
+			QueryEvaluationStep step = strategy.precompile(pattern, context);
+			BindingFrameBindings.Scope owner = new BindingFrameBindings.Scope();
+			try (BindingFrameReplay.Invocation invocation = new BindingFrameReplay.Invocation(
+					DefaultCollectionFactory::new, null)) {
+				MutableBindingSet logical = context.createBindingSet();
+				if (supplied) {
+					logical = GraphFrameBindings.supply(logical, "g", graph);
+				}
+				MapBindingSet probe = new MapBindingSet();
+				probe.addBinding("unused", vf.createIRI(EX, "unusedOwner"));
+				BindingSet input = BindingFrameBindings.push(owner, logical, probe, context, invocation.root);
+				softly.assertThat(GraphFrameBindings.isSupplied(input, "g"))
+						.as("input supplied=%s", supplied)
+						.isEqualTo(supplied);
+				List<BindingSet> rows = evaluateStep(step, input);
+				softly.assertThat(rows).as("supplied=%s", supplied).hasSize(1);
+				if (rows.size() == 1) {
+					BindingSet row = rows.getFirst();
+					softly.assertThat(row.getValue("g")).as("term supplied=%s", supplied).isSameAs(graph);
+					softly.assertThat(GraphFrameBindings.isSupplied(row, "g"))
+							.as("origin supplied=%s", supplied)
+							.isEqualTo(supplied);
+					softly.assertThat(BindingFrameBindings.from(row))
+							.as("owner supplied=%s", supplied)
+							.isSameAs(BindingFrameBindings.from(input));
+				}
+				softly.assertThat(pattern.getLongMetricActual("nativeInvocationsActual"))
+						.as("native invocation supplied=%s", supplied)
+						.isPositive();
+			}
+		}
+		softly.assertAll();
+	}
+
+	@Test
+	void nativeStatementDoesNotPromoteANestedRemoteProbe() {
+		ValueFactory vf = SimpleValueFactory.getInstance();
+		RemoteBNode remote = (RemoteBNode) RemoteBNode.newResponseScope(new BlankNodeAllocationScope(), vf,
+				new Object(), true).map(vf.createBNode("remote"));
+		BNode local = vf.createBNode(remote.getID());
+		IRI predicate = vf.createIRI(EX, "nestedProbe");
+		IRI subject = vf.createIRI(EX, "nestedSubject");
+		Value witnessed = vf.createTripleTerm(local, predicate, vf.createLiteral("quoted"));
+		Value probe = vf.createTripleTerm(remote, predicate, vf.createLiteral("quoted"));
+		dataset.close();
+		try (SailRepositoryConnection connection = repository.getConnection()) {
+			connection.add(subject, predicate, witnessed);
+		}
+		dataset = NativeQuerySourceAccess.openExplicitDataset(store);
+		StatementPattern pattern = new StatementPattern(Var.of("s", subject, true, true),
+				Var.of("p", predicate, true, true), Var.of("x"));
+		pattern.setRuntimeTelemetryEnabled(true);
+		QueryEvaluationContext context = new QueryEvaluationContext.Minimal((Dataset) null);
+		LmdbNativeEvaluationStrategy strategy = new LmdbNativeEvaluationStrategy(
+				new SailDatasetTripleTermSource(vf, dataset), null, null, 0L, new EvaluationStatistics(), false);
+		QueryEvaluationStep step = strategy.precompile(pattern, context);
+		BindingFrameBindings.Scope owner = new BindingFrameBindings.Scope();
+		try (BindingFrameReplay.Invocation invocation = new BindingFrameReplay.Invocation(DefaultCollectionFactory::new,
+				null)) {
+			invocation.root.registerLookupInputs(owner, "x"::equals);
+			MapBindingSet probes = new MapBindingSet();
+			probes.addBinding("x", probe);
+			BindingSet input = BindingFrameBindings.push(owner, EmptyBindingSet.getInstance(), probes, context,
+					invocation.root);
+			long nativeBefore = Math.max(0, pattern.getLongMetricActual("nativeInvocationsActual"));
+			List<BindingSet> actual = evaluateStep(step, input);
+			long nativeAfter = Math.max(0, pattern.getLongMetricActual("nativeInvocationsActual"));
+			String path = pattern.getStringMetricActual(LmdbNativeExplain.EXECUTION_PATH);
+			System.out.printf("nested-probe nativeBefore=%d nativeAfter=%d path=%s rows=%d%n", nativeBefore,
+					nativeAfter, path, actual.size());
+			assertThat(actual).hasSize(1);
+			Value output = actual.getFirst().getValue("x");
+			SoftAssertions softly = new SoftAssertions();
+			softly.assertThat(output).isEqualTo(witnessed);
+			softly.assertThat(((TripleTerm) output).getSubject()).isNotInstanceOf(RemoteBNode.class);
+			softly.assertThat(nativeAfter).isEqualTo(nativeBefore);
+			softly.assertThat(path).contains("genericFallback(unrepresentableEntry)");
+			softly.assertAll();
+		}
+	}
+
+	@Test
+	void nativeStatementKeepsFixedAndLogicalInputAuthorityWithoutProbe() {
+		ValueFactory vf = SimpleValueFactory.getInstance();
+		BNode fixed = vf.createBNode("fixed-direct-authority");
+		BNode caller = vf.createBNode(fixed.getID());
+		IRI predicate = vf.createIRI(EX, "fixedDirect");
+		IRI object = vf.createIRI(EX, "fixedObject");
+		dataset.close();
+		try (SailRepositoryConnection connection = repository.getConnection()) {
+			connection.add(fixed, predicate, object);
+		}
+		dataset = NativeQuerySourceAccess.openExplicitDataset(store);
+		StatementPattern pattern = new StatementPattern(Var.of("x", fixed), Var.of("p", predicate, true, true),
+				Var.of("o", object, true, true));
+		pattern.setRuntimeTelemetryEnabled(true);
+		QueryEvaluationContext context = new QueryEvaluationContext.Minimal((Dataset) null);
+		LmdbNativeEvaluationStrategy strategy = new LmdbNativeEvaluationStrategy(
+				new SailDatasetTripleTermSource(vf, dataset), null, null, 0L, new EvaluationStatistics(), false);
+		QueryEvaluationStep step = strategy.precompile(pattern, context);
+		MapBindingSet callerInput = new MapBindingSet();
+		callerInput.addBinding("x", caller);
+		SoftAssertions softly = new SoftAssertions();
+		for (boolean hasCaller : List.of(false, true)) {
+			long before = Math.max(0, pattern.getLongMetricActual("nativeInvocationsActual"));
+			List<BindingSet> actual = evaluateStep(step, hasCaller ? callerInput : EmptyBindingSet.getInstance());
+			long after = Math.max(0, pattern.getLongMetricActual("nativeInvocationsActual"));
+			String path = pattern.getStringMetricActual(LmdbNativeExplain.EXECUTION_PATH);
+			System.out.printf("direct-authority caller=%s nativeBefore=%d nativeAfter=%d path=%s rows=%d%n",
+					hasCaller, before, after, path, actual.size());
+			softly.assertThat(actual).as("caller %s", hasCaller).hasSize(1);
+			if (actual.size() == 1) {
+				softly.assertThat(actual.getFirst().getValue("x"))
+						.as("caller %s authority", hasCaller)
+						.isSameAs(hasCaller ? caller : fixed);
+			}
+			softly.assertThat(after).as("caller %s executes native", hasCaller).isGreaterThan(before);
+		}
+		softly.assertAll();
+	}
+
+	@Test
+	void nativeStatementDoesNotPromoteAnUnvaluedRemoteProbe() {
+		ValueFactory vf = SimpleValueFactory.getInstance();
+		RemoteBNode probe = (RemoteBNode) RemoteBNode.newResponseScope(new BlankNodeAllocationScope(), vf,
+				new Object(), true).map(vf.createBNode("remote"));
+		BNode witnessed = vf.createBNode(probe.getID());
+		IRI predicate = vf.createIRI(EX, "unvaluedProbe");
+		IRI object = vf.createIRI(EX, "unvaluedObject");
+		dataset.close();
+		try (SailRepositoryConnection connection = repository.getConnection()) {
+			connection.add(witnessed, predicate, object);
+		}
+		dataset = NativeQuerySourceAccess.openExplicitDataset(store);
+		StatementPattern pattern = new StatementPattern(Var.of("x"), Var.of("p", predicate, true, true),
+				Var.of("o", object, true, true));
+		pattern.setRuntimeTelemetryEnabled(true);
+		QueryEvaluationContext context = new QueryEvaluationContext.Minimal((Dataset) null);
+		LmdbNativeEvaluationStrategy strategy = new LmdbNativeEvaluationStrategy(
+				new SailDatasetTripleTermSource(vf, dataset), null, null, 0L, new EvaluationStatistics(), false);
+		QueryEvaluationStep step = strategy.precompile(pattern, context);
+		BindingFrameBindings.Scope owner = new BindingFrameBindings.Scope();
+		try (BindingFrameReplay.Invocation invocation = new BindingFrameReplay.Invocation(DefaultCollectionFactory::new,
+				null)) {
+			invocation.root.registerLookupInputs(owner, "x"::equals);
+			MapBindingSet probes = new MapBindingSet();
+			probes.addBinding("x", probe);
+			BindingSet input = BindingFrameBindings.push(owner, EmptyBindingSet.getInstance(), probes, context,
+					invocation.root);
+			long nativeBefore = Math.max(0, pattern.getLongMetricActual("nativeInvocationsActual"));
+			List<BindingSet> actual = evaluateStep(step, input);
+			long nativeAfter = Math.max(0, pattern.getLongMetricActual("nativeInvocationsActual"));
+			String path = pattern.getStringMetricActual(LmdbNativeExplain.EXECUTION_PATH);
+			System.out.printf("unvalued-probe nativeBefore=%d nativeAfter=%d path=%s rows=%d%n", nativeBefore,
+					nativeAfter, path, actual.size());
+			assertThat(actual).hasSize(1);
+			SoftAssertions softly = new SoftAssertions();
+			softly.assertThat(actual.getFirst().getValue("x"))
+					.isEqualTo(witnessed)
+					.isNotInstanceOf(RemoteBNode.class);
+			softly.assertThat(nativeAfter).isEqualTo(nativeBefore);
+			softly.assertThat(path).contains("genericFallback(unrepresentableEntry)");
+			softly.assertAll();
+		}
+	}
+
+	@Test
+	void nativeStatementKeepsFixedAuthorityAcrossCertifiedProbeAndFallback() {
+		ValueFactory vf = SimpleValueFactory.getInstance();
+		RemoteBNode remote = (RemoteBNode) RemoteBNode.newResponseScope(new BlankNodeAllocationScope(), vf,
+				new Object(), true).map(vf.createBNode("remote"));
+		BNode fixed = vf.createBNode(remote.getID());
+		IRI predicate = vf.createIRI(EX, "fixedProbe");
+		dataset.close();
+		try (SailRepositoryConnection connection = repository.getConnection()) {
+			connection.add(fixed, predicate, fixed);
+		}
+		dataset = NativeQuerySourceAccess.openExplicitDataset(store);
+		StatementPattern pattern = new StatementPattern(Var.of("x", fixed), Var.of("p", predicate, true, true),
+				Var.of("x"));
+		pattern.setRuntimeTelemetryEnabled(true);
+		QueryEvaluationContext context = new QueryEvaluationContext.Minimal((Dataset) null);
+		LmdbNativeEvaluationStrategy strategy = new LmdbNativeEvaluationStrategy(
+				new SailDatasetTripleTermSource(vf, dataset), null, null, 0L, new EvaluationStatistics(), false);
+		QueryEvaluationStep nativeStep = strategy.precompile(pattern, context);
+		BindingFrameBindings.Scope owner = new BindingFrameBindings.Scope();
+		SoftAssertions softly = new SoftAssertions();
+		try (BindingFrameReplay.Invocation invocation = new BindingFrameReplay.Invocation(DefaultCollectionFactory::new,
+				null)) {
+			invocation.root.registerLookupInputs(owner, "x"::equals);
+			for (Value probe : List.of(vf.createBNode(fixed.getID()), remote)) {
+				MapBindingSet probes = new MapBindingSet();
+				probes.addBinding("x", probe);
+				BindingSet input = BindingFrameBindings.push(owner, EmptyBindingSet.getInstance(), probes, context,
+						invocation.root);
+				long nativeBefore = Math.max(0, pattern.getLongMetricActual("nativeInvocationsActual"));
+				List<BindingSet> actual = evaluateStep(nativeStep, input);
+				long nativeAfter = Math.max(0, pattern.getLongMetricActual("nativeInvocationsActual"));
+				String path = pattern.getStringMetricActual(LmdbNativeExplain.EXECUTION_PATH);
+				System.out.printf("fixed-authority-probe type=%s nativeBefore=%d nativeAfter=%d path=%s rows=%d%n",
+						probe.getClass().getSimpleName(), nativeBefore, nativeAfter, path, actual.size());
+				if (probe instanceof RemoteBNode) {
+					softly.assertThat(nativeAfter)
+							.as("protected probe does not start a native invocation")
+							.isEqualTo(nativeBefore);
+					softly.assertThat(path)
+							.as("protected probe takes the generic leaf fallback")
+							.contains("genericFallback(unrepresentableEntry)");
+				} else {
+					softly.assertThat(nativeAfter)
+							.as("plain probe executes the native statement leaf")
+							.isGreaterThan(nativeBefore);
+				}
+				softly.assertThat(actual).as("probe %s", probe.getClass().getSimpleName()).hasSize(1);
+				if (actual.size() == 1) {
+					softly.assertThat(actual.getFirst().getValue("x"))
+							.as("probe %s", probe.getClass().getSimpleName())
+							.isSameAs(fixed)
+							.isNotInstanceOf(RemoteBNode.class);
+				}
+			}
+		}
+		assertThat(pattern.getLongMetricActual("nativeInvocationsActual")).isPositive();
+		softly.assertAll();
+	}
+
+	@ParameterizedTest(name = "telemetry={0}")
+	@ValueSource(booleans = { false, true })
+	void composedNativeStatementUsesItsCertifiedOwnerLookup(boolean telemetry) {
+		ValueFactory vf = repository.getValueFactory();
+		AtomicInteger opens = new AtomicInteger();
+		AtomicInteger bound = new AtomicInteger();
+		AtomicInteger candidates = new AtomicInteger();
+		NativeLmdbQuerySource counted = countingNativeSource((NativeLmdbQuerySource) dataset, opens, bound, candidates);
+		LmdbNativeEvaluationStrategy strategy = new LmdbNativeEvaluationStrategy(
+				new NativeWorkerTripleSource(counted, vf), null, null, 0L, new EvaluationStatistics(), false);
+		strategy.setTrackResultSize(telemetry);
+		strategy.setTrackTime(telemetry);
+		QueryEvaluationContext context = new QueryEvaluationContext.Minimal((Dataset) null);
+		IRI ownerValue = vf.createIRI(EX, "owner");
+		IRI subject = vf.createIRI(EX, "s0");
+		MapBindingSet input = new MapBindingSet();
+		input.addBinding("a", ownerValue);
+		input.addBinding("s", subject);
+		BindingSetAssignment left = new BindingSetAssignment();
+		left.setBindingSets(List.of(input, input, input));
+		StatementPattern pattern = new StatementPattern(Var.of("s"),
+				Var.of("p", vf.createIRI(EX, "link")), Var.of("o"));
+		pattern.setRuntimeTelemetryEnabled(true);
+		TupleExpr right = new Filter(new Filter(pattern, new Bound(Var.of("a"))), new Bound(Var.of("a")));
+		Join owner = new Join(left, right);
+		Predicate<String> proof = QueryEvaluationUtility.preparedScopedLookupInputs(owner);
+		assertThat(proof).isNotNull();
+		assertThat(proof.test("s")).as("the owner certifies the physical statement subject").isTrue();
+		QueryEvaluationStep prepared = strategy.genericPrecompile(owner, context);
+		MapBindingSet expected = new MapBindingSet();
+		expected.addBinding("a", ownerValue);
+		expected.addBinding("s", subject);
+		expected.addBinding("p", vf.createIRI(EX, "link"));
+		expected.addBinding("o", vf.createIRI(EX, "o0"));
+		List<BindingSet> rows = evaluateStep(prepared);
+		System.out.printf("native-composed-owner telemetry=%s rows=%d nativeInvocations=%d producerOpens=%d "
+				+ "boundOpens=%d sourceCandidates=%d%n", telemetry, rows.size(),
+				pattern.getLongMetricActual("nativeInvocationsActual"), opens.get(), bound.get(), candidates.get());
+		assertThat(rows).containsExactlyInAnyOrder(expected, expected, expected);
+		assertThat(pattern.getLongMetricActual("nativeInvocationsActual")).isPositive();
+		assertThat(opens).as("each native lookup opens with the certified subject").hasValue(3);
+		assertThat(bound).hasValue(3);
+		assertThat(candidates).hasValue(3);
+	}
+
+	@Test
+	void assuredNearerOwnerRestrictsTheNativeProducer() {
+		ValueFactory vf = repository.getValueFactory();
+		IRI link = vf.createIRI(EX, "link");
+		IRI middle = vf.createIRI(EX, "middle");
+		IRI end = vf.createIRI(EX, "end");
+		IRI target = vf.createIRI(EX, "target");
+		dataset.close();
+		try (SailRepositoryConnection connection = repository.getConnection()) {
+			for (int i = 0; i < 8; i++) {
+				if (i >= 3) {
+					connection.add(vf.createIRI(EX, "s" + i), link, vf.createIRI(EX, "o" + i));
+				}
+				connection.add(vf.createIRI(EX, "o" + i), middle, vf.createIRI(EX, "d" + i));
+				connection.add(vf.createIRI(EX, "d" + i), end, target);
+			}
+		}
+		dataset = NativeQuerySourceAccess.openExplicitDataset(store);
+		NativeLmdbQuerySource source = (NativeLmdbQuerySource) dataset;
+		AtomicInteger opens = new AtomicInteger();
+		AtomicInteger bound = new AtomicInteger();
+		AtomicInteger candidates = new AtomicInteger();
+		NativeLmdbQuerySource counted = countingNativeSource(source, opens, bound, candidates, source.idOf(link));
+		LmdbNativeEvaluationStrategy strategy = new LmdbNativeEvaluationStrategy(
+				new NativeWorkerTripleSource(counted, vf), null, null, 0L, new EvaluationStatistics(), false);
+		QueryEvaluationContext context = new QueryEvaluationContext.Minimal((Dataset) null);
+		MapBindingSet input = new MapBindingSet();
+		input.addBinding("a", target);
+		input.addBinding("b", vf.createIRI(EX, "s0"));
+		BindingSetAssignment left = new BindingSetAssignment();
+		left.setBindingSets(List.of(input, input, input));
+		StatementPattern first = new StatementPattern(Var.of("b"), Var.of("p", link), Var.of("c"));
+		first.setRuntimeTelemetryEnabled(true);
+		Filter condition = new Filter(new StatementPattern(Var.of("c"), Var.of("q", middle), Var.of("d")),
+				new And(new Bound(Var.of("a")), new Bound(Var.of("b"))));
+		StatementPattern closing = new StatementPattern(Var.of("d"), Var.of("r", end), Var.of("a"));
+		Join outer = new Join(left, new Join(first, new Join(condition, closing)));
+		Predicate<String> proof = QueryEvaluationUtility.preparedScopedLookupInputs(outer);
+		QueryEvaluationStep prepared = strategy.genericPrecompile(outer, context);
+		List<BindingSet> rows = evaluateStep(prepared);
+		MapBindingSet expected = new MapBindingSet();
+		expected.addBinding("a", target);
+		expected.addBinding("b", vf.createIRI(EX, "s0"));
+		expected.addBinding("c", vf.createIRI(EX, "o0"));
+		expected.addBinding("d", vf.createIRI(EX, "d0"));
+		expected.addBinding("p", link);
+		expected.addBinding("q", middle);
+		expected.addBinding("r", end);
+		System.out.printf("native-assured-near rows=%d cert=%s nativeInvocations=%d producerOpens=%d "
+				+ "boundOpens=%d sourceCandidates=%d%n", rows.size(), proof != null && proof.test("b"),
+				first.getLongMetricActual("nativeInvocationsActual"), opens.get(), bound.get(), candidates.get());
+		assertThat(rows).containsExactlyInAnyOrder(expected, expected, expected);
+		assertThat(first.getLongMetricActual("nativeInvocationsActual")).isPositive();
+		assertThat(opens).as("the certified native producer opens once for each duplicate input").hasValue(3);
+		assertThat(bound).hasValue(3);
+		assertThat(candidates).hasValue(3);
+		assertThat(proof).isNotNull();
+		assertThat(proof.test("b")).isTrue();
+	}
+
+	@Test
+	void subqueryOwnerFilterRemainsConservative() {
+		ValueFactory vf = repository.getValueFactory();
+		IRI p = vf.createIRI(EX, "subquery-owner-p");
+		IRI q = vf.createIRI(EX, "subquery-owner-q");
+		IRI r = vf.createIRI(EX, "subquery-owner-r");
+		IRI a = vf.createIRI(EX, "subquery-owner-a");
+		IRI b = vf.createIRI(EX, "subquery-owner-b");
+		IRI c = vf.createIRI(EX, "subquery-owner-c");
+		dataset.close();
+		try (SailRepositoryConnection connection = repository.getConnection()) {
+			connection.add(a, p, b);
+			connection.add(b, q, c);
+			connection.add(c, r, a);
+		}
+		dataset = NativeQuerySourceAccess.openExplicitDataset(store);
+		StatementPattern first = new StatementPattern(Var.of("a"), Var.of("p", p), Var.of("b"));
+		Filter owned = new Filter(new StatementPattern(Var.of("b"), Var.of("q", q), Var.of("c")),
+				new Compare(Var.of("a"), Var.of("c"), CompareOp.NE));
+		StatementPattern closing = new StatementPattern(Var.of("c"), Var.of("r", r), Var.of("a"));
+		Projection host = new Projection(new Join(first, new Join(owned, closing)),
+				new ProjectionElemList(new ProjectionElem("a"), new ProjectionElem("b"), new ProjectionElem("c")),
+				true);
+		QueryEvaluationContext context = new QueryEvaluationContext.Minimal((Dataset) null);
+		LmdbNativeEvaluationStrategy strategy = new LmdbNativeEvaluationStrategy(
+				new SailDatasetTripleTermSource(vf, dataset), null, null, 0L, new EvaluationStatistics(), false);
+		MapBindingSet expected = new MapBindingSet();
+		expected.addBinding("a", a);
+		expected.addBinding("b", b);
+		expected.addBinding("c", c);
+		assertThat(evaluateStep(strategy.genericOnlyView().precompile(host.clone(), context)))
+				.containsExactly(expected);
+		assertThat(evaluateStep(strategy.precompile(host, context))).containsExactly(expected);
+		assertThat(LmdbNativeAggregateCompiler.tryCompile(host, context, strategy, (NativeLmdbQuerySource) dataset))
+				.as("a private subquery does not receive the closed-region admission proof")
+				.isNull();
+	}
+
+	@Test
+	void nestedOwnerFiltersPreserveTheCompleteCorrelatedSet() {
+		ValueFactory vf = repository.getValueFactory();
+		IRI p = vf.createIRI(EX, "nested-owner-p");
+		IRI t = vf.createIRI(EX, "nested-owner-t");
+		IRI q = vf.createIRI(EX, "nested-owner-q");
+		IRI r = vf.createIRI(EX, "nested-owner-r");
+		IRI a = vf.createIRI(EX, "nested-owner-a");
+		dataset.close();
+		try (SailRepositoryConnection connection = repository.getConnection()) {
+			for (int i = 0; i < 2; i++) {
+				IRI b = vf.createIRI(EX, "nested-owner-b" + i);
+				IRI c = vf.createIRI(EX, "nested-owner-c" + i);
+				IRI d = vf.createIRI(EX, "nested-owner-d" + i);
+				connection.add(a, p, b);
+				connection.add(d, t, b);
+				connection.add(b, q, c);
+				connection.add(c, r, a);
+			}
+		}
+		dataset = NativeQuerySourceAccess.openExplicitDataset(store);
+		StatementPattern first = new StatementPattern(Var.of("a"), Var.of("p", p), Var.of("b"));
+		StatementPattern second = new StatementPattern(Var.of("d"), Var.of("t", t), Var.of("b"));
+		Filter owned = new Filter(new StatementPattern(Var.of("b"), Var.of("q", q), Var.of("c")),
+				new And(new Compare(Var.of("a"), Var.of("c"), CompareOp.NE),
+						new Compare(Var.of("d"), Var.of("c"), CompareOp.NE)));
+		StatementPattern closing = new StatementPattern(Var.of("c"), Var.of("r", r), Var.of("a"));
+		Join owner = new Join(first, new Join(second, new Join(owned, closing)));
+		assertThat(QueryEvaluationUtility.requiresScopedFilterInput(owner)).isTrue();
+		Projection host = new Projection(owner, new ProjectionElemList(new ProjectionElem("a"),
+				new ProjectionElem("b"), new ProjectionElem("c"), new ProjectionElem("d")), false);
+		host.setRuntimeTelemetryEnabled(true);
+		QueryEvaluationContext context = new QueryEvaluationContext.Minimal((Dataset) null);
+		LmdbNativeEvaluationStrategy strategy = new LmdbNativeEvaluationStrategy(
+				new SailDatasetTripleTermSource(vf, dataset), null, null, 0L, new EvaluationStatistics(), false);
+		QueryEvaluationStep generic = strategy.genericOnlyView().precompile(host.clone(), context);
+		QueryEvaluationStep nativeStep = LmdbNativeAggregateCompiler.tryCompile(host, context, strategy,
+				(NativeLmdbQuerySource) dataset);
+		QueryEvaluationStep executed = nativeStep == null ? strategy.precompile(host, context) : nativeStep;
+		List<BindingSet> expected = new ArrayList<>();
+		for (int i = 0; i < 2; i++) {
+			MapBindingSet row = new MapBindingSet();
+			row.addBinding("a", a);
+			row.addBinding("b", vf.createIRI(EX, "nested-owner-b" + i));
+			row.addBinding("c", vf.createIRI(EX, "nested-owner-c" + i));
+			row.addBinding("d", vf.createIRI(EX, "nested-owner-d" + i));
+			expected.add(row);
+		}
+		assertThat(evaluateStep(generic)).containsExactlyInAnyOrderElementsOf(expected);
+		assertThat(evaluateStep(executed)).containsExactlyInAnyOrderElementsOf(expected);
+		MapBindingSet supplied = new MapBindingSet();
+		supplied.addBinding("a", a);
+		assertThat(evaluateStep(generic, supplied)).containsExactlyInAnyOrderElementsOf(expected);
+		assertThat(evaluateStep(executed, supplied)).containsExactlyInAnyOrderElementsOf(expected);
+		supplied.setBinding("a", vf.createIRI(EX, "nested-owner-conflict"));
+		assertThat(evaluateStep(generic, supplied)).isEmpty();
+		assertThat(evaluateStep(executed, supplied)).isEmpty();
+		System.out.printf("nested-owner-native-plan=%s rows=%d%n", nativeStep == null ? "DECLINED"
+				: nativeStep instanceof LmdbNativePhysicalPlan physical ? physical.nativePhysicalPlan()
+						: nativeStep.getClass().getName(),
+				expected.size());
+		assertThat(nativeStep).as("both nested owner inputs are certified together")
+				.isInstanceOf(LmdbNativePhysicalPlan.class);
+		String plan = ((LmdbNativePhysicalPlan) nativeStep).nativePhysicalPlan();
+		assertThat(plan).doesNotContain("GenericEvalPlan", "NativeSubquery(");
+		assertThat(host.getLongMetricActual("nativeInvocationsActual")).isPositive();
+	}
+
+	@Test
+	void retainedFilterCannotSeeAnAssuredOwnerName() {
+		ValueFactory vf = repository.getValueFactory();
+		IRI p = vf.createIRI(EX, "hidden-owner-p");
+		IRI q = vf.createIRI(EX, "hidden-owner-q");
+		IRI r = vf.createIRI(EX, "hidden-owner-r");
+		IRI a = vf.createIRI(EX, "hidden-owner-a");
+		IRI b = vf.createIRI(EX, "hidden-owner-b");
+		IRI c = vf.createIRI(EX, "hidden-owner-c");
+		dataset.close();
+		try (SailRepositoryConnection connection = repository.getConnection()) {
+			connection.add(a, p, b);
+			connection.add(b, q, c);
+			connection.add(c, r, a);
+		}
+		dataset = NativeQuerySourceAccess.openExplicitDataset(store);
+		StatementPattern first = new StatementPattern(Var.of("a"), Var.of("p", p), Var.of("b"));
+		Filter hidden = new Filter(new StatementPattern(Var.of("b"), Var.of("q", q), Var.of("c")),
+				new Bound(Var.of("a")));
+		hidden.setConditionBindingScope(ConditionBindingScope.retain(Set.of("b", "c")));
+		StatementPattern closing = new StatementPattern(Var.of("c"), Var.of("r", r), Var.of("a"));
+		Projection host = new Projection(new Join(first, new Join(hidden, closing)),
+				new ProjectionElemList(new ProjectionElem("a"), new ProjectionElem("b"), new ProjectionElem("c")));
+		QueryEvaluationContext context = new QueryEvaluationContext.Minimal((Dataset) null);
+		LmdbNativeEvaluationStrategy strategy = new LmdbNativeEvaluationStrategy(
+				new SailDatasetTripleTermSource(vf, dataset), null, null, 0L, new EvaluationStatistics(), false);
+		assertThat(evaluateStep(strategy.genericOnlyView().precompile(host.clone(), context))).isEmpty();
+		assertThat(evaluateStep(strategy.precompile(host, context))).isEmpty();
+	}
+
+	@Test
+	void closedLocallyBoundFilterFragmentRemainsNative() {
+		ValueFactory vf = repository.getValueFactory();
+		IRI p = vf.createIRI(EX, "local-fragment-p");
+		IRI q = vf.createIRI(EX, "local-fragment-q");
+		IRI r = vf.createIRI(EX, "local-fragment-r");
+		IRI a = vf.createIRI(EX, "local-fragment-a");
+		dataset.close();
+		try (SailRepositoryConnection connection = repository.getConnection()) {
+			for (int i = 0; i < 2; i++) {
+				IRI b = vf.createIRI(EX, "local-fragment-b" + i);
+				IRI c = vf.createIRI(EX, "local-fragment-c" + i);
+				connection.add(a, p, b);
+				connection.add(b, q, c);
+				connection.add(c, r, a);
+			}
+		}
+		dataset = NativeQuerySourceAccess.openExplicitDataset(store);
+		StatementPattern first = new StatementPattern(Var.of("a"), Var.of("p", p), Var.of("b"));
+		Filter local = new Filter(new StatementPattern(Var.of("b"), Var.of("q", q), Var.of("c")),
+				new Compare(Var.of("b"), Var.of("c"), CompareOp.NE));
+		StatementPattern closing = new StatementPattern(Var.of("c"), Var.of("r", r), Var.of("a"));
+		Join join = new Join(first, new Join(local, closing));
+		Projection host = new Projection(join,
+				new ProjectionElemList(new ProjectionElem("a"), new ProjectionElem("b"), new ProjectionElem("c")));
+		host.setRuntimeTelemetryEnabled(true);
+		QueryEvaluationContext context = new QueryEvaluationContext.Minimal((Dataset) null);
+		LmdbNativeEvaluationStrategy strategy = new LmdbNativeEvaluationStrategy(
+				new SailDatasetTripleTermSource(vf, dataset), null, null, 0L, new EvaluationStatistics(), false);
+		QueryEvaluationStep nativeStep = LmdbNativeAggregateCompiler.tryCompile(host, context, strategy,
+				(NativeLmdbQuerySource) dataset);
+		assertThat(nativeStep).isInstanceOf(LmdbNativePhysicalPlan.class);
+		List<BindingSet> expected = new ArrayList<>();
+		for (int i = 0; i < 2; i++) {
+			MapBindingSet row = new MapBindingSet();
+			row.addBinding("a", a);
+			row.addBinding("b", vf.createIRI(EX, "local-fragment-b" + i));
+			row.addBinding("c", vf.createIRI(EX, "local-fragment-c" + i));
+			expected.add(row);
+		}
+		assertThat(evaluateStep(nativeStep)).containsExactlyInAnyOrderElementsOf(expected);
+		assertThat(host.getLongMetricActual("nativeInvocationsActual")).isPositive();
+		String plan = ((LmdbNativePhysicalPlan) nativeStep).nativePhysicalPlan();
+		System.out.printf("closed-local-native-plan=%s rows=%d nativeInvocations=%d%n", plan, expected.size(),
+				host.getLongMetricActual("nativeInvocationsActual"));
+		assertThat(plan).doesNotContain("GenericEvalPlan");
+	}
+
+	@Test
+	void closedOwnerFilterFragmentCanRemainNative() {
+		ValueFactory vf = repository.getValueFactory();
+		IRI p = vf.createIRI(EX, "fragment-p");
+		IRI q = vf.createIRI(EX, "fragment-q");
+		IRI r = vf.createIRI(EX, "fragment-r");
+		IRI a = vf.createIRI(EX, "fragment-a");
+		dataset.close();
+		try (SailRepositoryConnection connection = repository.getConnection()) {
+			for (int i = 0; i < 2; i++) {
+				IRI b = vf.createIRI(EX, "fragment-b" + i);
+				IRI c = vf.createIRI(EX, "fragment-c" + i);
+				connection.add(a, p, b);
+				connection.add(b, q, c);
+				connection.add(c, r, a);
+			}
+		}
+		dataset = NativeQuerySourceAccess.openExplicitDataset(store);
+		StatementPattern first = new StatementPattern(Var.of("a"), Var.of("p", p), Var.of("b"));
+		Filter owned = new Filter(new StatementPattern(Var.of("b"), Var.of("q", q), Var.of("c")),
+				new Compare(Var.of("a"), Var.of("c"), CompareOp.NE));
+		StatementPattern closing = new StatementPattern(Var.of("c"), Var.of("r", r), Var.of("a"));
+		Join owner = new Join(first, new Join(owned, closing));
+		assertThat(QueryEvaluationUtility.requiresScopedFilterInput(owner)).isTrue();
+		assertThat(QueryEvaluationUtility.permitsBindingInjection(owner.getRightArg(), first.getBindingNames()))
+				.as("ordinary context-free injection remains rejected for the owner read")
+				.isFalse();
+		Projection host = new Projection(owner,
+				new ProjectionElemList(new ProjectionElem("a"), new ProjectionElem("b"), new ProjectionElem("c")),
+				false);
+		host.setRuntimeTelemetryEnabled(true);
+		QueryEvaluationContext context = new QueryEvaluationContext.Minimal((Dataset) null);
+		LmdbNativeEvaluationStrategy strategy = new LmdbNativeEvaluationStrategy(
+				new SailDatasetTripleTermSource(vf, dataset), null, null, 0L, new EvaluationStatistics(), false);
+		QueryEvaluationStep generic = strategy.genericOnlyView().precompile(host.clone(), context);
+		QueryEvaluationStep nativeStep = LmdbNativeAggregateCompiler.tryCompile(host, context, strategy,
+				(NativeLmdbQuerySource) dataset);
+		List<BindingSet> expected = new ArrayList<>();
+		for (int i = 0; i < 2; i++) {
+			MapBindingSet row = new MapBindingSet();
+			row.addBinding("a", a);
+			row.addBinding("b", vf.createIRI(EX, "fragment-b" + i));
+			row.addBinding("c", vf.createIRI(EX, "fragment-c" + i));
+			expected.add(row);
+		}
+		assertThat(evaluateStep(generic)).containsExactlyInAnyOrderElementsOf(expected);
+		QueryEvaluationStep executed = nativeStep == null ? strategy.precompile(host, context) : nativeStep;
+		assertThat(evaluateStep(executed)).containsExactlyInAnyOrderElementsOf(expected);
+		System.out.printf("closed-owner-native-plan=%s rows=%d%n", nativeStep == null ? "DECLINED"
+				: nativeStep instanceof LmdbNativePhysicalPlan physical ? physical.nativePhysicalPlan()
+						: nativeStep.getClass().getName(),
+				expected.size());
+		assertThat(nativeStep).as("closed, repeatable owner-local FILTER fragment must be admitted")
+				.isInstanceOf(LmdbNativePhysicalPlan.class);
+		assertThat(host.getLongMetricActual("nativeInvocationsActual")).isPositive();
+		String plan = ((LmdbNativePhysicalPlan) nativeStep).nativePhysicalPlan();
+		System.out.printf("closed-owner-native-plan=%s rows=%d nativeInvocations=%d%n", plan, expected.size(),
+				host.getLongMetricActual("nativeInvocationsActual"));
+		assertThat(plan).as("closed, repeatable owner-local FILTER fragment remains native")
+				.doesNotContain("GenericEvalPlan");
+		assertThat(plan).as("the certified right operand stays correlated")
+				.doesNotContain("NativeSubquery(");
+	}
+
+	@Test
+	void defaultContextOwnerIsNotBound() {
+		assertContextInput(false, false, ContextCondition.BOUND, false);
+	}
+
+	@Test
+	void defaultContextLocalInputIsNotBound() {
+		assertContextInput(true, false, ContextCondition.BOUND, false);
+	}
+
+	@Test
+	void defaultContextOwnerUsesCoalesceFallback() {
+		assertContextInput(false, false, ContextCondition.COALESCE, false);
+	}
+
+	@Test
+	void defaultContextNameCanBeBoundByLaterPattern() {
+		assertContextInput(false, false, ContextCondition.NOT_BOUND, true);
+	}
+
+	@Test
+	void namedContextOwnerIsBound() {
+		assertContextInput(false, true, ContextCondition.BOUND, false);
+	}
+
+	@Test
+	void namedContextLocalInputIsBound() {
+		assertContextInput(true, true, ContextCondition.BOUND, false);
+	}
+
+	@Test
+	void fixedNamedContextOwnerIsBound() {
+		assertContextInput(false, true, ContextCondition.BOUND, false, ContextRestriction.NAMED_GRAPH);
+	}
+
+	@Test
+	void fixedRdf4jNilNamedContextIsNotBound() {
+		assertContextInput(false, true, ContextCondition.BOUND, false, ContextRestriction.RDF4J_NIL);
+	}
+
+	@Test
+	void fixedSesameNilNamedContextIsNotBound() {
+		assertContextInput(false, true, ContextCondition.BOUND, false, ContextRestriction.SESAME_NIL);
+	}
+
+	@Test
+	void fixedMixedNamedContextsPreserveBoundRow() {
+		assertContextInput(false, true, ContextCondition.BOUND, false, ContextRestriction.MIXED_RDF4J_NIL);
+		assertContextInput(false, true, ContextCondition.BOUND, false, ContextRestriction.MIXED_SESAME_NIL);
+	}
+
+	private enum ContextCondition {
+		BOUND,
+		NOT_BOUND,
+		COALESCE
+	}
+
+	private enum ContextRestriction {
+		UNRESTRICTED,
+		NAMED_GRAPH,
+		RDF4J_NIL,
+		SESAME_NIL,
+		MIXED_RDF4J_NIL,
+		MIXED_SESAME_NIL
+	}
+
+	private void assertContextInput(boolean local, boolean named, ContextCondition kind, boolean reuse) {
+		assertContextInput(local, named, kind, reuse, ContextRestriction.UNRESTRICTED);
+	}
+
+	private void assertContextInput(boolean local, boolean named, ContextCondition kind, boolean reuse,
+			ContextRestriction restriction) {
+		ValueFactory vf = repository.getValueFactory();
+		IRI p = vf.createIRI(EX, "context-proof-p");
+		IRI q = vf.createIRI(EX, "context-proof-q");
+		IRI r = vf.createIRI(EX, "context-proof-r");
+		IRI u = vf.createIRI(EX, "context-proof-u");
+		IRI a = vf.createIRI(EX, "context-proof-a");
+		IRI b = vf.createIRI(EX, "context-proof-b");
+		IRI c = vf.createIRI(EX, "context-proof-c");
+		IRI graph = vf.createIRI(EX, "context-proof-graph");
+		IRI later = vf.createIRI(EX, "context-proof-later");
+		IRI result = vf.createIRI(EX, "context-proof-result");
+		boolean hasRdfContext = named && restriction != ContextRestriction.RDF4J_NIL
+				&& restriction != ContextRestriction.SESAME_NIL;
+		boolean mixed = restriction == ContextRestriction.MIXED_RDF4J_NIL
+				|| restriction == ContextRestriction.MIXED_SESAME_NIL;
+		dataset.close();
+		try (SailRepositoryConnection connection = repository.getConnection()) {
+			if (hasRdfContext && !local) {
+				connection.add(a, p, b, graph);
+				if (mixed) {
+					connection.add(a, p, b);
+				}
+			} else {
+				connection.add(a, p, b);
+			}
+			if (hasRdfContext && local) {
+				connection.add(b, q, c, graph);
+				if (mixed) {
+					connection.add(b, q, c);
+				}
+			} else {
+				connection.add(b, q, c);
+			}
+			connection.add(c, r, a);
+			connection.add(later, u, result);
+		}
+		dataset = NativeQuerySourceAccess.openExplicitDataset(store);
+		Scope scope = named ? Scope.NAMED_CONTEXTS : Scope.DEFAULT_CONTEXTS;
+		StatementPattern first = local ? new StatementPattern(Var.of("a"), Var.of("p", p), Var.of("b"))
+				: new StatementPattern(scope, Var.of("a"), Var.of("p", p), Var.of("b"), Var.of("g"));
+		StatementPattern argument = local
+				? new StatementPattern(scope, Var.of("b"), Var.of("q", q), Var.of("c"), Var.of("g"))
+				: new StatementPattern(Var.of("b"), Var.of("q", q), Var.of("c"));
+		ValueExpr condition = switch (kind) {
+		case BOUND -> new Bound(Var.of("g"));
+		case NOT_BOUND -> new Not(new Bound(Var.of("g")));
+		case COALESCE -> new Compare(new Coalesce(List.of(Var.of("g"), new ValueConstant(BooleanLiteral.FALSE))),
+				new ValueConstant(BooleanLiteral.FALSE), CompareOp.EQ);
+		};
+		if (local) {
+			condition = new And(new Bound(Var.of("a")), condition);
+		}
+		Filter filter = new Filter(argument, condition);
+		TupleExpr closing = new StatementPattern(Var.of("c"), Var.of("r", r), Var.of("a"));
+		if (reuse) {
+			closing = new Join(closing, new StatementPattern(Var.of("g"), Var.of("u", u), Var.of("z")));
+		}
+		Join owner = new Join(first, new Join(filter, closing));
+		ProjectionElemList projection = new ProjectionElemList(new ProjectionElem("a"),
+				new ProjectionElem("b"), new ProjectionElem("c"));
+		if (reuse) {
+			projection.addElement(new ProjectionElem("g"));
+			projection.addElement(new ProjectionElem("z"));
+		}
+		Projection host = new Projection(owner, projection, false);
+		host.setRuntimeTelemetryEnabled(true);
+		Dataset readDataset = null;
+		if (restriction != ContextRestriction.UNRESTRICTED) {
+			SimpleDataset selected = new SimpleDataset();
+			selected.addDefaultGraph(RDF4J.NIL);
+			selected.addNamedGraph(switch (restriction) {
+			case NAMED_GRAPH, MIXED_RDF4J_NIL, MIXED_SESAME_NIL -> graph;
+			case RDF4J_NIL -> RDF4J.NIL;
+			case SESAME_NIL -> SESAME.NIL;
+			case UNRESTRICTED -> throw new IllegalStateException();
+			});
+			if (mixed) {
+				selected.addNamedGraph(restriction == ContextRestriction.MIXED_RDF4J_NIL ? RDF4J.NIL : SESAME.NIL);
+			}
+			readDataset = selected;
+		}
+		QueryEvaluationContext context = new QueryEvaluationContext.Minimal(readDataset);
+		LmdbNativeEvaluationStrategy strategy = new LmdbNativeEvaluationStrategy(
+				new SailDatasetTripleTermSource(vf, dataset), readDataset, null, 0L, new EvaluationStatistics(), false);
+		List<BindingSet> expected = new ArrayList<>();
+		if (hasRdfContext && kind == ContextCondition.BOUND || !hasRdfContext && kind != ContextCondition.BOUND) {
+			MapBindingSet row = new MapBindingSet();
+			row.addBinding("a", a);
+			row.addBinding("b", b);
+			row.addBinding("c", c);
+			if (reuse) {
+				row.addBinding("g", later);
+				row.addBinding("z", result);
+			}
+			expected.add(row);
+		}
+		QueryEvaluationStep generic = strategy.genericOnlyView().precompile(host.clone(), context);
+		assertThat(evaluateStep(generic)).containsExactlyInAnyOrderElementsOf(expected);
+		QueryEvaluationStep nativeStep = LmdbNativeAggregateCompiler.tryCompile(host, context, strategy,
+				(NativeLmdbQuerySource) dataset);
+		QueryEvaluationStep executed = nativeStep == null ? strategy.precompile(host, context) : nativeStep;
+		List<BindingSet> actual = evaluateStep(executed);
+		System.out.printf(
+				"context-proof local=%s named=%s restriction=%s condition=%s reuse=%s plan=%s expected=%s actual=%s%n",
+				local, named, restriction, kind, reuse, nativeStep == null ? "DECLINED"
+						: nativeStep instanceof LmdbNativePhysicalPlan physical ? physical.nativePhysicalPlan()
+								: nativeStep.getClass().getName(),
+				expected, actual);
+		assertThat(actual).containsExactlyInAnyOrderElementsOf(expected);
+		if (hasRdfContext && !mixed) {
+			assertThat(nativeStep).as("a named-context RDF term remains eligible for native evaluation")
+					.isInstanceOf(LmdbNativePhysicalPlan.class);
+			assertThat(host.getLongMetricActual("nativeInvocationsActual")).isPositive();
+			for (IRI occupied : List.of(graph, later, RDF4J.NIL, SESAME.NIL)) {
+				MapBindingSet caller = new MapBindingSet();
+				caller.addBinding("g", occupied);
+				List<BindingSet> boundExpected = occupied.equals(graph) ? expected : List.of();
+				assertThat(evaluateStep(generic, caller)).as("generic context input %s", occupied)
+						.containsExactlyInAnyOrderElementsOf(boundExpected);
+				long nativeBefore = host.getLongMetricActual("nativeInvocationsActual");
+				assertThat(evaluateStep(nativeStep, caller)).as("prepared context input %s", occupied)
+						.containsExactlyInAnyOrderElementsOf(boundExpected);
+				assertThat(host.getLongMetricActual("nativeInvocationsActual")).isEqualTo(nativeBefore);
+				assertThat(host.getStringMetricActual(LmdbNativeExplain.EXECUTION_PATH))
+						.contains("genericFallback(certifiedContextInput)");
+				try (QueryExplanationContext explanation = QueryExplanationContext.enter(Explanation.Level.Optimized,
+						caller)) {
+					((LmdbNativePhysicalPlan) nativeStep).explainStrategies();
+					assertThat(explanation.decisions()).anySatisfy(decision -> assertThat(decision.wouldSelect())
+							.isEqualTo(LmdbNativeAttemptMetrics.PATH_GENERIC_FALLBACK));
+				}
+			}
+			long nativeBefore = host.getLongMetricActual("nativeInvocationsActual");
+			assertThat(evaluateStep(nativeStep)).containsExactlyInAnyOrderElementsOf(expected);
+			assertThat(host.getLongMetricActual("nativeInvocationsActual")).isGreaterThan(nativeBefore);
+		} else {
+			assertThat(nativeStep).as("a possible default-context marker declines the complete native region").isNull();
+		}
+	}
+
+	private static NativeLmdbQuerySource countingNativeSource(NativeLmdbQuerySource actualSource,
+			AtomicInteger producerOpens, AtomicInteger boundOpens, AtomicInteger sourceCandidates) {
+		return countingNativeSource(actualSource, producerOpens, boundOpens, sourceCandidates, null);
+	}
+
+	private static NativeLmdbQuerySource countingNativeSource(NativeLmdbQuerySource actualSource,
+			AtomicInteger producerOpens, AtomicInteger boundOpens, AtomicInteger sourceCandidates,
+			Long monitoredPredicate) {
+		var delegateSource = delegatesTo(actualSource);
+		NativeLmdbQuerySource countedSource = mock(NativeLmdbQuerySource.class, call -> {
+			Object result = delegateSource.answer(call);
+			if (result instanceof RecordIterator records) {
+				Object[] arguments = call.getArguments();
+				int first = arguments.length > 0 && arguments[0] instanceof Long ? 0
+						: arguments.length > 1 && arguments[1] instanceof Long ? 1 : -1;
+				if (first >= 0 && arguments.length >= first + 4
+						&& (monitoredPredicate == null || monitoredPredicate.equals(arguments[first + 1]))) {
+					return countNativeRecords(records, (Long) arguments[first], producerOpens, boundOpens,
+							sourceCandidates);
+				}
+			}
+			return result;
+		});
+		doAnswer(ignored -> {
+			NativeProbe real = actualSource.newProbe();
+			NativeProbe counted = mock(NativeProbe.class, delegatesTo(real));
+			doAnswer(request -> countNativeOpen(real, request.getArgument(0), request.getArgument(1),
+					request.getArgument(2), request.getArgument(3), null, producerOpens, boundOpens, sourceCandidates,
+					monitoredPredicate))
+							.when(counted)
+							.open(anyLong(), anyLong(), anyLong(), anyLong());
+			doAnswer(request -> countNativeOpen(real, request.getArgument(0), request.getArgument(1),
+					request.getArgument(2), request.getArgument(3), request.getArgument(4), producerOpens, boundOpens,
+					sourceCandidates, monitoredPredicate)).when(counted)
+							.open(anyLong(), anyLong(), anyLong(), anyLong(), any());
+			return counted;
+		}).when(countedSource).newProbe();
+		return countedSource;
+	}
+
+	private static RecordIterator countNativeOpen(NativeProbe real, long subject, long predicate, long object,
+			long graph, AdjacencyAccessObserver observer, AtomicInteger opens, AtomicInteger bound,
+			AtomicInteger candidates, Long monitoredPredicate) throws IOException {
+		RecordIterator records = observer == null ? real.open(subject, predicate, object, graph)
+				: real.open(subject, predicate, object, graph, observer);
+		return monitoredPredicate == null || monitoredPredicate == predicate
+				? countNativeRecords(records, subject, opens, bound, candidates)
+				: records;
+	}
+
+	private static RecordIterator countNativeRecords(RecordIterator records, long subject, AtomicInteger opens,
+			AtomicInteger bound, AtomicInteger candidates) {
+		opens.incrementAndGet();
+		if (subject != NativeLmdbQuerySource.UNKNOWN_ID) {
+			bound.incrementAndGet();
+		}
+		RecordIterator counted = mock(RecordIterator.class, delegatesTo(records));
+		doAnswer(ignored -> {
+			long[] row = records.next();
+			if (row != null) {
+				candidates.incrementAndGet();
+			}
+			return row;
+		}).when(counted).next();
+		doAnswer(request -> {
+			int rows = records.fill(request.getArgument(0), request.getArgument(1));
+			candidates.addAndGet(rows);
+			return rows;
+		}).when(counted).fill(any(long[].class), anyInt());
+		return counted;
 	}
 
 	@Test
@@ -882,6 +3367,25 @@ public class LmdbNativeGenericBridgeScopeTest {
 		}
 		assertThat(rows).as("the filter accepts everything, so all statements must survive").isEqualTo(3);
 		return new ArrayList<>(RECORDED);
+	}
+
+	private static Projection descriptorProjectedValues(Value value) {
+		BindingSetAssignment values = new BindingSetAssignment();
+		values.setDeclaredBindingNames(Set.of("h"));
+		values.setBindingSets(List.of(new ListBindingSet(List.of("h"), value), EmptyBindingSet.getInstance()));
+		return new Projection(values, new ProjectionElemList(new ProjectionElem("h", "x")), true);
+	}
+
+	private static Group descriptorProjectedGroup(Value value) {
+		Group group = new Group(descriptorProjectedValues(value));
+		group.addGroupElement(new GroupElem("n", new Count(Var.of("x"), false)));
+		return group;
+	}
+
+	private static Exists descriptorProjectedExists(Value value) {
+		Value two = SimpleValueFactory.getInstance().createLiteral("2", XSD.INTEGER);
+		return new Exists(new Filter(descriptorProjectedGroup(value),
+				new Compare(Var.of("n"), new ValueConstant(two), CompareOp.EQ)));
 	}
 
 	private static List<BindingSet> evaluateStep(QueryEvaluationStep step) {

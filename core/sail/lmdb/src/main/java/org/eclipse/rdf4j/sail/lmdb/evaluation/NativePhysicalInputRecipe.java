@@ -36,7 +36,14 @@ final class NativePhysicalInputRecipe {
 	}
 
 	private record PatternRecipe(TermRecipe subject, TermRecipe predicate, TermRecipe object, TermRecipe context,
-			List<Long> contexts, boolean unrestricted, boolean named, LmdbKeyRange range) {
+			List<Long> contexts, boolean unrestricted, boolean named, LmdbKeyRange range, ContextRecipe contextChoice) {
+	}
+
+	private record ContextRecipe(int slot, boolean fixedDataset, boolean rdf4jMember, boolean sesameMember) {
+		static ContextRecipe of(PatternPlan.DynamicContext context) {
+			return context == null ? null
+					: new ContextRecipe(context.slot, context.fixedDataset, context.rdf4jMember, context.sesameMember);
+		}
 	}
 
 	private record OrderedPattern(PatternRecipe semantics, StatementOrder order, String index) {
@@ -67,7 +74,8 @@ final class NativePhysicalInputRecipe {
 					new OrderedPattern(new PatternRecipe(TermRecipe.of(pattern.s), TermRecipe.of(pattern.p),
 							TermRecipe.of(pattern.o),
 							TermRecipe.of(pattern.c), contexts, pattern.contexts.ids == null, pattern.namedContextScope,
-							pattern.range), pattern.statementOrder, pattern.indexName),
+							pattern.range, ContextRecipe.of(pattern.dynamicContext)), pattern.statementOrder,
+							pattern.indexName),
 					null);
 		}
 		if (plan instanceof ExtensionPlan extension) {

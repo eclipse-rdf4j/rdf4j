@@ -40,16 +40,18 @@ final class LmdbNativeRuntimePlan {
 	private LmdbNativeRuntimePlan() {
 	}
 
-	static Invocation begin(TupleExpr target, SlotPlan entryPlan, NativeSlotLayout layout, long initialBoundMask) {
+	static Invocation begin(TupleExpr target, SlotPlan entryPlan, NativeSlotLayout layout, long initialBoundMask,
+			NativeGroupInvocationWitness.Admission directInput) {
 		if (target == null || !target.isRuntimeTelemetryEnabled()) {
 			return null;
 		}
-		return summary(target).begin(entryPlan, layout.slotNames(), initialBoundMask);
+		String renderedDirect = directInput == null ? null : directInput.describeDirect(initialBoundMask);
+		return summary(target).begin(entryPlan, layout.slotNames(), initialBoundMask, renderedDirect);
 	}
 
 	/** Collects a private attempt without exposing it until its result is selected. */
 	static Invocation deferred(SlotPlan entryPlan, NativeSlotLayout layout, long initialBoundMask) {
-		return new Summary(null).begin(entryPlan, layout.slotNames(), initialBoundMask);
+		return new Summary(null).begin(entryPlan, layout.slotNames(), initialBoundMask, null);
 	}
 
 	static void adopt(TupleExpr target, Invocation completed) {
@@ -172,16 +174,19 @@ final class LmdbNativeRuntimePlan {
 		 * instead of appending one rendered block per row — the append-per-row form made every publish re-render a
 		 * summary that itself grew per row, turning telemetry collection quadratic in the outer row count.
 		 */
-		private Invocation begin(SlotPlan entryPlan, String[] slotNames, long initialBoundMask) {
+		private Invocation begin(SlotPlan entryPlan, String[] slotNames, long initialBoundMask, String renderedDirect) {
 			Invocation invocation;
 			boolean fresh;
-			String renderedShape = LmdbNativeExplain.describe(entryPlan, slotNames, initialBoundMask);
+			String renderedShape = renderedDirect == null
+					? LmdbNativeExplain.describe(entryPlan, slotNames, initialBoundMask)
+					: renderedDirect;
 			synchronized (this) {
 				InvocationShape shape = new InvocationShape(renderedShape, initialBoundMask);
 				invocation = byShape.get(shape);
 				fresh = invocation == null;
 				if (fresh) {
-					invocation = new Invocation(this, invocations.size(), entryPlan, slotNames, initialBoundMask);
+					invocation = new Invocation(this, invocations.size(), entryPlan, slotNames, initialBoundMask,
+							renderedShape);
 					invocations.add(invocation);
 					byShape.put(shape, invocation);
 				}
@@ -209,13 +214,12 @@ final class LmdbNativeRuntimePlan {
 		}
 
 		private synchronized void merge(Invocation completed) {
-			InvocationShape shape = new InvocationShape(
-					LmdbNativeExplain.describe(completed.entryPlan, completed.slotNames, completed.initialBoundMask),
+			InvocationShape shape = new InvocationShape(completed.renderedEntryPlan,
 					completed.initialBoundMask);
 			Invocation invocation = byShape.get(shape);
 			if (invocation == null) {
 				invocation = new Invocation(this, invocations.size(), completed.entryPlan, completed.slotNames,
-						completed.initialBoundMask);
+						completed.initialBoundMask, completed.renderedEntryPlan);
 				invocations.add(invocation);
 				byShape.put(shape, invocation);
 			}
@@ -268,6 +272,7 @@ final class LmdbNativeRuntimePlan {
 		private final SlotPlan entryPlan;
 		private final String[] slotNames;
 		private final long initialBoundMask;
+		private final String renderedEntryPlan;
 		private String strategy = "NOT_ACTIVATED";
 		private List<String> actualOrder = List.of();
 		private boolean janinoUsed;
@@ -295,12 +300,14 @@ final class LmdbNativeRuntimePlan {
 		private long adoptedOpens;
 		private SlotPlan[] lastRenderedOrder;
 
-		private Invocation(Summary owner, int index, SlotPlan entryPlan, String[] slotNames, long initialBoundMask) {
+		private Invocation(Summary owner, int index, SlotPlan entryPlan, String[] slotNames, long initialBoundMask,
+				String renderedEntryPlan) {
 			this.owner = owner;
 			this.index = index;
 			this.entryPlan = entryPlan;
 			this.slotNames = slotNames.clone();
 			this.initialBoundMask = initialBoundMask;
+			this.renderedEntryPlan = renderedEntryPlan;
 			this.adaptiveReason = initialAdaptiveReason(entryPlan);
 		}
 
@@ -407,6 +414,18 @@ final class LmdbNativeRuntimePlan {
 					adjacencyReason = "SUPERSEDED_BY_STRATEGY[strategy=" + strategy + "]";
 					adjacencyWhere = null;
 				}
+			}
+			publishIfAllowed();
+		}
+
+		void activateCommittedGroup() {
+			synchronized (this) {
+				if (LmdbNativeAttemptMetrics.PATH_DIRECT_NESTED_LOOP.equals(strategy)) {
+					return;
+				}
+				strategy = LmdbNativeAttemptMetrics.PATH_DIRECT_NESTED_LOOP;
+				actualOrder = List.of(renderedEntryPlan);
+				adaptiveReason = "NOT_ATTEMPTED[committed Group uses fixed filter stages]";
 			}
 			publishIfAllowed();
 		}
@@ -644,7 +663,7 @@ final class LmdbNativeRuntimePlan {
 					.append("\n    actualOrder:");
 			if (actualOrder.isEmpty()) {
 				out.append("\n      <not opened; entryPlan=")
-						.append(LmdbNativeExplain.describe(entryPlan, slotNames, initialBoundMask))
+						.append(renderedEntryPlan)
 						.append('>');
 			} else {
 				appendOrder(out, actualOrder, "      ");
