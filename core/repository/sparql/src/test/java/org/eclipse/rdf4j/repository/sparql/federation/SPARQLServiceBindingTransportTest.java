@@ -68,20 +68,23 @@ class SPARQLServiceBindingTransportTest {
 		var service = new Service(Var.of("endpoint", VF.createIRI("urn:service")), pattern,
 				"?s <urn:p> ?o . FILTER(BOUND(?s)) BIND(\"literal ?s\" AS ?text)", Map.of(), null, false);
 		var endpoint = new RepositoryFederatedService(repository);
-		endpoint.setBNodeIdentityScope(epoch);
-		endpoint.setBlankNodeReferencesSupported(true);
-		endpoint.setCanonicalBNodeIDsSupported(true);
-		try (var rows = endpoint.select(service, Set.of("o"), input, null)) {
-			assertEquals(VF.createLiteral("remote"), rows.next().getValue("o"));
+		try {
+			endpoint.setBNodeIdentityScope(epoch);
+			endpoint.setBlankNodeReferencesSupported(true);
+			endpoint.setCanonicalBNodeIDsSupported(true);
+			try (var rows = endpoint.select(service, Set.of("o"), input, null)) {
+				assertEquals(VF.createLiteral("remote"), rows.next().getValue("o"));
+			}
+			var query = ArgumentCaptor.forClass(String.class);
+			verify(client).sendTupleQuery(eq(QueryLanguage.SPARQL), query.capture(), isNull(), isNull(), anyBoolean(),
+					anyInt(), ArgumentMatchers.<WeakReference<?>>isNull(), any(Binding[].class));
+			assertTrue(query.getValue().contains("<_:canonical>"));
+			assertTrue(query.getValue().contains("BOUND(?s)"));
+			assertTrue(query.getValue().contains("literal ?s"));
+			QueryParserUtil.parseQuery(QueryLanguage.SPARQL, query.getValue(), null);
+		} finally {
+			endpoint.shutdown();
 		}
-		var query = ArgumentCaptor.forClass(String.class);
-		verify(client).sendTupleQuery(eq(QueryLanguage.SPARQL), query.capture(), isNull(), isNull(), anyBoolean(),
-				anyInt(), ArgumentMatchers.<WeakReference<?>>isNull(), any(Binding[].class));
-		assertTrue(query.getValue().contains("<_:canonical>"));
-		assertTrue(query.getValue().contains("BOUND(?s)"));
-		assertTrue(query.getValue().contains("literal ?s"));
-		QueryParserUtil.parseQuery(QueryLanguage.SPARQL, query.getValue(), null);
-		endpoint.shutdown();
 	}
 
 	@Test

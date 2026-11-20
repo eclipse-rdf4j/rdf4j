@@ -12,7 +12,6 @@
 package org.eclipse.rdf4j.sail.lmdb;
 
 import static org.junit.Assert.assertEquals;
-import static org.junit.Assert.assertTrue;
 
 import java.io.File;
 import java.util.ArrayList;
@@ -83,10 +82,10 @@ public class LmdbStoreMultiRepoTest {
 					Repository repository = new SailRepository(
 							new LmdbStore(repositoryDir, new LmdbStoreConfig("spoc,posc")
 									.setValueCacheSize(triplesPerRepository * 3)));
-					repository.init();
 					synchronized (repositories) {
 						repositories.add(repository);
 					}
+					repository.init();
 					scheduledExecutor.scheduleAtFixedRate(() -> {
 						try (RepositoryConnection connection = repository.getConnection()) {
 							try (var result = connection.prepareTupleQuery(
@@ -139,10 +138,16 @@ public class LmdbStoreMultiRepoTest {
 			scheduledExecutor.shutdown();
 			repositoryExecutor.shutdown();
 			transactionExecutor.shutdown();
-			assertTrue(scheduledExecutor.awaitTermination(10, TimeUnit.MINUTES));
-			assertTrue(repositoryExecutor.awaitTermination(10, TimeUnit.MINUTES));
-			assertTrue(transactionExecutor.awaitTermination(10, TimeUnit.MINUTES));
-			repositories.forEach(Repository::shutDown);
+			LmdbTestUtil.cleanup(testFailure,
+					() -> LmdbTestUtil.shutdownExecutor(scheduledExecutor, 600, 10, true,
+							"Scheduled readers did not terminate"),
+					() -> LmdbTestUtil.shutdownExecutor(repositoryExecutor, 600, 10, true,
+							"Repository workers did not terminate"),
+					() -> LmdbTestUtil.shutdownExecutor(transactionExecutor, 600, 10, true,
+							"Transaction workers did not terminate"),
+					() -> LmdbTestUtil.cleanup(null, repositories.stream()
+							.map(repository -> (AutoCloseable) repository::shutDown)
+							.toArray(AutoCloseable[]::new)));
 		}
 
 		if (!scheduledReaderFailures.isEmpty()) {
@@ -177,7 +182,6 @@ public class LmdbStoreMultiRepoTest {
 
 	@AfterEach
 	public void after() {
-		LmdbTestUtil.deleteDir(dataDir);
 		Locale.setDefault(defaultLocale);
 	}
 }

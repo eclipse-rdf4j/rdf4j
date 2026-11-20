@@ -88,13 +88,9 @@ class LmdbNativeValuesFilterFoldShapesTest {
 	}
 
 	@AfterAll
-	static void tearDown() {
-		if (lmdbRepository != null) {
-			lmdbRepository.shutDown();
-		}
-		if (memoryRepository != null) {
-			memoryRepository.shutDown();
-		}
+	static void tearDown() throws Exception {
+		LmdbTestUtil.cleanup(null, lmdbRepository == null ? null : lmdbRepository::shutDown,
+				memoryRepository == null ? null : memoryRepository::shutDown);
 	}
 
 	@ParameterizedTest(name = "{0}")

@@ -40,6 +40,7 @@ import org.eclipse.rdf4j.sail.base.SailDataset;
 import org.eclipse.rdf4j.sail.base.SailDatasetTripleTermSource;
 import org.eclipse.rdf4j.sail.helpers.SlowQueryContextHolder;
 import org.eclipse.rdf4j.sail.lmdb.LmdbStore;
+import org.eclipse.rdf4j.sail.lmdb.LmdbTestUtil;
 import org.eclipse.rdf4j.sail.lmdb.NativeQuerySourceAccess;
 import org.eclipse.rdf4j.sail.lmdb.RecordIterator;
 import org.eclipse.rdf4j.sail.lmdb.config.LmdbStoreConfig;
@@ -88,6 +89,7 @@ public class ScanBackedHashJoinBenchmark {
 	public String strategy;
 
 	private final Map<String, String> previousProperties = new LinkedHashMap<>();
+	private File dataDir;
 	private SailRepository repository;
 	private LmdbStore store;
 	private Digest expected;
@@ -95,41 +97,50 @@ public class ScanBackedHashJoinBenchmark {
 
 	@Setup(Level.Trial)
 	public void setup() throws Exception {
-		set("rdf4j.lmdb.nativeQueryEngine.enabled", "true");
-		set(NativeBatch.ENABLED_PROPERTY, "true");
-		set(LmdbNativeHashJoin.ENABLED_PROPERTY, "true");
-		set(LmdbNativeHashJoin.MIN_ROWS_PROPERTY, "0");
-		set(LmdbNativeHashJoin.MAX_BUILD_ROWS_PROPERTY, "16384");
-		set(LmdbNativeHashJoin.BYTE_ADMISSION_PROPERTY, "false");
-		set(LmdbNativeJaninoCodegen.ENABLED_PROPERTY, "true");
-		set(LmdbNativeJaninoCodegen.THRESHOLD_ROWS_PROPERTY, "0");
-		set(LmdbNativeJaninoCodegen.SYNCHRONOUS_PROPERTY, "true");
-		set(LmdbNativeKernelInterpreter.ENABLED_PROPERTY, "false");
-		set("rdf4j.lmdb.janinoCodegen.hashJoin", "true");
-		set("rdf4j.lmdb.janinoCodegen.scanSources", "true");
-		set("rdf4j.lmdb.mergeJoin.enabled", "false");
-		set("rdf4j.lmdb.parallel.enabled", "false");
-		set("rdf4j.lmdb.irKernelParallel.enabled", "false");
-		set("rdf4j.lmdb.wcoj.enabled", "false");
-		set("rdf4j.lmdb.packedFtree.enabled", "false");
-		set("rdf4j.lmdb.factorizedRows.enabled", "false");
-		set("rdf4j.lmdb.factorizedTail.enabled", "false");
-		set("rdf4j.lmdb.chunkPipeline.enabled", "false");
-		set("rdf4j.lmdb.adaptiveFilterPlacement.enabled", "false");
-		File dataDir = Files.createTempDirectory("rdf4j-scan-hash-benchmark-").toFile();
-		String indexConfiguration = "spoc-posc".equals(indexes) ? "spoc,posc" : indexes;
-		store = new LmdbStore(dataDir, new LmdbStoreConfig(indexConfiguration).setForceSync(false)
-				.setNativeEvaluationEnabled(true)
-				.setDirectAdjacencyEnabled(false));
-		repository = new SailRepository(store);
-		repository.init();
-		loadData();
-		long expectedSum = 0;
-		for (int i = 0; i < BUILD_ROWS; i++) {
-			expectedSum += rowDigest(i);
+		try {
+			set("rdf4j.lmdb.nativeQueryEngine.enabled", "true");
+			set(NativeBatch.ENABLED_PROPERTY, "true");
+			set(LmdbNativeHashJoin.ENABLED_PROPERTY, "true");
+			set(LmdbNativeHashJoin.MIN_ROWS_PROPERTY, "0");
+			set(LmdbNativeHashJoin.MAX_BUILD_ROWS_PROPERTY, "16384");
+			set(LmdbNativeHashJoin.BYTE_ADMISSION_PROPERTY, "false");
+			set(LmdbNativeJaninoCodegen.ENABLED_PROPERTY, "true");
+			set(LmdbNativeJaninoCodegen.THRESHOLD_ROWS_PROPERTY, "0");
+			set(LmdbNativeJaninoCodegen.SYNCHRONOUS_PROPERTY, "true");
+			set(LmdbNativeKernelInterpreter.ENABLED_PROPERTY, "false");
+			set("rdf4j.lmdb.janinoCodegen.hashJoin", "true");
+			set("rdf4j.lmdb.janinoCodegen.scanSources", "true");
+			set("rdf4j.lmdb.mergeJoin.enabled", "false");
+			set("rdf4j.lmdb.parallel.enabled", "false");
+			set("rdf4j.lmdb.irKernelParallel.enabled", "false");
+			set("rdf4j.lmdb.wcoj.enabled", "false");
+			set("rdf4j.lmdb.packedFtree.enabled", "false");
+			set("rdf4j.lmdb.factorizedRows.enabled", "false");
+			set("rdf4j.lmdb.factorizedTail.enabled", "false");
+			set("rdf4j.lmdb.chunkPipeline.enabled", "false");
+			set("rdf4j.lmdb.adaptiveFilterPlacement.enabled", "false");
+			dataDir = Files.createTempDirectory("rdf4j-scan-hash-benchmark-").toFile();
+			String indexConfiguration = "spoc-posc".equals(indexes) ? "spoc,posc" : indexes;
+			store = new LmdbStore(dataDir, new LmdbStoreConfig(indexConfiguration).setForceSync(false)
+					.setNativeEvaluationEnabled(true)
+					.setDirectAdjacencyEnabled(false));
+			repository = new SailRepository(store);
+			repository.init();
+			loadData();
+			long expectedSum = 0;
+			for (int i = 0; i < BUILD_ROWS; i++) {
+				expectedSum += rowDigest(i);
+			}
+			expected = new Digest(BUILD_ROWS, expectedSum);
+			optimized = captureOrdinaryQuery();
+		} catch (Exception | Error failure) {
+			try {
+				tearDown();
+			} catch (Exception | Error cleanupFailure) {
+				failure.addSuppressed(cleanupFailure);
+			}
+			throw failure;
 		}
-		expected = new Digest(BUILD_ROWS, expectedSum);
-		optimized = captureOrdinaryQuery();
 	}
 
 	private void loadData() {
@@ -291,24 +302,29 @@ public class ScanBackedHashJoinBenchmark {
 
 	@TearDown(Level.Trial)
 	public void tearDown() throws Exception {
-		try {
+		try (var propertyCleanup = LmdbTestUtil.onClose(() -> {
+			previousProperties.forEach((property, value) -> {
+				if (value == null) {
+					System.clearProperty(property);
+				} else {
+					System.setProperty(property, value);
+				}
+			});
+			previousProperties.clear();
+		}); var directoryCleanup = LmdbTestUtil.onClose(() -> {
+			LmdbTestUtil.deleteDir(dataDir);
+			dataDir = null;
+		}); var repositoryCleanup = LmdbTestUtil.onClose(() -> {
+			if (repository != null) {
+				repository.shutDown();
+				repository = null;
+			}
+		})) {
 			// Recompiling with an observing source can affect the plan cache. Run it only after all timed invocations.
 			if (optimized != null) {
-				observeCompiledQuery(optimized);
-			}
-		} finally {
-			try {
-				if (repository != null) {
-					repository.shutDown();
-				}
-			} finally {
-				previousProperties.forEach((property, value) -> {
-					if (value == null) {
-						System.clearProperty(property);
-					} else {
-						System.setProperty(property, value);
-					}
-				});
+				TupleExpr expression = optimized;
+				optimized = null;
+				observeCompiledQuery(expression);
 			}
 		}
 	}

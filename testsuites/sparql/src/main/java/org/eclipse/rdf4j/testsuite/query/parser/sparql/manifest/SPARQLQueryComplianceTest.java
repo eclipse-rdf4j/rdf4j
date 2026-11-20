@@ -96,6 +96,13 @@ public abstract class SPARQLQueryComplianceTest extends SPARQLComplianceTest {
 		try (RepositoryConnection con = repo.getConnection()) {
 			con.clear();
 			con.clearNamespaces();
+		} catch (RuntimeException | Error failure) {
+			try {
+				shutDownAndDeleteDataDir(repo);
+			} catch (RuntimeException | Error cleanupFailure) {
+				failure.addSuppressed(cleanupFailure);
+			}
+			throw failure;
 		}
 		return repo;
 	}
@@ -172,11 +179,6 @@ public abstract class SPARQLQueryComplianceTest extends SPARQLComplianceTest {
 			SailRepository sailRepository = new SailRepository(new MemoryStore());
 			try (SailRepositoryConnection connection = sailRepository.getConnection()) {
 				connection.add(new URL(filename), filename, RDFFormat.TURTLE);
-			} catch (IOException e) {
-				throw new RuntimeException(e);
-			}
-
-			try (SailRepositoryConnection connection = sailRepository.getConnection()) {
 
 				String manifestQuery = " PREFIX qt: <http://www.w3.org/2001/sw/DataAccess/tests/test-query#> "
 						+ "PREFIX mf: <http://www.w3.org/2001/sw/DataAccess/tests/test-manifest#> "
@@ -269,6 +271,11 @@ public abstract class SPARQLQueryComplianceTest extends SPARQLComplianceTest {
 						}
 					}
 				}
+			} catch (IOException e) {
+				throw new RuntimeException(e);
+			} finally {
+				sailRepository.shutDown();
+
 			}
 
 		}
@@ -364,9 +371,12 @@ public abstract class SPARQLQueryComplianceTest extends SPARQLComplianceTest {
 		@Override
 		public void tearDown() throws Exception {
 			if (dataRepository != null) {
-				clear(dataRepository);
-				shutDownAndDeleteDataDir(dataRepository);
-				dataRepository = null;
+				try {
+					clear(dataRepository);
+				} finally {
+					shutDownAndDeleteDataDir(dataRepository);
+					dataRepository = null;
+				}
 			}
 		}
 

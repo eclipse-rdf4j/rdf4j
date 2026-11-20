@@ -79,158 +79,163 @@ class ValueStoreRandomLookupTest {
 		NativeStore store = (NativeStore) new NativeStoreFactory().getSail(cfg);
 		store.setDataDir(dataDir);
 		SailRepository repository = new SailRepository(store);
-		repository.init();
-		try (SailRepositoryConnection connection = repository.getConnection()) {
-			connection.begin(IsolationLevels.NONE);
-			try (InputStream in = BenchmarkResources.openDecompressedStream("benchmarkFiles/datagovbe-valid.ttl.gz")) {
-				assertThat(in).as("benchmarkFiles/datagovbe-valid.ttl.gz should be on classpath").isNotNull();
-				connection.add(in, "", RDFFormat.TURTLE);
-			}
-			connection.commit();
-		}
-		repository.shutDown();
-		Path walDir = dataDir.toPath().resolve(ValueStoreWalConfig.DEFAULT_DIRECTORY_NAME);
-		String storeUuid = Files.readString(walDir.resolve("store.uuid"), StandardCharsets.UTF_8).trim();
-
-		try (DataStore ds = new DataStore(dataDir, "values");
-				ValueStore vs = new ValueStore(dataDir, false)) {
-
-			int maxId = ds.getMaxID();
-			assertThat(maxId).isGreaterThan(0);
-
-			ValueStoreWalConfig walConfig = ValueStoreWalConfig.builder()
-					.walDirectory(walDir)
-					.storeUuid(storeUuid)
-					.build();
-			Map<Path, SegmentStats> statsBySegment = analyzeSegments(walDir, walConfig);
-			assertThat(statsBySegment).isNotEmpty();
-
-			ValueStoreWalRecovery recovery = new ValueStoreWalRecovery();
-			Map<Integer, ValueStoreWalRecord> dict;
-			try (ValueStoreWalReader reader = ValueStoreWalReader.open(walConfig)) {
-				dict = recovery.replay(reader);
-			}
-			assertThat(dict).isNotEmpty();
-
-			List<Integer> ids = new ArrayList<>();
-			for (Map.Entry<Integer, ValueStoreWalRecord> entry : dict.entrySet()) {
-				ValueStoreWalValueKind kind = entry.getValue().valueKind();
-				if (kind == ValueStoreWalValueKind.IRI || kind == ValueStoreWalValueKind.BNODE
-						|| kind == ValueStoreWalValueKind.LITERAL) {
-					ids.add(entry.getKey());
+		try {
+			repository.init();
+			try (SailRepositoryConnection connection = repository.getConnection()) {
+				connection.begin(IsolationLevels.NONE);
+				try (InputStream in = BenchmarkResources
+						.openDecompressedStream("benchmarkFiles/datagovbe-valid.ttl.gz")) {
+					assertThat(in).as("benchmarkFiles/datagovbe-valid.ttl.gz should be on classpath").isNotNull();
+					connection.add(in, "", RDFFormat.TURTLE);
 				}
+				connection.commit();
 			}
-			assertThat(ids).isNotEmpty();
+			repository.shutDown();
+			Path walDir = dataDir.toPath().resolve(ValueStoreWalConfig.DEFAULT_DIRECTORY_NAME);
+			String storeUuid = Files.readString(walDir.resolve("store.uuid"), StandardCharsets.UTF_8).trim();
 
-			List<SegmentStats> compressedStats = statsBySegment.values()
-					.stream()
-					.filter(SegmentStats::isCompressed)
-					.sorted(Comparator.comparingInt(SegmentStats::sequence))
-					.collect(Collectors.toList());
-			assertThat(compressedStats).isNotEmpty();
-			for (SegmentStats stat : compressedStats) {
-				assertThat(stat.summaryLastId)
-						.as("Summary should exist for %s", stat.path.getFileName())
-						.isNotNull();
-				assertThat(stat.summaryCRC32)
-						.as("Summary CRC should exist for %s", stat.path.getFileName())
-						.isNotNull();
-				assertThat(stat.summaryLastId).isEqualTo(stat.highestMintedId);
-				long actualCrc = crc32(stat.uncompressedBytes, stat.summaryOffset);
-				assertThat(stat.summaryCRC32).isEqualTo(actualCrc);
-			}
+			try (DataStore ds = new DataStore(dataDir, "values");
+					ValueStore vs = new ValueStore(dataDir, false)) {
 
-			List<Path> orderedSegments = new ArrayList<>(statsBySegment.keySet());
-			orderedSegments.sort(Comparator.comparingInt(p -> statsBySegment.get(p).sequence()));
-			assertThat(orderedSegments).isNotEmpty();
-			Path firstSegment = orderedSegments.get(0);
-			Path currentSegment = orderedSegments.get(orderedSegments.size() - 1);
+				int maxId = ds.getMaxID();
+				assertThat(maxId).isGreaterThan(0);
 
-			Set<Path> deleted = new HashSet<>();
-			Files.deleteIfExists(firstSegment);
-			deleted.add(firstSegment);
-			Files.deleteIfExists(currentSegment);
-			deleted.add(currentSegment);
+				ValueStoreWalConfig walConfig = ValueStoreWalConfig.builder()
+						.walDirectory(walDir)
+						.storeUuid(storeUuid)
+						.build();
+				Map<Path, SegmentStats> statsBySegment = analyzeSegments(walDir, walConfig);
+				assertThat(statsBySegment).isNotEmpty();
 
-			ThreadLocalRandom random = ThreadLocalRandom.current();
-			// Keep one middle segment, so that some ids always survive for the WAL to recover.
-			List<Path> middleSegments = orderedSegments.subList(1, orderedSegments.size() - 1);
-			assertThat(middleSegments).as("the WAL should span more than two segments").isNotEmpty();
-			Path keptSegment = middleSegments.get(random.nextInt(middleSegments.size()));
-			for (Path segment : orderedSegments) {
-				if (deleted.contains(segment) || segment.equals(keptSegment)) {
-					continue;
+				ValueStoreWalRecovery recovery = new ValueStoreWalRecovery();
+				Map<Integer, ValueStoreWalRecord> dict;
+				try (ValueStoreWalReader reader = ValueStoreWalReader.open(walConfig)) {
+					dict = recovery.replay(reader);
 				}
-				if (random.nextBoolean()) {
-					Files.deleteIfExists(segment);
-					deleted.add(segment);
-				}
-			}
+				assertThat(dict).isNotEmpty();
 
-			Set<Integer> deletedIds = new HashSet<>();
-			Set<Integer> survivingIds = new HashSet<>();
-			for (Map.Entry<Path, SegmentStats> entry : statsBySegment.entrySet()) {
-				if (deleted.contains(entry.getKey())) {
-					deletedIds.addAll(entry.getValue().mintedIds);
-				} else {
-					survivingIds.addAll(entry.getValue().mintedIds);
-				}
-			}
-
-			List<Integer> survivingValueIds = new ArrayList<>(ids);
-			survivingValueIds.retainAll(survivingIds);
-			assertThat(survivingValueIds).as("the kept segment should hold values").isNotEmpty();
-
-			ValueStoreWalSearch search = ValueStoreWalSearch.open(walConfig);
-			int walMatches = 0;
-			for (int i = 0; i < 50; i++) {
-				// The first lookup is a surviving value; the others are drawn from all values.
-				int id = i == 0 ? survivingValueIds.get(random.nextInt(survivingValueIds.size()))
-						: ids.get(random.nextInt(ids.size()));
-				assertThat(id).isBetween(1, maxId);
-				Value value = null;
-				try {
-					value = vs.getValue(id);
-				} catch (SailException e) {
-					if (!deletedIds.contains(id)) {
-						throw e;
+				List<Integer> ids = new ArrayList<>();
+				for (Map.Entry<Integer, ValueStoreWalRecord> entry : dict.entrySet()) {
+					ValueStoreWalValueKind kind = entry.getValue().valueKind();
+					if (kind == ValueStoreWalValueKind.IRI || kind == ValueStoreWalValueKind.BNODE
+							|| kind == ValueStoreWalValueKind.LITERAL) {
+						ids.add(entry.getKey());
 					}
 				}
-				Value walValue = search.findValueById(id);
-				if (deletedIds.contains(id)) {
-					assertThat(walValue).as("wal search should miss deleted segment id %s", id).isNull();
-					continue;
-				}
-				assertThat(value).as("ValueStore value not null for surviving id %s", id).isNotNull();
-				assertThat(walValue).as("wal search should recover surviving id %s", id).isEqualTo(value);
-				walMatches++;
-			}
-			assertThat(walMatches).as("should recover at least one id via WAL").isGreaterThan(0);
+				assertThat(ids).isNotEmpty();
 
-			List<Integer> survivorList = new ArrayList<>(survivingIds);
-			Collections.shuffle(survivorList);
-			int sampleCount = Math.min(50, survivorList.size());
-			for (int i = 0; i < sampleCount; i++) {
-				int id = survivorList.get(i);
-				Value expected = vs.getValue(id);
-				Value fromWal = search.findValueById(id);
-				assertThat(expected).isNotNull();
-				assertThat(fromWal).isEqualTo(expected);
-			}
-			assertThat(sampleCount).as("should have surviving ids to verify").isGreaterThan(0);
-
-			int found = 0;
-			for (int i = 0; i < 50; i++) {
-				int id = i == 0 ? survivingValueIds.get(random.nextInt(survivingValueIds.size()))
-						: ids.get(random.nextInt(ids.size()));
-				assertThat(id).isBetween(1, maxId);
-				Value v = vs.getValue(id);
-				Value w = search.findValueById(id);
-				if (w != null && v != null && v.equals(w)) {
-					found++;
+				List<SegmentStats> compressedStats = statsBySegment.values()
+						.stream()
+						.filter(SegmentStats::isCompressed)
+						.sorted(Comparator.comparingInt(SegmentStats::sequence))
+						.collect(Collectors.toList());
+				assertThat(compressedStats).isNotEmpty();
+				for (SegmentStats stat : compressedStats) {
+					assertThat(stat.summaryLastId)
+							.as("Summary should exist for %s", stat.path.getFileName())
+							.isNotNull();
+					assertThat(stat.summaryCRC32)
+							.as("Summary CRC should exist for %s", stat.path.getFileName())
+							.isNotNull();
+					assertThat(stat.summaryLastId).isEqualTo(stat.highestMintedId);
+					long actualCrc = crc32(stat.uncompressedBytes, stat.summaryOffset);
+					assertThat(stat.summaryCRC32).isEqualTo(actualCrc);
 				}
+
+				List<Path> orderedSegments = new ArrayList<>(statsBySegment.keySet());
+				orderedSegments.sort(Comparator.comparingInt(p -> statsBySegment.get(p).sequence()));
+				assertThat(orderedSegments).isNotEmpty();
+				Path firstSegment = orderedSegments.get(0);
+				Path currentSegment = orderedSegments.get(orderedSegments.size() - 1);
+
+				Set<Path> deleted = new HashSet<>();
+				Files.deleteIfExists(firstSegment);
+				deleted.add(firstSegment);
+				Files.deleteIfExists(currentSegment);
+				deleted.add(currentSegment);
+
+				ThreadLocalRandom random = ThreadLocalRandom.current();
+				// Keep one middle segment, so that some ids always survive for the WAL to recover.
+				List<Path> middleSegments = orderedSegments.subList(1, orderedSegments.size() - 1);
+				assertThat(middleSegments).as("the WAL should span more than two segments").isNotEmpty();
+				Path keptSegment = middleSegments.get(random.nextInt(middleSegments.size()));
+				for (Path segment : orderedSegments) {
+					if (deleted.contains(segment) || segment.equals(keptSegment)) {
+						continue;
+					}
+					if (random.nextBoolean()) {
+						Files.deleteIfExists(segment);
+						deleted.add(segment);
+					}
+				}
+
+				Set<Integer> deletedIds = new HashSet<>();
+				Set<Integer> survivingIds = new HashSet<>();
+				for (Map.Entry<Path, SegmentStats> entry : statsBySegment.entrySet()) {
+					if (deleted.contains(entry.getKey())) {
+						deletedIds.addAll(entry.getValue().mintedIds);
+					} else {
+						survivingIds.addAll(entry.getValue().mintedIds);
+					}
+				}
+
+				List<Integer> survivingValueIds = new ArrayList<>(ids);
+				survivingValueIds.retainAll(survivingIds);
+				assertThat(survivingValueIds).as("the kept segment should hold values").isNotEmpty();
+
+				ValueStoreWalSearch search = ValueStoreWalSearch.open(walConfig);
+				int walMatches = 0;
+				for (int i = 0; i < 50; i++) {
+					// The first lookup is a surviving value; the others are drawn from all values.
+					int id = i == 0 ? survivingValueIds.get(random.nextInt(survivingValueIds.size()))
+							: ids.get(random.nextInt(ids.size()));
+					assertThat(id).isBetween(1, maxId);
+					Value value = null;
+					try {
+						value = vs.getValue(id);
+					} catch (SailException e) {
+						if (!deletedIds.contains(id)) {
+							throw e;
+						}
+					}
+					Value walValue = search.findValueById(id);
+					if (deletedIds.contains(id)) {
+						assertThat(walValue).as("wal search should miss deleted segment id %s", id).isNull();
+						continue;
+					}
+					assertThat(value).as("ValueStore value not null for surviving id %s", id).isNotNull();
+					assertThat(walValue).as("wal search should recover surviving id %s", id).isEqualTo(value);
+					walMatches++;
+				}
+				assertThat(walMatches).as("should recover at least one id via WAL").isGreaterThan(0);
+
+				List<Integer> survivorList = new ArrayList<>(survivingIds);
+				Collections.shuffle(survivorList);
+				int sampleCount = Math.min(50, survivorList.size());
+				for (int i = 0; i < sampleCount; i++) {
+					int id = survivorList.get(i);
+					Value expected = vs.getValue(id);
+					Value fromWal = search.findValueById(id);
+					assertThat(expected).isNotNull();
+					assertThat(fromWal).isEqualTo(expected);
+				}
+				assertThat(sampleCount).as("should have surviving ids to verify").isGreaterThan(0);
+
+				int found = 0;
+				for (int i = 0; i < 50; i++) {
+					int id = i == 0 ? survivingValueIds.get(random.nextInt(survivingValueIds.size()))
+							: ids.get(random.nextInt(ids.size()));
+					assertThat(id).isBetween(1, maxId);
+					Value v = vs.getValue(id);
+					Value w = search.findValueById(id);
+					if (w != null && v != null && v.equals(w)) {
+						found++;
+					}
+				}
+				assertThat(found).as("Should resolve values for surviving WAL segments").isGreaterThan(0);
 			}
-			assertThat(found).as("Should resolve values for surviving WAL segments").isGreaterThan(0);
+		} finally {
+			repository.shutDown();
 		}
 	}
 

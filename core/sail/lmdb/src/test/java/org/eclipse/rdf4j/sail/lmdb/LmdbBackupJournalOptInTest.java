@@ -386,7 +386,9 @@ class LmdbBackupJournalOptInTest {
 		}
 		Files.writeString(live.resolve(LmdbBackupJournalState.FILE_NAME), "version=1\nenabled=maybe\n");
 		LmdbStore broken = new LmdbStore(live.toFile(), new LmdbStoreConfig().setBackupJournalEnabled(true));
-		assertThrows(SailException.class, broken::init);
+		try (var cleanup = LmdbTestUtil.onClose(broken::shutDown)) {
+			assertThrows(SailException.class, broken::init);
+		}
 	}
 
 	@Test
