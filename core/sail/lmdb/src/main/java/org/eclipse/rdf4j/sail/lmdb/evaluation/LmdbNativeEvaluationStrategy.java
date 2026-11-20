@@ -20,7 +20,6 @@ import java.util.function.Supplier;
 import org.eclipse.rdf4j.collection.factory.api.CollectionFactory;
 import org.eclipse.rdf4j.common.annotation.Experimental;
 import org.eclipse.rdf4j.common.annotation.InternalUseOnly;
-import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.common.transaction.QueryEvaluationMode;
 import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.query.BindingSet;
@@ -34,6 +33,7 @@ import org.eclipse.rdf4j.query.algebra.QueryModelNode;
 import org.eclipse.rdf4j.query.algebra.QueryRoot;
 import org.eclipse.rdf4j.query.algebra.Reduced;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
+import org.eclipse.rdf4j.query.algebra.UnaryTupleOperator;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryEvaluationStep;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryOptimizerPipeline;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryValueEvaluationStep;
@@ -43,10 +43,11 @@ import org.eclipse.rdf4j.query.algebra.evaluation.impl.EvaluationStatistics;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.QueryEvaluationContext;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.StrictEvaluationStrategy;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.evaluationsteps.AdaptiveFilterEvaluationStep;
+import org.eclipse.rdf4j.query.impl.EmptyBindingSet;
 import org.eclipse.rdf4j.sail.base.SailDatasetTripleTermSource;
 import org.eclipse.rdf4j.sail.helpers.SlowQueryContextHolder;
-import org.eclipse.rdf4j.sail.lmdb.LmdbPartitionedDistinctIteration;
-import org.eclipse.rdf4j.sail.lmdb.LmdbStableOrderPlanner;
+import org.eclipse.rdf4j.sail.lmdb.LmdbDistinctOrderMarker;
+import org.eclipse.rdf4j.sail.lmdb.LmdbPartitionedDistinctSteps;
 
 /**
  * Evaluation strategy that opportunistically replaces safe LMDB-local basic graph patterns with a native ID/slot
@@ -65,7 +66,6 @@ public final class LmdbNativeEvaluationStrategy extends StrictEvaluationStrategy
 	// Keep only the inactive Boolean between callbacks: removing it would allocate a fresh entry for every row.
 	private static final ThreadLocal<Boolean> KERNEL_SUBPLAN = ThreadLocal.withInitial(() -> Boolean.FALSE);
 	private final EvaluationStatistics evaluationStatistics;
-	private final LmdbStableOrderPlanner stableOrderPlanner;
 	// Constructor inputs retained so the claim-suppressed sibling view can be built with identical configuration.
 	private final TripleSource tripleSourceArg;
 	private final Dataset datasetArg;
@@ -180,7 +180,6 @@ public final class LmdbNativeEvaluationStrategy extends StrictEvaluationStrategy
 		this.forceRootGeneric = Boolean.getBoolean("rdf4j.lmdb.nativeQueryEngine.forceRootGeneric");
 		this.forcedExecutionStrategy = resolveForcedExecutionStrategy();
 		this.evaluationStatistics = evaluationStatistics;
-		this.stableOrderPlanner = new LmdbStableOrderPlanner(tripleSource);
 		this.tripleSourceArg = tripleSource;
 		this.datasetArg = dataset;
 		this.serviceResolverShadow = serviceResolver;
@@ -511,12 +510,9 @@ public final class LmdbNativeEvaluationStrategy extends StrictEvaluationStrategy
 	@Override
 	protected QueryEvaluationStep prepare(Distinct node, QueryEvaluationContext context)
 			throws QueryEvaluationException {
-		Optional<LmdbStableOrderPlanner.Resolution> resolution = getQueryExecutionPolicy()
-				.experimentalQueryOptimizations()
-						? stableOrderPlanner.plan(node.getArg())
-						: Optional.empty();
-		if (resolution.isPresent()) {
-			return preparePartitioned(node.getArg(), resolution.get(), context);
+		Optional<String> partitionBindingName = markPartitionBinding(node);
+		if (partitionBindingName.isPresent()) {
+			return preparePartitioned(node.getArg(), partitionBindingName.get(), context);
 		}
 		return super.prepare(node, context);
 	}
@@ -524,14 +520,31 @@ public final class LmdbNativeEvaluationStrategy extends StrictEvaluationStrategy
 	@Override
 	protected QueryEvaluationStep prepare(Reduced node, QueryEvaluationContext context)
 			throws QueryEvaluationException {
-		Optional<LmdbStableOrderPlanner.Resolution> resolution = getQueryExecutionPolicy()
-				.experimentalQueryOptimizations()
-						? stableOrderPlanner.plan(node.getArg())
-						: Optional.empty();
-		if (resolution.isPresent()) {
-			return preparePartitioned(node.getArg(), resolution.get(), context);
+		Optional<String> partitionBindingName = markPartitionBinding(node);
+		if (partitionBindingName.isPresent()) {
+			return preparePartitioned(node.getArg(), partitionBindingName.get(), context);
 		}
 		return super.prepare(node, context);
+	}
+
+	/**
+	 * Reached only when the native compiler did not claim the DISTINCT/REDUCED (it claims the whole query root in the
+	 * default mode), so the generic operators below it decide the row order. The optimizer pipeline of this strategy is
+	 * deliberately unchanged (native plans and adjacency-index fast paths must not be perturbed), so nothing has been
+	 * marked yet: mark the pattern that already leads the argument, if it qualifies. No join argument is ever moved,
+	 * which keeps pushed-down filters next to the bindings they need.
+	 * <p>
+	 * The batching accumulate join (opt-in) buffers left rows and probes in batches, so it does not preserve the left
+	 * argument's order and partitioning is refused while it is enabled.
+	 */
+	private Optional<String> markPartitionBinding(UnaryTupleOperator node) {
+		if (!getQueryExecutionPolicy().experimentalQueryOptimizations()
+				|| !LmdbDistinctOrderMarker.enabled(tripleSourceArg)
+				|| (batchCorrelatedJoinProvider() != null && LmdbNativeAccumulateJoin.enabled())) {
+			return Optional.empty();
+		}
+		return LmdbDistinctOrderMarker.mark(node.getArg(), tripleSourceArg,
+				LmdbDistinctOrderMarker.boundOutside(node, EmptyBindingSet.getInstance()));
 	}
 
 	@Override
@@ -547,31 +560,10 @@ public final class LmdbNativeEvaluationStrategy extends StrictEvaluationStrategy
 		return super.prepare(node, context);
 	}
 
-	private QueryEvaluationStep preparePartitioned(TupleExpr tupleExpr,
-			LmdbStableOrderPlanner.Resolution resolution, QueryEvaluationContext context) {
-		resolution.apply();
-		QueryEvaluationStep child = genericPrecompile(tupleExpr, context);
-		// Each evaluation owns its own factory (gap-analysis S8): the iteration closes what it was handed, so a
-		// factory shared across the prepared step would be closed by the first evaluation and a correlated re-run
-		// would operate on a closed factory — a real resource-release failure for disk-backed factories.
-		java.util.function.Supplier<CollectionFactory> collectionFactorySupplier = getCollectionFactory();
-		return bindings -> {
-			CollectionFactory collectionFactory = collectionFactorySupplier.get();
-			try {
-				CloseableIteration<BindingSet> evaluate = child.evaluate(bindings);
-				return new LmdbPartitionedDistinctIteration(evaluate, collectionFactory.createSetOfBindingSets(),
-						resolution.getVisibleBindingName(), collectionFactory);
-			} catch (RuntimeException | Error e) {
-				try {
-					collectionFactory.close();
-				} catch (RuntimeException | Error closeFailure) {
-					if (closeFailure != e) {
-						e.addSuppressed(closeFailure);
-					}
-				}
-				throw e;
-			}
-		};
+	private QueryEvaluationStep preparePartitioned(TupleExpr tupleExpr, String partitionBindingName,
+			QueryEvaluationContext context) {
+		return LmdbPartitionedDistinctSteps.partitioned(genericPrecompile(tupleExpr, context), partitionBindingName,
+				getCollectionFactory());
 	}
 
 	private void annotateNativeExplainPlan(TupleExpr expr, QueryEvaluationContext context) {
