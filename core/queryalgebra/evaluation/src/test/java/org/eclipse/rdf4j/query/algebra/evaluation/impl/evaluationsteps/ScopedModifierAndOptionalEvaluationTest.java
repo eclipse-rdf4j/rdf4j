@@ -36,6 +36,7 @@ import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.Statement;
 import org.eclipse.rdf4j.model.Value;
+import org.eclipse.rdf4j.model.base.AbstractIRI;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.MutableBindingSet;
@@ -84,6 +85,59 @@ class ScopedModifierAndOptionalEvaluationTest {
 	@BeforeEach
 	void setUp() {
 		strategy = new StrictEvaluationStrategy(new EmptyTripleSource(), null);
+	}
+
+	@Test
+	void optionalReplayDoesNotHashOpaqueIncomingValues() {
+		AtomicInteger foreignHashes = new AtomicInteger();
+		IRI first = new ForeignOptionalKey("first", foreignHashes);
+		IRI second = new ForeignOptionalKey("second", foreignHashes);
+		List<BindingSet> inputs = new ArrayList<>();
+		for (IRI key : List.of(first, second, first, second)) {
+			var row = new QueryBindingSet();
+			row.setBinding("key", key);
+			inputs.add(row);
+		}
+		LeftJoin join = new LeftJoin(new SingletonSet(), new Join(
+				new StatementPattern(Var.of("key"), Var.of("predicate"), Var.of("child")),
+				new StatementPattern(Var.of("child"), Var.of("otherPredicate"), Var.of("result"))));
+		OptionalRightMemo memo = OptionalRightMemo.prepare(join, new QueryEvaluationContext.Minimal(null),
+				() -> {
+				}, value -> SimpleValueFactory.getInstance().createIRI(value.stringValue()));
+		QueryEvaluationStep left = ignored -> new CloseableIteratorIteration<>(inputs.iterator());
+		QueryEvaluationStep right = row -> new CloseableIteratorIteration<>(List.of(row).iterator());
+
+		try (var rows = memo.open(left, EmptyBindingSet.getInstance(), right)) {
+			assertThat(QueryResults.asList(rows)).hasSize(inputs.size());
+		}
+		assertThat(foreignHashes.get()).isZero();
+	}
+
+	private static final class ForeignOptionalKey extends AbstractIRI {
+		private static final long serialVersionUID = 1L;
+		private final String localName;
+		private final AtomicInteger foreignHashes;
+
+		ForeignOptionalKey(String localName, AtomicInteger foreignHashes) {
+			this.localName = localName;
+			this.foreignHashes = foreignHashes;
+		}
+
+		@Override
+		public String getNamespace() {
+			return "urn:";
+		}
+
+		@Override
+		public String getLocalName() {
+			return localName;
+		}
+
+		@Override
+		public int hashCode() {
+			foreignHashes.incrementAndGet();
+			return super.hashCode();
+		}
 	}
 
 	@ParameterizedTest

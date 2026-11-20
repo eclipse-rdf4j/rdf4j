@@ -32,6 +32,8 @@ import org.eclipse.rdf4j.model.Literal;
 import org.eclipse.rdf4j.model.TripleTerm;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.query.QueryInterruptedException;
+import org.eclipse.rdf4j.query.algebra.evaluation.ArrayBindingSet;
+import org.eclipse.rdf4j.query.algebra.evaluation.ArrayBindingSet.ResultSnapshotLayout;
 import org.eclipse.rdf4j.query.impl.MapBindingSet;
 import org.eclipse.rdf4j.sail.SailException;
 import org.eclipse.rdf4j.sail.base.SailClosable;
@@ -39,6 +41,7 @@ import org.eclipse.rdf4j.sail.features.SailResultValueExtractor;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.NativeProjectedBindingSet;
 import org.eclipse.rdf4j.sail.lmdb.model.LmdbBNode;
 import org.eclipse.rdf4j.sail.lmdb.model.LmdbIRI;
+import org.eclipse.rdf4j.sail.lmdb.model.LmdbLiteral;
 import org.eclipse.rdf4j.sail.lmdb.model.LmdbValue;
 
 /** Repository-only, demand-driven materialization retaining ID capabilities through complete value waves. */
@@ -68,6 +71,7 @@ final class RepositoryValueIteration<T> implements CloseableIteration<T>, Cooper
 	private Thread activeThread;
 	private boolean interruptDelivered;
 	private boolean drainClaimed;
+	private ResultSnapshotLayout arraySnapshotLayout;
 	private T row;
 	private boolean rowReady;
 
@@ -156,14 +160,29 @@ final class RepositoryValueIteration<T> implements CloseableIteration<T>, Cooper
 		NativeProjectedBindingSet projected = extractor == SailResultValueExtractor.BINDING_SETS
 				&& sourceRow instanceof NativeProjectedBindingSet nativeRow ? nativeRow : null;
 		MapBindingSet snapshot = projected == null ? null : projected.snapshotIfFullyCaptured();
+		boolean captured = snapshot != null;
+		if (extractor == SailResultValueExtractor.BINDING_SETS && sourceRow != null
+				&& sourceRow.getClass() == ArrayBindingSet.class) {
+			ArrayBindingSet array = (ArrayBindingSet) sourceRow;
+			if (arraySnapshotLayout == null || !arraySnapshotLayout.matches(array)) {
+				arraySnapshotLayout = new ResultSnapshotLayout(array);
+			}
+			snapshot = arraySnapshotLayout.snapshot(array);
+		}
 		// Identity with the default binding-set extractor guarantees T accepts a BindingSet.
 		@SuppressWarnings("unchecked")
 		T nextRow = snapshot == null ? extractor.snapshot(sourceRow) : (T) snapshot;
 		if (closed.get()) {
 			return false;
 		}
-		List<Value> roots = snapshot == null ? rootsRequiringPreparation(nextRow)
-				: projected.capturedRootsRequiringPreparation(RepositoryValueIteration::isPrepared);
+		List<Value> roots;
+		if (captured) {
+			roots = projected.capturedRootsRequiringPreparation(RepositoryValueIteration::isPrepared);
+		} else if (extractor == SailResultValueExtractor.BINDING_SETS && nextRow instanceof MapBindingSet bindings) {
+			roots = bindingRootsRequiringPreparation(bindings);
+		} else {
+			roots = rootsRequiringPreparation(nextRow);
+		}
 		// Rows whose values are already resolved need neither owner scopes nor dictionary waves.
 		if (roots != null) {
 			resolveWaves(roots);
@@ -186,6 +205,17 @@ final class RepositoryValueIteration<T> implements CloseableIteration<T>, Cooper
 		return prepared[0] ? null : roots;
 	}
 
+	private static List<Value> bindingRootsRequiringPreparation(MapBindingSet bindings) {
+		boolean[] prepared = { true };
+		bindings.forEachValue(value -> prepared[0] &= isPrepared(value));
+		if (prepared[0]) {
+			return null;
+		}
+		List<Value> roots = new ArrayList<>(bindings.size());
+		bindings.forEachValue(roots::add);
+		return roots;
+	}
+
 	/** A repository pull already owns cold values until its complete current-row wave finishes. */
 	boolean isPullingSource() {
 		SourcePull pull = SOURCE_PULL.get();
@@ -201,6 +231,11 @@ final class RepositoryValueIteration<T> implements CloseableIteration<T>, Cooper
 	static SourcePull currentSourcePull(CloseableIteration<?> replayable) {
 		SourcePull pull = SOURCE_PULL.get();
 		return pull != null && pull.observedSource == replayable && !pull.exposure.closed.get() ? pull : null;
+	}
+
+	static boolean capturesRepositoryProjection(Object owner) {
+		SourcePull pull = SOURCE_PULL.get();
+		return pull != null && pull.projectionOwner == owner && !pull.exposure.closed.get();
 	}
 
 	private SourcePull beginSourcePull() {
@@ -219,6 +254,7 @@ final class RepositoryValueIteration<T> implements CloseableIteration<T>, Cooper
 		private boolean inUse;
 		private boolean availabilityClaimed;
 		private LmdbStoreConnection.ObservedRead observedRead;
+		private Object projectionOwner;
 
 		private SourcePull(RepositoryValueIteration<?> exposure) {
 			this.exposure = exposure;
@@ -243,6 +279,10 @@ final class RepositoryValueIteration<T> implements CloseableIteration<T>, Cooper
 			return read;
 		}
 
+		void projectionOwner(Object owner) {
+			projectionOwner = owner;
+		}
+
 		@Override
 		public void close() {
 			if (previous == null) {
@@ -258,6 +298,7 @@ final class RepositoryValueIteration<T> implements CloseableIteration<T>, Cooper
 					read.close();
 				}
 			} finally {
+				projectionOwner = null;
 				availabilityClaimed = false;
 				inUse = false;
 			}
@@ -274,6 +315,14 @@ final class RepositoryValueIteration<T> implements CloseableIteration<T>, Cooper
 				return false;
 			}
 			if (value instanceof Literal) {
+				if (value.getClass() == LmdbLiteral.class) {
+					Value datatype = ((LmdbLiteral) value).loadedDatatype();
+					return datatype == null || isPrepared(datatype);
+				}
+				if (lmdb instanceof PreparedLmdbValue.Prepared prepared
+						&& prepared.state().payload instanceof Literal literal) {
+					return isPrepared(literal.getDatatype());
+				}
 				boolean[] prepared = { true };
 				lmdb.visitValueChildren(child -> prepared[0] &= child == null || isPrepared(child));
 				return prepared[0];

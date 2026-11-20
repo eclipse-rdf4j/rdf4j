@@ -20,6 +20,7 @@ import java.util.Iterator;
 import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.Set;
+import java.util.function.Consumer;
 
 import org.eclipse.rdf4j.common.annotation.InternalUseOnly;
 import org.eclipse.rdf4j.model.Value;
@@ -147,6 +148,23 @@ public class MapBindingSet extends AbstractBindingSet implements MutableBindingS
 		}
 
 		return null;
+	}
+
+	/** Visits values in binding encounter order without creating binding objects or a writable view. */
+	@InternalUseOnly
+	public void forEachValue(Consumer<? super Value> action) {
+		if (bindings instanceof CompactBindings compact) {
+			Value[] projected = compact.values;
+			if (projected != null) {
+				for (Value value : projected) {
+					if (value != null) {
+						action.accept(value);
+					}
+				}
+				return;
+			}
+		}
+		bindings.values().forEach(binding -> action.accept(binding.getValue()));
 	}
 
 	@Override

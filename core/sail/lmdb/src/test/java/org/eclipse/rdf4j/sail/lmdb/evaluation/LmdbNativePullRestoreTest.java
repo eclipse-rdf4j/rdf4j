@@ -26,6 +26,7 @@ import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.function.Function;
 import java.util.stream.IntStream;
 
+import org.eclipse.rdf4j.sail.lmdb.LmdbQueryMemoryManager;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbNativeKernelInterpreter.PullRestore;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbNativeKernelInterpreter.PullRestoreSite;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbNativeKernelInterpreter.PullRestoreTestMode;
@@ -91,6 +92,137 @@ class LmdbNativePullRestoreTest {
 		for (List<PullRestoreSite> child : site.children()) {
 			child.forEach(LmdbNativePullRestoreTest::assertNoStageRestore);
 		}
+	}
+
+	@Test
+	void repeatedOptionalKeysReuseCompleteRightRowsWithoutChangingTheLeftMapping() {
+		LeftGroup optional = new LeftGroup(List.of(new Probe(1, Operand.col(1), 2),
+				new LeftGroup(List.of(new Probe(2, Operand.col(2), 3)))));
+		Kernel ir = new Kernel(4, List.of(new EnumerateDomain(0, 0), new Probe(0, Operand.col(0), 1), optional),
+				new Emit(new int[] { 0, 1, 2, 3 }, false, OutputMods.none()));
+		var left = new KeyedView(1, new long[][] { { 11 }, { 12 }, { 11 }, { 12 }, { 11 } });
+		var right = new KernelMixedDemandTest.CountingAdjacency(11);
+		var nested = new KeyedView(100_011, new long[][] { { 21, 21, 22 } });
+		var manager = LmdbQueryMemoryManager.createForTesting(1L << 20, 1L << 20);
+		LmdbNativeKernelInterpreter execution = LmdbNativeKernelInterpreter.forRows(ir, PullRestoreTestMode.VERIFY);
+		assertNotNull(execution);
+		try (var ledger = manager.openQuery()) {
+			try {
+				execution
+						.bind(probeContext(new long[] { 1, 2, 3, 4, 5 }, left, right, nested).withMemoryLedger(ledger));
+				assertEquals(List.of("[1, 11, 100011, 21]", "[1, 11, 100011, 21]", "[1, 11, 100011, 22]",
+						"[2, 12, -1, -1]", "[3, 11, 100011, 21]", "[3, 11, 100011, 21]", "[3, 11, 100011, 22]",
+						"[4, 12, -1, -1]", "[5, 11, 100011, 21]", "[5, 11, 100011, 21]", "[5, 11, 100011, 22]"),
+						drain(ir, execution));
+				assertEquals(2, right.finds,
+						"only one right-arm probe per distinct correlation key, including no matches");
+			} finally {
+				execution.close();
+			}
+		}
+	}
+
+	@Test
+	void optionalReplayKeysIncludeGraphContextAndUnboundValues() {
+		LeftGroup optional = new LeftGroup(List.of(new Probe(1, Operand.constant(0), 2, -1, Operand.col(1), false)));
+		Kernel ir = new Kernel(3, List.of(new EnumerateDomain(0, 0), new LeftProbe(0, Operand.col(0), 1), optional),
+				new Emit(new int[] { 0, 1, 2 }, false, OutputMods.none()));
+		var graphNames = new KeyedView(1, new long[][] { { 17 }, { 18 }, {}, { 17 }, { 18 }, {} });
+		var quads = new KeyedView(0, new long[][] { { 41, 42 } }, new long[][] { { 17, 18 } });
+		var manager = LmdbQueryMemoryManager.createForTesting(1L << 20, 1L << 20);
+		LmdbNativeKernelInterpreter execution = LmdbNativeKernelInterpreter.forRows(ir, PullRestoreTestMode.VERIFY);
+		assertNotNull(execution);
+		try (var ledger = manager.openQuery()) {
+			try {
+				execution.bind(
+						probeContext(new long[] { 1, 2, 3, 4, 5, 6 }, graphNames, quads).withMemoryLedger(ledger));
+				assertEquals(List.of("[1, 17, 41]", "[2, 18, 42]", "[3, -1, -1]", "[4, 17, 41]", "[5, 18, 42]",
+						"[6, -1, -1]"), drain(ir, execution));
+			} finally {
+				execution.close();
+			}
+		}
+	}
+
+	@Test
+	void optionalReplayHonorsDemandAndReleasesPartialStateOnRebind() {
+		Kernel ir = replayAcrossRootRows();
+		var first = new KeyedView(0, new long[][] { { 11, 12, 13 } });
+		var changed = new KeyedView(0, new long[][] { { 14 } });
+		var reads = new KernelMixedDemandTest.CountingAdjacency(13);
+		var changedReads = new KernelMixedDemandTest.CountingAdjacency(14);
+		var manager = LmdbQueryMemoryManager.createForTesting(1L << 20, 1L << 20);
+		LmdbNativeKernelInterpreter execution = LmdbNativeKernelInterpreter.forRows(ir, PullRestoreTestMode.VERIFY);
+		assertNotNull(execution);
+		try (var ledger = manager.openQuery(); var nextLedger = manager.openQuery()) {
+			try {
+				execution.bind(probeContext(new long[] { 1, 2 }, first, reads).withMemoryLedger(ledger));
+				long[] row = new long[ir.stride()];
+				assertEquals(1, execution.fill(row, 1));
+				assertArrayEquals(new long[] { 1, 11, 100_011 }, row);
+				assertEquals(1, reads.finds, "first demand may touch only the first right-hand row");
+				assertTrue(ledger.usedBytes() > 0);
+
+				execution.bind(probeContext(new long[] { 1, 2 }, changed, changedReads).withMemoryLedger(nextLedger));
+				assertEquals(0, ledger.usedBytes());
+				assertEquals(1, reads.finds, "rebind must abandon partial recording without finishing its arm");
+				assertEquals(List.of("[1, 14, 100014]", "[2, 14, 100014]"), drain(ir, execution));
+				assertEquals(1, changedReads.finds);
+			} finally {
+				execution.close();
+			}
+			assertEquals(0, nextLedger.usedBytes());
+		}
+	}
+
+	@Test
+	void optionalReplayAbandonsPartialRunWhenTheLedgerRefusesGrowth() {
+		Kernel ir = replayAcrossRootRows();
+		var first = new KeyedView(0, new long[][] { { 11, 12, 13 } });
+		var reads = new KernelMixedDemandTest.CountingAdjacency(13);
+		var manager = LmdbQueryMemoryManager.createForTesting(190, 190);
+		LmdbNativeKernelInterpreter execution = LmdbNativeKernelInterpreter.forRows(ir, PullRestoreTestMode.VERIFY);
+		assertNotNull(execution);
+		try (var ledger = manager.openQuery()) {
+			try {
+				execution.bind(probeContext(new long[] { 1, 2 }, first, reads).withMemoryLedger(ledger));
+				assertEquals(List.of("[1, 11, 100011]", "[1, 12, 100012]", "[1, 13, 100013]", "[2, 11, 100011]",
+						"[2, 12, 100012]", "[2, 13, 100013]"), drain(ir, execution));
+				assertEquals(6, reads.finds, "an incomplete right-arm recording must never be replayed");
+				assertEquals(0, ledger.usedBytes());
+			} finally {
+				execution.close();
+			}
+		}
+	}
+
+	@Test
+	void optionalReplayLeavesInheritedWritesInTheirOrdinaryFrame() {
+		LeftGroup optional = new LeftGroup(List.of(new Probe(0, Operand.constant(0), 0)), new int[0],
+				new int[] { 0 });
+		Kernel ir = new Kernel(1, List.of(new EnumerateDomain(0, 0), optional),
+				new Emit(new int[] { 0 }, false, OutputMods.none()));
+		var right = new KernelMixedDemandTest.CountingAdjacency(1);
+		var manager = LmdbQueryMemoryManager.createForTesting(1L << 20, 1L << 20);
+		LmdbNativeKernelInterpreter execution = LmdbNativeKernelInterpreter.forRows(ir, PullRestoreTestMode.VERIFY);
+		assertNotNull(execution);
+		try (var ledger = manager.openQuery()) {
+			try {
+				execution.bind(probeContext(new long[] { 1, 2 }, right).withMemoryLedger(ledger));
+				assertEquals(List.of("[1]", "[2]"), drain(ir, execution));
+				assertEquals(2, right.finds);
+				assertEquals(0, ledger.usedBytes());
+			} finally {
+				execution.close();
+			}
+		}
+	}
+
+	private static Kernel replayAcrossRootRows() {
+		LeftGroup optional = new LeftGroup(
+				List.of(new Probe(0, Operand.constant(0), 1), new Probe(1, Operand.col(1), 2)));
+		return new Kernel(3, List.of(new EnumerateDomain(0, 0), optional),
+				new Emit(new int[] { 0, 1, 2 }, false, OutputMods.none()));
 	}
 
 	@ParameterizedTest

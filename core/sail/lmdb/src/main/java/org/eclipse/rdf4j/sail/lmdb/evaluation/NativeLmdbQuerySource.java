@@ -17,6 +17,7 @@ import java.util.Arrays;
 import java.util.Objects;
 import java.util.OptionalDouble;
 import java.util.OptionalLong;
+import java.util.function.Predicate;
 
 import org.eclipse.rdf4j.common.annotation.Experimental;
 import org.eclipse.rdf4j.common.annotation.InternalUseOnly;
@@ -190,6 +191,32 @@ public interface NativeLmdbQuerySource {
 	default Value reuseProjectedValue(Object snapshot, long id, int positionMask, ValueResolutionScope valueScope,
 			Value supplied, long semanticVersion) {
 		return null;
+	}
+
+	/** Borrows the paired store snapshot for internal lazy-handle lookup only. The access must not escape the call. */
+	default boolean withProjectedValueAccess(ValueResolutionScope scope, Predicate<ProjectedValueAccess> capture) {
+		return false;
+	}
+
+	interface ProjectedValueAccess {
+		Object snapshot();
+
+		/**
+		 * A null result declines the remaining row so its original source can resolve it outside the borrowed scope.
+		 */
+		Value lookup(long id, int positionMask, ValueResolutionScope scope);
+
+		Value reuse(long id, int positionMask, ValueResolutionScope scope, Value supplied, long semanticVersion);
+
+		/** Stable reuse epoch for independently owned RDF payloads, or negative when reuse is unavailable. */
+		default long detachedProjectionEpoch() {
+			return -1L;
+		}
+
+		/** Captures a term without borrowing mutable semantic state from the dictionary cache. */
+		default Value lookupDetached(long id, int positionMask, ValueResolutionScope scope) {
+			return null;
+		}
 	}
 
 	/**

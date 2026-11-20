@@ -82,35 +82,34 @@ public final class LmdbStandardQueryOptimizerPipeline implements QueryOptimizerP
 
 	@Override
 	public BindingSet getOptimizerInputBindings(QueryOptimizer optimizer, BindingSet initialBindings) {
+		if (optimizer instanceof LmdbDistinctWitnessOptimizer) {
+			return initialBindings;
+		}
 		return delegate.getOptimizerInputBindings(optimizer, initialBindings);
 	}
 
 	@Override
 	public Iterable<QueryOptimizer> getOptimizers() {
-		if (!strategy.getQueryExecutionPolicy().experimentalQueryOptimizations()) {
-			if (!nativeEngine) {
-				return delegate.getOptimizers();
-			}
-			List<QueryOptimizer> plain = new ArrayList<>();
-			delegate.getOptimizers().forEach(plain::add);
-			insertGroupPushdown(plain);
-			return plain;
-		}
+		boolean experimental = strategy.getQueryExecutionPolicy().experimentalQueryOptimizations();
 		List<QueryOptimizer> optimizers = new ArrayList<>();
 		boolean inserted = false;
 
 		for (QueryOptimizer optimizer : delegate.getOptimizers()) {
+			if (!nativeEngine && optimizer instanceof QueryJoinOptimizer) {
+				optimizers.add(new LmdbDistinctWitnessOptimizer());
+			}
 			optimizers.add(optimizer);
-			if (optimizer instanceof QueryJoinOptimizer && !evaluationStatistics.supportsJoinEstimation()) {
+			if (experimental && optimizer instanceof QueryJoinOptimizer
+					&& !evaluationStatistics.supportsJoinEstimation()) {
 				optimizers.add(new LmdbPhysicalJoinOrderOptimizer());
 			}
-			if (optimizer instanceof OrderLimitOptimizer) {
+			if (experimental && optimizer instanceof OrderLimitOptimizer) {
 				optimizers.add(new LmdbOrderByOptimizer(tripleSource));
 				inserted = true;
 			}
 		}
 
-		if (!inserted) {
+		if (experimental && !inserted) {
 			optimizers.add(new LmdbOrderByOptimizer(tripleSource));
 		}
 

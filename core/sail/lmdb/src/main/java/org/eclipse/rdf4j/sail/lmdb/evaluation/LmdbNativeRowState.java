@@ -70,6 +70,8 @@ final class RowState implements LmdbNativeSlotReader {
 	PathResultMemo pathEstimateMemos;
 	/** Replay the ordinary generic source order without mandating adjacency or LMDB. */
 	boolean encounterOrderRequired;
+	/** The root result consumer reads this carrier without binding or nesting other operators on it. */
+	boolean terminalKernelOutput;
 	int trailSize;
 	long boundMask;
 	/**

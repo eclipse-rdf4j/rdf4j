@@ -3651,6 +3651,25 @@ class TripleStore implements Closeable {
 		return selectGeneration(txn, generation -> generation.best[boundMask(subj, pred, obj, context)].toString());
 	}
 
+	/** First unfixed field of the same index an unordered statement scan would open. */
+	StatementOrder getNaturalStatementOrder(Txn txn, long subj, long pred, long obj, long context) {
+		return selectGeneration(txn, generation -> {
+			TripleIndex index = generation.best[boundMask(subj, pred, obj, context)];
+			for (StatementOrder order : StatementOrder.values()) {
+				boolean fixed = switch (order) {
+				case S -> subj >= 0;
+				case P -> pred >= 0;
+				case O -> obj >= 0;
+				case C -> context >= 0;
+				};
+				if (!fixed && index.supportsOrder(order, subj, pred, obj, context)) {
+					return order;
+				}
+			}
+			return null;
+		});
+	}
+
 	String getIndexName(StatementOrder order, long subj, long pred, long obj, long context) {
 		return orderedIndexName(queryGeneration, order, subj, pred, obj, context);
 	}

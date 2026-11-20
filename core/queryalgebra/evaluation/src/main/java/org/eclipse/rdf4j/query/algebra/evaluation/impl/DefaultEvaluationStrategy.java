@@ -1234,7 +1234,16 @@ public class DefaultEvaluationStrategy implements EvaluationStrategy, FederatedS
 
 	protected QueryEvaluationStep prepare(Distinct node, QueryEvaluationContext context)
 			throws QueryEvaluationException {
-		final QueryEvaluationStep child = precompile(node.getArg(), context);
+		return prepareDistinct(precompile(node.getArg(), context), null, null);
+	}
+
+	/**
+	 * Prepares DISTINCT over an already compiled input. A supplied partition accessor must produce one contiguous run
+	 * for every value when evaluated without incoming bindings. Its snapshot function owns the retained key
+	 * independently of any values exposed through the output row.
+	 */
+	protected QueryEvaluationStep prepareDistinct(QueryEvaluationStep child, Function<BindingSet, Value> partition,
+			Function<Value, Value> snapshotPartition) {
 		return bindings -> {
 			final CollectionFactory cf = this.getCollectionFactory().get();
 			CloseableIteration<BindingSet> evaluate = null;
@@ -1246,7 +1255,33 @@ public class DefaultEvaluationStrategy implements EvaluationStrategy, FederatedS
 						return new DistinctBindingSetKey(sourceObject);
 					}
 				};
-				DistinctIteration<DistinctBindingSetKey> distinct = new DistinctIteration<>(keys, cf.createSet());
+				DistinctIteration<DistinctBindingSetKey> distinct;
+				if (partition == null || !bindings.isEmpty()) {
+					distinct = new DistinctIteration<>(keys, cf.createSet());
+				} else {
+					distinct = new DistinctIteration<>(keys, cf.createSet()) {
+						private Value currentPartition;
+						private boolean initialized;
+
+						@Override
+						protected boolean add(DistinctBindingSetKey key) {
+							Value nextPartition = partition.apply(key.bindings);
+							if (!initialized || !Objects.equals(currentPartition, nextPartition)) {
+								clearSeen();
+								currentPartition = nextPartition == null ? null
+										: snapshotPartition.apply(nextPartition);
+								initialized = true;
+							}
+							return super.add(key);
+						}
+
+						@Override
+						protected void handleClose() {
+							currentPartition = null;
+							super.handleClose();
+						}
+					};
+				}
 				final class DistinctResult extends AbstractCloseableIteration<BindingSet>
 						implements CooperativeCancellation {
 					@Override

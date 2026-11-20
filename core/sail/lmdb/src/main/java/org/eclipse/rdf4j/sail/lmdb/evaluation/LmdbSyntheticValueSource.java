@@ -17,6 +17,7 @@ import static org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbNativeAggregateCompiler
 import java.io.IOException;
 import java.util.OptionalDouble;
 import java.util.OptionalLong;
+import java.util.function.Predicate;
 
 import org.eclipse.rdf4j.common.annotation.Experimental;
 import org.eclipse.rdf4j.common.order.StatementOrder;
@@ -438,6 +439,49 @@ class SyntheticValueSource implements NativeLmdbQuerySource {
 			return null;
 		}
 		return delegate.reuseProjectedValue(snapshot, id, positionMask, valueScope, supplied, semanticVersion);
+	}
+
+	@Override
+	public boolean withProjectedValueAccess(ValueResolutionScope scope, Predicate<ProjectedValueAccess> capture) {
+		if (!catalog.isEmpty() || context != null && (context.isClosed() || context.mayShadowProjectedStoreValues())) {
+			return false;
+		}
+		return context == null ? delegate.withProjectedValueAccess(scope, capture)
+				: delegate.withProjectedValueAccess(scope,
+						access -> capture.test(new UnshadowedProjectedAccess(access, context)));
+	}
+
+	private record UnshadowedProjectedAccess(ProjectedValueAccess backing, NativeExecutionContext context)
+			implements ProjectedValueAccess {
+		@Override
+		public Object snapshot() {
+			return backing.snapshot();
+		}
+
+		@Override
+		public Value lookup(long id, int positionMask, ValueResolutionScope scope) {
+			return context.isClosed() || context.mayShadowProjectedStoreValues() ? null
+					: backing.lookup(id, positionMask, scope);
+		}
+
+		@Override
+		public Value reuse(long id, int positionMask, ValueResolutionScope scope, Value supplied,
+				long semanticVersion) {
+			return context.isClosed() || context.mayShadowProjectedStoreValues() ? null
+					: backing.reuse(id, positionMask, scope, supplied, semanticVersion);
+		}
+
+		@Override
+		public long detachedProjectionEpoch() {
+			return context.isClosed() || context.mayShadowProjectedStoreValues() ? -1L
+					: backing.detachedProjectionEpoch();
+		}
+
+		@Override
+		public Value lookupDetached(long id, int positionMask, ValueResolutionScope scope) {
+			return context.isClosed() || context.mayShadowProjectedStoreValues() ? null
+					: backing.lookupDetached(id, positionMask, scope);
+		}
 	}
 
 	private Value lazyValue(long id, int positionMask, ValueResolutionScope valueScope, boolean explicitScope) {

@@ -41,6 +41,28 @@ final class PreparedLmdbValue {
 
 	/** Deliberately contains no store, source, connection, reader, or model references. */
 	static final class Owner {
+		private final boolean tracksProjectionChanges;
+		private volatile long projectionEpoch;
+
+		Owner() {
+			this(false);
+		}
+
+		Owner(boolean tracksProjectionChanges) {
+			this.tracksProjectionChanges = tracksProjectionChanges;
+		}
+
+		long projectionEpoch() {
+			long epoch = projectionEpoch;
+			return (epoch & 1L) == 0 ? epoch : -1L;
+		}
+
+		private synchronized void rebindProjection(State state, Proof rebound) {
+			projectionEpoch++;
+			state.proof = rebound;
+			state.dictionaryProof = rebound;
+			projectionEpoch++;
+		}
 	}
 
 	static final class Generation {
@@ -89,8 +111,13 @@ final class PreparedLmdbValue {
 				// Numeric associations can change after GC/reinsert; they do not replace the original decode
 				// capability.
 				Proof rebound = new Proof(null, new InternalIdentity(id, revision));
-				state().proof = rebound;
-				state().dictionaryProof = rebound;
+				State current = state();
+				if (current.owner.tracksProjectionChanges) {
+					current.owner.rebindProjection(current, rebound);
+				} else {
+					current.proof = rebound;
+					current.dictionaryProof = rebound;
+				}
 			}
 		}
 

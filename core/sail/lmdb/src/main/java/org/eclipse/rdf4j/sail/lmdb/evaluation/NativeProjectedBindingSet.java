@@ -39,6 +39,7 @@ import org.eclipse.rdf4j.query.impl.MapBindingSet;
 import org.eclipse.rdf4j.query.impl.SimpleBinding;
 import org.eclipse.rdf4j.sail.lmdb.ValueResolutionScope;
 import org.eclipse.rdf4j.sail.lmdb.ValueStore;
+import org.eclipse.rdf4j.sail.lmdb.evaluation.NativeLmdbQuerySource.ProjectedValueAccess;
 import org.eclipse.rdf4j.sail.lmdb.model.LmdbValue;
 
 /** Immutable projected native ids that materialize RDF values only when a caller reads a binding. */
@@ -51,6 +52,7 @@ public final class NativeProjectedBindingSet extends AbstractBindingSet {
 	private static final long serialVersionUID = -7813114252830058655L;
 
 	static final String ENABLED_PROPERTY = "rdf4j.lmdb.nativeLazyResults.enabled";
+	static final String BATCH_CAPTURE_ENABLED_PROPERTY = "rdf4j.lmdb.nativeLazyResults.batchCapture.enabled";
 	static final AtomicLong CREATED = new AtomicLong();
 	static final AtomicLong MATERIALIZED_VALUES = new AtomicLong();
 	private static final Consumer<Value> IGNORE_VALUE = ignored -> {
@@ -68,7 +70,12 @@ public final class NativeProjectedBindingSet extends AbstractBindingSet {
 	final int size;
 	Set<String> bindingNames;
 	private transient boolean fullyCaptured;
+	private transient boolean hasCapturedValue;
+	private transient boolean detachedProjection;
+	private transient List<Value> newProjectionRoots;
 	private transient int[] captureIndex;
+	private transient int captureIndexMask;
+	private transient int captureHashShift;
 
 	NativeProjectedBindingSet(NativeLmdbQuerySource source, String[] names, int[] sourceSlots, long[] row) {
 		this(source, ProjectionLayout.create(names, sourceSlots), row);
@@ -246,6 +253,11 @@ public final class NativeProjectedBindingSet extends AbstractBindingSet {
 	/** Returns the ordered roots for preparation, or null when every captured value is already prepared. */
 	public List<Value> capturedRootsRequiringPreparation(Predicate<? super Value> isPrepared) {
 		assert source == null && fullyCaptured && captureIndex == null;
+		if (detachedProjection) {
+			List<Value> roots = newProjectionRoots;
+			newProjectionRoots = null;
+			return roots;
+		}
 		List<Value> roots = null;
 		for (int i = 0; i < values.length; i++) {
 			Value value = values[i];
@@ -300,6 +312,150 @@ public final class NativeProjectedBindingSet extends AbstractBindingSet {
 		detachAfterMaterialization();
 	}
 
+	/**
+	 * The registered repository pull prepares this row before asking for another one. A paired store source can select
+	 * immutable terms at this boundary, so later rows need prepare only newly captured handles.
+	 */
+	public void captureRepositoryAndDetach(ValueResolutionScope valueScope, CaptureScratch scratch) {
+		NativeLmdbQuerySource current = source;
+		CaptureState state = current != null && !hasCapturedValue && scratch.batchCapture ? scratch.acquire() : null;
+		if (state != null) {
+			boolean detached = false;
+			try {
+				detached = current.withProjectedValueAccess(valueScope, access -> {
+					long epoch = access.detachedProjectionEpoch();
+					return epoch >= 0 && captureDetached(current, access, valueScope, state, epoch)
+							&& epoch == access.detachedProjectionEpoch();
+				});
+				if (detached) {
+					detachedProjection = true;
+					fullyCaptured = true;
+					source = null;
+					return;
+				}
+			} finally {
+				if (!detached) {
+					state.discardDetached();
+					Arrays.fill(values, null);
+					newProjectionRoots = null;
+				}
+				scratch.release(state);
+			}
+		}
+		captureAndDetach(valueScope, scratch);
+	}
+
+	private boolean captureDetached(NativeLmdbQuerySource current, ProjectedValueAccess access,
+			ValueResolutionScope scope, CaptureState state, long epoch) {
+		Object snapshot = access.snapshot();
+		if (snapshot == null) {
+			return false;
+		}
+		DetachedProjection cache = state.detached;
+		if (cache == null || !cache.matches(current, snapshot, scope)) {
+			state.detached = cache = new DetachedProjection(current, snapshot, scope, epoch);
+		} else if (cache.epoch != epoch) {
+			cache.clear(epoch);
+		}
+		NativeProjectedBindingSet previous = cache.previous;
+		int first = 0;
+		if (previous != null && positionMasks == previous.positionMasks) {
+			first = Arrays.mismatch(ids, previous.ids);
+			if (first < 0) {
+				System.arraycopy(previous.values, 0, values, 0, values.length);
+				cache.previous = this;
+				return true;
+			}
+			System.arraycopy(previous.values, 0, values, 0, first);
+			for (int column = first + 1; column < ids.length; column++) {
+				if (ids[column] == previous.ids[column]) {
+					values[column] = previous.values[column];
+				}
+			}
+		}
+		int lookedUp = 0;
+		try {
+			for (int column = first; column < ids.length; column++) {
+				long id = ids[column];
+				if (values[column] != null || !isBound(id)) {
+					continue;
+				}
+				int mask = positionMasks[column];
+				int bucket = DetachedProjection.bucket(id, mask);
+				Value value = cache.value(bucket, id, mask);
+				if (value == null) {
+					int duplicate = firstMaterializedDuplicate(column);
+					if (duplicate >= 0) {
+						value = values[duplicate];
+					} else {
+						value = access.lookupDetached(id, mask, scope);
+						if (value == null) {
+							return false;
+						}
+						lookedUp++;
+						if (newProjectionRoots == null) {
+							newProjectionRoots = new ArrayList<>();
+						}
+						newProjectionRoots.add(value);
+					}
+					cache.put(bucket, id, mask, value);
+				}
+				values[column] = value;
+			}
+			cache.previous = this;
+			return true;
+		} finally {
+			if (lookedUp != 0) {
+				MATERIALIZED_VALUES.addAndGet(lookedUp);
+			}
+		}
+	}
+
+	/** Result-local, paired dictionary cache. Probe collisions only drop a retained term. */
+	private static final class DetachedProjection {
+		private static final int CAPACITY = 1024;
+		private final NativeLmdbQuerySource source;
+		private final Object snapshot;
+		private final ValueResolutionScope scope;
+		private long epoch;
+		private final long[] ids = new long[CAPACITY];
+		private final int[] masks = new int[CAPACITY];
+		private final Value[] values = new Value[CAPACITY];
+		private NativeProjectedBindingSet previous;
+
+		DetachedProjection(NativeLmdbQuerySource source, Object snapshot, ValueResolutionScope scope, long epoch) {
+			this.source = source;
+			this.snapshot = snapshot;
+			this.scope = scope;
+			this.epoch = epoch;
+		}
+
+		boolean matches(NativeLmdbQuerySource source, Object snapshot, ValueResolutionScope scope) {
+			return this.source == source && this.snapshot == snapshot && this.scope == scope;
+		}
+
+		void clear(long epoch) {
+			Arrays.fill(values, null);
+			previous = null;
+			this.epoch = epoch;
+		}
+
+		static int bucket(long id, int mask) {
+			long hash = (id ^ ((long) mask << Integer.SIZE)) * 0x9E3779B97F4A7C15L;
+			return (int) (hash >>> (Long.SIZE - Integer.numberOfTrailingZeros(CAPACITY)));
+		}
+
+		Value value(int bucket, long id, int mask) {
+			return ids[bucket] == id && masks[bucket] == mask ? values[bucket] : null;
+		}
+
+		void put(int bucket, long id, int mask, Value value) {
+			ids[bucket] = id;
+			masks[bucket] = mask;
+			values[bucket] = value;
+		}
+	}
+
 	private void collectMaterializationValues(Consumer<? super Value> consumer, ValueResolutionScope valueScope,
 			boolean explicitScope, CaptureScratch scratch) {
 		NativeLmdbQuerySource currentSource = source;
@@ -316,6 +472,8 @@ public final class NativeProjectedBindingSet extends AbstractBindingSet {
 			if (outermost) {
 				if (size > 1 && size <= MAX_INDEXED_BINDINGS) {
 					int capacity = captureCapacity();
+					captureIndexMask = capacity - 1;
+					captureHashShift = Long.SIZE - Integer.numberOfTrailingZeros(capacity);
 					entries = state == null ? new int[capacity] : state.index(capacity);
 				} else {
 					entries = CAPTURING_WITHOUT_INDEX;
@@ -327,7 +485,7 @@ public final class NativeProjectedBindingSet extends AbstractBindingSet {
 			if (snapshot != null) {
 				state.ensureCandidateCapacity(ids.length);
 			}
-			if (outermost && entries != CAPTURING_WITHOUT_INDEX) {
+			if (outermost && hasCapturedValue && entries != CAPTURING_WITHOUT_INDEX) {
 				for (int i = 0; i < values.length; i++) {
 					if (values[i] != null) {
 						int bucket = findOrReserveCaptureBucket(i, entries);
@@ -337,38 +495,46 @@ public final class NativeProjectedBindingSet extends AbstractBindingSet {
 					}
 				}
 			}
-			for (int i = 0; i < ids.length; i++) {
-				if (!isBound(ids[i])) {
-					if (snapshot != null) {
-						state.candidates[i] = null;
+			int[] activeIndex = entries;
+			if (snapshot != null && explicitScope && consumer == IGNORE_VALUE && scratch.batchCapture
+					&& currentSource.withProjectedValueAccess(valueScope,
+							access -> captureUnderSnapshot(access, snapshot,
+									valueScope, state, reusePrevious, activeIndex))) {
+				state.finishBatchedVersions();
+			} else {
+				for (int i = 0; i < ids.length; i++) {
+					if (!isBound(ids[i])) {
+						if (snapshot != null) {
+							state.candidates[i] = null;
+						}
+						continue;
 					}
-					continue;
-				}
-				Value value = values[i];
-				boolean resolvedHere = false;
-				if (value == null) {
-					int bucket = entries == CAPTURING_WITHOUT_INDEX ? -1 : findOrReserveCaptureBucket(i, entries);
-					value = materializedDuplicate(i, entries, bucket);
+					Value value = values[i];
+					boolean resolvedHere = false;
 					if (value == null) {
-						long id = ids[i];
-						int mask = positionMasks[i];
-						if (reusePrevious) {
-							value = state.reuse(i, id, mask);
-						}
+						int bucket = entries == CAPTURING_WITHOUT_INDEX ? -1 : findOrReserveCaptureBucket(i, entries);
+						value = materializedDuplicate(i, entries, bucket);
 						if (value == null) {
-							value = explicitScope ? currentSource.lazyValue(id, mask, valueScope)
-									: currentSource.lazyValue(id, mask);
-							materializedValues++;
+							long id = ids[i];
+							int mask = positionMasks[i];
+							if (reusePrevious) {
+								value = state.reuse(i, id, mask);
+							}
+							if (value == null) {
+								value = explicitScope ? currentSource.lazyValue(id, mask, valueScope)
+										: currentSource.lazyValue(id, mask);
+								materializedValues++;
+							}
+							resolvedHere = true;
 						}
-						resolvedHere = true;
+						assignValue(i, value, entries, bucket);
 					}
-					assignValue(i, value, entries, bucket);
+					if (snapshot != null) {
+						state.recordCandidate(i, resolvedHere ? value : null);
+					}
+					complete &= value != null;
+					consumer.accept(value);
 				}
-				if (snapshot != null) {
-					state.recordCandidate(i, resolvedHere ? value : null);
-				}
-				complete &= value != null;
-				consumer.accept(value);
 			}
 			if (outermost) {
 				fullyCaptured = complete;
@@ -393,10 +559,56 @@ public final class NativeProjectedBindingSet extends AbstractBindingSet {
 		}
 	}
 
+	/** Resolves only owned dictionary handles. Consumer dispatch and candidate-version access happen after the lock. */
+	private boolean captureUnderSnapshot(ProjectedValueAccess access, Object snapshot, ValueResolutionScope scope,
+			CaptureState state, boolean reusePrevious, int[] entries) {
+		if (access.snapshot() != snapshot) {
+			return false;
+		}
+		state.batchedVersionCount = 0;
+		int lookups = 0;
+		try {
+			for (int i = 0; i < ids.length; i++) {
+				if (!isBound(ids[i]) || values[i] != null) {
+					state.candidates[i] = null;
+					continue;
+				}
+				int bucket = entries == CAPTURING_WITHOUT_INDEX ? -1 : findOrReserveCaptureBucket(i, entries);
+				Value value = materializedDuplicate(i, entries, bucket);
+				if (value == null) {
+					long id = ids[i];
+					int mask = positionMasks[i];
+					if (reusePrevious) {
+						value = state.reuseBatched(i, id, mask, scope, access);
+					}
+					if (value == null) {
+						value = access.lookup(id, mask, scope);
+						if (value == null) {
+							return false;
+						}
+						lookups++;
+						state.rememberBatchedCandidate(i, value);
+					}
+					// An accepted reuse already checked this candidate's recorded version.
+				} else {
+					state.candidates[i] = null;
+				}
+				assignValue(i, value, entries, bucket);
+			}
+			return true;
+		} finally {
+			if (lookups > 0) {
+				MATERIALIZED_VALUES.addAndGet(lookups);
+			}
+		}
+	}
+
 	/** Bounded scratch owned by one read attempt. Reentrant or overlapping capture gets independent storage. */
 	public static final class CaptureScratch {
 		private static final CaptureState CLOSED = new CaptureState();
 		private final AtomicReference<CaptureState> available = new AtomicReference<>(new CaptureState());
+		private final boolean batchCapture = Boolean.parseBoolean(System.getProperty(BATCH_CAPTURE_ENABLED_PROPERTY,
+				"true"));
 
 		private CaptureState acquire() {
 			CaptureState state = available.get();
@@ -431,6 +643,9 @@ public final class NativeProjectedBindingSet extends AbstractBindingSet {
 		private int[] previousMasks;
 		private LmdbValue[] candidates;
 		private long[] versions;
+		private int[] batchedVersionSlots;
+		private int batchedVersionCount;
+		private DetachedProjection detached;
 
 		int[] index(int capacity) {
 			if (entries.length < capacity) {
@@ -449,9 +664,11 @@ public final class NativeProjectedBindingSet extends AbstractBindingSet {
 			if (candidates == null) {
 				candidates = new LmdbValue[width];
 				versions = new long[width];
+				batchedVersionSlots = new int[width];
 			} else if (candidates.length < width) {
 				candidates = Arrays.copyOf(candidates, width);
 				versions = Arrays.copyOf(versions, width);
+				batchedVersionSlots = new int[width];
 			}
 		}
 
@@ -464,8 +681,32 @@ public final class NativeProjectedBindingSet extends AbstractBindingSet {
 					: source.reuseProjectedValue(snapshot, id, mask, valueScope, candidate, versions[index]);
 		}
 
+		Value reuseBatched(int index, long id, int mask, ValueResolutionScope scope, ProjectedValueAccess access) {
+			if (index >= previousIds.length || previousIds[index] != id || previousMasks[index] != mask) {
+				return null;
+			}
+			LmdbValue candidate = candidates[index];
+			return candidate == null ? null : access.reuse(id, mask, scope, candidate, versions[index]);
+		}
+
+		void rememberBatchedCandidate(int index, Value value) {
+			if (ValueStore.canReuseNativeProjectedValue(value)) {
+				candidates[index] = (LmdbValue) value;
+				batchedVersionSlots[batchedVersionCount++] = index;
+			} else {
+				candidates[index] = null;
+			}
+		}
+
+		void finishBatchedVersions() {
+			for (int i = 0; i < batchedVersionCount; i++) {
+				int column = batchedVersionSlots[i];
+				versions[column] = candidates[column].getSemanticVersion();
+			}
+		}
+
 		void recordCandidate(int index, Value value) {
-			if (ValueStore.canReuseNativeLeaf(value)) {
+			if (ValueStore.canReuseNativeProjectedValue(value)) {
 				LmdbValue candidate = (LmdbValue) value;
 				candidates[index] = candidate;
 				versions[index] = candidate.getSemanticVersion();
@@ -487,6 +728,7 @@ public final class NativeProjectedBindingSet extends AbstractBindingSet {
 		}
 
 		void discardPrevious() {
+			discardDetached();
 			source = null;
 			snapshot = null;
 			valueScope = null;
@@ -495,6 +737,10 @@ public final class NativeProjectedBindingSet extends AbstractBindingSet {
 			if (candidates != null) {
 				Arrays.fill(candidates, null);
 			}
+		}
+
+		void discardDetached() {
+			detached = null;
 		}
 	}
 
@@ -550,15 +796,14 @@ public final class NativeProjectedBindingSet extends AbstractBindingSet {
 	private int findOrReserveCaptureBucket(int index, int[] entries) {
 		long id = ids[index];
 		int positionMask = positionMasks[index];
-		int capacity = captureCapacity();
 		long hash = (id ^ ((long) positionMask << Integer.SIZE)) * 0x9E3779B97F4A7C15L;
-		int bucket = (int) (hash >>> (Long.SIZE - Integer.numberOfTrailingZeros(capacity)));
+		int bucket = (int) (hash >>> captureHashShift);
 		while (entries[bucket] != 0) {
 			int candidate = Math.abs(entries[bucket]) - 1;
 			if (ids[candidate] == id && positionMasks[candidate] == positionMask) {
 				return bucket;
 			}
-			bucket = (bucket + 1) & (capacity - 1);
+			bucket = (bucket + 1) & captureIndexMask;
 		}
 		// Reserve the key across resolver callbacks. The sign distinguishes a reservation from a filled column.
 		entries[bucket] = -(index + 1);
@@ -572,6 +817,7 @@ public final class NativeProjectedBindingSet extends AbstractBindingSet {
 
 	private void assignValue(int index, Value value, int[] entries, int bucket) {
 		values[index] = value;
+		hasCapturedValue |= value != null;
 		if (bucket < 0) {
 			return;
 		}
