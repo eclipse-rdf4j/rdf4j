@@ -62,6 +62,7 @@ import org.eclipse.rdf4j.query.algebra.Group;
 import org.eclipse.rdf4j.query.algebra.Join;
 import org.eclipse.rdf4j.query.algebra.LeftJoin;
 import org.eclipse.rdf4j.query.algebra.Or;
+import org.eclipse.rdf4j.query.algebra.SingletonSet;
 import org.eclipse.rdf4j.query.algebra.StatementPattern;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.algebra.ValueConstant;
@@ -118,6 +119,35 @@ class LmdbOptimizerPipelineTest {
 		assertTrue(optimizers.stream().anyMatch(QueryJoinOptimizer.class::isInstance));
 		assertTrue(optimizers.stream().anyMatch(LmdbOrderByOptimizer.class::isInstance));
 		assertFalse(optimizers.stream().anyMatch(LmdbSketchJoinOptimizer.class::isInstance));
+	}
+
+	@Test
+	void physicalJoinOrderUsesGuaranteedOptionalInputs() {
+		TripleSource tripleSource = new EmptyTripleSource();
+		StrictEvaluationStrategy strategy = new StrictEvaluationStrategy(tripleSource, null);
+		strategy.setQueryExecutionPolicy(QueryExecutionPolicy.EXPERIMENTAL);
+		EvaluationStatistics statistics = new EvaluationStatistics();
+		List<QueryOptimizer> optimizers = optimizers(
+				new LmdbStandardQueryOptimizerPipeline(strategy, tripleSource, statistics).getOptimizers());
+		QueryOptimizer physicalOptimizer = optimizers.get(indexOf(optimizers, QueryJoinOptimizer.class) + 1);
+
+		ValueFactory vf = SimpleValueFactory.getInstance();
+		StatementPattern anchor = new StatementPattern(Var.of("key"),
+				Var.of("anchorPredicate", vf.createIRI("urn:anchor"), true, true), Var.of("seed"));
+		StatementPattern connected = new StatementPattern(Var.of("key"),
+				Var.of("relatedPredicate", vf.createIRI("urn:related"), true, true), Var.of("detail"));
+		StatementPattern disconnected = new StatementPattern(
+				Var.of("fixedSubject", vf.createIRI("urn:fixed"), true, true),
+				Var.of("otherPredicate", vf.createIRI("urn:other"), true, true), Var.of("other"));
+		LeftJoin guaranteedInput = new LeftJoin(anchor, new Join(disconnected, connected));
+		physicalOptimizer.optimize(guaranteedInput, null, EmptyBindingSet.getInstance());
+		assertSame(connected, assertInstanceOf(Join.class, guaranteedInput.getRightArg()).getLeftArg());
+
+		StatementPattern other = disconnected.clone();
+		LeftJoin nullableInput = new LeftJoin(new LeftJoin(new SingletonSet(), anchor.clone()),
+				new Join(connected.clone(), other));
+		physicalOptimizer.optimize(nullableInput, null, EmptyBindingSet.getInstance());
+		assertSame(other, assertInstanceOf(Join.class, nullableInput.getRightArg()).getLeftArg());
 	}
 
 	@Test

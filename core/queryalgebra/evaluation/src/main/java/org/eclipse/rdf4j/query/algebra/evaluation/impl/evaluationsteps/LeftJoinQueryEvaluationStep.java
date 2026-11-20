@@ -15,9 +15,12 @@ package org.eclipse.rdf4j.query.algebra.evaluation.impl.evaluationsteps;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
+import java.util.function.Function;
 import java.util.function.Predicate;
 
+import org.eclipse.rdf4j.common.annotation.InternalUseOnly;
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
+import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.impl.BooleanLiteral;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.QueryEvaluationException;
@@ -49,9 +52,25 @@ public final class LeftJoinQueryEvaluationStep implements QueryEvaluationStep {
 	private final LeftJoin leftJoin;
 	private final Set<String> optionalVars;
 	private final QueryEvaluationStep wellDesignedRightEvaluationStep;
+	private final OptionalRightMemo memo;
+
+	/** Backend replay capture with an optional, callback-free term identity in the validated read snapshot. */
+	@InternalUseOnly
+	public interface ReplayValueCapturer extends Function<Value, Value> {
+		long UNKNOWN_ID = -1L;
+
+		long canonicalId(Value value);
+	}
 
 	public static QueryEvaluationStep supply(EvaluationStrategy strategy, LeftJoin leftJoin,
 			QueryEvaluationContext context) {
+		return supply(strategy, leftJoin, context, null, null);
+	}
+
+	/** The backend may supply a read-snapshot check when this arm's statement results can be replayed. */
+	@InternalUseOnly
+	public static QueryEvaluationStep supply(EvaluationStrategy strategy, LeftJoin leftJoin,
+			QueryEvaluationContext context, Runnable checkReplaySnapshot, Function<Value, Value> captureReplayValue) {
 		boolean runtimeTelemetryTrackingActive = strategy.isTrackResultSize() || strategy.isTrackTime();
 		QueryEvaluationStep left = JoinMetricsTracking
 				.wrapLeftInput(strategy.precompile(leftJoin.getLeftArg(), context), leftJoin, leftJoin.getLeftArg(),
@@ -122,7 +141,8 @@ public final class LeftJoinQueryEvaluationStep implements QueryEvaluationStep {
 			condition = null;
 		}
 		LeftJoinQueryEvaluationStep defaultStep = new LeftJoinQueryEvaluationStep(right, condition, left, leftJoin,
-				optionalVarCollector.getVarNames());
+				optionalVarCollector.getVarNames(),
+				OptionalRightMemo.prepare(leftJoin, context, checkReplaySnapshot, captureReplayValue));
 		// Batch-correlated seam (accumulate–semijoin–probe): only reachable on this well-designed,
 		// replay-stable, binding-injection-safe path, where independent right-operand evaluation is the
 		// algebraic definition. A join condition is handed to the provider as a merged-row predicate with the
@@ -220,10 +240,16 @@ public final class LeftJoinQueryEvaluationStep implements QueryEvaluationStep {
 
 	public LeftJoinQueryEvaluationStep(QueryEvaluationStep right, QueryValueEvaluationStep condition,
 			QueryEvaluationStep left, LeftJoin leftJoin, Set<String> optionalVars) {
+		this(right, condition, left, leftJoin, optionalVars, null);
+	}
+
+	private LeftJoinQueryEvaluationStep(QueryEvaluationStep right, QueryValueEvaluationStep condition,
+			QueryEvaluationStep left, LeftJoin leftJoin, Set<String> optionalVars, OptionalRightMemo memo) {
 		this.right = right;
 		this.condition = condition;
 		this.left = left;
 		this.leftJoin = leftJoin;
+		this.memo = memo;
 		// This is used to determine if the left join is well designed.
 
 		Set<String> leftBindingNames = leftJoin.getLeftArg().getBindingNames();
@@ -265,6 +291,9 @@ public final class LeftJoinQueryEvaluationStep implements QueryEvaluationStep {
 		if (containsNone) {
 			// left join is "well designed"
 			leftJoin.setAlgorithm(LeftJoinIterator.class.getSimpleName());
+			if (memo != null) {
+				return memo.open(left, bindings, wellDesignedRightEvaluationStep);
+			}
 			return LeftJoinIterator.getInstance(left, bindings, wellDesignedRightEvaluationStep);
 		} else {
 			Set<String> problemVars = new HashSet<>(optionalVars);

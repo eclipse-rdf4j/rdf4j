@@ -295,6 +295,7 @@ final class LmdbNativeKernelInterpreter implements JaninoKernel {
 	private double[][] agM;
 	private boolean[] agO;
 	private KernelRuntime.AggregateMemory aggregateMemory;
+	private LmdbNativeOptionalReplay.Budget optionalReplayBudget;
 	private boolean chargeAggregateOutput;
 	/** Bytes retained by primitive aggregate arrays (map/set state owns its own reservation). */
 	private long aggregateArrayBytes;
@@ -445,6 +446,10 @@ final class LmdbNativeKernelInterpreter implements JaninoKernel {
 		// Build the op chain. Site lists and cursors are collected as a side effect, in the same DFS order the
 		// emitter numbers its methods and sites.
 		if (demandDriven) {
+			if (context.groupMemoryLedger() != null && Boolean.parseBoolean(
+					System.getProperty(LmdbNativeOptionalReplay.ENABLED_PROPERTY, "true"))) {
+				optionalReplayBudget = new LmdbNativeOptionalReplay.Budget(aggregateMemory);
+			}
 			this.pullRows = pullPipeline(kernel.pipeline);
 			if (!emit.distinct) {
 				contiguousDistinctColumn = pullRows.contiguousDistinctColumn();
@@ -612,6 +617,7 @@ final class LmdbNativeKernelInterpreter implements JaninoKernel {
 		aggregateArrayBytes = 0L;
 		failure = KernelRuntime.closeResource(aggregateMemory, failure);
 		aggregateMemory = null;
+		optionalReplayBudget = null;
 		chargeAggregateOutput = false;
 		context = null;
 		hooks = null;
@@ -2002,23 +2008,50 @@ final class LmdbNativeKernelInterpreter implements JaninoKernel {
 		if (node instanceof LeftGroup left) {
 			PullPipeline arm = pullPipeline(left.arm);
 			int[] resetColumns = left.resetColumns();
+			LmdbNativeOptionalReplay memo = LmdbNativeOptionalReplay.create(left, kernel, optionalReplayBudget);
 			return new PullStage(node, List.of(arm), PullReset.PRESERVES_ROW, resetColumns) {
 				boolean matched;
+				LmdbNativeOptionalReplay.Rows replay;
+				int replayOffset;
 
 				@Override
 				void reset() {
 					matched = false;
-					arm.reset();
+					replayOffset = 0;
+					replay = memo == null ? null : memo.open(v);
+					if (replay == null) {
+						arm.reset();
+						if (telemetry) {
+							workCounters.recordOptionalArmOpen();
+						}
+					} else if (telemetry) {
+						workCounters.recordOptionalArmReplay();
+					}
 				}
 
 				@Override
 				boolean advance() {
-					if (arm.next()) {
+					if (replay != null) {
+						if (replayOffset < replay.length()) {
+							replayOffset = memo.replay(replay, replayOffset, v);
+							matched = true;
+							exhausted = replayOffset == replay.length();
+							return true;
+						}
+					} else if (arm.next()) {
 						matched = true;
 						// Leave the arm suspended until normal backtracking or close. An exhausted arm has
 						// no remaining advances, but its active frames still own their saved registers.
 						exhausted = arm.exhaustedAfterOutput();
+						if (memo != null) {
+							memo.record(v);
+							if (exhausted) {
+								memo.complete();
+							}
+						}
 						return true;
+					} else if (memo != null) {
+						memo.complete();
 					}
 					if (!matched) {
 						exhausted = true;
@@ -2032,7 +2065,13 @@ final class LmdbNativeKernelInterpreter implements JaninoKernel {
 
 				@Override
 				void release() {
-					arm.close();
+					if (memo != null) {
+						memo.abandon();
+					}
+					if (replay == null) {
+						arm.close();
+					}
+					replay = null;
 				}
 			};
 		}

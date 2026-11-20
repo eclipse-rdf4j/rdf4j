@@ -12,6 +12,8 @@
 package org.eclipse.rdf4j.sail.lmdb;
 
 import java.io.IOException;
+import java.lang.invoke.MethodHandles;
+import java.lang.invoke.VarHandle;
 import java.util.List;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.locks.ReentrantLock;
@@ -28,6 +30,8 @@ public final class ValueResolutionScope implements SailClosable {
 
 	/** Restored with set(null), not remove(), so a transaction does not allocate a new thread-local entry. */
 	private static final ThreadLocal<ValueResolutionScope> ACTIVE = new ThreadLocal<>();
+	private static final VarHandle REVISION_ELEMENT = MethodHandles
+			.arrayElementVarHandle(ValueStoreRevision.Lazy[].class);
 	private final ValueStore store;
 	private final Object lifetime = new Object();
 	private final ConcurrentHashMap<Thread, ReaderLease> readers = new ConcurrentHashMap<>();
@@ -36,6 +40,8 @@ public final class ValueResolutionScope implements SailClosable {
 	}
 
 	private final ConcurrentHashMap<RevisionKey, ValueStoreRevision.Lazy> revisions = new ConcurrentHashMap<>();
+	// One recently admitted epoch per exact position mask; the map interns all admitted revisions.
+	private final ValueStoreRevision.Lazy[] recentRevisions = new ValueStoreRevision.Lazy[ValuePosition.ALL + 1];
 	private volatile ValueStore.ValueEpoch anchor;
 	private ValueStore.EpochReservation epochReservation;
 	private volatile boolean closed;
@@ -79,30 +85,50 @@ public final class ValueResolutionScope implements SailClosable {
 	}
 
 	ValueStoreRevision.Lazy revision(ValueStoreRevision.Lazy epoch) {
-		if (epoch.resolutionScope() == this && !closed) {
-			// Already the unique scoped wrapper of its epoch in this scope; skip the keyed lookup.
+		if (epoch.resolutionScope() == this) {
 			return epoch;
 		}
-		RevisionKey key = new RevisionKey(epoch.epoch(), epoch.getPositionMask());
+		ValueStoreRevision.Lazy raw = epoch.epoch();
+		int positionMask = epoch.getPositionMask();
+		ValueStoreRevision.Lazy recent = (ValueStoreRevision.Lazy) REVISION_ELEMENT.getAcquire(recentRevisions,
+				positionMask);
+		if (recent != null && recent.epoch() == raw) {
+			return closed ? epoch : recent;
+		}
+		return findOrAdmitRevision(epoch, raw, positionMask);
+	}
+
+	private ValueStoreRevision.Lazy findOrAdmitRevision(ValueStoreRevision.Lazy epoch, ValueStoreRevision.Lazy raw,
+			int positionMask) {
+		if (closed) {
+			return epoch;
+		}
+		RevisionKey key = new RevisionKey(raw, positionMask);
 		ValueStoreRevision.Lazy cached = revisions.get(key);
-		if (cached != null || closed) {
+		if (cached != null) {
 			return closed ? epoch : cached;
 		}
-		// First admission of an epoch only; all later shells and nested decode use the concurrent fast lookup.
 		synchronized (lifetime) {
 			if (closed) {
 				return epoch;
 			}
-			ValueStoreRevision.Lazy raw = epoch.epoch();
-			if (raw.idEpoch() != null && raw.idEpoch().sequence() < anchor.sequence()) {
+			ValueStore.ValueEpoch encountered = raw.idEpoch();
+			if (encountered != null && encountered.sequence() < anchor.sequence()) {
 				// A paired view may precede this owner. Acquire the earlier horizon before dropping the old one.
 				ValueStore.EpochReservation earlier = store.reserveValueEpoch(raw);
 				ValueStore.EpochReservation previous = epochReservation;
-				anchor = raw.idEpoch();
+				anchor = encountered;
 				epochReservation = earlier;
 				previous.close();
 			}
-			return revisions.computeIfAbsent(key, ignored -> new ValueStoreRevision.Lazy(epoch, this));
+			cached = revisions.get(key);
+			if (cached != null) {
+				return cached;
+			}
+			ValueStoreRevision.Lazy scoped = new ValueStoreRevision.Lazy(epoch, this);
+			revisions.put(key, scoped);
+			REVISION_ELEMENT.setRelease(recentRevisions, positionMask, scoped);
+			return scoped;
 		}
 	}
 
@@ -171,6 +197,9 @@ public final class ValueResolutionScope implements SailClosable {
 			retired = List.copyOf(readers.values());
 			readers.clear();
 			revisions.clear();
+			for (int mask = 0; mask < recentRevisions.length; mask++) {
+				REVISION_ELEMENT.setRelease(recentRevisions, mask, null);
+			}
 			anchor = null;
 			retainedReservation = epochReservation;
 			epochReservation = null;

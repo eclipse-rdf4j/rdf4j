@@ -16,6 +16,7 @@ import java.lang.invoke.VarHandle;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collections;
+import java.util.HashSet;
 import java.util.Iterator;
 import java.util.LinkedHashSet;
 import java.util.List;
@@ -34,6 +35,7 @@ import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.MutableBindingSet;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.GraphFrameBindings;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.GraphFrameBindings.MutableCarrier;
+import org.eclipse.rdf4j.query.impl.MapBindingSet;
 import org.eclipse.rdf4j.query.impl.SimpleBinding;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -360,6 +362,45 @@ public class ArrayBindingSet extends AbstractBindingSet implements MutableBindin
 		}
 
 		return new ArrayBindingSetIterator();
+	}
+
+	/** A reusable conversion from this evaluation layout to detached, mutable repository rows. */
+	@InternalUseOnly
+	public static final class ResultSnapshotLayout {
+		private final String[] names;
+		private final MapBindingSet.CompactLayout layout;
+
+		public ResultSnapshotLayout(ArrayBindingSet row) {
+			names = row.bindingNames;
+			Set<String> unique = HashSet.newHashSet(names.length);
+			for (String name : names) {
+				if (name == null || !unique.add(name)) {
+					layout = null;
+					return;
+				}
+			}
+			layout = new MapBindingSet.CompactLayout(names);
+		}
+
+		public boolean matches(ArrayBindingSet row) {
+			return names == row.bindingNames;
+		}
+
+		public MapBindingSet snapshot(ArrayBindingSet row) {
+			if (layout == null || !matches(row) || row.getClass() != ArrayBindingSet.class) {
+				return null;
+			}
+			Value[] copy = new Value[names.length];
+			int count = 0;
+			for (int slot = 0; slot < copy.length; slot++) {
+				Value value = row.values[slot];
+				if (isBoundValue(value)) {
+					copy[slot] = value;
+					count++;
+				}
+			}
+			return layout.snapshot(copy, count);
+		}
 	}
 
 	@Override

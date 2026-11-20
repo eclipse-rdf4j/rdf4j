@@ -13,14 +13,19 @@ package org.eclipse.rdf4j.sail.lmdb.benchmark;
 
 import java.io.File;
 import java.io.IOException;
+import java.math.BigDecimal;
 import java.nio.file.Files;
+import java.time.LocalDate;
 import java.util.concurrent.TimeUnit;
 
 import org.eclipse.rdf4j.common.transaction.IsolationLevels;
 import org.eclipse.rdf4j.model.IRI;
+import org.eclipse.rdf4j.model.Literal;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.ValueFactory;
-import org.eclipse.rdf4j.model.impl.IntegerLiteral;
+import org.eclipse.rdf4j.model.vocabulary.RDF;
+import org.eclipse.rdf4j.model.vocabulary.XSD;
+import org.eclipse.rdf4j.query.TupleQuery;
 import org.eclipse.rdf4j.query.TupleQueryResult;
 import org.eclipse.rdf4j.repository.RepositoryConnection;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
@@ -44,8 +49,9 @@ import org.openjdk.jmh.annotations.Warmup;
 /**
  * A procurement awards report that reuses supplier sites and certificates, buyer contacts, and commodity
  * classifications across awards. The deepest OPTIONAL chain follows a site address through geography to the authority
- * administering a trade agreement. The two publication channels per award produce duplicate projected rows. At the
- * default scale, DISTINCT reduces 43.2 million candidate rows to 21.6 million twenty-column results.
+ * administering a trade agreement. Award notices and certificates supply XSD, RDF, and procurement-specific literals.
+ * The two publication channels per award produce duplicate projected rows. At the default scale, DISTINCT reduces 43.2
+ * million candidate rows to 21.6 million 28-column results.
  */
 @State(Scope.Benchmark)
 @BenchmarkMode(Mode.AverageTime)
@@ -56,17 +62,25 @@ import org.openjdk.jmh.annotations.Warmup;
 public class LmdbNestedOptionalDistinctBenchmark {
 
 	private static final String NS = "urn:rdf4j:lmdb:procurement:";
-	private static final int PROJECTION_WIDTH = 20;
+	private static final int PROJECTION_WIDTH = 28;
 	private static final long MAP_SIZE = 512L * 1024 * 1024;
 	private static final String QUERY = """
 			PREFIX pc: <urn:rdf4j:lmdb:procurement:>
 			SELECT DISTINCT ?award ?supplier ?buyer ?category
+			                ?awardDate ?awardValue ?noticeSummary ?noticeMetadata ?awardReference
 			                ?site ?street ?city ?region ?country ?tradeArea ?tradeAgreement ?tradeAuthority
-			                ?certificate ?standard ?issuer ?accreditation ?contact ?contactEmail ?division ?sector
+			                ?certificate ?standard ?issuer ?accreditation
+			                ?certificateReference ?certificateScope ?certificateRegisterRecord
+			                ?contact ?contactEmail ?division ?sector
 			WHERE {
 			  ?award pc:awardedTo ?supplier ;
 			         pc:contractingAuthority ?buyer ;
 			         pc:commodityCategory ?category ;
+			         pc:awardDate ?awardDate ;
+			         pc:awardValue ?awardValue ;
+			         pc:noticeSummary ?noticeSummary ;
+			         pc:noticeMetadata ?noticeMetadata ;
+			         pc:awardReference ?awardReference ;
 			         pc:publishedThrough ?channel .
 			  OPTIONAL {
 			    ?supplier pc:operatesSite ?site .
@@ -93,6 +107,9 @@ public class LmdbNestedOptionalDistinctBenchmark {
 			  }
 			  OPTIONAL {
 			    ?supplier pc:holdsCertificate ?certificate .
+			    ?certificate pc:certificateReference ?certificateReference ;
+			                 pc:certificateScope ?certificateScope ;
+			                 pc:certificateRegisterRecord ?certificateRegisterRecord .
 			    OPTIONAL { ?certificate pc:certifiesStandard ?standard . }
 			    OPTIONAL {
 			      ?certificate pc:issuedBy ?issuer .
@@ -116,6 +133,9 @@ public class LmdbNestedOptionalDistinctBenchmark {
 	@Param("200000")
 	public int awardCount;
 
+	@Param("true")
+	public boolean nativeEvaluationEnabled = true;
+
 	private File dataDirectory;
 	private SailRepository repository;
 	private long expectedRows;
@@ -128,8 +148,8 @@ public class LmdbNestedOptionalDistinctBenchmark {
 		dataDirectory = Files.createTempDirectory("rdf4j-lmdb-nested-optional-distinct-").toFile();
 		try {
 			LmdbStoreConfig config = new LmdbStoreConfig("spoc,ospc,psoc,posc")
-					.setNativeEvaluationEnabled(true)
-					.setDirectAdjacencyEnabled(true)
+					.setNativeEvaluationEnabled(nativeEvaluationEnabled)
+					.setDirectAdjacencyEnabled(nativeEvaluationEnabled)
 					.setTripleDBSize(MAP_SIZE)
 					.setValueDBSize(MAP_SIZE)
 					.setForceSync(false);
@@ -154,7 +174,7 @@ public class LmdbNestedOptionalDistinctBenchmark {
 						.evaluate()) {
 					while (evaluate.hasNext()) {
 						System.out.printf("Type count: %,d%n",
-								((IntegerLiteral) evaluate.next().getValue("count")).intValue());
+								((Literal) evaluate.next().getValue("count")).intValue());
 					}
 				}
 			}
@@ -171,7 +191,7 @@ public class LmdbNestedOptionalDistinctBenchmark {
 						.evaluate()) {
 					while (evaluate.hasNext()) {
 						System.out.printf("Triple count: %,d%n",
-								((IntegerLiteral) evaluate.next().getValue("count")).intValue());
+								((Literal) evaluate.next().getValue("count")).intValue());
 					}
 				}
 			}
@@ -191,14 +211,17 @@ public class LmdbNestedOptionalDistinctBenchmark {
 	@Benchmark
 	public long nestedOptionalDistinct() {
 		long rows = 0;
-		try (RepositoryConnection connection = repository.getConnection();
-				TupleQueryResult result = connection.prepareTupleQuery(QUERY).evaluate()) {
-			if (result.getBindingNames().size() != PROJECTION_WIDTH) {
-				throw new IllegalStateException("Unexpected projection: " + result.getBindingNames());
-			}
-			while (result.hasNext()) {
-				result.next();
-				rows++;
+		try (RepositoryConnection connection = repository.getConnection()) {
+			TupleQuery tupleQuery = connection.prepareTupleQuery(QUERY);
+			tupleQuery.setMaxExecutionTime(120);
+			try (TupleQueryResult result = tupleQuery.evaluate()) {
+				if (result.getBindingNames().size() != PROJECTION_WIDTH) {
+					throw new IllegalStateException("Unexpected projection: " + result.getBindingNames());
+				}
+				while (result.hasNext()) {
+					result.next();
+					rows++;
+				}
 			}
 		}
 		if (rows != expectedRows) {
@@ -236,16 +259,20 @@ public class LmdbNestedOptionalDistinctBenchmark {
 		private static final int FAMILY_COUNT = 40;
 		private static final int DIVISION_COUNT = 10;
 		private static final int SECTOR_COUNT = 5;
+		private static final LocalDate FIRST_AWARD_DATE = LocalDate.of(2020, 1, 1);
+		private static final int AWARD_DATE_COUNT = 2_192; // 2020 through 2025, inclusive
 		private static final String[] CERTIFICATION_STANDARDS = {
 				"iso-9001", "iso-14001", "iso-45001", "iso-50001", "iso-22301", "iso-27001"
 		};
 
 		private final RepositoryConnection connection;
 		private final ValueFactory vf;
+		private final IRI certificateReferenceDatatype;
 
 		private ProcurementFixture(RepositoryConnection connection) {
 			this.connection = connection;
 			this.vf = connection.getValueFactory();
+			this.certificateReferenceDatatype = vf.createIRI(NS, "CertificateReference");
 		}
 
 		private void addGeography() {
@@ -299,10 +326,21 @@ public class LmdbNestedOptionalDistinctBenchmark {
 
 		private void addCertificates(IRI supplierIri, int supplier) {
 			for (int standard = 0; standard < CERTIFICATION_STANDARDS.length; standard++) {
-				IRI certificate = entity("certificate", supplier * CERTIFICATION_STANDARDS.length + standard);
+				int certificateId = supplier * CERTIFICATION_STANDARDS.length + standard;
+				IRI certificate = entity("certificate", certificateId);
+				String standardName = CERTIFICATION_STANDARDS[standard];
+				String reference = "CERT-" + certificateId;
 				link(supplierIri, "holdsCertificate", certificate);
-				link(certificate, "certifiesStandard",
-						vf.createIRI(NS, "standard/" + CERTIFICATION_STANDARDS[standard]));
+				link(certificate, "certifiesStandard", vf.createIRI(NS, "standard/" + standardName));
+				link(certificate, "certificateReference", vf.createLiteral(reference, certificateReferenceDatatype));
+				link(certificate, "certificateScope", vf.createLiteral(
+						"<p>Management systems of supplier " + supplier + " certified under <strong>" + standardName
+								+ "</strong>.</p>",
+						RDF.HTML));
+				link(certificate, "certificateRegisterRecord", vf.createLiteral(
+						"<certificate reference=\"" + reference + "\" supplier=\"" + supplier + "\"><standard>"
+								+ standardName + "</standard></certificate>",
+						RDF.XMLLITERAL));
 				if (standard < CERTIFICATION_STANDARDS.length - 1) {
 					link(certificate, "issuedBy", entity("issuer", (supplier + standard) % ISSUER_COUNT));
 				}
@@ -339,6 +377,12 @@ public class LmdbNestedOptionalDistinctBenchmark {
 			IRI awardedTo = vf.createIRI(NS, "awardedTo");
 			IRI authority = vf.createIRI(NS, "contractingAuthority");
 			IRI commodityCategory = vf.createIRI(NS, "commodityCategory");
+			IRI awardDate = vf.createIRI(NS, "awardDate");
+			IRI awardValue = vf.createIRI(NS, "awardValue");
+			IRI noticeSummary = vf.createIRI(NS, "noticeSummary");
+			IRI noticeMetadata = vf.createIRI(NS, "noticeMetadata");
+			IRI awardReference = vf.createIRI(NS, "awardReference");
+			IRI awardReferenceDatatype = vf.createIRI(NS, "AwardReference");
 			IRI publishedThrough = vf.createIRI(NS, "publishedThrough");
 			IRI buyerPortal = vf.createIRI(NS, "publication-channel/buyer-tender-portal");
 			IRI nationalRegister = vf.createIRI(NS, "publication-channel/national-award-register");
@@ -348,9 +392,22 @@ public class LmdbNestedOptionalDistinctBenchmark {
 				int supplier = award / 4 % SUPPLIER_COUNT;
 				int buyer = (award / 2 + award / SUPPLIER_COUNT) % BUYER_COUNT;
 				int category = (award / 3 + award / BUYER_COUNT) % CATEGORY_COUNT;
+				String reference = "AWD-" + award;
+				LocalDate date = FIRST_AWARD_DATE.plusDays(award % AWARD_DATE_COUNT);
+				BigDecimal value = BigDecimal.valueOf(1_000_000L + 3_719L * award, 2);
 				connection.add(awardIri, awardedTo, entity("supplier", supplier));
 				connection.add(awardIri, authority, entity("buyer", buyer));
 				connection.add(awardIri, commodityCategory, entity("category", category));
+				connection.add(awardIri, awardDate, vf.createLiteral(date.toString(), XSD.DATE));
+				connection.add(awardIri, awardValue, vf.createLiteral(value));
+				connection.add(awardIri, noticeSummary, vf.createLiteral(
+						"Contract " + reference + " awarded by buyer " + buyer + " for commodity category " + category,
+						"en"));
+				connection.add(awardIri, noticeMetadata, vf.createLiteral(
+						"{\"reference\":\"" + reference + "\",\"buyerId\":" + buyer + ",\"categoryId\":" + category
+								+ ",\"currency\":\"EUR\"}",
+						RDF.JSON));
+				connection.add(awardIri, awardReference, vf.createLiteral(reference, awardReferenceDatatype));
 				connection.add(awardIri, publishedThrough, buyerPortal);
 				connection.add(awardIri, publishedThrough, nationalRegister);
 				distinctRows += (long) sitesForSupplier(supplier) * CERTIFICATION_STANDARDS.length * CONTACTS_PER_BUYER;

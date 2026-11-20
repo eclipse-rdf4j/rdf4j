@@ -14,6 +14,7 @@ package org.eclipse.rdf4j.sail.lmdb;
 import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -29,6 +30,8 @@ import java.util.concurrent.TimeoutException;
 
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.sail.lmdb.config.LmdbStoreConfig;
+import org.eclipse.rdf4j.sail.lmdb.model.LmdbIRI;
+import org.eclipse.rdf4j.sail.lmdb.model.LmdbLiteral;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.Timeout;
 import org.junit.jupiter.api.io.TempDir;
@@ -36,6 +39,36 @@ import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.EnumSource;
 
 class ValueStoreDetachedSnapshotReadTest {
+
+	@Test
+	void projectedLiteralReuseRequiresDecodedUnchangedDatatype(@TempDir Path dataDir) throws Exception {
+		var config = new LmdbStoreConfig("spoc,posc").setInlineLiterals(false).setForceSync(false);
+		var values = new ValueStore(dataDir.resolve("values").toFile(), config);
+		try (var triples = new TripleStore(dataDir.resolve("triples").toFile(), config, values)) {
+			String datatype = "urn:detached-read:reusable-datatype";
+			values.startTransaction(true);
+			long id = values.storeValue(values.createLiteral("typed", values.createIRI(datatype)));
+			values.commit();
+			values.clearCaches();
+			int mask = ValuePosition.OBJECT;
+			try (var triple = triples.getTxnManager().createReadTxnPinned(triples::getDataRevision);
+					var reserved = values.reserveReadSnapshot();
+					var snapshot = reserved.start(triple);
+					var scope = values.openValueResolutionScope()) {
+				var literal = (LmdbLiteral) values.getLazyValue(snapshot, id, mask, scope);
+				long version = literal.getSemanticVersion();
+				assertNull(values.reuseProjectedLazyValue(snapshot, id, mask, scope, literal, version));
+				literal.init();
+				assertEquals(datatype, literal.getDatatype().stringValue());
+				assertEquals("typed", literal.getLabel());
+				assertSame(literal, values.reuseProjectedLazyValue(snapshot, id, mask, scope, literal, version));
+				((LmdbIRI) literal.getDatatype()).setFromInitializedValue(values.createIRI("urn:changed-datatype"));
+				assertNull(values.reuseProjectedLazyValue(snapshot, id, mask, scope, literal, version));
+			}
+		} finally {
+			values.close();
+		}
+	}
 
 	@Test
 	@Timeout(value = 15, unit = TimeUnit.SECONDS)
@@ -58,10 +91,19 @@ class ValueStoreDetachedSnapshotReadTest {
 				assertTrue(values.growMapForEstimatedWrite(Math.multiplyExact(values.mapSizeBytes(), 2L), null));
 				assertTrue(snapshot.dictionaryDetached());
 				assertSame(leaf, values.reuseProjectedLazyValue(snapshot, id, mask, scope, leaf, version));
+				assertTrue(values.withProjectedValueAccess(snapshot, scope, access -> {
+					assertTrue(Thread.holdsLock(snapshot.txnRef()));
+					assertSame(snapshot, access.snapshot());
+					assertSame(leaf, access.reuse(id, mask, scope, leaf, version));
+					assertNull(access.reuse(id, mask, scope, leaf, version + 1));
+					assertNotNull(access.lookup(id, mask, scope));
+					return true;
+				}));
 				assertEquals(iri, leaf.stringValue());
 				snapshot.close();
 				assertThrows(IOException.class,
 						() -> values.reuseProjectedLazyValue(snapshot, id, mask, scope, leaf, version));
+				assertThrows(IOException.class, () -> values.withProjectedValueAccess(snapshot, scope, access -> true));
 			}
 		} finally {
 			values.close();

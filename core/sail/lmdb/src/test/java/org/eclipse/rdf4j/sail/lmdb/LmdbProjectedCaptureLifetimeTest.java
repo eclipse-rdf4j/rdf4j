@@ -26,18 +26,22 @@ import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledFuture;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.function.Predicate;
 
+import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
+import org.eclipse.rdf4j.query.QueryEvaluationException;
 import org.eclipse.rdf4j.query.QueryLanguage;
 import org.eclipse.rdf4j.query.impl.EmptyBindingSet;
 import org.eclipse.rdf4j.query.parser.QueryParserUtil;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
 import org.eclipse.rdf4j.sail.lmdb.config.LmdbStoreConfig;
+import org.eclipse.rdf4j.sail.lmdb.evaluation.NativeLmdbQuerySource.ProjectedValueAccess;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.NativeProjectedBindingSet;
 import org.eclipse.rdf4j.sail.lmdb.model.LmdbIRI;
 import org.eclipse.rdf4j.sail.lmdb.model.LmdbValue;
-import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.Timeout;
 import org.junit.jupiter.api.io.TempDir;
 import org.junit.jupiter.params.ParameterizedTest;
@@ -95,9 +99,10 @@ class LmdbProjectedCaptureLifetimeTest {
 		}
 	}
 
-	@Test
-	void resultCloseDefersNativeSourceRetirementUntilCurrentRowCaptureCompletes(@TempDir Path directory)
-			throws Exception {
+	@ParameterizedTest
+	@ValueSource(booleans = { false, true })
+	void resultCloseDefersNativeSourceRetirementUntilCurrentRowCaptureCompletes(boolean batchCapture,
+			@TempDir Path directory) throws Exception {
 		long started = System.nanoTime();
 		List<String> phases = new CopyOnWriteArrayList<>();
 		var watchdog = Executors.newSingleThreadScheduledExecutor(task -> {
@@ -108,7 +113,7 @@ class LmdbProjectedCaptureLifetimeTest {
 		ScheduledFuture<?> stalled = null;
 		try {
 			stalled = watchdog.schedule(() -> dumpFixtureDiagnostics(phases, started), 20, TimeUnit.SECONDS);
-			runCaptureScenario(directory, started, phases);
+			runCaptureScenario(directory, started, phases, batchCapture);
 		} catch (Exception | Error failure) {
 			try {
 				failure.addSuppressed(new AssertionError("Capture fixture phases: " + phases
@@ -135,7 +140,8 @@ class LmdbProjectedCaptureLifetimeTest {
 		}
 	}
 
-	private static void runCaptureScenario(Path directory, long started, List<String> phases) throws Exception {
+	private static void runCaptureScenario(Path directory, long started, List<String> phases, boolean batchCapture)
+			throws Exception {
 		recordPhase(directory, started, phases, "seed creation");
 		var config = new LmdbStoreConfig("spoc,posc,ospc").setNativeEvaluationEnabled(true)
 				.setDirectAdjacencyEnabled(true)
@@ -158,6 +164,7 @@ class LmdbProjectedCaptureLifetimeTest {
 		var store = new ObservedStore(directory.toFile(), config);
 		recordPhase(directory, started, phases, "observed store reopen begins");
 		store.init();
+		store.values.batchCapture = batchCapture;
 		recordPhase(directory, started, phases, "observed store reopen complete");
 		try (var workers = Executors.newVirtualThreadPerTaskExecutor(); var connection = store.getConnection()) {
 			var query = QueryParserUtil.parseTupleQuery(QueryLanguage.SPARQL,
@@ -179,6 +186,8 @@ class LmdbProjectedCaptureLifetimeTest {
 				var row = reading.get(10, TimeUnit.SECONDS);
 				assertInstanceOf(NativeProjectedBindingSet.class, row);
 				assertEquals(2, store.values.captures.get(), "closing cannot pull another row speculatively");
+				assertEquals(batchCapture ? 1 : 0, store.values.batchLookupAttempts.get(),
+						"a paused batch must hand off to scalar capture once its value scope closes");
 				for (var binding : row) {
 					assertInstanceOf(ValueStoreRevision.Lazy.class,
 							((LmdbValue) binding.getValue()).getValueStoreRevision());
@@ -241,10 +250,13 @@ class LmdbProjectedCaptureLifetimeTest {
 	private static final class CapturingValueStore extends ValueStore {
 		private final CountDownLatch captureEntered = new CountDownLatch(1);
 		private final CountDownLatch releaseCapture = new CountDownLatch(1);
+		private final AtomicBoolean captureStarted = new AtomicBoolean();
 		private final AtomicInteger captures = new AtomicInteger();
+		private final AtomicInteger batchLookupAttempts = new AtomicInteger();
 		private volatile ReadSnapshot capturedSnapshot;
 		private volatile boolean armed;
 		private volatile boolean pauseFirstCapture;
+		private boolean batchCapture = true;
 
 		private CapturingValueStore(File directory, StoreProperties properties, LmdbStoreConfig config)
 				throws IOException {
@@ -254,7 +266,53 @@ class LmdbProjectedCaptureLifetimeTest {
 		@Override
 		LmdbValue getLazyValue(ReadSnapshot snapshot, long id, int positionMask, ValueResolutionScope valueScope)
 				throws IOException {
-			if (armed && captures.incrementAndGet() == 1 && pauseFirstCapture) {
+			observeCapture(snapshot);
+			LmdbValue value = super.getLazyValue(snapshot, id, positionMask, valueScope);
+			recordCapture(value);
+			return value;
+		}
+
+		@Override
+		boolean withProjectedValueAccess(ReadSnapshot snapshot, ValueResolutionScope scope,
+				Predicate<ProjectedValueAccess> capture) throws IOException {
+			return batchCapture && super.withProjectedValueAccess(snapshot, scope,
+					access -> capture.test(new ProjectedValueAccess() {
+						@Override
+						public Object snapshot() {
+							return access.snapshot();
+						}
+
+						@Override
+						public Value lookup(long id, int positionMask, ValueResolutionScope valueScope) {
+							if (armed) {
+								batchLookupAttempts.incrementAndGet();
+							}
+							try {
+								observeCapture(snapshot);
+							} catch (IOException failure) {
+								throw new QueryEvaluationException(failure);
+							}
+							Value value = access.lookup(id, positionMask, valueScope);
+							recordCapture(value);
+							return value;
+						}
+
+						@Override
+						public Value reuse(long id, int positionMask, ValueResolutionScope valueScope, Value supplied,
+								long semanticVersion) {
+							return access.reuse(id, positionMask, valueScope, supplied, semanticVersion);
+						}
+					}));
+		}
+
+		private void recordCapture(Value value) {
+			if (armed && value != null) {
+				captures.incrementAndGet();
+			}
+		}
+
+		private void observeCapture(ReadSnapshot snapshot) throws IOException {
+			if (armed && pauseFirstCapture && captureStarted.compareAndSet(false, true)) {
 				capturedSnapshot = snapshot;
 				captureEntered.countDown();
 				try {
@@ -266,7 +324,6 @@ class LmdbProjectedCaptureLifetimeTest {
 					throw new IOException(interrupted);
 				}
 			}
-			return super.getLazyValue(snapshot, id, positionMask, valueScope);
 		}
 	}
 }

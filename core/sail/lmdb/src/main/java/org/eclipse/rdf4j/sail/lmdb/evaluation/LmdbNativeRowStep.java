@@ -3849,6 +3849,7 @@ final class NativeRowsIteration implements CloseableIteration<BindingSet>, Coope
 			LmdbNativeExplain.recordExecutionPath(step.originalExpr, LmdbNativeAttemptMetrics.PATH_EMPTY_SEED);
 			return false;
 		}
+		row.terminalKernelOutput = step.rootEvaluationScoped;
 		values = new AggContext(source, step.strictCompare);
 		distinctPlan = step.distinct
 				? LmdbNativeOrderPlanner.tuple(step.arg, step.sourceSlots, row)
