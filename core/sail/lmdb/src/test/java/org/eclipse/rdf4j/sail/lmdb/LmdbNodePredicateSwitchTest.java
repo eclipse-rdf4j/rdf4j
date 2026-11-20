@@ -68,12 +68,7 @@ class LmdbNodePredicateSwitchTest {
 		} else {
 			System.setProperty(LmdbDirectAdjacencyStore.NODE_PREDICATE_SERVE_PROPERTY, previousServingProperty);
 		}
-		if (store != null) {
-			store.close();
-		}
-		if (tripleStore != null) {
-			tripleStore.close();
-		}
+		LmdbTestUtil.cleanup(null, store, tripleStore);
 	}
 
 	private void open(File dataDir, Boolean construction, Boolean serving) throws Exception {

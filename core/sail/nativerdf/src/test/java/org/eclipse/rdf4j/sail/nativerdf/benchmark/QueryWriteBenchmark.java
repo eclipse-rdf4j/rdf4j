@@ -96,31 +96,45 @@ public class QueryWriteBenchmark {
 	}
 
 	@Setup(Level.Invocation)
-	public void beforeClass() {
-		file = Files.newTemporaryFolder();
+	public void beforeClass() throws IOException {
+		boolean initialized = false;
+		try {
+			file = Files.newTemporaryFolder();
 
-		repository = new SailRepository(new NativeStore(file, "spoc,ospc,psoc"));
+			repository = new SailRepository(new NativeStore(file, "spoc,ospc,psoc"));
 
-		try (SailRepositoryConnection connection = repository.getConnection()) {
-			connection.begin(IsolationLevels.NONE);
-			connection.add(data);
-			connection.commit();
+			try (SailRepositoryConnection connection = repository.getConnection()) {
+				connection.begin(IsolationLevels.NONE);
+				connection.add(data);
+				connection.commit();
+			}
+
+			try (SailRepositoryConnection connection = repository.getConnection()) {
+				connection.begin(IsolationLevels.NONE);
+				statementList = Iterations.asList(connection.getStatements(null, RDF.TYPE, null, false));
+				connection.commit();
+			}
+
+			System.gc();
+			initialized = true;
+		} finally {
+			if (!initialized) {
+				afterClass();
+			}
 		}
-
-		try (SailRepositoryConnection connection = repository.getConnection()) {
-			connection.begin(IsolationLevels.NONE);
-			statementList = Iterations.asList(connection.getStatements(null, RDF.TYPE, null, false));
-			connection.commit();
-		}
-
-		System.gc();
-
 	}
 
 	@TearDown(Level.Invocation)
 	public void afterClass() throws IOException {
-		repository.shutDown();
-		FileUtils.deleteDirectory(file);
+		try {
+			if (repository != null) {
+				repository.shutDown();
+			}
+		} finally {
+			if (file != null) {
+				FileUtils.deleteDirectory(file);
+			}
+		}
 
 	}
 

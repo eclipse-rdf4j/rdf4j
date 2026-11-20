@@ -27,7 +27,7 @@ import org.eclipse.rdf4j.query.algebra.StatementPattern;
 import org.eclipse.rdf4j.query.algebra.Var;
 import org.junit.jupiter.api.Test;
 
-class SketchBasedJoinEstimatorZeroIntersectionSamplingRegressionTest {
+class SketchBasedJoinEstimatorZeroIntersectionSamplingRegressionTest extends AbstractSketchBasedJoinEstimatorTest {
 
 	private static final ValueFactory VF = SimpleValueFactory.getInstance();
 	private static final String PROPERTY_PREFIX = "org.eclipse.rdf4j.query.algebra.evaluation.sketch.SketchBasedJoinEstimator.";
@@ -63,7 +63,7 @@ class SketchBasedJoinEstimatorZeroIntersectionSamplingRegressionTest {
 		}
 	}
 
-	private static RareOverlapFixture buildRareOverlapFixture() throws Exception {
+	private RareOverlapFixture buildRareOverlapFixture() throws Exception {
 		IRI locatedAt = VF.createIRI("urn:locatedAt");
 		IRI hasName = VF.createIRI("urn:hasName");
 		int overlapBranches = 64;
@@ -73,7 +73,7 @@ class SketchBasedJoinEstimatorZeroIntersectionSamplingRegressionTest {
 			StubSketchStatementSource store = new StubSketchStatementSource();
 			populateRareOverlapData(store, locatedAt, hasName, overlapBranches, copiesPerBranch, noiseSubjects);
 
-			SketchBasedJoinEstimator estimator = new SketchBasedJoinEstimator(store, config());
+			SketchBasedJoinEstimator estimator = createEstimator(store, config());
 			estimator.rebuild();
 
 			return new RareOverlapFixture(estimator, joinNode(locatedAt, hasName),

@@ -1096,8 +1096,17 @@ public class BlankNodeReferenceConformanceTest extends AbstractComplianceTest {
 
 		private LocalDocumentSource() throws IOException {
 			document = Files.createTempFile("rdf4j-bnr-", ".ttl");
-			Files.write(document, DOCUMENT);
-			localUrl = document.toUri().toString();
+			try {
+				Files.write(document, DOCUMENT);
+				localUrl = document.toUri().toString();
+			} catch (IOException | RuntimeException | Error failure) {
+				try {
+					Files.deleteIfExists(document);
+				} catch (IOException cleanupFailure) {
+					failure.addSuppressed(cleanupFailure);
+				}
+				throw failure;
+			}
 		}
 
 		private String localize(String request) {

@@ -130,23 +130,25 @@ class SpinUpdateGraphExecutionTest {
 
 	private static List<Statement> execute(UpdateExpr update, Dataset dataset) throws Exception {
 		MemoryStore store = new MemoryStore();
-		store.init();
-		try (var connection = store.getConnection()) {
-			connection.begin();
-			connection.addStatement(iri("urn:seed"), iri("urn:p"), iri("urn:o"));
-			connection.addStatement(iri("urn:s"), iri("urn:p"), iri("urn:o"));
-			connection.addStatement(iri("urn:s"), iri("urn:p"), iri("urn:o"), iri("urn:g"));
-			connection.addStatement(iri("urn:s"), iri("urn:p"), iri("urn:o"), iri("urn:other"));
-			new SailUpdateExecutor(connection, SimpleValueFactory.getInstance(), new ParserConfig())
-					.executeUpdate(update, dataset, EmptyBindingSet.getInstance(), false, 0);
-			connection.commit();
-			List<Statement> statements = new ArrayList<>();
-			try (var results = connection.getStatements(null, null, null, false)) {
-				while (results.hasNext()) {
-					statements.add(results.next());
+		try {
+			store.init();
+			try (var connection = store.getConnection()) {
+				connection.begin();
+				connection.addStatement(iri("urn:seed"), iri("urn:p"), iri("urn:o"));
+				connection.addStatement(iri("urn:s"), iri("urn:p"), iri("urn:o"));
+				connection.addStatement(iri("urn:s"), iri("urn:p"), iri("urn:o"), iri("urn:g"));
+				connection.addStatement(iri("urn:s"), iri("urn:p"), iri("urn:o"), iri("urn:other"));
+				new SailUpdateExecutor(connection, SimpleValueFactory.getInstance(), new ParserConfig())
+						.executeUpdate(update, dataset, EmptyBindingSet.getInstance(), false, 0);
+				connection.commit();
+				List<Statement> statements = new ArrayList<>();
+				try (var results = connection.getStatements(null, null, null, false)) {
+					while (results.hasNext()) {
+						statements.add(results.next());
+					}
 				}
+				return statements;
 			}
-			return statements;
 		} finally {
 			store.shutDown();
 		}

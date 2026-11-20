@@ -77,33 +77,42 @@ public class ReadCacheBenchmark {
 
 	@Setup(Level.Trial)
 	public void beforeClass() throws IOException {
-		// JMH does not correctly set JAVA_HOME. Change the JAVA_HOME below if you the following error:
-		// [EmbeddedElsHandler] INFO p.a.t.e.ElasticServer - could not find java; set JAVA_HOME or ensure java is in
-		// PATH
-		TestHelpers.openClient();
+		boolean initialized = false;
+		try {
+			// JMH does not correctly set JAVA_HOME. Change the JAVA_HOME below if you the following error:
+			// [EmbeddedElsHandler] INFO p.a.t.e.ElasticServer - could not find java; set JAVA_HOME or ensure java is in
+			// PATH
+			TestHelpers.openClient();
 
-		repoWithoutCache = new SailRepository(new ElasticsearchStore(TestHelpers.HOST, TestHelpers.PORT,
-				TestHelpers.CLUSTER, "testindex1", ExtensibleStore.Cache.NONE));
+			repoWithoutCache = new SailRepository(new ElasticsearchStore(TestHelpers.HOST, TestHelpers.PORT,
+					TestHelpers.CLUSTER, "testindex1", ExtensibleStore.Cache.NONE));
 
-		repoWithCache = new SailRepository(
-				new ElasticsearchStore(TestHelpers.HOST, TestHelpers.PORT, TestHelpers.CLUSTER, "testindex2"));
-		try (SailRepositoryConnection connection = repoWithCache.getConnection()) {
-			connection.begin(IsolationLevels.NONE);
-			connection.clear();
-			connection.add(getResourceAsStream("benchmarkFiles/datagovbe-valid.ttl.gz"), "", RDFFormat.TURTLE);
-			connection.commit();
+			repoWithCache = new SailRepository(
+					new ElasticsearchStore(TestHelpers.HOST, TestHelpers.PORT, TestHelpers.CLUSTER, "testindex2"));
+			try (SailRepositoryConnection connection = repoWithCache.getConnection();
+					InputStream input = getResourceAsStream("benchmarkFiles/datagovbe-valid.ttl.gz")) {
+				connection.begin(IsolationLevels.NONE);
+				connection.clear();
+				connection.add(input, "", RDFFormat.TURTLE);
+				connection.commit();
+			}
+
+			try (SailRepositoryConnection connection = repoWithoutCache.getConnection();
+					InputStream input = getResourceAsStream("benchmarkFiles/datagovbe-valid.ttl.gz")) {
+				connection.begin(IsolationLevels.NONE);
+				connection.clear();
+				connection.add(input, "", RDFFormat.TURTLE);
+				connection.commit();
+
+			}
+
+			System.gc();
+			initialized = true;
+		} finally {
+			if (!initialized) {
+				afterClass();
+			}
 		}
-
-		try (SailRepositoryConnection connection = repoWithoutCache.getConnection()) {
-			connection.begin(IsolationLevels.NONE);
-			connection.clear();
-			connection.add(getResourceAsStream("benchmarkFiles/datagovbe-valid.ttl.gz"), "", RDFFormat.TURTLE);
-			connection.commit();
-
-		}
-
-		System.gc();
-
 	}
 
 	private static InputStream getResourceAsStream(String name) {
@@ -115,8 +124,19 @@ public class ReadCacheBenchmark {
 
 	@TearDown(Level.Trial)
 	public void afterClass() throws IOException {
-		repoWithoutCache.shutDown();
-		TestHelpers.closeClient();
+		try {
+			if (repoWithoutCache != null) {
+				repoWithoutCache.shutDown();
+			}
+		} finally {
+			try {
+				if (repoWithCache != null) {
+					repoWithCache.shutDown();
+				}
+			} finally {
+				TestHelpers.closeClient();
+			}
+		}
 	}
 
 	@Benchmark

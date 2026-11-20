@@ -59,7 +59,11 @@ public class ElasticsearchStoreFactoryTest {
 		config.setSlowQueryLogFile("elasticsearch-slow.log");
 
 		ElasticsearchStore sail = (ElasticsearchStore) subject.getSail(config);
-		assertMatchesConfig(sail, config);
+		try {
+			assertMatchesConfig(sail, config);
+		} finally {
+			sail.shutDown();
+		}
 	}
 
 	@Test
@@ -71,11 +75,19 @@ public class ElasticsearchStoreFactoryTest {
 		config.setPort(9300);
 
 		ElasticsearchStore defaultStore = (ElasticsearchStore) subject.getSail(config);
-		assertThat(defaultStore.isExperimentalQueryOptimizations()).isFalse();
+		try {
+			assertThat(defaultStore.isExperimentalQueryOptimizations()).isFalse();
+		} finally {
+			defaultStore.shutDown();
+		}
 
 		config.setExperimentalQueryOptimizations(true);
 		ElasticsearchStore optedInStore = (ElasticsearchStore) subject.getSail(config);
-		assertThat(optedInStore.isExperimentalQueryOptimizations()).isTrue();
+		try {
+			assertThat(optedInStore.isExperimentalQueryOptimizations()).isTrue();
+		} finally {
+			optedInStore.shutDown();
+		}
 	}
 
 	private void assertMatchesConfig(ElasticsearchStore sail, ElasticsearchStoreConfig config) {
