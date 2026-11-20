@@ -13,10 +13,14 @@ package org.eclipse.rdf4j.sail.memory;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatCode;
+import static org.junit.jupiter.api.Assumptions.assumeTrue;
 
+import java.io.IOException;
 import java.lang.reflect.Method;
+import java.nio.file.DirectoryStream;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.nio.file.SecureDirectoryStream;
 import java.util.ArrayDeque;
 import java.util.Arrays;
 import java.util.List;
@@ -39,6 +43,7 @@ class SlowQueryLoggingTest {
 
 	@Test
 	void logsSlowTupleQueryToConfiguredFile(@TempDir Path tempDir) throws Exception {
+		requireSecureDirectoryStreams(tempDir);
 		Path logFile = tempDir.resolve("slow-query.log");
 		TestMemoryStore store = new TestMemoryStore();
 		store.setDataDir(tempDir.toFile());
@@ -144,6 +149,7 @@ class SlowQueryLoggingTest {
 
 	@Test
 	void logsQueryWhenFirstResultExceedsConfiguredThreshold(@TempDir Path tempDir) throws Exception {
+		requireSecureDirectoryStreams(tempDir);
 		Path logFile = tempDir.resolve("slow-query.log");
 		TestMemoryStore store = new TestMemoryStore();
 		store.setDataDir(tempDir.toFile());
@@ -177,6 +183,8 @@ class SlowQueryLoggingTest {
 
 	@Test
 	void relativeLogFileResolvesAgainstDataDir(@TempDir Path tempDir) throws Exception {
+		requireSecureDirectoryStreams(tempDir);
+		Files.createDirectory(tempDir.resolve("logs"));
 		Path expectedLogFile = tempDir.resolve("logs/slow-query.log");
 		TestMemoryStore store = new TestMemoryStore();
 		store.setDataDir(tempDir.toFile());
@@ -245,6 +253,12 @@ class SlowQueryLoggingTest {
 				.anySatisfy(message -> assertThat(message).contains("ASK WHERE { ?s ?p ?o }"))
 				.anySatisfy(
 						message -> assertThat(message).containsIgnoringCase("failed to write slow query log entry"));
+	}
+
+	private static void requireSecureDirectoryStreams(Path directory) throws IOException {
+		try (DirectoryStream<Path> stream = Files.newDirectoryStream(directory)) {
+			assumeTrue(stream instanceof SecureDirectoryStream<?>, "Secure directory streams are unavailable");
+		}
 	}
 
 	private static void configureSlowQueryThreshold(MemoryStore store, long thresholdSeconds) throws Exception {

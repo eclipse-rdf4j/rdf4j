@@ -16,13 +16,17 @@ import java.io.File;
 import java.io.IOException;
 import java.lang.invoke.MethodHandles;
 import java.lang.invoke.VarHandle;
+import java.nio.channels.Channels;
+import java.nio.channels.SeekableByteChannel;
 import java.nio.charset.StandardCharsets;
+import java.nio.file.DirectoryStream;
 import java.nio.file.Files;
 import java.nio.file.LinkOption;
 import java.nio.file.NoSuchFileException;
 import java.nio.file.Path;
+import java.nio.file.SecureDirectoryStream;
 import java.nio.file.StandardOpenOption;
-import java.nio.file.attribute.BasicFileAttributes;
+import java.nio.file.attribute.BasicFileAttributeView;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collections;
@@ -30,6 +34,7 @@ import java.util.IdentityHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.Set;
 import java.util.concurrent.locks.ReentrantReadWriteLock;
 
 import org.eclipse.rdf4j.common.iteration.CancellationSignal;
@@ -545,6 +550,8 @@ public abstract class AbstractSail implements Sail {
 	/**
 	 * Sets the slow-query log file relative to this Sail's data directory. Only {@code .log} files within that
 	 * directory are allowed; symbolic links below it are rejected. A null or blank value selects the default logger.
+	 * Parent directories must already exist. If the filesystem does not support secure directory access, or file access
+	 * fails, entries are written to the default logger instead.
 	 *
 	 * @throws IllegalArgumentException if the configured path is invalid
 	 */
@@ -611,17 +618,23 @@ public abstract class AbstractSail implements Sail {
 			synchronized (slowQueryLogFileLock) {
 				Path dataDirectory = currentDataDir.getCanonicalFile().toPath();
 				Path resolvedPath = dataDirectory.resolve(configuredPath);
-				validateSlowQueryLogPath(dataDirectory, resolvedPath);
-				Files.createDirectories(resolvedPath.getParent());
-				validateSlowQueryLogPath(dataDirectory, resolvedPath);
-				try (BufferedWriter writer = Files.newBufferedWriter(resolvedPath,
-						StandardCharsets.UTF_8, StandardOpenOption.CREATE, StandardOpenOption.APPEND,
-						StandardOpenOption.WRITE, LinkOption.NOFOLLOW_LINKS)) {
-					// A newly created destination must also be a regular file before any log text is written.
-					requireRegularSlowQueryLogFile(resolvedPath);
-					writer.write(logEntry);
-					writer.newLine();
-					writer.newLine();
+				try (SecureDirectoryStream<Path> parent = openSlowQueryLogDirectory(resolvedPath.getParent())) {
+					Path fileName = resolvedPath.getFileName();
+					try {
+						requireRegularSlowQueryLogFile(parent, fileName);
+					} catch (NoSuchFileException e) {
+						// The handle-relative append below creates a missing file without following symbolic links.
+					}
+					try (SeekableByteChannel channel = parent.newByteChannel(fileName,
+							Set.of(StandardOpenOption.CREATE, StandardOpenOption.APPEND, StandardOpenOption.WRITE,
+									LinkOption.NOFOLLOW_LINKS));
+							BufferedWriter writer = new BufferedWriter(
+									Channels.newWriter(channel, StandardCharsets.UTF_8))) {
+						requireRegularSlowQueryLogFile(parent, fileName);
+						writer.write(logEntry);
+						writer.newLine();
+						writer.newLine();
+					}
 				}
 			}
 		} catch (RuntimeException e) {
@@ -635,22 +648,34 @@ public abstract class AbstractSail implements Sail {
 		}
 	}
 
-	private static void validateSlowQueryLogPath(Path dataDirectory, Path logFile) throws IOException {
-		// Canonicalization also resolves existing parents when the log file has not been created yet.
-		Path canonicalPath = logFile.toFile().getCanonicalFile().toPath();
-		if (!canonicalPath.startsWith(dataDirectory) || !canonicalPath.equals(logFile)) {
-			throw new IOException(
-					"Slow query log file must stay within the repository data directory without symbolic links");
+	private static SecureDirectoryStream<Path> openSlowQueryLogDirectory(Path directory) throws IOException {
+		// Anchor at the filesystem root so replacement of any parent, including dataDir, cannot redirect traversal.
+		DirectoryStream<Path> root = Files.newDirectoryStream(directory.getRoot());
+		if (!(root instanceof SecureDirectoryStream<Path> current)) {
+			try (root) {
+				throw new IOException("Filesystem does not support secure slow query log file access");
+			}
 		}
 		try {
-			requireRegularSlowQueryLogFile(logFile);
-		} catch (NoSuchFileException e) {
-			// A missing file will be created by the append operation, which must not follow symbolic links.
+			for (Path component : directory) {
+				// Never create directories by pathname: the secure API has no race-free directory creation operation.
+				try (SecureDirectoryStream<Path> parent = current) {
+					current = parent.newDirectoryStream(component, LinkOption.NOFOLLOW_LINKS);
+				}
+			}
+			return current;
+		} catch (IOException | RuntimeException | Error e) {
+			try (SecureDirectoryStream<Path> failedDirectory = current) {
+				throw e;
+			}
 		}
 	}
 
-	private static void requireRegularSlowQueryLogFile(Path logFile) throws IOException {
-		if (!Files.readAttributes(logFile, BasicFileAttributes.class, LinkOption.NOFOLLOW_LINKS).isRegularFile()) {
+	private static void requireRegularSlowQueryLogFile(SecureDirectoryStream<Path> parent, Path fileName)
+			throws IOException {
+		if (!parent.getFileAttributeView(fileName, BasicFileAttributeView.class, LinkOption.NOFOLLOW_LINKS)
+				.readAttributes()
+				.isRegularFile()) {
 			throw new IOException("Slow query log file must be a regular .log file");
 		}
 	}

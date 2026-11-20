@@ -16,17 +16,36 @@ import static org.assertj.core.api.Assertions.assertThatCode;
 import static org.assertj.core.api.Assertions.assertThatIllegalArgumentException;
 import static org.junit.jupiter.api.Assertions.assertAll;
 import static org.junit.jupiter.api.Assumptions.assumeTrue;
+import static org.mockito.Mockito.mockStatic;
 
 import java.io.IOException;
+import java.nio.channels.SeekableByteChannel;
+import java.nio.file.DirectoryStream;
 import java.nio.file.Files;
+import java.nio.file.LinkOption;
+import java.nio.file.OpenOption;
 import java.nio.file.Path;
+import java.nio.file.SecureDirectoryStream;
+import java.nio.file.attribute.FileAttribute;
+import java.nio.file.attribute.FileAttributeView;
 import java.util.Arrays;
+import java.util.Iterator;
+import java.util.List;
+import java.util.Set;
+import java.util.concurrent.atomic.AtomicBoolean;
 
 import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.sail.SailConnection;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
+import org.mockito.MockedStatic;
+import org.slf4j.LoggerFactory;
+
+import ch.qos.logback.classic.Level;
+import ch.qos.logback.classic.Logger;
+import ch.qos.logback.classic.spi.ILoggingEvent;
+import ch.qos.logback.core.read.ListAppender;
 
 class SlowQueryLogFileTest {
 
@@ -59,22 +78,25 @@ class SlowQueryLogFileTest {
 
 	@Test
 	void writesAndAppendsOnlyWithinDataDirectory() throws IOException {
+		requireSecureDirectoryStreams(tempDir);
 		for (String logFile : new String[] { "slow-query.log", "logs/slow-query.log", "logs/nested/slow-query.log",
 				"./logs/slow-query.log" }) {
 			Path dataDir = Files.createTempDirectory(tempDir, "repository-");
+			Files.createDirectories(dataDir.resolve(logFile).getParent());
 			AbstractSail sail = configuredSail(dataDir, logFile);
 
-			SlowQuerySupport.log(sail, "first entry");
+			SlowQuerySupport.log(sail, "first entry æøå");
 			SlowQuerySupport.log(sail, "second entry");
 
 			String separator = System.lineSeparator() + System.lineSeparator();
 			assertThat(Files.readString(dataDir.resolve(logFile)))
-					.isEqualTo("first entry" + separator + "second entry" + separator);
+					.isEqualTo("first entry æøå" + separator + "second entry" + separator);
 		}
 	}
 
 	@Test
 	void acceptsSettingBeforeDataDirectoryIsAssigned() throws IOException {
+		requireSecureDirectoryStreams(tempDir);
 		AbstractSail sail = new TestSail();
 		sail.setSlowQueryLogFile("slow-query.log");
 		sail.setDataDir(tempDir.toFile());
@@ -86,6 +108,7 @@ class SlowQueryLogFileTest {
 
 	@Test
 	void trimsSurroundingWhitespace() throws IOException {
+		requireSecureDirectoryStreams(tempDir);
 		AbstractSail sail = new TestSail();
 		sail.setDataDir(tempDir.toFile());
 		sail.setSlowQueryLogFile("  slow-query.log  ");
@@ -97,6 +120,8 @@ class SlowQueryLogFileTest {
 
 	@Test
 	void usesTheSamePathSeparatorRulesForValidationAndWriting() throws IOException {
+		requireSecureDirectoryStreams(tempDir);
+		Files.createDirectory(tempDir.resolve("logs"));
 		AbstractSail sail = configuredSail(tempDir, "logs\\slow-query.log");
 
 		SlowQuerySupport.log(sail, "entry");
@@ -174,7 +199,9 @@ class SlowQueryLogFileTest {
 
 	@Test
 	void rechecksParentOnEveryWrite() throws IOException {
+		requireSecureDirectoryStreams(tempDir);
 		Path dataDir = Files.createDirectory(tempDir.resolve("repository"));
+		Files.createDirectory(dataDir.resolve("logs"));
 		Path outside = Files.createDirectory(tempDir.resolve("outside"));
 		AbstractSail sail = configuredSail(dataDir, "logs/slow-query.log");
 		SlowQuerySupport.log(sail, "first entry");
@@ -191,6 +218,7 @@ class SlowQueryLogFileTest {
 
 	@Test
 	void rechecksFileOnEveryWrite() throws IOException {
+		requireSecureDirectoryStreams(tempDir);
 		Path outside = Files.writeString(tempDir.resolve("config.ttl"), "unchanged");
 		AbstractSail sail = configuredSail(tempDir, "slow-query.log");
 		SlowQuerySupport.log(sail, "first entry");
@@ -204,7 +232,9 @@ class SlowQueryLogFileTest {
 
 	@Test
 	void permitsRepositoryDirectoryItselfToBeASymlink() throws IOException {
+		requireSecureDirectoryStreams(tempDir);
 		Path dataDir = Files.createDirectory(tempDir.resolve("repository"));
+		Files.createDirectory(dataDir.resolve("logs"));
 		Path alias = tempDir.resolve("alias");
 		createSymbolicLink(alias, dataDir);
 		AbstractSail sail = configuredSail(alias, "logs/slow-query.log");
@@ -225,6 +255,275 @@ class SlowQueryLogFileTest {
 		try (var files = Files.list(logDirectory)) {
 			assertThat(files).isEmpty();
 		}
+	}
+
+	@Test
+	void parentReplacementDuringFileOpenCannotRedirectAppend() throws IOException {
+		requireSecureDirectoryStreams(tempDir);
+		requireSymbolicLinks(tempDir);
+		Path dataDir = Files.createDirectory(tempDir.resolve("repository")).toRealPath();
+		Path logs = Files.createDirectory(dataDir.resolve("logs"));
+		Path originalLogs = dataDir.resolve("original-logs");
+		Path outside = Files.createDirectory(tempDir.resolve("outside"));
+		Path outsideFile = Files.writeString(outside.resolve("slow-query.log"), "unchanged");
+		AbstractSail sail = configuredSail(dataDir, "logs/slow-query.log");
+		AtomicBoolean replaced = new AtomicBoolean();
+		BeforeFileOpen replacement = path -> {
+			if (path.equals(logs.resolve("slow-query.log")) && replaced.compareAndSet(false, true)) {
+				Files.move(logs, originalLogs);
+				Files.createSymbolicLink(logs, outside);
+			}
+		};
+
+		try (MockedStatic<Files> ignored = interceptFileOpen(replacement)) {
+			SlowQuerySupport.log(sail, "entry");
+		}
+
+		assertThat(replaced).isTrue();
+		assertThat(Files.readString(outsideFile)).isEqualTo("unchanged");
+		assertThat(Files.readString(originalLogs.resolve("slow-query.log"))).contains("entry");
+	}
+
+	@Test
+	void missingParentDirectoryIsNotCreatedWhileLogging() throws IOException {
+		AbstractSail sail = configuredSail(tempDir, "missing/nested/slow-query.log");
+
+		try (LogCapture capture = new LogCapture()) {
+			assertThatCode(() -> SlowQuerySupport.log(sail, "entry")).doesNotThrowAnyException();
+			assertThat(capture.messages()).contains("entry");
+		}
+
+		assertThat(tempDir.resolve("missing")).doesNotExist();
+	}
+
+	@Test
+	void directoryReplacementBeforeTraversalFallsBackToLogger() throws IOException {
+		requireSecureDirectoryStreams(tempDir);
+		requireSymbolicLinks(tempDir);
+		for (boolean replaceDataDirectory : new boolean[] { false, true }) {
+			Path dataDir = Files.createTempDirectory(tempDir, "repository-").toRealPath();
+			Path logs = Files.createDirectory(dataDir.resolve("logs"));
+			Path outside = Files.createTempDirectory(tempDir, "outside-");
+			Files.createDirectory(outside.resolve("logs"));
+			Path outsideFile = Files.writeString(outside.resolve("slow-query.log"), "unchanged");
+			Path outsideNestedFile = Files.writeString(outside.resolve("logs/slow-query.log"), "unchanged");
+			Path replacedDirectory = replaceDataDirectory ? dataDir : logs;
+			Path originalDirectory = dataDir.resolveSibling(dataDir.getFileName() + "-original");
+			AtomicBoolean replaced = new AtomicBoolean();
+			BeforeFileOpen replacement = path -> {
+				if (path.equals(replacedDirectory) && replaced.compareAndSet(false, true)) {
+					Files.move(replacedDirectory, originalDirectory);
+					Files.createSymbolicLink(replacedDirectory, outside);
+				}
+			};
+			AbstractSail sail = configuredSail(dataDir, "logs/slow-query.log");
+
+			try (LogCapture capture = new LogCapture();
+					MockedStatic<Files> ignored = interceptFileOpen(path -> {
+					}, replacement)) {
+				SlowQuerySupport.log(sail, "entry");
+				assertThat(capture.messages()).contains("entry");
+			}
+
+			assertThat(replaced).isTrue();
+			assertThat(Files.readString(outsideFile)).isEqualTo("unchanged");
+			assertThat(Files.readString(outsideNestedFile)).isEqualTo("unchanged");
+		}
+	}
+
+	@Test
+	void fileReplacementDuringOpenCannotFollowSymlink() throws IOException {
+		requireSecureDirectoryStreams(tempDir);
+		requireSymbolicLinks(tempDir);
+		for (boolean targetInsideRepository : new boolean[] { false, true }) {
+			Path dataDir = Files.createTempDirectory(tempDir, "repository-").toRealPath();
+			Path target = Files.writeString(targetInsideRepository ? dataDir.resolve("config.ttl")
+					: Files.createTempFile(tempDir, "outside-", ".log"), "unchanged");
+			Path logFile = Files.writeString(dataDir.resolve("slow-query.log"), "original");
+			AtomicBoolean replaced = new AtomicBoolean();
+			BeforeFileOpen replacement = path -> {
+				if (path.equals(logFile) && replaced.compareAndSet(false, true)) {
+					Files.delete(logFile);
+					Files.createSymbolicLink(logFile, target);
+				}
+			};
+			AbstractSail sail = configuredSail(dataDir, "slow-query.log");
+
+			try (LogCapture capture = new LogCapture();
+					MockedStatic<Files> ignored = interceptFileOpen(replacement)) {
+				SlowQuerySupport.log(sail, "entry");
+				assertThat(capture.messages()).contains("entry");
+			}
+
+			assertThat(replaced).isTrue();
+			assertThat(Files.readString(target)).isEqualTo("unchanged");
+		}
+	}
+
+	@Test
+	void unsupportedSecureDirectoryAccessClosesStreamAndFallsBackToLogger() throws IOException {
+		AbstractSail sail = configuredSail(tempDir, "slow-query.log");
+		AtomicBoolean closed = new AtomicBoolean();
+		try (LogCapture capture = new LogCapture();
+				MockedStatic<Files> ignored = mockStatic(Files.class, invocation -> {
+					Object result = invocation.callRealMethod();
+					if (invocation.getMethod().getName().equals("newDirectoryStream")) {
+						@SuppressWarnings("unchecked")
+						DirectoryStream<Path> stream = (DirectoryStream<Path>) result;
+						return new DirectoryStream<Path>() {
+							@Override
+							public Iterator<Path> iterator() {
+								return stream.iterator();
+							}
+
+							@Override
+							public void close() throws IOException {
+								closed.set(true);
+								stream.close();
+							}
+						};
+					}
+					return result;
+				})) {
+			SlowQuerySupport.log(sail, "entry");
+			assertThat(capture.messages()).contains("entry");
+		}
+
+		assertThat(closed).isTrue();
+		assertThat(tempDir.resolve("slow-query.log")).doesNotExist();
+	}
+
+	/**
+	 * Schedule a real directory swap at the file-open boundary without timing or background threads. The pathname hook
+	 * reproduces the old writer; the directory-stream hook exercises handle-relative file opening.
+	 */
+	private static MockedStatic<Files> interceptFileOpen(BeforeFileOpen beforeOpen) {
+		return interceptFileOpen(beforeOpen, path -> {
+		});
+	}
+
+	private static MockedStatic<Files> interceptFileOpen(BeforeFileOpen beforeOpen,
+			BeforeFileOpen beforeDirectoryOpen) {
+		return mockStatic(Files.class, invocation -> {
+			if (invocation.getMethod().getName().equals("newBufferedWriter")) {
+				beforeOpen.run(invocation.getArgument(0));
+			} else if (invocation.getMethod().getName().equals("newDirectoryStream")) {
+				beforeDirectoryOpen.run(invocation.getArgument(0));
+			}
+			Object result = invocation.callRealMethod();
+			if (result instanceof SecureDirectoryStream<?> stream) {
+				@SuppressWarnings("unchecked")
+				SecureDirectoryStream<Path> directory = (SecureDirectoryStream<Path>) stream;
+				return new InterceptingDirectoryStream(invocation.getArgument(0), directory, beforeOpen,
+						beforeDirectoryOpen);
+			}
+			return result;
+		});
+	}
+
+	@FunctionalInterface
+	private interface BeforeFileOpen {
+		void run(Path file) throws IOException;
+	}
+
+	private static final class InterceptingDirectoryStream implements SecureDirectoryStream<Path> {
+		private final Path path;
+		private final SecureDirectoryStream<Path> delegate;
+		private final BeforeFileOpen beforeOpen;
+		private final BeforeFileOpen beforeDirectoryOpen;
+
+		private InterceptingDirectoryStream(Path path, SecureDirectoryStream<Path> delegate,
+				BeforeFileOpen beforeOpen, BeforeFileOpen beforeDirectoryOpen) {
+			this.path = path;
+			this.delegate = delegate;
+			this.beforeOpen = beforeOpen;
+			this.beforeDirectoryOpen = beforeDirectoryOpen;
+		}
+
+		@Override
+		public SecureDirectoryStream<Path> newDirectoryStream(Path child, LinkOption... options) throws IOException {
+			beforeDirectoryOpen.run(path.resolve(child));
+			return new InterceptingDirectoryStream(path.resolve(child), delegate.newDirectoryStream(child, options),
+					beforeOpen, beforeDirectoryOpen);
+		}
+
+		@Override
+		public SeekableByteChannel newByteChannel(Path file, Set<? extends OpenOption> options,
+				FileAttribute<?>... attributes) throws IOException {
+			beforeOpen.run(path.resolve(file));
+			return delegate.newByteChannel(file, options, attributes);
+		}
+
+		@Override
+		public void deleteFile(Path file) throws IOException {
+			delegate.deleteFile(file);
+		}
+
+		@Override
+		public void deleteDirectory(Path directory) throws IOException {
+			delegate.deleteDirectory(directory);
+		}
+
+		@Override
+		public void move(Path source, SecureDirectoryStream<Path> target, Path destination) throws IOException {
+			delegate.move(source, target, destination);
+		}
+
+		@Override
+		public <V extends FileAttributeView> V getFileAttributeView(Class<V> type) {
+			return delegate.getFileAttributeView(type);
+		}
+
+		@Override
+		public <V extends FileAttributeView> V getFileAttributeView(Path file, Class<V> type, LinkOption... options) {
+			return delegate.getFileAttributeView(file, type, options);
+		}
+
+		@Override
+		public Iterator<Path> iterator() {
+			return delegate.iterator();
+		}
+
+		@Override
+		public void close() throws IOException {
+			delegate.close();
+		}
+	}
+
+	private static final class LogCapture implements AutoCloseable {
+		private final Logger logger = (Logger) LoggerFactory.getLogger("org.eclipse.rdf4j.sail.slowquery");
+		private final Level previousLevel = logger.getLevel();
+		private final ListAppender<ILoggingEvent> appender = new ListAppender<>();
+
+		private LogCapture() {
+			appender.setContext(logger.getLoggerContext());
+			appender.start();
+			logger.addAppender(appender);
+			logger.setLevel(Level.WARN);
+		}
+
+		List<String> messages() {
+			return appender.list.stream().map(ILoggingEvent::getFormattedMessage).toList();
+		}
+
+		@Override
+		public void close() {
+			logger.detachAppender(appender);
+			appender.stop();
+			logger.setLevel(previousLevel);
+		}
+	}
+
+	private static void requireSecureDirectoryStreams(Path directory) throws IOException {
+		try (DirectoryStream<Path> stream = Files.newDirectoryStream(directory)) {
+			assumeTrue(stream instanceof SecureDirectoryStream<?>, "Secure directory streams are unavailable");
+		}
+	}
+
+	private static void requireSymbolicLinks(Path directory) throws IOException {
+		Path link = directory.resolve("symlink-support");
+		createSymbolicLink(link, directory);
+		Files.delete(link);
 	}
 
 	private static AbstractSail configuredSail(Path dataDir, String logFile) {
