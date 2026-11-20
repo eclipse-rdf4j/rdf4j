@@ -1101,7 +1101,7 @@ class LmdbSnapshotValueLifetimeTest {
 	void readCommittedObservedResultCanFinishWithinGrowthGrace(@TempDir File dataDir) throws Exception {
 		LmdbStore store = new LmdbStore(dataDir, new LmdbStoreConfig("spoc,posc")
 				.setForceSync(true)
-				.setTripleDBSize(TRIPLE_STORE_GROWTH_MAP_SIZE)
+				.setTripleDBSize(4L * 1024L * 1024L)
 				.setValueDBSize(128L * 1024L * 1024L)
 				.setMapGrowthThreshold(TRIPLE_STORE_GROWTH_THRESHOLD)
 				.setMapGrowthReadDrainTimeoutMillis(30_000)
@@ -1123,8 +1123,9 @@ class LmdbSnapshotValueLifetimeTest {
 			TripleStore tripleStore = tripleStoreOf(store);
 			long initialMapSize = mapSize(tripleStore);
 			MapGrowthMetrics.Snapshot beforeGrowth = store.getBackingStore().growthMetricsSnapshot();
-			try (SailConnection reader = store.getConnection();
-					ExecutorService writers = Executors.newSingleThreadExecutor()) {
+			// Release the reader before joining the writer if an assertion fails during reader drain.
+			try (ExecutorService writers = Executors.newSingleThreadExecutor();
+					SailConnection reader = store.getConnection()) {
 				reader.begin(IsolationLevels.READ_COMMITTED);
 				try (CloseableIteration<? extends Statement> observed = reader.getStatements(null, observedPredicate,
 						null, false)) {
@@ -1135,12 +1136,9 @@ class LmdbSnapshotValueLifetimeTest {
 					Future<String> writer = writers.submit(() -> {
 						try (SailConnection connection = store.getConnection()) {
 							connection.begin(IsolationLevels.SNAPSHOT);
+							// The map-sized namespace alone requires hard capacity. Keep one statement for retained
+							// publication coverage without spending the test deadline on bulk spill I/O.
 							String namespace = addTripleStoreHardGrowthDemand(connection, tripleStore);
-							for (int i = 0; i < 25_000; i++) {
-								connection.addStatement(
-										VF.createIRI("urn:snapshot-lifetime:grace:growth:" + i), growthPredicate,
-										VF.createLiteral("growth"));
-							}
 							connection.addStatement(publishedSubject, growthPredicate, VF.createLiteral("published"));
 							writesBuffered.countDown();
 							connection.commit();

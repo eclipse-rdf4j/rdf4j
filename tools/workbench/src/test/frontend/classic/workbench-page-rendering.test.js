@@ -1572,11 +1572,11 @@ test('page bootstrap loads shared view and stream runtimes before requesting the
     });
 
     assert.equal(result.status, 'rendered');
-    assert.deepEqual(order.slice(0, 6),
-        ['workbenchViews.js', 'workbenchRoutes.js', 'workbenchRouter.js', 'queryStream.js', 'graphAdditions.js',
-            'workbench-theme.js']);
-    assert.equal(order[6], 'page-request');
-    assert.equal(scripts.length, 6);
+    assert.deepEqual(order.slice(0, 7),
+        ['workbenchWorkspace.js', 'workbenchViews.js', 'workbenchRoutes.js', 'workbenchRouter.js', 'queryStream.js',
+            'graphAdditions.js', 'workbench-theme.js']);
+    assert.equal(order[7], 'page-request');
+    assert.equal(scripts.length, 7);
 });
 
 test('page bootstrap consumes the shared incremental reader and keeps streamed rows in the row store', async () => {
