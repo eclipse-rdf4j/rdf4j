@@ -3427,15 +3427,22 @@ final class NativeUnorderedInput implements AutoCloseable {
 
 	boolean advance() throws IOException {
 		LmdbNativeCostObservation observing = observation;
+		long started = 0L;
 		try {
 			if (observing == null) {
 				return row.advance(cursor);
 			}
-			long started = observing.beginPull();
+			started = observing.beginPull();
 			boolean advanced = row.advance(cursor);
 			observing.endPull(started);
+			started = 0L;
+			observing.rows(advanced ? 1L : 0L);
 			return advanced;
 		} catch (IOException | RuntimeException | Error failure) {
+			if (observing != null) {
+				observing.endPull(started);
+				observing.failed(failure);
+			}
 			// This input owns the attempt even if its row later restores or replaces the mutable carrier pointer.
 			// Keep a trial-private failure local until its arbiter decides whether it escapes.
 			failScalarFilterAttempt(failure, false);
@@ -3445,15 +3452,22 @@ final class NativeUnorderedInput implements AutoCloseable {
 
 	int fill() throws IOException {
 		LmdbNativeCostObservation observing = observation;
+		long started = 0L;
 		try {
 			if (observing == null) {
 				return row.fill(batchCursor, batch);
 			}
-			long started = observing.beginPull();
+			started = observing.beginPull();
 			int filled = row.fill(batchCursor, batch);
 			observing.endPull(started);
+			started = 0L;
+			observing.rows(filled);
 			return filled;
 		} catch (IOException | RuntimeException | Error failure) {
+			if (observing != null) {
+				observing.endPull(started);
+				observing.failed(failure);
+			}
 			failScalarFilterAttempt(failure, false);
 			throw failure;
 		}
@@ -3515,6 +3529,13 @@ final class NativeUnorderedInput implements AutoCloseable {
 		}
 		if (failure == null && completed && selectedInputAccepted && observation != null) {
 			observation.completed();
+		}
+		if (observation != null) {
+			if (failure != null) {
+				observation.failed(failure);
+			} else {
+				observation.closed();
+			}
 		}
 		if (scalarFilterAttempt != null && row.scalarFilterAttempt == scalarFilterAttempt) {
 			row.scalarFilterAttempt = scalarFilterAttempt.parent();

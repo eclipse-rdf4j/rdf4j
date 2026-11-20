@@ -7481,7 +7481,7 @@ final class LmdbNativePackedFtree {
 			this.orderedOccurrences = orderedOccurrences;
 			this.replayMemory = orderedOccurrences
 					? row.memoryScope.ledger(LmdbNativeHashJoin.queryMemory())
-							.reserve(128L + 24L * plan.nodes.length, null)
+							.reserve(128L + 24L * plan.nodes.length, null, "packed-factor-tree")
 					: null;
 			if (orderedOccurrences && replayMemory == null) {
 				throw new QueryEvaluationException("Query memory limit cannot retain ordered packed cursor state");

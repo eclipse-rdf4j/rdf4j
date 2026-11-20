@@ -71,7 +71,8 @@ final class NativeExpressionDomainPolicy {
 		Input(ValuesRow[] rows, RowState row) {
 			this.rows = rows;
 			this.cancellation = row.cancellation;
-			memory = KernelRuntime.AggregateMemory.forLedger(row.memoryScope.ledger(LmdbNativeHashJoin.queryMemory()));
+			memory = KernelRuntime.AggregateMemory.forLedger(row.memoryScope.ledger(LmdbNativeHashJoin.queryMemory()),
+					"expression-domain-policy");
 			// Input owner (64), account (64), reservation bookkeeping (128), and conservative alignment/owner links.
 			refused = !memory.tryReserve(384L);
 		}

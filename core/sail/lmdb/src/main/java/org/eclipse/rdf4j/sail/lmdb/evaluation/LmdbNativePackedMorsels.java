@@ -753,7 +753,8 @@ final class LmdbNativePackedMorsels {
 				if (aggregate == null) {
 					long pageBytes = 64L + Math.multiplyExact((long) pageRows, (columns[0].length + 1L) * Long.BYTES);
 					long bytes = Math.multiplyExact(pageBytes, queuePages + (long) workers + 1L);
-					memory = row.memoryScope.ledger(LmdbNativeHashJoin.queryMemory()).reserve(bytes, null);
+					memory = row.memoryScope.ledger(LmdbNativeHashJoin.queryMemory())
+							.reserve(bytes, null, "packed-morsels");
 					if (memory == null)
 						return null;
 				}

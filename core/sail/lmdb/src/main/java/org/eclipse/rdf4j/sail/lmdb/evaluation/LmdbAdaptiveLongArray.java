@@ -51,7 +51,7 @@ final class LmdbAdaptiveLongArray implements AutoCloseable {
 			throw new IllegalArgumentException("adaptive array length must be positive");
 		}
 		long bytes = arrayBytes(length);
-		LmdbQueryMemoryManager.Reservation reservation = ledger.reserve(bytes, null);
+		LmdbQueryMemoryManager.Reservation reservation = ledger.reserve(bytes, null, "adaptive-id-array");
 		if (reservation == null) {
 			return null;
 		}

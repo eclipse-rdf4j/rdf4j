@@ -314,7 +314,7 @@ public final class NativeCountGroupStore implements AutoCloseable {
 	private boolean grow(int next, long bytes) {
 		// Claim the complete replacement before allocation: old and new coexist during the copy.
 		if (arenaClaim == null) {
-			arenaClaim = ledger.reserve(bytes, null);
+			arenaClaim = ledger.reserve(bytes, null, "count-group-arena");
 			if (arenaClaim == null)
 				return false;
 		} else if (!arenaClaim.tryGrow(bytes))
@@ -405,7 +405,7 @@ public final class NativeCountGroupStore implements AutoCloseable {
 		long runBudget = Math.max(4096L, localBytes / 3L);
 		for (;;) {
 			long claim = Math.addExact(overhead, Math.multiplyExact(sorters, runBudget));
-			spillClaim = ledger.reserve(claim, null);
+			spillClaim = ledger.reserve(claim, null, "count-group-spill-buffer");
 			if (spillClaim != null) {
 				spillAllowance = claim;
 				peakClaimed = Math.max(peakClaimed, arenaBytes + claim);

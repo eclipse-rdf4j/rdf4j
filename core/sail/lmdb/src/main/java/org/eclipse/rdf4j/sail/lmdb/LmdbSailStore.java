@@ -13854,6 +13854,7 @@ class LmdbSailStore implements SailStore {
 	}
 
 	private final class ParallelSnapshotSource implements NativeLmdbQuerySource.ParallelSource {
+		private final LmdbQueryTelemetry queryTelemetry = LmdbQueryTelemetry.current();
 
 		private final Txn txn;
 		private final boolean explicit;
@@ -13896,6 +13897,10 @@ class LmdbSailStore implements SailStore {
 					if (!adjacencyViewResolved) {
 						if (adjacencyEligible && directAdjacency != null) {
 							adjacencyView = directAdjacency.acquire(adjacencyRevision, adjacencyLifetimeId);
+						}
+						if (queryTelemetry != null) {
+							queryTelemetry.adjacency(adjacencyView, adjacencyRevision, adjacencyEligible, explicit,
+									directAdjacency != null, "parallel");
 						}
 						adjacencyViewResolved = true;
 					}
@@ -15137,6 +15142,11 @@ class LmdbSailStore implements SailStore {
 						? directAdjacency.acquire(snapshotRevision)
 						: null;
 				this.adjacencyView = acquiredView;
+				LmdbQueryTelemetry telemetry = LmdbQueryTelemetry.current();
+				if (telemetry != null) {
+					telemetry.adjacency(acquiredView, snapshotRevision, adjacencyEligible, explicit,
+							directAdjacency != null, "dataset");
+				}
 				this.adjacencyOpenSnapshot = directAdjacency != null && logger.isInfoEnabled()
 						? directAdjacency.snapshotMetrics()
 						: null;

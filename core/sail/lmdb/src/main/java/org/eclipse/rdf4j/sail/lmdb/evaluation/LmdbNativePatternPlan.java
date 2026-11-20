@@ -391,6 +391,15 @@ final class PatternPlan implements SlotPlan {
 				first.measurement(adjacency, scanned, matched, filtered, censored, physicalScanCount);
 				second.measurement(adjacency, scanned, matched, filtered, censored, physicalScanCount);
 			}
+
+			@Override
+			public void measurement(boolean adjacency, long scanned, long matched, long filtered, boolean censored,
+					boolean physicalScanCount, long activeNanos, String indexName) {
+				first.measurement(adjacency, scanned, matched, filtered, censored, physicalScanCount, activeNanos,
+						indexName);
+				second.measurement(adjacency, scanned, matched, filtered, censored, physicalScanCount, activeNanos,
+						indexName);
+			}
 		};
 	}
 

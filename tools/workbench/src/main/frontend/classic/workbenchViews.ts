@@ -4736,6 +4736,24 @@ namespace workbench {
                             ?hidden=${allExplainFormatsDisabled}>
                             ${explainFormats.map(formatOption)}
                         </select>
+                        <label id="explain-consumption-field" class="query-telemetry-option" ?hidden=${selectedLevel !== 'Telemetry'}>
+                            <span>Consume results</span>
+                            <select id="explain-consumption" name="explain-consumption" aria-label="Telemetry result consumption"
+                                ?disabled=${selectedLevel !== 'Telemetry'}>
+                                <option value="rows" ?selected=${text(options.explanationConsumption) !== 'values' && text(options.explanationConsumption) !== 'serialized'}>Rows only</option>
+                                <option value="values" ?selected=${text(options.explanationConsumption) === 'values'}>Resolve RDF values</option>
+                                <option value="serialized" ?selected=${text(options.explanationConsumption) === 'serialized'}>Serialize results</option>
+                            </select>
+                        </label>
+                        <label id="explain-result-mime-field" class="query-telemetry-option"
+                            ?hidden=${selectedLevel !== 'Telemetry' || text(options.explanationConsumption) !== 'serialized'}>
+                            <span>Result format</span>
+                            <select id="explain-result-mime" name="explain-result-mime" aria-label="Telemetry result format"
+                                ?disabled=${selectedLevel !== 'Telemetry' || text(options.explanationConsumption) !== 'serialized'}>
+                                <option value="application/sparql-results+json" ?selected=${text(options.explanationResultMime) !== 'application/x-binary-rdf-results-table'}>SPARQL JSON</option>
+                                <option value="application/x-binary-rdf-results-table" ?selected=${text(options.explanationResultMime) === 'application/x-binary-rdf-results-table'}>Binary results</option>
+                            </select>
+                        </label>
                         ${explanationSettings}
                         <button id="explanation-cancel" class="query-explain-cancel workbench-action workbench-action--warning" type="button"
                             aria-label="Cancel explanation" title="Cancel explanation" aria-hidden="true" disabled ?hidden=${!queryFeatureEnabled(context, 'explain-cancel')}
@@ -4798,6 +4816,8 @@ namespace workbench {
             const explanation = text(pageValue(model, 'explanation'));
             const explanationFormat = text(pageValue(model, 'explanation-format')) || 'text';
             const explanationLevel = text(pageValue(model, 'explanation-level')) || 'Optimized';
+            const explanationConsumption = text(pageValue(model, 'explanation-consumption')) || 'rows';
+            const explanationResultMime = text(pageValue(model, 'explanation-result-mime')) || 'application/sparql-results+json';
             // A private query belongs to the signed-in server user; without one the server would store it for everyone.
             const privateSave = queryFeatureEnabled(context, 'query-private-save');
             const signedIn = !!serverUser(context);
@@ -4958,7 +4978,7 @@ namespace workbench {
                         </section>
                         <p class="query-output__empty query-results-panel__empty">Choose Execute to see the results here.</p>
                     </div>
-                    ${explanationPanel(runtime, { explanation, explanationFormat, explanationLevel, queryTimeout: defaultTimeout }, context)}
+                    ${explanationPanel(runtime, { explanation, explanationFormat, explanationLevel, explanationConsumption, explanationResultMime, queryTimeout: defaultTimeout }, context)}
                 </section>
                 <div id="query-diff-modal" class="query-diff-modal" aria-hidden="true">
                     <div class="query-diff-modal__dialog" role="dialog" aria-modal="true" aria-labelledby="query-diff-modal-title">
@@ -4967,7 +4987,7 @@ namespace workbench {
                                 @click=${() => invoke('workbench.query.closeDiffModal')}>Close</button></div>
                         <div class="query-diff-modal__body">
                             <section class="query-diff-section query-diff-section--query"><div class="query-diff-section__title">Query</div><div id="query-diff-query" class="query-diff-view"></div></section>
-                            <section class="query-diff-section query-diff-section--explanation"><div class="query-diff-section__title">Explanation</div><div id="query-diff-explanation" class="query-diff-view">Comparison is not ready.</div></section>
+                            <section class="query-diff-section query-diff-section--explanation"><div class="query-diff-section__title">Explanation</div><pre id="query-diff-profile" class="query-profile-comparison" hidden></pre><div id="query-diff-explanation" class="query-diff-view">Comparison is not ready.</div></section>
                         </div>
                     </div>
                 </div>

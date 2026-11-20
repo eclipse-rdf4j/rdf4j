@@ -48,6 +48,7 @@ import org.eclipse.rdf4j.query.QueryLanguage;
 import org.eclipse.rdf4j.query.TupleQuery;
 import org.eclipse.rdf4j.query.TupleQueryResult;
 import org.eclipse.rdf4j.query.explanation.Explanation;
+import org.eclipse.rdf4j.query.explanation.ExplanationOptions;
 import org.eclipse.rdf4j.repository.Repository;
 import org.eclipse.rdf4j.repository.RepositoryConnection;
 import org.eclipse.rdf4j.repository.RepositoryException;
@@ -530,6 +531,32 @@ class DefaultQueryRequestHandlerTest {
 		assertThat(result).isNotNull();
 		assertThat(result.getView()).isInstanceOf(ExplainQueryResultView.class);
 		assertThat(request.isAsyncStarted()).isFalse();
+		verify(connection).close();
+	}
+
+	@Test
+	void telemetryConsumptionOptionsReachRegisteredExplainAndAreRestored() throws Exception {
+		RepositoryResolver resolver = mock(RepositoryResolver.class);
+		Repository repository = mock(Repository.class);
+		RepositoryConnection connection = mock(RepositoryConnection.class);
+		TupleQuery query = mock(TupleQuery.class);
+		Explanation explanation = mock(Explanation.class);
+		DefaultQueryRequestHandler handler = new DefaultQueryRequestHandler(resolver);
+		MockHttpServletRequest request = newAsyncExplainRequest("telemetry-consumption");
+		request.setParameter(Protocol.EXPLAIN_PARAM_NAME, Explanation.Level.Telemetry.name());
+		request.setParameter("explain-consumption", "serialized");
+		request.setParameter("explain-result-mime", "application/sparql-results+json");
+		when(resolver.getRepository(request)).thenReturn(repository);
+		when(resolver.getRepositoryConnection(request, repository)).thenReturn(connection);
+		when(connection.prepareQuery(QueryLanguage.SPARQL, SELECT_ALL_QUERY, null)).thenReturn(query);
+		AtomicReference<ExplanationOptions> observed = new AtomicReference<>();
+		when(query.explain(Explanation.Level.Telemetry)).thenAnswer(invocation -> {
+			observed.set(ExplanationOptions.current());
+			return explanation;
+		});
+		handler.handleQueryRequest(request, RequestMethod.POST, new MockHttpServletResponse());
+		assertThat(observed).hasValue(ExplanationOptions.serialized("application/sparql-results+json"));
+		assertThat(ExplanationOptions.current()).isEqualTo(ExplanationOptions.rows());
 		verify(connection).close();
 	}
 

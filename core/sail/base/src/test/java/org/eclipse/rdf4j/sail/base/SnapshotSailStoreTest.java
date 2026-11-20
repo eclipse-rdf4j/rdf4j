@@ -23,6 +23,7 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.doCallRealMethod;
 import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -62,6 +63,7 @@ import org.eclipse.rdf4j.model.vocabulary.RDFS;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.Dataset;
 import org.eclipse.rdf4j.query.QueryEvaluationException;
+import org.eclipse.rdf4j.query.QueryInterruptedException;
 import org.eclipse.rdf4j.query.algebra.Exists;
 import org.eclipse.rdf4j.query.algebra.Filter;
 import org.eclipse.rdf4j.query.algebra.InsertData;
@@ -74,7 +76,11 @@ import org.eclipse.rdf4j.query.algebra.evaluation.TripleSource;
 import org.eclipse.rdf4j.query.algebra.evaluation.federation.FederatedServiceResolver;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.EvaluationStatistics;
 import org.eclipse.rdf4j.query.explanation.Explanation;
+import org.eclipse.rdf4j.query.explanation.ExplanationExecutionException;
+import org.eclipse.rdf4j.query.explanation.ExplanationOptions;
+import org.eclipse.rdf4j.query.explanation.ExplanationResultConsumerFactory;
 import org.eclipse.rdf4j.query.impl.EmptyBindingSet;
+import org.eclipse.rdf4j.query.impl.MapBindingSet;
 import org.eclipse.rdf4j.repository.RepositoryConnection;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
 import org.eclipse.rdf4j.sail.NotifyingSailConnection;
@@ -1280,6 +1286,98 @@ public class SnapshotSailStoreTest {
 	}
 
 	@Test
+	public void testExplainTelemetryReportsLifecycleWithoutReadingLazyValues() {
+		BindingSet row = mock(BindingSet.class);
+		EvaluationStrategy strategy = mock(EvaluationStrategy.class);
+		when(strategy.precompile(any()))
+				.thenReturn(bindings -> new CloseableIteratorIteration<>(List.of(row).iterator()));
+		Sail sail = createExplainTestSail(strategy);
+		try (SailConnection connection = sail.getConnection()) {
+			TupleExpr tupleExpr = new StatementPattern(new Var("s"), new Var("p"), new Var("o"));
+			String json = connection.explain(Explanation.Level.Telemetry, tupleExpr, null,
+					EmptyBindingSet.getInstance(), false, 10).toJson();
+			assertThat(json).contains("\"executionProfile\"", "COMPLETE", "sourceAcquisition", "optimization",
+					"compilation", "execution", "cleanup", "rows");
+			verify(row, never()).iterator();
+		} finally {
+			sail.shutDown();
+		}
+	}
+
+	@Test
+	public void testExplainValuesConsumptionIsExplicitAndScoped() throws Exception {
+		AtomicInteger decodes = new AtomicInteger();
+		Value value = mock(Value.class);
+		when(value.stringValue()).thenAnswer(invocation -> {
+			decodes.incrementAndGet();
+			return "decoded";
+		});
+		MapBindingSet row = new MapBindingSet();
+		row.addBinding("o", value);
+		EvaluationStrategy strategy = mock(EvaluationStrategy.class);
+		when(strategy.precompile(any()))
+				.thenReturn(bindings -> new CloseableIteratorIteration<>(List.<BindingSet>of(row).iterator()));
+		Sail sail = createExplainTestSail(strategy);
+		try (SailConnection connection = sail.getConnection()) {
+			try (ExplanationOptions.Activation scope = ExplanationOptions.values().activate()) {
+				TupleExpr tupleExpr = new StatementPattern(new Var("s"), new Var("p"), new Var("o"));
+				String json = connection.explain(Explanation.Level.Telemetry, tupleExpr, null,
+						EmptyBindingSet.getInstance(), false, 10).toJson();
+				assertThat(json).contains("values", "resultConsumption");
+				assertThat(decodes).hasValue(1);
+			}
+			TupleExpr tupleExpr = new StatementPattern(new Var("s"), new Var("p"), new Var("o"));
+			connection.explain(Explanation.Level.Telemetry, tupleExpr, null,
+					EmptyBindingSet.getInstance(), false, 10);
+			assertThat(decodes).hasValue(1);
+		} finally {
+			sail.shutDown();
+		}
+	}
+
+	@Test
+	public void testExplainFailurePreservesOriginalExceptionAndPartialProfile() {
+		IllegalStateException failure = new IllegalStateException("evaluation failed");
+		EvaluationStrategy strategy = mock(EvaluationStrategy.class);
+		when(strategy.precompile(any())).thenReturn(bindings -> {
+			throw failure;
+		});
+		Sail sail = createExplainTestSail(strategy);
+		try (SailConnection connection = sail.getConnection()) {
+			TupleExpr tupleExpr = new StatementPattern(new Var("s"), new Var("p"), new Var("o"));
+			assertSame(failure, assertThrows(IllegalStateException.class,
+					() -> connection.explain(Explanation.Level.Telemetry, tupleExpr, null,
+							EmptyBindingSet.getInstance(), false, 10)));
+			assertThat(failure.getSuppressed()).anySatisfy(diagnostic -> {
+				assertThat(diagnostic.getClass().getSimpleName()).isEqualTo("ExplanationExecutionException");
+				assertThat(diagnostic.getMessage()).contains("FAILED");
+			});
+		} finally {
+			sail.shutDown();
+		}
+	}
+
+	@Test
+	public void testExplainCancellationPreservesExceptionAndPartialOutcome() {
+		var cancellation = new org.eclipse.rdf4j.query.QueryInterruptedException("cancelled by client");
+		EvaluationStrategy strategy = mock(EvaluationStrategy.class);
+		CloseableIteration<BindingSet> iteration = mock(CloseableIteration.class);
+		when(iteration.hasNext()).thenThrow(cancellation);
+		when(strategy.precompile(any())).thenReturn(bindings -> iteration);
+		Sail sail = createExplainTestSail(strategy);
+		try (SailConnection connection = sail.getConnection()) {
+			TupleExpr tupleExpr = new StatementPattern(new Var("s"), new Var("p"), new Var("o"));
+			assertSame(cancellation, assertThrows(org.eclipse.rdf4j.query.QueryInterruptedException.class,
+					() -> connection.explain(Explanation.Level.Telemetry, tupleExpr, null,
+							EmptyBindingSet.getInstance(), false, 10)));
+			assertThat(cancellation.getSuppressed())
+					.anySatisfy(diagnostic -> assertThat(diagnostic.getMessage()).contains("CANCELLED"));
+		} finally {
+			sail.shutDown();
+		}
+	}
+
+	@Test
 	public void testExplainTelemetryIncludesMetricsAndRestoresRuntimeTelemetryFlag() {
 		SnapshotSailStore sailStore = createSnapshotSailStore(level -> new TestSailSink());
 		Sail sail = createSail(sailStore);
@@ -1385,6 +1483,189 @@ public class SnapshotSailStoreTest {
 							EmptyBindingSet.getInstance(), false, 10)));
 		} finally {
 			sail.shutDown();
+		}
+	}
+
+	@Test
+	public void testExplainTimeoutDoesNotSwallowARealFailure() {
+		IllegalStateException failure = new IllegalStateException("real failure after timeout signal");
+		EvaluationStrategy strategy = mock(EvaluationStrategy.class);
+		when(strategy.precompile(any())).thenReturn(bindings -> new CloseableIteration<BindingSet>() {
+			@Override
+			public boolean hasNext() {
+				try {
+					new CountDownLatch(1).await(10, TimeUnit.SECONDS);
+					throw new AssertionError("explanation timeout did not interrupt evaluation");
+				} catch (InterruptedException interrupted) {
+					throw failure;
+				}
+			}
+
+			@Override
+			public BindingSet next() {
+				throw new NoSuchElementException();
+			}
+
+			@Override
+			public void close() {
+			}
+		});
+		Sail sail = createExplainTestSail(strategy);
+		try (SailConnection connection = sail.getConnection()) {
+			TupleExpr expression = new StatementPattern(new Var("s"), new Var("p"), new Var("o"));
+			assertSame(failure, assertThrows(IllegalStateException.class,
+					() -> connection.explain(Explanation.Level.Telemetry, expression, null,
+							EmptyBindingSet.getInstance(), false, 1)));
+			assertThat(failure.getSuppressed()).anySatisfy(diagnostic -> {
+				assertThat(diagnostic).isInstanceOf(ExplanationExecutionException.class);
+				assertThat(((ExplanationExecutionException) diagnostic).getExecutionProfile().status())
+						.isEqualTo("FAILED");
+			});
+		} finally {
+			sail.shutDown();
+		}
+	}
+
+	@Test
+	public void testExplainConsumerCloseFailureLeavesPartialCounters() {
+		IllegalStateException failure = new IllegalStateException("consumer close failed");
+		FailingTelemetryConsumerFactory.CURRENT.set(new ExplanationResultConsumerFactory.ResultConsumer() {
+			@Override
+			public void accept(BindingSet row) {
+			}
+
+			@Override
+			public void finish() {
+			}
+
+			@Override
+			public long bytesWritten() {
+				return 13L;
+			}
+
+			@Override
+			public void close() {
+				throw failure;
+			}
+		});
+		EvaluationStrategy strategy = mock(EvaluationStrategy.class);
+		when(strategy.precompile(any())).thenReturn(bindings -> new CloseableIteratorIteration<>(
+				List.<BindingSet>of(EmptyBindingSet.getInstance()).iterator()));
+		Sail sail = createExplainTestSail(strategy);
+		try (SailConnection connection = sail.getConnection();
+				var ignored = ExplanationOptions.serialized(FailingTelemetryConsumerFactory.MIME).activate()) {
+			TupleExpr expression = new StatementPattern(new Var("s"), new Var("p"), new Var("o"));
+			assertSame(failure, assertThrows(IllegalStateException.class,
+					() -> connection.explain(Explanation.Level.Telemetry, expression, null,
+							EmptyBindingSet.getInstance(), false, 10)));
+			assertThat(failure.getSuppressed()).anySatisfy(diagnostic -> {
+				assertThat(diagnostic).isInstanceOf(ExplanationExecutionException.class);
+				var profile = ((ExplanationExecutionException) diagnostic).getExecutionProfile();
+				assertThat(profile.stages()).filteredOn(stage -> stage.id().equals("query/resultConsumption"))
+						.singleElement()
+						.satisfies(stage -> {
+							assertThat(stage.status()).isEqualTo("PARTIAL");
+							assertThat(stage.metrics().get("rowsConsumed").state()).isEqualTo("partial");
+							assertThat(stage.metrics().get("serializedBytes").count()).isEqualTo(13L);
+							assertThat(stage.metrics().get("serializedBytes").state()).isEqualTo("partial");
+						});
+			});
+		} finally {
+			FailingTelemetryConsumerFactory.CURRENT.remove();
+			sail.shutDown();
+		}
+	}
+
+	@Test
+	public void testExplainTimeoutDoesNotSwallowSuppressedCloseFailure() {
+		QueryInterruptedException interruption = new QueryInterruptedException("interrupted evaluation");
+		IllegalStateException cleanupFailure = new IllegalStateException("real cleanup failure");
+		EvaluationStrategy strategy = mock(EvaluationStrategy.class);
+		when(strategy.precompile(any())).thenReturn(bindings -> new CloseableIteration<BindingSet>() {
+			@Override
+			public boolean hasNext() {
+				try {
+					new CountDownLatch(1).await(10, TimeUnit.SECONDS);
+					throw new AssertionError("explanation timeout did not interrupt evaluation");
+				} catch (InterruptedException interrupted) {
+					throw interruption;
+				}
+			}
+
+			@Override
+			public BindingSet next() {
+				throw new NoSuchElementException();
+			}
+
+			@Override
+			public void close() {
+				throw cleanupFailure;
+			}
+		});
+		Sail sail = createExplainTestSail(strategy);
+		try (SailConnection connection = sail.getConnection()) {
+			TupleExpr expression = new StatementPattern(new Var("s"), new Var("p"), new Var("o"));
+			assertSame(interruption, assertThrows(QueryInterruptedException.class,
+					() -> connection.explain(Explanation.Level.Telemetry, expression, null,
+							EmptyBindingSet.getInstance(), false, 1)));
+			assertThat(interruption.getSuppressed()).contains(cleanupFailure).anySatisfy(diagnostic -> {
+				assertThat(diagnostic).isInstanceOf(ExplanationExecutionException.class);
+				assertThat(((ExplanationExecutionException) diagnostic).getExecutionProfile().status())
+						.isEqualTo("FAILED");
+			});
+		} finally {
+			sail.shutDown();
+		}
+	}
+
+	@Test
+	public void testExplainCounterFailureDoesNotReplaceConsumerCloseFailure() {
+		IllegalStateException failure = new IllegalStateException("consumer close failed");
+		IllegalArgumentException counterFailure = new IllegalArgumentException("counter snapshot failed");
+		FailingTelemetryConsumerFactory.CURRENT.set(new ExplanationResultConsumerFactory.ResultConsumer() {
+			@Override
+			public void accept(BindingSet row) {
+			}
+
+			@Override
+			public void finish() {
+			}
+
+			@Override
+			public long bytesWritten() {
+				throw counterFailure;
+			}
+
+			@Override
+			public void close() {
+				throw failure;
+			}
+		});
+		EvaluationStrategy strategy = mock(EvaluationStrategy.class);
+		when(strategy.precompile(any())).thenReturn(bindings -> new CloseableIteratorIteration<>(
+				List.<BindingSet>of(EmptyBindingSet.getInstance()).iterator()));
+		Sail sail = createExplainTestSail(strategy);
+		try (SailConnection connection = sail.getConnection();
+				var ignored = ExplanationOptions.serialized(FailingTelemetryConsumerFactory.MIME).activate()) {
+			TupleExpr expression = new StatementPattern(new Var("s"), new Var("p"), new Var("o"));
+			assertSame(failure, assertThrows(IllegalStateException.class,
+					() -> connection.explain(Explanation.Level.Telemetry, expression, null,
+							EmptyBindingSet.getInstance(), false, 10)));
+			assertThat(failure.getSuppressed()).contains(counterFailure);
+		} finally {
+			FailingTelemetryConsumerFactory.CURRENT.remove();
+			sail.shutDown();
+		}
+	}
+
+	/** Test-only SPI fixture; the request thread explicitly owns each configured consumer. */
+	public static final class FailingTelemetryConsumerFactory implements ExplanationResultConsumerFactory {
+		static final String MIME = "application/x-rdf4j-test-consumption";
+		static final ThreadLocal<ResultConsumer> CURRENT = new ThreadLocal<>();
+
+		@Override
+		public ResultConsumer create(String mimeType, List<String> bindingNames) {
+			return MIME.equals(mimeType) ? CURRENT.get() : null;
 		}
 	}
 

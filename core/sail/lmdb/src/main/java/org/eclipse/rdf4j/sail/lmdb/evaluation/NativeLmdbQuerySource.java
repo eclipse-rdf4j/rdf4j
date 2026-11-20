@@ -214,6 +214,12 @@ public interface NativeLmdbQuerySource {
 				boolean censored, boolean physicalScanCount) {
 			measurement(adjacency, scannedRows, matchedRows, filteredRows, censored);
 		}
+
+		/** Active iterator time excludes downstream pauses; index name describes the iterator actually opened. */
+		default void measurement(boolean adjacency, long scannedRows, long matchedRows, long filteredRows,
+				boolean censored, boolean physicalScanCount, long activeNanos, String indexName) {
+			measurement(adjacency, scannedRows, matchedRows, filteredRows, censored, physicalScanCount);
+		}
 	}
 
 	default RecordIterator statements(long subj, long pred, long obj, long context,

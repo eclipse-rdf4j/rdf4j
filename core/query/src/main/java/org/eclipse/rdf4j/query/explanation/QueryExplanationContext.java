@@ -32,11 +32,13 @@ public final class QueryExplanationContext implements AutoCloseable {
 	private final Map<Object, Boolean> inspected = new IdentityHashMap<>();
 	private final List<StrategyDecision> decisions = new ArrayList<>();
 	private final BindingSet bindings;
+	private final QueryExecutionProfile.Collector telemetry;
 	private String runtimeCondition;
 
-	private QueryExplanationContext(boolean preview, BindingSet bindings) {
+	private QueryExplanationContext(Explanation.Level level, BindingSet bindings) {
 		previous = CURRENT.get();
-		this.preview = preview;
+		this.preview = level == Explanation.Level.Optimized;
+		telemetry = level == Explanation.Level.Telemetry ? new QueryExecutionProfile.Collector() : null;
 		MapBindingSet copy = new MapBindingSet();
 		if (bindings != null) {
 			bindings.forEach(copy::addBinding);
@@ -50,7 +52,18 @@ public final class QueryExplanationContext implements AutoCloseable {
 	}
 
 	public static QueryExplanationContext enter(Explanation.Level level, BindingSet bindings) {
-		return new QueryExplanationContext(level == Explanation.Level.Optimized, bindings);
+		return new QueryExplanationContext(level, bindings);
+	}
+
+	/** Whether this thread is inside an explanation request, including levels without runtime telemetry. */
+	public static boolean isActive() {
+		return CURRENT.get() != null;
+	}
+
+	/** Query-local telemetry; worker tasks must capture it explicitly before leaving the request thread. */
+	public static QueryExecutionProfile.Collector telemetry() {
+		QueryExplanationContext context = CURRENT.get();
+		return context == null ? null : context.telemetry;
 	}
 
 	public static BindingSet bindings() {

@@ -398,6 +398,7 @@ final class LmdbStatementAccessArbiter {
 			long scanned = owned.getSourceRowsScannedActual();
 			long matched = owned.getSourceRowsMatchedActual();
 			long filtered = owned.getSourceRowsFilteredActual();
+			String actualIndex = observer == null ? "" : owned.getIndexName();
 			long started = System.nanoTime();
 			try {
 				owned.close();
@@ -421,7 +422,7 @@ final class LmdbStatementAccessArbiter {
 				observer = null;
 				if (completedObserver != null) {
 					completedObserver.measurement(adjacency, actualScanned, actualMatched, actualFiltered, !exhausted,
-							scanned >= 0L);
+							scanned >= 0L, activeNanos, actualIndex);
 				}
 			}
 		}

@@ -55,7 +55,7 @@ final class NativeStructuralCounts implements AutoCloseable {
 			standalone = context == null ? new LmdbNativeQueryMemoryScope() : null;
 			memory = KernelRuntime.AggregateMemory.forLedger(context == null
 					? standalone.ledger(LmdbNativeHashJoin.queryMemory())
-					: context.memoryLedger());
+					: context.memoryLedger(), "structural-count-workspace");
 		}
 
 		@Override
@@ -110,7 +110,7 @@ final class NativeStructuralCounts implements AutoCloseable {
 		this.channels = channels;
 		this.integerKeys = integerKeys;
 		LmdbQueryMemoryManager.QueryLedger ledger = owner.memoryLedger();
-		memory = KernelRuntime.AggregateMemory.forLedger(ledger);
+		memory = KernelRuntime.AggregateMemory.forLedger(ledger, "structural-count-groups");
 		int count = Math.toIntExact((channels + (long) CHANNELS_PER_STORE - 1L) / CHANNELS_PER_STORE);
 		try {
 			memory.reserve(Math.addExact(1024L, Math.multiplyExact(128L, channels)));

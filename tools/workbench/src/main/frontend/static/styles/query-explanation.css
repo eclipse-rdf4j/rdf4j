@@ -295,6 +295,35 @@ body.query-compare-mode #copy-explanation {
     margin-left: auto;
 }
 
+.query-telemetry-option:not([hidden]) {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 12px;
+}
+
+.query-profile-comparison {
+    padding: 12px;
+    margin: 0 0 12px;
+    border: 1px solid var(--workbench-border-color, #d6dee7);
+    border-radius: 8px;
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+    font-size: 12px;
+    line-height: 1.5;
+}
+
+.query-explanation-line--physical {
+    cursor: pointer;
+    font-weight: 600;
+}
+
+.query-explanation-line--physical:focus-visible,
+.query-explanation-line[data-logical-path]:focus {
+    outline: 2px solid var(--workbench-focus-color, #147dbe);
+    outline-offset: 2px;
+}
+
 .query-explanation-toolbar #primary-explain-settings,
 .query-explanation-toolbar #primary-explain-settings > .query-form__field--controls-group {
     justify-content: flex-end;

@@ -102,7 +102,7 @@ public final class KernelProjectionCursor implements AutoCloseable {
 			try {
 				if (ledger != null) {
 					reservation = ledger.reserve(Math.addExact(BUFFER_BYTES,
-							Math.multiplyExact((long) retainedColumns, Long.BYTES)), null);
+							Math.multiplyExact((long) retainedColumns, Long.BYTES)), null, "projection-buffer");
 					if (reservation == null) {
 						return null;
 					}
@@ -142,6 +142,7 @@ public final class KernelProjectionCursor implements AutoCloseable {
 				throw new IllegalStateException("projection owner already has an active cursor");
 			}
 			KernelProjectionCursor result = reusable;
+			boolean reusedOwner = result != null;
 			if (result == null) {
 				result = new KernelProjectionCursor(source, program, outputs, programs,
 						contextObserved, contextMatch, wantedContext, excludeDefault, cancellation, null, this);
@@ -151,6 +152,7 @@ public final class KernelProjectionCursor implements AutoCloseable {
 						excludeDefault, cancellation);
 			}
 			result.deliveryGrain = deliveryGrain;
+			result.reusedOwner = reusedOwner;
 			result.rootMultiplicityRows = rootMultiplicityRows;
 			active = result;
 			try {
@@ -298,6 +300,7 @@ public final class KernelProjectionCursor implements AutoCloseable {
 	private long rootsVisited;
 	private long fibersVisited;
 	private long contextsVisited;
+	private boolean reusedOwner;
 	private long completedNeighborValues;
 	private long completedContextValues;
 
@@ -389,7 +392,7 @@ public final class KernelProjectionCursor implements AutoCloseable {
 		try {
 			if (ledger != null) {
 				reservation = ledger.reserve(Math.addExact(BUFFER_BYTES,
-						Math.multiplyExact((long) retainedColumns, Long.BYTES)), null);
+						Math.multiplyExact((long) retainedColumns, Long.BYTES)), null, "projection-buffer");
 				if (reservation == null) {
 					source.close();
 					return null;
@@ -660,6 +663,16 @@ public final class KernelProjectionCursor implements AutoCloseable {
 
 	public long contextsVisited() {
 		return contextsVisited;
+	}
+
+	/** Whether the producer reached its natural end before this activation was closed. */
+	public boolean exhausted() {
+		return sourceDone;
+	}
+
+	/** This activation reused its existing cursor and admitted owner, rather than allocating a new producer cursor. */
+	public boolean reusedOwner() {
+		return reusedOwner;
 	}
 
 	/** Neighbor values returned by fiber or quad-copy calls, including values a later filter rejects. */

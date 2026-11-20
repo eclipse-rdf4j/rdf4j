@@ -45,6 +45,8 @@ import org.springframework.mock.web.MockHttpServletRequest;
 import org.springframework.mock.web.MockHttpServletResponse;
 import org.springframework.web.servlet.ModelAndView;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
+
 class TestTransactionControllerExplain {
 
 	private static final String SELECT_ALL_QUERY = "select * where { ?s ?p ?o }";
@@ -127,6 +129,58 @@ class TestTransactionControllerExplain {
 			} finally {
 				ActiveTransactionRegistry.INSTANCE.deregister(txn);
 			}
+		}
+	}
+
+	@Test
+	void shouldCaptureTelemetryConsumptionAcrossTransactionThread() throws Exception {
+		Transaction txn = new Transaction(repository);
+		ActiveTransactionRegistry.INSTANCE.register(txn);
+		try {
+			configureExplainRequest(txn.getID());
+			request.setParameter(Protocol.EXPLAIN_PARAM_NAME, "Telemetry");
+			request.setParameter("explain-consumption", "values");
+			request.addHeader("Accept", "application/json");
+			ModelAndView result = new TransactionController().handleRequestInternal(request, response);
+			result.getView().render(result.getModel(), request, response);
+			assertThat(response.getStatus()).isEqualTo(200);
+			assertThat(new ObjectMapper().readTree(response.getContentAsString())
+					.path("executionProfile")
+					.path("properties")
+					.path("consumptionMode")
+					.asText()).isEqualTo("values");
+		} finally {
+			closeQuietly(txn);
+			deregisterQuietly(txn);
+		}
+	}
+
+	@Test
+	void serializedTelemetryReportsWriterBytesAndComparisonContext() throws Exception {
+		try (var connection = repository.getConnection()) {
+			var values = connection.getValueFactory();
+			connection.add(values.createIRI("urn:subject"), values.createIRI("urn:label"),
+					values.createLiteral("Norwegian: æøå"));
+		}
+		Transaction txn = new Transaction(repository);
+		ActiveTransactionRegistry.INSTANCE.register(txn);
+		try {
+			configureExplainRequest(txn.getID());
+			request.setParameter(Protocol.EXPLAIN_PARAM_NAME, "Telemetry");
+			request.setParameter("explain-consumption", "serialized");
+			request.setParameter("explain-result-mime", "application/sparql-results+json");
+			request.addHeader("Accept", "application/json");
+			ModelAndView result = new TransactionController().handleRequestInternal(request, response);
+			result.getView().render(result.getModel(), request, response);
+			var profile = new ObjectMapper().readTree(response.getContentAsString()).path("executionProfile");
+			assertThat(profile.path("status").asText()).isEqualTo("COMPLETE");
+			assertThat(profile.path("stages").findValue("serializedBytes").path("count").asLong()).isPositive();
+			assertThat(profile.path("stages").findValue("rowsConsumed").path("count").asLong()).isEqualTo(1);
+			assertThat(profile.path("properties").path("resultMimeType").asText())
+					.isEqualTo("application/sparql-results+json");
+		} finally {
+			closeQuietly(txn);
+			deregisterQuietly(txn);
 		}
 	}
 

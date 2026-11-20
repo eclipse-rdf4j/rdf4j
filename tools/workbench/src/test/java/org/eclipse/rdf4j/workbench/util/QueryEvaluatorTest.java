@@ -50,6 +50,7 @@ import org.eclipse.rdf4j.query.QueryLanguage;
 import org.eclipse.rdf4j.query.TupleQuery;
 import org.eclipse.rdf4j.query.TupleQueryResult;
 import org.eclipse.rdf4j.query.explanation.Explanation;
+import org.eclipse.rdf4j.query.explanation.ExplanationOptions;
 import org.eclipse.rdf4j.query.explanation.GenericPlanNode;
 import org.eclipse.rdf4j.query.explanation.StrategyDecision;
 import org.eclipse.rdf4j.query.impl.IteratingTupleQueryResult;
@@ -135,6 +136,52 @@ class QueryEvaluatorTest {
 		verify(builder).link(List.of("info", "_internal/namespaces"));
 		verify(builder).result("optimized plan", "text", "Optimized", "[]");
 		verify(builder).end();
+	}
+
+	@Test
+	void telemetryResponseIncludesItsConsumptionSettings() throws Exception {
+		String text = "SELECT * WHERE {?s ?p ?o}";
+		RepositoryConnection connection = mock(RepositoryConnection.class);
+		TupleQuery query = mock(TupleQuery.class);
+		Explanation explanation = mock(Explanation.class);
+		TupleResultBuilder builder = mock(TupleResultBuilder.class);
+		when(connection.prepareQuery(QueryLanguage.SPARQL, text)).thenReturn(query);
+		when(query.explain(Explanation.Level.Telemetry)).thenReturn(explanation);
+		when(explanation.toString()).thenReturn("profile");
+		WorkbenchRequest request = mock(WorkbenchRequest.class);
+		when(request.getParameter("queryLn")).thenReturn("SPARQL");
+		when(request.isParameterPresent("explain")).thenReturn(true);
+		when(request.getParameter("explain")).thenReturn("Telemetry");
+		when(request.getParameter("explain-format")).thenReturn("text");
+		when(request.getParameter("explain-consumption")).thenReturn("values");
+		QueryEvaluator.INSTANCE.extractQueryAndEvaluate(builder, mock(HttpServletResponse.class),
+				new ByteArrayOutputStream(), connection, text, request, mock(CookieHandler.class), null);
+		verify(builder).start("explanation", "explanation-format", "explanation-level", "strategy-decisions",
+				"explanation-consumption", "explanation-result-mime");
+		verify(builder).result("profile", "text", "Telemetry", "[]", "values", null);
+	}
+
+	@Test
+	void telemetryConsumptionOptionsSurvivePreparedRequestAndAreScoped() throws Exception {
+		String text = "SELECT * WHERE {?s ?p ?o}";
+		RepositoryConnection connection = mock(RepositoryConnection.class);
+		TupleQuery query = mock(TupleQuery.class);
+		Explanation explanation = mock(Explanation.class);
+		when(connection.prepareQuery(QueryLanguage.SPARQL, text)).thenReturn(query);
+		when(explanation.toString()).thenReturn("profile");
+		when(query.explain(Explanation.Level.Telemetry)).thenAnswer(invocation -> {
+			assertThat(ExplanationOptions.current()).isEqualTo(ExplanationOptions.values());
+			return explanation;
+		});
+		WorkbenchRequest request = mock(WorkbenchRequest.class);
+		when(request.getParameter("queryLn")).thenReturn("SPARQL");
+		when(request.getParameter("explain")).thenReturn("Telemetry");
+		when(request.getParameter("explain-format")).thenReturn("text");
+		when(request.getParameter("explain-consumption")).thenReturn("values");
+		QueryEvaluator.ExplainRequest prepared = QueryEvaluator.INSTANCE.extractExplainRequest(request);
+		QueryEvaluator.INSTANCE.explain(connection, text, prepared);
+		assertThat(ExplanationOptions.current()).isEqualTo(ExplanationOptions.rows());
+		verify(query, never()).evaluate();
 	}
 
 	@Test

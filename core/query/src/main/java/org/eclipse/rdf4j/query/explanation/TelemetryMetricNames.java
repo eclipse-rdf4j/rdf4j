@@ -63,7 +63,10 @@ public final class TelemetryMetricNames {
 	public static final String OVERLAP_ROWS_ACTUAL = "overlapRowsActual";
 
 	public static final String INDEX_LOOKUP_COUNT_ACTUAL = "indexLookupCountActual";
+	/** Legacy externally supplied metric. Matched/scanned rows are a source match fraction, not cache hits. */
+	@Deprecated
 	public static final String INDEX_HIT_RATE_ACTUAL = "indexHitRateActual";
+	public static final String SOURCE_MATCH_FRACTION_ACTUAL = "sourceMatchFractionActual";
 	public static final String INDEX_NAME = "indexName";
 	public static final String INDEX_NAMES = "indexNames";
 	public static final String NATIVE_EXECUTION_PATH = "nativeExecutionPath";

@@ -222,6 +222,8 @@ final class RowState implements LmdbNativeSlotReader {
 		NativeIdKind kind = authority == null ? NativeIdKind.STORE : authority.kind(id);
 		boolean sameAuthority = decodedCodec == codec && decodedAuthority == authority;
 		if (sameAuthority && decodedValues != null && decodedIds[slot] == id && decodedValues[slot] != null) {
+			if (codec != null)
+				codec.recordRowMemoHit();
 			return decodedValues[slot];
 		}
 		if (!sameAuthority) {
@@ -340,7 +342,7 @@ final class RowState implements LmdbNativeSlotReader {
 		if (decodedInputReservation == null) {
 			long initial = Math.addExact(decodedInputMemoryBytes(slots.length), valueBytes);
 			LmdbQueryMemoryManager.QueryLedger ledger = memoryScope.ledger(LmdbNativeHashJoin.queryMemory());
-			decodedInputReservation = ledger.reserve(initial, null);
+			decodedInputReservation = ledger.reserve(initial, null, "decoded-input-cache");
 			if (decodedInputReservation == null) {
 				return false;
 			}

@@ -16,6 +16,8 @@ import java.io.BufferedOutputStream;
 import java.io.DataInputStream;
 import java.io.DataOutputStream;
 import java.io.IOException;
+import java.io.InputStream;
+import java.io.OutputStream;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
@@ -25,6 +27,7 @@ import java.util.PriorityQueue;
 import java.util.concurrent.atomic.AtomicLong;
 
 import org.eclipse.rdf4j.common.annotation.Experimental;
+import org.eclipse.rdf4j.sail.lmdb.LmdbQueryTelemetry;
 
 @FunctionalInterface
 interface PackedRowComparator {
@@ -772,6 +775,7 @@ final class TopKPayloadStore implements AutoCloseable {
 @Experimental
 final class NativeSpillSort implements AutoCloseable {
 	final int ioBufferBytes;
+	private final LmdbQueryTelemetry telemetry = LmdbQueryTelemetry.current();
 
 	static final String MAX_BYTES_PROPERTY = "rdf4j.lmdb.nativeSort.maxBytes";
 	static final long DEFAULT_MAX_BYTES = 64L << 20;
@@ -909,7 +913,8 @@ final class NativeSpillSort implements AutoCloseable {
 		while (runs.size() > MERGE_FAN_IN)
 			mergeRuns(runs.size() - MERGE_FAN_IN, MERGE_FAN_IN, 64);
 		buffer.close();
-		return new MergedRunRows(slotCount, keyCount, comparator, List.copyOf(runs), ioBufferBytes, cancellationPoll);
+		return new MergedRunRows(slotCount, keyCount, comparator, List.copyOf(runs), ioBufferBytes, cancellationPoll,
+				telemetry);
 	}
 
 	private void spillRun() throws IOException {
@@ -933,7 +938,7 @@ final class NativeSpillSort implements AutoCloseable {
 		boolean complete = false;
 		try {
 			try (DataOutputStream out = new DataOutputStream(
-					new BufferedOutputStream(Files.newOutputStream(path), ioBufferBytes))) {
+					new BufferedOutputStream(spillOutput(path), ioBufferBytes))) {
 				out.writeInt(slotCount);
 				out.writeInt(keyCount);
 				out.writeInt(writtenRows);
@@ -969,6 +974,8 @@ final class NativeSpillSort implements AutoCloseable {
 			updateBoundary(order[writtenRows - 1]);
 		}
 		metrics.recordNativeSpill(writtenRows);
+		if (telemetry != null)
+			telemetry.spillRun(writtenRows);
 		buffer.close();
 		buffer = new NativeSortBuffer(slotCount, Math.min(1024, maxRows), metrics, maxRows);
 		buffer.cancellationPoll(cancellationPoll);
@@ -1000,9 +1007,9 @@ final class NativeSpillSort implements AutoCloseable {
 		boolean complete = false;
 		try {
 			try (MergedRunRows merge = new MergedRunRows(slotCount, keyCount, comparator, inputs, ioBufferBytes,
-					cancellationPoll);
+					cancellationPoll, telemetry);
 					DataOutputStream out = new DataOutputStream(
-							new BufferedOutputStream(Files.newOutputStream(output), ioBufferBytes))) {
+							new BufferedOutputStream(spillOutput(output), ioBufferBytes))) {
 				out.writeInt(RunReader.ROW_MAJOR_MAGIC);
 				out.writeInt(slotCount);
 				out.writeInt(keyCount);
@@ -1031,6 +1038,13 @@ final class NativeSpillSort implements AutoCloseable {
 		runLevels.add(from, level);
 		runCounts.add(from, rows);
 		MERGED_RUNS.incrementAndGet();
+		if (telemetry != null)
+			telemetry.spillMerge();
+	}
+
+	private OutputStream spillOutput(Path path) throws IOException {
+		OutputStream output = Files.newOutputStream(path);
+		return telemetry == null ? output : telemetry.spillOutput(output);
 	}
 
 	private void poll(long position) {
@@ -1116,6 +1130,11 @@ final class MergedRunRows implements NativeSortedRows {
 
 	MergedRunRows(int slotCount, int keyCount, PackedRowComparator comparator, List<Path> paths,
 			int ioBufferBytes, Runnable cancellationPoll) throws IOException {
+		this(slotCount, keyCount, comparator, paths, ioBufferBytes, cancellationPoll, LmdbQueryTelemetry.current());
+	}
+
+	MergedRunRows(int slotCount, int keyCount, PackedRowComparator comparator, List<Path> paths,
+			int ioBufferBytes, Runnable cancellationPoll, LmdbQueryTelemetry telemetry) throws IOException {
 		this.slotCount = slotCount;
 		this.keyCount = keyCount;
 		this.comparator = comparator;
@@ -1130,7 +1149,7 @@ final class MergedRunRows implements NativeSortedRows {
 		try {
 			for (Path path : paths) {
 				checkCancellation();
-				RunReader reader = new RunReader(path, slotCount, keyCount, ioBufferBytes);
+				RunReader reader = new RunReader(path, slotCount, keyCount, ioBufferBytes, telemetry);
 				readers.add(reader);
 				if (reader.advance()) {
 					queue.add(reader);
@@ -1206,9 +1225,14 @@ final class RunReader implements AutoCloseable {
 	}
 
 	RunReader(Path path, int expectedSlotCount, int expectedKeyCount, int ioBufferBytes) throws IOException {
+		this(path, expectedSlotCount, expectedKeyCount, ioBufferBytes, LmdbQueryTelemetry.current());
+	}
+
+	RunReader(Path path, int expectedSlotCount, int expectedKeyCount, int ioBufferBytes,
+			LmdbQueryTelemetry telemetry) throws IOException {
 		this.path = path;
 		DataInputStream openedKeys = new DataInputStream(
-				new BufferedInputStream(Files.newInputStream(path), ioBufferBytes));
+				new BufferedInputStream(spillInput(path, telemetry), ioBufferBytes));
 		DataInputStream openedPayload = null;
 		try {
 			int header = openedKeys.readInt();
@@ -1233,7 +1257,7 @@ final class RunReader implements AutoCloseable {
 					+ (long) remaining * (1L + keyCount) * Long.BYTES;
 			if (!rowMajor && keyCount < slotCount) {
 				openedPayload = new DataInputStream(
-						new BufferedInputStream(Files.newInputStream(path), ioBufferBytes));
+						new BufferedInputStream(spillInput(path, telemetry), ioBufferBytes));
 				openedPayload.skipNBytes(payloadOffset);
 			}
 			this.keyInput = openedKeys;
@@ -1264,6 +1288,11 @@ final class RunReader implements AutoCloseable {
 		}
 		remaining--;
 		return true;
+	}
+
+	private static InputStream spillInput(Path path, LmdbQueryTelemetry telemetry) throws IOException {
+		InputStream input = Files.newInputStream(path);
+		return telemetry == null ? input : telemetry.spillInput(input);
 	}
 
 	void copyCurrent(long[] target) throws IOException {

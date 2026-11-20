@@ -42,6 +42,7 @@ import org.eclipse.rdf4j.query.QueryResultHandlerException;
 import org.eclipse.rdf4j.query.TupleQuery;
 import org.eclipse.rdf4j.query.TupleQueryResult;
 import org.eclipse.rdf4j.query.explanation.Explanation;
+import org.eclipse.rdf4j.query.explanation.ExplanationOptions;
 import org.eclipse.rdf4j.query.explanation.GenericPlanNode;
 import org.eclipse.rdf4j.query.explanation.StrategyDecision;
 import org.eclipse.rdf4j.repository.RepositoryConnection;
@@ -116,14 +117,16 @@ public final class QueryEvaluator {
 		private final String level;
 		private final List<StrategyDecision> strategyDecisions;
 		private final boolean timedOut;
+		private final ExplanationOptions explanationOptions;
 
 		private ExplainQueryResult(String content, String format, String level,
-				List<StrategyDecision> strategyDecisions, boolean timedOut) {
+				List<StrategyDecision> strategyDecisions, boolean timedOut, ExplanationOptions explanationOptions) {
 			this.content = content;
 			this.format = format;
 			this.level = level;
 			this.strategyDecisions = List.copyOf(strategyDecisions);
 			this.timedOut = timedOut;
+			this.explanationOptions = explanationOptions;
 		}
 
 		@Experimental
@@ -158,15 +161,18 @@ public final class QueryEvaluator {
 		private final Explanation.Level explainLevel;
 		private final ExplainFormat explainFormat;
 		private final String forcedLmdbExecutionStrategy;
+		private final ExplanationOptions explanationOptions;
 
 		private ExplainRequest(QueryLanguage queryLanguage, Boolean includeInferred, int queryTimeoutSeconds,
-				Explanation.Level explainLevel, ExplainFormat explainFormat, String forcedLmdbExecutionStrategy) {
+				Explanation.Level explainLevel, ExplainFormat explainFormat, String forcedLmdbExecutionStrategy,
+				ExplanationOptions explanationOptions) {
 			this.queryLanguage = queryLanguage;
 			this.includeInferred = includeInferred;
 			this.queryTimeoutSeconds = queryTimeoutSeconds;
 			this.explainLevel = explainLevel;
 			this.explainFormat = explainFormat;
 			this.forcedLmdbExecutionStrategy = forcedLmdbExecutionStrategy;
+			this.explanationOptions = explanationOptions;
 		}
 
 		@Experimental
@@ -546,13 +552,22 @@ public final class QueryEvaluator {
 	public ExplainRequest extractExplainRequest(final WorkbenchRequest req) throws BadRequestException {
 		Boolean includeInferred = req.isParameterPresent("infer") ? Boolean.parseBoolean(req.getParameter("infer"))
 				: null;
+		Explanation.Level level = getExplainLevel(req.getParameter(EXPLAIN));
+		ExplanationOptions options;
+		try {
+			options = ExplanationOptions.fromParameters(req.getParameter(Protocol.EXPLAIN_CONSUMPTION_PARAM_NAME),
+					req.getParameter(Protocol.EXPLAIN_RESULT_MIME_PARAM_NAME));
+			options.validate(level);
+		} catch (IllegalArgumentException e) {
+			throw new BadRequestException(e.getMessage(), e);
+		}
 		return new ExplainRequest(
 				QueryLanguage.valueOf(req.getParameter("queryLn")),
 				includeInferred,
 				req.getInt("query-timeout"),
-				getExplainLevel(req.getParameter(EXPLAIN)),
+				level,
 				getExplainFormat(req.getParameter(EXPLAIN_FORMAT)),
-				getForcedLmdbExecutionStrategy(req));
+				getForcedLmdbExecutionStrategy(req), options);
 	}
 
 	public ExplainQueryResult explain(final RepositoryConnection con, final String queryText,
@@ -643,8 +658,12 @@ public final class QueryEvaluator {
 	}
 
 	private ExplainQueryResult explain(final Query query, final ExplainRequest req) throws BadRequestException {
+		if (req.explanationOptions.consumption() == ExplanationOptions.Consumption.SERIALIZED
+				&& !(query instanceof TupleQuery)) {
+			throw new BadRequestException("Serialized Telemetry consumption requires a tuple query.");
+		}
 		Explanation explanation;
-		try {
+		try (ExplanationOptions.Activation ignored = req.explanationOptions.activate()) {
 			explanation = query.explain(req.getExplainLevel());
 		} catch (UnsupportedOperationException e) {
 			throw new BadRequestException("Explain is not supported for this query or repository.", e);
@@ -654,7 +673,7 @@ public final class QueryEvaluator {
 		collectStrategyDecisions(plan, decisions);
 		return new ExplainQueryResult(formatExplanation(explanation, req.getExplainFormat()),
 				req.getExplainFormatValue(), req.getExplainLevelName(), decisions,
-				plan != null && Boolean.TRUE.equals(plan.getTimedOut()));
+				plan != null && Boolean.TRUE.equals(plan.getTimedOut()), req.explanationOptions);
 	}
 
 	private static void collectStrategyDecisions(GenericPlanNode node, List<StrategyDecision> decisions) {
@@ -673,10 +692,25 @@ public final class QueryEvaluator {
 
 	private void explainQuery(final TupleResultBuilder builder,
 			final ExplainQueryResult explainQueryResult) throws QueryResultHandlerException {
-		builder.start(EXPLANATION, EXPLANATION_FORMAT, EXPLANATION_LEVEL, STRATEGY_DECISIONS);
+		boolean telemetry = Explanation.Level.Telemetry.name().equals(explainQueryResult.getLevel());
+		if (telemetry) {
+			builder.start(EXPLANATION, EXPLANATION_FORMAT, EXPLANATION_LEVEL, STRATEGY_DECISIONS,
+					"explanation-consumption", "explanation-result-mime");
+		} else {
+			builder.start(EXPLANATION, EXPLANATION_FORMAT, EXPLANATION_LEVEL, STRATEGY_DECISIONS);
+		}
 		builder.link(List.of(INFO, WorkbenchPolicy.INTERNAL_NAMESPACES_LINK));
-		builder.result(explainQueryResult.getContent(), explainQueryResult.getFormat(), explainQueryResult.getLevel(),
-				EXPLANATION_MAPPER.valueToTree(explainQueryResult.getStrategyDecisions()).toString());
+		String decisions = EXPLANATION_MAPPER.valueToTree(explainQueryResult.getStrategyDecisions()).toString();
+		if (telemetry) {
+			builder.result(explainQueryResult.getContent(), explainQueryResult.getFormat(),
+					explainQueryResult.getLevel(),
+					decisions, explainQueryResult.explanationOptions.consumption().wireValue(),
+					explainQueryResult.explanationOptions.resultMimeType());
+		} else {
+			builder.result(explainQueryResult.getContent(), explainQueryResult.getFormat(),
+					explainQueryResult.getLevel(),
+					decisions);
+		}
 		builder.end();
 	}
 

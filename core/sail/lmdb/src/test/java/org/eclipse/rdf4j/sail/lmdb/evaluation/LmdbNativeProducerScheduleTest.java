@@ -40,6 +40,7 @@ import org.eclipse.rdf4j.query.algebra.And;
 import org.eclipse.rdf4j.query.algebra.BNodeGenerator;
 import org.eclipse.rdf4j.query.algebra.Bound;
 import org.eclipse.rdf4j.query.algebra.IsBNode;
+import org.eclipse.rdf4j.query.algebra.SingletonSet;
 import org.eclipse.rdf4j.query.algebra.Str;
 import org.eclipse.rdf4j.query.algebra.ValueExpr;
 import org.eclipse.rdf4j.query.algebra.Var;
@@ -119,6 +120,28 @@ class LmdbNativeProducerScheduleTest {
 		assertEquals(source.physicalContextCopies.get(), work.contextValuesCopied());
 		assertEquals(source.physicalNeighborCopies.get(), work.neighborValuesCopied(),
 				"all neighbor values returned by quad-copy APIs count as physical copies, including witness scans");
+		assertTrue(work.stages().isEmpty(), "ordinary kernels keep physical site detail disabled");
+	}
+
+	@ParameterizedTest(name = "compiled={0}")
+	@ValueSource(booleans = { false, true })
+	void telemetryAttributesPayloadWorkToItsProducerSite(boolean compiled) throws Exception {
+		Wildcard source = splitRootFixture(new CyclicBarrier(1), new AtomicInteger());
+		Kernel ir = new Kernel(4, List.of(
+				new EnumerateWildcard(0, true, LmdbWildcardPhysicalDemand.Demand.PAYLOAD, 1, 0, 2, 3,
+						Operand.constant(0), false),
+				new FilterValue(0, new Operand[] { Operand.col(1) }, true)), emit(0, 1, 2, 3))
+						.withTelemetry(Kernel.TelemetryMode.FULL);
+		KernelWorkCounters work = executeWithWork(ir, source, new PredicateHooks(ignored -> true), compiled, 6);
+		SingletonSet target = new SingletonSet();
+		target.setRuntimeTelemetryEnabled(true);
+
+		LmdbNativeKernelExecution.publishKernelWork(target, work);
+
+		assertNotNull(target.getStringMetricActual("nativeKernelStages"));
+		assertTrue(target.getStringMetricActual("nativeKernelStages").contains("EnumerateWildcard"));
+		assertTrue(target.getStringMetricActual("nativeKernelStages")
+				.contains("contextValuesCopied=" + source.physicalContextCopies.get()));
 	}
 
 	@ParameterizedTest(name = "compiled={0}, root rejected={1}")
@@ -603,6 +626,32 @@ class LmdbNativeProducerScheduleTest {
 				execution.close();
 			}
 		}
+	}
+
+	@ParameterizedTest(name = "compiled={0}")
+	@ValueSource(booleans = { false, true })
+	void telemetryDistinguishesNewProjectionCursorsFromReuse(boolean compiled) throws Exception {
+		Adjacency source = new Adjacency(new long[] { 10, 20 }, new long[][] { { 100 }, { 200 } },
+				new long[][] { { 7 }, { 7 } });
+		Kernel ir = new Kernel(4, List.of(new EnumerateDomain(0, 0),
+				new Probe(0, Operand.col(0), 1, 2, Operand.constant(0), true),
+				new BindAlias(Operand.col(1), 3),
+				new FilterCompareId(true, Operand.col(3), Operand.constant(1))), emit(0, 1, 2, 3))
+						.withTelemetry(Kernel.TelemetryMode.FULL);
+		JaninoKernel execution = compiled ? KernelCompilationTestSupport.compile(ir)
+				: LmdbNativeKernelInterpreter.forRows(ir);
+		try {
+			execution.bind(new KernelContext(new NativeAdjacency[] { source }, new long[] { 7, 101 }, new long[0],
+					new long[][] { { 10, 20, 10, 30, 20, 10 } }, new CountingHooks()));
+			assertEquals(5, fillRows(execution, ir.stride()).size());
+		} finally {
+			execution.close();
+		}
+		SingletonSet target = new SingletonSet();
+		target.setRuntimeTelemetryEnabled(true);
+		LmdbNativeKernelExecution.publishKernelWork(target, execution.workCounters());
+		assertTrue(target.getStringMetricActual("nativeKernelStages").contains("producerCursorReuses=5"));
+		assertTrue(target.getStringMetricActual("nativeKernelStages").contains("newProducerCursors=1"));
 	}
 
 	@ParameterizedTest(name = "compiled={0}")

@@ -832,7 +832,7 @@ final class HashJoinBatchCursor implements BatchCursor {
 		long bytes = LmdbNativeHashJoin.estimateBuildBytes(estimatedRows, keySlots.length, payloadSlots.length);
 		org.eclipse.rdf4j.sail.lmdb.LmdbQueryMemoryManager.QueryLedger ledger = row.memoryScope
 				.ledger(LmdbNativeHashJoin.queryMemory());
-		reservation = ledger.reserve(bytes, null);
+		reservation = ledger.reserve(bytes, null, "hash-join");
 		return reservation != null;
 	}
 
