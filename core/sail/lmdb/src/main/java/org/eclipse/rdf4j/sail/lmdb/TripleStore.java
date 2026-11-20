@@ -108,6 +108,7 @@ import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicLong;
+import java.util.concurrent.atomic.AtomicReference;
 import java.util.concurrent.atomic.LongAdder;
 import java.util.concurrent.locks.LockSupport;
 import java.util.function.BooleanSupplier;
@@ -116,6 +117,7 @@ import java.util.function.IntConsumer;
 import java.util.function.LongConsumer;
 import java.util.function.Supplier;
 import java.util.regex.Pattern;
+import java.util.stream.Stream;
 
 import org.eclipse.collections.api.iterator.LongIterator;
 import org.eclipse.collections.impl.map.mutable.primitive.LongIntHashMap;
@@ -241,7 +243,10 @@ class TripleStore implements Closeable {
 	/**
 	 * The list of triple indexes that are used to store and retrieve triples.
 	 */
-	private final List<PartialIndex> partialIndexes = new ArrayList<>();
+	/** Partial indexes of the current generation; replaced as a whole when a build publishes a new generation. */
+	private volatile List<PartialIndex> partialIndexes = List.of();
+	/** Partial indexes being filled by the background build; maintained by writers but not used for queries. */
+	private volatile List<PartialIndex> stagingPartialIndexes = List.of();
 	private final int splitPosition = 0; // split between key and value storage in the chunk representation
 	private volatile List<TripleIndex> indexes = new ArrayList<>();
 	private final TripleStoreIndexUpdater indexUpdater = new TripleStoreIndexUpdater(() -> indexes);
@@ -780,8 +785,11 @@ class TripleStore implements Closeable {
 					effectiveIndexSpecs = readIndexSpecs(writeTxn);
 					boolean nativeIndexManifest = effectiveIndexSpecs != null;
 					if (effectiveIndexSpecs == null && (properties.isLoaded() || properties.hasNativeGeneration())) {
-						// Import the legacy sidecar once. The marker and DBI creation become durable together.
-						effectiveIndexSpecs = getIndexSpecs();
+						// Import the legacy sidecar once. The marker and DBI creation become durable together. The
+						// sidecar
+						// records the requested configuration, so its partial indexes are rebuilt in the background
+						// instead of being trusted as complete.
+						effectiveIndexSpecs = fullIndexSpecs(getIndexSpecs());
 					} else if (effectiveIndexSpecs == null) {
 						// A missing sidecar does not make a native store new: its committed manifest takes precedence
 						// above.
@@ -793,27 +801,17 @@ class TripleStore implements Closeable {
 						}
 					}
 					initIndexes(effectiveIndexSpecs);
-					Set<String> requested = TripleIndex.parseStatementIndexSpecList(indexSpecStr);
-					if (requested.isEmpty()) {
-						requested = effectiveIndexSpecs;
-					}
-					Set<String> activeWithPairs = new LinkedHashSet<>(fullIndexSpecs(effectiveIndexSpecs));
-					for (String spec : requested) {
-						if (spec.length() == 2) {
-							activeWithPairs.add(spec);
-						}
-					}
-					initPartialIndexes(effectiveIndexSpecs, activeWithPairs);
-					setupCommitWithoutNativeWrites = nativeIndexManifest && !indexDatabaseCreated
-							&& activeWithPairs.equals(effectiveIndexSpecs);
+					// Only the committed partial indexes are opened. Added ones are filled and removed ones are
+					// retired by the background statement-index build, like full indexes.
+					initPartialIndexes(effectiveIndexSpecs);
+					setupCommitWithoutNativeWrites = nativeIndexManifest && !indexDatabaseCreated;
 					rebuildIndexSelectionTable();
 					resetAlignedWriteCursorState();
-					if (!nativeIndexManifest || !activeWithPairs.equals(effectiveIndexSpecs)) {
-						writeIndexSpecs(activeWithPairs);
+					if (!nativeIndexManifest) {
+						writeIndexSpecs(effectiveIndexSpecs);
 					}
 					initializeStatementCounts();
 					initializeBackupBoundary();
-					effectiveIndexSpecs = activeWithPairs;
 					endTransaction(true);
 					break;
 				} catch (MapFullException | LmdbUtil.MapFullException mapFull) {
@@ -821,7 +819,7 @@ class TripleStore implements Closeable {
 					// index creation and manifest must be redone in a fresh transaction after growing the map.
 					endTransaction(false);
 					indexes.clear();
-					partialIndexes.clear();
+					partialIndexes = List.of();
 					if (!autoGrow || ++initializationAttempts >= MAX_INDEX_INITIALIZATION_ATTEMPTS) {
 						throw new IOException("LMDB map is full while initializing the triple indexes", mapFull);
 					}
@@ -836,8 +834,8 @@ class TripleStore implements Closeable {
 			for (TripleIndex index : indexes) {
 				indexHandles.put(index.toString(), index);
 			}
-			initializeIndexBuild(fullIndexSpecs(effectiveIndexSpecs),
-					fullIndexSpecs(requestedIndexSpecs.isEmpty() ? effectiveIndexSpecs : requestedIndexSpecs));
+			initializeIndexBuild(effectiveIndexSpecs,
+					requestedIndexSpecs.isEmpty() ? effectiveIndexSpecs : requestedIndexSpecs);
 			if (indexSpecStr == null || indexSpecStr.isEmpty()) {
 				indexSpecStr = String.join(",", TripleIndex.orderIndexSpecs(effectiveIndexSpecs));
 			}
@@ -853,13 +851,8 @@ class TripleStore implements Closeable {
 			refreshCommittedHighWater();
 			replayPolicy = new TxnReplayPolicy(config.getMapGrowthThreshold());
 			valueEnvironmentGeneration = valueStore == null ? 0L : valueStore.environmentGeneration();
-			if (!partialIndexes.isEmpty() && indexBuild != null) {
-				// Projection plans must see the requested terminal indexes as soon as the store is opened.
-				runIndexRebuild();
-				if (indexBuild != null) {
-					throw new IOException("Unable to initialize partial-index terminal indexes: " + indexRebuildState);
-				}
-			}
+			// A changed terminal-index set is built by the background rebuild, also when partial indexes exist: the
+			// committed generation (with its partial indexes) keeps serving until the cutover publishes the new one.
 			// Bulk metrics begin after opening/configuring the environment, as in the loader-only driver.
 			bulkMapGrowthCount = 0L;
 			recoverBackupBoundary();
@@ -1920,39 +1913,42 @@ class TripleStore implements Closeable {
 		return full;
 	}
 
-	private void initPartialIndexes(Set<String> previous, Set<String> requested) throws IOException {
-		List<PartialIndex> added = new ArrayList<>();
+	/** Opens the committed partial indexes of {@code active}; no data is copied or removed here. */
+	private void initPartialIndexes(Set<String> active) throws IOException {
+		List<PartialIndex> opened = new ArrayList<>();
 		for (String fields : PartialIndex.SUPPORTED_FIELDS) {
-			if (requested.contains(fields)) {
-				long[] pattern = { fields.indexOf('s') >= 0 ? 0 : -1, fields.indexOf('p') >= 0 ? 0 : -1,
-						fields.indexOf('o') >= 0 ? 0 : -1, fields.indexOf('c') >= 0 ? 0 : -1 };
-				TripleIndex supportIndex = TripleIndex.getBestIndex(indexes, pattern[0], pattern[1], pattern[2],
-						pattern[3]);
-				PartialIndex partial = new PartialIndex(fields, env, writeTxn, supportIndex);
-				partialIndexes.add(partial);
-				if (!previous.contains(fields)) {
-					added.add(partial);
-				}
-			} else if (previous.contains(fields)) {
-				new PartialIndex(fields, env, writeTxn, null).destroy(writeTxn);
+			if (active.contains(fields)) {
+				opened.add(new PartialIndex(fields, env, writeTxn, partialSupportIndex(indexes, fields)));
 			}
 		}
-		if (!added.isEmpty()) {
-			long[] tuple = new long[4];
-			TripleIndex source = indexes.getFirst();
-			for (boolean explicit : new boolean[] { true, false }) {
-				try (RecordIterator it = new LmdbRecordIterator(source, 0, -1, -1, -1, -1, explicit,
-						txnManager.createTxn(writeTxn))) {
-					long[] quad;
-					while ((quad = it.next()) != null) {
-						for (PartialIndex partial : added) {
-							partial.project(tuple, quad[0], quad[1], quad[2], quad[3]);
-							partial.add(writeTxn, tuple, explicit);
-						}
-					}
-				}
+		partialIndexes = List.copyOf(opened);
+	}
+
+	/** The full index that writers consult to decide whether a pair is still supported by some statement. */
+	private static TripleIndex partialSupportIndex(List<TripleIndex> fullIndexes, String fields) {
+		return TripleIndex.getBestIndex(fullIndexes, fields.indexOf('s') >= 0 ? 0 : -1,
+				fields.indexOf('p') >= 0 ? 0 : -1, fields.indexOf('o') >= 0 ? 0 : -1,
+				fields.indexOf('c') >= 0 ? 0 : -1);
+	}
+
+	/** Opens (or creates) the partial indexes that the build adds, supported by the current full indexes. */
+	private List<PartialIndex> openStagingPartialIndexes(long txn, StatementIndexBuild build) throws IOException {
+		List<PartialIndex> stage = new ArrayList<>();
+		for (String fields : PartialIndex.SUPPORTED_FIELDS) {
+			if (build.target().contains(fields) && !build.source().contains(fields)) {
+				stage.add(new PartialIndex(fields, env, txn, partialSupportIndex(indexes, fields)));
 			}
 		}
+		return List.copyOf(stage);
+	}
+
+	/** Full and partial specifications of the current generation, comparable with a build target. */
+	private Set<String> activeIndexSpecifications() {
+		Set<String> specifications = indexSpecifications(indexes);
+		for (PartialIndex partial : partialIndexes) {
+			specifications.add(partial.fields());
+		}
+		return specifications;
 	}
 
 	private int openIndexDatabaseForInitialization(long transaction, String name, int flags) throws IOException {
@@ -2140,13 +2136,17 @@ class TripleStore implements Closeable {
 					// DBIs first opened by a transaction survive only a successful native commit. A pooled
 					// read callback aborts/reset its view on exit, invalidating otherwise valid resumed handles.
 					// Opening existing trees with flags=0 performs no data walk or native data mutation.
+					AtomicReference<List<PartialIndex>> partialStage = new AtomicReference<>(List.of());
 					stagingIndexes = writeTransaction(env, (stack, txn) -> {
 						validateNativeWriterTransaction(txn);
+						partialStage.set(openStagingPartialIndexes(txn, saved));
 						return openTargetIndexes(txn, saved, false);
 					});
+					stagingPartialIndexes = partialStage.get();
 				} catch (IOException invalidStage) {
 					indexBuild = saved.phase(StatementIndexBuild.Phase.RESET);
 					stagingIndexes = List.of();
+					stagingPartialIndexes = List.of();
 					indexHandles.entrySet().removeIf(entry -> !indexes.contains(entry.getValue()));
 				}
 			}
@@ -2240,7 +2240,7 @@ class TripleStore implements Closeable {
 				}
 				StatementIndexBuild before = indexBuild;
 				if (before.phase() == StatementIndexBuild.Phase.CLEANUP
-						&& !before.target().equals(indexSpecifications(indexes))) {
+						&& !before.target().equals(activeIndexSpecifications())) {
 					indexRebuildWriter.execute(() -> reconcileCommittedIndexGeneration(before.target()));
 				}
 				indexRebuildState = before.phase().name();
@@ -2305,6 +2305,7 @@ class TripleStore implements Closeable {
 			return;
 		}
 		List<TripleIndex> originalStage = stagingIndexes;
+		List<PartialIndex> originalPartialStage = stagingPartialIndexes;
 		indexBuildWaitingReaders = false;
 		while (!indexRebuildClosing) {
 			long originalCommitGeneration = nativeCommitGeneration.get();
@@ -2314,18 +2315,35 @@ class TripleStore implements Closeable {
 				unjournaledMutation = true;
 				nativeMutation = true;
 				if (before.phase() == StatementIndexBuild.Phase.RESET) {
-					openCanonicalIndexesForCleanup(before.target());
+					openCanonicalIndexesForCleanup(fullIndexSpecs(before.target()));
 					if (deleteInactiveIndexBatch()) {
 						stagingIndexes = openTargetIndexes(writeTxn, before, true);
-						indexBuild = before.phase(StatementIndexBuild.Phase.COPY);
+						stagingPartialIndexes = openStagingPartialIndexes(writeTxn, before);
+						if (stagingIndexes.isEmpty() && stagingPartialIndexes.isEmpty()) {
+							// Removal only: every target index is already complete and active, so nothing needs
+							// copying. Publish the target right away, exactly as at the end of COPY.
+							writeIndexSpecs(new LinkedHashSet<>(before.target()));
+							indexBuild = before.phase(StatementIndexBuild.Phase.CLEANUP);
+							publish = true;
+						} else {
+							indexBuild = before.phase(StatementIndexBuild.Phase.COPY);
+						}
 					}
 				} else if (before.phase() == StatementIndexBuild.Phase.COPY) {
 					TripleIndex source = indexes.getFirst();
+					List<PartialIndex> partialStage = stagingPartialIndexes;
+					long[] pair = new long[4];
 					for (int row = 0; row < count; row++) {
 						long[] quad = batch[row];
 						// A copied snapshot is advisory. Membership is rechecked in this same native writer, so
 						// deletes/promotions after the read cannot be resurrected by a stale batch.
 						synchronizeStagingQuad(quad[0], quad[1], quad[2], quad[3], before.explicit());
+						if (!partialStage.isEmpty() && tripleExistsInMainIndex(quad, before.explicit())) {
+							for (PartialIndex partial : partialStage) {
+								partial.project(pair, quad[0], quad[1], quad[2], quad[3]);
+								partial.add(writeTxn, pair, before.explicit());
+							}
+						}
 					}
 					if (count > 0) {
 						indexBuild = before.advance(before.explicit(), lastKey);
@@ -2333,11 +2351,8 @@ class TripleStore implements Closeable {
 						indexBuild = before.advance(false, new byte[0]);
 					} else {
 						verifyStagingCounts(source);
-						Set<String> manifest = new LinkedHashSet<>(before.target());
-						for (PartialIndex partial : partialIndexes) {
-							manifest.add(partial.fields());
-						}
-						writeIndexSpecs(manifest);
+						// The target lists the full and the partial indexes of the new generation.
+						writeIndexSpecs(new LinkedHashSet<>(before.target()));
 						indexBuild = before.phase(StatementIndexBuild.Phase.CLEANUP);
 						publish = true;
 					}
@@ -2383,6 +2398,7 @@ class TripleStore implements Closeable {
 				endTransaction(false);
 				indexBuild = before;
 				stagingIndexes = originalStage;
+				stagingPartialIndexes = originalPartialStage;
 				indexHandles.entrySet()
 						.removeIf(entry -> !indexes.contains(entry.getValue())
 								&& !originalStage.contains(entry.getValue()));
@@ -2394,6 +2410,7 @@ class TripleStore implements Closeable {
 				if (nativeCommitGeneration.get() == originalCommitGeneration) {
 					indexBuild = before;
 					stagingIndexes = originalStage;
+					stagingPartialIndexes = originalPartialStage;
 				}
 				try {
 					endTransaction(false);
@@ -2424,7 +2441,7 @@ class TripleStore implements Closeable {
 	private List<TripleIndex> openTargetIndexes(long txn, StatementIndexBuild build, boolean create)
 			throws IOException {
 		List<TripleIndex> stage = new ArrayList<>();
-		for (String spec : TripleIndex.orderIndexSpecs(build.target())) {
+		for (String spec : TripleIndex.orderIndexSpecs(fullIndexSpecs(build.target()))) {
 			if (build.source().contains(spec)) {
 				continue;
 			}
@@ -2513,7 +2530,29 @@ class TripleStore implements Closeable {
 				}
 			}
 		}
+		// Pair databases outside the current generation: retired ones after cutover, and leftovers of an
+		// interrupted build before staging starts again.
+		for (String fields : PartialIndex.SUPPORTED_FIELDS) {
+			if (isActivePartial(fields) || isStagingPartial(fields)) {
+				continue;
+			}
+			PartialIndex inactive = PartialIndex.openExisting(fields, env, writeTxn);
+			if (inactive != null) {
+				removed += inactive.deleteBatch(writeTxn, INDEX_REBUILD_BATCH_SIZE - removed);
+				if (removed == INDEX_REBUILD_BATCH_SIZE) {
+					return false;
+				}
+			}
+		}
 		return true;
+	}
+
+	private boolean isActivePartial(String fields) {
+		return partialIndexes.stream().anyMatch(partial -> partial.fields().equals(fields));
+	}
+
+	private boolean isStagingPartial(String fields) {
+		return stagingPartialIndexes.stream().anyMatch(partial -> partial.fields().equals(fields));
 	}
 
 	private void verifyStagingCounts(TripleIndex source) throws IOException {
@@ -2639,8 +2678,8 @@ class TripleStore implements Closeable {
 		try {
 			long firstNewReader = readTransaction(env, (stack, txn) -> {
 				byte[] encoded = readNamespaceDatabaseValue(stack, txn, INDEX_SPECS_KEY);
-				if (encoded == null || !fullIndexSpecs(TripleIndex.parseStatementIndexSpecList(
-						new String(encoded, StandardCharsets.UTF_8))).equals(target)) {
+				if (encoded == null || !TripleIndex.parseStatementIndexSpecList(
+						new String(encoded, StandardCharsets.UTF_8)).equals(target)) {
 					throw new IOException("Committed statement manifest changed before query publication");
 				}
 				try {
@@ -2660,23 +2699,33 @@ class TripleStore implements Closeable {
 	/** Called under the reader admission barrier, after the corresponding native manifest is authoritative. */
 	private void publishCommittedIndexGeneration(Set<String> target, long firstNewReader) {
 		List<TripleIndex> next = new ArrayList<>();
-		for (String spec : TripleIndex.orderIndexSpecs(target)) {
+		for (String spec : TripleIndex.orderIndexSpecs(fullIndexSpecs(target))) {
 			next.add(Objects.requireNonNull(indexHandles.get(spec), "Missing committed statement index " + spec));
 		}
-		IndexGeneration generation = new IndexGeneration(next, partialIndexes);
+		// Kept partial indexes and newly built ones form the new generation; retired ones stay referenced only by
+		// the previous generation until CLEANUP empties them after its readers are gone.
+		List<PartialIndex> nextPartials = new ArrayList<>();
+		for (String fields : PartialIndex.SUPPORTED_FIELDS) {
+			if (target.contains(fields)) {
+				nextPartials.add(Stream.concat(partialIndexes.stream(), stagingPartialIndexes.stream())
+						.filter(partial -> partial.fields().equals(fields))
+						.findFirst()
+						.orElseThrow(() -> new IllegalStateException("Missing committed partial index " + fields)));
+			}
+		}
+		IndexGeneration generation = new IndexGeneration(next, nextPartials);
 		indexCutoverTransactionId = firstNewReader;
 		previousQueryGeneration = queryGeneration;
 		indexes = generation.indexes;
 		queryGeneration = generation;
-		for (PartialIndex partial : partialIndexes) {
-			String fields = partial.fields();
-			partial.setSupportIndex(TripleIndex.getBestIndex(indexes, fields.indexOf('s') >= 0 ? 0 : -1,
-					fields.indexOf('p') >= 0 ? 0 : -1, fields.indexOf('o') >= 0 ? 0 : -1,
-					fields.indexOf('c') >= 0 ? 0 : -1));
+		for (PartialIndex partial : nextPartials) {
+			partial.setSupportIndex(partialSupportIndex(indexes, partial.fields()));
 		}
+		partialIndexes = List.copyOf(nextPartials);
 		bestIndexByBoundMask = generation.best;
 		rangeSearchByBoundMask = generation.range;
 		stagingIndexes = List.of();
+		stagingPartialIndexes = List.of();
 		resetAlignedWriteCursorState();
 		if (pageEstimator != null) {
 			pageEstimator.configureIndexes(indexes.stream().map(TripleIndex::toString).toList());
@@ -5094,9 +5143,19 @@ class TripleStore implements Closeable {
 		}
 	}
 
+	/**
+	 * Maintains the active partial indexes and those being built. Removal checks support in a full index, so this runs
+	 * only after all full-index mutations of the statement.
+	 */
 	private void updatePartialIndexes(long s, long p, long o, long c, long[] tuple, boolean explicit, boolean add)
 			throws IOException {
-		for (PartialIndex partial : partialIndexes) {
+		updatePartialIndexes(partialIndexes, s, p, o, c, tuple, explicit, add);
+		updatePartialIndexes(stagingPartialIndexes, s, p, o, c, tuple, explicit, add);
+	}
+
+	private void updatePartialIndexes(List<PartialIndex> targets, long s, long p, long o, long c, long[] tuple,
+			boolean explicit, boolean add) throws IOException {
+		for (PartialIndex partial : targets) {
 			partial.project(tuple, s, p, o, c);
 			if (add) {
 				partial.add(writeTxn, tuple, explicit);
@@ -5104,6 +5163,11 @@ class TripleStore implements Closeable {
 				partial.reconcile(writeTxn, tuple, explicit);
 			}
 		}
+	}
+
+	/** True while any partial index, active or being built, needs per-statement maintenance. */
+	private boolean hasPartialIndexMaintenance() {
+		return !partialIndexes.isEmpty() || !stagingPartialIndexes.isEmpty();
 	}
 
 	private final ChunkUpdater updater = new ChunkUpdater();
@@ -5114,7 +5178,7 @@ class TripleStore implements Closeable {
 		if (count == 0) {
 			return;
 		}
-		if (!partialIndexes.isEmpty() || count == 1 || count < subj.length) {
+		if (hasPartialIndexMaintenance() || count == 1 || count < subj.length) {
 			for (int i = 0; i < count; i++) {
 				if (storeTripleDirect(subj[i], pred[i], obj[i], context[i], explicit) && addedIndexConsumer != null) {
 					addedIndexConsumer.accept(i);
@@ -6433,7 +6497,7 @@ class TripleStore implements Closeable {
 	}
 
 	boolean hasStagingIndexes() {
-		return !stagingIndexes.isEmpty();
+		return !stagingIndexes.isEmpty() || !stagingPartialIndexes.isEmpty();
 	}
 
 	/** Flushes committed pages to disk; the environment runs without per-commit sync. */
@@ -6468,7 +6532,7 @@ class TripleStore implements Closeable {
 		if (runsByIndex.size() != targets.size()) {
 			throw new IllegalStateException("Initial import runs do not match the active TripleStore indexes");
 		}
-		if (!stagingIndexes.isEmpty() || usesReplayJournal()) {
+		if (hasStagingIndexes() || usesReplayJournal()) {
 			throw new IllegalStateException("An initial run import needs empty indexes without a background build");
 		}
 		try (MemoryStack stack = stackPush()) {
@@ -6699,7 +6763,7 @@ class TripleStore implements Closeable {
 		if (count == 0) {
 			return;
 		}
-		if (!partialIndexes.isEmpty()) {
+		if (hasPartialIndexMaintenance()) {
 			for (int row = 0; row < count; row++) {
 				if (storeTripleDirect(subj[row], pred[row], obj[row], context[row], explicit)
 						&& addedIndexConsumer != null) {
