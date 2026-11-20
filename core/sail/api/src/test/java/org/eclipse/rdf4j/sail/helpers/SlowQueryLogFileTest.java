@@ -19,6 +19,8 @@ import static org.junit.jupiter.api.Assumptions.assumeTrue;
 import static org.mockito.Mockito.mockStatic;
 
 import java.io.IOException;
+import java.nio.channels.FileChannel;
+import java.nio.channels.FileLock;
 import java.nio.channels.SeekableByteChannel;
 import java.nio.file.DirectoryStream;
 import java.nio.file.Files;
@@ -26,18 +28,29 @@ import java.nio.file.LinkOption;
 import java.nio.file.OpenOption;
 import java.nio.file.Path;
 import java.nio.file.SecureDirectoryStream;
+import java.nio.file.StandardCopyOption;
+import java.nio.file.StandardOpenOption;
 import java.nio.file.attribute.FileAttribute;
 import java.nio.file.attribute.FileAttributeView;
+import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Iterator;
 import java.util.List;
 import java.util.Set;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.CyclicBarrier;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 
 import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.sail.SailConnection;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.condition.EnabledOnOs;
+import org.junit.jupiter.api.condition.OS;
 import org.junit.jupiter.api.io.TempDir;
 import org.mockito.MockedStatic;
 import org.slf4j.LoggerFactory;
@@ -104,6 +117,30 @@ class SlowQueryLogFileTest {
 		SlowQuerySupport.log(sail, "entry");
 
 		assertThat(Files.readString(tempDir.resolve("slow-query.log"))).contains("entry");
+	}
+
+	@Test
+	void capturedConfigurationKeepsOriginalThresholdsAndDestination() throws IOException {
+		requireSecureDirectoryStreams(tempDir);
+		Path originalDataDir = Files.createDirectory(tempDir.resolve("original"));
+		Path replacementDataDir = Files.createDirectory(tempDir.resolve("replacement"));
+		AbstractSail sail = configuredSail(originalDataDir, "original.log");
+		sail.setSlowQueryLogThresholdSeconds(10);
+		sail.setSlowQueryLogFirstResultThresholdSeconds(5);
+		SlowQuerySupport.Configuration configuration = SlowQuerySupport.snapshot(sail);
+
+		sail.setDataDir(replacementDataDir.toFile());
+		sail.setSlowQueryLogFile("replacement.log");
+		sail.setSlowQueryLogThresholdSeconds(20);
+		sail.setSlowQueryLogFirstResultThresholdSeconds(15);
+		SlowQuerySupport.log(sail, configuration, "entry");
+
+		assertThat(configuration).isEqualTo(new SlowQuerySupport.Configuration(10, 5,
+				"original.log", originalDataDir.toFile()));
+		assertThat(SlowQuerySupport.snapshot(sail)).isEqualTo(new SlowQuerySupport.Configuration(20, 15,
+				"replacement.log", replacementDataDir.toFile()));
+		assertThat(Files.readString(originalDataDir.resolve("original.log"))).contains("entry");
+		assertThat(replacementDataDir.resolve("replacement.log")).doesNotExist();
 	}
 
 	@Test
@@ -393,6 +430,164 @@ class SlowQueryLogFileTest {
 		assertThat(tempDir.resolve("slow-query.log")).doesNotExist();
 	}
 
+	@Test
+	@EnabledOnOs(OS.LINUX)
+	void fifoReplacementDuringOpenFallsBackWithoutWaitingForAReader() throws Exception {
+		requireSecureDirectoryStreams(tempDir);
+		Path dataDir = Files.createDirectory(tempDir.resolve("repository")).toRealPath();
+		Path logFile = Files.writeString(dataDir.resolve("slow-query.log"), "original");
+		Path fifo = dataDir.resolve("replacement-fifo");
+		createFifo(fifo);
+		AbstractSail sail = configuredSail(dataDir, "slow-query.log");
+		CountDownLatch openingFifo = new CountDownLatch(1);
+		ExecutorService executor = Executors.newSingleThreadExecutor();
+		Future<?> logging = null;
+		try (LogCapture capture = new LogCapture()) {
+			logging = executor.submit(() -> {
+				try (MockedStatic<Files> ignored = interceptFileOpen(path -> {
+					if (path.equals(logFile)) {
+						Files.move(fifo, logFile, StandardCopyOption.REPLACE_EXISTING);
+						openingFifo.countDown();
+					}
+				})) {
+					SlowQuerySupport.log(sail, "fifo entry");
+				}
+			});
+			assertThat(openingFifo.await(5, TimeUnit.SECONDS)).isTrue();
+			try {
+				logging.get(2, TimeUnit.SECONDS);
+			} finally {
+				// Release the old write-only open on failure so this regression cannot strand a query/test thread.
+				if (!logging.isDone()) {
+					try (FileChannel reader = FileChannel.open(logFile,
+							StandardOpenOption.READ, StandardOpenOption.WRITE)) {
+						logging.get(5, TimeUnit.SECONDS);
+					}
+				}
+			}
+			assertThat(capture.messages()).contains("fifo entry");
+			Files.delete(logFile);
+			SlowQuerySupport.log(sail, "next entry");
+			assertThat(Files.readString(logFile)).contains("next entry");
+		} finally {
+			executor.shutdownNow();
+			assertThat(executor.awaitTermination(5, TimeUnit.SECONDS)).isTrue();
+		}
+	}
+
+	@Test
+	@EnabledOnOs(OS.LINUX)
+	void openedFifoCannotHideBehindAReplacementRegularFile() throws Exception {
+		requireSecureDirectoryStreams(tempDir);
+		Path dataDir = Files.createDirectory(tempDir.resolve("repository")).toRealPath();
+		Path logFile = Files.writeString(dataDir.resolve("slow-query.log"), "original");
+		Path fifo = dataDir.resolve("replacement-fifo");
+		createFifo(fifo);
+		AtomicBoolean replaced = new AtomicBoolean();
+		AtomicBoolean restored = new AtomicBoolean();
+		AbstractSail sail = configuredSail(dataDir, "slow-query.log");
+		try (FileChannel reader = FileChannel.open(fifo, StandardOpenOption.READ, StandardOpenOption.WRITE);
+				LogCapture capture = new LogCapture();
+				MockedStatic<Files> ignored = interceptFileOpen(path -> {
+					if (path.equals(logFile) && replaced.compareAndSet(false, true)) {
+						Files.move(fifo, logFile, StandardCopyOption.REPLACE_EXISTING);
+					}
+				}, path -> {
+				}, path -> {
+					if (path.equals(logFile) && restored.compareAndSet(false, true)) {
+						Files.move(logFile, fifo);
+						Files.writeString(logFile, "replacement");
+					}
+				})) {
+			SlowQuerySupport.log(sail, "fifo entry");
+			assertThat(capture.messages()).contains("fifo entry");
+		}
+		assertThat(replaced).isTrue();
+		assertThat(restored).isTrue();
+		assertThat(Files.readString(logFile)).isEqualTo("replacement");
+	}
+
+	@Test
+	void lockedFileFallsBackAndTheNextEntryCanAppend() throws IOException {
+		requireSecureDirectoryStreams(tempDir);
+		Path logFile = Files.writeString(tempDir.resolve("slow-query.log"), "original");
+		AbstractSail sail = configuredSail(tempDir, "slow-query.log");
+		try (FileChannel owner = FileChannel.open(logFile, StandardOpenOption.READ, StandardOpenOption.WRITE);
+				FileLock lock = owner.lock();
+				LogCapture capture = new LogCapture()) {
+			SlowQuerySupport.log(sail, "locked entry");
+			assertThat(capture.messages()).contains("locked entry");
+			assertThat(Files.readString(logFile)).isEqualTo("original");
+		}
+
+		SlowQuerySupport.log(sail, "next entry");
+		assertThat(Files.readString(logFile))
+				.isEqualTo("originalnext entry" + System.lineSeparator() + System.lineSeparator());
+	}
+
+	@Test
+	void concurrentSailsAppendCompleteEntriesToTheSameFile() throws Exception {
+		requireSecureDirectoryStreams(tempDir);
+		assertConcurrentEntries(List.of("slow-query.log"));
+	}
+
+	@Test
+	void concurrentSailsAppendCompleteEntriesThroughHardLinkAliases() throws Exception {
+		requireSecureDirectoryStreams(tempDir);
+		Path logFile = Files.writeString(tempDir.resolve("slow-query.log"), "");
+		try {
+			Files.createLink(tempDir.resolve("alias.log"), logFile);
+		} catch (UnsupportedOperationException | IOException | SecurityException e) {
+			assumeTrue(false, "Hard links are unavailable: " + e.getMessage());
+		}
+		assertConcurrentEntries(List.of("slow-query.log", "alias.log"));
+	}
+
+	private void assertConcurrentEntries(List<String> logFiles) throws Exception {
+		int workers = 4;
+		int entriesPerWorker = 10;
+		String separator = System.lineSeparator() + System.lineSeparator();
+		List<String> expected = new ArrayList<>();
+		List<Future<?>> logging = new ArrayList<>();
+		ExecutorService executor = Executors.newFixedThreadPool(workers);
+		CyclicBarrier start = new CyclicBarrier(workers);
+		try {
+			for (int worker = 0; worker < workers; worker++) {
+				AbstractSail sail = configuredSail(tempDir, logFiles.get(worker % logFiles.size()));
+				List<String> entries = new ArrayList<>();
+				for (int entry = 0; entry < entriesPerWorker; entry++) {
+					String text = "worker=" + worker + ", entry=" + entry + ":" + "x".repeat(64 * 1024);
+					entries.add(text);
+					expected.add(text);
+				}
+				logging.add(executor.submit(() -> {
+					start.await(5, TimeUnit.SECONDS);
+					entries.forEach(entry -> SlowQuerySupport.log(sail, entry));
+					return null;
+				}));
+			}
+			for (Future<?> task : logging) {
+				task.get(10, TimeUnit.SECONDS);
+			}
+		} finally {
+			executor.shutdownNow();
+			assertThat(executor.awaitTermination(5, TimeUnit.SECONDS)).isTrue();
+		}
+		assertThat(Files.readString(tempDir.resolve("slow-query.log")).split(separator))
+				.withFailMessage("Concurrent log entries were interleaved, truncated, or lost")
+				.containsExactlyInAnyOrderElementsOf(expected);
+	}
+
+	private static void createFifo(Path fifo) throws Exception {
+		Process process = new ProcessBuilder("mkfifo", fifo.toString()).redirectErrorStream(true).start();
+		try {
+			assertThat(process.waitFor(5, TimeUnit.SECONDS)).isTrue();
+			assertThat(process.exitValue()).isZero();
+		} finally {
+			process.destroyForcibly();
+		}
+	}
+
 	/**
 	 * Schedule a real directory swap at the file-open boundary without timing or background threads. The pathname hook
 	 * reproduces the old writer; the directory-stream hook exercises handle-relative file opening.
@@ -404,6 +599,12 @@ class SlowQueryLogFileTest {
 
 	private static MockedStatic<Files> interceptFileOpen(BeforeFileOpen beforeOpen,
 			BeforeFileOpen beforeDirectoryOpen) {
+		return interceptFileOpen(beforeOpen, beforeDirectoryOpen, path -> {
+		});
+	}
+
+	private static MockedStatic<Files> interceptFileOpen(BeforeFileOpen beforeOpen,
+			BeforeFileOpen beforeDirectoryOpen, BeforeFileOpen afterOpen) {
 		return mockStatic(Files.class, invocation -> {
 			if (invocation.getMethod().getName().equals("newBufferedWriter")) {
 				beforeOpen.run(invocation.getArgument(0));
@@ -415,7 +616,7 @@ class SlowQueryLogFileTest {
 				@SuppressWarnings("unchecked")
 				SecureDirectoryStream<Path> directory = (SecureDirectoryStream<Path>) stream;
 				return new InterceptingDirectoryStream(invocation.getArgument(0), directory, beforeOpen,
-						beforeDirectoryOpen);
+						beforeDirectoryOpen, afterOpen);
 			}
 			return result;
 		});
@@ -431,27 +632,37 @@ class SlowQueryLogFileTest {
 		private final SecureDirectoryStream<Path> delegate;
 		private final BeforeFileOpen beforeOpen;
 		private final BeforeFileOpen beforeDirectoryOpen;
+		private final BeforeFileOpen afterOpen;
 
 		private InterceptingDirectoryStream(Path path, SecureDirectoryStream<Path> delegate,
-				BeforeFileOpen beforeOpen, BeforeFileOpen beforeDirectoryOpen) {
+				BeforeFileOpen beforeOpen, BeforeFileOpen beforeDirectoryOpen, BeforeFileOpen afterOpen) {
 			this.path = path;
 			this.delegate = delegate;
 			this.beforeOpen = beforeOpen;
 			this.beforeDirectoryOpen = beforeDirectoryOpen;
+			this.afterOpen = afterOpen;
 		}
 
 		@Override
 		public SecureDirectoryStream<Path> newDirectoryStream(Path child, LinkOption... options) throws IOException {
 			beforeDirectoryOpen.run(path.resolve(child));
 			return new InterceptingDirectoryStream(path.resolve(child), delegate.newDirectoryStream(child, options),
-					beforeOpen, beforeDirectoryOpen);
+					beforeOpen, beforeDirectoryOpen, afterOpen);
 		}
 
 		@Override
 		public SeekableByteChannel newByteChannel(Path file, Set<? extends OpenOption> options,
 				FileAttribute<?>... attributes) throws IOException {
 			beforeOpen.run(path.resolve(file));
-			return delegate.newByteChannel(file, options, attributes);
+			SeekableByteChannel channel = delegate.newByteChannel(file, options, attributes);
+			try {
+				afterOpen.run(path.resolve(file));
+				return channel;
+			} catch (IOException | RuntimeException | Error e) {
+				try (channel) {
+					throw e;
+				}
+			}
 		}
 
 		@Override

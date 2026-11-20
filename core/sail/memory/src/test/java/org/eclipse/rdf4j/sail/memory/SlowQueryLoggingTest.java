@@ -24,14 +24,24 @@ import java.nio.file.SecureDirectoryStream;
 import java.util.ArrayDeque;
 import java.util.Arrays;
 import java.util.List;
+import java.util.Map;
 import java.util.concurrent.atomic.AtomicLong;
+import java.util.regex.Pattern;
 
+import org.eclipse.rdf4j.http.client.QueryRequestContext;
+import org.eclipse.rdf4j.model.IRI;
+import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.model.vocabulary.RDF;
+import org.eclipse.rdf4j.query.QueryLanguage;
+import org.eclipse.rdf4j.query.QueryParseOptions;
 import org.eclipse.rdf4j.query.TupleQueryResult;
+import org.eclipse.rdf4j.query.impl.SimpleDataset;
 import org.eclipse.rdf4j.repository.RepositoryConnection;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
+import org.eclipse.rdf4j.repository.sail.SailTupleQuery;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
+import org.slf4j.MDC;
 
 import ch.qos.logback.classic.Level;
 import ch.qos.logback.classic.Logger;
@@ -253,6 +263,87 @@ class SlowQueryLoggingTest {
 				.anySatisfy(message -> assertThat(message).contains("ASK WHERE { ?s ?p ?o }"))
 				.anySatisfy(
 						message -> assertThat(message).containsIgnoringCase("failed to write slow query log entry"));
+	}
+
+	@Test
+	void bothEventsKeepTheOriginalExecutionConfigurationAndIdentity(@TempDir Path tempDir) throws Exception {
+		requireSecureDirectoryStreams(tempDir);
+		TestMemoryStore store = new TestMemoryStore();
+		store.setDataDir(tempDir.toFile());
+		store.setSlowQueryLogThresholdSeconds(1L);
+		store.setSlowQueryLogFirstResultThresholdSeconds(1L);
+		store.setSlowQueryLogFile("original.log");
+		SailRepository repository = new SailRepository(store);
+		Map<String, String> previousMdc = MDC.getCopyOfContextMap();
+		repository.init();
+		try (RepositoryConnection connection = repository.getConnection()) {
+			IRI graph = SimpleValueFactory.getInstance().createIRI("urn:original-graph");
+			connection.add(RDF.TYPE, RDF.TYPE, RDF.TYPE, graph);
+			connection.setQueryParseOptions(QueryParseOptions.STRICT);
+			SimpleDataset dataset = new SimpleDataset();
+			dataset.addDefaultGraph(graph);
+			SailTupleQuery query = (SailTupleQuery) connection.prepareTupleQuery(QueryLanguage.SPARQL,
+					"SELECT * WHERE { ?subject ?predicate ?object }", "https://example.org/original/");
+			query.setBinding("subject", RDF.TYPE);
+			query.setBinding("message", SimpleValueFactory.getInstance().createLiteral("original\nvalue"));
+			query.setDataset(dataset);
+			query.setIncludeInferred(false);
+			query.setMaxExecutionTime(30);
+			query.setForcedLmdbExecutionStrategy("test-strategy");
+			query.setLmdbResultCacheRequested(true);
+			MDC.put("org.eclipse.rdf4j.repositoryId", "original-repository");
+			MDC.put("org.eclipse.rdf4j.requestId", "original-http-request");
+			store.setCurrentTimeMillis(1_000L);
+			TupleQueryResult result;
+			try (QueryRequestContext.Activation ignored = QueryRequestContext.activate("original-query-request")) {
+				result = query.evaluate();
+			}
+			try (result) {
+				query.setMaxExecutionTime(90);
+				query.setIncludeInferred(true);
+				query.setBinding("subject", graph);
+				query.setBinding("message", SimpleValueFactory.getInstance().createLiteral("later value"));
+				dataset.clear();
+				dataset.addDefaultGraph(SimpleValueFactory.getInstance().createIRI("urn:later-graph"));
+				store.setSlowQueryLogFile("later.log");
+				store.setSlowQueryLogThresholdSeconds(999L);
+				store.setSlowQueryLogFirstResultThresholdSeconds(999L);
+				MDC.put("org.eclipse.rdf4j.repositoryId", "later-repository");
+				MDC.put("org.eclipse.rdf4j.requestId", "later-http-request");
+				store.setCurrentTimeMillis(3_000L);
+				try (QueryRequestContext.Activation ignored = QueryRequestContext.activate("later-query-request")) {
+					assertThat(result.hasNext()).isTrue();
+				}
+			}
+		} finally {
+			repository.shutDown();
+			if (previousMdc == null) {
+				MDC.clear();
+			} else {
+				MDC.setContextMap(previousMdc);
+			}
+		}
+
+		String output = Files.readString(tempDir.resolve("original.log"));
+		assertThat(output)
+				.contains("maxExecutionTimeSeconds=30", "includeInferred=false", "queryLanguage=SPARQL",
+						"baseURI=https://example.org/original/", "blankNodeReferences=false",
+						"forcedExecutionStrategy=test-strategy", "resultCacheRequested=true",
+						"repositoryId=original-repository", "serverRequestId=original-http-request",
+						"queryRequestId=original-query-request", "repositoryDataDir=" + tempDir.toAbsolutePath(),
+						"binding.subject=<" + RDF.TYPE.stringValue() + ">", "original\\nvalue",
+						"dataset.defaultGraphs=[<urn:original-graph>]", "thresholdSeconds=1",
+						"firstResultThresholdSeconds=1", "queryStartTimeMillis=", "threadName=")
+				.doesNotContain("later value", "urn:later-graph", "later-repository", "later-http-request",
+						"later-query-request", "maxExecutionTimeSeconds=90");
+		List<String> executionIds = Pattern.compile("(?m)^executionId=(.+)$")
+				.matcher(output)
+				.results()
+				.map(match -> match.group(1))
+				.toList();
+		assertThat(executionIds).hasSize(2);
+		assertThat(executionIds.stream().distinct()).hasSize(1);
+		assertThat(tempDir.resolve("later.log")).doesNotExist();
 	}
 
 	private static void requireSecureDirectoryStreams(Path directory) throws IOException {

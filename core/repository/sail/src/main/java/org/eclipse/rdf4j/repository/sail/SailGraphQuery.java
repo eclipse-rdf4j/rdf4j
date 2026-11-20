@@ -66,9 +66,8 @@ public class SailGraphQuery extends SailQuery implements GraphQuery {
 		try {
 			TupleExpr tupleExpr = getParsedQuery().getTupleExpr();
 			SailConnection sailCon = getConnection().getSailConnection();
-			SlowQueryContextHolder.SlowQueryContext previous = SlowQueryContextHolder
-					.set(getParsedQuery().getSourceString(), Query.QueryType.GRAPH, getForcedLmdbExecutionStrategy());
 			try (BlankNodeAllocationScope.Activation allocation = createBlankNodeAllocationScope().activate()) {
+				SlowQueryContextHolder.SlowQueryContext previous = beginSlowQueryContext();
 				try {
 					bindingsIter1 = sailCon.evaluate(tupleExpr, getActiveDataset(), getBindings(),
 							getIncludeInferred());
