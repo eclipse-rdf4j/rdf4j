@@ -17,6 +17,7 @@ import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.junit.jupiter.api.Assertions.fail;
 import static org.mockito.Mockito.doAnswer;
 import static org.mockito.Mockito.spy;
 import static org.mockito.Mockito.verify;
@@ -322,7 +323,16 @@ class LmdbRecordIteratorCancellationTest {
 			var unrelated = new NativeCancellationToken();
 			unrelated.requestCancellation();
 			try (var scope = unrelated.enter()) {
-				assertThrows(QueryInterruptedException.class, cursor::next);
+				// rows already prefetched by the wrapper cost no check; the request lands at the next batch refill
+				int servedAfterRequest = 0;
+				try {
+					while (cursor.next() != null && servedAfterRequest <= 64) {
+						servedAfterRequest++;
+					}
+					fail("the cancellation request must interrupt the cursor within one prefetched batch");
+				} catch (QueryInterruptedException expected) {
+					assertTrue(servedAfterRequest <= 64);
+				}
 			}
 			assertNull(cursor.next(), "the consumer closed the cancelled cursor");
 		}
