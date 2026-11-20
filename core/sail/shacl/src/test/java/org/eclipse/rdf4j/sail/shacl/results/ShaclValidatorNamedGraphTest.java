@@ -31,12 +31,29 @@ import org.eclipse.rdf4j.rio.RDFFormat;
 import org.eclipse.rdf4j.sail.memory.MemoryStore;
 import org.eclipse.rdf4j.sail.shacl.ShaclSail;
 import org.eclipse.rdf4j.sail.shacl.ShaclValidator;
+import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 
 /**
  * @author Håvard Ottestad
  */
 public class ShaclValidatorNamedGraphTest {
+
+	private SailRepository data;
+	private SailRepository shapes;
+
+	@AfterEach
+	void shutDownRepositories() {
+		try {
+			if (data != null) {
+				data.shutDown();
+			}
+		} finally {
+			if (shapes != null) {
+				shapes.shutDown();
+			}
+		}
+	}
 
 	private static final String EX = "http://example.com/ns#";
 	private static final IRI dataGraph = Values.iri(EX, "dataGraph");
@@ -45,9 +62,9 @@ public class ShaclValidatorNamedGraphTest {
 	@Test
 	public void testNamedGraph() throws Exception {
 
-		SailRepository shapes = getShapes();
+		shapes = getShapes();
 
-		SailRepository data = new SailRepository(new MemoryStore());
+		data = new SailRepository(new MemoryStore());
 
 		try (SailRepositoryConnection connection = data.getConnection()) {
 			connection.add(Values.iri(EX, "person1"), RDF.TYPE, RDFS.RESOURCE, dataGraph);
@@ -60,9 +77,9 @@ public class ShaclValidatorNamedGraphTest {
 	@Test
 	public void testRdf4jShaclShapesGraph() throws Exception {
 
-		SailRepository shapes = getShapesRdf4jShaclShapesGraph();
+		shapes = getShapesRdf4jShaclShapesGraph();
 
-		SailRepository data = new SailRepository(new MemoryStore());
+		data = new SailRepository(new MemoryStore());
 
 		{
 			try (SailRepositoryConnection connection = data.getConnection()) {
@@ -97,9 +114,9 @@ public class ShaclValidatorNamedGraphTest {
 	@Test
 	public void testRdf4jShaclShapesGraph2() throws Exception {
 
-		SailRepository shapes = getShapesRdf4jShaclShapesGraph2();
+		shapes = getShapesRdf4jShaclShapesGraph2();
 
-		SailRepository data = new SailRepository(new MemoryStore());
+		data = new SailRepository(new MemoryStore());
 
 		{
 			try (SailRepositoryConnection connection = data.getConnection()) {
@@ -113,7 +130,7 @@ public class ShaclValidatorNamedGraphTest {
 
 	}
 
-	private static SailRepository getShapes() throws IOException {
+	private SailRepository getShapes() throws IOException {
 		String shapesString = "@base <http://example.com/ns> .\n" +
 				"@prefix ex: <http://example.com/ns#> .\n" +
 				"@prefix owl: <http://www.w3.org/2002/07/owl#> .\n" +
@@ -136,14 +153,14 @@ public class ShaclValidatorNamedGraphTest {
 				"ex:dataGraph sh:shapesGraph ex:shapesGraph.\n" +
 				"}\n";
 
-		SailRepository shapes = new SailRepository(new MemoryStore());
+		shapes = new SailRepository(new MemoryStore());
 		try (SailRepositoryConnection connection = shapes.getConnection()) {
 			connection.add(new StringReader(shapesString), RDFFormat.TRIG);
 		}
 		return shapes;
 	}
 
-	private static SailRepository getShapesRdf4jShaclShapesGraph() throws IOException {
+	private SailRepository getShapesRdf4jShaclShapesGraph() throws IOException {
 		String shapesString = "@base <http://example.com/ns> .\n" +
 				"@prefix ex: <http://example.com/ns#> .\n" +
 				"@prefix owl: <http://www.w3.org/2002/07/owl#> .\n" +
@@ -178,14 +195,14 @@ public class ShaclValidatorNamedGraphTest {
 				"        sh:maxCount 1 .\n" +
 				"}\n";
 
-		SailRepository shapes = new SailRepository(new ShaclSail(new MemoryStore()));
+		shapes = new SailRepository(new ShaclSail(new MemoryStore()));
 		try (SailRepositoryConnection connection = shapes.getConnection()) {
 			connection.add(new StringReader(shapesString), RDFFormat.TRIG);
 		}
 		return shapes;
 	}
 
-	private static SailRepository getShapesRdf4jShaclShapesGraph2() throws IOException {
+	private SailRepository getShapesRdf4jShaclShapesGraph2() throws IOException {
 		String shapesString = "@base <http://example.com/ns> .\n" +
 				"@prefix ex: <http://example.com/ns#> .\n" +
 				"@prefix owl: <http://www.w3.org/2002/07/owl#> .\n" +
@@ -224,7 +241,7 @@ public class ShaclValidatorNamedGraphTest {
 				"        sh:minCount 1 .\n" +
 				"}\n";
 
-		SailRepository shapes = new SailRepository(new ShaclSail(new MemoryStore()));
+		shapes = new SailRepository(new ShaclSail(new MemoryStore()));
 		try (SailRepositoryConnection connection = shapes.getConnection()) {
 			connection.begin(ShaclSail.TransactionSettings.ValidationApproach.Disabled);
 			connection.add(new StringReader(shapesString), RDFFormat.TRIG);

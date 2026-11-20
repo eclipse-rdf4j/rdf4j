@@ -151,26 +151,36 @@ public class ParallelismBenchmark {
 
 		@Setup(Level.Trial)
 		public void setUp() {
-			if (inputRows <= 0) {
-				throw new IllegalArgumentException("inputRows must be positive");
-			}
-			Selector selected = selector();
-			int workersPerQuery = workersPerQuery();
-			captureProperties();
-			configure(selected, workersPerQuery, inputRows);
+			try {
+				if (inputRows <= 0) {
+					throw new IllegalArgumentException("inputRows must be positive");
+				}
+				Selector selected = selector();
+				int workersPerQuery = workersPerQuery();
+				captureProperties();
+				configure(selected, workersPerQuery, inputRows);
 
-			dataDir = Files.newTemporaryFolder();
-			repository = new SailRepository(new LmdbStore(dataDir,
-					new LmdbStoreConfig("spoc,posc,ospc").setNativeEvaluationEnabled(true)));
-			loadData();
-			if (selected.queryCount > 1) {
-				queryExecutor = Executors.newFixedThreadPool(selected.queryCount);
-			}
+				dataDir = Files.newTemporaryFolder();
+				repository = new SailRepository(new LmdbStore(dataDir,
+						new LmdbStoreConfig("spoc,posc,ospc").setNativeEvaluationEnabled(true)));
+				loadData();
+				if (selected.queryCount > 1) {
+					queryExecutor = Executors.newFixedThreadPool(selected.queryCount);
+				}
 
-			expectedDigest = expectedDigest(inputRows).times(selected.queryCount);
-			QueryDigest actual = runWorkload();
-			verifyDigest(actual);
-			engagement = captureEngagement(selected, workersPerQuery);
+				expectedDigest = expectedDigest(inputRows).times(selected.queryCount);
+				QueryDigest actual = runWorkload();
+				verifyDigest(actual);
+				engagement = captureEngagement(selected, workersPerQuery);
+
+			} catch (Exception | Error failure) {
+				try {
+					tearDown();
+				} catch (Exception | Error cleanupFailure) {
+					failure.addSuppressed(cleanupFailure);
+				}
+				throw failure;
+			}
 		}
 
 		private void captureProperties() {

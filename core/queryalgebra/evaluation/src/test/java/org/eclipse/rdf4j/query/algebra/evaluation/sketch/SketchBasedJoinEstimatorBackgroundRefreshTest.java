@@ -33,14 +33,14 @@ import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
-class SketchBasedJoinEstimatorBackgroundRefreshTest {
+class SketchBasedJoinEstimatorBackgroundRefreshTest extends AbstractSketchBasedJoinEstimatorTest {
 
 	private static final ValueFactory VF = SimpleValueFactory.getInstance();
 
 	@Test
 	void backgroundRefreshDoesNotRebuildEmptyStoreEveryTick() throws Exception {
 		CountingEmptyStore store = new CountingEmptyStore();
-		SketchBasedJoinEstimator estimator = new SketchBasedJoinEstimator(store,
+		SketchBasedJoinEstimator estimator = createEstimator(store,
 				SketchBasedJoinEstimator.Config.defaults()
 						.withNominalEntries(64)
 						.withThrottleEveryN(1)
@@ -64,7 +64,7 @@ class SketchBasedJoinEstimatorBackgroundRefreshTest {
 	void backgroundRefreshLoadsPersistedSnapshotWithoutCallerReadyLazyLoad(@TempDir Path dataDir) throws Exception {
 		CountingEmptyStore store = new CountingEmptyStore(VF.createStatement(VF.createIRI("urn:s"),
 				VF.createIRI("urn:p"), VF.createIRI("urn:o")));
-		SketchBasedJoinEstimator estimator = new SketchBasedJoinEstimator(store,
+		SketchBasedJoinEstimator estimator = createEstimator(store,
 				SketchBasedJoinEstimator.Config.defaults()
 						.withNominalEntries(64)
 						.withThrottleEveryN(1)
@@ -88,7 +88,7 @@ class SketchBasedJoinEstimatorBackgroundRefreshTest {
 			assertEquals(1, store.rebuildCount(), "Background snapshot load should not rebuild the store");
 			assertFalse(estimator.hasPendingBackgroundRefresh(), "a completed load must leave the worker idle");
 		} finally {
-			estimator.close();
+			closeEstimator(estimator);
 		}
 	}
 
@@ -96,7 +96,7 @@ class SketchBasedJoinEstimatorBackgroundRefreshTest {
 	void deferredBackgroundRebuildKeepsPublishedSnapshotReady() throws Exception {
 		DeferringAfterInitialRebuildStore store = new DeferringAfterInitialRebuildStore(
 				VF.createStatement(VF.createIRI("urn:s"), VF.createIRI("urn:p"), VF.createIRI("urn:o")));
-		SketchBasedJoinEstimator estimator = new SketchBasedJoinEstimator(store,
+		SketchBasedJoinEstimator estimator = createEstimator(store,
 				SketchBasedJoinEstimator.Config.defaults()
 						.withNominalEntries(64)
 						.withThrottleEveryN(1)
@@ -120,7 +120,7 @@ class SketchBasedJoinEstimatorBackgroundRefreshTest {
 					estimator.estimateCount(SketchBasedJoinEstimator.Component.S, null, "urn:p", "urn:o", null),
 					0.0d);
 		} finally {
-			estimator.close();
+			closeEstimator(estimator);
 		}
 	}
 
@@ -128,7 +128,7 @@ class SketchBasedJoinEstimatorBackgroundRefreshTest {
 	void inProgressBackgroundRebuildKeepsPublishedSnapshotReady() throws Exception {
 		BlockingSecondRebuildStore store = new BlockingSecondRebuildStore(
 				VF.createStatement(VF.createIRI("urn:s"), VF.createIRI("urn:p"), VF.createIRI("urn:o")));
-		SketchBasedJoinEstimator estimator = new SketchBasedJoinEstimator(store,
+		SketchBasedJoinEstimator estimator = createEstimator(store,
 				SketchBasedJoinEstimator.Config.defaults()
 						.withNominalEntries(64)
 						.withThrottleEveryN(1)
@@ -148,7 +148,7 @@ class SketchBasedJoinEstimatorBackgroundRefreshTest {
 					"In-progress background rebuild should not make the published snapshot unavailable");
 		} finally {
 			store.releaseSecondRebuild();
-			estimator.close();
+			closeEstimator(estimator);
 		}
 		assertFalse(estimator.hasPendingBackgroundRefresh());
 	}

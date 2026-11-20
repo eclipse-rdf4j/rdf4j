@@ -457,6 +457,14 @@ public abstract class AbstractMemoryOverflowModel<T extends AbstractModel> exten
 					return;
 				}
 
+				Model memory = this.memory;
+				if (memory != null && memory.size() < BATCH_SIZE) {
+					// A disk store costs more heap than a model smaller than one batch holds, so spilling it would
+					// add pressure, and under sustained pressure every short-lived model would get a store of its
+					// own. Adders re-check at batch boundaries, so a large inflow still moves to disk.
+					return;
+				}
+
 				if (overflow || highGcLoad || mbFree() < MIN_AVAILABLE_MEM_BEFORE_OVERFLOWING) {
 					logger.debug("Syncing triples to disk due to memory pressure or retry");
 					overflowToDisk();

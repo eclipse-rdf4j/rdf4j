@@ -224,15 +224,24 @@ public abstract class SPARQL11UpdateComplianceTest extends SPARQLComplianceTest 
 
 		@Override
 		public void tearDown() {
-			if (dataRep != null) {
-				clear(dataRep);
-				shutDownAndDeleteDataDir(dataRep);
-				dataRep = null;
-			}
-			if (expectedResultRepo != null) {
-				clear(expectedResultRepo);
-				expectedResultRepo.shutDown();
-				expectedResultRepo = null;
+			try {
+				if (dataRep != null) {
+					try {
+						clear(dataRep);
+					} finally {
+						shutDownAndDeleteDataDir(dataRep);
+						dataRep = null;
+					}
+				}
+			} finally {
+				if (expectedResultRepo != null) {
+					try {
+						clear(expectedResultRepo);
+					} finally {
+						expectedResultRepo.shutDown();
+						expectedResultRepo = null;
+					}
+				}
 			}
 		}
 	}
@@ -242,6 +251,13 @@ public abstract class SPARQL11UpdateComplianceTest extends SPARQLComplianceTest 
 		try (RepositoryConnection con = repo.getConnection()) {
 			con.clear();
 			con.clearNamespaces();
+		} catch (RuntimeException | Error failure) {
+			try {
+				shutDownAndDeleteDataDir(repo);
+			} catch (RuntimeException | Error cleanupFailure) {
+				failure.addSuppressed(cleanupFailure);
+			}
+			throw failure;
 		}
 		return repo;
 	}
@@ -279,11 +295,6 @@ public abstract class SPARQL11UpdateComplianceTest extends SPARQLComplianceTest 
 			SailRepository sailRepository = new SailRepository(new MemoryStore());
 			try (SailRepositoryConnection connection = sailRepository.getConnection()) {
 				connection.add(new URL(filename), filename, RDFFormat.TURTLE);
-			} catch (IOException e) {
-				throw new RuntimeException(e);
-			}
-
-			try (SailRepositoryConnection connection = sailRepository.getConnection()) {
 
 				String manifestQuery = " PREFIX qt: <http://www.w3.org/2001/sw/DataAccess/tests/test-query#> "
 						+ "PREFIX mf: <http://www.w3.org/2001/sw/DataAccess/tests/test-manifest#> "
@@ -384,6 +395,11 @@ public abstract class SPARQL11UpdateComplianceTest extends SPARQLComplianceTest 
 						}
 					}
 				}
+			} catch (IOException e) {
+				throw new RuntimeException(e);
+			} finally {
+				sailRepository.shutDown();
+
 			}
 		}
 	}

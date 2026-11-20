@@ -31,7 +31,7 @@ import org.eclipse.rdf4j.query.algebra.ValueConstant;
 import org.eclipse.rdf4j.query.algebra.Var;
 import org.junit.jupiter.api.Test;
 
-class SketchBasedJoinEstimatorAccessShapeTest {
+class SketchBasedJoinEstimatorAccessShapeTest extends AbstractSketchBasedJoinEstimatorTest {
 
 	private static final ValueFactory VF = SimpleValueFactory.getInstance();
 	private static final IRI GRID_NAME = VF.createIRI("urn:grid:name");
@@ -94,7 +94,7 @@ class SketchBasedJoinEstimatorAccessShapeTest {
 				"Object-only scan work should stay wider than the filtered output rows");
 	}
 
-	private static SketchBasedJoinEstimator estimatorWithGridLiterals() {
+	private SketchBasedJoinEstimator estimatorWithGridLiterals() {
 		StubSketchStatementSource store = new StubSketchStatementSource();
 		for (int i = 0; i < 24; i++) {
 			Resource substation = VF.createIRI("urn:substation:" + i);
@@ -105,7 +105,7 @@ class SketchBasedJoinEstimatorAccessShapeTest {
 			store.add(VF.createStatement(aliasHolder, GRID_ALIAS, VF.createLiteral("Substation " + (1 + (i % 3)))));
 		}
 
-		SketchBasedJoinEstimator estimator = new SketchBasedJoinEstimator(store, config());
+		SketchBasedJoinEstimator estimator = createEstimator(store, config());
 		estimator.rebuild();
 		return estimator;
 	}
