@@ -61,6 +61,9 @@ public class SailConnectionWrapper
 	 */
 	private final SailConnection wrappedCon;
 
+	// Carries the caller's policy while dispatching through a four-argument subclass override.
+	private final ScopedValue<QueryParseOptions> preparationOptions = ScopedValue.newInstance();
+
 	/*--------------*
 	 * Constructors *
 	 *--------------*/
@@ -138,8 +141,11 @@ public class SailConnectionWrapper
 
 	@Override
 	public Optional<TupleExpr> prepareQuery(QueryLanguage ql, Query.QueryType type, String query, String baseURI) {
-		return wrappedCon.prepareQuery(ql, type, query, baseURI,
-				QueryParseOptions.DEFAULT.withGraphAlgebraMode(GraphAlgebraMode.LEGACY));
+		QueryParseOptions options = preparationOptions.orElse(QueryParseOptions.DEFAULT);
+		if (options.graphAlgebraMode() == GraphAlgebraMode.AUTO && wrappedCon.supportsGraphAlgebra()) {
+			options = options.withGraphAlgebraMode(GraphAlgebraMode.LEGACY);
+		}
+		return wrappedCon.prepareQuery(ql, type, query, baseURI, options);
 	}
 
 	@Override
@@ -314,8 +320,14 @@ public class SailConnectionWrapper
 	public Optional<TupleExpr> prepareQuery(QueryLanguage language, Query.QueryType type,
 			String query, String baseURI, QueryParseOptions options) {
 		Objects.requireNonNull(options);
-		return options.blankNodeReferences() && options.graphAlgebraMode() != GraphAlgebraMode.GRAPH
-				? prepareQuery(language, type, query, baseURI)
-				: wrappedCon.prepareQuery(language, type, query, baseURI, options);
+		GraphAlgebraMode mode = options.graphAlgebraMode();
+		if (!options.blankNodeReferences() || mode == GraphAlgebraMode.GRAPH) {
+			return wrappedCon.prepareQuery(language, type, query, baseURI, options);
+		}
+		if (mode == GraphAlgebraMode.AUTO && !preparationOptions.isBound()) {
+			return prepareQuery(language, type, query, baseURI);
+		}
+		// Reentrant calls may request AUTO while an explicit policy is already bound.
+		return ScopedValue.where(preparationOptions, options).call(() -> prepareQuery(language, type, query, baseURI));
 	}
 }

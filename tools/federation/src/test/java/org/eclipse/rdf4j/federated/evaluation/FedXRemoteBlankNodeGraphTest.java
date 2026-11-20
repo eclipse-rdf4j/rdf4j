@@ -20,6 +20,7 @@ import static org.mockito.ArgumentMatchers.anyBoolean;
 import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.nullable;
+import static org.mockito.Mockito.doAnswer;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
@@ -92,6 +93,8 @@ import org.eclipse.rdf4j.repository.base.RepositoryWrapper;
 import org.eclipse.rdf4j.repository.http.HTTPRepository;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
 import org.eclipse.rdf4j.repository.sparql.SPARQLRepository;
+import org.eclipse.rdf4j.rio.RDFHandler;
+import org.eclipse.rdf4j.sail.inferencer.InferencerConnection;
 import org.eclipse.rdf4j.sail.memory.MemoryStore;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
@@ -122,6 +125,7 @@ class FedXRemoteBlankNodeGraphTest {
 	private boolean blockCapture;
 	private boolean failCapture;
 	private boolean failContextRead;
+	private boolean rejectStatementTransfer;
 	private final AtomicInteger closedContextRows = new AtomicInteger();
 	private boolean expireCapture;
 	private final AtomicLong remainingTime = new AtomicLong(Long.MAX_VALUE);
@@ -142,6 +146,38 @@ class FedXRemoteBlankNodeGraphTest {
 	void unboundGraphsPreserveBlankNodeNamesAcrossMembers() throws Exception {
 		initialize("sparql");
 		assertBlankGraphRows(query("SELECT ?g ?s ?o WHERE { GRAPH ?g { ?s <urn:p> ?o } }"), 1);
+	}
+
+	@Test
+	void rdf4jProtocolCatalogRespectsTheInferenceSetting() throws Exception {
+		rejectStatementTransfer = true;
+		initialize("http");
+		IRI inferred = VF.createIRI("urn:inferred");
+		BNode inferredBlank = VF.createBNode("http-inferred-graph");
+		try (var left = first.getConnection(); var right = second.getConnection()) {
+			left.clear(GRAPH);
+			right.clear(VF.createBNode("http-second-graph"));
+			left.begin();
+			((InferencerConnection) left.getSailConnection()).addInferredStatement(A, P, B, inferred, inferredBlank);
+			left.commit();
+		}
+		try (var connection = federation.getConnection()) {
+			for (boolean includeInferred : new boolean[] { false, true }) {
+				var query = connection.prepareTupleQuery("SELECT ?g WHERE { GRAPH ?g {} }");
+				query.setIncludeInferred(includeInferred);
+				try (var rows = query.evaluate()) {
+					var graphs = QueryResults.asList(rows).stream().map(row -> row.getValue("g")).toList();
+					assertThat(graphs.stream().filter(IRI.class::isInstance))
+							.containsExactlyInAnyOrderElementsOf(
+									includeInferred ? List.of(inferred, SHARED) : List.of(SHARED));
+					assertThat(graphs.stream().filter(BNode.class::isInstance).count())
+							.isEqualTo(includeInferred ? 1L : 0L);
+				}
+				var selected = connection.prepareBooleanQuery("ASK { GRAPH <urn:inferred> {} }");
+				selected.setIncludeInferred(includeInferred);
+				assertThat(selected.evaluate()).isEqualTo(includeInferred);
+			}
+		}
 	}
 
 	@ParameterizedTest
@@ -861,6 +897,7 @@ class FedXRemoteBlankNodeGraphTest {
 					try (RepositoryConnection connection = data.getConnection()) {
 						var query = connection.prepareBooleanQuery(invocation.<String>getArgument(1));
 						configure(query, invocation.getArgument(3), (Binding[]) invocation.getRawArguments()[6]);
+						query.setIncludeInferred(invocation.getArgument(4));
 						return query.evaluate();
 					}
 				});
@@ -881,6 +918,14 @@ class FedXRemoteBlankNodeGraphTest {
 				}
 				return new IteratingTupleQueryResult(List.of("contextID"), result);
 			});
+			doAnswer(invocation -> {
+				if (rejectStatementTransfer) {
+					throw new AssertionError("Catalog membership must use a bounded existence query");
+				}
+				return null;
+			}).when(rdf4j)
+					.getStatements(nullable(Resource.class), nullable(IRI.class), nullable(Value.class), anyBoolean(),
+							any(RDFHandler.class), any(Resource[].class));
 			when(manager.createRDF4JProtocolSession(anyString())).thenReturn(rdf4j);
 			HTTPRepository remote = new HTTPRepository("http://example.org/rdf4j", endpoint);
 			remote.setHttpClientSessionManager(manager);

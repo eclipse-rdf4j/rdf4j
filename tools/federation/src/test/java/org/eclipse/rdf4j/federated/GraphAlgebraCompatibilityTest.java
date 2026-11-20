@@ -41,6 +41,7 @@ import org.junit.jupiter.api.parallel.ResourceLock;
 import org.junit.jupiter.api.parallel.Resources;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.EnumSource;
+import org.junit.jupiter.params.provider.ValueSource;
 
 /** Probes the local parse boundaries used by the federation engine. */
 @ResourceLock(Resources.SYSTEM_PROPERTIES)
@@ -85,6 +86,35 @@ class GraphAlgebraCompatibilityTest {
 		}
 		if (second != null) {
 			second.shutDown();
+		}
+	}
+
+	@ParameterizedTest
+	@ValueSource(strings = {
+			"{ SELECT ?s WHERE { ?s <urn:compat:payload> ?g } }",
+			"{ SELECT ?s WHERE { { SELECT ?s ?g WHERE { ?s <urn:compat:payload> ?g } } } }",
+			"{ SELECT ?s WHERE { ?s <urn:compat:payload> ?v FILTER EXISTS { ?s <urn:compat:payload> ?g } } }",
+			"{ SELECT ?s WHERE { ?s <urn:compat:payload> ?g VALUES ?g { <urn:compat:object> } } }"
+	})
+	void legacySubqueryDoesNotCaptureItsLocalGraphVariable(String subquery) {
+		IRI predicate = VF.createIRI("urn:compat:payload");
+		IRI object = VF.createIRI("urn:compat:object");
+		IRI firstSubject = VF.createIRI("urn:compat:firstSubject");
+		IRI secondSubject = VF.createIRI("urn:compat:secondSubject");
+		try (var connection = first.getConnection()) {
+			connection.add(firstSubject, predicate, object, FIRST_GRAPH);
+		}
+		try (var connection = second.getConnection()) {
+			connection.add(secondSubject, predicate, object, SECOND_GRAPH);
+		}
+
+		try (var connection = federation.getConnection()) {
+			connection.setQueryParseOptions(QueryParseOptions.DEFAULT.withGraphAlgebraMode(GraphAlgebraMode.LEGACY));
+			var query = connection.prepareTupleQuery("SELECT ?s WHERE { GRAPH ?g { " + subquery + " } }");
+			try (var rows = query.evaluate()) {
+				assertThat(QueryResults.asList(rows)).extracting(row -> row.getValue("s"))
+						.containsExactlyInAnyOrder(firstSubject, secondSubject);
+			}
 		}
 	}
 

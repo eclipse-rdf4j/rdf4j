@@ -25,6 +25,7 @@ import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.function.Supplier;
 
 import org.eclipse.rdf4j.common.transaction.IsolationLevel;
 import org.eclipse.rdf4j.common.transaction.TransactionSetting;
@@ -47,6 +48,7 @@ import org.eclipse.rdf4j.query.GraphQueryResult;
 import org.eclipse.rdf4j.query.Query;
 import org.eclipse.rdf4j.query.QueryLanguage;
 import org.eclipse.rdf4j.query.QueryParseOptions;
+import org.eclipse.rdf4j.query.QueryParseOptions.GraphAlgebraMode;
 import org.eclipse.rdf4j.query.TupleQuery;
 import org.eclipse.rdf4j.query.TupleQueryResult;
 import org.eclipse.rdf4j.query.Update;
@@ -97,6 +99,9 @@ class Transaction implements AutoCloseable {
 
 	private final RepositoryConnection txnConnection;
 
+	// Captured and used on the transaction executor.
+	private QueryParseOptions preparationOptions;
+
 	/** The value factory of this transaction's repository, which says which blank nodes it stores. */
 	ValueFactory getValueFactory() {
 		return txnConnection.getValueFactory();
@@ -142,13 +147,23 @@ class Transaction implements AutoCloseable {
 		return id;
 	}
 
-	/** Merges endpoint parsing policy on the connection's dedicated transaction thread, preserving AUTO semantics. */
+	/** Applies endpoint syntax and captures the options for SPARQL preparation on the transaction executor. */
 	void setQueryParseOptions(QueryParseOptions options)
 			throws InterruptedException, ExecutionException {
 		getFromFuture(submit(() -> {
-			RepositoryInterceptor.applyQueryParseOptions(txnConnection, options);
+			QueryParseOptions syntax = RepositoryInterceptor.resolveQueryParseOptions(txnConnection,
+					options.withGraphAlgebraMode(GraphAlgebraMode.AUTO));
+			QueryParseOptions capturedOptions = options.graphAlgebraMode() == GraphAlgebraMode.AUTO ? syntax
+					: RepositoryInterceptor.resolveQueryParseOptions(txnConnection, options);
+			txnConnection.setQueryParseOptions(syntax);
+			preparationOptions = capturedOptions;
 			return true;
 		}));
+	}
+
+	private <T> T withPreparationOptions(Supplier<T> operation) {
+		return preparationOptions == null ? operation.get()
+				: RepositoryInterceptor.withQueryParseOptions(txnConnection, preparationOptions, operation);
 	}
 
 	/**
@@ -218,7 +233,8 @@ class Transaction implements AutoCloseable {
 	 */
 	Query prepareQuery(QueryLanguage queryLanguage, String query, String baseURI)
 			throws InterruptedException, ExecutionException {
-		Future<Query> result = submit(() -> txnConnection.prepareQuery(queryLanguage, query, baseURI));
+		Future<Query> result = submit(
+				() -> withPreparationOptions(() -> txnConnection.prepareQuery(queryLanguage, query, baseURI)));
 		return getFromFuture(result);
 	}
 
@@ -438,7 +454,8 @@ class Transaction implements AutoCloseable {
 	void executeUpdate(QueryLanguage queryLn, String sparqlUpdateString, String baseURI, boolean includeInferred,
 			Dataset dataset, Map<String, Value> bindings) throws InterruptedException, ExecutionException {
 		Future<Boolean> result = submit(() -> {
-			Update update = txnConnection.prepareUpdate(queryLn, sparqlUpdateString, baseURI);
+			Update update = withPreparationOptions(
+					() -> txnConnection.prepareUpdate(queryLn, sparqlUpdateString, baseURI));
 			update.setIncludeInferred(includeInferred);
 			if (dataset != null) {
 				update.setDataset(dataset);

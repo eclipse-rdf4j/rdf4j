@@ -12,18 +12,33 @@
 package org.eclipse.rdf4j.repository.sail;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.isNull;
 import static org.mockito.Mockito.CALLS_REAL_METHODS;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
+import java.util.List;
+import java.util.Optional;
+import java.util.function.Consumer;
+
+import org.eclipse.rdf4j.query.Query;
 import org.eclipse.rdf4j.query.QueryLanguage;
 import org.eclipse.rdf4j.query.QueryParseOptions;
 import org.eclipse.rdf4j.query.QueryParseOptions.GraphAlgebraMode;
 import org.eclipse.rdf4j.query.algebra.Graph;
 import org.eclipse.rdf4j.query.algebra.Modify;
+import org.eclipse.rdf4j.query.algebra.SingletonSet;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.algebra.helpers.AbstractQueryModelVisitor;
+import org.eclipse.rdf4j.query.parser.ParsedQuery;
+import org.eclipse.rdf4j.query.parser.ParsedTupleQuery;
+import org.eclipse.rdf4j.query.parser.ParsedUpdate;
+import org.eclipse.rdf4j.query.parser.QueryParser;
+import org.eclipse.rdf4j.query.parser.QueryParserFactory;
+import org.eclipse.rdf4j.query.parser.QueryParserRegistry;
 import org.eclipse.rdf4j.query.parser.QueryParserUtil;
 import org.eclipse.rdf4j.repository.base.RepositoryConnectionWrapper;
 import org.eclipse.rdf4j.sail.SailConnection;
@@ -34,6 +49,117 @@ import org.junit.jupiter.api.parallel.Resources;
 
 @ResourceLock(Resources.SYSTEM_PROPERTIES)
 class GraphAlgebraCompatibilityTest {
+
+	@Test
+	@ResourceLock("QueryParserRegistry")
+	void autoPreservesSyntaxOnlyParserOverridesAndCapturesTheResolvedMode() {
+		QueryLanguage language = new QueryLanguage("SYNTAX-ONLY-OVERRIDE");
+		QueryParser parser = new QueryParser() {
+			@Override
+			public ParsedQuery parseQuery(String query, String baseURI) {
+				throw new AssertionError("The options-aware overload should be used");
+			}
+
+			@Override
+			public ParsedUpdate parseUpdate(String update, String baseURI) {
+				throw new AssertionError("The options-aware overload should be used");
+			}
+
+			@Override
+			public ParsedQuery parseQuery(String query, String baseURI, QueryParseOptions options) {
+				checkSyntax(options);
+				return new ParsedTupleQuery(query, new SingletonSet());
+			}
+
+			@Override
+			public ParsedUpdate parseUpdate(String update, String baseURI, QueryParseOptions options) {
+				checkSyntax(options);
+				return new ParsedUpdate(update);
+			}
+
+			private void checkSyntax(QueryParseOptions options) {
+				if (!QueryParseOptions.DEFAULT.equals(options)) {
+					throw new UnsupportedOperationException("Unsupported syntax");
+				}
+			}
+		};
+		withParser(language, parser, false, connection -> {
+			var query = connection.prepareTupleQuery(language, "custom query", null);
+			var update = (SailUpdate) connection.prepareUpdate(language, "custom update", null);
+			assertEquals(GraphAlgebraMode.LEGACY, query.getParsedQuery().getParseOptions().graphAlgebraMode());
+			assertEquals(GraphAlgebraMode.LEGACY, update.getParsedUpdate().getParseOptions().graphAlgebraMode());
+			connection.setQueryParseOptions(QueryParseOptions.STRICT);
+			assertThrows(UnsupportedOperationException.class, () -> connection.prepareQuery(language, "query", null));
+		});
+	}
+
+	@Test
+	@ResourceLock("QueryParserRegistry")
+	void preparationRecordsThePolicyEvenIfAnOptionsAwareParserOmitsMetadata() {
+		QueryLanguage language = new QueryLanguage("PREPARED-POLICY-METADATA");
+		QueryParser parser = mock(QueryParser.class);
+		when(parser.parseQuery(any(), isNull(), any()))
+				.thenAnswer(invocation -> new ParsedTupleQuery(new SingletonSet()));
+		when(parser.parseUpdate(any(), isNull(), any())).thenAnswer(invocation -> new ParsedUpdate());
+		withParser(language, parser, true, connection -> {
+			for (QueryParseOptions requested : List.of(QueryParseOptions.DEFAULT,
+					QueryParseOptions.STRICT.withGraphAlgebraMode(GraphAlgebraMode.LEGACY),
+					QueryParseOptions.STRICT.withGraphAlgebraMode(GraphAlgebraMode.GRAPH))) {
+				connection.setQueryParseOptions(requested);
+				QueryParseOptions expected = QueryParserUtil.resolveRepositoryQueryParseOptions(language, requested,
+						true);
+				assertEquals(expected,
+						connection.prepareQuery(language, "custom query", null).getParsedQuery().getParseOptions());
+				assertEquals(expected,
+						((SailUpdate) connection.prepareUpdate(language, "custom update", null)).getParsedUpdate()
+								.getParseOptions());
+			}
+		});
+	}
+
+	private static void withParser(QueryLanguage language, QueryParser parser, boolean supportsGraph,
+			Consumer<SailRepositoryConnection> action) {
+		QueryParserFactory factory = mock(QueryParserFactory.class);
+		when(factory.getQueryLanguage()).thenReturn(language);
+		when(factory.getParser()).thenReturn(parser);
+		when(factory.supportsGraphAlgebra()).thenReturn(supportsGraph);
+		var registry = QueryParserRegistry.getInstance();
+		var previous = registry.add(factory);
+		SailConnection sail = mock(SailConnection.class, CALLS_REAL_METHODS);
+		when(sail.supportsGraphAlgebra()).thenReturn(true);
+		try (var connection = new SailRepositoryConnection(mock(SailRepository.class), sail)) {
+			action.accept(connection);
+		} finally {
+			registry.remove(factory);
+			previous.ifPresent(registry::add);
+		}
+	}
+
+	@Test
+	void autoPreservesSyntaxOnlySailOverridesThroughTransparentWrappers() {
+		var supplied = new SingletonSet();
+		var provider = new SailConnectionWrapper(mock(SailConnection.class, CALLS_REAL_METHODS)) {
+			@Override
+			public Optional<TupleExpr> prepareQuery(QueryLanguage language, Query.QueryType type, String query,
+					String baseURI, QueryParseOptions options) {
+				return QueryParseOptions.DEFAULT.equals(options) ? Optional.of(supplied) : Optional.empty();
+			}
+		};
+		for (SailConnection sail : List.of(provider, new SailConnectionWrapper(new SailConnectionWrapper(provider)))) {
+			try (var connection = new SailRepositoryConnection(mock(SailRepository.class), sail)) {
+				var tuple = connection.prepareTupleQuery(QueryLanguage.SPARQL, "SELECT * WHERE {}", null);
+				var ask = connection.prepareBooleanQuery(QueryLanguage.SPARQL, "ASK {}", null);
+				var construct = connection.prepareGraphQuery(QueryLanguage.SPARQL, "CONSTRUCT WHERE { ?s ?p ?o }",
+						null);
+				var generic = connection.prepareQuery(QueryLanguage.SPARQL, "SELECT * WHERE {}", null);
+				for (var operation : List.of(tuple, ask, construct, generic)) {
+					assertSame(supplied, operation.getParsedQuery().getTupleExpr());
+					assertEquals(GraphAlgebraMode.LEGACY,
+							operation.getParsedQuery().getParseOptions().graphAlgebraMode());
+				}
+			}
+		}
+	}
 
 	@Test
 	void jvmPolicyKeepsCapabilityGatesAndExplicitPrecedence() {

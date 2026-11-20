@@ -416,14 +416,9 @@ public class FederationEvaluationStrategy extends StrictEvaluationStrategy {
 
 		List<Endpoint> members = getMembersFromContext(stats);
 
-		// Clone the tuple expression to allow for more aggressive optimizations
+		// Prepare inherited graph contexts before source selection replaces statement patterns with FedX operators.
 		TupleExpr clone = expr.clone();
-		TupleExpr query;
-		if (clone instanceof QueryRoot) {
-			query = clone;
-		} else {
-			query = new QueryRoot(clone);
-		}
+		TupleExpr query = prepareTupleExpr(clone instanceof QueryRoot ? clone : new QueryRoot(clone));
 
 		Dataset queryDataset = FedXUtil.toRdfDataset(queryInfo.getDataset());
 		StandardQueryOptimizerPipeline.BINDING_ASSIGNER.optimize(query, queryDataset, bindings);

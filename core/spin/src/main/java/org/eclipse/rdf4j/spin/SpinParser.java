@@ -110,6 +110,7 @@ import org.eclipse.rdf4j.query.algebra.OrderElem;
 import org.eclipse.rdf4j.query.algebra.Projection;
 import org.eclipse.rdf4j.query.algebra.ProjectionElem;
 import org.eclipse.rdf4j.query.algebra.ProjectionElemList;
+import org.eclipse.rdf4j.query.algebra.QueryModelNode;
 import org.eclipse.rdf4j.query.algebra.QueryRoot;
 import org.eclipse.rdf4j.query.algebra.Reduced;
 import org.eclipse.rdf4j.query.algebra.Regex;
@@ -137,6 +138,7 @@ import org.eclipse.rdf4j.query.algebra.evaluation.function.TupleFunction;
 import org.eclipse.rdf4j.query.algebra.evaluation.function.TupleFunctionRegistry;
 import org.eclipse.rdf4j.query.algebra.evaluation.util.TripleSources;
 import org.eclipse.rdf4j.query.algebra.helpers.AbstractQueryModelVisitor;
+import org.eclipse.rdf4j.query.algebra.helpers.LegacyGraphContext;
 import org.eclipse.rdf4j.query.algebra.helpers.TupleExprs;
 import org.eclipse.rdf4j.query.impl.SimpleDataset;
 import org.eclipse.rdf4j.query.parser.ParsedBooleanQuery;
@@ -708,7 +710,7 @@ public class SpinParser {
 
 	public ValueExpr parseExpression(Value expr, TripleSource store) throws RDF4JException {
 		SpinVisitor visitor = new SpinVisitor(store, expr);
-		return visitor.visitExpression(expr);
+		return visitor.exposeLegacyGraphContext(visitor.visitExpression(expr));
 	}
 
 	/**
@@ -789,6 +791,7 @@ public class SpinParser {
 		private final Map<Value, String> constantNames = new HashMap<>();
 		private final Set<String> occupiedNames = new HashSet<>();
 		private long nextConstant;
+		private long nextGraphParameter;
 
 		SpinVisitor(TripleSource store, Value root) throws RDF4JException {
 			this.store = store;
@@ -915,11 +918,18 @@ public class SpinParser {
 		}
 
 		public TupleExpr getTupleExpr() {
-			return tupleRoot;
+			return exposeLegacyGraphContext(tupleRoot);
 		}
 
 		public UpdateExpr getUpdateExpr() {
-			return updateRoot;
+			return exposeLegacyGraphContext(updateRoot);
+		}
+
+		private <T extends QueryModelNode> T exposeLegacyGraphContext(T expression) {
+			if (expression != null && nextGraphParameter > 0) {
+				LegacyGraphContext.expose(expression);
+			}
+			return expression;
 		}
 
 		public void visitConstruct(Resource construct) throws RDF4JException {
@@ -956,12 +966,24 @@ public class SpinParser {
 						String.format("Value of %s is not a resource", SP.RESULT_VARIABLES_PROPERTY));
 			}
 
+			List<Resource> resultVariables = Iterations
+					.asList(TripleSources.listResources((Resource) resultVars, store));
+			Var callerGraph = subquery && parseOptions.graphAlgebraMode() == GraphAlgebraMode.LEGACY ? namedGraph
+					: null;
+			if (callerGraph != null && !callerGraph.hasValue() && !projects(resultVariables, callerGraph.getName())) {
+				// The unprojected variable is local to the SELECT. Inherit the active graph in a separate slot.
+				namedGraph = inheritedGraphParameter(callerGraph);
+			}
+
 			Map<String, ProjectionElem> oldProjElems = projElems;
 			projElems = new LinkedHashMap<>();
-			Projection projection = visitResultVariables((Resource) resultVars, oldProjElems);
+			Projection projection = visitResultVariables(resultVariables, oldProjElems);
 			projection.setSubquery(subquery);
-			if (subquery && parseOptions.graphAlgebraMode() == GraphAlgebraMode.LEGACY && namedGraph != null) {
-				projection.setProjectionContext(namedGraph.clone());
+			if (callerGraph != null) {
+				projection.setProjectionContext(callerGraph.clone());
+				if (namedGraph != callerGraph) {
+					projection.setInheritedGraphParameter(namedGraph.getName());
+				}
 			}
 			TupleExpr whereExpr = visitWhere(select);
 			projection.setArg(whereExpr);
@@ -1096,15 +1118,31 @@ public class SpinParser {
 			return createProjectionElem(r, null, null);
 		}
 
-		private Projection visitResultVariables(Resource resultVars, Map<String, ProjectionElem> previousProjElems)
+		private boolean projects(List<Resource> resultVariables, String name) throws RDF4JException {
+			for (Resource variable : resultVariables) {
+				if (name.equals(getVarName(variable))) {
+					return true;
+				}
+			}
+			return false;
+		}
+
+		private Var inheritedGraphParameter(Var callerGraph) {
+			String name;
+			do {
+				name = "_spin_graph_" + nextGraphParameter++;
+			} while (!occupiedNames.add(name));
+			Var parameter = Var.of(name, true);
+			parameter.setGraphContextDepth(Math.incrementExact(callerGraph.getGraphContextDepth()));
+			return parameter;
+		}
+
+		private Projection visitResultVariables(List<Resource> resultVars,
+				Map<String, ProjectionElem> previousProjElems)
 				throws RDF4JException {
 			ProjectionElemList projElemList = new ProjectionElemList();
-			CloseableIteration<Resource> iter = TripleSources.listResources(resultVars,
-					store);
-			while (iter.hasNext()) {
-				Resource r = iter.next();
-				ProjectionElem projElem = visitResultVariable(r, previousProjElems);
-				projElemList.addElement(projElem);
+			for (Resource variable : resultVars) {
+				projElemList.addElement(visitResultVariable(variable, previousProjElems));
 			}
 
 			Projection proj = new Projection();
@@ -1508,10 +1546,15 @@ public class SpinParser {
 				} else if (types.contains(SP.SUB_QUERY_CLASS)) {
 					Value q = TripleSources.singleValue(r, SP.QUERY_PROPERTY, store);
 					TupleExpr oldRoot = tupleRoot;
-					visitSelect((Resource) q, true);
-					tupleNode = tupleRoot;
-					((VariableScopeChange) tupleNode).setVariableScopeChange(true);
-					tupleRoot = oldRoot;
+					Var oldGraph = namedGraph;
+					try {
+						visitSelect((Resource) q, true);
+						tupleNode = tupleRoot;
+						((VariableScopeChange) tupleNode).setVariableScopeChange(true);
+					} finally {
+						tupleRoot = oldRoot;
+						namedGraph = oldGraph;
+					}
 				} else if (types.contains(SP.VALUES_CLASS)) {
 					BindingSetAssignment bsa = new BindingSetAssignment();
 					Set<String> varNames = new LinkedHashSet<>();

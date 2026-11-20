@@ -99,6 +99,17 @@ import org.eclipse.rdf4j.rio.UnsupportedRDFormatException;
 public interface RepositoryConnection extends AutoCloseable {
 
 	/**
+	 * Indicates whether this connection sends prepared queries and updates to another evaluator as query text. A caller
+	 * configuring local query algebra can leave that policy unset for a text transport. Syntax policies may still apply
+	 * independently.
+	 *
+	 * @return true if the connection does not interpret the query algebra used for evaluation
+	 */
+	default boolean isQueryTextTransport() {
+		return false;
+	}
+
+	/**
 	 * Requested parsing policy for subsequently prepared queries and updates, independent of Rio parser settings. AUTO
 	 * remains unresolved here; the local evaluator selects the effective algebra mode during preparation.
 	 *

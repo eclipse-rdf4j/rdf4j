@@ -18,10 +18,10 @@ import java.util.concurrent.TimeUnit;
 import org.eclipse.rdf4j.query.MalformedQueryException;
 import org.eclipse.rdf4j.query.QueryLanguage;
 import org.eclipse.rdf4j.query.QueryParseOptions;
-import org.eclipse.rdf4j.query.QueryParseOptions.GraphAlgebraMode;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.parser.QueryParserFactory;
 import org.eclipse.rdf4j.query.parser.QueryParserRegistry;
+import org.eclipse.rdf4j.query.parser.QueryParserUtil;
 import org.eclipse.rdf4j.sail.SailConnection;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -58,10 +58,8 @@ public class SparqlQueryParserCache {
 		QueryParserFactory factory = QueryParserRegistry.getInstance()
 				.get(QueryLanguage.SPARQL)
 				.orElseThrow(() -> new IllegalStateException("Query parser factory for SPARQL is missing!"));
-		GraphAlgebraMode fallback = evaluationSupportsGraph && factory.supportsGraphAlgebra()
-				? GraphAlgebraMode.GRAPH
-				: GraphAlgebraMode.LEGACY;
-		CacheKey key = new CacheKey(query, options.resolveGraphAlgebraMode(fallback), factory);
+		CacheKey key = new CacheKey(query, QueryParserUtil.parserOptions(factory, options, evaluationSupportsGraph),
+				factory);
 		try {
 			return PARSER_QUERY_CACHE
 					.get(key,

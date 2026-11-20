@@ -305,12 +305,11 @@ public class QueryManager {
 		}
 
 		RepositoryConnection connection = getOrCreateConn();
-		boolean supportsGraph = connection instanceof SailRepositoryConnection sail
-				&& sail.getSailConnection().supportsGraphAlgebra();
-		var options = QueryParserUtil.resolveRepositoryQueryParseOptions(QueryLanguage.SPARQL,
-				connection.getQueryParseOptions(),
-				supportsGraph);
-		ParsedOperation query = QueryParserUtil.parseOperation(QueryLanguage.SPARQL, queryString, null, options);
+		var options = QueryParserUtil.preparationOptions(QueryLanguage.SPARQL, connection.getQueryParseOptions(),
+				() -> connection instanceof SailRepositoryConnection sail
+						&& sail.getSailConnection().supportsGraphAlgebra());
+		ParsedOperation query = options
+				.capture(QueryParserUtil.parseOperation(QueryLanguage.SPARQL, queryString, null, options.parser()));
 		if (!(query instanceof ParsedQuery)) {
 			throw new MalformedQueryException("Not a ParsedQuery: " + query.getClass());
 		}

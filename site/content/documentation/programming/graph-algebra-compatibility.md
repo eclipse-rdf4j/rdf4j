@@ -108,7 +108,9 @@ Compatibility includes the old representation's limitations. For example, with t
 | --- | --- | --- |
 | `GRAPH ?g {}` | Enumerates the two graphs and binds `?g`. | Produces one solution with `?g` unbound. |
 | `GRAPH <urn:missing> { BIND(1 AS ?x) }` | Produces no solution when that graph does not exist. | Can produce `?x = 1` because no statement pattern checks graph membership. |
-| A subquery within `GRAPH ?g` that does not project `?g` | Retains the outer graph selector. | Can lose the graph binding at the subquery projection. |
+| A subquery within `GRAPH ?g` that does not project `?g` | Retains the outer graph selector. | An incoming binding for `?g` restricts the named-context patterns. A graph name discovered inside the subquery can be absent from the result. |
+
+LEGACY exposes the caller's graph variable on inherited statement and path contexts, so an existing evaluator can use an incoming graph binding directly. RDF4J's current evaluator also isolates an unprojected, same-named variable used inside the subquery. A 6.1 evaluator retains its historical behavior for that case and can require, for example, the object of `?s :p ?g` to equal the graph name.
 
 The mode also applies to GRAPH patterns in an update's WHERE clause. INSERT and DELETE quad templates continue to represent their contexts on statement patterns. Consequently, an update whose WHERE uses only an empty GRAPH pattern can intentionally produce different writes in LEGACY and GRAPH.
 
@@ -117,6 +119,8 @@ LEGACY does not emulate every behavior of an older RDF4J release. Independent pa
 ## Extension and wrapper capability
 
 `QueryParserFactory.supportsGraphAlgebra()`, `SailConnection.supportsGraphAlgebra()`, and `EvaluationStrategyFactory.supportsGraphAlgebra()` default to `false`. An extension may override its declaration after auditing the entire path that consumes the algebra: parser hooks, wrappers, query optimizers, and evaluation strategies. A capable evaluator alone is insufficient when the registered parser only implements the older parsing interface.
+
+During repository `AUTO` preparation, a parser or Sail that has not opted into GRAPH receives the original syntax options. This preserves options-aware extensions that compare their argument with `QueryParseOptions.DEFAULT` or `STRICT`. The prepared operation records the resolved algebra mode. An explicitly configured connection passes its concrete mode to the preparation hooks.
 
 Known built-in connections and factories opt in explicitly. An unknown subclass or an injected optimizer pipeline does not automatically inherit support merely because its superclass supports Graph. Transparent wrappers forward support only when their own implementation has been audited. A wrapper must not bypass an unknown delegate to find a capable store underneath it.
 
@@ -138,7 +142,7 @@ This requirement applies to the same store's mutable configuration. Starting a d
 
 ## Server, Workbench, and remote repositories
 
-RDF4J Server merges endpoint policy with the connection's requested policy before preparation. Endpoint blank node syntax is applied independently of algebra. The graph-mode precedence is:
+RDF4J Server merges endpoint policy with the connection's requested policy when preparing queries or updates locally. Requests for repository metadata use only the endpoint syntax policy. For HTTPRepository and SPARQLRepository, the remote endpoint selects the algebra. Endpoint blank node syntax is applied independently of algebra. The graph-mode precedence is:
 
 | Endpoint mode | Connection mode | Mode passed to preparation |
 | --- | --- | --- |

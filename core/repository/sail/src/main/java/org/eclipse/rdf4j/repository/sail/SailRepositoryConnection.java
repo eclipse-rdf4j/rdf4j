@@ -42,8 +42,6 @@ import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.query.MalformedQueryException;
 import org.eclipse.rdf4j.query.Query;
 import org.eclipse.rdf4j.query.QueryLanguage;
-import org.eclipse.rdf4j.query.QueryParseOptions;
-import org.eclipse.rdf4j.query.QueryParseOptions.GraphAlgebraMode;
 import org.eclipse.rdf4j.query.Update;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.algebra.evaluation.federation.FederatedServiceResolver;
@@ -54,6 +52,7 @@ import org.eclipse.rdf4j.query.parser.ParsedQuery;
 import org.eclipse.rdf4j.query.parser.ParsedTupleQuery;
 import org.eclipse.rdf4j.query.parser.ParsedUpdate;
 import org.eclipse.rdf4j.query.parser.QueryParserUtil;
+import org.eclipse.rdf4j.query.parser.QueryParserUtil.PreparationOptions;
 import org.eclipse.rdf4j.repository.RepositoryConnection;
 import org.eclipse.rdf4j.repository.RepositoryException;
 import org.eclipse.rdf4j.repository.RepositoryReadOnlyException;
@@ -326,23 +325,20 @@ public class SailRepositoryConnection extends AbstractRepositoryConnection imple
 		return true;
 	}
 
-	private QueryParseOptions resolveQueryParseOptions(QueryLanguage language) {
-		QueryParseOptions requested = getQueryParseOptions();
-		if (requested.graphAlgebraMode() != GraphAlgebraMode.AUTO) {
-			return requested;
-		}
-		return QueryParserUtil.resolveRepositoryQueryParseOptions(language, requested,
-				sailConnection.supportsGraphAlgebra());
+	private PreparationOptions resolveQueryParseOptions(QueryLanguage language) {
+		return QueryParserUtil.preparationOptions(language, getQueryParseOptions(),
+				sailConnection::supportsGraphAlgebra);
 	}
 
 	@Override
 	public SailQuery prepareQuery(QueryLanguage ql, String queryString, String baseURI) throws MalformedQueryException {
-		QueryParseOptions options = resolveQueryParseOptions(ql);
-		ParsedQuery parsedQuery = QueryParserUtil.parseQuery(ql, queryString, baseURI, options);
+		PreparationOptions options = resolveQueryParseOptions(ql);
+		ParsedQuery parsedQuery = options
+				.capture(QueryParserUtil.parseQuery(ql, queryString, baseURI, options.parser()));
 
 		if (parsedQuery instanceof ParsedTupleQuery) {
 			Optional<TupleExpr> sailTupleExpr = sailConnection.prepareQuery(ql, Query.QueryType.TUPLE, queryString,
-					baseURI, options);
+					baseURI, options.sail());
 			if (sailTupleExpr.isPresent()) {
 				var replacement = new ParsedTupleQuery(queryString, sailTupleExpr.get());
 				replacement.setParseOptions(parsedQuery.getParseOptions());
@@ -353,7 +349,7 @@ public class SailRepositoryConnection extends AbstractRepositoryConnection imple
 			return new SailTupleQuery((ParsedTupleQuery) parsedQuery, this);
 		} else if (parsedQuery instanceof ParsedGraphQuery) {
 			Optional<TupleExpr> sailTupleExpr = sailConnection.prepareQuery(ql, Query.QueryType.GRAPH, queryString,
-					baseURI, options);
+					baseURI, options.sail());
 			if (sailTupleExpr.isPresent()) {
 				var replacement = new ParsedGraphQuery(queryString, sailTupleExpr.get());
 				replacement.setParseOptions(parsedQuery.getParseOptions());
@@ -364,7 +360,7 @@ public class SailRepositoryConnection extends AbstractRepositoryConnection imple
 			return new SailGraphQuery((ParsedGraphQuery) parsedQuery, this);
 		} else if (parsedQuery instanceof ParsedBooleanQuery) {
 			Optional<TupleExpr> sailTupleExpr = sailConnection.prepareQuery(ql, Query.QueryType.BOOLEAN, queryString,
-					baseURI, options);
+					baseURI, options.sail());
 			if (sailTupleExpr.isPresent()) {
 				var replacement = new ParsedBooleanQuery(queryString, sailTupleExpr.get());
 				replacement.setParseOptions(parsedQuery.getParseOptions());
@@ -381,10 +377,11 @@ public class SailRepositoryConnection extends AbstractRepositoryConnection imple
 	@Override
 	public SailTupleQuery prepareTupleQuery(QueryLanguage ql, String queryString, String baseURI)
 			throws MalformedQueryException {
-		QueryParseOptions options = resolveQueryParseOptions(ql);
-		ParsedTupleQuery parsed = QueryParserUtil.parseTupleQuery(ql, queryString, baseURI, options);
+		PreparationOptions options = resolveQueryParseOptions(ql);
+		ParsedTupleQuery parsed = options
+				.capture(QueryParserUtil.parseTupleQuery(ql, queryString, baseURI, options.parser()));
 		Optional<TupleExpr> supplied = sailConnection.prepareQuery(ql, Query.QueryType.TUPLE, queryString, baseURI,
-				options);
+				options.sail());
 		if (supplied.isPresent()) {
 			ParsedTupleQuery replacement = new ParsedTupleQuery(queryString, supplied.get());
 			replacement.setDataset(parsed.getDataset());
@@ -398,10 +395,11 @@ public class SailRepositoryConnection extends AbstractRepositoryConnection imple
 	@Override
 	public SailGraphQuery prepareGraphQuery(QueryLanguage ql, String queryString, String baseURI)
 			throws MalformedQueryException {
-		QueryParseOptions options = resolveQueryParseOptions(ql);
-		ParsedGraphQuery parsed = QueryParserUtil.parseGraphQuery(ql, queryString, baseURI, options);
+		PreparationOptions options = resolveQueryParseOptions(ql);
+		ParsedGraphQuery parsed = options
+				.capture(QueryParserUtil.parseGraphQuery(ql, queryString, baseURI, options.parser()));
 		Optional<TupleExpr> supplied = sailConnection.prepareQuery(ql, Query.QueryType.GRAPH, queryString, baseURI,
-				options);
+				options.sail());
 		if (supplied.isPresent()) {
 			ParsedGraphQuery replacement = new ParsedGraphQuery(queryString, supplied.get());
 			replacement.setDataset(parsed.getDataset());
@@ -415,10 +413,11 @@ public class SailRepositoryConnection extends AbstractRepositoryConnection imple
 	@Override
 	public SailBooleanQuery prepareBooleanQuery(QueryLanguage ql, String queryString, String baseURI)
 			throws MalformedQueryException {
-		QueryParseOptions options = resolveQueryParseOptions(ql);
-		ParsedBooleanQuery parsed = QueryParserUtil.parseBooleanQuery(ql, queryString, baseURI, options);
+		PreparationOptions options = resolveQueryParseOptions(ql);
+		ParsedBooleanQuery parsed = options
+				.capture(QueryParserUtil.parseBooleanQuery(ql, queryString, baseURI, options.parser()));
 		Optional<TupleExpr> supplied = sailConnection.prepareQuery(ql, Query.QueryType.BOOLEAN, queryString, baseURI,
-				options);
+				options.sail());
 		if (supplied.isPresent()) {
 			ParsedBooleanQuery replacement = new ParsedBooleanQuery(queryString, supplied.get());
 			replacement.setDataset(parsed.getDataset());
@@ -432,8 +431,8 @@ public class SailRepositoryConnection extends AbstractRepositoryConnection imple
 	@Override
 	public Update prepareUpdate(QueryLanguage ql, String update, String baseURI)
 			throws RepositoryException, MalformedQueryException {
-		QueryParseOptions options = resolveQueryParseOptions(ql);
-		ParsedUpdate parsedUpdate = QueryParserUtil.parseUpdate(ql, update, baseURI, options);
+		PreparationOptions options = resolveQueryParseOptions(ql);
+		ParsedUpdate parsedUpdate = options.capture(QueryParserUtil.parseUpdate(ql, update, baseURI, options.parser()));
 		return new SailUpdate(parsedUpdate, this);
 	}
 

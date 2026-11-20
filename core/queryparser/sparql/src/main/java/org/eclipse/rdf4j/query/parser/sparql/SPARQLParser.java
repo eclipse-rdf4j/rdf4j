@@ -172,6 +172,7 @@ public class SPARQLParser implements QueryParser {
 					UpdateExpr updateExpr = (UpdateExpr) updateNode.jjtAccept(updateExprBuilder, null);
 					// window functions are only meaningful in SELECT expressions (of nested subqueries here)
 					TupleExprBuilder.rejectStrayWindowFunctions(updateExpr);
+					updateExprBuilder.exposeLegacyGraphContext(updateExpr);
 
 					// add individual update expression to ParsedUpdate sequence
 					// container
@@ -304,7 +305,9 @@ public class SPARQLParser implements QueryParser {
 	private TupleExpr buildQueryModel(Node qc, QueryParseOptions options) throws MalformedQueryException {
 		TupleExprBuilder tupleExprBuilder = new TupleExprBuilder(SimpleValueFactory.getInstance(), options);
 		try {
-			return (TupleExpr) qc.jjtAccept(tupleExprBuilder, null);
+			TupleExpr result = (TupleExpr) qc.jjtAccept(tupleExprBuilder, null);
+			tupleExprBuilder.exposeLegacyGraphContext(result);
+			return result;
 		} catch (VisitorException e) {
 			throw new MalformedQueryException(e.getMessage(), e);
 		}

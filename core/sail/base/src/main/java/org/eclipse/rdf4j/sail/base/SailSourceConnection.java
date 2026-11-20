@@ -685,6 +685,11 @@ public abstract class SailSourceConnection extends AbstractNotifyingSailConnecti
 		return readIteration(IncludeInferred.explicitOnly, SailDataset::getContextIDs);
 	}
 
+	/** Read a distinct context catalog for stores that expose separate explicit and inferred catalogs. */
+	protected final CloseableIteration<? extends Resource> getContextIDsFromBothDatasets() {
+		return readIteration(IncludeInferred.all, SailDataset::getContextIDs);
+	}
+
 	@Override
 	protected CloseableIteration<? extends Statement> getStatementsInternal(Resource subj, IRI pred,
 			Value obj, boolean includeInferred, Resource... contexts) throws SailException {

@@ -133,6 +133,7 @@ import org.eclipse.rdf4j.query.algebra.WindowElem;
 import org.eclipse.rdf4j.query.algebra.WindowFunctionCall;
 import org.eclipse.rdf4j.query.algebra.ZeroLengthPath;
 import org.eclipse.rdf4j.query.algebra.helpers.AbstractQueryModelVisitor;
+import org.eclipse.rdf4j.query.algebra.helpers.LegacyGraphContext;
 import org.eclipse.rdf4j.query.algebra.helpers.collectors.StatementPatternCollector;
 import org.eclipse.rdf4j.query.algebra.helpers.collectors.VarNameCollector;
 import org.eclipse.rdf4j.query.impl.ListBindingSet;
@@ -326,6 +327,7 @@ public class TupleExprBuilder extends AbstractASTVisitor {
 
 	protected ValueFactory valueFactory;
 	private final boolean useGraphAlgebra;
+	private boolean hasHiddenLegacyGraphContext;
 	private Map<Value, Var> constantVars = new HashMap<>();
 	private final Set<String> occupiedVarNames = new HashSet<>();
 	private long nextConstantVar;
@@ -771,6 +773,13 @@ public class TupleExprBuilder extends AbstractASTVisitor {
 		graphPattern.enterSubquery();
 		privateContext.setGraphContextDepth(graphPattern.getContextVar().getGraphContextDepth());
 		graphPattern.setContextVar(privateContext);
+		hasHiddenLegacyGraphContext = true;
+	}
+
+	void exposeLegacyGraphContext(QueryModelNode expression) {
+		if (hasHiddenLegacyGraphContext) {
+			LegacyGraphContext.expose(expression);
+		}
 	}
 
 	private TupleExpr processHavingClause(ASTHavingClause havingNode, TupleExpr tupleExpr, Group group)

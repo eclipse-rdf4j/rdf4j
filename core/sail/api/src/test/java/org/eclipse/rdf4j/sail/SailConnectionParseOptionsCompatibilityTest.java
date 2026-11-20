@@ -22,6 +22,7 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.function.Function;
 
 import org.eclipse.rdf4j.query.Query;
 import org.eclipse.rdf4j.query.QueryLanguage;
@@ -70,9 +71,17 @@ class SailConnectionParseOptionsCompatibilityTest {
 
 	@Test
 	void sailConnectionWrapperForwardsTheConfiguredPolicy() {
+		assertForwardedPolicy(false);
+		assertForwardedPolicy(true);
+	}
+
+	private void assertForwardedPolicy(boolean capable) {
 		List<QueryParseOptions> forwarded = new ArrayList<>();
 		SailConnection delegate = (SailConnection) Proxy.newProxyInstance(SailConnection.class.getClassLoader(),
 				new Class<?>[] { SailConnection.class }, (proxy, method, args) -> {
+					if (method.getName().equals("supportsGraphAlgebra")) {
+						return capable;
+					}
 					if (method.getName().equals("prepareQuery") && method.getParameterCount() == 5) {
 						forwarded.add((QueryParseOptions) args[4]);
 						return LEGACY_RESULT;
@@ -85,8 +94,9 @@ class SailConnectionParseOptionsCompatibilityTest {
 				.orElseThrow());
 		assertSame(LEGACY_RESULT.get(), wrapper.prepareQuery(LANGUAGE, TYPE, QUERY, null, QueryParseOptions.DEFAULT)
 				.orElseThrow());
-		assertEquals(List.of(QueryParseOptions.STRICT,
-				QueryParseOptions.DEFAULT.withGraphAlgebraMode(GraphAlgebraMode.LEGACY)), forwarded);
+		QueryParseOptions expected = capable ? QueryParseOptions.DEFAULT.withGraphAlgebraMode(GraphAlgebraMode.LEGACY)
+				: QueryParseOptions.DEFAULT;
+		assertEquals(List.of(QueryParseOptions.STRICT, expected), forwarded);
 	}
 
 	@Test
@@ -123,6 +133,60 @@ class SailConnectionParseOptionsCompatibilityTest {
 		assertFalse(nested.prepareQuery(LANGUAGE, TYPE, QUERY, null,
 				QueryParseOptions.DEFAULT.withGraphAlgebraMode(GraphAlgebraMode.GRAPH)).isPresent());
 		assertEquals(3, legacyCalls.get(), "GRAPH must never invoke a legacy-only override");
+	}
+
+	@Test
+	void explicitLegacyReachesOptionsAwareProviderThroughDeepWrappers() {
+		QueryParseOptions legacy = QueryParseOptions.DEFAULT.withGraphAlgebraMode(GraphAlgebraMode.LEGACY);
+		SailConnection delegate = optionsAwareConnection(
+				options -> options == legacy ? LEGACY_RESULT : Optional.empty());
+		SailConnectionWrapper wrapper = new SailConnectionWrapper(delegate);
+		SailConnectionWrapper deep = new SailConnectionWrapper(new SailConnectionWrapper(wrapper));
+
+		assertEquals(LEGACY_RESULT, delegate.prepareQuery(LANGUAGE, TYPE, QUERY, null, legacy));
+		assertEquals(LEGACY_RESULT, deep.prepareQuery(LANGUAGE, TYPE, QUERY, null, legacy));
+		assertEquals(LEGACY_RESULT, wrapper.prepareQuery(LANGUAGE, TYPE, QUERY, null, legacy));
+		assertEquals(Optional.empty(), deep.prepareQuery(LANGUAGE, TYPE, QUERY, null, QueryParseOptions.DEFAULT));
+	}
+
+	@Test
+	void reentrantPreparationUsesItsOwnOptions() {
+		QueryParseOptions legacy = QueryParseOptions.DEFAULT.withGraphAlgebraMode(GraphAlgebraMode.LEGACY);
+		List<QueryParseOptions> forwarded = new ArrayList<>();
+		SailConnection delegate = optionsAwareConnection(options -> {
+			forwarded.add(options);
+			return LEGACY_RESULT;
+		});
+		SailConnectionWrapper otherWrapper = new SailConnectionWrapper(delegate);
+		SailConnectionWrapper wrapper = new SailConnectionWrapper(delegate) {
+			@Override
+			public Optional<TupleExpr> prepareQuery(QueryLanguage ql, Query.QueryType type, String query,
+					String baseURI) {
+				if (query.equals(QUERY)) {
+					prepareQuery(ql, type, QUERY + "\n", baseURI, QueryParseOptions.DEFAULT);
+					otherWrapper.prepareQuery(ql, type, query, baseURI);
+				}
+				return super.prepareQuery(ql, type, query + " ", baseURI);
+			}
+		};
+
+		assertEquals(LEGACY_RESULT, wrapper.prepareQuery(LANGUAGE, TYPE, QUERY, null, legacy));
+		assertEquals(LEGACY_RESULT, wrapper.prepareQuery(LANGUAGE, TYPE, QUERY + "\n", null));
+		assertEquals(List.of(QueryParseOptions.DEFAULT, QueryParseOptions.DEFAULT, legacy, QueryParseOptions.DEFAULT),
+				forwarded);
+	}
+
+	private static SailConnection optionsAwareConnection(Function<QueryParseOptions, Optional<TupleExpr>> prepare) {
+		return (SailConnection) Proxy.newProxyInstance(SailConnection.class.getClassLoader(),
+				new Class<?>[] { SailConnection.class }, (proxy, method, args) -> {
+					if (method.getName().equals("prepareQuery") && method.getParameterCount() == 5) {
+						return prepare.apply((QueryParseOptions) args[4]);
+					}
+					if (method.isDefault()) {
+						return InvocationHandler.invokeDefault(proxy, method, args);
+					}
+					throw new AssertionError("Unexpected delegate call: " + method);
+				});
 	}
 
 	private static SailConnection legacyConnection(AtomicInteger legacyCalls) {

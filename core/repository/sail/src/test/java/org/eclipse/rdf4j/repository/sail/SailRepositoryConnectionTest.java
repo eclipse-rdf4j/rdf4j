@@ -39,7 +39,6 @@ import org.eclipse.rdf4j.query.BooleanQuery;
 import org.eclipse.rdf4j.query.GraphQuery;
 import org.eclipse.rdf4j.query.Query;
 import org.eclipse.rdf4j.query.QueryParseOptions;
-import org.eclipse.rdf4j.query.QueryParseOptions.GraphAlgebraMode;
 import org.eclipse.rdf4j.query.TupleQuery;
 import org.eclipse.rdf4j.query.algebra.QueryRoot;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
@@ -185,7 +184,7 @@ public class SailRepositoryConnectionTest {
 		TupleExpr expr = mock(TupleExpr.class);
 		Optional<TupleExpr> response = Optional.of(expr);
 		when(sailConnection.prepareQuery(any(), eq(Query.QueryType.GRAPH), any(), any(),
-				eq(QueryParseOptions.DEFAULT.withGraphAlgebraMode(GraphAlgebraMode.LEGACY))))
+				eq(QueryParseOptions.DEFAULT)))
 						.thenReturn(response);
 		when(sailConnection.evaluate(eq(expr), any(), any(), anyBoolean())).thenReturn(new EmptyIteration<>());
 
@@ -212,7 +211,7 @@ public class SailRepositoryConnectionTest {
 		TupleExpr expr = mock(TupleExpr.class);
 		Optional<TupleExpr> response = Optional.of(expr);
 		when(sailConnection.prepareQuery(any(), eq(Query.QueryType.TUPLE), any(), any(),
-				eq(QueryParseOptions.DEFAULT.withGraphAlgebraMode(GraphAlgebraMode.LEGACY))))
+				eq(QueryParseOptions.DEFAULT)))
 						.thenReturn(response);
 		when(sailConnection.evaluate(eq(expr), any(), any(), anyBoolean())).thenReturn(new EmptyIteration<>());
 
@@ -239,7 +238,7 @@ public class SailRepositoryConnectionTest {
 		TupleExpr expr = mock(TupleExpr.class);
 		Optional<TupleExpr> response = Optional.of(expr);
 		when(sailConnection.prepareQuery(any(), eq(Query.QueryType.GRAPH), any(), any(),
-				eq(QueryParseOptions.DEFAULT.withGraphAlgebraMode(GraphAlgebraMode.LEGACY))))
+				eq(QueryParseOptions.DEFAULT)))
 						.thenReturn(response);
 		when(sailConnection.evaluate(eq(expr), any(), any(), anyBoolean())).thenReturn(new EmptyIteration<>());
 
@@ -266,7 +265,7 @@ public class SailRepositoryConnectionTest {
 		TupleExpr expr = mock(TupleExpr.class);
 		Optional<TupleExpr> response = Optional.of(expr);
 		when(sailConnection.prepareQuery(any(), eq(Query.QueryType.BOOLEAN), any(), any(),
-				eq(QueryParseOptions.DEFAULT.withGraphAlgebraMode(GraphAlgebraMode.LEGACY))))
+				eq(QueryParseOptions.DEFAULT)))
 						.thenReturn(response);
 		when(sailConnection.evaluate(eq(expr), any(), any(), anyBoolean())).thenReturn(new EmptyIteration<>());
 

@@ -14,6 +14,7 @@ package org.eclipse.rdf4j.http.server.repository;
 import static jakarta.servlet.http.HttpServletResponse.SC_NOT_FOUND;
 
 import java.util.Objects;
+import java.util.function.Supplier;
 
 import org.eclipse.rdf4j.http.protocol.Protocol;
 import org.eclipse.rdf4j.http.server.ClientHTTPException;
@@ -173,31 +174,80 @@ public class RepositoryInterceptor extends ServerInterceptor {
 	}
 
 	/**
-	 * Apply endpoint syntax policy independently of algebra policy. Endpoint AUTO preserves the connection's algebra
-	 * choice; an explicit endpoint mode overrides it. Remaining AUTO is resolved by the preparing evaluator.
+	 * Resolve the endpoint syntax policy. For local evaluation, endpoint AUTO preserves the connection's algebra
+	 * choice, and an explicit endpoint mode overrides it. For text transports, the remote evaluator owns algebra
+	 * selection.
 	 */
+	public static QueryParseOptions resolveQueryParseOptions(RepositoryConnection connection,
+			QueryParseOptions requested) {
+		GraphAlgebraMode mode = requested.graphAlgebraMode();
+		if (connection.isQueryTextTransport()) {
+			mode = GraphAlgebraMode.AUTO;
+		} else if (mode == GraphAlgebraMode.AUTO) {
+			mode = connection.getQueryParseOptions().graphAlgebraMode();
+		}
+		return requested.withGraphAlgebraMode(mode);
+	}
+
 	public static void applyQueryParseOptions(RepositoryConnection connection, QueryParseOptions requested) {
-		QueryParseOptions effective = requested.graphAlgebraMode() == GraphAlgebraMode.AUTO
-				? requested.withGraphAlgebraMode(connection.getQueryParseOptions().graphAlgebraMode())
-				: requested;
-		connection.setQueryParseOptions(effective);
+		connection.setQueryParseOptions(resolveQueryParseOptions(connection, requested));
+	}
+
+	/** Run an operation with its captured preparation policy, then restore the connection's policy. */
+	public static <T> T withQueryParseOptions(RepositoryConnection connection, QueryParseOptions options,
+			Supplier<T> operation) {
+		QueryParseOptions previous = connection.getQueryParseOptions();
+		Throwable failure = null;
+		try {
+			connection.setQueryParseOptions(options);
+			return operation.get();
+		} catch (RuntimeException | Error primary) {
+			failure = primary;
+			throw primary;
+		} finally {
+			try {
+				connection.setQueryParseOptions(previous);
+			} catch (RuntimeException | Error restorationFailure) {
+				if (failure == null) {
+					throw restorationFailure;
+				}
+				if (failure != restorationFailure) {
+					failure.addSuppressed(restorationFailure);
+				}
+			}
+		}
 	}
 
 	/**
-	 * Obtain a new {@link RepositoryConnection} with suitable parser/writer configuration for handling the incoming
-	 * HTTP request. The caller of this method is responsible for closing the connection.
+	 * Obtain a new {@link RepositoryConnection} with endpoint syntax policy and parser/writer configuration for the
+	 * incoming HTTP request. The caller of this method is responsible for closing the connection.
 	 *
 	 * @param request the {@link HttpServletRequest} for which a {@link RepositoryConnection} is to be returned
 	 * @return a configured {@link RepositoryConnection}
 	 */
 	public static RepositoryConnection getRepositoryConnection(HttpServletRequest request) throws ClientHTTPException {
+		return getRepositoryConnection(request,
+				getQueryParseOptions(request).withGraphAlgebraMode(GraphAlgebraMode.AUTO));
+	}
+
+	/**
+	 * Obtain a request connection for preparing SPARQL with the endpoint's parsing and algebra policy. The caller must
+	 * close the connection.
+	 */
+	public static RepositoryConnection getRepositoryConnectionForSparql(HttpServletRequest request)
+			throws ClientHTTPException {
+		return getRepositoryConnection(request, getQueryParseOptions(request));
+	}
+
+	private static RepositoryConnection getRepositoryConnection(HttpServletRequest request, QueryParseOptions options)
+			throws ClientHTTPException {
 		Repository repo = getRepository(request);
 		if (repo == null) {
 			throw new ClientHTTPException(SC_NOT_FOUND, "Unknown repository: " + getRepositoryID(request));
 		}
 		RepositoryConnection conn = repo.getConnection();
 		try {
-			applyQueryParseOptions(conn, getQueryParseOptions(request));
+			applyQueryParseOptions(conn, options);
 			conn.getParserConfig().addNonFatalError(BasicParserSettings.VERIFY_DATATYPE_VALUES);
 			conn.getParserConfig().addNonFatalError(BasicParserSettings.VERIFY_LANGUAGE_TAGS);
 			return conn;

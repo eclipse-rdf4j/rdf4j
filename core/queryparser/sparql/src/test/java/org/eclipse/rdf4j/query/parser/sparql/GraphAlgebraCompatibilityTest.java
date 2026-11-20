@@ -176,13 +176,13 @@ class GraphAlgebraCompatibilityTest {
 	}
 
 	@Test
-	void legacySubqueriesCarryTheirInheritedGraphInAPrivateParameter() {
+	void legacySubqueriesExposeTheHistoricalContextVariable() {
 		var query = new SPARQLParser().parseQuery(
 				"SELECT * WHERE { GRAPH ?g { SELECT ?s WHERE { ?s <urn:p> ?o } } }", null, LEGACY);
 
 		assertThat(nodes(query.getTupleExpr(), Graph.class)).isEmpty();
 		assertThat(nodes(query.getTupleExpr(), StatementPattern.class)).singleElement().satisfies(pattern -> {
-			assertThat(pattern.getContextVar().getName()).isNotEqualTo("g");
+			assertThat(pattern.getContextVar().getName()).isEqualTo("g");
 			assertThat(pattern.getContextVar().getGraphContextDepth()).isEqualTo(1);
 		});
 		assertThat(nodes(query.getTupleExpr(), Projection.class)).filteredOn(Projection::isSubquery)
@@ -190,8 +190,7 @@ class GraphAlgebraCompatibilityTest {
 				.satisfies(projection -> {
 					assertThat(projection.getProjectionContext().getName()).isEqualTo("g");
 					assertThat(projection.getProjectionContext().getGraphContextDepth()).isZero();
-					assertThat(projection.getInheritedGraphParameter()).isEqualTo(
-							nodes(projection, StatementPattern.class).getFirst().getContextVar().getName());
+					assertThat(projection.getInheritedGraphParameter()).isNull();
 				});
 	}
 
@@ -202,8 +201,14 @@ class GraphAlgebraCompatibilityTest {
 
 		assertThat(nodes(query.getTupleExpr(), Graph.class)).isEmpty();
 		assertThat(nodes(query.getTupleExpr(), StatementPattern.class)).singleElement().satisfies(pattern -> {
-			assertThat(pattern.getContextVar().getName()).isNotEqualTo("g");
+			assertThat(pattern.getContextVar().getName()).isEqualTo("g");
+			assertThat(pattern.getContextVar().getGraphContextDepth()).isEqualTo(1);
 			assertThat(pattern.getObjectVar().getName()).isEqualTo("g");
+			assertThat(pattern.getObjectVar().getGraphContextDepth()).isZero();
+			assertThat(pattern.getContextVar())
+					.as("legacy consumers compare context and term variables by historical identity")
+					.isEqualTo(pattern.getObjectVar())
+					.hasSameHashCodeAs(pattern.getObjectVar());
 		});
 		assertThat(nodes(query.getTupleExpr(), Projection.class)).filteredOn(Projection::isSubquery)
 				.singleElement()
@@ -211,6 +216,32 @@ class GraphAlgebraCompatibilityTest {
 					assertThat(projection.getBindingNames()).containsExactly("s");
 					assertThat(projection.getProjectionContext().getName()).isEqualTo("g");
 				});
+	}
+
+	@Test
+	void legacySubqueryCanBindLocalNameOfHiddenGraph() {
+		var query = new SPARQLParser().parseQuery(
+				"SELECT ?label WHERE { GRAPH ?g { SELECT (?g AS ?label) WHERE { ?s <urn:p> ?o BIND(?o AS ?g) } } }",
+				null, LEGACY);
+
+		assertThat(query.getTupleExpr().getBindingNames()).containsExactly("label");
+	}
+
+	@Test
+	void legacySubqueryCanProjectLocalNameOfHiddenGraphAtNestedBoundary() {
+		var query = new SPARQLParser().parseQuery("""
+				SELECT ?s WHERE { GRAPH ?g {
+				  SELECT ?s WHERE {
+				    { SELECT ?s (?o AS ?g) WHERE { ?s <urn:p> ?o } }
+				  }
+				} }
+				""", null, LEGACY);
+
+		assertThat(query.getTupleExpr().getBindingNames()).containsExactly("s");
+		assertThat(nodes(query.getTupleExpr(), StatementPattern.class)).singleElement().satisfies(pattern -> {
+			assertThat(pattern.getContextVar().getName()).isEqualTo("g");
+			assertThat(pattern.getContextVar().getGraphContextDepth()).isEqualTo(2);
+		});
 	}
 
 	@Test

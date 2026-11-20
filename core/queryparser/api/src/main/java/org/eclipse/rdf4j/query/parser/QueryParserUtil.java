@@ -13,7 +13,9 @@ package org.eclipse.rdf4j.query.parser;
 
 import java.util.Locale;
 import java.util.Objects;
+import java.util.function.BooleanSupplier;
 
+import org.eclipse.rdf4j.common.annotation.InternalUseOnly;
 import org.eclipse.rdf4j.query.MalformedQueryException;
 import org.eclipse.rdf4j.query.QueryLanguage;
 import org.eclipse.rdf4j.query.QueryParseOptions;
@@ -50,6 +52,10 @@ public class QueryParserUtil {
 	@Deprecated(since = "6.2.0", forRemoval = true)
 	public static QueryParseOptions resolveRepositoryQueryParseOptions(QueryLanguage language,
 			QueryParseOptions requested, boolean evaluationSupportsGraph) {
+		return resolveQueryParseOptions(language, repositoryDefault(requested), evaluationSupportsGraph);
+	}
+
+	private static QueryParseOptions repositoryDefault(QueryParseOptions requested) {
 		Objects.requireNonNull(requested);
 		if (requested.graphAlgebraMode() != GraphAlgebraMode.AUTO) {
 			return requested;
@@ -67,7 +73,7 @@ public class QueryParserUtil {
 		if (mode == GraphAlgebraMode.LEGACY) {
 			return requested.withGraphAlgebraMode(GraphAlgebraMode.LEGACY);
 		}
-		return resolveQueryParseOptions(language, requested, evaluationSupportsGraph);
+		return requested;
 	}
 
 	/**
@@ -94,6 +100,48 @@ public class QueryParserUtil {
 				.map(QueryParserFactory::supportsGraphAlgebra)
 				.orElse(false);
 		return requested.resolveGraphAlgebraMode(supportsGraph ? GraphAlgebraMode.GRAPH : GraphAlgebraMode.LEGACY);
+	}
+
+	/** The effective policy recorded on an operation and the arguments understood by the two preparation hooks. */
+	@InternalUseOnly
+	public record PreparationOptions(QueryParseOptions resolved, QueryParseOptions parser, QueryParseOptions sail) {
+		/** Store the repository's choice even when a custom parser leaves the operation metadata at its default. */
+		public <T extends ParsedOperation> T capture(T operation) {
+			if (operation != null) {
+				operation.setParseOptions(resolved);
+			}
+			return operation;
+		}
+	}
+
+	/** Resolve a repository's requested options once, retaining the original syntax options for older providers. */
+	@InternalUseOnly
+	public static PreparationOptions preparationOptions(QueryLanguage language, QueryParseOptions requested,
+			BooleanSupplier evaluationSupportsGraph) {
+		if (requested.graphAlgebraMode() != GraphAlgebraMode.AUTO) {
+			return new PreparationOptions(requested, requested, requested);
+		}
+		QueryParseOptions policy = repositoryDefault(requested);
+		boolean sailSupportsGraph = evaluationSupportsGraph.getAsBoolean();
+		boolean parserSupportsGraph = QueryParserRegistry.getInstance()
+				.get(language)
+				.map(QueryParserFactory::supportsGraphAlgebra)
+				.orElse(false);
+		QueryParseOptions resolved = policy.resolveGraphAlgebraMode(
+				parserSupportsGraph && sailSupportsGraph ? GraphAlgebraMode.GRAPH : GraphAlgebraMode.LEGACY);
+		return new PreparationOptions(resolved, parserSupportsGraph ? resolved : requested,
+				sailSupportsGraph ? resolved : requested);
+	}
+
+	/** Select the argument for a standalone parser whose factory has already been chosen by its caller. */
+	@InternalUseOnly
+	public static QueryParseOptions parserOptions(QueryParserFactory factory, QueryParseOptions requested,
+			boolean evaluationSupportsGraph) {
+		if (requested.graphAlgebraMode() != GraphAlgebraMode.AUTO || !factory.supportsGraphAlgebra()) {
+			return requested;
+		}
+		return requested
+				.resolveGraphAlgebraMode(evaluationSupportsGraph ? GraphAlgebraMode.GRAPH : GraphAlgebraMode.LEGACY);
 	}
 
 	public static QueryParser createParser(QueryLanguage ql) throws UnsupportedQueryLanguageException {

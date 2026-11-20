@@ -12,6 +12,7 @@
 package org.eclipse.rdf4j.sail.shacl.ast;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.query.QueryLanguage;
@@ -85,6 +86,9 @@ class SparqlQueryParserCacheGraphModeTest {
 		try {
 			registry.add(legacyFactory(original));
 			assertThat(SparqlQueryParserCache.get(query).getBindingNames()).containsExactly("newProvider");
+			assertThatThrownBy(() -> SparqlQueryParserCache.get(query,
+					QueryParseOptions.DEFAULT.withGraphAlgebraMode(GraphAlgebraMode.LEGACY)))
+							.isInstanceOf(UnsupportedOperationException.class);
 		} finally {
 			registry.add(original);
 		}
@@ -125,6 +129,14 @@ class SparqlQueryParserCacheGraphModeTest {
 					@Override
 					public ParsedQuery parseQuery(String query, String baseURI) {
 						return delegate.getParser().parseQuery(query.replace("oldProvider", "newProvider"), baseURI);
+					}
+
+					@Override
+					public ParsedQuery parseQuery(String query, String baseURI, QueryParseOptions options) {
+						if (!QueryParseOptions.DEFAULT.equals(options)) {
+							throw new UnsupportedOperationException("Unsupported syntax");
+						}
+						return parseQuery(query, baseURI);
 					}
 
 					@Override
