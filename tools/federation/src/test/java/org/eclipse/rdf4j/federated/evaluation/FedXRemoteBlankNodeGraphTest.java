@@ -14,6 +14,7 @@ package org.eclipse.rdf4j.federated.evaluation;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.assertj.core.api.Assertions.tuple;
+import static org.junit.jupiter.api.Assertions.assertAll;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyBoolean;
 import static org.mockito.ArgumentMatchers.anyInt;
@@ -128,12 +129,13 @@ class FedXRemoteBlankNodeGraphTest {
 
 	@AfterEach
 	void closeRepositories() {
-		if (federation != null) {
-			federation.shutDown();
-		}
-		for (Repository repository : repositories) {
-			repository.shutDown();
-		}
+		assertAll(
+				() -> {
+					if (federation != null) {
+						federation.shutDown();
+					}
+				},
+				() -> assertAll(repositories.stream().map(repository -> repository::shutDown)));
 	}
 
 	@Test

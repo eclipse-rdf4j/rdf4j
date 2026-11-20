@@ -202,34 +202,36 @@ class SpinScopeRoundTripTest {
 			throws Exception {
 		MemoryStore store = new MemoryStore();
 		store.setDefaultQueryEvaluationMode(mode);
-		store.init();
-		try (var connection = store.getConnection()) {
-			connection.begin();
-			connection.addStatement(iri("urn:s1"), iri("urn:p"), iri("urn:a"));
-			connection.addStatement(iri("urn:s2"), iri("urn:p"), iri("urn:b"));
-			connection.addStatement(iri("urn:s3"), iri("urn:p"), iri("urn:a"));
-			connection.addStatement(iri("urn:s1"), iri("urn:q"), iri("urn:x"));
-			connection.addStatement(iri("urn:s1"), iri("urn:p"), iri("urn:a"), iri("urn:g1"));
-			connection.addStatement(iri("urn:s2"), iri("urn:p"), iri("urn:b"), iri("urn:g1"));
-			connection.addStatement(iri("urn:s1"), iri("urn:q"), iri("urn:x"), iri("urn:g1"));
-			connection.addStatement(iri("urn:s3"), iri("urn:p"), iri("urn:c"), iri("urn:g2"));
-			connection.commit();
-			List<String> rows = new ArrayList<>();
-			SimpleDataset dataset = new SimpleDataset();
-			dataset.addDefaultGraph(RDF4J.NIL);
-			dataset.addNamedGraph(iri("urn:g1"));
-			dataset.addNamedGraph(iri("urn:g2"));
-			try (var result = connection.evaluate(query.getTupleExpr().clone(), dataset, bindings, false)) {
-				while (result.hasNext()) {
-					BindingSet row = result.next();
-					rows.add(row.getBindingNames()
-							.stream()
-							.sorted()
-							.map(name -> name + "=" + row.getValue(name).stringValue())
-							.collect(Collectors.joining(";")));
+		try {
+			store.init();
+			try (var connection = store.getConnection()) {
+				connection.begin();
+				connection.addStatement(iri("urn:s1"), iri("urn:p"), iri("urn:a"));
+				connection.addStatement(iri("urn:s2"), iri("urn:p"), iri("urn:b"));
+				connection.addStatement(iri("urn:s3"), iri("urn:p"), iri("urn:a"));
+				connection.addStatement(iri("urn:s1"), iri("urn:q"), iri("urn:x"));
+				connection.addStatement(iri("urn:s1"), iri("urn:p"), iri("urn:a"), iri("urn:g1"));
+				connection.addStatement(iri("urn:s2"), iri("urn:p"), iri("urn:b"), iri("urn:g1"));
+				connection.addStatement(iri("urn:s1"), iri("urn:q"), iri("urn:x"), iri("urn:g1"));
+				connection.addStatement(iri("urn:s3"), iri("urn:p"), iri("urn:c"), iri("urn:g2"));
+				connection.commit();
+				List<String> rows = new ArrayList<>();
+				SimpleDataset dataset = new SimpleDataset();
+				dataset.addDefaultGraph(RDF4J.NIL);
+				dataset.addNamedGraph(iri("urn:g1"));
+				dataset.addNamedGraph(iri("urn:g2"));
+				try (var result = connection.evaluate(query.getTupleExpr().clone(), dataset, bindings, false)) {
+					while (result.hasNext()) {
+						BindingSet row = result.next();
+						rows.add(row.getBindingNames()
+								.stream()
+								.sorted()
+								.map(name -> name + "=" + row.getValue(name).stringValue())
+								.collect(Collectors.joining(";")));
+					}
 				}
+				return rows;
 			}
-			return rows;
 		} finally {
 			store.shutDown();
 		}

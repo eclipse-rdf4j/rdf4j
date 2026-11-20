@@ -76,149 +76,176 @@ public class NativeStoreBenchmark {
 	public void shaclNativeStore() throws IOException {
 
 		File file = Files.newTemporaryFolder();
+		try {
 
-		ShaclSail shaclSail = new ShaclSail(new NativeStore(file, "spoc,ospc,psoc"));
+			ShaclSail shaclSail = new ShaclSail(new NativeStore(file, "spoc,ospc,psoc"));
 
-		runBenchmark(file, shaclSail, true, IsolationLevels.NONE, Bulk);
+			runBenchmark(file, shaclSail, true, IsolationLevels.NONE, Bulk);
 
+		} finally {
+			FileUtils.deleteDirectory(file);
+		}
 	}
 
 	@Benchmark
 	public void shaclNativeStoreLoadShapesFirst() throws IOException {
 
 		File file = Files.newTemporaryFolder();
+		try {
 
-		ShaclSail shaclSail = new ShaclSail(new NativeStore(file, "spoc,ospc,psoc"));
+			ShaclSail shaclSail = new ShaclSail(new NativeStore(file, "spoc,ospc,psoc"));
 
-		runBenchmark(file, shaclSail, false, IsolationLevels.NONE, Bulk);
+			runBenchmark(file, shaclSail, false, IsolationLevels.NONE, Bulk);
 
+		} finally {
+			FileUtils.deleteDirectory(file);
+		}
 	}
 
 	@Benchmark
 	public void shaclParallelNativeStore() throws IOException {
 
 		File file = Files.newTemporaryFolder();
+		try {
 
-		ShaclSail shaclSail = new ShaclSail(new NativeStore(file, "spoc,ospc,psoc"));
+			ShaclSail shaclSail = new ShaclSail(new NativeStore(file, "spoc,ospc,psoc"));
 
-		runBenchmark(file, shaclSail, true, IsolationLevels.NONE, Bulk, ParallelValidation, CacheDisabled);
+			runBenchmark(file, shaclSail, true, IsolationLevels.NONE, Bulk, ParallelValidation, CacheDisabled);
 
+		} finally {
+			FileUtils.deleteDirectory(file);
+		}
 	}
 
 	@Benchmark
 	public void shaclCacheNativeStore() throws IOException {
 
 		File file = Files.newTemporaryFolder();
+		try {
 
-		ShaclSail shaclSail = new ShaclSail(new NativeStore(file, "spoc,ospc,psoc"));
+			ShaclSail shaclSail = new ShaclSail(new NativeStore(file, "spoc,ospc,psoc"));
 
-		runBenchmark(file, shaclSail, true, IsolationLevels.NONE, Bulk, SerialValidation, CacheEnabled);
+			runBenchmark(file, shaclSail, true, IsolationLevels.NONE, Bulk, SerialValidation, CacheEnabled);
+		} finally {
+			FileUtils.deleteDirectory(file);
+		}
 	}
 
 	@Benchmark
 	public void shaclCacheParallelNativeStore() throws IOException {
 
 		File file = Files.newTemporaryFolder();
+		try {
 
-		ShaclSail shaclSail = new ShaclSail(new NativeStore(file, "spoc,ospc,psoc"));
+			ShaclSail shaclSail = new ShaclSail(new NativeStore(file, "spoc,ospc,psoc"));
 
-		runBenchmark(file, shaclSail, true, IsolationLevels.NONE, Bulk, ParallelValidation, CacheEnabled);
+			runBenchmark(file, shaclSail, true, IsolationLevels.NONE, Bulk, ParallelValidation, CacheEnabled);
 
+		} finally {
+			FileUtils.deleteDirectory(file);
+		}
 	}
 
 	private void runBenchmark(File file, ShaclSail shaclSail, boolean singleTransaction,
 			TransactionSetting... transactionSettings) throws IOException {
 		SailRepository sailRepository = new SailRepository(shaclSail);
+		try {
 
-		try (SailRepositoryConnection connection = sailRepository.getConnection()) {
+			try (SailRepositoryConnection connection = sailRepository.getConnection()) {
 
-			if (singleTransaction) {
-				connection.begin(transactionSettings);
-				try (InputStream inputStream = getFile("complexBenchmark/shacl.trig")) {
-					connection.add(inputStream, "", RDFFormat.TRIG, RDF4J.SHACL_SHAPE_GRAPH);
+				if (singleTransaction) {
+					connection.begin(transactionSettings);
+					try (InputStream inputStream = getFile("complexBenchmark/shacl.trig")) {
+						connection.add(inputStream, "", RDFFormat.TRIG, RDF4J.SHACL_SHAPE_GRAPH);
+					}
+
+					try (InputStream inputStream = getFile("complexBenchmark/generated.ttl.gz")) {
+						connection.add(inputStream, "", RDFFormat.TRIG);
+					}
+					connection.commit();
+
+				} else {
+					connection.begin(transactionSettings);
+					try (InputStream inputStream = getFile("complexBenchmark/shacl.trig")) {
+						connection.add(inputStream, "", RDFFormat.TRIG, RDF4J.SHACL_SHAPE_GRAPH);
+					}
+
+					connection.commit();
+					connection.begin(transactionSettings);
+
+					try (InputStream inputStream = getFile("complexBenchmark/generated.ttl.gz")) {
+						connection.add(inputStream, "", RDFFormat.TRIG);
+					}
+					connection.commit();
 				}
 
-				try (InputStream inputStream = getFile("complexBenchmark/generated.ttl.gz")) {
-					connection.add(inputStream, "", RDFFormat.TRIG);
-				}
-				connection.commit();
-
-			} else {
-				connection.begin(transactionSettings);
-				try (InputStream inputStream = getFile("complexBenchmark/shacl.trig")) {
-					connection.add(inputStream, "", RDFFormat.TRIG, RDF4J.SHACL_SHAPE_GRAPH);
-				}
-
-				connection.commit();
-				connection.begin(transactionSettings);
-
-				try (InputStream inputStream = getFile("complexBenchmark/generated.ttl.gz")) {
-					connection.add(inputStream, "", RDFFormat.TRIG);
-				}
-				connection.commit();
 			}
 
+		} finally {
+			sailRepository.shutDown();
 		}
-
-		sailRepository.shutDown();
-
-		FileUtils.deleteDirectory(file);
 	}
 
 	@Benchmark
 	public void nativeStore() throws IOException {
 
 		File file = Files.newTemporaryFolder();
+		try {
 
-		NotifyingSail nativeStore = new NativeStore(file, "spoc,ospc,psoc");
+			NotifyingSail nativeStore = new NativeStore(file, "spoc,ospc,psoc");
 
-		SailRepository sailRepository = new SailRepository(nativeStore);
-		sailRepository.init();
+			SailRepository sailRepository = new SailRepository(nativeStore);
+			try {
+				sailRepository.init();
 
-		try (SailRepositoryConnection connection = sailRepository.getConnection()) {
+				try (SailRepositoryConnection connection = sailRepository.getConnection()) {
 
-			connection.begin(IsolationLevels.NONE);
+					connection.begin(IsolationLevels.NONE);
 
-			try (InputStream inputStream = getFile("complexBenchmark/shacl.trig")) {
-				connection.add(inputStream, "", RDFFormat.TRIG, RDF4J.SHACL_SHAPE_GRAPH);
+					try (InputStream inputStream = getFile("complexBenchmark/shacl.trig")) {
+						connection.add(inputStream, "", RDFFormat.TRIG, RDF4J.SHACL_SHAPE_GRAPH);
+					}
+
+					try (InputStream inputStream = getFile("complexBenchmark/generated.ttl.gz")) {
+						connection.add(inputStream, "", RDFFormat.TURTLE);
+					}
+					connection.commit();
+
+				}
+
+			} finally {
+				sailRepository.shutDown();
 			}
-
-			try (InputStream inputStream = getFile("complexBenchmark/generated.ttl.gz")) {
-				connection.add(inputStream, "", RDFFormat.TURTLE);
-			}
-			connection.commit();
-
+		} finally {
+			FileUtils.deleteDirectory(file);
 		}
-
-		sailRepository.shutDown();
-
-		FileUtils.deleteDirectory(file);
-
 	}
 
 	@Benchmark // this should always run out of memory, as proof that we need the native store
 	public void memoryStore() throws IOException {
 
 		SailRepository sailRepository = new SailRepository(new MemoryStore());
-		sailRepository.init();
+		try {
+			sailRepository.init();
 
-		try (SailRepositoryConnection connection = sailRepository.getConnection()) {
+			try (SailRepositoryConnection connection = sailRepository.getConnection()) {
 
-			connection.begin(IsolationLevels.NONE);
+				connection.begin(IsolationLevels.NONE);
 
-			try (InputStream inputStream = getFile("complexBenchmark/shacl.trig")) {
-				connection.add(inputStream, "", RDFFormat.TRIG, RDF4J.SHACL_SHAPE_GRAPH);
+				try (InputStream inputStream = getFile("complexBenchmark/shacl.trig")) {
+					connection.add(inputStream, "", RDFFormat.TRIG, RDF4J.SHACL_SHAPE_GRAPH);
+				}
+
+				try (InputStream inputStream = getFile("complexBenchmark/generated.ttl.gz")) {
+					connection.add(inputStream, "", RDFFormat.TRIG);
+				}
+				connection.commit();
+
 			}
 
-			try (InputStream inputStream = getFile("complexBenchmark/generated.ttl.gz")) {
-				connection.add(inputStream, "", RDFFormat.TRIG);
-			}
-			connection.commit();
-
+		} finally {
+			sailRepository.shutDown();
 		}
-
-		sailRepository.shutDown();
-
 	}
 
 	private InputStream getFile(String s) {

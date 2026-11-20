@@ -911,9 +911,18 @@ class AsyncValueRetirementQueuePressureTest {
 		Fixture(Path path, LmdbStoreConfig config, AsyncValueRetirementCoordinator.Processor processor)
 				throws IOException {
 			values = new ValueStore(path.resolve("values").toFile(), config);
-			values.completeStoreInitialization(ids -> {
-			});
-			cleanup = new AsyncValueRetirementCoordinator(path, config, values, processor);
+			try {
+				values.completeStoreInitialization(ids -> {
+				});
+				cleanup = new AsyncValueRetirementCoordinator(path, config, values, processor);
+			} catch (IOException | RuntimeException | Error failure) {
+				try {
+					values.close();
+				} catch (IOException | RuntimeException | Error cleanupFailure) {
+					failure.addSuppressed(cleanupFailure);
+				}
+				throw failure;
+			}
 		}
 
 		void closeWithSpool() throws IOException {
