@@ -58,11 +58,20 @@ public class AbstractMemoryOverflowModelTest {
 		runInConstrainedHeap("migration-retry");
 	}
 
+	@Test
+	void modelSmallerThanOneBatchDoesNotSpillUnderMemoryPressure() throws Exception {
+		runInConstrainedHeap("small-model");
+	}
+
 	public static void main(String[] args) throws Exception {
 		if (args.length != 1) {
 			throw new IllegalArgumentException("Expected one pressure probe name");
 		}
 		System.out.println("RUNTIME_MAX_MEMORY_BYTES=" + Runtime.getRuntime().maxMemory());
+		if (!"small-model".equals(args[0])) {
+			// The single-statement fixtures probe spill mechanics, so each statement forms a spillable batch.
+			AbstractMemoryOverflowModel.BATCH_SIZE = 1;
+		}
 		AbstractMemoryOverflowModelTest test = new AbstractMemoryOverflowModelTest();
 		switch (args[0]) {
 		case "pressure-hook":
@@ -76,6 +85,9 @@ public class AbstractMemoryOverflowModelTest {
 			break;
 		case "migration-retry":
 			test.migrationRetryProbe();
+			break;
+		case "small-model":
+			test.smallModelProbe();
 			break;
 		default:
 			throw new IllegalArgumentException("Unknown pressure probe: " + args[0]);
@@ -143,6 +155,48 @@ public class AbstractMemoryOverflowModelTest {
 
 			model.spillToDiskIfNeeded();
 			assertThat(model.spillCount).isEqualTo(1);
+		} finally {
+			setPressureThresholds(oldHigh, oldMedium, oldLow, oldMinimum);
+			if (model != null) {
+				model.close();
+			}
+		}
+	}
+
+	/**
+	 * A spill allocates a disk store whose fixed cost exceeds what a model smaller than one batch holds, so under
+	 * sustained pressure every short-lived transaction model would otherwise allocate a store of its own.
+	 */
+	private void smallModelProbe() throws Exception {
+		int oldHigh = AbstractMemoryOverflowModel.MEMORY_THRESHOLD_HIGH;
+		int oldMedium = AbstractMemoryOverflowModel.MEMORY_THRESHOLD_MEDIUM;
+		int oldLow = AbstractMemoryOverflowModel.MEMORY_THRESHOLD_LOW;
+		int oldMinimum = AbstractMemoryOverflowModel.MIN_AVAILABLE_MEM_BEFORE_OVERFLOWING;
+		RecordingOverflowModel model = null;
+		try {
+			setPressureThresholds(Integer.MAX_VALUE, Integer.MAX_VALUE, -1, minimumAboveMaxHeapMiB());
+			model = new RecordingOverflowModel();
+
+			model.spillToDiskIfNeeded();
+			assertThat(model.spillCount).as("an empty model holds no heap to release").isZero();
+
+			ValueFactory valueFactory = SimpleValueFactory.getInstance();
+			List<Statement> statements = new ArrayList<>();
+			for (int index = 0; index < AbstractMemoryOverflowModel.BATCH_SIZE; index++) {
+				statements.add(valueFactory.createStatement(valueFactory.createIRI("urn:overflow:subject:" + index),
+						valueFactory.createIRI("urn:overflow:predicate"), valueFactory.createLiteral("value")));
+			}
+			for (Statement statement : statements.subList(0, statements.size() - 1)) {
+				model.add(statement);
+			}
+			model.spillToDiskIfNeeded();
+			assertThat(model.spillCount).as("a model smaller than one batch stays in memory").isZero();
+			assertThat(model).hasSize(AbstractMemoryOverflowModel.BATCH_SIZE - 1);
+
+			model.add(statements.get(statements.size() - 1));
+			model.spillToDiskIfNeeded();
+			assertThat(model.spillCount).as("a full batch spills").isEqualTo(1);
+			assertThat(model.spilledStatements).containsExactlyInAnyOrderElementsOf(statements);
 		} finally {
 			setPressureThresholds(oldHigh, oldMedium, oldLow, oldMinimum);
 			if (model != null) {

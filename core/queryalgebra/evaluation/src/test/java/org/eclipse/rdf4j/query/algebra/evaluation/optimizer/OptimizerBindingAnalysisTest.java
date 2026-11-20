@@ -21,6 +21,7 @@ import org.eclipse.rdf4j.model.Literal;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.query.BindingSet;
+import org.eclipse.rdf4j.query.QueryResults;
 import org.eclipse.rdf4j.query.algebra.AbstractQueryModelNode;
 import org.eclipse.rdf4j.query.algebra.ArbitraryLengthPath;
 import org.eclipse.rdf4j.query.algebra.BindingSetAssignment;
@@ -61,6 +62,7 @@ import org.eclipse.rdf4j.query.algebra.VariableScopeChange;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryBindingSet;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.DefaultEvaluationStrategy;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.EmptyTripleSource;
+import org.eclipse.rdf4j.query.algebra.evaluation.impl.EvaluationStatistics;
 import org.eclipse.rdf4j.query.algebra.helpers.QueryAlgebraBindingAnalysis;
 import org.eclipse.rdf4j.query.algebra.helpers.QueryModelTreeToGenericPlanNode;
 import org.eclipse.rdf4j.query.algebra.helpers.TupleExprs;
@@ -75,6 +77,99 @@ import org.junit.jupiter.api.Test;
 class OptimizerBindingAnalysisTest {
 
 	private static final SimpleValueFactory VF = SimpleValueFactory.getInstance();
+
+	@Test
+	void projectionKeepsParameterReadByFilterOnlyOptional() {
+		MapBindingSet input = new MapBindingSet();
+		input.addBinding("x", VF.createLiteral(true));
+		MapBindingSet expected = new MapBindingSet();
+		expected.addBinding("x", VF.createLiteral(true));
+		expected.addBinding("left", VF.createLiteral("left"));
+		assertOptionalProjection("""
+				SELECT ?x ?left WHERE {
+					VALUES ?left { "left" }
+					OPTIONAL { FILTER(?x) }
+				}
+				""", input, expected);
+	}
+
+	@Test
+	void projectionKeepsParameterReadByOptionalCondition() {
+		assertProjectedOptionalParameter("""
+				SELECT ?x ?left ?right WHERE {
+					VALUES ?left { "left" }
+					OPTIONAL { VALUES ?right { "right" } FILTER(%s) }
+				}
+				""");
+	}
+
+	@Test
+	void nestedOptionalConditionKeepsParameterInItsProjection() {
+		assertProjectedOptionalParameter("""
+				SELECT ?x ?left ?right WHERE {
+					VALUES ?left { "left" }
+					OPTIONAL {
+						OPTIONAL { VALUES ?right { "right" } FILTER(%s) }
+					}
+				}
+				""");
+	}
+
+	@Test
+	void bareOptionalConditionSurvivesAnUnrelatedSubqueryReadOfTheSameName() {
+		assertProjectedOptionalParameter("""
+				SELECT ?x ?left ?right WHERE {
+					VALUES ?left { "left" }
+					OPTIONAL { VALUES ?right { "right" } FILTER(%s) }
+					{ SELECT ?y WHERE { BIND(2 AS ?x) BIND(?x AS ?y) } }
+				}
+				""", List.of("?x"));
+	}
+
+	@Test
+	void optionalConditionDoesNotExportAnUnprojectedSubqueryParameter() {
+		String query = """
+				SELECT ?x ?right WHERE {
+					{ SELECT ?right WHERE { OPTIONAL { VALUES ?right { "right" } FILTER(?x) } } }
+				}
+				""";
+		MapBindingSet input = new MapBindingSet();
+		input.addBinding("x", VF.createLiteral(true));
+		MapBindingSet expected = new MapBindingSet();
+		expected.addBinding("right", VF.createLiteral("right"));
+
+		assertOptionalProjection(query, input, expected);
+	}
+
+	private static void assertOptionalProjection(String query, BindingSet input, BindingSet expected) {
+		TupleExpr expression = new SPARQLParser().parseQuery(query, null).getTupleExpr();
+		var strategy = new DefaultEvaluationStrategy(new EmptyTripleSource(), null);
+		TupleExpr optimized = strategy.optimize(expression, new EvaluationStatistics(), input);
+		try (var rows = strategy.precompile(optimized).evaluate(EmptyBindingSet.getInstance())) {
+			assertThat(QueryResults.asList(rows)).as("%s with %s", query, input).containsExactly(expected);
+		}
+	}
+
+	private static void assertProjectedOptionalParameter(String query) {
+		assertProjectedOptionalParameter(query, List.of("?x && true", "?x"));
+	}
+
+	private static void assertProjectedOptionalParameter(String query, List<String> conditions) {
+		for (String condition : conditions) {
+			for (boolean match : List.of(true, false)) {
+				MapBindingSet input = new MapBindingSet();
+				input.addBinding("x", VF.createLiteral(match));
+				MapBindingSet expected = new MapBindingSet();
+				expected.addBinding("x", VF.createLiteral(match));
+				expected.addBinding("left", VF.createLiteral("left"));
+				if (match) {
+					expected.addBinding("right", VF.createLiteral("right"));
+				}
+
+				assertOptionalProjection(query.formatted(condition), input, expected);
+			}
+		}
+	}
 
 	@Test
 	void apiSubstitutionPhaseKeepsParametersHiddenByRuntimeFilterProjection() {

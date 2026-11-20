@@ -13,22 +13,31 @@
 package org.eclipse.rdf4j.query.algebra.evaluation.optimizer;
 
 import java.util.ArrayList;
+import java.util.IdentityHashMap;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.Dataset;
 import org.eclipse.rdf4j.query.algebra.Exists;
+import org.eclipse.rdf4j.query.algebra.Extension;
+import org.eclipse.rdf4j.query.algebra.ExtensionElem;
 import org.eclipse.rdf4j.query.algebra.Graph;
+import org.eclipse.rdf4j.query.algebra.LeftJoin;
 import org.eclipse.rdf4j.query.algebra.PrivateGraphContextRole;
 import org.eclipse.rdf4j.query.algebra.Projection;
 import org.eclipse.rdf4j.query.algebra.QueryModelNode;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.algebra.TupleFunctionCall;
+import org.eclipse.rdf4j.query.algebra.UnaryTupleOperator;
+import org.eclipse.rdf4j.query.algebra.ValueConstant;
 import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryOptimizer;
 import org.eclipse.rdf4j.query.algebra.helpers.AbstractSimpleQueryModelVisitor;
 import org.eclipse.rdf4j.query.algebra.helpers.QueryAlgebraBindingAnalysis;
+import org.eclipse.rdf4j.query.algebra.helpers.TupleExprs;
 
 /**
  * Assigns values to variables based on a supplied set of bindings.
@@ -116,6 +125,7 @@ public class BindingAssignerOptimizer implements QueryOptimizer {
 		}
 
 		private void apply() {
+			var projectedInputs = findProjectedOptionalInputs();
 			// Prove every occurrence against the unchanged tree, so context/output caches survive the traversal.
 			// Each admitted read already has this guaranteed API value, independent of earlier replacements.
 			for (Replacement replacement : replacements) {
@@ -136,6 +146,42 @@ public class BindingAssignerOptimizer implements QueryOptimizer {
 				assigned.setVariableScopeChange(var.isVariableScopeChange());
 				var.replaceWith(assigned);
 			}
+			projectedInputs.forEach((projection, values) -> {
+				Extension extension = new Extension(projection.getArg());
+				values.forEach(
+						(name, value) -> extension.addElement(new ExtensionElem(new ValueConstant(value), name)));
+				projection.setArg(extension);
+			});
+		}
+
+		private Map<UnaryTupleOperator, Map<String, Value>> findProjectedOptionalInputs() {
+			Map<UnaryTupleOperator, Map<String, Value>> inputs = new IdentityHashMap<>();
+			for (Replacement replacement : replacements) {
+				Var variable = replacement.variable();
+				if (!(variable.getParentNode() instanceof LeftJoin optional) || optional.getCondition() != variable) {
+					continue;
+				}
+
+				// An OPTIONAL condition reads the parameter without producing it in the result row.
+				UnaryTupleOperator projection = TupleExprs.projectingExpressionScope(variable);
+				if (projection == null) {
+					continue;
+				}
+				String name = variable.getName();
+				Value value = replacement.value();
+				var input = analysis.contextAt(projection);
+				if (!input.externalGuaranteedNames().contains(name)
+						|| !value.equals(input.externalValues().get(name))) {
+					continue;
+				}
+				TupleExpr argument = projection.getArg();
+				var facts = analysis.outputFacts(argument, analysis.contextAt(argument));
+				if (facts.possibleOutputsKnown() && !facts.possibleOutputs().contains(name)
+						&& !argument.getBindingNames().contains(name)) {
+					inputs.computeIfAbsent(projection, ignored -> new LinkedHashMap<>()).put(name, value);
+				}
+			}
+			return inputs;
 		}
 
 		private record Replacement(Var variable, Value value) {

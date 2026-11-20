@@ -13,8 +13,6 @@ package org.eclipse.rdf4j.query;
 
 import java.util.Iterator;
 
-import org.eclipse.rdf4j.model.Value;
-
 /**
  * Abstract base class for {@link BindingSet} implementations, providing a.o. consistent implementations of
  * {@link BindingSet#equals(Object)} and {@link BindingSet#hashCode()}.
@@ -40,33 +38,33 @@ public abstract class AbstractBindingSet implements BindingSet {
 
 		BindingSet that = (BindingSet) other;
 
-		if (this.size() != that.size()) {
+		int size = size();
+		if (size != that.size()) {
 			return false;
 		}
 
-		// Compare other's bindings to own
-		int comparedValues = 0;
-		for (Binding binding : that) {
-			Value ownValue = getValue(binding.getName());
-
-			if (!binding.getValue().equals(ownValue)) {
-				// Unequal bindings for this name
+		int compared = 0;
+		for (Binding binding : this) {
+			if (!binding.getValue().equals(that.getValue(binding.getName()))) {
 				return false;
 			}
-			comparedValues++;
+			compared++;
+		}
+		if (compared == size) {
+			return true;
 		}
 
-		// Evaluation mappings can retain explicit-null names that are not RDF bindings. Ordinary mappings
-		// need no name-set traversal; omitted shadows must match both presence and their null value.
-		if (comparedValues != that.size()) {
-			for (String name : that.getBindingNames()) {
-				if (that.hasBinding(name) && that.getValue(name) == null
-						&& (!hasBinding(name) || getValue(name) != null)) {
+		// The iterator omits null values, but an explicit null may still occupy a binding name.
+		for (String name : getBindingNames()) {
+			if (hasBinding(name) && getValue(name) == null) {
+				if (!that.hasBinding(name) || that.getValue(name) != null) {
 					return false;
 				}
+				compared++;
 			}
 		}
-		return true;
+
+		return compared == size;
 	}
 
 	@Override

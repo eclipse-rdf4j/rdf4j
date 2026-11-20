@@ -13,11 +13,14 @@ package org.eclipse.rdf4j.repository.sparql.federation;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.junit.jupiter.api.DynamicContainer.dynamicContainer;
 import static org.junit.jupiter.api.DynamicTest.dynamicTest;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Set;
 import java.util.stream.Stream;
 
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
@@ -52,6 +55,8 @@ class FederationBindingMergeTest {
 						dynamicTest("unbound input", () -> unboundInputSlotIsFilledByRemoteValue(adapter)),
 						dynamicTest("unbound remote", () -> unboundRemoteSlotDoesNotOverwriteInputValue(adapter)),
 						dynamicTest("unbound slots", () -> unboundSlotsRemainAbsent(adapter)),
+						dynamicTest("explicit null and correlation column",
+								() -> callerNullTakesPrecedence(adapter)),
 						dynamicTest("duplicate remote rows", () -> duplicateRemoteRowsPreserveMultiplicity(adapter)),
 						dynamicTest("exhaustion closes source", () -> exhaustingFilteredResultsClosesSource(adapter)),
 						dynamicTest("early close closes source", () -> earlyCloseClosesSourceOnce(adapter)))));
@@ -104,6 +109,26 @@ class FederationBindingMergeTest {
 		List<BindingSet> result = merge(adapter, input, List.of(remote));
 		assertEquals(List.of(bindings("left", "l", "right", "r")), result);
 		assertFalse(result.get(0).hasBinding("shared"));
+	}
+
+	void callerNullTakesPrecedence(Adapter adapter) {
+		SPARQLQueryBindingSet input = new SPARQLQueryBindingSet(bindings("__rowIdx", "caller data"));
+		input.setBinding("shared", null);
+		BindingSet remote = bindings("shared", "remote", "right", "r");
+
+		List<BindingSet> rows = merge(adapter, input, List.of(remote));
+
+		assertEquals(1, rows.size());
+		BindingSet row = rows.getFirst();
+		assertEquals(Set.of("__rowIdx", "shared", "right"), row.getBindingNames());
+		assertTrue(row.hasBinding("shared"));
+		assertNull(row.getValue("shared"));
+		assertNull(row.getBinding("shared"));
+		assertEquals(value("caller data"), row.getValue("__rowIdx"));
+		assertEquals(value("r"), row.getValue("right"));
+		BindingSet copy = new SPARQLQueryBindingSet(row);
+		assertEquals(row, copy);
+		assertEquals(copy, row);
 	}
 
 	void duplicateRemoteRowsPreserveMultiplicity(Adapter adapter) {
