@@ -10,10 +10,15 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.federated;
 
+import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.tuple;
+
 import java.util.Arrays;
 import java.util.List;
 
 import org.eclipse.rdf4j.common.iteration.Iterations;
+import org.eclipse.rdf4j.model.util.Values;
+import org.eclipse.rdf4j.model.vocabulary.DCTERMS;
 import org.eclipse.rdf4j.model.vocabulary.FOAF;
 import org.eclipse.rdf4j.model.vocabulary.OWL;
 import org.eclipse.rdf4j.model.vocabulary.RDFS;
@@ -22,6 +27,8 @@ import org.eclipse.rdf4j.query.TupleQueryResult;
 import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 
 import com.google.common.collect.Sets;
 
@@ -33,6 +40,37 @@ public class OptionalTests extends SPARQLBaseTest {
 		qm.addPrefixDeclaration("owl", OWL.NAMESPACE);
 		qm.addPrefixDeclaration("rdfs", RDFS.NAMESPACE);
 		qm.addPrefixDeclaration("foaf", FOAF.NAMESPACE);
+	}
+
+	@ParameterizedTest
+	@ValueSource(booleans = { true, false })
+	public void testOptionalFilter(boolean bindLeftJoinOptimizationEnabled) throws Exception {
+		prepareTest(Arrays.asList("/tests/basic/data_emptyStore.ttl", "/tests/basic/data_emptyStore.ttl"));
+		fedxRule.setConfig(config -> config.withEnableOptionalAsBindJoin(bindLeftJoinOptimizationEnabled));
+
+		var book1 = Values.iri("http://example.org/book1");
+		var book2 = Values.iri("http://example.org/book2");
+		var price = Values.iri("http://example.org/ns#price");
+		try (var titles = getRepository(1).getConnection(); var prices = getRepository(2).getConnection()) {
+			titles.add(book1, DCTERMS.TITLE, Values.literal("SPARQL Tutorial"));
+			titles.add(book2, DCTERMS.TITLE, Values.literal("The Semantic Web"));
+			prices.add(book1, price, Values.literal(42));
+			prices.add(book2, price, Values.literal(23));
+		}
+
+		String query = """
+				PREFIX dct: <http://purl.org/dc/terms/>
+				PREFIX ns: <http://example.org/ns#>
+				SELECT ?title ?price WHERE {
+				  ?x dct:title ?title .
+				  OPTIONAL { ?x ns:price ?price . FILTER (?price < 30) }
+				}
+				""";
+		try (var conn = fedxRule.getRepository().getConnection(); var rows = conn.prepareTupleQuery(query).evaluate()) {
+			assertThat(Iterations.asList(rows)).extracting(row -> row.getValue("title"), row -> row.getValue("price"))
+					.containsExactlyInAnyOrder(tuple(Values.literal("SPARQL Tutorial"), null),
+							tuple(Values.literal("The Semantic Web"), Values.literal(23)));
+		}
 	}
 
 	@Test

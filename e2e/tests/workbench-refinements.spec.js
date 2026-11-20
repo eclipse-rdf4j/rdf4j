@@ -178,6 +178,9 @@ test('New Repository says what the chosen type is', async ({ page }) => {
 	await waitForRoute(page, 'create');
 	const description = page.locator('#type-description');
 	await expect(page.locator('#type')).toHaveAttribute('aria-describedby', 'type-description');
+	await expect(page.locator('#type')).toHaveValue('lmdb');
+	await expect(description).toHaveText('Stores the data on disk in LMDB, a memory-mapped database, for large data.');
+	await page.locator('#type').selectOption('memory');
 	await expect(description).toHaveText('Keeps all data in memory and can save it to disk.');
 	await page.locator('#type').selectOption('native-shacl');
 	await expect(description).toHaveText('Stores the data on disk in B-tree indexes, for data larger than memory. '

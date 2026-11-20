@@ -25,11 +25,13 @@ import java.util.concurrent.CompletionException;
 import java.util.concurrent.Executor;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.function.BiFunction;
+import java.util.function.Predicate;
 import java.util.stream.Collectors;
 
 import org.eclipse.rdf4j.common.annotation.Experimental;
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.common.iteration.EmptyIteration;
+import org.eclipse.rdf4j.common.iteration.FilterIteration;
 import org.eclipse.rdf4j.common.iteration.LookAheadIteration;
 import org.eclipse.rdf4j.common.iteration.SingletonIteration;
 import org.eclipse.rdf4j.federated.FedX;
@@ -136,6 +138,7 @@ import org.eclipse.rdf4j.query.algebra.StatementPattern;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.algebra.ValueExpr;
 import org.eclipse.rdf4j.query.algebra.Var;
+import org.eclipse.rdf4j.query.algebra.evaluation.QueryBindingSet;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryEvaluationStep;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryOptimizer;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryValueEvaluationStep;
@@ -1496,7 +1499,7 @@ public class FederationEvaluationStrategy extends StrictEvaluationStrategy {
 		try {
 			if (executeAsBindJoin) {
 				join = new ControlledWorkerBindLeftJoin(joinScheduler, this, leftIter, rightArg,
-						bindings, queryInfo);
+						bindings, queryInfo, leftJoinCondition(leftJoin, context));
 			} else {
 				join = new ControlledWorkerLeftJoin(joinScheduler, this,
 						leftIter, leftJoin, bindings, queryInfo,
@@ -1513,6 +1516,23 @@ public class FederationEvaluationStrategy extends StrictEvaluationStrategy {
 			}
 			throw failure;
 		}
+	}
+
+	private Predicate<BindingSet> leftJoinCondition(LeftJoin join, QueryEvaluationContext context) {
+		if (!join.hasCondition()) {
+			return null;
+		}
+		Set<String> scope = join.getBindingNames();
+		QueryValueEvaluationStep prepared = context == null ? null : precompile(join.getCondition(), context);
+		return row -> {
+			QueryBindingSet scoped = new QueryBindingSet(row);
+			scoped.retainAll(scope);
+			try {
+				return prepared == null ? isTrue(join.getCondition(), scoped) : isTrue(prepared, scoped);
+			} catch (ValueExprEvaluationException error) {
+				return false;
+			}
+		};
 	}
 
 	private static void closeAfterSetupFailure(CloseableIteration<BindingSet> owned, Throwable failure) {
@@ -1730,18 +1750,26 @@ public class FederationEvaluationStrategy extends StrictEvaluationStrategy {
 	 * @param bindings
 	 * @return the result iteration
 	 * @throws QueryEvaluationException
-	 * @see {@link BindLeftJoinIteration}
+	 * @see BindLeftJoinIteration
+	 * @deprecated Use {@link #evaluateLeftBoundJoinStatementPattern(StatementTupleExpr, List, Predicate)}.
 	 */
+	@Deprecated(since = "6.2.0")
 	public CloseableIteration<BindingSet> evaluateLeftBoundJoinStatementPattern(
 			StatementTupleExpr stmt, final List<BindingSet> bindings) throws QueryEvaluationException {
+		return evaluateLeftBoundJoinStatementPattern(stmt, bindings, null);
+	}
+
+	/** Applies the OPTIONAL condition before a candidate marks its input row as matched. */
+	public CloseableIteration<BindingSet> evaluateLeftBoundJoinStatementPattern(
+			StatementTupleExpr stmt, List<BindingSet> bindings, Predicate<BindingSet> condition) {
 		if (hasBlankNodeBindings(stmt, bindings)) {
-			return evaluateBindingsIndividually(stmt, bindings, true);
+			return evaluateBindingsIndividually(stmt, bindings, true, condition);
 		}
 		if ((!NativeGraphQuery.isRequired((TupleExpr) stmt)
 				&& bindings.stream().anyMatch(row -> NativeGraphQuery.isRequired((TupleExpr) stmt, row)))
 				|| (stmt instanceof StatementPattern statement
 						&& NativeGraphQuery.requiresScalarBindings(statement, bindings))) {
-			return evaluateGraphBindingRows(stmt, bindings, true);
+			return evaluateGraphBindingRows(stmt, bindings, true, condition);
 		}
 
 		FilterValueExpr filterExpr = null;
@@ -1762,17 +1790,15 @@ public class FederationEvaluationStrategy extends StrictEvaluationStrategy {
 							stmt.getStatementSources(), stmt.getQueryInfo())
 					: evaluateAtStatementSources(preparedQuery, stmt.getStatementSources(), stmt.getQueryInfo());
 
-			// apply filter and/or convert to original bindings
-			if (filterExpr != null && !isEvaluated.get()) {
-				result = new BindLeftJoinIteration(result, bindings); // apply conversion
-				result = new FilteringIteration(filterExpr, result, this); // apply filter
-				if (!result.hasNext()) {
-					result.close();
-					return new EmptyIteration<>();
+			FilterValueExpr residualFilter = isEvaluated.get() ? null : filterExpr;
+			result = new BindLeftJoinIteration(result, bindings, row -> {
+				try {
+					return (residualFilter == null || isTrue(residualFilter, row))
+							&& (condition == null || condition.test(row));
+				} catch (ValueExprEvaluationException error) {
+					return false;
 				}
-			} else {
-				result = new BindLeftJoinIteration(result, bindings);
-			}
+			});
 
 			return result;
 		} catch (Throwable t) {
@@ -1810,6 +1836,11 @@ public class FederationEvaluationStrategy extends StrictEvaluationStrategy {
 	/** VALUES text has no typed identity channel; retain each solution occurrence on the ordinary evaluation path. */
 	private CloseableIteration<BindingSet> evaluateBindingsIndividually(StatementTupleExpr expression,
 			List<BindingSet> rows, boolean optional) {
+		return evaluateBindingsIndividually(expression, rows, optional, null);
+	}
+
+	private CloseableIteration<BindingSet> evaluateBindingsIndividually(StatementTupleExpr expression,
+			List<BindingSet> rows, boolean optional, Predicate<BindingSet> condition) {
 		return new LookAheadIteration<>() {
 			private final Iterator<BindingSet> inputs = rows.iterator();
 			private CloseableIteration<BindingSet> current;
@@ -1821,9 +1852,12 @@ public class FederationEvaluationStrategy extends StrictEvaluationStrategy {
 				try {
 					while (true) {
 						if (current != null) {
-							if (current.hasNext()) {
-								matched = true;
-								return current.next();
+							while (current.hasNext()) {
+								BindingSet row = current.next();
+								if (condition == null || condition.test(row)) {
+									matched = true;
+									return row;
+								}
 							}
 							current.close();
 							current = null;
@@ -1906,6 +1940,11 @@ public class FederationEvaluationStrategy extends StrictEvaluationStrategy {
 	/** Varying blank-node graph bindings cannot be written as cells in a SPARQL VALUES table. */
 	private CloseableIteration<BindingSet> evaluateGraphBindingRows(StatementTupleExpr statement,
 			List<BindingSet> bindings, boolean optional) {
+		return evaluateGraphBindingRows(statement, bindings, optional, null);
+	}
+
+	private CloseableIteration<BindingSet> evaluateGraphBindingRows(StatementTupleExpr statement,
+			List<BindingSet> bindings, boolean optional, Predicate<BindingSet> condition) {
 		return new LookAheadIteration<>() {
 			private final Iterator<BindingSet> inputs = bindings.iterator();
 			private CloseableIteration<BindingSet> current;
@@ -1926,6 +1965,18 @@ public class FederationEvaluationStrategy extends StrictEvaluationStrategy {
 						}
 						BindingSet input = inputs.next();
 						current = evaluate((TupleExpr) statement, input);
+						if (condition != null) {
+							current = new FilterIteration<>(current) {
+								@Override
+								protected boolean accept(BindingSet row) {
+									return condition.test(row);
+								}
+
+								@Override
+								protected void handleClose() {
+								}
+							};
+						}
 						if (optional && !current.hasNext()) {
 							current.close();
 							current = new SingleBindingSetIteration(input);
