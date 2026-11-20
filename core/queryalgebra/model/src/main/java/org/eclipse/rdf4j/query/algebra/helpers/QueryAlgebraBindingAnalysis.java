@@ -37,6 +37,7 @@ import org.eclipse.rdf4j.query.algebra.And;
 import org.eclipse.rdf4j.query.algebra.ArbitraryLengthPath;
 import org.eclipse.rdf4j.query.algebra.BindingSetAssignment;
 import org.eclipse.rdf4j.query.algebra.Bound;
+import org.eclipse.rdf4j.query.algebra.DescribeOperator;
 import org.eclipse.rdf4j.query.algebra.Difference;
 import org.eclipse.rdf4j.query.algebra.Distinct;
 import org.eclipse.rdf4j.query.algebra.EmptySet;
@@ -629,7 +630,8 @@ public final class QueryAlgebraBindingAnalysis {
 		}
 		if (parent instanceof QueryRoot || parent instanceof Distinct || parent instanceof Reduced
 				|| parent instanceof Slice || parent instanceof Order || parent instanceof Projection
-				|| parent instanceof MultiProjection || parent instanceof Service) {
+				|| parent instanceof MultiProjection || parent instanceof Service
+				|| parent instanceof DescribeOperator) {
 			return input;
 		}
 		if (parent instanceof Exists exists && child == exists.getSubQuery()) {
