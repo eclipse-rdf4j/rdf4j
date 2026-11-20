@@ -201,8 +201,9 @@ class ValueStoreTermIndexRecoveryTest {
 		try {
 			Map<String, LmdbStore.LmdbDatabaseStats> valueDatabases = reopened.getLmdbStats().valueDatabases();
 			for (String index : GROWN_TERM_INDEXES.split(",")) {
-				assertEquals(GROWTH_FIXTURE_SIZE * 2,
-						valueDatabases.get(termIndexDatabaseName(index)).entries(),
+				assertTrue(valueDatabases.containsKey(termIndexDatabaseName(index)), index);
+				// LMDB entries are chunks; count the logical term keys.
+				assertEquals(GROWTH_FIXTURE_SIZE * 2, reopened.getBackingStore().valueStore().termIndexRowCount(index),
 						"every reopened term index must contain the complete source snapshot: " + index);
 			}
 			assertStatementAndSelectiveTermQuery(reopened, first);

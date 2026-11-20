@@ -656,7 +656,17 @@ public class ValueStore extends AbstractValueFactory implements BNodeIdResolver,
 	private static final int TERM_INDEX_MANIFEST_VERSION = 1;
 	static final int MAX_TERM_INDEXES = 12;
 	private static final int TERM_INDEX_REBUILD_BATCH_SIZE = 2_048;
-	private static final long TERM_INDEX_REBUILD_BYTES_PER_RECORD = 2L * (TripleIndex.MAX_KEY_LENGTH + 4096L + 64L);
+	/** A key holds four varints, so this is the longest varint. */
+	private static final long MAX_VARINT_BYTES = TripleIndex.MAX_KEY_LENGTH / 4;
+	/** Largest chunk footer: a length varint and a flag byte per column, the tuple-count varint and the length byte. */
+	private static final long CHUNK_FOOTER_MAX_BYTES = 4L * (MAX_VARINT_BYTES + 1L) + MAX_VARINT_BYTES + 1L;
+	/**
+	 * Worst-case map growth for writing one record into one chunked term index: the tuple's suffix in a chunk value (at
+	 * most one full key plus its sign bits), at most one new chunk when the insert splits a full chunk (an anchor key
+	 * plus a footer), and the LMDB node and page overhead allowance used for unchunked keys.
+	 */
+	private static final long TERM_INDEX_REBUILD_BYTES_PER_RECORD = TripleIndex.MAX_KEY_LENGTH + 1L
+			+ TripleIndex.MAX_KEY_LENGTH + CHUNK_FOOTER_MAX_BYTES + 64L;
 	private static final Set<String> ALL_TERM_INDEX_SPECS = allTermIndexSpecs();
 
 	private static final byte URI_VALUE = ValueStoreRecordCodec.URI_VALUE;

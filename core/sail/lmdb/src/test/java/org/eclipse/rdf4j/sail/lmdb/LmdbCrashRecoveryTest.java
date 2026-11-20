@@ -47,6 +47,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
+import java.util.SplittableRandom;
 import java.util.UUID;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutionException;
@@ -1661,7 +1662,7 @@ class LmdbCrashRecoveryTest {
 	}
 
 	private static StoreTransaction autogrowTransaction(long initialTripleMapSize) {
-		return new StoreTransaction("autogrow-1", generatedStatements("urn:crash:autogrow:",
+		return new StoreTransaction("autogrow-1", incompressibleStatements("urn:crash:autogrow:",
 				AUTOGROW_TRANSACTION_SIZE), List.of(),
 				"urn:crash:autogrow:growth-namespace:"
 						+ "n".repeat(Math.toIntExact(initialTripleMapSize)));
@@ -1684,9 +1685,27 @@ class LmdbCrashRecoveryTest {
 		List<Statement> additions = new ArrayList<>(MIXED_AUTOGROW_TRANSACTION_SIZE + 2);
 		additions.add(REMOVED_ACKNOWLEDGED_STATEMENT);
 		additions.add(MIXED_PROMOTED);
-		additions.addAll(generatedStatements("urn:crash:mixed:autogrow:", MIXED_AUTOGROW_TRANSACTION_SIZE));
+		additions.addAll(incompressibleStatements("urn:crash:mixed:autogrow:", MIXED_AUTOGROW_TRANSACTION_SIZE));
 		return new StoreTransaction("mixed-autogrow-unknown", additions,
 				List.of(REMOVED_ACKNOWLEDGED_STATEMENT, MIXED_DELETE_ONLY), "urn:crash:mixed:after:");
+	}
+
+	/**
+	 * Like {@link #generatedStatements}, but with deterministic random inlined integer objects. Chunked indexes
+	 * delta-encode sorted rows, so sequential generated statements overflow the map only a few times, early in the
+	 * transaction, before the replay journal spills. Incompressible rows keep the geometric map growth going until the
+	 * journal has spilled, which the replay pause points require.
+	 */
+	private static List<Statement> incompressibleStatements(String prefix, int count) {
+		SplittableRandom objects = new SplittableRandom(prefix.hashCode());
+		List<Statement> statements = new ArrayList<>(count);
+		for (int i = 0; i < count; i++) {
+			Resource subject = VF.createIRI(prefix + "subject:" + i);
+			Value object = VF.createLiteral(objects.nextLong(1L << 40, 1L << 50));
+			Resource context = i % 2 == 0 ? null : GRAPH;
+			statements.add(VF.createStatement(subject, PREDICATE, object, context));
+		}
+		return statements;
 	}
 
 	private static List<Statement> generatedStatements(String prefix, int count) {

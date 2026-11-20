@@ -43,6 +43,7 @@ import java.util.IdentityHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Set;
+import java.util.SplittableRandom;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutionException;
@@ -3388,10 +3389,14 @@ class LmdbNoneStreamingIngestionTest {
 						"the direct result prefix must contain no duplicate statements");
 
 				try (SailSink writer = store.getExplicitSailSource(new Object()).sink(IsolationLevels.NONE)) {
-					for (int i = 0; i < CHECKPOINT_STATEMENT_COUNT; i++) {
-						Statement statement = statement("growth", i);
-						writer.approve(statement.getSubject(), statement.getPredicate(), statement.getObject(),
-								statement.getContext());
+					// Chunked indexes delta-encode sorted rows, so sequential IDs barely use the triple map. Random
+					// inlined integer objects keep the rows incompressible enough to exceed the 1 MiB map.
+					SplittableRandom objects = new SplittableRandom(0x7e1_9e55L);
+					IRI growthPredicate = VALUE_FACTORY.createIRI("urn:none-streaming:growth:predicate");
+					for (int i = 0; i < 4 * CHECKPOINT_STATEMENT_COUNT; i++) {
+						writer.approve(VALUE_FACTORY.createIRI("urn:none-streaming:growth:subject:" + i),
+								growthPredicate, VALUE_FACTORY.createLiteral(objects.nextLong(1L << 40, 1L << 50)),
+								null);
 					}
 					writer.approve(VALUE_FACTORY.createIRI("urn:none-streaming:dictionary-growth"),
 							VALUE_FACTORY.createIRI("urn:none-streaming:dictionary-growth-predicate"),

@@ -628,7 +628,7 @@ class TripleStore implements Closeable {
 		private static final long serialVersionUID = 1L;
 
 		MapFullException() {
-			super("LMDB map is full");
+			super("LMDB map is full (MDB_MAP_FULL)");
 		}
 	}
 
