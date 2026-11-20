@@ -58,11 +58,13 @@ import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.query.algebra.evaluation.EvaluationStrategy;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryEvaluationStep;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryValueEvaluationStep;
+import org.eclipse.rdf4j.query.algebra.evaluation.function.TupleFunctionRegistry;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.EvaluationStatistics;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.QueryEvaluationContext;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.evaluationsteps.AdaptiveFilterEvaluationStep;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.evaluationsteps.MinusQueryEvaluationStep;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.evaluationsteps.UnionQueryEvaluationStep;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.TupleFunctionMagicPropertyOptimizer;
 import org.eclipse.rdf4j.query.algebra.evaluation.util.ExternalValuePreparation;
 import org.eclipse.rdf4j.query.algebra.evaluation.util.QueryEvaluationUtility;
 import org.eclipse.rdf4j.query.algebra.helpers.OriginalPathDescriptor;
@@ -442,7 +444,8 @@ public final class RestrictionCompiler {
 			}
 			return ends;
 		}
-		if (node instanceof StatementPattern pattern && pattern.getContextVar() == null) {
+		if (node instanceof StatementPattern pattern && pattern.getContextVar() == null
+				&& !TupleFunctionMagicPropertyOptimizer.isMagicProperty(pattern, TupleFunctionRegistry.getInstance())) {
 			Set<String> names = new HashSet<>();
 			for (Var variable : List.of(pattern.getSubjectVar(), pattern.getPredicateVar(), pattern.getObjectVar())) {
 				if (!variable.hasValue()) {

@@ -98,6 +98,23 @@ class GraphScopeOptimizerTest {
 	}
 
 	@Test
+	void autoDoesNotRetainGraphForMagicPropertyOnly() {
+		TupleExpr plan = parse(
+				"SELECT ?x WHERE { VALUES ?a { '[1,2]'^^<http://www.w3.org/1999/02/22-rdf-syntax-ns#JSON> } "
+						+ "GRAPH <urn:absent> { ?a <http://rdf4j.org/function/array#unnest> ?x } }");
+		new GraphScopeOptimizer(QueryExecutionPolicy.DEFAULT).optimize(plan, null, EmptyBindingSet.getInstance());
+		assertThat(graphs(plan)).isEmpty();
+	}
+
+	@Test
+	void autoRetainsGraphWhenAnOrdinaryPatternCanSeek() {
+		TupleExpr plan = parse("SELECT ?x WHERE { VALUES ?s { <urn:s> } GRAPH <urn:g> { "
+				+ "?s <urn:p> ?a . ?a <http://rdf4j.org/function/array#unnest> ?x } }");
+		new GraphScopeOptimizer(QueryExecutionPolicy.DEFAULT).optimize(plan, null, EmptyBindingSet.getInstance());
+		assertThat(graphs(plan)).hasSize(1);
+	}
+
+	@Test
 	void genericOptimizerLeavesAuthoredValuesInsideConstantGraph() {
 		TupleExpr plan = parse("SELECT * { GRAPH <urn:g> { VALUES ?s { <urn:s> } ?s <urn:p> ?o } }");
 		new GraphScopeOptimizer().optimize(plan, null, EmptyBindingSet.getInstance());

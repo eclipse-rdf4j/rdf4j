@@ -22,6 +22,7 @@ import java.util.List;
 import java.util.Set;
 
 import org.eclipse.rdf4j.common.annotation.Experimental;
+import org.eclipse.rdf4j.common.annotation.InternalUseOnly;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.vocabulary.RDF;
 import org.eclipse.rdf4j.query.BindingSet;
@@ -97,6 +98,12 @@ public class TupleFunctionMagicPropertyOptimizer implements QueryOptimizer {
 	}
 
 	private boolean isMagicPattern(StatementPattern node) {
+		return isMagicProperty(node, registry);
+	}
+
+	/** A magic-property pattern invokes a tuple function rather than seeking statement data. */
+	@InternalUseOnly
+	public static boolean isMagicProperty(StatementPattern node, TupleFunctionRegistry registry) {
 		Var predicate = node.getPredicateVar();
 		// Only the set-returning extension functions opt in to the magic-property syntax. Other registrations (SPIN's
 		// functions, third-party tuple functions) are invoked by their own machinery, and triples using their IRIs
