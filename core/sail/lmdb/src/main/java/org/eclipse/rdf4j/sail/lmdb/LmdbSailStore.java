@@ -17397,6 +17397,12 @@ class LmdbSailStore implements SailStore {
 			 * version check and wrapper dispatch from the third row on.
 			 */
 			private static final int SINGLE_PULLS_BEFORE_BATCHING = 2;
+			/**
+			 * Delegate rows between full open/replay/snapshot/cancellation checks. The delegate validates its own
+			 * snapshot on every row and this wrapper holds a source read stamp until close, so the full check only
+			 * makes a pending close, replay, resize or cancellation take effect sooner.
+			 */
+			private static final int CHECK_STRIDE = 64;
 
 			private final RecordIterator delegate;
 			private final long readStamp;
@@ -17404,6 +17410,8 @@ class LmdbSailStore implements SailStore {
 			private final long delegateGeneration;
 			private volatile boolean closed;
 			private volatile boolean cancellationRequested;
+			/** Remaining delegate work before the next full check; plain, owner-thread only apart from a racy reset. */
+			private int checkBudget = CHECK_STRIDE;
 			private boolean seekForwardMode;
 			private int singlePulls;
 			private long[] batch;
@@ -17426,13 +17434,29 @@ class LmdbSailStore implements SailStore {
 					return false;
 				}
 				cancellationRequested = true;
+				// force the next pull to run the full check; a lost racy write only delays it by one stride
+				checkBudget = 0;
 				RecordIterator.forwardCancellation(delegate, delegateGeneration);
 				return true;
 			}
 
-			private void checkCancellation() {
+			/** Everything that is checked once per stride, at each batch refill and when the cursor is exhausted. */
+			private void fullCheck() {
 				if (cancellationRequested) {
 					NativeLmdbQuerySource.checkpointRecordCancellation(cancellation);
+				}
+				if (cancellation != null) {
+					cancellation.checkpointPublishedCancellation();
+					cancellation.checkpointProbeDeadline();
+				}
+				assertNativeSourceOpen();
+			}
+
+			/** Runs the full check when the work budget is spent, before more rows are pulled from the delegate. */
+			private void checkpointIfBudgetSpent() {
+				if (checkBudget <= 0) {
+					fullCheck();
+					checkBudget = CHECK_STRIDE;
 				}
 			}
 
@@ -17442,16 +17466,16 @@ class LmdbSailStore implements SailStore {
 					return null;
 				}
 				try {
-					checkCancellation();
 					if (batch != null) {
 						return nextFromBatch();
 					}
-					assertNativeSourceOpen();
 					if (seekForwardMode || singlePulls < SINGLE_PULLS_BEFORE_BATCHING) {
+						checkpointIfBudgetSpent();
+						checkBudget--;
 						singlePulls++;
 						long[] record = delegate.next();
-						checkCancellation();
 						if (record == null) {
+							fullCheck();
 							close();
 						}
 						return record;
@@ -17466,23 +17490,22 @@ class LmdbSailStore implements SailStore {
 			}
 
 			private long[] nextFromBatch() {
-				if (cancellation != null) {
-					cancellation.checkpointPublishedCancellation();
-					cancellation.checkpointProbeDeadline();
-				}
 				if (batchPos >= batchCount) {
 					if (exhausted) {
+						fullCheck();
 						close();
 						return null;
 					}
-					assertNativeSourceOpen();
+					// a refill pulls up to BATCH_ROWS rows, so it always runs the full check first
+					fullCheck();
+					checkBudget = CHECK_STRIDE;
 					batchCount = delegate.fill(batch, BATCH_ROWS);
-					checkCancellation();
 					batchPos = 0;
 					if (batchCount < BATCH_ROWS) {
 						exhausted = true;
 					}
 					if (batchCount == 0) {
+						fullCheck();
 						close();
 						return null;
 					}
@@ -17502,12 +17525,12 @@ class LmdbSailStore implements SailStore {
 					return 0;
 				}
 				try {
-					checkCancellation();
-					assertNativeSourceOpen();
 					if (batch == null) {
+						checkpointIfBudgetSpent();
 						int rows = delegate.fill(buffer, maxRows);
-						checkCancellation();
+						checkBudget -= rows;
 						if (rows < maxRows) {
+							fullCheck();
 							close();
 						}
 						return rows;
@@ -17518,11 +17541,6 @@ class LmdbSailStore implements SailStore {
 					// second staging array in adaptive join cursors.
 					int rows = 0;
 					while (rows < maxRows) {
-						checkCancellation();
-						if (cancellation != null) {
-							cancellation.checkpointPublishedCancellation();
-							cancellation.checkpointProbeDeadline();
-						}
 						int available = batchCount - batchPos;
 						if (available != 0) {
 							int take = Math.min(available, maxRows - rows);
@@ -17532,11 +17550,14 @@ class LmdbSailStore implements SailStore {
 							continue;
 						}
 						if (exhausted) {
+							fullCheck();
 							close();
 							break;
 						}
+						checkpointIfBudgetSpent();
 						int requested = Math.min(BATCH_ROWS, maxRows - rows);
 						batchCount = delegate.fill(batch, requested);
+						checkBudget -= batchCount;
 						batchPos = 0;
 						if (batchCount < requested) {
 							exhausted = true;
@@ -17555,15 +17576,14 @@ class LmdbSailStore implements SailStore {
 					return false;
 				}
 				try {
-					checkCancellation();
-					assertNativeSourceOpen();
+					checkpointIfBudgetSpent();
+					checkBudget--;
 					// A seek-driven cursor must not prefetch beyond its current frontier key: fill() may exhaust and
 					// close the delegate while later seek targets still exist only in this wrapper's buffer.
 					if (batch == null) {
 						seekForwardMode = true;
 					}
 					boolean sought = delegate.seekForward(subj, pred, obj, context);
-					checkCancellation();
 					if (sought && batch != null) {
 						// buffered rows precede the seek target: drop them so the next pull refills from there
 						batchPos = batchCount;
