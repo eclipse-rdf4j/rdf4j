@@ -147,6 +147,7 @@ public class SPARQLParserTest {
 				"SELECT ?key (COUNT(DISTINCT ?item) AS ?count) " + body + "GROUP BY ?key HAVING(COUNT(?item) > 1)",
 				"SELECT ?key (SUM(?item) AS ?total) " + body + "GROUP BY ?key HAVING(COUNT(*) > 1) ORDER BY ?total",
 				"SELECT (COUNT(?item) AS ?count) " + body + "HAVING(COUNT(?item) > 1)",
+				"SELECT (COUNT(?item) + 1 AS ?count) " + body,
 				"SELECT ?key (COUNT(?item) AS ?count) " + body + "GROUP BY ?key ORDER BY (COUNT(?item))",
 				"SELECT ?key (SUM(?item) + COUNT(?item) AS ?combined) " + body + "GROUP BY ?key HAVING(COUNT(*) > 1)",
 				"SELECT ?key WHERE { { SELECT ?key (COUNT(?item) AS ?count) " + body
