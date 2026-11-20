@@ -84,35 +84,34 @@ public final class LmdbStandardQueryOptimizerPipeline implements QueryOptimizerP
 
 	@Override
 	public BindingSet getOptimizerInputBindings(QueryOptimizer optimizer, BindingSet initialBindings) {
+		if (optimizer instanceof LmdbDistinctWitnessOptimizer) {
+			return initialBindings;
+		}
 		return delegate.getOptimizerInputBindings(optimizer, initialBindings);
 	}
 
 	@Override
 	public Iterable<QueryOptimizer> getOptimizers() {
-		if (!strategy.getQueryExecutionPolicy().experimentalQueryOptimizations()) {
-			if (!nativeEngine) {
-				return delegate.getOptimizers();
-			}
-			List<QueryOptimizer> plain = new ArrayList<>();
-			delegate.getOptimizers().forEach(plain::add);
-			insertGroupPushdown(plain);
-			return plain;
-		}
+		boolean experimental = strategy.getQueryExecutionPolicy().experimentalQueryOptimizations();
 		List<QueryOptimizer> optimizers = new ArrayList<>();
 		boolean inserted = false;
 
 		for (QueryOptimizer optimizer : delegate.getOptimizers()) {
+			if (!nativeEngine && optimizer instanceof QueryJoinOptimizer) {
+				optimizers.add(new LmdbDistinctWitnessOptimizer());
+			}
 			optimizers.add(optimizer);
-			if (optimizer instanceof QueryJoinOptimizer && !evaluationStatistics.supportsJoinEstimation()) {
+			if (experimental && optimizer instanceof QueryJoinOptimizer
+					&& !evaluationStatistics.supportsJoinEstimation()) {
 				optimizers.add(new LmdbPhysicalJoinOrderOptimizer());
 			}
-			if (optimizer instanceof OrderLimitOptimizer) {
+			if (experimental && optimizer instanceof OrderLimitOptimizer) {
 				optimizers.add(new LmdbOrderByOptimizer(tripleSource));
 				inserted = true;
 			}
 		}
 
-		if (!inserted) {
+		if (experimental && !inserted) {
 			optimizers.add(new LmdbOrderByOptimizer(tripleSource));
 		}
 
@@ -144,17 +143,11 @@ public final class LmdbStandardQueryOptimizerPipeline implements QueryOptimizerP
 
 		@Override
 		public void optimize(TupleExpr tupleExpr, Dataset dataset, BindingSet bindings) {
-			/*
-			 * QueryJoinOptimizer treats finite binding assignments as physical anchors. Its nested join tree does not
-			 * expose that outer binding context to this fallback visitor, so reordering a descendant join would be able
-			 * to move a broad pattern ahead of the assignment. Preserve the standard planner's finite-anchor order; the
-			 * fallback is needed for the no-assignment path where LMDB access-prefix information is otherwise
-			 * unavailable.
-			 */
+			// Keep QueryJoinOptimizer's finite-assignment anchor ordering.
 			if (containsFiniteBindingAssignment(tupleExpr)) {
 				return;
 			}
-			tupleExpr.visit(new BoundVarsAwareVisitor());
+			tupleExpr.visit(new BoundVarsAwareVisitor(bindings.getBindingNames()));
 		}
 
 		/**
@@ -164,7 +157,15 @@ public final class LmdbStandardQueryOptimizerPipeline implements QueryOptimizerP
 		 */
 		private final class BoundVarsAwareVisitor extends AbstractSimpleQueryModelVisitor<RuntimeException> {
 
-			private Set<String> boundVars = new HashSet<>();
+			/** Externally supplied bindings; bound in every scope, including sub-selects. */
+			private final Set<String> externalBindings;
+
+			private Set<String> boundVars;
+
+			BoundVarsAwareVisitor(Set<String> externalBindings) {
+				this.externalBindings = Set.copyOf(externalBindings);
+				this.boundVars = new HashSet<>(this.externalBindings);
+			}
 
 			@Override
 			public void meet(LeftJoin leftJoin) {
@@ -187,7 +188,7 @@ public final class LmdbStandardQueryOptimizerPipeline implements QueryOptimizerP
 			public void meet(Projection projection) {
 				Set<String> entry = boundVars;
 				try {
-					boundVars = new HashSet<>();
+					boundVars = new HashSet<>(externalBindings);
 					super.meet(projection);
 				} finally {
 					boundVars = entry;
@@ -286,7 +287,7 @@ public final class LmdbStandardQueryOptimizerPipeline implements QueryOptimizerP
 				}
 				remaining.remove(selected);
 				reordered.add(selected);
-				boundVars.addAll(selected.getBindingNames());
+				addPatternBindings((StatementPattern) selected, boundVars);
 			}
 			return reordered;
 		}
@@ -306,7 +307,7 @@ public final class LmdbStandardQueryOptimizerPipeline implements QueryOptimizerP
 				double cost = standardCost(pattern, boundVars, variableFrequencies, currentHighestCost);
 				pattern.setCostEstimate(cost);
 				currentHighestCost = Math.max(currentHighestCost, cost);
-				boundVars.addAll(pattern.getBindingNames());
+				addPatternBindings(pattern, boundVars);
 			}
 		}
 
@@ -387,11 +388,19 @@ public final class LmdbStandardQueryOptimizerPipeline implements QueryOptimizerP
 
 		private boolean usesBoundVar(StatementPattern pattern, Set<String> boundVars) {
 			for (Var var : pattern.getVarList()) {
-				if (var != null && !var.hasValue() && var.getName() != null && boundVars.contains(var.getName())) {
+				if (var != null && !var.isConstant() && boundVars.contains(var.getName())) {
 					return true;
 				}
 			}
 			return false;
+		}
+
+		private void addPatternBindings(StatementPattern pattern, Set<String> boundVars) {
+			for (Var var : pattern.getVarList()) {
+				if (var != null && !var.isConstant() && var.getName() != null) {
+					boundVars.add(var.getName());
+				}
+			}
 		}
 
 		private int accessPrefixLength(StatementPattern pattern, Set<String> boundVars) {

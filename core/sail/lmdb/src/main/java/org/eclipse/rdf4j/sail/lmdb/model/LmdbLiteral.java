@@ -25,10 +25,13 @@ import java.util.function.Function;
 import javax.xml.datatype.XMLGregorianCalendar;
 
 import org.eclipse.rdf4j.common.annotation.Experimental;
+import org.eclipse.rdf4j.common.annotation.InternalUseOnly;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.base.AbstractLiteral;
 import org.eclipse.rdf4j.model.base.CoreDatatype;
+import org.eclipse.rdf4j.model.base.InternedIRI;
+import org.eclipse.rdf4j.model.impl.SimpleIRI;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.sail.lmdb.ValueIds;
 import org.eclipse.rdf4j.sail.lmdb.ValueStoreRevision;
@@ -184,8 +187,13 @@ public class LmdbLiteral extends AbstractLiteral implements LmdbValue {
 
 	@Override
 	public void setInternalID(long internalID, ValueStoreRevision revision) {
+		setInternalIdentity(new InternalIdentity(internalID, revision));
+	}
+
+	@Override
+	public void setInternalIdentity(InternalIdentity identity) {
 		datatypeVersion = ChildVersion.capture(datatype);
-		identity = new InternalIdentity(internalID, revision);
+		this.identity = identity;
 	}
 
 	@Override
@@ -231,6 +239,16 @@ public class LmdbLiteral extends AbstractLiteral implements LmdbValue {
 		SimpleValueFactory factory = SimpleValueFactory.getInstance();
 		return language != null ? factory.createLiteral(label, language, baseDirection)
 				: factory.createLiteral(label, (IRI) childCopier.apply(datatype));
+	}
+
+	@InternalUseOnly
+	public record InitializedPayload(String label, String language, BaseDirection baseDirection, IRI datatype) {
+	}
+
+	/** Copies the loaded fields without calling payload getters or resolving a deferred datatype. */
+	@InternalUseOnly
+	public InitializedPayload copyInitializedPayload() {
+		return initialized ? new InitializedPayload(label, language, baseDirection, datatype) : null;
 	}
 
 	private void payloadChanged() {
@@ -298,9 +316,29 @@ public class LmdbLiteral extends AbstractLiteral implements LmdbValue {
 		return initialized;
 	}
 
+	/** A projected value can bypass dictionary lookup once both the decoded literal and its datatype are ready. */
+	@InternalUseOnly
+	public boolean hasResolvedDictionaryDatatype() {
+		if (!initialized || !identity.decodedFromDictionary()) {
+			return false;
+		}
+		IRI current = datatype;
+		if (current instanceof LmdbIRI iri) {
+			return iri.getClass() == LmdbIRI.class && iri.isInitialized()
+					&& iri.getValueStoreRevision() instanceof ValueStoreRevision.Default;
+		}
+		return current instanceof InternedIRI || current != null && current.getClass() == SimpleIRI.class;
+	}
+
 	@Override
 	public void visitValueChildren(Consumer<Value> visitor) {
 		visitor.accept(datatype);
+	}
+
+	/** Returns the stored datatype reference without decoding or exporting the datatype. */
+	@InternalUseOnly
+	public IRI loadedDatatype() {
+		return datatype;
 	}
 
 	@Override

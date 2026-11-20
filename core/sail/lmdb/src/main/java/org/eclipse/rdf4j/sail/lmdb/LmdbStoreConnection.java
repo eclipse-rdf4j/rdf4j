@@ -831,7 +831,7 @@ public class LmdbStoreConnection extends SailSourceConnection implements SailRes
 				operationAttempt, sourcePlan == null ? readAttemptLease : sourcePlan.admissionAttempt,
 				sourcePlan == null ? valueResolutionScope : sourcePlan.valueScope,
 				sourcePlan == null ? null : (SailResultValueExtractor<T>) sourcePlan.rawExtractor,
-				sourcePlan != null && sourcePlan.queryResult);
+				sourcePlan != null && sourcePlan.queryResult, sourcePlan == null ? null : sourcePlan.queryCapture());
 		synchronized (readAttemptLock) {
 			if (sourcePlan != null) {
 				openReplayPlans.remove(sourcePlan);
@@ -1060,29 +1060,43 @@ public class LmdbStoreConnection extends SailSourceConnection implements SailRes
 			BindingSet bindings, boolean includeInferred, ValueResolutionScope valueScope) throws SailException {
 		Dataset datasetCopy = copyDataset(dataset);
 		BindingSet bindingsCopy = copyBindings(bindings);
-		return new IterationWrapper<BindingSet>(
-				super.evaluateInternal(expression, datasetCopy, bindingsCopy, includeInferred)) {
-			private final NativeProjectedBindingSet.CaptureScratch captureScratch = new NativeProjectedBindingSet.CaptureScratch();
+		return new QueryValueCaptureIteration(
+				super.evaluateInternal(expression, datasetCopy, bindingsCopy, includeInferred), valueScope);
+	}
 
-			@Override
-			public BindingSet next() {
-				BindingSet row = super.next();
-				if (row instanceof NativeProjectedBindingSet nativeRow) {
-					// Capture this row while its native source is live. Sail callbacks still receive lazy values;
-					// the repository exposure scope initializes them without speculatively requesting later rows.
-					nativeRow.captureAndDetach(valueScope, captureScratch);
+	private static final class QueryValueCaptureIteration extends IterationWrapper<BindingSet> {
+		private final ValueResolutionScope valueScope;
+		private final NativeProjectedBindingSet.CaptureScratch scratch = new NativeProjectedBindingSet.CaptureScratch();
+		private volatile boolean nativeProjection = true;
+
+		private QueryValueCaptureIteration(CloseableIteration<? extends BindingSet> source,
+				ValueResolutionScope valueScope) {
+			super(source);
+			this.valueScope = valueScope;
+		}
+
+		@Override
+		public BindingSet next() {
+			BindingSet row = super.next();
+			if (row instanceof NativeProjectedBindingSet nativeRow) {
+				if (RepositoryValueIteration.capturesRepositoryProjection(this)) {
+					nativeRow.captureRepositoryAndDetach(valueScope, scratch);
 				} else {
-					captureScratch.discardPrevious();
+					nativeProjection = true;
+					nativeRow.captureAndDetach(valueScope, scratch);
 				}
-				return row;
+			} else {
+				nativeProjection = false;
+				scratch.discardPrevious();
 			}
+			return row;
+		}
 
-			@Override
-			protected void handleClose() {
-				captureScratch.close();
-				super.handleClose();
-			}
-		};
+		@Override
+		protected void handleClose() {
+			scratch.close();
+			super.handleClose();
+		}
 	}
 
 	@Override
@@ -3676,6 +3690,10 @@ public class LmdbStoreConnection extends SailSourceConnection implements SailRes
 			return operationAttempt;
 		}
 
+		private QueryValueCaptureIteration queryCapture() {
+			return wrappedIter instanceof QueryValueCaptureIteration capture ? capture : null;
+		}
+
 		private void requestGrowth(LmdbSailStore.MapResizeKind kind, LmdbSailStore.MapGrowthToken token) {
 			if (growthToken != token) {
 				replayAttempts++;
@@ -3710,6 +3728,7 @@ public class LmdbStoreConnection extends SailSourceConnection implements SailRes
 		private RawValueRegistration rawRegistration;
 		private volatile WeakReference<RepositoryValueIteration<?>> repositoryExposure;
 		private volatile CloseableIteration<? extends T> delegate;
+		private volatile QueryValueCaptureIteration queryCapture;
 		private final ReplayFactory<T> factory;
 		private volatile long generation;
 		private long attemptGeneration;
@@ -3737,10 +3756,12 @@ public class LmdbStoreConnection extends SailSourceConnection implements SailRes
 		private ReplayableIteration(CloseableIteration<? extends T> delegate, ReplayFactory<T> factory,
 				long generation, List<LmdbSailStore.ReadViewLease> readViews, OperationReadAttempt operationAttempt,
 				LmdbSailStore.ReadAttemptLease admissionAttempt, ValueResolutionScope valueScope,
-				SailResultValueExtractor<T> rawExtractor, boolean queryResult) {
+				SailResultValueExtractor<T> rawExtractor, boolean queryResult,
+				QueryValueCaptureIteration queryCapture) {
 			this.valueScope = valueScope;
 			this.rawExtractor = rawExtractor;
 			this.queryResult = queryResult;
+			this.queryCapture = queryCapture;
 			this.delegate = delegate;
 			this.factory = factory;
 			this.generation = generation;
@@ -3791,7 +3812,7 @@ public class LmdbStoreConnection extends SailSourceConnection implements SailRes
 			try {
 				SourcePull pull = repositorySourcePull();
 				return trackedCall(() -> {
-					T row = currentDelegate().next();
+					T row = pullRowForExposure(pull);
 					WeakReference<RepositoryValueIteration<?>> owner = repositoryExposure;
 					RepositoryValueIteration<?> exposure = owner == null ? null : owner.get();
 					if (rawExtractor != null && (exposure == null || !exposure.isPullingSource())) {
@@ -3806,6 +3827,20 @@ public class LmdbStoreConnection extends SailSourceConnection implements SailRes
 				closeResources(failure, this::close);
 				throw queryResult ? new QueryEvaluationException("Unable to read from an LMDB iteration", failure)
 						: failure;
+			}
+		}
+
+		private T pullRowForExposure(SourcePull pull) {
+			CloseableIteration<? extends T> current = currentDelegate();
+			QueryValueCaptureIteration capture = queryCapture;
+			if (pull == null || capture == null || !capture.nativeProjection) {
+				return current.next();
+			}
+			pull.projectionOwner(capture);
+			try {
+				return current.next();
+			} finally {
+				pull.projectionOwner(null);
 			}
 		}
 
@@ -3938,6 +3973,7 @@ public class LmdbStoreConnection extends SailSourceConnection implements SailRes
 			synchronized (readAttemptLock) {
 				current = delegate;
 				delegate = null;
+				queryCapture = null;
 				readViews = List.of();
 			}
 			closeDelegateWhenIdle(current);
@@ -3950,6 +3986,7 @@ public class LmdbStoreConnection extends SailSourceConnection implements SailRes
 			synchronized (readAttemptLock) {
 				previous = delegate;
 				delegate = replacement;
+				queryCapture = replacement instanceof ReplayPlanIteration<?> plan ? plan.queryCapture() : null;
 				generation = newGeneration;
 				attemptGeneration = newGeneration;
 				attemptFinished = false;
