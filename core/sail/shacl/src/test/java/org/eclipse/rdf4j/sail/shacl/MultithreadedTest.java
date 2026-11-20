@@ -223,12 +223,11 @@ public abstract class MultithreadedTest {
 		sail.setLogValidationViolations(false);
 		sail.setSerializableValidation(false);
 		SailRepository repository = new SailRepository(sail);
-		repository.init();
-
 		Random r = new Random(52465534);
 
 		Throwable failure = null;
 		try {
+			repository.init();
 			try (ExecutorService executorService = Executors
 					.newFixedThreadPool(Runtime.getRuntime().availableProcessors() * 2)) {
 				for (int i = 0; i < 3; i++) {
@@ -496,10 +495,10 @@ public abstract class MultithreadedTest {
 	private void runValidationFailuresTest(Sail sail, IsolationLevels isolationLevels, int numberOfRuns)
 			throws IOException {
 		SailRepository repository = new SailRepository(sail);
-		repository.init();
 		Throwable failure = null;
 		Thread deadlockDetectionThread = null;
 		try {
+			repository.init();
 			List<Statement> parse;
 			try (InputStream resource = MultithreadedTest.class.getClassLoader()
 					.getResourceAsStream("complexBenchmark/smallFileInvalid.ttl")) {

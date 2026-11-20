@@ -94,12 +94,7 @@ class LmdbNodePredicateLifetimeTest {
 	@AfterEach
 	void tearDown() throws Exception {
 		System.clearProperty(LmdbDirectAdjacencyStore.NODE_PREDICATE_SERVE_PROPERTY);
-		if (store != null) {
-			store.close();
-		}
-		if (tripleStore != null) {
-			tripleStore.close();
-		}
+		LmdbTestUtil.cleanup(null, store, tripleStore);
 	}
 
 	// ------------------------------------------------------------------

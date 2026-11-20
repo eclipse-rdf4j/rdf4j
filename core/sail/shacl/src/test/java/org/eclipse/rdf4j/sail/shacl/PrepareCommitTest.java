@@ -223,57 +223,64 @@ public class PrepareCommitTest {
 	@Test
 	public void testFailedPrepareRejectsMutationUntilRollbackAndFreshPrepareSucceeds() throws IOException {
 		ShaclSail shaclSail = Utils.getInitializedShaclSail("shacl.trig");
-		IRI invalid = Values.iri("urn:prepare-guard:invalid");
-		try (NotifyingSailConnection connection = shaclSail.getConnection()) {
-			connection.setTransactionSettings(ShaclSail.TransactionSettings.ValidationApproach.Bulk);
-			connection.begin();
-			connection.addStatement(invalid, RDF.TYPE, RDFS.RESOURCE, DATA_GRAPH);
-			assertThrows(ShaclSailValidationException.class, connection::prepare);
+		try {
+			IRI invalid = Values.iri("urn:prepare-guard:invalid");
+			try (NotifyingSailConnection connection = shaclSail.getConnection()) {
+				connection.setTransactionSettings(ShaclSail.TransactionSettings.ValidationApproach.Bulk);
+				connection.begin();
+				connection.addStatement(invalid, RDF.TYPE, RDFS.RESOURCE, DATA_GRAPH);
+				assertThrows(ShaclSailValidationException.class, connection::prepare);
 
-			assertRejected("mutation after failed prepare",
-					() -> connection.addStatement(invalid, RDFS.LABEL, Values.literal("too late"), DATA_GRAPH));
-			assertRejected("namespace change after failed prepare",
-					() -> connection.setNamespace("failed", "urn:failed:"));
-			connection.rollback();
-			assertThat(connection.hasStatement(invalid, null, null, false)).isFalse();
+				assertRejected("mutation after failed prepare",
+						() -> connection.addStatement(invalid, RDFS.LABEL, Values.literal("too late"), DATA_GRAPH));
+				assertRejected("namespace change after failed prepare",
+						() -> connection.setNamespace("failed", "urn:failed:"));
+				connection.rollback();
+				assertThat(connection.hasStatement(invalid, null, null, false)).isFalse();
 
-			connection.begin();
-			connection.addStatement(invalid, RDF.TYPE, RDFS.RESOURCE, DATA_GRAPH);
-			connection.addStatement(invalid, RDFS.LABEL, Values.literal("valid after rollback"), DATA_GRAPH);
-			connection.prepare();
-			connection.prepare();
-			connection.commit();
+				connection.begin();
+				connection.addStatement(invalid, RDF.TYPE, RDFS.RESOURCE, DATA_GRAPH);
+				connection.addStatement(invalid, RDFS.LABEL, Values.literal("valid after rollback"), DATA_GRAPH);
+				connection.prepare();
+				connection.prepare();
+				connection.commit();
+			}
+			assertThat(readGraph(shaclSail, DATA_GRAPH)).containsExactlyInAnyOrder(
+					SimpleValueFactory.getInstance().createStatement(invalid, RDF.TYPE, RDFS.RESOURCE, DATA_GRAPH),
+					SimpleValueFactory.getInstance()
+							.createStatement(invalid, RDFS.LABEL,
+									Values.literal("valid after rollback"), DATA_GRAPH));
+		} finally {
+			shaclSail.shutDown();
 		}
-		assertThat(readGraph(shaclSail, DATA_GRAPH)).containsExactlyInAnyOrder(
-				SimpleValueFactory.getInstance().createStatement(invalid, RDF.TYPE, RDFS.RESOURCE, DATA_GRAPH),
-				SimpleValueFactory.getInstance()
-						.createStatement(invalid, RDFS.LABEL,
-								Values.literal("valid after rollback"), DATA_GRAPH));
-		shaclSail.shutDown();
 	}
 
 	@Test
 	public void testUpdateContextQueuedBeforePrepareIsDrained() throws IOException {
 		ShaclSail shaclSail = Utils.getInitializedShaclSail("shacl.trig");
-		IRI subject = Values.iri("urn:prepare-guard:queued-update");
-		try (NotifyingSailConnection connection = shaclSail.getConnection()) {
-			connection.setTransactionSettings(ShaclSail.TransactionSettings.ValidationApproach.Bulk);
-			connection.begin();
-			UpdateContext insert = updateContext("INSERT DATA {}");
-			connection.startUpdate(insert);
-			connection.addStatement(insert, subject, RDF.TYPE, RDFS.RESOURCE, DATA_GRAPH);
-			connection.addStatement(insert, subject, RDFS.LABEL, Values.literal("queued before prepare"), DATA_GRAPH);
-			connection.endUpdate(insert);
-			connection.prepare();
-			assertThat(connection.hasStatement(subject, RDF.TYPE, RDFS.RESOURCE, false, DATA_GRAPH)).isTrue();
-			connection.commit();
+		try {
+			IRI subject = Values.iri("urn:prepare-guard:queued-update");
+			try (NotifyingSailConnection connection = shaclSail.getConnection()) {
+				connection.setTransactionSettings(ShaclSail.TransactionSettings.ValidationApproach.Bulk);
+				connection.begin();
+				UpdateContext insert = updateContext("INSERT DATA {}");
+				connection.startUpdate(insert);
+				connection.addStatement(insert, subject, RDF.TYPE, RDFS.RESOURCE, DATA_GRAPH);
+				connection.addStatement(insert, subject, RDFS.LABEL, Values.literal("queued before prepare"),
+						DATA_GRAPH);
+				connection.endUpdate(insert);
+				connection.prepare();
+				assertThat(connection.hasStatement(subject, RDF.TYPE, RDFS.RESOURCE, false, DATA_GRAPH)).isTrue();
+				connection.commit();
+			}
+			assertThat(readGraph(shaclSail, DATA_GRAPH)).containsExactlyInAnyOrder(
+					SimpleValueFactory.getInstance().createStatement(subject, RDF.TYPE, RDFS.RESOURCE, DATA_GRAPH),
+					SimpleValueFactory.getInstance()
+							.createStatement(subject, RDFS.LABEL,
+									Values.literal("queued before prepare"), DATA_GRAPH));
+		} finally {
+			shaclSail.shutDown();
 		}
-		assertThat(readGraph(shaclSail, DATA_GRAPH)).containsExactlyInAnyOrder(
-				SimpleValueFactory.getInstance().createStatement(subject, RDF.TYPE, RDFS.RESOURCE, DATA_GRAPH),
-				SimpleValueFactory.getInstance()
-						.createStatement(subject, RDFS.LABEL,
-								Values.literal("queued before prepare"), DATA_GRAPH));
-		shaclSail.shutDown();
 	}
 
 	@Test
@@ -414,57 +421,66 @@ public class PrepareCommitTest {
 	@Test
 	public void testMultiplePrepare() throws IOException {
 		ShaclSail shaclSail = Utils.getInitializedShaclSail("shacl.trig");
+		try {
 
-		try (NotifyingSailConnection connection = shaclSail.getConnection()) {
-			connection.begin();
-			connection.addStatement(RDFS.RESOURCE, RDFS.SUBCLASSOF, RDFS.RESOURCE);
-			connection.prepare();
-			connection.commit();
+			try (NotifyingSailConnection connection = shaclSail.getConnection()) {
+				connection.begin();
+				connection.addStatement(RDFS.RESOURCE, RDFS.SUBCLASSOF, RDFS.RESOURCE);
+				connection.prepare();
+				connection.commit();
 
-			connection.begin();
-			connection.removeStatements(RDFS.RESOURCE, RDFS.SUBCLASSOF, RDFS.RESOURCE);
-			connection.prepare();
-			connection.commit();
+				connection.begin();
+				connection.removeStatements(RDFS.RESOURCE, RDFS.SUBCLASSOF, RDFS.RESOURCE);
+				connection.prepare();
+				connection.commit();
 
+			}
+
+		} finally {
+			shaclSail.shutDown();
 		}
-
-		shaclSail.shutDown();
 	}
 
 	@Test
 	public void testWithoutPrepare() throws IOException {
 		ShaclSail shaclSail = Utils.getInitializedShaclSail("shacl.trig");
+		try {
 
-		try (NotifyingSailConnection connection = shaclSail.getConnection()) {
-			connection.begin();
-			connection.addStatement(RDFS.RESOURCE, RDFS.SUBCLASSOF, RDFS.RESOURCE);
-			connection.commit();
+			try (NotifyingSailConnection connection = shaclSail.getConnection()) {
+				connection.begin();
+				connection.addStatement(RDFS.RESOURCE, RDFS.SUBCLASSOF, RDFS.RESOURCE);
+				connection.commit();
 
+			}
+
+		} finally {
+			shaclSail.shutDown();
 		}
-
-		shaclSail.shutDown();
 	}
 
 	@Test
 	public void testPrepareAfterRollback() throws IOException {
 		ShaclSail shaclSail = Utils.getInitializedShaclSail("shacl.trig");
+		try {
 
-		try (NotifyingSailConnection connection = shaclSail.getConnection()) {
-			connection.begin();
-			connection.addStatement(RDFS.RESOURCE, RDFS.SUBCLASSOF, RDFS.RESOURCE);
-			connection.prepare();
-			connection.prepare();
-			connection.rollback();
-			connection.rollback();
+			try (NotifyingSailConnection connection = shaclSail.getConnection()) {
+				connection.begin();
+				connection.addStatement(RDFS.RESOURCE, RDFS.SUBCLASSOF, RDFS.RESOURCE);
+				connection.prepare();
+				connection.prepare();
+				connection.rollback();
+				connection.rollback();
 
-			connection.begin();
-			connection.addStatement(RDFS.SUBCLASSOF, RDFS.SUBPROPERTYOF, RDFS.SUBCLASSOF);
-			connection.prepare();
-			connection.commit();
+				connection.begin();
+				connection.addStatement(RDFS.SUBCLASSOF, RDFS.SUBPROPERTYOF, RDFS.SUBCLASSOF);
+				connection.prepare();
+				connection.commit();
 
+			}
+
+		} finally {
+			shaclSail.shutDown();
 		}
-
-		shaclSail.shutDown();
 	}
 
 	@Test

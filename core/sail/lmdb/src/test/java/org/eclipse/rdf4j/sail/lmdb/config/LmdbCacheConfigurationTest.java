@@ -33,6 +33,7 @@ import org.eclipse.rdf4j.sail.lmdb.CompactSlotCache;
 import org.eclipse.rdf4j.sail.lmdb.ConcurrentCache;
 import org.eclipse.rdf4j.sail.lmdb.LmdbCache;
 import org.eclipse.rdf4j.sail.lmdb.LmdbStore;
+import org.eclipse.rdf4j.sail.lmdb.LmdbTestUtil;
 import org.eclipse.rdf4j.sail.lmdb.LossyConcurrentCache;
 import org.eclipse.rdf4j.sail.lmdb.MemoizingSlotCache;
 import org.eclipse.rdf4j.sail.lmdb.SlotCasCache;
@@ -178,7 +179,10 @@ class LmdbCacheConfigurationTest {
 		assertThrows(SailConfigException.class, () -> new LmdbStoreConfig().parse(model, node));
 		Path storeDirectory = directory.resolve("not-opened");
 		LmdbStore store = new LmdbStore(storeDirectory.toFile(), config);
-		assertThrows(SailConfigException.class, store::init);
-		assertFalse(Files.exists(storeDirectory), "An invalid selection must fail before acquiring native resources");
+		try (var cleanup = LmdbTestUtil.onClose(store::shutDown)) {
+			assertThrows(SailConfigException.class, store::init);
+			assertFalse(Files.exists(storeDirectory),
+					"An invalid selection must fail before acquiring native resources");
+		}
 	}
 }

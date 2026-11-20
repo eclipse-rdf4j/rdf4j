@@ -87,13 +87,21 @@ public class ThemeQueryBenchmark {
 
 	@Setup(Level.Trial)
 	public void setup() throws IOException {
-		theme = Theme.valueOf(themeName);
-		query = ThemeQueryCatalog.queryFor(theme, z_queryIndex);
-		expected = ThemeQueryCatalog.expectedCountFor(theme, z_queryIndex);
-		dataDir = Files.newTemporaryFolder();
-		NativeStore sail = new NativeStore(dataDir, "spoc,ospc,psoc");
-		repository = new SailRepository(sail);
-		loadData();
+		boolean initialized = false;
+		try {
+			theme = Theme.valueOf(themeName);
+			query = ThemeQueryCatalog.queryFor(theme, z_queryIndex);
+			expected = ThemeQueryCatalog.expectedCountFor(theme, z_queryIndex);
+			dataDir = Files.newTemporaryFolder();
+			NativeStore sail = new NativeStore(dataDir, "spoc,ospc,psoc");
+			repository = new SailRepository(sail);
+			loadData();
+			initialized = true;
+		} finally {
+			if (!initialized) {
+				tearDown();
+			}
+		}
 	}
 
 	private void loadData() throws IOException {
@@ -109,8 +117,15 @@ public class ThemeQueryBenchmark {
 
 	@TearDown(Level.Trial)
 	public void tearDown() throws IOException {
-		repository.shutDown();
-		FileUtils.deleteDirectory(dataDir);
+		try {
+			if (repository != null) {
+				repository.shutDown();
+			}
+		} finally {
+			if (dataDir != null) {
+				FileUtils.deleteDirectory(dataDir);
+			}
+		}
 	}
 
 	@Benchmark
