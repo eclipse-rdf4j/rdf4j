@@ -44,8 +44,10 @@ import org.eclipse.rdf4j.query.algebra.ValueExpr;
 import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.query.algebra.evaluation.TripleSource;
 import org.eclipse.rdf4j.query.algebra.helpers.AbstractSimpleQueryModelVisitor;
+import org.eclipse.rdf4j.query.algebra.helpers.QueryAlgebraBindingAnalysis;
 import org.eclipse.rdf4j.query.algebra.helpers.TupleExprs;
 import org.eclipse.rdf4j.query.algebra.helpers.collectors.VarNameCollector;
+import org.eclipse.rdf4j.query.impl.EmptyBindingSet;
 
 @Experimental
 @InternalUseOnly
@@ -177,15 +179,13 @@ public final class LmdbStableOrderPlanner {
 	}
 
 	/**
-	 * Whether {@code arg} contains an expression that mentions a variable which {@code arg} does not bind itself: a
-	 * filter condition, a BIND expression or an OPTIONAL condition. Such an expression is only evaluated correctly if
-	 * something else has bound that variable first, and a join swap that moves {@code arg} ahead of that something
-	 * evaluates it with the variable unbound, dropping rows or producing unbound values. Variables inside
-	 * {@code EXISTS}/subquery operators are counted too, which is conservative: a false positive only degrades the
-	 * ordering to a value sort.
+	 * Checks whether each filter, BIND or OPTIONAL condition has its inputs assured at its evaluation point when
+	 * {@code arg} runs first. A later producer or a nullable producer may leave an expression dependent on the original
+	 * left operand. References inside subqueries are checked conservatively as well.
 	 */
 	private static boolean dependsOnOuterBindings(TupleExpr arg) {
-		Set<String> boundByArg = arg.getBindingNames();
+		QueryAlgebraBindingAnalysis analysis = QueryAlgebraBindingAnalysis.withBindingValues(arg,
+				EmptyBindingSet.getInstance());
 		boolean[] found = { false };
 		arg.visit(new AbstractSimpleQueryModelVisitor<RuntimeException>() {
 			@Override
@@ -209,7 +209,8 @@ public final class LmdbStableOrderPlanner {
 			}
 
 			private void check(ValueExpr expr) {
-				if (!boundByArg.containsAll(VarNameCollector.process(expr))) {
+				if (!found[0]
+						&& !analysis.contextAt(expr).guaranteedNames().containsAll(VarNameCollector.process(expr))) {
 					found[0] = true;
 				}
 			}

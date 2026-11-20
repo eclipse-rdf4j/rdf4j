@@ -528,19 +528,16 @@ public final class LmdbNativeEvaluationStrategy extends StrictEvaluationStrategy
 	}
 
 	/**
-	 * Reached only when the native compiler did not claim the DISTINCT/REDUCED (it claims the whole query root in the
-	 * default mode), so the generic operators below it decide the row order. The optimizer pipeline of this strategy is
-	 * deliberately unchanged (native plans and adjacency-index fast paths must not be perturbed), so nothing has been
-	 * marked yet: mark the pattern that already leads the argument, if it qualifies. No join argument is ever moved,
-	 * which keeps pushed-down filters next to the bindings they need.
-	 * <p>
-	 * The batching accumulate join (opt-in) buffers left rows and probes in batches, so it does not preserve the left
-	 * argument's order and partitioning is refused while it is enabled.
+	 * Partitions generic DISTINCT/REDUCED only when its descendants also use generic preparation. A generic operator in
+	 * a native-enabled plan can still have native descendants. Their physical strategies can reorder the join or emit
+	 * parallel results in completion order, so an ordered scan in the algebra cannot establish contiguous groups at the
+	 * DISTINCT/REDUCED boundary. When native preparation is disabled, marking the leading pattern leaves the generic
+	 * join order intact.
 	 */
 	private Optional<String> markPartitionBinding(UnaryTupleOperator node) {
-		if (!getQueryExecutionPolicy().experimentalQueryOptimizations()
-				|| !LmdbDistinctOrderMarker.enabled(tripleSourceArg)
-				|| (batchCorrelatedJoinProvider() != null && LmdbNativeAccumulateJoin.enabled())) {
+		if ((nativeEnabled && nativeSource != null)
+				|| !getQueryExecutionPolicy().experimentalQueryOptimizations()
+				|| !LmdbDistinctOrderMarker.enabled(tripleSourceArg)) {
 			return Optional.empty();
 		}
 		return LmdbDistinctOrderMarker.mark(node.getArg(), tripleSourceArg,
