@@ -68,6 +68,7 @@ import org.eclipse.rdf4j.query.algebra.evaluation.impl.restrictions.RestrictionC
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.restrictions.RestrictionPlanProvider;
 import org.eclipse.rdf4j.query.algebra.evaluation.iterator.FilterCondition;
 import org.eclipse.rdf4j.query.algebra.evaluation.iterator.FilterIterator;
+import org.eclipse.rdf4j.query.algebra.evaluation.iterator.PathVariableScope;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.FilterPlacementAnalyzer;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.FilterPlacementAnalyzer.Alternative;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.FilterPlacementAnalyzer.Envelope;
@@ -116,6 +117,12 @@ public final class AdaptiveFilterEvaluationStep implements QueryEvaluationStep, 
 	/** The existing preparation walk also knows whether this execution contains a logical GRAPH. */
 	public static boolean includesGraphRestrictionRegion(QueryEvaluationContext context) {
 		return !(context instanceof PlanningContext planning) || planning.includesGraph;
+	}
+
+	/** Shares the whole-tree path name reservation across steps in this preparation. */
+	public static PathVariableScope pathVariableScope(TupleExpr expression, QueryEvaluationContext context) {
+		return context instanceof PlanningContext planning ? planning.pathVariableScope()
+				: PathVariableScope.prepare(expression);
 	}
 
 	/** Keeps allocation and query values while giving a detached algebra its own identity-indexed planning state. */
@@ -1252,18 +1259,21 @@ public final class AdaptiveFilterEvaluationStep implements QueryEvaluationStep, 
 	}
 
 	private static final class PlanningContext implements QueryEvaluationContext {
+		private final TupleExpr root;
 		private final QueryEvaluationContext delegate;
 		private final List<Filter> filters = new ArrayList<>();
 		private final Map<TupleExpr, List<Envelope>> regions = new IdentityHashMap<>();
 		private final Map<TupleExpr, QueryEvaluationStep> physicalSteps = new IdentityHashMap<>();
 		private final Map<Filter, TupleExpr> islandRoots;
 		private final QueryAlgebraBindingAnalysis analysis;
+		private PathVariableScope pathVariableScope;
 		private boolean includesGraph;
 		private boolean compiledRegion;
 		private boolean physicalReady;
 		private final Set<TupleExpr> preparingStandard = Collections.newSetFromMap(new IdentityHashMap<>());
 
 		PlanningContext(TupleExpr root, QueryEvaluationContext delegate) {
+			this.root = root;
 			this.delegate = delegate;
 			includesGraph = delegate.getActiveGraph() != null;
 			root.visit(new AbstractSimpleQueryModelVisitor<RuntimeException>() {
@@ -1304,6 +1314,13 @@ public final class AdaptiveFilterEvaluationStep implements QueryEvaluationStep, 
 					regions.computeIfAbsent(region, ignored -> new ArrayList<>()).add(envelope);
 				}
 			}
+		}
+
+		private synchronized PathVariableScope pathVariableScope() {
+			if (pathVariableScope == null) {
+				pathVariableScope = PathVariableScope.prepare(root);
+			}
+			return pathVariableScope;
 		}
 
 		/** Per join, since every filter region containing the join asks again; the inputs never change. */

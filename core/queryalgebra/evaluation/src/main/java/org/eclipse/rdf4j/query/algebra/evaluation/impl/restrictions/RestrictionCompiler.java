@@ -394,13 +394,18 @@ public final class RestrictionCompiler {
 
 	/** Conservative candidate keys. Each selected body still needs a plan from the actual prepared step. */
 	public static boolean hasPotentialSeekFrom(TupleExpr operand, TupleExpr driver) {
-		return hasPotentialSeekFrom(potentialSeeks(operand), driver);
+		return hasPotentialSeekFrom(operand, driver, Set.of());
+	}
+
+	/** The optimizer may supply statement occurrences that a later magic-property rewrite consumes. */
+	public static boolean hasPotentialSeekFrom(TupleExpr operand, TupleExpr driver, Set<StatementPattern> consumed) {
+		return hasPotentialSeekFrom(potentialSeeks(operand, consumed), driver);
 	}
 
 	/** Allows a physical planner to retain its ordinary join when even the cheapest admissible probes lose. */
 	public static boolean hasPotentialProfitableSeekFrom(TupleExpr operand, TupleExpr driver,
 			EvaluationStatistics statistics) {
-		Set<String> keys = potentialSeeks(operand);
+		Set<String> keys = potentialSeeks(operand, Set.of());
 		if (!hasPotentialSeekFrom(keys, driver)) {
 			return false;
 		}
@@ -425,14 +430,18 @@ public final class RestrictionCompiler {
 
 	/** Candidate keys exported by the selector or the selected graph body. */
 	public static Set<String> potentialGraphSeeks(Graph graph) {
-		Set<String> names = new HashSet<>(potentialSeeks(graph.getArg()));
+		return potentialGraphSeeks(graph, Set.of());
+	}
+
+	private static Set<String> potentialGraphSeeks(Graph graph, Set<StatementPattern> consumed) {
+		Set<String> names = new HashSet<>(potentialSeeks(graph.getArg(), consumed));
 		if (!graph.getGraphName().isConstant() && !graph.getGraphName().hasValue()) {
 			names.add(graph.getGraphName().getName());
 		}
 		return names;
 	}
 
-	private static Set<String> potentialSeeks(TupleExpr node) {
+	private static Set<String> potentialSeeks(TupleExpr node, Set<StatementPattern> consumed) {
 		OriginalPathDescriptor path = OriginalPathDescriptor.forRegion(node);
 		if (path != null) {
 			Set<String> exported = node.getBindingNames();
@@ -445,6 +454,7 @@ public final class RestrictionCompiler {
 			return ends;
 		}
 		if (node instanceof StatementPattern pattern && pattern.getContextVar() == null
+				&& !consumed.contains(pattern)
 				&& !TupleFunctionMagicPropertyOptimizer.isMagicProperty(pattern, TupleFunctionRegistry.getInstance())) {
 			Set<String> names = new HashSet<>();
 			for (Var variable : List.of(pattern.getSubjectVar(), pattern.getPredicateVar(), pattern.getObjectVar())) {
@@ -455,38 +465,38 @@ public final class RestrictionCompiler {
 			return names;
 		}
 		if (node instanceof Graph graph) {
-			return potentialGraphSeeks(graph);
+			return potentialGraphSeeks(graph, consumed);
 		}
 		if (node instanceof Projection projection) {
 			return projectNames(projection.getBindingNames(), projectionSources(projection)::get,
-					potentialSeeks(projection.getArg()));
+					potentialSeeks(projection.getArg(), consumed));
 		}
 		if (node instanceof Extension extension
 				&& extension.getElements().stream().allMatch(element -> movable(element.getExpr()))) {
 			return projectNames(extension.getBindingNames(), extensionSources(extension),
-					potentialSeeks(extension.getArg()));
+					potentialSeeks(extension.getArg(), consumed));
 		}
 		if (node instanceof Filter filter && movable(filter.getCondition())) {
-			return potentialSeeks(filter.getArg());
+			return potentialSeeks(filter.getArg(), consumed);
 		}
 		if (node instanceof Distinct distinct) {
-			return potentialSeeks(distinct.getArg());
+			return potentialSeeks(distinct.getArg(), consumed);
 		}
 		if (node instanceof Order order && RestrictionModifierRules.sortedBag(order)) {
-			return potentialSeeks(order.getArg());
+			return potentialSeeks(order.getArg(), consumed);
 		}
 		if (node instanceof Slice slice && RestrictionModifierRules.noOpSlice(slice)) {
-			return potentialSeeks(slice.getArg());
+			return potentialSeeks(slice.getArg(), consumed);
 		}
 		if (node instanceof Group group && RestrictionModifierRules.wholeGroups(group)) {
-			Set<String> names = new HashSet<>(potentialSeeks(group.getArg()));
+			Set<String> names = new HashSet<>(potentialSeeks(group.getArg(), consumed));
 			names.retainAll(group.getGroupBindingNames());
 			return names;
 		}
 		if (node instanceof Join || node instanceof Union || node instanceof LeftJoin || node instanceof Difference) {
 			BinaryTupleOperator binary = (BinaryTupleOperator) node;
-			Set<String> names = new HashSet<>(potentialSeeks(binary.getLeftArg()));
-			names.addAll(externalRightSeeks(binary, potentialSeeks(binary.getRightArg())));
+			Set<String> names = new HashSet<>(potentialSeeks(binary.getLeftArg(), consumed));
+			names.addAll(externalRightSeeks(binary, potentialSeeks(binary.getRightArg(), consumed)));
 			names.retainAll(node.getBindingNames());
 			return names;
 		}

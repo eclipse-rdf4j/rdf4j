@@ -75,19 +75,7 @@ public class TupleFunctionMagicPropertyOptimizer implements QueryOptimizer {
 
 	@Override
 	public void optimize(TupleExpr tupleExpr, Dataset dataset, BindingSet bindings) {
-		List<TupleExpr> groups = new ArrayList<>();
-		Set<TupleExpr> seen = Collections.newSetFromMap(new IdentityHashMap<>());
-		tupleExpr.visit(new AbstractSimpleQueryModelVisitor<RuntimeException>(false) {
-			@Override
-			public void meet(StatementPattern node) {
-				if (isMagicPattern(node)) {
-					TupleExpr root = groupRoot(node);
-					if (seen.add(root)) {
-						groups.add(root);
-					}
-				}
-			}
-		});
+		List<TupleExpr> groups = magicGroups(tupleExpr, registry);
 		// Rewrite inner visibility scopes first, keeping them opaque to their surrounding plain-join group.
 		groups.sort(Comparator.comparingInt(TupleFunctionMagicPropertyOptimizer::depth).reversed());
 		for (TupleExpr group : groups) {
@@ -97,8 +85,35 @@ public class TupleFunctionMagicPropertyOptimizer implements QueryOptimizer {
 		}
 	}
 
-	private boolean isMagicPattern(StatementPattern node) {
-		return isMagicProperty(node, registry);
+	/** Finds the statement patterns that the magic-property rewrite will replace with calls. */
+	@InternalUseOnly
+	public static Set<StatementPattern> consumedStatements(TupleExpr tupleExpr, TupleFunctionRegistry registry) {
+		Set<StatementPattern> consumed = Collections.newSetFromMap(new IdentityHashMap<>());
+		for (TupleExpr group : magicGroups(tupleExpr, registry)) {
+			if (group.getParentNode() != null) {
+				List<TupleExpr> operands = new ArrayList<>();
+				collectOperands(group, operands, true);
+				magicCalls(operands, consumed, registry);
+			}
+		}
+		return consumed;
+	}
+
+	private static List<TupleExpr> magicGroups(TupleExpr tupleExpr, TupleFunctionRegistry registry) {
+		List<TupleExpr> groups = new ArrayList<>();
+		Set<TupleExpr> seen = Collections.newSetFromMap(new IdentityHashMap<>());
+		tupleExpr.visit(new AbstractSimpleQueryModelVisitor<RuntimeException>(false) {
+			@Override
+			public void meet(StatementPattern node) {
+				if (isMagicProperty(node, registry)) {
+					TupleExpr root = groupRoot(node);
+					if (seen.add(root)) {
+						groups.add(root);
+					}
+				}
+			}
+		});
+		return groups;
 	}
 
 	/** A magic-property pattern invokes a tuple function rather than seeking statement data. */
@@ -123,25 +138,11 @@ public class TupleFunctionMagicPropertyOptimizer implements QueryOptimizer {
 	private void rewrite(TupleExpr root) {
 		List<TupleExpr> operands = new ArrayList<>();
 		collectOperands(root, operands, true);
-		List<StatementPattern> patterns = new ArrayList<>();
-		for (TupleExpr operand : operands) {
-			if (operand instanceof StatementPattern pattern) {
-				patterns.add(pattern);
-			}
-		}
 		Set<StatementPattern> consumed = Collections.newSetFromMap(new IdentityHashMap<>());
 		List<TupleExpr> calls = new ArrayList<>();
 		Set<String> inputNames = new LinkedHashSet<>();
-		// Resolve every call against the unchanged group, including collection patterns shared by several calls.
-		for (StatementPattern pattern : patterns) {
-			if (isMagicPattern(pattern)) {
-				List<StatementPattern> listPatterns = new ArrayList<>();
-				List<Var> args = resolveList(pattern.getSubjectVar(), patterns, listPatterns);
-				List<Var> results = resolveList(pattern.getObjectVar(), patterns, listPatterns);
-				calls.add(call(pattern, args, results, inputNames));
-				consumed.add(pattern);
-				consumed.addAll(listPatterns);
-			}
+		for (MagicCall magic : magicCalls(operands, consumed, registry)) {
+			calls.add(call(magic.pattern(), magic.arguments(), magic.results(), inputNames));
 		}
 		List<TupleExpr> ordinary = new ArrayList<>();
 		for (TupleExpr operand : operands) {
@@ -152,6 +153,30 @@ public class TupleFunctionMagicPropertyOptimizer implements QueryOptimizer {
 		Lateral lateral = new Lateral(join(ordinary), join(calls), inputNames);
 		lateral.setVariableScopeChange(TupleExprs.isVariableScopeChange(root));
 		root.replaceWith(lateral);
+	}
+
+	private record MagicCall(StatementPattern pattern, List<Var> arguments, List<Var> results) {
+	}
+
+	private static List<MagicCall> magicCalls(List<TupleExpr> operands, Set<StatementPattern> consumed,
+			TupleFunctionRegistry registry) {
+		List<StatementPattern> patterns = new ArrayList<>();
+		for (TupleExpr operand : operands) {
+			if (operand instanceof StatementPattern pattern) {
+				patterns.add(pattern);
+			}
+		}
+		List<MagicCall> calls = new ArrayList<>();
+		// Resolve every call against the unchanged group, including collection patterns shared by several calls.
+		for (StatementPattern pattern : patterns) {
+			if (isMagicProperty(pattern, registry)) {
+				List<Var> args = resolveList(pattern.getSubjectVar(), patterns, consumed);
+				List<Var> results = resolveList(pattern.getObjectVar(), patterns, consumed);
+				calls.add(new MagicCall(pattern, args, results));
+				consumed.add(pattern);
+			}
+		}
+		return calls;
 	}
 
 	private static TupleExpr join(List<TupleExpr> operands) {
@@ -208,7 +233,7 @@ public class TupleFunctionMagicPropertyOptimizer implements QueryOptimizer {
 	 * Resolves a subject/object into argument or result terms: a plain term is a single entry, an anonymous variable
 	 * heading an {@code rdf:first}/{@code rdf:rest} chain within the group is expanded into its members.
 	 */
-	private static List<Var> resolveList(Var head, List<StatementPattern> group, List<StatementPattern> consumed) {
+	private static List<Var> resolveList(Var head, List<StatementPattern> group, Set<StatementPattern> consumed) {
 		List<Var> items = new ArrayList<>();
 		if (head.hasValue() || !head.isAnonymous()) {
 			items.add(head);

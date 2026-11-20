@@ -27,6 +27,7 @@ import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.Statement;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
+import org.eclipse.rdf4j.model.vocabulary.RDF;
 import org.eclipse.rdf4j.model.vocabulary.RDF4J;
 import org.eclipse.rdf4j.model.vocabulary.SESAME;
 import org.eclipse.rdf4j.query.Binding;
@@ -63,6 +64,7 @@ import org.eclipse.rdf4j.query.impl.SimpleDataset;
 import org.eclipse.rdf4j.query.parser.QueryParserUtil;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.EnumSource;
 import org.junit.jupiter.params.provider.ValueSource;
 
 class GraphScopeOptimizerTest {
@@ -104,6 +106,31 @@ class GraphScopeOptimizerTest {
 						+ "GRAPH <urn:absent> { ?a <http://rdf4j.org/function/array#unnest> ?x } }");
 		new GraphScopeOptimizer(QueryExecutionPolicy.DEFAULT).optimize(plan, null, EmptyBindingSet.getInstance());
 		assertThat(graphs(plan)).isEmpty();
+	}
+
+	@ParameterizedTest
+	@EnumSource(GraphRestrictionMode.class)
+	void preservesMagicPropertyResultsWithCollectionSyntax(GraphRestrictionMode mode) {
+		DefaultEvaluationStrategy strategy = new DefaultEvaluationStrategy(new EmptyTripleSource(), null);
+		strategy.setQueryExecutionPolicy(QueryExecutionPolicy.DEFAULT.withGraphRestrictionMode(mode));
+		for (String output : List.of("(?part)", "?part")) {
+			TupleExpr plan = parse("SELECT ?part WHERE { VALUES ?part { 'a' } GRAPH <urn:absent> { "
+					+ "('a,b' ',') <http://rdf4j.org/function/string#split> " + output + " } }");
+			strategy.optimize(plan, new EvaluationStatistics(), EmptyBindingSet.getInstance());
+			assertThat(evaluate(strategy, plan, EmptyBindingSet.getInstance())).as("%s in %s", output, mode)
+					.containsExactly(bindings("part", VF.createLiteral("a")));
+		}
+	}
+
+	@ParameterizedTest
+	@EnumSource(value = GraphRestrictionMode.class, names = { "AUTO", "FORCE_INDEPENDENT", "REQUIRE_RESTRICTED" })
+	void retainsGraphWhenAnOrdinaryCollectionPatternCanSeek(GraphRestrictionMode mode) {
+		TupleExpr plan = parse("SELECT ?part WHERE { VALUES ?part { 'a' } GRAPH <urn:g> { "
+				+ "('a,b' ',') <http://rdf4j.org/function/string#split> (?part) . "
+				+ "<urn:list> <" + RDF.FIRST + "> ?part } }");
+		new GraphScopeOptimizer(QueryExecutionPolicy.DEFAULT.withGraphRestrictionMode(mode))
+				.optimize(plan, null, EmptyBindingSet.getInstance());
+		assertThat(graphs(plan)).hasSize(1);
 	}
 
 	@Test

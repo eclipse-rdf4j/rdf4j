@@ -127,7 +127,13 @@ public abstract class AbstractSail implements Sail {
 
 	/** Selects optional query behavior before initialization. Correctness checks always remain enabled. */
 	public final void setExperimentalQueryOptimizations(boolean enabled) {
-		setQueryExecutionPolicy(QueryExecutionPolicy.of(enabled));
+		initializationLock.writeLock().lock();
+		try {
+			setQueryExecutionPolicy(QueryExecutionPolicy.of(enabled)
+					.withGraphRestrictionMode(queryExecutionPolicy.graphRestrictionMode()));
+		} finally {
+			initializationLock.writeLock().unlock();
+		}
 	}
 
 	/** Selects the immutable execution policy for queries prepared by this Sail. */

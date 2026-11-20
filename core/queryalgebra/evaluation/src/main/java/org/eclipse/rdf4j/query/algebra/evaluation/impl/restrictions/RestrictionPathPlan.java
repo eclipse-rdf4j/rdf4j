@@ -35,7 +35,7 @@ import org.eclipse.rdf4j.query.algebra.evaluation.QueryEvaluationStep;
 import org.eclipse.rdf4j.query.algebra.evaluation.TripleSource;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.BindingSetQueryEvaluationContext;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.QueryEvaluationContext;
-import org.eclipse.rdf4j.query.algebra.evaluation.iterator.PathVariableScope;
+import org.eclipse.rdf4j.query.algebra.evaluation.impl.evaluationsteps.AdaptiveFilterEvaluationStep;
 import org.eclipse.rdf4j.query.algebra.evaluation.iterator.ProjectionIterator;
 import org.eclipse.rdf4j.query.algebra.helpers.AbstractQueryModelVisitor;
 import org.eclipse.rdf4j.query.algebra.helpers.OriginalPathDescriptor;
@@ -179,7 +179,7 @@ public final class RestrictionPathPlan {
 
 	private static Template compile(TupleExpr region, OriginalPathDescriptor path, int mask, QueryEvaluationContext ctx,
 			BindingSet input, BiFunction<TupleExpr, QueryEvaluationContext, QueryEvaluationStep> prepare) {
-		String prefix = PathVariableScope.prepare(region).freshPrefix(input);
+		String prefix = AdaptiveFilterEvaluationStep.pathVariableScope(region, ctx).freshPrefix(input);
 		Map<String, String> params = new HashMap<>();
 		for (int i = 0; i < 2; i++) {
 			String name = (i == 0 ? path.start() : path.end()).name();

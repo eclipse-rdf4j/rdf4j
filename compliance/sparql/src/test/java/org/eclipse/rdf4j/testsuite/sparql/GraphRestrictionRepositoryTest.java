@@ -242,7 +242,7 @@ class GraphRestrictionRepositoryTest {
 
 	@Test
 	@Timeout(30)
-	void nativeDirectWriterMakesAutoUseIndependentReadUntilTheWriterCloses() {
+	void nativeAutoUsesIndependentAutocommitReadsWithOrWithoutDirectWriter() {
 		AbstractSail sail = Backend.NATIVE.newSail(dataDirectory.resolve("direct-writer"));
 		sail.setQueryExecutionPolicy(QueryExecutionPolicy.DEFAULT.withGraphRestrictionMode(GraphRestrictionMode.AUTO));
 		SailRepository repository = new SailRepository(sail);
@@ -266,6 +266,7 @@ class GraphRestrictionRepositoryTest {
 			assertThat(writer.isActive()).isTrue();
 			writer.rollback();
 
+			assertThat(usesRestrictionPlan(query)).as("writable NativeStore autocommit read").isFalse();
 			reader.begin(IsolationLevels.SNAPSHOT_READ);
 			assertThat(usesRestrictionPlan(query)).isTrue();
 			assertThat(QueryResults.asList(query.evaluate())).containsExactly(expected, expected);

@@ -64,7 +64,10 @@ public class NativeStoreConnection extends SailSourceConnection implements Threa
 	@Override
 	protected SailDataset acquireQueryDataset(TupleExpr expression, boolean includeInferred) {
 		GraphRestrictionMode mode = nativeStore.getQueryExecutionPolicy().graphRestrictionMode();
+		boolean inIsolatedTransaction = isActive() && !IsolationLevels.NONE.isCompatibleWith(getTransactionIsolation());
+		// Standalone reads on writable stores keep ordinary writer admission, including for NONE transactions.
 		if ((mode == GraphRestrictionMode.AUTO || mode == GraphRestrictionMode.REQUIRE_RESTRICTED)
+				&& (inIsolatedTransaction || !nativeStore.isWritable())
 				&& GraphScopeOptimizer.hasRestrictionJoin(expression)) {
 			Lock lease = nativeStore.tryPinIsolatedQuery();
 			if (lease != null) {

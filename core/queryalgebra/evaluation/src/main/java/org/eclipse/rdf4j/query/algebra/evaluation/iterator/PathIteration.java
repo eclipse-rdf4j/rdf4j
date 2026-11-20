@@ -44,6 +44,7 @@ import org.eclipse.rdf4j.query.algebra.evaluation.QueryBindingSet;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryEvaluationStep;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.BindingSetQueryEvaluationContext;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.QueryEvaluationContext;
+import org.eclipse.rdf4j.query.algebra.evaluation.impl.evaluationsteps.AdaptiveFilterEvaluationStep;
 import org.eclipse.rdf4j.query.algebra.helpers.AbstractQueryModelVisitor;
 import org.eclipse.rdf4j.query.impl.SimpleBinding;
 
@@ -128,7 +129,7 @@ public class PathIteration extends LookAheadIteration<BindingSet> {
 		Var graph = path.getContextVar();
 		TupleExpr expression = path.getPathExpression();
 		long minLength = path.getMinLength();
-		PathVariableScope names = PathVariableScope.prepare(path);
+		PathVariableScope names = AdaptiveFilterEvaluationStep.pathVariableScope(path, context);
 		return bindings -> new PathIteration(strategy, scope, start, expression, end, graph, minLength, bindings,
 				context, names, false);
 	}

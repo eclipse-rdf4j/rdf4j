@@ -48,6 +48,7 @@ import org.eclipse.rdf4j.query.algebra.StatementPattern;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.DefaultEvaluationStrategy;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.EmptyTripleSource;
+import org.eclipse.rdf4j.query.algebra.evaluation.impl.EvaluationStatistics;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.QueryEvaluationContext;
 import org.eclipse.rdf4j.query.algebra.helpers.AbstractQueryModelVisitor;
 import org.eclipse.rdf4j.query.algebra.helpers.OriginalPathDescriptor;
@@ -147,6 +148,69 @@ class GraphRestrictionJoinTest {
 				.containsExactlyInAnyOrder(firstRow, firstRow, secondRow, secondRow);
 		assertThat(source.accesses).containsExactly(new Access(null, PREDICATE, null, List.of(GRAPH)));
 		assertThat(source.statementRows).isEqualTo(2L);
+	}
+
+	@Test
+	void graphSelectorProbesShareTheCatalogAcrossDistinctKeys() {
+		List<Resource> graphs = IntStream.range(0, 128).mapToObj(index -> (Resource) iri("graph" + index)).toList();
+		IRI subject = iri("subject");
+		IRI object = iri("object");
+		RecordingTripleSource source = new RecordingTripleSource(graphs,
+				graphs.stream().map(graph -> VF.createStatement(subject, PREDICATE, object, graph)).toList());
+		String selectors = String.join(" ", graphs.stream().map(graph -> "<" + graph.stringValue() + ">").toList());
+		String body = "VALUES ?g { " + selectors + " :graph0 :missing } GRAPH ?g { ?s :p ?o }";
+		List<BindingSet> expected = new ArrayList<>(graphs.stream()
+				.<BindingSet>map(graph -> row(Map.of("g", graph, "s", subject, "o", object)))
+				.toList());
+		expected.add(expected.getFirst());
+		var statistics = new EvaluationStatistics() {
+			@Override
+			public double getCardinality(TupleExpr expression) {
+				if (expression instanceof StatementPattern pattern && pattern.getContextVar() != null) {
+					return pattern.getContextVar().hasValue() ? 1 : graphs.size();
+				}
+				return super.getCardinality(expression);
+			}
+		};
+		for (GraphRestrictionMode mode : List.of(GraphRestrictionMode.AUTO, GraphRestrictionMode.REQUIRE_RESTRICTED)) {
+			source.resetObservations();
+			var strategy = new DefaultEvaluationStrategy(source, null, null, 0, statistics);
+			strategy.setQueryExecutionPolicy(QueryExecutionPolicy.DEFAULT.withGraphRestrictionMode(mode));
+			assertThat(evaluate(strategy, parse("?g ?s ?o", body), EmptyBindingSet.getInstance())).as("%s rows", mode)
+					.containsExactlyInAnyOrderElementsOf(expected);
+			assertThat(source.catalogOpens).as("%s catalog opens", mode).isLessThanOrEqualTo(1);
+			assertThat(source.catalogEntries).as("%s catalog entries", mode).isLessThanOrEqualTo(graphs.size());
+		}
+	}
+
+	@Test
+	void boundAndUnboundGraphSelectorProbesShareOrderAndCloseTheCatalog() {
+		IRI secondGraph = iri("H");
+		IRI thirdGraph = iri("I");
+		IRI subject = iri("subject");
+		IRI object = iri("object");
+		List<Resource> graphs = List.of(GRAPH, secondGraph, thirdGraph);
+		RecordingTripleSource source = new RecordingTripleSource(graphs,
+				graphs.stream().map(graph -> VF.createStatement(subject, PREDICATE, object, graph)).toList());
+		String mixed = "VALUES (?g ?key) { (:H 1) (UNDEF 2) (:G 3) } GRAPH ?g { ?s :p ?o }";
+		assertThat(evaluate(source, parse("?g", mixed))).extracting(binding -> binding.getValue("g"))
+				.containsExactly(secondGraph, GRAPH, secondGraph, thirdGraph, GRAPH);
+		assertThat(source.catalogOpens).isEqualTo(1);
+		assertThat(source.catalogEntries).isEqualTo(3);
+		assertThat(source.catalogCloses).isEqualTo(1);
+
+		source.resetObservations();
+		String first = "VALUES ?g { :G :H :I } GRAPH ?g { ?s :p ?o }";
+		var strategy = new DefaultEvaluationStrategy(source, null, null);
+		strategy.setQueryExecutionPolicy(QueryExecutionPolicy.DEFAULT
+				.withGraphRestrictionMode(GraphRestrictionMode.REQUIRE_RESTRICTED));
+		try (var rows = strategy.precompile(parse("?g", first, "LIMIT 1")).evaluate(EmptyBindingSet.getInstance())) {
+			assertThat(source.catalogOpens).isZero();
+			assertThat(rows.next().getValue("g")).isEqualTo(GRAPH);
+		}
+		assertThat(source.catalogOpens).isEqualTo(1);
+		assertThat(source.catalogEntries).isEqualTo(1);
+		assertThat(source.catalogCloses).isEqualTo(1);
 	}
 
 	@Test
@@ -836,6 +900,9 @@ class GraphRestrictionJoinTest {
 		private final List<Access> accesses = new ArrayList<>();
 		private final StatementRestrictionSourceView view = new StatementRestrictionSourceView(this, new Object());
 		private long statementRows;
+		private int catalogOpens;
+		private int catalogEntries;
+		private int catalogCloses;
 
 		RecordingTripleSource(List<Resource> contexts, List<Statement> statements) {
 			this.contexts = contexts;
@@ -862,7 +929,13 @@ class GraphRestrictionJoinTest {
 
 		@Override
 		public CloseableIteration<? extends Resource> getContextIDs() {
-			return new CloseableIteratorIteration<>(contexts.iterator());
+			catalogOpens++;
+			return new CloseableIteratorIteration<>(contexts.stream().peek(context -> catalogEntries++).iterator()) {
+				@Override
+				protected void handleClose() {
+					catalogCloses++;
+				}
+			};
 		}
 
 		@Override
@@ -887,6 +960,9 @@ class GraphRestrictionJoinTest {
 		void resetObservations() {
 			accesses.clear();
 			statementRows = 0;
+			catalogOpens = 0;
+			catalogEntries = 0;
+			catalogCloses = 0;
 		}
 	}
 }

@@ -12,6 +12,7 @@
 package org.eclipse.rdf4j.query.algebra.evaluation.optimizer;
 
 import java.util.Collections;
+import java.util.Set;
 import java.util.function.BiPredicate;
 import java.util.function.Predicate;
 
@@ -34,6 +35,7 @@ import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.query.algebra.VariableScopeChange;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryOptimizer;
+import org.eclipse.rdf4j.query.algebra.evaluation.function.TupleFunctionRegistry;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.restrictions.RestrictionCompiler;
 import org.eclipse.rdf4j.query.algebra.helpers.AbstractQueryModelVisitor;
 import org.eclipse.rdf4j.query.algebra.helpers.QueryAlgebraBindingAnalysis;
@@ -118,11 +120,22 @@ public class GraphScopeOptimizer implements QueryOptimizer {
 
 	@Override
 	public void optimize(TupleExpr tupleExpr, Dataset dataset, BindingSet bindings) {
-		if (mode == GraphRestrictionMode.FORCE_INDEPENDENT) {
-			return;
-		}
 		QueryAlgebraBindingAnalysis analysis = QueryAlgebraBindingAnalysis.withBindingValues(tupleExpr, bindings);
 		tupleExpr.visit(new AbstractQueryModelVisitor<RuntimeException>() {
+			private Set<StatementPattern> magicStatements;
+
+			private Set<StatementPattern> magicStatements() {
+				if (magicStatements == null) {
+					magicStatements = TupleFunctionMagicPropertyOptimizer.consumedStatements(tupleExpr,
+							TupleFunctionRegistry.getInstance());
+				}
+				return magicStatements;
+			}
+
+			private boolean hasPotentialSeekFrom(TupleExpr operand, TupleExpr driver) {
+				return RestrictionCompiler.hasPotentialSeekFrom(operand, driver, magicStatements());
+			}
+
 			@Override
 			public void meet(Service service) {
 				// The remote endpoint owns its graph dataset and optimizer pipeline.
@@ -132,11 +145,6 @@ public class GraphScopeOptimizer implements QueryOptimizer {
 			public void meet(Graph graph) {
 				QueryAlgebraBindingAnalysis.ReadOnlyContext input = analysis.contextAt(graph);
 				super.meet(graph);
-				if (mode != GraphRestrictionMode.OFF && participatesInJoin(graph, tupleExpr,
-						mode == GraphRestrictionMode.AUTO ? RestrictionCompiler::hasPotentialSeekFrom
-								: GraphScopeOptimizer::sharesBindingName)) {
-					return;
-				}
 				Value name = graph.getGraphName().getValue();
 				if (graph.getParentNode() != null && name instanceof Resource && !requiresSemanticSelection(name)
 						&& hasCompatibleInput(graph.getGraphName(), input)
@@ -145,6 +153,15 @@ public class GraphScopeOptimizer implements QueryOptimizer {
 										.stream()
 										.noneMatch(GraphScopeOptimizer::requiresSemanticSelection))
 						&& isPositiveBasicGraphPattern(graph.getArg(), graph.getGraphName())) {
+					boolean retainForRestriction = mode == GraphRestrictionMode.FORCE_INDEPENDENT
+							|| mode != GraphRestrictionMode.OFF && participatesInJoin(graph, tupleExpr,
+									mode == GraphRestrictionMode.AUTO ? this::hasPotentialSeekFrom
+											: GraphScopeOptimizer::sharesBindingName);
+					// A body consisting entirely of magic call syntax has no statement to execute in a named graph.
+					// Keep its existing constant-graph lowering irrespective of the physical join policy.
+					if (retainForRestriction && !onlyMagicStatements(graph.getArg(), magicStatements())) {
+						return;
+					}
 					TupleExpr lowered = lowerBasicGraphPattern(graph.getArg(), graph.getGraphName());
 					// GRAPH receives invocation input, not bindings produced by an ordinary join sibling. Keep that
 					// boundary when the physical context lookup replaces its active-graph evaluator.
@@ -154,6 +171,14 @@ public class GraphScopeOptimizer implements QueryOptimizer {
 				}
 			}
 		});
+	}
+
+	private static boolean onlyMagicStatements(TupleExpr expression, Set<StatementPattern> consumed) {
+		if (expression instanceof Join join) {
+			return onlyMagicStatements(join.getLeftArg(), consumed)
+					&& onlyMagicStatements(join.getRightArg(), consumed);
+		}
+		return consumed.contains(expression);
 	}
 
 	/** Physical context lookup alone cannot resolve a default-graph alias or verify a remote blank node's origin. */

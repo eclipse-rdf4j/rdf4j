@@ -25,6 +25,8 @@ import org.eclipse.rdf4j.collection.factory.impl.DefaultCollectionFactory;
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.common.iteration.LookAheadIteration;
 import org.eclipse.rdf4j.common.iteration.SingletonIteration;
+import org.eclipse.rdf4j.model.TripleTerm;
+import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.QueryResults;
@@ -35,6 +37,7 @@ import org.eclipse.rdf4j.query.algebra.evaluation.impl.ActiveGraphQueryEvaluatio
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.ArrayBindingBasedQueryEvaluationContext;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.QueryEvaluationContext;
 import org.eclipse.rdf4j.query.impl.EmptyBindingSet;
+import org.eclipse.rdf4j.query.impl.RepositoryBNode;
 import org.junit.jupiter.api.Test;
 
 class RestrictionInvocationTest {
@@ -97,6 +100,34 @@ class RestrictionInvocationTest {
 			assertThatThrownBy(() -> invocation.probe(narrow)).isInstanceOf(IllegalStateException.class);
 		}
 		assertThat(closes).hasValue(1);
+	}
+
+	@Test
+	void inMemoryReplayKeepsDeepTripleTermsWithTrustedBlankNodes() {
+		var context = new QueryEvaluationContext.Minimal(null);
+		var subject = VF.createIRI("urn:test:subject");
+		var predicate = VF.createIRI("urn:test:predicate");
+		var trusted = RepositoryBNode.fromNegotiatedResult("wire", "raw", true);
+		Value term = trusted;
+		int depth = 6_000;
+		for (int i = 0; i < depth; i++) {
+			term = VF.createTripleTerm(subject, predicate, term);
+		}
+		var original = new QueryBindingSet();
+		original.setBinding("allocation", term);
+		var plan = RestrictionCompiler.replay("test/replay", assignment(), context,
+				input -> new SingletonIteration<>(original), DefaultCollectionFactory::new);
+		try (var invocation = plan.open(EMPTY, InvocationOwner.forExecution(context))) {
+			for (int probe = 0; probe < 2; probe++) {
+				List<BindingSet> rows = read(invocation.probe(plan.layout().unrestricted()));
+				assertThat(rows).hasSize(1);
+				Value current = rows.getFirst().getValue("allocation");
+				for (int i = 0; i < depth; i++) {
+					current = ((TripleTerm) current).getObject();
+				}
+				assertThat(current).isSameAs(trusted);
+			}
+		}
 	}
 
 	@Test

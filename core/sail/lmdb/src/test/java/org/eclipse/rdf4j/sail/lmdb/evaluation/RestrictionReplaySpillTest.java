@@ -13,6 +13,7 @@ package org.eclipse.rdf4j.sail.lmdb.evaluation;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.io.File;
@@ -30,7 +31,11 @@ import org.eclipse.rdf4j.collection.factory.api.CollectionFactory;
 import org.eclipse.rdf4j.collection.factory.impl.DefaultCollectionFactory;
 import org.eclipse.rdf4j.collection.factory.mapdb.MapDb3CollectionFactory;
 import org.eclipse.rdf4j.common.iteration.CloseableIteratorIteration;
+import org.eclipse.rdf4j.model.IRI;
+import org.eclipse.rdf4j.model.Resource;
+import org.eclipse.rdf4j.model.TripleTerm;
 import org.eclipse.rdf4j.model.Value;
+import org.eclipse.rdf4j.model.impl.SimpleTripleTerm;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.QueryResults;
@@ -102,6 +107,65 @@ class RestrictionReplaySpillTest {
 		long reportedFileBytes = assignment.getLongMetricActual(SPILL_FILE_BYTES);
 		assertEquals(fileBytesBeforeClose, reportedFileBytes);
 		reporter.publishEntry(SPILL_FILE_BYTES, Long.toString(reportedFileBytes));
+	}
+
+	@Test
+	void replaySpillKeepsDeepTripleTermsWithTrustedBlankNodes() {
+		var context = new QueryEvaluationContext.Minimal(null);
+		var subject = VF.createIRI("urn:test:subject");
+		var predicate = VF.createIRI("urn:test:predicate");
+		var trusted = RepositoryBNode.fromNegotiatedResult("wire", "raw", true);
+		Value objectChain = trusted;
+		Resource subjectChain = trusted;
+		int depth = 6_000;
+		for (int i = 0; i < depth; i++) {
+			objectChain = VF.createTripleTerm(subject, predicate, objectChain);
+			subjectChain = new ResourceTerm(subjectChain, predicate, subject);
+		}
+		var row = new QueryBindingSet();
+		row.setBinding("nested", VF.createTripleTerm(subjectChain, predicate, objectChain));
+		var assignment = new BindingSetAssignment();
+		assignment.setBindingNames(Set.of("nested"));
+		var factory = new ObservedMapDbFactory();
+		var plan = RestrictionCompiler.replay("test/deep-spill", assignment, context,
+				input -> new CloseableIteratorIteration<>(List.<BindingSet>of(row, row, row).iterator()),
+				() -> factory);
+		var input = EmptyBindingSet.getInstance();
+		try (var invocation = plan.open(input, InvocationOwner.forExecution(context))) {
+			try (var rows = invocation.probe(plan.layout().unrestricted())) {
+				assertEquals(3, QueryResults.asList(rows).size());
+			}
+			assertTrue(factory.spilled());
+			try (var rows = invocation.probe(plan.layout().unrestricted())) {
+				TripleTerm restored = (TripleTerm) rows.next().getValue("nested");
+				Resource subjectTerm = restored.getSubject();
+				Value objectTerm = restored.getObject();
+				for (int i = 0; i < depth; i++) {
+					subjectTerm = ((TripleTerm) subjectTerm).getSubject();
+					objectTerm = ((TripleTerm) objectTerm).getObject();
+				}
+				assertSame(trusted, subjectTerm);
+				assertSame(trusted, objectTerm);
+			}
+		}
+	}
+
+	private static final class ResourceTerm extends SimpleTripleTerm implements Resource {
+		private static final long serialVersionUID = 1L;
+		private int predicateReads;
+
+		private ResourceTerm(Resource subject, IRI predicate, Value object) {
+			super(subject, predicate, object);
+		}
+
+		@Override
+		public IRI getPredicate() {
+			// Fail promptly if an encoder continually asks for a stable identity from this lazy field.
+			if (++predicateReads > 16) {
+				throw new AssertionError("repeated reads of a lazy triple predicate");
+			}
+			return VF.createIRI(super.getPredicate().stringValue());
+		}
 	}
 
 	@Test
