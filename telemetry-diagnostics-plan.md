@@ -20,7 +20,7 @@ A physical stage is an actual scan, join, expression, materialization, or worker
 - [x] (2026-11-20) Integrate lifecycle timing and consumption options; 210 Sail base tests before final review, followed by 11 focused explanation cases after the final fixes, 69 HTTP client cases (4 pre-existing disabled cases), 24 server/transaction cases, and 22 Workbench Java cases pass.
 - [x] (2026-11-20) Present findings and semantic profile comparison; 1,163 classic frontend tests pass, followed by focused context/partial-state regressions.
 - [x] (2026-11-20) Complete review-driven failure regressions, measure overhead, and pass the final header, format, and full reactor quick-install gates (2m48).
-- [ ] in_progress: Commit, push, and verify downloadable patch.
+- [x] (2026-11-20) Commit and publish the implementation branch; verify the remote source tree and patch application against the original main tree.
 
 ## Surprises & Discoveries
 
@@ -50,7 +50,7 @@ Decision: guard semantic comparisons using context in both profile properties an
 
 ## Outcomes & Retrospective
 
-All ten feature areas are implemented. Shared schema contracts, truthful generic metrics, lifecycle phases, explicit value consumption, native/resource producers, protocol propagation, and Workbench presentation have passed focused regressions. Review-driven regressions now cover timeout races, partial writer cleanup, nested query ownership, elastic parallel worker counts, and unmeasured filter timing. Production edits are frozen. The final combined LMDB regression passed all 217 tests with zero failures, errors, or skips; both exploratory JMH runs completed with all twelve cells and setup assertions passing, and the final reactor quick install passed in 2m48. Header checks, generated signatures, and `git diff --check` also pass. This section records actual coverage and limitations without implying every desired measurement is exact.
+All ten feature areas are implemented. Shared schema contracts, truthful generic metrics, lifecycle phases, explicit value consumption, native/resource producers, protocol propagation, and Workbench presentation have passed focused regressions. Review-driven regressions now cover timeout races, partial writer cleanup, nested query ownership, elastic parallel worker counts, and unmeasured filter timing. Production edits are frozen. The final combined LMDB regression passed all 217 tests with zero failures, errors, or skips; both exploratory JMH runs completed with all twelve cells and setup assertions passing, and the final reactor quick install passed in 2m48. Header checks, generated signatures, and `git diff --check` also pass. The implementation is published on the HASMAC fork branch. This section records actual coverage and limitations without implying every desired measurement is exact.
 
 Integration evidence now includes real native adjacency row/value runs (128 identical consumed rows; only explicit values consumption forces output lexical resolution), exact JSON UTF-8 byte counts through the registered writer, transaction-thread propagation, partial cancellation status, physical/proxy access evidence, late attempt outliers, worker ownership, and real spill-sort file traffic. Root/module logs retain each initial failure and the corresponding green run. A separate detached baseline worktree at the starting SHA has passed its root quick clean install; the same JMH harness is present on both revisions for the final comparison.
 
@@ -148,3 +148,13 @@ Focused suites use the installed artifacts in the checkout-local Maven repositor
 The initial full frontend invocation omitted the toolchain from PATH and produced 107 environment-related failures. The corrected invocation produced the 1,163-test green result above. This record uses the corrected run and does not imply the failed invocation passed.
 
 Final review regressions were observed before production changes: native cleanup incorrectly trained a successful cost sample; sampled or absent filter timing appeared measured; nested explanations inherited an outer resource owner; balanced invocations with different worker counts produced false skew; timeout races swallowed real failures; and consumer close failures were marked complete. The fixes retain the original exception, keep unsuccessful work separate from learning, isolate query owners, aggregate skew within invocations, and retain unavailable/partial timing states.
+
+## Delivery
+
+The implementation commit is `c7deb179289b48ef3d1e91d45c9cf341479f22c1` on `HASMAC-AS/rdf4j` branch `GH-0000-lmdb-telemetry-diagnostics`, directly based on main commit `2b53e4d637b698b1f5eda9d842e60e384b59ebe9`. GitHub's implementation tree `0990dad496cf12a4ef086c871c4b74180c8925a3` matches the tested local source tree exactly. A final documentation-only commit records this completed delivery.
+
+The local remote had no write credentials, so publication used the user's connected GitHub account. No fork-main update or force push was used. Full source, tests, the guide, and benchmark JSON are included; transient build/test logs remain local.
+
+The complete binary-capable patch was applied to an isolated Git index initialized from the original main commit. Its resulting tree matched the implementation commit exactly. After the documentation-only update, the delivered patch is regenerated from the same base against the final branch head and the same tree-equality check is repeated.
+
+[Complete source](https://github.com/HASMAC-AS/rdf4j/tree/GH-0000-lmdb-telemetry-diagnostics) · [Compare against main](https://github.com/HASMAC-AS/rdf4j/compare/main...GH-0000-lmdb-telemetry-diagnostics)
