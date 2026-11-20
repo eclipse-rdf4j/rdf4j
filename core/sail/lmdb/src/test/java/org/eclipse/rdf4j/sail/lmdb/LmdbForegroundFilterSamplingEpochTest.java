@@ -69,10 +69,14 @@ import org.eclipse.rdf4j.sail.base.StreamingPreflightBranchFactory;
 import org.eclipse.rdf4j.sail.lmdb.config.LmdbStoreConfig;
 import org.eclipse.rdf4j.sail.lmdb.model.LmdbValue;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.io.TempDir;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.ValueSource;
 
 class LmdbForegroundFilterSamplingEpochTest {
+
+	@TempDir
+	Path temporaryRoot;
 
 	private static final int ROW_COUNT = 256;
 	private static final IRI NAME = SimpleValueFactory.getInstance().createIRI("urn:test:name");
@@ -89,7 +93,7 @@ class LmdbForegroundFilterSamplingEpochTest {
 
 	@Test
 	void foregroundFilterSamplingMustResolveTermsFromTheTripleSnapshot() throws Exception {
-		Path dataDirectory = Files.createTempDirectory("lmdb-foreground-filter-snapshot");
+		Path dataDirectory = Files.createTempDirectory(temporaryRoot, "lmdb-foreground-filter-snapshot");
 		SamplingPause pause = new SamplingPause();
 		ProbeLmdbStore sail = new ProbeLmdbStore(dataDirectory.toFile(),
 				samplingConfig().setTripleIndexes("spoc,posc,ospc"),
@@ -265,7 +269,7 @@ class LmdbForegroundFilterSamplingEpochTest {
 	@ParameterizedTest
 	@ValueSource(booleans = { false, true })
 	void unrelatedReadersMustNotClaimTheSamplingPause(boolean samplerSnapshotReserved) throws Exception {
-		Path dataDirectory = Files.createTempDirectory("lmdb-foreground-filter-pause-owner");
+		Path dataDirectory = Files.createTempDirectory(temporaryRoot, "lmdb-foreground-filter-pause-owner");
 		SamplingPause pause = new SamplingPause();
 		ProbeLmdbStore sail = new ProbeLmdbStore(dataDirectory.toFile(), samplingConfig(), pause);
 		SailRepository repository = new SailRepository(sail);
@@ -323,7 +327,7 @@ class LmdbForegroundFilterSamplingEpochTest {
 
 	@Test
 	void samplingWithoutPairedViewProviderKeepsOtherStatisticsAvailable() throws Exception {
-		Path dataDirectory = Files.createTempDirectory("lmdb-foreground-filter-no-provider");
+		Path dataDirectory = Files.createTempDirectory(temporaryRoot, "lmdb-foreground-filter-no-provider");
 		SamplingPause pause = new SamplingPause();
 		ProbeLmdbStore sail = new ProbeLmdbStore(dataDirectory.toFile(), samplingConfig(), pause);
 		SailRepository repository = new SailRepository(sail);
@@ -361,7 +365,7 @@ class LmdbForegroundFilterSamplingEpochTest {
 
 	@Test
 	void inFlightForegroundSampleMustNotRepublishAStaleRatioAfterMutation() throws Exception {
-		Path dataDirectory = Files.createTempDirectory("lmdb-foreground-filter-stale-sample-cache");
+		Path dataDirectory = Files.createTempDirectory(temporaryRoot, "lmdb-foreground-filter-stale-sample-cache");
 		SamplingPause pause = new SamplingPause();
 		ProbeLmdbStore sail = new ProbeLmdbStore(dataDirectory.toFile(), samplingConfig(), pause);
 		SailRepository repository = new SailRepository(sail);
@@ -447,7 +451,8 @@ class LmdbForegroundFilterSamplingEpochTest {
 
 	@Test
 	void sampleFromAlreadyAdmittedOldViewMustNotPopulateCurrentCache() throws Exception {
-		Path dataDirectory = Files.createTempDirectory("lmdb-foreground-filter-old-view-cache-authority");
+		Path dataDirectory = Files.createTempDirectory(temporaryRoot,
+				"lmdb-foreground-filter-old-view-cache-authority");
 		SamplingPause pause = new SamplingPause();
 		ProbeLmdbStore sail = new ProbeLmdbStore(dataDirectory.toFile(), samplingConfig(), pause);
 		SailRepository repository = new SailRepository(sail);
@@ -586,7 +591,8 @@ class LmdbForegroundFilterSamplingEpochTest {
 
 	@Test
 	void oldViewSampleCannotPopulateCacheAfterNativeCommitWhilePublicationRemainsOpen() throws Exception {
-		Path dataDirectory = Files.createTempDirectory("lmdb-foreground-filter-open-publication-cache-authority");
+		Path dataDirectory = Files.createTempDirectory(temporaryRoot,
+				"lmdb-foreground-filter-open-publication-cache-authority");
 		SamplingPause pause = new SamplingPause();
 		ProbeLmdbStore sail = new ProbeLmdbStore(dataDirectory.toFile(), samplingConfig(), pause);
 		SailRepository repository = new SailRepository(sail);
@@ -730,7 +736,7 @@ class LmdbForegroundFilterSamplingEpochTest {
 
 	@Test
 	void publicationDuringReservationRetriesWithoutAnotherSamplingAdmission() throws Exception {
-		Path dataDirectory = Files.createTempDirectory("lmdb-filter-sampling-admission-retry");
+		Path dataDirectory = Files.createTempDirectory(temporaryRoot, "lmdb-filter-sampling-admission-retry");
 		SamplingPause pause = new SamplingPause();
 		ProbeLmdbStore sail = new ProbeLmdbStore(dataDirectory.toFile(), samplingConfig(), pause);
 		SailRepository repository = new SailRepository(sail);
@@ -767,7 +773,7 @@ class LmdbForegroundFilterSamplingEpochTest {
 
 	@Test
 	void nestedForegroundSamplingUsesItsAlreadyAdmittedReadView() throws Exception {
-		Path dataDirectory = Files.createTempDirectory("lmdb-foreground-filter-nested-view");
+		Path dataDirectory = Files.createTempDirectory(temporaryRoot, "lmdb-foreground-filter-nested-view");
 		SamplingPause pause = new SamplingPause();
 		ProbeLmdbStore sail = new ProbeLmdbStore(dataDirectory.toFile(), samplingConfig(), pause);
 		SailRepository repository = new SailRepository(sail);
@@ -868,7 +874,7 @@ class LmdbForegroundFilterSamplingEpochTest {
 
 	@Test
 	void backgroundSamplingDoesNotHoldWriterAdmissionWhilePaused() throws Exception {
-		Path dataDirectory = Files.createTempDirectory("lmdb-background-filter-writer-progress");
+		Path dataDirectory = Files.createTempDirectory(temporaryRoot, "lmdb-background-filter-writer-progress");
 		SamplingPause pause = new SamplingPause();
 		ProbeLmdbStore sail = new ProbeLmdbStore(dataDirectory.toFile(), backgroundSamplingConfig(), pause);
 		SailRepository repository = new SailRepository(sail);
@@ -975,7 +981,7 @@ class LmdbForegroundFilterSamplingEpochTest {
 
 	@Test
 	void queuedBackgroundPredicateIsResolvedInTheSamplingView() throws Exception {
-		Path dataDirectory = Files.createTempDirectory("lmdb-background-filter-current-predicate");
+		Path dataDirectory = Files.createTempDirectory(temporaryRoot, "lmdb-background-filter-current-predicate");
 		SamplingPause pause = new SamplingPause();
 		ProbeLmdbStore sail = new ProbeLmdbStore(dataDirectory.toFile(),
 				backgroundSamplingConfig().setTripleIndexes("spoc,posc,ospc"), pause);
@@ -1126,7 +1132,7 @@ class LmdbForegroundFilterSamplingEpochTest {
 
 	@Test
 	void foregroundSamplingAdmissionRespectsItsLocalBudgetAndLeavesNoInterrupt() throws Exception {
-		Path dataDirectory = Files.createTempDirectory("lmdb-foreground-filter-admission-budget");
+		Path dataDirectory = Files.createTempDirectory(temporaryRoot, "lmdb-foreground-filter-admission-budget");
 		SamplingPause pause = new SamplingPause();
 		ProbeLmdbStore sail = new ProbeLmdbStore(dataDirectory.toFile(), samplingConfig(100L, true, false, 0L), pause);
 		SailRepository repository = new SailRepository(sail);
@@ -1229,7 +1235,7 @@ class LmdbForegroundFilterSamplingEpochTest {
 
 	private void assertSamplingCancellationPropagates(boolean foregroundSampling, SamplingCancellation cancellation)
 			throws Exception {
-		Path dataDirectory = Files.createTempDirectory("lmdb-filter-sampling-cancellation");
+		Path dataDirectory = Files.createTempDirectory(temporaryRoot, "lmdb-filter-sampling-cancellation");
 		long samplingMillis = 20_000L;
 		SamplingPause pause = new SamplingPause();
 		ProbeLmdbStore sail = new ProbeLmdbStore(dataDirectory.toFile(),
@@ -1276,7 +1282,7 @@ class LmdbForegroundFilterSamplingEpochTest {
 
 	@Test
 	void earlierCallerTimeLimitStillInterruptsSamplingAdmission() throws Exception {
-		Path dataDirectory = Files.createTempDirectory("lmdb-foreground-filter-query-deadline");
+		Path dataDirectory = Files.createTempDirectory(temporaryRoot, "lmdb-foreground-filter-query-deadline");
 		SamplingPause pause = new SamplingPause();
 		ProbeLmdbStore sail = new ProbeLmdbStore(dataDirectory.toFile(), samplingConfig(1_000L, true, false, 0L),
 				pause);
@@ -1342,7 +1348,7 @@ class LmdbForegroundFilterSamplingEpochTest {
 
 	@Test
 	void backgroundSamplingAdmissionRespectsItsCycleBudget() throws Exception {
-		Path dataDirectory = Files.createTempDirectory("lmdb-background-filter-admission-budget");
+		Path dataDirectory = Files.createTempDirectory(temporaryRoot, "lmdb-background-filter-admission-budget");
 		SamplingPause pause = new SamplingPause();
 		ProbeLmdbStore sail = new ProbeLmdbStore(dataDirectory.toFile(), backgroundSamplingConfig(), pause);
 		SailRepository repository = new SailRepository(sail);

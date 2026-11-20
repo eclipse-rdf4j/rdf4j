@@ -297,17 +297,22 @@ public class MemStatementListBenchmark extends BaseConcurrentBenchmark {
 		}
 
 		MemoryStore memoryStore = new MemoryStore();
-		memoryStore.init();
+		try {
+			memoryStore.init();
 
-		try (NotifyingSailConnection connection = memoryStore.getConnection()) {
-			connection.begin(IsolationLevels.NONE);
-			statementList.forEach(
-					st -> connection.addStatement(st.getSubject(), st.getPredicate(), st.getObject(), st.getContext()));
-			connection.commit();
-			return connection.getStatements(null, null, null, false)
-					.stream()
-					.map(s -> ((MemStatement) s))
-					.collect(Collectors.toList());
+			try (NotifyingSailConnection connection = memoryStore.getConnection()) {
+				connection.begin(IsolationLevels.NONE);
+				statementList.forEach(
+						st -> connection.addStatement(st.getSubject(), st.getPredicate(), st.getObject(),
+								st.getContext()));
+				connection.commit();
+				return connection.getStatements(null, null, null, false)
+						.stream()
+						.map(s -> ((MemStatement) s))
+						.collect(Collectors.toList());
+			}
+		} finally {
+			memoryStore.shutDown();
 		}
 	}
 
@@ -318,17 +323,21 @@ public class MemStatementListBenchmark extends BaseConcurrentBenchmark {
 				Model parse = Rio.parse(inputStream, RDFFormat.TURTLE);
 
 				MemoryStore memoryStore = new MemoryStore();
-				memoryStore.init();
+				try {
+					memoryStore.init();
 
-				try (NotifyingSailConnection connection = memoryStore.getConnection()) {
-					connection.begin(IsolationLevels.NONE);
-					parse.forEach(st -> connection.addStatement(st.getSubject(), st.getPredicate(), st.getObject(),
-							st.getContext()));
-					connection.commit();
-					return connection.getStatements(null, null, null, false)
-							.stream()
-							.map(s -> ((MemStatement) s))
-							.collect(Collectors.toList());
+					try (NotifyingSailConnection connection = memoryStore.getConnection()) {
+						connection.begin(IsolationLevels.NONE);
+						parse.forEach(st -> connection.addStatement(st.getSubject(), st.getPredicate(), st.getObject(),
+								st.getContext()));
+						connection.commit();
+						return connection.getStatements(null, null, null, false)
+								.stream()
+								.map(s -> ((MemStatement) s))
+								.collect(Collectors.toList());
+					}
+				} finally {
+					memoryStore.shutDown();
 				}
 			}
 		} catch (IOException e) {

@@ -36,6 +36,7 @@ import org.eclipse.rdf4j.repository.sail.SailRepository;
 import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
 import org.eclipse.rdf4j.rio.RDFFormat;
 import org.eclipse.rdf4j.sail.lmdb.LmdbStore;
+import org.eclipse.rdf4j.sail.lmdb.LmdbTestUtil;
 import org.openjdk.jmh.annotations.Benchmark;
 import org.openjdk.jmh.annotations.BenchmarkMode;
 import org.openjdk.jmh.annotations.Fork;
@@ -119,33 +120,49 @@ public class ParallelMixedQueryPressureBenchmark {
 
 	@Setup(Level.Trial)
 	public void setup() throws IOException {
-		dataDir = Files.newTemporaryFolder();
-		repository = new SailRepository(new LmdbStore(dataDir, ConfigUtil.createConfig()));
-		executorService = Executors.newFixedThreadPool(queryThreads);
+		try {
+			dataDir = Files.newTemporaryFolder();
+			repository = new SailRepository(new LmdbStore(dataDir, ConfigUtil.createConfig()));
+			executorService = Executors.newFixedThreadPool(queryThreads);
 
-		try (SailRepositoryConnection connection = repository.getConnection()) {
-			connection.begin(IsolationLevels.NONE);
-			try (InputStream resourceAsStream = getResourceAsStream("benchmarkFiles/datagovbe-valid.ttl.gz")) {
-				connection.add(resourceAsStream, RDFFormat.TURTLE);
+			try (SailRepositoryConnection connection = repository.getConnection()) {
+				connection.begin(IsolationLevels.NONE);
+				try (InputStream resourceAsStream = getResourceAsStream("benchmarkFiles/datagovbe-valid.ttl.gz")) {
+					connection.add(resourceAsStream, RDFFormat.TURTLE);
+				}
+				connection.commit();
 			}
-			connection.commit();
+
+		} catch (Exception | Error failure) {
+			try {
+				tearDown();
+			} catch (Exception | Error cleanupFailure) {
+				failure.addSuppressed(cleanupFailure);
+			}
+			throw failure;
 		}
 	}
 
 	@TearDown(Level.Trial)
-	public void tearDown() throws IOException {
-		if (executorService != null) {
-			executorService.shutdownNow();
-			executorService = null;
-		}
-		if (repository != null) {
-			repository.shutDown();
-			repository = null;
-		}
-		if (dataDir != null) {
-			FileUtils.deleteDirectory(dataDir);
-			dataDir = null;
-		}
+	public void tearDown() throws Exception {
+		LmdbTestUtil.cleanup(null, () -> {
+			if (executorService != null) {
+				executorService.shutdownNow();
+				LmdbTestUtil.shutdownExecutor(executorService, 10, 10, false,
+						"Mixed-query benchmark workers did not terminate");
+				executorService = null;
+			}
+		}, () -> {
+			if (repository != null) {
+				repository.shutDown();
+				repository = null;
+			}
+		}, () -> {
+			if (dataDir != null) {
+				FileUtils.deleteDirectory(dataDir);
+				dataDir = null;
+			}
+		});
 	}
 
 	@Benchmark

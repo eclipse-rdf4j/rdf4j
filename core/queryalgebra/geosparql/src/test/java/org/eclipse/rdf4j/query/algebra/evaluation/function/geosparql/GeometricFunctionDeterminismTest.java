@@ -37,6 +37,7 @@ import org.eclipse.rdf4j.query.algebra.evaluation.function.FunctionRegistry;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.FilterOptimizer;
 import org.eclipse.rdf4j.query.algebra.evaluation.util.QueryEvaluationUtility;
 import org.eclipse.rdf4j.query.impl.EmptyBindingSet;
+import org.eclipse.rdf4j.repository.Repository;
 import org.eclipse.rdf4j.repository.RepositoryConnection;
 import org.junit.jupiter.api.Test;
 
@@ -79,12 +80,15 @@ class GeometricFunctionDeterminismTest {
 				"  FILTER(geof:sfIntersects(?shape, \"POINT(-105.00 39.74)\"^^geo:wktLiteral))",
 				"}");
 		List<Value> features = new ArrayList<>();
-		try (RepositoryConnection connection = GeoSPARQLTests.getRepository().getConnection();
+		Repository repository = GeoSPARQLTests.getRepository();
+		try (RepositoryConnection connection = repository.getConnection();
 				TupleQueryResult result = connection.prepareTupleQuery(query).evaluate()) {
 			while (result.hasNext()) {
 				BindingSet bindings = result.next();
 				features.add(bindings.getValue("feature"));
 			}
+		} finally {
+			repository.shutDown();
 		}
 
 		assertThat(features).containsExactlyInAnyOrder(

@@ -94,29 +94,35 @@ public class OOMBenchmark {
 
 	@Setup(Level.Trial)
 	public void setup() throws IOException {
+		boolean initialized = false;
+		try {
+			repository = new SailRepository(new MemoryStore());
 
-		repository = new SailRepository(new MemoryStore());
-
-		try (SailRepositoryConnection connection = repository.getConnection()) {
-			connection.begin(IsolationLevels.NONE);
-			connection.add(getResourceAsStream("benchmarkFiles/datagovbe-valid.ttl.gz"), "", RDFFormat.TURTLE);
-			connection.commit();
-		}
-
-		try (SailRepositoryConnection connection = repository.getConnection()) {
-			try (Stream<Statement> stream = connection.getStatements(null, null, null, false).stream()) {
-				valuesList = new ArrayList<>((int) stream.count());
+			try (SailRepositoryConnection connection = repository.getConnection()) {
+				connection.begin(IsolationLevels.NONE);
+				connection.add(getResourceAsStream("benchmarkFiles/datagovbe-valid.ttl.gz"), "", RDFFormat.TURTLE);
+				connection.commit();
 			}
 
-			try (Stream<Statement> stream = connection.getStatements(null, null, null, false).stream()) {
-				stream
-						.map(Statement::getObject)
-						.sorted(new ValueComparator())
-						.forEach(valuesList::add);
+			try (SailRepositoryConnection connection = repository.getConnection()) {
+				try (Stream<Statement> stream = connection.getStatements(null, null, null, false).stream()) {
+					valuesList = new ArrayList<>((int) stream.count());
+				}
+
+				try (Stream<Statement> stream = connection.getStatements(null, null, null, false).stream()) {
+					stream
+							.map(Statement::getObject)
+							.sorted(new ValueComparator())
+							.forEach(valuesList::add);
+				}
+
 			}
-
+			initialized = true;
+		} finally {
+			if (!initialized) {
+				afterClass();
+			}
 		}
-
 	}
 
 	@Setup(Level.Iteration)
@@ -127,7 +133,9 @@ public class OOMBenchmark {
 	@TearDown(Level.Trial)
 	public void afterClass() {
 
-		repository.shutDown();
+		if (repository != null) {
+			repository.shutDown();
+		}
 
 	}
 

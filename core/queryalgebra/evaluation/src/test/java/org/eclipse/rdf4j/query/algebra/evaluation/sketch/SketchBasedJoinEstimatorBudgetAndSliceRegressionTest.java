@@ -35,7 +35,7 @@ import org.eclipse.rdf4j.query.algebra.StatementPattern;
 import org.eclipse.rdf4j.query.algebra.Var;
 import org.junit.jupiter.api.Test;
 
-class SketchBasedJoinEstimatorBudgetAndSliceRegressionTest {
+class SketchBasedJoinEstimatorBudgetAndSliceRegressionTest extends AbstractSketchBasedJoinEstimatorTest {
 
 	private static final ValueFactory VF = SimpleValueFactory.getInstance();
 
@@ -47,7 +47,7 @@ class SketchBasedJoinEstimatorBudgetAndSliceRegressionTest {
 			store.add(st(VF.createIRI("urn:encounter:" + i), predicate, VF.createIRI("urn:observation:" + i)));
 		}
 
-		SketchBasedJoinEstimator estimator = new SketchBasedJoinEstimator(store, config());
+		SketchBasedJoinEstimator estimator = createEstimator(store, config());
 		estimator.rebuild();
 
 		StatementPattern pattern = new StatementPattern(Var.of("enc"), Var.of("p", predicate), Var.of("obs"));
@@ -73,7 +73,7 @@ class SketchBasedJoinEstimatorBudgetAndSliceRegressionTest {
 		store.add(st(VF.createIRI("urn:s2"), p1, VF.createIRI("urn:o1"), c));
 		store.add(st(VF.createIRI("urn:s1"), p2, VF.createIRI("urn:o2"), c));
 
-		SketchBasedJoinEstimator estimator = new SketchBasedJoinEstimator(store, config());
+		SketchBasedJoinEstimator estimator = createEstimator(store, config());
 		estimator.rebuild();
 		assertTrue(estimator.isReady(), "Expected populated rebuild to be ready");
 

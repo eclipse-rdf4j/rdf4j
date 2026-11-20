@@ -36,9 +36,26 @@ import org.eclipse.rdf4j.sail.SailException;
 import org.eclipse.rdf4j.sail.memory.MemoryStore;
 import org.eclipse.rdf4j.sail.shacl.ShaclSailValidationReportHelper;
 import org.eclipse.rdf4j.sail.shacl.ShaclValidator;
+import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 
 public class ShaclValidatorSparqlMessagesTest {
+
+	private SailRepository data;
+	private SailRepository shapes;
+
+	@AfterEach
+	void shutDownRepositories() {
+		try {
+			if (data != null) {
+				data.shutDown();
+			}
+		} finally {
+			if (shapes != null) {
+				shapes.shutDown();
+			}
+		}
+	}
 
 	@Test
 	public void multipleSparqlConstraintsDifferentMessages() throws Exception {
@@ -78,12 +95,12 @@ public class ShaclValidatorSparqlMessagesTest {
 				"ex:alice a ex:Person ;\n" +
 				"  ex:age \"twenty\"^^xsd:string .\n";
 
-		SailRepository shapes = new SailRepository(new MemoryStore());
+		shapes = new SailRepository(new MemoryStore());
 		try (SailRepositoryConnection connection = shapes.getConnection()) {
 			connection.add(new StringReader(shapesTtl), "", RDFFormat.TURTLE, RDF4J.SHACL_SHAPE_GRAPH);
 		}
 
-		SailRepository data = new SailRepository(new MemoryStore());
+		data = new SailRepository(new MemoryStore());
 		try (SailRepositoryConnection connection = data.getConnection()) {
 			connection.add(new StringReader(dataTtl), RDFFormat.TURTLE);
 		}
@@ -133,12 +150,12 @@ public class ShaclValidatorSparqlMessagesTest {
 				"ex:bob a ex:Person ;\n" +
 				"  ex:age \"old\"^^xsd:string .\n";
 
-		SailRepository shapes = new SailRepository(new MemoryStore());
+		shapes = new SailRepository(new MemoryStore());
 		try (SailRepositoryConnection connection = shapes.getConnection()) {
 			connection.add(new StringReader(shapesTtl), "", RDFFormat.TURTLE, RDF4J.SHACL_SHAPE_GRAPH);
 		}
 
-		SailRepository data = new SailRepository(new MemoryStore());
+		data = new SailRepository(new MemoryStore());
 		try (SailRepositoryConnection connection = data.getConnection()) {
 			connection.add(new StringReader(dataTtl), RDFFormat.TURTLE);
 		}
@@ -189,12 +206,12 @@ public class ShaclValidatorSparqlMessagesTest {
 				"ex:alice a ex:Person ;\n" +
 				"  ex:knows \"Bob\" , ex:charlie .\n";
 
-		SailRepository shapes = new SailRepository(new MemoryStore());
+		shapes = new SailRepository(new MemoryStore());
 		try (SailRepositoryConnection connection = shapes.getConnection()) {
 			connection.add(new StringReader(shapesTtl), "", RDFFormat.TURTLE, RDF4J.SHACL_SHAPE_GRAPH);
 		}
 
-		SailRepository data = new SailRepository(new MemoryStore());
+		data = new SailRepository(new MemoryStore());
 		try (SailRepositoryConnection connection = data.getConnection()) {
 			connection.add(new StringReader(dataTtl), RDFFormat.TURTLE);
 		}
@@ -246,12 +263,12 @@ public class ShaclValidatorSparqlMessagesTest {
 				"  ex:age \"-2\"^^xsd:integer ;\n" +
 				"  ex:manage ex:alice .\n";
 
-		SailRepository shapes = new SailRepository(new MemoryStore());
+		shapes = new SailRepository(new MemoryStore());
 		try (SailRepositoryConnection connection = shapes.getConnection()) {
 			connection.add(new StringReader(shapesTtl), "", RDFFormat.TURTLE, RDF4J.SHACL_SHAPE_GRAPH);
 		}
 
-		SailRepository data = new SailRepository(new MemoryStore());
+		data = new SailRepository(new MemoryStore());
 		try (SailRepositoryConnection connection = data.getConnection()) {
 			connection.add(new StringReader(dataTtl), RDFFormat.TURTLE);
 		}
@@ -288,12 +305,12 @@ public class ShaclValidatorSparqlMessagesTest {
 				"\n" +
 				"ex:alice a ex:Person .\n";
 
-		SailRepository shapes = new SailRepository(new MemoryStore());
+		shapes = new SailRepository(new MemoryStore());
 		try (SailRepositoryConnection connection = shapes.getConnection()) {
 			connection.add(new StringReader(shapesTtl), "", RDFFormat.TURTLE, RDF4J.SHACL_SHAPE_GRAPH);
 		}
 
-		SailRepository data = new SailRepository(new MemoryStore());
+		data = new SailRepository(new MemoryStore());
 		try (SailRepositoryConnection connection = data.getConnection()) {
 			connection.add(new StringReader(dataTtl), RDFFormat.TURTLE);
 		}
@@ -328,12 +345,12 @@ public class ShaclValidatorSparqlMessagesTest {
 				"\n" +
 				"ex:alice a ex:Person .\n";
 
-		SailRepository shapes = new SailRepository(new MemoryStore());
+		shapes = new SailRepository(new MemoryStore());
 		try (SailRepositoryConnection connection = shapes.getConnection()) {
 			connection.add(new StringReader(shapesTtl), "", RDFFormat.TURTLE, RDF4J.SHACL_SHAPE_GRAPH);
 		}
 
-		SailRepository data = new SailRepository(new MemoryStore());
+		data = new SailRepository(new MemoryStore());
 		try (SailRepositoryConnection connection = data.getConnection()) {
 			connection.add(new StringReader(dataTtl), RDFFormat.TURTLE);
 		}
@@ -373,12 +390,12 @@ public class ShaclValidatorSparqlMessagesTest {
 				"ex:bob a ex:Person ;\n" +
 				"  ex:age \"old\"^^xsd:string .\n";
 
-		SailRepository shapes = new SailRepository(new MemoryStore());
+		shapes = new SailRepository(new MemoryStore());
 		try (SailRepositoryConnection connection = shapes.getConnection()) {
 			connection.add(new StringReader(shapesTtl), "", RDFFormat.TURTLE, RDF4J.SHACL_SHAPE_GRAPH);
 		}
 
-		SailRepository data = new SailRepository(new MemoryStore());
+		data = new SailRepository(new MemoryStore());
 		try (SailRepositoryConnection connection = data.getConnection()) {
 			connection.add(new StringReader(dataTtl), RDFFormat.TURTLE);
 		}
@@ -412,12 +429,12 @@ public class ShaclValidatorSparqlMessagesTest {
 				"\n" +
 				"ex:alice a ex:Person .\n";
 
-		SailRepository shapes = new SailRepository(new MemoryStore());
+		shapes = new SailRepository(new MemoryStore());
 		try (SailRepositoryConnection connection = shapes.getConnection()) {
 			connection.add(new StringReader(shapesTtl), "", RDFFormat.TURTLE, RDF4J.SHACL_SHAPE_GRAPH);
 		}
 
-		SailRepository data = new SailRepository(new MemoryStore());
+		data = new SailRepository(new MemoryStore());
 		try (SailRepositoryConnection connection = data.getConnection()) {
 			connection.add(new StringReader(dataTtl), RDFFormat.TURTLE);
 		}
@@ -463,12 +480,12 @@ public class ShaclValidatorSparqlMessagesTest {
 				"  ex:age \"old\"^^xsd:string ;\n" +
 				"  ex:age \"ancient\"^^xsd:string .\n";
 
-		SailRepository shapes = new SailRepository(new MemoryStore());
+		shapes = new SailRepository(new MemoryStore());
 		try (SailRepositoryConnection connection = shapes.getConnection()) {
 			connection.add(new StringReader(shapesTtl), "", RDFFormat.TURTLE, RDF4J.SHACL_SHAPE_GRAPH);
 		}
 
-		SailRepository data = new SailRepository(new MemoryStore());
+		data = new SailRepository(new MemoryStore());
 		try (SailRepositoryConnection connection = data.getConnection()) {
 			connection.add(new StringReader(dataTtl), RDFFormat.TURTLE);
 		}
@@ -518,12 +535,12 @@ public class ShaclValidatorSparqlMessagesTest {
 				"\n" +
 				"ex:alice a ex:Person .\n";
 
-		SailRepository shapes = new SailRepository(new MemoryStore());
+		shapes = new SailRepository(new MemoryStore());
 		try (SailRepositoryConnection connection = shapes.getConnection()) {
 			connection.add(new StringReader(shapesTtl), "", RDFFormat.TURTLE, RDF4J.SHACL_SHAPE_GRAPH);
 		}
 
-		SailRepository data = new SailRepository(new MemoryStore());
+		data = new SailRepository(new MemoryStore());
 		try (SailRepositoryConnection connection = data.getConnection()) {
 			connection.add(new StringReader(dataTtl), RDFFormat.TURTLE);
 		}
@@ -563,12 +580,12 @@ public class ShaclValidatorSparqlMessagesTest {
 				"ex:bob a ex:Person ;\n" +
 				"  ex:age \"old\"^^xsd:string .\n";
 
-		SailRepository shapes = new SailRepository(new MemoryStore());
+		shapes = new SailRepository(new MemoryStore());
 		try (SailRepositoryConnection connection = shapes.getConnection()) {
 			connection.add(new StringReader(shapesTtl), "", RDFFormat.TURTLE, RDF4J.SHACL_SHAPE_GRAPH);
 		}
 
-		SailRepository data = new SailRepository(new MemoryStore());
+		data = new SailRepository(new MemoryStore());
 		try (SailRepositoryConnection connection = data.getConnection()) {
 			connection.add(new StringReader(dataTtl), RDFFormat.TURTLE);
 		}
@@ -604,12 +621,12 @@ public class ShaclValidatorSparqlMessagesTest {
 				"\n" +
 				"ex:alice a ex:Person .\n";
 
-		SailRepository shapes = new SailRepository(new MemoryStore());
+		shapes = new SailRepository(new MemoryStore());
 		try (SailRepositoryConnection connection = shapes.getConnection()) {
 			connection.add(new StringReader(shapesTtl), "", RDFFormat.TURTLE, RDF4J.SHACL_SHAPE_GRAPH);
 		}
 
-		SailRepository data = new SailRepository(new MemoryStore());
+		data = new SailRepository(new MemoryStore());
 		try (SailRepositoryConnection connection = data.getConnection()) {
 			connection.add(new StringReader(dataTtl), RDFFormat.TURTLE);
 		}
@@ -649,12 +666,12 @@ public class ShaclValidatorSparqlMessagesTest {
 				"\n" +
 				"ex:alice a ex:Person .\n";
 
-		SailRepository shapes = new SailRepository(new MemoryStore());
+		shapes = new SailRepository(new MemoryStore());
 		try (SailRepositoryConnection connection = shapes.getConnection()) {
 			connection.add(new StringReader(shapesTrig), RDFFormat.TRIG);
 		}
 
-		SailRepository data = new SailRepository(new MemoryStore());
+		data = new SailRepository(new MemoryStore());
 		try (SailRepositoryConnection connection = data.getConnection()) {
 			connection.add(new StringReader(dataTtl), RDFFormat.TURTLE);
 		}
@@ -689,12 +706,12 @@ public class ShaclValidatorSparqlMessagesTest {
 				"\n" +
 				"ex:alice a ex:Person .\n";
 
-		SailRepository shapes = new SailRepository(new MemoryStore());
+		shapes = new SailRepository(new MemoryStore());
 		try (SailRepositoryConnection connection = shapes.getConnection()) {
 			connection.add(new StringReader(shapesTtl), "", RDFFormat.TURTLE, RDF4J.SHACL_SHAPE_GRAPH);
 		}
 
-		SailRepository data = new SailRepository(new MemoryStore());
+		data = new SailRepository(new MemoryStore());
 		try (SailRepositoryConnection connection = data.getConnection()) {
 			connection.add(new StringReader(dataTtl), RDFFormat.TURTLE);
 		}
@@ -734,12 +751,12 @@ public class ShaclValidatorSparqlMessagesTest {
 				"\n" +
 				"ex:alice a ex:Person .\n";
 
-		SailRepository shapes = new SailRepository(new MemoryStore());
+		shapes = new SailRepository(new MemoryStore());
 		try (SailRepositoryConnection connection = shapes.getConnection()) {
 			connection.add(new StringReader(shapesTrig), RDFFormat.TRIG);
 		}
 
-		SailRepository data = new SailRepository(new MemoryStore());
+		data = new SailRepository(new MemoryStore());
 		try (SailRepositoryConnection connection = data.getConnection()) {
 			connection.add(new StringReader(dataTtl), RDFFormat.TURTLE);
 		}
@@ -788,12 +805,12 @@ public class ShaclValidatorSparqlMessagesTest {
 				"ex:alice a ex:Person ;\n" +
 				"  ex:age \"-1\"^^xsd:integer .\n";
 
-		SailRepository shapes = new SailRepository(new MemoryStore());
+		shapes = new SailRepository(new MemoryStore());
 		try (SailRepositoryConnection connection = shapes.getConnection()) {
 			connection.add(new StringReader(shapesTrig), RDFFormat.TRIG);
 		}
 
-		SailRepository data = new SailRepository(new MemoryStore());
+		data = new SailRepository(new MemoryStore());
 		try (SailRepositoryConnection connection = data.getConnection()) {
 			connection.add(new StringReader(dataTtl), RDFFormat.TURTLE);
 		}
@@ -843,12 +860,12 @@ public class ShaclValidatorSparqlMessagesTest {
 				"ex:alice a ex:Person ;\n" +
 				"  ex:age \"-1\"^^xsd:integer .\n";
 
-		SailRepository shapes = new SailRepository(new MemoryStore());
+		shapes = new SailRepository(new MemoryStore());
 		try (SailRepositoryConnection connection = shapes.getConnection()) {
 			connection.add(new StringReader(shapesTrig), "", RDFFormat.TURTLE, RDF4J.SHACL_SHAPE_GRAPH);
 		}
 
-		SailRepository data = new SailRepository(new MemoryStore());
+		data = new SailRepository(new MemoryStore());
 		try (SailRepositoryConnection connection = data.getConnection()) {
 			connection.add(new StringReader(dataTtl), RDFFormat.TURTLE);
 		}
@@ -889,12 +906,12 @@ public class ShaclValidatorSparqlMessagesTest {
 				"ex:alice a ex:Person .\n" +
 				"ex:bob ex:knows ex:alice .\n";
 
-		SailRepository shapes = new SailRepository(new MemoryStore());
+		shapes = new SailRepository(new MemoryStore());
 		try (SailRepositoryConnection connection = shapes.getConnection()) {
 			connection.add(new StringReader(shapesTtl), "", RDFFormat.TURTLE, RDF4J.SHACL_SHAPE_GRAPH);
 		}
 
-		SailRepository data = new SailRepository(new MemoryStore());
+		data = new SailRepository(new MemoryStore());
 		try (SailRepositoryConnection connection = data.getConnection()) {
 			connection.add(new StringReader(dataTtl), RDFFormat.TURTLE);
 		}
@@ -932,12 +949,12 @@ public class ShaclValidatorSparqlMessagesTest {
 				"\n" +
 				"ex:alice a ex:Person .\n";
 
-		SailRepository shapes = new SailRepository(new MemoryStore());
+		shapes = new SailRepository(new MemoryStore());
 		try (SailRepositoryConnection connection = shapes.getConnection()) {
 			connection.add(new StringReader(shapesTtl), "", RDFFormat.TURTLE, RDF4J.SHACL_SHAPE_GRAPH);
 		}
 
-		SailRepository data = new SailRepository(new MemoryStore());
+		data = new SailRepository(new MemoryStore());
 		try (SailRepositoryConnection connection = data.getConnection()) {
 			connection.add(new StringReader(dataTtl), RDFFormat.TURTLE);
 		}
@@ -979,12 +996,12 @@ public class ShaclValidatorSparqlMessagesTest {
 				"ex:alice a ex:Person ;\n" +
 				"  ex:knows \"Bob\" .\n";
 
-		SailRepository shapes = new SailRepository(new MemoryStore());
+		shapes = new SailRepository(new MemoryStore());
 		try (SailRepositoryConnection connection = shapes.getConnection()) {
 			connection.add(new StringReader(shapesTtl), "", RDFFormat.TURTLE, RDF4J.SHACL_SHAPE_GRAPH);
 		}
 
-		SailRepository data = new SailRepository(new MemoryStore());
+		data = new SailRepository(new MemoryStore());
 		try (SailRepositoryConnection connection = data.getConnection()) {
 			connection.add(new StringReader(dataTtl), RDFFormat.TURTLE);
 		}
@@ -1028,12 +1045,12 @@ public class ShaclValidatorSparqlMessagesTest {
 				"ex:alice a ex:Person ;\n" +
 				"  ex:age -1 .\n";
 
-		SailRepository shapes = new SailRepository(new MemoryStore());
+		shapes = new SailRepository(new MemoryStore());
 		try (SailRepositoryConnection connection = shapes.getConnection()) {
 			connection.add(new StringReader(shapesTtl), "", RDFFormat.TURTLE, RDF4J.SHACL_SHAPE_GRAPH);
 		}
 
-		SailRepository data = new SailRepository(new MemoryStore());
+		data = new SailRepository(new MemoryStore());
 		try (SailRepositoryConnection connection = data.getConnection()) {
 			connection.add(new StringReader(dataTtl), RDFFormat.TURTLE);
 		}
