@@ -64,10 +64,23 @@ public final class LmdbQueryOptimizerPipeline implements QueryOptimizerPipeline 
 	private final EvaluationStrategy strategy;
 	private final TripleSource tripleSource;
 	private final EvaluationStatistics evaluationStatistics;
+	private final boolean nativeEngine;
 
 	@InternalUseOnly
 	public LmdbQueryOptimizerPipeline(EvaluationStrategy strategy, TripleSource tripleSource,
 			EvaluationStatistics evaluationStatistics) {
+		this(strategy, tripleSource, evaluationStatistics, false);
+	}
+
+	/**
+	 * @param nativeEngine when {@code true}, the pipeline is built for the native query engine and adds
+	 *                     {@link LmdbSubqueryGroupPushdownOptimizer}, whose rewrite only pays off for the native
+	 *                     planner. Generic-engine pipelines pass {@code false}.
+	 */
+	@InternalUseOnly
+	public LmdbQueryOptimizerPipeline(EvaluationStrategy strategy, TripleSource tripleSource,
+			EvaluationStatistics evaluationStatistics, boolean nativeEngine) {
+		this.nativeEngine = nativeEngine;
 		this.strategy = strategy;
 		this.tripleSource = tripleSource;
 		this.evaluationStatistics = evaluationStatistics;
@@ -81,9 +94,10 @@ public final class LmdbQueryOptimizerPipeline implements QueryOptimizerPipeline 
 	@Override
 	public Iterable<QueryOptimizer> getOptimizers() {
 		if (!strategy.getQueryExecutionPolicy().experimentalQueryOptimizations()) {
-			return new LmdbStandardQueryOptimizerPipeline(strategy, tripleSource, evaluationStatistics).getOptimizers();
+			return new LmdbStandardQueryOptimizerPipeline(strategy, tripleSource, evaluationStatistics, nativeEngine)
+					.getOptimizers();
 		}
-		List<QueryOptimizer> optimizers = List.of(
+		List<QueryOptimizer> optimizers = new ArrayList<>(List.of(
 				BINDING_ASSIGNER,
 				GRAPH_SCOPE_OPTIMIZER,
 				StandardQueryOptimizerPipeline.TUPLE_FUNCTION_MAGIC_PROPERTY_OPTIMIZER,
@@ -103,7 +117,12 @@ public final class LmdbQueryOptimizerPipeline implements QueryOptimizerPipeline 
 				new LmdbSketchJoinOptimizer(evaluationStatistics, strategy.isTrackResultSize()),
 				StandardQueryOptimizerPipeline.getFilterInValuesOptimizer(),
 				ORDER_LIMIT_OPTIMIZER,
-				new LmdbOrderByOptimizer(tripleSource));
+				new LmdbOrderByOptimizer(tripleSource)));
+		if (nativeEngine) {
+			// after FilterOptimizer has pushed filters onto their patterns, before the join optimizers
+			optimizers.add(optimizers.indexOf(ITERATIVE_EVALUATION_OPTIMIZER) + 1,
+					new LmdbSubqueryGroupPushdownOptimizer());
+		}
 
 		if (assertsEnabled) {
 			List<QueryOptimizer> checked = new ArrayList<>();

@@ -140,6 +140,8 @@ class LmdbNativeIndexedCountParityTest {
 		add(cases, "fixed-named", count("GRAPH <urn:g1> { ?s <urn:p> ?o }", "*"), true);
 		add(cases, "fixed-blank-graph", count("GRAPH <_:graph> { ?s <urn:p> ?o }", "*"), true);
 		add(cases, "unknown-graph", count("GRAPH <urn:missing> { ?s <urn:p> ?o }", "*"), false);
+		// GRAPH rdf4j:nil reaches the engine as a graph island, not a bare pattern; the adjacency census answers its
+		// COUNT(*) from the store's per-context metadata instead (LmdbNativeCensusAggregateTest)
 		add(cases, "parser-graph-nil-default", count("GRAPH <" + RDF4J.NIL + "> { ?s <urn:p> ?o }", "*"), false);
 		add(cases, "distinct-subject", count("?s <urn:p> ?o", "DISTINCT ?s"), false);
 		add(cases, "distinct-object", count("?s <urn:p> ?o", "DISTINCT ?o"), false);

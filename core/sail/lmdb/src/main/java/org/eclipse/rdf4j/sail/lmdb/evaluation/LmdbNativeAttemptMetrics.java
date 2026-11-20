@@ -127,6 +127,8 @@ public final class LmdbNativeAttemptMetrics {
 	static final String PATH_DATATYPE_HISTOGRAM = "datatypeHistogram";
 	static final String PATH_PREDICATE_PLANE_GROUPS = "predicatePlaneGroups";
 	static final String PATH_TYPE_MATRIX = "typeMatrix";
+	/** Join of a one-row-per-key subquery with another operand through a keyed lookup provider. */
+	static final String PATH_KEYED_SUBQUERY_JOIN = "keyedSubqueryJoin";
 	static final String PATH_CONSTANT_FALSE_FILTER = "constantFalseFilter";
 
 	static final String STRATEGY_MERGE_JOIN = "mergeJoin";
@@ -165,7 +167,7 @@ public final class LmdbNativeAttemptMetrics {
 			PATH_IR_KERNEL_DISTINCT_PARALLEL_INTERPRETED, PATH_IR_KERNEL_DISTINCT,
 			PATH_IR_KERNEL_DISTINCT_INTERPRETED,
 			PATH_WCOJ,
-			PATH_CONSTANT_FALSE_FILTER);
+			PATH_CONSTANT_FALSE_FILTER, PATH_KEYED_SUBQUERY_JOIN);
 
 	private static final LmdbNativeAttemptMetrics DIRECT = new LmdbNativeAttemptMetrics(null, true, null);
 
@@ -263,8 +265,8 @@ public final class LmdbNativeAttemptMetrics {
 	}
 
 	/**
-	 * Directs subsequent {@link #recordDecline} calls on this thread into {@code capture} (keyed by base tag), and
-	 * returns whatever capture was previously installed so a nested arbitration can restore it. Pass {@code null} to
+	 * Directs subsequent {@link #recordDecline} calls on this thread into {@code capture}, keyed by exact strategy id.
+	 * Returns whatever capture was previously installed so a nested arbitration can restore it. Pass {@code null} to
 	 * stop capturing.
 	 */
 	static Map<String, String> installDeclineCapture(Map<String, String> capture) {
@@ -285,16 +287,12 @@ public final class LmdbNativeAttemptMetrics {
 		Map<String, String> capture = DECLINE_CAPTURE.get();
 		if (LmdbNativeStrategyPreview.active()) {
 			if (capture != null && strategy != null && reason != null) {
-				capture.put(LmdbNativeStrategyPreference.baseTag(strategy), reason);
+				capture.put(strategy, reason);
 			}
 			return;
 		}
 		if (capture != null && strategy != null && reason != null) {
-			capture.put(LmdbNativeStrategyPreference.baseTag(strategy), reason);
-			if (logger.isInfoEnabled()) {
-				logger.info("LMDB forced strategy candidate declined: strategy={}, operator={}, reason={}", strategy,
-						target == null ? "?" : target.getClass().getSimpleName(), reason);
-			}
+			capture.put(strategy, reason);
 		}
 		LmdbNativeExplain.recordStrategyDecline(target, strategy, reason);
 		if (JANINO_STRATEGIES.contains(strategy) && logger.isInfoEnabled()) {
@@ -311,7 +309,7 @@ public final class LmdbNativeAttemptMetrics {
 	static void captureDecline(String strategy, String reason) {
 		Map<String, String> capture = DECLINE_CAPTURE.get();
 		if (capture != null) {
-			capture.put(LmdbNativeStrategyPreference.baseTag(strategy), reason);
+			capture.put(strategy, reason);
 		}
 	}
 

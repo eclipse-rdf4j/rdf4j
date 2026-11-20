@@ -25,6 +25,7 @@ import static org.lwjgl.system.MemoryUtil.memAlloc;
 import static org.lwjgl.system.MemoryUtil.memFree;
 import static org.lwjgl.system.MemoryUtil.memGetByte;
 import static org.lwjgl.util.lmdb.LMDB.MDB_APPEND;
+import static org.lwjgl.util.lmdb.LMDB.MDB_CP_COMPACT;
 import static org.lwjgl.util.lmdb.LMDB.MDB_CREATE;
 import static org.lwjgl.util.lmdb.LMDB.MDB_FIRST;
 import static org.lwjgl.util.lmdb.LMDB.MDB_KEYEXIST;
@@ -50,6 +51,7 @@ import static org.lwjgl.util.lmdb.LMDB.mdb_cursor_renew;
 import static org.lwjgl.util.lmdb.LMDB.mdb_dbi_open;
 import static org.lwjgl.util.lmdb.LMDB.mdb_del;
 import static org.lwjgl.util.lmdb.LMDB.mdb_env_close;
+import static org.lwjgl.util.lmdb.LMDB.mdb_env_copy2;
 import static org.lwjgl.util.lmdb.LMDB.mdb_env_create;
 import static org.lwjgl.util.lmdb.LMDB.mdb_env_info;
 import static org.lwjgl.util.lmdb.LMDB.mdb_env_open;
@@ -96,6 +98,7 @@ import java.util.Objects;
 import java.util.OptionalDouble;
 import java.util.OptionalLong;
 import java.util.Set;
+import java.util.UUID;
 import java.util.concurrent.ArrayBlockingQueue;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentLinkedQueue;
@@ -217,6 +220,10 @@ class TripleStore implements Closeable {
 	static final byte[] INDEX_SPECS_KEY = "triple-index-specs".getBytes(StandardCharsets.US_ASCII);
 	static final byte[] INDEX_BUILD_KEY = "triple-index-build".getBytes(StandardCharsets.US_ASCII);
 	static final int INDEX_DATABASE_VERSION = 1;
+	static final byte[] BACKUP_BOUNDARY_KEY = "backup-logical-boundary".getBytes(StandardCharsets.US_ASCII);
+	static final byte[] BACKUP_OUTBOX_HEAD_KEY = "backup-outbox-head".getBytes(StandardCharsets.US_ASCII);
+	private volatile UUID backupOutboxHead = PostCommitBackupPublisher.EMPTY;
+	private volatile UUID pendingBackupOutboxHead;
 	private static final int MAX_INDEX_INITIALIZATION_ATTEMPTS = 4;
 	private static final Pattern MUTATION_JOURNAL_NAME = Pattern.compile(
 			"txn-replay-[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\\.bin");
@@ -263,6 +270,21 @@ class TripleStore implements Closeable {
 	@FunctionalInterface
 	interface IndexRebuildWriter {
 		void execute(IndexRebuildWork work) throws IOException;
+	}
+
+	/**
+	 * A fingerprint of the active index set, independent of index order; it changes when an index is added or dropped.
+	 */
+	long indexGeneration() {
+		long fingerprint = 0L;
+		for (TripleIndex index : indexes) {
+			long sequence = 1125899906842597L;
+			for (char field : index.getFieldSeq()) {
+				sequence = 31L * sequence + field;
+			}
+			fingerprint += sequence * sequence;
+		}
+		return fingerprint;
 	}
 
 	private static final class IndexGeneration {
@@ -565,6 +587,10 @@ class TripleStore implements Closeable {
 	private final AtomicLong dataRevision = new AtomicLong();
 	private final LmdbFanOutStats explicitFanOutStats = new LmdbFanOutStats();
 	private final LmdbFanOutStats inferredFanOutStats = new LmdbFanOutStats();
+	private volatile long lastCommittedTxnId;
+	private volatile long requiredBackupTxnId;
+	private volatile long previousRequiredBackupTxnId;
+	private boolean backupPublicationRequired;
 	private final AtomicLong mappingGeneration = new AtomicLong();
 
 	/**
@@ -774,6 +800,7 @@ class TripleStore implements Closeable {
 						writeIndexSpecs(activeWithPairs);
 					}
 					initializeStatementCounts();
+					initializeBackupBoundary();
 					effectiveIndexSpecs = activeWithPairs;
 					endTransaction(true);
 					break;
@@ -823,12 +850,82 @@ class TripleStore implements Closeable {
 			}
 			// Bulk metrics begin after opening/configuring the environment, as in the loader-only driver.
 			bulkMapGrowthCount = 0L;
+			recoverBackupBoundary();
 		} catch (IOException e) {
 			cleanupAfterInitializationFailure(e);
 			throw e;
 		} catch (RuntimeException | Error e) {
 			cleanupAfterInitializationFailure(e);
 			throw e;
+		}
+	}
+
+	private void recoverBackupBoundary() throws IOException {
+		lastCommittedTxnId = getCurrentCommittedTransactionId();
+		long[] backupBoundary = txnManager.doWith((stack, txn) -> {
+			byte[] encoded = readNamespaceDatabaseValue(stack, txn, BACKUP_BOUNDARY_KEY);
+			if (encoded == null) {
+				return new long[] { lastCommittedTxnId, -1L };
+			}
+			validateBackupBoundary(encoded);
+			ByteBuffer buffer = ByteBuffer.wrap(encoded);
+			long current = buffer.getLong();
+			long previous = buffer.getLong();
+			return new long[] { current, previous };
+		});
+		requiredBackupTxnId = backupBoundary[0];
+		previousRequiredBackupTxnId = backupBoundary[1];
+		backupOutboxHead = txnManager.doWith((stack, txn) -> {
+			byte[] head = readNamespaceDatabaseValue(stack, txn, BACKUP_OUTBOX_HEAD_KEY);
+			if (head == null) {
+				return PostCommitBackupPublisher.EMPTY;
+			}
+			validateBackupOutboxHead(head);
+			ByteBuffer encoded = ByteBuffer.wrap(head);
+			return new UUID(encoded.getLong(), encoded.getLong());
+		});
+	}
+
+	static void validateBackupOutboxHead(byte[] head) throws IOException {
+		if (head.length != 2 * Long.BYTES) {
+			throw new IOException("Malformed LMDB backup outbox head");
+		}
+		ByteBuffer encoded = ByteBuffer.wrap(head);
+		if ((encoded.getLong() | encoded.getLong()) == 0) {
+			throw new IOException("Empty LMDB backup outbox head");
+		}
+	}
+
+	UUID getBackupOutboxHead() {
+		return backupOutboxHead;
+	}
+
+	void setPendingBackupOutboxHead(UUID head) {
+		pendingBackupOutboxHead = head;
+	}
+
+	static void validateBackupBoundary(byte[] encoded) throws IOException {
+		if (encoded.length != 2 * Long.BYTES) {
+			throw new IOException("Malformed LMDB logical backup boundary");
+		}
+		ByteBuffer buffer = ByteBuffer.wrap(encoded);
+		long current = buffer.getLong();
+		long previous = buffer.getLong();
+		if (previous < 0 || current <= previous) {
+			throw new IOException("Invalid LMDB logical backup boundary");
+		}
+	}
+
+	private void initializeBackupBoundary() throws IOException {
+		try (MemoryStack stack = stackPush()) {
+			if (readNamespaceDatabaseValue(stack, writeTxn, BACKUP_BOUNDARY_KEY) == null) {
+				long baseline = mdb_txn_id(writeTxn);
+				writeNamespaceDatabaseValue(stack, writeTxn, BACKUP_BOUNDARY_KEY,
+						ByteBuffer.allocate(2 * Long.BYTES).putLong(baseline).putLong(baseline - 1).array());
+				setupCommitWithoutNativeWrites = false;
+				nativeMutation = true;
+				unjournaledMutation = true;
+			}
 		}
 	}
 
@@ -1447,6 +1544,11 @@ class TripleStore implements Closeable {
 	}
 
 	void commitNamespaceSnapshot(Map<String, String> namespaces, TxnReplayPolicy.Decision decision) throws IOException {
+		commitNamespaceSnapshot(namespaces, decision, false);
+	}
+
+	void commitNamespaceSnapshot(Map<String, String> namespaces, TxnReplayPolicy.Decision decision,
+			boolean publishBackup) throws IOException {
 		if (writeTxn != 0) {
 			throw new IllegalStateException(
 					"Namespace-only commit cannot run inside an active TripleStore transaction");
@@ -1454,6 +1556,7 @@ class TripleStore implements Closeable {
 		try {
 			startTransaction(decision);
 			writeNamespaceSnapshot(namespaces);
+			backupPublicationRequired = publishBackup;
 			commit(false);
 		} catch (IOException | RuntimeException | Error failure) {
 			if (writeTxn != 0) {
@@ -1625,6 +1728,46 @@ class TripleStore implements Closeable {
 		}
 	}
 
+	long getCurrentCommittedTransactionId() throws IOException {
+		return txnManager.doWith((stack, txn) -> mdb_txn_id(txn));
+	}
+
+	long getLastCommittedTxnId() {
+		return lastCommittedTxnId;
+	}
+
+	long getRequiredBackupTxnId() {
+		return requiredBackupTxnId;
+	}
+
+	long getPreviousRequiredBackupTxnId() {
+		return previousRequiredBackupTxnId;
+	}
+
+	void requireBackupPublication() {
+		backupPublicationRequired = true;
+	}
+
+	private void writeBackupBoundary() throws IOException {
+		if (backupPublicationRequired) {
+			try (MemoryStack stack = stackPush()) {
+				writeNamespaceDatabaseValue(stack, writeTxn, BACKUP_BOUNDARY_KEY,
+						ByteBuffer.allocate(2 * Long.BYTES)
+								.putLong(Math.incrementExact(requiredBackupTxnId))
+								.putLong(requiredBackupTxnId)
+								.array());
+				UUID head = pendingBackupOutboxHead;
+				if (head != null) {
+					writeNamespaceDatabaseValue(stack, writeTxn, BACKUP_OUTBOX_HEAD_KEY,
+							ByteBuffer.allocate(2 * Long.BYTES)
+									.putLong(head.getMostSignificantBits())
+									.putLong(head.getLeastSignificantBits())
+									.array());
+				}
+			}
+		}
+	}
+
 	/** Returns -1 for an absent key; stored metadata longs must be nonnegative and big-endian. */
 	private long readMetadataLong(MemoryStack stack, long txn, byte[] key) throws IOException {
 		MDBVal keyValue = MDBVal.malloc(stack);
@@ -1674,6 +1817,34 @@ class TripleStore implements Closeable {
 			}
 			writeMetadataLong(stack, explicit ? EXPLICIT_STATEMENT_COUNT_KEY : INFERRED_STATEMENT_COUNT_KEY,
 					count);
+		}
+	}
+
+	void copyEnvironment(Path targetDir, boolean compact) throws IOException {
+		Files.createDirectories(targetDir);
+		long stamp = txnManager.acquireReadBarrier();
+		try {
+			// LMDB's copy owns an internal reader that TxnManager cannot deactivate during map resizing.
+			E(mdb_env_copy2(env, targetDir.toAbsolutePath().toString(), compact ? MDB_CP_COMPACT : 0));
+		} finally {
+			txnManager.lockManager().unlockRead(stamp);
+		}
+	}
+
+	private volatile ValueStore.IoRunnable beforeBackupSync = () -> {
+	};
+
+	void setBeforeBackupSync(ValueStore.IoRunnable callback) {
+		beforeBackupSync = callback;
+	}
+
+	void syncBackupBoundary() throws IOException {
+		long stamp = txnManager.acquireReadBarrier();
+		try {
+			beforeBackupSync.run();
+			E(mdb_env_sync(env, true));
+		} finally {
+			txnManager.lockManager().unlockRead(stamp);
 		}
 	}
 
@@ -7212,6 +7383,23 @@ class TripleStore implements Closeable {
 						writeTxn = 0;
 					} else {
 						while (true) {
+							try {
+								// Keep the logical sequence independent of native IDs, including compacted snapshots.
+								writeBackupBoundary();
+							} catch (MapFullException capacity) {
+								if (!autoGrow) {
+									throw capacity;
+								}
+								if (isFrozenReplay()) {
+									throw frozenCapacity(capacity);
+								}
+								if (replayDecision != null && replayDecision.checkpoint) {
+									throw new LmdbNativeChunkFullException(LmdbSailStore.MapResizeKind.TRIPLE_STORE,
+											capacity);
+								}
+								resizeAndReplay(-1, null);
+								continue;
+							}
 							var lockManager = txnManager.lockManager();
 							long stamp;
 							try {
@@ -7230,9 +7418,21 @@ class TripleStore implements Closeable {
 								if (beforePhysicalCommit != null) {
 									beforePhysicalCommit.run();
 								}
+								long writeTxnHandle = writeTxn;
+								long committedTxnId = mdb_txn_id(writeTxnHandle);
+								replayProjectedUsedBytes = Math.max(replayProjectedUsedBytes,
+										LmdbUtil.getNewSize(pageSize, writeTxnHandle, 0L));
 								result = commitWriteTransactionWithIndexBuildAuthority();
 								if (result == MDB_SUCCESS) {
 									nativeCommitGeneration.incrementAndGet();
+									lastCommittedTxnId = committedTxnId;
+									if (backupPublicationRequired) {
+										previousRequiredBackupTxnId = requiredBackupTxnId;
+										requiredBackupTxnId = Math.incrementExact(requiredBackupTxnId);
+										if (pendingBackupOutboxHead != null) {
+											backupOutboxHead = pendingBackupOutboxHead;
+										}
+									}
 									committed = true;
 									completeCommittedTransaction(preparedDirect, advanceDataRevision);
 								}
@@ -7308,6 +7508,8 @@ class TripleStore implements Closeable {
 				setupCommitWithoutNativeWrites = false;
 				tripleMutation = false;
 				unjournaledMutation = false;
+				backupPublicationRequired = false;
+				pendingBackupOutboxHead = null;
 				if (!commit || committed || !(failure instanceof LmdbTransactionRetryException)) {
 					if (valueStore != null) {
 						valueStore.clearReplayDecision(replayDecision, transaction);

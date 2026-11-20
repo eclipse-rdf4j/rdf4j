@@ -48,6 +48,7 @@ import org.eclipse.rdf4j.rio.helpers.BasicWriterSettings;
 import org.eclipse.rdf4j.workbench.base.AbstractServlet;
 import org.eclipse.rdf4j.workbench.base.WorkbenchHtmlShell;
 import org.eclipse.rdf4j.workbench.base.WorkbenchViewRegistry;
+import org.eclipse.rdf4j.workbench.commands.ExploreServlet;
 import org.eclipse.rdf4j.workbench.commands.QueryServlet;
 import org.eclipse.rdf4j.workbench.exceptions.BadRequestException;
 import org.eclipse.rdf4j.workbench.exceptions.MissingInitParameterException;
@@ -451,13 +452,17 @@ public class WorkbenchServlet extends AbstractServlet {
 			metadataServlet(repoID, repositoryInfo).service(http, resp);
 			return;
 		}
-		QueryServlet.RequestOperation operation = "/query".equals(pathInfo)
-				? QueryServlet.requestOperation(new WorkbenchRequest(null, http, Map.of()))
-				: null;
+		QueryServlet.RequestOperation operation = null;
+		if ("/query".equals(pathInfo)) {
+			operation = QueryServlet.requestOperation(new WorkbenchRequest(null, http, Map.of()));
+		} else if ("/explore".equals(pathInfo)) {
+			operation = ExploreServlet.requestOperation(new WorkbenchRequest(null, http, Map.of()));
+		}
 		RepositoryOperation key = operation == null ? null
 				: new RepositoryOperation(repoID, operation.kind(), operation.requestId());
 		RepositoryServletEntry entry = null;
 		OperationOwner owner = null;
+		boolean finishedExplore = false;
 		if (key != null) {
 			synchronized (activeOperations) {
 				OperationOwner existing = activeOperations.get(key);
@@ -468,10 +473,24 @@ public class WorkbenchServlet extends AbstractServlet {
 						owner.requests++;
 					}
 				} else if (operation.cancellation()) {
-					resp.sendError(HttpServletResponse.SC_NOT_FOUND);
-					return;
+					if ("explore-query".equals(operation.kind())) {
+						finishedExplore = true;
+					} else {
+						resp.sendError(HttpServletResponse.SC_NOT_FOUND);
+						return;
+					}
 				}
 			}
+		}
+		if (finishedExplore) {
+			// Once no owner remains there is nothing to cancel. Check the repository without routing this stale
+			// request to a newer servlet that might own a different operation with the same identifier.
+			if (manager.getRepositoryInfo(repoID) == null) {
+				writeRepositoryNotFound(repoID, req, resp);
+			} else {
+				resp.setStatus(HttpServletResponse.SC_NO_CONTENT);
+			}
+			return;
 		}
 		if (entry == null) {
 			RepositoryServletSlot slot = repositories.computeIfAbsent(repoID, RepositoryServletSlot::new);

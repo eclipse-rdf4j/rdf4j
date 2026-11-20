@@ -139,8 +139,8 @@ class LmdbNativeAdaptiveFilterPlacementTest {
 		assertThat(intField(castMetadata, "estimatedCostUnits")).isEqualTo(4);
 		Object existsMetadata = forFilter.invoke(null, 13,
 				new Filter(new SingletonSet(), new Exists(new SingletonSet())));
-		assertThat(booleanField(existsMetadata, "adaptiveEligible")).isFalse();
-		assertThat(field(existsMetadata, "declineReason").toString()).isEqualTo("EXISTS_FILTER");
+		assertThat(booleanField(existsMetadata, "adaptiveEligible")).isTrue();
+		assertThat(field(existsMetadata, "declineReason").toString()).isEqualTo("NONE");
 	}
 
 	@Test

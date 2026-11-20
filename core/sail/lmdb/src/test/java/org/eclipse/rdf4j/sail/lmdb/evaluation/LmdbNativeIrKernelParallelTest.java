@@ -64,10 +64,6 @@ class LmdbNativeIrKernelParallelTest {
 			"rdf4j.lmdb.kernelInterpreter.enabled",
 			"rdf4j.lmdb.kernelInterpreter.warmup",
 			"rdf4j.lmdb.adaptiveFilterPlacement.enabled",
-			"rdf4j.lmdb.costCalibration.enabled",
-			"rdf4j.lmdb.costCalibration.record",
-			"rdf4j.lmdb.adaptiveProbe.enabled",
-			"rdf4j.lmdb.adaptiveHedge.enabled",
 			"rdf4j.lmdb.nativeHashJoin.minRows",
 			LmdbNativeKernelLowering.HASH_JOIN_PROPERTY,
 			"rdf4j.lmdb.parallel.enabled",
@@ -247,10 +243,6 @@ class LmdbNativeIrKernelParallelTest {
 		System.setProperty("rdf4j.lmdb.kernelInterpreter.enabled", "true");
 		System.setProperty("rdf4j.lmdb.kernelInterpreter.warmup", "true");
 		System.setProperty("rdf4j.lmdb.adaptiveFilterPlacement.enabled", "false");
-		System.setProperty("rdf4j.lmdb.costCalibration.enabled", "true");
-		System.setProperty("rdf4j.lmdb.costCalibration.record", "false");
-		System.setProperty("rdf4j.lmdb.adaptiveProbe.enabled", "false");
-		System.setProperty("rdf4j.lmdb.adaptiveHedge.enabled", "false");
 		System.setProperty("rdf4j.lmdb.parallel.enabled", "true");
 		System.setProperty("rdf4j.lmdb.parallel.threads", "4");
 		System.setProperty("rdf4j.lmdb.parallel.minWorkEstimate", "1");
@@ -389,7 +381,6 @@ class LmdbNativeIrKernelParallelTest {
 
 	@Test
 	void composedExistsPredicatesUseIndependentParallelWorkers() {
-		System.setProperty("rdf4j.lmdb.costCalibration.enabled", "false");
 		System.setProperty("rdf4j.lmdb.nativeQueryEngine.enabled", "false");
 		List<String> expected = rows(EXISTS_DISJUNCTION_QUERY);
 		assertThat(expected).isNotEmpty();

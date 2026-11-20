@@ -174,7 +174,7 @@ test('Explore groups use the shared result table on a desktop', async ({ page })
 	await expect(outgoing.locator('.query-result-layout')).toHaveAttribute('data-effective-layout', 'table');
 	await expect(outgoing.locator('.query-result-table-wrap thead th')).toHaveText(['Predicate', 'Object', 'Graph']);
 	await expect(page.locator('section.explore-group[data-explore-role="predicate"] .query-result-table-wrap thead th'))
-		.toHaveText(['Subject', 'Object']);
+		.toHaveText(['Subject', 'Object', 'Graph']);
 	await expect(page.locator('section.explore-group[data-explore-role="graph"] .query-result-table-wrap thead th'))
 		.toHaveText(['Subject', 'Predicate', 'Object']);
 	await expect(sharedRows(outgoing)).toHaveCount(10);
@@ -231,15 +231,16 @@ test('Explore groups stay inside a phone screen', async ({ page }) => {
 	expectContained(await overflowMetrics(page, '#explore-results'), 'Explore 390px, scrolled');
 });
 
-test('a long Explore page is one shared table with windowed rows', async ({ page }) => {
+test('a long Explore section uses a shared table with windowed rows', async ({ page }) => {
 	await page.setViewportSize({ width: 1440, height: 900 });
-	await page.goto(exploreUrl(LARGE, '&limit_explore=100'), { waitUntil: 'domcontentloaded' });
+	await page.goto(exploreUrl(LARGE), { waitUntil: 'domcontentloaded' });
 	await waitForRoute(page, 'explore');
-	const rows = sharedRows(page.locator('#explore-results'));
+	const outgoing = page.locator('[data-explore-role="outgoing"]');
+	const rows = sharedRows(outgoing);
 	await expect(rows.first()).toBeVisible({ timeout: 15_000 });
-	await expect(page.locator('#explore-results .query-result-layout')).toHaveCount(1);
-	await expect(page.locator('#explore-results .query-result-table-wrap thead th'))
-		.toHaveText(['Subject', 'Predicate', 'Object', 'Graph']);
+	await expect(outgoing.locator('.query-result-layout')).toHaveCount(1);
+	await expect(outgoing.locator('.query-result-table-wrap thead th'))
+		.toHaveText(['Predicate', 'Object', 'Graph']);
 	await expect(rows.first()).toContainText('large value 000');
 	const indices = await rows.evaluateAll(elements => elements.map(row => Number(row.getAttribute('data-workbench-row-index'))));
 	expect(indices[0]).toBe(0);

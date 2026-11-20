@@ -30,10 +30,14 @@ import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.QueryLanguage;
 import org.eclipse.rdf4j.query.TupleQuery;
 import org.eclipse.rdf4j.query.TupleQueryResult;
+import org.eclipse.rdf4j.query.algebra.FunctionCall;
+import org.eclipse.rdf4j.query.algebra.helpers.AbstractSimpleQueryModelVisitor;
+import org.eclipse.rdf4j.query.parser.QueryParserUtil;
 import org.eclipse.rdf4j.queryrender.SparqlComprehensiveStreamingValidTest;
 import org.eclipse.rdf4j.queryrender.SparqlComprehensiveStreamingValidTest.GeneratedQuery;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
 import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
+import org.eclipse.rdf4j.repository.sail.SailTupleQuery;
 import org.eclipse.rdf4j.sail.lmdb.JaninoCeilingKernels;
 import org.eclipse.rdf4j.sail.lmdb.LmdbStore;
 import org.eclipse.rdf4j.sail.lmdb.config.LmdbStoreConfig;
@@ -56,7 +60,9 @@ import org.openjdk.jmh.annotations.Warmup;
  * unsupported plan shapes that are not numeric DISTINCT and therefore also exercises normal bounded-cache churn; the
  * other two workloads isolate exact SUM(DISTINCT) and AVG(DISTINCT). Every invocation consumes and validates complete
  * results against a generic-evaluator digest. Generated kernels remain costed proposals, so a correct lower-cost
- * specialist or compile-pending fallback is part of the measured JANINO configuration.
+ * specialist or compile-pending fallback is part of the measured JANINO configuration. One bridge shape reads
+ * {@code NOW()}; its generic digest is only an oracle for the current clock reading and is re-read when that reading
+ * moves (see {@link #matchesOracle(int, long)}).
  */
 @State(Scope.Benchmark)
 @Warmup(iterations = 3, time = 1, timeUnit = TimeUnit.SECONDS)
@@ -84,6 +90,8 @@ public class LmdbNativeGeneratedCorpusBenchmark {
 	private File dataDir;
 	private SailRepository repository;
 	private SailRepositoryConnection connection;
+	private String[] sparql;
+	private boolean[] readsClock;
 	private TupleQuery[] queries;
 	private long[] expected;
 
@@ -111,11 +119,22 @@ public class LmdbNativeGeneratedCorpusBenchmark {
 		JaninoCeilingKernels.buildDirectAdjacency(store);
 		connection = repository.getConnection();
 
-		List<String> sparql = workloadQueries();
-		expected = genericDigests(sparql);
-		queries = new TupleQuery[sparql.size()];
+		sparql = workloadQueries().toArray(String[]::new);
+		readsClock = new boolean[sparql.length];
+		expected = new long[sparql.length];
+		queries = new TupleQuery[sparql.length];
 		for (int i = 0; i < queries.length; i++) {
-			queries[i] = connection.prepareTupleQuery(QueryLanguage.SPARQL, sparql.get(i));
+			readsClock[i] = readsClock(sparql[i]);
+			expected[i] = genericDigest(sparql[i]);
+		}
+		for (int i = 0; i < queries.length; i++) {
+			queries[i] = connection.prepareTupleQuery(QueryLanguage.SPARQL, sparql[i]);
+			if (janino) {
+				// the workload measures the generated kernels, which the measured selector may pass over on this
+				// corpus; force the kernel family (compiled first, interpreted while a compile is pending)
+				((SailTupleQuery) queries[i]).setForcedLmdbExecutionStrategy(
+						"irKernel,irKernelInterpreted,irAggregate,irAggregateInterpreted");
+			}
 		}
 		primeAndVerifyAdmission(janino, bridge);
 	}
@@ -145,7 +164,7 @@ public class LmdbNativeGeneratedCorpusBenchmark {
 		long suiteDigest = 0x9E3779B97F4A7C15L;
 		for (int i = 0; i < queries.length; i++) {
 			long actual = digest(queries[i]);
-			if (actual != expected[i]) {
+			if (!matchesOracle(i, actual)) {
 				throw new IllegalStateException(workload + " query " + i + ": expected digest " + expected[i]
 						+ " but got " + actual);
 			}
@@ -218,17 +237,47 @@ public class LmdbNativeGeneratedCorpusBenchmark {
 		return result;
 	}
 
-	private long[] genericDigests(List<String> sparql) {
+	private long genericDigest(String query) {
 		System.setProperty(NATIVE_FLAG, "false");
 		try {
-			long[] digests = new long[sparql.size()];
-			for (int i = 0; i < digests.length; i++) {
-				digests[i] = digest(connection.prepareTupleQuery(QueryLanguage.SPARQL, sparql.get(i)));
-			}
-			return digests;
+			return digest(connection.prepareTupleQuery(QueryLanguage.SPARQL, query));
 		} finally {
 			System.setProperty(NATIVE_FLAG, "true");
 		}
+	}
+
+	/**
+	 * A pure query is checked against the digest cached at setup. A query that reads {@code NOW()} only reproduces that
+	 * digest while its clock-visible fields are unchanged (the corpus shape reads YEAR..HOURS, so a run straddling an
+	 * hour boundary changes its correct result). When the cached digest disagrees, the generic oracle is re-read after
+	 * the native evaluation, and the native result must equal that newer reading; the cache is then advanced so later
+	 * invocations compare against the current reading. This stays exact as long as the clock-visible value changes at
+	 * most once between the cached reading and the re-read, which holds because every change refreshes the cache and
+	 * invocations run back to back.
+	 */
+	private boolean matchesOracle(int index, long actual) {
+		if (actual == expected[index]) {
+			return true;
+		}
+		if (!readsClock[index]) {
+			return false;
+		}
+		expected[index] = genericDigest(sparql[index]);
+		return actual == expected[index];
+	}
+
+	private static boolean readsClock(String query) {
+		boolean[] found = { false };
+		QueryParserUtil.parseTupleQuery(QueryLanguage.SPARQL, query, null)
+				.getTupleExpr()
+				.visit(new AbstractSimpleQueryModelVisitor<RuntimeException>() {
+					@Override
+					public void meet(FunctionCall node) {
+						found[0] |= "NOW".equals(node.getURI());
+						super.meet(node);
+					}
+				});
+		return found[0];
 	}
 
 	private void primeAndVerifyAdmission(boolean janino, boolean bridge) throws Exception {
@@ -255,7 +304,7 @@ public class LmdbNativeGeneratedCorpusBenchmark {
 
 	private void verifyDigest(int index) {
 		long actual = digest(queries[index]);
-		if (actual != expected[index]) {
+		if (!matchesOracle(index, actual)) {
 			throw new IllegalStateException("warmup digest mismatch at query " + index);
 		}
 	}

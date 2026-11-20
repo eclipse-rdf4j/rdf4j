@@ -78,7 +78,6 @@ class LmdbNativeValuesFilterFoldShapesTest {
 
 	@BeforeAll
 	static void setUp() {
-		KernelExecutionTestAccess.resetCostCalibration();
 		lmdbRepository = new SailRepository(new LmdbStore(directory, new LmdbStoreConfig("spoc,posc,ospc")
 				.setNativeEvaluationEnabled(true)
 				.setDirectAdjacencyEnabled(true)

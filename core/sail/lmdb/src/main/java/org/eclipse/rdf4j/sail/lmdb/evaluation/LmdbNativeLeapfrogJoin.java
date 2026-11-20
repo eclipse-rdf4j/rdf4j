@@ -144,17 +144,26 @@ final class LmdbNativeLeapfrogJoin {
 	 * the bag's filters attached at the earliest depth whose slots are covered. Returns null when no eligible cyclic
 	 * core exists — the caller then falls through to the ordinary strategy ladder.
 	 */
-	static RowCursor tryOpen(SlotPlan root, RowState row) throws IOException {
+	/**
+	 * The stages {@link #tryOpen} runs: the non-core children the compiler ranked before the cycle, the core patterns
+	 * fused into one leapfrog stage (with the filters it prunes with), and the children after it with the filters that
+	 * keep their chain placement.
+	 */
+	record Shape(SlotPlan[] before, PatternPlan[] core, boolean[] existential, MaskedFilter[] pushed,
+			SlotPlan[] after, MaskedFilter[] chained, NativeBooleanFilter[] consumedFilters) {
+	}
+
+	/** The shape the join would open for {@code root}, or null when no eligible cyclic core exists. */
+	static Shape shape(SlotPlan root, long boundMask) {
 		if (!enabled()) {
 			return null;
 		}
-		WcojInput input = WcojInput.tryCreate(root, row.boundMask());
+		WcojInput input = WcojInput.tryCreate(root, boundMask);
 		if (input == null) {
 			return null;
 		}
 		MultiJoinPlan multiJoin = input.join;
 		SlotPlan[] children = multiJoin.children;
-		long boundMask = row.boundMask();
 		boolean[] core = findCyclicCore(children, boundMask);
 		if (core == null) {
 			return null;
@@ -164,8 +173,6 @@ final class LmdbNativeLeapfrogJoin {
 				return null;
 			}
 		}
-		PLANNED.incrementAndGet();
-
 		ArrayList<PatternPlan> corePatterns = new ArrayList<>();
 		ArrayList<Boolean> coreExistential = new ArrayList<>();
 		long coreProduced = 0L;
@@ -176,12 +183,13 @@ final class LmdbNativeLeapfrogJoin {
 				coreProduced |= children[i].producedMask();
 			}
 		}
-
 		// stage order: keep the compiler's cost-derived child order, with the whole core fused into one
 		// leapfrog stage at the position of the first core member. Selective non-core children the compiler
 		// ranked before the cycle (VALUES, bound attribute probes) still run first and pre-bind core slots,
 		// which keeps the leapfrog's search confined to the surviving bindings.
 		SlotPlan[] derivedOrder = multiJoin.derivedPlan(boundMask).order;
+		ArrayList<SlotPlan> before = new ArrayList<>();
+		ArrayList<SlotPlan> after = new ArrayList<>();
 		long preStageProduced = 0L;
 		boolean beforeCore = true;
 		for (SlotPlan child : derivedOrder) {
@@ -189,9 +197,11 @@ final class LmdbNativeLeapfrogJoin {
 				beforeCore = false;
 			} else if (beforeCore) {
 				preStageProduced |= child.producedMask();
+				before.add(child);
+			} else {
+				after.add(child);
 			}
 		}
-
 		// filters that touch a core slot and whose whole read-set is bound once the leapfrog row exists run
 		// INSIDE the leapfrog, at the earliest level that covers them — pruning subtrees during the search
 		// instead of discarding finished rows. The rest keep their ordinary chain placement.
@@ -206,27 +216,28 @@ final class LmdbNativeLeapfrogJoin {
 				chained.add(filter);
 			}
 		}
-
 		boolean[] existential = new boolean[coreExistential.size()];
 		for (int i = 0; i < existential.length; i++) {
 			existential[i] = coreExistential.get(i);
 		}
-		LeapfrogPlan leapfrog = new LeapfrogPlan(corePatterns.toArray(PatternPlan[]::new), existential,
-				pushed.toArray(MaskedFilter[]::new), input.consumedFilters);
-		ArrayList<SlotPlan> stages = new ArrayList<>(children.length);
-		boolean corePlaced = false;
-		for (SlotPlan child : derivedOrder) {
-			if (isCoreMember(core, children, child)) {
-				if (!corePlaced) {
-					stages.add(leapfrog);
-					corePlaced = true;
-				}
-			} else {
-				stages.add(child);
-			}
-		}
+		return new Shape(before.toArray(SlotPlan[]::new), corePatterns.toArray(PatternPlan[]::new), existential,
+				pushed.toArray(MaskedFilter[]::new), after.toArray(SlotPlan[]::new),
+				chained.toArray(MaskedFilter[]::new), input.consumedFilters);
+	}
 
-		return openChain(stages, chained.toArray(MaskedFilter[]::new), boundMask, row);
+	static RowCursor tryOpen(SlotPlan root, RowState row) throws IOException {
+		Shape shape = shape(root, row.boundMask());
+		if (shape == null) {
+			return null;
+		}
+		PLANNED.incrementAndGet();
+		LeapfrogPlan leapfrog = new LeapfrogPlan(shape.core(), shape.existential(), shape.pushed(),
+				shape.consumedFilters());
+		ArrayList<SlotPlan> stages = new ArrayList<>(shape.before().length + 1 + shape.after().length);
+		stages.addAll(Arrays.asList(shape.before()));
+		stages.add(leapfrog);
+		stages.addAll(Arrays.asList(shape.after()));
+		return openChain(stages, shape.chained(), row.boundMask(), row);
 	}
 
 	/**
@@ -946,6 +957,15 @@ final class LmdbNativeLeapfrogJoin {
 		 * slot preferring adjacency (sharing a pattern) with the slots already chosen.
 		 */
 		private int[] chooseOrder(long freeMask, int slotCount) {
+			return chooseOrder(plan.patterns, freeMask);
+		}
+
+		/**
+		 * Greedy order: highest pattern-connectivity first (ties: smaller summed static estimates), each subsequent
+		 * slot preferring adjacency (sharing a pattern) with the slots already chosen.
+		 */
+		static int[] chooseOrder(PatternPlan[] patterns, long freeMask) {
+			int slotCount = Long.bitCount(freeMask);
 			int[] order = new int[slotCount];
 			long remaining = freeMask;
 			long chosen = 0L;
@@ -959,7 +979,7 @@ final class LmdbNativeLeapfrogJoin {
 					int score = 0;
 					double estimateSum = 0D;
 					boolean adjacent = false;
-					for (PatternPlan pattern : plan.patterns) {
+					for (PatternPlan pattern : patterns) {
 						if ((pattern.producedMask() & (1L << slot)) == 0L) {
 							continue;
 						}

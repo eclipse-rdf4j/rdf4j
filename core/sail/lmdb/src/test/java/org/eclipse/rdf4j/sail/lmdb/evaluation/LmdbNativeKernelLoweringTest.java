@@ -1708,10 +1708,19 @@ class LmdbNativeKernelLoweringTest {
 			LmdbNativeKernelLowering.Lowered deniedBuild = LmdbNativeKernelLowering.lowerRows(plan, row, null, false,
 					Set.of(PRED + 2));
 			assertNotNull(deniedBuild);
-			assertFalse(deniedBuild.kernel.shapeKey().contains("hb0("), deniedBuild.kernel.shapeKey());
+			assertTrue(deniedBuild.kernel.shapeKey().contains("hb0("), deniedBuild.kernel.shapeKey());
+			assertTrue(deniedBuild.kernel.shapeKey().contains("hp0("), deniedBuild.kernel.shapeKey());
+			LmdbNativeKernelIr.HashBuild scanBuild = deniedBuild.kernel.pipeline.stream()
+					.filter(LmdbNativeKernelIr.HashBuild.class::isInstance)
+					.map(LmdbNativeKernelIr.HashBuild.class::cast)
+					.findFirst()
+					.orElseThrow();
+			assertTrue(scanBuild.pipeline.stream().anyMatch(LmdbNativeKernelIr.ScanQuad.class::isInstance),
+					"the denied build consumes a scan without discarding the hash join");
 			assertEquals(1, deniedBuild.kernel.requirements.scans);
 			assertEquals(1, deniedBuild.bindings.adjacencies.length,
 					"the allowed probe pattern keeps its adjacency route when the build is denied");
+			assertEquals(PRED, deniedBuild.bindings.adjacencies[0].predicate);
 
 			LmdbNativeKernelLowering.Lowered deniedProbe = LmdbNativeKernelLowering.lowerRows(plan,
 					freshRow(new FanOutStubSource(PRED + 2, true, 4_000D)), null, false, Set.of(PRED));

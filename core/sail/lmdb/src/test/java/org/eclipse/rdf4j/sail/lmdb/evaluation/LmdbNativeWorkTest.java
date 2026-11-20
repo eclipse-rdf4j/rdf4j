@@ -101,8 +101,8 @@ public class LmdbNativeWorkTest {
 	@Test
 	public void filterOverAPatternIsPriceable() {
 		PatternPlan arg = driver(10D);
-		// The condition is never evaluated by the cost model, only counted, so a null filter is safe here.
-		FilterPlan filter = new FilterPlan(arg, null, -1L);
+		// The condition is never evaluated by the cost model; it is only counted.
+		FilterPlan filter = new FilterPlan(arg, row -> true, -1L);
 
 		LmdbNativeWork work = filter.estimateWork(null, 0L);
 

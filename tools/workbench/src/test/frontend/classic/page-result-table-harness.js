@@ -82,18 +82,37 @@ async function renderPageResultTables(workbench, model, context, options = {}) {
     };
     const mount = createElement('div');
     document.body.appendChild(mount);
-    if (!model.rowStore) {
+    if (!model.rowStore && model.viewId !== 'explore') {
         model.rowStore = memoryRowStore(model.rows || []);
     }
     const runtime = options.runtime || fakeRuntime();
     workbench.views.render(mount, model, context, runtime);
     await settle();
     const outlet = workbench.views.outletOf ? workbench.views.outletOf(mount) : null;
-    const template = outlet && outlet.template ? outlet.template : mount.template;
+    let template = outlet && outlet.template ? outlet.template : mount.template;
+    let exploreHost = null;
+    let sectionOutlet = null;
+    if (model.viewId === 'explore' && typeof workbench.views.renderExploreSections === 'function') {
+        exploreHost = createElement('div');
+        sectionOutlet = {
+            ownerDocument: document,
+            querySelector(selector) { return selector === '#explore-section-output' ? exploreHost : null; }
+        };
+        workbench.views.renderExploreSections(sectionOutlet, model, context, runtime);
+        await settle();
+        template = [template, exploreHost.template];
+    }
     const hosts = resultTableHosts(template);
     return {
         document,
         mount,
+        exploreHost,
+        async rerenderExplore() {
+            if (sectionOutlet) {
+                workbench.views.renderExploreSections(sectionOutlet, model, context, runtime);
+                await settle();
+            }
+        },
         runtime,
         template,
         hosts,

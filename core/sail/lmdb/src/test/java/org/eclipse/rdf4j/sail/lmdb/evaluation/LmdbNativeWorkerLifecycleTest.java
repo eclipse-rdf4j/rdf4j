@@ -162,7 +162,6 @@ class LmdbNativeWorkerLifecycleTest {
 		System.setProperty("rdf4j.lmdb.parallel.maxTasks", "3");
 		System.setProperty("rdf4j.lmdb.parallel.minWorkEstimate", "0");
 		System.setProperty("rdf4j.lmdb.parallel.startupWork", "0");
-		System.setProperty("rdf4j.lmdb.costCalibration.enabled", "false");
 		System.setProperty("rdf4j.lmdb.janinoCodegen.enabled", "false");
 		System.setProperty("rdf4j.lmdb.kernelInterpreter.enabled", "true");
 		System.setProperty("rdf4j.lmdb.factorizedRows.enabled", "false");

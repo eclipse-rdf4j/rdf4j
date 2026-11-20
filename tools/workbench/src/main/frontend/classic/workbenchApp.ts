@@ -42,9 +42,15 @@ namespace workbench {
 
     export namespace app {
         export const ACCEPT = 'application/vnd.rdf4j.workbench+ndjson';
+        export interface PageLoadOptions {
+            rowStoreOptions?: any;
+            filterRows?: (rows: any[][]) => Promise<any[][]>;
+        }
         const scriptPromiseKey = '__rdf4jWorkbenchScriptPromises';
         const litPromiseKey = '__rdf4jWorkbenchLitPromise';
         const loadRoutineKey = '__rdf4jWorkbenchLoadRoutineRun';
+        const responseScopePrefix = 'page:' + Date.now() + ':' + Math.random().toString(36).slice(2) + ':';
+        let responseScopeSequence = 0;
 
         function invalid(message: string): Error {
             return new Error('Invalid Workbench page model: ' + message);
@@ -400,6 +406,11 @@ namespace workbench {
                         model.metadata.namespaceMap = model.namespaceMap;
                     }
                     return Promise.resolve();
+                case 'progress':
+                    if (!isObject(record.values)) {
+                        throw invalid('progress values must be an object');
+                    }
+                    return Promise.resolve();
                 case 'vars':
                     if (state.haveVars || !Array.isArray(record.values)
                             || record.values.some((value: any) => typeof value !== 'string')) {
@@ -433,6 +444,11 @@ namespace workbench {
                         throw invalid('rows must contain positional arrays matching vars');
                     }
                     state.rowsSeen = true;
+                    const scopeBlankNodes = (workbench as any).queryStream.scopeUnverifiedBlankNodes;
+                    if (typeof scopeBlankNodes === 'function') {
+                        record.values.forEach((row: any[]) => row.forEach((term: any) =>
+                            scopeBlankNodes(term, state.responseScope)));
+                    }
                     if (model.viewId === '_internal/namespaces' || model.viewId === 'namespace-metadata') {
                         const prefixIndex = model.vars.indexOf('prefix');
                         const nameIndex = model.vars.indexOf('namespace') >= 0
@@ -451,7 +467,14 @@ namespace workbench {
                         }
                         return Promise.resolve();
                     }
-                    return model.rowStore.append(record.values).then(() => {});
+                    return Promise.resolve(state.filterRows ? state.filterRows(record.values) : record.values)
+                        .then((rows: any[][]) => {
+                            if (!Array.isArray(rows) || rows.some((row: any) => !Array.isArray(row)
+                                    || (state.haveVars && row.length !== model.vars.length))) {
+                                throw invalid('filtered rows must match vars');
+                            }
+                            return model.rowStore.append(rows).then(() => {});
+                        });
                 case 'boolean':
                     if (typeof record.value !== 'boolean') {
                         throw invalid('boolean must contain a boolean value');
@@ -500,12 +523,12 @@ namespace workbench {
          * came from after redirects.
          */
         export function loadModel(fetcher: (url: string, options: any) => Promise<any>, url: string,
-                                  signal?: AbortSignal): Promise<PageModel> {
+                                  signal?: AbortSignal, options?: PageLoadOptions): Promise<PageModel> {
             const request: any = { headers: { Accept: ACCEPT }, credentials: 'same-origin' };
             if (signal) {
                 request.signal = signal;
             }
-            return fetcher(url, request).then((response: any) => loadModelFromResponse(response, signal, url));
+            return fetcher(url, request).then((response: any) => loadModelFromResponse(response, signal, url, options));
         }
 
         /**
@@ -513,17 +536,20 @@ namespace workbench {
          * router sent (M10.1). requestedUrl stands in for response.url when a fake response has none.
          */
         export function loadModelFromResponse(response: any, signal?: AbortSignal,
-                                              requestedUrl?: string): Promise<PageModel> {
+                                              requestedUrl?: string, options?: PageLoadOptions): Promise<PageModel> {
             if (!response || response.ok === false && !isPageProtocolResponse(response)) {
                 const status = response && response.status ? ' (' + response.status + ')' : '';
                 return Promise.reject(new Error('Unable to load Workbench page data' + status));
             }
             const stream = queryStream();
-            return stream.createRowStore().then((rowStore: any) => {
+            return stream.createRowStore(options && options.rowStoreOptions).then((rowStore: any) => {
                 const model = newPageModel(rowStore);
                 const state: { haveView: boolean; haveVars: boolean; haveTerminal: boolean;
-                    rowsSeen: boolean; error: Error | null } = {
-                    haveView: false, haveVars: false, haveTerminal: false, rowsSeen: false, error: null
+                    rowsSeen: boolean; error: Error | null; responseScope: string;
+                    filterRows?: (rows: any[][]) => Promise<any[][]> } = {
+                    haveView: false, haveVars: false, haveTerminal: false, rowsSeen: false, error: null,
+                    responseScope: responseScopePrefix + (++responseScopeSequence),
+                    filterRows: options && options.filterRows
                 };
                 model.finalUrl = response.url || requestedUrl;
                 return stream.consumeNdjsonResponse(response, {

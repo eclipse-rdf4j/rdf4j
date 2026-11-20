@@ -1,0 +1,10 @@
+# Added only by CI test launchers. This host bind survives container teardown and down -v.
+services:
+  rdf4j:
+    environment:
+      - RDF4J_CONTAINER_JVM_DIAGNOSTICS_ROOT=/rdf4j-jvm-diagnostics
+      - JAVA_TOOL_OPTIONS=${RDF4J_DOCKER_JVM_DIAGNOSTIC_OPTIONS:?CI diagnostic options are required}
+    volumes:
+      - type: bind
+        source: ${RDF4J_JVM_DIAGNOSTICS_DIR:?CI diagnostic directory is required}/docker
+        target: /rdf4j-jvm-diagnostics

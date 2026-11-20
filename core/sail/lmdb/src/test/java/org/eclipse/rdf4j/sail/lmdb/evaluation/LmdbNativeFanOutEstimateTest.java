@@ -21,6 +21,7 @@ import java.util.Map;
 import java.util.OptionalDouble;
 import java.util.OptionalLong;
 
+import org.eclipse.rdf4j.common.order.StatementOrder;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.query.QueryEvaluationException;
 import org.eclipse.rdf4j.query.impl.EmptyBindingSet;
@@ -37,7 +38,38 @@ class LmdbNativeFanOutEstimateTest {
 
 		assertThat(pattern.estimateForBoundMask(1L, measured)).isEqualTo(3D);
 		assertThat(pattern.estimateForBoundMask(1L << 1, measured)).isEqualTo(5D);
-		assertThat(pattern.estimateForBoundMask(1L, absent)).isEqualTo(4_096D * 256D);
+		// without a statistic a probe from one bound end yields a node's fan-out (pseudo 16), not the node domain
+		// (4096): the domain is what an unbound end enumerates, the fan-out what a bound end reaches
+		assertThat(pattern.estimateForBoundMask(1L, absent)).isEqualTo(16D);
+	}
+
+	@Test
+	void aVariablePredicateProbeFromOneBoundEndYieldsTheNodeDegreeAcrossPredicates() {
+		// ?s ?p ?o with ?s bound: 64 predicate pseudo-planes times a fan-out of 16 per plane, never the node domain
+		PatternPlan wildcard = new PatternPlan(Term.slot(0), Term.slot(2), Term.slot(1), Term.unbound(),
+				ContextConstraint.UNRESTRICTED, false, Double.NaN);
+		FanOutSource absent = new FanOutSource(7L, Double.NaN, Double.NaN, OptionalLong.empty(), 150_000L);
+		assertThat(wildcard.estimateForBoundMask(1L, absent)).isEqualTo(64D * 16D);
+		assertThat(wildcard.estimateForBoundMask(1L << 1, absent)).isEqualTo(64D * 16D);
+		// unbound at both ends it is the sweep, capped at the store's statement count
+		assertThat(wildcard.estimateForBoundMask(0L, absent)).isEqualTo(150_000D);
+	}
+
+	@Test
+	void aVariablePredicateProbeFromOneBoundEndUsesTheMeanNodeDegreeWhenTheSourceKnowsIt() {
+		// ?s ?p ?o with ?s bound reaches one node's statements: the plane statistics' mean out-degree, not 64 planes
+		// times a fan-out of 16 (the 600-person FOAF census fixture priced a 10,665-row join at 279,711 rows that way
+		// and lost the measured fastest strategy, 2026-11-03)
+		PatternPlan wildcard = new PatternPlan(Term.slot(0), Term.slot(2), Term.slot(1), Term.unbound(),
+				ContextConstraint.UNRESTRICTED, false, Double.NaN);
+		FanOutSource known = new FanOutSource(7L, Double.NaN, Double.NaN, OptionalLong.empty(), 150_000L)
+				.nodeDegree(3.5D, 1.7D);
+		assertThat(wildcard.estimateForBoundMask(1L, known)).isEqualTo(3.5D);
+		assertThat(wildcard.estimateForBoundMask(1L << 1, known)).isEqualTo(1.7D);
+		assertThat(wildcard.hasDirectEstimateForBoundMask(1L, known)).isTrue();
+		// both ends bound, or the predicate bound as well, is not a node probe
+		assertThat(wildcard.estimateForBoundMask(1L | 1L << 1, known)).isEqualTo(64D);
+		assertThat(wildcard.estimateForBoundMask(0L, known)).isEqualTo(150_000D);
 	}
 
 	@Test
@@ -70,6 +102,20 @@ class LmdbNativeFanOutEstimateTest {
 		assertThat(plan.estimate(row)).isEqualTo(200D);
 	}
 
+	@Test
+	void structuralEstimateNeverExceedsTheStoreStatementCount() {
+		// an unbound predicate has no fan-out statistics, so the estimate is structural; a store of 500 statements
+		// cannot answer a pattern with more than 500 rows, bound subject or not
+		FanOutSource small = new FanOutSource(7L, Double.NaN, Double.NaN, OptionalLong.empty(), 500L);
+		PatternPlan wildcard = new PatternPlan(Term.slot(0), Term.slot(2), Term.slot(1), Term.unbound(),
+				ContextConstraint.UNRESTRICTED, false, Double.NaN);
+		assertThat(wildcard.estimateForBoundMask(1L, small)).isLessThanOrEqualTo(500D);
+		assertThat(wildcard.estimateForBoundMask(0L, small)).isLessThanOrEqualTo(500D);
+		// without a profile the pseudo-cardinalities stand (64 predicates × a fan-out of 16 per bound subject)
+		FanOutSource unknown = new FanOutSource(7L, Double.NaN, Double.NaN, OptionalLong.empty());
+		assertThat(wildcard.estimateForBoundMask(1L, unknown)).isEqualTo(64D * 16D);
+	}
+
 	private static PatternPlan pattern(long predicate, double staticEstimate) {
 		return new PatternPlan(Term.slot(0), Term.constant(predicate), Term.slot(1), Term.unbound(),
 				ContextConstraint.UNRESTRICTED, false, staticEstimate);
@@ -81,11 +127,33 @@ class LmdbNativeFanOutEstimateTest {
 		private final double byObject;
 		private final OptionalLong exactDegree;
 
+		private final long entries;
+		private double nodeDegreeBySubject = Double.NaN;
+		private double nodeDegreeByObject = Double.NaN;
+
 		private FanOutSource(long predicate, double bySubject, double byObject, OptionalLong exactDegree) {
+			this(predicate, bySubject, byObject, exactDegree, -1L);
+		}
+
+		private FanOutSource(long predicate, double bySubject, double byObject, OptionalLong exactDegree,
+				long entries) {
 			this.predicate = predicate;
 			this.bySubject = bySubject;
 			this.byObject = byObject;
 			this.exactDegree = exactDegree;
+			this.entries = entries;
+		}
+
+		@Override
+		public IndexAccessProfile indexAccessProfile() {
+			if (entries < 0L) {
+				return null;
+			}
+			int[][] prefixes = new int[StatementOrder.values().length + 1][16];
+			for (int[] row : prefixes) {
+				Arrays.fill(row, -1);
+			}
+			return new IndexAccessProfile(entries, 1, prefixes, false, -1L, -1L, -1L);
 		}
 
 		@Override
@@ -100,6 +168,18 @@ class LmdbNativeFanOutEstimateTest {
 		@Override
 		public OptionalLong exactDegree(long predicate, long key, boolean bySubject) {
 			return predicate == this.predicate && key == 42L && bySubject ? exactDegree : OptionalLong.empty();
+		}
+
+		FanOutSource nodeDegree(double bySubject, double byObject) {
+			this.nodeDegreeBySubject = bySubject;
+			this.nodeDegreeByObject = byObject;
+			return this;
+		}
+
+		@Override
+		public OptionalDouble meanNodeDegree(boolean bySubject) {
+			double degree = bySubject ? nodeDegreeBySubject : nodeDegreeByObject;
+			return Double.isFinite(degree) ? OptionalDouble.of(degree) : OptionalDouble.empty();
 		}
 
 		@Override

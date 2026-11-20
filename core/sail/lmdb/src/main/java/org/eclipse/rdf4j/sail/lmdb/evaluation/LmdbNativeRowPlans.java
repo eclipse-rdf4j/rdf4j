@@ -185,6 +185,7 @@ final class FilterPlan implements SlotPlan {
 	final NativeBooleanFilter filter;
 	/** Slots the condition can read, or -1 when the filter must stay exactly where the algebra put it. */
 	final long filterMask;
+	private final long groupedReads;
 	/** Optional exact term-kind condition retained from the filter algebra for page-grain prefiltering. */
 	final LmdbNativeTermKindFilter termKindFilter;
 
@@ -197,7 +198,12 @@ final class FilterPlan implements SlotPlan {
 		this.arg = arg;
 		this.filter = filter;
 		this.filterMask = filterMask;
+		this.groupedReads = NativePredicateCapabilities.groupedReadMask(filter, filterMask);
 		this.termKindFilter = termKindFilter;
+	}
+
+	long groupedReadMask() {
+		return groupedReads;
 	}
 
 	@Override
@@ -212,8 +218,9 @@ final class FilterPlan implements SlotPlan {
 			return LmdbNativeFactorRows.asRows(grouped, row);
 		// A pinned filter can observe each logical solution in encounter order. Its input must be opened under
 		// that boundary, including lazy probes performed after the filter cursor has been constructed.
-		RowCursor input = filterMask < 0L ? LmdbNativeFactorAlgebra.openOrdered(arg, row) : arg.open(row);
-		return new FilterCursor(filterMask < 0L ? LmdbNativeFactorAlgebra.logical(input, row) : input, filter, row);
+		boolean logicalReplay = groupedReadMask() < 0L;
+		RowCursor input = logicalReplay ? LmdbNativeFactorAlgebra.openOrdered(arg, row) : arg.open(row);
+		return new FilterCursor(logicalReplay ? LmdbNativeFactorAlgebra.logical(input, row) : input, filter, row);
 	}
 
 	@Override
@@ -237,12 +244,13 @@ final class FilterPlan implements SlotPlan {
 
 	@Override
 	public BatchCursor openBatch(RowState row, int capacity) throws IOException {
-		if (filterMask < 0L) {
+		long reads = groupedReadMask();
+		if (reads < 0L) {
 			RowCursor input = LmdbNativeFactorAlgebra.logical(LmdbNativeFactorAlgebra.openOrdered(arg, row), row);
 			return new RowBatchCursor(new FilterCursor(input, filter, row), row);
 		}
 		BatchCursor batch = arg.openBatch(row, capacity);
-		return batch == null ? null : new FilterBatchCursor(batch, filter, row, filterMask);
+		return batch == null ? null : new FilterBatchCursor(batch, filter, row, reads);
 	}
 
 	@Override

@@ -20,7 +20,11 @@ import java.util.List;
  *
  */
 public enum EndpointType {
+	/**
+	 * @deprecated use {@link #LocalStore} as successor
+	 */
 	NativeStore(Arrays.asList("NativeStore", "lsail/NativeStore")),
+	LocalStore(Arrays.asList("LocalStore", "lsail/LocalStore")),
 	SparqlEndpoint(Arrays.asList("SparqlEndpoint", "api/sparql")),
 	RemoteRepository(List.of("RemoteRepository")),
 	Other(List.of("Other"));

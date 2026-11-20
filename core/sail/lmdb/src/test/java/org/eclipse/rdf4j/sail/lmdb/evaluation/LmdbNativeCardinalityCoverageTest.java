@@ -33,6 +33,7 @@ public class LmdbNativeCardinalityCoverageTest {
 	private static final int ROOT = 0;
 	private static final int FIRST = 1;
 	private static final int SECOND = 2;
+	private static final NativeBooleanFilter FILTER = row -> true;
 
 	private static PatternPlan pattern(Term subject, long predicate, Term object, double estimate) {
 		return new PatternPlan(subject, Term.constant(predicate), object, Term.unbound(),
@@ -54,7 +55,7 @@ public class LmdbNativeCardinalityCoverageTest {
 	@Test
 	public void filterIsBoundedAboveByItsArgument() {
 		PatternPlan arg = driver(10D);
-		double filtered = rows(new FilterPlan(arg, null, -1L));
+		double filtered = rows(new FilterPlan(arg, FILTER, -1L));
 
 		assertThat(filtered)
 				.as("a filter can only remove rows, never add them")
@@ -122,7 +123,7 @@ public class LmdbNativeCardinalityCoverageTest {
 				new ExtensionPlan(
 						new UnionPlan(probe(FIRST, 9L, 5D), probe(SECOND, 11L, 7D)),
 						new CopyBinding[0]),
-				null, -1L);
+				FILTER, -1L);
 
 		LmdbNativeWork.Chain chain = LmdbNativeWork.chain(new SlotPlan[] { driver(10D), stacked }, 2, null, 0L);
 
@@ -140,7 +141,7 @@ public class LmdbNativeCardinalityCoverageTest {
 		PatternPlan optionalLeft = driver(10D);
 		MultiJoinPlan nested = new MultiJoinPlan(new SlotPlan[] {
 				probe(FIRST, 9L, 5D), probe(SECOND, 11L, 7D) }, new MaskedFilter[0]);
-		FilterPlan filteredNested = new FilterPlan(nested, null, -1L);
+		FilterPlan filteredNested = new FilterPlan(nested, FILTER, -1L);
 		LeftJoinPlan optional = new LeftJoinPlan(optionalLeft, filteredNested);
 
 		double expected = LmdbNativeWork.expectedWork(optional, null, 0L);
@@ -247,7 +248,7 @@ public class LmdbNativeCardinalityCoverageTest {
 		SlotPlan nested = new CountingPlan(1L << nextSlot++, 1D, 1D, rowEstimateCalls, hardWorkQuotes);
 		for (int i = 0; i < depth; i++) {
 			SlotPlan wrapped = switch (i % 4) {
-			case 0 -> new FilterPlan(nested, null, -1L);
+			case 0 -> new FilterPlan(nested, FILTER, -1L);
 			case 1 -> new LeftJoinPlan(nested,
 					new CountingPlan(1L << nextSlot++, 1D, 1D, rowEstimateCalls, hardWorkQuotes));
 			case 2 -> new MinusPlan(nested,
@@ -341,7 +342,7 @@ public class LmdbNativeCardinalityCoverageTest {
 		assertThat(rows(new UnionPlan(driver(10D), unpriceable)))
 				.as("a union is only as priceable as both its arms")
 				.isNaN();
-		assertThat(rows(new FilterPlan(driver(10D), null, -1L)))
+		assertThat(rows(new FilterPlan(driver(10D), FILTER, -1L)))
 				.as("but a sibling plan that does not contain it is unaffected")
 				.isNotNaN();
 	}
@@ -350,7 +351,7 @@ public class LmdbNativeCardinalityCoverageTest {
 	public void estimateRemainsTheLegacyChannelAndIsUntouched() {
 		// The whole reason estimateRows exists as a second channel: SlotPlan.estimate feeds admission decisions that
 		// predate the cost model, and its "infinity means unknown" sentinel must keep working.
-		assertThat(new FilterPlan(driver(10D), null, -1L).estimate(null))
+		assertThat(new FilterPlan(driver(10D), FILTER, -1L).estimate(null))
 				.isEqualTo(Double.POSITIVE_INFINITY);
 		assertThat(new UnionPlan(driver(10D), driver(5D)).estimate(null))
 				.isEqualTo(Double.POSITIVE_INFINITY);

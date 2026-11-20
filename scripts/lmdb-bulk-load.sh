@@ -50,7 +50,7 @@ if [ "$needs_build" = true ]; then
 	fi
 	(
 		cd "$repository_root"
-		exec mvn -B -ntp -o -Dmaven.repo.local=.m2_repo -pl tools/lmdb-bulk-load -am -Pquick package
+		exec mvn -B -ntp -Dmaven.repo.local=.m2_repo -pl tools/lmdb-bulk-load -am -Pquick package
 	)
 	tool_jar=$(find_tool_jar)
 fi

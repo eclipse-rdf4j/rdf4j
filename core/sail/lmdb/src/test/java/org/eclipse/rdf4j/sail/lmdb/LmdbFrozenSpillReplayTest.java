@@ -17,7 +17,6 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
-import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.lwjgl.util.lmdb.LMDB.MDB_MAP_FULL;
 import static org.lwjgl.util.lmdb.LMDB.mdb_txn_abort;
@@ -1367,7 +1366,8 @@ class LmdbFrozenSpillReplayTest {
 				throws IOException, SailException {
 			super(dataDir, new StoreProperties(), config, false, ValueStore::new,
 					(tripleDirectory, tripleProperties, tripleConfig, valueStore) -> new ProbeTripleStore(
-							tripleDirectory, tripleProperties, tripleConfig, valueStore, probe, true));
+							tripleDirectory, tripleProperties, tripleConfig, valueStore, probe, true),
+					1024, true);
 			this.probe = probe;
 		}
 

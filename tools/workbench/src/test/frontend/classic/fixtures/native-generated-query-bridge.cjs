@@ -17,6 +17,7 @@ const path = require('node:path');
 const vm = require('node:vm');
 const { installDetailDisclosureTemplateRuntime } = require('../workbench-detail-disclosure-runtime.js');
 const { compiledScriptsDir, sourceScriptsDir } = require('../workbench-scripts.js');
+const { createExploreModel } = require('../explore-section-fixtures.js');
 
 // Exercise the same public view renderer as workbench-page-rendering.test.js. The queries below come from the
 // rendered resource link and the clicked graph-addition control, so generator changes cannot leave copied text stale.
@@ -32,7 +33,8 @@ for (const filename of ['workbenchViews.js', 'workbenchRoutes.js', 'queryStream.
 }
 window.workbench = context.workbench;
 
-const runtime = { html: (strings, ...values) => ({ strings: Array.from(strings), values }) };
+const runtime = { html: (strings, ...values) => ({ strings: Array.from(strings), values }),
+    render(template, target) { target.template = template; } };
 const viewContext = { basePath: '/workbench', repositoryId: 'native-test', serverIdentity: 'test-server', workbench: {} };
 const input = JSON.parse(process.argv[2]);
 const queued = [];
@@ -56,14 +58,23 @@ visit(graphs, template => {
 });
 assert.equal(queued.length, 1, 'one real graph-addition query must be generated');
 
-const explore = context.workbench.views.pageTemplate({ viewId: 'explore', vars: ['subject', 'predicate', 'object', 'context'],
-    rows: [], metadata: { 'explore-resource': input.resource } }, viewContext, runtime);
+const exploreModel = createExploreModel({
+    metadata: { resource: input.resource, 'explore-resource': input.resource },
+    sections: { types: { rows: [[{ kind: 'iri', value: input.graph }]], totalRows: 1, count: '1' } }
+});
+const exploreOutlet = { querySelector(selector) { return selector === '#explore-section-output' ? this.host : null; },
+    host: {} };
+context.workbench.views.renderExploreSections(exploreOutlet, exploreModel, viewContext, runtime);
 const resourceLinks = [];
-visit(explore, template => {
+const sectionLinks = [];
+visit(exploreOutlet.host.template, template => {
     template.values.filter(value => typeof value === 'string' && value.startsWith('query?query='))
         .forEach(value => resourceLinks.push(decodeURIComponent(value.slice('query?query='.length))));
+    template.values.filter(value => typeof value === 'string' && value.startsWith('explore?resource='))
+        .forEach(value => sectionLinks.push(value));
 });
-assert.equal(resourceLinks.length, 1, 'one real query-resource link must be generated');
+assert.equal(resourceLinks.length, 1, 'the resource card generates its real query link from resolved metadata');
+assert.equal(sectionLinks.length, 1, 'the dedicated Types response generates one real Explore resource link');
 
 // The bundled editor default is a literal configuration field. Reading that literal avoids loading YASQE's browser
 // DOM dependencies and preserves its exact shipped query, including any future prefix or LIMIT changes.
@@ -71,4 +82,5 @@ const yasqe = fs.readFileSync(path.join(sourceScriptsDir, 'yasqe.js'), 'utf8');
 const defaults = yasqe.slice(yasqe.indexOf('YASQE.defaults = $.extend(true, {}, YASQE.defaults, {'));
 const value = defaults.match(/^  value: ("(?:[^"\\]|\\.)*"),$/m);
 assert.ok(value, 'the shipped YASQE query default must remain a readable string configuration field');
-process.stdout.write(JSON.stringify({ resource: resourceLinks[0], graph: queued[0].query, editor: JSON.parse(value[1]) }));
+process.stdout.write(JSON.stringify({ resource: resourceLinks[0], section: sectionLinks[0],
+    graph: queued[0].query, editor: JSON.parse(value[1]) }));

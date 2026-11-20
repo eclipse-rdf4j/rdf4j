@@ -314,6 +314,47 @@ class LmdbOptimizerPipelineTest {
 	}
 
 	@Test
+	void nativeStandardPipelineAddsGroupPushdownAfterFilterOptimizer() throws Exception {
+		LmdbStore store = new LmdbStore(new LmdbStoreConfig().setNativeEvaluationEnabled(true));
+		for (EvaluationStrategy strategy : List.of(createEvaluationStrategy(store.getEvaluationStrategyFactory()),
+				createExperimentalEvaluationStrategy(store.getEvaluationStrategyFactory()))) {
+			List<QueryOptimizer> optimizers = optimizers(strategy);
+			int pushdown = indexOf(optimizers, LmdbSubqueryGroupPushdownOptimizer.class);
+			assertTrue(pushdown >= 0, "native pipelines add the group pushdown");
+			assertTrue(pushdown > indexOf(optimizers, FilterOptimizer.class), "after FilterOptimizer");
+		}
+	}
+
+	@Test
+	void nativeLmdbPipelineAddsGroupPushdownBetweenIterativeEvaluationAndJoinOptimizers() throws Exception {
+		LmdbStore store = new LmdbStore(new LmdbStoreConfig().setNativeEvaluationEnabled(true));
+		EvaluationStatistics readyStatistics = new EvaluationStatistics() {
+			@Override
+			public boolean supportsJoinEstimation() {
+				return true;
+			}
+		};
+		List<QueryOptimizer> optimizers = optimizers(
+				createExperimentalEvaluationStrategy(store.getEvaluationStrategyFactory(), readyStatistics));
+		int pushdown = indexOf(optimizers, LmdbSubqueryGroupPushdownOptimizer.class);
+		assertTrue(pushdown > indexOf(optimizers, IterativeEvaluationOptimizer.class));
+		assertTrue(pushdown < indexOf(optimizers, LmdbSketchJoinOptimizer.class));
+	}
+
+	@Test
+	void genericEvaluationPipelinesDoNotAddGroupPushdown() throws Exception {
+		LmdbStoreConfig config = new LmdbStoreConfig();
+		config.setExperimentalQueryOptimizations(true);
+		LmdbStore store = new LmdbStore(config);
+		assertFalse(optimizers(createExperimentalEvaluationStrategy(store.getEvaluationStrategyFactory()))
+				.stream()
+				.anyMatch(LmdbSubqueryGroupPushdownOptimizer.class::isInstance));
+		assertFalse(optimizers(createEvaluationStrategy(store.getEvaluationStrategyFactory()))
+				.stream()
+				.anyMatch(LmdbSubqueryGroupPushdownOptimizer.class::isInstance));
+	}
+
+	@Test
 	void automaticLmdbStoreUsesNativeEvaluationWithLmdbPipelineAfterSketchesAreReady(@TempDir File dataDir)
 			throws Exception {
 		LmdbStore store = new LmdbStore(dataDir, sketchEnabledConfig("spoc"));

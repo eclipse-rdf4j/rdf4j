@@ -128,7 +128,7 @@ test('the built-in definitions carry the script lists the pages load today', () 
     const workbench = loadWorkbench();
     const routes = workbench.routes;
     assert.deepEqual(Array.from(routes.get('query').scripts({ vars: [] })), ['queryStream.js', 'vendor/codemirror-5.65.21/codemirror.js',
-        'yasqe.min.js', 'yasqeHelper.js', 'queryCancelPolicy.js', 'diff.min.js', 'queryExplanationHighlighter.js',
+        'yasqe.min.js', 'yasqeHelper.js', 'querySharing.js', 'queryCancelPolicy.js', 'diff.min.js', 'queryExplanationHighlighter.js',
         'paging.js', 'query.js'], 'the graph renderer is loaded only for DOT explanations (M11.1)');
     assert.deepEqual(Array.from(routes.get('explore').baseScripts()), ['paging.js', 'explore.js']);
     assert.deepEqual(Array.from(routes.get('contexts').scripts({ vars: ['context'] })), []);
@@ -348,19 +348,15 @@ test('the explore route binds its controls inside the outlet and removes them on
     const harness = routeHarness(
         'http://localhost:8080/rdf4j-workbench/repositories/repo-1/explore?resource=%3Curn%3Ax%3E');
     const outlet = harness.outlet;
-    append(harness, outlet, 'input', { id: 'resource' });
-    append(harness, outlet, 'input', { id: 'limit_explore', value: '10' });
-    append(harness, outlet, 'input', { id: 'nextX', value: 'Next 10' });
-    append(harness, outlet, 'input', { id: 'previousX', value: 'Previous 10' });
+    const resource = append(harness, outlet, 'input', { id: 'resource' });
     const showDataTypes = append(harness, outlet, 'input', { name: 'show-datatypes', type: 'checkbox',
         checked: true });
-    const summary = append(harness, outlet, 'p', { id: 'explore-resource-summary', hidden: true });
-    const value = append(harness, summary, 'span', { id: 'explore-resource-value' });
-    append(harness, summary, 'span', { id: 'explore-result-count' });
 
     const { second } = await remount(harness, 'explore');
 
-    assert.equal(value.textContent, '<urn:x>');
+    assert.equal(resource.value, '<urn:x>', 'the requested term is restored in the metadata-only form');
+    assert.equal(harness.document.getElementById('explore-result-count'), null,
+        'the route has no page-wide row summary');
     assert.equal(showDataTypes.listenerCount('change'), 1, 'the datatype toggle is bound once');
     second.dispose('navigate');
     assert.equal(showDataTypes.listenerCount('change'), 0, 'dispose removes the namespaced handler');

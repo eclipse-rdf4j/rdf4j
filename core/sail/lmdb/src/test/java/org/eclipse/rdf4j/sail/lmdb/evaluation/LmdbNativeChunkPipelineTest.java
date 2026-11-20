@@ -27,8 +27,10 @@ import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.model.util.Values;
 import org.eclipse.rdf4j.query.QueryResults;
+import org.eclipse.rdf4j.query.TupleQuery;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
 import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
+import org.eclipse.rdf4j.repository.sail.SailTupleQuery;
 import org.eclipse.rdf4j.sail.lmdb.AdjacencyEngagementTestAccess;
 import org.eclipse.rdf4j.sail.lmdb.LmdbStore;
 import org.eclipse.rdf4j.sail.lmdb.config.DirectAdjacencyCoverage;
@@ -61,7 +63,6 @@ public class LmdbNativeChunkPipelineTest {
 		setProperty("rdf4j.lmdb.kernelInterpreter.enabled", "false");
 		setProperty("rdf4j.lmdb.packedFtree.enabled", "false");
 		setProperty("rdf4j.lmdb.parallel.enabled", "false");
-		setProperty("rdf4j.lmdb.costCalibration.enabled", "false");
 	}
 
 	@org.junit.jupiter.api.AfterAll
@@ -388,7 +389,7 @@ public class LmdbNativeChunkPipelineTest {
 			long masksBefore = LmdbNativeChunkPipeline.SIP_MASKS.get();
 			long maskedBefore = LmdbNativeChunkPipeline.SIP_MASKED_ROWS.get();
 
-			List<String> nativeRows = rows(multi, query);
+			List<String> nativeRows = rows(multi, "factorizedRows", query);
 			String previous = System.getProperty("rdf4j.lmdb.nativeQueryEngine.enabled");
 			List<String> genericRows;
 			try {
@@ -637,6 +638,9 @@ public class LmdbNativeChunkPipelineTest {
 			}
 			assertThat(store.awaitDirectAdjacencyReady(60, TimeUnit.SECONDS)).isTrue();
 
+			// the test pins the chunk pipeline's adjacency key-domain mask, not the selection: every run forces the
+			// factorized-rows strategy that drives it (the measured selector prefers the generic chain on this store
+			// under four workers)
 			String query = "PREFIX ex: <" + EX + ">\n"
 					+ "SELECT ?s ?leaf WHERE { ?s ex:maskRoot ?middle . "
 					+ "?middle ex:maskSelective ?value . ?value ex:maskLeaf ?leaf }";
@@ -646,8 +650,8 @@ public class LmdbNativeChunkPipelineTest {
 			long maskedBefore = LmdbNativeChunkPipeline.SIP_MASKED_ROWS.get();
 			long engagedBefore = LmdbNativeChunkPipeline.ENGAGED.get();
 			assertThat(LmdbNativeChunkPipeline.mergeEnabled()).isFalse();
-			List<String> disabledRows = snapshotRows(selective, query);
-			String disabledTelemetry = telemetry(selective, query);
+			List<String> disabledRows = snapshotRows(selective, "factorizedRows", query);
+			String disabledTelemetry = telemetry(selective, "factorizedRows", query);
 			assertThat(disabledRows).hasSize(32 * 200);
 			assertThat(AdjacencyEngagementTestAccess.lookupHits(store))
 					.as("covered probe predicates should remain adjacency-served")
@@ -664,8 +668,8 @@ public class LmdbNativeChunkPipelineTest {
 
 			System.setProperty(adjacencyMaskProperty, "true");
 			assertThat(LmdbNativeChunkPipeline.adjacencySipMasksEnabled()).isTrue();
-			List<String> enabledRows = snapshotRows(selective, query);
-			String enabledTelemetry = telemetry(selective, query);
+			List<String> enabledRows = snapshotRows(selective, "factorizedRows", query);
+			String enabledTelemetry = telemetry(selective, "factorizedRows", query);
 
 			assertThat(enabledRows).containsExactlyInAnyOrderElementsOf(disabledRows);
 			assertThat(LmdbNativeChunkPipeline.ENGAGED.get()).isGreaterThan(engagedAfterDisabled);
@@ -686,8 +690,8 @@ public class LmdbNativeChunkPipelineTest {
 			String denseQuery = "PREFIX ex: <" + EX + ">\n"
 					+ "SELECT ?s ?leaf WHERE { ?s ex:maskRoot ?middle . "
 					+ "?middle ex:maskDense ?value . ?value ex:maskDenseLeaf ?leaf }";
-			assertThat(snapshotRows(selective, denseQuery)).hasSize(2048 * 2);
-			String denseTelemetry = telemetry(selective, denseQuery);
+			assertThat(snapshotRows(selective, "factorizedRows", denseQuery)).hasSize(2048 * 2);
+			String denseTelemetry = telemetry(selective, "factorizedRows", denseQuery);
 			assertThat(LmdbNativeChunkPipeline.SIP_MASKS.get())
 					.as("a domain covering every root key cannot repay installation and membership checks")
 					.isEqualTo(masksAfterSelective);
@@ -743,6 +747,14 @@ public class LmdbNativeChunkPipelineTest {
 		}
 	}
 
+	private static List<String> rows(SailRepository repo, String forcedStrategy, String query) {
+		try (SailRepositoryConnection conn = repo.getConnection()) {
+			SailTupleQuery prepared = (SailTupleQuery) conn.prepareTupleQuery(query);
+			prepared.setForcedLmdbExecutionStrategy(forcedStrategy);
+			return canonicalRows(prepared);
+		}
+	}
+
 	private static List<String> snapshotRows(SailRepository repo, String query) {
 		try (SailRepositoryConnection conn = repo.getConnection()) {
 			conn.begin(IsolationLevels.SNAPSHOT_READ);
@@ -760,8 +772,31 @@ public class LmdbNativeChunkPipelineTest {
 		}
 	}
 
+	private static String telemetry(SailRepository repo, String forcedStrategy, String query) {
+		try (SailRepositoryConnection conn = repo.getConnection()) {
+			SailTupleQuery prepared = (SailTupleQuery) conn.prepareTupleQuery(query);
+			prepared.setForcedLmdbExecutionStrategy(forcedStrategy);
+			return prepared.explain(org.eclipse.rdf4j.query.explanation.Explanation.Level.Telemetry).toString();
+		}
+	}
+
+	private static List<String> snapshotRows(SailRepository repo, String forcedStrategy, String query) {
+		try (SailRepositoryConnection conn = repo.getConnection()) {
+			conn.begin(IsolationLevels.SNAPSHOT_READ);
+			SailTupleQuery prepared = (SailTupleQuery) conn.prepareTupleQuery(query);
+			prepared.setForcedLmdbExecutionStrategy(forcedStrategy);
+			List<String> rows = canonicalRows(prepared);
+			conn.commit();
+			return rows;
+		}
+	}
+
 	private static List<String> canonicalRows(SailRepositoryConnection conn, String query) {
-		return QueryResults.asList(conn.prepareTupleQuery(query).evaluate())
+		return canonicalRows(conn.prepareTupleQuery(query));
+	}
+
+	private static List<String> canonicalRows(TupleQuery query) {
+		return QueryResults.asList(query.evaluate())
 				.stream()
 				.map(bs -> bs.getBindingNames()
 						.stream()

@@ -2538,8 +2538,7 @@ namespace workbench {
 
         /**
          * Counts load after the list renders: 'pending', then 'done', 'timed-out' or 'failed' ('none' for an empty
-         * list). Types adopt the count-ordered rows; Graphs keep their rows and look counts up by N-Triples key, where
-         * '' is the default graph.
+         * list). Types adopt the count-ordered rows; Graphs look counts up by typed identity, with '' for the default.
          */
         interface BrowseCounts {
             state: string;
@@ -2642,7 +2641,7 @@ namespace workbench {
             const nameColumn = model.vars && model.vars.length ? model.vars[0] : list.column;
             const cells = (record: any) => {
                 const term = record[nameColumn];
-                const value = list.resort ? record[list.count] : counts.values[term ? resourceTerm(term) : ''];
+                const value = list.resort ? record[list.count] : counts.values[resultIdentity(term, context)];
                 return h`${browseNameCell(runtime, model, list, term, context)}${browseCountCell(runtime, list, counts, value, context)}${
                     list.actions ? browseActionsCell(runtime, term, context) : ''}`;
             };
@@ -2671,11 +2670,6 @@ namespace workbench {
             </section>`;
         }
 
-        const explorePageSize = 40;
-        const rdfsNamespace = 'http://www.w3.org/2000/01/rdf-schema#';
-        const rdfNamespace = 'http://www.w3.org/1999/02/22-rdf-syntax-ns#';
-        /** Pages that fit in one row window are grouped by role; larger pages keep the single windowed table. */
-        const exploreGroupedRowLimit = 80;
         const exploreRoles: any[] = [
             { key: 'outgoing', title: 'Outgoing', columns: ['predicate', 'object'] },
             { key: 'incoming', title: 'Incoming', columns: ['subject', 'predicate'] },
@@ -2686,6 +2680,20 @@ namespace workbench {
         function resourceTerm(term: any): string {
             const stream = workbench.queryStream as any;
             return stream && typeof stream.exploreResource === 'function' ? stream.exploreResource(term) : text(term);
+        }
+
+        /** A graph/term key includes repository proof or the response scope of an unverified blank node. */
+        function resultIdentity(term: any, context: ViewContext): string {
+            if (!term) { return ''; }
+            const stream: any = (workbench as any).queryStream;
+            if (!stream || typeof stream.termIdentity !== 'function') { return undefined; }
+            const repository = JSON.stringify([context.serverIdentity || '', context.basePath || '', context.repositoryId || '']);
+            return stream.termIdentity(term, repository);
+        }
+
+        /** Only a term with reusable identity can become a graph operand in a form. */
+        function graphOperand(term: any): string {
+            return resultExploreHref(term) ? resourceTerm(term) : '';
         }
 
         /** Result labels become request operands only when their recursively typed identity is reusable. */
@@ -2752,52 +2760,14 @@ namespace workbench {
             }));
         }
 
-        /**
-         * The four role groups: Outgoing, Incoming, Used as predicate and Graph contents (mockup 05). Each is the
-         * shared result table, so long IRIs wrap and the columns stay inside the card as on the Query page.
-         */
-        function exploreRoleGroups(runtime: LitRuntime, model: PageModel, context: ViewContext, roles: any): any {
-            const h = runtime.html;
-            const namespaces = exploreNamespaces(model);
-            const index = (name: string) => model.vars.indexOf(name);
-            return exploreRoles.filter((role: any) => roles[role.key].length).map((role: any) => {
-                const entries: any[] = roles[role.key];
-                const rows: any[][] = entries.map((entry: any) => entry.values);
-                const graphs = rows.map(row => index('context') >= 0 ? row[index('context')] : null);
-                const graphKeys = graphs.map(graph => graph ? resourceTerm(graph) : '');
-                const oneGraph = role.key === 'graph' || graphKeys.every(key => key === graphKeys[0]);
-                const columns = role.columns.concat(oneGraph ? [] : ['context']);
-                const headingId = 'explore-group-' + role.key;
-                return h`<section class="explore-group" data-explore-role=${role.key} aria-labelledby=${headingId}>
-                    <h3 id=${headingId} class="explore-group__title">${role.title}
-                        <span class="explore-group__count">${rows.length}</span>
-                        ${oneGraph && role.key !== 'graph'
-                            ? h`<span class="explore-group__graph workbench-copyable">Graph: ${exploreGraphLabel(graphs[0], namespaces)}${
-                                copyResourceControl(runtime, graphs[0], exploreGraphLabel(graphs[0], namespaces))}</span>` : ''}</h3>
-                    ${resultTable(runtime, model, context, {
-                        key: 'explore-' + role.key,
-                        label: role.title + ' statements',
-                        columns,
-                        rows: projectRows(model, rows, columns),
-                        rowIndex: (position: number) => entries[position].index,
-                        statement: (position: number) => projectRows(model, [rows[position]], statementColumns)[0],
-                        namespaces,
-                        signature: columns.join(' ') + ':' + entries.map((entry: any) => entry.index).join(',')
-                    })}
-                </section>`;
-            });
-        }
-
         /** The explored resource: label, IRI with Copy, types as chips, comment and "Query this resource". */
         function exploreResourceCard(runtime: LitRuntime, model: PageModel, summary: any, resource: string,
                                      context: ViewContext): any {
             const h = runtime.html;
-            const namespaces = exploreNamespaces(model);
             const key = exploreResourceKey(model) || resource;
             const isIri = /^<(?!_:)[^<]/.test(key);
             const isQueryable = isIri || key.indexOf('<_:') === 0;
             const comment = summary.comment ? text(summary.comment) : '';
-            const types = distinctExploreValues(model, summary.types || []);
             const copy = (event: any) => {
                 workbench.icons.copyText(event.currentTarget, isIri ? key.slice(1, -1) : key);
             };
@@ -2819,16 +2789,10 @@ namespace workbench {
                     'Add this resource and its neighbours to the graph', false)
             ].filter((action: any) => !!action) : [];
             return h`<section id="explore-resource-card" class="workbench-island explore-resource-card" aria-label="Explored resource">
-                ${summary.label ? h`<h2>${text(summary.label)}</h2>` : ''}
+                ${summary.label ? h`<h2 title=${isIri ? key.slice(1, -1) : key}>${text(summary.label)}</h2>` : ''}
                 <div class="explore-resource-card__iri"><code id="explore-resource-iri">${isIri ? key.slice(1, -1) : key}</code>
                     <button class="workbench-action workbench-action--ghost workbench-action--icon" type="button"
                         aria-label="Copy resource" title="Copy resource" @click=${copy}>${icon(runtime, 'copy')}</button></div>
-                ${types.length ? h`<ul class="explore-resource-card__types" aria-label="Types">${types.map((type: any) => {
-                    const href = resultExploreHref(type);
-                    const label = exploreGraphLabel(type, namespaces);
-                    return h`<li class="workbench-copyable">${href ? h`<a class="explore-chip" href=${href}>${label}</a>`
-                        : h`<span class="explore-chip">${label}</span>`}${copyResourceControl(runtime, type, label)}</li>`;
-                })}</ul>` : ''}
                 ${comment ? h`<div class="explore-resource-card__description"><p class="explore-resource-card__comment workbench-prose">${comment}</p>
                     ${comment.length > 240 ? h`<button class="workbench-action workbench-action--ghost explore-resource-card__more" type="button"
                         aria-expanded="false" @click=${toggleComment}>Show more</button>` : ''}</div>` : ''}
@@ -2836,296 +2800,112 @@ namespace workbench {
             </section>`;
         }
         const exploreGroups: any[] = [
-            { key: 'superClasses', title: 'Super Classes', predicate: rdfsNamespace + 'subClassOf', field: 'object' },
-            { key: 'subClasses', title: 'Sub Classes', predicate: rdfsNamespace + 'subClassOf', field: 'subject' },
-            { key: 'properties', title: 'Properties', predicate: rdfsNamespace + 'domain', field: 'subject' },
-            { key: 'superProperties', title: 'Super Properties', predicate: rdfsNamespace + 'subPropertyOf', field: 'object' },
-            { key: 'subProperties', title: 'Sub Properties', predicate: rdfsNamespace + 'subPropertyOf', field: 'subject' },
-            { key: 'domain', title: 'Domain', predicate: rdfsNamespace + 'domain', field: 'object' },
-            { key: 'range', title: 'Range', predicate: rdfsNamespace + 'range', field: 'object' }
+            { key: 'types', title: 'Types' }, { key: 'superClasses', title: 'Super Classes' },
+            { key: 'subClasses', title: 'Sub Classes' }, { key: 'properties', title: 'Properties' },
+            { key: 'superProperties', title: 'Super Properties' }, { key: 'subProperties', title: 'Sub Properties' },
+            { key: 'domain', title: 'Domain' }, { key: 'range', title: 'Range' }
         ];
 
-        function exploreGroupStates(model: PageModel): any {
-            const target: any = model;
-            if (!target.exploreGroupStates) {
-                target.exploreGroupStates = {};
-                exploreGroups.forEach((group: any) => {
-                    target.exploreGroupStates[group.key] = { cursor: null, history: [], start: 0 };
-                });
-            }
-            return target.exploreGroupStates;
-        }
-
-        function exploreAccumulator(model: PageModel): any {
-            const states = exploreGroupStates(model);
-            const groups: any = {};
-            exploreGroups.forEach((group: any) => {
-                groups[group.key] = {
-                    count: 0,
-                    eligible: 0,
-                    candidates: [],
-                    cursor: states[group.key].cursor
-                };
-            });
-            const key = exploreResourceKey(model);
-            return {
-                groups,
-                resourceKey: key,
-                // Rows grouped by the role the explored resource plays, for pages small enough to list (M5.1).
-                roles: key && rowCount(model) <= exploreGroupedRowLimit
-                    ? { outgoing: [], predicate: [], incoming: [], graph: [] } : null,
-                types: [],
-                labels: [],
-                comments: []
-            };
-        }
-
-        /** How many labels and comments of the explored resource Explore keeps to choose from. */
-        const exploreLiteralChoices = 64;
-
-        /**
-         * The label or comment to show of several: the one in the reader's language (navigator.languages; a regional
-         * language also takes its base language), else one without a language, else the English one, else the first.
-         */
-        function preferredLiteral(values: any[]): any {
-            if (values.length < 2) {
-                return values.length ? values[0] : null;
-            }
-            const languageOf = (value: any) => value && typeof value === 'object' && value.language
-                ? String(value.language).toLowerCase() : '';
-            const find = (accept: (language: string) => boolean) => values.filter((value) => accept(languageOf(value)))[0];
-            const navigatorObject: any = typeof navigator !== 'undefined' ? navigator : null;
-            const readers: string[] = !navigatorObject ? [] : (navigatorObject.languages && navigatorObject.languages.length
-                ? Array.prototype.slice.call(navigatorObject.languages) : [navigatorObject.language])
-                .filter((language: any) => !!language).map((language: any) => String(language).toLowerCase());
-            for (let index = 0; index < readers.length; index++) {
-                const reader = readers[index];
-                const base = reader.split('-')[0];
-                const chosen = find((language) => language === reader)
-                    || find((language) => language.split('-')[0] === base);
-                if (chosen) {
-                    return chosen;
-                }
-            }
-            return find((language) => language === '') || find((language) => language.split('-')[0] === 'en') || values[0];
-        }
-
-        function candidateBefore(left: any, right: any): boolean {
-            return left.key < right.key || (left.key === right.key && left.rowIndex < right.rowIndex);
-        }
-
-        function addExploreCandidate(group: any, value: any, rowIndex: number, pageSize: number): void {
-            const key = text(value);
-            group.count++;
-            const cursor = group.cursor;
-            if (cursor && key < cursor.key) {
-                return;
-            }
-            if (cursor && key === cursor.key) {
-                group.cursorValuesSeen = (group.cursorValuesSeen || 0) + 1;
-                if (group.cursorValuesSeen <= cursor.consumed) {
-                    return;
-                }
-            }
-            group.eligible++;
-            const candidate = { key, rowIndex, value };
-            let index = 0;
-            while (index < group.candidates.length && candidateBefore(group.candidates[index], candidate)) {
-                index++;
-            }
-            group.candidates.splice(index, 0, candidate);
-            if (group.candidates.length > pageSize) {
-                group.candidates.pop();
-            }
-        }
-
-        function consumeExploreRows(model: PageModel, rows: any[][], start: number, accumulator: any): void {
-            const subjectIndex = model.vars.indexOf('subject');
-            const predicateIndex = model.vars.indexOf('predicate');
-            const objectIndex = model.vars.indexOf('object');
-            const contextIndex = model.vars.indexOf('context');
-            const key = accumulator.resourceKey;
-            const matches = (term: any) => !!key && !!term && resourceTerm(term) === key;
-            rows.forEach((row: any[], offset: number) => {
-                const subject = subjectIndex >= 0 ? row[subjectIndex] : null;
-                const predicate = predicateIndex >= 0 ? text(row[predicateIndex]) : '';
-                const object = objectIndex >= 0 ? row[objectIndex] : null;
-                const rowIndex = start + offset;
-                // Another resource's label must not become the heading: only rows about the explored resource count.
-                const aboutResource = !key || matches(subject);
-                if (accumulator.roles) {
-                    const role = matches(subject) ? 'outgoing'
-                        : predicateIndex >= 0 && matches(row[predicateIndex]) ? 'predicate'
-                            : matches(object) ? 'incoming'
-                                : contextIndex >= 0 && matches(row[contextIndex]) ? 'graph' : null;
-                    if (role) {
-                        accumulator.roles[role].push({ values: row, index: rowIndex });
-                    }
-                }
-                if (aboutResource && predicate === rdfNamespace + 'type' && object) {
-                    accumulator.types.push(object);
-                }
-                if (predicate === rdfsNamespace + 'label' && aboutResource) {
-                    if (accumulator.labels.length < exploreLiteralChoices) {
-                        accumulator.labels.push(object);
-                    }
-                } else if (predicate === rdfsNamespace + 'comment' && aboutResource) {
-                    if (accumulator.comments.length < exploreLiteralChoices) {
-                        accumulator.comments.push(object);
-                    }
-                }
-                exploreGroups.forEach((definition: any) => {
-                    if (predicate === definition.predicate) {
-                        const value = definition.field === 'subject' ? subject : object;
-                        // The explored resource is the statement's other end: its super classes are the objects of
-                        // its own subClassOf statements, its sub classes the subjects of those about it.
-                        const anchor = definition.field === 'subject' ? object : subject;
-                        if (value !== null && typeof value !== 'undefined' && (!key || matches(anchor))) {
-                            addExploreCandidate(accumulator.groups[definition.key], value, rowIndex, explorePageSize);
-                        }
-                    }
-                });
-            });
-        }
-
-        function finishExploreSummary(model: PageModel, accumulator: any): any {
-            const states = exploreGroupStates(model);
-            const groups: any = {};
-            exploreGroups.forEach((definition: any) => {
-                const state = states[definition.key];
-                const collected = accumulator.groups[definition.key];
-                const candidates = collected.candidates;
-                const last = candidates.length ? candidates[candidates.length - 1] : null;
-                let nextCursor = null;
-                if (last) {
-                    const sameKeyInPage = candidates.filter((candidate: any) => candidate.key === last.key).length;
-                    nextCursor = {
-                        key: last.key,
-                        consumed: state.cursor && state.cursor.key === last.key
-                            ? state.cursor.consumed + sameKeyInPage : sameKeyInPage
-                    };
-                }
-                groups[definition.key] = {
-                    count: collected.count,
-                    start: state.start,
-                    items: candidates.map((candidate: any) => candidate.value),
-                    hasPrevious: state.history.length > 0,
-                    hasNext: collected.eligible > candidates.length,
-                    nextCursor
-                };
-            });
-            return {
-                label: preferredLiteral(accumulator.labels),
-                comment: preferredLiteral(accumulator.comments),
-                roles: accumulator.roles,
-                types: accumulator.types,
-                groups
-            };
-        }
-
-        function summarizeVisibleExploreRows(model: PageModel): any {
-            const accumulator = exploreAccumulator(model);
-            consumeExploreRows(model, model.rows || [], rowStart(model), accumulator);
-            return finishExploreSummary(model, accumulator);
-        }
-
-        function prepareExploreSummary(model: PageModel): Promise<any> {
-            if (model.viewId !== 'explore' || !model.rowStore) {
-                return Promise.resolve();
-            }
-            const accumulator = exploreAccumulator(model);
-            const chunkSize = 256;
-            const scan = (start: number): Promise<void> => {
-                if (start >= model.rowCount) {
-                    return Promise.resolve();
-                }
-                const count = Math.min(chunkSize, model.rowCount - start);
-                return model.rowStore.read(start, count).then((rows: any[][]) => {
-                    consumeExploreRows(model, rows, start, accumulator);
-                    return rows.length ? scan(start + rows.length) : Promise.resolve();
-                });
-            };
-            return scan(0).then(() => finishExploreSummary(model, accumulator));
-        }
-
-        function exploreGroupList(runtime: LitRuntime, model: PageModel, context: ViewContext,
-                                  definition: any, page: any): any {
+        /** A section renders only its current bounded page; rows and counts arrive independently. */
+        function exploreSection(runtime: LitRuntime, model: PageModel, context: ViewContext,
+                                definition: any, section: any, role: boolean): any {
             const h = runtime.html;
-            if (!page || !page.count) { return ''; }
-            const regions = context.rowRegions;
-            if (regions) {
-                if (!regions.groups[definition.key]) {
-                    const node = regions.document.createElement('section');
-                    node.setAttribute('data-workbench-explore-group', definition.key);
-                    regions.groups[definition.key] = {
-                        node,
-                        render: () => {
-                            const summary = (model as any).exploreSummary || summarizeVisibleExploreRows(model);
-                            runtime.render(exploreGroupContent(runtime, model, context, definition,
-                                summary.groups[definition.key]), node);
-                        }
-                    };
-                }
-                return regions.groups[definition.key].node;
+            if (!section) { return ''; }
+            if (!role && section.status === 'ready' && section.totalRows === 0
+                    && section.countStatus === 'ready' && section.count === '0' && !section.error) { return ''; }
+            const controller: any = (model as any).exploreController;
+            const namespaces = exploreNamespaces(model);
+            const title = definition.title;
+            const count = section.countStatus === 'ready' ? formatCount(section.count, context)
+                : section.countStatus === 'error' ? '?' : '…';
+            const countError = section.countStatus === 'error' ? h`<span role="alert">${section.countError}
+                <button type="button" class="workbench-action workbench-action--ghost"
+                    @click=${() => controller.retry(definition.key, 'count')}>Retry count</button></span>` : '';
+            const rowError = section.error ? h`<p role="alert">${section.error}
+                ${section.errorKind === 'cleanup' ? '' : h`<button type="button" class="workbench-action workbench-action--ghost"
+                    @click=${() => section.errorKind === 'more' ? controller.expand(definition.key)
+                        : controller.retry(definition.key, section.errorKind === 'page' ? 'page' : 'rows')}>Retry</button>`}</p>` : '';
+            let content: any = '';
+            if (section.status === 'loading' || section.status === 'idle') {
+                content = h`<p role="status">Loading…</p>`;
+            } else if (section.status === 'ready' && !section.totalRows) {
+                content = h`<p class="workbench-empty">No results.</p>`;
+            } else if (section.status === 'ready' && role) {
+                const columns = definition.columns.concat(definition.key === 'graph' ? [] : ['context']);
+                const source = { vars: section.vars } as PageModel;
+                const rows = section.rows || [];
+                content = resultTable(runtime, model, context, {
+                    key: 'explore-' + definition.key, label: title + ' statements', columns,
+                    rows: projectRows(source, rows, columns),
+                    rowIndex: (position: number) => section.start + position,
+                    statement: (position: number) => projectRows(source, [rows[position]], statementColumns)[0],
+                    namespaces, signature: definition.key + ':' + section.start + ':' + section.revision
+                });
+            } else if (section.status === 'ready') {
+                const valueIndex = Math.max(0, (section.vars || []).indexOf('value'));
+                content = h`<ul>${(section.rows || []).map((row: any[]) => {
+                    const value = row[valueIndex];
+                    const href = resultExploreHref(value);
+                    const label = exploreGraphLabel(value, namespaces);
+                    return h`<li class="workbench-copyable">${href ? h`<a href=${href} title=${termText(value)}>${label}</a>`
+                        : renderTerm(runtime, value, context, true)}${copyResourceControl(runtime, value, label)}</li>`;
+                })}</ul>`;
             }
-            return h`<section data-workbench-explore-group=${definition.key}>
-                ${exploreGroupContent(runtime, model, context, definition, page)}
+            const size = role ? 100 : 40;
+            const pages = section.totalRows > size ? h`<div class="workbench-form-actions workbench-window-controls"
+                    role="group" aria-label=${title + ' pages'}>
+                <span role="status">Showing ${section.start + 1}–${section.start + section.rows.length}
+                    of ${formatCount(section.totalRows, context)} cached</span>
+                <button type="button" class="workbench-action workbench-action--secondary"
+                    ?disabled=${section.start === 0} @click=${() => controller.page(definition.key, 'previous')}>Previous</button>
+                <button type="button" class="workbench-action workbench-action--secondary"
+                    ?disabled=${section.start + section.rows.length >= section.totalRows}
+                    @click=${() => controller.page(definition.key, 'next')}>Next</button></div>` : '';
+            const explore: any = (workbench as any).explore;
+            const more = explore && explore.canExpandSection(section) ? h`<button type="button"
+                class="workbench-action workbench-action--secondary" ?disabled=${section.loadingMore}
+                @click=${() => controller.expand(definition.key)}>${section.loadingMore ? 'Loading…' : 'Load more'}</button>` : '';
+            const capped = section.expanded && section.totalRows >= 1000000
+                ? h`<p class="workbench-page-meta">Showing up to 1,000,000 cached results.</p>` : '';
+            return h`<section class="explore-group" data-explore-role=${role ? definition.key : ''}
+                    data-explore-section=${definition.key}>
+                <h3 class="explore-group__title">${title} <span class="explore-group__count">${count}</span></h3>
+                ${countError}${rowError}${content}${pages}${more}${capped}
             </section>`;
         }
 
-        /** Values in list order without repeats (a statement in several graphs) and without the explored resource. */
-        function distinctExploreValues(model: PageModel, values: any[]): any[] {
-            const explored = exploreResourceKey(model);
-            const seen: { [key: string]: boolean } = Object.create(null);
-            return values.filter((value: any) => {
-                const key = resourceTerm(value);
-                if (key === explored || seen[key]) {
-                    return false;
-                }
-                seen[key] = true;
-                return true;
-            });
-        }
-
-        function exploreGroupContent(runtime: LitRuntime, model: PageModel, context: ViewContext,
-                                     definition: any, page: any): any {
+        function exploreSectionContent(runtime: LitRuntime, model: PageModel, context: ViewContext): any {
             const h = runtime.html;
-            const namespaces = exploreNamespaces(model);
-            // Members use the repository prefixes, as the statement tables beside them do.
-            const member = (value: any) => {
-                const href = resultExploreHref(value);
-                return href ? h`<a href=${href} title=${text(value)}>${exploreGraphLabel(value, namespaces)}</a>`
-                    : renderTerm(runtime, value, context, true);
+            const sections = (model as any).exploreSections || {};
+            const scalar = (key: string) => {
+                const section = sections[key];
+                if (!section || !section.rows || !section.rows.length) { return null; }
+                const index = Math.max(0, (section.vars || []).indexOf('value'));
+                return section.rows[0][index];
             };
-            // The heading counts the group's members as the statement groups count theirs (the pager below counts alike).
-            return h`<h3>${definition.title} <span class="explore-group__count">${formatCount(String(page.count), context)}</span></h3>
-                <ul>${distinctExploreValues(model, page.items).map((value: any) => h`<li class="workbench-copyable">${member(value)}${
-                    copyResourceControl(runtime, value, exploreGraphLabel(value, namespaces))}</li>`)}</ul>
-                ${page.count > explorePageSize ? h`<div class="workbench-form-actions workbench-window-controls"
-                    role="group" aria-label=${definition.title + ' pages'}>
-                    <span role="status">Showing ${page.start + 1}–${page.start + page.items.length} of ${page.count}</span>
-                    <button type="button" class="workbench-action workbench-action--secondary" data-workbench-explore-group=${definition.key}
-                        data-workbench-explore-action="previous" ?disabled=${!page.hasPrevious}>Previous</button>
-                    <button type="button" class="workbench-action workbench-action--secondary" data-workbench-explore-group=${definition.key}
-                        data-workbench-explore-action="next" ?disabled=${!page.hasNext}>Next</button>
-                </div>` : ''}`;
-        }
-
-        /**
-         * The Explore limit in use, as ExploreServlet picks it: the request's limit_explore, else 100. The server reads
-         * no cookie for it (isParameterPresent), so neither does this.
-         */
-        function activeExploreLimit(): number {
-            const limit = Number(locationParameter('limit_explore') || '100');
-            return isFinite(limit) && limit >= 0 ? limit : 100;
-        }
-
-        /**
-         * An Explore pager button names the page size it moves by (C20), not the rows on this page. Its value keeps the
-         * rows shown: paging.correctButtons reads them to know whether a next page exists.
-         */
-        function pagerLabel(direction: string, pageSize: number): string {
-            return pageSize > 0 ? direction + ' ' + pageSize : direction;
+            const scalarError = (key: string) => {
+                const section = sections[key];
+                const controller = (model as any).exploreController;
+                return section && section.error ? h`<p role="alert">${section.error}
+                    <button type="button" class="workbench-action workbench-action--ghost"
+                        @click=${() => controller.retry(key, 'rows')}>${'Retry ' + key}</button></p>` : '';
+            };
+            const summary = { label: scalar('label'), comment: scalar('comment') };
+            const resource = text(pageValue(model, 'resource')) || exploreResourceKey(model);
+            const mode = text(pageValue(model, 'explore-graph-mode'));
+            const listing = exploreGroups.concat(exploreRoles).map((definition: any) => sections[definition.key]);
+            const empty = listing.every((section: any) => section && section.status === 'ready'
+                && section.totalRows === 0 && section.countStatus === 'ready' && section.count === '0');
+            return h`${exploreResourceCard(runtime, model, summary, resource, context)}
+                ${scalarError('label')}${scalarError('comment')}
+                ${mode === 'dataset' ? h`<p class="workbench-page-meta">Results reflect the repository's query dataset.</p>` : ''}
+                <section id="explore-results" class="workbench-island">
+                    ${empty ? h`<p class="workbench-empty" role="status">No results to display.</p>` : ''}
+                    <div class="workbench-explore-groups">${exploreGroups.map((definition: any) =>
+                        exploreSection(runtime, model, context, definition, sections[definition.key], false))}</div>
+                    ${exploreRoles.map((definition: any) =>
+                        exploreSection(runtime, model, context, definition, sections[definition.key], true))}
+                </section>`;
         }
 
         /**
@@ -3142,65 +2922,21 @@ namespace workbench {
 
         function explorePage(runtime: LitRuntime, model: PageModel, context: ViewContext): any {
             const h = runtime.html;
-            // A refused resource (C10) has no page metadata: the field keeps what was asked for.
-            const resource = text(pageValue(model, 'resource')) || (model.error ? text(locationParameter('resource')) : '');
-            // A rejected Explore answers with an error-message row, or a 400 error: an error, not a result.
-            const rejected = isErrorOnlyModel(model) || !!model.error;
-            const total = rejected ? 0 : rowCount(model);
-            const summary = (model as any).exploreSummary || summarizeVisibleExploreRows(model);
-            const info = workbenchData(context);
-            const defaults = info.defaults || info;
-            const resultLimit = activeExploreLimit();
-            // A page as long as the limit in use may have been cut short.
-            const resultLimited = !rejected && !!exploreResourceKey(model) && resultLimit > 0 && total === resultLimit;
-            const groupPages = summary.groups || {};
-            // Every group the explored resource has members in, classes first; exploreGroupList leaves out empty ones.
-            const groupList = (definition: any) => exploreGroupList(runtime, model, context, definition,
-                groupPages[definition.key]);
-            const classGroups = exploreGroups.slice(0, 2).map(groupList);
-            const propertyGroups = exploreGroups.slice(2).map(groupList);
-            const groupedResults = classGroups.concat(propertyGroups).some((group: any) => !!group)
-                ? h`<div class="workbench-explore-groups">
-                    ${classGroups.some((group: any) => !!group) ? h`<div>${classGroups}</div>` : ''}
-                    ${propertyGroups.some((group: any) => !!group) ? h`<div>${propertyGroups}</div>` : ''}
-                </div>` : '';
-            // Group only when every row of the page has a role; anything unexpected keeps the plain table.
-            // Display keeps its toggle in the form row and opens its panel in a track below the row.
+            let requested = '';
+            if (model.finalUrl) {
+                try { requested = new URL(model.finalUrl).searchParams.get('resource') || ''; } catch (_error) { /* no URL */ }
+            }
+            const resource = text(pageValue(model, 'resource')) || requested || locationParameter('resource');
             const exploreDisplay = workbench.detailDisclosure.renderSeparated(h, {
                 id: 'explore-result-options', toggleId: 'explore-result-options-toggle',
                 panelId: 'explore-result-options-panel', label: 'Display', accessibleName: 'Result display options',
                 ownerClass: 'workbench-options workbench-form-subgroup'
-            }, h`<div class="workbench-field workbench-disclosure__field"><label for="limit_explore">Result limit</label>
-                    ${limitSelect(runtime, 'limit_explore', context, String(resultLimit))}
-                </div>${tableDisplayFields(runtime, model, { layout: 'explore-result-layout', wrap: 'explore-wrap-values' },
-                    (wrap: boolean) => setPageResultPresentation(model, { wrap }))}<label class="workbench-check" for="explore-show-datatypes">
-                    <input id="explore-show-datatypes" type="checkbox" name="show-datatypes" value="show-dataypes" checked
+            }, h`${tableDisplayFields(runtime, model, { layout: 'explore-result-layout', wrap: 'explore-wrap-values' },
+                (wrap: boolean) => setPageResultPresentation(model, { wrap }))}<label class="workbench-check" for="explore-show-datatypes">
+                    <input id="explore-show-datatypes" type="checkbox" name="show-datatypes" checked
                         @change=${(event: any) => showPageResultDatatypes(model, !!event.currentTarget.checked)} />
                     <span>Show datatypes</span></label>`);
-            const roles = summary.roles;
-            const groupedRows = roles ? exploreRoles.reduce((sum: number, role: any) => sum + roles[role.key].length, 0) : 0;
-            const grouped = !!roles && !!total && groupedRows === total;
-            // A page short enough to group waits until bindRowWindows has read all its rows, so it never shows the
-            // single table first and then the groups.
-            const groupingPending = !grouped && !!model.rowStore && !(model as any).exploreSummary
-                && (model.rows || []).length < total && total <= exploreGroupedRowLimit && !!exploreResourceKey(model);
-            const namespaces = exploreNamespaces(model);
-            const statements = () => resultTable(runtime, model, context, {
-                key: 'explore-all',
-                label: 'Explore statements',
-                columns: model.vars || [],
-                rows: model.rowStore ? undefined : projectRows(model, model.rows || [], model.vars || []),
-                store: model.rowStore,
-                count: total,
-                namespaces,
-                signature: 'all:' + total + ':' + (model.vars || []).join(' ')
-            });
-            // explore.ts writes the resource and the row range into the summary's spans, so they hold no template
-            // values: the router renders the next Explore page in place, and Lit must find its own nodes there (M12.1).
             return h`<form id="explore-form" class="workbench-island explore-form" action="explore">
-                    <input id="workbench-total-result-count" type="hidden"
-                        value=${text(pageValue(model, 'total-result-count'))}
-                        data-has-more=${text(pageValue(model, 'has-more')) === 'true' ? 'true' : 'false'} />
                     <div id="explore-controls"><div id="explore-resource-field" class="workbench-field">
                         <label for="resource">Resource</label>
                         <div class="workbench-search-field">${icon(runtime, 'search', 'workbench-search-field__icon')}<input id="resource"
@@ -3208,29 +2944,12 @@ namespace workbench {
                             placeholder="<http://…>, prefix:name, _:node or &quot;literal&quot;" /></div>
                     </div>
                     <button id="explore-submit" class="workbench-action workbench-action--primary" type="submit">Explore</button>
-                    ${exploreDisplay.owner}
-                    </div>
+                    ${exploreDisplay.owner}</div>
                     <div class="workbench-action-toolbar__panels workbench-disclosure-track">${exploreDisplay.panel}</div>
                 </form>
-                ${resultLimited ? callout(runtime, 'info', 'The results shown may be truncated.', undefined, 'result-limited') : ''}
                 ${model.error ? callout(runtime, 'error', model.error.message) : errorCallout(runtime, model)}
                 ${!model.error && (resource || exploreResourceKey(model))
-                    ? exploreResourceCard(runtime, model, summary, resource || exploreResourceKey(model), context) : ''}
-                <p id="explore-resource-summary" class="workbench-page-meta" ?hidden=${!resource}>
-                    <span id="explore-resource-value" hidden></span><span id="explore-result-count"></span>
-                </p>
-                ${rejected ? '' : h`<section id="explore-results" class="workbench-island">
-                    ${total ? h`${groupedResults}${grouped ? exploreRoleGroups(runtime, model, context, roles)
-                        : groupingPending ? h`<p class="workbench-page-meta workbench-result-pending" role="status">Loading rows…</p>`
-                            : statements()}`
-                        : h`<p class="workbench-empty" role="status">No results to display.</p>`}
-                    <div id="explore-pagination" class="workbench-form-actions" ?hidden=${total === 0}>
-                        <button id="previousX" class="workbench-action workbench-action--secondary" type="button" value=${'Previous ' + total}
-                            @click=${() => invoke('workbench.paging.previousOffset', 'explore')}>${pagerLabel('Previous', resultLimit)}</button>
-                        <button id="nextX" class="workbench-action workbench-action--secondary" type="button" value=${'Next ' + total}
-                            @click=${() => invoke('workbench.paging.nextOffset', 'explore')}>${pagerLabel('Next', resultLimit)}</button>
-                    </div>
-                </section>`}`;
+                    ? h`<div id="explore-section-output"></div>` : ''}`;
         }
 
         function limitSelect(runtime: LitRuntime, id: string, _context: ViewContext, selected: string): any {
@@ -4175,7 +3894,7 @@ namespace workbench {
             const rejected = (model.vars || []).indexOf('error-message') >= 0;
             const selectedGraph = rejected ? text(pageValue(model, 'context')) : locationParameter('context');
             const listedGraph = selectedGraph === '' || selectedGraph === 'null'
-                || graphs.some((record: any) => resourceTerm(record.context) === selectedGraph);
+                || graphs.some((record: any) => graphOperand(record.context) === selectedGraph);
             const previewDisabled = state.state === 'empty' || state.state === 'invalid' || counted && state.count === 0
                 || preview.state === 'loading';
             const namespaces = exploreNamespaces(model);
@@ -4212,8 +3931,12 @@ namespace workbench {
                             <option value="null" ?selected=${selectedGraph === 'null'}>Default graph</option>
                             ${listedGraph ? '' : h`<option value=${selectedGraph} ?selected=${true}>${
                                 removeGraphPhrase(selectedGraph).replace(/^in graph /, '')}</option>`}
-                            ${graphs.map((record: any) => h`<option value=${resourceTerm(record.context)}
-                                ?selected=${resourceTerm(record.context) === selectedGraph}>${termText(record.context)}</option>`)}
+                            ${graphs.map((record: any) => {
+                                const operand = graphOperand(record.context);
+                                return h`<option value=${operand} ?disabled=${!operand}
+                                    ?selected=${!!operand && operand === selectedGraph}>${termText(record.context)}${
+                                    operand ? '' : ' (identity unavailable)'}</option>`;
+                            })}
                         </select>${icon(runtime, 'chevron', 'workbench-select-chevron')}</div>
                     </div>
                 </div>
@@ -4258,16 +3981,17 @@ namespace workbench {
          * repository; Summary by 'size' and 'contexts'.
          */
         const countedPages: { [viewId: string]: { timedOut: string; absorb(answer: PageModel, rows: any[][],
-                                                                            counts: PageCounts): void } } = {
+                                                                            counts: PageCounts, context: ViewContext): void } } = {
             clear: {
                 timedOut: 'Statement counts took longer than five seconds',
-                absorb(answer: PageModel, rows: any[][], counts: PageCounts): void {
+                absorb(answer: PageModel, rows: any[][], counts: PageCounts, context: ViewContext): void {
                     const values = counts.values;
                     if (text(meta(answer, 'context-discovery-complete')) !== 'true') { return; }
                     // Replace choices only after the server has returned a complete graph snapshot (M14.2).
                     counts.listing = recordsFromRows(answer, rows);
                     rows.forEach((row: any[]) => {
-                        if (text(row[1])) { values[row[0] ? resourceTerm(row[0]) : ''] = row[1]; }
+                        const key = resultIdentity(row[0], context);
+                        if (text(row[1]) && typeof key === 'string') { values[key] = row[1]; }
                     });
                     const size = meta(answer, 'repository-size');
                     if (text(size)) { values['*'] = size; }
@@ -4327,7 +4051,7 @@ namespace workbench {
             app.loadModel(targetWindow.fetch.bind(targetWindow), url.toString())
                 .then((answer: PageModel) => answer.rowStore.read(0, answer.rowCount).then((rows: any[][]) => {
                     answer.rowStore.dispose();
-                    countedPages[model.viewId].absorb(answer, rows, counts);
+                    countedPages[model.viewId].absorb(answer, rows, counts, context);
                     if (model.viewId === 'clear') {
                         counts.state = text(meta(answer, 'context-discovery-complete')) === 'true'
                             ? text(meta(answer, 'statement-counts-timed-out')) === 'true' ? 'timed-out' : 'done'
@@ -4379,8 +4103,14 @@ namespace workbench {
                 .concat(listing.filter((record: any) => !record.context)
                     .map((record: any) => ({ value: 'null', label: 'Default graph', count: countOf('', record.statements) })))
                 .concat(listing.filter((record: any) => !!record.context)
-                    .map((record: any) => ({ value: resourceTerm(record.context), label: termText(record.context),
-                        count: countOf(resourceTerm(record.context), record.statements) })));
+                    .map((record: any, index: number) => {
+                        const operand = graphOperand(record.context);
+                        const key = resultIdentity(record.context, context);
+                        return { value: operand || '__unverified_graph_' + index,
+                            label: termText(record.context) + (operand ? '' : ' (identity unavailable)'),
+                            count: typeof key === 'string' ? countOf(key, record.statements) : record.statements,
+                            unavailable: !operand };
+                    }));
             if (discoveryIncomplete && !targets.length) {
                 targets.push({ value: '__unavailable__', label: 'Graph choices unavailable', count: '', unavailable: true });
             }
@@ -5126,6 +4856,7 @@ namespace workbench {
                     ?hidden=${!queryFeatureEnabled(context, 'editor-namespaces')}
                     @click=${() => invoke('workbench.query.insertPrefixes')}>Insert prefixes</button></div>`);
             return h`<div id="query-page" class="query-page"
+                    data-query-server-url=${text(info.server)} data-query-repository-id=${context.repositoryId}
                     data-editor-fullscreen-enabled=${queryFeatureEnabled(context, 'editor-fullscreen') ? 'true' : 'false'}>
                 <form id="query-form" action="query" method="post"
                     data-workbench-query-execution="true" data-workbench-results-target="query-results">
@@ -5652,6 +5383,18 @@ namespace workbench {
             return outlet;
         }
 
+        /** Refresh Explore's results without replacing the resource form or its focused controls. */
+        export function renderExploreSections(outlet: Element, model: PageModel, context: ViewContext,
+                                              runtime: LitRuntime): void {
+            const host = outlet && outlet.querySelector('#explore-section-output');
+            if (!host) { return; }
+            const regions = prepareRowRegions(outlet, model);
+            const renderedContext = regions ? { ...context, rowRegions: regions } : context;
+            if (regions) { regions.resultTables = {}; }
+            runtime.render(exploreSectionContent(runtime, model, renderedContext), host);
+            renderPageResultTables(model, regions);
+        }
+
         /** Render a route's title and page surface into the outlet. */
         export function renderOutlet(outletMount: Element, model: PageModel, context: ViewContext,
                                      runtime: LitRuntime): Element {
@@ -5689,6 +5432,18 @@ namespace workbench {
             return mount;
         }
 
+        /** Lists of rows shorter than this are far below any browser's scroll capacity and are not measured against it. */
+        const LIST_CAPACITY_CHECK_HEIGHT = 1000000;
+
+        /** Room kept below compressed list rows for what follows them on the page (a trailing row, the footer). */
+        const LIST_PAGE_RESERVE = 8192;
+
+        /** What an arrow key or a wheel line scrolls a compressed list by, as browsers scroll a page. */
+        const LIST_LINE_STEP = 40;
+
+        /** How long the page must stop scrolling after a lifted finger before a touch swipe counts as over. */
+        const LIST_TOUCH_SETTLE_MS = 300;
+
         /** Keep streamed route rows in the worker store and render only viewport windows. */
         export function bindRowWindows(mount: any, model: PageModel, context: ViewContext,
                                        runtime: LitRuntime): Promise<() => void> {
@@ -5713,10 +5468,7 @@ namespace workbench {
             const hasPicker = hasQuery('[data-workbench-window-picker]');
             // Counts a browse list still waits for (Graphs' default graph) are loaded without rows too.
             const countsPending = !!browseLists[model.viewId] && browseCounts(model).state === 'pending';
-            // Explore reads its rows to find the resource's label, types and role groups; its statements are shown by
-            // result tables that window their own rows (resultTable).
-            const exploreRows = model.viewId === 'explore' && model.rowCount > 0;
-            if (!targetWindow || !model.rowStore || !hasRows && !hasPicker && !countsPending && !exploreRows) {
+            if (!targetWindow || !model.rowStore || !hasRows && !hasPicker && !countsPending) {
                 return Promise.resolve(loadPageCounts(mount, model, context, runtime, targetWindow));
             }
             if (hasRows && typeof HeightIndex !== 'function') {
@@ -5725,7 +5477,6 @@ namespace workbench {
 
             let disposed = false;
             let generation = 0;
-            let groupGeneration = 0;
             let heights: any = hasRows
                 ? new HeightIndex(model.rowCount, model.viewId === 'saved-queries' ? 240 : 44) : null;
             let repositorySortedRows: any[][] = (model as any).repositorySortedRows || null;
@@ -5779,44 +5530,6 @@ namespace workbench {
                 });
             };
 
-            function bindExploreControls(): void {
-                if (model.viewId !== 'explore') { return; }
-                elements('[data-workbench-explore-action]').forEach((button: any) => {
-                    if (button.__rdf4jWorkbenchExploreBound || !button.addEventListener) { return; }
-                    const groupKey = button.getAttribute('data-workbench-explore-group');
-                    const action = button.getAttribute('data-workbench-explore-action');
-                    listenOnce(button, '__rdf4jWorkbenchExploreBound', (event: any) => {
-                        if (event && event.preventDefault) { event.preventDefault(); }
-                        const states = exploreGroupStates(model);
-                        const state = states[groupKey];
-                        const page = (model as any).exploreSummary
-                            && (model as any).exploreSummary.groups[groupKey];
-                        if (!state || !page || disposed) { return; }
-                        if (action === 'previous') {
-                            const previous = state.history.pop();
-                            if (!previous) { return; }
-                            state.cursor = previous.cursor;
-                            state.start = previous.start;
-                        } else {
-                            if (!page.hasNext || !page.nextCursor || !page.items.length) { return; }
-                            state.history.push({ cursor: state.cursor, start: state.start });
-                            state.cursor = page.nextCursor;
-                            state.start += page.items.length;
-                        }
-                        const activeGeneration = ++groupGeneration;
-                        prepareExploreSummary(model).then((summary) => {
-                            if (disposed || activeGeneration !== groupGeneration) { return; }
-                            (model as any).exploreSummary = summary;
-                            const regions = rowRegionsByMount.get(regionKey);
-                            if (regions) {
-                                Object.keys(regions.groups).forEach((key) => regions.groups[key].render());
-                            }
-                            bindExploreControls();
-                        });
-                    });
-                });
-            }
-
             let rowMenuDisposers: Array<() => void> = [];
             /** Row action menus (repository list): popovers bound once per rendered row element. */
             const bindRowMenus = () => {
@@ -5835,7 +5548,6 @@ namespace workbench {
                 render(mount, model, context, runtime);
                 bindExecutionForms();
                 bindPickerControls();
-                bindExploreControls();
                 bindRowMenus();
             };
 
@@ -5929,12 +5641,144 @@ namespace workbench {
                 const targets = elements('[data-workbench-row-table="true"], [data-workbench-row-list="true"]');
                 return targets.length ? targets[0] : null;
             };
-            /** How far the rows' top has scrolled past the top of the window. */
-            const rowScrollTop = (target: any): number => {
-                const rectangle = target.getBoundingClientRect ? target.getBoundingClientRect() : { top: 0 };
-                return Math.max(0, -Number(rectangle.top || 0));
+            /** The box of the rows themselves: a table's body (below its header), or the list. */
+            const rowsBox = (target: any): any => {
+                const body = target.tagName === 'TABLE' && typeof target.querySelector === 'function'
+                    ? target.querySelector('tbody') : null;
+                return body || target;
             };
+            /** How far the rows' top is above the top of the window (negative while they start lower down). */
+            const rowsOffset = (target: any): number => {
+                const box = rowsBox(target);
+                const rectangle = box.getBoundingClientRect ? box.getBoundingClientRect() : { top: 0 };
+                return -Number(rectangle.top || 0);
+            };
+            /** How far the rows' top has scrolled past the top of the window. */
+            const rowScrollTop = (target: any): number => Math.max(0, rowsOffset(target));
             let windowScrollTop = 0;
+
+            /*
+             * A list taller than the browser can lay out (a million named graphs is about 45 million px of rows; browsers
+             * stop at 16 to 33 million) scrolls with the page in compressed coordinates, as the Query page's results do in
+             * their own box: the rows take what is left of the browser's scroll capacity, and the page's scroll position
+             * maps onto the rows' logical offset, one to one near both ends (queryStream.ResultScrollCoordinates). The
+             * wheel, the scroll keys and touch swipes move the rows by the distance they scroll, not by the compressed
+             * scroll bar's scale.
+             */
+            const ScrollCoordinates = stream && stream.ResultScrollCoordinates;
+            let scrollCapacity = 0;
+            let coordinates: any = null;
+            /** The logical offset shown, and the offset into the rows (in page pixels) it was shown at. */
+            const position = { logical: 0, committed: NaN };
+            let touchScrolling = false;
+            let fingerDown = false;
+            let touchSettleTimer: any = null;
+            /** Set by End (and Ctrl or Cmd+Down): keep going to the bottom until the last row is on screen. */
+            let endIntent = false;
+
+            const pageDocument = (): any => targetWindow.document || (mount && mount.ownerDocument) || null;
+
+            /** Turns compressed coordinates on or off for rows logicalHeight tall that start at the page offset above. */
+            const updateCompression = (target: any, above: number, logicalHeight: number, viewportHeight: number) => {
+                const document = pageDocument();
+                if (!coordinates && (logicalHeight < LIST_CAPACITY_CHECK_HEIGHT || typeof ScrollCoordinates !== 'function'
+                        || !document || typeof stream.measureScrollCapacity !== 'function')) {
+                    return;
+                }
+                if (!scrollCapacity) {
+                    scrollCapacity = stream.measureScrollCapacity(document, target.tagName === 'TABLE');
+                }
+                const rowsCapacity = scrollCapacity - Math.max(0, above) - LIST_PAGE_RESERVE;
+                if (logicalHeight <= rowsCapacity) {
+                    if (coordinates) {
+                        coordinates = null;
+                        position.committed = NaN;
+                    }
+                    return;
+                }
+                if (!coordinates) {
+                    coordinates = new ScrollCoordinates(Math.max(1, rowsCapacity));
+                    position.committed = NaN;
+                } else {
+                    coordinates.setCapacity(Math.max(1, rowsCapacity));
+                }
+                coordinates.update(logicalHeight, viewportHeight);
+            };
+
+            /** The logical offset for the rows scrolled offset px into the page (see position). */
+            const logicalPosition = (offset: number): number => {
+                if (Math.abs(offset - position.committed) < 1) {
+                    return position.logical;
+                }
+                if (touchScrolling) {
+                    // A swipe moves the rows as far as the finger moved, not by the compressed scroll bar's scale.
+                    return Math.max(0, Math.min(coordinates.maximumOffset, position.logical + offset - position.committed));
+                }
+                return coordinates.logicalOffset(offset);
+            };
+
+            /** The rows to read for the page's scroll position, and where they are placed. */
+            const planWindow = (target: any, viewportHeight: number): any => {
+                const offset = rowScrollTop(target);
+                const box = rowsBox(target);
+                const top = box.getBoundingClientRect ? Number(box.getBoundingClientRect().top || 0) : 0;
+                updateCompression(target, (Number(targetWindow.scrollY) || 0) + top, heights.offsetOf(model.rowCount),
+                    viewportHeight);
+                if (!coordinates) {
+                    return { offset, logical: offset, compressed: false,
+                        range: heights.range(offset, viewportHeight, 4, 80) };
+                }
+                const physicalRange = Math.max(0, coordinates.physicalHeight - viewportHeight);
+                const physical = Math.min(physicalRange, offset);
+                const logical = logicalPosition(physical);
+                position.logical = logical;
+                position.committed = physical;
+                const anchor = heights.range(logical, 0, 0, 1).start;
+                return { offset: physical, logical, compressed: true, anchor, within: logical - heights.offsetOf(anchor),
+                    atEnd: coordinates.maximumOffset > 0 && logical >= coordinates.maximumOffset - 0.5,
+                    range: heights.range(logical, viewportHeight, 4, 80) };
+            };
+
+            /** The spacers above and below a window of rows from start to end. */
+            const spacersFor = (plan: any, start: number, end: number): { top: number; bottom: number } => {
+                if (!plan.compressed) {
+                    return { top: heights.offsetOf(start), bottom: heights.offsetOf(model.rowCount) - heights.offsetOf(end) };
+                }
+                return coordinates.spacers(heights.offsetOf(start), heights.offsetOf(end) - heights.offsetOf(start),
+                    plan.offset, plan.logical);
+            };
+
+            /** Places the planned rows again after their measured heights changed the list's geometry. */
+            const replan = (plan: any, viewportHeight: number): any => {
+                if (!plan.compressed) {
+                    return { ...plan, range: heights.range(plan.offset, viewportHeight, 4, 80) };
+                }
+                coordinates.update(heights.offsetOf(model.rowCount), viewportHeight);
+                const logical = plan.atEnd ? coordinates.maximumOffset : Math.max(0,
+                    Math.min(coordinates.maximumOffset, heights.offsetOf(plan.anchor) + plan.within));
+                position.logical = logical;
+                position.committed = plan.offset;
+                return { ...plan, logical, range: heights.range(logical, viewportHeight, 4, 80) };
+            };
+
+            /**
+             * Row heights are estimates until rows are rendered, so measuring the last rows makes the list taller after
+             * End scrolled the page to what was its bottom. Until the last row is on screen, keep going to the new bottom.
+             */
+            const followListEnd = (renderedEnd: number) => {
+                const document = pageDocument();
+                const documentElement = document && document.documentElement;
+                if (!endIntent || !documentElement || typeof targetWindow.scrollTo !== 'function') {
+                    return;
+                }
+                const atBottom = (Number(targetWindow.scrollY) || 0) + (Number(targetWindow.innerHeight) || 0)
+                    >= documentElement.scrollHeight - 2;
+                if (renderedEnd >= model.rowCount && atBottom) {
+                    endIntent = false;
+                    return;
+                }
+                targetWindow.scrollTo(Number(targetWindow.scrollX) || 0, documentElement.scrollHeight);
+            };
 
             const refreshRows = (paint: boolean = true): Promise<void> => {
                 if (!hasRows || disposed) { return Promise.resolve(); }
@@ -5942,37 +5786,209 @@ namespace workbench {
                 heights.resize(model.rowCount);
                 const target = rowTarget();
                 if (!target) { return Promise.resolve(); }
-                const scrollTop = rowScrollTop(target);
-                windowScrollTop = scrollTop;
+                windowScrollTop = rowScrollTop(target);
                 const viewportHeight = Math.max(1, Number(targetWindow.innerHeight) || 600);
-                const range = heights.range(scrollTop, viewportHeight, 4, 80);
+                const plan = planWindow(target, viewportHeight);
+                const range = plan.range;
+                if (target.style) {
+                    // The rows are placed for the scroll position, which anchoring must not move.
+                    target.style.overflowAnchor = plan.compressed ? 'none' : '';
+                }
                 const rowWindow = repositorySortedRows
                     ? Promise.resolve(repositorySortedRows.slice(range.start, range.end))
                     : model.rowStore.read(range.start, range.end - range.start);
                 return rowWindow.then((rows: any[][]) => {
                     if (disposed || activeGeneration !== generation) { return; }
+                    const spacers = spacersFor(plan, range.start, range.end);
                     model.rows = rows;
                     model.rowStart = range.start;
-                    model.rowTopSpacer = range.topSpacer;
-                    model.rowBottomSpacer = range.bottomSpacer;
+                    model.rowTopSpacer = spacers.top;
+                    model.rowBottomSpacer = spacers.bottom;
                     if (paint) { renderCurrentRows(); }
                     measureRows(range.start, range.end);
-                    const measuredRange = heights.range(scrollTop, viewportHeight, 4, 80);
-                    const topSpacer = heights.offsetOf(measuredRange.start);
-                    const bottomSpacer = heights.offsetOf(model.rowCount) - heights.offsetOf(measuredRange.end);
+                    const measured = replan(plan, viewportHeight);
+                    const measuredRange = measured.range;
+                    const measuredSpacers = spacersFor(measured, range.start, range.end);
                     const moved = measuredRange.start !== range.start || measuredRange.end !== range.end;
-                    const spacerChanged = Math.abs(topSpacer - model.rowTopSpacer) > 0.5
-                        || Math.abs(bottomSpacer - model.rowBottomSpacer) > 0.5;
+                    const spacerChanged = Math.abs(measuredSpacers.top - model.rowTopSpacer) > 0.5
+                        || Math.abs(measuredSpacers.bottom - model.rowBottomSpacer) > 0.5;
                     if (moved) {
                         return refreshRows(paint);
                     }
                     if (spacerChanged && !disposed) {
-                        model.rowTopSpacer = topSpacer;
-                        model.rowBottomSpacer = bottomSpacer;
+                        model.rowTopSpacer = measuredSpacers.top;
+                        model.rowBottomSpacer = measuredSpacers.bottom;
                         if (paint) { renderCurrentRows(); }
                     }
+                    if (paint) { followListEnd(range.end); }
                 });
             };
+
+            /** The height of the sticky context bar, read from --workbench-contextbar-height. */
+            const stickyOffset = (): number => {
+                const document = pageDocument();
+                if (!document || !document.documentElement || typeof targetWindow.getComputedStyle !== 'function') {
+                    return 0;
+                }
+                const value = parseFloat(targetWindow.getComputedStyle(document.documentElement)
+                    .getPropertyValue('--workbench-contextbar-height'));
+                return isFinite(value) && value > 0 ? value : 0;
+            };
+
+            /** What PageDown scrolls: most of the window below the context bar, as browsers do. */
+            const pageStep = (): number => Math.max(LIST_LINE_STEP,
+                ((Number(targetWindow.innerHeight) || 600) - stickyOffset()) * 0.875);
+
+            /**
+             * Scrolls compressed rows delta logical px (a wheel step, a scroll key) and moves the page to the matching
+             * compressed position. False where the page itself should scroll: while it shows what is above or below the
+             * rows, or when the step would leave them.
+             */
+            const scrollRowsBy = (delta: number): boolean => {
+                const target = coordinates && coordinates.compressed ? rowTarget() : null;
+                if (!target || typeof targetWindow.scrollTo !== 'function') {
+                    return false;
+                }
+                const viewportHeight = Math.max(1, Number(targetWindow.innerHeight) || 600);
+                coordinates.update(heights.offsetOf(model.rowCount), viewportHeight);
+                const offset = rowsOffset(target);
+                if (offset < 0 || offset > Math.max(0, coordinates.physicalHeight - viewportHeight)) {
+                    return false;
+                }
+                const next = logicalPosition(offset) + delta;
+                if (next < 0 || next > coordinates.maximumOffset) {
+                    return false;
+                }
+                endIntent = false;
+                position.logical = next;
+                targetWindow.scrollTo(Number(targetWindow.scrollX) || 0,
+                    (Number(targetWindow.scrollY) || 0) + coordinates.physicalOffset(next) - offset);
+                // The browser can round the scroll position: remember where it is, for the logical offset above.
+                position.committed = rowsOffset(target);
+                refresh();
+                return true;
+            };
+
+            /** True when a wheel or key at target scrolls a box of its own (a panel) rather than the page. */
+            const scrollsOwnBox = (target: any, delta: number): boolean => {
+                const document = pageDocument();
+                for (let element = target; element && element !== document.body && element !== document.documentElement;
+                    element = element.parentElement) {
+                    if (element.scrollHeight > element.clientHeight + 1 && typeof targetWindow.getComputedStyle === 'function'
+                            && /^(?:auto|scroll|overlay)$/.test(targetWindow.getComputedStyle(element).overflowY)
+                            && (delta > 0 ? element.scrollTop + element.clientHeight < element.scrollHeight - 1
+                                : element.scrollTop > 0)) {
+                        return true;
+                    }
+                }
+                return false;
+            };
+
+            const onWheel = (event: any) => {
+                if (event.deltaY < 0) { endIntent = false; }
+                if (!coordinates || !coordinates.compressed || event.defaultPrevented || event.ctrlKey || event.shiftKey
+                        || !event.deltaY) {
+                    return;
+                }
+                const delta = event.deltaY * (event.deltaMode === 1 ? LIST_LINE_STEP
+                    : event.deltaMode === 2 ? pageStep() : 1);
+                if (!scrollsOwnBox(event.target, delta) && scrollRowsBy(delta)) {
+                    event.preventDefault();
+                }
+            };
+
+            const onKeyDown = (event: any) => {
+                const target = event.target;
+                const tag = String(target && target.tagName || '').toUpperCase();
+                const field = !!target && (target.isContentEditable || /^(?:INPUT|TEXTAREA|SELECT)$/.test(tag));
+                endIntent = !field && !event.defaultPrevented && (event.key === 'End'
+                    || (event.key === 'ArrowDown' && (event.metaKey || event.ctrlKey)));
+                if (!coordinates || !coordinates.compressed || field || event.defaultPrevented || event.altKey
+                        || event.ctrlKey || event.metaKey) {
+                    return;
+                }
+                const page = pageStep();
+                const delta = event.key === 'ArrowDown' ? LIST_LINE_STEP : event.key === 'ArrowUp' ? -LIST_LINE_STEP
+                    : event.key === 'PageDown' ? page : event.key === 'PageUp' ? -page
+                        // The browser would scroll the compressed scroll bar a view, many views of rows.
+                        : event.key === ' ' ? (event.shiftKey ? -page : page) : null;
+                if (delta === null) {
+                    return;
+                }
+                // Space still presses a focused button; a focused link passes the scroll keys on to the page.
+                const button = tag === 'BUTTON' || tag === 'SUMMARY'
+                    || (!!target && typeof target.getAttribute === 'function' && target.getAttribute('role') === 'button');
+                const document = pageDocument();
+                const onPage = !target || target === document.body || target === document.documentElement
+                    || (typeof mount.contains === 'function' && mount.contains(target) && !scrollsOwnBox(target, delta));
+                if (onPage && !(event.key === ' ' && button) && scrollRowsBy(delta)) {
+                    event.preventDefault();
+                }
+            };
+
+            /**
+             * A touch swipe scrolls the page natively, momentum included. From touchstart until the page comes to rest
+             * after the finger is lifted (scrollend, or LIST_TOUCH_SETTLE_MS without scrolling), compressed rows move
+             * as far as the swipe scrolled; once it settles, the page is put at the compressed position of the rows.
+             */
+            const stopTouchSettle = () => {
+                if (touchSettleTimer !== null && typeof targetWindow.clearTimeout === 'function') {
+                    targetWindow.clearTimeout(touchSettleTimer);
+                }
+                touchSettleTimer = null;
+            };
+            const endTouchScrolling = () => {
+                stopTouchSettle();
+                if (!touchScrolling) { return; }
+                const target = rowTarget();
+                if (!disposed && target && coordinates && coordinates.compressed
+                        && typeof targetWindow.scrollTo === 'function') {
+                    const viewportHeight = Math.max(1, Number(targetWindow.innerHeight) || 600);
+                    coordinates.update(heights.offsetOf(model.rowCount), viewportHeight);
+                    const offset = rowsOffset(target);
+                    if (offset >= 0 && offset <= Math.max(0, coordinates.physicalHeight - viewportHeight)) {
+                        // Where the swipe took the rows (still one to one), then the page to their compressed position.
+                        const logical = logicalPosition(offset);
+                        position.logical = logical;
+                        targetWindow.scrollTo(Number(targetWindow.scrollX) || 0,
+                            (Number(targetWindow.scrollY) || 0) + coordinates.physicalOffset(logical) - offset);
+                        position.committed = rowsOffset(target);
+                    }
+                }
+                touchScrolling = false;
+                fingerDown = false;
+                if (!disposed) { refresh(); }
+            };
+            const awaitTouchSettle = () => {
+                stopTouchSettle();
+                if (typeof targetWindow.setTimeout === 'function') {
+                    touchSettleTimer = targetWindow.setTimeout(endTouchScrolling, LIST_TOUCH_SETTLE_MS);
+                }
+            };
+            const onTouchStart = (event: any) => {
+                endIntent = false;
+                if (!coordinates || !coordinates.compressed) { return; }
+                touchScrolling = true;
+                fingerDown = true;
+                stopTouchSettle();
+                // The row under the finger can be rendered away during the swipe; touchend still goes to it.
+                const target = event && event.target;
+                if (target && typeof target.addEventListener === 'function') {
+                    const lifted = () => {
+                        target.removeEventListener('touchend', lifted, false);
+                        target.removeEventListener('touchcancel', lifted, false);
+                        fingerDown = false;
+                        awaitTouchSettle();
+                    };
+                    target.addEventListener('touchend', lifted, false);
+                    target.addEventListener('touchcancel', lifted, false);
+                }
+            };
+            const onScrollEnd = () => {
+                if (touchScrolling && !fingerDown) { endTouchScrolling(); }
+            };
+            /** Pressing the scroll bar or the page cancels following End. */
+            const onMouseDown = () => { endIntent = false; };
 
             const refresh = () => {
                 if (!hasRows) { return Promise.resolve(); }
@@ -6012,7 +6028,8 @@ namespace workbench {
                     return answer.rowStore.read(0, answer.rowCount).then((rows: any[][]) => {
                         answer.rowStore.dispose();
                         rows.forEach((row: any[]) => {
-                            counts.values[row[0] ? resourceTerm(row[0]) : ''] = row[1];
+                            const key = resultIdentity(row[0], context);
+                            if (typeof key === 'string') { counts.values[key] = row[1]; }
                         });
                         counts.state = 'done';
                         if (!disposed) { renderCurrent(); }
@@ -6023,7 +6040,12 @@ namespace workbench {
                 });
             };
 
-            const onScroll = () => refresh();
+            const onScroll = () => {
+                if (touchScrolling && !fingerDown) {
+                    awaitTouchSettle();
+                }
+                refresh();
+            };
             const onResize = () => refresh();
             const initialPicker = hasPicker && model.rowCount > 0
                 ? model.rowStore.read(0, windowSize).then((rows: any[][]) => {
@@ -6043,15 +6065,11 @@ namespace workbench {
                     }
                 })
                 : Promise.resolve();
-            return initialPicker.then(() => initialSort).then(() => prepareExploreSummary(model)).then((summary: any) => {
-                if (summary) { (model as any).exploreSummary = summary; }
-                return refreshRows(false);
-            }).then(() => {
+            return initialPicker.then(() => initialSort).then(() => refreshRows(false)).then(() => {
                 renderCurrent();
                 return refreshRows();
             }).then(() => {
                 bindPickerControls();
-                bindExploreControls();
                 loadBrowseCounts();
                 if (repositoryRows && repositoryRows.addEventListener) {
                     repositoryRows.addEventListener('click', onRepositoryRowClick);
@@ -6062,6 +6080,11 @@ namespace workbench {
                 if (hasRows && targetWindow.addEventListener) {
                     targetWindow.addEventListener('scroll', onScroll, { passive: true });
                     targetWindow.addEventListener('resize', onResize);
+                    targetWindow.addEventListener('wheel', onWheel, { passive: false });
+                    targetWindow.addEventListener('keydown', onKeyDown, false);
+                    targetWindow.addEventListener('touchstart', onTouchStart, { passive: true });
+                    targetWindow.addEventListener('scrollend', onScrollEnd, false);
+                    targetWindow.addEventListener('mousedown', onMouseDown, false);
                     // A scroll made while the rows were being bound reached no listener: catch up with it.
                     const target = rowTarget();
                     if (target && rowScrollTop(target) !== windowScrollTop) {
@@ -6071,7 +6094,6 @@ namespace workbench {
                 return () => {
                     disposed = true;
                     generation++;
-                    groupGeneration++;
                     controlDisposers.forEach((dispose) => dispose());
                     controlDisposers = [];
                     disposeExecutionForms();
@@ -6085,9 +6107,15 @@ namespace workbench {
                     }
                     const regions = rowRegionsByMount.get(regionKey);
                     if (regions && regions.model === model) { rowRegionsByMount.delete(regionKey); }
+                    stopTouchSettle();
                     if (hasRows && targetWindow.removeEventListener) {
                         targetWindow.removeEventListener('scroll', onScroll);
                         targetWindow.removeEventListener('resize', onResize);
+                        targetWindow.removeEventListener('wheel', onWheel);
+                        targetWindow.removeEventListener('keydown', onKeyDown, false);
+                        targetWindow.removeEventListener('touchstart', onTouchStart);
+                        targetWindow.removeEventListener('scrollend', onScrollEnd, false);
+                        targetWindow.removeEventListener('mousedown', onMouseDown, false);
                     }
                 };
             });

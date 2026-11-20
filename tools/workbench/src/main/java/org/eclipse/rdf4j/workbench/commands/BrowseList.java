@@ -41,6 +41,7 @@ import org.eclipse.rdf4j.http.client.query.AbstractHTTPQuery;
 import org.eclipse.rdf4j.model.BNode;
 import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.Value;
+import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.query.QueryInterruptedException;
 import org.eclipse.rdf4j.query.QueryLanguage;
 import org.eclipse.rdf4j.query.TupleQuery;
@@ -486,7 +487,7 @@ final class BrowseList {
 	}
 
 	/** A complete graph list, or an explicit indication that discovery stopped before the list was complete. */
-	record ContextDiscovery(List<Resource> contexts, boolean complete, boolean timedOut) {
+	record ContextDiscovery(List<Resource> contexts, boolean complete, boolean timedOut, ValueFactory origins) {
 	}
 
 	/** Statement counts that finished, and whether counting stopped before all of them did. */
@@ -496,9 +497,12 @@ final class BrowseList {
 	/** Discovers and sorts graph names using a connection owned by the bounded worker. */
 	ContextDiscovery discoverContexts(Repository repository, long budgetMillis) throws Exception {
 		Deadline deadline = new Deadline(budgetMillis);
-		Optional<List<Resource>> found = withinBudget(() -> {
+		Optional<ContextDiscovery> found = withinBudget(() -> {
 			List<Resource> contexts = new ArrayList<>();
+			ValueFactory origins;
 			try (RepositoryConnection connection = repository.getConnection()) {
+				TupleResultBuilder.enableRepositoryOrigins(connection);
+				origins = connection.getValueFactory();
 				deadline.checkActive();
 				try (RepositoryResult<Resource> contextIDs = connection.getContextIDs()) {
 					while (true) {
@@ -515,10 +519,9 @@ final class BrowseList {
 			deadline.checkActive();
 			contexts.sort(BY_NAME);
 			deadline.checkActive();
-			return List.copyOf(contexts);
+			return new ContextDiscovery(List.copyOf(contexts), true, false, origins);
 		}, deadline);
-		return found.map(contexts -> new ContextDiscovery(contexts, true, false))
-				.orElseGet(() -> new ContextDiscovery(List.of(), false, true));
+		return found.orElseGet(() -> new ContextDiscovery(List.of(), false, true, null));
 	}
 
 	/**
@@ -533,6 +536,7 @@ final class BrowseList {
 		Deadline deadline = new Deadline(budgetMillis);
 		Optional<Boolean> finished = withinBudget(() -> {
 			try (RepositoryConnection connection = repository.getConnection()) {
+				TupleResultBuilder.enableRepositoryOrigins(connection);
 				deadline.checkActive();
 				long repositorySize = connection.size();
 				keep(counts, REPOSITORY, repositorySize, deadline);

@@ -99,10 +99,33 @@ class LmdbBulkLoadGenerationTest {
 		}
 	}
 
+	@Test
+	void childLockProbeKeepsJavaToolOptionsOutOfItsProtocol() throws Exception {
+		Path target = temporaryDirectory.resolve("jvm-options-ownership");
+		Path stableLock = target.resolveSibling("." + target.getFileName() + ".lmdb-bulk-load.lock");
+		String javaToolOptions = "-Drdf4j.test.lockProbe.jvmOptions=true";
+		try (LmdbBulkLoadGeneration owner = LmdbBulkLoadGeneration.create(target)) {
+			assertEquals("BLOCKED", tryStableLockInChild(stableLock, javaToolOptions));
+		}
+		assertEquals("ACQUIRED", tryStableLockInChild(stableLock, javaToolOptions));
+	}
+
 	private String tryStableLockInChild(Path stableLock) throws Exception {
+		return tryStableLockInChild(stableLock, "");
+	}
+
+	private String tryStableLockInChild(Path stableLock, String additionalJavaToolOptions) throws Exception {
 		String java = Path.of(System.getProperty("java.home"), "bin", "java").toString();
-		Process child = new ProcessBuilder(java, "-cp", System.getProperty("java.class.path"),
-				StableLockContender.class.getName(), stableLock.toString()).redirectErrorStream(true).start();
+		// JVM startup diagnostics belong on stderr, not in the probe's stdout protocol.
+		ProcessBuilder processBuilder = new ProcessBuilder(java, "-cp", System.getProperty("java.class.path"),
+				StableLockContender.class.getName(), stableLock.toString())
+						.redirectError(ProcessBuilder.Redirect.INHERIT);
+		if (!additionalJavaToolOptions.isEmpty()) {
+			processBuilder.environment()
+					.merge("JAVA_TOOL_OPTIONS", additionalJavaToolOptions,
+							(existing, additional) -> existing + " " + additional);
+		}
+		Process child = processBuilder.start();
 		try {
 			assertTrue(child.waitFor(60, TimeUnit.SECONDS), "the owned lock-probe child must terminate");
 			String output = new String(child.getInputStream().readAllBytes(), UTF_8).trim();

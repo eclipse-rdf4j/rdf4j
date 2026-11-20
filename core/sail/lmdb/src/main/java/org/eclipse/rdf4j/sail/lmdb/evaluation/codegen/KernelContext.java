@@ -76,6 +76,9 @@ public final class KernelContext {
 	 */
 	public KernelCancellation cancellation;
 
+	/** Preflight reservation for the single private serial hash build, including any subsequent growth. */
+	public KernelRuntime.HashBuildMemory hashBuildMemory;
+
 	/** Root-shared query ledger. The kernel closes only its reservations, never this shared ledger. */
 	public org.eclipse.rdf4j.sail.lmdb.LmdbQueryMemoryManager.QueryLedger memoryLedger;
 	private java.util.function.Supplier<org.eclipse.rdf4j.sail.lmdb.LmdbQueryMemoryManager.QueryLedger> memoryLedgerSupplier;

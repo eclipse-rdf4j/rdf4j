@@ -695,10 +695,9 @@ class LmdbGrowthLifecycleRegressionTest {
 		Future<?> mutation = null;
 		Future<?> shutdown = null;
 		try {
-			mutation = executor.submit(() -> {
-				sink.approve(subject, predicate, object, null);
-				sink.flush();
-			});
+			// Protect the native call that is already active. Once approve returns, shutdown may retire
+			// this idle direct transaction; a later flush is a separate admission and may correctly fail.
+			mutation = executor.submit(() -> sink.approve(subject, predicate, object, null));
 			assertTrue(mutationEntered.await(3, TimeUnit.SECONDS), "the direct sink must enter its native value write");
 			CountDownLatch shutdownStarted = new CountDownLatch(1);
 			shutdown = executor.submit(() -> {
@@ -714,6 +713,10 @@ class LmdbGrowthLifecycleRegressionTest {
 			mutation.get(3, TimeUnit.SECONDS);
 			shutdown.get(3, TimeUnit.SECONDS);
 			int callsAfterClose = valueStoreCalls.get();
+			assertDoesNotThrow(sink::flush,
+					"a fully retired direct transaction has no remaining work to publish");
+			assertEquals(callsAfterClose, valueStoreCalls.get(),
+					"flushing the retired direct sink must not reenter the closed native ValueStore");
 			assertThrows(SailException.class,
 					() -> sink.approve(values.createIRI("urn:synchronous-shutdown:after"), predicate, object, null),
 					"a retained direct sink must reject mutations after backing shutdown");

@@ -488,15 +488,13 @@ class GraphExplorerFacetRegressionTest {
 	}
 
 	private static String generated(Map<String, ?> request) throws IOException, InterruptedException {
-		String node = System.getProperty("os.name").startsWith("Windows") ? "node.exe" : "node";
-		Path bundledNode = Path.of("target", "node", node);
 		Path directory = Files.createDirectories(Path.of("target/generated-facet-queries"));
 		Path output = Files.createTempFile(directory, "query-", ".rq");
 		Path errors = Files.createTempFile(directory, "generator-", ".log");
 		Path input = Files.createTempFile(directory, "request-", ".json");
 		Files.writeString(input, JSON.writeValueAsString(request));
 		try (TestProcess child = TestProcess
-				.start(new ProcessBuilder(Files.isExecutable(bundledNode) ? bundledNode.toString() : node,
+				.start(new ProcessBuilder(TestProcess.NODE,
 						"--experimental-strip-types",
 						"src/test/frontend/graph-explorer/fixtures/facet-regression-bridge.mjs",
 						"--request-file", input.toString()).redirectOutput(output.toFile())

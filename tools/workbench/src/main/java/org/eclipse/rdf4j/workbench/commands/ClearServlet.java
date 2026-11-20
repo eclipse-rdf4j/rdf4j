@@ -105,6 +105,9 @@ public class ClearServlet extends TransformationServlet {
 	@Override
 	public void service(TupleResultBuilder builder) throws Exception {
 		BrowseList.ContextDiscovery discovery = browseList.discoverContexts(repository, contextDiscoveryBudgetMillis);
+		if (discovery.origins() != null) {
+			builder.repositoryOrigins(discovery.origins());
+		}
 		builder.start(CONTEXT, "statements");
 		builder.link(List.of(INFO));
 		writeDiscoveryMetadata(builder, discovery);
@@ -125,6 +128,9 @@ public class ClearServlet extends TransformationServlet {
 		BrowseList.StatementCounts counts = discovery.complete()
 				? browseList.statementCounts(repository, discovery.contexts(), countBudgetMillis)
 				: new BrowseList.StatementCounts(Map.of(), false);
+		if (discovery.origins() != null) {
+			builder.repositoryOrigins(discovery.origins());
+		}
 		builder.start(CONTEXT, "statements");
 		builder.link(List.of(INFO));
 		writeDiscoveryMetadata(builder, discovery);

@@ -257,6 +257,141 @@ test('a row store disposed in a live page still rejects the requests its worker 
     await assert.rejects(read, /worker was closed/);
 });
 
+test('budgeted and owned reads preserve pending-request disposal semantics before and after dispatch', async () => {
+    class SlowReadWorker extends MemoryWorker {
+        postMessage(message) {
+            if (message.op === 'read') { this.messages.push(message); return; }
+            super.postMessage(message);
+        }
+    }
+    for (const method of ['read', 'readOwned']) {
+        for (const waitingForBudget of [false, true]) {
+            for (const unloading of [false, true]) {
+                const listeners = new Map();
+                const { api } = loadApi({ addEventListener(type, callback) {
+                    listeners.set(type, [...(listeners.get(type) || []), callback]);
+                } });
+                const worker = new SlowReadWorker();
+                const budget = api.createRowStoreBudget(20000);
+                const store = await api.createRowStore({ workerFactory: () => worker, spillRowLimit: 0,
+                    memoryBudget: budget, storageTimeout: 1000 });
+                await store.append([[{ kind: 'literal', value: 'x'.repeat(1000) }]]);
+                await moved(store);
+                assert.equal(store.inMemory, false);
+                const blocker = budget.createReservation('temporary');
+                if (waitingForBudget) await blocker.grow(12000);
+                let outcome = 'pending';
+                store[method](0, 1).then(() => { outcome = 'resolved'; }, error => { outcome = error.message; });
+                for (let index = 0; index < 5; index++) await new Promise(resolve => setImmediate(resolve));
+                assert.equal(worker.messages.some(message => message.op === 'read'), !waitingForBudget,
+                    `${method}: the request ${waitingForBudget ? 'waits for budget' : 'reaches the worker'}`);
+                if (unloading) {
+                    for (const callback of listeners.get('pagehide') || []) callback({ type: 'pagehide', persisted: false });
+                }
+                await store.dispose();
+                blocker.release();
+                for (let index = 0; index < 5; index++) await new Promise(resolve => setImmediate(resolve));
+                assert.equal(budget.usedBytes, 0, `${method}: disposal releases every pending reservation`);
+                if (unloading) {
+                    assert.equal(outcome, 'pending', `${method}: the read is abandoned on destructive pagehide`);
+                } else {
+                    assert.match(outcome, /worker was closed/, `${method}: a live page is told its worker closed`);
+                }
+            }
+        }
+    }
+});
+
+test('disposing a mixed worker and memory read cancels its pending window reservation', async () => {
+    class SlowAppendWorker extends MemoryWorker {
+        postMessage(message) {
+            if (this.holdAppend && message.op === 'append') { this.messages.push(message); return; }
+            super.postMessage(message);
+        }
+    }
+    for (const unloading of [false, true]) {
+        const listeners = new Map();
+        const { api } = loadApi({ addEventListener(type, callback) {
+            listeners.set(type, [...(listeners.get(type) || []), callback]);
+        } });
+        const worker = new SlowAppendWorker();
+        const budget = api.createRowStoreBudget(20000);
+        const store = await api.createRowStore({ workerFactory: () => worker, spillRowLimit: 0,
+            memoryBudget: budget, storageTimeout: 1000 });
+        await store.append([[{ kind: 'literal', value: 'first'.repeat(200) }]]);
+        await moved(store);
+        assert.equal(store.inMemory, false);
+        worker.holdAppend = true;
+        const blocker = budget.createReservation('retained');
+        await blocker.grow(8500);
+        await store.append([[{ kind: 'literal', value: 'second'.repeat(166) }]]);
+        let outcome = 'pending';
+        store.readOwned(0, 2).then(() => { outcome = 'resolved'; }, error => { outcome = error.message; });
+        for (let index = 0; index < 5; index++) await new Promise(resolve => setImmediate(resolve));
+        assert.equal(worker.messages.some(message => message.op === 'read'), false,
+            'the memory suffix waits for its own reservation before reading the worker prefix');
+        if (unloading) {
+            for (const callback of listeners.get('pagehide') || []) callback({ type: 'pagehide', persisted: false });
+        }
+        await store.dispose();
+        assert.equal(budget.usedBytes, 8500, 'only the independent blocker remains reserved');
+        blocker.release();
+        for (let index = 0; index < 5; index++) await new Promise(resolve => setImmediate(resolve));
+        assert.equal(budget.usedBytes, 0);
+        if (unloading) {
+            assert.equal(outcome, 'pending');
+        } else {
+            assert.match(outcome, /disposed/);
+        }
+    }
+});
+
+test('a mixed read releases its captured memory suffix when a pending worker read is abandoned', async () => {
+    class SlowMixedWorker extends MemoryWorker {
+        postMessage(message) {
+            if (this.holdAppend && message.op === 'append' || this.holdRead && message.op === 'read') {
+                this.messages.push(message);
+                return;
+            }
+            super.postMessage(message);
+        }
+    }
+    for (const unloading of [true, false]) {
+        const listeners = new Map();
+        const { api } = loadApi({ addEventListener(type, callback) {
+            listeners.set(type, [...(listeners.get(type) || []), callback]);
+        } });
+        const worker = new SlowMixedWorker();
+        const budget = api.createRowStoreBudget(50000);
+        const store = await api.createRowStore({ workerFactory: () => worker, spillRowLimit: 0,
+            memoryBudget: budget, storageTimeout: 1000 });
+        await store.append([[{ kind: 'literal', value: 'first'.repeat(200) }]]);
+        await moved(store);
+        assert.equal(store.inMemory, false);
+        worker.holdAppend = true;
+        worker.holdRead = true;
+        await store.append([[{ kind: 'literal', value: 'second'.repeat(166) }]]);
+        let outcome = 'pending';
+        store.readOwned(0, 2).then(() => { outcome = 'resolved'; }, error => { outcome = error.message; });
+        for (let index = 0; index < 20 && !worker.messages.some(message => message.op === 'read'); index++) {
+            await new Promise(resolve => setImmediate(resolve));
+        }
+        assert.equal(worker.messages.some(message => message.op === 'read'), true,
+            'the memory suffix was captured before the worker prefix read was dispatched');
+        if (unloading) {
+            for (const callback of listeners.get('pagehide') || []) callback({ type: 'pagehide', persisted: false });
+        }
+        await store.dispose();
+        for (let index = 0; index < 5; index++) await new Promise(resolve => setImmediate(resolve));
+        assert.equal(budget.usedBytes, 0, 'no captured suffix or worker reservation survives disposal');
+        if (unloading) {
+            assert.equal(outcome, 'pending', 'the caller is abandoned with the departing document');
+        } else {
+            assert.match(outcome, /worker was closed/);
+        }
+    }
+});
+
 /** A worker that answers everything but dispose, as browser storage that cannot delete the database now. */
 class UndeletableWorker extends MemoryWorker {
     postMessage(message) {

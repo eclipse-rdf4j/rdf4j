@@ -298,7 +298,13 @@ class NativeResultReplayTest {
 			List<BindingSet> result = NativeReplayBindingList.copy(cursor, owner, ledger);
 			assertEquals(1, result.size(), "the completed bounded trial must contain the input row");
 			assertTrue(memory.usedBytes() > 0L);
-			LmdbNativeProbeHarness.<List<BindingSet>>blocking().discard(result);
+			if (result instanceof AutoCloseable resource) {
+				try {
+					resource.close();
+				} catch (Exception e) {
+					throw new IllegalStateException(e);
+				}
+			}
 			assertEquals(0L, memory.usedBytes(), "discard must release trial storage before the fallback opens");
 		} finally {
 			owner.close();

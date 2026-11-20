@@ -35,13 +35,15 @@ import org.eclipse.rdf4j.rio.RDFParseException;
  */
 final class FastNTriplesParser {
 
+	/** Conservative heap allowance for all three bounded vocabulary caches, including array/object overhead. */
+	static final long TERM_CACHE_MEMORY_BYTES = 64L * 1024L;
+
 	private static final int BUFFER_BYTES = 4 * 1024 * 1024;
 	private static final int INITIAL_LINE_BYTES = 1024;
 	private static final int MAX_LINE_BYTES = 128 * 1024 * 1024;
 	private static final int MAX_RDF_STAR_DEPTH = 64;
 	private static final byte[] UTF8_BOM = { (byte) 0xef, (byte) 0xbb, (byte) 0xbf };
 	private static final byte[] VERSION_MARKER = "VERSION".getBytes(StandardCharsets.US_ASCII);
-	private static final int MIN_VERSION_DIRECTIVE_LENGTH = VERSION_MARKER.length + 4;
 
 	private static final byte[] XSD_STRING = XMLSchema.STRING.stringValue().getBytes(StandardCharsets.UTF_8);
 	private static final byte[] RDF_LANGSTRING = RDF.LANGSTRING.stringValue().getBytes(StandardCharsets.UTF_8);
@@ -49,7 +51,11 @@ final class FastNTriplesParser {
 
 	private final boolean parseQuads;
 	private final BooleanSupplier cancellationSignal;
+	private final IriCache predicates = new IriCache();
+	private final IriCache graphs = new IriCache();
+	private final IriCache datatypes = new IriCache();
 
+	private byte[] inputBuffer;
 	private byte[] overflowLine = new byte[INITIAL_LINE_BYTES];
 	private int overflowLength;
 	// A literal label remains live while its datatype IRI is parsed.
@@ -90,8 +96,12 @@ final class FastNTriplesParser {
 
 	long parse(InputStream rawInput, StatementSink sink) throws IOException {
 		lineNumber = 0L;
+		overflowLength = 0;
 		InputStream input = decompressingInput(rawInput);
-		byte[] buffer = new byte[BUFFER_BYTES];
+		if (inputBuffer == null) {
+			inputBuffer = new byte[BUFFER_BYTES];
+		}
+		byte[] buffer = inputBuffer;
 		boolean skipLfAfterCr = false;
 		long statements = 0L;
 		int read;
@@ -169,19 +179,20 @@ final class FastNTriplesParser {
 		return statements;
 	}
 
+	/** Returns the absolute number of the last physical line visited by the latest parse or block parse. */
+	long lineNumber() {
+		return lineNumber;
+	}
+
 	/** Counts the line breaks in {@code bytes[offset, offset + length)}, treating a CRLF pair as one. */
 	static long countLines(byte[] bytes, int offset, int length) {
 		int end = offset + length;
 		long lines = 0L;
-		for (int cursor = offset; cursor < end; cursor++) {
-			byte value = bytes[cursor];
-			if (value == '\n') {
-				lines++;
-			} else if (value == '\r') {
-				lines++;
-				if (cursor + 1 < end && bytes[cursor + 1] == '\n') {
-					cursor++;
-				}
+		int cursor = offset;
+		while ((cursor = FastByteScan.findLineBreak(bytes, cursor, end)) < end) {
+			lines++;
+			if (bytes[cursor++] == '\r' && cursor < end && bytes[cursor] == '\n') {
+				cursor++;
 			}
 		}
 		return lines;
@@ -203,7 +214,11 @@ final class FastNTriplesParser {
 		}
 
 		int cursor = skipHorizontalWhitespace(start);
-		if (cursor == end || bytes[cursor] == '#') {
+		if (cursor == end) {
+			return 0;
+		}
+		if (bytes[cursor] == '#') {
+			validateUtf8(bytes, cursor + 1, end - cursor - 1, cursor);
 			return 0;
 		}
 		if (startsWithVersionDirective(cursor)) {
@@ -225,8 +240,11 @@ final class FastNTriplesParser {
 			throw error("Expected '.'", cursor);
 		}
 		cursor = skipHorizontalWhitespace(cursor + 1);
-		if (cursor < end && bytes[cursor] != '#') {
-			throw error("Unexpected content after '.'", cursor);
+		if (cursor < end) {
+			if (bytes[cursor] != '#') {
+				throw error("Unexpected content after '.'", cursor);
+			}
+			validateUtf8(bytes, cursor + 1, end - cursor - 1, cursor);
 		}
 		sink.handleStatement(subject, predicate, object, context);
 		return 1;
@@ -247,7 +265,7 @@ final class FastNTriplesParser {
 
 	private byte[] parsePredicate(int cursor) {
 		if (cursor < lineEnd && activeLine[cursor] == '<') {
-			return parseIri(cursor);
+			return parseCachedIri(cursor, predicates);
 		}
 		throw error("Expected IRI predicate", cursor);
 	}
@@ -274,7 +292,7 @@ final class FastNTriplesParser {
 
 	private byte[] parseGraph(int cursor) {
 		if (activeLine[cursor] == '<') {
-			return parseIri(cursor);
+			return parseCachedIri(cursor, graphs);
 		}
 		if (isBNodeStart(cursor)) {
 			return parseBNode(cursor);
@@ -302,18 +320,83 @@ final class FastNTriplesParser {
 	}
 
 	private byte[] parseIri(int cursor) {
+		return parseIri(cursor, null);
+	}
+
+	private byte[] parseCachedIri(int cursor, IriCache cache) {
+		if (cursor >= lineEnd || activeLine[cursor] != '<') {
+			throw error("Expected '<' to start IRI", cursor);
+		}
+		byte[] cached = cache.last(activeLine, cursor + 1, lineEnd);
+		if (cached != null) {
+			termEnd = cursor + cache.lastLength() + 2;
+			return cached;
+		}
+		return parseIri(cursor, cache);
+	}
+
+	private byte[] parseIri(int cursor, IriCache cache) {
+		if (cursor >= lineEnd || activeLine[cursor] != '<') {
+			throw error("Expected '<' to start IRI", cursor);
+		}
+		int start = cursor + 1;
+		int end = FastByteScan.findIriSpecial(activeLine, start, lineEnd);
+		if (end == lineEnd || activeLine[end] == '\\') {
+			return parseIriSlow(cursor, cache);
+		}
+		int slot = -1;
+		if (cache != null && end - start <= IriCache.MAX_TOKEN_BYTES) {
+			slot = cache.slot(activeLine, start, end - start);
+			byte[] cached = cache.get(slot, activeLine, start, end - start);
+			if (cached != null) {
+				termEnd = end + 1;
+				return cached;
+			}
+		}
+		// Full IRI validation also rejects every forbidden unescaped lexical byte. On malformed input, the scalar
+		// parser preserves the first lexical error and its original column, rather than reporting only the final '>'.
+		if (!FastRdfTermValidation.isAbsoluteIri(activeLine, start, end - start)) {
+			return parseIriSlow(cursor, cache);
+		}
+		termEnd = end + 1;
+		byte[] encoded = CanonicalTermCodec.encodeIri(activeLine, start, end - start);
+		if (slot >= 0) {
+			cache.put(slot, activeLine, start, end - start, false, encoded);
+		}
+		return encoded;
+	}
+
+	private byte[] parseIriSlow(int cursor, IriCache cache) {
+		if (cursor >= lineEnd || activeLine[cursor] != '<') {
+			throw error("Expected '<' to start IRI", cursor);
+		}
 		int start = cursor + 1;
 		boolean escaped = false;
 		for (int i = start; i < lineEnd; i++) {
 			int value = activeLine[i] & 0xff;
 			if (value == '>') {
 				termEnd = i + 1;
-				if (!escaped) {
-					validateUtf8(activeLine, start, i - start, i);
-					return CanonicalTermCodec.encodeIri(activeLine, start, i - start);
+				int slot = -1;
+				if (cache != null && i - start <= IriCache.MAX_TOKEN_BYTES) {
+					slot = cache.slot(activeLine, start, i - start);
+					byte[] cached = cache.get(slot, activeLine, start, i - start);
+					if (cached != null) {
+						return cached;
+					}
 				}
-				int decodedLength = decodeIri(start, i);
-				return CanonicalTermCodec.encodeIri(decodedIri, 0, decodedLength);
+				byte[] encoded;
+				if (!escaped) {
+					validateIri(activeLine, start, i - start, i);
+					encoded = CanonicalTermCodec.encodeIri(activeLine, start, i - start);
+				} else {
+					int decodedLength = decodeIri(start, i);
+					validateIri(decodedIri, 0, decodedLength, i);
+					encoded = CanonicalTermCodec.encodeIri(decodedIri, 0, decodedLength);
+				}
+				if (slot >= 0) {
+					cache.put(slot, activeLine, start, i - start, escaped, encoded);
+				}
+				return encoded;
 			}
 			if (value == '\\') {
 				escaped = true;
@@ -324,6 +407,12 @@ final class FastNTriplesParser {
 			}
 		}
 		throw error("Unterminated IRI", cursor);
+	}
+
+	private void validateIri(byte[] bytes, int offset, int length, int errorColumn) {
+		if (!FastRdfTermValidation.isAbsoluteIri(bytes, offset, length)) {
+			throw error("Invalid absolute IRI", errorColumn);
+		}
 	}
 
 	private byte[] parseBNode(int cursor) {
@@ -339,7 +428,7 @@ final class FastNTriplesParser {
 				width = (int) (decoded & 7);
 			}
 			boolean first = cursor == start;
-			if (!(isPnCharsBase(codePoint) || codePoint == '_' || codePoint == ':'
+			if (!(isPnCharsBase(codePoint) || codePoint == '_'
 					|| codePoint >= '0' && codePoint <= '9'
 					|| !first && (codePoint == '.' || codePoint == '-' || codePoint == 0x00b7
 							|| codePoint >= 0x0300 && codePoint <= 0x036f
@@ -362,17 +451,19 @@ final class FastNTriplesParser {
 
 	private byte[] parseLiteral(int tokenStart) {
 		int start = tokenStart + 1;
-		int cursor = start;
-		while (cursor < lineEnd) {
-			byte value = activeLine[cursor];
-			if (value == '"') {
-				validateUtf8(activeLine, start, cursor - start, cursor);
-				return finishLiteral(start, cursor, activeLine, start, cursor - start);
+		int cursor = FastByteScan.findLiteralSpecial(activeLine, start, lineEnd);
+		int firstNonAscii = cursor;
+		if (cursor < lineEnd && activeLine[cursor] < 0) {
+			cursor = FastByteScan.findQuoteOrBackslash(activeLine, cursor + 1, lineEnd);
+		}
+		if (cursor < lineEnd && activeLine[cursor] == '"') {
+			if (firstNonAscii < cursor) {
+				validateUtf8(activeLine, firstNonAscii, cursor - firstNonAscii, cursor);
 			}
-			if (value == '\\') {
-				return parseEscapedLiteral(tokenStart, start, cursor);
-			}
-			cursor++;
+			return finishLiteral(start, cursor, activeLine, start, cursor - start);
+		}
+		if (cursor < lineEnd && activeLine[cursor] == '\\') {
+			return parseEscapedLiteral(tokenStart, start, cursor);
 		}
 		throw error("Unterminated literal", tokenStart);
 	}
@@ -390,26 +481,8 @@ final class FastNTriplesParser {
 			if (escaped == 'u' || escaped == 'U') {
 				int digits = escaped == 'u' ? 4 : 8;
 				int codePoint = unicodeCodePoint(cursor, digits);
-				int next = cursor + digits + 2;
-				if (isHighSurrogate(codePoint)) {
-					if (next + 1 < lineEnd && activeLine[next] == '\\'
-							&& (activeLine[next + 1] == 'u' || activeLine[next + 1] == 'U')) {
-						int lowDigits = activeLine[next + 1] == 'u' ? 4 : 8;
-						int low = unicodeCodePoint(next, lowDigits);
-						if (isLowSurrogate(low)) {
-							codePoint = Character.toCodePoint((char) codePoint, (char) low);
-							next += lowDigits + 2;
-						} else {
-							codePoint = '?';
-						}
-					} else {
-						codePoint = '?';
-					}
-				} else if (isLowSurrogate(codePoint)) {
-					codePoint = '?';
-				}
 				decodedLength = appendUtf8(decodedLiteral, decodedLength, codePoint);
-				cursor = next;
+				cursor += digits + 2;
 			} else {
 				int decodedByte = stringEscape(escaped);
 				if (decodedByte < 0) {
@@ -419,9 +492,7 @@ final class FastNTriplesParser {
 				cursor += 2;
 			}
 			int runStart = cursor;
-			while (cursor < lineEnd && activeLine[cursor] != '\\' && activeLine[cursor] != '"') {
-				cursor++;
-			}
+			cursor = FastByteScan.findQuoteOrBackslash(activeLine, cursor, lineEnd);
 			int runLength = cursor - runStart;
 			System.arraycopy(activeLine, runStart, decodedLiteral, decodedLength, runLength);
 			decodedLength += runLength;
@@ -434,11 +505,14 @@ final class FastNTriplesParser {
 	}
 
 	private byte[] finishLiteral(int lexicalStart, int lexicalEnd, byte[] label, int labelOffset, int labelLength) {
-		int cursor = lexicalEnd + 1;
+		// STRING_LITERAL_QUOTE, LANG_DIR, '^^' and IRIREF are separate terminals.
+		int cursor = skipHorizontalWhitespace(lexicalEnd + 1);
 		byte[] datatype = XSD_STRING;
 		int datatypeOffset = 0;
 		int datatypeLength = datatype.length;
 		byte[] language = null;
+		int languageOffset = 0;
+		int languageLength = 0;
 		int direction = 0;
 
 		if (cursor < lineEnd && activeLine[cursor] == '@') {
@@ -467,27 +541,30 @@ final class FastNTriplesParser {
 				throw error("Expected language tag before base direction", lexicalStart);
 			}
 			validateLanguageTag(languageStart, languageEnd);
-			language = lowercaseAscii(activeLine, languageStart, languageEnd - languageStart);
+			language = activeLine;
+			languageOffset = languageStart;
+			languageLength = languageEnd - languageStart;
 		} else if (cursor + 1 < lineEnd && activeLine[cursor] == '^' && activeLine[cursor + 1] == '^') {
-			byte[] datatypeIri = parseIri(cursor + 2);
+			byte[] datatypeIri = parseCachedIri(skipHorizontalWhitespace(cursor + 2), datatypes);
 			datatype = datatypeIri;
 			datatypeOffset = 1 + Integer.BYTES;
 			datatypeLength = CanonicalTermCodec.lexicalLength(datatypeIri);
+			if (Arrays.equals(datatype, datatypeOffset, datatypeOffset + datatypeLength,
+					RDF_LANGSTRING, 0, RDF_LANGSTRING.length)
+					|| Arrays.equals(datatype, datatypeOffset, datatypeOffset + datatypeLength,
+							RDF_DIRLANGSTRING, 0, RDF_DIRLANGSTRING.length)) {
+				throw error("Language-string datatypes require a language tag and any required base direction", cursor);
+			}
 			cursor = termEnd;
 		}
 		termEnd = cursor;
 		return CanonicalTermCodec.encodeLiteral(label, labelOffset, labelLength, datatype, datatypeOffset,
-				datatypeLength, language, 0, language == null ? 0 : language.length, direction);
+				datatypeLength, language, languageOffset, languageLength, direction);
 	}
 
 	private void validateLanguageTag(int start, int end) {
-		if (start >= end || !isAsciiLetter(activeLine[start])) {
+		if (!FastRdfTermValidation.isWellFormedLanguageTag(activeLine, start, end - start)) {
 			throw error("Invalid language tag", start);
-		}
-		for (int cursor = start + 1; cursor + 1 < end; cursor++) {
-			if (activeLine[cursor] == '-' && activeLine[cursor + 1] == '-') {
-				throw error("Invalid base direction", cursor);
-			}
 		}
 	}
 
@@ -506,14 +583,10 @@ final class FastNTriplesParser {
 			if (cursor < end) {
 				int digits = activeLine[cursor + 1] == 'u' ? 4 : 8;
 				int codePoint = unicodeCodePoint(cursor, digits);
-				if (isSurrogate(codePoint)) {
-					throw error("Invalid Unicode escape sequence", cursor);
-				}
 				output = appendUtf8(decodedIri, output, codePoint);
 				cursor += digits + 2;
 			}
 		}
-		validateUtf8(decodedIri, 0, output, end);
 		return output;
 	}
 
@@ -538,7 +611,7 @@ final class FastNTriplesParser {
 			}
 			codePoint = codePoint << 4 | value;
 		}
-		if (codePoint > Character.MAX_CODE_POINT) {
+		if (codePoint > Character.MAX_CODE_POINT || isSurrogate((int) codePoint)) {
 			throw error("Invalid Unicode escape sequence", cursor);
 		}
 		return (int) codePoint;
@@ -546,14 +619,6 @@ final class FastNTriplesParser {
 
 	private static boolean isSurrogate(int codePoint) {
 		return codePoint >= Character.MIN_SURROGATE && codePoint <= Character.MAX_SURROGATE;
-	}
-
-	private static boolean isHighSurrogate(int codePoint) {
-		return codePoint >= Character.MIN_HIGH_SURROGATE && codePoint <= Character.MAX_HIGH_SURROGATE;
-	}
-
-	private static boolean isLowSurrogate(int codePoint) {
-		return codePoint >= Character.MIN_LOW_SURROGATE && codePoint <= Character.MAX_LOW_SURROGATE;
 	}
 
 	private void appendRange(byte[] source, int offset, int length) {
@@ -586,8 +651,7 @@ final class FastNTriplesParser {
 	}
 
 	private boolean startsWithVersionDirective(int cursor) {
-		if (lineEnd - cursor < MIN_VERSION_DIRECTIVE_LENGTH
-				|| cursor + VERSION_MARKER.length >= lineEnd) {
+		if (lineEnd - cursor < VERSION_MARKER.length) {
 			return false;
 		}
 		for (int i = 0; i < VERSION_MARKER.length; i++) {
@@ -595,26 +659,47 @@ final class FastNTriplesParser {
 				return false;
 			}
 		}
-		byte next = activeLine[cursor + VERSION_MARKER.length];
-		return next == ' ' || next == '\t';
+		return true;
 	}
 
-	/** Validates the complete quoted directive using the same grammar accepted by Rio's N-Triples parser. */
+	/** Validates VERSION followed by STRING_LITERAL_QUOTE and optional horizontal whitespace or a comment. */
 	private void parseVersionDirective(int cursor) {
-		cursor += VERSION_MARKER.length + 1;
-		if (cursor >= lineEnd || (activeLine[cursor] != '"' && activeLine[cursor] != '\'')) {
+		cursor = skipHorizontalWhitespace(cursor + VERSION_MARKER.length);
+		if (cursor >= lineEnd || activeLine[cursor] != '"') {
 			throw error("Expected opening quote for version string", cursor);
 		}
-		byte quote = activeLine[cursor++];
-		while (cursor < lineEnd && activeLine[cursor] != quote) {
-			cursor++;
+		int start = ++cursor;
+		while (cursor < lineEnd) {
+			int value = activeLine[cursor] & 0xff;
+			if (value == '"') {
+				validateUtf8(activeLine, start, cursor - start, cursor);
+				cursor = skipHorizontalWhitespace(cursor + 1);
+				if (cursor < lineEnd) {
+					if (activeLine[cursor] != '#') {
+						throw error("Unexpected content after version string", cursor);
+					}
+					validateUtf8(activeLine, cursor + 1, lineEnd - cursor - 1, cursor);
+				}
+				return;
+			}
+			if (value == '\\') {
+				if (cursor + 1 >= lineEnd) {
+					throw error("Incomplete escape sequence", cursor);
+				}
+				int escaped = activeLine[cursor + 1] & 0xff;
+				if (escaped == 'u' || escaped == 'U') {
+					cursor = validateUnicodeEscape(cursor) + 1;
+				} else {
+					if (stringEscape(escaped) < 0) {
+						throw error("Invalid escape sequence", cursor);
+					}
+					cursor += 2;
+				}
+			} else {
+				cursor++;
+			}
 		}
-		if (cursor >= lineEnd) {
-			throw error("Unterminated version string", lineEnd);
-		}
-		if (cursor != lineEnd - 1) {
-			throw error("Unexpected content after version string", cursor);
-		}
+		throw error("Unterminated version string", lineEnd);
 	}
 
 	private boolean isBNodeStart(int cursor) {
@@ -623,16 +708,13 @@ final class FastNTriplesParser {
 
 	private boolean endsWithBaseDirection(int start, int end, char first, char second, char third) {
 		return end - start >= 5 && activeLine[end - 5] == '-' && activeLine[end - 4] == '-'
-				&& asciiLower(activeLine[end - 3]) == first
-				&& asciiLower(activeLine[end - 2]) == second
-				&& asciiLower(activeLine[end - 1]) == third;
+				&& activeLine[end - 3] == first
+				&& activeLine[end - 2] == second
+				&& activeLine[end - 1] == third;
 	}
 
 	private static int findLineBreak(byte[] bytes, int cursor, int end) {
-		while (cursor < end && bytes[cursor] != '\n' && bytes[cursor] != '\r') {
-			cursor++;
-		}
-		return cursor;
+		return FastByteScan.findLineBreak(bytes, cursor, end);
 	}
 
 	private static boolean isPnCharsBase(int c) {
@@ -649,24 +731,6 @@ final class FastNTriplesParser {
 	private static boolean isLanguageByte(byte value) {
 		int c = value & 0xff;
 		return c >= 'a' && c <= 'z' || c >= 'A' && c <= 'Z' || c >= '0' && c <= '9' || c == '-';
-	}
-
-	private static boolean isAsciiLetter(byte value) {
-		int c = value & 0xff;
-		return c >= 'a' && c <= 'z' || c >= 'A' && c <= 'Z';
-	}
-
-	private static int asciiLower(byte value) {
-		int c = value & 0xff;
-		return c >= 'A' && c <= 'Z' ? c + ('a' - 'A') : c;
-	}
-
-	private static byte[] lowercaseAscii(byte[] source, int offset, int length) {
-		byte[] lower = Arrays.copyOfRange(source, offset, offset + length);
-		for (int i = 0; i < lower.length; i++) {
-			lower[i] = (byte) asciiLower(lower[i]);
-		}
-		return lower;
 	}
 
 	private static int hexValue(byte value) {
@@ -722,11 +786,7 @@ final class FastNTriplesParser {
 
 	private void validateUtf8(byte[] bytes, int offset, int length, int errorColumn) {
 		int end = offset + length;
-		while (offset < end) {
-			if (bytes[offset] >= 0) {
-				offset++;
-				continue;
-			}
+		while ((offset = FastByteScan.skipAscii(bytes, offset, end)) < end) {
 			offset += (int) (utf8CodePoint(bytes, offset, end, errorColumn) & 7);
 		}
 	}
@@ -768,7 +828,7 @@ final class FastNTriplesParser {
 	/** Wraps {@code input} in a gzip decoder when it starts with the gzip magic bytes. */
 	static InputStream decompressingInput(InputStream input) throws IOException {
 		BufferedInputStream buffered = input instanceof BufferedInputStream existing ? existing
-				: new BufferedInputStream(input, BUFFER_BYTES);
+				: new BufferedInputStream(input, 8192);
 		buffered.mark(2);
 		int first = buffered.read();
 		int second = buffered.read();
@@ -788,6 +848,73 @@ final class FastNTriplesParser {
 
 	@FunctionalInterface
 	interface StatementSink {
+		/**
+		 * Receives immutable canonical bytes. Arrays can be retained and may be shared between statements; the sink
+		 * must not modify them. The parser never modifies an emitted array.
+		 */
 		void handleStatement(byte[] subject, byte[] predicate, byte[] object, byte[] context) throws IOException;
+	}
+
+	/**
+	 * Small, per-role vocabulary cache. Only fully validated IRIs enter it, and every hit compares the entire raw
+	 * token. Unescaped keys share the immutable canonical array; mutable input and decoding buffers are never retained.
+	 */
+	private static final class IriCache {
+
+		private static final int CAPACITY = 32;
+		private static final int SLOT_SHIFT = Long.SIZE - Integer.numberOfTrailingZeros(CAPACITY);
+		private static final int MAX_TOKEN_BYTES = 256;
+		private final byte[][] raw = new byte[CAPACITY][];
+		private final byte[][] canonical = new byte[CAPACITY][];
+		private final int[] offsets = new int[CAPACITY];
+		private int lastSlot = -1;
+
+		byte[] last(byte[] bytes, int start, int end) {
+			if (lastSlot < 0) {
+				return null;
+			}
+			int length = lastLength();
+			if (length >= end - start || bytes[start + length] != '>') {
+				return null;
+			}
+			return get(lastSlot, bytes, start, length);
+		}
+
+		int lastLength() {
+			return raw[lastSlot].length - offsets[lastSlot];
+		}
+
+		int slot(byte[] bytes, int start, int length) {
+			long fingerprint = length;
+			if (length >= Long.BYTES) {
+				fingerprint ^= FastByteScan.word(bytes, start)
+						^ Long.rotateLeft(FastByteScan.word(bytes, start + length - Long.BYTES), 17);
+			} else {
+				for (int i = 0; i < length; i++) {
+					fingerprint = (fingerprint << 8) ^ (bytes[start + i] & 0xffL);
+				}
+			}
+			fingerprint ^= fingerprint >>> 33;
+			fingerprint *= 0xff51afd7ed558ccdL;
+			// The high product bits mix variation across the fingerprint without an additional XOR fold.
+			return (int) (fingerprint >>> SLOT_SHIFT);
+		}
+
+		byte[] get(int slot, byte[] bytes, int start, int length) {
+			byte[] key = raw[slot];
+			if (key != null && key.length - offsets[slot] == length
+					&& Arrays.equals(key, offsets[slot], key.length, bytes, start, start + length)) {
+				lastSlot = slot;
+				return canonical[slot];
+			}
+			return null;
+		}
+
+		void put(int slot, byte[] bytes, int start, int length, boolean escaped, byte[] encoded) {
+			raw[slot] = escaped ? Arrays.copyOfRange(bytes, start, start + length) : encoded;
+			offsets[slot] = escaped ? 0 : 1 + Integer.BYTES;
+			canonical[slot] = encoded;
+			lastSlot = slot;
+		}
 	}
 }

@@ -61,7 +61,7 @@ test.beforeAll(async ({ request }) => {
 		});
 		expect([200, 201, 204]).toContain(response.status()); created.push(id);
 	}
-	const relations = Array.from({ length: 42 }, (_, index) => [
+	const relations = Array.from({ length: 102 }, (_, index) => [
 		`<urn:spacing:Child-${index}> <http://www.w3.org/2000/01/rdf-schema#subClassOf> <urn:spacing:Class> .`,
 		`<urn:spacing:Class> <http://www.w3.org/2000/01/rdf-schema#subClassOf> <urn:spacing:Parent-${index}> .`,
 		`<urn:spacing:property-${index}> <http://www.w3.org/2000/01/rdf-schema#domain> <urn:spacing:Class> .`,
@@ -258,6 +258,45 @@ async function navigation(page, info, state) {
 	}
 }
 
+async function exploreSectionPages(page, key, pageSize, totalRows) {
+	const section = page.locator(`[data-explore-section="${key}"]`);
+	await expect(section, `${key} is an expected populated Explore section`).toBeVisible();
+	const pager = section.locator('.workbench-window-controls');
+	const status = pager.getByRole('status');
+	const previous = pager.getByRole('button', { name: 'Previous', exact: true });
+	const next = pager.getByRole('button', { name: 'Next', exact: true });
+	const expectWindow = async start => {
+		const end = Math.min(start + pageSize, totalRows);
+		await expect(status).toHaveText(`Showing ${start + 1}–${end} of ${totalRows} cached`);
+		if (start === 0) {
+			await expect(previous).toBeDisabled();
+		} else {
+			await expect(previous).toBeEnabled();
+		}
+		if (end < totalRows) {
+			await expect(next).toBeEnabled();
+		} else {
+			await expect(next).toBeDisabled();
+		}
+	};
+	await expectWindow(0);
+	for (let start = 0; start < totalRows - pageSize; start += pageSize) {
+		await next.click();
+		await expectWindow(start + pageSize);
+	}
+	for (let start = Math.floor((totalRows - 1) / pageSize) * pageSize; start > 0; start -= pageSize) {
+		await previous.click();
+		await expectWindow(start - pageSize);
+	}
+}
+
+const EXPLORE_PAGED_SECTIONS = {
+	Class: [['superClasses', 40, 102], ['subClasses', 40, 102], ['properties', 40, 102],
+		['outgoing', 100, 102], ['incoming', 100, 204]],
+	property: [['superProperties', 40, 102], ['subProperties', 40, 102], ['domain', 40, 102], ['range', 40, 102],
+		['outgoing', 100, 306], ['incoming', 100, 102]]
+};
+
 for (const variant of VARIANTS) {
 	test(`route and creation controls ${variant.width} ${variant.theme}`, async ({ page }, info) => {
 		for (const route of ROUTES) {
@@ -295,25 +334,10 @@ for (const variant of VARIANTS) {
 		await capture(page, info, 'namespaces', 'filtered');
 		for (const resource of ['Class', 'property']) {
 			await open(page, `explore?resource=${encodeURIComponent(`<urn:spacing:${resource}>`)}`, variant);
-			await page.locator('#explore-result-options-toggle').click(); await page.locator('#limit_explore').selectOption('0');
-			await page.locator('#resource').press('Enter');
-			// The form shows the next page in place once its model arrived; until then the previous page (default limit)
-			// stays on screen with its own paging buttons, so wait for the new page before using them.
-			await waitForRoute(page, 'explore', { url: /[?&]limit_explore=0(&|$)/ });
-			// The open Display pane lies over the page; close it before using the group pagers under it.
-			await page.locator('#explore-result-options-toggle').click();
-			await expect(page.locator('#explore-result-options-panel')).toBeHidden();
-			await expect(page.locator('[data-workbench-explore-action=next]').first()).toBeVisible();
-			await capture(page, info, 'explore', `${resource}-all-groups`);
-			const groups = await page.locator('[data-workbench-explore-action=next]').evaluateAll(elements =>
-				elements.map(element => element.getAttribute('data-workbench-explore-group')));
-			for (const group of groups) {
-				const previous = page.locator(`[data-workbench-explore-group="${group}"][data-workbench-explore-action=previous]`);
-				await page.locator(`[data-workbench-explore-group="${group}"][data-workbench-explore-action=next]`).click();
-				// A group's next page renders after its rows are read; Previous is enabled once it is shown.
-				await expect(previous).toBeEnabled();
-				await capture(page, info, 'explore', `${group}-next`);
-				await previous.click();
+			await expect(page.locator('[data-explore-section]')).not.toHaveCount(0);
+			await capture(page, info, 'explore', `${resource}-first-pages`);
+			for (const [section, pageSize, totalRows] of EXPLORE_PAGED_SECTIONS[resource]) {
+				await exploreSectionPages(page, section, pageSize, totalRows);
 			}
 		}
 		await open(page, 'query', variant); await navigation(page, info, 'configured');

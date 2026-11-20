@@ -190,6 +190,16 @@ final class NativeCancellationToken implements KernelCancellation.QueryCancellat
 		}
 	}
 
+	/** The token entered on this thread, or null when no evaluation is active here. */
+	static NativeCancellationToken current() {
+		return CURRENT.get();
+	}
+
+	/** Worker-side attach: a null token is a no-op scope, so callers need no conditional. */
+	static Scope inherit(NativeCancellationToken token) {
+		return token == null ? Scope.UNCHANGED : token.enter();
+	}
+
 	static void checkCurrent() {
 		NativeCancellationToken current = CURRENT.get();
 		if (current != null) {

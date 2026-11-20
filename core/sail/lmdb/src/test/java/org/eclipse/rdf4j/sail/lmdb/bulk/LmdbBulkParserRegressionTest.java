@@ -149,8 +149,22 @@ class LmdbBulkParserRegressionTest {
 	}
 
 	@Test
-	void scopesRdf11ColonBlankNodesIndependentlyAcrossParallelFiles() throws IOException {
-		assertScopedFiles(":a.b:c:");
+	void rejectsRdf12ColonBlankNodesAcrossParallelFilesWithoutPublishing() throws IOException {
+		Path first = temporaryDirectory.resolve("valid-blank-node.nq");
+		Path second = temporaryDirectory.resolve("invalid-blank-node.nq");
+		Files.writeString(first, "_:a.b <urn:p> _:a.b _:a.b .\n", UTF_8);
+		Files.writeString(second, "_:a.b <urn:p> _:a.b _:a:b .\n", UTF_8);
+		List<LmdbBulkLoader.PathInput> inputs = List.of(
+				new LmdbBulkLoader.PathInput(first, RDFFormat.NQUADS, "urn:test:"),
+				new LmdbBulkLoader.PathInput(second, RDFFormat.NQUADS, "urn:test:"));
+		for (LmdbBulkLoader.ParserMode mode : List.of(LmdbBulkLoader.ParserMode.AUTO,
+				LmdbBulkLoader.ParserMode.FAST)) {
+			for (int workers : List.of(1, 3)) {
+				Path target = target("colon-blank-node", RDFFormat.NQUADS, mode, workers);
+				assertThrows(RDFParseException.class, () -> loader(target, mode, workers).load(inputs));
+				assertTrue(Files.notExists(target), mode + " must not publish malformed input");
+			}
+		}
 	}
 
 	@Test
@@ -199,37 +213,40 @@ class LmdbBulkParserRegressionTest {
 	}
 
 	@Test
-	void validatesVersionDirectivesAtTheBulkLoaderBoundaryLikeRio() throws Exception {
+	void validatesCanonicalVersionDirectivesAtTheBulkLoaderBoundary() throws Exception {
 		String statement = "<urn:s> <urn:p> <urn:o> .\n";
 		List<String> malformedDirectives = List.of("VERSION garbage", "VERSION \"1.2");
 		for (int index = 0; index < malformedDirectives.size(); index++) {
 			String inputText = malformedDirectives.get(index) + "\n" + statement;
-			for (LmdbBulkLoader.ParserMode mode : List.of(LmdbBulkLoader.ParserMode.AUTO,
-					LmdbBulkLoader.ParserMode.RIO)) {
-				Path input = temporaryDirectory.resolve("malformed-version-" + index + "-" + mode + ".nt");
-				Path target = target("malformed-version-" + index, RDFFormat.NTRIPLES, mode, 1);
-				Files.writeString(input, inputText, UTF_8);
-				LmdbBulkLoader bulkLoader = loader(target, mode, 1);
+			for (LmdbBulkLoader.ParserMode mode : LmdbBulkLoader.ParserMode.values()) {
+				for (int workers : List.of(1, 3)) {
+					Path input = temporaryDirectory
+							.resolve("malformed-version-" + index + "-" + mode + "-" + workers + ".nt");
+					Path target = target("malformed-version-" + index, RDFFormat.NTRIPLES, mode, workers);
+					Files.writeString(input, inputText, UTF_8);
+					LmdbBulkLoader bulkLoader = loader(target, mode, workers);
 
-				assertThrows(RDFParseException.class,
-						() -> bulkLoader.load(List.of(
-								new LmdbBulkLoader.PathInput(input, RDFFormat.NTRIPLES, "urn:test:"))),
-						mode + ": " + malformedDirectives.get(index));
-				assertTrue(Files.notExists(target), mode + " must not publish malformed input");
+					assertThrows(RDFParseException.class,
+							() -> bulkLoader.load(List.of(
+									new LmdbBulkLoader.PathInput(input, RDFFormat.NTRIPLES, "urn:test:"))),
+							mode + ": " + malformedDirectives.get(index));
+					assertTrue(Files.notExists(target), mode + " must not publish malformed input");
+				}
 			}
 		}
 
 		String validInput = "VERSION \"1.2\"\n" + statement;
 		Set<Statement> expected = Set.of(VF.createStatement(SUBJECT, PREDICATE, VF.createIRI("urn:o")));
-		for (LmdbBulkLoader.ParserMode mode : List.of(LmdbBulkLoader.ParserMode.AUTO,
-				LmdbBulkLoader.ParserMode.RIO)) {
-			Path input = temporaryDirectory.resolve("valid-version-" + mode + ".nt");
-			Path target = target("valid-version", RDFFormat.NTRIPLES, mode, 1);
-			Files.writeString(input, validInput, UTF_8);
-			LmdbBulkLoader.Result result = loader(target, mode, 1)
-					.load(List.of(new LmdbBulkLoader.PathInput(input, RDFFormat.NTRIPLES, "urn:test:")));
-			assertEquals(expected.size(), result.parsedStatements(), mode.toString());
-			assertEquals(expected, read(target), mode.toString());
+		for (LmdbBulkLoader.ParserMode mode : LmdbBulkLoader.ParserMode.values()) {
+			for (int workers : List.of(1, 3)) {
+				Path input = temporaryDirectory.resolve("valid-version-" + mode + "-" + workers + ".nt");
+				Path target = target("valid-version", RDFFormat.NTRIPLES, mode, workers);
+				Files.writeString(input, validInput, UTF_8);
+				LmdbBulkLoader.Result result = loader(target, mode, workers)
+						.load(List.of(new LmdbBulkLoader.PathInput(input, RDFFormat.NTRIPLES, "urn:test:")));
+				assertEquals(expected.size(), result.parsedStatements(), mode.toString());
+				assertEquals(expected, read(target), mode.toString());
+			}
 		}
 	}
 

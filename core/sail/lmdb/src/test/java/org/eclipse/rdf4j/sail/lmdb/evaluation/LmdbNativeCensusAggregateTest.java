@@ -38,6 +38,7 @@ import org.eclipse.rdf4j.common.transaction.IsolationLevels;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Literal;
 import org.eclipse.rdf4j.model.ValueFactory;
+import org.eclipse.rdf4j.model.vocabulary.RDF4J;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.Dataset;
 import org.eclipse.rdf4j.query.QueryLanguage;
@@ -56,6 +57,7 @@ import org.eclipse.rdf4j.query.impl.EmptyBindingSet;
 import org.eclipse.rdf4j.query.parser.QueryParserUtil;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
 import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
+import org.eclipse.rdf4j.repository.sail.SailTupleQuery;
 import org.eclipse.rdf4j.sail.base.SailDatasetTripleTermSource;
 import org.eclipse.rdf4j.sail.lmdb.AdjacencyEngagementTestAccess;
 import org.eclipse.rdf4j.sail.lmdb.LmdbQueryMemoryManager;
@@ -173,11 +175,12 @@ class LmdbNativeCensusAggregateTest {
 				"iriObjectQuads", 2L, "literalObjectQuads", 1L, "blankObjectQuads", 2L,
 				"otherObjectQuads", 1L, "blankSubjectQuads", 1L));
 		System.setProperty(NATIVE, "true");
+		// the six-quad store prices the sequential path below the census; this test is about the census
 		for (String mode : List.of("compiled", "interpreted", "disabled")) {
 			System.setProperty(JANINO, Boolean.toString(mode.equals("compiled")));
 			System.setProperty(INTERPRETER, Boolean.toString(!mode.equals("disabled")));
-			assertThat(rows(CENSUS)).as(mode).containsExactlyElementsOf(expected);
-			String telemetry = telemetry(CENSUS);
+			assertThat(rows(CENSUS, LmdbNativeCensusAggregate.PATH)).as(mode).containsExactlyElementsOf(expected);
+			String telemetry = telemetry(CENSUS, LmdbNativeCensusAggregate.PATH);
 			assertThat(telemetry).as(mode).contains("nativeExecutionPath=adjacencyCensus");
 			assertThat(telemetry).as(mode).doesNotContain("ENCOUNTER_ORDER_REQUIRES_LMDB");
 		}
@@ -598,6 +601,82 @@ class LmdbNativeCensusAggregateTest {
 	}
 
 	@Test
+	void defaultGraphCountIsAnsweredByTheCensus() {
+		// GRAPH rdf4j:nil names the default (null) context: the Workbench's named-graph page counts it this way and
+		// fell to a full scan (6.8 s on a 14.6M-quad store, 2026-11-03) because no specialist accepted the shape
+		String count = "SELECT (COUNT(*) AS ?quads) (COUNT(DISTINCT ?s) AS ?subjects) "
+				+ "WHERE { GRAPH <" + RDF4J.NIL + "> { ?s ?p ?o } }";
+		assertParity(count, LmdbNativeCensusAggregate.PATH);
+		assertThat(telemetry(count, LmdbNativeCensusAggregate.PATH)).contains("nativeExecutionPath=adjacencyCensus");
+		// and a named graph by constant still counts only that graph
+		String named = "SELECT (COUNT(*) AS ?quads) WHERE { GRAPH <" + EX + "g1> { ?s ?p ?o } }";
+		assertParity(named, LmdbNativeCensusAggregate.PATH);
+	}
+
+	@Test
+	void countOnlyGraphCountsComeFromTheContextMetadata() {
+		// COUNT(*) over one constant graph (the default graph included) is a lookup in the store's per-context
+		// counts: no plane or page is visited. With no named graphs that entry is the whole store.
+		for (String graph : new String[] { RDF4J.NIL.stringValue(), EX + "g1", EX + "g2" }) {
+			String count = "SELECT (COUNT(*) AS ?quads) WHERE { GRAPH <" + graph + "> { ?s ?p ?o } }";
+			assertParity(count, LmdbNativeCensusAggregate.PATH);
+			// a visited page would publish its counter; the metadata read is the only adjacency access
+			assertThat(telemetry(count, LmdbNativeCensusAggregate.PATH)).as(graph)
+					.contains("nativeExecutionPath=adjacencyCensus")
+					.contains("nativeAdjacencyPlaneMetadataReadsActual=1")
+					.doesNotContain("nativeAdjacencyPagesVisitedActual=");
+		}
+	}
+
+	@Test
+	void graphCountOverAMixedContextCatalogDoesNotClaimAConstantTimeLookup() {
+		// The context catalog combines both planes, so with inferred statements present it cannot answer an explicit
+		// count. What runs then has to be the page walk the recipe priced, not a two-unit metadata read.
+		try (LmdbStoreConnection connection = (LmdbStoreConnection) store.getConnection()) {
+			ValueFactory vf = store.getValueFactory();
+			connection.begin();
+			connection.addInferredStatement(vf.createBNode("inferred"), vf.createIRI(EX + "p2"),
+					vf.createLiteral("inferred"), vf.createIRI(EX + "g1"));
+			connection.commit();
+		}
+		assertThat(AdjacencyEngagementTestAccess.buildNow(store)).isTrue();
+		String count = "SELECT (COUNT(*) AS ?quads) WHERE { GRAPH <" + EX + "g1> { ?s ?p ?o } }";
+		try (SailRepositoryConnection connection = repository.getConnection()) {
+			assertParity(connection, count, false, LmdbNativeCensusAggregate.PATH);
+			SailTupleQuery prepared = (SailTupleQuery) connection.prepareTupleQuery(count);
+			prepared.setIncludeInferred(false);
+			prepared.setForcedLmdbExecutionStrategy(LmdbNativeCensusAggregate.PATH);
+			assertThat(prepared.explain(Explanation.Level.Telemetry).toString())
+					.contains("nativeExecutionPath=adjacencyCensus")
+					.doesNotContain("nativeAdjacencyPlaneMetadataReadsActual=1")
+					.contains("nativeAdjacencyPagesVisitedActual=");
+		}
+	}
+
+	@Test
+	void globalCensusIsSelectedUnforcedWhenHeadersAndMetadataAnswerIt() {
+		// 24000 quads on homogeneous pages: the census answers COUNT(DISTINCT ?s/?o) from node metadata and the rest
+		// from page headers, so it must out-price the sequential path instead of quoting a payload decode per quad
+		try (SailRepositoryConnection connection = repository.getConnection()) {
+			ValueFactory vf = connection.getValueFactory();
+			connection.begin();
+			connection.clear();
+			IRI p = vf.createIRI(EX + "p");
+			IRI g = vf.createIRI(EX + "g");
+			for (int i = 0; i < 12_000; i++) {
+				connection.add(vf.createIRI(EX + i), p, vf.createIRI(EX + (i + 1)), g);
+				connection.add(vf.createIRI(EX + i), vf.createIRI(EX + "p2"), vf.createIRI(EX + (i + 1)), g);
+			}
+			connection.commit();
+		}
+		assertThat(AdjacencyEngagementTestAccess.buildNow(store)).isTrue();
+		// measured 2026-11-03 on this fixture (parity run, generic engine included): census 55 to 111 ms,
+		// nestedLoop 580 to 755 ms; on the 14.6M-quad theme store 0.24 s against 16 s for the kernel
+		assertParity(CENSUS);
+		assertThat(telemetry(CENSUS)).contains("nativeExecutionPath=adjacencyCensus");
+	}
+
+	@Test
 	void homogeneousPagesUseCountsAndUnavailableProjectionsUseExactDomains() {
 		try (SailRepositoryConnection connection = repository.getConnection()) {
 			ValueFactory vf = connection.getValueFactory();
@@ -613,8 +692,9 @@ class LmdbNativeCensusAggregateTest {
 			connection.commit();
 		}
 		assertThat(AdjacencyEngagementTestAccess.buildNow(store)).isTrue();
-		assertParity(CENSUS);
-		String metadata = telemetry(CENSUS);
+		// the census quote's ceiling stays above the sequential path's on this store; the test is about the census
+		assertParity(CENSUS, LmdbNativeCensusAggregate.PATH);
+		String metadata = telemetry(CENSUS, LmdbNativeCensusAggregate.PATH);
 		assertThat(metadata).contains("nativeExecutionPath=adjacencyCensus", "decoded=root:0,neighbor:0,context:0");
 		try (SailRepositoryConnection connection = repository.getConnection()) {
 			ValueFactory vf = connection.getValueFactory();
@@ -624,16 +704,16 @@ class LmdbNativeCensusAggregateTest {
 			connection.commit();
 		}
 		assertThat(AdjacencyEngagementTestAccess.buildNow(store)).isTrue();
-		assertParity(CENSUS);
-		String corrected = telemetry(CENSUS);
+		assertParity(CENSUS, LmdbNativeCensusAggregate.PATH);
+		String corrected = telemetry(CENSUS, LmdbNativeCensusAggregate.PATH);
 		var decodes = Pattern.compile("decoded=root:(\\d+),neighbor:(\\d+),context:(\\d+)")
 				.matcher(corrected);
 		assertThat(decodes.find()).isTrue();
 		assertThat(Long.parseLong(decodes.group(2))).as("only excluded or mixed pages need neighbor decoding")
 				.isLessThan(2_000L);
 		System.setProperty(AdjacencyEngagementTestAccess.NODE_PREDICATE_SERVE_PROPERTY, "false");
-		assertParity(CENSUS);
-		assertThat(telemetry(CENSUS)).contains("nativeExecutionPath=adjacencyCensus")
+		assertParity(CENSUS, LmdbNativeCensusAggregate.PATH);
+		assertThat(telemetry(CENSUS, LmdbNativeCensusAggregate.PATH)).contains("nativeExecutionPath=adjacencyCensus")
 				.doesNotContain("decoded=root:0,neighbor:0,context:0");
 	}
 
@@ -735,9 +815,11 @@ class LmdbNativeCensusAggregateTest {
 		}
 		assertThat(AdjacencyEngagementTestAccess.buildNow(store)).isTrue();
 		String query = CENSUS;
-		assertParity(query);
-		assertThat(((Literal) rows(query).get(0).getValue("objects")).longValue()).isEqualTo(2048);
-		String explanation = telemetry(query);
+		// the census quote's ceiling stays above the sequential path's on this store; the test is about the census
+		assertParity(query, LmdbNativeCensusAggregate.PATH);
+		assertThat(((Literal) rows(query, LmdbNativeCensusAggregate.PATH).get(0).getValue("objects")).longValue())
+				.isEqualTo(2048);
+		String explanation = telemetry(query, LmdbNativeCensusAggregate.PATH);
 		assertThat(explanation).contains("nativeExecutionPath=adjacencyCensus");
 		var decoded = Pattern.compile("decoded=root:(\\d+),neighbor:(\\d+),context:(\\d+)").matcher(explanation);
 		assertThat(decoded.find()).isTrue();
@@ -746,8 +828,13 @@ class LmdbNativeCensusAggregateTest {
 	}
 
 	private void assertParity(String query) {
+		assertParity(query, null);
+	}
+
+	/** Checks native parity with the generic engine, forcing one GROUP BY operator when the test is about it. */
+	private void assertParity(String query, String forcedStrategy) {
 		try (SailRepositoryConnection connection = repository.getConnection()) {
-			assertParity(connection, query);
+			assertParity(connection, query, true, forcedStrategy);
 		}
 	}
 
@@ -756,13 +843,18 @@ class LmdbNativeCensusAggregateTest {
 	}
 
 	private void assertParity(SailRepositoryConnection connection, String query, boolean includeInferred) {
+		assertParity(connection, query, includeInferred, null);
+	}
+
+	private void assertParity(SailRepositoryConnection connection, String query, boolean includeInferred,
+			String forcedStrategy) {
 		System.setProperty(NATIVE, "false");
 		List<BindingSet> expected = rows(connection, query, includeInferred);
 		System.setProperty(NATIVE, "true");
 		for (String mode : List.of("compiled", "interpreted", "disabled")) {
 			System.setProperty(JANINO, Boolean.toString(mode.equals("compiled")));
 			System.setProperty(INTERPRETER, Boolean.toString(!mode.equals("disabled")));
-			assertThat(rows(connection, query, includeInferred)).as(mode + ": " + query)
+			assertThat(rows(connection, query, includeInferred, forcedStrategy)).as(mode + ": " + query)
 					.containsExactlyInAnyOrderElementsOf(expected);
 		}
 	}
@@ -772,8 +864,16 @@ class LmdbNativeCensusAggregateTest {
 	}
 
 	private List<BindingSet> rows(SailRepositoryConnection connection, String query, boolean includeInferred) {
-		var prepared = connection.prepareTupleQuery(query);
+		return rows(connection, query, includeInferred, null);
+	}
+
+	private List<BindingSet> rows(SailRepositoryConnection connection, String query, boolean includeInferred,
+			String forcedStrategy) {
+		SailTupleQuery prepared = (SailTupleQuery) connection.prepareTupleQuery(query);
 		prepared.setIncludeInferred(includeInferred);
+		if (forcedStrategy != null) {
+			prepared.setForcedLmdbExecutionStrategy(forcedStrategy);
+		}
 		return QueryResults.asList(prepared.evaluate());
 	}
 
@@ -784,14 +884,26 @@ class LmdbNativeCensusAggregateTest {
 	}
 
 	private List<BindingSet> rows(String query) {
+		return rows(query, null);
+	}
+
+	private List<BindingSet> rows(String query, String forcedStrategy) {
 		try (SailRepositoryConnection connection = repository.getConnection()) {
-			return QueryResults.asList(connection.prepareTupleQuery(query).evaluate());
+			return rows(connection, query, true, forcedStrategy);
 		}
 	}
 
 	private String telemetry(String query) {
+		return telemetry(query, null);
+	}
+
+	private String telemetry(String query, String forcedStrategy) {
 		try (SailRepositoryConnection connection = repository.getConnection()) {
-			return connection.prepareTupleQuery(query).explain(Explanation.Level.Telemetry).toString();
+			SailTupleQuery prepared = (SailTupleQuery) connection.prepareTupleQuery(query);
+			if (forcedStrategy != null) {
+				prepared.setForcedLmdbExecutionStrategy(forcedStrategy);
+			}
+			return prepared.explain(Explanation.Level.Telemetry).toString();
 		}
 	}
 }
