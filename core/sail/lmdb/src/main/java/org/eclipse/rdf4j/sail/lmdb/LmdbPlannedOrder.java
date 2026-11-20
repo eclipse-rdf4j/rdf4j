@@ -138,21 +138,24 @@ final class LmdbPlannedOrder {
 
 		while (true) {
 			if (current instanceof StatementPattern pattern) {
-				// A context variable can be unbound for statements in the default graph. A right operand that
-				// fills it can emit different keys for each left row in that group.
+				// A context variable can be unbound for statements in the default graph. A projection or right
+				// operand can fill it with a value that also appears later in the ordered scan.
 				if (needsBoundKey && !bindsKeyOnEveryRow(pattern, name, dataset)) {
 					return null;
 				}
 				return new Leading(pattern, name);
 			}
 
-			// Renaming operators: rows come out in input order, but under different names.
+			// Projections can supply a caller binding when the source is absent. Only a bound source is guaranteed
+			// to keep the scan's grouping through that fallback.
 			if (current instanceof Projection) {
 				Projection projection = (Projection) current;
+				needsBoundKey |= name != null;
 				name = name == null ? null : mapProjection(projection.getProjectionElemList(), name);
 				current = projection.getArg();
 			} else if (current instanceof MultiProjection) {
 				MultiProjection multiProjection = (MultiProjection) current;
+				needsBoundKey |= name != null;
 				name = name == null ? null : mapMultiProjection(multiProjection, name);
 				current = multiProjection.getArg();
 			} else if (current instanceof Extension) {

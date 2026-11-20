@@ -18,6 +18,7 @@ import org.eclipse.rdf4j.collection.factory.api.CollectionFactory;
 import org.eclipse.rdf4j.common.annotation.Experimental;
 import org.eclipse.rdf4j.common.annotation.InternalUseOnly;
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
+import org.eclipse.rdf4j.common.iteration.DistinctIteration;
 import org.eclipse.rdf4j.common.iteration.FilterIteration;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.query.BindingSet;
@@ -44,7 +45,28 @@ public final class LmdbPartitionedDistinctIteration extends FilterIteration<Bind
 	}
 
 	@Override
+	public boolean hasNext() {
+		try {
+			return super.hasNext();
+		} catch (RuntimeException | Error failure) {
+			closeWithSuppressed(failure);
+			throw failure;
+		}
+	}
+
+	@Override
+	public BindingSet next() {
+		try {
+			return super.next();
+		} catch (RuntimeException | Error failure) {
+			closeWithSuppressed(failure);
+			throw failure;
+		}
+	}
+
+	@Override
 	protected boolean accept(BindingSet bindingSet) {
+		DistinctIteration.checkExecution();
 		Value partitionValue = bindingSet.getValue(partitionBindingName);
 		if (!partitionInitialized || !Objects.equals(currentPartitionValue, partitionValue)) {
 			seen.clear();

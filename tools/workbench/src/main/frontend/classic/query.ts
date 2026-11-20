@@ -5617,7 +5617,10 @@ namespace workbench {
          * Let go of the results kept for tabs that are not shown (a running query is cancelled) and of the tabs closed
          * here: the repository's tabs were replaced (Undo of a restore), so none of them is open any more.
          */
-        export function forgetQueryTabResults(): void {
+        export function forgetQueryTabResults(scope: workbench.workspace.Scope): void {
+            if (!scope || queryTabControllersKey !== workbench.queryTabs.storageKey(scope)) {
+                return;
+            }
             disposeQueryTabResults();
             queryTabControllersKey = '';
             closedQueryTabs = [];

@@ -25,6 +25,9 @@ import org.eclipse.rdf4j.collection.factory.impl.DefaultCollectionFactory;
 import org.eclipse.rdf4j.collection.factory.mapdb.MapDb3CollectionFactory;
 import org.eclipse.rdf4j.common.iteration.CloseableIteratorIteration;
 import org.eclipse.rdf4j.common.iteration.Iterations;
+import org.eclipse.rdf4j.http.client.QueryCircuitBreaker;
+import org.eclipse.rdf4j.http.client.QueryCircuitBreakerHandle;
+import org.eclipse.rdf4j.http.client.QueryExecutionContext;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.Value;
@@ -34,6 +37,7 @@ import org.eclipse.rdf4j.model.vocabulary.SESAME;
 import org.eclipse.rdf4j.model.vocabulary.XSD;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.Dataset;
+import org.eclipse.rdf4j.query.QueryInterruptedException;
 import org.eclipse.rdf4j.query.QueryLanguage;
 import org.eclipse.rdf4j.query.algebra.Distinct;
 import org.eclipse.rdf4j.query.algebra.Extension;
@@ -64,7 +68,7 @@ import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.EnumSource;
 import org.junit.jupiter.params.provider.ValueSource;
 
-@Isolated("Changes the JVM-wide LMDB native execution flag")
+@Isolated("Changes JVM-wide LMDB and query circuit breaker settings")
 class LmdbPartitionedDistinctRegressionTest {
 
 	private static final String NATIVE_ENGINE = "rdf4j.lmdb.nativeQueryEngine.enabled";
@@ -311,6 +315,126 @@ class LmdbPartitionedDistinctRegressionTest {
 	}
 
 	@ParameterizedTest
+	@EnumSource(PullFailureSite.class)
+	void closesChildAndFactoryWhenPullFails(PullFailureSite failureSite) {
+		var pullFailure = new IllegalStateException("pull failed");
+		var childCloseFailure = new IllegalStateException("child close failed");
+		var factoryCloseFailure = new IllegalStateException("factory close failed");
+		BindingSet row = EmptyBindingSet.getInstance();
+		var child = new CloseableIteratorIteration<BindingSet>(List.of(row, row).iterator()) {
+			private boolean emittedFirst;
+
+			@Override
+			public boolean hasNext() {
+				if (emittedFirst && failureSite == PullFailureSite.CHILD_HAS_NEXT) {
+					throw pullFailure;
+				}
+				return super.hasNext();
+			}
+
+			@Override
+			public BindingSet next() {
+				if (emittedFirst && failureSite == PullFailureSite.CHILD_NEXT) {
+					throw pullFailure;
+				}
+				emittedFirst = true;
+				return super.next();
+			}
+
+			@Override
+			protected void handleClose() {
+				throw childCloseFailure;
+			}
+		};
+		var factory = new DefaultCollectionFactory() {
+			private boolean closed;
+
+			@Override
+			public <T> Set<T> createSet() {
+				return new HashSet<>() {
+					@Override
+					public boolean add(T value) {
+						if (!isEmpty() && failureSite == PullFailureSite.MEMBERSHIP_ADD) {
+							throw pullFailure;
+						}
+						return super.add(value);
+					}
+				};
+			}
+
+			@Override
+			public void close() {
+				closed = true;
+				throw factoryCloseFailure;
+			}
+		};
+
+		try (var result = LmdbPartitionedDistinctSteps
+				.partitioned(ignored -> child, "s", () -> factory)
+				.evaluate(EmptyBindingSet.getInstance())) {
+			assertThat(result.next()).isSameAs(row);
+			Throwable thrown = failureSite == PullFailureSite.CHILD_NEXT
+					? catchThrowable(result::next)
+					: catchThrowable(result::hasNext);
+
+			assertThat(thrown).isSameAs(pullFailure);
+			assertThat(child.isClosed()).isTrue();
+			assertThat(factory.closed).isTrue();
+			assertThat(thrown.getSuppressed()).containsExactly(childCloseFailure, factoryCloseFailure);
+		}
+	}
+
+	private enum PullFailureSite {
+		CHILD_HAS_NEXT,
+		CHILD_NEXT,
+		MEMBERSHIP_ADD
+	}
+
+	@ParameterizedTest
+	@ValueSource(booleans = { false, true })
+	void partitionedDistinctHonorsCircuitBreakerDuringPulls(boolean criticalPressure) {
+		String query = "SELECT DISTINCT ?a ?b WHERE { ?a <urn:p> ?b }";
+		LmdbStore store = openStore(false);
+		try (var connection = store.getConnection()) {
+			loadAliasedValues(connection);
+			long before = LmdbPartitionedDistinctSteps.partitionedEvaluationCount();
+			try (var result = connection.evaluate(parse(query), null, EmptyBindingSet.getInstance(), false)) {
+				assertThat(LmdbPartitionedDistinctSteps.partitionedEvaluationCount()).isEqualTo(before + 1);
+
+				QueryCircuitBreaker breaker = QueryCircuitBreaker.getInstance();
+				QueryCircuitBreakerHandle handle = breaker.register(QueryCircuitBreakerHandle.Source.SERVER, "test",
+						query);
+				String previousCriticalThreshold = System.setProperty(QueryCircuitBreaker.CRITICAL_FREE_MB_PROPERTY,
+						Integer.toString(Integer.MAX_VALUE));
+				String previousEnabled = System.setProperty(QueryCircuitBreaker.ENABLED_PROPERTY,
+						Boolean.toString(criticalPressure));
+				try (var ignored = QueryExecutionContext.activate(handle)) {
+					assertThat(breaker.snapshotStatus().getState()).isEqualTo(criticalPressure ? "CRITICAL" : "NORMAL");
+					if (criticalPressure) {
+						assertThat(catchThrowable(result::hasNext)).isInstanceOf(QueryInterruptedException.class)
+								.hasMessageContaining("Query cancelled by global memory circuit breaker");
+						assertThat(handle.isCancelRequested()).isTrue();
+					} else {
+						assertThat(Iterations.asList(result)).hasSize(3);
+					}
+					assertThat(handle.getLastHeavyOperator()).isEqualTo("DISTINCT");
+					assertThat(handle.hasHeavyCheckpoint()).isTrue();
+				} finally {
+					breaker.complete(handle);
+					restoreProperty(QueryCircuitBreaker.CRITICAL_FREE_MB_PROPERTY, previousCriticalThreshold);
+					// Reset the forced pressure state immediately, including when the breaker was already enabled.
+					System.setProperty(QueryCircuitBreaker.ENABLED_PROPERTY, "false");
+					breaker.snapshotStatus();
+					restoreProperty(QueryCircuitBreaker.ENABLED_PROPERTY, previousEnabled);
+					breaker.snapshotStatus();
+				}
+			}
+		} finally {
+			store.shutDown();
+		}
+	}
+
+	@ParameterizedTest
 	@ValueSource(booleans = { false, true })
 	void explicitReducedUsesNoPartitionedSet(boolean nativeFactory) {
 		String prior = System.setProperty(NATIVE_ENGINE, "false");
@@ -331,11 +455,15 @@ class LmdbPartitionedDistinctRegressionTest {
 				store.shutDown();
 			}
 		} finally {
-			if (prior == null) {
-				System.clearProperty(NATIVE_ENGINE);
-			} else {
-				System.setProperty(NATIVE_ENGINE, prior);
-			}
+			restoreProperty(NATIVE_ENGINE, prior);
+		}
+	}
+
+	private static void restoreProperty(String name, String previous) {
+		if (previous == null) {
+			System.clearProperty(name);
+		} else {
+			System.setProperty(name, previous);
 		}
 	}
 

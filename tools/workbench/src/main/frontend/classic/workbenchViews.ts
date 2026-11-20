@@ -1066,7 +1066,7 @@ namespace workbench {
         function queryActivity(context: ViewContext): string {
             const page: any = (workbench as any).queryPage;
             return page && typeof page.activity === 'function'
-                ? page.activity(context.repositoryId || '', context.serverIdentity, context.basePath) : '';
+                ? page.activity(context.repositoryId || '', context.serverIdentity, context.basePath, context.serverUser) : '';
         }
 
         function navigationItem(runtime: LitRuntime, context: ViewContext, info: any, item: any,
