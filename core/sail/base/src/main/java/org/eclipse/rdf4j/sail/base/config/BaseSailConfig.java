@@ -33,6 +33,7 @@ import org.eclipse.rdf4j.model.vocabulary.CONFIG;
 import org.eclipse.rdf4j.query.algebra.evaluation.EvaluationStrategyFactory;
 import org.eclipse.rdf4j.sail.config.AbstractSailImplConfig;
 import org.eclipse.rdf4j.sail.config.SailConfigException;
+import org.eclipse.rdf4j.sail.helpers.SlowQuerySupport;
 
 @Configurable(
 		description = "Shared query evaluation and slow-query logging settings for BaseSail implementations."
@@ -58,7 +59,7 @@ import org.eclipse.rdf4j.sail.config.SailConfigException;
 						"http://www.openrdf.org/config/sail/base#slowQueryLogFirstResultThresholdSeconds" }
 )
 @ConfigProperty(
-		predicate = "tag:rdf4j.org,2023:config/sail.slowQueryLogFile", description = "Filesystem path for slow-query log output.", examples = {
+		predicate = "tag:rdf4j.org,2023:config/sail.slowQueryLogFile", description = "Relative path to a .log file within the repository data directory; symbolic links below it are not allowed. Parent directories must already exist. Blank or unavailable secure file access selects the default logger.", examples = {
 				"\"slow-queries.log\"" }, aliases = { "http://www.openrdf.org/config/sail/base#slowQueryLogFile" }
 )
 @ConfigProperty(
@@ -238,7 +239,14 @@ public abstract class BaseSailConfig extends AbstractSailImplConfig {
 		return slowQueryLogFile;
 	}
 
+	/**
+	 * Sets a relative {@code .log} file within the repository data directory, or null/blank to use the default logger.
+	 * Parent directories must already exist; unavailable secure file access falls back to the default logger.
+	 *
+	 * @throws IllegalArgumentException if the configured path is invalid
+	 */
 	public void setSlowQueryLogFile(String slowQueryLogFile) {
+		SlowQuerySupport.validateLogFile(slowQueryLogFile);
 		this.slowQueryLogFile = slowQueryLogFile;
 	}
 }
