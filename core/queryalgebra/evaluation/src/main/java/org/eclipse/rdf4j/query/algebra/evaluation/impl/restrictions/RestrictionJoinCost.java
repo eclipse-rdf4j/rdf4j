@@ -43,8 +43,12 @@ public record RestrictionJoinCost(boolean preferProbes, boolean cacheResults, do
 		}
 		double outerRows = rows(outer, stats);
 		double independent = independentWork(innerRows, outerRows);
-		double probe = outerRows * (1 + Math.sqrt(innerRows)); // no known duplicate-key or fully bound guarantee
-		return choose(true, false, outerRows, probe, independent, 1 + Math.sqrt(innerRows), innerRows, inner);
+		// A possible output name does not imply a bound key on every row (notably after OPTIONAL).
+		// Without an assured seek, price each probe as an unrestricted read of the original relation.
+		boolean assuredSeek = !Collections.disjoint(outer.getAssuredBindingNames(), candidate.seekNames());
+		double workPerProbe = 1 + (assuredSeek ? Math.sqrt(innerRows) : innerRows);
+		double probe = outerRows * workPerProbe;
+		return choose(assuredSeek, false, outerRows, probe, independent, workPerProbe, innerRows, inner);
 	}
 
 	/**

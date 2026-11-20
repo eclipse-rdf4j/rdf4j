@@ -151,6 +151,92 @@ class GraphRestrictionJoinTest {
 	}
 
 	@Test
+	void optionalOnlyJoinKeyUsesOneIndependentGraphRead() {
+		IRI first = iri("first");
+		IRI second = iri("second");
+		IRI object = iri("object");
+		RecordingTripleSource source = new RecordingTripleSource(List.of(GRAPH), List.of(
+				VF.createStatement(first, PREDICATE, object, GRAPH),
+				VF.createStatement(second, PREDICATE, object, GRAPH)));
+		String query = "VALUES ?k { :key1 :key2 :key3 :key4 } "
+				+ "OPTIONAL { ?k :missing ?s } GRAPH :G { ?s :p ?o }";
+		for (double estimatedOuterRows : new double[] { 4.0d, 1.0d }) {
+			source.resetObservations();
+			TupleExpr expression = parse(query);
+			List<Join> graphJoins = new ArrayList<>();
+			expression.visit(new AbstractQueryModelVisitor<RuntimeException>() {
+				@Override
+				public void meet(Join join) {
+					if (join.getRightArg() instanceof Graph) {
+						graphJoins.add(join);
+					}
+					super.meet(join);
+				}
+			});
+			assertThat(graphJoins).hasSize(1);
+			// A store can underestimate the optional branch while none of its shared keys bind.
+			graphJoins.get(0).getLeftArg().setResultSizeEstimate(estimatedOuterRows);
+
+			assertThat(evaluate(source, expression, null, EmptyBindingSet.getInstance(), GraphRestrictionMode.AUTO))
+					.as("outer estimate %s", estimatedOuterRows)
+					.hasSize(8)
+					.contains(row(first, object), row(second, object));
+			assertThat(source.accesses.stream().filter(access -> PREDICATE.equals(access.predicate())).toList())
+					.as("outer estimate %s", estimatedOuterRows)
+					.containsExactly(new Access(null, PREDICATE, null, List.of(GRAPH)));
+			assertThat(source.statementRows).as("outer estimate %s", estimatedOuterRows).isEqualTo(2L);
+		}
+	}
+
+	@Test
+	void assuredJoinKeyRetainsSelectiveGraphAccess() {
+		IRI selected = iri("selected");
+		IRI object = iri("object");
+		RecordingTripleSource source = new RecordingTripleSource(List.of(GRAPH), List.of(
+				VF.createStatement(selected, PREDICATE, object, GRAPH),
+				VF.createStatement(iri("unrelated"), PREDICATE, iri("other-object"), GRAPH)));
+		String query = "VALUES ?s { :selected } VALUES ?k { 1 2 } GRAPH :G { ?s :p ?o }";
+
+		assertThat(evaluate(source, parse(query), null, EmptyBindingSet.getInstance(), GraphRestrictionMode.AUTO))
+				.containsExactly(row(selected, object), row(selected, object));
+		assertThat(source.accesses.stream().filter(access -> PREDICATE.equals(access.predicate())).toList())
+				.containsExactly(new Access(selected, PREDICATE, null, List.of(GRAPH)),
+						new Access(selected, PREDICATE, null, List.of(GRAPH)));
+	}
+
+	@Test
+	void assuredObjectKeyRemainsSelectiveWhenOptionalSubjectIsUnbound() {
+		IRI object = iri("object");
+		RecordingTripleSource source = new RecordingTripleSource(List.of(GRAPH), List.of(
+				VF.createStatement(iri("first"), PREDICATE, object, GRAPH),
+				VF.createStatement(iri("second"), PREDICATE, object, GRAPH),
+				VF.createStatement(iri("unrelated"), PREDICATE, iri("other-object"), GRAPH)));
+		String query = "VALUES (?k ?o) { (:key1 :object) (:key2 :object) (:key3 :object) (:key4 :object) } "
+				+ "OPTIONAL { ?k :missing ?s } GRAPH :G { ?s :p ?o }";
+		TupleExpr expression = parse(query);
+		List<Join> graphJoins = new ArrayList<>();
+		expression.visit(new AbstractQueryModelVisitor<RuntimeException>() {
+			@Override
+			public void meet(Join join) {
+				if (join.getRightArg() instanceof Graph) {
+					graphJoins.add(join);
+				}
+				super.meet(join);
+			}
+		});
+		assertThat(graphJoins).hasSize(1);
+		graphJoins.get(0).getLeftArg().setResultSizeEstimate(4);
+
+		assertThat(evaluate(source, expression, null, EmptyBindingSet.getInstance(), GraphRestrictionMode.AUTO))
+				.hasSize(8);
+		assertThat(source.accesses.stream().filter(access -> PREDICATE.equals(access.predicate())).toList())
+				.containsExactly(new Access(null, PREDICATE, object, List.of(GRAPH)),
+						new Access(null, PREDICATE, object, List.of(GRAPH)),
+						new Access(null, PREDICATE, object, List.of(GRAPH)),
+						new Access(null, PREDICATE, object, List.of(GRAPH)));
+	}
+
+	@Test
 	void graphSelectorProbesShareTheCatalogAcrossDistinctKeys() {
 		List<Resource> graphs = IntStream.range(0, 128).mapToObj(index -> (Resource) iri("graph" + index)).toList();
 		IRI subject = iri("subject");
