@@ -369,6 +369,18 @@ class TripleStore implements Closeable {
 	private final Supplier<? extends CollectionFactory> legacyCollections;
 	private LongConsumer legacyPendingScanObserver;
 
+	/**
+	 * Rows visible to the open writer, including its uncommitted native writes; the same view the legacy semantic pass
+	 * seeds from.
+	 */
+	RecordIterator getTriplesForWrite(long subj, long pred, long obj, long context, boolean explicit)
+			throws IOException {
+		if (writeTxn == 0L) {
+			throw new IOException("No active TripleStore write transaction");
+		}
+		return getTriples(txnManager.createTxn(writeTxn), subj, pred, obj, context, explicit);
+	}
+
 	void setLegacyPendingScanObserver(LongConsumer observer) {
 		legacyPendingScanObserver = observer;
 	}
