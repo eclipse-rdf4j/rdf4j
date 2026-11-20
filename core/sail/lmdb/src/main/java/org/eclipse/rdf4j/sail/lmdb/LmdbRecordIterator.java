@@ -54,6 +54,12 @@ class LmdbRecordIterator implements RecordIterator {
 	private static final long STATE_MASK = 3L;
 	private static final VarHandle CANCELLATION_STATE;
 
+	/**
+	 * Skip-scan (leapfrog step): after this many consecutive KEY_FILTERED keys, seek past the non-matching run with
+	 * MDB_SET_RANGE instead of stepping key by key. Short mismatch runs keep the cheaper MDB_NEXT.
+	 */
+	private static final boolean skipScanEnabled = !"false".equals(System.getProperty("rdf4j.lmdb.skipScan.enabled"));
+
 	static {
 		try {
 			CANCELLATION_STATE = MethodHandles.lookup()
@@ -112,11 +118,7 @@ class LmdbRecordIterator implements RecordIterator {
 
 	private boolean exactKeyFound = false;
 
-	/**
-	 * Skip-scan (leapfrog step): after this many consecutive KEY_FILTERED keys, seek past the non-matching run with
-	 * MDB_SET_RANGE instead of stepping key by key. Short mismatch runs keep the cheaper MDB_NEXT.
-	 */
-	private final boolean skipScanEnabled = !"false".equals(System.getProperty("rdf4j.lmdb.skipScan.enabled"));
+
 	private static final int SKIP_MIN_RUN = 4;
 	private int consecutiveFiltered;
 	private long[] skipKeyValues;
