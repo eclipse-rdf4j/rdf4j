@@ -421,6 +421,9 @@ public final class ImmutablePagedQuadCsfIndex implements AutoCloseable {
 
 	private long findLocalReferenceByPartition(int partition, long rawRowId, LookupCursor cursor, long rawContext,
 			Runnable cancellationPoll) {
+		if (cursor.trackSinglePageContextMiss) {
+			cursor.singlePageContextMiss = false;
+		}
 		int count = partitionShardCounts[partition];
 		if (count == 0) {
 			return 0;
@@ -438,7 +441,8 @@ public final class ImmutablePagedQuadCsfIndex implements AutoCloseable {
 			}
 			int globalPage = Math.addExact(shardFirstPageIds[floor], localPage);
 			long address = shard.validatedPageAddress(localPage);
-			if (rawContext >= 0 && !rowMayContainContext(globalPage, address, rawRowId, rawContext, cancellationPoll)) {
+			if (rawContext >= 0 && !rowMayContainContext(globalPage, address, rawRowId, rawContext, cancellationPoll,
+					cursor)) {
 				return 0;
 			}
 			if (cursor.owner != this || cursor.globalPage != globalPage) {
@@ -446,7 +450,7 @@ public final class ImmutablePagedQuadCsfIndex implements AutoCloseable {
 			}
 		} else if (rawContext >= 0
 				&& !rowMayContainContext(cursor.globalPage, pageAddress(cursor.globalPage), rawRowId, rawContext,
-						cancellationPoll)) {
+						cancellationPoll, cursor)) {
 			return 0;
 		}
 		int localRow = cursor.findRowCached(rawRowId);
@@ -1486,21 +1490,38 @@ public final class ImmutablePagedQuadCsfIndex implements AutoCloseable {
 
 	private boolean rowMayContainContext(int pageId, long address, long row, long rawContext,
 			Runnable cancellationPoll) {
+		return rowMayContainContext(pageId, address, row, rawContext, cancellationPoll, null);
+	}
+
+	private boolean rowMayContainContext(int pageId, long address, long row, long rawContext,
+			Runnable cancellationPoll, LookupCursor cursor) {
 		if (CompactCsfPageReader.mayContainContext(address, rawContext)) {
 			return true;
 		}
-		if (UnsafeAccess.getLongLE(address + CompactCsfPageFormat.LAST_ROW_AT) != row) {
+		long last = UnsafeAccess.getLongLE(address + CompactCsfPageFormat.LAST_ROW_AT);
+		int next = pageId + 1;
+		if (last != row || next >= pageCount || !isExtentContinuation(next, row)) {
+			if (cursor != null && cursor.trackSinglePageContextMiss) {
+				cursor.singlePageContextMiss = provesSinglePageRow(address, row, last);
+			}
 			return false;
 		}
-		for (int next = pageId + 1; next < pageCount && isExtentContinuation(next, row); next++) {
+		do {
 			if (cancellationPoll != null) {
 				cancellationPoll.run();
 			}
 			if (CompactCsfPageReader.mayContainContext(pageAddress(next), rawContext)) {
 				return true;
 			}
-		}
+		} while (++next < pageCount && isExtentContinuation(next, row));
 		return false;
+	}
+
+	/** The page header proves membership for its boundary keys without searching the row directory. */
+	private static boolean provesSinglePageRow(long address, long row, long last) {
+		return (row == last || row == UnsafeAccess.getLongLE(address + CompactCsfPageFormat.FIRST_ROW_AT))
+				&& (UnsafeAccess.getUnsignedShortLE(address + CompactCsfPageFormat.FLAGS_AT)
+						& CompactCsfPageFormat.FLAG_CONTINUATION) == 0;
 	}
 
 	/**
@@ -3744,8 +3765,24 @@ public final class ImmutablePagedQuadCsfIndex implements AutoCloseable {
 		private int rowRadixBits;
 		private int pageLookups;
 		private boolean reusablePage;
+		private final boolean trackSinglePageContextMiss;
+		private boolean singlePageContextMiss;
 		/** Created only after a cursor has reused a page; optional exact arrays remain pressure-admitted. */
 		private PackedLongVector.NativeSearchState searchState;
+
+		public LookupCursor() {
+			this(false);
+		}
+
+		/** Enables proof of a disjoint graph header on the sole page of an existing row. */
+		public LookupCursor(boolean trackSinglePageContextMiss) {
+			this.trackSinglePageContextMiss = trackSinglePageContextMiss;
+		}
+
+		/** Whether the latest lookup rejected a known row using one disjoint page and no continuations. */
+		public boolean singlePageContextMiss() {
+			return singlePageContextMiss;
+		}
 
 		private void pageChanged(ImmutablePagedQuadCsfIndex owner, int partition, int globalPage, long pageAddress) {
 			this.owner = owner;
@@ -3817,6 +3854,7 @@ public final class ImmutablePagedQuadCsfIndex implements AutoCloseable {
 			rowCount = 0;
 			pageLookups = 0;
 			reusablePage = false;
+			singlePageContextMiss = false;
 		}
 	}
 

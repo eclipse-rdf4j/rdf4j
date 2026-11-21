@@ -2715,6 +2715,17 @@ public class LmdbStoreConnection extends SailSourceConnection implements SailRes
 						growthKind = pendingGrowthKind;
 					}
 					boolean conflict = isMapResizeConflict(failure);
+					if ((failure == null || conflict) && observationOwner != null
+							&& observationOwner.cancellationRequested) {
+						// The delegate can accept cancellation while producing its final row or EOF.
+						QueryInterruptedException cancelled = new QueryInterruptedException(
+								"Query evaluation was cancelled");
+						if (failure != null) {
+							cancelled.addSuppressed(failure);
+						}
+						failure = cancelled;
+						conflict = false;
+					}
 					boolean retryableOutcome = failure == null || conflict;
 					if (!detachedResult && retryableOutcome && operationAttempt == null
 							&& (conflict || growthToken != null)
@@ -2858,9 +2869,6 @@ public class LmdbStoreConnection extends SailSourceConnection implements SailRes
 		}
 	}
 
-	private static final Runnable NO_REPLAY_CHECKPOINT = () -> {
-	};
-
 	/**
 	 * A result that has already handed out rows can never be replayed, so its later calls need none of the
 	 * exposure-scope bookkeeping: no growth request targets an observed result, and a view invalidated underneath
@@ -2903,8 +2911,7 @@ public class LmdbStoreConnection extends SailSourceConnection implements SailRes
 						.activateExternalValueInitializer(LmdbStoreConnection::protectValueTree);
 				readResourceBinding = lmdbStore.getBackingStore()
 						.enterReadResourceContext(() -> owner.readViews);
-				workerAdmission = QueryExecutionContext.activateReplaySafepoint(NO_REPLAY_CHECKPOINT,
-						() -> observedWorkerScope(owner));
+				workerAdmission = QueryExecutionContext.activateWorkerAdmission(() -> observedWorkerScope(owner));
 				internalReadScopeDepth.set(oldDepth + 1);
 			} catch (RuntimeException | Error failure) {
 				finish(failure);
@@ -2921,6 +2928,7 @@ public class LmdbStoreConnection extends SailSourceConnection implements SailRes
 					throwIfReadThreadCancelled();
 				}
 				T result = operation.execute();
+				throwIfCancelled(owner);
 				if (lifecycleCancellation.isCancelled()) {
 					throw new SailException("The LMDB read operation was cancelled");
 				}
@@ -3878,6 +3886,9 @@ public class LmdbStoreConnection extends SailSourceConnection implements SailRes
 			try {
 				return continuedRead == null ? executeTrackedRead(operation, this, retainOnAvailable)
 						: continuedRead.execute(operation, null);
+			} catch (QueryInterruptedException cancelled) {
+				closeResources(cancelled, this::close);
+				throw cancelled;
 			} finally {
 				synchronized (callLock) {
 					if (--activeCalls == 0) {

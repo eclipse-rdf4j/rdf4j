@@ -14,12 +14,6 @@
 
 package org.eclipse.rdf4j.query.algebra.evaluation.impl;
 
-import java.io.ByteArrayInputStream;
-import java.io.ByteArrayOutputStream;
-import java.io.IOException;
-import java.io.ObjectInputStream;
-import java.io.ObjectOutputStream;
-import java.io.Serializable;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.HashSet;
@@ -35,11 +29,9 @@ import java.util.function.Supplier;
 
 import org.eclipse.rdf4j.collection.factory.api.CollectionFactory;
 import org.eclipse.rdf4j.collection.factory.impl.DefaultCollectionFactory;
-import org.eclipse.rdf4j.common.iteration.AbstractCloseableIteration;
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.common.iteration.ConvertingIteration;
 import org.eclipse.rdf4j.common.iteration.CooperativeCancellation;
-import org.eclipse.rdf4j.common.iteration.DistinctIteration;
 import org.eclipse.rdf4j.common.iteration.IndexReportingIterator;
 import org.eclipse.rdf4j.common.iteration.IterationWrapper;
 import org.eclipse.rdf4j.common.iteration.LookAheadIteration;
@@ -58,7 +50,6 @@ import org.eclipse.rdf4j.model.base.CoreDatatype;
 import org.eclipse.rdf4j.model.impl.BooleanLiteral;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.model.util.Literals;
-import org.eclipse.rdf4j.query.Binding;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.Dataset;
 import org.eclipse.rdf4j.query.MutableBindingSet;
@@ -160,6 +151,7 @@ import org.eclipse.rdf4j.query.algebra.evaluation.function.TupleFunctionRegistry
 import org.eclipse.rdf4j.query.algebra.evaluation.function.datetime.Now;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.evaluationsteps.AdaptiveFilterEvaluationStep;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.evaluationsteps.BindingSetAssignmentQueryEvaluationStep;
+import org.eclipse.rdf4j.query.algebra.evaluation.impl.evaluationsteps.DistinctQueryEvaluationStep;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.evaluationsteps.EncodedTripleTermQueryEvaluationStep;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.evaluationsteps.GraphQueryEvaluationStep;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.evaluationsteps.IntersectionQueryEvaluationStep;
@@ -207,7 +199,6 @@ import org.eclipse.rdf4j.query.algebra.helpers.LocalBNodeReferences;
 import org.eclipse.rdf4j.query.explanation.TelemetryMetricNames;
 import org.eclipse.rdf4j.query.impl.BlankNodeAllocationScope;
 import org.eclipse.rdf4j.query.impl.EmptyBindingSet;
-import org.eclipse.rdf4j.query.impl.MapBindingSet;
 import org.eclipse.rdf4j.query.impl.RemoteBNode;
 
 /**
@@ -1234,212 +1225,9 @@ public class DefaultEvaluationStrategy implements EvaluationStrategy, FederatedS
 
 	protected QueryEvaluationStep prepare(Distinct node, QueryEvaluationContext context)
 			throws QueryEvaluationException {
-		return prepareDistinct(precompile(node.getArg(), context), null, null);
-	}
-
-	/**
-	 * Prepares DISTINCT over an already compiled input. A supplied partition accessor must produce one contiguous run
-	 * for every value when evaluated without incoming bindings. Its snapshot function owns the retained key
-	 * independently of any values exposed through the output row.
-	 */
-	protected QueryEvaluationStep prepareDistinct(QueryEvaluationStep child, Function<BindingSet, Value> partition,
-			Function<Value, Value> snapshotPartition) {
-		return bindings -> {
-			final CollectionFactory cf = this.getCollectionFactory().get();
-			CloseableIteration<BindingSet> evaluate = null;
-			try {
-				evaluate = child.evaluate(bindings);
-				ConvertingIteration<BindingSet, DistinctBindingSetKey> keys = new ConvertingIteration<>(evaluate) {
-					@Override
-					protected DistinctBindingSetKey convert(BindingSet sourceObject) {
-						return new DistinctBindingSetKey(sourceObject);
-					}
-				};
-				DistinctIteration<DistinctBindingSetKey> distinct;
-				if (partition == null || !bindings.isEmpty()) {
-					distinct = new DistinctIteration<>(keys, cf.createSet());
-				} else {
-					distinct = new DistinctIteration<>(keys, cf.createSet()) {
-						private Value currentPartition;
-						private boolean initialized;
-
-						@Override
-						protected boolean add(DistinctBindingSetKey key) {
-							Value nextPartition = partition.apply(key.bindings);
-							if (!initialized || !Objects.equals(currentPartition, nextPartition)) {
-								clearSeen();
-								currentPartition = nextPartition == null ? null
-										: snapshotPartition.apply(nextPartition);
-								initialized = true;
-							}
-							return super.add(key);
-						}
-
-						@Override
-						protected void handleClose() {
-							currentPartition = null;
-							super.handleClose();
-						}
-					};
-				}
-				final class DistinctResult extends AbstractCloseableIteration<BindingSet>
-						implements CooperativeCancellation {
-					@Override
-					public boolean hasNext() {
-						if (isClosed()) {
-							return false;
-						}
-						try {
-							boolean hasNext = distinct.hasNext();
-							if (!hasNext) {
-								close();
-							}
-							return hasNext;
-						} catch (RuntimeException | Error failure) {
-							closeOnFailure(failure);
-							throw failure;
-						}
-					}
-
-					@Override
-					public BindingSet next() {
-						try {
-							return distinct.next().bindings;
-						} catch (RuntimeException | Error failure) {
-							closeOnFailure(failure);
-							throw failure;
-						}
-					}
-
-					@Override
-					public void remove() {
-						try {
-							distinct.remove();
-						} catch (RuntimeException | Error failure) {
-							closeOnFailure(failure);
-							throw failure;
-						}
-					}
-
-					@Override
-					protected void handleClose() {
-						Throwable failure = null;
-						try {
-							distinct.close();
-						} catch (RuntimeException | Error closeFailure) {
-							failure = closeFailure;
-						}
-						try {
-							cf.close();
-						} catch (RuntimeException | Error closeFailure) {
-							if (failure == null) {
-								failure = closeFailure;
-							} else if (failure != closeFailure) {
-								failure.addSuppressed(closeFailure);
-							}
-						}
-						if (failure instanceof RuntimeException runtimeFailure) {
-							throw runtimeFailure;
-						}
-						if (failure instanceof Error errorFailure) {
-							throw errorFailure;
-						}
-					}
-
-					private void closeOnFailure(Throwable failure) {
-						try {
-							close();
-						} catch (RuntimeException | Error closeFailure) {
-							if (failure != closeFailure) {
-								failure.addSuppressed(closeFailure);
-							}
-						}
-					}
-
-					@Override
-					public boolean requestCancellation() {
-						return !isClosed() && CooperativeCancellation.forward(distinct);
-					}
-				}
-				return new DistinctResult();
-
-			} catch (RuntimeException | Error failure) {
-				if (evaluate != null) {
-					try {
-						evaluate.close();
-					} catch (RuntimeException | Error closeFailure) {
-						if (failure != closeFailure) {
-							failure.addSuppressed(closeFailure);
-						}
-					}
-				}
-				try {
-					cf.close();
-				} catch (RuntimeException | Error closeFailure) {
-					if (failure != closeFailure) {
-						failure.addSuppressed(closeFailure);
-					}
-				}
-				throw failure;
-			}
-		};
-	}
-
-	/**
-	 * DISTINCT's private hash must not use BindingSet's public XOR: repeated values cancel there, so identity paths put
-	 * every row in one bucket. Sum binding hashes instead, keeping iteration order irrelevant and retaining the
-	 * original row for equality and output. Serializable keys keep factory-backed spill available.
-	 */
-	private static final class DistinctBindingSetKey implements Serializable {
-		private static final long serialVersionUID = 1L;
-
-		private transient BindingSet bindings;
-
-		private DistinctBindingSetKey(BindingSet bindings) {
-			this.bindings = bindings;
-		}
-
-		@Override
-		public int hashCode() {
-			int hash = 0;
-			for (Binding binding : bindings) {
-				hash += binding.getName().hashCode() ^ binding.getValue().hashCode();
-			}
-			return hash;
-		}
-
-		@Override
-		public boolean equals(Object other) {
-			return other instanceof DistinctBindingSetKey key && bindings.equals(key.bindings);
-		}
-
-		private void writeObject(ObjectOutputStream output) throws IOException {
-			// Serialize visible bindings, not implementation-specific unbound markers or Binding state.
-			// A private stream also isolates values from disk factories' custom class-descriptor handling.
-			ByteArrayOutputStream bytes = new ByteArrayOutputStream();
-			try (ObjectOutputStream values = new ObjectOutputStream(bytes)) {
-				values.writeInt(bindings.size());
-				for (Binding binding : bindings) {
-					values.writeObject(binding.getName());
-					values.writeObject(binding.getValue());
-				}
-			}
-			output.writeInt(bytes.size());
-			output.write(bytes.toByteArray());
-		}
-
-		private void readObject(ObjectInputStream input) throws IOException, ClassNotFoundException {
-			byte[] bytes = new byte[input.readInt()];
-			input.readFully(bytes);
-			try (ObjectInputStream values = new ObjectInputStream(new ByteArrayInputStream(bytes))) {
-				int size = values.readInt();
-				MapBindingSet snapshot = new MapBindingSet(size);
-				for (int i = 0; i < size; i++) {
-					snapshot.addBinding((String) values.readObject(), (Value) values.readObject());
-				}
-				bindings = snapshot;
-			}
-		}
+		return DistinctQueryEvaluationStep.supply(precompile(node.getArg(), context),
+				() -> getCollectionFactory().get(),
+				null, null);
 	}
 
 	protected QueryEvaluationStep prepare(Reduced node, QueryEvaluationContext context)

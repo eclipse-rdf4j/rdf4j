@@ -1328,6 +1328,23 @@ final class LmdbNativeKernelInterpreter implements JaninoKernel {
 			return false;
 		}
 
+		/** Whether every stage supports setting its exhaustion flag when returning a row. */
+		boolean canProveExhaustion() {
+			for (PullStage stage : stages) {
+				Node node = stage.node;
+				if (stage.scheduled || !(node instanceof ProbeVariable || node instanceof LeftProbe
+						|| node instanceof EnumerateDomain || node instanceof Probe || node instanceof LeftGroup
+						|| node instanceof ProbeClose || node instanceof EnumerateEntry || node instanceof BindAlias
+						|| node instanceof BindHook || node instanceof FilterResidual
+						|| LmdbNativeKernelIr.isFilter(node)
+						|| node instanceof FilterEntryCompatible || node instanceof Exists
+						|| node instanceof HashBuild)) {
+					return false;
+				}
+			}
+			return true;
+		}
+
 		boolean exhaustedAfterOutput() {
 			for (PullStage stage : stages) {
 				if (!stage.exhausted) {
@@ -2007,6 +2024,7 @@ final class LmdbNativeKernelInterpreter implements JaninoKernel {
 		}
 		if (node instanceof LeftGroup left) {
 			PullPipeline arm = pullPipeline(left.arm);
+			boolean canProveExhaustion = arm.canProveExhaustion();
 			int[] resetColumns = left.resetColumns();
 			LmdbNativeOptionalReplay memo = LmdbNativeOptionalReplay.create(left, kernel, optionalReplayBudget);
 			return new PullStage(node, List.of(arm), PullReset.PRESERVES_ROW, resetColumns) {
@@ -2042,7 +2060,7 @@ final class LmdbNativeKernelInterpreter implements JaninoKernel {
 						matched = true;
 						// Leave the arm suspended until normal backtracking or close. An exhausted arm has
 						// no remaining advances, but its active frames still own their saved registers.
-						exhausted = arm.exhaustedAfterOutput();
+						exhausted = canProveExhaustion && arm.exhaustedAfterOutput();
 						if (memo != null) {
 							memo.record(v);
 							if (exhausted) {

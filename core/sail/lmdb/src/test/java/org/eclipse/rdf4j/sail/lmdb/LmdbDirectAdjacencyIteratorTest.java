@@ -14,7 +14,13 @@ package org.eclipse.rdf4j.sail.lmdb;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.mockito.Mockito.clearInvocations;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.when;
 
+import org.eclipse.rdf4j.sail.lmdb.evaluation.NativeLmdbQuerySource.CursorCancellation;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -120,6 +126,23 @@ class LmdbDirectAdjacencyIteratorTest {
 		assertThat(iterator.next()[TripleIndex.OBJ_IDX]).isEqualTo(30);
 		assertThat(iterator.next()[TripleIndex.OBJ_IDX]).isEqualTo(40);
 		assertThat(iterator.next()).isNull();
+	}
+
+	@Test
+	void cachedMatchingEdgeChargesTheSharedBudgetOnce() {
+		CursorCancellation owner = mock(CursorCancellation.class);
+		when(owner.forWorker()).thenReturn(owner);
+		when(owner.transferToWorker()).thenReturn(owner);
+		try (var iterator = new LmdbDirectAdjacencyIterator()) {
+			iterator.init(null, catalog, contexts, handle, KEY, PRED, -1, LmdbDirectAdjacencyIterator.BY_SUBJECT,
+					"direct", owner);
+			assertThat(iterator.next()).isNotNull();
+			clearInvocations(owner);
+
+			assertThat(iterator.next()[TripleIndex.CONTEXT_IDX]).isEqualTo(G1);
+			verify(owner).poll();
+			verify(owner, never()).checkpoint();
+		}
 	}
 
 	@Test

@@ -12,6 +12,8 @@
 package org.eclipse.rdf4j.sail.lmdb.evaluation;
 
 import java.io.IOException;
+import java.lang.invoke.MethodHandles;
+import java.lang.invoke.VarHandle;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
@@ -2064,7 +2066,17 @@ final class CompositeNativeLmdbQuerySource implements NativeLmdbQuerySource {
 		}
 	}
 
+	private static VarHandle childGenerationHandle(Class<?> owner) {
+		try {
+			return MethodHandles.lookup().findVarHandle(owner, "childGeneration", long.class);
+		} catch (ReflectiveOperationException e) {
+			throw new ExceptionInInitializerError(e);
+		}
+	}
+
 	private static final class ConcatenatingProbeIterator implements RecordIterator {
+
+		private static final VarHandle CHILD_GENERATION = childGenerationHandle(ConcatenatingProbeIterator.class);
 
 		private final CompositeProbe owner;
 		private final NativeProbe[] probes;
@@ -2114,12 +2126,17 @@ final class CompositeNativeLmdbQuerySource implements NativeLmdbQuerySource {
 
 		@Override
 		public boolean requestCancellation(long generation) {
-			RecordIterator child = current;
-			long childSelection = childGeneration;
 			if (!request.request(generation)) {
 				return false;
 			}
-			RecordIterator.forwardCancellation(child, childSelection);
+			// Publish the stop before sampling the active child. A later adoption sees the stop before pulling.
+			RecordIterator child = current;
+			if (child != null) {
+				long childSelection = (long) CHILD_GENERATION.getAcquire(this);
+				if (current == child && request.generation() == generation) {
+					RecordIterator.forwardCancellation(child, childSelection);
+				}
+			}
 			return true;
 		}
 
@@ -2133,7 +2150,11 @@ final class CompositeNativeLmdbQuerySource implements NativeLmdbQuerySource {
 				while (index < probes.length) {
 					if (current == null) {
 						RecordIterator child = probes[index].open(subj, pred, obj, context, observer);
-						childGeneration = child.cancellationGeneration();
+						long selectedGeneration = child.cancellationGeneration();
+						if (childGeneration != selectedGeneration) {
+							// Seeing a newer generation must also reveal detachment of the previous child.
+							CHILD_GENERATION.setRelease(this, selectedGeneration);
+						}
 						current = child;
 						// Publish the child before rechecking a cancellation received during open.
 						checkpointCancellation();
@@ -2212,6 +2233,8 @@ final class CompositeNativeLmdbQuerySource implements NativeLmdbQuerySource {
 	}
 
 	private static final class ConcatenatingRecordIterator implements RecordIterator {
+		private static final VarHandle CHILD_GENERATION = childGenerationHandle(ConcatenatingRecordIterator.class);
+
 		private enum AccessMode {
 			ORDINARY,
 			ENCOUNTER_ORDER,
@@ -2252,10 +2275,14 @@ final class CompositeNativeLmdbQuerySource implements NativeLmdbQuerySource {
 			if (closed) {
 				return false;
 			}
-			RecordIterator child = current;
-			long childSelection = childGeneration;
 			cancellationRequested = true;
-			RecordIterator.forwardCancellation(child, childSelection);
+			RecordIterator child = current;
+			if (child != null) {
+				long childSelection = (long) CHILD_GENERATION.getAcquire(this);
+				if (current == child) {
+					RecordIterator.forwardCancellation(child, childSelection);
+				}
+			}
 			return true;
 		}
 
@@ -2278,7 +2305,10 @@ final class CompositeNativeLmdbQuerySource implements NativeLmdbQuerySource {
 								case FORCED_LMDB ->
 									source.lmdbStatements(subj, pred, obj, context, observer, cancellation);
 								};
-						childGeneration = child.cancellationGeneration();
+						long selectedGeneration = child.cancellationGeneration();
+						if (childGeneration != selectedGeneration) {
+							CHILD_GENERATION.setRelease(this, selectedGeneration);
+						}
 						current = child;
 						// Publish the child before rechecking a cancellation received during open.
 						checkpointCancellation();

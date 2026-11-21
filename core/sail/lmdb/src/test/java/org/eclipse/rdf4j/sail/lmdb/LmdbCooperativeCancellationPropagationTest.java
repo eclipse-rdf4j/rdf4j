@@ -19,6 +19,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.nio.file.Path;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicReference;
 
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.common.iteration.CooperativeCancellation;
@@ -36,6 +37,7 @@ import org.eclipse.rdf4j.sail.lmdb.config.LmdbStoreConfig;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.CsvSource;
 import org.junit.jupiter.params.provider.ValueSource;
 
 /**
@@ -68,6 +70,78 @@ class LmdbCooperativeCancellationPropagationTest {
 					assertThrows(QueryInterruptedException.class, rows::next);
 				}
 				assertEquals(2, dataset.getStatementCount(subject, predicate, null));
+			}
+		} finally {
+			store.shutDown();
+		}
+	}
+
+	@ParameterizedTest
+	@CsvSource({ "false,false", "false,true", "true,false", "true,true" })
+	void cancellationDuringAnExtensionPullStopsThePublicResult(boolean observed, boolean eof, @TempDir Path dataDir) {
+		AtomicReference<Runnable> onReturn = new AtomicReference<>();
+		AtomicInteger closes = new AtomicInteger();
+		LmdbStore store = new LmdbStore(dataDir.toFile()) {
+			@Override
+			protected NotifyingSailConnection getConnectionInternal() {
+				return new LmdbStoreConnection(this) {
+					@Override
+					protected CloseableIteration<? extends Statement> getStatementsInternal(Resource s, IRI p,
+							Value o, boolean inferred, Resource... contexts) {
+						return new IterationWrapper<Statement>(
+								super.getStatementsInternal(s, p, o, inferred, contexts)) {
+							@Override
+							public boolean hasNext() {
+								boolean available = super.hasNext();
+								Runnable callback = onReturn.get();
+								if (callback != null && !available) {
+									callback.run();
+								}
+								return available;
+							}
+
+							@Override
+							public Statement next() {
+								Statement row = super.next();
+								Runnable callback = onReturn.get();
+								if (callback != null) {
+									callback.run();
+								}
+								return row;
+							}
+
+							@Override
+							protected void handleClose() {
+								closes.incrementAndGet();
+								super.handleClose();
+							}
+						};
+					}
+				};
+			}
+		};
+		store.init();
+		try (SailConnection connection = store.getConnection()) {
+			if (observed || !eof) {
+				var vf = store.getValueFactory();
+				connection.begin();
+				connection.addStatement(vf.createIRI("urn:s"), vf.createIRI("urn:p"), vf.createIRI("urn:o"));
+				connection.commit();
+			}
+			try (var result = connection.getStatements(null, null, null, false)) {
+				if (observed) {
+					assertTrue(result.hasNext());
+					if (eof) {
+						result.next();
+					}
+				}
+				onReturn.set(() -> assertTrue(CooperativeCancellation.forward(result)));
+				if (eof) {
+					assertThrows(QueryInterruptedException.class, result::hasNext);
+				} else {
+					assertThrows(QueryInterruptedException.class, result::next);
+				}
+				assertEquals(1, closes.get());
 			}
 		} finally {
 			store.shutDown();

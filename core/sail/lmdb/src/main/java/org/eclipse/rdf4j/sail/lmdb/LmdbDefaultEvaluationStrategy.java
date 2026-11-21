@@ -33,6 +33,7 @@ import org.eclipse.rdf4j.query.algebra.evaluation.federation.FederatedServiceRes
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.DefaultEvaluationStrategy;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.EvaluationStatistics;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.QueryEvaluationContext;
+import org.eclipse.rdf4j.query.algebra.evaluation.impl.evaluationsteps.DistinctQueryEvaluationStep;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.evaluationsteps.LeftJoinQueryEvaluationStep;
 import org.eclipse.rdf4j.query.algebra.evaluation.iterator.JoinIterator;
 import org.eclipse.rdf4j.query.algebra.evaluation.iterator.LeftJoinIterator;
@@ -68,10 +69,11 @@ final class LmdbDefaultEvaluationStrategy extends DefaultEvaluationStrategy {
 		QueryEvaluationStep input = precompile(projection, context);
 		String key = naturalPartitionKey(projection);
 		if (key == null) {
-			return prepareDistinct(input, null, null);
+			return DistinctQueryEvaluationStep.supply(input, () -> getCollectionFactory().get(), null, null);
 		}
 		node.setStringMetricPlanned("distinctPartitionBinding", key);
-		return prepareDistinct(input, context.getValue(key), statementSource.statementReplayCapturer());
+		return DistinctQueryEvaluationStep.supply(input, () -> getCollectionFactory().get(), context.getValue(key),
+				statementSource.statementReplayCapturer());
 	}
 
 	private String naturalPartitionKey(Projection projection) {

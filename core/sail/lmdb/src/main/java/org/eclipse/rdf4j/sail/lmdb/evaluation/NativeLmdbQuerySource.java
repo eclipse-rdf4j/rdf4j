@@ -81,24 +81,25 @@ public interface NativeLmdbQuerySource {
 		return new KernelQueryCancelledException(token, token);
 	}
 
-	/** The terminal owner, its thread's shared work budget, and the optional replayable attempt for a scan. */
+	/** The terminal owner and optional probe attempt, both sharing their worker's work across cursors. */
 	final class CursorCancellation {
 		private final NativeCancellationToken token;
 		private final Thread workThread;
 		private final NativeCancellationToken.CursorWork work;
 		private final LmdbNativeProbeDeadline deadline;
+		private final NativeCancellationToken.CursorWork deadlineWork;
+		private volatile Runnable graphContinuationPoll;
 
 		private CursorCancellation(NativeCancellationToken token, LmdbNativeProbeDeadline deadline) {
 			this.token = token;
 			this.workThread = Thread.currentThread();
 			this.work = token == null ? null : token.cursorWork(workThread);
 			this.deadline = deadline;
+			this.deadlineWork = deadline == null ? null : deadline.cursorWork(workThread);
 		}
 
 		public void checkpoint() {
-			checkpointPublishedCancellation();
-			poll();
-			checkpointProbeDeadline();
+			poll(true);
 		}
 
 		/** Checks both owning signals at a boundary that already bounds the amount of work between calls. */
@@ -116,16 +117,65 @@ public interface NativeLmdbQuerySource {
 			}
 		}
 
-		public void poll() {
-			if (work != null) {
-				work.poll(token);
+		/** Observes published stops without reading the deadline clock. */
+		public void checkpointPublishedStops() {
+			checkpointPublishedCancellation();
+			if (deadline != null && deadline.tripped()) {
+				checkpointProbeDeadline();
 			}
+		}
+
+		/** Charges one internal work unit before it executes. */
+		public void poll() {
+			poll(false);
+		}
+
+		private void poll(boolean exactDeadline) {
+			if (work != null && (work.pollDue(token) || (exactDeadline && token.cancellationPublished()))) {
+				token.check();
+			}
+			// An unrelated attempt must never use up this deadline's opportunity to be checked.
+			if (deadlineWork != null && (deadlineWork.pollDue() || exactDeadline)) {
+				checkpointProbeDeadline();
+			}
+		}
+
+		/** Reusable callback for synchronous graph proofs over CSF continuations. */
+		public Runnable graphContinuationPoll() {
+			Runnable poll = graphContinuationPoll;
+			if (poll == null) {
+				poll = this::pollGraphContinuation;
+				graphContinuationPoll = poll;
+			}
+			return poll;
+		}
+
+		private void pollGraphContinuation() {
+			if (workThread != Thread.currentThread()) {
+				// A borrowed owner can check both signals without changing its owning thread's work budget.
+				checkpointNow();
+				return;
+			}
+			poll();
 		}
 
 		/** The same signals, with a work budget belonging to the worker that opens this scan. */
 		public CursorCancellation forWorker() {
-			return workThread == Thread.currentThread() || work == null ? this
-					: new CursorCancellation(token, deadline);
+			return workThread == Thread.currentThread() ? this : new CursorCancellation(token, deadline);
+		}
+
+		/** Checks both signals on transfer of an already-open cursor, preserving both workers' countdowns. */
+		public CursorCancellation transferToWorker() {
+			CursorCancellation worker = forWorker();
+			if (worker != this) {
+				worker.checkpointNow();
+			}
+			return worker;
+		}
+
+		/** Reads the owning signals without delivering either under the native transaction lease. */
+		public boolean checkpointSignalled() {
+			return (token != null && token.cancellationPublished()) || (deadline != null && deadline.expired());
 		}
 
 		public void checkpointProbeDeadline() {
