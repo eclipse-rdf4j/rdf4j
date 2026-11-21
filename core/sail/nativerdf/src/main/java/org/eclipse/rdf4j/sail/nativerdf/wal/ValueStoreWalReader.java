@@ -19,6 +19,7 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.StandardOpenOption;
 import java.util.ArrayList;
+import java.util.BitSet;
 import java.util.Comparator;
 import java.util.Iterator;
 import java.util.List;
@@ -104,6 +105,22 @@ public final class ValueStoreWalReader implements AutoCloseable {
 			records.add(it.next());
 		}
 		return new ScanResult(records, this.lastValidLsn(), this.isComplete());
+	}
+
+	/**
+	 * Scan the entire WAL and check that it is complete and covers every ValueStore ID from 1 to {@code maxId}. Retain
+	 * only coverage bits, not the decoded values. IDs outside the current store do not affect coverage.
+	 */
+	public boolean hasCompleteValueIdCoverage(int maxId) {
+		BitSet seen = new BitSet();
+		Iterator<ValueStoreWalRecord> records = iterator();
+		while (records.hasNext()) {
+			int id = records.next().id();
+			if (id > 0 && id <= maxId) {
+				seen.set(id - 1);
+			}
+		}
+		return isComplete() && seen.nextClearBit(0) >= maxId;
 	}
 
 	/** On-demand iterator over minted WAL records. */
