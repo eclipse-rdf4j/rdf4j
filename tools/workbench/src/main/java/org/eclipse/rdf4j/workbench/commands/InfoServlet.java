@@ -70,7 +70,10 @@ public class InfoServlet extends TransformationServlet {
 		builder.start(INFO_COLUMNS);
 		String desc = info.getDescription();
 		URL loc = info.getLocation();
-		URL server = getServer();
+		Object server = req.getAttribute(WorkbenchPageProtocol.SERVER_DISPLAY_ATTRIBUTE);
+		if (!(server instanceof String)) {
+			server = getServer();
+		}
 		builder.result(id, desc, loc, server, info.isReadable(), info.isWritable());
 		builder.namedResult("default-limit", getParameterOrEmpty(req, "limit"));
 		builder.namedResult("default-queryLn", getParameterOrEmpty(req, "queryLn"));
