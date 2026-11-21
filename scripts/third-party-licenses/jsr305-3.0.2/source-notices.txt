@@ -1,0 +1,8 @@
+Source entries: javax/annotation/concurrent/GuardedBy.java#L1-L6, javax/annotation/concurrent/Immutable.java#L1-L6, javax/annotation/concurrent/NotThreadSafe.java#L1-L6, javax/annotation/concurrent/ThreadSafe.java#L1-L6
+/*
+ * Copyright (c) 2005 Brian Goetz
+ * Released under the Creative Commons Attribution License
+ *   (http://creativecommons.org/licenses/by/2.5)
+ * Official home: http://www.jcip.net
+ */
+

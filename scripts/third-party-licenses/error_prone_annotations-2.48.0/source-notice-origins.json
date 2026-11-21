@@ -1,0 +1,281 @@
+{
+  "sourceArchive": "https://repo.maven.apache.org/maven2/com/google/errorprone/error_prone_annotations/2.48.0/error_prone_annotations-2.48.0-sources.jar",
+  "archiveSha256": "5c1c7b797aa1effa050a06d2d98534a28750f5fa8bcca56d8f49a866ca8bd03f",
+  "blocks": [
+    {
+      "commentSha256": "db6296ab6266013c16f53e9ade9789598b1c66e16179a5236f85df287b13c4c0",
+      "sources": [
+        {
+          "entry": "com/google/errorprone/annotations/FormatMethod.java",
+          "sourceSha256": "f8d0960170f892da0b476dfef8267f7f8f05a9064652c76a4dbdae4914dcd89a",
+          "startByte": 0,
+          "endByteExclusive": 607,
+          "startLine": 1,
+          "endLine": 15
+        },
+        {
+          "entry": "com/google/errorprone/annotations/MustBeClosed.java",
+          "sourceSha256": "55734cbb3c33e5dbbb65cf571b89ac091c5bea9c672df27c38204a08f4aba375",
+          "startByte": 0,
+          "endByteExclusive": 607,
+          "startLine": 1,
+          "endLine": 15
+        },
+        {
+          "entry": "com/google/errorprone/annotations/CompatibleWith.java",
+          "sourceSha256": "625734d315ca4ca92910d30d306b945bbbfc4a4abcf20eee7f75146f59c8f4df",
+          "startByte": 0,
+          "endByteExclusive": 607,
+          "startLine": 1,
+          "endLine": 15
+        },
+        {
+          "entry": "com/google/errorprone/annotations/DoNotMock.java",
+          "sourceSha256": "f9fafefa9032f677a1afff12cf50dcc2101acb2944ba0455a9a9144219df4a5c",
+          "startByte": 0,
+          "endByteExclusive": 607,
+          "startLine": 1,
+          "endLine": 15
+        },
+        {
+          "entry": "com/google/errorprone/annotations/RestrictedApi.java",
+          "sourceSha256": "6100da102932e84e4b189a883ad880fd895f53b5deca4c1e4b27ba78462e195a",
+          "startByte": 0,
+          "endByteExclusive": 607,
+          "startLine": 1,
+          "endLine": 15
+        },
+        {
+          "entry": "com/google/errorprone/annotations/FormatString.java",
+          "sourceSha256": "09370c8693dced3cddde9f25ffc4d4101e87e28cad7c2be81ee2acdad00f6c70",
+          "startByte": 0,
+          "endByteExclusive": 607,
+          "startLine": 1,
+          "endLine": 15
+        }
+      ]
+    },
+    {
+      "commentSha256": "b9c026aaba308f1635696dba23b986237a9ab95d94e6333d9847454cad4ed7d5",
+      "sources": [
+        {
+          "entry": "com/google/errorprone/annotations/ThreadSafeTypeParameter.java",
+          "sourceSha256": "207ac13cca461ee2881e2933b547efa6e1f4392f5da8b478ef9785c33b622e3a",
+          "startByte": 0,
+          "endByteExclusive": 607,
+          "startLine": 1,
+          "endLine": 15
+        },
+        {
+          "entry": "com/google/errorprone/annotations/ImmutableTypeParameter.java",
+          "sourceSha256": "d611c790240ad01819b2be10f674ab62c562085a6beab36547d4c218236a0931",
+          "startByte": 0,
+          "endByteExclusive": 607,
+          "startLine": 1,
+          "endLine": 15
+        }
+      ]
+    },
+    {
+      "commentSha256": "80bb5643c4bd201c7306a48cd8a7e9069cae786d25aab3b734ae2b093baea342",
+      "sources": [
+        {
+          "entry": "com/google/errorprone/annotations/CanIgnoreReturnValue.java",
+          "sourceSha256": "66c06b3c92923fb451d38ba059e1a734d61de17dcfd2a11c143b293feae3894d",
+          "startByte": 0,
+          "endByteExclusive": 607,
+          "startLine": 1,
+          "endLine": 15
+        },
+        {
+          "entry": "com/google/errorprone/annotations/concurrent/LazyInit.java",
+          "sourceSha256": "b59124e59f5c819d0346160d27d003cfc8f175437edefcede7cbb3e45c63a1dd",
+          "startByte": 0,
+          "endByteExclusive": 607,
+          "startLine": 1,
+          "endLine": 15
+        },
+        {
+          "entry": "com/google/errorprone/annotations/CompileTimeConstant.java",
+          "sourceSha256": "cb4b18172ddc33d1d084da9b7a400861fab1a8b93a12496f6a7f99f90f16515b",
+          "startByte": 0,
+          "endByteExclusive": 607,
+          "startLine": 1,
+          "endLine": 15
+        },
+        {
+          "entry": "com/google/errorprone/annotations/ForOverride.java",
+          "sourceSha256": "537d2c22144408e70e467339cf9be7be5b77c8d7ff9a08fe84a0bb708d3be9e5",
+          "startByte": 0,
+          "endByteExclusive": 607,
+          "startLine": 1,
+          "endLine": 15
+        },
+        {
+          "entry": "com/google/errorprone/annotations/Var.java",
+          "sourceSha256": "761bb12299c6728350aad5763c202a82ea3709b3742abf67c4e95a9dccf7c6f6",
+          "startByte": 0,
+          "endByteExclusive": 607,
+          "startLine": 1,
+          "endLine": 15
+        },
+        {
+          "entry": "com/google/errorprone/annotations/RequiredModifiers.java",
+          "sourceSha256": "01d5359e7070f6840617a2aaa69460b42bdc0ccadb80ae02325373a4b4a25b54",
+          "startByte": 0,
+          "endByteExclusive": 607,
+          "startLine": 1,
+          "endLine": 15
+        },
+        {
+          "entry": "com/google/errorprone/annotations/Immutable.java",
+          "sourceSha256": "a6eb49931e65dcc633d641bca1c2e54925cb44bfddbd217f2bffe52aeb5fef04",
+          "startByte": 0,
+          "endByteExclusive": 607,
+          "startLine": 1,
+          "endLine": 15
+        },
+        {
+          "entry": "com/google/errorprone/annotations/IncompatibleModifiers.java",
+          "sourceSha256": "580cda3621f9fba885dc65366c4a9485bf430b52756f10d05a9cf47d3ed5cf0e",
+          "startByte": 0,
+          "endByteExclusive": 607,
+          "startLine": 1,
+          "endLine": 15
+        },
+        {
+          "entry": "com/google/errorprone/annotations/SuppressPackageLocation.java",
+          "sourceSha256": "14f45ff5901310638e28cc7e5fabcfa715126178e45fcf9be409bf4da876e0b6",
+          "startByte": 0,
+          "endByteExclusive": 607,
+          "startLine": 1,
+          "endLine": 15
+        },
+        {
+          "entry": "module-info.java",
+          "sourceSha256": "cbcf5f8000705f8f0c6297e47669693574d02cb575937c1e7523f50c7996762d",
+          "startByte": 0,
+          "endByteExclusive": 607,
+          "startLine": 1,
+          "endLine": 15
+        }
+      ]
+    },
+    {
+      "commentSha256": "3bd8c2bec0bad3254596d46b7ed1bb1d772d3076e868b464e13630d8e951c068",
+      "sources": [
+        {
+          "entry": "com/google/errorprone/annotations/concurrent/LockMethod.java",
+          "sourceSha256": "882aa8fa436dd94f52b38a1fc78e3f39a9a312aa05dcc1d814d600611cd2145b",
+          "startByte": 0,
+          "endByteExclusive": 607,
+          "startLine": 1,
+          "endLine": 15
+        },
+        {
+          "entry": "com/google/errorprone/annotations/concurrent/UnlockMethod.java",
+          "sourceSha256": "90dc91dcf3bfe77e9d1686678f7fbde74a28dbf7ec50c4a08d6abc3fa6f0971c",
+          "startByte": 0,
+          "endByteExclusive": 607,
+          "startLine": 1,
+          "endLine": 15
+        },
+        {
+          "entry": "com/google/errorprone/annotations/NoAllocation.java",
+          "sourceSha256": "d883a08f7bd2318371936d8cdf267ee9f28526ded73d0ded073815329517e0ef",
+          "startByte": 0,
+          "endByteExclusive": 607,
+          "startLine": 1,
+          "endLine": 15
+        }
+      ]
+    },
+    {
+      "commentSha256": "3d6cfaead17fe243949f66ae8c8311c3dd2e1e79af3e305d5a71eb0e2f2aec69",
+      "sources": [
+        {
+          "entry": "com/google/errorprone/annotations/concurrent/GuardedBy.java",
+          "sourceSha256": "6b5926e264bf8bd4c52a83098e4ddc027cc125475c32694b1551988989755552",
+          "startByte": 0,
+          "endByteExclusive": 607,
+          "startLine": 1,
+          "endLine": 15
+        },
+        {
+          "entry": "com/google/errorprone/annotations/OverridingMethodsMustInvokeSuper.java",
+          "sourceSha256": "69b739a13c51e689301792dc422786b307bfc7f10fb9dd935465243c459dd8c8",
+          "startByte": 0,
+          "endByteExclusive": 607,
+          "startLine": 1,
+          "endLine": 15
+        },
+        {
+          "entry": "com/google/errorprone/annotations/DoNotCall.java",
+          "sourceSha256": "91e1b24c8fd6b34cae7f147d7379cf8740534a21ab5fcb39037dc08fe7cd3009",
+          "startByte": 0,
+          "endByteExclusive": 607,
+          "startLine": 1,
+          "endLine": 15
+        },
+        {
+          "entry": "com/google/errorprone/annotations/CheckReturnValue.java",
+          "sourceSha256": "6bb3481be928f21d7ace3fc127fd5cd1122c5763fc8f19976fba6e0d717dbac8",
+          "startByte": 0,
+          "endByteExclusive": 607,
+          "startLine": 1,
+          "endLine": 15
+        }
+      ]
+    },
+    {
+      "commentSha256": "e78c246af482b43258f6968ee7a998fa699f4b4a03e42c9902ee1ad8a4f3682e",
+      "sources": [
+        {
+          "entry": "com/google/errorprone/annotations/ThreadSafe.java",
+          "sourceSha256": "45bec077770e86fc267a9b3c82083bc2a4da5423fe08b7a8838efe9862332dca",
+          "startByte": 0,
+          "endByteExclusive": 607,
+          "startLine": 1,
+          "endLine": 15
+        }
+      ]
+    },
+    {
+      "commentSha256": "be363ad0f0a1f69a0e6bf014d2147b89977a914ea2083962a6e218e3edcd09ca",
+      "sources": [
+        {
+          "entry": "com/google/errorprone/annotations/Modifier.java",
+          "sourceSha256": "28e9d88cf4bf0cbd9f805161edb82053198e6d311998edd72b52d44f59bfe1a9",
+          "startByte": 0,
+          "endByteExclusive": 607,
+          "startLine": 1,
+          "endLine": 15
+        },
+        {
+          "entry": "com/google/errorprone/annotations/InlineMeValidationDisabled.java",
+          "sourceSha256": "387a714177a98abba728b226392ae041ee5fb2dccd84c7e78af1b64e56e4d772",
+          "startByte": 0,
+          "endByteExclusive": 607,
+          "startLine": 1,
+          "endLine": 15
+        },
+        {
+          "entry": "com/google/errorprone/annotations/Keep.java",
+          "sourceSha256": "8eb12c29b1cbe2c2f1f630aa3a1f0fb15db023bdb73c112f77da1b3488713fcc",
+          "startByte": 0,
+          "endByteExclusive": 607,
+          "startLine": 1,
+          "endLine": 15
+        },
+        {
+          "entry": "com/google/errorprone/annotations/InlineMe.java",
+          "sourceSha256": "daa26553d2c08d21de97540402003ea0c8989e8f3e5d3797ceeb4c77b2bc2db3",
+          "startByte": 0,
+          "endByteExclusive": 607,
+          "startLine": 1,
+          "endLine": 15
+        }
+      ]
+    }
+  ]
+}

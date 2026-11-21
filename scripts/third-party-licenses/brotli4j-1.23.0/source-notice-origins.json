@@ -1,0 +1,199 @@
+{
+  "sourceArchive": "https://repo.maven.apache.org/maven2/com/aayushatharva/brotli4j/brotli4j/1.23.0/brotli4j-1.23.0-sources.jar",
+  "archiveSha256": "3da6a63af5d5bf06ef24576cc5728b60892d8b551f2490eb1f219a441b3655a0",
+  "blocks": [
+    {
+      "commentSha256": "405030130145bf9b95d9bf460c336ba5544fa40642b144f77d552858b3bdd46e",
+      "sources": [
+        {
+          "entry": "com/aayushatharva/brotli4j/decoder/BrotliDecoderChannel.java",
+          "sourceSha256": "47ae7eb01195c56c75b1a0ec0941adb67a502cbcaf4cee4a5ac36717a8ba1f78",
+          "startByte": 0,
+          "endByteExclusive": 166,
+          "startLine": 1,
+          "endLine": 5
+        },
+        {
+          "entry": "com/aayushatharva/brotli4j/decoder/BrotliInputStream.java",
+          "sourceSha256": "466067878eb86d91f06524b45744b4a72af91feea2c0a0f9ae1b1030c9aa4f18",
+          "startByte": 0,
+          "endByteExclusive": 166,
+          "startLine": 1,
+          "endLine": 5
+        },
+        {
+          "entry": "com/aayushatharva/brotli4j/decoder/DecoderJNI.java",
+          "sourceSha256": "94aba6f0f41cb88a92b47acb79f70c5ec33cabc3b237ee89c1812b6b28b743b5",
+          "startByte": 0,
+          "endByteExclusive": 166,
+          "startLine": 1,
+          "endLine": 5
+        },
+        {
+          "entry": "com/aayushatharva/brotli4j/decoder/Decoder.java",
+          "sourceSha256": "a53df283c6a0fccc09f1a19cebbaf04584c5d3b5a0694224bc97fa1f790e7a1b",
+          "startByte": 0,
+          "endByteExclusive": 166,
+          "startLine": 1,
+          "endLine": 5
+        },
+        {
+          "entry": "com/aayushatharva/brotli4j/encoder/BrotliEncoderChannel.java",
+          "sourceSha256": "be2d982879b1bafef41248742f20b51caff34706f3a8d550ce31f7badd50026c",
+          "startByte": 0,
+          "endByteExclusive": 166,
+          "startLine": 1,
+          "endLine": 5
+        },
+        {
+          "entry": "com/aayushatharva/brotli4j/encoder/Encoder.java",
+          "sourceSha256": "5172bfdee9567ba99eb4ea0d685e48a6db3697fd38a41d485112ed5da9d4a209",
+          "startByte": 0,
+          "endByteExclusive": 166,
+          "startLine": 1,
+          "endLine": 5
+        },
+        {
+          "entry": "com/aayushatharva/brotli4j/encoder/BrotliOutputStream.java",
+          "sourceSha256": "48c66ed9297ea0e128bb7963f7d5853ee59b7fc902d495c3c917cb541387f4b6",
+          "startByte": 0,
+          "endByteExclusive": 166,
+          "startLine": 1,
+          "endLine": 5
+        },
+        {
+          "entry": "com/aayushatharva/brotli4j/encoder/EncoderJNI.java",
+          "sourceSha256": "f89313e0084869dced7112220b58e01aa826c20102282a9ead073bad39199142",
+          "startByte": 0,
+          "endByteExclusive": 166,
+          "startLine": 1,
+          "endLine": 5
+        },
+        {
+          "entry": "com/aayushatharva/brotli4j/encoder/PreparedDictionaryGenerator.java",
+          "sourceSha256": "64db8aa043d8bb63c7409d9ca267f6d39b34db1047fa5339be80520f821a6e55",
+          "startByte": 0,
+          "endByteExclusive": 166,
+          "startLine": 1,
+          "endLine": 5
+        },
+        {
+          "entry": "com/aayushatharva/brotli4j/common/CommonJNI.java",
+          "sourceSha256": "8684db820ffb2a4f6ed06e2ed50749453a0f4f037c5c17b294223731147d7eb8",
+          "startByte": 0,
+          "endByteExclusive": 166,
+          "startLine": 1,
+          "endLine": 5
+        },
+        {
+          "entry": "com/aayushatharva/brotli4j/common/BrotliCommon.java",
+          "sourceSha256": "ef5225da9a181628f2227355719be2f37fca68835758e2f0c23682fc34234d8b",
+          "startByte": 0,
+          "endByteExclusive": 166,
+          "startLine": 1,
+          "endLine": 5
+        }
+      ]
+    },
+    {
+      "commentSha256": "269974a7b6406e9f1aadae96666154a1288426133d9b2412441293a68bfa1429",
+      "sources": [
+        {
+          "entry": "com/aayushatharva/brotli4j/decoder/Decoders.java",
+          "sourceSha256": "42e17c2f451b82fa8c59ed3b9ff66850ca9122080af0d6781c9170a43c61c3b6",
+          "startByte": 0,
+          "endByteExclusive": 669,
+          "startLine": 1,
+          "endLine": 16
+        },
+        {
+          "entry": "com/aayushatharva/brotli4j/decoder/DirectDecompress.java",
+          "sourceSha256": "1e7eca87d4dca6a801e51a88539f33a52806242e6ee5acc3b71df33dc02015f7",
+          "startByte": 0,
+          "endByteExclusive": 669,
+          "startLine": 1,
+          "endLine": 16
+        },
+        {
+          "entry": "com/aayushatharva/brotli4j/Brotli4jLoader.java",
+          "sourceSha256": "1d141488b40198699eb82813428bb9360561673ebdc758fdd2319287f12d5330",
+          "startByte": 0,
+          "endByteExclusive": 669,
+          "startLine": 1,
+          "endLine": 16
+        },
+        {
+          "entry": "com/aayushatharva/brotli4j/encoder/Encoders.java",
+          "sourceSha256": "2493aaba9e83f3a87c9f01f41962097c316f0b8848164cde047a89248466647d",
+          "startByte": 0,
+          "endByteExclusive": 669,
+          "startLine": 1,
+          "endLine": 16
+        },
+        {
+          "entry": "com/aayushatharva/brotli4j/common/annotations/Local.java",
+          "sourceSha256": "1009c1b68dc48de367b61de0cf9279fa6477688694ab36b1edca87a21411927e",
+          "startByte": 0,
+          "endByteExclusive": 669,
+          "startLine": 1,
+          "endLine": 16
+        },
+        {
+          "entry": "com/aayushatharva/brotli4j/common/annotations/Upstream.java",
+          "sourceSha256": "6e85091440b2ff23b75678028bbce3dc71ff7b889f27cf2c6a14d7b25e1b118c",
+          "startByte": 0,
+          "endByteExclusive": 669,
+          "startLine": 1,
+          "endLine": 16
+        },
+        {
+          "entry": "com/aayushatharva/brotli4j/common/annotations/Internal.java",
+          "sourceSha256": "d307b7ea56c7e9ee7507b562b0d4e4bd028de0b09163075055159241989e7e91",
+          "startByte": 0,
+          "endByteExclusive": 669,
+          "startLine": 1,
+          "endLine": 16
+        }
+      ]
+    },
+    {
+      "commentSha256": "9f1c9d2a28d797bf959accda82a1effea6c33e99873d22cc31925446dd784a7c",
+      "sources": [
+        {
+          "entry": "com/aayushatharva/brotli4j/encoder/PreparedDictionary.java",
+          "sourceSha256": "d06e1eb96b324092b1fee2ae7700bd1baddae6a47db35908855c8e8738a7e02d",
+          "startByte": 0,
+          "endByteExclusive": 166,
+          "startLine": 1,
+          "endLine": 5
+        }
+      ]
+    },
+    {
+      "commentSha256": "a5675a0ef8b567e2d421108bb7677eaaf65f1fd30cff33b10f89786bfe1ccb5e",
+      "sources": [
+        {
+          "entry": "com/aayushatharva/brotli4j/common/Utils.java",
+          "sourceSha256": "7e00c268d279cdf18d588379fa7501fc786a3639fab6b5c655c079e50bc272d0",
+          "startByte": 0,
+          "endByteExclusive": 684,
+          "startLine": 1,
+          "endLine": 16
+        }
+      ]
+    },
+    {
+      "commentSha256": "adc6104e4076ea96afee66e3b626f046129841dcc206d68c1c5dc3a7656db41c",
+      "sources": [
+        {
+          "entry": "com/aayushatharva/brotli4j/common/Utils.java",
+          "sourceSha256": "7e00c268d279cdf18d588379fa7501fc786a3639fab6b5c655c079e50bc272d0",
+          "startByte": 809,
+          "endByteExclusive": 1285,
+          "startLine": 24,
+          "endLine": 33
+        }
+      ]
+    }
+  ]
+}
