@@ -61,6 +61,7 @@ import static org.lwjgl.util.lmdb.LMDB.mdb_txn_begin;
 import static org.lwjgl.util.lmdb.LMDB.mdb_txn_commit;
 import static org.lwjgl.util.lmdb.LMDB.mdb_txn_id;
 
+import java.io.DataOutputStream;
 import java.io.File;
 import java.io.IOException;
 import java.io.UncheckedIOException;
@@ -1096,6 +1097,8 @@ public class ValueStore extends AbstractValueFactory implements BNodeIdResolver,
 	private Thread writeTxnOwner;
 	/** Published before writer IDs, and released only after commit or abort metadata has settled. */
 	private volatile WriterPublication writerPublication;
+	/** Accessed only by the serialized native backup capture, including its producer/worker handoff. */
+	private NativeBackupMetadataCache backupMetadata;
 
 	private static final class WriterPublication {
 		private final Thread owner;
@@ -1104,6 +1107,8 @@ public class ValueStore extends AbstractValueFactory implements BNodeIdResolver,
 		private ReverseIdCache.State<NamespaceKey> namespaceCandidateState;
 		private ValueStoreRevision namespaceCandidateRevision;
 		private long namespaceCandidateEnvironment;
+		private boolean backupCaptureSeen;
+		private Object backupMetadataIdentity;
 		private volatile Thread consumer;
 		private volatile boolean failedCleanup;
 
@@ -1307,6 +1312,14 @@ public class ValueStore extends AbstractValueFactory implements BNodeIdResolver,
 			Runnable duringValueOverlayWarmupScanForTest, LmdbStoreFormat format,
 			boolean deferPersistedUnusedRecovery, Supplier<? extends CollectionFactory> legacyCollections)
 			throws IOException {
+		this(dir, properties, config, deferAuxiliaryDatabases, duringValueOverlayWarmupScanForTest, format,
+				deferPersistedUnusedRecovery, legacyCollections, config.getBackupJournalEnabled());
+	}
+
+	ValueStore(File dir, StoreProperties properties, LmdbStoreConfig config, boolean deferAuxiliaryDatabases,
+			Runnable duringValueOverlayWarmupScanForTest, LmdbStoreFormat format,
+			boolean deferPersistedUnusedRecovery, Supplier<? extends CollectionFactory> legacyCollections,
+			boolean backupJournalEnabled) throws IOException {
 		this.legacyCollections = legacyCollections;
 		this.duringValueOverlayWarmupScanForTest = duringValueOverlayWarmupScanForTest;
 		this.dir = dir;
@@ -1315,7 +1328,8 @@ public class ValueStore extends AbstractValueFactory implements BNodeIdResolver,
 		this.refCountRepairEnabled = !format.isLegacy() || config.getLegacyReferenceCountRepairEnabled();
 		this.deferPersistedUnusedRecovery = deferPersistedUnusedRecovery;
 		this.storeConfig = config;
-		this.forceSync = config.getForceSync();
+		// Enabled backup journaling promises durable client commits even when forceSync is false.
+		this.forceSync = config.getForceSync() || backupJournalEnabled;
 		this.noReadahead = config.getNoReadahead();
 		this.autoGrow = config.getAutoGrow();
 		this.growthPolicy = new MapGrowthPolicy(config.getMapGrowthThreshold());
@@ -14956,10 +14970,17 @@ public class ValueStore extends AbstractValueFactory implements BNodeIdResolver,
 	}
 
 	void syncBackupBoundary() throws IOException {
-		withEnvironmentCopyLock(() -> {
-			beforeBackupSync.run();
-			E(mdb_env_sync(env, true));
-		});
+		// Every resize path holds the native write barrier; some do not need the environment-copy lock.
+		// Take the locks in the same order as resizeMapInternal before touching the mapped environment.
+		long stamp = txnManager.acquireReadBarrier();
+		try {
+			withEnvironmentCopyLock(() -> {
+				beforeBackupSync.run();
+				E(mdb_env_sync(env, true));
+			});
+		} finally {
+			txnManager.lockManager().unlockRead(stamp);
+		}
 	}
 
 	void withMapResizeLock(IoRunnable operation) throws IOException {
@@ -16025,6 +16046,351 @@ public class ValueStore extends AbstractValueFactory implements BNodeIdResolver,
 				context.writerCapture = previousCapture;
 			}
 		});
+	}
+
+	/**
+	 * Copies ordinary dictionary terms directly into the public backup record encoding. The caller serializes access to
+	 * its output and scratch buffer and holds the Sail mutation/native-continuation admission until this callback ends.
+	 * Commit, rollback and close drain that callback before consuming the native writer. No mapped bytes, models or
+	 * numeric identities enter retained backup work, so this byte-only path needs no model epoch reservation. Inline
+	 * literals and triple terms use the existing protected model capture path, including its format-specific decoding.
+	 */
+	boolean writeBackupRecord(DataOutputStream output, boolean addition, boolean explicit, long[] quad, byte[] scratch)
+			throws IOException {
+		for (int i = 0; i < 4; i++) {
+			long id = quad[i];
+			if (i == 3 && (id == 0 || id == LmdbValue.UNKNOWN_ID)) {
+				continue;
+			}
+			int kind = ValueIds.getIdType(id);
+			if (id == LmdbValue.UNKNOWN_ID || ValueIds.isInlined(id)
+					|| kind != ValueIds.T_URI && kind != ValueIds.T_BNODE
+							&& kind != ValueIds.T_LITERAL && kind != ValueIds.T_CORE_LITERAL) {
+				return false;
+			}
+		}
+		WriterPublication publication = writerPublication;
+		long nativeWriter = writeTxn;
+		if (publication == null || nativeWriter == 0 || publication.consumer != null) {
+			return false;
+		}
+		try (MemoryStack stack = stackPush()) {
+			if (writerPublication != publication || writeTxn != nativeWriter || publication.consumer != null) {
+				return false;
+			}
+			NativeBackupWriter writer = new NativeBackupWriter(stack, nativeWriter, dbi, output, scratch,
+					backupMetadataFor(publication));
+			output.writeByte(addition ? LmdbBackupDeltaCodec.OP_ADD : LmdbBackupDeltaCodec.OP_REMOVE);
+			output.writeBoolean(explicit);
+			writer.writeValue(quad[0], false);
+			writer.writeValue(quad[1], true);
+			writer.writeValue(quad[2], false);
+			boolean hasContext = quad[3] != 0 && quad[3] != LmdbValue.UNKNOWN_ID;
+			output.writeBoolean(hasContext);
+			if (hasContext) {
+				writer.writeValue(quad[3], false);
+			}
+			return true;
+		}
+	}
+
+	private NativeBackupMetadataCache backupMetadataFor(WriterPublication publication) {
+		// A single-record transaction cannot reuse metadata across records. Avoid its cold-cache allocation/copy cost.
+		if (!publication.backupCaptureSeen) {
+			publication.backupCaptureSeen = true;
+			if (backupMetadata != null) {
+				backupMetadata.reset(null);
+			}
+			return null;
+		}
+		if (publication.backupMetadataIdentity == null) {
+			publication.backupMetadataIdentity = new Object();
+		}
+		if (backupMetadata == null) {
+			backupMetadata = new NativeBackupMetadataCache();
+		}
+		backupMetadata.reset(publication.backupMetadataIdentity);
+		return backupMetadata;
+	}
+
+	/**
+	 * Owned immutable UTF-8 metadata, bounded to 32 entries of at most 4 KiB each. The opaque identity belongs to one
+	 * physical dictionary writer and changes at dictionary-only capacity checkpoints too. It retains no publication,
+	 * model revision, transaction handle or native address. Namespace payloads and complete IRIs have separate kinds.
+	 */
+	private static final class NativeBackupMetadataCache {
+		private static final int CAPACITY = 32;
+		private static final int WAYS = 4;
+		private static final int MAX_BYTES = 4 * 1024;
+		private static final byte NAMESPACE = 1;
+		private static final byte IRI = 2;
+		private final long[] ids = new long[CAPACITY];
+		private final byte[] kinds = new byte[CAPACITY];
+		private final byte[][] values = new byte[CAPACITY][];
+		private Object writerIdentity;
+		private int nextVictim;
+
+		private void reset(Object identity) {
+			if (writerIdentity != identity) {
+				Arrays.fill(values, null);
+				writerIdentity = identity;
+				nextVictim = 0;
+			}
+		}
+
+		private byte[] get(long id, byte kind) {
+			int base = ((spreadValueId(id) ^ kind) & (CAPACITY / WAYS - 1)) * WAYS;
+			for (int i = base; i < base + WAYS; i++) {
+				byte[] value = values[i];
+				if (value != null && ids[i] == id && kinds[i] == kind) {
+					return value;
+				}
+			}
+			return null;
+		}
+
+		private void put(long id, byte kind, byte[] value) {
+			int base = ((spreadValueId(id) ^ kind) & (CAPACITY / WAYS - 1)) * WAYS;
+			int slot = -1;
+			for (int i = base; i < base + WAYS; i++) {
+				if (values[i] == null || ids[i] == id && kinds[i] == kind) {
+					slot = i;
+					break;
+				}
+			}
+			if (slot < 0) {
+				slot = base + (nextVictim++ & (WAYS - 1));
+			}
+			ids[slot] = id;
+			kinds[slot] = kind;
+			values[slot] = value;
+		}
+	}
+
+	/** Lives only within writeBackupRecord's native callback, and never retains a mapped value after returning. */
+	private static final class NativeBackupWriter {
+		private static final byte[] XSD_STRING = CoreDatatype.XSD.STRING.getIri()
+				.stringValue()
+				.getBytes(StandardCharsets.UTF_8);
+		private static final byte[] RDF_LANG_STRING = CoreDatatype.RDF.LANGSTRING.getIri()
+				.stringValue()
+				.getBytes(StandardCharsets.UTF_8);
+		private static final byte[] RDF_DIR_LANG_STRING = CoreDatatype.RDF.DIRLANGSTRING.getIri()
+				.stringValue()
+				.getBytes(StandardCharsets.UTF_8);
+		private static final byte[] LTR = Literal.BaseDirection.LTR.toString().getBytes(StandardCharsets.UTF_8);
+		private static final byte[] RTL = Literal.BaseDirection.RTL.toString().getBytes(StandardCharsets.UTF_8);
+		private final long transaction;
+		private final int database;
+		private final DataOutputStream output;
+		private final byte[] scratch;
+		private final NativeBackupMetadataCache metadata;
+		private final ByteBuffer keyBytes;
+		private final MDBVal key;
+		private final MDBVal value;
+		private int dataLength;
+		private int varintLength;
+
+		private NativeBackupWriter(MemoryStack stack, long transaction, int database, DataOutputStream output,
+				byte[] scratch, NativeBackupMetadataCache metadata) {
+			this.transaction = transaction;
+			this.database = database;
+			this.output = output;
+			this.scratch = scratch;
+			this.metadata = metadata;
+			keyBytes = stack.malloc(MAX_ID_KEY_BYTES);
+			key = MDBVal.malloc(stack);
+			value = MDBVal.malloc(stack);
+		}
+
+		private long data(long id) throws IOException {
+			keyBytes.clear().put(ID_KEY);
+			Varint.writeUnsigned(keyBytes, id);
+			LmdbUtil.setMDBValData(key, keyBytes.flip());
+			int result = mdb_get(transaction, database, key, value);
+			if (result == MDB_NOTFOUND) {
+				throw new IOException("Missing dictionary value during backup capture: " + id);
+			}
+			E(result);
+			long length = LmdbUtil.mdbValSizeLong(value);
+			if (length == 0) {
+				throw new IOException("Empty dictionary value during backup capture: " + id);
+			}
+			if (length < 0 || length > Integer.MAX_VALUE) {
+				throw new IOException("Invalid dictionary value length during backup capture: " + id);
+			}
+			dataLength = (int) length;
+			return LmdbUtil.mdbValDataAddress(value);
+		}
+
+		private long readUnsigned(long address, int remaining) throws IOException {
+			if (remaining < 1) {
+				throw new IOException("Truncated dictionary varint during backup capture");
+			}
+			int first = LmdbUtil.getByte(address) & 0xff;
+			int length = Varint.firstToLength(first);
+			if (length > remaining) {
+				throw new IOException("Truncated dictionary varint during backup capture");
+			}
+			varintLength = length;
+			return Varint.readUnsigned(address, first);
+		}
+
+		private void writeValue(long id, boolean cacheIri) throws IOException {
+			if (cacheIri && metadata != null) {
+				byte[] iri = metadata.get(id, NativeBackupMetadataCache.IRI);
+				if (iri != null) {
+					output.writeByte(LmdbBackupDeltaCodec.VALUE_IRI);
+					writeString(iri);
+					return;
+				}
+			}
+			long address = data(id);
+			int length = dataLength;
+			switch (LmdbUtil.getByte(address)) {
+			case URI_VALUE -> {
+				output.writeByte(LmdbBackupDeltaCodec.VALUE_IRI);
+				writeIriString(address + 1, length - 1, cacheIri ? id : LmdbValue.UNKNOWN_ID);
+			}
+			case BNODE_VALUE -> {
+				output.writeByte(LmdbBackupDeltaCodec.VALUE_BNODE);
+				writeString(address + 1, length - 1);
+			}
+			case LITERAL_VALUE -> {
+				output.writeByte(LmdbBackupDeltaCodec.VALUE_LITERAL);
+				writeLiteral(address + 1, length - 1);
+			}
+			default -> throw new IOException("Unexpected dictionary record during backup capture: " + id);
+			}
+		}
+
+		private void writeIriString(long address, int length, long cacheId) throws IOException {
+			long namespaceId = readUnsigned(address, length);
+			long localAddress = address + varintLength;
+			int localLength = length - varintLength;
+			byte[] namespaceBytes = metadata == null ? null
+					: metadata.get(namespaceId, NativeBackupMetadataCache.NAMESPACE);
+			long namespaceAddress = 0;
+			int namespaceLength;
+			if (namespaceBytes != null) {
+				namespaceLength = namespaceBytes.length;
+			} else {
+				long namespace = data(namespaceId);
+				namespaceLength = dataLength - 1;
+				if (LmdbUtil.getByte(namespace) != NAMESPACE_VALUE) {
+					throw new IOException("Invalid dictionary namespace during backup capture");
+				}
+				namespaceAddress = namespace + 1;
+				if (metadata != null && namespaceLength <= NativeBackupMetadataCache.MAX_BYTES) {
+					namespaceBytes = new byte[namespaceLength];
+					LmdbUtil.copyMemoryToByteArray(namespaceAddress, namespaceBytes, namespaceLength);
+					metadata.put(namespaceId, NativeBackupMetadataCache.NAMESPACE, namespaceBytes);
+				}
+			}
+			int iriLength = Math.addExact(namespaceLength, localLength);
+			if (metadata != null && cacheId != LmdbValue.UNKNOWN_ID
+					&& iriLength <= NativeBackupMetadataCache.MAX_BYTES) {
+				byte[] iri = new byte[iriLength];
+				if (namespaceBytes != null) {
+					System.arraycopy(namespaceBytes, 0, iri, 0, namespaceLength);
+				} else {
+					LmdbUtil.copyMemoryToByteArray(namespaceAddress, iri, namespaceLength);
+				}
+				copyBytes(localAddress, iri, namespaceLength, localLength);
+				metadata.put(cacheId, NativeBackupMetadataCache.IRI, iri);
+				writeString(iri);
+				return;
+			}
+			output.writeInt(iriLength);
+			if (namespaceBytes != null) {
+				output.write(namespaceBytes);
+			} else {
+				writeBytes(namespaceAddress, namespaceLength);
+			}
+			writeBytes(localAddress, localLength);
+		}
+
+		private void writeLiteral(long address, int length) throws IOException {
+			long datatypeId = readUnsigned(address, length);
+			int offset = varintLength;
+			if (offset == length) {
+				throw new IOException("Truncated dictionary literal during backup capture");
+			}
+			int directionAndLength = LmdbUtil.getByte(address + offset++) & 0xff;
+			int direction = directionAndLength >>> 6;
+			int languageLength;
+			if (direction == 3) {
+				direction = directionAndLength & 0x3f;
+				long extendedLength = readUnsigned(address + offset, length - offset);
+				offset += varintLength;
+				if (extendedLength < 0 || extendedLength > length - offset) {
+					throw new IOException("Invalid dictionary language length during backup capture");
+				}
+				languageLength = (int) extendedLength;
+			} else {
+				languageLength = directionAndLength & 0x3f;
+			}
+			if (languageLength > length - offset) {
+				throw new IOException("Truncated dictionary language during backup capture");
+			}
+			long languageAddress = address + offset;
+			writeString(languageAddress + languageLength, length - offset - languageLength);
+			if (languageLength != 0) {
+				writeString(direction == 1 || direction == 2 ? RDF_DIR_LANG_STRING : RDF_LANG_STRING);
+			} else if (datatypeId > 0) {
+				byte[] datatypeBytes = metadata == null ? null
+						: metadata.get(datatypeId, NativeBackupMetadataCache.IRI);
+				if (datatypeBytes != null) {
+					writeString(datatypeBytes);
+				} else {
+					long datatype = data(datatypeId);
+					int datatypeLength = dataLength - 1;
+					if (LmdbUtil.getByte(datatype) != URI_VALUE) {
+						throw new IOException("Invalid dictionary datatype during backup capture");
+					}
+					writeIriString(datatype + 1, datatypeLength, datatypeId);
+				}
+			} else {
+				writeString(XSD_STRING);
+			}
+			writeString(languageAddress, languageLength);
+			if (languageLength != 0 && (direction == 1 || direction == 2)) {
+				writeString(direction == 1 ? LTR : RTL);
+			} else {
+				output.writeInt(0);
+			}
+		}
+
+		private void writeString(byte[] bytes) throws IOException {
+			output.writeInt(bytes.length);
+			output.write(bytes);
+		}
+
+		private void writeString(long address, int length) throws IOException {
+			output.writeInt(length);
+			writeBytes(address, length);
+		}
+
+		private void writeBytes(long address, int length) throws IOException {
+			while (length != 0) {
+				int copied = Math.min(length, scratch.length);
+				LmdbUtil.copyMemoryToByteArray(address, scratch, copied);
+				output.write(scratch, 0, copied);
+				address += copied;
+				length -= copied;
+			}
+		}
+
+		private void copyBytes(long address, byte[] target, int offset, int length) {
+			while (length != 0) {
+				int copied = Math.min(length, scratch.length);
+				LmdbUtil.copyMemoryToByteArray(address, scratch, copied);
+				System.arraycopy(scratch, 0, target, offset, copied);
+				address += copied;
+				offset += copied;
+				length -= copied;
+			}
+		}
 	}
 
 	private long getTransactionValueId(Value value) {

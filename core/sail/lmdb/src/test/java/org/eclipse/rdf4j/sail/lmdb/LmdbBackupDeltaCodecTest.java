@@ -12,6 +12,7 @@
 package org.eclipse.rdf4j.sail.lmdb;
 
 import static org.junit.jupiter.api.Assertions.assertAll;
+import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertIterableEquals;
@@ -20,8 +21,11 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
+import java.io.DataInputStream;
+import java.io.DataOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
+import java.nio.charset.StandardCharsets;
 import java.util.Arrays;
 import java.util.List;
 import java.util.UUID;
@@ -40,6 +44,32 @@ import org.junit.jupiter.params.provider.EnumSource;
 class LmdbBackupDeltaCodecTest {
 
 	private final ValueFactory vf = SimpleValueFactory.getInstance();
+
+	@Test
+	void stringEncodingMatchesCharsetForUnicodeAndUnpairedSurrogates() throws IOException {
+		List<String> values = List.of("", "ASCII", "café 茶 🙂", String.valueOf((char) 0),
+				String.valueOf((char) 0xd800), String.valueOf((char) 0xdc00),
+				new String(new char[] { (char) 0xdc00, (char) 0xd800 }),
+				new String(new char[] { (char) 0xd800, 'a', (char) 0xd800, (char) 0xdc00 }));
+		for (String value : values) {
+			var reference = StandardCharsets.UTF_8.encode(value);
+			byte[] expected = new byte[reference.remaining()];
+			reference.get(expected);
+			ByteArrayOutputStream bytes = new ByteArrayOutputStream();
+			try (DataOutputStream output = new DataOutputStream(bytes)) {
+				LmdbBackupDeltaCodec.writeRecord(output, new LmdbBackupDeltaCodec.Record(
+						LmdbBackupDeltaCodec.NamespaceOperation.SET, value, value));
+			}
+			try (DataInputStream input = new DataInputStream(new ByteArrayInputStream(bytes.toByteArray()))) {
+				assertEquals(3, input.readUnsignedByte());
+				assertEquals(expected.length, input.readInt());
+				assertArrayEquals(expected, input.readNBytes(expected.length));
+				assertEquals(expected.length, input.readInt());
+				assertArrayEquals(expected, input.readNBytes(expected.length));
+				assertEquals(-1, input.read());
+			}
+		}
+	}
 
 	@Test
 	void generationJournalsRejectDifferentOrLegacyBaselines() throws IOException {

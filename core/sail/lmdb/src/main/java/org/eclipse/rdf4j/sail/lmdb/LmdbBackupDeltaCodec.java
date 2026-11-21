@@ -16,8 +16,6 @@ import java.io.DataOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
-import java.nio.ByteBuffer;
-import java.nio.CharBuffer;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.List;
@@ -47,18 +45,23 @@ final class LmdbBackupDeltaCodec {
 		}
 	}
 
-	private static final byte OP_ADD = 1;
-	private static final byte OP_REMOVE = 2;
+	static final byte OP_ADD = 1;
+	static final byte OP_REMOVE = 2;
 	private static final byte OP_SET_NAMESPACE = 3;
 	private static final byte OP_REMOVE_NAMESPACE = 4;
 	private static final byte OP_CLEAR_NAMESPACES = 5;
 
-	private static final byte VALUE_IRI = 1;
-	private static final byte VALUE_BNODE = 2;
-	private static final byte VALUE_LITERAL = 3;
+	static final byte VALUE_IRI = 1;
+	static final byte VALUE_BNODE = 2;
+	static final byte VALUE_LITERAL = 3;
 	private static final byte VALUE_TRIPLE = 4;
 
 	private LmdbBackupDeltaCodec() {
+	}
+
+	/** A snapshot which can reuse its already encoded record body without materializing values again. */
+	interface EncodedRecords {
+		void writeTo(DataOutputStream output) throws IOException;
 	}
 
 	static void write(OutputStream outputStream, List<Record> records) throws IOException {
@@ -83,16 +86,29 @@ final class LmdbBackupDeltaCodec {
 	private static void writeJournal(OutputStream outputStream, List<Record> records, long previousTransactionId,
 			UUID generation) throws IOException {
 		try (DataOutputStream out = new DataOutputStream(outputStream)) {
-			out.writeInt(MAGIC.length);
-			out.write(generation != null ? GENERATION_MAGIC : previousTransactionId < 0 ? MAGIC : CHAINED_MAGIC);
-			if (previousTransactionId >= 0) {
-				out.writeLong(previousTransactionId);
-			}
-			if (generation != null) {
-				out.writeLong(generation.getMostSignificantBits());
-				out.writeLong(generation.getLeastSignificantBits());
-			}
-			out.writeInt(records.size());
+			writeJournalHeader(out, records.size(), previousTransactionId, generation);
+			writeRecords(out, records);
+		}
+	}
+
+	static void writeJournalHeader(DataOutputStream out, int count, long previousTransactionId, UUID generation)
+			throws IOException {
+		out.writeInt(MAGIC.length);
+		out.write(generation != null ? GENERATION_MAGIC : previousTransactionId < 0 ? MAGIC : CHAINED_MAGIC);
+		if (previousTransactionId >= 0) {
+			out.writeLong(previousTransactionId);
+		}
+		if (generation != null) {
+			out.writeLong(generation.getMostSignificantBits());
+			out.writeLong(generation.getLeastSignificantBits());
+		}
+		out.writeInt(count);
+	}
+
+	static void writeRecords(DataOutputStream out, List<Record> records) throws IOException {
+		if (records instanceof EncodedRecords encoded) {
+			encoded.writeTo(out);
+		} else {
 			for (Record record : records) {
 				writeRecord(out, record);
 			}
@@ -268,9 +284,13 @@ final class LmdbBackupDeltaCodec {
 	}
 
 	private static void writeString(DataOutputStream out, String value) throws IOException {
-		ByteBuffer encoded = StandardCharsets.UTF_8.encode(CharBuffer.wrap(value));
-		out.writeInt(encoded.remaining());
-		out.write(encoded.array(), 0, encoded.remaining());
+		if (value.isEmpty()) {
+			out.writeInt(0);
+			return;
+		}
+		byte[] encoded = value.getBytes(StandardCharsets.UTF_8);
+		out.writeInt(encoded.length);
+		out.write(encoded);
 	}
 
 	private static String readString(DataInputStream in) throws IOException {

@@ -317,6 +317,10 @@ class AsyncValueRetirementQueuePressureTest {
 			f.cleanup.start();
 			assertTrue(f.cleanup.awaitEmpty(10, TimeUnit.SECONDS), "invalid optional hints must release capacity");
 			assertEquals(0, processed.get(), "corrupt data must not reach processor");
+			AsyncValueRetirementCoordinator.Metrics dropped = f.cleanup.metrics();
+			assertEquals(0L, dropped.queuedCandidates());
+			assertEquals(0L, dropped.unacknowledgedCandidates());
+			assertEquals(0L, dropped.acknowledgedCandidates());
 		}
 	}
 
@@ -431,9 +435,15 @@ class AsyncValueRetirementQueuePressureTest {
 				}
 			});
 			assertTrue(waiting.await(2, TimeUnit.SECONDS));
-			assertEquals(100, f.cleanup.metrics().pressureTargetAcknowledged());
+			AsyncValueRetirementCoordinator.Metrics initial = f.cleanup.metrics();
+			assertEquals(100, initial.pressureTargetAcknowledged());
+			assertEquals(1000L, initial.queuedCandidates());
+			assertEquals(1000L, initial.unacknowledgedCandidates());
 			enqueue(f, 1000);
-			assertEquals(100, f.cleanup.metrics().pressureTargetAcknowledged());
+			AsyncValueRetirementCoordinator.Metrics extended = f.cleanup.metrics();
+			assertEquals(100, extended.pressureTargetAcknowledged());
+			assertEquals(2000L, extended.queuedCandidates());
+			assertEquals(2000L, extended.unacknowledgedCandidates());
 			allow.set(true);
 			f.cleanup.start();
 			writer.join(2000);
@@ -441,6 +451,10 @@ class AsyncValueRetirementQueuePressureTest {
 					"fixed ten-percent target must release admission before newer backlog drains");
 			assertNull(failure.get());
 			assertEquals(100, processed.get());
+			AsyncValueRetirementCoordinator.Metrics admitted = f.cleanup.metrics();
+			assertEquals(100L, admitted.acknowledgedCandidates());
+			assertEquals(1900L, admitted.queuedCandidates());
+			assertEquals(1900L, admitted.unacknowledgedCandidates());
 			assertTrue(f.cleanup.hasProducer(next));
 			f.cleanup.complete(next);
 		}
@@ -587,15 +601,23 @@ class AsyncValueRetirementQueuePressureTest {
 			f.cleanup.start();
 			try {
 				assertTrue(paused.await(5, TimeUnit.SECONDS));
-				assertTrue(f.cleanup.metrics().retainedBytes() < before - 32000,
+				AsyncValueRetirementCoordinator.Metrics partial = f.cleanup.metrics();
+				assertTrue(partial.retainedBytes() < before - 32000,
 						"successful prefix processing must return segment memory credits");
-				assertTrue(f.cleanup.metrics().queuedCandidates() > 0, "the stream is still pending");
-				assertTrue(f.cleanup.metrics().acknowledgedCandidates() >= 8192);
+				assertTrue(partial.queuedCandidates() > 0, "the stream is still pending");
+				assertTrue(partial.acknowledgedCandidates() >= 8192);
+				assertEquals((long) processed.get(), partial.acknowledgedCandidates());
+				assertEquals(65536L, partial.queuedCandidates() + partial.acknowledgedCandidates());
+				assertEquals(partial.queuedCandidates(), partial.unacknowledgedCandidates());
 			} finally {
 				resume.countDown();
 			}
 			assertTrue(f.cleanup.awaitEmpty(10, TimeUnit.SECONDS));
 			assertEquals(65536, processed.get());
+			AsyncValueRetirementCoordinator.Metrics drained = f.cleanup.metrics();
+			assertEquals(0L, drained.queuedCandidates());
+			assertEquals(0L, drained.unacknowledgedCandidates());
+			assertEquals(65536L, drained.acknowledgedCandidates());
 		}
 	}
 
@@ -627,11 +649,18 @@ class AsyncValueRetirementQueuePressureTest {
 			assertEquals(0, processed.get());
 			assertEquals(0, forces.get());
 			assertTrue(f.cleanup.metrics().retainedBytes() < before);
-			assertEquals(0, f.cleanup.metrics().admissionSpillers());
+			AsyncValueRetirementCoordinator.Metrics spilled = f.cleanup.metrics();
+			assertEquals(0, spilled.admissionSpillers());
+			assertEquals((long) queued, spilled.queuedCandidates());
+			assertEquals((long) queued, spilled.unacknowledgedCandidates());
 			f.cleanup.complete(owner);
 			f.cleanup.start();
 			assertTrue(f.cleanup.awaitEmpty(10, TimeUnit.SECONDS));
 			assertEquals(queued, processed.get());
+			AsyncValueRetirementCoordinator.Metrics drained = f.cleanup.metrics();
+			assertEquals(0L, drained.queuedCandidates());
+			assertEquals(0L, drained.unacknowledgedCandidates());
+			assertEquals((long) queued, drained.acknowledgedCandidates());
 		}
 	}
 

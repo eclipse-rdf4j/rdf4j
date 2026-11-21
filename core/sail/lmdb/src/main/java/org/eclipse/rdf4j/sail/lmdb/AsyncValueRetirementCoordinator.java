@@ -74,6 +74,7 @@ final class AsyncValueRetirementCoordinator implements ValueRetirementCoordinato
 	/** Roots, three dependency continuations, ref-count cache, retired IDs, bounded liveness and legacy key lists. */
 	private static final int WORKER_BYTES_PER_CANDIDATE = 960;
 	private static final int ROOT_BATCHES_PER_LEGACY_PASS = 8;
+	/** Conservative shared bookkeeping allowance, including the fixed queued-count accumulator. */
 	private static final int FIXED_BYTES = 2048;
 	/** Stream/channel/path, guard, map/queue entries, one bounded admission waiter and spool bookkeeping. */
 	private static final int PRODUCER_OVERHEAD = 1024;
@@ -748,6 +749,7 @@ final class AsyncValueRetirementCoordinator implements ValueRetirementCoordinato
 						boolean completed = false;
 						lock.lock();
 						try {
+							queue.remaining.subtract(count);
 							candidates.readCount += count;
 							candidates.releaseAcknowledgedSegments();
 							acknowledgedCandidates += count;
@@ -1215,13 +1217,49 @@ final class AsyncValueRetirementCoordinator implements ValueRetirementCoordinato
 		return table;
 	}
 
+	/**
+	 * Exact queued total with a saturated long view. At most Integer.MAX_VALUE streams each contribute a nonnegative
+	 * long, so their sum fits within 94 bits. Retaining the excess is necessary when acknowledgements bring a
+	 * previously saturated total back below Long.MAX_VALUE. Access uses the existing queue lock, or constructor
+	 * ownership.
+	 */
+	static final class RemainingCount {
+		private long low;
+		private long high;
+
+		void add(long amount) {
+			assert amount >= 0 : "Negative queued candidate count";
+			long previous = low;
+			low += amount;
+			if (Long.compareUnsigned(low, previous) < 0) {
+				high++;
+			}
+		}
+
+		void subtract(long amount) {
+			assert amount >= 0 : "Negative queued candidate count";
+			boolean borrow = Long.compareUnsigned(low, amount) < 0;
+			assert !borrow || high != 0 : "Queued candidate count underflow";
+			low -= amount;
+			if (borrow) {
+				high--;
+			}
+		}
+
+		long saturatedValue() {
+			return high != 0 || low < 0 ? Long.MAX_VALUE : low;
+		}
+	}
+
 	/** Intrusive nodes preserve the allocation-free publication/completion ownership transfer. */
 	private final class CandidateQueue extends AbstractCollection<Candidates> {
+		private final RemainingCount remaining = new RemainingCount();
 		private Candidates first;
 		private Candidates last;
 		private int size;
 
 		void addLast(Candidates candidates) {
+			remaining.add(candidates.committedCount - candidates.readCount);
 			candidates.queuePrevious = last;
 			candidates.queueNext = null;
 			if (last == null) {
@@ -1242,6 +1280,7 @@ final class AsyncValueRetirementCoordinator implements ValueRetirementCoordinato
 				throw new NoSuchElementException();
 			}
 			Candidates removed = first;
+			remaining.subtract(removed.committedCount - removed.readCount);
 			first = removed.queueNext;
 			if (first == null) {
 				last = null;
@@ -1780,11 +1819,7 @@ final class AsyncValueRetirementCoordinator implements ValueRetirementCoordinato
 	}
 
 	private long queuedCandidates() {
-		long queued = 0;
-		for (Candidates candidates : queue) {
-			queued = LmdbUtil.saturatedAdd(queued, candidates.committedCount - candidates.readCount);
-		}
-		return queued;
+		return queue.remaining.saturatedValue();
 	}
 
 	/** Waiters/spill owners share the conservative per-stream bookkeeping allowance, never an uncharged slot. */
