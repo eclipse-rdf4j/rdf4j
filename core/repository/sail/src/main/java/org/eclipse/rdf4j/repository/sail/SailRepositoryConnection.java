@@ -346,7 +346,7 @@ public class SailRepositoryConnection extends AbstractRepositoryConnection imple
 				replacement.setDataset(parsedQuery.getDataset());
 				parsedQuery = replacement;
 			}
-			return new SailTupleQuery((ParsedTupleQuery) parsedQuery, this);
+			return withPreparationContext(new SailTupleQuery((ParsedTupleQuery) parsedQuery, this), ql, baseURI);
 		} else if (parsedQuery instanceof ParsedGraphQuery) {
 			Optional<TupleExpr> sailTupleExpr = sailConnection.prepareQuery(ql, Query.QueryType.GRAPH, queryString,
 					baseURI, options.sail());
@@ -357,7 +357,7 @@ public class SailRepositoryConnection extends AbstractRepositoryConnection imple
 				replacement.setDataset(parsedQuery.getDataset());
 				parsedQuery = replacement;
 			}
-			return new SailGraphQuery((ParsedGraphQuery) parsedQuery, this);
+			return withPreparationContext(new SailGraphQuery((ParsedGraphQuery) parsedQuery, this), ql, baseURI);
 		} else if (parsedQuery instanceof ParsedBooleanQuery) {
 			Optional<TupleExpr> sailTupleExpr = sailConnection.prepareQuery(ql, Query.QueryType.BOOLEAN, queryString,
 					baseURI, options.sail());
@@ -368,7 +368,7 @@ public class SailRepositoryConnection extends AbstractRepositoryConnection imple
 				replacement.setDataset(parsedQuery.getDataset());
 				parsedQuery = replacement;
 			}
-			return new SailBooleanQuery((ParsedBooleanQuery) parsedQuery, this);
+			return withPreparationContext(new SailBooleanQuery((ParsedBooleanQuery) parsedQuery, this), ql, baseURI);
 		} else {
 			throw new RuntimeException("Unexpected query type: " + parsedQuery.getClass());
 		}
@@ -389,7 +389,7 @@ public class SailRepositoryConnection extends AbstractRepositoryConnection imple
 			replacement.setReservedBNodeIDs(parsed.getReservedBNodeIDs());
 			parsed = replacement;
 		}
-		return new SailTupleQuery(parsed, this);
+		return withPreparationContext(new SailTupleQuery(parsed, this), ql, baseURI);
 	}
 
 	@Override
@@ -407,7 +407,7 @@ public class SailRepositoryConnection extends AbstractRepositoryConnection imple
 			replacement.setReservedBNodeIDs(parsed.getReservedBNodeIDs());
 			parsed = replacement;
 		}
-		return new SailGraphQuery(parsed, this);
+		return withPreparationContext(new SailGraphQuery(parsed, this), ql, baseURI);
 	}
 
 	@Override
@@ -425,7 +425,12 @@ public class SailRepositoryConnection extends AbstractRepositoryConnection imple
 			replacement.setReservedBNodeIDs(parsed.getReservedBNodeIDs());
 			parsed = replacement;
 		}
-		return new SailBooleanQuery(parsed, this);
+		return withPreparationContext(new SailBooleanQuery(parsed, this), ql, baseURI);
+	}
+
+	private <Q extends SailQuery> Q withPreparationContext(Q query, QueryLanguage queryLanguage, String baseURI) {
+		query.setPreparationContext(queryLanguage, baseURI);
+		return query;
 	}
 
 	@Override
