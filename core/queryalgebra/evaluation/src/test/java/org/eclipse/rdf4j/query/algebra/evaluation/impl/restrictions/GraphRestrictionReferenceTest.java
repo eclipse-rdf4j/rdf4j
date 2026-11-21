@@ -33,6 +33,8 @@ import org.eclipse.rdf4j.query.QueryEvaluationException;
 import org.eclipse.rdf4j.query.QueryExecutionPolicy;
 import org.eclipse.rdf4j.query.QueryExecutionPolicy.GraphRestrictionMode;
 import org.eclipse.rdf4j.query.QueryLanguage;
+import org.eclipse.rdf4j.query.QueryParseOptions;
+import org.eclipse.rdf4j.query.QueryParseOptions.GraphAlgebraMode;
 import org.eclipse.rdf4j.query.QueryResults;
 import org.eclipse.rdf4j.query.algebra.FunctionCall;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
@@ -236,7 +238,8 @@ class GraphRestrictionReferenceTest {
 	}
 
 	private static List<BindingSet> evaluate(String query, DefaultEvaluationStrategy strategy) {
-		TupleExpr expression = QueryParserUtil.parseTupleQuery(QueryLanguage.SPARQL, PREFIX + query, null)
+		TupleExpr expression = QueryParserUtil.parseTupleQuery(QueryLanguage.SPARQL, PREFIX + query, null,
+				QueryParseOptions.DEFAULT.withGraphAlgebraMode(GraphAlgebraMode.GRAPH))
 				.getTupleExpr();
 		try (CloseableIteration<BindingSet> results = strategy.precompile(expression)
 				.evaluate(EmptyBindingSet.getInstance())) {

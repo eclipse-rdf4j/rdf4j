@@ -90,6 +90,16 @@ public class NativeStoreConnection extends SailSourceConnection implements Threa
 	 * Methods *
 	 *---------*/
 
+	/**
+	 * @deprecated This compatibility hook will be removed in the next major release, when explicit Graph algebra is
+	 *             required.
+	 */
+	@Override
+	@Deprecated(since = "6.2.0", forRemoval = true)
+	public boolean supportsGraphAlgebra() {
+		return getClass() == NativeStoreConnection.class && supportsGraphAlgebraEvaluation();
+	}
+
 	@Override
 	protected void startTransactionInternal() throws SailException {
 		addedCount = 0;

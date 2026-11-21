@@ -41,6 +41,8 @@ import org.eclipse.rdf4j.query.QueryEvaluationException;
 import org.eclipse.rdf4j.query.QueryExecutionPolicy;
 import org.eclipse.rdf4j.query.QueryExecutionPolicy.GraphRestrictionMode;
 import org.eclipse.rdf4j.query.QueryLanguage;
+import org.eclipse.rdf4j.query.QueryParseOptions;
+import org.eclipse.rdf4j.query.QueryParseOptions.GraphAlgebraMode;
 import org.eclipse.rdf4j.query.QueryResults;
 import org.eclipse.rdf4j.query.algebra.Graph;
 import org.eclipse.rdf4j.query.algebra.Join;
@@ -937,7 +939,8 @@ class GraphRestrictionJoinTest {
 
 	private static TupleExpr parse(String variables, String body, String modifiers) {
 		return QueryParserUtil.parseTupleQuery(QueryLanguage.SPARQL,
-				"PREFIX : <urn:gbj:> SELECT " + variables + " WHERE { " + body + " } " + modifiers, null)
+				"PREFIX : <urn:gbj:> SELECT " + variables + " WHERE { " + body + " } " + modifiers, null,
+				QueryParseOptions.DEFAULT.withGraphAlgebraMode(GraphAlgebraMode.GRAPH))
 				.getTupleExpr();
 	}
 

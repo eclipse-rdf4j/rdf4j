@@ -34,6 +34,8 @@ import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.QueryEvaluationException;
 import org.eclipse.rdf4j.query.QueryLanguage;
+import org.eclipse.rdf4j.query.QueryParseOptions;
+import org.eclipse.rdf4j.query.QueryParseOptions.GraphAlgebraMode;
 import org.eclipse.rdf4j.query.algebra.Join;
 import org.eclipse.rdf4j.query.algebra.Order;
 import org.eclipse.rdf4j.query.algebra.Projection;
@@ -96,13 +98,13 @@ public class LmdbOrderByOptimizerTest {
 
 	@Test
 	public void testRetainsOrderHintAcrossIndependentGraphJoin() {
-		TupleExpr tupleExpr = parse("""
+		TupleExpr tupleExpr = QueryParserUtil.parseTupleQuery(QueryLanguage.SPARQL, """
 				SELECT ?a ?o WHERE {
 				  ?a <urn:p> ?o
 				  GRAPH ?g { ?s <urn:p> ?o VALUES ?v { <urn:a> <urn:a> } }
 				}
 				ORDER BY STABLE_INDEX(?a)
-				""");
+				""", null, QueryParseOptions.DEFAULT.withGraphAlgebraMode(GraphAlgebraMode.GRAPH)).getTupleExpr();
 
 		optimize(tupleExpr);
 
