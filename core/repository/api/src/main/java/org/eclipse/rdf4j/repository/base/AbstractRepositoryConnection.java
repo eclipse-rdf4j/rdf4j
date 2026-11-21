@@ -65,7 +65,16 @@ import org.slf4j.LoggerFactory;
  */
 public abstract class AbstractRepositoryConnection implements RepositoryConnection {
 
-	protected final Logger logger = LoggerFactory.getLogger(this.getClass());
+	// One logger per concrete class, resolved once: LoggerFactory.getLogger can be costly per call (for example the
+	// Log4j 2 binding walks the stack), and these objects are created for every connection or parse.
+	private static final ClassValue<Logger> LOGGERS = new ClassValue<>() {
+		@Override
+		protected Logger computeValue(Class<?> type) {
+			return LoggerFactory.getLogger(type);
+		}
+	};
+
+	protected final Logger logger = LOGGERS.get(this.getClass());
 
 	private final Repository repository;
 
