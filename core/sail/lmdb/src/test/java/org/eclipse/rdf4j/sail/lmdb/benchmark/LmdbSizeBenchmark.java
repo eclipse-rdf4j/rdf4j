@@ -68,23 +68,33 @@ public class LmdbSizeBenchmark {
 
 	@Setup(Level.Trial)
 	public void setUp() throws IOException {
-		dataDir = Files.createTempDirectory("rdf4j-lmdb-size-").toFile();
-		repository = new SailRepository(new LmdbStore(dataDir, new LmdbStoreConfig("spoc,cspo")
-				.setSketchEstimatorEnabled(false)
-				.setDirectAdjacencyMode(DirectAdjacencyMode.DISABLED)));
-		connection = repository.getConnection();
-		ValueFactory vf = connection.getValueFactory();
-		IRI namedContext = vf.createIRI("urn:size:context");
-		connection.begin(IsolationLevels.NONE);
-		for (int i = 0; i < statements; i++) {
-			connection.add(vf.createIRI("urn:size:" + i), RDFS.LABEL, vf.createLiteral("label-" + i),
-					i % 2 == 0 ? namedContext : null);
-		}
-		connection.commit();
-		contexts = "all".equals(contextSelection) ? new Resource[0] : new Resource[] { namedContext };
-		long expected = contexts.length == 0 ? statements : (statements + 1L) / 2L;
-		if (connection.size(contexts) != expected || scan() != expected) {
-			throw new IllegalStateException("Size and scan must agree with the fixture's statement count");
+		try {
+			dataDir = Files.createTempDirectory("rdf4j-lmdb-size-").toFile();
+			repository = new SailRepository(new LmdbStore(dataDir, new LmdbStoreConfig("spoc,cspo")
+					.setSketchEstimatorEnabled(false)
+					.setDirectAdjacencyMode(DirectAdjacencyMode.DISABLED)));
+			connection = repository.getConnection();
+			ValueFactory vf = connection.getValueFactory();
+			IRI namedContext = vf.createIRI("urn:size:context");
+			connection.begin(IsolationLevels.NONE);
+			for (int i = 0; i < statements; i++) {
+				connection.add(vf.createIRI("urn:size:" + i), RDFS.LABEL, vf.createLiteral("label-" + i),
+						i % 2 == 0 ? namedContext : null);
+			}
+			connection.commit();
+			contexts = "all".equals(contextSelection) ? new Resource[0] : new Resource[] { namedContext };
+			long expected = contexts.length == 0 ? statements : (statements + 1L) / 2L;
+			if (connection.size(contexts) != expected || scan() != expected) {
+				throw new IllegalStateException("Size and scan must agree with the fixture's statement count");
+			}
+
+		} catch (Exception | Error failure) {
+			try {
+				tearDown();
+			} catch (Exception | Error cleanupFailure) {
+				failure.addSuppressed(cleanupFailure);
+			}
+			throw failure;
 		}
 	}
 
@@ -102,12 +112,19 @@ public class LmdbSizeBenchmark {
 	@TearDown(Level.Trial)
 	public void tearDown() throws IOException {
 		try {
-			connection.close();
+			if (connection != null) {
+				connection.close();
+				connection = null;
+			}
 		} finally {
 			try {
-				repository.shutDown();
+				if (repository != null) {
+					repository.shutDown();
+					repository = null;
+				}
 			} finally {
 				LmdbTestUtil.deleteDir(dataDir);
+				dataDir = null;
 			}
 		}
 	}

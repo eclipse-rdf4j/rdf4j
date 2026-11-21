@@ -49,11 +49,15 @@ import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.Timeout;
+import org.junit.jupiter.api.io.TempDir;
 
 @Timeout(value = 3000, unit = MILLISECONDS)
 public class SailSourceModelTest extends ModelTest {
-	List<LmdbSailStore> stores = new ArrayList<>();
-	List<File> storeDirs = new ArrayList<>();
+	private final List<LmdbSailStore> stores = new ArrayList<>();
+	private final List<SailSourceModel> models = new ArrayList<>();
+
+	@TempDir
+	File temporaryRoot;
 
 	@Test
 	public void testRemove() {
@@ -193,14 +197,15 @@ public class SailSourceModelTest extends ModelTest {
 
 	private SailSourceModel getNewModel(DirectAdjacencyMode adjacencyMode) {
 		try {
-			File dataDir = Files.createTempDirectory("SailSourceModelTest-").toFile();
+			File dataDir = Files.createTempDirectory(temporaryRoot.toPath(), "SailSourceModelTest-").toFile();
 			LmdbSailStore store = new LmdbSailStore(dataDir,
 					new StoreProperties(),
 					new LmdbStoreConfig("spoc").setDirectAdjacencyEnabled(adjacencyMode != DirectAdjacencyMode.DISABLED)
 							.setDirectAdjacencyMode(adjacencyMode));
 			stores.add(store);
-			storeDirs.add(dataDir);
-			return new SailSourceModel(store);
+			SailSourceModel model = new SailSourceModel(store);
+			models.add(model);
+			return model;
 		} catch (Exception e) {
 			throw new RuntimeException(e);
 		}
@@ -208,12 +213,16 @@ public class SailSourceModelTest extends ModelTest {
 
 	@AfterEach
 	public void tearDown() throws Exception {
-		super.tearDown();
-		for (int i = 0; i < stores.size(); i++) {
-			stores.get(i).close();
-			LmdbTestUtil.deleteDir(storeDirs.get(i));
+		List<AutoCloseable> cleanup = new ArrayList<>();
+		cleanup.add(super::tearDown);
+		// Models own active datasets and sinks, so release them before their backing stores.
+		cleanup.addAll(models);
+		cleanup.addAll(stores);
+		try {
+			LmdbTestUtil.cleanup(null, cleanup.toArray(AutoCloseable[]::new));
+		} finally {
+			models.clear();
+			stores.clear();
 		}
-		stores.clear();
-		storeDirs.clear();
 	}
 }

@@ -25,7 +25,7 @@ import org.eclipse.rdf4j.query.algebra.StatementPattern;
 import org.eclipse.rdf4j.query.algebra.Var;
 import org.junit.jupiter.api.Test;
 
-class SketchBasedJoinEstimatorCrossComponentJoinRegressionTest {
+class SketchBasedJoinEstimatorCrossComponentJoinRegressionTest extends AbstractSketchBasedJoinEstimatorTest {
 
 	private static final ValueFactory VF = SimpleValueFactory.getInstance();
 
@@ -46,7 +46,7 @@ class SketchBasedJoinEstimatorCrossComponentJoinRegressionTest {
 		store.add(st(branch1, hasName, VF.createLiteral("Branch 1")));
 		store.add(st(branch2, hasName, VF.createLiteral("Branch 2")));
 
-		SketchBasedJoinEstimator estimator = new SketchBasedJoinEstimator(store, config());
+		SketchBasedJoinEstimator estimator = createEstimator(store, config());
 		estimator.rebuild();
 
 		double directJoinEstimate = estimator.estimate(SketchBasedJoinEstimator.Component.O, null,

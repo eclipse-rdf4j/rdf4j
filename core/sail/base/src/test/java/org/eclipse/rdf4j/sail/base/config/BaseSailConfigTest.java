@@ -15,6 +15,9 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatExceptionOfType;
 import static org.eclipse.rdf4j.model.util.Values.bnode;
 import static org.eclipse.rdf4j.model.util.Values.literal;
+import static org.junit.jupiter.api.Assertions.assertAll;
+
+import java.util.stream.Stream;
 
 import org.eclipse.rdf4j.common.transaction.QueryEvaluationMode;
 import org.eclipse.rdf4j.model.impl.LinkedHashModel;
@@ -22,6 +25,7 @@ import org.eclipse.rdf4j.model.util.ModelBuilder;
 import org.eclipse.rdf4j.model.vocabulary.CONFIG;
 import org.eclipse.rdf4j.sail.config.SailConfigException;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.function.Executable;
 
 public class BaseSailConfigTest {
 
@@ -152,6 +156,56 @@ public class BaseSailConfigTest {
 				System.setProperty(propertyName, previousValue);
 			}
 		}
+	}
+
+	@Test
+	public void parseRejectsInvalidSlowQueryLogFile() {
+		assertAll(invalidSlowQueryLogFiles().flatMap(logFile -> Stream.of(
+				CONFIG.Sail.slowQueryLogFile, BaseSailSchema.SLOW_QUERY_LOG_FILE)
+				.<Executable>map(predicate -> () -> {
+					var implNode = bnode();
+					var config = new BaseSailConfig("stub") {
+					};
+					config.setSlowQueryLogFile("logs/valid.log");
+					var model = new ModelBuilder().add(implNode, predicate, literal(logFile)).build();
+
+					assertThatExceptionOfType(SailConfigException.class)
+							.isThrownBy(() -> config.parse(model, implNode));
+					assertThat(config.getSlowQueryLogFile()).isEqualTo("logs/valid.log");
+				})));
+	}
+
+	@Test
+	public void setterRejectsInvalidSlowQueryLogFileWithoutReplacingValidValue() {
+		assertAll(invalidSlowQueryLogFiles().<Executable>map(logFile -> () -> {
+			var config = new BaseSailConfig("stub") {
+			};
+			config.setSlowQueryLogFile("logs/valid.log");
+
+			assertThatExceptionOfType(IllegalArgumentException.class)
+					.isThrownBy(() -> config.setSlowQueryLogFile(logFile));
+			assertThat(config.getSlowQueryLogFile()).isEqualTo("logs/valid.log");
+		}));
+	}
+
+	@Test
+	public void nullOrBlankSlowQueryLogFileRestoresDefaultLogging() {
+		for (String logFile : new String[] { null, "", " ", "\t " }) {
+			var config = new BaseSailConfig("stub") {
+			};
+			config.setSlowQueryLogFile("logs/valid.log");
+			config.setSlowQueryLogFile(logFile);
+
+			var exportedModel = new LinkedHashModel();
+			var exportedNode = config.export(exportedModel);
+			assertThat(exportedModel.contains(exportedNode, CONFIG.Sail.slowQueryLogFile, null)).isFalse();
+			assertThat(exportedModel.contains(exportedNode, BaseSailSchema.SLOW_QUERY_LOG_FILE, null)).isFalse();
+		}
+	}
+
+	private static Stream<String> invalidSlowQueryLogFiles() {
+		return Stream.of("../outside.log", "logs/../../outside.log", "/tmp/outside.log", "C:/outside.log",
+				"C:outside.log", "config.ttl", "slow.LOG", "slow.log.1", "config.ttl:slow.log", "slow\u0000query.log");
 	}
 
 	@Test

@@ -140,24 +140,40 @@ public class FoafCliqueQueryBenchmark {
 
 	@Setup(Level.Trial)
 	public void setup() throws IOException {
-		applyEngineMode(engineMode);
-		dataDir = Files.createTempDirectory("rdf4j-lmdb-foaf-cliques").toFile();
-		repository = createRepository(dataDir);
-		repository.init();
+		try {
+			applyEngineMode(engineMode);
+			dataDir = Files.createTempDirectory("rdf4j-lmdb-foaf-cliques").toFile();
+			repository = createRepository(dataDir);
+			repository.init();
 
-		try (SailRepositoryConnection connection = repository.getConnection()) {
-			new FoafCliqueDataGenerator(peopleCount, cliquePercentage, minCliqueSize, maxCliqueSize, randomKnowsEdges,
-					seed).populate(connection);
+			try (SailRepositoryConnection connection = repository.getConnection()) {
+				new FoafCliqueDataGenerator(peopleCount, cliquePercentage, minCliqueSize, maxCliqueSize,
+						randomKnowsEdges,
+						seed).populate(connection);
+			}
+
+		} catch (Exception | Error failure) {
+			try {
+				tearDown();
+			} catch (Exception | Error cleanupFailure) {
+				failure.addSuppressed(cleanupFailure);
+			}
+			throw failure;
 		}
 	}
 
 	@TearDown(Level.Trial)
 	public void tearDown() throws IOException {
-		if (repository != null) {
-			repository.shutDown();
-		}
-		if (dataDir != null && dataDir.exists()) {
-			FileUtils.deleteDirectory(dataDir);
+		try (java.io.Closeable directoryCleanup = () -> {
+			if (dataDir != null) {
+				FileUtils.deleteDirectory(dataDir);
+				dataDir = null;
+			}
+		}) {
+			if (repository != null) {
+				repository.shutDown();
+				repository = null;
+			}
 		}
 	}
 

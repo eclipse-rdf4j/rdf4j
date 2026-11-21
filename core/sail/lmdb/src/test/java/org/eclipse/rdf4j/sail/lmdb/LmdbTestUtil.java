@@ -39,7 +39,7 @@ public final class LmdbTestUtil {
 	}
 
 	/** Attempts every cleanup action without replacing an already failing test. */
-	static void cleanup(Throwable primary, AutoCloseable... actions) throws Exception {
+	public static void cleanup(Throwable primary, AutoCloseable... actions) throws Exception {
 		Throwable failure = primary;
 		for (AutoCloseable action : actions) {
 			try {
@@ -60,7 +60,7 @@ public final class LmdbTestUtil {
 	}
 
 	/** Forces and reaps a worker on failure; strict callers still fail their original graceful-shutdown assertion. */
-	static void shutdownExecutor(ExecutorService executor, long gracefulSeconds, long forcedSeconds,
+	public static void shutdownExecutor(ExecutorService executor, long gracefulSeconds, long forcedSeconds,
 			boolean requireGraceful, String description) throws Exception {
 		Throwable failure = null;
 		boolean interrupted = Thread.interrupted();

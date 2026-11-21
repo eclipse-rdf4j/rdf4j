@@ -24,6 +24,7 @@ import org.eclipse.rdf4j.repository.sail.SailRepository;
 import org.eclipse.rdf4j.sail.base.SailDataset;
 import org.eclipse.rdf4j.sail.lmdb.JaninoCeilingKernels;
 import org.eclipse.rdf4j.sail.lmdb.LmdbStore;
+import org.eclipse.rdf4j.sail.lmdb.LmdbTestUtil;
 import org.eclipse.rdf4j.sail.lmdb.config.LmdbStoreConfig;
 import org.eclipse.rdf4j.sail.lmdb.csf.ImmutablePagedQuadCsfIndex;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.DistinctRootCountCandidates.Algorithm;
@@ -87,101 +88,111 @@ public class DistinctRootCountBenchmark {
 
 	@Setup(Level.Trial)
 	public void setup() throws Exception {
-		selected = algorithm.equals("PRODUCTION") ? Algorithm.HYBRID : Algorithm.valueOf(algorithm);
-		System.setProperty("rdf4j.lmdb.parallel.threads", Integer.toString(workers));
-		if (selected == Algorithm.VECTOR || selected == Algorithm.VECTOR_DENSE) {
-			vector = (WordCounter) Class.forName("org.eclipse.rdf4j.sail.lmdb.evaluation.DistinctRootVectorCounter"
-					+ (selected == Algorithm.VECTOR_DENSE ? "$Dense" : ""))
-					.getConstructor()
-					.newInstance();
-		}
-		domains = DistinctRootCountCandidates.fixture(entries, predicates, distribution, encoding);
-		expected = DistinctRootCountCandidates.expected(entries, predicates, distribution);
-		if (input.equals("CSF")) {
-			Domain[] generated = domains;
-			ImmutablePagedQuadCsfIndex.BuildPlan plan;
-			try (var builder = ImmutablePagedQuadCsfIndex.sizingBuilder(predicates)) {
-				feed(builder, generated);
-				plan = builder.finishPlan();
-			}
-			try (var builder = ImmutablePagedQuadCsfIndex.materializingBuilder(plan)) {
-				feed(builder, generated);
-				csf = builder.finishIndex();
-			}
-			for (int p = 0; p < predicates; p++) {
-				domains[p] = DistinctRootCountCandidates.csf(csf.keyDomain(p, 1));
-			}
-		} else if (input.equals("THEME")) {
-			if (workers != 1 && !algorithm.equals("PRODUCTION")) {
-				throw new IllegalArgumentException(
-						"theme views are worker-confined; use physical CSF for parallel prototypes");
-			}
-			System.setProperty("rdf4j.lmdb.nativeQueryEngine.enabled", "true");
+		try {
+			selected = algorithm.equals("PRODUCTION") ? Algorithm.HYBRID : Algorithm.valueOf(algorithm);
 			System.setProperty("rdf4j.lmdb.parallel.threads", Integer.toString(workers));
-			System.setProperty("rdf4j.lmdb.directAdjacency.nodePredicateProjection.incoming.enabled", "false");
-			File directory = new File("target/lmdb-theme-query-benchmark/complete");
-			if (!directory.isDirectory()) {
-				directory = new File("core/sail/lmdb/target/lmdb-theme-query-benchmark/complete");
+			if (selected == Algorithm.VECTOR || selected == Algorithm.VECTOR_DENSE) {
+				vector = (WordCounter) Class.forName("org.eclipse.rdf4j.sail.lmdb.evaluation.DistinctRootVectorCounter"
+						+ (selected == Algorithm.VECTOR_DENSE ? "$Dense" : ""))
+						.getConstructor()
+						.newInstance();
 			}
-			if (!new File(directory, "triples").isDirectory()) {
-				throw new IllegalStateException("theme fixture missing: " + directory);
-			}
-			LmdbStore store = new LmdbStore(directory,
-					new LmdbStoreConfig("spoc,ospc,psoc,posc").setNativeEvaluationEnabled(true)
-							.setDirectAdjacencyEnabled(true));
-			repository = new SailRepository(store);
-			repository.init();
-			JaninoCeilingKernels.buildDirectAdjacency(store);
-			long firstQueryStart = System.nanoTime();
-			long firstQueryCount = census();
-			System.out.printf("DISTINCT_FIRST_QUERY millis=%.3f objects=%d requestedWorkers=%d%n",
-					(System.nanoTime() - firstQueryStart) / 1e6, firstQueryCount, workers);
-			dataset = JaninoCeilingKernels.openDataset(store);
-			probe = ((NativeLmdbQuerySource) dataset).newProbe();
-			try (var wildcard = probe.wildcardAdjacency(false)) {
-				if (wildcard == null) {
-					throw new IllegalStateException("incoming wildcard unavailable");
+			domains = DistinctRootCountCandidates.fixture(entries, predicates, distribution, encoding);
+			expected = DistinctRootCountCandidates.expected(entries, predicates, distribution);
+			if (input.equals("CSF")) {
+				Domain[] generated = domains;
+				ImmutablePagedQuadCsfIndex.BuildPlan plan;
+				try (var builder = ImmutablePagedQuadCsfIndex.sizingBuilder(predicates)) {
+					feed(builder, generated);
+					plan = builder.finishPlan();
 				}
-				domains = new Domain[wildcard.predicateCount()];
-				entries = 0;
-				predicateIds = new long[domains.length];
-				for (int p = 0; p < domains.length; p++) {
-					predicateIds[p] = wildcard.predicateAt(p);
-					var view = probe.adjacency(predicateIds[p], false);
-					views.add(view);
-					domains[p] = DistinctRootCountCandidates.adjacency(view);
-					entries += view.keyCount();
+				try (var builder = ImmutablePagedQuadCsfIndex.materializingBuilder(plan)) {
+					feed(builder, generated);
+					csf = builder.finishIndex();
+				}
+				for (int p = 0; p < predicates; p++) {
+					domains[p] = DistinctRootCountCandidates.csf(csf.keyDomain(p, 1));
+				}
+			} else if (input.equals("THEME")) {
+				if (workers != 1 && !algorithm.equals("PRODUCTION")) {
+					throw new IllegalArgumentException(
+							"theme views are worker-confined; use physical CSF for parallel prototypes");
+				}
+				System.setProperty("rdf4j.lmdb.nativeQueryEngine.enabled", "true");
+				System.setProperty("rdf4j.lmdb.parallel.threads", Integer.toString(workers));
+				System.setProperty("rdf4j.lmdb.directAdjacency.nodePredicateProjection.incoming.enabled", "false");
+				File directory = new File("target/lmdb-theme-query-benchmark/complete");
+				if (!directory.isDirectory()) {
+					directory = new File("core/sail/lmdb/target/lmdb-theme-query-benchmark/complete");
+				}
+				if (!new File(directory, "triples").isDirectory()) {
+					throw new IllegalStateException("theme fixture missing: " + directory);
+				}
+				LmdbStore store = new LmdbStore(directory,
+						new LmdbStoreConfig("spoc,ospc,psoc,posc").setNativeEvaluationEnabled(true)
+								.setDirectAdjacencyEnabled(true));
+				repository = new SailRepository(store);
+				repository.init();
+				JaninoCeilingKernels.buildDirectAdjacency(store);
+				long firstQueryStart = System.nanoTime();
+				long firstQueryCount = census();
+				System.out.printf("DISTINCT_FIRST_QUERY millis=%.3f objects=%d requestedWorkers=%d%n",
+						(System.nanoTime() - firstQueryStart) / 1e6, firstQueryCount, workers);
+				dataset = JaninoCeilingKernels.openDataset(store);
+				probe = ((NativeLmdbQuerySource) dataset).newProbe();
+				try (var wildcard = probe.wildcardAdjacency(false)) {
+					if (wildcard == null) {
+						throw new IllegalStateException("incoming wildcard unavailable");
+					}
+					domains = new Domain[wildcard.predicateCount()];
+					entries = 0;
+					predicateIds = new long[domains.length];
+					for (int p = 0; p < domains.length; p++) {
+						predicateIds[p] = wildcard.predicateAt(p);
+						var view = probe.adjacency(predicateIds[p], false);
+						views.add(view);
+						domains[p] = DistinctRootCountCandidates.adjacency(view);
+						entries += view.keyCount();
+					}
+				}
+				expected = DistinctRootCountCandidates.count(domains, Algorithm.BASELINE, batch, windowBits, null,
+						null);
+				if (firstQueryCount != expected) {
+					throw new AssertionError("first census disagrees with root-union oracle");
+				}
+				try (var connection = repository.getConnection()) {
+					String explanation = connection.prepareTupleQuery(CENSUS)
+							.explain(Explanation.Level.Telemetry)
+							.toString();
+					if (!explanation.contains("nativeExecutionPath=adjacencyCensus")
+							|| !explanation.contains("OSC")) {
+						throw new AssertionError("required census root scan absent: " + explanation);
+					}
+					System.out.println("DISTINCT_CENSUS_ENGAGEMENT " + explanation);
 				}
 			}
-			expected = DistinctRootCountCandidates.count(domains, Algorithm.BASELINE, batch, windowBits, null, null);
-			if (firstQueryCount != expected) {
-				throw new AssertionError("first census disagrees with root-union oracle");
+			long started = System.nanoTime();
+			long actual = count();
+			long elapsed = System.nanoTime() - started;
+			if (actual != expected) {
+				throw new AssertionError("expected " + expected + ", got " + actual);
 			}
-			try (var connection = repository.getConnection()) {
-				String explanation = connection.prepareTupleQuery(CENSUS)
-						.explain(Explanation.Level.Telemetry)
-						.toString();
-				if (!explanation.contains("nativeExecutionPath=adjacencyCensus")
-						|| !explanation.contains("OSC")) {
-					throw new AssertionError("required census root scan absent: " + explanation);
-				}
-				System.out.println("DISTINCT_CENSUS_ENGAGEMENT " + explanation);
+			System.out.printf(
+					"DISTINCT_SETUP algorithm=%s input=%s roots=%d predicates=%d expected=%d firstMillis=%.3f scratchBytes=%d%n",
+					algorithm, input, entries, domains.length, expected, elapsed / 1e6,
+					DistinctRootCountCandidates.scratchBytes(domains.length, batch, windowBits, selected) * workers);
+			if (productionResult != null) {
+				System.out.printf("DISTINCT_PRODUCTION workers=%d scratchBytes=%d decoded=%d skipped=%d balance=%s%n",
+						productionResult.workers(), productionResult.scratchBytes(), productionResult.decoded(),
+						productionResult.skipped(), Arrays.toString(productionResult.workerEntries()));
 			}
-		}
-		long started = System.nanoTime();
-		long actual = count();
-		long elapsed = System.nanoTime() - started;
-		if (actual != expected) {
-			throw new AssertionError("expected " + expected + ", got " + actual);
-		}
-		System.out.printf(
-				"DISTINCT_SETUP algorithm=%s input=%s roots=%d predicates=%d expected=%d firstMillis=%.3f scratchBytes=%d%n",
-				algorithm, input, entries, domains.length, expected, elapsed / 1e6,
-				DistinctRootCountCandidates.scratchBytes(domains.length, batch, windowBits, selected) * workers);
-		if (productionResult != null) {
-			System.out.printf("DISTINCT_PRODUCTION workers=%d scratchBytes=%d decoded=%d skipped=%d balance=%s%n",
-					productionResult.workers(), productionResult.scratchBytes(), productionResult.decoded(),
-					productionResult.skipped(), Arrays.toString(productionResult.workerEntries()));
+		} catch (Exception | Error failure) {
+			try {
+				close();
+			} catch (Exception | Error cleanupFailure) {
+				failure.addSuppressed(cleanupFailure);
+			}
+			throw failure;
 		}
 	}
 
@@ -225,17 +236,15 @@ public class DistinctRootCountBenchmark {
 
 	@TearDown(Level.Trial)
 	public void close() throws Exception {
-		if (probe != null) {
-			probe.close();
-		}
-		if (dataset != null) {
-			dataset.close();
-		}
-		if (repository != null) {
-			repository.shutDown();
-		}
-		if (csf != null) {
-			csf.close();
+		List<AutoCloseable> cleanup = new ArrayList<>();
+		cleanup.add(probe);
+		cleanup.add(dataset);
+		cleanup.add(repository == null ? null : repository::shutDown);
+		cleanup.add(csf);
+		try {
+			LmdbTestUtil.cleanup(null, cleanup.toArray(AutoCloseable[]::new));
+		} finally {
+			views.clear();
 		}
 	}
 

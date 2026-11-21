@@ -63,29 +63,39 @@ public class LmdbIndexedAggregateBenchmark {
 
 	@Setup(Level.Trial)
 	public void setUp() throws Exception {
-		directory = Files.createTempDirectory("lmdb-index-aggregates-");
-		repository = new SailRepository(new LmdbStore(directory.toFile(), new LmdbStoreConfig()
-				.setNativeEvaluationEnabled(true)
-				.setDirectAdjacencyEnabled(false)));
-		repository.init();
-		connection = repository.getConnection();
-		var values = repository.getValueFactory();
-		IRI[] predicates = new IRI[groups];
-		for (int group = 0; group < groups; group++) {
-			predicates[group] = values.createIRI("urn:aggregate-benchmark:p:" + group);
+		try {
+			directory = Files.createTempDirectory("lmdb-index-aggregates-");
+			repository = new SailRepository(new LmdbStore(directory.toFile(), new LmdbStoreConfig()
+					.setNativeEvaluationEnabled(true)
+					.setDirectAdjacencyEnabled(false)));
+			repository.init();
+			connection = repository.getConnection();
+			var values = repository.getValueFactory();
+			IRI[] predicates = new IRI[groups];
+			for (int group = 0; group < groups; group++) {
+				predicates[group] = values.createIRI("urn:aggregate-benchmark:p:" + group);
+			}
+			connection.begin();
+			for (int row = 0; row < ROWS; row++) {
+				connection.add(values.createIRI("urn:aggregate-benchmark:s:" + row), predicates[row % groups],
+						values.createLiteral(row));
+			}
+			connection.commit();
+			boolean scalar = shape.equals("scalar");
+			query = connection.prepareTupleQuery(scalar
+					? "SELECT (COUNT(*) AS ?c) WHERE { ?s <urn:aggregate-benchmark:p:0> ?o }"
+					: "SELECT ?p (COUNT(*) AS ?c) WHERE { ?s ?p ?o } GROUP BY ?p");
+			((SailQuery) query).setLmdbResultCacheRequested(false);
+			expectedTotal = scalar ? ROWS / groups : ROWS;
+
+		} catch (Exception | Error failure) {
+			try {
+				tearDown();
+			} catch (Exception | Error cleanupFailure) {
+				failure.addSuppressed(cleanupFailure);
+			}
+			throw failure;
 		}
-		connection.begin();
-		for (int row = 0; row < ROWS; row++) {
-			connection.add(values.createIRI("urn:aggregate-benchmark:s:" + row), predicates[row % groups],
-					values.createLiteral(row));
-		}
-		connection.commit();
-		boolean scalar = shape.equals("scalar");
-		query = connection.prepareTupleQuery(scalar
-				? "SELECT (COUNT(*) AS ?c) WHERE { ?s <urn:aggregate-benchmark:p:0> ?o }"
-				: "SELECT ?p (COUNT(*) AS ?c) WHERE { ?s ?p ?o } GROUP BY ?p");
-		((SailQuery) query).setLmdbResultCacheRequested(false);
-		expectedTotal = scalar ? ROWS / groups : ROWS;
 	}
 
 	@Benchmark
@@ -105,17 +115,7 @@ public class LmdbIndexedAggregateBenchmark {
 
 	@TearDown(Level.Trial)
 	public void tearDown() throws Exception {
-		try {
-			if (connection != null) {
-				connection.close();
-			}
-		} finally {
-			if (repository != null) {
-				repository.shutDown();
-			}
-			if (directory != null) {
-				LmdbTestUtil.deleteDir(directory.toFile());
-			}
-		}
+		LmdbTestUtil.cleanup(null, connection, repository == null ? null : repository::shutDown,
+				() -> LmdbTestUtil.deleteDir(directory));
 	}
 }

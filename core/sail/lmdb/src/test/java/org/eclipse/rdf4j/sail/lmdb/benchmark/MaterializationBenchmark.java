@@ -92,21 +92,31 @@ public class MaterializationBenchmark {
 
 		@Setup(Level.Trial)
 		public void setUp() {
-			if (inputRows <= 0) {
-				throw new IllegalArgumentException("inputRows must be positive");
-			}
-			captureProperties();
-			System.setProperty(NATIVE_ENABLED, "true");
-			System.setProperty(PARALLEL_ENABLED, "false");
-			dataDir = Files.newTemporaryFolder();
-			repository = new SailRepository(new LmdbStore(dataDir,
-					new LmdbStoreConfig("spoc,posc,ospc").setNativeEvaluationEnabled(true)));
-			loadData();
-			expectedDigests = expectedDigests(inputRows);
-			executionPaths = new EnumMap<>(Workload.class);
-			for (Workload workload : Workload.values()) {
-				verifyDigest(workload, runWorkload(workload));
-				executionPaths.put(workload, executionPath(workload));
+			try {
+				if (inputRows <= 0) {
+					throw new IllegalArgumentException("inputRows must be positive");
+				}
+				captureProperties();
+				System.setProperty(NATIVE_ENABLED, "true");
+				System.setProperty(PARALLEL_ENABLED, "false");
+				dataDir = Files.newTemporaryFolder();
+				repository = new SailRepository(new LmdbStore(dataDir,
+						new LmdbStoreConfig("spoc,posc,ospc").setNativeEvaluationEnabled(true)));
+				loadData();
+				expectedDigests = expectedDigests(inputRows);
+				executionPaths = new EnumMap<>(Workload.class);
+				for (Workload workload : Workload.values()) {
+					verifyDigest(workload, runWorkload(workload));
+					executionPaths.put(workload, executionPath(workload));
+				}
+
+			} catch (Exception | Error failure) {
+				try {
+					tearDown();
+				} catch (Exception | Error cleanupFailure) {
+					failure.addSuppressed(cleanupFailure);
+				}
+				throw failure;
 			}
 		}
 

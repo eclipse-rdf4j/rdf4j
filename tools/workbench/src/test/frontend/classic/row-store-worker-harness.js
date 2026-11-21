@@ -143,9 +143,22 @@ function fakeIndexedDB() {
                 const connection = connect(databases.get(name));
                 connection.name = name;
                 connections.push(connection);
-                const request = { result: connection, error: null };
+                const request = { result: connection, error: null, transaction: null };
                 setImmediate(() => {
-                    if (fresh && request.onupgradeneeded) request.onupgradeneeded();
+                    let aborted = false;
+                    if (fresh) {
+                        // A database opened for the first time: an upgrade that the page may abort, which creates
+                        // nothing (an aborted creation leaves no database behind).
+                        request.transaction = { abort() { aborted = true; } };
+                        if (request.onupgradeneeded) request.onupgradeneeded({ oldVersion: 0, newVersion: 1 });
+                    }
+                    if (aborted) {
+                        databases.delete(name);
+                        connection.closed = true;
+                        request.error = { name: 'AbortError', message: 'The upgrade was aborted.' };
+                        if (request.onerror) request.onerror();
+                        return;
+                    }
                     request.onsuccess();
                 });
                 return request;
@@ -167,4 +180,54 @@ function fakeIndexedDB() {
     };
 }
 
-module.exports = { loadWorker, fakeIndexedDB };
+/**
+ * A page-side Worker whose messages go to a compiled row-store worker of its own (one store per worker, as in the
+ * browser), all on one fake IndexedDB.
+ */
+function realWorkerFactory(storage) {
+    const workers = [];
+    const factory = () => {
+        const pageListeners = [];
+        const workerListeners = [];
+        // A terminated worker's connections close, as the browser closes them, so a deletion is not blocked.
+        const opened = [];
+        const indexedDB = {
+            open(name, version) {
+                const request = storage.indexedDB.open(name, version);
+                opened.push(request.result);
+                return request;
+            },
+            deleteDatabase: (name) => storage.indexedDB.deleteDatabase(name)
+        };
+        const handle = {
+            terminated: false,
+            messages: [],
+            addEventListener(type, callback) { if (type === 'message') pageListeners.push(callback); },
+            removeEventListener(type, callback) {
+                const index = pageListeners.indexOf(callback);
+                if (index >= 0) pageListeners.splice(index, 1);
+            },
+            postMessage(message) {
+                handle.messages.push(message);
+                setImmediate(() => workerListeners.forEach((listener) => listener({ data: message })));
+            },
+            terminate() {
+                handle.terminated = true;
+                opened.forEach((connection) => connection.close());
+            }
+        };
+        loadWorker({
+            indexedDB,
+            IDBKeyRange: storage.IDBKeyRange,
+            addEventListener(type, listener) { if (type === 'message') workerListeners.push(listener); },
+            postMessage(response) {
+                if (!handle.terminated) pageListeners.slice().forEach((callback) => callback({ data: response }));
+            }
+        });
+        workers.push(handle);
+        return handle;
+    };
+    return { workers, factory };
+}
+
+module.exports = { loadWorker, fakeIndexedDB, realWorkerFactory };

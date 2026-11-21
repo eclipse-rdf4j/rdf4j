@@ -61,24 +61,36 @@ public class ConcurrentQueryBenchmark extends BaseConcurrentBenchmark {
 
 	@Setup(Level.Trial)
 	public void setup() throws Exception {
-		super.setup();
-		repository = new SailRepository(new MemoryStore());
+		boolean initialized = false;
+		try {
+			super.setup();
+			repository = new SailRepository(new MemoryStore());
 
-		try (SailRepositoryConnection connection = repository.getConnection()) {
-			connection.begin(IsolationLevels.NONE);
-			try (InputStream resourceAsStream = getResourceAsStream("benchmarkFiles/datagovbe-valid.ttl.gz")) {
-				connection.add(resourceAsStream, RDFFormat.TURTLE);
+			try (SailRepositoryConnection connection = repository.getConnection()) {
+				connection.begin(IsolationLevels.NONE);
+				try (InputStream resourceAsStream = getResourceAsStream("benchmarkFiles/datagovbe-valid.ttl.gz")) {
+					connection.add(resourceAsStream, RDFFormat.TURTLE);
+				}
+				connection.commit();
+
 			}
-			connection.commit();
-
+			initialized = true;
+		} finally {
+			if (!initialized) {
+				tearDown();
+			}
 		}
-
 	}
 
 	@TearDown(Level.Trial)
 	public void tearDown() throws Exception {
-		super.tearDown();
-		repository.shutDown();
+		try {
+			super.tearDown();
+		} finally {
+			if (repository != null) {
+				repository.shutDown();
+			}
+		}
 	}
 
 	@Benchmark

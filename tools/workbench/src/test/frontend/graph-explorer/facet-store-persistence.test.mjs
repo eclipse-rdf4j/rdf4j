@@ -57,14 +57,16 @@ test("clearing drops this repository's rows only", async () => {
 });
 
 test("the namespace separates repositories, graph scopes and the inference setting", () => {
-  const scope = JSON.stringify(["repository-v2", "/wb", "server", "repo"]);
+  const scope = JSON.stringify(["repository-v3", "/wb", "server", "", "repo"]);
   assert.notEqual(facetNamespace(scope, "default", true), facetNamespace(scope, "all", true));
   assert.notEqual(facetNamespace(scope, "default", true), facetNamespace(scope, "default", false));
 });
 
 test("the data revision key matches the one the Workbench pages write", () => {
   assert.equal(dataRevisionKey("/wb/", "my repo", "server"),
-    'rdf4j-workbench-data-revision:["repository-v2","/wb","server","my repo"]');
+    'rdf4j-workbench-data-revision:["repository-v3","/wb","server","my repo"]');
+  assert.equal(dataRevisionKey("/wb", "my repo", "sha256:abc:session-a"), dataRevisionKey("/wb", "my repo", "sha256:abc:session-b"),
+    "every browser session and user of the repository shares its data revision");
   const storage = new Map([[dataRevisionKey("/wb", "my repo", "server"), "k1"]]);
   const store = { getItem: (key) => storage.get(key) ?? null };
   assert.equal(readDataRevision(dataRevisionKey("/wb", "my repo", "server"), store), "k1");

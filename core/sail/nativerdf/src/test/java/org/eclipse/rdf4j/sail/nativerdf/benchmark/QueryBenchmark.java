@@ -120,25 +120,40 @@ public class QueryBenchmark {
 
 	@Setup(Level.Trial)
 	public void beforeClass() throws IOException {
-		file = Files.newTemporaryFolder();
+		boolean initialized = false;
+		try {
+			file = Files.newTemporaryFolder();
 
-		NativeStore sail = new NativeStore(file, "spoc,ospc,psoc");
-		sail.setIterationCacheSyncThreshold(10000);
-		repository = new SailRepository(sail);
+			NativeStore sail = new NativeStore(file, "spoc,ospc,psoc");
+			sail.setIterationCacheSyncThreshold(10000);
+			repository = new SailRepository(sail);
 
-		try (SailRepositoryConnection connection = repository.getConnection()) {
-			connection.begin(IsolationLevels.NONE);
-			try (InputStream resourceAsStream = getResourceAsStream("benchmarkFiles/datagovbe-valid.ttl.gz")) {
-				connection.add(resourceAsStream, RDFFormat.TURTLE);
+			try (SailRepositoryConnection connection = repository.getConnection()) {
+				connection.begin(IsolationLevels.NONE);
+				try (InputStream resourceAsStream = getResourceAsStream("benchmarkFiles/datagovbe-valid.ttl.gz")) {
+					connection.add(resourceAsStream, RDFFormat.TURTLE);
+				}
+				connection.commit();
 			}
-			connection.commit();
+			initialized = true;
+		} finally {
+			if (!initialized) {
+				afterClass();
+			}
 		}
 	}
 
 	@TearDown(Level.Trial)
 	public void afterClass() throws IOException {
-		repository.shutDown();
-		FileUtils.deleteDirectory(file);
+		try {
+			if (repository != null) {
+				repository.shutDown();
+			}
+		} finally {
+			if (file != null) {
+				FileUtils.deleteDirectory(file);
+			}
+		}
 	}
 
 	@Benchmark
