@@ -466,7 +466,11 @@ public final class ValueStoreWAL implements AutoCloseable {
 
 	private void recordWriterFailure(Throwable failure) {
 		synchronized (memoryMonitor) {
-			writerFailure = failure;
+			if (writerFailure == null) {
+				writerFailure = failure;
+			} else if (writerFailure != failure) {
+				writerFailure.addSuppressed(failure);
+			}
 			memoryMonitor.notifyAll();
 		}
 	}
@@ -702,6 +706,10 @@ public final class ValueStoreWAL implements AutoCloseable {
 					if (record != null) {
 						try {
 							append(record);
+						} catch (Throwable failure) {
+							// Waiting producers must see the failure before they can use the freed reservation.
+							recordWriterFailure(failure);
+							throw failure;
 						} finally {
 							releaseRecord(record);
 						}

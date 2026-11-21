@@ -57,7 +57,6 @@ import org.eclipse.rdf4j.sail.base.SailSink;
 import org.eclipse.rdf4j.sail.base.SailSource;
 import org.eclipse.rdf4j.sail.base.SailStore;
 import org.eclipse.rdf4j.sail.nativerdf.btree.RecordIterator;
-import org.eclipse.rdf4j.sail.nativerdf.datastore.DataStore;
 import org.eclipse.rdf4j.sail.nativerdf.model.NativeValue;
 import org.eclipse.rdf4j.sail.nativerdf.wal.ValueStoreWAL;
 import org.eclipse.rdf4j.sail.nativerdf.wal.ValueStoreWalConfig;
@@ -228,22 +227,8 @@ class NativeSailStore implements SailStore {
 
 			return false;
 		}
-		// Respect read-only data directories: do not enable WAL when we can't write
-		if (!dataDir.canWrite()) {
-			return false;
-		}
-		if (hasExistingWalSegments(walDir)) {
-//			writeBootstrapMarker(walDir, "enabled-existing-wal");
-			return true;
-		}
-		try (DataStore values = new DataStore(dataDir, "values", false)) {
-			if (values.getMaxID() > 0) {
-//				writeBootstrapMarker(walDir, "enabled-rebuild-existing-values");
-				return true;
-			}
-		}
-//		writeBootstrapMarker(walDir, "enabled-empty-store");
-		return true;
+		// ValueStore must be the first to open the dictionary so it can finish interrupted recovery.
+		return dataDir.canWrite();
 	}
 
 	private boolean hasExistingWalSegments(Path walDir) throws IOException {
@@ -252,18 +237,6 @@ class NativeSailStore implements SailStore {
 		}
 		try (var stream = Files.list(walDir)) {
 			return stream.anyMatch(path -> WAL_SEGMENT_PATTERN.matcher(path.getFileName().toString()).matches());
-		}
-	}
-
-	private void writeBootstrapMarker(Path walDir, String state) {
-		try {
-			Files.createDirectories(walDir);
-			Path marker = walDir.resolve("bootstrap.info");
-			String content = "state=" + state + "\n";
-			Files.writeString(marker, content, StandardCharsets.UTF_8, StandardOpenOption.CREATE,
-					StandardOpenOption.TRUNCATE_EXISTING);
-		} catch (IOException e) {
-			logger.warn("Failed to write WAL bootstrap marker", e);
 		}
 	}
 

@@ -168,11 +168,15 @@ class ValueStoreWalWriterMemoryTest {
 			ValueStoreWAL writer = wal;
 			writer.logMint(1, ValueStoreWalValueKind.LITERAL, "first", "", "", 0);
 			assertThat(writerEntered.await(10, TimeUnit.SECONDS)).isTrue();
+			String oversized = "x".repeat(8 * 1024 * 1024);
+			CountDownLatch producerEntered = new CountDownLatch(1);
 			var producer = executor.submit(() -> {
-				writer.logMint(2, ValueStoreWalValueKind.LITERAL, "x".repeat(8 * 1024 * 1024), "", "", 0);
+				producerEntered.countDown();
+				writer.logMint(2, ValueStoreWalValueKind.LITERAL, oversized, "", "", 0);
 				return null;
 			});
 			try {
+				assertThat(producerEntered.await(10, TimeUnit.SECONDS)).isTrue();
 				assertThatThrownBy(() -> producer.get(1, TimeUnit.SECONDS)).isInstanceOf(TimeoutException.class);
 			} finally {
 				failWriter.countDown();
@@ -181,6 +185,9 @@ class ValueStoreWalWriterMemoryTest {
 					.isInstanceOf(ExecutionException.class)
 					.hasCauseInstanceOf(IOException.class)
 					.hasRootCauseMessage("injected WAL writer failure");
+			assertThatThrownBy(() -> writer.logMint(3, ValueStoreWalValueKind.LITERAL, "later", "", "", 0))
+					.isInstanceOf(IOException.class)
+					.hasMessage("injected WAL writer failure");
 		} finally {
 			failWriter.countDown();
 			ValueStoreWAL.resetChannelOpenerForTesting();

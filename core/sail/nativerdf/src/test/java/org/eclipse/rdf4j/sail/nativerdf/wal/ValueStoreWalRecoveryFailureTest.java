@@ -18,6 +18,7 @@ import java.io.IOException;
 import java.nio.channels.FileChannel;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.nio.file.StandardCopyOption;
 import java.util.ArrayList;
 import java.util.List;
 
@@ -46,6 +47,13 @@ class ValueStoreWalRecoveryFailureTest {
 			wal.logMint(2, ValueStoreWalValueKind.BNODE, "same-value", "", "", 0);
 		}
 		Path values = Files.createDirectory(directory.resolve("values"));
+		try (ValueStore original = new ValueStore(values.toFile())) {
+			assertThat(original.storeValue(original.createBNode("original-value"))).isEqualTo(1);
+			original.sync();
+		}
+		byte[] originalData = Files.readAllBytes(values.resolve("values.dat"));
+		byte[] originalIds = Files.readAllBytes(values.resolve("values.id"));
+		byte[] originalHash = Files.readAllBytes(values.resolve("values.hash"));
 		List<FileChannel> opened = new ArrayList<>();
 		NioFile.setChannelFactoryForTesting((path, options) -> {
 			FileChannel channel = FileChannel.open(path, options);
@@ -62,9 +70,12 @@ class ValueStoreWalRecoveryFailureTest {
 					}).isInstanceOf(IOException.class).hasMessageContaining("mismatched id");
 				}
 				assertThat(opened).isNotEmpty().allMatch(channel -> !channel.isOpen());
+				assertThat(Files.readAllBytes(values.resolve("values.dat"))).isEqualTo(originalData);
+				assertThat(Files.readAllBytes(values.resolve("values.id"))).isEqualTo(originalIds);
+				assertThat(Files.readAllBytes(values.resolve("values.hash"))).isEqualTo(originalHash);
 				try (var files = Files.list(values)) {
 					assertThat(files.map(p -> p.getFileName().toString()))
-							.noneMatch(name -> name.startsWith("wal-recovery-"));
+							.noneMatch(name -> name.startsWith("wal-recovery-") || name.equals("values-recovery"));
 				}
 				opened.clear();
 			}
@@ -73,6 +84,67 @@ class ValueStoreWalRecoveryFailureTest {
 			for (FileChannel channel : opened) {
 				channel.close();
 			}
+		}
+	}
+
+	@Test
+	void resumesDictionaryPublicationWhenWalIsDisabled() throws IOException {
+		Path values = Files.createDirectory(directory.resolve("values"));
+		writeDictionary(values, "original-value");
+		Path stage = Files.createDirectory(values.resolve("values-recovery"));
+		writeDictionary(stage, "replacement-value", "next-value");
+		Files.createFile(stage.resolve("ready"));
+		// Simulate an interruption after the first replacement, with the complete staged generation retained.
+		Files.copy(stage.resolve("values.dat"), values.resolve("values.dat"), StandardCopyOption.REPLACE_EXISTING);
+
+		try (ValueStore store = new ValueStore(values.toFile())) {
+			assertThat(store.getValue(1).stringValue()).isEqualTo("replacement-value");
+			assertThat(store.getValue(2).stringValue()).isEqualTo("next-value");
+			assertThat(store.getID(store.createBNode("next-value"))).isEqualTo(2);
+		}
+		assertThat(stage).doesNotExist();
+	}
+
+	@Test
+	void discardsUnfinishedStageWithoutChangingTheLiveDictionary() throws IOException {
+		Path values = Files.createDirectory(directory.resolve("values"));
+		writeDictionary(values, "original-value");
+		Path stage = Files.createDirectory(values.resolve("values-recovery"));
+		writeDictionary(stage, "unfinished-replacement");
+		Files.createFile(stage.resolve("rehash_values.hash"));
+
+		try (ValueStore store = new ValueStore(values.toFile())) {
+			assertThat(store.getValue(1).stringValue()).isEqualTo("original-value");
+			assertThat(store.getID(store.createBNode("original-value"))).isEqualTo(1);
+		}
+		assertThat(stage).doesNotExist();
+	}
+
+	@Test
+	void incompleteReadyStageDoesNotReplaceAnyLiveFiles() throws IOException {
+		Path values = Files.createDirectory(directory.resolve("values"));
+		writeDictionary(values, "original-value");
+		byte[] originalData = Files.readAllBytes(values.resolve("values.dat"));
+		Path stage = Files.createDirectory(values.resolve("values-recovery"));
+		writeDictionary(stage, "replacement-value");
+		Files.delete(stage.resolve("values.hash"));
+		Files.createFile(stage.resolve("ready"));
+
+		assertThatThrownBy(() -> {
+			try (ValueStore ignored = new ValueStore(values.toFile())) {
+				// Do not expose a mixed generation when a ready stage is damaged.
+			}
+		}).isInstanceOf(IOException.class).hasMessageContaining("values.hash");
+		assertThat(Files.readAllBytes(values.resolve("values.dat"))).isEqualTo(originalData);
+		assertThat(stage.resolve("ready")).exists();
+	}
+
+	private static void writeDictionary(Path values, String... names) throws IOException {
+		try (ValueStore store = new ValueStore(values.toFile())) {
+			for (int i = 0; i < names.length; i++) {
+				assertThat(store.storeValue(store.createBNode(names[i]))).isEqualTo(i + 1);
+			}
+			store.sync();
 		}
 	}
 }

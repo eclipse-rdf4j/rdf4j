@@ -28,6 +28,7 @@ import java.nio.charset.CharsetEncoder;
 import java.nio.charset.CoderResult;
 import java.nio.charset.CodingErrorAction;
 import java.nio.charset.StandardCharsets;
+import java.nio.file.AccessDeniedException;
 import java.nio.file.Files;
 import java.nio.file.NoSuchFileException;
 import java.nio.file.Path;
@@ -135,6 +136,11 @@ public class ValueStore extends SimpleValueFactory implements AutoCloseable, BNo
 	public static final int NAMESPACE_ID_CACHE_SIZE = 32;
 
 	private static final String FILENAME_PREFIX = "values";
+	private static final String RECOVERY_DIRECTORY = "values-recovery";
+	private static final String RECOVERY_READY = "ready";
+	private static final String RECOVERY_INSTALL = "install";
+	private static final String[] DICTIONARY_FILES = { FILENAME_PREFIX + ".dat", FILENAME_PREFIX + ".id",
+			FILENAME_PREFIX + ".hash" };
 
 	private static final byte URI_VALUE = 0x1; // 0000 0001
 
@@ -212,7 +218,6 @@ public class ValueStore extends SimpleValueFactory implements AutoCloseable, BNo
 			int namespaceIDCacheSize, ValueStoreWAL wal) throws IOException {
 		super();
 		this.dataDir = dataDir;
-		dataStore = new DataStore(dataDir, FILENAME_PREFIX, forceSync, this);
 
 		valueCache = new ConcurrentCache<>(valueCacheSize);
 		valueIDCache = new ConcurrentCache<>(valueIDCacheSize);
@@ -222,8 +227,8 @@ public class ValueStore extends SimpleValueFactory implements AutoCloseable, BNo
 		this.wal = wal;
 		this.walPendingLsn = wal != null ? ThreadLocal.withInitial(() -> ValueStoreWAL.NO_LSN) : null;
 
+		dataStore = openDataStore(forceSync);
 		try {
-			autoRecoverValueStoreIfConfigured();
 			setNewRevision();
 			maybeScheduleWalBootstrap();
 		} catch (IOException | RuntimeException | Error failure) {
@@ -1769,87 +1774,183 @@ public class ValueStore extends SimpleValueFactory implements AutoCloseable, BNo
 		}
 	}
 
-	private void autoRecoverValueStoreIfConfigured() throws IOException {
+	private DataStore openDataStore(boolean forceSync) throws IOException {
+		Path directory = dataDir.toPath();
+		Path staging = directory.resolve(RECOVERY_DIRECTORY);
+		// Always finish an interrupted publication before opening any dictionary file, even with the WAL disabled.
+		if (!Files.notExists(staging)) {
+			finishWalRecovery(directory, staging);
+		}
+		DataStore original = new DataStore(dataDir, FILENAME_PREFIX, forceSync, this);
+		int recoveredCount;
+		try {
+			recoveredCount = stageWalRecoveryIfConfigured(original, staging);
+			if (recoveredCount == 0) {
+				return original;
+			}
+		} catch (IOException | RuntimeException | Error failure) {
+			try {
+				original.close();
+			} catch (IOException closeFailure) {
+				failure.addSuppressed(closeFailure);
+			}
+			throw failure;
+		}
+		original.close();
+		finishWalRecovery(directory, staging);
+		DataStore recovered = new DataStore(dataDir, FILENAME_PREFIX, forceSync, this);
+		logAutoRecovery(recoveredCount);
+		return recovered;
+	}
+
+	private int stageWalRecoveryIfConfigured(DataStore original, Path staging) throws IOException {
 		if (wal == null) {
-			return;
+			return 0;
 		}
 		ValueStoreWalConfig config;
 		try {
 			config = wal.config();
 		} catch (Throwable t) {
 			logger.warn("ValueStore WAL configuration unavailable for {}", dataDir, t);
-			return;
+			return 0;
 		}
 		if (!config.recoverValueStoreOnOpen()) {
-			return;
+			return 0;
 		}
 		if (incompleteWalBootstrapMaxId() > 0) {
 			// An interrupted bootstrap can contain a contiguous prefix while still missing original values.
 			// Keep the native dictionary intact and let bootstrap validate its target and retry below.
-			return;
+			return 0;
 		}
 		ValueStoreWalReader.Summary summary = wal.initialSummary();
 		if (!summary.hasRecords()) {
-			return;
+			return 0;
 		}
 		if (!summary.complete()) {
 			logger.warn("Skipping ValueStore WAL recovery for {}: WAL segments incomplete", dataDir);
-			return;
+			return 0;
 		}
 		if (summary.contiguousId() != summary.maxId()) {
 			logger.warn("Skipping ValueStore WAL recovery for {}: WAL dictionary has gaps", dataDir);
-			return;
+			return 0;
 		}
 		int maxWalId = summary.maxId();
-		if (dataStore.getMaxID() > maxWalId) {
+		if (original.getMaxID() > maxWalId) {
 			logger.warn("Skipping ValueStore WAL recovery for {}: WAL does not cover all existing value IDs", dataDir);
-			return;
+			return 0;
 		}
-		if (!shouldRecoverFromWal(maxWalId)) {
-			return;
+		if (!shouldRecoverFromWal(original, maxWalId)) {
+			return 0;
 		}
 		// Recovery is required: an I/O or read-budget failure must not expose an incomplete value store.
 		try (ValueStoreWalReader reader = ValueStoreWalReader.open(config);
 				ValueStoreWalRecovery.DiskReplay replay = new ValueStoreWalRecovery().replayToDisk(reader,
 						dataDir.toPath())) {
-			// Validate the complete spool before clearing any existing value data. The WAL may have changed since open.
+			// Validate the complete spool before building a replacement. The WAL may have changed since open.
 			if (!replay.complete() || replay.hasGaps() || replay.maxId() != maxWalId) {
 				throw new IOException("Required ValueStore WAL recovery cannot proceed: WAL changed or is incomplete");
 			}
-			recoverValueStoreFromWal(replay);
-			logAutoRecovery(replay.count());
+			stageWalRecovery(staging, replay);
+			return replay.count();
 		}
 	}
 
-	private boolean shouldRecoverFromWal(int maxWalId) {
+	private boolean shouldRecoverFromWal(DataStore original, int maxWalId) {
 		if (maxWalId <= 0) {
 			return false;
 		}
-		if (dataStore.getMaxID() < maxWalId) {
+		if (original.getMaxID() < maxWalId) {
 			return true;
 		}
 		for (long id = 1; id <= maxWalId; id++) {
-			if (isMissingValueData((int) id)) {
+			if (isMissingValueData(original, (int) id)) {
 				return true;
 			}
 		}
 		return false;
 	}
 
-	private boolean isMissingValueData(int id) {
+	private static boolean isMissingValueData(DataStore original, int id) {
 		try {
-			return !dataStore.hasData(id);
+			return !original.hasData(id);
 		} catch (IOException e) {
 			return true;
 		}
 	}
 
-	private void recoverValueStoreFromWal(ValueStoreWalRecovery.DiskReplay replay) throws IOException {
-		dataStore.clear();
-		valueCache.clear();
-		valueIDCache.clear();
-		namespaceCache.clear();
-		namespaceIDCache.clear();
+	private void stageWalRecovery(Path staging, ValueStoreWalRecovery.DiskReplay replay) throws IOException {
+		Files.createDirectory(staging);
+		try {
+			try (DataStore rebuilt = new DataStore(staging.toFile(), FILENAME_PREFIX, true)) {
+				recoverValueStoreFromWal(replay, rebuilt);
+				rebuilt.sync();
+			}
+			// Persist the complete dictionary before recording that it is safe to publish.
+			forceRecoveryDirectory(staging);
+			forceRecoveryDirectory(staging.getParent());
+			Files.createFile(staging.resolve(RECOVERY_READY));
+		} catch (IOException | RuntimeException | Error failure) {
+			try {
+				discardRecoveryStage(staging);
+			} catch (IOException cleanupFailure) {
+				failure.addSuppressed(cleanupFailure);
+			}
+			throw failure;
+		}
+	}
+
+	private static void finishWalRecovery(Path directory, Path staging) throws IOException {
+		Path ready = staging.resolve(RECOVERY_READY);
+		if (!Files.notExists(ready)) {
+			for (String name : DICTIONARY_FILES) {
+				if (!Files.isRegularFile(staging.resolve(name))) {
+					throw new IOException("Incomplete staged ValueStore WAL recovery: missing " + name);
+				}
+			}
+			// Retain the entire staged generation until all live replacements are durable. A later open can
+			// repeat this even if the previous install was interrupted between any two atomic moves.
+			forceRecoveryDirectory(staging);
+			Path install = staging.resolve(RECOVERY_INSTALL);
+			for (String name : DICTIONARY_FILES) {
+				Files.copy(staging.resolve(name), install, StandardCopyOption.REPLACE_EXISTING);
+				try (FileChannel file = FileChannel.open(install, StandardOpenOption.WRITE)) {
+					file.force(true);
+				}
+				Files.move(install, directory.resolve(name), StandardCopyOption.ATOMIC_MOVE,
+						StandardCopyOption.REPLACE_EXISTING);
+			}
+			forceRecoveryDirectory(directory);
+			Files.delete(ready);
+			forceRecoveryDirectory(staging);
+		}
+		discardRecoveryStage(staging);
+	}
+
+	private static void discardRecoveryStage(Path staging) throws IOException {
+		for (String name : DICTIONARY_FILES) {
+			Files.deleteIfExists(staging.resolve(name));
+		}
+		Files.deleteIfExists(staging.resolve(RECOVERY_INSTALL));
+		// HashFile may have been interrupted while creating its replacement hash index.
+		Files.deleteIfExists(staging.resolve("rehash_" + FILENAME_PREFIX + ".hash"));
+		Files.delete(staging);
+	}
+
+	private static void forceRecoveryDirectory(Path directory) throws IOException {
+		try (FileChannel channel = FileChannel.open(directory, StandardOpenOption.READ)) {
+			channel.force(true);
+		} catch (AccessDeniedException e) {
+			if (!System.getProperty("os.name", "").startsWith("Windows")) {
+				throw e;
+			}
+			logger.debug("Directory sync is unavailable for {}", directory, e);
+		} catch (UnsupportedOperationException e) {
+			logger.debug("Directory sync is unavailable for {}", directory, e);
+		}
+	}
+
+	private void recoverValueStoreFromWal(ValueStoreWalRecovery.DiskReplay replay, DataStore rebuilt)
+			throws IOException {
 
 		for (long id = 1; id <= replay.maxId(); id++) {
 			ValueStoreWalRecord record = replay.read((int) id);
@@ -1862,7 +1963,7 @@ public class ValueStore extends SimpleValueFactory implements AutoCloseable, BNo
 				data = encodeWalString(record.lexical(), 0, record.lexical().length(), 0);
 				break;
 			case IRI:
-				data = encodeIri(record.lexical(), dataStore);
+				data = encodeIri(record.lexical(), rebuilt);
 				break;
 			case BNODE: {
 				data = encodeWalString(record.lexical(), 0, record.lexical().length(), 1);
@@ -1870,24 +1971,20 @@ public class ValueStore extends SimpleValueFactory implements AutoCloseable, BNo
 				break;
 			}
 			case LITERAL:
-				data = encodeLiteral(record.lexical(), record.datatype(), record.language(), dataStore);
+				data = encodeLiteral(record.lexical(), record.datatype(), record.language(), rebuilt);
 				break;
 			case TRIPLE:
 				data = encodeTripleTerm(record.lexical());
 				break;
 			default:
-				continue;
+				throw new IOException("Unsupported ValueStore WAL recovery record kind: " + record.valueKind());
 			}
-			if (data == null) {
-				continue;
-			}
-			int assigned = dataStore.storeData(data);
+			int assigned = rebuilt.storeData(data);
 			if (assigned != record.id()) {
 				throw new IOException("ValueStore WAL recovery produced mismatched id " + assigned
 						+ " (expected " + record.id() + ")");
 			}
 		}
-		dataStore.sync();
 	}
 
 	private void logAutoRecovery(int recoveredCount) {
