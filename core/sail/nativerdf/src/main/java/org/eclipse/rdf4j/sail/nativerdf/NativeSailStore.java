@@ -59,6 +59,7 @@ import org.eclipse.rdf4j.sail.nativerdf.datastore.DataStore;
 import org.eclipse.rdf4j.sail.nativerdf.model.NativeValue;
 import org.eclipse.rdf4j.sail.nativerdf.wal.ValueStoreWAL;
 import org.eclipse.rdf4j.sail.nativerdf.wal.ValueStoreWalConfig;
+import org.eclipse.rdf4j.sail.nativerdf.wal.WalDirectoryResolver;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -134,10 +135,8 @@ class NativeSailStore implements SailStore {
 		ContextStore createdContextStore = null;
 		boolean initialized = false;
 		try {
+			Path walDir = WalDirectoryResolver.resolve(dataDir.toPath(), walDirectoryName);
 			createdNamespaceStore = new NamespaceStore(dataDir);
-			Path walDir = dataDir.toPath()
-					.resolve(walDirectoryName != null && !walDirectoryName.isEmpty() ? walDirectoryName
-							: ValueStoreWalConfig.DEFAULT_DIRECTORY_NAME);
 			boolean enableWal = shouldEnableWal(dataDir, walDir);
 			ValueStoreWalConfig walConfig = null;
 			if (enableWal) {
