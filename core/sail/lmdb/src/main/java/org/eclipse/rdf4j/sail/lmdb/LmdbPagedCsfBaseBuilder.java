@@ -173,6 +173,8 @@ final class LmdbPagedCsfBaseBuilder {
 			long wrapperMetadataBytes = Math.addExact(arrayBytes(sortedPredicates.length, Long.BYTES),
 					Math.addExact(arrayBytes(partitionCountLong, REFERENCE_BYTES),
 							Math.addExact(Math.multiplyExact(partitionCountLong, 64L), 2_048L)));
+			wrapperMetadataBytes = Math.addExact(wrapperMetadataBytes,
+					LmdbInMemoryAdjacencyIndex.SYNOPSIS_BUILD_LOCK_BYTES);
 			Charge dictionaryCharge = account.tryCharge(MemoryKind.BASE, dictionaryPlan.capacityBytes());
 			if (dictionaryCharge == null) {
 				throw new LmdbAdjacencyMemoryRefusedException(

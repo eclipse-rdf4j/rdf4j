@@ -28,6 +28,15 @@ import org.eclipse.rdf4j.model.Value;
 @Experimental
 final class LmdbNativeTermAuthority implements NativeTermAuthority {
 
+	/** Canonicality of IDs emitted by an unmodified stored-statement pattern, not the synthetic term space. */
+	static boolean canonicalPatternIds(NativeLmdbQuerySource source) {
+		NativeLmdbQuerySource backing = source;
+		while (backing instanceof SyntheticValueSource synthetic) {
+			backing = synthetic.delegate;
+		}
+		return backing.hasCanonicalIds();
+	}
+
 	private final NativeLmdbQuerySource store;
 	private final PlanValueCatalog catalog;
 	private final NativeExecutionContext context;

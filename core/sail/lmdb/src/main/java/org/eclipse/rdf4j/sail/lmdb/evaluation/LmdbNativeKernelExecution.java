@@ -13,6 +13,7 @@
 package org.eclipse.rdf4j.sail.lmdb.evaluation;
 
 import java.io.IOException;
+import java.util.Arrays;
 import java.util.Collections;
 import java.util.HashSet;
 import java.util.IdentityHashMap;
@@ -74,6 +75,20 @@ final class LmdbNativeKernelExecution {
 		AUTO,
 		COMPILED,
 		INTERPRETED
+	}
+
+	/** The same row input, terminal columns, wildcard policy and parallel mode, with only the tier substituted. */
+	private record RowSiblingRecipe(Boolean wildcardFamily, boolean parallel, List<Integer> distinctSlots) {
+	}
+
+	private static LmdbNativeCandidate.KernelSibling rowSibling(SlotPlan input, Boolean wildcardFamily,
+			ParallelExecution parallel, int[] distinctSlots, int workers, boolean interpreted) {
+		List<Integer> slots = distinctSlots == null ? null : Arrays.stream(distinctSlots).boxed().toList();
+		return new LmdbNativeCandidate.KernelSibling(
+				distinctSlots == null ? LmdbNativeCandidate.KernelFamily.ROW
+						: LmdbNativeCandidate.KernelFamily.DISTINCT_ROW,
+				input, new RowSiblingRecipe(wildcardFamily, parallel == ParallelExecution.REQUIRE, slots), workers,
+				interpreted ? LmdbNativeCandidate.KernelTier.INTERPRETED : LmdbNativeCandidate.KernelTier.COMPILED);
 	}
 
 	private LmdbNativeKernelExecution() {
@@ -1010,7 +1025,10 @@ final class LmdbNativeKernelExecution {
 						() -> tryOpenRows(arg, row, originalExpr, false, null, null, null, scanVariables,
 								parallelExecution, requestedTier, reservation, wildcardFamily)),
 				work, startup, rows, tag, () -> {
-				}).withPlanningWork(planning).withParallelReservation(reservation);
+				}).withPlanningWork(planning)
+						.withParallelReservation(reservation)
+						.withKernelSibling(rowSibling(arg, wildcardFamily, parallelExecution, null, workers,
+								interpretedTier));
 		return Boolean.FALSE.equals(wildcardFamily)
 				? proposal.withDominates(ordinaryKernelDominates(interpretedTier))
 				: proposal;
@@ -1128,6 +1146,8 @@ final class LmdbNativeKernelExecution {
 				work, startup, rows, tag, () -> {
 				}).withPlanningWork(planning)
 						.withParallelReservation(reservation)
+						.withKernelSibling(
+								rowSibling(arg, null, parallelExecution, distinctSlots, workers, interpretedTier))
 						.withOptionalCostQuote(pricing == null
 								? LmdbNativeDistinctRowCostQuote.quote(arg, row, distinctSlots, interpretedTier,
 										workers)
@@ -2268,14 +2288,16 @@ final class LmdbNativeKernelExecution {
 			if (closed) {
 				return false;
 			}
-			row.cancellation.check();
-			LmdbNativeProbeDeadline.poll(0);
 			if (activeMark >= 0) {
 				row.rollback(activeMark);
 				activeMark = -1;
 			}
+			row.cancellation.check();
+			LmdbNativeProbeDeadline.poll(0);
 			while (true) {
 				if (bufferPos == bufferRows) {
+					row.cancellation.check();
+					LmdbNativeProbeDeadline.poll(0);
 					try {
 						bufferRows = LmdbNativeJaninoCodegen.fill(kernel, buffer, fillRows, route);
 					} catch (LmdbNativeKernelBindings.PlanFailure problem) {

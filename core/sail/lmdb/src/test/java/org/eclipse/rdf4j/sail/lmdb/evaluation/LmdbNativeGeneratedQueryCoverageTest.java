@@ -728,34 +728,20 @@ class LmdbNativeGeneratedQueryCoverageTest {
 			prepared.setMaxExecutionTime(QUERY_TIMEOUT_SECONDS);
 			optimizedPlan = prepared.explain(Explanation.Level.Optimized).toString();
 			try (MockedStatic<NativeResultSteps> resultSteps = mockStatic(NativeResultSteps.class)) {
+				resultSteps.when(() -> NativeResultSteps.openRelation(any(QueryEvaluationStep.class),
+						any(BindingSet.class)))
+						.thenAnswer(invocation -> {
+							QueryEvaluationStep step = invocation.getArgument(0);
+							BindingSet input = invocation.getArgument(1);
+							NativeResultCursor cursor = (NativeResultCursor) invocation.callRealMethod();
+							return observeFrame(step, input, cursor, frameObservations, frameCall);
+						});
 				resultSteps.when(() -> NativeResultSteps.open(any(QueryEvaluationStep.class), any(BindingSet.class)))
 						.thenAnswer(invocation -> {
 							QueryEvaluationStep step = invocation.getArgument(0);
 							BindingSet input = invocation.getArgument(1);
 							NativeResultCursor cursor = (NativeResultCursor) invocation.callRealMethod();
-							NativeExecutionContext context = cursor.executionContext();
-							String contextIdentity;
-							String queryBase;
-							if (context == null) {
-								contextIdentity = "<none>";
-								queryBase = "<unavailable:no execution context>";
-							} else {
-								contextIdentity = context.getClass().getName() + "@"
-										+ Integer.toHexString(System.identityHashCode(context));
-								try {
-									queryBase = "initialized:" + describeBindings(context.queryBase());
-								} catch (IllegalStateException uninitialized) {
-									queryBase = "unavailable:" + uninitialized.getMessage();
-								}
-							}
-							frameObservations.add("call=" + frameCall.incrementAndGet()
-									+ " thread=" + Thread.currentThread().getName()
-									+ " step=" + step.getClass().getName() + "@"
-									+ Integer.toHexString(System.identityHashCode(step))
-									+ " input=" + describeBindings(input)
-									+ " executionContext=" + contextIdentity
-									+ " queryBase=" + queryBase);
-							return cursor;
+							return observeFrame(step, input, cursor, frameObservations, frameCall);
 						});
 				resultSteps.when(() -> NativeResultSteps.map(any(NativeResultCursor.class), any()))
 						.thenCallRealMethod();
@@ -806,6 +792,34 @@ class LmdbNativeGeneratedQueryCoverageTest {
 		assertThat(evaluationFailure).as("the forced nestedLoop evaluation completes").isNull();
 		assertThat(rowBag(actualRows)).as("forced nestedLoop preserves the exact canonical result bag")
 				.isEqualTo(rowBag(expected));
+	}
+
+	private static NativeResultCursor observeFrame(QueryEvaluationStep step, BindingSet input,
+			NativeResultCursor cursor,
+			List<String> frameObservations, AtomicInteger frameCall) {
+		NativeExecutionContext context = cursor.executionContext();
+		String contextIdentity;
+		String queryBase;
+		if (context == null) {
+			contextIdentity = "<none>";
+			queryBase = "<unavailable:no execution context>";
+		} else {
+			contextIdentity = context.getClass().getName() + "@"
+					+ Integer.toHexString(System.identityHashCode(context));
+			try {
+				queryBase = "initialized:" + describeBindings(context.queryBase());
+			} catch (IllegalStateException uninitialized) {
+				queryBase = "unavailable:" + uninitialized.getMessage();
+			}
+		}
+		frameObservations.add("call=" + frameCall.incrementAndGet()
+				+ " thread=" + Thread.currentThread().getName()
+				+ " step=" + step.getClass().getName() + "@"
+				+ Integer.toHexString(System.identityHashCode(step))
+				+ " input=" + describeBindings(input)
+				+ " executionContext=" + contextIdentity
+				+ " queryBase=" + queryBase);
+		return cursor;
 	}
 
 	@Test

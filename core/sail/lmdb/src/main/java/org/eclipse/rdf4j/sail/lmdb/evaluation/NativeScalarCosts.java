@@ -16,9 +16,14 @@ import java.util.IdentityHashMap;
 import java.util.Set;
 import java.util.function.Predicate;
 
+import org.eclipse.rdf4j.query.algebra.Datatype;
 import org.eclipse.rdf4j.query.algebra.Exists;
 import org.eclipse.rdf4j.query.algebra.FunctionCall;
 import org.eclipse.rdf4j.query.algebra.IRIFunction;
+import org.eclipse.rdf4j.query.algebra.Label;
+import org.eclipse.rdf4j.query.algebra.Lang;
+import org.eclipse.rdf4j.query.algebra.LocalName;
+import org.eclipse.rdf4j.query.algebra.Namespace;
 import org.eclipse.rdf4j.query.algebra.QueryModelNode;
 import org.eclipse.rdf4j.query.algebra.Regex;
 import org.eclipse.rdf4j.query.algebra.Str;
@@ -70,7 +75,7 @@ final class NativeScalarCosts {
 		return total;
 	}
 
-	private static LmdbNativeCostVector expression(NativeScalarPlan scalar) {
+	static LmdbNativeCostVector expression(NativeScalarPlan scalar) {
 		class Operations extends AbstractQueryModelVisitor<RuntimeException> {
 			double operators;
 			long decodedSlots;
@@ -83,7 +88,8 @@ final class NativeScalarCosts {
 					operators++;
 				}
 				boolean lexical = node instanceof Str || node instanceof FunctionCall || node instanceof Regex
-						|| node instanceof IRIFunction;
+						|| node instanceof IRIFunction || node instanceof Datatype || node instanceof Lang
+						|| node instanceof Label || node instanceof LocalName || node instanceof Namespace;
 				if (lexical) {
 					// The AST supplies dispatch counts, not string lengths, normalization passes, or arbitrary
 					// extension-function work. Keep those costs unbounded instead of inventing a character price.
@@ -117,6 +123,18 @@ final class NativeScalarCosts {
 				.add(Feature.DECODED_ROW, 0D, Long.bitCount(operations.decodedSlots),
 						Long.bitCount(operations.decodedSlots))
 				.build();
+	}
+
+	/** EXISTS owns a tuple producer whose access work is not described by a scalar expression alone. */
+	static boolean hasUnquotedWitness(NativeScalarPlan scalar) {
+		boolean[] found = { false };
+		scalar.expression().visit(new AbstractQueryModelVisitor<RuntimeException>() {
+			@Override
+			public void meet(Exists exists) {
+				found[0] = true;
+			}
+		});
+		return found[0];
 	}
 
 	static LmdbNativeCostVector forInput(LmdbNativeCostVector work, SlotPlan input, RowState row, long mask) {

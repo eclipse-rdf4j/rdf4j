@@ -747,6 +747,7 @@ class LmdbNativeAliasJoinEncounterOrderTest {
 						if (!row.encounterOrderRequired) {
 							throw switch (reason) {
 							case FLOATING_SUM_OR_AVG -> EncounterOrderFallback.floatingSumOrAvg();
+							case NUMERIC_INPUT_VALIDATION -> EncounterOrderFallback.numericInputValidation();
 							case DISTINCT_TERM_EXTREMA_TIE -> EncounterOrderFallback.distinctTermExtremaTie();
 							case GROUP_CONCAT_ORDER -> EncounterOrderFallback.groupConcatOrder();
 							case CUSTOM_AGGREGATE_ORDER -> EncounterOrderFallback.customAggregateOrder();

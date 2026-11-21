@@ -323,7 +323,8 @@ final class NativeAggregateCostQuotes {
 							LmdbNativeCostVector.upperAdd(LmdbNativeCostVector.upperMultiply(2D, maximumSortHigh),
 									upperSortComparisons(description.highRows))));
 		} else if (retainedGroups && !streaming
-				&& (actual == null || actual.retention() != NativeAggregatePhysicalPlan.Retention.RESIDENT_STATE)) {
+				&& (actual == null || actual.retention() != NativeAggregatePhysicalPlan.Retention.RESIDENT_STATE)
+				&& (actual == null || actual.producer() == null || !actual.producer().retentionWorkIncluded())) {
 			double retainedRows = producerWork != null && Double.isFinite(producerWork.retainedRows())
 					? Math.min(rows, producerWork.retainedRows())
 					: rows;
@@ -378,7 +379,8 @@ final class NativeAggregateCostQuotes {
 			evidence = evidence.withMissingProof(legacy.workEvidence().missingProof());
 		}
 		if (actual != null && actual.retention() == null) {
-			evidence = evidence.withMissingProof("The selected recipe has unknown reducer/storage work");
+			evidence = evidence
+					.withMissingProof("The selected recipe has unknown producer/transport or reducer/storage work");
 		}
 		if (fullConcat && description.highRows > 0D) {
 			// Decoding the shared inputs is already represented above. Constructing the additional concatenated
@@ -387,9 +389,12 @@ final class NativeAggregateCostQuotes {
 			evidence = evidence
 					.withMissingProof("FULL GROUP_CONCAT additional text materialization/copy work is unproved");
 		}
-		NativePhysicalWorkQuote estimate = NativePhysicalWorkQuote.of(
-				LmdbNativeCostVector.builder().add(OPEN, 1D).build(),
-				operations, outputExpected, evidence);
+		// A fully materializing producer pays its complete contraction, storage and output preparation even when
+		// a downstream LIMIT consumes one row. Streaming producers retain their existing incremental quote.
+		LmdbNativeCostVector startup = actual != null && actual.producer() != null
+				&& actual.producer().blocksBeforeOutput() ? operations
+						: LmdbNativeCostVector.builder().add(OPEN, 1D).build();
+		NativePhysicalWorkQuote estimate = NativePhysicalWorkQuote.of(startup, operations, outputExpected, evidence);
 		if (outputHigh == 0D) {
 			// A grouped reducer cannot emit a key when its input is proved empty. Unlike an estimated zero,
 			// this is a physical output proof that survives the conversion into the selector quote.

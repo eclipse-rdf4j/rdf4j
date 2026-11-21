@@ -22,6 +22,7 @@ import org.eclipse.rdf4j.common.annotation.Experimental;
 import org.eclipse.rdf4j.common.order.StatementOrder;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.query.QueryEvaluationException;
+import org.eclipse.rdf4j.query.QueryInterruptedException;
 import org.eclipse.rdf4j.sail.lmdb.LmdbKeyRange;
 import org.eclipse.rdf4j.sail.lmdb.LmdbPrefixRunCursor;
 import org.eclipse.rdf4j.sail.lmdb.LmdbPrefixRunPlan;
@@ -82,6 +83,11 @@ final class CompositeNativeLmdbQuerySource implements NativeLmdbQuerySource {
 	@Override
 	public Value lazyValue(long id) throws QueryEvaluationException {
 		return sources.get(0).lazyValue(id);
+	}
+
+	@Override
+	public DictionaryLease retainDictionaryLease() throws IOException {
+		return sources.get(0).retainDictionaryLease();
 	}
 
 	@Override
@@ -599,6 +605,57 @@ final class CompositeNativeLmdbQuerySource implements NativeLmdbQuerySource {
 			total += cardinality.getAsLong();
 		}
 		return OptionalLong.of(total);
+	}
+
+	@Override
+	public PredicateProjectionStatistics predicateProjectionStatistics(boolean bySubject, Runnable cancellationPoll) {
+		NativeLmdbQuerySource active = onlyActiveSource();
+		return active == null ? null : active.predicateProjectionStatistics(bySubject, cancellationPoll);
+	}
+
+	@Override
+	public RootCountWorkspace rootCountWorkspace(boolean bySubject) {
+		NativeLmdbQuerySource active = onlyActiveSource();
+		return active == null ? null : active.rootCountWorkspace(bySubject);
+	}
+
+	@Override
+	public ParallelRootCountReceipt parallelRootCountReceipt(boolean bySubject, Runnable cancellationPoll) {
+		NativeLmdbQuerySource active = onlyActiveSource();
+		return active == null ? null : active.parallelRootCountReceipt(bySubject, cancellationPoll);
+	}
+
+	@Override
+	public RootCountWorker[] openParallelRootCountWorkers(ParallelRootCountReceipt receipt, int count,
+			Runnable cancellationPoll) throws IOException {
+		NativeLmdbQuerySource active = onlyActiveSource();
+		return active == null ? null : active.openParallelRootCountWorkers(receipt, count, cancellationPoll);
+	}
+
+	@Override
+	public CachedDatatypeSummaryReceipt cachedDatatypeSummaryReceipt(boolean bySubject) {
+		NativeLmdbQuerySource active = onlyActiveSource();
+		return active == null ? null : active.cachedDatatypeSummaryReceipt(bySubject);
+	}
+
+	@Override
+	public ColdDatatypeSummaryReceipt coldDatatypeSummaryReceipt(boolean bySubject, Runnable cancellationPoll) {
+		NativeLmdbQuerySource active = onlyActiveSource();
+		return active == null ? null : active.coldDatatypeSummaryReceipt(bySubject, cancellationPoll);
+	}
+
+	@Override
+	public DatatypePageWorkspace datatypePageWorkspace(boolean bySubject) {
+		NativeLmdbQuerySource active = onlyActiveSource();
+		return active == null ? null : active.datatypePageWorkspace(bySubject);
+	}
+
+	@Override
+	public CensusPageSweepReceipt censusPageSweepReceipt(boolean bySubject, boolean needSubjectNodes,
+			boolean needObjectNodes, Runnable cancellationPoll) throws IOException {
+		NativeLmdbQuerySource active = onlyActiveSource();
+		return active == null ? null
+				: active.censusPageSweepReceipt(bySubject, needSubjectNodes, needObjectNodes, cancellationPoll);
 	}
 
 	@Override
@@ -1259,6 +1316,14 @@ final class CompositeNativeLmdbQuerySource implements NativeLmdbQuerySource {
 		}
 
 		@Override
+		public synchronized DictionaryLease retainDictionaryLease() throws IOException {
+			if (closed) {
+				throw new QueryInterruptedException("Parallel source has been closed");
+			}
+			return delegate.retainDictionaryLease();
+		}
+
+		@Override
 		public Value lazyValue(long id, int positionMask) throws QueryEvaluationException {
 			return delegate.lazyValue(id, positionMask);
 		}
@@ -1481,6 +1546,49 @@ final class CompositeNativeLmdbQuerySource implements NativeLmdbQuerySource {
 		@Override
 		public OptionalLong predicateDomainCardinality() {
 			return delegate.predicateDomainCardinality();
+		}
+
+		@Override
+		public PredicateProjectionStatistics predicateProjectionStatistics(boolean bySubject,
+				Runnable cancellationPoll) {
+			return delegate.predicateProjectionStatistics(bySubject, cancellationPoll);
+		}
+
+		@Override
+		public RootCountWorkspace rootCountWorkspace(boolean bySubject) {
+			return delegate.rootCountWorkspace(bySubject);
+		}
+
+		@Override
+		public ParallelRootCountReceipt parallelRootCountReceipt(boolean bySubject, Runnable cancellationPoll) {
+			return delegate.parallelRootCountReceipt(bySubject, cancellationPoll);
+		}
+
+		@Override
+		public RootCountWorker[] openParallelRootCountWorkers(ParallelRootCountReceipt receipt, int count,
+				Runnable cancellationPoll) throws IOException {
+			return delegate.openParallelRootCountWorkers(receipt, count, cancellationPoll);
+		}
+
+		@Override
+		public CachedDatatypeSummaryReceipt cachedDatatypeSummaryReceipt(boolean bySubject) {
+			return delegate.cachedDatatypeSummaryReceipt(bySubject);
+		}
+
+		@Override
+		public ColdDatatypeSummaryReceipt coldDatatypeSummaryReceipt(boolean bySubject, Runnable cancellationPoll) {
+			return delegate.coldDatatypeSummaryReceipt(bySubject, cancellationPoll);
+		}
+
+		@Override
+		public DatatypePageWorkspace datatypePageWorkspace(boolean bySubject) {
+			return delegate.datatypePageWorkspace(bySubject);
+		}
+
+		@Override
+		public CensusPageSweepReceipt censusPageSweepReceipt(boolean bySubject, boolean needSubjectNodes,
+				boolean needObjectNodes, Runnable cancellationPoll) throws IOException {
+			return delegate.censusPageSweepReceipt(bySubject, needSubjectNodes, needObjectNodes, cancellationPoll);
 		}
 
 		@Override

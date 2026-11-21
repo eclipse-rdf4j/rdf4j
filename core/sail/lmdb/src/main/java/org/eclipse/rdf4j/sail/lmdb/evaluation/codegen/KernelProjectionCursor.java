@@ -30,7 +30,7 @@ import org.eclipse.rdf4j.sail.lmdb.evaluation.NativeLmdbQuerySource.RunView;
 @Experimental
 @InternalUseOnly
 public final class KernelProjectionCursor implements AutoCloseable {
-	private static final int VIRTUAL_ROWS_PER_POLL = 256;
+	private static final int VIRTUAL_ROWS_PER_POLL = 1024;
 	public static final int INPUT = 0;
 	public static final int PLANE = 1;
 	public static final int ROOT = 2;
@@ -290,6 +290,7 @@ public final class KernelProjectionCursor implements AutoCloseable {
 	private long rootWeight;
 	private long fiberWeight;
 	private long remainingRows;
+	/** Retained across short fibers and same-token activations, so small virtual groups cannot starve polling. */
 	private int virtualRowPollTick;
 	private int grain;
 	private long weight;
@@ -300,6 +301,8 @@ public final class KernelProjectionCursor implements AutoCloseable {
 	private long contextsVisited;
 	private long completedNeighborValues;
 	private long completedContextValues;
+	// These modes keep the original traversal loop; classify once per activation, including owner reuse.
+	private boolean generalTraversal;
 
 	private KernelProjectionCursor(Source source, Program program, int outputs, int programs,
 			boolean contextObserved, boolean contextMatch, long wantedContext, boolean excludeDefault,
@@ -312,6 +315,9 @@ public final class KernelProjectionCursor implements AutoCloseable {
 		this.contextMatch = contextMatch;
 		this.wantedContext = wantedContext;
 		this.excludeDefault = excludeDefault;
+		this.generalTraversal = contextMatch || excludeDefault
+				|| ((outputs & ((1 << ROOT) | (1 << FIBER) | (1 << QUAD))) == (1 << ROOT)
+						&& (contextObserved || (programs & (1 << QUAD)) != 0));
 		this.cancellation = cancellation;
 		this.reservation = reservation;
 		this.owner = owner;
@@ -330,6 +336,12 @@ public final class KernelProjectionCursor implements AutoCloseable {
 		this.contextMatch = contextMatch;
 		this.wantedContext = wantedContext;
 		this.excludeDefault = excludeDefault;
+		this.generalTraversal = contextMatch || excludeDefault
+				|| ((outputs & ((1 << ROOT) | (1 << FIBER) | (1 << QUAD))) == (1 << ROOT)
+						&& (contextObserved || (programs & (1 << QUAD)) != 0));
+		if (this.cancellation != cancellation) {
+			virtualRowPollTick = 0;
+		}
 		this.cancellation = cancellation;
 		this.cursor = null;
 		this.initialized = false;
@@ -345,7 +357,6 @@ public final class KernelProjectionCursor implements AutoCloseable {
 		this.rootWeight = 0L;
 		this.fiberWeight = 0L;
 		this.remainingRows = 0L;
-		this.virtualRowPollTick = 0;
 		this.grain = INPUT;
 		this.weight = 0L;
 		this.pagesVisited = 0L;
@@ -452,6 +463,204 @@ public final class KernelProjectionCursor implements AutoCloseable {
 
 	/** Advances to an accepted quad, or an aggregate projection on exiting an accepted fiber/root. */
 	public boolean advance() {
+		if (generalTraversal) {
+			return advanceGeneral();
+		}
+		if (closed) {
+			throw new IllegalStateException("projection cursor is closed");
+		}
+		if (rootRowsRemaining > 0L) {
+			return advanceRootRow();
+		}
+		// An admitted root has no pending plane transition, root exit, or source completion.
+		// Resume its fibers without revisiting those ancestor states on every emitted row.
+		if (rootReady && advanceFibers()) {
+			return true;
+		}
+		return advanceRoots();
+	}
+
+	private boolean advanceRootRow() {
+		if ((++virtualRowPollTick & (VIRTUAL_ROWS_PER_POLL - 1)) == 0) {
+			checkCancelled();
+		}
+		rootRowsRemaining--;
+		return event(QUAD, 1L);
+	}
+
+	/** Resumes the current root's fibers and delivers its exit before advancing to another root. */
+	private boolean advanceFibers() {
+		for (;;) {
+			if (fiberReady) {
+				if (remainingRows >= 0L) {
+					if ((++virtualRowPollTick & (VIRTUAL_ROWS_PER_POLL - 1)) == 0) {
+						checkCancelled();
+					}
+					if (remainingRows-- > 0L) {
+						return event(QUAD, 1L);
+					}
+				} else if (advanceContexts()) {
+					return true;
+				}
+				// No continuation can suspend between finishing a fiber and delivering its exit.
+				fiberReady = false;
+				if (fiberWeight > 0 && emitted(FIBER)) {
+					return event(FIBER, fiberWeight);
+				}
+			}
+			if (!cursor.advanceFiber()) {
+				rootReady = false;
+				// Deliver completion now; there is no suspended continuation that needs an exit flag.
+				return rootWeight > 0 && emitted(ROOT) && event(ROOT, rootWeight);
+			}
+			fibersVisited++;
+			fiberWeight = 0;
+			program.restore(ROOT);
+			if (!program.enter(FIBER, source.predicate(), cursor)) {
+				continue;
+			}
+			if (!contextObserved && !programAt(QUAD) && acceptsEntireFiber()) {
+				fiberWeight = cursor.contextMultiplicity();
+				if (emitted(ROOT)) {
+					rootWeight = Math.addExact(rootWeight, fiberWeight);
+				}
+				if (!emitted(QUAD)) {
+					// advanceFiber() has already validated that the physical multiplicity is positive.
+					if (emitted(FIBER)) {
+						return event(FIBER, fiberWeight);
+					}
+					continue;
+				}
+				remainingRows = fiberWeight;
+				// Multiplicity is positive. Preserve continuation state before polling or restoration can throw,
+				// and deliver the first row without re-entering the continuation loop.
+				fiberReady = true;
+				return advanceFiberRow();
+			} else {
+				remainingRows = -1L;
+			}
+			fiberReady = true;
+		}
+	}
+
+	/** Emits the first virtual row of an admitted fiber without repeating its continuation checks. */
+	private boolean advanceFiberRow() {
+		if ((++virtualRowPollTick & (VIRTUAL_ROWS_PER_POLL - 1)) == 0) {
+			checkCancelled();
+		}
+		remainingRows--;
+		return event(QUAD, 1L);
+	}
+
+	private boolean acceptsEntireFiber() {
+		return !contextMatch && !excludeDefault
+				|| cursor.hasCommonContext() && acceptsContext(cursor.commonContext());
+	}
+
+	private boolean advanceContexts() {
+		final boolean countFibers = emitted(FIBER);
+		final boolean countRoots = emitted(ROOT);
+		final boolean emitQuads = emitted(QUAD);
+		while (cursor.advanceContext()) {
+			contextsVisited++;
+			if ((contextsVisited & (VIRTUAL_ROWS_PER_POLL - 1)) == 0L) {
+				checkCancelled();
+			}
+			if (!acceptsContext(cursor.contextId())) {
+				continue;
+			}
+			program.restore(FIBER);
+			if (!program.enter(QUAD, source.predicate(), cursor)) {
+				continue;
+			}
+			// Only aggregate exits consume these weights; a quad event always carries weight one.
+			if (countFibers) {
+				fiberWeight = Math.addExact(fiberWeight, 1L);
+			}
+			if (countRoots) {
+				rootWeight = Math.addExact(rootWeight, 1L);
+			}
+			if (emitQuads) {
+				return event(QUAD, 1L);
+			}
+		}
+		return false;
+	}
+
+	/** Advances between roots and planes only after the previous root's fibers have finished. */
+	private boolean advanceRoots() {
+		for (;;) {
+			if (rootRowsRemaining > 0L) {
+				return advanceRootRow();
+			}
+			if (skipPlane) {
+				skipPlane = false;
+				nextPlane();
+			}
+			if (sourceDone) {
+				return false;
+			}
+			if (!cursor.advanceRoot()) {
+				nextPlane();
+				continue;
+			}
+			rootsVisited++;
+			rootWeight = 0;
+			if (!cursor.hasAcceptedRootQuad(contextMatch, wantedContext, excludeDefault)) {
+				continue;
+			}
+			if (!initialized) {
+				initialized = true;
+				if (!program.enter(INPUT, source.predicate(), null)) {
+					sourceDone = true;
+					continue;
+				}
+			}
+			if (!planeReady) {
+				program.restore(INPUT);
+				planeReady = program.enter(PLANE, source.predicate(), null);
+				if (!planeReady) {
+					nextPlane();
+					continue;
+				}
+			}
+			if (deliveryGrain == INPUT) {
+				sourceDone = true;
+				return event(INPUT, 1L);
+			}
+			if (deliveryGrain == PLANE) {
+				skipPlane = true;
+				return event(PLANE, 1L);
+			}
+			program.restore(PLANE);
+			if (!program.enter(ROOT, source.predicate(), cursor)) {
+				continue;
+			}
+			if (deliveryGrain == ROOT) {
+				return event(ROOT, 1L);
+			}
+			if (rootMultiplicityRows && !contextObserved && !programAt(FIBER) && !programAt(QUAD)
+					&& emitted(QUAD) && (!contextMatch && !excludeDefault || cursor.hasCommonContext())) {
+				rootRowsRemaining = cursor.acceptedRootQuadCount(contextMatch, wantedContext, excludeDefault);
+				continue;
+			}
+			if (!contextObserved && !emitted(FIBER) && !emitted(QUAD)
+					&& !programAt(FIBER) && !programAt(QUAD)) {
+				rootWeight = cursor.acceptedRootQuadCount(contextMatch, wantedContext, excludeDefault);
+				if (rootWeight > 0 && emitted(ROOT)) {
+					return event(ROOT, rootWeight);
+				}
+				continue;
+			}
+			rootReady = true;
+			if (advanceFibers()) {
+				return true;
+			}
+		}
+	}
+
+	/** Keeps graph restrictions and ROOT-only context aggregation in the original single traversal loop. */
+	private boolean advanceGeneral() {
 		if (closed) {
 			throw new IllegalStateException("projection cursor is closed");
 		}
@@ -525,7 +734,6 @@ public final class KernelProjectionCursor implements AutoCloseable {
 				if (rootMultiplicityRows && !contextObserved && !programAt(FIBER) && !programAt(QUAD)
 						&& emitted(QUAD) && (!contextMatch && !excludeDefault || cursor.hasCommonContext())) {
 					rootRowsRemaining = cursor.acceptedRootQuadCount(contextMatch, wantedContext, excludeDefault);
-					virtualRowPollTick = 0;
 					continue;
 				}
 				if (!contextObserved && !emitted(FIBER) && !emitted(QUAD)
@@ -558,7 +766,6 @@ public final class KernelProjectionCursor implements AutoCloseable {
 						continue;
 					}
 					remainingRows = fiberWeight;
-					virtualRowPollTick = 0;
 				} else {
 					remainingRows = -1L;
 				}
@@ -574,6 +781,9 @@ public final class KernelProjectionCursor implements AutoCloseable {
 			} else {
 				while (cursor.advanceContext()) {
 					contextsVisited++;
+					if ((contextsVisited & (VIRTUAL_ROWS_PER_POLL - 1)) == 0L) {
+						checkCancelled();
+					}
 					if (!acceptsContext(cursor.contextId())) {
 						continue;
 					}

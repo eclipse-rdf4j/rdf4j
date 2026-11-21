@@ -117,7 +117,7 @@ public final class LmdbNativeExpressionCompiler {
 		if (!enabled()) {
 			return null;
 		}
-		ValueExpr ownedExpression = expr.clone();
+		ValueExpr ownedExpression = QueryEvaluationUtility.pinFunctions(expr.clone());
 		NativeScalarPlan scalarPlan = NativeScalarPlan.create(ownedExpression, slots,
 				NativeScalarPlan.ResultKind.BOOLEAN,
 				strictCompare, assuredMask, false, false);
@@ -140,7 +140,7 @@ public final class LmdbNativeExpressionCompiler {
 		if (!enabled()) {
 			return null;
 		}
-		ValueExpr ownedExpression = expr.clone();
+		ValueExpr ownedExpression = QueryEvaluationUtility.pinFunctions(expr.clone());
 		NativeScalarPlan scalarPlan = NativeScalarPlan.create(ownedExpression, slots,
 				NativeScalarPlan.ResultKind.INLINE_ID, strictCompare, 0L, false, false);
 		LmdbNativeValueCodec codec = source.nativeValueCodec();
@@ -187,7 +187,7 @@ public final class LmdbNativeExpressionCompiler {
 		if (!enabled()) {
 			return null;
 		}
-		ValueExpr ownedExpression = expr.clone();
+		ValueExpr ownedExpression = QueryEvaluationUtility.pinFunctions(expr.clone());
 		NativeScalarPlan scalarPlan = NativeScalarPlan.create(ownedExpression, slots, NativeScalarPlan.ResultKind.VALUE,
 				strictCompare, 0L, true, true);
 		LmdbNativeValueCodec codec = source.nativeValueCodec();
@@ -345,7 +345,7 @@ public final class LmdbNativeExpressionCompiler {
 		if (!inlineResultsAvailable || !(expr instanceof FunctionCall)) {
 			return false;
 		}
-		LmdbNativeFunctionLibrary.Entry entry = LmdbNativeFunctionLibrary.entry(((FunctionCall) expr).getURI());
+		LmdbNativeFunctionLibrary.Entry entry = LmdbNativeFunctionLibrary.entry((FunctionCall) expr);
 		return entry != null && entry.guaranteedInlineResult;
 	}
 
@@ -559,7 +559,7 @@ public final class LmdbNativeExpressionCompiler {
 			return true;
 		}
 		if (expr instanceof FunctionCall) {
-			LmdbNativeFunctionLibrary.Entry entry = LmdbNativeFunctionLibrary.entry(((FunctionCall) expr).getURI());
+			LmdbNativeFunctionLibrary.Entry entry = LmdbNativeFunctionLibrary.entry((FunctionCall) expr);
 			return entry != null && entry.comparableResult;
 		}
 		return false;
@@ -581,6 +581,9 @@ public final class LmdbNativeExpressionCompiler {
 	}
 
 	private LmdbNativeCompiledTruth compileFunctionTruth(FunctionCall call) {
+		if (LmdbNativeFunctionLibrary.entry(call) == null) {
+			return null;
+		}
 		String uri = call.getURI();
 		List<ValueExpr> args = call.getArgs();
 		if (FN.CONTAINS.stringValue().equals(uri) || FN.STARTS_WITH.stringValue().equals(uri)

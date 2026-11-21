@@ -75,6 +75,7 @@ import org.eclipse.rdf4j.query.algebra.ValueConstant;
 import org.eclipse.rdf4j.query.algebra.ValueExpr;
 import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryOptimizer;
+import org.eclipse.rdf4j.query.algebra.evaluation.function.string.Contains;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.EvaluationStatistics;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.JoinFactorCostModel;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.JoinOrderPlanner;
@@ -1941,6 +1942,9 @@ final class LmdbSketchJoinOptimizer implements QueryOptimizer {
 			}
 			if (condition instanceof FunctionCall functionCall) {
 				return FN.CONTAINS.stringValue().equals(functionCall.getURI()) && functionCall.getArgs().size() == 2
+						&& QueryEvaluationUtility.resolveFunction(functionCall)
+								.filter(function -> function.getClass() == Contains.class)
+								.isPresent()
 						&& isSafeStringExpression(functionCall.getArgs().get(0), assuredConditionVars)
 						&& isSafeStringExpression(functionCall.getArgs().get(1), assuredConditionVars);
 			}

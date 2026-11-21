@@ -6377,6 +6377,8 @@ final class LmdbNativeKernelLowering {
 			if (aggregateDemand != null) {
 				specializeWildcardDemands(pipeline, aggregateDemand);
 			}
+			pipeline = LmdbNativeDistinctUnionPrefix.optimize(pipeline, terminal, adjacencies, keyDomains,
+					row.encounterOrderRequired);
 			// Let the semantic Kernel constructor first fold COUNT(DISTINCT root) into its existential fast shape —
 			// on unannotated nodes, so SIP marks cannot make structurally equal enumerations look different to the
 			// fold (the union-root collapse compares branch heads). SIP marking and batching are then applied to the

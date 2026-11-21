@@ -12,6 +12,9 @@
 package org.eclipse.rdf4j.sail.lmdb.evaluation;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbNativeCostVector.Feature.GROUP_UPDATE;
+import static org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbNativeCostVector.Feature.MEMBERSHIP_TEST;
+import static org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbNativeCostVector.Feature.OUTPUT_MATERIALIZATION;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyBoolean;
 import static org.mockito.ArgumentMatchers.anyInt;
@@ -28,7 +31,9 @@ import java.util.Map;
 import java.util.OptionalLong;
 import java.util.concurrent.atomic.AtomicInteger;
 
+import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.query.BindingSet;
+import org.eclipse.rdf4j.query.algebra.evaluation.QueryBindingSet;
 import org.eclipse.rdf4j.query.impl.EmptyBindingSet;
 import org.eclipse.rdf4j.sail.lmdb.LmdbPrefixRunCursor;
 import org.eclipse.rdf4j.sail.lmdb.LmdbPrefixRunPlan;
@@ -41,6 +46,171 @@ import org.junit.jupiter.params.provider.CsvSource;
 
 @ResourceLock(Resources.SYSTEM_PROPERTIES)
 class LmdbAdjacencyAggregateMetadataTest {
+	@Test
+	void predicateRootQuoteChargesOneGroupAndOutputPerRoot() {
+		NativeLmdbQuerySource source = mock(NativeLmdbQuerySource.class);
+		when(source.hasCanonicalIds()).thenReturn(true);
+		when(source.predicateProjectionStatistics(anyBoolean(), any()))
+				.thenReturn(new NativeLmdbQuerySource.PredicateProjectionStatistics(100L, 25L, 10L, 5L));
+		NativeSlotLayout layout = new NativeSlotLayout(Map.of("s", 0, "p", 1, "o", 2, "g", 3), null);
+		layout.freeze(List.of("s", "p", "o", "g"));
+		PatternPlan input = new PatternPlan(Term.slot(0), Term.slot(1), Term.slot(2), Term.slot(3),
+				ContextConstraint.UNRESTRICTED, true, 100D);
+		int[] groups = { 1, 0 };
+		AggregateSpec[] counts = { AggregateSpec.star("count"), AggregateSpec.slot("values", 2, true, AggKind.COUNT) };
+		LmdbAdjacencyAggregatePlan plan = LmdbAdjacencyAggregatePlan.tryCreate(input, groups, counts);
+		assertThat(plan).isNotNull();
+		NativeGroupIteration owner = new NativeGroupIteration(source, input, layout, groups, counts, false,
+				EmptyBindingSet.getInstance(), null, null, false, null);
+		RowState row = new RowState(source, layout, EmptyBindingSet.getInstance());
+		try {
+			assertThat(owner.initialize(row)).isTrue();
+			LmdbNativeStrategyProposal<List<BindingSet>> proposal = new LmdbNativeStrategyProposal<>(List::of,
+					LmdbNativeWork.UNKNOWN, LmdbNativeAttemptMetrics.PATH_ADJACENCY_AGGREGATE, () -> {
+					});
+			try {
+				proposal.withAggregatePhysicalPlan(new NativeAggregatePhysicalPlan(input,
+						NativeAggregatePhysicalPlan.Retention.STREAMING, plan));
+				new NativeAggregateCostQuotes(owner, row, null, false).attach(proposal);
+				NativePhysicalWorkQuote quote = proposal.typedQuote();
+				assertThat(quote).isNotNull();
+				assertThat(quote.workEvidence().isComplete()).isTrue();
+				assertThat(quote.total().expected(GROUP_UPDATE)).isEqualTo(25D);
+				assertThat(quote.total().expected(OUTPUT_MATERIALIZATION)).isEqualTo(25D);
+				assertThat(quote.total().high(MEMBERSHIP_TEST)).isGreaterThanOrEqualTo(200D);
+				assertThat(quote.total().high(OUTPUT_MATERIALIZATION)).isEqualTo(Double.POSITIVE_INFINITY);
+				assertThat(quote.startup()).isEqualTo(quote.total());
+			} finally {
+				proposal.close();
+			}
+		} finally {
+			owner.close();
+			row.closeDecodedInputs();
+			row.memoryScope.close();
+		}
+	}
+
+	@Test
+	void forwardAliasGroupKeysDecline() {
+		PatternPlan pattern = new PatternPlan(Term.slot(0), Term.slot(1), Term.slot(2), Term.unbound(),
+				ContextConstraint.UNRESTRICTED, false, 3D);
+		// BIND(?a AS ?b) precedes BIND(?s AS ?a), so ?b remains unbound.
+		SlotPlan input = new ExtensionPlan(
+				new ExtensionPlan(pattern, new CopyBinding[] { CopyBinding.slot(4, 3) }),
+				new CopyBinding[] { CopyBinding.slot(3, 0) });
+		assertThat(LmdbAdjacencyAggregatePlan.tryCreate(input, new int[] { 3, 4 },
+				new AggregateSpec[] { AggregateSpec.star("count") }))
+						.as("a later assignment must not retroactively bind an earlier alias")
+						.isNull();
+	}
+
+	@Test
+	void forwardAliasInOneExtensionDeclines() {
+		PatternPlan pattern = aliasPattern();
+		SlotPlan input = new ExtensionPlan(pattern,
+				new CopyBinding[] { CopyBinding.slot(4, 3), CopyBinding.slot(3, 0) });
+		assertThat(LmdbAdjacencyAggregatePlan.tryCreate(input, new int[] { 3, 4 },
+				new AggregateSpec[] { AggregateSpec.star("count") })).isNull();
+	}
+
+	@ParameterizedTest
+	@CsvSource({ "false", "true" })
+	void orderedAliasesRemainEligibleWithinAndAcrossExtensions(boolean nested) {
+		CopyBinding first = CopyBinding.slot(3, 0);
+		CopyBinding second = CopyBinding.slot(4, 3);
+		SlotPlan input = aliasExtensions(first, second, nested);
+		assertThat(LmdbAdjacencyAggregatePlan.tryCreate(input, new int[] { 3, 4 },
+				new AggregateSpec[] { AggregateSpec.star("count"),
+						AggregateSpec.slot("distinct", 4, true, AggKind.COUNT) })).isNotNull();
+	}
+
+	@ParameterizedTest
+	@CsvSource({ "false", "true" })
+	void orderedConstantAliasesRemainEligibleWithinAndAcrossExtensions(boolean nested) {
+		SlotPlan input = aliasExtensions(CopyBinding.constant(3, 9L), CopyBinding.slot(4, 3), nested);
+		assertThat(LmdbAdjacencyAggregatePlan.tryCreate(input, new int[] { 3, 4 },
+				new AggregateSpec[] { AggregateSpec.slot("distinct", 4, true, AggKind.COUNT) })).isNotNull();
+	}
+
+	@ParameterizedTest
+	@CsvSource({ "false", "true" })
+	void forwardAggregateArgumentAliasesDecline(boolean distinct) {
+		SlotPlan input = aliasExtensions(CopyBinding.slot(4, 3), CopyBinding.slot(3, 0), true);
+		assertThat(LmdbAdjacencyAggregatePlan.tryCreate(input, new int[] { 0 },
+				new AggregateSpec[] { AggregateSpec.slot("count", 4, distinct, AggKind.COUNT) })).isNull();
+	}
+
+	@ParameterizedTest
+	@CsvSource({ "false", "true" })
+	void forwardAliasesToLaterConstantsDecline(boolean nested) {
+		SlotPlan input = aliasExtensions(CopyBinding.slot(4, 3), CopyBinding.constant(3, 9L), nested);
+		assertThat(LmdbAdjacencyAggregatePlan.tryCreate(input, new int[] { 3, 4 },
+				new AggregateSpec[] { AggregateSpec.star("count") })).isNull();
+	}
+
+	@ParameterizedTest
+	@CsvSource({ "false", "true" })
+	void repeatedAliasTargetsDeclineWithinAndAcrossExtensions(boolean nested) {
+		SlotPlan input = aliasExtensions(CopyBinding.slot(3, 0), CopyBinding.slot(3, 2), nested);
+		assertThat(LmdbAdjacencyAggregatePlan.tryCreate(input, new int[] { 3 },
+				new AggregateSpec[] { AggregateSpec.star("count") })).isNull();
+	}
+
+	@Test
+	void unboundAliasSourcesDecline() {
+		SlotPlan input = new ExtensionPlan(aliasPattern(), new CopyBinding[] { CopyBinding.slot(3, 4) });
+		assertThat(LmdbAdjacencyAggregatePlan.tryCreate(input, new int[] { 0, 3 },
+				new AggregateSpec[] { AggregateSpec.star("count") })).isNull();
+	}
+
+	private static PatternPlan aliasPattern() {
+		return new PatternPlan(Term.slot(0), Term.slot(1), Term.slot(2), Term.unbound(),
+				ContextConstraint.UNRESTRICTED, false, 3D);
+	}
+
+	private static SlotPlan aliasExtensions(CopyBinding first, CopyBinding second, boolean nested) {
+		return nested ? new ExtensionPlan(new ExtensionPlan(aliasPattern(), new CopyBinding[] { first }),
+				new CopyBinding[] { second })
+				: new ExtensionPlan(aliasPattern(), new CopyBinding[] { first, second });
+	}
+
+	@Test
+	void aliasTargetAlreadyProducedByInputDeclines() {
+		PatternPlan pattern = new PatternPlan(Term.slot(0), Term.slot(1), Term.slot(2), Term.unbound(),
+				ContextConstraint.UNRESTRICTED, false, 3D);
+		SlotPlan input = new ExtensionPlan(pattern, new CopyBinding[] { CopyBinding.slot(0, 2) });
+		AggregateSpec[] counts = { AggregateSpec.star("count"), AggregateSpec.slot("values", 2, true, AggKind.COUNT) };
+		assertThat(LmdbAdjacencyAggregatePlan.tryCreate(input, new int[] { 1, 0 }, counts))
+				.as("an assignment to a slot already produced by its input cannot be skipped")
+				.isNull();
+	}
+
+	@Test
+	void preboundAliasTargetsDeclineBeforeReadingAdjacency() {
+		NativeLmdbQuerySource source = mock(NativeLmdbQuerySource.class);
+		when(source.hasCanonicalIds()).thenReturn(true);
+		when(source.idOf(any(), anyInt())).thenReturn(42L);
+		NativeSlotLayout layout = new NativeSlotLayout(Map.of("s", 0, "p", 1, "o", 2, "alias", 3), null);
+		layout.freeze(List.of("s", "p", "o", "alias"));
+		PatternPlan pattern = new PatternPlan(Term.slot(0), Term.slot(1), Term.slot(2), Term.unbound(),
+				ContextConstraint.UNRESTRICTED, false, 3D);
+		SlotPlan input = new ExtensionPlan(pattern, new CopyBinding[] { CopyBinding.slot(3, 0) });
+		AggregateSpec[] counts = { AggregateSpec.star("count"), AggregateSpec.slot("values", 2, true, AggKind.COUNT) };
+		LmdbAdjacencyAggregatePlan plan = LmdbAdjacencyAggregatePlan.tryCreate(input, new int[] { 1, 0, 3 }, counts);
+		assertThat(plan).isNotNull();
+		for (String lexical : List.of("urn:alias:possible-match", "urn:alias:absent")) {
+			QueryBindingSet base = new QueryBindingSet();
+			base.addBinding("alias", SimpleValueFactory.getInstance().createIRI(lexical));
+			RowState row = new RowState(source, layout, base);
+			assertThat(NativeRowSeeder.seed(row.slots, layout, base, source)).isTrue();
+			row.recomputeBoundMask();
+			assertThat(plan.handles(row)).as("an occupied alias target requires ordinary assignment semantics")
+					.isFalse();
+			row.closeDecodedInputs();
+			row.memoryScope.close();
+		}
+	}
+
 	@Test
 	void completeVisibleNodeDomainsAnswerDistinctCountsWithoutOpeningRootStreams() throws Exception {
 		String previous = System.getProperty("rdf4j.lmdb.directAdjacency.scanAggregates.enabled");

@@ -158,7 +158,8 @@ final class NativeBindingSetExtensionStep implements NativeResultStep, LmdbNativ
 					NativePhysicalOutputEvidence.Domain.RDF_TERM, NativeAggregateResultDemand.FULL_VALUE,
 					List.of(NativeResultCell.State.BOUND));
 		}
-		if (expression instanceof FunctionCall function && FN.STRING_LENGTH.stringValue().equals(function.getURI())
+		if (expression instanceof FunctionCall function && LmdbNativeFunctionLibrary.entry(function) != null
+				&& FN.STRING_LENGTH.stringValue().equals(function.getURI())
 				&& function.getArgs().size() == 1) {
 			NativePhysicalOutputEvidence.Column argument = outputColumn(function.getArgs().getFirst(), columns,
 					definition);
@@ -183,7 +184,8 @@ final class NativeBindingSetExtensionStep implements NativeResultStep, LmdbNativ
 		if (expression instanceof Var || expression instanceof ValueConstant) {
 			return 1;
 		}
-		if (expression instanceof FunctionCall function && FN.STRING_LENGTH.stringValue().equals(function.getURI())
+		if (expression instanceof FunctionCall function && LmdbNativeFunctionLibrary.entry(function) != null
+				&& FN.STRING_LENGTH.stringValue().equals(function.getURI())
 				&& function.getArgs().size() == 1) {
 			int child = physicalOperations(function.getArgs().get(0));
 			return child < 0 ? -1 : Math.addExact(1, child);
@@ -211,7 +213,15 @@ final class NativeBindingSetExtensionStep implements NativeResultStep, LmdbNativ
 
 	@Override
 	public NativeResultCursor evaluateNative(BindingSet bindings) {
-		NativeResultCursor delegate = NativeResultSteps.open(arg, bindings);
+		return extend(NativeResultSteps.open(arg, bindings));
+	}
+
+	@Override
+	public NativeResultCursor evaluateNativeRelation(BindingSet bindings) {
+		return extend(NativeResultSteps.openRelation(arg, bindings));
+	}
+
+	private NativeResultCursor extend(NativeResultCursor delegate) {
 		return NativeResultSteps.map(delegate, source -> {
 			Map<String, Integer> indices = new LinkedHashMap<>();
 			for (int index = 0; index < source.schema().size(); index++) {
@@ -267,7 +277,8 @@ final class NativeBindingSetExtensionStep implements NativeResultStep, LmdbNativ
 			return (row, execution) -> NativeResultCell.term(constant.getValue());
 		}
 		ValueFactory factory = strategy.valueFactory();
-		if (expression instanceof FunctionCall function && FN.STRING_LENGTH.stringValue().equals(function.getURI())
+		if (expression instanceof FunctionCall function && LmdbNativeFunctionLibrary.entry(function) != null
+				&& FN.STRING_LENGTH.stringValue().equals(function.getURI())
 				&& function.getArgs().size() == 1) {
 			PhysicalEvaluator input = physicalEvaluator(function.getArgs().get(0), strategy, context);
 			return (row, execution) -> {

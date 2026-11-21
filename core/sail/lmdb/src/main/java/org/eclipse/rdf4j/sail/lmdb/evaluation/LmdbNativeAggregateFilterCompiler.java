@@ -373,6 +373,15 @@ abstract class LmdbNativeAggregateFilterCompiler extends LmdbNativeAggregateValu
 		boolean strict = strategy.getQueryEvaluationMode() == QueryEvaluationMode.STRICT;
 		for (int i = 0; i < copies.length; i++) {
 			PendingAggregateExpression pending = pendingAggregateExpressions.get(i);
+			if (pending.expression instanceof ValueConstant constant) {
+				// Preserve the same exact-term admission as ordinary BIND constants. This also exposes a proven
+				// bound value to aggregate specializations instead of evaluating a constant for every joined row.
+				long id = idOfExtensionConstant(constant.getValue(), pending.name);
+				if (id != UNKNOWN) {
+					copies[i] = CopyBinding.constant(pending.slot, id);
+					continue;
+				}
+			}
 			LmdbNativeCompiledInlineId computed = LmdbNativeExpressionCompiler
 					.compileInlineId(pending.expression, source, this::slot, strict);
 			if (computed != null) {
@@ -545,7 +554,9 @@ abstract class LmdbNativeAggregateFilterCompiler extends LmdbNativeAggregateValu
 		if (expr instanceof ListMemberOperator) {
 			NativeBooleanFilter membership = compileListMember((ListMemberOperator) expr, assuredMask);
 			if (membership != null) {
-				return membership;
+				NativeScalarPlan recipe = NativeScalarPlan.create(expr, this::existingSlot,
+						NativeScalarPlan.ResultKind.BOOLEAN, strictCompare(), assuredMask, false, false);
+				return membership.plannedBy(recipe);
 			}
 		}
 

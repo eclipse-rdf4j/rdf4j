@@ -18,6 +18,11 @@ import org.eclipse.rdf4j.query.algebra.evaluation.QueryEvaluationStep;
 interface NativeResultStep extends QueryEvaluationStep {
 	NativeResultCursor evaluateNative(BindingSet bindings);
 
+	/** Open at a lexical relation boundary, where the consumer can retain physical cells and own their lifetime. */
+	default NativeResultCursor evaluateNativeRelation(BindingSet bindings) {
+		return evaluateNative(bindings);
+	}
+
 	/** True only when ordinary RDF adapters would erase an unconsumed physical cell. */
 	default boolean requiresPhysicalResults() {
 		return false;

@@ -1518,6 +1518,7 @@ class LmdbDirectAdjacencyQueryTest {
 				}
 			}
 			assertThat(found).isTrue();
+			assertThat(roots.supportsPhysicalFiberCopy()).isTrue();
 			NativeLmdbQuerySource.NativeAdjacency.FiberBatch fibers = new NativeLmdbQuerySource.NativeAdjacency.FiberBatch(
 					1);
 			Map<Long, Long> multiplicities = new HashMap<>();

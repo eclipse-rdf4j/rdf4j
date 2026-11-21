@@ -157,7 +157,8 @@ final class LmdbNativeCompiledBoolean implements NativeBooleanFilter {
 		return requiredMask;
 	}
 
-	NativeScalarPlan scalarPlan() {
+	@Override
+	public NativeScalarPlan scalarPlan() {
 		return scalarPlan;
 	}
 

@@ -455,11 +455,68 @@ class LmdbNativeAggregateExplanationRouteTest {
 				.isEqualTo(LmdbNativeAttemptMetrics.PATH_IR_AGGREGATE);
 
 		GenericPlanNode unforcedTelemetry = explain(PURE_WILDCARD_QUERY, null, Explanation.Level.Telemetry);
-		// disabling wildcard codegen does not touch the unforced selection: an exact COUNT(*) over one pattern is
-		// answered by the index cardinality, which structurally dominates every row-producing count
+		List<BindingSet> automaticRows = rows(PURE_WILDCARD_QUERY, null);
+		assertThat(automaticRows).hasSize(1);
+		assertThat(automaticRows.getFirst().getValue("count").stringValue()).isEqualTo("1");
+		// With an unbound predicate, indexedCount has no source-bound metadata quote. The arbiter picks nestedLoop
+		// among priced candidates, while the result is represented by the aggState execution path.
 		assertThat(findMetric(unforcedTelemetry, LmdbNativeExplain.EXECUTION_PATH))
-				.as("the unforced exact count selects the indexed count regardless of wildcard codegen")
+				.as("the unbound-predicate count uses its aggregate-state execution representation: "
+						+ unforcedTelemetry)
+				.isEqualTo(LmdbNativeAttemptMetrics.PATH_AGG_STATE);
+		assertThat(findMetric(unforcedTelemetry, LmdbNativeExplain.DECISION_PREFIX + "GROUP.0"))
+				.as("the exact AUTO decision for the unbound-predicate count: " + unforcedTelemetry)
+				.contains("winner=nestedLoop");
+	}
+
+	@Test
+	void unpricedIndexedCountCannotDominateWildcardCountAlternatives() {
+		set("rdf4j.lmdb.janinoCodegen.wildcardPredicates", "false");
+		List<BindingSet> result = rows(PURE_WILDCARD_QUERY, null);
+		assertThat(result).hasSize(1);
+		assertThat(result.getFirst().getValue("count").stringValue()).isEqualTo("1");
+
+		List<BindingSet> forcedResult = rows(PURE_WILDCARD_QUERY, LmdbNativeAttemptMetrics.PATH_INDEXED_COUNT);
+		assertThat(forcedResult).hasSize(1);
+		assertThat(forcedResult.getFirst().getValue("count").stringValue()).isEqualTo("1");
+		GenericPlanNode forcedTelemetry = explain(PURE_WILDCARD_QUERY, LmdbNativeAttemptMetrics.PATH_INDEXED_COUNT,
+				Explanation.Level.Telemetry);
+		assertThat(findMetric(forcedTelemetry, LmdbNativeExplain.EXECUTION_PATH))
+				.as("forcing indexedCount remains available even without a bound predicate: " + forcedTelemetry)
 				.isEqualTo(LmdbNativeAttemptMetrics.PATH_INDEXED_COUNT);
+
+		GenericPlanNode telemetry = explain(PURE_WILDCARD_QUERY, null, Explanation.Level.Telemetry);
+		String costs = findMetric(telemetry, LmdbNativeExplain.STRATEGY_PROPOSAL_COSTS);
+		assertThat(costs).as("the unbound predicate must leave the source-bound index count unpriced: " + telemetry)
+				.contains("indexedCount=unpriced");
+		String decision = findMetric(telemetry, LmdbNativeExplain.DECISION_PREFIX + "GROUP.0");
+		assertThat(decision).as("the exact missing metadata proof must be retained: " + telemetry)
+				.contains("indexedCount unpriced")
+				.contains("no source-bound typed metadata-operation quote");
+		String declines = findMetric(telemetry, LmdbNativeExplain.STRATEGY_DECLINES);
+		assertThat(declines)
+				.as("an unpriced index count cannot structurally dominate row-producing routes: " + telemetry)
+				.contains("indexedCount:outranked (Unpriced:")
+				.doesNotContain("irAggregate:outranked (Structurally dominated by indexedCount)",
+						"nestedLoop:outranked (Structurally dominated by indexedCount)");
+	}
+
+	@Test
+	void preparedPredicateCountKeepsIndexedCountDominance() {
+		set("rdf4j.lmdb.janinoCodegen.wildcardPredicates", "false");
+		String query = "SELECT (COUNT(*) AS ?count) WHERE { ?s <" + EX + "p> ?o }";
+		List<BindingSet> result = rows(query, null);
+		assertThat(result).hasSize(1);
+		assertThat(result.getFirst().getValue("count").stringValue()).isEqualTo("32");
+
+		GenericPlanNode telemetry = explain(query, null, Explanation.Level.Telemetry);
+		assertThat(findMetric(telemetry, LmdbNativeExplain.EXECUTION_PATH))
+				.as("the prepared predicate count is source-bound and should execute the indexed count: " + telemetry)
+				.isEqualTo(LmdbNativeAttemptMetrics.PATH_INDEXED_COUNT);
+		String declines = findMetric(telemetry, LmdbNativeExplain.STRATEGY_DECLINES);
+		assertThat(declines).as("the priced exact count should dominate row-producing alternatives: " + telemetry)
+				.contains("irAggregate:outranked (Structurally dominated by indexedCount)")
+				.contains("nestedLoop:outranked (Structurally dominated by indexedCount)");
 	}
 
 	@Test

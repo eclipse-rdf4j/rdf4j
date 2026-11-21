@@ -142,21 +142,26 @@ class NativeCensusCostQuoteTest {
 				assertThat(census).as("the admitted census alternative").isNotNull();
 				assertThat(census.path("physicalFeaturesKnown").asBoolean()).isTrue();
 				JsonNode total = census.path("total");
+				long planes = countMetric(plan, "nativeAdjacencyPlanesVisitedActual");
 				long pages = countMetric(plan, "nativeAdjacencyPagesVisitedActual");
 				long headers = countMetric(plan, "nativeAdjacencyHeaderBulkCountPagesActual");
 				long roots = countMetric(plan, "nativeAdjacencyRootIdsDecodedActual");
 				long neighbors = countMetric(plan, "nativeAdjacencyNeighborIdsDecodedActual");
 				long contexts = countMetric(plan, "nativeAdjacencyContextIdsDecodedActual");
-				for (long count : new long[] { pages, headers, roots, neighbors, contexts }) {
+				for (long count : new long[] { planes, pages, headers, roots, neighbors, contexts }) {
 					assertThat(count).as("the census execution counter is present").isNotNegative();
 				}
+				assertThat(planes).as("all three physical predicate planes are visited").isEqualTo(3L);
 				// These fixtures have either header/root reduction or neighbor expansion, with no
 				// mixture of root-only and expanded pages. Derive counts from execution, not an assumed
 				// number of rows per storage page.
 				double contributions = headers + (neighbors == 0L ? roots : neighbors);
 				double decoded = roots + neighbors + contexts
 						+ (recipe.extraChannel.isEmpty() ? 0D : contributions);
-				assertThat(contributions).isPositive();
+				assertThat(contributions).isPositive().isLessThanOrEqualTo(9D);
+				// Each computed channel performs a term lookup per contribution and can intern one term for
+				// each visited kind combination. At most nine contributions are below the 216-kind table bound.
+				double scalarAttempts = recipe.extraChannel.isEmpty() ? 0D : 2D * contributions;
 				if (recipe == Recipe.NEIGHBOR || recipe == Recipe.MIXED_CONTEXT) {
 					assertThat(neighbors).as("the fixture actually opens the payload").isPositive();
 				}
@@ -166,12 +171,19 @@ class NativeCensusCostQuoteTest {
 						() -> assertThat(total.path("GROUP_UPDATE").path("high").asDouble())
 								.isEqualTo(contributions),
 						() -> assertThat(total.path("INTERPRETED_ROW").path("expected").asDouble())
-								.isEqualTo(contributions),
+								.isEqualTo(contributions + scalarAttempts),
+						// Coverage and reduction each traverse the complete predicate catalog; page headers
+						// are likewise visited in both passes.
 						() -> assertThat(total.path("SCANNED_ROW").path("expected").asDouble())
-								.isEqualTo(3D + 2D * pages + contributions),
+								.isEqualTo(2D * planes + 2D * pages + contributions),
 						() -> assertThat(total.path("INDEX_SEEK").path("expected").asDouble()).isEqualTo(3D),
 						() -> assertThat(total.path("DECODED_ROW").path("expected").asDouble())
 								.isEqualTo(decoded));
+				if (!recipe.extraChannel.isEmpty()) {
+					assertThat(total.path("INTERPRETED_ROW").path("high").isNull())
+							.as("variable-width computed-channel work has no finite ceiling")
+							.isTrue();
+				}
 			}
 		} finally {
 			repository.shutDown();

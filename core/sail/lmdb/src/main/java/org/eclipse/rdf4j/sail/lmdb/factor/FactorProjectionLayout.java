@@ -30,6 +30,18 @@ public final class FactorProjectionLayout {
 	private final boolean[] exact;
 
 	public FactorProjectionLayout(int[] groups, int[] arguments, boolean[] exactWeights) {
+		this(groups, Arrays.stream(arguments)
+				.mapToObj(argument -> argument < 0 ? new int[0] : new int[] { argument })
+				.toArray(int[][]::new), exactWeights);
+		for (int argument : arguments) {
+			if (argument < -1) {
+				throw new IllegalArgumentException("invalid argument demand");
+			}
+		}
+	}
+
+	/** Each channel may require several correlated bindings, such as a complete visible solution mapping. */
+	public FactorProjectionLayout(int[] groups, int[][] arguments, boolean[] exactWeights) {
 		if (arguments.length != exactWeights.length)
 			throw new IllegalArgumentException("aggregate demand dimensions");
 		List<int[]> requests = new ArrayList<>();
@@ -44,15 +56,17 @@ public final class FactorProjectionLayout {
 		weights.add(false);
 		updates.add(new ArrayList<>());
 		for (int channel = 0; channel < arguments.length; channel++) {
-			int argument = arguments[channel];
-			if (argument < -1 || argument >= 64)
-				throw new IllegalArgumentException("invalid argument demand");
-			int[] projection = group;
-			if (argument >= 0 && Arrays.binarySearch(group, argument) < 0) {
-				projection = Arrays.copyOf(group, group.length + 1);
-				projection[group.length] = argument;
-				Arrays.sort(projection);
+			long demanded = 0L;
+			for (int slot : group)
+				demanded |= 1L << slot;
+			for (int argument : arguments[channel]) {
+				if (argument < 0 || argument >= 64)
+					throw new IllegalArgumentException("invalid argument demand");
+				demanded |= 1L << argument;
 			}
+			int[] projection = new int[Long.bitCount(demanded)];
+			for (int index = 0; demanded != 0L; index++, demanded &= demanded - 1L)
+				projection[index] = Long.numberOfTrailingZeros(demanded);
 			int request = 0;
 			for (; request < requests.size(); request++)
 				if (Arrays.equals(requests.get(request), projection)

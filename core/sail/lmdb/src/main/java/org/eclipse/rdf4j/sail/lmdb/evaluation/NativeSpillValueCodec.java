@@ -38,7 +38,7 @@ final class NativeSpillValueCodec {
 	private final NativeCancellationToken cancellation;
 	private final UnaryOperator<Value> representative;
 	private final Runnable cooperativePoll;
-	private final NativeLmdbQuerySource termSource;
+	private final NativeLmdbQuerySource.DictionaryLease dictionary;
 	/** Revision id of the dictionary generation the source resolves; learned from one probe, then compared. */
 	private long acceptedRevisionId = NO_REVISION;
 	private boolean revisionProbed;
@@ -52,13 +52,13 @@ final class NativeSpillValueCodec {
 		this(cancellation, representative, cooperativePoll, null);
 	}
 
-	/** {@code termSource} (nullable) lets terms of its dictionary spill as IDs and replay as its lazy terms. */
+	/** A retained dictionary (nullable) lets its terms spill as IDs and replay as lazy terms of the same revision. */
 	NativeSpillValueCodec(NativeCancellationToken cancellation, UnaryOperator<Value> representative,
-			Runnable cooperativePoll, NativeLmdbQuerySource termSource) {
+			Runnable cooperativePoll, NativeLmdbQuerySource.DictionaryLease dictionary) {
 		this.cancellation = cancellation;
 		this.representative = representative;
 		this.cooperativePoll = cooperativePoll;
-		this.termSource = termSource;
+		this.dictionary = dictionary;
 	}
 
 	void write(DataOutput output, Value value) throws IOException {
@@ -67,7 +67,7 @@ final class NativeSpillValueCodec {
 
 	private void write(DataOutput output, Value value, int depth) throws IOException {
 		checkDepth(depth);
-		if (termSource != null && value instanceof LmdbValue term && storeTerm(term)) {
+		if (dictionary != null && value instanceof LmdbValue term && storeTerm(term)) {
 			output.writeByte(TAG_STORE_TERM);
 			output.writeLong(term.getInternalID());
 			return;
@@ -114,10 +114,10 @@ final class NativeSpillValueCodec {
 		SimpleValueFactory factory = SimpleValueFactory.getInstance();
 		int type = input.readUnsignedByte();
 		if (type == TAG_STORE_TERM) {
-			if (termSource == null) {
+			if (dictionary == null) {
 				throw new IOException("Spilled dictionary term without a term source");
 			}
-			Value term = termSource.lazyValue(input.readLong());
+			Value term = dictionary.lazyValue(input.readLong());
 			if (term == null) {
 				throw new IOException("Spilled dictionary term no longer resolves");
 			}
@@ -165,27 +165,18 @@ final class NativeSpillValueCodec {
 		long id = term.getInternalID();
 		ValueStoreRevision revision = term.getValueStoreRevision();
 		if (id == LmdbValue.UNKNOWN_ID || revision == null || revision.getValueStore() == null
-				|| revision.getValueStore() != backingIdSpace(termSource)) {
+				|| revision.getValueStore() != dictionary.idSpace()) {
 			return false;
 		}
 		if (!revisionProbed) {
 			revisionProbed = true;
-			Value probe = termSource.lazyValue(id);
+			Value probe = dictionary.lazyValue(id);
 			if (probe instanceof LmdbValue resolved && resolved.getValueStoreRevision() != null
 					&& resolved.getValueStoreRevision().getValueStore() == revision.getValueStore()) {
 				acceptedRevisionId = resolved.getValueStoreRevision().getRevisionId();
 			}
 		}
 		return acceptedRevisionId != NO_REVISION && revision.getRevisionId() == acceptedRevisionId;
-	}
-
-	/**
-	 * The dictionary a source resolves store IDs against: a synthetic evaluation wrapper delegates every non-synthetic
-	 * ID to its backing source, so its terms carry that backing store's revision.
-	 */
-	private static Object backingIdSpace(NativeLmdbQuerySource source) {
-		return source instanceof SyntheticValueSource synthetic ? backingIdSpace(synthetic.delegate)
-				: source.idSpace();
 	}
 
 	/** The long whose decimal spelling is exactly {@code label}, or Long.MIN_VALUE when there is none. */

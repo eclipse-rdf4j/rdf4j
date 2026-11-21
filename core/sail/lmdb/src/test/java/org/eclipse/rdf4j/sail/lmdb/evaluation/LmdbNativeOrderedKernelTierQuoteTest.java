@@ -13,6 +13,7 @@ package org.eclipse.rdf4j.sail.lmdb.evaluation;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbNativeFactorizedQuoteTest.edge;
+import static org.junit.jupiter.api.Assertions.assertAll;
 
 import java.io.File;
 import java.util.ArrayList;
@@ -20,8 +21,10 @@ import java.util.Arrays;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Set;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.stream.IntStream;
 
 import org.eclipse.rdf4j.model.IRI;
@@ -33,6 +36,7 @@ import org.eclipse.rdf4j.repository.sail.SailRepository;
 import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
 import org.eclipse.rdf4j.sail.lmdb.LmdbStore;
 import org.eclipse.rdf4j.sail.lmdb.config.LmdbStoreConfig;
+import org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbNativeCostVector.Feature;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.codegen.JaninoKernel;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
@@ -76,13 +80,20 @@ class LmdbNativeOrderedKernelTierQuoteTest {
 
 	@Test
 	void warmupOrderedSelectionNamesTheInterpreterThatActuallyBinds() throws Exception {
+		assertThat(System.getProperty(LmdbNativeJaninoCodegen.THRESHOLD_ROWS_PROPERTY))
+				.isEqualTo(Long.toString(Long.MAX_VALUE));
 		Fixture fixture = new Fixture();
 		fixture.orderedKernel();
 		long compiledBefore = LmdbNativeKernelExecution.COMPILED_BINDS.get();
 		long interpretedBefore = LmdbNativeKernelExecution.INTERPRETED_BINDS.get();
+		long plannedBefore = LmdbNativeKernelExecution.PLANNED.get();
 		List<LmdbNativeDecisionTestAccess.Selected> selected = new ArrayList<>();
+		List<LmdbNativeDecisionRecord> decisions = new ArrayList<>();
 		try (AutoCloseable capture = LmdbNativeDecisionTestAccess.captureSelections(selected)) {
+			LmdbNativeDispatchLoop.observeDecisions((record, label) -> decisions.add(record));
 			assertAnswers(fixture.step.evaluateAll(EmptyBindingSet.getInstance()));
+		} finally {
+			LmdbNativeDispatchLoop.observeDecisions(null);
 		}
 		assertThat(LmdbNativeKernelExecution.COMPILED_BINDS.get() - compiledBefore).isZero();
 		assertThat(LmdbNativeKernelExecution.INTERPRETED_BINDS.get() - interpretedBefore).isEqualTo(1L);
@@ -90,6 +101,323 @@ class LmdbNativeOrderedKernelTierQuoteTest {
 				.satisfies(selection -> assertThat(selection.id())
 						.as("the successful ordered candidate must name its actual serving tier")
 						.isEqualTo(LmdbNativeAttemptMetrics.PATH_IR_KERNEL_INTERPRETED));
+		List<LmdbNativeDecisionRecord> orderedDecisions = decisions.stream()
+				.filter(record -> record.point() == LmdbNativeDecisionPoint.ORDER)
+				.toList();
+		assertAll("ORDER tries its actual compiled proposal, then the exact interpreted sibling",
+				() -> assertThat(orderedDecisions).hasSize(2),
+				() -> assertThat(orderedDecisions.getFirst().winnerId())
+						.isEqualTo(LmdbNativeAttemptMetrics.PATH_IR_KERNEL),
+				() -> assertThat(orderedDecisions.getLast().winnerId())
+						.isEqualTo(LmdbNativeAttemptMetrics.PATH_IR_KERNEL_INTERPRETED),
+				() -> assertThat(orderedDecisions.getLast().mode()).isEqualTo("retry interpreted sibling"),
+				() -> assertThat(LmdbNativeKernelExecution.PLANNED.get() - plannedBefore).isEqualTo(2L));
+	}
+
+	@Test
+	void realDistinctKernelDeclineRetriesItsInterpretedRecipeWithTheCompleteKeyBag() throws Exception {
+		Fixture fixture = new Fixture();
+		RowState row = new RowState(fixture.source, fixture.layout, EmptyBindingSet.getInstance());
+		Arrays.fill(row.slots, LmdbNativeAggregateCompiler.UNKNOWN);
+		row.recomputeBoundMask();
+		List<String> attempted = new ArrayList<>();
+		Map<String, String> declines = new LinkedHashMap<>();
+		Map<String, String> previousDeclines = LmdbNativeAttemptMetrics.installDeclineCapture(declines);
+		try {
+			try (LmdbNativeStrategyProposal<RowCursor> compiled = Objects.requireNonNull(
+					LmdbNativeKernelExecution.proposeDistinctRows(fixture.input, row, null, new int[] { 0 }, false),
+					"the real compiled DISTINCT row tier is offered");
+					LmdbNativeStrategyProposal<RowCursor> interpreted = Objects.requireNonNull(
+							LmdbNativeKernelExecution.proposeDistinctRows(fixture.input, row, null, new int[] { 0 },
+									true),
+							"the real interpreted DISTINCT row tier is independently offered")) {
+				compiled.withCostQuote(LmdbNativeCostQuote.streaming(
+						LmdbNativeCostVector.point(Feature.SCANNED_ROW, 1D), 16D));
+				compiled.beforeOpen(() -> attempted.add("compiled"));
+				interpreted.withCostQuote(LmdbNativeCostQuote.streaming(
+						LmdbNativeCostVector.point(Feature.SCANNED_ROW, 100D), 16D));
+				interpreted.beforeOpen(() -> attempted.add("interpreted"));
+				LmdbNativeDispatchLoop.Selection<RowCursor> selected = new LmdbNativeDispatchLoop<>(
+						LmdbNativeDecisionPoint.ROW,
+						List.of(strategy(compiled), strategy(interpreted)), null).sharedRow(row).dispatch(null);
+				List<String> actualKeys = new ArrayList<>();
+				try (RowCursor cursor = selected.value()) {
+					while (cursor.next()) {
+						actualKeys.add(fixture.source.lazyValue(row.slots[0]).stringValue());
+					}
+				}
+				List<String> expectedKeys = IntStream.rangeClosed(1, 16)
+						.mapToObj(root -> "urn:packed-quote:" + root)
+						.toList();
+				assertAll("the actual DISTINCT factories preserve their recipe through compiled decline",
+						() -> assertThat(attempted).containsExactly("compiled", "interpreted"),
+						() -> assertThat(declines.get(LmdbNativeAttemptMetrics.PATH_IR_KERNEL_DISTINCT))
+								.startsWith("BELOW_THRESHOLD["),
+						() -> assertThat(selected.id())
+								.isEqualTo(LmdbNativeAttemptMetrics.PATH_IR_KERNEL_DISTINCT_INTERPRETED),
+						() -> assertThat(selected.record().mode()).isEqualTo("retry interpreted sibling"),
+						() -> assertThat(actualKeys).hasSize(16).containsExactlyInAnyOrderElementsOf(expectedKeys));
+			}
+		} finally {
+			LmdbNativeAttemptMetrics.installDeclineCapture(previousDeclines);
+			row.closeDecodedInputs();
+			row.memoryScope.close();
+		}
+	}
+
+	@Test
+	void realParallelKernelDeclineRetriesItsInterpretedRecipeWithTheCompleteBindingBag() throws Exception {
+		set("rdf4j.lmdb.parallel.enabled", "true");
+		set("rdf4j.lmdb.parallel.threads", "4");
+		set("rdf4j.lmdb.parallel.maxTasks", "4");
+		set(LmdbNativeParallelPipelines.MIN_WORK_ESTIMATE_PROPERTY, "0");
+		set(LmdbNativeParallelKernelRows.ENABLED_PROPERTY, "true");
+		Fixture fixture = new Fixture();
+		RowState row = new RowState(fixture.source, fixture.layout, EmptyBindingSet.getInstance());
+		Arrays.fill(row.slots, LmdbNativeAggregateCompiler.UNKNOWN);
+		row.recomputeBoundMask();
+		long interpretedBefore = LmdbNativeKernelExecution.INTERPRETED_BINDS.get();
+		long parallelRunsBefore = LmdbNativeParallelKernelRows.PARALLEL_RUNS.get();
+		List<String> attempted = new ArrayList<>();
+		Map<String, String> declines = new LinkedHashMap<>();
+		Map<String, String> previousDeclines = LmdbNativeAttemptMetrics.installDeclineCapture(declines);
+		try {
+			try (LmdbNativeStrategyProposal<RowCursor> compiled = Objects.requireNonNull(
+					LmdbNativeKernelExecution.proposeParallelRows(fixture.input, row, null, false),
+					"the actual compiled parallel row tier is offered");
+					LmdbNativeStrategyProposal<RowCursor> interpreted = Objects.requireNonNull(
+							LmdbNativeKernelExecution.proposeParallelRows(fixture.input, row, null, true),
+							"the independently admitted interpreted parallel tier is offered")) {
+				compiled.withCostQuote(LmdbNativeCostQuote.streaming(
+						LmdbNativeCostVector.point(Feature.SCANNED_ROW, 1D), 16D));
+				compiled.beforeOpen(() -> attempted.add("compiled"));
+				interpreted.withCostQuote(LmdbNativeCostQuote.streaming(
+						LmdbNativeCostVector.point(Feature.SCANNED_ROW, 100D), 16D));
+				interpreted.beforeOpen(() -> attempted.add("interpreted"));
+				LmdbNativeDispatchLoop.Selection<RowCursor> selected = new LmdbNativeDispatchLoop<>(
+						LmdbNativeDecisionPoint.ROW,
+						List.of(strategy(compiled), strategy(interpreted)), null).sharedRow(row).dispatch(null);
+				List<String> actualRows = new ArrayList<>();
+				try (RowCursor cursor = selected.value()) {
+					while (cursor.next()) {
+						actualRows.add(fixture.source.lazyValue(row.slots[0]).stringValue() + "|"
+								+ fixture.source.lazyValue(row.slots[1]).stringValue() + "|"
+								+ fixture.source.lazyValue(row.slots[2]).stringValue());
+					}
+				}
+				List<String> expectedRows = IntStream.rangeClosed(1, 16)
+						.mapToObj(root -> "urn:packed-quote:" + root + "|urn:packed-quote:" + (root + 100)
+								+ "|urn:packed-quote:" + (root + 200))
+						.toList();
+				assertAll("the actual parallel factory reaches the interpreted tier after compiled decline",
+						() -> assertThat(attempted).containsExactly("compiled", "interpreted"),
+						() -> assertThat(declines.get(LmdbNativeAttemptMetrics.PATH_IR_KERNEL_PARALLEL))
+								.startsWith("BELOW_THRESHOLD["),
+						() -> assertThat(selected.id())
+								.isEqualTo(LmdbNativeAttemptMetrics.PATH_IR_KERNEL_PARALLEL_INTERPRETED),
+						() -> assertThat(selected.record().mode()).isEqualTo("retry interpreted sibling"),
+						() -> assertThat(LmdbNativeKernelExecution.INTERPRETED_BINDS.get() - interpretedBefore)
+								.isPositive(),
+						() -> assertThat(LmdbNativeParallelKernelRows.PARALLEL_RUNS.get() - parallelRunsBefore)
+								.isPositive(),
+						() -> assertThat(actualRows).hasSize(16).containsExactlyInAnyOrderElementsOf(expectedRows),
+						() -> assertThat(fixture.source.closed.get()).isEqualTo(fixture.source.opened.get()),
+						() -> assertThat(fixture.source.opened.get()).isPositive());
+			}
+		} finally {
+			LmdbNativeAttemptMetrics.installDeclineCapture(previousDeclines);
+			row.closeDecodedInputs();
+			row.memoryScope.close();
+		}
+	}
+
+	@Test
+	void compiledRowDeclineRetriesItsInterpretedSiblingBeforeAnUnrelatedCandidate() throws Exception {
+		Fixture fixture = new Fixture();
+		RowState row = new RowState(fixture.source, fixture.layout, EmptyBindingSet.getInstance());
+		Arrays.fill(row.slots, LmdbNativeAggregateCompiler.UNKNOWN);
+		row.recomputeBoundMask();
+		List<String> attempted = new ArrayList<>();
+		Map<String, String> declines = new LinkedHashMap<>();
+		AtomicInteger decoyReleases = new AtomicInteger();
+		try {
+			try (LmdbNativeStrategyProposal<RowCursor> compiled = Objects.requireNonNull(
+					LmdbNativeKernelExecution.proposeRows(fixture.input, row, null, false),
+					"the real compiled row tier is offered");
+					LmdbNativeStrategyProposal<RowCursor> interpreted = Objects.requireNonNull(
+							LmdbNativeKernelExecution.proposeRows(fixture.input, row, null, true),
+							"the real interpreted row tier is independently offered")) {
+				compiled.withCostQuote(LmdbNativeCostQuote.streaming(
+						LmdbNativeCostVector.point(Feature.SCANNED_ROW, 1D), 16D));
+				compiled.beforeOpen(() -> attempted.add("compiled"));
+				interpreted.withCostQuote(LmdbNativeCostQuote.streaming(
+						LmdbNativeCostVector.point(Feature.SCANNED_ROW, 100D), 16D));
+				interpreted.beforeOpen(() -> attempted.add("interpreted"));
+				LmdbNativeCandidate<RowCursor> decoy = LmdbNativeCandidate.of("unrelatedDecoy",
+						LmdbNativeCostQuote.streaming(LmdbNativeCostVector.point(Feature.SCANNED_ROW, 2D), 16D), () -> {
+							attempted.add("decoy");
+							return null;
+						}, decoyReleases::incrementAndGet);
+				LmdbNativeStrategy<Void, RowCursor> compiledStrategy = LmdbNativeStrategy.of(
+						LmdbNativeDecisionPoint.ROW, compiled.tag,
+						ignored -> LmdbNativeAdmission.of(LmdbNativeStrategyProposal.candidate(compiled)));
+				LmdbNativeStrategy<Void, RowCursor> decoyStrategy = LmdbNativeStrategy.of(LmdbNativeDecisionPoint.ROW,
+						"unrelatedDecoy", ignored -> LmdbNativeAdmission.of(decoy));
+				LmdbNativeStrategy<Void, RowCursor> interpretedStrategy = LmdbNativeStrategy.of(
+						LmdbNativeDecisionPoint.ROW, interpreted.tag,
+						ignored -> LmdbNativeAdmission.of(LmdbNativeStrategyProposal.candidate(interpreted)));
+				Map<String, String> previousDeclines = LmdbNativeAttemptMetrics.installDeclineCapture(declines);
+				LmdbNativeDispatchLoop.Selection<RowCursor> selected;
+				try {
+					selected = new LmdbNativeDispatchLoop<>(LmdbNativeDecisionPoint.ROW,
+							List.of(compiledStrategy, decoyStrategy, interpretedStrategy), null)
+									.sharedRow(row)
+									.dispatch(null);
+				} finally {
+					LmdbNativeAttemptMetrics.installDeclineCapture(previousDeclines);
+				}
+				assertThat(selected).isNotNull();
+				List<String> actualRows = new ArrayList<>();
+				try (RowCursor cursor = selected.value()) {
+					while (cursor.next()) {
+						actualRows.add(fixture.source.lazyValue(row.slots[0]).stringValue() + "|"
+								+ fixture.source.lazyValue(row.slots[1]).stringValue() + "|"
+								+ fixture.source.lazyValue(row.slots[2]).stringValue());
+					}
+				}
+				List<String> expectedRows = IntStream.rangeClosed(1, 16)
+						.mapToObj(root -> "urn:packed-quote:" + root + "|urn:packed-quote:" + (root + 100)
+								+ "|urn:packed-quote:" + (root + 200))
+						.toList();
+				assertAll("a compiled bind decline retries its admitted interpreted sibling",
+						() -> assertThat(attempted).containsExactly("compiled", "interpreted"),
+						() -> assertThat(declines.get(LmdbNativeAttemptMetrics.PATH_IR_KERNEL))
+								.startsWith("BELOW_THRESHOLD["),
+						() -> assertThat(selected.id()).isEqualTo(interpreted.tag),
+						() -> assertThat(actualRows).hasSize(16),
+						() -> assertThat(actualRows).containsExactlyInAnyOrderElementsOf(expectedRows),
+						() -> assertThat(decoyReleases).hasValue(1));
+			}
+		} finally {
+			row.closeDecodedInputs();
+			row.memoryScope.close();
+		}
+	}
+
+	@Test
+	void compiledGroupDeclineRetriesItsInterpretedSiblingBeforeAnUnrelatedCandidate() throws Exception {
+		Fixture fixture = new Fixture();
+		RowState row = new RowState(fixture.source, fixture.layout, EmptyBindingSet.getInstance());
+		Arrays.fill(row.slots, LmdbNativeAggregateCompiler.UNKNOWN);
+		row.recomputeBoundMask();
+		AggregateSpec[] aggregates = { AggregateSpec.star("n") };
+		NativeGroupIteration owner = new NativeGroupIteration(fixture.source, fixture.input, fixture.layout,
+				new int[0], aggregates, false, EmptyBindingSet.getInstance(), null, null, false, null);
+		Map<String, LmdbNativeStrategyProposal<List<BindingSet>>> proposals = new LinkedHashMap<>();
+		List<String> attempted = new ArrayList<>();
+		Map<String, String> declines = new LinkedHashMap<>();
+		AtomicInteger decoyReleases = new AtomicInteger();
+
+		try (owner) {
+			try {
+				owner.offerCandidates(row, LmdbNativeAttemptMetrics.direct(), fixture.input,
+						new LmdbNativeCandidateOffers<>() {
+							@Override
+							LmdbNativeCandidateOffers<List<BindingSet>> offer(Proposer<List<BindingSet>> proposer)
+									throws java.io.IOException {
+								retainTierProposal(proposer, proposals);
+								return this;
+							}
+
+							@Override
+							LmdbNativeCandidateOffers<List<BindingSet>> terminalFallback(
+									Proposer<List<BindingSet>> proposer) {
+								try {
+									retainTierProposal(proposer, proposals);
+								} catch (java.io.IOException failure) {
+									throw new IllegalStateException(failure);
+								}
+								return this;
+							}
+						});
+				LmdbNativeStrategyProposal<List<BindingSet>> compiled = Objects.requireNonNull(
+						proposals.get(LmdbNativeAttemptMetrics.PATH_IR_AGGREGATE),
+						"the actual compiled GROUP proposal is offered");
+				LmdbNativeStrategyProposal<List<BindingSet>> interpreted = Objects.requireNonNull(
+						proposals.get(LmdbNativeAttemptMetrics.PATH_IR_AGGREGATE_INTERPRETED),
+						"the actual interpreted GROUP proposal is offered");
+				compiled.withCostQuote(LmdbNativeCostQuote.streaming(
+						LmdbNativeCostVector.point(Feature.SCANNED_ROW, 1D), 1D));
+				compiled.beforeOpen(() -> attempted.add("compiled"));
+				interpreted.withCostQuote(LmdbNativeCostQuote.streaming(
+						LmdbNativeCostVector.point(Feature.SCANNED_ROW, 2_000_000D), 1D));
+				interpreted.beforeOpen(() -> attempted.add("interpreted"));
+				LmdbNativeCandidate<List<BindingSet>> decoy = LmdbNativeCandidate.of("unrelatedDecoy",
+						LmdbNativeCostQuote.streaming(LmdbNativeCostVector.point(Feature.SCANNED_ROW, 1_000_000D), 1D),
+						() -> {
+							attempted.add("decoy");
+							return null;
+						}, decoyReleases::incrementAndGet);
+				LmdbNativeStrategy<Void, List<BindingSet>> compiledStrategy = LmdbNativeStrategy.of(
+						LmdbNativeDecisionPoint.GROUP, compiled.tag,
+						ignored -> LmdbNativeAdmission.of(LmdbNativeStrategyProposal.candidate(compiled)));
+				LmdbNativeStrategy<Void, List<BindingSet>> decoyStrategy = LmdbNativeStrategy.of(
+						LmdbNativeDecisionPoint.GROUP, "unrelatedDecoy", ignored -> LmdbNativeAdmission.of(decoy));
+				LmdbNativeStrategy<Void, List<BindingSet>> interpretedStrategy = LmdbNativeStrategy.of(
+						LmdbNativeDecisionPoint.GROUP, interpreted.tag,
+						ignored -> LmdbNativeAdmission.of(LmdbNativeStrategyProposal.candidate(interpreted)));
+				Map<String, String> previousDeclines = LmdbNativeAttemptMetrics.installDeclineCapture(declines);
+				LmdbNativeDispatchLoop.Selection<List<BindingSet>> selected;
+				try {
+					selected = new LmdbNativeDispatchLoop<>(LmdbNativeDecisionPoint.GROUP,
+							List.of(compiledStrategy, decoyStrategy, interpretedStrategy), null)
+									.sharedRow(row)
+									.dispatch(null);
+				} finally {
+					LmdbNativeAttemptMetrics.installDeclineCapture(previousDeclines);
+				}
+				assertThat(selected).isNotNull();
+				List<BindingSet> selectedRows = selected.value();
+				try {
+					assertAll("a compiled aggregate decline retries its admitted interpreted sibling",
+							() -> assertThat(attempted).containsExactly("compiled", "interpreted"),
+							() -> assertThat(declines.get(LmdbNativeAttemptMetrics.PATH_IR_AGGREGATE))
+									.startsWith("BELOW_THRESHOLD["),
+							() -> assertThat(selected.id()).isEqualTo(interpreted.tag),
+							() -> assertThat(selectedRows).hasSize(1),
+							() -> assertThat(selectedRows.getFirst().getValue("n").stringValue()).isEqualTo("16"),
+							() -> assertThat(decoyReleases).hasValue(1));
+				} finally {
+					if (selectedRows instanceof AutoCloseable resource) {
+						resource.close();
+					}
+				}
+			} finally {
+				proposals.values().forEach(LmdbNativeStrategyProposal::close);
+				owner.aggContext.close();
+			}
+		} finally {
+			row.closeDecodedInputs();
+			row.memoryScope.close();
+		}
+	}
+
+	private static void retainTierProposal(LmdbNativeCandidateOffers.Proposer<List<BindingSet>> proposer,
+			Map<String, LmdbNativeStrategyProposal<List<BindingSet>>> retained) throws java.io.IOException {
+		LmdbNativeStrategyProposal<List<BindingSet>> proposal = proposer.propose();
+		if (proposal == null) {
+			return;
+		}
+		if (proposal.tag.equals(LmdbNativeAttemptMetrics.PATH_IR_AGGREGATE)
+				|| proposal.tag.equals(LmdbNativeAttemptMetrics.PATH_IR_AGGREGATE_INTERPRETED)) {
+			LmdbNativeStrategyProposal<List<BindingSet>> duplicate = retained.putIfAbsent(proposal.tag, proposal);
+			if (duplicate != null) {
+				proposal.close();
+				throw new IllegalStateException("duplicate GROUP tier proposal: " + proposal.tag);
+			}
+		} else {
+			proposal.close();
+		}
 	}
 
 	@Test
@@ -224,6 +552,11 @@ class LmdbNativeOrderedKernelTierQuoteTest {
 	private static List<LmdbNativeDecisionTestAccess.Selected> orderedSelections(
 			List<LmdbNativeDecisionTestAccess.Selected> selections) {
 		return selections.stream().filter(selection -> "ORDER".equals(selection.point())).toList();
+	}
+
+	private static LmdbNativeStrategy<Void, RowCursor> strategy(LmdbNativeStrategyProposal<RowCursor> proposal) {
+		return LmdbNativeStrategy.of(LmdbNativeDecisionPoint.ROW, proposal.tag,
+				ignored -> LmdbNativeAdmission.of(LmdbNativeStrategyProposal.candidate(proposal)));
 	}
 
 	private static void assertAnswers(List<BindingSet> results) {

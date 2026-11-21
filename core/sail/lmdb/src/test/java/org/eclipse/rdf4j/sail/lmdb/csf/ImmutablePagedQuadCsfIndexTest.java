@@ -20,11 +20,14 @@ import java.util.Arrays;
 import java.util.List;
 import java.util.Random;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicLong;
 
 import org.eclipse.rdf4j.sail.lmdb.ValueIds;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.parallel.Isolated;
 
+@Isolated("The allocation assertion reads process-global adaptive-memory counters")
 class ImmutablePagedQuadCsfIndexTest {
 	private static final String SHARD_TARGET_PAGES_PROPERTY = "org.eclipse.rdf4j.sail.lmdb.directAdjacency.csfShardTargetPages";
 
@@ -52,6 +55,214 @@ class ImmutablePagedQuadCsfIndexTest {
 			assertThat(pages.neighborAt(0, 0)).isEqualTo(id(ValueIds.T_URI, 101));
 			assertThat(pages.neighborContextCount(0, 0)).isEqualTo(2);
 			assertThat(pages.advance()).isFalse();
+		}
+	}
+
+	@Test
+	void pageCursorCopyRetainsSameTargetAndEmptyRangeBehavior() {
+		long neighbor = id(1, 101);
+		long[] neighbors = { neighbor, neighbor, neighbor };
+		long[] contexts = { id(1, 201), id(1, 202), id(1, 203) };
+		try (ImmutablePagedQuadCsfIndex index = build(1, 0, 0,
+				List.of(new Row(id(1, 77), neighbors, contexts)))) {
+			ImmutablePagedQuadCsfIndex.PageCursor pages = index.keyDomain(0, 0).pageCursor();
+			assertThat(pages.advance()).isTrue();
+			long[] shared = { -7, -8, -9 };
+			assertThat(pages.copyRootQuads(0, 0, 0, shared, shared)).isZero();
+			assertThat(shared).containsExactly(-7, -8, -9);
+			assertThat(pages.copyRootQuads(0, contexts.length, 4, shared, shared)).isZero();
+			assertThat(shared).containsExactly(-7, -8, -9);
+			assertThatThrownBy(() -> pages.copyRootQuads(0, contexts.length + 1, 1, shared, shared))
+					.isInstanceOf(IllegalArgumentException.class);
+			assertThat(shared).containsExactly(-7, -8, -9);
+			assertThat(pages.copyRootQuads(0, 0, contexts.length, shared, shared)).isEqualTo(contexts.length);
+			assertThat(shared).containsExactly(contexts);
+		}
+	}
+
+	@Test
+	void pageCursorSequentialQuadCopiesAvoidAdaptiveNeighborPrefixes() {
+		boolean foundUnindexedPage = false;
+		for (int count = 1_030; count <= 2_048 && !foundUnindexedPage; count++) {
+			long[] neighbors = new long[count];
+			long[] contexts = new long[count];
+			for (int i = 0; i < count; i++) {
+				neighbors[i] = id(1, 1_000_000L + (long) i * i);
+			}
+			try (ImmutablePagedQuadCsfIndex index = build(1, 0, 0,
+					List.of(new Row(id(1, 77), neighbors, contexts)))) {
+				ImmutablePagedQuadCsfIndex.PageCursor pages = index.keyDomain(0, 0).pageCursor();
+				assertThat(pages.advance()).isTrue();
+				assertThat(pages.rootQuadCount(0)).isEqualTo(count);
+				int descriptor = UnsafeAccess.getIntLE(pages.nativeAddress()
+						+ CompactCsfPageFormat.ACCELERATOR_DESCRIPTOR_AT);
+				if (CompactCsfPageAccelerators.prefixStrideShift(descriptor,
+						CompactCsfPageAccelerators.NEIGHBOR_PREFIX_CODE_SHIFT) >= 0) {
+					continue;
+				}
+
+				foundUnindexedPage = true;
+				long promotionsBefore = CsfAdaptiveMemory.promotions();
+				long refusalsBefore = CsfAdaptiveMemory.refusals();
+				long[] neighborBatch = new long[256];
+				long[] contextBatch = new long[256];
+				int windows = 0;
+				for (int from = 0; from < count; from += neighborBatch.length) {
+					int expected = Math.min(neighborBatch.length, count - from);
+					assertThat(pages.copyRootQuads(0, from, neighborBatch.length, neighborBatch, contextBatch))
+							.isEqualTo(expected);
+					assertThat(Arrays.copyOf(neighborBatch, expected))
+							.containsExactly(Arrays.copyOfRange(neighbors, from, from + expected));
+					assertThat(Arrays.copyOf(contextBatch, expected))
+							.containsExactly(Arrays.copyOfRange(contexts, from, from + expected));
+					windows++;
+				}
+				assertThat(windows).as("the real unindexed page must exercise progressive nonempty ranges")
+						.isGreaterThan(4);
+
+				assertThat(pages.copyRootQuads(0, 800, 64, neighborBatch, null)).isEqualTo(64);
+				assertThat(Arrays.copyOf(neighborBatch, 64)).containsExactly(Arrays.copyOfRange(neighbors, 800, 864));
+				assertThat(pages.copyRootQuads(0, 400, 64, null, contextBatch)).isEqualTo(64);
+				assertThat(Arrays.copyOf(contextBatch, 64)).containsExactly(Arrays.copyOfRange(contexts, 400, 464));
+				assertThat(pages.copyRootQuads(0, 700, 64, neighborBatch, contextBatch)).isEqualTo(64);
+				assertThat(Arrays.copyOf(neighborBatch, 64)).containsExactly(Arrays.copyOfRange(neighbors, 700, 764));
+				assertThat(Arrays.copyOf(contextBatch, 64)).containsExactly(Arrays.copyOfRange(contexts, 700, 764));
+
+				long promotions = CsfAdaptiveMemory.promotions() - promotionsBefore;
+				long refusals = CsfAdaptiveMemory.refusals() - refusalsBefore;
+				assertThat(promotions + refusals)
+						.as("unindexed encoder page; progressive windows=%d; legacy adaptive promotions=%d refusals=%d",
+								windows, promotions, refusals)
+						.isZero();
+			}
+		}
+		assertThat(foundUnindexedPage).as("the production encoder must emit an unindexed neighbor page").isTrue();
+	}
+
+	@Test
+	void pageCursorCancellationBetweenQuadBatchesCanRetry() {
+		int fibers = 700;
+		int quads = fibers * 2;
+		long[] neighbors = new long[quads];
+		long[] contexts = new long[quads];
+		for (int fiber = 0; fiber < fibers; fiber++) {
+			long neighbor = id(1, 1_000_000L + fiber);
+			neighbors[2 * fiber] = neighbors[2 * fiber + 1] = neighbor;
+			contexts[2 * fiber] = 0L;
+			contexts[2 * fiber + 1] = id(1, 10L);
+		}
+		AtomicBoolean armed = new AtomicBoolean();
+		AtomicInteger polls = new AtomicInteger();
+		IllegalStateException cancellation = new IllegalStateException("injected page-copy cancellation");
+		try (ImmutablePagedQuadCsfIndex index = build(1, 0, 0,
+				List.of(new Row(id(1, 77), neighbors, contexts)))) {
+			ImmutablePagedQuadCsfIndex.PageCursor pages = index.keyDomain(0, 0).pageCursor(() -> {
+				if (armed.get() && polls.incrementAndGet() == 2) {
+					throw cancellation;
+				}
+			});
+			assertThat(pages.advance()).isTrue();
+			int pageQuads = Math.toIntExact(pages.rootQuadCount(0));
+			assertThat(pageQuads).isEqualTo(quads);
+			long[] firstNeighbors = new long[256];
+			long[] firstContexts = new long[256];
+			assertThat(pages.copyRootQuads(0, 0, 256, firstNeighbors, firstContexts)).isEqualTo(256);
+			assertThat(firstNeighbors).containsExactly(Arrays.copyOfRange(neighbors, 0, 256));
+			assertThat(firstContexts).containsExactly(Arrays.copyOfRange(contexts, 0, 256));
+
+			armed.set(true);
+			long[] cancelledNeighbors = new long[quads - 256];
+			long[] cancelledContexts = new long[quads - 256];
+			assertThatThrownBy(() -> pages.copyRootQuads(0, 256, quads - 256,
+					cancelledNeighbors, cancelledContexts)).isSameAs(cancellation);
+			assertThat(polls).hasValue(2);
+
+			armed.set(false);
+			long[] retryNeighbors = new long[quads - 256];
+			long[] retryContexts = new long[quads - 256];
+			assertThat(pages.copyRootQuads(0, 256, quads - 256, retryNeighbors, retryContexts))
+					.isEqualTo(quads - 256);
+			assertThat(retryNeighbors).containsExactly(Arrays.copyOfRange(neighbors, 256, quads));
+			assertThat(retryContexts).containsExactly(Arrays.copyOfRange(contexts, 256, quads));
+		}
+	}
+
+	@Test
+	void pageCursorCopiesRemainExactAcrossRowsExtentsAndBackwardWindows() {
+		int hotQuads = 80_000;
+		long hotRoot = id(1, 1);
+		long[] hotNeighbors = new long[hotQuads];
+		long[] hotContexts = new long[hotQuads];
+		for (int fiber = 0; fiber < hotQuads / 2; fiber++) {
+			long neighbor = id(1, 1_000_000L + fiber);
+			hotNeighbors[2 * fiber] = hotNeighbors[2 * fiber + 1] = neighbor;
+			hotContexts[2 * fiber] = 0L;
+			hotContexts[2 * fiber + 1] = id(1, 10L);
+		}
+		long secondRoot = id(1, 2);
+		long[] secondNeighbors = { id(1, 5_000_001L), id(1, 5_000_002L) };
+		long[] secondContexts = { 0L, id(1, 11L) };
+		long thirdRoot = id(1, 3);
+		long[] thirdNeighbors = { id(1, 5_000_003L) };
+		long[] thirdContexts = { id(1, 12L) };
+		try (ImmutablePagedQuadCsfIndex index = build(1, 0, 0, List.of(
+				new Row(hotRoot, hotNeighbors, hotContexts),
+				new Row(secondRoot, secondNeighbors, secondContexts),
+				new Row(thirdRoot, thirdNeighbors, thirdContexts)))) {
+			ImmutablePagedQuadCsfIndex.PageCursor pages = index.keyDomain(0, 0).pageCursor();
+			assertThat(index.pageCount()).isGreaterThan(1);
+			int hotOffset = 0;
+			while (pages.advance()) {
+				for (int row = 0; row < pages.roots(); row++) {
+					long root = pages.rootAt(row);
+					int rowQuads = Math.toIntExact(pages.rootQuadCount(row));
+					long[] expectedNeighbors;
+					long[] expectedContexts;
+					int expectedOffset;
+					if (root == hotRoot) {
+						expectedNeighbors = hotNeighbors;
+						expectedContexts = hotContexts;
+						expectedOffset = hotOffset;
+						hotOffset += rowQuads;
+					} else if (root == secondRoot) {
+						expectedNeighbors = secondNeighbors;
+						expectedContexts = secondContexts;
+						expectedOffset = 0;
+					} else {
+						assertThat(root).isEqualTo(thirdRoot);
+						expectedNeighbors = thirdNeighbors;
+						expectedContexts = thirdContexts;
+						expectedOffset = 0;
+					}
+
+					for (int from = 0; from < rowQuads; from += 256) {
+						int expected = Math.min(256, rowQuads - from);
+						long[] neighborBatch = new long[expected];
+						long[] contextBatch = new long[expected];
+						assertThat(pages.copyRootQuads(row, from, expected, neighborBatch, contextBatch))
+								.isEqualTo(expected);
+						assertThat(neighborBatch).containsExactly(Arrays.copyOfRange(expectedNeighbors,
+								expectedOffset + from, expectedOffset + from + expected));
+						assertThat(contextBatch).containsExactly(Arrays.copyOfRange(expectedContexts,
+								expectedOffset + from, expectedOffset + from + expected));
+					}
+
+					int probeFrom = Math.max(0, rowQuads - Math.min(32, rowQuads));
+					int probeLength = Math.min(32, rowQuads - probeFrom);
+					if (probeLength > 0) {
+						long[] neighborProbe = new long[probeLength];
+						long[] contextProbe = new long[probeLength];
+						assertThat(pages.copyRootQuads(row, probeFrom, probeLength, neighborProbe, null))
+								.isEqualTo(probeLength);
+						assertThat(neighborProbe).containsExactly(Arrays.copyOfRange(expectedNeighbors,
+								expectedOffset + probeFrom, expectedOffset + probeFrom + probeLength));
+						assertThat(pages.copyRootQuads(row, 0, probeLength, null, contextProbe)).isEqualTo(probeLength);
+						assertThat(contextProbe).containsExactly(Arrays.copyOfRange(expectedContexts,
+								expectedOffset, expectedOffset + probeLength));
+					}
+				}
+			}
+			assertThat(hotOffset).isEqualTo(hotQuads);
 		}
 	}
 
@@ -529,6 +740,39 @@ class ImmutablePagedQuadCsfIndexTest {
 	}
 
 	@Test
+	void rootBoundsIncludeContinuationOnlyShardsWithoutOpeningRows() {
+		long row = id(1, 21);
+		try (ImmutablePagedQuadCsfIndex index = buildFragments(0, 0, List.of(
+				List.of(new Row(row, new long[] { id(1, 100) }, new long[] { 0 })),
+				List.of(new Row(row, new long[] { id(1, 101) }, new long[] { 0 })),
+				List.of(new Row(row + 128L, new long[] { id(1, 102) }, new long[] { 0 }))),
+				new boolean[] { false, true, false })) {
+			ImmutablePagedQuadCsfIndex.KeyDomain keys = index.keyDomain(0, 0);
+			assertThat(keys.keyCount()).isEqualTo(2L);
+			AtomicInteger polls = new AtomicInteger();
+			var bounds = keys.rootBounds(polls::incrementAndGet);
+			assertThat(bounds).isNotNull();
+			assertThat(bounds.pages()).isEqualTo(index.pageCount()).isGreaterThanOrEqualTo(3L);
+			assertThat(bounds.shardDescriptors())
+					.as("root-bound metadata reports the exact continuation and terminal shard count")
+					.isEqualTo(3);
+			assertThat(bounds.firstRoot()).isEqualTo(row);
+			assertThat(bounds.lastRoot()).isEqualTo(row + 128L);
+			assertThat(polls.get()).isGreaterThanOrEqualTo(4);
+			AtomicInteger cancellationPolls = new AtomicInteger();
+			IllegalStateException cancelled = new IllegalStateException("injected shard-descriptor cancellation");
+			assertThatThrownBy(() -> keys.rootBounds(() -> {
+				if (cancellationPolls.incrementAndGet() == 3) {
+					throw cancelled;
+				}
+			})).isSameAs(cancelled);
+			var empty = index.keyDomain(0, 1).rootBounds(() -> {
+			});
+			assertThat(empty).isEqualTo(new ImmutablePagedQuadCsfIndex.KeyDomain.RootBounds(0L, 0L, 0L, 0));
+		}
+	}
+
+	@Test
 	void enumeratesCompleteRowsAcrossFragmentBoundariesInsideMultiRowPages() {
 		long row = 2_932_299_266L;
 		try (ImmutablePagedQuadCsfIndex index = buildFragments(0, 0, List.of(
@@ -833,6 +1077,442 @@ class ImmutablePagedQuadCsfIndexTest {
 				assertThat(actualNeighbors).containsExactly(neighbors);
 				assertThat(actualContexts).containsExactly(contexts);
 			}
+		}
+	}
+
+	@Test
+	void keyCursorBatchedColumnCopiesTraverseContinuationPagesLinearly() {
+		List<Long> traversals = new ArrayList<>();
+		List<Integer> pageCounts = new ArrayList<>();
+		for (int count : new int[] { 40_000, 80_000 }) {
+			long[] expectedNeighbors = new long[count];
+			long[] expectedContexts = new long[count];
+			for (int i = 0; i < count; i++) {
+				expectedNeighbors[i] = id(1, 1_000_000L + (long) i * i);
+			}
+			try (ImmutablePagedQuadCsfIndex index = build(1, 0, 0,
+					List.of(new Row(id(1, 77), expectedNeighbors, expectedContexts)))) {
+				assertThat(index.pageCount()).isGreaterThan(1);
+				ImmutablePagedQuadCsfIndex.KeyCursor cursor = index.keyDomain(0, 0).cursor();
+				assertThat(cursor.advance()).isTrue();
+				assertThat(cursor.edgeCount()).isEqualTo(count);
+				long[] actualNeighbors = new long[count];
+				long[] actualContexts = new long[count];
+				long before = CompactCsfPageReader.DECODES.sum();
+				for (int offset = 0; offset < count; offset += 256) {
+					int length = Math.min(256, count - offset);
+					assertThat(cursor.copyPairs(offset, length, actualNeighbors, offset, null, 0)).isEqualTo(length);
+					assertThat(cursor.copyPairs(offset, length, null, 0, actualContexts, offset)).isEqualTo(length);
+				}
+				assertThat(actualNeighbors).containsExactly(expectedNeighbors);
+				assertThat(actualContexts).containsExactly(expectedContexts);
+				long decodes = CompactCsfPageReader.DECODES.sum() - before;
+				traversals.add(decodes);
+				pageCounts.add(index.pageCount());
+				System.out.printf("BATCHED_CSF_TRAVERSAL quads=%d pages=%d decodes=%d%n", count,
+						index.pageCount(), decodes);
+			}
+		}
+		for (int i = 0; i < traversals.size(); i++) {
+			// Each of the two columns may rebind a page once for a batch that crosses the preceding page.
+			// Four binds per page, plus fixed startup slack, therefore suffices without a prefix-chain rewalk.
+			assertThat(traversals.get(i))
+					.as("interleaved 256-quad columns must traverse each continuation page a bounded number of times")
+					.isLessThanOrEqualTo(4L * pageCounts.get(i) + 4L);
+		}
+	}
+
+	@Test
+	void keyCursorColumnCopiesSurviveBackwardSeeksAndOtherReadersAcrossRoots() {
+		int count = 80_000;
+		int longFiber = 36_000;
+		long[] neighbors = new long[count];
+		long[] contexts = new long[count];
+		for (int i = 0; i < count; i++) {
+			if (i < longFiber) {
+				neighbors[i] = id(1, 1_000_000);
+				contexts[i] = id(1, 1L + (long) i * i);
+			} else {
+				int position = i - longFiber;
+				neighbors[i] = id(1, 1_000_001L + position / 4);
+				contexts[i] = id(1, 1 + position % 4);
+			}
+		}
+		List<Row> rows = List.of(
+				new Row(id(1, 10), new long[] { id(1, 5) }, new long[] { 0 }),
+				new Row(id(1, 20), neighbors, contexts),
+				new Row(id(1, 30), new long[] { id(1, 6) }, new long[] { id(1, 7) }));
+		try (ImmutablePagedQuadCsfIndex index = build(1, 0, 0, rows)) {
+			assertThat(index.pageCount()).isGreaterThan(2);
+			ImmutablePagedQuadCsfIndex.KeyCursor cursor = index.keyDomain(0, 0).cursor();
+			assertThat(cursor.advance()).isTrue();
+			assertThat(cursor.copyPairs(0, 1, new long[1], 0, null, 0)).isEqualTo(1);
+			assertThat(cursor.advance()).isTrue();
+			assertThat(cursor.edgeCount()).isEqualTo(count);
+			assertThat(cursor.distinctNeighborCount()).isEqualTo(1L + (count - longFiber) / 4);
+			long[] fiberNeighbors = new long[3];
+			long[] fiberWeights = new long[3];
+			assertThat(cursor.copyFibers(longFiber - 10L, 3, fiberNeighbors, 0, fiberWeights, 0)).isEqualTo(3);
+			assertThat(fiberNeighbors).containsExactly(id(1, 1_000_000), id(1, 1_000_001), id(1, 1_000_002));
+			assertThat(fiberWeights).containsExactly(10, 4, 4);
+			assertThat(cursor.copyFibers(1_000, 2, fiberNeighbors, 0, fiberWeights, 0)).isEqualTo(2);
+			assertThat(Arrays.copyOf(fiberNeighbors, 2)).containsExactly(id(1, 1_000_000), id(1, 1_000_001));
+			assertThat(Arrays.copyOf(fiberWeights, 2)).containsExactly(longFiber - 1_000, 4);
+			for (int offset : new int[] { 0, 13_777, 13_950, 100, 35_850, 36_100, 65_000, 0, 79_990 }) {
+				int length = Math.min(600, count - offset);
+				long[] actualNeighbors = new long[length + 2];
+				long[] actualContexts = new long[length + 2];
+				assertThat(cursor.copyPairs(offset, length, actualNeighbors, 1, null, 0)).isEqualTo(length);
+				assertThat(cursor.contextAt(count - 1L)).isEqualTo(contexts[count - 1]);
+				assertThat(cursor.copyPairs(offset, length, null, 0, actualContexts, 1)).isEqualTo(length);
+				assertThat(Arrays.copyOfRange(actualNeighbors, 1, length + 1))
+						.containsExactly(Arrays.copyOfRange(neighbors, offset, offset + length));
+				assertThat(Arrays.copyOfRange(actualContexts, 1, length + 1))
+						.containsExactly(Arrays.copyOfRange(contexts, offset, offset + length));
+				assertThat(cursor.copyPairs(count, 0, actualNeighbors, 0, actualContexts, 0)).isZero();
+			}
+			assertThat(cursor.advance()).isTrue();
+			long[] lastNeighbor = new long[1];
+			long[] lastContext = new long[1];
+			assertThat(cursor.copyPairs(0, 1, lastNeighbor, 0, lastContext, 0)).isEqualTo(1);
+			assertThat(lastNeighbor).containsExactly(rows.get(2).neighbours);
+			assertThat(lastContext).containsExactly(rows.get(2).contexts);
+			assertThat(cursor.advance()).isFalse();
+
+			// Bulk root counts position the cursor without calling position(); copy state must reset there too.
+			cursor = index.keyDomain(0, 0).cursor();
+			assertThat(cursor.fillRootCounts(new long[2], 0, new long[2], 0, 2)).isEqualTo(2);
+			assertThat(cursor.copyPairs(count - 1L, 1, lastNeighbor, 0, lastContext, 0)).isEqualTo(1);
+			assertThat(lastNeighbor[0]).isEqualTo(neighbors[count - 1]);
+			assertThat(lastContext[0]).isEqualTo(contexts[count - 1]);
+		}
+	}
+
+	@Test
+	void contextInitializationAcrossManyRootsDoesNotReplayEarlierFibers() {
+		long[] observed = new long[2];
+		int measurement = 0;
+		for (int rootCount : new int[] { 350, 700 }) {
+			List<Row> rows = new ArrayList<>();
+			for (int i = 0; i < rootCount; i++) {
+				long neighbor = id(1, 100_000L + i);
+				rows.add(new Row(id(1, 100L + i), new long[] { neighbor, neighbor },
+						new long[] { 0, id(1, 2) }));
+			}
+			try (ImmutablePagedQuadCsfIndex index = build(1, 0, 0, rows)) {
+				assertThat(index.pageCount()).isEqualTo(1);
+				ImmutablePagedQuadCsfIndex.KeyCursor cursor = index.keyDomain(0, 0).cursor();
+				AtomicLong polls = new AtomicLong();
+				cursor.cancellationPoll(polls::incrementAndGet);
+				long[] actual = new long[2];
+				int seen = 0;
+				while (cursor.advance()) {
+					assertThat(cursor.copyPairs(0, 2, null, 0, actual, 0)).isEqualTo(2);
+					assertThat(actual).containsExactly(0, id(1, 2));
+					seen++;
+				}
+				assertThat(seen).isEqualTo(rootCount);
+				observed[measurement++] = polls.get();
+				System.out.printf("CSF_ROOT_CONTEXT_WORK roots=%d polls=%d%n", rootCount, polls.get());
+			}
+		}
+		assertThat(observed[0]).isLessThanOrEqualTo(3L * 350 + 16);
+		assertThat(observed[1]).isLessThanOrEqualTo(3L * 700 + 16);
+	}
+
+	@Test
+	void distantColumnSeeksSkipWholeContinuationPages() {
+		int count = 80_000;
+		long[] neighbors = new long[count];
+		long[] contexts = new long[count];
+		for (int i = 0; i < count; i++) {
+			neighbors[i] = id(1, 1_000_000L + (long) i * i);
+		}
+		try (ImmutablePagedQuadCsfIndex index = build(1, 0, 0,
+				List.of(new Row(id(1, 77), neighbors, contexts)))) {
+			assertThat(index.pageCount()).isGreaterThan(3);
+			ImmutablePagedQuadCsfIndex.KeyCursor cursor = index.keyDomain(0, 0).cursor();
+			assertThat(cursor.advance()).isTrue();
+			assertThat(cursor.edgeCount()).isEqualTo(count);
+			AtomicLong polls = new AtomicLong();
+			cursor.cancellationPoll(polls::incrementAndGet);
+			long[] result = new long[1];
+			assertThat(cursor.copyPairs(count - 1L, 1, result, 0, null, 0)).isEqualTo(1);
+			assertThat(result[0]).isEqualTo(neighbors[count - 1]);
+			long firstSeek = polls.get();
+			assertThat(cursor.copyPairs(0, 1, result, 0, null, 0)).isEqualTo(1);
+			assertThat(result[0]).isEqualTo(neighbors[0]);
+			assertThat(cursor.copyPairs(count - 1L, 1, result, 0, null, 0)).isEqualTo(1);
+			assertThat(result[0]).isEqualTo(neighbors[count - 1]);
+			long secondSeek = polls.get() - firstSeek;
+			System.out.printf("CSF_GAP_SEEK quads=%d pages=%d firstPolls=%d backwardAndForwardPolls=%d%n",
+					count, index.pageCount(), firstSeek, secondSeek);
+			assertThat(firstSeek).isLessThanOrEqualTo(4L * index.pageCount() + 64);
+			assertThat(secondSeek).isLessThanOrEqualTo(4L * index.pageCount() + 65);
+		}
+	}
+
+	@Test
+	void overlappingColumnCopiesKeepPageDecoderWriteOrder() {
+		long n0 = id(1, 100);
+		long n1 = id(1, 101);
+		long n2 = id(1, 102);
+		long c0 = id(1, 200);
+		long c1 = id(1, 201);
+		long c2 = id(1, 202);
+		for (boolean singleContext : new boolean[] { true, false }) {
+			long[] neighbors = singleContext ? new long[] { n0, n1, n2 } : new long[] { n0, n0, n1 };
+			long[] contexts = { c0, c1, c2 };
+			try (ImmutablePagedQuadCsfIndex index = build(1, 0, 0,
+					List.of(new Row(id(1, 1), neighbors, contexts)))) {
+				for (boolean neighborFirst : new boolean[] { true, false }) {
+					ImmutablePagedQuadCsfIndex.KeyCursor cursor = index.keyDomain(0, 0).cursor();
+					assertThat(cursor.advance()).isTrue();
+					long[] actual = new long[4];
+					int neighborOffset = neighborFirst ? 0 : 1;
+					int contextOffset = neighborFirst ? 1 : 0;
+					assertThat(cursor.copyPairs(0, 3, actual, neighborOffset, actual, contextOffset)).isEqualTo(3);
+					long[] expected = new long[4];
+					if (singleContext) {
+						System.arraycopy(neighbors, 0, expected, neighborOffset, 3);
+						System.arraycopy(contexts, 0, expected, contextOffset, 3);
+					} else {
+						for (int i = 0; i < 3; i++) {
+							expected[neighborOffset + i] = neighbors[i];
+							expected[contextOffset + i] = contexts[i];
+						}
+					}
+					assertThat(actual).containsExactly(expected);
+				}
+			}
+		}
+	}
+
+	@Test
+	void overlappingColumnCopiesKeepWriteOrderAcrossPageBoundaries() {
+		int count = 80_000;
+		for (boolean singleContext : new boolean[] { true, false }) {
+			long[] neighbors = new long[count];
+			long[] contexts = new long[count];
+			for (int i = 0; i < count; i++) {
+				neighbors[i] = id(1, singleContext ? 1_000_000L + (long) i * i : 1_000_000L);
+				contexts[i] = singleContext ? 0 : id(1, 1L + (long) i * i);
+			}
+			try (ImmutablePagedQuadCsfIndex index = build(1, 0, 0,
+					List.of(new Row(id(1, 1), neighbors, contexts)))) {
+				assertThat(index.pageCount()).isGreaterThan(1);
+				ImmutablePagedQuadCsfIndex.PageCursor pages = index.keyDomain(0, 0).pageCursor();
+				assertThat(pages.advance()).isTrue();
+				int firstPageQuads = Math.toIntExact(pages.rootQuadCount(0));
+				int offset = firstPageQuads - 7;
+				int length = 32;
+				assertThat(offset).isPositive();
+				assertThat(offset + length).isLessThan(count);
+				long[] expected = new long[length + 1];
+				for (int pageOffset : new int[] { 0, 7 }) {
+					int pageLength = pageOffset == 0 ? 7 : length - pageOffset;
+					if (singleContext) {
+						System.arraycopy(neighbors, offset + pageOffset, expected, pageOffset, pageLength);
+						System.arraycopy(contexts, offset + pageOffset, expected, pageOffset + 1, pageLength);
+					} else {
+						for (int i = 0; i < pageLength; i++) {
+							expected[pageOffset + i] = neighbors[offset + pageOffset + i];
+							expected[pageOffset + i + 1] = contexts[offset + pageOffset + i];
+						}
+					}
+				}
+				ImmutablePagedQuadCsfIndex.KeyCursor cursor = index.keyDomain(0, 0).cursor();
+				assertThat(cursor.advance()).isTrue();
+				long[] actual = new long[length + 1];
+				assertThat(cursor.copyPairs(offset, length, actual, 0, actual, 1)).isEqualTo(length);
+				assertThat(actual).containsExactly(expected);
+			}
+		}
+	}
+
+	@Test
+	void overlappingFiberCopiesKeepPageDecoderWriteOrder() {
+		int fiberCount = 20;
+		for (int contextsPerFiber : new int[] { 1, 2 }) {
+			long[] neighbors = new long[fiberCount * contextsPerFiber];
+			long[] contexts = new long[neighbors.length];
+			for (int fiber = 0; fiber < fiberCount; fiber++) {
+				for (int context = 0; context < contextsPerFiber; context++) {
+					int position = fiber * contextsPerFiber + context;
+					neighbors[position] = id(1, 100L + fiber);
+					contexts[position] = context == 0 ? 0 : id(1, 2);
+				}
+			}
+			try (ImmutablePagedQuadCsfIndex index = build(1, 0, 0,
+					List.of(new Row(id(1, 1), neighbors, contexts)))) {
+				for (boolean neighborFirst : new boolean[] { true, false }) {
+					ImmutablePagedQuadCsfIndex.KeyCursor cursor = index.keyDomain(0, 0).cursor();
+					assertThat(cursor.advance()).isTrue();
+					long[] actual = new long[fiberCount + 1];
+					int neighborOffset = neighborFirst ? 0 : 1;
+					int weightOffset = neighborFirst ? 1 : 0;
+					assertThat(cursor.copyFibers(0, fiberCount, actual, neighborOffset, actual, weightOffset))
+							.isEqualTo(fiberCount);
+					long[] expected = new long[fiberCount + 1];
+					if (contextsPerFiber == 1) {
+						System.arraycopy(neighbors, 0, expected, neighborOffset, fiberCount);
+						Arrays.fill(expected, weightOffset, weightOffset + fiberCount, 1);
+					} else {
+						for (int i = 0; i < fiberCount; i++) {
+							expected[neighborOffset + i] = neighbors[2 * i];
+							expected[weightOffset + i] = 2;
+						}
+					}
+					assertThat(actual).containsExactly(expected);
+				}
+			}
+		}
+	}
+
+	@Test
+	void overlappingFiberBatchesTraverseContinuationPagesLinearly() {
+		List<Long> traversals = new ArrayList<>();
+		List<Integer> pageCounts = new ArrayList<>();
+		for (int count : new int[] { 40_000, 80_000 }) {
+			long[] neighbors = new long[count];
+			for (int i = 0; i < count; i++) {
+				neighbors[i] = id(1, 1_000_000L + (long) i * i);
+			}
+			try (ImmutablePagedQuadCsfIndex index = build(1, 0, 0,
+					List.of(new Row(id(1, 77), neighbors, new long[count])))) {
+				ImmutablePagedQuadCsfIndex.KeyCursor cursor = index.keyDomain(0, 0).cursor();
+				assertThat(cursor.advance()).isTrue();
+				assertThat(cursor.edgeCount()).isEqualTo(count);
+				long before = CompactCsfPageReader.DECODES.sum();
+				long[] target = new long[257];
+				for (int offset = 0; offset < count; offset += 256) {
+					int length = Math.min(256, count - offset);
+					assertThat(cursor.copyFibers(offset, length, target, 0, target, 1)).isEqualTo(length);
+					assertThat(target[0]).isEqualTo(neighbors[offset]);
+				}
+				long decodes = CompactCsfPageReader.DECODES.sum() - before;
+				traversals.add(decodes);
+				pageCounts.add(index.pageCount());
+				System.out.printf("ALIASED_FIBER_TRAVERSAL quads=%d pages=%d decodes=%d%n", count,
+						index.pageCount(), decodes);
+			}
+		}
+		for (int i = 0; i < traversals.size(); i++) {
+			assertThat(traversals.get(i)).isLessThanOrEqualTo(4L * pageCounts.get(i) + 4);
+		}
+	}
+
+	@Test
+	void distantFiberSeekSkipsPagesAndLargeContextFibers() {
+		int count = 80_000;
+		long neighbor = id(1, 1_000_000);
+		long[] neighbors = new long[count];
+		long[] contexts = new long[count];
+		Arrays.fill(neighbors, neighbor);
+		for (int i = 0; i < count; i++) {
+			contexts[i] = id(1, 1L + (long) i * i);
+		}
+		try (ImmutablePagedQuadCsfIndex index = build(1, 0, 0,
+				List.of(new Row(id(1, 77), neighbors, contexts)))) {
+			assertThat(index.pageCount()).isGreaterThan(1);
+			ImmutablePagedQuadCsfIndex.KeyCursor cursor = index.keyDomain(0, 0).cursor();
+			assertThat(cursor.advance()).isTrue();
+			assertThat(cursor.edgeCount()).isEqualTo(count);
+			AtomicLong polls = new AtomicLong();
+			cursor.cancellationPoll(polls::incrementAndGet);
+			long[] values = new long[1];
+			long[] weights = new long[1];
+			assertThat(cursor.copyFibers(count - 1L, 1, values, 0, weights, 0)).isEqualTo(1);
+			assertThat(values[0]).isEqualTo(neighbor);
+			assertThat(weights[0]).isEqualTo(1);
+			System.out.printf("CSF_FIBER_GAP_SEEK quads=%d pages=%d polls=%d%n", count, index.pageCount(),
+					polls.get());
+			assertThat(polls.get()).isLessThanOrEqualTo(4L * index.pageCount() + 16);
+		}
+	}
+
+	@Test
+	void interruptedUnindexedColumnSeeksCanBeRetried() {
+		for (boolean contextColumn : new boolean[] { false, true }) {
+			boolean found = false;
+			for (int count = 1_030; count <= 2_048 && !found; count++) {
+				long[] neighbors = new long[count];
+				long[] contexts = new long[count];
+				for (int i = 0; i < count; i++) {
+					neighbors[i] = id(1, contextColumn ? 1_000_000L : 1_000_000L + (long) i * i);
+					contexts[i] = contextColumn ? id(1, 1L + (long) i * i) : 0;
+				}
+				try (ImmutablePagedQuadCsfIndex index = build(1, 0, 0,
+						List.of(new Row(id(1, 77), neighbors, contexts)))) {
+					ImmutablePagedQuadCsfIndex.PageCursor pages = index.keyDomain(0, 0).pageCursor();
+					assertThat(pages.advance()).isTrue();
+					assertThat(pages.rootQuadCount(0)).isEqualTo(count);
+					int descriptor = UnsafeAccess.getIntLE(pages.nativeAddress()
+							+ CompactCsfPageFormat.ACCELERATOR_DESCRIPTOR_AT);
+					int shift = contextColumn ? CompactCsfPageAccelerators.CONTEXT_TAIL_PREFIX_CODE_SHIFT
+							: CompactCsfPageAccelerators.NEIGHBOR_PREFIX_CODE_SHIFT;
+					if (CompactCsfPageAccelerators.prefixStrideShift(descriptor, shift) >= 0) {
+						continue;
+					}
+					found = true;
+					System.out.printf("CSF_UNINDEXED_SEEK context=%s quads=%d%n", contextColumn, count);
+					ImmutablePagedQuadCsfIndex.KeyCursor cursor = index.keyDomain(0, 0).cursor();
+					assertThat(cursor.advance()).isTrue();
+					assertThat(cursor.edgeCount()).isEqualTo(count);
+					long[] actual = new long[1];
+					if (contextColumn) {
+						assertThat(cursor.copyPairs(0, 1, null, 0, actual, 0)).isEqualTo(1);
+					} else {
+						assertThat(cursor.copyPairs(0, 1, actual, 0, null, 0)).isEqualTo(1);
+					}
+					AtomicLong polls = new AtomicLong();
+					cursor.cancellationPoll(() -> {
+						if (polls.incrementAndGet() == 3) {
+							throw new IllegalStateException("interrupt seek");
+						}
+					});
+					assertThatThrownBy(() -> cursor.copyPairs(1_024, 1, contextColumn ? null : actual, 0,
+							contextColumn ? actual : null, 0)).isInstanceOf(IllegalStateException.class)
+									.hasMessage("interrupt seek");
+					cursor.cancellationPoll(null);
+					assertThat(cursor.copyPairs(1_024, 1, contextColumn ? null : actual, 0,
+							contextColumn ? actual : null, 0)).isEqualTo(1);
+					assertThat(actual[0]).isEqualTo((contextColumn ? contexts : neighbors)[1_024]);
+				}
+			}
+			assertThat(found).as("production encoder can emit a sufficiently large page without a prefix").isTrue();
+		}
+	}
+
+	@Test
+	void interruptedContextColumnInitializationCanBeRetried() {
+		int firstFibers = 600;
+		long[] neighbors = new long[firstFibers * 2];
+		long[] contexts = new long[neighbors.length];
+		for (int i = 0; i < firstFibers; i++) {
+			neighbors[2 * i] = neighbors[2 * i + 1] = id(1, 1_000L + i);
+			contexts[2 * i] = id(1, 1);
+			contexts[2 * i + 1] = id(1, 2);
+		}
+		long[] expected = { id(1, 7), id(1, 8) };
+		try (ImmutablePagedQuadCsfIndex index = build(1, 0, 0,
+				List.of(new Row(id(1, 10), neighbors, contexts),
+						new Row(id(1, 20), new long[] { id(1, 50), id(1, 50) }, expected)))) {
+			assertThat(index.pageCount()).isEqualTo(1);
+			ImmutablePagedQuadCsfIndex.KeyCursor cursor = index.keyDomain(0, 0).cursor();
+			assertThat(cursor.advance()).isTrue();
+			assertThat(cursor.advance()).isTrue();
+			assertThat(cursor.edgeCount()).isEqualTo(2);
+			long[] actual = new long[2];
+			cursor.cancellationPoll(() -> {
+				throw new IllegalStateException("interrupt initialization");
+			});
+			assertThatThrownBy(() -> cursor.copyPairs(0, 2, null, 0, actual, 0))
+					.isInstanceOf(IllegalStateException.class)
+					.hasMessage("interrupt initialization");
+			cursor.cancellationPoll(null);
+			assertThat(cursor.copyPairs(0, 2, null, 0, actual, 0)).isEqualTo(2);
+			assertThat(actual).containsExactly(expected);
 		}
 	}
 

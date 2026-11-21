@@ -16,6 +16,9 @@ import java.io.IOException;
 
 /** A single owned, bounded physical relation with independent demand-projected readers per batch. */
 interface NativeFactorProjections extends AutoCloseable {
+	/** The exact positive weight cannot be represented as a long; this is never a usable multiplicity. */
+	long UNAVAILABLE_WEIGHT = -1L;
+
 	/**
 	 * Permit repeated binding prefixes in disjoint additive relation partitions. Call before reading input, only when
 	 * all consumers merge partitions without changing semantics. Presence channels must deduplicate identities across
@@ -69,6 +72,34 @@ interface NativeFactorProjections extends AutoCloseable {
 	long value(int slot);
 
 	long multiplicity();
+
+	/**
+	 * Returns a positive exact weight, or {@link #UNAVAILABLE_WEIGHT} when this producer can prove that its own
+	 * arithmetic overflowed. Other failures must propagate. Producers without that proof retain the throwing contract.
+	 */
+	default long numericMultiplicity() {
+		return multiplicity();
+	}
+
+	static long addNumericWeight(long total, long weight) {
+		if ((total < 0L && total != UNAVAILABLE_WEIGHT) || weight <= 0L) {
+			throw new IllegalArgumentException("Invalid numeric projection weight");
+		}
+		if (total == UNAVAILABLE_WEIGHT) {
+			return total;
+		}
+		return total > Long.MAX_VALUE - weight ? UNAVAILABLE_WEIGHT : total + weight;
+	}
+
+	static long multiplyNumericWeights(long left, long right) {
+		if ((left <= 0L && left != UNAVAILABLE_WEIGHT) || (right <= 0L && right != UNAVAILABLE_WEIGHT)) {
+			throw new IllegalArgumentException("Invalid numeric projection weight");
+		}
+		if (left == UNAVAILABLE_WEIGHT || right == UNAVAILABLE_WEIGHT) {
+			return UNAVAILABLE_WEIGHT;
+		}
+		return left > Long.MAX_VALUE / right ? UNAVAILABLE_WEIGHT : left * right;
+	}
 
 	@Override
 	void close();

@@ -48,6 +48,9 @@ final class LmdbNativeDispatchLoop<C, T> {
 			LmdbNativeCostObservation observation) {
 	}
 
+	private record PendingSibling(String compiledId, LmdbNativeCandidate.KernelSibling recipe) {
+	}
+
 	private final LmdbNativeDecisionPoint point;
 	private final List<? extends LmdbNativeStrategy<C, T>> strategies;
 	private final TupleExpr explainTarget;
@@ -261,7 +264,8 @@ final class LmdbNativeDispatchLoop<C, T> {
 				}
 				entries.add(new LmdbNativeDecisionRecord.Entry(candidates.get(i).id(), true, null,
 						ranking.nanos()[i], ranking.expectedNanos()[i], ranking.eliminatedBy()[i],
-						consumedQuote(candidates.get(i)), ranking.quotedExpectedNanos()[i], ranking.estimated()[i]));
+						consumedQuote(candidates.get(i)), ranking.quotedExpectedNanos()[i], ranking.estimated()[i],
+						ranking.priceable()[i], candidates.get(i).missingPhysicalWork()));
 			}
 			for (String id : asked) {
 				if (declines.containsKey(id)) {
@@ -310,7 +314,7 @@ final class LmdbNativeDispatchLoop<C, T> {
 					if (directTag.equals(admitted.candidates.get(i).id())) {
 						ranking = new LmdbNativeSelector.Ranking(i, ranking.nanos(), ranking.expectedNanos(),
 								ranking.quotedExpectedNanos(), new String[admitted.candidates.size()], directReason,
-								ranking.estimated());
+								ranking.estimated(), ranking.priceable(), ranking.structurallyEligible());
 						mode = "direct";
 						break;
 					}
@@ -402,29 +406,44 @@ final class LmdbNativeDispatchLoop<C, T> {
 			int decisionSlot = -1;
 			int rankingRound = 0;
 			KernelRuntime.AllocationDeniedException budgetRefusal = null;
+			PendingSibling pendingSibling = null;
 			while (!admitted.candidates.isEmpty()) {
 				if (retry) {
 					restoreSharedRow();
 				}
 				LmdbNativeSelector.Ranking ranking = rank(admitted.candidates);
+				boolean siblingRetry = false;
+				if (pendingSibling != null) {
+					int sibling = interpretedSibling(admitted.candidates, ranking, pendingSibling);
+					if (sibling >= 0) {
+						ranking = preferSibling(ranking, sibling, pendingSibling.compiledId());
+						siblingRetry = true;
+					}
+					pendingSibling = null;
+				}
 				if (ranking.winner() < 0) {
 					break;
 				}
 				LmdbNativeCandidate<T> chosen = admitted.candidates.get(ranking.winner());
-				LmdbNativeDecisionRecord record = admitted.record(ranking, retry ? "retry " + mode : mode);
+				String selectionMode = siblingRetry ? "retry interpreted sibling" : retry ? "retry " + mode : mode;
+				LmdbNativeDecisionRecord record = admitted.record(ranking, selectionMode);
 				rankingRound++;
 				observe(record, label);
 				if (LmdbNativeExplain.recordsExecutionPaths(explainTarget)) {
 					decisionSlot = LmdbNativeExplain.recordDecision(explainTarget, point, decisionSlot,
 							record.metric());
+					boolean priced = ranking.priceable()[ranking.winner()];
 					LmdbNativeExplain.recordDecisionOutcome(explainTarget, "winner=" + chosen.id() + ";reason="
-							+ ranking.reason() + ";kind=" + (retry ? "RETRY" : "NORMAL") + ";expectedNanos="
-							+ String.format(java.util.Locale.ROOT, "%.0f", ranking.expectedNanos()[ranking.winner()]));
+							+ ranking.reason() + ";kind=" + (retry ? "RETRY" : priced ? "NORMAL" : "UNPRICED")
+							+ ";expectedNanos=" + (priced
+									? String.format(java.util.Locale.ROOT, "%.0f",
+											ranking.expectedNanos()[ranking.winner()])
+									: "unpriced"));
 				}
 				if (NativeStrategyDecisionEvent.enabled()) {
 					NativeStrategyDecisionEvent.commit(decisionId, rankingRound, label, record, advice);
 				}
-				logSelected(explainTarget, decisionId, label, chosen.id(), retry ? "retry " + mode : mode,
+				logSelected(explainTarget, decisionId, label, chosen.id(), selectionMode,
 						ranking.reason());
 				retry = true;
 				startAttemptOnSharedRow();
@@ -471,6 +490,10 @@ final class LmdbNativeDispatchLoop<C, T> {
 				}
 				admitted.candidates.remove(ranking.winner());
 				chosen.release().run();
+				if ("normal".equals(mode) && chosen.kernelSibling() != null
+						&& chosen.kernelSibling().tier() == LmdbNativeCandidate.KernelTier.COMPILED) {
+					pendingSibling = new PendingSibling(chosen.id(), chosen.kernelSibling());
+				}
 				if (forcedTag != null && admitted.forcingApplies && !admitted.deferred.isEmpty()) {
 					admitted.candidates.addAll(admitted.deferred);
 					admitted.deferred.clear();
@@ -490,6 +513,42 @@ final class LmdbNativeDispatchLoop<C, T> {
 			admitted.releaseAll(failure);
 			throw failure;
 		}
+	}
+
+	/** Match an independently admitted peer on its explicit recipe, worker grant and exact variant suffix. */
+	private static <T> int interpretedSibling(List<LmdbNativeCandidate<T>> candidates,
+			LmdbNativeSelector.Ranking ranking, PendingSibling pending) {
+		int found = -1;
+		for (int i = 0; i < candidates.size(); i++) {
+			LmdbNativeCandidate<T> candidate = candidates.get(i);
+			if (!ranking.structurallyEligible()[i] || candidate.kernelSibling() == null
+					|| !candidate.kernelSibling().isInterpretedSiblingOf(pending.recipe())
+					|| !variantSuffix(candidate.id()).equals(variantSuffix(pending.compiledId()))) {
+				continue;
+			}
+			if (found >= 0) {
+				// Ambiguous ownership is not proof that either proposal is the requested sibling.
+				return -1;
+			}
+			found = i;
+		}
+		return found;
+	}
+
+	private static String variantSuffix(String id) {
+		return id.substring(LmdbNativeCandidate.baseId(id).length());
+	}
+
+	private static LmdbNativeSelector.Ranking preferSibling(LmdbNativeSelector.Ranking ranking, int sibling,
+			String compiledId) {
+		String[] eliminated = ranking.eliminatedBy().clone();
+		String priceExclusion = eliminated[sibling];
+		eliminated[sibling] = null;
+		String reason = "Interpreted sibling of " + compiledId + " after its opening declined"
+				+ (priceExclusion == null ? "" : "; bypassed price exclusion: " + priceExclusion);
+		return new LmdbNativeSelector.Ranking(sibling, ranking.nanos(), ranking.expectedNanos(),
+				ranking.quotedExpectedNanos(), eliminated, reason, ranking.estimated(), ranking.priceable(),
+				ranking.structurallyEligible());
 	}
 
 	private void recordBudgetDecline(String id, Admitted admitted) {
@@ -619,7 +678,9 @@ final class LmdbNativeDispatchLoop<C, T> {
 		}
 		StringBuilder rendered = new StringBuilder();
 		StringBuilder features = new StringBuilder();
-		for (LmdbNativeCandidate<T> candidate : admitted.candidates) {
+		LmdbNativeSelector.Ranking ranking = rank(admitted.candidates);
+		for (int i = 0; i < admitted.candidates.size(); i++) {
+			LmdbNativeCandidate<T> candidate = admitted.candidates.get(i);
 			if (rendered.length() > 0) {
 				rendered.append(',');
 				features.append(',');
@@ -627,8 +688,9 @@ final class LmdbNativeDispatchLoop<C, T> {
 			LmdbNativeCostVector vector = consumedQuote(candidate);
 			rendered.append(candidate.id())
 					.append('=')
-					.append(String.format(java.util.Locale.ROOT, "%.0f",
-							prior.expected(vector) + LmdbNativeStaticPrior.fixedNanos(candidate.id())));
+					.append(ranking.priceable()[i]
+							? String.format(java.util.Locale.ROOT, "%.0f", ranking.quotedExpectedNanos()[i])
+							: "unpriced");
 			features.append(candidate.id()).append('=');
 			boolean first = true;
 			for (LmdbNativeCostVector.Feature feature : LmdbNativeCostVector.Feature.values()) {

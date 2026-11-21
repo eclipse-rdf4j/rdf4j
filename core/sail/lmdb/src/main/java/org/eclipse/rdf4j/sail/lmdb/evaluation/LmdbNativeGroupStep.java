@@ -60,6 +60,7 @@ import org.eclipse.rdf4j.sail.lmdb.LmdbPrefixRunPlan;
 import org.eclipse.rdf4j.sail.lmdb.LmdbQueryMemoryManager;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.codegen.KernelQueryCancelledException;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.codegen.KernelRuntime;
+import org.eclipse.rdf4j.sail.lmdb.factor.FactorProjectionLayout;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -176,8 +177,18 @@ final class NativeGroupStep implements NativeResultStep, LmdbNativePhysicalPlan 
 		return evaluateNative(bindings, null);
 	}
 
+	@Override
+	public NativeResultCursor evaluateNativeRelation(BindingSet bindings) {
+		return evaluateNative(bindings, null, true);
+	}
+
 	private NativeResultCursor evaluateNative(BindingSet bindings, NativeGroupResultCursor.GroupingPlan fixedPlan) {
-		if (fixedPlan == null && !requiresPhysicalResults()) {
+		return evaluateNative(bindings, fixedPlan, false);
+	}
+
+	private NativeResultCursor evaluateNative(BindingSet bindings, NativeGroupResultCursor.GroupingPlan fixedPlan,
+			boolean relationConsumer) {
+		if (fixedPlan == null && !relationConsumer && !requiresPhysicalResults()) {
 			return NativeResultSteps.open(ignored -> evaluate(bindings), bindings);
 		}
 		if (hasOptionalOnlyBinding(bindings)) {
@@ -229,18 +240,24 @@ final class NativeGroupStep implements NativeResultStep, LmdbNativePhysicalPlan 
 		boolean closeContext = evaluation != source && !SyntheticValueSource.inheritedEvaluation(evaluation);
 		if (fixedPlan != null) {
 			NativeAggregateExecutionEvent.Descriptor diagnostic = NativeAggregateExecutionEvent.describe(iteration,
-					fixedPlan.tag(), NativeAggregatePhysicalPlan.typed(fixedPlan, iteration));
+					fixedPlan.tag(), fixedPlan.physical(iteration));
 			try {
 				return diagnostic == null
-						? new NativeGroupResultCursor(null, iteration, evaluation.executionContext(), closeContext,
-								fixedPlan, true)
-						: diagnostic.open(() -> new NativeGroupResultCursor(null, iteration,
-								evaluation.executionContext(), closeContext, fixedPlan, true));
+						? openFixedGroup(iteration, evaluation.executionContext(), closeContext, fixedPlan)
+						: diagnostic.open(() -> openFixedGroup(iteration, evaluation.executionContext(), closeContext,
+								fixedPlan));
 			} catch (IOException failure) {
 				throw new QueryEvaluationException(failure);
 			}
 		}
 		return new NativeGroupResultCursor(this, iteration, evaluation.executionContext(), closeContext);
+	}
+
+	private static NativeResultCursor openFixedGroup(NativeGroupIteration iteration, NativeExecutionContext context,
+			boolean closeContext, NativeGroupResultCursor.GroupingPlan plan) {
+		NativeGroupResultCursor result = new NativeGroupResultCursor(null, iteration, context, closeContext, plan,
+				true);
+		return plan.sparse() == null || result.prepareSparse() ? result : null;
 	}
 
 	@Override
@@ -275,23 +292,48 @@ final class NativeGroupStep implements NativeResultStep, LmdbNativePhysicalPlan 
 			{
 				NativeGroupResultCursor.GroupingPlan ordered = NativeGroupResultCursor.orderedPlan(iteration, row);
 				NativeGroupResultCursor.GroupingPlan table = NativeGroupResultCursor.tablePlan(iteration);
-				for (NativeGroupResultCursor.GroupingPlan candidate : ordered == null ? List.of(table)
-						: List.of(ordered, table)) {
+				NativeGroupResultCursor.GroupingPlan sparse = NativeGroupResultCursor.sparsePlan(iteration, row);
+				List<NativeGroupResultCursor.GroupingPlan> candidates = new ArrayList<>();
+				candidates.add(table);
+				if (ordered != null) {
+					candidates.add(ordered);
+				}
+				if (sparse != null) {
+					candidates.add(sparse);
+				}
+				NativeGroupResultCursor.GroupingPlan boundTable = null;
+				NativePhysicalWorkQuote tableQuote = null;
+				boolean strictSparse = strictlyForcesSparse(iteration.forcedExecutionStrategy);
+				for (NativeGroupResultCursor.GroupingPlan candidate : candidates) {
 					SlotPlan input = NativeAggregatePhysicalPlan.bindLexicalInputs(candidate.input(), row);
-					if (input == null || NativeAggregateCostQuotes.describe(input, row, row.boundMask()) == null) {
+					if (input == null || candidate.sparse() == null
+							&& NativeAggregateCostQuotes.describe(input, row, row.boundMask()) == null
+							|| candidate.sparse() != null && (NativePhysicalInputRecipe.capture(input) == null
+									|| !strictSparse && (boundTable == null
+											|| !NativeGroupResultCursor.allowsReorderedGrouping(iteration)
+													&& (!SlotPlan.budgetRetrySafe(input)
+															|| !SlotPlan.budgetRetrySafe(boundTable.input()))))) {
 						continue;
 					}
 					NativeGroupResultCursor.GroupingPlan bound = new NativeGroupResultCursor.GroupingPlan(input,
-							candidate.channels(), candidate.streaming(), candidate.tag());
+							candidate.channels(), candidate.streaming(), candidate.tag(), candidate.sparse());
+					NativeAggregatePhysicalPlan physical = candidate.sparse() == null || strictSparse
+							? bound.physical(iteration)
+							: NativeAggregatePhysicalPlan.sparseWithFallback(bound, tableQuote,
+									NativeAggregatePhysicalPlan.groupProperties(boundTable, groupSlots, aggregates));
 					LmdbNativeStrategyProposal<NativeGroupResultCursor.GroupingPlan> proposal = quotes.attach(
 							new LmdbNativeStrategyProposal<NativeGroupResultCursor.GroupingPlan>(() -> bound,
 									input.estimateWork(row, row.boundMask()),
 									bound.tag(), () -> {
-									}).withAggregatePhysicalPlan(
-											NativeAggregatePhysicalPlan.typed(bound, iteration)));
+									}).withAggregatePhysicalPlan(physical));
 					plans.put(proposal, bound);
 					proposalsByTag.put(proposal.tag, proposal);
 					offers.offer(proposal.tag, () -> proposal);
+					if (candidate == table) {
+						boundTable = bound;
+						tableQuote = proposal.typedQuote() == null ? proposal.directTimingQuote()
+								: proposal.typedQuote();
+					}
 				}
 				LmdbNativeCandidate<NativeGroupResultCursor.GroupingPlan> choice = new LmdbNativeDispatchLoop<>(
 						LmdbNativeDecisionPoint.GROUP_PHYSICAL, offers.strategies(), originalExpr)
@@ -305,19 +347,29 @@ final class NativeGroupStep implements NativeResultStep, LmdbNativePhysicalPlan 
 				NativeGroupResultCursor.GroupingPlan bound = plans.get(chosen);
 				NativeAggregateCostQuotes.Input child = NativeAggregateCostQuotes.describe(bound.input(), row,
 						row.boundMask());
+				if (child == null || !Double.isFinite(child.rows()) || child.rows() < 0D) {
+					return null;
+				}
 				NativePhysicalWorkQuote chosenEstimate = chosen.typedQuote();
 				if (chosenEstimate == null) {
 					chosenEstimate = chosen.directTimingQuote();
 				}
 				double highRows = groupSlots.length == 0 ? 1D : child.highRows();
 				double lowRows = groupSlots.length == 0 && havingCondition == null ? 1D : 0D;
-				NativeAggregateCostQuotes.Input output = new NativeAggregateCostQuotes.Input(highRows,
+				// Every input row may establish a distinct group; the separate upper bound can remain unbounded.
+				double expectedRows = groupSlots.length == 0 ? 1D : child.rows();
+				NativeAggregateCostQuotes.Input output = new NativeAggregateCostQuotes.Input(expectedRows,
 						0D, 0D, 0D, 0D, lowRows, highRows, chosenEstimate.total(),
 						chosenEstimate.workEvidence().inherited());
 				NativePhysicalOutputEvidence evidence = NativePhysicalOutputEvidence.grouped(output, bound, iteration,
 						chosen.aggregatePhysicalPlan(), chosen.coldAnchor());
-				return physicalResult(bound, output, evidence, quotes.snapshot(iteration.forcedExecutionStrategy),
-						iteration.decisionPoint());
+				if (bound.sparse() != null && evidence == null) {
+					return null;
+				}
+				NativeGroupResultCursor.GroupingPlan fallback = bound.sparse() == null || strictSparse ? null
+						: boundTable;
+				return physicalResult(bound, fallback, output, evidence,
+						quotes.snapshot(iteration.forcedExecutionStrategy), iteration.decisionPoint());
 			}
 		} catch (IOException problem) {
 			QueryEvaluationException converted = new QueryEvaluationException(problem);
@@ -341,13 +393,29 @@ final class NativeGroupStep implements NativeResultStep, LmdbNativePhysicalPlan 
 		}
 	}
 
+	private static boolean strictlyForcesSparse(String forced) {
+		if (forced == null) {
+			return false;
+		}
+		List<String> options = LmdbNativeForceableStrategies.options(forced);
+		return options.size() == 1 && LmdbNativeForceableStrategies.matches(options.get(0),
+				LmdbNativeAttemptMetrics.PATH_SPARSE_JOIN_AGGREGATE);
+	}
+
 	private NativePhysicalResultPlan physicalResult(NativeGroupResultCursor.GroupingPlan bound,
+			NativeGroupResultCursor.GroupingPlan fallback,
 			NativeAggregateCostQuotes.Input output, NativePhysicalOutputEvidence evidence,
 			NativeAggregateCostQuotes.Snapshot snapshot, String decisionPoint) {
 		NativeResultStep executable = new NativeResultStep() {
 			@Override
 			public NativeResultCursor evaluateNative(BindingSet input) {
-				return NativeGroupStep.this.evaluateNative(input, bound);
+				if (bound.sparse() != null
+						&& (!evidence.matchesEntry(input) || !evidence.sourceFamilyMatches(source))) {
+					throw new QueryEvaluationException(
+							"The selected sparse physical child has a different input or source");
+				}
+				return bound.sparse() == null ? NativeGroupStep.this.evaluateNative(input, bound)
+						: openRetainedSparse(input, bound, fallback);
 			}
 
 			@Override
@@ -363,28 +431,125 @@ final class NativeGroupStep implements NativeResultStep, LmdbNativePhysicalPlan 
 		NativeResultStep selected = new NativeSelectedResultStep(executable, previewIdentity(), bound.input(),
 				originalExpr, snapshot, bound.tag(), decisionPoint);
 		return new NativePhysicalResultPlan(selected, output,
-				evidence == null || !NativeWorkerPlanBinder.canBind(bound.input()) ? null
-						: (prepared, worker, bindings) -> {
-							if (!(prepared instanceof NativeGroupStep actual)
-									|| !evidence.sourceFamilyMatches(actual.source)
-									|| strictCompare != actual.strictCompare
-									|| !Objects.equals(havingCondition, actual.havingCondition)
-									|| queryExecutionPolicy() != actual.queryExecutionPolicy()
-									|| !Set.copyOf(Arrays.asList(optionalOnlyNames))
-											.equals(Set.copyOf(Arrays.asList(actual.optionalOnlyNames)))
-									|| !evidence.matchesGrouping(actual.arg, actual.groupSlots, actual.aggregates,
-											actual.layout,
-											worker.source(), bindings)) {
-								return null;
-							}
-							SlotPlan input = NativeAggregatePhysicalPlan.rebindInput(bound.input(), actual.arg, worker);
-							return input == null ? null
-									: actual.physicalResult(new NativeGroupResultCursor.GroupingPlan(input,
-											bound.channels(), bound.streaming(), bound.tag()), output, evidence,
-											snapshot,
-											decisionPoint);
-						},
-				NativeAggregatePhysicalPlan.groupProperties(bound, groupSlots, aggregates), evidence);
+				evidence == null || !NativeWorkerPlanBinder.canBind(bound.input())
+						|| fallback != null && !NativeWorkerPlanBinder.canBind(fallback.input()) ? null
+								: (prepared, worker, bindings) -> {
+									if (!(prepared instanceof NativeGroupStep actual)
+											|| !evidence.sourceFamilyMatches(actual.source)
+											|| bound.sparse() != null
+													&& (!evidence.sparseWorkerSourceMatches(worker.source())
+															|| !evidence.sparseWorkerSourceMatches(actual.source))
+											|| strictCompare != actual.strictCompare
+											|| !Objects.equals(havingCondition, actual.havingCondition)
+											|| queryExecutionPolicy() != actual.queryExecutionPolicy()
+											|| !Set.copyOf(Arrays.asList(optionalOnlyNames))
+													.equals(Set.copyOf(Arrays.asList(actual.optionalOnlyNames)))
+											|| !evidence.matchesGrouping(actual.arg, actual.groupSlots,
+													actual.aggregates,
+													actual.layout,
+													worker.source(), bindings)) {
+										return null;
+									}
+									SlotPlan input = NativeAggregatePhysicalPlan.rebindInput(bound.input(), actual.arg,
+											worker);
+									if (input == null) {
+										return null;
+									}
+									LmdbSparseJoinAggregatePlan sparse = bound.sparse() == null ? null
+											: bound.sparse()
+													.rebind(input, actual.groupSlots, actual.aggregates,
+															actual.havingCondition);
+									if (bound.sparse() != null && sparse == null) {
+										return null;
+									}
+									SlotPlan fallbackInput = fallback == null ? null
+											: NativeAggregatePhysicalPlan.rebindInput(fallback.input(), actual.arg,
+													worker);
+									if (fallback != null && fallbackInput == null) {
+										return null;
+									}
+									NativeGroupResultCursor.GroupingPlan reboundFallback = fallback == null ? null
+											: new NativeGroupResultCursor.GroupingPlan(fallbackInput,
+													fallback.channels(),
+													fallback.streaming(), fallback.tag());
+									return actual.physicalResult(new NativeGroupResultCursor.GroupingPlan(input,
+											bound.channels(), bound.streaming(), bound.tag(), sparse), reboundFallback,
+											output,
+											evidence, snapshot, decisionPoint);
+								},
+				NativeAggregatePhysicalPlan.groupProperties(bound, groupSlots, aggregates)
+						+ (fallback == null ? ""
+								: ";FIXED_FALLBACK="
+										+ NativeAggregatePhysicalPlan.groupProperties(fallback, groupSlots,
+												aggregates)),
+				evidence);
+	}
+
+	/** One frozen speculative producer owns its filters until it publishes or replays the fixed table arm. */
+	private NativeResultCursor openRetainedSparse(BindingSet input, NativeGroupResultCursor.GroupingPlan bound,
+			NativeGroupResultCursor.GroupingPlan fallback) {
+		NativeFilterLease filters = new NativeFilterLease();
+		try {
+			SlotPlan borrowed = filters.borrow(bound.input());
+			LmdbSparseJoinAggregatePlan sparse = bound.sparse()
+					.rebind(borrowed, groupSlots, aggregates,
+							havingCondition);
+			if (sparse == null) {
+				filters.discard();
+				return openRetainedFallback(input, fallback, false);
+			}
+			NativeGroupResultCursor.GroupingPlan attempt = new NativeGroupResultCursor.GroupingPlan(borrowed,
+					bound.channels(), bound.streaming(), bound.tag(), sparse);
+			NativeResultCursor result = evaluateNative(input, attempt);
+			if (result == null) {
+				filters.discard();
+				return openRetainedFallback(input, fallback, false);
+			}
+			try {
+				filters.commit();
+			} catch (RuntimeException | Error failure) {
+				Throwable closed = KernelRuntime.closeResource(result, failure);
+				if (EncounterOrderFallback.find(closed) != null) {
+					throw new QueryEvaluationException("Sparse filter cleanup failed", closed);
+				}
+				NativeContextClosingIteration.throwFailure(closed);
+				throw new AssertionError("unreachable");
+			}
+			return result;
+		} catch (EncounterOrderFallback signal) {
+			try {
+				NativeGroupIteration.throwRealFailureSuppressedBy(signal);
+				NativeCancellationToken.forSource(source).check();
+			} catch (RuntimeException | Error failure) {
+				filters.abort(failure);
+				throw failure;
+			}
+			if (fallback == null || !SlotPlan.budgetRetrySafe(bound.input())
+					|| !SlotPlan.budgetRetrySafe(fallback.input())) {
+				filters.abort(signal);
+				NativeGroupIteration.throwRealFailureSuppressedBy(signal);
+				throw new QueryEvaluationException(
+						"The selected sparse physical child cannot preserve encounter order");
+			}
+			filters.discard();
+			return openRetainedFallback(input, fallback, true);
+		} catch (RuntimeException | Error failure) {
+			filters.abort(failure);
+			throw failure;
+		}
+	}
+
+	private NativeResultCursor openRetainedFallback(BindingSet input, NativeGroupResultCursor.GroupingPlan fallback,
+			boolean encounterOrder) {
+		NativeCancellationToken.forSource(source).check();
+		if (fallback == null) {
+			throw new QueryEvaluationException(encounterOrder
+					? "The selected sparse physical child cannot preserve encounter order"
+					: "The selected sparse physical child could not be opened");
+		}
+		LmdbNativeExplain.recordExecutionPath(originalExpr,
+				LmdbNativeAttemptMetrics.PATH_NESTED_LOOP + "(sparseFallback)");
+		return evaluateNative(input, fallback);
 	}
 
 	Object previewIdentity() {
@@ -715,6 +880,7 @@ final class NativeGroupIteration implements CloseableIteration<BindingSet>, Coop
 	final long prefixMinRunCount;
 	final LmdbNativeExistsIntersection existsIntersection;
 	final LmdbAdjacencyAggregatePlan adjacencyAggregate;
+	final LmdbSparseJoinAggregatePlan sparseJoinAggregate;
 	LmdbNativeTypeMatrix typeMatrix;
 	List<NativeGroupStep.Alternative> alternatives = List.of();
 	/** The externally enforced HAVING condition, offered to the aggregate kernel as a sinkable pre-filter. */
@@ -841,6 +1007,7 @@ final class NativeGroupIteration implements CloseableIteration<BindingSet>, Coop
 		this.prefixMinRunCount = prefixMinRunCount;
 		this.existsIntersection = existsIntersection;
 		this.adjacencyAggregate = adjacencyAggregate;
+		this.sparseJoinAggregate = LmdbSparseJoinAggregatePlan.tryCreate(arg, groupSlots, aggregates, havingCondition);
 		this.havingCondition = havingCondition;
 		this.explainTarget = explainTarget;
 		this.cancellation = cancellation;
@@ -1017,6 +1184,10 @@ final class NativeGroupIteration implements CloseableIteration<BindingSet>, Coop
 	private boolean requiresSerialDispatch() {
 		return containsSerialComputedValueCopy(arg) || AggregateSpec.anyFullRowDistinct(aggregates)
 				|| !SlotPlan.encounterOrderReplaySafe(arg);
+	}
+
+	boolean mayRetryBudgetRefusal() {
+		return !requiresSerialDispatch() && !requiresOpaqueEncounterOrder() && SlotPlan.budgetRetrySafe(arg);
 	}
 
 	/** Opaque reducers must receive every logical input in its original encounter order. */
@@ -1303,22 +1474,54 @@ final class NativeGroupIteration implements CloseableIteration<BindingSet>, Coop
 					metrics.deferStrategy(explainTarget, LmdbNativeAttemptMetrics.PATH_INDEXED_COUNT);
 					return List.of(toBindingSet(null, state, count > 0L));
 				}, LmdbNativeAttemptMetrics.PATH_INDEXED_COUNT, indexedCountWork);
-				// an exact index cardinality answers the count without producing a row, so every row-producing
-				// count is dominated by construction (measured fastest at 3000 and 15000 people, 2026-11-02)
-				proposal = proposal.withDominates(Set.of(LmdbNativeAttemptMetrics.PATH_NESTED_LOOP,
-						LmdbNativeAttemptMetrics.PATH_PREFIX_RUN_GROUPS,
-						LmdbNativeAttemptMetrics.PATH_IR_AGGREGATE,
-						LmdbNativeAttemptMetrics.PATH_IR_AGGREGATE_INTERPRETED,
-						LmdbNativeAttemptMetrics.PATH_IR_AGGREGATE_PARALLEL,
-						LmdbNativeAttemptMetrics.PATH_IR_AGGREGATE_PARALLEL_INTERPRETED,
-						LmdbNativeAttemptMetrics.PATH_PARALLEL_AGGREGATION));
-				proposal = proposal.withOptionalAggregatePhysicalPlan(indexedCount.physicalPlan(preparedCount));
+				NativeAggregatePhysicalPlan physical = indexedCount.physicalPlan(preparedCount);
+				if (preparedCount != null && physical != null) {
+					// Only the retained source-proved metadata operation guarantees that the count avoids row
+					// enumeration. A generic source count may scan, so it cannot dominate row-producing plans.
+					proposal = proposal.withDominates(Set.of(LmdbNativeAttemptMetrics.PATH_NESTED_LOOP,
+							LmdbNativeAttemptMetrics.PATH_PREFIX_RUN_GROUPS,
+							LmdbNativeAttemptMetrics.PATH_IR_AGGREGATE,
+							LmdbNativeAttemptMetrics.PATH_IR_AGGREGATE_INTERPRETED,
+							LmdbNativeAttemptMetrics.PATH_IR_AGGREGATE_PARALLEL,
+							LmdbNativeAttemptMetrics.PATH_IR_AGGREGATE_PARALLEL_INTERPRETED,
+							LmdbNativeAttemptMetrics.PATH_PARALLEL_AGGREGATION));
+				}
+				proposal = proposal.withOptionalAggregatePhysicalPlan(physical);
 				NativeAggregatePhysicalPlan.ColdAnchor coldAnchor = indexedCount.coldAnchor(preparedCount);
 				return coldAnchor == null ? proposal : proposal.withColdAnchor(coldAnchor);
 			});
 		}
 		for (NativeGroupStep.Alternative alternative : alternatives) {
 			if (base.isEmpty()) {
+				if (alternative.step() instanceof NativeAggregateAlternative.WithVariants physical) {
+					arbiter.offerVariants(() -> {
+						List<NativeAggregateAlternative.Variant> variants = physical.prepareVariants(row,
+								alternative.tag(), forcedExecutionStrategy);
+						List<LmdbNativeStrategyProposal<List<BindingSet>>> proposals = new ArrayList<>(variants.size());
+						LmdbNativeStrategyProposal<List<BindingSet>> current = null;
+						try {
+							for (NativeAggregateAlternative.Variant variant : variants) {
+								NativeAggregateAlternative.Prepared prepared = variant.prepared();
+								current = estimatedProposal(() -> evaluateAlternative(alternative, prepared, row),
+										variant.tag(), prepared.estimateWork());
+								current.withAggregatePhysicalPlan(
+										new NativeAggregatePhysicalPlan(arg, prepared.retention(), prepared));
+								proposals.add(current);
+								current = null;
+							}
+							return proposals;
+						} catch (RuntimeException | Error failure) {
+							Throwable retained = failure;
+							for (LmdbNativeStrategyProposal<List<BindingSet>> proposal : proposals) {
+								retained = KernelRuntime.closeResource(proposal, retained);
+							}
+							retained = KernelRuntime.closeResource(current, retained);
+							KernelRuntime.rethrowCloseFailureIfNotPrimary(retained, failure);
+							throw failure;
+						}
+					});
+					continue;
+				}
 				arbiter.offer(() -> {
 					NativeAggregateAlternative.Prepared prepared = alternative
 							.step() instanceof NativeAggregateAlternative physical
@@ -1351,31 +1554,48 @@ final class NativeGroupIteration implements CloseableIteration<BindingSet>, Coop
 					"The adjacency index is not serving this source; the metadata path would fall back to scans");
 		}
 		if (adjacencyProfile != null && adjacencyProfile.adjacencyPossible()) {
+			arbiter.offer(() -> {
+				LmdbNativeStrategyProposal<List<BindingSet>> proposal = estimatedProposal(() -> {
+					List<BindingSet> result = adjacencyAggregate.evaluate(this, row);
+					if (result != null) {
+						metrics.deferStrategy(explainTarget,
+								LmdbNativeAttemptMetrics.PATH_ADJACENCY_AGGREGATE);
+					}
+					return result;
+				}, LmdbNativeAttemptMetrics.PATH_ADJACENCY_AGGREGATE, adjacencyAggregate.estimateWork(row))
+						.withAggregatePhysicalPlan(new NativeAggregatePhysicalPlan(arg,
+								NativeAggregatePhysicalPlan.Retention.STREAMING, adjacencyAggregate));
+				if (adjacencyAggregate.hasExpandedGroups()) {
+					return proposal;
+				}
+				// measured (2026-11-02, both sizes): the metadata walk costs 1.13 to 1.15 times a prefix-run
+				// scan of the same pattern, while its metadata-lookup quote was 0.1 to 0.4 of it
+				return proposal.withCostQuote(LmdbNativeCostQuote.streaming(
+						LmdbNativeCostVectors.plan(arg, row, row.boundMask(),
+								LmdbNativeCostVector.Feature.SCANNED_ROW)
+								.plus(LmdbNativeCostVectors.perRow(LmdbNativeCostVector.Feature.GROUP_UPDATE,
+										LmdbNativeWork.rowsOut(arg, row, row.boundMask()) / 16D))
+								.scale(1.15D),
+						groupSlots.length == 0 ? 1D : Double.NaN))
+						// the metadata summaries answer without walking index keys or decoding rows; measured faster
+						// than prefix runs on every shape where both were admitted (3000 people, 2026-11-02: 251 vs
+						// 572,
+						// 287 vs 314, 315 vs 1237, 1694 vs 2342 µs)
+						.withDominates(Set.of(LmdbNativeAttemptMetrics.PATH_PREFIX_RUN_GROUPS,
+								LmdbNativeAttemptMetrics.PATH_NESTED_LOOP,
+								LmdbNativeAttemptMetrics.PATH_ORDERED_SINGLE_PATTERN_GROUPS));
+			});
+		}
+		LmdbSparseJoinAggregatePlan sparse = sparseJoinAggregate == null ? null : sparseJoinAggregate.prepare(row);
+		if (sparse != null && (forcedExecutionStrategy != null || sparse.automaticCandidate(row))) {
 			arbiter.offer(() -> estimatedProposal(() -> {
-				List<BindingSet> result = adjacencyAggregate.evaluate(this, row);
+				List<BindingSet> result = sparse.evaluate(this, row);
 				if (result != null) {
-					metrics.deferStrategy(explainTarget,
-							LmdbNativeAttemptMetrics.PATH_ADJACENCY_AGGREGATE);
+					metrics.deferStrategy(explainTarget, LmdbNativeAttemptMetrics.PATH_SPARSE_JOIN_AGGREGATE);
 				}
 				return result;
-			}, LmdbNativeAttemptMetrics.PATH_ADJACENCY_AGGREGATE, adjacencyAggregate.estimateWork(row))
-					.withAggregatePhysicalPlan(new NativeAggregatePhysicalPlan(arg,
-							NativeAggregatePhysicalPlan.Retention.STREAMING, adjacencyAggregate))
-					// measured (2026-11-02, both sizes): the metadata walk costs 1.13 to 1.15 times a prefix-run
-					// scan of the same pattern, while its metadata-lookup quote was 0.1 to 0.4 of it
-					.withCostQuote(LmdbNativeCostQuote.streaming(
-							LmdbNativeCostVectors.plan(arg, row, row.boundMask(),
-									LmdbNativeCostVector.Feature.SCANNED_ROW)
-									.plus(LmdbNativeCostVectors.perRow(LmdbNativeCostVector.Feature.GROUP_UPDATE,
-											LmdbNativeWork.rowsOut(arg, row, row.boundMask()) / 16D))
-									.scale(1.15D),
-							groupSlots.length == 0 ? 1D : Double.NaN))
-					// the metadata summaries answer without walking index keys or decoding rows; measured faster
-					// than prefix runs on every shape where both were admitted (3000 people, 2026-11-02: 251 vs 572,
-					// 287 vs 314, 315 vs 1237, 1694 vs 2342 µs)
-					.withDominates(Set.of(LmdbNativeAttemptMetrics.PATH_PREFIX_RUN_GROUPS,
-							LmdbNativeAttemptMetrics.PATH_NESTED_LOOP,
-							LmdbNativeAttemptMetrics.PATH_ORDERED_SINGLE_PATTERN_GROUPS)));
+			}, LmdbNativeAttemptMetrics.PATH_SPARSE_JOIN_AGGREGATE, LmdbNativeWork.UNKNOWN)
+					.withAggregatePhysicalPlan(new NativeAggregatePhysicalPlan(arg, sparse.retention(), sparse)));
 		}
 		if (typeMatrix != null && base.isEmpty()) {
 			arbiter.offer(() -> estimatedProposal(this::evaluateTypeMatrixFallback,
@@ -1428,7 +1648,7 @@ final class NativeGroupIteration implements CloseableIteration<BindingSet>, Coop
 						? synthetic.executionContext()
 						: null;
 				try (NativeReplayBindingList.Builder results = collectResults()) {
-					results.drain(encounterOrdered.open(this, owner));
+					results.drain(encounterOrdered.open(this, row, owner));
 					metrics.deferStrategy(explainTarget, encounterOrdered.tag());
 					return results.finish();
 				}
@@ -1716,8 +1936,7 @@ final class NativeGroupIteration implements CloseableIteration<BindingSet>, Coop
 							.sharedRow(row)
 							.forcing(forcedExecutionStrategy)
 							.advice(LmdbNativeAdvisoryLearner.scope(row, originalArg))
-							.budgetRefusals(!requiresSerialDispatch() && !requiresOpaqueEncounterOrder()
-									&& SlotPlan.encounterOrderReplaySafe(arg))
+							.budgetRefusals(mayRetryBudgetRefusal())
 							.eager();
 			if (LmdbNativeStrategyPreview.active()) {
 				if (existsIntersection != null) {
@@ -1876,25 +2095,84 @@ final class NativeGroupIteration implements CloseableIteration<BindingSet>, Coop
 	private LmdbNativeStrategyProposal<List<BindingSet>> withKernelQuote(
 			LmdbNativeStrategyProposal<List<BindingSet>> proposal, RowState row, String tag, int workers,
 			LmdbNativeKernelExecution.AggregateAdmission admission) {
+		if (proposal.aggregatePhysicalPlan() == null && admission.lowered().bindings.planRequests.length != 0) {
+			// A PlanRows bridge opens its own input recipe and aggregate sink. The legacy scalar work interval does
+			// not establish their physical grain, transport or storage, even if its logical row estimate is finite.
+			// Preserve any describable child work as partial evidence until the complete executable recipe is proved.
+			proposal.withAggregatePhysicalPlan(new NativeAggregatePhysicalPlan(arg, null));
+		}
+		// Admission can lower the two tiers to different physical families. Pair only the same retained lowered
+		// recipe and worker mode, never labels that merely happen to differ by "Interpreted".
+		proposal.withKernelSibling(new LmdbNativeCandidate.KernelSibling(LmdbNativeCandidate.KernelFamily.AGGREGATE,
+				this, List.of(admission.lowered().kernel.shapeKey(), workers > 0), Math.max(1, workers),
+				admission.interpreted() ? LmdbNativeCandidate.KernelTier.INTERPRETED
+						: LmdbNativeCandidate.KernelTier.COMPILED));
 		LmdbNativeCostQuote quote = kernelQuote(arg, row, tag, workers, admission);
 		if (quote == null) {
 			// Keep the existing physical access algorithm and its quote. Legacy work already charges one
 			// assignment per copy, but does not describe the nested expression evaluated by a BIND hook.
 			LmdbNativeCostVector scalar = NativeScalarCosts.additionalForKernel(arg, row, row.boundMask(),
 					admission.lowered().bindings);
-			if (!scalar.isZero()) {
+			LmdbNativeCostVector projectedGroups = projectedKernelGroupWork(arg, row, admission);
+			if (!scalar.isZero() || projectedGroups != null) {
 				quote = LmdbNativeStrategyProposal.quote(proposal);
+				LmdbNativeCostVector additional = projectedGroups == null ? scalar : scalar.plus(projectedGroups);
 				if (workers > 0) {
 					LmdbNativeStaticPrior.ParallelShape shape = LmdbNativeStaticPrior.ParallelShape.aggregate(
 							arg, row, row.boundMask(), groupSlots);
-					scalar = scalar.scale(1D / LmdbNativeStaticPrior.parallelSpeedup(shape, workers));
+					additional = additional.scale(1D / LmdbNativeStaticPrior.parallelSpeedup(shape, workers));
 				}
-				quote = new LmdbNativeCostQuote(quote.startup(), quote.streaming().plus(scalar), quote.outputRows(),
+				quote = new LmdbNativeCostQuote(quote.startup(), quote.streaming().plus(additional), quote.outputRows(),
 						quote.ordered(), quote.distinct(), quote.chunked(), quote.inputSpread(),
 						quote.outputProvenEmpty());
 			}
 		}
 		return proposal.withOptionalCostQuote(quote);
+	}
+
+	/** Price group updates for the exact packed projections a single plan-backed IR aggregate consumes. */
+	private static LmdbNativeCostVector projectedKernelGroupWork(SlotPlan input, RowState row,
+			LmdbNativeKernelExecution.AggregateAdmission admission) {
+		LmdbNativeKernelIr.Kernel kernel = admission.lowered().kernel;
+		if (!(input instanceof MultiJoinPlan join) || kernel.pipeline.size() != 1
+				|| !(kernel.pipeline.getFirst() instanceof LmdbNativeKernelIr.PlanRows producer)
+				|| producer instanceof LmdbNativeKernelIr.PlanFactors) {
+			return null;
+		}
+		boolean weighted = LmdbNativeKernelIr.weightedPlanCount(kernel);
+		LmdbNativeKernelIr.AggregateProjections projections = kernel.aggregateProjections;
+		if (!weighted && projections == null) {
+			return null;
+		}
+		LmdbNativeKernelBindings.PlanRequest request = admission.lowered().bindings.planRequests[producer.plan];
+		if (request.plan != input || request.inputSlots.length != 0 || !request.batchSafe) {
+			return null;
+		}
+		int[][] outputSlots;
+		int[] channels;
+		if (weighted) {
+			outputSlots = new int[][] { request.outputSlots };
+			channels = new int[] { 1 };
+		} else {
+			FactorProjectionLayout layout = projections.layout;
+			outputSlots = new int[layout.size()][];
+			channels = new int[layout.size()];
+			for (int i = 0; i < outputSlots.length; i++) {
+				int[] columns = layout.columns(i);
+				outputSlots[i] = new int[columns.length];
+				for (int column = 0; column < columns.length; column++) {
+					outputSlots[i][column] = request.outputSlots[columns[column]];
+				}
+				channels[i] = layout.channels(i).length;
+			}
+		}
+		LmdbNativePackedFtree.Plan plan = LmdbNativePackedFtree.Planner.plan(join, row, request.outputSlots);
+		LmdbNativeCostVector work = plan == null ? null
+				: LmdbNativePackedFtreeQuote.projectedGroupWork(plan, row,
+						outputSlots, channels, LmdbNativeWork.rowsOut(input, row, row.boundMask()));
+		return work != null ? work
+				: LmdbNativeCostVector.bounds(LmdbNativeCostVector.Feature.GROUP_UPDATE,
+						0D, 0D, LmdbNativeCostQuote.UNBOUNDED_COUNT);
 	}
 
 	private LmdbNativeCostQuote kernelQuote(SlotPlan input, RowState row, String tag, int quotedWorkers,
@@ -2890,6 +3168,7 @@ final class NativeGroupIteration implements CloseableIteration<BindingSet>, Coop
 	/** Variant with an explicit value source so parallel workers resolve group values through their own sibling. */
 	BindingSet toBindingSet(NativeLmdbQuerySource valueSource, GroupKey key, AggState state, boolean sawRow) {
 		cancellation.check();
+		state.checkProjectedNumericWeights();
 		QueryBindingSet result = new QueryBindingSet(groupSlots.length + aggregates.length);
 		if (key != null) {
 			for (int i = 0; i < groupSlots.length; i++) {
@@ -2925,6 +3204,7 @@ final class NativeGroupIteration implements CloseableIteration<BindingSet>, Coop
 
 	NativeResultRow toPhysicalRow(GroupKey key, AggState state, boolean sawRow) {
 		cancellation.check();
+		state.checkProjectedNumericWeights();
 		physicalSchema();
 		NativeResultCell[] cells = new NativeResultCell[groupSlots.length + aggregates.length];
 		for (int index = 0; index < groupSlots.length; index++) {

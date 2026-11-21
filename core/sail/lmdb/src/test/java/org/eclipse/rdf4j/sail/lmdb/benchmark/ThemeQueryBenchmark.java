@@ -91,7 +91,7 @@ import org.openjdk.jmh.runner.options.OptionsBuilder;
 import org.openjdk.jmh.runner.options.TimeValue;
 
 @State(Scope.Benchmark)
-@Warmup(iterations = 3, batchSize = 1, timeUnit = TimeUnit.MILLISECONDS, time = 1000)
+@Warmup(iterations = 5, batchSize = 1, timeUnit = TimeUnit.MILLISECONDS, time = 1000)
 @BenchmarkMode({ Mode.AverageTime })
 @Fork(value = 1, jvmArgs = { "-Xms1G", "-Xmx16G", "-Drdf4j.lmdb.directAdjacency.synchronousMaintenance=true",
 		"-Drdf4j.lmdb.themeQueryBenchmark.waitForDirectAdjacency=true",
@@ -192,17 +192,17 @@ public class ThemeQueryBenchmark {
 
 	@Param({
 			"MEDICAL_RECORDS",
-			"SOCIAL_MEDIA",
-			"LIBRARY",
-			"ENGINEERING",
-			"HIGHLY_CONNECTED",
-			"TRAIN",
-			"ELECTRICAL_GRID",
-			"PHARMA",
-			"ADAPTIVE_FILTER_PLACEMENT",
-			"ANALYTICS",
-			"EXPLORATION",
-			"DATA_TRANSFORMATION"
+//			"SOCIAL_MEDIA",
+//			"LIBRARY",
+//			"ENGINEERING",
+//			"HIGHLY_CONNECTED",
+//			"TRAIN",
+//			"ELECTRICAL_GRID",
+//			"PHARMA",
+//			"ADAPTIVE_FILTER_PLACEMENT",
+//			"ANALYTICS",
+//			"EXPLORATION",
+//			"DATA_TRANSFORMATION"
 	})
 	public String themeName;
 
@@ -317,7 +317,14 @@ public class ThemeQueryBenchmark {
 //				}
 //				System.out.println(connection.size() + " statements in store after setup");
 //			}
-
+			try (SailRepositoryConnection connection = repository.getConnection()) {
+				System.out.println("### Optimized Query ###");
+				Explanation explain = prepareBenchmarkQuery(connection).explain(Explanation.Level.Optimized);
+				System.out.println(explain);
+				TupleExpr tupleExpr = (TupleExpr) explain.tupleExpr();
+				System.out.println(new TupleExprIRRenderer().render(tupleExpr));
+				System.out.println();
+			}
 		} catch (IOException | RuntimeException | Error e) {
 			try {
 				if (repository != null) {

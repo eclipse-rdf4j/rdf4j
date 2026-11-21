@@ -59,6 +59,7 @@ import org.eclipse.rdf4j.query.algebra.ValueExpr;
 import org.eclipse.rdf4j.query.algebra.ValueExprTripleRef;
 import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.QueryEvaluationContext;
+import org.eclipse.rdf4j.query.algebra.evaluation.util.QueryEvaluationUtility;
 import org.eclipse.rdf4j.query.algebra.helpers.AbstractQueryModelVisitor;
 import org.eclipse.rdf4j.sail.lmdb.ValueIds;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.codegen.KernelTermKindProof;
@@ -183,7 +184,7 @@ final class NativeScalarPlan {
 		Objects.requireNonNull(expression, "expression");
 		Objects.requireNonNull(resultKind, "resultKind");
 		Objects.requireNonNull(slots, "slots");
-		ValueExpr ownedExpression = expression.clone();
+		ValueExpr ownedExpression = QueryEvaluationUtility.pinFunctions(expression.clone());
 		Set<String> names = requiredNames(ownedExpression);
 		TreeMap<String, Integer> mapping = new TreeMap<>();
 		long dependencyMask = 0L;
@@ -445,7 +446,7 @@ final class NativeScalarPlan {
 		}
 		if (expression instanceof FunctionCall) {
 			FunctionCall function = (FunctionCall) expression;
-			LmdbNativeFunctionLibrary.Entry entry = LmdbNativeFunctionLibrary.entry(function.getURI());
+			LmdbNativeFunctionLibrary.Entry entry = LmdbNativeFunctionLibrary.entry(function);
 			if (entry == null) {
 				return EffectClass.SIDE_EFFECTING_OR_UNSUPPORTED;
 			}
@@ -617,7 +618,7 @@ final class NativeScalarPlan {
 		}
 		if (expression instanceof FunctionCall) {
 			FunctionCall function = (FunctionCall) expression;
-			if (LmdbNativeFunctionLibrary.entry(function.getURI()) == null) {
+			if (LmdbNativeFunctionLibrary.entry(function) == null) {
 				// An unknown function is deliberately opaque. Its URI alone is not a semantic proof: a custom
 				// implementation may have observable state or depend on query-local registration, so two independently
 				// compiled closures must never be treated as reusable just because their class and URI match.

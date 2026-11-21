@@ -43,17 +43,21 @@ record LmdbNativeDecisionRecord(LmdbNativeDecisionPoint point, String mode, List
 	 * @param features            the priced feature vector (after slice proration), or null when declined
 	 * @param quotedExpectedNanos the expected price as quoted, before learned advice, or NaN
 	 * @param estimated           the interval a run is estimated to land in, or null when declined
+	 * @param priceable           whether the candidate has a comparable whole-execution price
+	 * @param missingPhysicalWork why a physical work proof is incomplete, or null
 	 */
 	record Entry(String id, boolean admitted, String declineReason, LmdbNativeWork nanos, double expectedNanos,
-			String eliminatedBy, LmdbNativeCostVector features, double quotedExpectedNanos, LmdbNativeWork estimated) {
+			String eliminatedBy, LmdbNativeCostVector features, double quotedExpectedNanos, LmdbNativeWork estimated,
+			boolean priceable, String missingPhysicalWork) {
 
 		static Entry declined(String id, String reason) {
-			return new Entry(id, false, reason, null, Double.NaN, null, null, Double.NaN, null);
+			return new Entry(id, false, reason, null, Double.NaN, null, null, Double.NaN, null, false, null);
 		}
 
 		/** Where the price came from: the quote alone, or the quote narrowed by learned advice; null when declined. */
 		String provenance() {
-			return !admitted ? null : expectedNanos == quotedExpectedNanos ? "quoted" : "advised";
+			return !admitted ? null
+					: !priceable ? "unpriced" : expectedNanos == quotedExpectedNanos ? "quoted" : "advised";
 		}
 	}
 
@@ -129,7 +133,7 @@ record LmdbNativeDecisionRecord(LmdbNativeDecisionPoint point, String mode, List
 			boolean eliminated = entry.eliminatedBy() != null;
 			candidates.add(new StrategyDecision.Candidate(entry.id(), priority++, true,
 					eliminated ? "Eliminated" : "Eligible",
-					null, eliminated ? entry.eliminatedBy() : "Priced " + render(entry)));
+					null, eliminated ? entry.eliminatedBy() : (entry.priceable() ? "Priced " : "") + render(entry)));
 		}
 		for (Entry entry : entries) {
 			if (!entry.admitted()) {
@@ -142,8 +146,10 @@ record LmdbNativeDecisionRecord(LmdbNativeDecisionPoint point, String mode, List
 	}
 
 	private static String render(Entry entry) {
-		if (entry.nanos() == null) {
-			return "unpriced";
+		if (!entry.priceable()) {
+			return entry.missingPhysicalWork() == null ? "unpriced"
+					: String.format("unpriced (partial quote %.0f ns; missing proof: %s)",
+							entry.quotedExpectedNanos(), entry.missingPhysicalWork());
 		}
 		LmdbNativeWork interval = entry.estimated() == null ? entry.nanos() : entry.estimated();
 		String rendered = String.format("%.0f..%s ns (expected %.0f)", interval.low(),

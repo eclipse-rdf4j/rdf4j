@@ -12,8 +12,10 @@
 package org.eclipse.rdf4j.sail.lmdb;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import java.io.IOException;
+import java.util.concurrent.atomic.AtomicInteger;
 
 import org.eclipse.rdf4j.sail.lmdb.evaluation.NativeLmdbQuerySource.NodeDomainSynopsis.RootCursor;
 import org.junit.jupiter.api.Test;
@@ -23,6 +25,51 @@ class LmdbNodeDomainSynopsisTest {
 	private static final int ROOT_COUNT = 100_000;
 	private static final long PREDICATE = uri(10);
 	private static final long MAXIMUM_SYNOPSIS_BYTES = 200_000L;
+
+	@Test
+	void datatypeIdSortPreservesUnsignedOrderAndDuplicates() {
+		long[] values = { -1L, Long.MIN_VALUE, 1L, 0L, Long.MAX_VALUE, -1L, 0L };
+		LmdbNodeDomainSynopsis.sortUnsignedDatatypeIds(values, () -> {
+		});
+		assertThat(values).containsExactly(0L, 0L, 1L, Long.MAX_VALUE, Long.MIN_VALUE, -1L, -1L);
+		long[] empty = {};
+		LmdbNodeDomainSynopsis.sortUnsignedDatatypeIds(empty, () -> {
+		});
+		assertThat(empty).isEmpty();
+	}
+
+	@Test
+	void datatypeIdSortBoundsWorkForDescendingInput() {
+		int count = 2_048;
+		long[] values = new long[count];
+		for (int i = 0; i < count; i++) {
+			values[i] = count - i;
+		}
+		AtomicInteger polls = new AtomicInteger();
+		LmdbNodeDomainSynopsis.sortUnsignedDatatypeIds(values, polls::incrementAndGet);
+		for (int i = 0; i < count; i++) {
+			assertThat(values[i]).isEqualTo(i + 1L);
+		}
+		int levels = Integer.SIZE - Integer.numberOfLeadingZeros(count - 1);
+		assertThat(polls.get()).as("descending datatype IDs require bounded n log n ordering work")
+				.isLessThanOrEqualTo(12 * count * (1 + levels));
+	}
+
+	@Test
+	void datatypeIdSortPropagatesMidOrderingCancellation() {
+		long[] values = new long[2_048];
+		for (int i = 0; i < values.length; i++) {
+			values[i] = values.length - i;
+		}
+		AtomicInteger polls = new AtomicInteger();
+		RuntimeException cancelled = new RuntimeException("ordering cancelled");
+		assertThatThrownBy(() -> LmdbNodeDomainSynopsis.sortUnsignedDatatypeIds(values, () -> {
+			if (polls.incrementAndGet() == 1_000) {
+				throw cancelled;
+			}
+		})).isSameAs(cancelled);
+		assertThat(polls).hasValue(1_000);
+	}
 
 	@Test
 	void densePresenceRanksOnlyExistingRootMultiplicities() throws IOException {

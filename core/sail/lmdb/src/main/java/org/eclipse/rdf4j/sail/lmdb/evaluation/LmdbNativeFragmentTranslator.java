@@ -292,6 +292,11 @@ final class FragmentTruthFilter implements NativeBooleanFilter {
 	}
 
 	@Override
+	public NativeScalarPlan scalarPlan() {
+		return exact.scalarPlan();
+	}
+
+	@Override
 	public KernelTermKindProof pageProof(int[] argSlots) {
 		return exact.pageProof(argSlots);
 	}

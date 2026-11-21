@@ -51,7 +51,7 @@ final class NativeTypedGroupStore implements AutoCloseable {
 	private NativeResultRow.Schema schema;
 	private long nextOrdinal, resultCount;
 	private int ticks;
-	private boolean finished, closed;
+	private boolean finished, closed, projectedEvents;
 
 	static boolean supports(AggregateSpec[] specs) {
 		for (AggregateSpec spec : specs) {
@@ -179,9 +179,11 @@ final class NativeTypedGroupStore implements AutoCloseable {
 
 	private void addOrdered(RowState row, long weight, int[] selected, long rootOrdinal, long localOrdinal,
 			int provedCount) {
-		if (closed || finished || weight <= 0L) {
+		if (closed || finished || weight <= 0L
+				&& (weight != NativeFactorProjections.UNAVAILABLE_WEIGHT || selected == null)) {
 			throw new IllegalStateException("Invalid reducer input or closed grouping store");
 		}
+		projectedEvents |= selected != null;
 		try {
 			check();
 			Arrays.fill(scratch, 0L);
@@ -201,6 +203,10 @@ final class NativeTypedGroupStore implements AutoCloseable {
 				if (index != provedCount && !spec.hasInput(row)) {
 					continue;
 				}
+				if (weight == NativeFactorProjections.UNAVAILABLE_WEIGHT
+						&& spec.kind == AggKind.COUNT && !spec.distinct) {
+					throw FactorizedTail.countOverflow();
+				}
 				scratch[tagOffset] = index + 1L;
 				Arrays.fill(scratch, membershipOffset, ordinalOffset, 0L);
 				if (spec.distinct) {
@@ -213,7 +219,7 @@ final class NativeTypedGroupStore implements AutoCloseable {
 					}
 				}
 				scratch[valueOffset] = index == provedCount ? UNKNOWN : spec.value(row);
-				scratch[weightOffset] = spec.distinct ? 1L : weight;
+				scratch[weightOffset] = spec.reducer.weightSensitive ? weight : 1L;
 				membership.add(scratch, rootOrdinal);
 			}
 		} catch (IOException failure) {
@@ -371,7 +377,11 @@ final class NativeTypedGroupStore implements AutoCloseable {
 					}
 					int tag = Math.toIntExact(read[tagOffset]);
 					if (tag != 0) {
-						state.addExternal(tag - 1, read[valueOffset], read[weightOffset]);
+						if (projectedEvents) {
+							state.addExternalProjected(tag - 1, read[valueOffset], read[weightOffset]);
+						} else {
+							state.addExternal(tag - 1, read[valueOffset], read[weightOffset]);
+						}
 					}
 				}
 				if (state != null) {
@@ -421,6 +431,7 @@ final class NativeTypedGroupStore implements AutoCloseable {
 
 	private void emit(NativeGroupIteration renderer, GroupKey key, AggState state, boolean sawRow, long ordinal,
 			long localOrdinal, NativeExecutionPhaseEvent.Coalesced render) throws IOException {
+		state.checkProjectedNumericWeights();
 		if (finalAggregate != null && finalAggregate.having != null
 				&& !havingHolds(state.count(finalAggregate.having.outputIndex), finalAggregate.having.op,
 						finalAggregate.having.threshold)) {

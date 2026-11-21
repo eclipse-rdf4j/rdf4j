@@ -48,6 +48,7 @@ final class NativeResultReplay implements AutoCloseable {
 	private NativeSpillValueCodec writerCodec;
 	/** Dictionary authority for spilling store-backed terms as IDs; null keeps the exact lexical codec only. */
 	private NativeLmdbQuerySource termSource;
+	private NativeLmdbQuerySource.DictionaryLease dictionary;
 	private List<NativeResultRow> resident = new ArrayList<>();
 	private DataOutputStream output;
 	private Path path;
@@ -122,15 +123,18 @@ final class NativeResultReplay implements AutoCloseable {
 			cancellation.poll(appendTick);
 			LmdbNativeProbeDeadline.poll(appendTick++);
 			checkSchema(row);
-			long retained = retainedBytes(row);
-			// Keep room for the writer while resident rows are still being encoded. The runway belongs to the
-			// operator's bound but is charged to the shared ledger only if a spill actually opens.
-			if (path == null && retained <= maxBytes - OWNER_BYTES - WRITER_BYTES - residentBytes
-					&& memory.tryReserve(retained)) {
-				resident.add(row);
-				residentBytes += retained;
+			if (path == null) {
+				long retained = retainedBytes(row);
+				// Keep room for the writer while resident rows are still being encoded. The runway belongs to the
+				// operator's bound but is charged to the shared ledger only if a spill actually opens.
+				if (retained <= maxBytes - OWNER_BYTES - WRITER_BYTES - residentBytes && memory.tryReserve(retained)) {
+					resident.add(row);
+					residentBytes += retained;
+				} else {
+					ensureSpill();
+					write(row);
+				}
 			} else {
-				ensureSpill();
 				write(row);
 			}
 			cancellation.check();
@@ -208,8 +212,9 @@ final class NativeResultReplay implements AutoCloseable {
 			throw new QueryEvaluationException("Result replay spill workspace refused by query memory ledger");
 		}
 		try (NativeExecutionPhaseEvent.Span phase = NativeExecutionPhaseEvent.start("spill", cancellation)) {
+			dictionary = termSource == null ? null : termSource.retainDictionaryLease();
 			writerCodec = new NativeSpillValueCodec(cancellation,
-					context == null ? null : context::authoritativeQueryScopedValue, null, termSource);
+					context == null ? null : context::authoritativeQueryScopedValue, null, dictionary);
 			path = Files.createTempFile("rdf4j-lmdb-result-", ".spill");
 			output = new DataOutputStream(
 					new BufferedOutputStream(Files.newOutputStream(path), NativeSpillValueCodec.BUFFER_BYTES));
@@ -295,6 +300,9 @@ final class NativeResultReplay implements AutoCloseable {
 				Files.deleteIfExists(path);
 			}
 		}, failure);
+		failure = KernelRuntime.closeResource(dictionary, failure);
+		dictionary = null;
+		termSource = null;
 		failure = KernelRuntime.closeResource(memory, failure);
 		failure = KernelRuntime.closeResource(lease, failure);
 		if (failure != null) {
@@ -318,7 +326,7 @@ final class NativeResultReplay implements AutoCloseable {
 			this.reservedBytes = reservedBytes;
 			this.codec = input == null ? null
 					: new NativeSpillValueCodec(localCancellation,
-							context == null ? null : context::authoritativeQueryScopedValue, null, termSource);
+							context == null ? null : context::authoritativeQueryScopedValue, null, dictionary);
 		}
 
 		@Override

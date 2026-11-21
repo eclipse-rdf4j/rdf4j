@@ -256,7 +256,7 @@ final class LmdbPagedCsfConsolidator {
 
 	private static long modeledBaseMetadataBytes(LmdbAdjacencyPredicateCatalog predicates,
 			LmdbAdjacencyContextCatalog contexts, LmdbAdjacencyCoverage coverage, int partitions) {
-		long bytes = BASE_OBJECT_BYTES;
+		long bytes = Math.addExact(BASE_OBJECT_BYTES, LmdbInMemoryAdjacencyIndex.SYNOPSIS_BUILD_LOCK_BYTES);
 		bytes = Math.addExact(bytes, predicates.modeledJavaBytes());
 		bytes = Math.addExact(bytes, contexts.modeledJavaBytes());
 		bytes = Math.addExact(bytes, arrayBytes(partitions, 8));

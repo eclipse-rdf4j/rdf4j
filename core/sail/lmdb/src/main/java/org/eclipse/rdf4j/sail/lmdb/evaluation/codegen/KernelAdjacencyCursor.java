@@ -42,11 +42,14 @@ import org.eclipse.rdf4j.sail.lmdb.evaluation.NativeLmdbQuerySource.RunView.Cont
 @InternalUseOnly
 public final class KernelAdjacencyCursor implements AutoCloseable {
 	private static final int BATCH_SIZE = 256;
+	private static final int CANCELLATION_WORK_PER_POLL = 1024;
 
 	private final AdjacencyPageCursor pages;
 	private final NativeAdjacency.KeyRunCursor runs;
 	private final Predicate<AdjacencyPageCursor> pageAccept;
 	private KernelCancellation cancellation;
+	/** Thread-confined budget, charged at physical refills rather than while serving buffered fibers. */
+	private int cancellationWork;
 	private final LmdbQueryMemoryManager.Reservation reservation;
 	private final int bufferCapacity;
 	private final long[] roots;
@@ -329,10 +332,9 @@ public final class KernelAdjacencyCursor implements AutoCloseable {
 			if (cursor == null) {
 				cursor = create(null, runs, null, cancellation, BATCH_SIZE, null);
 			} else {
-				// release() reset every traversal field before making this cursor available again; only the new token
-				// changes.
+				// release() reset traversal state. Keep the polling budget across short activations of the same token.
 				cursor.ensureOpen();
-				cursor.cancellation = cancellation;
+				cursor.bindCancellation(cancellation);
 			}
 			active = true;
 			return cursor;
@@ -392,13 +394,14 @@ public final class KernelAdjacencyCursor implements AutoCloseable {
 	/** Advances to the next physical root fragment. */
 	public boolean advanceRoot() {
 		ensureOpen();
-		checkCancelled();
 		rootReady = false;
 		fiberReady = false;
 		contextReady = false;
 		if (pages != null) {
 			return advancePageRoot();
 		}
+		cancellationWork--;
+		checkCancelled();
 		if (!runs.advance()) {
 			return false;
 		}
@@ -421,7 +424,6 @@ public final class KernelAdjacencyCursor implements AutoCloseable {
 				&& runSpan.end() == rootQuads && runSpan.hasCommonContext()) {
 			runCommonContext = runSpan.commonContext();
 		}
-		checkCancelled();
 		rootReady = true;
 		return true;
 	}
@@ -436,8 +438,12 @@ public final class KernelAdjacencyCursor implements AutoCloseable {
 			pageRows = 0;
 			pageRootBatchFrom = -1;
 			pageRootBatchSize = 0;
-			while (pages.advance()) {
+			while (true) {
+				cancellationWork--;
 				checkCancelled();
+				if (!pages.advance()) {
+					return false;
+				}
 				if (pageAccept != null && !pageAccept.test(pages)) {
 					continue;
 				}
@@ -452,7 +458,6 @@ public final class KernelAdjacencyCursor implements AutoCloseable {
 					return exposePageRoot();
 				}
 			}
-			return false;
 		}
 	}
 
@@ -460,11 +465,13 @@ public final class KernelAdjacencyCursor implements AutoCloseable {
 		// pageAccept has already run, so all payload access below is authorized by the caller's proof.
 		if (pageRootBatchFrom < 0 || pageRow < pageRootBatchFrom
 				|| pageRow - pageRootBatchFrom >= pageRootBatchSize) {
+			checkCancelled();
 			int requested = Math.min(bufferCapacity, pageRows - pageRow);
 			int copied = pages.copyRootCounts(pageRow, requested, roots, 0, rootQuadCounts, 0);
 			if (copied <= 0 || copied > requested) {
 				throw new IllegalStateException("page root cursor returned an invalid copied count: " + copied);
 			}
+			cancellationWork -= copied;
 			pageRootBatchFrom = pageRow;
 			pageRootBatchSize = copied;
 		}
@@ -489,13 +496,12 @@ public final class KernelAdjacencyCursor implements AutoCloseable {
 		return true;
 	}
 
-	/** Advances to the next distinct-neighbor fiber in the current root fragment. */
+	/** Advances to the next distinct-neighbor fiber; buffered fibers need no cancellation work. */
 	public boolean advanceFiber() {
 		ensureOpen();
 		if (!rootReady) {
 			throw new IllegalStateException("advanceRoot must succeed before advanceFiber");
 		}
-		checkCancelled();
 		fiberReady = false;
 		contextReady = false;
 		if (pages != null) {
@@ -512,6 +518,7 @@ public final class KernelAdjacencyCursor implements AutoCloseable {
 			return false;
 		}
 		if (fiberBatchIndex >= fiberBatchSize) {
+			checkCancelled();
 			fiberBatchSize = pages.copyRowFibers(pageRow, pageFiber, bufferCapacity, neighbors, 0, multiplicities, 0);
 			fiberBatchIndex = 0;
 			if (fiberBatchSize <= 0) {
@@ -520,6 +527,7 @@ public final class KernelAdjacencyCursor implements AutoCloseable {
 			if (fiberBatchSize > pageFiberCount - pageFiber) {
 				throw new IllegalStateException("page fiber cursor exceeded the declared fiber count");
 			}
+			cancellationWork -= fiberBatchSize;
 			neighborValuesCopied = Math.addExact(neighborValuesCopied, fiberBatchSize);
 		}
 		neighbor = neighbors[fiberBatchIndex];
@@ -550,6 +558,8 @@ public final class KernelAdjacencyCursor implements AutoCloseable {
 			return false;
 		}
 		if (rootQuads == 1L) {
+			cancellationWork--;
+			checkCancelled();
 			neighbor = runs.neighborAt(0L);
 			multiplicity = 1L;
 			neighborValuesCopied = Math.addExact(neighborValuesCopied, 1L);
@@ -563,11 +573,13 @@ public final class KernelAdjacencyCursor implements AutoCloseable {
 			return true;
 		}
 		if (runFiberBatchIndex >= runFiberBatchSize) {
+			checkCancelled();
 			runFiberBatchSize = runs.copyFibers(runFiberQuadOffset, bufferCapacity, neighbors, 0, multiplicities, 0);
 			runFiberBatchIndex = 0;
 			if (runFiberBatchSize <= 0) {
 				throw new IllegalStateException("run fiber cursor made no progress before its declared end");
 			}
+			cancellationWork -= runFiberBatchSize;
 			neighborValuesCopied = Math.addExact(neighborValuesCopied, runFiberBatchSize);
 		}
 		neighbor = neighbors[runFiberBatchIndex];
@@ -642,6 +654,7 @@ public final class KernelAdjacencyCursor implements AutoCloseable {
 				&& offset - runBatchFrom < runBatchSize) {
 			return false;
 		}
+		cancellationWork--;
 		checkCancelled();
 		if (runs.contextSpan(offset, witnessSpan) && witnessSpan.hasCommonContext()) {
 			return false;
@@ -656,12 +669,13 @@ public final class KernelAdjacencyCursor implements AutoCloseable {
 		}
 		while (from < rootQuads) {
 			if (runBatchFrom < 0L || from < runBatchFrom || from - runBatchFrom >= runBatchSize) {
+				cancellationWork--;
 				checkCancelled();
 				// The look-ahead doubles per refill, so a consumer that stops at its first visible row never forces
 				// a full buffer of later contexts.
 				int copied = runSpan.copyAccepted(runs, from, rootQuads, runBatchLimit,
 						roots, 0, rootQuadCounts, 0, wantedContext, null, excludeDefault);
-				checkCancelled();
+				cancellationWork -= copied;
 				runBatchLimit = Math.min(bufferCapacity, runBatchLimit << 1);
 				if (copied == 0) {
 					from = runSpan.end();
@@ -685,7 +699,9 @@ public final class KernelAdjacencyCursor implements AutoCloseable {
 
 	private long nextAcceptedRunContext() {
 		while (contextRawPosition < fiberRawEnd) {
-			checkCancelled();
+			if (--cancellationWork <= 0) {
+				checkCancelled();
+			}
 			if (contextProofFrom < 0L || contextRawPosition < contextProofFrom
 					|| contextRawPosition >= contextReadSpan.end()) {
 				if (!runs.contextSpan(contextRawPosition, contextReadSpan)) {
@@ -762,7 +778,9 @@ public final class KernelAdjacencyCursor implements AutoCloseable {
 				continue;
 			}
 			for (; offset < end; offset++) {
-				checkCancelled();
+				if (--cancellationWork <= 0) {
+					checkCancelled();
+				}
 				copyRootContexts(offset, 1);
 				if (ContextSpan.acceptsContext(contexts[0], wanted, null, excludeDefault)) {
 					return true;
@@ -778,6 +796,7 @@ public final class KernelAdjacencyCursor implements AutoCloseable {
 	 * span.
 	 */
 	private long witnessSpanEnd(long offset) {
+		cancellationWork--;
 		checkCancelled();
 		if (pages != null || !runs.contextSpan(offset, witnessSpan)) {
 			witnessSpan.set(rootQuads, -1L);
@@ -820,6 +839,7 @@ public final class KernelAdjacencyCursor implements AutoCloseable {
 				checkCancelled();
 				int requested = (int) Math.min(bufferCapacity, end - offset);
 				int copied = copyRootContexts(offset, requested);
+				cancellationWork -= copied;
 				for (int index = 0; index < copied; index++) {
 					if (ContextSpan.acceptsContext(contexts[index], wanted, null, excludeDefault)) {
 						accepted = Math.addExact(accepted, 1L);
@@ -922,6 +942,7 @@ public final class KernelAdjacencyCursor implements AutoCloseable {
 		if (copied != requested) {
 			throw new UnsupportedOperationException("exact context payload is unavailable");
 		}
+		cancellationWork -= copied;
 		contextBatchStart = contextIndex;
 		contextBatchSize = copied;
 	}
@@ -998,7 +1019,7 @@ public final class KernelAdjacencyCursor implements AutoCloseable {
 
 	private void resetReusable(KernelCancellation cancellation) {
 		ensureOpen();
-		this.cancellation = cancellation;
+		bindCancellation(cancellation);
 		pageRow = -1;
 		pageRows = 0;
 		pageRootBatchFrom = -1;
@@ -1045,8 +1066,19 @@ public final class KernelAdjacencyCursor implements AutoCloseable {
 		resetReusable(cancellation);
 	}
 
+	private void bindCancellation(KernelCancellation cancellation) {
+		if (this.cancellation != cancellation) {
+			this.cancellation = cancellation;
+			cancellationWork = 0;
+		}
+	}
+
+	/** Full supplier/interrupt polls are best effort; an already-published stop is honored at the next boundary. */
 	private void checkCancelled() {
-		KernelRuntime.checkCancelled(cancellation);
+		if (cancellationWork <= 0 || cancellation != null && cancellation.cancellationPublished()) {
+			cancellationWork = CANCELLATION_WORK_PER_POLL;
+			KernelRuntime.checkCancelled(cancellation);
+		}
 	}
 
 	private void checkRoot() {
