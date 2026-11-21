@@ -28,6 +28,7 @@ import org.eclipse.rdf4j.query.algebra.BindingSetAssignment;
 import org.eclipse.rdf4j.query.algebra.ExtensionElem;
 import org.eclipse.rdf4j.query.algebra.GroupElem;
 import org.eclipse.rdf4j.query.algebra.Join;
+import org.eclipse.rdf4j.query.algebra.Lateral;
 import org.eclipse.rdf4j.query.algebra.LeftJoin;
 import org.eclipse.rdf4j.query.algebra.Projection;
 import org.eclipse.rdf4j.query.algebra.ProjectionElem;
@@ -122,6 +123,20 @@ final class PreparedValuesSnapshot {
 			});
 			prepared.visit(new AbstractQueryModelVisitor<RuntimeException>() {
 				@Override
+				public void meet(Projection projection) {
+					Var caller = projection.getProjectionContext();
+					if (projection.isSubquery() && caller != null && !caller.hasValue()
+							&& projection.getInheritedGraphParameter() == null
+							&& (caller.getGraphContextDepth() > 0
+									|| !projection.getBindingNames().contains(caller.getName()))) {
+						// Parsed LEGACY algebra names the inherited context as historical consumers expect.
+						// Materialize its private slot here, before the current evaluator builds input frames.
+						lower(projection);
+					}
+					super.meet(projection);
+				}
+
+				@Override
 				public void meet(Join join) {
 					lowerFrom(join.getRightArg(), join.getLeftArg());
 					lowerFrom(join.getLeftArg(), join.getRightArg());
@@ -199,7 +214,8 @@ final class PreparedValuesSnapshot {
 				parameter = "_rdf4j_graph_context_" + nextParameter++;
 			} while (!names.add(parameter));
 			String target = parameter;
-			int callerDepth = projection.getProjectionContext().getGraphContextDepth();
+			Var source = projection.getProjectionContext();
+			int callerDepth = source.getGraphContextDepth();
 			int[] changed = { 0 };
 			projection.getArg().visit(new AbstractQueryModelVisitor<RuntimeException>() {
 				private int nestedSelects;
@@ -220,6 +236,25 @@ final class PreparedValuesSnapshot {
 						nested.setInheritedGraphParameter(target);
 					}
 					nestedSelects--;
+				}
+
+				@Override
+				public void meet(ProjectionElem element) {
+					if (element.getLegacyGraphContextDepth() == callerDepth + 1 + nestedSelects
+							&& element.getName().equals(source.getName())) {
+						element.setName(target);
+						element.setLegacyGraphContextDepth(0);
+						changed[0]++;
+					}
+					super.meet(element);
+				}
+
+				@Override
+				public void meet(Lateral lateral) {
+					if (lateral.lowerLegacyGraphInput(source.getName(), callerDepth + 1 + nestedSelects, target)) {
+						changed[0]++;
+					}
+					super.meet(lateral);
 				}
 
 				@Override

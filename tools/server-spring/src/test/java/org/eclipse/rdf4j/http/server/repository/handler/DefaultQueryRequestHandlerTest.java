@@ -45,6 +45,7 @@ import org.eclipse.rdf4j.http.server.repository.resolver.RepositoryResolver;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.query.QueryInterruptedException;
 import org.eclipse.rdf4j.query.QueryLanguage;
+import org.eclipse.rdf4j.query.QueryParseOptions;
 import org.eclipse.rdf4j.query.TupleQuery;
 import org.eclipse.rdf4j.query.TupleQueryResult;
 import org.eclipse.rdf4j.query.explanation.Explanation;
@@ -72,7 +73,7 @@ class DefaultQueryRequestHandlerTest {
 	void explainRequestIdShouldRunInlineAndCloseConnectionOnCancel() throws Exception {
 		RepositoryResolver repositoryResolver = mock(RepositoryResolver.class);
 		Repository repository = mock(Repository.class);
-		RepositoryConnection connection = mock(RepositoryConnection.class);
+		RepositoryConnection connection = mockConnection();
 		TupleQuery tupleQuery = mock(TupleQuery.class);
 		DefaultQueryRequestHandler handler = new DefaultQueryRequestHandler(repositoryResolver);
 		ExecutorService executor = Executors.newSingleThreadExecutor();
@@ -134,8 +135,8 @@ class DefaultQueryRequestHandlerTest {
 	void duplicateAsyncExplainRequestShouldCloseRejectedConnection() throws Exception {
 		RepositoryResolver repositoryResolver = mock(RepositoryResolver.class);
 		Repository repository = mock(Repository.class);
-		RepositoryConnection firstConnection = mock(RepositoryConnection.class);
-		RepositoryConnection secondConnection = mock(RepositoryConnection.class);
+		RepositoryConnection firstConnection = mockConnection();
+		RepositoryConnection secondConnection = mockConnection();
 		TupleQuery firstQuery = mock(TupleQuery.class);
 		TupleQuery secondQuery = mock(TupleQuery.class);
 		DefaultQueryRequestHandler handler = new DefaultQueryRequestHandler(repositoryResolver);
@@ -199,7 +200,7 @@ class DefaultQueryRequestHandlerTest {
 	void shouldRejectNewQueriesWhenCircuitBreakerIsHighPressure() throws Exception {
 		RepositoryResolver repositoryResolver = mock(RepositoryResolver.class);
 		Repository repository = mock(Repository.class);
-		RepositoryConnection connection = mock(RepositoryConnection.class);
+		RepositoryConnection connection = mockConnection();
 		TupleQuery tupleQuery = mock(TupleQuery.class);
 		TupleQueryResult tupleQueryResult = mock(TupleQueryResult.class);
 		DefaultQueryRequestHandler handler = new DefaultQueryRequestHandler(repositoryResolver);
@@ -270,7 +271,7 @@ class DefaultQueryRequestHandlerTest {
 	void regularQueryRequestIdShouldInterruptEvaluationAndForwardToProxyRepository() throws Exception {
 		RepositoryResolver repositoryResolver = mock(RepositoryResolver.class);
 		HTTPRepository repository = mock(HTTPRepository.class);
-		RepositoryConnection connection = mock(RepositoryConnection.class);
+		RepositoryConnection connection = mockConnection();
 		TupleQuery tupleQuery = mock(TupleQuery.class);
 		DefaultQueryRequestHandler handler = new DefaultQueryRequestHandler(repositoryResolver);
 		ExecutorService executor = Executors.newSingleThreadExecutor();
@@ -320,7 +321,7 @@ class DefaultQueryRequestHandlerTest {
 	void failedRemoteCancellationReturnsAnErrorAndCanBeRetried() throws Exception {
 		RepositoryResolver repositoryResolver = mock(RepositoryResolver.class);
 		HTTPRepository repository = mock(HTTPRepository.class);
-		RepositoryConnection connection = mock(RepositoryConnection.class);
+		RepositoryConnection connection = mockConnection();
 		TupleQuery tupleQuery = mock(TupleQuery.class);
 		DefaultQueryRequestHandler handler = new DefaultQueryRequestHandler(repositoryResolver);
 		ExecutorService executor = Executors.newSingleThreadExecutor();
@@ -383,7 +384,7 @@ class DefaultQueryRequestHandlerTest {
 		RepositoryResolver repositoryResolver = mock(RepositoryResolver.class);
 		HTTPRepository repositoryA = mock(HTTPRepository.class);
 		HTTPRepository repositoryB = mock(HTTPRepository.class);
-		RepositoryConnection connectionA = mock(RepositoryConnection.class);
+		RepositoryConnection connectionA = mockConnection();
 		TupleQuery tupleQueryA = mock(TupleQuery.class);
 		DefaultQueryRequestHandler handler = new DefaultQueryRequestHandler(repositoryResolver);
 		ExecutorService executor = Executors.newSingleThreadExecutor();
@@ -453,7 +454,7 @@ class DefaultQueryRequestHandlerTest {
 	void regularQueryRemainsCancellableWhileTupleResultIsRendered() throws Exception {
 		RepositoryResolver repositoryResolver = mock(RepositoryResolver.class);
 		Repository repository = mock(Repository.class);
-		RepositoryConnection connection = mock(RepositoryConnection.class);
+		RepositoryConnection connection = mockConnection();
 		TupleQuery tupleQuery = mock(TupleQuery.class);
 		TupleQueryResult tupleResult = mock(TupleQueryResult.class);
 		DefaultQueryRequestHandler handler = new DefaultQueryRequestHandler(repositoryResolver);
@@ -506,7 +507,7 @@ class DefaultQueryRequestHandlerTest {
 	void explainWithoutRequestIdShouldStaySynchronous() throws Exception {
 		RepositoryResolver repositoryResolver = mock(RepositoryResolver.class);
 		Repository repository = mock(Repository.class);
-		RepositoryConnection connection = mock(RepositoryConnection.class);
+		RepositoryConnection connection = mockConnection();
 		TupleQuery tupleQuery = mock(TupleQuery.class);
 		Explanation explanation = mock(Explanation.class);
 		DefaultQueryRequestHandler handler = new DefaultQueryRequestHandler(repositoryResolver);
@@ -537,7 +538,7 @@ class DefaultQueryRequestHandlerTest {
 	void explainRequestIdShouldPropagateToProxyRepositoriesAndForwardCancel() throws Exception {
 		RepositoryResolver repositoryResolver = mock(RepositoryResolver.class);
 		HTTPRepository repository = mock(HTTPRepository.class);
-		RepositoryConnection connection = mock(RepositoryConnection.class);
+		RepositoryConnection connection = mockConnection();
 		TupleQuery tupleQuery = mock(TupleQuery.class);
 		DefaultQueryRequestHandler handler = new DefaultQueryRequestHandler(repositoryResolver);
 		ExecutorService executor = Executors.newSingleThreadExecutor();
@@ -588,7 +589,7 @@ class DefaultQueryRequestHandlerTest {
 	void breakerCancellationShouldForwardTrackedExplainCancelToProxyRepository() throws Exception {
 		RepositoryResolver repositoryResolver = mock(RepositoryResolver.class);
 		HTTPRepository repository = mock(HTTPRepository.class);
-		RepositoryConnection connection = mock(RepositoryConnection.class);
+		RepositoryConnection connection = mockConnection();
 		TupleQuery tupleQuery = mock(TupleQuery.class);
 		DefaultQueryRequestHandler handler = new DefaultQueryRequestHandler(repositoryResolver);
 		ExecutorService executor = Executors.newSingleThreadExecutor();
@@ -637,7 +638,7 @@ class DefaultQueryRequestHandlerTest {
 	@Test
 	void ordinaryQueryParametersUseSharedForcedStrategyNormalization() throws Exception {
 		DefaultQueryRequestHandler handler = new DefaultQueryRequestHandler(mock(RepositoryResolver.class));
-		RepositoryConnection connection = mock(RepositoryConnection.class);
+		RepositoryConnection connection = mockConnection();
 		when(connection.getValueFactory()).thenReturn(SimpleValueFactory.getInstance());
 		SailQuery query = mock(SailQuery.class);
 		MockHttpServletRequest forcedRequest = new MockHttpServletRequest();
@@ -663,7 +664,7 @@ class DefaultQueryRequestHandlerTest {
 	@Test
 	void ordinaryQueryParametersRequestTheLmdbResultCacheOnlyWhenAskedFor() throws Exception {
 		DefaultQueryRequestHandler handler = new DefaultQueryRequestHandler(mock(RepositoryResolver.class));
-		RepositoryConnection connection = mock(RepositoryConnection.class);
+		RepositoryConnection connection = mockConnection();
 		when(connection.getValueFactory()).thenReturn(SimpleValueFactory.getInstance());
 		SailQuery query = mock(SailQuery.class);
 		MockHttpServletRequest cachedRequest = new MockHttpServletRequest();
@@ -797,4 +798,11 @@ class DefaultQueryRequestHandlerTest {
 	private interface ThrowingRunnable {
 		void run() throws Exception;
 	}
+
+	private static RepositoryConnection mockConnection() {
+		RepositoryConnection connection = mock(RepositoryConnection.class);
+		when(connection.getQueryParseOptions()).thenReturn(QueryParseOptions.DEFAULT);
+		return connection;
+	}
+
 }

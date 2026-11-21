@@ -41,6 +41,15 @@ public class RioConfigTest {
 	}
 
 	@Test
+	public void testLoggerIsSharedPerClassAndNamedAfterIt() {
+		// the logger is resolved once per class, not once per instance, and keeps the runtime class name
+		assertThat(new ParserConfig().log).isSameAs(new ParserConfig().log);
+		assertThat(new ParserConfig().log.getName()).isEqualTo(ParserConfig.class.getName());
+		assertThat(new RioConfig().log).isSameAs(config.log);
+		assertThat(config.log.getName()).isEqualTo(RioConfig.class.getName());
+	}
+
+	@Test
 	public void testIsSetDefault() {
 		assertThat(config.isSet(testSetting)).isFalse();
 	}

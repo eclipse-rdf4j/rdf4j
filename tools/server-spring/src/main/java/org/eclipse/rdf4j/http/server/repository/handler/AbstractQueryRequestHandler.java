@@ -29,6 +29,7 @@ import org.eclipse.rdf4j.http.client.QueryCircuitBreaker;
 import org.eclipse.rdf4j.http.client.QueryCircuitBreakerHandle;
 import org.eclipse.rdf4j.http.client.QueryExecutionContext;
 import org.eclipse.rdf4j.http.client.QueryExplanationRequestContext;
+import org.eclipse.rdf4j.http.client.QueryLoggingContext;
 import org.eclipse.rdf4j.http.client.QueryRequestContext;
 import org.eclipse.rdf4j.http.client.QueryResponseHeartbeat;
 import org.eclipse.rdf4j.http.protocol.Protocol;
@@ -151,6 +152,8 @@ public abstract class AbstractQueryRequestHandler implements QueryRequestHandler
 		QueryCircuitBreakerHandle breakerHandle = null;
 		CancellableOperationCoordinator.Handle queryHandle = null;
 		QueryResponseHeartbeat responseHeartbeat = null;
+		QueryLoggingContext.Activation requestLoggingContext = null;
+		QueryLoggingContext.Activation responseLoggingContext = null;
 
 		try {
 			Repository repository = repositoryResolver.getRepository(request);
@@ -193,6 +196,12 @@ public abstract class AbstractQueryRequestHandler implements QueryRequestHandler
 			long offset = getOffset(request);
 			boolean distinct = isDistinct(request);
 			final Optional<Explanation.Level> explainLevel = getExplain(request);
+			Map<String, String> loggingContext = ProtocolUtil.captureQueryLoggingContext(request);
+			loggingContext.put(QueryLoggingContext.REPOSITORY_ID, repositoryId);
+			loggingContext.put(QueryLoggingContext.HTTP_LIMIT, Long.toString(limit));
+			loggingContext.put(QueryLoggingContext.HTTP_OFFSET, Long.toString(offset));
+			loggingContext.put(QueryLoggingContext.HTTP_DISTINCT, Boolean.toString(distinct));
+			requestLoggingContext = QueryLoggingContext.activateMdc(loggingContext);
 
 			if (!headersOnly && explainLevel.isPresent() && explainRequestId.isPresent()) {
 				return handleRegisteredExplainRequest(request, response, repository, repositoryId, repositoryCon, query,
@@ -231,6 +240,12 @@ public abstract class AbstractQueryRequestHandler implements QueryRequestHandler
 				CancellableOperationCoordinator.Handle registeredHandle = queryHandle;
 				preparedResponse = prepareResponse(request, response, registry, registeredHandle);
 				responseHeartbeat = preparedResponse.heartbeat;
+				responseLoggingContext = QueryLoggingContext.activateMdc(Map.of(
+						QueryLoggingContext.HTTP_RESPONSE_CONTENT_TYPE, preparedResponse.contentType,
+						QueryLoggingContext.HTTP_RESPONSE_HEARTBEAT_ENABLED,
+						Boolean.toString(responseHeartbeat.isProbing()),
+						QueryLoggingContext.HTTP_RESPONSE_HEARTBEAT_INTERVAL_MILLIS,
+						Long.toString(QueryResponseHeartbeat.DEFAULT_INTERVAL.toMillis())));
 			}
 
 			try {
@@ -324,6 +339,13 @@ public abstract class AbstractQueryRequestHandler implements QueryRequestHandler
 		} catch (Error e) {
 			cleanupAfterRequestFailure(responseHeartbeat, queryResponse, repositoryCon, breakerHandle, queryHandle);
 			throw e;
+		} finally {
+			if (responseLoggingContext != null) {
+				responseLoggingContext.close();
+			}
+			if (requestLoggingContext != null) {
+				requestLoggingContext.close();
+			}
 		}
 
 	}
@@ -532,7 +554,7 @@ public abstract class AbstractQueryRequestHandler implements QueryRequestHandler
 				throw new UnsupportedOperationException(
 						"Unsupported query result writer: " + factory.getClass().getName());
 			}
-			return new PreparedResponse(factory, heartbeat, writer);
+			return new PreparedResponse(factory, heartbeat, writer, mimeType);
 		} catch (IOException | RuntimeException e) {
 			cleanupResponseHeartbeatAfterFailure(heartbeat);
 			throw e;
@@ -580,11 +602,13 @@ public abstract class AbstractQueryRequestHandler implements QueryRequestHandler
 		private final Object factory;
 		private final QueryResponseHeartbeat heartbeat;
 		private final Object writer;
+		private final String contentType;
 
-		private PreparedResponse(Object factory, QueryResponseHeartbeat heartbeat, Object writer) {
+		private PreparedResponse(Object factory, QueryResponseHeartbeat heartbeat, Object writer, String contentType) {
 			this.factory = factory;
 			this.heartbeat = heartbeat;
 			this.writer = writer;
+			this.contentType = contentType;
 		}
 	}
 
