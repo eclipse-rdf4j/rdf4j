@@ -326,8 +326,8 @@ class Rdf4jServerWorkbenchApplicationTest {
 	@Test
 	void requestIntegrityFiltersMatchWarDeploymentScopes() {
 		assertThat(requestIntegrityFilter.getFilter()).isInstanceOf(RequestIntegrityFilter.class);
-		assertThat(requestIntegrityFilter.getUrlPatterns()).containsExactlyInAnyOrder(
-				"/rdf4j-server/repositories", "/rdf4j-server/repositories/*");
+		assertThat(requestIntegrityFilter.getUrlPatterns()).containsExactlyInAnyOrder("/repositories",
+				"/repositories/*", "/rdf4j-server/repositories", "/rdf4j-server/repositories/*");
 		assertThat(requestIntegrityFilter.getOrder()).isLessThan(httpCompressionFilter.getOrder());
 
 		assertThat(workbenchCsrfFilter.getFilter()).isInstanceOf(WorkbenchCsrfFilter.class);
@@ -356,6 +356,26 @@ class Rdf4jServerWorkbenchApplicationTest {
 				"http://localhost:" + port + "/rdf4j-server/repositories/NONE/statements", HttpMethod.POST,
 				new HttpEntity<>("", headers), String.class);
 		assertThat(response.getStatusCode()).isEqualTo(HttpStatus.FORBIDDEN);
+	}
+
+	@Test
+	void embeddedServerRejectsCrossOriginBrowserMutationWithoutServerPrefix() throws Exception {
+		String repoId = registerRepository("csrf", new MemoryStoreConfig());
+		IRI subject = valueFactory.createIRI("urn:example:kept");
+		withRepositoryConnection(repoId, connection -> connection.add(subject, RDFS.LABEL,
+				valueFactory.createLiteral("kept")));
+
+		HttpHeaders headers = new HttpHeaders();
+		headers.setContentType(MediaType.APPLICATION_FORM_URLENCODED);
+		headers.setOrigin("https://attacker.example");
+		headers.set("Sec-Fetch-Site", "cross-site");
+		ResponseEntity<String> response = restTemplate.exchange(
+				"http://localhost:" + port + "/repositories/" + repoId + "/statements", HttpMethod.POST,
+				new HttpEntity<>("update=DELETE+WHERE+%7B+%3Fs+%3Fp+%3Fo+%7D", headers), String.class);
+
+		assertThat(response.getStatusCode()).isEqualTo(HttpStatus.FORBIDDEN);
+		withRepositoryConnection(repoId,
+				connection -> assertThat(connection.hasStatement(subject, RDFS.LABEL, null, false)).isTrue());
 	}
 
 	@Test
