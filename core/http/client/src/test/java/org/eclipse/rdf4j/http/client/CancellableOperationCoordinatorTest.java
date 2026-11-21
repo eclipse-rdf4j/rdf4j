@@ -21,9 +21,11 @@ import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 
 import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.ExecutionException;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
+import java.util.concurrent.FutureTask;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
@@ -383,35 +385,70 @@ class CancellableOperationCoordinatorTest {
 		CountDownLatch remoteStarted = new CountDownLatch(1);
 		CountDownLatch releaseRemote = new CountDownLatch(1);
 		AtomicInteger remoteCalls = new AtomicInteger();
+		AtomicReference<Thread> remoteWorker = new AtomicReference<>();
+		AssertionError fatalFailure = new AssertionError("remote cancellation failed fatally");
 		CancellableOperationCoordinator.Handle handle = coordinator.register("request-error", () -> {
+			remoteWorker.set(Thread.currentThread());
 			remoteCalls.incrementAndGet();
 			remoteStarted.countDown();
 			try {
-				releaseRemote.await(5, TimeUnit.SECONDS);
+				releaseRemote.await();
 			} catch (InterruptedException e) {
 				Thread.currentThread().interrupt();
 			}
-			throw new AssertionError("remote cancellation failed fatally");
+			throw fatalFailure;
 		});
-		ExecutorService executor = Executors.newFixedThreadPool(2);
+		FutureTask<Boolean> waiter = new FutureTask<>(() -> coordinator.cancel("request-error"));
+		FutureTask<Void> shutdown = new FutureTask<>(coordinator::shutdown, null);
+		Thread waiterThread = Thread.ofVirtual().unstarted(waiter);
+		Thread shutdownThread = Thread.ofVirtual().unstarted(shutdown);
 
 		try {
 			assertThat(coordinator.cancelAsync(handle)).isTrue();
 			assertThat(remoteStarted.await(5, TimeUnit.SECONDS)).isTrue();
-			Future<Boolean> waiter = executor.submit(() -> coordinator.cancel("request-error"));
-			Future<?> shutdown = executor.submit(coordinator::shutdown);
+			waiterThread.start();
+			shutdownThread.start();
+			// Submitting a task does not mean it has joined the in-flight cancellation attempt.
+			awaitCancellationWaiter(waiterThread, waiter);
+			awaitCancellationWaiter(shutdownThread, shutdown);
 			releaseRemote.countDown();
 
 			assertThatThrownBy(() -> waiter.get(5, TimeUnit.SECONDS))
-					.isInstanceOf(java.util.concurrent.ExecutionException.class)
-					.hasCauseInstanceOf(AssertionError.class);
+					.isInstanceOf(ExecutionException.class)
+					.hasCause(fatalFailure);
 			assertThat(shutdown.get(5, TimeUnit.SECONDS)).isNull();
+			awaitCallbackWorker(remoteWorker);
 			assertThat(remoteCalls).hasValue(1);
 			assertThat(coordinator.cancel("request-error")).isFalse();
 		} finally {
 			releaseRemote.countDown();
-			executor.shutdownNow();
+			waiterThread.interrupt();
+			shutdownThread.interrupt();
 		}
+	}
+
+	@Test
+	void cancellationAfterFatalCleanupDoesNotRetry() throws Exception {
+		CancellableOperationCoordinator coordinator = new CancellableOperationCoordinator();
+		CountDownLatch remoteStarted = new CountDownLatch(1);
+		AtomicInteger remoteCalls = new AtomicInteger();
+		AtomicReference<Thread> remoteWorker = new AtomicReference<>();
+		CancellableOperationCoordinator.Handle handle = coordinator.register("request-error-late", () -> {
+			remoteWorker.set(Thread.currentThread());
+			remoteCalls.incrementAndGet();
+			remoteStarted.countDown();
+			throw new AssertionError("remote cancellation failed fatally");
+		});
+
+		assertThat(coordinator.cancelAsync(handle)).isTrue();
+		assertThat(remoteStarted.await(5, TimeUnit.SECONDS)).isTrue();
+		awaitCallbackWorker(remoteWorker);
+		assertThat(coordinator.cancel("request-error-late")).isFalse();
+		assertThat(coordinator.cancelAsync(handle)).isFalse();
+		assertThat(remoteCalls).hasValue(1);
+		CancellableOperationCoordinator.Handle replacement = coordinator.register("request-error-late");
+		assertThat(replacement).isNotSameAs(handle);
+		coordinator.complete(replacement);
 	}
 
 	@Test
@@ -532,6 +569,19 @@ class CancellableOperationCoordinatorTest {
 		CancellableOperationCoordinator.Handle replacement = coordinator.register("request-async");
 		assertThat(replacement).isNotSameAs(handle);
 		coordinator.complete(replacement);
+	}
+
+	private static void awaitCancellationWaiter(Thread caller, Future<?> result) {
+		// Dedicated caller threads have no blocking operation before the cancellation attempt's join.
+		// Observing that park proves they joined the attempt before the remote callback is released.
+		long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(5);
+		Thread.State observed = caller.getState();
+		while (observed != Thread.State.WAITING && !result.isDone() && System.nanoTime() - deadline < 0) {
+			Thread.onSpinWait();
+			observed = caller.getState();
+		}
+		assertThat(result.isDone()).as("caller must still be waiting on the cancellation attempt").isFalse();
+		assertThat(observed).as("cancellation caller state").isEqualTo(Thread.State.WAITING);
 	}
 
 	private static void awaitCallbackWorker(AtomicReference<Thread> remoteWorker) throws InterruptedException {

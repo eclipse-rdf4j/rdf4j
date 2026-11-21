@@ -90,6 +90,7 @@ import org.eclipse.rdf4j.query.algebra.evaluation.impl.EvaluationStatistics;
 import org.eclipse.rdf4j.query.algebra.evaluation.util.QueryEvaluationUtility;
 import org.eclipse.rdf4j.query.algebra.helpers.AbstractQueryModelVisitor;
 import org.eclipse.rdf4j.query.algebra.helpers.AbstractSimpleQueryModelVisitor;
+import org.eclipse.rdf4j.query.algebra.helpers.FilterBindingScope;
 import org.eclipse.rdf4j.query.algebra.helpers.QueryAlgebraBindingAnalysis;
 import org.eclipse.rdf4j.query.algebra.helpers.StatementPatternVisitor;
 import org.eclipse.rdf4j.query.algebra.helpers.TupleExprs;
@@ -504,12 +505,8 @@ public class QueryJoinOptimizer implements QueryOptimizer {
 
 						joinArgs.remove(tupleExpr);
 
-						// Recursively optimize join arguments
-						Join parent = (Join) tupleExpr.getParentNode();
-						boolean leftArgument = parent.getLeftArg() == tupleExpr;
-						tupleExpr.visit(this);
-						// Optimizing a nested join can replace its root. Retain the actual optimized operand.
-						tupleExpr = leftArgument ? parent.getLeftArg() : parent.getRightArg();
+						// Optimize this operand only after its final containing joins have been built. Its original
+						// position does not describe which bindings the reordered evaluator will supply.
 						orderedJoinArgs.addLast(tupleExpr);
 
 						boundVars.addAll(getBindingInfo(tupleExpr).guaranteedOutput);
@@ -524,6 +521,7 @@ public class QueryJoinOptimizer implements QueryOptimizer {
 				// into, IterativeEvaluationOptimizer would hoist it away from that filter. Hoisting single-row tables
 				// to the front stays an experimental reordering. See QueryJoinOptimizerValuesPlacementTest.
 				orderedJoinArgs = placeBindingSetAssignments(orderedJoinArgs, ordinaryEntryBoundVars, experimental);
+				List<TupleExpr> deferredJoinArgs = new ArrayList<>(orderedJoinArgs);
 
 				// Build new join hierarchy
 				TupleExpr priorityJoins = null;
@@ -612,10 +610,9 @@ public class QueryJoinOptimizer implements QueryOptimizer {
 					// Replace old join hierarchy
 					replacePreservingScope(node, right);
 					bindingAnalysis.invalidate();
+					optimizeJoinOperands(deferredJoinArgs, origBoundVars);
 
-					// we optimize after the right call above in case the optimize call below
-					// recurses back into this function and we need all the node's parent/child pointers
-					// set up correctly for right to work on subsequent calls
+					// Priority operands also need the installed hierarchy for their contextual analysis.
 					if (priorityJoins != null) {
 						optimizePriorityJoin(origBoundVars.snapshot(), priorityJoins);
 					}
@@ -627,6 +624,24 @@ public class QueryJoinOptimizer implements QueryOptimizer {
 				}
 			} finally {
 				boundVars = origBoundVars;
+			}
+		}
+
+		/**
+		 * The rebuilt hierarchy determines operand invocation inputs. In a right-recursive join, an independent right
+		 * operand retains the containing join's entry bindings while withholding only that join's left row. Analyze the
+		 * installed tree rather than guessing this distinction from the flattened selection prefix. The original entry
+		 * prefix remains cost information; new guarantees come solely from the actual algebra context.
+		 */
+		private void optimizeJoinOperands(List<TupleExpr> operands, PhysicalCostPrefix entryBindings) {
+			PhysicalCostPrefix selectedBindings = boundVars;
+			try {
+				boundVars = entryBindings;
+				for (TupleExpr operand : operands) {
+					visitAt(operand);
+				}
+			} finally {
+				boundVars = selectedBindings;
 			}
 		}
 
@@ -765,9 +780,15 @@ public class QueryJoinOptimizer implements QueryOptimizer {
 				if (!(candidate instanceof LeftJoin leftJoin)) {
 					// Priority arguments are evaluated first. Any other argument may be evaluated with a sibling's row
 					// injected by JoinIterator, which changes nested BIND inputs and sub-select/MINUS/GROUP scopes.
-					if (!priorityArgs.contains(candidate)) {
+					// With only two operands an independent argument receives the same entry input in either order.
+					// A larger hierarchy can pass an earlier operand's output as a containing join's entry input.
+					boolean canReceiveSiblingInput = joinArgs.size() > 2
+							|| !TupleExprs.requiresIndependentEvaluation(candidate);
+					if (!priorityArgs.contains(candidate) && canReceiveSiblingInput) {
 						Set<String> sensitiveNames = new HashSet<>();
-						collectInjectionSensitiveNames(candidate, sensitiveNames);
+						if (!collectInjectionSensitiveNames(candidate, sensitiveNames)) {
+							return true;
+						}
 						if (!sensitiveNames.isEmpty() && siblingChangesNames(candidate, joinArgs, joinInput,
 								sensitiveNames, joinInput.guaranteedNames())) {
 							return true;
@@ -806,7 +827,9 @@ public class QueryJoinOptimizer implements QueryOptimizer {
 					addBindingReferences(leftJoin.getLeftArg(), optionalAnalysis, leftInput, sensitiveNames);
 				}
 				Set<String> leftSensitiveNames = new HashSet<>();
-				collectInjectionSensitiveNames(leftJoin.getLeftArg(), leftSensitiveNames);
+				if (!collectInjectionSensitiveNames(leftJoin.getLeftArg(), leftSensitiveNames)) {
+					return true;
+				}
 				if (!leftSensitiveNames.isEmpty() && siblingChangesNames(candidate, joinArgs, joinInput,
 						leftSensitiveNames, joinInput.guaranteedNames())) {
 					return true;
@@ -847,14 +870,54 @@ public class QueryJoinOptimizer implements QueryOptimizer {
 		}
 
 		/**
-		 * Collects names whose meaning changes when a sibling's row is injected into the expression: BIND inputs, every
-		 * name inside nested sub-selects and aggregates, and names only a MINUS right operand uses.
+		 * Collects names whose meaning may change when a sibling's row is injected. Unknown expression input contracts
+		 * reject reordering rather than silently treating an incomplete read set as empty.
 		 */
-		private void collectInjectionSensitiveNames(TupleExpr expression, Set<String> names) {
+		private boolean collectInjectionSensitiveNames(TupleExpr expression, Set<String> names) {
+			boolean[] complete = { true };
 			expression.visit(new AbstractSimpleQueryModelVisitor<RuntimeException>(false) {
 				@Override
 				public void meet(ExtensionElem node) {
-					names.addAll(VarNameCollector.process(node.getExpr()));
+					if (TupleExprs.isEvaluatedExtensionElement(node)) {
+						FilterBindingScope.ConditionBindingReads reads = FilterBindingScope
+								.conditionBindingReads(node.getExpr());
+						complete[0] &= reads.complete();
+						names.addAll(reads.bindingNames());
+						// An injected target changes compatibility even if the expression reads no variables or fails.
+						names.add(node.getName());
+					} else {
+						names.addAll(VarNameCollector.process(node.getExpr()));
+					}
+				}
+
+				@Override
+				public void meet(Filter node) {
+					FilterBindingScope.ConditionBindingReads reads = FilterBindingScope
+							.conditionBindingReads(node.getCondition());
+					complete[0] &= reads.complete();
+					Set<String> inheritedReads = new HashSet<>(reads.bindingNames());
+					QueryAlgebraBindingAnalysis.OutputFacts argument = bindingAnalysis.outputFacts(node.getArg(),
+							currentContext);
+					if (argument.guaranteedOutputsKnown()) {
+						inheritedReads.removeAll(argument.guaranteedOutputs());
+					}
+					names.addAll(inheritedReads);
+					node.getArg().visit(this);
+				}
+
+				@Override
+				public void meet(LeftJoin node) {
+					// An OPTIONAL nested inside a UNION is not the direct join operand analyzed above. A new entry
+					// binding can change its unmatched rows even when every enclosing BIND reads only local names.
+					names.addAll(node.getBindingNames());
+					names.addAll(VarNameCollector.process(node));
+					if (node.hasCondition()) {
+						FilterBindingScope.ConditionBindingReads reads = FilterBindingScope
+								.conditionBindingReads(node.getCondition());
+						complete[0] &= reads.complete();
+						names.addAll(reads.bindingNames());
+					}
+					super.meet(node);
 				}
 
 				@Override
@@ -881,6 +944,7 @@ public class QueryJoinOptimizer implements QueryOptimizer {
 					names.addAll(rightOnly);
 				}
 			});
+			return complete[0];
 		}
 
 		private Set<String> possibleAndRetainedNames(TupleExpr expression,
@@ -1471,7 +1535,7 @@ public class QueryJoinOptimizer implements QueryOptimizer {
 
 			List<TupleExpr> extensions = List.of();
 			for (TupleExpr expr : expressions) {
-				if (TupleExprs.containsExtension(expr)) {
+				if (containsPriorityExtension(expr)) {
 					if (extensions.isEmpty()) {
 						extensions = List.of(expr);
 					} else {
@@ -1483,6 +1547,17 @@ public class QueryJoinOptimizer implements QueryOptimizer {
 				}
 			}
 			return extensions;
+		}
+
+		private boolean containsPriorityExtension(TupleExpr expression) {
+			TupleExpr current = expression;
+			while (current.getClass() == Filter.class) {
+				current = ((Filter) current).getArg();
+			}
+			// Assignments inside UNION arms are local regardless of its scope marker. A FILTER around that UNION
+			// does not turn them into group-level assignments; its input-sensitive reads are checked separately.
+			// Other wrappers retain their existing treatment, including result modifiers and subqueries.
+			return !(current instanceof Union) && TupleExprs.containsExtension(expression);
 		}
 
 		/**
