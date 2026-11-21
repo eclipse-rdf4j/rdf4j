@@ -51,13 +51,15 @@ public interface AggregateNAryFunctionFactory {
 	/**
 	 * Builds an aggregate function with input evaluation step
 	 *
+	 * @param arity                 number of arguments passed to the function
 	 * @param evaluationStepByIndex used to process values from an iterator's binding set
 	 * @return an aggregate function evaluator
 	 */
-	AggregateNAryFunction buildFunction(BiFunction<Integer, BindingSet, Value> evaluationStepByIndex);
+	AggregateNAryFunction buildFunction(int arity, BiFunction<Integer, BindingSet, Value> evaluationStepByIndex);
 
 	/**
+	 * @param arity number of arguments passed to the function
 	 * @return result collector associated with given function type
 	 */
-	AggregateCollector getCollector();
+	AggregateCollector getCollector(int arity);
 }

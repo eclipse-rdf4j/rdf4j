@@ -27,7 +27,7 @@ public class CorrAggregateFactory extends AbstractNAryAggregateFactory {
 	}
 
 	@Override
-	public ExtensionCollector getCollector() {
+	public ExtensionCollector getCollector(int arity) {
 		return new CoMomentCollector(CoMomentCollector.Statistic.CORRELATION);
 	}
 }

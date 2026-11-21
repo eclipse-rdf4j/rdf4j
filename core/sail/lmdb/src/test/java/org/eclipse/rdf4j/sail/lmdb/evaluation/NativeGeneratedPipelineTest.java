@@ -664,14 +664,14 @@ class NativeGeneratedPipelineTest {
 		assertTrue(sampleProof.discards(unused));
 
 		NativeCustomAggregate custom = new NativeCustomAggregate(null, null, new NativeBindingSetValueEvaluator[0],
-				null, false, false);
+				null, -1, false);
 		NativeGeneratedKeyPlan customProof = NativeGeneratedKeyPlan.group(producer, new int[] { 1 },
 				new AggregateSpec[] { AggregateSpec.custom("opaque", custom) });
 		assertFalse(customProof.discards(sampleInput));
 		assertFalse(customProof.discards(unused), "custom aggregates keep opaque dependencies live");
 
 		NativeCustomAggregate distinctCustom = new NativeCustomAggregate(null, null,
-				new NativeBindingSetValueEvaluator[0], null, false, true);
+				new NativeBindingSetValueEvaluator[0], null, -1, true);
 		NativeGeneratedKeyPlan distinctCustomProof = NativeGeneratedKeyPlan.group(producer, new int[] { 1 },
 				new AggregateSpec[] { AggregateSpec.custom("opaqueDistinct", distinctCustom) });
 		assertTrue(distinctCustomProof.isEmpty(), "custom DISTINCT channels cannot prove their input slots");

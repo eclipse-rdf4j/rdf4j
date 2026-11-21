@@ -1655,12 +1655,13 @@ public class SPARQLParserTest {
 			}
 
 			@Override
-			public AggregateNAryFunction buildFunction(BiFunction<Integer, BindingSet, Value> evaluationStepByIndex) {
+			public AggregateNAryFunction buildFunction(int arity,
+					BiFunction<Integer, BindingSet, Value> evaluationStepByIndex) {
 				return null;
 			}
 
 			@Override
-			public AggregateCollector getCollector() {
+			public AggregateCollector getCollector(int arity) {
 				return null;
 			}
 		};

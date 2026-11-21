@@ -42,9 +42,8 @@ public abstract class AbstractNAryAggregateFactory implements AggregateNAryFunct
 	}
 
 	@Override
-	public AggregateNAryFunction<ExtensionCollector, Value> buildFunction(
+	public AggregateNAryFunction<ExtensionCollector, Value> buildFunction(int arity,
 			BiFunction<Integer, BindingSet, Value> evaluationStepByIndex) {
-		int arity = getMaxNumberOfArguments();
 		return new AggregateNAryFunction<>(evaluationStepByIndex) {
 			@Override
 			public void processAggregate(BindingSet bindingSet, Predicate<List<Value>> distinctTuple,
@@ -78,5 +77,5 @@ public abstract class AbstractNAryAggregateFactory implements AggregateNAryFunct
 	}
 
 	@Override
-	public abstract ExtensionCollector getCollector();
+	public abstract ExtensionCollector getCollector(int arity);
 }

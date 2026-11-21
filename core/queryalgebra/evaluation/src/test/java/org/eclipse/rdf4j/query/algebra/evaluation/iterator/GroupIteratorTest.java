@@ -947,7 +947,7 @@ public class GroupIteratorTest {
 		}
 
 		@Override
-		public AggregateNAryFunction<SumCollector, Value> buildFunction(
+		public AggregateNAryFunction<SumCollector, Value> buildFunction(int arity,
 				BiFunction<Integer, BindingSet, Value> evaluationStepByIndex) {
 			return new AggregateNAryFunction<>(evaluationStepByIndex) {
 				private ValueExprEvaluationException typeError = null;
@@ -993,7 +993,7 @@ public class GroupIteratorTest {
 		}
 
 		@Override
-		public SumCollector getCollector() {
+		public SumCollector getCollector(int arity) {
 			return new SumCollector();
 		}
 	}
@@ -1006,7 +1006,7 @@ public class GroupIteratorTest {
 		}
 
 		@Override
-		public AggregateNAryFunction<SumCollector, Value> buildFunction(
+		public AggregateNAryFunction<SumCollector, Value> buildFunction(int arity,
 				BiFunction<Integer, BindingSet, Value> evaluationStepByIndex) {
 			return new AggregateNAryFunction<>(evaluationStepByIndex) {
 
@@ -1022,7 +1022,7 @@ public class GroupIteratorTest {
 		}
 
 		@Override
-		public SumCollector getCollector() {
+		public SumCollector getCollector(int arity) {
 			return new SumCollector();
 		}
 	}
@@ -1044,7 +1044,7 @@ public class GroupIteratorTest {
 		}
 
 		@Override
-		public AggregateNAryFunction<SumCollector, Value> buildFunction(
+		public AggregateNAryFunction<SumCollector, Value> buildFunction(int arity,
 				BiFunction<Integer, BindingSet, Value> evaluationStepByIndex) {
 			return new AggregateNAryFunction<>(evaluationStepByIndex) {
 				private ValueExprEvaluationException typeError = null;
@@ -1074,7 +1074,7 @@ public class GroupIteratorTest {
 		}
 
 		@Override
-		public SumCollector getCollector() {
+		public SumCollector getCollector(int arity) {
 			return new SumCollector();
 		}
 	}

@@ -61,8 +61,8 @@ class ExtensionAggregateBoundaryRegressionTest {
 	@ValueSource(strings = { "NaN", "INF", "-INF", "-0.1", "1.1", "bad" })
 	void approximateQuantileRejectsInvalidFractionsWithoutEscaping(String lexical) {
 		ApproxQuantileAggregateFactory factory = new ApproxQuantileAggregateFactory();
-		ExtensionCollector collector = factory.getCollector();
-		var function = factory.buildFunction((index, row) -> row.getValue(index == 0 ? "x" : "p"));
+		ExtensionCollector collector = factory.getCollector(2);
+		var function = factory.buildFunction(2, (index, row) -> row.getValue(index == 0 ? "x" : "p"));
 		QueryBindingSet row = new QueryBindingSet();
 		row.setBinding("x", VF.createLiteral(1));
 		row.setBinding("p", VF.createLiteral(lexical, XSD.DOUBLE));
@@ -78,8 +78,8 @@ class ExtensionAggregateBoundaryRegressionTest {
 	@ParameterizedTest
 	@MethodSource("quantileFactories")
 	void quantileFractionMustBeTheSameForEveryRow(AbstractNAryAggregateFactory factory) {
-		ExtensionCollector collector = factory.getCollector();
-		var function = factory.buildFunction((index, row) -> row.getValue(index == 0 ? "x" : "p"));
+		ExtensionCollector collector = factory.getCollector(2);
+		var function = factory.buildFunction(2, (index, row) -> row.getValue(index == 0 ? "x" : "p"));
 		QueryBindingSet first = new QueryBindingSet();
 		first.setBinding("x", VF.createLiteral(1));
 		first.setBinding("p", VF.createLiteral(new BigDecimal("0.1")));
@@ -90,7 +90,7 @@ class ExtensionAggregateBoundaryRegressionTest {
 		assertDoesNotThrow(() -> function.processAggregate(second, tuple -> true, collector));
 		assertThrows(ValueExprEvaluationException.class, collector::getFinalValue);
 
-		ExtensionCollector sameFraction = factory.getCollector();
+		ExtensionCollector sameFraction = factory.getCollector(2);
 		QueryBindingSet third = new QueryBindingSet();
 		third.setBinding("x", VF.createLiteral(2));
 		third.setBinding("p", VF.createLiteral(new BigDecimal("0.10")));
@@ -115,8 +115,8 @@ class ExtensionAggregateBoundaryRegressionTest {
 	@MethodSource("exactInvalidFractions")
 	void approximateQuantileChecksExactFractionBeforePromotion(String lexical) {
 		ApproxQuantileAggregateFactory factory = new ApproxQuantileAggregateFactory();
-		ExtensionCollector collector = factory.getCollector();
-		var function = factory.buildFunction((index, row) -> row.getValue(index == 0 ? "x" : "p"));
+		ExtensionCollector collector = factory.getCollector(2);
+		var function = factory.buildFunction(2, (index, row) -> row.getValue(index == 0 ? "x" : "p"));
 		QueryBindingSet row = new QueryBindingSet();
 		row.setBinding("x", VF.createLiteral(1));
 		row.setBinding("p", VF.createLiteral(lexical, XSD.DECIMAL));
@@ -127,8 +127,8 @@ class ExtensionAggregateBoundaryRegressionTest {
 	@ParameterizedTest
 	@MethodSource("invalidPairs")
 	void covarianceAndCorrelationRecordInvalidLexicalValues(AbstractNAryAggregateFactory factory, Value invalid) {
-		ExtensionCollector collector = factory.getCollector();
-		var function = factory.buildFunction((index, row) -> row.getValue(index == 0 ? "x" : "y"));
+		ExtensionCollector collector = factory.getCollector(2);
+		var function = factory.buildFunction(2, (index, row) -> row.getValue(index == 0 ? "x" : "y"));
 		QueryBindingSet row = new QueryBindingSet();
 		row.setBinding("x", invalid);
 		row.setBinding("y", VF.createLiteral(1));

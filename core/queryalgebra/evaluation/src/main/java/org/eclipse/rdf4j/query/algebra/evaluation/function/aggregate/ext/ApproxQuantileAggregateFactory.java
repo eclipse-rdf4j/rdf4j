@@ -38,7 +38,7 @@ public class ApproxQuantileAggregateFactory extends AbstractNAryAggregateFactory
 	}
 
 	@Override
-	public ExtensionCollector getCollector() {
+	public ExtensionCollector getCollector(int arity) {
 		return new ExtensionCollector() {
 			private final KllDoublesSketch sketch = KllDoublesSketch.newHeapInstance();
 			private double fraction = Double.NaN;
