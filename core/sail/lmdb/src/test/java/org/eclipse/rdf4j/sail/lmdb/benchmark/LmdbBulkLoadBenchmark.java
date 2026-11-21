@@ -81,13 +81,23 @@ public class LmdbBulkLoadBenchmark {
 
 	@Setup(Level.Trial)
 	public void createInput() throws IOException {
-		fixedPartitionConcurrency = "ADAPTIVE".equals(partitionConcurrency) ? 0
-				: Integer.parseInt(partitionConcurrency);
-		input = Files.createTempFile("rdf4j-lmdb-bulk-benchmark-", ".nq");
-		try (BufferedWriter writer = Files.newBufferedWriter(input, StandardCharsets.UTF_8)) {
-			for (int index = 0; index < statementCount; index++) {
-				writer.write(scenario.statement(index));
+		try {
+			fixedPartitionConcurrency = "ADAPTIVE".equals(partitionConcurrency) ? 0
+					: Integer.parseInt(partitionConcurrency);
+			input = Files.createTempFile("rdf4j-lmdb-bulk-benchmark-", ".nq");
+			try (BufferedWriter writer = Files.newBufferedWriter(input, StandardCharsets.UTF_8)) {
+				for (int index = 0; index < statementCount; index++) {
+					writer.write(scenario.statement(index));
+				}
 			}
+
+		} catch (Exception | Error failure) {
+			try {
+				deleteInput();
+			} catch (Exception | Error cleanupFailure) {
+				failure.addSuppressed(cleanupFailure);
+			}
+			throw failure;
 		}
 	}
 
@@ -150,7 +160,10 @@ public class LmdbBulkLoadBenchmark {
 
 	@TearDown(Level.Trial)
 	public void deleteInput() throws IOException {
-		Files.deleteIfExists(input);
+		if (input != null) {
+			Files.deleteIfExists(input);
+			input = null;
+		}
 	}
 
 	private static LmdbStoreConfig config() {

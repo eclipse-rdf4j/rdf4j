@@ -14,6 +14,7 @@ package org.eclipse.rdf4j.sail.base;
 import java.io.PrintWriter;
 import java.io.StringWriter;
 import java.util.Set;
+import java.util.stream.Collectors;
 
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Resource;
@@ -27,6 +28,7 @@ import org.eclipse.rdf4j.query.explanation.ExplanationImpl;
 import org.eclipse.rdf4j.queryrender.RenderUtils;
 import org.eclipse.rdf4j.queryrender.sparql.TupleExprIRRenderer;
 import org.eclipse.rdf4j.queryrender.sparql.TupleExprIRRenderer.DatasetView;
+import org.eclipse.rdf4j.rio.helpers.NTriplesUtil;
 
 class SlowQueryLogFormatter {
 
@@ -36,8 +38,7 @@ class SlowQueryLogFormatter {
 		sb.append("Slow query detected").append(lineSeparator);
 		sb.append("sail=").append(info.getSailClassName()).append(lineSeparator);
 		sb.append("elapsedMillis=").append(elapsedMillis).append(lineSeparator);
-		sb.append("thresholdSeconds=").append(info.getThresholdSeconds()).append(lineSeparator);
-		appendCommonSections(sb, info);
+		sb.append(commonSections(info));
 		return sb.toString();
 	}
 
@@ -47,14 +48,31 @@ class SlowQueryLogFormatter {
 		sb.append("Slow query detected while retrieving first result").append(lineSeparator);
 		sb.append("sail=").append(info.getSailClassName()).append(lineSeparator);
 		sb.append("elapsedMillisToFirstResult=").append(elapsedMillisToFirstResult).append(lineSeparator);
-		sb.append("firstResultThresholdSeconds=").append(info.getFirstResultThresholdSeconds()).append(lineSeparator);
-		appendCommonSections(sb, info);
+		sb.append(commonSections(info));
 		return sb.toString();
+	}
+
+	private String commonSections(SlowQueryLogInfo info) {
+		return info.formattedCommonSections(() -> {
+			StringBuilder sb = new StringBuilder(1_024);
+			appendCommonSections(sb, info);
+			return sb.toString();
+		});
 	}
 
 	private void appendCommonSections(StringBuilder sb, SlowQueryLogInfo info) {
 		String lineSeparator = System.lineSeparator();
+		sb.append("thresholdSeconds=").append(info.getThresholdSeconds()).append(lineSeparator);
+		sb.append("firstResultThresholdSeconds=").append(info.getFirstResultThresholdSeconds()).append(lineSeparator);
 		sb.append("queryType=").append(info.getQueryType()).append(lineSeparator);
+		info.getMetadata().forEach((key, value) -> appendField(sb, key, value));
+		appendField(sb, "bindingCount", Integer.toString(info.getIncomingBindings().size()));
+		info.getIncomingBindings()
+				.forEach((name, value) -> sb.append(escapeField("binding." + name))
+						.append('=')
+						.append(escapeControls(value))
+						.append(lineSeparator));
+		appendDataset(sb, info);
 		appendSection(sb, "Raw query text", valueOrUnavailable(info.getRawQueryText()));
 		appendSection(sb, "Unoptimized explanation",
 				explanationToString(Explanation.Level.Unoptimized, info.getUnoptimizedTupleExpr(),
@@ -64,6 +82,50 @@ class SlowQueryLogFormatter {
 						info.getIncomingBindingNames()));
 		appendSection(sb, "Rendered optimized query after optimization (WARNING: best-effort; may be incorrect)",
 				renderOptimizedQuery(info));
+	}
+
+	private void appendDataset(StringBuilder target, SlowQueryLogInfo info) {
+		Dataset dataset = info.getDataset();
+		if (dataset == null) {
+			appendField(target, "dataset", info.getMetadata().containsKey("datasetSnapshotError")
+					? "unavailable"
+					: "repository-default");
+			return;
+		}
+		appendField(target, "dataset.explicitReadDataset", Boolean.toString(dataset.isExplicitReadDataset()));
+		appendField(target, "dataset.defaultGraphs", selectors(dataset.getDefaultGraphResources()));
+		appendField(target, "dataset.namedGraphs", selectors(dataset.getNamedGraphResources()));
+		appendField(target, "dataset.defaultRemoveGraphs", selectors(dataset.getDefaultRemoveGraphResources()));
+		Resource insertGraph = dataset.getDefaultInsertGraphResource();
+		appendField(target, "dataset.defaultInsertGraph",
+				insertGraph == null ? "DEFAULT" : NTriplesUtil.toNTriplesString(insertGraph));
+	}
+
+	private String selectors(Set<Resource> graphs) {
+		if (graphs == null) {
+			return "unspecified";
+		}
+		return graphs.stream()
+				.map(graph -> graph == null ? "DEFAULT" : NTriplesUtil.toNTriplesString(graph))
+				.sorted()
+				.collect(Collectors.joining(", ", "[", "]"));
+	}
+
+	private void appendField(StringBuilder target, String key, String value) {
+		target.append(escapeField(key)).append('=').append(escapeField(value)).append(System.lineSeparator());
+	}
+
+	private String escapeField(String value) {
+		return value == null ? "unavailable" : escapeControls(value.replace("\\", "\\\\"));
+	}
+
+	private String escapeControls(String value) {
+		return value.replace("\r", "\\r")
+				.replace("\n", "\\n")
+				.replace("\t", "\\t")
+				.replace("\u0085", "\\u0085")
+				.replace("\u2028", "\\u2028")
+				.replace("\u2029", "\\u2029");
 	}
 
 	protected TupleExprIRRenderer createRenderer() {
@@ -107,15 +169,20 @@ class SlowQueryLogFormatter {
 			return "<unavailable>";
 		}
 
-		TupleExpr explanationTupleExpr = tupleExpr;
-		if (level == Explanation.Level.Unoptimized && !(explanationTupleExpr instanceof QueryRoot)) {
-			explanationTupleExpr = new QueryRoot(tupleExpr.clone());
-		}
+		try {
+			TupleExpr explanationTupleExpr = tupleExpr;
+			if (level == Explanation.Level.Unoptimized && !(explanationTupleExpr instanceof QueryRoot)) {
+				explanationTupleExpr = new QueryRoot(tupleExpr.clone());
+			}
 
-		QueryModelTreeToGenericPlanNode converter = new QueryModelTreeToGenericPlanNode(explanationTupleExpr,
-				incomingBindingNames, level);
-		explanationTupleExpr.visit(converter);
-		return new ExplanationImpl(converter.getGenericPlanNode(), false, explanationTupleExpr).toString();
+			QueryModelTreeToGenericPlanNode converter = new QueryModelTreeToGenericPlanNode(explanationTupleExpr,
+					incomingBindingNames, level);
+			explanationTupleExpr.visit(converter);
+			return new ExplanationImpl(converter.getGenericPlanNode(), false, explanationTupleExpr).toString();
+		} catch (Throwable failure) {
+			return "<unavailable>" + System.lineSeparator() + "Explanation throwable:" + System.lineSeparator()
+					+ stackTrace(failure);
+		}
 	}
 
 	private DatasetView toDatasetView(Dataset dataset) {

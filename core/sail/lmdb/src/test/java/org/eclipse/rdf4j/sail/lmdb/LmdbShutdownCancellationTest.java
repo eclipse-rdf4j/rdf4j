@@ -242,7 +242,10 @@ class LmdbShutdownCancellationTest {
 			repository.shutDown();
 			assertEquals(seedCloses + 1, delegateClosesAtNativeShutdown.get(),
 					"shutdown must close the parked result's native delegate before native teardown");
-			assertFalse(parked.hasNext(), "a result closed by shutdown must report exhaustion");
+			RepositoryException aborted = assertThrows(RepositoryException.class, parked::hasNext,
+					"a result closed by shutdown before it was consumed must fail, not look exhausted");
+			assertInstanceOf(SailException.class, aborted.getCause());
+			assertEquals("Sail is shutting down", aborted.getCause().getMessage());
 			parked.close();
 			assertEquals(seedCloses + 1, delegateCloses.get(), "the parked native delegate must close exactly once");
 		} finally {

@@ -77,6 +77,8 @@ public class GraphServlet extends TransformationServlet {
 
 	private static final String QUERY_EXECUTION_FEATURE = "query-execution";
 
+	private final BrowseList searchCounts = new BrowseList(() -> repository);
+
 	private int maxQueryLength = DEFAULT_MAX_QUERY_LENGTH;
 	private int maxResultRows = DEFAULT_MAX_RESULT_ROWS;
 	private int maxQueryTimeout = DEFAULT_MAX_QUERY_TIMEOUT;
@@ -126,12 +128,48 @@ public class GraphServlet extends TransformationServlet {
 	/** The page model: who the repository is and what the explorer may send. */
 	@Override
 	protected void service(WorkbenchRequest req, HttpServletResponse resp) throws Exception {
+		if ("true".equals(req.getParameter("search-size"))) {
+			searchSize(resp);
+			return;
+		}
 		TupleResultBuilder builder = getTupleResultBuilder(req, resp, resp.getOutputStream());
 		// Results stop at max-result-rows (saying so with rdf4j:truncated); the explorer sizes its batches below it.
 		builder.start("id", "readable", "writeable", "max-query-length", "max-result-rows");
 		builder.link(List.of(INFO));
 		builder.result(info.getId(), info.isReadable(), info.isWritable(), maxQueryLength, maxResultRows);
 		builder.end();
+	}
+
+	/**
+	 * A quick statement count for choosing automatic versus manual repository-wide search. A slow or unavailable count
+	 * is unknown, never zero. The shared count budget also bounds workers when a repository ignores cancellation.
+	 */
+	private void searchSize(HttpServletResponse resp) throws IOException {
+		if (!info.isReadable() || !isQueryFeatureEnabled(QUERY_EXECUTION_FEATURE)) {
+			resp.sendError(HttpServletResponse.SC_FORBIDDEN);
+			return;
+		}
+		Long size = null;
+		try {
+			size = searchCounts.sharedWithinBudget("graph-search-size", () -> {
+				try (RepositoryConnection connection = repository.getConnection()) {
+					return connection.size();
+				}
+			}, BrowseList.COUNT_BUDGET_MILLIS).orElse(null);
+		} catch (Exception e) {
+			// Failure to estimate size must not prevent local search or enable automatic repository-wide search.
+			log.debug("Could not determine repository size for graph search", e);
+		}
+		resp.setContentType("application/json");
+		resp.setCharacterEncoding(StandardCharsets.UTF_8.name());
+		resp.setHeader("Cache-Control", "no-store");
+		resp.getOutputStream().write(("{\"size\":" + size + "}").getBytes(StandardCharsets.UTF_8));
+	}
+
+	@Override
+	public void destroy() {
+		searchCounts.shutdown();
+		super.destroy();
 	}
 
 	@Override

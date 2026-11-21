@@ -239,6 +239,18 @@ public abstract class QueryResultView implements View {
 		return handle != null && !handle.isActive();
 	}
 
+	/**
+	 * Whether this view consumes a heartbeat stored under {@link #RESPONSE_HEARTBEAT_KEY}: it writes the result through
+	 * {@link QueryResponseHeartbeat#getOutputStream()} and completes or aborts the heartbeat. The query request handler
+	 * starts a heartbeat only for views that return {@code true}, because a view that writes to the servlet response
+	 * directly would write concurrently with the heartbeat thread.
+	 *
+	 * @return {@code false} by default; views that honour the heartbeat contract override this
+	 */
+	public boolean supportsResponseHeartbeat() {
+		return false;
+	}
+
 	@SuppressWarnings("rawtypes")
 	protected QueryResponseHeartbeat getResponseHeartbeat(Map model) {
 		return (QueryResponseHeartbeat) model.get(RESPONSE_HEARTBEAT_KEY);

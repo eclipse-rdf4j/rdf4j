@@ -190,7 +190,7 @@ test('Find uses the fixed blank reference as a SPARQL resource operand', async (
     await loadGraph(page);
     const find = page.getByRole('combobox', { name: 'Find a node, or search the repository' });
     await find.fill('<_:alice>');
-    const repositorySearch = page.getByRole('option', { name: /Search the repository for “<_:alice>”/ });
+    const repositorySearch = page.getByRole('button', { name: 'Load this resource', exact: true });
     await expect(repositorySearch).toBeVisible();
     await repositorySearch.click();
 

@@ -79,29 +79,39 @@ public class TransactionsPerSecondSyntheticBenchmark {
 
 	@Setup(Level.Iteration)
 	public void beforeClass() {
-		if (connection != null) {
-			connection.close();
-			connection = null;
-		}
-		i = 0;
-		file = Files.newTemporaryFolder();
+		try {
+			if (connection != null) {
+				connection.close();
+				connection = null;
+			}
+			i = 0;
+			file = Files.newTemporaryFolder();
 
-		LmdbStore sail = new LmdbStore(file,
-				ConfigUtil.createConfig().setForceSync(forceSync).setSketchEstimatorEnabled(false));
-		repository = new SailRepository(sail);
-		connection = repository.getConnection();
-		random = new Random(1337);
-		literalGenerator = new RandomLiteralGenerator(connection.getValueFactory(), random);
-		resources = new ArrayList<>();
-		for (int i = 0; i < 10; i++) {
-			resources.add(connection.getValueFactory().createIRI("some:resource-" + i));
-		}
-		predicates = new ArrayList<>();
-		for (int i = 0; i < 10; i++) {
-			predicates.add(connection.getValueFactory().createIRI("some:predicate-" + i));
-		}
+			LmdbStore sail = new LmdbStore(file,
+					ConfigUtil.createConfig().setForceSync(forceSync).setSketchEstimatorEnabled(false));
+			repository = new SailRepository(sail);
+			connection = repository.getConnection();
+			random = new Random(1337);
+			literalGenerator = new RandomLiteralGenerator(connection.getValueFactory(), random);
+			resources = new ArrayList<>();
+			for (int i = 0; i < 10; i++) {
+				resources.add(connection.getValueFactory().createIRI("some:resource-" + i));
+			}
+			predicates = new ArrayList<>();
+			for (int i = 0; i < 10; i++) {
+				predicates.add(connection.getValueFactory().createIRI("some:predicate-" + i));
+			}
 
-		System.gc();
+			System.gc();
+
+		} catch (Exception | Error failure) {
+			try {
+				afterClass();
+			} catch (Exception | Error cleanupFailure) {
+				failure.addSuppressed(cleanupFailure);
+			}
+			throw failure;
+		}
 	}
 
 	IRI randomResource() {
@@ -114,16 +124,22 @@ public class TransactionsPerSecondSyntheticBenchmark {
 
 	@TearDown(Level.Iteration)
 	public void afterClass() throws IOException {
-		if (connection != null) {
-			connection.close();
-			connection = null;
-		}
-		try {
-			repository.shutDown();
-		} finally {
+		try (var directoryCleanup = LmdbTestUtil.onClose(() -> {
 			LmdbTestUtil.deleteDir(file);
+			file = null;
+		}); var repositoryCleanup = LmdbTestUtil.onClose(() -> {
+			if (repository != null) {
+				repository.shutDown();
+				repository = null;
+			}
+		}); var connectionCleanup = LmdbTestUtil.onClose(() -> {
+			if (connection != null) {
+				connection.close();
+				connection = null;
+			}
+		})) {
+			// The connection closes before repository shutdown and directory removal.
 		}
-
 	}
 
 	@Benchmark

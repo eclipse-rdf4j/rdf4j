@@ -13,18 +13,30 @@ package org.eclipse.rdf4j.query.algebra.evaluation.optimizer;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+import java.util.Arrays;
 import java.util.List;
 import java.util.concurrent.atomic.AtomicReference;
 
+import org.eclipse.rdf4j.common.iteration.CloseableIteration;
+import org.eclipse.rdf4j.common.iteration.CloseableIteratorIteration;
+import org.eclipse.rdf4j.common.order.StatementOrder;
+import org.eclipse.rdf4j.model.IRI;
+import org.eclipse.rdf4j.model.Resource;
+import org.eclipse.rdf4j.model.Statement;
+import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.query.BindingSet;
+import org.eclipse.rdf4j.query.QueryLanguage;
+import org.eclipse.rdf4j.query.QueryResults;
 import org.eclipse.rdf4j.query.algebra.SingletonSet;
+import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryOptimizer;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.DefaultEvaluationStrategy;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.EmptyTripleSource;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.EvaluationStatistics;
 import org.eclipse.rdf4j.query.impl.EmptyBindingSet;
 import org.eclipse.rdf4j.query.impl.MapBindingSet;
+import org.eclipse.rdf4j.query.parser.QueryParserUtil;
 import org.junit.jupiter.api.Test;
 
 class PreparedQueryOptimizerBindingsTest {
@@ -62,6 +74,47 @@ class PreparedQueryOptimizerBindingsTest {
 		strategy.setOptimizerPipeline(() -> List.of(optimizer));
 		strategy.optimize(new SingletonSet(), new EvaluationStatistics(), parameters);
 		assertThat(observed.get()).isSameAs(parameters);
+	}
+
+	@Test
+	void preparedWindowFiltersOnTheSuppliedLabel() {
+		var vf = SimpleValueFactory.getInstance();
+		IRI label = vf.createIRI("http://www.w3.org/2000/01/rdf-schema#label");
+		List<Statement> statements = List.of(vf.createStatement(vf.createIRI("urn:alice"), label,
+				vf.createLiteral("Alice")),
+				vf.createStatement(vf.createIRI("urn:bob"), label,
+						vf.createLiteral("Bob")));
+		var source = new EmptyTripleSource() {
+			@Override
+			public CloseableIteration<? extends Statement> getStatements(Resource subject, IRI predicate,
+					Value object, Resource... contexts) {
+				return new CloseableIteratorIteration<>(statements.stream()
+						.filter(st -> subject == null || subject.equals(st.getSubject()))
+						.filter(st -> predicate == null || predicate.equals(st.getPredicate()))
+						.filter(st -> object == null || object.equals(st.getObject()))
+						.filter(st -> contexts.length == 0 || Arrays.asList(contexts).contains(st.getContext()))
+						.iterator());
+			}
+
+			@Override
+			public CloseableIteration<? extends Statement> getStatements(StatementOrder order, Resource subject,
+					IRI predicate, Value object, Resource... contexts) {
+				return getStatements(subject, predicate, object, contexts);
+			}
+		};
+		String query = "PREFIX winf:<http://rdf4j.org/function/window#> "
+				+ "SELECT ?subject (winf:rowNumber() AS ?rank) WHERE { "
+				+ "?subject <http://www.w3.org/2000/01/rdf-schema#label> ?label }";
+		TupleExpr expression = QueryParserUtil.parseTupleQuery(QueryLanguage.SPARQL, query, null).getTupleExpr();
+		var bindings = new MapBindingSet();
+		bindings.addBinding("label", vf.createLiteral("Alice"));
+		var strategy = new DefaultEvaluationStrategy(source, null);
+		TupleExpr prepared = strategy.optimize(expression, new EvaluationStatistics(), bindings);
+		try (var result = strategy.precompile(prepared).evaluate(EmptyBindingSet.getInstance())) {
+			List<BindingSet> rows = QueryResults.asList(result);
+			assertThat(rows).extracting(row -> row.getValue("subject")).containsExactly(vf.createIRI("urn:alice"));
+			assertThat(rows).extracting(row -> row.getValue("rank").stringValue()).containsExactly("1");
+		}
 	}
 
 	private static MapBindingSet parameters() {

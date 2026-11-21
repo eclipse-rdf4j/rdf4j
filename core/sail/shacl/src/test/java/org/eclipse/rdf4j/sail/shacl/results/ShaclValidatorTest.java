@@ -29,6 +29,7 @@ import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
 import org.eclipse.rdf4j.rio.RDFFormat;
 import org.eclipse.rdf4j.sail.memory.MemoryStore;
 import org.eclipse.rdf4j.sail.shacl.ShaclValidator;
+import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 
 /**
@@ -36,12 +37,28 @@ import org.junit.jupiter.api.Test;
  */
 public class ShaclValidatorTest {
 
+	private SailRepository data;
+	private SailRepository shapes;
+
+	@AfterEach
+	void shutDownRepositories() {
+		try {
+			if (data != null) {
+				data.shutDown();
+			}
+		} finally {
+			if (shapes != null) {
+				shapes.shutDown();
+			}
+		}
+	}
+
 	@Test
 	public void testDefaultGraphIsUnionValid() throws Exception {
 
-		SailRepository shapes = getShapes(null);
+		shapes = getShapes(null);
 
-		SailRepository data = new SailRepository(new MemoryStore());
+		data = new SailRepository(new MemoryStore());
 
 		try (SailRepositoryConnection connection = data.getConnection()) {
 			connection.add(Values.iri("http://example.org", "person1"), RDF.TYPE, RDFS.RESOURCE);
@@ -56,9 +73,9 @@ public class ShaclValidatorTest {
 	@Test
 	public void testDefaultGraphIsUnionFailureDefaultGraph() throws Exception {
 
-		SailRepository shapes = getShapes(null);
+		shapes = getShapes(null);
 
-		SailRepository data = new SailRepository(new MemoryStore());
+		data = new SailRepository(new MemoryStore());
 
 		try (SailRepositoryConnection connection = data.getConnection()) {
 			connection.add(Values.iri("http://example.org", "person1"), RDF.TYPE, RDFS.RESOURCE);
@@ -71,9 +88,9 @@ public class ShaclValidatorTest {
 	@Test
 	public void testDefaultGraphIsUnionWarningDefaultGraph() throws Exception {
 
-		SailRepository shapes = getShapes("sh:Warning");
+		shapes = getShapes("sh:Warning");
 
-		SailRepository data = new SailRepository(new MemoryStore());
+		data = new SailRepository(new MemoryStore());
 
 		try (SailRepositoryConnection connection = data.getConnection()) {
 			connection.add(Values.iri("http://example.org", "person1"), RDF.TYPE, RDFS.RESOURCE);
@@ -89,9 +106,9 @@ public class ShaclValidatorTest {
 	@Test
 	public void testDefaultGraphIsUnionInfoDefaultGraph() throws Exception {
 
-		SailRepository shapes = getShapes("sh:Info");
+		shapes = getShapes("sh:Info");
 
-		SailRepository data = new SailRepository(new MemoryStore());
+		data = new SailRepository(new MemoryStore());
 
 		try (SailRepositoryConnection connection = data.getConnection()) {
 			connection.add(Values.iri("http://example.org", "person1"), RDF.TYPE, RDFS.RESOURCE);
@@ -106,9 +123,9 @@ public class ShaclValidatorTest {
 	@Test
 	public void testDefaultGraphIsUnionFailureNamedGraph() throws Exception {
 
-		SailRepository shapes = getShapes(null);
+		shapes = getShapes(null);
 
-		SailRepository data = new SailRepository(new MemoryStore());
+		data = new SailRepository(new MemoryStore());
 
 		try (SailRepositoryConnection connection = data.getConnection()) {
 			connection.add(Values.iri("http://example.org", "person1"), RDF.TYPE, RDFS.RESOURCE,
@@ -119,7 +136,7 @@ public class ShaclValidatorTest {
 		assertFalse(validate.conforms());
 	}
 
-	private static SailRepository getShapes(String severity) throws IOException {
+	private SailRepository getShapes(String severity) throws IOException {
 		String turtleTemplate = "@base <http://example.com/ns> .\n" +
 				"@prefix ex: <http://example.com/ns#> .\n" +
 				"@prefix owl: <http://www.w3.org/2002/07/owl#> .\n" +
@@ -143,7 +160,7 @@ public class ShaclValidatorTest {
 		String severityLine = severity != null ? "sh:severity " + severity + " ;\n" : "";
 		String turtleString = String.format(turtleTemplate, severityLine);
 
-		SailRepository shapes = new SailRepository(new MemoryStore());
+		shapes = new SailRepository(new MemoryStore());
 		try (SailRepositoryConnection connection = shapes.getConnection()) {
 			connection.add(new StringReader(turtleString), "", RDFFormat.TURTLE, RDF4J.SHACL_SHAPE_GRAPH);
 		}

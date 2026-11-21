@@ -20,7 +20,7 @@ import { canvasGraph, RDF_TYPE } from "./graph-canvas-scope.ts";
 import type { RangeDraft, FilterFacet, PredicateOption, ContextMenu, ViewMode, LoadBatch, NamedGroup, GraphHistorySnapshot, LayoutIntent } from "./explorer-types.ts";
 import { INCREMENTAL_LAYOUT_DURATION, PROGRAMMATIC_NODE_MOTION_DURATION, DOUBLE_TAP_DELAY, DOUBLE_TAP_DISTANCE, TAP_MOVE_TOLERANCE, DOUBLE_TAP_ZOOM_SENSITIVITY, HISTORY_LIMIT, INTERACTIVE_TRANSFORM_COMMIT_DELAY, DEFAULT_QUERY, SHOW_VALUES_STORAGE_KEY, SHOW_LABELS_STORAGE_KEY, readDisplayPreferences, DETAILS_ITEM_LIMIT, LEGEND_TYPE_LIMIT, LABEL_WAIT_MS, FACET_LIST_LIMIT, MORE_BADGE_NODE_LIMIT, EDGE_HIT_PIXELS, QUEUED_QUERY_ROW_LIMIT, SHADOW_NODE_LIMIT, LARGE_GRAPH_NODES } from "./explorer-config.ts";
 import { ARROW_MARKER, UNTYPED_IRI_TYPE, TYPE_PALETTE, LITERAL_VISUAL, BLANK_VISUAL, LOADING_IRI_VISUAL, typeVisual, facetValueVisual, primaryNodeType, nodeVisual, nodeTypeIds } from "./graph-visuals.ts";
-import { compactTerm, isSafeSparqlIri, predicateLabel, findBindingValue, bindingsToTriples, tripleEdgeId } from "./graph-terms.ts";
+import { compactTerm, setNamespaces, isSafeSparqlIri, predicateLabel, findBindingValue, bindingsToTriples, tripleEdgeId } from "./graph-terms.ts";
 import { leafClusterForNode, directNeighborIds, seedIncrementalNodes, mergeTriples, mergeResourceNodes, cloneGraph, preserveSharedNodePositions, removeGraphNodes, groupsInGraph, shortestPathInGraph, commonNeighborIds, newEdgesOf } from "./graph-operations.ts";
 import { addToSelection, contextMenuScope, selectionKeys, selectionModifier, selectionToEdit, toggleInSelection } from "./graph-selection.ts";
 import { escapeStep } from "./graph-dismissal.ts";
@@ -42,6 +42,8 @@ import { LoadHistoryPanel, NavigatorPanel } from "./side-panels.tsx";
 import { StatusBar } from "./status-bar.tsx";
 import { ExplorerToolbar } from "./explorer-toolbar.tsx";
 import { QueryDrawer } from "./query-drawer.tsx";
+import { exactSearchResource } from "./repository-search.ts";
+import { useRepositorySearchSize } from "./use-repository-search-size.ts";
 import { FindField } from "./find-field.tsx";
 import { EdgeView, NodeView, stableCurves, type NodeHandlers } from "./graph-canvas-view.tsx";
 import { useFacetFilters } from "./use-facet-filters.ts";
@@ -70,7 +72,7 @@ import { labelGuidance, type LabelEvidence } from "./label-policy.ts";
 import { useLabelPolicy, useDismissedLabelGuidance } from "./use-label-policy.ts";
 import { Icon } from "./icons.tsx";
 import { entitySearchQuery, expandQuery, expansionSkipsAllLoaded, neighborsQuery, seedQuery, type GraphScope } from "./rdf-vocabulary.ts";
-import { explorePageUrl, graphEndpoint, queryPageUrl, queryRepository as executeRepositoryQuery } from "./transport.ts";
+import { explorePageUrl, fetchNamespaces, graphEndpoint, queryPageUrl, queryRepository as executeRepositoryQuery } from "./transport.ts";
 import {
   useCallback,
   useEffect,
@@ -113,7 +115,7 @@ import type { WorkspacePayload, WorkspaceViewState } from "./workspace";
 import { useWorkspaceLibrary } from "./use-workspace-library.tsx";
 import { snapshotSourceOrNull } from "./workspace-snapshots.ts";
 import type { WorkspaceSnapshotMetadata } from "./workspace-snapshot-store.ts";
-import { repositoryScope } from "./repository-identity.ts";
+import { repositoryScope, sessionRepositoryScope } from "./repository-identity.ts";
 import { copyToClipboard } from "./clipboard.ts";
 
 export type GraphExplorerProps = {
@@ -123,6 +125,8 @@ export type GraphExplorerProps = {
   repositoryId: string;
   /** Credential-free identity of the RDF4J server selected by the backend. */
   serverIdentity: string;
+  /** The signed-in server user, "" when nobody is signed in: the graph is kept per user. */
+  serverUser?: string;
   /** The Graph servlet's limits (page data): results stop at maxResultRows without saying so. */
   limits?: { maxResultRows?: number; maxQueryLength?: number };
 };
@@ -143,10 +147,27 @@ function browserStorage() {
   }
 }
 
-export function GraphExplorerApp({ basePath, repositoryId, serverIdentity, limits }: GraphExplorerProps) {
-  const workspaceScope = repositoryScope(basePath, repositoryId, serverIdentity);
+export function GraphExplorerApp({ basePath, repositoryId, serverIdentity, serverUser = "", limits }: GraphExplorerProps) {
+  const workspaceScope = repositoryScope(basePath, repositoryId, serverIdentity, serverUser);
+  // This browser session's graph from before graphs were kept per user, brought along once.
+  const sessionWorkspaceScope = sessionRepositoryScope(basePath, repositoryId, serverIdentity);
   // The explorer's own queries go first: the Filters panel's background loading waits while any of them runs.
   const [foreground] = useState(foregroundTracker);
+  // The repository's namespaces shorten IRIs everywhere; until they arrive (or if they cannot be fetched) the built-in
+  // prefixes apply. The counter re-renders what already shows a compact term.
+  const [, setNamespacesLoaded] = useState(0);
+  useEffect(() => {
+    const controller = new AbortController();
+    void fetchNamespaces(basePath, repositoryId, controller.signal).then((namespaces) => {
+      if (controller.signal.aborted || !namespaces.length) return;
+      setNamespaces(namespaces);
+      setNamespacesLoaded((count) => count + 1);
+    });
+    return () => {
+      controller.abort();
+      setNamespaces([]);
+    };
+  }, [basePath, repositoryId]);
   const queryRepository = useCallback((endpoint: string, query: string, signal?: AbortSignal) =>
     foreground.track(executeRepositoryQuery(endpoint, query, signal, serverIdentity)), [foreground, serverIdentity]);
   const backgroundQuery = useCallback((endpoint: string, query: string, signal?: AbortSignal) =>
@@ -854,6 +875,7 @@ export function GraphExplorerApp({ basePath, repositoryId, serverIdentity, limit
     restored: workspaceRestored, checkForNewer, unreadable: unreadableWorkspace, recoverUnreadable, discardUnreadable,
   } = useStoredWorkspace({
     scope: workspaceScope,
+    legacyScope: sessionWorkspaceScope,
     snapshot: captureWorkspace,
     // Label preferences followed from other tabs or the browser are not this page's change (labelPolicyChanges).
     changes: [graph, transform, query, provenanceBatches, namedGroups, manualSelectedNodeIds, focusedNodeId, graphScope,
@@ -900,6 +922,7 @@ export function GraphExplorerApp({ basePath, repositoryId, serverIdentity, limit
   restoreNamedSnapshotRef.current = workspaceLibrary.restoreActive;
 
   const endpoint = useMemo(() => graphEndpoint(basePath, repositoryId), [basePath, repositoryId]);
+  const repositorySearchSize = useRepositorySearchSize(basePath, repositoryId, serverIdentity, endpoint);
   const rdf4jRepository = useMemo(
     () => ({ id: repositoryId, title: repositoryId, endpoint, workbench: queryPageUrl(basePath, repositoryId, "") }),
     [basePath, repositoryId, endpoint],
@@ -1006,6 +1029,7 @@ export function GraphExplorerApp({ basePath, repositoryId, serverIdentity, limit
     basePath,
     repositoryId,
     serverIdentity,
+    serverUser,
     endpoint,
     execute: backgroundQuery,
     scope: graphScope as GraphScope,
@@ -2205,8 +2229,8 @@ export function GraphExplorerApp({ basePath, repositoryId, serverIdentity, limit
     const searchRequestId = entitySearchRef.current + 1;
     entitySearchRef.current = searchRequestId;
     // An absolute IRI (with "//" or a urn:) loads that resource; anything else, "foaf:Person" included, searches labels.
-    const resource = resourceNodeId(term);
-    const looksLikeResource = resource !== undefined && (term.startsWith("<_:") || /^<?([A-Za-z][A-Za-z0-9+.-]*:\/\/|urn:)/i.test(term));
+    const resource = exactSearchResource(term);
+    const looksLikeResource = resource !== undefined;
     const nextQuery = looksLikeResource ? seedQuery([resource!],graphScope) : entitySearchQuery(term,[...explorer.properties],graphScope);
     setQuery(nextQuery);
     await execute(nextQuery, !graphRef.current.nodes.length);
@@ -2839,11 +2863,11 @@ export function GraphExplorerApp({ basePath, repositoryId, serverIdentity, limit
     let applying = false;
     const take = () => {
       if (stopped || applying || !additionsIdleRef.current || document.visibilityState === "hidden") return;
-      const additions = takeAdditions(basePath, repositoryId, undefined, serverIdentity);
+      const additions = takeAdditions(basePath, repositoryId, undefined, serverIdentity, serverUser);
       if (!additions.length) return;
       applying = true;
       void addFromWorkbenchRef.current(additions)
-        .then((left) => returnAdditions(basePath, repositoryId, left, undefined, serverIdentity))
+        .then((left) => returnAdditions(basePath, repositoryId, left, undefined, serverIdentity, serverUser))
         .catch(() => {})
         .finally(() => {
           applying = false;
@@ -2851,7 +2875,7 @@ export function GraphExplorerApp({ basePath, repositoryId, serverIdentity, limit
         });
     };
     takeAdditionsRef.current = take;
-    const key = additionsKey(basePath, repositoryId, serverIdentity);
+    const key = additionsKey(basePath, repositoryId, serverIdentity, serverUser);
     const onStorage = (event: StorageEvent) => {
       if (event.key === key && event.newValue) take();
     };
@@ -2870,7 +2894,7 @@ export function GraphExplorerApp({ basePath, repositoryId, serverIdentity, limit
       window.removeEventListener("storage", onStorage);
       document.removeEventListener("visibilitychange", onVisible);
     };
-  }, [workspaceRestored, basePath, repositoryId, serverIdentity, checkForNewer, invalidateAsyncRequests]);
+  }, [workspaceRestored, basePath, repositoryId, serverIdentity, serverUser, checkForNewer, invalidateAsyncRequests]);
   useEffect(() => {
     if (additionsIdle) takeAdditionsRef.current();
   }, [additionsIdle]);
@@ -4122,6 +4146,8 @@ ${connectionQuery(iriIds.slice(0,32),graphScope)}`;
           >
           <div ref={canvasWrapRef} className="canvas-wrap" data-dragging={draggingNodeId ? "" : undefined}>
             <FindField
+              repositorySize={repositorySearchSize.size}
+              onFocusSearch={repositorySearchSize.refresh}
               nodes={drawnGraph.nodes}
               busy={isQuerying}
               inputRef={findInputRef}

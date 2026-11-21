@@ -63,11 +63,25 @@ import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.function.Executable;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 
 public class QueryPlanRetrievalTest {
+
+	private final List<SailRepository> repositories = new ArrayList<>();
+
+	private SailRepository closeAfterTest(SailRepository repository) {
+		repositories.add(repository);
+		return repository;
+	}
+
+	@AfterEach
+	void shutDownRepositories() {
+		org.junit.jupiter.api.Assertions.assertAll(
+				repositories.stream().<Executable>map(repository -> repository::shutDown));
+	}
 
 	private static final ObjectMapper OBJECT_MAPPER = new ObjectMapper();
 
@@ -244,7 +258,7 @@ public class QueryPlanRetrievalTest {
 
 	@Test
 	public void testOptimizedNestedGroupPlanIncludesJoinAlgorithmsWithoutExecution() {
-		SailRepository sailRepository = new SailRepository(new MemoryStore());
+		SailRepository sailRepository = closeAfterTest(new SailRepository(new MemoryStore()));
 		try (SailRepositoryConnection connection = sailRepository.getConnection()) {
 			TupleQuery query = connection.prepareTupleQuery("""
 					SELECT ?s (COUNT(?optional) AS ?count) WHERE {
@@ -274,7 +288,7 @@ public class QueryPlanRetrievalTest {
 	@Test
 	public void testFilterDontMergeAcrossSubqueryOptimizedPlanRetrieval() throws Exception {
 		String sparql = "SELECT * WHERE {?s ?p ?o .  {?o ?p2 ?o2. FILTER(?o > ?o2) FILTER(?o2 != ?o)}  {?o ?p3 ?o3. FILTER(?o > ?o3) FILTER(?o != ?o3  || ?o = ?o3)} FILTER(?s > ?o)}";
-		SailRepository sailRepository = new SailRepository(new MemoryStore());
+		SailRepository sailRepository = closeAfterTest(new SailRepository(new MemoryStore()));
 		addData(sailRepository);
 		try (SailRepositoryConnection connection = sailRepository.getConnection()) {
 			Query query = connection.prepareTupleQuery(sparql);
@@ -344,7 +358,7 @@ public class QueryPlanRetrievalTest {
 				"  FILTER (?o2 IN (1,2,3,4,5))            # top‑level filter\n" +
 				"}";
 		assertSpecificScopeResultBags(sparql);
-		SailRepository sailRepository = new SailRepository(new MemoryStore());
+		SailRepository sailRepository = closeAfterTest(new SailRepository(new MemoryStore()));
 		addData(sailRepository);
 		try (SailRepositoryConnection connection = sailRepository.getConnection()) {
 			TupleQuery query = connection.prepareTupleQuery(sparql);
@@ -469,7 +483,7 @@ public class QueryPlanRetrievalTest {
 				"}";
 
 		assertMultipleScopeResultBags(sparql);
-		SailRepository sailRepository = new SailRepository(new MemoryStore());
+		SailRepository sailRepository = closeAfterTest(new SailRepository(new MemoryStore()));
 		addData(sailRepository);
 		try (SailRepositoryConnection connection = sailRepository.getConnection()) {
 			Query query = connection.prepareTupleQuery(sparql);
@@ -568,7 +582,7 @@ public class QueryPlanRetrievalTest {
 				"  }\n" +
 				"}";
 		assertIndependentBindResultBags(sparql);
-		SailRepository sailRepository = new SailRepository(new MemoryStore());
+		SailRepository sailRepository = closeAfterTest(new SailRepository(new MemoryStore()));
 		addData(sailRepository);
 
 		try (SailRepositoryConnection connection = sailRepository.getConnection()) {
@@ -619,7 +633,7 @@ public class QueryPlanRetrievalTest {
 
 	@Test
 	public void testTupleQuery() {
-		SailRepository sailRepository = new SailRepository(new MemoryStore());
+		SailRepository sailRepository = closeAfterTest(new SailRepository(new MemoryStore()));
 		try (SailRepositoryConnection connection = sailRepository.getConnection()) {
 			Query query = connection.prepareTupleQuery(TUPLE_QUERY);
 
@@ -667,7 +681,7 @@ public class QueryPlanRetrievalTest {
 
 	@Test
 	public void testTupleQueryOptimized() {
-		SailRepository sailRepository = new SailRepository(new MemoryStore());
+		SailRepository sailRepository = closeAfterTest(new SailRepository(new MemoryStore()));
 		addData(sailRepository);
 
 		try (SailRepositoryConnection connection = sailRepository.getConnection()) {
@@ -717,7 +731,7 @@ public class QueryPlanRetrievalTest {
 	@Test
 	@Disabled
 	public void testTupleQueryTimed() {
-		SailRepository sailRepository = new SailRepository(new MemoryStore());
+		SailRepository sailRepository = closeAfterTest(new SailRepository(new MemoryStore()));
 		addData(sailRepository);
 
 		try (SailRepositoryConnection connection = sailRepository.getConnection()) {
@@ -744,7 +758,7 @@ public class QueryPlanRetrievalTest {
 
 	@Test
 	public void testTupleQueryExecuted() {
-		SailRepository sailRepository = new SailRepository(new MemoryStore());
+		SailRepository sailRepository = closeAfterTest(new SailRepository(new MemoryStore()));
 		addData(sailRepository);
 
 		try (SailRepositoryConnection connection = sailRepository.getConnection()) {
@@ -796,7 +810,7 @@ public class QueryPlanRetrievalTest {
 
 	@Test
 	public void testGenericPlanNode() {
-		SailRepository sailRepository = new SailRepository(new MemoryStore());
+		SailRepository sailRepository = closeAfterTest(new SailRepository(new MemoryStore()));
 		addData(sailRepository);
 
 		try (SailRepositoryConnection connection = sailRepository.getConnection()) {
@@ -848,7 +862,7 @@ public class QueryPlanRetrievalTest {
 
 	@Test
 	public void testJsonPlanNode() throws IOException {
-		SailRepository sailRepository = new SailRepository(new MemoryStore());
+		SailRepository sailRepository = closeAfterTest(new SailRepository(new MemoryStore()));
 		addData(sailRepository);
 
 		try (SailRepositoryConnection connection = sailRepository.getConnection()) {
@@ -867,7 +881,7 @@ public class QueryPlanRetrievalTest {
 
 	@Test
 	public void testJsonPlanNodeTelemetry() throws IOException {
-		SailRepository sailRepository = new SailRepository(new MemoryStore());
+		SailRepository sailRepository = closeAfterTest(new SailRepository(new MemoryStore()));
 		addData(sailRepository);
 
 		try (SailRepositoryConnection connection = sailRepository.getConnection()) {
@@ -888,7 +902,7 @@ public class QueryPlanRetrievalTest {
 
 	@Test
 	public void testEstimateStabilityStatsAreHiddenUntilTelemetryLevel() {
-		SailRepository sailRepository = new SailRepository(new MemoryStore());
+		SailRepository sailRepository = closeAfterTest(new SailRepository(new MemoryStore()));
 		addData(sailRepository);
 
 		try (SailRepositoryConnection connection = sailRepository.getConnection()) {
@@ -925,7 +939,7 @@ public class QueryPlanRetrievalTest {
 
 	@Test
 	public void testExplainAnnotationsEmitDisconnectedJoinTypeTextAndJson() throws IOException {
-		SailRepository sailRepository = new SailRepository(new MemoryStore());
+		SailRepository sailRepository = closeAfterTest(new SailRepository(new MemoryStore()));
 		addData(sailRepository);
 
 		try (SailRepositoryConnection connection = sailRepository.getConnection()) {
@@ -979,7 +993,7 @@ public class QueryPlanRetrievalTest {
 
 	@Test
 	public void testExplainAnnotationsKeepHashJoinRightSideUnbound() throws IOException {
-		SailRepository sailRepository = new SailRepository(new MemoryStore());
+		SailRepository sailRepository = closeAfterTest(new SailRepository(new MemoryStore()));
 		addData(sailRepository);
 
 		try (SailRepositoryConnection connection = sailRepository.getConnection()) {
@@ -1212,7 +1226,7 @@ public class QueryPlanRetrievalTest {
 
 	@Test
 	public void testAskQuery() {
-		SailRepository sailRepository = new SailRepository(new MemoryStore());
+		SailRepository sailRepository = closeAfterTest(new SailRepository(new MemoryStore()));
 		addData(sailRepository);
 
 		try (SailRepositoryConnection connection = sailRepository.getConnection()) {
@@ -1262,7 +1276,7 @@ public class QueryPlanRetrievalTest {
 
 	@Test
 	public void testConstructQuery() {
-		SailRepository sailRepository = new SailRepository(new MemoryStore());
+		SailRepository sailRepository = closeAfterTest(new SailRepository(new MemoryStore()));
 		addData(sailRepository);
 
 		try (SailRepositoryConnection connection = sailRepository.getConnection()) {
@@ -1327,7 +1341,7 @@ public class QueryPlanRetrievalTest {
 	@Disabled // slow test used for debugging
 	@Test
 	public void bigDataset() throws IOException {
-		SailRepository repository = new SailRepository(new MemoryStore());
+		SailRepository repository = closeAfterTest(new SailRepository(new MemoryStore()));
 
 		try (SailRepositoryConnection connection = repository.getConnection()) {
 			connection.begin(IsolationLevels.NONE);
@@ -1350,7 +1364,7 @@ public class QueryPlanRetrievalTest {
 
 	@Test
 	public void testSubQuery() {
-		SailRepository sailRepository = new SailRepository(new MemoryStore());
+		SailRepository sailRepository = closeAfterTest(new SailRepository(new MemoryStore()));
 		addData(sailRepository);
 
 		try (SailRepositoryConnection connection = sailRepository.getConnection()) {
@@ -1413,7 +1427,7 @@ public class QueryPlanRetrievalTest {
 
 	@Test
 	public void testSubQuery2() {
-		SailRepository sailRepository = new SailRepository(new MemoryStore());
+		SailRepository sailRepository = closeAfterTest(new SailRepository(new MemoryStore()));
 		addData(sailRepository);
 
 		try (SailRepositoryConnection connection = sailRepository.getConnection()) {
@@ -1585,7 +1599,7 @@ public class QueryPlanRetrievalTest {
 
 	@Test
 	public void testUnionQuery() throws Exception {
-		SailRepository sailRepository = new SailRepository(new MemoryStore());
+		SailRepository sailRepository = closeAfterTest(new SailRepository(new MemoryStore()));
 		addData(sailRepository);
 
 		try (SailRepositoryConnection connection = sailRepository.getConnection()) {
@@ -1682,7 +1696,7 @@ public class QueryPlanRetrievalTest {
 
 	@Test
 	public void testTimeout() {
-		SailRepository sailRepository = new SailRepository(new MemoryStore());
+		SailRepository sailRepository = closeAfterTest(new SailRepository(new MemoryStore()));
 		try (SailRepositoryConnection connection = sailRepository.getConnection()) {
 			connection.begin();
 			for (int i = 0; i < 1000; i++) {
@@ -1721,7 +1735,7 @@ public class QueryPlanRetrievalTest {
 
 	@Test
 	public void testDot() {
-		SailRepository sailRepository = new SailRepository(new MemoryStore());
+		SailRepository sailRepository = closeAfterTest(new SailRepository(new MemoryStore()));
 		addData(sailRepository);
 
 		try (SailRepositoryConnection connection = sailRepository.getConnection()) {
@@ -1842,7 +1856,7 @@ public class QueryPlanRetrievalTest {
 
 	@Test
 	public void testDotTimed() {
-		SailRepository sailRepository = new SailRepository(new MemoryStore());
+		SailRepository sailRepository = closeAfterTest(new SailRepository(new MemoryStore()));
 		addData(sailRepository);
 
 		try (SailRepositoryConnection connection = sailRepository.getConnection()) {
@@ -1874,7 +1888,7 @@ public class QueryPlanRetrievalTest {
 				"   s: Var (name=a)\n" +
 				"   p: Var (name=b)\n" +
 				"   o: Var (name=c)\n";
-		SailRepository sailRepository = new SailRepository(new MemoryStore());
+		SailRepository sailRepository = closeAfterTest(new SailRepository(new MemoryStore()));
 		addData(sailRepository);
 
 		try (SailRepositoryConnection connection = sailRepository.getConnection()) {
@@ -1908,7 +1922,7 @@ public class QueryPlanRetrievalTest {
 				"            p: Var (name=_const_0, value=http://a, anonymous)\n" +
 				"            o: Var (name=d)\n" +
 				"         Var (name=d)\n";
-		SailRepository sailRepository = new SailRepository(new MemoryStore());
+		SailRepository sailRepository = closeAfterTest(new SailRepository(new MemoryStore()));
 		addData(sailRepository);
 
 		try (SailRepositoryConnection connection = sailRepository.getConnection()) {
@@ -2114,7 +2128,7 @@ public class QueryPlanRetrievalTest {
 				"            ValueConstant (value=http://data.europa.eu/a4g/ontology#refersToRole)\n" +
 				"         ExtensionElem (_const_10)\n" +
 				"            ValueConstant (value=http://data.europa.eu/a4g/ontology#refersToProcedure)\n";
-		SailRepository sailRepository = new SailRepository(new MemoryStore());
+		SailRepository sailRepository = closeAfterTest(new SailRepository(new MemoryStore()));
 		addData(sailRepository);
 
 		try (SailRepositoryConnection connection = sailRepository.getConnection()) {
@@ -2203,7 +2217,7 @@ public class QueryPlanRetrievalTest {
 				"            p: Var (name=_const_3, value=http://iec.ch/TC57/2013/CIM-schema-cim16#Terminal.ConnectivityNode, anonymous)\n"
 				+
 				"            o: Var (name=idCN1)\n";
-		SailRepository sailRepository = new SailRepository(new MemoryStore());
+		SailRepository sailRepository = closeAfterTest(new SailRepository(new MemoryStore()));
 
 		try (SailRepositoryConnection connection = sailRepository.getConnection()) {
 			connection.add(new StringReader("@prefix rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#> .\n" +

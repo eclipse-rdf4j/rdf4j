@@ -79,33 +79,49 @@ public class ParallelQueryBenchmark extends BaseConcurrentBenchmark {
 
 	@Setup(Level.Trial)
 	public void setup() throws Exception {
-		super.setup();
-		repository = new SailRepository(new MemoryStore());
+		boolean initialized = false;
+		try {
+			super.setup();
+			repository = new SailRepository(new MemoryStore());
 
-		try (RepositoryConnection connection = repository.getConnection()) {
-			connection.begin(IsolationLevels.NONE);
-			try (InputStream resourceAsStream = getResourceAsStream("benchmarkFiles/datagovbe-valid.ttl.gz")) {
-				connection.add(resourceAsStream, RDFFormat.TURTLE);
+			try (RepositoryConnection connection = repository.getConnection()) {
+				connection.begin(IsolationLevels.NONE);
+				try (InputStream resourceAsStream = getResourceAsStream("benchmarkFiles/datagovbe-valid.ttl.gz")) {
+					connection.add(resourceAsStream, RDFFormat.TURTLE);
+				}
+				connection.commit();
 			}
-			connection.commit();
+			initialized = true;
+		} finally {
+			if (!initialized) {
+				tearDown();
+			}
 		}
 	}
 
 	@TearDown(Level.Trial)
 	public void tearDown() throws Exception {
-		repository.shutDown();
-		super.tearDown();
+		try {
+			if (repository != null) {
+				repository.shutDown();
+			}
+		} finally {
+			super.tearDown();
+		}
 	}
 
 	public static void main(String[] args) throws Exception {
 		ParallelQueryBenchmark benchmark = new ParallelQueryBenchmark();
 		benchmark.setup();
-		for (int i = 0; i < 1000; i++) {
-			System.out.println(i);
-			benchmark.mixedQueriesAndReads(new Blackhole(
-					"Today's password is swordfish. I understand instantiating Blackholes directly is dangerous."));
+		try {
+			for (int i = 0; i < 1000; i++) {
+				System.out.println(i);
+				benchmark.mixedQueriesAndReads(new Blackhole(
+						"Today's password is swordfish. I understand instantiating Blackholes directly is dangerous."));
+			}
+		} finally {
+			benchmark.tearDown();
 		}
-		benchmark.tearDown();
 
 	}
 

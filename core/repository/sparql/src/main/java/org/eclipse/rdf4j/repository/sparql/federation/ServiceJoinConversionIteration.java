@@ -12,17 +12,17 @@
 package org.eclipse.rdf4j.repository.sparql.federation;
 
 import java.util.List;
+import java.util.Set;
 
 import org.eclipse.rdf4j.common.annotation.Experimental;
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.common.iteration.ConvertingIteration;
 import org.eclipse.rdf4j.common.iteration.FilterIteration;
 import org.eclipse.rdf4j.model.Value;
-import org.eclipse.rdf4j.query.Binding;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.QueryEvaluationException;
 import org.eclipse.rdf4j.query.QueryResults;
-import org.eclipse.rdf4j.repository.sparql.query.SPARQLQueryBindingSet;
+import org.eclipse.rdf4j.query.impl.BindingSetSnapshots;
 
 /**
  * Inserts original bindings into the result, uses ?__rowIdx to resolve original bindings. See
@@ -49,9 +49,7 @@ public class ServiceJoinConversionIteration extends ConvertingIteration<BindingS
 				BindingSet input = bindings.get(getRowIndex(remote, rowIndexVar));
 				// The control column is not a binding returned by the SERVICE expression.
 				if (input.hasBinding(rowIndexVar)) {
-					SPARQLQueryBindingSet withoutRowIndex = new SPARQLQueryBindingSet(input);
-					withoutRowIndex.removeBinding(rowIndexVar);
-					input = withoutRowIndex;
+					input = BindingSetSnapshots.without(input, Set.of(rowIndexVar));
 				}
 				return QueryResults.bindingSetsCompatible(input, remote);
 			}
@@ -68,18 +66,7 @@ public class ServiceJoinConversionIteration extends ConvertingIteration<BindingS
 	protected BindingSet convert(BindingSet bIn) throws QueryEvaluationException {
 
 		BindingSet input = bindings.get(getRowIndex(bIn, rowIndexVar));
-		SPARQLQueryBindingSet res = new SPARQLQueryBindingSet(bIn.size() + input.size());
-		for (Binding binding : bIn) {
-			if (!rowIndexVar.equals(binding.getName()) && binding.getValue() != null) {
-				res.addBinding(binding);
-			}
-		}
-		for (Binding binding : input) {
-			if (binding.getValue() != null && !res.hasBinding(binding.getName())) {
-				res.addBinding(binding);
-			}
-		}
-		return res;
+		return BindingSetSnapshots.mergeWithPrecedence(input, bIn, rowIndexVar);
 	}
 
 	static int getRowIndex(BindingSet result, String rowIndexVar) {
