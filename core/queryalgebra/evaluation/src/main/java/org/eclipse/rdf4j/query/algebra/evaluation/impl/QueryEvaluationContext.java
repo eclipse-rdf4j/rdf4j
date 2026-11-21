@@ -25,6 +25,7 @@ import java.util.function.Function;
 import java.util.function.Predicate;
 
 import org.eclipse.rdf4j.common.annotation.Experimental;
+import org.eclipse.rdf4j.common.annotation.InternalUseOnly;
 import org.eclipse.rdf4j.model.BNode;
 import org.eclipse.rdf4j.model.Literal;
 import org.eclipse.rdf4j.model.Resource;
@@ -35,6 +36,7 @@ import org.eclipse.rdf4j.query.Binding;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.Dataset;
 import org.eclipse.rdf4j.query.MutableBindingSet;
+import org.eclipse.rdf4j.query.algebra.evaluation.ArrayBindingSet.IndexedLayout;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryBindingSet;
 import org.eclipse.rdf4j.query.impl.BlankNodeAllocationScope;
 import org.eclipse.rdf4j.query.impl.RemoteBNode;
@@ -238,6 +240,12 @@ public interface QueryEvaluationContext {
 
 	default MutableBindingSet createBindingSet() {
 		return new QueryBindingSet();
+	}
+
+	/** Opts in to bulk indexed writes that reproduce the context's ordinary binding access and write policy. */
+	@InternalUseOnly
+	default IndexedLayout indexedBindingLayout() {
+		return null;
 	}
 
 	default Predicate<BindingSet> hasBinding(String variableName) {

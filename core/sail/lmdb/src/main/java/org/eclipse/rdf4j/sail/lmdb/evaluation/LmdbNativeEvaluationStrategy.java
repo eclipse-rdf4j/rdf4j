@@ -289,6 +289,7 @@ public final class LmdbNativeEvaluationStrategy extends StrictEvaluationStrategy
 					view.setCollectionFactory(getCollectionFactory());
 					view.setTrackTime(trackTimeShadow);
 					view.setTrackResultSize(trackResultSizeShadow);
+					view.setTrackStatementIndexNames(isTrackStatementIndexNames());
 					view.setQueryEvaluationMode(getQueryEvaluationMode());
 					view.setQueryExecutionPolicy(getQueryExecutionPolicy());
 					view.valuePositions = valuePositions;
@@ -338,6 +339,7 @@ public final class LmdbNativeEvaluationStrategy extends StrictEvaluationStrategy
 		worker.setCollectionFactory(getCollectionFactory());
 		worker.setTrackTime(trackTimeShadow);
 		worker.setTrackResultSize(trackResultSizeShadow);
+		worker.setTrackStatementIndexNames(isTrackStatementIndexNames());
 		worker.setQueryEvaluationMode(getQueryEvaluationMode());
 		worker.setQueryExecutionPolicy(getQueryExecutionPolicy());
 		worker.valuePositions = positions;
@@ -384,6 +386,15 @@ public final class LmdbNativeEvaluationStrategy extends StrictEvaluationStrategy
 		LmdbNativeEvaluationStrategy view = genericOnlyView;
 		if (view != null) {
 			view.setTrackResultSize(trackResultSize);
+		}
+	}
+
+	@Override
+	public synchronized void setTrackStatementIndexNames(boolean trackStatementIndexNames) {
+		super.setTrackStatementIndexNames(trackStatementIndexNames);
+		LmdbNativeEvaluationStrategy view = genericOnlyView;
+		if (view != null) {
+			view.setTrackStatementIndexNames(trackStatementIndexNames);
 		}
 	}
 

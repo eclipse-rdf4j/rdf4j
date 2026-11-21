@@ -408,25 +408,21 @@ final class PrimitiveTupleTable {
 	}
 }
 
-/** DISTINCT tuple tracker backed by the primitive table for the common narrow projections. */
+/** DISTINCT tuple tracker for empty, narrow, and wide projections. */
 @Experimental
 final class NativeDistinctTracker {
 
 	static final AtomicLong PRIMITIVE_ROWS = new AtomicLong();
-	static final AtomicLong OBJECT_ROWS = new AtomicLong();
 
 	final int[] slots;
-	final NativeTermAuthority authority;
 	final NativeTermReferenceCache termCache;
 	final PrimitiveTupleTable primitive;
-	final HashMap<GroupKey, Boolean> objects;
-	final GroupKey probe;
+	private final WideDistinctTupleSet wide;
 	final long[] normalizedRow;
 	final int[] normalizedSlots;
 	NativeBatch normalizedBatch;
 	boolean emptySeen;
 	long primitiveRows;
-	long objectRows;
 	boolean metricsCommitted;
 	long[] batchHashState = new long[0];
 	int[] batchHashes = new int[0];
@@ -439,13 +435,11 @@ final class NativeDistinctTracker {
 
 	NativeDistinctTracker(int[] slots, NativeTermAuthority authority) {
 		this.slots = slots;
-		this.authority = authority;
 		this.termCache = authority == null ? null : new NativeTermReferenceCache(authority);
 		this.primitive = slots.length >= 1 && slots.length <= 4 ? new PrimitiveTupleTable(slots.length, 256) : null;
-		this.objects = primitive == null && slots.length > 0 ? new HashMap<>() : null;
-		this.probe = objects == null ? null : new GroupKey(new long[slots.length]);
-		this.normalizedRow = authority == null ? null : new long[slots.length];
-		this.normalizedSlots = authority == null ? null : identitySlots(slots.length);
+		this.wide = slots.length > 4 ? new WideDistinctTupleSet(slots.length) : null;
+		this.normalizedRow = termCache != null || wide != null ? new long[slots.length] : null;
+		this.normalizedSlots = termCache != null && primitive != null ? identitySlots(slots.length) : null;
 	}
 
 	boolean add(long[] row) {
@@ -453,6 +447,18 @@ final class NativeDistinctTracker {
 			boolean fresh = !emptySeen;
 			emptySeen = true;
 			return fresh;
+		}
+		if (wide != null) {
+			if (termCache != null) {
+				normalize(row);
+			} else {
+				for (int i = 0; i < slots.length; i++) {
+					long id = row[slots[i]];
+					normalizedRow[i] = id == NULL_CONTEXT_ID ? UNKNOWN : id;
+				}
+			}
+			primitiveRows++;
+			return wide.add(normalizedRow);
 		}
 		long[] candidate = row;
 		int[] candidateSlots = slots;
@@ -463,23 +469,10 @@ final class NativeDistinctTracker {
 			candidateSlots = normalizedSlots;
 			nullAsUnknown = false;
 		}
-		if (primitive != null) {
-			int before = primitive.size;
-			primitive.findOrInsert(candidate, candidateSlots, nullAsUnknown);
-			primitiveRows++;
-			return primitive.size != before;
-		}
-		for (int i = 0; i < slots.length; i++) {
-			long id = candidate[candidateSlots[i]];
-			probe.ids[i] = id == NULL_CONTEXT_ID ? UNKNOWN : id;
-		}
-		probe.rehash();
-		objectRows++;
-		if (objects.containsKey(probe)) {
-			return false;
-		}
-		objects.put(probe.storedCopy(), Boolean.TRUE);
-		return true;
+		int before = primitive.size;
+		primitive.findOrInsert(candidate, candidateSlots, nullAsUnknown);
+		primitiveRows++;
+		return primitive.size != before;
 	}
 
 	boolean add(NativeBatch batch, int row) {
@@ -488,42 +481,27 @@ final class NativeDistinctTracker {
 			emptySeen = true;
 			return fresh;
 		}
+		if (wide != null) {
+			if (termCache != null) {
+				normalize(batch, row);
+			} else {
+				for (int i = 0; i < slots.length; i++) {
+					long id = batch.get(slots[i], row);
+					normalizedRow[i] = id == NULL_CONTEXT_ID ? UNKNOWN : id;
+				}
+			}
+			primitiveRows++;
+			return wide.add(normalizedRow);
+		}
+		int before = primitive.size;
 		if (termCache != null) {
 			normalize(batch, row);
-			if (primitive != null) {
-				int before = primitive.size;
-				primitive.findOrInsert(normalizedRow, normalizedSlots, false);
-				primitiveRows++;
-				return primitive.size != before;
-			}
-			for (int i = 0; i < slots.length; i++) {
-				probe.ids[i] = normalizedRow[i];
-			}
-			probe.rehash();
-			objectRows++;
-			if (objects.containsKey(probe)) {
-				return false;
-			}
-			objects.put(probe.storedCopy(), Boolean.TRUE);
-			return true;
-		}
-		if (primitive != null) {
-			int before = primitive.size;
+			primitive.findOrInsert(normalizedRow, normalizedSlots, false);
+		} else {
 			primitive.findOrInsert(batch, row, slots, true);
-			primitiveRows++;
-			return primitive.size != before;
 		}
-		for (int i = 0; i < slots.length; i++) {
-			long id = batch.get(slots[i], row);
-			probe.ids[i] = id == NULL_CONTEXT_ID ? UNKNOWN : id;
-		}
-		probe.rehash();
-		objectRows++;
-		if (objects.containsKey(probe)) {
-			return false;
-		}
-		objects.put(probe.storedCopy(), Boolean.TRUE);
-		return true;
+		primitiveRows++;
+		return primitive.size != before;
 	}
 
 	int selectBatch(NativeBatch batch, int[] selection, int count) {
@@ -603,16 +581,22 @@ final class NativeDistinctTracker {
 		}
 		metricsCommitted = true;
 		PRIMITIVE_ROWS.addAndGet(primitiveRows);
-		OBJECT_ROWS.addAndGet(objectRows);
 	}
 
 	void clear() {
 		emptySeen = false;
 		if (primitive != null) {
 			primitive.clear();
-		} else if (objects != null) {
-			objects.clear();
+		} else if (wide != null) {
+			wide.clear();
 		}
+	}
+
+	long size() {
+		if (wide != null) {
+			return wide.size();
+		}
+		return primitive != null ? primitive.size : emptySeen ? 1 : 0;
 	}
 
 	private void normalize(long[] row) {
@@ -633,6 +617,199 @@ final class NativeDistinctTracker {
 			identity[i] = i;
 		}
 		return identity;
+	}
+}
+
+/**
+ * Exact membership for wide DISTINCT keys already normalized by the caller. The hash index contains a 32-bit hash and
+ * row ordinal in each bucket. Keys are appended to fixed-size blocks, so growing the index never copies keys.
+ */
+final class WideDistinctTupleSet {
+
+	private static final int BLOCK_LONGS = 1 << 15;
+	private static final int INITIAL_BUCKETS = 16;
+	private static final int MAX_BUCKETS = 1 << 30;
+	private static final long PRIME_1 = 0x9e3779b185ebca87L;
+	private static final long PRIME_2 = 0xc2b2ae3d27d4eb4fL;
+	private static final long PRIME_3 = 0x165667b19e3779f9L;
+	private static final long PRIME_4 = 0x85ebca77c2b2ae63L;
+
+	private final int width;
+	private final int blockShift;
+	private final int blockMask;
+	private final int blockLength;
+	private final int maxBuckets;
+	private long[] buckets = new long[INITIAL_BUCKETS];
+	private long[][] keys = new long[1][];
+	private int threshold = INITIAL_BUCKETS * 3 / 4;
+	private int size;
+	private WideDistinctTupleSet overflow;
+
+	WideDistinctTupleSet(int width) {
+		this(width, MAX_BUCKETS);
+	}
+
+	WideDistinctTupleSet(int width, int maxBuckets) {
+		assert width > 4;
+		assert maxBuckets >= INITIAL_BUCKETS && maxBuckets <= MAX_BUCKETS && Integer.bitCount(maxBuckets) == 1;
+		this.width = width;
+		this.maxBuckets = maxBuckets;
+		int blockRows = Integer.highestOneBit(Math.max(1, BLOCK_LONGS / width));
+		blockShift = Integer.numberOfTrailingZeros(blockRows);
+		blockMask = blockRows - 1;
+		blockLength = blockRows * width;
+	}
+
+	boolean add(long[] key) {
+		assert key.length == width;
+		return add(key, hash(key));
+	}
+
+	private boolean add(long[] key, int hash) {
+		int mask = buckets.length - 1;
+		int bucket = hash & mask;
+		long entry;
+		while ((entry = buckets[bucket]) != 0L) {
+			if ((int) (entry >>> Integer.SIZE) == hash && matches((int) entry - 1, key)) {
+				return false;
+			}
+			bucket = (bucket + 1) & mask;
+		}
+		if (size == threshold) {
+			if (buckets.length == maxBuckets) {
+				// Keep ordinals and arrays within this index's capacity. Check this index for duplicates before
+				// consulting the next one.
+				if (overflow == null) {
+					overflow = new WideDistinctTupleSet(width, maxBuckets);
+				}
+				return overflow.add(key, hash);
+			}
+			grow();
+			bucket = vacantBucket(buckets, hash);
+		}
+		append(key);
+		buckets[bucket] = (long) hash << Integer.SIZE | (size + 1L);
+		size++;
+		return true;
+	}
+
+	/** Resets the index and returns the number of bucket slots initialized. */
+	int clear() {
+		if (size == 0) {
+			if (keys.length > 1) {
+				keys[1] = null;
+			}
+			return 0;
+		}
+		if (buckets.length > INITIAL_BUCKETS && size < (buckets.length >>> 2)) {
+			// A large previous partition can leave this one sparse. Shrink to at most half the old capacity
+			// while leaving room for the next partition to grow. The reset initializes at most four slots per
+			// live key, with the initial capacity as the minimum.
+			int capacity = Math.max(INITIAL_BUCKETS, Integer.highestOneBit(size) << 2);
+			buckets = new long[capacity];
+			threshold = capacity - (capacity >>> 2);
+		} else {
+			Arrays.fill(buckets, 0L);
+		}
+		int usedBlocks = ((size - 1) >>> blockShift) + 1;
+		// Adjacent partitions that exceed the first block can reuse a spare within the block size limit.
+		// Release the spare when the partition fits in the first block, and always release later blocks.
+		if (usedBlocks > 1) {
+			int firstReleasedBlock = blockLength <= BLOCK_LONGS ? 2 : 1;
+			Arrays.fill(keys, firstReleasedBlock, usedBlocks, null);
+		} else if (keys.length > 1) {
+			keys[1] = null;
+		}
+		size = 0;
+		overflow = null;
+		return buckets.length;
+	}
+
+	long size() {
+		long total = size;
+		for (WideDistinctTupleSet next = overflow; next != null; next = next.overflow) {
+			total += next.size;
+		}
+		return total;
+	}
+
+	private void append(long[] key) {
+		int blockIndex = size >>> blockShift;
+		int offset = (size & blockMask) * width;
+		if (blockIndex == keys.length) {
+			keys = Arrays.copyOf(keys, keys.length << 1);
+		}
+		long[] block = keys[blockIndex];
+		if (block == null) {
+			int length = blockIndex == 0 ? (int) Math.min(4L * width, blockLength) : blockLength;
+			block = keys[blockIndex] = new long[length];
+		} else if (offset == block.length) {
+			// Only the first block starts small. COUNT(DISTINCT *) may need a wide set per group.
+			block = keys[blockIndex] = Arrays.copyOf(block, (int) Math.min(blockLength, 2L * block.length));
+		}
+		System.arraycopy(key, 0, block, offset, width);
+	}
+
+	private boolean matches(int index, long[] key) {
+		int offset = (index & blockMask) * width;
+		return Arrays.equals(keys[index >>> blockShift], offset, offset + width, key, 0, width);
+	}
+
+	private void grow() {
+		long[] replacement = new long[buckets.length << 1];
+		for (long entry : buckets) {
+			if (entry != 0L) {
+				int hash = (int) (entry >>> Integer.SIZE);
+				replacement[vacantBucket(replacement, hash)] = entry;
+			}
+		}
+		buckets = replacement;
+		threshold = replacement.length - (replacement.length >>> 2);
+	}
+
+	private static int vacantBucket(long[] buckets, int hash) {
+		int mask = buckets.length - 1;
+		int bucket = hash & mask;
+		while (buckets[bucket] != 0L) {
+			bucket = (bucket + 1) & mask;
+		}
+		return bucket;
+	}
+
+	// xxHash64 over the key's long words, using four independent accumulators for the bulk rounds.
+	private static int hash(long[] key) {
+		long a = PRIME_1 + PRIME_2;
+		long b = PRIME_2;
+		long c = 0L;
+		long d = -PRIME_1;
+		int i = 0;
+		for (; i <= key.length - 4; i += 4) {
+			a = round(a, key[i]);
+			b = round(b, key[i + 1]);
+			c = round(c, key[i + 2]);
+			d = round(d, key[i + 3]);
+		}
+		long hash = Long.rotateLeft(a, 1) + Long.rotateLeft(b, 7) + Long.rotateLeft(c, 12) + Long.rotateLeft(d, 18);
+		hash = merge(hash, a);
+		hash = merge(hash, b);
+		hash = merge(hash, c);
+		hash = merge(hash, d);
+		hash += (long) key.length * Long.BYTES;
+		for (; i < key.length; i++) {
+			hash ^= round(0L, key[i]);
+			hash = Long.rotateLeft(hash, 27) * PRIME_1 + PRIME_4;
+		}
+		hash = (hash ^ (hash >>> 33)) * PRIME_2;
+		hash = (hash ^ (hash >>> 29)) * PRIME_3;
+		return (int) (hash ^ (hash >>> 32));
+	}
+
+	private static long round(long accumulator, long value) {
+		return Long.rotateLeft(accumulator + value * PRIME_2, 31) * PRIME_1;
+	}
+
+	private static long merge(long hash, long accumulator) {
+		return (hash ^ round(0L, accumulator)) * PRIME_1 + PRIME_4;
 	}
 }
 
@@ -781,16 +958,24 @@ final class NativeOrderedDistinctTracker {
 	final NativeTermAuthority authority;
 	final NativeDistinctTracker residual;
 	final long[] previous;
+	final boolean observe;
 	boolean initialized;
 	boolean emptySeen;
+	long inputRows;
+	private long peakClosedPartitionKeys;
 
 	NativeOrderedDistinctTracker(NativeTupleDistinctPlan plan) {
 		this(plan, null);
 	}
 
 	NativeOrderedDistinctTracker(NativeTupleDistinctPlan plan, NativeTermAuthority authority) {
+		this(plan, authority, false);
+	}
+
+	NativeOrderedDistinctTracker(NativeTupleDistinctPlan plan, NativeTermAuthority authority, boolean observe) {
 		this.plan = plan;
 		this.authority = authority;
+		this.observe = observe;
 		this.residual = plan.strategy == NativeDistinctStrategy.GLOBAL_HASH
 				? new NativeDistinctTracker(plan.keySlots, authority)
 				: plan.strategy == NativeDistinctStrategy.PARTITIONED_HASH
@@ -802,12 +987,15 @@ final class NativeOrderedDistinctTracker {
 	}
 
 	boolean add(long[] row) {
+		if (observe) {
+			inputRows++;
+		}
 		boolean fresh = switch (plan.strategy) {
 		case GLOBAL_HASH -> residual.add(row);
 		case ADJACENT -> transition(row, plan.keySlots);
 		case PARTITIONED_HASH -> {
 			if (transition(row, plan.partitionSlots)) {
-				residual.clear();
+				clearPartition();
 			}
 			yield residual.add(row);
 		}
@@ -819,6 +1007,9 @@ final class NativeOrderedDistinctTracker {
 	}
 
 	int selectBatch(NativeBatch batch, int[] selection, int count) {
+		if (observe) {
+			inputRows += count;
+		}
 		if (plan.strategy == NativeDistinctStrategy.GLOBAL_HASH) {
 			int accepted = residual.selectBatch(batch, selection, count);
 			if (plan.keySlots.length == 0 && accepted > 0) {
@@ -834,7 +1025,7 @@ final class NativeOrderedDistinctTracker {
 			case ADJACENT -> transition(batch, row, plan.keySlots);
 			case PARTITIONED_HASH -> {
 				if (transition(batch, row, plan.partitionSlots)) {
-					residual.clear();
+					clearPartition();
 				}
 				yield residual.add(batch, row);
 			}
@@ -853,6 +1044,17 @@ final class NativeOrderedDistinctTracker {
 		if (residual != null) {
 			residual.commitMetrics();
 		}
+	}
+
+	long peakKeys() {
+		return residual == null ? (initialized ? 1L : 0L) : Math.max(peakClosedPartitionKeys, residual.size());
+	}
+
+	private void clearPartition() {
+		if (observe) {
+			peakClosedPartitionKeys = Math.max(peakClosedPartitionKeys, residual.size());
+		}
+		residual.clear();
 	}
 
 	private boolean transition(long[] row, int[] slots) {

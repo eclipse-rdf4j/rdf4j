@@ -12,16 +12,23 @@
 package org.eclipse.rdf4j.sail.lmdb;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNull;
 
 import java.io.File;
 import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.List;
+import java.util.Optional;
 
+import org.eclipse.rdf4j.common.transaction.IsolationLevels;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.model.vocabulary.RDF;
+import org.eclipse.rdf4j.query.QueryResults;
+import org.eclipse.rdf4j.query.TupleQuery;
 import org.eclipse.rdf4j.query.TupleQueryResult;
+import org.eclipse.rdf4j.query.explanation.Explanation;
 import org.eclipse.rdf4j.repository.Repository;
 import org.eclipse.rdf4j.repository.RepositoryConnection;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
@@ -77,9 +84,107 @@ class LmdbDistinctStableOrderTest {
 				evaluate("select distinct ?x where { ?a a ?type. bind(str(?a) as ?x) } order by ?x", "x"));
 	}
 
+	@Test
+	void testGenericDistinctPartitionsOnNaturalLeftSpineWithNestedOptional() {
+		String query = """
+				SELECT DISTINCT ?s ?leaf WHERE {
+				  ?s a ?type .
+				  OPTIONAL {
+				    ?type <urn:detail> ?child .
+				    OPTIONAL { ?child <urn:leaf> ?leaf }
+				  }
+				}
+				""";
+		IRI type1 = vf.createIRI("urn:type1");
+		IRI first = vf.createIRI("urn:child1");
+		IRI second = vf.createIRI("urn:child2");
+		IRI detail = vf.createIRI("urn:detail");
+		IRI leaf = vf.createIRI("urn:leaf");
+		try (RepositoryConnection connection = repo.getConnection()) {
+			connection.add(type1, detail, first);
+			connection.add(type1, detail, second);
+			connection.add(first, leaf, vf.createLiteral("same"));
+			connection.add(second, leaf, vf.createLiteral("same"));
+
+			try (TupleQueryResult rows = connection.prepareTupleQuery(query).evaluate()) {
+				assertEquals(List.of("urn:s1", "urn:s2", "urn:s3", "urn:s4"), readSubjects(rows));
+			}
+			assertEquals("s", partitionKey(connection.prepareTupleQuery(query)));
+		}
+	}
+
+	@Test
+	void testGenericDistinctRetainsGlobalDedupWhenNaturalKeyIsNotProjected() {
+		String query = "SELECT DISTINCT ?type WHERE { ?s a ?type }";
+		try (RepositoryConnection connection = repo.getConnection()) {
+			assertNull(partitionKey(connection.prepareTupleQuery(query)));
+		}
+		assertEquals(List.of("urn:type1", "urn:type2"), evaluate(query, "type"));
+	}
+
+	@Test
+	void testGenericDistinctRetainsGlobalDedupAcrossUnionArms() {
+		String query = """
+				SELECT DISTINCT ?s WHERE {
+				  { ?s a <urn:type1> } UNION { ?s a ?type }
+				}
+				""";
+		try (RepositoryConnection connection = repo.getConnection()) {
+			assertNull(partitionKey(connection.prepareTupleQuery(query)));
+		}
+		assertEquals(List.of("urn:s1", "urn:s2", "urn:s3", "urn:s4"), evaluate(query, "s"));
+	}
+
+	@Test
+	void testGenericDistinctRetainsGlobalDedupWhenAnOptionalCanRebindTheKey() {
+		String query = """
+				SELECT DISTINCT ?s WHERE {
+				  ?s a ?type .
+				  OPTIONAL {
+				    BIND(IF(sameTerm(?s, <urn:s2>), <urn:replacement>, <urn:rebound>) AS ?s)
+				  }
+				}
+				""";
+		try (RepositoryConnection connection = repo.getConnection()) {
+			TupleQuery candidate = connection.prepareTupleQuery(query);
+			assertNull(partitionKey(candidate));
+			var rows = QueryResults.asList(candidate.evaluate());
+			var global = QueryResults.asList(connection.prepareTupleQuery(query + "ORDER BY ?s").evaluate());
+			assertEquals(global.size(), rows.size());
+			assertEquals(new HashSet<>(global), new HashSet<>(rows));
+		}
+	}
+
+	@Test
+	void testGenericDistinctRetainsGlobalDedupWithPendingStatementChanges() {
+		String query = "SELECT DISTINCT ?s WHERE { ?s a ?type }";
+		try (RepositoryConnection connection = repo.getConnection()) {
+			connection.begin(IsolationLevels.SNAPSHOT);
+			connection.add(vf.createIRI("urn:s1"), RDF.TYPE, vf.createIRI("urn:type2"));
+			assertNull(partitionKey(connection.prepareTupleQuery(query)));
+			try (TupleQueryResult rows = connection.prepareTupleQuery(query).evaluate()) {
+				assertEquals(List.of("urn:s1", "urn:s2", "urn:s3", "urn:s4"), readSubjects(rows));
+			}
+			connection.rollback();
+		}
+	}
+
 	@AfterEach
 	void after() {
 		repo.shutDown();
+	}
+
+	private String partitionKey(TupleQuery query) {
+		var planned = query.explain(Explanation.Level.Optimized).toGenericPlanNode().getStringMetricsPlanned();
+		return Optional.ofNullable(planned).map(metrics -> metrics.get("distinctPartitionBinding")).orElse(null);
+	}
+
+	private List<String> readSubjects(TupleQueryResult rows) {
+		List<String> subjects = new ArrayList<>();
+		while (rows.hasNext()) {
+			subjects.add(rows.next().getValue("s").stringValue());
+		}
+		return subjects;
 	}
 
 	private List<String> evaluate(String query, String bindingName) {

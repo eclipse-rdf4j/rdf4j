@@ -17,6 +17,7 @@ import java.util.function.Supplier;
 import org.eclipse.rdf4j.collection.factory.api.CollectionFactory;
 import org.eclipse.rdf4j.collection.factory.impl.DefaultCollectionFactory;
 import org.eclipse.rdf4j.common.annotation.Experimental;
+import org.eclipse.rdf4j.common.annotation.InternalUseOnly;
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.common.transaction.QueryEvaluationMode;
 import org.eclipse.rdf4j.model.Value;
@@ -169,6 +170,11 @@ public interface EvaluationStrategy extends FederatedServiceResolver {
 	@Experimental
 	default boolean isTrackTime() {
 		return false;
+	}
+
+	/** Set before compilation to collect statement index names for query diagnostics. */
+	@InternalUseOnly
+	default void setTrackStatementIndexNames(boolean trackStatementIndexNames) {
 	}
 
 	QueryEvaluationMode getQueryEvaluationMode();

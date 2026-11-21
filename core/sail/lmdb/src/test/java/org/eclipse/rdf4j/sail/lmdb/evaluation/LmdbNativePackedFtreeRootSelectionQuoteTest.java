@@ -14,6 +14,7 @@ package org.eclipse.rdf4j.sail.lmdb.evaluation;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbNativeFactorizedQuoteTest.edge;
 import static org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbNativeFactorizedQuoteTest.row;
+import static org.eclipse.rdf4j.sail.lmdb.evaluation.NativeCancellationTestAccess.mockScanSource;
 import static org.mockito.AdditionalAnswers.delegatesTo;
 import static org.mockito.Mockito.doReturn;
 import static org.mockito.Mockito.mock;
@@ -35,7 +36,7 @@ class LmdbNativePackedFtreeRootSelectionQuoteTest {
 		StatsSource statistics = new StatsSource(100_000L).predicate(1L, 3D, 3_000L)
 				.predicate(2L, 3D, 3_000L)
 				.adjacencyServed(true);
-		NativeLmdbQuerySource source = mock(NativeLmdbQuerySource.class, delegatesTo(statistics));
+		NativeLmdbQuerySource source = mockScanSource(NativeLmdbQuerySource.class, delegatesTo(statistics));
 		doReturn(OptionalLong.empty()).when(source).adjacencyKeyDomainCardinality(1L, true);
 		NativeProbe probe = mock(NativeProbe.class);
 		doReturn(probe).when(source).newProbe();

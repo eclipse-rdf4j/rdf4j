@@ -122,7 +122,12 @@ public class LmdbIRI implements LmdbResource, IRI {
 
 	@Override
 	public void setInternalID(long internalID, ValueStoreRevision revision) {
-		identity = new InternalIdentity(internalID, revision);
+		setInternalIdentity(new InternalIdentity(internalID, revision));
+	}
+
+	@Override
+	public void setInternalIdentity(InternalIdentity identity) {
+		this.identity = identity;
 	}
 
 	@Override

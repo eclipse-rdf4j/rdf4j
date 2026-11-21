@@ -71,7 +71,8 @@ interface NativeTermAuthority {
 	 * A representative id for RDF-term identity within {@link #token()}, not a SPARQL value-comparison key. Equal keys
 	 * are equivalent terms; unlike a hash this key is collision-free within the authority. Store ids should pass
 	 * through without resolving a Value. Synthetic aliases may require normalization at their boundary. Keys must not
-	 * escape this authority or replace the original ids in output bindings.
+	 * escape this authority or replace the original ids in output bindings. The {@code UNKNOWN} and
+	 * {@code NULL_CONTEXT} sentinels are their own canonical keys and are reserved for those sentinels.
 	 */
 	default long canonicalTermKey(long id) {
 		throw new UnsupportedOperationException("canonical term keys are not supported by this authority");

@@ -12,22 +12,30 @@
 package org.eclipse.rdf4j.sail.lmdb.evaluation;
 
 import java.io.IOException;
+import java.lang.invoke.MethodHandles;
+import java.lang.invoke.VarHandle;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
 import java.util.OptionalDouble;
 import java.util.OptionalLong;
+import java.util.function.Predicate;
 
 import org.eclipse.rdf4j.common.annotation.Experimental;
 import org.eclipse.rdf4j.common.order.StatementOrder;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.query.QueryEvaluationException;
+import org.eclipse.rdf4j.query.QueryInterruptedException;
 import org.eclipse.rdf4j.sail.lmdb.LmdbKeyRange;
 import org.eclipse.rdf4j.sail.lmdb.LmdbPrefixRunCursor;
 import org.eclipse.rdf4j.sail.lmdb.LmdbPrefixRunPlan;
 import org.eclipse.rdf4j.sail.lmdb.LmdbRootScanPartition;
+import org.eclipse.rdf4j.sail.lmdb.RecordCursorCancellation;
 import org.eclipse.rdf4j.sail.lmdb.RecordIterator;
 import org.eclipse.rdf4j.sail.lmdb.TripleIndex;
+import org.eclipse.rdf4j.sail.lmdb.ValueResolutionScope;
+import org.eclipse.rdf4j.sail.lmdb.evaluation.codegen.KernelQueryCancelledException;
+import org.eclipse.rdf4j.sail.lmdb.evaluation.codegen.KernelRuntime;
 
 @Experimental
 final class CompositeNativeLmdbQuerySource implements NativeLmdbQuerySource {
@@ -90,19 +98,47 @@ final class CompositeNativeLmdbQuerySource implements NativeLmdbQuerySource {
 	}
 
 	@Override
+	public Value lazyValue(long id, int positionMask, ValueResolutionScope valueScope) throws QueryEvaluationException {
+		return sources.get(0).lazyValue(id, positionMask, valueScope);
+	}
+
+	@Override
+	public Object projectedValueSnapshot() {
+		return sources.get(0).projectedValueSnapshot();
+	}
+
+	@Override
+	public Value reuseProjectedValue(Object snapshot, long id, int positionMask, ValueResolutionScope valueScope,
+			Value supplied, long semanticVersion) {
+		// The same immutable first-source choice owns ordinary lazy lookup and its snapshot validation.
+		return sources.get(0).reuseProjectedValue(snapshot, id, positionMask, valueScope, supplied, semanticVersion);
+	}
+
+	@Override
+	public boolean withProjectedValueAccess(ValueResolutionScope scope, Predicate<ProjectedValueAccess> capture) {
+		return sources.get(0).withProjectedValueAccess(scope, capture);
+	}
+
+	@Override
 	public boolean supportsTripleTermScan() {
 		return tripleTermSource != null;
 	}
 
 	@Override
 	public RecordIterator tripleTerms(long subj, long pred, long obj) throws IOException {
+		return tripleTerms(subj, pred, obj, null);
+	}
+
+	@Override
+	public RecordIterator tripleTerms(long subj, long pred, long obj, CursorCancellation cancellation)
+			throws IOException {
 		if (tripleTermSource == null) {
 			return NativeLmdbQuerySource.super.tripleTerms(subj, pred, obj);
 		}
 		// Triple terms live in the value dictionary shared by every member's idSpace. Scan that
 		// dictionary once: concatenating the explicit/inferred statement sources would duplicate
 		// each global triple term and invent multiplicity that is not present in the RDF value space.
-		return tripleTermSource.tripleTerms(subj, pred, obj);
+		return tripleTermSource.tripleTerms(subj, pred, obj, cancellation);
 	}
 
 	@Override
@@ -138,34 +174,52 @@ final class CompositeNativeLmdbQuerySource implements NativeLmdbQuerySource {
 	@Override
 	public RecordIterator statements(long subj, long pred, long obj, long context,
 			AdjacencyAccessObserver observer) throws IOException {
+		return statements(subj, pred, obj, context, observer, null);
+	}
+
+	@Override
+	public RecordIterator statements(long subj, long pred, long obj, long context,
+			AdjacencyAccessObserver observer, CursorCancellation cancellation) throws IOException {
 		NativeLmdbQuerySource active = onlyActiveSource();
 		if (active != null) {
-			return active.statements(subj, pred, obj, context, observer);
+			return active.statements(subj, pred, obj, context, observer, cancellation);
 		}
 		return new ConcatenatingRecordIterator(activeSources, subj, pred, obj, context, null, observer,
-				ConcatenatingRecordIterator.AccessMode.ORDINARY);
+				ConcatenatingRecordIterator.AccessMode.ORDINARY, cancellation);
 	}
 
 	@Override
 	public RecordIterator statementsInEncounterOrder(long subj, long pred, long obj, long context,
 			AdjacencyAccessObserver observer) throws IOException {
+		return statementsInEncounterOrder(subj, pred, obj, context, observer, null);
+	}
+
+	@Override
+	public RecordIterator statementsInEncounterOrder(long subj, long pred, long obj, long context,
+			AdjacencyAccessObserver observer, CursorCancellation cancellation) throws IOException {
 		NativeLmdbQuerySource active = onlyActiveSource();
 		if (active != null) {
-			return active.statementsInEncounterOrder(subj, pred, obj, context, observer);
+			return active.statementsInEncounterOrder(subj, pred, obj, context, observer, cancellation);
 		}
 		return new ConcatenatingRecordIterator(activeSources, subj, pred, obj, context, null, observer,
-				ConcatenatingRecordIterator.AccessMode.ENCOUNTER_ORDER);
+				ConcatenatingRecordIterator.AccessMode.ENCOUNTER_ORDER, cancellation);
 	}
 
 	@Override
 	public RecordIterator lmdbStatements(long subj, long pred, long obj, long context,
 			AdjacencyAccessObserver observer) throws IOException {
+		return lmdbStatements(subj, pred, obj, context, observer, null);
+	}
+
+	@Override
+	public RecordIterator lmdbStatements(long subj, long pred, long obj, long context,
+			AdjacencyAccessObserver observer, CursorCancellation cancellation) throws IOException {
 		NativeLmdbQuerySource active = onlyActiveSource();
 		if (active != null) {
-			return active.lmdbStatements(subj, pred, obj, context, observer);
+			return active.lmdbStatements(subj, pred, obj, context, observer, cancellation);
 		}
 		return new ConcatenatingRecordIterator(activeSources, subj, pred, obj, context, null, observer,
-				ConcatenatingRecordIterator.AccessMode.FORCED_LMDB);
+				ConcatenatingRecordIterator.AccessMode.FORCED_LMDB, cancellation);
 	}
 
 	@Override
@@ -177,21 +231,32 @@ final class CompositeNativeLmdbQuerySource implements NativeLmdbQuerySource {
 	@Override
 	public RecordIterator statements(long subj, long pred, long obj, long context, LmdbKeyRange range,
 			AdjacencyAccessObserver observer) throws IOException {
+		return statements(subj, pred, obj, context, range, observer, null);
+	}
+
+	@Override
+	public RecordIterator statements(long subj, long pred, long obj, long context, LmdbKeyRange range,
+			AdjacencyAccessObserver observer, CursorCancellation cancellation) throws IOException {
 		NativeLmdbQuerySource active = onlyActiveSource();
 		if (active != null) {
-			return active.statements(subj, pred, obj, context, range, observer);
+			return active.statements(subj, pred, obj, context, range, observer, cancellation);
 		}
 		return new ConcatenatingRecordIterator(activeSources, subj, pred, obj, context, range, observer,
-				ConcatenatingRecordIterator.AccessMode.ORDINARY);
+				ConcatenatingRecordIterator.AccessMode.ORDINARY, cancellation);
 	}
 
 	@Override
 	public NativeProbe newProbe() {
+		return newProbe(NativeLmdbQuerySource.captureCursorCancellation());
+	}
+
+	@Override
+	public NativeProbe newProbe(CursorCancellation cancellation) {
 		NativeLmdbQuerySource active = onlyActiveSource();
 		if (active != null) {
-			return active.newProbe();
+			return active.newProbe(cancellation);
 		}
-		return new CompositeProbe(activeSources);
+		return new CompositeProbe(activeSources, cancellation);
 	}
 
 	@Override
@@ -240,9 +305,15 @@ final class CompositeNativeLmdbQuerySource implements NativeLmdbQuerySource {
 	@Override
 	public RecordIterator statements(long subj, long pred, long obj, long context, LmdbRootScanPartition partition)
 			throws IOException {
+		return partitionStatements(subj, pred, obj, context, partition, null);
+	}
+
+	@Override
+	public RecordIterator partitionStatements(long subj, long pred, long obj, long context,
+			LmdbRootScanPartition partition, CursorCancellation cancellation) throws IOException {
 		NativeLmdbQuerySource active = onlyActiveSource();
 		if (active != null) {
-			return active.statements(subj, pred, obj, context, partition);
+			return active.partitionStatements(subj, pred, obj, context, partition, cancellation);
 		}
 		int member = partition.member();
 		if (member < 0 || member >= activeSources.size()) {
@@ -252,7 +323,7 @@ final class CompositeNativeLmdbQuerySource implements NativeLmdbQuerySource {
 		// member ordinals are stable across same-snapshot siblings because parallel families are built in
 		// activeSources order; the member source planned its ranges under ordinal 0
 		return activeSources.get(member)
-				.statements(subj, pred, obj, context, partition.withMember(0));
+				.partitionStatements(subj, pred, obj, context, partition.withMember(0), cancellation);
 	}
 
 	@Override
@@ -264,39 +335,51 @@ final class CompositeNativeLmdbQuerySource implements NativeLmdbQuerySource {
 	@Override
 	public RecordIterator statements(StatementOrder order, long subj, long pred, long obj, long context,
 			AdjacencyAccessObserver observer) throws IOException {
+		return statements(order, subj, pred, obj, context, observer, null);
+	}
+
+	@Override
+	public RecordIterator statements(StatementOrder order, long subj, long pred, long obj, long context,
+			AdjacencyAccessObserver observer, CursorCancellation cancellation) throws IOException {
 		NativeLmdbQuerySource active = onlyActiveSource();
 		if (active != null) {
-			return active.statements(order, subj, pred, obj, context, observer);
+			return active.statements(order, subj, pred, obj, context, observer, cancellation);
 		}
 		List<RecordIterator> iterators = new ArrayList<>(activeSources.size());
 		for (NativeLmdbQuerySource source : activeSources) {
 			try {
-				iterators.add(source.statements(order, subj, pred, obj, context, observer));
+				iterators.add(source.statements(order, subj, pred, obj, context, observer, cancellation));
 			} catch (IOException | RuntimeException | Error e) {
 				closeIterators(iterators, e);
 				throw e;
 			}
 		}
-		return OrderedRecordIterator.merge(iterators, order);
+		return OrderedRecordIterator.merge(iterators, order, cancellation);
 	}
 
 	@Override
 	public RecordIterator lmdbStatements(StatementOrder order, long subj, long pred, long obj, long context,
 			AdjacencyAccessObserver observer) throws IOException {
+		return lmdbStatements(order, subj, pred, obj, context, observer, null);
+	}
+
+	@Override
+	public RecordIterator lmdbStatements(StatementOrder order, long subj, long pred, long obj, long context,
+			AdjacencyAccessObserver observer, CursorCancellation cancellation) throws IOException {
 		NativeLmdbQuerySource active = onlyActiveSource();
 		if (active != null) {
-			return active.lmdbStatements(order, subj, pred, obj, context, observer);
+			return active.lmdbStatements(order, subj, pred, obj, context, observer, cancellation);
 		}
 		List<RecordIterator> iterators = new ArrayList<>(activeSources.size());
 		for (NativeLmdbQuerySource source : activeSources) {
 			try {
-				iterators.add(source.lmdbStatements(order, subj, pred, obj, context, observer));
+				iterators.add(source.lmdbStatements(order, subj, pred, obj, context, observer, cancellation));
 			} catch (IOException | RuntimeException | Error e) {
 				closeIterators(iterators, e);
 				throw e;
 			}
 		}
-		return OrderedRecordIterator.merge(iterators, order);
+		return OrderedRecordIterator.merge(iterators, order, cancellation);
 	}
 
 	@Override
@@ -432,9 +515,17 @@ final class CompositeNativeLmdbQuerySource implements NativeLmdbQuerySource {
 	@Override
 	public LmdbPrefixRunCursor prefixRuns(LmdbPrefixRunPlan plan, long subj, long pred, long obj, long context,
 			boolean countRunRows, AdjacencyAccessObserver observer) throws IOException {
+		return prefixRuns(plan, subj, pred, obj, context, countRunRows, observer,
+				NativeLmdbQuerySource.captureCursorCancellation());
+	}
+
+	@Override
+	public LmdbPrefixRunCursor prefixRuns(LmdbPrefixRunPlan plan, long subj, long pred, long obj, long context,
+			boolean countRunRows, AdjacencyAccessObserver observer, CursorCancellation cancellation)
+			throws IOException {
 		NativeLmdbQuerySource active = onlyActiveSource();
 		if (active != null) {
-			return active.prefixRuns(plan, subj, pred, obj, context, countRunRows, observer);
+			return active.prefixRuns(plan, subj, pred, obj, context, countRunRows, observer, cancellation);
 		}
 		if (activeSources.isEmpty() || plan == null) {
 			return LmdbPrefixRunCursor.EMPTY;
@@ -451,7 +542,7 @@ final class CompositeNativeLmdbQuerySource implements NativeLmdbQuerySource {
 				}
 				memberPlan = memberPlan.withConstraintsOf(plan);
 				LmdbPrefixRunCursor cursor = source.prefixRuns(memberPlan, subj, pred, obj, context, countRunRows,
-						observer);
+						observer, cancellation);
 				if (cursor == null) {
 					closePrefixRunCursors(cursors, null);
 					return null;
@@ -475,9 +566,15 @@ final class CompositeNativeLmdbQuerySource implements NativeLmdbQuerySource {
 
 	@Override
 	public long count(long subj, long pred, long obj, long context) throws IOException {
+		return count(subj, pred, obj, context, null);
+	}
+
+	@Override
+	public long count(long subj, long pred, long obj, long context, CursorCancellation cancellation)
+			throws IOException {
 		long count = 0L;
 		for (NativeLmdbQuerySource source : activeSources) {
-			long sourceCount = source.count(subj, pred, obj, context);
+			long sourceCount = source.count(subj, pred, obj, context, cancellation);
 			if (Long.MAX_VALUE - count < sourceCount) {
 				return Long.MAX_VALUE;
 			}
@@ -504,8 +601,14 @@ final class CompositeNativeLmdbQuerySource implements NativeLmdbQuerySource {
 	@Override
 	public boolean has(long subj, long pred, long obj, long context, AdjacencyAccessObserver observer)
 			throws IOException {
+		return has(subj, pred, obj, context, observer, null);
+	}
+
+	@Override
+	public boolean has(long subj, long pred, long obj, long context, AdjacencyAccessObserver observer,
+			CursorCancellation cancellation) throws IOException {
 		for (NativeLmdbQuerySource source : activeSources) {
-			if (source.has(subj, pred, obj, context, observer)) {
+			if (source.has(subj, pred, obj, context, observer, cancellation)) {
 				return true;
 			}
 		}
@@ -1264,6 +1367,12 @@ final class CompositeNativeLmdbQuerySource implements NativeLmdbQuerySource {
 		}
 
 		@Override
+		public Value lazyValue(long id, int positionMask, ValueResolutionScope valueScope)
+				throws QueryEvaluationException {
+			return delegate.lazyValue(id, positionMask, valueScope);
+		}
+
+		@Override
 		public boolean supportsTripleTermScan() {
 			return delegate.supportsTripleTermScan();
 		}
@@ -1271,6 +1380,12 @@ final class CompositeNativeLmdbQuerySource implements NativeLmdbQuerySource {
 		@Override
 		public RecordIterator tripleTerms(long subj, long pred, long obj) throws IOException {
 			return delegate.tripleTerms(subj, pred, obj);
+		}
+
+		@Override
+		public RecordIterator tripleTerms(long subj, long pred, long obj, CursorCancellation cancellation)
+				throws IOException {
+			return delegate.tripleTerms(subj, pred, obj, cancellation);
 		}
 
 		@Override
@@ -1320,15 +1435,33 @@ final class CompositeNativeLmdbQuerySource implements NativeLmdbQuerySource {
 		}
 
 		@Override
+		public RecordIterator statements(long subj, long pred, long obj, long context,
+				AdjacencyAccessObserver observer, CursorCancellation cancellation) throws IOException {
+			return delegate.statements(subj, pred, obj, context, observer, cancellation);
+		}
+
+		@Override
 		public RecordIterator statementsInEncounterOrder(long subj, long pred, long obj, long context,
 				AdjacencyAccessObserver observer) throws IOException {
 			return delegate.statementsInEncounterOrder(subj, pred, obj, context, observer);
 		}
 
 		@Override
+		public RecordIterator statementsInEncounterOrder(long subj, long pred, long obj, long context,
+				AdjacencyAccessObserver observer, CursorCancellation cancellation) throws IOException {
+			return delegate.statementsInEncounterOrder(subj, pred, obj, context, observer, cancellation);
+		}
+
+		@Override
 		public RecordIterator lmdbStatements(long subj, long pred, long obj, long context,
 				AdjacencyAccessObserver observer) throws IOException {
 			return delegate.lmdbStatements(subj, pred, obj, context, observer);
+		}
+
+		@Override
+		public RecordIterator lmdbStatements(long subj, long pred, long obj, long context,
+				AdjacencyAccessObserver observer, CursorCancellation cancellation) throws IOException {
+			return delegate.lmdbStatements(subj, pred, obj, context, observer, cancellation);
 		}
 
 		@Override
@@ -1344,6 +1477,12 @@ final class CompositeNativeLmdbQuerySource implements NativeLmdbQuerySource {
 		}
 
 		@Override
+		public RecordIterator statements(long subj, long pred, long obj, long context, LmdbKeyRange range,
+				AdjacencyAccessObserver observer, CursorCancellation cancellation) throws IOException {
+			return delegate.statements(subj, pred, obj, context, range, observer, cancellation);
+		}
+
+		@Override
 		public RecordIterator statements(StatementOrder order, long subj, long pred, long obj, long context)
 				throws IOException {
 			return delegate.statements(order, subj, pred, obj, context);
@@ -1356,9 +1495,21 @@ final class CompositeNativeLmdbQuerySource implements NativeLmdbQuerySource {
 		}
 
 		@Override
+		public RecordIterator statements(StatementOrder order, long subj, long pred, long obj, long context,
+				AdjacencyAccessObserver observer, CursorCancellation cancellation) throws IOException {
+			return delegate.statements(order, subj, pred, obj, context, observer, cancellation);
+		}
+
+		@Override
 		public RecordIterator lmdbStatements(StatementOrder order, long subj, long pred, long obj, long context,
 				AdjacencyAccessObserver observer) throws IOException {
 			return delegate.lmdbStatements(order, subj, pred, obj, context, observer);
+		}
+
+		@Override
+		public RecordIterator lmdbStatements(StatementOrder order, long subj, long pred, long obj, long context,
+				AdjacencyAccessObserver observer, CursorCancellation cancellation) throws IOException {
+			return delegate.lmdbStatements(order, subj, pred, obj, context, observer, cancellation);
 		}
 
 		@Override
@@ -1375,7 +1526,15 @@ final class CompositeNativeLmdbQuerySource implements NativeLmdbQuerySource {
 		@Override
 		public LmdbPrefixRunCursor prefixRuns(LmdbPrefixRunPlan plan, long subj, long pred, long obj, long context,
 				boolean countRunRows, AdjacencyAccessObserver observer) throws IOException {
-			return delegate.prefixRuns(plan, subj, pred, obj, context, countRunRows, observer);
+			return prefixRuns(plan, subj, pred, obj, context, countRunRows, observer,
+					NativeLmdbQuerySource.captureCursorCancellation());
+		}
+
+		@Override
+		public LmdbPrefixRunCursor prefixRuns(LmdbPrefixRunPlan plan, long subj, long pred, long obj, long context,
+				boolean countRunRows, AdjacencyAccessObserver observer, CursorCancellation cancellation)
+				throws IOException {
+			return delegate.prefixRuns(plan, subj, pred, obj, context, countRunRows, observer, cancellation);
 		}
 
 		@Override
@@ -1400,6 +1559,12 @@ final class CompositeNativeLmdbQuerySource implements NativeLmdbQuerySource {
 		public RecordIterator statements(long subj, long pred, long obj, long context,
 				LmdbRootScanPartition partition) throws IOException {
 			return delegate.statements(subj, pred, obj, context, partition);
+		}
+
+		@Override
+		public RecordIterator partitionStatements(long subj, long pred, long obj, long context,
+				LmdbRootScanPartition partition, CursorCancellation cancellation) throws IOException {
+			return delegate.partitionStatements(subj, pred, obj, context, partition, cancellation);
 		}
 
 		@Override
@@ -1428,8 +1593,19 @@ final class CompositeNativeLmdbQuerySource implements NativeLmdbQuerySource {
 		}
 
 		@Override
+		public NativeProbe newProbe(CursorCancellation cancellation) {
+			return delegate.newProbe(cancellation);
+		}
+
+		@Override
 		public long count(long subj, long pred, long obj, long context) throws IOException {
-			return delegate.count(subj, pred, obj, context);
+			return count(subj, pred, obj, context, null);
+		}
+
+		@Override
+		public long count(long subj, long pred, long obj, long context, CursorCancellation cancellation)
+				throws IOException {
+			return delegate.count(subj, pred, obj, context, cancellation);
 		}
 
 		@Override
@@ -1445,7 +1621,13 @@ final class CompositeNativeLmdbQuerySource implements NativeLmdbQuerySource {
 		@Override
 		public boolean has(long subj, long pred, long obj, long context, AdjacencyAccessObserver observer)
 				throws IOException {
-			return delegate.has(subj, pred, obj, context, observer);
+			return has(subj, pred, obj, context, observer, null);
+		}
+
+		@Override
+		public boolean has(long subj, long pred, long obj, long context, AdjacencyAccessObserver observer,
+				CursorCancellation cancellation) throws IOException {
+			return delegate.has(subj, pred, obj, context, observer, cancellation);
 		}
 
 		@Override
@@ -1528,14 +1710,14 @@ final class CompositeNativeLmdbQuerySource implements NativeLmdbQuerySource {
 		private long domainPredicate;
 		private boolean closed;
 
-		private CompositeProbe(List<NativeLmdbQuerySource> sources) {
+		private CompositeProbe(List<NativeLmdbQuerySource> sources, CursorCancellation cancellation) {
 			probes = new NativeProbe[sources.size()];
 			int created = 0;
 			try {
 				for (; created < probes.length; created++) {
-					probes[created] = sources.get(created).newProbe();
+					probes[created] = sources.get(created).newProbe(cancellation);
 				}
-				iterator = new ConcatenatingProbeIterator(this, probes);
+				iterator = new ConcatenatingProbeIterator(this, probes, cancellation);
 			} catch (RuntimeException | Error e) {
 				for (int i = 0; i < created; i++) {
 					try {
@@ -1884,7 +2066,17 @@ final class CompositeNativeLmdbQuerySource implements NativeLmdbQuerySource {
 		}
 	}
 
+	private static VarHandle childGenerationHandle(Class<?> owner) {
+		try {
+			return MethodHandles.lookup().findVarHandle(owner, "childGeneration", long.class);
+		} catch (ReflectiveOperationException e) {
+			throw new ExceptionInInitializerError(e);
+		}
+	}
+
 	private static final class ConcatenatingProbeIterator implements RecordIterator {
+
+		private static final VarHandle CHILD_GENERATION = childGenerationHandle(ConcatenatingProbeIterator.class);
 
 		private final CompositeProbe owner;
 		private final NativeProbe[] probes;
@@ -1894,15 +2086,20 @@ final class CompositeNativeLmdbQuerySource implements NativeLmdbQuerySource {
 		private long context;
 		private AdjacencyAccessObserver observer;
 		private int index;
-		private RecordIterator current;
-		private boolean closed = true;
+		private volatile RecordIterator current;
+		private long childGeneration;
+		private CursorCancellation cancellation;
+		private final RecordCursorCancellation request = new RecordCursorCancellation();
 
-		private ConcatenatingProbeIterator(CompositeProbe owner, NativeProbe[] probes) {
+		private ConcatenatingProbeIterator(CompositeProbe owner, NativeProbe[] probes,
+				CursorCancellation cancellation) {
+			this.cancellation = cancellation == null ? null : cancellation.forWorker();
 			this.owner = owner;
 			this.probes = probes;
 		}
 
 		private void reset(long subj, long pred, long obj, long context, AdjacencyAccessObserver observer) {
+			request.close();
 			RecordIterator previous = current;
 			current = null;
 			if (previous != null) {
@@ -1914,69 +2111,119 @@ final class CompositeNativeLmdbQuerySource implements NativeLmdbQuerySource {
 			this.context = context;
 			this.observer = observer;
 			index = 0;
-			closed = false;
+			request.open();
+		}
+
+		@Override
+		public boolean requestCancellation() {
+			return requestCancellation(request.generation());
+		}
+
+		@Override
+		public long cancellationGeneration() {
+			return request.generation();
+		}
+
+		@Override
+		public boolean requestCancellation(long generation) {
+			if (!request.request(generation)) {
+				return false;
+			}
+			// Publish the stop before sampling the active child. A later adoption sees the stop before pulling.
+			RecordIterator child = current;
+			if (child != null) {
+				long childSelection = (long) CHILD_GENERATION.getAcquire(this);
+				if (current == child && request.generation() == generation) {
+					RecordIterator.forwardCancellation(child, childSelection);
+				}
+			}
+			return true;
 		}
 
 		@Override
 		public long[] next() {
-			if (closed) {
+			if (request.isClosed()) {
 				return null;
 			}
-			while (index < probes.length) {
-				if (current == null) {
-					try {
-						current = probes[index].open(subj, pred, obj, context, observer);
-					} catch (IOException e) {
-						owner.fail(this, e);
-						throw new QueryEvaluationException(e);
-					} catch (RuntimeException | Error e) {
-						owner.fail(this, e);
-						throw e;
-					}
-				}
-				long[] row;
-				try {
-					row = current.next();
-				} catch (RuntimeException | Error e) {
-					owner.fail(this, e);
-					throw e;
-				}
-				if (row != null) {
-					return row;
-				}
-				RecordIterator exhausted = current;
-				current = null;
-				try {
-					exhausted.close();
-				} catch (RuntimeException | Error e) {
-					owner.fail(this, e);
-					throw e;
-				}
-				index++;
-			}
-			close();
-			return null;
-		}
-
-		@Override
-		public boolean seekForward(long subj, long pred, long obj, long context) {
-			if (closed || current == null) {
-				return false;
-			}
 			try {
-				return current.seekForward(subj, pred, obj, context);
-			} catch (RuntimeException | Error e) {
+				enterCancellation();
+				while (index < probes.length) {
+					if (current == null) {
+						RecordIterator child = probes[index].open(subj, pred, obj, context, observer);
+						long selectedGeneration = child.cancellationGeneration();
+						if (childGeneration != selectedGeneration) {
+							// Seeing a newer generation must also reveal detachment of the previous child.
+							CHILD_GENERATION.setRelease(this, selectedGeneration);
+						}
+						current = child;
+						// Publish the child before rechecking a cancellation received during open.
+						checkpointCancellation();
+					}
+					long[] row = current.next();
+					checkpointCancellation();
+					if (row != null) {
+						return row;
+					}
+					RecordIterator exhausted = current;
+					current = null;
+					exhausted.close();
+					index++;
+					checkpointCancellation();
+				}
+				close();
+				return null;
+			} catch (IOException e) {
 				owner.fail(this, e);
+				throw new QueryEvaluationException(e);
+			} catch (RuntimeException | Error e) {
+				fail(e);
 				throw e;
 			}
 		}
 
 		@Override
+		public boolean seekForward(long subj, long pred, long obj, long context) {
+			if (request.isClosed()) {
+				return false;
+			}
+			try {
+				enterCancellation();
+				boolean positioned = current != null && current.seekForward(subj, pred, obj, context);
+				checkpointCancellation();
+				return positioned;
+			} catch (RuntimeException | Error e) {
+				fail(e);
+				throw e;
+			}
+		}
+
+		private void fail(Throwable failure) {
+			if (request.isCancelled()
+					&& (failure instanceof QueryInterruptedException
+							|| failure instanceof KernelQueryCancelledException)) {
+				KernelRuntime.closeCursor(this, failure);
+			} else {
+				owner.fail(this, failure);
+			}
+		}
+
+		private void enterCancellation() {
+			if (cancellation != null) {
+				cancellation = cancellation.forWorker();
+			}
+			checkpointCancellation();
+		}
+
+		private void checkpointCancellation() {
+			request.checkpoint(cancellation);
+		}
+
+		@Override
 		public void close() {
-			if (closed) {
+			if (request.isClosed()) {
 				return;
 			}
-			closed = true;
+			request.close();
 			RecordIterator iterator = current;
 			current = null;
 			if (iterator != null) {
@@ -1986,6 +2233,8 @@ final class CompositeNativeLmdbQuerySource implements NativeLmdbQuerySource {
 	}
 
 	private static final class ConcatenatingRecordIterator implements RecordIterator {
+		private static final VarHandle CHILD_GENERATION = childGenerationHandle(ConcatenatingRecordIterator.class);
+
 		private enum AccessMode {
 			ORDINARY,
 			ENCOUNTER_ORDER,
@@ -2000,12 +2249,17 @@ final class CompositeNativeLmdbQuerySource implements NativeLmdbQuerySource {
 		private final LmdbKeyRange range;
 		private final AdjacencyAccessObserver observer;
 		private final AccessMode accessMode;
+		private CursorCancellation cancellation;
 		private int index;
-		private RecordIterator current;
-		private boolean closed;
+		private volatile RecordIterator current;
+		private long childGeneration;
+		private volatile boolean closed;
+		private volatile boolean cancellationRequested;
 
 		private ConcatenatingRecordIterator(List<NativeLmdbQuerySource> sources, long subj, long pred, long obj,
-				long context, LmdbKeyRange range, AdjacencyAccessObserver observer, AccessMode accessMode) {
+				long context, LmdbKeyRange range, AdjacencyAccessObserver observer, AccessMode accessMode,
+				CursorCancellation cancellation) {
+			this.cancellation = cancellation == null ? null : cancellation.forWorker();
 			this.sources = sources;
 			this.subj = subj;
 			this.pred = pred;
@@ -2017,36 +2271,69 @@ final class CompositeNativeLmdbQuerySource implements NativeLmdbQuerySource {
 		}
 
 		@Override
+		public boolean requestCancellation() {
+			if (closed) {
+				return false;
+			}
+			cancellationRequested = true;
+			RecordIterator child = current;
+			if (child != null) {
+				long childSelection = (long) CHILD_GENERATION.getAcquire(this);
+				if (current == child) {
+					RecordIterator.forwardCancellation(child, childSelection);
+				}
+			}
+			return true;
+		}
+
+		@Override
 		public long[] next() {
 			if (closed) {
 				return null;
 			}
-			while (index < sources.size()) {
-				if (current == null) {
-					try {
+			try {
+				enterCancellation();
+				while (index < sources.size()) {
+					if (current == null) {
 						NativeLmdbQuerySource source = sources.get(index);
-						current = range != null
-								? source.statements(subj, pred, obj, context, range, observer)
+						RecordIterator child = range != null
+								? source.statements(subj, pred, obj, context, range, observer, cancellation)
 								: switch (accessMode) {
-								case ORDINARY -> source.statements(subj, pred, obj, context, observer);
+								case ORDINARY -> source.statements(subj, pred, obj, context, observer, cancellation);
 								case ENCOUNTER_ORDER -> source.statementsInEncounterOrder(subj, pred, obj, context,
-										observer);
-								case FORCED_LMDB -> source.lmdbStatements(subj, pred, obj, context, observer);
+										observer, cancellation);
+								case FORCED_LMDB ->
+									source.lmdbStatements(subj, pred, obj, context, observer, cancellation);
 								};
-					} catch (IOException e) {
-						throw new QueryEvaluationException(e);
+						long selectedGeneration = child.cancellationGeneration();
+						if (childGeneration != selectedGeneration) {
+							CHILD_GENERATION.setRelease(this, selectedGeneration);
+						}
+						current = child;
+						// Publish the child before rechecking a cancellation received during open.
+						checkpointCancellation();
 					}
+					long[] row = current.next();
+					checkpointCancellation();
+					if (row != null) {
+						return row;
+					}
+					RecordIterator exhausted = current;
+					current = null;
+					exhausted.close();
+					index++;
+					checkpointCancellation();
 				}
-				long[] row = current.next();
-				if (row != null) {
-					return row;
-				}
-				current.close();
-				current = null;
-				index++;
+				close();
+				return null;
+			} catch (IOException e) {
+				QueryEvaluationException failure = new QueryEvaluationException(e);
+				KernelRuntime.closeCursor(this, failure);
+				throw failure;
+			} catch (RuntimeException | Error failure) {
+				KernelRuntime.closeCursor(this, failure);
+				throw failure;
 			}
-			close();
-			return null;
 		}
 
 		/**
@@ -2056,19 +2343,44 @@ final class CompositeNativeLmdbQuerySource implements NativeLmdbQuerySource {
 		 */
 		@Override
 		public boolean seekForward(long subj, long pred, long obj, long context) {
-			if (closed || current == null) {
+			if (closed) {
 				return false;
 			}
-			return current.seekForward(subj, pred, obj, context);
+			try {
+				enterCancellation();
+				boolean positioned = current != null && current.seekForward(subj, pred, obj, context);
+				checkpointCancellation();
+				return positioned;
+			} catch (RuntimeException | Error failure) {
+				KernelRuntime.closeCursor(this, failure);
+				throw failure;
+			}
+		}
+
+		private void enterCancellation() {
+			if (cancellation != null) {
+				cancellation = cancellation.forWorker();
+			}
+			checkpointCancellation();
+		}
+
+		private void checkpointCancellation() {
+			if (cancellationRequested) {
+				NativeLmdbQuerySource.checkpointRecordCancellation(cancellation);
+			}
+			if (cancellation != null) {
+				cancellation.checkpoint();
+			}
 		}
 
 		@Override
 		public void close() {
 			if (!closed) {
 				closed = true;
-				if (current != null) {
-					current.close();
-					current = null;
+				RecordIterator owned = current;
+				current = null;
+				if (owned != null) {
+					owned.close();
 				}
 			}
 		}

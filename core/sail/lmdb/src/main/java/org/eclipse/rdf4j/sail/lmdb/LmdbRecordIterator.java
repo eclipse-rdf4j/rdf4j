@@ -26,13 +26,16 @@ import static org.lwjgl.util.lmdb.LMDB.mdb_cursor_renew;
 import static org.lwjgl.util.lmdb.LMDB.mdb_get;
 
 import java.io.IOException;
+import java.lang.invoke.MethodHandles;
+import java.lang.invoke.VarHandle;
 import java.nio.ByteBuffer;
 import java.util.Arrays;
 
 import org.eclipse.rdf4j.common.concurrent.locks.StampedLongAdderLockManager;
+import org.eclipse.rdf4j.query.QueryInterruptedException;
 import org.eclipse.rdf4j.sail.SailException;
 import org.eclipse.rdf4j.sail.lmdb.TxnManager.Txn;
-import org.eclipse.rdf4j.sail.lmdb.evaluation.NativeLmdbQuerySource;
+import org.eclipse.rdf4j.sail.lmdb.evaluation.NativeLmdbQuerySource.CursorCancellation;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.codegen.KernelRuntime;
 import org.lwjgl.PointerBuffer;
 import org.lwjgl.system.MemoryStack;
@@ -46,6 +49,25 @@ import org.slf4j.LoggerFactory;
  */
 class LmdbRecordIterator implements RecordIterator {
 	private static final Logger log = LoggerFactory.getLogger(LmdbRecordIterator.class);
+	private static final long ACTIVE = 1L;
+	private static final long CANCELLED = 2L;
+	private static final long STATE_MASK = 3L;
+	private static final VarHandle CANCELLATION_STATE;
+
+	/**
+	 * Skip-scan (leapfrog step): after this many consecutive KEY_FILTERED keys, seek past the non-matching run with
+	 * MDB_SET_RANGE instead of stepping key by key. Short mismatch runs keep the cheaper MDB_NEXT.
+	 */
+	private static final boolean skipScanEnabled = !"false".equals(System.getProperty("rdf4j.lmdb.skipScan.enabled"));
+
+	static {
+		try {
+			CANCELLATION_STATE = MethodHandles.lookup()
+					.findVarHandle(LmdbRecordIterator.class, "cancellationState", long.class);
+		} catch (ReflectiveOperationException e) {
+			throw new ExceptionInInitializerError(e);
+		}
+	}
 
 	private TripleIndex index;
 
@@ -67,7 +89,10 @@ class LmdbRecordIterator implements RecordIterator {
 
 	private int dbi;
 
-	private volatile boolean closed = false;
+	private boolean closed;
+	// High bits identify the retained selection; a racing request cannot cross a reset.
+	private volatile long cancellationState = ACTIVE;
+	private CursorCancellation cancellation;
 
 	private final MDBVal keyData;
 
@@ -93,11 +118,6 @@ class LmdbRecordIterator implements RecordIterator {
 
 	private boolean exactKeyFound = false;
 
-	/**
-	 * Skip-scan (leapfrog step): after this many consecutive KEY_FILTERED keys, seek past the non-matching run with
-	 * MDB_SET_RANGE instead of stepping key by key. Short mismatch runs keep the cheaper MDB_NEXT.
-	 */
-	private final boolean skipScanEnabled = !"false".equals(System.getProperty("rdf4j.lmdb.skipScan.enabled"));
 	private static final int SKIP_MIN_RUN = 4;
 	private int consecutiveFiltered;
 	private long[] skipKeyValues;
@@ -125,38 +145,25 @@ class LmdbRecordIterator implements RecordIterator {
 	private long sourceRowsScannedActual;
 	private long sourceRowsMatchedActual;
 	private long sourceRowsFilteredActual;
-	private int cancellationPollTick;
+	private int cancellationTick;
 
 	LmdbRecordIterator(TripleIndex index, boolean rangeSearch, long subj, long pred, long obj,
 			long context, boolean explicit, Txn txnRef) throws IOException {
-		this(index, rangeSearch, subj, pred, obj, context, explicit, txnRef, null, false);
-	}
-
-	LmdbRecordIterator(TripleIndex index, boolean rangeSearch, long subj, long pred, long obj,
-			long context, boolean explicit, Txn txnRef, TripleStore.CursorPool cursorPool) throws IOException {
-		this(index, rangeSearch, subj, pred, obj, context, explicit, txnRef, cursorPool, false);
+		this(index, rangeSearch, subj, pred, obj, context, explicit, txnRef, null, false, null, null, null);
 	}
 
 	LmdbRecordIterator(TripleIndex index, boolean rangeSearch, long subj, long pred, long obj,
 			long context, boolean explicit, Txn txnRef, TripleStore.CursorPool cursorPool, boolean retainOnClose)
 			throws IOException {
-		this(index, rangeSearch, subj, pred, obj, context, explicit, txnRef, cursorPool, retainOnClose, null);
-	}
-
-	LmdbRecordIterator(TripleIndex index, boolean rangeSearch, long subj, long pred, long obj,
-			long context, boolean explicit, Txn txnRef, ValueStore.ReadSnapshot readSnapshot) throws IOException {
-		this(index, rangeSearch, subj, pred, obj, context, explicit, txnRef, null, false, null, readSnapshot);
+		this(index, rangeSearch, subj, pred, obj, context, explicit, txnRef, cursorPool, retainOnClose, null, null,
+				null);
 	}
 
 	LmdbRecordIterator(TripleIndex index, boolean rangeSearch, long subj, long pred, long obj,
 			long context, boolean explicit, Txn txnRef, TripleStore.CursorPool cursorPool, boolean retainOnClose,
-			LmdbKeyRange range) throws IOException {
-		this(index, rangeSearch, subj, pred, obj, context, explicit, txnRef, cursorPool, retainOnClose, range, null);
-	}
-
-	LmdbRecordIterator(TripleIndex index, boolean rangeSearch, long subj, long pred, long obj,
-			long context, boolean explicit, Txn txnRef, TripleStore.CursorPool cursorPool, boolean retainOnClose,
-			LmdbKeyRange range, ValueStore.ReadSnapshot readSnapshot) throws IOException {
+			LmdbKeyRange range, ValueStore.ReadSnapshot readSnapshot, CursorCancellation cancellation)
+			throws IOException {
+		this.cancellation = cancellation == null ? null : cancellation.forWorker();
 		this.retainOnClose = retainOnClose;
 		this.matchSubj = subj > 0 ? subj : -1;
 		this.matchPred = pred > 0 ? pred : -1;
@@ -182,6 +189,9 @@ class LmdbRecordIterator implements RecordIterator {
 				txnRef.ensureSnapshotValid();
 				if (readSnapshot != null) {
 					readSnapshot.ensureValid();
+				}
+				if (this.cancellation != null) {
+					this.cancellation.poll();
 				}
 				this.txnLease = txnRef.lease();
 				this.txnRefVersion = txnRef.version();
@@ -334,9 +344,7 @@ class LmdbRecordIterator implements RecordIterator {
 				if (exactKeySearch) {
 					long[] record = nextExactKey();
 					if (record == null) {
-						pollCancellationAtExhaustion();
-					} else {
-						pollCancellationCandidate();
+						finish();
 					}
 					return record;
 				}
@@ -356,17 +364,16 @@ class LmdbRecordIterator implements RecordIterator {
 						index.toKey(minKeyBuf, quad[0], quad[1], quad[2], quad[3]);
 						minKeyBuf.flip();
 						LmdbUtil.setMDBValData(keyData, minKeyBuf);
-						lastResult = mdb_cursor_get(cursor, keyData, valueData, MDB_SET);
+						lastResult = readCandidate(MDB_SET);
 						if (lastResult != MDB_SUCCESS) {
 							// use MDB_SET_RANGE if key was deleted
-							lastResult = mdb_cursor_get(cursor, keyData, valueData, MDB_SET_RANGE);
+							lastResult = readCandidate(MDB_SET_RANGE);
 							if (lastResult == MDB_SUCCESS) {
 								fetchNext = false;
 							}
 						}
 						if (lastResult != MDB_SUCCESS) {
-							pollCancellationAtExhaustion();
-							closeInternalUnderCurrentReadLock();
+							finish();
 							return null;
 						}
 					}
@@ -375,22 +382,21 @@ class LmdbRecordIterator implements RecordIterator {
 				}
 
 				if (fetchNext) {
-					lastResult = mdb_cursor_get(cursor, keyData, valueData, MDB_NEXT);
+					lastResult = readCandidate(MDB_NEXT);
 					fetchNext = false;
 				} else {
 					if (minKeyBuf != null) {
 						// set cursor to min key
 						LmdbUtil.setMDBValData(keyData, minKeyBuf);
-						lastResult = mdb_cursor_get(cursor, keyData, valueData, MDB_SET_RANGE);
+						lastResult = readCandidate(MDB_SET_RANGE);
 					} else {
 						// set cursor to first item; MDB_FIRST (not MDB_NEXT) because a pooled cursor may
 						// still be positioned wherever its previous iterator left it
-						lastResult = mdb_cursor_get(cursor, keyData, valueData, MDB_FIRST);
+						lastResult = readCandidate(MDB_FIRST);
 					}
 				}
 
 				while (lastResult == MDB_SUCCESS) {
-					pollCancellationCandidate();
 					sourceRowsScannedActual++;
 					if (isOutOfRange()) {
 						sourceRowsFilteredActual++;
@@ -404,7 +410,7 @@ class LmdbRecordIterator implements RecordIterator {
 							// A replay continuation excludes its checkpoint row even after a cursor renew.
 							if (resumeExclusive != null && Arrays.equals(quad, resumeExclusive)) {
 								resumeExclusive = null;
-								lastResult = mdb_cursor_get(cursor, keyData, valueData, MDB_NEXT);
+								lastResult = readCandidate(MDB_NEXT);
 								continue;
 							}
 							resumeExclusive = null;
@@ -424,8 +430,7 @@ class LmdbRecordIterator implements RecordIterator {
 						}
 					}
 				}
-				pollCancellationAtExhaustion();
-				closeInternalUnderCurrentReadLock();
+				finish();
 				return null;
 			}
 		} catch (SailException e) {
@@ -444,7 +449,24 @@ class LmdbRecordIterator implements RecordIterator {
 
 	@Override
 	public int fill(long[] buffer, int maxRows) {
+		return fillAt(buffer, 0, maxRows, maxRows, null);
+	}
 
+	static int fillAt(LmdbRecordIterator iterator, long[] buffer, int rowOffset, int maxRows) {
+		return iterator.fillAt(buffer, rowOffset, maxRows, maxRows, null);
+	}
+
+	/** A read boundary that must not run user callbacks while the transaction is locked. */
+	interface ReadCheckpoint {
+		boolean mayContinueDuringRead();
+	}
+
+	static int fillWithCheckpoints(LmdbRecordIterator iterator, long[] buffer, int maxRows, int interval,
+			ReadCheckpoint checkpoint) {
+		return iterator.fillAt(buffer, 0, maxRows, interval, checkpoint);
+	}
+
+	private int fillAt(long[] buffer, int rowOffset, int maxRows, int interval, ReadCheckpoint checkpoint) {
 		long readStamp;
 		try {
 			readStamp = txnLockManager.readLock();
@@ -461,96 +483,26 @@ class LmdbRecordIterator implements RecordIterator {
 				if (exactKeySearch) {
 					long[] record = nextExactKey();
 					if (record == null) {
-						pollCancellationAtExhaustion();
+						finish();
 						return 0;
 					}
-					pollCancellationCandidate();
-					System.arraycopy(record, 0, buffer, 0, 4);
+					System.arraycopy(record, 0, buffer, rowOffset * 4, 4);
 					return 1;
 				}
 
-				int lastResult;
-				if (txnRefVersion != txnRef.version()) {
-					// a pinned SNAPSHOT transaction must fail here instead of silently rebinding to a newer snapshot
-					validateSnapshot();
-					// cursor must be renewed; quad holds the last key handed out, which is also the last
-					// buffered key because the driver drains the batch before refilling
-					E(mdb_cursor_renew(txn, cursor));
-					if (fetchNext) {
-						if (minKeyBuf == null) {
-							minKeyBuf = txnRef.takeKeyBuffer();
-						}
-						minKeyBuf.clear();
-						index.toKey(minKeyBuf, quad[0], quad[1], quad[2], quad[3]);
-						minKeyBuf.flip();
-						LmdbUtil.setMDBValData(keyData, minKeyBuf);
-						lastResult = mdb_cursor_get(cursor, keyData, valueData, MDB_SET);
-						if (lastResult != MDB_SUCCESS) {
-							// use MDB_SET_RANGE if key was deleted
-							lastResult = mdb_cursor_get(cursor, keyData, valueData, MDB_SET_RANGE);
-							if (lastResult == MDB_SUCCESS) {
-								fetchNext = false;
-							}
-						}
-						if (lastResult != MDB_SUCCESS) {
-							pollCancellationAtExhaustion();
-							closeInternalUnderCurrentReadLock();
-							return 0;
-						}
-					}
-					this.txnRefVersion = txnRef.version();
-				}
-
-				if (fetchNext) {
-					lastResult = mdb_cursor_get(cursor, keyData, valueData, MDB_NEXT);
-					fetchNext = false;
-				} else if (minKeyBuf != null) {
-					// set cursor to min key
-					LmdbUtil.setMDBValData(keyData, minKeyBuf);
-					lastResult = mdb_cursor_get(cursor, keyData, valueData, MDB_SET_RANGE);
-				} else {
-					// set cursor to first item; MDB_FIRST (not MDB_NEXT) because a pooled cursor may
-					// still be positioned wherever its previous iterator left it
-					lastResult = mdb_cursor_get(cursor, keyData, valueData, MDB_FIRST);
+				if (checkpoint == null) {
+					return fillQuads(buffer, rowOffset, maxRows);
 				}
 
 				int rows = 0;
-				while (lastResult == MDB_SUCCESS) {
-					pollCancellationCandidate();
-					sourceRowsScannedActual++;
-					if (isOutOfRange()) {
-						sourceRowsFilteredActual++;
+				while (rows < maxRows) {
+					int demand = Math.min(interval, maxRows - rows);
+					int count = fillQuads(buffer, rowOffset + rows, demand);
+					rows += count;
+					if (count < demand || (rows < maxRows && !checkpoint.mayContinueDuringRead())) {
 						break;
 					}
-					long keyAddress = LmdbUtil.mdbValDataAddress(keyData);
-					int matchStatus = index.keyToQuadMatchStatus(keyAddress, rangePrefixLength, matchSubj, matchPred,
-							matchObj, matchContext, quad);
-					if (matchStatus == TripleIndex.KEY_MATCH) {
-						if (resumeExclusive != null && Arrays.equals(quad, resumeExclusive)) {
-							resumeExclusive = null;
-							lastResult = mdb_cursor_get(cursor, keyData, valueData, MDB_NEXT);
-							continue;
-						}
-						resumeExclusive = null;
-						sourceRowsMatchedActual++;
-						consecutiveFiltered = 0;
-						System.arraycopy(quad, 0, buffer, rows * 4, 4);
-						rows++;
-						if (rows == maxRows) {
-							fetchNext = true;
-							return rows;
-						}
-						lastResult = mdb_cursor_get(cursor, keyData, valueData, MDB_NEXT);
-					} else {
-						sourceRowsFilteredActual++;
-						if (matchStatus == TripleIndex.KEY_OUT_OF_RANGE) {
-							break;
-						}
-						lastResult = advancePastFiltered(keyAddress);
-					}
 				}
-				pollCancellationAtExhaustion();
-				closeInternalUnderCurrentReadLock();
 				return rows;
 			}
 		} catch (SailException e) {
@@ -567,12 +519,97 @@ class LmdbRecordIterator implements RecordIterator {
 		}
 	}
 
+	private int fillQuads(long[] buffer, int rowOffset, int maxRows) throws IOException {
+		int lastResult;
+		if (txnRefVersion != txnRef.version()) {
+			// a pinned SNAPSHOT transaction must fail here instead of silently rebinding to a newer snapshot
+			validateSnapshot();
+			// cursor must be renewed; quad holds the last key handed out, which is also the last
+			// buffered key because the driver drains the batch before refilling
+			E(mdb_cursor_renew(txn, cursor));
+			if (fetchNext) {
+				if (minKeyBuf == null) {
+					minKeyBuf = txnRef.takeKeyBuffer();
+				}
+				minKeyBuf.clear();
+				index.toKey(minKeyBuf, quad[0], quad[1], quad[2], quad[3]);
+				minKeyBuf.flip();
+				LmdbUtil.setMDBValData(keyData, minKeyBuf);
+				lastResult = readCandidate(MDB_SET);
+				if (lastResult != MDB_SUCCESS) {
+					// use MDB_SET_RANGE if key was deleted
+					lastResult = readCandidate(MDB_SET_RANGE);
+					if (lastResult == MDB_SUCCESS) {
+						fetchNext = false;
+					}
+				}
+				if (lastResult != MDB_SUCCESS) {
+					finish();
+					return 0;
+				}
+			}
+			this.txnRefVersion = txnRef.version();
+		}
+
+		if (fetchNext) {
+			lastResult = readCandidate(MDB_NEXT);
+			fetchNext = false;
+		} else if (minKeyBuf != null) {
+			// set cursor to min key
+			LmdbUtil.setMDBValData(keyData, minKeyBuf);
+			lastResult = readCandidate(MDB_SET_RANGE);
+		} else {
+			// set cursor to first item; MDB_FIRST (not MDB_NEXT) because a pooled cursor may
+			// still be positioned wherever its previous iterator left it
+			lastResult = readCandidate(MDB_FIRST);
+		}
+
+		int rows = 0;
+		while (lastResult == MDB_SUCCESS) {
+			sourceRowsScannedActual++;
+			if (isOutOfRange()) {
+				sourceRowsFilteredActual++;
+				break;
+			}
+			long keyAddress = LmdbUtil.mdbValDataAddress(keyData);
+			int matchStatus = index.keyToQuadMatchStatus(keyAddress, rangePrefixLength, matchSubj, matchPred,
+					matchObj, matchContext, quad);
+			if (matchStatus == TripleIndex.KEY_MATCH) {
+				if (resumeExclusive != null && Arrays.equals(quad, resumeExclusive)) {
+					resumeExclusive = null;
+					lastResult = readCandidate(MDB_NEXT);
+					continue;
+				}
+				resumeExclusive = null;
+				sourceRowsMatchedActual++;
+				consecutiveFiltered = 0;
+				System.arraycopy(quad, 0, buffer, (rowOffset + rows) * 4, 4);
+				rows++;
+				if (rows == maxRows) {
+					fetchNext = true;
+					return rows;
+				}
+				lastResult = readCandidate(MDB_NEXT);
+			} else {
+				sourceRowsFilteredActual++;
+				if (matchStatus == TripleIndex.KEY_OUT_OF_RANGE) {
+					break;
+				}
+				lastResult = advancePastFiltered(keyAddress);
+			}
+		}
+		finish();
+		return rows;
+	}
+
 	private long[] nextExactKey() {
+		if (cancellation != null) {
+			cancellation.poll();
+		}
 		if (!fetchNext && exactKeyFound) {
 			fetchNext = true;
 			return quad;
 		}
-		closeInternalUnderCurrentReadLock();
 		return null;
 	}
 
@@ -586,20 +623,32 @@ class LmdbRecordIterator implements RecordIterator {
 	 */
 	@Override
 	public boolean seekForward(long subj, long pred, long obj, long context) {
-		synchronized (txnRef) {
-			if (closed || exactKeySearch) {
-				return false;
+		try {
+			synchronized (txnRef) {
+				if (closed) {
+					return false;
+				}
+				pollCancellationAtEntry();
+				if (cancellation != null) {
+					cancellation.poll();
+				}
+				if (exactKeySearch) {
+					return false;
+				}
+				validateSnapshot();
+				if (minKeyBuf == null) {
+					minKeyBuf = txnRef.takeKeyBuffer();
+				}
+				minKeyBuf.clear();
+				index.toKey(minKeyBuf, subj, pred, obj, context);
+				minKeyBuf.flip();
+				fetchNext = false;
+				consecutiveFiltered = 0;
+				return true;
 			}
-			validateSnapshot();
-			if (minKeyBuf == null) {
-				minKeyBuf = txnRef.takeKeyBuffer();
-			}
-			minKeyBuf.clear();
-			index.toKey(minKeyBuf, subj, pred, obj, context);
-			minKeyBuf.flip();
-			fetchNext = false;
-			consecutiveFiltered = 0;
-			return true;
+		} catch (RuntimeException | Error failure) {
+			KernelRuntime.closeCursor(this, failure);
+			throw failure;
 		}
 	}
 
@@ -610,7 +659,7 @@ class LmdbRecordIterator implements RecordIterator {
 	 */
 	private int advancePastFiltered(long keyAddress) {
 		if (!skipScanEnabled || ++consecutiveFiltered < SKIP_MIN_RUN) {
-			return mdb_cursor_get(cursor, keyData, valueData, MDB_NEXT);
+			return readCandidate(MDB_NEXT);
 		}
 		if (skipKeyBuf == null) {
 			skipKeyValues = new long[4];
@@ -623,13 +672,13 @@ class LmdbRecordIterator implements RecordIterator {
 			return MDB_NOTFOUND;
 		}
 		if (action == TripleIndex.SKIP_NONE) {
-			return mdb_cursor_get(cursor, keyData, valueData, MDB_NEXT);
+			return readCandidate(MDB_NEXT);
 		}
 		skipKeyBuf.clear();
 		index.toKey(skipKeyBuf, skipTargetQuad[0], skipTargetQuad[1], skipTargetQuad[2], skipTargetQuad[3]);
 		skipKeyBuf.flip();
 		LmdbUtil.setMDBValData(keyData, skipKeyBuf);
-		int rc = mdb_cursor_get(cursor, keyData, valueData, MDB_SET_RANGE);
+		int rc = readCandidate(MDB_SET_RANGE);
 		if (rc != MDB_SUCCESS && rc != MDB_NOTFOUND) {
 			// the scan loops treat any non-SUCCESS code as exhaustion; a genuine LMDB error must not
 			// silently truncate query results
@@ -705,6 +754,7 @@ class LmdbRecordIterator implements RecordIterator {
 				}
 				disposed = true;
 				closed = true;
+				cancellationState &= ~STATE_MASK;
 				freeResources();
 			}
 		} finally {
@@ -733,11 +783,15 @@ class LmdbRecordIterator implements RecordIterator {
 				if (disposed) {
 					throw new SailException("Iterator has been disposed");
 				}
+				if (cancellation != null) {
+					cancellation = cancellation.transferToWorker();
+					cancellation.poll();
+				}
 				// The retained cursor is reused, but source work belongs to one logical probe open.
 				this.sourceRowsScannedActual = 0L;
 				this.sourceRowsMatchedActual = 0L;
 				this.sourceRowsFilteredActual = 0L;
-				this.cancellationPollTick = 0;
+				this.cancellationTick = 0;
 				this.matchSubj = subj > 0 ? subj : -1;
 				this.matchPred = pred > 0 ? pred : -1;
 				this.matchObj = obj > 0 ? obj : -1;
@@ -824,6 +878,7 @@ class LmdbRecordIterator implements RecordIterator {
 						}
 					}
 				}
+				cancellationState = (cancellationState & ~STATE_MASK) + STATE_MASK + 1L + ACTIVE;
 				closed = false;
 			}
 		} finally {
@@ -852,20 +907,71 @@ class LmdbRecordIterator implements RecordIterator {
 		}
 	}
 
+	@Override
+	public boolean requestCancellation() {
+		return requestCancellation(cancellationGeneration());
+	}
+
+	@Override
+	public long cancellationGeneration() {
+		return cancellationState & ~STATE_MASK;
+	}
+
+	@Override
+	public boolean requestCancellation(long generation) {
+		long state = cancellationState;
+		if ((state & ~STATE_MASK) != generation) {
+			return false;
+		}
+		return switch ((int) (state & STATE_MASK)) {
+		case (int) ACTIVE -> CANCELLATION_STATE.compareAndSet(this, state, generation | CANCELLED)
+				|| cancellationState == (generation | CANCELLED);
+		case (int) CANCELLED -> true;
+		default -> false;
+		};
+	}
+
 	private void pollCancellationAtEntry() {
-		if (cancellationPollTick == 0) {
-			NativeLmdbQuerySource.checkpointCancellation();
+		checkLocalCancellation();
+		if (cancellation != null) {
+			cancellation = cancellation.transferToWorker();
+			if (cancellationTick == 0) {
+				cancellation.checkpointPublishedStops();
+			}
 		}
 	}
 
-	private void pollCancellationCandidate() {
-		if ((++cancellationPollTick & 1023) == 0) {
-			NativeLmdbQuerySource.checkpointCancellation();
+	/** Charge each physical cursor step, including seeks and empty results. */
+	private int readCandidate(int operation) {
+		if ((++cancellationTick & 63) == 0) {
+			checkLocalCancellation();
+		}
+		if (cancellation != null) {
+			cancellation.poll();
+		}
+		return mdb_cursor_get(cursor, keyData, valueData, operation);
+	}
+
+	private void finish() {
+		long state = (long) CANCELLATION_STATE.getAndBitwiseAnd(this, ~STATE_MASK);
+		if ((state & STATE_MASK) == CANCELLED) {
+			throw localCancellation();
+		}
+		if (cancellation != null) {
+			cancellation.checkpointPublishedStops();
+		}
+		closeInternalUnderCurrentReadLock();
+	}
+
+	private void checkLocalCancellation() {
+		if ((cancellationState & STATE_MASK) == CANCELLED) {
+			throw localCancellation();
 		}
 	}
 
-	private static void pollCancellationAtExhaustion() {
-		NativeLmdbQuerySource.checkpointCancellation();
+	private RuntimeException localCancellation() {
+		return cancellation == null ? new QueryInterruptedException("LMDB record iteration cancelled")
+				: cancellation.cancelled();
 	}
 
 	private void closeInternal(boolean maybeCalledAsync, boolean currentThreadHasReadLock) {
@@ -887,6 +993,7 @@ class LmdbRecordIterator implements RecordIterator {
 						}
 					} finally {
 						closed = true;
+						cancellationState &= ~STATE_MASK;
 					}
 				}
 			}

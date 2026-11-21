@@ -52,6 +52,7 @@ import org.eclipse.rdf4j.query.algebra.UnaryTupleOperator;
 import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.query.algebra.ZeroLengthPath;
 import org.eclipse.rdf4j.query.algebra.evaluation.ArrayBindingSet;
+import org.eclipse.rdf4j.query.algebra.evaluation.ArrayBindingSet.IndexedLayout;
 import org.eclipse.rdf4j.query.algebra.evaluation.iterator.ZeroLengthPathIteration;
 import org.eclipse.rdf4j.query.algebra.helpers.AbstractSimpleQueryModelVisitor;
 import org.eclipse.rdf4j.query.impl.BlankNodeAllocationScope;
@@ -72,6 +73,7 @@ public final class ArrayBindingBasedQueryEvaluationContext implements QueryEvalu
 	private final String[] allVariables;
 	private final Set<String> allVariablesSet;
 	private final ArrayBindingSet defaultArrayBindingSet;
+	private final IndexedLayout indexedLayout;
 	private final Predicate<BindingSet>[] hasBinding;
 	private final Function<BindingSet, Binding>[] getBinding;
 	private final Function<BindingSet, Value>[] getValue;
@@ -93,6 +95,7 @@ public final class ArrayBindingBasedQueryEvaluationContext implements QueryEvalu
 		this.comparator = comparator;
 		this.sortedBindingNamesCache = createSortedBindingNamesCache();
 		this.defaultArrayBindingSet = new ArrayBindingSet(allVariables, sortedBindingNamesCache);
+		this.indexedLayout = new IndexedLayout(defaultArrayBindingSet);
 
 		hasBinding = new Predicate[allVariables.length];
 		getBinding = new Function[allVariables.length];
@@ -162,6 +165,11 @@ public final class ArrayBindingBasedQueryEvaluationContext implements QueryEvalu
 	@Override
 	public ArrayBindingSet createBindingSet() {
 		return new ArrayBindingSet(allVariables, sortedBindingNamesCache);
+	}
+
+	@Override
+	public IndexedLayout indexedBindingLayout() {
+		return indexedLayout;
 	}
 
 	@Override

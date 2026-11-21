@@ -13,6 +13,7 @@ package org.eclipse.rdf4j.sail.lmdb.evaluation;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.eclipse.rdf4j.sail.lmdb.evaluation.NativeCancellationTestAccess.mockScanSource;
 import static org.junit.jupiter.api.Assertions.assertAll;
 import static org.mockito.AdditionalAnswers.delegatesTo;
 import static org.mockito.ArgumentMatchers.anyBoolean;
@@ -245,7 +246,7 @@ class LmdbNativeCensusAggregateTest {
 		Group group = group(root);
 		try (var dataset = NativeQuerySourceAccess.openExplicitDataset(store)) {
 			NativeLmdbQuerySource actual = (NativeLmdbQuerySource) dataset;
-			NativeLmdbQuerySource source = mock(NativeLmdbQuerySource.class, delegatesTo(actual));
+			NativeLmdbQuerySource source = mockScanSource(NativeLmdbQuerySource.class, delegatesTo(actual));
 			NativeCancellationToken owner = new NativeCancellationToken();
 			AtomicBoolean armed = new AtomicBoolean();
 			AtomicBoolean cancelled = new AtomicBoolean();
@@ -306,7 +307,7 @@ class LmdbNativeCensusAggregateTest {
 		Set<Path> initialSpills = censusSpills();
 		try (var dataset = NativeQuerySourceAccess.openExplicitDataset(store)) {
 			NativeLmdbQuerySource actual = (NativeLmdbQuerySource) dataset;
-			NativeLmdbQuerySource source = mock(NativeLmdbQuerySource.class, delegatesTo(actual));
+			NativeLmdbQuerySource source = mockScanSource(NativeLmdbQuerySource.class, delegatesTo(actual));
 			var triples = new SailDatasetTripleTermSource(repository.getValueFactory(), dataset);
 			QueryEvaluationContext context = new QueryEvaluationContext.Minimal((Dataset) null);
 			DefaultEvaluationStrategy generic = new DefaultEvaluationStrategy(triples, null);
@@ -365,7 +366,7 @@ class LmdbNativeCensusAggregateTest {
 		LmdbNativeHashJoin.queryMemoryOverride = memory;
 		try (var dataset = NativeQuerySourceAccess.openExplicitDataset(store)) {
 			NativeLmdbQuerySource actual = (NativeLmdbQuerySource) dataset;
-			NativeLmdbQuerySource source = mock(NativeLmdbQuerySource.class, delegatesTo(actual));
+			NativeLmdbQuerySource source = mockScanSource(NativeLmdbQuerySource.class, delegatesTo(actual));
 			AtomicLong firstCatalogBytes = new AtomicLong(-1L);
 			AtomicLong maximumPageBytes = new AtomicLong(-1L);
 			doAnswer(open -> {

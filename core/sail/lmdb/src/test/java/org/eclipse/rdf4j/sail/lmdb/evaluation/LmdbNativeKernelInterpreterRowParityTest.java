@@ -16,21 +16,27 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import java.io.File;
+import java.io.IOException;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.TimeUnit;
+import java.util.function.Consumer;
 
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.ValueFactory;
+import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.query.Binding;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.QueryResults;
+import org.eclipse.rdf4j.query.impl.EmptyBindingSet;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
 import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
 import org.eclipse.rdf4j.repository.sail.SailTupleQuery;
 import org.eclipse.rdf4j.sail.lmdb.LmdbStore;
+import org.eclipse.rdf4j.sail.lmdb.NativeQuerySourceAccess;
 import org.eclipse.rdf4j.sail.lmdb.config.DirectAdjacencyMode;
 import org.eclipse.rdf4j.sail.lmdb.config.LmdbStoreConfig;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbNativeKernelIr.Emit;
@@ -45,6 +51,8 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 import org.junit.jupiter.api.parallel.ResourceLock;
 import org.junit.jupiter.api.parallel.Resources;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.EnumSource;
 
 /**
  * Differential parity harness for the interpreted IR ROW kernel (M4 of {@code .agent/lmdb-kernel-interpreter-execplan}
@@ -179,6 +187,159 @@ class LmdbNativeKernelInterpreterRowParityTest {
 		// Pins the DISTINCT Emit guard (hash or aligned-prefix dedup per the distinct-sinking lowering).
 		assertParityInterpreterServed(prefixes()
 				+ "SELECT DISTINCT ?p WHERE { ?p ex:hasEncounter ?e . ?e ex:diagnosis ?dg }");
+	}
+
+	@Test
+	void distinctTestsPrivateMandatoryMatchesBeforeNestedOptional() {
+		String query = prefixes() + """
+				SELECT DISTINCT ?p ?name ?e ?diagnosis WHERE {
+				  ?p ex:name ?name ; ex:medication ?medication .
+				  OPTIONAL {
+				    ?p ex:hasEncounter ?e .
+				    OPTIONAL { ?e ex:diagnosis ?diagnosis }
+				  }
+				}
+				""";
+		System.setProperty("rdf4j.lmdb.nativeQueryEngine.enabled", "false");
+		List<String> expected = canonical(rows(query, false));
+		System.setProperty("rdf4j.lmdb.nativeQueryEngine.enabled", "true");
+		LmdbNativeKernelExecution.resetMetrics();
+
+		assertThat(canonical(rows(query, false))).isEqualTo(expected);
+		assertThat(LmdbNativeKernelExecution.OPENED.get()).isPositive();
+		assertThat(KernelExecutionTestAccess.kernelRows())
+				.as("nested OPTIONAL should run once for each mapping that has a medication witness")
+				.isEqualTo(expected.size());
+	}
+
+	@Test
+	void distinctTestsConnectedMandatoryWitnessesBeforeNestedOptional() {
+		String query = prefixes() + """
+				SELECT DISTINCT ?p ?name ?m ?age WHERE {
+				  ?p ex:name ?name ; ex:hasEncounter ?witness .
+				  ?witness ex:diagnosis ?witnessDiagnosis .
+				  OPTIONAL {
+				    ?p ex:medication ?m .
+				    OPTIONAL { ?p ex:age ?age }
+				  }
+				}
+				""";
+		List<String> expected = genericRows(query, prepared -> {
+		});
+		LmdbNativeKernelExecution.resetMetrics();
+		assertThat(canonical(rows(query, false))).isEqualTo(expected);
+		assertThat(LmdbNativeKernelExecution.OPENED.get()).isPositive();
+		assertThat(KernelExecutionTestAccess.kernelRows()).isEqualTo(expected.size());
+	}
+
+	@Test
+	void distinctRetainsAnUnprojectedJoinKeyUsedByOptional() {
+		String query = prefixes() + """
+				SELECT DISTINCT ?p ?name ?other WHERE {
+				  ?p ex:name ?name ; ex:medication ?medication .
+				  OPTIONAL { ?other ex:medication ?medication }
+				}
+				""";
+		assertThat(canonical(rows(query, false))).isEqualTo(genericRows(query, prepared -> {
+		}));
+	}
+
+	@Test
+	void distinctWitnessPreservesPreparedBinding() {
+		String query = prefixes() + """
+				SELECT DISTINCT ?p ?name ?e ?diagnosis WHERE {
+				  ?p ex:name ?name ; ex:medication ?medication .
+				  OPTIONAL {
+				    ?p ex:hasEncounter ?e .
+				    OPTIONAL { ?e ex:diagnosis ?diagnosis }
+				  }
+				}
+				""";
+		for (String medication : List.of("drugB", "patient0")) {
+			Consumer<SailTupleQuery> prepare = prepared -> prepared.setBinding("medication",
+					SimpleValueFactory.getInstance().createIRI(EX, medication));
+			List<String> expected = genericRows(query, prepare);
+			assertThat(expected.isEmpty()).isEqualTo(medication.equals("patient0"));
+			assertThat(canonical(rows(query, false, prepare))).isEqualTo(expected);
+		}
+	}
+
+	@ParameterizedTest
+	@EnumSource(NativePatternField.class)
+	void distinctWitnessRetainsConstantSlotCompatibility(NativePatternField position) throws Exception {
+		ValueFactory vf = SimpleValueFactory.getInstance();
+		IRI patient = vf.createIRI(EX, "patient0");
+		IRI medication = vf.createIRI(EX, "medication");
+		IRI drug = vf.createIRI(EX, "drugB");
+		if (position == NativePatternField.CONTEXT) {
+			try (var connection = repository.getConnection()) {
+				connection.add(patient, medication, drug, patient);
+			}
+		}
+		try (var dataset = NativeQuerySourceAccess.openExplicitDataset((LmdbStore) repository.getSail())) {
+			var source = (NativeLmdbQuerySource) dataset;
+			long patientId = source.idOf(patient);
+			long medicationId = source.idOf(medication);
+			long drugId = source.idOf(drug);
+			var spine = new PatternPlan(Term.slot(0), Term.constant(source.idOf(vf.createIRI(EX, "name"))),
+					Term.slot(1), Term.unbound(), ContextConstraint.UNRESTRICTED, false, 1D);
+			var required = new PatternPlan(
+					position == NativePatternField.SUBJECT ? Term.constantSlot(0, patientId) : Term.constant(patientId),
+					position == NativePatternField.PREDICATE ? Term.constantSlot(0, medicationId)
+							: Term.constant(medicationId),
+					position == NativePatternField.OBJECT ? Term.constantSlot(0, drugId) : Term.slot(2),
+					switch (position) {
+					case CONTEXT -> Term.constantSlot(0, patientId);
+					case OBJECT -> Term.slot(2);
+					default -> Term.unbound();
+					}, ContextConstraint.UNRESTRICTED, false, 1D);
+			var optional = new PatternPlan(Term.slot(0), Term.constant(source.idOf(vf.createIRI(EX, "age"))),
+					Term.slot(3), Term.unbound(), ContextConstraint.UNRESTRICTED, false, 1D);
+			var root = new LeftJoinPlan(new MultiJoinPlan(new SlotPlan[] { spine, required }, new MaskedFilter[0]),
+					optional);
+			SlotPlan rewritten = LmdbNativeDistinctOptionalWitnesses.rewrite(root, 0b1011L);
+			List<Long> ordinary = witnessSubjects(root, source).stream().distinct().toList();
+			assertThat(ordinary).containsExactlyElementsOf(switch (position) {
+			case SUBJECT, CONTEXT -> List.of(patientId);
+			case PREDICATE, OBJECT -> List.of();
+			});
+			assertThat(witnessSubjects(rewritten, source).stream().distinct()).containsExactlyElementsOf(ordinary);
+			assertThat(rewritten).as("the bound optimizer constant must still check its existing slot").isSameAs(root);
+		}
+	}
+
+	private static List<Long> witnessSubjects(SlotPlan plan, NativeLmdbQuerySource source) throws IOException {
+		var layout = new NativeSlotLayout(Map.of("patient", 0, "name", 1, "private", 2, "age", 3), null);
+		layout.freeze(List.of("patient", "name", "private", "age"));
+		var row = new RowState(source, layout, EmptyBindingSet.getInstance());
+		Arrays.fill(row.slots, LmdbNativeAggregateCompiler.UNKNOWN);
+		row.recomputeBoundMask();
+		List<Long> subjects = new ArrayList<>();
+		try (RowCursor cursor = plan.open(row)) {
+			while (cursor.next()) {
+				subjects.add(row.slots[0]);
+			}
+		} finally {
+			row.closeDecodedInputs();
+		}
+		return subjects;
+	}
+
+	@Test
+	void mandatoryWitnessMultiplicityRemainsVisibleWithoutDistinct() {
+		String query = prefixes() + """
+				SELECT ?p ?name ?e ?diagnosis WHERE {
+				  ?p ex:name ?name ; ex:medication ?medication .
+				  OPTIONAL {
+				    ?p ex:hasEncounter ?e .
+				    OPTIONAL { ?e ex:diagnosis ?diagnosis }
+				  }
+				}
+				""";
+		List<String> expected = genericRows(query, prepared -> {
+		});
+		assertThat(expected.size()).isGreaterThan((int) expected.stream().distinct().count());
+		assertThat(canonical(rows(query, false))).isEqualTo(expected);
 	}
 
 	@Test
@@ -396,14 +557,29 @@ class LmdbNativeKernelInterpreterRowParityTest {
 	}
 
 	private List<BindingSet> rows(String query, boolean janino) {
+		return rows(query, janino, prepared -> {
+		});
+	}
+
+	private List<BindingSet> rows(String query, boolean janino, Consumer<SailTupleQuery> setup) {
 		System.setProperty("rdf4j.lmdb.janinoCodegen.enabled", Boolean.toString(janino));
 		try (SailRepositoryConnection connection = repository.getConnection()) {
 			// the row kernel tiers are the subject of this suite; the measured selector may prefer another strategy,
 			// so the tier under test is forced wherever a kernel applies
 			SailTupleQuery prepared = (SailTupleQuery) connection.prepareTupleQuery(query);
+			setup.accept(prepared);
 			prepared.setForcedLmdbExecutionStrategy(janino ? "irKernel,irAggregate"
 					: "irKernelInterpreted,irAggregateInterpreted");
 			return QueryResults.asList(prepared.evaluate());
+		}
+	}
+
+	private List<String> genericRows(String query, Consumer<SailTupleQuery> setup) {
+		System.setProperty("rdf4j.lmdb.nativeQueryEngine.enabled", "false");
+		try {
+			return canonical(rows(query, false, setup));
+		} finally {
+			System.setProperty("rdf4j.lmdb.nativeQueryEngine.enabled", "true");
 		}
 	}
 

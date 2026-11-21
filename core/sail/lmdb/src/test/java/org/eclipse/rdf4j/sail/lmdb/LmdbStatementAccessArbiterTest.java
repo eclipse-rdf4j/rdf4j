@@ -12,6 +12,7 @@
 package org.eclipse.rdf4j.sail.lmdb;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.catchThrowable;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -87,6 +88,67 @@ class LmdbStatementAccessArbiterTest {
 		assertThat(bulkCalls).hasValue(2);
 		assertThat(closes).hasValue(1);
 		assertThat(measurements).singleElement().satisfies(counts -> assertThat(counts).containsExactly(7L, 2L, 5L));
+	}
+
+	@Test
+	void failingScanCounterStillClosesTheDelegateExactlyOnce() {
+		RuntimeException counterFailure = new IllegalStateException("counter");
+		RuntimeException closeFailure = new IllegalStateException("close");
+		AtomicInteger closes = new AtomicInteger();
+		RecordIterator source = new RecordIterator() {
+			@Override
+			public long[] next() {
+				return null;
+			}
+
+			@Override
+			public long getSourceRowsScannedActual() {
+				throw counterFailure;
+			}
+
+			@Override
+			public void close() {
+				closes.incrementAndGet();
+				throw closeFailure;
+			}
+		};
+		RecordIterator observed = LmdbStatementAccessArbiter.observed(source, (used, reason, order, s, p, o, c) -> {
+		}, true);
+		assertThat(catchThrowable(observed::close)).isSameAs(counterFailure);
+		observed.close();
+		assertThat(closes).hasValue(1);
+		assertThat(counterFailure.getSuppressed()).containsExactly(closeFailure);
+	}
+
+	@Test
+	void failingObserverPreservesTheDelegateCloseFailure() {
+		RuntimeException closeFailure = new IllegalStateException("close");
+		RuntimeException observerFailure = new IllegalStateException("observer");
+		RecordIterator source = new RecordIterator() {
+			@Override
+			public long[] next() {
+				return null;
+			}
+
+			@Override
+			public void close() {
+				throw closeFailure;
+			}
+		};
+		AdjacencyAccessObserver observer = new AdjacencyAccessObserver() {
+			@Override
+			public void access(boolean used, String reason, StatementOrder order, long s, long p, long o, long c) {
+			}
+
+			@Override
+			public void measurement(boolean adjacency, long scanned, long matched, long filtered, boolean censored) {
+				throw observerFailure;
+			}
+		};
+		RecordIterator observed = LmdbStatementAccessArbiter.observed(source, observer, false);
+		assertThat(catchThrowable(observed::close)).isSameAs(closeFailure);
+		assertThat(closeFailure.getSuppressed()).containsExactly(observerFailure);
+		observed.close();
 	}
 
 	@Test
