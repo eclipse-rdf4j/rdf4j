@@ -47,6 +47,8 @@ public final class QueryExecutionContext {
 	private static final ThreadLocal<InstalledReplayContext> INSTALLED_REPLAY_CONTEXT = new ThreadLocal<>();
 	private static volatile boolean heavyOperatorExecutionEnabled = true;
 	private static volatile int checkpointCalls;
+	private static final Runnable WORKER_ADMISSION_ONLY = () -> {
+	};
 	private static final Activation NOOP_ACTIVATION = () -> {
 	};
 
@@ -97,6 +99,12 @@ public final class QueryExecutionContext {
 	/** Installs an optional cooperative map-growth checkpoint for the current query evaluation. */
 	public static Activation activateReplaySafepoint(Runnable checkpoint) {
 		return activateReplaySafepoint(checkpoint, null);
+	}
+
+	/** Installs an admission capability for dispatched work without running a callback at replay checkpoints. */
+	@InternalUseOnly
+	public static Activation activateWorkerAdmission(Supplier<WorkerScope> workerScopeCapture) {
+		return activateReplaySafepoint(WORKER_ADMISSION_ONLY, Objects.requireNonNull(workerScopeCapture));
 	}
 
 	/** Adds an opaque admission capability to work explicitly dispatched with the captured query context. */
@@ -251,7 +259,33 @@ public final class QueryExecutionContext {
 			if (!ignoreCheckpointStride && (calls++ & REPLAY_CHECKPOINT_MASK) != 0) {
 				return;
 			}
-			checkpointReplaySafepoint(Thread.currentThread() == thread ? state : REPLAY.get());
+			checkpointNow();
+		}
+
+		/** Checks the consuming thread's replay state at an exact boundary. */
+		@InternalUseOnly
+		public void checkpointNow() {
+			checkpointReplaySafepoint(currentState());
+		}
+
+		/** Whether a checkpoint on the consuming thread can run an application callback. */
+		@InternalUseOnly
+		public boolean hasActiveCallback() {
+			ReplayState current = currentState();
+			if (current.deferralDepth > 0) {
+				return false;
+			}
+			for (ReplaySafepoint scope = current.safepoint; scope != null; scope = scope.previous) {
+				Runnable checkpoint = scope.checkpoint.get();
+				if (checkpoint != null && checkpoint != WORKER_ADMISSION_ONLY && scope.active.get()) {
+					return true;
+				}
+			}
+			return false;
+		}
+
+		private ReplayState currentState() {
+			return Thread.currentThread() == thread ? state : REPLAY.get();
 		}
 	}
 
@@ -262,7 +296,7 @@ public final class QueryExecutionContext {
 		for (ReplaySafepoint safepoint = state.safepoint; safepoint != null; safepoint = safepoint.previous) {
 			if (safepoint.active.get()) {
 				Runnable checkpoint = safepoint.checkpoint.get();
-				if (checkpoint == null) {
+				if (checkpoint == null || checkpoint == WORKER_ADMISSION_ONLY) {
 					continue;
 				}
 				try {

@@ -696,6 +696,9 @@ final class WideDistinctTupleSet {
 	/** Resets the index and returns the number of bucket slots initialized. */
 	int clear() {
 		if (size == 0) {
+			if (keys.length > 1) {
+				keys[1] = null;
+			}
 			return 0;
 		}
 		if (buckets.length > INITIAL_BUCKETS && size < (buckets.length >>> 2)) {
@@ -709,7 +712,14 @@ final class WideDistinctTupleSet {
 			Arrays.fill(buckets, 0L);
 		}
 		int usedBlocks = ((size - 1) >>> blockShift) + 1;
-		Arrays.fill(keys, 1, usedBlocks, null);
+		// Adjacent partitions that exceed the first block can reuse a spare within the block size limit.
+		// Release the spare when the partition fits in the first block, and always release later blocks.
+		if (usedBlocks > 1) {
+			int firstReleasedBlock = blockLength <= BLOCK_LONGS ? 2 : 1;
+			Arrays.fill(keys, firstReleasedBlock, usedBlocks, null);
+		} else if (keys.length > 1) {
+			keys[1] = null;
+		}
 		size = 0;
 		overflow = null;
 		return buckets.length;

@@ -13,11 +13,15 @@ package org.eclipse.rdf4j.sail.lmdb.evaluation;
 
 import static org.eclipse.rdf4j.sail.lmdb.evaluation.NativeLmdbQuerySource.UNKNOWN_ID;
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.junit.jupiter.api.Assertions.fail;
+import static org.mockito.Mockito.atLeastOnce;
+import static org.mockito.Mockito.atMost;
 import static org.mockito.Mockito.doAnswer;
 import static org.mockito.Mockito.spy;
 import static org.mockito.Mockito.verify;
@@ -25,11 +29,14 @@ import static org.mockito.Mockito.verify;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.CyclicBarrier;
 import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicLong;
 
+import org.eclipse.rdf4j.http.client.QueryExecutionContext;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.query.QueryInterruptedException;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
@@ -43,8 +50,169 @@ import org.junit.jupiter.api.io.TempDir;
 
 class LmdbRecordIteratorCancellationTest {
 
+	private static final int CURSOR_POLL_INTERVAL = 64;
+
 	@TempDir
 	Path directory;
+
+	@Test
+	void emptySourceOpensShareTheOwningThreadsPollBudget() throws Exception {
+		var store = new LmdbStore(directory.toFile(), new LmdbStoreConfig("spoc")
+				.setDirectAdjacencyEnabled(false));
+		var repository = new SailRepository(store);
+		try {
+			repository.init();
+			try (var dataset = NativeQuerySourceAccess.openExplicitDataset(store);
+					var worker = Executors.newSingleThreadExecutor()) {
+				var source = (NativeLmdbQuerySource) dataset;
+				var owner = new NativeCancellationToken();
+				var first = new NativeCancellationToken(owner);
+				var second = new NativeCancellationToken(owner);
+				var firstScan = NativeLmdbQuerySource.captureCursorCancellation(first);
+				var secondScan = NativeLmdbQuerySource.captureCursorCancellation(second);
+				var warmup = new CyclicBarrier(2);
+				var interrupted = new CountDownLatch(1);
+				var outcome = worker.submit(() -> {
+					openEmpty(source, firstScan);
+					openEmpty(source, secondScan);
+					warmup.await(10, TimeUnit.SECONDS);
+					assertTrue(interrupted.await(10, TimeUnit.SECONDS));
+					var signal = assertThrows(KernelQueryCancelledException.class, () -> {
+						for (int i = 0; i <= CURSOR_POLL_INTERVAL; i++) {
+							openEmpty(source, (i & 1) == 0 ? firstScan : secondScan);
+						}
+					});
+					assertSame(owner, signal.origin());
+					return signal;
+				});
+				warmup.await(10, TimeUnit.SECONDS);
+				Thread.currentThread().interrupt();
+				try {
+					interrupted.countDown();
+					// Keep the evaluation owner's interrupt visible while the worker opens fresh cursors.
+					long end = System.nanoTime() + TimeUnit.SECONDS.toNanos(10);
+					while (!outcome.isDone() && System.nanoTime() < end) {
+						Thread.onSpinWait();
+					}
+				} finally {
+					Thread.interrupted();
+				}
+				outcome.get(10, TimeUnit.SECONDS);
+			}
+		} finally {
+			repository.shutDown();
+		}
+	}
+
+	private static void openEmpty(NativeLmdbQuerySource source, NativeLmdbQuerySource.CursorCancellation cancellation)
+			throws Exception {
+		try (var cursor = source.lmdbStatements(UNKNOWN_ID, UNKNOWN_ID, UNKNOWN_ID, UNKNOWN_ID, null,
+				cancellation)) {
+			assertNull(cursor.next());
+		}
+	}
+
+	@Test
+	void oneRowFillsShareDeadlineBudgetAcrossCursorsAndIndependentAttempts() throws Exception {
+		var store = new LmdbStore(directory.toFile(), new LmdbStoreConfig("spoc")
+				.setDirectAdjacencyEnabled(false));
+		var repository = new SailRepository(store);
+		try {
+			repository.init();
+			var values = repository.getValueFactory();
+			IRI subject = values.createIRI("urn:one-row-poll:subject");
+			IRI predicate = values.createIRI("urn:one-row-poll:predicate");
+			try (var connection = repository.getConnection()) {
+				connection.begin();
+				for (int i = 0; i < CURSOR_POLL_INTERVAL * 4; i++) {
+					connection.add(subject, predicate, values.createIRI("urn:one-row-poll:o" + i));
+				}
+				connection.commit();
+			}
+			var owner = new NativeCancellationToken();
+			var overdue = new AtomicBoolean();
+			var deadline = spy(LmdbNativeProbeDeadline.trippableOnly());
+			doAnswer(call -> overdue.get()).when(deadline).expired();
+			var independent = LmdbNativeProbeDeadline.trippableOnly();
+			try (var dataset = NativeQuerySourceAccess.openExplicitDataset(store)) {
+				var source = (NativeLmdbQuerySource) dataset;
+				var firstCancellation = capture(owner, deadline);
+				var otherCancellation = capture(owner, independent);
+				long[] buffer = new long[4];
+				try (var first = source.lmdbStatements(UNKNOWN_ID, UNKNOWN_ID, UNKNOWN_ID, UNKNOWN_ID,
+						null, firstCancellation);
+						var second = source.lmdbStatements(UNKNOWN_ID, UNKNOWN_ID, UNKNOWN_ID, UNKNOWN_ID,
+								null, firstCancellation);
+						var other = source.lmdbStatements(UNKNOWN_ID, UNKNOWN_ID, UNKNOWN_ID, UNKNOWN_ID,
+								null, otherCancellation)) {
+					for (int i = 0; i < CURSOR_POLL_INTERVAL; i++) {
+						assertEquals(1, first.fill(buffer, 1));
+						assertEquals(1, second.fill(buffer, 1));
+						assertEquals(1, other.fill(buffer, 1));
+					}
+					verify(deadline, atMost(4)).expired();
+					overdue.set(true);
+					assertThrows(LmdbNativeProbeDeadlineExceeded.class, () -> {
+						for (int i = 0; i <= CURSOR_POLL_INTERVAL; i++) {
+							assertEquals(1, ((i & 1) == 0 ? first : second).fill(buffer, 1));
+							assertEquals(1, other.fill(buffer, 1));
+						}
+					});
+					assertEquals(1, other.fill(buffer, 1));
+				}
+			}
+		} finally {
+			repository.shutDown();
+		}
+	}
+
+	private static NativeLmdbQuerySource.CursorCancellation capture(NativeCancellationToken owner,
+			LmdbNativeProbeDeadline deadline) {
+		try (var scope = LmdbNativeProbeDeadline.enter(deadline)) {
+			return NativeLmdbQuerySource.captureCursorCancellation(owner);
+		}
+	}
+
+	@Test
+	void anExpiredAttemptWinsOverPendingReplayBeforeAOneRowFillWrites() throws Exception {
+		var store = new LmdbStore(directory.toFile(), new LmdbStoreConfig("spoc")
+				.setDirectAdjacencyEnabled(false));
+		var repository = new SailRepository(store);
+		try {
+			repository.init();
+			var values = repository.getValueFactory();
+			IRI subject = values.createIRI("urn:replay-order:subject");
+			IRI predicate = values.createIRI("urn:replay-order:predicate");
+			try (var connection = repository.getConnection()) {
+				connection.add(subject, predicate, subject);
+				connection.add(subject, predicate, predicate);
+			}
+			var owner = new NativeCancellationToken();
+			var deadline = spy(LmdbNativeProbeDeadline.trippableOnly());
+			var overdue = new AtomicBoolean();
+			doAnswer(call -> overdue.get()).when(deadline).expired();
+			try (var dataset = NativeQuerySourceAccess.openExplicitDataset(store)) {
+				var source = (NativeLmdbQuerySource) dataset;
+				try (var cursor = source.lmdbStatements(UNKNOWN_ID, UNKNOWN_ID, UNKNOWN_ID, UNKNOWN_ID,
+						null, capture(owner, deadline))) {
+					assertEquals(1, cursor.fill(new long[4], 1));
+					overdue.set(true);
+					var replayEntered = new AtomicBoolean();
+					try (var replay = QueryExecutionContext.activateReplaySafepoint(() -> {
+						replayEntered.set(true);
+						throw new IllegalStateException("Pending replay");
+					})) {
+						long[] sentinel = { -1, -1, -1, -1 };
+						assertThrows(LmdbNativeProbeDeadlineExceeded.class, () -> cursor.fill(sentinel, 1));
+						assertEquals(-1, sentinel[0]);
+						assertFalse(replayEntered.get());
+					}
+				}
+			}
+		} finally {
+			repository.shutDown();
+		}
+	}
 
 	@Test
 	void scanObservesItsOwnerAndAttemptOutsideTheirOpeningScopes() throws Exception {
@@ -132,7 +300,7 @@ class LmdbRecordIteratorCancellationTest {
 							assertNull(cursor.next());
 						}
 					}
-					verify(cancellation).check();
+					verify(cancellation, atLeastOnce()).check();
 					var unrelated = new NativeCancellationToken();
 					try (var outerScope = cancellation.enter()) {
 						for (int i = 0; i < 32; i++) {
@@ -144,7 +312,7 @@ class LmdbRecordIteratorCancellationTest {
 						}
 					}
 				}
-				verify(cancellation).check();
+				verify(cancellation, atMost(16)).check();
 
 				var child = new NativeCancellationToken(cancellation);
 				var grandchild = new NativeCancellationToken(child);
@@ -203,7 +371,7 @@ class LmdbRecordIteratorCancellationTest {
 				AtomicLong lastPollWork = new AtomicLong();
 				doAnswer(call -> {
 					long work = finishedWork.get() + candidatesScanned(active);
-					assertTrue(work - lastPollWork.getAndSet(work) <= 1_024,
+					assertTrue(work - lastPollWork.getAndSet(work) <= CURSOR_POLL_INTERVAL,
 							"polls must cover all live and closed cursors' filtered and accepted candidates");
 					return call.callRealMethod();
 				}).when(cancellation).check();
@@ -237,7 +405,9 @@ class LmdbRecordIteratorCancellationTest {
 							for (RecordIterator cursor : active) {
 								assertEquals(30, cursor.fill(buffer, 30));
 							}
-							assertTrue(finishedWork.get() + candidatesScanned(active) - lastPollWork.get() <= 1_024,
+							assertTrue(
+									finishedWork.get() + candidatesScanned(active)
+											- lastPollWork.get() <= CURSOR_POLL_INTERVAL,
 									"interleaved short pulls still poll the same physical-work budget");
 						} finally {
 							for (RecordIterator cursor : active) {
@@ -266,7 +436,7 @@ class LmdbRecordIteratorCancellationTest {
 			var values = repository.getValueFactory();
 			IRI subject = values.createIRI("urn:cursor-cancellation:subject");
 			IRI predicate = values.createIRI("urn:cursor-cancellation:predicate");
-			int interval = NativeCancellationToken.POLL_INTERVAL;
+			int interval = CURSOR_POLL_INTERVAL;
 			try (var connection = repository.getConnection()) {
 				connection.begin();
 				for (int i = 0; i < 2 * interval; i++) {
@@ -392,7 +562,7 @@ class LmdbRecordIteratorCancellationTest {
 
 	private static void checkPollDistance(RecordIterator first, RecordIterator second, AtomicLong lastWork) {
 		long work = first.getSourceRowsScannedActual() + second.getSourceRowsScannedActual();
-		assertTrue(work - lastWork.getAndSet(work) <= 1_024,
+		assertTrue(work - lastWork.getAndSet(work) <= CURSOR_POLL_INTERVAL,
 				"each consuming thread polls across both of its real cursors");
 	}
 

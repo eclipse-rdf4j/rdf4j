@@ -55,8 +55,8 @@ final class LmdbDirectNodeIterator implements RecordIterator {
 
 	private final long[] entry = new long[2];
 	private final long[] quad = new long[4];
-	private final LmdbAdjacencyRunCodec.RunCursor runCursor = new LmdbAdjacencyRunCodec.RunCursor(
-			this::pollCancellation);
+	private final Runnable cancellationPoll = this::pollCancellation;
+	private final LmdbAdjacencyRunCodec.RunCursor runCursor = new LmdbAdjacencyRunCodec.RunCursor(cancellationPoll);
 
 	private long baseIndex;
 	private long[] basePredicateChunk;
@@ -109,7 +109,7 @@ final class LmdbDirectNodeIterator implements RecordIterator {
 		this.inconsistencyListener = inconsistencyListener;
 		view.retainLease();
 		try {
-			checkpointCancellation();
+			pollCancellation();
 			this.view = view;
 			LmdbAdjacencyPublishedState state = view.state();
 			this.base = state.base();
@@ -186,27 +186,32 @@ final class LmdbDirectNodeIterator implements RecordIterator {
 	}
 
 	private void enterCancellation() {
+		checkpointLocalCancellation();
 		if (cancellation != null) {
-			cancellation = cancellation.forWorker();
+			cancellation = cancellation.transferToWorker();
+			cancellation.checkpointPublishedStops();
 		}
-		checkpointCancellation();
 	}
 
 	private void checkpointCancellation() {
+		checkpointLocalCancellation();
+		if (cancellation != null) {
+			cancellation.checkpointPublishedStops();
+		}
+	}
+
+	private void checkpointLocalCancellation() {
 		if (cancellationRequested) {
 			NativeLmdbQuerySource.checkpointRecordCancellation(cancellation);
-		}
-		if (cancellation != null) {
-			cancellation.checkpoint();
 		}
 	}
 
 	private void pollCancellation() {
+		if ((++cancellationTick & 63) == 0) {
+			checkpointLocalCancellation();
+		}
 		if (cancellation != null) {
 			cancellation.poll();
-		}
-		if ((++cancellationTick & 1023) == 0) {
-			checkpointCancellation();
 		}
 	}
 
@@ -219,8 +224,8 @@ final class LmdbDirectNodeIterator implements RecordIterator {
 			enterCancellation();
 			while (true) {
 				while (advanceCandidate()) {
-					int at = chunkIndexOf(pos);
 					pollCancellation();
+					int at = chunkIndexOf(pos);
 					long neighbor = neighborChunk[at];
 					if (boundNeighbor != -1L && neighbor != boundNeighbor) {
 						pos = end;
@@ -365,8 +370,14 @@ final class LmdbDirectNodeIterator implements RecordIterator {
 				if (ordinal < 0) {
 					throw inconsistent("references unknown predicate " + Long.toUnsignedString(chosen));
 				}
-				runHandle = base.findRunByOrdinal(key, plane, ordinal, baseSearchContext, boundContext);
+				runHandle = base.findRunByOrdinal(key, plane, ordinal, baseSearchContext, boundContext,
+						boundContext < 0 ? null : cancellationPoll);
 				if (runHandle == LmdbInMemoryAdjacencyIndex.NOT_FOUND && boundContext >= 0) {
+					// The last continuation can complete before the next periodic poll.
+					checkpointLocalCancellation();
+					if (cancellation != null) {
+						cancellation.checkpointNow();
+					}
 					continue;
 				}
 				if (runHandle <= 0) {

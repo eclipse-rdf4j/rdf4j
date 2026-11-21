@@ -36,6 +36,7 @@ final class LmdbInMemoryAdjacencyIndex implements AutoCloseable {
 
 	static final long NOT_FOUND = -1L;
 	static final long NOT_COVERED = -2L;
+	static final long SINGLE_PAGE_CONTEXT_MISS = -3L;
 
 	private final long baseRevision;
 	private final LmdbAdjacencyArenaCatalog arenaCatalog;
@@ -367,6 +368,26 @@ final class LmdbInMemoryAdjacencyIndex implements AutoCloseable {
 			long rawContext, Runnable cancellationPoll) {
 		return findRunByOrdinal(rawKey, plane, bindPredicate(rawPredicateId, searchContext), searchContext, rawContext,
 				cancellationPoll);
+	}
+
+	/** A one-shot lookup that distinguishes a page-proved graph miss from a regular absent row. */
+	long findRunWithContextMissProof(long rawKey, int plane, long rawPredicateId, long rawContext, Runnable poll) {
+		long predicateOrdinal = bindPredicate(rawPredicateId);
+		if (predicateOrdinal < 0) {
+			return predicateOrdinal;
+		}
+		var cursor = new ImmutablePagedQuadCsfIndex.LookupCursor(true);
+		long reference = csfBase.findLocalReference(predicateOrdinal, plane, rawKey, cursor, rawContext, poll);
+		if (reference != 0L) {
+			return arenaCatalog.packCsfHandle(reference);
+		}
+		// A compacted base may retain context extensions. Restrict this proof to a bounded catalog lookup.
+		if (cursor.singlePageContextMiss()
+				&& (rawContext == 0L || contextCatalog.segmentCount() == 1
+						&& contextCatalog.ordinalForRaw(rawContext) >= 0L)) {
+			return SINGLE_PAGE_CONTEXT_MISS;
+		}
+		return NOT_FOUND;
 	}
 
 	/**

@@ -532,14 +532,18 @@ final class RepositoryValueIteration<T> implements CloseableIteration<T>, Cooper
 	private void endCall(Throwable failure) {
 		synchronized (lifetime) {
 			assert activeCalls > 0;
-			activeCalls--;
-			if (activeCalls == 0) {
-				activeThread = null;
-				if (interruptDelivered) {
-					// Interrupts are only delivered to the active thread under this lock, so this clears ours.
-					interruptDelivered = false;
-					Thread.interrupted();
-				}
+			if (--activeCalls != 0) {
+				return;
+			}
+			activeThread = null;
+			if (interruptDelivered) {
+				// Interrupts are only delivered to the active thread under this lock, so this clears ours.
+				interruptDelivered = false;
+				Thread.interrupted();
+			}
+			if (!closed.get()) {
+				// A later close sees no active call and attempts the drain itself.
+				return;
 			}
 		}
 		try {

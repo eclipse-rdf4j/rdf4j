@@ -80,6 +80,23 @@ class KernelCancellationOrdinaryExecutionTest {
 	}
 
 	@Test
+	void manualProbeKeepsTheCapacityLimitAndSignalPrecedence() {
+		AtomicInteger notifications = new AtomicInteger();
+		KernelCancellation live = KernelCancellation.forManualProbe(() -> false, null, 16,
+				notifications::incrementAndGet, null);
+		assertFalse(live.cancelled());
+		assertEquals(16, live.materializationRowLimit());
+		assertEquals(KernelCancellation.PROBE_CANCELLED, live.cancellationReasonAtMaterializationLimit());
+		assertEquals(KernelCancellation.PROBE_CANCELLED, live.cancellationReasonAtMaterializationLimit());
+		assertEquals(1, notifications.get());
+
+		KernelCancellation simultaneous = KernelCancellation.forManualProbe(() -> true, () -> true, 16,
+				notifications::incrementAndGet, () -> true);
+		assertEquals(KernelCancellation.QUERY_CANCELLED, simultaneous.cancellationReasonAtMaterializationLimit());
+		assertEquals(1, notifications.get());
+	}
+
+	@Test
 	void explicitDeadlineConstructorRetainsExpiryAndWrapSafeComparison() {
 		AtomicLong now = new AtomicLong(100L);
 		KernelCancellation live = new KernelCancellation(200L, null, null, -1, null, null, now::get);

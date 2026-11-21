@@ -113,11 +113,6 @@ public class DistinctIteration<E> extends FilterIteration<E> {
 		return excludeSet.add(object);
 	}
 
-	/** For a subclass that can prove equal inputs never cross a partition boundary. */
-	protected void clearSeen() {
-		excludeSet.clear();
-	}
-
 	private static final class QueryExecutionContextBridge {
 
 		private static final String QUERY_EXECUTION_CONTEXT_CLASS = "org.eclipse.rdf4j.http.client.QueryExecutionContext";

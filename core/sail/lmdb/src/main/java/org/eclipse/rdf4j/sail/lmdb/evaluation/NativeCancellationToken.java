@@ -34,9 +34,7 @@ final class NativeCancellationToken implements KernelCancellation.QueryCancellat
 	 */
 	private final Thread evaluationThread;
 	private final NativeCancellationToken evaluationOwner;
-	// Each worker mutates its own countdown. The registry lives only as long as the evaluation.
-	private final CursorWork evaluationThreadWork;
-	private volatile ConcurrentHashMap<Long, CursorWork> workerCursorWork;
+	private final CursorWork.PerThread cursorWork;
 	private volatile boolean cancellationRequested;
 	private volatile boolean explicitlyRequested;
 	/** Immutable after cancellationRequested is published; null means an unattributed thread interruption. */
@@ -55,7 +53,7 @@ final class NativeCancellationToken implements KernelCancellation.QueryCancellat
 		this.parent = parent;
 		this.evaluationThread = parent == null ? Thread.currentThread() : parent.evaluationThread;
 		this.evaluationOwner = parent == null ? this : parent.evaluationOwner;
-		this.evaluationThreadWork = parent == null ? new CursorWork() : null;
+		this.cursorWork = parent == null ? new CursorWork.PerThread() : null;
 		this.evaluationId = parent == null ? NEXT_EVALUATION_ID.incrementAndGet() : parent.evaluationId;
 		this.ownerThreadId = parent == null ? evaluationThread.threadId() : parent.ownerThreadId;
 	}
@@ -84,31 +82,55 @@ final class NativeCancellationToken implements KernelCancellation.QueryCancellat
 	}
 
 	CursorWork cursorWork(Thread worker) {
-		return worker == evaluationThread ? evaluationOwner.evaluationThreadWork
-				: evaluationOwner.cursorWorkForWorker(worker.threadId());
+		return evaluationOwner.cursorWork.forThread(worker);
 	}
 
-	private CursorWork cursorWorkForWorker(long workerId) {
-		ConcurrentHashMap<Long, CursorWork> work = workerCursorWork;
-		if (work == null) {
-			synchronized (this) {
-				work = workerCursorWork;
-				if (work == null) {
-					work = new ConcurrentHashMap<>();
-					workerCursorWork = work;
-				}
-			}
-		}
-		return work.computeIfAbsent(workerId, ignored -> new CursorWork());
-	}
-
+	/** Counts physical cursor work from all handles for one owner on one thread. */
 	static final class CursorWork {
-		private int remaining;
+		private static final int STRIDE = 64;
+		private int remaining = 1;
+		private NativeCancellationToken lastOwner;
 
-		void poll(NativeCancellationToken token) {
-			if (--remaining <= 0) {
-				token.check();
-				remaining = POLL_INTERVAL;
+		boolean pollDue(NativeCancellationToken owner) {
+			boolean due = pollDue();
+			if (lastOwner != owner) {
+				// A sibling must not consume the next check for an operator's own local stop.
+				lastOwner = owner;
+				return true;
+			}
+			return due;
+		}
+
+		boolean pollDue() {
+			if (--remaining != 0) {
+				return false;
+			}
+			remaining = STRIDE;
+			return true;
+		}
+
+		/** The creating thread needs no lookup. Each other worker mutates only its own counter. */
+		static final class PerThread {
+			private final long ownerId = Thread.currentThread().threadId();
+			private final CursorWork ownerWork = new CursorWork();
+			private volatile ConcurrentHashMap<Long, CursorWork> workers;
+
+			CursorWork forThread(Thread worker) {
+				long workerId = worker.threadId();
+				if (workerId == ownerId) {
+					return ownerWork;
+				}
+				var work = workers;
+				if (work == null) {
+					synchronized (this) {
+						work = workers;
+						if (work == null) {
+							work = new ConcurrentHashMap<>();
+							workers = work;
+						}
+					}
+				}
+				return work.computeIfAbsent(workerId, ignored -> new CursorWork());
 			}
 		}
 	}

@@ -99,7 +99,7 @@ final class LmdbDirectAdjacencyIterator implements RecordIterator {
 		this.cancellation = cancellation == null ? null : cancellation.forWorker();
 		cancellationTick = 0;
 		try {
-			checkpointCancellation();
+			pollCancellation();
 			this.view = view;
 			this.arenaCatalog = arenaCatalog;
 			this.contextCatalog = contextCatalog;
@@ -220,27 +220,32 @@ final class LmdbDirectAdjacencyIterator implements RecordIterator {
 	}
 
 	private void enterCancellation() {
+		checkLocalCancellation();
 		if (cancellation != null) {
-			cancellation = cancellation.forWorker();
+			cancellation = cancellation.transferToWorker();
+			cancellation.checkpointPublishedStops();
 		}
-		checkpointCancellation();
 	}
 
-	private void checkpointCancellation() {
+	private void checkLocalCancellation() {
 		if (request.isCancelled()) {
 			NativeLmdbQuerySource.checkpointRecordCancellation(cancellation);
 		}
+	}
+
+	private void checkpointCancellation() {
+		checkLocalCancellation();
 		if (cancellation != null) {
-			cancellation.checkpoint();
+			cancellation.checkpointPublishedStops();
 		}
 	}
 
 	private void pollCancellation() {
+		if ((++cancellationTick & 63) == 0) {
+			checkLocalCancellation();
+		}
 		if (cancellation != null) {
 			cancellation.poll();
-		}
-		if ((++cancellationTick & 1023) == 0) {
-			checkpointCancellation();
 		}
 	}
 
@@ -252,8 +257,8 @@ final class LmdbDirectAdjacencyIterator implements RecordIterator {
 		try {
 			enterCancellation();
 			while (advanceCandidate()) {
-				int at = chunkIndexOf(pos);
 				pollCancellation();
+				int at = chunkIndexOf(pos);
 				long neighbor = neighborChunk[at];
 				long context = contextChunk[at];
 				pos++;
@@ -269,7 +274,6 @@ final class LmdbDirectAdjacencyIterator implements RecordIterator {
 				}
 				quad[TripleIndex.PRED_IDX] = pred;
 				quad[TripleIndex.CONTEXT_IDX] = context;
-				checkpointCancellation();
 				return quad;
 			}
 			checkpointCancellation();
@@ -282,7 +286,7 @@ final class LmdbDirectAdjacencyIterator implements RecordIterator {
 
 	@Override
 	public int fill(long[] buffer, int maxRows) {
-		if (request.isClosed()) {
+		if (request.isClosed() || maxRows <= 0) {
 			return 0;
 		}
 		try {
@@ -290,8 +294,8 @@ final class LmdbDirectAdjacencyIterator implements RecordIterator {
 			int rows = 0;
 			boolean bySubject = direction == BY_SUBJECT;
 			while (rows < maxRows && advanceCandidate()) {
-				int at = chunkIndexOf(pos);
 				pollCancellation();
+				int at = chunkIndexOf(pos);
 				long neighbor = neighborChunk[at];
 				long context = contextChunk[at];
 				pos++;
@@ -331,6 +335,7 @@ final class LmdbDirectAdjacencyIterator implements RecordIterator {
 			if (targetNeighbor < 0) {
 				return false;
 			}
+			pollCancellation();
 			pos = LmdbAdjacencyRunCodec.lowerBound(contextCatalog, runCursor, pos, targetNeighbor,
 					Math.max(0L, context));
 			checkpointCancellation();

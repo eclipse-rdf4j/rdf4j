@@ -235,7 +235,9 @@ public final class LmdbStandardQueryOptimizerPipeline implements QueryOptimizerP
 					i = end;
 				}
 				if (changed) {
-					join.replaceWith(buildJoin(orderedArgs));
+					Join replacement = buildJoin(orderedArgs);
+					replacement.setVariableScopeChange(join.isVariableScopeChange());
+					join.replaceWith(replacement);
 				}
 
 				argEntry = new HashSet<>(entryBoundVars);
@@ -422,12 +424,12 @@ public final class LmdbStandardQueryOptimizerPipeline implements QueryOptimizerP
 			return Double.isFinite(cardinality) && cardinality >= 0.0d ? cardinality : Double.POSITIVE_INFINITY;
 		}
 
-		private TupleExpr buildJoin(List<TupleExpr> orderedArgs) {
+		private Join buildJoin(List<TupleExpr> orderedArgs) {
 			TupleExpr result = orderedArgs.getLast();
-			for (int i = orderedArgs.size() - 2; i >= 0; i--) {
+			for (int i = orderedArgs.size() - 2; i > 0; i--) {
 				result = new Join(orderedArgs.get(i), result);
 			}
-			return result;
+			return new Join(orderedArgs.getFirst(), result);
 		}
 	}
 

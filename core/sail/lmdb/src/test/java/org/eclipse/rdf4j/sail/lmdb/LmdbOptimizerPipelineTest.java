@@ -106,6 +106,37 @@ import org.junit.jupiter.api.io.TempDir;
 class LmdbOptimizerPipelineTest {
 
 	@Test
+	void physicalJoinReorderingPreservesGroupScope(@TempDir File dataDir) {
+		LmdbStore store = new LmdbStore(dataDir, new LmdbStoreConfig("spoc")
+				.setNativeEvaluationEnabled(false)
+				.setDirectAdjacencyEnabled(false)
+				.setSketchEstimatorEnabled(false));
+		store.setExperimentalQueryOptimizations(true);
+		SailRepository repository = new SailRepository(store);
+		try (SailRepositoryConnection connection = repository.getConnection()) {
+			ValueFactory vf = connection.getValueFactory();
+			IRI key = vf.createIRI("urn:key");
+			connection.begin();
+			connection.add(key, vf.createIRI("urn:anchor"), vf.createIRI("urn:seed"));
+			connection.add(key, vf.createIRI("urn:related"), vf.createIRI("urn:detail"));
+			connection.add(vf.createIRI("urn:fixed"), vf.createIRI("urn:otherP"), vf.createIRI("urn:other"));
+			connection.commit();
+
+			String input = "?key <urn:anchor> ?seed . ";
+			String group = "{ BIND(BOUND(?key) AS ?hit) <urn:fixed> <urn:otherP> ?other . ?key <urn:related> ?detail }";
+			for (boolean optional : List.of(false, true)) {
+				String query = "SELECT ?hit WHERE { " + input + (optional ? "OPTIONAL " : "") + group + " }";
+				try (var rows = connection.prepareTupleQuery(query).evaluate()) {
+					assertThat(QueryResults.asList(rows)).extracting(row -> row.getValue("hit"))
+							.containsExactly(vf.createLiteral(optional));
+				}
+			}
+		} finally {
+			repository.shutDown();
+		}
+	}
+
+	@Test
 	void defaultEvaluationStrategyFactoryUsesOptedInLmdbFallbackPipeline() throws Exception {
 		LmdbStoreConfig config = new LmdbStoreConfig();
 		config.setExperimentalQueryOptimizations(true);
