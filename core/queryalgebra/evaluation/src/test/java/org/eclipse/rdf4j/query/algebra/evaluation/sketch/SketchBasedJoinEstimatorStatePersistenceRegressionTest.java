@@ -26,7 +26,7 @@ import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
-class SketchBasedJoinEstimatorStatePersistenceRegressionTest {
+class SketchBasedJoinEstimatorStatePersistenceRegressionTest extends AbstractSketchBasedJoinEstimatorTest {
 
 	private static final ValueFactory VF = SimpleValueFactory.getInstance();
 
@@ -46,12 +46,12 @@ class SketchBasedJoinEstimatorStatePersistenceRegressionTest {
 		sourceStore.add(st(s1, p2, o2, c1));
 
 		Path snapshot = tempDir.resolve("join-estimator.rjes");
-		SketchBasedJoinEstimator writer = new SketchBasedJoinEstimator(sourceStore, smallConfig());
+		SketchBasedJoinEstimator writer = createEstimator(sourceStore, smallConfig());
 		writer.rebuild();
 		writer.configurePersistence(snapshot, false);
 		assertTrue(writer.persistIfDirty(), "Expected snapshot persist");
 
-		SketchBasedJoinEstimator reader = new SketchBasedJoinEstimator(new StubSketchStatementSource(), smallConfig());
+		SketchBasedJoinEstimator reader = createEstimator(new StubSketchStatementSource(), smallConfig());
 		reader.configurePersistence(snapshot, true);
 		assertTrue(reader.isReady(), "Expected lazy snapshot load");
 
@@ -84,7 +84,7 @@ class SketchBasedJoinEstimatorStatePersistenceRegressionTest {
 		Resource c1 = VF.createIRI("urn:evict:c1");
 
 		Path snapshot = tempDir.resolve("join-estimator.rjes");
-		SketchBasedJoinEstimator writer = new SketchBasedJoinEstimator(new StubSketchStatementSource(), smallConfig());
+		SketchBasedJoinEstimator writer = createEstimator(new StubSketchStatementSource(), smallConfig());
 		writer.configurePersistence(snapshot, false);
 
 		writer.addStatement(st(s1, p1, o1, c1));
@@ -93,7 +93,7 @@ class SketchBasedJoinEstimatorStatePersistenceRegressionTest {
 		writer.debugFlushPendingIncremental();
 		assertTrue(writer.persistIfDirty(), "Expected incremental snapshot persist");
 
-		SketchBasedJoinEstimator reader = new SketchBasedJoinEstimator(new StubSketchStatementSource(), smallConfig());
+		SketchBasedJoinEstimator reader = createEstimator(new StubSketchStatementSource(), smallConfig());
 		reader.configurePersistence(snapshot, true);
 		assertTrue(reader.isReady(), "Expected lazy load after incremental persist");
 

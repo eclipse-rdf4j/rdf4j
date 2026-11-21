@@ -34,7 +34,7 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.CsvSource;
 
-class SketchBasedJoinEstimatorConcurrentIncrementalTest {
+class SketchBasedJoinEstimatorConcurrentIncrementalTest extends AbstractSketchBasedJoinEstimatorTest {
 
 	private static final SimpleValueFactory VF = SimpleValueFactory.getInstance();
 	private static final IRI PREDICATE = VF.createIRI("urn:concurrent:predicate");
@@ -50,7 +50,7 @@ class SketchBasedJoinEstimatorConcurrentIncrementalTest {
 		if (mutation == Mutation.DELETE) {
 			source.add(statement);
 		}
-		SketchBasedJoinEstimator estimator = new SketchBasedJoinEstimator(
+		SketchBasedJoinEstimator estimator = createEstimator(
 				(s, p, o, contexts) -> new CloseableIteratorIteration<>(source.iterator()),
 				SketchBasedJoinEstimator.Config.defaults()
 						.withNominalEntries(64)
@@ -101,13 +101,13 @@ class SketchBasedJoinEstimatorConcurrentIncrementalTest {
 			if (first != null) {
 				first.get(5, TimeUnit.SECONDS);
 			}
-			estimator.close();
+			closeEstimator(estimator);
 		}
 	}
 
 	@Test
 	void updatesArrivingDuringCallerDrainRemainTrackedAcrossQueueRotation() throws Exception {
-		SketchBasedJoinEstimator estimator = new SketchBasedJoinEstimator(new StubSketchStatementSource(),
+		SketchBasedJoinEstimator estimator = createEstimator(new StubSketchStatementSource(),
 				SketchBasedJoinEstimator.Config.defaults().withNominalEntries(64).withIncrementalQueueInitialLimit(2));
 		Statement statement = VF.createStatement(VF.createIRI("urn:concurrent:subject"), PREDICATE,
 				VF.createLiteral("rotating queue"));
@@ -134,13 +134,13 @@ class SketchBasedJoinEstimatorConcurrentIncrementalTest {
 		} finally {
 			blocked.release.countDown();
 			first.get(5, TimeUnit.SECONDS);
-			estimator.close();
+			closeEstimator(estimator);
 		}
 	}
 
 	@Test
 	void failedDrainReleasesWaitingReadersAndAllowsRebuild() throws Exception {
-		SketchBasedJoinEstimator estimator = new SketchBasedJoinEstimator(new StubSketchStatementSource(),
+		SketchBasedJoinEstimator estimator = createEstimator(new StubSketchStatementSource(),
 				SketchBasedJoinEstimator.Config.defaults().withNominalEntries(64));
 		Statement statement = VF.createStatement(VF.createIRI("urn:concurrent:subject"), PREDICATE,
 				VF.createLiteral("conversion failure"));
@@ -174,7 +174,7 @@ class SketchBasedJoinEstimatorConcurrentIncrementalTest {
 		} finally {
 			blocked.release.countDown();
 			estimator.discardAndMarkForRebuild();
-			estimator.close();
+			closeEstimator(estimator);
 		}
 	}
 

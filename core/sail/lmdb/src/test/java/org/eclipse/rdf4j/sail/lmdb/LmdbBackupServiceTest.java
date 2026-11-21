@@ -198,7 +198,8 @@ class LmdbBackupServiceTest {
 					incremental.getEndTransactionId(), true));
 			LmdbStore restoredStore = new LmdbStore(restored.toFile(),
 					new LmdbStoreConfig("spoc,posc").setBackupJournalEnabled(true));
-			try (SailConnection conn = restoredStore.getConnection()) {
+			try (var cleanup = LmdbTestUtil.onClose(restoredStore::shutDown);
+					SailConnection conn = restoredStore.getConnection()) {
 				assertFalse(conn.hasStatement(inferredAdded.getSubject(), inferredAdded.getPredicate(),
 						inferredAdded.getObject(), false));
 				assertTrue(conn.hasStatement(inferredAdded.getSubject(), inferredAdded.getPredicate(),
@@ -316,7 +317,8 @@ class LmdbBackupServiceTest {
 					incrementalAfterClear.getEndTransactionId(), true));
 			LmdbStore restoredStore = new LmdbStore(restored.toFile(),
 					new LmdbStoreConfig("spoc,posc").setBackupJournalEnabled(true));
-			try (SailConnection conn = restoredStore.getConnection()) {
+			try (var cleanup = LmdbTestUtil.onClose(restoredStore::shutDown);
+					SailConnection conn = restoredStore.getConnection()) {
 				assertEquals("http://example.com/after#", conn.getNamespace("after"));
 				assertNull(conn.getNamespace("base"));
 				assertNull(conn.getNamespace("old"));
@@ -982,12 +984,12 @@ class LmdbBackupServiceTest {
 		Path artifactPath = incremental.getArtifactPath();
 		Path deltaDir = artifactPath;
 		Path tempDir = null;
-		if (!Files.isDirectory(artifactPath)) {
-			tempDir = Files.createTempDirectory("rdf4j-incremental-test-");
-			unzipForTest(artifactPath, tempDir);
-			deltaDir = tempDir;
-		}
 		try {
+			if (!Files.isDirectory(artifactPath)) {
+				tempDir = Files.createTempDirectory("rdf4j-incremental-test-");
+				unzipForTest(artifactPath, tempDir);
+				deltaDir = tempDir;
+			}
 			for (long txn = sinceTxn + 1; txn <= endTxn; txn++) {
 				Path log = deltaDir.resolve(String.format("txn-%020d.delta.gz", txn));
 				assertTrue(Files.isRegularFile(log),
@@ -1018,15 +1020,11 @@ class LmdbBackupServiceTest {
 		if (!Files.exists(root)) {
 			return;
 		}
-		Files.walk(root)
-				.sorted(Comparator.reverseOrder())
-				.forEach(path -> {
-					try {
-						Files.deleteIfExists(path);
-					} catch (IOException e) {
-						throw new RuntimeException(e);
-					}
-				});
+		try (var paths = Files.walk(root)) {
+			for (Path path : paths.sorted(Comparator.reverseOrder()).toList()) {
+				Files.deleteIfExists(path);
+			}
+		}
 	}
 
 	@Test

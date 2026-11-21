@@ -69,18 +69,28 @@ public class MembershipBuildBenchmark {
 
 	@Setup(Level.Trial)
 	public void setUp() throws IOException {
-		previousImpl = System.getProperty(MEMBERSHIP_IMPL);
-		previousThreshold = System.getProperty(MEMBERSHIP_THRESHOLD);
-		System.setProperty(MEMBERSHIP_IMPL, mode);
-		System.setProperty(MEMBERSHIP_THRESHOLD, "64");
-		dataDir = Files.newTemporaryFolder();
-		repository = new SailRepository(new LmdbStore(dataDir,
-				new LmdbStoreConfig("spoc,posc,ospc").setNativeEvaluationEnabled(true)));
-		loadData();
-		query = "SELECT (COUNT(?s) AS ?count) WHERE { ?s <" + EX + "type> <" + EX
-				+ "Item> . FILTER EXISTS { ?s <" + EX + "member> <" + EX + "yes> } }";
-		if (executeQuery() != membershipRows) {
-			throw new IllegalStateException(mode + " membership benchmark produced the wrong setup count");
+		try {
+			previousImpl = System.getProperty(MEMBERSHIP_IMPL);
+			previousThreshold = System.getProperty(MEMBERSHIP_THRESHOLD);
+			System.setProperty(MEMBERSHIP_IMPL, mode);
+			System.setProperty(MEMBERSHIP_THRESHOLD, "64");
+			dataDir = Files.newTemporaryFolder();
+			repository = new SailRepository(new LmdbStore(dataDir,
+					new LmdbStoreConfig("spoc,posc,ospc").setNativeEvaluationEnabled(true)));
+			loadData();
+			query = "SELECT (COUNT(?s) AS ?count) WHERE { ?s <" + EX + "type> <" + EX
+					+ "Item> . FILTER EXISTS { ?s <" + EX + "member> <" + EX + "yes> } }";
+			if (executeQuery() != membershipRows) {
+				throw new IllegalStateException(mode + " membership benchmark produced the wrong setup count");
+			}
+
+		} catch (Exception | Error failure) {
+			try {
+				tearDown();
+			} catch (Exception | Error cleanupFailure) {
+				failure.addSuppressed(cleanupFailure);
+			}
+			throw failure;
 		}
 	}
 
@@ -120,14 +130,20 @@ public class MembershipBuildBenchmark {
 
 	@TearDown(Level.Trial)
 	public void tearDown() throws IOException {
-		if (repository != null) {
-			repository.shutDown();
+		try (java.io.Closeable directoryCleanup = () -> {
+			if (dataDir != null) {
+				FileUtil.deleteDir(dataDir);
+				dataDir = null;
+			}
+		}) {
+			if (repository != null) {
+				repository.shutDown();
+				repository = null;
+			}
+		} finally {
+			restore(MEMBERSHIP_IMPL, previousImpl);
+			restore(MEMBERSHIP_THRESHOLD, previousThreshold);
 		}
-		if (dataDir != null) {
-			FileUtil.deleteDir(dataDir);
-		}
-		restore(MEMBERSHIP_IMPL, previousImpl);
-		restore(MEMBERSHIP_THRESHOLD, previousThreshold);
 	}
 
 	private static void restore(String key, String value) {

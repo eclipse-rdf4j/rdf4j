@@ -61,41 +61,51 @@ public class DirectAdjacencyRetainedProbeBenchmark {
 
 	@Setup(Level.Trial)
 	public void setUp() throws IOException {
-		dataDir = Files.createTempDirectory("rdf4j-retained-direct-probe-jmh-").toFile();
-		LmdbStoreConfig config = new LmdbStoreConfig("spoc,posc")
-				.setDirectAdjacencyEnabled(true)
-				.setDirectAdjacencyMode(DirectAdjacencyMode.PREFER)
-				.setDirectAdjacencyMaxBytes(1L << 30);
-		LmdbStore sail = new LmdbStore(dataDir, config);
-		repository = new SailRepository(sail);
-		repository.init();
-		SimpleValueFactory values = SimpleValueFactory.getInstance();
-		IRI predicateValue = values.createIRI("urn:jmh:predicate");
-		try (RepositoryConnection connection = repository.getConnection()) {
+		try {
+			dataDir = Files.createTempDirectory("rdf4j-retained-direct-probe-jmh-").toFile();
+			LmdbStoreConfig config = new LmdbStoreConfig("spoc,posc")
+					.setDirectAdjacencyEnabled(true)
+					.setDirectAdjacencyMode(DirectAdjacencyMode.PREFER)
+					.setDirectAdjacencyMaxBytes(1L << 30);
+			LmdbStore sail = new LmdbStore(dataDir, config);
+			repository = new SailRepository(sail);
+			repository.init();
+			SimpleValueFactory values = SimpleValueFactory.getInstance();
+			IRI predicateValue = values.createIRI("urn:jmh:predicate");
+			try (RepositoryConnection connection = repository.getConnection()) {
+				for (int i = 0; i < KEY_COUNT; i++) {
+					connection.add(values.createIRI("urn:jmh:subject:" + i), predicateValue,
+							values.createIRI("urn:jmh:object:" + i));
+				}
+			}
+			LmdbSailStore backing = sail.getBackingStore();
+			LmdbDirectAdjacencyStore direct = backing.directAdjacencyStore();
+			if (!direct.buildNowForTest()) {
+				LmdbAdjacencyPublishedState published = direct.publishedStateForTest();
+				throw new IllegalStateException("direct adjacency build was refused: maintenance="
+						+ direct.maintenanceState() + ", serving=" + published.servingState() + ", base="
+						+ (published.base() != null));
+			}
+			dataset = backing.getExplicitSailSource().dataset(IsolationLevels.SNAPSHOT);
+			NativeLmdbQuerySource source = (NativeLmdbQuerySource) dataset;
+			predicate = source.idOf(predicateValue);
 			for (int i = 0; i < KEY_COUNT; i++) {
-				connection.add(values.createIRI("urn:jmh:subject:" + i), predicateValue,
-						values.createIRI("urn:jmh:object:" + i));
+				subjects[i] = source.idOf(values.createIRI("urn:jmh:subject:" + i));
 			}
-		}
-		LmdbSailStore backing = sail.getBackingStore();
-		LmdbDirectAdjacencyStore direct = backing.directAdjacencyStore();
-		if (!direct.buildNowForTest()) {
-			LmdbAdjacencyPublishedState published = direct.publishedStateForTest();
-			throw new IllegalStateException("direct adjacency build was refused: maintenance="
-					+ direct.maintenanceState() + ", serving=" + published.servingState() + ", base="
-					+ (published.base() != null));
-		}
-		dataset = backing.getExplicitSailSource().dataset(IsolationLevels.SNAPSHOT);
-		NativeLmdbQuerySource source = (NativeLmdbQuerySource) dataset;
-		predicate = source.idOf(predicateValue);
-		for (int i = 0; i < KEY_COUNT; i++) {
-			subjects[i] = source.idOf(values.createIRI("urn:jmh:subject:" + i));
-		}
-		probe = source.newProbe();
-		try (RecordIterator iterator = probe.open(subjects[0], predicate, -1, -1)) {
-			if (iterator.next() == null || !probe.adjacencyCacheBacked()) {
-				throw new IllegalStateException("retained-probe benchmark did not engage direct adjacency");
+			probe = source.newProbe();
+			try (RecordIterator iterator = probe.open(subjects[0], predicate, -1, -1)) {
+				if (iterator.next() == null || !probe.adjacencyCacheBacked()) {
+					throw new IllegalStateException("retained-probe benchmark did not engage direct adjacency");
+				}
 			}
+
+		} catch (Exception | Error failure) {
+			try {
+				tearDown();
+			} catch (Exception | Error cleanupFailure) {
+				failure.addSuppressed(cleanupFailure);
+			}
+			throw failure;
 		}
 	}
 

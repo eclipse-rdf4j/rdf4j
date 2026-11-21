@@ -43,9 +43,13 @@ import org.eclipse.rdf4j.sail.base.SailDataset;
 import org.eclipse.rdf4j.sail.lmdb.config.LmdbStoreConfig;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.condition.EnabledIfSystemProperty;
+import org.junit.jupiter.api.io.TempDir;
 
 /** Routine C scratch fixture. One mode per fresh fork; no production implementation is changed. */
 public class StreamingSpillPrototypeTest {
+
+	@TempDir
+	Path temporaryDirectory;
 
 	private static final ValueFactory VF = SimpleValueFactory.getInstance();
 	private static final IRI PREDICATE = VF.createIRI("urn:spill:predicate");
@@ -70,55 +74,55 @@ public class StreamingSpillPrototypeTest {
 			}
 		}
 		assertEquals(rows, input.size());
-		LmdbSailStore store = newStore(output.resolve("native"));
-		System.gc();
-		long baseline = heapUsed();
-		long initialNativeBytes = nativeBytes(output.resolve("native"));
-		System.out.printf(
-				"SPILL_START mode=%s rows=%d highContexts=%s highPredicates=%s heapMax=%d inputHeap=%d nativeBytes=%d%n",
-				mode, rows, highContexts, highPredicates, Runtime.getRuntime().maxMemory(), baseline,
-				initialNativeBytes);
-		com.sun.management.ThreadMXBean threadBean = (com.sun.management.ThreadMXBean) ManagementFactory
-				.getThreadMXBean();
-		threadBean.setThreadAllocatedMemoryEnabled(true);
-		long allocatedBefore = threadBean.getThreadAllocatedBytes(Thread.currentThread().threadId());
-		AbstractModel transferred = null;
-		try (HeapSampler sampler = new HeapSampler(baseline)) {
-			long start = System.nanoTime();
-			try {
-				if ("current".equals(mode)) {
-					transferred = new SailSourceModel(store, input);
-				} else if ("stream".equals(mode)) {
-					transferred = new StreamingSpillPrototypeModel(store, input);
-				} else {
-					throw new IllegalArgumentException("Unknown spill.mode: " + mode);
+		try (LmdbSailStore store = newStore(output.resolve("native"))) {
+			System.gc();
+			long baseline = heapUsed();
+			long initialNativeBytes = nativeBytes(output.resolve("native"));
+			System.out.printf(
+					"SPILL_START mode=%s rows=%d highContexts=%s highPredicates=%s heapMax=%d inputHeap=%d nativeBytes=%d%n",
+					mode, rows, highContexts, highPredicates, Runtime.getRuntime().maxMemory(), baseline,
+					initialNativeBytes);
+			com.sun.management.ThreadMXBean threadBean = (com.sun.management.ThreadMXBean) ManagementFactory
+					.getThreadMXBean();
+			threadBean.setThreadAllocatedMemoryEnabled(true);
+			long allocatedBefore = threadBean.getThreadAllocatedBytes(Thread.currentThread().threadId());
+			AbstractModel transferred = null;
+			try (HeapSampler sampler = new HeapSampler(baseline)) {
+				long start = System.nanoTime();
+				try {
+					if ("current".equals(mode)) {
+						transferred = new SailSourceModel(store, input);
+					} else if ("stream".equals(mode)) {
+						transferred = new StreamingSpillPrototypeModel(store, input);
+					} else {
+						throw new IllegalArgumentException("Unknown spill.mode: " + mode);
+					}
+					long elapsed = System.nanoTime() - start;
+					long allocated = threadBean.getThreadAllocatedBytes(Thread.currentThread().threadId())
+							- allocatedBefore;
+					long bytes = nativeBytes(output.resolve("native"));
+					System.out.printf(
+							"SPILL_METRIC mode=%s rows=%d highContexts=%s highPredicates=%s elapsedNs=%d baselineHeap=%d sampledPeakHeap=%d sampledExtraHeap=%d allocatedBytes=%d upgrades=%d nativeBytes=%d nativeGrowthBytes=%d%n",
+							mode, rows, highContexts, highPredicates, elapsed, baseline, sampler.peak(),
+							Math.max(0L, sampler.peak() - baseline), allocated, upgrades.get(), bytes,
+							bytes - initialNativeBytes);
+					assertEquals(rows, transferred.size());
+					assertEquals("current".equals(mode) ? 1 : 0, upgrades.get());
+					verifyRows(store, rows, highContexts, highPredicates);
+					assertTrue(bytes > initialNativeBytes, "Must perform actual native spill I/O");
+					System.out.printf("SPILL_VERIFIED rows=%d nativeDirectory=%s%n", rows, output.resolve("native"));
+				} catch (OutOfMemoryError failure) {
+					System.out.printf(
+							"SPILL_OOM mode=%s rows=%d highContexts=%s highPredicates=%s elapsedNs=%d peakHeap=%d upgrades=%d%n",
+							mode, rows, highContexts, highPredicates, System.nanoTime() - start, sampler.peak(),
+							upgrades.get());
+					throw failure;
+				} finally {
+					Reference.reachabilityFence(input);
 				}
-				long elapsed = System.nanoTime() - start;
-				long allocated = threadBean.getThreadAllocatedBytes(Thread.currentThread().threadId())
-						- allocatedBefore;
-				long bytes = nativeBytes(output.resolve("native"));
-				System.out.printf(
-						"SPILL_METRIC mode=%s rows=%d highContexts=%s highPredicates=%s elapsedNs=%d baselineHeap=%d sampledPeakHeap=%d sampledExtraHeap=%d allocatedBytes=%d upgrades=%d nativeBytes=%d nativeGrowthBytes=%d%n",
-						mode, rows, highContexts, highPredicates, elapsed, baseline, sampler.peak(),
-						Math.max(0L, sampler.peak() - baseline), allocated, upgrades.get(), bytes,
-						bytes - initialNativeBytes);
-				assertEquals(rows, transferred.size());
-				assertEquals("current".equals(mode) ? 1 : 0, upgrades.get());
-				verifyRows(store, rows, highContexts, highPredicates);
-				assertTrue(bytes > initialNativeBytes, "Must perform actual native spill I/O");
-				System.out.printf("SPILL_VERIFIED rows=%d nativeDirectory=%s%n", rows, output.resolve("native"));
-			} catch (OutOfMemoryError failure) {
-				System.out.printf(
-						"SPILL_OOM mode=%s rows=%d highContexts=%s highPredicates=%s elapsedNs=%d peakHeap=%d upgrades=%d%n",
-						mode, rows, highContexts, highPredicates, System.nanoTime() - start, sampler.peak(),
-						upgrades.get());
-				throw failure;
 			} finally {
-				Reference.reachabilityFence(input);
+				closeModel(transferred);
 			}
-		} finally {
-			closeModel(transferred);
-			store.close();
 		}
 		try (LmdbSailStore reopened = newStore(output.resolve("native"))) {
 			verifyRows(reopened, rows, highContexts, highPredicates);
@@ -258,8 +262,8 @@ public class StreamingSpillPrototypeTest {
 		return store;
 	}
 
-	private static Path freshDirectory(String suffix) throws IOException {
-		String root = System.getProperty("spill.output", "work/lmdb-growth-spill-20261007/spill");
+	private Path freshDirectory(String suffix) throws IOException {
+		String root = System.getProperty("spill.output", temporaryDirectory.toString());
 		Path parent = Path.of(root).toAbsolutePath();
 		Files.createDirectories(parent);
 		return Files.createTempDirectory(parent, suffix + "-");
@@ -275,21 +279,11 @@ public class StreamingSpillPrototypeTest {
 		}
 	}
 
-	private static void closeModel(AbstractModel model) {
+	private static void closeModel(AbstractModel model) throws Exception {
 		if (model instanceof SailSourceModel source) {
-			if (source.dataset != null) {
-				source.dataset.close();
-			}
-			if (source.sink != null) {
-				source.sink.close();
-			}
+			source.close();
 		} else if (model instanceof StreamingSpillPrototypeModel source) {
-			if (source.dataset != null) {
-				source.dataset.close();
-			}
-			if (source.sink != null) {
-				source.sink.close();
-			}
+			LmdbTestUtil.cleanup(null, source.dataset, source.sink);
 		}
 	}
 

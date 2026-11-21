@@ -45,28 +45,38 @@ public class FreshValueReservationBenchmark {
 
 	@Setup
 	public void setup() throws Exception {
-		directory = Files.createTempDirectory("rdf4j-reservation-benchmark-").toFile();
-		store = new ValueStore(directory,
-				new LmdbStoreConfig().setAutoGrow(true).setValueDBSize(128L * 1024 * 1024));
-		session = store.startFreshValueSessionIfEmpty();
-		SimpleValueFactory factory = SimpleValueFactory.getInstance();
-		values = new Value[1024];
-		String sharedNamespace = "urn:reservation:" + "namespace".repeat(1024) + ":";
-		for (int i = 0; i < values.length; i++) {
-			values[i] = switch (workload) {
-			case "sharedNamespace" -> factory.createLiteral("value-" + i,
-					factory.createIRI(sharedNamespace, "datatype"));
-			case "language" -> factory.createLiteral("多言語-" + i + "😀".repeat(64),
-					"EN-" + "İ".repeat(24));
-			case "mixed" -> switch (i % 5) {
-			case 0 -> factory.createLiteral(Integer.toString(i), XSD.INT);
-			case 1 -> factory.createLiteral(i + ".125", XSD.DECIMAL);
-			case 2 -> factory.createLiteral("2026-10-02T08:00:00." + i + "Z", XSD.DATETIME);
-			case 3 -> factory.createLiteral("lexical-" + i + "😀".repeat(32));
-			default -> factory.createIRI("urn:reservation:resource:", Integer.toString(i));
-			};
-			default -> throw new IllegalArgumentException(workload);
-			};
+		try {
+			directory = Files.createTempDirectory("rdf4j-reservation-benchmark-").toFile();
+			store = new ValueStore(directory,
+					new LmdbStoreConfig().setAutoGrow(true).setValueDBSize(128L * 1024 * 1024));
+			session = store.startFreshValueSessionIfEmpty();
+			SimpleValueFactory factory = SimpleValueFactory.getInstance();
+			values = new Value[1024];
+			String sharedNamespace = "urn:reservation:" + "namespace".repeat(1024) + ":";
+			for (int i = 0; i < values.length; i++) {
+				values[i] = switch (workload) {
+				case "sharedNamespace" -> factory.createLiteral("value-" + i,
+						factory.createIRI(sharedNamespace, "datatype"));
+				case "language" -> factory.createLiteral("多言語-" + i + "😀".repeat(64),
+						"EN-" + "İ".repeat(24));
+				case "mixed" -> switch (i % 5) {
+				case 0 -> factory.createLiteral(Integer.toString(i), XSD.INT);
+				case 1 -> factory.createLiteral(i + ".125", XSD.DECIMAL);
+				case 2 -> factory.createLiteral("2026-10-02T08:00:00." + i + "Z", XSD.DATETIME);
+				case 3 -> factory.createLiteral("lexical-" + i + "😀".repeat(32));
+				default -> factory.createIRI("urn:reservation:resource:", Integer.toString(i));
+				};
+				default -> throw new IllegalArgumentException(workload);
+				};
+			}
+
+		} catch (Exception | Error failure) {
+			try {
+				teardown();
+			} catch (Exception | Error cleanupFailure) {
+				failure.addSuppressed(cleanupFailure);
+			}
+			throw failure;
 		}
 	}
 
@@ -78,9 +88,13 @@ public class FreshValueReservationBenchmark {
 	@TearDown
 	public void teardown() throws Exception {
 		try {
-			store.close();
+			if (store != null) {
+				store.close();
+				store = null;
+			}
 		} finally {
 			LmdbTestUtil.deleteDir(directory);
+			directory = null;
 		}
 	}
 }

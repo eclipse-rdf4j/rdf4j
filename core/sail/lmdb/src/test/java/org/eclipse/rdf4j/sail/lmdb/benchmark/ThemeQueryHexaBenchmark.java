@@ -131,23 +131,33 @@ public class ThemeQueryHexaBenchmark {
 
 	@Setup(Level.Trial)
 	public void setup() throws IOException {
+		try {
 //		previousJoinOrderStrategy = QueryJoinOptimizer.JOIN_ORDER_STRATEGY;
 //		QueryJoinOptimizer.JOIN_ORDER_STRATEGY = QueryJoinOptimizer.JoinOrderStrategy.GREEDY;
 
-		System.out.println(STORE_DIRECTORY.getAbsolutePath());
-		theme = Theme.valueOf(themeName);
-		query = ThemeQueryCatalog.queryFor(theme, z_queryIndex);
-		expected = ThemeQueryCatalog.expectedCountFor(theme, z_queryIndex);
-		if (!STORE_DIRECTORY.exists() && !STORE_DIRECTORY.mkdirs()) {
-			throw new IOException("Unable to create fixed LMDB benchmark directory: " + STORE_DIRECTORY);
-		}
-		storeConfig = ConfigUtil.createConfig();
-		storeConfig.setTripleIndexes("spoc,sopc,psoc,posc,ospc,opsc");
-		store = new LmdbStore(STORE_DIRECTORY, storeConfig);
-		repository = new SailRepository(store);
-		ensureDataLoadedAndValidated();
-		if (QueryPlanCapture.isCaptureEnabled()) {
-			captureQueryPlanSnapshot();
+			System.out.println(STORE_DIRECTORY.getAbsolutePath());
+			theme = Theme.valueOf(themeName);
+			query = ThemeQueryCatalog.queryFor(theme, z_queryIndex);
+			expected = ThemeQueryCatalog.expectedCountFor(theme, z_queryIndex);
+			if (!STORE_DIRECTORY.exists() && !STORE_DIRECTORY.mkdirs()) {
+				throw new IOException("Unable to create fixed LMDB benchmark directory: " + STORE_DIRECTORY);
+			}
+			storeConfig = ConfigUtil.createConfig();
+			storeConfig.setTripleIndexes("spoc,sopc,psoc,posc,ospc,opsc");
+			store = new LmdbStore(STORE_DIRECTORY, storeConfig);
+			repository = new SailRepository(store);
+			ensureDataLoadedAndValidated();
+			if (QueryPlanCapture.isCaptureEnabled()) {
+				captureQueryPlanSnapshot();
+			}
+
+		} catch (Exception | Error failure) {
+			try {
+				tearDown();
+			} catch (Exception | Error cleanupFailure) {
+				failure.addSuppressed(cleanupFailure);
+			}
+			throw failure;
 		}
 	}
 
