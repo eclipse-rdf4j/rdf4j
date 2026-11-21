@@ -80,57 +80,67 @@ public class ChunkPipelineChainBenchmark {
 
 	@Setup(Level.Trial)
 	public void setUp() {
-		switch (mode) {
-		case "chunkPipeline":
-			System.setProperty(CHUNK_FLAG, "true");
-			break;
-		case "chunkedMemo":
-			System.setProperty(CHUNK_FLAG, "false");
-			System.setProperty(MEMO_FLAG, "true");
-			break;
-		case "rowChain":
-			System.setProperty(CHUNK_FLAG, "false");
-			System.setProperty(MEMO_FLAG, "false");
-			break;
-		default:
-			throw new IllegalArgumentException(mode);
-		}
-		dataDir = Files.newTemporaryFolder();
-		repository = new SailRepository(new LmdbStore(dataDir,
-				new LmdbStoreConfig("spoc,posc,ospc").setNativeEvaluationEnabled(true)));
-		try (SailRepositoryConnection conn = repository.getConnection()) {
-			ValueFactory vf = conn.getValueFactory();
-			IRI p1 = vf.createIRI(EX, "p1");
-			IRI p2 = vf.createIRI(EX, "p2");
-			IRI p3 = vf.createIRI(EX, "p3");
-			IRI p4 = vf.createIRI(EX, "p4");
-			conn.begin();
-			for (int h = 0; h < HUBS; h++) {
-				IRI hub = vf.createIRI(EX, "hub" + h);
-				for (int s = 0; s < SUBJECTS_PER_HUB; s++) {
-					conn.add(vf.createIRI(EX, "s" + h + "_" + s), p1, hub);
-				}
-				for (int m = 0; m < MIDS_PER_HUB; m++) {
-					IRI mid = vf.createIRI(EX, "mid" + h + "_" + m);
-					conn.add(hub, p2, mid);
-					for (int t = 0; t < TARGETS_PER_MID; t++) {
-						IRI target = vf.createIRI(EX, "t" + h + "_" + m + "_" + t);
-						conn.add(mid, p3, target);
-						conn.add(target, p4, vf.createIRI(EX, "leaf" + h + "_" + m + "_" + t));
+		try {
+			switch (mode) {
+			case "chunkPipeline":
+				System.setProperty(CHUNK_FLAG, "true");
+				break;
+			case "chunkedMemo":
+				System.setProperty(CHUNK_FLAG, "false");
+				System.setProperty(MEMO_FLAG, "true");
+				break;
+			case "rowChain":
+				System.setProperty(CHUNK_FLAG, "false");
+				System.setProperty(MEMO_FLAG, "false");
+				break;
+			default:
+				throw new IllegalArgumentException(mode);
+			}
+			dataDir = Files.newTemporaryFolder();
+			repository = new SailRepository(new LmdbStore(dataDir,
+					new LmdbStoreConfig("spoc,posc,ospc").setNativeEvaluationEnabled(true)));
+			try (SailRepositoryConnection conn = repository.getConnection()) {
+				ValueFactory vf = conn.getValueFactory();
+				IRI p1 = vf.createIRI(EX, "p1");
+				IRI p2 = vf.createIRI(EX, "p2");
+				IRI p3 = vf.createIRI(EX, "p3");
+				IRI p4 = vf.createIRI(EX, "p4");
+				conn.begin();
+				for (int h = 0; h < HUBS; h++) {
+					IRI hub = vf.createIRI(EX, "hub" + h);
+					for (int s = 0; s < SUBJECTS_PER_HUB; s++) {
+						conn.add(vf.createIRI(EX, "s" + h + "_" + s), p1, hub);
+					}
+					for (int m = 0; m < MIDS_PER_HUB; m++) {
+						IRI mid = vf.createIRI(EX, "mid" + h + "_" + m);
+						conn.add(hub, p2, mid);
+						for (int t = 0; t < TARGETS_PER_MID; t++) {
+							IRI target = vf.createIRI(EX, "t" + h + "_" + m + "_" + t);
+							conn.add(mid, p3, target);
+							conn.add(target, p4, vf.createIRI(EX, "leaf" + h + "_" + m + "_" + t));
+						}
 					}
 				}
+				conn.commit();
 			}
-			conn.commit();
+			query = "PREFIX ex: <" + EX + ">\n"
+					+ "SELECT ?s ?w WHERE {\n"
+					+ "  ?s ex:p1 ?x .\n"
+					+ "  ?x ex:p2 ?y .\n"
+					+ "  ?y ex:p3 ?w .\n"
+					+ "  ?w ex:p4 ?z .\n"
+					+ "}";
+			expectedRows = (long) HUBS * SUBJECTS_PER_HUB * MIDS_PER_HUB * TARGETS_PER_MID;
+			verifyModeEngagement();
+
+		} catch (Exception | Error failure) {
+			try {
+				tearDown();
+			} catch (Exception | Error cleanupFailure) {
+				failure.addSuppressed(cleanupFailure);
+			}
+			throw failure;
 		}
-		query = "PREFIX ex: <" + EX + ">\n"
-				+ "SELECT ?s ?w WHERE {\n"
-				+ "  ?s ex:p1 ?x .\n"
-				+ "  ?x ex:p2 ?y .\n"
-				+ "  ?y ex:p3 ?w .\n"
-				+ "  ?w ex:p4 ?z .\n"
-				+ "}";
-		expectedRows = (long) HUBS * SUBJECTS_PER_HUB * MIDS_PER_HUB * TARGETS_PER_MID;
-		verifyModeEngagement();
 	}
 
 	/** One explain run proving the intended prefix strategy actually runs (the flags freeze at class load). */
@@ -180,10 +190,20 @@ public class ChunkPipelineChainBenchmark {
 
 	@TearDown(Level.Trial)
 	public void tearDown() throws IOException {
-		repository.shutDown();
-		FileUtil.deleteDir(dataDir);
-		System.clearProperty(CHUNK_FLAG);
-		System.clearProperty(MEMO_FLAG);
+		try (java.io.Closeable directoryCleanup = () -> {
+			if (dataDir != null) {
+				FileUtil.deleteDir(dataDir);
+				dataDir = null;
+			}
+		}) {
+			if (repository != null) {
+				repository.shutDown();
+				repository = null;
+			}
+		} finally {
+			System.clearProperty(CHUNK_FLAG);
+			System.clearProperty(MEMO_FLAG);
+		}
 	}
 
 	@Benchmark

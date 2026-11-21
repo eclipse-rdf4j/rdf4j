@@ -23,6 +23,7 @@ import org.eclipse.rdf4j.model.BNode;
 import org.eclipse.rdf4j.model.Literal;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.query.algebra.AggregateOperator;
+import org.eclipse.rdf4j.query.algebra.Difference;
 import org.eclipse.rdf4j.query.algebra.Distinct;
 import org.eclipse.rdf4j.query.algebra.Exists;
 import org.eclipse.rdf4j.query.algebra.Extension;
@@ -30,14 +31,17 @@ import org.eclipse.rdf4j.query.algebra.ExtensionElem;
 import org.eclipse.rdf4j.query.algebra.Filter;
 import org.eclipse.rdf4j.query.algebra.Graph;
 import org.eclipse.rdf4j.query.algebra.Join;
+import org.eclipse.rdf4j.query.algebra.MultiProjection;
 import org.eclipse.rdf4j.query.algebra.Not;
 import org.eclipse.rdf4j.query.algebra.Order;
 import org.eclipse.rdf4j.query.algebra.Projection;
+import org.eclipse.rdf4j.query.algebra.ProjectionElem;
 import org.eclipse.rdf4j.query.algebra.ProjectionElemList;
 import org.eclipse.rdf4j.query.algebra.QueryModelNode;
 import org.eclipse.rdf4j.query.algebra.Reduced;
 import org.eclipse.rdf4j.query.algebra.Service;
 import org.eclipse.rdf4j.query.algebra.Slice;
+import org.eclipse.rdf4j.query.algebra.SubQueryValueOperator;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.algebra.UnaryTupleOperator;
 import org.eclipse.rdf4j.query.algebra.Var;
@@ -50,6 +54,42 @@ import org.eclipse.rdf4j.query.algebra.helpers.collectors.VarNameCollector;
  * @author Jeen Broekstra
  */
 public class TupleExprs {
+
+	/**
+	 * Returns the nearest projection that exports a scalar expression's input in the same result scope.
+	 */
+	@InternalUseOnly
+	public static UnaryTupleOperator projectingExpressionScope(Var variable) {
+		UnaryTupleOperator projection = null;
+		QueryModelNode child = variable;
+		for (QueryModelNode parent = child.getParentNode(); parent != null; parent = child.getParentNode()) {
+			if (parent instanceof ExtensionElem element && !isEvaluatedExtensionElement(element)) {
+				return null;
+			}
+			if (parent instanceof SubQueryValueOperator subquery && child == subquery.getSubQuery()
+					|| parent instanceof Difference difference && child == difference.getRightArg()) {
+				return null;
+			}
+			if (projection == null && (parent instanceof Projection || parent instanceof MultiProjection)) {
+				projection = (UnaryTupleOperator) parent;
+			}
+			child = parent;
+		}
+		if (projection == null) {
+			return null;
+		}
+		List<ProjectionElemList> lists = projection instanceof Projection single
+				? List.of(single.getProjectionElemList())
+				: ((MultiProjection) projection).getProjections();
+		for (ProjectionElemList list : lists) {
+			for (ProjectionElem element : list.getElements()) {
+				if (variable.getName().equals(element.getName())) {
+					return projection;
+				}
+			}
+		}
+		return null;
+	}
 
 	/** The direct-SELECT exemption used when preparing an RDF4J LATERAL caller scope. */
 	public static boolean preservesDirectSubSelectBindings(TupleExpr rightArg, Set<String> newInputNames) {

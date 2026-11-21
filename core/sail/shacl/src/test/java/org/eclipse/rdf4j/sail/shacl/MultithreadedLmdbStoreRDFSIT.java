@@ -13,51 +13,39 @@
 package org.eclipse.rdf4j.sail.shacl;
 
 import java.io.File;
-import java.io.IOException;
-import java.util.concurrent.TimeUnit;
 
-import org.apache.commons.io.FileUtils;
-import org.assertj.core.util.Files;
 import org.eclipse.rdf4j.common.transaction.IsolationLevels;
 import org.eclipse.rdf4j.sail.NotifyingSail;
 import org.eclipse.rdf4j.sail.NotifyingSailConnection;
 import org.eclipse.rdf4j.sail.inferencer.fc.SchemaCachingRDFSInferencer;
 import org.eclipse.rdf4j.sail.lmdb.MapGrowthCheckingLmdbStore;
-import org.junit.jupiter.api.AfterEach;
-import org.junit.jupiter.api.BeforeEach;
-import org.junit.jupiter.api.RepeatedTest;
 import org.junit.jupiter.api.Tag;
-import org.junit.jupiter.api.Timeout;
+import org.junit.jupiter.api.io.TempDir;
 
 @Tag("slow")
 public class MultithreadedLmdbStoreRDFSIT extends MultithreadedTest {
 
+	@TempDir
 	File file;
-
-	@AfterEach
-	public void after() {
-		try {
-			FileUtils.deleteDirectory(file);
-		} catch (IOException e) {
-			throw new RuntimeException(e);
-		}
-	}
-
-	@BeforeEach
-	public void before() {
-		file = Files.newTemporaryFolder();
-	}
 
 	@Override
 	NotifyingSail getBaseSail() {
 		NotifyingSail notifyingSail = new MapGrowthCheckingLmdbStore(file);
 		notifyingSail = new SchemaCachingRDFSInferencer(notifyingSail);
-		try (NotifyingSailConnection connection = notifyingSail.getConnection()) {
-			connection.begin(IsolationLevels.NONE);
-			connection.clear();
-			connection.commit();
+		boolean initialized = false;
+		try {
+			try (NotifyingSailConnection connection = notifyingSail.getConnection()) {
+				connection.begin(IsolationLevels.NONE);
+				connection.clear();
+				connection.commit();
+			}
+			initialized = true;
+			return notifyingSail;
+		} finally {
+			if (!initialized) {
+				notifyingSail.shutDown();
+			}
 		}
-		return notifyingSail;
 	}
 
 }

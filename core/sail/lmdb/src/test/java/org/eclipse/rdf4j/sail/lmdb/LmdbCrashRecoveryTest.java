@@ -1567,7 +1567,8 @@ class LmdbCrashRecoveryTest {
 	}
 
 	private static Path preserveCrashImage(Path storeDir, String label, Path witness) throws IOException {
-		Path artifact = Files.createTempDirectory(Path.of(System.getProperty("java.io.tmpdir")),
+		// Keep the image within the test-owned work directory, or the explicitly configured crash-lab data root.
+		Path artifact = Files.createTempDirectory(storeDir.getParent(),
 				"rdf4j-lmdb-crash-" + label + "-");
 		Path image = artifact.resolve("store");
 		try (Stream<Path> paths = Files.walk(storeDir)) {

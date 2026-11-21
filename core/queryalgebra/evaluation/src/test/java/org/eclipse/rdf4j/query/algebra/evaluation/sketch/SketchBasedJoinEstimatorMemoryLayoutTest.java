@@ -27,13 +27,13 @@ import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.junit.jupiter.api.Test;
 
-class SketchBasedJoinEstimatorMemoryLayoutTest {
+class SketchBasedJoinEstimatorMemoryLayoutTest extends AbstractSketchBasedJoinEstimatorTest {
 
 	private static final ValueFactory VF = SimpleValueFactory.getInstance();
 
 	@Test
 	void stateAllocatesDeleteOnlySketchContainers() throws Exception {
-		SketchBasedJoinEstimator estimator = new SketchBasedJoinEstimator(new StubSketchStatementSource(),
+		SketchBasedJoinEstimator estimator = createEstimator(new StubSketchStatementSource(),
 				smallConfig());
 		Object state = privateFieldValue(estimator, "bufA");
 
@@ -44,7 +44,7 @@ class SketchBasedJoinEstimatorMemoryLayoutTest {
 
 	@Test
 	void deleteUpdatesUseTombstoneSketches() {
-		SketchBasedJoinEstimator estimator = new SketchBasedJoinEstimator(new StubSketchStatementSource(),
+		SketchBasedJoinEstimator estimator = createEstimator(new StubSketchStatementSource(),
 				smallConfig());
 		IRI predicate = VF.createIRI("urn:memory-layout:p");
 		Statement statement = VF.createStatement(VF.createIRI("urn:memory-layout:s"), predicate,
@@ -69,7 +69,7 @@ class SketchBasedJoinEstimatorMemoryLayoutTest {
 
 	@Test
 	void pairSketchesUseSingleLevelPackedSparseArrays() throws Exception {
-		SketchBasedJoinEstimator estimator = new SketchBasedJoinEstimator(new StubSketchStatementSource(),
+		SketchBasedJoinEstimator estimator = createEstimator(new StubSketchStatementSource(),
 				smallConfig());
 		Statement statement = VF.createStatement(VF.createIRI("urn:memory-layout:s"),
 				VF.createIRI("urn:memory-layout:p"), VF.createIRI("urn:memory-layout:o"),

@@ -338,22 +338,21 @@ public class LmdbNativeKernelAdversarialDeclineTest {
 	}
 
 	@AfterAll
-	static void tearDown() {
-		if (repository != null) {
-			repository.shutDown();
-		}
-		if (smallPathRepository != null) {
-			smallPathRepository.shutDown();
-		}
-		if (previousThreshold == null) {
-			System.clearProperty("rdf4j.lmdb.janinoCodegen.thresholdRows");
-		} else {
-			System.setProperty("rdf4j.lmdb.janinoCodegen.thresholdRows", previousThreshold);
-		}
-		if (previousSynchronous == null) {
-			System.clearProperty(SYNCHRONOUS_CODEGEN_PROPERTY);
-		} else {
-			System.setProperty(SYNCHRONOUS_CODEGEN_PROPERTY, previousSynchronous);
+	static void tearDown() throws Exception {
+		try {
+			LmdbTestUtil.cleanup(null, repository == null ? null : repository::shutDown,
+					smallPathRepository == null ? null : smallPathRepository::shutDown);
+		} finally {
+			if (previousThreshold == null) {
+				System.clearProperty("rdf4j.lmdb.janinoCodegen.thresholdRows");
+			} else {
+				System.setProperty("rdf4j.lmdb.janinoCodegen.thresholdRows", previousThreshold);
+			}
+			if (previousSynchronous == null) {
+				System.clearProperty(SYNCHRONOUS_CODEGEN_PROPERTY);
+			} else {
+				System.setProperty(SYNCHRONOUS_CODEGEN_PROPERTY, previousSynchronous);
+			}
 		}
 	}
 

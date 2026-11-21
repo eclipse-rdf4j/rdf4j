@@ -453,8 +453,14 @@ class LmdbNativeOrderedDistinctTest {
 	private SailRepository repository(String name, String indexes) {
 		SailRepository repository = new SailRepository(
 				new LmdbStore(new File(dataDir, name), new LmdbStoreConfig(indexes).setNativeEvaluationEnabled(true)));
-		repository.init();
-		return repository;
+		try {
+			repository.init();
+			return repository;
+		} catch (RuntimeException | Error failure) {
+			try (var cleanup = LmdbTestUtil.onClose(repository::shutDown)) {
+				throw failure;
+			}
+		}
 	}
 
 	private static void restoreProperty(String name, String value) {

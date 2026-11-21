@@ -29,7 +29,7 @@ import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.junit.jupiter.api.Test;
 
-class SketchBasedJoinEstimatorAdaptiveIncrementalQueueTest {
+class SketchBasedJoinEstimatorAdaptiveIncrementalQueueTest extends AbstractSketchBasedJoinEstimatorTest {
 
 	private static final String PROPERTY_PREFIX = "org.eclipse.rdf4j.query.algebra.evaluation.sketch.SketchBasedJoinEstimator.";
 	private static final ValueFactory VF = SimpleValueFactory.getInstance();
@@ -170,7 +170,7 @@ class SketchBasedJoinEstimatorAdaptiveIncrementalQueueTest {
 			store.add(statement("urn:adaptive:rebuild-memory:" + i, predicate,
 					"urn:adaptive:rebuild-memory:o:" + i));
 		}
-		SketchBasedJoinEstimator estimator = new SketchBasedJoinEstimator(store,
+		SketchBasedJoinEstimator estimator = createEstimator(store,
 				SketchBasedJoinEstimator.Config.defaults()
 						.withNominalEntries(64)
 						.withRefreshSleepMillis(5)
@@ -214,7 +214,7 @@ class SketchBasedJoinEstimatorAdaptiveIncrementalQueueTest {
 				}));
 	}
 
-	private static SketchBasedJoinEstimator newEstimator() {
+	private SketchBasedJoinEstimator newEstimator() {
 		return newEstimator(SketchBasedJoinEstimator.Config.defaults()
 				.withNominalEntries(64)
 				.withThrottleEveryN(1)
@@ -222,8 +222,8 @@ class SketchBasedJoinEstimatorAdaptiveIncrementalQueueTest {
 				.withRefreshSleepMillis(5));
 	}
 
-	private static SketchBasedJoinEstimator newEstimator(SketchBasedJoinEstimator.Config config) {
-		return new SketchBasedJoinEstimator(new StubSketchStatementSource(), config);
+	private SketchBasedJoinEstimator newEstimator(SketchBasedJoinEstimator.Config config) {
+		return createEstimator(new StubSketchStatementSource(), config);
 	}
 
 	private static Statement statement(String subject, IRI predicate, String object) {

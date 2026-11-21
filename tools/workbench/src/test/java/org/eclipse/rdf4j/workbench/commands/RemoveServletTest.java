@@ -15,6 +15,7 @@ package org.eclipse.rdf4j.workbench.commands;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.eclipse.rdf4j.workbench.base.TransformationServlet.CONTEXT;
+import static org.junit.jupiter.api.Assertions.assertAll;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyBoolean;
 import static org.mockito.ArgumentMatchers.anyString;
@@ -83,6 +84,7 @@ import org.eclipse.rdf4j.workbench.support.TestServletConfig;
 import org.eclipse.rdf4j.workbench.util.TupleResultBuilder;
 import org.eclipse.rdf4j.workbench.util.WorkbenchPageProtocol;
 import org.eclipse.rdf4j.workbench.util.WorkbenchRequest;
+import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
 import org.springframework.mock.web.MockHttpServletRequest;
@@ -105,6 +107,18 @@ import jakarta.servlet.http.HttpServletResponse;
 public class RemoveServletTest {
 
 	private final RemoveServlet servlet = new RemoveServlet();
+	private final List<Repository> repositories = new ArrayList<>();
+
+	@AfterEach
+	void shutDownRepositories() {
+		assertAll(repositories.stream().filter(Repository::isInitialized).map(repository -> repository::shutDown));
+	}
+
+	private Repository memoryRepository() {
+		Repository repository = new SailRepository(new MemoryStore());
+		repositories.add(repository);
+		return repository;
+	}
 
 	@Test
 	public void testSES1958regression()
@@ -226,8 +240,11 @@ public class RemoveServletTest {
 		try {
 			servlet.service(request, response);
 		} finally {
-			servlet.destroy();
-			repository.shutDown();
+			try {
+				servlet.destroy();
+			} finally {
+				repository.shutDown();
+			}
 		}
 
 		verify(builder).result(SimpleValueFactory.getInstance().createLiteral(BigInteger.ONE));
@@ -351,7 +368,7 @@ public class RemoveServletTest {
 
 	@Test
 	public void previewShowsAtMostItsLimitAndSaysThereAreMore() throws Exception {
-		Repository repository = new SailRepository(new MemoryStore());
+		Repository repository = memoryRepository();
 		repository.init();
 		ValueFactory vf = repository.getValueFactory();
 		try (RepositoryConnection connection = repository.getConnection()) {
@@ -368,7 +385,7 @@ public class RemoveServletTest {
 
 	@Test
 	public void previewMarksStoredBlankNodesAsReusableReferences() throws Exception {
-		Repository repository = new SailRepository(new MemoryStore());
+		Repository repository = memoryRepository();
 		repository.init();
 		ValueFactory vf = repository.getValueFactory();
 		BNode stored = vf.createBNode("stored-node");
@@ -567,8 +584,8 @@ public class RemoveServletTest {
 						.containsExactly("test=urn:test:", "acme=https://acme.example/vocab#");
 	}
 
-	private static Repository store() {
-		Repository repository = new SailRepository(new MemoryStore());
+	private Repository store() {
+		Repository repository = memoryRepository();
 		repository.init();
 		ValueFactory vf = repository.getValueFactory();
 		try (RepositoryConnection connection = repository.getConnection()) {
@@ -580,8 +597,8 @@ public class RemoveServletTest {
 		return repository;
 	}
 
-	private static Repository repeatedQuadStore() {
-		Repository repository = new SailRepository(new MemoryStore());
+	private Repository repeatedQuadStore() {
+		Repository repository = memoryRepository();
 		repository.init();
 		ValueFactory vf = repository.getValueFactory();
 		IRI subject = vf.createIRI("urn:test:s");
@@ -601,8 +618,8 @@ public class RemoveServletTest {
 		return repository;
 	}
 
-	private static Repository storeWithSentinelNamedGraph(IRI context) {
-		Repository repository = new SailRepository(new MemoryStore());
+	private Repository storeWithSentinelNamedGraph(IRI context) {
+		Repository repository = memoryRepository();
 		repository.init();
 		try (RepositoryConnection connection = repository.getConnection()) {
 			IRI subject = SimpleValueFactory.getInstance().createIRI("urn:test:s");
@@ -615,8 +632,8 @@ public class RemoveServletTest {
 		return repository;
 	}
 
-	private static Repository storeWithObject(Value object) {
-		Repository repository = new SailRepository(new MemoryStore());
+	private Repository storeWithObject(Value object) {
+		Repository repository = memoryRepository();
 		repository.init();
 		try (RepositoryConnection connection = repository.getConnection()) {
 			connection.add(SimpleValueFactory.getInstance().createIRI("urn:test:s"),
@@ -625,7 +642,7 @@ public class RemoveServletTest {
 		return repository;
 	}
 
-	private static void assertMalformedAggregateResult(boolean hasRow, Value countValue) throws Exception {
+	private void assertMalformedAggregateResult(boolean hasRow, Value countValue) throws Exception {
 		Repository delegate = store();
 		Repository repository = spy(delegate);
 		RepositoryConnection connection = spy(delegate.getConnection());
@@ -711,8 +728,8 @@ public class RemoveServletTest {
 		RemoveServlet countingServlet = new RemoveServlet();
 		countingServlet.setRepository(repository);
 		countingServlet.setRepositoryManager(mock(RepositoryManager.class));
-		countingServlet.init(config);
 		try {
+			countingServlet.init(config);
 			MockHttpServletRequest request = new MockHttpServletRequest("GET", "/remove");
 			request.addHeader("Accept", WorkbenchPageProtocol.ACCEPT);
 			for (int index = 0; index < parameters.length; index += 2) {
@@ -728,8 +745,11 @@ public class RemoveServletTest {
 				}
 			}).toList();
 		} finally {
-			countingServlet.destroy();
-			repository.shutDown();
+			try {
+				countingServlet.destroy();
+			} finally {
+				repository.shutDown();
+			}
 		}
 	}
 

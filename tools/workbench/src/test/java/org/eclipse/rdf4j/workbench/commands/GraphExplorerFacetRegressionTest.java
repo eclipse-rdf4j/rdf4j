@@ -79,8 +79,15 @@ class GraphExplorerFacetRegressionTest {
 
 	@AfterEach
 	void tearDown() {
-		connection.close();
-		repository.shutDown();
+		try {
+			if (connection != null) {
+				connection.close();
+			}
+		} finally {
+			if (repository != null) {
+				repository.shutDown();
+			}
+		}
 	}
 
 	static Stream<Arguments> focusSelections() {

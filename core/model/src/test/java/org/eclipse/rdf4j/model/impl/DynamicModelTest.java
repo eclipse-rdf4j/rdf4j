@@ -46,6 +46,7 @@ import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.model.base.AbstractStatement;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.io.TempDir;
 
 public class DynamicModelTest {
 
@@ -909,13 +910,13 @@ public class DynamicModelTest {
 	}
 
 	@Test
-	void deserializingOlderDynamicModelInitializesAddedContexts() throws Exception {
+	void deserializingOlderDynamicModelInitializesAddedContexts(@TempDir Path tempDir) throws Exception {
 		ValueFactory valueFactory = SimpleValueFactory.getInstance();
 		Statement statement = valueFactory.createStatement(valueFactory.createIRI("urn:subject"),
 				valueFactory.createIRI("urn:predicate"), valueFactory.createLiteral("object"),
 				valueFactory.createIRI("urn:context"));
 
-		byte[] serialized = serializeLegacyDynamicModel(statement);
+		byte[] serialized = serializeLegacyDynamicModel(statement, tempDir);
 
 		DynamicModel deserialized;
 		try (ObjectInputStream objectInputStream = new ObjectInputStream(new ByteArrayInputStream(serialized))) {
@@ -946,8 +947,7 @@ public class DynamicModelTest {
 		assertThat(model.getUpgradedModel()).isNull();
 	}
 
-	private static byte[] serializeLegacyDynamicModel(Statement statement) throws Exception {
-		Path tempDir = Files.createTempDirectory("dynamic-model-legacy");
+	private static byte[] serializeLegacyDynamicModel(Statement statement, Path tempDir) throws Exception {
 		Path packageDir = Files.createDirectories(tempDir.resolve("org/eclipse/rdf4j/model/impl"));
 		Path sourceFile = packageDir.resolve("DynamicModel.java");
 		Files.writeString(sourceFile, legacyDynamicModelSource(), StandardCharsets.UTF_8);
