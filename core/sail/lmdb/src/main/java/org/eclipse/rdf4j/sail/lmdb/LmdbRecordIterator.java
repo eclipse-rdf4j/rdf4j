@@ -331,7 +331,8 @@ class LmdbRecordIterator implements RecordIterator, RecordIterator.Retainable<Tr
 						break;
 					}
 					if (action == TripleIndex.SKIP_SEEK) {
-						consecutiveFiltered = 0;
+						// Like upstream, the run counter is reset only by a match, so a long mismatch run keeps
+						// leapfrogging after its first seek.
 						System.arraycopy(skipTarget, 0, startTuple, 0, 4);
 						result = position();
 					}

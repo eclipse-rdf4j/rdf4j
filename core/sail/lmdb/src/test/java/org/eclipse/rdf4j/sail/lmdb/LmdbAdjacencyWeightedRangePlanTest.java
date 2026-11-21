@@ -75,7 +75,8 @@ class LmdbAdjacencyWeightedRangePlanTest {
 			long heaviestRange = contents.stream().mapToLong(range -> range.statements).max().orElseThrow();
 			double ideal = (double) TOTAL_STATEMENTS / TARGET_RANGES;
 			assertThat((double) heaviestRange)
-					.as("heaviest planned range against an ideal share of %s", ideal)
+					.as("heaviest planned range against an ideal share of %s; %s ranges with %s statements", ideal,
+							ranges.length, contents.stream().map(range -> range.statements).toList())
 					.isLessThan(3 * ideal);
 		}
 	}

@@ -3200,13 +3200,26 @@ class TripleStore implements Closeable {
 	/** Exact row count only when every constraint belongs to one contiguous physical key prefix. */
 	private long countIndexPrefix(Txn txn, TripleIndex index, long subj, long pred, long obj, long context,
 			boolean explicit) throws IOException {
-		if (exactIndexReader == null || !txn.isReadOnly() || index.getIndexSplitPosition() < 4
+		if (exactIndexReader == null || !txn.isReadOnly()
 				|| index.getRangePrefixLength(subj, pred, obj, context) != Integer
 						.bitCount(boundMask(subj, pred, obj, context))) {
 			return -1L;
 		}
 		byte[] lower = exactBoundPrefix(index, subj, pred, obj, context);
 		byte[] upper = lower == null ? null : LmdbExactPrefixRunCursor.successor(lower);
+		if (isChunked(index)) {
+			// Page headers count chunks, not rows: count one footer per chunk on the pinned snapshot instead.
+			long stamp = pinExactSnapshot(txn);
+			try {
+				LmdbPageCardinalityEstimator.ExactCount count = ChunkedExactIndexCounter.count(txn.get(), index,
+						explicit, lower, upper, exactIndexCancellation());
+				LmdbPrefixRunPlan.INDEX_EXACT_COUNTS.incrementAndGet();
+				LmdbPrefixRunPlan.recordExactIndexWork(count.work());
+				return count.entries();
+			} finally {
+				txn.lockManager().unlockRead(stamp);
+			}
+		}
 		try (LmdbPageCardinalityEstimator.ReadView view = exactReadView(txn)) {
 			if (view == null) {
 				return -1L;
@@ -3239,8 +3252,8 @@ class TripleStore implements Closeable {
 		}
 		return selectGeneration(txn, selectedGeneration -> {
 			TripleIndex index = selectedGeneration.best[mask];
-			if (index == null || index.getIndexSplitPosition() < 4
-					|| index.getRangePrefixLength(subj, pred, obj, context) != Integer.bitCount(mask)) {
+			// The quote stays a valid ceiling for chunked indexes: their walk visits each leaf of the range once.
+			if (index == null || index.getRangePrefixLength(subj, pred, obj, context) != Integer.bitCount(mask)) {
 				return null;
 			}
 			try (MemoryStack stack = stackPush()) {
@@ -3305,10 +3318,26 @@ class TripleStore implements Closeable {
 		TripleIndex index = plan.index();
 		// Distinct-only runs already successor-seek past their payload. Counting leaf headers there would replace
 		// one seek per identity with a walk over every leaf of a long run.
-		if (!countRunRows || exactIndexReader == null || !txn.isReadOnly() || index.getIndexSplitPosition() < 4
+		if (!countRunRows || exactIndexReader == null || !txn.isReadOnly()
 				|| index.getRangePrefixLength(subj, pred, obj, context) != Integer
 						.bitCount(boundMask(subj, pred, obj, context))) {
 			return null;
+		}
+		if (isChunked(index)) {
+			long stamp = pinExactSnapshot(txn);
+			try {
+				byte[] lower = exactBoundPrefix(index, subj, pred, obj, context);
+				byte[] upper = lower == null ? null : LmdbExactPrefixRunCursor.successor(lower);
+				BooleanSupplier cancelled = exactIndexCancellation();
+				int prefixLength = plan.prefixLength();
+				// The cursor re-pins the barrier for every step, so it borrows the transaction, not the lock.
+				LmdbExactPrefixRunCursor.CursorFactory cursors = (from, to) -> ChunkedExactIndexCounter
+						.prefixRuns(txn.get(), index, explicit, from, to, prefixLength, cancelled);
+				return new LmdbExactPrefixRunCursor(plan, txn, null, cursors, lower, upper,
+						cursors.open(lower, upper), countRunRows);
+			} finally {
+				txn.lockManager().unlockRead(stamp);
+			}
 		}
 		long stamp;
 		try {
@@ -3335,8 +3364,14 @@ class TripleStore implements Closeable {
 			}
 			// The barrier is held only while the cursor is built; the cursor re-pins it for every step so an open
 			// cursor never stalls commits.
-			LmdbPrefixRunCursor result = new LmdbExactPrefixRunCursor(plan, txn, view, index.getName(explicit),
-					lower, upper, cancelled, cursor, countRunRows);
+			LmdbPageCardinalityEstimator.ReadView pages = view;
+			String database = index.getName(explicit);
+			int prefixLength = plan.prefixLength();
+			LmdbExactPrefixRunCursor.CursorFactory cursors = (from, to) -> pages.prefixRunsExact(database, from,
+					LmdbExactPrefixRunCursor.length(from), true, to, LmdbExactPrefixRunCursor.length(to), false,
+					prefixLength, cancelled);
+			LmdbPrefixRunCursor result = new LmdbExactPrefixRunCursor(plan, txn, view, cursors, lower, upper, cursor,
+					countRunRows);
 			transferred = true;
 			return result;
 		} finally {
@@ -3368,6 +3403,29 @@ class TripleStore implements Closeable {
 			prefix[i] = boundValue(statementField(fields[i]), subj, pred, obj, context);
 		}
 		return LmdbExactPrefixRunCursor.encodePrefix(prefix);
+	}
+
+	/** Chunked indexes store several rows per LMDB entry, so page-header cardinalities count chunks. */
+	private static boolean isChunked(TripleIndex index) {
+		return index.getIndexSplitPosition() < 4;
+	}
+
+	/** Holds the shared barrier and validates the pinned snapshot for a cursor walk on {@code txn}. */
+	private static long pinExactSnapshot(Txn txn) throws IOException {
+		long stamp;
+		try {
+			stamp = txn.lockManager().readLock();
+		} catch (InterruptedException e) {
+			Thread.currentThread().interrupt();
+			throw new IOException("Interrupted while pinning an exact index count", e);
+		}
+		try {
+			txn.ensureSnapshotValid();
+		} catch (RuntimeException | Error failure) {
+			txn.lockManager().unlockRead(stamp);
+			throw failure;
+		}
+		return stamp;
 	}
 
 	private static BooleanSupplier exactIndexCancellation() {
@@ -3427,8 +3485,25 @@ class TripleStore implements Closeable {
 		}
 	}
 
+	/**
+	 * Plane emptiness from the main index's entry count. Entries are chunks, but a plane has rows exactly when its
+	 * index has entries, so this stays exact without reading the statement-count metadata.
+	 */
 	private boolean hasAnyTriples(Txn txnRef, boolean explicit) throws IOException {
-		return statementCount(txnRef, explicit) > 0;
+		long readStamp;
+		try {
+			readStamp = txnRef.lockManager().readLock();
+		} catch (InterruptedException e) {
+			Thread.currentThread().interrupt();
+			throw new IOException(e);
+		}
+		try (MemoryStack stack = stackPush()) {
+			MDBStat stat = MDBStat.malloc(stack);
+			E(mdb_stat(txnRef.get(), generation(txnRef).indexes.getFirst().getDB(explicit), stat));
+			return stat.ms_entries() > 0;
+		} finally {
+			txnRef.lockManager().unlockRead(readStamp);
+		}
 	}
 
 	private long statementCount(Txn txnRef, boolean explicit) throws IOException {
@@ -4003,32 +4078,12 @@ class TripleStore implements Closeable {
 						index.getIndexSplitPosition())) {
 			// Bisect over logical tuples, not chunk anchors: a chunk holds up to MAX_CHUNK_SIZE statements, and a
 			// range covered by a single chunk must still be divisible.
-			long[] min = new long[4];
-			long[] max = new long[4];
-			index.getMinEntry(min, subj, pred, obj, context);
-			index.getMaxEntry(max, subj, pred, obj, context);
-			if (context == ValueIds.NULL_CONTEXT) {
-				int[] indexMap = index.getIndexMap();
-				for (int i = 0; i < indexMap.length; i++) {
-					if (indexMap[i] == TripleIndex.CONTEXT_IDX) {
-						max[i] = ValueIds.NULL_CONTEXT;
-						break;
-					}
-				}
-			}
-			long[] found = cursor.seekCeiling(min);
-			if (found == null || Arrays.compareUnsigned(found, max) > 0) {
+			long[][] bounds = logicalRangeBounds(cursor, index, subj, pred, obj, context);
+			if (bounds == null) {
 				return result;
 			}
-			long[] first = found.clone();
-			found = cursor.seekCeiling(max);
-			if (found == null || Arrays.compareUnsigned(found, max) != 0) {
-				found = cursor.floorBelow(max);
-			}
-			if (found == null || Arrays.compareUnsigned(first, found) >= 0) {
-				return result;
-			}
-			long[] last = found.clone();
+			long[] first = bounds[0];
+			long[] last = bounds[1];
 
 			ArrayList<long[]> boundaries = new ArrayList<>();
 			boundaries.add(first);
@@ -4055,10 +4110,18 @@ class TripleStore implements Closeable {
 					break;
 				}
 			}
-			// interior boundaries plus the last tuple are valid split points (a split == last yields a non-empty
-			// final partition holding exactly that tuple); the first tuple is the scan start, not a split
-			for (int i = 1; i < boundaries.size() - 1 && result.size() < targetSplits; i++) {
-				result.add(encodeEntry(boundaries.get(i)));
+			// Interior boundaries are valid split points; the first tuple is the scan start, not a split. Bisection
+			// can produce more boundaries than requested: take an evenly spaced subset, not the first ones, which
+			// would leave the whole tail of the range in one partition.
+			int interior = boundaries.size() - 2;
+			int previous = 0;
+			for (int k = 1; k <= Math.min(targetSplits, interior); k++) {
+				int i = interior <= targetSplits ? k
+						: (int) Math.round((double) k * (interior + 1) / (targetSplits + 1));
+				if (i > previous && i <= interior) {
+					result.add(encodeEntry(boundaries.get(i)));
+					previous = i;
+				}
 			}
 			return result;
 		} finally {
@@ -4079,85 +4142,74 @@ class TripleStore implements Closeable {
 		} catch (InterruptedException e) {
 			throw new SailException(e);
 		}
-		try (MemoryStack stack = MemoryStack.stackPush()) {
-			long txn = txnRef.get();
-			int dbi = index.getDB(explicit);
-
-			MDBVal maxKey = MDBVal.malloc(stack);
-			ByteBuffer maxKeyBuf = stack.malloc(TripleIndex.MAX_KEY_LENGTH);
-			index.getMaxKey(maxKeyBuf, subj, pred, obj, context);
-			maxKeyBuf.flip();
-			maxKey.mv_data(maxKeyBuf);
-
-			MDBVal keyData = MDBVal.malloc(stack);
-			MDBVal valueData = MDBVal.malloc(stack);
-			ByteBuffer keyBuf = stack.malloc(TripleIndex.MAX_KEY_LENGTH);
-
-			PointerBuffer pp = stack.mallocPointer(1);
-			E(mdb_cursor_open(txn, dbi, pp));
-			long cursor = pp.get(0);
-			try {
-				// first existing key of the pattern's range
-				keyBuf.clear();
-				index.getMinKey(keyBuf, subj, pred, obj, context);
-				keyBuf.flip();
-				keyData.mv_data(keyBuf);
-				int rc = mdb_cursor_get(cursor, keyData, valueData, MDB_SET_RANGE);
-				if (rc != MDB_SUCCESS || mdb_cmp(txn, dbi, keyData, maxKey) > 0) {
-					return splits;
-				}
-				long[] firstValues = new long[4];
-				Varint.readListUnsigned(keyData.mv_data(), firstValues);
-				byte[] firstKey = copyKey(keyData);
-
-				// last existing key of the range
-				keyData.mv_data(maxKeyBuf);
-				rc = mdb_cursor_get(cursor, keyData, valueData, MDB_SET_RANGE);
-				if (rc != MDB_SUCCESS) {
-					rc = mdb_cursor_get(cursor, keyData, valueData, MDB_LAST);
-				} else if (mdb_cmp(txn, dbi, keyData, maxKey) > 0) {
-					rc = mdb_cursor_get(cursor, keyData, valueData, MDB_PREV);
-				}
-				if (rc != MDB_SUCCESS) {
-					return splits;
-				}
-				byte[] lastKey = copyKey(keyData);
-				if (Arrays.compareUnsigned(firstKey, lastKey) >= 0) {
-					return splits;
-				}
-				long[] lastValues = new long[4];
-				Varint.readListUnsigned(keyData.mv_data(), lastValues);
-
-				long[] splitValues = new long[4];
-				byte[] previous = firstKey;
-				for (int i = 1; i < targetPartitions; i++) {
-					bucketStart((double) i / targetPartitions, firstValues, lastValues, splitValues);
-					keyBuf.clear();
-					Varint.writeListUnsigned(keyBuf, splitValues);
-					keyBuf.flip();
-					keyData.mv_data(keyBuf);
-					if (mdb_cursor_get(cursor, keyData, valueData, MDB_SET_RANGE) != MDB_SUCCESS) {
-						break; // interpolated key is past the end of the database
-					}
-					byte[] snapped = copyKey(keyData);
-					// keep only splits strictly inside (firstKey, lastKey]: a split == lastKey still yields a
-					// non-empty right partition holding exactly that key
-					if (Arrays.compareUnsigned(snapped, previous) <= 0) {
-						continue;
-					}
-					if (Arrays.compareUnsigned(snapped, lastKey) > 0) {
-						break;
-					}
-					splits.add(snapped);
-					previous = snapped;
-				}
+		try (MemoryStack stack = MemoryStack.stackPush();
+				LogicalIndexCursor cursor = new LogicalIndexCursor(stack, txnRef.get(), index.getDB(explicit),
+						index.getIndexSplitPosition())) {
+			// Interpolate between the first and last rows and snap to rows, not chunk anchors: a chunk holds up to
+			// MAX_CHUNK_SIZE statements, so anchors alone are too coarse to split small ranges.
+			long[][] bounds = logicalRangeBounds(cursor, index, subj, pred, obj, context);
+			if (bounds == null) {
 				return splits;
-			} finally {
-				mdb_cursor_close(cursor);
 			}
+			long[] firstValues = bounds[0];
+			long[] lastValues = bounds[1];
+			long[] splitValues = new long[4];
+			long[] previous = firstValues;
+			for (int i = 1; i < targetPartitions; i++) {
+				bucketStart((double) i / targetPartitions, firstValues, lastValues, splitValues);
+				long[] snapped = cursor.seekCeiling(splitValues);
+				if (snapped == null) {
+					break; // interpolated tuple is past the end of the index
+				}
+				// keep only splits strictly inside (first, last]: a split == last still yields a non-empty right
+				// partition holding exactly that row
+				if (Arrays.compareUnsigned(snapped, previous) <= 0) {
+					continue;
+				}
+				if (Arrays.compareUnsigned(snapped, lastValues) > 0) {
+					break;
+				}
+				previous = snapped.clone();
+				splits.add(encodeEntry(previous));
+			}
+			return splits;
 		} finally {
 			lockManager.unlockRead(readStamp);
 		}
+	}
+
+	/**
+	 * The first and the last row (index-order tuples) of the pattern's range, or {@code null} when the range holds
+	 * fewer than two distinct rows.
+	 */
+	private static long[][] logicalRangeBounds(LogicalIndexCursor cursor, TripleIndex index, long subj, long pred,
+			long obj, long context) throws IOException {
+		long[] min = new long[4];
+		long[] max = new long[4];
+		index.getMinEntry(min, subj, pred, obj, context);
+		index.getMaxEntry(max, subj, pred, obj, context);
+		if (context == ValueIds.NULL_CONTEXT) {
+			int[] indexMap = index.getIndexMap();
+			for (int i = 0; i < indexMap.length; i++) {
+				if (indexMap[i] == TripleIndex.CONTEXT_IDX) {
+					max[i] = ValueIds.NULL_CONTEXT;
+					break;
+				}
+			}
+		}
+		long[] found = cursor.seekCeiling(min);
+		if (found == null || Arrays.compareUnsigned(found, max) > 0) {
+			return null;
+		}
+		long[] first = found.clone();
+		found = cursor.seekCeiling(max);
+		if (found == null || Arrays.compareUnsigned(found, max) != 0) {
+			found = cursor.floorBelow(max);
+		}
+		if (found == null || Arrays.compareUnsigned(first, found) >= 0) {
+			return null;
+		}
+		return new long[][] { first, found.clone() };
 	}
 
 	private static byte[] encodeEntry(long[] entry) {
@@ -4512,7 +4564,8 @@ class TripleStore implements Closeable {
 	 * This exists so that the parallel adjacency base build can cut its work into ranges of roughly equal statement
 	 * count instead of ranges of equal key space. On a predicate-leading index the first key of a predicate marks the
 	 * boundary between two predicates' runs, so the difference of two approximate key ranks is the approximate size of
-	 * the run between them. Ranks come from a B-tree descent over the pinned snapshot's pages
+	 * the run between them, in entries; entries are chunks, so the sizes are scaled to statements by the plane's exact
+	 * statement count. Ranks come from a B-tree descent over the pinned snapshot's pages
 	 * ({@link LmdbPageCardinalityEstimator#estimateEntryRanks}), which costs one page read per tree level per predicate
 	 * rather than one per statement.
 	 * <p>
@@ -4538,9 +4591,11 @@ class TripleStore implements Closeable {
 		}
 		try {
 			long txnId;
+			long rows;
 			long readStamp = txnRef.lockManager().readLock();
-			try {
+			try (MemoryStack stack = stackPush()) {
 				txnId = mdb_txn_id(txnRef.get());
+				rows = readStatementCount(stack, txnRef.get(), explicit);
 			} finally {
 				txnRef.lockManager().unlockRead(readStamp);
 			}
@@ -4558,10 +4613,13 @@ class TripleStore implements Closeable {
 				predicateStartKeys[i] = toArray(keyBuffer);
 			}
 			long[] ranks = estimator.estimateEntryRanks(txnId, dbName, predicateStartKeys);
+			// Ranks count LMDB entries, which are chunks of up to Chunks.MAX_CHUNK_SIZE statements: scale them by
+			// the exact statements per entry of this plane.
+			double rowsPerEntry = (double) rows / total;
 			long[] counts = new long[sortedPredicates.length];
 			for (int i = 0; i < counts.length; i++) {
 				long end = i + 1 < ranks.length ? ranks[i + 1] : total;
-				counts[i] = Math.max(0, end - ranks[i]);
+				counts[i] = Math.round(Math.max(0, end - ranks[i]) * rowsPerEntry);
 			}
 			return counts;
 		} catch (InterruptedException e) {
