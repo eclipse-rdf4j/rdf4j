@@ -133,7 +133,7 @@ public class LmdbNestedOptionalDistinctBenchmark {
 	@Param("200000")
 	public int awardCount;
 
-	@Param("true")
+	@Param({ "true", "false" })
 	public boolean nativeEvaluationEnabled = true;
 
 	private File dataDirectory;
