@@ -569,6 +569,8 @@
 										<exclude>/work/**</exclude>
 										<exclude>**/site/themes/**</exclude>
 										<exclude>**/.*/**</exclude>
+										<!-- Preserve byte-for-byte upstream notice evidence referenced by SHA-256. -->
+										<exclude>scripts/third-party-licenses/**/*.xml</exclude>
 										<exclude>**/dependency-reduced-pom.xml</exclude>
 										<exclude>**/dependency-reduced-pom-*.xml</exclude>
 									</excludes>
