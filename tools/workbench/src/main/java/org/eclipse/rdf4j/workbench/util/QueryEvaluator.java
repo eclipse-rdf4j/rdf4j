@@ -42,6 +42,7 @@ import org.eclipse.rdf4j.query.QueryResultHandlerException;
 import org.eclipse.rdf4j.query.TupleQuery;
 import org.eclipse.rdf4j.query.TupleQueryResult;
 import org.eclipse.rdf4j.query.explanation.Explanation;
+import org.eclipse.rdf4j.query.explanation.ExplanationOptions;
 import org.eclipse.rdf4j.query.explanation.GenericPlanNode;
 import org.eclipse.rdf4j.query.explanation.StrategyDecision;
 import org.eclipse.rdf4j.repository.RepositoryConnection;
@@ -546,11 +547,12 @@ public final class QueryEvaluator {
 	public ExplainRequest extractExplainRequest(final WorkbenchRequest req) throws BadRequestException {
 		Boolean includeInferred = req.isParameterPresent("infer") ? Boolean.parseBoolean(req.getParameter("infer"))
 				: null;
+		Explanation.Level level = getExplainLevel(req.getParameter(EXPLAIN));
 		return new ExplainRequest(
 				QueryLanguage.valueOf(req.getParameter("queryLn")),
 				includeInferred,
 				req.getInt("query-timeout"),
-				getExplainLevel(req.getParameter(EXPLAIN)),
+				level,
 				getExplainFormat(req.getParameter(EXPLAIN_FORMAT)),
 				getForcedLmdbExecutionStrategy(req));
 	}
@@ -643,9 +645,12 @@ public final class QueryEvaluator {
 	}
 
 	private ExplainQueryResult explain(final Query query, final ExplainRequest req) throws BadRequestException {
+		Explanation.Level level = req.getExplainLevel();
+		ExplanationOptions options = level == Explanation.Level.Telemetry ? ExplanationOptions.values()
+				: ExplanationOptions.rows();
 		Explanation explanation;
-		try {
-			explanation = query.explain(req.getExplainLevel());
+		try (ExplanationOptions.Activation ignored = options.activate()) {
+			explanation = query.explain(level);
 		} catch (UnsupportedOperationException e) {
 			throw new BadRequestException("Explain is not supported for this query or repository.", e);
 		}
@@ -675,8 +680,9 @@ public final class QueryEvaluator {
 			final ExplainQueryResult explainQueryResult) throws QueryResultHandlerException {
 		builder.start(EXPLANATION, EXPLANATION_FORMAT, EXPLANATION_LEVEL, STRATEGY_DECISIONS);
 		builder.link(List.of(INFO, WorkbenchPolicy.INTERNAL_NAMESPACES_LINK));
+		String decisions = EXPLANATION_MAPPER.valueToTree(explainQueryResult.getStrategyDecisions()).toString();
 		builder.result(explainQueryResult.getContent(), explainQueryResult.getFormat(), explainQueryResult.getLevel(),
-				EXPLANATION_MAPPER.valueToTree(explainQueryResult.getStrategyDecisions()).toString());
+				decisions);
 		builder.end();
 	}
 

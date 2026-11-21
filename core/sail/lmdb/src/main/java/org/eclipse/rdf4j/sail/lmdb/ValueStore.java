@@ -5890,11 +5890,14 @@ public class ValueStore extends AbstractValueFactory implements BNodeIdResolver,
 	}
 
 	protected byte[] getData(long id) throws IOException {
+		LmdbQueryTelemetry telemetry = LmdbQueryTelemetry.current();
 		return readTransaction(env, (stack, txn) -> {
 			try (ValueOverlayRegistry.SnapshotLease overlay = borrowValueOverlay(txn)) {
 				if (overlay != null) {
 					byte[] hit = overlay.get(id);
 					if (hit != null) {
+						if (telemetry != null)
+							telemetry.overlayRecordRead(hit.length);
 						return hit;
 					}
 				}
@@ -5903,10 +5906,14 @@ public class ValueStore extends AbstractValueFactory implements BNodeIdResolver,
 			LmdbUtil.setMDBValData(key, id2data(idBuffer(stack), id).flip());
 			MDBVal value = MDBVal.calloc(stack);
 			if (mdb_get(txn, dbi, key, value) != MDB_SUCCESS) {
+				if (telemetry != null)
+					telemetry.dictionaryRead(-1);
 				return null;
 			}
 			byte[] bytes = new byte[Math.toIntExact(LmdbUtil.mdbValSize(value))];
 			LmdbUtil.copyMemoryToByteArray(LmdbUtil.mdbValDataAddress(value), bytes, bytes.length);
+			if (telemetry != null)
+				telemetry.dictionaryRead(bytes.length);
 			return bytes;
 		});
 	}
@@ -6602,6 +6609,7 @@ public class ValueStore extends AbstractValueFactory implements BNodeIdResolver,
 	@InternalUseOnly
 	public <T> T withData(long id, ValueDataReader<T> reader,
 			Function<ValueStoreRecordVisitor.Record, T> overlayReader) throws IOException {
+		LmdbQueryTelemetry telemetry = LmdbQueryTelemetry.current();
 		return readTransaction(env, (stack, txn) -> {
 			if (overlayReader != null) {
 				try (ValueOverlayRegistry.SnapshotLease overlay = borrowValueOverlay(txn)) {
@@ -6611,6 +6619,9 @@ public class ValueStore extends AbstractValueFactory implements BNodeIdResolver,
 
 							@Override
 							public void accept(ValueStoreRecordVisitor.Record record) {
+								if (telemetry != null)
+									telemetry.overlayRead(
+											(long) record.lexicalByteLength() + record.languageByteLength());
 								result = overlayReader.apply(record);
 							}
 						};
@@ -6624,8 +6635,12 @@ public class ValueStore extends AbstractValueFactory implements BNodeIdResolver,
 			LmdbUtil.setMDBValData(keyData, id2data(idBuffer(stack), id).flip());
 			MDBVal valueData = MDBVal.calloc(stack);
 			if (mdb_get(txn, dbi, keyData, valueData) == MDB_SUCCESS) {
+				if (telemetry != null)
+					telemetry.dictionaryRead(LmdbUtil.mdbValSize(valueData));
 				return reader.read(LmdbUtil.mdbValDataAddress(valueData), LmdbUtil.mdbValSize(valueData));
 			}
+			if (telemetry != null)
+				telemetry.dictionaryRead(-1);
 			return null;
 		});
 	}
@@ -6635,6 +6650,7 @@ public class ValueStore extends AbstractValueFactory implements BNodeIdResolver,
 	}
 
 	private byte[] getData(MemoryStack frameStack, long txn, long id) throws IOException {
+		LmdbQueryTelemetry telemetry = LmdbQueryTelemetry.current();
 		try (MemoryStack stack = frameStack.push()) {
 			// Both structs are fully written before use (the key by mv_data, the value by mdb_get), so no zeroing.
 			MDBVal keyData = MDBVal.malloc(stack);
@@ -6643,8 +6659,12 @@ public class ValueStore extends AbstractValueFactory implements BNodeIdResolver,
 			if (mdb_get(txn, dbi, keyData, valueData) == MDB_SUCCESS) {
 				byte[] valueBytes = new byte[valueData.mv_data().remaining()];
 				valueData.mv_data().get(valueBytes);
+				if (telemetry != null)
+					telemetry.dictionaryRead(valueBytes.length);
 				return valueBytes;
 			}
+			if (telemetry != null)
+				telemetry.dictionaryRead(-1);
 			return null;
 		}
 	}
@@ -7027,11 +7047,17 @@ public class ValueStore extends AbstractValueFactory implements BNodeIdResolver,
 		boolean currentEpoch = idx >= 0 && caches.revision == completedRevision(valueRevision);
 		CanonicalValueEntry previous = currentEpoch ? canonicalValue(caches, idx, id) : null;
 		if (previous != null && previous.id == id && previous.isCurrent()) {
+			LmdbQueryTelemetry telemetry = LmdbQueryTelemetry.current();
+			if (telemetry != null)
+				telemetry.valueCacheHit();
 			return outwardLookup ? previous.value : finishLazyLookup(previous.value, valueRevision, exposure);
 		}
 		LmdbValue cached = cachedValue(id, valueRevision);
 		if (cached != null) {
 			// Both the ID association and deferred nested children belong to this captured dictionary epoch.
+			LmdbQueryTelemetry telemetry = LmdbQueryTelemetry.current();
+			if (telemetry != null)
+				telemetry.valueCacheHit();
 			LmdbValue published = currentEpoch ? publishCanonicalValue(caches, idx, id, cached) : cached;
 			return outwardLookup ? published : finishLazyLookup(published, valueRevision, exposure);
 		}
@@ -7041,6 +7067,9 @@ public class ValueStore extends AbstractValueFactory implements BNodeIdResolver,
 	private LmdbValue createLazyValue(long id, ValueStoreRevision valueRevision, boolean outwardLookup,
 			ValueResolutionScope exposure, ValueCacheEpoch caches, boolean currentEpoch, int idx,
 			CanonicalValueEntry previous) throws IOException {
+		LmdbQueryTelemetry telemetry = LmdbQueryTelemetry.current();
+		if (telemetry != null)
+			telemetry.lazyHandle();
 		valueRevision = scopedRevision(valueRevision, exposure);
 		int idType = ValueIds.getIdType(id);
 		LmdbValue value = switch (idType) {
@@ -7243,6 +7272,9 @@ public class ValueStore extends AbstractValueFactory implements BNodeIdResolver,
 	}
 
 	boolean resolveValue(long id, LmdbValue value, ValueStoreRevision valueRevision) {
+		LmdbQueryTelemetry telemetry = LmdbQueryTelemetry.current();
+		if (telemetry != null)
+			telemetry.lazyResolution();
 		// unpack inlined values if possible
 		if (ValueIds.isInlined(id)) {
 			Literal unpacked = format.unpackLiteral(id, this);
@@ -7256,6 +7288,8 @@ public class ValueStore extends AbstractValueFactory implements BNodeIdResolver,
 		// Try to get from cache
 		LmdbValue cached = cachedValue(id, valueRevision);
 		if (cached != null) {
+			if (telemetry != null)
+				telemetry.valueCacheHit();
 			value.setFromInitializedValue(cached);
 			return true;
 		}
@@ -11466,6 +11500,9 @@ public class ValueStore extends AbstractValueFactory implements BNodeIdResolver,
 			}
 			};
 			snapshot.revision.track(value);
+			LmdbQueryTelemetry telemetry = LmdbQueryTelemetry.current();
+			if (telemetry != null)
+				telemetry.lazyHandle();
 			return value;
 		}
 	}
@@ -11508,6 +11545,9 @@ public class ValueStore extends AbstractValueFactory implements BNodeIdResolver,
 	}
 
 	boolean resolveValue(ReadSnapshot snapshot, long id, LmdbValue value) {
+		LmdbQueryTelemetry telemetry = LmdbQueryTelemetry.current();
+		if (telemetry != null)
+			telemetry.lazyResolution();
 		long stamp;
 		try {
 			stamp = txnManager.lockManager().readLock();

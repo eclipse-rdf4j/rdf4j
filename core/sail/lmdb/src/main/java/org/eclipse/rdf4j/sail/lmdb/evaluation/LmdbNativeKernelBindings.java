@@ -956,7 +956,7 @@ final class LmdbNativeKernelBindings {
 			}
 			BoundDomain nativeDomain = bindNativeDomain(probe, request);
 			NativeLmdbQuerySource.AdjacencyAccessObserver observer = row == null || row.runtimePlan == null ? null
-					: row.runtimePlan.adjacencyAccessAt(route + ".keyDomain[" + i + "]");
+					: row.runtimePlan.adjacencyAccessAt(row.source, route + ".keyDomain[" + i + "]");
 			if (nativeDomain != null) {
 				if (observer != null) {
 					observer.access(true,

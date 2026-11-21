@@ -37,6 +37,50 @@ import tools.jackson.databind.json.JsonMapper;
 
 class GenericPlanNodeTest {
 
+	@Test
+	void overlappingChildTimesNeverInventParentElapsedTime() {
+		GenericPlanNode parent = new GenericPlanNode("Join");
+		parent.setTotalTimeActual(8D);
+		GenericPlanNode child = new GenericPlanNode("StatementPattern");
+		child.setTotalTimeActual(24D);
+		parent.addPlans(child);
+		assertEquals(8D, parent.getTotalTimeActual());
+		assertNull(parent.getSelfTimeActual());
+	}
+
+	@Test
+	void telemetryDoesNotInventConfidenceOrCompareMillisecondsWithAbstractCost() {
+		GenericPlanNode node = new GenericPlanNode("Join");
+		node.setCostEstimate(10D);
+		node.setTotalTimeActual(100D);
+		GenericPlanNode child = new GenericPlanNode("StatementPattern");
+		child.setResultSizeEstimate(10D);
+		child.setResultSizeActual(100L);
+		node.addPlans(child);
+		node.applyExplanationLevel(Explanation.Level.Telemetry);
+
+		String text = node.toString();
+		assertFalse(text.contains("confidenceScoreActual="), text);
+		assertFalse(text.contains("sampleCountActual="), text);
+		assertFalse(text.contains("costErrorRatio="), text);
+	}
+
+	@Test
+	void telemetryHasARequestScopedStructuredProfile() throws ReflectiveOperationException {
+		var method = QueryExplanationContext.class.getMethod("telemetry");
+		assertNull(method.invoke(null));
+		try (var context = QueryExplanationContext.enter(Explanation.Level.Telemetry)) {
+			Object collector = method.invoke(null);
+			assertNotNull(collector);
+			try (var nested = QueryExplanationContext.enter(Explanation.Level.Executed)) {
+				assertNull(method.invoke(null));
+			}
+			assertTrue(collector == method.invoke(null));
+		}
+		assertNull(method.invoke(null));
+		assertNotNull(GenericPlanNode.class.getMethod("getExecutionProfile"));
+	}
+
 	private Locale defaultLocale;
 
 	@BeforeEach
@@ -172,7 +216,7 @@ class GenericPlanNodeTest {
 	}
 
 	@Test
-	void toStringDerivesEstimateStabilityStatsFromChildPlans() {
+	void childEstimateErrorsAreNotReportedAsStatisticalConfidence() {
 		GenericPlanNode node = new GenericPlanNode("Join");
 		node.setCostEstimate(1.0);
 
@@ -188,10 +232,10 @@ class GenericPlanNodeTest {
 
 		String actual = node.toString();
 
-		assertTrue(actual.contains("sampleCountActual=2"), actual);
-		assertTrue(actual.contains("varianceActual="), actual);
-		assertTrue(actual.contains("stddevActual="), actual);
-		assertTrue(actual.contains("confidenceScoreActual="), actual);
+		assertFalse(actual.contains("sampleCountActual="), actual);
+		assertFalse(actual.contains("varianceActual="), actual);
+		assertFalse(actual.contains("stddevActual="), actual);
+		assertFalse(actual.contains("confidenceScoreActual="), actual);
 	}
 
 	@Test
@@ -504,7 +548,7 @@ class GenericPlanNodeTest {
 	}
 
 	@Test
-	void totalTimeActualPreservesRecordedSelfTimeWhenChildTotalsAreLarger() {
+	void totalTimeActualPreservesObservedParentWhenChildTotalsAreLarger() {
 		GenericPlanNode parent = new GenericPlanNode("Join");
 		parent.setTotalTimeActual(8.0);
 
@@ -514,10 +558,10 @@ class GenericPlanNodeTest {
 		right.setTotalTimeActual(40.0);
 		parent.addPlans(left, right);
 
-		assertEquals(72.0, parent.getTotalTimeActual());
-		assertEquals(8.0, parent.getSelfTimeActual());
+		assertEquals(8.0, parent.getTotalTimeActual());
+		assertNull(parent.getSelfTimeActual());
 		String actual = parent.toString();
-		assertTrue(actual.contains("Join (totalTimeActual=72.0ms, selfTimeActual=8.0ms)"), actual);
+		assertTrue(actual.contains("Join (totalTimeActual=8.0ms)"), actual);
 	}
 
 	@Test
@@ -561,7 +605,7 @@ class GenericPlanNodeTest {
 		assertTrue(left.getSourceRowsScannedActual() > 0);
 		String telemetry = parent.toString();
 		assertTrue(telemetry.contains("sampleCountActual="), telemetry);
-		assertTrue(telemetry.contains("varianceActual="), telemetry);
+		assertFalse(telemetry.contains("varianceActual="), telemetry);
 	}
 
 	@Test

@@ -184,7 +184,7 @@ final class NativeAliasJoinMemoPlan implements SlotPlan {
 			this.keySlots = keySlots;
 			this.replaySlots = replaySlots;
 			this.ledger = row.memoryScope.ledger(LmdbNativeHashJoin.queryMemory());
-			this.memory = KernelRuntime.AggregateMemory.forLedger(ledger);
+			this.memory = KernelRuntime.AggregateMemory.forLedger(ledger, "alias-join-memo");
 			boolean canSweep = canSweep(row, left, right, keySlots);
 			long scratchBytes = canSweep ? 1024L + (long) row.slots.length * 160L : 0L;
 			this.admitted = memory.tryReserve(OWNER_BYTES + (long) keySlots.length * Long.BYTES);

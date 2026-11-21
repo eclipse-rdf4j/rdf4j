@@ -32,6 +32,7 @@ import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.query.algebra.VariableScopeChange;
 import org.eclipse.rdf4j.query.explanation.Explanation;
 import org.eclipse.rdf4j.query.explanation.GenericPlanNode;
+import org.eclipse.rdf4j.query.explanation.QueryExplanationContext;
 import org.eclipse.rdf4j.query.explanation.StrategyDecision;
 import org.eclipse.rdf4j.query.explanation.TelemetryMetricNames;
 
@@ -84,6 +85,10 @@ public class QueryModelTreeToGenericPlanNode extends AbstractQueryModelVisitor<R
 		if (top != null) {
 			applyPhysicalPlanPrelude();
 			top.applyExplanationLevel(level);
+			if (level.includesRuntimeTelemetry() && top.getExecutionProfile() == null
+					&& QueryExplanationContext.telemetry() != null) {
+				top.setExecutionProfile(QueryExplanationContext.telemetry().snapshot());
+			}
 		}
 		return top;
 	}
@@ -126,8 +131,13 @@ public class QueryModelTreeToGenericPlanNode extends AbstractQueryModelVisitor<R
 	}
 
 	private GenericPlanNode buildPlanNode(QueryModelNode node) {
+		return buildPlanNode(node, "0");
+	}
+
+	private GenericPlanNode buildPlanNode(QueryModelNode node, String logicalPath) {
 		GenericPlanNode genericPlanNode = new GenericPlanNode(node.getSignature());
-		if (level == Explanation.Level.Optimized) {
+		genericPlanNode.setLogicalPath(logicalPath);
+		if (level.includesEvaluationAnnotations()) {
 			Object report = node.getQueryModelMetadata(StrategyDecision.METADATA_KEY);
 			if (report instanceof List<?> decisions) {
 				genericPlanNode.setStrategyDecisions(decisions.stream()
@@ -183,8 +193,9 @@ public class QueryModelTreeToGenericPlanNode extends AbstractQueryModelVisitor<R
 		}
 		genericPlanNode.setTotalTimeActual(node.getTotalTimeNanosActual() / 1_000_000.0);
 
-		for (QueryModelNode child : directChildren(node)) {
-			genericPlanNode.addPlans(buildPlanNode(child));
+		List<QueryModelNode> children = directChildren(node);
+		for (int i = 0; i < children.size(); i++) {
+			genericPlanNode.addPlans(buildPlanNode(children.get(i), logicalPath + "/" + i));
 		}
 
 		return genericPlanNode;
@@ -192,7 +203,7 @@ public class QueryModelTreeToGenericPlanNode extends AbstractQueryModelVisitor<R
 
 	private long runtimeTelemetryMetric(long value) {
 		if (level.includesRuntimeTelemetry()) {
-			return Math.max(0, value);
+			return value;
 		}
 		return -1;
 	}

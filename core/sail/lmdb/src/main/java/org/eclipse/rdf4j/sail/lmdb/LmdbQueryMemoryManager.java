@@ -86,17 +86,20 @@ public final class LmdbQueryMemoryManager {
 		return peakUsedBytes;
 	}
 
-	private boolean makeRoom(QueryLedger query, long additionalBytes, Reservation excluded) {
+	private boolean makeRoom(QueryLedger query, long additionalBytes, Reservation excluded,
+			LmdbQueryTelemetry.MemoryOwner telemetryOwner) {
 		if (additionalBytes > perQueryMaxBytes || additionalBytes > maxBytes) {
+			query.refused(additionalBytes, false, telemetryOwner);
 			return false;
 		}
 		while (!fits(query, additionalBytes)) {
 			boolean queryLimitExceeded = additionalBytes > perQueryMaxBytes - query.usedBytes;
 			Reservation candidate = oldestReclaimable(queryLimitExceeded ? query : null, excluded);
 			if (candidate == null) {
+				query.refused(additionalBytes, false, telemetryOwner);
 				return false;
 			}
-			if (candidate.reclaim()) {
+			if (candidate.reclaim(query, telemetryOwner, queryLimitExceeded, additionalBytes > maxBytes - usedBytes)) {
 				candidate.releaseAll();
 			} else {
 				candidate.disableReclamation();
@@ -121,10 +124,14 @@ public final class LmdbQueryMemoryManager {
 		return null;
 	}
 
-	private void account(QueryLedger query, long bytes) {
+	private void account(QueryLedger query, long bytes, LmdbQueryTelemetry.MemoryOwner telemetryOwner) {
 		usedBytes += bytes;
 		query.usedBytes += bytes;
 		peakUsedBytes = Math.max(peakUsedBytes, usedBytes);
+		if (query.telemetry != null) {
+			query.telemetry.memoryReserved(bytes);
+			telemetryOwner.reserved(bytes);
+		}
 	}
 
 	private void touch(Reservation reservation) {
@@ -162,20 +169,52 @@ public final class LmdbQueryMemoryManager {
 	public final class QueryLedger implements AutoCloseable {
 
 		private final Set<Reservation> reservations = new LinkedHashSet<>();
+		private final LmdbQueryTelemetry telemetry;
 		private long usedBytes;
 		private boolean closed;
 
+		public QueryLedger() {
+			telemetry = LmdbQueryTelemetry.current();
+			if (telemetry != null) {
+				telemetry.memoryOpened(perQueryMaxBytes, maxBytes);
+			}
+		}
+
+		private void refused(long bytes, boolean closed, LmdbQueryTelemetry.MemoryOwner telemetryOwner) {
+			if (telemetry != null) {
+				boolean queryLimit = !closed && bytes > perQueryMaxBytes - usedBytes;
+				boolean globalLimit = !closed && bytes > maxBytes - LmdbQueryMemoryManager.this.usedBytes;
+				telemetry.memoryRefused(queryLimit, globalLimit, closed);
+				telemetryOwner.refused(queryLimit, globalLimit, closed);
+			}
+		}
+
 		public Reservation reserve(long bytes, Reclaimable reclaimable) {
+			return reserve(bytes, reclaimable, null);
+		}
+
+		/**
+		 * Reserves capacity with a stable operator-role label for Telemetry. Repeated instances of the same role share
+		 * one bounded query-local counter; a missing label remains explicitly unattributed. The label does not change
+		 * admission or reclamation policy, and is not retained when Telemetry is disabled.
+		 */
+		public Reservation reserve(long bytes, Reclaimable reclaimable, String ownerLabel) {
 			if (bytes < 0L) {
 				throw new IllegalArgumentException("Reservation size must not be negative");
 			}
+			LmdbQueryTelemetry.MemoryOwner telemetryOwner = telemetry == null ? null
+					: telemetry.memoryOwner(ownerLabel);
 			synchronized (LmdbQueryMemoryManager.this) {
-				if (closed || !makeRoom(this, bytes, null)) {
+				if (closed) {
+					refused(bytes, true, telemetryOwner);
 					return null;
 				}
-				Reservation reservation = new Reservation(this, bytes, reclaimable);
+				if (!makeRoom(this, bytes, null, telemetryOwner)) {
+					return null;
+				}
+				Reservation reservation = new Reservation(this, bytes, reclaimable, telemetryOwner);
 				reservations.add(reservation);
-				account(this, bytes);
+				account(this, bytes, telemetryOwner);
 				touch(reservation);
 				return reservation;
 			}
@@ -212,12 +251,15 @@ public final class LmdbQueryMemoryManager {
 	public final class Reservation implements AutoCloseable {
 
 		private final QueryLedger owner;
+		private final LmdbQueryTelemetry.MemoryOwner telemetryOwner;
 		private Reclaimable reclaimable;
 		private long bytes;
 		private boolean closed;
 
-		private Reservation(QueryLedger owner, long bytes, Reclaimable reclaimable) {
+		private Reservation(QueryLedger owner, long bytes, Reclaimable reclaimable,
+				LmdbQueryTelemetry.MemoryOwner telemetryOwner) {
 			this.owner = owner;
+			this.telemetryOwner = telemetryOwner;
 			this.bytes = bytes;
 			this.reclaimable = reclaimable;
 		}
@@ -227,11 +269,15 @@ public final class LmdbQueryMemoryManager {
 				throw new IllegalArgumentException("Growth size must not be negative");
 			}
 			synchronized (LmdbQueryMemoryManager.this) {
-				if (closed || owner.closed || !makeRoom(owner, additionalBytes, this)) {
+				if (closed || owner.closed) {
+					owner.refused(additionalBytes, true, telemetryOwner);
+					return false;
+				}
+				if (!makeRoom(owner, additionalBytes, this, telemetryOwner)) {
 					return false;
 				}
 				bytes += additionalBytes;
-				account(owner, additionalBytes);
+				account(owner, additionalBytes, telemetryOwner);
 				touch(this);
 				return true;
 			}
@@ -262,8 +308,39 @@ public final class LmdbQueryMemoryManager {
 			}
 		}
 
-		private boolean reclaim() {
-			return reclaimable != null && (reclaimable.spill() || reclaimable.shed());
+		private boolean reclaim(QueryLedger requester, LmdbQueryTelemetry.MemoryOwner requesterOwner,
+				boolean queryPressure, boolean globalPressure) {
+			if (requester.telemetry == null && owner.telemetry == null) {
+				return reclaimable != null && (reclaimable.spill() || reclaimable.shed());
+			}
+			long started = System.nanoTime();
+			long before = bytes;
+			boolean spilled = false;
+			boolean shed = false;
+			try {
+				if (reclaimable != null) {
+					spilled = reclaimable.spill();
+					if (!spilled)
+						shed = reclaimable.shed();
+				}
+				return spilled || shed;
+			} finally {
+				long reclaimedBytes = spilled || shed ? before : Math.max(0, before - bytes);
+				long nanos = System.nanoTime() - started;
+				if (requester.telemetry != null) {
+					requester.telemetry.reclaimed(nanos, reclaimedBytes,
+							owner.telemetry != requester.telemetry, spilled, shed);
+					requesterOwner.reclaimed(nanos, reclaimedBytes, owner.telemetry != requester.telemetry,
+							spilled, shed, queryPressure, globalPressure);
+				}
+				if (telemetryOwner != null) {
+					telemetryOwner.victim(reclaimedBytes, owner.telemetry != requester.telemetry, spilled, shed);
+				}
+				if (owner.telemetry != null && owner.telemetry != requester.telemetry
+						&& (spilled || shed || before > bytes)) {
+					owner.telemetry.reclaimedByOtherQuery();
+				}
+			}
 		}
 
 		private void disableReclamation() {
@@ -282,6 +359,10 @@ public final class LmdbQueryMemoryManager {
 			bytes -= releasedBytes;
 			owner.usedBytes -= releasedBytes;
 			usedBytes -= releasedBytes;
+			if (owner.telemetry != null) {
+				owner.telemetry.memoryReleased(releasedBytes);
+				telemetryOwner.released(releasedBytes);
+			}
 			if (bytes == 0L) {
 				closed = true;
 				reclaimable = null;

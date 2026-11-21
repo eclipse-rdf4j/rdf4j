@@ -211,7 +211,7 @@ final class LmdbNativeAccumulateJoin implements BatchCorrelatedJoinProvider {
 			outerRows = new ArrayList<>();
 			perRowRows = new ArrayList<>();
 			ledger = LmdbQueryMemoryManager.process().openQuery();
-			reservation = ledger.reserve(GROW_STEP * ROW_BYTES, null);
+			reservation = ledger.reserve(GROW_STEP * ROW_BYTES, null, "accumulate-join");
 			if (reservation == null) {
 				overflow = true;
 			}

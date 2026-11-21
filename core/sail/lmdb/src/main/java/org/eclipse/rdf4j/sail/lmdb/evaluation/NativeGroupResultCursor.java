@@ -228,7 +228,7 @@ final class NativeGroupResultCursor implements NativeResultCursor {
 		row.encounterOrderRequired |= !allowsReorderedGrouping(iteration);
 		if (streaming) {
 			streamingMemory = KernelRuntime.AggregateMemory
-					.forLedger(row.memoryScope.ledger(LmdbNativeHashJoin.queryMemory()));
+					.forLedger(row.memoryScope.ledger(LmdbNativeHashJoin.queryMemory()), "streaming-group-state");
 			streamingMemory.reserve(Math.addExact(512L, Math.multiplyExact(128L, iteration.aggregates.length)));
 			input = openInput(plan);
 			LmdbNativeExplain.recordExecutionPath(iteration.explainTarget, plan.tag());
@@ -421,7 +421,7 @@ final class NativeGroupResultCursor implements NativeResultCursor {
 		}
 		if (resultMemory == null) {
 			resultMemory = KernelRuntime.AggregateMemory.forLedger(
-					row.memoryScope.ledger(LmdbNativeHashJoin.queryMemory()));
+					row.memoryScope.ledger(LmdbNativeHashJoin.queryMemory()), "group-result-values");
 		}
 		resultMemory.reserve(bytes);
 		resultBytes = bytes;

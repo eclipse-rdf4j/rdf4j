@@ -16,10 +16,15 @@ import java.lang.reflect.Constructor;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.security.MessageDigest;
+import java.security.NoSuchAlgorithmException;
+import java.util.ArrayList;
 import java.util.Collections;
+import java.util.HexFormat;
 import java.util.IdentityHashMap;
 import java.util.Iterator;
 import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.CountDownLatch;
@@ -33,6 +38,12 @@ import java.util.function.Supplier;
 
 import org.codehaus.janino.SimpleCompiler;
 import org.eclipse.rdf4j.common.annotation.Experimental;
+import org.eclipse.rdf4j.query.explanation.QueryExecutionProfile;
+import org.eclipse.rdf4j.query.explanation.QueryExecutionProfile.Contribution;
+import org.eclipse.rdf4j.query.explanation.QueryExecutionProfile.Metric;
+import org.eclipse.rdf4j.query.explanation.QueryExecutionProfile.Stage;
+import org.eclipse.rdf4j.query.explanation.QueryExplanationContext;
+import org.eclipse.rdf4j.sail.lmdb.LmdbQueryTelemetry;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.codegen.JaninoKernel;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.codegen.KernelCancelledException;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.codegen.KernelContext;
@@ -132,7 +143,39 @@ final class LmdbNativeJaninoCodegen {
 
 	static KernelAttempt kernelAttempt(String shapeKey, String className, Supplier<String> sourceSupplier,
 			long observedRows, String route) {
+		QueryExecutionProfile.Collector collector = QueryExplanationContext.telemetry();
+		if (collector == null) {
+			LmdbQueryTelemetry workerOwner = LmdbQueryTelemetry.current();
+			collector = workerOwner == null ? null : workerOwner.collector();
+		}
+		CodegenTelemetry telemetry = collector == null ? null
+				: collector.sourceOnce("lmdb.codegen", CodegenTelemetry::new);
+		if (telemetry == null) {
+			return kernelAttempt(shapeKey, className, sourceSupplier, observedRows, route, null);
+		}
+		CodegenLookup lookup = new CodegenLookup(shapeKey, route, observedRows);
+		try {
+			KernelAttempt attempt = kernelAttempt(shapeKey, className, sourceSupplier, observedRows, route, lookup);
+			lookup.availability = attempt.kernel() != null ? "compiled"
+					: attempt.declineReason().startsWith("COMPILE_PENDING[") ? "pending" : "declined";
+			lookup.reason = attempt.declineReason();
+			return attempt;
+		} catch (RuntimeException | Error failure) {
+			lookup.availability = "failed";
+			lookup.reason = failure.getClass().getSimpleName() + ": " + failure.getMessage();
+			throw failure;
+		} finally {
+			lookup.elapsedNanos = System.nanoTime() - lookup.startedAt;
+			telemetry.record(lookup);
+		}
+	}
+
+	private static KernelAttempt kernelAttempt(String shapeKey, String className, Supplier<String> sourceSupplier,
+			long observedRows, String route, CodegenLookup lookup) {
 		long threshold = Long.getLong(THRESHOLD_ROWS_PROPERTY, DEFAULT_THRESHOLD_ROWS);
+		if (lookup != null) {
+			lookup.thresholdRows = threshold;
+		}
 		if (!enabled()) {
 			return new KernelAttempt(null, "FEATURE_DISABLED[" + ENABLED_PROPERTY + "=false,route=" + route + "]");
 		}
@@ -158,19 +201,44 @@ final class LmdbNativeJaninoCodegen {
 //					System.out.println("Janino kernel cache hit for shape  " + shapeKey);
 					CACHE_HITS.incrementAndGet();
 				}
+				if (lookup != null) {
+					lookup.cacheState = created ? "cold"
+							: entry.constructor != null ? "warm"
+									: entry.ready.getCount() != 0 ? "pending" : "failed";
+				}
 			}
 			if (created) {
 				PENDING_COMPILES.incrementAndGet();
 				if (synchronous()) {
 					compile(entry, shapeKey, className, sourceSupplier);
+					if (lookup != null) {
+						lookup.synchronous = entry.timings;
+					}
 				} else {
+					if (lookup != null) {
+						lookup.background = entry;
+					}
 					schedule(entry, shapeKey, className, sourceSupplier);
 				}
 			}
 			if (synchronous()) {
-				awaitReady(entry.ready);
+				long started = lookup == null ? 0L : System.nanoTime();
+				try {
+					awaitReady(entry.ready);
+				} finally {
+					if (lookup != null) {
+						lookup.waitNanos = System.nanoTime() - started;
+					}
+				}
 			}
-			return instantiateAttempt(entry, route);
+			long started = lookup == null ? 0L : System.nanoTime();
+			try {
+				return instantiateAttempt(entry, route);
+			} finally {
+				if (lookup != null) {
+					lookup.instantiationNanos = System.nanoTime() - started;
+				}
+			}
 		} finally {
 			COMPILER_LIFECYCLE_READ.unlock();
 		}
@@ -300,15 +368,19 @@ final class LmdbNativeJaninoCodegen {
 
 	private static void compile(Entry entry, String shapeKey, String className, Supplier<String> sourceSupplier) {
 		long start = System.nanoTime();
+		long sourceFinished = -1;
+		long compilerFinished = -1;
 		String source = null;
 		try {
 			source = sourceSupplier.get();
+			sourceFinished = System.nanoTime();
 			SimpleCompiler janino = new SimpleCompiler();
 			// Generated kernels use Java 8 interface static methods; keep the source and class-file contract explicit.
 			janino.setSourceVersion(8);
 			janino.setTargetVersion(8);
 			janino.setParentClassLoader(JaninoKernel.class.getClassLoader());
 			janino.cook(source);
+			compilerFinished = System.nanoTime();
 			Class<?> kernelClass = janino.getClassLoader().loadClass(className);
 			Constructor<?> constructor = kernelClass.getDeclaredConstructor();
 			// Sanity: the generated class must implement the SPI before we publish it.
@@ -332,7 +404,12 @@ final class LmdbNativeJaninoCodegen {
 			logger.debug("Janino kernel compile failed for shape {}: {}", shapeKey, problem.toString());
 			// The failed entry stays cached so the shape is not recompiled on every call; callers fall back.
 		} finally {
-			COMPILE_NANOS.addAndGet(System.nanoTime() - start);
+			long finished = System.nanoTime();
+			entry.timings = new CompilationTiming(finished - start,
+					sourceFinished < 0 ? finished - start : sourceFinished - start,
+					sourceFinished < 0 ? 0 : (compilerFinished < 0 ? finished : compilerFinished) - sourceFinished,
+					compilerFinished < 0 ? 0 : finished - compilerFinished);
+			COMPILE_NANOS.addAndGet(finished - start);
 			PENDING_COMPILES.decrementAndGet();
 			entry.ready.countDown();
 		}
@@ -503,9 +580,167 @@ final class LmdbNativeJaninoCodegen {
 		volatile String compileFailure;
 		volatile String instantiationFailure;
 		volatile Throwable compileProblem;
+		volatile CompilationTiming timings;
 
 		private Entry(String shapeKey) {
 			this.shapeKey = shapeKey;
+		}
+	}
+
+	/** Published once with the cache entry; a background duration is never charged to query-thread execution. */
+	private record CompilationTiming(long totalNanos, long sourceNanos, long compilerNanos, long publicationNanos) {
+	}
+
+	private static final class CodegenLookup {
+		final long startedAt = System.nanoTime();
+		final String shape;
+		final String route;
+		final long observedRows;
+		String cacheState = "not consulted";
+		String availability;
+		String reason;
+		long thresholdRows;
+		long elapsedNanos;
+		long waitNanos;
+		long instantiationNanos;
+		CompilationTiming synchronous;
+		Entry background;
+
+		CodegenLookup(String shape, String route, long observedRows) {
+			this.shape = shape;
+			this.route = route == null ? "unspecified" : route;
+			this.observedRows = observedRows;
+		}
+	}
+
+	/** Bounded per-query aggregation at kernel-open boundaries, never inside generated row loops. */
+	private static final class CodegenTelemetry implements Supplier<Contribution> {
+		private final Map<String, CodegenSummary> summaries = new LinkedHashMap<>();
+		private long omittedLookups;
+
+		synchronized void record(CodegenLookup lookup) {
+			String key = lookup.route + '\0' + lookup.shape;
+			CodegenSummary summary = summaries.get(key);
+			if (summary == null) {
+				if (summaries.size() >= 64) {
+					omittedLookups++;
+					return;
+				}
+				summary = new CodegenSummary(lookup);
+				summaries.put(key, summary);
+			}
+			summary.add(lookup);
+		}
+
+		@Override
+		public synchronized Contribution get() {
+			List<Stage> stages = new ArrayList<>(summaries.size() + 1);
+			summaries.values().forEach(summary -> stages.add(summary.snapshot()));
+			if (omittedLookups != 0) {
+				stages.add(new Stage("codegen/omitted", null, null, "CodeGeneration", "native", null, "PARTIAL",
+						Map.of("omittedLookups", Metric.count(omittedLookups, "lookups")),
+						Map.of("reason", "64 distinct shape/route summaries retained")));
+			}
+			return new Contribution(stages, List.of(), List.of());
+		}
+	}
+
+	private static final class CodegenSummary {
+		final String id;
+		final String route;
+		final List<Entry> background = new ArrayList<>();
+		String cacheState;
+		String availability;
+		String lastReason;
+		long lookups, warmHits, coldMisses, pendingReturns, declinedReturns;
+		long elapsedNanos, waitNanos, instantiationNanos, synchronousNanos, sourceNanos, compilerNanos,
+				publicationNanos;
+		long observedRows, thresholdRows, omittedBackgroundCompiles;
+
+		CodegenSummary(CodegenLookup lookup) {
+			route = lookup.route;
+			try {
+				id = "codegen/" + route + '/' + HexFormat.of()
+						.formatHex(MessageDigest.getInstance("SHA-256")
+								.digest(lookup.shape.getBytes(StandardCharsets.UTF_8)));
+			} catch (NoSuchAlgorithmException impossible) {
+				throw new IllegalStateException("Java requires SHA-256", impossible);
+			}
+		}
+
+		void add(CodegenLookup lookup) {
+			lookups++;
+			warmHits += "warm".equals(lookup.cacheState) ? 1 : 0;
+			coldMisses += "cold".equals(lookup.cacheState) ? 1 : 0;
+			pendingReturns += "pending".equals(lookup.availability) ? 1 : 0;
+			declinedReturns += "declined".equals(lookup.availability) || "failed".equals(lookup.availability) ? 1 : 0;
+			cacheState = combine(cacheState, lookup.cacheState);
+			availability = combine(availability, lookup.availability);
+			lastReason = lookup.reason;
+			observedRows = lookup.observedRows;
+			thresholdRows = lookup.thresholdRows;
+			elapsedNanos += lookup.elapsedNanos;
+			waitNanos += lookup.waitNanos;
+			instantiationNanos += lookup.instantiationNanos;
+			if (lookup.synchronous != null) {
+				synchronousNanos += lookup.synchronous.totalNanos;
+				sourceNanos += lookup.synchronous.sourceNanos;
+				compilerNanos += lookup.synchronous.compilerNanos;
+				publicationNanos += lookup.synchronous.publicationNanos;
+			}
+			if (lookup.background != null) {
+				if (background.size() < 8) {
+					background.add(lookup.background);
+				} else {
+					omittedBackgroundCompiles++;
+				}
+			}
+		}
+
+		private static String combine(String previous, String current) {
+			return previous == null || previous.equals(current) ? current : "mixed";
+		}
+
+		Stage snapshot() {
+			Map<String, Metric> metrics = new LinkedHashMap<>();
+			metrics.put("lookups", Metric.count(lookups, "lookups"));
+			metrics.put("warmHits", Metric.count(warmHits, "lookups"));
+			metrics.put("coldMisses", Metric.count(coldMisses, "lookups"));
+			metrics.put("pendingReturns", Metric.count(pendingReturns, "lookups"));
+			metrics.put("declinedReturns", Metric.count(declinedReturns, "lookups"));
+			metrics.put("lookupNanos", Metric.nanos(elapsedNanos));
+			metrics.put("compileWaitNanos", Metric.nanos(waitNanos));
+			metrics.put("instantiationNanos", Metric.nanos(instantiationNanos));
+			metrics.put("synchronousCompileNanos", Metric.nanos(synchronousNanos));
+			metrics.put("sourceGenerationNanos", Metric.nanos(sourceNanos));
+			metrics.put("compilerNanos", Metric.nanos(compilerNanos));
+			metrics.put("classPublicationNanos", Metric.nanos(publicationNanos));
+			long backgroundNanos = 0;
+			int pending = 0;
+			for (Entry entry : background) {
+				CompilationTiming timing = entry.timings;
+				if (timing == null) {
+					pending++;
+				} else {
+					backgroundNanos += timing.totalNanos;
+				}
+			}
+			metrics.put("backgroundCompileNanos", new Metric(backgroundNanos, null, "ns", "measured",
+					pending == 0 && omittedBackgroundCompiles == 0 ? "complete" : "partial", "compiler-thread"));
+			metrics.put("backgroundCompilesPending", Metric.count(pending, "compiles"));
+			metrics.put("omittedBackgroundCompiles", Metric.count(omittedBackgroundCompiles, "compiles"));
+			Map<String, String> properties = new LinkedHashMap<>();
+			properties.put("cacheStateAtLookup", cacheState);
+			properties.put("availabilityAtReturn", availability);
+			properties.put("lastAdmissionRowHint", Long.toString(observedRows));
+			properties.put("rowHintOrigin", "shape admission hint");
+			properties.put("thresholdRows", Long.toString(thresholdRows));
+			properties.put("timingContract",
+					"Lookup includes synchronous compilation, wait and instantiation; background compilation is separate compiler-thread work triggered by this query.");
+			if (lastReason != null) {
+				properties.put("lastDeclineReason", lastReason);
+			}
+			return new Stage(id, null, null, "CodeGeneration", "native", route, "COMPLETE", metrics, properties);
 		}
 	}
 

@@ -168,8 +168,8 @@ final class NativeBindingSetProjectionStep implements NativeResultStep, LmdbNati
 	}
 
 	@Override
-	public String nativePhysicalPlan() {
-		String inner = arg instanceof LmdbNativePhysicalPlan physical ? physical.nativePhysicalPlan()
+	public String nativePhysicalPlan(boolean resolveRdfTerms) {
+		String inner = arg instanceof LmdbNativePhysicalPlan physical ? physical.nativePhysicalPlan(resolveRdfTerms)
 				: arg.getClass().getSimpleName();
 		return "NativeProjection(arg=" + inner + ")";
 	}

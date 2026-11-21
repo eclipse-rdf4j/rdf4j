@@ -140,11 +140,14 @@ final class LmdbNativeDispatchLoop<C, T> {
 
 	/** Starts this run's observation, reporting at once when opening was the whole run. */
 	private LmdbNativeCostObservation observation(LmdbNativeCandidate<T> chosen, double quotedExpected,
-			long openStarted) {
-		if (advice == null) {
+			long openStarted, LmdbNativeDiagnosticLedger.Attempt diagnostic) {
+		if (advice == null && diagnostic == null) {
 			return null;
 		}
-		LmdbNativeCostObservation observation = advice.observation(chosen.id(), chosen.quote(), quotedExpected);
+		LmdbNativeCostObservation observation = advice == null
+				? new LmdbNativeCostObservation(null, null, quotedExpected)
+				: advice.observation(chosen.id(), chosen.quote(), quotedExpected);
+		observation.diagnostic(diagnostic);
 		observation.opened(System.nanoTime() - openStarted);
 		if (eager) {
 			observation.completed();
@@ -390,6 +393,7 @@ final class LmdbNativeDispatchLoop<C, T> {
 			admitted.admit(context);
 			recordProposalCosts(admitted);
 			if (!admitted.applyForcing()) {
+				recordNoCandidate(admitted, "forced");
 				if (point.forcedMandatory()) {
 					throw forcedUnavailable(forcedDecline(admitted), false);
 				}
@@ -428,12 +432,17 @@ final class LmdbNativeDispatchLoop<C, T> {
 						ranking.reason());
 				retry = true;
 				startAttemptOnSharedRow();
-				long openStarted = advice == null ? 0L : System.nanoTime();
+				LmdbNativeDiagnosticLedger diagnosticLedger = LmdbNativeExplain.diagnostics(explainTarget);
+				LmdbNativeDiagnosticLedger.Attempt diagnostic = diagnosticLedger == null ? null
+						: diagnosticLedger.begin(point, record, sharedRow == null ? 0L : sharedRow.boundMask(),
+								chosen.quote().outputRows());
+				long openStarted = advice == null && diagnostic == null ? 0L : System.nanoTime();
 				T value;
 				try {
 					value = forcedTag == null || !admitted.forcingApplies ? chosen.opener().open()
 							: openCapturingDeclines(chosen, admitted);
 				} catch (KernelRuntime.AllocationDeniedException refused) {
+					finishDiagnostic(diagnostic, "BUDGET_REFUSED", BUDGET_DECLINE, openStarted);
 					if (!handlesBudgetRefusals) {
 						throw refused;
 					}
@@ -444,6 +453,9 @@ final class LmdbNativeDispatchLoop<C, T> {
 					budgetRefusal = refused;
 					value = null;
 					recordBudgetDecline(chosen.id(), admitted);
+				} catch (IOException | RuntimeException | Error failure) {
+					finishDiagnostic(diagnostic, "FAILED", failure.getClass().getSimpleName(), openStarted);
+					throw failure;
 				}
 				if (value != null) {
 					int winner = ranking.winner();
@@ -456,8 +468,9 @@ final class LmdbNativeDispatchLoop<C, T> {
 							listener.selected(explainTarget, label, chosen.id(), record);
 						}
 						return new Selection<>(value, chosen.id(), ranking.expectedNanos()[winner], record,
-								observation(chosen, ranking.quotedExpectedNanos()[winner], openStarted));
+								observation(chosen, ranking.quotedExpectedNanos()[winner], openStarted, diagnostic));
 					} catch (RuntimeException | Error failure) {
+						finishDiagnostic(diagnostic, "FAILED", failure.getClass().getSimpleName(), openStarted);
 						// The result has not been handed to the caller if cleanup or observation fails.
 						if (value instanceof AutoCloseable resource) {
 							KernelRuntime.rethrowCloseFailureIfNotPrimary(
@@ -466,6 +479,8 @@ final class LmdbNativeDispatchLoop<C, T> {
 						throw failure;
 					}
 				}
+				finishDiagnostic(diagnostic, "DECLINED", admitted.declines.getOrDefault(chosen.id(),
+						"opener returned no executable"), openStarted);
 				if (forcedTag != null && forcedTagMatches(chosen.id())) {
 					forcedReturnedNull = true;
 				}
@@ -478,6 +493,9 @@ final class LmdbNativeDispatchLoop<C, T> {
 				}
 			}
 			restoreSharedRow();
+			if (rankingRound == 0) {
+				recordNoCandidate(admitted, mode);
+			}
 			if (forcedTag != null && admitted.forcingApplies && point.forcedMandatory()) {
 				throw forcedUnavailable(forcedDecline(admitted), forcedReturnedNull);
 			}
@@ -489,6 +507,22 @@ final class LmdbNativeDispatchLoop<C, T> {
 		} catch (IOException | RuntimeException | Error failure) {
 			admitted.releaseAll(failure);
 			throw failure;
+		}
+	}
+
+	private static void finishDiagnostic(LmdbNativeDiagnosticLedger.Attempt diagnostic, String status, String reason,
+			long openStarted) {
+		if (diagnostic != null) {
+			long elapsed = Math.max(0L, System.nanoTime() - openStarted);
+			diagnostic.opened(elapsed);
+			diagnostic.finish(status, reason, elapsed, 0L, -1L, false);
+		}
+	}
+
+	private void recordNoCandidate(Admitted admitted, String mode) {
+		LmdbNativeDiagnosticLedger ledger = LmdbNativeExplain.diagnostics(explainTarget);
+		if (ledger != null) {
+			ledger.rejected(admitted.record(rank(admitted.candidates), mode));
 		}
 	}
 

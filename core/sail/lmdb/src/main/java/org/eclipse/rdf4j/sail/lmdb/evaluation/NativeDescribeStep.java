@@ -101,8 +101,9 @@ final class NativeDescribeStep implements QueryEvaluationStep, LmdbNativePhysica
 	}
 
 	@Override
-	public String nativePhysicalPlan() {
-		String childPlan = child instanceof LmdbNativePhysicalPlan physical ? physical.nativePhysicalPlan()
+	public String nativePhysicalPlan(boolean resolveRdfTerms) {
+		String childPlan = child instanceof LmdbNativePhysicalPlan physical
+				? physical.nativePhysicalPlan(resolveRdfTerms)
 				: child.getClass().getSimpleName();
 		return "NativeDescribeStep(child=" + childPlan + ")";
 	}

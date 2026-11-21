@@ -122,7 +122,7 @@ final class LmdbNativeKernelScanner implements KernelScanner, Closeable {
 	public KernelQuadCursor open(int scanId, long subj, long pred, long obj, long context) {
 		try {
 			NativeLmdbQuerySource.AdjacencyAccessObserver observer = runtimePlan == null ? null
-					: runtimePlan.adjacencyAccessAt("JaninoScan[" + scanId + "]");
+					: runtimePlan.adjacencyAccessAt(source, "JaninoScan[" + scanId + "]");
 			ReusableCursor cursor = cursors[scanId];
 			if (cursor == null) {
 				cursor = new ReusableCursor();

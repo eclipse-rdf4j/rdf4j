@@ -3020,8 +3020,15 @@ namespace workbench {
                         getExplanationDisplayContent(queryPageState.comparePane.explanation),
                         diffNotReadyLabel
                     );
+                    var leftProfile = queryPageState.primaryPane.explanation.plan
+                        && queryPageState.primaryPane.explanation.plan.executionProfile;
+                    var rightProfile = queryPageState.comparePane.explanation.plan
+                        && queryPageState.comparePane.explanation.plan.executionProfile;
+                    var profileChanges = queryExplanationHighlighter.compareExecutionProfiles(leftProfile, rightProfile);
+                    $('#query-diff-profile').text(profileChanges).prop('hidden', !profileChanges);
                 } else {
                     $('#query-diff-explanation').text(diffNotReadyLabel);
+                    $('#query-diff-profile').text('').prop('hidden', true);
                 }
             }
         }
@@ -3702,7 +3709,11 @@ namespace workbench {
                 explanationView = 'jsonTree';
                 if (explanationText) {
                     try {
-                        JSON.parse(explanationText);
+                        var jsonPlan = parsePlanJson(explanationText);
+                        if (jsonPlan && typeof jsonPlan === 'object' && !Array.isArray(jsonPlan)
+                                && typeof jsonPlan.type === 'string') {
+                            parsedPlan = <queryExplanationHighlighter.QueryPlanNode>jsonPlan;
+                        }
                     } catch (parseError) {
                         explanationView = 'jsonRawFallback';
                     }
@@ -4560,6 +4571,7 @@ namespace workbench {
             var initialFormat = getNormalizedExplainFormat(
                 <string>$('#query-explanation').attr('data-format') || <string>$('#explain-format').val() || 'text'
             );
+            var initialLevel = getNormalizedExplainLevel(<string>$('#explain-level').val());
             var hydratedExplanation: StableExplanation = null;
             if (initialExplanation) {
                 hydratedExplanation = createStableExplanationFromResponse({
@@ -4568,7 +4580,7 @@ namespace workbench {
                     pane: 'primary',
                     source: 'primary-explain',
                     queryHash: buildQueryHash(getPaneRawQueryValue('primary')),
-                    level: getNormalizedExplainLevel(<string>$('#explain-level').val()),
+                    level: initialLevel,
                     format: initialFormat,
                     forcedLmdbExecutionStrategy: $('#lmdb-forced-strategy').prop('disabled') ? '' : <string>$('#lmdb-forced-strategy').val() || ''
                 }, {

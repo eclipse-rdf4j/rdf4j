@@ -90,6 +90,11 @@ final class CompositeNativeLmdbQuerySource implements NativeLmdbQuerySource {
 	}
 
 	@Override
+	public Value diagnosticValue(long id) throws IOException {
+		return sources.get(0).diagnosticValue(id);
+	}
+
+	@Override
 	public boolean supportsTripleTermScan() {
 		return tripleTermSource != null;
 	}
@@ -1261,6 +1266,11 @@ final class CompositeNativeLmdbQuerySource implements NativeLmdbQuerySource {
 		@Override
 		public Value lazyValue(long id, int positionMask) throws QueryEvaluationException {
 			return delegate.lazyValue(id, positionMask);
+		}
+
+		@Override
+		public Value diagnosticValue(long id) throws IOException {
+			return delegate.diagnosticValue(id);
 		}
 
 		@Override

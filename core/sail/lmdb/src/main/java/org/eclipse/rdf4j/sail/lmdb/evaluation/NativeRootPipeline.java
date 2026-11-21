@@ -154,9 +154,7 @@ final class NativeRootPipeline {
 		if (topK) {
 			LmdbNativeAggregateCompiler.TOP_K_ROOTS.incrementAndGet();
 		}
-		String innerPlan = step instanceof LmdbNativePhysicalPlan physical ? physical.nativePhysicalPlan()
-				: step.getClass().getSimpleName();
-		return new PipelineStep(step, "RootPipeline(stages=[" + stages + "], plan=" + innerPlan + ")");
+		return new PipelineStep(step, stages.toString());
 	}
 
 	private static boolean boundedTopK(Slice slice) {
@@ -191,11 +189,11 @@ final class NativeRootPipeline {
 
 	static final class PipelineStep implements QueryEvaluationStep, LmdbNativePhysicalPlan {
 		private final QueryEvaluationStep staged;
-		private final String physicalPlan;
+		private final String stages;
 
-		private PipelineStep(QueryEvaluationStep staged, String physicalPlan) {
+		private PipelineStep(QueryEvaluationStep staged, String stages) {
 			this.staged = staged;
-			this.physicalPlan = physicalPlan;
+			this.stages = stages;
 		}
 
 		@Override
@@ -209,8 +207,11 @@ final class NativeRootPipeline {
 		}
 
 		@Override
-		public String nativePhysicalPlan() {
-			return physicalPlan;
+		public String nativePhysicalPlan(boolean resolveRdfTerms) {
+			String innerPlan = staged instanceof LmdbNativePhysicalPlan physical
+					? physical.nativePhysicalPlan(resolveRdfTerms)
+					: staged.getClass().getSimpleName();
+			return "RootPipeline(stages=[" + stages + "], plan=" + innerPlan + ")";
 		}
 	}
 
@@ -252,7 +253,7 @@ final class NativeRootPipeline {
 		}
 
 		@Override
-		public String nativePhysicalPlan() {
+		public String nativePhysicalPlan(boolean resolveRdfTerms) {
 			return "NativeTopK(offset=" + offset + ", limit=" + limit + ", keys=" + keys.length + ")";
 		}
 	}
@@ -458,7 +459,7 @@ final class NativeRootPipeline {
 		}
 
 		@Override
-		public String nativePhysicalPlan() {
+		public String nativePhysicalPlan(boolean resolveRdfTerms) {
 			return "NativeSlice(offset=" + offset + ", limit=" + limit + ")";
 		}
 	}
@@ -582,7 +583,7 @@ final class NativeRootPipeline {
 		}
 
 		@Override
-		public String nativePhysicalPlan() {
+		public String nativePhysicalPlan(boolean resolveRdfTerms) {
 			return "NativeDistinct";
 		}
 	}
@@ -697,7 +698,7 @@ final class NativeRootPipeline {
 		}
 
 		@Override
-		public String nativePhysicalPlan() {
+		public String nativePhysicalPlan(boolean resolveRdfTerms) {
 			return "NativeOrder(keys=" + keys.length + ")";
 		}
 	}

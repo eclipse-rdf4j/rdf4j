@@ -140,17 +140,20 @@ public class ExplanationImpl implements Explanation {
 
 	private static int metadataContainerDepth(GenericPlanNode node) {
 		int depth = 1; // GenericPlanNode object
+		if (node.getExecutionProfile() != null) {
+			depth = 8; // Profile, stage/worker lists, typed metric maps and diagnostic evidence.
+		}
 		if (node.getLongMetricsActual() != null || node.getDoubleMetricsActual() != null
 				|| node.getStringMetricsActual() != null || node.getLongMetricsPlanned() != null
 				|| node.getDoubleMetricsPlanned() != null || node.getStringMetricsPlanned() != null) {
-			depth = 2; // Any metrics map adds one object
+			depth = Math.max(depth, 2); // Any metrics map adds one object
 		}
 
 		List<StrategyDecision> decisions = node.getStrategyDecisions();
 		if (decisions != null && !decisions.isEmpty()) {
 			depth = Math.max(depth, 4); // Decisions array, decision object, and candidates array
 			if (decisions.stream().anyMatch(decision -> !decision.candidates().isEmpty())) {
-				depth = 5; // At least one candidate object
+				depth = Math.max(depth, 5); // At least one candidate object
 			}
 		}
 		if (node.getClass() != GenericPlanNode.class) {

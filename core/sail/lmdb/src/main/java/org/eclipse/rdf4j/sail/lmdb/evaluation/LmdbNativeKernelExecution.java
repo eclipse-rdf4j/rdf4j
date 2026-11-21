@@ -98,6 +98,14 @@ final class LmdbNativeKernelExecution {
 		LmdbNativeExplain.addRuntimeMetric(target, "nativeIrBindEvaluationsActual", counters.bindEvaluations());
 		LmdbNativeExplain.addRuntimeMetric(target, "nativeIrValueFilterEvaluationsActual",
 				counters.valueFilterEvaluations());
+		publishKernelStages(target, counters);
+	}
+
+	/** Also used by the parallel coordinator, which publishes aggregate legacy counters itself. */
+	static void publishKernelStages(TupleExpr target, KernelWorkCounters counters) {
+		if (counters != null) {
+			LmdbNativeExplain.recordKernelStages(target, counters);
+		}
 	}
 
 	static void resetMetrics() {
@@ -725,8 +733,9 @@ final class LmdbNativeKernelExecution {
 					SlotPlan[] actualOrder = arg instanceof MultiJoinPlan
 							? ((MultiJoinPlan) arg).derivedPlan(row).order
 							: new SlotPlan[] { arg };
-					row.runtimePlan.janinoActivated(activationRoute(route + "Parallel", lowered), actualOrder);
-					row.runtimePlan.activate(parallelRoute, actualOrder);
+					row.runtimePlan.janinoActivated(row.source, activationRoute(route + "Parallel", lowered),
+							actualOrder);
+					row.runtimePlan.activate(row.source, parallelRoute, actualOrder);
 				}
 				return retainedResults = parallel;
 			}
@@ -783,8 +792,8 @@ final class LmdbNativeKernelExecution {
 				SlotPlan[] actualOrder = arg instanceof MultiJoinPlan
 						? ((MultiJoinPlan) arg).derivedPlan(row).order
 						: new SlotPlan[] { arg };
-				row.runtimePlan.janinoActivated(activationRoute(route, lowered), actualOrder);
-				row.runtimePlan.activate(pathTag, actualOrder);
+				row.runtimePlan.janinoActivated(row.source, activationRoute(route, lowered), actualOrder);
+				row.runtimePlan.activate(row.source, pathTag, actualOrder);
 			}
 			return results;
 		} catch (RuntimeException | IOException problem) {
@@ -1721,10 +1730,10 @@ final class LmdbNativeKernelExecution {
 					SlotPlan[] actualOrder = arg instanceof MultiJoinPlan
 							? ((MultiJoinPlan) arg).derivedPlan(row).order
 							: new SlotPlan[] { arg };
-					row.runtimePlan.janinoActivated(
+					row.runtimePlan.janinoActivated(row.source,
 							activationRoute(route + (ordered == null ? "Parallel" : "ParallelTopK"), lowered),
 							actualOrder);
-					row.runtimePlan.activate(parallelRoute, actualOrder);
+					row.runtimePlan.activate(row.source, parallelRoute, actualOrder);
 				}
 				return retainedCursor = parallel;
 			}
@@ -1749,7 +1758,7 @@ final class LmdbNativeKernelExecution {
 			if (hashBuildBytes > 0L) {
 				hashReservation = row.memoryScope
 						.ledger(LmdbNativeHashJoin.queryMemory())
-						.reserve(hashBuildBytes, null);
+						.reserve(hashBuildBytes, null, "kernel-hash-build");
 				if (hashReservation == null) {
 					if (row.runtimePlan != null) {
 						row.runtimePlan.janinoDeclined(
@@ -1788,9 +1797,9 @@ final class LmdbNativeKernelExecution {
 				SlotPlan[] actualOrder = arg instanceof MultiJoinPlan
 						? ((MultiJoinPlan) arg).derivedPlan(row).order
 						: new SlotPlan[] { arg };
-				row.runtimePlan.janinoActivated(
+				row.runtimePlan.janinoActivated(row.source,
 						activationRoute(ordered == null ? route : route + "TopK", lowered), actualOrder);
-				row.runtimePlan.activate(pathTag, actualOrder);
+				row.runtimePlan.activate(row.source, pathTag, actualOrder);
 			}
 
 			KernelRowCursor cursor = new KernelRowCursor(kernel, probe, scanner, hooks, views, row,
@@ -2161,7 +2170,7 @@ final class LmdbNativeKernelExecution {
 			LmdbNativeKernelBindings.AdjacencyRequest request = bindings.adjacencies[i];
 			boolean used = views != null && i < views.length && views[i] != null;
 			row.runtimePlan
-					.adjacencyAccessAt(route + ".adjacency[" + i + "]")
+					.adjacencyAccessAt(row.source, route + ".adjacency[" + i + "]")
 					.access(used,
 							used
 									? "JANINO_ADJACENCY_VIEW[direction="

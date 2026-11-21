@@ -189,7 +189,7 @@ final class NativeExpressionDomain implements AutoCloseable {
 			this.cancellation = cancellation;
 			this.representative = representative;
 			this.telemetryTarget = telemetryTarget;
-			memory = KernelRuntime.AggregateMemory.forLedger(ledger);
+			memory = KernelRuntime.AggregateMemory.forLedger(ledger, "expression-domain");
 			if (memory.tryReserve(SCOPE_STRUCTURAL_BYTES)) {
 				domains = new IdentityHashMap<>(16);
 			}
@@ -323,7 +323,7 @@ final class NativeExpressionDomain implements AutoCloseable {
 		this.kind = kind;
 		this.mode = mode;
 		this.cancellation = cancellation;
-		this.memory = KernelRuntime.AggregateMemory.forLedger(ledger);
+		this.memory = KernelRuntime.AggregateMemory.forLedger(ledger, "expression-domain");
 		this.maxBytes = NativeCountGroupStore.configuredMaxBytes();
 		this.admitted = memory.tryReserve(WORKSPACE_BYTES);
 		if (admitted) {

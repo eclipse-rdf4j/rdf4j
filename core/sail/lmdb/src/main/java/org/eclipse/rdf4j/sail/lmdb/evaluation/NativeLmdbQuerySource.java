@@ -78,6 +78,11 @@ public interface NativeLmdbQuerySource {
 
 	Value lazyValue(long id) throws QueryEvaluationException;
 
+	/** Resolves a diagnostic term from this source's own ID space while its snapshot is open. */
+	default Value diagnosticValue(long id) throws IOException {
+		return null;
+	}
+
 	/** Materializes a value using the complete static position mask of its lexical binding. */
 	default Value lazyValue(long id, int positionMask) throws QueryEvaluationException {
 		return lazyValue(id);
@@ -213,6 +218,12 @@ public interface NativeLmdbQuerySource {
 		default void measurement(boolean adjacency, long scannedRows, long matchedRows, long filteredRows,
 				boolean censored, boolean physicalScanCount) {
 			measurement(adjacency, scannedRows, matchedRows, filteredRows, censored);
+		}
+
+		/** Active iterator time excludes downstream pauses; index name describes the iterator actually opened. */
+		default void measurement(boolean adjacency, long scannedRows, long matchedRows, long filteredRows,
+				boolean censored, boolean physicalScanCount, long activeNanos, String indexName) {
+			measurement(adjacency, scannedRows, matchedRows, filteredRows, censored, physicalScanCount);
 		}
 	}
 

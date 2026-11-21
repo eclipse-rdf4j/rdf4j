@@ -28,6 +28,8 @@ namespace workbench {
             timedOut?: boolean;
             physicalPlanPrelude?: string;
             strategyDecisions?: StrategyDecision[];
+            executionProfile?: ExecutionProfile;
+            logicalPath?: string;
             costEstimate?: JsonDouble;
             resultSizeEstimate?: JsonDouble;
             resultSizeActual?: JsonLong;
@@ -64,6 +66,49 @@ namespace workbench {
             candidates?: StrategyCandidate[];
         }
 
+        export interface ProfileMetric {
+            count?: JsonLong;
+            value?: number;
+            unit: string;
+            origin: string;
+            state: string;
+            scope: string;
+        }
+
+        export interface ProfileStage {
+            id: string;
+            parentId?: string;
+            logicalPath?: string;
+            operator: string;
+            engine?: string;
+            strategy?: string;
+            status?: string;
+            metrics: { [name: string]: ProfileMetric };
+            properties?: { [name: string]: string };
+        }
+
+        export interface ExecutionProfile {
+            schemaVersion: number;
+            status: string;
+            detail?: string;
+            elapsedNanos: JsonLong;
+            properties?: { [name: string]: string };
+            phases?: { name: string; elapsedNanos: JsonLong; scope: string }[];
+            stages?: ProfileStage[];
+            attempts?: {
+                stageId: string; strategy: string; status: string; reason?: string;
+                estimatedMillis?: number; elapsedNanos?: JsonLong;
+                metrics?: { [name: string]: ProfileMetric };
+            }[];
+            workers?: {
+                stageId: string; ordinal: number; elapsedNanos?: JsonLong; busyNanos?: JsonLong;
+                waitNanos?: JsonLong; rows?: JsonLong; complete: boolean;
+                metrics?: { [name: string]: ProfileMetric };
+            }[];
+            diagnostics?: { code: string; stageId?: string; severity: string; message: string; evidence?: string[] }[];
+            droppedEvents?: JsonLong;
+        }
+
         export interface StrategyCandidate {
             strategy?: string;
             priority?: number;
@@ -96,6 +141,7 @@ namespace workbench {
         export interface FormattedLine {
             tokens: TextToken[];
             node?: QueryPlanNode;
+            physicalStage?: ProfileStage;
         }
 
         export interface FormatResult {
@@ -184,7 +230,7 @@ namespace workbench {
             'leftRowsConsumedActual', 'rightRowsConsumedActual', 'leftRowsOutputContributionActual',
             'rightRowsOutputContributionActual', 'overlapRowsActual'
         ];
-        var ACCESS_ONLY_METRICS = ['indexLookupCountActual', 'indexHitRateActual', 'indexName', 'indexNames'];
+        var ACCESS_ONLY_METRICS = ['indexLookupCountActual', 'indexHitRateActual', 'sourceMatchFractionActual', 'indexName', 'indexNames'];
 
         function planType(node: QueryPlanNode): string {
             if (typeof node.type === 'undefined' || node.type === null) {
@@ -834,6 +880,7 @@ namespace workbench {
 
         function addDerivedMetrics(node: QueryPlanNode, entries: MetricEntry[],
                                    seen: { [name: string]: boolean }): void {
+            var children = plans(node);
             var inputRows = totalInputRows(node);
             var outputRows = node.resultSizeActual;
             var scanned = sourceRowsScanned(node);
@@ -865,40 +912,7 @@ namespace workbench {
                     readableDouble(jsonLongAsNumber(outputRows) * 1000 / node.totalTimeActual));
             }
 
-            var qErrors: number[] = [];
-            var children = plans(node);
-            for (var i = 0; i < children.length; i++) {
-                var estimate = parsedDouble(children[i].resultSizeEstimate);
-                var actual = children[i].resultSizeActual;
-                if (estimate > 0 && positiveLong(actual)) {
-                    var actualNumber = jsonLongAsNumber(actual);
-                    qErrors.push(Math.max(estimate / actualNumber, actualNumber / estimate));
-                }
-            }
-            if (qErrors.length) {
-                var sum = 0;
-                for (i = 0; i < qErrors.length; i++) {
-                    sum += qErrors[i];
-                }
-                var mean = sum / qErrors.length;
-                var varianceSum = 0;
-                for (i = 0; i < qErrors.length; i++) {
-                    var delta = qErrors[i] - mean;
-                    varianceSum += delta * delta;
-                }
-                var variance = varianceSum / qErrors.length;
-                var stddev = Math.sqrt(variance);
-                addMetric(entries, seen, 'sampleCountActual', readableLong(qErrors.length));
-                addMetric(entries, seen, 'varianceActual', readableDouble(variance));
-                addMetric(entries, seen, 'stddevActual', readableDouble(stddev));
-                addMetric(entries, seen, 'confidenceScoreActual',
-                    readableDouble(Math.min(1, qErrors.length / (qErrors.length + stddev + 1))));
-            }
-            var costEstimate = parsedDouble(node.costEstimate);
-            if (costEstimate > 0 && typeof node.totalTimeActual === 'number' && node.totalTimeActual > 0) {
-                addMetric(entries, seen, 'costErrorRatio',
-                    readableDouble(node.totalTimeActual / costEstimate));
-            }
+            // Preserve explicit legacy fields, but child estimate dispersion is not confidence and cost is not time.
             if (compareJsonLong(node.hasNextCallCountActual, 0) !== null
                 && compareJsonLong(node.hasNextTrueCountActual, 0) !== null) {
                 addMetric(entries, seen, 'hasNextFalseCountActual',
@@ -1001,7 +1015,7 @@ namespace workbench {
                 }
             }
             if (isAccess(node) && positiveLong(scanned) && compareJsonLong(matched, 0) !== null) {
-                addMetric(entries, seen, 'indexHitRateActual', readableDouble(ratio(matched, scanned)));
+                addMetric(entries, seen, 'sourceMatchFractionActual', readableDouble(ratio(matched, scanned)));
             }
         }
 
@@ -1469,12 +1483,288 @@ namespace workbench {
             return typeof lineSeparator === 'string' && lineSeparator.length > 0 ? lineSeparator : '\n';
         }
 
+        function profileComplete(profile: ExecutionProfile): boolean {
+            return !!profile && (profile.status === 'COMPLETE' || profile.status === 'COMPLETED');
+        }
+
+        function stageComplete(stage: ProfileStage): boolean {
+            return !!stage && /^(COMPLETE|COMPLETED|OBSERVED|AVAILABLE)$/.test(stage.status || '');
+        }
+
+        function profileDuration(value: JsonLong): string {
+            return nonNegativeLong(value) ? readableTime(jsonLongAsNumber(value) / 1000000) : 'unavailable';
+        }
+
+        function profileMetricValue(metric: ProfileMetric): string {
+            if (!metric || metric.state === 'unknown'
+                    || (!nonNegativeLong(metric.count) && !(typeof metric.value === 'number' && isFinite(metric.value)))) {
+                return 'unavailable';
+            }
+            return nonNegativeLong(metric.count) ? readableLong(metric.count) : readableDouble(metric.value);
+        }
+
+        function profileMetricText(metric: ProfileMetric): string {
+            return profileMetricValue(metric) + ' ' + (metric.unit || 'count')
+                + ' [' + (metric.origin || 'unavailable') + ', ' + (metric.state || 'unknown')
+                + ', ' + (metric.scope || 'unknown') + ']';
+        }
+
+        function workloadContextName(name: string): boolean {
+            return /consumption|resultMime|snapshot|revision|overlayGenerations|pendingGenerations|dataset|includeInferred|binding|repository|inputAlgebra|queryEvaluationMode/i.test(name);
+        }
+
+        function truncatedWorkloadContext(value: string): boolean {
+            return typeof value === 'string' && value.indexOf('… [truncated]') >= 0;
+        }
+
+        function stagedWorkloadContext(profile: ExecutionProfile): { [key: string]: string } {
+            var context: { [key: string]: string } = Object.create(null);
+            (profile.stages || []).forEach(function(stage: ProfileStage): void {
+                Object.keys(stage.properties || {}).forEach(function(name: string): void {
+                    if (workloadContextName(name)) { context[stage.id + ' / ' + name] = stage.properties[name]; }
+                });
+                Object.keys(stage.metrics || {}).forEach(function(name: string): void {
+                    if (!workloadContextName(name)) { return; }
+                    var metric = stage.metrics[name];
+                    var value = nonNegativeLong(metric.count) ? signedLongText(metric.count) : profileMetricValue(metric);
+                    context[stage.id + ' / ' + name] = value + ' ' + metric.unit
+                        + ' [' + metric.origin + ', ' + metric.state + ']';
+                });
+            });
+            return context;
+        }
+
+        function physicalElapsed(stage: ProfileStage): JsonLong {
+            var maximum: JsonLong = null;
+            var values = stage.metrics || {};
+            Object.keys(values).forEach(function(name: string): void {
+                var metric = values[name];
+                if (metric && metric.unit === 'ns' && !/proxy|fallback|estimated|unavailable|sampled/i.test(metric.origin)
+                        && metric.scope !== 'compiler-thread' && !/background|worker|p50|p95|max|last/i.test(name)
+                        && metric.state !== 'unknown' && nonNegativeLong(metric.count)
+                        && (maximum === null || compareJsonLong(metric.count, maximum) > 0)) {
+                    maximum = metric.count;
+                }
+            });
+            return maximum;
+        }
+
+        function profileLines(profile: ExecutionProfile): FormattedLine[] {
+            var lines = [textLine('Execution profile (' + profile.status + ')'),
+                textLine('  elapsed: ' + profileDuration(profile.elapsedNanos) + ' [wall]')];
+            if (!profileComplete(profile)) {
+                lines.push(textLine('  Partial execution: counts are observed work, not full-query cardinalities.'));
+            }
+            if (profile.detail) {
+                lines.push(textLine('  outcome: ' + profile.detail));
+            }
+            Object.keys(profile.properties || {}).forEach(function(name: string): void {
+                lines.push(textLine('  ' + name + ': ' + profile.properties[name]));
+            });
+            (profile.diagnostics || []).forEach(function(diagnostic): void {
+                lines.push(textLine('  ' + diagnostic.severity + ': ' + diagnostic.message
+                    + (diagnostic.stageId ? ' [' + diagnostic.stageId + ']' : '')));
+                (diagnostic.evidence || []).forEach(function(evidence: string): void {
+                    lines.push(textLine('    evidence: ' + evidence));
+                });
+            });
+            (profile.phases || []).forEach(function(phase): void {
+                lines.push(textLine('  phase ' + phase.name + ': ' + profileDuration(phase.elapsedNanos)
+                    + ' [' + phase.scope + ']'));
+            });
+            (profile.stages || []).forEach(function(stage: ProfileStage): void {
+                var line = textLine('  stage ' + stage.id + ': ' + stage.operator
+                    + (stage.strategy ? ' (' + stage.strategy + ')' : '') + ' [' + (stage.status || 'unknown') + ']');
+                line.physicalStage = stage;
+                lines.push(line);
+                Object.keys(stage.metrics || {}).forEach(function(name: string): void {
+                    lines.push(textLine('    ' + name + ': ' + profileMetricText(stage.metrics[name])));
+                });
+                Object.keys(stage.properties || {}).forEach(function(name: string): void {
+                    lines.push(textLine('    ' + name + ': ' + stage.properties[name]));
+                });
+            });
+            (profile.attempts || []).forEach(function(attempt): void {
+                var activeTime = (attempt.metrics || {}).activeTime;
+                var elapsedLabel = activeTime && activeTime.origin === 'sampled' ? 'sampled estimate'
+                    : activeTime && activeTime.origin === 'estimated' ? 'estimate' : 'observed';
+                var observed = nonNegativeLong(attempt.elapsedNanos)
+                    ? '; ' + elapsedLabel + ' ' + profileDuration(attempt.elapsedNanos) : '';
+                var predicted = typeof attempt.estimatedMillis === 'number' && isFinite(attempt.estimatedMillis)
+                    ? '; predicted ' + readableTime(attempt.estimatedMillis) : '';
+                lines.push(textLine('  attempt ' + attempt.stageId + ' / ' + attempt.strategy + ': ' + attempt.status
+                    + (attempt.reason ? ' — ' + attempt.reason : '') + predicted + observed));
+                Object.keys(attempt.metrics || {}).forEach(function(name: string): void {
+                    lines.push(textLine('    ' + name + ': ' + profileMetricText(attempt.metrics[name])));
+                });
+            });
+            (profile.workers || []).forEach(function(worker): void {
+                lines.push(textLine('  worker ' + worker.stageId + '/' + worker.ordinal
+                    + ': elapsed=' + profileDuration(worker.elapsedNanos)
+                    + ', busy=' + profileDuration(worker.busyNanos) + ', wait=' + profileDuration(worker.waitNanos)
+                    + ', rows=' + (nonNegativeLong(worker.rows) ? readableLong(worker.rows) : 'unavailable')
+                    + (worker.complete ? ' [complete]' : ' [partial]')));
+                Object.keys(worker.metrics || {}).forEach(function(name: string): void {
+                    lines.push(textLine('    ' + name + ': ' + profileMetricText(worker.metrics[name])));
+                });
+            });
+            if (positiveLong(profile.droppedEvents)) {
+                lines.push(textLine('  omitted events: ' + readableLong(profile.droppedEvents) + ' (profile budget)'));
+            }
+            return lines;
+        }
+
+        /** Compares matching physical identities; partial, proxy and incompatible measurements never acquire a ratio. */
+        export function compareExecutionProfiles(left: ExecutionProfile, right: ExecutionProfile): string {
+            if (!left || !right) {
+                return '';
+            }
+            var lines = ['Physical execution changes'];
+            if (left.schemaVersion !== right.schemaVersion) {
+                return lines.concat(['Profiles use different schema versions; measurements are incomparable.']).join('\n');
+            }
+            var complete = profileComplete(left) && profileComplete(right);
+            var truncatedContext = false;
+            if (!complete) {
+                lines.push('Partial or incomplete execution: report observed values without speedup or work ratios.');
+            }
+            lines.push('Elapsed: ' + profileDuration(left.elapsedNanos) + ' → ' + profileDuration(right.elapsedNanos));
+            var propertyNames = Object.keys(left.properties || {}).concat(Object.keys(right.properties || {}));
+            var visited: { [key: string]: boolean } = Object.create(null);
+            propertyNames.forEach(function(name: string): void {
+                if (visited[name]) { return; }
+                visited[name] = true;
+                var before = (left.properties || {})[name];
+                var after = (right.properties || {})[name];
+                if (workloadContextName(name) && (truncatedWorkloadContext(before) || truncatedWorkloadContext(after))) {
+                    complete = false;
+                    truncatedContext = true;
+                }
+                if (before !== after) {
+                    lines.push('Context ' + name + ': ' + (before || 'unavailable') + ' → ' + (after || 'unavailable'));
+                    if (workloadContextName(name)) {
+                        complete = false;
+                    }
+                }
+            });
+            // Pinned adjacency revisions and serializer format can be owned by physical stages rather than the root.
+            // Inspect both profiles first, before any work ratio is produced for an earlier stage.
+            var beforeContext = stagedWorkloadContext(left);
+            var afterContext = stagedWorkloadContext(right);
+            var contextNames = Object.keys(beforeContext).concat(Object.keys(afterContext));
+            var visitedContext: { [key: string]: boolean } = Object.create(null);
+            var contextChanges = 0;
+            contextNames.forEach(function(name: string): void {
+                if (visitedContext[name]) { return; }
+                visitedContext[name] = true;
+                if (truncatedWorkloadContext(beforeContext[name]) || truncatedWorkloadContext(afterContext[name])) {
+                    complete = false;
+                    truncatedContext = true;
+                }
+                if (beforeContext[name] !== afterContext[name]) {
+                    complete = false;
+                    if (contextChanges++ < 8) {
+                        lines.push('Workload context ' + name + ': ' + (beforeContext[name] || 'unavailable')
+                            + ' → ' + (afterContext[name] || 'unavailable'));
+                    }
+                }
+            });
+            if (contextChanges > 8) { lines.push((contextChanges - 8) + ' further workload context changes.'); }
+            if (truncatedContext) {
+                lines.push('Workload comparison unavailable: context was truncated, so input equivalence cannot be verified.');
+            }
+            var beforeStages: { [key: string]: ProfileStage } = Object.create(null);
+            var duplicate: { [key: string]: boolean } = Object.create(null);
+            (left.stages || []).forEach(function(stage: ProfileStage): void {
+                if (beforeStages[stage.id]) { duplicate[stage.id] = true; }
+                beforeStages[stage.id] = stage;
+            });
+            var changed = 0;
+            (right.stages || []).forEach(function(after: ProfileStage): void {
+                var before = beforeStages[after.id];
+                delete beforeStages[after.id];
+                if (!before || duplicate[after.id] || before.logicalPath !== after.logicalPath
+                        || before.operator !== after.operator) {
+                    if (changed++ < 50) { lines.push(after.id + ': added or changed physical stage (' + after.operator + ')'); }
+                    return;
+                }
+                if (before.strategy !== after.strategy || before.engine !== after.engine) {
+                    if (changed++ < 50) { lines.push(after.id + ': route ' + (before.strategy || before.engine)
+                        + ' → ' + (after.strategy || after.engine)); }
+                }
+                var stagesComplete = stageComplete(before) && stageComplete(after);
+                if ((before.status !== after.status || !stagesComplete) && changed++ < 50) {
+                    lines.push(after.id + ': outcome ' + (before.status || 'unknown') + ' → '
+                        + (after.status || 'unknown') + (stagesComplete ? '' : ' (partial or incomplete stage)'));
+                }
+                var stagePropertyNames = Object.keys(before.properties || {}).concat(Object.keys(after.properties || {}));
+                var visitedProperties: { [key: string]: boolean } = Object.create(null);
+                stagePropertyNames.forEach(function(name: string): void {
+                    if (visitedProperties[name]) { return; }
+                    visitedProperties[name] = true;
+                    var oldProperty = (before.properties || {})[name];
+                    var newProperty = (after.properties || {})[name];
+                    if (oldProperty !== newProperty && changed++ < 50) {
+                        lines.push(after.id + ' / ' + name + ': ' + (oldProperty || 'unavailable')
+                            + ' → ' + (newProperty || 'unavailable'));
+                    }
+                });
+                var metricNames = Object.keys(before.metrics || {}).concat(Object.keys(after.metrics || {}));
+                var visitedMetrics: { [key: string]: boolean } = Object.create(null);
+                metricNames.forEach(function(name: string): void {
+                    if (visitedMetrics[name]) { return; }
+                    visitedMetrics[name] = true;
+                    var oldMetric = (before.metrics || {})[name];
+                    var newMetric = (after.metrics || {})[name];
+                    var oldValue = profileMetricValue(oldMetric);
+                    var newValue = profileMetricValue(newMetric);
+                    if (oldValue === 'unavailable' || newValue === 'unavailable') {
+                        if (oldValue !== newValue && changed++ < 50) {
+                            lines.push(after.id + ' / ' + name + ': ' + oldValue + ' → ' + newValue
+                                + ' ' + ((newMetric || oldMetric).unit || 'count') + ' (measurement availability changed)');
+                        }
+                        return;
+                    }
+                    var oldNumber = nonNegativeLong(oldMetric.count) ? jsonLongAsNumber(oldMetric.count) : oldMetric.value;
+                    var newNumber = nonNegativeLong(newMetric.count) ? jsonLongAsNumber(newMetric.count) : newMetric.value;
+                    var sameValue = nonNegativeLong(oldMetric.count) && nonNegativeLong(newMetric.count)
+                        ? compareJsonLong(oldMetric.count, newMetric.count) === 0 : oldNumber === newNumber;
+                    if (sameValue && oldMetric.unit === newMetric.unit && oldMetric.origin === newMetric.origin
+                            && oldMetric.scope === newMetric.scope && oldMetric.state === newMetric.state) { return; }
+                    var compatible = !!oldMetric.unit && !!oldMetric.scope && oldMetric.scope !== 'unknown'
+                        && oldMetric.unit === newMetric.unit && oldMetric.scope === newMetric.scope
+                        && !!oldMetric.origin && oldMetric.origin === newMetric.origin
+                        && !/proxy|fallback|estimated|unavailable|unknown|sampled/i.test(oldMetric.origin)
+                        && oldMetric.state === 'complete' && newMetric.state === 'complete';
+                    var suffix = '';
+                    if (!compatible) {
+                        suffix = ' (incomparable: units, scope, provenance or completeness)';
+                    } else if (complete && stagesComplete && oldNumber > 0 && isFinite(newNumber / oldNumber)) {
+                        suffix = ' (' + String(Number((newNumber / oldNumber).toPrecision(3))) + 'x)';
+                    } else if (complete && stagesComplete && oldNumber === 0 && newNumber > 0) {
+                        suffix = ' (new work; baseline zero)';
+                    }
+                    if (changed++ < 50) { lines.push(after.id + ' / ' + name + ': ' + oldValue + ' ' + oldMetric.unit
+                        + ' → ' + newValue + ' ' + newMetric.unit + suffix); }
+                });
+            });
+            Object.keys(beforeStages).forEach(function(id: string): void {
+                if (changed++ < 50) { lines.push(id + ': physical stage no longer present'); }
+            });
+            if (changed > 50) { lines.push((changed - 50) + ' further metric changes; full profiles follow.'); }
+            if (!changed) { lines.push('No comparable physical work changes.'); }
+            return lines.join('\n');
+        }
+
         export function format(plan: QueryPlanNode, level?: ExplainLevel, lineSeparator?: string,
                                hiddenProperties?: string[]): FormatResult {
             var effectiveLevel = level || 'Optimized';
             var separator = effectiveLineSeparator(lineSeparator);
             var lines = formatLines(plan || {}, 0, isProjectionElemList(plan || {}), effectiveLevel,
                 separator, hiddenProperties);
+            if (plan && plan.executionProfile && effectiveLevel === 'Telemetry') {
+                lines = profileLines(plan.executionProfile).concat([textLine(''), textLine('Query explanation')], lines);
+            }
             var prelude = plan && plan.physicalPlanPrelude;
             if (typeof prelude === 'string' && prelude.length) {
                 // The physical plan prelude carries its own embedded newlines (independent of the
@@ -1482,7 +1772,8 @@ namespace workbench {
                 // re-emit them using the caller's separator, matching GenericPlanNode#toString().
                 var normalizedPrelude = prelude.replace(/\r\n|\r/g, '\n');
                 var preludeLines = splitPhysicalLines(textLine(normalizedPrelude), '\n');
-                lines = preludeLines.concat([textLine(''), textLine('Query explanation')], lines);
+                lines = preludeLines.concat(plan && plan.executionProfile && effectiveLevel === 'Telemetry'
+                    ? [textLine('')] : [textLine(''), textLine('Query explanation')], lines);
             }
             var text = '';
             for (var i = 0; i < lines.length; i++) {
@@ -1544,6 +1835,18 @@ namespace workbench {
         }
 
         export function getHotspot(plan: QueryPlanNode, level: ExplainLevel): HotspotSummary {
+            if (level === 'Telemetry' && plan && plan.executionProfile) {
+                var physicalMaximum: JsonLong = null;
+                (plan.executionProfile.stages || []).forEach(function(stage: ProfileStage): void {
+                    var elapsed = physicalElapsed(stage);
+                    if (elapsed !== null && (physicalMaximum === null || compareJsonLong(elapsed, physicalMaximum) > 0)) {
+                        physicalMaximum = elapsed;
+                    }
+                });
+                if (physicalMaximum !== null) {
+                    return { metric: 'physicalElapsedNanos', label: 'Physical time (see scope)', maximum: physicalMaximum };
+                }
+            }
             var selected = hotspotMetric(level);
             if (!selected) {
                 return null;
@@ -1598,12 +1901,45 @@ namespace workbench {
                 sharedMaximum = Math.max(<number>localMaximum, <number>options.sharedMaximum);
             }
             var fragment = document.createDocumentFragment();
+            var logicalElements: { [path: string]: HTMLElement } = Object.create(null);
+            function showLogical(path: string): () => void {
+                return function(): void {
+                    var target = logicalElements[path];
+                    if (target && typeof target.scrollIntoView === 'function') {
+                        target.scrollIntoView({ block: 'center' });
+                        target.focus();
+                    }
+                };
+            }
             for (var lineIndex = 0; lineIndex < formatted.lines.length; lineIndex++) {
                 var formattedLine = formatted.lines[lineIndex];
                 var lineElement = document.createElement('span');
                 lineElement.className = 'query-explanation-line';
-                if (hotspot && formattedLine.node) {
-                    var value: any = (<any>formattedLine.node)[hotspot.metric];
+                if (formattedLine.node && formattedLine.node.logicalPath) {
+                    logicalElements[formattedLine.node.logicalPath] = lineElement;
+                    lineElement.setAttribute('tabindex', '-1');
+                    lineElement.setAttribute('data-logical-path', formattedLine.node.logicalPath);
+                }
+                if (formattedLine.physicalStage && formattedLine.physicalStage.logicalPath) {
+                    lineElement.classList.add('query-explanation-line--physical');
+                    lineElement.setAttribute('title', 'Show logical operator ' + formattedLine.physicalStage.logicalPath);
+                    lineElement.setAttribute('role', 'button');
+                    lineElement.setAttribute('tabindex', '0');
+                    var follow = showLogical(formattedLine.physicalStage.logicalPath);
+                    lineElement.addEventListener('click', follow);
+                    (function(element: HTMLElement, action: () => void): void {
+                        element.addEventListener('keydown', function(event: KeyboardEvent): void {
+                            if (event.key === 'Enter' || event.key === ' ') {
+                                event.preventDefault();
+                                action();
+                            }
+                        });
+                    })(lineElement, follow);
+                }
+                if (hotspot && (formattedLine.node || formattedLine.physicalStage)) {
+                    var value: any = hotspot.metric === 'physicalElapsedNanos'
+                        ? formattedLine.physicalStage ? physicalElapsed(formattedLine.physicalStage) : null
+                        : formattedLine.node ? (<any>formattedLine.node)[hotspot.metric] : null;
                     var valueIsValid = hotspot.metric === 'resultSizeActual'
                         ? nonNegativeLong(value) : finiteNonNegative(value);
                     if (valueIsValid) {

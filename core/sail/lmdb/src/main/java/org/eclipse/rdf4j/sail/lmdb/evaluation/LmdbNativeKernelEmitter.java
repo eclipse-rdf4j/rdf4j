@@ -1150,7 +1150,9 @@ final class LmdbNativeKernelEmitter {
 					.append("    private KernelContext context;\n")
 					.append("    private KernelRuntime.AggregateMemory aggregateMemory;\n")
 					.append("    private long aggregateArrayBytes;\n")
-					.append("    private final KernelWorkCounters workCounters = new KernelWorkCounters();\n");
+					.append("    private final KernelWorkCounters workCounters = new KernelWorkCounters(")
+					.append(telemetryEnabled())
+					.append(");\n");
 			for (ProjectionSite site : projectionSites) {
 				source.append("    private KernelProjectionCursor ppCursor")
 						.append(site.id)
@@ -4063,7 +4065,18 @@ final class LmdbNativeKernelEmitter {
 					.append(id)
 					.append(" = false;\n")
 					.append("        if (owned != null) {\n")
-					.append("            try { owned.close(); } finally { workCounters.addProjection(owned); }\n")
+					.append("            try { owned.close(); } finally { workCounters.addProjection(");
+			if (telemetryEnabled()) {
+				StringBuilder shape = new StringBuilder();
+				schedule.producer.key(shape);
+				close.append(id)
+						.append(", \"")
+						.append(schedule.producer.getClass().getSimpleName())
+						.append("\", \"")
+						.append(javaString(shape.toString()))
+						.append("\", ");
+			}
+			close.append("owned); }\n")
 					.append("        }\n    }\n\n");
 			methods.add(close.toString());
 
@@ -4112,7 +4125,7 @@ final class LmdbNativeKernelEmitter {
 						+ "        int idFact = ppIdFact" + id + '_' + proof + "(a0, a1, a2);\n"
 						+ "        if ((idFact & KernelTermKindProof.TRUE_BIT) == 0) return false;\n"
 						+ "        if (idFact == KernelTermKindProof.TRUE_BIT) return true;\n"
-						+ "        workCounters.recordValueFilter();\n"
+						+ "        workCounters.recordValueFilter(" + filter.filterId + ");\n"
 						+ "        return hooks.testFilter(" + filter.filterId + ", a0, a1, a2);\n"
 						+ "    }\n\n");
 			}
@@ -4939,7 +4952,7 @@ final class LmdbNativeKernelEmitter {
 				FilterValue filter = valueFilterMethods.get(i);
 				methods.add("    private boolean vf" + i
 						+ "(long a0, long a1, long a2) {\n"
-						+ "        workCounters.recordValueFilter();\n"
+						+ "        workCounters.recordValueFilter(" + filter.filterId + ");\n"
 						+ "        return hooks.testFilter(" + filter.filterId + ", a0, a1, a2);\n"
 						+ "    }\n\n");
 			}
@@ -10320,7 +10333,9 @@ final class LmdbNativeKernelEmitter {
 								.append(");\n");
 					}
 					body.append(indent)
-							.append("workCounters.recordBind();\n")
+							.append("workCounters.recordBind(")
+							.append(bind.bindId)
+							.append(");\n")
 							.append(indent)
 							.append('v')
 							.append(bind.dstCol)
@@ -10335,7 +10350,9 @@ final class LmdbNativeKernelEmitter {
 					args[i] = bind.args[i].token();
 				}
 				body.append(indent)
-						.append("workCounters.recordBind();\n")
+						.append("workCounters.recordBind(")
+						.append(bind.bindId)
+						.append(");\n")
 						.append(indent)
 						.append('v')
 						.append(bind.dstCol)

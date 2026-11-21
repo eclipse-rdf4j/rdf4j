@@ -386,7 +386,7 @@ final class LmdbNativeFactorizedRows {
 			if (lexical != null) {
 				branches[d - flatCount].lexical = lexical;
 				branches[d - flatCount].lexicalMemory = KernelRuntime.AggregateMemory.forLedger(
-						row.memoryScope.ledger(LmdbNativeHashJoin.queryMemory()));
+						row.memoryScope.ledger(LmdbNativeHashJoin.queryMemory()), "factorized-lexical-values");
 			}
 		}
 		boolean allPrefixDepthsArePatterns = true;

@@ -43,7 +43,9 @@ import org.eclipse.rdf4j.http.server.repository.resolver.RepositoryResolver;
 import org.eclipse.rdf4j.query.Query;
 import org.eclipse.rdf4j.query.QueryEvaluationException;
 import org.eclipse.rdf4j.query.QueryInterruptedException;
+import org.eclipse.rdf4j.query.TupleQuery;
 import org.eclipse.rdf4j.query.explanation.Explanation;
+import org.eclipse.rdf4j.query.explanation.ExplanationOptions;
 import org.eclipse.rdf4j.query.resultio.BooleanQueryResultWriter;
 import org.eclipse.rdf4j.query.resultio.BooleanQueryResultWriterFactory;
 import org.eclipse.rdf4j.query.resultio.TupleQueryResultWriter;
@@ -196,6 +198,9 @@ public abstract class AbstractQueryRequestHandler implements QueryRequestHandler
 			long offset = getOffset(request);
 			boolean distinct = isDistinct(request);
 			final Optional<Explanation.Level> explainLevel = getExplain(request);
+			final ExplanationOptions explainOptions = explainLevel.isPresent()
+					? getExplainOptions(request, query, explainLevel.get())
+					: ExplanationOptions.rows();
 			Map<String, String> loggingContext = ProtocolUtil.captureQueryLoggingContext(request);
 			loggingContext.put(QueryLoggingContext.REPOSITORY_ID, repositoryId);
 			loggingContext.put(QueryLoggingContext.HTTP_LIMIT, Long.toString(limit));
@@ -205,7 +210,7 @@ public abstract class AbstractQueryRequestHandler implements QueryRequestHandler
 
 			if (!headersOnly && explainLevel.isPresent() && explainRequestId.isPresent()) {
 				return handleRegisteredExplainRequest(request, response, repository, repositoryId, repositoryCon, query,
-						explainLevel.get(),
+						explainLevel.get(), explainOptions,
 						explainRequestId.get(), breakerHandle);
 			}
 
@@ -254,7 +259,7 @@ public abstract class AbstractQueryRequestHandler implements QueryRequestHandler
 					if (explainLevel.isPresent()) {
 						try {
 							Explanation explanation = queryCircuitBreaker.execute(breakerHandle, repositoryCon,
-									() -> explainQuery(query, explainLevel.get()));
+									() -> explainQuery(query, explainLevel.get(), explainOptions));
 							queryCircuitBreaker.complete(breakerHandle);
 							breakerHandle = null;
 							return getExplainQueryResponse(request, response, explanation);
@@ -393,9 +398,16 @@ public abstract class AbstractQueryRequestHandler implements QueryRequestHandler
 		throw new ServerHTTPException("unimplemented explainQuery feature");
 	}
 
+	private Explanation explainQuery(Query query, Explanation.Level level, ExplanationOptions options)
+			throws ServerHTTPException {
+		try (ExplanationOptions.Activation ignored = options.activate()) {
+			return explainQuery(query, level);
+		}
+	}
+
 	private ModelAndView handleRegisteredExplainRequest(HttpServletRequest request, HttpServletResponse response,
 			Repository repository, String repositoryId, RepositoryConnection repositoryCon, Query query,
-			Explanation.Level explainLevel,
+			Explanation.Level explainLevel, ExplanationOptions explainOptions,
 			String explainRequestId, QueryCircuitBreakerHandle breakerHandle)
 			throws IOException, HTTPException {
 		final AsyncExplainCoordinator.Handle handle;
@@ -422,7 +434,7 @@ public abstract class AbstractQueryRequestHandler implements QueryRequestHandler
 							explainActivation.close();
 						};
 					},
-					() -> explainQuery(query, explainLevel));
+					() -> explainQuery(query, explainLevel, explainOptions));
 			if (explanation == null) {
 				return null;
 			}
@@ -711,6 +723,22 @@ public abstract class AbstractQueryRequestHandler implements QueryRequestHandler
 			return Optional.of(level);
 		} catch (final IllegalArgumentException e) {
 			throw new ClientHTTPException("Invalid explanation level: " + explainString, e);
+		}
+	}
+
+	private ExplanationOptions getExplainOptions(HttpServletRequest request, Query query, Explanation.Level level)
+			throws ClientHTTPException {
+		try {
+			ExplanationOptions options = ExplanationOptions.fromParameters(
+					request.getParameter(Protocol.EXPLAIN_CONSUMPTION_PARAM_NAME),
+					request.getParameter(Protocol.EXPLAIN_RESULT_MIME_PARAM_NAME));
+			options.validate(level);
+			if (options.consumption() == ExplanationOptions.Consumption.SERIALIZED && !(query instanceof TupleQuery)) {
+				throw new IllegalArgumentException("Serialized Telemetry consumption requires a tuple query.");
+			}
+			return options;
+		} catch (IllegalArgumentException e) {
+			throw new ClientHTTPException(e.getMessage(), e);
 		}
 	}
 

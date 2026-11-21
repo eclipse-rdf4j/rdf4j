@@ -44,7 +44,7 @@ final class NativeBoundedConcat implements AutoCloseable {
 		this.context = context;
 		this.spec = spec;
 		this.cancellation = cancellation;
-		this.memory = KernelRuntime.AggregateMemory.forLedger(ledger);
+		this.memory = KernelRuntime.AggregateMemory.forLedger(ledger, "bounded-concat");
 		try {
 			memory.reserve(4096L + 2L * PAIRS * Long.BYTES);
 			ids = new long[PAIRS];

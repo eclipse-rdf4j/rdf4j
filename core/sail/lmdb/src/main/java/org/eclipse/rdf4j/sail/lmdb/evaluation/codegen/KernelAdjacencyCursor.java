@@ -237,7 +237,7 @@ public final class KernelAdjacencyCursor implements AutoCloseable {
 		long reservationBytes = bufferBytesForCapacity(bufferCapacity);
 		try {
 			if (ledger != null && reservationBytes > 0L) {
-				reservation = ledger.reserve(reservationBytes, null);
+				reservation = ledger.reserve(reservationBytes, null, "adjacency-cursor");
 			}
 		} catch (RuntimeException | Error failure) {
 			Throwable cleanup = closeResource(pages, failure);

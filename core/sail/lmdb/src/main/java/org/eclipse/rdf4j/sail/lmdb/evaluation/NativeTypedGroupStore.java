@@ -84,7 +84,7 @@ final class NativeTypedGroupStore implements AutoCloseable {
 		this.backing = store;
 		this.cancellation = row.cancellation;
 		this.ledger = row.memoryScope.ledger(LmdbNativeHashJoin.queryMemory());
-		this.memory = KernelRuntime.AggregateMemory.forLedger(ledger);
+		this.memory = KernelRuntime.AggregateMemory.forLedger(ledger, "typed-group-store");
 		NativeExecutionContext owner = source instanceof SyntheticValueSource synthetic ? synthetic.executionContext()
 				: null;
 		this.values = owner == null ? new NativeExecutionContext() : new NativeExecutionContext(owner);

@@ -4971,7 +4971,7 @@ namespace workbench {
                                 @click=${() => invoke('workbench.query.closeDiffModal')}>Close</button></div>
                         <div class="query-diff-modal__body">
                             <section class="query-diff-section query-diff-section--query"><div class="query-diff-section__title">Query</div><div id="query-diff-query" class="query-diff-view"></div></section>
-                            <section class="query-diff-section query-diff-section--explanation"><div class="query-diff-section__title">Explanation</div><div id="query-diff-explanation" class="query-diff-view">Comparison is not ready.</div></section>
+                            <section class="query-diff-section query-diff-section--explanation"><div class="query-diff-section__title">Explanation</div><pre id="query-diff-profile" class="query-profile-comparison" hidden></pre><div id="query-diff-explanation" class="query-diff-view">Comparison is not ready.</div></section>
                         </div>
                     </div>
                 </div>

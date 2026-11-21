@@ -56,6 +56,18 @@ import org.junit.jupiter.api.Test;
 public class QueryModelTreeToGenericPlanNodeTest {
 
 	@Test
+	public void telemetryPreservesUnavailableCountersInsteadOfReportingMeasuredZero() {
+		StatementPattern pattern = new StatementPattern(Var.of("s"), Var.of("p"), Var.of("o"));
+		GenericPlanNode plan = convert(pattern, Explanation.Level.Telemetry);
+		assertThat(plan.getSourceRowsScannedActual()).isNull();
+		assertThat(plan.getHasNextCallCountActual()).isNull();
+		assertThat(plan.getJoinRightIteratorsCreatedActual()).isNull();
+
+		pattern.setSourceRowsScannedActual(0);
+		assertThat(convert(pattern, Explanation.Level.Telemetry).getSourceRowsScannedActual()).isZero();
+	}
+
+	@Test
 	public void includesRuntimeTelemetryForAllPlanNodes() {
 		TupleExpr tupleExpr = new Join(
 				new StatementPattern(Var.of("s"), Var.of("p"), Var.of("o")),
@@ -536,8 +548,8 @@ public class QueryModelTreeToGenericPlanNodeTest {
 		assertThat(telemetry.getSourceRowsScannedActual()).isEqualTo(13L);
 		assertThat(rightSubjectVar(telemetry).getStringMetricsActual())
 				.containsEntry(TelemetryMetricNames.BINDING_STATE, "bound");
-		assertThat(telemetry.toString()).contains("sampleCountActual=");
-		assertThat(telemetry.toString()).contains("varianceActual=");
+		assertThat(telemetry.toString()).doesNotContain("sampleCountActual=");
+		assertThat(telemetry.toString()).doesNotContain("varianceActual=");
 	}
 
 	@Test

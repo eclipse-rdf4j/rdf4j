@@ -51,8 +51,8 @@ final class NativeBindingSetMultiProjectionStep implements QueryEvaluationStep, 
 	}
 
 	@Override
-	public String nativePhysicalPlan() {
-		String inner = arg instanceof LmdbNativePhysicalPlan physical ? physical.nativePhysicalPlan()
+	public String nativePhysicalPlan(boolean resolveRdfTerms) {
+		String inner = arg instanceof LmdbNativePhysicalPlan physical ? physical.nativePhysicalPlan(resolveRdfTerms)
 				: arg.getClass().getSimpleName();
 		return "NativeMultiProjection(projections=" + projections.length + ", arg=" + inner + ")";
 	}
