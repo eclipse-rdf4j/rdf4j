@@ -271,6 +271,106 @@ class RDFInputDispatcherTest {
 	}
 
 	@Test
+	void limitsExpandedBytesFromTopLevelGzip() throws Exception {
+		ParserConfig config = maxExpandedBytesConfig(1024);
+		byte[] compressed = gzip(concat(TURTLE, new byte[8 * 1024]));
+
+		assertThatThrownBy(() -> new RDFInputDispatcher(config).dispatch(
+				new ByteArrayInputStream(compressed), "data.ttl.gz", null,
+				(input, name, format) -> input.readAllBytes()))
+						.isInstanceOf(RDFInputDecompressionLimitException.class)
+						.hasMessageStartingWith("RDF input decompression limit exceeded: expanded bytes");
+	}
+
+	@Test
+	void limitsExpandedBytesFromTopLevelZip() throws Exception {
+		ParserConfig config = maxExpandedBytesConfig(1024);
+		byte[] archive = zip(Map.of("data.ttl", concat(TURTLE, new byte[8 * 1024])));
+
+		assertThatThrownBy(() -> new RDFInputDispatcher(config).dispatch(
+				new ByteArrayInputStream(archive), "data.zip", null,
+				(input, name, format) -> input.readAllBytes()))
+						.isInstanceOf(RDFInputDecompressionLimitException.class)
+						.hasMessageStartingWith("RDF input decompression limit exceeded: expanded bytes");
+	}
+
+	@Test
+	void limitsExpandedBytesFromTopLevelTar() throws Exception {
+		ParserConfig config = maxExpandedBytesConfig(1024);
+		byte[] archive = tar(Map.of("data.ttl", concat(TURTLE, new byte[8 * 1024])));
+
+		assertThatThrownBy(() -> new RDFInputDispatcher(config).dispatch(
+				new ByteArrayInputStream(archive), "data.tar", null,
+				(input, name, format) -> input.readAllBytes()))
+						.isInstanceOf(RDFInputDecompressionLimitException.class)
+						.hasMessageStartingWith("RDF input decompression limit exceeded: expanded bytes");
+	}
+
+	@Test
+	void limitsTopLevelGzipExpansionRatioAfterGrace() throws Exception {
+		ParserConfig config = new ParserConfig()
+				.set(new LongRioSetting("org.eclipse.rdf4j.rio.loader.max_expanded_bytes", "test", Long.MAX_VALUE),
+						Long.MAX_VALUE)
+				.set(new LongRioSetting("org.eclipse.rdf4j.rio.loader.max_expansion_ratio", "test", 2L), 2L)
+				.set(new LongRioSetting("org.eclipse.rdf4j.rio.loader.expansion_ratio_grace_bytes", "test", 0L),
+						0L);
+		byte[] compressed = gzip(concat(TURTLE, new byte[8 * 1024]));
+
+		assertThatThrownBy(() -> new RDFInputDispatcher(config).dispatch(
+				new ByteArrayInputStream(compressed), "data.ttl.gz", null,
+				(input, name, format) -> input.readAllBytes()))
+						.isInstanceOf(RDFInputDecompressionLimitException.class)
+						.hasMessageStartingWith("RDF input decompression limit exceeded: expansion ratio");
+	}
+
+	@Test
+	void limitsAggregateExpandedBytesAcrossTopLevelArchiveMembers() throws Exception {
+		ParserConfig config = maxExpandedBytesConfig(1024);
+		Map<String, byte[]> members = new LinkedHashMap<>();
+		members.put("first.ttl", new byte[700]);
+		members.put("second.ttl", new byte[700]);
+
+		for (byte[] archive : List.of(zip(members), tar(members))) {
+			assertThatThrownBy(() -> new RDFInputDispatcher(config).dispatch(
+					new ByteArrayInputStream(archive), "data.archive", null,
+					(input, name, format) -> input.readAllBytes()))
+							.isInstanceOf(RDFInputDecompressionLimitException.class)
+							.hasMessageStartingWith("RDF input decompression limit exceeded: expanded bytes");
+		}
+	}
+
+	@Test
+	void drainsUnreadTopLevelGzipTailThroughExpandedBudget() throws Exception {
+		ParserConfig config = maxExpandedBytesConfig(1024);
+		CloseTrackingInputStream source = new CloseTrackingInputStream(gzip(concat(TURTLE, new byte[8 * 1024])));
+
+		assertThatThrownBy(() -> new RDFInputDispatcher(config).dispatch(source, "data.ttl.gz", null,
+				(input, name, format) -> assertThat(input.read()).isNotNegative()))
+						.isInstanceOf(RDFInputDecompressionLimitException.class)
+						.hasMessageStartingWith("RDF input decompression limit exceeded: expanded bytes");
+		assertThat(source.closed).as("limited input remains caller-owned").isFalse();
+	}
+
+	@Test
+	void allowsTopLevelCompressedInputsWithinExpandedBudget() throws Exception {
+		ParserConfig config = maxExpandedBytesConfig(1024);
+		Map<String, byte[]> inputs = new LinkedHashMap<>();
+		inputs.put("data.ttl.gz", gzip(TURTLE));
+		inputs.put("data.zip", zip(Map.of("data.ttl", TURTLE)));
+		inputs.put("data.tar", tar(Map.of("data.ttl", TURTLE)));
+
+		for (Map.Entry<String, byte[]> entry : inputs.entrySet()) {
+			CloseTrackingInputStream source = new CloseTrackingInputStream(entry.getValue());
+			List<Terminal> terminals = new ArrayList<>();
+			new RDFInputDispatcher(config).dispatch(source, entry.getKey(), null,
+					(input, name, format) -> terminals.add(new Terminal(name, format, input.readAllBytes())));
+
+			assertThat(terminals).containsExactly(new Terminal("data.ttl", RDFFormat.TURTLE, TURTLE));
+			assertThat(source.closed).as("input remains caller-owned").isFalse();
+		}
+	}
+
+	@Test
 	void accountsForUnreadCompressedArchiveMemberTails() throws Exception {
 		ParserConfig config = maxExpandedBytesConfig(2L * 1024 * 1024);
 		byte[] paddedMember = gzip(new byte[4 * 1024 * 1024]);
