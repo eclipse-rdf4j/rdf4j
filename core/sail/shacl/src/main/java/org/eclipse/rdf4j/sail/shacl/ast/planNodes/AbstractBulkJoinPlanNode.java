@@ -57,14 +57,14 @@ public abstract class AbstractBulkJoinPlanNode implements PlanNode {
 		this.stackTrace = Thread.currentThread().getStackTrace();
 	}
 
-	TupleExpr parseQuery(String query) {
+	TupleExpr parseQuery(String query, SailConnection connection) {
 
 		// #VALUES_INJECTION_POINT# is an annotation in the query where there is a "new scope" due to the bottom up
 		// semantics of SPARQL but where we don't actually want a new scope.
 		query = query.replace(AbstractConstraintComponent.VALUES_INJECTION_POINT, "\nVALUES (?a) {}\n");
 
 		String completeQuery = "select distinct " + varsQueryString + " where {\nVALUES (?a) {}\n" + query + "\n}";
-		return SparqlQueryParserCache.get(completeQuery);
+		return SparqlQueryParserCache.get(completeQuery, connection);
 	}
 
 	void runQuery(Collection<ValidationTuple> left, ArrayDeque<ValidationTuple> right, SailConnection connection,

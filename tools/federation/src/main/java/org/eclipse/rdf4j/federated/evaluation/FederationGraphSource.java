@@ -18,20 +18,28 @@ import java.util.Set;
 
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.common.iteration.CloseableIteratorIteration;
+import org.eclipse.rdf4j.common.iteration.FilterIteration;
 import org.eclipse.rdf4j.common.iteration.LookAheadIteration;
 import org.eclipse.rdf4j.federated.endpoint.Endpoint;
 import org.eclipse.rdf4j.federated.structures.QueryInfo;
+import org.eclipse.rdf4j.federated.util.FedXUtil;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.Statement;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
+import org.eclipse.rdf4j.query.BooleanQuery;
 import org.eclipse.rdf4j.query.algebra.evaluation.TripleSource;
+import org.eclipse.rdf4j.query.impl.SimpleDataset;
+import org.eclipse.rdf4j.repository.DelegatingRepositoryConnection;
 import org.eclipse.rdf4j.repository.RepositoryConnection;
+import org.eclipse.rdf4j.repository.http.HTTPRepository;
+import org.eclipse.rdf4j.repository.sparql.SPARQLConnection;
 
 /** Streams the distinct graph names of the query's accessible federation members. */
 final class FederationGraphSource implements TripleSource {
+	private static final String GRAPH_HAS_STATEMENTS = "ASK { GRAPH ?name { ?s ?p ?o } }";
 	private final FederationEvaluationStrategy strategy;
 	private final QueryInfo queryInfo;
 	private final List<Endpoint> members;
@@ -58,6 +66,60 @@ final class FederationGraphSource implements TripleSource {
 	public CloseableIteration<? extends Statement> getStatements(Resource subject, IRI predicate, Value object,
 			Resource... contexts) {
 		return strategy.getStatements(queryInfo, subject, predicate, object, contexts);
+	}
+
+	private static RepositoryConnection unwrap(RepositoryConnection connection) {
+		while (connection instanceof DelegatingRepositoryConnection wrapper && wrapper.getDelegate() != null) {
+			connection = wrapper.getDelegate();
+		}
+		return connection;
+	}
+
+	private CloseableIteration<Resource> openContexts(RepositoryConnection connection) {
+		if (queryInfo.getIncludeInferred()) {
+			return connection.getContextIDs();
+		}
+		RepositoryConnection delegate = unwrap(connection);
+		// Standard SPARQL exposes the endpoint's graph view without a protocol-level inference selector.
+		if (delegate instanceof SPARQLConnection) {
+			return connection.getContextIDs();
+		}
+		BooleanQuery httpProbe = delegate.getRepository() instanceof HTTPRepository
+				? connection.prepareBooleanQuery(GRAPH_HAS_STATEMENTS)
+				: null;
+		if (httpProbe != null) {
+			FedXUtil.applyMaxQueryExecutionTime(httpProbe, queryInfo.getFederationContext());
+		}
+		return new FilterIteration<>(connection.getContextIDs()) {
+			@Override
+			protected boolean accept(Resource name) {
+				// A catalog can also contain empty named graphs, which have no statements in either mode.
+				if (name == null) {
+					return false;
+				}
+				if (httpProbe == null) {
+					return connection.hasStatement(null, null, null, false, name)
+							|| !connection.hasStatement(null, null, null, true, name);
+				}
+				httpProbe.setBinding("name", name);
+				SimpleDataset dataset = null;
+				if (name instanceof IRI iri) {
+					dataset = new SimpleDataset();
+					dataset.addNamedGraph(iri);
+				}
+				httpProbe.setDataset(dataset);
+				httpProbe.setIncludeInferred(false);
+				if (httpProbe.evaluate()) {
+					return true;
+				}
+				httpProbe.setIncludeInferred(true);
+				return !httpProbe.evaluate();
+			}
+
+			@Override
+			protected void handleClose() {
+			}
+		};
 	}
 
 	@Override
@@ -98,7 +160,7 @@ final class FederationGraphSource implements TripleSource {
 							contexts = new CloseableIteratorIteration<>(cached.iterator());
 						} else {
 							connection = endpoint.getConnection();
-							contexts = connection.getContextIDs();
+							contexts = openContexts(connection);
 						}
 					}
 				} catch (RuntimeException | Error failure) {
