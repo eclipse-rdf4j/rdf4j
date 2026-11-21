@@ -168,13 +168,15 @@ class LmdbNativeZeroLengthBindingMembershipTest {
 	}
 
 	@Test
-	void compoundBothBoundCasesRetainTheExistingGenericBehavior() throws Exception {
+	void nullableRepetitionMatchesAnAbsentTermAtEitherEndpoint() throws Exception {
 		openBasicFixture();
-		// Compatibility controls, not a claim that this fix resolves every arbitrary-path specification question.
-		assertBag("SELECT ?s WHERE { VALUES ?s { <" + EX + "missing> } ?s (<" + EX
-				+ "absent>?)+ <" + EX + "missing> }", List.of(), true);
-		assertBag("SELECT ?o WHERE { VALUES ?o { <" + EX + "missing> } <" + EX
-				+ "missing> (<" + EX + "absent>?)+ ?o }", List.of(), true);
+		String prefix = "PREFIX : <" + EX + "> ";
+		assertBag(prefix + "SELECT ?o { VALUES ?o { :missing } :missing (:absent?)+ ?o }",
+				List.of(new ListBindingSet(List.of("o"), iri("missing"))), true);
+		assertBag(prefix + "SELECT ?s { VALUES ?s { :missing } ?s (:absent?)+ :missing }",
+				List.of(new ListBindingSet(List.of("s"), iri("missing"))), true);
+		assertBag(prefix + "SELECT ?s ?o { VALUES (?s ?o) { (:missing :missing) (:a :a) (:a :missing) } "
+				+ "?s (:absent?)+ ?o }", List.of(pair(iri("a"), iri("a"))), true);
 	}
 
 	@Test

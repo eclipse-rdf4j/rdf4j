@@ -910,7 +910,7 @@ class NativeSailStore implements SailStore {
 	/**
 	 * @author James Leigh
 	 */
-	private final class NativeSailDataset implements SailDataset {
+	final class NativeSailDataset implements SailDataset {
 
 		private final boolean explicit;
 

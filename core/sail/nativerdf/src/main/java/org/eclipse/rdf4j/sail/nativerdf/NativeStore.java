@@ -588,6 +588,18 @@ public class NativeStore extends AbstractNotifyingSail implements FederatedServi
 		return disabledIsolationLockManager.isActiveLock();
 	}
 
+	/** Pin branch-managed reads only when no direct index writer owns or is switching the isolation mode. */
+	Lock tryPinIsolatedQuery() {
+		if (!txnLockManager.tryLock()) {
+			return null;
+		}
+		try {
+			return isIsolationDisabled() ? null : isolatedLockManager.createLock("GRAPH statement snapshot");
+		} finally {
+			txnLockManager.unlock();
+		}
+	}
+
 	SailStore getSailStore() {
 		return store;
 	}

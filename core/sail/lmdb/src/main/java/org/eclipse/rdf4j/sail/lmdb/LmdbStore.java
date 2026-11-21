@@ -212,7 +212,7 @@ public class LmdbStore extends AbstractNotifyingSail
 	public LmdbStore(LmdbStoreConfig config) {
 		super();
 		this.config = config;
-		setExperimentalQueryOptimizations(config.isExperimentalQueryOptimizations());
+		setQueryExecutionPolicy(config.getQueryExecutionPolicy());
 		nativeEvaluationEnabled = config.getNativeEvaluationEnabled();
 		allowIncompleteBulkLoad = false;
 		validationOnlyOpen = false;
@@ -247,7 +247,7 @@ public class LmdbStore extends AbstractNotifyingSail
 	LmdbStore(File dataDir, LmdbStoreConfig config, boolean allowIncompleteBulkLoad) {
 		super();
 		this.config = config;
-		setExperimentalQueryOptimizations(config.isExperimentalQueryOptimizations());
+		setQueryExecutionPolicy(config.getQueryExecutionPolicy());
 		nativeEvaluationEnabled = config.getNativeEvaluationEnabled();
 		this.allowIncompleteBulkLoad = allowIncompleteBulkLoad;
 		validationOnlyOpen = true;

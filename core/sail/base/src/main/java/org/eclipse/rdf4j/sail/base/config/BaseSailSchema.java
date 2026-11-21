@@ -43,6 +43,10 @@ public class BaseSailSchema {
 	@Deprecated
 	public final static IRI EXPERIMENTAL_QUERY_OPTIMIZATIONS = iri(NAMESPACE, "experimentalQueryOptimizations");
 
+	/** @deprecated use {@link CONFIG.Sail#graphRestrictionMode} instead. */
+	@Deprecated
+	public final static IRI GRAPH_RESTRICTION_MODE = iri(NAMESPACE, "graphRestrictionMode");
+
 	/**
 	 * @deprecated use {@link CONFIG.Sail#slowQueryLogThresholdSeconds} instead.
 	 */

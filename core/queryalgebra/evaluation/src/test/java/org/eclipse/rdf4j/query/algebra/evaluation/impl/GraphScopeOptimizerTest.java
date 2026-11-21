@@ -21,20 +21,25 @@ import java.util.Set;
 
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.common.iteration.CloseableIteratorIteration;
+import org.eclipse.rdf4j.model.BNode;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.Statement;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
+import org.eclipse.rdf4j.model.vocabulary.RDF;
 import org.eclipse.rdf4j.model.vocabulary.RDF4J;
 import org.eclipse.rdf4j.model.vocabulary.SESAME;
 import org.eclipse.rdf4j.query.Binding;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.Dataset;
 import org.eclipse.rdf4j.query.QueryEvaluationException;
+import org.eclipse.rdf4j.query.QueryExecutionPolicy;
+import org.eclipse.rdf4j.query.QueryExecutionPolicy.GraphRestrictionMode;
 import org.eclipse.rdf4j.query.QueryLanguage;
 import org.eclipse.rdf4j.query.algebra.BindingSetAssignment;
 import org.eclipse.rdf4j.query.algebra.Graph;
+import org.eclipse.rdf4j.query.algebra.Join;
 import org.eclipse.rdf4j.query.algebra.Lateral;
 import org.eclipse.rdf4j.query.algebra.QueryModelVisitor;
 import org.eclipse.rdf4j.query.algebra.QueryRoot;
@@ -51,11 +56,16 @@ import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.GraphScopeOptimizer;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.StandardQueryOptimizerPipeline;
 import org.eclipse.rdf4j.query.algebra.helpers.AbstractQueryModelVisitor;
 import org.eclipse.rdf4j.query.algebra.helpers.QueryAlgebraBindingAnalysis;
+import org.eclipse.rdf4j.query.impl.BlankNodeAllocationScope;
 import org.eclipse.rdf4j.query.impl.EmptyBindingSet;
 import org.eclipse.rdf4j.query.impl.MapBindingSet;
+import org.eclipse.rdf4j.query.impl.RemoteBNode;
 import org.eclipse.rdf4j.query.impl.SimpleDataset;
 import org.eclipse.rdf4j.query.parser.QueryParserUtil;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.EnumSource;
+import org.junit.jupiter.params.provider.ValueSource;
 
 class GraphScopeOptimizerTest {
 
@@ -66,8 +76,10 @@ class GraphScopeOptimizerTest {
 	private static final IRI ABSENT_GRAPH = VF.createIRI("urn:absent");
 
 	@Test
-	void positiveGraphIsLoweredBeforeJoinSelection() {
+	void positiveGraphIsLoweredBeforeJoinSelectionWhenRestrictionsAreOff() {
 		DefaultEvaluationStrategy strategy = new DefaultEvaluationStrategy(new EmptyTripleSource(), null);
+		strategy.setQueryExecutionPolicy(
+				QueryExecutionPolicy.DEFAULT.withGraphRestrictionMode(GraphRestrictionMode.OFF));
 		TupleExpr plan = parse("SELECT * WHERE { VALUES ?s { <urn:s> } GRAPH <urn:g> { ?s <urn:p> ?o } }");
 		strategy.optimize(plan, new EvaluationStatistics(), EmptyBindingSet.getInstance());
 		assertThat(graphs(plan)).isEmpty();
@@ -77,6 +89,126 @@ class GraphScopeOptimizerTest {
 			assertThat(statement.getSubjectVar().getName()).isEqualTo("s");
 			assertThat(statement.isVariableScopeChange()).isTrue();
 		});
+	}
+
+	@Test
+	void standardPipelinePreservesAConstantGraphForAutomaticProbes() {
+		DefaultEvaluationStrategy strategy = new DefaultEvaluationStrategy(new EmptyTripleSource(), null);
+		TupleExpr plan = parse("SELECT * WHERE { VALUES ?s { <urn:s> } GRAPH <urn:g> { ?s <urn:p> ?o } }");
+		strategy.optimize(plan, new EvaluationStatistics(), EmptyBindingSet.getInstance());
+		assertThat(graphs(plan)).singleElement();
+	}
+
+	@Test
+	void autoDoesNotRetainGraphForMagicPropertyOnly() {
+		TupleExpr plan = parse(
+				"SELECT ?x WHERE { VALUES ?a { '[1,2]'^^<http://www.w3.org/1999/02/22-rdf-syntax-ns#JSON> } "
+						+ "GRAPH <urn:absent> { ?a <http://rdf4j.org/function/array#unnest> ?x } }");
+		new GraphScopeOptimizer(QueryExecutionPolicy.DEFAULT).optimize(plan, null, EmptyBindingSet.getInstance());
+		assertThat(graphs(plan)).isEmpty();
+	}
+
+	@ParameterizedTest
+	@EnumSource(GraphRestrictionMode.class)
+	void preservesMagicPropertyResultsWithCollectionSyntax(GraphRestrictionMode mode) {
+		DefaultEvaluationStrategy strategy = new DefaultEvaluationStrategy(new EmptyTripleSource(), null);
+		strategy.setQueryExecutionPolicy(QueryExecutionPolicy.DEFAULT.withGraphRestrictionMode(mode));
+		for (String output : List.of("(?part)", "?part")) {
+			TupleExpr plan = parse("SELECT ?part WHERE { VALUES ?part { 'a' } GRAPH <urn:absent> { "
+					+ "('a,b' ',') <http://rdf4j.org/function/string#split> " + output + " } }");
+			strategy.optimize(plan, new EvaluationStatistics(), EmptyBindingSet.getInstance());
+			assertThat(evaluate(strategy, plan, EmptyBindingSet.getInstance())).as("%s in %s", output, mode)
+					.containsExactly(bindings("part", VF.createLiteral("a")));
+		}
+	}
+
+	@ParameterizedTest
+	@EnumSource(value = GraphRestrictionMode.class, names = { "AUTO", "FORCE_INDEPENDENT", "REQUIRE_RESTRICTED" })
+	void retainsGraphWhenAnOrdinaryCollectionPatternCanSeek(GraphRestrictionMode mode) {
+		TupleExpr plan = parse("SELECT ?part WHERE { VALUES ?part { 'a' } GRAPH <urn:g> { "
+				+ "('a,b' ',') <http://rdf4j.org/function/string#split> (?part) . "
+				+ "<urn:list> <" + RDF.FIRST + "> ?part } }");
+		new GraphScopeOptimizer(QueryExecutionPolicy.DEFAULT.withGraphRestrictionMode(mode))
+				.optimize(plan, null, EmptyBindingSet.getInstance());
+		assertThat(graphs(plan)).hasSize(1);
+	}
+
+	@Test
+	void autoRetainsGraphWhenAnOrdinaryPatternCanSeek() {
+		TupleExpr plan = parse("SELECT ?x WHERE { VALUES ?s { <urn:s> } GRAPH <urn:g> { "
+				+ "?s <urn:p> ?a . ?a <http://rdf4j.org/function/array#unnest> ?x } }");
+		new GraphScopeOptimizer(QueryExecutionPolicy.DEFAULT).optimize(plan, null, EmptyBindingSet.getInstance());
+		assertThat(graphs(plan)).hasSize(1);
+	}
+
+	@Test
+	void genericOptimizerLeavesAuthoredValuesInsideConstantGraph() {
+		TupleExpr plan = parse("SELECT * { GRAPH <urn:g> { VALUES ?s { <urn:s> } ?s <urn:p> ?o } }");
+		new GraphScopeOptimizer().optimize(plan, null, EmptyBindingSet.getInstance());
+		assertThat(graphs(plan)).singleElement().satisfies(graph -> {
+			assertThat(GraphScopeOptimizer.canLowerPositiveBasicGraphPattern(graph)).isFalse();
+			assertThat(GraphScopeOptimizer.canLowerPositiveGraphPattern(graph)).isTrue();
+		});
+	}
+
+	@Test
+	void physicalLoweringRequiresAMandatoryStatement() {
+		for (String body : List.of("VALUES ?s { <urn:s> } VALUES ?o { <urn:o> }",
+				"VALUES ?s { <urn:s> } OPTIONAL { ?s <urn:p> ?o }")) {
+			TupleExpr plan = parse("SELECT * { GRAPH ?g { " + body + " } }");
+			assertThat(graphs(plan)).singleElement().satisfies(graph -> {
+				assertThat(GraphScopeOptimizer.lowerPositiveGraphPattern(graph)).as(body).isNull();
+			});
+		}
+	}
+
+	@Test
+	void physicalLoweringRejectsValuesThatDeclareOrBindTheGraphSelector() {
+		TupleExpr plan = parse("SELECT * { GRAPH ?g { VALUES ?g { UNDEF } ?s <urn:p> ?o } }");
+		assertThat(graphs(plan)).singleElement()
+				.satisfies(graph -> assertThat(GraphScopeOptimizer.lowerPositiveGraphPattern(graph)).isNull());
+
+		BindingSetAssignment values = new BindingSetAssignment();
+		values.setDeclaredBindingNames(Set.of("s"));
+		values.setBindingSets(List.of(bindings("g", TARGET_GRAPH)));
+		assertThat(GraphScopeOptimizer.lowerPositiveGraphPattern(graphWithValues(values))).isNull();
+	}
+
+	@Test
+	void physicalLoweringUsesCurrentValuesDespiteCachedNames() {
+		MapBindingSet row = bindings("s", TARGET_GRAPH);
+		BindingSetAssignment values = new BindingSetAssignment();
+		values.setDeclaredBindingNames(Set.of("s"));
+		values.setBindingSets(List.of(row));
+		assertThat(values.getPossibleBindingNames()).containsExactly("s");
+		row.addBinding("g", OTHER_GRAPH);
+		assertThat(GraphScopeOptimizer.lowerPositiveGraphPattern(graphWithValues(values))).isNull();
+	}
+
+	@Test
+	void physicalLoweringDoesNotReadAnUnprovedValuesSource() {
+		BindingSetAssignment values = new BindingSetAssignment();
+		values.setDeclaredBindingNames(Set.of("s"));
+		values.setBindingSets(() -> {
+			throw new AssertionError("Physical admission must leave an unproved source unopened");
+		});
+		assertThat(GraphScopeOptimizer.lowerPositiveGraphPattern(graphWithValues(values))).isNull();
+	}
+
+	private static Graph graphWithValues(BindingSetAssignment values) {
+		return new Graph(Var.of("g"),
+				new Join(values, new StatementPattern(Var.of("s"), Var.of("p", P, true, true), Var.of("o"))));
+	}
+
+	@Test
+	void autoRetainsTheExistingLoweringWhenNoValuesRowCanSupplyAKey() {
+		GraphScopeOptimizer optimizer = new GraphScopeOptimizer(QueryExecutionPolicy.EXPERIMENTAL);
+		TupleExpr unbound = parse("SELECT * { VALUES ?s { UNDEF UNDEF } GRAPH <urn:g> { ?s <urn:p> ?o } }");
+		optimizer.optimize(unbound, null, EmptyBindingSet.getInstance());
+		assertThat(graphs(unbound)).isEmpty();
+		TupleExpr mixed = parse("SELECT * { VALUES ?s { UNDEF <urn:s> } GRAPH <urn:g> { ?s <urn:p> ?o } }");
+		optimizer.optimize(mixed, null, EmptyBindingSet.getInstance());
+		assertThat(graphs(mixed)).hasSize(1);
 	}
 
 	@Test
@@ -195,6 +327,35 @@ class GraphScopeOptimizerTest {
 			assertThat(evaluate(strategy, original, conflicting)).isEmpty();
 			assertThat(evaluate(strategy, lowered, conflicting)).as(subjectName).isEmpty();
 		}
+	}
+
+	@ParameterizedTest(name = "lateral driver = {0}")
+	@ValueSource(booleans = { false, true })
+	void prevaluedLocalGraphRejectsAForeignInvocationWithTheSameBlankNodeLabel(boolean lateral) {
+		BNode remote = (BNode) RemoteBNode.newResponseScope(new BlankNodeAllocationScope(), VF, new Object(), false)
+				.map(VF.createBNode("response-label"));
+		BNode local = VF.createBNode(remote.getID());
+		CountingTripleSource source = new CountingTripleSource();
+		source.contextIDs.add(local);
+		source.data.add(VF.createStatement(TARGET_GRAPH, P, OTHER_GRAPH, local));
+		QueryRoot plan = new QueryRoot(new Graph(Var.of("g", local),
+				new StatementPattern(Var.of("s"), Var.of("p", P, true, true), Var.of("o"))));
+		DefaultEvaluationStrategy strategy = new DefaultEvaluationStrategy(source, null);
+		assertThat(evaluate(strategy, plan, bindings("g", local))).hasSize(1);
+		BindingSet input = bindings("g", remote);
+		if (lateral) {
+			BindingSetAssignment driver = new BindingSetAssignment();
+			driver.setBindingSets(List.of(bindings("g", local), input));
+			plan.setArg(new Lateral(driver, plan.getArg()));
+			input = EmptyBindingSet.getInstance();
+		}
+		List<BindingSet> expected = evaluate(strategy, plan, input);
+		assertThat(expected).hasSize(lateral ? 1 : 0);
+
+		new GraphScopeOptimizer().optimize(plan, null, input);
+
+		assertThat(evaluate(strategy, plan, input)).containsExactlyElementsOf(expected);
+		assertThat(graphs(plan)).hasSize(1);
 	}
 
 	@Test

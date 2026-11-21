@@ -139,11 +139,22 @@ public abstract class AbstractSail implements Sail {
 	public final void setExperimentalQueryOptimizations(boolean enabled) {
 		initializationLock.writeLock().lock();
 		try {
+			setQueryExecutionPolicy(QueryExecutionPolicy.of(enabled)
+					.withGraphRestrictionMode(queryExecutionPolicy.graphRestrictionMode()));
+		} finally {
+			initializationLock.writeLock().unlock();
+		}
+	}
+
+	/** Selects the immutable execution policy for queries prepared by this Sail. */
+	public final void setQueryExecutionPolicy(QueryExecutionPolicy policy) {
+		initializationLock.writeLock().lock();
+		try {
 			if (initialized || initializing) {
 				throw new IllegalStateException(
 						"experimentalQueryOptimizations must be configured before initialization");
 			}
-			queryExecutionPolicy = QueryExecutionPolicy.of(enabled);
+			queryExecutionPolicy = Objects.requireNonNull(policy, "policy");
 		} finally {
 			initializationLock.writeLock().unlock();
 		}

@@ -332,6 +332,76 @@ public class LmdbNativeGeneralPathTest {
 		}
 	}
 
+	@Test
+	public void nestedCompoundClosureReplaysOriginalEndpointsPerSelectedGraph() {
+		ValueFactory vf = repository.getValueFactory();
+		addNestedGeneralPathEdges(vf.createIRI("urn:g1"));
+		try (SailRepositoryConnection conn = repository.getConnection()) {
+			var graph = vf.createIRI("urn:g2");
+			conn.add(vf.createIRI("urn:a"), vf.createIRI("urn:p"), vf.createIRI("urn:x"), graph);
+			conn.add(vf.createIRI("urn:x"), vf.createIRI("urn:q"), vf.createIRI("urn:d"), graph);
+			conn.add(vf.createIRI("urn:d"), vf.createIRI("urn:r"), vf.createIRI("urn:other"), graph);
+		}
+		String query = """
+				PREFIX : <urn:>
+				SELECT ?g ?o WHERE {
+				  VALUES (?g ?o) { (:g1 UNDEF) (:g1 :c) (:g1 :missing) (:g2 UNDEF) (:g2 :c) }
+				  GRAPH ?g { :a ((:p/:q)+/:r)+ ?o }
+				}
+				""";
+		List<BindingSet> generic = genericRows(query);
+		assertThat(generic)
+				.extracting(row -> row.getValue("g").stringValue() + " " + row.getValue("o").stringValue())
+				.containsExactlyInAnyOrder("urn:g1 urn:c", "urn:g1 urn:c", "urn:g2 urn:other");
+		assertNativeRowsMatch(query, generic);
+	}
+
+	@Test
+	public void nullablePathsKeepMembershipInTheSelectedGraph() {
+		ValueFactory vf = repository.getValueFactory();
+		try (SailRepositoryConnection conn = repository.getConnection()) {
+			var selected = vf.createIRI("urn:g1");
+			var unrelated = vf.createIRI("urn:unrelated");
+			var source = vf.createIRI("urn:source");
+			conn.add(vf.createIRI("urn:a"), vf.createIRI("urn:p"), vf.createIRI("urn:b"), selected);
+			conn.add(source, unrelated, vf.createIRI("urn:inside"), selected);
+			conn.add(source, unrelated, vf.createIRI("urn:outside"), vf.createIRI("urn:g2"));
+		}
+		for (String path : List.of(":p*", "(:p?)+")) {
+			String query = """
+					PREFIX : <urn:>
+					SELECT ?o WHERE {
+					  VALUES ?g { :g1 }
+					  GRAPH ?g { VALUES ?s { :inside :outside } ?s %s ?o }
+					}
+					""".formatted(path);
+			assertThat(genericRows(query)).as(path)
+					.extracting(row -> row.getValue("o").stringValue())
+					.containsExactly("urn:inside");
+			assertThat(rows(query)).as(path)
+					.extracting(row -> row.getValue("o").stringValue())
+					.containsExactly("urn:inside");
+		}
+	}
+
+	@Test
+	public void simplePathKeepsItsLogicalOutputDomainInSelectedGraph() {
+		try (SailRepositoryConnection conn = repository.getConnection()) {
+			ValueFactory vf = conn.getValueFactory();
+			conn.add(vf.createIRI("urn:a"), vf.createIRI("urn:p"), vf.createIRI("urn:x"), vf.createIRI("urn:g1"));
+		}
+		String query = """
+				PREFIX : <urn:>
+				SELECT ?g (COUNT(DISTINCT *) AS ?n) {
+				  VALUES ?g { :g1 }
+				  GRAPH ?g { { :a :p+ ?o } UNION { VALUES ?o { :x } } }
+				}
+				GROUP BY ?g
+				""";
+		assertThat(genericRows(query)).extracting(row -> row.getValue("n").stringValue()).containsExactly("1");
+		assertThat(rows(query)).extracting(row -> row.getValue("n").stringValue()).containsExactly("1");
+	}
+
 	private void addNestedGeneralPathEdges(Resource... contexts) {
 		try (SailRepositoryConnection conn = repository.getConnection()) {
 			conn.begin();

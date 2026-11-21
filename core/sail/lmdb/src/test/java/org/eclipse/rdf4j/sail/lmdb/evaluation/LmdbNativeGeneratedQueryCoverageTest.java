@@ -45,6 +45,8 @@ import org.eclipse.rdf4j.model.vocabulary.RDF;
 import org.eclipse.rdf4j.model.vocabulary.RDF4J;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.QueryEvaluationException;
+import org.eclipse.rdf4j.query.QueryExecutionPolicy;
+import org.eclipse.rdf4j.query.QueryExecutionPolicy.GraphRestrictionMode;
 import org.eclipse.rdf4j.query.QueryLanguage;
 import org.eclipse.rdf4j.query.TupleQueryResult;
 import org.eclipse.rdf4j.query.algebra.Graph;
@@ -321,6 +323,8 @@ class LmdbNativeGeneratedQueryCoverageTest {
 		store = new LmdbStore(dataDir, new LmdbStoreConfig("spoc,ospc,psoc,posc").setNativeEvaluationEnabled(true)
 				.setDirectAdjacencyEnabled(true)
 				.setDirectAdjacencyBuildOnStart(false));
+		// This class measures kernel eligibility; keep GRAPH join routing from replacing that candidate.
+		store.setQueryExecutionPolicy(QueryExecutionPolicy.DEFAULT.withGraphRestrictionMode(GraphRestrictionMode.OFF));
 		repository = new SailRepository(store);
 		try (SailRepositoryConnection connection = repository.getConnection()) {
 			connection.begin();
