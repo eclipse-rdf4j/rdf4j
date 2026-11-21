@@ -599,7 +599,8 @@ final class NativeRowsStep implements NativeResultStep, LmdbNativePhysicalPlan {
 			}
 		};
 		NativePhysicalInputRecipe recipe = NativePhysicalInputRecipe.capture(input);
-		NativeResultStep selected = new NativeSelectedResultStep(executable, this, input, null, null, null, null);
+		NativeResultStep selected = new NativeSelectedResultStep(executable, this, input, originalExpr, null, null,
+				null);
 		return new NativePhysicalResultPlan(selected, quote,
 				evidence == null || recipe == null || !NativeWorkerPlanBinder.canBind(input) ? null
 						: (prepared, worker, bindings) -> {
@@ -1135,7 +1136,7 @@ final class NativeRowsStep implements NativeResultStep, LmdbNativePhysicalPlan {
 		NativeFilterLease filterLease = new NativeFilterLease();
 		MultiJoinPlan multiJoin = filterLease.borrow(input);
 		LmdbNativeAttemptMetrics attemptMetrics = LmdbNativeAttemptMetrics.root(originalExpr);
-		try {
+		try (var optionalScope = attemptMetrics.optionalScope(row.source)) {
 			List<BindingSet> result = tryEvaluateOrderedFactorizedAttempt(values, comparator, emitCap, row, multiJoin,
 					attemptMetrics);
 			if (result == null) {
@@ -1148,6 +1149,8 @@ final class NativeRowsStep implements NativeResultStep, LmdbNativePhysicalPlan {
 		} catch (RuntimeException | Error failure) {
 			filterLease.abort(failure);
 			throw failure;
+		} finally {
+			attemptMetrics.discardOptionalTelemetry();
 		}
 	}
 
@@ -1884,7 +1887,7 @@ final class NativeRowsStep implements NativeResultStep, LmdbNativePhysicalPlan {
 		} catch (IOException e) {
 			throw new QueryEvaluationException(e);
 		}
-		LmdbNativeStrategyPreview.inspect(arg);
+		LmdbNativeStrategyPreview.inspect(arg, originalExpr);
 	}
 
 	private LmdbNativeStrategyProposal<NativeUnorderedInput> proposeFactorized(RowState row,
@@ -1983,7 +1986,7 @@ final class NativeRowsStep implements NativeResultStep, LmdbNativePhysicalPlan {
 					LmdbNativeCostVectors.rowBounds(multiJoin, row, row.boundMask()));
 			quote = new LmdbNativeCostQuote(quote.startup(), quote.streaming().plus(materialization),
 					quote.outputRows(),
-					quote.ordered(), quote.distinct(), quote.chunked());
+					quote.ordered(), quote.distinct(), quote.chunked()).withOptionalCostFrom(quote);
 		}
 		return quote == null ? wrapped : wrapped.withCostQuote(quote);
 	}
@@ -2013,7 +2016,7 @@ final class NativeRowsStep implements NativeResultStep, LmdbNativePhysicalPlan {
 					LmdbNativeCostVector.Feature.OUTPUT_MATERIALIZATION, quote.outputRows(),
 					new LmdbNativeWork.RowBounds(0D, physicalRowsHigh));
 			return new LmdbNativeCostQuote(quote.startup(), quote.streaming().plus(materialization), quote.outputRows(),
-					quote.ordered(), quote.distinct(), quote.chunked());
+					quote.ordered(), quote.distinct(), quote.chunked()).withOptionalCostFrom(quote);
 		}
 		double inputs = Double.isFinite(physicalRows) && physicalRows >= 0D ? physicalRows : quote.outputRows();
 		if (distinct && offset == 0L && limit == 1L) {
@@ -2031,7 +2034,7 @@ final class NativeRowsStep implements NativeResultStep, LmdbNativePhysicalPlan {
 					.plus(LmdbNativeCostVector.bounds(LmdbNativeCostVector.Feature.OUTPUT_MATERIALIZATION,
 							0D, empty ? 0D : 1D, 1D));
 			return new LmdbNativeCostQuote(quote.startup().plus(firstConsumer), quote.streaming(), quote.outputRows(),
-					quote.ordered(), quote.distinct(), quote.chunked());
+					quote.ordered(), quote.distinct(), quote.chunked()).withOptionalCostFrom(quote);
 		}
 		// A sampled logical output estimate is not the physical producer's ceiling. Factorized plans carry
 		// their raw-prefix/ordinary-suffix bound explicitly, without changing logical demand or expected work.
@@ -2057,7 +2060,7 @@ final class NativeRowsStep implements NativeResultStep, LmdbNativePhysicalPlan {
 		consumer = consumer.plus(LmdbNativeCostVector.bounds(LmdbNativeCostVector.Feature.OUTPUT_MATERIALIZATION,
 				0D, emitted, Math.max(ceiling, emitted)));
 		return new LmdbNativeCostQuote(quote.startup(), quote.streaming().plus(consumer), quote.outputRows(),
-				quote.ordered(), quote.distinct(), quote.chunked());
+				quote.ordered(), quote.distinct(), quote.chunked()).withOptionalCostFrom(quote);
 	}
 
 	/** Retained key domains from the first producer of each slot; missing or nullable domains remain unknown. */
@@ -2116,14 +2119,17 @@ final class NativeRowsStep implements NativeResultStep, LmdbNativePhysicalPlan {
 
 	private NativeUnorderedInput acceptFactorized(RowState row, LmdbNativeFactorizedRows factorized,
 			LmdbNativeAttemptMetrics metrics) throws IOException {
-		if (row.runtimePlan != null) {
-			row.runtimePlan.activate(LmdbNativeAttemptMetrics.PATH_FACTORIZED_ROWS, factorized.derived.order);
+		try (var optionalScope = metrics.optionalScope(row.source)) {
+			if (row.runtimePlan != null) {
+				row.runtimePlan.activate(LmdbNativeAttemptMetrics.PATH_FACTORIZED_ROWS, factorized.derived.order);
+			}
+			RowCursor cursor = factorized.open(row);
+			if (LmdbNativeExplain.recordsExecutionPaths(originalExpr)) {
+				metrics.deferStrategy(originalExpr, factorized.describeEngagement());
+			}
+			return NativeUnorderedInput.factorized(row, cursor, factorized, metrics);
+
 		}
-		RowCursor cursor = factorized.open(row);
-		if (LmdbNativeExplain.recordsExecutionPaths(originalExpr)) {
-			metrics.deferStrategy(originalExpr, factorized.describeEngagement());
-		}
-		return NativeUnorderedInput.factorized(row, cursor, factorized, metrics);
 	}
 
 	private NativeUnorderedInput acceptKernel(RowState row, RowCursor cursor) {
@@ -2276,7 +2282,7 @@ final class NativeRowsStep implements NativeResultStep, LmdbNativePhysicalPlan {
 		return proposal.withCostQuote(new LmdbNativeCostQuote(
 				firstKey ? quote.startup().plus(tracker) : quote.startup(),
 				firstKey ? quote.streaming() : quote.streaming().plus(tracker), quote.outputRows(),
-				quote.ordered(), quote.distinct(), quote.chunked()));
+				quote.ordered(), quote.distinct(), quote.chunked()).withOptionalCostFrom(quote));
 	}
 
 	private static LmdbNativeStrategyProposal<NativeUnorderedInput> inputProposal(
@@ -2311,16 +2317,23 @@ final class NativeRowsStep implements NativeResultStep, LmdbNativePhysicalPlan {
 		LmdbNativeStrategyProposal<NativeUnorderedInput> proposal = inputProposal(opener, tag,
 				plan.estimateWork(row, boundMask), rows)
 						.withPlanningWork(LmdbNativeWork.planning(plan, row, boundMask));
-		LmdbNativeCostVector producer = LmdbNativePlanExecutionProfile.profile(plan, row, boundMask, mode);
+		LmdbNativeCostQuote producer = LmdbNativePlanExecutionProfile.quote(plan, row, boundMask, mode);
 		LmdbNativeCostVector materialization = LmdbNativeCostVectors.boundedRows(
 				LmdbNativeCostVector.Feature.OUTPUT_MATERIALIZATION, rows,
 				LmdbNativeCostVectors.rowBounds(plan, row, boundMask));
 		// The plain direct pattern fills a complete selected batch before exposing its first output.
 		// Consumer BindingSets still follow requested demand, independently of that producer buffer.
-		LmdbNativeCostQuote quote = producerBatchSize > 1 && rows > 0D && Double.isFinite(rows)
-				? new LmdbNativeCostQuote(LmdbNativeCostVector.zero(), materialization, rows, false, false,
-						new LmdbNativeCostQuote.ChunkedWork(producer, rows, producerBatchSize))
-				: LmdbNativeCostQuote.streaming(producer.plus(materialization), rows);
+		LmdbNativeCostQuote.ChunkedWork chunks = producer.chunked();
+		LmdbNativeCostVector streaming = producer.streaming();
+		if (producerBatchSize > 1 && rows > 0D && Double.isFinite(rows)) {
+			LmdbNativeCostQuote.ChunkedWork batch = new LmdbNativeCostQuote.ChunkedWork(streaming, rows,
+					producerBatchSize);
+			chunks = chunks == null ? batch : batch.withIndependentPhase(chunks);
+			streaming = LmdbNativeCostVector.zero();
+		}
+		LmdbNativeCostQuote quote = new LmdbNativeCostQuote(producer.startup(), streaming.plus(materialization),
+				rows, false, false, chunks, producer.inputSpread(), producer.outputProvenEmpty())
+						.withOptionalCostFrom(producer);
 		return proposal.withCostQuote(quote);
 	}
 
@@ -2348,7 +2361,8 @@ final class NativeRowsStep implements NativeResultStep, LmdbNativePhysicalPlan {
 							LmdbNativeKernelExecution.rowFillSize(replaySafe))
 					: LmdbNativeKernelHashCostQuote.parallelQuote(arg, row, rowFeature, rows, quotedWorkers);
 			if (hash != null) {
-				return hash;
+				return LmdbNativePlanExecutionProfile.preserveOptionalDemand(hash, arg, row, boundMask,
+						LmdbNativePlanExecutionProfile.Mode.KERNEL);
 			}
 		}
 		// a kernel lowers EXISTS and MINUS bodies to witnesses and OPTIONAL to correlated probes; a pipeline runs
@@ -2388,7 +2402,10 @@ final class NativeRowsStep implements NativeResultStep, LmdbNativePhysicalPlan {
 			return new LmdbNativeCostQuote(startup, materialization, rows, false, false,
 					new LmdbNativeCostQuote.ChunkedWork(streaming, rows, fillRows));
 		}
-		return new LmdbNativeCostQuote(startup, streaming.plus(materialization), rows, false, false);
+		LmdbNativeCostQuote quote = new LmdbNativeCostQuote(startup, streaming.plus(materialization),
+				rows, false, false);
+		return LmdbNativePlanExecutionProfile.preserveOptionalDemand(quote, arg, row, boundMask,
+				pipelines ? LmdbNativePlanExecutionProfile.Mode.BATCH : LmdbNativePlanExecutionProfile.Mode.KERNEL);
 	}
 
 	/**
@@ -2700,7 +2717,7 @@ final class NativeBareRowsStep implements QueryEvaluationStep, LmdbNativePhysica
 				LmdbNativeStrategyPreview.empty("bound BGP dispatch",
 						"Incoming bindings have no matching stored values");
 			}
-			LmdbNativeStrategyPreview.inspect(arg);
+			LmdbNativeStrategyPreview.inspect(arg, originalExpr);
 		}
 	}
 
@@ -2741,7 +2758,7 @@ final class NativeExistsValueStep implements QueryValueEvaluationStep {
 		}
 		LmdbNativeStrategyPreview.direct("EXISTS dispatch", LmdbNativeAttemptMetrics.PATH_BARE_EXISTS,
 				"Boolean existence probe; outer-row bindings are applied when the expression is evaluated", null);
-		LmdbNativeStrategyPreview.inspect(step.arg);
+		LmdbNativeStrategyPreview.inspect(step.arg, step.originalExpr);
 	}
 
 	@Override
@@ -3346,6 +3363,8 @@ final class NativeUnorderedInput implements AutoCloseable {
 	NativeBatch batch;
 	LmdbNativeFactorizedRows factorizedAttempt;
 	LmdbNativeAttemptMetrics factorizedAttemptMetrics;
+	private LmdbNativeAttemptMetrics optionalMetrics;
+	private boolean ownsOptionalMetrics;
 	NativeScalarFilterAttempt scalarFilterAttempt;
 	boolean selectedInputAccepted;
 	boolean materializedRowsClaimed;
@@ -3372,6 +3391,7 @@ final class NativeUnorderedInput implements AutoCloseable {
 
 	private NativeUnorderedInput(RowState row) {
 		this.row = row;
+		this.optionalMetrics = LmdbNativeAttemptMetrics.currentOptionalOwner();
 		this.scalarFilterAttempt = row.scalarFilterAttempt;
 		this.scalarFilterAcceptanceGuard = row.scalarFilterAcceptanceGuard;
 	}
@@ -3394,6 +3414,8 @@ final class NativeUnorderedInput implements AutoCloseable {
 		NativeUnorderedInput input = rows(row, cursor);
 		input.factorizedAttempt = factorized;
 		input.factorizedAttemptMetrics = metrics;
+		input.optionalMetrics = metrics;
+		input.ownsOptionalMetrics = true;
 		return input;
 	}
 
@@ -3425,9 +3447,14 @@ final class NativeUnorderedInput implements AutoCloseable {
 		this.observation = observation;
 	}
 
+	private LmdbNativeAttemptMetrics.OptionalScope optionalScope() {
+		return optionalMetrics == null ? LmdbNativeAttemptMetrics.direct().optionalScope(row.source)
+				: optionalMetrics.optionalScope(row.source);
+	}
+
 	boolean advance() throws IOException {
 		LmdbNativeCostObservation observing = observation;
-		try {
+		try (var optionalScope = optionalScope()) {
 			if (observing == null) {
 				return row.advance(cursor);
 			}
@@ -3445,7 +3472,7 @@ final class NativeUnorderedInput implements AutoCloseable {
 
 	int fill() throws IOException {
 		LmdbNativeCostObservation observing = observation;
-		try {
+		try (var optionalScope = optionalScope()) {
 			if (observing == null) {
 				return row.fill(batchCursor, batch);
 			}
@@ -3483,43 +3510,50 @@ final class NativeUnorderedInput implements AutoCloseable {
 		if (closed) {
 			return;
 		}
-		closed = true;
-		Throwable failure = KernelRuntime.closeResource(batchCursor, null);
-		batchCursor = null;
-		failure = KernelRuntime.closeResource(cursor, failure);
-		cursor = null;
-		boolean producerCleanupSucceeded = failure == null;
-		if (failure == null && selectedInputAccepted && scalarFilterAcceptanceGuard != null) {
-			try {
-				scalarFilterAcceptanceGuard.run();
-			} catch (RuntimeException | Error problem) {
-				failure = KernelRuntime.closeResource(() -> {
-					throw problem;
-				}, failure);
+		try (var optionalScope = optionalScope()) {
+			closed = true;
+			Throwable failure = KernelRuntime.closeResource(batchCursor, null);
+			batchCursor = null;
+			failure = KernelRuntime.closeResource(cursor, failure);
+			cursor = null;
+			boolean producerCleanupSucceeded = failure == null;
+			if (failure == null && selectedInputAccepted && scalarFilterAcceptanceGuard != null) {
+				try {
+					scalarFilterAcceptanceGuard.run();
+				} catch (RuntimeException | Error problem) {
+					failure = KernelRuntime.closeResource(() -> {
+						throw problem;
+					}, failure);
+				}
+			}
+			if (failure == null) {
+				try {
+					commitFactorizedAttemptIfEngaged();
+				} catch (RuntimeException | Error problem) {
+					failure = KernelRuntime.closeResource(() -> {
+						throw problem;
+					}, failure);
+				}
+			}
+			batch = null;
+			if (failure != null) {
+				failScalarFilterAttempt(failure, true);
+			} else if (selectedInputAccepted && scalarFilterAttempt != null) {
+				scalarFilterAttempt.accept();
+			}
+			if (failure == null && completed && selectedInputAccepted && observation != null) {
+				observation.completed();
+			}
+			if (scalarFilterAttempt != null && row.scalarFilterAttempt == scalarFilterAttempt) {
+				row.scalarFilterAttempt = scalarFilterAttempt.parent();
+			}
+			KernelRuntime.rethrowCloseFailure(failure);
+
+		} finally {
+			if (ownsOptionalMetrics) {
+				optionalMetrics.discardOptionalTelemetry();
 			}
 		}
-		if (failure == null) {
-			try {
-				commitFactorizedAttemptIfEngaged();
-			} catch (RuntimeException | Error problem) {
-				failure = KernelRuntime.closeResource(() -> {
-					throw problem;
-				}, failure);
-			}
-		}
-		batch = null;
-		if (failure != null) {
-			failScalarFilterAttempt(failure, true);
-		} else if (selectedInputAccepted && scalarFilterAttempt != null) {
-			scalarFilterAttempt.accept();
-		}
-		if (failure == null && completed && selectedInputAccepted && observation != null) {
-			observation.completed();
-		}
-		if (scalarFilterAttempt != null && row.scalarFilterAttempt == scalarFilterAttempt) {
-			row.scalarFilterAttempt = scalarFilterAttempt.parent();
-		}
-		KernelRuntime.rethrowCloseFailure(failure);
 	}
 }
 

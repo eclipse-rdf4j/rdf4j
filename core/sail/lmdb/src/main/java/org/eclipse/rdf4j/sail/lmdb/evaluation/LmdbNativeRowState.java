@@ -478,6 +478,14 @@ final class RowState implements LmdbNativeSlotReader {
 		return source instanceof SyntheticValueSource ? ((SyntheticValueSource) source).authority() : null;
 	}
 
+	/** A missing evaluation authority means no reusable OPTIONAL scope can be proved. */
+	OptionalEvaluationIdentity optionalEvaluationIdentity() {
+		if (!(source instanceof SyntheticValueSource synthetic) || synthetic.executionContext() == null) {
+			return null;
+		}
+		return synthetic.executionContext().optionalEvaluationIdentity();
+	}
+
 	/** Terminal hashing/equality only. Pattern probes and expression comparisons keep termAuthority(). */
 	NativeTermAuthority keyAuthority() {
 		return source instanceof SyntheticValueSource ? ((SyntheticValueSource) source).keyAuthority() : null;

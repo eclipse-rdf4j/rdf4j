@@ -17,6 +17,7 @@ import java.util.Arrays;
 import java.util.List;
 import java.util.OptionalDouble;
 import java.util.OptionalLong;
+import java.util.function.LongConsumer;
 
 import org.eclipse.rdf4j.common.annotation.Experimental;
 import org.eclipse.rdf4j.common.order.StatementOrder;
@@ -28,6 +29,7 @@ import org.eclipse.rdf4j.sail.lmdb.LmdbPrefixRunPlan;
 import org.eclipse.rdf4j.sail.lmdb.LmdbRootScanPartition;
 import org.eclipse.rdf4j.sail.lmdb.RecordIterator;
 import org.eclipse.rdf4j.sail.lmdb.TripleIndex;
+import org.eclipse.rdf4j.sail.lmdb.model.LmdbValue;
 
 @Experimental
 final class CompositeNativeLmdbQuerySource implements NativeLmdbQuerySource {
@@ -77,6 +79,11 @@ final class CompositeNativeLmdbQuerySource implements NativeLmdbQuerySource {
 	@Override
 	public Object valueLookupScope() {
 		return sources.get(0).valueLookupScope();
+	}
+
+	@Override
+	public boolean initializeAdmittedValue(LmdbValue value, LongConsumer admission) {
+		return sources.get(0).initializeAdmittedValue(value, admission);
 	}
 
 	@Override
@@ -1251,6 +1258,11 @@ final class CompositeNativeLmdbQuerySource implements NativeLmdbQuerySource {
 		@Override
 		public Object valueLookupScope() {
 			return delegate.valueLookupScope();
+		}
+
+		@Override
+		public boolean initializeAdmittedValue(LmdbValue value, LongConsumer admission) {
+			return delegate.initializeAdmittedValue(value, admission);
 		}
 
 		@Override

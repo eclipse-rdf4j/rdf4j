@@ -484,8 +484,12 @@ public final class LmdbNativeEvaluationStrategy extends StrictEvaluationStrategy
 	 */
 	private QueryEvaluationStep compileHostedPlan(TupleExpr expr, QueryEvaluationContext context) {
 		LmdbNativeAggregateCompiler.CompileOutcome outcome;
+		boolean optionalScopeUnproven = !forceRootGeneric
+				&& OptionalSemanticScope.requiresGenericEvaluation(expr, nativeSource);
 		if (forceRootGeneric) {
 			outcome = LmdbNativeAggregateCompiler.CompileOutcome.unsupported("forceRootGeneric");
+		} else if (optionalScopeUnproven) {
+			outcome = LmdbNativeAggregateCompiler.CompileOutcome.unsupported("optional-scope-unproven");
 		} else if (!nativeSource.hasStatementsInSource()) {
 			outcome = LmdbNativeAggregateCompiler.CompileOutcome.unsupported("known-empty-source");
 		} else {
@@ -497,7 +501,8 @@ public final class LmdbNativeEvaluationStrategy extends StrictEvaluationStrategy
 		// forceRootGeneric compiles through the claim-suppressed view so every lazy runtime precompile callback from
 		// generic operators lands on it; default mode keeps today's generic compilation, whose recursion re-enters
 		// this strategy and preserves the interior native fragment claims.
-		LmdbNativeEvaluationStrategy hostCompiler = forceRootGeneric ? genericOnlyView() : this;
+		LmdbNativeEvaluationStrategy hostCompiler = forceRootGeneric || optionalScopeUnproven ? genericOnlyView()
+				: this;
 		GenericRootPlan hosted = new GenericRootPlan(hostCompiler.genericPrecompile(expr, context),
 				outcome.hostReason(), expr);
 		LmdbNativeAggregateCompiler.HOSTED_GENERIC.incrementAndGet();

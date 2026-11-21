@@ -251,7 +251,10 @@ final class LmdbNativeHashJoin {
 				.plus(LmdbNativeCostVectors.perRow(LmdbNativeCostVector.Feature.BATCH_ROW, outputRows, row));
 		return new LmdbNativeStrategyProposal<>(() -> candidate.open(plan, row, capacity), candidate.estCost,
 				LmdbNativeAttemptMetrics.PATH_BATCH)
-						.withCostQuote(new LmdbNativeCostQuote(startup, streaming, outputRows, false, false));
+						.withCostQuote(LmdbNativePlanExecutionProfile.preserveOptionalDemand(
+								new LmdbNativeCostQuote(startup, streaming, outputRows, false, false), plan, row,
+								boundMask,
+								LmdbNativePlanExecutionProfile.Mode.BATCH));
 	}
 
 	private static Candidate tryPlan(MultiJoinPlan plan, RowState row) {

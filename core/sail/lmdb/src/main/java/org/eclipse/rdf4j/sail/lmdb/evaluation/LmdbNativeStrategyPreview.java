@@ -13,6 +13,7 @@
 package org.eclipse.rdf4j.sail.lmdb.evaluation;
 
 import java.util.ArrayList;
+import java.util.IdentityHashMap;
 import java.util.List;
 
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
@@ -31,6 +32,9 @@ final class LmdbNativeStrategyPreview {
 
 	static void inspect(QueryEvaluationStep step) {
 		if (step instanceof NativeSelectedResultPreview selected) {
+			if (active()) {
+				selected.explainOptionalPlans();
+			}
 			if (QueryExplanationContext.inspectOnce(selected.previewIdentity())) {
 				selected.explainSelected();
 			}
@@ -70,75 +74,112 @@ final class LmdbNativeStrategyPreview {
 	}
 
 	static void inspect(SlotPlan plan) {
-		if (!QueryExplanationContext.inspectOnce(plan)) {
+		inspect(plan, null, null);
+	}
+
+	/** Attach current physical OPTIONAL descriptions even if another preview already inspected this plan. */
+	static void inspect(SlotPlan plan, TupleExpr target) {
+		describeOptionals(plan, target);
+		inspect(plan);
+	}
+
+	/** Pure, target-specific annotations are independent of the once-only strategy-decision preview. */
+	static void describeOptionals(SlotPlan plan, TupleExpr target) {
+		if (target != null) {
+			inspect(plan, target, new IdentityHashMap<>());
+		}
+	}
+
+	private static void inspect(SlotPlan plan, TupleExpr target, IdentityHashMap<Object, Boolean> seen) {
+		if (seen == null ? !QueryExplanationContext.inspectOnce(plan) : seen.put(plan, Boolean.TRUE) != null) {
 			return;
 		}
+		if (target != null && plan instanceof LeftJoinPlan join) {
+			OptionalExecutionStrategy.describe(join).explainPlanned(target);
+		}
 		if (plan instanceof NativeGraphPlan graph) {
-			graph.explainStrategies();
+			if (seen == null) {
+				graph.explainStrategies();
+			}
 		} else if (plan instanceof NativeLogicalResultTransferPlan transfer) {
-			inspect(transfer.input);
+			inspect(transfer.input, target, seen);
 		} else if (plan instanceof NativeSubqueryPlan subquery) {
-			subquery.explainStrategies();
+			if (seen == null) {
+				subquery.explainStrategies();
+			}
 		} else if (plan instanceof NativeKeyedSubqueryJoinPlan keyed) {
-			inspect(keyed.probe);
-			inspect(keyed.subPlan);
+			inspect(keyed.probe, target, seen);
+			inspect(keyed.subPlan, target, seen);
 		} else if (plan instanceof MultiJoinPlan join) {
 			for (SlotPlan child : join.children) {
-				inspect(child);
+				inspect(child, target, seen);
 			}
 			for (MaskedFilter filter : join.filters) {
-				inspect(filter.filter);
+				inspect(filter.filter, target, seen);
 			}
 		} else if (plan instanceof JoinPlan join) {
-			inspect(join.left);
-			inspect(join.right);
+			inspect(join.left, target, seen);
+			inspect(join.right, target, seen);
 		} else if (plan instanceof LeftJoinPlan join) {
-			inspect(join.left);
-			inspect(join.right);
+			inspect(join.left, target, seen);
+			inspect(join.right, target, seen);
+			if (join.lexicalCondition != null) {
+				inspect(join.lexicalCondition, target, seen);
+			}
 		} else if (plan instanceof LateralPlan join) {
-			inspect(join.left);
-			QueryExplanationContext.withRuntimeCondition("Outer LATERAL row bindings are required",
-					() -> inspect(join.right));
+			inspect(join.left, target, seen);
+			if (seen != null) {
+				inspect(join.right, target, seen);
+			} else {
+				QueryExplanationContext.withRuntimeCondition("Outer LATERAL row bindings are required",
+						() -> inspect(join.right, target, seen));
+			}
 		} else if (plan instanceof UnionPlan union) {
-			inspect(union.left);
-			inspect(union.right);
+			inspect(union.left, target, seen);
+			inspect(union.right, target, seen);
 		} else if (plan instanceof OrderedUnionPlan union) {
-			inspect(union.left);
-			inspect(union.right);
+			inspect(union.left, target, seen);
+			inspect(union.right, target, seen);
 		} else if (plan instanceof MinusPlan minus) {
-			inspect(minus.left);
-			inspect(minus.right);
+			inspect(minus.left, target, seen);
+			inspect(minus.right, target, seen);
 		} else if (plan instanceof FilterPlan filter) {
-			inspect(filter.arg);
-			inspect(filter.filter);
+			inspect(filter.arg, target, seen);
+			inspect(filter.filter, target, seen);
 		} else if (plan instanceof ExtensionPlan extension) {
-			inspect(extension.arg);
+			inspect(extension.arg, target, seen);
 		} else if (plan instanceof EntryBindingCompatibilityPlan entry) {
-			inspect(entry.arg);
+			inspect(entry.arg, target, seen);
 		} else if (plan instanceof MergeOrderedJoinPlan merge) {
-			inspect(merge.join);
+			inspect(merge.join, target, seen);
 		} else if (plan instanceof DrainGuardPlan guard) {
-			inspect(guard.delegate);
-			inspect(guard.drained);
+			inspect(guard.delegate, target, seen);
+			inspect(guard.drained, target, seen);
 		}
 	}
 
 	static void inspect(NativeBooleanFilter filter) {
-		if (!QueryExplanationContext.inspectOnce(filter)) {
+		inspect(filter, null, null);
+	}
+
+	private static void inspect(NativeBooleanFilter filter, TupleExpr target, IdentityHashMap<Object, Boolean> seen) {
+		if (seen == null ? !QueryExplanationContext.inspectOnce(filter) : seen.put(filter, Boolean.TRUE) != null) {
 			return;
 		}
 		if (filter instanceof ExistsFilter exists) {
-			inspect(exists.subPlan);
+			inspect(exists.subPlan, target, seen);
+		} else if (filter instanceof ScopedNativeBooleanFilter scoped) {
+			inspect(scoped.delegate(), target, seen);
 		} else if (filter instanceof RecordingNativeBooleanFilter recording) {
-			inspect(recording.delegate);
+			inspect(recording.delegate, target, seen);
 		} else if (filter instanceof NegatedNativeBooleanFilter negated) {
-			inspect(negated.delegate);
+			inspect(negated.delegate, target, seen);
 		} else if (filter instanceof BooleanCombinationFilter combined) {
-			inspect(combined.left);
-			inspect(combined.right);
+			inspect(combined.left, target, seen);
+			inspect(combined.right, target, seen);
 		} else if (filter instanceof NativeConstantFalseWhenUnboundFilter guarded) {
-			inspect(guarded.fallback);
-		} else {
+			inspect(guarded.fallback, target, seen);
+		} else if (seen == null) {
 			filter.explainStrategies();
 		}
 	}

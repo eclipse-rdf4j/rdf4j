@@ -82,6 +82,222 @@ final class LmdbNativePlanExecutionProfile {
 		return mode == Mode.SEQUENTIAL ? scaleInterpreted(priced, GENERIC_ROW_PREMIUM) : priced;
 	}
 
+	/** Keeps complete OPTIONAL builds outside output-proportional work. */
+	static LmdbNativeCostQuote quote(SlotPlan plan, RowState row, long boundMask, Mode mode) {
+		LmdbNativeCostVector total = profile(plan, row, boundMask, mode);
+		LmdbNativeCostQuote quote = LmdbNativeCostQuote.streaming(total,
+				LmdbNativeCostVectors.rows(plan, row, boundMask));
+		if (containsEagerOptional(plan, row) && LmdbNativeCostVectors.rowBounds(plan, row, boundMask).high() == 0D) {
+			quote = quote.withProvenEmptyOutput();
+		}
+		return preserveOptionalDemand(quote, plan, row, boundMask, mode);
+	}
+
+	/** Existing specialized quotes retain their fixed startup and make uncertain nested activation indivisible. */
+	static LmdbNativeCostQuote preserveOptionalDemand(LmdbNativeCostQuote quote, SlotPlan plan, RowState row,
+			long boundMask, Mode mode) {
+		if (!containsEagerOptional(plan, row)) {
+			return quote;
+		}
+		LmdbNativePlanExecutionProfile pricing = new LmdbNativePlanExecutionProfile(row, mode, Execution.ALL,
+				mode == Mode.SEQUENTIAL);
+		if (!pricing.containsActiveEagerOptional(plan, boundMask)) {
+			// A zero-output left side can still have access or fatal-effect work. It does not imply that a
+			// discardable OPTIONAL right side is built, nor does that left work make its materialization unpriced.
+			return quote;
+		}
+		LmdbNativeCostVector firstPull = pricing.firstPullBuilds(plan, boundMask, boundMask);
+		if (mode == Mode.SEQUENTIAL) {
+			firstPull = scaleInterpreted(firstPull, GENERIC_ROW_PREMIUM);
+		}
+		LmdbNativeCostVector streaming = quote.streaming();
+		if (quote.chunked() != null || !quote.startup().isZero() || !simpleOptionalSpine(plan, row)) {
+			// Epoch counts, locality and branch demand are not proved. Preserve a complete-run envelope.
+			firstPull = LmdbNativeCostVectors.expectationOnly(
+					LmdbNativeCostQuote.remainder(quote.total(), quote.startup()));
+			streaming = LmdbNativeCostVector.zero();
+		} else {
+			streaming = LmdbNativeCostQuote.remainder(streaming, firstPull);
+		}
+		LmdbNativeCostQuote.ChunkedWork builds = firstPull.isZero() ? null
+				: new LmdbNativeCostQuote.ChunkedWork(firstPull, 1D, 1);
+		LmdbNativeCostQuote result = new LmdbNativeCostQuote(quote.startup(), streaming, quote.outputRows(),
+				quote.ordered(),
+				quote.distinct(), builds, quote.inputSpread(), quote.outputProvenEmpty(), quote.optionalCost());
+		return result.total().isZero() ? result : result.withOptionalCost(OptionalCostCompleteness.MATERIALIZATION);
+	}
+
+	private LmdbNativeCostVector firstPullBuilds(SlotPlan plan, long mask, long assuredMask) {
+		if (plan instanceof LeftJoinPlan join && join.lexicalSharedSlots != null) {
+			LmdbNativeCostVector leftBuilds = firstPullBuilds(join.left, mask, assuredMask);
+			return emptyAndDiscardable(join, mask) ? leftBuilds
+					: leftBuilds.plus(independentRightBuild(join, mask, assuredMask));
+		}
+		if (plan instanceof LeftJoinPlan join && OptionalExecutionStrategy.describe(join).mayBuildCorrelatedMemo(row)) {
+			LmdbNativeCostVector leftBuilds = firstPullBuilds(join.left, mask, assuredMask);
+			if (emptyAndDiscardable(join, mask)) {
+				return leftBuilds;
+			}
+			long rightMask = mask | join.left.producedMask();
+			long rightAssured = assuredAfter(join.left, mask, assuredMask);
+			SlotPlan rawRight = OptionalExecutionStrategy.describe(join).rawRight();
+			LmdbNativePlanExecutionProfile nativeRows = mode == Mode.SEQUENTIAL ? this
+					: new LmdbNativePlanExecutionProfile(row, Mode.SEQUENTIAL);
+			LmdbNativeCostVector build = nativeRows.price(rawRight, rightMask, rightAssured)
+					.plus(perRow(Feature.DECODED_ROW, rows(rawRight, rightMask)))
+					.plus(LmdbNativeCostVector.point(Feature.BRANCH_OPEN, 1D));
+			return leftBuilds.plus(LmdbNativeCostVectors.expectationOnly(build));
+		}
+		if (plan instanceof FilterPlan filter) {
+			return firstPullBuilds(filter.arg, mask, assuredMask);
+		}
+		if (plan instanceof ExtensionPlan extension) {
+			return firstPullBuilds(extension.arg, mask, assuredMask);
+		}
+		if (plan instanceof RowDistinctPlan distinct) {
+			return firstPullBuilds(distinct.arg, mask, assuredMask);
+		}
+		if (plan instanceof NativeAliasJoinPlan alias) {
+			return firstPullBuilds(alias.original, mask, assuredMask);
+		}
+		if (plan instanceof NativeAliasJoinMemoPlan memo) {
+			return firstPullBuilds(memo.original, mask, assuredMask);
+		}
+		return LmdbNativeCostVector.zero();
+	}
+
+	private static boolean simpleOptionalSpine(SlotPlan plan, RowState row) {
+		if (plan instanceof LeftJoinPlan join) {
+			return (join.lexicalSharedSlots != null
+					|| OptionalExecutionStrategy.describe(join).mayBuildCorrelatedMemo(row))
+					&& !containsEagerOptional(join.left, row);
+		}
+		if (plan instanceof FilterPlan filter) {
+			return !containsEagerOptional(filter.filter, row) && simpleOptionalSpine(filter.arg, row);
+		}
+		if (plan instanceof ExtensionPlan extension) {
+			return simpleOptionalSpine(extension.arg, row);
+		}
+		if (plan instanceof RowDistinctPlan distinct) {
+			return simpleOptionalSpine(distinct.arg, row);
+		}
+		if (plan instanceof NativeAliasJoinPlan alias) {
+			return simpleOptionalSpine(alias.original, row);
+		}
+		return plan instanceof NativeAliasJoinMemoPlan memo && simpleOptionalSpine(memo.original, row);
+	}
+
+	private static boolean containsEagerOptional(SlotPlan plan, RowState row) {
+		if (plan instanceof LeftJoinPlan join) {
+			return join.lexicalSharedSlots != null
+					|| OptionalExecutionStrategy.describe(join).mayBuildCorrelatedMemo(row)
+					|| containsEagerOptional(join.left, row) || containsEagerOptional(join.right, row);
+		}
+		if (plan instanceof JoinPlan join) {
+			return containsEagerOptional(join.left, row) || containsEagerOptional(join.right, row);
+		}
+		if (plan instanceof LateralPlan lateral) {
+			return containsEagerOptional(lateral.left, row) || containsEagerOptional(lateral.right, row);
+		}
+		if (plan instanceof UnionPlan union) {
+			return containsEagerOptional(union.left, row) || containsEagerOptional(union.right, row);
+		}
+		if (plan instanceof MultiJoinPlan multi) {
+			for (SlotPlan child : multi.children) {
+				if (containsEagerOptional(child, row)) {
+					return true;
+				}
+			}
+			for (MaskedFilter filter : multi.filters) {
+				if (containsEagerOptional(filter.filter, row)) {
+					return true;
+				}
+			}
+		}
+		if (plan instanceof FilterPlan filter) {
+			return containsEagerOptional(filter.arg, row) || containsEagerOptional(filter.filter, row);
+		}
+		if (plan instanceof ExtensionPlan extension) {
+			return containsEagerOptional(extension.arg, row);
+		}
+		if (plan instanceof RowDistinctPlan distinct) {
+			return containsEagerOptional(distinct.arg, row);
+		}
+		if (plan instanceof MinusPlan minus) {
+			return containsEagerOptional(minus.left, row) || containsEagerOptional(minus.right, row);
+		}
+		if (plan instanceof NativeAliasJoinPlan alias) {
+			return containsEagerOptional(alias.original, row);
+		}
+		return plan instanceof NativeAliasJoinMemoPlan memo && containsEagerOptional(memo.original, row);
+	}
+
+	private static boolean containsEagerOptional(NativeBooleanFilter filter, RowState row) {
+		filter = NativeFilterLease.inspect(filter);
+		if (filter instanceof RecordingNativeBooleanFilter recording) {
+			return containsEagerOptional(recording.delegate, row);
+		}
+		if (filter instanceof NegatedNativeBooleanFilter negated) {
+			return containsEagerOptional(negated.delegate, row);
+		}
+		if (filter instanceof BooleanCombinationFilter combination) {
+			return containsEagerOptional(combination.left, row) || containsEagerOptional(combination.right, row);
+		}
+		return filter instanceof ExistsFilter exists && containsEagerOptional(exists.subPlan, row);
+	}
+
+	/** Like the structural check, but excludes a right arm proven inactive by the same proof used by pricing. */
+	private boolean containsActiveEagerOptional(SlotPlan plan, long mask) {
+		if (plan instanceof LeftJoinPlan join) {
+			if (emptyAndDiscardable(join, mask)) {
+				return containsActiveEagerOptional(join.left, mask);
+			}
+			return join.lexicalSharedSlots != null
+					|| OptionalExecutionStrategy.describe(join).mayBuildCorrelatedMemo(row)
+					|| containsActiveEagerOptional(join.left, mask)
+					|| containsActiveEagerOptional(join.right, mask | join.left.producedMask());
+		}
+		if (plan instanceof JoinPlan join) {
+			return containsActiveEagerOptional(join.left, mask)
+					|| containsActiveEagerOptional(join.right, mask | join.left.producedMask());
+		}
+		if (plan instanceof LateralPlan lateral) {
+			return containsActiveEagerOptional(lateral.left, mask)
+					|| containsActiveEagerOptional(lateral.right, mask | lateral.left.producedMask());
+		}
+		if (plan instanceof UnionPlan union) {
+			return containsActiveEagerOptional(union.left, mask) || containsActiveEagerOptional(union.right, mask);
+		}
+		if (plan instanceof MultiJoinPlan multi) {
+			for (SlotPlan child : multi.children) {
+				if (containsActiveEagerOptional(child, mask)) {
+					return true;
+				}
+			}
+			for (MaskedFilter filter : multi.filters) {
+				if (containsEagerOptional(filter.filter, row)) {
+					return true;
+				}
+			}
+		}
+		if (plan instanceof FilterPlan filter) {
+			return containsActiveEagerOptional(filter.arg, mask) || containsEagerOptional(filter.filter, row);
+		}
+		if (plan instanceof ExtensionPlan extension) {
+			return containsActiveEagerOptional(extension.arg, mask);
+		}
+		if (plan instanceof RowDistinctPlan distinct) {
+			return containsActiveEagerOptional(distinct.arg, mask);
+		}
+		if (plan instanceof MinusPlan minus) {
+			return containsActiveEagerOptional(minus.left, mask) || containsActiveEagerOptional(minus.right, mask);
+		}
+		if (plan instanceof NativeAliasJoinPlan alias) {
+			return containsActiveEagerOptional(alias.original, mask);
+		}
+		return plan instanceof NativeAliasJoinMemoPlan memo && containsActiveEagerOptional(memo.original, mask);
+	}
+
 	/** Scales cursor dispatch independently from scalar callbacks shared by the cursor and kernel tiers. */
 	private static LmdbNativeCostVector scaleInterpreted(LmdbNativeCostVector vector, double interpretedScale) {
 		if (vector.high(Feature.INTERPRETED_ROW) <= 0D) {
@@ -626,7 +842,8 @@ final class LmdbNativePlanExecutionProfile {
 			return requiresNativeWitness(union.left) || requiresNativeWitness(union.right);
 		}
 		if (plan instanceof LeftJoinPlan leftJoin) {
-			return leftJoin.lexicalSharedSlots != null || leftJoin.lexicalProblemSlots != null
+			return leftJoin.lexicalCondition != null || leftJoin.lexicalSharedSlots != null
+					|| leftJoin.lexicalProblemSlots != null
 					|| requiresNativeWitness(leftJoin.left) || requiresNativeWitness(leftJoin.right);
 		}
 		if (plan instanceof MinusPlan minus) {
@@ -701,6 +918,9 @@ final class LmdbNativePlanExecutionProfile {
 	 * priced in full.
 	 */
 	private LmdbNativeCostVector firstMatchPlan(SlotPlan plan, long mask, long assuredMask) {
+		if (containsEagerOptional(plan, row)) {
+			return price(plan, mask, assuredMask).plus(LmdbNativeCostVector.point(Feature.BRANCH_OPEN, 1D));
+		}
 		if (plan instanceof PatternPlan pattern) {
 			return firstMatch(LmdbNativeCostVectors.pattern(pattern, row, mask))
 					.plus(LmdbNativeCostVector.point(Feature.BRANCH_OPEN, 1D));
@@ -837,12 +1057,71 @@ final class LmdbNativePlanExecutionProfile {
 
 	private LmdbNativeCostVector leftJoin(LeftJoinPlan leftJoin, long mask, long assuredMask) {
 		LmdbNativeCostVector left = price(leftJoin.left, mask, assuredMask);
+		if (leftJoin.lexicalSharedSlots != null) {
+			if (emptyAndDiscardable(leftJoin, mask)) {
+				return left;
+			}
+			return left.plus(independentRightBuild(leftJoin, mask, assuredMask))
+					.plus(independentProbes(leftJoin, mask));
+		}
 		double leftRows = rows(leftJoin.left, mask);
 		if (Double.isNaN(leftRows)) {
 			return left.plus(sweep());
 		}
 		// LeftJoinPlan.estimateWork: the cursor can retain and replay the right side, so this is expected work.
 		return left.plus(LmdbNativeCostVectors.expectationOnly(leftJoinProbes(leftJoin, leftRows, mask, assuredMask)));
+	}
+
+	private boolean emptyAndDiscardable(LeftJoinPlan join, long mask) {
+		boolean discardable = join.rhsContract == null ? SlotPlan.discardable(join.right) : join.canDiscardRight();
+		return discardable && LmdbNativeCostVectors.rowBounds(join.left, row, mask).high() == 0D;
+	}
+
+	private LmdbNativeCostVector independentRightBuild(LeftJoinPlan join, long mask, long assuredMask) {
+		OptionalExecutionStrategy.Count builds = OptionalExecutionStrategy.describe(join)
+				.independentBuilds(true,
+						LmdbNativeCostVectors.rowBounds(join.left, row, mask).high() == 0D);
+		if (builds.high() == 0D) {
+			return LmdbNativeCostVector.zero();
+		}
+		// Lexical RHS execution is a native row cursor even when its outer consumer is generated or batched.
+		LmdbNativePlanExecutionProfile nativeRows = mode == Mode.SEQUENTIAL ? this
+				: new LmdbNativePlanExecutionProfile(row, Mode.SEQUENTIAL);
+		double rightRows = rows(join.right, mask);
+		LmdbNativeCostVector build = nativeRows.price(join.right, mask, assuredMask)
+				.plus(perRow(Feature.DECODED_ROW, rightRows))
+				.plus(LmdbNativeCostVector.point(Feature.BRANCH_OPEN, 1D));
+		// Payload byte lengths and actual ledger admission are absent from the plan. Neither residence nor
+		// spill/index construction is a proved zero. Keep these components explicitly uncertain.
+		build = build.plus(LmdbNativeCostVector.bounds(Feature.HASH_BUILD_ROW, 0D, 0D,
+				LmdbNativeCostQuote.UNBOUNDED_COUNT))
+				.plus(LmdbNativeCostVector.bounds(Feature.SORT_N_LOG2_N, 0D, 0D,
+						LmdbNativeCostQuote.UNBOUNDED_COUNT));
+		// The vector requires a finite nominal count. When hits are unknown, price the cold physical-open scenario;
+		// keep its lower/upper bounds uncertain rather than claiming that scenario is a measured miss estimate.
+		double nominalBuilds = builds.expectedKnown() ? builds.expected() : builds.high();
+		return LmdbNativeCostVectors.expectationOnly(build.scale(nominalBuilds));
+	}
+
+	private LmdbNativeCostVector independentProbes(LeftJoinPlan join, long mask) {
+		double leftRows = rows(join.left, mask);
+		if (LmdbNativeCostVectors.rowBounds(join.left, row, mask).high() == 0D) {
+			return LmdbNativeCostVector.zero();
+		}
+		double rightRows = rows(join.right, mask);
+		LmdbNativeCostVector candidates = LmdbNativeCostVectors.perRowProduct(Feature.DECODED_ROW,
+				rightRows, leftRows, row);
+		if (join.lexicalSharedSlots.length != 0) {
+			candidates = candidates.plus(LmdbNativeCostVectors.perRowProduct(Feature.MEMBERSHIP_TEST,
+					rightRows, leftRows, row).scale(join.lexicalSharedSlots.length));
+		}
+		if (join.lexicalCondition != null) {
+			candidates = candidates.plus(LmdbNativeCostVectors.perRowProduct(Feature.INTERPRETED_ROW,
+					rightRows, leftRows, row));
+		}
+		// Distinct exact keys, posting selectivity, cache reuse distance and condition acceptance are unknown.
+		return LmdbNativeCostVectors.expectationOnly(candidates)
+				.plus(LmdbNativeCostVectors.expectationOnly(perRow(Feature.HASH_PROBE, leftRows)));
 	}
 
 	private LmdbNativeCostVector leftJoinProbes(LeftJoinPlan leftJoin, double leftRows, long mask, long assuredMask) {
@@ -853,7 +1132,8 @@ final class LmdbNativePlanExecutionProfile {
 		LmdbNativeCostVector conversion = mode == Mode.BATCH && !(right instanceof PatternPlan)
 				? perRow(Feature.INTERPRETED_ROW, leftRows).plus(perRow(Feature.BATCH_ROW, leftRows))
 				: LmdbNativeCostVector.zero();
-		if (leftJoin.lexicalSharedSlots != null || leftJoin.lexicalProblemSlots != null) {
+		if (leftJoin.lexicalCondition != null || leftJoin.lexicalSharedSlots != null
+				|| leftJoin.lexicalProblemSlots != null) {
 			return child(right, rightMask, rightAssuredMask, leftRows,
 					LmdbNativeCostVectors.rowBounds(leftJoin.left, row, mask)).plus(conversion);
 		}

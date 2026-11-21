@@ -367,6 +367,14 @@ public interface ValueStoreRevision {
 			}
 		}
 
+		ValueStore.ReadSnapshot admittedSnapshot() {
+			ValueStore.ReadSnapshot current = snapshot;
+			if (current == null) {
+				throw new SailException("ValueStore read snapshot is closed; retry the read operation");
+			}
+			return current;
+		}
+
 		@Override
 		public boolean resolveValue(long id, LmdbValue value) {
 			if (valueStore == null) {

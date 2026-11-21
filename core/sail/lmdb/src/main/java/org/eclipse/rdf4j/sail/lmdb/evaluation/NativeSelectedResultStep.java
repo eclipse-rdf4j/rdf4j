@@ -25,6 +25,9 @@ interface NativeSelectedResultPreview {
 	Object previewIdentity();
 
 	void explainSelected();
+
+	default void explainOptionalPlans() {
+	}
 }
 
 /** Delegates the exact executable recipe and exposes only its frozen quote and already-selected descendants. */
@@ -75,6 +78,11 @@ final class NativeSelectedResultStep implements NativeResultStep, NativeSelected
 	@Override
 	public Object previewIdentity() {
 		return identity;
+	}
+
+	@Override
+	public void explainOptionalPlans() {
+		LmdbNativeStrategyPreview.describeOptionals(input, target);
 	}
 
 	@Override

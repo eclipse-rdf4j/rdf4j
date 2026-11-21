@@ -30,6 +30,9 @@ final class LmdbNativeStrategyProposal<T> implements AutoCloseable {
 	}
 
 	final Opener<T> opener;
+	// The delayed opener belongs to the attempt that constructed this proposal, including nested dispatch.
+	private final LmdbNativeAttemptMetrics.OptionalBinding optionalBinding = LmdbNativeAttemptMetrics
+			.captureOptionalBinding();
 	/**
 	 * Work paid before the first row can be emitted — a parallel group's worker startup, a hash join's build sweep.
 	 * Zero for strategies that stream from the first probe.
@@ -97,7 +100,7 @@ final class LmdbNativeStrategyProposal<T> implements AutoCloseable {
 
 	/** Attaches the feature-count quote the selector prices; it takes precedence over every legacy interval. */
 	LmdbNativeStrategyProposal<T> withCostQuote(LmdbNativeCostQuote quote) {
-		this.costQuote = quote;
+		this.costQuote = quote == null || costQuote == null ? quote : quote.withOptionalCostFrom(costQuote);
 		return this;
 	}
 
@@ -372,7 +375,7 @@ final class LmdbNativeStrategyProposal<T> implements AutoCloseable {
 			throw new IllegalStateException("strategy proposal already opened");
 		}
 		opened = true;
-		try {
+		try (var optionalScope = LmdbNativeAttemptMetrics.activateOptionalBinding(optionalBinding)) {
 			if (parallelReservation != null && !parallelReservation.admit()) {
 				parallelReservation.close();
 				return null;
@@ -476,7 +479,9 @@ final class LmdbNativeStrategyProposal<T> implements AutoCloseable {
 				}
 			}
 			return finishQuote(proposal,
-					new LmdbNativeCostQuote(startup, streaming, typed.outputRows(), false, false), typed, estimate);
+					new LmdbNativeCostQuote(startup, streaming, typed.outputRows(), false, false)
+							.withOptionalCostFrom(typed.quote()),
+					typed, estimate);
 		}
 		LmdbNativeWork comparable = proposal.planningWork() != null ? proposal.planningWork() : proposal.work;
 		LmdbNativeWork startup = estimated(proposal.startupWork == null ? LmdbNativeWork.ZERO : proposal.startupWork,
@@ -492,6 +497,7 @@ final class LmdbNativeStrategyProposal<T> implements AutoCloseable {
 	private static LmdbNativeCostQuote finishQuote(LmdbNativeStrategyProposal<?> proposal, LmdbNativeCostQuote quote,
 			NativePhysicalWorkQuote physical, LmdbNativeWork estimate) {
 		if (physical != null) {
+			quote = quote.withOptionalCostFrom(physical.quote());
 			NativePhysicalWorkEvidence evidence = physical.workEvidence();
 			NativePhysicalWorkEvidence.ExactFacts fixed = evidence.fixedFacts();
 			NativePhysicalWorkEvidence.ExactFacts drained = evidence.fullDrainFacts();
@@ -514,7 +520,7 @@ final class LmdbNativeStrategyProposal<T> implements AutoCloseable {
 						LmdbNativeCostQuote.UNBOUNDED_COUNT);
 				quote = new LmdbNativeCostQuote(quote.startup(), quote.streaming().plus(unknown), quote.outputRows(),
 						quote.ordered(), quote.distinct(), quote.chunked(), quote.inputSpread(),
-						quote.outputProvenEmpty());
+						quote.outputProvenEmpty(), quote.optionalCost());
 			}
 		}
 		return withQuotedWorkerStartup(proposal, quote);
@@ -529,7 +535,7 @@ final class LmdbNativeStrategyProposal<T> implements AutoCloseable {
 		}
 		return new LmdbNativeCostQuote(withWorkerStarts(quote.startup(), workers),
 				withWorkerStarts(quote.streaming(), 0D), quote.outputRows(), quote.ordered(), quote.distinct(),
-				quote.chunked(), quote.inputSpread(), quote.outputProvenEmpty());
+				quote.chunked(), quote.inputSpread(), quote.outputProvenEmpty(), quote.optionalCost());
 	}
 
 	private static LmdbNativeCostVector withWorkerStarts(LmdbNativeCostVector vector, double workers) {

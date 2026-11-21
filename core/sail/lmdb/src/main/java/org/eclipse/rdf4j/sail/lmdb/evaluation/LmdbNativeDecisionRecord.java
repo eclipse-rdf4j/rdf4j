@@ -43,9 +43,18 @@ record LmdbNativeDecisionRecord(LmdbNativeDecisionPoint point, String mode, List
 	 * @param features            the priced feature vector (after slice proration), or null when declined
 	 * @param quotedExpectedNanos the expected price as quoted, before learned advice, or NaN
 	 * @param estimated           the interval a run is estimated to land in, or null when declined
+	 * @param incompleteOptional  missing OPTIONAL components, or null when the expected price is complete
 	 */
 	record Entry(String id, boolean admitted, String declineReason, LmdbNativeWork nanos, double expectedNanos,
-			String eliminatedBy, LmdbNativeCostVector features, double quotedExpectedNanos, LmdbNativeWork estimated) {
+			String eliminatedBy, LmdbNativeCostVector features, double quotedExpectedNanos, LmdbNativeWork estimated,
+			String incompleteOptional) {
+
+		Entry(String id, boolean admitted, String declineReason, LmdbNativeWork nanos, double expectedNanos,
+				String eliminatedBy, LmdbNativeCostVector features, double quotedExpectedNanos,
+				LmdbNativeWork estimated) {
+			this(id, admitted, declineReason, nanos, expectedNanos, eliminatedBy, features, quotedExpectedNanos,
+					estimated, null);
+		}
 
 		static Entry declined(String id, String reason) {
 			return new Entry(id, false, reason, null, Double.NaN, null, null, Double.NaN, null);
@@ -53,7 +62,9 @@ record LmdbNativeDecisionRecord(LmdbNativeDecisionPoint point, String mode, List
 
 		/** Where the price came from: the quote alone, or the quote narrowed by learned advice; null when declined. */
 		String provenance() {
-			return !admitted ? null : expectedNanos == quotedExpectedNanos ? "quoted" : "advised";
+			return !admitted ? null
+					: incompleteOptional != null ? "known subtotal"
+							: expectedNanos == quotedExpectedNanos ? "quoted" : "advised";
 		}
 	}
 
@@ -119,7 +130,10 @@ record LmdbNativeDecisionRecord(LmdbNativeDecisionPoint point, String mode, List
 		int priority = 1;
 		if (winner >= 0) {
 			candidates.add(new StrategyDecision.Candidate(entries.get(winner).id(), priority++, true,
-					"Would select now", null, "Execution-time binding and admission must still succeed"));
+					"Would select now", null, entries.get(winner).incompleteOptional() == null
+							? "Execution-time binding and admission must still succeed"
+							: "Incomplete OPTIONAL cost: " + entries.get(winner).incompleteOptional()
+									+ "; selected by stable fallback"));
 		}
 		for (int i = 0; i < entries.size(); i++) {
 			Entry entry = entries.get(i);
@@ -146,9 +160,12 @@ record LmdbNativeDecisionRecord(LmdbNativeDecisionPoint point, String mode, List
 			return "unpriced";
 		}
 		LmdbNativeWork interval = entry.estimated() == null ? entry.nanos() : entry.estimated();
-		String rendered = String.format("%.0f..%s ns (expected %.0f)", interval.low(),
+		String rendered = String.format("%.0f..%s ns (%s %.0f)", interval.low(),
 				interval.known() ? String.format("%.0f", interval.high()) : "unbounded",
-				entry.expectedNanos());
+				entry.incompleteOptional() == null ? "expected" : "known subtotal", entry.expectedNanos());
+		if (entry.incompleteOptional() != null) {
+			rendered += " [incomplete OPTIONAL: " + entry.incompleteOptional() + ']';
+		}
 		if (!interval.known() && entry.features() != null) {
 			// name the feature counts that have no ceiling, so an unbounded quote can be traced to its source
 			StringBuilder unbounded = new StringBuilder();

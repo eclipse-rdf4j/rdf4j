@@ -566,8 +566,7 @@ final class LmdbNativeOrderPlanner {
 			LeftJoinPlan join = (LeftJoinPlan) plan;
 			NativeOrderedPlan left = best(join.left, requested, row);
 			return new NativeOrderedPlan(
-					new LeftJoinPlan(left.plan, join.right, join.lexicalSharedSlots, join.lexicalHashKeys,
-							join.lexicalProblemSlots),
+					join.withChildren(left.plan, join.right),
 					left.order.withBarrier());
 		}
 		if (plan instanceof MinusPlan) {

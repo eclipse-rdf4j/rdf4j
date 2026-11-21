@@ -92,6 +92,23 @@ final class LmdbNativeProbeDeadline {
 		}
 	}
 
+	/**
+	 * Removes a registration whose owner has already released every associated resource. A concurrent settlement either
+	 * owns the callback or observes its removal; callbacks are always invoked outside this monitor.
+	 */
+	boolean releaseAttemptState(Object identity, AutoCloseable release) {
+		synchronized (this) {
+			if (nativeStates == null || nativeStates.get(identity) != release) {
+				return false;
+			}
+			nativeStates.remove(identity);
+			if (nativeStates.isEmpty()) {
+				nativeStates = null;
+			}
+			return true;
+		}
+	}
+
 	private Throwable releaseAttemptStates(Throwable failure) {
 		AutoCloseable[] states;
 		synchronized (this) {

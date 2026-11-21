@@ -42,6 +42,7 @@ import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.QueryExecutionPolicy;
 import org.eclipse.rdf4j.query.algebra.Filter.ConditionBindingScope;
+import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.QueryEvaluationContext;
 import org.eclipse.rdf4j.sail.lmdb.LmdbQueryMemoryManager;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.codegen.KernelRuntime;
@@ -64,7 +65,9 @@ import org.eclipse.rdf4j.sail.lmdb.model.RdfTermKey;
 @Experimental
 final class NativeExecutionContext implements AutoCloseable {
 	private static final ThreadLocal<NativeExecutionContext[]> BORROWED_PRODUCER_OWNERS = new ThreadLocal<>();
-	private static final WorkerContext NO_WORKER_CONTEXT = new WorkerContext(null, null);
+	private static final Object OPTIONAL_MATERIALIZATION_STATE = new Object();
+	private static final Object OPTIONAL_TELEMETRY_STATE = new Object();
+	private static final WorkerContext NO_WORKER_CONTEXT = new WorkerContext(null, null, null, null);
 	private static final QueryExecutionContext.Activation NO_WORKER_ACTIVATION = () -> {
 	};
 
@@ -72,22 +75,29 @@ final class NativeExecutionContext implements AutoCloseable {
 	static WorkerContext captureWorkerContext() {
 		QueryExecutionContext.ReplayContext context = QueryExecutionContext.captureReplayContext();
 		NativeExecutionContext[] borrowed = BORROWED_PRODUCER_OWNERS.get();
-		if (context == null && borrowed == null) {
+		OptionalEvaluationIdentity optionalIdentity = OptionalEvaluationIdentity.active();
+		LmdbNativeAttemptMetrics.OptionalBinding telemetry = LmdbNativeAttemptMetrics.captureOptionalBinding();
+		if (context == null && borrowed == null && optionalIdentity == null && telemetry == null) {
 			return NO_WORKER_CONTEXT;
 		}
 		if (context != null) {
 			context.checkActive();
 		}
-		return new WorkerContext(context, borrowed);
+		return new WorkerContext(context, borrowed, optionalIdentity, telemetry);
 	}
 
 	static final class WorkerContext {
 		private final QueryExecutionContext.ReplayContext context;
 		private final NativeExecutionContext[] borrowed;
+		private final OptionalEvaluationIdentity optionalIdentity;
+		private final LmdbNativeAttemptMetrics.OptionalBinding telemetry;
 
-		private WorkerContext(QueryExecutionContext.ReplayContext context, NativeExecutionContext[] borrowed) {
+		private WorkerContext(QueryExecutionContext.ReplayContext context, NativeExecutionContext[] borrowed,
+				OptionalEvaluationIdentity optionalIdentity, LmdbNativeAttemptMetrics.OptionalBinding telemetry) {
 			this.context = context;
 			this.borrowed = borrowed;
+			this.optionalIdentity = optionalIdentity;
+			this.telemetry = telemetry;
 		}
 
 		boolean ownsCancellation(Object owner) {
@@ -97,20 +107,30 @@ final class NativeExecutionContext implements AutoCloseable {
 		/** Called inside the worker's existing failure and source-cleanup guards. */
 		QueryExecutionContext.Activation activate() {
 			ProducerScope producer = ProducerScope.enter(borrowed);
+			OptionalEvaluationIdentity.Activation optional = null;
+			LmdbNativeAttemptMetrics.OptionalScope observation = null;
 			try {
+				observation = LmdbNativeAttemptMetrics.activateOptionalBinding(telemetry);
+				optional = optionalIdentity == null ? null : optionalIdentity.activate();
 				QueryExecutionContext.Activation activation = context == null ? NO_WORKER_ACTIVATION
 						: context.activate();
-				if (producer == null) {
+				if (producer == null && optional == null && telemetry == null) {
 					return activation;
 				}
+				OptionalEvaluationIdentity.Activation closingOptional = optional;
+				LmdbNativeAttemptMetrics.OptionalScope closingObservation = observation;
 				return () -> {
 					Throwable failure = KernelRuntime.closeResource(activation, null);
+					failure = KernelRuntime.closeResource(closingOptional, failure);
+					failure = KernelRuntime.closeResource(closingObservation, failure);
 					failure = KernelRuntime.closeResource(producer, failure);
 					if (failure != null) {
 						NativeContextClosingIteration.throwFailure(failure);
 					}
 				};
 			} catch (RuntimeException | Error failure) {
+				KernelRuntime.closeResource(optional, failure);
+				KernelRuntime.closeResource(observation, failure);
 				KernelRuntime.closeResource(producer, failure);
 				throw failure;
 			}
@@ -358,6 +378,9 @@ final class NativeExecutionContext implements AutoCloseable {
 	/** Owned by the root evaluation and released only after the last retained consumer finishes. */
 	/** Independent binding-frame ownership; condition projections still share the outer scalar and term authority. */
 	private final NativeExecutionContext queryFrameOwner;
+	/** Parent for a distinct invocation frame; ordinary source/worker facades share their frame owner's scope. */
+	private final NativeExecutionContext optionalScopeParent;
+	private volatile OptionalEvaluationIdentity optionalFrameScope;
 	/** Term-space owner; an invocation can replace its input/caches without replacing already bound native terms. */
 	private final NativeExecutionContext termOwner;
 	final boolean valueResolutionCacheEnabled;
@@ -419,6 +442,7 @@ final class NativeExecutionContext implements AutoCloseable {
 		this.queryScopeOwner = this;
 		this.cancellation = new NativeCancellationToken();
 		this.queryFrameOwner = this;
+		this.optionalScopeParent = null;
 		this.termOwner = this;
 		this.queryExecutionPolicy = policy;
 		this.valueResolutionCacheEnabled = !"false".equalsIgnoreCase(System.getProperty(NativeValueResolver.PROPERTY));
@@ -428,6 +452,7 @@ final class NativeExecutionContext implements AutoCloseable {
 		this.queryScopeOwner = parent.queryScopeOwner;
 		this.cancellation = new NativeCancellationToken(parent.cancellation);
 		this.queryFrameOwner = parent.queryFrameOwner;
+		this.optionalScopeParent = parent.optionalScopeParent;
 		this.termOwner = this;
 		this.queryExecutionPolicy = parent.queryExecutionPolicy;
 		this.valueResolutionCacheEnabled = parent.valueResolutionCacheEnabled;
@@ -439,6 +464,10 @@ final class NativeExecutionContext implements AutoCloseable {
 
 	LmdbNativeQueryMemoryScope memoryScope() {
 		return queryScopeOwner == this ? memoryScope : queryScopeOwner.memoryScope();
+	}
+
+	OptionalStoragePolicy optionalStoragePolicy() {
+		return memoryScope().optionalStoragePolicy();
 	}
 
 	LmdbQueryMemoryManager.QueryLedger memoryLedger() {
@@ -453,10 +482,83 @@ final class NativeExecutionContext implements AutoCloseable {
 		this.queryScopeOwner = parent.queryScopeOwner;
 		this.cancellation = new NativeCancellationToken(parent.cancellation);
 		this.queryFrameOwner = this;
+		this.optionalScopeParent = parent;
 		this.termOwner = shareTermSpace ? parent.termOwner : this;
 		this.queryExecutionPolicy = parent.queryExecutionPolicy;
 		this.valueResolutionCacheEnabled = parent.valueResolutionCacheEnabled;
 		this.queryBase = NativeEntryBindings.snapshot(input);
+	}
+
+	/** One bounded registry is shared by every native frame and worker of the query execution. */
+	OptionalMaterialization optionalMaterializations() {
+		NativeExecutionContext owner = queryScopeOwner;
+		return owner.nativeState(OPTIONAL_MATERIALIZATION_STATE,
+				() -> new OptionalMaterialization(owner, owner.memoryLedger()));
+	}
+
+	/** Read an already-created registry without allocating one while handling an admission refusal. */
+	OptionalMaterialization existingOptionalMaterializations() {
+		return (OptionalMaterialization) queryScopeOwner.nativeStates.get(OPTIONAL_MATERIALIZATION_STATE);
+	}
+
+	Object optionalExecutionOwner() {
+		return queryScopeOwner;
+	}
+
+	OptionalExecutionTelemetry optionalTelemetryRoot() {
+		NativeExecutionContext owner = queryScopeOwner;
+		return owner.nativeState(OPTIONAL_TELEMETRY_STATE,
+				() -> OptionalExecutionTelemetry.root(owner.memoryLedger(), owner::reclaimOptionalPreparation));
+	}
+
+	/** Telemetry admission borrows the existing registry and never retains this execution through a lease. */
+	private boolean reclaimOptionalPreparation() {
+		cancellation.check();
+		OptionalMaterialization registry = existingOptionalMaterializations();
+		return registry != null && registry.reclaimForPreparation();
+	}
+
+	OptionalExecutionTelemetry.Channel optionalTelemetry(Object operator, TupleExpr target) {
+		if (target == null || !target.isRuntimeTelemetryEnabled()) {
+			return null;
+		}
+		OptionalExecutionTelemetry telemetry = LmdbNativeAttemptMetrics.optionalTelemetry(this);
+		return telemetry.open(operator, target);
+	}
+
+	/** An active descendant refines, but never replaces, this invocation's own semantic frame. */
+	OptionalEvaluationIdentity optionalEvaluationIdentity() {
+		OptionalEvaluationIdentity active = OptionalEvaluationIdentity.activeFor(queryScopeOwner);
+		if (queryFrameOwner != this) {
+			return queryFrameOwner.optionalEvaluationIdentity();
+		}
+		OptionalMaterialization registry = optionalMaterializations();
+		if (queryScopeOwner == this) {
+			return active == null ? registry.root() : active;
+		}
+		OptionalEvaluationIdentity existing = optionalFrameScope;
+		if (existing != null) {
+			return active != null && active.isWithin(existing) ? active : existing;
+		}
+		OptionalEvaluationIdentity parent = active != null ? active
+				: optionalScopeParent == null ? null : optionalScopeParent.optionalEvaluationIdentity();
+		if (parent == null) {
+			return null;
+		}
+		OptionalEvaluationIdentity created = registry.child(parent);
+		synchronized (this) {
+			if (closed) {
+				created.close();
+				throw new IllegalStateException("execution context is closed");
+			}
+			if (optionalFrameScope == null) {
+				optionalFrameScope = created;
+				return created;
+			}
+			existing = optionalFrameScope;
+		}
+		created.close();
+		return active != null && active.isWithin(existing) ? active : existing;
 	}
 
 	/** One cached frame per exact projection and entry-frame owner, with isolated binding-dependent operator caches. */
@@ -1166,6 +1268,19 @@ final class NativeExecutionContext implements AutoCloseable {
 					} else {
 						failure.addSuppressed(cleanup);
 					}
+				}
+			}
+		}
+		OptionalEvaluationIdentity invocationScope = optionalFrameScope;
+		optionalFrameScope = null;
+		if (invocationScope != null) {
+			try {
+				invocationScope.close();
+			} catch (RuntimeException cleanup) {
+				if (failure == null) {
+					failure = cleanup;
+				} else if (failure != cleanup) {
+					failure.addSuppressed(cleanup);
 				}
 			}
 		}

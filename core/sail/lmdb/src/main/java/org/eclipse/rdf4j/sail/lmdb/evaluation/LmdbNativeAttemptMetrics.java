@@ -170,11 +170,163 @@ public final class LmdbNativeAttemptMetrics {
 			PATH_CONSTANT_FALSE_FILTER, PATH_KEYED_SUBQUERY_JOIN);
 
 	private static final LmdbNativeAttemptMetrics DIRECT = new LmdbNativeAttemptMetrics(null, true, null);
+	private static final ThreadLocal<OptionalBinding> OPTIONAL_CURRENT = new ThreadLocal<>();
+	private static final OptionalScope NO_OPTIONAL_SCOPE = new OptionalScope(null, false);
 
 	private final LmdbNativeAttemptMetrics parent;
 	private final boolean direct;
 	private final TupleExpr explainTarget;
-	private boolean committed;
+	private volatile boolean committed;
+	private LmdbNativeAttemptMetrics optionalParent;
+	private OptionalExecutionTelemetry optionalTelemetry;
+	private Object optionalOwner;
+	private boolean optionalDiscarded;
+	private LmdbNativeProbeDeadline optionalDeadline;
+	private AutoCloseable optionalDeadlineRelease;
+
+	static OptionalBinding captureOptionalBinding() {
+		return OPTIONAL_CURRENT.get();
+	}
+
+	static OptionalScope activateOptionalBinding(OptionalBinding binding) {
+		if (binding == null) {
+			return NO_OPTIONAL_SCOPE;
+		}
+		OptionalBinding previous = OPTIONAL_CURRENT.get();
+		OPTIONAL_CURRENT.set(binding);
+		return new OptionalScope(previous, true);
+	}
+
+	static LmdbNativeAttemptMetrics currentOptionalOwner() {
+		OptionalBinding binding = OPTIONAL_CURRENT.get();
+		return binding == null ? null : binding.metrics;
+	}
+
+	OptionalScope optionalScope(NativeLmdbQuerySource source) {
+		return source instanceof SyntheticValueSource synthetic && synthetic.executionContext() != null
+				? optionalScope(synthetic.executionContext())
+				: NO_OPTIONAL_SCOPE;
+	}
+
+	OptionalScope optionalScope(NativeExecutionContext context) {
+		if (explainTarget == null || !explainTarget.isRuntimeTelemetryEnabled()) {
+			return NO_OPTIONAL_SCOPE;
+		}
+		optionalJournal(context);
+		registerOptionalDeadline();
+		OptionalBinding previous = OPTIONAL_CURRENT.get();
+		OPTIONAL_CURRENT.set(new OptionalBinding(context.optionalExecutionOwner(), this));
+		return new OptionalScope(previous, true);
+	}
+
+	static OptionalExecutionTelemetry optionalTelemetry(NativeExecutionContext context) {
+		OptionalBinding binding = OPTIONAL_CURRENT.get();
+		if (binding == null) {
+			if (LmdbNativeProbeDeadline.currentOrNull() != null) {
+				throw new IllegalStateException("OPTIONAL telemetry requires its speculative attempt owner");
+			}
+			return context.optionalTelemetryRoot();
+		}
+		if (binding.executionOwner != context.optionalExecutionOwner()) {
+			throw new IllegalStateException("OPTIONAL telemetry belongs to another native execution");
+		}
+		return binding.metrics.optionalJournal(context);
+	}
+
+	private synchronized OptionalExecutionTelemetry optionalJournal(NativeExecutionContext context) {
+		if (direct) {
+			return context.optionalTelemetryRoot();
+		}
+		if (optionalDiscarded) {
+			throw new IllegalStateException("OPTIONAL attempt telemetry is discarded");
+		}
+		if (committed) {
+			return (optionalParent == null ? parent : optionalParent).optionalJournal(context);
+		}
+		Object owner = context.optionalExecutionOwner();
+		if (optionalTelemetry == null) {
+			optionalTelemetry = (optionalParent == null ? parent : optionalParent).optionalJournal(context).child();
+			optionalOwner = owner;
+		} else if (optionalOwner != owner) {
+			throw new IllegalStateException("attempt metrics belongs to another native execution");
+		}
+		return optionalTelemetry;
+	}
+
+	private synchronized void registerOptionalDeadline() {
+		LmdbNativeProbeDeadline deadline = LmdbNativeProbeDeadline.currentOrNull();
+		if (direct || committed || deadline == null) {
+			return;
+		}
+		if (optionalDeadline != null && optionalDeadline != deadline) {
+			throw new IllegalStateException("OPTIONAL metrics reused across distinct probe attempts");
+		}
+		if (optionalDeadline == null) {
+			optionalDeadline = deadline;
+			optionalDeadlineRelease = this::discardOptionalTelemetry;
+			deadline.retainAttemptState(this, optionalDeadlineRelease);
+		}
+	}
+
+	private void releaseOptionalDeadline() {
+		LmdbNativeProbeDeadline deadline;
+		AutoCloseable release;
+		synchronized (this) {
+			deadline = optionalDeadline;
+			release = optionalDeadlineRelease;
+			optionalDeadline = null;
+			optionalDeadlineRelease = null;
+		}
+		if (deadline != null) {
+			deadline.releaseAttemptState(this, release);
+		}
+	}
+
+	void discardOptionalTelemetry() {
+		OptionalExecutionTelemetry closing;
+		synchronized (this) {
+			if (direct || committed || optionalDiscarded) {
+				return;
+			}
+			optionalDiscarded = true;
+			closing = optionalTelemetry;
+			optionalTelemetry = null;
+			optionalOwner = null;
+		}
+		try {
+			if (closing != null) {
+				closing.close();
+			}
+		} finally {
+			releaseOptionalDeadline();
+		}
+	}
+
+	record OptionalBinding(Object executionOwner, LmdbNativeAttemptMetrics metrics) {
+	}
+
+	static final class OptionalScope implements AutoCloseable {
+		private final OptionalBinding previous;
+		private final boolean active;
+		private boolean closed;
+
+		OptionalScope(OptionalBinding previous, boolean active) {
+			this.previous = previous;
+			this.active = active;
+		}
+
+		@Override
+		public void close() {
+			if (active && !closed) {
+				closed = true;
+				if (previous == null) {
+					OPTIONAL_CURRENT.remove();
+				} else {
+					OPTIONAL_CURRENT.set(previous);
+				}
+			}
+		}
+	}
 
 	private long parallelRuns;
 	private long factorizedTailEngaged;
@@ -226,7 +378,9 @@ public final class LmdbNativeAttemptMetrics {
 	}
 
 	static LmdbNativeAttemptMetrics root(TupleExpr explainTarget) {
-		return new LmdbNativeAttemptMetrics(DIRECT, false, explainTarget);
+		LmdbNativeAttemptMetrics result = new LmdbNativeAttemptMetrics(DIRECT, false, explainTarget);
+		result.optionalParent = currentOptionalOwner();
+		return result;
 	}
 
 	TupleExpr explainTarget() {
@@ -346,6 +500,19 @@ public final class LmdbNativeAttemptMetrics {
 		}
 		committed = true;
 		parent.merge(this);
+		OptionalExecutionTelemetry journal;
+		synchronized (this) {
+			journal = optionalTelemetry;
+			optionalTelemetry = null;
+			optionalOwner = null;
+		}
+		try {
+			if (journal != null) {
+				journal.commitToParent();
+			}
+		} finally {
+			releaseOptionalDeadline();
+		}
 	}
 
 	void deferStrategy(TupleExpr target, String executedStrategy) {

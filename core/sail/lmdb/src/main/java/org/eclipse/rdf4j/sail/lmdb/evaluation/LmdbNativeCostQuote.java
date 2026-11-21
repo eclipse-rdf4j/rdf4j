@@ -20,9 +20,10 @@ import java.util.Objects;
  * ({@code streaming}), and optional work paid in whole root chunks or output buffers ({@code chunked}), plus the
  * benefit side: how many rows come out and whether they are ordered or distinct.
  * <p>
- * Uncertainty lives in the feature bounds, never in a hand-picked interval: an exact count has equal low, expected and
- * high; a statistical estimate carries its band; an upper bound only has a zero low. {@link LmdbNativeStaticPrior}
- * turns the counts into a time interval.
+ * Count uncertainty lives in the feature bounds: an exact count has equal low, expected and high; a statistical
+ * estimate carries its band; an upper bound only has a zero low. Missing OPTIONAL components are kept separately:
+ * finite expected counts then describe known work, not a complete expected price. {@link LmdbNativeStaticPrior} turns
+ * the known counts into a time interval.
  *
  * @param startup           features paid once, before the first row (opens, worker starts, hash builds, sorts)
  * @param streaming         features paid per produced row and prorated by the share of the result a slice consumes
@@ -35,10 +36,11 @@ import java.util.Objects;
  *                          estimated interval the selector reports and never the bounds of these vectors, which stay
  *                          what is proven.
  * @param outputProvenEmpty whether independent physical evidence proves that the producer emits no rows
+ * @param optionalCost      OPTIONAL components missing from the finite known-work counts
  */
 record LmdbNativeCostQuote(LmdbNativeCostVector startup, LmdbNativeCostVector streaming, double outputRows,
 		boolean ordered, boolean distinct, ChunkedWork chunked, LmdbNativeRowSpread inputSpread,
-		boolean outputProvenEmpty) {
+		boolean outputProvenEmpty, OptionalCostCompleteness optionalCost) {
 
 	/**
 	 * Explicit absent ceiling. No finite physical count, including Double.MAX_VALUE, collides with this value. Only the
@@ -49,6 +51,15 @@ record LmdbNativeCostQuote(LmdbNativeCostVector startup, LmdbNativeCostVector st
 	LmdbNativeCostQuote {
 		Objects.requireNonNull(startup, "startup");
 		Objects.requireNonNull(streaming, "streaming");
+		Objects.requireNonNull(optionalCost, "optionalCost");
+	}
+
+	/** Existing quotes have no missing OPTIONAL cost components unless their producer attaches them. */
+	LmdbNativeCostQuote(LmdbNativeCostVector startup, LmdbNativeCostVector streaming, double outputRows,
+			boolean ordered, boolean distinct, ChunkedWork chunked, LmdbNativeRowSpread inputSpread,
+			boolean outputProvenEmpty) {
+		this(startup, streaming, outputRows, ordered, distinct, chunked, inputSpread, outputProvenEmpty,
+				OptionalCostCompleteness.COMPLETE);
 	}
 
 	/** Existing strategies without chunked construction keep the same quote shape. */
@@ -267,27 +278,39 @@ record LmdbNativeCostQuote(LmdbNativeCostVector startup, LmdbNativeCostVector st
 
 	LmdbNativeCostQuote ordered(boolean value) {
 		return new LmdbNativeCostQuote(startup, streaming, outputRows, value, distinct, chunked, inputSpread,
-				outputProvenEmpty);
+				outputProvenEmpty, optionalCost);
 	}
 
 	LmdbNativeCostQuote distinct(boolean value) {
 		return new LmdbNativeCostQuote(startup, streaming, outputRows, ordered, value, chunked, inputSpread,
-				outputProvenEmpty);
+				outputProvenEmpty, optionalCost);
 	}
 
 	LmdbNativeCostQuote withOutputRows(double rows) {
 		return new LmdbNativeCostQuote(startup, streaming, rows, ordered, distinct, chunked, inputSpread,
-				outputProvenEmpty && rows == 0D);
+				outputProvenEmpty && rows == 0D, optionalCost);
 	}
 
 	LmdbNativeCostQuote withInputSpread(LmdbNativeRowSpread spread) {
 		return new LmdbNativeCostQuote(startup, streaming, outputRows, ordered, distinct, chunked, spread,
-				outputProvenEmpty);
+				outputProvenEmpty, optionalCost);
 	}
 
 	/** A zero estimate is not sufficient; only an owned physical fact may establish an empty output. */
 	LmdbNativeCostQuote withProvenEmptyOutput() {
-		return new LmdbNativeCostQuote(startup, streaming, outputRows, ordered, distinct, chunked, inputSpread, true);
+		return new LmdbNativeCostQuote(startup, streaming, outputRows, ordered, distinct, chunked, inputSpread, true,
+				optionalCost);
+	}
+
+	LmdbNativeCostQuote withOptionalCost(OptionalCostCompleteness missing) {
+		OptionalCostCompleteness combined = optionalCost.plus(missing);
+		return combined.equals(optionalCost) ? this
+				: new LmdbNativeCostQuote(startup, streaming, outputRows,
+						ordered, distinct, chunked, inputSpread, outputProvenEmpty, combined);
+	}
+
+	LmdbNativeCostQuote withOptionalCostFrom(LmdbNativeCostQuote source) {
+		return withOptionalCost(source.optionalCost);
 	}
 
 	/** {@code total} minus {@code startup} per feature and bound, retaining an unknown remainder ceiling. */
@@ -354,7 +377,7 @@ record LmdbNativeCostQuote(LmdbNativeCostVector startup, LmdbNativeCostVector st
 
 	/** Whether the quote has a finite ceiling. */
 	boolean bounded() {
-		return !hasUnboundedCount(startup) && !hasUnboundedCount(streaming)
+		return !optionalCost.incomplete() && !hasUnboundedCount(startup) && !hasUnboundedCount(streaming)
 				&& (chunked == null || !hasUnboundedCount(chunked.vector()));
 	}
 

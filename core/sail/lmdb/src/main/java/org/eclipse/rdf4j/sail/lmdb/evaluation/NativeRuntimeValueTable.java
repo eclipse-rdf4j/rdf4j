@@ -79,6 +79,7 @@ final class NativeRuntimeValueTable implements AutoCloseable {
 	private final Object pageLock = new Object();
 	private final AtomicInteger count = new AtomicInteger();
 	private final AtomicLong bytes = new AtomicLong();
+	private final AtomicLong sharedPayloadBytes = new AtomicLong();
 	private volatile Page[] pages = NO_PAGES;
 	/** Only exceptionally sparse/high ordinals use a map; the ordinary dense path never boxes. */
 	private volatile ConcurrentHashMap<Long, SparseValue> sparse;
@@ -284,7 +285,17 @@ final class NativeRuntimeValueTable implements AutoCloseable {
 				value = (spelling != null ? spelling : RdfTermKey.of(value)).toValue();
 			}
 			long payloadBytes = retainedValueBytes(value, 0);
-			reserve(payloadBytes);
+			NativeValuePayloads.Claim shared = NativeValuePayloads.adopt(value);
+			if (shared != null && (!shared.belongsTo(budget.ledger) || shared.bytes() != payloadBytes)) {
+				shared.close();
+				shared = null;
+			}
+			try {
+				reservePayload(payloadBytes, shared);
+			} catch (RuntimeException | Error failure) {
+				KernelRuntime.closeResource(shared, failure);
+				throw failure;
+			}
 			boolean published = false;
 			try {
 				long id = nextId.getAndIncrement();
@@ -299,7 +310,7 @@ final class NativeRuntimeValueTable implements AutoCloseable {
 					canonical = canonicalForNewSpelling(index, value, hash, id);
 				}
 				long metadata = ((canonical - RUNTIME_INTERN_BASE + 1L) << 1) | (unresolved ? 1L : 0L);
-				publish(ordinal, value, metadata);
+				publish(ordinal, value, metadata, shared);
 				LONGS.setRelease(index.slots, emptySlot, ((long) hash << 32) | (ordinal + 1L));
 				stripe.size++;
 				count.incrementAndGet();
@@ -307,7 +318,7 @@ final class NativeRuntimeValueTable implements AutoCloseable {
 				return id;
 			} finally {
 				if (!published) {
-					release(payloadBytes);
+					releasePayload(payloadBytes, shared);
 				}
 			}
 		}
@@ -368,9 +379,13 @@ final class NativeRuntimeValueTable implements AutoCloseable {
 			for (Stripe stripe : stripes) {
 				stripe.index = EMPTY_INDEX;
 			}
+			Throwable ownershipFailure = dropSharedClaims();
 			pages = NO_PAGES;
 			sparse = null;
 			release(bytes.get() - PERMANENT_BYTES);
+			if (ownershipFailure != null) {
+				NativeContextClosingIteration.throwFailure(ownershipFailure);
+			}
 			phase.complete();
 			return replacement;
 		} catch (Throwable failure) {
@@ -531,7 +546,7 @@ final class NativeRuntimeValueTable implements AutoCloseable {
 		return value == null ? spilled == null ? 0L : spilled.metadata(id) : value.metadata;
 	}
 
-	private void publish(long ordinal, Value value, long metadata) {
+	private void publish(long ordinal, Value value, long metadata, NativeValuePayloads.Claim shared) {
 		if (ordinal >= DENSE_LIMIT) {
 			synchronized (pageLock) {
 				if (sparse == null) {
@@ -540,7 +555,7 @@ final class NativeRuntimeValueTable implements AutoCloseable {
 				}
 			}
 			reserve(128L); // boxed ID, sparse record, map node, and amortized table growth
-			sparse.put(RUNTIME_INTERN_BASE + ordinal, new SparseValue(value, metadata));
+			sparse.put(RUNTIME_INTERN_BASE + ordinal, new SparseValue(value, metadata, shared));
 			return;
 		}
 		int pageIndex = (int) (ordinal >>> PAGE_SHIFT);
@@ -550,6 +565,21 @@ final class NativeRuntimeValueTable implements AutoCloseable {
 			page = createPage(pageIndex);
 		}
 		int offset = (int) ordinal & PAGE_MASK;
+		if (shared != null) {
+			synchronized (pageLock) {
+				if (page.claims == null) {
+					long allocation = 32L + 8L * PAGE_SIZE;
+					reserve(allocation);
+					try {
+						page.claims = new NativeValuePayloads.Claim[PAGE_SIZE];
+					} catch (RuntimeException | Error failure) {
+						release(allocation);
+						throw failure;
+					}
+				}
+				page.claims[offset] = shared;
+			}
+		}
 		page.values[offset] = value;
 		// This single release publishes Value, exact ownership, key, and membership state together.
 		LONGS.setRelease(page.metadata, offset, metadata);
@@ -621,6 +651,51 @@ final class NativeRuntimeValueTable implements AutoCloseable {
 		budget.release(amount);
 	}
 
+	private void reservePayload(long amount, NativeValuePayloads.Claim shared) {
+		if (shared == null) {
+			reserve(amount);
+		} else {
+			if (!budget.tryReserveShared(amount)) {
+				throw new SpillRequired();
+			}
+			bytes.addAndGet(amount);
+			sharedPayloadBytes.addAndGet(amount);
+		}
+	}
+
+	private void releasePayload(long amount, NativeValuePayloads.Claim shared) {
+		if (shared == null) {
+			release(amount);
+		} else {
+			bytes.addAndGet(-amount);
+			sharedPayloadBytes.addAndGet(-amount);
+			budget.releaseShared(amount);
+			shared.close();
+		}
+	}
+
+	private Throwable dropSharedClaims() {
+		Throwable failure = null;
+		for (Page page : pages) {
+			if (page != null && page.claims != null) {
+				for (int i = 0; i < page.claims.length; i++) {
+					NativeValuePayloads.Claim claim = page.claims[i];
+					page.claims[i] = null;
+					failure = KernelRuntime.closeResource(claim, failure);
+				}
+			}
+		}
+		if (sparse != null) {
+			for (SparseValue value : sparse.values()) {
+				failure = KernelRuntime.closeResource(value.claim, failure);
+			}
+		}
+		long shared = sharedPayloadBytes.getAndSet(0L);
+		bytes.addAndGet(-shared);
+		budget.releaseShared(shared);
+		return failure;
+	}
+
 	private static QueryEvaluationException probeLimit() {
 		return new QueryEvaluationException("Runtime-value hash chain exceeded " + MAX_PROBES
 				+ " probes even after content-hash protection; refusing pathological key work without dropping rows");
@@ -645,16 +720,18 @@ final class NativeRuntimeValueTable implements AutoCloseable {
 					stripe.index = EMPTY_INDEX;
 				}
 			}
+			Throwable failure = dropSharedClaims();
 			pages = NO_PAGES;
 			sparse = null;
 			count.set(0);
 			try {
-				if (spill != null) {
-					spill.close();
-				}
+				failure = KernelRuntime.closeResource(spill, failure);
 			} finally {
 				budget.unregister(this);
 				budget.release(bytes.getAndSet(0L));
+			}
+			if (failure != null) {
+				NativeContextClosingIteration.throwFailure(failure);
 			}
 		}
 	}
@@ -795,6 +872,7 @@ final class NativeRuntimeValueTable implements AutoCloseable {
 	 */
 	static final class Budget {
 		private final long limit;
+		private final LmdbQueryMemoryManager.QueryLedger ledger;
 		private final KernelRuntime.AggregateMemory memory;
 		private long used;
 		private long peak;
@@ -809,6 +887,7 @@ final class NativeRuntimeValueTable implements AutoCloseable {
 				throw new IllegalArgumentException(MAX_BYTES_PROPERTY + " must be positive");
 			}
 			this.limit = limit;
+			this.ledger = ledger;
 			this.memory = ledger == null ? null : KernelRuntime.AggregateMemory.forLedger(ledger);
 		}
 
@@ -874,6 +953,22 @@ final class NativeRuntimeValueTable implements AutoCloseable {
 			}
 		}
 
+		synchronized boolean tryReserveShared(long amount) {
+			if (amount < 0L || amount > limit - used) {
+				return false;
+			}
+			used += amount;
+			peak = Math.max(peak, used);
+			return true;
+		}
+
+		synchronized void releaseShared(long amount) {
+			if (amount < 0L || amount > used) {
+				throw new IllegalStateException("Unbalanced shared runtime-value accounting");
+			}
+			used -= amount;
+		}
+
 		synchronized long usedBytes() {
 			return used;
 		}
@@ -895,9 +990,10 @@ final class NativeRuntimeValueTable implements AutoCloseable {
 	private static final class Page {
 		final Value[] values = new Value[PAGE_SIZE];
 		final long[] metadata = new long[PAGE_SIZE];
+		volatile NativeValuePayloads.Claim[] claims;
 	}
 
-	private record SparseValue(Value value, long metadata) {
+	private record SparseValue(Value value, long metadata, NativeValuePayloads.Claim claim) {
 	}
 
 	private static final class SpillRequired extends RuntimeException {

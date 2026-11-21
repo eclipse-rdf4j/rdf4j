@@ -576,25 +576,28 @@ final class NativeGroupResultCursor implements NativeResultCursor {
 		}
 
 		void offer(LmdbNativeOffers<NativeResultCursor> arbiter, StringBuilder telemetry) throws IOException {
-			if (!seeded) {
-				return;
-			}
-			NativeAggregateCostQuotes quotes = new NativeAggregateCostQuotes(iteration, row, telemetry);
-			iteration.offerCandidates(row, metrics, originalArg, new LmdbNativeCandidateOffers<>() {
-				@Override
-				LmdbNativeCandidateOffers<List<BindingSet>> offer(
-						LmdbNativeCandidateOffers.Proposer<List<BindingSet>> proposer) throws IOException {
-					arbiter.offer(() -> map(proposer.propose(), quotes));
-					return this;
+			try (var optionalScope = metrics.optionalScope(evaluation)) {
+				if (!seeded) {
+					return;
 				}
+				NativeAggregateCostQuotes quotes = new NativeAggregateCostQuotes(iteration, row, telemetry);
+				iteration.offerCandidates(row, metrics, originalArg, new LmdbNativeCandidateOffers<>() {
+					@Override
+					LmdbNativeCandidateOffers<List<BindingSet>> offer(
+							LmdbNativeCandidateOffers.Proposer<List<BindingSet>> proposer) throws IOException {
+						arbiter.offer(() -> map(proposer.propose(), quotes));
+						return this;
+					}
 
-				@Override
-				LmdbNativeCandidateOffers<List<BindingSet>> terminalFallback(
-						LmdbNativeCandidateOffers.Proposer<List<BindingSet>> proposer) {
-					arbiter.terminalFallback(() -> map(proposer.propose(), quotes));
-					return this;
-				}
-			});
+					@Override
+					LmdbNativeCandidateOffers<List<BindingSet>> terminalFallback(
+							LmdbNativeCandidateOffers.Proposer<List<BindingSet>> proposer) {
+						arbiter.terminalFallback(() -> map(proposer.propose(), quotes));
+						return this;
+					}
+				});
+
+			}
 		}
 
 		private LmdbNativeStrategyProposal<NativeResultCursor> map(
@@ -679,6 +682,7 @@ final class NativeGroupResultCursor implements NativeResultCursor {
 			failure = KernelRuntime.closeResource(
 					iteration.prefixRunFilter == null ? null : iteration.prefixRunFilter::close,
 					failure);
+			failure = KernelRuntime.closeResource(metrics::discardOptionalTelemetry, failure);
 			if (closeContext) {
 				failure = KernelRuntime.closeResource(evaluation.executionContext(), failure);
 			}

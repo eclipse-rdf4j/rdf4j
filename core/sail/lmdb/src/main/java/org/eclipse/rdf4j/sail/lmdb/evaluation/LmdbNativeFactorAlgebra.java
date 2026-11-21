@@ -96,6 +96,26 @@ final class LmdbNativeFactorAlgebra {
 		if (plan instanceof ExtensionPlan extension)
 			return extension(extension, row);
 		if (plan instanceof LeftJoinPlan optional) {
+			if (!row.encounterOrderRequired && SlotPlan.optionalReplaySafe(optional.left)
+					&& (optional.right instanceof NativeGraphPlan
+							|| optional.right instanceof PatternPlan pattern && pattern.p.hasSlot()
+									&& !pattern.p.isConstant())) {
+				// A fixed GRAPH/single-statement compatibility access preserves its lexical relation while using
+				// shared left keys physically. The direct statement path uses the same existing weighted producer.
+				int capacity = NativeBatch.configuredRows();
+				BatchCursor batch = optional.tryOpenPatternBatch(row, capacity);
+				if (batch != null) {
+					RowCursor rows = LmdbWildcardPredicateBatch.asRows(batch, row, capacity);
+					if (rows != null) {
+						try {
+							return LmdbNativeFactorRows.scalar(rows, row.slots.length);
+						} catch (RuntimeException | Error failure) {
+							KernelRuntime.closeResource(rows, failure);
+							throw failure;
+						}
+					}
+				}
+			}
 			if (optional.lexicalProblemSlots != null || optional.lexicalSharedSlots != null) {
 				// These two operators deliberately evaluate in a different binding frame. In particular, probing a
 				// non-well-designed OPTIONAL as an ordinary correlated left join would change its difference term.
@@ -103,16 +123,22 @@ final class LmdbNativeFactorAlgebra {
 				SlotPlan right = new Boundary(optional.right);
 				RowCursor cursor = optional.lexicalProblemSlots != null
 						? new LexicalFrameLeftJoinCursor(left, right, optional.lexicalProblemSlots, row)
-						: new LexicalLeftJoinCursor(left, right, optional.lexicalSharedSlots, row);
+						: new LexicalLeftJoinCursor(left, right, optional.lexicalSharedSlots,
+								optional.lexicalCondition, optional.rhsContract, optional.canDiscardRight(), row);
 				return LmdbNativeFactorRows.scalar(cursor, row.slots.length);
 			}
-			return join(optional.left, optional.right, row, true);
+			if (optional.correlatedConditionInRight) {
+				// A weight represents distinct logical occurrences. Both inputs must be expanded before the
+				// OPTIONAL condition is evaluated so that each candidate gets its own true/false/error result.
+				return LmdbNativeFactorRows.scalar(optional.openCorrelated(row), row.slots.length);
+			}
+			return optional(optional, row);
 		}
 		if (plan instanceof JoinPlan join)
 			return join(join.left, join.right, row, false);
 		if (plan instanceof FilterPlan filter) {
 			long reads = filter.groupedReadMask();
-			if (reads < 0L) {
+			if (reads < 0L || NativeFilterLease.requiresLogicalRhsRows(filter.filter)) {
 				// An opaque predicate may observe a new RAND/UUID/BNODE value on every logical mapping.
 				return LmdbNativeFactorRows.scalar(new FilterCursor(
 						logical(openOrdered(filter.arg, row), row), filter.filter, row), row.slots.length);
@@ -175,6 +201,22 @@ final class LmdbNativeFactorAlgebra {
 		}
 	}
 
+	private static LmdbNativeFactorCursor optional(LeftJoinPlan plan, RowState row) throws IOException {
+		OptionalExecutionOwner owner = OptionalExecutionOwner.prepare(plan, plan.right, row);
+		LmdbNativeFactorCursor left = null;
+		try {
+			left = owner.groupOccurrences() ? open(plan.left, row)
+					: LmdbNativeFactorRows.scalar(logical(openOrdered(plan.left, row), row), row.slots.length);
+			long demand = LeftJoinPlan.optionalReadMask(owner.right(), row, plan.rhsContract)
+					| owner.right().producedMask();
+			return new Joined(LmdbNativeFactorRows.expand(left, row, demand), owner.right(), row, true, owner);
+		} catch (IOException | RuntimeException | Error failure) {
+			KernelRuntime.closeResource(left, failure);
+			KernelRuntime.closeResource(owner, failure);
+			throw failure;
+		}
+	}
+
 	private static LmdbNativeFactorCursor join(SlotPlan leftPlan, SlotPlan rightPlan, RowState row,
 			boolean optional) throws IOException {
 		boolean replaySafe = SlotPlan.encounterOrderReplaySafe(rightPlan);
@@ -192,7 +234,7 @@ final class LmdbNativeFactorAlgebra {
 	}
 
 	/** Existing lexical operators materialize rows, not weights. Hide the weighted interface at that boundary. */
-	private record Boundary(SlotPlan delegate) implements SlotPlan {
+	record Boundary(SlotPlan delegate) implements SlotPlan {
 		@Override
 		public RowCursor open(RowState row) throws IOException {
 			return logical(LmdbNativeFactorRows.asRows(LmdbNativeFactorAlgebra.open(delegate, row), row), row);
@@ -483,6 +525,7 @@ final class LmdbNativeFactorAlgebra {
 		final SlotPlan rightPlan;
 		final RowState row;
 		final boolean optional;
+		final OptionalExecutionOwner owner;
 		final FactorEnvironment result;
 		LmdbNativeFactorCursor right;
 		long leftWeight;
@@ -493,7 +536,13 @@ final class LmdbNativeFactorAlgebra {
 		boolean closed;
 
 		Joined(LmdbNativeFactorCursor left, SlotPlan rightPlan, RowState row, boolean optional) {
+			this(left, rightPlan, row, optional, null);
+		}
+
+		Joined(LmdbNativeFactorCursor left, SlotPlan rightPlan, RowState row, boolean optional,
+				OptionalExecutionOwner owner) {
 			this.left = left;
+			this.owner = owner;
 			this.rightPlan = rightPlan;
 			this.row = row;
 			this.optional = optional;
@@ -521,12 +570,18 @@ final class LmdbNativeFactorAlgebra {
 							result.append(right.factors(), -1L);
 							weight = Math.multiplyExact(leftWeight, right.multiplicity());
 							matched = true;
+							if (owner != null) {
+								owner.emitted(weight, result);
+							}
 							return true;
 						}
 						closeRight();
 						if (optional && !matched) {
 							result.append(left.factors(), -1L);
 							weight = leftWeight;
+							if (owner != null) {
+								owner.emitted(weight, result);
+							}
 							return true;
 						}
 					}
@@ -539,7 +594,12 @@ final class LmdbNativeFactorAlgebra {
 					leftWeight = left.multiplicity();
 					matched = false;
 					rightMark = row.mark();
-					right = open(rightPlan, row);
+					RowCursor memo = owner == null ? null : owner.openMemo(row);
+					if (memo != null) {
+						right = LmdbNativeFactorRows.scalar(memo, row.slots.length);
+					} else {
+						right = open(rightPlan, row);
+					}
 				}
 			} catch (IOException | RuntimeException | Error failure) {
 				closeSuppressing(this, failure);
@@ -577,13 +637,10 @@ final class LmdbNativeFactorAlgebra {
 				return;
 			closed = true;
 			result.clear();
-			try {
-				closeRight();
-			} catch (RuntimeException | Error failure) {
-				closeSuppressing(left, failure);
-				throw failure;
-			}
-			left.close();
+			Throwable failure = KernelRuntime.closeResource(this::closeRight, null);
+			failure = KernelRuntime.closeResource(left, failure);
+			failure = KernelRuntime.closeResource(owner, failure);
+			KernelRuntime.rethrowCloseFailure(failure);
 		}
 	}
 }

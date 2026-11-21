@@ -166,9 +166,14 @@ final class LmdbNativeParallelAggregation {
 		return new LmdbNativeStrategyProposal<>(candidate::open, LmdbNativeWork.exact(estCost),
 				LmdbNativeWork.exact(LmdbNativeWork.parallelStartupCost()), Double.NaN,
 				LmdbNativeAttemptMetrics.PATH_PARALLEL_AGGREGATION, reservation::close)
-						.withCostQuote(new LmdbNativeCostQuote(startup, streaming,
-								it.groupSlots.length == 0 && it.havingCondition == null ? 1D : Double.NaN, false,
-								false));
+						.withCostQuote(
+								LmdbNativePlanExecutionProfile.preserveOptionalDemand(
+										new LmdbNativeCostQuote(startup, streaming,
+												it.groupSlots.length == 0 && it.havingCondition == null ? 1D
+														: Double.NaN,
+												false,
+												false),
+										plan, row, boundMask, LmdbNativePlanExecutionProfile.Mode.BATCH));
 	}
 
 	private static List<BindingSet> open(AggregateCandidate candidate) {
@@ -189,107 +194,116 @@ final class LmdbNativeParallelAggregation {
 		MultiJoinPlan[] workerPlans = null;
 		NativeLmdbQuerySource.ParallelSource[] sources = null;
 		LmdbNativeAttemptMetrics metrics = null;
-		List<BindingSet> results = null;
-		String dynamicDecline = null;
-		Throwable primaryFailure = null;
 		try {
-			metrics = parentMetrics.child();
-			// Admission precedes the sibling readers so task-budget losers cannot exhaust LMDB reader capacity. The
-			// complete sibling set is then opened together: the handed-off root cursor and every worker probe must
-			// observe one pinned snapshot.
-			sources = it.source.openParallelSources(sourceCount);
-			if (sources != null) {
-				boolean setupReady = preflightAggregateSlots == 0L;
-				if (!setupReady && partitions != null) {
-					// no producer sibling exists in partition mode: run the floating SUM/AVG sample on the query
-					// thread's own source over a throwaway cursor and discard it (partition 0's worker re-reads
-					// those rows — noise against the >=50k-row gate); EncounterOrderFallback propagates unchanged
-					RowState sampleRow = new RowState(it.source, it.layout, it.base, it.explainTarget, it.cancellation);
-					if (NativeRowSeeder.seed(sampleRow.slots, it.layout, it.base, it.source)) {
-						sampleRow.recomputeBoundMask();
-						prepareFloatingRootSample(derived, root, sampleRow, preflightAggregateSlots).close();
-						setupReady = true;
-					}
-				} else if (!setupReady) {
-					RowState producerRow = new RowState(sources[threads], it.layout, it.base, it.explainTarget,
-							it.cancellation);
-					if (NativeRowSeeder.seed(producerRow.slots, it.layout, it.base, sources[threads])) {
-						producerRow.recomputeBoundMask();
-						preparedRoot = prepareFloatingRootSample(derived, root, producerRow,
-								preflightAggregateSlots);
-						setupReady = true;
-					}
-				}
-				if (setupReady) {
-					// Keep the compiled plan as a query-thread template. Each worker binds its own copy after it owns a
-					// sibling source, so source-bound scalar evaluators never capture a transaction from another
-					// thread.
-					workerPlans = new MultiJoinPlan[threads];
-				} else {
-					dynamicDecline = "preflight-unavailable";
-				}
-			} else {
-				dynamicDecline = "snapshot-unavailable";
-			}
-		} catch (IOException e) {
-			primaryFailure = new QueryEvaluationException(e);
-		} catch (RuntimeException | Error e) {
-			primaryFailure = e;
-		}
-		if (primaryFailure == null && workerPlans != null) {
+			List<BindingSet> results = null;
+			String dynamicDecline = null;
+			Throwable primaryFailure = null;
 			try {
-				results = evaluate(it, plan, workerPlans, root, sources, threads, metrics, preparedRoot, partitions);
-			} catch (RuntimeException | Error problem) {
-				primaryFailure = problem;
+				metrics = parentMetrics.child();
+				// Admission precedes the sibling readers so task-budget losers cannot exhaust LMDB reader capacity. The
+				// complete sibling set is then opened together: the handed-off root cursor and every worker probe must
+				// observe one pinned snapshot.
+				sources = it.source.openParallelSources(sourceCount);
+				if (sources != null) {
+					boolean setupReady = preflightAggregateSlots == 0L;
+					if (!setupReady && partitions != null) {
+						// no producer sibling exists in partition mode: run the floating SUM/AVG sample on the query
+						// thread's own source over a throwaway cursor and discard it (partition 0's worker re-reads
+						// those rows — noise against the >=50k-row gate); EncounterOrderFallback propagates unchanged
+						RowState sampleRow = new RowState(it.source, it.layout, it.base, it.explainTarget,
+								it.cancellation);
+						if (NativeRowSeeder.seed(sampleRow.slots, it.layout, it.base, it.source)) {
+							sampleRow.recomputeBoundMask();
+							prepareFloatingRootSample(derived, root, sampleRow, preflightAggregateSlots).close();
+							setupReady = true;
+						}
+					} else if (!setupReady) {
+						RowState producerRow = new RowState(sources[threads], it.layout, it.base, it.explainTarget,
+								it.cancellation);
+						if (NativeRowSeeder.seed(producerRow.slots, it.layout, it.base, sources[threads])) {
+							producerRow.recomputeBoundMask();
+							preparedRoot = prepareFloatingRootSample(derived, root, producerRow,
+									preflightAggregateSlots);
+							setupReady = true;
+						}
+					}
+					if (setupReady) {
+						// Keep the compiled plan as a query-thread template. Each worker binds its own copy after it
+						// owns a
+						// sibling source, so source-bound scalar evaluators never capture a transaction from another
+						// thread.
+						workerPlans = new MultiJoinPlan[threads];
+					} else {
+						dynamicDecline = "preflight-unavailable";
+					}
+				} else {
+					dynamicDecline = "snapshot-unavailable";
+				}
+			} catch (IOException e) {
+				primaryFailure = new QueryEvaluationException(e);
+			} catch (RuntimeException | Error e) {
+				primaryFailure = e;
 			}
-		}
-		// All accepted work has drained; this scope observes closure and never polls or shortens it.
-		try (NativeExecutionPhaseEvent.Span cleanup = NativeExecutionPhaseEvent.start("coordinator-cleanup",
-				it.cancellation)) {
-			if (preparedRoot != null) {
+			if (primaryFailure == null && workerPlans != null) {
 				try {
-					preparedRoot.close();
+					results = evaluate(it, plan, workerPlans, root, sources, threads, metrics, preparedRoot,
+							partitions);
+				} catch (RuntimeException | Error problem) {
+					primaryFailure = problem;
+				}
+			}
+			// All accepted work has drained; this scope observes closure and never polls or shortens it.
+			try (NativeExecutionPhaseEvent.Span cleanup = NativeExecutionPhaseEvent.start("coordinator-cleanup",
+					it.cancellation)) {
+				if (preparedRoot != null) {
+					try {
+						preparedRoot.close();
+					} catch (RuntimeException | Error closeFailure) {
+						cleanup.resourceFailed();
+						primaryFailure = addCleanupFailure(primaryFailure, closeFailure);
+					}
+				}
+				primaryFailure = LmdbNativeParallelPipelines.closeWorkerPlans(workerPlans, 0, primaryFailure, cleanup);
+				primaryFailure = LmdbNativeParallelPipelines.closeSources(sources, primaryFailure, cleanup);
+				try {
+					reservation.close();
 				} catch (RuntimeException | Error closeFailure) {
 					cleanup.resourceFailed();
 					primaryFailure = addCleanupFailure(primaryFailure, closeFailure);
 				}
+				cleanup.complete();
 			}
-			primaryFailure = LmdbNativeParallelPipelines.closeWorkerPlans(workerPlans, 0, primaryFailure, cleanup);
-			primaryFailure = LmdbNativeParallelPipelines.closeSources(sources, primaryFailure, cleanup);
-			try {
-				reservation.close();
-			} catch (RuntimeException | Error closeFailure) {
-				cleanup.resourceFailed();
-				primaryFailure = addCleanupFailure(primaryFailure, closeFailure);
+			if (primaryFailure != null) {
+				if (primaryFailure instanceof RuntimeException) {
+					throw (RuntimeException) primaryFailure;
+				}
+				throw (Error) primaryFailure;
 			}
-			cleanup.complete();
-		}
-		if (primaryFailure != null) {
-			if (primaryFailure instanceof RuntimeException) {
-				throw (RuntimeException) primaryFailure;
+			it.cancellation.check();
+			LmdbNativeProbeDeadline.poll(0);
+			if (workerPlans == null) {
+				return reject(it, dynamicDecline != null ? dynamicDecline : "worker-plan-unavailable");
 			}
-			throw (Error) primaryFailure;
-		}
-		it.cancellation.check();
-		LmdbNativeProbeDeadline.poll(0);
-		if (workerPlans == null) {
-			return reject(it, dynamicDecline != null ? dynamicDecline : "worker-plan-unavailable");
-		}
-		metrics.recordParallelRun();
-		metrics.commitToParent();
-		if (partitions != null) {
-			LmdbNativeParallelPipelines.RANGE_PARTITION_RUNS.incrementAndGet();
-			LmdbNativeParallelPipelines.RANGE_PARTITIONS_PLANNED.addAndGet(partitions.length);
-			LmdbNativeParallelPipelines.LAST_RANGE_REJECTION.set(null);
-			if (LmdbNativeExplain.recordsExecutionPaths(it.explainTarget)) {
-				LAST_STRATEGY_LABEL.set(LmdbNativeParallelPipelines.parallelStrategyLabel(
-						LmdbNativeAttemptMetrics.PATH_PARALLEL_AGGREGATION, threads, partitions.length));
+			metrics.recordParallelRun();
+			metrics.commitToParent();
+			if (partitions != null) {
+				LmdbNativeParallelPipelines.RANGE_PARTITION_RUNS.incrementAndGet();
+				LmdbNativeParallelPipelines.RANGE_PARTITIONS_PLANNED.addAndGet(partitions.length);
+				LmdbNativeParallelPipelines.LAST_RANGE_REJECTION.set(null);
+				if (LmdbNativeExplain.recordsExecutionPaths(it.explainTarget)) {
+					LAST_STRATEGY_LABEL.set(LmdbNativeParallelPipelines.parallelStrategyLabel(
+							LmdbNativeAttemptMetrics.PATH_PARALLEL_AGGREGATION, threads, partitions.length));
+				}
+			} else if (LmdbNativeExplain.recordsExecutionPaths(it.explainTarget)) {
+				LAST_STRATEGY_LABEL.set(LmdbNativeParallelPipelines
+						.parallelStrategyLabel(LmdbNativeAttemptMetrics.PATH_PARALLEL_AGGREGATION, threads, 0));
 			}
-		} else if (LmdbNativeExplain.recordsExecutionPaths(it.explainTarget)) {
-			LAST_STRATEGY_LABEL.set(LmdbNativeParallelPipelines
-					.parallelStrategyLabel(LmdbNativeAttemptMetrics.PATH_PARALLEL_AGGREGATION, threads, 0));
+			return results;
+		} finally {
+			if (metrics != null) {
+				metrics.discardOptionalTelemetry();
+			}
 		}
-		return results;
 	}
 
 	private static <T> T reject(NativeGroupIteration it, String reason) {
@@ -670,126 +684,133 @@ final class LmdbNativeParallelAggregation {
 		for (int i = 0; i < threads; i++) {
 			workerMetrics[i] = metrics.child();
 		}
-		Throwable submissionFailure = null;
-		for (int i = 0; i < threads; i++) {
-			NativeLmdbQuerySource source = sources[i];
-			LmdbNativeAttemptMetrics workerMetric = workerMetrics[i];
-			int worker = i;
-			try {
-				var replayContext = NativeExecutionContext.captureWorkerContext();
-				futures.add(LmdbNativeParallelPipelines.pool().submit(() -> {
-					MultiJoinPlan workerPlan = null;
-					boolean handedToWorkerRunner = false;
-					try (var replayScope = replayContext.activate();
-							NativeExecutionPhaseEvent.InputScope inputPhases = NativeExecutionPhaseEvent
-									.inputScope(it.cancellation)) {
-						workerPlan = templatePlan == null
-								? workerPlans[worker]
-								: LmdbNativeParallelPipelines.forkWorkerPlan(templatePlan,
-										NativeScalarPlan.WorkerContext.forSource(source, it.evaluationContext));
-						workerPlans[worker] = workerPlan;
-						handedToWorkerRunner = true;
-						NativeExecutionPhaseEvent.activateInput("scan", it.cancellation);
-						if (workerPlan.filters.length != 0) {
-							NativeExecutionPhaseEvent.activateInput("expressions", it.cancellation);
-						}
-						NativeGroupTable result = runWorkerOwned(it, workerPlan, root, source, queue, partitions,
-								failure, workerMetric);
-						if (failure.get() == null) {
-							inputPhases.complete();
-						}
-						return result;
-					} catch (Throwable t) {
-						failure.compareAndSet(null, t);
-						throw t;
-					} finally {
-						if (!handedToWorkerRunner && workerPlan != null) {
-							Throwable closeFailure = LmdbNativeParallelPipelines.closePlanFilters(workerPlan, null);
-							if (closeFailure != null) {
-								Throwable primary = failure.get();
-								if (primary == null) {
-									if (failure.compareAndSet(null, closeFailure)) {
-										primary = closeFailure;
-									} else {
-										primary = failure.get();
+		try {
+			Throwable submissionFailure = null;
+			for (int i = 0; i < threads; i++) {
+				NativeLmdbQuerySource source = sources[i];
+				LmdbNativeAttemptMetrics workerMetric = workerMetrics[i];
+				int worker = i;
+				try {
+					var replayContext = NativeExecutionContext.captureWorkerContext();
+					futures.add(LmdbNativeParallelPipelines.pool().submit(() -> {
+						MultiJoinPlan workerPlan = null;
+						boolean handedToWorkerRunner = false;
+						try (var replayScope = replayContext.activate();
+								var optionalScope = workerMetric.optionalScope(it.source);
+								NativeExecutionPhaseEvent.InputScope inputPhases = NativeExecutionPhaseEvent
+										.inputScope(it.cancellation)) {
+							workerPlan = templatePlan == null
+									? workerPlans[worker]
+									: LmdbNativeParallelPipelines.forkWorkerPlan(templatePlan,
+											NativeScalarPlan.WorkerContext.forSource(source, it.evaluationContext));
+							workerPlans[worker] = workerPlan;
+							handedToWorkerRunner = true;
+							NativeExecutionPhaseEvent.activateInput("scan", it.cancellation);
+							if (workerPlan.filters.length != 0) {
+								NativeExecutionPhaseEvent.activateInput("expressions", it.cancellation);
+							}
+							NativeGroupTable result = runWorkerOwned(it, workerPlan, root, source, queue, partitions,
+									failure, workerMetric);
+							if (failure.get() == null) {
+								inputPhases.complete();
+							}
+							return result;
+						} catch (Throwable t) {
+							failure.compareAndSet(null, t);
+							throw t;
+						} finally {
+							if (!handedToWorkerRunner && workerPlan != null) {
+								Throwable closeFailure = LmdbNativeParallelPipelines.closePlanFilters(workerPlan, null);
+								if (closeFailure != null) {
+									Throwable primary = failure.get();
+									if (primary == null) {
+										if (failure.compareAndSet(null, closeFailure)) {
+											primary = closeFailure;
+										} else {
+											primary = failure.get();
+										}
+									}
+									if (primary != null && primary != closeFailure) {
+										primary.addSuppressed(closeFailure);
 									}
 								}
-								if (primary != null && primary != closeFailure) {
-									primary.addSuppressed(closeFailure);
-								}
 							}
+							workerPlans[worker] = null;
 						}
-						workerPlans[worker] = null;
-					}
-				}));
-			} catch (RuntimeException | Error problem) {
-				submissionFailure = problem;
-				failure.compareAndSet(null, problem);
-				break;
-			}
-		}
-		if (submissionFailure != null) {
-			submissionFailure = LmdbNativeParallelPipelines.closeWorkerPlans(workerPlans, futures.size(),
-					submissionFailure);
-		}
-		Throwable producerFailure = null;
-		if (submissionFailure == null && partitions == null) {
-			try {
-				produce(it, root, sources[threads], queue, threads, failure, preparedRoot);
-			} catch (Throwable t) {
-				producerFailure = t;
-				failure.compareAndSet(null, t);
-			}
-		}
-		// every future must be terminal before the caller closes the worker transactions
-		problems.add(submissionFailure);
-		problems.add(producerFailure);
-		boolean interrupted = false;
-		for (Future<NativeGroupTable> future : futures) {
-			while (true) {
-				try {
-					results.add(future.get());
-					break;
-				} catch (InterruptedException e) {
-					interrupted = true;
-					failure.compareAndSet(null, e);
-					problems.add(e);
-				} catch (ExecutionException e) {
-					problems.add(e.getCause() != null ? e.getCause() : e);
-					break;
-				} catch (CancellationException e) {
-					// a cancelled worker produced no partial result: merging the remainder would silently
-					// undercount, so the query must fail instead
-					problems.add(e);
-					break;
-				} catch (RuntimeException | Error e) {
-					// Even an exceptional Future implementation or allocation failure must not skip the remaining
-					// joins; sources are closed only after every submitted worker is terminal.
-					problems.add(e);
+					}));
+				} catch (RuntimeException | Error problem) {
+					submissionFailure = problem;
+					failure.compareAndSet(null, problem);
 					break;
 				}
 			}
-		}
-		if (interrupted) {
-			Thread.currentThread().interrupt();
-		}
-		problems.add(failure.get());
-		if (problems.realFailure != null) {
-			throw problems.realFailure instanceof QueryEvaluationException
-					? (QueryEvaluationException) problems.realFailure
-					: new QueryEvaluationException(problems.realFailure);
-		}
-		if (problems.fallback != null) {
-			throw problems.fallback;
-		}
-		List<BindingSet> merged = mergeResults(it, results, metrics);
-		for (NativeGroupTable table : results) {
-			if (table.factorizedTailUsed) {
-				table.workerMetrics.recordFactorizedTailEngaged();
+			if (submissionFailure != null) {
+				submissionFailure = LmdbNativeParallelPipelines.closeWorkerPlans(workerPlans, futures.size(),
+						submissionFailure);
 			}
-			table.workerMetrics.commitToParent();
+			Throwable producerFailure = null;
+			if (submissionFailure == null && partitions == null) {
+				try {
+					produce(it, root, sources[threads], queue, threads, failure, preparedRoot);
+				} catch (Throwable t) {
+					producerFailure = t;
+					failure.compareAndSet(null, t);
+				}
+			}
+			// every future must be terminal before the caller closes the worker transactions
+			problems.add(submissionFailure);
+			problems.add(producerFailure);
+			boolean interrupted = false;
+			for (Future<NativeGroupTable> future : futures) {
+				while (true) {
+					try {
+						results.add(future.get());
+						break;
+					} catch (InterruptedException e) {
+						interrupted = true;
+						failure.compareAndSet(null, e);
+						problems.add(e);
+					} catch (ExecutionException e) {
+						problems.add(e.getCause() != null ? e.getCause() : e);
+						break;
+					} catch (CancellationException e) {
+						// a cancelled worker produced no partial result: merging the remainder would silently
+						// undercount, so the query must fail instead
+						problems.add(e);
+						break;
+					} catch (RuntimeException | Error e) {
+						// Even an exceptional Future implementation or allocation failure must not skip the remaining
+						// joins; sources are closed only after every submitted worker is terminal.
+						problems.add(e);
+						break;
+					}
+				}
+			}
+			if (interrupted) {
+				Thread.currentThread().interrupt();
+			}
+			problems.add(failure.get());
+			if (problems.realFailure != null) {
+				throw problems.realFailure instanceof QueryEvaluationException
+						? (QueryEvaluationException) problems.realFailure
+						: new QueryEvaluationException(problems.realFailure);
+			}
+			if (problems.fallback != null) {
+				throw problems.fallback;
+			}
+			List<BindingSet> merged = mergeResults(it, results, metrics);
+			for (NativeGroupTable table : results) {
+				if (table.factorizedTailUsed) {
+					table.workerMetrics.recordFactorizedTailEngaged();
+				}
+				table.workerMetrics.commitToParent();
+			}
+			return merged;
+		} finally {
+			for (LmdbNativeAttemptMetrics worker : workerMetrics) {
+				worker.discardOptionalTelemetry();
+			}
 		}
-		return merged;
 	}
 
 	static final class FailureOutcome {
@@ -847,86 +868,92 @@ final class LmdbNativeParallelAggregation {
 			PatternPlan root, NativeLmdbQuerySource source, ArrayBlockingQueue<LmdbNativeExchange.Morsel> queue,
 			ConcurrentLinkedQueue<LmdbRootScanPartition> partitions, AtomicReference<Throwable> failure,
 			LmdbNativeAttemptMetrics metrics) throws IOException {
-		RowState row = new RowState(source, it.layout, it.base, it.explainTarget, it.cancellation);
-		if (!NativeRowSeeder.seed(row.slots, it.layout, it.base, source)) {
-			// the main thread seeded the identical bindings against the same value store before gating in
-			throw new IllegalStateException("worker seeding diverged from the query thread");
-		}
-		row.recomputeBoundMask();
-		AggContext ctx = new AggContext(source, it.strictCompare, true, true);
-		FactorizedTail tail;
-		if (derived == null) {
-			// the same deterministic selection the consumer ran at propose time: worker forks share the
-			// consumer's pattern children, so the selected root must be the shared morsel root
-			FactorizedTail.Selection selection = FactorizedTail.select(plan, row, it.groupSlots, it.aggregates,
-					metrics);
-			derived = selection.derived;
-			tail = selection.tail;
-			if (derived.order[0] != root) {
-				throw new IllegalStateException("worker physical root diverged from the shared morsel root");
+		try (var optionalScope = metrics.optionalScope(
+				source instanceof SyntheticValueSource ? source : it.source)) {
+			RowState row = new RowState(source, it.layout, it.base, it.explainTarget, it.cancellation);
+			if (!NativeRowSeeder.seed(row.slots, it.layout, it.base, source)) {
+				// the main thread seeded the identical bindings against the same value store before gating in
+				throw new IllegalStateException("worker seeding diverged from the query thread");
 			}
-		} else {
-			tail = derived.order.length >= 2
-					? FactorizedTail.probe(derived, plan.filters, row.boundMask(), it.groupSlots, it.aggregates,
-							metrics)
-					: null;
-		}
-		NativeGroupTable result = null;
-		Throwable failureOutcome = null;
-		try {
-			int chainLength = tail != null ? derived.order.length - tail.branchCount() : derived.order.length;
-			RowCursor leftmost = partitions != null
-					? new LmdbNativeExchange.PartitionCursor(partitions, root, row, failure, new AtomicBoolean())
-					: new LmdbNativeExchange.MorselCursor(queue, root, row, failure);
-			FactorizedTail.MemoBudget prefixBudget = tail != null ? tail.memoBudget
-					: new FactorizedTail.MemoBudget(FactorizedTail.MEMO_BYPASSES, metrics);
-			NativeGroupTable table = tail != null && tail.groupsByTail()
-					? NativeGroupTable.tailGrouped(it.aggregates, ctx, it.hashDistinctChannels)
-					: NativeGroupTable.createParallel(it.groupSlots, it.aggregates, ctx, it.hashDistinctChannels, true);
-			RowCursor prefix = LmdbNativeChunkPipeline.externalRootCandidateEnabled()
-					? LmdbNativeChunkPipeline.tryOpenPrefixFrom(plan, derived, chainLength, row, leftmost, prefixBudget)
-					: null;
-			if (prefix == null) {
-				prefix = plan.openChainFrom(derived, leftmost, chainLength, row);
+			row.recomputeBoundMask();
+			AggContext ctx = new AggContext(source, it.strictCompare, true, true);
+			FactorizedTail tail;
+			if (derived == null) {
+				// the same deterministic selection the consumer ran at propose time: worker forks share the
+				// consumer's pattern children, so the selected root must be the shared morsel root
+				FactorizedTail.Selection selection = FactorizedTail.select(plan, row, it.groupSlots, it.aggregates,
+						metrics);
+				derived = selection.derived;
+				tail = selection.tail;
+				if (derived.order[0] != root) {
+					throw new IllegalStateException("worker physical root diverged from the shared morsel root");
+				}
+			} else {
+				tail = derived.order.length >= 2
+						? FactorizedTail.probe(derived, plan.filters, row.boundMask(), it.groupSlots, it.aggregates,
+								metrics)
+						: null;
 			}
-			try (RowCursor cursor = prefix) {
-				if (tail != null && tail.groupsByTail()) {
-					while (row.advance(cursor)) {
-						tail.aggregateGrouped(row, table.longGroups(), ctx);
-					}
-				} else if (tail != null) {
-					while (row.advance(cursor)) {
-						table.aggregateFactorized(row, tail);
-					}
-				} else {
-					while (row.advance(cursor)) {
-						table.add(row);
+			NativeGroupTable result = null;
+			Throwable failureOutcome = null;
+			try {
+				int chainLength = tail != null ? derived.order.length - tail.branchCount() : derived.order.length;
+				RowCursor leftmost = partitions != null
+						? new LmdbNativeExchange.PartitionCursor(partitions, root, row, failure, new AtomicBoolean())
+						: new LmdbNativeExchange.MorselCursor(queue, root, row, failure);
+				FactorizedTail.MemoBudget prefixBudget = tail != null ? tail.memoBudget
+						: new FactorizedTail.MemoBudget(FactorizedTail.MEMO_BYPASSES, metrics);
+				NativeGroupTable table = tail != null && tail.groupsByTail()
+						? NativeGroupTable.tailGrouped(it.aggregates, ctx, it.hashDistinctChannels)
+						: NativeGroupTable.createParallel(it.groupSlots, it.aggregates, ctx, it.hashDistinctChannels,
+								true);
+				RowCursor prefix = LmdbNativeChunkPipeline.externalRootCandidateEnabled()
+						? LmdbNativeChunkPipeline.tryOpenPrefixFrom(plan, derived, chainLength, row, leftmost,
+								prefixBudget)
+						: null;
+				if (prefix == null) {
+					prefix = plan.openChainFrom(derived, leftmost, chainLength, row);
+				}
+				try (RowCursor cursor = prefix) {
+					if (tail != null && tail.groupsByTail()) {
+						while (row.advance(cursor)) {
+							tail.aggregateGrouped(row, table.longGroups(), ctx);
+						}
+					} else if (tail != null) {
+						while (row.advance(cursor)) {
+							table.aggregateFactorized(row, tail);
+						}
+					} else {
+						while (row.advance(cursor)) {
+							table.add(row);
+						}
 					}
 				}
+				table.factorizedTailUsed = tail != null;
+				table.workerMetrics = metrics;
+				result = table;
+			} catch (IOException | RuntimeException | Error problem) {
+				failureOutcome = problem;
 			}
-			table.factorizedTailUsed = tail != null;
-			table.workerMetrics = metrics;
-			result = table;
-		} catch (IOException | RuntimeException | Error problem) {
-			failureOutcome = problem;
-		}
-		if (tail != null) {
-			try {
-				tail.close();
-			} catch (RuntimeException | Error closeFailure) {
-				failureOutcome = addCleanupFailure(failureOutcome, closeFailure);
+			if (tail != null) {
+				try {
+					tail.close();
+				} catch (RuntimeException | Error closeFailure) {
+					failureOutcome = addCleanupFailure(failureOutcome, closeFailure);
+				}
 			}
+			if (failureOutcome instanceof IOException ioException) {
+				throw ioException;
+			}
+			if (failureOutcome instanceof RuntimeException runtimeException) {
+				throw runtimeException;
+			}
+			if (failureOutcome instanceof Error error) {
+				throw error;
+			}
+			return result;
+
 		}
-		if (failureOutcome instanceof IOException ioException) {
-			throw ioException;
-		}
-		if (failureOutcome instanceof RuntimeException runtimeException) {
-			throw runtimeException;
-		}
-		if (failureOutcome instanceof Error error) {
-			throw error;
-		}
-		return result;
 	}
 
 	private static NativeGroupTable runWorkerOwned(NativeGroupIteration it, MultiJoinPlan plan, PatternPlan root,
