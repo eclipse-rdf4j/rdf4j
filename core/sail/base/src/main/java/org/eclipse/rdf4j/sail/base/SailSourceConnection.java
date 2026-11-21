@@ -21,6 +21,7 @@ import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.UUID;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.locks.LockSupport;
@@ -248,14 +249,16 @@ public abstract class SailSourceConnection extends AbstractNotifyingSailConnecti
 		logger.trace("Incoming query model:\n{}", tupleExpr);
 
 		SlowQueryContextHolder.SlowQueryContext slowQueryContext = SlowQueryContextHolder.get();
-		long slowQueryThresholdSeconds = getSailBase().getSlowQueryLogThresholdSeconds();
-		long slowQueryFirstResultThresholdSeconds = getSailBase().getSlowQueryLogFirstResultThresholdSeconds();
-		boolean slowQueryLoggingEnabled = (slowQueryThresholdSeconds > 0 || slowQueryFirstResultThresholdSeconds > 0)
-				&& slowQueryContext != null;
-		TupleExpr unoptimizedTupleExpr = tupleExpr;
+		SlowQuerySupport.Configuration slowQueryConfiguration = slowQueryContext == null ? null
+				: slowQueryContext.getLoggingConfiguration(getSailBase());
+		boolean slowQueryLoggingEnabled = slowQueryConfiguration != null
+				&& (slowQueryConfiguration.thresholdSeconds() > 0
+						|| slowQueryConfiguration.firstResultThresholdSeconds() > 0);
+		SlowQueryLogInfo.PlanSnapshot unoptimizedPlan = null;
 		long slowQueryStartMillis = 0L;
 		if (slowQueryLoggingEnabled) {
 			slowQueryStartMillis = SlowQuerySupport.getTimestampMillis(getSailBase());
+			unoptimizedPlan = SlowQueryLogInfo.capturePlan(tupleExpr);
 		}
 
 		if (cloneTupleExpression) {
@@ -300,25 +303,27 @@ public abstract class SailSourceConnection extends AbstractNotifyingSailConnecti
 			if (executionSummaryEnabled) {
 				setExecutionSummaryEnabled(tupleExpr, true);
 			}
-			SlowQueryLogInfo slowQueryLogInfo = null;
-			if (slowQueryLoggingEnabled) {
-				slowQueryLogInfo = new SlowQueryLogInfo(getSailBase().getClass().getName(),
-						slowQueryThresholdSeconds, slowQueryFirstResultThresholdSeconds,
-						slowQueryContext.getQueryType(),
-						slowQueryContext.getRawQueryText(),
-						unoptimizedTupleExpr, tupleExpr, dataset,
-						bindings == null ? Set.of() : bindings.getBindingNames());
-			}
-
 			logger.trace("Optimized query model:\n{}", tupleExpr);
 			boolean preview = QueryExplanationContext.isPreview();
 			strategy.setTrackStatementIndexNames(!preview && (executionSummaryEnabled || slowQueryLoggingEnabled));
 			QueryEvaluationStep qes = strategy.precompile(tupleExpr);
+			SlowQueryLogInfo slowQueryLogInfo = null;
+			if (slowQueryLoggingEnabled) {
+				slowQueryLogInfo = new SlowQueryLogInfo(getSailBase().getClass().getName(),
+						slowQueryConfiguration.thresholdSeconds(), slowQueryConfiguration.firstResultThresholdSeconds(),
+						slowQueryContext.getQueryType(),
+						slowQueryContext.getRawQueryText(),
+						unoptimizedPlan, tupleExpr, dataset, bindings,
+						captureSlowQueryMetadata(slowQueryContext, slowQueryConfiguration, includeInferred, tupleExpr,
+								strategy));
+			}
+
 			iteration = preview ? new EmptyIteration<>() : qes.evaluate(EmptyBindingSet.getInstance());
 			iteration = interlock(iteration, rdfDataset);
 			rdfDataset = null; // The iteration now owns the dataset, including any acquired source.
 			if (slowQueryLogInfo != null) {
-				iteration = new SlowQueryLoggingIteration<>(iteration, getSailBase(), slowQueryLogInfo,
+				iteration = new SlowQueryLoggingIteration<>(iteration, getSailBase(), slowQueryConfiguration,
+						slowQueryLogInfo,
 						new SlowQueryLogFormatter(), slowQueryStartMillis);
 			}
 			return iteration;
@@ -330,6 +335,85 @@ public abstract class SailSourceConnection extends AbstractNotifyingSailConnecti
 			closeFailedRead(failure, iteration, rdfDataset);
 			throw failure;
 		}
+	}
+
+	/** Records slow consumption of a cached result without running the optimizer or evaluator again. */
+	protected final CloseableIteration<BindingSet> wrapCachedQueryLogging(CloseableIteration<BindingSet> result,
+			TupleExpr expression, Dataset dataset, BindingSet bindings, boolean includeInferred, long startMillis,
+			SlowQuerySupport.Configuration configuration) {
+		SlowQueryContextHolder.SlowQueryContext context = SlowQueryContextHolder.get();
+		if (context == null) {
+			return result;
+		}
+		if (configuration == null
+				|| configuration.thresholdSeconds() <= 0 && configuration.firstResultThresholdSeconds() <= 0) {
+			return result;
+		}
+		Map<String, String> metadata = captureSlowQueryMetadata(context, configuration, includeInferred, expression,
+				null);
+		metadata.put("resultCacheHit", "true");
+		metadata.put("evaluationStrategy", "cache");
+		metadata.put("optimizedPlanAvailability", "not-produced-cache-hit");
+		SlowQueryLogInfo info = new SlowQueryLogInfo(getSailBase().getClass().getName(),
+				configuration.thresholdSeconds(),
+				configuration.firstResultThresholdSeconds(), context.getQueryType(), context.getRawQueryText(),
+				SlowQueryLogInfo.capturePlan(expression), null, dataset, bindings, metadata);
+		return new SlowQueryLoggingIteration<>(result, getSailBase(), configuration, info, new SlowQueryLogFormatter(),
+				startMillis);
+	}
+
+	private Map<String, String> captureSlowQueryMetadata(SlowQueryContextHolder.SlowQueryContext context,
+			SlowQuerySupport.Configuration configuration, boolean includeInferred, TupleExpr expression,
+			EvaluationStrategy strategy) {
+		Map<String, String> metadata = new HashMap<>(context.getMetadata());
+		metadata.computeIfAbsent("executionId", ignored -> UUID.randomUUID().toString());
+		metadata.put("evaluationId", UUID.randomUUID().toString());
+		metadata.putIfAbsent("queryStartTimeMillis", Long.toString(System.currentTimeMillis()));
+		metadata.putIfAbsent("threadId", Long.toString(Thread.currentThread().threadId()));
+		metadata.putIfAbsent("threadName", Thread.currentThread().getName());
+		metadata.put("sailInstanceId", Integer.toHexString(System.identityHashCode(getSailBase())));
+		metadata.put("sailConnectionId", Integer.toHexString(System.identityHashCode(this)));
+		metadata.put("includeInferred", Boolean.toString(includeInferred));
+		metadata.putIfAbsent("forcedExecutionStrategy", context.getForcedExecutionStrategy() == null ? "default"
+				: context.getForcedExecutionStrategy());
+		metadata.putIfAbsent("resultCacheRequested", Boolean.toString(context.isResultCacheRequested()));
+		metadata.put("slowQueryLogFile", configuration.logFile() == null || configuration.logFile().isBlank()
+				? "logger"
+				: configuration.logFile());
+		try {
+			String dataDirectory = configuration.dataDir() == null ? "in-memory"
+					: configuration.dataDir().getAbsolutePath();
+			metadata.put("repositoryDataDir", dataDirectory);
+			metadata.putIfAbsent("repositoryId", configuration.dataDir() == null
+					? getSailBase().getClass().getName() + "@" + metadata.get("sailInstanceId")
+					: dataDirectory);
+			metadata.put("transactionActive", Boolean.toString(isActive()));
+			IsolationLevel isolationLevel = getIsolationLevel();
+			metadata.put("isolationLevel",
+					String.valueOf(isolationLevel == null ? defaultIsolationLevel : isolationLevel));
+			metadata.put("queryEvaluationMode", String.valueOf(strategy == null ? queryEvaluationMode
+					: strategy.getQueryEvaluationMode()));
+			metadata.put("evaluationStrategyFactory", evalStratFactory.getClass().getName());
+			metadata.put("querySolutionCacheThreshold",
+					Long.toString(evalStratFactory.getQuerySolutionCacheThreshold()));
+			metadata.put("optimizerPipeline", evalStratFactory.getOptimizerPipeline()
+					.map(pipeline -> pipeline.getClass().getName())
+					.orElse("default"));
+			metadata.put("experimentalQueryOptimizations", Boolean.toString((strategy == null
+					? getSailBase().getQueryExecutionPolicy()
+					: strategy.getQueryExecutionPolicy()).experimentalQueryOptimizations()));
+			metadata.put("runtimeTelemetryEnabled", Boolean.toString(expression.isRuntimeTelemetryEnabled()));
+			metadata.put("executionSummaryEnabled", Boolean.toString(expression.isExecutionSummaryEnabled()));
+			if (strategy != null) {
+				metadata.put("evaluationStrategy", strategy.getClass().getName());
+				metadata.put("trackTime", Boolean.toString(strategy.isTrackTime()));
+				metadata.put("trackResultSize", Boolean.toString(strategy.isTrackResultSize()));
+				metadata.put("resultCacheHit", "false");
+			}
+		} catch (RuntimeException | AssertionError failure) {
+			metadata.put("evaluationMetadataError", failure.toString());
+		}
+		return metadata;
 	}
 
 	@Override
