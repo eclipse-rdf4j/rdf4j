@@ -3628,6 +3628,10 @@ class TripleStore implements Closeable {
 		return queryGeneration.best[boundMask(subj, pred, obj, context)].toString();
 	}
 
+	int bestIndexPrefixMask(int boundComponentMask) {
+		return queryGeneration.best[boundComponentMask].boundPrefixMask(boundComponentMask);
+	}
+
 	String getIndexName(Txn txn, long subj, long pred, long obj, long context) {
 		return selectGeneration(txn, generation -> generation.best[boundMask(subj, pred, obj, context)].toString());
 	}
