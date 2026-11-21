@@ -1207,24 +1207,7 @@ public class ValueStore extends SimpleValueFactory implements AutoCloseable {
 
 	private boolean walNeedsBootstrap(int maxId) {
 		try (ValueStoreWalReader reader = ValueStoreWalReader.open(wal.config())) {
-			ValueStoreWalRecovery recovery = new ValueStoreWalRecovery();
-			ValueStoreWalRecovery.ReplayReport report = recovery.replayWithReport(reader);
-			Map<Integer, ValueStoreWalRecord> dict = report.dictionary();
-			if (dict.isEmpty()) {
-				return true;
-			}
-			if (!report.complete()) {
-				return true;
-			}
-			for (int id = 1; id <= maxId; id++) {
-				if (!dict.containsKey(id)) {
-					return true;
-				}
-			}
-			return false;
-		} catch (IOException e) {
-			// if we cannot inspect WAL, avoid scheduling to not interfere with normal operations
-			return false;
+			return !reader.hasCompleteValueIdCoverage(maxId);
 		}
 	}
 
