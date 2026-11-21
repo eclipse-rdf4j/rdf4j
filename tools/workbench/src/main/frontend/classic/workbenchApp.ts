@@ -1,3 +1,4 @@
+/// <reference path="workbenchPageModel.d.ts" />
 /// <reference path="workbenchViews.ts" />
 /// <reference path="workbenchRoutes.ts" />
 /// <reference path="workbenchRouter.ts" />
@@ -9,31 +10,6 @@
 // Browser bootstrap for structured Workbench page models. Route-changing POST
 // forms remain browser-owned; only eligible GET shells fetch page data here.
 namespace workbench {
-    export interface PageModel {
-        viewId: string;
-        vars: string[];
-        /** The current bounded window only; complete rows remain in rowStore. */
-        rows: any[][];
-        rowStart: number;
-        rowCount: number;
-        rowTopSpacer: number;
-        rowBottomSpacer: number;
-        pickerRows: any[][];
-        pickerStart: number;
-        pickerPageSize: number;
-        rowStore: any;
-        namespaceMap: { [prefix: string]: string };
-        links: string[];
-        metadata: { [key: string]: any };
-        boolean?: boolean;
-        linked?: { [key: string]: any };
-        workbench?: any;
-        /** Set when the page model ends in an error record after its view, for example repository-not-found. */
-        error?: { status: number; code: string; message: string };
-        /** The URL the page model was answered from, after redirects (M8.1). */
-        finalUrl?: string;
-    }
-
     export interface LitRuntime {
         html: (strings: TemplateStringsArray, ...values: any[]) => any;
         render: (template: any, root: Element) => void;
@@ -1299,14 +1275,10 @@ namespace workbench {
         }
 
         /** A repository deletion started on the page before: the Repositories list it leads to confirms it. */
-        function settleRepositoryDeletion(mount: any, failed: boolean): void {
+        function settleRepositoryDeletion(model: PageModel): void {
             const shared: any = (workbench as any).workspace;
             if (shared && typeof shared.deletionDone === 'function') {
-                try {
-                    shared.deletionDone(attribute(mount, 'data-workbench-view') || '', failed);
-                } catch (error) {
-                    // What the browser keeps for it stays.
-                }
+                shared.deletionDone(model).catch(() => { /* Browser storage is best effort. */ });
             }
         }
 
@@ -1315,11 +1287,11 @@ namespace workbench {
             scriptSource = { basePath, dependencies };
             return loadSharedRuntime(basePath, dependencies)
                 .then(() => bootstrapPage(mount, dependencies, basePath).then((result) => {
-                    settleRepositoryDeletion(mount, false);
+                    settleRepositoryDeletion(result.model);
                     scheduleRowStoreCleanup();
                     return result;
                 }, (error: any) => {
-                    settleRepositoryDeletion(mount, true);
+                    settleRepositoryDeletion(null);
                     scheduleRowStoreCleanup();
                     throw error;
                 }), (error: any) => {

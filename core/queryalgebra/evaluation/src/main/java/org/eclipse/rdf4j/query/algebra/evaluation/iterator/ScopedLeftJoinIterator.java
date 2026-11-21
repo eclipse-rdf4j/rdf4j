@@ -14,12 +14,15 @@ package org.eclipse.rdf4j.query.algebra.evaluation.iterator;
 
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.Collections;
+import java.util.Comparator;
 import java.util.Iterator;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.Predicate;
 import java.util.function.Supplier;
 
@@ -33,36 +36,46 @@ import org.eclipse.rdf4j.query.QueryEvaluationException;
 import org.eclipse.rdf4j.query.algebra.Projection;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.algebra.Var;
+import org.eclipse.rdf4j.query.algebra.evaluation.QueryBindingSet;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryEvaluationStep;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryValueEvaluationStep;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.GraphFrameBindings;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.QueryEvaluationContext;
+import org.eclipse.rdf4j.query.algebra.evaluation.util.ExternalValuePreparation;
 import org.eclipse.rdf4j.query.algebra.evaluation.util.QueryEvaluationUtility;
+import org.eclipse.rdf4j.query.impl.BindingSetSnapshots;
+
+import com.google.common.cache.Cache;
+import com.google.common.cache.CacheBuilder;
+import com.google.common.collect.Iterators;
 
 /**
  * Evaluates a scoped join's right-hand side once with the query input bindings, then joins its rows with each left row.
  * This keeps left-row bindings out of subqueries and result modifiers while preserving compatible joins, conditions,
  * and (for an OPTIONAL) fallback rows.
  * <p>
- * The only left-row bindings that do reach the right-hand side are its <em>frame names</em>: variables that a
- * sub-select inside the right operand uses as the active graph of its patterns ({@code GRAPH ?g { ... { SELECT ... }
- * }}) while the left operand binds {@code ?g}. The algebra evaluates such a sub-select per active graph, so the right
- * operand is materialized once per distinct frame value instead of once overall.
+ * Right-hand scopes receive selected parameters from the left row. An inherited {@code GRAPH} frame supplies the active
+ * graph of a sub-select. A parameterized UNION arm receives the names used by its own operators, such as a property
+ * path's endpoint. Repeatable and discardable arms stream their rows in encounter order. A small, completed frame may
+ * be replayed, using only the parameters that arm actually reads.
  */
 public final class ScopedLeftJoinIterator extends LookAheadIteration<BindingSet> {
 
 	private static final String[] NO_FRAME = new String[0];
+	// Count each cache entry, parameter and row in addition to the row's binding columns. Empty frames take space too.
+	private static final int REPLAY_WEIGHT_LIMIT = 4096;
 
 	private final CloseableIteration<BindingSet> leftIter;
-	private final QueryEvaluationStep rightStep;
 	private final BindingSet inputBindings;
 	private final Predicate<BindingSet> condition;
 	private final QueryEvaluationContext context;
 	private final String[] joinAttributes;
-	private final String[] frameNames;
 	private final GraphFrameMapping[] graphFrames;
 	private final String[] privateParameters;
 	private final boolean optional;
+	private final RightArm[] arms;
+	private final List<PartialKeyHashLookup<BindingSet>> eagerLookups;
+	private final Cache<ReplayFrame, ReplayRows> replay;
 
 	/** Caller-side graph selector and the private context parameter of its inherited subquery. */
 	public record GraphFrameMapping(String sourceName, String parameterName) {
@@ -94,10 +107,54 @@ public final class ScopedLeftJoinIterator extends LookAheadIteration<BindingSet>
 		}
 	}
 
-	private volatile CloseableIteration<BindingSet> rightIter;
-	private final Map<BindingSetHashKey, PartialKeyHashLookup> rightRowsByFrame = new LinkedHashMap<>();
+	/** One prepared UNION arm and the sibling bindings it reads as parameters. */
+	public record ParameterizedArm(QueryEvaluationStep step, Set<String> parameters, boolean repeatable,
+			boolean discardable) {
+	}
+
+	private record RightArm(QueryEvaluationStep step, String[] parameters, boolean eager, boolean streams,
+			Map<BindingSetHashKey, PartialKeyHashLookup<BindingSet>> rowsByFrame) {
+	}
+
+	private record ReplayFrame(int arm, BindingSetHashKey key) {
+	}
+
+	private record ReplayRow(int ordinal, BindingSet bindings) {
+	}
+
+	private final class ReplayRows {
+		private List<BindingSet> rows;
+		private PartialKeyHashLookup<ReplayRow> lookup;
+		private final int weight;
+
+		private ReplayRows(List<BindingSet> rows, int weight) {
+			this.rows = rows;
+			this.weight = weight;
+		}
+
+		private Iterator<BindingSet> candidates(BindingSetHashKey key) {
+			if (lookup == null) {
+				Map<BindingSetHashKey, List<ReplayRow>> buckets = new LinkedHashMap<>();
+				for (int ordinal = 0; ordinal < rows.size(); ordinal++) {
+					BindingSet row = rows.get(ordinal);
+					buckets.computeIfAbsent(BindingSetHashKey.create(joinAttributes, row), ignored -> new ArrayList<>())
+							.add(new ReplayRow(ordinal, row));
+				}
+				lookup = new PartialKeyHashLookup<>(buckets);
+				rows = null;
+			}
+			return Iterators.transform(lookup.candidates(key, Comparator.comparingInt(ReplayRow::ordinal)),
+					ReplayRow::bindings);
+		}
+	}
+
+	private final AtomicReference<CloseableIteration<BindingSet>> rightIter = new AtomicReference<>();
+	private volatile boolean released;
 	private Iterator<BindingSet> currentRightRows;
 	private BindingSet currentLeft;
+	private BindingSet currentFrameInput;
+	private BindingSetHashKey currentJoinKey;
+	private int nextArm;
 	private boolean currentLeftMatched;
 
 	/**
@@ -147,20 +204,49 @@ public final class ScopedLeftJoinIterator extends LookAheadIteration<BindingSet>
 	private ScopedLeftJoinIterator(QueryEvaluationStep left, QueryEvaluationStep right,
 			QueryValueEvaluationStep condition, BindingSet bindings, QueryEvaluationContext context,
 			String[] joinAttributes, GraphFrameMapping[] graphFrames, boolean optional) {
+		this(left, condition, bindings, context, joinAttributes, graphFrames, optional,
+				new RightArm[] { new RightArm(right, Arrays.stream(graphFrames)
+						.map(GraphFrameMapping::parameterName)
+						.distinct()
+						.toArray(String[]::new), false, false, new LinkedHashMap<>()) });
+	}
+
+	/** Opens each repeatable, discardable arm on demand and bounds replay across all its frames. */
+	public static ScopedLeftJoinIterator withParameters(QueryEvaluationStep left, List<ParameterizedArm> rightArms,
+			QueryValueEvaluationStep condition, BindingSet bindings, QueryEvaluationContext context,
+			String[] joinAttributes, Set<String> parameters, boolean optional) {
+		GraphFrameMapping[] frames = parameters.stream()
+				.map(name -> new GraphFrameMapping(name, name))
+				.toArray(GraphFrameMapping[]::new);
+		RightArm[] arms = rightArms.stream()
+				.map(arm -> new RightArm(arm.step(), arm.parameters().toArray(String[]::new), !arm.discardable(),
+						arm.repeatable() && arm.discardable(), null))
+				.toArray(RightArm[]::new);
+		return new ScopedLeftJoinIterator(left, condition, bindings, context, joinAttributes, frames, optional, arms);
+	}
+
+	private ScopedLeftJoinIterator(QueryEvaluationStep left, QueryValueEvaluationStep condition, BindingSet bindings,
+			QueryEvaluationContext context, String[] joinAttributes, GraphFrameMapping[] graphFrames, boolean optional,
+			RightArm[] arms) {
 		this.optional = optional;
+		this.arms = arms;
+		this.eagerLookups = Arrays.stream(arms).anyMatch(RightArm::eager)
+				? new ArrayList<>(Collections.nCopies(arms.length, null))
+				: null;
+		this.replay = Arrays.stream(arms).anyMatch(RightArm::streams)
+				? CacheBuilder.newBuilder()
+						.maximumWeight(REPLAY_WEIGHT_LIMIT)
+						.weigher((ReplayFrame frame, ReplayRows rows) -> rows.weight)
+						.build()
+				: null;
 		this.joinAttributes = PartialKeyHashLookup.capKeyNames(joinAttributes);
 		this.graphFrames = graphFrames;
-		this.frameNames = Arrays.stream(graphFrames)
-				.map(GraphFrameMapping::parameterName)
-				.distinct()
-				.toArray(String[]::new);
 		this.privateParameters = Arrays.stream(graphFrames)
 				.filter(frame -> !frame.sourceName().equals(frame.parameterName()))
 				.map(GraphFrameMapping::parameterName)
 				.distinct()
 				.toArray(String[]::new);
 		leftIter = left.evaluate(bindings);
-		rightStep = right;
 		inputBindings = bindings;
 		this.condition = condition == null ? ignored -> true : condition.asPredicate();
 		this.context = context;
@@ -169,26 +255,45 @@ public final class ScopedLeftJoinIterator extends LookAheadIteration<BindingSet>
 	@Override
 	protected BindingSet getNextElement() throws QueryEvaluationException {
 		try {
-			while (true) {
-				if (currentLeft != null) {
-					while (currentRightRows.hasNext()) {
-						BindingSet rightRow = currentRightRows.next();
-						if (!currentLeft.isCompatible(rightRow)) {
+			while (!released) {
+				BindingSet leftRow = currentLeft;
+				if (leftRow != null) {
+					while (!released) {
+						Iterator<BindingSet> candidates = currentRightRows;
+						if (candidates == null || !candidates.hasNext()) {
+							if (nextArm == arms.length) {
+								break;
+							}
+							CancellationPoints.check(isCancellationRequested());
+							currentRightRows = openArm(nextArm++);
+							if (released) {
+								return null;
+							}
 							continue;
 						}
-						BindingSet merged = merge(currentLeft, rightRow);
+						CancellationPoints.check(isCancellationRequested());
+						BindingSet rightRow = candidates.next();
+						if (released) {
+							return null;
+						}
+						if (!leftRow.isCompatible(rightRow)) {
+							continue;
+						}
+						BindingSet merged = merge(leftRow, rightRow);
 						if (condition.test(merged)) {
 							currentLeftMatched = true;
-							return merged;
+							return released ? null : merged;
 						}
 					}
 
-					BindingSet completedLeft = currentLeft;
+					if (released) {
+						return null;
+					}
 					boolean matched = currentLeftMatched;
 					currentLeft = null;
 					currentLeftMatched = false;
 					if (optional && !matched) {
-						return completedLeft;
+						return leftRow;
 					}
 				}
 
@@ -198,60 +303,189 @@ public final class ScopedLeftJoinIterator extends LookAheadIteration<BindingSet>
 					return null;
 				}
 
-				currentLeft = leftIter.next();
-				currentLeftMatched = false;
-				BindingSet frameInput = frameInput();
-				BindingSetHashKey frame = BindingSetHashKey.create(frameNames, frameInput);
-				PartialKeyHashLookup rightRows = rightRowsByFrame.get(frame);
-				if (rightRows == null) {
-					rightRows = materializeRight(frameInput);
-					if (isClosed()) {
-						return null;
-					}
-					rightRowsByFrame.put(frame, rightRows);
+				BindingSet nextLeft = leftIter.next();
+				if (released) {
+					return null;
 				}
-				currentRightRows = rightRows.candidates(BindingSetHashKey.create(joinAttributes, currentLeft));
+				currentLeft = nextLeft;
+				currentLeftMatched = false;
+				BindingSet frame = frameInput(nextLeft);
+				currentFrameInput = frame;
+				currentJoinKey = BindingSetHashKey.create(joinAttributes, nextLeft);
+				currentRightRows = null;
+				nextArm = 0;
+				if (eagerLookups != null) {
+					// Open arms that can raise a fatal error before exposing a result from this UNION.
+					for (int arm = 0; arm < arms.length; arm++) {
+						if (arms[arm].eager) {
+							eagerLookups.set(arm, lookup(arms[arm], frame));
+							if (released) {
+								return null;
+							}
+						}
+					}
+				}
 			}
+			return null;
 		} catch (RuntimeException | Error e) {
-			closeOnFailure(e);
+			ExternalValuePreparation.closeWithSuppressed(this, e);
 			throw e;
 		}
 	}
 
-	private PartialKeyHashLookup materializeRight(BindingSet frameInput) throws QueryEvaluationException {
-		// Every right row is bucketed by its key values, unbound ones included; the lookup matches null patterns.
-		Map<BindingSetHashKey, List<BindingSet>> rowsByKey = new LinkedHashMap<>();
-		// Keep the right iteration in a field so that close() (e.g. from a query timeout) can interrupt it.
-		CloseableIteration<BindingSet> iter = rightStep.evaluate(frameInput);
-		rightIter = iter;
-		try {
-			while (!isClosed() && iter.hasNext()) {
+	private Iterator<BindingSet> openArm(int index) {
+		BindingSet frameInput = currentFrameInput;
+		BindingSetHashKey joinKey = currentJoinKey;
+		if (released) {
+			return Collections.emptyIterator();
+		}
+		RightArm arm = arms[index];
+		if (arm.streams()) {
+			return streamArm(index, arm, frameInput, joinKey);
+		}
+		PartialKeyHashLookup<BindingSet> rows = arm.eager() ? eagerLookups.set(index, null) : lookup(arm, frameInput);
+		return released ? Collections.emptyIterator() : rows.candidates(joinKey);
+	}
+
+	private Iterator<BindingSet> streamArm(int index, RightArm arm, BindingSet frameInput, BindingSetHashKey joinKey) {
+		ReplayFrame frame = new ReplayFrame(index, BindingSetHashKey.create(arm.parameters(), frameInput));
+		ReplayRows cached = replay.getIfPresent(frame);
+		if (cached != null) {
+			return cached.candidates(joinKey);
+		}
+		CloseableIteration<BindingSet> source = openRight(arm.step(), frameInput);
+		if (source == null) {
+			return Collections.emptyIterator();
+		}
+		return new Iterator<>() {
+			private List<BindingSet> rows = new ArrayList<>();
+			private int weight = 1 + arm.parameters().length;
+			private boolean exhausted;
+
+			@Override
+			public boolean hasNext() {
+				if (released || exhausted) {
+					return false;
+				}
 				CancellationPoints.check(isCancellationRequested());
-				BindingSet row = iter.next();
-				MutableBindingSet exported = null;
-				for (String parameter : privateParameters) {
-					if (row.hasBinding(parameter)) {
-						if (exported == null) {
-							exported = context.createBindingSet(row);
+				if (source.hasNext()) {
+					return !released;
+				}
+				exhausted = true;
+				closeRight(source);
+				// Never cache a partial or failed scan.
+				if (rows != null && weight <= REPLAY_WEIGHT_LIMIT) {
+					synchronized (replay) {
+						if (!released && !isCancellationRequested()) {
+							replay.put(frame, new ReplayRows(rows, weight));
 						}
-						exported.removeBinding(parameter);
 					}
 				}
-				if (exported != null) {
-					row = exported;
+				rows = null;
+				return false;
+			}
+
+			@Override
+			public BindingSet next() {
+				BindingSet row = export(source.next());
+				if (rows != null) {
+					long rowWeight = 1L + row.getBindingNames().size();
+					if (rowWeight > REPLAY_WEIGHT_LIMIT - weight) {
+						rows = null;
+					} else {
+						weight += (int) rowWeight;
+						rows.add(snapshot(row));
+					}
 				}
+				return row;
+			}
+		};
+	}
+
+	private static BindingSet snapshot(BindingSet row) {
+		GraphFrameBindings frames = GraphFrameBindings.from(row);
+		if (frames == GraphFrameBindings.EMPTY) {
+			return BindingSetSnapshots.copyOf(row);
+		}
+		QueryBindingSet copy = new QueryBindingSet(row.size());
+		for (String name : row.getBindingNames()) {
+			if (row.hasBinding(name)) {
+				copy.setBinding(name, row.getValue(name));
+			}
+		}
+		copy.setGraphFrameBindings(frames);
+		return copy;
+	}
+
+	private PartialKeyHashLookup<BindingSet> lookup(RightArm arm, BindingSet frameInput) {
+		if (arm.rowsByFrame == null) {
+			return materializeRight(arm.step, frameInput);
+		}
+		BindingSetHashKey frame = BindingSetHashKey.create(arm.parameters, frameInput);
+		PartialKeyHashLookup<BindingSet> rows = arm.rowsByFrame.get(frame);
+		if (rows == null) {
+			rows = materializeRight(arm.step, frameInput);
+			if (!released) {
+				arm.rowsByFrame.put(frame, rows);
+			}
+		}
+		return rows;
+	}
+
+	private PartialKeyHashLookup<BindingSet> materializeRight(QueryEvaluationStep step, BindingSet frameInput) {
+		// Every right row is bucketed by its key values, unbound ones included; the lookup matches null patterns.
+		Map<BindingSetHashKey, List<BindingSet>> rowsByKey = new LinkedHashMap<>();
+		CloseableIteration<BindingSet> iter = openRight(step, frameInput);
+		if (iter != null) {
+			while (!released) {
+				CancellationPoints.check(isCancellationRequested());
+				if (!iter.hasNext()) {
+					break;
+				}
+				BindingSet row = export(iter.next());
 				rowsByKey.computeIfAbsent(BindingSetHashKey.create(joinAttributes, row), k -> new ArrayList<>())
 						.add(row);
 			}
-		} finally {
-			rightIter = null;
-			iter.close();
+			closeRight(iter);
 		}
-		return new PartialKeyHashLookup(rowsByKey);
+		return new PartialKeyHashLookup<>(rowsByKey);
+	}
+
+	private CloseableIteration<BindingSet> openRight(QueryEvaluationStep step, BindingSet frameInput) {
+		if (released) {
+			return null;
+		}
+		CloseableIteration<BindingSet> iteration = step.evaluate(frameInput);
+		rightIter.set(iteration);
+		if (released) {
+			closeRight(iteration);
+			return null;
+		}
+		CancellationPoints.check(isCancellationRequested());
+		return iteration;
+	}
+
+	private void closeRight(CloseableIteration<BindingSet> iteration) {
+		if (rightIter.compareAndSet(iteration, null)) {
+			iteration.close();
+		}
+	}
+
+	private BindingSet export(BindingSet row) {
+		MutableBindingSet exported = null;
+		for (String parameter : privateParameters) {
+			if (row.hasBinding(parameter)) {
+				if (exported == null) {
+					exported = context.createBindingSet(row);
+				}
+				exported.removeBinding(parameter);
+			}
+		}
+		return exported == null ? row : exported;
 	}
 
 	/** The query input plus the current left row's frame values (only the frame names, never other left bindings). */
-	private BindingSet frameInput() {
+	private BindingSet frameInput(BindingSet leftRow) {
 		MutableBindingSet input = null;
 		for (String parameter : privateParameters) {
 			if (inputBindings.hasBinding(parameter) && !GraphFrameBindings.isSupplied(inputBindings, parameter)) {
@@ -265,7 +499,7 @@ public final class ScopedLeftJoinIterator extends LookAheadIteration<BindingSet>
 			if (GraphFrameBindings.isSupplied(inputBindings, frame.parameterName())) {
 				continue;
 			}
-			Value value = currentLeft.getValue(frame.sourceName());
+			Value value = leftRow.getValue(frame.sourceName());
 			if (value != null) {
 				if (input == null) {
 					input = GraphFrameBindings.preserve(inputBindings, context.createBindingSet(inputBindings));
@@ -277,39 +511,42 @@ public final class ScopedLeftJoinIterator extends LookAheadIteration<BindingSet>
 	}
 
 	private BindingSet merge(BindingSet leftRow, BindingSet rightRow) {
-		return HashJoinIteration.merge(context.createBindingSet(leftRow), rightRow);
-	}
-
-	private void closeOnFailure(Throwable failure) {
-		try {
-			close();
-		} catch (RuntimeException | Error closeFailure) {
-			failure.addSuppressed(closeFailure);
-		}
+		MutableBindingSet merged = HashJoinIteration.merge(context.createBindingSet(leftRow), rightRow);
+		return GraphFrameBindings.preserveClearedSiblingInputs(rightRow, merged);
 	}
 
 	@Override
 	protected void handleClose() throws QueryEvaluationException {
+		released = true;
 		try {
-			try {
+			try (CloseableIteration<BindingSet> iter = rightIter.getAndSet(null)) {
 				leftIter.close();
-			} finally {
-				CloseableIteration<BindingSet> iter = rightIter;
-				rightIter = null;
-				if (iter != null) {
-					iter.close();
-				}
 			}
 		} finally {
-			rightRowsByFrame.clear();
+			for (RightArm arm : arms) {
+				if (arm.rowsByFrame != null) {
+					arm.rowsByFrame.clear();
+				}
+			}
+			if (eagerLookups != null) {
+				Collections.fill(eagerLookups, null);
+			}
+			if (replay != null) {
+				synchronized (replay) {
+					replay.invalidateAll();
+				}
+			}
 			currentRightRows = null;
 			currentLeft = null;
+			currentFrameInput = null;
+			currentJoinKey = null;
 			currentLeftMatched = false;
 		}
 	}
 
 	@Override
 	protected boolean forwardCancellation() {
-		return CooperativeCancellation.forwardAll(leftIter, rightIter) | true;
+		CooperativeCancellation.forwardAll(leftIter, rightIter.get());
+		return true;
 	}
 }

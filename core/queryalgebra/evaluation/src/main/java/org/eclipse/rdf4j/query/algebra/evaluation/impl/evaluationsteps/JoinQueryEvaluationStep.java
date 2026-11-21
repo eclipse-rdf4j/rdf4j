@@ -18,11 +18,14 @@ import java.util.List;
 import java.util.Set;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.function.Function;
+import java.util.function.Predicate;
 
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.common.iteration.CooperativeCancellation;
 import org.eclipse.rdf4j.common.iteration.LookAheadIteration;
 import org.eclipse.rdf4j.query.BindingSet;
+import org.eclipse.rdf4j.query.Dataset;
+import org.eclipse.rdf4j.query.algebra.BinaryTupleOperator;
 import org.eclipse.rdf4j.query.algebra.Difference;
 import org.eclipse.rdf4j.query.algebra.EmptySet;
 import org.eclipse.rdf4j.query.algebra.Join;
@@ -38,6 +41,7 @@ import org.eclipse.rdf4j.query.algebra.Union;
 import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.query.algebra.evaluation.EvaluationStrategy;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryEvaluationStep;
+import org.eclipse.rdf4j.query.algebra.evaluation.QueryValueEvaluationStep;
 import org.eclipse.rdf4j.query.algebra.evaluation.federation.ServiceJoinIterator;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.QueryEvaluationContext;
 import org.eclipse.rdf4j.query.algebra.evaluation.iterator.HashJoinIteration;
@@ -46,6 +50,7 @@ import org.eclipse.rdf4j.query.algebra.evaluation.iterator.JoinIterator;
 import org.eclipse.rdf4j.query.algebra.evaluation.iterator.MaterializedReplayJoinIterator;
 import org.eclipse.rdf4j.query.algebra.evaluation.iterator.ScopedLeftJoinIterator;
 import org.eclipse.rdf4j.query.algebra.evaluation.iterator.ScopedLeftJoinIterator.GraphFrameMapping;
+import org.eclipse.rdf4j.query.algebra.evaluation.iterator.ScopedLeftJoinIterator.ParameterizedArm;
 import org.eclipse.rdf4j.query.algebra.evaluation.util.QueryEvaluationUtility;
 import org.eclipse.rdf4j.query.algebra.helpers.QueryAlgebraBindingAnalysis;
 import org.eclipse.rdf4j.query.algebra.helpers.TupleExprs;
@@ -91,6 +96,7 @@ public class JoinQueryEvaluationStep implements QueryEvaluationStep {
 				join.getLeftArg());
 		GraphFrameMapping[] leftFrames = GraphFrameMapping.forSubqueries(join.getLeftArg(),
 				join.getRightArg());
+		NullableGraphJoinInputs graphInputs = nullableGraphJoinInputs(join, defaultContextScan(context), rightRaw);
 		if (rightFrames.length > 0 || leftFrames.length > 0) {
 			// An inherited active graph is a lexical parameter, while every ordinary subquery variable remains
 			// independent. Evaluate the graph carrier first, including when source order puts it on the right.
@@ -116,7 +122,8 @@ public class JoinQueryEvaluationStep implements QueryEvaluationStep {
 					strategy, rightPrepared, context.getBlankNodeAllocationScope());
 			join.setAlgorithm(ServiceJoinIterator.class.getSimpleName());
 		} else if (isOutOfScopeForLeftArgBindings(join.getRightArg(), bindingAnalysis)
-				|| subqueryObservesInjectedBindings(join.getRightArg(), join.getLeftArg().getBindingNames())) {
+				|| subqueryObservesInjectedBindings(join.getRightArg(), join.getLeftArg().getBindingNames())
+				|| graphInputs != null && graphInputs.parameters().isEmpty()) {
 			// The right side must not see left-row bindings, so both sides are evaluated independently and hashed on
 			// the names they may share; rows where a shared name is unbound still join with every compatible row.
 			String[] joinAttributes = HashJoinIteration.hashJoinAttributeNames(join);
@@ -130,6 +137,11 @@ public class JoinQueryEvaluationStep implements QueryEvaluationStep {
 								joinAttributes, context));
 			}
 			join.setAlgorithm(HashJoinIteration.class.getSimpleName());
+		} else if (graphInputs != null) {
+			QueryEvaluationStep scoped = parameterizedGraphJoin(strategy, join, context, leftPrepared, rightRaw,
+					graphInputs, null, HashJoinIteration.hashJoinAttributeNames(join), false);
+			eval = scoped::evaluate;
+			join.setAlgorithm(ScopedLeftJoinIterator.class.getSimpleName());
 		} else if (!QueryEvaluationUtility.usesMappingParameterizedEvaluation(join.getRightArg())
 				&& !QueryEvaluationUtility.isRepeatable(join.getRightArg())) {
 			// The per-left-row bind join below re-evaluates the right operand once per left solution. That is
@@ -278,6 +290,12 @@ public class JoinQueryEvaluationStep implements QueryEvaluationStep {
 			return rightPrepared.evaluate(bs);
 		};
 		CloseableIteration<BindingSet> inner = open.apply(trackedRight);
+		return checkUnopenedRight(strategy, rightExpression, rightPrepared, context, bindings, rightEvaluated, inner);
+	}
+
+	private static CloseableIteration<BindingSet> checkUnopenedRight(EvaluationStrategy strategy,
+			TupleExpr rightExpression, QueryEvaluationStep rightPrepared, QueryEvaluationContext context,
+			BindingSet bindings, AtomicBoolean rightEvaluated, CloseableIteration<BindingSet> inner) {
 		return new LookAheadIteration<>() {
 
 			@Override
@@ -377,6 +395,114 @@ public class JoinQueryEvaluationStep implements QueryEvaluationStep {
 	}
 
 	/**
+	 * Whether the operator this step picks for {@code join} emits its rows in the order the left argument produced
+	 * them.
+	 * <p>
+	 * {@link JoinIterator} re-evaluates the right argument once per left row, and {@link InnerMergeJoinIterator} emits
+	 * in the merge key both arguments were ordered on, so both inherit the left argument's order. The other two do not:
+	 * {@link HashJoinIteration} scans whichever side turns out to be the greater relation, which is the right one
+	 * whenever the left is exhausted first, and {@link ServiceJoinIterator} sends blocks of bindings to a remote
+	 * endpoint that is under no obligation to answer them in order.
+	 * <p>
+	 * This lives next to the selection above so the two cannot drift apart: a caller reasoning about the order a
+	 * finished plan emits has to ask the code that decides how the plan is evaluated, not re-derive it from the
+	 * algebra.
+	 */
+	public static boolean preservesLeftArgOrder(Join join) {
+		return preservesLeftArgOrder(join, null);
+	}
+
+	/** Whether the join preserves the left argument's order under the selected dataset. */
+	public static boolean preservesLeftArgOrder(Join join, Dataset dataset) {
+		TupleExpr rightArg = join.getRightArg();
+		if (rightArg instanceof Service) {
+			return false;
+		}
+		if (GraphFrameMapping.forSubqueries(rightArg, join.getLeftArg()).length > 0
+				|| GraphFrameMapping.forSubqueries(join.getLeftArg(), rightArg).length > 0) {
+			return false;
+		}
+		QueryAlgebraBindingAnalysis bindingAnalysis = QueryAlgebraBindingAnalysis.withBindingValues(join,
+				EmptyBindingSet.getInstance());
+		return !(isOutOfScopeForLeftArgBindings(rightArg, bindingAnalysis)
+				|| subqueryObservesInjectedBindings(rightArg, join.getLeftArg().getBindingNames())
+				|| nullableGraphJoinInputs(join, pattern -> TupleExprs.canScanDefaultContext(pattern, dataset),
+						null) != null);
+	}
+
+	/** A shared graph name can be absent in one operand's rows and supplied by the other operand. */
+	public static boolean hasNullableGraphJoinKey(Join join, Dataset dataset) {
+		return hasNullableGraphJoinKey(join, pattern -> TupleExprs.canScanDefaultContext(pattern, dataset));
+	}
+
+	private static boolean hasNullableGraphJoinKey(Join join, Predicate<StatementPattern> defaultContextScan) {
+		TupleExpr left = join.getLeftArg();
+		TupleExpr right = join.getRightArg();
+		return observesNullableGraphBinding(right, left.getBindingNames(), defaultContextScan)
+				|| observesNullableGraphBinding(left, right.getBindingNames(), defaultContextScan);
+	}
+
+	private static NullableGraphJoinInputs nullableGraphJoinInputs(Join join,
+			Predicate<StatementPattern> defaultContextScan, QueryEvaluationStep right) {
+		return hasNullableGraphJoinKey(join, defaultContextScan)
+				? NullableGraphJoinInputs.analyze(join.getRightArg(), join.getLeftArg().getBindingNames(),
+						defaultContextScan, right)
+				: null;
+	}
+
+	static QueryEvaluationStep parameterizedGraphJoin(EvaluationStrategy strategy, BinaryTupleOperator join,
+			QueryEvaluationContext context, QueryEvaluationStep left, QueryEvaluationStep right,
+			NullableGraphJoinInputs graphInputs, QueryValueEvaluationStep condition, String[] joinAttributes,
+			boolean optional) {
+		TupleExpr expression = join.getRightArg();
+		var arms = graphInputs.arms();
+		boolean discardable = arms.stream().allMatch(NullableGraphJoinInputs.Arm::discardable);
+		boolean telemetry = strategy.isTrackResultSize() || strategy.isTrackTime();
+		return bindings -> {
+			AtomicBoolean rightEvaluated = discardable ? null : new AtomicBoolean();
+			List<ParameterizedArm> rightArms = new ArrayList<>(arms.size());
+			for (var arm : arms) {
+				QueryEvaluationStep scoped = JoinMetricsTracking.wrapRightInput(arm.bind(bindings, context), join,
+						expression, telemetry);
+				QueryEvaluationStep step = discardable ? scoped : frame -> {
+					rightEvaluated.set(true);
+					return scoped.evaluate(frame);
+				};
+				rightArms.add(new ParameterizedArm(step, arm.parameters(), arm.repeatable(), arm.discardable()));
+			}
+			var result = ScopedLeftJoinIterator.withParameters(left, rightArms, condition, bindings, context,
+					joinAttributes, graphInputs.parameters(), optional);
+			return discardable ? result
+					: checkUnopenedRight(strategy, expression, right, context, bindings, rightEvaluated, result);
+		};
+	}
+
+	static Predicate<StatementPattern> defaultContextScan(QueryEvaluationContext context) {
+		var activeGraph = context.getActiveGraph();
+		Dataset dataset = context.getDataset();
+		return pattern -> activeGraph != null && pattern.getScope() == StatementPattern.Scope.DEFAULT_CONTEXTS
+				? activeGraph.physicalGraph() == null
+				: TupleExprs.canScanDefaultContext(pattern, dataset);
+	}
+
+	static boolean observesNullableGraphBinding(TupleExpr expression, Set<String> injectedNames,
+			Predicate<StatementPattern> defaultContextScan) {
+		if (injectedNames.isEmpty() || expression instanceof Service) {
+			return false;
+		}
+		if (expression instanceof StatementPattern pattern) {
+			String name = TupleExprs.contextOnlyBindingName(pattern);
+			return name != null && injectedNames.contains(name) && defaultContextScan.test(pattern);
+		}
+		for (TupleExpr child : TupleExprs.getChildren(expression)) {
+			if (observesNullableGraphBinding(child, injectedNames, defaultContextScan)) {
+				return true;
+			}
+		}
+		return false;
+	}
+
+	/**
 	 * Whether a bind join would leak a left-row binding into a sub-select nested anywhere in {@code subtree} (Join
 	 * operands included, which {@link TupleExprs#containsSubquery(TupleExpr)} deliberately skips). A sub-select's
 	 * non-projected variables are local to it: an injected binding of such a name is not a join on that variable but a
@@ -407,7 +533,8 @@ public class JoinQueryEvaluationStep implements QueryEvaluationStep {
 		if (join.getRightArg() instanceof Service) {
 			return "SERVICE join";
 		}
-		if (isOutOfScopeForLeftArgBindings(join.getRightArg(), analysis)) {
+		if (isOutOfScopeForLeftArgBindings(join.getRightArg(), analysis)
+				|| nullableGraphJoinInputs(join, defaultContextScan(context), null) != null) {
 			return "independently evaluated hash join";
 		}
 		if (join.isMergeJoin() && context.getComparator() != null) {

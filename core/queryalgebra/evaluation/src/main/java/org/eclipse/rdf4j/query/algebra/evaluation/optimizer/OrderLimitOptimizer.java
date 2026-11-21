@@ -17,6 +17,7 @@ import java.util.Set;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.Dataset;
 import org.eclipse.rdf4j.query.algebra.Distinct;
+import org.eclipse.rdf4j.query.algebra.FunctionCall;
 import org.eclipse.rdf4j.query.algebra.Order;
 import org.eclipse.rdf4j.query.algebra.OrderElem;
 import org.eclipse.rdf4j.query.algebra.Projection;
@@ -25,6 +26,8 @@ import org.eclipse.rdf4j.query.algebra.QueryModelNode;
 import org.eclipse.rdf4j.query.algebra.Reduced;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryOptimizer;
+import org.eclipse.rdf4j.query.algebra.evaluation.function.OrderByHint;
+import org.eclipse.rdf4j.query.algebra.evaluation.util.QueryEvaluationUtility;
 import org.eclipse.rdf4j.query.algebra.helpers.AbstractSimpleQueryModelVisitor;
 import org.eclipse.rdf4j.query.algebra.helpers.QueryAlgebraBindingAnalysis;
 
@@ -70,7 +73,7 @@ public class OrderLimitOptimizer implements QueryOptimizer {
 					Order replacement = node.clone();
 					projection.replaceWith(replacement);
 					QueryModelNode distinct = replacement.getParentNode();
-					if (distinct instanceof Distinct distinctNode) {
+					if (distinct instanceof Distinct distinctNode && !containsBackendOrderHint(replacement)) {
 						Reduced reduced = new Reduced(replacement.clone());
 						reduced.setVariableScopeChange(distinctNode.isVariableScopeChange());
 						distinct.replaceWith(reduced);
@@ -78,6 +81,15 @@ public class OrderLimitOptimizer implements QueryOptimizer {
 					analysis.invalidate();
 				}
 			}
+		}
+
+		private boolean containsBackendOrderHint(Order order) {
+			// A backend can replace the Order with an ordered access path. Keep exact DISTINCT so that duplicate
+			// elimination remains enforced independently of the backend's ordering strategy.
+			return order.getElements()
+					.stream()
+					.anyMatch(element -> element.getExpr() instanceof FunctionCall call
+							&& QueryEvaluationUtility.resolveFunction(call).orElse(null) instanceof OrderByHint);
 		}
 
 		private boolean orderKeysAreProjected(Order order, Projection projection) {

@@ -15091,6 +15091,8 @@ class LmdbSailStore implements SailStore {
 		private final Txn txn;
 		private final Set<CloseableIteration<?>> guardedIterations = ConcurrentHashMap.newKeySet();
 		private final Set<RecordIterator> nativeTermIterations = ConcurrentHashMap.newKeySet();
+		private final Set<NativeSourceReadLockedPrefixRunCursor> representativePrefixCursors = ConcurrentHashMap
+				.newKeySet();
 		private final LegacySemanticScope.Owner semanticScopes = valueStore.getFormat().isLegacy()
 				? new LegacySemanticScope.Owner()
 				: null;
@@ -15422,6 +15424,9 @@ class LmdbSailStore implements SailStore {
 			}
 			for (var iteration : nativeTermIterations) {
 				failure = closeDatasetResource(failure, iteration::close);
+			}
+			for (var cursor : representativePrefixCursors) {
+				failure = closeDatasetResource(failure, cursor::close);
 			}
 			if (semanticScopes != null) {
 				// Semantic cursors own source read stamps: release before acquiring the exclusive close stamp.
@@ -16077,8 +16082,20 @@ class LmdbSailStore implements SailStore {
 				}
 				LmdbPrefixRunCursor cursor = tripleStore.getPrefixRuns(txn, plan, subj, pred, obj, context, explicit,
 						countRunRows);
+				var guarded = new NativeSourceReadLockedPrefixRunCursor(cursor, readStamp, countRunRows);
 				releaseReadLock = false;
-				return new NativeSourceReadLockedPrefixRunCursor(cursor, readStamp);
+				if (!countRunRows) {
+					try {
+						representativePrefixCursors.add(guarded);
+						if (closed.get()) {
+							throw new QueryInterruptedException("Query evaluation was interrupted");
+						}
+					} catch (RuntimeException | Error failure) {
+						guarded.closeAfterFailure(failure);
+						throw failure;
+					}
+				}
+				return guarded;
 			} finally {
 				if (releaseReadLock) {
 					nativeSourceLock.unlockRead(readStamp);
@@ -16980,20 +16997,24 @@ class LmdbSailStore implements SailStore {
 		private final class NativeSourceReadLockedPrefixRunCursor implements LmdbPrefixRunCursor {
 			private final LmdbPrefixRunCursor delegate;
 			private final long readStamp;
-			private final Thread owner = Thread.currentThread();
+			private final Thread owner;
 			private boolean closed;
 
-			private NativeSourceReadLockedPrefixRunCursor(LmdbPrefixRunCursor delegate, long readStamp) {
+			private NativeSourceReadLockedPrefixRunCursor(LmdbPrefixRunCursor delegate, long readStamp,
+					boolean countRunRows) {
 				this.delegate = delegate;
 				this.readStamp = readStamp;
+				// Run counts may use a mapped estimator scope whose read lock is thread-owned. A representative scan
+				// uses a read-only MDB_NOTLS transaction and can be handed off between calls.
+				this.owner = countRunRows ? Thread.currentThread() : null;
 			}
 
 			@Override
-			public boolean next() throws IOException {
-				checkOwner();
+			public synchronized boolean next() throws IOException {
 				if (closed) {
 					return false;
 				}
+				checkOwner();
 				try {
 					assertNativeSourceOpen();
 					boolean hasNext = delegate.next();
@@ -17001,46 +17022,48 @@ class LmdbSailStore implements SailStore {
 						close();
 					}
 					return hasNext;
-				} catch (RuntimeException | Error | IOException e) {
-					close();
-					throw e;
+				} catch (RuntimeException | Error | IOException failure) {
+					closeAfterFailure(failure);
+					throw failure;
 				}
 			}
 
 			@Override
-			public boolean seekTo(long value) throws IOException {
-				checkOwner();
+			public synchronized boolean seekTo(long value) throws IOException {
 				if (closed) {
 					return false;
 				}
+				checkOwner();
 				try {
 					assertNativeSourceOpen();
 					return delegate.seekTo(value);
-				} catch (RuntimeException | Error | IOException e) {
-					close();
-					throw e;
+				} catch (RuntimeException | Error | IOException failure) {
+					closeAfterFailure(failure);
+					throw failure;
 				}
 			}
 
 			@Override
-			public boolean seekTo(long[] prefixValues) throws IOException {
-				checkOwner();
+			public synchronized boolean seekTo(long[] prefixValues) throws IOException {
 				if (closed) {
 					return false;
 				}
+				checkOwner();
 				try {
 					assertNativeSourceOpen();
 					return delegate.seekTo(prefixValues);
-				} catch (RuntimeException | Error | IOException e) {
-					close();
-					throw e;
+				} catch (RuntimeException | Error | IOException failure) {
+					closeAfterFailure(failure);
+					throw failure;
 				}
 			}
 
 			@Override
-			public void stopBefore(long[] prefixValues) {
-				checkOwner();
-				delegate.stopBefore(prefixValues);
+			public synchronized void stopBefore(long[] prefixValues) {
+				if (!closed) {
+					checkOwner();
+					delegate.stopBefore(prefixValues);
+				}
 			}
 
 			@Override
@@ -17074,23 +17097,34 @@ class LmdbSailStore implements SailStore {
 			}
 
 			@Override
-			public void close() {
-				checkOwner();
+			public synchronized void close() {
 				if (closed) {
 					return;
 				}
+				checkOwner();
 				closed = true;
 				try {
 					delegate.close();
 				} finally {
+					if (owner == null) {
+						representativePrefixCursors.remove(this);
+					}
 					nativeSourceLock.unlockRead(readStamp);
 				}
 			}
 
+			private void closeAfterFailure(Throwable failure) {
+				try {
+					close();
+				} catch (RuntimeException | Error cleanup) {
+					addSuppressedCleanupFailure(failure, cleanup);
+				}
+			}
+
 			private void checkOwner() {
-				if (Thread.currentThread() != owner) {
+				if (owner != null && Thread.currentThread() != owner) {
 					throw new IllegalStateException(
-							"Native prefix cursor must be used and closed by its creating thread");
+							"Native run-count cursor must be used and closed by its creating thread");
 				}
 			}
 		}
@@ -17386,6 +17420,12 @@ class LmdbSailStore implements SailStore {
 			long objPattern = obj == null ? LmdbValue.UNKNOWN_ID : 1L;
 			long contextPattern = contexts.length == 1 ? contextID : LmdbValue.UNKNOWN_ID;
 			return tripleStore.getSupportedOrders(txn, subjPattern, predPattern, objPattern, contextPattern);
+		}
+
+		Set<StatementOrder> getPrefixPreservingOrders(int fixedMask, int possiblyBoundMask) {
+			ensureSnapshot();
+			return valueStore.getFormat().isLegacy() ? Set.of()
+					: tripleStore.getPrefixPreservingOrders(txn, fixedMask, possiblyBoundMask);
 		}
 
 		@Override

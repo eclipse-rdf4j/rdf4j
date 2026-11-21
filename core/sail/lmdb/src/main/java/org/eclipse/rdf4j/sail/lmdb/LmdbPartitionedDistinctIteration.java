@@ -13,51 +13,105 @@ package org.eclipse.rdf4j.sail.lmdb;
 
 import java.util.Objects;
 import java.util.Set;
+import java.util.function.Supplier;
 
 import org.eclipse.rdf4j.collection.factory.api.CollectionFactory;
 import org.eclipse.rdf4j.common.annotation.Experimental;
 import org.eclipse.rdf4j.common.annotation.InternalUseOnly;
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
+import org.eclipse.rdf4j.common.iteration.DistinctIteration;
 import org.eclipse.rdf4j.common.iteration.FilterIteration;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.query.BindingSet;
+import org.eclipse.rdf4j.query.algebra.evaluation.impl.DistinctBindingSetKey;
 
 @Experimental
 @InternalUseOnly
 public final class LmdbPartitionedDistinctIteration extends FilterIteration<BindingSet> {
 
 	private final String partitionBindingName;
-	private final CollectionFactory collectionFactory;
-	private Set<BindingSet> seen;
+	private final Supplier<CollectionFactory> collectionFactorySupplier;
+	private CollectionFactory collectionFactory;
+	private Set<DistinctBindingSetKey> seen;
+	private int peakPartitionSize;
 	private Value currentPartitionValue;
 	private boolean partitionInitialized;
 
-	@InternalUseOnly
-	public LmdbPartitionedDistinctIteration(CloseableIteration<? extends BindingSet> iter, Set<BindingSet> seen,
-			String partitionBindingName, CollectionFactory collectionFactory) {
+	LmdbPartitionedDistinctIteration(CloseableIteration<? extends BindingSet> iter,
+			Set<DistinctBindingSetKey> seen,
+			String partitionBindingName, CollectionFactory collectionFactory,
+			Supplier<CollectionFactory> collectionFactorySupplier) {
 		super(iter);
 		this.seen = seen;
 		this.partitionBindingName = partitionBindingName;
 		this.collectionFactory = collectionFactory;
+		this.collectionFactorySupplier = collectionFactorySupplier;
+	}
+
+	@Override
+	public boolean hasNext() {
+		try {
+			return super.hasNext();
+		} catch (RuntimeException | Error failure) {
+			closeWithSuppressed(failure);
+			throw failure;
+		}
+	}
+
+	@Override
+	public BindingSet next() {
+		try {
+			return super.next();
+		} catch (RuntimeException | Error failure) {
+			closeWithSuppressed(failure);
+			throw failure;
+		}
 	}
 
 	@Override
 	protected boolean accept(BindingSet bindingSet) {
+		DistinctIteration.checkExecution();
 		Value partitionValue = bindingSet.getValue(partitionBindingName);
 		if (!partitionInitialized || !Objects.equals(currentPartitionValue, partitionValue)) {
-			seen.clear();
+			if (partitionInitialized) {
+				resetMembership();
+			}
 			currentPartitionValue = partitionValue;
 			partitionInitialized = true;
 		}
-		return seen.add(bindingSet);
+		return seen.add(new DistinctBindingSetKey(bindingSet));
+	}
+
+	private void resetMembership() {
+		int finishedSize = seen.size();
+		// HashSet.clear() walks the retained capacity. Reuse the set only while its peak occupancy is at
+		// most twice the finished partition's size, so clearing work is amortized over the rows processed.
+		if (2L * finishedSize >= peakPartitionSize) {
+			seen.clear();
+			peakPartitionSize = Math.max(peakPartitionSize, finishedSize);
+			return;
+		}
+		// Closing the factory also releases any backing disk set before replacing the membership table.
+		closeMembership();
+		collectionFactory = collectionFactorySupplier.get();
+		seen = collectionFactory.createSet();
+		peakPartitionSize = 0;
+	}
+
+	private void closeMembership() {
+		CollectionFactory factory = collectionFactory;
+		collectionFactory = null;
+		seen = null;
+		if (factory != null) {
+			factory.close();
+		}
 	}
 
 	@Override
 	protected void handleClose() {
 		try {
-			collectionFactory.close();
+			closeMembership();
 		} finally {
-			seen = null;
 			currentPartitionValue = null;
 			partitionInitialized = false;
 		}

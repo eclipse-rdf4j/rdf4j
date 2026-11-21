@@ -10808,8 +10808,10 @@ namespace workbench {
                 }
             }
 
-            function repositoryScope(repositoryId: string, serverIdentity?: string, basePath?: string): string {
-                return JSON.stringify([String(basePath || '').replace(/\/+$/, ''), serverIdentity || null, repositoryId]);
+            function repositoryScope(repositoryId: string, serverIdentity?: string, basePath?: string,
+                                     serverUser?: string): string {
+                return JSON.stringify([String(basePath || '').replace(/\/+$/, ''), serverIdentity || null,
+                    serverUser || '', repositoryId]);
             }
 
             /** Results nobody sees: the waiting ones and a kept-alive Query page's own. */
@@ -10851,8 +10853,9 @@ namespace workbench {
             }
 
             /** What the menu's Query item says about a repository's query: 'running', 'ready' or ''. */
-            export function activity(repositoryId: string, serverIdentity?: string, basePath?: string): string {
-                var scope = repositoryScope(repositoryId, serverIdentity, basePath);
+            export function activity(repositoryId: string, serverIdentity?: string, basePath?: string,
+                                     serverUser?: string): string {
+                var scope = repositoryScope(repositoryId, serverIdentity, basePath, serverUser);
                 var results = backgroundResults().filter(entry => entry.scope === scope);
                 if (results.some(entry => entry.controller.hasActiveRequest())) {
                     return 'running';
@@ -10961,7 +10964,7 @@ namespace workbench {
                 mountedSwitchHoldMs = Number.isSafeInteger(holdMs) && holdMs >= 0 ? holdMs : SWITCH_HOLD_MS;
                 var repositoryId = shellContext && shellContext.repositoryId || '';
                 var scope = repositoryScope(repositoryId, shellContext && shellContext.serverIdentity,
-                    shellContext && shellContext.basePath);
+                    shellContext && shellContext.basePath, shellContext && shellContext.serverUser);
                 mountedRepositoryId = repositoryId;
                 mountedScope = scope;
                 mountedSuspended = false;
@@ -11144,8 +11147,9 @@ namespace workbench {
              * Drop the result waiting for a repository's next Query page (its tabs were replaced, or the repository
              * was deleted): that page starts without it.
              */
-            export function forgetShelved(repositoryId: string, serverIdentity?: string, basePath?: string): void {
-                var waiting = takeShelved(repositoryScope(repositoryId, serverIdentity, basePath));
+            export function forgetShelved(repositoryId: string, serverIdentity?: string, basePath?: string,
+                                          serverUser?: string): void {
+                var waiting = takeShelved(repositoryScope(repositoryId, serverIdentity, basePath, serverUser));
                 if (waiting) {
                     waiting.dispose();
                     activityChanged();
@@ -11227,8 +11231,9 @@ namespace workbench {
         }
 
         /** 'running' or 'ready' when a repository's query runs or ended while no Query page shows it (M13.5). */
-        export function activity(repositoryId: string, serverIdentity?: string, basePath?: string): string {
-            return queryStream.queryPage.activity(repositoryId, serverIdentity, basePath);
+        export function activity(repositoryId: string, serverIdentity?: string, basePath?: string,
+                                 serverUser?: string): string {
+            return queryStream.queryPage.activity(repositoryId, serverIdentity, basePath, serverUser);
         }
 
         export function isMounted(): boolean {
@@ -11286,8 +11291,9 @@ namespace workbench {
         }
 
         /** Drop the result waiting for a repository's next Query page. */
-        export function forgetShelved(repositoryId: string, serverIdentity?: string, basePath?: string): void {
-            queryStream.queryPage.forgetShelved(repositoryId, serverIdentity, basePath);
+        export function forgetShelved(repositoryId: string, serverIdentity?: string, basePath?: string,
+                                      serverUser?: string): void {
+            queryStream.queryPage.forgetShelved(repositoryId, serverIdentity, basePath, serverUser);
         }
 
         /** Query tabs: show a kept result in the page (null shows nothing). */

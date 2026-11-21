@@ -12,15 +12,42 @@
 
 package org.eclipse.rdf4j.spring.support.connectionfactory;
 
+import java.util.Collections;
+import java.util.Map;
+import java.util.Set;
+
 import org.eclipse.rdf4j.repository.RepositoryConnection;
+import org.springframework.beans.factory.BeanFactory;
+import org.springframework.beans.factory.BeanFactoryAware;
 import org.springframework.beans.factory.DisposableBean;
+import org.springframework.beans.factory.HierarchicalBeanFactory;
+import org.springframework.beans.factory.config.SingletonBeanRegistry;
+import org.springframework.beans.factory.support.DefaultSingletonBeanRegistry;
+
+import com.google.common.collect.MapMaker;
 
 /**
+ * Disposes a disposable delegate created inline. Independently managed Spring beans retain their own lifecycle,
+ * including beans from parent factories. A managed decorator arranges fallback cleanup for RDF4J delegates when their
+ * registry is destroyed. If the same delegate is registered in multiple registries in the hierarchy, the outermost
+ * registry that exposes it owns the fallback. Manually registered third-party delegates remain the responsibility of
+ * their registrant.
+ *
  * @author Florian Kleedorfer
  * @since 4.0.0
  */
-public abstract class DelegatingRepositoryConnectionFactory implements RepositoryConnectionFactory, DisposableBean {
+public abstract class DelegatingRepositoryConnectionFactory
+		implements IdempotentlyDisposableConnectionFactory, BeanFactoryAware {
+	private static final String SHUTDOWN_CALLBACK_NAME = DelegatingRepositoryConnectionFactory.class.getName()
+			+ ".singletonShutdown";
+	private static final Map<DefaultSingletonBeanRegistry, Set<IdempotentlyDisposableConnectionFactory>> SHUTDOWN_FALLBACKS = new MapMaker()
+			.weakKeys()
+			.makeMap();
+
 	private final RepositoryConnectionFactory delegate;
+	private BeanFactory containingBeanFactory;
+	private boolean separatelyManagedDelegate;
+	private boolean destroyed;
 
 	public DelegatingRepositoryConnectionFactory(RepositoryConnectionFactory delegate) {
 		this.delegate = delegate;
@@ -32,10 +59,116 @@ public abstract class DelegatingRepositoryConnectionFactory implements Repositor
 	}
 
 	@Override
-	public void destroy() throws Exception {
-		if (delegate instanceof DisposableBean disposable) {
+	public void setBeanFactory(BeanFactory beanFactory) {
+		setContainingBeanFactory(beanFactory);
+	}
+
+	private void setContainingBeanFactory(BeanFactory beanFactory) {
+		if (containingBeanFactory == beanFactory) {
+			return;
+		}
+		containingBeanFactory = beanFactory;
+		SingletonRegistration registration = delegate instanceof DisposableBean
+				? findRegistration(delegate, beanFactory)
+				: null;
+		separatelyManagedDelegate = registration != null;
+		BeanFactory delegateBeanFactory = registration != null ? registration.factory() : beanFactory;
+		if (delegate instanceof DelegatingRepositoryConnectionFactory nested) {
+			// Share the registry with nested decorators so inline and manually registered instances can look up
+			// their delegates even though they did not receive BeanFactoryAware initialization.
+			nested.setContainingBeanFactory(delegateBeanFactory);
+		}
+		if (delegate instanceof IdempotentlyDisposableConnectionFactory disposable) {
+			for (BeanFactory current = delegateBeanFactory; current != null; current = parentOf(current)) {
+				if (current instanceof DefaultSingletonBeanRegistry registry) {
+					registerShutdownFallback(registry, current, disposable);
+				}
+			}
+		}
+	}
+
+	@Override
+	public synchronized void destroy() throws Exception {
+		if (!destroyed && delegate instanceof DisposableBean disposable && !separatelyManagedDelegate
+				&& findRegistration(delegate, containingBeanFactory) == null) {
+			destroyIfNeeded(disposable);
+		}
+		destroyed = true;
+	}
+
+	@Override
+	public synchronized boolean isDestroyed() {
+		return destroyed;
+	}
+
+	private static void destroyIfNeeded(DisposableBean disposable) throws Exception {
+		if (!(disposable instanceof IdempotentlyDisposableConnectionFactory factory) || !factory.isDestroyed()) {
 			disposable.destroy();
 		}
+	}
+
+	private static void registerShutdownFallback(DefaultSingletonBeanRegistry registry, BeanFactory factory,
+			IdempotentlyDisposableConnectionFactory delegate) {
+		// A delegate can be registered after creation of the decorator. Keep one callback per registry
+		// and avoid retaining inline delegates from child contexts in their parent registries.
+		synchronized (SHUTDOWN_FALLBACKS) {
+			SHUTDOWN_FALLBACKS.computeIfAbsent(registry, key -> {
+				key.registerDisposableBean(SHUTDOWN_CALLBACK_NAME, () -> destroyRegisteredSingletons(key, factory));
+				return Collections.newSetFromMap(new MapMaker().weakKeys().makeMap());
+			}).add(delegate);
+		}
+	}
+
+	private static void destroyRegisteredSingletons(DefaultSingletonBeanRegistry registry, BeanFactory factory)
+			throws Exception {
+		Set<IdempotentlyDisposableConnectionFactory> candidates;
+		synchronized (SHUTDOWN_FALLBACKS) {
+			candidates = SHUTDOWN_FALLBACKS.remove(registry);
+		}
+		Exception failure = null;
+		for (IdempotentlyDisposableConnectionFactory candidate : candidates) {
+			SingletonRegistration registration = findRegistration(candidate, factory);
+			if (registration == null || registration.factory() != factory || candidate.isDestroyed()) {
+				continue;
+			}
+			try {
+				// Let Spring destroy dependent beans and run its named callback first. A singleton with the
+				// same name as a bean definition may have been registered directly with no callback.
+				registry.destroySingleton(registration.name());
+				destroyIfNeeded(candidate);
+			} catch (Exception | Error closeFailure) {
+				if (failure == null) {
+					failure = new IllegalStateException("Failed to destroy registered connection factories");
+				}
+				failure.addSuppressed(closeFailure);
+			}
+		}
+		if (failure != null) {
+			throw failure;
+		}
+	}
+
+	private static SingletonRegistration findRegistration(RepositoryConnectionFactory delegate,
+			BeanFactory beanFactory) {
+		SingletonRegistration registration = null;
+		for (BeanFactory current = beanFactory; current != null; current = parentOf(current)) {
+			if (current instanceof SingletonBeanRegistry singletonRegistry) {
+				for (String name : singletonRegistry.getSingletonNames()) {
+					if (singletonRegistry.containsSingleton(name) && singletonRegistry.getSingleton(name) == delegate) {
+						registration = new SingletonRegistration(current, name);
+						break;
+					}
+				}
+			}
+		}
+		return registration;
+	}
+
+	private static BeanFactory parentOf(BeanFactory factory) {
+		return factory instanceof HierarchicalBeanFactory hierarchy ? hierarchy.getParentBeanFactory() : null;
+	}
+
+	private record SingletonRegistration(BeanFactory factory, String name) {
 	}
 
 	protected RepositoryConnectionFactory getDelegate() {

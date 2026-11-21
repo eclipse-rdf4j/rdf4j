@@ -28,7 +28,9 @@ import org.eclipse.rdf4j.query.algebra.ProjectionElem;
 import org.eclipse.rdf4j.query.algebra.ProjectionElemList;
 import org.eclipse.rdf4j.query.algebra.QueryModelNode;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryBindingSet;
+import org.eclipse.rdf4j.query.algebra.evaluation.impl.GraphFrameBindings;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.QueryEvaluationContext;
+import org.eclipse.rdf4j.query.algebra.evaluation.impl.evaluationsteps.ScopedUnionInput;
 
 public class ProjectionIterator extends ConvertingIteration<BindingSet, BindingSet> {
 
@@ -37,6 +39,7 @@ public class ProjectionIterator extends ConvertingIteration<BindingSet, BindingS
 	 *-----------*/
 
 	private final BiConsumer<MutableBindingSet, BindingSet> projector;
+	private final boolean trackClearedSiblingInputs;
 
 	private final Supplier<MutableBindingSet> maker;
 
@@ -66,6 +69,7 @@ public class ProjectionIterator extends ConvertingIteration<BindingSet, BindingS
 	public ProjectionIterator(Projection projection, CloseableIteration<BindingSet> iter,
 			BindingSet parentBindings, QueryEvaluationContext context) throws QueryEvaluationException {
 		super(iter);
+		trackClearedSiblingInputs = ScopedUnionInput.tracksClearedSiblingInputs();
 		ProjectionElemList projectionElemList = projection.getProjectionElemList();
 		boolean isOuterProjection = !hasEnclosingProjection(projection, context);
 		boolean includeAllParentBindings = !isOuterProjection;
@@ -142,7 +146,7 @@ public class ProjectionIterator extends ConvertingIteration<BindingSet, BindingS
 	protected BindingSet convert(BindingSet sourceBindings) throws QueryEvaluationException {
 		MutableBindingSet qbs = maker.get();
 		projector.accept(qbs, sourceBindings);
-		return qbs;
+		return trackClearedSiblingInputs ? GraphFrameBindings.preserveClearedSiblingInputs(sourceBindings, qbs) : qbs;
 	}
 
 	public static BindingSet project(ProjectionElemList projElemList, BindingSet sourceBindings,
