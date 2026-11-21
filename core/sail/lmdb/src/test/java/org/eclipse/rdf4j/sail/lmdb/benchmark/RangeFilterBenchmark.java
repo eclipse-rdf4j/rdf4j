@@ -114,23 +114,33 @@ public class RangeFilterBenchmark {
 
 		@Setup(Level.Trial)
 		public void setUp() {
-			if (inputRows <= 0 || inputRows % Window.POINT_ONE_PERCENT.divisor != 0) {
-				throw new IllegalArgumentException("inputRows must be positive and divisible by 1000");
-			}
 			captureProperties();
-			System.setProperty(PARALLEL_ENABLED, "false");
-			System.setProperty(NATIVE_ENABLED, "true");
+			try {
+				if (inputRows <= 0 || inputRows % Window.POINT_ONE_PERCENT.divisor != 0) {
+					throw new IllegalArgumentException("inputRows must be positive and divisible by 1000");
+				}
+				System.setProperty(PARALLEL_ENABLED, "false");
+				System.setProperty(NATIVE_ENABLED, "true");
 
-			dataDir = Files.newTemporaryFolder();
-			repository = new SailRepository(new LmdbStore(dataDir,
-					new LmdbStoreConfig("spoc,posc").setNativeEvaluationEnabled(true)));
-			loadData();
-			warmOrderedIntegerAdjacency();
+				dataDir = Files.newTemporaryFolder();
+				repository = new SailRepository(new LmdbStore(dataDir,
+						new LmdbStoreConfig("spoc,posc").setNativeEvaluationEnabled(true)));
+				loadData();
+				warmOrderedIntegerAdjacency();
 
-			queries = queries(inputRows);
-			expectedDigests = expectedDigests(inputRows);
-			System.setProperty(NATIVE_ENABLED, Boolean.toString(nativeEnabled()));
-			verifyEvaluationModes();
+				queries = queries(inputRows);
+				expectedDigests = expectedDigests(inputRows);
+				System.setProperty(NATIVE_ENABLED, Boolean.toString(nativeEnabled()));
+				verifyEvaluationModes();
+
+			} catch (Exception | Error failure) {
+				try {
+					tearDown();
+				} catch (Exception | Error cleanupFailure) {
+					failure.addSuppressed(cleanupFailure);
+				}
+				throw failure;
+			}
 		}
 
 		protected boolean nativeEnabled() {

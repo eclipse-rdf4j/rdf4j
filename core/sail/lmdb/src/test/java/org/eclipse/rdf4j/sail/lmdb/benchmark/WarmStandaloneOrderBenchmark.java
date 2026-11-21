@@ -61,21 +61,31 @@ public class WarmStandaloneOrderBenchmark {
 
 	@Setup(Level.Trial)
 	public void prepareWarmRepository() throws Exception {
-		directory = Files.createTempDirectory("lmdb-warm-standalone-order-").toFile();
-		repository = new SailRepository(new LmdbStore(directory, new LmdbStoreConfig("spoc,ospc,psoc")));
-		repository.init();
-		try (SailRepositoryConnection connection = repository.getConnection()) {
-			connection.begin(IsolationLevels.NONE);
-			try (InputStream input = Objects.requireNonNull(BenchmarkResources.openDecompressedStream(DATA_FILE),
-					"dataset resource not found: " + DATA_FILE)) {
-				connection.add(input, "", RDFFormat.TURTLE);
+		try {
+			directory = Files.createTempDirectory("lmdb-warm-standalone-order-").toFile();
+			repository = new SailRepository(new LmdbStore(directory, new LmdbStoreConfig("spoc,ospc,psoc")));
+			repository.init();
+			try (SailRepositoryConnection connection = repository.getConnection()) {
+				connection.begin(IsolationLevels.NONE);
+				try (InputStream input = Objects.requireNonNull(BenchmarkResources.openDecompressedStream(DATA_FILE),
+						"dataset resource not found: " + DATA_FILE)) {
+					connection.add(input, "", RDFFormat.TURTLE);
+				}
+				connection.commit();
 			}
-			connection.commit();
-		}
-		try (InputStream input = Objects.requireNonNull(
-				WarmStandaloneOrderBenchmark.class.getClassLoader().getResourceAsStream(QUERY_FILE),
-				"query resource not found: " + QUERY_FILE)) {
-			query = new String(input.readAllBytes(), StandardCharsets.UTF_8);
+			try (InputStream input = Objects.requireNonNull(
+					WarmStandaloneOrderBenchmark.class.getClassLoader().getResourceAsStream(QUERY_FILE),
+					"query resource not found: " + QUERY_FILE)) {
+				query = new String(input.readAllBytes(), StandardCharsets.UTF_8);
+			}
+
+		} catch (Exception | Error failure) {
+			try {
+				removePreparedRepository();
+			} catch (Exception | Error cleanupFailure) {
+				failure.addSuppressed(cleanupFailure);
+			}
+			throw failure;
 		}
 	}
 
@@ -97,13 +107,16 @@ public class WarmStandaloneOrderBenchmark {
 
 	@TearDown(Level.Trial)
 	public void removePreparedRepository() throws Exception {
-		if (repository != null) {
-			repository.shutDown();
-			repository = null;
-		}
-		if (directory != null) {
-			LmdbTestUtil.deleteDir(directory);
-			directory = null;
+		try (java.io.Closeable directoryCleanup = () -> {
+			if (directory != null) {
+				LmdbTestUtil.deleteDir(directory);
+				directory = null;
+			}
+		}) {
+			if (repository != null) {
+				repository.shutDown();
+				repository = null;
+			}
 		}
 	}
 }

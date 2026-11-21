@@ -93,14 +93,22 @@ public class ThemeQueryBenchmark {
 
 	@Setup(Level.Trial)
 	public void setup() throws IOException {
-		theme = Theme.valueOf(themeName);
-		query = ThemeQueryCatalog.queryFor(theme, z_queryIndex);
-		expected = ThemeQueryCatalog.expectedCountFor(theme, z_queryIndex);
-		store = new MemoryStore();
-		repository = new SailRepository(store);
-		loadData();
-		if (QueryPlanCapture.isCaptureEnabled()) {
-			captureQueryPlanSnapshot();
+		boolean initialized = false;
+		try {
+			theme = Theme.valueOf(themeName);
+			query = ThemeQueryCatalog.queryFor(theme, z_queryIndex);
+			expected = ThemeQueryCatalog.expectedCountFor(theme, z_queryIndex);
+			store = new MemoryStore();
+			repository = new SailRepository(store);
+			loadData();
+			if (QueryPlanCapture.isCaptureEnabled()) {
+				captureQueryPlanSnapshot();
+			}
+			initialized = true;
+		} finally {
+			if (!initialized) {
+				tearDown();
+			}
 		}
 	}
 
@@ -156,7 +164,9 @@ public class ThemeQueryBenchmark {
 
 	@TearDown(Level.Trial)
 	public void tearDown() throws IOException {
-		repository.shutDown();
+		if (repository != null) {
+			repository.shutDown();
+		}
 	}
 
 	@Benchmark

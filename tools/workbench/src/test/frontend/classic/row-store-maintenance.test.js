@@ -249,6 +249,29 @@ test('maintenance keeps stored results under the cap, least recently used first'
     assert.notEqual(entryOf(env.storage, 'rows-recent'), null);
 });
 
+test('a result kept for a query tab stays until the space is needed; one no tab refers to is cleaned up', async () => {
+    const { api } = loadApi();
+    const env = environment({ databases: [DATABASE + 'rows-kept', DATABASE + 'rows-orphan', DATABASE + 'rows-big'] });
+    const kept = (tabId) => ({ scope: '["sha256:abc","","lmdb"]', tabId, owner: 'page-a', shownAt: NOW - 9 * DAY,
+        rows: 10 });
+    register(env.storage, 'rows-kept', { created: NOW - 9 * DAY, used: NOW - 9 * DAY, bytes: 500, retained: kept('t1') });
+    register(env.storage, 'rows-orphan', { created: NOW - 9 * DAY, used: NOW - 9 * DAY, bytes: 10,
+        retained: kept('t2') });
+    register(env.storage, 'rows-big', { created: NOW - HOUR, used: NOW - HOUR, bytes: 80 });
+    const referenced = () => ({ 'rows-kept': true });
+    const report = await api.maintainRowStores(Object.assign({ capBytes: 100, referenced }, env.options));
+    assert.deepEqual([...report.deleted], ['rows-orphan'], 'an orphan is deleted for its age');
+    assert.notEqual(entryOf(env.storage, 'rows-kept'), null, 'neither its age nor the cap deletes a kept result');
+    assert.notEqual(entryOf(env.storage, 'rows-big'), null, 'kept results do not count toward the cap');
+
+    env.clock.now = NOW + 2 * HOUR;
+    register(env.storage, 'rows-recent', { created: NOW, used: NOW, bytes: 10,
+        retained: Object.assign(kept('t3'), { shownAt: NOW + HOUR }) });
+    env.idb.databases.add(DATABASE + 'rows-recent');
+    const unknown = await api.maintainRowStores(Object.assign({ referenced: () => null }, env.options));
+    assert.deepEqual([...unknown.deleted], [], 'where the tabs cannot be read, every kept result counts as referred to');
+});
+
 test('maintenance deletes the old shared database once no tab runs the old Workbench', async () => {
     const { api } = loadApi();
     const env = environment({ databases: [LEGACY_DATABASE], held: [LEGACY_LOCK + 'rows-old-tab'] });

@@ -26,6 +26,7 @@ import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.sail.lmdb.config.LmdbStoreConfig;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.condition.EnabledIfSystemProperty;
+import org.junit.jupiter.api.io.TempDir;
 import org.lwjgl.system.MemoryStack;
 import org.lwjgl.util.lmdb.MDBStat;
 
@@ -34,11 +35,11 @@ import org.lwjgl.util.lmdb.MDBStat;
 public class ValueStoreCheckpointInvestigationIT {
 
 	@Test
-	void naturalShortKeyCheckpoint() throws Exception {
+	void naturalShortKeyCheckpoint(@TempDir Path temporaryDirectory) throws Exception {
 		int count = Integer.getInteger("rdf4j.lmdb.checkpointProbe.count", 8_000_000);
 		int width = Integer.getInteger("rdf4j.lmdb.checkpointProbe.width", 490);
 		Path root = Path.of(System.getProperty("rdf4j.lmdb.checkpointProbe.directory",
-				"work/lmdb-growth-spill-20261007/native/java-probes"));
+				temporaryDirectory.toString()));
 		Files.createDirectories(root);
 		Path directory = Files.createTempDirectory(root, "w" + width + "-n" + count + "-");
 		LmdbStoreConfig config = new LmdbStoreConfig().setValueDBSize(1_048_576L).setForceSync(false);

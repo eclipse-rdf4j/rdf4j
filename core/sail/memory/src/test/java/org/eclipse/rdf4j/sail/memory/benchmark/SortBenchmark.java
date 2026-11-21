@@ -89,23 +89,29 @@ public class SortBenchmark {
 
 	@Setup(Level.Trial)
 	public void setup() throws IOException {
+		boolean initialized = false;
+		try {
+			repository = new SailRepository(new MemoryStore());
 
-		repository = new SailRepository(new MemoryStore());
+			try (SailRepositoryConnection connection = repository.getConnection()) {
+				connection.begin(IsolationLevels.NONE);
+				connection.add(getResourceAsStream("benchmarkFiles/datagovbe-valid.ttl.gz"), "", RDFFormat.TURTLE);
+				connection.commit();
+			}
 
-		try (SailRepositoryConnection connection = repository.getConnection()) {
-			connection.begin(IsolationLevels.NONE);
-			connection.add(getResourceAsStream("benchmarkFiles/datagovbe-valid.ttl.gz"), "", RDFFormat.TURTLE);
-			connection.commit();
-		}
-
-		try (SailRepositoryConnection connection = repository.getConnection()) {
-			try (Stream<Statement> stream = connection.getStatements(null, null, null, false).stream()) {
-				valuesList = stream
-						.map(Statement::getObject)
-						.collect(Collectors.toList());
+			try (SailRepositoryConnection connection = repository.getConnection()) {
+				try (Stream<Statement> stream = connection.getStatements(null, null, null, false).stream()) {
+					valuesList = stream
+							.map(Statement::getObject)
+							.collect(Collectors.toList());
+				}
+			}
+			initialized = true;
+		} finally {
+			if (!initialized) {
+				tearDown();
 			}
 		}
-
 	}
 
 	private static InputStream getResourceAsStream(String name) {
@@ -118,7 +124,9 @@ public class SortBenchmark {
 	@TearDown(Level.Trial)
 	public void tearDown() {
 
-		repository.shutDown();
+		if (repository != null) {
+			repository.shutDown();
+		}
 
 	}
 

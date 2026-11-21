@@ -116,62 +116,69 @@ class ValueStoreWalSearchTest {
 		NativeStore store = (NativeStore) new NativeStoreFactory().getSail(cfg);
 		store.setDataDir(dataDir);
 		SailRepository repo = new SailRepository(store);
-		repo.init();
-		try (SailRepositoryConnection conn = repo.getConnection()) {
-			var vf = SimpleValueFactory.getInstance();
-			var predicate = vf.createIRI("urn:predicate");
-			conn.begin();
-			for (int i = 0; i < 1500; i++) {
-				conn.add(vf.createIRI("urn:subject:" + i), predicate,
-						vf.createLiteral("value-" + i + "-" + "x".repeat(40)));
+		try {
+			repo.init();
+			try (SailRepositoryConnection conn = repo.getConnection()) {
+				var vf = SimpleValueFactory.getInstance();
+				var predicate = vf.createIRI("urn:predicate");
+				conn.begin();
+				for (int i = 0; i < 1500; i++) {
+					conn.add(vf.createIRI("urn:subject:" + i), predicate,
+							vf.createLiteral("value-" + i + "-" + "x".repeat(40)));
+				}
+				conn.commit();
 			}
-			conn.commit();
-		}
-		repo.shutDown();
+			repo.shutDown();
 
-		Path walDir = dataDir.toPath().resolve(ValueStoreWalConfig.DEFAULT_DIRECTORY_NAME);
-		String storeUuid = Files.readString(walDir.resolve("store.uuid"), StandardCharsets.UTF_8).trim();
-		ValueStoreWalConfig cfgRead = ValueStoreWalConfig.builder().walDirectory(walDir).storeUuid(storeUuid).build();
-		try (var walFiles = Files.list(walDir)) {
-			long segmentCount = walFiles.map(path -> path.getFileName().toString())
-					.filter(name -> name.matches("wal-\\d+\\.v1(\\.gz)?"))
-					.count();
-			assertThat(segmentCount).as("expected multiple WAL segments for probe search").isGreaterThan(1);
-		}
-
-		// Build dictionary of minted values from WAL and pick a random entry
-		Map<Integer, ValueStoreWalRecord> dict = Map.of();
-		boolean complete = false;
-		for (int attempt = 0; attempt < 10 && (!complete || dict.isEmpty()); attempt++) {
-			try (ValueStoreWalReader reader = ValueStoreWalReader.open(cfgRead)) {
-				ValueStoreWalRecovery.ReplayReport report = new ValueStoreWalRecovery().replayWithReport(reader);
-				dict = report.dictionary();
-				complete = report.complete();
+			Path walDir = dataDir.toPath().resolve(ValueStoreWalConfig.DEFAULT_DIRECTORY_NAME);
+			String storeUuid = Files.readString(walDir.resolve("store.uuid"), StandardCharsets.UTF_8).trim();
+			ValueStoreWalConfig cfgRead = ValueStoreWalConfig.builder()
+					.walDirectory(walDir)
+					.storeUuid(storeUuid)
+					.build();
+			try (var walFiles = Files.list(walDir)) {
+				long segmentCount = walFiles.map(path -> path.getFileName().toString())
+						.filter(name -> name.matches("wal-\\d+\\.v1(\\.gz)?"))
+						.count();
+				assertThat(segmentCount).as("expected multiple WAL segments for probe search").isGreaterThan(1);
 			}
-			if (!complete || dict.isEmpty()) {
-				Thread.sleep(100);
-			}
-		}
-		assertThat(dict).isNotEmpty();
-		assertThat(complete).as("WAL recovery should be complete before searching").isTrue();
-		Integer[] ids = dict.keySet().toArray(Integer[]::new);
-		Integer pickId = ids[new Random().nextInt(ids.length)];
 
-		ValueStoreWalSearch search = ValueStoreWalSearch.open(cfgRead);
-		Value found = null;
-		for (int attempt = 0; attempt < 100 && found == null; attempt++) {
-			found = search.findValueById(pickId);
-			if (found == null) {
-				Thread.sleep(100);
+			// Build dictionary of minted values from WAL and pick a random entry
+			Map<Integer, ValueStoreWalRecord> dict = Map.of();
+			boolean complete = false;
+			for (int attempt = 0; attempt < 10 && (!complete || dict.isEmpty()); attempt++) {
+				try (ValueStoreWalReader reader = ValueStoreWalReader.open(cfgRead)) {
+					ValueStoreWalRecovery.ReplayReport report = new ValueStoreWalRecovery().replayWithReport(reader);
+					dict = report.dictionary();
+					complete = report.complete();
+				}
+				if (!complete || dict.isEmpty()) {
+					Thread.sleep(100);
+				}
 			}
-		}
-		assertThat(found).as("ValueStoreWalSearch should find value by id").isNotNull();
+			assertThat(dict).isNotEmpty();
+			assertThat(complete).as("WAL recovery should be complete before searching").isTrue();
+			Integer[] ids = dict.keySet().toArray(Integer[]::new);
+			Integer pickId = ids[new Random().nextInt(ids.length)];
 
-		// Cross-check against ValueStore
-		try (ValueStore vs = new ValueStore(dataDir, false)) {
-			Value vsValue = vs.getValue(pickId);
-			assertThat(vsValue).isNotNull();
-			assertThat(found).isEqualTo(vsValue);
+			ValueStoreWalSearch search = ValueStoreWalSearch.open(cfgRead);
+			Value found = null;
+			for (int attempt = 0; attempt < 100 && found == null; attempt++) {
+				found = search.findValueById(pickId);
+				if (found == null) {
+					Thread.sleep(100);
+				}
+			}
+			assertThat(found).as("ValueStoreWalSearch should find value by id").isNotNull();
+
+			// Cross-check against ValueStore
+			try (ValueStore vs = new ValueStore(dataDir, false)) {
+				Value vsValue = vs.getValue(pickId);
+				assertThat(vsValue).isNotNull();
+				assertThat(found).isEqualTo(vsValue);
+			}
+		} finally {
+			repo.shutDown();
 		}
 	}
 }

@@ -37,7 +37,7 @@ import ch.qos.logback.classic.Logger;
 import ch.qos.logback.classic.spi.ILoggingEvent;
 import ch.qos.logback.core.read.ListAppender;
 
-class SketchJoinOrderPlannerLoggingTest {
+class SketchJoinOrderPlannerLoggingTest extends AbstractSketchBasedJoinEstimatorTest {
 
 	private static final ValueFactory VF = SimpleValueFactory.getInstance();
 	private static final String TRACE_DIAGNOSTICS_PROPERTY = "rdf4j.optimizer.sketchPlanner.traceDiagnostics";
@@ -157,7 +157,7 @@ class SketchJoinOrderPlannerLoggingTest {
 				.anySatisfy(line -> assertThat(line).contains("JoinCostVector"));
 	}
 
-	private static JoinOrderPlanner.JoinOrderPlan planTwoFactorGreedyJoin() {
+	private JoinOrderPlanner.JoinOrderPlan planTwoFactorGreedyJoin() {
 		StubSketchStatementSource store = new StubSketchStatementSource();
 		IRI pA = VF.createIRI("urn:pA");
 		IRI pB = VF.createIRI("urn:pB");
@@ -170,7 +170,7 @@ class SketchJoinOrderPlannerLoggingTest {
 		}
 		store.add(VF.createStatement(VF.createIRI("urn:x0"), pB, y));
 
-		SketchBasedJoinEstimator estimator = new SketchBasedJoinEstimator(store, config());
+		SketchBasedJoinEstimator estimator = createEstimator(store, config());
 		estimator.rebuild();
 
 		StatementPattern a = pattern("s", pA, "x");

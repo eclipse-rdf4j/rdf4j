@@ -92,6 +92,7 @@ public class ParallelLeftJoinTask extends ParallelTaskBase<BindingSet> {
 		private CloseableIteration<BindingSet> rightIter;
 
 		private final AtomicBoolean exhausted = new AtomicBoolean(false);
+		private boolean matched;
 
 		public FedXLeftJoinIteration(FederationEvaluationStrategy strategy, LeftJoin join, BindingSet leftBindings) {
 			this(strategy, join, leftBindings, null, null);
@@ -129,6 +130,7 @@ public class ParallelLeftJoinTask extends ParallelTaskBase<BindingSet> {
 
 					try {
 						if (join.getCondition() == null) {
+							matched = true;
 							return rightBindings;
 						} else {
 							// Limit the bindings to the ones that are in scope for
@@ -138,6 +140,7 @@ public class ParallelLeftJoinTask extends ParallelTaskBase<BindingSet> {
 
 							if (preparedCondition == null ? strategy.isTrue(join.getCondition(), scopeBindings)
 									: strategy.isTrue(preparedCondition, scopeBindings)) {
+								matched = true;
 								return rightBindings;
 							}
 						}
@@ -146,8 +149,8 @@ public class ParallelLeftJoinTask extends ParallelTaskBase<BindingSet> {
 					}
 				}
 
-				// join did not work
-				if (leftBindings != null) {
+				// Keep the left row only if no right candidate matched.
+				if (!matched && leftBindings != null) {
 					return leftBindings;
 				}
 			}
