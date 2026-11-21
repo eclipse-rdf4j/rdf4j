@@ -60,7 +60,7 @@ final class GenericRootPlan implements QueryEvaluationStep, LmdbNativePhysicalPl
 	}
 
 	@Override
-	public String nativePhysicalPlan() {
+	public String nativePhysicalPlan(boolean resolveRdfTerms) {
 		return "GenericRootPlan(reason=" + reason + ")";
 	}
 }

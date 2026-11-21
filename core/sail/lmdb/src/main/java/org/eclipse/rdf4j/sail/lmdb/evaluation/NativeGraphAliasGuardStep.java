@@ -61,9 +61,9 @@ final class NativeGraphAliasGuardStep implements QueryEvaluationStep, LmdbNative
 	}
 
 	@Override
-	public String nativePhysicalPlan() {
+	public String nativePhysicalPlan(boolean resolveRdfTerms) {
 		return "GraphAliasGuard(selectors=" + selectors + ", "
-				+ (fused instanceof LmdbNativePhysicalPlan physical ? physical.nativePhysicalPlan()
+				+ (fused instanceof LmdbNativePhysicalPlan physical ? physical.nativePhysicalPlan(resolveRdfTerms)
 						: fused.getClass().getSimpleName())
 				+ ")";
 	}

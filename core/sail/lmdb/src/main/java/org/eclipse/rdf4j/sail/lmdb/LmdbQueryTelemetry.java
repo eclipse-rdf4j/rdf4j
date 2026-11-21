@@ -106,6 +106,9 @@ public final class LmdbQueryTelemetry implements Supplier<Contribution> {
 	/** Capture once at construction/bind boundaries; worker scopes never manufacture a second collector. */
 	public static LmdbQueryTelemetry current() {
 		Scope scope = ACTIVE.get();
+		if (scope != null && scope.diagnosticOnly) {
+			return null;
+		}
 		QueryExecutionProfile.Collector collector = QueryExplanationContext.telemetry();
 		if (collector == null) {
 			// An explicit nested request overrides the captured outer worker owner, including unmeasured levels.
@@ -128,20 +131,30 @@ public final class LmdbQueryTelemetry implements Supplier<Contribution> {
 		if (previous == null && telemetry == null || previous != null && previous.telemetry == telemetry) {
 			return Scope.UNCHANGED;
 		}
-		Scope scope = new Scope(telemetry, previous);
+		Scope scope = new Scope(telemetry, previous, false);
+		ACTIVE.set(scope);
+		return scope;
+	}
+
+	/** Excludes dictionary reads and lazy RDF access done solely to describe the plan. */
+	public static Scope diagnosticOnly() {
+		Scope previous = ACTIVE.get();
+		Scope scope = new Scope(null, previous, true);
 		ACTIVE.set(scope);
 		return scope;
 	}
 
 	public static final class Scope implements AutoCloseable {
-		private static final Scope UNCHANGED = new Scope(null, null);
+		private static final Scope UNCHANGED = new Scope(null, null, false);
 		private final LmdbQueryTelemetry telemetry;
 		private final Scope previous;
+		private final boolean diagnosticOnly;
 		private boolean closed;
 
-		private Scope(LmdbQueryTelemetry telemetry, Scope previous) {
+		private Scope(LmdbQueryTelemetry telemetry, Scope previous, boolean diagnosticOnly) {
 			this.telemetry = telemetry;
 			this.previous = previous;
+			this.diagnosticOnly = diagnosticOnly;
 		}
 
 		@Override

@@ -242,8 +242,8 @@ final class NativeBindingSetExtensionStep implements NativeResultStep, LmdbNativ
 	}
 
 	@Override
-	public String nativePhysicalPlan() {
-		String inner = arg instanceof LmdbNativePhysicalPlan physical ? physical.nativePhysicalPlan()
+	public String nativePhysicalPlan(boolean resolveRdfTerms) {
+		String inner = arg instanceof LmdbNativePhysicalPlan physical ? physical.nativePhysicalPlan(resolveRdfTerms)
 				: arg.getClass().getSimpleName();
 		return "NativeBindingSetExtension(assignments=" + assignments.length + ", arg=" + inner + ")";
 	}

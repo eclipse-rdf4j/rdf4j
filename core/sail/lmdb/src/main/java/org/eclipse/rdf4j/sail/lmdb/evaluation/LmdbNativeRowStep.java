@@ -735,9 +735,9 @@ final class NativeRowsStep implements NativeResultStep, LmdbNativePhysicalPlan {
 	}
 
 	@Override
-	public String nativePhysicalPlan() {
+	public String nativePhysicalPlan(boolean resolveRdfTerms) {
 		StringBuilder sb = new StringBuilder("NativeRows(arg=")
-				.append(LmdbNativeExplain.describe(distinctPlan.arg, layout))
+				.append(LmdbNativeExplain.describe(distinctPlan.arg, layout, resolveRdfTerms ? source : null))
 				.append(", sourceSlots=")
 				.append(LmdbNativeExplain.describeSlots(sourceSlots, layout))
 				.append(", distinct=")
@@ -815,7 +815,7 @@ final class NativeRowsStep implements NativeResultStep, LmdbNativePhysicalPlan {
 			LmdbNativeExplain.recordExecutionPath(originalExpr, LmdbNativeAttemptMetrics.PATH_EMPTY_SEED);
 			return List.of();
 		}
-		row.runtimePlan = LmdbNativeExplain.recordRuntimeEntryPlan(originalExpr, arg, layout, row.boundMask());
+		row.runtimePlan = LmdbNativeExplain.recordRuntimeEntryPlan(originalExpr, arg, row);
 		row.enableScalarFilterTelemetry();
 		row.guardScalarFilterAcceptance(cancellation::check);
 		LmdbNativeExplain.addRuntimeMetric(originalExpr, "nativeInvocationsActual", 1L);
@@ -1456,7 +1456,7 @@ final class NativeRowsStep implements NativeResultStep, LmdbNativePhysicalPlan {
 		long obj = prefixPattern.o.lookup(row.slots);
 		long context = prefixPattern.c.lookup(row.slots);
 		NativeLmdbQuerySource.AdjacencyAccessObserver observer = row.runtimePlan == null ? null
-				: row.runtimePlan.adjacencyAccessAt(LmdbNativeExplain.describe(prefixPattern, row.layout));
+				: row.runtimePlan.adjacencyAccessAt(row.source, prefixPattern);
 		LmdbPrefixRunCursor cursor = row.source.prefixRuns(prefixRunPlan, subj, pred, obj, context, false, observer);
 		if (cursor == null) {
 			return null;
@@ -1558,7 +1558,7 @@ final class NativeRowsStep implements NativeResultStep, LmdbNativePhysicalPlan {
 				selected.dedupMode = NativeUnorderedInput.DedupMode.ORDERED;
 				LmdbNativeExplain.recordExecutionPath(originalExpr, winningTag);
 				if (row.runtimePlan != null) {
-					row.runtimePlan.activate(winningTag, new SlotPlan[] { distinctPlan.arg });
+					row.runtimePlan.activate(row.source, winningTag, new SlotPlan[] { distinctPlan.arg });
 				}
 			}
 			selected.acceptScalarFilterAttempt();
@@ -2117,7 +2117,8 @@ final class NativeRowsStep implements NativeResultStep, LmdbNativePhysicalPlan {
 	private NativeUnorderedInput acceptFactorized(RowState row, LmdbNativeFactorizedRows factorized,
 			LmdbNativeAttemptMetrics metrics) throws IOException {
 		if (row.runtimePlan != null) {
-			row.runtimePlan.activate(LmdbNativeAttemptMetrics.PATH_FACTORIZED_ROWS, factorized.derived.order);
+			row.runtimePlan.activate(row.source, LmdbNativeAttemptMetrics.PATH_FACTORIZED_ROWS,
+					factorized.derived.order);
 		}
 		RowCursor cursor = factorized.open(row);
 		if (LmdbNativeExplain.recordsExecutionPaths(originalExpr)) {
@@ -2455,7 +2456,7 @@ final class NativeRowsStep implements NativeResultStep, LmdbNativePhysicalPlan {
 	private void activateOrder(RowState row, String strategy, MultiJoinPlan multiJoin) {
 		if (row.runtimePlan != null) {
 			SlotPlan[] order = multiJoin == null ? new SlotPlan[] { arg } : multiJoin.derivedPlan(row).order;
-			row.runtimePlan.activate(runtimeStrategy(strategy), order);
+			row.runtimePlan.activate(row.source, runtimeStrategy(strategy), order);
 		}
 	}
 
@@ -2705,8 +2706,8 @@ final class NativeBareRowsStep implements QueryEvaluationStep, LmdbNativePhysica
 	}
 
 	@Override
-	public String nativePhysicalPlan() {
-		return bulk.nativePhysicalPlan();
+	public String nativePhysicalPlan(boolean resolveRdfTerms) {
+		return bulk.nativePhysicalPlan(resolveRdfTerms);
 	}
 
 	QueryValueEvaluationStep existsStep() {
@@ -2768,8 +2769,7 @@ final class NativeExistsValueStep implements QueryValueEvaluationStep {
 			LmdbNativeExplain.recordExecutionPath(step.originalExpr, LmdbNativeAttemptMetrics.PATH_EMPTY_SEED);
 			return BooleanLiteral.FALSE;
 		}
-		row.runtimePlan = LmdbNativeExplain.recordRuntimeEntryPlan(step.originalExpr, step.arg, step.layout,
-				row.boundMask());
+		row.runtimePlan = LmdbNativeExplain.recordRuntimeEntryPlan(step.originalExpr, step.arg, row);
 		LmdbNativeExplain.addRuntimeMetric(step.originalExpr, "nativeInvocationsActual", 1L);
 		LmdbNativeDispatchLoop.logDirect(step.originalExpr, "EXISTS dispatch",
 				LmdbNativeAttemptMetrics.PATH_BARE_EXISTS, "Boolean existence probe");
@@ -2783,10 +2783,10 @@ final class NativeExistsValueStep implements QueryValueEvaluationStep {
 		try (LmdbFusedSipFactorizedRuntime.Scope ignored = LmdbFusedSipFactorizedRuntime.attach(session);
 				NativeExistsPatternCursor cursor = new NativeExistsPatternCursor(existsPlan, row)) {
 			if (row.runtimePlan != null) {
-				row.runtimePlan.activate(LmdbNativeAttemptMetrics.PATH_BARE_EXISTS, existsPlan.patterns);
+				row.runtimePlan.activate(row.source, LmdbNativeAttemptMetrics.PATH_BARE_EXISTS, existsPlan.patterns);
 				row.runtimePlan.janinoDeclined("UNSUPPORTED_ROUTE[bareExists]");
 				row.runtimePlan.adjacencyDecision("NOT_CONSIDERED", "UNSUPPORTED_ROUTE[bareExists]",
-						LmdbNativeExplain.describe(step.arg, step.layout));
+						LmdbNativeExplain.describe(step.arg, step.layout, source));
 			}
 			exists = cursor.exists();
 		} catch (IOException e) {
@@ -3163,8 +3163,7 @@ final class NativeBareRowsIteration implements CloseableIteration<BindingSet>, C
 			LmdbNativeExplain.recordExecutionPath(step.originalExpr, LmdbNativeAttemptMetrics.PATH_EMPTY_SEED);
 			return false;
 		}
-		row.runtimePlan = LmdbNativeExplain.recordRuntimeEntryPlan(step.originalExpr, step.arg, step.layout,
-				row.boundMask());
+		row.runtimePlan = LmdbNativeExplain.recordRuntimeEntryPlan(step.originalExpr, step.arg, row);
 		row.enableScalarFilterTelemetry();
 		LmdbNativeExplain.addRuntimeMetric(step.originalExpr, "nativeInvocationsActual", 1L);
 		LmdbFusedSipFactorizedRuntime.Session inherited = LmdbFusedSipFactorizedRuntime.currentOrNull();
@@ -3190,7 +3189,8 @@ final class NativeBareRowsIteration implements CloseableIteration<BindingSet>, C
 			cursor = step.arg.open(row);
 			LmdbNativeExplain.recordExecutionPath(step.originalExpr, LmdbNativeAttemptMetrics.PATH_BARE_DIRECT);
 			if (row.runtimePlan != null) {
-				row.runtimePlan.activate(LmdbNativeAttemptMetrics.PATH_BARE_DIRECT, new SlotPlan[] { step.arg });
+				row.runtimePlan.activate(row.source, LmdbNativeAttemptMetrics.PATH_BARE_DIRECT,
+						new SlotPlan[] { step.arg });
 			}
 			return true;
 		}
@@ -3869,8 +3869,7 @@ final class NativeRowsIteration implements CloseableIteration<BindingSet>, Coope
 		distinctPlan = step.distinct
 				? LmdbNativeOrderPlanner.tuple(step.arg, step.sourceSlots, row)
 				: NativeTupleDistinctPlan.global(step.arg, step.sourceSlots);
-		row.runtimePlan = LmdbNativeExplain.recordRuntimeEntryPlan(step.originalExpr, distinctPlan.arg, step.layout,
-				row.boundMask());
+		row.runtimePlan = LmdbNativeExplain.recordRuntimeEntryPlan(step.originalExpr, distinctPlan.arg, row);
 		row.enableScalarFilterTelemetry();
 		row.guardScalarFilterAcceptance(() -> {
 			Throwable cancellation = cancellationFailure();

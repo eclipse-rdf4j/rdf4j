@@ -295,13 +295,6 @@ body.query-compare-mode #copy-explanation {
     margin-left: auto;
 }
 
-.query-telemetry-option:not([hidden]) {
-    display: inline-flex;
-    align-items: center;
-    gap: 6px;
-    font-size: 12px;
-}
-
 .query-profile-comparison {
     padding: 12px;
     margin: 0 0 12px;

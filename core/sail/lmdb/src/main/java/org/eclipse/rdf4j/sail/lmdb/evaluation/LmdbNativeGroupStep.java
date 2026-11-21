@@ -630,9 +630,9 @@ final class NativeGroupStep implements NativeResultStep, LmdbNativePhysicalPlan 
 	}
 
 	@Override
-	public String nativePhysicalPlan() {
+	public String nativePhysicalPlan(boolean resolveRdfTerms) {
 		StringBuilder sb = new StringBuilder("NativeGroup(arg=")
-				.append(LmdbNativeExplain.describe(distinctPlan.arg, layout))
+				.append(LmdbNativeExplain.describe(distinctPlan.arg, layout, resolveRdfTerms ? source : null))
 				.append(", groupSlots=")
 				.append(LmdbNativeExplain.describeSlots(groupSlots, layout))
 				.append(", aggregates=")
@@ -981,7 +981,7 @@ final class NativeGroupIteration implements CloseableIteration<BindingSet>, Coop
 			LmdbNativeExplain.recordExecutionPath(explainTarget, LmdbNativeAttemptMetrics.PATH_EMPTY_SEED);
 			return noInputResult();
 		}
-		row.runtimePlan = LmdbNativeExplain.recordRuntimeEntryPlan(explainTarget, arg, layout, row.boundMask());
+		row.runtimePlan = LmdbNativeExplain.recordRuntimeEntryPlan(explainTarget, arg, row);
 		LmdbNativeExplain.addRuntimeMetric(explainTarget, "nativeInvocationsActual", 1L);
 		LmdbFusedSipFactorizedRuntime.Session inherited = LmdbFusedSipFactorizedRuntime.currentOrNull();
 		boolean ownsSession = inherited == null;
@@ -1306,7 +1306,8 @@ final class NativeGroupIteration implements CloseableIteration<BindingSet>, Coop
 					AggState state = new AggState(aggregates, 16, aggContext, sequentialDistinctChannels);
 					Arrays.fill(state.counts, count);
 					if (row.runtimePlan != null) {
-						row.runtimePlan.activate(LmdbNativeAttemptMetrics.PATH_INDEXED_COUNT, new SlotPlan[0]);
+						row.runtimePlan.activate(row.source, LmdbNativeAttemptMetrics.PATH_INDEXED_COUNT,
+								new SlotPlan[0]);
 					}
 					metrics.deferStrategy(explainTarget, LmdbNativeAttemptMetrics.PATH_INDEXED_COUNT);
 					return List.of(toBindingSet(null, state, count > 0L));
@@ -1445,7 +1446,7 @@ final class NativeGroupIteration implements CloseableIteration<BindingSet>, Coop
 		} else if (!typeMatrixOwned && orderedDistinct != null && orderedDistinct.specialized()) {
 			arbiter.offer(() -> estimatedProposal(() -> {
 				if (row.runtimePlan != null) {
-					row.runtimePlan.activate(LmdbNativeAttemptMetrics.PATH_ORDERED_DISTINCT_GROUPS,
+					row.runtimePlan.activate(row.source, LmdbNativeAttemptMetrics.PATH_ORDERED_DISTINCT_GROUPS,
 							new SlotPlan[] { orderedDistinct.arg });
 				}
 				List<BindingSet> result = evaluateOrderedDistinct(row, orderedDistinct,
@@ -1998,9 +1999,10 @@ final class NativeGroupIteration implements CloseableIteration<BindingSet>, Coop
 		row.runtimePlan = speculativeRow.runtimePlan;
 		if (row.runtimePlan != null) {
 			if (encounterOrderRequired) {
-				row.runtimePlan.restartWithEncounterOrderFallback(reason, originalInput);
+				row.runtimePlan.restartWithEncounterOrderFallback(row.source, reason, originalInput);
 			} else {
-				row.runtimePlan.activate(LmdbNativeAttemptMetrics.PATH_NESTED_LOOP, new SlotPlan[] { originalInput });
+				row.runtimePlan.activate(row.source, LmdbNativeAttemptMetrics.PATH_NESTED_LOOP,
+						new SlotPlan[] { originalInput });
 			}
 		}
 		if (!initialize(row)) {
@@ -2093,7 +2095,8 @@ final class NativeGroupIteration implements CloseableIteration<BindingSet>, Coop
 				SlotPlan[] actualOrder = arg instanceof MultiJoinPlan
 						? ((MultiJoinPlan) arg).derivedPlan(row).order
 						: new SlotPlan[] { arg };
-				row.runtimePlan.activate(LmdbNativeAttemptMetrics.PATH_WILDCARD_PREDICATE_REDUCED, actualOrder);
+				row.runtimePlan.activate(row.source, LmdbNativeAttemptMetrics.PATH_WILDCARD_PREDICATE_REDUCED,
+						actualOrder);
 			}
 			return results;
 		}
@@ -2365,7 +2368,7 @@ final class NativeGroupIteration implements CloseableIteration<BindingSet>, Coop
 		long obj = prefixPattern.o.lookup(row.slots);
 		long context = prefixPattern.c.lookup(row.slots);
 		NativeLmdbQuerySource.AdjacencyAccessObserver observer = row.runtimePlan == null ? null
-				: row.runtimePlan.adjacencyAccessAt(LmdbNativeExplain.describe(prefixPattern, row.layout));
+				: row.runtimePlan.adjacencyAccessAt(row.source, prefixPattern);
 		try (NativeReplayBindingList.Builder results = collectResults()) {
 			try (LmdbPrefixRunCursor cursor = source.prefixRuns(prefixRunPlan, subj, pred, obj, context,
 					prefixCountRunRows, observer)) {

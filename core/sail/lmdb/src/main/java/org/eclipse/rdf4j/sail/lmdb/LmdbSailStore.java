@@ -14093,6 +14093,12 @@ class LmdbSailStore implements SailStore {
 		}
 
 		@Override
+		public Value diagnosticValue(long id) throws IOException {
+			return id == 0L || id == LmdbValue.UNKNOWN_ID ? null
+					: valueStore.getValue(lease.readView.valueSnapshot(), id);
+		}
+
+		@Override
 		public Object valueLookupScope() {
 			try {
 				return txn.valueLookupScope(valueStore.valueLookupScope(lease.readView.valueSnapshot()));
@@ -15614,6 +15620,11 @@ class LmdbSailStore implements SailStore {
 			} catch (IOException e) {
 				throw new QueryEvaluationException(e);
 			}
+		}
+
+		@Override
+		public Value diagnosticValue(long id) throws IOException {
+			return id == 0L || id == LmdbValue.UNKNOWN_ID ? null : valueStore.getValue(readView.valueSnapshot(), id);
 		}
 
 		@Override

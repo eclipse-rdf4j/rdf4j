@@ -102,7 +102,7 @@ namespace workbench {
 
         type ExplainLevel = 'Unoptimized' | 'Optimized' | 'Executed' | 'Telemetry' | 'Timed';
         type ExplainFormat = 'text' | 'dot' | 'json';
-        type StaleReason = 'query' | 'level' | 'format' | 'strategy' | 'consumption';
+        type StaleReason = 'query' | 'level' | 'format' | 'strategy';
         type ExplanationView = 'text' | 'highlightedText' | 'jsonTree' | 'jsonRawFallback'
             | 'dotRendering' | 'dotReady' | 'dotRenderError';
         type PaneKey = 'primary' | 'compare';
@@ -117,8 +117,6 @@ namespace workbench {
             level: ExplainLevel;
             requestedFormat: ExplainFormat;
             forcedLmdbExecutionStrategy: string;
-            explanationConsumption?: string;
-            explanationResultMime?: string;
             responseFormat: 'text' | 'json' | 'dot';
             view: ExplanationView;
             rawContent: string;
@@ -160,8 +158,6 @@ namespace workbench {
             level: ExplainLevel;
             format: ExplainFormat;
             forcedLmdbExecutionStrategy: string;
-            explanationConsumption?: string;
-            explanationResultMime?: string;
             groupId?: number;
             /** When the request was sent (Date.now), for its running time. */
             startedAt?: number;
@@ -202,8 +198,6 @@ namespace workbench {
             explainLevel: ExplainLevel;
             explainFormat: ExplainFormat;
             forcedLmdbExecutionStrategy: string;
-            explanationConsumption?: string;
-            explanationResultMime?: string;
         }
 
         interface QueryPageState {
@@ -615,19 +609,6 @@ namespace workbench {
             }
         }
 
-        function normalizedExplanationConsumption(value?: string): string {
-            return value === 'values' || value === 'serialized' ? value : 'rows';
-        }
-
-        function syncTelemetryControls(): void {
-            var telemetry = getNormalizedExplainLevel(<string>$('#explain-level').val()) === 'Telemetry';
-            var serialized = normalizedExplanationConsumption(<string>$('#explain-consumption').val()) === 'serialized';
-            $('#explain-consumption-field').prop('hidden', !telemetry);
-            $('#explain-consumption').prop('disabled', !telemetry);
-            $('#explain-result-mime-field').prop('hidden', !telemetry || !serialized);
-            $('#explain-result-mime').prop('disabled', !telemetry || !serialized);
-        }
-
         function buildQueryHash(queryValue: string): string {
             return queryValue || '';
         }
@@ -643,19 +624,13 @@ namespace workbench {
         }
 
         function collectCurrentInputs(): QueryPageInputs {
-            var inputs: QueryPageInputs = {
+            return {
                 primaryQueryHash: buildQueryHash(getPaneRawQueryValue('primary')),
                 compareQueryHash: buildQueryHash(getPaneRawQueryValue('compare')),
                 explainLevel: getNormalizedExplainLevel(<string>$('#explain-level').val()),
                 explainFormat: getNormalizedExplainFormat(<string>$('#explain-format').val()),
                 forcedLmdbExecutionStrategy: $('#lmdb-forced-strategy').prop('disabled') ? '' : <string>$('#lmdb-forced-strategy').val() || ''
             };
-            if (inputs.explainLevel === 'Telemetry') {
-                inputs.explanationConsumption = normalizedExplanationConsumption(<string>$('#explain-consumption').val());
-                inputs.explanationResultMime = inputs.explanationConsumption === 'serialized'
-                    ? <string>$('#explain-result-mime').val() || 'application/sparql-results+json' : '';
-            }
-            return inputs;
         }
 
         function createRequestSignature(
@@ -674,8 +649,6 @@ namespace workbench {
                 level: currentInputs.explainLevel,
                 format: currentInputs.explainFormat,
                 forcedLmdbExecutionStrategy: currentInputs.forcedLmdbExecutionStrategy,
-                explanationConsumption: currentInputs.explanationConsumption,
-                explanationResultMime: currentInputs.explanationResultMime,
                 groupId: groupId,
                 startedAt: Date.now()
             };
@@ -724,8 +697,6 @@ namespace workbench {
                 level: explanation.level,
                 requestedFormat: explanation.requestedFormat,
                 forcedLmdbExecutionStrategy: explanation.forcedLmdbExecutionStrategy,
-                explanationConsumption: explanation.explanationConsumption,
-                explanationResultMime: explanation.explanationResultMime,
                 responseFormat: explanation.responseFormat,
                 view: explanation.view,
                 rawContent: explanation.rawContent,
@@ -757,8 +728,6 @@ namespace workbench {
                 explanation.level,
                 explanation.requestedFormat,
                 explanation.forcedLmdbExecutionStrategy,
-                explanation.explanationConsumption || 'rows',
-                explanation.explanationResultMime || '',
                 explanation.responseFormat,
                 explanation.view,
                 explanation.rawContent,
@@ -778,8 +747,6 @@ namespace workbench {
                 explanation.level,
                 explanation.requestedFormat,
                 explanation.forcedLmdbExecutionStrategy,
-                explanation.explanationConsumption || 'rows',
-                explanation.explanationResultMime || '',
                 explanation.responseFormat,
                 explanation.rawContent,
                 JSON.stringify(explanation.strategyDecisions || []),
@@ -821,11 +788,6 @@ namespace workbench {
             }
             if (explanation.forcedLmdbExecutionStrategy !== inputs.forcedLmdbExecutionStrategy) {
                 staleReasons.push('strategy');
-            }
-            if (explanation.level === 'Telemetry' && inputs.explainLevel === 'Telemetry'
-                    && ((explanation.explanationConsumption || 'rows') !== (inputs.explanationConsumption || 'rows')
-                        || (explanation.explanationResultMime || '') !== (inputs.explanationResultMime || ''))) {
-                staleReasons.push('consumption');
             }
             return staleReasons;
         }
@@ -897,8 +859,6 @@ namespace workbench {
                 && left.level === right.level
                 && left.format === right.format
                 && left.forcedLmdbExecutionStrategy === right.forcedLmdbExecutionStrategy
-                && (left.explanationConsumption || 'rows') === (right.explanationConsumption || 'rows')
-                && (left.explanationResultMime || '') === (right.explanationResultMime || '')
                 && left.groupId === right.groupId;
         }
 
@@ -3040,7 +3000,6 @@ namespace workbench {
             renderPanePresentation('primary');
             renderPanePresentation('compare');
             syncExplanationPanelBusy();
-            syncTelemetryControls();
             renderExplanationTiming();
 
             updateDownloadButtonState();
@@ -3382,24 +3341,10 @@ namespace workbench {
             level: string,
             format: string,
             serverRequestId: string,
-            forcedLmdbExecutionStrategy?: string,
-            explanationConsumption?: string,
-            explanationResultMime?: string
+            forcedLmdbExecutionStrategy?: string
         ): string {
             forcedLmdbExecutionStrategy = forcedLmdbExecutionStrategy || '';
             var serializedForm: any[] = <any[]>$('form[action="query"]').serializeArray();
-            // Use the captured request settings, even if the controls changed while another pane was submitting.
-            serializedForm = serializedForm.filter(function(field: any): boolean {
-                return field.name !== 'explain-consumption' && field.name !== 'explain-result-mime';
-            });
-            if (level === 'Telemetry') {
-                var consumption = normalizedExplanationConsumption(explanationConsumption);
-                serializedForm.push({ name: 'explain-consumption', value: consumption });
-                if (consumption === 'serialized') {
-                    serializedForm.push({ name: 'explain-result-mime',
-                        value: explanationResultMime || 'application/sparql-results+json' });
-                }
-            }
             var transportFormat = getNormalizedExplainFormat(format) === 'text' ? 'json' : format;
             var seenAction = false;
             var seenExplain = false;
@@ -3781,8 +3726,6 @@ namespace workbench {
                 level: signature.level,
                 requestedFormat: signature.format,
                 forcedLmdbExecutionStrategy: signature.forcedLmdbExecutionStrategy,
-                explanationConsumption: signature.explanationConsumption,
-                explanationResultMime: signature.explanationResultMime,
                 responseFormat: responseFormat,
                 view: explanationView,
                 rawContent: explanationText,
@@ -3821,9 +3764,7 @@ namespace workbench {
                     signature.level,
                     signature.format,
                     signature.serverRequestId,
-                    signature.forcedLmdbExecutionStrategy,
-                    signature.explanationConsumption,
-                    signature.explanationResultMime
+                    signature.forcedLmdbExecutionStrategy
                 ),
                 error: function(jqXHR: JQueryXHR, textStatus: string, errorThrown: string) {
                     if (activePrimaryRequestSignature && signaturesMatch(activePrimaryRequestSignature, signature)) {
@@ -4214,9 +4155,7 @@ namespace workbench {
                     signature.level,
                     signature.format,
                     signature.serverRequestId,
-                    signature.forcedLmdbExecutionStrategy,
-                    signature.explanationConsumption,
-                    signature.explanationResultMime
+                    signature.forcedLmdbExecutionStrategy
                 ),
                 error: function(jqXHR: JQueryXHR, textStatus: string, errorThrown: string) {
                     if (activeCompareRequestSignatures[signature.pane]
@@ -4633,8 +4572,6 @@ namespace workbench {
                 <string>$('#query-explanation').attr('data-format') || <string>$('#explain-format').val() || 'text'
             );
             var initialLevel = getNormalizedExplainLevel(<string>$('#explain-level').val());
-            var initialConsumption = initialLevel === 'Telemetry'
-                ? normalizedExplanationConsumption(<string>$('#explain-consumption').val()) : undefined;
             var hydratedExplanation: StableExplanation = null;
             if (initialExplanation) {
                 hydratedExplanation = createStableExplanationFromResponse({
@@ -4645,9 +4582,6 @@ namespace workbench {
                     queryHash: buildQueryHash(getPaneRawQueryValue('primary')),
                     level: initialLevel,
                     format: initialFormat,
-                    explanationConsumption: initialConsumption,
-                    explanationResultMime: initialConsumption === 'serialized'
-                        ? <string>$('#explain-result-mime').val() || 'application/sparql-results+json' : undefined,
                     forcedLmdbExecutionStrategy: $('#lmdb-forced-strategy').prop('disabled') ? '' : <string>$('#lmdb-forced-strategy').val() || ''
                 }, {
                     content: initialExplanation,
@@ -6048,11 +5982,6 @@ namespace workbench {
                 notifyQueryPageInputChange('COMPARE_QUERY_CHANGED');
             }));
             on('#explain-level', 'change', function() {
-                syncTelemetryControls();
-                notifyQueryPageInputChange('EXPLAIN_LEVEL_CHANGED');
-            });
-            on('#explain-consumption, #explain-result-mime', 'change', function() {
-                syncTelemetryControls();
                 notifyQueryPageInputChange('EXPLAIN_LEVEL_CHANGED');
             });
             on('#explain-format', 'change', function() {

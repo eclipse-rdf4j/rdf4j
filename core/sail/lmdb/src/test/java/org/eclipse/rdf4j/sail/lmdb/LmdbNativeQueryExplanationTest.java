@@ -24,6 +24,7 @@ import java.util.concurrent.atomic.AtomicInteger;
 import java.util.stream.Stream;
 
 import org.eclipse.rdf4j.model.IRI;
+import org.eclipse.rdf4j.model.Literal;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.model.vocabulary.RDF;
@@ -36,19 +37,24 @@ import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.query.algebra.evaluation.function.Function;
 import org.eclipse.rdf4j.query.algebra.evaluation.function.FunctionRegistry;
 import org.eclipse.rdf4j.query.explanation.Explanation;
+import org.eclipse.rdf4j.query.explanation.ExplanationOptions;
 import org.eclipse.rdf4j.query.explanation.GenericPlanNode;
 import org.eclipse.rdf4j.query.impl.EmptyBindingSet;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
 import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
 import org.eclipse.rdf4j.repository.sail.SailTupleQuery;
+import org.eclipse.rdf4j.rio.helpers.NTriplesUtil;
 import org.eclipse.rdf4j.sail.SailConnection;
 import org.eclipse.rdf4j.sail.lmdb.config.LmdbStoreConfig;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.JaninoPipelineTestAccess;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.KernelExecutionTestAccess;
+import org.eclipse.rdf4j.sail.lmdb.inlined.Values;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.EnumSource;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 
@@ -508,6 +514,53 @@ public class LmdbNativeQueryExplanationTest {
 				.doesNotContain("outcome: INELIGIBLE");
 	}
 
+	@ParameterizedTest
+	@EnumSource(ExplanationOptions.Consumption.class)
+	void telemetryNativePlanShowsRdfTermsInEveryConsumptionMode(ExplanationOptions.Consumption consumption)
+			throws Exception {
+		assertThat(store.awaitDirectAdjacencyReady(60, TimeUnit.SECONDS)).isTrue();
+		ExplanationOptions options = consumption == ExplanationOptions.Consumption.SERIALIZED
+				? ExplanationOptions.serialized("application/sparql-results+xml")
+				: new ExplanationOptions(consumption, null);
+		GenericPlanNode plan;
+		try (var connection = repository.getConnection()) {
+			SailTupleQuery query = (SailTupleQuery) connection.prepareTupleQuery(rowQuery());
+			query.setForcedLmdbExecutionStrategy("nestedLoop");
+			plan = query.explain(Explanation.Level.Telemetry, options).toGenericPlanNode();
+		}
+
+		String actualOrder = planSection(plan.getPhysicalPlanPrelude(), "    actualOrder:\n", "    janino:\n");
+		assertThat(actualOrder).contains("<" + RDF.TYPE + ">", "<" + EX + "Item>", "<" + EX + "price>");
+		String accesses = planSection(plan.getPhysicalPlanPrelude(), "    adjacencyAccess:\n", "    adjacencySIP:\n");
+		assertThat(accesses).contains("predicate: BOUND[<" + RDF.TYPE + ">", "object: BOUND[<" + EX + "Item>");
+		assertThat(plan.getExecutionProfile().stages()).anySatisfy(stage -> {
+			assertThat(stage.operator()).isEqualTo("Native invocation");
+			assertThat(stage.properties().get("actualOrder")).contains("<" + RDF.TYPE + ">", "<" + EX + "Item>");
+		});
+		assertThat(plannedMetrics(plan, "nativePhysicalPlan"))
+				.anySatisfy(metric -> assertThat(metric).contains("<" + RDF.TYPE + ">", "<" + EX + "Item>"));
+	}
+
+	@Test
+	void telemetryShowsInlineLiteralAndItsId() throws Exception {
+		ValueFactory vf = repository.getValueFactory();
+		Literal literal = vf.createLiteral(2.0d);
+		long id = Values.packLiteral(literal);
+		assertThat(ValueIds.isInlined(id)).isTrue();
+		try (var connection = repository.getConnection()) {
+			connection.add(vf.createIRI(EX, "doubleItem"), vf.createIRI(EX, "price"), literal);
+		}
+		assertThat(store.awaitDirectAdjacencyReady(60, TimeUnit.SECONDS)).isTrue();
+
+		String term = NTriplesUtil.toNTriplesString(literal);
+		String query = "SELECT ?s WHERE { ?s <" + EX + "price> " + term + " }";
+		String rendered = explain(Explanation.Level.Telemetry, query, "nestedLoop").toGenericPlanNode()
+				.getPhysicalPlanPrelude();
+		assertThat(planSection(rendered, "    actualOrder:\n", "    janino:\n")).contains(term + " (id=" + id + ")");
+		assertThat(planSection(rendered, "    adjacencyAccess:\n", "    adjacencySIP:\n"))
+				.contains("object: BOUND[" + term + " (id=" + id + ")]");
+	}
+
 	@Test
 	public void telemetrySeparatesStatementAccessCandidatesFromSelection() throws Exception {
 		assertThat(store.awaitDirectAdjacencyReady(60, TimeUnit.SECONDS)).isTrue();
@@ -740,7 +793,8 @@ public class LmdbNativeQueryExplanationTest {
 					.contains("    actualOrder:\n      0: Pattern(");
 			assertThat(planSection(rendered, "    actualOrder:\n", "    janino:\n"))
 					.as("the physical plan must show the exact order embedded in the generated kernel")
-					.isEqualTo(planSection(rendered, "      generatedOrder:\n", "    adjacencyAccess:\n"));
+					.isEqualTo(planSection(rendered, "      generatedOrder:\n", "    adjacencyAccess:\n"))
+					.contains("<" + RDF.TYPE + ">", "<" + EX + "Item>", "<" + EX + "price>");
 		} finally {
 			restoreProperty(previousEnabled, "rdf4j.lmdb.janinoCodegen.enabled");
 			restoreProperty(previousThreshold, "rdf4j.lmdb.janinoCodegen.thresholdRows");
@@ -1066,6 +1120,13 @@ public class LmdbNativeQueryExplanationTest {
 		int end = rendered.indexOf(endMarker, start);
 		assertThat(end).as("missing end marker %s in:%n%s", endMarker, rendered).isGreaterThan(start);
 		return rendered.substring(start, end).replace("  ", "").strip();
+	}
+
+	private static Stream<String> plannedMetrics(GenericPlanNode node, String metricName) {
+		return Stream.concat(Stream.ofNullable(node.getStringMetricPlanned(metricName)),
+				Stream.ofNullable(node.getPlans())
+						.flatMap(List::stream)
+						.flatMap(child -> plannedMetrics(child, metricName)));
 	}
 
 	private static void restoreProperty(String previous) {

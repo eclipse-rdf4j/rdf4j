@@ -423,6 +423,15 @@ class SyntheticValueSource implements NativeLmdbQuerySource {
 	}
 
 	@Override
+	public Value diagnosticValue(long id) throws IOException {
+		Value value = context == null ? null : context.valueOf(id);
+		if (value == null) {
+			value = catalog.valueOf(id);
+		}
+		return value == null ? delegate.diagnosticValue(id) : value;
+	}
+
+	@Override
 	public Value lazyValue(long id, int positionMask) throws QueryEvaluationException {
 		if (context != null) {
 			Value interned = context.valueOf(id);

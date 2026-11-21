@@ -88,6 +88,17 @@ test('query explanation selectors hide unavailable options and select an availab
     assert.equal(unoptimized[1], true, 'the legacy preferred supported level becomes the fallback');
 });
 
+test('Telemetry explanation offers no result consumption or serialization controls', () => {
+    const templates = queryTemplates({
+        'explanation-level': 'Telemetry',
+        'explanation-consumption': 'serialized',
+        'explanation-result-mime': 'application/x-binary-rdf-results-table'
+    }, {});
+    const text = templates.map(template => template.strings.join('')).join('\n');
+    assert.deepEqual(option(templates, 'Telemetry'), ['Telemetry', true, undefined, undefined]);
+    assert.doesNotMatch(text, /id="explain-(consumption|result-mime)\b/);
+});
+
 test('main query options omit obsolete result page-size preferences', () => {
     const templates = queryTemplates({ limit_query: 100 }, {});
     const text = templates.map(template => template.strings.join('')).join('\n');

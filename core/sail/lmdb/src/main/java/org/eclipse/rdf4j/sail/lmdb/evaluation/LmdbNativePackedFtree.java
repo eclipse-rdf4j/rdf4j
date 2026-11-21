@@ -168,7 +168,7 @@ final class LmdbNativePackedFtree {
 		return new LmdbNativeStrategyProposal<>(() -> {
 			FactorizedRowCursor rows = LmdbNativeFactorProjections.openRows(input, row, retainedSlots, !distinct);
 			if (row.runtimePlan != null)
-				row.runtimePlan.activate(ROWS_SERIAL, new SlotPlan[] { input });
+				row.runtimePlan.activate(row.source, ROWS_SERIAL, new SlotPlan[] { input });
 			LmdbNativeExplain.recordExecutionPath(explainTarget, ROWS_SERIAL);
 			return NativeUnorderedInput.rows(row, rows);
 		}, input.estimateWork(row, row.boundMask()), ROWS_SERIAL, () -> {
@@ -241,7 +241,7 @@ final class LmdbNativePackedFtree {
 				return null;
 			}
 			if (row.runtimePlan != null) {
-				row.runtimePlan.activate(ROWS_SERIAL, multiJoin.children);
+				row.runtimePlan.activate(row.source, ROWS_SERIAL, multiJoin.children);
 			}
 			LmdbNativeExplain.recordExecutionPath(explainTarget, ROWS_SERIAL);
 			return NativeUnorderedInput.rows(row, cursor);
@@ -439,7 +439,7 @@ final class LmdbNativePackedFtree {
 
 	private static void recordVariant(SlotPlan input, RowState row, TupleExpr target, String tag) {
 		if (row.runtimePlan != null)
-			row.runtimePlan.activate(tag,
+			row.runtimePlan.activate(row.source, tag,
 					input instanceof MultiJoinPlan multi ? multi.children : new SlotPlan[] { input });
 		LmdbNativeExplain.recordExecutionPath(target, tag);
 	}

@@ -123,7 +123,7 @@ final class LmdbNativeChunkPipeline {
 			}
 		}
 		if (row.runtimePlan != null) {
-			row.runtimePlan.actualOrder(derived.order);
+			row.runtimePlan.actualOrder(row.source, derived.order);
 			if (!adjacencySipMasksEnabled()) {
 				row.runtimePlan.adjacencyDecision("NOT_CONSIDERED",
 						"FEATURE_DISABLED[" + ADJACENCY_SIP_MASK_PROPERTY + "=false]", null);
@@ -1279,7 +1279,8 @@ final class LmdbNativeChunkPipeline {
 		}
 
 		private String adjacencyWhere() {
-			return LmdbNativeExplain.describe(pattern, row.layout);
+			return row.runtimePlan == null ? LmdbNativeExplain.describe(pattern, row.layout)
+					: row.runtimePlan.describeAccessSite(row.source, pattern);
 		}
 
 		/**

@@ -73,19 +73,39 @@ test('profile comparison labels partial runs and mismatched units without false 
     assert.doesNotMatch(compared, /scanned[^\n]*2(?:\.0+)?x/);
 });
 
-test('telemetry consumption is captured in the request and omitted from other explanation levels', () => {
+test('Workbench explanation requests leave result consumption to the server', () => {
     const harness = createQueryBrowserHarness();
     const testing = harness.context.workbench.query.testing;
-    const serialized = new URLSearchParams(testing.serializeExplainFormData(
-        'SELECT * WHERE { ?s ?p ?o }', 'Telemetry', 'text', 'request-1', '',
-        'serialized', 'application/x-binary-rdf-results-table'));
-    assert.equal(serialized.get('explain-consumption'), 'serialized');
-    assert.equal(serialized.get('explain-result-mime'), 'application/x-binary-rdf-results-table');
-    const optimized = new URLSearchParams(testing.serializeExplainFormData(
-        'SELECT * WHERE { ?s ?p ?o }', 'Optimized', 'text', 'request-2', '',
-        'serialized', 'application/x-binary-rdf-results-table'));
-    assert.equal(optimized.has('explain-consumption'), false);
-    assert.equal(optimized.has('explain-result-mime'), false);
+    for (const level of ['Telemetry', 'Optimized']) {
+        const request = new URLSearchParams(testing.serializeExplainFormData(
+            'SELECT * WHERE { ?s ?p ?o }', level, 'text', 'request-1', ''));
+        assert.equal(request.get('explain'), level);
+        assert.equal(request.has('explain-consumption'), false, level);
+        assert.equal(request.has('explain-result-mime'), false, level);
+    }
+});
+
+test('Telemetry explain, rerun, and compare all use the same request settings', () => {
+    const harness = createQueryBrowserHarness();
+    const query = harness.context.workbench.query;
+    const plan = { content: JSON.stringify({ type: 'Group', executionProfile: profile() }), format: 'json' };
+    harness.runPageLoad();
+    query.setQueryValue('SELECT * WHERE { ?s ?p ?o }');
+    harness.setValue('explain-level', 'Telemetry');
+
+    harness.click('explain-trigger');
+    harness.pendingExplainRequests[0].resolve(plan);
+    harness.click('rerun-explanation');
+    harness.pendingExplainRequests[1].resolve(plan);
+    query.toggleCompareMode();
+    query.runCompareExplain('explain-trigger');
+
+    assert.equal(harness.pendingExplainRequests.length, 4);
+    for (const { params } of harness.pendingExplainRequests) {
+        assert.equal(params.get('explain'), 'Telemetry');
+        assert.equal(params.has('explain-consumption'), false);
+        assert.equal(params.has('explain-result-mime'), false);
+    }
 });
 
 test('JSON explanations retain the typed profile for comparison', () => {
@@ -94,24 +114,21 @@ test('JSON explanations retain the typed profile for comparison', () => {
     const plan = { type: 'Group', executionProfile: profile() };
     const explanation = testing.createStableExplanationFromResponse({
         queryHash: 'SELECT (COUNT(*) AS ?n) WHERE { ?s ?p ?o }',
-        level: 'Telemetry', format: 'json', explanationConsumption: 'rows'
+        level: 'Telemetry', format: 'json'
     }, { content: JSON.stringify(plan), format: 'json' }, 'json');
     assert.equal(explanation.view, 'jsonTree');
     assert.equal(explanation.plan.executionProfile.stages[0].id, 'fragment-0/access-1');
 });
 
-test('server-rendered explanations retain their selected consumption mode', () => {
+test('a server-rendered Telemetry explanation is current without consumption controls', () => {
     const harness = createQueryBrowserHarness();
     harness.$('#explain-level').val('Telemetry');
-    harness.document.body.appendChild(harness.registerElement('select', { id: 'explain-consumption', value: 'serialized' }));
-    harness.document.body.appendChild(harness.registerElement('select', {
-        id: 'explain-result-mime', value: 'application/x-binary-rdf-results-table'
-    }));
     harness.$('#query-explanation').text('Group (resultSizeActual=1)');
     harness.context.workbench.query.initializeExplanationView();
-    const explanation = harness.context.workbench.query.testing.getInternalState().queryPageState.primaryPane.explanation;
-    assert.equal(explanation.explanationConsumption, 'serialized');
-    assert.equal(explanation.explanationResultMime, 'application/x-binary-rdf-results-table');
+    const pane = harness.context.workbench.query.testing.getInternalState().queryPageState.primaryPane;
+    assert.equal(pane.kind, 'ready');
+    assert.equal(pane.freshness, 'current');
+    assert.equal(pane.explanation.level, 'Telemetry');
 });
 
 test('physical time hotspots retain exact long values and link to their logical operator', () => {

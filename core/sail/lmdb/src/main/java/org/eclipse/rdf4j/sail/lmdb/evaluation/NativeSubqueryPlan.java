@@ -281,8 +281,8 @@ final class NativeSubqueryPlan implements SlotPlan {
 		return mask;
 	}
 
-	String describe() {
-		String nested = step instanceof LmdbNativePhysicalPlan physical ? physical.nativePhysicalPlan()
+	String describe(boolean resolveRdfTerms) {
+		String nested = step instanceof LmdbNativePhysicalPlan physical ? physical.nativePhysicalPlan(resolveRdfTerms)
 				: step.getClass().getSimpleName();
 		return "NativeSubquery(frameInputs=" + Arrays.toString(frameInputNames) + ", step=" + nested + ")";
 	}

@@ -269,7 +269,7 @@ final class MultiJoinPlan implements SlotPlan {
 	 */
 	RowCursor openChain(OrderedPlan plan, int upToExclusive, RowState row) throws IOException {
 		if (row.runtimePlan != null) {
-			row.runtimePlan.actualOrder(plan.order);
+			row.runtimePlan.actualOrder(row.source, plan.order);
 		}
 		SlotPlan[] ordered = plan.order;
 		RowCursor cursor = ordered[0].open(row);
@@ -290,7 +290,7 @@ final class MultiJoinPlan implements SlotPlan {
 	 */
 	RowCursor openSuffix(OrderedPlan plan, int fromInclusive, RowState row) throws IOException {
 		if (row.runtimePlan != null) {
-			row.runtimePlan.actualOrder(plan.order);
+			row.runtimePlan.actualOrder(row.source, plan.order);
 		}
 		SlotPlan[] ordered = plan.order;
 		if (fromInclusive >= ordered.length) {
@@ -314,7 +314,7 @@ final class MultiJoinPlan implements SlotPlan {
 	RowCursor openChainFrom(OrderedPlan plan, RowCursor leftmost, int upToExclusive, RowState row)
 			throws IOException {
 		if (row.runtimePlan != null) {
-			row.runtimePlan.actualOrder(plan.order);
+			row.runtimePlan.actualOrder(row.source, plan.order);
 		}
 		SlotPlan[] ordered = plan.order;
 		RowCursor cursor = applyFilters(leftmost, plan.filterDepth, 0, row);

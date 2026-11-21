@@ -337,7 +337,7 @@ final class PatternPlan implements SlotPlan {
 
 	private NativeLmdbQuerySource.AdjacencyAccessObserver adjacencyAccessObserver(RowState row) {
 		NativeLmdbQuerySource.AdjacencyAccessObserver telemetry = row.runtimePlan == null ? null
-				: row.runtimePlan.adjacencyAccessAt(LmdbNativeExplain.describe(this, row.layout));
+				: row.runtimePlan.adjacencyAccessAt(row.source, this);
 		return combineAccessObservers(telemetry, row.probeWorkObserver);
 	}
 

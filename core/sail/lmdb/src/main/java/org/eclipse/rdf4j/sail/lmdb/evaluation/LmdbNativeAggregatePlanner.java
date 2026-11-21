@@ -268,9 +268,9 @@ final class LmdbNativeAggregatePlanner extends LmdbNativeAggregateFilterCompiler
 		}
 
 		@Override
-		public String nativePhysicalPlan() {
+		public String nativePhysicalPlan(boolean resolveRdfTerms) {
 			return "NativeHaving(arg=" + (arg instanceof LmdbNativePhysicalPlan physical
-					? physical.nativePhysicalPlan()
+					? physical.nativePhysicalPlan(resolveRdfTerms)
 					: arg.getClass().getSimpleName()) + ")";
 		}
 	}
