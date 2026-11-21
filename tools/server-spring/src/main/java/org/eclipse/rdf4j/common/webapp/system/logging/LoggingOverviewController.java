@@ -28,6 +28,10 @@ import jakarta.servlet.http.HttpServletResponse;
 
 public class LoggingOverviewController implements Controller {
 
+	private static final int DEFAULT_PAGE_SIZE = 50;
+	private static final int MAX_PAGE_SIZE = 500;
+	private static final List<Integer> PAGE_SIZES = List.of(DEFAULT_PAGE_SIZE, 100, 200, MAX_PAGE_SIZE);
+
 	private AppConfiguration config;
 
 	String viewName = "system/logging/overview";
@@ -46,7 +50,7 @@ public class LoggingOverviewController implements Controller {
 		model.put("logreader", logReader);
 		model.put("offset", offset);
 		model.put("count", count);
-		model.put("countsAvailable", Arrays.asList(50, 100, 200, 500));
+		model.put("countsAvailable", PAGE_SIZES);
 		if (logReader.supportsLevelFilter()) {
 			LogLevel level = logReader.getLevel();
 			model.put("level", (level == null) ? "ALL" : level.toString());
@@ -175,18 +179,18 @@ public class LoggingOverviewController implements Controller {
 	}
 
 	private int getCount(HttpServletRequest request) {
-		int result = 50; // Default entries count
+		int result = DEFAULT_PAGE_SIZE;
 
 		String countString = request.getParameter("count");
 		if (countString != null && !countString.isEmpty()) {
 			try {
 				result = Integer.parseInt(countString);
 			} catch (NumberFormatException nfe) {
-				// ignore, result stays 50
+				// ignore, result stays at the default page size
 			}
 		}
 
-		return result;
+		return result > 0 ? Math.min(result, MAX_PAGE_SIZE) : DEFAULT_PAGE_SIZE;
 	}
 
 	/**
