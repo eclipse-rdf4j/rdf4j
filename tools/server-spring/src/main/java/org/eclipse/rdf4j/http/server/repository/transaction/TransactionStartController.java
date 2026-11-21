@@ -150,6 +150,7 @@ public class TransactionStartController extends AbstractController {
 			txnURL.append("/" + txnId.toString());
 			Map<String, String> customHeaders = new HashMap<>();
 			customHeaders.put("Location", txnURL.toString());
+			customHeaders.put(Protocol.TRANSACTION_NAMESPACES_HEADER, "true");
 			model.put(SimpleResponseView.CUSTOM_HEADERS_KEY, customHeaders);
 
 			ModelAndView result = new ModelAndView(SimpleResponseView.getInstance(), model);
@@ -159,7 +160,7 @@ public class TransactionStartController extends AbstractController {
 		} catch (RepositoryException | InterruptedException | ExecutionException e) {
 			throw new ServerHTTPException("Transaction start error: " + e.getMessage(), e);
 		} finally {
-			if (!allGood) {
+			if (!allGood && txn != null) {
 				try {
 					txn.close();
 				} catch (InterruptedException | ExecutionException e) {

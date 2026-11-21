@@ -20,6 +20,7 @@ import java.nio.ByteBuffer;
 import java.nio.channels.FileChannel;
 import java.nio.file.AtomicMoveNotSupportedException;
 import java.nio.file.Files;
+import java.nio.file.LinkOption;
 import java.nio.file.Path;
 import java.nio.file.StandardCopyOption;
 import java.nio.file.StandardOpenOption;
@@ -106,6 +107,8 @@ class StoreProperties {
 
 	/** Both native environments were present during the locked, read-only startup preflight. */
 	private boolean nativeGenerationPresent;
+	/** Granted only by validated interrupted-import recovery, while the original format sidecars remain durable. */
+	private boolean recreatingNativeGeneration;
 	/** Validated only while the owning LmdbStore holds its directory lock; never serialized as a boolean. */
 	PreparedBulkStore.Snapshot preparedBulkStore;
 	long verifiedValueTransactionId = -1L;
@@ -123,12 +126,35 @@ class StoreProperties {
 		this.propertiesFile = new File(dir, FILE_NAME);
 	}
 
+	/** A dictionary inside an owning Sail must use that Sail's identity and clean-close fingerprint. */
+	static StoreProperties forDictionary(File directory) {
+		File parent = directory.getAbsoluteFile().getParentFile();
+		if (directory.getName().equals("values") && parent != null
+				&& (Files.exists(new File(parent, FILE_NAME).toPath(), LinkOption.NOFOLLOW_LINKS)
+						|| Files.exists(new File(parent, LmdbStore.CORE_LITERAL_REFERENCE_MARKER_FILE).toPath(),
+								LinkOption.NOFOLLOW_LINKS)
+						|| hasOwningSail(directory))) {
+			return new StoreProperties(parent);
+		}
+		return new StoreProperties(directory);
+	}
+
+	static boolean hasOwningSail(File directory) {
+		File parent = directory.getAbsoluteFile().getParentFile();
+		return directory.getName().equals("values") && parent != null
+				&& Files.exists(new File(parent, "triples").toPath(), LinkOption.NOFOLLOW_LINKS);
+	}
+
 	/**
 	 * Load from properties file.
 	 *
 	 * @return <code>true</code> if loaded from file, else <code>false</code>
 	 */
 	boolean load() {
+		if (propertiesFile != null && Files.exists(propertiesFile.toPath(), LinkOption.NOFOLLOW_LINKS)
+				&& !propertiesFile.isFile()) {
+			throw new IllegalStateException("LmdbStore properties must be a readable regular file: " + propertiesFile);
+		}
 		Optional.ofNullable(propertiesFile).filter(File::isFile).ifPresent(file -> {
 			Properties properties = new Properties();
 			try (InputStream in = new FileInputStream(file)) {
@@ -189,6 +215,12 @@ class StoreProperties {
 			}
 			if (dateTimeIdEncoding != null) {
 				properties.setProperty(DATE_TIME_ID_ENCODING_KEY, dateTimeIdEncoding);
+			}
+			if (loaded && file.isFile() && properties.equals(loadedProperties)) {
+				// Discovery may temporarily order index descriptors differently before initialization restores the
+				// original settings. Preserve the exact legacy sidecar when the effective policy did not change.
+				dirty = false;
+				return;
 			}
 			Path target = file.toPath().toAbsolutePath();
 			Path parent = target.getParent();
@@ -262,6 +294,23 @@ class StoreProperties {
 
 	void setNativeGenerationPresent(boolean nativeGenerationPresent) {
 		this.nativeGenerationPresent = nativeGenerationPresent;
+	}
+
+	void recreateNativeGeneration() {
+		recreatingNativeGeneration = true;
+		nativeGenerationPresent = false;
+		preparedBulkStore = null;
+		verifiedValueTransactionId = 0L;
+		verifiedTripleTransactionId = 0L;
+		statementIndexCleanupPending = false;
+	}
+
+	boolean recreatesNativeGeneration() {
+		return recreatingNativeGeneration;
+	}
+
+	void completeNativeGenerationRecreation() {
+		recreatingNativeGeneration = false;
 	}
 
 	String getRawProperty(String key) {

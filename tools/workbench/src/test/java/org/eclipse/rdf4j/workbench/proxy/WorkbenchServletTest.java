@@ -41,6 +41,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Properties;
 import java.util.Set;
+import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
@@ -94,6 +95,133 @@ import tools.jackson.databind.ObjectMapper;
 
 public class WorkbenchServletTest {
 	private static final String LEGACY_TRANSFORMATIONS = "transformations";
+
+	@Test
+	void completedAndUnknownExploreCancellationAreIdempotentWithinExistingRepository() throws Exception {
+		RepositoryManager manager = mock(RepositoryManager.class);
+		Repository repository = mock(Repository.class);
+		when(repository.isInitialized()).thenReturn(true);
+		when(manager.getRepository("repo")).thenReturn(repository);
+		when(manager.getRepositoryInfo("repo")).thenReturn(new RepositoryInfo());
+		TestWorkbenchServlet servlet = initServlet(manager);
+		RecordingProxyRepositoryServlet commands = new RecordingProxyRepositoryServlet();
+		servlet.createdServlets.add(commands);
+		try {
+			MockHttpServletRequest execution = request("/workbench/repo/explore", "/repo/explore");
+			execution.setMethod("GET");
+			execution.addParameter("section", "outgoing");
+			execution.addParameter("query-request-id", "completed");
+			servlet.service(execution, new CapturedResponse());
+
+			for (String id : List.of("completed", "completed", "unknown")) {
+				MockHttpServletRequest cancellation = request("/workbench/repo/explore", "/repo/explore");
+				cancellation.setMethod("POST");
+				cancellation.addParameter("action", "cancel-query");
+				cancellation.addParameter("query-request-id", id);
+				MockHttpServletResponse response = new MockHttpServletResponse();
+				servlet.service(cancellation, response);
+				assertThat(response.getStatus()).as(id).isEqualTo(HttpServletResponse.SC_NO_CONTENT);
+			}
+			assertThat(commands.serviceCount).isEqualTo(1);
+
+			MockHttpServletRequest missing = request("/workbench/missing/explore", "/missing/explore");
+			missing.setMethod("POST");
+			missing.addParameter("action", "cancel-query");
+			missing.addParameter("query-request-id", "unknown");
+			MockHttpServletResponse missingResponse = new MockHttpServletResponse();
+			servlet.service(missing, missingResponse);
+			assertThat(missingResponse.getStatus()).isEqualTo(HttpServletResponse.SC_NOT_FOUND);
+		} finally {
+			servlet.destroy();
+		}
+	}
+
+	@Test
+	void exploreCancellationKeepsOriginalOwnerAcrossRepositoryReplacement() throws Exception {
+		RepositoryManager manager = mock(RepositoryManager.class);
+		when(manager.getRepository("repo")).thenReturn(mock(Repository.class), mock(Repository.class));
+		when(manager.getRepositoryInfo("repo")).thenReturn(new RepositoryInfo());
+		TestWorkbenchServlet servlet = initServlet(manager);
+		RecordingProxyRepositoryServlet previous = new RecordingProxyRepositoryServlet();
+		RecordingProxyRepositoryServlet replacement = new RecordingProxyRepositoryServlet();
+		previous.serviceEntered = new CountDownLatch(1);
+		previous.serviceRelease = new CountDownLatch(1);
+		servlet.createdServlets.add(previous);
+		servlet.createdServlets.add(replacement);
+		MockHttpServletRequest execution = request("/workbench/repo/explore", "/repo/explore");
+		execution.setMethod("GET");
+		execution.addParameter("section", "outgoing");
+		execution.addParameter("query-request-id", "active-id");
+		try (var executor = Executors.newSingleThreadExecutor()) {
+			var active = executor.submit(() -> {
+				servlet.service(execution, new CapturedResponse());
+				return null;
+			});
+			try {
+				assertThat(previous.serviceEntered.await(30, TimeUnit.SECONDS)).isTrue();
+				servlet.service(request("/workbench/repo/summary", "/repo/summary"), new CapturedResponse());
+				MockHttpServletRequest cancel = request("/workbench/repo/explore", "/repo/explore");
+				cancel.setMethod("POST");
+				cancel.addParameter("action", "cancel-query");
+				cancel.addParameter("query-request-id", "active-id");
+				servlet.service(cancel, new CapturedResponse());
+				assertThat(previous.serviceCount).isEqualTo(2);
+				assertThat(replacement.serviceCount).isEqualTo(1);
+				assertThat(previous.destroyCount).isZero();
+			} finally {
+				previous.serviceRelease.countDown();
+				active.get(30, TimeUnit.SECONDS);
+			}
+			assertThat(previous.destroyCount).isEqualTo(1);
+		} finally {
+			servlet.destroy();
+		}
+	}
+
+	@Test
+	void unmatchedExploreCancellationDoesNotCancelAnotherSessionOrRepository() throws Exception {
+		RepositoryManager manager = mock(RepositoryManager.class);
+		Repository repository = mock(Repository.class);
+		when(repository.isInitialized()).thenReturn(true);
+		when(manager.getRepository("repo")).thenReturn(repository);
+		when(manager.getRepositoryInfo("repo")).thenReturn(new RepositoryInfo());
+		when(manager.getRepositoryInfo("other")).thenReturn(new RepositoryInfo());
+		TestWorkbenchServlet first = initServlet(manager);
+		TestWorkbenchServlet second = initServlet(manager);
+		RecordingProxyRepositoryServlet owner = new RecordingProxyRepositoryServlet();
+		owner.serviceEntered = new CountDownLatch(1);
+		owner.serviceRelease = new CountDownLatch(1);
+		first.createdServlets.add(owner);
+		MockHttpServletRequest execution = request("/workbench/repo/explore", "/repo/explore");
+		execution.setMethod("GET");
+		execution.addParameter("section", "outgoing");
+		execution.addParameter("query-request-id", "shared-id");
+		try (var executor = Executors.newSingleThreadExecutor()) {
+			var active = executor.submit(() -> {
+				first.service(execution, new CapturedResponse());
+				return null;
+			});
+			try {
+				assertThat(owner.serviceEntered.await(30, TimeUnit.SECONDS)).isTrue();
+				for (String repo : List.of("repo", "other")) {
+					MockHttpServletRequest cancel = request("/workbench/" + repo + "/explore", "/" + repo + "/explore");
+					cancel.setMethod("POST");
+					cancel.addParameter("action", "cancel-query");
+					cancel.addParameter("query-request-id", "shared-id");
+					MockHttpServletResponse response = new MockHttpServletResponse();
+					(repo.equals("repo") ? second : first).service(cancel, response);
+					assertThat(response.getStatus()).isEqualTo(HttpServletResponse.SC_NO_CONTENT);
+				}
+				assertThat(owner.serviceCount).isEqualTo(1);
+			} finally {
+				owner.serviceRelease.countDown();
+				active.get(30, TimeUnit.SECONDS);
+			}
+		} finally {
+			first.destroy();
+			second.destroy();
+		}
+	}
 
 	@ParameterizedTest
 	@ValueSource(strings = { "query", "explain" })
@@ -471,6 +599,89 @@ public class WorkbenchServletTest {
 			}
 		} finally {
 			servlet.destroy();
+		}
+	}
+
+	@Test
+	void policyQueryDefaultTimeoutOverridesTheInitParameter() throws Exception {
+		Properties properties = new Properties();
+		properties.setProperty("menu.items", "summary,query,repositories");
+		properties.setProperty("menu.group.explore.visible", "true");
+		properties.setProperty("menu.group.repositories.visible", "true");
+		properties.setProperty("query.default-timeout", "15");
+
+		TimeoutCapturingServlet servlet = initTimeoutServlet(WorkbenchPolicy.fromProperties(properties, Set.of()));
+		try {
+			assertThat(servlet.getServletConfig().getInitParameter("default-query-timeout")).isEqualTo("15");
+			assertThat(serviceRepository(servlet)).isEqualTo("15");
+		} finally {
+			servlet.destroy();
+		}
+	}
+
+	@Test
+	void initParameterQueryTimeoutIsKeptWhenPolicyIsSilent() throws Exception {
+		TimeoutCapturingServlet servlet = initTimeoutServlet(policy("summary,query,repositories"));
+		try {
+			assertThat(servlet.getServletConfig().getInitParameter("default-query-timeout")).isEqualTo("60");
+			assertThat(serviceRepository(servlet)).isEqualTo("60");
+		} finally {
+			servlet.destroy();
+		}
+	}
+
+	private static TimeoutCapturingServlet initTimeoutServlet(WorkbenchPolicy policy) throws Exception {
+		RepositoryManager manager = mock(RepositoryManager.class);
+		when(manager.getRepository("repo")).thenReturn(mock(Repository.class));
+		when(manager.getRepositoryInfo("repo")).thenReturn(new RepositoryInfo());
+		MockServletContext context = new MockServletContext();
+		context.setAttribute(WorkbenchPolicyLoader.POLICY_ATTRIBUTE, policy);
+		Map<String, String> params = new LinkedHashMap<>();
+		params.put("default-path", "/repositories");
+		params.put("default-command", "/summary");
+		params.put("default-query-timeout", "60");
+		params.put(WorkbenchServlet.SERVER_PARAM, "https://example.org/rdf4j-server");
+		params.put(LEGACY_TRANSFORMATIONS, "/transform");
+		params.put("/summary", SummaryServlet.class.getName());
+		TimeoutCapturingServlet servlet = new TimeoutCapturingServlet(manager);
+		servlet.init(new TestServletConfig("workbench", context, params));
+		return servlet;
+	}
+
+	/** Services a request for a repository and returns the default query timeout its child servlet was given. */
+	private static String serviceRepository(TimeoutCapturingServlet servlet) throws Exception {
+		servlet.service(request("/workbench/repo/summary", "/repo/summary", "", "/workbench"),
+				new MockHttpServletResponse());
+		assertThat(servlet.childTimeouts).as("child servlets created").isNotEmpty();
+		return servlet.childTimeouts.get(0);
+	}
+
+	private static final class TimeoutCapturingServlet extends WorkbenchServlet {
+		private final RepositoryManager manager;
+		private final List<String> childTimeouts = new CopyOnWriteArrayList<>();
+
+		private TimeoutCapturingServlet(RepositoryManager manager) {
+			this.manager = manager;
+		}
+
+		@Override
+		protected RepositoryManager createRepositoryManager(String param) {
+			return manager;
+		}
+
+		@Override
+		protected ProxyRepositoryServlet createProxyRepositoryServlet() {
+			return new ProxyRepositoryServlet() {
+				@Override
+				public void init(ServletConfig config) {
+					childTimeouts.add(config.getInitParameter("default-query-timeout"));
+				}
+
+				@Override
+				public void service(HttpServletRequest req, HttpServletResponse resp) {
+					// The child's own work is not under test.
+				}
+			};
 		}
 	}
 

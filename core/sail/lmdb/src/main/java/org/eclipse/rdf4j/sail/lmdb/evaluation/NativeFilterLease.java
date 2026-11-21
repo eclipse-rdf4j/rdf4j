@@ -45,10 +45,15 @@ final class NativeFilterLease {
 	 * directly; execution keeps using the facade so the lease observes use and closes the right owner.
 	 */
 	static NativeBooleanFilter inspect(NativeBooleanFilter filter) {
-		while (filter instanceof BorrowedFilter borrowed) {
-			filter = borrowed.entry.attempt;
+		while (true) {
+			if (filter instanceof BorrowedFilter borrowed) {
+				filter = borrowed.entry.attempt;
+			} else if (filter instanceof PlannedNativeBooleanFilter planned) {
+				filter = planned.delegate;
+			} else {
+				return filter;
+			}
 		}
-		return filter;
 	}
 
 	NativeBooleanFilter borrow(NativeBooleanFilter original) {
@@ -88,6 +93,12 @@ final class NativeFilterLease {
 		}
 		if (plan instanceof EntryBindingCompatibilityPlan entry) {
 			return new EntryBindingCompatibilityPlan(borrow(entry.arg), entry.slots, entry.ids, entry.restoredMask);
+		}
+		if (plan instanceof NativeAliasJoinPlan alias) {
+			return alias.clonePlan(borrow(alias.original.left), borrow(alias.original.right));
+		}
+		if (plan instanceof NativeAliasJoinMemoPlan memo) {
+			return new NativeAliasJoinMemoPlan(new JoinPlan(borrow(memo.original.left), borrow(memo.original.right)));
 		}
 		if (plan instanceof JoinPlan join) {
 			// Reapply relational identity/flattening while cloning the attempt. Otherwise an unused VALUES
@@ -251,6 +262,11 @@ final class NativeFilterLease {
 		@Override
 		public long batchReadMask() {
 			return entry.attempt.batchReadMask();
+		}
+
+		@Override
+		public NativePredicateCapabilities capabilities() {
+			return entry.attempt.capabilities();
 		}
 
 		@Override

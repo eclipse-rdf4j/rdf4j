@@ -20,6 +20,7 @@ import java.io.IOException;
 import java.util.HashMap;
 
 import org.eclipse.rdf4j.common.annotation.Experimental;
+import org.eclipse.rdf4j.sail.lmdb.evaluation.codegen.KernelRuntime;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.fragment.IdCapability;
 
 @Experimental
@@ -184,6 +185,7 @@ final class FilterPlan implements SlotPlan {
 	final NativeBooleanFilter filter;
 	/** Slots the condition can read, or -1 when the filter must stay exactly where the algebra put it. */
 	final long filterMask;
+	private final long groupedReads;
 	/** Optional exact term-kind condition retained from the filter algebra for page-grain prefiltering. */
 	final LmdbNativeTermKindFilter termKindFilter;
 
@@ -196,7 +198,12 @@ final class FilterPlan implements SlotPlan {
 		this.arg = arg;
 		this.filter = filter;
 		this.filterMask = filterMask;
+		this.groupedReads = NativePredicateCapabilities.groupedReadMask(filter, filterMask);
 		this.termKindFilter = termKindFilter;
+	}
+
+	long groupedReadMask() {
+		return groupedReads;
 	}
 
 	@Override
@@ -209,8 +216,11 @@ final class FilterPlan implements SlotPlan {
 		LmdbNativeFactorCursor grouped = openFactors(row);
 		if (grouped != null)
 			return LmdbNativeFactorRows.asRows(grouped, row);
-		RowCursor input = arg.open(row);
-		return new FilterCursor(filterMask < 0L ? LmdbNativeFactorAlgebra.logical(input, row) : input, filter, row);
+		// A pinned filter can observe each logical solution in encounter order. Its input must be opened under
+		// that boundary, including lazy probes performed after the filter cursor has been constructed.
+		boolean logicalReplay = groupedReadMask() < 0L;
+		RowCursor input = logicalReplay ? LmdbNativeFactorAlgebra.openOrdered(arg, row) : arg.open(row);
+		return new FilterCursor(logicalReplay ? LmdbNativeFactorAlgebra.logical(input, row) : input, filter, row);
 	}
 
 	@Override
@@ -218,11 +228,7 @@ final class FilterPlan implements SlotPlan {
 		// The condition is evaluated once per row the argument produces. Pricing a filter is what lets a plan that
 		// contains one be compared at all: before this, every such plan was unpriceable end to end.
 		LmdbNativeWork argWork = arg.estimateWork(row, boundMask);
-		double argRows = LmdbNativeWork.rowsOut(arg, row, boundMask);
-		if (!argWork.known() || Double.isNaN(argRows)) {
-			return argWork;
-		}
-		return argWork.plus(LmdbNativeWork.exact(argRows));
+		return argWork.plus(LmdbNativeWork.exact(1D).times(LmdbNativeWork.rowBounds(arg, row, boundMask)));
 	}
 
 	@Override
@@ -238,8 +244,13 @@ final class FilterPlan implements SlotPlan {
 
 	@Override
 	public BatchCursor openBatch(RowState row, int capacity) throws IOException {
+		long reads = groupedReadMask();
+		if (reads < 0L) {
+			RowCursor input = LmdbNativeFactorAlgebra.logical(LmdbNativeFactorAlgebra.openOrdered(arg, row), row);
+			return new RowBatchCursor(new FilterCursor(input, filter, row), row);
+		}
 		BatchCursor batch = arg.openBatch(row, capacity);
-		return batch == null ? null : new FilterBatchCursor(batch, filter, row, filterMask);
+		return batch == null ? null : new FilterBatchCursor(batch, filter, row, reads);
 	}
 
 	@Override
@@ -304,7 +315,9 @@ final class FilterCursor implements FactorizedRowCursor {
 	final RowCursor arg;
 	final NativeBooleanFilter filter;
 	final RowState row;
+	final NativeScalarFilterAttempt scalarFilterAttempt;
 	boolean closed;
+	long scalarFilterCalls;
 	// The probe deadline is cooperative: a low-selectivity filter can reject rows for arbitrarily long without the
 	// consumer's drain loop (which polls per EMITTED row) ever regaining control, so this loop must poll itself.
 	int probePollTick;
@@ -313,14 +326,31 @@ final class FilterCursor implements FactorizedRowCursor {
 		this.arg = arg;
 		this.filter = filter;
 		this.row = row;
+		this.scalarFilterAttempt = row == null ? null : row.scalarFilterAttempt;
 	}
 
 	@Override
 	public boolean next() throws IOException {
 		while (arg.next()) {
 			LmdbNativeProbeDeadline.poll(++probePollTick);
-			if (filter.accept(row)) {
-				return true;
+			if (row != null) {
+				row.cancellation.poll(probePollTick);
+			}
+			RowCursor previous = row == null ? null : row.expressionProducer;
+			if (row != null) {
+				row.expressionProducer = arg;
+			}
+			try {
+				if (scalarFilterAttempt != null) {
+					scalarFilterCalls++;
+				}
+				if (filter.accept(row)) {
+					return true;
+				}
+			} finally {
+				if (row != null) {
+					row.expressionProducer = previous;
+				}
 			}
 		}
 		return false;
@@ -333,31 +363,27 @@ final class FilterCursor implements FactorizedRowCursor {
 		}
 		closed = true;
 		Throwable failure = null;
-		try {
-			arg.close();
-		} catch (RuntimeException | Error problem) {
-			failure = problem;
+		failure = KernelRuntime.closeResource(arg, failure);
+		failure = KernelRuntime.closeResource(filter::close, failure);
+		if (scalarFilterAttempt != null && scalarFilterCalls != 0L) {
+			long calls = scalarFilterCalls;
+			failure = KernelRuntime.closeResource(() -> scalarFilterAttempt.record(calls), failure);
+			scalarFilterCalls = 0L;
 		}
-		try {
-			filter.close();
-		} catch (RuntimeException | Error problem) {
-			if (failure == null) {
-				failure = problem;
-			} else if (failure != problem) {
-				failure.addSuppressed(problem);
-			}
-		}
-		if (failure instanceof RuntimeException runtimeException) {
-			throw runtimeException;
-		}
-		if (failure instanceof Error error) {
-			throw error;
+		if (failure != null) {
+			NativeContextClosingIteration.throwFailure(failure);
 		}
 	}
 
 	@Override
 	public long multiplicity() {
 		return arg instanceof FactorizedRowCursor factorized ? factorized.multiplicity() : 1L;
+	}
+
+	@Override
+	public NativeExpressionDomainPolicy.Input expressionInput() {
+		// Removing rows preserves dependency-prefix order; this does not assert exact post-filter N/D.
+		return arg.expressionInput();
 	}
 }
 
@@ -379,18 +405,28 @@ final class ExtensionPlan implements SlotPlan {
 
 	@Override
 	public LmdbNativeFactorCursor openFactors(RowState row) throws IOException {
+		NativeExecutionPhaseEvent.activateInput("expressions", row.cancellation);
 		return LmdbNativeFactorAlgebra.tryOpen(this, row);
 	}
 
 	@Override
 	public RowCursor open(RowState row) throws IOException {
 		LmdbNativeFactorCursor grouped = openFactors(row);
-		return grouped != null ? LmdbNativeFactorRows.asRows(grouped, row)
-				: new ExtensionCursor(arg.open(row), copies, row);
+		if (grouped != null) {
+			return LmdbNativeFactorRows.asRows(grouped, row);
+		}
+		// An effectful assignment observes the input's encounter order. Establish the ordered boundary before
+		// opening its lazy producer, and keep it in force while that producer is advanced and closed.
+		RowCursor input = copiesReplaySafe() ? arg.open(row) : LmdbNativeFactorAlgebra.openOrdered(arg, row);
+		return new ExtensionCursor(input, copies, row);
 	}
 
 	@Override
 	public BatchCursor openBatch(RowState row, int capacity) throws IOException {
+		if (!copiesReplaySafe()) {
+			return new RowBatchCursor(new ExtensionCursor(LmdbNativeFactorAlgebra.openOrdered(arg, row), copies, row),
+					row);
+		}
 		BatchCursor batch = arg.openBatch(row, capacity);
 		if (batch == null) {
 			return null;
@@ -399,15 +435,20 @@ final class ExtensionPlan implements SlotPlan {
 		return rows == null ? null : new RowBatchCursor(new ExtensionCursor(rows, copies, row), row);
 	}
 
+	private boolean copiesReplaySafe() {
+		for (CopyBinding copy : copies) {
+			if (!copy.encounterOrderReplaySafe) {
+				return false;
+			}
+		}
+		return true;
+	}
+
 	@Override
 	public LmdbNativeWork estimateWork(RowState row, long boundMask) {
 		// One slot write per copied binding, per row the argument produces.
 		LmdbNativeWork argWork = arg.estimateWork(row, boundMask);
-		double argRows = LmdbNativeWork.rowsOut(arg, row, boundMask);
-		if (!argWork.known() || Double.isNaN(argRows)) {
-			return argWork;
-		}
-		return argWork.plus(LmdbNativeWork.exact(argRows * copies.length));
+		return argWork.plus(LmdbNativeWork.exact(copies.length).times(LmdbNativeWork.rowBounds(arg, row, boundMask)));
 	}
 
 	@Override
@@ -430,6 +471,7 @@ final class ExtensionCursor implements FactorizedRowCursor {
 	int activeMark = -1;
 	int probePollTick;
 	boolean closed;
+	final NativeExecutionPhaseEvent.Span executionPhase;
 
 	ExtensionCursor(RowCursor arg, CopyBinding[] copies, RowState row) {
 		boolean replaySafe = true;
@@ -440,6 +482,7 @@ final class ExtensionCursor implements FactorizedRowCursor {
 		this.arg = replaySafe ? arg : LmdbNativeFactorAlgebra.logical(arg, row);
 		this.copies = copies;
 		this.row = row;
+		this.executionPhase = NativeExecutionPhaseEvent.inputStage("expressions", row.cancellation);
 	}
 
 	@Override
@@ -450,11 +493,20 @@ final class ExtensionCursor implements FactorizedRowCursor {
 			release();
 			while (arg.next()) {
 				LmdbNativeProbeDeadline.poll(++probePollTick);
+				row.cancellation.poll(probePollTick);
 				activeMark = row.mark();
-				if (bindCopies(copies, row))
-					return true;
+				RowCursor previous = row.expressionProducer;
+				row.expressionProducer = arg;
+				try {
+					if (bindCopies(copies, row)) {
+						return true;
+					}
+				} finally {
+					row.expressionProducer = previous;
+				}
 				release();
 			}
+			executionPhase.complete();
 			close();
 			return false;
 		} catch (IOException | RuntimeException | Error failure) {
@@ -468,6 +520,11 @@ final class ExtensionCursor implements FactorizedRowCursor {
 		// Expressions in this extension share labeled BNODE state, but not the state of a previous solution.
 		row.beginLogicalSolution();
 		for (CopyBinding copy : copies) {
+			NativeResultCell summary = copy.sourceSlot < 0 ? null : row.summaryCell(copy.sourceSlot);
+			if (summary != null) {
+				row.bindSummary(copy.targetSlot, summary);
+				continue;
+			}
 			long id = copy.value(row);
 			if (id == UNKNOWN) {
 				if (!copy.setNullOnError)
@@ -490,7 +547,11 @@ final class ExtensionCursor implements FactorizedRowCursor {
 		try {
 			release();
 		} finally {
-			arg.close();
+			try {
+				arg.close();
+			} finally {
+				executionPhase.close();
+			}
 		}
 	}
 
@@ -555,6 +616,7 @@ final class RowDistinctPlan implements SlotPlan {
 				while (inner.next()) {
 					// a long duplicate run advances without emitting; poll or the probe deadline starves
 					LmdbNativeProbeDeadline.poll(++probePollTick);
+					row.cancellation.poll(probePollTick);
 					if (tracker.add(row.slots)) {
 						return true;
 					}
@@ -627,8 +689,13 @@ final class MinusPlan implements SlotPlan {
 
 	@Override
 	public LmdbNativeWork estimateWork(RowState row, long boundMask) {
-		// The right arm is re-probed for every left row to decide whether that row survives.
-		return LmdbNativeWork.probeChain(left, right, row, boundMask);
+		// MINUS can drain a disjoint right arm once, stop after a compatible row, or reuse/build a verdict
+		// memo. Its independent and correlated probes also have different lexical input frames. Until those
+		// alternatives expose a common bound, only the left work is guaranteed; multiplying a complete right
+		// scan by the left cardinality is neither a floor nor a safe ceiling for the possible build/fallback.
+		LmdbNativeWork leftWork = left.estimateWork(row, boundMask);
+		LmdbNativeWork.RowBounds leftRows = LmdbNativeWork.rowBounds(left, row, boundMask);
+		return leftWork.plus(LmdbNativeWork.UNKNOWN.times(new LmdbNativeWork.RowBounds(0D, leftRows.high())));
 	}
 
 	@Override
@@ -699,6 +766,7 @@ final class MinusCursor implements FactorizedRowCursor {
 		while (leftCursor.next()) {
 			// every removed left row performs right-side probe work without emitting; poll or the deadline starves
 			LmdbNativeProbeDeadline.poll(++probePollTick);
+			row.cancellation.poll(probePollTick);
 			if (!hasCompatibleRight()) {
 				return true;
 			}
@@ -840,6 +908,7 @@ final class MinusCursor implements FactorizedRowCursor {
 			try (RowCursor cursor = right.open(row)) {
 				while (cursor.next()) {
 					LmdbNativeProbeDeadline.poll(++probePollTick);
+					row.cancellation.poll(probePollTick);
 					long overlap = leftBoundMask & boundComparisonMask();
 					if (overlap == 0L) {
 						continue;
@@ -978,6 +1047,7 @@ final class ValuesCursor implements RowCursor {
 	int index;
 	int activeMark = -1;
 	int probePollTick;
+	NativeExpressionDomainPolicy.Input expressionInput;
 
 	ValuesCursor(ValuesRow[] rows, RowState row) {
 		this(rows, row, false);
@@ -994,11 +1064,12 @@ final class ValuesCursor implements RowCursor {
 		release();
 		while (index < rows.length) {
 			LmdbNativeProbeDeadline.poll(++probePollTick);
+			row.cancellation.poll(probePollTick);
 			ValuesRow candidate = rows[index++];
 			int mark = row.mark();
 			boolean ok = true;
 			for (int i = 0; i < candidate.slots.length; i++) {
-				if (!row.bind(candidate.slots[i], candidate.values[i])) {
+				if (!row.bindOrCheckTerm(candidate.slots[i], candidate.values[i])) {
 					ok = false;
 					break;
 				}
@@ -1019,9 +1090,20 @@ final class ValuesCursor implements RowCursor {
 	public void close() {
 		release();
 		index = rows.length;
+		if (expressionInput != null) {
+			expressionInput.close();
+		}
 		if (exactFilterRewrite && row.exactValuesMetrics != null) {
 			row.exactValuesMetrics.publish();
 		}
+	}
+
+	@Override
+	public NativeExpressionDomainPolicy.Input expressionInput() {
+		if (expressionInput == null) {
+			expressionInput = new NativeExpressionDomainPolicy.Input(rows, row);
+		}
+		return expressionInput;
 	}
 
 	void release() {

@@ -251,6 +251,27 @@ class LmdbAdjacencyArenaTest {
 	}
 
 	@Test
+	void theFinalReleaseHandsTheNativeMemoryToTheReaperInsteadOfClosingItOnTheReleasingThread() throws Exception {
+		LmdbAdjacencyArena arena = new LmdbAdjacencyArena(TEST_REGION_BYTES);
+		long ref = arena.allocateRef(16, 8);
+		MemorySegment slice = arena.slice(ref, 16);
+		LmdbAdjacencyArenaReaper.holdForTest(true);
+		try {
+			arena.close();
+			// closed to its users at once...
+			assertThat(arena.isClosed()).isTrue();
+			assertThatThrownBy(() -> arena.slice(ref, 16)).isInstanceOf(IllegalStateException.class);
+			// ...while the shared native arena, whose close handshakes every Java thread, is still open: the reaper
+			// closes it off the releasing thread, which may be the applier with committers waiting on it
+			assertThat(slice.scope().isAlive()).isTrue();
+		} finally {
+			LmdbAdjacencyArenaReaper.holdForTest(false);
+		}
+		assertThat(LmdbAdjacencyArenaReaper.awaitIdleForTest(10, TimeUnit.SECONDS)).isTrue();
+		assertThat(slice.scope().isAlive()).isFalse();
+	}
+
+	@Test
 	void ownerReferencesKeepTheArenaOpenUntilTheFinalRelease() {
 		LmdbAdjacencyArena arena = new LmdbAdjacencyArena(TEST_REGION_BYTES);
 		arena.retainOwner();

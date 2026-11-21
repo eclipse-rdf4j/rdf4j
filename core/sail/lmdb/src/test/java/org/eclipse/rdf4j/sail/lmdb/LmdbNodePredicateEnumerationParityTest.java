@@ -336,16 +336,14 @@ class LmdbNodePredicateEnumerationParityTest {
 	 * crosses the configured threshold, and it needs at least two generations to have anything to merge, so the
 	 * fold-down is requested explicitly rather than inferred from a commit count.
 	 */
+	/** Folds every live overlay generation into a new base through the applier's fold task. */
 	private void foldDown() throws IOException {
 		if (store.publishedStateForTest().overlays() == null) {
 			return;
 		}
-		if (store.publishedStateForTest().overlays().generationCount() < 2) {
-			commit(() -> add(S_ABSENT, P_A, uri(4999), 0, true));
-		}
 		store.consolidateNowForTest();
 		assertThat(store.publishedStateForTest().overlays())
-				.as("the fold-down must have absorbed every generation")
+				.as("the fold must have absorbed every generation: %s", store.publicationDiagnostics())
 				.isNull();
 	}
 

@@ -180,6 +180,54 @@ class CreateTemplateConfigTest {
 	}
 
 	@Test
+	void parseReadsReadonlyAndGroupFieldAnnotations() {
+		CreateTemplateConfig template = parse("annotated", String.join("\n",
+				"[] config:rep.id \"{%Repo Id%}\" ;",
+				"   # @workbench.field readonly=true",
+				"   config:title \"{%Title%}\" ;",
+				"   # @workbench.field group=\"Advanced options\"",
+				"   config:other \"{%Other%}\" ;",
+				"   # @workbench.field readonly=false group=\"Advanced options\"",
+				"   config:last \"{%Last%}\" ."));
+
+		assertThat(field(template, "Repo Id").isReadonly()).isTrue();
+		assertThat(field(template, "Repo Id").getGroup()).isEmpty();
+		assertThat(field(template, "Title").isReadonly()).isFalse();
+		assertThat(field(template, "Title").getGroup()).isEqualTo("Advanced options");
+		assertThat(field(template, "Other").isReadonly()).isFalse();
+		assertThat(field(template, "Other").getGroup()).isEqualTo("Advanced options");
+		assertThat(field(template, "Last").isReadonly()).isFalse();
+		assertThat(field(template, "Last").getGroup()).isEmpty();
+	}
+
+	@Test
+	void parseRejectsNonBooleanReadonly() {
+		assertThatThrownBy(() -> parse("bad", String.join("\n",
+				"[] config:rep.id \"{%Repo Id%}\" .",
+				"   # @workbench.field readonly=maybe")))
+						.isInstanceOf(IllegalArgumentException.class)
+						.hasMessageContaining("readonly");
+	}
+
+	@Test
+	void parseRejectsReadonlyCombinedWithUnset() {
+		assertThatThrownBy(() -> parse("bad", String.join("\n",
+				"[] config:rep.id \"{%Repo Id%}\" .",
+				"   # @workbench.field readonly=true unset=true")))
+						.isInstanceOf(IllegalArgumentException.class)
+						.hasMessageContaining("readonly");
+	}
+
+	@Test
+	void parseRejectsBlankGroup() {
+		assertThatThrownBy(() -> parse("bad", String.join("\n",
+				"[] config:rep.id \"{%Repo Id%}\" .",
+				"   # @workbench.field group=\"  \"")))
+						.isInstanceOf(IllegalArgumentException.class)
+						.hasMessageContaining("group");
+	}
+
+	@Test
 	void helperBranchesCoverNullNormalizationAndHiddenMetadata() {
 		CreateTemplateConfig template = parse("hidden-template", String.join("\n",
 				"# @workbench.template label=\"Hidden\" order=9 hidden=true",

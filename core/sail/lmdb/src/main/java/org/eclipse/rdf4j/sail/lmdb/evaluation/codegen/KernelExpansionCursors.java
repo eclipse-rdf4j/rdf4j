@@ -18,6 +18,7 @@ import java.util.Objects;
 import org.eclipse.rdf4j.common.annotation.Experimental;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.NativeLmdbQuerySource;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.NativeLmdbQuerySource.NativeAdjacency;
+import org.eclipse.rdf4j.sail.lmdb.evaluation.NativeLmdbQuerySource.RunView.ContextSpan;
 import org.eclipse.rdf4j.sail.lmdb.factor.BorrowedFactorBatch;
 
 /**
@@ -121,7 +122,8 @@ public final class KernelExpansionCursors {
 				if (cursor == null) {
 					KernelRuntime.checkCancelled(cancellation);
 					cursor = scanner.open(scan, -1L, -1L, -1L, -1L);
-					seen = new KernelRuntime.LongHashSet();
+					seen = new KernelRuntime.LongHashSet(16, null, null,
+							KernelRuntime.cancellationPoll(cancellation));
 					buffer = new long[KernelRuntime.SCAN_BATCH_ROWS * 4];
 				}
 				while (true) {
@@ -172,10 +174,12 @@ public final class KernelExpansionCursors {
 	@Experimental
 	public static final class Path extends Values {
 		private NativeAdjacency adjacency;
-		private KernelRuntime.LongHashSet emitted = new KernelRuntime.LongHashSet();
-		private KernelRuntime.LongHashSet queued = new KernelRuntime.LongHashSet();
+		private KernelRuntime.LongHashSet emitted;
+		private KernelRuntime.LongHashSet queued;
 		private long[] stack = new long[16];
 		private long[] contexts;
+		private final ContextSpan contextSpan = new ContextSpan();
+		private long spanStart = -1L;
 		private int top;
 		private long handle, position, end;
 		private boolean initial;
@@ -187,6 +191,9 @@ public final class KernelExpansionCursors {
 				throw new IllegalArgumentException("only p* / p+ is supported");
 			this.adjacency = Objects.requireNonNull(adjacency);
 			this.contexts = Objects.requireNonNull(contexts).clone();
+			Runnable cancellationPoll = KernelRuntime.cancellationPoll(cancellation);
+			emitted = new KernelRuntime.LongHashSet(16, null, null, cancellationPoll);
+			queued = new KernelRuntime.LongHashSet(16, null, null, cancellationPoll);
 			if (start == -1L) {
 				done = true;
 				return;
@@ -212,19 +219,28 @@ public final class KernelExpansionCursors {
 			while (true) {
 				while (position < end) {
 					poll();
-					long at = position++;
+					long at = position;
 					if (contexts.length != 0) {
-						long context = adjacency.contextAt(handle, at);
+						if (at < spanStart || at >= contextSpan.end()) {
+							adjacency.contextSpan(handle, at, contextSpan);
+							spanStart = at;
+						}
+						long context = contextSpan.hasCommonContext() ? contextSpan.commonContext()
+								: adjacency.contextInContextSpan(handle, at);
 						boolean accepted = false;
 						for (long allowed : contexts)
 							if (allowed == context) {
 								accepted = true;
 								break;
 							}
-						if (!accepted)
+						if (!accepted) {
+							position = contextSpan.hasCommonContext() ? contextSpan.end() : at + 1L;
 							continue;
+						}
 					}
-					long neighbor = adjacency.neighborAt(handle, at);
+					position = at + 1L;
+					long neighbor = contexts.length == 0 ? adjacency.neighborAt(handle, at)
+							: adjacency.neighborInContextSpan(handle, at);
 					if (queued.add(neighbor)) {
 						if (top == stack.length)
 							stack = Arrays.copyOf(stack, Math.multiplyExact(top, 2));
@@ -243,6 +259,8 @@ public final class KernelExpansionCursors {
 				long node = stack[--top];
 				handle = adjacency.find(node);
 				position = 0;
+				spanStart = -1L;
+				contextSpan.set(0L, -1L);
 				end = handle > 0L ? adjacency.size(handle) : 0L;
 			}
 		}

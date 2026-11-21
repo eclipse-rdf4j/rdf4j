@@ -380,6 +380,7 @@ test('update page initializes yasqe, applies defaults, and submits safely withou
 
     // Cmd/Ctrl+Enter submits through the form's submit handler; YASQE never posts to its own endpoint.
     assert.deepEqual(JSON.parse(JSON.stringify(instance.options.sparql)), { endpoint: '', showQueryButton: false });
+    assert.equal(instance.options.screenReaderLabel, 'SPARQL update', 'the editor names what it edits for screen readers');
     instance.options.extraKeys['Ctrl-Enter']();
     const form = harness.registerElement('form', { id: 'update-form' });
     let requested = 0;
@@ -387,6 +388,63 @@ test('update page initializes yasqe, applies defaults, and submits safely withou
     instance.options.extraKeys['Ctrl-Enter']();
     instance.options.extraKeys['Cmd-Enter']();
     assert.equal(requested, 2);
+});
+
+// YASQE draws Share and Full screen as plain divs: they become buttons a keyboard can reach and press.
+test('yasqe helper makes the editor toolbar controls keyboard buttons with names', () => {
+    const harness = createFormBrowserHarness();
+    harness.context.YASQE = createYasqeStub(harness).api;
+    harness.loadScripts(['yasqeHelper.js']);
+    const wrapper = harness.registerElement('div', { className: 'CodeMirror' });
+    const share = harness.registerElement('div', { className: 'svgImg yasqe_share' });
+    const fullscreen = harness.registerElement('div', { className: 'svgImg yasqe_fullscreenBtn' });
+    wrapper.appendChild(share);
+    wrapper.appendChild(fullscreen);
+    const editor = { getWrapperElement: () => wrapper };
+    harness.context.workbench.yasqeHelper.enableToolbarKeyboard(editor);
+    harness.context.workbench.yasqeHelper.enableToolbarKeyboard(editor);
+
+    assert.deepEqual([share, fullscreen].map(control => [control.getAttribute('role'), control.getAttribute('tabindex'),
+        control.getAttribute('aria-label')]), [['button', '0', 'Share query'], ['button', '0', 'Full screen']]);
+    let clicks = 0;
+    fullscreen.addEventListener('click', () => clicks++);
+    const enter = fullscreen.trigger('keydown', { key: 'Enter' });
+    fullscreen.trigger('keydown', { key: ' ' });
+    fullscreen.trigger('keydown', { key: 'a' });
+    assert.equal(clicks, 2, 'Enter and Space press the control once each, however often the editor was prepared');
+    assert.equal(enter.defaultPrevented, true, 'the key does not also reach the page');
+});
+
+// An empty editor says what goes in it: a quiet line where the text starts, hidden from screen readers (the editor's
+// field already has a name) and gone as soon as there is text.
+test('yasqe helper shows a hint in an empty editor until it has text', () => {
+    const harness = createFormBrowserHarness();
+    harness.context.YASQE = createYasqeStub(harness).api;
+    harness.loadScripts(['yasqeHelper.js']);
+    const wrapper = harness.registerElement('div', { className: 'CodeMirror' });
+    const gutters = harness.registerElement('div', { className: 'CodeMirror-gutters' });
+    gutters.offsetWidth = 31;
+    let value = '';
+    const handlers = {};
+    const editor = {
+        getWrapperElement: () => wrapper,
+        getGutterElement: () => gutters,
+        getValue: () => value,
+        on(name, handler) { (handlers[name] = handlers[name] || []).push(handler); }
+    };
+    harness.context.workbench.yasqeHelper.showEmptyHint(editor, 'Write a SPARQL query');
+    const hint = wrapper.querySelector('.workbench-editor-hint');
+    assert.ok(hint, 'the hint is in the editor');
+    assert.equal(hint.textContent, 'Write a SPARQL query');
+    assert.equal(hint.getAttribute('aria-hidden'), 'true');
+    assert.equal(hint.hidden, false);
+    assert.equal(hint.style.left, '35px', 'the hint starts where the first line\'s text starts, after the gutters');
+    value = 'SELECT';
+    handlers.change.forEach(handler => handler());
+    assert.equal(hint.hidden, true, 'text hides the hint');
+    value = '';
+    handlers.change.forEach(handler => handler());
+    assert.equal(hint.hidden, false, 'an editor emptied again shows it again');
 });
 
 test('yasqe helper registers namespace completer and delegates prefix helpers', () => {
@@ -415,12 +473,16 @@ test('yasqe helper registers namespace completer and delegates prefix helpers', 
     const completer = yasqe.state.registeredCompleters[0].factory(fakeEditor, 'customPrefixCompleter');
     fakeEditor.handler();
 
-    assert.deepEqual(Array.from(completer.get()), [
+    // The completer hands YASQE the given namespaces at once; the fallback namespaces follow when they arrive
+    // (workbench-fallback-namespaces.test.js).
+    const lists = [];
+    completer.get(null, (list) => lists.push(Array.from(list)));
+    assert.deepEqual(lists[0], [
         'ex <http://example.com/>',
         'foaf <http://xmlns.com/foaf/0.1/>'
     ]);
     assert.equal(completer.bulk, true);
-    assert.equal(completer.async, false);
+    assert.equal(completer.async, true);
     assert.equal(completer.autoShow, true);
     assert.equal(completer.isValidCompletionPosition(), false);
     assert.equal(completer.preProcessToken('tok'), 'editor:tok');

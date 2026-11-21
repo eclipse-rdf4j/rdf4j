@@ -29,14 +29,3 @@ for (const [name, build, before, crossings] of [['conference hub', conferenceHub
     assert.ok(metrics.edgeCrossings <= crossings, `crossings ${metrics.edgeCrossings}`);
   });
 }
-
-test('tidying a drawing also moves cards off routed arrows, without moving pinned cards', async () => {
-  const graph = conferenceHub();
-  const organized = await computeGraphLayout(graph, { mode: 'network', aspectRatio: 1.6 });
-  const pinned = graph.nodes[0].id;
-  const placed = { ...graph, nodes: graph.nodes.map((node) => ({ ...node, ...organized.positions.get(node.id), pinned: node.id === pinned })) };
-  const tidied = await computeGraphLayout(placed, { refine: true });
-  assert.deepEqual(tidied.positions.get(pinned), organized.positions.get(pinned));
-  const metrics = layoutMetrics(graph, tidied.positions, tidied.bends, tidied.routes);
-  assert.ok(metrics.routedEdgeNodeOverlaps <= layoutMetrics(graph, organized.positions, organized.bends, organized.routes).routedEdgeNodeOverlaps);
-});

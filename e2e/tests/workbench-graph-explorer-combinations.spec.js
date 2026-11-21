@@ -13,6 +13,7 @@
 // @ts-check
 const { test, expect } = require('@playwright/test');
 const {
+    chooseGraphView,
     deleteRepository,
     memoryRepositoryConfiguration,
     repositoryPageUrl,
@@ -93,7 +94,8 @@ function storedGraph(page, suffix = '') {
         const appRepositoryId = app?.getAttribute('data-workbench-repository-id');
         if (!app || !serverIdentity || appRepositoryId !== repositoryId) return resolve('');
         const basePath = (app.getAttribute('data-workbench-base-path') || '').replace(/\/+$/, '');
-        const scope = JSON.stringify(['repository-v2', basePath, serverIdentity, repositoryId]);
+        const scope = JSON.stringify(['repository-v3', basePath, serverIdentity.split(':').slice(0, 2).join(':'),
+            app.getAttribute('data-workbench-server-user') || '', repositoryId]);
         const request = indexedDB.open('graph-field-workspaces');
         request.onupgradeneeded = () => {
             if (!request.result.objectStoreNames.contains('workspaces')) request.result.createObjectStore('workspaces');
@@ -145,7 +147,8 @@ test('a stored graph this version cannot read is kept, not saved over when the p
         const appRepositoryId = app?.getAttribute('data-workbench-repository-id');
         if (!app || !serverIdentity || appRepositoryId !== repositoryId) throw new Error('Workbench server identity is unavailable');
         const basePath = (app.getAttribute('data-workbench-base-path') || '').replace(/\/+$/, '');
-        const scope = JSON.stringify(['repository-v2', basePath, serverIdentity, repositoryId]);
+        const scope = JSON.stringify(['repository-v3', basePath, serverIdentity.split(':').slice(0, 2).join(':'),
+            app.getAttribute('data-workbench-server-user') || '', repositoryId]);
         const request = indexedDB.open('graph-field-workspaces');
         request.onupgradeneeded = () => {
             if (!request.result.objectStoreNames.contains('workspaces')) request.result.createObjectStore('workspaces');
@@ -220,7 +223,7 @@ test('hiding, pinning, Values and added results leave the arranged nodes where t
 
     const find = explorer.getByRole('combobox', { name: /Find a node/ });
     await find.fill('Dave');
-    await explorer.getByRole('option', { name: /Search the repository/ }).click();
+    await explorer.getByRole('button', { name: 'Search entire repository', exact: true }).click();
     await expect(node(page, 'Dave')).toBeAttached({ timeout: 30000 });
     await page.waitForTimeout(2000);
     expect(moved(before, await nodePositions(page))).toEqual([]);
@@ -307,7 +310,7 @@ test('an image exported from another view has the same colours as one exported f
         return Buffer.concat(chunks).toString().replace(/<path d="[^"]*"/g, '');
     };
     const fromGraph = await download();
-    await explorer.getByRole('tab', { name: 'Triples' }).click();
+    await chooseGraphView(explorer, 'table');
     const fromTable = await download();
     expect(fromTable).toBe(fromGraph);
     expect(fromTable).not.toContain('#888');
@@ -344,7 +347,7 @@ test('RDF 1.2 and blank nodes: badges count only drawable links, blank nodes hav
         await expect(node(page, 'Dave').locator('.node-more')).toHaveCount(0);
         await expect(node(page, 'address of Alice')).toBeAttached();
 
-        await explorer.getByRole('tab', { name: 'Triples' }).click();
+        await chooseGraphView(explorer, 'table');
         const ageRow = explorer.locator('.triple-table tr', { hasText: 'age' }).first();
         await expect(ageRow.locator('td').nth(2).locator('code')).toHaveText('xsd:integer');
         await expect(explorer.locator('.triple-table')).not.toContainText('__rdf_literal__');
@@ -424,13 +427,13 @@ test('RDF 1.2: a reifier and a reference are drawn to their statement, listed in
 test('with nodes selected every data view shows what concerns them; Triples lists statements about statements',
     async ({ page }) => {
         const explorer = await loadAll(page);
-        await explorer.getByRole('tab', { name: 'Triples' }).click();
+        await chooseGraphView(explorer, 'table');
         await expect(explorer.locator('.triple-table')).toContainText('<<( Alice knows Bob )>>');
         await expect(explorer.locator('.triple-table')).toContainText('Bergen');
 
-        await explorer.getByRole('tab', { name: 'Graph' }).click();
+        await chooseGraphView(explorer, 'graph');
         await node(page, 'Oslo').click({ modifiers: ['Shift'] });
-        await explorer.getByRole('tab', { name: 'Triples' }).click();
+        await chooseGraphView(explorer, 'table');
         await expect(explorer.locator('.data-view-title small')).toHaveText('1 selected nodes');
         await expect(explorer.locator('.triple-table')).toContainText('Oslo');
         await expect(explorer.locator('.triple-table')).not.toContainText('Bergen');

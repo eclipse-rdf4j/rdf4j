@@ -44,7 +44,7 @@ current class inventory; `src/test/frontend/graph-explorer/css-inventory.test.mj
 | --- | --- |
 | Page title | The Workbench page header; on a full-bleed page (`workbench-page-surface--full-bleed`) it is one compact row (32px icon tile, 20px title, description on the same line, hidden below 600px) — rules in `workbench-refresh.css`. |
 | Shell (`#graph-explorer-app.app-shell`) | A Workbench card: surface, soft rule, radius, shadow, on the canvas-coloured island (16px bottom gutter). |
-| Toolbar (`.graph-toolbar`) | One row: `Query editor` (`workbench-action--secondary`), the view tabs, history (`--ghost --icon`), Values / Labels / Filters (joined `--secondary` toggles), Layout and Tools menus, full screen (`--ghost --icon`). Icons come from `icons.tsx` (Workbench paths where the Workbench has the icon). |
+| Toolbar (`.graph-toolbar`) | One row at every width: `Query editor` (`workbench-action--secondary`), the View menu (named after the current view), history (`--ghost --icon`), Values / Labels / Filters (joined `--secondary` toggles), Layout and Tools menus, full screen (`--ghost --icon`). Icons come from `icons.tsx` (Workbench paths where the Workbench has the icon). |
 | View tabs (`.primary-view-tabs`, `.view-menu`) | `workbench-segmented`: joined segments; the selected one has the selected fill and the 3px primary underline. |
 | Pressed toggles, open menus | The same selected-segment look (`--selected` fill, 3px primary underline). |
 | Menus (`.toolbar-menu-popover`, `.view-menu-popover`) | `workbench-popover` with `workbench-popover__option`-style rows (title + muted description, selected fill on hover); destructive rows in danger colour behind a rule. |
@@ -81,7 +81,7 @@ containers, so the explorer reacts to its own width beside the Workbench sidebar
 
 - graph panel ≤ 1040px: toolbar buttons show only their icons (names stay in `aria-label` and `title`);
 - graph panel ≤ 820px: the menu chevrons and the layout state in the status bar are hidden, side panels overlay the canvas;
-- graph panel ≤ 640px: the view tabs take their own row, menus open as bottom sheets, the status bar shows only the status;
+- graph panel ≤ 640px: menus open as bottom sheets; once the icons no longer fit, the compact toolbar moves history, Values and Labels into Tools; the status bar shows only the status;
 - island ≤ 900px: the query drawer overlays the graph; island ≤ 640px: node actions open as a bottom sheet.
 
 Touch devices and windows ≤ 900px get the Workbench's 44px control height. `prefers-reduced-motion` stays a media query.

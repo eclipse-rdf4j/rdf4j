@@ -17,12 +17,15 @@ import {
   type LargeGraphProps,
 } from "./graph-canvas-controller.ts";
 import { selectionKeys } from "./graph-selection.ts";
+import { largeGraphTooltip, tooltipPlacement } from "./large-graph-tooltip.ts";
 import { ARROW_KEYS, nodeInDirection } from "./graph-keyboard.ts";
 export function LargeGraphCanvas(props: LargeGraphProps) {
   const canvas = useRef<HTMLCanvasElement>(null),
     overlay = useRef<HTMLCanvasElement>(null),
     view = useRef<CanvasGraph | null>(null),
-    latest = useRef(props);
+    latest = useRef(props),
+    stage = useRef<HTMLDivElement>(null),
+    tooltip = useRef<HTMLDivElement>(null);
   useLayoutEffect(() => {
     latest.current = props;
   });
@@ -32,6 +35,27 @@ export function LargeGraphCanvas(props: LargeGraphProps) {
       overlay.current!,
       () => latest.current,
     );
+    // The tooltip is moved with the DOM, not React state: a pointer move must not render the graph's component.
+    view.current.onHover = (node, at) => {
+      const box = tooltip.current;
+      const area = stage.current;
+      if (!box || !area) return;
+      if (!node) {
+        box.hidden = true;
+        return;
+      }
+      const { title, detail } = largeGraphTooltip(node);
+      const [titleLine, detailLine] = [box.firstElementChild, box.lastElementChild];
+      if (titleLine && titleLine.textContent !== title) titleLine.textContent = title;
+      if (detailLine && detailLine !== titleLine) {
+        if (detailLine.textContent !== detail) detailLine.textContent = detail;
+        (detailLine as HTMLElement).hidden = !detail;
+      }
+      box.hidden = false;
+      const place = tooltipPlacement(at, area.getBoundingClientRect(), { width: box.offsetWidth, height: box.offsetHeight });
+      box.style.left = `${place.left}px`;
+      box.style.top = `${place.top}px`;
+    };
     return () => {
       view.current?.dispose();
       view.current = null;
@@ -60,14 +84,14 @@ export function LargeGraphCanvas(props: LargeGraphProps) {
   });
   const focused = props.graph.nodes.find((n) => n.id === props.focused);
   return (
-    <div className="large-graph-stage">
+    <div className="large-graph-stage" ref={stage}>
       <canvas ref={canvas} className="large-graph-base" aria-hidden="true" />
       <canvas
         ref={overlay}
         className="large-graph-interactive"
         tabIndex={0}
         role="img"
-        aria-label={`Interactive RDF graph with ${props.graph.nodes.length} nodes and ${props.graph.edges.length} edges. Click a node or its label to show its details, double-click it to load its neighbours. Drag to pan or move a node; double-click a node and keep dragging to move its leaf neighbours with it. ${selectionKeys(!props.zoomOnScroll)}click or drag to select nodes. ${props.zoomOnScroll ? "Scroll" : "Pinch"} to zoom. Right-click or long-press a node for actions. Arrow keys move from the shown node (or the middle of the view) to the next node in that direction; Enter shows its details again and the menu key or Shift+F10 opens its actions; Delete hides it. Escape closes the details, then clears the selection.`}
+        aria-label={`Interactive RDF graph with ${props.graph.nodes.length} nodes and ${props.graph.edges.length} edges. Click a node or its label to show its details, double-click it to load its neighbours. Drag to pan or move a node; double-click a node and keep dragging to move its leaf neighbours with it. ${selectionKeys(!props.zoomOnScroll)}click or drag to select nodes. ${props.zoomOnScroll ? "Scroll" : "Pinch"} to zoom. Right-click or long-press a node for actions. Arrow keys move from the shown node (or the middle of the view) to the next node in that direction; Enter shows its details again and the menu key or Shift+F10 opens its actions; Delete hides it. Escape closes the details, then clears the selection; ${props.zoomOnScroll ? "Ctrl+A" : "⌘A"} selects all drawn nodes.`}
         onPointerDown={(e) => {
           // A secondary press, or a Ctrl-press where that is the context-menu click, is the menu's.
           if (e.button !== 0 || (!props.zoomOnScroll && e.ctrlKey && !e.shiftKey && !e.metaKey && e.pointerType === "mouse")) return;
@@ -76,6 +100,7 @@ export function LargeGraphCanvas(props: LargeGraphProps) {
           view.current?.downAt(contact(e));
         }}
         onPointerMove={(e) => view.current?.moveAt(contact(e))}
+        onPointerLeave={() => tooltip.current && (tooltip.current.hidden = true)}
         onPointerUp={(e) => view.current?.upAt(contact(e))}
         onPointerCancel={(e) => view.current?.upAt(contact(e), true)}
         onLostPointerCapture={(e) => view.current?.upAt(contact(e), true)}
@@ -106,6 +131,10 @@ export function LargeGraphCanvas(props: LargeGraphProps) {
           }
         }}
       />
+      <div className="large-graph-tooltip" ref={tooltip} role="presentation" hidden>
+        <strong />
+        <code />
+      </div>
       <span className="large-graph-hint" aria-busy={props.arranging || undefined}>
         {largeGraphHint(props.graph.nodes.length, Boolean(props.arranging))}
       </span>

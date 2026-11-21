@@ -21,6 +21,7 @@ import java.util.TreeSet;
 
 import org.eclipse.rdf4j.common.annotation.Experimental;
 import org.eclipse.rdf4j.model.Value;
+import org.eclipse.rdf4j.model.vocabulary.FN;
 import org.eclipse.rdf4j.query.algebra.And;
 import org.eclipse.rdf4j.query.algebra.BNodeGenerator;
 import org.eclipse.rdf4j.query.algebra.Bound;
@@ -259,6 +260,16 @@ final class NativeScalarPlan {
 	/** Returns an owned copy so callers cannot mutate the expression retained by the plan. */
 	ValueExpr expression() {
 		return expression.clone();
+	}
+
+	/** The only closed scalar transfer currently admitted from a physical lexical-summary lane. */
+	int lexicalLengthInputSlot() {
+		if (expression instanceof FunctionCall function && FN.STRING_LENGTH.stringValue().equals(function.getURI())
+				&& function.getArgs().size() == 1 && function.getArgs().getFirst() instanceof Var variable
+				&& !variable.hasValue() && effect == EffectClass.PURE) {
+			return slotMapping.getOrDefault(variable.getName(), -1);
+		}
+		return -1;
 	}
 
 	/**

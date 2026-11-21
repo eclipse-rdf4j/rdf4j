@@ -164,6 +164,11 @@ class ValueStoreCheckpointAtomicityTest {
 
 		ValueStore reopened = new ValueStore(valuesDir, config);
 		try {
+			// Standalone dictionaries have no async Sail worker; service their finite durable backlog explicitly.
+			reopened.completeStoreInitialization(unusedCandidatesWithoutStatementReferences -> {
+				// This standalone dictionary has no external statement references.
+			});
+			reopened.reclaimPersistedUnusedIdsBatch(4096);
 			assertEquals(seedEquivalent, reopened.getValue(seedId), "the seed must survive a reopen");
 			assertEquals(companionEquivalent, reopened.getValue(companionId), "the companion must survive a reopen");
 			assertEquals(datatype, reopened.getValue(datatypeId), "the datatype must survive a reopen");
@@ -223,6 +228,11 @@ class ValueStoreCheckpointAtomicityTest {
 
 		ValueStore reopened = new ValueStore(valuesDir, config);
 		try {
+			// Standalone dictionaries have no async Sail worker; service their finite durable backlog explicitly.
+			reopened.completeStoreInitialization(unusedCandidatesWithoutStatementReferences -> {
+				// This standalone dictionary has no external statement references.
+			});
+			reopened.reclaimPersistedUnusedIdsBatch(4096);
 			assertEquals(seedEquivalent, reopened.getValue(seedId), "the seed must survive a reopen");
 			assertEquals(companionEquivalent, reopened.getValue(companionId), "the companion must survive a reopen");
 			assertEquals(datatype, reopened.getValue(datatypeId), "the datatype must survive a reopen");
@@ -333,6 +343,11 @@ class ValueStoreCheckpointAtomicityTest {
 
 		ValueStore reopened = new ValueStore(valuesDir, config);
 		try {
+			// Standalone dictionaries have no async Sail worker; service their finite durable backlog explicitly.
+			reopened.completeStoreInitialization(unusedCandidatesWithoutStatementReferences -> {
+				// This standalone dictionary has no external statement references.
+			});
+			reopened.reclaimPersistedUnusedIdsBatch(4096);
 			assertNull(reopened.getValue(outerAId), "the collected outer term must be gone after reopen eviction");
 			assertEquals(expectedOuterB, reopened.getValue(outerBId),
 					"the remaining outer term must survive a reopen");
@@ -404,6 +419,11 @@ class ValueStoreCheckpointAtomicityTest {
 
 		ValueStore reopened = new ValueStore(valuesDir, config);
 		try {
+			// Standalone dictionaries have no async Sail worker; service their finite durable backlog explicitly.
+			reopened.completeStoreInitialization(unusedCandidatesWithoutStatementReferences -> {
+				// This standalone dictionary has no external statement references.
+			});
+			reopened.reclaimPersistedUnusedIdsBatch(4096);
 			assertNull(reopened.getValue(firstId), "the collected historical literal must be absent after reopen");
 			assertEquals(secondEquivalent, reopened.getValue(secondId),
 					"repair must preserve the other literal sharing the datatype");
@@ -464,6 +484,11 @@ class ValueStoreCheckpointAtomicityTest {
 
 		ValueStore afterEviction = new ValueStore(valuesDir, config);
 		try {
+			// Standalone dictionaries have no async Sail worker; service their finite durable backlog explicitly.
+			afterEviction.completeStoreInitialization(unusedCandidatesWithoutStatementReferences -> {
+				// This standalone dictionary has no external statement references.
+			});
+			afterEviction.reclaimPersistedUnusedIdsBatch(4096);
 			assertNull(afterEviction.getValue(firstId), "the collected first literal must be absent after reopen");
 			assertEquals(second, afterEviction.getValue(secondId),
 					"reconciliation must preserve the other literal");
@@ -553,6 +578,11 @@ class ValueStoreCheckpointAtomicityTest {
 
 		ValueStore afterEviction = new ValueStore(valuesDir, config);
 		try {
+			// Standalone dictionaries have no async Sail worker; service their finite durable backlog explicitly.
+			afterEviction.completeStoreInitialization(unusedCandidatesWithoutStatementReferences -> {
+				// This standalone dictionary has no external statement references.
+			});
+			afterEviction.reclaimPersistedUnusedIdsBatch(4096);
 			assertNull(afterEviction.getValue(firstId), "the selected batched owner must be absent after reopen");
 			assertEquals(datatype, afterEviction.getValue(datatypeId), "the shared datatype must survive reopen");
 			assertEquals(expectedInner, afterEviction.getValue(innerId), "the nested term must survive reopen");
@@ -665,6 +695,11 @@ class ValueStoreCheckpointAtomicityTest {
 
 		ValueStore reopened = new ValueStore(valuesDir, config);
 		try {
+			// Standalone dictionaries have no async Sail worker; service their finite durable backlog explicitly.
+			reopened.completeStoreInitialization(unusedCandidatesWithoutStatementReferences -> {
+				// This standalone dictionary has no external statement references.
+			});
+			reopened.reclaimPersistedUnusedIdsBatch(4096);
 			assertNull(reopened.getValue(firstId), "the first live literal must be collected");
 			assertNull(reopened.getValue(secondId), "the second live literal must be collected");
 			assertNull(reopened.getValue(datatypeId),

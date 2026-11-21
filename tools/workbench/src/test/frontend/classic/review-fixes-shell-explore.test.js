@@ -8,6 +8,7 @@ const { installDetailDisclosureTemplateRuntime } = require('./workbench-detail-d
 const { createExploreBrowserHarness } = require('./explore-browser-harness.js');
 const { createFormBrowserHarness } = require('./form-browser-harness.js');
 const { renderPageResultTables } = require('./page-result-table-harness.js');
+const { createExploreModel } = require('./explore-section-fixtures.js');
 
 const scripts = require('./workbench-scripts.js').compiledScriptsDir();
 
@@ -51,7 +52,7 @@ test('A10: a "+" in an explored resource stays a "+"', () => {
         href: 'http://localhost:8080/rdf4j-workbench/repositories/test/explore?resource=' + encodeURIComponent(resource)
     });
     harness.loadExploreScript();
-    harness.workbench.explore.mount(harness.document.body);
+    harness.mountExplore();
     assert.equal(harness.document.getElementById('resource').value, resource);
 });
 
@@ -60,7 +61,7 @@ test('A10: a "+" written as a space in the query string is still a space; "=" in
         href: 'http://localhost:8080/rdf4j-workbench/repositories/test/explore?resource=%22a+b=c%22'
     });
     harness.loadExploreScript();
-    harness.workbench.explore.mount(harness.document.body);
+    harness.mountExplore();
     assert.equal(harness.document.getElementById('resource').value, '"a b=c"');
 });
 
@@ -82,7 +83,7 @@ test('A10: Create keeps a "+" in the id and title from its URL', () => {
     assert.equal(title.value, 'C++ store');
 });
 
-test('A11: a large Explore page shows its terms like the grouped view (IRIs, literals, datatypes, default graph)', async () => {
+test('A11: a large Explore role section shows typed terms and default graphs in the shared table', async () => {
     const wb = loadViews();
     const rows = [];
     for (let index = 0; index < 90; index++) {
@@ -91,30 +92,44 @@ test('A11: a large Explore page shows its terms like the grouped view (IRIs, lit
                 datatype: 'http://www.w3.org/2001/XMLSchema#date' },
             index % 2 ? iri('urn:g') : null]);
     }
-    const model = { viewId: 'explore', vars, rows, rowCount: rows.length, metadata: { 'explore-resource': '<urn:p>' } };
-    // Both are the shared result table (.agent/execplans/workbench-shared-result-table.md).
+    const model = createExploreModel({
+        metadata: { resource: '<urn:s0>', 'explore-resource': '<urn:s0>' },
+        sections: { outgoing: { rows, totalRows: rows.length, count: String(rows.length) } }
+    });
     const page = await quiet(() => renderPageResultTables(wb, model, ctx));
-    const table = page.markup('explore-all');
-    assert.deepEqual(page.headers('explore-all'), ['Subject', 'Predicate', 'Object', 'Graph']);
+    const table = page.markup('explore-outgoing');
+    assert.deepEqual(page.headers('explore-outgoing'), ['Predicate', 'Object', 'Graph']);
     assert.match(table, /class="rdf-datatype"/, 'datatypes are tagged so "Show datatypes" applies');
     assert.match(table, /Default graph/, 'a statement in the default graph says so');
     assert.match(table, /class="resource"/, 'cells are formatted like query results');
 });
 
-test('A12: Explore says a page may be truncated when it is as long as the limit in use', () => {
+test('A12: Explore shows local section navigation for cached rows without server paging', async () => {
     const wb = loadViews();
     const rows = Array.from({ length: 100 }, (_, index) => [iri('urn:s'), iri('urn:p' + index), iri('urn:o'), null]);
-    const model = { viewId: 'explore', vars, rows, rowCount: 100,
-        metadata: { 'explore-resource': '<urn:s>', 'total-result-count': 250 } };
-    assert.match(flat(quiet(() => wb.views.pageTemplate(model, ctx, runtime()))), /id="result-limited"/);
+    const model = createExploreModel({
+        metadata: { resource: '<urn:s>', 'explore-resource': '<urn:s>', 'total-result-count': '999' },
+        sections: { outgoing: { rows, totalRows: 250, start: 0, count: '250' } }
+    });
+    const page = await renderPageResultTables(wb, model, ctx);
+    const markup = flat(page.template);
+    assert.match(markup, /Showing 1–100\s+of 250 cached/);
+    assert.match(markup, />Next</);
+    assert.doesNotMatch(markup, /id="result-limited"/);
+    assert.doesNotMatch(markup, />All</, 'Explore does not expose an unbounded server page');
 });
 
-test('A12: an Explore page shorter than the limit in use is not called truncated', () => {
+test('A12: a complete cached section has no extra local page controls', async () => {
     const wb = loadViews('?resource=%3Curn%3As%3E&limit_explore=200');
     const rows = Array.from({ length: 100 }, (_, index) => [iri('urn:s'), iri('urn:p' + index), iri('urn:o'), null]);
-    const model = { viewId: 'explore', vars, rows, rowCount: 100,
-        metadata: { 'explore-resource': '<urn:s>', 'total-result-count': 100 } };
-    assert.doesNotMatch(flat(quiet(() => wb.views.pageTemplate(model, ctx, runtime()))), /id="result-limited"/);
+    const model = createExploreModel({
+        metadata: { resource: '<urn:s>', 'explore-resource': '<urn:s>', 'total-result-count': '100' },
+        sections: { outgoing: { rows, totalRows: 100, count: '100' } }
+    });
+    const page = await renderPageResultTables(wb, model, ctx);
+    const markup = flat(page.template);
+    assert.doesNotMatch(markup, /workbench-window-controls/);
+    assert.doesNotMatch(markup, /id="result-limited"/);
 });
 
 test('A27: a rejected Explore shows its error and the resource field, without a result table or paging', () => {

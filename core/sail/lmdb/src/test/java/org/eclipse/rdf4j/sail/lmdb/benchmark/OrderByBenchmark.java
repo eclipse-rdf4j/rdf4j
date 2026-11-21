@@ -127,24 +127,34 @@ public class OrderByBenchmark {
 
 		@Setup(Level.Trial)
 		public void setUp() {
-			validateParameters();
-			captureProperties();
-			configure();
-			dataDir = Files.newTemporaryFolder();
-			repository = new SailRepository(new LmdbStore(dataDir,
-					new LmdbStoreConfig("spoc,posc,ospc").setNativeEvaluationEnabled(true)));
-			loadData();
-			queries = new EnumMap<>(Workload.class);
-			for (Workload workload : Workload.values()) {
-				queries.put(workload, workload.query(topK));
-			}
-			expectedDigests = expectedDigests(inputRows, topK);
-			evidence = new EnumMap<>(Workload.class);
-			for (Workload workload : Workload.values()) {
-				verifyDigest(workload, runWorkload(workload));
-				WorkloadEvidence observed = captureEvidence(workload);
-				validateEvidence(workload, observed);
-				evidence.put(workload, observed);
+			try {
+				validateParameters();
+				captureProperties();
+				configure();
+				dataDir = Files.newTemporaryFolder();
+				repository = new SailRepository(new LmdbStore(dataDir,
+						new LmdbStoreConfig("spoc,posc,ospc").setNativeEvaluationEnabled(true)));
+				loadData();
+				queries = new EnumMap<>(Workload.class);
+				for (Workload workload : Workload.values()) {
+					queries.put(workload, workload.query(topK));
+				}
+				expectedDigests = expectedDigests(inputRows, topK);
+				evidence = new EnumMap<>(Workload.class);
+				for (Workload workload : Workload.values()) {
+					verifyDigest(workload, runWorkload(workload));
+					WorkloadEvidence observed = captureEvidence(workload);
+					validateEvidence(workload, observed);
+					evidence.put(workload, observed);
+				}
+
+			} catch (Exception | Error failure) {
+				try {
+					tearDown();
+				} catch (Exception | Error cleanupFailure) {
+					failure.addSuppressed(cleanupFailure);
+				}
+				throw failure;
 			}
 		}
 

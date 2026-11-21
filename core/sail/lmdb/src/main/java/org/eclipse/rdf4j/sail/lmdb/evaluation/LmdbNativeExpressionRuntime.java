@@ -23,6 +23,7 @@ import org.eclipse.rdf4j.model.base.CoreDatatype;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.query.algebra.Compare;
 import org.eclipse.rdf4j.query.algebra.MathExpr;
+import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.algebra.evaluation.ValueExprEvaluationException;
 import org.eclipse.rdf4j.query.algebra.evaluation.util.QueryEvaluationUtil;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.codegen.KernelTermKindProof;
@@ -35,6 +36,11 @@ interface LmdbNativeSlotResolver {
 @Experimental
 interface LmdbNativeSlotReader {
 	long id(int slot);
+
+	/** Internal physical lane; ordinary readers carry RDF term IDs only. */
+	default NativeResultCell summaryCell(int slot) {
+		return null;
+	}
 
 	default int positionMask(int slot) {
 		return 0;
@@ -78,6 +84,23 @@ interface LmdbNativeSlotReader {
 	 * through it; such expressions only compile in positions whose readers supply the scope (computed BIND copies).
 	 */
 	default SyntheticValueSource evaluationScope() {
+		return null;
+	}
+
+	/** Optional exact dependency-result domain owned by this reader's query/worker/attempt. */
+	default NativeExpressionDomain.Scope expressionDomains() {
+		return null;
+	}
+
+	default NativeCancellationToken expressionCancellation() {
+		return null;
+	}
+
+	default NativeExpressionDomainPolicy.Decision expressionDomainDecision(Object carrier, NativeScalarPlan plan) {
+		return NativeExpressionDomainPolicy.Decision.UNCACHED;
+	}
+
+	default TupleExpr expressionTelemetryTarget() {
 		return null;
 	}
 }
@@ -138,6 +161,11 @@ final class LmdbNativeCompiledBoolean implements NativeBooleanFilter {
 		return scalarPlan;
 	}
 
+	@Override
+	public NativePredicateCapabilities capabilities() {
+		return NativePredicateCapabilities.scalar(scalarPlan);
+	}
+
 	boolean workerBindable() {
 		return scalarPlan != null && scalarPlan.workerBindable();
 	}
@@ -149,7 +177,7 @@ final class LmdbNativeCompiledBoolean implements NativeBooleanFilter {
 
 	@Override
 	public int selectBatch(NativeBatch batch, int[] sel, int n, RowState scratch) {
-		BatchSlotReader reader = new BatchSlotReader(batch, scratch.termAuthority(), scratch.layout);
+		BatchSlotReader reader = new BatchSlotReader(batch, scratch);
 		int accepted = 0;
 		for (int i = 0; i < n; i++) {
 			int physicalRow = sel[i];
@@ -172,7 +200,7 @@ final class LmdbNativeCompiledBoolean implements NativeBooleanFilter {
 	}
 
 	boolean accept(LmdbNativeSlotReader row) {
-		return evaluator.eval(row) == LmdbNativeTruth.TRUE;
+		return NativeExpressionDomain.truth(row, this, scalarPlan, evaluator) == LmdbNativeTruth.TRUE;
 	}
 
 	@Override
@@ -200,12 +228,14 @@ final class LmdbNativeCompiledBoolean implements NativeBooleanFilter {
 		private final NativeBatch batch;
 		private final NativeTermAuthority termAuthority;
 		private final NativeSlotLayout layout;
+		private final RowState owner;
 		private int physicalRow;
 
-		private BatchSlotReader(NativeBatch batch, NativeTermAuthority termAuthority, NativeSlotLayout layout) {
+		private BatchSlotReader(NativeBatch batch, RowState owner) {
 			this.batch = batch;
-			this.termAuthority = termAuthority;
-			this.layout = layout;
+			this.termAuthority = owner.termAuthority();
+			this.layout = owner.layout;
+			this.owner = owner;
 		}
 
 		@Override
@@ -221,6 +251,34 @@ final class LmdbNativeCompiledBoolean implements NativeBooleanFilter {
 		@Override
 		public NativeTermAuthority termAuthority() {
 			return termAuthority;
+		}
+
+		@Override
+		public SyntheticValueSource evaluationScope() {
+			return owner.evaluationScope();
+		}
+
+		@Override
+		public NativeExpressionDomain.Scope expressionDomains() {
+			return owner.expressionDomains();
+		}
+
+		@Override
+		public NativeCancellationToken expressionCancellation() {
+			return owner.cancellation;
+		}
+
+		@Override
+		public NativeExpressionDomainPolicy.Decision expressionDomainDecision(Object carrier, NativeScalarPlan plan) {
+			// A batch selection vector need not preserve its producer's order. An explicitly selected hash
+			// alternative remains valid because its complete tuple keys do not rely on encounter order.
+			return owner.hashedExpressionDomains ? NativeExpressionDomainPolicy.Decision.HASHED
+					: NativeExpressionDomainPolicy.Decision.UNCACHED;
+		}
+
+		@Override
+		public TupleExpr expressionTelemetryTarget() {
+			return owner.telemetryTarget;
 		}
 	}
 }
@@ -262,11 +320,11 @@ final class LmdbNativeCompiledInlineId {
 	}
 
 	long id(RowState row) {
-		return evaluator.eval(row);
+		return id((LmdbNativeSlotReader) row);
 	}
 
 	long id(LmdbNativeSlotReader row) {
-		return evaluator.eval(row);
+		return NativeExpressionDomain.id(row, this, scalarPlan, evaluator);
 	}
 
 	LmdbNativeCompiledInlineId bindForWorker(NativeScalarPlan.WorkerContext context) {
@@ -314,6 +372,10 @@ final class LmdbNativeCompiledValue {
 
 	NativeScalarPlan scalarPlan() {
 		return scalarPlan;
+	}
+
+	LmdbNativeValueCodec.DecodedValue value(LmdbNativeSlotReader row) {
+		return NativeExpressionDomain.value(row, this, scalarPlan, evaluator);
 	}
 
 	LmdbNativeCompiledValue bindForWorker(NativeScalarPlan.WorkerContext context) {

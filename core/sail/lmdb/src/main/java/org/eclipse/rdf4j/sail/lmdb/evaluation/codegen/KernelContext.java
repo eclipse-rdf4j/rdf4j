@@ -70,11 +70,14 @@ public final class KernelContext {
 	 */
 	public FragmentBinding[] fragmentBindings = NO_FRAGMENT_BINDINGS;
 	/**
-	 * Cooperative cancellation for deadline-bounded probe executions, or {@code null} for a normal run — the generated
-	 * poll sites are data-driven off this field, so probe and normal runs share identical generated source and one
-	 * kernel-cache entry.
+	 * Cooperative query cancellation, optionally combined with a private probe deadline. Native bindings supply the
+	 * query hook for ordinary execution too; custom contexts may leave it null. Data-driven poll sites let probe and
+	 * normal executions share identical generated source and one kernel-cache entry.
 	 */
 	public KernelCancellation cancellation;
+
+	/** Preflight reservation for the single private serial hash build, including any subsequent growth. */
+	public KernelRuntime.HashBuildMemory hashBuildMemory;
 
 	/** Root-shared query ledger. The kernel closes only its reservations, never this shared ledger. */
 	public org.eclipse.rdf4j.sail.lmdb.LmdbQueryMemoryManager.QueryLedger memoryLedger;
@@ -217,7 +220,7 @@ public final class KernelContext {
 		return this;
 	}
 
-	/** Binds probe-deadline cancellation without widening the constructor surface; null clears it (normal run). */
+	/** Binds query cancellation and optional private probe deadlines; null clears the optional cancellation hook. */
 	public KernelContext withCancellation(KernelCancellation cancellation) {
 		this.cancellation = cancellation;
 		return this;

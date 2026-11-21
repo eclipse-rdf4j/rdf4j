@@ -20,8 +20,14 @@ import java.io.IOException;
 import java.time.Duration;
 import java.util.concurrent.TimeUnit;
 
+import org.eclipse.rdf4j.sail.base.SailClosable;
+import org.eclipse.rdf4j.sail.lmdb.config.LmdbStoreConfig;
+
 /** Explicitly drives bounded publications in tests whose contract requires completing their entire finite backlog. */
 final class LmdbGcTestMaintenance {
+	// The hard-capacity check is independent of the soft growth threshold.
+	private static final MapGrowthPolicy CAPACITY_POLICY = new MapGrowthPolicy(LmdbStoreConfig.MAP_GROWTH_THRESHOLD);
+
 	private LmdbGcTestMaintenance() {
 	}
 
@@ -73,6 +79,20 @@ final class LmdbGcTestMaintenance {
 
 	/** Runs one explicit bounded physical-reclamation batch for fixtures that require reusable IDs. */
 	static int reclaimUnusedValues(LmdbStore store, int maxVisitedRecords) throws IOException {
-		return store.getBackingStore().valueStore().reclaimPersistedUnusedIdsBatch(maxVisitedRecords);
+		// An empty async hint queue does not exclude an idle maintenance writer. Use the owning Sail's
+		// publication admission, just like normal maintenance, before opening an independent native writer.
+		try (SailClosable publication = store.getBackingStore().getExplicitSailSource().beginPublication()) {
+			ValueStore values = store.getBackingStore().valueStore();
+			int batch = maxVisitedRecords;
+			while (batch > 1) {
+				long requiredBytes = values.estimatePersistedUnusedBatchWriteBytes(batch);
+				if (requiredBytes == 0L || !CAPACITY_POLICY.hardCapacityRequired(values.mapSizeBytes(),
+						values.occupiedBytes(), requiredBytes)) {
+					break;
+				}
+				batch /= 2;
+			}
+			return values.reclaimPersistedUnusedIdsBatch(batch);
+		}
 	}
 }

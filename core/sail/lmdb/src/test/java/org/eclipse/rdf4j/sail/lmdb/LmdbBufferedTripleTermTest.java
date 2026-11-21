@@ -138,9 +138,10 @@ class LmdbBufferedTripleTermTest {
 		SailRepository repository = new SailRepository(buffering);
 		repository.init();
 		LmdbGcTestMaintenance.awaitTrustedReclamationSetup(store);
+		assertTrue(store.getBackingStore().asyncValueCleanupCoordinator().awaitEmpty(10, TimeUnit.SECONDS));
 		LmdbGcTestMaintenance.drainRetirements(store.getBackingStore());
-		assertTrue(LmdbGcTestMaintenance.reclaimUnusedValues(store, 4096) > 0,
-				"the reopened fixture must explicitly reclaim its finite released cohort");
+		// The worker may already have reclaimed this finite cohort; the free-pool assertion below is the oracle.
+		LmdbGcTestMaintenance.reclaimUnusedValues(store, 4096);
 		// Reopening and explicit bounded maintenance release the old cohort before any new reader owns its dictionary
 		// epoch.
 		long initialFree = entries(store, "free_ids");

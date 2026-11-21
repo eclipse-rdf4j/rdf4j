@@ -28,12 +28,21 @@ final class LmdbNativePackedAlgebraAggregate {
 
 	static List<BindingSet> evaluate(SlotPlan plan, RowState row, int[] groupSlots, AggregateSpec[] aggregates,
 			NativeGroupIteration owner, TupleExpr explainTarget) throws IOException {
+		return evaluate(plan, row, groupSlots, aggregates, owner, explainTarget, true);
+	}
+
+	static List<BindingSet> evaluateSerial(SlotPlan plan, RowState row, int[] groupSlots, AggregateSpec[] aggregates,
+			NativeGroupIteration owner, TupleExpr explainTarget) throws IOException {
+		return evaluate(plan, row, groupSlots, aggregates, owner, explainTarget, false);
+	}
+
+	private static List<BindingSet> evaluate(SlotPlan plan, RowState row, int[] groupSlots, AggregateSpec[] aggregates,
+			NativeGroupIteration owner, TupleExpr explainTarget, boolean allowParallel) throws IOException {
 		if (!LmdbNativeFactorAlgebra.candidate(plan))
 			return null;
 		boolean ordered = row.encounterOrderRequired || !SlotPlan.encounterOrderReplaySafe(plan);
 		for (AggregateSpec aggregate : aggregates)
-			ordered |= aggregate.kind == AggKind.GROUP_CONCAT || aggregate.kind == AggKind.CUSTOM
-					|| aggregate.kind == AggKind.SAMPLE;
+			ordered |= aggregate.reducer.mergeLaw == NativeReducerCapabilities.MergeLaw.OPAQUE;
 		List<BindingSet> results;
 		if (ordered) {
 			// Never speculatively evaluate, then replay, a volatile BIND or a custom aggregate. Its input is
@@ -43,10 +52,13 @@ final class LmdbNativePackedAlgebraAggregate {
 			NativeFilterLease lease = new NativeFilterLease();
 			try {
 				SlotPlan attempt = lease.borrow(plan);
-				results = LmdbNativePackedMorsels.tryAggregate(attempt, row, groupSlots, aggregates, owner,
-						explainTarget);
+				results = allowParallel ? LmdbNativePackedMorsels.tryAggregate(attempt, row, groupSlots, aggregates,
+						owner, explainTarget) : null;
 				if (results == null)
-					results = collect(attempt, row, groupSlots, aggregates, owner, false);
+					results = collect(attempt, row, groupSlots, aggregates, owner,
+							Arrays.stream(aggregates)
+									.anyMatch(
+											spec -> spec.reducer.mergeLaw == NativeReducerCapabilities.MergeLaw.ORDERED_CONCAT));
 				lease.commit();
 			} catch (EncounterOrderFallback fallback) {
 				Throwable realFailure = EncounterOrderFallback.realFailure(fallback);
@@ -67,9 +79,11 @@ final class LmdbNativePackedAlgebraAggregate {
 				throw failure;
 			}
 		}
+		String tag = allowParallel ? LmdbNativeAttemptMetrics.PATH_PACKED_FTREE_AGGREGATE
+				: LmdbNativePackedFtree.AGGREGATE_SERIAL;
 		if (row.runtimePlan != null)
-			row.runtimePlan.activate(LmdbNativeAttemptMetrics.PATH_PACKED_FTREE_AGGREGATE, new SlotPlan[] { plan });
-		LmdbNativeExplain.recordExecutionPath(explainTarget, LmdbNativeAttemptMetrics.PATH_PACKED_FTREE_AGGREGATE);
+			row.runtimePlan.activate(tag, new SlotPlan[] { plan });
+		LmdbNativeExplain.recordExecutionPath(explainTarget, tag);
 		return results;
 	}
 
@@ -94,7 +108,7 @@ final class LmdbNativePackedAlgebraAggregate {
 		}
 		if (!ordered && row.exactValuesMetrics == null
 				&& !"false".equals(System.getProperty(LmdbNativeKernelIr.FACTOR_MARGINALS_PROPERTY))
-				&& Arrays.stream(effective).allMatch(spec -> spec.rowSlots == null))
+				&& Arrays.stream(effective).allMatch(spec -> spec.reducer.supportsMarginal()))
 			return collectMarginals(plan, row, groupSlots, effective, owner);
 		long demanded = 0L;
 		for (int slot : groupSlots)
@@ -112,7 +126,7 @@ final class LmdbNativePackedAlgebraAggregate {
 				AggregateDistinctChannels.allHash(effective), true, false)) {
 			long matched = 0L;
 			try (RowCursor input = ordered
-					? LmdbNativeFactorAlgebra.logical(LmdbNativeFactorAlgebra.openOrdered(plan, row), row)
+					? LmdbNativePackedMorsels.openOrderedScalar(plan, row)
 					: LmdbNativeFactorProjections.openRows(plan, row,
 							LmdbNativeAggregateCompiler.slotsOf(demanded), true)) {
 				while (row.advance(input)) {
@@ -141,7 +155,7 @@ final class LmdbNativePackedAlgebraAggregate {
 		boolean[] needsWeight = new boolean[specs.length];
 		for (int i = 0; i < specs.length; i++) {
 			arguments[i] = specs[i].slot;
-			needsWeight[i] = !specs[i].distinct && specs[i].kind != AggKind.MIN && specs[i].kind != AggKind.MAX;
+			needsWeight[i] = specs[i].reducer.weightSensitive;
 		}
 		FactorProjectionLayout layout = new FactorProjectionLayout(groupSlots, arguments, needsWeight);
 		int[][] columns = layout.columns();

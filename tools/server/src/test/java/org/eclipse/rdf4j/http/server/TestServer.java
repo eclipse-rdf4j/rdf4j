@@ -16,6 +16,7 @@ import java.io.IOException;
 import java.net.ServerSocket;
 import java.net.URI;
 import java.net.URISyntaxException;
+import java.nio.file.Files;
 import java.util.EnumSet;
 import java.util.Map;
 import java.util.function.LongSupplier;
@@ -25,6 +26,7 @@ import org.eclipse.jetty.ee.webapp.WebAppClassLoading;
 import org.eclipse.jetty.ee11.webapp.WebAppContext;
 import org.eclipse.jetty.server.Server;
 import org.eclipse.jetty.server.ServerConnector;
+import org.eclipse.rdf4j.common.io.FileUtil;
 import org.eclipse.rdf4j.http.protocol.Protocol;
 import org.eclipse.rdf4j.repository.RepositoryException;
 import org.eclipse.rdf4j.repository.config.RepositoryConfig;
@@ -159,62 +161,96 @@ public class TestServer {
 		return (Supplier<String>) support.getMethod(snapshotMethod, Object.class).invoke(null, repository);
 	}
 
+	private File dataDir;
+	private String previousAppDataDirectory;
+
+	File getDataDir() {
+		return dataDir;
+	}
+
 	public void start() throws Exception {
-		File dataDir = new File(System.getProperty("user.dir") + "/target/datadir");
-		dataDir.mkdirs();
+		dataDir = Files.createTempDirectory("rdf4j-test-server-").toFile();
+		previousAppDataDirectory = System.getProperty("org.eclipse.rdf4j.appdata.basedir");
 		System.setProperty("org.eclipse.rdf4j.appdata.basedir", dataDir.getAbsolutePath());
 
-		jetty.start();
-
-		if (!webapp.isAvailable()) {
-			throw new IllegalStateException("Webapp failed to start", webapp.getUnavailableException());
-		}
 		try {
-			Object dispatcherContext = webapp.getServletContext().getAttribute(DISPATCHER_CONTEXT_ATTRIBUTE);
-			if (dispatcherContext != null) {
-				ClassLoader webappClassLoader = dispatcherContext.getClass().getClassLoader();
-				Class<?> handlerMappingClass = Class.forName("org.springframework.web.servlet.HandlerMapping", false,
-						webappClassLoader);
-				@SuppressWarnings("unchecked")
-				Map<String, ?> handlerMappings = (Map<String, ?>) dispatcherContext.getClass()
-						.getMethod("getBeansOfType", Class.class)
-						.invoke(dispatcherContext, handlerMappingClass);
-				logger.warn("Handler mappings detected: {}", handlerMappings.keySet());
-				for (Map.Entry<String, ?> entry : handlerMappings.entrySet()) {
-					Class<?> mappingClass = entry.getValue().getClass();
-					java.lang.reflect.Field handlerMapField = null;
-					while (mappingClass != null && handlerMapField == null) {
-						try {
-							handlerMapField = mappingClass.getDeclaredField("handlerMap");
-						} catch (NoSuchFieldException ignore) {
-							mappingClass = mappingClass.getSuperclass();
+			jetty.start();
+
+			if (!webapp.isAvailable()) {
+				throw new IllegalStateException("Webapp failed to start", webapp.getUnavailableException());
+			}
+			try {
+				Object dispatcherContext = webapp.getServletContext().getAttribute(DISPATCHER_CONTEXT_ATTRIBUTE);
+				if (dispatcherContext != null) {
+					ClassLoader webappClassLoader = dispatcherContext.getClass().getClassLoader();
+					Class<?> handlerMappingClass = Class.forName("org.springframework.web.servlet.HandlerMapping",
+							false,
+							webappClassLoader);
+					@SuppressWarnings("unchecked")
+					Map<String, ?> handlerMappings = (Map<String, ?>) dispatcherContext.getClass()
+							.getMethod("getBeansOfType", Class.class)
+							.invoke(dispatcherContext, handlerMappingClass);
+					logger.warn("Handler mappings detected: {}", handlerMappings.keySet());
+					for (Map.Entry<String, ?> entry : handlerMappings.entrySet()) {
+						Class<?> mappingClass = entry.getValue().getClass();
+						java.lang.reflect.Field handlerMapField = null;
+						while (mappingClass != null && handlerMapField == null) {
+							try {
+								handlerMapField = mappingClass.getDeclaredField("handlerMap");
+							} catch (NoSuchFieldException ignore) {
+								mappingClass = mappingClass.getSuperclass();
+							}
+						}
+						if (handlerMapField != null) {
+							handlerMapField.setAccessible(true);
+							Object handlerMap = handlerMapField.get(entry.getValue());
+							logger.warn("Mapping {} handler map: {}", entry.getKey(), handlerMap);
+							System.out.println("Handler mapping " + entry.getKey() + " -> " + handlerMap);
+						} else {
+							logger.warn("Mapping {} has no handlerMap field", entry.getKey());
 						}
 					}
-					if (handlerMapField != null) {
-						handlerMapField.setAccessible(true);
-						Object handlerMap = handlerMapField.get(entry.getValue());
-						logger.warn("Mapping {} handler map: {}", entry.getKey(), handlerMap);
-						System.out.println("Handler mapping " + entry.getKey() + " -> " + handlerMap);
-					} else {
-						logger.warn("Mapping {} has no handlerMap field", entry.getKey());
-					}
+				} else {
+					logger.warn("No dispatcher context found at attribute {}", DISPATCHER_CONTEXT_ATTRIBUTE);
 				}
-			} else {
-				logger.warn("No dispatcher context found at attribute {}", DISPATCHER_CONTEXT_ATTRIBUTE);
+			} catch (Throwable t) {
+				logger.warn("Unable to inspect handler mappings", t);
 			}
-		} catch (Throwable t) {
-			logger.warn("Unable to inspect handler mappings", t);
+			createTestRepositories();
+		} catch (Exception | Error failure) {
+			try {
+				stop();
+			} catch (Exception | Error cleanupFailure) {
+				failure.addSuppressed(cleanupFailure);
+			}
+			throw failure;
 		}
-		createTestRepositories();
 	}
 
 	public void stop() throws Exception {
 		try {
-			manager.getAllRepositoryInfos().forEach(ri -> manager.removeRepository(ri.getId()));
-			manager.shutDown();
+			try {
+				if (jetty.isStarted()) {
+					manager.getAllRepositoryInfos().forEach(ri -> manager.removeRepository(ri.getId()));
+				}
+			} finally {
+				manager.shutDown();
+			}
 		} finally {
-			jetty.stop();
-			System.clearProperty("org.mortbay.log.class");
+			try {
+				jetty.stop();
+			} finally {
+				System.clearProperty("org.mortbay.log.class");
+				if (dataDir != null) {
+					if (previousAppDataDirectory == null) {
+						System.clearProperty("org.eclipse.rdf4j.appdata.basedir");
+					} else {
+						System.setProperty("org.eclipse.rdf4j.appdata.basedir", previousAppDataDirectory);
+					}
+					FileUtil.deleteDir(dataDir);
+					dataDir = null;
+				}
+			}
 		}
 	}
 

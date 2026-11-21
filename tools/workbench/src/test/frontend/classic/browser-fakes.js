@@ -105,6 +105,10 @@ class FakeElement {
         this.id = options.id || '';
         this.name = options.name || '';
         this.value = options.value || '';
+        if (this.tagName === 'TEXTAREA') {
+            // As in a browser: the text the textarea was rendered with, which typing into it leaves unchanged.
+            this.defaultValue = this.value;
+        }
         this.type = options.type || '';
         this.checked = !!options.checked;
         this.selected = !!options.selected;
@@ -239,7 +243,12 @@ class FakeElement {
 
     removeAttribute(name) {
         this.attributes.delete(name);
-        if (name === 'class') {
+        if (name === 'id') {
+            this.id = '';
+            this.ownerDocument.reindex(this);
+        } else if (name === 'name') {
+            this.name = '';
+        } else if (name === 'class') {
             this.classes.clear();
         } else if (name === 'checked') {
             this.checked = false;
@@ -308,6 +317,40 @@ class FakeElement {
             propertyHandler.call(this, normalizedEvent);
         }
         return normalizedEvent;
+    }
+
+    /**
+     * A copy of this element, as a browser makes one: its attributes, text, value and hidden state, and with `deep`
+     * its children. The copy is not indexed under its id until it is put into the document.
+     */
+    cloneNode(deep) {
+        const copy = this.tagName === 'DIALOG' ? new FakeDialogElement(this.ownerDocument, this.tagName)
+            : new FakeElement(this.ownerDocument, this.tagName);
+        copy.namespaceURI = this.namespaceURI;
+        this.attributes.forEach((value, name) => copy.attributes.set(name, value));
+        copy.id = this.id;
+        copy.name = this.name;
+        copy.type = this.type;
+        copy.className = this.className;
+        copy.value = this.value;
+        copy.checked = this.checked;
+        copy.selected = this.selected;
+        copy.disabled = this.disabled;
+        copy.hidden = this.hidden;
+        copy.readOnly = this.readOnly;
+        copy._textContent = this._textContent;
+        copy._innerHTML = this._innerHTML;
+        Object.assign(copy.style, Object.fromEntries(Object.entries(this.style)
+            .filter(([, value]) => typeof value !== 'function')));
+        if (deep) {
+            this.children.forEach((child) => {
+                const childCopy = child.nodeType === 3
+                    ? createTextNode(this.ownerDocument, child.textContent) : child.cloneNode(true);
+                copy.children.push(childCopy);
+                childCopy.parentNode = copy;
+            });
+        }
+        return copy;
     }
 
     click() {
@@ -723,6 +766,13 @@ class FakeDocument {
             this.eventHandlers.set(type, []);
         }
         this.eventHandlers.get(type).push(handler);
+    }
+
+    /** Document-level events (a page script may listen on the document for events other scripts dispatch). */
+    dispatchEvent(event) {
+        const normalizedEvent = typeof event === 'string' ? { type: event } : Object.assign({}, event);
+        (this.eventHandlers.get(normalizedEvent.type) || []).slice().forEach((handler) => handler.call(this, normalizedEvent));
+        return true;
     }
 
     removeEventListener(type, handler) {

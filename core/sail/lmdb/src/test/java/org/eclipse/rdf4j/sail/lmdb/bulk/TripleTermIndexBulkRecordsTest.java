@@ -15,6 +15,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
@@ -34,6 +35,36 @@ class TripleTermIndexBulkRecordsTest {
 	void noneDisablesTermIndexSpecifications() {
 		assertThat(TripleTermIndexBulkRecords.specifications("none")).isEmpty();
 		assertThat(TripleTermIndexBulkRecords.specifications("  NONE  ")).isEmpty();
+	}
+
+	@Test
+	void disabledTermIndexesDoNotEmitIndexProgress() throws Exception {
+		Path workspace = Files.createDirectory(temporaryDirectory.resolve("disabled-term-indexes"));
+		ExternalLongTupleSorter.SortedTupleFile source;
+		try (ExternalLongTupleSorter sorter = new ExternalLongTupleSorter(workspace, "term-source", 4,
+				1024L * 1024L, 8, BulkCodec.NONE)) {
+			sorter.add4(1L, 2L, 3L, 0L);
+			source = sorter.finish(workspace.resolve("term-source-sorted.bin"));
+		}
+
+		List<ProgressSnapshot> snapshots = new ArrayList<>();
+		try (BulkLoadProgress progress = new BulkLoadProgress(temporaryDirectory, snapshots::add, 1, 1, false)) {
+			progress.startPhase(BulkLoadPhase.BUILD_NATIVE_RUNS);
+			try (TripleTermIndexBulkRecords records = TripleTermIndexBulkRecords.build(source, workspace, "none",
+					1024L * 1024L, 8, BulkCompression.NONE, () -> false, null, () -> {
+					}, () -> {
+					}, progress)) {
+				assertThat(records.runs()).isEmpty();
+			}
+		}
+
+		assertThat(snapshots)
+				.noneMatch(snapshot -> snapshot.activeIndexes()
+						.stream()
+						.anyMatch(index -> index.family() == ProgressSnapshot.IndexFamily.TRIPLE_TERM));
+		assertThat(snapshots)
+				.noneMatch(snapshot -> snapshot.indexEvent() != null
+						&& snapshot.indexEvent().family() == ProgressSnapshot.IndexFamily.TRIPLE_TERM);
 	}
 
 	@Test

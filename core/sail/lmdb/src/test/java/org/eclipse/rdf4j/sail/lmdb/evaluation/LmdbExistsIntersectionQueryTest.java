@@ -29,6 +29,7 @@ import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.QueryResults;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
 import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
+import org.eclipse.rdf4j.repository.sail.SailTupleQuery;
 import org.eclipse.rdf4j.sail.lmdb.AdjacencyEngagementTestAccess;
 import org.eclipse.rdf4j.sail.lmdb.LmdbStore;
 import org.eclipse.rdf4j.sail.lmdb.config.LmdbStoreConfig;
@@ -68,7 +69,7 @@ public class LmdbExistsIntersectionQueryTest {
 	private final Map<String, String> previousProperties = new HashMap<>();
 
 	@BeforeEach
-	public void resetCostCalibration() {
+	public void resetKernelMetrics() {
 		captureProperty(SYNOPSIS_PROPERTY);
 		captureProperty(LmdbNativeExistsIntersection.PARALLEL_MIN_ESTIMATE_PROPERTY);
 		captureProperty("rdf4j.lmdb.janinoCodegen.enabled");
@@ -77,7 +78,6 @@ public class LmdbExistsIntersectionQueryTest {
 		// activation and compiled/interpreted parity are covered by LmdbKernelExistsIntersectTest.
 		System.setProperty("rdf4j.lmdb.janinoCodegen.enabled", "false");
 		System.setProperty("rdf4j.lmdb.kernelInterpreter.enabled", "false");
-		LmdbNativeCostCalibration.reset();
 	}
 
 	@AfterEach
@@ -110,8 +110,11 @@ public class LmdbExistsIntersectionQueryTest {
 	public void subjectsAlsoObjectsUsesIntersection() {
 		openRepository("spoc,ospc,psoc,posc");
 
+		// this suite tests the intersection operator; on an eight-statement store every strategy runs within noise of
+		// the sequential path and the plane-metadata aggregates' re-fitted intercepts (2026-11-03) price
+		// prefixRunGroups below it, so the operator is forced as the padded variants already do
 		long before = LmdbNativeExistsIntersection.OPENED.get();
-		assertThat(count(SUBJECTS_ALSO_OBJECTS)).isEqualTo(6L);
+		assertThat(count(SUBJECTS_ALSO_OBJECTS, LmdbNativeAttemptMetrics.PATH_EXISTS_INTERSECTION)).isEqualTo(6L);
 		assertThat(LmdbNativeExistsIntersection.OPENED.get()).isGreaterThan(before);
 	}
 
@@ -132,7 +135,8 @@ public class LmdbExistsIntersectionQueryTest {
 		long streamingBefore = streamingIntersections.get();
 		long presenceBefore = presenceIntersections.get();
 		long preparationsBefore = preparations.get();
-		assertThat(count(SUBJECTS_ALSO_OBJECTS)).isEqualTo(6L);
+		// the padded store prices prefixRunGroups below the intersection; this test is about the intersection
+		assertThat(count(SUBJECTS_ALSO_OBJECTS, LmdbNativeAttemptMetrics.PATH_EXISTS_INTERSECTION)).isEqualTo(6L);
 		assertThat(rootIntersections.get()).isEqualTo(before);
 		assertThat(rootsVisited.get()).isEqualTo(rootsVisitedBefore);
 		assertThat(synopsisIntersections.get()).isGreaterThan(synopsisBefore);
@@ -155,7 +159,8 @@ public class LmdbExistsIntersectionQueryTest {
 				.isTrue();
 
 		long openedBefore = LmdbNativeExistsIntersection.OPENED.get();
-		assertThat(count(SUBJECTS_ALSO_OBJECTS)).isEqualTo(5L);
+		// the padded store prices prefixRunGroups below the intersection; this test is about the intersection
+		assertThat(count(SUBJECTS_ALSO_OBJECTS, LmdbNativeAttemptMetrics.PATH_EXISTS_INTERSECTION)).isEqualTo(5L);
 		assertThat(LmdbNativeExistsIntersection.OPENED.get()).isGreaterThan(openedBefore);
 	}
 
@@ -173,7 +178,8 @@ public class LmdbExistsIntersectionQueryTest {
 		long synopsisBefore = synopsisIntersections.get();
 		long presenceBefore = presenceIntersections.get();
 
-		assertThat(count(SUBJECTS_ALSO_OBJECTS)).isEqualTo(6L);
+		// the padded store prices prefixRunGroups below the intersection; this test is about the intersection
+		assertThat(count(SUBJECTS_ALSO_OBJECTS, LmdbNativeAttemptMetrics.PATH_EXISTS_INTERSECTION)).isEqualTo(6L);
 		assertThat(rootIntersections.get()).isGreaterThan(rootBefore);
 		assertThat(rootsVisited.get()).isGreaterThan(rootsVisitedBefore);
 		assertThat(synopsisIntersections.get()).isEqualTo(synopsisBefore);
@@ -185,7 +191,7 @@ public class LmdbExistsIntersectionQueryTest {
 		openRepository("spoc,ospc,psoc,posc");
 
 		long before = LmdbNativeExistsIntersection.OPENED.get();
-		assertThat(count(OBJECTS_ALSO_SUBJECTS)).isEqualTo(6L);
+		assertThat(count(OBJECTS_ALSO_SUBJECTS, LmdbNativeAttemptMetrics.PATH_EXISTS_INTERSECTION)).isEqualTo(6L);
 		assertThat(LmdbNativeExistsIntersection.OPENED.get()).isGreaterThan(before);
 	}
 
@@ -197,7 +203,7 @@ public class LmdbExistsIntersectionQueryTest {
 		assertThat(count("SELECT (COUNT(DISTINCT ?node) AS ?count) WHERE {\n"
 				+ "  ?node ?p ?o .\n"
 				+ "  FILTER EXISTS { ?s <" + EX + "knows> ?node . }\n"
-				+ "}")).isEqualTo(4L);
+				+ "}", LmdbNativeAttemptMetrics.PATH_EXISTS_INTERSECTION)).isEqualTo(4L);
 		assertThat(LmdbNativeExistsIntersection.OPENED.get()).isGreaterThan(before);
 	}
 
@@ -281,7 +287,10 @@ public class LmdbExistsIntersectionQueryTest {
 
 		long parallelBefore = LmdbNativeExistsIntersection.PARALLEL_RUNS.get();
 		long adjacencyBefore = LmdbNativeExistsIntersection.PARALLEL_ADJACENCY_INTERSECTIONS.get();
-		assertThat(count(SUBJECTS_ALSO_OBJECTS)).isEqualTo(expected);
+		// the parallel merge is internal to the intersection operator, which is priced above prefixRunGroups on
+		// this 5000-statement store; force the operator under test
+		assertThat(count(SUBJECTS_ALSO_OBJECTS, LmdbNativeAttemptMetrics.PATH_EXISTS_INTERSECTION))
+				.isEqualTo(expected);
 		assertThat(LmdbNativeExistsIntersection.PARALLEL_RUNS.get()).isGreaterThan(parallelBefore);
 		assertThat(LmdbNativeExistsIntersection.PARALLEL_ADJACENCY_INTERSECTIONS.get())
 				.isGreaterThan(adjacencyBefore);
@@ -382,8 +391,17 @@ public class LmdbExistsIntersectionQueryTest {
 	}
 
 	private long count(String query) {
+		return count(query, null);
+	}
+
+	/** Evaluates a scalar count, forcing one GROUP BY operator when the test is about that operator. */
+	private long count(String query, String forcedStrategy) {
 		try (SailRepositoryConnection conn = repository.getConnection()) {
-			List<BindingSet> result = QueryResults.asList(conn.prepareTupleQuery(query).evaluate());
+			SailTupleQuery prepared = (SailTupleQuery) conn.prepareTupleQuery(query);
+			if (forcedStrategy != null) {
+				prepared.setForcedLmdbExecutionStrategy(forcedStrategy);
+			}
+			List<BindingSet> result = QueryResults.asList(prepared.evaluate());
 			assertThat(result).hasSize(1);
 			return ((Literal) result.get(0).getValue("count")).longValue();
 		}

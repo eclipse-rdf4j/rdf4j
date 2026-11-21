@@ -34,6 +34,7 @@ import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.model.base.CoreDatatype;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
+import org.eclipse.rdf4j.model.vocabulary.FN;
 import org.eclipse.rdf4j.model.vocabulary.XSD;
 import org.eclipse.rdf4j.query.algebra.AggregateFunctionCall;
 import org.eclipse.rdf4j.query.algebra.BNodeGenerator;
@@ -43,6 +44,7 @@ import org.eclipse.rdf4j.query.algebra.Extension;
 import org.eclipse.rdf4j.query.algebra.ExtensionElem;
 import org.eclipse.rdf4j.query.algebra.Filter;
 import org.eclipse.rdf4j.query.algebra.FunctionCall;
+import org.eclipse.rdf4j.query.algebra.Graph;
 import org.eclipse.rdf4j.query.algebra.Join;
 import org.eclipse.rdf4j.query.algebra.Sample;
 import org.eclipse.rdf4j.query.algebra.Service;
@@ -62,6 +64,7 @@ import org.eclipse.rdf4j.query.algebra.evaluation.function.Function;
 import org.eclipse.rdf4j.query.algebra.evaluation.function.FunctionRegistry;
 import org.eclipse.rdf4j.query.algebra.evaluation.function.IntegerCast;
 import org.eclipse.rdf4j.query.algebra.evaluation.function.StringCast;
+import org.eclipse.rdf4j.query.algebra.helpers.FilterBindingScope;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
@@ -70,6 +73,46 @@ import org.junit.jupiter.api.Test;
  * @author Håvard M. Ottestad
  */
 public class QueryEvaluationUtilityTest {
+
+	@Test
+	void pinnedFunctionCallsKeepTheirExplicitReads() {
+		Filter filter = new Filter(new SingletonSet(), new FunctionCall(FN.CONCAT.stringValue(), Var.of("value")));
+
+		QueryEvaluationUtility.pinFunctions(filter);
+
+		assertTrue(filter.getCondition().getClass() != FunctionCall.class, "preparation pins the call");
+		FilterBindingScope.ConditionBindingReads reads = FilterBindingScope
+				.conditionBindingReads(filter.getCondition());
+		assertTrue(reads.complete());
+		assertEquals(Set.of("value"), reads.bindingNames());
+	}
+
+	@Test
+	void namedGraphInheritsBodyRepeatabilityAndKeepsItsInjectionBoundary() {
+		for (Var selector : List.of(Var.of("graph"), new Var("fixed", f.createIRI("urn:graph")))) {
+			Graph graph = new Graph(selector,
+					new StatementPattern(Var.of("s"), Var.of("p"), Var.of("o")));
+			var snapshot = QueryEvaluationUtility.querySafetySnapshot(graph);
+			assertTrue(snapshot.isRepeatable(graph), "a named-graph frame can repeat its pure body on one snapshot");
+			assertFalse(snapshot.mayRaiseQueryFatalError(graph));
+			assertTrue(snapshot.usesMappingParameterizedEvaluation(graph));
+			assertFalse(snapshot.permitsBindingInjection(graph, Set.of("o")),
+					"repeatability is independent of binding injection through an active-graph frame");
+			Graph nested = new Graph(Var.of("outerGraph"), graph);
+			assertTrue(QueryEvaluationUtility.isRepeatable(nested));
+		}
+	}
+
+	@Test
+	void namedGraphRetainsVolatileAndFatalChildSafety() {
+		Graph volatileGraph = new Graph(Var.of("graph"), new Extension(new SingletonSet(),
+				new ExtensionElem(new BNodeGenerator(), "blank")));
+		assertFalse(QueryEvaluationUtility.isRepeatable(volatileGraph));
+		Service service = new Service(Var.of("service"), new SingletonSet(), "", Map.of(), "", false);
+		Graph remoteGraph = new Graph(Var.of("graph"), service);
+		assertFalse(QueryEvaluationUtility.isRepeatable(remoteGraph));
+		assertTrue(QueryEvaluationUtility.mayRaiseQueryFatalError(remoteGraph));
+	}
 
 	@Test
 	void numericOperatorsTreatNaNAsUnordered() {

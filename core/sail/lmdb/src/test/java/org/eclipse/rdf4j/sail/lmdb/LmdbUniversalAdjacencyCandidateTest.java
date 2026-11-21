@@ -69,12 +69,7 @@ class LmdbUniversalAdjacencyCandidateTest {
 
 	@AfterEach
 	void tearDown() throws Exception {
-		if (store != null) {
-			store.close();
-		}
-		if (tripleStore != null) {
-			tripleStore.close();
-		}
+		LmdbTestUtil.cleanup(null, store, tripleStore);
 	}
 
 	@Test

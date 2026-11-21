@@ -679,7 +679,9 @@ class SnapshotPositiveLookupCacheTest {
 						}
 					}
 				} else {
+					// Only a rollback that assigned an ID retires the revision.
 					first.values.startTransaction(true);
+					first.values.storeValue(VF.createBNode("prepared-rollback-assigned"));
 					first.values.rollback();
 					try (View secondView = first.openView()) {
 						LmdbValue secondValue = (LmdbValue) first.values.valuePreparer(secondView.snapshot)
@@ -706,7 +708,9 @@ class SnapshotPositiveLookupCacheTest {
 				child = fixture.values.getLazyValue(childId);
 			}
 			long olderEpoch = child.getValueStoreRevision().getRevisionId();
+			// Only a rollback that assigned an ID retires the revision.
 			fixture.values.startTransaction(true);
+			fixture.values.storeValue(VF.createBNode("older-prepared-rollback-assigned"));
 			fixture.values.rollback();
 			long parentId = fixture.store(expected);
 			LmdbTripleTerm ready = new LmdbTripleTerm(fixture.values.getRevision(), expected.getSubject(),
@@ -1010,8 +1014,13 @@ class SnapshotPositiveLookupCacheTest {
 		private final TripleStore triples;
 
 		private Fixture(Path directory, boolean inline, int capacity) throws IOException {
-			LmdbStoreConfig config = new LmdbStoreConfig().setInlineLiterals(inline).setValueIDCacheSize(capacity);
-			values = new ValueStore(directory.resolve("values").toFile(), config);
+			LmdbStoreConfig config = new LmdbStoreConfig().setInlineLiterals(inline)
+					.setValueIDCacheSize(capacity)
+					.setLegacyReferenceCountRepairEnabled(true);
+			// These capture counters distinguish legacy split getters from lexical fingerprint validation.
+			// Format 7 only reads stringValue(); its cache contract is covered by ValueStoreCanonicalIriTest.
+			values = new ValueStore(directory.resolve("values").toFile(),
+					new StoreProperties().setVersion(Integer.toString(LmdbStoreFormat.LEGACY_VERSION)), config);
 			try {
 				triples = new TripleStore(directory.resolve("triples").toFile(), config, values);
 			} catch (IOException | RuntimeException | Error failure) {

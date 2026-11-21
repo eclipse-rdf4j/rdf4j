@@ -1931,17 +1931,13 @@ public class TupleExprBuilder extends AbstractASTVisitor {
 	public Object visit(ASTPropertyList propListNode, Object data) throws VisitorException {
 		Var subjVar = mapValueExprToVar(data);
 		ValueExpr predicate = (ValueExpr) propListNode.getVerb().jjtAccept(this, null);
-		@SuppressWarnings("unchecked")
-		List<ValueExpr> objectList = (List<ValueExpr>) propListNode.getObjectList().jjtAccept(this, null);
-
 		Var predVar = mapValueExprToVar(predicate);
 
-		for (ValueExpr object : objectList) {
-			Var objVar = mapValueExprToVar(object);
+		ObjectListSyntax.forEach(propListNode.getObjectList(), (object, suffixes) -> {
+			Var objVar = mapValueExprToVar(object.jjtAccept(this, null));
 			graphPattern.addRequiredSP(subjVar.clone(), predVar.clone(), objVar);
-
-			applyAnnotationSuffixes(propListNode, subjVar, predVar, objVar);
-		}
+			applyAnnotationSuffixes(suffixes, subjVar, predVar, objVar);
+		});
 
 		ASTPropertyList nextPropList = propListNode.getNextPropertyList();
 		if (nextPropList != null) {
@@ -2164,9 +2160,9 @@ public class TupleExprBuilder extends AbstractASTVisitor {
 		throw new VisitorException("Unexpected reifier type: " + reifier.getClass());
 	}
 
-	private void applyAnnotationSuffixes(SimpleNode property, Var subject, Var predicate, Var object)
+	private void applyAnnotationSuffixes(List<ASTAnnotationSuffix> suffixes, Var subject, Var predicate, Var object)
 			throws VisitorException {
-		for (ASTAnnotationSuffix suffix : property.jjtGetChildren(ASTAnnotationSuffix.class)) {
+		for (ASTAnnotationSuffix suffix : suffixes) {
 			Var reifier = buildReifiedTripleVar(suffix.getReifier(), subject, predicate, object);
 			if (suffix.getAnnotation() != null) {
 				suffix.getAnnotation().jjtAccept(this, reifier);
@@ -2328,32 +2324,43 @@ public class TupleExprBuilder extends AbstractASTVisitor {
 
 	@Override
 	public Object visit(ASTPropertyListPath property, Object data) throws VisitorException {
-		Object verb = property.getVerb().jjtAccept(this, data);
-		boolean annotated = !property.jjtGetChildren(ASTAnnotationSuffix.class).isEmpty();
-		if (verb instanceof Var) {
-			@SuppressWarnings("unchecked")
-			List<ValueExpr> objects = (List<ValueExpr>) property.getObjectList().jjtAccept(this, null);
+		Node verbNode = property.getVerb();
+		boolean annotated = ObjectListSyntax.hasAnnotations(property.getObjectList());
+		Node simplePredicate = simplePredicate(verbNode);
+		if (annotated && simplePredicate == null) {
+			throw new MalformedQueryException(
+					"SPARQL 1.2 annotation syntax is only allowed for triple patterns with a simple predicate (IRI, variable, or 'a')");
+		}
+		if (verbNode instanceof ASTVar || annotated) {
 			Var subject = mapValueExprToVar(data);
-			Var predicate = mapValueExprToVar(verb);
-			for (ValueExpr object : objects) {
-				Var value = mapValueExprToVar(object);
+			Var predicate = mapValueExprToVar(simplePredicate.jjtAccept(this, null));
+			ObjectListSyntax.forEach(property.getObjectList(), (object, suffixes) -> {
+				Var value = mapValueExprToVar(object.jjtAccept(this, null));
 				graphPattern.addRequiredSP(subject.clone(), predicate.clone(), value);
-				applyAnnotationSuffixes(property, subject, predicate, value);
-			}
-		} else if (verb instanceof TupleExpr expression) {
-			if (annotated) {
-				if (!(expression instanceof StatementPattern pattern)) {
-					throw new MalformedQueryException(
-							"SPARQL 1.2 annotation syntax is only allowed for triple patterns with a simple predicate (IRI, variable, or 'a')");
-				}
-				applyAnnotationSuffixes(property, pattern.getSubjectVar(), pattern.getPredicateVar(),
-						pattern.getObjectVar());
-			}
-			graphPattern.addRequiredTE(expression);
+				applyAnnotationSuffixes(suffixes, subject, predicate, value);
+			});
+		} else {
+			graphPattern.addRequiredTE((TupleExpr) verbNode.jjtAccept(this, data));
 		}
 		ASTPropertyListPath next = property.getNextPropertyList();
 		if (next != null) {
 			next.jjtAccept(this, data);
+		}
+		return null;
+	}
+
+	private Node simplePredicate(Node verb) {
+		if (verb instanceof ASTVar) {
+			return verb;
+		}
+		if (verb instanceof ASTPathAlternative alternative && alternative.jjtGetNumChildren() == 1
+				&& alternative.jjtGetChild(0) instanceof ASTPathSequence sequence && sequence.jjtGetNumChildren() == 1
+				&& sequence.jjtGetChild(0) instanceof ASTPathElt element && !element.isInverse()
+				&& element.getPathMod() == null && element.jjtGetNumChildren() == 1) {
+			Node predicate = element.jjtGetChild(0);
+			if (predicate instanceof ASTIRI || predicate instanceof ASTQName) {
+				return predicate;
+			}
 		}
 		return null;
 	}
@@ -2364,6 +2371,9 @@ public class TupleExprBuilder extends AbstractASTVisitor {
 		List<ValueExpr> result = new ArrayList<>(childCount);
 
 		for (int i = 0; i < childCount; i++) {
+			if (node.jjtGetChild(i) instanceof ASTAnnotationSuffix) {
+				continue;
+			}
 			Object obj = node.jjtGetChild(i).jjtAccept(this, null);
 			if (obj instanceof ValueExpr) {
 				result.add((ValueExpr) obj);

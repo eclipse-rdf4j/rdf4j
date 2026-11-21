@@ -85,76 +85,87 @@ public class PropertyPathReachabilityBenchmark {
 
 	@Setup(Level.Trial)
 	public void setUp() throws InterruptedException {
-		dataDir = Files.newTemporaryFolder();
-		LmdbStoreConfig loadConfig = new LmdbStoreConfig("spoc,posc,ospc")
-				.setDirectAdjacencyMode(DirectAdjacencyMode.DISABLED);
-		repository = new SailRepository(new LmdbStore(dataDir, loadConfig));
-		try (SailRepositoryConnection conn = repository.getConnection()) {
-			ValueFactory vf = conn.getValueFactory();
-			IRI p = vf.createIRI(EX, "p");
-			IRI seedEdge = vf.createIRI(EX, "seedEdge");
-			conn.begin();
-			for (int layer = 0; layer < LAYERS - 1; layer++) {
-				for (int i = 0; i < WIDTH; i++) {
-					IRI from = vf.createIRI(EX, "n" + layer + "_" + i);
-					for (int j = 0; j < FANOUT; j++) {
-						int child = (int) ((i * (long) FANOUT + j * 131L) % WIDTH);
-						conn.add(from, p, vf.createIRI(EX, "n" + (layer + 1) + "_" + child));
+		try {
+			dataDir = Files.newTemporaryFolder();
+			LmdbStoreConfig loadConfig = new LmdbStoreConfig("spoc,posc,ospc")
+					.setDirectAdjacencyMode(DirectAdjacencyMode.DISABLED);
+			repository = new SailRepository(new LmdbStore(dataDir, loadConfig));
+			try (SailRepositoryConnection conn = repository.getConnection()) {
+				ValueFactory vf = conn.getValueFactory();
+				IRI p = vf.createIRI(EX, "p");
+				IRI seedEdge = vf.createIRI(EX, "seedEdge");
+				conn.begin();
+				for (int layer = 0; layer < LAYERS - 1; layer++) {
+					for (int i = 0; i < WIDTH; i++) {
+						IRI from = vf.createIRI(EX, "n" + layer + "_" + i);
+						for (int j = 0; j < FANOUT; j++) {
+							int child = (int) ((i * (long) FANOUT + j * 131L) % WIDTH);
+							conn.add(from, p, vf.createIRI(EX, "n" + (layer + 1) + "_" + child));
+						}
 					}
 				}
+				for (int i = 0; i < WIDTH; i++) {
+					conn.add(vf.createIRI(EX, "seed" + i), seedEdge, vf.createIRI(EX, "seedLeaf" + i));
+				}
+				if ("boundExistence".equals(variant)) {
+					addBushyTree(conn, vf);
+				}
+				conn.commit();
 			}
-			for (int i = 0; i < WIDTH; i++) {
-				conn.add(vf.createIRI(EX, "seed" + i), seedEdge, vf.createIRI(EX, "seedLeaf" + i));
+			repository.shutDown();
+			LmdbStoreConfig benchmarkConfig = new LmdbStoreConfig("spoc,posc,ospc")
+					.setDirectAdjacencyMaxBytes(256L * 1024 * 1024);
+			benchmarkConfig.setNativeEvaluationEnabled(true);
+			benchmarkConfig.setDirectAdjacencyEnabled(true);
+			repository = new SailRepository(new LmdbStore(dataDir, benchmarkConfig));
+			repository.init();
+			if (!((LmdbStore) repository.getSail()).awaitDirectAdjacencyReady(60, TimeUnit.SECONDS)) {
+				throw new IllegalStateException(
+						"direct adjacency did not become ready for the property-path benchmark: "
+								+ ((LmdbStore) repository.getSail()).getDirectAdjacencyReadinessDescription());
 			}
-			if ("boundExistence".equals(variant)) {
-				addBushyTree(conn, vf);
+			switch (variant) {
+			case "selectReachable":
+				query = "PREFIX ex: <" + EX + ">\nSELECT ?o WHERE { ex:n0_0 ex:p+ ?o . }";
+				break;
+			case "countReachable":
+				query = "PREFIX ex: <" + EX + ">\nSELECT (COUNT(?o) AS ?count) WHERE { ex:n0_0 ex:p+ ?o . }";
+				break;
+			case "reverseReachable":
+				query = "PREFIX ex: <" + EX + ">\nSELECT ?s WHERE { ?s ex:p+ ex:n" + (LAYERS - 1) + "_0 . }";
+				break;
+			case "unboundStarts":
+				query = "PREFIX ex: <" + EX + ">\nSELECT ?s ?o WHERE { ?s ex:seedEdge+ ?o . }";
+				break;
+			case "boundDirect":
+				query = "PREFIX ex: <" + EX + ">\nSELECT * WHERE { ex:n0_0 ex:p+ ex:n1_0 . }";
+				break;
+			case "boundExistence":
+				query = "PREFIX ex: <" + EX + ">\nSELECT * WHERE { ex:treeRoot ex:treeEdge+ ex:treeTarget . }";
+				break;
+			default:
+				throw new IllegalArgumentException(variant);
 			}
-			conn.commit();
-		}
-		repository.shutDown();
-		LmdbStoreConfig benchmarkConfig = new LmdbStoreConfig("spoc,posc,ospc")
-				.setDirectAdjacencyMaxBytes(256L * 1024 * 1024);
-		benchmarkConfig.setNativeEvaluationEnabled(true);
-		benchmarkConfig.setDirectAdjacencyEnabled(true);
-		repository = new SailRepository(new LmdbStore(dataDir, benchmarkConfig));
-		repository.init();
-		if (!((LmdbStore) repository.getSail()).awaitDirectAdjacencyReady(60, TimeUnit.SECONDS)) {
-			throw new IllegalStateException("direct adjacency did not become ready for the property-path benchmark: "
-					+ ((LmdbStore) repository.getSail()).getDirectAdjacencyReadinessDescription());
-		}
-		switch (variant) {
-		case "selectReachable":
-			query = "PREFIX ex: <" + EX + ">\nSELECT ?o WHERE { ex:n0_0 ex:p+ ?o . }";
-			break;
-		case "countReachable":
-			query = "PREFIX ex: <" + EX + ">\nSELECT (COUNT(?o) AS ?count) WHERE { ex:n0_0 ex:p+ ?o . }";
-			break;
-		case "reverseReachable":
-			query = "PREFIX ex: <" + EX + ">\nSELECT ?s WHERE { ?s ex:p+ ex:n" + (LAYERS - 1) + "_0 . }";
-			break;
-		case "unboundStarts":
-			query = "PREFIX ex: <" + EX + ">\nSELECT ?s ?o WHERE { ?s ex:seedEdge+ ?o . }";
-			break;
-		case "boundDirect":
-			query = "PREFIX ex: <" + EX + ">\nSELECT * WHERE { ex:n0_0 ex:p+ ex:n1_0 . }";
-			break;
-		case "boundExistence":
-			query = "PREFIX ex: <" + EX + ">\nSELECT * WHERE { ex:treeRoot ex:treeEdge+ ex:treeTarget . }";
-			break;
-		default:
-			throw new IllegalArgumentException(variant);
-		}
-		// the generic evaluator is the semantics oracle for the expected size
-		String previous = System.getProperty(NATIVE_FLAG);
-		try {
-			System.setProperty(NATIVE_FLAG, "false");
-			expectedRows = runQuery();
-		} finally {
-			if (previous == null) {
-				System.clearProperty(NATIVE_FLAG);
-			} else {
-				System.setProperty(NATIVE_FLAG, previous);
+			// the generic evaluator is the semantics oracle for the expected size
+			String previous = System.getProperty(NATIVE_FLAG);
+			try {
+				System.setProperty(NATIVE_FLAG, "false");
+				expectedRows = runQuery();
+			} finally {
+				if (previous == null) {
+					System.clearProperty(NATIVE_FLAG);
+				} else {
+					System.setProperty(NATIVE_FLAG, previous);
+				}
 			}
+
+		} catch (Exception | Error failure) {
+			try {
+				tearDown();
+			} catch (Exception | Error cleanupFailure) {
+				failure.addSuppressed(cleanupFailure);
+			}
+			throw failure;
 		}
 	}
 
@@ -181,8 +192,17 @@ public class PropertyPathReachabilityBenchmark {
 
 	@TearDown(Level.Trial)
 	public void tearDown() throws IOException {
-		repository.shutDown();
-		FileUtil.deleteDir(dataDir);
+		try (java.io.Closeable directoryCleanup = () -> {
+			if (dataDir != null) {
+				FileUtil.deleteDir(dataDir);
+				dataDir = null;
+			}
+		}) {
+			if (repository != null) {
+				repository.shutDown();
+				repository = null;
+			}
+		}
 	}
 
 	long runQuery() {

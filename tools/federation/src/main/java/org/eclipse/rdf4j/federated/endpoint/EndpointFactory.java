@@ -29,6 +29,7 @@ import org.eclipse.rdf4j.federated.endpoint.provider.ResolvableRepositoryInforma
 import org.eclipse.rdf4j.federated.endpoint.provider.ResolvableRepositoryProvider;
 import org.eclipse.rdf4j.federated.endpoint.provider.SPARQLProvider;
 import org.eclipse.rdf4j.federated.endpoint.provider.SPARQLRepositoryInformation;
+import org.eclipse.rdf4j.federated.evaluation.EndpointIdentity;
 import org.eclipse.rdf4j.federated.exception.FedXException;
 import org.eclipse.rdf4j.federated.exception.FedXRuntimeException;
 import org.eclipse.rdf4j.federated.repository.FedXRepository;
@@ -41,6 +42,8 @@ import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.impl.TreeModel;
 import org.eclipse.rdf4j.repository.Repository;
 import org.eclipse.rdf4j.repository.RepositoryResolver;
+import org.eclipse.rdf4j.repository.http.HTTPRepository;
+import org.eclipse.rdf4j.repository.sparql.SPARQLRepository;
 import org.eclipse.rdf4j.rio.RDFFormat;
 import org.eclipse.rdf4j.rio.RDFHandler;
 import org.eclipse.rdf4j.rio.RDFHandlerException;
@@ -162,7 +165,9 @@ public class EndpointFactory {
 	/**
 	 * Load an {@link Endpoint} for a given (configured) Repository.
 	 * <p>
-	 * Note that {@link EndpointType} is set to {@link EndpointType#Other}
+	 * Note that {@link EndpointType} is derived from the repository: {@link EndpointType#LocalStore} for Sail-backed
+	 * repositories, {@link EndpointType#SparqlEndpoint} for SPARQL/HTTP repositories, otherwise
+	 * {@link EndpointType#Other}
 	 * </p>
 	 *
 	 * <p>
@@ -186,7 +191,15 @@ public class EndpointFactory {
 			logger.debug("Failed to use data dir as location, using unknown instead: " + e.getMessage());
 			logger.trace("Details:", e);
 		}
-		return repProvider.loadEndpoint(new RepositoryInformation(id, name, location, EndpointType.Other));
+		var endpointType = EndpointType.Other;
+		if (EndpointIdentity.localStore(repository) != null) {
+			endpointType = EndpointType.LocalStore;
+		} else if (repository instanceof SPARQLRepository) {
+			endpointType = EndpointType.SparqlEndpoint;
+		} else if (repository instanceof HTTPRepository) {
+			endpointType = EndpointType.RemoteRepository;
+		}
+		return repProvider.loadEndpoint(new RepositoryInformation(id, name, location, endpointType));
 	}
 
 	/**

@@ -174,6 +174,12 @@ class BulkTaskSchedulerTest {
 			assertThatThrownBy(() -> parent.get(10, TimeUnit.SECONDS))
 					.isInstanceOf(ExecutionException.class)
 					.hasCauseInstanceOf(IOException.class);
+			// The future publishes its failure before the tracked task releases the parent lease; wait for that
+			// release instead of racing it.
+			long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(10);
+			while (scheduler.reservedMemoryBytes() != 0L && System.nanoTime() < deadline) {
+				Thread.onSpinWait();
+			}
 			assertThat(scheduler.reservedMemoryBytes()).isZero();
 			assertThat(scheduler.reservedFileDescriptors()).isZero();
 			assertThat(scheduler.peakReservedMemoryBytes()).isEqualTo(16L);

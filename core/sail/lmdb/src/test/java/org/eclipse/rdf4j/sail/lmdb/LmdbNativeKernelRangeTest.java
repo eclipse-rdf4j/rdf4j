@@ -21,16 +21,19 @@ import java.util.Map;
 import java.util.concurrent.TimeUnit;
 
 import org.eclipse.rdf4j.model.IRI;
+import org.eclipse.rdf4j.model.Literal;
 import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.QueryResults;
 import org.eclipse.rdf4j.query.explanation.Explanation;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
 import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
+import org.eclipse.rdf4j.repository.sail.SailTupleQuery;
 import org.eclipse.rdf4j.sail.lmdb.config.DirectAdjacencyMode;
 import org.eclipse.rdf4j.sail.lmdb.config.LmdbStoreConfig;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.JaninoPipelineTestAccess;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.KernelExecutionTestAccess;
+import org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbNativeForceableStrategies;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -43,7 +46,6 @@ class LmdbNativeKernelRangeTest {
 	private static final String EX = "http://example.com/";
 	private static final String[] PROPERTIES = {
 			"rdf4j.lmdb.nativeQueryEngine.enabled",
-			"rdf4j.lmdb.costCalibration.enabled",
 			"rdf4j.lmdb.janinoCodegen.enabled",
 			"rdf4j.lmdb.janinoCodegen.thresholdRows",
 			"rdf4j.lmdb.janinoCodegen.synchronous",
@@ -72,7 +74,6 @@ class LmdbNativeKernelRangeTest {
 		}
 		System.setProperty("rdf4j.lmdb.nativeQueryEngine.enabled", "true");
 		// Route contracts use stable strategy preference, independent of earlier runtime cost samples.
-		System.setProperty("rdf4j.lmdb.costCalibration.enabled", "false");
 		System.setProperty("rdf4j.lmdb.janinoCodegen.enabled", "true");
 		System.setProperty("rdf4j.lmdb.janinoCodegen.thresholdRows", "0");
 		System.setProperty("rdf4j.lmdb.janinoCodegen.synchronous", "true");
@@ -214,7 +215,7 @@ class LmdbNativeKernelRangeTest {
 		List<String> expected = genericRows(query);
 		assertThat(expected).containsExactly("3", EX + "item1=1", EX + "item1=1");
 		System.setProperty("rdf4j.lmdb.janinoCodegen.enabled", Boolean.toString(codegen));
-		assertThat(nativeRows(query)).containsExactlyElementsOf(expected);
+		assertThat(unforcedNativeRows(query)).containsExactlyElementsOf(expected);
 	}
 
 	@ParameterizedTest(name = "composed ranged OPTIONAL preserves results with codegen={0}")
@@ -254,7 +255,7 @@ class LmdbNativeKernelRangeTest {
 		List<String> expected = genericRows(query);
 		assertThat(expected).containsExactly(EX + "item0=0=" + EX + "graph", EX + "item1=1=" + EX + "graph");
 		KernelExecutionTestAccess.resetMetrics();
-		assertThat(nativeRows(query)).containsExactlyElementsOf(expected);
+		assertThat(unforcedNativeRows(query)).containsExactlyElementsOf(expected);
 		// Context-bearing generated scans may conservatively decline. Either execution route must retain GRAPH scope;
 		// this case prevents a future range-aware scanner from widening the graph at the same time as the key range.
 	}
@@ -288,10 +289,13 @@ class LmdbNativeKernelRangeTest {
 				+ "}";
 
 		assertThat(genericCount(query)).isEqualTo(expectedCount);
+		assertThat(nativeCount(query)).isEqualTo(expectedCount);
+		assertAdjacencyCandidate(query);
 		LmdbPrefixRunPlan.resetMetrics();
-		assertThat(nativeCount(query))
-				.as("the prefix aggregate must not replace a ranged plane with its unfiltered row total")
-				.isEqualTo(expectedCount);
+		assertThat(((Literal) rows(query, true, "adjacencyAggregate").getFirst().getValue("c"))
+				.longValue())
+						.as("the prefix aggregate must not replace a ranged plane with its unfiltered row total")
+						.isEqualTo(expectedCount);
 		assertThat(LmdbPrefixRunPlan.INCOMING_ADJACENCY_OPENED.get())
 				.as("the object range must bound the incoming OSC root stream")
 				.isPositive();
@@ -312,8 +316,11 @@ class LmdbNativeKernelRangeTest {
 
 		List<String> expected = genericRows(query);
 		assertThat(expected).containsExactly(EX + "item3=2", EX + "item4=2");
-		LmdbPrefixRunPlan.resetMetrics();
 		assertThat(nativeRows(query)).containsExactlyElementsOf(expected);
+		assertAdjacencyCandidate(query);
+		LmdbPrefixRunPlan.resetMetrics();
+		assertThat(rows(query, true, "adjacencyAggregate").stream().map(LmdbNativeKernelRangeTest::render).sorted())
+				.containsExactlyElementsOf(expected);
 		assertThat(LmdbPrefixRunPlan.OUTGOING_ADJACENCY_OPENED.get()).isPositive();
 		assertThat(LmdbPrefixRunPlan.INCOMING_ADJACENCY_OPENED.get()).isZero();
 		assertThat(LmdbPrefixRunPlan.NEIGHBOR_VALUES_DECODED.get()).isPositive();
@@ -452,7 +459,7 @@ class LmdbNativeKernelRangeTest {
 	}
 
 	private long count(String query, boolean nativeEnabled) {
-		return ((org.eclipse.rdf4j.model.Literal) rows(query, nativeEnabled).get(0).getValue("c")).longValue();
+		return ((Literal) rows(query, nativeEnabled).get(0).getValue("c")).longValue();
 	}
 
 	private List<String> genericRows(String query) {
@@ -463,10 +470,43 @@ class LmdbNativeKernelRangeTest {
 		return rows(query, true).stream().map(LmdbNativeKernelRangeTest::render).sorted().toList();
 	}
 
+	/** For parity-only assertions whose shape has no kernel candidate at every decision point. */
+	private List<String> unforcedNativeRows(String query) {
+		return rows(query, true, LmdbNativeForceableStrategies.NOT_ACTIVATED).stream()
+				.map(LmdbNativeKernelRangeTest::render)
+				.sorted()
+				.toList();
+	}
+
 	private List<BindingSet> rows(String query, boolean nativeEnabled) {
+		return rows(query, nativeEnabled, null);
+	}
+
+	private List<BindingSet> rows(String query, boolean nativeEnabled, String strategy) {
 		System.setProperty("rdf4j.lmdb.nativeQueryEngine.enabled", Boolean.toString(nativeEnabled));
 		try (SailRepositoryConnection connection = repository.getConnection()) {
-			return QueryResults.asList(connection.prepareTupleQuery(query).evaluate());
+			SailTupleQuery prepared = (SailTupleQuery) connection.prepareTupleQuery(query);
+			// this suite tests range handling inside the kernels, so the kernel tier is forced whenever the
+			// caller did not name a strategy: the measured selector may legitimately prefer a rival on tiny stores
+			if (strategy == null && nativeEnabled) {
+				boolean codegen = !"false".equals(System.getProperty("rdf4j.lmdb.janinoCodegen.enabled"));
+				strategy = codegen ? "irAggregate,irKernel" : "irAggregateInterpreted,irKernelInterpreted";
+			}
+			prepared.setForcedLmdbExecutionStrategy(strategy);
+			return QueryResults.asList(prepared.evaluate());
+		}
+	}
+
+	private void assertAdjacencyCandidate(String query) {
+		try (SailRepositoryConnection connection = repository.getConnection()) {
+			assertThat(KernelExecutionTestAccess.eligibleStrategies(connection.prepareTupleQuery(query)
+					.explain(Explanation.Level.Optimized)
+					.toGenericPlanNode()))
+							.contains("adjacencyAggregate", "irAggregate", "irAggregateInterpreted", "nestedLoop");
+			SailTupleQuery forced = (SailTupleQuery) connection.prepareTupleQuery(query);
+			forced.setForcedLmdbExecutionStrategy("adjacencyAggregate");
+			assertThat(forced.explain(Explanation.Level.Telemetry).toString())
+					.contains("nativeExecutionPath=adjacencyAggregate");
 		}
 	}
 

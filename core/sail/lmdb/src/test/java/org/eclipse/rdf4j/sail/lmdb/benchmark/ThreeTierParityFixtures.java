@@ -23,15 +23,17 @@ import java.util.Properties;
 import java.util.Set;
 import java.util.concurrent.TimeUnit;
 
-import org.apache.commons.io.FileUtils;
 import org.eclipse.rdf4j.common.transaction.IsolationLevels;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.ValueFactory;
+import org.eclipse.rdf4j.query.TupleQuery;
 import org.eclipse.rdf4j.query.TupleQueryResult;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
 import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
+import org.eclipse.rdf4j.repository.sail.SailTupleQuery;
 import org.eclipse.rdf4j.sail.lmdb.AdjacencyEngagementTestAccess;
 import org.eclipse.rdf4j.sail.lmdb.LmdbStore;
+import org.eclipse.rdf4j.sail.lmdb.LmdbTestUtil;
 import org.eclipse.rdf4j.sail.lmdb.benchmark.ThreeTierParityCorpus.CorrelatedData;
 import org.eclipse.rdf4j.sail.lmdb.benchmark.ThreeTierParityCorpus.Dataset;
 import org.eclipse.rdf4j.sail.lmdb.benchmark.ThreeTierParityCorpus.FoafData;
@@ -162,12 +164,21 @@ final class ThreeTierParityFixtures {
 		File dataDir = temporaryDirectory("rdf4j-lmdb-three-tier-foaf");
 		Fixture fixture = open(Dataset.FOAF, regime,
 				regime.applyTo(FoafCliqueQueryBenchmark.createBenchmarkConfig()), dataDir, dataDir);
-		try (SailRepositoryConnection connection = fixture.repository.getConnection()) {
-			new FoafCliqueDataGenerator(people, 30, 3, 8, randomEdges, 12345L).populate(connection);
-			populateChainShapes(connection, people);
+		try {
+			try (SailRepositoryConnection connection = fixture.repository.getConnection()) {
+				new FoafCliqueDataGenerator(people, 30, 3, 8, randomEdges, 12345L).populate(connection);
+				populateChainShapes(connection, people);
+			}
+			fixture.awaitAdjacency();
+			return fixture;
+		} catch (RuntimeException | Error failure) {
+			try {
+				fixture.close();
+			} catch (Throwable cleanupFailure) {
+				failure.addSuppressed(cleanupFailure);
+			}
+			throw failure;
 		}
-		fixture.awaitAdjacency();
-		return fixture;
 	}
 
 	private static Fixture openCorrelated(ThreeTierRegime regime) {
@@ -175,11 +186,20 @@ final class ThreeTierParityFixtures {
 		File dataDir = temporaryDirectory("rdf4j-lmdb-three-tier-correlated");
 		Fixture fixture = open(Dataset.CORRELATED, regime,
 				regime.applyTo(new LmdbStoreConfig("spoc,posc,ospc")), dataDir, dataDir);
-		try (SailRepositoryConnection connection = fixture.repository.getConnection()) {
-			populateCorrelated(connection, outerRows);
+		try {
+			try (SailRepositoryConnection connection = fixture.repository.getConnection()) {
+				populateCorrelated(connection, outerRows);
+			}
+			fixture.awaitAdjacency();
+			return fixture;
+		} catch (RuntimeException | Error failure) {
+			try {
+				fixture.close();
+			} catch (Throwable cleanupFailure) {
+				failure.addSuppressed(cleanupFailure);
+			}
+			throw failure;
 		}
-		fixture.awaitAdjacency();
-		return fixture;
 	}
 
 	private static Fixture openTheme(ThreeTierRegime regime) {
@@ -190,16 +210,35 @@ final class ThreeTierParityFixtures {
 		verifyThemeStore(storeDirectory, config);
 		// No temporary directory: the theme store is shared and clean-protected, so it is never deleted here.
 		Fixture fixture = open(Dataset.THEME, regime, config, storeDirectory, null);
-		fixture.awaitAdjacency();
-		return fixture;
+		try {
+			fixture.awaitAdjacency();
+			return fixture;
+		} catch (RuntimeException | Error failure) {
+			try {
+				fixture.close();
+			} catch (Throwable cleanupFailure) {
+				failure.addSuppressed(cleanupFailure);
+			}
+			throw failure;
+		}
 	}
 
 	private static Fixture open(Dataset dataset, ThreeTierRegime regime, LmdbStoreConfig config, File dataDir,
 			File temporaryDataDir) {
 		LmdbStore store = new LmdbStore(dataDir, config);
 		SailRepository repository = new SailRepository(store);
-		repository.init();
-		return new Fixture(dataset, regime, repository, store, temporaryDataDir);
+		Fixture fixture = new Fixture(dataset, regime, repository, store, temporaryDataDir);
+		try {
+			repository.init();
+			return fixture;
+		} catch (RuntimeException | Error failure) {
+			try {
+				fixture.close();
+			} catch (Throwable cleanupFailure) {
+				failure.addSuppressed(cleanupFailure);
+			}
+			throw failure;
+		}
 	}
 
 	/**
@@ -348,16 +387,29 @@ final class ThreeTierParityFixtures {
 			return store;
 		}
 
+		/**
+		 * The Janino regime measures the compiled kernels, so it forces that family wherever a decision offers one
+		 * (soft preference list: compiled first, the interpreted twin while compilation is pending, free elsewhere).
+		 * Unforced, the measured selector prices the serial paths below the kernels on corpora this small (2026-11-03),
+		 * and the regime would measure nothing.
+		 */
+		private static final String JANINO_FAMILY = "irKernel,irKernelInterpreted,irAggregate,irAggregateInterpreted";
+
 		/** Evaluates one corpus query and returns its row count. */
 		long execute(ThreeTierParityCorpus entry) {
-			try (SailRepositoryConnection connection = repository.getConnection();
-					TupleQueryResult result = connection.prepareTupleQuery(entry.query()).evaluate()) {
-				long rows = 0L;
-				while (result.hasNext()) {
-					result.next();
-					rows++;
+			try (SailRepositoryConnection connection = repository.getConnection()) {
+				TupleQuery query = connection.prepareTupleQuery(entry.query());
+				if (regime.janinoEnabled()) {
+					((SailTupleQuery) query).setForcedLmdbExecutionStrategy(JANINO_FAMILY);
 				}
-				return rows;
+				try (TupleQueryResult result = query.evaluate()) {
+					long rows = 0L;
+					while (result.hasNext()) {
+						result.next();
+						rows++;
+					}
+					return rows;
+				}
 			}
 		}
 
@@ -417,16 +469,10 @@ final class ThreeTierParityFixtures {
 		}
 
 		void close() {
-			try {
-				repository.shutDown();
-			} finally {
-				if (temporaryDataDir != null && temporaryDataDir.exists()) {
-					try {
-						FileUtils.deleteDirectory(temporaryDataDir);
-					} catch (IOException e) {
-						throw new UncheckedIOException(e);
-					}
-				}
+			repository.shutDown();
+			// Only remove generated stores after their native owner has closed successfully.
+			if (temporaryDataDir != null) {
+				LmdbTestUtil.deleteDir(temporaryDataDir);
 			}
 		}
 

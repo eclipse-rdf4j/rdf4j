@@ -15,14 +15,22 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.util.List;
 import java.util.Locale;
+import java.util.Map;
+import java.util.concurrent.atomic.AtomicInteger;
 
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
+import tools.jackson.core.StreamReadConstraints;
+import tools.jackson.core.json.JsonFactory;
 import tools.jackson.databind.JsonNode;
 import tools.jackson.databind.ObjectMapper;
 import tools.jackson.databind.json.JsonMapper;
@@ -597,5 +605,188 @@ class GenericPlanNodeTest {
 
 		assertEquals(prelude, roundTripped.getPhysicalPlanPrelude());
 		assertEquals(originalToString, roundTripped.toString());
+	}
+
+	@Test
+	void toJsonSerializesFinitePlanBeyondDefaultJacksonDepth() throws Exception {
+		int nodeCount = 260;
+		GenericPlanNode root = new GenericPlanNode("depth-0");
+		GenericPlanNode leaf = root;
+		for (int i = 1; i < nodeCount; i++) {
+			GenericPlanNode child = new GenericPlanNode("depth-" + i);
+			leaf.addPlans(child);
+			leaf = child;
+		}
+		leaf.setLongMetricActual("deepLeafMetric", 73L);
+		leaf.setStrategyDecisions(List.of(new StrategyDecision("deepDecision", 1L, "static", "hash", null,
+				"deep plan strategy",
+				List.of(new StrategyDecision.Candidate("hash", 1, true, "selected", null, null)))));
+
+		String json = new ExplanationImpl(root, false, null).toJson();
+		Files.writeString(Path.of("target", "deep-explanation-plan.json"), json);
+		int maxJsonDepth = Math.addExact(2 * nodeCount - 1, 4);
+		assertTrue(maxJsonDepth > 500, "the fixture must exceed Jackson's default read and write limits");
+		ObjectMapper reader = JsonMapper.builder(JsonFactory.builder()
+				.streamReadConstraints(StreamReadConstraints.builder().maxNestingDepth(maxJsonDepth).build())
+				.build()).build();
+		JsonNode tree = reader.readTree(json);
+
+		int serializedNodes = 0;
+		JsonNode serializedLeaf = tree;
+		while (serializedLeaf != null) {
+			serializedNodes++;
+			JsonNode plans = serializedLeaf.get("plans");
+			if (plans == null) {
+				break;
+			}
+			assertEquals(1, plans.size());
+			serializedLeaf = plans.get(0);
+		}
+		assertEquals(nodeCount, serializedNodes);
+		assertEquals("\"depth-259\"", serializedLeaf.get("type").toString());
+		assertEquals("73", serializedLeaf.get("longMetricsActual").get("deepLeafMetric").toString());
+		assertEquals("\"deepDecision\"",
+				serializedLeaf.get("strategyDecisions").get(0).get("decisionPoint").toString());
+		assertEquals("\"hash\"",
+				serializedLeaf.get("strategyDecisions").get(0).get("candidates").get(0).get("strategy").toString());
+	}
+
+	@Test
+	void toJsonKeepsShallowSharedSubtreeShape() throws Exception {
+		GenericPlanNode shared = new GenericPlanNode("shared");
+		GenericPlanNode left = new GenericPlanNode("left");
+		left.addPlans(shared);
+		GenericPlanNode right = new GenericPlanNode("right");
+		right.addPlans(shared);
+		GenericPlanNode root = new GenericPlanNode("root");
+		root.addPlans(left, right);
+		root.setLongMetricActual("rootMetric", 11L);
+
+		String json = new ExplanationImpl(root, false, null).toJson();
+		JsonNode tree = JsonMapper.builder().build().readTree(json);
+
+		assertEquals("\"root\"", tree.get("type").toString());
+		assertEquals("11", tree.get("longMetricsActual").get("rootMetric").toString());
+		assertEquals(2, tree.get("plans").size());
+		assertEquals("\"shared\"", tree.get("plans").get(0).get("plans").get(0).get("type").toString());
+		assertEquals("\"shared\"", tree.get("plans").get(1).get("plans").get(0).get("type").toString());
+	}
+
+	@Test
+	void toJsonPreservesDefaultDepthForNestedSubclassMetadata() throws Exception {
+		GenericPlanNode node = new PlanWithNestedMetadata();
+
+		String json = new ExplanationImpl(node, false, null).toJson();
+		JsonNode serialized = JsonMapper.builder().build().readTree(json);
+
+		assertEquals("nested", serialized.path("nestedMetadata").path("items").get(0).path("name").asText());
+	}
+
+	@Test
+	void toJsonIncludesSubclassMetadataDepthOnDeepPlan() throws Exception {
+		int nodeCount = 260;
+		GenericPlanNode root = new GenericPlanNode("deep-0");
+		GenericPlanNode leaf = root;
+		for (int i = 1; i < nodeCount; i++) {
+			GenericPlanNode child = i == nodeCount - 1
+					? new PlanWithNestedMetadata("deep-" + i)
+					: new GenericPlanNode("deep-" + i);
+			leaf.addPlans(child);
+			leaf = child;
+		}
+
+		String json = new ExplanationImpl(root, false, null).toJson();
+		int maxJsonDepth = 600;
+		ObjectMapper reader = JsonMapper.builder(JsonFactory.builder()
+				.streamReadConstraints(StreamReadConstraints.builder().maxNestingDepth(maxJsonDepth).build())
+				.build()).build();
+		JsonNode serialized = reader.readTree(json);
+		int serializedNodes = 0;
+		JsonNode serializedLeaf = serialized;
+		while (serializedLeaf != null) {
+			serializedNodes++;
+			JsonNode plans = serializedLeaf.get("plans");
+			if (plans == null) {
+				break;
+			}
+			assertEquals(1, plans.size());
+			serializedLeaf = plans.get(0);
+		}
+		assertEquals(nodeCount, serializedNodes);
+		assertEquals("\"deep-259\"", serializedLeaf.get("type").toString());
+		assertEquals("nested", serializedLeaf.path("nestedMetadata").path("items").get(0).path("name").asText());
+	}
+
+	@Test
+	void toJsonDerivesDepthFromSingleVirtualPlanSnapshot() throws Exception {
+		int nodeCount = 260;
+		GenericPlanNode shallowStoredPlan = new GenericPlanNode("stored");
+		GenericPlanNode returnedRoot = new GenericPlanNode("returned-0");
+		GenericPlanNode leaf = returnedRoot;
+		for (int i = 1; i < nodeCount; i++) {
+			GenericPlanNode child = new GenericPlanNode("returned-" + i);
+			leaf.addPlans(child);
+			leaf = child;
+		}
+		leaf.setLongMetricActual("deepLeafMetric", 91L);
+
+		AtomicInteger snapshotCalls = new AtomicInteger();
+		ExplanationImpl explanation = new ExplanationImpl(shallowStoredPlan, false, null) {
+			@Override
+			public GenericPlanNode toGenericPlanNode() {
+				snapshotCalls.incrementAndGet();
+				return returnedRoot;
+			}
+		};
+
+		String json = explanation.toJson();
+		Files.writeString(Path.of("target", "deep-overridden-explanation-plan.json"), json);
+		assertEquals(1, snapshotCalls.get(), "toJson must serialize one stable virtual plan snapshot");
+
+		int maxJsonDepth = Math.addExact(2 * nodeCount - 1, 4);
+		ObjectMapper reader = JsonMapper.builder(JsonFactory.builder()
+				.streamReadConstraints(StreamReadConstraints.builder().maxNestingDepth(maxJsonDepth).build())
+				.build()).build();
+		JsonNode serialized = reader.readTree(json);
+		int serializedNodes = 0;
+		JsonNode serializedLeaf = serialized;
+		while (serializedLeaf != null) {
+			serializedNodes++;
+			JsonNode plans = serializedLeaf.get("plans");
+			if (plans == null) {
+				break;
+			}
+			assertEquals(1, plans.size());
+			serializedLeaf = plans.get(0);
+		}
+		assertEquals(nodeCount, serializedNodes);
+		assertEquals("\"returned-259\"", serializedLeaf.get("type").toString());
+		assertEquals("91", serializedLeaf.get("longMetricsActual").get("deepLeafMetric").toString());
+	}
+
+	@Test
+	void toJsonReportsCyclicPlanInput() {
+		GenericPlanNode root = new GenericPlanNode("root");
+		GenericPlanNode child = new GenericPlanNode("child");
+		root.addPlans(child);
+		child.addPlans(root);
+
+		IllegalArgumentException error = assertThrows(IllegalArgumentException.class,
+				() -> new ExplanationImpl(root, false, null).toJson());
+		assertTrue(error.getMessage().toLowerCase(Locale.ROOT).contains("cycle"), error.getMessage());
+	}
+
+	public static final class PlanWithNestedMetadata extends GenericPlanNode {
+		public PlanWithNestedMetadata() {
+			this("PlanWithNestedMetadata");
+		}
+
+		public PlanWithNestedMetadata(String type) {
+			super(type);
+		}
+
+		public Map<String, Object> getNestedMetadata() {
+			return Map.of("items", List.of(Map.of("name", "nested")));
+		}
 	}
 }

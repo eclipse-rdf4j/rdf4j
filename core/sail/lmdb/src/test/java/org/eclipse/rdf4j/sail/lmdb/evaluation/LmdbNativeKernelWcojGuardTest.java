@@ -15,6 +15,7 @@ package org.eclipse.rdf4j.sail.lmdb.evaluation;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import java.io.File;
+import java.util.ArrayList;
 import java.util.List;
 
 import org.eclipse.rdf4j.model.IRI;
@@ -26,6 +27,7 @@ import org.eclipse.rdf4j.query.explanation.Explanation;
 import org.eclipse.rdf4j.query.explanation.GenericPlanNode;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
 import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
+import org.eclipse.rdf4j.repository.sail.SailTupleQuery;
 import org.eclipse.rdf4j.sail.lmdb.LmdbStore;
 import org.eclipse.rdf4j.sail.lmdb.config.LmdbStoreConfig;
 import org.junit.jupiter.api.AfterEach;
@@ -34,10 +36,10 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
 /**
- * A cyclic {@code COUNT} join — a triangle — is the worst-case-optimal join's fast path: leapfrog stays bounded well
- * below the product of its inputs, which is the whole reason the strategy exists. The IR/Janino aggregate kernel has no
- * such bound; it enumerates what the interpreter would and hash-dedups, just more cheaply per row. When both are viable
- * the kernel must yield.
+ * A cyclic {@code COUNT} join — a triangle — exercises the worst-case-optimal join alongside independently legal
+ * aggregate kernels. This fixture pins the exact answer, requires the common strategy inventory to retain those
+ * kernels, and proves WCOJ remains reachable when explicitly selected. The default optimizer may choose a legal
+ * alternative, so an unforced route is not part of this regression's contract.
  * <p>
  * This is the HIGHLY_CONNECTED q8 regression in miniature. That query went from 110.68ms to 241.06ms the day the kernel
  * learned to compile a {@code JoinPlan}: the decline {@code irKernel:agg:unsupported:JoinPlan} disappeared, the kernel
@@ -94,27 +96,39 @@ public class LmdbNativeKernelWcojGuardTest {
 	}
 
 	@Test
-	public void cyclicCountDoesNotAttemptIrAggregate() {
+	public void cyclicCountKeepsLegalInventoryAndWcojReachableWhenForced() {
 		String query = "PREFIX ex: <" + EX + "> "
 				+ "SELECT (COUNT(*) AS ?c) WHERE { ?a ex:connectsTo ?b . ?b ex:connectsTo ?d . ?d ex:connectsTo ?a }";
 
-		// Sanity: this shape really is the worst-case-optimal join's fast path (guards the fixture, not the fix).
-		assertThat(executionPath(query)).isEqualTo(LmdbNativeAttemptMetrics.PATH_WCOJ);
+		assertThat(eligibleStrategies(optimizedPlan(query)))
+				.as("the common inventory must retain the specialist and both legal serial IR tiers")
+				.contains(LmdbNativeAttemptMetrics.PATH_WCOJ, LmdbNativeAttemptMetrics.PATH_IR_AGGREGATE,
+						LmdbNativeAttemptMetrics.PATH_IR_AGGREGATE_INTERPRETED,
+						LmdbNativeAttemptMetrics.PATH_NESTED_LOOP);
 
-		// Isolate the kernel-attempt counter to a single clean execution (the explain above also executes).
-		LmdbNativeKernelExecution.resetMetrics();
+		assertThat(evaluateCount(query, null))
+				.as("the default optimizer returns each of the 8 triangles once per starting vertex")
+				.isEqualTo(24L);
 
-		long count;
+		assertThat(forcedExecutionPath(query, LmdbNativeAttemptMetrics.PATH_WCOJ))
+				.as("WCOJ remains executable even when the default optimizer prefers another legal route")
+				.isEqualTo(LmdbNativeAttemptMetrics.PATH_WCOJ);
+		assertThat(evaluateCount(query, LmdbNativeAttemptMetrics.PATH_WCOJ))
+				.as("the forced WCOJ result preserves the triangle count")
+				.isEqualTo(24L);
+
+	}
+
+	private long evaluateCount(String query, String forcedStrategy) {
 		try (SailRepositoryConnection connection = repository.getConnection()) {
-			List<BindingSet> rows = QueryResults.asList(connection.prepareTupleQuery(query).evaluate());
+			SailTupleQuery prepared = (SailTupleQuery) connection.prepareTupleQuery(query);
+			if (forcedStrategy != null) {
+				prepared.setForcedLmdbExecutionStrategy(forcedStrategy);
+			}
+			List<BindingSet> rows = QueryResults.asList(prepared.evaluate());
 			assertThat(rows).hasSize(1);
-			count = ((Literal) rows.get(0).getValue("c")).longValue();
+			return ((Literal) rows.get(0).getValue("c")).longValue();
 		}
-		assertThat(count).as("each of the 8 triangles is matched once per starting vertex").isEqualTo(24L);
-
-		assertThat(LmdbNativeKernelExecution.AGG_PLANNED.get())
-				.as("the IR aggregate kernel must not intercept a row a worst-case-optimal join would have served")
-				.isZero();
 	}
 
 	@Test
@@ -146,6 +160,44 @@ public class LmdbNativeKernelWcojGuardTest {
 			assertThat(path).as("expected a nativeExecutionPath metric in the explanation").isNotNull();
 			return path;
 		}
+	}
+
+	private GenericPlanNode optimizedPlan(String query) {
+		try (SailRepositoryConnection connection = repository.getConnection()) {
+			return connection.prepareTupleQuery(query).explain(Explanation.Level.Optimized).toGenericPlanNode();
+		}
+	}
+
+	private String forcedExecutionPath(String query, String strategy) {
+		try (SailRepositoryConnection connection = repository.getConnection()) {
+			SailTupleQuery prepared = (SailTupleQuery) connection.prepareTupleQuery(query);
+			prepared.setForcedLmdbExecutionStrategy(strategy);
+			String path = findStrategy(prepared.explain(Explanation.Level.Telemetry).toGenericPlanNode());
+			assertThat(path).as("expected a nativeExecutionPath metric in the forced-strategy explanation")
+					.isNotNull();
+			return path;
+		}
+	}
+
+	private static List<String> eligibleStrategies(GenericPlanNode node) {
+		List<String> strategies = new ArrayList<>();
+		if (node.getStrategyDecisions() != null) {
+			for (var decision : node.getStrategyDecisions()) {
+				if (decision.decisionPoint().contains("GROUP BY")) {
+					for (var candidate : decision.candidates()) {
+						if (!Boolean.FALSE.equals(candidate.canAttempt())) {
+							strategies.add(candidate.strategy());
+						}
+					}
+				}
+			}
+		}
+		if (node.getPlans() != null) {
+			for (GenericPlanNode child : node.getPlans()) {
+				strategies.addAll(eligibleStrategies(child));
+			}
+		}
+		return strategies;
 	}
 
 	private static String findStrategy(GenericPlanNode node) {

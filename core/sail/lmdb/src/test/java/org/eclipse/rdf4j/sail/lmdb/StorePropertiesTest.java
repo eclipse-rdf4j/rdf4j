@@ -39,15 +39,18 @@ class StorePropertiesTest {
 				"spoc,posc");
 		inlined.setInlineLiterals(true);
 		LmdbStore created = new LmdbStore(dir, inlined);
-		created.init();
-		created.shutDown();
+		try (var cleanup = LmdbTestUtil.onClose(created::shutDown)) {
+			created.init();
+		}
 
 		org.eclipse.rdf4j.sail.lmdb.config.LmdbStoreConfig notInlined = new org.eclipse.rdf4j.sail.lmdb.config.LmdbStoreConfig(
 				"spoc,posc");
 		notInlined.setInlineLiterals(false);
 		LmdbStore reopened = new LmdbStore(dir, notInlined);
-		org.junit.jupiter.api.Assertions.assertThrows(org.eclipse.rdf4j.sail.SailException.class, reopened::init,
-				"a store created with inlining on must refuse to open with it off");
+		try (var cleanup = LmdbTestUtil.onClose(reopened::shutDown)) {
+			org.junit.jupiter.api.Assertions.assertThrows(org.eclipse.rdf4j.sail.SailException.class, reopened::init,
+					"a store created with inlining on must refuse to open with it off");
+		}
 	}
 
 	/** The converse direction, and the same-setting case which must keep working. */
@@ -57,22 +60,26 @@ class StorePropertiesTest {
 				"spoc,posc");
 		notInlined.setInlineLiterals(false);
 		LmdbStore created = new LmdbStore(dir, notInlined);
-		created.init();
-		created.shutDown();
+		try (var cleanup = LmdbTestUtil.onClose(created::shutDown)) {
+			created.init();
+		}
 
 		org.eclipse.rdf4j.sail.lmdb.config.LmdbStoreConfig inlinedAgain = new org.eclipse.rdf4j.sail.lmdb.config.LmdbStoreConfig(
 				"spoc,posc");
 		inlinedAgain.setInlineLiterals(true);
 		LmdbStore mismatched = new LmdbStore(dir, inlinedAgain);
-		org.junit.jupiter.api.Assertions.assertThrows(org.eclipse.rdf4j.sail.SailException.class, mismatched::init,
-				"a store created with inlining off must refuse to open with it on");
+		try (var cleanup = LmdbTestUtil.onClose(mismatched::shutDown)) {
+			org.junit.jupiter.api.Assertions.assertThrows(org.eclipse.rdf4j.sail.SailException.class, mismatched::init,
+					"a store created with inlining off must refuse to open with it on");
+		}
 
 		org.eclipse.rdf4j.sail.lmdb.config.LmdbStoreConfig same = new org.eclipse.rdf4j.sail.lmdb.config.LmdbStoreConfig(
 				"spoc,posc");
 		same.setInlineLiterals(false);
 		LmdbStore reopened = new LmdbStore(dir, same);
-		assertDoesNotThrow(reopened::init, "reopening with the recorded setting must work");
-		reopened.shutDown();
+		try (var cleanup = LmdbTestUtil.onClose(reopened::shutDown)) {
+			assertDoesNotThrow(reopened::init, "reopening with the recorded setting must work");
+		}
 	}
 
 	@Test

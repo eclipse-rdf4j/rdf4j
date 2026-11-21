@@ -29,13 +29,11 @@ for (const [name, options] of [
   ['incremental organic', {incremental: true, movableNodeIds: selection, newNodeIds: selection}],
   ['new local nodes', {localNodeIds: selection}],
   ['organic selection', {mode: 'network', localNodeIds: selection}],
-  ['organic refine', {refine: true}],
   ['overlap repair', {repairOnly: true}],
   ['square', {mode: 'square'}],
   ['hierarchy selection', {mode: 'hierarchy', localNodeIds: selection}],
   ['hierarchy', {mode: 'hierarchy'}],
   ['grouped layout', {mode: 'network', groups}],
-  ['nonorganic refine', {mode: 'network', groups, refine: true}],
 ]) {
   test(`omitting final routes preserves all node geometry: ${name}`, async () => {
     const graph = fixture(), before = structuredClone(graph);

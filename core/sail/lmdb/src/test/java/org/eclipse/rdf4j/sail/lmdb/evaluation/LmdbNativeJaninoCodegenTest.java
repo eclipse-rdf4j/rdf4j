@@ -18,9 +18,16 @@ import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.mockito.Mockito.CALLS_REAL_METHODS;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.when;
 
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.time.Duration;
+import java.util.LinkedHashMap;
+import java.util.List;
+import java.util.Map;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
@@ -29,6 +36,9 @@ import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.Supplier;
 
+import org.eclipse.rdf4j.query.BindingSet;
+import org.eclipse.rdf4j.query.QueryEvaluationException;
+import org.eclipse.rdf4j.query.impl.EmptyBindingSet;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.codegen.JaninoKernel;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.codegen.KernelContext;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.codegen.KernelQueryCancelledException;
@@ -37,6 +47,12 @@ import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.CsvSource;
+import org.junit.jupiter.params.provider.ValueSource;
+
+import jdk.jfr.Recording;
+import jdk.jfr.consumer.RecordingFile;
 
 /**
  * Milestone-2 infrastructure tests for {@link LmdbNativeJaninoCodegen}: async compile + admission threshold, cache
@@ -134,6 +150,122 @@ public class LmdbNativeJaninoCodegenTest {
 			return first;
 		}
 		return LmdbNativeJaninoCodegen.awaitKernel(shapeKey, 30, TimeUnit.SECONDS);
+	}
+
+	@ParameterizedTest
+	@ValueSource(booleans = { false, true })
+	void pendingKernelAttemptReportsTheSpecificGateAtItsActualBoundary(boolean aggregate) throws Exception {
+		NativeLmdbQuerySource source = mock(NativeLmdbQuerySource.class, CALLS_REAL_METHODS);
+		NativeSlotLayout layout = new NativeSlotLayout(Map.of("a", 0, "b", 1, "c", 2), null);
+		layout.freeze(List.of("a", "b", "c"));
+		RowState row = new RowState(source, layout, EmptyBindingSet.getInstance());
+		java.util.Arrays.fill(row.slots, LmdbNativeAggregateCompiler.UNKNOWN);
+		row.recomputeBoundMask();
+		SlotPlan input = new JoinPlan(
+				new PatternPlan(Term.slot(0), Term.constant(129L), Term.slot(1), Term.unbound(),
+						ContextConstraint.UNRESTRICTED, false, 10D),
+				new PatternPlan(Term.slot(1), Term.constant(257L), Term.slot(2), Term.unbound(),
+						ContextConstraint.UNRESTRICTED, false, 10D));
+		AggregateSpec[] specs = { AggregateSpec.star("count") };
+		var lowered = aggregate
+				? LmdbNativeKernelLowering.lowerAggregate(input, row, new int[0], specs, null)
+				: LmdbNativeKernelLowering.lowerRows(input, row, null);
+		assertNotNull(lowered, "the pending-cache fixture must be admitted by real lowering");
+		var ir = lowered.kernel.withTelemetry(LmdbNativeKernelIr.Kernel.TelemetryMode.NONE);
+		CountDownLatch sourceEntered = new CountDownLatch(1);
+		CountDownLatch releaseSource = new CountDownLatch(1);
+		Map<String, String> capture = new LinkedHashMap<>();
+		Map<String, String> previous = LmdbNativeAttemptMetrics.installDeclineCapture(capture);
+		try {
+			assertNull(LmdbNativeJaninoCodegen.kernel(ir.shapeKey(), ir.className(), () -> {
+				sourceEntered.countDown();
+				try {
+					assertTrue(releaseSource.await(30, TimeUnit.SECONDS));
+				} catch (InterruptedException interrupted) {
+					Thread.currentThread().interrupt();
+					throw new IllegalStateException(interrupted);
+				}
+				return LmdbNativeKernelEmitter.emit(ir);
+			}, 1L));
+			assertTrue(sourceEntered.await(30, TimeUnit.SECONDS));
+			if (aggregate) {
+				NativeGroupIteration emitter = new NativeGroupIteration(source, input, layout, new int[0], specs,
+						false, EmptyBindingSet.getInstance(), null, null, false, null);
+				try (emitter) {
+					assertNull(LmdbNativeKernelExecution.tryEvaluateAggregateSerial(input, row, new int[0], specs,
+							emitter, null, null, false, false));
+				}
+			} else {
+				try (var proposal = LmdbNativeKernelExecution.proposeRows(input, row, null, false)) {
+					assertNotNull(proposal, "the compiled row fixture must be offered before asserting its decline");
+					assertNull(proposal.open());
+				}
+			}
+			String route = aggregate ? "irAggregate" : "irKernel";
+			assertNotNull(capture.get(route), "the actual route must record its declined gate");
+			assertTrue(capture.get(route).startsWith("COMPILE_PENDING["), capture.toString());
+		} finally {
+			releaseSource.countDown();
+			LmdbNativeAttemptMetrics.installDeclineCapture(previous);
+			row.closeDecodedInputs();
+		}
+	}
+
+	@Test
+	void kernelAttemptRetainsPendingAvailabilityAfterItsCacheEntryBecomesReady() throws Exception {
+		CountDownLatch sourceEntered = new CountDownLatch(1);
+		CountDownLatch releaseSource = new CountDownLatch(1);
+		String shape = "shape-explicit-attempt-snapshot";
+		try {
+			var pending = LmdbNativeJaninoCodegen.kernelAttempt(shape, KERNEL_CLASS, () -> {
+				sourceEntered.countDown();
+				try {
+					assertTrue(releaseSource.await(30, TimeUnit.SECONDS));
+				} catch (InterruptedException interrupted) {
+					Thread.currentThread().interrupt();
+					throw new IllegalStateException(interrupted);
+				}
+				return KERNEL_SOURCE;
+			}, 1L, "irAggregate");
+			assertTrue(sourceEntered.await(30, TimeUnit.SECONDS));
+			assertNull(pending.kernel());
+			assertTrue(pending.declineReason().startsWith("COMPILE_PENDING[route=irAggregate,"));
+			releaseSource.countDown();
+			JaninoKernel ready = LmdbNativeJaninoCodegen.awaitKernel(shape, 30, TimeUnit.SECONDS);
+			assertNotNull(ready);
+			ready.close();
+			assertTrue(pending.declineReason().startsWith("COMPILE_PENDING["));
+			var available = LmdbNativeJaninoCodegen.kernelAttempt(shape, KERNEL_CLASS, () -> KERNEL_SOURCE, 1L,
+					"irAggregate");
+			assertNotNull(available.kernel());
+			assertNull(available.declineReason());
+			available.kernel().close();
+		} finally {
+			releaseSource.countDown();
+		}
+	}
+
+	@Test
+	void kernelAttemptCapturesDisabledThresholdAndFailedCompilationWithoutInventingReadiness() {
+		System.setProperty(LmdbNativeJaninoCodegen.ENABLED_PROPERTY, "false");
+		var disabled = LmdbNativeJaninoCodegen.kernelAttempt("shape-attempt-gates", KERNEL_CLASS,
+				() -> KERNEL_SOURCE, 0L, "irKernel");
+		assertNull(disabled.kernel());
+		assertTrue(disabled.declineReason().startsWith("FEATURE_DISABLED["));
+		System.setProperty(LmdbNativeJaninoCodegen.ENABLED_PROPERTY, "true");
+		System.setProperty(LmdbNativeJaninoCodegen.THRESHOLD_ROWS_PROPERTY, "100");
+		var threshold = LmdbNativeJaninoCodegen.kernelAttempt("shape-attempt-gates", KERNEL_CLASS,
+				() -> KERNEL_SOURCE, 99L, "irKernel");
+		assertNull(threshold.kernel());
+		assertTrue(threshold.declineReason().contains("observedRows=99,thresholdRows=100"));
+		System.setProperty(LmdbNativeJaninoCodegen.THRESHOLD_ROWS_PROPERTY, "0");
+		System.setProperty(SYNCHRONOUS_PROPERTY, "true");
+		var broken = LmdbNativeJaninoCodegen.kernelAttempt("shape-attempt-broken", KERNEL_CLASS,
+				() -> "this is not Java", 1L, "irKernel");
+		assertNull(broken.kernel());
+		assertTrue(broken.declineReason().startsWith("COMPILE_FAILED[route=irKernel,"));
+		assertTrue(disabled.declineReason().startsWith("FEATURE_DISABLED["));
+		assertTrue(threshold.declineReason().startsWith("BELOW_THRESHOLD["));
 	}
 
 	@Test

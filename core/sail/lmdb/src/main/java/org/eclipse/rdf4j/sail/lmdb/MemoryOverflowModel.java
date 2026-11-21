@@ -15,7 +15,6 @@ import java.io.File;
 import java.io.IOException;
 import java.lang.ref.Cleaner;
 import java.nio.file.Files;
-import java.util.concurrent.atomic.AtomicBoolean;
 
 import org.eclipse.rdf4j.common.concurrent.locks.diagnostics.ConcurrentCleaner;
 import org.eclipse.rdf4j.common.io.FileUtil;
@@ -36,9 +35,7 @@ abstract class MemoryOverflowModel extends AbstractMemoryOverflowModel<SailSourc
 	private static final Logger logger = LoggerFactory.getLogger(MemoryOverflowModel.class);
 	private static final ConcurrentCleaner CLEANER = new ConcurrentCleaner();
 
-	private transient File dataDir;
-
-	private transient LmdbSailStore store;
+	private transient volatile Object closeLock;
 
 	private transient OverflowStoreCleaner overflowCleaner;
 
@@ -53,31 +50,33 @@ abstract class MemoryOverflowModel extends AbstractMemoryOverflowModel<SailSourc
 	private static final class OverflowStoreCleaner implements Runnable {
 		private final LmdbSailStore store;
 		private final File dataDir;
-		private final AtomicBoolean cleaned = new AtomicBoolean();
+		private boolean storeClosed;
+		private boolean cleaned;
 
 		private OverflowStoreCleaner(LmdbSailStore store, File dataDir) {
 			this.store = store;
 			this.dataDir = dataDir;
 		}
 
-		private void closeNow() {
-			if (!cleaned.compareAndSet(false, true)) {
+		private synchronized void closeNow() {
+			if (cleaned) {
 				return;
 			}
-			Throwable failure = null;
-			try {
+			// A refused shutdown explicitly leaves the native environment owned and open.
+			// Keep both its files and this cleanup owner available for an explicit retry.
+			if (!storeClosed) {
 				store.close();
-			} catch (Throwable closeFailure) {
-				failure = closeFailure;
+				storeClosed = true;
 			}
 			try {
 				if (dataDir.exists()) {
 					FileUtil.deleteDir(dataDir);
 				}
-			} catch (Throwable deleteFailure) {
-				failure = addSuppressed(failure, deleteFailure);
-			}
-			if (failure != null) {
+				if (dataDir.exists()) {
+					throw new IOException("Could not delete closed overflow store directory " + dataDir);
+				}
+				cleaned = true;
+			} catch (IOException failure) {
 				throw propagate(failure);
 			}
 		}
@@ -99,19 +98,18 @@ abstract class MemoryOverflowModel extends AbstractMemoryOverflowModel<SailSourc
 		SailSourceModel candidateModel = null;
 		OverflowStoreCleaner candidateCleaner = null;
 		Cleaner.Cleanable candidateCleanable = null;
+		// A previous failed migration may still own a native store whose close was refused.
+		innerClose();
 		try {
 			assert disk == null;
 			candidateDir = Files.createTempDirectory("model").toFile();
 			logger.debug("memory overflow using temp directory {}", candidateDir);
 			candidateStore = createSailStore(candidateDir);
-			candidateModel = new SailSourceModel(candidateStore, memory);
 			candidateCleaner = new OverflowStoreCleaner(candidateStore, candidateDir);
-			candidateCleanable = CLEANER.register(this, candidateCleaner);
-
-			dataDir = candidateDir;
-			store = candidateStore;
 			overflowCleaner = candidateCleaner;
+			candidateCleanable = CLEANER.register(this, candidateCleaner);
 			overflowStoreCleanup = candidateCleanable;
+			candidateModel = new SailSourceModel(candidateStore, memory);
 			disk = candidateModel;
 		} catch (Throwable failure) {
 			logger.error("Error while writing to overflow directory {}", candidateDir, failure);
@@ -120,58 +118,71 @@ abstract class MemoryOverflowModel extends AbstractMemoryOverflowModel<SailSourc
 			}
 			if (candidateCleaner != null) {
 				try {
-					candidateCleaner.closeNow();
+					innerClose();
 				} catch (Throwable cleanupFailure) {
 					failure = addSuppressed(failure, cleanupFailure);
 				}
 			} else {
+				boolean closed = candidateStore == null;
 				if (candidateStore != null) {
-					failure = closeResource(candidateStore, failure);
+					try {
+						candidateStore.close();
+						closed = true;
+					} catch (Throwable cleanupFailure) {
+						failure = addSuppressed(failure, cleanupFailure);
+					}
 				}
-				failure = deleteOwnedDirectory(candidateDir, failure);
-			}
-			if (candidateCleanable != null) {
-				candidateCleanable.clean();
+				if (closed) {
+					failure = deleteOwnedDirectory(candidateDir, failure);
+				}
 			}
 			throw propagate(failure);
 		}
 	}
 
 	@Override
+	public void close() {
+		// Do not hold the model monitor during native shutdown. The superclass marks itself closed
+		// before innerClose, so later explicit calls must still retry a retained cleanup owner.
+		synchronized (closeLock()) {
+			super.close();
+			innerClose();
+		}
+	}
+
+	private Object closeLock() {
+		Object lock = closeLock;
+		if (lock == null) {
+			synchronized (this) {
+				if (closeLock == null) {
+					closeLock = new Object();
+				}
+				lock = closeLock;
+			}
+		}
+		return lock;
+	}
+
+	@Override
 	protected void innerClose() {
 		Cleaner.Cleanable cleanable;
 		OverflowStoreCleaner cleaner;
-		LmdbSailStore localStore;
-		File localDir;
 		synchronized (this) {
 			cleanable = overflowStoreCleanup;
 			cleaner = overflowCleaner;
-			localStore = store;
-			localDir = dataDir;
-			overflowStoreCleanup = null;
-			overflowCleaner = null;
-			store = null;
-			dataDir = null;
 		}
-
-		Throwable failure = null;
 		if (cleaner != null) {
-			try {
-				cleaner.closeNow();
-			} catch (Throwable closeFailure) {
-				failure = closeFailure;
+			cleaner.closeNow();
+		}
+		// Only successful cleanup consumes the registration and releases the explicit retry owner.
+		synchronized (this) {
+			if (overflowCleaner == cleaner) {
+				overflowStoreCleanup = null;
+				overflowCleaner = null;
 			}
-		} else {
-			if (localStore != null) {
-				failure = closeResource(localStore, failure);
-			}
-			failure = deleteOwnedDirectory(localDir, failure);
 		}
 		if (cleanable != null) {
 			cleanable.clean();
-		}
-		if (failure != null) {
-			throw propagate(failure);
 		}
 	}
 

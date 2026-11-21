@@ -1453,16 +1453,25 @@ class QueryServletHeartbeatTest {
 		when(tupleQuery.evaluate())
 				.thenAnswer(invocation -> new IteratingTupleQueryResult(List.of("s"), List.of(binding("urn:s"))));
 
-		try {
-			String requestId = "flush-failure";
-			AtomicReference<Throwable> firstFailure = new AtomicReference<>();
-			Thread firstRequest = Thread.startVirtualThread(() -> {
-				try {
-					servlet.service(request(QUERY, null, null, requestId), responseWith(firstOutput));
-				} catch (Throwable e) {
-					firstFailure.set(e);
-				}
-			});
+		String requestId = "flush-failure";
+		AtomicReference<Throwable> firstFailure = new AtomicReference<>();
+		Thread firstRequest = Thread.ofVirtual().unstarted(() -> {
+			try {
+				servlet.service(request(QUERY, null, null, requestId), responseWith(firstOutput));
+			} catch (Throwable e) {
+				firstFailure.set(e);
+			}
+		});
+		try (AutoCloseable requestCleanup = () -> {
+			firstOutput.releasePayloadWrite.countDown();
+			try {
+				firstRequest.join(5000);
+				assertThat(firstRequest.isAlive()).isFalse();
+			} finally {
+				coordinator.shutdown();
+			}
+		}) {
+			firstRequest.start();
 			assertThat(firstOutput.payloadWritten.await(5, TimeUnit.SECONDS)).isTrue();
 			firstOutput.releasePayloadWrite.countDown();
 			firstRequest.join(5000);
@@ -1472,8 +1481,6 @@ class QueryServletHeartbeatTest {
 			ProbeServletOutputStream secondOutput = new ProbeServletOutputStream(0);
 			servlet.service(request(QUERY, null, null, requestId), responseWith(secondOutput));
 			assertThat(secondOutput.asString()).contains("query-result-status");
-		} finally {
-			coordinator.shutdown();
 		}
 	}
 

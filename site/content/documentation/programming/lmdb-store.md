@@ -179,6 +179,151 @@ with both `http://rdf4j.org/config/sail/lmdb#sketchEstimatorEnabled` and
    config:sail.experimentalQueryOptimizations true .
 ```
 
+## Dictionary value cleanup
+
+`asyncValueCleanup` is enabled by default, including when an older configuration omits the property. The default uses
+bounded best-effort background dictionary cleanup to keep candidate processing off the application commit path. Pending
+cleanup hints may be lost on a crash; this does not change committed RDF data.
+
+To retain durable retirement recording, explicitly set `new LmdbStoreConfig().setAsyncValueCleanup(false)` before
+startup. This preserves recoverable cleanup work after removing statements, not a guarantee of immediate reclamation.
+Readers, unresolved values and unknown bounded liveness may still prevent dictionary records from being reclaimed.
+
+Configure the background cleanup bounds before starting the repository:
+
+```java
+LmdbStoreConfig config = new LmdbStoreConfig()
+        .setAsyncValueCleanupMaxBytes(8L * 1024 * 1024)
+        .setAsyncValueCleanupBatchSize(256)
+        .setAsyncValueCleanupAdmissionTimeoutMillis(250)
+        .setAsyncValueCleanupShutdownTimeoutMillis(3_500);
+```
+
+This changes dictionary reclamation policy, not RDF transaction semantics or the dictionary format. Committed RDF
+remains correct if a crash loses pending cleanup candidates. Unused dictionary records may then remain on disk, and
+subsequent insertion of the same RDF values can reuse those records. Rollback discards candidates for unpublished work.
+The existing `NONE` behavior can publish checkpoints before the final commit or rollback; cleanup for those already
+published checkpoints remains eligible. Candidates become eligible only after successful statement publication;
+application commits do not reclaim them.
+
+The settings are captured at startup. `LmdbStore` also exposes matching setters, which reject changes while the store
+is initialized. Close and reopen the store to change modes or limits. Changes to a caller-held `LmdbStoreConfig` after
+initialization do not reconfigure the running cleanup worker.
+
+| Setting | Default | Constraint and meaning |
+| --- | ---: | --- |
+| `asyncValueCleanup` | `true` | Enables one background cleanup worker; explicit `false` selects durable retirement recording. |
+| `asyncValueCleanupMaxCandidates` | Derived from the cleanup byte budget | At least 16; an explicit value additionally bounds retained candidate slots, including producer reservations and worker workspace. |
+| `asyncValueCleanupMaxBytes` | 1% of JVM maximum heap, capped at 64 MiB | At least 4096; bounds estimated cleanup memory, including producer reservations and worker workspace. Explicit values override the dynamic default. |
+| `asyncValueCleanupBatchSize` | `256` | Positive and no larger than the candidate limit; the worker may use a smaller batch to meet the memory bounds. |
+| `asyncValueCleanupMaxPendingProducers` | Byte budget / 1024, at least 1 | Positive upper bound on total active and queued producer streams. The charged byte and candidate budgets may constrain admission sooner. Explicit values override this derived total cap. |
+| `asyncValueCleanupPressureTimeoutMillis` | `250` | Nonnegative maximum brief pause for safe new-writer admission under cleanup pressure; zero disables this optional pause. |
+| `asyncValueCleanupAdmissionTimeoutMillis` | `250` | Positive interruptible total admission wait before publication, including any pressure pause; not a bound on complete transaction duration. Explicit longer values remain supported. |
+| `asyncValueCleanupShutdownTimeoutMillis` | `3500` | Positive best-effort budget for finishing cleanup and saving pending work; active native calls must still finish safely. |
+
+For an explicit 8 MiB byte ceiling, use the same LMDB predicates with either the current or legacy Sail configuration vocabulary:
+
+```turtle
+@prefix lmdb: <http://rdf4j.org/config/sail/lmdb#> .
+
+[] lmdb:asyncValueCleanup true ;
+   lmdb:asyncValueCleanupMaxBytes 8388608 ;
+   lmdb:asyncValueCleanupBatchSize 256 ;
+   lmdb:asyncValueCleanupAdmissionTimeoutMillis 250 ;
+   lmdb:asyncValueCleanupShutdownTimeoutMillis 3500 .
+```
+
+Omitting `asyncValueCleanup` now enables it intentionally, even in configurations written before this option existed
+or when it previously defaulted to false. To keep durable retirement recording, add `lmdb:asyncValueCleanup false`.
+This applies to both current and legacy Sail configuration vocabularies. Exports omit the default `true` value but
+retain explicit `false`, so an explicit durable choice survives export and parsing.
+
+Candidate buffers grow on demand within the configured byte budget; the default candidate and producer limits derive
+from that budget, while worker processing stays in bounded batches. A transaction larger than the available queue
+memory spills into a temporary, non-durable candidate stream; it does not reserve its entire candidate count in memory.
+Runtime spills are best effort and are not forced to disk. Before consuming a queued spilled stream, cleanup validates
+the completed stream prefix against its recorded checksum. A corrupt stream is discarded rather than used for
+reclamation; this loses optional cleanup hints, not committed RDF data. This check is not a promise against changes
+occurring after validation. Shutdown persistence uses the stronger forced, native-fenced protocol described below. Spill-file disk
+usage can grow with the transaction's candidate count; the configured candidate and byte limits govern retained cleanup
+memory. Admission can fail or be interrupted before publication if capacity remains unavailable. A successful publication
+is not reported as rolled back because cleanup handoff later encounters backpressure.
+
+Concurrent producers and waiting callers grow on demand within the charged byte budget and the effective producer-stream
+limit; eight is only the initial staging-reservation baseline, not a default concurrency ceiling. Waiting callers are
+counted separately from admitted or queued streams, with no more than the effective producer limit waiting at once.
+Explicit configured caps remain hard limits. The estimated memory budget includes waiting-call bookkeeping and retained
+producer-map capacity; callers fail before publication if these bounds cannot accommodate them.
+
+Transaction change sets that overflow memory use disposable LMDB stores. In async mode, these temporary stores keep
+their dictionary records until the entire temporary directory is closed and deleted. They do not create additional
+cleanup workers or consume cleanup producer capacity, and retained internal read views cannot prevent change-set writes.
+
+If `valueOverlayEnabled` is also enabled, asynchronous dictionary reclamation retires the current optional value overlay
+after a successful transaction. Metadata-only durable continuations do not require this invalidation. Existing leased
+views remain valid; subsequent lookups use LMDB until the overlay is explicitly rebuilt. This avoids copying large
+lexical values into overlay updates during bounded cleanup, but can change query lookup performance.
+
+Under pressure, eligible new writers briefly yield to cleanup before acquiring writer ownership or native read pins.
+The pause targets acknowledgement of at least 10% of the queued work measured at the beginning of that pressure cycle;
+concurrent arrivals do not move that target. It ends at the target or the pressure timeout (250 ms by default), because
+readers may prevent progress. Acknowledged work is not necessarily physical dictionary reclamation: protections and
+unknown liveness can defer records. The pressure pause uses the same admission wait budget, rather than adding another full timeout. If capacity is
+still unavailable after that budget and best-effort spill handling, admission fails before publication; already
+committed RDF work is not relabelled as failed. Blocking filesystem/native operations must finish safely and are not
+forcibly cancelled at the wait deadline, so this is not a hard wall-clock bound. Explicit admission timeouts, including
+the former 30-second default, remain supported. Existing observed/pinned
+transactions do not wait on this optional pressure gate.
+
+A long-lived reader can indefinitely delay reclamation. Bounded memory therefore does not imply that writers always
+make progress: once producer capacity is exhausted, admission is subject to the configured timeout. Close read results
+and transactions promptly when sustained deletion pressure matters. The worker continues existing durable retirement
+work. Recursive dependency candidates are saved through the existing durable retirement mechanism inside the worker's
+maintenance transaction, atomically with the dependency-count updates, instead of waiting to enter its own cleanup queue.
+
+The default statement indexes, `spoc,posc`, do not include an object-leading index. Cleanup uses an object-leading
+index when available; otherwise a predicate/object-leading index such as `posc` supports bounded exact probes across
+distinct predicates, without scanning all statements. This permits reclamation with the default indexes when the
+bounded proof completes. If the seek budget is exhausted or a necessary index is unavailable, the result remains
+`UNKNOWN`: cleanup persists or defers the candidate rather than guessing that it is unused. Unused records may still
+remain indefinitely under sustained deferral. This setting does not add or change indexes. Context liveness uses the
+dedicated context-count table and does not require a context-first index. Reclamation measurements made with an
+object-leading index should not be extrapolated to the default index set.
+
+The cleanup byte default is computed from `Runtime.maxMemory()` (normally `-Xmx`), with a 4 KiB minimum.
+It is a cleanup-memory ceiling, not a whole-JVM memory budget or an eager allocation. Candidate buffers grow on demand
+within that ceiling; worker batches remain bounded independently. An explicitly configured candidate cap may reduce
+the usable queue capacity, and producer streams can spill to disk. Omitted configuration stays omitted
+on export so a different JVM recomputes its own defaults; explicitly configured byte, candidate and producer limits
+are retained even when they equal the current JVM defaults.
+
+Lazy values retained outside a tracked read result also remain protected. If their pinned dictionary revisions would
+make cleanup accumulate revision history, the worker saves the affected root candidates through the existing durable
+retirement mechanism and defers reclamation until those protections are released. These fallback writes occur in worker
+maintenance transactions; if a lazy value keeps its protection for the lifetime of the open store, reclamation may wait
+until a later reopen.
+
+Unscoped raw Sail reads can expose lazy values in a way that makes the ValueStore itself retain their dictionary
+revision. Dropping the returned value or closing that raw Sail result does not guarantee that cleanup resumes: another
+revision transition followed by collection, or a reopen, may be needed. Scoped repository iteration avoids this promotion
+to a retained raw dictionary revision.
+
+The shutdown setting budgets cleanup and spooling, not the entire store shutdown. Shutdown stops new producer admission
+and new cleanup batches, wakes producer-capacity waiters, and tries to finish the current batch and save remaining
+candidates. If the worker is still using LMDB when the budget expires, shutdown reports an exception and retains both
+native environments and the store lock; retry shutdown after the worker finishes. Spooling is best effort and may be
+abandoned when its remaining budget expires. The budget stops new spool work; filesystem writes, forced synchronization,
+and native calls already in progress may take longer. Completed candidate streams and their manifest are forced before
+atomic publication. Publishing also forces the paired native store state, including the final value-store close marker,
+even when `forceSync` is disabled. Directory synchronization is attempted where supported; cleanup hints are still best
+effort rather than a complete durable retirement history.
+
+Recovery requires a valid version-two manifest, the exact store identity and the exact certified native transaction.
+Older version-one manifests, stale manifests and bare crash-leftover streams are discarded, never guessed into replay
+authority. A missing or corrupt stream does not discard independently validated healthy siblings. Startup removes owned
+orphan files even when async cleanup is disabled; failed deletions are retried on a later open. This changes no dictionary
+format and does not promise recovery from corruption of the native databases themselves.
+
 ## Store formats and returning to an older release
 
 Existing format-2 repositories keep their format, inlining capabilities and RDF-term encodings when this code opens or
@@ -436,6 +581,86 @@ More up-to-date information about LMDB can be found at: https://www.symas.com/sy
 Especially the [SSD-benchmarks](http://www.lmdb.tech/bench/optanessd/imdt.html) may be of interest.
 
 ## Backup and restore
+
+`LmdbStore.getBackupService()` provides coordinated native full snapshots by default. A full
+snapshot holds one publication boundary across the separate value and triple databases and includes
+namespace and store-format metadata. It does not require incremental journaling and is safe while
+writers are active. Do not replace it with separate live copies of the two LMDB environments.
+
+Incremental backups and point-in-time recovery (PITR) are an explicit, startup-only opt-in:
+
+```java
+LmdbStoreConfig config = new LmdbStoreConfig().setBackupJournalEnabled(true);
+LmdbStore store = new LmdbStore(dataDirectory, config);
+store.init();
+// First create a FULL backup. Use its end transaction ID as the incremental baseline.
+```
+
+The RDF configuration property is `lmdb:backupJournalEnabled`, where `lmdb:` is
+`http://rdf4j.org/config/sail/lmdb#`. Its default is `false`, including when an older configuration
+omits it. Changing the configuration object after opening a store does not change the running mode.
+Close and reopen the store to change modes.
+
+With journaling disabled, ordinary writes do not capture backup records, create an outbox or publish
+transaction journals. Their existing `forceSync` durability policy is unchanged. Full snapshots
+force their copied files, metadata and directory entries independently of journaling. A full-only
+snapshot restores its exact transaction boundary; it cannot recover intervening writes.
+
+### Enabling, disabling, and upgrading
+
+After first enabling journaling, upgrading an existing store to this explicit-opt-in implementation,
+or reopening after any disabled interval, create a **fresh full backup** before requesting an
+incremental. A full backup taken while journaling was disabled is not an incremental baseline.
+An uninterrupted enabled restart retains its existing generation, usable baseline and pending
+publication recovery. Incrementals also require a retained full baseline of that generation in
+the requested backup directory.
+
+Backup transaction IDs identify committed logical mutations, including namespace-only commits;
+they are not native LMDB transaction IDs. They continue advancing during disabled writes, without
+producing recovery records. The durable `backup-journal.properties` file records the journal
+generation and baseline. New journal headers and artifact metadata carry that generation, so
+missing journals or a disabled interval cannot be silently joined into a recovery chain, even if
+no writes occurred during the disabled interval. Keep this file with the complete live store.
+Malformed state fails closed. Missing state starts a fresh generation and requires a new full backup.
+
+Already published legacy full/incremental backups and version-1/version-2 journals remain readable.
+They cannot consume new-generation journals. Older RDF4J versions cannot read version-3 journals;
+keep pre-upgrade backups and test any downgrade using a separate copy rather than downgrading a
+live journaled store in place. A recreated store or restored fork should use a separate backup
+directory; conflicting journal filenames are rejected, never overwritten.
+
+Enabled commits retain records in a durable, store-local `backup-outbox` until an ordered background
+publisher has persisted their journals. Publication runs after native writer locks are released.
+If publication fails, later journals cannot skip the failed change. Repair the destination and
+reopen with journaling still enabled to retry retained changes. Disabling journaling abandons this
+automatic publication continuity. On the next enable, any old outbox is preserved under
+`backup-outbox-archive` as diagnostic/recovery evidence, but those unpublished stages are **not**
+automatically replayed as part of the new generation. Published historical artifacts remain intact;
+only targets with complete published journal coverage remain restorable. Archives are excluded
+from new full snapshots and are not automatically pruned.
+
+Journaled commits explicitly flush native dictionary state before the authoritative triples commit
+and flush both environments before external publication acknowledgement. These flushes also apply
+with `forceSync=false` and add durability-related I/O to writes. Store shutdown settles admitted
+writers and backup operations, then drains publication while the service remains available.
+Durability requires a filesystem and storage stack that honor file and directory flushes.
+
+### Safe restore destinations
+
+A restore validates its full snapshot and journal predecessor/generation chain, replays only changes
+after that snapshot through the requested transaction, and publishes a complete restored directory
+from a sibling staging directory. The destination must be **absent or empty** and must not overlap
+the live store or backup directory, including through symbolic links. Nonempty destinations are
+rejected and left untouched. This is stricter than the earlier implementation, which deleted the
+destination: choose a new empty directory, validate the restored store, then switch your application
+to it. Atomic directory moves must be supported by the destination filesystem.
+
+Restored stores start with journaling disabled and a restore-local backup directory. Replay and later
+writes never publish into the source backup. To journal a restored fork, explicitly enable journaling
+when opening it and create another full baseline. Full snapshots preserve the source's persisted
+format and capabilities in `store.properties` and establish an independent publication baseline
+rather than copying the source's pending outbox.
+
 LMDB provides a set of [command line tools](http://www.lmdb.tech/doc/tools.html) that can be used
 to backup and restore the value and triple databases.
 Those tools can typically be used while the databases are in use as LMDB permits concurrent use
@@ -484,6 +709,6 @@ The per-store `mapGrowthThreshold` setting (default `0.75`) controls the soft al
 closing admission and scheduling phased map growth. It also guides growth sizing below that trigger. The threshold
 measures allocated high-water pages rather than live RDF statements, and must be finite and strictly between `0` and
 `1`. `mapGrowthReadDrainTimeoutMillis` (default `30000`) is the reader grace after logical writers finish; setting it
-to `0` skips that grace without disabling the early admission warning or writer drain. Query admission waiters keep the
-query's original deadline, and waits without a deadline remain interruptible. See the transaction and recovery guide
-for the phased behavior and retry details.
+to `0` skips that grace without disabling the early admission warning or writer drain. Query admission waits are
+interruptible: a query's maximum execution time or its cancellation ends them by interrupting the waiting thread. See
+the transaction and recovery guide for the phased behavior and retry details.

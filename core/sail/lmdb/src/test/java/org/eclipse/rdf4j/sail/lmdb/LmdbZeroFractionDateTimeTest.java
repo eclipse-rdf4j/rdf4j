@@ -74,7 +74,7 @@ class LmdbZeroFractionDateTimeTest {
 		}
 		StoreProperties properties = new StoreProperties(directory);
 		assertThat(properties.load()).isTrue();
-		assertThat(properties.getVersion()).isEqualTo("6");
+		assertThat(properties.getVersion()).isEqualTo("7");
 		assertThat(properties.usesZeroFractionDateTimeIds()).isTrue();
 		SailRepository reopened = new SailRepository(new LmdbStore(directory, config));
 		try {
@@ -187,16 +187,20 @@ class LmdbZeroFractionDateTimeTest {
 		assertThat(properties.load()).isTrue();
 		properties.setDateTimeIdEncoding("unknown-future-encoding").save();
 		LmdbStore reopened = new LmdbStore(directory, config());
-		assertThatThrownBy(reopened::init).isInstanceOf(SailException.class)
-				.hasStackTraceContaining("Unsupported date-time-id-encoding: unknown-future-encoding");
+		try (var cleanup = LmdbTestUtil.onClose(reopened::shutDown)) {
+			assertThatThrownBy(reopened::init).isInstanceOf(SailException.class)
+					.hasStackTraceContaining("Unsupported date-time-id-encoding: unknown-future-encoding");
+		}
 	}
 
 	@Test
 	void futureStoreVersionIsRejectedBeforeReadingValues() {
-		new StoreProperties(directory).setVersion("7").save();
+		new StoreProperties(directory).setVersion("8").save();
 		LmdbStore store = new LmdbStore(directory, config());
-		assertThatThrownBy(store::init).isInstanceOf(SailException.class)
-				.hasStackTraceContaining("supported persisted formats are 2 and 6");
+		try (var cleanup = LmdbTestUtil.onClose(store::shutDown)) {
+			assertThatThrownBy(store::init).isInstanceOf(SailException.class)
+					.hasStackTraceContaining("supported persisted formats are 2 and 7");
+		}
 	}
 
 	@Test
@@ -204,7 +208,7 @@ class LmdbZeroFractionDateTimeTest {
 		try (LmdbNativeBulkStore ignored = new LmdbNativeBulkStore(directory.toPath(), config())) {
 			StoreProperties properties = new StoreProperties(directory);
 			assertThat(properties.load()).isTrue();
-			assertThat(properties.getVersion()).isEqualTo("6");
+			assertThat(properties.getVersion()).isEqualTo("7");
 			assertThat(properties.usesZeroFractionDateTimeIds()).isTrue();
 		}
 	}
@@ -229,7 +233,7 @@ class LmdbZeroFractionDateTimeTest {
 
 		StoreProperties properties = new StoreProperties(target.toFile());
 		assertThat(properties.load()).isTrue();
-		assertThat(properties.getVersion()).isEqualTo("6");
+		assertThat(properties.getVersion()).isEqualTo("7");
 		assertThat(properties.usesZeroFractionDateTimeIds()).isTrue();
 
 		List<Literal> literals = zeroFractions();

@@ -231,7 +231,9 @@ class LmdbEmptyCacheClearTest {
 		private PersistentSetFactory<Long> cache;
 
 		CountingCacheStore(File directory) {
-			super(directory, new LmdbStoreConfig("spoc,ospc,psoc").setForceSync(false)
+			// These tests inject and inspect the durable policy's persistent scratch-cache environment.
+			super(directory, new LmdbStoreConfig("spoc,ospc,psoc").setAsyncValueCleanup(false)
+					.setForceSync(false)
 					.setSketchEstimatorEnabled(false));
 		}
 

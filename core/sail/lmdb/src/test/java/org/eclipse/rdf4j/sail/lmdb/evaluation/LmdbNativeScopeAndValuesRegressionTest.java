@@ -21,6 +21,7 @@ import java.util.function.Supplier;
 import java.util.stream.Collectors;
 
 import org.eclipse.rdf4j.model.IRI;
+import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.model.vocabulary.RDF;
@@ -479,6 +480,33 @@ public class LmdbNativeScopeAndValuesRegressionTest {
 		assertThat(nativeRows).isEqualTo(rows(query, false, "external", external));
 		assertThat(nativeRows).containsExactly(
 				"[copy=http://example.org/not-present-in-store;s=http://example.org/s4]");
+	}
+
+	@Test
+	public void externalBindingConflictingWithInlineValuesYieldsNoRows() {
+		ValueFactory vf = repository.getValueFactory();
+		IRI p = vf.createIRI("urn:deferred:p");
+		Resource focus = vf.createBNode("deferred-values-focus");
+		Resource other = vf.createBNode("deferred-values-other");
+		Value match = vf.createBNode("deferred-values-match");
+		Value wrong = vf.createBNode("deferred-values-wrong");
+		try (SailRepositoryConnection conn = repository.getConnection()) {
+			conn.add(focus, p, match);
+			conn.add(other, p, match);
+			conn.add(focus, p, wrong);
+			conn.add(focus, p, match, vf.createIRI("urn:deferred:named"));
+			conn.add(focus, p, match, vf.createBNode("deferred-values-graph"));
+		}
+		String query = "SELECT ?s ?v WHERE { ?s <urn:deferred:p> ?v . VALUES ?v { <_:deferred-values-match> } }";
+
+		assertThat(rows(query, false, "v", wrong)).as("generic: entry ?v conflicts with VALUES ?v").isEmpty();
+		assertThat(rows(query, true, "v", wrong))
+				.as("native: entry ?v conflicts with VALUES ?v\n%s", explain(query))
+				.isEmpty();
+
+		List<String> genericEqual = rows(query, false, "v", match);
+		assertThat(genericEqual).hasSize(4);
+		assertThat(rows(query, true, "v", match)).as("native: entry ?v equals VALUES ?v").isEqualTo(genericEqual);
 	}
 
 	@Test

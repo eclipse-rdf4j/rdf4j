@@ -11,6 +11,7 @@
 package org.eclipse.rdf4j.federated.evaluation.join;
 
 import java.util.List;
+import java.util.function.Predicate;
 
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.federated.algebra.StatementTupleExpr;
@@ -18,12 +19,13 @@ import org.eclipse.rdf4j.federated.evaluation.FederationEvaluationStrategy;
 import org.eclipse.rdf4j.federated.evaluation.concurrent.ParallelExecutor;
 import org.eclipse.rdf4j.federated.evaluation.concurrent.ParallelTaskBase;
 import org.eclipse.rdf4j.query.BindingSet;
+import org.jspecify.annotations.Nullable;
 
 /**
  * A {@link ParallelTaskBase} for executing bind left joins.
  *
  * @author Andreas Schwarte
- * @see FederationEvaluationStrategy#evaluateLeftBoundJoinStatementPattern(StatementTupleExpr, List)
+ * @see FederationEvaluationStrategy#evaluateLeftBoundJoinStatementPattern(StatementTupleExpr, List, Predicate)
  */
 public class ParallelBindLeftJoinTask extends ParallelTaskBase<BindingSet> {
 
@@ -31,9 +33,21 @@ public class ParallelBindLeftJoinTask extends ParallelTaskBase<BindingSet> {
 	protected final StatementTupleExpr rightArg;
 	protected final List<BindingSet> bindings;
 	protected final ParallelExecutor<BindingSet> joinControl;
+	private final @Nullable Predicate<BindingSet> condition;
 
+	/**
+	 * @deprecated Use
+	 *             {@link #ParallelBindLeftJoinTask(ParallelExecutor, FederationEvaluationStrategy, StatementTupleExpr, List, Predicate)}.
+	 */
+	@Deprecated(since = "6.2.0")
 	public ParallelBindLeftJoinTask(ParallelExecutor<BindingSet> joinControl, FederationEvaluationStrategy strategy,
 			StatementTupleExpr expr, List<BindingSet> bindings) {
+		this(joinControl, strategy, expr, bindings, null);
+	}
+
+	public ParallelBindLeftJoinTask(ParallelExecutor<BindingSet> joinControl, FederationEvaluationStrategy strategy,
+			StatementTupleExpr expr, List<BindingSet> bindings, Predicate<BindingSet> condition) {
+		this.condition = condition;
 		this.strategy = strategy;
 		this.rightArg = expr;
 		this.bindings = bindings;
@@ -47,7 +61,8 @@ public class ParallelBindLeftJoinTask extends ParallelTaskBase<BindingSet> {
 
 	@Override
 	protected CloseableIteration<BindingSet> performTaskInternal() throws Exception {
-		return strategy.evaluateLeftBoundJoinStatementPattern(rightArg, bindings);
+		return condition == null ? strategy.evaluateLeftBoundJoinStatementPattern(rightArg, bindings)
+				: strategy.evaluateLeftBoundJoinStatementPattern(rightArg, bindings, condition);
 	}
 
 }

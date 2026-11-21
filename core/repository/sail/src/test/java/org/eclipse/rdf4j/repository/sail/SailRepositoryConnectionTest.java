@@ -22,6 +22,7 @@ import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.mockingDetails;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
+import static org.mockito.Mockito.withSettings;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -41,12 +42,22 @@ import org.eclipse.rdf4j.query.QueryParseOptions;
 import org.eclipse.rdf4j.query.TupleQuery;
 import org.eclipse.rdf4j.query.algebra.QueryRoot;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
+import org.eclipse.rdf4j.query.algebra.evaluation.federation.FederatedServiceResolver;
+import org.eclipse.rdf4j.query.algebra.evaluation.federation.FederatedServiceResolverClient;
 import org.eclipse.rdf4j.query.explanation.Explanation;
 import org.eclipse.rdf4j.repository.RepositoryException;
 import org.eclipse.rdf4j.sail.SailConnection;
+import org.eclipse.rdf4j.sail.helpers.SailConnectionWrapper;
 import org.eclipse.rdf4j.sail.helpers.SlowQueryContextHolder;
+import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+
+import ch.qos.logback.classic.Level;
+import ch.qos.logback.classic.Logger;
+import ch.qos.logback.classic.LoggerContext;
+import ch.qos.logback.classic.spi.ILoggingEvent;
+import ch.qos.logback.core.read.ListAppender;
 
 /**
  * Unit tests for {@link SailRepositoryConnection}
@@ -58,6 +69,8 @@ public class SailRepositoryConnectionTest {
 	private SailRepositoryConnection subject;
 	private SailConnection sailConnection;
 	private SailRepository sailRepository;
+	private Logger resolverLogger;
+	private ListAppender<ILoggingEvent> resolverLogAppender;
 
 	@BeforeEach
 	public void setUp() {
@@ -65,6 +78,75 @@ public class SailRepositoryConnectionTest {
 		sailRepository = mock(SailRepository.class);
 
 		subject = new SailRepositoryConnection(sailRepository, sailConnection);
+
+		resolverLogger = (Logger) org.slf4j.LoggerFactory.getLogger(SailRepositoryConnection.class);
+		resolverLogAppender = new ListAppender<>();
+		resolverLogAppender.setContext((LoggerContext) org.slf4j.LoggerFactory.getILoggerFactory());
+		resolverLogAppender.start();
+		resolverLogger.addAppender(resolverLogAppender);
+	}
+
+	@AfterEach
+	public void detachLogAppender() {
+		resolverLogger.detachAppender(resolverLogAppender);
+		resolverLogAppender.stop();
+	}
+
+	interface NonClientConnectionA extends SailConnection {
+	}
+
+	interface NonClientConnectionB extends SailConnection {
+	}
+
+	interface NonClientConnectionC extends SailConnection {
+	}
+
+	private List<ILoggingEvent> warnings() {
+		return resolverLogAppender.list.stream().filter(e -> e.getLevel() == Level.WARN).toList();
+	}
+
+	@Test
+	public void setFederatedServiceResolverWarnsOnceWhenTheSailConnectionCannotUseIt() {
+		FederatedServiceResolver resolver = mock(FederatedServiceResolver.class);
+		new SailRepositoryConnection(sailRepository, mock(NonClientConnectionA.class))
+				.setFederatedServiceResolver(resolver);
+		new SailRepositoryConnection(sailRepository, mock(NonClientConnectionA.class))
+				.setFederatedServiceResolver(resolver);
+
+		assertThat(warnings()).singleElement()
+				.satisfies(e -> assertThat(e.getFormattedMessage()).contains("NonClientConnectionA"));
+	}
+
+	@Test
+	public void setFederatedServiceResolverWarnsWhenAWrapperHidesANonClientConnection() {
+		FederatedServiceResolver resolver = mock(FederatedServiceResolver.class);
+		new SailRepositoryConnection(sailRepository, new SailConnectionWrapper(mock(NonClientConnectionB.class)))
+				.setFederatedServiceResolver(resolver);
+
+		assertThat(warnings()).singleElement().satisfies(e -> {
+			assertThat(e.getFormattedMessage()).contains("NonClientConnectionB");
+			assertThat(e.getFormattedMessage()).doesNotContain("SailConnectionWrapper");
+		});
+	}
+
+	@Test
+	public void setFederatedServiceResolverForwardsWithoutWarningToAClientConnection() {
+		FederatedServiceResolver resolver = mock(FederatedServiceResolver.class);
+		SailConnection innermost = mock(SailConnection.class,
+				withSettings().extraInterfaces(FederatedServiceResolverClient.class));
+		new SailRepositoryConnection(sailRepository, new SailConnectionWrapper(innermost))
+				.setFederatedServiceResolver(resolver);
+
+		verify((FederatedServiceResolverClient) innermost).setFederatedServiceResolver(resolver);
+		assertThat(warnings()).isEmpty();
+	}
+
+	@Test
+	public void nullResolverNeverWarns() {
+		new SailRepositoryConnection(sailRepository, mock(NonClientConnectionC.class))
+				.setFederatedServiceResolver(null);
+
+		assertThat(warnings()).isEmpty();
 	}
 
 	@Test

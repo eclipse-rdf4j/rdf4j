@@ -46,17 +46,18 @@ final class LmdbNativeFactorRows {
 	}
 
 	private static LmdbNativeFactorCursor filter(FilterPlan plan, RowState row, long scalarDemand) throws IOException {
-		if (!enabled() || row.encounterOrderRequired || plan.filterMask < 0L)
+		long reads = plan.groupedReadMask();
+		if (!enabled() || row.encounterOrderRequired || reads < 0L)
 			return null;
 		boolean retainSelection = !"false".equals(System.getProperty("rdf4j.lmdb.factor.selection.enabled"))
-				&& (plan.filterMask & ~scalarDemand) != 0L;
+				&& (reads & ~scalarDemand) != 0L;
 		LmdbNativeFactorCursor input = openDemanded(plan.arg, row, scalarDemand);
 		if (input == null)
 			return null;
 		try {
 			if (retainSelection && input.mayHaveFactors())
-				return new SelectingFilter(input, plan.filter, row, plan.filterMask, scalarDemand);
-			return new Filter(expand(input, row, plan.filterMask), plan.filter, row);
+				return new SelectingFilter(input, plan.filter, row, reads, scalarDemand);
+			return new Filter(expand(input, row, reads), plan.filter, row);
 		} catch (RuntimeException | Error problem) {
 			closeSuppressing(input, problem);
 			throw problem;
@@ -131,6 +132,14 @@ final class LmdbNativeFactorRows {
 
 	static LmdbNativeFactorCursor scalar(RowCursor input, int slots) {
 		return new Scalar(input, slots);
+	}
+
+	/** Only scalar transport and order-preserving restriction retain the actual producer's facts. */
+	static RowCursor expressionProducer(LmdbNativeFactorCursor input) {
+		if (input instanceof Scalar scalar) {
+			return scalar.input;
+		}
+		return input instanceof Filter filter ? expressionProducer(filter.input) : null;
 	}
 
 	/** A query cancellation is exhaustion, not a probe decline or a recoverable plan failure. */
@@ -590,8 +599,15 @@ final class LmdbNativeFactorRows {
 						close();
 						return false;
 					}
-					if (filter.accept(row))
-						return true;
+					RowCursor previous = row.expressionProducer;
+					row.expressionProducer = expressionProducer(input);
+					try {
+						if (filter.accept(row)) {
+							return true;
+						}
+					} finally {
+						row.expressionProducer = previous;
+					}
 				}
 				close();
 				return false;

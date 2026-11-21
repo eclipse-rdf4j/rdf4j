@@ -20,6 +20,7 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Properties;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
 
@@ -86,6 +87,75 @@ class BulkLoadProgressTest {
 			assertThat(snapshots).hasSize(listenerUpdatesBeforeCompletion + 1);
 			assertThat(snapshots.getLast().phaseComplete()).isTrue();
 			assertThat(snapshots.getLast().currentOperationsPerSecond()).isPositive();
+		}
+	}
+
+	@Test
+	void reportsAndPersistsConcurrentIndexStagesAndClearsThemAtPhaseBoundaries() throws Exception {
+		List<ProgressSnapshot> snapshots = new ArrayList<>();
+		ScheduledExecutorService sampler = mock();
+		try (BulkLoadProgress progress = new BulkLoadProgress(temporaryDirectory, snapshots::add, 2, 3, false,
+				sampler)) {
+			progress.startPhase(BulkLoadPhase.WRITE_GENERATION);
+			progress.startIndex(ProgressSnapshot.IndexFamily.STATEMENT, "spoc", 1, 3,
+					ProgressSnapshot.IndexStage.SCAN);
+
+			ProgressSnapshot scan = snapshots.getLast();
+			assertThat(scan.phaseNumber()).isEqualTo(8);
+			assertThat(scan.phaseCount()).isEqualTo(BulkLoadPhase.values().length);
+			assertThat(scan.activeIndexes())
+					.containsExactly(
+							new ProgressSnapshot.IndexProgress(ProgressSnapshot.IndexFamily.STATEMENT, "SPOC", 1,
+									3, ProgressSnapshot.IndexStage.SCAN, false));
+			Properties persisted = new Properties();
+			try (var input = Files.newInputStream(temporaryDirectory.resolve("progress.properties"))) {
+				persisted.load(input);
+			}
+			assertThat(persisted)
+					.containsEntry("phase.number", "8")
+					.containsEntry("phase.count", Integer.toString(BulkLoadPhase.values().length))
+					.containsEntry("active.indexes.count", "1")
+					.containsEntry("active.indexes.0.name", "SPOC")
+					.containsEntry("active.indexes.0.number", "1")
+					.containsEntry("active.indexes.0.count", "3")
+					.containsEntry("active.indexes.0.stage", "SCAN");
+
+			progress.startIndex(ProgressSnapshot.IndexFamily.STATEMENT, "posc", 2, 3,
+					ProgressSnapshot.IndexStage.SCAN);
+			progress.indexStage(ProgressSnapshot.IndexFamily.STATEMENT, "spoc", ProgressSnapshot.IndexStage.MERGE);
+			assertThat(snapshots.getLast().activeIndexes())
+					.extracting(ProgressSnapshot.IndexProgress::stage)
+					.containsExactly(ProgressSnapshot.IndexStage.MERGE, ProgressSnapshot.IndexStage.SCAN);
+
+			progress.completeIndex(ProgressSnapshot.IndexFamily.STATEMENT, "spoc");
+			ProgressSnapshot completed = snapshots.getLast();
+			assertThat(completed.activeIndexes()).hasSize(1);
+			assertThat(completed.indexEvent())
+					.isEqualTo(new ProgressSnapshot.IndexProgress(ProgressSnapshot.IndexFamily.STATEMENT, "SPOC", 1, 3,
+							ProgressSnapshot.IndexStage.MERGE, true));
+			Properties completedProperties = new Properties();
+			try (var input = Files.newInputStream(temporaryDirectory.resolve("progress.properties"))) {
+				completedProperties.load(input);
+			}
+			assertThat(completedProperties)
+					.containsEntry("active.indexes.count", "1")
+					.containsEntry("index.event.present", "true")
+					.containsEntry("index.event.family", "STATEMENT")
+					.containsEntry("index.event.name", "SPOC")
+					.containsEntry("index.event.stage", "MERGE")
+					.containsEntry("index.event.complete", "true");
+
+			progress.startPhase(BulkLoadPhase.PUBLISH_AND_CLEAN);
+			assertThat(snapshots.getLast().activeIndexes()).isEmpty();
+			assertThat(snapshots.getLast().indexEvent()).isNull();
+			Properties noActiveIndexes = new Properties();
+			try (var input = Files.newInputStream(temporaryDirectory.resolve("progress.properties"))) {
+				noActiveIndexes.load(input);
+			}
+			assertThat(noActiveIndexes)
+					.containsEntry("phase.number", "10")
+					.containsEntry("active.indexes.count", "0")
+					.containsEntry("index.event.present", "false");
 		}
 	}
 

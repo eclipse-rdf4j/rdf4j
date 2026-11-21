@@ -30,7 +30,7 @@
 		</init-param>
 	</filter>
 	<filter>
-		<filter-name>RevalidatedEntryFilter</filter-name>
+		<filter-name>RevalidatedAssetFilter</filter-name>
 		<filter-class>org.eclipse.rdf4j.workbench.proxy.CacheFilter</filter-class>
 		<init-param>
 			<param-name>Cache-Control</param-name>
@@ -54,13 +54,13 @@
 		<filter-name>CacheFilter</filter-name>
 		<url-pattern>*</url-pattern>
 	</filter-mapping>
-	<!-- The graph explorer and DOT renderer entries keep their names across releases but load hashed chunks and
-	     workers: browsers revalidate them, so an upgrade never pairs an old entry with chunks that are gone. -->
+	<!-- Scripts and stylesheets keep their names across releases (the graph explorer's entries also load hashed
+	     chunks and workers): browsers revalidate them, so after an upgrade they never run the previous release's
+	     scripts against the new server, nor pair an old entry with chunks that are gone. -->
 	<filter-mapping>
-		<filter-name>RevalidatedEntryFilter</filter-name>
-		<url-pattern>/scripts/graph-explorer/graph-explorer.mjs</url-pattern>
-		<url-pattern>/scripts/graph-explorer/query-graph-renderer.mjs</url-pattern>
-		<url-pattern>/styles/graph-explorer.css</url-pattern>
+		<filter-name>RevalidatedAssetFilter</filter-name>
+		<url-pattern>/scripts/*</url-pattern>
+		<url-pattern>/styles/*</url-pattern>
 	</filter-mapping>
 	<servlet>
 		<servlet-name>workbench</servlet-name>
@@ -220,6 +220,16 @@
 	<servlet-mapping>
 		<servlet-name>workbench</servlet-name>
 		<url-pattern>/repositories/*</url-pattern>
+	</servlet-mapping>
+	<!-- The namespaces the query editor falls back on for prefixes that are not defined (the bundled list, empty for
+		now, or namespaces.fallback of workbench.properties): the same for every repository. -->
+	<servlet>
+		<servlet-name>fallback-namespaces</servlet-name>
+		<servlet-class>org.eclipse.rdf4j.workbench.proxy.config.WorkbenchFallbackNamespacesServlet</servlet-class>
+	</servlet>
+	<servlet-mapping>
+		<servlet-name>fallback-namespaces</servlet-name>
+		<url-pattern>/fallback-namespaces</url-pattern>
 	</servlet-mapping>
 	<!-- Browsers load module scripts only with a JavaScript type; containers such as Tomcat do not map .mjs. -->
 	<mime-mapping>

@@ -12,6 +12,8 @@
 package org.eclipse.rdf4j.sail.lmdb.estimate;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.io.IOException;
@@ -19,10 +21,15 @@ import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.List;
+import java.util.concurrent.CancellationException;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.function.IntFunction;
 
 import org.eclipse.rdf4j.sail.lmdb.Varint;
+import org.eclipse.rdf4j.sail.lmdb.estimate.LmdbPageCardinalityEstimator.PrefixRun;
 import org.eclipse.rdf4j.sail.lmdb.util.GroupMatcher;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
@@ -213,6 +220,209 @@ class LmdbBtreeRangeCounterTest {
 		assertEquals(LARGE_RANGE_LEAVES - 2, result.entries);
 		assertTrue(result.leafPagesRead <= 34);
 		assertTrue(result.branchPagesRead <= 5);
+	}
+
+	@Test
+	void exactRangeUsesEverySelectedLeafHeaderAndNeverSamples(@TempDir Path directory) throws Exception {
+		int leaves = 128;
+		int perLeaf = 200;
+		TreeFile tree = writeSingleBranchTree(directory.resolve("data.mdb"), leaves, perLeaf,
+				LmdbBtreeRangeCounterTest::quadKey);
+		try (LmdbDataFile file = new LmdbDataFile(tree.path.toFile(), tree.meta.byteOrder(), PAGE_SIZE)) {
+			byte[] lower = quadKey(1);
+			byte[] upper = quadKey(leaves * perLeaf - 2);
+			var result = new LmdbBtreeRangeCounter(file, tree.meta).countEntriesExact(tree.db,
+					lower, lower.length, true, upper, upper.length, true, () -> false);
+			assertEquals(leaves * perLeaf - 2, result.entries());
+			assertEquals(leaves - 2, result.work().leafHeadersRead());
+			assertEquals(2, result.work().leafPagesRead());
+			assertEquals(0, result.work().keyPrefixesRead());
+		}
+	}
+
+	@Test
+	void exactBoundsHandleAllInclusiveExclusiveAndUnboundedEdges(@TempDir Path directory) throws Exception {
+		TreeFile tree = writeSingleBranchTree(directory.resolve("data.mdb"), 8, 20,
+				LmdbBtreeRangeCounterTest::quadKey);
+		try (LmdbDataFile file = new LmdbDataFile(tree.path.toFile(), tree.meta.byteOrder(), PAGE_SIZE)) {
+			var counter = new LmdbBtreeRangeCounter(file, tree.meta);
+			for (boolean lowerInclusive : List.of(false, true)) {
+				for (boolean upperInclusive : List.of(false, true)) {
+					byte[] lower = quadKey(5);
+					byte[] upper = quadKey(137);
+					assertEquals(131 + (lowerInclusive ? 1 : 0) + (upperInclusive ? 1 : 0),
+							counter.countEntriesExact(tree.db, lower, lower.length, lowerInclusive,
+									upper, upper.length, upperInclusive, () -> false).entries());
+				}
+			}
+			assertEquals(160,
+					counter.countEntriesExact(tree.db, null, 0, false, null, 0, false, () -> false).entries());
+			byte[] key = quadKey(5);
+			assertEquals(0, counter.countEntriesExact(tree.db, key, key.length, false,
+					key, key.length, true, () -> false).entries());
+			byte[] upper = quadKey(4);
+			assertEquals(0, counter.countEntriesExact(tree.db, key, key.length, true,
+					upper, upper.length, true, () -> false).entries());
+		}
+	}
+
+	@Test
+	void exactPrefixRunsCrossLeafAndBranchBoundariesWithoutDecodingEveryKey(@TempDir Path directory) throws Exception {
+		int rows = 128 * 200;
+		TreeFile tree = writeSingleBranchTree(directory.resolve("data.mdb"), 128, 200,
+				ordinal -> varintKey(1, ordinal / 900, ordinal, 0));
+		try (LmdbDataFile file = new LmdbDataFile(tree.path.toFile(), tree.meta.byteOrder(), PAGE_SIZE);
+				var cursor = new LmdbBtreeRangeCounter(file, tree.meta).prefixRunsExact(tree.db,
+						null, 0, true, null, 0, true, 2, () -> false)) {
+			int groups = 0;
+			long total = 0;
+			PrefixRun run;
+			while ((run = cursor.next()) != null) {
+				long[] values = new long[4];
+				Varint.readListUnsigned(ByteBuffer.wrap(run.representativeKey()), values);
+				assertEquals(groups, values[1]);
+				assertEquals(Math.min(900, rows - groups * 900), run.entries());
+				total += run.entries();
+				groups++;
+			}
+			assertEquals(rows, total);
+			assertEquals((rows + 899) / 900, groups);
+			assertTrue(cursor.work().keyPrefixesRead() < rows,
+					"whole-leaf prefix proofs must avoid one prefix decode per statement");
+			assertEquals(1, cursor.work().branchPagesRead());
+		}
+	}
+
+	@Test
+	void oneKeyGroupsRemainLinearWithinMixedLeaves(@TempDir Path directory) throws Exception {
+		int rows = 8 * 200;
+		TreeFile tree = writeSingleBranchTree(directory.resolve("data.mdb"), 8, 200,
+				LmdbBtreeRangeCounterTest::quadKey);
+		try (LmdbDataFile file = new LmdbDataFile(tree.path.toFile(), tree.meta.byteOrder(), PAGE_SIZE);
+				var cursor = new LmdbBtreeRangeCounter(file, tree.meta).prefixRunsExact(tree.db,
+						null, 0, true, null, 0, true, 1, () -> false)) {
+			int groups = 0;
+			PrefixRun run;
+			while ((run = cursor.next()) != null) {
+				assertEquals(1, run.entries());
+				groups++;
+			}
+			assertEquals(rows, groups);
+			assertTrue(cursor.work().keyPrefixesRead() <= 5L * rows,
+					"immediately different prefixes cannot pay a full-leaf binary search per group");
+		}
+	}
+
+	@Test
+	void exactPrefixRunsRespectVarintWidthChangesAndMaximumUnsignedEncoding(@TempDir Path directory) throws Exception {
+		long[] values = { 0L, 240L, 241L, 2287L, 2288L, 65535L, 65536L, Long.MAX_VALUE, Long.MIN_VALUE, -1L };
+		TreeFile tree = writeSingleBranchTree(directory.resolve("data.mdb"), values.length, 2,
+				ordinal -> unsignedPrefixKey(values[ordinal / 2], ordinal % 2));
+		try (LmdbDataFile file = new LmdbDataFile(tree.path.toFile(), tree.meta.byteOrder(), PAGE_SIZE);
+				var cursor = new LmdbBtreeRangeCounter(file, tree.meta).prefixRunsExact(tree.db,
+						null, 0, true, null, 0, true, 1, () -> false)) {
+			List<Long> found = new ArrayList<>();
+			PrefixRun run;
+			while ((run = cursor.next()) != null) {
+				found.add(Varint.readUnsigned(ByteBuffer.wrap(run.representativeKey())));
+				assertEquals(2, run.entries());
+			}
+			assertEquals(Arrays.stream(values).boxed().toList(), found);
+		}
+	}
+
+	@Test
+	void exactWalkerRejectsUnsupportedFlagsAndPropagatesCancellation(@TempDir Path directory) throws Exception {
+		TreeFile tree = writeSingleBranchTree(directory.resolve("data.mdb"), 4, 10,
+				LmdbBtreeRangeCounterTest::quadKey);
+		try (LmdbDataFile file = new LmdbDataFile(tree.path.toFile(), tree.meta.byteOrder(), PAGE_SIZE)) {
+			var counter = new LmdbBtreeRangeCounter(file, tree.meta);
+			LmdbDb unsupported = new LmdbDb(tree.db.pad(), LmdbFormat.MDB_DUPSORT, tree.db.depth(),
+					tree.db.branchPages(), tree.db.leafPages(), 0, tree.db.entries(), tree.db.rootPgno());
+			assertNull(counter.countEntriesExact(unsupported, null, 0, true, null, 0, true, () -> false));
+			assertNull(counter.prefixRunsExact(unsupported, null, 0, true, null, 0, true, 1, () -> false));
+			assertThrows(CancellationException.class,
+					() -> counter.countEntriesExact(tree.db, null, 0, true, null, 0, true, () -> true));
+		}
+	}
+
+	@Test
+	void exactWalkTraversesSeveralBranchLevelsMonotonically(@TempDir Path directory) throws Exception {
+		TreeFile tree = writeTwoBranchLevelTree(directory.resolve("data.mdb"), 16, 64,
+				ordinal -> varintKey(ordinal / 130, ordinal, 0, 0));
+		try (LmdbDataFile file = new LmdbDataFile(tree.path.toFile(), tree.meta.byteOrder(), PAGE_SIZE)) {
+			var counter = new LmdbBtreeRangeCounter(file, tree.meta);
+			byte[] lower = varintKey(0, 5, 0, 0);
+			byte[] upper = varintKey(7, 1018, 0, 0);
+			assertEquals(1014, counter.countEntriesExact(tree.db, lower, lower.length, true,
+					upper, upper.length, true, () -> false).entries());
+			try (var cursor = counter.prefixRunsExact(tree.db, lower, lower.length, true,
+					upper, upper.length, true, 1, () -> false)) {
+				long total = 0;
+				int groups = 0;
+				PrefixRun run;
+				while ((run = cursor.next()) != null) {
+					total += run.entries();
+					groups++;
+				}
+				assertEquals(1014, total);
+				assertEquals(8, groups);
+				assertTrue(cursor.work().branchPagesRead() < 2L * 17,
+						"successive leaves reuse their branch path rather than restarting the root");
+			}
+		}
+	}
+
+	@Test
+	void malformedPrefixesAndDepthCannotEscapeValidatedPageBounds(@TempDir Path directory) throws Exception {
+		TreeFile tree = writeSingleBranchTree(directory.resolve("data.mdb"), 2, 1,
+				ordinal -> new byte[] { (byte) 255, (byte) ordinal });
+		try (LmdbDataFile file = new LmdbDataFile(tree.path.toFile(), tree.meta.byteOrder(), PAGE_SIZE)) {
+			var counter = new LmdbBtreeRangeCounter(file, tree.meta);
+			try (var cursor = counter.prefixRunsExact(tree.db, null, 0, true, null, 0, true, 1, () -> false)) {
+				assertThrows(IOException.class, cursor::next);
+			}
+			LmdbDb wrongDepth = new LmdbDb(tree.db.pad(), 0, 1, tree.db.branchPages(), tree.db.leafPages(),
+					0, tree.db.entries(), tree.db.rootPgno());
+			byte[] lower = { (byte) 255, 0 };
+			assertThrows(IOException.class, () -> counter.countEntriesExact(wrongDepth,
+					lower, lower.length, true, null, 0, true, () -> false));
+		}
+	}
+
+	@Test
+	void cancellationStopsAnAlreadyAdvancingExactRangeAndAllowsAnotherWalk(@TempDir Path directory) throws Exception {
+		TreeFile tree = writeTwoBranchLevelTree(directory.resolve("data.mdb"), 16, 64,
+				LmdbBtreeRangeCounterTest::quadKey);
+		try (LmdbDataFile file = new LmdbDataFile(tree.path.toFile(), tree.meta.byteOrder(), PAGE_SIZE)) {
+			var counter = new LmdbBtreeRangeCounter(file, tree.meta);
+			byte[] lower = quadKey(5);
+			byte[] upper = quadKey(1018);
+			AtomicInteger polls = new AtomicInteger();
+			assertThrows(CancellationException.class, () -> counter.countEntriesExact(tree.db,
+					lower, lower.length, true, upper, upper.length, true, () -> polls.incrementAndGet() >= 12));
+			assertEquals(12, polls.get(), "cancellation is checked after boundary paths and several interior pages");
+			assertEquals(1014, counter.countEntriesExact(tree.db, lower, lower.length, true,
+					upper, upper.length, true, () -> false).entries());
+		}
+	}
+
+	private static byte[] unsignedPrefixKey(long value, long suffix) {
+		ByteBuffer buffer = ByteBuffer.allocate(36);
+		if (value < 0) {
+			// Raw unsigned 64-bit encodings exercise the page primitive; RDF term-ID allocation remains unchanged.
+			buffer.put((byte) 255).putLong(value);
+		} else {
+			Varint.writeUnsigned(buffer, value);
+		}
+		Varint.writeListUnsigned(buffer, new long[] { suffix, 0, 0 });
+		return Arrays.copyOf(buffer.array(), buffer.position());
+	}
+
+	private static byte[] varintKey(long... values) {
+		ByteBuffer buffer = ByteBuffer.allocate(36);
+		Varint.writeListUnsigned(buffer, values);
+		return Arrays.copyOf(buffer.array(), buffer.position());
 	}
 
 	private static RangeCountResult countRange(TreeFile tree, byte[] minKey, byte[] maxKey, GroupMatcher matcher)

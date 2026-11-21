@@ -68,7 +68,7 @@ class LmdbNativeFormatFenceTest {
 			byte[] fence = values.getTxnManager().doWithPriority((stack, txn) -> readFence(stack, txn));
 			assertThat(fence)
 					.as("the native catalog must identify its writer before the first bulk record")
-					.containsExactly((byte) 6);
+					.containsExactly((byte) 7);
 		} finally {
 			values.close();
 		}
@@ -77,12 +77,12 @@ class LmdbNativeFormatFenceTest {
 	@Test
 	void newFenceSurvivesClearGcAndReopen() throws Exception {
 		createStore(true);
-		assertThat(readFence()).containsExactly((byte) 6);
+		assertThat(readFence()).containsExactly((byte) 7);
 		writeMetadata((byte) 127, new byte[] { 42 });
 		LmdbStore store = new LmdbStore(directory.toFile(), config());
 		store.init();
 		store.shutDown();
-		assertThat(readFence()).containsExactly((byte) 6);
+		assertThat(readFence()).containsExactly((byte) 7);
 		assertThat(readMetadata((byte) 127)).containsExactly((byte) 42);
 	}
 
@@ -107,7 +107,7 @@ class LmdbNativeFormatFenceTest {
 			assertThat(values.getValue(id)).isEqualTo(node);
 			assertThat(values.getId(node, false)).isEqualTo(id);
 			byte[] fence = values.getTxnManager().doWithPriority((stack, txn) -> readFence(stack, txn));
-			assertThat(fence).containsExactly((byte) 6);
+			assertThat(fence).containsExactly((byte) 7);
 		} finally {
 			values.close();
 		}
@@ -120,9 +120,9 @@ class LmdbNativeFormatFenceTest {
 		try {
 			ValueStore values = (ValueStore) store.getValueFactory();
 			assertThat(values.getFormat().usesCoreDatatypeLiteralReferences()).isTrue();
-			assertThat(values.getFormat().getVersion()).isEqualTo(6);
+			assertThat(values.getFormat().getVersion()).isEqualTo(7);
 			byte[] fence = values.getTxnManager().doWithPriority((stack, txn) -> readFence(stack, txn));
-			assertThat(fence).containsExactly((byte) 6);
+			assertThat(fence).containsExactly((byte) 7);
 			var literal = SimpleValueFactory.getInstance().createLiteral("fresh prepared dictionary identity");
 			values.startTransaction(true);
 			ValueStore.FreshValueSession session = values.startFreshValueSessionIfEmpty();
@@ -155,7 +155,8 @@ class LmdbNativeFormatFenceTest {
 	}
 
 	@ParameterizedTest
-	@CsvSource({ "false,-1", "true,-1", "false,2", "true,2", "false,7", "true,7", "false,99", "true,99" })
+	@CsvSource({ "false,-1", "true,-1", "false,2", "true,2", "false,6", "true,6", "false,8", "true,8", "false,99",
+			"true,99" })
 	void missingOrInconsistentNativeFenceRejectsBeforeMutation(boolean clear, int marker) throws Exception {
 		createStore(clear);
 		writeMetadata(FORMAT_KEY,
@@ -164,7 +165,7 @@ class LmdbNativeFormatFenceTest {
 	}
 
 	@Test
-	void formatSixNativeCatalogCannotBeRelabeledLegacy() throws Exception {
+	void formatSevenNativeCatalogCannotBeRelabeledLegacy() throws Exception {
 		createStore(false);
 		writeLegacyProperties();
 		Files.delete(directory.resolve("lmdbrdf.ver"));
@@ -172,7 +173,7 @@ class LmdbNativeFormatFenceTest {
 	}
 
 	@Test
-	void existingFormatSixCannotRecreateMissingNativeGeneration() throws Exception {
+	void existingFormatSevenCannotRecreateMissingNativeGeneration() throws Exception {
 		createStore(true);
 		Files.delete(directory.resolve("values/data.mdb"));
 		byte[] properties = Files.readAllBytes(directory.resolve("store.properties"));

@@ -29,6 +29,7 @@ import org.eclipse.rdf4j.model.Literal;
 import org.eclipse.rdf4j.model.Namespace;
 import org.eclipse.rdf4j.model.TripleTerm;
 import org.eclipse.rdf4j.model.Value;
+import org.eclipse.rdf4j.model.util.Literals;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.MalformedQueryException;
 import org.eclipse.rdf4j.query.QueryParseOptions;
@@ -141,6 +142,20 @@ public class SPARQLQueries {
 		}
 		return value instanceof TripleTerm triple
 				&& (containsReference(triple.getSubject(), ids) || containsReference(triple.getObject(), ids));
+	}
+
+	/**
+	 * Serializes query bindings, inlining unprojected ordinary triple-pattern terms only when every occurrence of the
+	 * variable is safe to replace. Other bindings use scoped VALUES mappings. Variables needed by projections,
+	 * expressions or independent scopes are never removed by the inline rewrite. Unsupported binding scopes and
+	 * conflicting locally owned VALUES bindings fail explicitly. Callers transporting blank nodes must first verify
+	 * ownership and translate their IDs into the receiving repository's canonical namespace.
+	 *
+	 * @throws UnsupportedOperationException if the binding semantics cannot safely be serialized
+	 * @throws MalformedQueryException       if the input is not a SPARQL query
+	 */
+	public static String withQueryBindings(String query, BindingSet bindings) {
+		return QueryBindingRewriter.rewrite(query, bindings);
 	}
 
 	/**
@@ -445,7 +460,7 @@ public class SPARQLQueries {
 		return new UnsupportedOperationException("Unsupported initial-binding transport: " + shape);
 	}
 
-	private static void appendBindingValue(Value value, StringBuilder result) {
+	static void appendBindingValue(Value value, StringBuilder result) {
 		if (value instanceof RemoteBNode) {
 			throw unsupportedBindings("remote blank node requires a verified canonical mapping");
 		} else if (value instanceof BNode blank) {
@@ -455,7 +470,11 @@ public class SPARQLQueries {
 		} else if (value instanceof Literal literal) {
 			result.append('"').append(escape(literal.getLabel())).append('"');
 			if (literal.getLanguage().isPresent()) {
-				result.append('@').append(literal.getLanguage().get());
+				String language = literal.getLanguage().get();
+				if (!Literals.isValidLanguageTag(language)) {
+					throw new IllegalArgumentException("Invalid language tag in SPARQL binding: " + language);
+				}
+				result.append('@').append(language);
 				if (literal.getBaseDirection() != Literal.BaseDirection.NONE) {
 					result.append("--").append(literal.getBaseDirection().name().toLowerCase(Locale.ROOT));
 				}

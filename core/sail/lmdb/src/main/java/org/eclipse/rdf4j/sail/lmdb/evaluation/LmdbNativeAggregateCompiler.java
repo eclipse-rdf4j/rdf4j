@@ -115,6 +115,8 @@ final class LmdbNativeAggregateCompiler {
 	static final AtomicLong ISLAND_HOISTS = new AtomicLong();
 	/** Test observability: roots compiled as ordered stage pipelines over a native inner source (M-A2). */
 	static final AtomicLong PIPELINE_ROOTS = new AtomicLong();
+	/** Test observability: pipeline roots whose ORDER BY + LIMIT ran as one bounded top-K stage. */
+	static final AtomicLong TOP_K_ROOTS = new AtomicLong();
 	/** Test observability: slot-starved roots rescued by internal-variable island demotion (M-A4). */
 	static final AtomicLong WIDE_QUERY_DEMOTIONS = new AtomicLong();
 	/**
@@ -513,6 +515,15 @@ final class LmdbNativeAggregateCompiler {
 	 * consult state outside declared slot masks.
 	 */
 	static long memoReadMask(SlotPlan plan) {
+		if (plan instanceof EmptyPlan || plan instanceof SingletonPlan) {
+			return 0L;
+		}
+		if (plan instanceof NativeAliasJoinPlan alias) {
+			return memoReadMask(alias.original);
+		}
+		if (plan instanceof NativeAliasJoinMemoPlan memo) {
+			return memoReadMask(memo.original);
+		}
 		if (plan instanceof LmdbNativePackedMorsels.Leaf leaf)
 			return memoReadMask(leaf.template);
 		if (plan instanceof PatternPlan || plan instanceof ValuesPlan || plan instanceof PathPlan) {
@@ -532,10 +543,11 @@ final class LmdbNativeAggregateCompiler {
 				mask |= childMask;
 			}
 			for (MaskedFilter filter : multiJoin.filters) {
-				if (filter.mask < 0L) {
+				long reads = NativePredicateCapabilities.groupedReadMask(filter.filter, filter.mask);
+				if (reads < 0L) {
 					return -1L;
 				}
-				mask |= filter.mask;
+				mask |= reads;
 			}
 			return mask;
 		}
@@ -573,11 +585,12 @@ final class LmdbNativeAggregateCompiler {
 		}
 		if (plan instanceof FilterPlan) {
 			FilterPlan filterPlan = (FilterPlan) plan;
-			if (filterPlan.filterMask < 0L) {
+			long reads = filterPlan.groupedReadMask();
+			if (reads < 0L) {
 				return -1L;
 			}
 			long argMask = memoReadMask(filterPlan.arg);
-			return argMask < 0L ? -1L : argMask | filterPlan.filterMask;
+			return argMask < 0L ? -1L : argMask | reads;
 		}
 		if (plan instanceof ExtensionPlan) {
 			// M-F1: plain slot/constant copies are pure functions of the argument's row stream; computed copies keep

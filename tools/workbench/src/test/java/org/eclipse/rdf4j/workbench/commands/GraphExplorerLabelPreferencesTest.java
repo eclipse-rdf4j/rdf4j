@@ -25,6 +25,7 @@ import org.eclipse.rdf4j.query.QueryResults;
 import org.eclipse.rdf4j.query.resultio.sparqljson.SPARQLResultsJSONWriter;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
 import org.eclipse.rdf4j.sail.memory.MemoryStore;
+import org.eclipse.rdf4j.workbench.support.TestProcess;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 import org.junit.jupiter.params.ParameterizedTest;
@@ -45,22 +46,21 @@ class GraphExplorerLabelPreferencesTest {
 
 	@Test
 	void orderedPredicatePolicyControlsDisplayedLabels(@TempDir Path temporary) throws Exception {
-		Path node = Path.of("target/node", System.getProperty("os.name").startsWith("Windows") ? "node.exe" : "node")
-				.toAbsolutePath();
-		assertThat(Files.isExecutable(node)).as("the Workbench frontend's bundled Node runtime").isTrue();
 		Path output = temporary.resolve("label-preference-tests.log");
-		Process process = new ProcessBuilder(node.toString(), "--experimental-strip-types", "--test",
+		try (TestProcess child = TestProcess.start(new ProcessBuilder(TestProcess.NODE,
+				"--experimental-strip-types", "--test",
 				"src/test/frontend/graph-explorer/label-preference-policy.test.mjs")
 						.redirectErrorStream(true)
-						.redirectOutput(output.toFile())
-						.start();
-		boolean finished = process.waitFor(60, TimeUnit.SECONDS);
-		if (!finished) {
-			process.destroyForcibly();
-			process.waitFor();
+						.redirectOutput(output.toFile()))) {
+			Process process = child.process();
+			boolean finished = process.waitFor(60, TimeUnit.SECONDS);
+			if (!finished) {
+				process.destroyForcibly();
+				process.waitFor();
+			}
+			assertThat(finished).as("the frontend label selection regressions finish").isTrue();
+			assertThat(process.exitValue()).as(Files.readString(output)).isZero();
 		}
-		assertThat(finished).as("the frontend label selection regressions finish").isTrue();
-		assertThat(process.exitValue()).as(Files.readString(output)).isZero();
 	}
 
 	static Stream<Arguments> vocabularyCases() {
@@ -164,25 +164,24 @@ class GraphExplorerLabelPreferencesTest {
 	}
 
 	private String nodeFixture(Map<String, ?> input, Path temporary) throws Exception {
-		Path node = Path.of("target/node", System.getProperty("os.name").startsWith("Windows") ? "node.exe" : "node")
-				.toAbsolutePath();
 		Path output = temporary.resolve("label-fixture-output.json");
 		Path errors = temporary.resolve("label-fixture-errors.log");
-		Process process = new ProcessBuilder(node.toString(), "--experimental-strip-types",
+		try (TestProcess child = TestProcess.start(new ProcessBuilder(TestProcess.NODE, "--experimental-strip-types",
 				"src/test/frontend/graph-explorer/label-preference-rdf4j-fixture.mjs")
 						.redirectOutput(output.toFile())
-						.redirectError(errors.toFile())
-						.start();
-		try (var writer = process.getOutputStream()) {
-			writer.write(JSON.writeValueAsBytes(input));
+						.redirectError(errors.toFile()))) {
+			Process process = child.process();
+			try (var writer = process.getOutputStream()) {
+				writer.write(JSON.writeValueAsBytes(input));
+			}
+			boolean finished = process.waitFor(30, TimeUnit.SECONDS);
+			if (!finished) {
+				process.destroyForcibly();
+				process.waitFor();
+			}
+			assertThat(finished).as("the actual TypeScript label fixture completes").isTrue();
+			assertThat(process.exitValue()).as(Files.readString(errors)).isZero();
+			return Files.readString(output);
 		}
-		boolean finished = process.waitFor(30, TimeUnit.SECONDS);
-		if (!finished) {
-			process.destroyForcibly();
-			process.waitFor();
-		}
-		assertThat(finished).as("the actual TypeScript label fixture completes").isTrue();
-		assertThat(process.exitValue()).as(Files.readString(errors)).isZero();
-		return Files.readString(output);
 	}
 }

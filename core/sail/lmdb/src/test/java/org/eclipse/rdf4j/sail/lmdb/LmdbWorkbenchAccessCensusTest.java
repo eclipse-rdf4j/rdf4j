@@ -93,7 +93,10 @@ class LmdbWorkbenchAccessCensusTest {
 	@Test
 	void censusOfWorkbenchRepositoryCalls() {
 		Map<String, ToLongFunction<RepositoryConnection>> calls = new LinkedHashMap<>();
-		List<String> answeredByLmdbCounters = List.of("size()", "getContextIDs()");
+		// size(g3) and size(default) are answered by the LMDB context catalog: one mdb_get of the exact
+		// per-context statement count, which is at least as cheap as an adjacency lookup and needs no statement
+		// scan, so neither consults the adjacency any more (LmdbDirectAdjacencyQueryTest pins that contract).
+		List<String> answeredByLmdbCounters = List.of("size()", "size(g3)", "size(default)", "getContextIDs()");
 		calls.put("size()", RepositoryConnection::size);
 		calls.put("size(g3)", conn -> conn.size(iri("g3")));
 		calls.put("size(default)", conn -> conn.size((Resource) null));

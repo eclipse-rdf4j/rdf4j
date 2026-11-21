@@ -21,6 +21,7 @@ import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicReference;
 
 import org.eclipse.rdf4j.common.annotation.Experimental;
+import org.eclipse.rdf4j.http.client.QueryExecutionContext;
 import org.eclipse.rdf4j.sail.lmdb.LmdbRootScanPartition;
 import org.eclipse.rdf4j.sail.lmdb.RecordIterator;
 
@@ -107,8 +108,28 @@ final class LmdbNativeExchange {
 				throwIfAborted(failure, cancelled);
 			}
 		} catch (InterruptedException e) {
-			Thread.currentThread().interrupt();
-			throw new IOException(e);
+			throw interrupted(e);
+		}
+	}
+
+	/** Capture interrupt authority at the queue wait, not later when an unrelated IOException is reported. */
+	static IOException interrupted(InterruptedException interrupted) {
+		Object owner = QueryExecutionContext.consumeInterruptionOwner();
+		Thread.currentThread().interrupt();
+		return owner == null ? new IOException(interrupted) : new OwnerInterruptedException(owner, interrupted);
+	}
+
+	static final class OwnerInterruptedException extends IOException {
+		private static final long serialVersionUID = 1L;
+		private final Object owner;
+
+		private OwnerInterruptedException(Object owner, InterruptedException cause) {
+			super(cause);
+			this.owner = owner;
+		}
+
+		Object owner() {
+			return owner;
 		}
 	}
 
@@ -360,8 +381,7 @@ final class LmdbNativeExchange {
 					throwIfAborted(failure, cancelled);
 				}
 			} catch (InterruptedException e) {
-				Thread.currentThread().interrupt();
-				throw new IOException(e);
+				throw interrupted(e);
 			}
 		}
 

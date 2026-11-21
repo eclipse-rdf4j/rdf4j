@@ -17,8 +17,7 @@ package org.eclipse.rdf4j.sail.lmdb;
  * walking the outgoing plane produces the same subject-major order as the LMDB {@code spoc} index and walking the
  * incoming plane produces object-major order, without materializing the predicate's rows. The composed adjacency view
  * owns base/delta key-domain merging; this cursor only walks that domain and bulk-decodes each resolved run. A bound
- * context filters during the walk: runs are (neighbor, context) ordered, so the context column is decoded anyway and
- * the filter only compacts the emitted rows.
+ * context first rejects disjoint common-context pages, then filters mixed pages during the walk.
  */
 final class LmdbDirectAdjacencyRootIterator implements RecordIterator {
 	static final String INDEX_NAME = "direct-spoc";
@@ -46,7 +45,7 @@ final class LmdbDirectAdjacencyRootIterator implements RecordIterator {
 		try {
 			view.retainLease();
 			leaseHeld = true;
-			resolvedCursor = adjacency.rootScanCursor();
+			resolvedCursor = adjacency.rootScanCursor(boundContext);
 		} catch (RuntimeException | Error failure) {
 			if (resolvedCursor != null) {
 				try {
@@ -89,15 +88,20 @@ final class LmdbDirectAdjacencyRootIterator implements RecordIterator {
 	}
 
 	private boolean advanceRun() {
-		while (runOffset >= runSize) {
-			if (!cursor.advance()) {
-				return false;
+		while (true) {
+			while (runOffset >= runSize) {
+				if (!cursor.advance()) {
+					return false;
+				}
+				key = cursor.key();
+				runOffset = 0L;
+				runSize = cursor.size();
 			}
-			key = cursor.key();
-			runOffset = 0L;
-			runSize = cursor.size();
+			runOffset = cursor.nextContextCandidate(runOffset);
+			if (runOffset < runSize) {
+				return true;
+			}
 		}
-		return true;
 	}
 
 	@Override
@@ -124,7 +128,8 @@ final class LmdbDirectAdjacencyRootIterator implements RecordIterator {
 		int neighborIdx = bySubject ? TripleIndex.OBJ_IDX : TripleIndex.SUBJ_IDX;
 		int rows = 0;
 		while (rows < maxRows && advanceRun()) {
-			int copied = (int) Math.min(Math.min((long) COPY_EDGES, maxRows - rows), runSize - runOffset);
+			int copied = (int) Math.min(Math.min((long) COPY_EDGES, maxRows - rows),
+					cursor.contextCandidateEnd() - runOffset);
 			ensureScratch(copied);
 			int pairCount = cursor.copyPairs(runOffset, copied, neighbors, contexts);
 			if (pairCount != copied) {

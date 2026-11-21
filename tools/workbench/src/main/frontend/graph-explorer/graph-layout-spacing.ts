@@ -17,5 +17,7 @@ export const LAYOUT_SPACING = Object.freeze({
   nodeGapX: 48,
   nodeGapY: 36,
   groupGap: 80,
+  /** Between parts that share no link: well over an arrow's length, so whitespace alone says they are not connected. */
+  componentGap: 240,
   hierarchyRankGap: 90,
 });

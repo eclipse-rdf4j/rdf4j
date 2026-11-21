@@ -148,7 +148,14 @@ class LmdbStatsLoggingTest {
 	void logsWritesAcrossIsolationLevels(IsolationLevels isolation) {
 		LmdbStore store = new LmdbStore(dataDir, config());
 		store.init();
-		try (LmdbStoreConnection connection = (LmdbStoreConnection) store.getConnection()) {
+		try (NotifyingSailConnection snapshotReader = store.getConnection();
+				LmdbStoreConnection connection = (LmdbStoreConnection) store.getConnection()) {
+			// Keep cleanup behind a real reader while comparing exact foreground-native logging boundaries.
+			// Async cleanup remains enabled and can resume after this scoped snapshot closes.
+			snapshotReader.begin(IsolationLevels.SNAPSHOT);
+			assertThat(snapshotReader.hasStatement(null, null, null, true)).isFalse();
+			assertThat(store.getBackingStore().getTripleStore().getTxnManager().minPinnedSnapshotRevision())
+					.isNotEqualTo(Long.MAX_VALUE);
 			LmdbStats before = store.getLmdbStats();
 			connection.begin(isolation);
 			connection.addStatement(RDF.TYPE, RDF.TYPE, RDF.PROPERTY, RDFS.RESOURCE);

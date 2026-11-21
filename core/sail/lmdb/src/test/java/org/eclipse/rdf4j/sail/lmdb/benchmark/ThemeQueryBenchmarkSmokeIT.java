@@ -122,6 +122,7 @@ class ThemeQueryBenchmarkSmokeIT {
 		String forcedStrategyProperty = ThemeQueryBenchmark.FORCED_EXECUTION_STRATEGY_PROPERTY;
 		String previousForcedStrategy = System.getProperty(forcedStrategyProperty);
 		String previousProfiling = System.getProperty(PROFILING_PROPERTY);
+		String previousDirectAdjacency = System.getProperty(ThemeQueryBenchmark.WAIT_FOR_DIRECT_ADJACENCY_PROPERTY);
 		ThemeQueryBenchmark benchmark = new ThemeQueryBenchmark();
 		benchmark.themeName = Theme.MEDICAL_RECORDS.name();
 		benchmark.z_queryIndex = 0;
@@ -130,6 +131,10 @@ class ThemeQueryBenchmarkSmokeIT {
 		try {
 			System.setProperty(forcedStrategyProperty, "packedFtreeAggregate");
 			System.setProperty(PROFILING_PROPERTY, "true");
+			// The packed aggregate needs an exact adjacency view; against a store still building its index after the
+			// reopen the query falls back to the generic path, which runs for tens of seconds and hit the 60 s query
+			// timeout on CI.
+			System.setProperty(ThemeQueryBenchmark.WAIT_FOR_DIRECT_ADJACENCY_PROPERTY, Boolean.TRUE.toString());
 			benchmark.setup();
 			initialized = true;
 			assertBenchmarkQueryCount(benchmark, Theme.MEDICAL_RECORDS, 0, 1);
@@ -139,6 +144,7 @@ class ThemeQueryBenchmarkSmokeIT {
 			}
 			restoreProperty(forcedStrategyProperty, previousForcedStrategy);
 			restoreProperty(PROFILING_PROPERTY, previousProfiling);
+			restoreProperty(ThemeQueryBenchmark.WAIT_FOR_DIRECT_ADJACENCY_PROPERTY, previousDirectAdjacency);
 		}
 	}
 

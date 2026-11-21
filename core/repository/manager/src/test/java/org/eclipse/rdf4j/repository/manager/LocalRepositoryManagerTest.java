@@ -36,7 +36,6 @@ import org.eclipse.rdf4j.repository.base.RepositoryWrapper;
 import org.eclipse.rdf4j.repository.config.RepositoryConfig;
 import org.eclipse.rdf4j.repository.config.RepositoryConfigException;
 import org.eclipse.rdf4j.repository.sparql.config.SPARQLRepositoryConfig;
-import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.Timeout;
@@ -61,13 +60,6 @@ public class LocalRepositoryManagerTest extends RepositoryManagerTest {
 		this.dataDir = datadir;
 		subject = new LocalRepositoryManager(datadir);
 		subject.init();
-	}
-
-	/**
-	 */
-	@AfterEach
-	public void tearDown() {
-		subject.shutDown();
 	}
 
 	@Test
@@ -259,11 +251,9 @@ public class LocalRepositoryManagerTest extends RepositoryManagerTest {
 				Thread.currentThread().interrupt();
 			}
 		});
-		manager.init();
 		ExecutorService threads = Executors.newFixedThreadPool(3);
-		Future<?> update = null;
-		Future<Boolean> removal = null;
 		try {
+			manager.init();
 			manager.addRepositoryConfig(sparqlConfig("edited"));
 			manager.addRepositoryConfig(sparqlConfig("other"));
 			manager.addRepositoryConfig(sparqlConfig("removed"));
@@ -271,10 +261,10 @@ public class LocalRepositoryManagerTest extends RepositoryManagerTest {
 			manager.getRepository("other");
 			// A shutdown waits for the edited repository's open connections; meanwhile every other request (such as
 			// the commit that would release one of those connections) must still reach the manager.
-			update = threads.submit(() -> manager.updateRepositoryConfig(sparqlConfig("edited")));
+			Future<?> update = threads.submit(() -> manager.updateRepositoryConfig(sparqlConfig("edited")));
 			assertThat(shuttingDown.await(10, TimeUnit.SECONDS)).isTrue();
 			assertThat(threads.submit(() -> manager.getRepository("other")).get(10, TimeUnit.SECONDS)).isNotNull();
-			removal = threads.submit(() -> manager.removeRepository("removed"));
+			Future<Boolean> removal = threads.submit(() -> manager.removeRepository("removed"));
 			assertThat(removal.get(10, TimeUnit.SECONDS)).isTrue();
 			resume.countDown();
 
@@ -284,7 +274,9 @@ public class LocalRepositoryManagerTest extends RepositoryManagerTest {
 		} finally {
 			resume.countDown();
 			threads.shutdownNow();
-			if (update != null && update.isDone() && removal != null && removal.isDone()) {
+			try {
+				threads.close();
+			} finally {
 				manager.shutDown();
 			}
 		}
@@ -308,9 +300,9 @@ public class LocalRepositoryManagerTest extends RepositoryManagerTest {
 				super.deleteRepositoryDirectory(repositoryDirectory);
 			}
 		};
-		manager.init();
 		ExecutorService threads = Executors.newFixedThreadPool(2);
 		try {
+			manager.init();
 			manager.addRepositoryConfig(sparqlConfig("other"));
 			manager.addRepositoryConfig(sparqlConfig("removed"));
 			manager.getRepository("other");
@@ -335,8 +327,8 @@ public class LocalRepositoryManagerTest extends RepositoryManagerTest {
 		LocalRepositoryManager manager = managerWithFirstShutdown(directory, () -> {
 			throw new RepositoryException("the store is locked");
 		});
-		manager.init();
 		try {
+			manager.init();
 			manager.addRepositoryConfig(sparqlConfig("edited"));
 			Repository previous = manager.getRepository("edited");
 

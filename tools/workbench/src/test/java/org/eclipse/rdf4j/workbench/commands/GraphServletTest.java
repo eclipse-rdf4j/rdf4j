@@ -17,17 +17,28 @@ import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
 import java.io.IOException;
+import java.io.InputStream;
 import java.nio.charset.StandardCharsets;
+import java.nio.file.Path;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Properties;
 import java.util.Set;
+import java.util.concurrent.TimeUnit;
 
 import org.eclipse.rdf4j.model.ValueFactory;
+import org.eclipse.rdf4j.model.vocabulary.RDFS;
+import org.eclipse.rdf4j.model.vocabulary.XSD;
 import org.eclipse.rdf4j.repository.Repository;
 import org.eclipse.rdf4j.repository.RepositoryConnection;
 import org.eclipse.rdf4j.repository.manager.RepositoryInfo;
 import org.eclipse.rdf4j.repository.manager.RepositoryManager;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
+import org.eclipse.rdf4j.sail.inferencer.InferencerConnection;
+import org.eclipse.rdf4j.sail.lmdb.LmdbStore;
+import org.eclipse.rdf4j.sail.lmdb.config.DirectAdjacencyCoverage;
+import org.eclipse.rdf4j.sail.lmdb.config.DirectAdjacencyMode;
+import org.eclipse.rdf4j.sail.lmdb.config.LmdbStoreConfig;
 import org.eclipse.rdf4j.sail.memory.MemoryStore;
 import org.eclipse.rdf4j.workbench.proxy.config.WorkbenchPolicy;
 import org.eclipse.rdf4j.workbench.proxy.config.WorkbenchPolicyLoader;
@@ -37,6 +48,11 @@ import org.eclipse.rdf4j.workbench.util.WorkbenchRequest;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.io.TempDir;
+import org.junit.jupiter.api.parallel.ResourceLock;
+import org.junit.jupiter.api.parallel.Resources;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 import org.springframework.mock.web.MockHttpServletRequest;
 import org.springframework.mock.web.MockHttpServletResponse;
 import org.springframework.mock.web.MockServletContext;
@@ -44,6 +60,7 @@ import org.springframework.mock.web.MockServletContext;
 import jakarta.servlet.http.Cookie;
 import tools.jackson.databind.JsonNode;
 import tools.jackson.databind.ObjectMapper;
+import tools.jackson.databind.node.ObjectNode;
 
 /**
  * The Graph page: the browser-side graph explorer posts SPARQL SELECT, CONSTRUCT and DESCRIBE queries to
@@ -78,8 +95,12 @@ class GraphServletTest {
 	}
 
 	private GraphServlet newServlet(String... params) throws Exception {
+		return newServlet(repository, params);
+	}
+
+	private GraphServlet newServlet(Repository selectedRepository, String... params) throws Exception {
 		GraphServlet created = new GraphServlet();
-		created.setRepository(repository);
+		created.setRepository(selectedRepository);
 		created.setRepositoryManager(mock(RepositoryManager.class));
 		RepositoryInfo info = new RepositoryInfo();
 		info.setId("repo-1");
@@ -102,6 +123,144 @@ class GraphServletTest {
 	void tearDown() {
 		servlet.destroy();
 		repository.shutDown();
+	}
+
+	@ParameterizedTest(name = "generated labels through real LMDB GraphServlet, adjacency={0}")
+	@ValueSource(booleans = { false, true })
+	@ResourceLock(Resources.SYSTEM_PROPERTIES)
+	void generatedLabelQueriesUseTheSelectedLmdbContextsAndInference(boolean adjacency, @TempDir Path directory)
+			throws Exception {
+		String nativeProperty = "rdf4j.lmdb.nativeQueryEngine.enabled";
+		String previousNative = System.getProperty(nativeProperty);
+		LmdbStore store = new LmdbStore(directory.toFile(), new LmdbStoreConfig()
+				.setNativeEvaluationEnabled(true)
+				.setDirectAdjacencyEnabled(adjacency)
+				.setDirectAdjacencyMode(adjacency ? DirectAdjacencyMode.PREFER : DirectAdjacencyMode.DISABLED)
+				.setDirectAdjacencyCoverage(DirectAdjacencyCoverage.FULL));
+		SailRepository selected = new SailRepository(store);
+		GraphServlet graph = null;
+		try {
+			System.setProperty(nativeProperty, "true");
+			selected.init();
+			ValueFactory vf = selected.getValueFactory();
+			try (RepositoryConnection connection = selected.getConnection()) {
+				connection.begin();
+				connection.add(vf.createIRI("urn:ex:named"), RDFS.LABEL,
+						vf.createLiteral("Default ☃", "en"));
+				connection.add(vf.createIRI("urn:ex:named"), RDFS.LABEL,
+						vf.createLiteral("Named Æ", "nb"), vf.createIRI("urn:ex:graph"));
+				connection.add(vf.createIRI("urn:ex:named"), RDFS.LABEL,
+						vf.createLiteral(42), vf.createIRI("urn:ex:other"));
+				connection.commit();
+			}
+			try (InferencerConnection connection = (InferencerConnection) store.getConnection()) {
+				connection.begin();
+				connection.addInferredStatement(vf.createIRI("urn:ex:named"), RDFS.LABEL,
+						vf.createLiteral("Inferred", "de"), vf.createIRI("urn:ex:graph"));
+				connection.commit();
+			}
+			if (adjacency) {
+				assertThat(store.awaitDirectAdjacencyReady(30, TimeUnit.SECONDS))
+						.as(store.getDirectAdjacencyReadinessDescription())
+						.isTrue();
+			}
+			graph = newServlet(selected, GraphServlet.MAX_QUERY_LENGTH_PARAM, "65536",
+					GraphServlet.MAX_RESULT_ROWS_PARAM, "10", "cookie-max-age", "300");
+			long cacheHits = store.getQueryResultCacheHits();
+			for (boolean inferred : List.of(false, true)) {
+				for (boolean namedOnly : List.of(true, false)) {
+					String text = committedGraphQuery(namedOnly ? "labels-named" : "labels-all");
+					List<JsonNode> expected = expectedLabels(namedOnly, inferred);
+					for (int repeat = 0; repeat < 2; repeat++) {
+						JsonNode json = runGeneratedLabels(graph, text, inferred, null);
+						assertThat(json.path("head").path("vars")).extracting(JsonNode::asText)
+								.containsExactly("resource", "labelProperty", "label");
+						assertThat(json.path("results").path("bindings"))
+								.as("exact generated query RDF-term bag, named=%s, inferred=%s, repeat=%s",
+										namedOnly, inferred, repeat)
+								.containsExactlyInAnyOrderElementsOf(expected);
+						assertThat(json.path("rdf4j:truncated").asBoolean()).isFalse();
+					}
+				}
+			}
+			JsonNode limited = runGeneratedLabels(graph, committedGraphQuery("labels-all"), true, "1");
+			assertThat(limited.path("results").path("bindings")).hasSize(1);
+			assertThat(expectedLabels(false, true)).contains(limited.path("results").path("bindings").get(0));
+			assertThat(limited.path("rdf4j:truncated").asBoolean()).isTrue();
+			// GraphServlet creates fresh SailQuery objects without requesting the LMDB result cache. Repeating the
+			// requests verifies that this path does not silently use cache hits instead of exercising real evaluation.
+			assertThat(store.getQueryResultCacheHits()).isEqualTo(cacheHits);
+		} finally {
+			try {
+				if (graph != null) {
+					graph.destroy();
+				}
+			} finally {
+				try {
+					selected.shutDown();
+				} finally {
+					if (previousNative == null) {
+						System.clearProperty(nativeProperty);
+					} else {
+						System.setProperty(nativeProperty, previousNative);
+					}
+				}
+			}
+		}
+	}
+
+	private static String committedGraphQuery(String name) throws IOException {
+		String resource = "/graph-explorer-queries/" + name + ".rq";
+		try (InputStream input = GraphServletTest.class.getResourceAsStream(resource)) {
+			assertThat(input).as(resource).isNotNull();
+			return new String(input.readAllBytes(), StandardCharsets.UTF_8);
+		}
+	}
+
+	private static JsonNode runGeneratedLabels(GraphServlet graph, String text, boolean inferred, String rowLimit)
+			throws Exception {
+		MockHttpServletRequest request = sparqlPost(text);
+		request.addParameter("infer", Boolean.toString(inferred));
+		request.addParameter("query-timeout", "30");
+		// The explicit infer parameter must win over its opposite cookie; the Query page's limit cookie must not
+		// truncate GraphServlet results, whose independent row-limit parameter is tested below.
+		request.setCookies(new Cookie("infer", Boolean.toString(!inferred)), new Cookie("limit", "1"));
+		if (rowLimit != null) {
+			request.addParameter("row-limit", rowLimit);
+		}
+		MockHttpServletResponse response = new MockHttpServletResponse();
+		graph.service(request, response);
+		assertThat(response.getStatus()).as(response.getContentAsString()).isEqualTo(200);
+		assertThat(response.getContentType()).startsWith("application/sparql-results+json");
+		assertThat(response.getCharacterEncoding()).isEqualTo(StandardCharsets.UTF_8.name());
+		assertThat(response.getHeader("Cache-Control")).contains("no-store");
+		return JSON_MAPPER.readTree(response.getContentAsString());
+	}
+
+	private static List<JsonNode> expectedLabels(boolean namedOnly, boolean inferred) {
+		List<JsonNode> expected = new ArrayList<>();
+		if (!namedOnly) {
+			expected.add(labelBinding("Default ☃", "en", null));
+			expected.add(labelBinding("42", null, XSD.INT.stringValue()));
+		}
+		expected.add(labelBinding("Named Æ", "nb", null));
+		if (inferred) {
+			expected.add(labelBinding("Inferred", "de", null));
+		}
+		return expected;
+	}
+
+	private static JsonNode labelBinding(String lexical, String language, String datatype) {
+		ObjectNode binding = JSON_MAPPER.createObjectNode();
+		binding.putObject("resource").put("type", "uri").put("value", "urn:ex:named");
+		binding.putObject("labelProperty").put("type", "uri").put("value", RDFS.LABEL.stringValue());
+		ObjectNode label = binding.putObject("label").put("type", "literal").put("value", lexical);
+		if (language != null) {
+			label.put("xml:lang", language);
+		} else if (datatype != null) {
+			label.put("datatype", datatype);
+		}
+		return binding;
 	}
 
 	@Test

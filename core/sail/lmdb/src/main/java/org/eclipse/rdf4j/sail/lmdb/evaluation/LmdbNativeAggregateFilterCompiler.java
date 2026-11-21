@@ -17,7 +17,6 @@ import static org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbNativeAggregateCompiler
 import static org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbNativeAggregateCompiler.NULL_CONTEXT_ID;
 import static org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbNativeAggregateCompiler.UNKNOWN;
 import static org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbNativeAggregateCompiler.isNullContextValue;
-import static org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbNativeAggregateCompiler.memoReadMask;
 import static org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbNativeAggregateCompiler.safeResourceId;
 import static org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbNativeAggregateCompiler.validValueForField;
 
@@ -68,10 +67,13 @@ import org.eclipse.rdf4j.query.algebra.evaluation.iterator.FilterIterator;
 import org.eclipse.rdf4j.query.algebra.evaluation.util.QueryEvaluationUtility;
 import org.eclipse.rdf4j.query.algebra.helpers.AbstractQueryModelVisitor;
 import org.eclipse.rdf4j.query.algebra.helpers.FilterBindingScope;
+import org.eclipse.rdf4j.query.algebra.helpers.QueryAlgebraBindingAnalysis;
 import org.eclipse.rdf4j.query.algebra.helpers.collectors.VarNameCollector;
+import org.eclipse.rdf4j.query.impl.EmptyBindingSet;
 
 @Experimental
 abstract class LmdbNativeAggregateFilterCompiler extends LmdbNativeAggregateValuesCompiler {
+	QueryAlgebraBindingAnalysis lexicalBindingAnalysis;
 
 	/**
 	 * When set, {@link #compileExtensionCopies(Extension)} may compile a computed, non-inline BIND (e.g.
@@ -482,7 +484,9 @@ abstract class LmdbNativeAggregateFilterCompiler extends LmdbNativeAggregateValu
 			NativeBooleanFilter comparison = compileCompare((Compare) expr, assuredMask);
 			if (comparison != null) {
 				LmdbNativeExpressionCompiler.recordCompiledFilter();
-				return comparison;
+				NativeScalarPlan recipe = NativeScalarPlan.create(expr, this::existingSlot,
+						NativeScalarPlan.ResultKind.BOOLEAN, strictCompare(), assuredMask, false, false);
+				return comparison.plannedBy(recipe);
 			}
 		}
 		if (expr instanceof And) {
@@ -527,6 +531,11 @@ abstract class LmdbNativeAggregateFilterCompiler extends LmdbNativeAggregateValu
 				SlotPlan subPlan = compileTuple(exists.getSubQuery(), false);
 				if (subPlan == null && Boolean.getBoolean("rdf4j.lmdb.janinoCodegen.debug")) {
 					System.err.println("[exists-compile] decline: sub-plan " + exists.getSubQuery().getSignature());
+				}
+				if (subPlan != null && Boolean.getBoolean("rdf4j.lmdb.janinoCodegen.debug")) {
+					System.err.println("[exists-compile] replay=" + SlotPlan.encounterOrderReplaySafe(subPlan)
+							+ " worker=" + NativeWorkerPlanBinder.canBind(subPlan) + " plan="
+							+ LmdbNativeExplain.describe(subPlan, slotNames.toArray(String[]::new), 0L));
 				}
 				return subPlan == null ? null : new ExistsFilter(subPlan);
 			} finally {
@@ -741,72 +750,13 @@ abstract class LmdbNativeAggregateFilterCompiler extends LmdbNativeAggregateValu
 		return null;
 	}
 
-	/** Only row-local native plans may borrow a projected row without a separate query-entry frame. */
+	/**
+	 * The condition row owns its projected entry frame as well as its slots. Lexical producers therefore use the same
+	 * replay/effect and worker-construction proofs as ordinary native predicates; unknown or effectful recipes retain
+	 * the semantic fallback. Root partitionability is a separate aggregate admission gate.
+	 */
 	private static boolean projectedNativeFrameSupported(SlotPlan plan) {
-		if (memoReadMask(plan) < 0L || plan instanceof PathPlan) {
-			// Independent subqueries, GRAPH, generic islands, lexical OPTIONALs and computed copies decline through
-			// memoReadMask. A path's dynamic context is not part of its produced mask, so that proof is incomplete.
-			return false;
-		}
-		if (plan instanceof LmdbNativePackedMorsels.Leaf leaf) {
-			return projectedNativeFrameSupported(leaf.template);
-		}
-		if (plan instanceof MultiJoinPlan join) {
-			for (SlotPlan child : join.children) {
-				if (!projectedNativeFrameSupported(child)) {
-					return false;
-				}
-			}
-			for (MaskedFilter filter : join.filters) {
-				if (!projectedNativeBooleanSupported(filter.filter)) {
-					return false;
-				}
-			}
-			return true;
-		}
-		if (plan instanceof JoinPlan join) {
-			return projectedNativeFrameSupported(join.left) && projectedNativeFrameSupported(join.right);
-		}
-		if (plan instanceof LeftJoinPlan join) {
-			return projectedNativeFrameSupported(join.left) && projectedNativeFrameSupported(join.right);
-		}
-		if (plan instanceof UnionPlan union) {
-			return projectedNativeFrameSupported(union.left) && projectedNativeFrameSupported(union.right);
-		}
-		if (plan instanceof MinusPlan minus) {
-			return projectedNativeFrameSupported(minus.left) && projectedNativeFrameSupported(minus.right);
-		}
-		if (plan instanceof FilterPlan filter) {
-			return projectedNativeFrameSupported(filter.arg) && projectedNativeBooleanSupported(filter.filter);
-		}
-		if (plan instanceof ExtensionPlan extension) {
-			return projectedNativeFrameSupported(extension.arg);
-		}
-		return plan instanceof PatternPlan || plan instanceof MultiValuePatternPlan || plan instanceof ValuesPlan;
-	}
-
-	private static boolean projectedNativeBooleanSupported(NativeBooleanFilter filter) {
-		filter = NativeFilterLease.inspect(filter);
-		if (filter instanceof RecordingNativeBooleanFilter recording) {
-			return projectedNativeBooleanSupported(recording.delegate);
-		}
-		if (filter instanceof ExistsFilter exists) {
-			return projectedNativeFrameSupported(exists.subPlan);
-		}
-		if (filter instanceof NegatedNativeBooleanFilter negated) {
-			return projectedNativeBooleanSupported(negated.delegate);
-		}
-		if (filter instanceof BooleanCombinationFilter combination) {
-			return projectedNativeBooleanSupported(combination.left)
-					&& projectedNativeBooleanSupported(combination.right);
-		}
-		if (filter instanceof NativeConstantFalseWhenUnboundFilter guarded) {
-			return projectedNativeBooleanSupported(guarded.fallback);
-		}
-		// Semantic callbacks may enter an independent subquery. Their projection must use the explicit entry-frame
-		// owner, rather than borrowing only the row-local slot view.
-		return filter instanceof StatementPatternExistsFilter || filter instanceof ValueSetFilter
-				|| filter instanceof CachedCompareFilter || filter instanceof OrderedSlotCompareFilter;
+		return NativeWorkerPlanBinder.canBind(plan) && SlotPlan.encounterOrderReplaySafe(plan);
 	}
 
 	long projectedFilterMask(Filter filter, NativeBooleanFilter compiled) {
@@ -868,8 +818,12 @@ abstract class LmdbNativeAggregateFilterCompiler extends LmdbNativeAggregateValu
 	 * fragment. Constants have mask zero and are safe to call as entry-depth hooks.
 	 */
 	private long genericReadMask(ValueExpr expr) {
+		var reads = FilterBindingScope.conditionBindingReads(expr);
+		if (!reads.complete()) {
+			return -1L;
+		}
 		long mask = 0L;
-		for (String name : VarNameCollector.process(expr)) {
+		for (String name : reads.bindingNames()) {
 			Integer slot = slots.get(name);
 			if (slot == null || slot < 0 || slot >= Long.SIZE) {
 				return -1L;
@@ -912,10 +866,12 @@ abstract class LmdbNativeAggregateFilterCompiler extends LmdbNativeAggregateValu
 	 */
 	long placeableFilterMask(ValueExpr condition) {
 		if (containsExists(condition)) {
-			if (!isNativeRepeatable(condition)) {
+			NativeExpressionFacts facts = NativeExpressionFacts.of(condition);
+			if (!facts.repeatable() || !facts.readsComplete()) {
 				return -1L;
 			}
 			long mask = 0L;
+			Set<String> frame = conditionInputFrame(condition);
 			for (String name : conditionVarNames(condition, false)) {
 				Integer slot = slots.get(name);
 				if (slot == null) {
@@ -923,9 +879,11 @@ abstract class LmdbNativeAggregateFilterCompiler extends LmdbNativeAggregateValu
 				}
 				mask |= 1L << slot;
 			}
-			for (String name : conditionVarNames(condition, true)) {
+			// Include implicit tuple reads such as VALUES columns, not only Var nodes. Exclude names outside the
+			// owning input frame even if compiling the witness has already allocated slots for them.
+			for (String name : facts.requiredNames()) {
 				Integer slot = slots.get(name);
-				if (slot != null) {
+				if (slot != null && (frame == null || frame.contains(name))) {
 					mask |= 1L << slot;
 				}
 			}
@@ -943,6 +901,27 @@ abstract class LmdbNativeAggregateFilterCompiler extends LmdbNativeAggregateValu
 			mask |= 1L << slot;
 		}
 		return mask;
+	}
+
+	/**
+	 * Witness compilation allocates its local slots in the same table as the outer plan. Those slots are not outer
+	 * correlations merely because they now exist. Retain the owning condition's possible input names, including
+	 * nullable incoming join bindings. Nested witness scopes remain conservative unless their frame is explicit.
+	 */
+	private Set<String> conditionInputFrame(ValueExpr condition) {
+		if (lexicalBindingAnalysis != null) {
+			return lexicalBindingAnalysis.contextAt(condition).maybeBoundNames();
+		}
+		QueryModelNode root = condition;
+		while (root.getParentNode() != null) {
+			root = root.getParentNode();
+		}
+		if (root instanceof TupleExpr tuple) {
+			return QueryAlgebraBindingAnalysis.withBindingValues(tuple, EmptyBindingSet.getInstance())
+					.contextAt(condition)
+					.maybeBoundNames();
+		}
+		return null;
 	}
 
 	/**
@@ -998,10 +977,8 @@ abstract class LmdbNativeAggregateFilterCompiler extends LmdbNativeAggregateValu
 	}
 
 	/**
-	 * Snapshot-local EXISTS over one statement pattern is deterministic for fixed bindings even though the generic
-	 * expression classifier conservatively treats EXISTS as a scope-sensitive operator. Recognizing this narrow form
-	 * lets a null-rejecting OPTIONAL become an inner join while retaining the EXISTS exactly at its algebraic scope;
-	 * the resulting direct adjacency semijoin is especially important for grouped OPTIONAL+EXISTS shapes.
+	 * Snapshot-local witness repeatability is a recursive semantic proof, independent of lexical placement and the
+	 * compiled predicate's read/effect capabilities. Scope-sensitive operators retain their own binding frames.
 	 */
 	static boolean isNativeRepeatable(ValueExpr expr) {
 		return NativeExpressionFacts.of(expr).repeatable();

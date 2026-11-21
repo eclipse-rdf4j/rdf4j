@@ -108,7 +108,8 @@ final class LmdbNativeParallelAggregation {
 			return reject(it, "single-thread");
 		}
 		double totalWork = plan.estimate(row);
-		if (!(totalWork >= LmdbNativeParallelPipelines.minimumWorkEstimate())) {
+		if (!(totalWork >= LmdbNativeParallelPipelines.minimumWorkEstimate()) && !LmdbNativeForceableStrategies
+				.forces(it.forcedExecutionStrategy, LmdbNativeAttemptMetrics.PATH_PARALLEL_AGGREGATION)) {
 			return reject(it, "below-threshold");
 		}
 		// commit to the same order the workers will select: sunk only when the tail engages, so a declined or
@@ -142,15 +143,32 @@ final class LmdbNativeParallelAggregation {
 		}
 		int threads = reservation.grantedWorkers();
 		int sourceCount = threads + (morselMode ? 1 : 0);
-		double estCost = LmdbNativeStrategyProposal.parallelCost(totalWork, threads);
+		double estCost = LmdbNativeWork.parallelCost(totalWork, threads);
 		AggregateCandidate candidate = new AggregateCandidate(it, plan, parentMetrics, derived, root,
 				preflightAggregateSlots, partitions, reservation, threads, sourceCount);
 		// declare the genuinely front-loaded worker-start cost separately (gap-analysis C4): workers, snapshot
 		// sources and read transactions all exist before the first group can be produced, exactly as in the
 		// parallel row pipelines' proposal
+		// the workers run the derived order as batch pipelines over the whole join (its access work included, as
+		// the row site prices it) and update a group per joined row; the streaming part scales by the measured
+		// parallel speed-up and every worker is started up front
+		long boundMask = row.boundMask();
+		LmdbNativeStaticPrior.ParallelShape shape = LmdbNativeStaticPrior.ParallelShape.aggregate(plan, row,
+				boundMask, it.groupSlots);
+		LmdbNativeCostVector streaming = LmdbNativeCostVectors
+				.chain(derived.order, derived.order.length, row, boundMask, LmdbNativeCostVector.Feature.BATCH_ROW)
+				.plus(LmdbNativeCostVectors.perRow(LmdbNativeCostVector.Feature.GROUP_UPDATE,
+						LmdbNativeWork.rowsOut(plan, row, boundMask), row))
+				.scale(1D / LmdbNativeStaticPrior.parallelSpeedup(shape, threads));
+		LmdbNativeCostVector startup = LmdbNativeCostVector.point(LmdbNativeCostVector.Feature.OPEN, 1D)
+				.plus(LmdbNativeCostVector.point(LmdbNativeCostVector.Feature.WORKER_START, threads))
+				.plus(LmdbNativeStaticPrior.parallelMerge(shape, threads));
 		return new LmdbNativeStrategyProposal<>(candidate::open, LmdbNativeWork.exact(estCost),
-				LmdbNativeWork.exact(LmdbNativeStrategyProposal.parallelStartupCost()), Double.NaN,
-				LmdbNativeAttemptMetrics.PATH_PARALLEL_AGGREGATION, reservation::close);
+				LmdbNativeWork.exact(LmdbNativeWork.parallelStartupCost()), Double.NaN,
+				LmdbNativeAttemptMetrics.PATH_PARALLEL_AGGREGATION, reservation::close)
+						.withCostQuote(new LmdbNativeCostQuote(startup, streaming,
+								it.groupSlots.length == 0 && it.havingCondition == null ? 1D : Double.NaN, false,
+								false));
 	}
 
 	private static List<BindingSet> open(AggregateCandidate candidate) {
@@ -225,22 +243,35 @@ final class LmdbNativeParallelAggregation {
 				primaryFailure = problem;
 			}
 		}
-		if (preparedRoot != null) {
+		// All accepted work has drained; this scope observes closure and never polls or shortens it.
+		try (NativeExecutionPhaseEvent.Span cleanup = NativeExecutionPhaseEvent.start("coordinator-cleanup",
+				it.cancellation)) {
+			if (preparedRoot != null) {
+				try {
+					preparedRoot.close();
+				} catch (RuntimeException | Error closeFailure) {
+					cleanup.resourceFailed();
+					primaryFailure = addCleanupFailure(primaryFailure, closeFailure);
+				}
+			}
+			primaryFailure = LmdbNativeParallelPipelines.closeWorkerPlans(workerPlans, 0, primaryFailure, cleanup);
+			primaryFailure = LmdbNativeParallelPipelines.closeSources(sources, primaryFailure, cleanup);
 			try {
-				preparedRoot.close();
+				reservation.close();
 			} catch (RuntimeException | Error closeFailure) {
+				cleanup.resourceFailed();
 				primaryFailure = addCleanupFailure(primaryFailure, closeFailure);
 			}
+			cleanup.complete();
 		}
-		primaryFailure = LmdbNativeParallelPipelines.closeWorkerPlans(workerPlans, 0, primaryFailure);
-		primaryFailure = LmdbNativeParallelPipelines.closeSources(sources, primaryFailure);
-		reservation.close();
 		if (primaryFailure != null) {
 			if (primaryFailure instanceof RuntimeException) {
 				throw (RuntimeException) primaryFailure;
 			}
 			throw (Error) primaryFailure;
 		}
+		it.cancellation.check();
+		LmdbNativeProbeDeadline.poll(0);
 		if (workerPlans == null) {
 			return reject(it, dynamicDecline != null ? dynamicDecline : "worker-plan-unavailable");
 		}
@@ -649,14 +680,25 @@ final class LmdbNativeParallelAggregation {
 				futures.add(LmdbNativeParallelPipelines.pool().submit(() -> {
 					MultiJoinPlan workerPlan = null;
 					boolean handedToWorkerRunner = false;
-					try (var replayScope = replayContext.activate()) {
+					try (var replayScope = replayContext.activate();
+							NativeExecutionPhaseEvent.InputScope inputPhases = NativeExecutionPhaseEvent
+									.inputScope(it.cancellation)) {
 						workerPlan = templatePlan == null
 								? workerPlans[worker]
 								: LmdbNativeParallelPipelines.forkWorkerPlan(templatePlan,
 										NativeScalarPlan.WorkerContext.forSource(source, it.evaluationContext));
 						workerPlans[worker] = workerPlan;
 						handedToWorkerRunner = true;
-						return runWorkerOwned(it, workerPlan, root, source, queue, partitions, failure, workerMetric);
+						NativeExecutionPhaseEvent.activateInput("scan", it.cancellation);
+						if (workerPlan.filters.length != 0) {
+							NativeExecutionPhaseEvent.activateInput("expressions", it.cancellation);
+						}
+						NativeGroupTable result = runWorkerOwned(it, workerPlan, root, source, queue, partitions,
+								failure, workerMetric);
+						if (failure.get() == null) {
+							inputPhases.complete();
+						}
+						return result;
 					} catch (Throwable t) {
 						failure.compareAndSet(null, t);
 						throw t;
@@ -840,8 +882,7 @@ final class LmdbNativeParallelAggregation {
 					: new FactorizedTail.MemoBudget(FactorizedTail.MEMO_BYPASSES, metrics);
 			NativeGroupTable table = tail != null && tail.groupsByTail()
 					? NativeGroupTable.tailGrouped(it.aggregates, ctx, it.hashDistinctChannels)
-					: NativeGroupTable.create(it.groupSlots, it.aggregates, ctx, it.hashDistinctChannels, false,
-							true);
+					: NativeGroupTable.createParallel(it.groupSlots, it.aggregates, ctx, it.hashDistinctChannels, true);
 			RowCursor prefix = LmdbNativeChunkPipeline.externalRootCandidateEnabled()
 					? LmdbNativeChunkPipeline.tryOpenPrefixFrom(plan, derived, chainLength, row, leftmost, prefixBudget)
 					: null;
@@ -916,7 +957,7 @@ final class LmdbNativeParallelAggregation {
 			LmdbNativeAttemptMetrics metrics) {
 		NativeGroupTable merged = results.get(0);
 		for (int i = 1; i < results.size(); i++) {
-			merged.mergeFrom(results.get(i));
+			merged.mergeFrom(results.get(i), it.cancellation);
 		}
 		return merged.results(it, metrics);
 	}

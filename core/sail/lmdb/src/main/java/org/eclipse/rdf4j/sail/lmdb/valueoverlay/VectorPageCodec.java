@@ -161,7 +161,9 @@ final class VectorPageCodec {
 		if (n < 1 || slot < 0 || slot >= n || len < 0 || len > 512 || fields < 0 || fields > len
 				|| HEADER + (long) len + (long) fields * FIELD_BYTES > total)
 			throw new IllegalStateException("corrupt vector page");
-		byte[] out = s.asSlice(HEADER, len).toArray(ValueLayout.JAVA_BYTE);
+		// Bulk copy instead of MemorySegment.toArray, whose per-call bounds message formats the carrier class name.
+		byte[] out = new byte[len];
+		MemorySegment.copy(s, ValueLayout.JAVA_BYTE, HEADER, out, 0, len);
 		long at = HEADER + len;
 		int previousEnd = 0;
 		for (int f = 0; f < fields; f++, at += FIELD_BYTES) {

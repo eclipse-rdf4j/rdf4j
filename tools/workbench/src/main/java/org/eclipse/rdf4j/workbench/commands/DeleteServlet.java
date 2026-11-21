@@ -83,7 +83,7 @@ public class DeleteServlet extends TransformationServlet {
 			throws RepositoryException, QueryResultHandlerException {
 		builder.start("readable", "writeable", "id", "description", "location");
 		builder.link(List.of(INFO));
-		for (RepositoryInfo info : manager.getAllRepositoryInfos()) {
+		for (RepositoryInfo info : getAllRepositoryInfosInIdOrder()) {
 			builder.result(info.isReadable(), info.isWritable(), info.getId(), info.getDescription(),
 					info.getLocation());
 		}

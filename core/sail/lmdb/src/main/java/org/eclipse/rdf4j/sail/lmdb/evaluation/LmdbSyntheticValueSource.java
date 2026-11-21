@@ -72,7 +72,9 @@ class SyntheticValueSource implements NativeLmdbQuerySource {
 	private final LmdbNativeTermAuthority authority;
 	private NativeGeneratedKeyPlan generatedKeyPlan = NativeGeneratedKeyPlan.NONE;
 	private NativeGeneratedKeyAuthority generatedKeyAuthority;
-	/** Shared identity token for same-evaluation parallel decorators; {@code null} means this instance is the token. */
+	/**
+	 * Shared token for wrappers with the same complete synthetic term space; {@code null} means this source owns it.
+	 */
 	private final Object syntheticIdSpace;
 
 	/** Compile-scoped carrier: catalog resolution only, no runtime interning. */
@@ -95,8 +97,9 @@ class SyntheticValueSource implements NativeLmdbQuerySource {
 		this.catalog = catalog;
 		this.queryExecutionPolicy = policy;
 		this.context = context;
-		this.authority = context == null ? null : new LmdbNativeTermAuthority(delegate, catalog, context);
 		this.syntheticIdSpace = syntheticIdSpace;
+		this.authority = context == null ? null
+				: new LmdbNativeTermAuthority(delegate, catalog, context, idSpace());
 		if (context != null) {
 			context.installEvaluationSource(this);
 			context.installQueryScopedValueRegistrar(this::retainQueryScopedValue);
@@ -562,6 +565,16 @@ class SyntheticValueSource implements NativeLmdbQuerySource {
 	}
 
 	@Override
+	public IndexAccessProfile indexAccessProfile() {
+		return delegate.indexAccessProfile();
+	}
+
+	@Override
+	public IndexAccessProfile pinnedLmdbSweepProfile() {
+		return delegate.pinnedLmdbSweepProfile();
+	}
+
+	@Override
 	public String indexName(long subj, long pred, long obj, long context) {
 		return anySynthetic(subj, pred, obj, context) ? "" : delegate.indexName(subj, pred, obj, context);
 	}
@@ -703,6 +716,11 @@ class SyntheticValueSource implements NativeLmdbQuerySource {
 	}
 
 	@Override
+	public boolean countsContextFromMetadata(long context) throws IOException {
+		return anySynthetic(-1L, -1L, -1L, context) || delegate.countsContextFromMetadata(context);
+	}
+
+	@Override
 	public boolean has(long subj, long pred, long obj, long context) throws IOException {
 		return has(subj, pred, obj, context, null);
 	}
@@ -742,6 +760,27 @@ class SyntheticValueSource implements NativeLmdbQuerySource {
 	}
 
 	@Override
+	public boolean mayHaveWildcardViews() {
+		return delegate.mayHaveWildcardViews();
+	}
+
+	@Override
+	public OptionalLong predicateDomainCardinality() {
+		// synthetic ids stand for query constants absent from the store: they add no predicate to the catalog
+		return delegate.predicateDomainCardinality();
+	}
+
+	@Override
+	public OptionalDouble meanNodeDegree(boolean bySubject) {
+		return delegate.meanNodeDegree(bySubject);
+	}
+
+	@Override
+	public OptionalDouble meanNodePredicates(boolean bySubject) {
+		return delegate.meanNodePredicates(bySubject);
+	}
+
+	@Override
 	public OptionalLong exactDegree(long predicate, long key, boolean bySubject) {
 		return synthetic(predicate) || synthetic(key) ? OptionalLong.empty()
 				: delegate.exactDegree(predicate, key, bySubject);
@@ -750,6 +789,11 @@ class SyntheticValueSource implements NativeLmdbQuerySource {
 	@Override
 	public OptionalLong exactPredicateCount(long predicate) {
 		return synthetic(predicate) ? OptionalLong.empty() : delegate.exactPredicateCount(predicate);
+	}
+
+	@Override
+	public PreparedPredicateCount prepareExactPredicateCount(long predicate) {
+		return synthetic(predicate) ? null : delegate.prepareExactPredicateCount(predicate);
 	}
 
 	@Override
@@ -762,6 +806,13 @@ class SyntheticValueSource implements NativeLmdbQuerySource {
 	@Override
 	public boolean hasStatementsInSource() {
 		return delegate.hasStatementsInSource();
+	}
+
+	@Override
+	public OptionalLong rootScanPartitionCountUpperBound(long subj, long pred, long obj, long context,
+			int targetPartitions) {
+		return anySynthetic(subj, pred, obj, context) ? OptionalLong.of(0L)
+				: delegate.rootScanPartitionCountUpperBound(subj, pred, obj, context, targetPartitions);
 	}
 
 	@Override

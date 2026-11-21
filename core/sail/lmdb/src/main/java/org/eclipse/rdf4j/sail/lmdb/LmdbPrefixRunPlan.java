@@ -16,6 +16,7 @@ import java.util.concurrent.atomic.AtomicLong;
 
 import org.eclipse.rdf4j.common.annotation.Experimental;
 import org.eclipse.rdf4j.common.annotation.InternalUseOnly;
+import org.eclipse.rdf4j.sail.lmdb.estimate.LmdbPageCardinalityEstimator.ExactWork;
 
 /**
  * Package-private description of a prefix-run scan over an LMDB statement index.
@@ -44,6 +45,12 @@ public final class LmdbPrefixRunPlan {
 	static final AtomicLong CONTEXT_VALUES_DECODED = new AtomicLong();
 	static final AtomicLong MERGE_WIDTH_PEAK = new AtomicLong();
 	static final AtomicLong RANGE_BOUNDED_EXECUTIONS = new AtomicLong();
+	static final AtomicLong INDEX_EXACT_COUNTS = new AtomicLong();
+	static final AtomicLong INDEX_BRANCH_PAGES_READ = new AtomicLong();
+	static final AtomicLong INDEX_LEAF_PAGES_READ = new AtomicLong();
+	static final AtomicLong INDEX_LEAF_HEADERS_READ = new AtomicLong();
+	static final AtomicLong INDEX_KEY_PREFIXES_READ = new AtomicLong();
+	static final AtomicLong INDEX_PAGE_CACHE_HITS = new AtomicLong();
 
 	private final TripleIndex index;
 	private final int[] prefixFields;
@@ -188,6 +195,20 @@ public final class LmdbPrefixRunPlan {
 		CONTEXT_VALUES_DECODED.set(0);
 		MERGE_WIDTH_PEAK.set(0);
 		RANGE_BOUNDED_EXECUTIONS.set(0);
+		INDEX_EXACT_COUNTS.set(0);
+		INDEX_BRANCH_PAGES_READ.set(0);
+		INDEX_LEAF_PAGES_READ.set(0);
+		INDEX_LEAF_HEADERS_READ.set(0);
+		INDEX_KEY_PREFIXES_READ.set(0);
+		INDEX_PAGE_CACHE_HITS.set(0);
+	}
+
+	static void recordExactIndexWork(ExactWork work) {
+		INDEX_BRANCH_PAGES_READ.addAndGet(work.branchPagesRead());
+		INDEX_LEAF_PAGES_READ.addAndGet(work.leafPagesRead());
+		INDEX_LEAF_HEADERS_READ.addAndGet(work.leafHeadersRead());
+		INDEX_KEY_PREFIXES_READ.addAndGet(work.keyPrefixesRead());
+		INDEX_PAGE_CACHE_HITS.addAndGet(work.pageCacheHits());
 	}
 
 	/** Records the maximum number of simultaneously active predicate cursors in one aggregate merge. */

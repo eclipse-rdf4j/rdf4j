@@ -25,7 +25,9 @@ import java.io.InputStream;
 import java.io.OutputStream;
 import java.net.InetSocketAddress;
 import java.net.Socket;
+import java.nio.charset.StandardCharsets;
 import java.util.List;
+import java.util.Map;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
@@ -36,11 +38,16 @@ import java.util.concurrent.atomic.AtomicReference;
 import org.eclipse.rdf4j.http.client.QueryRequestContext;
 import org.eclipse.rdf4j.http.protocol.Protocol;
 import org.eclipse.rdf4j.http.server.ServerHTTPException;
+import org.eclipse.rdf4j.http.server.repository.QueryResultView;
 import org.eclipse.rdf4j.http.server.repository.resolver.RepositoryResolver;
+import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
+import org.eclipse.rdf4j.query.Query;
 import org.eclipse.rdf4j.query.QueryEvaluationException;
 import org.eclipse.rdf4j.query.QueryLanguage;
 import org.eclipse.rdf4j.query.TupleQuery;
 import org.eclipse.rdf4j.query.TupleQueryResult;
+import org.eclipse.rdf4j.query.impl.IteratingTupleQueryResult;
+import org.eclipse.rdf4j.query.impl.MapBindingSet;
 import org.eclipse.rdf4j.repository.RepositoryConnection;
 import org.eclipse.rdf4j.repository.http.HTTPRepository;
 import org.junit.jupiter.api.Assumptions;
@@ -49,6 +56,7 @@ import org.springframework.mock.web.MockHttpServletRequest;
 import org.springframework.mock.web.MockHttpServletResponse;
 import org.springframework.web.bind.annotation.RequestMethod;
 import org.springframework.web.servlet.ModelAndView;
+import org.springframework.web.servlet.View;
 
 import com.sun.net.httpserver.HttpExchange;
 import com.sun.net.httpserver.HttpServer;
@@ -56,10 +64,94 @@ import com.sun.net.httpserver.HttpServer;
 import jakarta.servlet.ServletOutputStream;
 import jakarta.servlet.WriteListener;
 import jakarta.servlet.http.HttpServletRequest;
+import jakarta.servlet.http.HttpServletResponse;
 
 class QueryResponseHeartbeatHandlerTest {
 
 	private static final String QUERY = "select * where { ?s ?p ?o }";
+
+	@Test
+	void viewsThatDoNotDeclareHeartbeatSupportDoNotGetAHeartbeat() throws Exception {
+		RepositoryResolver resolver = mock(RepositoryResolver.class);
+		MockHttpServletRequest request = newQueryRequest();
+		MockHttpServletResponse response = new MockHttpServletResponse();
+		mockQueryResult(resolver, request, singleRowResult());
+		// A view written against the servlet response directly, as views written before the heartbeat existed are.
+		QueryResultView directView = new QueryResultView() {
+			@Override
+			@SuppressWarnings("rawtypes")
+			protected void renderInternal(Map model, HttpServletRequest request, HttpServletResponse response)
+					throws IOException {
+				try (TupleQueryResult result = (TupleQueryResult) model.get(QUERY_RESULT_KEY)) {
+					response.getOutputStream().write("direct".getBytes(StandardCharsets.US_ASCII));
+				}
+			}
+		};
+		DefaultQueryRequestHandler handler = new DefaultQueryRequestHandler(resolver) {
+			@Override
+			protected View getViewFor(Query query) {
+				return directView;
+			}
+		};
+
+		try {
+			ModelAndView modelAndView = handler.handleQueryRequest(request, RequestMethod.POST, response);
+
+			assertThat(modelAndView.getModel()).doesNotContainKey(QueryResultView.RESPONSE_HEARTBEAT_KEY)
+					.containsKey(QueryResultView.FACTORY_KEY);
+			render(modelAndView, request, response);
+			assertThat(response.getContentAsString()).isEqualTo("direct");
+		} finally {
+			handler.shutdown();
+		}
+	}
+
+	@Test
+	void subclassesCanTurnTheHeartbeatOffForDefaultViews() throws Exception {
+		RepositoryResolver resolver = mock(RepositoryResolver.class);
+		MockHttpServletRequest request = newQueryRequest();
+		MockHttpServletResponse response = new MockHttpServletResponse();
+		mockQueryResult(resolver, request, singleRowResult());
+		DefaultQueryRequestHandler handler = new DefaultQueryRequestHandler(resolver) {
+			@Override
+			protected boolean useResponseHeartbeat(HttpServletRequest request, Query query, View view) {
+				return false;
+			}
+		};
+
+		try {
+			ModelAndView modelAndView = handler.handleQueryRequest(request, RequestMethod.POST, response);
+
+			assertThat(modelAndView.getModel()).doesNotContainKey(QueryResultView.RESPONSE_HEARTBEAT_KEY)
+					.containsKey(QueryResultView.FACTORY_KEY);
+			render(modelAndView, request, response);
+			assertThat(response.getStatus()).isEqualTo(HttpServletResponse.SC_OK);
+			assertThat(response.getContentAsString()).startsWith("{").contains("urn:row").doesNotContain("\0");
+		} finally {
+			handler.shutdown();
+		}
+	}
+
+	@Test
+	void defaultViewsDeclareHeartbeatSupportAndStillGetAHeartbeat() throws Exception {
+		RepositoryResolver resolver = mock(RepositoryResolver.class);
+		MockHttpServletRequest request = newQueryRequest();
+		MockHttpServletResponse response = new MockHttpServletResponse();
+		mockQueryResult(resolver, request, singleRowResult());
+		DefaultQueryRequestHandler handler = new DefaultQueryRequestHandler(resolver);
+
+		try {
+			ModelAndView modelAndView = handler.handleQueryRequest(request, RequestMethod.POST, response);
+
+			assertThat(modelAndView.getModel()).containsKey(QueryResultView.RESPONSE_HEARTBEAT_KEY);
+			render(modelAndView, request, response);
+			assertThat(response.getContentAsString().stripLeading()).startsWith("{")
+					.contains("urn:row")
+					.doesNotContain("\0");
+		} finally {
+			handler.shutdown();
+		}
+	}
 
 	@Test
 	void generatedRequestIdCancelsAStalledEvaluationAfterTheClientDisconnects() throws Exception {
@@ -309,39 +401,39 @@ class QueryResponseHeartbeatHandlerTest {
 			}
 		});
 
-		DefaultQueryRequestHandler handler = new DefaultQueryRequestHandler(resolver);
-		ExecutorService httpExecutor = Executors.newCachedThreadPool();
-		HttpServer server;
-		try {
-			server = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
-		} catch (IOException e) {
-			Assumptions.assumeTrue(false, "Loopback HTTP server unavailable: " + e.getMessage());
-			return;
-		}
-		server.setExecutor(httpExecutor);
-		server.createContext("/query", exchange -> {
-			MockHttpServletRequest request = newQueryRequest();
-			request.setRequestURI("/query");
-			ExchangeResponse response = new ExchangeResponse(exchange);
-			when(resolver.getRepository(request)).thenReturn(repository);
-			when(resolver.getRepositoryConnection(request, repository)).thenReturn(connection);
+		try (SocketFixture fixture = new SocketFixture()) {
+			DefaultQueryRequestHandler handler = fixture.handler = new DefaultQueryRequestHandler(resolver);
+			ExecutorService httpExecutor = fixture.httpExecutor = Executors.newCachedThreadPool();
+			HttpServer server;
 			try {
-				ModelAndView modelAndView = handler.handleQueryRequest(request, RequestMethod.POST, response);
-				if (modelAndView != null) {
-					modelAndView.getView().render(modelAndView.getModel(), request, response);
-				}
-			} catch (Throwable t) {
-				requestFailure.set(t);
-			} finally {
-				try {
-					exchange.close();
-				} finally {
-					requestFinished.countDown();
-				}
+				server = fixture.server = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
+			} catch (IOException e) {
+				Assumptions.assumeTrue(false, "Loopback HTTP server unavailable: " + e.getMessage());
+				return;
 			}
-		});
-		server.start();
-		try {
+			server.setExecutor(httpExecutor);
+			server.createContext("/query", exchange -> {
+				MockHttpServletRequest request = newQueryRequest();
+				request.setRequestURI("/query");
+				ExchangeResponse response = new ExchangeResponse(exchange);
+				when(resolver.getRepository(request)).thenReturn(repository);
+				when(resolver.getRepositoryConnection(request, repository)).thenReturn(connection);
+				try {
+					ModelAndView modelAndView = handler.handleQueryRequest(request, RequestMethod.POST, response);
+					if (modelAndView != null) {
+						modelAndView.getView().render(modelAndView.getModel(), request, response);
+					}
+				} catch (Throwable t) {
+					requestFailure.set(t);
+				} finally {
+					try {
+						exchange.close();
+					} finally {
+						requestFinished.countDown();
+					}
+				}
+			});
+			server.start();
 			try (Socket socket = new Socket("127.0.0.1", server.getAddress().getPort())) {
 				socket.setSoTimeout(15_000);
 				OutputStream request = socket.getOutputStream();
@@ -359,10 +451,64 @@ class QueryResponseHeartbeatHandlerTest {
 			verify(repository, org.mockito.Mockito.timeout(10_000)).cancelQuery(generatedRequestId.get());
 			verify(connection, org.mockito.Mockito.atLeastOnce()).close();
 			assertThat(requestFailure.get()).isNull();
+		}
+	}
+
+	static final class SocketFixture implements AutoCloseable {
+		HttpServer server;
+		ExecutorService httpExecutor;
+		DefaultQueryRequestHandler handler;
+
+		@Override
+		public void close() throws Exception {
+			closeSocketFixture(server, httpExecutor, handler);
+		}
+	}
+
+	static void closeSocketFixture(HttpServer server, ExecutorService httpExecutor,
+			DefaultQueryRequestHandler handler) throws Exception {
+		try (AutoCloseable reap = () -> awaitSocketWorkers(httpExecutor);
+				AutoCloseable closeHandler = () -> {
+					if (handler != null) {
+						handler.shutdown();
+					}
+				};
+				AutoCloseable stopWorkers = () -> {
+					if (httpExecutor != null) {
+						httpExecutor.shutdownNow();
+					}
+				}) {
+			if (server != null) {
+				server.stop(0);
+			}
+		}
+	}
+
+	private static void awaitSocketWorkers(ExecutorService executor) {
+		if (executor == null) {
+			return;
+		}
+		boolean interrupted = false;
+		long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(5);
+		try {
+			while (true) {
+				try {
+					assertThat(
+							executor.awaitTermination(Math.max(0, deadline - System.nanoTime()), TimeUnit.NANOSECONDS))
+									.as("loopback HTTP workers must terminate during fixture cleanup")
+									.isTrue();
+					return;
+				} catch (InterruptedException e) {
+					interrupted = true;
+					if (System.nanoTime() >= deadline) {
+						throw new AssertionError("interrupted while reaping loopback HTTP workers", e);
+					}
+				}
+			}
 		} finally {
-			server.stop(0);
-			httpExecutor.shutdownNow();
-			handler.shutdown();
+			if (interrupted) {
+				Thread.currentThread().interrupt();
+			}
 		}
 	}
 
@@ -378,6 +524,29 @@ class QueryResponseHeartbeatHandlerTest {
 		} finally {
 			executor.shutdownNow();
 		}
+	}
+
+	private static void mockQueryResult(RepositoryResolver resolver, MockHttpServletRequest request,
+			TupleQueryResult result) throws Exception {
+		org.eclipse.rdf4j.repository.Repository repository = mock(org.eclipse.rdf4j.repository.Repository.class);
+		RepositoryConnection connection = mock(RepositoryConnection.class);
+		TupleQuery query = mock(TupleQuery.class);
+		when(resolver.getRepository(request)).thenReturn(repository);
+		when(resolver.getRepositoryID(request)).thenReturn("repository");
+		when(resolver.getRepositoryConnection(request, repository)).thenReturn(connection);
+		when(connection.prepareQuery(QueryLanguage.SPARQL, QUERY, null)).thenReturn(query);
+		when(query.evaluate()).thenReturn(result);
+	}
+
+	private static TupleQueryResult singleRowResult() {
+		MapBindingSet row = new MapBindingSet();
+		row.addBinding("s", SimpleValueFactory.getInstance().createIRI("urn:row"));
+		return new IteratingTupleQueryResult(List.of("s"), List.of(row));
+	}
+
+	private static void render(ModelAndView modelAndView, HttpServletRequest request, HttpServletResponse response)
+			throws Exception {
+		((View) modelAndView.getView()).render(modelAndView.getModel(), request, response);
 	}
 
 	private static MockHttpServletRequest newQueryRequest() {

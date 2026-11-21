@@ -15,6 +15,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 import java.io.File;
 import java.util.List;
+import java.util.Map;
 
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.ValueFactory;
@@ -22,12 +23,14 @@ import org.eclipse.rdf4j.model.vocabulary.RDF;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.QueryResults;
 import org.eclipse.rdf4j.query.explanation.Explanation;
+import org.eclipse.rdf4j.query.explanation.GenericPlanNode;
 import org.eclipse.rdf4j.repository.RepositoryConnection;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
 import org.eclipse.rdf4j.repository.sail.SailTupleQuery;
 import org.eclipse.rdf4j.sail.lmdb.config.DirectAdjacencyMode;
 import org.eclipse.rdf4j.sail.lmdb.config.LmdbStoreConfig;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbNativeKernelIrTestAccess;
+import org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbWildcardPredicateBatchCancellationTestAccess;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
@@ -41,9 +44,6 @@ class LmdbNativeWildcardPredicateBatchTest {
 	private static final String JANINO_PROPERTY = "rdf4j.lmdb.janinoCodegen.enabled";
 	private static final String JANINO_THRESHOLD_PROPERTY = "rdf4j.lmdb.janinoCodegen.thresholdRows";
 	private static final String KERNEL_INTERPRETER_PROPERTY = "rdf4j.lmdb.kernelInterpreter.enabled";
-	private static final String COST_CALIBRATION_PROPERTY = "rdf4j.lmdb.costCalibration.enabled";
-	private static final String ADAPTIVE_PROBE_PROPERTY = "rdf4j.lmdb.adaptiveProbe.enabled";
-	private static final String ADAPTIVE_HEDGE_PROPERTY = "rdf4j.lmdb.adaptiveHedge.enabled";
 	private static final String PREFIX_RUN_PROPERTY = "rdf4j.lmdb.prefixRun.enabled";
 	private static final String ADJACENCY_AGGREGATE_PROPERTY = "rdf4j.lmdb.directAdjacency.scanAggregates.enabled";
 	private static final String NATIVE_BATCH_PROPERTY = "rdf4j.lmdb.nativeBatch.enabled";
@@ -69,9 +69,6 @@ class LmdbNativeWildcardPredicateBatchTest {
 		System.clearProperty(JANINO_PROPERTY);
 		System.clearProperty(JANINO_THRESHOLD_PROPERTY);
 		System.clearProperty(KERNEL_INTERPRETER_PROPERTY);
-		System.clearProperty(COST_CALIBRATION_PROPERTY);
-		System.clearProperty(ADAPTIVE_PROBE_PROPERTY);
-		System.clearProperty(ADAPTIVE_HEDGE_PROPERTY);
 		System.clearProperty(PREFIX_RUN_PROPERTY);
 		System.clearProperty(ADJACENCY_AGGREGATE_PROPERTY);
 		System.clearProperty(NATIVE_BATCH_PROPERTY);
@@ -88,6 +85,156 @@ class LmdbNativeWildcardPredicateBatchTest {
 		System.clearProperty(LmdbDirectAdjacencyOptions.NODE_PREDICATE_PROJECTION_PROPERTY);
 		System.clearProperty(LmdbDirectAdjacencyOptions.NODE_PREDICATE_PROJECTION_INCOMING_PROPERTY);
 		System.clearProperty(LmdbDirectAdjacencyStore.NODE_PREDICATE_SERVE_PROPERTY);
+	}
+
+	@ParameterizedTest
+	@ValueSource(strings = { "payload", "optional", "optional-single", "lateral", "fixed-optional",
+			"fixed-optional-single", "parallel-payload", "predicate-major" })
+	void cancellationStopsGraphDisjointSpanWindows(String mode) throws Exception {
+		System.setProperty(NATIVE_BATCH_PROPERTY, "true");
+		System.setProperty(LmdbNativeKernelIrTestAccess.WILDCARD_BATCH_PROPERTY, "true");
+		System.setProperty(PARALLEL_PROPERTY, Boolean.toString(mode.equals("parallel-payload")));
+		System.setProperty(PARALLEL_MIN_WORK_PROPERTY, "0");
+		System.setProperty(PARALLEL_THREADS_PROPERTY, "1");
+		System.setProperty(PARALLEL_MAX_TASKS_PROPERTY, "1");
+		LmdbWildcardPredicateBatchCancellationTestAccess.assertCancellationStopsSkippedSpans(mode);
+	}
+
+	@ParameterizedTest
+	@ValueSource(booleans = { false, true })
+	void graphDisjointBatchJoinsSkipPayloadAcrossDirectAndRoutedDemands(boolean routed, @TempDir File dataDir) {
+		open(dataDir, routed);
+		try (RepositoryConnection connection = repository.getConnection()) {
+			ValueFactory vf = connection.getValueFactory();
+			connection.add(vf.createIRI(NS, "cold-graph-subject"), vf.createIRI(NS, "cold-graph-predicate"),
+					vf.createIRI(NS, "cold-graph-object"), vf.createIRI(NS, "other-graph"));
+		}
+		assertThat(AdjacencyEngagementTestAccess.buildNow(store)).isTrue();
+		List<String> queries = List.of(
+				"SELECT ?a ?p ?v WHERE { VALUES ?a { ex:s0 ex:s1 } GRAPH ex:other-graph { ?a ?p ?v } }",
+				"SELECT DISTINCT ?p WHERE { VALUES ?a { ex:s0 ex:s1 } GRAPH ex:other-graph { ?a ?p ?v } }",
+				"SELECT ?a ?p (COUNT(*) AS ?n) WHERE { VALUES ?a { ex:s0 ex:s1 } "
+						+ "GRAPH ex:other-graph { ?a ?p ?v } } GROUP BY ?a ?p",
+				"SELECT ?a ?p ?v WHERE { VALUES ?a { ex:s0 ex:s1 } OPTIONAL { "
+						+ "GRAPH ex:other-graph { ?a ?p ?v } } }",
+				"SELECT ?a ?p ?v WHERE { VALUES ?a { ex:s0 ex:s1 } GRAPH ex:other-graph { ?v ?p ?a } }");
+		for (String body : queries) {
+			String query = "PREFIX ex: <" + NS + "> " + body;
+			System.setProperty(NATIVE_ENGINE_PROPERTY, "false");
+			List<String> expected = allRows(query);
+			System.setProperty(NATIVE_ENGINE_PROPERTY, "true");
+			long batches = LmdbNativeKernelIrTestAccess.wildcardBatches();
+			long payload = LmdbNativeKernelIrTestAccess.wildcardPayloadRowsDecoded();
+			assertThat(allRows(query)).containsExactlyElementsOf(expected);
+			assertThat(LmdbNativeKernelIrTestAccess.wildcardBatches()).isGreaterThan(batches);
+			assertThat(LmdbNativeKernelIrTestAccess.wildcardPayloadRowsDecoded() - payload)
+					.as("graph-disjoint direct/routed payload, scalar, grouped and OPTIONAL demands: %s", body)
+					.isZero();
+		}
+	}
+
+	@ParameterizedTest
+	@ValueSource(booleans = { false, true })
+	void contextRestrictedBatchJoinsPreserveBagsAndCorrelation(boolean routed, @TempDir File dataDir) {
+		open(dataDir, routed);
+		try (RepositoryConnection connection = repository.getConnection()) {
+			ValueFactory vf = connection.getValueFactory();
+			IRI s0 = vf.createIRI(NS, "s0");
+			IRI s1 = vf.createIRI(NS, "s1");
+			IRI common = vf.createIRI(NS, "common");
+			IRI mixed = vf.createIRI(NS, "mixed");
+			IRI g1 = vf.createIRI(NS, "g1");
+			IRI g2 = vf.createIRI(NS, "g2");
+			connection.begin();
+			connection.add(s0, common, vf.createIRI(NS, "o0"), g1, g2);
+			connection.add(s0, mixed, vf.createIRI(NS, "default-only"));
+			connection.add(s0, mixed, vf.createIRI(NS, "o1"), g1);
+			connection.add(s0, mixed, vf.createIRI(NS, "o2"), g2);
+			connection.add(s1, mixed, s1, g1);
+			connection.add(s0, g1, g1, g1);
+			connection.add(g1, mixed, s0, g1);
+			connection.add(vf.createIRI(NS, "unrelated"), mixed, s1, vf.createIRI(NS, "missing-graph"));
+			connection.commit();
+		}
+		assertThat(AdjacencyEngagementTestAccess.buildNow(store)).isTrue();
+		System.setProperty(NATIVE_BATCH_ROWS_PROPERTY, "2");
+		List<String> queries = List.of(
+				"SELECT ?s ?g ?p ?o WHERE { VALUES (?s ?g) { (ex:s0 ex:g1) (ex:s0 ex:g2) "
+						+ "(ex:s0 ex:g1) (ex:s1 ex:g1) (ex:s0 ex:missing-graph) } GRAPH ?g { ?s ?p ?o } }",
+				"SELECT ?s ?g ?p (COUNT(*) AS ?n) WHERE { VALUES (?s ?g) { (ex:s0 ex:g1) "
+						+ "(ex:s0 ex:g2) (ex:s0 ex:g1) } GRAPH ?g { ?s ?p ?o } } GROUP BY ?s ?g ?p",
+				"SELECT DISTINCT ?p WHERE { VALUES (?s ?g) { (ex:s0 ex:g1) (ex:s0 ex:g2) } "
+						+ "GRAPH ?g { ?s ?p ?o } }",
+				"SELECT ?s ?g ?p ?o WHERE { VALUES (?s ?g) { (ex:s0 ex:g1) (ex:s0 ex:g2) "
+						+ "(ex:s0 ex:missing-graph) } OPTIONAL { GRAPH ?g { ?s ?p ?o } } }",
+				"SELECT ?s ?g ?o WHERE { VALUES (?s ?g) { (ex:s0 ex:g1) (ex:s0 ex:g2) "
+						+ "(ex:s0 ex:missing-graph) } OPTIONAL { GRAPH ?g { ?s ex:common ?o } } }",
+				"SELECT ?s ?g ?p ?o WHERE { VALUES (?o ?g) { (ex:o0 ex:g1) (ex:o0 ex:g2) "
+						+ "(ex:o0 ex:g1) (ex:o1 ex:g1) } GRAPH ?g { ?s ?p ?o } }",
+				"SELECT ?s ?g ?p ?o FROM NAMED ex:g1 FROM NAMED ex:g2 WHERE { "
+						+ "VALUES ?s { ex:s0 ex:s0 ex:s1 } GRAPH ?g { ?s ?p ?o } }",
+				"SELECT ?s ?p ?o FROM ex:g1 FROM ex:g2 WHERE { VALUES ?s { ex:s0 ex:s0 ex:s1 } ?s ?p ?o }",
+				"SELECT ?s ?p WHERE { VALUES ?s { ex:s0 ex:s1 } GRAPH ex:g1 { ?s ?p ?s } }",
+				"SELECT ?s ?g ?p WHERE { VALUES ?s { ex:s0 ex:s1 } GRAPH ?g { ?s ?p ?g } }",
+				"SELECT ?s ?g ?o WHERE { VALUES ?s { ex:s0 ex:s1 } GRAPH ?g { ?s ?g ?o } }",
+				"SELECT ?g ?p ?o WHERE { VALUES ?g { ex:g1 ex:g2 } GRAPH ?g { ?g ?p ?o } }",
+				"SELECT ?s ?g WHERE { VALUES (?s ?g) { (ex:s0 ex:g1) (ex:s0 ex:missing-graph) } "
+						+ "FILTER EXISTS { GRAPH ?g { ?s ?p ?o } } }",
+				"SELECT ?s ?g WHERE { VALUES (?s ?g) { (ex:s0 ex:g1) (ex:s0 ex:missing-graph) } "
+						+ "FILTER NOT EXISTS { GRAPH ?g { ?s ?p ?o } } }",
+				"SELECT ?s ?g WHERE { VALUES (?s ?g) { (ex:s0 ex:g1) (ex:s0 ex:missing-graph) } "
+						+ "MINUS { GRAPH ?g { ?s ?p ?o } } }");
+		for (String body : queries) {
+			String query = "PREFIX ex: <" + NS + "> " + body;
+			System.setProperty(NATIVE_ENGINE_PROPERTY, "false");
+			List<String> expected = allRows(query);
+			assertThat(expected).as("fixture should exercise %s", body).isNotEmpty();
+			System.setProperty(NATIVE_ENGINE_PROPERTY, "true");
+			assertThat(allRows(query)).as("routed=%s query=%s", routed, body).containsExactlyElementsOf(expected);
+		}
+	}
+
+	@ParameterizedTest
+	@ValueSource(booleans = { false, true })
+	void predicateMajorContextSpansKeepRawParallelWindowsAligned(boolean parallel, @TempDir File dataDir) {
+		open(dataDir);
+		try (RepositoryConnection connection = repository.getConnection()) {
+			ValueFactory vf = connection.getValueFactory();
+			connection.begin();
+			for (int neighbor = 0; neighbor < 5; neighbor++) {
+				connection.add(vf.createIRI(NS, "named-root"), vf.createIRI(NS, "named-predicate"),
+						vf.createIRI(NS, "named-object" + neighbor), vf.createIRI(NS, "selected-graph"));
+			}
+			connection.add(vf.createIRI(NS, "rejected-root"), vf.createIRI(NS, "rejected-predicate"),
+					vf.createIRI(NS, "rejected-object"), vf.createIRI(NS, "rejected-graph"));
+			connection.commit();
+		}
+		assertThat(AdjacencyEngagementTestAccess.buildNow(store)).isTrue();
+		System.setProperty(NATIVE_BATCH_ROWS_PROPERTY, "2");
+		System.setProperty(PARALLEL_PROPERTY, Boolean.toString(parallel));
+		System.setProperty(PARALLEL_MIN_WORK_PROPERTY, "0");
+		System.setProperty(PARALLEL_STARTUP_WORK_PROPERTY, "1.0E12");
+		System.setProperty(PARALLEL_THREADS_PROPERTY, "2");
+		System.setProperty(PARALLEL_MAX_TASKS_PROPERTY, "2");
+		List<String> queries = List.of(
+				"SELECT ?s ?p ?o WHERE { GRAPH ex:selected-graph { ?s ?p ?o } }",
+				"SELECT DISTINCT ?p WHERE { GRAPH ex:selected-graph { ?s ?p ?o } }",
+				"SELECT ?s ?p (COUNT(*) AS ?n) WHERE { GRAPH ex:selected-graph { ?s ?p ?o } } GROUP BY ?s ?p");
+		for (int selection = 0; selection < queries.size(); selection++) {
+			String query = "PREFIX ex: <" + NS + "> " + queries.get(selection);
+			System.setProperty(NATIVE_ENGINE_PROPERTY, "false");
+			List<String> expected = allRows(query);
+			System.setProperty(NATIVE_ENGINE_PROPERTY, "true");
+			long payload = LmdbNativeKernelIrTestAccess.wildcardPayloadRowsDecoded();
+			long payloadRounds = LmdbNativeKernelIrTestAccess.wildcardParallelPayloadRounds();
+			assertThat(allRows(query)).containsExactlyElementsOf(expected);
+			assertThat(LmdbNativeKernelIrTestAccess.wildcardPayloadRowsDecoded() - payload)
+					.as("only selected payload rows should be decoded; parallel=%s query=%s", parallel, query)
+					.isEqualTo(selection == 0 ? 5L : 0L);
+			if (parallel && selection == 0) {
+				assertThat(LmdbNativeKernelIrTestAccess.wildcardParallelPayloadRounds()).isGreaterThan(payloadRounds);
+			}
+		}
 	}
 
 	@Test
@@ -460,6 +607,56 @@ class LmdbNativeWildcardPredicateBatchTest {
 		assertThat(LmdbNativeKernelIrTestAccess.variablePredicateLowerings())
 				.as("each wildcard access in the join should own a predicate-plane batch stage")
 				.isGreaterThanOrEqualTo(loweringsBefore + 2L);
+	}
+
+	@Test
+	void payloadBatchBehindAPrefixIsPricedAsPlaneProbesPerPrefixRow(@TempDir File dataDir) {
+		// the wildcard batch at a row site carried only its legacy work interval, bridged as scanned rows (5.2 ms
+		// here), so once nestedLoop's rows were honest (120 µs) it lost the small-store decisions this suite's
+		// subquery and UNION shapes rely on (2026-11-03); the executor probes the six predicate planes once per
+		// prefix row and delivers the statements in batch form without interpreting a row
+		open(dataDir);
+		String query = "SELECT ?s ?p ?o WHERE { ?s a <" + NS + "SomeClass> . ?s ?p ?o }";
+		GenericPlanNode plan;
+		try (RepositoryConnection connection = repository.getConnection()) {
+			plan = connection.prepareTupleQuery(query).explain(Explanation.Level.Telemetry).toGenericPlanNode();
+		}
+		Map<String, Double> batch = NativeProposalFeatures.offering(plan, "wildcardPredicateBatch")
+				.get("wildcardPredicateBatch");
+		Map<String, Double> costs = NativeProposalFeatures.costs(plan, "wildcardPredicateBatch");
+		assertThat(batch.getOrDefault("INTERPRETED_ROW", 0D)).as("batch quote: %s", batch).isZero();
+		assertThat(batch.getOrDefault("HASH_PROBE", 0D)).as("one plane probe per prefix row and plane: %s", batch)
+				.isGreaterThanOrEqualTo(96D * 6D);
+		assertThat(batch.getOrDefault("BATCH_ROW", 0D)).as("the prefix rows and the delivered statements: %s", batch)
+				.isGreaterThan(96D);
+		assertThat(costs.get("wildcardPredicateBatch"))
+				.as("the batch never interprets the rows the sequential path does: %s", costs)
+				.isLessThan(costs.get("nestedLoop"));
+	}
+
+	@Test
+	void hashedExpressionDomainIsPricedAboveTheRowsItHashes(@TempDir File dataDir) {
+		// BIND(STR(?p)) over the UNION offers the hashed expression-domain variant of the row path: it runs the same
+		// nested cursors as nestedLoop and hashes every row on top, yet it was quoted from the plain plan vector
+		// without the generic-row premium, 18 % below nestedLoop and 1 % below batch, and took the root from the
+		// batch (measured warm minima of 500 runs, 2026-11-03: batch 642 µs, nestedLoop 704 µs, hashed 732 µs)
+		open(dataDir);
+		String query = "SELECT ?s ?p ?o ?label WHERE { "
+				+ "{ ?s a <" + NS + "SomeClass> . ?s ?p ?o } UNION "
+				+ "{ ?s a <" + NS + "SomeClass> . ?s ?p ?o . FILTER(?p = <" + NS + "common>) } "
+				+ "BIND(STR(?p) AS ?label) }";
+		GenericPlanNode plan;
+		try (RepositoryConnection connection = repository.getConnection()) {
+			plan = connection.prepareTupleQuery(query).explain(Explanation.Level.Telemetry).toGenericPlanNode();
+		}
+		Map<String, Double> costs = NativeProposalFeatures.costs(plan, "nestedLoop");
+		String hashed = costs.keySet()
+				.stream()
+				.filter(tag -> tag.startsWith("rowTermDomainHash"))
+				.findFirst()
+				.orElseThrow(() -> new AssertionError("no hashed expression-domain candidate in " + costs));
+		assertThat(costs.get(hashed)).as("quotes: %s", costs).isGreaterThan(costs.get("nestedLoop"));
+		assertThat(costs.get("batch")).as("quotes: %s", costs).isLessThan(costs.get(hashed));
 	}
 
 	@Test
@@ -889,9 +1086,8 @@ class LmdbNativeWildcardPredicateBatchTest {
 			long folded = LmdbNativeKernelIrTestAccess.wildcardLogicalRowsFolded();
 			try (RepositoryConnection connection = repository.getConnection()) {
 				SailTupleQuery prepared = (SailTupleQuery) connection.prepareTupleQuery(query);
-				if (strategy != null) {
-					prepared.setForcedLmdbExecutionStrategy(strategy);
-				}
+				prepared.setForcedLmdbExecutionStrategy(strategy != null ? strategy
+						: "wildcardPredicateBatch,wildcardPredicateReduced");
 				List<BindingSet> result = QueryResults.asList(prepared.evaluate());
 				List<String> actual = result.stream()
 						.map(bindings -> bindings.getBindingNames()
@@ -945,9 +1141,9 @@ class LmdbNativeWildcardPredicateBatchTest {
 	private List<String> executeComputedWildcardQuery(String query, String strategy) {
 		try (RepositoryConnection connection = repository.getConnection()) {
 			SailTupleQuery prepared = (SailTupleQuery) connection.prepareTupleQuery(query);
-			if (!"withoutIr".equals(strategy)) {
-				prepared.setForcedLmdbExecutionStrategy(strategy);
-			}
+			prepared.setForcedLmdbExecutionStrategy("withoutIr".equals(strategy)
+					? "wildcardPredicateBatch,wildcardPredicateReduced"
+					: strategy);
 			return QueryResults.asList(prepared.evaluate())
 					.stream()
 					.map(LmdbNativeWildcardPredicateBatchTest::canonicalRow)
@@ -1043,9 +1239,6 @@ class LmdbNativeWildcardPredicateBatchTest {
 		System.setProperty(JANINO_PROPERTY, "false");
 		System.setProperty(JANINO_THRESHOLD_PROPERTY, "0");
 		System.setProperty(KERNEL_INTERPRETER_PROPERTY, "false");
-		System.setProperty(COST_CALIBRATION_PROPERTY, "false");
-		System.setProperty(ADAPTIVE_PROBE_PROPERTY, "false");
-		System.setProperty(ADAPTIVE_HEDGE_PROPERTY, "false");
 		System.setProperty(PREFIX_RUN_PROPERTY, "false");
 		System.setProperty(ADJACENCY_AGGREGATE_PROPERTY, "false");
 		System.setProperty(NATIVE_BATCH_PROPERTY, "true");
@@ -1110,7 +1303,7 @@ class LmdbNativeWildcardPredicateBatchTest {
 
 	private List<String> rows(String query) {
 		try (RepositoryConnection connection = repository.getConnection()) {
-			return QueryResults.asList(connection.prepareTupleQuery(query).evaluate())
+			return QueryResults.asList(wildcardQuery(connection, query).evaluate())
 					.stream()
 					.map(LmdbNativeWildcardPredicateBatchTest::canonical)
 					.sorted()
@@ -1120,7 +1313,7 @@ class LmdbNativeWildcardPredicateBatchTest {
 
 	private List<String> allRows(String query) {
 		try (RepositoryConnection connection = repository.getConnection()) {
-			return QueryResults.asList(connection.prepareTupleQuery(query).evaluate())
+			return QueryResults.asList(wildcardQuery(connection, query).evaluate())
 					.stream()
 					.map(LmdbNativeWildcardPredicateBatchTest::canonicalRow)
 					.sorted()
@@ -1148,11 +1341,22 @@ class LmdbNativeWildcardPredicateBatchTest {
 
 	private String explain(String query) {
 		try (RepositoryConnection connection = repository.getConnection()) {
-			return connection.prepareTupleQuery(query).explain(Explanation.Level.Optimized).toString();
+			return wildcardQuery(connection, query).explain(Explanation.Level.Optimized).toString();
 		}
 	}
 
 	private static String canonical(BindingSet row) {
 		return row.getValue("p").stringValue();
 	}
+
+	/**
+	 * This suite tests the wildcard-predicate batch operator; the measured selector may prefer a rival on these small
+	 * stores, so the shared helpers force whichever wildcard form applies at each decision point.
+	 */
+	private static SailTupleQuery wildcardQuery(RepositoryConnection connection, String query) {
+		SailTupleQuery prepared = (SailTupleQuery) connection.prepareTupleQuery(query);
+		prepared.setForcedLmdbExecutionStrategy("wildcardPredicateBatch,wildcardPredicateReduced");
+		return prepared;
+	}
+
 }

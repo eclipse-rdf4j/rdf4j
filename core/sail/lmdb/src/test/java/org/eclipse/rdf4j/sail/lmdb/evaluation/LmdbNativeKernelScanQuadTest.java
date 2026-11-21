@@ -20,6 +20,7 @@ import java.io.File;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
+import java.util.Map;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 
@@ -28,6 +29,7 @@ import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.query.QueryEvaluationException;
+import org.eclipse.rdf4j.query.impl.EmptyBindingSet;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
 import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
 import org.eclipse.rdf4j.sail.base.SailDataset;
@@ -306,6 +308,145 @@ public class LmdbNativeKernelScanQuadTest {
 			assertEquals(1, runOn(source, ir, new long[] { p1, p2 }, 8).size(),
 					"outer rows whose correlated scan finds nothing must drop out silently and completely");
 		}
+	}
+
+	@Test
+	public void fullyBoundExistsWitnessUsesLoweredScanInBothKernelTiers() throws Exception {
+		try (SailDataset dataset = openDataset()) {
+			NativeLmdbQuerySource source = (NativeLmdbQuerySource) dataset;
+			ValueFactory vf = repository.getValueFactory();
+			long p1 = source.idOf(vf.createIRI(EX, "p1"));
+			long p2 = source.idOf(vf.createIRI(EX, "p2"));
+			long o2 = source.idOf(vf.createIRI(EX, "o2"));
+			assertTrue(p1 >= 0L && p2 >= 0L && o2 >= 0L, "fixture terms must resolve before lowering");
+
+			for (boolean compiled : new boolean[] { false, true }) {
+				LmdbNativeKernelLowering.Lowered exists = lowerFullyBoundWitness(source, p1, p2, o2, false);
+				assertFullyBoundWitnessScan(exists, false);
+				assertEquals(List.of("s1|o1"), runLowered(source, exists, compiled),
+						"the matching subject survives in " + tierName(compiled) + " execution");
+
+				LmdbNativeKernelLowering.Lowered notExists = lowerFullyBoundWitness(source, p1, p2, o2, true);
+				assertFullyBoundWitnessScan(notExists, true);
+				assertEquals(List.of("s2|o3", "s3|o4", "s4|s4"), runLowered(source, notExists, compiled),
+						"outer rows without a witness survive NOT EXISTS in " + tierName(compiled) + " execution");
+			}
+		}
+	}
+
+	private static LmdbNativeKernelLowering.Lowered lowerFullyBoundWitness(NativeLmdbQuerySource source,
+			long outerPredicate, long witnessPredicate, long witnessObject, boolean negated) {
+		NativeSlotLayout layout = new NativeSlotLayout(Map.of("s", 0, "o", 1), null);
+		layout.freeze(List.of("s", "o"));
+		RowState row = new RowState(source, layout, EmptyBindingSet.getInstance());
+		assertTrue(NativeRowSeeder.seed(row.slots, layout, row.base, source),
+				"the witness scan outer row must be seeded from its empty input binding set");
+		row.recomputeBoundMask();
+
+		PatternPlan outer = new PatternPlan(Term.slot(0), Term.constant(outerPredicate), Term.slot(1), Term.unbound(),
+				ContextConstraint.UNRESTRICTED, false, 1D);
+		NativeBooleanFilter witness = new StatementPatternExistsFilter(source, Term.slot(0),
+				Term.constant(witnessPredicate), Term.constant(witnessObject), Term.unbound(),
+				ContextConstraint.UNRESTRICTED, false);
+		if (negated) {
+			witness = new NegatedNativeBooleanFilter(witness);
+		}
+		// Global scan preference keeps this direct execution fixture independent of adjacency-cache configuration.
+		return LmdbNativeKernelLowering.lowerRows(new FilterPlan(outer, witness, -1L), row, null, true);
+	}
+
+	private static void assertFullyBoundWitnessScan(LmdbNativeKernelLowering.Lowered lowered, boolean negated) {
+		assertNotNull(lowered, "the real lowerer must produce an executable kernel");
+		assertEquals(0, lowered.bindings.adjacencies.length,
+				"the forced scan plan must not depend on adjacency views");
+		assertTrue(lowered.kernel.pipeline.stream().anyMatch(ScanQuad.class::isInstance),
+				"the outer relation itself must be scanned by this fixture");
+		LmdbNativeKernelIr.Exists exists = lowered.kernel.pipeline.stream()
+				.filter(LmdbNativeKernelIr.Exists.class::isInstance)
+				.map(LmdbNativeKernelIr.Exists.class::cast)
+				.findFirst()
+				.orElseThrow(() -> new AssertionError("the real lowerer must place an Exists node in the kernel"));
+		assertEquals(negated, exists.negated);
+		ScanQuad scan = exists.pipeline.stream()
+				.filter(ScanQuad.class::isInstance)
+				.map(ScanQuad.class::cast)
+				.findFirst()
+				.orElseThrow(() -> new AssertionError("the fully bound witness must lower to ScanQuad"));
+		assertTrue(exists.pipeline.stream().noneMatch(LmdbNativeKernelIr.ProbeClose.class::isInstance),
+				"the missing-adjacency witness must not be replaced by an adjacency probe");
+		assertEquals(Operand.COL, scan.terms[ScanQuad.SUBJ].kind,
+				"the scan must correlate its subject to the outer row");
+		assertEquals(Operand.CONST, scan.terms[ScanQuad.PRED].kind);
+		assertEquals(Operand.CONST, scan.terms[ScanQuad.OBJ].kind);
+		assertEquals(-1, scan.outCols[ScanQuad.SUBJ]);
+		assertEquals(-1, scan.outCols[ScanQuad.PRED]);
+		assertEquals(-1, scan.outCols[ScanQuad.OBJ]);
+		assertTrue(scan.outCols[ScanQuad.CTX] >= 0,
+				"a fully bound witness scan still needs a scratch output to represent a matching quad");
+	}
+
+	private static List<String> runLowered(NativeLmdbQuerySource source,
+			LmdbNativeKernelLowering.Lowered lowered, boolean compiled) throws Exception {
+		NativeSlotLayout layout = new NativeSlotLayout(Map.of("s", 0, "o", 1), null);
+		layout.freeze(List.of("s", "o"));
+		RowState row = new RowState(source, layout, EmptyBindingSet.getInstance());
+		assertTrue(NativeRowSeeder.seed(row.slots, layout, row.base, source),
+				"the witness scan execution row must be seeded from its empty input binding set");
+		row.recomputeBoundMask();
+
+		try (NativeLmdbQuerySource.NativeProbe probe = source.newProbe()) {
+			NativeLmdbQuerySource.NativeAdjacency[] views = null;
+			try {
+				views = lowered.bindings.requestAdjacenciesPartial(probe);
+				LmdbNativeKernelBindings.VariablePredicateViews variableViews = LmdbNativeKernelBindings
+						.requestVariablePredicateViews(lowered.bindings, probe);
+				assertNotNull(variableViews);
+				LmdbNativeKernelBindings.BoundDomains domains = lowered.bindings.bindDomains(probe, row,
+						"fully-bound-witness-scan-test");
+				try (LmdbNativeKernelScanner scanner = new LmdbNativeKernelScanner(row, lowered.bindings.scanSites)) {
+					JaninoKernel execution = null;
+					LmdbNativeKernelHooks hooks = null;
+					try {
+						execution = compiled
+								? KernelCompilationTestSupport.compile(lowered.kernel)
+								: LmdbNativeKernelInterpreter.forRows(lowered.kernel);
+						assertNotNull(execution, "the lowered witness must be supported by " + tierName(compiled));
+						hooks = new LmdbNativeKernelHooks(row, lowered.bindings);
+						execution.bind(lowered.bindings.context(views, domains, row, hooks, scanner, variableViews));
+						int stride = lowered.kernel.stride();
+						long[] buffer = new long[stride];
+						List<String> rows = new ArrayList<>();
+						while (true) {
+							int filled = execution.fill(buffer, 1);
+							if (filled == 0) {
+								break;
+							}
+							String subject = source.lazyValue(buffer[0]).stringValue().substring(EX.length());
+							String object = source.lazyValue(buffer[1]).stringValue().substring(EX.length());
+							rows.add(subject + "|" + object);
+						}
+						rows.sort(String::compareTo);
+						return rows;
+					} finally {
+						try {
+							if (execution != null) {
+								execution.close();
+							}
+						} finally {
+							if (hooks != null) {
+								hooks.closeFilters();
+							}
+						}
+					}
+				}
+			} finally {
+				LmdbNativeKernelBindings.closeAdjacencies(views, null);
+			}
+		}
+	}
+
+	private static String tierName(boolean compiled) {
+		return compiled ? "compiled" : "interpreted";
 	}
 
 	private SailDataset openDataset() {

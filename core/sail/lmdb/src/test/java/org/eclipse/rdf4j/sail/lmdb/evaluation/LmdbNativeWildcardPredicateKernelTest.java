@@ -121,6 +121,27 @@ class LmdbNativeWildcardPredicateKernelTest {
 	}
 
 	@Test
+	void unscheduledWildcardKernelsUseKnownRunContextsInBothExecutionTiers() throws Exception {
+		for (boolean targetBound : new boolean[] { false, true }) {
+			Kernel ir = new Kernel(3,
+					List.of(new EnumeratePredicates(0, true, true, LmdbWildcardPhysicalDemand.Demand.PAYLOAD,
+							Operand.constant(0), targetBound ? Operand.constant(2) : null,
+							0, 1, 2, Operand.constant(1), false)),
+					emit(0, 1, 2));
+			for (boolean compiled : new boolean[] { false, true }) {
+				FixtureWildcard fixture = new FixtureWildcard(new Plane(10L, new long[] { 1L },
+						new long[][] { { 3L, 4L } }, new long[][] { { 0L, 7L } }));
+				fixture.contextProofs = true;
+				List<long[]> actual = compiled
+						? runCompiled(ir, new long[] { 1L, 7L, 4L }, new FixtureWildcard[] { fixture }, null, 1)
+						: runInterpreted(ir, new long[] { 1L, 7L, 4L }, new FixtureWildcard[] { fixture }, null, 1);
+				assertRows(actual, new long[][] { { 10L, 4L, 7L } });
+				assertEquals(0, fixture.contextReads);
+			}
+		}
+	}
+
+	@Test
 	void boundRootWildcardEnumerationHonorsContextAndDirection() throws Exception {
 		Kernel outgoing = new Kernel(3,
 				List.of(new EnumeratePredicates(0, true, true, LmdbWildcardPhysicalDemand.Demand.PAYLOAD,
@@ -506,6 +527,33 @@ class LmdbNativeWildcardPredicateKernelTest {
 	}
 
 	@Test
+	void graphDisjointVectorTailChecksCancellationBetweenPhysicalSpans() throws Exception {
+		for (boolean resumable : new boolean[] { true, false }) {
+			String previous = System.setProperty(LmdbNativeKernelIr.RESUMABLE_PROPERTY,
+					Boolean.toString(resumable));
+			try {
+				Kernel ir = new Kernel(2,
+						List.of(new ProbeVariable(0, true, Operand.constant(0), Operand.constant(1), 0, 1,
+								Operand.constant(2), false)),
+						emit(0, 1));
+				assertEquals(resumable, ir.resumable);
+				assertEquals(0, ir.vectorTailIndex);
+				FixtureWildcard fixture = wideFixture(8_192);
+				KernelCancellation cancel = new KernelCancellation(Long.MAX_VALUE);
+				fixture.cancelOnSpan = cancel;
+				assertThrows(KernelCancelledException.class,
+						() -> runCompiled(ir, new long[] { 1L, 10L, 7L }, null,
+								new FixtureWildcard[] { fixture }, 1, cancel));
+				assertTrue(fixture.spanReads <= 1_024,
+						"cancellation must be polled while discarding header-only spans: " + fixture.spanReads);
+				assertEquals(0, fixture.neighborReads);
+			} finally {
+				restore(LmdbNativeKernelIr.RESUMABLE_PROPERTY, previous);
+			}
+		}
+	}
+
+	@Test
 	void dynamicProbeStreamsThroughTheBufferedVectorTail() throws Exception {
 		Kernel ir = new Kernel(2,
 				List.of(new ProbeVariable(0, true, Operand.constant(0), Operand.constant(1), 0, 1, null, false)),
@@ -861,6 +909,9 @@ class LmdbNativeWildcardPredicateKernelTest {
 		private int corruptPlane = -1;
 		private int neighborReads;
 		private int contextReads;
+		private boolean contextProofs;
+		private KernelCancellation cancelOnSpan;
+		private int spanReads;
 		private int findBatchCalls;
 		private PageSpec[] pages;
 		private int pageHeaderReads;
@@ -1001,6 +1052,12 @@ class LmdbNativeWildcardPredicateKernelTest {
 			}
 			Plane plane = plane();
 			return new KeyRunCursor() {
+				@Override
+				public boolean contextSpan(long offset, ContextSpan span) {
+					FixtureWildcard.this.contextSpan(runHandle(), offset, span);
+					return true;
+				}
+
 				private int root = -1;
 
 				@Override
@@ -1025,6 +1082,7 @@ class LmdbNativeWildcardPredicateKernelTest {
 
 				@Override
 				public long neighborAt(long runOffset) {
+					checkContextNeighbor(plane.contexts[root], runOffset, 1);
 					recordLegacyNeighborRead(plane.keys[root], 1);
 					return plane.neighbors[root][(int) runOffset];
 				}
@@ -1037,6 +1095,7 @@ class LmdbNativeWildcardPredicateKernelTest {
 
 				@Override
 				public int copyNeighbors(long runOffset, int length, long[] target, int targetOffset) {
+					checkContextNeighbor(plane.contexts[root], runOffset, length);
 					int copied = copy(plane.neighbors[root], runOffset, length, target, targetOffset);
 					recordLegacyNeighborRead(plane.keys[root], copied);
 					return copied;
@@ -1058,6 +1117,27 @@ class LmdbNativeWildcardPredicateKernelTest {
 		}
 
 		@Override
+		public void contextSpan(long handle, long offset, ContextSpan span) {
+			if (cancelOnSpan != null) {
+				spanReads++;
+				cancelOnSpan.cancel();
+				span.set(offset + 1L, 0L);
+				return;
+			}
+			if (!contextProofs) {
+				NativeLmdbQuerySource.WildcardAdjacency.super.contextSpan(handle, offset, span);
+				return;
+			}
+			long[] contexts = plane().contexts[(int) handle - 1];
+			int end = (int) offset;
+			long graph = contexts[end];
+			while (end < contexts.length && contexts[end] == graph) {
+				end++;
+			}
+			span.set(end, graph);
+		}
+
+		@Override
 		public long size(long runHandle) {
 			return plane().neighbors[(int) runHandle - 1].length;
 		}
@@ -1066,6 +1146,7 @@ class LmdbNativeWildcardPredicateKernelTest {
 		public long neighborAt(long runHandle, long runOffset) {
 			int root = (int) runHandle - 1;
 			Plane plane = plane();
+			checkContextNeighbor(plane.contexts[root], runOffset, 1);
 			recordLegacyNeighborRead(plane.keys[root], 1);
 			return plane.neighbors[root][(int) runOffset];
 		}
@@ -1082,6 +1163,7 @@ class LmdbNativeWildcardPredicateKernelTest {
 		public int copyNeighbors(long runHandle, long runOffset, int length, long[] target, int targetOffset) {
 			int root = (int) runHandle - 1;
 			Plane plane = plane();
+			checkContextNeighbor(plane.contexts[root], runOffset, length);
 			int copied = copy(plane.neighbors[root], runOffset, length, target, targetOffset);
 			recordLegacyNeighborRead(plane.keys[root], copied);
 			return copied;
@@ -1115,7 +1197,18 @@ class LmdbNativeWildcardPredicateKernelTest {
 			}
 		}
 
+		private void checkContextNeighbor(long[] graphs, long offset, int count) {
+			if (contextProofs) {
+				for (int i = (int) offset; i < offset + count; i++) {
+					assertEquals(7L, graphs[i], "a disjoint context span must not read neighbor payload");
+				}
+			}
+		}
+
 		private void recordLegacyContextRead(long root, int count) {
+			if (contextProofs) {
+				throw new AssertionError("known context span decoded context payload");
+			}
 			contextReads += count;
 			int page = pageForRoot(root);
 			if (page >= 0) {

@@ -272,6 +272,7 @@ final class PatternBatchCursor implements BatchCursor {
 final class ValuesBatchCursor implements BatchCursor {
 	final ValuesRow[] rows;
 	final long[] seedSlots;
+	final NativeTermAuthority authority;
 	final ExactValuesRuntimeMetrics exactValuesMetrics;
 	int index;
 	boolean closed;
@@ -283,6 +284,7 @@ final class ValuesBatchCursor implements BatchCursor {
 	ValuesBatchCursor(ValuesRow[] rows, RowState row, boolean exactFilterRewrite) {
 		this.rows = rows;
 		this.seedSlots = Arrays.copyOf(row.slots, row.slots.length);
+		this.authority = row.termAuthority();
 		this.exactValuesMetrics = exactFilterRewrite ? row.exactValuesMetrics : null;
 	}
 
@@ -301,11 +303,14 @@ final class ValuesBatchCursor implements BatchCursor {
 				int slot = candidate.slots[i];
 				long current = batch.get(slot, outputRows);
 				long value = candidate.values[i];
-				if (current != UNKNOWN && current != value) {
+				if (current != UNKNOWN && current != value
+						&& (authority == null || !authority.sameRdfTerm(current, value))) {
 					accepted = false;
 					break;
 				}
-				batch.set(slot, outputRows, value);
+				if (current == UNKNOWN) {
+					batch.set(slot, outputRows, value);
+				}
 			}
 			if (accepted) {
 				outputRows++;

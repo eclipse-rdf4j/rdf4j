@@ -254,6 +254,10 @@ final class LmdbAdjacencyPlaneStatistics {
 			return predicates.length == 0;
 		}
 
+		/**
+		 * Sums two updates. A predicate whose deltas cancel stays listed with zero counts: an older snapshot still
+		 * served by this history may hold its rows, and {@link #predicateDomain()} must keep it.
+		 */
 		private static Update merge(Update left, Update right) {
 			long[] predicates = new long[Math.addExact(left.predicates.length, right.predicates.length)];
 			long[] quads = new long[Math.multiplyExact(predicates.length, PLANE_COUNT)];
@@ -266,7 +270,6 @@ final class LmdbAdjacencyPlaneStatistics {
 						: rightAt >= right.predicates.length ? -1
 								: Long.compareUnsigned(left.predicates[leftAt], right.predicates[rightAt]);
 				long predicate;
-				boolean nonzero = false;
 				if (comparison < 0) {
 					predicate = left.predicates[leftAt];
 					for (int plane = 0; plane < PLANE_COUNT; plane++) {
@@ -274,7 +277,6 @@ final class LmdbAdjacencyPlaneStatistics {
 						long key = left.keyDeltas[leftAt * PLANE_COUNT + plane];
 						quads[output * PLANE_COUNT + plane] = quad;
 						keys[output * PLANE_COUNT + plane] = key;
-						nonzero |= quad != 0 || key != 0;
 					}
 					leftAt++;
 				} else if (comparison > 0) {
@@ -284,7 +286,6 @@ final class LmdbAdjacencyPlaneStatistics {
 						long key = right.keyDeltas[rightAt * PLANE_COUNT + plane];
 						quads[output * PLANE_COUNT + plane] = quad;
 						keys[output * PLANE_COUNT + plane] = key;
-						nonzero |= quad != 0 || key != 0;
 					}
 					rightAt++;
 				} else {
@@ -296,14 +297,11 @@ final class LmdbAdjacencyPlaneStatistics {
 								right.keyDeltas[rightAt * PLANE_COUNT + plane]);
 						quads[output * PLANE_COUNT + plane] = quad;
 						keys[output * PLANE_COUNT + plane] = key;
-						nonzero |= quad != 0 || key != 0;
 					}
 					leftAt++;
 					rightAt++;
 				}
-				if (nonzero) {
-					predicates[output++] = predicate;
-				}
+				predicates[output++] = predicate;
 			}
 			return output == 0 ? EMPTY
 					: new Update(Arrays.copyOf(predicates, output), Arrays.copyOf(quads, output * PLANE_COUNT),

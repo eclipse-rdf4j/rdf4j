@@ -13,6 +13,7 @@
 package org.eclipse.rdf4j.sail.lmdb;
 
 import java.nio.file.Files;
+import java.nio.file.Path;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.concurrent.TimeUnit;
@@ -60,76 +61,88 @@ public class LmdbFallbackAdjacencyBenchmark {
 	private SailRepositoryConnection connection;
 	private SailTupleQuery query;
 	private LmdbStore store;
+	private Path directory;
 	private long hitsBefore;
 
 	@Setup(Level.Trial)
 	public void setup() throws Exception {
-		set("rdf4j.lmdb.nativeQueryEngine.enabled", "true");
-		set("rdf4j.lmdb.parallel.enabled", "false");
-		set(AdjacencyEngagementTestAccess.NODE_PREDICATE_PROJECTION_PROPERTY, "true");
-		set(AdjacencyEngagementTestAccess.NODE_PREDICATE_PROJECTION_INCOMING_PROPERTY, "true");
-		set(AdjacencyEngagementTestAccess.NODE_PREDICATE_SERVE_PROPERTY,
-				Boolean.toString(indexes.equals("nodePredicates")));
-		LmdbStoreConfig config = new LmdbStoreConfig("spoc,posc,ospc")
-				.setNativeEvaluationEnabled(true)
-				.setDirectAdjacencyEnabled(!indexes.equals("lmdb"))
-				.setDirectAdjacencyCoverage(DirectAdjacencyCoverage.FULL)
-				.setDirectAdjacencyBuildOnStart(false)
-				.setDirectAdjacencyMode(
-						indexes.equals("lmdb") ? DirectAdjacencyMode.DISABLED : DirectAdjacencyMode.PREFER);
-		store = new LmdbStore(Files.createTempDirectory("rdf4j-fallback-adjacency-").toFile(), config);
-		repository = new SailRepository(store);
-		connection = repository.getConnection();
-		ValueFactory vf = connection.getValueFactory();
-		IRI[] predicates = new IRI[256];
-		IRI[] nodes = new IRI[nodeCount];
-		for (int i = 0; i < predicates.length; i++) {
-			predicates[i] = vf.createIRI("urn:predicate:" + i);
-		}
-		for (int i = 0; i < nodes.length; i++) {
-			nodes[i] = vf.createIRI("urn:node:" + i);
-		}
-		IRI seed = vf.createIRI("urn:seed"), yes = vf.createIRI("urn:yes"), target = vf.createIRI("urn:target");
-		connection.begin();
-		for (int i = 0; i < nodes.length; i++) {
-			if (i < 128) {
-				connection.add(nodes[i], seed, yes);
+		try {
+			set("rdf4j.lmdb.nativeQueryEngine.enabled", "true");
+			set("rdf4j.lmdb.parallel.enabled", "false");
+			set(AdjacencyEngagementTestAccess.NODE_PREDICATE_PROJECTION_PROPERTY, "true");
+			set(AdjacencyEngagementTestAccess.NODE_PREDICATE_PROJECTION_INCOMING_PROPERTY, "true");
+			set(AdjacencyEngagementTestAccess.NODE_PREDICATE_SERVE_PROPERTY,
+					Boolean.toString(indexes.equals("nodePredicates")));
+			LmdbStoreConfig config = new LmdbStoreConfig("spoc,posc,ospc")
+					.setNativeEvaluationEnabled(true)
+					.setDirectAdjacencyEnabled(!indexes.equals("lmdb"))
+					.setDirectAdjacencyCoverage(DirectAdjacencyCoverage.FULL)
+					.setDirectAdjacencyBuildOnStart(false)
+					.setDirectAdjacencyMode(
+							indexes.equals("lmdb") ? DirectAdjacencyMode.DISABLED : DirectAdjacencyMode.PREFER);
+			directory = Files.createTempDirectory("rdf4j-fallback-adjacency-");
+			store = new LmdbStore(directory.toFile(), config);
+			repository = new SailRepository(store);
+			connection = repository.getConnection();
+			ValueFactory vf = connection.getValueFactory();
+			IRI[] predicates = new IRI[256];
+			IRI[] nodes = new IRI[nodeCount];
+			for (int i = 0; i < predicates.length; i++) {
+				predicates[i] = vf.createIRI("urn:predicate:" + i);
 			}
-			for (int p = 0; p < 4; p++) {
-				IRI predicate = predicates[(i + p) % predicates.length];
-				connection.add(nodes[i], predicate, target);
-				for (int e = 1; e <= 16; e++) {
-					connection.add(nodes[i], predicate, nodes[(i + e) % nodes.length]);
+			for (int i = 0; i < nodes.length; i++) {
+				nodes[i] = vf.createIRI("urn:node:" + i);
+			}
+			IRI seed = vf.createIRI("urn:seed"), yes = vf.createIRI("urn:yes"), target = vf.createIRI("urn:target");
+			connection.begin();
+			for (int i = 0; i < nodes.length; i++) {
+				if (i < 128) {
+					connection.add(nodes[i], seed, yes);
+				}
+				for (int p = 0; p < 4; p++) {
+					IRI predicate = predicates[(i + p) % predicates.length];
+					connection.add(nodes[i], predicate, target);
+					for (int e = 1; e <= 16; e++) {
+						connection.add(nodes[i], predicate, nodes[(i + e) % nodes.length]);
+					}
 				}
 			}
+			connection.commit();
+			if (!indexes.equals("lmdb") && !AdjacencyEngagementTestAccess.buildNow(store)) {
+				throw new IllegalStateException("adjacency build failed");
+			}
+			String tail = switch (shape) {
+			case "outgoing" -> "?root ?p ?o";
+			case "incoming" -> "?s ?p ?root";
+			case "boundPair" -> "?root ?p <urn:target>";
+			case "fixedPredicate" -> "?root <urn:predicate:64> ?o";
+			default -> throw new IllegalArgumentException(shape);
+			};
+			query = (SailTupleQuery) connection
+					.prepareTupleQuery("SELECT * WHERE { ?root <urn:seed> <urn:yes> . " + tail + " }");
+			query.setForcedLmdbExecutionStrategy("nestedLoop");
+			long expected = switch (shape) {
+			case "outgoing" -> 128L * 69;
+			case "incoming" -> 128L * 64;
+			case "boundPair" -> 128L * 4;
+			case "fixedPredicate" -> 4L * 17;
+			default -> throw new IllegalArgumentException(shape);
+			};
+			long actual = fallbackQuery();
+			if (actual != expected) {
+				throw new AssertionError(shape + ": expected " + expected + ", got " + actual);
+			}
+			System.out.println(query.explain(Explanation.Level.Telemetry));
+			hitsBefore = AdjacencyEngagementTestAccess.lookupHits(store);
+
+		} catch (Exception | Error failure) {
+			try {
+				tearDown();
+			} catch (Exception | Error cleanupFailure) {
+				failure.addSuppressed(cleanupFailure);
+			}
+			throw failure;
 		}
-		connection.commit();
-		if (!indexes.equals("lmdb") && !AdjacencyEngagementTestAccess.buildNow(store)) {
-			throw new IllegalStateException("adjacency build failed");
-		}
-		String tail = switch (shape) {
-		case "outgoing" -> "?root ?p ?o";
-		case "incoming" -> "?s ?p ?root";
-		case "boundPair" -> "?root ?p <urn:target>";
-		case "fixedPredicate" -> "?root <urn:predicate:64> ?o";
-		default -> throw new IllegalArgumentException(shape);
-		};
-		query = (SailTupleQuery) connection
-				.prepareTupleQuery("SELECT * WHERE { ?root <urn:seed> <urn:yes> . " + tail + " }");
-		query.setForcedLmdbExecutionStrategy("nestedLoop");
-		long expected = switch (shape) {
-		case "outgoing" -> 128L * 69;
-		case "incoming" -> 128L * 64;
-		case "boundPair" -> 128L * 4;
-		case "fixedPredicate" -> 4L * 17;
-		default -> throw new IllegalArgumentException(shape);
-		};
-		long actual = fallbackQuery();
-		if (actual != expected) {
-			throw new AssertionError(shape + ": expected " + expected + ", got " + actual);
-		}
-		System.out.println(query.explain(Explanation.Level.Telemetry));
-		hitsBefore = AdjacencyEngagementTestAccess.lookupHits(store);
 	}
 
 	@Benchmark
@@ -150,23 +163,33 @@ public class LmdbFallbackAdjacencyBenchmark {
 
 	@TearDown(Level.Trial)
 	public void tearDown() {
-		if (store != null) {
-			System.out.println("FALLBACK indexes=" + indexes + " shape=" + shape + " adjacencyHits="
-					+ (AdjacencyEngagementTestAccess.lookupHits(store) - hitsBefore));
-		}
-		if (connection != null) {
-			connection.close();
-		}
-		if (repository != null) {
-			repository.shutDown();
-		}
-		previous.forEach((key, value) -> {
-			if (value == null) {
-				System.clearProperty(key);
-			} else {
-				System.setProperty(key, value);
+		try {
+			try (var repositoryCleanup = LmdbTestUtil.onClose(() -> {
+				if (repository != null) {
+					repository.shutDown();
+				}
+				// Delete only after successful shutdown, even if the test body failed.
+				LmdbTestUtil.deleteDir(directory);
+			});
+					var connectionCleanup = LmdbTestUtil.onClose(() -> {
+						if (connection != null) {
+							connection.close();
+						}
+					})) {
+				if (store != null) {
+					System.out.println("FALLBACK indexes=" + indexes + " shape=" + shape + " adjacencyHits="
+							+ (AdjacencyEngagementTestAccess.lookupHits(store) - hitsBefore));
+				}
 			}
-		});
+		} finally {
+			previous.forEach((key, value) -> {
+				if (value == null) {
+					System.clearProperty(key);
+				} else {
+					System.setProperty(key, value);
+				}
+			});
+		}
 	}
 
 	private void set(String key, String value) {

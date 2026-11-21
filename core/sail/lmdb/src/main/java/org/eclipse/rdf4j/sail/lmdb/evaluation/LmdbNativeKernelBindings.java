@@ -25,6 +25,7 @@ import org.eclipse.rdf4j.sail.lmdb.ValueIds;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.codegen.KernelContext;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.codegen.KernelHooks;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.codegen.KernelPlan;
+import org.eclipse.rdf4j.sail.lmdb.evaluation.codegen.KernelRuntime;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.codegen.KernelScanner;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.codegen.TypeMatrixContext;
 
@@ -87,6 +88,12 @@ final class LmdbNativeKernelBindings {
 
 	/** One computed-BIND registration, index-aligned with the IR's {@code BindHook.bindId}. */
 	static final class BindHook {
+		private enum Builtin {
+			NONE,
+			NULL_PLACEHOLDER_TO_UNBOUND
+		}
+
+		private final Builtin builtin;
 		final LmdbNativeCompiledInlineId computed;
 		/**
 		 * Interned computed-value variant (completion plan M1.3b): the hook evaluates the decoded value and interns it
@@ -112,11 +119,26 @@ final class LmdbNativeKernelBindings {
 
 		private BindHook(LmdbNativeCompiledInlineId computed, LmdbNativeCompiledValue computedValue, CopyBinding copy,
 				int[] argSlots, boolean startsSolution) {
+			this(computed, computedValue, copy, argSlots, startsSolution, Builtin.NONE);
+		}
+
+		private BindHook(LmdbNativeCompiledInlineId computed, LmdbNativeCompiledValue computedValue, CopyBinding copy,
+				int[] argSlots, boolean startsSolution, Builtin builtin) {
 			this.computed = computed;
 			this.computedValue = computedValue;
 			this.copy = copy;
 			this.argSlots = argSlots;
 			this.startsSolution = startsSolution;
+			this.builtin = builtin;
+		}
+
+		/** An internal slot representation conversion, independent of RDF expressions, sources and query scope. */
+		static BindHook normalizeNullableInput(int slot) {
+			LmdbNativeCompiledInlineId value = new LmdbNativeCompiledInlineId(1L << slot, true, input -> {
+				long id = input.id(slot);
+				return id == LmdbNativeAggregateCompiler.NULL_CONTEXT_ID ? LmdbNativeAggregateCompiler.UNKNOWN : id;
+			});
+			return new BindHook(value, null, null, new int[] { slot }, false, Builtin.NULL_PLACEHOLDER_TO_UNBOUND);
 		}
 
 		BindHook withSolutionScope() {
@@ -141,6 +163,15 @@ final class LmdbNativeKernelBindings {
 		 * proved that replay preserves encounter-order semantics. Legacy CopyBinding evaluators have no such proof.
 		 */
 		boolean workerBindable() {
+			if (builtin != Builtin.NONE) {
+				return !startsSolution;
+			}
+			if (!startsSolution && copy != null && copy.computed == null && copy.computedValue == null
+					&& copy.semanticValue == null) {
+				// Alias/constant assignments contain no evaluator or worker-owned state, including nullable aliases
+				// that need a hook rather than a direct column copy at a lexical boundary.
+				return copy.encounterOrderReplaySafe;
+			}
 			NativeScalarPlan plan = scalarPlan();
 			if (plan == null || !plan.workerBindable() || startsSolution) {
 				return false;
@@ -156,6 +187,9 @@ final class LmdbNativeKernelBindings {
 			if (!workerBindable()) {
 				return null;
 			}
+			if (builtin != Builtin.NONE) {
+				return this;
+			}
 			if (copy != null) {
 				if (copy.computed != null) {
 					LmdbNativeCompiledInlineId rebound = copy.computed.bindForWorker(context);
@@ -167,7 +201,7 @@ final class LmdbNativeKernelBindings {
 							: new BindHook(copy.withComputedValue(rebound), argSlots,
 									startsSolution);
 				}
-				return null;
+				return new BindHook(copy, argSlots.clone(), startsSolution);
 			}
 			if (computed != null) {
 				LmdbNativeCompiledInlineId rebound = computed.bindForWorker(context);
@@ -638,6 +672,48 @@ final class LmdbNativeKernelBindings {
 		return copy;
 	}
 
+	/** Construction safety is independent of whether the pipeline's root has an exact partition. */
+	boolean workerProducersBindable() {
+		for (PlanRequest request : planRequests) {
+			if (!request.batchSafe || !NativeWorkerPlanBinder.canBind(request.plan)) {
+				return false;
+			}
+		}
+		for (MaskedFilter residual : kernelResiduals) {
+			if (!residual.filter.parallelWorkerForkable()
+					|| residual.mask < 0L && !residual.filter.capabilities().replaySafe()) {
+				return false;
+			}
+		}
+		return true;
+	}
+
+	/** The binder owns all copied filters until this worker's last kernel has closed. */
+	LmdbNativeKernelBindings bindWorkerProducers(NativeWorkerPlanBinder binder) throws java.io.IOException {
+		if (planRequests.length == 0 && kernelResiduals.length == 0) {
+			return this;
+		}
+		PlanRequest[] plans = new PlanRequest[planRequests.length];
+		for (int i = 0; i < plans.length; i++) {
+			PlanRequest request = planRequests[i];
+			plans[i] = new PlanRequest(binder.bind(request.plan), request.outputSlots, request.inputSlots,
+					request.factorProjection);
+		}
+		MaskedFilter[] residuals = new MaskedFilter[kernelResiduals.length];
+		for (int i = 0; i < residuals.length; i++) {
+			MaskedFilter residual = kernelResiduals[i];
+			residuals[i] = new MaskedFilter(binder.bindFilter(residual.filter), residual.mask, residual.adaptive,
+					residual.plannedDepth);
+		}
+		LmdbNativeKernelBindings copy = new LmdbNativeKernelBindings(adjacencies, constants, entrySlotIds,
+				keyDomains, filterHooks, bindHooks, columnEngineSlots, residualFilters, scanSites, plans,
+				groupLayout, hooksRequired, distinctExpected, residuals, nodePredicateRequests, dynamicRequests,
+				wildcardRequests, kernelColumnEngineSlots);
+		copy.nodeDomainIntersectionRequests = nodeDomainIntersectionRequests;
+		copy.typeMatrixRequests = typeMatrixRequests;
+		return copy;
+	}
+
 	static TypeMatrixContext[] requestTypeMatrices(LmdbNativeKernelBindings bindings,
 			NativeLmdbQuerySource.NativeProbe probe, RowState row) throws java.io.IOException {
 		TypeMatrixContext[] matrices = new TypeMatrixContext[bindings.typeMatrixRequests.length];
@@ -1011,10 +1087,10 @@ final class LmdbNativeKernelBindings {
 						.withMemoryLedgerSupplier(() -> row.memoryScope.ledger(LmdbNativeHashJoin.queryMemory()))
 						.withCancellation(peerCancellation == null
 								? LmdbNativeProbeDeadline.currentKernelCancellation(
-										row.cancellation::isCancellationRequested,
+										row.cancellation,
 										workerCancellation)
 								: LmdbNativeProbeDeadline.currentAggregateKernelCancellation(
-										row.cancellation::isCancellationRequested, peerCancellation));
+										row.cancellation, peerCancellation));
 	}
 
 	/** Runtime wrapper that isolates an interpreted producer from the row receiving generated-kernel output. */
@@ -1416,6 +1492,8 @@ final class LmdbNativeKernelBindings {
 		private final RowState row;
 		private final int[] outputSlots;
 		private final BoundPlan owner;
+		private long remainingLogicalRows;
+		private int pollTick;
 		private boolean closed;
 
 		private BoundCursor(RowCursor cursor, RowState row, int[] outputSlots, BoundPlan owner) {
@@ -1437,11 +1515,23 @@ final class LmdbNativeKernelBindings {
 			int rows = 0;
 			boolean nested = LmdbNativeEvaluationStrategy.enterKernelSubplan();
 			try {
-				while (rows < maxRows && row.advance(cursor)) {
+				while (rows < maxRows && !row.cancellation.isCancellationRequested()) {
+					LmdbNativeProbeDeadline.poll(++pollTick);
+					if (remainingLogicalRows == 0L) {
+						if (!row.advance(cursor)) {
+							break;
+						}
+						remainingLogicalRows = cursor instanceof FactorizedRowCursor factor ? factor.multiplicity()
+								: 1L;
+						if (remainingLogicalRows <= 0L) {
+							throw new IllegalStateException("nonpositive projected bag weight");
+						}
+					}
 					int base = rows * outputSlots.length;
 					for (int i = 0; i < outputSlots.length; i++) {
 						rowBuffer[base + i] = row.slots[outputSlots[i]];
 					}
+					remainingLogicalRows--;
 					rows++;
 				}
 				if (rows == 0)
@@ -1470,6 +1560,13 @@ final class LmdbNativeKernelBindings {
 			int rows = 0;
 			boolean nested = LmdbNativeEvaluationStrategy.enterKernelSubplan();
 			try {
+				if (remainingLogicalRows > 0L && !row.cancellation.isCancellationRequested()) {
+					for (int i = 0; i < outputSlots.length; i++) {
+						rowBuffer[i] = row.slots[outputSlots[i]];
+					}
+					weights[rows++] = remainingLogicalRows;
+					remainingLogicalRows = 0L;
+				}
 				while (rows < maxRows && row.advance(cursor)) {
 					int base = rows * outputSlots.length;
 					for (int i = 0; i < outputSlots.length; i++)
@@ -1494,12 +1591,20 @@ final class LmdbNativeKernelBindings {
 		}
 
 		private void closeAfterFailure(Throwable original) {
-			try {
-				close();
-			} catch (Throwable cleanup) {
-				if (cleanup != original)
-					original.addSuppressed(cleanup);
+			if (original == LmdbNativeProbeDeadlineExceeded.INSTANCE) {
+				// KernelRuntime cannot attach close failures to this suppression-disabled signal. Collect the primary
+				// cleanup result first, then promote any real failure while retaining the probe signal as evidence.
+				Throwable cleanup = KernelRuntime.closeResource(this, null);
+				Throwable realCleanup = LmdbNativeParallelKernelAggregate.realFailureInControlGraph(cleanup);
+				if (realCleanup != null) {
+					if (realCleanup != original) {
+						realCleanup.addSuppressed(original);
+					}
+					NativeContextClosingIteration.throwFailure(realCleanup);
+				}
+				return;
 			}
+			KernelRuntime.closeCursor(this, original);
 		}
 
 		@Override

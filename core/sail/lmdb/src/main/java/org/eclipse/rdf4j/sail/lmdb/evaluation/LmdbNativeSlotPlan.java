@@ -22,6 +22,66 @@ import org.eclipse.rdf4j.common.annotation.Experimental;
 interface SlotPlan {
 	RowCursor open(RowState row) throws IOException;
 
+	/** Whether a native physical cell must remain in its typed lane until a scalar consumer has run. */
+	static boolean requiresPhysicalCells(SlotPlan plan) {
+		if (plan instanceof NativeAliasJoinPlan alias) {
+			return requiresPhysicalCells(alias.original);
+		}
+		if (plan instanceof NativeAliasJoinMemoPlan memo) {
+			return requiresPhysicalCells(memo.original);
+		}
+		if (plan instanceof NativeLogicalResultTransferPlan) {
+			return false;
+		}
+		if (plan instanceof NativeSubqueryPlan subquery) {
+			return subquery.requiresPhysicalResults();
+		}
+		if (plan instanceof NativeKeyedSubqueryJoinPlan keyed) {
+			return requiresPhysicalCells(keyed.probe) || keyed.subPlan.requiresPhysicalResults();
+		}
+		if (plan instanceof FilterPlan filter) {
+			return requiresPhysicalCells(filter.arg);
+		}
+		if (plan instanceof ExtensionPlan extension) {
+			return requiresPhysicalCells(extension.arg);
+		}
+		if (plan instanceof EntryBindingCompatibilityPlan entry) {
+			return requiresPhysicalCells(entry.arg);
+		}
+		if (plan instanceof RowDistinctPlan distinct) {
+			return requiresPhysicalCells(distinct.arg);
+		}
+		if (plan instanceof MultiJoinPlan join) {
+			for (SlotPlan child : join.children) {
+				if (requiresPhysicalCells(child)) {
+					return true;
+				}
+			}
+		}
+		if (plan instanceof JoinPlan join) {
+			return requiresPhysicalCells(join.left) || requiresPhysicalCells(join.right);
+		}
+		if (plan instanceof LeftJoinPlan join) {
+			return requiresPhysicalCells(join.left) || requiresPhysicalCells(join.right);
+		}
+		if (plan instanceof UnionPlan union) {
+			return requiresPhysicalCells(union.left) || requiresPhysicalCells(union.right);
+		}
+		if (plan instanceof OrderedUnionPlan union) {
+			return requiresPhysicalCells(union.left) || requiresPhysicalCells(union.right);
+		}
+		if (plan instanceof MinusPlan minus) {
+			return requiresPhysicalCells(minus.left) || requiresPhysicalCells(minus.right);
+		}
+		if (plan instanceof LateralPlan lateral) {
+			return requiresPhysicalCells(lateral.left) || requiresPhysicalCells(lateral.right);
+		}
+		if (plan instanceof DrainGuardPlan guard) {
+			return requiresPhysicalCells(guard.delegate) || requiresPhysicalCells(guard.drained);
+		}
+		return false;
+	}
+
 	/** Returns a direct batch implementation, or {@code null} when this plan must use its row cursor. */
 	default BatchCursor openBatch(RowState row, int capacity) throws IOException {
 		return null;
@@ -119,14 +179,22 @@ interface SlotPlan {
 		if (right == SingletonPlan.INSTANCE) {
 			return left;
 		}
-		if (canFlatten(left) && canFlatten(right)) {
+		boolean flattenable = canFlatten(left) && canFlatten(right);
+		// A nonnegative scalar placement mask has already been checked against the compiler's lexical and
+		// assured ancestor frame. Witnesses and semantic callbacks have additional runtime reads that the
+		// placement mask may omit. Nonflattenable left inputs retain their complete original frame check.
+		if (changesFilterFrame(left, right.producedMask(), flattenable)
+				|| changesFilterFrame(right, left.producedMask(), true)) {
+			return new JoinPlan(left, right);
+		}
+		if (flattenable) {
 			ArrayList<SlotPlan> children = new ArrayList<>();
 			ArrayList<MaskedFilter> filters = new ArrayList<>();
 			collectFlattenable(left, children, filters);
 			collectFlattenable(right, children, filters);
 			return new MultiJoinPlan(children.toArray(SlotPlan[]::new), filters.toArray(MaskedFilter[]::new));
 		}
-		return new JoinPlan(left, right);
+		return NativeAliasJoinPlan.create(left, right);
 	}
 
 	/**
@@ -135,8 +203,17 @@ interface SlotPlan {
 	 * a trailing pattern may factorize against a prefix containing optional bindings.
 	 */
 	static long assuredMask(SlotPlan plan) {
+		if (plan instanceof NativeAliasJoinPlan alias) {
+			return assuredMask(alias.original);
+		}
+		if (plan instanceof NativeAliasJoinMemoPlan memo) {
+			return assuredMask(memo.original);
+		}
 		if (plan instanceof NativeGraphPlan graph) {
 			return graph.assuredMask();
+		}
+		if (plan instanceof NativeKeyedSubqueryJoinPlan keyed) {
+			return keyed.assuredMask();
 		}
 		if (plan instanceof LmdbNativePackedMorsels.Leaf leaf)
 			return assuredMask(leaf.template);
@@ -190,6 +267,21 @@ interface SlotPlan {
 	 * its ownership and expression-repeatability rules are reviewed.
 	 */
 	static boolean encounterOrderReplaySafe(SlotPlan plan) {
+		if (plan instanceof NativeAliasJoinPlan alias) {
+			return encounterOrderReplaySafe(alias.original);
+		}
+		if (plan instanceof NativeAliasJoinMemoPlan memo) {
+			return encounterOrderReplaySafe(memo.original);
+		}
+		if (plan instanceof NativeSubqueryPlan subquery) {
+			return subquery.workerBindable();
+		}
+		if (plan instanceof NativeKeyedSubqueryJoinPlan keyed) {
+			return keyed.subPlan.workerBindable() && encounterOrderReplaySafe(keyed.probe);
+		}
+		if (plan instanceof NativeGraphPlan graph) {
+			return graph.workerBindable();
+		}
 		if (plan instanceof LmdbNativePackedMorsels.Leaf leaf)
 			return encounterOrderReplaySafe(leaf.template);
 		if (plan instanceof EmptyPlan || plan instanceof SingletonPlan || plan instanceof PatternPlan
@@ -197,7 +289,9 @@ interface SlotPlan {
 			return true;
 		}
 		if (plan instanceof FilterPlan filter) {
-			return filter.filterMask >= 0L && encounterOrderReplaySafe(filter.arg);
+			return (filter.filterMask >= 0L
+					|| filter.filter.capabilities().atPlacement(filter.filterMask).replaySafe())
+					&& encounterOrderReplaySafe(filter.arg);
 		}
 		if (plan instanceof EntryBindingCompatibilityPlan entry) {
 			return encounterOrderReplaySafe(entry.arg);
@@ -223,14 +317,15 @@ interface SlotPlan {
 				}
 			}
 			for (MaskedFilter filter : multiJoin.filters) {
-				if (filter.mask < 0L) {
+				if (filter.mask < 0L && !filter.filter.capabilities().atPlacement(filter.mask).replaySafe()) {
 					return false;
 				}
 			}
 			return true;
 		}
 		if (plan instanceof LeftJoinPlan leftJoin) {
-			if (leftJoin.lexicalSharedSlots != null || leftJoin.lexicalProblemSlots != null) {
+			if ((leftJoin.lexicalSharedSlots != null || leftJoin.lexicalProblemSlots != null)
+					&& !NativeWorkerPlanBinder.canBind(plan)) {
 				return false;
 			}
 			return encounterOrderReplaySafe(leftJoin.left) && encounterOrderReplaySafe(leftJoin.right);
@@ -243,6 +338,15 @@ interface SlotPlan {
 		}
 		if (plan instanceof MinusPlan minus) {
 			return encounterOrderReplaySafe(minus.left) && encounterOrderReplaySafe(minus.right);
+		}
+		if (plan instanceof LateralPlan lateral) {
+			return encounterOrderReplaySafe(lateral.left) && encounterOrderReplaySafe(lateral.right);
+		}
+		if (plan instanceof RowDistinctPlan distinct) {
+			return encounterOrderReplaySafe(distinct.arg);
+		}
+		if (plan instanceof DrainGuardPlan guard) {
+			return encounterOrderReplaySafe(guard.delegate) && encounterOrderReplaySafe(guard.drained);
 		}
 		return false;
 	}
@@ -259,6 +363,130 @@ interface SlotPlan {
 		return plan instanceof PatternPlan || plan instanceof MultiJoinPlan
 				|| (plan instanceof ValuesPlan && ((ValuesPlan) plan).bindsAllSlotsEveryRow)
 				|| plan instanceof MultiValuePatternPlan;
+	}
+
+	/** Whether introducing these sibling slots can change a carried predicate's lexical input. */
+	static boolean changesFilterFrame(SlotPlan plan, long siblingSlots) {
+		return changesFilterFrame(plan, siblingSlots, false);
+	}
+
+	private static boolean changesFilterFrame(SlotPlan plan, long siblingSlots, boolean completeReadsOnly) {
+		if (plan instanceof FilterPlan filter) {
+			return changesFilterFrame(filter.filter, filter.filterMask, assuredMask(filter.arg), siblingSlots,
+					completeReadsOnly) || changesFilterFrame(filter.arg, siblingSlots, completeReadsOnly);
+		}
+		if (plan instanceof MultiJoinPlan join) {
+			for (MaskedFilter filter : join.filters) {
+				long assuredAtFilter;
+				if (filter.plannedDepth < 0) {
+					// An unplanned filter runs when its explicit inputs are available, but witness-local slots
+					// outside that mask need not have been bound when the filter first ran.
+					assuredAtFilter = assuredMask(join) & filter.mask;
+				} else {
+					assuredAtFilter = 0L;
+					for (int i = 0; i <= filter.plannedDepth && i < join.children.length; i++) {
+						assuredAtFilter |= assuredMask(join.children[i]);
+					}
+				}
+				if (changesFilterFrame(filter.filter, filter.mask, assuredAtFilter, siblingSlots,
+						completeReadsOnly)) {
+					return true;
+				}
+			}
+			for (SlotPlan child : join.children) {
+				if (changesFilterFrame(child, siblingSlots, completeReadsOnly)) {
+					return true;
+				}
+			}
+		}
+		if (plan instanceof UnionPlan union) {
+			return changesFilterFrame(union.left, siblingSlots, completeReadsOnly)
+					|| changesFilterFrame(union.right, siblingSlots, completeReadsOnly);
+		}
+		return false;
+	}
+
+	private static boolean changesFilterFrame(NativeBooleanFilter filter, long placementMask, long assuredBefore,
+			long siblingSlots) {
+		return changesFilterFrame(filter, placementMask, assuredBefore, siblingSlots, false);
+	}
+
+	private static boolean changesFilterFrame(NativeBooleanFilter filter, long placementMask, long assuredBefore,
+			long siblingSlots, boolean completeReadsOnly) {
+		if (placementMask < 0L) {
+			return true;
+		}
+		if (siblingSlots == 0L) {
+			return false;
+		}
+		NativePredicateCapabilities capabilities = filter.capabilities();
+		if (completeReadsOnly && !capabilities.requiresCompleteReads()) {
+			return false;
+		}
+		long reads = capabilities.correlationReads();
+		if (reads >= 0L) {
+			// Even a name mentioned in the placement mask may have been unbound on the original input. A later
+			// sibling can then change the witness by binding it, unless that input assured the value already.
+			return (reads & ~assuredBefore & siblingSlots) != 0L;
+		}
+		// Legacy predicates retain their established placement-mask contract. Witnesses and semantic callbacks
+		// explicitly require a separate complete read proof, including through worker and composition wrappers.
+		return capabilities.requiresCompleteReads() || (placementMask & ~assuredBefore & siblingSlots) != 0L;
+	}
+
+	/**
+	 * Whether skipping this physical relation can suppress a query-fatal effect. Keep this separate from replay safety:
+	 * a repeatable evaluator may still fail every time it opens. Unknown plans and expression-bearing native boundaries
+	 * remain non-discardable unless their owning semantic descriptor proves otherwise.
+	 */
+	static boolean discardable(SlotPlan plan) {
+		if (plan instanceof EmptyPlan || plan instanceof SingletonPlan || plan instanceof PatternPlan
+				|| plan instanceof MultiValuePatternPlan || plan instanceof ValuesPlan || plan instanceof PathPlan) {
+			return true;
+		}
+		if (plan instanceof GenericEvalPlan generic) {
+			NativeTupleFacts facts = generic.descriptor.facts();
+			return facts != null && facts.discardable();
+		}
+		if (plan instanceof NativeAliasJoinPlan alias) {
+			return discardable(alias.original);
+		}
+		if (plan instanceof NativeAliasJoinMemoPlan memo) {
+			return discardable(memo.original);
+		}
+		if (plan instanceof JoinPlan join) {
+			return discardable(join.left) && discardable(join.right);
+		}
+		if (plan instanceof MultiJoinPlan join) {
+			if (join.filters.length != 0) {
+				return false;
+			}
+			for (SlotPlan child : join.children) {
+				if (!discardable(child)) {
+					return false;
+				}
+			}
+			return true;
+		}
+		if (plan instanceof UnionPlan union) {
+			return discardable(union.left) && discardable(union.right);
+		}
+		if (plan instanceof OrderedUnionPlan union) {
+			return discardable(union.left) && discardable(union.right);
+		}
+		if (plan instanceof LeftJoinPlan join) {
+			return discardable(join.left) && discardable(join.right);
+		}
+		if (plan instanceof MinusPlan minus) {
+			return discardable(minus.left) && discardable(minus.right);
+		}
+		if (plan instanceof RowDistinctPlan distinct) {
+			return discardable(distinct.arg);
+		}
+		if (plan instanceof EntryBindingCompatibilityPlan entry) {
+			return discardable(entry.arg);
+		}
+		return false;
 	}
 
 	static void collectFlattenable(SlotPlan plan, ArrayList<SlotPlan> children, ArrayList<MaskedFilter> filters) {
@@ -328,8 +556,18 @@ interface SlotPlan {
 		if (arg == EmptyPlan.INSTANCE) {
 			return arg;
 		}
-		if (filterMask >= 0L && arg instanceof MultiJoinPlan) {
+		if (filterMask >= 0L && arg instanceof MultiJoinPlan
+				&& !changesFilterFrame(filter, filterMask, filterMask & assuredMask(arg), arg.producedMask())) {
 			return ((MultiJoinPlan) arg).withFilter(filter, filterMask);
+		}
+		// A complete placement mask already retains the condition's lexical input frame. Restricting an assured
+		// left prefix is then equivalent to restricting every compatible joined row. Do not cross OPTIONAL/MINUS,
+		// reorder the children, clone the predicate, or skip a sibling lacking both replay and discard proofs.
+		if (filterMask >= 0L && filter.capabilities().replaySafe() && arg instanceof JoinPlan join
+				&& (filterMask & ~assuredMask(join.left)) == 0L
+				&& !changesFilterFrame(filter, filterMask, assuredMask(join.left), join.right.producedMask())
+				&& encounterOrderReplaySafe(join.right) && discardable(join.right)) {
+			return new JoinPlan(filter(join.left, filter, filterMask, termKindFilter), join.right);
 		}
 		return new FilterPlan(arg, filter, filterMask, termKindFilter);
 	}
@@ -366,6 +604,11 @@ interface SlotPlan {
 @Experimental
 interface RowCursor extends AutoCloseable {
 	boolean next() throws IOException;
+
+	/** Facts belong to this actual producer, not to a logical plan that another strategy may lower differently. */
+	default NativeExpressionDomainPolicy.Input expressionInput() {
+		return null;
+	}
 
 	@Override
 	void close();

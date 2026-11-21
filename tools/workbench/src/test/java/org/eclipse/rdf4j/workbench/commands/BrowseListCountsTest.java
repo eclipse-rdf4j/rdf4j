@@ -23,6 +23,7 @@ import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicReference;
 
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.ValueFactory;
@@ -116,6 +117,9 @@ class BrowseListCountsTest {
 		CountDownLatch started = new CountDownLatch(1);
 		CountDownLatch release = new CountDownLatch(1);
 		AtomicInteger runs = new AtomicInteger();
+		CountDownLatch allowReload = new CountDownLatch(1);
+		CountDownLatch reloadReady = new CountDownLatch(1);
+		AtomicReference<Thread> reloadThread = new AtomicReference<>();
 		Callable<Long> count = () -> {
 			runs.incrementAndGet();
 			started.countDown();
@@ -125,10 +129,22 @@ class BrowseListCountsTest {
 		try {
 			Future<Optional<Long>> first = requests.submit(() -> browseList.sharedWithinBudget("types", count, 5000));
 			assertThat(started.await(5, TimeUnit.SECONDS)).isTrue();
-			Future<Optional<Long>> reload = requests.submit(() -> browseList.sharedWithinBudget("types", count, 5000));
+			Future<Optional<Long>> reload = requests.submit(() -> {
+				reloadThread.set(Thread.currentThread());
+				reloadReady.countDown();
+				allowReload.await();
+				return browseList.sharedWithinBudget("types", count, 5000);
+			});
 			Future<Optional<Long>> other = requests.submit(() -> browseList.sharedWithinBudget("graphs", () -> 7L,
 					5000));
 			assertThat(other.get(5, TimeUnit.SECONDS)).as("another count runs on its own").contains(7L);
+			assertThat(reloadReady.await(5, TimeUnit.SECONDS)).isTrue();
+			allowReload.countDown();
+			// Completing the unrelated request does not establish that the reload joined the first count.
+			assertThat(awaitSharedCountWait(reloadThread.get(), 5, TimeUnit.SECONDS))
+					.as("the reload joined the still-running count before it is released")
+					.isTrue();
+			assertThat(runs).hasValue(1);
 			release.countDown();
 
 			assertThat(first.get(5, TimeUnit.SECONDS)).contains(42L);
@@ -138,10 +154,30 @@ class BrowseListCountsTest {
 					.contains(42L);
 			assertThat(runs).hasValue(2);
 		} finally {
+			allowReload.countDown();
 			release.countDown();
 			requests.shutdownNow();
 			browseList.shutdown();
 		}
+	}
+
+	private static boolean awaitSharedCountWait(Thread thread, long timeout, TimeUnit unit)
+			throws InterruptedException {
+		long deadline = System.nanoTime() + unit.toNanos(timeout);
+		while (System.nanoTime() < deadline) {
+			boolean inSharedCount = false;
+			for (StackTraceElement frame : thread.getStackTrace()) {
+				inSharedCount |= frame.getClassName().equals(BrowseList.class.getName())
+						&& frame.getMethodName().equals("sharedWithinBudget");
+			}
+			// The pre-call gate is an untimed await. Inside this application method, the only
+			// timed wait is for the shared result, after waiter registration has completed.
+			if (inSharedCount && thread.getState() == Thread.State.TIMED_WAITING) {
+				return true;
+			}
+			TimeUnit.MILLISECONDS.sleep(1);
+		}
+		return false;
 	}
 
 	@Test

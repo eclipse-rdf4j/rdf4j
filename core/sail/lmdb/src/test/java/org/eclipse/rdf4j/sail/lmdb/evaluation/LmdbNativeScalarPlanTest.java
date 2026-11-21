@@ -17,17 +17,22 @@ import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
 import java.io.File;
+import java.util.List;
 import java.util.Map;
 
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.base.CoreDatatype;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
+import org.eclipse.rdf4j.model.vocabulary.FN;
 import org.eclipse.rdf4j.query.algebra.And;
 import org.eclipse.rdf4j.query.algebra.BNodeGenerator;
+import org.eclipse.rdf4j.query.algebra.Bound;
+import org.eclipse.rdf4j.query.algebra.Coalesce;
 import org.eclipse.rdf4j.query.algebra.Extension;
 import org.eclipse.rdf4j.query.algebra.ExtensionElem;
 import org.eclipse.rdf4j.query.algebra.FunctionCall;
 import org.eclipse.rdf4j.query.algebra.IRIFunction;
+import org.eclipse.rdf4j.query.algebra.If;
 import org.eclipse.rdf4j.query.algebra.IsLiteral;
 import org.eclipse.rdf4j.query.algebra.MathExpr;
 import org.eclipse.rdf4j.query.algebra.Not;
@@ -54,6 +59,94 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
 class LmdbNativeScalarPlanTest {
+
+	@Test
+	void nestedScalarConversionsBindCompositionalWorkerRecipes() {
+		var vf = SimpleValueFactory.getInstance();
+		NativeLmdbQuerySource source = mock(NativeLmdbQuerySource.class);
+		LmdbNativeValueCodec codec = mock(LmdbNativeValueCodec.class);
+		when(codec.decode(42L, ValuePosition.NONE)).thenReturn(stringValue("a😀x尾z"));
+		when(codec.decode(NativeLmdbQuerySource.UNKNOWN_ID, ValuePosition.NONE))
+				.thenReturn(LmdbNativeValueCodec.DecodedValue.ERROR);
+		NativeScalarPlan.WorkerContext worker = new NativeScalarPlan.WorkerContext(source, codec, null);
+		FunctionCall before = new FunctionCall(FN.SUBSTRING_BEFORE.stringValue(), new Str(Var.of("value")),
+				new ValueConstant(vf.createLiteral("x")));
+		FunctionCall after = new FunctionCall(FN.SUBSTRING_AFTER.stringValue(), new Str(Var.of("value")),
+				new ValueConstant(vf.createLiteral("x")));
+		Coalesce coalesce = new Coalesce();
+		coalesce.addArgument(Var.of("missing"));
+		coalesce.addArgument(after.clone());
+		for (ValueExpr child : List.of(before, after,
+				new If(new Bound(Var.of("value")), after.clone(), new ValueConstant(vf.createLiteral("fallback"))),
+				coalesce)) {
+			NativeScalarPlan plan = NativeScalarPlan.create(new FunctionCall(FN.STRING_LENGTH.stringValue(), child),
+					name -> name.equals("value") ? 0 : 1, NativeScalarPlan.ResultKind.NUMERIC, false, 0L, false,
+					false);
+			assertThat(plan.workerBindable()).isTrue();
+			LmdbNativeCompiledNumeric compiled = plan.bindNumeric(worker);
+			assertThat(compiled).as("STRLEN must recursively compile %s", child).isNotNull();
+			assertThat(compiled.evaluator.eval(reader(42L, NativeLmdbQuerySource.UNKNOWN_ID)).decimal)
+					.isEqualByComparingTo("2");
+		}
+		for (String function : List.of(FN.STARTS_WITH.stringValue(), FN.ENDS_WITH.stringValue())) {
+			ValueExpr predicate = new FunctionCall(function, new Str(Var.of("value")),
+					new ValueConstant(vf.createLiteral(function.equals(FN.STARTS_WITH.stringValue()) ? "a" : "z")));
+			NativeScalarPlan plan = NativeScalarPlan.create(
+					new FunctionCall(CoreDatatype.XSD.INTEGER.getIri().stringValue(), predicate), name -> 0,
+					NativeScalarPlan.ResultKind.VALUE, false, 0L, false, false);
+			LmdbNativeCompiledValue compiled = plan.bindValue(worker);
+			assertThat(compiled).as("casts must recursively compile Boolean producers").isNotNull();
+			assertThat(LmdbNativeValueCodec.toValue(compiled.evaluator.eval(reader(42L))))
+					.isEqualTo(vf.createLiteral("1", CoreDatatype.XSD.INTEGER));
+		}
+	}
+
+	@Test
+	void nestedScalarConversionsPreserveTypesErrorsAndShortCircuiting() {
+		var vf = SimpleValueFactory.getInstance();
+		NativeLmdbQuerySource source = mock(NativeLmdbQuerySource.class);
+		LmdbNativeValueCodec codec = mock(LmdbNativeValueCodec.class);
+		when(codec.decode(42L, ValuePosition.NONE)).thenReturn(stringValue("a😀x尾z"));
+		when(codec.decode(NativeLmdbQuerySource.UNKNOWN_ID, ValuePosition.NONE))
+				.thenThrow(new AssertionError("an unselected branch must not evaluate its input"));
+		NativeScalarPlan.WorkerContext worker = new NativeScalarPlan.WorkerContext(source, codec, null);
+		Coalesce coalesce = new Coalesce();
+		coalesce.addArgument(new ValueConstant(vf.createLiteral("😀")));
+		coalesce.addArgument(Var.of("missing"));
+		for (ValueExpr child : List.of(coalesce,
+				new If(new Bound(Var.of("value")), new ValueConstant(vf.createLiteral("😀")), Var.of("missing")))) {
+			NativeScalarPlan plan = NativeScalarPlan.create(new FunctionCall(FN.STRING_LENGTH.stringValue(), child),
+					name -> name.equals("value") ? 0 : 1, NativeScalarPlan.ResultKind.NUMERIC, false, 0L, false,
+					false);
+			assertThat(plan.bindNumeric(worker).evaluator.eval(reader(42L, NativeLmdbQuerySource.UNKNOWN_ID)).decimal)
+					.isEqualByComparingTo("1");
+		}
+		FunctionCall languageBefore = new FunctionCall(FN.SUBSTRING_BEFORE.stringValue(),
+				new ValueConstant(vf.createLiteral("a😀x尾z", "en")), new ValueConstant(vf.createLiteral("x")));
+		NativeScalarPlan languagePlan = NativeScalarPlan.value(languageBefore, name -> -1, false, 0L, false, false);
+		assertThat(LmdbNativeValueCodec.toValue(languagePlan.bindValue(worker).evaluator.eval(reader())))
+				.isEqualTo(vf.createLiteral("a😀", "en"));
+		NativeScalarPlan nonString = NativeScalarPlan.create(new FunctionCall(FN.STRING_LENGTH.stringValue(),
+				new ValueConstant(vf.createLiteral(123))), name -> -1, NativeScalarPlan.ResultKind.NUMERIC,
+				false, 0L, false, false);
+		assertThat(nonString.bindNumeric(worker)).isNull();
+		ValueExpr incompatible = new FunctionCall(FN.SUBSTRING_BEFORE.stringValue(),
+				new ValueConstant(vf.createLiteral("abc", "fr")), new ValueConstant(vf.createLiteral("a", "en")));
+		NativeScalarPlan invalid = NativeScalarPlan.create(
+				new FunctionCall(FN.STRING_LENGTH.stringValue(), incompatible),
+				name -> -1, NativeScalarPlan.ResultKind.NUMERIC, false, 0L, false, false);
+		LmdbNativeCompiledNumeric compiledInvalid = invalid.bindNumeric(worker);
+		assertThat(compiledInvalid).isNotNull();
+		assertThat(compiledInvalid.evaluator.eval(reader()).error).isTrue();
+		NativeScalarPlan unknown = NativeScalarPlan.value(
+				new FunctionCall(FN.STRING_LENGTH.stringValue(), new FunctionCall("urn:rdf4j:test:opaque")),
+				name -> -1, false, 0L, false, false);
+		assertThat(unknown.bindValue(worker)).isNull();
+		NativeScalarPlan volatileFilter = NativeScalarPlan.value(
+				new FunctionCall(FN.STRING_LENGTH.stringValue(), new FunctionCall(new Rand().getURI())),
+				name -> -1, false, 0L, false, false);
+		assertThat(volatileFilter.bindValue(worker)).isNull();
+	}
 
 	@Test
 	void generalTripleOperandsParticipateInNativeScalarPlanning() {

@@ -190,6 +190,10 @@ function createScriptHarness(options = {}) {
         queryCancelPolicy: undefined,
         yasqeHelper: {
             setupCompleters() {
+            },
+            enableToolbarKeyboard() {
+            },
+            showEmptyHint() {
             }
         }
     }, options.workbench || {});
@@ -317,6 +321,7 @@ function createScriptHarness(options = {}) {
             }
         },
         URL,
+        URLSearchParams,
         Viz: undefined,
         YASQE: {
             defaults: {},

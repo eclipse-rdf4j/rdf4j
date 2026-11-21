@@ -256,25 +256,28 @@ final class DictionaryByteEstimate {
 		if (value == null) {
 			return 0L;
 		}
-		if (value instanceof TripleTerm) {
+		if (value.isTripleTerm()) {
 			throw new IllegalArgumentException("A triple term cannot be a subject, predicate or datatype");
 		}
 		if (isStored(value)) {
 			return storedHash(value);
 		}
-		long hash = 0L;
+		long hash;
 		long bytes;
-		if (value instanceof IRI iri) {
-			return stringScalar(iri.stringValue(), IRI_HASH, 1, 32L);
-		} else if (value instanceof BNode bnode) {
-			return stringScalar(bnode.getID(), BNODE_HASH, 2, 16L);
-		} else if (value instanceof Literal literal) {
-			return literal(literal);
-		} else {
+		Value.Type type = value.getType();
+		switch (type) {
+		case IRI:
+			return stringScalar(value.stringValue(), IRI_HASH, 1, 32L);
+		case BNode:
+			return stringScalar(((BNode) value).getID(), BNODE_HASH, 2, 16L);
+		case Literal:
+			return literal((Literal) value);
+		default:
 			// Unknown model implementations are not dictionary-encodable, but still receive a bounded estimate.
 			bytes = UNINSPECTED_VALUE_BYTES;
 			hash = System.identityHashCode(value);
 		}
+
 		record(hash, bytes);
 		return hash;
 	}

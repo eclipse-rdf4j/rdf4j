@@ -27,6 +27,7 @@ import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.QueryResults;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
 import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
+import org.eclipse.rdf4j.repository.sail.SailTupleQuery;
 import org.eclipse.rdf4j.sail.lmdb.LmdbStore;
 import org.eclipse.rdf4j.sail.lmdb.config.DirectAdjacencyMode;
 import org.eclipse.rdf4j.sail.lmdb.config.LmdbStoreConfig;
@@ -61,6 +62,7 @@ class LmdbNativeKernelInterpreterParityTest {
 			"rdf4j.lmdb.packedFtree.enabled",
 			"rdf4j.lmdb.prefixRun.enabled",
 			"rdf4j.lmdb.directAdjacency.scanAggregates.enabled",
+			LmdbNativeIndexedCount.ENABLED_PROPERTY,
 			"rdf4j.lmdb.parallel.enabled",
 			"rdf4j.lmdb.parallel.threads",
 			"rdf4j.lmdb.irAggregateParallel.enabled",
@@ -91,6 +93,9 @@ class LmdbNativeKernelInterpreterParityTest {
 		System.setProperty("rdf4j.lmdb.packedFtree.enabled", "false");
 		System.setProperty("rdf4j.lmdb.prefixRun.enabled", "false");
 		System.setProperty("rdf4j.lmdb.directAdjacency.scanAggregates.enabled", "false");
+		// The exact index count answers single-pattern COUNTs without any kernel; this suite measures the kernel
+		// tiers against each other, so that specialist is switched off like the other rivals above.
+		System.setProperty(LmdbNativeIndexedCount.ENABLED_PROPERTY, "false");
 		System.setProperty("rdf4j.lmdb.parallel.enabled", "false");
 		System.setProperty("rdf4j.lmdb.parallel.threads", "1");
 		System.setProperty("rdf4j.lmdb.irAggregateParallel.enabled", "false");
@@ -412,10 +417,14 @@ class LmdbNativeKernelInterpreterParityTest {
 	 * across arms.
 	 */
 	private List<String> run(String query, boolean janino) {
-		KernelExecutionTestAccess.resetCostCalibration();
 		System.setProperty("rdf4j.lmdb.janinoCodegen.enabled", Boolean.toString(janino));
 		try (SailRepositoryConnection connection = repository.getConnection()) {
-			return canonical(QueryResults.asList(connection.prepareTupleQuery(query).evaluate()));
+			// This suite tests the kernel tiers themselves, not the selector: the measured selector may legitimately
+			// pick a cheaper non-kernel strategy, so the tier under test is forced wherever a kernel applies.
+			SailTupleQuery prepared = (SailTupleQuery) connection.prepareTupleQuery(query);
+			prepared.setForcedLmdbExecutionStrategy(janino ? "irAggregate,irKernel"
+					: "irAggregateInterpreted,irKernelInterpreted");
+			return canonical(QueryResults.asList(prepared.evaluate()));
 		}
 	}
 

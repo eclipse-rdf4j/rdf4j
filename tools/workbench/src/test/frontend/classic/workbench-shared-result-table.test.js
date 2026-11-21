@@ -20,6 +20,7 @@ const vm = require('node:vm');
 const { FakeDocument } = require('./browser-fakes.js');
 const { installDetailDisclosureTemplateRuntime } = require('./workbench-detail-disclosure-runtime.js');
 const { renderPageResultTables, resultTableHosts, settle } = require('./page-result-table-harness.js');
+const { createExploreModel } = require('./explore-section-fixtures.js');
 
 const scripts = require('./workbench-scripts.js').compiledScriptsDir();
 
@@ -176,17 +177,20 @@ test('the Remove preview is the shared result table, with Graph and Default grap
 
 test('a page keeps its result tables across renders and disposes the ones it no longer shows', async () => {
     const workbench = loadWorkbench();
-    const rows = Array.from({ length: 3 }, (_unused, index) => [iri('urn:s'), iri('urn:p' + index), iri('urn:o'), null]);
-    const model = { viewId: 'explore', vars: ['subject', 'predicate', 'object', 'context'], rows, rowCount: rows.length,
-        rowStart: 0, namespaceMap: {}, links: [], metadata: { 'explore-resource': '<urn:s>' } };
+    const rows = Array.from({ length: 3 }, (_unused, index) => [
+        iri('urn:s'), iri('urn:p' + index), iri('urn:o'), null
+    ]);
+    const model = createExploreModel({
+        metadata: { resource: '<urn:s>', 'explore-resource': '<urn:s>' },
+        sections: { outgoing: { rows, totalRows: rows.length, count: String(rows.length) } }
+    });
     const page = await renderPageResultTables(workbench, model, context);
     const outgoing = page.host('explore-outgoing');
-    assert.ok(outgoing, 'rows about the resource are grouped');
+    assert.ok(outgoing, 'the Outgoing section owns its statement table');
     const table = outgoing.querySelector('table.data');
-    workbench.views.render(page.mount, model, context, page.runtime);
-    await settle();
-    const again = resultTableHosts(workbench.views.outletOf(page.mount).template);
-    assert.equal(again[0], outgoing, 'rendering the page again keeps the table host');
+    await page.rerenderExplore();
+    const again = page.host('explore-outgoing');
+    assert.equal(again, outgoing, 'a section refresh keeps its result-table host');
     assert.equal(outgoing.querySelector('table.data'), table, 'and the table in it');
 
     // Explore's Display pane switches the datatype tags of every table of the page.

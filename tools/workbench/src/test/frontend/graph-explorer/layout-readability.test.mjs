@@ -46,24 +46,6 @@ for (const y of [110, 300, 1000]) test(`routing avoids a card at y=${y}, includi
   assert.deepEqual(bends, optimizeEdgeBends(nodes, edges, 1));
 });
 
-test('refine leaves an already-clear manually arranged map exactly where it is', async () => {
-  const graph = {revision: 1, nodes: [node('a', -250, 0), node('b', 250, 0), node('c', 250, 300)], edges: [edge('a', 'b'), edge('b', 'c')]};
-  const result = await computeGraphLayout(graph, {refine: true});
-  assert.deepEqual(result.positions, new Map(graph.nodes.map(n => [n.id, {x: n.x, y: n.y}])));
-});
-
-test('refine repairs a blocked neighborhood without moving pinned context', async () => {
-  const graph = {revision: 1, nodes: [node('a', -400, 0), node('z', 400, 0), node('obstacle', 0, 0), node('leaf', 0, 280)],
-    edges: [edge('a', 'z'), edge('obstacle', 'leaf')]};
-  graph.nodes[0].pinned = graph.nodes[1].pinned = true;
-  const result = await computeGraphLayout(graph, {refine: true});
-  const placed = graph.nodes.map(n => ({...n, ...result.positions.get(n.id)}));
-  assert.equal(layoutMetrics(graph, result.positions).edgeNodeOverlaps, 0, 'repair clears the center-line obstruction before routing');
-  assert.equal(sampledObstructions(placed, graph.edges, result.bends), 0);
-  for (const n of graph.nodes.filter(n => n.pinned)) assert.deepEqual(result.positions.get(n.id), {x: n.x, y: n.y});
-  for (const n of graph.nodes) assert.ok(Math.hypot(result.positions.get(n.id).x - n.x, result.positions.get(n.id).y - n.y) <= 300);
-});
-
 test('readability cleanup preserves neighborhood bounds, roomier clearance and graph identity', () => {
   const graph = {revision: 1, nodes: Array.from({length: 32}, (_, i) => node(String(i), i % 8 * 260, Math.floor(i / 8) * 150)),
     edges: Array.from({length: 40}, (_, i) => edge(String(i % 32), String((i * 7 + 13) % 32), `e${i}`))};

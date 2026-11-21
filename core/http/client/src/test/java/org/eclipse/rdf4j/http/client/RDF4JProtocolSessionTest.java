@@ -17,6 +17,7 @@ import static org.mockserver.model.HttpRequest.request;
 import static org.mockserver.model.HttpResponse.response;
 
 import java.io.ByteArrayInputStream;
+import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.util.HashMap;
 import java.util.List;
@@ -27,6 +28,8 @@ import org.eclipse.rdf4j.common.transaction.IsolationLevels;
 import org.eclipse.rdf4j.http.client.spi.RDF4JHttpClient;
 import org.eclipse.rdf4j.http.client.spi.RDF4JHttpClients;
 import org.eclipse.rdf4j.http.protocol.Protocol;
+import org.eclipse.rdf4j.http.protocol.UnauthorizedException;
+import org.eclipse.rdf4j.query.QueryInterruptedException;
 import org.eclipse.rdf4j.query.QueryLanguage;
 import org.eclipse.rdf4j.query.explanation.Explanation;
 import org.eclipse.rdf4j.query.resultio.TupleQueryResultFormat;
@@ -315,6 +318,23 @@ public class RDF4JProtocolSessionTest extends SPARQLProtocolSessionTest {
 						.withPath("/rdf4j-server/repositories/test/size")
 						.withHeader(testHeader, testValue)
 		);
+	}
+
+	@ParameterizedTest(name = "[{0}]")
+	@MethodSource("httpClientFactories")
+	public void testSizeIncludesBNodeOriginHeaderWhenEnabled(String factoryName, MockServerClient client)
+			throws Exception {
+		this.factoryName = factoryName;
+		this.sparqlSession = createProtocolSession();
+		client.when(request().withMethod("GET").withPath("/rdf4j-server/repositories/test/size"), Times.once())
+				.respond(response().withBody("8"));
+
+		getRDF4JSession().setBNodeOriginEnabled(true);
+
+		assertThat(getRDF4JSession().size()).isEqualTo(8);
+		client.verify(request().withMethod("GET")
+				.withPath("/rdf4j-server/repositories/test/size")
+				.withHeader(BNodeOriginTransport.HEADER, BNodeOriginTransport.VERSION));
 	}
 
 	@ParameterizedTest(name = "[{0}]")
@@ -695,6 +715,29 @@ public class RDF4JProtocolSessionTest extends SPARQLProtocolSessionTest {
 						.withQueryStringParameter("cancel-query", "true")
 						.withQueryStringParameter("query-request-id", "query-456")
 						.withHeader(testHeader, testValue));
+	}
+
+	@ParameterizedTest(name = "[{0}]")
+	@MethodSource("httpClientFactories")
+	public void cancelQueryExposesNotFoundWithoutMaskingOtherRemoteErrors(String factoryName, MockServerClient client)
+			throws Exception {
+		this.factoryName = factoryName;
+		this.sparqlSession = createProtocolSession();
+		for (int status : List.of(404, 401, 503)) {
+			client.when(request()
+					.withMethod("POST")
+					.withPath("/rdf4j-server/repositories/test")
+					.withQueryStringParameter("cancel-query", "true")
+					.withQueryStringParameter("query-request-id", "status-" + status), Times.once())
+					.respond(response().withStatusCode(status).withHeader("WWW-Authenticate", "Basic realm=\"rdf4j\""));
+		}
+		assertThatThrownBy(() -> getRDF4JSession().cancelQuery("status-404"))
+				.isInstanceOf(RDF4JProtocolSession.QueryCancellationNotFoundException.class)
+				.isInstanceOf(RepositoryException.class);
+		assertThatThrownBy(() -> getRDF4JSession().cancelQuery("status-401"))
+				.isInstanceOfAny(UnauthorizedException.class, IOException.class);
+		assertThatThrownBy(() -> getRDF4JSession().cancelQuery("status-503"))
+				.isInstanceOf(QueryInterruptedException.class);
 	}
 
 	@ParameterizedTest(name = "[{0}]")

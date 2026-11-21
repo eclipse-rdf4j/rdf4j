@@ -115,7 +115,9 @@ class LmdbBoundedStartupTest {
 					LmdbSailStore owner = new LmdbSailStore(data, properties, settings, false, factory,
 							TripleStore::new);
 					if (!overlay) {
-						owner.directAdjacencyStore().afterBuildScanForTest = holdScan;
+						// the paused applier keeps the requested build pending; the initializer must not wait for it
+						owner.directAdjacencyStore().pauseApplierForTest(true);
+						scanStarted.countDown();
 					}
 					return owner;
 				}
@@ -140,6 +142,11 @@ class LmdbBoundedStartupTest {
 		} finally {
 			releaseScan.countDown();
 			if (repository != null) {
+				LmdbDirectAdjacencyStore adjacency = ((LmdbStore) repository.getSail()).getBackingStore()
+						.directAdjacencyStore();
+				if (adjacency != null) {
+					adjacency.pauseApplierForTest(false);
+				}
 				repository.shutDown();
 			}
 			if (previousBudget == null) {

@@ -51,8 +51,8 @@ public final class LmdbNativeEvaluationStrategyFactory extends StrictEvaluationS
 	private QueryOptimizerPipeline automaticPipeline(StrictEvaluationStrategy strategy, TripleSource tripleSource,
 			EvaluationStatistics evaluationStatistics) {
 		if (evaluationStatistics.supportsJoinEstimation()) {
-			return new LmdbQueryOptimizerPipeline(strategy, tripleSource, evaluationStatistics);
+			return new LmdbQueryOptimizerPipeline(strategy, tripleSource, evaluationStatistics, true);
 		}
-		return new LmdbStandardQueryOptimizerPipeline(strategy, tripleSource, evaluationStatistics);
+		return new LmdbStandardQueryOptimizerPipeline(strategy, tripleSource, evaluationStatistics, true);
 	}
 }

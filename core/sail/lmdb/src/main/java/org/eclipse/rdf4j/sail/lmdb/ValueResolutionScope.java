@@ -24,6 +24,7 @@ import org.eclipse.rdf4j.sail.lmdb.model.LmdbValue;
 /** A logical transaction's identifier retention, with independently owned native dictionary readers. */
 final class ValueResolutionScope implements SailClosable {
 
+	/** Restored with set(null), not remove(), so a transaction does not allocate a new thread-local entry. */
 	private static final ThreadLocal<ValueResolutionScope> ACTIVE = new ThreadLocal<>();
 	private final ValueStore store;
 	private final Object lifetime = new Object();
@@ -116,11 +117,7 @@ final class ValueResolutionScope implements SailClosable {
 		long activeGeneration = generation;
 		ACTIVE.set(this);
 		return () -> {
-			if (previous == null) {
-				ACTIVE.remove();
-			} else {
-				ACTIVE.set(previous);
-			}
+			ACTIVE.set(previous);
 			if (releaseTaskReader && previous != this) {
 				ReaderLease lease = readers.get(thread);
 				if (lease != null && lease != foreground && lease.admittedGeneration == activeGeneration

@@ -28,6 +28,7 @@ import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.repository.Repository;
 import org.eclipse.rdf4j.repository.RepositoryConnection;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
+import org.eclipse.rdf4j.sail.SailException;
 import org.eclipse.rdf4j.sail.lmdb.LmdbAdjacencyMetrics.FallbackReason;
 import org.eclipse.rdf4j.sail.lmdb.config.DirectAdjacencyCoverage;
 import org.eclipse.rdf4j.sail.lmdb.config.DirectAdjacencyMode;
@@ -73,9 +74,10 @@ class LmdbDirectAdjacencySnapshotTest {
 		}
 	}
 
-	private void openStore(DirectAdjacencyCoverage coverage, List<IRI> selected) {
+	private static LmdbStoreConfig snapshotConfig(DirectAdjacencyCoverage coverage, List<IRI> selected) {
 		LmdbStoreConfig config = new LmdbStoreConfig("spoc,posc")
 				.setDirectAdjacencyEnabled(true)
+				.setDirectAdjacencyBuildOnStart(false)
 				.setDirectAdjacencyMode(DirectAdjacencyMode.PREFER)
 				.setDirectAdjacencyMaxBytes(1L << 30);
 		if (coverage != null) {
@@ -84,6 +86,11 @@ class LmdbDirectAdjacencySnapshotTest {
 		if (selected != null) {
 			config.setDirectAdjacencyPredicates(selected);
 		}
+		return config;
+	}
+
+	private void openStore(DirectAdjacencyCoverage coverage, List<IRI> selected) {
+		LmdbStoreConfig config = snapshotConfig(coverage, selected);
 		LmdbStore sail = new LmdbStore(dataDir, config);
 		repo = new SailRepository(sail);
 		repo.init();
@@ -127,6 +134,58 @@ class LmdbDirectAdjacencySnapshotTest {
 			it.close();
 		}
 		return rows;
+	}
+
+	@Test
+	void explicitFixtureBuildDoesNotRaceDelayedStartupBuild() throws Exception {
+		CountDownLatch startupEntered = new CountDownLatch(1);
+		CountDownLatch releaseStartup = new CountDownLatch(1);
+		LmdbStore sail = new LmdbStore(dataDir, snapshotConfig(null, null)) {
+			@Override
+			LmdbSailStore createBackingStore(File directory, StoreProperties properties, LmdbStoreConfig config,
+					boolean sketches) throws IOException, SailException {
+				return new LmdbSailStore(directory, properties, config, sketches, ValueStore::new,
+						(tripleDirectory, tripleProperties, tripleConfig, valueStore) -> new TripleStore(
+								tripleDirectory,
+								tripleProperties, tripleConfig, valueStore) {
+							@Override
+							void startBackgroundIndexRebuild() {
+								startupEntered.countDown();
+								try {
+									if (!releaseStartup.await(30, TimeUnit.SECONDS)) {
+										throw new IllegalStateException("startup test gate was not released");
+									}
+								} catch (InterruptedException interrupted) {
+									Thread.currentThread().interrupt();
+									throw new IllegalStateException("startup test gate was interrupted", interrupted);
+								}
+								super.startBackgroundIndexRebuild();
+							}
+						});
+			}
+		};
+		repo = new SailRepository(sail);
+		try {
+			repo.init();
+			assertThat(startupEntered.await(30, TimeUnit.SECONDS)).isTrue();
+			try (RepositoryConnection conn = repo.getConnection()) {
+				conn.add(S1, P1, O1);
+				conn.add(S2, P1, O1);
+			}
+			direct = sail.getBackingStore().directAdjacencyStore();
+			assertThat(direct.buildNowForTest()).isTrue();
+			long buildsBefore = direct.snapshotMetrics().buildsCompleted;
+
+			releaseStartup.countDown();
+			assertThat(sail.awaitDirectAdjacencyReady(30, TimeUnit.SECONDS)).isTrue();
+			// This explicit build is also a maintenance-executor barrier behind any scheduled startup build.
+			assertThat(direct.buildNowForTest()).isTrue();
+			assertThat(direct.snapshotMetrics().buildsCompleted)
+					.as("only the explicit barrier build should follow the fixture build")
+					.isEqualTo(buildsBefore + 1);
+		} finally {
+			releaseStartup.countDown();
+		}
 	}
 
 	@Test
@@ -199,30 +258,11 @@ class LmdbDirectAdjacencySnapshotTest {
 	@Test
 	void pendingWindowFallsBackForTouchedRowsOnly() throws IOException {
 		openStoreWithSynchronousMaintenance(false);
+		// the paused applier leaves the sealed commit in the log: the pending window every reader below observes
 		direct.pauseApplierForTest(true);
-		CountDownLatch pendingPublished = new CountDownLatch(1);
-		CountDownLatch releaseQueueAdmission = new CountDownLatch(1);
-		Runnable previousQueueAdmissionHook = direct.beforeApplyQueueAdmissionForTest;
-		direct.beforeApplyQueueAdmissionForTest = () -> {
-			pendingPublished.countDown();
-			try {
-				releaseQueueAdmission.await();
-			} catch (InterruptedException e) {
-				Thread.currentThread().interrupt();
-				throw new AssertionError(e);
-			}
-		};
 		try {
 			try (RepositoryConnection conn = repo.getConnection()) {
 				conn.add(S1, P1, O3);
-			}
-			try {
-				assertThat(pendingPublished.await(30, TimeUnit.SECONDS))
-						.as("pending row publication should precede snapshot acquisition")
-						.isTrue();
-			} catch (InterruptedException e) {
-				Thread.currentThread().interrupt();
-				throw new AssertionError(e);
 			}
 			NativeLmdbQuerySource dataset = dataset();
 			try {
@@ -242,10 +282,7 @@ class LmdbDirectAdjacencySnapshotTest {
 				((org.eclipse.rdf4j.sail.base.SailDataset) dataset).close();
 			}
 		} finally {
-			releaseQueueAdmission.countDown();
-			direct.beforeApplyQueueAdmissionForTest = previousQueueAdmissionHook;
 			direct.pauseApplierForTest(false);
-			// Preparation may still be awaiting queue admission after the commit returns.
 			direct.awaitCommitCleanupForTest();
 		}
 		NativeLmdbQuerySource dataset = dataset();

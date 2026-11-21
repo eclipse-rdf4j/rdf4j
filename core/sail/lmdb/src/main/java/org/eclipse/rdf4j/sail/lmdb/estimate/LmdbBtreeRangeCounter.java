@@ -19,7 +19,14 @@ import java.util.Arrays;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.CancellationException;
+import java.util.function.BooleanSupplier;
 
+import org.eclipse.rdf4j.sail.lmdb.Varint;
+import org.eclipse.rdf4j.sail.lmdb.estimate.LmdbPageCardinalityEstimator.ExactCount;
+import org.eclipse.rdf4j.sail.lmdb.estimate.LmdbPageCardinalityEstimator.ExactPrefixCursor;
+import org.eclipse.rdf4j.sail.lmdb.estimate.LmdbPageCardinalityEstimator.ExactWork;
+import org.eclipse.rdf4j.sail.lmdb.estimate.LmdbPageCardinalityEstimator.PrefixRun;
 import org.eclipse.rdf4j.sail.lmdb.util.GroupMatcher;
 
 /**
@@ -129,6 +136,331 @@ final class LmdbBtreeRangeCounter {
 		this.meta = meta;
 		this.sharedCache = sharedCache;
 		this.databaseIdentity = databaseIdentity;
+	}
+
+	ExactCount countEntriesExact(LmdbDb db, byte[] lowerKey, int lowerLength, boolean lowerInclusive,
+			byte[] upperKey, int upperLength, boolean upperInclusive, BooleanSupplier cancelled) throws IOException {
+		checkCancelled(cancelled);
+		validateExactBounds(lowerKey, lowerLength, upperKey, upperLength);
+		RangeCountResult work = new RangeCountResult();
+		if (db == null || db.isEmpty()) {
+			return new ExactCount(0L, exactWork(work, 0L));
+		}
+		validateDatabase(db);
+		if (db.flags() != 0) {
+			return null;
+		}
+		if (lowerKey == null && upperKey == null) {
+			return new ExactCount(db.entries(), exactWork(work, 0L));
+		}
+		LocalPageCache pages = new LocalPageCache(localCacheCapacity(db.depth()));
+		SeekCursor lower = seekExact(db, lowerKey, lowerLength, !lowerInclusive, false, pages, work, cancelled);
+		SeekCursor upper = seekExact(db, upperKey, upperLength, upperInclusive, true, pages, work, cancelled);
+		RangePlan range = rangePlan(lower, upper);
+		if (range.empty) {
+			return new ExactCount(0L, exactWork(work, 0L));
+		}
+		if (coversWholeDatabase(lower, upper)) {
+			return new ExactCount(db.entries(), exactWork(work, 0L));
+		}
+		long entries;
+		if (range.sameLeaf) {
+			entries = upper.leafIndex - lower.leafIndex;
+		} else {
+			entries = (long) lower.leafPage.numKeys - lower.leafIndex + upper.leafIndex;
+			for (SiblingSpan span : range.spans) {
+				for (int child = span.fromInclusive; child < span.toExclusive; child++) {
+					entries = addExact(entries, countSubtreeExact(branchChildPage(span.parent, child),
+							span.remainingBranchLevels, pages, work, cancelled));
+				}
+			}
+		}
+		return new ExactCount(entries, exactWork(work, 0L));
+	}
+
+	ExactPrefixCursor prefixRunsExact(LmdbDb db, byte[] lowerKey, int lowerLength, boolean lowerInclusive,
+			byte[] upperKey, int upperLength, boolean upperInclusive, int leadingVarintFields,
+			BooleanSupplier cancelled) throws IOException {
+		checkCancelled(cancelled);
+		validateExactBounds(lowerKey, lowerLength, upperKey, upperLength);
+		if (leadingVarintFields < 1 || leadingVarintFields > 4) {
+			throw new IllegalArgumentException("A statement prefix must contain one to four fields");
+		}
+		if (db != null && !db.isEmpty()) {
+			validateDatabase(db);
+			if (db.flags() != 0) {
+				return null;
+			}
+		}
+		return new ExactWalker(db, lowerKey, lowerLength, lowerInclusive, upperKey, upperLength, upperInclusive,
+				leadingVarintFields, cancelled);
+	}
+
+	private long countSubtreeExact(long page, int branchLevels, LocalPageCache pages, RangeCountResult work,
+			BooleanSupplier cancelled) throws IOException {
+		checkCancelled(cancelled);
+		if (branchLevels == 0) {
+			return readLeafEntryCount(page, pages, work);
+		}
+		LmdbPage branch = readPage(page, pages, work);
+		if (!branch.isBranch() || branch.numKeys == 0) {
+			throw new IOException("Invalid branch in exact range on page " + page);
+		}
+		long count = 0L;
+		for (int child = 0; child < branch.numKeys; child++) {
+			count = addExact(count, countSubtreeExact(branchChildPage(branch, child), branchLevels - 1, pages,
+					work, cancelled));
+		}
+		return count;
+	}
+
+	private SeekCursor seekExact(LmdbDb db, byte[] key, int length, boolean strictUpper, boolean unboundedEnd,
+			LocalPageCache pages, RangeCountResult work, BooleanSupplier cancelled) throws IOException {
+		List<BranchFrame> path = new ArrayList<>(Math.max(0, db.depth() - 1));
+		LmdbPage page = readPage(db.rootPgno(), pages, work);
+		while (page.isBranch()) {
+			checkCancelled(cancelled);
+			if (page.numKeys == 0 || path.size() >= db.depth() - 1) {
+				throw new IOException("Invalid exact B-tree depth/branch on page " + page.expectedPgno);
+			}
+			int child;
+			if (key == null) {
+				child = unboundedEnd ? page.numKeys - 1 : 0;
+			} else {
+				SearchResult search = findFirstGreaterOrEqual(page, key, length, false, db.flags());
+				child = search.index >= page.numKeys ? page.numKeys - 1
+						: search.exact ? search.index : search.index - 1;
+			}
+			path.add(new BranchFrame(page, child));
+			page = readPage(branchChildPage(page, child), pages, work);
+		}
+		ensureOuterLeaf(page);
+		if (path.size() != db.depth() - 1) {
+			throw new IOException("Exact leaf depth disagrees with database metadata on page " + page.expectedPgno);
+		}
+		if (key == null) {
+			return new SeekCursor(page, unboundedEnd ? page.numKeys : 0, path);
+		}
+		SearchResult search = findFirstGreaterOrEqual(page, key, length, true, db.flags());
+		return new SeekCursor(page, search.index + (strictUpper && search.exact ? 1 : 0), path);
+	}
+
+	private void validateExactBounds(byte[] lowerKey, int lowerLength, byte[] upperKey, int upperLength)
+			throws IOException {
+		if (lowerKey != null) {
+			validateKey(lowerKey, lowerLength, "lower");
+		} else if (lowerLength != 0) {
+			throw new IllegalArgumentException("An unbounded lower key has zero length");
+		}
+		if (upperKey != null) {
+			validateKey(upperKey, upperLength, "upper");
+		} else if (upperLength != 0) {
+			throw new IllegalArgumentException("An unbounded upper key has zero length");
+		}
+	}
+
+	static void checkCancelled(BooleanSupplier cancelled) {
+		if (cancelled.getAsBoolean()) {
+			throw new CancellationException("Exact LMDB index walk cancelled");
+		}
+	}
+
+	private static long addExact(long left, long right) throws IOException {
+		try {
+			return Math.addExact(left, right);
+		} catch (ArithmeticException overflow) {
+			throw new IOException("Exact LMDB key cardinality exceeds a signed long", overflow);
+		}
+	}
+
+	private static ExactWork exactWork(RangeCountResult work, long prefixes) {
+		return new ExactWork(work.branchPagesRead, work.leafPagesRead, work.headerOnlyReads, prefixes,
+				work.pageCacheHits);
+	}
+
+	/** One ascending branch-stack traversal, retaining only its current path and boundary pages. */
+	private final class ExactWalker implements ExactPrefixCursor {
+		private final BooleanSupplier cancelled;
+		private final int fields;
+		private final int depth;
+		private final LocalPageCache pages;
+		private final RangeCountResult work = new RangeCountResult();
+		private final List<BranchFrame> path = new ArrayList<>();
+		private LmdbPage leaf;
+		private int index;
+		private long finalLeaf;
+		private int finalIndex;
+		private long prefixes;
+		private boolean finished;
+
+		private ExactWalker(LmdbDb db, byte[] lowerKey, int lowerLength, boolean lowerInclusive,
+				byte[] upperKey, int upperLength, boolean upperInclusive, int fields, BooleanSupplier cancelled)
+				throws IOException {
+			this.cancelled = cancelled;
+			this.fields = fields;
+			depth = db == null ? 0 : db.depth();
+			pages = new LocalPageCache(localCacheCapacity(db == null ? 0 : db.depth()));
+			if (db == null || db.isEmpty()) {
+				finished = true;
+				return;
+			}
+			SeekCursor lower = seekExact(db, lowerKey, lowerLength, !lowerInclusive, false, pages, work, cancelled);
+			SeekCursor upper = seekExact(db, upperKey, upperLength, upperInclusive, true, pages, work, cancelled);
+			RangePlan range = rangePlan(lower, upper);
+			finished = range.empty;
+			leaf = lower.leafPage;
+			index = lower.leafIndex;
+			path.addAll(lower.branchPath);
+			finalLeaf = upper.leafPage.expectedPgno;
+			finalIndex = upper.leafIndex;
+		}
+
+		@Override
+		public PrefixRun next() throws IOException {
+			checkCancelled(cancelled);
+			if (!hasSelectedKey()) {
+				return null;
+			}
+			int offset = leaf.nodeOffset(index);
+			int keyLength = leaf.keySizeAt(offset);
+			byte[] representative = new byte[keyLength];
+			int keyOffset = leaf.keyOffsetAt(offset);
+			ByteBuffer key = leaf.buffer.duplicate();
+			key.position(keyOffset);
+			key.get(representative);
+			int prefixLength = prefixLength(leaf, index);
+			byte[] prefix = Arrays.copyOf(representative, prefixLength);
+			long count = 0L;
+			while (hasSelectedKey()) {
+				if (!samePrefix(index, prefix)) {
+					break;
+				}
+				int end = selectedEnd();
+				if (samePrefix(end - 1, prefix)) {
+					count = addExact(count, end - index);
+					index = end;
+					continue;
+				}
+				int runEnd = runEnd(prefix, end);
+				count = addExact(count, runEnd - index);
+				index = runEnd;
+				break;
+			}
+			return new PrefixRun(representative, count);
+		}
+
+		/** Immediate different successors cost one comparison; longer mixed-leaf runs use a galloping bound. */
+		private int runEnd(byte[] prefix, int end) throws IOException {
+			int low = index + 1;
+			if (low >= end || !samePrefix(low, prefix)) {
+				return low;
+			}
+			int stride = 1;
+			int high = low + 1;
+			while (high < end && samePrefix(high, prefix)) {
+				low = high;
+				stride = Math.min(end - low, stride * 2);
+				high = low + stride;
+			}
+			high = Math.min(high, end);
+			while (low + 1 < high) {
+				int middle = low + (high - low) / 2;
+				if (samePrefix(middle, prefix)) {
+					low = middle;
+				} else {
+					high = middle;
+				}
+			}
+			return high;
+		}
+
+		private int prefixLength(LmdbPage page, int position) throws IOException {
+			checkCancelled(cancelled);
+			prefixes++;
+			int node = page.nodeOffset(position);
+			int offset = page.keyOffsetAt(node);
+			int length = page.keySizeAt(node);
+			int cursor = 0;
+			for (int field = 0; field < fields; field++) {
+				if (cursor >= length) {
+					throw new IOException("Truncated statement prefix on page " + page.expectedPgno);
+				}
+				cursor += Varint.firstToLength(page.buffer.get(offset + cursor));
+				if (cursor > length) {
+					throw new IOException("Truncated statement Varint on page " + page.expectedPgno);
+				}
+			}
+			return cursor;
+		}
+
+		private boolean samePrefix(int position, byte[] prefix) throws IOException {
+			if (prefixLength(leaf, position) != prefix.length) {
+				return false;
+			}
+			int offset = leaf.keyOffsetAt(leaf.nodeOffset(position));
+			for (int index = 0; index < prefix.length; index++) {
+				if (leaf.buffer.get(offset + index) != prefix[index]) {
+					return false;
+				}
+			}
+			return true;
+		}
+
+		private int selectedEnd() {
+			return leaf.expectedPgno == finalLeaf ? finalIndex : leaf.numKeys;
+		}
+
+		private boolean hasSelectedKey() throws IOException {
+			while (!finished && index >= selectedEnd()) {
+				checkCancelled(cancelled);
+				if (leaf.expectedPgno == finalLeaf) {
+					finished = true;
+					break;
+				}
+				advanceLeaf();
+			}
+			return !finished;
+		}
+
+		private void advanceLeaf() throws IOException {
+			for (int level = path.size() - 1; level >= 0; level--) {
+				BranchFrame frame = path.get(level);
+				int next = frame.childIndex + 1;
+				if (next < frame.page.numKeys) {
+					path.set(level, new BranchFrame(frame.page, next));
+					path.subList(level + 1, path.size()).clear();
+					LmdbPage page = readPage(branchChildPage(frame.page, next), pages, work);
+					while (page.isBranch()) {
+						checkCancelled(cancelled);
+						if (page.numKeys == 0 || path.size() >= depth - 1) {
+							throw new IOException("Empty branch in exact prefix walk on page " + page.expectedPgno);
+						}
+						path.add(new BranchFrame(page, 0));
+						page = readPage(branchChildPage(page, 0), pages, work);
+					}
+					ensureOuterLeaf(page);
+					if (path.size() != depth - 1) {
+						throw new IOException("Exact prefix leaf depth disagrees with database metadata");
+					}
+					leaf = page;
+					index = 0;
+					return;
+				}
+			}
+			finished = true;
+		}
+
+		@Override
+		public ExactWork work() {
+			return exactWork(work, prefixes);
+		}
+
+		@Override
+		public void close() {
+			finished = true;
+			leaf = null;
+			path.clear();
+		}
 	}
 
 	/**

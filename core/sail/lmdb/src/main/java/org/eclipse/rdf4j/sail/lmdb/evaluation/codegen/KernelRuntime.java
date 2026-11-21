@@ -17,12 +17,17 @@ import java.util.Arrays;
 import java.util.Collections;
 import java.util.IdentityHashMap;
 import java.util.List;
+import java.util.Objects;
 import java.util.Set;
+import java.util.function.Consumer;
 
 import org.eclipse.rdf4j.common.annotation.Experimental;
 import org.eclipse.rdf4j.common.annotation.InternalUseOnly;
 import org.eclipse.rdf4j.sail.lmdb.LmdbQueryMemoryManager;
 import org.eclipse.rdf4j.sail.lmdb.ValueIds;
+import org.eclipse.rdf4j.sail.lmdb.evaluation.NativeLmdbQuerySource.NativeAdjacency;
+import org.eclipse.rdf4j.sail.lmdb.evaluation.NativeLmdbQuerySource.RunView;
+import org.eclipse.rdf4j.sail.lmdb.evaluation.NativeLmdbQuerySource.RunView.ContextSpan;
 
 /**
  * Shared primitive data structures used by runtime-generated kernels. Keeping these as ordinary reviewed Java (instead
@@ -35,6 +40,26 @@ import org.eclipse.rdf4j.sail.lmdb.ValueIds;
 public final class KernelRuntime {
 
 	private KernelRuntime() {
+	}
+
+	/** Reads a context from its physical proof before requesting any mixed-span payload. */
+	public static long contextInSpan(RunView view, long handle, long offset, ContextSpan span) {
+		view.contextSpan(handle, offset, span);
+		return span.hasCommonContext() ? span.commonContext() : view.contextInContextSpan(handle, offset);
+	}
+
+	public static long contextInSpan(NativeAdjacency.BoundRunCursor cursor, long offset, ContextSpan span) {
+		if (!cursor.contextSpan(offset, span)) {
+			span.set(offset + 1L, -1L);
+		}
+		return span.hasCommonContext() ? span.commonContext() : cursor.contextInContextSpan(offset);
+	}
+
+	public static long contextInSpan(NativeAdjacency.KeyRunCursor cursor, long offset, ContextSpan span) {
+		if (!cursor.contextSpan(offset, span)) {
+			span.set(offset + 1L, -1L);
+		}
+		return span.hasCommonContext() ? span.commonContext() : cursor.contextInContextSpan(offset);
 	}
 
 	/**
@@ -56,6 +81,16 @@ public final class KernelRuntime {
 				throw new AllocationDeniedException();
 			}
 		}
+	}
+
+	/**
+	 * Marker for stackless evaluation signals whose shared singleton instance cannot retain suppressed cleanup errors.
+	 * Implementations are classified narrowly so ordinary suppression-disabled failures are not treated as clean
+	 * controls.
+	 */
+	@Experimental
+	@InternalUseOnly
+	public interface SuppressionDisabledControl {
 	}
 
 	/**
@@ -138,13 +173,52 @@ public final class KernelRuntime {
 		}
 	}
 
+	/** A private hash build could not be completed before any of its probe rows were published. */
+	@Experimental
+	public static final class HashBuildRefusedException extends IllegalStateException {
+		private static final long serialVersionUID = 1L;
+
+		HashBuildRefusedException(String message) {
+			super(message);
+		}
+	}
+
+	/** Covers one serial kernel hash table using its existing preflight reservation. */
+	@Experimental
+	public static final class HashBuildMemory {
+		private final LmdbQueryMemoryManager.Reservation reservation;
+
+		public HashBuildMemory(LmdbQueryMemoryManager.Reservation reservation) {
+			this.reservation = Objects.requireNonNull(reservation);
+		}
+
+		void cover(long bytes) {
+			long reserved = reservation.bytes();
+			if (bytes > reserved && !reservation.tryGrow(bytes - reserved)) {
+				throw new HashBuildRefusedException("kernel hash build exceeded its memory reservation");
+			}
+		}
+	}
+
 	/** Closes all resources without letting one failed release skip subsequent releases. */
 	public static Throwable closeResource(AutoCloseable resource, Throwable failure) {
+		return closeResource(resource, failure, null);
+	}
+
+	/**
+	 * Closes a resource and reports its retained cleanup contribution to an owner before returning or rethrowing it.
+	 */
+	public static Throwable closeResource(AutoCloseable resource, Throwable failure,
+			Consumer<Throwable> closeFailureObserver) {
 		if (resource != null) {
 			try {
 				resource.close();
 			} catch (Throwable cleanup) {
-				return retainCloseFailure(failure, cleanup);
+				Throwable retained = retainCloseFailure(failure, cleanup);
+				if (closeFailureObserver != null) {
+					closeFailureObserver.accept(retained == failure ? cleanup : retained);
+				}
+				return retained;
 			}
 		}
 		return failure;
@@ -187,7 +261,7 @@ public final class KernelRuntime {
 				addSuppressedOnce(existingReal, cleanup);
 			}
 			if (failure != existingReal) {
-				addSuppressedOnce(existingReal, failure);
+				addControlEvidence(existingReal, failure);
 			}
 			return existingReal;
 		}
@@ -233,8 +307,8 @@ public final class KernelRuntime {
 	}
 
 	private static boolean isSuppressionDisabledControl(Throwable problem) {
-		return problem instanceof KernelCancelledException || problem instanceof KernelQueryCancelledException
-				|| problem instanceof KernelPeerCancelledException;
+		return problem instanceof KernelCancelledException || problem == KernelQueryCancelledException.INSTANCE
+				|| problem instanceof KernelPeerCancelledException || problem instanceof SuppressionDisabledControl;
 	}
 
 	private static boolean isControlWrapper(Throwable problem) {
@@ -319,9 +393,26 @@ public final class KernelRuntime {
 		primary.addSuppressed(suppressed);
 	}
 
+	private static void addControlEvidence(Throwable primary, Throwable control) {
+		if (control instanceof KernelQueryCancelledException query && query != KernelQueryCancelledException.INSTANCE) {
+			for (Throwable existing : primary.getSuppressed()) {
+				if (existing instanceof KernelQueryCancelledException prior && prior.sameProvenance(query)) {
+					return;
+				}
+			}
+			// The original control already suppresses the promoted cleanup. A fresh occurrence keeps its owner
+			// without creating a cleanup -> control -> cleanup cycle.
+			addSuppressedOnce(primary, query.copy());
+		} else {
+			addSuppressedOnce(primary, control);
+		}
+	}
+
 	private static boolean isControlSignal(Throwable problem) {
 		return problem instanceof KernelCancelledException || problem instanceof KernelQueryCancelledException
-				|| problem instanceof KernelPeerCancelledException || problem instanceof AllocationDeniedException;
+				|| problem instanceof KernelPeerCancelledException || problem instanceof AllocationDeniedException
+				|| problem instanceof HashBuildRefusedException
+				|| problem instanceof SuppressionDisabledControl;
 	}
 
 	public static void rethrowCloseFailure(Throwable failure) {
@@ -334,6 +425,10 @@ public final class KernelRuntime {
 		// boundary the real cleanup must be promoted so it cannot be mistaken for a clean strategy decline.
 		Throwable realFailure = realFailureAttachedToControl(failure);
 		if (realFailure != null) {
+			if (failure instanceof KernelQueryCancelledException query
+					&& query != KernelQueryCancelledException.INSTANCE) {
+				addControlEvidence(realFailure, query);
+			}
 			failure = realFailure;
 		}
 		if (failure instanceof RuntimeException problem) {
@@ -343,6 +438,13 @@ public final class KernelRuntime {
 			throw problem;
 		}
 		throw new IllegalStateException("kernel resource close failed", failure);
+	}
+
+	/** Rethrows a changed close outcome or a real cleanup failure retained on the unchanged primary control. */
+	public static void rethrowCloseFailureIfNotPrimary(Throwable failure, Throwable primary) {
+		if (failure != null && (failure != primary || realFailureAttachedToControl(failure) != null)) {
+			rethrowCloseFailure(failure);
+		}
 	}
 
 	/** An exceptional fill cannot be resumed; drain owned cursors, preserving the evaluation failure. */
@@ -355,33 +457,31 @@ public final class KernelRuntime {
 				failure = retainCloseFailure(failure, cleanup);
 			}
 		}
-		if (primary == null || failure != primary || realFailureAttachedToControl(failure) != null) {
-			rethrowCloseFailure(failure);
-		}
+		rethrowCloseFailureIfNotPrimary(failure, primary);
 	}
 
 	/** Releases an activation-local owner without replacing a primary evaluation failure. */
 	public static void closeCursor(AutoCloseable cursor, Throwable primary) {
-		Throwable failure = closeResource(cursor, primary);
-		if (primary == null || failure != primary || realFailureAttachedToControl(failure) != null) {
-			rethrowCloseFailure(failure);
-		}
+		closeCursor(cursor, primary, null);
+	}
+
+	/** Releases an activation-local owner and reports retained cleanup failures before they escape. */
+	public static void closeCursor(AutoCloseable cursor, Throwable primary,
+			Consumer<Throwable> closeFailureObserver) {
+		Throwable failure = closeResource(cursor, primary, closeFailureObserver);
+		rethrowCloseFailureIfNotPrimary(failure, primary);
 	}
 
 	/** Close a scoped scan while preserving a primary evaluation failure. No per-row allocation or dispatch. */
 	public static void closeScanCursor(KernelQuadCursor cursor, Throwable primary) {
 		Throwable failure = closeResource(cursor, primary);
-		if (primary == null || failure != primary || realFailureAttachedToControl(failure) != null) {
-			rethrowCloseFailure(failure);
-		}
+		rethrowCloseFailureIfNotPrimary(failure, primary);
 	}
 
 	/** The plan-cursor equivalent of {@link #closeScanCursor}. */
 	public static void closePlanCursor(KernelPlan.Cursor cursor, Throwable primary) {
 		Throwable failure = closeResource(cursor, primary);
-		if (primary == null || failure != primary || realFailureAttachedToControl(failure) != null) {
-			rethrowCloseFailure(failure);
-		}
+		rethrowCloseFailureIfNotPrimary(failure, primary);
 	}
 
 	/**
@@ -395,7 +495,7 @@ public final class KernelRuntime {
 		}
 		int cancellationReason = cancellation.cancellationReason();
 		if (cancellationReason == KernelCancellation.QUERY_CANCELLED) {
-			throw KernelQueryCancelledException.INSTANCE;
+			throw cancellation.queryCancellationException();
 		}
 		if (cancellationReason == KernelCancellation.PROBE_CANCELLED) {
 			throw KernelCancelledException.INSTANCE;
@@ -403,6 +503,11 @@ public final class KernelRuntime {
 		if (cancellationReason == KernelCancellation.PEER_CANCELLED) {
 			throw KernelPeerCancelledException.INSTANCE;
 		}
+	}
+
+	/** Creates an explicit bound callback outside generated source, whose compiler need not support lambdas. */
+	public static Runnable cancellationPoll(KernelCancellation cancellation) {
+		return cancellation == null ? null : () -> checkCancelled(cancellation);
 	}
 
 	/**
@@ -421,7 +526,7 @@ public final class KernelRuntime {
 		}
 		int reason = cancellation.cancellationReasonAtMaterializationLimit();
 		if (reason == KernelCancellation.QUERY_CANCELLED) {
-			throw KernelQueryCancelledException.INSTANCE;
+			throw cancellation.queryCancellationException();
 		}
 		if (reason == KernelCancellation.PEER_CANCELLED) {
 			throw KernelPeerCancelledException.INSTANCE;
@@ -682,6 +787,7 @@ public final class KernelRuntime {
 		private final int keyWidth;
 		private final int payloadWidth;
 		private final int maxRows;
+		private final HashBuildMemory memory;
 		private long[] keys;
 		/** Full hash in the low word, head payload ordinal + 1 in the high word; zero is empty. */
 		private long[] entries;
@@ -693,13 +799,19 @@ public final class KernelRuntime {
 		private int distinctKeys;
 
 		public LongRowMap(int keyWidth, int payloadWidth, int maxRows) {
+			this(keyWidth, payloadWidth, maxRows, null);
+		}
+
+		public LongRowMap(int keyWidth, int payloadWidth, int maxRows, HashBuildMemory memory) {
 			if (keyWidth < 0 || payloadWidth < 0 || maxRows < 0) {
 				throw new IllegalArgumentException("negative hash build dimension");
 			}
 			this.keyWidth = keyWidth;
 			this.payloadWidth = payloadWidth;
 			this.maxRows = maxRows;
+			this.memory = memory;
 			int capacity = 32;
+			cover(capacity, capacity);
 			this.keys = new long[Math.multiplyExact(keyWidth, capacity)];
 			this.entries = new long[capacity];
 			this.controls = new byte[capacity];
@@ -711,7 +823,7 @@ public final class KernelRuntime {
 		/** Inserts one build row; duplicate keys chain. Aborts the kernel when the build exceeds its row cap. */
 		public void add(long[] key, long[] payload) {
 			if (payloadCount >= maxRows) {
-				throw new IllegalStateException("kernel hash build exceeded its row cap of " + maxRows);
+				throw new HashBuildRefusedException("kernel hash build exceeded its row cap of " + maxRows);
 			}
 			int hash = hash(key);
 			int bucket = find(key, hash);
@@ -839,6 +951,7 @@ public final class KernelRuntime {
 
 		private void growBuckets() {
 			int capacity = Math.multiplyExact(entries.length, 2);
+			cover(capacity, next.length);
 			long[] newKeys = new long[Math.multiplyExact(keyWidth, capacity)];
 			long[] newEntries = new long[capacity];
 			byte[] newControls = new byte[capacity];
@@ -866,11 +979,20 @@ public final class KernelRuntime {
 
 		private void growPayloads() {
 			int capacity = Math.multiplyExact(next.length, 2);
+			cover(entries.length, capacity);
 			long[] newPayloads = payloadWidth == 0 ? payloads
 					: java.util.Arrays.copyOf(payloads, Math.multiplyExact(payloadWidth, capacity));
 			int[] newNext = java.util.Arrays.copyOf(next, capacity);
 			payloads = newPayloads;
 			next = newNext;
+		}
+
+		private void cover(int buckets, int payloadRows) {
+			if (memory != null) {
+				long bucketBytes = Math.multiplyExact((long) buckets, 8L * keyWidth + 8L + 1L + 4L);
+				long payloadBytes = Math.multiplyExact((long) payloadRows, 8L * payloadWidth + 4L);
+				memory.cover(Math.addExact(bucketBytes, payloadBytes));
+			}
 		}
 	}
 
@@ -881,6 +1003,7 @@ public final class KernelRuntime {
 		private static final long ARRAY_HEADER_BYTES = 16L;
 		private KernelHooks semantics;
 		private MemoryAccount memory;
+		private final Runnable cancellationPoll;
 		private long[] keys;
 		private int mask;
 		private int size;
@@ -903,8 +1026,14 @@ public final class KernelRuntime {
 
 		/** Creates a set whose backing table is charged to an optional query-owned memory account. */
 		public LongHashSet(int expected, KernelHooks semantics, MemoryAccount memory) {
+			this(expected, semantics, memory, null);
+		}
+
+		/** Binds an optional owner for every insertion and its internal table growth. */
+		public LongHashSet(int expected, KernelHooks semantics, MemoryAccount memory, Runnable cancellationPoll) {
 			this.semantics = semantics;
 			this.memory = memory;
+			this.cancellationPoll = cancellationPoll;
 			int capacity = tableSizeFor(Math.max(expected, 2));
 			long tableBytes = checkedArrayBytes(capacity, Long.BYTES, memory);
 			long bytes = checkedAdd(SET_OBJECT_BYTES, tableBytes, memory);
@@ -926,9 +1055,15 @@ public final class KernelRuntime {
 
 		/** Adds the key; returns true when it was not present before. */
 		public boolean add(long key) {
+			return add(key, cancellationPoll);
+		}
+
+		/** Internal owner-aware insertion, including collision search and replacement-table construction. */
+		public boolean add(long key, Runnable cancellationPoll) {
 			if (closed) {
 				throw new IllegalStateException("closed long hash set");
 			}
+			checkCancellation(cancellationPoll);
 			if (key == 0L) {
 				if (hasZero) {
 					return false;
@@ -937,15 +1072,17 @@ public final class KernelRuntime {
 				size++;
 				return true;
 			}
+			int ticks = 0;
 			while (true) {
 				int slot = hash(key) & mask;
 				while (true) {
+					pollCancellation(cancellationPoll, ++ticks);
 					long current = keys[slot];
 					if (current == 0L) {
 						// Reserve the replacement table while the current table is still live. This keeps a refusal
 						// from publishing a partially inserted key or losing an accepted set.
 						if ((long) size + 1L >= threshold) {
-							grow();
+							grow(cancellationPoll);
 							break;
 						}
 						keys[slot] = key;
@@ -1010,20 +1147,30 @@ public final class KernelRuntime {
 
 		/** Feeds every member to the consumer, in unspecified order. */
 		public void forEach(java.util.function.LongConsumer consumer) {
+			forEach(consumer, null);
+		}
+
+		/** Internal owner-aware traversal polls allocated slots as well as occupied members. */
+		public void forEach(java.util.function.LongConsumer consumer, Runnable cancellationPoll) {
 			if (closed) {
 				throw new IllegalStateException("closed long hash set");
 			}
+			checkCancellation(cancellationPoll);
 			if (hasZero) {
 				consumer.accept(0L);
 			}
-			for (long key : keys) {
+			for (int index = 0; index < keys.length; index++) {
+				pollCancellation(cancellationPoll, index);
+				long key = keys[index];
 				if (key != 0L) {
 					consumer.accept(key);
 				}
 			}
+			checkCancellation(cancellationPoll);
 		}
 
-		private void grow() {
+		private void grow(Runnable cancellationPoll) {
+			checkCancellation(cancellationPoll);
 			long[] old = keys;
 			int capacity = checkedDoubleCapacity(old.length);
 			long bytes = checkedArrayBytes(capacity, Long.BYTES, memory);
@@ -1034,16 +1181,20 @@ public final class KernelRuntime {
 			try {
 				replacement = new long[capacity];
 				int replacementMask = capacity - 1;
+				int ticks = 0;
 				for (int i = 0; i < old.length; i++) {
+					pollCancellation(cancellationPoll, ++ticks);
 					long key = old[i];
 					if (key != 0L) {
 						int slot = hash(key) & replacementMask;
 						while (replacement[slot] != 0L) {
+							pollCancellation(cancellationPoll, ++ticks);
 							slot = slot + 1 & replacementMask;
 						}
 						replacement[slot] = key;
 					}
 				}
+				checkCancellation(cancellationPoll);
 			} catch (RuntimeException | Error problem) {
 				if (memory != null) {
 					memory.release(bytes);
@@ -1106,6 +1257,7 @@ public final class KernelRuntime {
 		private static final long MAP_OBJECT_BYTES = 128L;
 		private KernelHooks semantics;
 		private MemoryAccount memory;
+		private final Runnable cancellationPoll;
 		/** Canonical keys live in the probe table; keysByOrdinal retains the first original output payload. */
 		private final boolean canonicalKeys;
 		private long[] keys;
@@ -1138,10 +1290,16 @@ public final class KernelRuntime {
 
 		/** Creates a single-column group map whose backing arrays are charged to an optional query-owned account. */
 		public LongIntMap(int expected, KernelHooks semantics, MemoryAccount memory) {
+			this(expected, semantics, memory, null);
+		}
+
+		/** Binds an optional owner for collision searches, ordinal copies and table growth. */
+		public LongIntMap(int expected, KernelHooks semantics, MemoryAccount memory, Runnable cancellationPoll) {
 			if (expected < 0) {
 				throw new IllegalArgumentException("expected map size must not be negative");
 			}
 			this.semantics = semantics;
+			this.cancellationPoll = cancellationPoll;
 			this.canonicalKeys = semantics != null && semantics.supportsCanonicalTermKeys();
 			int capacity = tableSizeFor(Math.max(expected, 2));
 			int ordinalCapacity = Math.max(expected, 4);
@@ -1173,6 +1331,7 @@ public final class KernelRuntime {
 		/** Returns the key's ordinal, inserting a fresh one (the current {@link #size()}) when absent. */
 		public int getOrInsert(long key) {
 			checkOpen();
+			checkCancellation(cancellationPoll);
 			long lookup = canonicalKeys ? semantics.canonicalTermKey(key) : key;
 			if (lookup == 0L) {
 				if (zeroOrdinal < 0) {
@@ -1184,7 +1343,9 @@ public final class KernelRuntime {
 				return zeroOrdinal;
 			}
 			int slot = hash(lookup) & mask;
+			int ticks = 0;
 			while (true) {
+				pollCancellation(cancellationPoll, ++ticks);
 				long current = keys[slot];
 				if (current == 0L) {
 					// Grow before publishing either the new ordinal or its table entry. A refused replacement therefore
@@ -1193,6 +1354,7 @@ public final class KernelRuntime {
 						growTable();
 						slot = hash(lookup) & mask;
 						while (keys[slot] != 0L) {
+							pollCancellation(cancellationPoll, ++ticks);
 							slot = slot + 1 & mask;
 						}
 					}
@@ -1214,12 +1376,15 @@ public final class KernelRuntime {
 		/** Returns the key's ordinal or -1 when absent. */
 		public int get(long key) {
 			checkOpen();
+			checkCancellation(cancellationPoll);
 			long lookup = canonicalKeys ? semantics.canonicalTermKey(key) : key;
 			if (lookup == 0L) {
 				return zeroOrdinal;
 			}
 			int slot = hash(lookup) & mask;
+			int ticks = 0;
 			while (true) {
+				pollCancellation(cancellationPoll, ++ticks);
 				long current = keys[slot];
 				if (current == 0L) {
 					return -1;
@@ -1242,6 +1407,7 @@ public final class KernelRuntime {
 		}
 
 		private void growTable() {
+			checkCancellation(cancellationPoll);
 			long[] oldKeys = keys;
 			int[] oldOrdinals = ordinals;
 			int capacity = checkedDoubleCapacity(oldKeys.length);
@@ -1256,17 +1422,21 @@ public final class KernelRuntime {
 				replacementKeys = new long[capacity];
 				replacementOrdinals = new int[capacity];
 				int replacementMask = capacity - 1;
+				int ticks = 0;
 				for (int i = 0; i < oldKeys.length; i++) {
+					pollCancellation(cancellationPoll, ++ticks);
 					long key = oldKeys[i];
 					if (key != 0L) {
 						int slot = hash(key) & replacementMask;
 						while (replacementKeys[slot] != 0L) {
+							pollCancellation(cancellationPoll, ++ticks);
 							slot = slot + 1 & replacementMask;
 						}
 						replacementKeys[slot] = key;
 						replacementOrdinals[slot] = oldOrdinals[i];
 					}
 				}
+				checkCancellation(cancellationPoll);
 			} catch (RuntimeException | Error problem) {
 				if (memory != null) {
 					memory.release(replacementBytes);
@@ -1285,6 +1455,7 @@ public final class KernelRuntime {
 		}
 
 		private void growOrdinals() {
+			checkCancellation(cancellationPoll);
 			long[] old = keysByOrdinal;
 			int capacity = checkedDoubleCapacity(old.length);
 			long replacementBytes = checkedArrayBytes(capacity, Long.BYTES, memory);
@@ -1293,7 +1464,14 @@ public final class KernelRuntime {
 			}
 			long[] replacement;
 			try {
-				replacement = Arrays.copyOf(old, capacity);
+				replacement = new long[capacity];
+				for (int from = 0; from < old.length;) {
+					checkCancellation(cancellationPoll);
+					int count = Math.min(1_024, old.length - from);
+					System.arraycopy(old, from, replacement, from, count);
+					from += count;
+				}
+				checkCancellation(cancellationPoll);
 			} catch (RuntimeException | Error problem) {
 				if (memory != null) {
 					memory.release(replacementBytes);
@@ -1481,6 +1659,7 @@ public final class KernelRuntime {
 		private final int stride;
 		private KernelHooks semantics;
 		private MemoryAccount memory;
+		private final Runnable cancellationPoll;
 		private long[] rows;
 		private int count;
 		private int[] table;
@@ -1509,6 +1688,12 @@ public final class KernelRuntime {
 
 		/** Creates a fixed-stride set whose backing arrays are charged to an optional query-owned account. */
 		public RowSet(int stride, int expectedRows, KernelHooks semantics, MemoryAccount memory) {
+			this(stride, expectedRows, semantics, memory, null);
+		}
+
+		/** Binds an optional owner across collision searches and replacement-table/row construction. */
+		public RowSet(int stride, int expectedRows, KernelHooks semantics, MemoryAccount memory,
+				Runnable cancellationPoll) {
 			if (stride < 1) {
 				throw new IllegalArgumentException("stride must be positive: " + stride);
 			}
@@ -1518,6 +1703,7 @@ public final class KernelRuntime {
 			this.stride = stride;
 			this.semantics = semantics;
 			this.memory = memory;
+			this.cancellationPoll = cancellationPoll;
 			int capacity = tableSizeFor(Math.max(expectedRows, 2));
 			int rowCapacity = Math.max(expectedRows, 4);
 			long rowElements = checkedMultiply((long) rowCapacity, stride, memory);
@@ -1548,8 +1734,11 @@ public final class KernelRuntime {
 		/** Returns the ordinal of the row at {@code buf[offset .. offset+stride)}, interning it when absent. */
 		public int internOrGet(long[] buf, int offset) {
 			checkOpen();
+			checkCancellation(cancellationPoll);
 			int slot = hash(buf, offset) & mask;
+			int ticks = 0;
 			while (true) {
+				pollCancellation(cancellationPoll, ++ticks);
 				int ordinal = table[slot];
 				if (ordinal < 0) {
 					// Stage replacements before publishing the new row or table entry. A refused growth therefore
@@ -1559,6 +1748,7 @@ public final class KernelRuntime {
 						growTable();
 						slot = hash(buf, offset) & mask;
 						while (table[slot] >= 0) {
+							pollCancellation(cancellationPoll, ++ticks);
 							slot = slot + 1 & mask;
 						}
 					}
@@ -1592,8 +1782,9 @@ public final class KernelRuntime {
 		/** Forgets every interned row while keeping the allocated capacity (scoped dedup groups reset here). */
 		public void clear() {
 			checkOpen();
+			checkCancellation(cancellationPoll);
 			count = 0;
-			java.util.Arrays.fill(table, -1);
+			fillEmpty(table);
 		}
 
 		public long value(int ordinal, int column) {
@@ -1609,6 +1800,7 @@ public final class KernelRuntime {
 		private boolean rowEquals(int ordinal, long[] buf, int offset) {
 			int base = ordinal * stride;
 			for (int i = 0; i < stride; i++) {
+				pollCancellation(cancellationPoll, i);
 				long stored = rows[base + i];
 				long candidate = buf[offset + i];
 				if (stored != candidate && (semantics == null || !semantics.sameRdfTerm(stored, candidate))) {
@@ -1621,6 +1813,7 @@ public final class KernelRuntime {
 		private int hash(long[] buf, int offset) {
 			long hash = 0xCBF29CE484222325L;
 			for (int i = 0; i < stride; i++) {
+				pollCancellation(cancellationPoll, i);
 				long value = buf[offset + i];
 				hash = mix(hash ^ (semantics == null ? value : semantics.termHashKey(value)));
 			}
@@ -1628,6 +1821,7 @@ public final class KernelRuntime {
 		}
 
 		private void growTable() {
+			checkCancellation(cancellationPoll);
 			int capacity = checkedDoubleCapacity(table.length);
 			long replacementBytes = checkedArrayBytes(capacity, Integer.BYTES, memory);
 			if (memory != null) {
@@ -1636,15 +1830,19 @@ public final class KernelRuntime {
 			int[] replacement;
 			try {
 				replacement = new int[capacity];
-				java.util.Arrays.fill(replacement, -1);
+				fillEmpty(replacement);
 				int replacementMask = capacity - 1;
+				int ticks = 0;
 				for (int ordinal = 0; ordinal < count; ordinal++) {
+					pollCancellation(cancellationPoll, ++ticks);
 					int slot = hash(rows, ordinal * stride) & replacementMask;
 					while (replacement[slot] >= 0) {
+						pollCancellation(cancellationPoll, ++ticks);
 						slot = slot + 1 & replacementMask;
 					}
 					replacement[slot] = ordinal;
 				}
+				checkCancellation(cancellationPoll);
 			} catch (RuntimeException | Error problem) {
 				if (memory != null) {
 					memory.release(replacementBytes);
@@ -1662,6 +1860,7 @@ public final class KernelRuntime {
 		}
 
 		private void growRows() {
+			checkCancellation(cancellationPoll);
 			int capacity = checkedDoubleCapacity(rows.length);
 			long replacementBytes = checkedArrayBytes(capacity, Long.BYTES, memory);
 			if (memory != null) {
@@ -1669,7 +1868,14 @@ public final class KernelRuntime {
 			}
 			long[] replacement;
 			try {
-				replacement = Arrays.copyOf(rows, capacity);
+				replacement = new long[capacity];
+				for (int from = 0; from < rows.length;) {
+					checkCancellation(cancellationPoll);
+					int length = Math.min(1_024, rows.length - from);
+					System.arraycopy(rows, from, replacement, from, length);
+					from += length;
+				}
+				checkCancellation(cancellationPoll);
 			} catch (RuntimeException | Error problem) {
 				if (memory != null) {
 					memory.release(replacementBytes);
@@ -1682,6 +1888,15 @@ public final class KernelRuntime {
 			}
 			accountedBytes = checkedAdd(accountedBytes, replacementBytes - rowBytes, memory);
 			rowBytes = replacementBytes;
+		}
+
+		private void fillEmpty(int[] destination) {
+			for (int from = 0; from < destination.length;) {
+				checkCancellation(cancellationPoll);
+				int to = from + Math.min(1_024, destination.length - from);
+				Arrays.fill(destination, from, to, -1);
+				from = to;
+			}
 		}
 
 		/** Releases this set's backing arrays. Safe to call more than once. */
@@ -1719,20 +1934,35 @@ public final class KernelRuntime {
 	 */
 	public static void sortRows(long[] rows, int rowCount, int stride, int[] keyColumns, boolean[] descending,
 			KernelHooks hooks) {
+		sortRows(rows, rowCount, stride, keyColumns, descending, hooks, (Runnable) null);
+	}
+
+	/** Internal coordinator sort; the callback retains the exact owner and private-probe control signals. */
+	public static void sortRows(long[] rows, int rowCount, int stride, int[] keyColumns, boolean[] descending,
+			KernelHooks hooks, Runnable cancellationPoll) {
+		SortPoll poll = cancellationPoll == null ? null : new SortPoll(cancellationPoll);
+		sortRows(rows, rowCount, stride, keyColumns, descending, hooks, poll);
+	}
+
+	private static void sortRows(long[] rows, int rowCount, int stride, int[] keyColumns, boolean[] descending,
+			KernelHooks hooks, SortPoll poll) {
 		if (rowCount <= 1) {
 			return;
 		}
 		int[] index = new int[rowCount];
 		for (int i = 0; i < rowCount; i++) {
+			step(poll);
 			index[i] = i;
 		}
 		int[] scratchIndex = new int[rowCount];
-		mergeSort(index, scratchIndex, 0, rowCount, rows, stride, keyColumns, descending, hooks);
+		mergeSort(index, scratchIndex, 0, rowCount, rows, stride, keyColumns, descending, hooks, poll);
 		long[] scratch = new long[rowCount * stride];
 		for (int r = 0; r < rowCount; r++) {
-			System.arraycopy(rows, index[r] * stride, scratch, r * stride, stride);
+			step(poll);
+			copy(rows, index[r] * stride, scratch, r * stride, stride, poll);
 		}
-		System.arraycopy(scratch, 0, rows, 0, rowCount * stride);
+		copy(scratch, rows, rowCount * stride, poll);
+		check(poll);
 	}
 
 	/**
@@ -1741,73 +1971,98 @@ public final class KernelRuntime {
 	 */
 	public static int topKRows(long[] rows, int rowCount, int stride, int[] keyColumns, boolean[] descending,
 			KernelHooks hooks, int limit) {
+		return topKRows(rows, rowCount, stride, keyColumns, descending, hooks, limit, null);
+	}
+
+	/** Internal coordinator selection; even raw-id ordering and empty output observe the owning cancellation. */
+	public static int topKRows(long[] rows, int rowCount, int stride, int[] keyColumns, boolean[] descending,
+			KernelHooks hooks, int limit, Runnable cancellationPoll) {
+		SortPoll poll = cancellationPoll == null ? null : new SortPoll(cancellationPoll);
 		if (limit <= 0) {
 			return 0;
 		}
 		if (rowCount <= limit) {
-			sortRows(rows, rowCount, stride, keyColumns, descending, hooks);
+			sortRows(rows, rowCount, stride, keyColumns, descending, hooks, poll);
 			return rowCount;
 		}
 		// Max-heap over kept row indices: the root is the worst row currently kept.
 		int[] heap = new int[limit];
 		for (int i = 0; i < limit; i++) {
+			step(poll);
 			heap[i] = i;
 		}
 		for (int i = limit / 2 - 1; i >= 0; i--) {
-			siftDown(heap, i, limit, rows, stride, keyColumns, descending, hooks);
+			siftDown(heap, i, limit, rows, stride, keyColumns, descending, hooks, poll);
 		}
 		for (int r = limit; r < rowCount; r++) {
-			if (compareRows(rows, stride, r, heap[0], keyColumns, descending, hooks) < 0) {
+			step(poll);
+			if (compareRows(rows, stride, r, heap[0], keyColumns, descending, hooks, poll) < 0) {
 				heap[0] = r;
-				siftDown(heap, 0, limit, rows, stride, keyColumns, descending, hooks);
+				siftDown(heap, 0, limit, rows, stride, keyColumns, descending, hooks, poll);
 			}
 		}
 		int[] sorted = new int[limit];
 		int heapSize = limit;
 		for (int i = limit - 1; i >= 0; i--) {
+			step(poll);
 			sorted[i] = heap[0];
 			heapSize--;
 			heap[0] = heap[heapSize];
-			siftDown(heap, 0, heapSize, rows, stride, keyColumns, descending, hooks);
+			siftDown(heap, 0, heapSize, rows, stride, keyColumns, descending, hooks, poll);
 		}
 		long[] scratch = new long[limit * stride];
 		for (int r = 0; r < limit; r++) {
-			System.arraycopy(rows, sorted[r] * stride, scratch, r * stride, stride);
+			step(poll);
+			copy(rows, sorted[r] * stride, scratch, r * stride, stride, poll);
 		}
-		System.arraycopy(scratch, 0, rows, 0, limit * stride);
+		copy(scratch, rows, limit * stride, poll);
+		check(poll);
 		return limit;
 	}
 
 	private static void mergeSort(int[] index, int[] scratch, int from, int to, long[] rows, int stride,
-			int[] keyColumns, boolean[] descending, KernelHooks hooks) {
+			int[] keyColumns, boolean[] descending, KernelHooks hooks, SortPoll poll) {
 		if (to - from <= 1) {
 			return;
 		}
 		int middle = from + to >>> 1;
-		mergeSort(index, scratch, from, middle, rows, stride, keyColumns, descending, hooks);
-		mergeSort(index, scratch, middle, to, rows, stride, keyColumns, descending, hooks);
+		mergeSort(index, scratch, from, middle, rows, stride, keyColumns, descending, hooks, poll);
+		mergeSort(index, scratch, middle, to, rows, stride, keyColumns, descending, hooks, poll);
 		int left = from;
 		int right = middle;
 		int out = from;
 		while (left < middle && right < to) {
-			if (compareRows(rows, stride, index[left], index[right], keyColumns, descending, hooks) <= 0) {
+			step(poll);
+			if (compareRows(rows, stride, index[left], index[right], keyColumns, descending, hooks, poll) <= 0) {
 				scratch[out++] = index[left++];
 			} else {
 				scratch[out++] = index[right++];
 			}
 		}
 		while (left < middle) {
+			step(poll);
 			scratch[out++] = index[left++];
 		}
 		while (right < to) {
+			step(poll);
 			scratch[out++] = index[right++];
 		}
-		System.arraycopy(scratch, from, index, from, to - from);
+		if (poll == null) {
+			System.arraycopy(scratch, from, index, from, to - from);
+		} else {
+			for (int copied = from; copied < to;) {
+				check(poll);
+				int length = Math.min(1024, to - copied);
+				System.arraycopy(scratch, copied, index, copied, length);
+				copied += length;
+			}
+		}
 	}
 
 	private static int compareRows(long[] rows, int stride, int leftRow, int rightRow, int[] keyColumns,
-			boolean[] descending, KernelHooks hooks) {
+			boolean[] descending, KernelHooks hooks, SortPoll poll) {
 		for (int k = 0; k < keyColumns.length; k++) {
+			step(poll);
 			long left = rows[leftRow * stride + keyColumns[k]];
 			long right = rows[rightRow * stride + keyColumns[k]];
 			int cmp = hooks != null ? hooks.compareOutputValues(left, right, keyColumns[k])
@@ -1823,8 +2078,9 @@ public final class KernelRuntime {
 	}
 
 	private static void siftDown(int[] heap, int slot, int heapSize, long[] rows, int stride, int[] keyColumns,
-			boolean[] descending, KernelHooks hooks) {
+			boolean[] descending, KernelHooks hooks, SortPoll poll) {
 		while (true) {
+			step(poll);
 			int leftChild = slot * 2 + 1;
 			if (leftChild >= heapSize) {
 				return;
@@ -1833,16 +2089,68 @@ public final class KernelRuntime {
 			int rightChild = leftChild + 1;
 			if (rightChild < heapSize
 					&& compareRows(rows, stride, heap[rightChild], heap[leftChild], keyColumns, descending,
-							hooks) > 0) {
+							hooks, poll) > 0) {
 				biggest = rightChild;
 			}
-			if (compareRows(rows, stride, heap[biggest], heap[slot], keyColumns, descending, hooks) <= 0) {
+			if (compareRows(rows, stride, heap[biggest], heap[slot], keyColumns, descending, hooks, poll) <= 0) {
 				return;
 			}
 			int swap = heap[slot];
 			heap[slot] = heap[biggest];
 			heap[biggest] = swap;
 			slot = biggest;
+		}
+	}
+
+	private static void copy(long[] source, long[] destination, int length, SortPoll poll) {
+		copy(source, 0, destination, 0, length, poll);
+	}
+
+	private static void copy(long[] source, int sourceOffset, long[] destination, int destinationOffset, int length,
+			SortPoll poll) {
+		if (poll == null) {
+			System.arraycopy(source, sourceOffset, destination, destinationOffset, length);
+		} else {
+			for (int from = 0; from < length;) {
+				check(poll);
+				int count = Math.min(1024, length - from);
+				System.arraycopy(source, sourceOffset + from, destination, destinationOffset + from, count);
+				from += count;
+			}
+		}
+	}
+
+	private static void step(SortPoll poll) {
+		if (poll != null) {
+			pollCancellation(poll.callback, ++poll.ticks);
+		}
+	}
+
+	private static void check(SortPoll poll) {
+		if (poll != null) {
+			poll.callback.run();
+		}
+	}
+
+	private static void pollCancellation(Runnable cancellationPoll, int tick) {
+		if ((tick & 1023) == 0) {
+			checkCancellation(cancellationPoll);
+		}
+	}
+
+	private static void checkCancellation(Runnable cancellationPoll) {
+		if (cancellationPoll != null) {
+			cancellationPoll.run();
+		}
+	}
+
+	private static final class SortPoll {
+		private final Runnable callback;
+		private int ticks;
+
+		private SortPoll(Runnable callback) {
+			this.callback = callback;
+			callback.run();
 		}
 	}
 

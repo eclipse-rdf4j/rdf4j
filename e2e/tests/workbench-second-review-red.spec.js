@@ -176,8 +176,13 @@ test('Add keeps compact source choices, selected input, Format, then Upload with
 	expect(order.bodyScrollWidth).toBeLessThanOrEqual(390);
 });
 
-test('Explore keeps preferences collapsed and pagination below the result island', async ({ page }) => {
-	await page.goto(`${REPOSITORY_BASE_URL}/explore?resource=%3Chttp%3A%2F%2Fexample.org%2Falice%3E`, {
+test('Explore keeps preferences collapsed and section pagination below its rows', async ({ page, request }) => {
+	const loaded = await request.post(`${SERVER_BASE_URL}/repositories/${REPOSITORY_ID}/statements`, {
+		headers: { 'Content-Type': 'application/n-triples' },
+		data: Array.from({ length: 101 }, (_, index) => `<urn:review:pager> <urn:p> "${index}" .`).join('\n')
+	});
+	expect([200, 201, 204]).toContain(loaded.status());
+	await page.goto(`${REPOSITORY_BASE_URL}/explore?resource=${encodeURIComponent('<urn:review:pager>')}`, {
 		waitUntil: 'domcontentloaded'
 	});
 	await expect(page.locator('#explore-result-options')).toHaveCount(1);
@@ -186,12 +191,16 @@ test('Explore keeps preferences collapsed and pagination below the result island
 	await expect(page.locator('#explore-result-options-panel')).toHaveCount(1);
 	await expect(page.locator('#explore-result-options-panel')).toBeHidden();
 	await expect(page.locator('label[for="resource"]')).toHaveCount(1);
+	const outgoing = page.locator('[data-explore-role="outgoing"]');
+	await expect(outgoing.locator('.workbench-window-controls')).toBeVisible();
 	const geometry = await page.evaluate(() => {
-		const result = document.querySelector('#explore-results table.data, #explore-results table.simple')?.getBoundingClientRect();
+		const section = document.querySelector('[data-explore-role="outgoing"]');
+		const result = section.querySelector('.query-result-layout').getBoundingClientRect();
 		const label = document.querySelector('label[for="resource"]')?.getBoundingClientRect();
 		const resource = document.querySelector('#resource')?.getBoundingClientRect();
-		const previous = document.querySelector('#previousX').getBoundingClientRect();
-		const next = document.querySelector('#nextX').getBoundingClientRect();
+		const controls = section.querySelectorAll('.workbench-window-controls button');
+		const previous = controls[0].getBoundingClientRect();
+		const next = controls[1].getBoundingClientRect();
 		return {
 			resultBottom: result?.bottom || 0,
 			previousTop: previous.top,

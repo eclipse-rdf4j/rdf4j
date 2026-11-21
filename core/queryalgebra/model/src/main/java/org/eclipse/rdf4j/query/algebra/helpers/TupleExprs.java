@@ -18,10 +18,12 @@ import java.util.Deque;
 import java.util.List;
 import java.util.Set;
 
+import org.eclipse.rdf4j.common.annotation.InternalUseOnly;
 import org.eclipse.rdf4j.model.BNode;
 import org.eclipse.rdf4j.model.Literal;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.query.algebra.AggregateOperator;
+import org.eclipse.rdf4j.query.algebra.Difference;
 import org.eclipse.rdf4j.query.algebra.Distinct;
 import org.eclipse.rdf4j.query.algebra.Exists;
 import org.eclipse.rdf4j.query.algebra.Extension;
@@ -29,18 +31,22 @@ import org.eclipse.rdf4j.query.algebra.ExtensionElem;
 import org.eclipse.rdf4j.query.algebra.Filter;
 import org.eclipse.rdf4j.query.algebra.Graph;
 import org.eclipse.rdf4j.query.algebra.Join;
+import org.eclipse.rdf4j.query.algebra.MultiProjection;
 import org.eclipse.rdf4j.query.algebra.Not;
 import org.eclipse.rdf4j.query.algebra.Order;
 import org.eclipse.rdf4j.query.algebra.Projection;
+import org.eclipse.rdf4j.query.algebra.ProjectionElem;
 import org.eclipse.rdf4j.query.algebra.ProjectionElemList;
 import org.eclipse.rdf4j.query.algebra.QueryModelNode;
 import org.eclipse.rdf4j.query.algebra.Reduced;
 import org.eclipse.rdf4j.query.algebra.Service;
 import org.eclipse.rdf4j.query.algebra.Slice;
+import org.eclipse.rdf4j.query.algebra.SubQueryValueOperator;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.algebra.UnaryTupleOperator;
 import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.query.algebra.VariableScopeChange;
+import org.eclipse.rdf4j.query.algebra.helpers.collectors.VarNameCollector;
 
 /**
  * Utility methods for {@link TupleExpr} objects.
@@ -48,6 +54,42 @@ import org.eclipse.rdf4j.query.algebra.VariableScopeChange;
  * @author Jeen Broekstra
  */
 public class TupleExprs {
+
+	/**
+	 * Returns the nearest projection that exports a scalar expression's input in the same result scope.
+	 */
+	@InternalUseOnly
+	public static UnaryTupleOperator projectingExpressionScope(Var variable) {
+		UnaryTupleOperator projection = null;
+		QueryModelNode child = variable;
+		for (QueryModelNode parent = child.getParentNode(); parent != null; parent = child.getParentNode()) {
+			if (parent instanceof ExtensionElem element && !isEvaluatedExtensionElement(element)) {
+				return null;
+			}
+			if (parent instanceof SubQueryValueOperator subquery && child == subquery.getSubQuery()
+					|| parent instanceof Difference difference && child == difference.getRightArg()) {
+				return null;
+			}
+			if (projection == null && (parent instanceof Projection || parent instanceof MultiProjection)) {
+				projection = (UnaryTupleOperator) parent;
+			}
+			child = parent;
+		}
+		if (projection == null) {
+			return null;
+		}
+		List<ProjectionElemList> lists = projection instanceof Projection single
+				? List.of(single.getProjectionElemList())
+				: ((MultiProjection) projection).getProjections();
+		for (ProjectionElemList list : lists) {
+			for (ProjectionElem element : list.getElements()) {
+				if (variable.getName().equals(element.getName())) {
+					return projection;
+				}
+			}
+		}
+		return null;
+	}
 
 	/** The direct-SELECT exemption used when preparing an RDF4J LATERAL caller scope. */
 	public static boolean preservesDirectSubSelectBindings(TupleExpr rightArg, Set<String> newInputNames) {
@@ -88,6 +130,39 @@ public class TupleExprs {
 		return !(expression instanceof Service)
 				&& (isVariableScopeChange(expression) || containsSubquery(expression)
 						|| containsGraphBoundary(expression));
+	}
+
+	/**
+	 * Whether a bind join would expose a sibling's binding to a non-projected local variable of a nested SELECT. Unlike
+	 * {@link #containsSubquery(TupleExpr)}, this proof inspects projections inside joins as well. Projected names
+	 * remain compatible join keys; an unprojected name must not constrain the SELECT body through sibling-row
+	 * injection.
+	 */
+	@InternalUseOnly
+	public static boolean subqueryObservesInjectedBindings(TupleExpr subtree, Set<String> injectedNames) {
+		if (injectedNames.isEmpty()) {
+			return false;
+		}
+		boolean[] observes = { false };
+		subtree.visit(new AbstractSimpleQueryModelVisitor<RuntimeException>(false) {
+			@Override
+			public void meet(Projection projection) {
+				if (observes[0]) {
+					return;
+				}
+				if (projection.isSubquery()) {
+					Set<String> projected = projection.getBindingNames();
+					for (String name : VarNameCollector.process(projection.getArg())) {
+						if (injectedNames.contains(name) && !projected.contains(name)) {
+							observes[0] = true;
+							return;
+						}
+					}
+				}
+				super.meet(projection);
+			}
+		});
+		return observes[0];
 	}
 
 	/**

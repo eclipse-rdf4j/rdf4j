@@ -15,10 +15,21 @@ import java.io.File;
 import java.io.IOException;
 import java.lang.invoke.MethodHandles;
 import java.lang.invoke.VarHandle;
+import java.nio.ByteBuffer;
+import java.nio.CharBuffer;
+import java.nio.channels.FileChannel;
+import java.nio.channels.FileLock;
+import java.nio.channels.OverlappingFileLockException;
+import java.nio.channels.SeekableByteChannel;
 import java.nio.charset.StandardCharsets;
+import java.nio.file.DirectoryStream;
 import java.nio.file.Files;
+import java.nio.file.LinkOption;
+import java.nio.file.NoSuchFileException;
 import java.nio.file.Path;
+import java.nio.file.SecureDirectoryStream;
 import java.nio.file.StandardOpenOption;
+import java.nio.file.attribute.BasicFileAttributeView;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collections;
@@ -26,6 +37,7 @@ import java.util.IdentityHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.Set;
 import java.util.concurrent.locks.ReentrantReadWriteLock;
 
 import org.eclipse.rdf4j.common.iteration.CancellationSignal;
@@ -94,11 +106,9 @@ public abstract class AbstractSail implements Sail {
 
 	private static final Logger logger = LoggerFactory.getLogger(AbstractSail.class);
 	private static final Logger slowQueryLogger = LoggerFactory.getLogger("org.eclipse.rdf4j.sail.slowquery");
-
-	/**
-	 * Directory to store information related to this sail in (if any).
-	 */
-	private volatile File dataDir;
+	// Keep open, append and close together across Sail instances, including hard-link aliases of the same file.
+	// On some platforms, closing any channel for a file releases all of this JVM's file locks on it.
+	private static final Object slowQueryLogFileLock = new Object();
 
 	/**
 	 * Flag indicating whether the Sail has been initialized. Sails are initialized from {@link #init() initialization}
@@ -154,10 +164,10 @@ public abstract class AbstractSail implements Sail {
 	protected volatile long connectionTimeOut = DEFAULT_CONNECTION_TIMEOUT;
 
 	private long iterationCacheSyncThreshold = DEFAULT_ITERATION_SYNC_THRESHOLD;
-	private long slowQueryLogThresholdSeconds;
-	private long slowQueryLogFirstResultThresholdSeconds;
-	private String slowQueryLogFile;
-	private final Object slowQueryLogFileLock = new Object();
+	// Queries reuse one immutable snapshot; only configuration changes need synchronization and allocation.
+	private volatile SlowQuerySupport.Configuration slowQueryLogConfiguration = new SlowQuerySupport.Configuration(0, 0,
+			null, null);
+	private final Object slowQueryLogConfigurationLock = new Object();
 
 	// track the results size that each node in the query plan produces during execution
 	private boolean trackResultSize;
@@ -193,16 +203,21 @@ public abstract class AbstractSail implements Sail {
 			throw new IllegalStateException("sail has already been initialized");
 		}
 
-		this.dataDir = dataDir;
+		synchronized (slowQueryLogConfigurationLock) {
+			SlowQuerySupport.Configuration current = slowQueryLogConfiguration;
+			slowQueryLogConfiguration = new SlowQuerySupport.Configuration(current.thresholdSeconds(),
+					current.firstResultThresholdSeconds(), current.logFile(), dataDir);
+		}
 	}
 
 	@Override
 	public File getDataDir() {
-		return dataDir;
+		return slowQueryLogConfiguration.dataDir();
 	}
 
 	@Override
 	public String toString() {
+		File dataDir = slowQueryLogConfiguration.dataDir();
 		if (dataDir == null) {
 			return super.toString();
 		} else {
@@ -272,6 +287,13 @@ public abstract class AbstractSail implements Sail {
 						throw new SailException("An active Sail operation cannot shut down its own store");
 					}
 				}
+			}
+
+			// Validate the caller before changing subclass ownership. A native maintenance worker can fail
+			// to quiesce; that preflight must leave this lifecycle initialized so shutdown can safely be retried.
+			prepareForShutdown();
+
+			synchronized (activeConnections) {
 				SHUTTING_DOWN.setRelease(this, true);
 				shutdownGeneration++;
 				closing = true;
@@ -334,6 +356,15 @@ public abstract class AbstractSail implements Sail {
 			initializationLock.writeLock().unlock();
 			CancellationSignal.restoreCurrent(previous);
 		}
+	}
+
+	/**
+	 * Quiesces store-specific owners before shutdown changes the initialized state or cancels connections. Called after
+	 * rejecting shutdown from an active operation, under the initialization write lock and without holding the
+	 * active-connections monitor. A failure leaves the store initialized; an implementation must retain any native
+	 * resources that an unfinished owner can still use, and support a later shutdown retry.
+	 */
+	protected void prepareForShutdown() throws SailException {
 	}
 
 	/** Stores with interruptible operation accounting can cancel immediately rather than grant a close grace period. */
@@ -503,27 +534,52 @@ public abstract class AbstractSail implements Sail {
 	}
 
 	public long getSlowQueryLogThresholdSeconds() {
-		return slowQueryLogThresholdSeconds;
+		return slowQueryLogConfiguration.thresholdSeconds();
 	}
 
 	public void setSlowQueryLogThresholdSeconds(long slowQueryLogThresholdSeconds) {
-		this.slowQueryLogThresholdSeconds = slowQueryLogThresholdSeconds;
+		synchronized (slowQueryLogConfigurationLock) {
+			SlowQuerySupport.Configuration current = slowQueryLogConfiguration;
+			slowQueryLogConfiguration = new SlowQuerySupport.Configuration(slowQueryLogThresholdSeconds,
+					current.firstResultThresholdSeconds(), current.logFile(), current.dataDir());
+		}
 	}
 
 	public long getSlowQueryLogFirstResultThresholdSeconds() {
-		return slowQueryLogFirstResultThresholdSeconds;
+		return slowQueryLogConfiguration.firstResultThresholdSeconds();
 	}
 
 	public void setSlowQueryLogFirstResultThresholdSeconds(long slowQueryLogFirstResultThresholdSeconds) {
-		this.slowQueryLogFirstResultThresholdSeconds = slowQueryLogFirstResultThresholdSeconds;
+		synchronized (slowQueryLogConfigurationLock) {
+			SlowQuerySupport.Configuration current = slowQueryLogConfiguration;
+			slowQueryLogConfiguration = new SlowQuerySupport.Configuration(current.thresholdSeconds(),
+					slowQueryLogFirstResultThresholdSeconds, current.logFile(), current.dataDir());
+		}
 	}
 
 	public String getSlowQueryLogFile() {
-		return slowQueryLogFile;
+		return slowQueryLogConfiguration.logFile();
 	}
 
+	/**
+	 * Sets the slow-query log file relative to this Sail's data directory. Only {@code .log} files within that
+	 * directory are allowed; symbolic links below it are rejected. A null or blank value selects the default logger.
+	 * Parent directories must already exist. File output requires read/write access, secure directory streams and file
+	 * locking. If those are unavailable, or file access fails, entries are written to the default logger instead.
+	 *
+	 * @throws IllegalArgumentException if the configured path is invalid
+	 */
 	public void setSlowQueryLogFile(String slowQueryLogFile) {
-		this.slowQueryLogFile = slowQueryLogFile;
+		SlowQuerySupport.validateLogFile(slowQueryLogFile);
+		synchronized (slowQueryLogConfigurationLock) {
+			SlowQuerySupport.Configuration current = slowQueryLogConfiguration;
+			slowQueryLogConfiguration = new SlowQuerySupport.Configuration(current.thresholdSeconds(),
+					current.firstResultThresholdSeconds(), slowQueryLogFile, current.dataDir());
+		}
+	}
+
+	SlowQuerySupport.Configuration snapshotSlowQueryLogConfiguration() {
+		return slowQueryLogConfiguration;
 	}
 
 	/**
@@ -564,35 +620,61 @@ public abstract class AbstractSail implements Sail {
 		return SlowQueryTicker.currentTimeMillis();
 	}
 
-	void writeSlowQueryLogEntry(String logEntry) {
-		String configuredLogFile = slowQueryLogFile;
+	void writeSlowQueryLogEntry(SlowQuerySupport.Configuration configuration, String logEntry) {
+		String configuredLogFile = configuration.logFile();
 		if (configuredLogFile == null || configuredLogFile.isBlank()) {
 			slowQueryLogger.warn(logEntry);
 			return;
 		}
 
 		try {
-			Path configuredPath = Path.of(configuredLogFile.trim());
-			Path resolvedPath = configuredPath;
-			if (!configuredPath.isAbsolute()) {
-				File currentDataDir = getDataDir();
-				if (currentDataDir == null) {
-					slowQueryLogger.warn(logEntry + System.lineSeparator()
-							+ "Warning: configured slow query log file '" + configuredLogFile
-							+ "' is relative but dataDir is not set. Falling back to logger.");
-					return;
-				}
-				resolvedPath = currentDataDir.toPath().resolve(configuredPath).normalize();
+			Path configuredPath = SlowQuerySupport.getLogFilePath(configuredLogFile);
+			File currentDataDir = configuration.dataDir();
+			if (currentDataDir == null) {
+				slowQueryLogger.warn(logEntry + System.lineSeparator()
+						+ "Warning: configured slow query log file '" + configuredLogFile
+						+ "' cannot be used because dataDir is not set. Falling back to logger.");
+				return;
 			}
 
-			Path parent = resolvedPath.getParent();
-			if (parent != null) {
-				Files.createDirectories(parent);
-			}
+			ByteBuffer entry = StandardCharsets.UTF_8.newEncoder()
+					.encode(CharBuffer.wrap(logEntry + System.lineSeparator() + System.lineSeparator()));
 			synchronized (slowQueryLogFileLock) {
-				Files.writeString(resolvedPath, logEntry + System.lineSeparator() + System.lineSeparator(),
-						StandardCharsets.UTF_8, StandardOpenOption.CREATE, StandardOpenOption.APPEND,
-						StandardOpenOption.WRITE);
+				Path dataDirectory = currentDataDir.getCanonicalFile().toPath();
+				Path resolvedPath = dataDirectory.resolve(configuredPath);
+				try (SecureDirectoryStream<Path> parent = openSlowQueryLogDirectory(resolvedPath.getParent())) {
+					Path fileName = resolvedPath.getFileName();
+					try {
+						requireRegularSlowQueryLogFile(parent, fileName);
+					} catch (NoSuchFileException e) {
+						// The handle-relative append below creates a missing file without following symbolic links.
+					}
+					try (SeekableByteChannel channel = parent.newByteChannel(fileName,
+							Set.of(StandardOpenOption.CREATE, StandardOpenOption.READ, StandardOpenOption.WRITE,
+									LinkOption.NOFOLLOW_LINKS))) {
+						if (!(channel instanceof FileChannel fileChannel)) {
+							throw new IOException("Filesystem does not support locking slow query log files");
+						}
+						// READ + WRITE avoids waiting for a reader if a FIFO replaces the checked file during open.
+						// Check the opened descriptor too: the pathname may already name a regular file again.
+						fileChannel.position(0);
+						requireRegularSlowQueryLogFile(parent, fileName);
+						try (FileLock lock = fileChannel.tryLock()) {
+							if (lock == null) {
+								throw new IOException("Slow query log file is already locked");
+							}
+							// READ cannot be combined with APPEND, so seek and write the complete entry under the lock.
+							fileChannel.position(fileChannel.size());
+							while (entry.hasRemaining()) {
+								if (fileChannel.write(entry) == 0) {
+									throw new IOException("Slow query log file write made no progress");
+								}
+							}
+						} catch (OverlappingFileLockException e) {
+							throw new IOException("Slow query log file is already locked", e);
+						}
+					}
+				}
 			}
 		} catch (RuntimeException e) {
 			slowQueryLogger.warn(
@@ -602,6 +684,38 @@ public abstract class AbstractSail implements Sail {
 		} catch (IOException e) {
 			slowQueryLogger.warn("Failed to write slow query log entry to configured path '{}'.", configuredLogFile, e);
 			slowQueryLogger.warn(logEntry);
+		}
+	}
+
+	private static SecureDirectoryStream<Path> openSlowQueryLogDirectory(Path directory) throws IOException {
+		// Anchor at the filesystem root so replacement of any parent, including dataDir, cannot redirect traversal.
+		DirectoryStream<Path> root = Files.newDirectoryStream(directory.getRoot());
+		if (!(root instanceof SecureDirectoryStream<Path> current)) {
+			try (root) {
+				throw new IOException("Filesystem does not support secure slow query log file access");
+			}
+		}
+		try {
+			for (Path component : directory) {
+				// Never create directories by pathname: the secure API has no race-free directory creation operation.
+				try (SecureDirectoryStream<Path> parent = current) {
+					current = parent.newDirectoryStream(component, LinkOption.NOFOLLOW_LINKS);
+				}
+			}
+			return current;
+		} catch (IOException | RuntimeException | Error e) {
+			try (SecureDirectoryStream<Path> failedDirectory = current) {
+				throw e;
+			}
+		}
+	}
+
+	private static void requireRegularSlowQueryLogFile(SecureDirectoryStream<Path> parent, Path fileName)
+			throws IOException {
+		if (!parent.getFileAttributeView(fileName, BasicFileAttributeView.class, LinkOption.NOFOLLOW_LINKS)
+				.readAttributes()
+				.isRegularFile()) {
+			throw new IOException("Slow query log file must be a regular .log file");
 		}
 	}
 }

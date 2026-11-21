@@ -20,7 +20,7 @@ import { canvasGraph, RDF_TYPE } from "./graph-canvas-scope.ts";
 import type { RangeDraft, FilterFacet, PredicateOption, ContextMenu, ViewMode, LoadBatch, NamedGroup, GraphHistorySnapshot, LayoutIntent } from "./explorer-types.ts";
 import { INCREMENTAL_LAYOUT_DURATION, PROGRAMMATIC_NODE_MOTION_DURATION, DOUBLE_TAP_DELAY, DOUBLE_TAP_DISTANCE, TAP_MOVE_TOLERANCE, DOUBLE_TAP_ZOOM_SENSITIVITY, HISTORY_LIMIT, INTERACTIVE_TRANSFORM_COMMIT_DELAY, DEFAULT_QUERY, SHOW_VALUES_STORAGE_KEY, SHOW_LABELS_STORAGE_KEY, readDisplayPreferences, DETAILS_ITEM_LIMIT, LEGEND_TYPE_LIMIT, LABEL_WAIT_MS, FACET_LIST_LIMIT, MORE_BADGE_NODE_LIMIT, EDGE_HIT_PIXELS, QUEUED_QUERY_ROW_LIMIT, SHADOW_NODE_LIMIT, LARGE_GRAPH_NODES } from "./explorer-config.ts";
 import { ARROW_MARKER, UNTYPED_IRI_TYPE, TYPE_PALETTE, LITERAL_VISUAL, BLANK_VISUAL, LOADING_IRI_VISUAL, typeVisual, facetValueVisual, primaryNodeType, nodeVisual, nodeTypeIds } from "./graph-visuals.ts";
-import { compactTerm, isSafeSparqlIri, predicateLabel, findBindingValue, bindingsToTriples, tripleEdgeId } from "./graph-terms.ts";
+import { compactTerm, setNamespaces, isSafeSparqlIri, predicateLabel, findBindingValue, bindingsToTriples, tripleEdgeId } from "./graph-terms.ts";
 import { leafClusterForNode, directNeighborIds, seedIncrementalNodes, mergeTriples, mergeResourceNodes, cloneGraph, preserveSharedNodePositions, removeGraphNodes, groupsInGraph, shortestPathInGraph, commonNeighborIds, newEdgesOf } from "./graph-operations.ts";
 import { addToSelection, contextMenuScope, selectionKeys, selectionModifier, selectionToEdit, toggleInSelection } from "./graph-selection.ts";
 import { escapeStep } from "./graph-dismissal.ts";
@@ -42,18 +42,21 @@ import { LoadHistoryPanel, NavigatorPanel } from "./side-panels.tsx";
 import { StatusBar } from "./status-bar.tsx";
 import { ExplorerToolbar } from "./explorer-toolbar.tsx";
 import { QueryDrawer } from "./query-drawer.tsx";
+import { exactSearchResource } from "./repository-search.ts";
+import { useRepositorySearchSize } from "./use-repository-search-size.ts";
 import { FindField } from "./find-field.tsx";
 import { EdgeView, NodeView, stableCurves, type NodeHandlers } from "./graph-canvas-view.tsx";
 import { useFacetFilters } from "./use-facet-filters.ts";
-import { DataViews, recommendedViewOf, type DataViewMode } from "./data-views.tsx";
+import { DataViews, type DataViewMode } from "./data-views.tsx";
 import { colorToRgba, readCanvasPalette } from "./graph-canvas-controller.ts";
 import { createGraphVertexCache, graphClipTransform } from "./graph-webgl.ts";
 import { retainGraphLayoutWorker, startGraphLayout } from "./graph-layout-client.ts";
 import { expansionMovableIds } from "./graph-layout-expansion.ts";
+import { describeRelayoutChanges, laidOutGraph, readLayoutTiming, relayoutEstimate, relayoutSuggestion, writeLayoutTiming, type LaidOutGraph, type LayoutMode, type LayoutTiming } from "./relayout-suggestion.ts";
 import { LINK_COUNT_CAP, RdfExplorer, clearMetadataCache } from "./rdf-explorer.ts";
 import { bringsNewLinks, linkCountCap, linkTotalStale, loadedLinkCounts, loadedLinksOf, moreLinks, type LinkTotal } from "./link-counts.ts";
 import { EXPAND_PAGE_LIMIT } from "./explorer-config.ts";
-import { RELATION_CONFIRM_LINKS, loadedRelationLinks, relationCountCap, relationLimits, relationPlan, type RelationAmount } from "./relation-expansion.ts";
+import { RELATION_CONFIRM_LINKS, loadedRelationLinks, relationCountCap, relationLimits, relationPlan, valuesRevealedBy, type RelationAmount } from "./relation-expansion.ts";
 import { cssColorResolver, downloadFile, graphSvg, graphTurtle, svgToPng } from "./graph-export.ts";
 import { curveMidpoint, nearestEdge } from "./edge-hit.ts";
 import { StatementDetailsCard } from "./statement-details-card.tsx";
@@ -69,7 +72,7 @@ import { labelGuidance, type LabelEvidence } from "./label-policy.ts";
 import { useLabelPolicy, useDismissedLabelGuidance } from "./use-label-policy.ts";
 import { Icon } from "./icons.tsx";
 import { entitySearchQuery, expandQuery, expansionSkipsAllLoaded, neighborsQuery, seedQuery, type GraphScope } from "./rdf-vocabulary.ts";
-import { explorePageUrl, graphEndpoint, queryPageUrl, queryRepository as executeRepositoryQuery } from "./transport.ts";
+import { explorePageUrl, fetchNamespaces, graphEndpoint, queryPageUrl, queryRepository as executeRepositoryQuery } from "./transport.ts";
 import {
   useCallback,
   useEffect,
@@ -112,7 +115,8 @@ import type { WorkspacePayload, WorkspaceViewState } from "./workspace";
 import { useWorkspaceLibrary } from "./use-workspace-library.tsx";
 import { snapshotSourceOrNull } from "./workspace-snapshots.ts";
 import type { WorkspaceSnapshotMetadata } from "./workspace-snapshot-store.ts";
-import { repositoryScope } from "./repository-identity.ts";
+import { repositoryScope, sessionRepositoryScope } from "./repository-identity.ts";
+import { copyToClipboard } from "./clipboard.ts";
 
 export type GraphExplorerProps = {
   /** The Workbench context path, e.g. /rdf4j-workbench. */
@@ -121,6 +125,8 @@ export type GraphExplorerProps = {
   repositoryId: string;
   /** Credential-free identity of the RDF4J server selected by the backend. */
   serverIdentity: string;
+  /** The signed-in server user, "" when nobody is signed in: the graph is kept per user. */
+  serverUser?: string;
   /** The Graph servlet's limits (page data): results stop at maxResultRows without saying so. */
   limits?: { maxResultRows?: number; maxQueryLength?: number };
 };
@@ -141,10 +147,27 @@ function browserStorage() {
   }
 }
 
-export function GraphExplorerApp({ basePath, repositoryId, serverIdentity, limits }: GraphExplorerProps) {
-  const workspaceScope = repositoryScope(basePath, repositoryId, serverIdentity);
+export function GraphExplorerApp({ basePath, repositoryId, serverIdentity, serverUser = "", limits }: GraphExplorerProps) {
+  const workspaceScope = repositoryScope(basePath, repositoryId, serverIdentity, serverUser);
+  // This browser session's graph from before graphs were kept per user, brought along once.
+  const sessionWorkspaceScope = sessionRepositoryScope(basePath, repositoryId, serverIdentity);
   // The explorer's own queries go first: the Filters panel's background loading waits while any of them runs.
   const [foreground] = useState(foregroundTracker);
+  // The repository's namespaces shorten IRIs everywhere; until they arrive (or if they cannot be fetched) the built-in
+  // prefixes apply. The counter re-renders what already shows a compact term.
+  const [, setNamespacesLoaded] = useState(0);
+  useEffect(() => {
+    const controller = new AbortController();
+    void fetchNamespaces(basePath, repositoryId, controller.signal).then((namespaces) => {
+      if (controller.signal.aborted || !namespaces.length) return;
+      setNamespaces(namespaces);
+      setNamespacesLoaded((count) => count + 1);
+    });
+    return () => {
+      controller.abort();
+      setNamespaces([]);
+    };
+  }, [basePath, repositoryId]);
   const queryRepository = useCallback((endpoint: string, query: string, signal?: AbortSignal) =>
     foreground.track(executeRepositoryQuery(endpoint, query, signal, serverIdentity)), [foreground, serverIdentity]);
   const backgroundQuery = useCallback((endpoint: string, query: string, signal?: AbortSignal) =>
@@ -190,6 +213,13 @@ export function GraphExplorerApp({ basePath, repositoryId, serverIdentity, limit
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [isLayoutAnimating, setIsLayoutAnimating] = useState(false);
   const [isLayoutComputing, setIsLayoutComputing] = useState(false);
+  /** What the last full layout placed (or a stored graph showed): later changes are measured against it. */
+  const [laidOut, setLaidOut] = useState<LaidOutGraph | null>(null);
+  /** How long this browser's last full layout of each kind took, for the estimate of the next one. */
+  const [layoutTimings, setLayoutTimings] = useState<Partial<Record<LayoutMode, LayoutTiming>>>(() => {
+    const storage = browserStorage();
+    return { network: readLayoutTiming(storage, "network"), hierarchy: readLayoutTiming(storage, "hierarchy"), square: readLayoutTiming(storage, "square") };
+  });
   const [isLargeGraphDragging, setIsLargeGraphDragging] = useState(false);
   const [webglAvailable, setWebglAvailable] = useState(true);
   const [edgeBends, setEdgeBends] = useState<Map<string, number>>(new Map());
@@ -225,7 +255,7 @@ export function GraphExplorerApp({ basePath, repositoryId, serverIdentity, limit
   const drawnGraphRef = useRef(drawnGraph);
   const showValuesRef = useRef(showValues);
   const layoutJobRef = useRef<ReturnType<typeof startGraphLayout> | null>(null);
-  const requestedLayoutRef = useRef<{mode: 'network' | 'hierarchy' | 'square'; refine?: boolean; repairOnly?: boolean} | null>(null);
+  const requestedLayoutRef = useRef<{mode: 'network' | 'hierarchy' | 'square'; repairOnly?: boolean} | null>(null);
   const layoutSizeSnapshotRef = useRef<{revision: number; nodes: GraphNode[]} | null>(null);
   const namedGroupsRef = useRef(namedGroups);
   const provenanceBatchesRef = useRef(provenanceBatches);
@@ -809,6 +839,8 @@ export function GraphExplorerApp({ basePath, repositoryId, serverIdentity, limit
     applyRouting(saved.graph, showValuesRef.current);
     // The incoming revision belongs to another view; only this page's generation orders asynchronous work.
     const restoredGraph = { ...saved.graph, revision: graphRef.current.revision + 1 };
+    // A stored graph comes with its own positions: changes are measured from what it showed.
+    setLaidOut(laidOutGraph(canvasGraph(restoredGraph, showValuesRef.current)));
     animateProgrammaticGraph(restoredGraph, saved.transform, { skipLayout: true, duration: 0 });
     setQuery(saved.query);
     setProvenanceBatches(saved.provenanceBatches);
@@ -843,6 +875,7 @@ export function GraphExplorerApp({ basePath, repositoryId, serverIdentity, limit
     restored: workspaceRestored, checkForNewer, unreadable: unreadableWorkspace, recoverUnreadable, discardUnreadable,
   } = useStoredWorkspace({
     scope: workspaceScope,
+    legacyScope: sessionWorkspaceScope,
     snapshot: captureWorkspace,
     // Label preferences followed from other tabs or the browser are not this page's change (labelPolicyChanges).
     changes: [graph, transform, query, provenanceBatches, namedGroups, manualSelectedNodeIds, focusedNodeId, graphScope,
@@ -889,6 +922,7 @@ export function GraphExplorerApp({ basePath, repositoryId, serverIdentity, limit
   restoreNamedSnapshotRef.current = workspaceLibrary.restoreActive;
 
   const endpoint = useMemo(() => graphEndpoint(basePath, repositoryId), [basePath, repositoryId]);
+  const repositorySearchSize = useRepositorySearchSize(basePath, repositoryId, serverIdentity, endpoint);
   const rdf4jRepository = useMemo(
     () => ({ id: repositoryId, title: repositoryId, endpoint, workbench: queryPageUrl(basePath, repositoryId, "") }),
     [basePath, repositoryId, endpoint],
@@ -995,6 +1029,7 @@ export function GraphExplorerApp({ basePath, repositoryId, serverIdentity, limit
     basePath,
     repositoryId,
     serverIdentity,
+    serverUser,
     endpoint,
     execute: backgroundQuery,
     scope: graphScope as GraphScope,
@@ -1046,6 +1081,13 @@ export function GraphExplorerApp({ basePath, repositoryId, serverIdentity, limit
   rangeDraftsRef.current = filters.rangeDrafts;
   restoreRangeDraftsRef.current = filters.restoreRangeDrafts;
   const selectedNodeIds = filters.hasActive ? filters.matches : manualSelectedNodeIds;
+  const selectAllDrawnNodes = useCallback(() => {
+    filters.clear();
+    const nodeIds = new Set(drawnGraphRef.current.nodes.map((node) => node.id));
+    setManualSelectedNodeIds((current) =>
+      current.size === nodeIds.size && [...nodeIds].every((nodeId) => current.has(nodeId)) ? current : nodeIds,
+    );
+  }, [filters.clear]);
   const selectedNodeIdList = useMemo(
     () => [...selectedNodeIds],
     [selectedNodeIds],
@@ -1056,6 +1098,22 @@ export function GraphExplorerApp({ basePath, repositoryId, serverIdentity, limit
     const ids = selectedNodeIdList.filter((id) => drawnNodeById.has(id));
     return ids.length >= 2 ? new Set(ids) : null;
   }, [selectedNodeIdList, drawnNodeById]);
+  /**
+   * The nodes and links that changed since the last full layout, when the graph would look better laid out again,
+   * the layout to run and how long it should take. Animations move nodes without a new revision; only what is drawn
+   * and pinned matters here, and both change the revision.
+   */
+  const relayout = useMemo(() => {
+    const changes = laidOut ? relayoutSuggestion(laidOut, drawnGraph) : null;
+    if (!changes) return null;
+    // A hierarchy is not laid out with pinned nodes or past 1,500 nodes (as in the Layout menu): organize instead.
+    const mode = changes.mode === "hierarchy" && (drawnGraph.nodes.length > 1500 || drawnGraph.nodes.some((node) => node.pinned))
+      ? "network"
+      : changes.mode;
+    const timing = layoutTimings[mode];
+    const estimate = relayoutEstimate(timing, drawnGraph.nodes.length, drawnGraph.edges.length);
+    return { ...changes, mode, estimate };
+  }, [laidOut, graph.revision, showValues, layoutTimings]);
   const batchById = useMemo(
     () => new Map(provenanceBatches.map((batch) => [batch.id, batch])),
     [provenanceBatches],
@@ -1164,11 +1222,6 @@ export function GraphExplorerApp({ basePath, repositoryId, serverIdentity, limit
         ? filterNodes.filter((node) => selectedNodeIds.has(node.id))
         : filterNodes,
     [filterNodes, selectedNodeIds],
-  );
-  // The "Recommended" mark depends on the loaded structure, not on labels; very large graphs are sampled.
-  const recommendedView = useMemo(
-    () => recommendedViewOf(graph.edges.length > 20000 ? { ...graph, edges: graph.edges.slice(0, 20000) } : graph, metadataNodeById),
-    [graph.revision],
   );
   const useWebglRenderer =
     !largeGraph && webglAvailable &&
@@ -1473,13 +1526,21 @@ export function GraphExplorerApp({ basePath, repositoryId, serverIdentity, limit
       if (!cancelled && graphRef.current.revision === graphSnapshot.revision) {
         const targetGraph = applyGraphPositions(graphRef.current, positionByEntityId);
         const targetNodes = targetGraph.nodes;
+        // A layout of the whole graph is what later changes are measured against, and its time estimates the next.
+        if (!isIncremental && !isLocalLayout && !requestedLayout?.repairOnly) {
+          const mode = requestedLayout?.mode ?? "network";
+          const timing = { nodes: graphSnapshot.nodes.length, links: graphSnapshot.edges.length, durationMs: performance.now() - layoutStartedAt };
+          setLaidOut(laidOutGraph(graphSnapshot, mode));
+          setLayoutTimings((current) => ({ ...current, [mode]: timing }));
+          writeLayoutTiming(browserStorage(), mode, timing);
+        }
         setEdgeBends(result.bends);
         setEdgeRoutes(result.routes ?? new Map());
         // "Organizing the network…" becomes "Organized the network." once the positions are in; other messages stay.
         setStatus((current) =>
-          /^(Organizing|Arranging|Tidying|Refining) .*…$/.test(current)
+          /^(Organizing|Arranging) .*…$/.test(current)
             ? current
-                .replace(/^(Organizing|Arranging|Tidying|Refining)/, (verb) => ({ Organizing: "Organized", Arranging: "Arranged", Tidying: "Tidied", Refining: "Refined" })[verb] ?? verb)
+                .replace(/^(Organizing|Arranging)/, (verb) => ({ Organizing: "Organized", Arranging: "Arranged" })[verb] ?? verb)
                 .replace(/…$/, ".")
             : current,
         );
@@ -1521,10 +1582,14 @@ export function GraphExplorerApp({ basePath, repositoryId, serverIdentity, limit
             keepView(targetTransform),
             {
               duration: INCREMENTAL_LAYOUT_DURATION,
-              onComplete: finishLayoutIntent,
+              onComplete: () => {
+                finishLayoutIntent();
+                // A relation expansion that turned Values on also placed the values it showed.
+                if (isLocalLayout) localLayoutNodeIdsRef.current = null;
+              },
             },
           );
-        } else if (isLocalLayout || requestedLayout?.refine) {
+        } else if (isLocalLayout || requestedLayout?.repairOnly) {
           animationRunId = animateProgrammaticGraph(
             targetGraph,
             transformRef.current,
@@ -1649,7 +1714,7 @@ export function GraphExplorerApp({ basePath, repositoryId, serverIdentity, limit
       // The canvas renderer draws nodes as dots, whatever their labels: a repair would only move them about.
       if (current.nodes.length >= LARGE_GRAPH_NODES) return;
       if (!layoutDimensionsChanged(measured.nodes, current.nodes)) return;
-      requestedLayoutRef.current = {mode: 'network', refine: true, repairOnly: true};
+      requestedLayoutRef.current = {mode: 'network', repairOnly: true};
       localLayoutNodeIdsRef.current = null;
       setLayoutNonce(value => value + 1);
     }, 180);
@@ -1792,7 +1857,15 @@ export function GraphExplorerApp({ basePath, repositoryId, serverIdentity, limit
       }
       // Undo in a text field undoes the typing, not the graph.
       if (typing || !(event.metaKey || event.ctrlKey)) return;
-      if (event.key.toLocaleLowerCase() === "z") {
+      const key = event.key.toLocaleLowerCase();
+      if (key === "a" && !event.shiftKey && !event.altKey && viewMode === "graph") {
+        if (drawnGraphRef.current.nodes.length) {
+          event.preventDefault();
+          selectAllDrawnNodes();
+        }
+        return;
+      }
+      if (key === "z") {
         event.preventDefault();
         if (event.shiftKey) redo();
         else undo();
@@ -1800,7 +1873,7 @@ export function GraphExplorerApp({ basePath, repositoryId, serverIdentity, limit
     };
     document.addEventListener("keydown", onKeyDown);
     return () => document.removeEventListener("keydown", onKeyDown);
-  }, [redo, undo]);
+  }, [redo, selectAllDrawnNodes, undo, viewMode]);
 
   useEffect(() => {
     setPathHighlight(null);
@@ -2156,8 +2229,8 @@ export function GraphExplorerApp({ basePath, repositoryId, serverIdentity, limit
     const searchRequestId = entitySearchRef.current + 1;
     entitySearchRef.current = searchRequestId;
     // An absolute IRI (with "//" or a urn:) loads that resource; anything else, "foaf:Person" included, searches labels.
-    const resource = resourceNodeId(term);
-    const looksLikeResource = resource !== undefined && (term.startsWith("<_:") || /^<?([A-Za-z][A-Za-z0-9+.-]*:\/\/|urn:)/i.test(term));
+    const resource = exactSearchResource(term);
+    const looksLikeResource = resource !== undefined;
     const nextQuery = looksLikeResource ? seedQuery([resource!],graphScope) : entitySearchQuery(term,[...explorer.properties],graphScope);
     setQuery(nextQuery);
     await execute(nextQuery, !graphRef.current.nodes.length);
@@ -2420,6 +2493,7 @@ export function GraphExplorerApp({ basePath, repositoryId, serverIdentity, limit
         }
         // Links already in the graph can come back (when not all of them fit into the query): count the new ones.
         let added = 0;
+        let valuesShown = false;
         if (triples.length || relationLinks.length) {
           const batch = createBatch(
             `Expanded ${option.label}`,
@@ -2442,6 +2516,18 @@ export function GraphExplorerApp({ basePath, repositoryId, serverIdentity, limit
           if (added) {
             pushHistory();
             setProvenanceBatches((current) => [...current, batch]);
+            // Values the relation brought would stay hidden with Values off. The user asked for them, so Values turns
+            // on, and they (with the values Values off was hiding) are placed beside their cards, as the Values button
+            // places them.
+            const revealed = showValuesRef.current ? null : valuesRevealedBy(currentGraph, merged);
+            if (revealed) {
+              valuesShown = true;
+              localLayoutNodeIdsRef.current = revealed;
+              try {
+                localStorage.setItem(SHOW_VALUES_STORAGE_KEY, "true");
+              } catch {}
+              setShowValues(true);
+            }
             layoutIntentRef.current = {
               mode: "incremental",
               revision: merged.revision,
@@ -2458,6 +2544,7 @@ export function GraphExplorerApp({ basePath, repositoryId, serverIdentity, limit
             : triples.length
               ? `The ${option.label} links that came back are all in the graph already.`
               : `No ${option.label} links found for the selection.`) +
+            (valuesShown ? " Values are shown." : "") +
             (saturated
               ? ` The server sends at most ${limits!.maxResultRows!.toLocaleString()} rows per request: expand ${option.label} again for the rest.`
               : ""),
@@ -2776,11 +2863,11 @@ export function GraphExplorerApp({ basePath, repositoryId, serverIdentity, limit
     let applying = false;
     const take = () => {
       if (stopped || applying || !additionsIdleRef.current || document.visibilityState === "hidden") return;
-      const additions = takeAdditions(basePath, repositoryId, undefined, serverIdentity);
+      const additions = takeAdditions(basePath, repositoryId, undefined, serverIdentity, serverUser);
       if (!additions.length) return;
       applying = true;
       void addFromWorkbenchRef.current(additions)
-        .then((left) => returnAdditions(basePath, repositoryId, left, undefined, serverIdentity))
+        .then((left) => returnAdditions(basePath, repositoryId, left, undefined, serverIdentity, serverUser))
         .catch(() => {})
         .finally(() => {
           applying = false;
@@ -2788,7 +2875,7 @@ export function GraphExplorerApp({ basePath, repositoryId, serverIdentity, limit
         });
     };
     takeAdditionsRef.current = take;
-    const key = additionsKey(basePath, repositoryId, serverIdentity);
+    const key = additionsKey(basePath, repositoryId, serverIdentity, serverUser);
     const onStorage = (event: StorageEvent) => {
       if (event.key === key && event.newValue) take();
     };
@@ -2807,7 +2894,7 @@ export function GraphExplorerApp({ basePath, repositoryId, serverIdentity, limit
       window.removeEventListener("storage", onStorage);
       document.removeEventListener("visibilitychange", onVisible);
     };
-  }, [workspaceRestored, basePath, repositoryId, serverIdentity, checkForNewer, invalidateAsyncRequests]);
+  }, [workspaceRestored, basePath, repositoryId, serverIdentity, serverUser, checkForNewer, invalidateAsyncRequests]);
   useEffect(() => {
     if (additionsIdle) takeAdditionsRef.current();
   }, [additionsIdle]);
@@ -3536,7 +3623,7 @@ ${connectionQuery(iriIds.slice(0,32),graphScope)}`;
 
   const copyText = async (text: string) => {
     try {
-      await navigator.clipboard.writeText(text);
+      await copyToClipboard(text);
       setStatus("Copied.");
     } catch {
       setStatus("Copying is not available here; select the text instead.");
@@ -3673,14 +3760,16 @@ ${connectionQuery(iriIds.slice(0,32),graphScope)}`;
     setGraph(next);
   };
 
-  const refineLayout = (mode: 'network' | 'hierarchy' | 'square' = 'network', refine = true) => {
+  /** Arranges the selection (two or more nodes) or, with `wholeGraph` or without one, every node. */
+  const arrangeLayout = (mode: LayoutMode, wholeGraph = false) => {
     if (!graph.nodes.length) return;
+    const selection = wholeGraph ? null : layoutSelection;
     setViewMode("graph");
     invalidateAsyncRequests();
     pushHistory();
-    requestedLayoutRef.current = {mode, refine};
+    requestedLayoutRef.current = {mode};
     layoutIntentRef.current = null;
-    localLayoutNodeIdsRef.current = layoutSelection;
+    localLayoutNodeIdsRef.current = selection;
     setIsLayoutAnimating(false);
     setEdgeBends(new Map());
     setEdgeRoutes(new Map());
@@ -3689,15 +3778,13 @@ ${connectionQuery(iriIds.slice(0,32),graphScope)}`;
       revision: current.revision + 1,
     }));
     setLayoutNonce((value) => value + 1);
-    const what = layoutSelection ? `the ${layoutSelection.size} selected nodes` : null;
+    const what = selection ? `the ${selection.size} selected nodes` : null;
     setStatus(
-      refine
-        ? what ? `Tidying ${what}…` : "Tidying the layout…"
-        : mode === 'hierarchy'
-          ? what ? `Arranging ${what} as a hierarchy…` : "Arranging as a hierarchy…"
-          : mode === 'square'
-            ? what ? `Arranging ${what} in a square…` : "Arranging in a square…"
-            : what ? `Organizing ${what}…` : "Organizing the network…",
+      mode === 'hierarchy'
+        ? what ? `Arranging ${what} as a hierarchy…` : "Arranging as a hierarchy…"
+        : mode === 'square'
+          ? what ? `Arranging ${what} in a square…` : "Arranging in a square…"
+          : what ? `Organizing ${what}…` : "Organizing the network…",
     );
   };
 
@@ -3756,6 +3843,7 @@ ${connectionQuery(iriIds.slice(0,32),graphScope)}`;
     skipLayoutRevisionRef.current = next.revision;
     layoutIntentRef.current = null;
     localLayoutNodeIdsRef.current = null;
+    setLaidOut(laidOutGraph(canvasGraph(next, showValuesRef.current)));
     graphRef.current = next; setGraph(next);
     const fitted = fitBoxes(next.nodes.map(node => ({x:node.x ?? 0,y:node.y ?? 0,width:220,height:50})));
     transformRef.current = fitted; setTransform(fitted);
@@ -3772,6 +3860,7 @@ ${connectionQuery(iriIds.slice(0,32),graphScope)}`;
     pushHistory();
     layoutIntentRef.current = null;
     localLayoutNodeIdsRef.current = null;
+    setLaidOut(null);
     setIsLayoutAnimating(false);
     setEdgeBends(new Map());
     setEdgeRoutes(new Map());
@@ -3885,7 +3974,6 @@ ${connectionQuery(iriIds.slice(0,32),graphScope)}`;
               setQueryPanelOpen((current) => !current);
             }}
             viewMode={viewMode}
-            recommendedView={recommendedView}
             onViewMode={(mode) => {
               finishTransientAction();
               setViewMode(mode);
@@ -3944,7 +4032,7 @@ ${connectionQuery(iriIds.slice(0,32),graphScope)}`;
                 label: "Organize network",
                 description: "Start over: hubs in the middle, related nodes together",
                 disabled: !drawnGraph.nodes.length,
-                onSelect: () => refineLayout("network", false),
+                onSelect: () => arrangeLayout("network"),
               },
               {
                 label: "Hierarchy",
@@ -3954,19 +4042,13 @@ ${connectionQuery(iriIds.slice(0,32),graphScope)}`;
                   ? [...layoutSelection].filter((id) => !drawnNodeById.get(id)?.pinned).length < 2
                   : !drawnGraph.nodes.length || drawnGraph.nodes.length > 1500 || drawnGraph.nodes.some((node) => node.pinned),
                 title: !layoutSelection && drawnGraph.nodes.some((node) => node.pinned) ? "Unpin nodes to arrange a hierarchy" : undefined,
-                onSelect: () => refineLayout("hierarchy", false),
+                onSelect: () => arrangeLayout("hierarchy"),
               },
               {
                 label: "Square",
                 description: "A grid, in the order the nodes stand now",
                 disabled: !drawnGraph.nodes.length,
-                onSelect: () => refineLayout("square", false),
-              },
-              {
-                label: "Tidy current layout",
-                description: "Improve the current arrangement without starting over",
-                disabled: !drawnGraph.nodes.length,
-                onSelect: () => refineLayout(),
+                onSelect: () => arrangeLayout("square"),
               },
               {
                 label: "Zoom to selected node",
@@ -4064,55 +4146,73 @@ ${connectionQuery(iriIds.slice(0,32),graphScope)}`;
           >
           <div ref={canvasWrapRef} className="canvas-wrap" data-dragging={draggingNodeId ? "" : undefined}>
             <FindField
+              repositorySize={repositorySearchSize.size}
+              onFocusSearch={repositorySearchSize.refresh}
               nodes={drawnGraph.nodes}
               busy={isQuerying}
               inputRef={findInputRef}
               onReveal={focusLinkedNode}
               onSearchRepository={(term) => void searchForSeed(term)}
             />
-            {hasSelectionCriteria || selectedNodeIds.size > 1 ? (
-              <div className="focus-summary selection-summary" aria-live="polite">
-                <strong>
-                  {selectedNodeIds.size}{" "}
-                  {selectedNodeIds.size === 1 ? "node" : "nodes"} {filters.hasActive ? "match the filters" : "selected"}
-                </strong>
-                <div className="selection-actions">
-                  <button
-                    className="workbench-action workbench-action--secondary"
-                    type="button"
-                    aria-label={filters.hasActive ? `Clear the filters that select ${selectedNodeIds.size} ${selectedNodeIds.size === 1 ? "node" : "nodes"}` : `Clear the selection of ${selectedNodeIds.size} ${selectedNodeIds.size === 1 ? "node" : "nodes"}`}
-                    onClick={() => {
-                      clearFacetFilters();
-                      setManualSelectedNodeIds(new Set());
-                    }}
-                  >
-                    <Icon name="clear" />
-                    Clear
-                  </button>
-                  <button
-                    className="workbench-action workbench-action--secondary"
-                    type="button"
-                    title="Load the neighbours of every selected node"
-                    disabled={!selectedNodeIds.size || expandingNodeIds.size > 0}
-                    onClick={() => void expandNodes([...selectedNodeIds], [...selectedNodeIds][0])}
-                  >
-                    <Icon name="expand" />
-                    Expand
-                  </button>
-                  <button
-                    className="workbench-action workbench-action--secondary"
-                    type="button"
-                    aria-keyshortcuts="Delete"
-                    title="Hide the selected nodes from the graph (Delete). Undo brings them back."
-                    disabled={!selectedNodeIds.size}
-                    onClick={() => hideNodes(new Set(selectedNodeIds))}
-                  >
-                    <Icon name="hide" />
-                    Hide
-                  </button>
+            {/* Under the find field: the selection bar, then the offer to lay the changed graph out again. */}
+            <div className="canvas-notices">
+              {hasSelectionCriteria || selectedNodeIds.size > 1 ? (
+                <div className="focus-summary selection-summary" aria-live="polite">
+                  <strong>
+                    {selectedNodeIds.size}{" "}
+                    {selectedNodeIds.size === 1 ? "node" : "nodes"} {filters.hasActive ? "match the filters" : "selected"}
+                  </strong>
+                  <div className="selection-actions">
+                    <button
+                      className="workbench-action workbench-action--secondary"
+                      type="button"
+                      aria-label={filters.hasActive ? `Clear the filters that select ${selectedNodeIds.size} ${selectedNodeIds.size === 1 ? "node" : "nodes"}` : `Clear the selection of ${selectedNodeIds.size} ${selectedNodeIds.size === 1 ? "node" : "nodes"}`}
+                      onClick={() => {
+                        clearFacetFilters();
+                        setManualSelectedNodeIds(new Set());
+                      }}
+                    >
+                      <Icon name="clear" />
+                      Clear
+                    </button>
+                    <button
+                      className="workbench-action workbench-action--secondary"
+                      type="button"
+                      title="Load the neighbours of every selected node"
+                      disabled={!selectedNodeIds.size || expandingNodeIds.size > 0}
+                      onClick={() => void expandNodes([...selectedNodeIds], [...selectedNodeIds][0])}
+                    >
+                      <Icon name="expand" />
+                      Expand
+                    </button>
+                    <button
+                      className="workbench-action workbench-action--secondary"
+                      type="button"
+                      aria-keyshortcuts="Delete"
+                      title="Hide the selected nodes from the graph (Delete). Undo brings them back."
+                      disabled={!selectedNodeIds.size}
+                      onClick={() => hideNodes(new Set(selectedNodeIds))}
+                    >
+                      <Icon name="hide" />
+                      Hide
+                    </button>
+                  </div>
                 </div>
-              </div>
-            ) : null}
+              ) : null}
+              {relayout && !workspaceBusy ? (
+                <button
+                  className="workbench-action workbench-action--secondary relayout-suggestion"
+                  type="button"
+                  title={`${describeRelayoutChanges(relayout)} since the graph was last laid out. Lay it out again (Undo brings this layout back)${relayout.estimate ? `; that takes ${relayout.estimate}` : ""}.`}
+                  onClick={() => arrangeLayout(relayout.mode, true)}
+                >
+                  <Icon name="layout" />
+                  Re-run layout
+                  {/* The space keeps the words apart in the button's accessible name; the flex gap spaces them on screen. */}
+                  {relayout.estimate ? <>{" "}<span className="relayout-estimate">{relayout.estimate}</span></> : null}
+                </button>
+              ) : null}
+            </div>
             {!graph.nodes.length && workspaceRestored && !isQuerying && (
               <div className="empty-state">
                 <h3>The graph is empty</h3>
@@ -4274,7 +4374,7 @@ ${connectionQuery(iriIds.slice(0,32),graphScope)}`;
               }`}
               viewBox={`0 0 ${GRAPH_WIDTH} ${GRAPH_HEIGHT}`}
               role="img"
-              aria-label={`Interactive RDF graph. Select a node to show its details and double-click it to load its neighbours. Drag the background to pan and a node to move it; double-click a node and keep dragging to move its leaf neighbours with it. ${selectionKeys(applePlatform)}click or drag to select nodes; dragging a selected node moves the whole selection. ${zoomOnScroll ? "Scroll" : "Pinch"}, double-click the background, or double-tap and drag vertically to zoom. Right-click or long-press a node for more actions. Tab reaches one node; arrow keys move to the next node in that direction; Enter shows its details; Delete hides the selection or the shown node. Escape closes the details, then clears the selection; / finds a node.`}
+              aria-label={`Interactive RDF graph. Select a node to show its details and double-click it to load its neighbours. Drag the background to pan and a node to move it; double-click a node and keep dragging to move its leaf neighbours with it. ${selectionKeys(applePlatform)}click or drag to select nodes; dragging a selected node moves the whole selection. ${zoomOnScroll ? "Scroll" : "Pinch"}, double-click the background, or double-tap and drag vertically to zoom. Right-click or long-press a node for more actions. Tab reaches one node; arrow keys move to the next node in that direction; Enter shows its details; Delete hides the selection or the shown node. Escape closes the details, then clears the selection; ${applePlatform ? "⌘A" : "Ctrl+A"} selects all drawn nodes; / finds a node.`}
               onDoubleClick={(event) => {
                 const onHoverBridge = event.target instanceof Element
                   && Boolean(event.target.closest("[data-graph-hover-bridge]"));

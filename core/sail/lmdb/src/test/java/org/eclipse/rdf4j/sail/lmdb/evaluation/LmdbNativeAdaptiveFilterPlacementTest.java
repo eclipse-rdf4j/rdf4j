@@ -139,8 +139,8 @@ class LmdbNativeAdaptiveFilterPlacementTest {
 		assertThat(intField(castMetadata, "estimatedCostUnits")).isEqualTo(4);
 		Object existsMetadata = forFilter.invoke(null, 13,
 				new Filter(new SingletonSet(), new Exists(new SingletonSet())));
-		assertThat(booleanField(existsMetadata, "adaptiveEligible")).isFalse();
-		assertThat(field(existsMetadata, "declineReason").toString()).isEqualTo("EXISTS_FILTER");
+		assertThat(booleanField(existsMetadata, "adaptiveEligible")).isTrue();
+		assertThat(field(existsMetadata, "declineReason").toString()).isEqualTo("NONE");
 	}
 
 	@Test
@@ -410,7 +410,7 @@ class LmdbNativeAdaptiveFilterPlacementTest {
 			}
 
 			assertThat(cursor.failure.get()).isNull();
-			assertThat(cursor.cleanupFailure.get()).isNull();
+			assertThat(cursor.cleanupFailures).isEmpty();
 			assertThat(cursor.tasks.getCount()).isZero();
 			assertThat(closes).as("every worker-confined adaptive filter closes exactly once").hasValue(workers);
 			assertThat(telemetry.getLongMetricActual("adaptiveFilterPlacementAdmitted")).isEqualTo(1L);

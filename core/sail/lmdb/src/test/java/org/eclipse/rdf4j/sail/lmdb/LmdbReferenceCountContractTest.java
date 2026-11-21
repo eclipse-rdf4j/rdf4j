@@ -190,6 +190,11 @@ class LmdbReferenceCountContractTest {
 	@ParameterizedTest
 	@ValueSource(booleans = { false, true })
 	void duplicateRetirementPreservesReusedAssociation(boolean tripleTerm) throws Exception {
+		// This case requires old-cohort recycling while a newer lazy epoch remains pinned.
+		// Async cleanup deliberately defers physical reclamation behind any such protection.
+		store.close();
+		store = new ValueStore(directory.resolve("values").toFile(),
+				new LmdbStoreConfig().setAsyncValueCleanup(false));
 		Value anchor = VF.createBNode("later-retirement-cohort-anchor");
 		Value original = tripleTerm ? VF.createTripleTerm(SHARED, SHARED, VF.createLiteral("original object"))
 				: VF.createBNode("original owner");

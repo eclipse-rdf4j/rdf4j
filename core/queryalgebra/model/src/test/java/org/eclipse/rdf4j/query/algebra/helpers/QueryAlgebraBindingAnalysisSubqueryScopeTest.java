@@ -13,6 +13,7 @@ package org.eclipse.rdf4j.query.algebra.helpers;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Set;
 
@@ -33,6 +34,7 @@ import org.eclipse.rdf4j.query.algebra.ProjectionElemList;
 import org.eclipse.rdf4j.query.algebra.SingletonSet;
 import org.eclipse.rdf4j.query.algebra.StatementPattern;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
+import org.eclipse.rdf4j.query.algebra.Union;
 import org.eclipse.rdf4j.query.algebra.ValueConstant;
 import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.query.impl.MapBindingSet;
@@ -189,6 +191,67 @@ class QueryAlgebraBindingAnalysisSubqueryScopeTest {
 		assertThat(analysis.bindingState(Var.of("x"), filterInput))
 				.as("the scoped OPTIONAL path does not inject the left sibling row")
 				.isEqualTo(QueryAlgebraBindingAnalysis.BindingState.UNBOUND);
+	}
+
+	@Test
+	void nestedOptionalAndJoinSubqueriesExcludeOuterSiblingBindings() {
+		Value entryValue = SimpleValueFactory.getInstance().createIRI("urn:entry");
+		Value valueRow = SimpleValueFactory.getInstance().createIRI("urn:value-row");
+		List<String> leaks = new ArrayList<>();
+		List<String> observations = new ArrayList<>();
+
+		for (boolean optional : new boolean[] { false, true }) {
+			for (boolean projectionFirst : new boolean[] { false, true }) {
+				for (boolean nestedJoinFirst : new boolean[] { false, true }) {
+					StatementPattern localBody = pattern("s", "localP", "o");
+					Projection subquery = projection(localBody, "s");
+					BindingSetAssignment valueRows = values("s", valueRow);
+					Join nestedJoin = projectionFirst
+							? new Join(subquery, valueRows)
+							: new Join(valueRows, subquery);
+					Union subqueryUnion = nestedJoinFirst
+							? new Union(nestedJoin, new SingletonSet())
+							: new Union(new SingletonSet(), nestedJoin);
+					TupleExpr root = optional
+							? new LeftJoin(pattern("s", "outerP", "o"), subqueryUnion)
+							: new Join(pattern("s", "outerP", "o"), subqueryUnion);
+					String shape = (optional ? "OPTIONAL" : "JOIN") + ",projectionFirst=" + projectionFirst
+							+ ",nestedJoinFirst=" + nestedJoinFirst;
+
+					QueryAlgebraBindingAnalysis analysis = QueryAlgebraBindingAnalysis.withBindingValues(root,
+							bindings("entry", entryValue));
+					QueryAlgebraBindingAnalysis.ReadOnlyContext projectionInput = analysis.contextAt(subquery);
+					QueryAlgebraBindingAnalysis.ReadOnlyContext bodyInput = analysis.contextAt(localBody);
+					observations.add(shape + " projection=" + describeSiblingStates(analysis, projectionInput)
+							+ " body=" + describeSiblingStates(analysis, bodyInput));
+
+					for (String location : List.of("projection", "body")) {
+						QueryAlgebraBindingAnalysis.ReadOnlyContext frame = location.equals("projection")
+								? projectionInput
+								: bodyInput;
+						for (String sibling : List.of("s", "o")) {
+							QueryAlgebraBindingAnalysis.BindingState state = analysis.bindingState(Var.of(sibling),
+									frame);
+							if (state != QueryAlgebraBindingAnalysis.BindingState.UNBOUND) {
+								leaks.add(shape + " " + location + " inherited left sibling ?" + sibling + " as "
+										+ state);
+							}
+						}
+						QueryAlgebraBindingAnalysis.BindingState entryState = analysis.bindingState(Var.of("entry"),
+								frame);
+						if (entryState != QueryAlgebraBindingAnalysis.BindingState.BOUND
+								|| !entryValue.equals(frame.externalValues().get("entry"))) {
+							leaks.add(shape + " " + location + " lost the incoming entry binding: " + entryState);
+						}
+					}
+				}
+			}
+		}
+
+		assertThat(leaks)
+				.as("OPTIONAL and ordinary joins must evaluate nested SELECT inputs from their caller frame; %s",
+						String.join("\n", observations))
+				.isEmpty();
 	}
 
 	@Test
@@ -363,5 +426,12 @@ class QueryAlgebraBindingAnalysisSubqueryScopeTest {
 
 	private static StatementPattern pattern(String subject, String predicate, String object) {
 		return new StatementPattern(Var.of(subject), Var.of(predicate), Var.of(object));
+	}
+
+	private static String describeSiblingStates(QueryAlgebraBindingAnalysis analysis,
+			QueryAlgebraBindingAnalysis.ReadOnlyContext context) {
+		return "s=" + analysis.bindingState(Var.of("s"), context)
+				+ ",o=" + analysis.bindingState(Var.of("o"), context)
+				+ ",entry=" + analysis.bindingState(Var.of("entry"), context);
 	}
 }

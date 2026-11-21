@@ -16,19 +16,16 @@ import java.io.File;
 import java.io.IOException;
 import java.util.ArrayList;
 import java.util.List;
-import java.util.Locale;
 import java.util.Random;
 import java.util.concurrent.TimeUnit;
 
 import org.assertj.core.util.Files;
 import org.eclipse.rdf4j.common.transaction.IsolationLevels;
 import org.eclipse.rdf4j.model.IRI;
-import org.eclipse.rdf4j.model.Literal;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
 import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
 import org.eclipse.rdf4j.sail.lmdb.LmdbStore;
 import org.eclipse.rdf4j.sail.lmdb.LmdbTestUtil;
-import org.eclipse.rdf4j.sail.lmdb.config.DirectAdjacencyMode;
 import org.eclipse.rdf4j.sail.lmdb.config.LmdbStoreConfig;
 import org.openjdk.jmh.annotations.Benchmark;
 import org.openjdk.jmh.annotations.BenchmarkMode;
@@ -52,13 +49,13 @@ import org.openjdk.jmh.runner.options.OptionsBuilder;
  * Benchmarks insertion performance with synthetic data.
  */
 @State(Scope.Benchmark)
-@Warmup(iterations = 6)
+@Warmup(iterations = 3, time = 10, timeUnit = TimeUnit.SECONDS)
 @BenchmarkMode({ Mode.Throughput })
 @Fork(value = 1, jvmArgs = { "-Xms2G", "-Xmx2G", "-XX:+UseG1GC" })
-@Measurement(iterations = 5)
+@Measurement(iterations = 3)
 @OutputTimeUnit(TimeUnit.SECONDS)
 public class TransactionsPerSecondSyntheticBenchmark {
-	@Param({ "NONE", "READ_COMMITTED", "SNAPSHOT" })
+	@Param({ "SNAPSHOT_READ" })
 	public IsolationLevels isolationLevel;
 
 	SailRepositoryConnection connection;
@@ -82,29 +79,39 @@ public class TransactionsPerSecondSyntheticBenchmark {
 
 	@Setup(Level.Iteration)
 	public void beforeClass() {
-		if (connection != null) {
-			connection.close();
-			connection = null;
-		}
-		i = 0;
-		file = Files.newTemporaryFolder();
+		try {
+			if (connection != null) {
+				connection.close();
+				connection = null;
+			}
+			i = 0;
+			file = Files.newTemporaryFolder();
 
-		LmdbStore sail = new LmdbStore(file,
-				ConfigUtil.createConfig().setForceSync(forceSync).setSketchEstimatorEnabled(false));
-		repository = new SailRepository(sail);
-		connection = repository.getConnection();
-		random = new Random(1337);
-		literalGenerator = new RandomLiteralGenerator(connection.getValueFactory(), random);
-		resources = new ArrayList<>();
-		for (int i = 0; i < 10; i++) {
-			resources.add(connection.getValueFactory().createIRI("some:resource-" + i));
-		}
-		predicates = new ArrayList<>();
-		for (int i = 0; i < 10; i++) {
-			predicates.add(connection.getValueFactory().createIRI("some:predicate-" + i));
-		}
+			LmdbStore sail = new LmdbStore(file,
+					ConfigUtil.createConfig().setForceSync(forceSync).setSketchEstimatorEnabled(false));
+			repository = new SailRepository(sail);
+			connection = repository.getConnection();
+			random = new Random(1337);
+			literalGenerator = new RandomLiteralGenerator(connection.getValueFactory(), random);
+			resources = new ArrayList<>();
+			for (int i = 0; i < 10; i++) {
+				resources.add(connection.getValueFactory().createIRI("some:resource-" + i));
+			}
+			predicates = new ArrayList<>();
+			for (int i = 0; i < 10; i++) {
+				predicates.add(connection.getValueFactory().createIRI("some:predicate-" + i));
+			}
 
-		System.gc();
+			System.gc();
+
+		} catch (Exception | Error failure) {
+			try {
+				afterClass();
+			} catch (Exception | Error cleanupFailure) {
+				failure.addSuppressed(cleanupFailure);
+			}
+			throw failure;
+		}
 	}
 
 	IRI randomResource() {
@@ -117,16 +124,22 @@ public class TransactionsPerSecondSyntheticBenchmark {
 
 	@TearDown(Level.Iteration)
 	public void afterClass() throws IOException {
-		if (connection != null) {
-			connection.close();
-			connection = null;
-		}
-		try {
-			repository.shutDown();
-		} finally {
+		try (var directoryCleanup = LmdbTestUtil.onClose(() -> {
 			LmdbTestUtil.deleteDir(file);
+			file = null;
+		}); var repositoryCleanup = LmdbTestUtil.onClose(() -> {
+			if (repository != null) {
+				repository.shutDown();
+				repository = null;
+			}
+		}); var connectionCleanup = LmdbTestUtil.onClose(() -> {
+			if (connection != null) {
+				connection.close();
+				connection = null;
+			}
+		})) {
+			// The connection closes before repository shutdown and directory removal.
 		}
-
 	}
 
 	@Benchmark
@@ -134,6 +147,15 @@ public class TransactionsPerSecondSyntheticBenchmark {
 		connection.begin(isolationLevel);
 		connection.add(randomResource(), randomPredicate(), literalGenerator.createRandomLiteral());
 		connection.commit();
+	}
+
+	@Benchmark
+	public void multipleSmallTransactions() {
+		for (int i = 0; i < 10000; i++) {
+			connection.begin(isolationLevel);
+			connection.add(randomResource(), randomPredicate(), literalGenerator.createRandomLiteral());
+			connection.commit();
+		}
 	}
 
 	@Benchmark
@@ -155,20 +177,21 @@ public class TransactionsPerSecondSyntheticBenchmark {
 	}
 
 	@Benchmark
+	public void multipleLargerTransactions() {
+		for (int i = 0; i < 100; i++) {
+			connection.begin(isolationLevel);
+			for (int k = 0; k < 10000; k++) {
+				connection.add(randomResource(), randomPredicate(), literalGenerator.createRandomLiteral());
+			}
+			connection.commit();
+		}
+	}
+
+	@Benchmark
 	public void veryLargerTransaction() {
 		connection.begin(isolationLevel);
 		for (int k = 0; k < 1000000; k++) {
 			connection.add(randomResource(), randomPredicate(), literalGenerator.createRandomLiteral());
-		}
-		connection.commit();
-	}
-
-	@Benchmark
-	public void veryLargerTransactionLevelReadCommitted() {
-		connection.begin(IsolationLevels.READ_COMMITTED);
-		for (int k = 0; k < 1000000; k++) {
-			Literal randomLiteral = literalGenerator.createRandomLiteral();
-			connection.add(randomResource(), randomPredicate(), randomLiteral);
 		}
 		connection.commit();
 	}

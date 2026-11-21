@@ -176,6 +176,16 @@ class ValueStoreBatchGrowthRegressionTest {
 
 			store.close();
 			store = new ValueStore(valuesDirectory(dataDir, "mixed"), config());
+			// A standalone dictionary has no async Sail worker to reclaim its finite released cohort.
+			store.completeStoreInitialization(unusedCandidatesWithoutStatementReferences -> {
+				// This standalone dictionary has no external statement references.
+			});
+			// Bounded maintenance refuses to grow implicitly; reserve its finite write footprint first.
+			store.startTransaction(true);
+			store.reserveWriteCapacity(store.estimatePersistedUnusedBatchWriteBytes(4096));
+			store.commit();
+			assertTrue(store.reclaimPersistedUnusedIdsBatch(4096) > 0,
+					"the standalone maintenance pass must visit the finite released cohort");
 			assertEquals(values[3], store.getValue(survivorId),
 					"the retained custom datatype literal must survive reopen");
 			assertEquals(survivorId, store.getId(values[3]),

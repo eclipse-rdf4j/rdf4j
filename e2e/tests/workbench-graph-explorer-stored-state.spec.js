@@ -13,6 +13,7 @@
 // @ts-check
 const { test, expect } = require('@playwright/test');
 const {
+    chooseGraphView,
     deleteRepository,
     memoryRepositoryConfiguration,
     repositoryPageUrl,
@@ -84,7 +85,8 @@ function storedGraph(page) {
         const serverIdentity = app?.getAttribute('data-workbench-server-identity');
         if (!app || !serverIdentity || app.getAttribute('data-workbench-repository-id') !== repositoryId) return resolve('');
         const basePath = (app.getAttribute('data-workbench-base-path') || '').replace(/\/+$/, '');
-        const scope = JSON.stringify(['repository-v2', basePath, serverIdentity, repositoryId]);
+        const scope = JSON.stringify(['repository-v3', basePath, serverIdentity.split(':').slice(0, 2).join(':'),
+            app.getAttribute('data-workbench-server-user') || '', repositoryId]);
         const request = indexedDB.open('graph-field-workspaces');
         request.onupgradeneeded = () => {
             if (!request.result.objectStoreNames.contains('workspaces')) request.result.createObjectStore('workspaces');
@@ -163,8 +165,8 @@ test('the wheel still zooms the canvas after a data view was shown', async ({ pa
         Object.defineProperty(Navigator.prototype, 'userAgentData', { get: () => undefined });
     });
     const explorer = await loadAll(page);
-    await explorer.getByRole('tab', { name: 'Triples' }).click();
-    await explorer.getByRole('tab', { name: 'Graph' }).click();
+    await chooseGraphView(explorer, 'table');
+    await chooseGraphView(explorer, 'graph');
     const layer = explorer.locator('svg.graph-canvas > g').first();
     await expect(layer).toBeAttached();
     const scale = async () => Number(/scale\(([^)]+)\)/.exec((await layer.getAttribute('transform')) ?? '')?.[1]);

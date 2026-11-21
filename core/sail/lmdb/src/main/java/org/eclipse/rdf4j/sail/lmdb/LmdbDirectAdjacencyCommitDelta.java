@@ -13,6 +13,7 @@
 package org.eclipse.rdf4j.sail.lmdb;
 
 import java.util.Arrays;
+import java.util.List;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.ExecutorService;
@@ -39,6 +40,15 @@ final class LmdbDirectAdjacencyCommitDelta {
 	/** Conservative plan-worksheet seal-peak ceiling; the direct-row radix path remains below it. */
 	static final long PROJECTED_BYTES_PER_EVENT = 113;
 	private static final int INITIAL_CAPACITY = 1024;
+	/** First capacity of the direct event arrays; they double from here, so a small transaction allocates little. */
+	private static final int DIRECT_INITIAL_CAPACITY = 16;
+	/**
+	 * A transaction with at most this many events is recorded directly and sealed on the committing thread: sorting a
+	 * few events costs less than the two executor hand-offs (and capture-thread wake-ups) the asynchronous path takes,
+	 * and the commit log then stages an already sealed record. The event after this one moves the transaction to the
+	 * asynchronous capture, which replays the events recorded so far as its first batch.
+	 */
+	static final int INLINE_SEAL_MAX_EVENTS = 128;
 	private static final int INSERTION_SORT_THRESHOLD = 32;
 	private static final int MSD_RADIX_SORT_THRESHOLD = 1536;
 	private static final int MSD_RADIX_LEAF_THRESHOLD = 48;
@@ -61,6 +71,7 @@ final class LmdbDirectAdjacencyCommitDelta {
 	private final AtomicBoolean transactionDirty;
 	private final ExecutorService captureExecutor;
 	private final Runnable beforeCapture;
+	private final Runnable afterSeal; // nullable; runs on the capture thread once the sealed delta is published
 	private final Supplier<LmdbAdjacencyMemoryAccount> captureBudget;
 	private AsyncCapture asyncCapture;
 	private long commitMaxBytes;
@@ -84,17 +95,18 @@ final class LmdbDirectAdjacencyCommitDelta {
 
 	LmdbDirectAdjacencyCommitDelta(LmdbAdjacencyMemoryAccount account, long commitMaxBytes,
 			AtomicBoolean transactionDirty) {
-		this(account, commitMaxBytes, transactionDirty, null, null, () -> account);
+		this(account, commitMaxBytes, transactionDirty, null, null, null, () -> account);
 	}
 
 	LmdbDirectAdjacencyCommitDelta(LmdbAdjacencyMemoryAccount account, long commitMaxBytes,
 			AtomicBoolean transactionDirty, ExecutorService captureExecutor, Runnable beforeCapture,
-			Supplier<LmdbAdjacencyMemoryAccount> captureBudget) {
+			Runnable afterSeal, Supplier<LmdbAdjacencyMemoryAccount> captureBudget) {
 		this.account = account;
 		this.commitMaxBytes = commitMaxBytes;
 		this.transactionDirty = transactionDirty;
 		this.captureExecutor = captureExecutor;
 		this.beforeCapture = beforeCapture;
+		this.afterSeal = afterSeal;
 		this.captureBudget = captureBudget;
 	}
 
@@ -108,7 +120,8 @@ final class LmdbDirectAdjacencyCommitDelta {
 		this.count = 0;
 		this.resolvedSelectedPredicates = null;
 		this.transactionDirty.set(false);
-		if (captureExecutor != null) {
+		if (captureExecutor != null && (beforeCapture != null || afterSeal != null)) {
+			// a capture hook observes the capture thread, so every transaction crosses to it
 			asyncCapture = new AsyncCapture(startRevision);
 		}
 	}
@@ -162,10 +175,29 @@ final class LmdbDirectAdjacencyCommitDelta {
 		contexts[count] = Math.max(0, context);
 		flags[count] = (byte) ((explicit ? 1 : 0) | (add ? 2 : 0));
 		count++;
+		if (count > INLINE_SEAL_MAX_EVENTS && captureExecutor != null) {
+			moveToAsyncCapture();
+		}
+	}
+
+	/**
+	 * The transaction outgrew the inline limit: from here its events are captured and sealed off the committing thread,
+	 * starting with the ones recorded so far, in order.
+	 */
+	private void moveToAsyncCapture() {
+		AsyncCapture capture = new AsyncCapture(startRevision);
+		int recorded = count;
+		for (int i = 0; i < recorded; i++) {
+			capture.record(subjects[i], predicates[i], objects[i], contexts[i], (flags[i] & 1) != 0,
+					(flags[i] & 2) != 0);
+		}
+		releaseArrays();
+		count = recorded;
+		asyncCapture = capture;
 	}
 
 	private boolean grow() {
-		int newCapacity = subjects.length == 0 ? INITIAL_CAPACITY : Math.multiplyExact(subjects.length, 2);
+		int newCapacity = subjects.length == 0 ? DIRECT_INITIAL_CAPACITY : Math.multiplyExact(subjects.length, 2);
 		long projectedPeak = Math.multiplyExact((long) newCapacity, PROJECTED_BYTES_PER_EVENT);
 		long newChargedBytes = (long) newCapacity * 33;
 		if (projectedPeak > commitMaxBytes
@@ -202,8 +234,10 @@ final class LmdbDirectAdjacencyCommitDelta {
 
 	/**
 	 * Seals this transaction's events into an immutable {@link SealedDirectDelta} with its sorted, deduplicated
-	 * pending-row table, and resets this collector for the next transaction. The asynchronous path seals a detached
-	 * accumulator on its worker while LMDB commits; record calls between seal and the next {@link #begin} fail fast.
+	 * pending-row table, and resets this collector for the next transaction. A transaction of at most
+	 * {@link #INLINE_SEAL_MAX_EVENTS} events seals here, on the committing thread; a larger one moved to the
+	 * asynchronous capture, which seals a detached accumulator on its worker while LMDB commits. Record calls between
+	 * seal and the next {@link #begin} fail fast.
 	 */
 	SealedDirectDelta seal(long committedRevision) {
 		if (asyncCapture != null) {
@@ -271,7 +305,7 @@ final class LmdbDirectAdjacencyCommitDelta {
 		}
 	}
 
-	Future<SealedDirectDelta> sealAsync(long revision) {
+	CompletableFuture<SealedDirectDelta> sealAsync(long revision) {
 		if (asyncCapture == null) {
 			return CompletableFuture.completedFuture(seal(revision));
 		}
@@ -397,24 +431,45 @@ final class LmdbDirectAdjacencyCommitDelta {
 			}
 		}
 
-		Future<SealedDirectDelta> seal(long revision, long[] coverage) {
+		CompletableFuture<SealedDirectDelta> seal(long revision, long[] coverage) {
 			submitBatch(false);
-			return captureExecutor.submit(() -> {
-				if (cancelled) {
-					accumulator.reset();
-					if (failure instanceof Error error) {
-						throw error;
+			// A CompletableFuture so the commit log can mirror the seal without a waiting thread; get() still reports
+			// the failure as an ExecutionException whose cause is the original throwable, as the FutureTask did.
+			CompletableFuture<SealedDirectDelta> sealed = new CompletableFuture<>();
+			captureExecutor.execute(() -> {
+				try {
+					if (beforeCapture != null && !cancelled) {
+						beforeCapture.run(); // the seal is the final capture batch
 					}
-					if (failure != null) {
-						throw new IllegalStateException("delta batch capture failed", failure);
-					}
-					return SealedDirectDelta.overflowed(revision);
+					sealed.complete(sealNow(revision, coverage));
+				} catch (Throwable failure) {
+					sealed.completeExceptionally(failure);
+					return;
 				}
-				if (coverage != null) {
-					accumulator.captureResolvedSelectedPredicates(coverage);
+				// the commit log observed the seal inside complete(); the hook sees the sealed record
+				Runnable hook = afterSeal;
+				if (hook != null) {
+					hook.run();
 				}
-				return accumulator.seal(revision);
 			});
+			return sealed;
+		}
+
+		private SealedDirectDelta sealNow(long revision, long[] coverage) {
+			if (cancelled) {
+				accumulator.reset();
+				if (failure instanceof Error error) {
+					throw error;
+				}
+				if (failure != null) {
+					throw new IllegalStateException("delta batch capture failed", failure);
+				}
+				return SealedDirectDelta.overflowed(revision);
+			}
+			if (coverage != null) {
+				accumulator.captureResolvedSelectedPredicates(coverage);
+			}
+			return accumulator.seal(revision);
 		}
 
 		private void finishBatch() {
@@ -1300,7 +1355,7 @@ final class LmdbDirectAdjacencyCommitDelta {
 	 * Immutable ownership transfer of one committed transaction's events and pending table. Closing releases the
 	 * complete charge exactly once.
 	 */
-	static final class SealedDirectDelta implements AutoCloseable {
+	static final class SealedDirectDelta implements AutoCloseable, AdjacencyDelta {
 		final CompletableFuture<Void> publication = new CompletableFuture<>();
 		private LmdbAdjacencyMemoryAccount.Charge metadataCharge;
 		private final LmdbAdjacencyMemoryAccount account;
@@ -1359,6 +1414,70 @@ final class LmdbDirectAdjacencyCommitDelta {
 			return new SealedDirectDelta(revision, false);
 		}
 
+		/**
+		 * One delta holding the events of {@code parts} in order (consecutive revisions, none overflowed), at the last
+		 * part's revision. Events keep their transaction order, which the generation builder uses as the tiebreak for
+		 * the same quad, so a quad added in one part and removed in a later one nets out as it would within one
+		 * transaction. The parts keep their charges and pending tables; the coalesced delta owns nothing.
+		 */
+		static SealedDirectDelta coalesce(List<SealedDirectDelta> parts) {
+			int events = 0;
+			boolean coverage = true;
+			for (SealedDirectDelta part : parts) {
+				if (part.overflowed) {
+					throw new IllegalArgumentException("an overflowed delta cannot be coalesced");
+				}
+				events = Math.addExact(events, part.eventCount);
+				coverage &= part.hasCapturedCoverage();
+			}
+			long[] subjects = new long[events];
+			long[] predicates = new long[events];
+			long[] objects = new long[events];
+			long[] contexts = new long[events];
+			byte[] flags = new byte[events];
+			long[] selected = coverage ? new long[0] : null;
+			int at = 0;
+			for (SealedDirectDelta part : parts) {
+				System.arraycopy(part.subjects, 0, subjects, at, part.eventCount);
+				System.arraycopy(part.predicates, 0, predicates, at, part.eventCount);
+				System.arraycopy(part.objects, 0, objects, at, part.eventCount);
+				System.arraycopy(part.contexts, 0, contexts, at, part.eventCount);
+				System.arraycopy(part.flags, 0, flags, at, part.eventCount);
+				at += part.eventCount;
+				if (coverage) {
+					selected = unionUnsigned(selected, part.resolvedSelectedPredicates);
+				}
+			}
+			return new SealedDirectDelta(null, parts.get(parts.size() - 1).revision, subjects, predicates, objects,
+					contexts, flags, events, null, 0L, selected);
+		}
+
+		private static long[] unionUnsigned(long[] left, long[] right) {
+			if (right == null || right.length == 0) {
+				return left;
+			}
+			long[] merged = Arrays.copyOf(left, left.length + right.length);
+			System.arraycopy(right, 0, merged, left.length, right.length);
+			sortUnsigned(merged);
+			int distinct = 0;
+			for (int i = 0; i < merged.length; i++) {
+				if (i == 0 || merged[i] != merged[i - 1]) {
+					merged[distinct++] = merged[i];
+				}
+			}
+			return Arrays.copyOf(merged, distinct);
+		}
+
+		private static void sortUnsigned(long[] values) {
+			for (int i = 0; i < values.length; i++) {
+				values[i] ^= Long.MIN_VALUE;
+			}
+			Arrays.sort(values);
+			for (int i = 0; i < values.length; i++) {
+				values[i] ^= Long.MIN_VALUE;
+			}
+		}
+
 		private SealedDirectDelta accountMetadata(LmdbAdjacencyMemoryAccount memory) {
 			// Sealed owner, completion, queue entry and preparation task metadata, counted once until publication.
 			metadataCharge = memory.tryCharge(MemoryKind.PENDING, 256);
@@ -1378,16 +1497,51 @@ final class LmdbDirectAdjacencyCommitDelta {
 			return publication;
 		}
 
-		/** Release event arrays after catch-up consumes them, retaining only completion ownership. */
+		/**
+		 * Release event arrays after catch-up consumes them, retaining only completion ownership. Idempotent and safe
+		 * from two threads: the commit log releases a record's rows on the applier thread while a derived-state
+		 * listener may abort the same sealed delta on the committing thread.
+		 */
 		void releasePayload() {
-			if (chargedBytes > 0) {
-				account.release(MemoryKind.PENDING, chargedBytes);
+			long released;
+			synchronized (this) {
+				released = chargedBytes;
 				chargedBytes = 0;
+			}
+			if (released > 0) {
+				account.release(MemoryKind.PENDING, released);
 			}
 		}
 
-		long revision() {
+		@Override
+		public long revision() {
 			return revision;
+		}
+
+		@Override
+		public boolean overflowed() {
+			return overflowed;
+		}
+
+		@Override
+		public boolean empty() {
+			return isEmpty();
+		}
+
+		@Override
+		public long bytes() {
+			return overflowed ? 0L : eventCount * (4L * Long.BYTES + 1L);
+		}
+
+		@Override
+		public Object pending() {
+			return pending;
+		}
+
+		/** The log releases the rows once applied: the charges go, the arrays stay reachable for the pending table. */
+		@Override
+		public void releaseRows() {
+			close();
 		}
 
 		boolean isOverflowed() {
@@ -1421,8 +1575,13 @@ final class LmdbDirectAdjacencyCommitDelta {
 		@Override
 		public void close() {
 			releasePayload();
-			if (metadataCharge != null) {
-				metadataCharge.close();
+			LmdbAdjacencyMemoryAccount.Charge charge;
+			synchronized (this) {
+				charge = metadataCharge;
+				metadataCharge = null;
+			}
+			if (charge != null) {
+				charge.close();
 			}
 		}
 

@@ -51,7 +51,12 @@ final class CleanerIteration<E> implements CloseableIteration<E>, CooperativeCan
 
 	@Override
 	public boolean hasNext() {
-		return delegate.hasNext();
+		if (delegate.hasNext()) {
+			return true;
+		}
+		// Exhaustion is completed cleanup, not abandonment of the cleaner-owned wrapper.
+		close();
+		return false;
 	}
 
 	@Override

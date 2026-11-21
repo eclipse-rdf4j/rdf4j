@@ -66,6 +66,8 @@ class AbstractMemoryOverflowModelIteratorCloseTest {
 			throw new IllegalArgumentException("Expected one iterator-close probe name");
 		}
 		System.out.println("RUNTIME_MAX_MEMORY_BYTES=" + Runtime.getRuntime().maxMemory());
+		// The single-statement fixtures probe spill mechanics, so each statement forms a spillable batch.
+		AbstractMemoryOverflowModel.BATCH_SIZE = 1;
 		new AbstractMemoryOverflowModelIteratorCloseTest().runProbe(args[0]);
 	}
 

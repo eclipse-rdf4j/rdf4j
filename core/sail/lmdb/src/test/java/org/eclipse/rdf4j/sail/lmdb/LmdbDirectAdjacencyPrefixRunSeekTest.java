@@ -49,11 +49,10 @@ class LmdbDirectAdjacencyPrefixRunSeekTest {
 
 	@AfterEach
 	void tearDown() throws Exception {
-		if (store != null) {
-			store.close();
-		}
-		if (tripleStore != null) {
-			tripleStore.close();
+		try (var cleanup = tripleStore) {
+			if (store != null) {
+				store.close();
+			}
 		}
 	}
 

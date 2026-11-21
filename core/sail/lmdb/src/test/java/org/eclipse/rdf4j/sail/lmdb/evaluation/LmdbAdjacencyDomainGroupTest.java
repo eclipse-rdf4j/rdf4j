@@ -16,7 +16,6 @@ import static org.assertj.core.api.Assertions.assertThat;
 import java.io.File;
 import java.util.List;
 import java.util.concurrent.TimeUnit;
-import java.util.concurrent.atomic.AtomicLong;
 
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Literal;
@@ -27,6 +26,7 @@ import org.eclipse.rdf4j.query.explanation.Explanation;
 import org.eclipse.rdf4j.query.explanation.GenericPlanNode;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
 import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
+import org.eclipse.rdf4j.repository.sail.SailTupleQuery;
 import org.eclipse.rdf4j.sail.lmdb.LmdbStore;
 import org.eclipse.rdf4j.sail.lmdb.config.LmdbStoreConfig;
 import org.junit.jupiter.api.AfterEach;
@@ -96,25 +96,39 @@ public class LmdbAdjacencyDomainGroupTest {
 		repository.init();
 		assertThat(store.awaitDirectAdjacencyReady(60, TimeUnit.SECONDS)).isTrue();
 
-		AtomicLong domainRuns = (AtomicLong) NativeGroupIteration.class
-				.getDeclaredField("ADJACENCY_DOMAIN_GROUP_RUNS")
-				.get(null);
-		AtomicLong eligible = (AtomicLong) NativeGroupIteration.class
-				.getDeclaredField("ADJACENCY_DOMAIN_GROUP_ELIGIBLE")
-				.get(null);
-		AtomicLong unavailable = (AtomicLong) NativeGroupIteration.class
-				.getDeclaredField("ADJACENCY_DOMAIN_GROUP_UNAVAILABLE")
-				.get(null);
-		long before = domainRuns.get();
+		List<BindingSet> automatic;
 		try (SailRepositoryConnection connection = repository.getConnection()) {
-			List<BindingSet> rows = QueryResults.asList(connection.prepareTupleQuery(HIGH_IN_DEGREE).evaluate());
-			assertThat(rows).hasSize(1);
-			assertThat(rows.get(0).getValue("object")).isEqualTo(high);
-			assertThat(((Literal) rows.get(0).getValue("inDegree")).longValue()).isEqualTo(1200L);
+			automatic = QueryResults.asList(connection.prepareTupleQuery(HIGH_IN_DEGREE).evaluate());
+			assertThat(automatic).hasSize(1);
+			assertThat(automatic.get(0).getValue("object")).isEqualTo(high);
+			assertThat(((Literal) automatic.get(0).getValue("inDegree")).longValue()).isEqualTo(1200L);
+			assertThat(KernelExecutionTestAccess.eligibleStrategies(connection.prepareTupleQuery(HIGH_IN_DEGREE)
+					.explain(Explanation.Level.Optimized)
+					.toGenericPlanNode()))
+							.contains(LmdbNativeAttemptMetrics.PATH_PREFIX_RUN_GROUPS,
+									LmdbNativeAttemptMetrics.PATH_NESTED_LOOP);
+		}
+		String previous = System.setProperty("rdf4j.lmdb.nativeQueryEngine.enabled", "false");
+		try (SailRepositoryConnection connection = repository.getConnection()) {
+			assertThat(QueryResults.asList(connection.prepareTupleQuery(HIGH_IN_DEGREE).evaluate()))
+					.containsExactlyElementsOf(automatic);
+		} finally {
+			if (previous == null) {
+				System.clearProperty("rdf4j.lmdb.nativeQueryEngine.enabled");
+			} else {
+				System.setProperty("rdf4j.lmdb.nativeQueryEngine.enabled", previous);
+			}
+		}
+		long before = NativeGroupIteration.ADJACENCY_DOMAIN_GROUP_RUNS.get();
+		try (SailRepositoryConnection connection = repository.getConnection()) {
+			SailTupleQuery forced = (SailTupleQuery) connection.prepareTupleQuery(HIGH_IN_DEGREE);
+			forced.setForcedLmdbExecutionStrategy(LmdbNativeAttemptMetrics.PATH_PREFIX_RUN_GROUPS);
+			assertThat(QueryResults.asList(forced.evaluate())).containsExactlyElementsOf(automatic);
 		}
 		assertThat(executionPath(HIGH_IN_DEGREE)).isEqualTo(LmdbNativeAttemptMetrics.PATH_PREFIX_RUN_GROUPS);
-		assertThat(domainRuns.get())
-				.as("eligible=%s unavailable=%s", eligible.get(), unavailable.get())
+		assertThat(NativeGroupIteration.ADJACENCY_DOMAIN_GROUP_RUNS.get())
+				.as("eligible=%s unavailable=%s", NativeGroupIteration.ADJACENCY_DOMAIN_GROUP_ELIGIBLE.get(),
+						NativeGroupIteration.ADJACENCY_DOMAIN_GROUP_UNAVAILABLE.get())
 				.isGreaterThan(before);
 		assertThat(telemetry(HIGH_IN_DEGREE))
 				.contains("nativeAdjacencyOptimizationSummary=grain=ROOT;directions=OSC;pageHeaders=USED")
@@ -126,14 +140,17 @@ public class LmdbAdjacencyDomainGroupTest {
 
 	private String telemetry(String query) {
 		try (SailRepositoryConnection connection = repository.getConnection()) {
-			return connection.prepareTupleQuery(query).explain(Explanation.Level.Telemetry).toString();
+			SailTupleQuery forced = (SailTupleQuery) connection.prepareTupleQuery(query);
+			forced.setForcedLmdbExecutionStrategy(LmdbNativeAttemptMetrics.PATH_PREFIX_RUN_GROUPS);
+			return forced.explain(Explanation.Level.Telemetry).toString();
 		}
 	}
 
 	private String executionPath(String query) {
 		try (SailRepositoryConnection connection = repository.getConnection()) {
-			return findStrategy(connection.prepareTupleQuery(query)
-					.explain(Explanation.Level.Telemetry)
+			SailTupleQuery forced = (SailTupleQuery) connection.prepareTupleQuery(query);
+			forced.setForcedLmdbExecutionStrategy(LmdbNativeAttemptMetrics.PATH_PREFIX_RUN_GROUPS);
+			return findStrategy(forced.explain(Explanation.Level.Telemetry)
 					.toGenericPlanNode());
 		}
 	}

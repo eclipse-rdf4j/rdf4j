@@ -42,6 +42,7 @@ import org.eclipse.rdf4j.query.resultio.TupleQueryResultFormat;
 import org.eclipse.rdf4j.repository.RepositoryConnection;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
 import org.eclipse.rdf4j.sail.memory.MemoryStore;
+import org.eclipse.rdf4j.workbench.support.TestProcess;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
@@ -313,19 +314,18 @@ class GraphExplorerBlankNodeTest {
 		if (answer != null) {
 			graph.put("answer", answer);
 		}
-		Path node = Path.of("target/node", System.getProperty("os.name").startsWith("Windows") ? "node.exe" : "node")
-				.toAbsolutePath();
 		Path errors = Files.createTempFile(temporary, "query-generator-", ".log");
 		Path output = Files.createTempFile(temporary, "query-generator-", ".json");
-		Process process = new ProcessBuilder(node.toString(), "--experimental-strip-types",
+		try (TestProcess child = TestProcess.start(new ProcessBuilder(TestProcess.NODE, "--experimental-strip-types",
 				"src/test/frontend/graph-explorer/fixed-blank-node-query-fixture.mjs", raw, scope,
 				JSON.writeValueAsString(graph))
 						.redirectError(errors.toFile())
-						.redirectOutput(output.toFile())
-						.start();
-		assertThat(process.waitFor(30, TimeUnit.SECONDS)).as("query generator finished").isTrue();
-		assertThat(process.exitValue()).as(Files.readString(errors, StandardCharsets.UTF_8)).isZero();
-		return JSON.readTree(Files.readString(output, StandardCharsets.UTF_8));
+						.redirectOutput(output.toFile()))) {
+			Process process = child.process();
+			assertThat(process.waitFor(30, TimeUnit.SECONDS)).as("query generator finished").isTrue();
+			assertThat(process.exitValue()).as(Files.readString(errors, StandardCharsets.UTF_8)).isZero();
+			return JSON.readTree(Files.readString(output, StandardCharsets.UTF_8));
+		}
 	}
 
 	private static String nodeId(Value value) {

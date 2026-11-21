@@ -24,9 +24,31 @@ namespace workbench {
             }
         }
 
+        /**
+         * Where YASQE keeps the draft of the repository shown: one draft per server and repository, so an update typed
+         * for one repository is never offered, ready to run, in another. Null (no draft kept) without a repository.
+         */
+        function draftStorageKey(): string {
+            var app = document.getElementById('workbench-app');
+            var repository = app && app.getAttribute('data-workbench-repository-id');
+            if (!repository) {
+                return null;
+            }
+            var identity = app.getAttribute('data-workbench-server-identity') || '';
+            // WorkbenchServlet follows the server's 'sha256:<digest>' with ':' and a scope that is new in every
+            // browser session; the draft belongs to the server and outlives the session.
+            var digest = /^sha256:[0-9a-f]+/.exec(identity);
+            var server = digest ? digest[0] : identity;
+            return 'workbench:update-draft:' + encodeURIComponent(server) + ':' + encodeURIComponent(repository);
+        }
+
         function initYasqe(root: HTMLElement) {
             workbench.yasqeHelper.setupCompleters(namespaces);
-            yasqe = YASQE.fromTextArea(root.querySelector('#update'), {
+            var textarea = <HTMLTextAreaElement>root.querySelector('#update');
+            // Lit reuses the textarea when another repository's Update page replaces this one, and the previous
+            // editor left its text in it; start from the freshly rendered text, then the repository's own draft.
+            textarea.value = textarea.defaultValue;
+            yasqe = YASQE.fromTextArea(textarea, {
                 createShareLink: function () {
                     return {update: yasqe.getValue()};
                 },
@@ -36,17 +58,18 @@ namespace workbench {
                     }
                 },
 
-                // This way, we don't conflict with the YASQE editor of the
-                // regular query interface, and we show the most recent
-                // -update- query.
-                persistent: "update",
+                persistent: draftStorageKey(),
                 // Updates run through the Workbench form; YASQE must never send them to its default endpoint.
                 sparql: { endpoint: '', showQueryButton: false },
+                screenReaderLabel: 'SPARQL update',
                 extraKeys: {
                     'Ctrl-Enter': submitUpdateForm,
                     'Cmd-Enter': submitUpdateForm
                 }
             });
+
+            workbench.yasqeHelper.enableToolbarKeyboard(yasqe);
+            yasqe.on('change', clearErrorLocation);
 
             // The editor frame grows with its content like the Query editor (styles/query.css) and can be
             // resized with the handle under it.
@@ -65,6 +88,44 @@ namespace workbench {
             }
         }
 
+        /** The editor line (0-based) marked as where the server's parser stopped, or null. */
+        var errorLine: number = null;
+
+        /**
+         * Mark the line (1-based) where the server's parser stopped, as the Query page does; with reveal, also put the
+         * cursor at the column and scroll it into view.
+         */
+        export function showErrorLocation(line: number, column: number, reveal: boolean): void {
+            if (!yasqe || !(line >= 1)) {
+                return;
+            }
+            clearErrorLocation();
+            var doc = yasqe.getDoc();
+            var index = Math.min(line - 1, Math.max(0, doc.lineCount() - 1));
+            var marker = document.createElement('span');
+            marker.className = 'query-editor-error-marker';
+            marker.title = 'The server reported a syntax error on this line';
+            yasqe.setGutterMarker(index, 'gutterErrorBar', marker);
+            yasqe.addLineClass(index, 'background', 'query-editor-error-line');
+            errorLine = index;
+            if (reveal) {
+                yasqe.focus();
+                doc.setCursor({ line: index, ch: Math.max(0, column - 1) });
+                yasqe.scrollIntoView(null, 80);
+            }
+        }
+
+        function clearErrorLocation(): void {
+            if (errorLine === null) {
+                return;
+            }
+            if (yasqe) {
+                yasqe.setGutterMarker(errorLine, 'gutterErrorBar', null);
+                yasqe.removeLineClass(errorLine, 'background', 'query-editor-error-line');
+            }
+            errorLine = null;
+        }
+
         /** Route mount (plan task M9.1): open the editor; the returned function closes it again. */
         export function mount(outlet: HTMLElement): () => void {
             initYasqe(outlet);
@@ -81,6 +142,7 @@ namespace workbench {
                     }
                     yasqe.toTextArea();
                     yasqe = null;
+                    errorLine = null;
                 }
             };
         }

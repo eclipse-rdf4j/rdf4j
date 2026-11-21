@@ -39,6 +39,7 @@ import org.eclipse.rdf4j.workbench.support.TestServletConfig;
 import org.eclipse.rdf4j.workbench.util.WorkbenchPageProtocol;
 import org.eclipse.rdf4j.workbench.util.WorkbenchRequest;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.io.TempDir;
 import org.springframework.mock.web.MockHttpServletRequest;
 import org.springframework.mock.web.MockServletContext;
 
@@ -65,8 +66,7 @@ class AbstractServletTest {
 	}
 
 	@Test
-	void initWrapsIoFailuresInServletException() throws Exception {
-		Path tempDir = Files.createTempDirectory("abstract-servlet-init");
+	void initWrapsIoFailuresInServletException(@TempDir Path tempDir) throws Exception {
 		Files.createDirectories(
 				tempDir.resolve(PlatformFactory.getPlatform().getRelativeApplicationDataDir("Workbench"))
 						.resolve("conf")

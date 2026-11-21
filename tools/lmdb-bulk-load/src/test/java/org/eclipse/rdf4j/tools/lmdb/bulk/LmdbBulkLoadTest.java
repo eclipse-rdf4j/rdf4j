@@ -22,6 +22,7 @@ import static org.lwjgl.util.lmdb.LMDB.mdb_env_create;
 import static org.lwjgl.util.lmdb.LMDB.mdb_env_info;
 import static org.lwjgl.util.lmdb.LMDB.mdb_env_open;
 import static org.lwjgl.util.lmdb.LMDB.mdb_env_set_mapsize;
+import static org.mockito.Mockito.mockStatic;
 
 import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
@@ -31,6 +32,7 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.List;
 import java.util.Properties;
 import java.util.concurrent.CancellationException;
@@ -39,6 +41,7 @@ import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.zip.GZIPOutputStream;
 
+import org.eclipse.rdf4j.common.io.FileUtil;
 import org.eclipse.rdf4j.model.Model;
 import org.eclipse.rdf4j.repository.config.RepositoryConfig;
 import org.eclipse.rdf4j.repository.config.RepositoryConfigUtil;
@@ -54,12 +57,15 @@ import org.eclipse.rdf4j.sail.lmdb.bulk.BulkLoadPhase;
 import org.eclipse.rdf4j.sail.lmdb.bulk.LmdbBulkLoader;
 import org.eclipse.rdf4j.sail.lmdb.config.LmdbStoreConfig;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.io.CleanupMode;
 import org.junit.jupiter.api.io.TempDir;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.ValueSource;
 import org.lwjgl.PointerBuffer;
 import org.lwjgl.system.MemoryStack;
 import org.lwjgl.util.lmdb.MDBEnvInfo;
+import org.mockito.MockedStatic;
+import org.mockito.Mockito;
 
 class LmdbBulkLoadTest {
 
@@ -86,7 +92,7 @@ class LmdbBulkLoadTest {
 				.as("a successful CLI load publishes a reusable repository configuration")
 				.isRegularFile();
 		LmdbStoreConfig config = readStoreConfiguration(store);
-		assertThat(config.getTripleIndexes()).isEqualTo("spoc,posc");
+		assertThat(config.getTripleIndexes()).isEqualTo("spoc,posc,ospc");
 		assertThat(config.getTripleTermIndexes()).isEqualTo("spoc,cspo");
 		assertThat(config.getInlineLiterals()).isTrue();
 		assertThat(config.getOrderedNumericIds()).isTrue();
@@ -444,27 +450,106 @@ class LmdbBulkLoadTest {
 	}
 
 	@Test
-	void standaloneMainPublishesAnImmediatelyUsableRepository() throws Exception {
-		Path input = temporaryDirectory.resolve("input.nt");
+	void standaloneMainPublishesAnImmediatelyUsableRepository(
+			@TempDir(cleanup = CleanupMode.NEVER) Path childDirectory) throws Exception {
+		Path input = childDirectory.resolve("input.nt");
 		Files.writeString(input, "<urn:subject> <urn:predicate> <urn:object> .\n");
-		Path managerBase = temporaryDirectory.resolve("server");
+		Path managerBase = childDirectory.resolve("server");
 		Path store = managerBase.resolve("repositories").resolve("standalone-store");
-		Path log = temporaryDirectory.resolve("standalone.log");
+		Path log = childDirectory.resolve("standalone.log");
+		// A one-row main-entrypoint test must not require its host to have 50 GiB free. Keep the real
+		// default guard, but supply its existing measurement seam with exactly the healthy boundary.
+		int exitCode = runStandaloneWithDiskReading(childDirectory, log, 50 * DiskSpaceMonitor.GIB,
+				"--store", store.toString(), "--input", input.toString(), "--progress", "none");
+		assertThat(exitCode).as(Files.readString(log)).isZero();
+		assertThat(Files.readString(log)).contains("LMDB bulk load complete:", "controlled disk monitor closed");
+		assertManagerCanOpenPreparedStore(managerBase, store, 1);
+		// Failed process shutdown or repository shutdown leaves its owned root for diagnosis, not unsafe deletion.
+		FileUtil.deleteDir(childDirectory.toFile());
+		assertThat(childDirectory).doesNotExist();
+	}
+
+	@Test
+	void standaloneMainHaltsBelowItsDefaultDiskFloor(
+			@TempDir(cleanup = CleanupMode.NEVER) Path childDirectory) throws Exception {
+		Path log = childDirectory.resolve("standalone.log");
+		int exitCode = runStandaloneWithDiskReading(childDirectory, log, 49 * DiskSpaceMonitor.GIB, "--help");
+		assertThat(exitCode).as(Files.readString(log)).isEqualTo(3);
+		assertThat(Files.readString(log)).contains("49.0 GiB", "50.0 GiB", "killing the bulk loader JVM")
+				.doesNotContain("controlled disk monitor closed");
+		FileUtil.deleteDir(childDirectory.toFile());
+		assertThat(childDirectory).doesNotExist();
+	}
+
+	private static int runStandaloneWithDiskReading(Path childDirectory, Path log, long usableBytes,
+			String... arguments) throws Exception {
 		String classPath = System.getProperty("surefire.test.class.path", System.getProperty("java.class.path"));
-		Process process = new ProcessBuilder(Path.of(System.getProperty("java.home"), "bin", "java").toString(),
-				"-cp", classPath, LmdbBulkLoad.class.getName(), "--store", store.toString(),
-				"--input", input.toString(), "--progress", "none")
-						.redirectErrorStream(true)
-						.redirectOutput(log.toFile())
-						.start();
+		Path agent = Path.of(Mockito.class.getProtectionDomain().getCodeSource().getLocation().toURI());
+		List<String> command = new ArrayList<>(List.of(
+				Path.of(System.getProperty("java.home"), "bin", "java").toString(),
+				"-Xmx256m", "-javaagent:" + agent, "-Djava.io.tmpdir=" + childDirectory,
+				"-cp", classPath, ControlledDiskMain.class.getName(), Long.toString(usableBytes)));
+		command.addAll(Arrays.asList(arguments));
+		ProcessBuilder builder = new ProcessBuilder(command).redirectErrorStream(true).redirectOutput(log.toFile());
+		for (String injectedOptions : List.of("JAVA_TOOL_OPTIONS", "JDK_JAVA_OPTIONS", "_JAVA_OPTIONS")) {
+			builder.environment().remove(injectedOptions);
+		}
+		Process process = builder.start();
+		try (AutoCloseable processOwner = () -> reapStandalone(process)) {
+			try {
+				assertThat(process.waitFor(60, TimeUnit.SECONDS)).as("standalone CLI completion").isTrue();
+				return process.exitValue();
+			} catch (InterruptedException interrupted) {
+				Thread.currentThread().interrupt();
+				throw interrupted;
+			}
+		}
+	}
+
+	private static void reapStandalone(Process process) {
+		boolean interrupted = Thread.interrupted();
 		try {
-			assertThat(process.waitFor(60, TimeUnit.SECONDS)).as("standalone CLI completion").isTrue();
-			assertThat(process.exitValue()).as(Files.readString(log)).isZero();
-			assertThat(Files.readString(log)).contains("LMDB bulk load complete:");
-			assertManagerCanOpenPreparedStore(managerBase, store, 1);
-		} finally {
 			if (process.isAlive()) {
 				process.destroyForcibly();
+			}
+			long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(10);
+			while (process.isAlive()) {
+				long remaining = deadline - System.nanoTime();
+				assertThat(remaining).as("standalone CLI reap budget").isPositive();
+				try {
+					process.waitFor(remaining, TimeUnit.NANOSECONDS);
+				} catch (InterruptedException retryAfterInterrupt) {
+					interrupted = true;
+				}
+			}
+		} finally {
+			if (interrupted) {
+				Thread.currentThread().interrupt();
+			}
+		}
+	}
+
+	/** Child-only factory interception: the monitor, default thresholds, main, and halt callback remain real. */
+	public static final class ControlledDiskMain {
+		public static void main(String[] arguments) {
+			long usableBytes = Long.parseLong(arguments[0]);
+			List<DiskSpaceMonitor> monitors = new ArrayList<>();
+			try (MockedStatic<DiskSpaceMonitor> factory = mockStatic(DiskSpaceMonitor.class, invocation -> {
+				if (!invocation.getMethod().getName().equals("started")) {
+					return invocation.callRealMethod();
+				}
+				DiskSpaceMonitor monitor = new DiskSpaceMonitor(invocation.getArgument(0), invocation.getArgument(1),
+						() -> new DiskSpaceMonitor.Reading("controlled test volume", usableBytes));
+				monitors.add(monitor);
+				// Check synchronously so the unhealthy case cannot win a race by completing its tiny load first.
+				monitor.check(0L);
+				return monitor.start();
+			})) {
+				LmdbBulkLoad.main(Arrays.copyOfRange(arguments, 1, arguments.length));
+				assertThat(monitors).hasSize(1);
+				assertThat(monitors.get(0).monitoringThread().isAlive()).isFalse();
+				assertThat(monitors.get(0).watchedLocations()).isNotEmpty();
+				System.out.println("controlled disk monitor closed");
 			}
 		}
 	}
@@ -576,7 +661,7 @@ class LmdbBulkLoadTest {
 				.isZero();
 		assertThat(standardError.toString(StandardCharsets.UTF_8))
 				.contains("Interactive LMDB bulk-load setup")
-				.contains("Statement indexes [spoc,posc]")
+				.contains("Statement indexes [spoc,posc,ospc]")
 				.contains("RDF-star term indexes [spoc,cspo]");
 		assertThat(standardOutput.toString(StandardCharsets.UTF_8))
 				.contains("parsed=1")
@@ -1018,6 +1103,110 @@ class LmdbBulkLoadTest {
 	}
 
 	@Test
+	void reportsPhaseNumbersAndConfiguredStatementIndexes() throws Exception {
+		Path input = temporaryDirectory.resolve("indexed-progress.nt");
+		Files.writeString(input, "<urn:subject> <urn:predicate> <urn:object> .\n");
+		ByteArrayOutputStream standardError = new ByteArrayOutputStream();
+
+		int exitCode = LmdbBulkLoad.run(new String[] {
+				"--store", temporaryDirectory.resolve("indexed-progress-store").toString(),
+				"--input", input.toString(),
+				"--statement-indexes", "spoc,posc",
+				"--triple-term-indexes", "none",
+				"--progress", "plain"
+		}, new ByteArrayInputStream(new byte[0]), new PrintStream(new ByteArrayOutputStream()),
+				new PrintStream(standardError));
+
+		assertThat(exitCode).as(standardError.toString(StandardCharsets.UTF_8)).isZero();
+		String progress = standardError.toString(StandardCharsets.UTF_8);
+		assertThat(progress)
+				.contains("Phase 8/10")
+				.contains("SPOC 1/2")
+				.contains("POSC 2/2")
+				.contains("stage=MERGE")
+				.contains("stage=APPEND");
+	}
+
+	@Test
+	void reportsPhaseAndIndexFieldsInJsonProgress() throws Exception {
+		Path input = temporaryDirectory.resolve("json-indexed-progress.nt");
+		Files.writeString(input,
+				"<urn:owner> <urn:quoted> <<( <urn:inner> <urn:p> <urn:o> )>> .\n");
+		ByteArrayOutputStream standardError = new ByteArrayOutputStream();
+
+		int exitCode = LmdbBulkLoad.run(new String[] {
+				"--store", temporaryDirectory.resolve("json-indexed-progress-store").toString(),
+				"--input", input.toString(),
+				"--parser", "fast",
+				"--statement-indexes", "spoc,posc",
+				"--triple-term-indexes", "spoc,cspo",
+				"--progress", "json"
+		}, new ByteArrayInputStream(new byte[0]), new PrintStream(new ByteArrayOutputStream()),
+				new PrintStream(standardError));
+
+		assertThat(exitCode).as(standardError.toString(StandardCharsets.UTF_8)).isZero();
+		List<String> records = standardError.toString(StandardCharsets.UTF_8).lines().toList();
+		assertThat(records)
+				.isNotEmpty()
+				.allMatch(record -> record.startsWith("{") && record.endsWith("}"))
+				.anyMatch(record -> record.contains("\"phase\":\"WRITE_GENERATION\",\"phaseNumber\":8,"
+						+ "\"phaseCount\":10"))
+				.anyMatch(record -> record.contains("\"activeIndexes\":[{\"family\":\"STATEMENT\","
+						+ "\"name\":\"SPOC\",\"number\":1,\"count\":2,\"stage\":\"SCAN\","
+						+ "\"complete\":false},{\"family\":\"STATEMENT\",\"name\":\"POSC\","
+						+ "\"number\":2,\"count\":2,\"stage\":\"SCAN\",\"complete\":false}]"))
+				.anyMatch(record -> record.contains("\"activeIndexes\":[],\"indexEvent\":null"));
+
+		assertJsonIndexEvent(records, "STATEMENT", "SPOC", 1, 2, "SCAN");
+		assertJsonIndexEvent(records, "STATEMENT", "SPOC", 1, 2, "MERGE");
+		assertJsonIndexEvent(records, "STATEMENT", "SPOC", 1, 2, "APPEND");
+		assertJsonIndexEvent(records, "STATEMENT", "POSC", 2, 2, "SCAN");
+		assertJsonIndexEvent(records, "STATEMENT", "POSC", 2, 2, "MERGE");
+		assertJsonIndexEvent(records, "STATEMENT", "POSC", 2, 2, "APPEND");
+		assertJsonIndexEvent(records, "TRIPLE_TERM", "SPOC", 1, 2, "SCAN");
+		assertJsonIndexEvent(records, "TRIPLE_TERM", "SPOC", 1, 2, "MERGE");
+		assertJsonIndexEvent(records, "TRIPLE_TERM", "SPOC", 1, 2, "APPEND");
+		assertJsonIndexEvent(records, "TRIPLE_TERM", "CSPO", 2, 2, "SCAN");
+		assertJsonIndexEvent(records, "TRIPLE_TERM", "CSPO", 2, 2, "MERGE");
+		assertJsonIndexEvent(records, "TRIPLE_TERM", "CSPO", 2, 2, "APPEND");
+	}
+
+	private static void assertJsonIndexEvent(List<String> records, String family, String name, int number, int count,
+			String stage) {
+		String event = "\"indexEvent\":{\"family\":\"" + family + "\",\"name\":\"" + name
+				+ "\",\"number\":" + number + ",\"count\":" + count + ",\"stage\":\"" + stage
+				+ "\",\"complete\":false}";
+		assertThat(records).as("JSON index event %s %s %d/%d %s", family, name, number, count, stage)
+				.anyMatch(record -> record.contains(event));
+	}
+
+	@Test
+	void reportsConfiguredIndexWorkForEmptyInput() throws Exception {
+		Path input = temporaryDirectory.resolve("empty-index-progress.nt");
+		Files.createFile(input);
+		ByteArrayOutputStream standardOutput = new ByteArrayOutputStream();
+		ByteArrayOutputStream standardError = new ByteArrayOutputStream();
+
+		int exitCode = LmdbBulkLoad.run(new String[] {
+				"--store", temporaryDirectory.resolve("empty-index-progress-store").toString(),
+				"--input", input.toString(),
+				"--statement-indexes", "spoc,posc",
+				"--triple-term-indexes", "none",
+				"--progress", "plain"
+		}, new ByteArrayInputStream(new byte[0]), new PrintStream(standardOutput), new PrintStream(standardError));
+
+		assertThat(exitCode).as(standardError.toString(StandardCharsets.UTF_8)).isZero();
+		assertThat(standardOutput.toString(StandardCharsets.UTF_8)).contains("parsed=0").contains("stored=0");
+		assertThat(standardError.toString(StandardCharsets.UTF_8))
+				.contains("SPOC 1/2")
+				.contains("POSC 2/2")
+				.contains("TRIPLE_TERM SPOC 1/2")
+				.contains("TRIPLE_TERM CSPO 2/2")
+				.contains("stage=MERGE")
+				.contains("stage=APPEND");
+	}
+
+	@Test
 	void reportsTheSelectedCompressionInTheSummary() throws Exception {
 		Path input = temporaryDirectory.resolve("input.nt");
 		Files.writeString(input, "<urn:subject> <urn:predicate> <urn:object> .\n");
@@ -1034,6 +1223,7 @@ class LmdbBulkLoadTest {
 		assertThat(exitCode)
 				.as(standardError.toString(StandardCharsets.UTF_8))
 				.isZero();
+		assertThat(standardError.toString(StandardCharsets.UTF_8)).isEmpty();
 		assertThat(standardOutput.toString(StandardCharsets.UTF_8))
 				.contains("stored=1")
 				.contains("compression=7");

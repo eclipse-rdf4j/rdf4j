@@ -299,6 +299,14 @@ class CompactCsfPageReader {
 		return flag(CompactCsfPageFormat.FLAG_COMMON_CONTEXT);
 	}
 
+	/** Conservative header-only test on an already validated immutable page; mixed pages remain candidates. */
+	static boolean mayContainContext(long pageAddress, long rawContext) {
+		return rawContext < 0
+				|| (UnsafeAccess.getUnsignedShortLE(pageAddress + CompactCsfPageFormat.FLAGS_AT)
+						& CompactCsfPageFormat.FLAG_COMMON_CONTEXT) == 0
+				|| UnsafeAccess.getLongLE(pageAddress + CompactCsfPageFormat.COMMON_CONTEXT_AT) == rawContext;
+	}
+
 	long commonContext() {
 		if (!hasCommonContext()) {
 			throw new IllegalStateException("page does not have a common context");
@@ -326,6 +334,29 @@ class CompactCsfPageReader {
 		}
 		int vectorOffset = UnsafeAccess.getIntLE(pageAddress + CompactCsfPageFormat.ROW_IDS_OFFSET_AT);
 		return PackedLongVector.nativeGet(pageAddress + vectorOffset, rowIndex);
+	}
+
+	/** Reads only row-size metadata, preserving source-slice ordinals without binding pair payload columns. */
+	static int trustedRowQuadCount(long pageAddress, int rowIndex) {
+		int rows = UnsafeAccess.getIntLE(pageAddress + CompactCsfPageFormat.ROW_COUNT_AT);
+		if (rows == 1) {
+			return UnsafeAccess.getIntLE(pageAddress + CompactCsfPageFormat.QUAD_COUNT_AT);
+		}
+		int flags = UnsafeAccess.getUnsignedShortLE(pageAddress + CompactCsfPageFormat.FLAGS_AT);
+		if ((flags & CompactCsfPageFormat.FLAG_ROW_QUAD_EQUALS_NEIGHBOR) == 0) {
+			long counts = pageAddress
+					+ UnsafeAccess.getIntLE(pageAddress + CompactCsfPageFormat.ROW_QUAD_COUNTS_OFFSET_AT);
+			return Math.toIntExact(PackedLongVector.nativeGet(counts, rowIndex));
+		}
+		if ((flags & CompactCsfPageFormat.FLAG_ROW_NEIGHBOR_ONE) != 0) {
+			return 1;
+		}
+		long starts = pageAddress
+				+ UnsafeAccess.getIntLE(pageAddress + CompactCsfPageFormat.ROW_FIBER_STARTS_OFFSET_AT);
+		long from = PackedLongVector.nativeGet(starts, rowIndex);
+		long to = rowIndex + 1 == rows ? UnsafeAccess.getIntLE(pageAddress + CompactCsfPageFormat.FIBER_COUNT_AT)
+				: PackedLongVector.nativeGet(starts, rowIndex + 1);
+		return Math.toIntExact(to - from);
 	}
 
 	int findRow(long row) {
@@ -762,32 +793,32 @@ class CompactCsfPageReader {
 		if (targetOrdinal < 0 || targetOrdinal >= quads) {
 			throw new IllegalArgumentException("row ordinal out of range: " + targetOrdinal + " of " + quads);
 		}
+		// With one context per fiber, a quad ordinal is also its local fiber ordinal.
+		if (flag(CompactCsfPageFormat.FLAG_CONTEXT_COUNT_ONE)
+				&& flag(CompactCsfPageFormat.FLAG_ROW_QUAD_EQUALS_NEIGHBOR)) {
+			if (contextValue) {
+				return flag(CompactCsfPageFormat.FLAG_COMMON_CONTEXT)
+						? UnsafeAccess.getLongLE(address + CompactCsfPageFormat.COMMON_CONTEXT_AT)
+						: PackedLongVector.nativeGet(firstContextsAddress(), start + targetOrdinal);
+			}
+			long firstNeighbor = PackedLongVector.nativeGet(firstNeighborsAddress(), rowIndex);
+			return targetOrdinal == 0 ? firstNeighbor
+					: firstNeighbor + neighborRangeSum(start - rowIndex, targetOrdinal);
+		}
 		int neighborTailStart = start - rowIndex;
-		long currentNeighbor = PackedLongVector.nativeGet(firstNeighborsAddress(), rowIndex);
+		// Locate the fiber before decoding its neighbor; skipped fibers only need their context counts.
 		int ordinal = 0;
 		for (int localFiber = 0; localFiber < fibers; localFiber++) {
-			if (localFiber > 0) {
-				currentNeighbor += PackedLongVector.nativeGet(neighborTailsAddress(),
-						neighborTailStart + localFiber - 1);
-			}
 			int fiber = start + localFiber;
 			int contexts = flag(CompactCsfPageFormat.FLAG_CONTEXT_COUNT_ONE) ? 1
 					: Math.toIntExact(PackedLongVector.nativeGet(contextCountsAddress(), fiber));
 			if (targetOrdinal < ordinal + contexts) {
 				if (!contextValue) {
-					return currentNeighbor;
+					long firstNeighbor = PackedLongVector.nativeGet(firstNeighborsAddress(), rowIndex);
+					return localFiber == 0 ? firstNeighbor
+							: firstNeighbor + neighborRangeSum(neighborTailStart, localFiber);
 				}
-				int localContext = targetOrdinal - ordinal;
-				long currentContext = flag(CompactCsfPageFormat.FLAG_COMMON_CONTEXT)
-						? UnsafeAccess.getLongLE(address + CompactCsfPageFormat.COMMON_CONTEXT_AT)
-						: PackedLongVector.nativeGet(firstContextsAddress(), fiber);
-				// The context-tail prefix sum is only paid on the context path: contextStart(fiber) is exactly the
-				// running fiberContextStart the loop used to maintain, and a neighbor-only lookup never needs it.
-				int contextTailStart = contextStart(fiber) - fiber;
-				for (int c = 0; c < localContext; c++) {
-					currentContext += PackedLongVector.nativeGet(contextTailsAddress(), contextTailStart + c);
-				}
-				return currentContext;
+				return contextAt(fiber, targetOrdinal - ordinal);
 			}
 			ordinal += contexts;
 		}

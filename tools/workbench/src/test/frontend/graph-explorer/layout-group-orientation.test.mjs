@@ -29,8 +29,8 @@ test('group orientation brings boundary members towards their neighbors without 
   assert.deepEqual(graph, before);
 });
 
-test('refinement and pinned groups never reflect an existing mental map', () => {
-  for (const options of [{refine: true}, {incremental: true}, {repairOnly: true}, {localNodeIds: new Set(['a', 'b'])}, {}]) {
+test('extending, repairing and pinned groups never reflect an existing mental map', () => {
+  for (const options of [{incremental: true}, {repairOnly: true}, {localNodeIds: new Set(['a', 'b'])}, {}]) {
     const graph = fixture();
     if (!Object.keys(options).length) graph.nodes[0].pinned = true;
     const positions = new Map(graph.nodes.map(n => [n.id, {x: n.x, y: n.y}])), before = structuredClone(positions);

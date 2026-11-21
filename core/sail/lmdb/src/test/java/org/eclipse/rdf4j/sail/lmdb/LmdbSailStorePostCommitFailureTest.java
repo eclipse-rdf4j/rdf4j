@@ -276,7 +276,9 @@ class LmdbSailStorePostCommitFailureTest {
 					: new IllegalStateException("injected strict post-commit publication failure");
 			AtomicBoolean failOnce = new AtomicBoolean();
 			tripleStore.setDirectAdjacencyCommitHooks((delta, nextRevision) -> {
-				delegate.beforeRevisionBump(delta, nextRevision);
+				if (delegate != null) {
+					delegate.beforeRevisionBump(delta, nextRevision);
+				}
 				if (failOnce.compareAndSet(false, true)) {
 					throwFailure(injected);
 				}

@@ -663,6 +663,17 @@ final class BulkTaskScheduler implements AutoCloseable {
 		return schedule(lease, operation, true, whenFinished);
 	}
 
+	/**
+	 * Waits for this task's completion callback and resource-lease release, not just FutureTask's result publication.
+	 * Joining only this task keeps independent sorters free to share the scheduler without a pool-wide idle barrier.
+	 */
+	void awaitTaskCleanup(Future<?> future) throws InterruptedException {
+		if (!(future instanceof BulkTaskScheduler.TrackedTask<?> task) || task.lease.owner != this) {
+			throw new IllegalArgumentException("task belongs to another scheduler");
+		}
+		task.awaitCleanup();
+	}
+
 	<T> List<T> runOrdered(List<Work<T>> work) throws IOException {
 		if (CURRENT_SCHEDULER.get() == this) {
 			throw new IllegalStateException("ordered bulk work must be coordinated outside the scheduler pool");

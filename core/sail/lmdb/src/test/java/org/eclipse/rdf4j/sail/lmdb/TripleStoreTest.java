@@ -206,7 +206,11 @@ public class TripleStoreTest {
 
 			preparedStore.startTransaction();
 			try {
-				preparedStore.storeGloballyOrderedFreshTriples(quads, valueIds, subjects.length, task, executor);
+				List<Integer> additions = new ArrayList<>();
+				assertEquals(8, preparedStore.storeGloballyOrderedFreshTriples(quads, valueIds, subjects.length, task,
+						executor, additions::add));
+				assertEquals("Backup callbacks must report only newly added rows in input order",
+						List.of(0, 1, 2, 3, 5, 6, 7, 8), additions);
 				preparedStore.commit();
 			} catch (Throwable e) {
 				preparedStore.rollback();

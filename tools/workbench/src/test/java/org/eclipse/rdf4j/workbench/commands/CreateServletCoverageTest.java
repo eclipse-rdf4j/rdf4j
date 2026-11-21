@@ -14,7 +14,10 @@ package org.eclipse.rdf4j.workbench.commands;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -26,14 +29,21 @@ import java.nio.charset.StandardCharsets;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Properties;
+import java.util.Set;
 
 import org.eclipse.rdf4j.repository.config.RepositoryConfig;
 import org.eclipse.rdf4j.repository.manager.RepositoryInfo;
 import org.eclipse.rdf4j.repository.manager.RepositoryManager;
+import org.eclipse.rdf4j.repository.sail.config.SailRepositoryConfig;
+import org.eclipse.rdf4j.sail.memory.config.MemoryStoreConfig;
+import org.eclipse.rdf4j.workbench.proxy.config.WorkbenchPolicy;
+import org.eclipse.rdf4j.workbench.proxy.config.WorkbenchPolicyLoader;
 import org.eclipse.rdf4j.workbench.support.TestServletConfig;
 import org.eclipse.rdf4j.workbench.util.WorkbenchRequest;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
+import org.springframework.mock.web.MockServletContext;
 
 import jakarta.servlet.ServletException;
 import jakarta.servlet.ServletOutputStream;
@@ -107,6 +117,31 @@ class CreateServletCoverageTest {
 	}
 
 	@Test
+	void doPostIgnoresSubmittedValuesForReadonlyFields() throws Exception {
+		CreateServlet servlet = new CreateServlet();
+		RepositoryManager manager = mock(RepositoryManager.class);
+		WorkbenchRequest request = mock(WorkbenchRequest.class);
+		HttpServletResponse response = mock(HttpServletResponse.class);
+
+		servlet.setRepositoryManager(manager);
+		when(request.getTypeParameter()).thenReturn("workbench-test-custom");
+		when(request.getParameter("Repository ID")).thenReturn("readonly-coverage");
+		when(request.getParameter("Repository title")).thenReturn("Readonly Coverage");
+		when(request.getParameter("Persist")).thenReturn("false");
+		when(request.getParameter("Sync delay")).thenReturn("250");
+
+		servlet.doPost(request, response);
+
+		ArgumentCaptor<RepositoryConfig> configCaptor = ArgumentCaptor.forClass(RepositoryConfig.class);
+		verify(manager).addRepositoryConfig(configCaptor.capture());
+		SailRepositoryConfig repositoryConfig = (SailRepositoryConfig) configCaptor.getValue()
+				.getRepositoryImplConfig();
+		MemoryStoreConfig sailConfig = (MemoryStoreConfig) repositoryConfig.getSailImplConfig();
+		assertThat(sailConfig.getPersist()).as("readonly Persist keeps the template default").isTrue();
+		assertThat(sailConfig.getSyncDelay()).as("non-readonly Sync delay honours the submission").isEqualTo(250L);
+	}
+
+	@Test
 	void doPostCreatesFederatedRepositoryAndRedirects() throws Exception {
 		CreateServlet servlet = new CreateServlet();
 		RepositoryManager manager = mock(RepositoryManager.class);
@@ -123,6 +158,27 @@ class CreateServletCoverageTest {
 
 		verify(manager).addRepositoryConfig(any(RepositoryConfig.class));
 		verify(response).sendRedirect("../fed-coverage/summary");
+	}
+
+	@Test
+	void postOfATypeOutsideTheAllowlistIsRejected() throws Exception {
+		Properties properties = new Properties();
+		properties.setProperty("create.templates", "native");
+		MockServletContext context = new MockServletContext();
+		context.setAttribute(WorkbenchPolicyLoader.POLICY_ATTRIBUTE,
+				WorkbenchPolicy.fromProperties(properties, Set.of()));
+		CreateServlet servlet = new CreateServlet();
+		RepositoryManager manager = mock(RepositoryManager.class);
+		servlet.setRepositoryManager(manager);
+		servlet.init(new TestServletConfig("create", context, Map.of("transformations", "/transform")));
+		WorkbenchRequest request = mock(WorkbenchRequest.class);
+		HttpServletResponse response = mock(HttpServletResponse.class);
+		when(request.getTypeParameter()).thenReturn("memory");
+
+		servlet.doPost(request, response);
+
+		verify(response).sendError(eq(HttpServletResponse.SC_BAD_REQUEST), anyString());
+		verify(manager, never()).addRepositoryConfig(any(RepositoryConfig.class));
 	}
 
 	@Test

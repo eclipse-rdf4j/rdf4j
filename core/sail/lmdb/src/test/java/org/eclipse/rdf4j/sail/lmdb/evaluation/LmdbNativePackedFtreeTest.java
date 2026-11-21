@@ -18,6 +18,7 @@ import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyBoolean;
 import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.Mockito.mock;
@@ -34,6 +35,7 @@ import java.util.OptionalLong;
 
 import org.codehaus.janino.SimpleCompiler;
 import org.eclipse.rdf4j.query.impl.EmptyBindingSet;
+import org.eclipse.rdf4j.sail.lmdb.TripleIndex;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.NativeLmdbQuerySource.NativeAdjacency;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.codegen.KernelContext;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.codegen.PackedFtreeContext;
@@ -319,6 +321,122 @@ class LmdbNativePackedFtreeTest {
 			assertEquals(1, child.size, "equal neighbours from different contexts must share one physical lane");
 			assertEquals(2L, child.weight(0), "the physical lane carries the exact SPARQL bag multiplicity");
 			assertEquals(2L, chunk.computeSubtreeCountsInterpreted());
+		}
+	}
+
+	@Test
+	void graphRestrictedPackedScansUsePhysicalSpanProofs() throws Exception {
+		for (boolean boundRoot : new boolean[] { false, true }) {
+			TestGraph graph = new TestGraph();
+			graph.contextHeaders = true;
+			graph.forbiddenContext = 99L;
+			graph.add(P1, 1L, 10L, 7L);
+			graph.add(P1, 1L, 10L, 8L);
+			graph.add(P1, 1L, 10L, 99L);
+			graph.add(P1, 1L, 11L, 99L);
+			graph.add(P1, 1L, 12L, 8L);
+			RowState row = row(graph.source(), "a", "b");
+
+			PatternPlan restricted = new PatternPlan(Term.slot(0), Term.constant(P1), Term.slot(1), Term.unbound(),
+					new ContextConstraint(new long[] { 7L, 8L }), true, 5D);
+			LmdbNativePackedFtree.Plan plan = LmdbNativePackedFtree.Planner.plan(join(restricted), row,
+					new int[] { 0, 1 });
+			assertNotNull(plan);
+			long count = 0L;
+			if (boundRoot) {
+				try (NativeLmdbQuerySource.NativeProbe probe = row.source.newProbe()) {
+					NativeAdjacency adjacency = probe.adjacency(P1, true);
+					try (LmdbNativePackedFtree.RunRootProducer producer = new LmdbNativePackedFtree.RunRootProducer(
+							adjacency, adjacency.find(1L), restricted)) {
+						LmdbNativePackedFtree.NodeData values = new LmdbNativePackedFtree.NodeData(plan.root);
+						assertEquals(2, producer.fill(values, 16));
+						assertEquals(10L, values.value(0));
+						assertEquals(12L, values.value(1));
+						count = values.weight(0) + values.weight(1);
+					}
+				}
+			} else {
+				try (LmdbNativePackedFtree.Runtime runtime = LmdbNativePackedFtree.Runtime.open(plan, row)) {
+					LmdbNativePackedFtree.Chunk chunk;
+					while ((chunk = runtime.nextChunk()) != null) {
+						count += chunk.computeSubtreeCountsInterpreted();
+					}
+				}
+			}
+			assertEquals(3L, count, "accepted graphs preserve equal-neighbor bag weights");
+			assertEquals(0, graph.contextPayloadReads);
+			assertEquals(0, graph.disjointPayloadReads);
+		}
+	}
+
+	@Test
+	void contextRestrictedDistinctSeekUsesLogarithmicAcceptedSpanReads() throws Exception {
+		String property = "rdf4j.lmdb.packedFtree.bulkRuns.enabled";
+		String previous = System.getProperty(property);
+		try {
+			for (boolean buffered : new boolean[] { false, true }) {
+				System.setProperty(property, Boolean.toString(buffered));
+				TestGraph graph = new TestGraph();
+				graph.contextHeaders = true;
+				graph.forbiddenContext = 99L;
+				graph.add(P1, 1L, 10L, 99L);
+				for (long neighbor = 1_000L; neighbor < 17_384L; neighbor++) {
+					graph.add(P1, 1L, neighbor, 7L);
+				}
+				PatternPlan pattern = new PatternPlan(Term.slot(0), Term.constant(P1), Term.slot(1), Term.unbound(),
+						new ContextConstraint(new long[] { 7L }), true, 16_384D);
+				try (NativeLmdbQuerySource.NativeProbe probe = graph.source().newProbe()) {
+					NativeAdjacency adjacency = probe.adjacency(P1, true);
+					LmdbNativePackedFtree.EdgeRuntime edge = new LmdbNativePackedFtree.EdgeRuntime(adjacency,
+							new LmdbNativePackedFtree.EdgePlan(pattern, 0, 1, true));
+					LmdbNativePackedFtree.DistinctRun run = new LmdbNativePackedFtree.DistinctRun(edge, edge.bind(1L));
+					graph.neighborPayloadReads = 0L;
+					assertTrue(run.seekAtLeast(17_380L));
+					assertEquals(17_380L, run.value);
+					assertTrue(graph.neighborPayloadReads < 100L,
+							"seeking near the end must binary-search an accepted physical span; reads="
+									+ graph.neighborPayloadReads);
+					assertEquals(0, graph.disjointPayloadReads);
+					assertEquals(0, graph.contextPayloadReads);
+				}
+			}
+		} finally {
+			if (previous == null) {
+				System.clearProperty(property);
+			} else {
+				System.setProperty(property, previous);
+			}
+		}
+	}
+
+	@Test
+	void graphRestrictedPathScansUsePhysicalSpanProofsInBothDirections() throws Exception {
+		for (boolean backward : new boolean[] { false, true }) {
+			TestGraph graph = new TestGraph();
+			graph.contextHeaders = true;
+			graph.forbiddenContext = 99L;
+			graph.add(P1, 1L, 10L, 7L);
+			graph.add(P1, 1L, 10L, 8L);
+			graph.add(P1, 1L, 11L, 99L);
+			graph.add(P1, 10L, 12L, 8L);
+			graph.add(P1, 11L, 12L, 99L);
+			RowState row = row(graph.source(), "a", "b");
+			row.slots[backward ? 1 : 0] = backward ? 12L : 1L;
+			row.recomputeBoundMask();
+			PatternPlan restricted = new PatternPlan(Term.slot(0), Term.constant(P1), Term.slot(1), Term.unbound(),
+					new ContextConstraint(new long[] { 7L, 8L }), true, 5D);
+			PathPlan plan = new PathPlan(restricted, 0, -1L, 1, -1L,
+					TripleIndex.SUBJ_IDX,
+					TripleIndex.OBJ_IDX, false);
+			List<Long> reached = new ArrayList<>();
+			try (RowCursor cursor = plan.open(row)) {
+				while (cursor.next()) {
+					reached.add(row.slots[backward ? 0 : 1]);
+				}
+			}
+			assertEquals(backward ? List.of(10L, 1L) : List.of(10L, 12L), reached);
+			assertEquals(0, graph.contextPayloadReads);
+			assertEquals(0, graph.disjointPayloadReads);
 		}
 	}
 
@@ -768,6 +886,11 @@ class LmdbNativePackedFtreeTest {
 
 	private static final class TestGraph {
 		boolean borrow;
+		boolean contextHeaders;
+		long forbiddenContext = -1L;
+		int contextPayloadReads;
+		long neighborPayloadReads;
+		int disjointPayloadReads;
 		long failExportKey = -1L;
 		private final Map<AdjacencyKey, MutableAdjacency> mutable = new HashMap<>();
 		private NativeLmdbQuerySource source;
@@ -792,6 +915,8 @@ class LmdbNativePackedFtreeTest {
 			try {
 				when(result.newProbe()).thenReturn(probe);
 				when(probe.adjacency(anyLong(), anyBoolean())).thenAnswer(invocation -> adjacencies
+						.get(new AdjacencyKey(invocation.getArgument(0), invocation.getArgument(1))));
+				when(probe.adjacency(anyLong(), anyBoolean(), any())).thenAnswer(invocation -> adjacencies
 						.get(new AdjacencyKey(invocation.getArgument(0), invocation.getArgument(1))));
 			} catch (Exception e) {
 				throw new AssertionError(e);
@@ -885,6 +1010,39 @@ class LmdbNativePackedFtreeTest {
 		}
 
 		@Override
+		public void contextSpan(long handle, long offset, ContextSpan target) {
+			if (!owner.contextHeaders) {
+				NativeAdjacency.super.contextSpan(handle, offset, target);
+				return;
+			}
+			long[] row = contexts[index(handle)];
+			int end = Math.toIntExact(offset);
+			if (end == row.length) {
+				target.set(end, -1L);
+				return;
+			}
+			long graph = row[end];
+			while (end < row.length && row[end] == graph) {
+				end++;
+			}
+			target.set(end, graph);
+		}
+
+		private void checkNeighborPayload(long handle, long offset, int length) {
+			if (!owner.contextHeaders) {
+				return;
+			}
+			owner.neighborPayloadReads += length;
+			long[] row = contexts[index(handle)];
+			for (int i = Math.toIntExact(offset); i < offset + length; i++) {
+				if (row[i] == owner.forbiddenContext) {
+					owner.disjointPayloadReads++;
+					throw new AssertionError("context-disjoint span decoded neighbor payload");
+				}
+			}
+		}
+
+		@Override
 		public long find(long key) {
 			Integer ordinal = ordinalByKey.get(key);
 			return ordinal == null ? NOT_FOUND : ordinal + 1L;
@@ -897,16 +1055,22 @@ class LmdbNativePackedFtreeTest {
 
 		@Override
 		public long neighborAt(long runHandle, long runOffset) {
+			checkNeighborPayload(runHandle, runOffset, 1);
 			return neighbors[index(runHandle)][Math.toIntExact(runOffset)];
 		}
 
 		@Override
 		public long contextAt(long runHandle, long runOffset) {
+			if (owner.contextHeaders) {
+				owner.contextPayloadReads++;
+				throw new AssertionError("common-context span decoded its context payload");
+			}
 			return contexts[index(runHandle)][Math.toIntExact(runOffset)];
 		}
 
 		@Override
 		public int copyNeighbors(long runHandle, long runOffset, int length, long[] target, int targetOffset) {
+			checkNeighborPayload(runHandle, runOffset, length);
 			long[] row = neighbors[index(runHandle)];
 			int from = Math.toIntExact(runOffset);
 			int count = Math.min(length, row.length - from);
@@ -916,6 +1080,10 @@ class LmdbNativePackedFtreeTest {
 
 		@Override
 		public int copyContexts(long runHandle, long runOffset, int length, long[] target, int targetOffset) {
+			if (owner.contextHeaders) {
+				owner.contextPayloadReads++;
+				throw new AssertionError("common-context span decoded its context payload");
+			}
 			long[] row = contexts[index(runHandle)];
 			int from = Math.toIntExact(runOffset);
 			int count = Math.min(length, row.length - from);

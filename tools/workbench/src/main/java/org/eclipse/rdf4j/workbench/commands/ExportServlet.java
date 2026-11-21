@@ -117,6 +117,7 @@ public class ExportServlet extends TupleServlet {
 			resp.setContentType(compression.contentType(accept));
 			resp.setHeader("Content-disposition", attachment);
 			try (RepositoryConnection con = repository.getConnection()) {
+				TupleResultBuilder.enableRepositoryOrigins(con);
 				con.setParserConfig(NON_VERIFYING_PARSER_CONFIG);
 				RDFWriterFactory factory = getInstance().get(format).orElseThrow(Rio.unsupportedFormat(format));
 				if (compression == Compression.NONE && format.getCharset() != null) {
@@ -294,6 +295,7 @@ public class ExportServlet extends TupleServlet {
 		try {
 			return browseList.withinBudget(() -> {
 				try (RepositoryConnection connection = repository.getConnection()) {
+					TupleResultBuilder.enableRepositoryOrigins(connection);
 					return Iterations.asList(connection.getContextIDs()).size();
 				}
 			});

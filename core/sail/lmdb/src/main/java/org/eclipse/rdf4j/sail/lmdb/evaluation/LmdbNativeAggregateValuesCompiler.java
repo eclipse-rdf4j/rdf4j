@@ -833,7 +833,7 @@ abstract class LmdbNativeAggregateValuesCompiler extends LmdbNativeAggregatePatt
 			for (Binding binding : bindings) {
 				Value value = binding.getValue();
 				long id = idOf(value, layout.positionMask(binding.getName()));
-				if (id == UNKNOWN || !valueProbeSafeId(id, value)) {
+				if (!termProbeSafeId(id, value)) {
 					// allocated by collectSyntheticValues before compilation started; only variables it
 					// marked may carry synthetic ids (others must keep raw-id semantics and fall back)
 					long synthetic = syntheticVarNames.contains(binding.getName())
@@ -852,7 +852,7 @@ abstract class LmdbNativeAggregateValuesCompiler extends LmdbNativeAggregatePatt
 						if (guardId == UNKNOWN) {
 							return null;
 						}
-						pendingValueGuards.add(new PendingValueGuard(binding.getName(),
+						pendingValueGuards.add(new PendingValueGuard(values, binding.getName(),
 								slot(binding.getName()), guardId));
 						continue;
 					} else {

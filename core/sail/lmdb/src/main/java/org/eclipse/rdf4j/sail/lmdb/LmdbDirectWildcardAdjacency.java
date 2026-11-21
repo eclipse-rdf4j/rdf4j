@@ -141,6 +141,28 @@ final class LmdbDirectWildcardAdjacency implements NativeLmdbQuerySource.Wildcar
 	}
 
 	@Override
+	public long neighborInContextSpan(long runHandle, long offset) {
+		return bound().neighborInContextSpan(runHandle, offset);
+	}
+
+	@Override
+	public long contextInContextSpan(long runHandle, long offset) {
+		return bound().contextInContextSpan(runHandle, offset);
+	}
+
+	@Override
+	public void contextSpan(long runHandle, long fromOffset, ContextSpan target) {
+		bound().contextSpan(runHandle, fromOffset, target);
+	}
+
+	@Override
+	public int copyContextSpan(long runHandle, long fromOffset, int length, long[] neighbors, int neighborOffset,
+			long[] graphIds, int contextOffset) {
+		return bound().copyContextSpan(runHandle, fromOffset, length, neighbors, neighborOffset, graphIds,
+				contextOffset);
+	}
+
+	@Override
 	public long size(long runHandle) {
 		return bound().size(runHandle);
 	}

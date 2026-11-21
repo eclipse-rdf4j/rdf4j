@@ -13,6 +13,7 @@
 const { test, expect } = require('@playwright/test');
 const fs = require('node:fs');
 const path = require('node:path');
+const { createExploreNavigationTracker } = require('./workbench-browser-health');
 const {
 	deleteRepository,
 	memoryRepositoryConfiguration,
@@ -105,7 +106,9 @@ function exploreRoleRows(page, role) {
 }
 
 function monitorBrowser(page) {
-	const health = { pageErrors: [], consoleErrors: [], httpErrors: [], requestFailures: [] };
+	const navigation = createExploreNavigationTracker(page, repositoryPageUrl(REPOSITORY_ID, 'explore'));
+	const health = { pageErrors: [], consoleErrors: [], httpErrors: [], requestFailures: [],
+		expectNavigation: () => navigation.expectNavigation() };
 	page.on('pageerror', error => health.pageErrors.push(error.message));
 	page.on('console', message => {
 		if (message.type() === 'error') {
@@ -122,11 +125,12 @@ function monitorBrowser(page) {
 			});
 		}
 	});
-	page.on('requestfailed', request => health.requestFailures.push({
-		method: request.method(),
-		url: request.url(),
-		failure: request.failure()?.errorText || 'unknown request failure'
-	}));
+	page.on('requestfailed', request => {
+		const failure = request.failure()?.errorText || 'unknown request failure';
+		health.requestFailures.push(navigation.recordFailure({
+			method: request.method(), url: request.url(), error: failure, failure
+		}));
+	});
 	return health;
 }
 
@@ -171,7 +175,7 @@ async function assertBrowserHealthy(page, health, name, expectedErrorResponses =
 		});
 	// Workbench navigation cancels in-flight requests to the old repository route; retain these in the health artifact.
 	expect(health.requestFailures.filter(failure => !isExpectedRouteAbort(failure)
-		&& !isExpectedErrorCancellation(failure)), 'unexpected browser request failures')
+		&& !failure.expectedRouteAbort && !isExpectedErrorCancellation(failure)), 'unexpected browser request failures')
 		.toEqual([]);
 	const unexpectedConsoleErrors = health.consoleErrors.filter(message => {
 		if (!message.startsWith('Failed to load resource:')) {
@@ -223,6 +227,7 @@ test('Workbench query results explore and copy a reusable fixed blank node refer
 	const queryHref = await queryResourceLink.getAttribute('href');
 	const resourceQuery = new URL(queryHref, workbenchBaseUrl()).searchParams.get('query');
 	expect(resourceQuery).toBe(`SELECT * WHERE { <_:${FIXED_ID}> ?p ?o }`);
+	health.expectNavigation();
 	await queryResourceLink.click();
 	await waitForRoute(page, 'query');
 	expect(await queryEditorValue(page)).toBe(resourceQuery);
@@ -306,6 +311,7 @@ test('Workbench preserves escaped IDs, graph roles, nested triples, and graph-re
 	await expect(nestedTripleLink).toBeVisible();
 	const nestedExploreUrl = new URL(await nestedTripleLink.getAttribute('href'), page.url());
 	expect(nestedExploreUrl.searchParams.get('resource')).toBe(nestedTripleReference);
+	health.expectNavigation();
 	await nestedTripleLink.click();
 	await waitForRoute(page, 'explore', { url: nestedExploreUrl.href });
 	await expect(page.locator('#resource')).toHaveValue(nestedTripleReference);
@@ -317,6 +323,7 @@ test('Workbench preserves escaped IDs, graph roles, nested triples, and graph-re
 	// Reuse the value actually written by Copy. Deleting this exact reference must leave the other same-predicate
 	// blank node intact.
 	const copiedSpecialReference = clipboardWrites[0];
+	health.expectNavigation();
 	await submitUpdate(page, `DELETE DATA { ${copiedSpecialReference} <urn:bnr:predicate> "special subject" . }`);
 	await openQueryPage(page, REPOSITORY_ID);
 	await runQuery(page, `SELECT ?o WHERE { <_:${OTHER_ID}> <urn:bnr:predicate> ?o }`);

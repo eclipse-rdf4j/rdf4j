@@ -13,6 +13,7 @@
 package org.eclipse.rdf4j.sail.lmdb;
 
 import java.util.Arrays;
+import java.util.BitSet;
 import java.util.List;
 import java.util.Objects;
 import java.util.concurrent.atomic.AtomicBoolean;
@@ -493,6 +494,7 @@ final class LmdbAdjacencyArenaCatalog implements AutoCloseable {
 			List<LmdbAdjacencyRunCodec.SourceSlice> slices) {
 		int[] ids = new int[slices.size()];
 		int count = 0;
+		BitSet seenIds = new BitSet(); // a merged band retains thousands of slices; a linear scan per slice was O(n²)
 		for (LmdbAdjacencyRunCodec.SourceSlice slice : slices) {
 			int id;
 			if (slice.persistentSource()) {
@@ -507,11 +509,8 @@ final class LmdbAdjacencyArenaCatalog implements AutoCloseable {
 						? acquireCsfSource(registry, slice.catalog.csfSource(slot))
 						: acquireArenaSource(registry, slice.catalog.arena(slot), slice.catalog.deltaOwners[slot]);
 			}
-			boolean seen = false;
-			for (int i = 0; i < count; i++) {
-				seen |= ids[i] == id;
-			}
-			if (!seen) {
+			if (!seenIds.get(id)) {
+				seenIds.set(id);
 				ids[count++] = id;
 			} else {
 				registry.release(id);

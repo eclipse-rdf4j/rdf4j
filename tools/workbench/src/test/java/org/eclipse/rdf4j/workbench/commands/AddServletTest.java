@@ -27,7 +27,6 @@ import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.io.InputStreamReader;
 import java.io.OutputStream;
-import java.io.UncheckedIOException;
 import java.net.HttpURLConnection;
 import java.net.InetAddress;
 import java.net.InetSocketAddress;
@@ -43,6 +42,10 @@ import java.nio.file.attribute.PosixFilePermissions;
 import java.util.Base64;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
+import java.util.concurrent.TimeUnit;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
@@ -777,7 +780,7 @@ class AddServletTest {
 
 	@Test
 	void aSourceUrlThatAnswersNotFoundIsReportedOnTheAddPage() throws Exception {
-		HttpServer source = HttpServer.create(new InetSocketAddress(InetAddress.getLoopbackAddress(), 0), 0);
+		HttpServer source = HttpServer.create(new InetSocketAddress(InetAddress.getByName("127.0.0.1"), 0), 0);
 		source.createContext("/", exchange -> {
 			exchange.sendResponseHeaders(404, -1);
 			exchange.close();
@@ -796,9 +799,11 @@ class AddServletTest {
 	/** Servers such as Tomcat send no reason phrase: the standard one is shown with the status. */
 	@Test
 	void aSourceUrlThatAnswersAnErrorWithoutAReasonPhraseIsReportedWithTheStandardOne() throws Exception {
-		try (ServerSocket source = new ServerSocket(0, 1, InetAddress.getLoopbackAddress())) {
-			Thread answer = Thread.startVirtualThread(() -> {
+		try (ExecutorService responder = Executors.newVirtualThreadPerTaskExecutor();
+				ServerSocket source = new ServerSocket(0, 1, InetAddress.getByName("127.0.0.1"))) {
+			Future<?> answer = responder.submit(() -> {
 				try (Socket connection = source.accept()) {
+					connection.setSoTimeout(5000);
 					BufferedReader request = new BufferedReader(
 							new InputStreamReader(connection.getInputStream(), StandardCharsets.ISO_8859_1));
 					for (String line = request.readLine(); line != null && !line.isEmpty(); line = request.readLine()) {
@@ -808,23 +813,25 @@ class AddServletTest {
 					response.write("HTTP/1.1 404 \r\nContent-Length: 0\r\nConnection: close\r\n\r\n"
 							.getBytes(StandardCharsets.ISO_8859_1));
 					response.flush();
-				} catch (IOException e) {
-					throw new UncheckedIOException(e);
 				}
+				return null;
 			});
 			String url = "http://127.0.0.1:" + source.getLocalPort() + "/missing.ttl";
 
-			String output = addFromUrl(url, "http://127.0.0.1:" + source.getLocalPort());
-
-			answer.join(5000);
-			assertThat(output).contains("Could not read " + url + ": 404 Not Found");
+			try {
+				String output = addFromUrl(url, "http://127.0.0.1:" + source.getLocalPort());
+				answer.get(5, TimeUnit.SECONDS);
+				assertThat(output).contains("Could not read " + url + ": 404 Not Found");
+			} finally {
+				responder.shutdownNow();
+			}
 		}
 	}
 
 	@Test
 	void aSourceUrlThatRefusesTheConnectionIsReportedOnTheAddPage() throws Exception {
 		int closedPort;
-		try (ServerSocket socket = new ServerSocket(0, 1, InetAddress.getLoopbackAddress())) {
+		try (ServerSocket socket = new ServerSocket(0, 1, InetAddress.getByName("127.0.0.1"))) {
 			closedPort = socket.getLocalPort();
 		}
 		String url = "http://127.0.0.1:" + closedPort + "/data.ttl";

@@ -63,6 +63,13 @@ test.afterEach(async ({ request }) => {
 	for (const urn of savedUrns) await removeOwnedSavedQuery(request, urn);
 });
 
+const EXPLORE_PAGED_SECTIONS = {
+	Class: [['superClasses', 40, 102], ['subClasses', 40, 102], ['properties', 40, 102],
+		['outgoing', 100, 102], ['incoming', 100, 204]],
+	property: [['superProperties', 40, 102], ['subProperties', 40, 102], ['domain', 40, 102], ['range', 40, 102],
+		['outgoing', 100, 306], ['incoming', 100, 102]]
+};
+
 async function removeOwnedSavedQuery(request, urn) {
 	expect(savedUrns.has(urn), 'Only this test run\'s registered saved query may be removed').toBe(true);
 	const removed = await postWorkbench(request, `${BASE}/saved-queries`, { form: { delete: urn } });
@@ -136,6 +143,77 @@ async function evidence(page, info, label, measurements) {
 		await page.screenshot({ path: png, fullPage: pageHeight <= 32767, caret: 'hide' });
 		await info.attach(`${label}-screenshot`, { path: png, contentType: 'image/png' });
 	}
+}
+
+async function exploreSectionPages(page, key, pageSize, totalRows) {
+	const section = page.locator(`[data-explore-section="${key}"]`);
+	await expect(section, `${key} is an expected populated Explore section`).toBeVisible();
+	const pager = section.locator('.workbench-window-controls');
+	const status = pager.getByRole('status');
+	const previous = pager.getByRole('button', { name: 'Previous', exact: true });
+	const next = pager.getByRole('button', { name: 'Next', exact: true });
+	const windows = [];
+	const expectWindow = async start => {
+		const end = Math.min(start + pageSize, totalRows);
+		await expect(status).toHaveText(`Showing ${start + 1}–${end} of ${totalRows} cached`);
+		if (start === 0) {
+			await expect(previous).toBeDisabled();
+		} else {
+			await expect(previous).toBeEnabled();
+		}
+		if (end < totalRows) {
+			await expect(next).toBeEnabled();
+		} else {
+			await expect(next).toBeDisabled();
+		}
+		const measurement = await page.locator('#explore-results').evaluate((region, sectionKey) => {
+			const style = getComputedStyle(region), rect = region.getBoundingClientRect();
+			const contentLeft = rect.left + parseFloat(style.borderLeftWidth) + parseFloat(style.paddingLeft);
+			const contentRight = rect.right - parseFloat(style.borderRightWidth) - parseFloat(style.paddingRight);
+			const area = region.querySelector('.workbench-explore-groups').getBoundingClientRect();
+			const selected = region.querySelector(`[data-explore-section="${sectionKey}"]`);
+			const bounds = selected.getBoundingClientRect();
+			const layouts = Array.from(selected.querySelectorAll('.query-result-table-wrap, .query-result-records'))
+				.filter(element => {
+					const layout = element.getBoundingClientRect(), computed = getComputedStyle(element);
+					return layout.width > 0 && layout.height > 0 && computed.display !== 'none'
+						&& computed.visibility !== 'hidden' && !element.closest('[hidden], [inert]');
+				});
+			const box = element => ({ left: element.left, right: element.right, width: element.width });
+			return { contentLeft, contentRight, groups: box(area), section: box(bounds),
+				layouts: layouts.map(element => box(element.getBoundingClientRect())), pageOverflow: document.documentElement.scrollWidth
+					- document.documentElement.clientWidth };
+		}, key);
+		expect(measurement.groups.left, 'Metadata groups begin within the content region')
+			.toBeGreaterThanOrEqual(measurement.contentLeft - 0.5);
+		expect(measurement.groups.right, 'Metadata groups fit their available content width')
+			.toBeLessThanOrEqual(measurement.contentRight + 0.5);
+		expect(measurement.section.left, `${key} begins within the content region`)
+			.toBeGreaterThanOrEqual(measurement.contentLeft - 0.5);
+		expect(measurement.section.right, `${key} fits its available content width`)
+			.toBeLessThanOrEqual(measurement.contentRight + 0.5);
+		if (key === 'outgoing' || key === 'incoming') {
+			expect(measurement.layouts.length, `${key} renders a visible table or record layout`).toBeGreaterThan(0);
+		}
+		for (const layout of measurement.layouts) {
+			expect(layout.left, `${key} visible result begins within its section`)
+				.toBeGreaterThanOrEqual(measurement.section.left - 0.5);
+			expect(layout.right, `${key} visible result ends within its section`)
+				.toBeLessThanOrEqual(measurement.section.right + 0.5);
+		}
+		expect(measurement.pageOverflow, 'Explore relation paging must not overflow the page').toBeLessThanOrEqual(1);
+		windows.push({ range: `${start + 1}–${end}`, ...measurement });
+	};
+	await expectWindow(0);
+	for (let start = 0; start < totalRows - pageSize; start += pageSize) {
+		await next.click();
+		await expectWindow(start + pageSize);
+	}
+	for (let start = Math.floor((totalRows - 1) / pageSize) * pageSize; start > 0; start -= pageSize) {
+		await previous.click();
+		await expectWindow(start - pageSize);
+	}
+	return windows;
 }
 
 async function association(control) {
@@ -665,7 +743,7 @@ test('S11 saved headings contain long names', async ({ page }, info) => {
 });
 
 test('S12 relation groups remain within their content region', async ({ page, request }, info) => {
-	const relations = Array.from({ length: 42 }, (_, index) => [
+	const relations = Array.from({ length: 102 }, (_, index) => [
 		`<urn:spacing:Child-${index}> <http://www.w3.org/2000/01/rdf-schema#subClassOf> <urn:spacing:Class> .`,
 		`<urn:spacing:Class> <http://www.w3.org/2000/01/rdf-schema#subClassOf> <urn:spacing:Parent-${index}> .`,
 		`<urn:spacing:property-${index}> <http://www.w3.org/2000/01/rdf-schema#domain> <urn:spacing:Class> .`,
@@ -681,38 +759,10 @@ test('S12 relation groups remain within their content region', async ({ page, re
 	for (const variant of [...VARIANTS].sort((a, b) => a.width - b.width)) {
 		for (const resource of ['Class', 'property']) {
 			await open(page, `explore?resource=${encodeURIComponent(`<urn:spacing:${resource}>`)}`, variant);
-			await page.locator('#explore-result-options-toggle').click(); await page.locator('#limit_explore').selectOption('0');
-			await page.locator('#resource').press('Enter');
-			// The form shows the next page in place once its model arrived; until then the previous page (default limit)
-			// stays on screen with its own paging buttons, so wait for the new page before using them.
-			await waitForRoute(page, 'explore', { url: /[?&]limit_explore=0(&|$)/ });
-			// The open Display pane lies over the page; close it before using the group pagers under it.
-			await page.locator('#explore-result-options-toggle').click();
-			await expect(page.locator('#explore-result-options-panel')).toBeHidden();
-			await expect(page.locator('[data-workbench-explore-action=next]').first()).toBeVisible();
-			const groups = await page.locator('[data-workbench-explore-action=next]').evaluateAll(elements =>
-				elements.map(element => element.getAttribute('data-workbench-explore-group')));
-			for (const group of groups) {
-				const previous = page.locator(`[data-workbench-explore-group="${group}"][data-workbench-explore-action=previous]`);
-				await page.locator(`[data-workbench-explore-group="${group}"][data-workbench-explore-action=next]`).click();
-				// A group's next page renders after its rows are read; Previous is enabled once it is shown.
-				await expect(previous).toBeEnabled();
-				await settled(page);
-				const measurement = await page.locator('#explore-results').evaluate(region => {
-					const rect = region.getBoundingClientRect(), style = getComputedStyle(region);
-					const table = region.querySelector('.workbench-explore-groups').getBoundingClientRect();
-					return { contentLeft: rect.left + parseFloat(style.borderLeftWidth) + parseFloat(style.paddingLeft),
-						contentRight: rect.right - parseFloat(style.borderRightWidth) - parseFloat(style.paddingRight),
-						table: { left: table.left, right: table.right, width: table.width },
-						pageOverflow: document.documentElement.scrollWidth - document.documentElement.clientWidth };
-				});
-				await evidence(page, info, `S12-${group}-${variant.width}-${variant.theme}`, measurement);
-				expect(measurement.table.left, 'Relation groups begin within the content region')
-					.toBeGreaterThanOrEqual(measurement.contentLeft - 0.5);
-				expect(measurement.table.right, 'Relation groups must fit their available content width')
-					.toBeLessThanOrEqual(measurement.contentRight + 0.5);
-				expect(measurement.pageOverflow, 'Relation group paging must not overflow the page').toBeLessThanOrEqual(1);
-				await previous.click();
+			await expect(page.locator('[data-explore-section]')).not.toHaveCount(0);
+			for (const [section, pageSize, totalRows] of EXPLORE_PAGED_SECTIONS[resource]) {
+				const windows = await exploreSectionPages(page, section, pageSize, totalRows);
+				await evidence(page, info, `S12-${resource}-${section}-${variant.width}-${variant.theme}`, { windows });
 			}
 		}
 	}

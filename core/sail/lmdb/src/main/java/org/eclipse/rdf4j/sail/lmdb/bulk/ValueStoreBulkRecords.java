@@ -136,7 +136,7 @@ final class ValueStoreBulkRecords {
 					return;
 				}
 				byte[] data = switch (value) {
-				case IRI iri -> ValueStoreRecordCodec.iriData(iri, dependencyIds[0]);
+				case IRI iri -> ValueStoreRecordCodec.iriData(iri, dependencyIds[0], format);
 				case Literal literal -> ValueStoreRecordCodec.literalData(literal, dependencyIds[0],
 						format.usesCanonicalLanguageTags());
 				case BNode bNode -> ValueStoreRecordCodec.bnodeData(bNode);

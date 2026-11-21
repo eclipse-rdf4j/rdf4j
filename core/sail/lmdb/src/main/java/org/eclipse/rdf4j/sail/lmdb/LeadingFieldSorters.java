@@ -16,7 +16,8 @@ import java.util.Arrays;
 
 final class LeadingFieldSorters {
 
-	private static final int LSD_RADIX_THRESHOLD = 96;
+	/** At or below this length the sort is an insertion sort that needs no scratch arrays. */
+	static final int LSD_RADIX_THRESHOLD = 96;
 
 	private LeadingFieldSorters() {
 	}

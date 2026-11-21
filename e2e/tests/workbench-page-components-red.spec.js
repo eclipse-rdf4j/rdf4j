@@ -102,6 +102,9 @@ test('data and administration pages expose stable islands and action regions', a
     await page.goto(`${WORKBENCH_BASE_URL}/repositories/${REPOSITORY_ID}/explore`, { waitUntil: 'domcontentloaded' });
     await expect(page.locator('#explore-form')).toHaveCount(1);
     await expect(page.locator('#explore-controls')).toHaveCount(1);
+    await expect(page.locator('#explore-results')).toHaveCount(0);
+    await page.locator('#resource').fill('<urn:page-components:resource>');
+    await page.locator('#resource').press('Enter');
     await expect(page.locator('#explore-results')).toHaveCount(1);
 
     await page.goto(`${WORKBENCH_BASE_URL}/repositories/${REPOSITORY_ID}/saved-queries`, { waitUntil: 'domcontentloaded' });

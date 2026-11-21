@@ -14,9 +14,11 @@ package org.eclipse.rdf4j.repository.http;
 import java.io.File;
 import java.io.IOException;
 import java.util.Collections;
+import java.util.IdentityHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentMap;
 import java.util.regex.Matcher;
@@ -43,6 +45,7 @@ import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.QueryEvaluationException;
 import org.eclipse.rdf4j.query.TupleQueryResult;
 import org.eclipse.rdf4j.query.resultio.TupleQueryResultFormat;
+import org.eclipse.rdf4j.repository.DelegatingRepositoryConnection;
 import org.eclipse.rdf4j.repository.RepositoryConnection;
 import org.eclipse.rdf4j.repository.RepositoryException;
 import org.eclipse.rdf4j.repository.base.AbstractRepository;
@@ -68,8 +71,18 @@ public class HTTPRepository extends AbstractRepository implements HttpClientDepe
 	/** Enables origin negotiation on one internal HTTP connection without changing shared repository headers. */
 	@InternalUseOnly
 	public static void setBNodeOriginEnabled(RepositoryConnection connection, boolean enabled) {
-		if (connection instanceof HTTPRepositoryConnection http) {
-			http.setBNodeOriginEnabled(enabled);
+		Set<RepositoryConnection> visited = Collections.newSetFromMap(new IdentityHashMap<>());
+		RepositoryConnection current = connection;
+		while (current != null && visited.add(current)) {
+			if (current instanceof HTTPRepositoryConnection http) {
+				http.setBNodeOriginEnabled(enabled);
+				return;
+			}
+			if (current instanceof DelegatingRepositoryConnection delegating) {
+				current = delegating.getDelegate();
+			} else {
+				return;
+			}
 		}
 	}
 
