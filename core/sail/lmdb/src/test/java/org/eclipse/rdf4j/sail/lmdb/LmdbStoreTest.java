@@ -84,7 +84,7 @@ public class LmdbStoreTest extends RDFNotifyingStoreTest {
 				.getMethod("tripleDatabases")
 				.invoke(stats);
 		assertEquals(6, valueDatabases.size());
-		assertEquals(6, tripleDatabases.size());
+		assertEquals(7, tripleDatabases.size());
 
 		Object mainValueDatabase = valueDatabases.get("main");
 		assertNotNull(mainValueDatabase);

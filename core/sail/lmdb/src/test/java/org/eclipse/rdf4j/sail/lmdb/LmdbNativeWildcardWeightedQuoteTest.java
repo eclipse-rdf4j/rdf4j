@@ -12,6 +12,7 @@
 package org.eclipse.rdf4j.sail.lmdb;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.withinPercentage;
 
 import java.io.File;
 import java.util.HashMap;
@@ -125,8 +126,10 @@ public class LmdbNativeWildcardWeightedQuoteTest {
 		assertThat(reduced.getOrDefault("DECODED_ROW", 0D)).as("reduced quote: %s", reduced)
 				.isLessThanOrEqualTo(3000D);
 		assertThat(reduced.getOrDefault("INTERPRETED_ROW", 0D)).as("reduced quote: %s", reduced).isZero();
+		// The prefix row count is the planner's cardinality estimate. On chunked indexes it is exact only for small
+		// ranges and otherwise scaled from chunk-level estimates, so the probe term is checked within 1%.
 		assertThat(reduced.getOrDefault("HASH_PROBE", 0D)).as("one plane probe per prefix row and plane: %s", reduced)
-				.isGreaterThanOrEqualTo(3000D * 3D);
+				.isCloseTo(3000D * 3D, withinPercentage(1));
 		assertThat(reduced.getOrDefault("GROUP_UPDATE", 0D)).as("one update per delivered pair: %s", reduced)
 				.isBetween(3000D, 9000D);
 		assertThat(costs.get("wildcardPredicateReduced"))

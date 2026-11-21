@@ -134,7 +134,8 @@ import org.eclipse.rdf4j.sail.base.SailWriteContinuation;
 import org.eclipse.rdf4j.sail.base.StatementInput;
 import org.eclipse.rdf4j.sail.base.StreamingWritePreflight;
 import org.eclipse.rdf4j.sail.base.TemporaryFlushingException;
-import org.eclipse.rdf4j.sail.lmdb.TxnManager.ReaderReservation;
+import org.eclipse.rdf4j.sail.lmdb.TripleStoreIndexUpdater.PreparedSecondaryIndexes;
+import org.eclipse.rdf4j.sail.lmdb.TripleStoreIndexUpdater.PreparedSecondaryIndexesTask;
 import org.eclipse.rdf4j.sail.lmdb.TxnManager.Txn;
 import org.eclipse.rdf4j.sail.lmdb.config.DirectAdjacencyMode;
 import org.eclipse.rdf4j.sail.lmdb.config.LmdbStoreConfig;
@@ -3075,6 +3076,10 @@ class LmdbSailStore implements SailStore {
 		return tripleStore.explicitIndexEntryCounts();
 	}
 
+	Map<String, Long> explicitIndexChunkCounts() throws IOException {
+		return tripleStore.explicitIndexChunkCounts();
+	}
+
 	long tripleStoreTransactionId() throws IOException {
 		return tripleStore.lastTransactionId();
 	}
@@ -3466,7 +3471,7 @@ class LmdbSailStore implements SailStore {
 		private final boolean lexicalBatch;
 		private final AtomicBoolean reservationReleased = new AtomicBoolean(false);
 		Consumer<Statement> estimatorCallback;
-		Future<TripleStore.PreparedSecondaryIndexes> preparedSecondaryIndexes;
+		Future<PreparedSecondaryIndexes> preparedSecondaryIndexes;
 		Consumer<Statement> backupCallback;
 		int size;
 
@@ -3663,7 +3668,7 @@ class LmdbSailStore implements SailStore {
 			releaseReservation();
 		}
 
-		private TripleStore.PreparedSecondaryIndexes awaitPreparedSecondaryIndexes() throws IOException {
+		private PreparedSecondaryIndexes awaitPreparedSecondaryIndexes() throws IOException {
 			try {
 				return preparedSecondaryIndexes.get();
 			} catch (InterruptedException e) {
@@ -3718,7 +3723,7 @@ class LmdbSailStore implements SailStore {
 	private void collectUnusedIds(long[] quad) {
 		Set<Long> candidates = mutationUnusedIds();
 		for (long id : quad) {
-			if (id != 0L && !ValueIds.isInlined(id)) {
+			if (id != ValueIds.NULL_CONTEXT && !ValueIds.isInlined(id)) {
 				candidates.add(id);
 			}
 		}
@@ -3732,6 +3737,7 @@ class LmdbSailStore implements SailStore {
 			return tripleStore.getLegacySemanticTriplesForWrite(subject, predicate, object, context, explicit,
 					expected);
 		}
+		// The writer's own transaction: a committed snapshot cannot see an open NONE writer's pending rows.
 		RecordIterator physical = tripleStore.getTriplesForWrite(subject, predicate,
 				semantic ? LmdbValue.UNKNOWN_ID : object, context, explicit);
 		if (!semantic) {
@@ -3812,7 +3818,7 @@ class LmdbSailStore implements SailStore {
 		private final long[] contexts;
 		private final int statementCount;
 		private final AtomicBoolean arraysReleased = new AtomicBoolean();
-		private TripleStore.PreparedSecondaryIndexesTask preparedSecondaryIndexes;
+		private PreparedSecondaryIndexesTask preparedSecondaryIndexes;
 		private IntConsumer backupCallback;
 
 		private PreparedImportOperation(int statementCount) {
@@ -3832,7 +3838,7 @@ class LmdbSailStore implements SailStore {
 		@Override
 		public void execute() throws IOException {
 			try {
-				TripleStore.EncodedIndexKeys preparedMainIndex = preparedSecondaryIndexes.awaitMain();
+				SortedIndexEntries preparedMainIndex = preparedSecondaryIndexes.awaitMain();
 				tripleStore.storePreparedTriples(subjects, predicates, objects, contexts, statementCount, true,
 						mayHaveInferred, backupCallback, preparedMainIndex,
 						this::awaitPreparedSecondaryIndexes);
@@ -3866,87 +3872,9 @@ class LmdbSailStore implements SailStore {
 			}
 		}
 
-		private TripleStore.PreparedSecondaryIndexes awaitPreparedSecondaryIndexes() throws IOException {
+		private PreparedSecondaryIndexes awaitPreparedSecondaryIndexes() throws IOException {
 			return preparedSecondaryIndexes.await();
 		}
-	}
-
-	private GlobalPreparedImportOperation newGlobalPreparedImportOperation(int[] quads, long[] valueIds,
-			int statementCount) {
-		int reservation = preparedImportBudget.statementLimit();
-		try {
-			preparedImportBudget.reserve(reservation);
-		} catch (InterruptedException e) {
-			Thread.currentThread().interrupt();
-			throw new InterruptedSailException(e);
-		}
-		try {
-			return new GlobalPreparedImportOperation(quads, valueIds, statementCount, reservation);
-		} catch (RuntimeException | Error e) {
-			preparedImportBudget.release(reservation);
-			throw e;
-		}
-	}
-
-	private final class GlobalPreparedImportOperation implements Operation {
-		private final int[] quads;
-		private final long[] valueIds;
-		private final int statementCount;
-		private final int reservation;
-		private final AtomicBoolean reservationReleased = new AtomicBoolean();
-		private final TripleStore.GlobalPreparedIndexOrdersTask preparedOrders;
-		private IntConsumer backupCallback;
-
-		private GlobalPreparedImportOperation(int[] quads, long[] valueIds, int statementCount, int reservation) {
-			this.quads = quads;
-			this.valueIds = valueIds;
-			this.statementCount = statementCount;
-			this.reservation = reservation;
-			preparedOrders = tripleStore.prepareGlobalIndexOrdersAsync(indexPreparationExecutor, quads, valueIds,
-					statementCount);
-		}
-
-		@Override
-		public void execute() throws IOException {
-			try {
-				tripleStore.storeGloballyOrderedFreshTriples(quads, valueIds, statementCount,
-						preparedOrders, indexPreparationExecutor, backupCallback);
-			} finally {
-				try {
-					preparedOrders.cancel();
-				} finally {
-					releaseReservation();
-				}
-			}
-		}
-
-		@Override
-		public void cancel() {
-			try {
-				preparedOrders.cancel();
-			} finally {
-				releaseReservation();
-			}
-		}
-
-		private void releaseReservation() {
-			if (reservationReleased.compareAndSet(false, true)) {
-				preparedImportBudget.release(reservation);
-			}
-		}
-	}
-
-	private IOException preparedIndexFailure(Throwable cause) {
-		if (cause instanceof IOException ioException) {
-			return ioException;
-		}
-		if (cause instanceof RuntimeException runtimeException) {
-			throw runtimeException;
-		}
-		if (cause instanceof Error error) {
-			throw error;
-		}
-		return new IOException("Failed to prepare secondary LMDB index keys", cause);
 	}
 
 	/**
@@ -4028,7 +3956,8 @@ class LmdbSailStore implements SailStore {
 				long s = valueStore.getId(statement.getSubject());
 				long p = valueStore.getId(statement.getPredicate());
 				long o = valueStore.getId(statement.getObject());
-				long c = statement.getContext() == null ? 0L : valueStore.getId(statement.getContext());
+				long c = statement.getContext() == null ? ValueIds.NULL_CONTEXT
+						: valueStore.getId(statement.getContext());
 				if (s == LmdbValue.UNKNOWN_ID || p == LmdbValue.UNKNOWN_ID || o == LmdbValue.UNKNOWN_ID
 						|| c == LmdbValue.UNKNOWN_ID) {
 					continue;
@@ -4055,7 +3984,7 @@ class LmdbSailStore implements SailStore {
 				}
 				Set<Long> retiredIds = mutationUnusedIds();
 				for (long id : quads[index]) {
-					if (id != 0L && !ValueIds.isInlined(id)) {
+					if (id != ValueIds.NULL_CONTEXT && !ValueIds.isInlined(id)) {
 						retiredIds.add(id);
 					}
 				}
@@ -9550,7 +9479,7 @@ class LmdbSailStore implements SailStore {
 			for (Resource context : contexts) {
 				long contextID;
 				if (context == null) {
-					contextID = 0L;
+					contextID = ValueIds.NULL_CONTEXT;
 				} else if (!context.isTripleTerm()) {
 					contextID = valueStore.getStatementId(source.readView.valueSnapshot(), context,
 							ValuePosition.CONTEXT);
@@ -9596,7 +9525,7 @@ class LmdbSailStore implements SailStore {
 		}
 		long subject = ((LmdbValue) candidate.getSubject()).getInternalID();
 		long predicate = ((LmdbValue) candidate.getPredicate()).getInternalID();
-		long context = candidate.getContext() == null ? 0L
+		long context = candidate.getContext() == null ? ValueIds.NULL_CONTEXT
 				: ((LmdbValue) candidate.getContext()).getInternalID();
 		try (RecordIterator aliases = tripleStore.getTriples(source.txn, subject, predicate, LmdbValue.UNKNOWN_ID,
 				context, true)) {
@@ -9658,7 +9587,7 @@ class LmdbSailStore implements SailStore {
 			for (Resource context : contexts) {
 				long contextID;
 				if (context == null) {
-					contextID = 0L;
+					contextID = ValueIds.NULL_CONTEXT;
 				} else if (!context.isTripleTerm()) {
 					contextID = valueStore.getStatementId(source.readView.valueSnapshot(), context,
 							ValuePosition.CONTEXT);
@@ -9710,7 +9639,7 @@ class LmdbSailStore implements SailStore {
 		if (contexts.length == 0) {
 			return LmdbValue.UNKNOWN_ID;
 		}
-		return contexts[0] == null ? 0L : 1L;
+		return contexts[0] == null ? ValueIds.NULL_CONTEXT : 1L;
 	}
 
 	long countStatementIterator(
@@ -9762,7 +9691,7 @@ class LmdbSailStore implements SailStore {
 		for (Resource context : contexts) {
 			long contextID;
 			if (context == null) {
-				contextID = 0L;
+				contextID = ValueIds.NULL_CONTEXT;
 			} else if (!context.isTripleTerm()) {
 				contextID = valueStore.getStatementId(source.readView.valueSnapshot(), context, ValuePosition.CONTEXT);
 				if (contextID == LmdbValue.UNKNOWN_ID) {
@@ -9819,7 +9748,7 @@ class LmdbSailStore implements SailStore {
 		for (Resource context : contexts) {
 			long contextID;
 			if (context == null) {
-				contextID = 0L;
+				contextID = ValueIds.NULL_CONTEXT;
 			} else if (!context.isTripleTerm()) {
 				contextID = valueStore.getStatementId(source.readView.valueSnapshot(), context, ValuePosition.CONTEXT);
 				if (contextID == LmdbValue.UNKNOWN_ID) {
@@ -10027,7 +9956,8 @@ class LmdbSailStore implements SailStore {
 			if (context != null && context.isTripleTerm()) {
 				contextIDs[i] = LmdbValue.UNKNOWN_ID;
 			} else {
-				contextIDs[i] = context == null ? 0L : valueStore.getStatementId(valueSnapshot, context);
+				contextIDs[i] = context == null ? ValueIds.NULL_CONTEXT
+						: valueStore.getStatementId(valueSnapshot, context);
 			}
 		}
 
@@ -10089,7 +10019,7 @@ class LmdbSailStore implements SailStore {
 		} else {
 			for (Resource context : contexts) {
 				if (context == null) {
-					contextIDList.add(0L);
+					contextIDList.add(ValueIds.NULL_CONTEXT);
 				} else if (!context.isTripleTerm()) {
 					long contextID = valueStore.getStatementId(valueSnapshot, context);
 
@@ -11377,7 +11307,7 @@ class LmdbSailStore implements SailStore {
 					long objId = valueStore.storeValue(obj);
 					q.o = objId;
 					if (context == null) {
-						q.c = 0;
+						q.c = ValueIds.NULL_CONTEXT;
 					} else {
 						Long contextId = contextCache.get(context);
 						if (contextId == null) {
@@ -11849,7 +11779,7 @@ class LmdbSailStore implements SailStore {
 				batch.objects[i] = ids[positions[4 * i + 2]];
 				int contextIndex = positions[4 * i + 3];
 				if (contextIndex == -1) {
-					batch.contexts[i] = 0;
+					batch.contexts[i] = ValueIds.NULL_CONTEXT;
 				} else if (contextIndex != RESOLVED_POSITION) {
 					batch.contexts[i] = ids[contextIndex];
 					resolved.contexts.put(statement.getContext(), batch.contexts[i]);
@@ -12390,7 +12320,7 @@ class LmdbSailStore implements SailStore {
 			q.s = valueStore.storeValue(subj);
 			q.p = valueStore.storeValue(pred);
 			q.o = valueStore.storeValue(obj);
-			q.c = context == null ? 0 : valueStore.storeValue(context);
+			q.c = context == null ? ValueIds.NULL_CONTEXT : valueStore.storeValue(context);
 			q.context = context;
 			q.explicit = explicit;
 			q.subj = subj;
@@ -12444,7 +12374,7 @@ class LmdbSailStore implements SailStore {
 							}
 						}
 						for (long id : quad) {
-							if (id != 0L && !ValueIds.isInlined(id)) {
+							if (id != ValueIds.NULL_CONTEXT && !ValueIds.isInlined(id)) {
 								// only add references, exclude inlined values
 								mutationUnusedIds().add(id);
 							}
@@ -12512,7 +12442,7 @@ class LmdbSailStore implements SailStore {
 					for (int i = 0; i < contexts.length; i++) {
 						Resource context = contexts[i];
 						if (context == null) {
-							contextIds[i] = 0;
+							contextIds[i] = ValueIds.NULL_CONTEXT;
 						} else {
 							long id = valueStore.getId(context);
 							// unknown_id cannot be used (would result in removal from all contexts)
@@ -12565,7 +12495,7 @@ class LmdbSailStore implements SailStore {
 			IRI pred = (IRI) valueStore.getValue(predicateId);
 			Value obj = valueStore.getValue(objectId);
 			long ctxId = contextId;
-			Resource ctx = (ctxId == 0L || ctxId == LmdbValue.UNKNOWN_ID) ? null
+			Resource ctx = (ctxId == ValueIds.NULL_CONTEXT || ctxId == LmdbValue.UNKNOWN_ID) ? null
 					: (Resource) valueStore.getValue(ctxId);
 			return valueStore.createStatement(subj, pred, obj, ctx);
 		}
@@ -12598,7 +12528,7 @@ class LmdbSailStore implements SailStore {
 					long o = object == null ? LmdbValue.UNKNOWN_ID : valueStore.getId(object);
 					Resource context = contexts.length == 0 ? null : contexts[contextIndex];
 					long c = contexts.length == 0 ? LmdbValue.UNKNOWN_ID
-							: context == null ? 0L : valueStore.getId(context);
+							: context == null ? ValueIds.NULL_CONTEXT : valueStore.getId(context);
 					if (subject != null && s == LmdbValue.UNKNOWN_ID || predicate != null && p == LmdbValue.UNKNOWN_ID
 							|| object != null && o == LmdbValue.UNKNOWN_ID
 							|| contexts.length > 0 && context != null && c == LmdbValue.UNKNOWN_ID) {
@@ -12982,7 +12912,7 @@ class LmdbSailStore implements SailStore {
 					pending.add(pendingApproveValueIds[pendingApproveSubjectIndexes[i]],
 							pendingApproveValueIds[pendingApprovePredicateIndexes[i]],
 							pendingApproveValueIds[pendingApproveObjectIndexes[i]],
-							contextIndex < 0 ? 0 : pendingApproveValueIds[contextIndex]);
+							contextIndex < 0 ? ValueIds.NULL_CONTEXT : pendingApproveValueIds[contextIndex]);
 					if (pending.statements != null) {
 						pending.statements[pending.size - 1] = valueStore.createStatement(pendingApproveSubjects[i],
 								pendingApprovePredicates[i], pendingApproveObjects[i], pendingApproveContexts[i]);
@@ -13109,7 +13039,8 @@ class LmdbSailStore implements SailStore {
 						int quadOffset = Math.multiplyExact(statementOffset + i, 4);
 						int contextId = quads[quadOffset + 3];
 						operation.add(valueIds[quads[quadOffset]], valueIds[quads[quadOffset + 1]],
-								valueIds[quads[quadOffset + 2]], contextId < 0 ? 0 : valueIds[contextId]);
+								valueIds[quads[quadOffset + 2]],
+								contextId < 0 ? ValueIds.NULL_CONTEXT : valueIds[contextId]);
 						if (operation.statements != null) {
 							operation.statements[i] = valueStore.createStatement((Resource) values[quads[quadOffset]],
 									(IRI) values[quads[quadOffset + 1]], values[quads[quadOffset + 2]],
@@ -13154,9 +13085,6 @@ class LmdbSailStore implements SailStore {
 
 		private long storeFreshPreparedStatements(PreparedStatementBatch prepared,
 				ValueStore.FreshValueSession session) throws IOException {
-			if (prepared.size() > preparedImportOperationCapacity() && tripleStore.supportsGlobalPreparedOrder()) {
-				return storeGlobalFreshPreparedStatements(prepared, session);
-			}
 			Value[] values = prepared.values();
 			ValueStore.FreshValueAssignment assignment = valueStore.assignFreshValues(session, values,
 					prepared.predicateValueIndexes());
@@ -13180,7 +13108,7 @@ class LmdbSailStore implements SailStore {
 						operation.subjects[i] = valueIds[quads[quadOffset]];
 						operation.predicates[i] = valueIds[quads[quadOffset + 1]];
 						operation.objects[i] = valueIds[quads[quadOffset + 2]];
-						operation.contexts[i] = contextId < 0 ? 0 : valueIds[contextId];
+						operation.contexts[i] = contextId < 0 ? ValueIds.NULL_CONTEXT : valueIds[contextId];
 					}
 					operation.prepareSecondaryIndexes();
 					submitOperation(operation);
@@ -13210,40 +13138,6 @@ class LmdbSailStore implements SailStore {
 			return statementCount;
 		}
 
-		private long storeGlobalFreshPreparedStatements(PreparedStatementBatch prepared,
-				ValueStore.FreshValueSession session) throws IOException {
-			Value[] values = prepared.values();
-			ValueStore.FreshValueAssignment assignment = valueStore.assignFreshValues(session, values,
-					prepared.predicateValueIndexes());
-			GlobalPreparedImportOperation operation = newGlobalPreparedImportOperation(prepared.quads(),
-					assignment.ids(),
-					prepared.size());
-			boolean submitted = false;
-			try {
-				if (backupPublicationEnabled) {
-					operation.backupCallback = index -> queueBackupAdd(prepared.get(index));
-				}
-				submitOperation(operation);
-				submitted = true;
-				pendingFreshValueBatches.add(assignment.publication());
-				ValueStore.FreshValueEncoder encoder = valueStore.freshValueEncoder(session, assignment);
-				ValueStore.PreparedValueBatch preparedValues;
-				while ((preparedValues = encoder.next(MAX_BULK_OPERATION_CAPACITY)) != null) {
-					if (tripleStoreException != null) {
-						rethrowTripleStoreException();
-					}
-					valueStore.persistPreparedValues(preparedValues);
-					preparedValues.releasePersistenceData();
-					pendingFreshValueBatches.add(preparedValues);
-				}
-			} finally {
-				if (!submitted) {
-					operation.cancel();
-				}
-			}
-			return prepared.size();
-		}
-
 		private void sortForIndex(BulkAddQuadsOperation operation, char[] fieldSequence, int[] statementOrder,
 				int[] scratchOrder, long[] sortValues, long[] scratchValues, int[] radixCounts,
 				int[] radixOffsets) {
@@ -13256,13 +13150,6 @@ class LmdbSailStore implements SailStore {
 					operation.statements[index] = original[statementOrder[index]];
 				}
 			}
-		}
-
-		private void sortForIndex(long[] subjects, long[] predicates, long[] objects, long[] contexts,
-				char[] fieldSequence) {
-			int size = subjects.length;
-			sortForIndex(subjects, predicates, objects, contexts, size, fieldSequence, new int[size],
-					new int[size], new long[size], new long[size], new int[256], new int[256]);
 		}
 
 		private void sortForIndex(long[] subjects, long[] predicates, long[] objects, long[] contexts, int size,
@@ -13403,7 +13290,7 @@ class LmdbSailStore implements SailStore {
 								long o = object == null ? LmdbValue.UNKNOWN_ID : valueStore.getId(object);
 								Resource context = contexts.length == 0 ? null : contexts[contextIndex];
 								long c = contexts.length == 0 ? LmdbValue.UNKNOWN_ID
-										: context == null ? 0L : valueStore.getId(context);
+										: context == null ? ValueIds.NULL_CONTEXT : valueStore.getId(context);
 								long[][] quads = new long[0][];
 								if (!(subject != null && s == LmdbValue.UNKNOWN_ID
 										|| predicate != null && p == LmdbValue.UNKNOWN_ID
@@ -14077,7 +13964,7 @@ class LmdbSailStore implements SailStore {
 		public Value lazyValue(long id, int positionMask) throws QueryEvaluationException {
 			try {
 				// Lazy values retain the admitted dictionary ownership through exposure.
-				if (id == 0L || id == LmdbValue.UNKNOWN_ID) {
+				if (id == ValueIds.NULL_CONTEXT || id == LmdbValue.UNKNOWN_ID) {
 					return null;
 				}
 				LmdbNativeExpressionCompiler.LAZY_VALUE_CALLS.incrementAndGet();
@@ -14374,7 +14261,7 @@ class LmdbSailStore implements SailStore {
 		@Override
 		public String indexName(long subj, long pred, long obj, long context) {
 			checkOpen();
-			String lmdb = tripleStore.getIndexName(txn, subj, pred, obj, context);
+			String lmdb = tripleStore.getQueryIndexName(txn, subj, pred, obj, context);
 			LmdbAdjacencyReadView universalView = exactAdjacencyView(false);
 			if (universalView != null) {
 				String arbitrated = directAdjacency.arbitratedIndexName(universalView, null, subj, pred, obj, context,
@@ -14485,7 +14372,7 @@ class LmdbSailStore implements SailStore {
 				private final LmdbDirectAdjacencyIterator retainedDirect = new LmdbDirectAdjacencyIterator();
 				private final LmdbStatementAccessArbiter.ReusableMeasurement directMeasurement = new LmdbStatementAccessArbiter.ReusableMeasurement();
 				private final LmdbStatementAccessArbiter.ReusableMeasurement lmdbMeasurement = new LmdbStatementAccessArbiter.ReusableMeasurement();
-				private LmdbRecordIterator retained;
+				private RecordIterator.Retainable<IndexResolutionPlan> retained;
 				private RecordIterator currentSelection;
 				private LmdbDirectNativeAdjacency ownedAdjacencies;
 				private LmdbDirectWildcardAdjacency ownedWildcardAdjacencies;
@@ -14524,7 +14411,7 @@ class LmdbSailStore implements SailStore {
 						if (retained == null) {
 							retained = tripleStore.getTriplesRetained(txn, subj, pred, obj, context, explicit);
 						} else {
-							tripleStore.resetTriples(retained, subj, pred, obj, context, explicit);
+							tripleStore.resetTriples(txn, retained, subj, pred, obj, context, explicit);
 						}
 						if (observer != null) {
 							int variant = LmdbStatementAccessArbiter.variantKey(LmdbStatementAccessArbiter.Source.LMDB,
@@ -14589,7 +14476,7 @@ class LmdbSailStore implements SailStore {
 					if (retained == null) {
 						retained = tripleStore.getTriplesRetained(txn, subj, pred, obj, context, explicit);
 					} else {
-						tripleStore.resetTriples(retained, subj, pred, obj, context, explicit);
+						tripleStore.resetTriples(txn, retained, subj, pred, obj, context, explicit);
 					}
 					long openNanos = System.nanoTime() - started;
 					observeSelected(observer, LmdbStatementAccessArbiter.Source.LMDB, lmdbKey, null, subj, pred, obj,
@@ -15596,7 +15483,7 @@ class LmdbSailStore implements SailStore {
 		public Value lazyValue(long id, int positionMask) throws QueryEvaluationException {
 			try {
 				// no dataset-open assertion — see idOf
-				if (id == 0L || id == LmdbValue.UNKNOWN_ID) {
+				if (id == ValueIds.NULL_CONTEXT || id == LmdbValue.UNKNOWN_ID) {
 					return null;
 				}
 				LmdbNativeExpressionCompiler.LAZY_VALUE_CALLS.incrementAndGet();
@@ -15979,7 +15866,7 @@ class LmdbSailStore implements SailStore {
 			long readStamp = acquireNativeSourceReadLockUnchecked();
 			try {
 				assertNativeSourceOpen();
-				String lmdb = tripleStore.getIndexName(txn, subj, pred, obj, context);
+				String lmdb = tripleStore.getQueryIndexName(txn, subj, pred, obj, context);
 				if (directEligible()) {
 					String arbitrated = directAdjacency.arbitratedIndexName(adjacencyView, null, subj, pred, obj,
 							context, lmdb);
@@ -16112,9 +15999,9 @@ class LmdbSailStore implements SailStore {
 
 		/**
 		 * Operator-owned probe: one dataset read stamp for the probe's lifetime (instead of one per scan) and one
-		 * retained LmdbRecordIterator that is re-aimed per probe key instead of re-created. A direct iterator is
-		 * retained only until the next open or probe close, matching {@link NativeProbe}'s ownership contract. The
-		 * source-open check runs once per open(), the same granularity the batched wrapper already reduced it to.
+		 * retained record iterator that is re-aimed per probe key instead of re-created. A direct iterator is retained
+		 * only until the next open or probe close, matching {@link NativeProbe}'s ownership contract. The source-open
+		 * check runs once per open(), the same granularity the batched wrapper already reduced it to.
 		 */
 		private final class RetainedNativeProbe implements NativeProbe {
 			private final LmdbAdjacencyLookupContext searchContext = new LmdbAdjacencyLookupContext();
@@ -16123,7 +16010,7 @@ class LmdbSailStore implements SailStore {
 			private final LmdbStatementAccessArbiter.ReusableMeasurement lmdbMeasurement = new LmdbStatementAccessArbiter.ReusableMeasurement();
 			private long readStamp;
 			private boolean stampHeld;
-			private LmdbRecordIterator retained;
+			private RecordIterator.Retainable<IndexResolutionPlan> retained;
 			private RecordIterator currentSelection;
 			private LmdbDirectNativeAdjacency ownedAdjacencies;
 			private LmdbDirectWildcardAdjacency ownedWildcardAdjacencies;
@@ -16169,7 +16056,7 @@ class LmdbSailStore implements SailStore {
 					if (retained == null) {
 						retained = tripleStore.getTriplesRetained(txn, subj, pred, obj, context, explicit);
 					} else {
-						tripleStore.resetTriples(retained, subj, pred, obj, context, explicit);
+						tripleStore.resetTriples(txn, retained, subj, pred, obj, context, explicit);
 					}
 					if (observer != null) {
 						int variant = LmdbStatementAccessArbiter.variantKey(LmdbStatementAccessArbiter.Source.LMDB,
@@ -16234,7 +16121,7 @@ class LmdbSailStore implements SailStore {
 				if (retained == null) {
 					retained = tripleStore.getTriplesRetained(txn, subj, pred, obj, context, explicit);
 				} else {
-					tripleStore.resetTriples(retained, subj, pred, obj, context, explicit);
+					tripleStore.resetTriples(txn, retained, subj, pred, obj, context, explicit);
 				}
 				long openNanos = System.nanoTime() - started;
 				observeSelected(observer, LmdbStatementAccessArbiter.Source.LMDB, lmdbKey, null, subj, pred, obj,
