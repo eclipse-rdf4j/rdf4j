@@ -13,9 +13,10 @@ package org.eclipse.rdf4j.http.protocol.transaction;
 
 import java.util.ArrayList;
 import java.util.Base64;
-import java.util.Collection;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
+import java.util.function.Consumer;
 
 import org.eclipse.rdf4j.common.xml.SimpleSAXAdapter;
 import org.eclipse.rdf4j.http.protocol.transaction.operations.AddStatementOperation;
@@ -39,7 +40,7 @@ import org.eclipse.rdf4j.rio.helpers.TripleTermUtil;
 import org.xml.sax.SAXException;
 
 /**
- * Parses an RDF transaction document into a collection of {@link TransactionOperation} objects.
+ * Parses an RDF transaction document and delivers each {@link TransactionOperation} when complete.
  *
  * @author Arjohn Kampman
  * @author Leo Sauermann
@@ -48,7 +49,7 @@ class TransactionSAXParser extends SimpleSAXAdapter {
 
 	private final ValueFactory valueFactory;
 
-	protected Collection<TransactionOperation> txn;
+	private final Consumer<? super TransactionOperation> operationConsumer;
 
 	private final List<Value> parsedValues = new ArrayList<>();
 
@@ -58,30 +59,23 @@ class TransactionSAXParser extends SimpleSAXAdapter {
 
 	private SimpleDataset currentDataset;
 
-	public TransactionSAXParser() {
-		this(SimpleValueFactory.getInstance());
+	private TransactionOperation pendingNamespaceOperation;
+
+	public TransactionSAXParser(Consumer<? super TransactionOperation> operationConsumer) {
+		this(SimpleValueFactory.getInstance(), operationConsumer);
 	}
 
-	public TransactionSAXParser(ValueFactory valueFactory) {
+	public TransactionSAXParser(ValueFactory valueFactory, Consumer<? super TransactionOperation> operationConsumer) {
 		this.valueFactory = valueFactory;
-	}
-
-	/**
-	 * get the parsed transaction
-	 *
-	 * @return the parsed transaction
-	 */
-	public Collection<TransactionOperation> getTxn() {
-		return txn;
-	}
-
-	@Override
-	public void startDocument() throws SAXException {
-		txn = new ArrayList<>();
+		this.operationConsumer = Objects.requireNonNull(operationConsumer);
 	}
 
 	@Override
 	public void startTag(String tagName, Map<String, String> atts, String text) throws SAXException {
+		if (pendingNamespaceOperation != null) {
+			throw new SAXException("unexpected element inside namespace operation: " + tagName);
+		}
+
 		if (TransactionXMLConstants.TRIPLE_TAG.equals(tagName)) {
 			// fixes GH-3048
 			parsedValues.add(TripleTermUtil.fromRDFEncodedValue(valueFactory.createIRI(text)));
@@ -113,12 +107,12 @@ class TransactionSAXParser extends SimpleSAXAdapter {
 		} else if (TransactionXMLConstants.SET_NAMESPACE_TAG.equals(tagName)) {
 			String prefix = atts.get(TransactionXMLConstants.PREFIX_ATT);
 			String name = atts.get(TransactionXMLConstants.NAME_ATT);
-			txn.add(new SetNamespaceOperation(prefix, name));
+			pendingNamespaceOperation = new SetNamespaceOperation(prefix, name);
 		} else if (TransactionXMLConstants.REMOVE_NAMESPACE_TAG.equals(tagName)) {
 			String prefix = atts.get(TransactionXMLConstants.PREFIX_ATT);
-			txn.add(new RemoveNamespaceOperation(prefix));
+			pendingNamespaceOperation = new RemoveNamespaceOperation(prefix);
 		} else if (TransactionXMLConstants.CLEAR_NAMESPACES_TAG.equals(tagName)) {
-			txn.add(new ClearNamespacesOperation());
+			pendingNamespaceOperation = new ClearNamespacesOperation();
 		} else if (TransactionXMLConstants.SPARQL_UPDATE_TAG.equals(tagName)) {
 			if (currentSPARQLUpdate != null) {
 				throw new SAXException("unexpected start of SPARQL Update operation");
@@ -180,14 +174,19 @@ class TransactionSAXParser extends SimpleSAXAdapter {
 
 	@Override
 	public void endTag(String tagName) throws SAXException {
-		if (TransactionXMLConstants.ADD_STATEMENT_TAG.equals(tagName)) {
-			txn.add(createAddStatementOperation());
+		if (TransactionXMLConstants.SET_NAMESPACE_TAG.equals(tagName)
+				|| TransactionXMLConstants.REMOVE_NAMESPACE_TAG.equals(tagName)
+				|| TransactionXMLConstants.CLEAR_NAMESPACES_TAG.equals(tagName)) {
+			operationConsumer.accept(pendingNamespaceOperation);
+			pendingNamespaceOperation = null;
+		} else if (TransactionXMLConstants.ADD_STATEMENT_TAG.equals(tagName)) {
+			operationConsumer.accept(createAddStatementOperation());
 		} else if (TransactionXMLConstants.REMOVE_STATEMENTS_TAG.equals(tagName)) {
-			txn.add(createRemoveStatementsOperation());
+			operationConsumer.accept(createRemoveStatementsOperation());
 		} else if (TransactionXMLConstants.CLEAR_TAG.equals(tagName)) {
-			txn.add(createClearOperation());
+			operationConsumer.accept(createClearOperation());
 		} else if (TransactionXMLConstants.SPARQL_UPDATE_TAG.equals(tagName)) {
-			txn.add(currentSPARQLUpdate);
+			operationConsumer.accept(currentSPARQLUpdate);
 			currentSPARQLUpdate = null;
 		} else if (TransactionXMLConstants.DEFAULT_GRAPHS_TAG.equals(tagName)) {
 			for (Value parsedValue : parsedValues) {

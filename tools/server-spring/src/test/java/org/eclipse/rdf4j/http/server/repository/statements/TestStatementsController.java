@@ -12,6 +12,7 @@
 package org.eclipse.rdf4j.http.server.repository.statements;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -20,12 +21,18 @@ import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.stream.Stream;
 
 import org.eclipse.rdf4j.http.protocol.Protocol;
 import org.eclipse.rdf4j.http.server.ClientHTTPException;
+import org.eclipse.rdf4j.http.server.ServerHTTPException;
 import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.query.QueryLanguage;
 import org.eclipse.rdf4j.query.Update;
+import org.eclipse.rdf4j.repository.RepositoryException;
 import org.eclipse.rdf4j.rio.RDFFormat;
 import org.eclipse.rdf4j.rio.RDFParseException;
 import org.eclipse.rdf4j.rio.helpers.RDFInputDecompressionLimitException;
@@ -33,6 +40,8 @@ import org.eclipse.rdf4j.rio.helpers.RioCompression;
 import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.io.TempDir;
+import org.mockito.InOrder;
 import org.mockito.Mockito;
 import org.springframework.http.HttpMethod;
 import org.tukaani.xz.LZMA2Options;
@@ -50,6 +59,125 @@ public class TestStatementsController extends TestStatementsCommon {
 		request.setMethod(HttpMethod.POST.name());
 
 		super.initMocks();
+	}
+
+	@Test
+	public void malformedTransactionRemovesTemporarySpool(@TempDir Path spoolDirectory) throws Exception {
+		String previousDirectory = System.getProperty(StatementsController.TRANSACTION_XML_SPOOL_DIRECTORY_PROPERTY);
+		System.setProperty(StatementsController.TRANSACTION_XML_SPOOL_DIRECTORY_PROPERTY, spoolDirectory.toString());
+		try {
+			request.setContentType(Protocol.TXN_MIME_TYPE);
+			request.setContent(("<transaction><setNamespace prefix=\"ex\" name=\"urn:example\"/>"
+					+ "<add><uri>urn:subject</transaction>").getBytes(StandardCharsets.UTF_8));
+
+			assertThrows(ClientHTTPException.class, () -> controller.handleRequest(request, response));
+
+			Mockito.verifyNoInteractions(connectionMock);
+			try (Stream<Path> files = Files.list(spoolDirectory)) {
+				assertEquals(0, files.count());
+			}
+		} finally {
+			restoreProperty(StatementsController.TRANSACTION_XML_SPOOL_DIRECTORY_PROPERTY, previousDirectory);
+		}
+	}
+
+	@Test
+	public void oversizedTransactionReturnsPayloadTooLargeAndRemovesSpool(@TempDir Path spoolDirectory)
+			throws Exception {
+		String previousDirectory = System.getProperty(StatementsController.TRANSACTION_XML_SPOOL_DIRECTORY_PROPERTY);
+		String previousLimit = System.getProperty(StatementsController.TRANSACTION_XML_MAX_BYTES_PROPERTY);
+		System.setProperty(StatementsController.TRANSACTION_XML_SPOOL_DIRECTORY_PROPERTY, spoolDirectory.toString());
+		System.setProperty(StatementsController.TRANSACTION_XML_MAX_BYTES_PROPERTY, "32");
+		try {
+			request.setContentType(Protocol.TXN_MIME_TYPE);
+			request.setContent(("<transaction><setNamespace prefix=\"ex\" name=\"urn:example\"/>"
+					+ "</transaction>").getBytes(StandardCharsets.UTF_8));
+
+			ClientHTTPException failure = assertThrows(ClientHTTPException.class,
+					() -> controller.handleRequest(request, response));
+
+			assertEquals(413, failure.getStatusCode());
+			Mockito.verifyNoInteractions(connectionMock);
+			try (Stream<Path> files = Files.list(spoolDirectory)) {
+				assertEquals(0, files.count());
+			}
+		} finally {
+			restoreProperty(StatementsController.TRANSACTION_XML_SPOOL_DIRECTORY_PROPERTY, previousDirectory);
+			restoreProperty(StatementsController.TRANSACTION_XML_MAX_BYTES_PROPERTY, previousLimit);
+		}
+	}
+
+	private static void restoreProperty(String name, String previousValue) {
+		if (previousValue == null) {
+			System.clearProperty(name);
+		} else {
+			System.setProperty(name, previousValue);
+		}
+	}
+
+	@Test
+	public void malformedTransactionHasNoIrreversibleNamespaceEffect() throws Exception {
+		request.setContentType(Protocol.TXN_MIME_TYPE);
+		request.setContent(("<transaction><setNamespace prefix=\"ex\" name=\"urn:example\"/>"
+				+ "<add><uri>urn:subject</transaction>").getBytes(StandardCharsets.UTF_8));
+		AtomicBoolean externalNamespaceEffect = new AtomicBoolean();
+		Mockito.doAnswer(invocation -> {
+			externalNamespaceEffect.set(true);
+			return null;
+		}).when(connectionMock).setNamespace("ex", "urn:example");
+
+		assertThrows(ClientHTTPException.class, () -> controller.handleRequest(request, response));
+
+		assertFalse(externalNamespaceEffect.get(), "a later parse error must not call a nontransactional backend");
+		Mockito.verifyNoInteractions(connectionMock);
+	}
+
+	@Test
+	public void validTransactionExecutesOperationsInOrderAndCommits() throws Exception {
+		request.setContentType(Protocol.TXN_MIME_TYPE);
+		request.setContent(("<transaction><setNamespace prefix=\"ex\" name=\"urn:example\"/>"
+				+ "<removeNamespace prefix=\"ex\"/></transaction>").getBytes(StandardCharsets.UTF_8));
+
+		controller.handleRequest(request, response);
+
+		InOrder order = Mockito.inOrder(connectionMock);
+		order.verify(connectionMock).begin();
+		order.verify(connectionMock).setNamespace("ex", "urn:example");
+		order.verify(connectionMock).removeNamespace("ex");
+		order.verify(connectionMock).commit();
+		Mockito.verify(connectionMock, Mockito.never()).rollback();
+		Mockito.verify(connectionMock).close();
+	}
+
+	@Test
+	public void failedTransactionOperationRollsBackEarlierOperation() throws Exception {
+		request.setContentType(Protocol.TXN_MIME_TYPE);
+		request.setContent(("<transaction><setNamespace prefix=\"ex\" name=\"urn:example\"/>"
+				+ "<removeNamespace prefix=\"ex\"/></transaction>").getBytes(StandardCharsets.UTF_8));
+		Mockito.doThrow(new RepositoryException("failed namespace removal"))
+				.when(connectionMock)
+				.removeNamespace("ex");
+
+		assertThrows(ServerHTTPException.class, () -> controller.handleRequest(request, response));
+
+		InOrder order = Mockito.inOrder(connectionMock);
+		order.verify(connectionMock).begin();
+		order.verify(connectionMock).setNamespace("ex", "urn:example");
+		order.verify(connectionMock).removeNamespace("ex");
+		order.verify(connectionMock).rollback();
+		Mockito.verify(connectionMock, Mockito.never()).commit();
+		Mockito.verify(connectionMock).close();
+	}
+
+	@Test
+	public void malformedLaterTransactionOperationNeverTouchesRepository() throws Exception {
+		request.setContentType(Protocol.TXN_MIME_TYPE);
+		request.setContent(("<transaction><setNamespace prefix=\"ex\" name=\"urn:example\"/>"
+				+ "<add><uri>urn:subject</transaction>").getBytes(StandardCharsets.UTF_8));
+
+		assertThrows(ClientHTTPException.class, () -> controller.handleRequest(request, response));
+
+		Mockito.verifyNoInteractions(connectionMock);
 	}
 
 	@Test
