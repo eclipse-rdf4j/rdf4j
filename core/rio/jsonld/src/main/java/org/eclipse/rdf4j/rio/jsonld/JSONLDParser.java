@@ -17,9 +17,13 @@ import java.io.Reader;
 import java.net.URI;
 import java.net.URISyntaxException;
 import java.util.Collection;
+import java.util.LinkedHashMap;
+import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
 import java.util.function.BiConsumer;
+import java.util.function.Function;
+import java.util.function.UnaryOperator;
 
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Literal;
@@ -131,8 +135,6 @@ public class JSONLDParser extends AbstractRDFParser {
 
 		try {
 
-			Document document = getDocument(in, reader);
-
 			if (getParserConfig().get(BasicParserSettings.FAIL_ON_UNKNOWN_LANGUAGES)) {
 				logger.warn("JSON-LD parser does not support the {} setting",
 						BasicParserSettings.FAIL_ON_UNKNOWN_LANGUAGES);
@@ -188,75 +190,7 @@ public class JSONLDParser extends AbstractRDFParser {
 				opts.setBase(uri);
 			}
 
-			RDFHandler rdfHandler = getRDFHandler();
-			if (rdfHandler != null) {
-				extractPrefixes(document, rdfHandler::handleNamespace);
-			}
-
-			JsonLd.toRdf(document).options(opts).base(baseURI).get(new RdfConsumer<>() {
-				@Override
-				public void handleTriple(Statement statement) {
-					if (rdfHandler != null) {
-						rdfHandler.handleStatement(statement);
-					}
-				}
-
-				@Override
-				public void handleQuad(Statement statement) {
-					if (rdfHandler != null) {
-						rdfHandler.handleStatement(statement);
-					}
-				}
-
-			}, new RdfValueFactory<Statement, Statement, IRI, Resource, Resource, Literal, Value>() {
-				@Override
-				public Statement createTriple(Resource subject, IRI predicate, Value object) {
-					return JSONLDParser.this.createStatement(subject, predicate, object);
-				}
-
-				@Override
-				public Statement createQuad(Resource subject, IRI predicate, Value object, Resource graphName) {
-					return JSONLDParser.this.createStatement(subject, predicate, object, graphName);
-				}
-
-				@Override
-				public Statement createQuad(Statement statement, Resource graphName) {
-					return JSONLDParser.this.createStatement(statement.getSubject(), statement.getPredicate(),
-							statement.getObject(), graphName);
-				}
-
-				@Override
-				public IRI createIRI(String value) {
-					return JSONLDParser.this.createURI(value);
-				}
-
-				@Override
-				public Resource createBlankNode(String value) {
-					if (value.startsWith("_:")) {
-						return JSONLDParser.this.createNode(value.substring(2));
-					}
-					return JSONLDParser.this.createNode(value);
-				}
-
-				@Override
-				public Literal createTypedLiteral(String value, String datatype) {
-					Literal directedLanguageLiteral = createDirectedLanguageLiteral(value, datatype);
-					if (directedLanguageLiteral != null) {
-						return directedLanguageLiteral;
-					}
-					return JSONLDParser.this.createLiteral(value, null, valueFactory.createIRI(datatype));
-				}
-
-				@Override
-				public Literal createString(String value) {
-					return JSONLDParser.this.createLiteral(value, null, null);
-				}
-
-				@Override
-				public Literal createLangString(String value, String lang) {
-					return JSONLDParser.this.createLiteral(value, lang, null);
-				}
-			});
+			parseDocuments(in, reader, opts, baseURI);
 
 			if (rdfHandler != null) {
 				rdfHandler.endRDF();
@@ -274,6 +208,84 @@ public class JSONLDParser extends AbstractRDFParser {
 		} finally {
 			clear();
 		}
+	}
+
+	protected void parseDocuments(InputStream in, Reader reader, JsonLdOptions options, String baseURI)
+			throws JsonLdError, IOException {
+		processDocument(getDocument(in, reader), options, baseURI, this::createNode, UnaryOperator.identity());
+	}
+
+	protected final void processDocument(Document document, JsonLdOptions options, String baseURI,
+			Function<String, Resource> blankNodeCreator, UnaryOperator<Statement> statementMapper) throws JsonLdError {
+		RDFHandler rdfHandler = getRDFHandler();
+		if (rdfHandler != null) {
+			extractPrefixes(document, rdfHandler::handleNamespace);
+		}
+
+		JsonLd.toRdf(document).options(options).base(baseURI).get(new RdfConsumer<>() {
+			@Override
+			public void handleTriple(Statement statement) {
+				if (rdfHandler != null) {
+					rdfHandler.handleStatement(statementMapper.apply(statement));
+				}
+			}
+
+			@Override
+			public void handleQuad(Statement statement) {
+				if (rdfHandler != null) {
+					rdfHandler.handleStatement(statementMapper.apply(statement));
+				}
+			}
+
+		}, new RdfValueFactory<Statement, Statement, IRI, Resource, Resource, Literal, Value>() {
+			@Override
+			public Statement createTriple(Resource subject, IRI predicate, Value object) {
+				return JSONLDParser.this.createStatement(subject, predicate, object);
+			}
+
+			@Override
+			public Statement createQuad(Resource subject, IRI predicate, Value object, Resource graphName) {
+				return JSONLDParser.this.createStatement(subject, predicate, object, graphName);
+			}
+
+			@Override
+			public Statement createQuad(Statement statement, Resource graphName) {
+				return JSONLDParser.this.createStatement(statement.getSubject(), statement.getPredicate(),
+						statement.getObject(), graphName);
+			}
+
+			@Override
+			public IRI createIRI(String value) {
+				return JSONLDParser.this.createURI(value);
+			}
+
+			@Override
+			public Resource createBlankNode(String value) {
+				if (value.startsWith("_:")) {
+					return blankNodeCreator.apply(value.substring(2));
+				}
+				return blankNodeCreator.apply(value);
+			}
+
+			@Override
+			public Literal createTypedLiteral(String value, String datatype) {
+				Literal directedLanguageLiteral = createDirectedLanguageLiteral(value, datatype);
+				if (directedLanguageLiteral != null) {
+					return directedLanguageLiteral;
+				}
+				return JSONLDParser.this.createLiteral(value, null, valueFactory.createIRI(datatype));
+			}
+
+			@Override
+			public Literal createString(String value) {
+				return JSONLDParser.this.createLiteral(value, null, null);
+			}
+
+			@Override
+			public Literal createLangString(String value, String lang) {
+				return JSONLDParser.this.createLiteral(value, lang, null);
+			}
+		});
 	}
 
 	private Literal createDirectedLanguageLiteral(String value, String datatype) {
@@ -316,7 +328,7 @@ public class JSONLDParser extends AbstractRDFParser {
 		return document;
 	}
 
-	private static void extractPrefixes(Document document, BiConsumer<String, String> prefixConsumer) {
+	protected static void extractPrefixes(Document document, BiConsumer<String, String> prefixConsumer) {
 		try {
 			extractPrefixes(document.getJsonContent().orElse(null), prefixConsumer);
 		} catch (Exception e) {
@@ -343,8 +355,16 @@ public class JSONLDParser extends AbstractRDFParser {
 
 	private static void extractPrefixes(JsonObject jsonObject, BiConsumer<String, String> prefixConsumer) {
 		jsonObject.forEach((key, jsonValue) -> {
-			if (Keywords.CONTEXT.equals(key) && JsonValue.ValueType.OBJECT == jsonValue.getValueType()) {
+			if (Keywords.CONTEXT.equals(key) && JsonValue.ValueType.ARRAY == jsonValue.getValueType()) {
+				Map<String, String> active = new LinkedHashMap<>();
+				extractContextPrefixes(jsonValue, active);
+				active.forEach(prefixConsumer);
+			} else if (Keywords.CONTEXT.equals(key) && JsonValue.ValueType.OBJECT == jsonValue.getValueType()) {
 				extractPrefixes(jsonValue, prefixConsumer);
+			} else if (JsonValue.ValueType.OBJECT == jsonValue.getValueType()
+					&& jsonValue.asJsonObject().getBoolean("@prefix", false)
+					&& jsonValue.asJsonObject().get("@id") instanceof JsonString id) {
+				prefixConsumer.accept(key, id.getString());
 			} else {
 				if (JsonValue.ValueType.STRING == jsonValue.getValueType()) {
 					String prefix = key;
@@ -362,6 +382,31 @@ public class JSONLDParser extends AbstractRDFParser {
 			}
 		});
 
+	}
+
+	private static void extractContextPrefixes(JsonValue context, Map<String, String> active) {
+		if (context.getValueType() == JsonValue.ValueType.NULL) {
+			active.clear();
+		} else if (context.getValueType() == JsonValue.ValueType.ARRAY) {
+			context.asJsonArray().forEach(item -> extractContextPrefixes(item, active));
+		} else if (context.getValueType() == JsonValue.ValueType.OBJECT) {
+			context.asJsonObject().forEach((key, definition) -> {
+				if (key.startsWith("@") && !Keywords.VOCAB.equals(key)) {
+					return;
+				}
+				String prefix = Keywords.VOCAB.equals(key) ? "" : key;
+				if (definition instanceof JsonString string && (string.getString().endsWith("#")
+						|| string.getString().endsWith("/") || string.getString().endsWith(":"))) {
+					active.put(prefix, string.getString());
+				} else if (definition.getValueType() == JsonValue.ValueType.OBJECT
+						&& definition.asJsonObject().getBoolean("@prefix", false)
+						&& definition.asJsonObject().get("@id") instanceof JsonString id) {
+					active.put(prefix, id.getString());
+				} else {
+					active.remove(prefix);
+				}
+			});
+		}
 	}
 
 }
