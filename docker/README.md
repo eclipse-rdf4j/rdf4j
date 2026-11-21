@@ -43,3 +43,20 @@ Please note that the RDF4J server in the docker container is not
 password-protected, nor is it configured to use HTTPS. 
 Additional configuration may be required for running the container in 
 production environments.
+
+JSON-LD secure mode is enabled by default. When parsing JSON-LD from untrusted
+sources, remote or local `@context` URLs are loaded only if they are in the
+JSON-LD whitelist. Deployments that previously relied on unrestricted contexts
+must add the required URLs to the `org.eclipse.rdf4j.rio.jsonld_whitelist`
+system property (a JSON array of URLs). Use `RDF4J_OPTS` to pass this property
+to either Docker image. For example:
+
+```
+docker run -e 'RDF4J_OPTS=-Dorg.eclipse.rdf4j.rio.jsonld_whitelist=["https://example.org/context.jsonld"]' \
+    eclipse/rdf4j-workbench
+```
+
+If unrestricted context loading is required, set
+`RDF4J_OPTS=-Dorg.eclipse.rdf4j.rio.jsonld_secure_mode=false` explicitly.
+This also permits contexts to read local files and make arbitrary outbound
+requests, so use it only with trusted input.
