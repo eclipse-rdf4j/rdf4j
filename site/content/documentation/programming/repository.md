@@ -792,6 +792,30 @@ try (RepositoryConnection conn = repo.getConnection()) {
 }
 ```
 
+#### Logging slow queries
+
+The built-in stores can log queries that exceed a total execution threshold or take too long to produce their first result. Configure the underlying store before creating the repository:
+
+```java
+MemoryStore store = new MemoryStore(new File("repository-data"));
+store.setSlowQueryLogThresholdSeconds(10);
+store.setSlowQueryLogFirstResultThresholdSeconds(2);
+store.setSlowQueryLogFile("slow-query.log");
+```
+
+A threshold of zero disables that event. First-result and completion events are independent; a query can produce both. The completion measurement includes the time until the result is closed, so close query results promptly with try-with-resources.
+
+The file name must be a relative path ending in `.log`, resolved inside that repository's data directory. Absolute paths, paths escaping the data directory, and symbolic links below it are rejected. Parent directories must already exist. File output requires secure directory streams, read/write permission, and file locking. The logger opens and checks the file through directory handles, serializes complete entries across store instances, and uses a nonblocking file lock. If safe file access is unavailable or the file is locked, the entry goes to the `org.eclipse.rdf4j.sail.slowquery` logging category. A null or blank file setting selects that category directly.
+
+Each query execution retains its logging thresholds and destination, query settings, and correlation identifiers. Changing the query or the store configuration after evaluation starts does not change that execution's log entries. Both events include:
+
+- The execution and evaluation IDs, query text hash, start time, originating process and thread, repository and connection identity, and repository data directory.
+- The configured query timeout, inference setting, query language and base URI when available, parser options, requested execution strategy, and result-cache setting.
+- Incoming binding values in RDF syntax, the active dataset selectors, and effective evaluation mode, isolation, optimizer, tracking settings, and result-cache hit status.
+- Raw query text, unoptimized and optimized explanations, and a best-effort rendering of the optimized query.
+
+When the execution originates from the server, available server-request, query-request, transaction, and circuit-breaker execution identifiers are included, together with the relevant HTTP query options. When OpenTelemetry tracing is active, the query's trace and span IDs are included. These identifiers are captured before executor handoffs and result consumption, so a later request cannot replace the original query's context. Embedded repositories without a server-assigned repository ID still include their class, process-local instance identifier, and data directory.
+
 #### Explaining queries
 
 SPARQL queries are translated to query plans and then run through an optimization pipeline before they get evaluated and

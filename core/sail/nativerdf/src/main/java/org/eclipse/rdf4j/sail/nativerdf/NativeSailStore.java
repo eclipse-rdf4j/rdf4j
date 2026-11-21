@@ -573,6 +573,11 @@ class NativeSailStore implements SailStore {
 		}
 
 		@Override
+		public SailDataset datasetForRead(IsolationLevel level) throws SailException {
+			return dataset(level);
+		}
+
+		@Override
 		public SailSink sink(IsolationLevel level) throws SailException {
 			return new NativeSailSink(explicit);
 		}

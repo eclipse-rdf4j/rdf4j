@@ -86,94 +86,98 @@ public class DirectAdjacencyBenchmark {
 
 	@Setup(Level.Trial)
 	public void setUp() throws Exception {
-		if (degree <= 0 || degree > neighborCopy.length) {
-			throw new IllegalArgumentException("degree out of range: " + degree);
-		}
-		boolean delta = "delta".equals(sourceKind);
-		if (!delta && !"base".equals(sourceKind)) {
-			throw new IllegalArgumentException("unknown source kind: " + sourceKind);
-		}
-		if (!"plain".equals(contextMode) && !"mixed".equals(contextMode)) {
-			throw new IllegalArgumentException("unknown context mode: " + contextMode);
-		}
-		if (predicateCount != 1 && predicateCount != 100) {
-			throw new IllegalArgumentException("predicate count must be 1 or 100: " + predicateCount);
-		}
-		dataDir = Files.createTempDirectory("rdf4j-direct-adjacency-jmh-").toFile();
-		LmdbStoreConfig tripleConfig = new LmdbStoreConfig("spoc,posc");
-		tripleStore = new TripleStore(dataDir, tripleConfig, null);
-		LmdbStoreConfig directConfig = new LmdbStoreConfig("spoc,posc")
-				.setDirectAdjacencyEnabled(true)
-				.setDirectAdjacencyMode(DirectAdjacencyMode.PREFER)
-				.setDirectAdjacencyMaxBytes(1L << 30);
-		LmdbDirectAdjacencyOptions options = LmdbDirectAdjacencyOptions.resolve(directConfig, 8L << 30, name -> null,
-				1);
-		store = new LmdbDirectAdjacencyStore(tripleStore, null, new AtomicBoolean(false), options);
-		tripleStore.setDirectAdjacencyCommitHooks(store.commitListener(), store.newCommitDelta());
-
-		targetPredicate = predicate(predicateCount - 1);
-		for (int key = 0; key < KEY_COUNT; key++) {
-			keys[key] = uri(SUBJECT_PAYLOAD + key);
-		}
-		for (int i = 0; i < smallRunNeighbors.length; i++) {
-			smallRunNeighbors[i] = neighbor(0, i);
-		}
-		int baseDegree = delta ? degree - 1 : degree;
-		commit(() -> {
-			for (int key = 0; key < KEY_COUNT; key++) {
-				long subject = keys[key];
-				for (int predicate = 0; predicate < predicateCount - 1; predicate++) {
-					add(subject, predicate(predicate), uri(AUXILIARY_OBJECT_PAYLOAD + predicate), 0);
-				}
-				for (int edge = 0; edge < baseDegree; edge++) {
-					add(subject, targetPredicate, neighbor(key, edge), context(edge));
-				}
+		try {
+			if (degree <= 0 || degree > neighborCopy.length) {
+				throw new IllegalArgumentException("degree out of range: " + degree);
 			}
-		});
-		if (!store.buildNowForTest()) {
-			throw new IllegalStateException("direct adjacency build was refused");
-		}
-		if (delta) {
+			boolean delta = "delta".equals(sourceKind);
+			if (!delta && !"base".equals(sourceKind)) {
+				throw new IllegalArgumentException("unknown source kind: " + sourceKind);
+			}
+			if (!"plain".equals(contextMode) && !"mixed".equals(contextMode)) {
+				throw new IllegalArgumentException("unknown context mode: " + contextMode);
+			}
+			if (predicateCount != 1 && predicateCount != 100) {
+				throw new IllegalArgumentException("predicate count must be 1 or 100: " + predicateCount);
+			}
+			dataDir = Files.createTempDirectory("rdf4j-direct-adjacency-jmh-").toFile();
+			LmdbStoreConfig tripleConfig = new LmdbStoreConfig("spoc,posc");
+			tripleStore = new TripleStore(dataDir, tripleConfig, null);
+			LmdbStoreConfig directConfig = new LmdbStoreConfig("spoc,posc")
+					.setDirectAdjacencyEnabled(true)
+					.setDirectAdjacencyMode(DirectAdjacencyMode.PREFER)
+					.setDirectAdjacencyMaxBytes(1L << 30);
+			LmdbDirectAdjacencyOptions options = LmdbDirectAdjacencyOptions.resolve(directConfig, 8L << 30,
+					name -> null,
+					1);
+			store = new LmdbDirectAdjacencyStore(tripleStore, null, new AtomicBoolean(false), options);
+			tripleStore.setDirectAdjacencyCommitHooks(store.commitListener(), store.newCommitDelta());
+
+			targetPredicate = predicate(predicateCount - 1);
+			for (int key = 0; key < KEY_COUNT; key++) {
+				keys[key] = uri(SUBJECT_PAYLOAD + key);
+			}
+			for (int i = 0; i < smallRunNeighbors.length; i++) {
+				smallRunNeighbors[i] = neighbor(0, i);
+			}
+			int baseDegree = delta ? degree - 1 : degree;
 			commit(() -> {
 				for (int key = 0; key < KEY_COUNT; key++) {
-					add(keys[key], targetPredicate, neighbor(key, degree - 1), context(degree - 1));
+					long subject = keys[key];
+					for (int predicate = 0; predicate < predicateCount - 1; predicate++) {
+						add(subject, predicate(predicate), uri(AUXILIARY_OBJECT_PAYLOAD + predicate), 0);
+					}
+					for (int edge = 0; edge < baseDegree; edge++) {
+						add(subject, targetPredicate, neighbor(key, edge), context(edge));
+					}
 				}
 			});
-		}
+			if (!store.buildNowForTest()) {
+				throw new IllegalStateException("direct adjacency build was refused");
+			}
+			if (delta) {
+				commit(() -> {
+					for (int key = 0; key < KEY_COUNT; key++) {
+						add(keys[key], targetPredicate, neighbor(key, degree - 1), context(degree - 1));
+					}
+				});
+			}
 
-		fallbackTxn = tripleStore.getTxnManager().createReadTxn();
-		view = store.acquire(tripleStore.getDataRevision());
-		if (!view.isExact()) {
-			throw new IllegalStateException("benchmark view is not exact");
+			fallbackTxn = tripleStore.getTxnManager().createReadTxn();
+			view = store.acquire(tripleStore.getDataRevision());
+			if (!view.isExact()) {
+				throw new IllegalStateException("benchmark view is not exact");
+			}
+			adjacency = store.adjacency(view, targetPredicate, true, true);
+			if (adjacency == null) {
+				throw new IllegalStateException("benchmark adjacency is unavailable");
+			}
+			verifyFixture();
+			keyCursor = 0;
+		} catch (Exception | Error failure) {
+			try {
+				tearDown();
+			} catch (Exception | Error cleanupFailure) {
+				failure.addSuppressed(cleanupFailure);
+			}
+			throw failure;
 		}
-		adjacency = store.adjacency(view, targetPredicate, true, true);
-		if (adjacency == null) {
-			throw new IllegalStateException("benchmark adjacency is unavailable");
-		}
-		verifyFixture();
-		keyCursor = 0;
 	}
 
 	@TearDown(Level.Trial)
-	public void tearDown() throws IOException {
-		if (view != null) {
-			view.close();
+	public void tearDown() throws Exception {
+		try {
+			LmdbTestUtil.cleanup(null, adjacency, view, fallbackTxn, store, tripleStore, () -> {
+				if (dataDir != null) {
+					FileUtil.deleteDir(dataDir);
+				}
+			});
+		} finally {
+			adjacency = null;
 			view = null;
-		}
-		if (fallbackTxn != null) {
-			fallbackTxn.close();
 			fallbackTxn = null;
-		}
-		if (store != null) {
-			store.close();
 			store = null;
-		}
-		if (tripleStore != null) {
-			tripleStore.close();
 			tripleStore = null;
-		}
-		if (dataDir != null) {
-			FileUtil.deleteDir(dataDir);
 			dataDir = null;
 		}
 	}

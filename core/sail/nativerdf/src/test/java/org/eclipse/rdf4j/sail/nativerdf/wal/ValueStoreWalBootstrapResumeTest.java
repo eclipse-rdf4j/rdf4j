@@ -63,19 +63,21 @@ public class ValueStoreWalBootstrapResumeTest {
 				.syncBootstrapOnOpen(false)
 				.build();
 
-		ValueStoreWAL wal = ValueStoreWAL.open(cfg);
-		ValueStore vs2 = new ValueStore(data.toFile(), false,
-				ValueStore.VALUE_CACHE_SIZE, ValueStore.VALUE_ID_CACHE_SIZE,
-				ValueStore.NAMESPACE_CACHE_SIZE, ValueStore.NAMESPACE_ID_CACHE_SIZE,
-				wal);
-
-		// Simulate sudden crash by closing WAL directly almost immediately; bootstrap
-		// thread will observe isClosed and stop early (partial run or none)
-		Thread.sleep(5);
-		wal.close();
-		assertThatThrownBy(vs2::close).isInstanceOf(IOException.class)
-				.hasMessageContaining("WAL")
-				.hasMessageContaining("closed");
+		try (ValueStoreWAL wal = ValueStoreWAL.open(cfg)) {
+			assertThatThrownBy(() -> {
+				try (ValueStore vs2 = new ValueStore(data.toFile(), false,
+						ValueStore.VALUE_CACHE_SIZE, ValueStore.VALUE_ID_CACHE_SIZE,
+						ValueStore.NAMESPACE_CACHE_SIZE, ValueStore.NAMESPACE_ID_CACHE_SIZE,
+						wal)) {
+					// Simulate a sudden crash during asynchronous bootstrap. ValueStore close must surface the
+					// failed bootstrap while still releasing the data store.
+					Thread.sleep(5);
+					wal.close();
+				}
+			}).isInstanceOf(IOException.class)
+					.hasMessageContaining("WAL")
+					.hasMessageContaining("closed");
+		}
 
 		// 3) Reopen with WAL; after partial run, resume bootstrap and bring WAL dictionary
 		// to cover all existing ValueStore IDs.

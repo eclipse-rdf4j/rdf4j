@@ -89,6 +89,8 @@ class NativeMemoryOverflowMigrationTest {
 			throw new IllegalArgumentException("Expected one pressure probe name");
 		}
 		System.out.println("RUNTIME_MAX_MEMORY_BYTES=" + Runtime.getRuntime().maxMemory());
+		// The single-statement fixtures probe spill mechanics, so each statement forms a spillable batch.
+		AbstractMemoryOverflowModel.BATCH_SIZE = 1;
 		switch (args[0]) {
 		case "store-creation":
 			withPressure(FailureMode.STORE_CREATION, (model, statement) -> {

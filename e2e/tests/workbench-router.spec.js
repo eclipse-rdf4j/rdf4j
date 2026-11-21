@@ -638,7 +638,7 @@ test('deleting a saved query shows the remaining ones without loading a document
 });
 
 // Plan task M13.4 (user request): each repository keeps its Query results in the browser tab.
-test('each repository keeps its Query results in the tab, and a new tab starts without them', async ({ page, context, request }) => {
+test('each repository keeps its Query results, also for a new browser tab', async ({ page, context, request }) => {
 	const other = uniqueRepositoryId('workbench-router-other');
 	await createSeededRepository(request, serverBaseUrl(), other, { graphs: [] });
 	try {
@@ -683,10 +683,18 @@ test('each repository keeps its Query results in the tab, and a new tab starts w
 		await expect(status).toContainText('2 rows');
 		expect(executions, 'no query ran again').toHaveLength(2);
 
+		// A new browser tab opens the repository's latest query tabs and shows the saved result (query tabs, Part 2).
 		const second = await context.newPage();
+		const secondExecutions = [];
+		second.on('request', (request) => {
+			if (request.method() === 'POST' && (request.postData() || '').includes('action=exec')) {
+				secondExecutions.push(request.url());
+			}
+		});
 		await second.goto(repositoryPageUrl(REPOSITORY_ID, 'query'));
 		await waitForRoute(second, 'query');
-		await expect(second.locator('#query-results [data-query-stream-root]')).toHaveCount(0);
+		await expect(second.locator('#query-results .query-result-status')).toContainText('3 rows');
+		expect(secondExecutions, 'shown from the saved result').toHaveLength(0);
 		await second.close();
 	} finally {
 		await deleteRepository(request, serverBaseUrl(), other);

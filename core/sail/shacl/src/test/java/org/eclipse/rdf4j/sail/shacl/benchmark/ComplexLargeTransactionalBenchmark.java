@@ -98,24 +98,31 @@ public class ComplexLargeTransactionalBenchmark {
 
 	@Setup(Level.Invocation)
 	public void setUp() throws InterruptedException {
-
-		((Logger) LoggerFactory.getLogger(ShaclSailConnection.class.getName()))
-				.setLevel(ch.qos.logback.classic.Level.ERROR);
-		((Logger) LoggerFactory.getLogger(ShaclSail.class.getName())).setLevel(ch.qos.logback.classic.Level.ERROR);
-
+		boolean initialized = false;
 		try {
-			repository = new SailRepository(Utils.getInitializedShaclSail("complexBenchmark/shacl.trig"));
-			try (SailRepositoryConnection connection = repository.getConnection()) {
-				connection.begin(IsolationLevels.NONE, ShaclSail.TransactionSettings.ValidationApproach.Disabled);
-				connection.add(realData);
-				connection.commit();
-			}
-		} catch (IOException e) {
-			throw new RuntimeException(e);
-		}
+			((Logger) LoggerFactory.getLogger(ShaclSailConnection.class.getName()))
+					.setLevel(ch.qos.logback.classic.Level.ERROR);
+			((Logger) LoggerFactory.getLogger(ShaclSail.class.getName())).setLevel(ch.qos.logback.classic.Level.ERROR);
 
-		System.gc();
-		Thread.sleep(100);
+			try {
+				repository = new SailRepository(Utils.getInitializedShaclSail("complexBenchmark/shacl.trig"));
+				try (SailRepositoryConnection connection = repository.getConnection()) {
+					connection.begin(IsolationLevels.NONE, ShaclSail.TransactionSettings.ValidationApproach.Disabled);
+					connection.add(realData);
+					connection.commit();
+				}
+			} catch (IOException e) {
+				throw new RuntimeException(e);
+			}
+
+			System.gc();
+			Thread.sleep(100);
+			initialized = true;
+		} finally {
+			if (!initialized) {
+				teardown();
+			}
+		}
 	}
 
 	@TearDown(Level.Invocation)

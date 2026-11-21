@@ -56,6 +56,12 @@ function checkIsSafeToDelete(event: JQueryEventObject, ownsPage?: () => boolean)
 						if (submit && owns()) {
 							var additions: any = (workbench as any).graphAdditions;
 							if (additions && additions.repositoryChanged) { additions.repositoryChanged(String(id)); }
+							// What this browser keeps for the repository goes once the deletion is confirmed.
+							var shared: any = (workbench as any).workspace;
+							var app = document.getElementById('workbench-app');
+							if (shared && typeof shared.deletionStarted === 'function' && app) {
+								shared.deletionStarted(app.getAttribute('data-workbench-server-identity') || '', String(id));
+							}
 							workbench.submitForm(form);
 						}
 					});

@@ -15,6 +15,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.tuple;
 import static org.eclipse.rdf4j.federated.util.BlankNodeIdentityTestUtil.identity;
 import static org.eclipse.rdf4j.federated.util.BlankNodeIdentityTestUtil.memberValue;
+import static org.junit.jupiter.api.Assertions.assertAll;
 
 import java.util.List;
 
@@ -69,9 +70,22 @@ class FedXBlankNodeGraphTest {
 
 	@AfterEach
 	void closeMembers() {
-		federation.shutDown();
-		first.shutDown();
-		second.shutDown();
+		assertAll(
+				() -> {
+					if (federation != null) {
+						federation.shutDown();
+					}
+				},
+				() -> {
+					if (first != null) {
+						first.shutDown();
+					}
+				},
+				() -> {
+					if (second != null) {
+						second.shutDown();
+					}
+				});
 	}
 
 	@ParameterizedTest

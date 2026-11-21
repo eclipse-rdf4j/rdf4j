@@ -15,9 +15,11 @@ const WINDOW_IDS = Array.from({ length: 49 }, (_, index) => `${PICKER}-${index}`
 const created = [], savedUrns = new Set();
 const diagnostics = new WeakMap();
 const VARIANTS = [1440, 390, 320].flatMap(width => ['light', 'dark'].map(theme => ({ width, theme })));
-const CREATE_TYPES = ['memory', 'memory-lucene', 'memory-rdfs', 'memory-rdfs-dt', 'memory-rdfs-lucene',
+const CREATE_TYPES = ['lmdb', 'lmdb-rdfs', 'lmdb-shacl', 'lmdb-lucene', 'lmdb-rdfs-shacl',
+	'lmdb-rdfs-lucene', 'lmdb-shacl-lucene', 'lmdb-rdfs-shacl-lucene',
+	'memory', 'memory-lucene', 'memory-rdfs', 'memory-rdfs-dt', 'memory-rdfs-lucene',
 	'memory-customrule', 'memory-shacl', 'native', 'native-lucene', 'native-rdfs', 'native-rdfs-dt',
-	'native-rdfs-lucene', 'native-customrule', 'native-shacl', 'remote', 'sparql', 'federate', 'lmdb'];
+	'native-rdfs-lucene', 'native-customrule', 'native-shacl', 'remote', 'sparql', 'federate'];
 const ROUTES = ['server', 'repositories', 'create', 'delete', 'summary', 'namespaces', 'contexts', 'types',
 	'explore', 'query', 'saved-queries', 'export', 'update', 'add', 'remove', 'clear', 'information'];
 const FEATURES = ['query-execution', 'query-save', 'query-private-save', 'query-options', 'query-explain',

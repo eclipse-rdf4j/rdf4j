@@ -87,24 +87,31 @@ public class ComplexLargeBenchmark {
 
 	@Setup(Level.Trial)
 	public void setUp() throws InterruptedException {
-
-		((Logger) LoggerFactory.getLogger(ShaclSailConnection.class.getName()))
-				.setLevel(ch.qos.logback.classic.Level.INFO);
-		((Logger) LoggerFactory.getLogger(ShaclSail.class.getName())).setLevel(ch.qos.logback.classic.Level.ERROR);
-
+		boolean initialized = false;
 		try {
-			repository = new SailRepository(Utils.getInitializedShaclSail("complexBenchmark/shacl.trig"));
-			try (SailRepositoryConnection connection = repository.getConnection()) {
-				connection.begin(IsolationLevels.NONE, ShaclSail.TransactionSettings.ValidationApproach.Disabled);
-				connection.add(realData);
-				connection.commit();
-			}
-		} catch (IOException e) {
-			throw new RuntimeException(e);
-		}
+			((Logger) LoggerFactory.getLogger(ShaclSailConnection.class.getName()))
+					.setLevel(ch.qos.logback.classic.Level.INFO);
+			((Logger) LoggerFactory.getLogger(ShaclSail.class.getName())).setLevel(ch.qos.logback.classic.Level.ERROR);
 
-		System.gc();
-		Thread.sleep(100);
+			try {
+				repository = new SailRepository(Utils.getInitializedShaclSail("complexBenchmark/shacl.trig"));
+				try (SailRepositoryConnection connection = repository.getConnection()) {
+					connection.begin(IsolationLevels.NONE, ShaclSail.TransactionSettings.ValidationApproach.Disabled);
+					connection.add(realData);
+					connection.commit();
+				}
+			} catch (IOException e) {
+				throw new RuntimeException(e);
+			}
+
+			System.gc();
+			Thread.sleep(100);
+			initialized = true;
+		} finally {
+			if (!initialized) {
+				teardown();
+			}
+		}
 	}
 
 	@TearDown(Level.Trial)
@@ -117,11 +124,14 @@ public class ComplexLargeBenchmark {
 	public static void main(String[] args) throws InterruptedException {
 		ComplexLargeBenchmark complexLargeBenchmark = new ComplexLargeBenchmark();
 		complexLargeBenchmark.setUp();
-		for (int i = 0; i < 100; i++) {
-			System.out.println(i);
-			complexLargeBenchmark.noPreloadingNonEmptyParallelRemoved();
+		try {
+			for (int i = 0; i < 100; i++) {
+				System.out.println(i);
+				complexLargeBenchmark.noPreloadingNonEmptyParallelRemoved();
+			}
+		} finally {
+			complexLargeBenchmark.teardown();
 		}
-		complexLargeBenchmark.teardown();
 	}
 
 	@Benchmark
@@ -146,21 +156,23 @@ public class ComplexLargeBenchmark {
 		try {
 			SailRepository repository = new SailRepository(
 					Utils.getInitializedShaclSail("complexBenchmark/shacl.trig"));
+			try {
 
-			((ShaclSail) repository.getSail()).setParallelValidation(false);
-			((ShaclSail) repository.getSail()).setCacheSelectNodes(true);
-//			((ShaclSail) repository.getSail()).setPerformanceLogging(true);
-			((ShaclSail) repository.getSail()).setTransactionalValidationLimit(1000000);
+				((ShaclSail) repository.getSail()).setParallelValidation(false);
+				((ShaclSail) repository.getSail()).setCacheSelectNodes(true);
+				// ((ShaclSail) repository.getSail()).setPerformanceLogging(true);
+				((ShaclSail) repository.getSail()).setTransactionalValidationLimit(1000000);
 
-			try (SailRepositoryConnection connection = repository.getConnection()) {
-				connection.begin(IsolationLevels.NONE);
-				connection.add(realData);
+				try (SailRepositoryConnection connection = repository.getConnection()) {
+					connection.begin(IsolationLevels.NONE);
+					connection.add(realData);
 
-				connection.commit();
+					connection.commit();
+				}
+
+			} finally {
+				repository.shutDown();
 			}
-
-			repository.shutDown();
-
 		} catch (IOException e) {
 			throw new RuntimeException(e);
 		}
@@ -173,21 +185,23 @@ public class ComplexLargeBenchmark {
 		try {
 			SailRepository repository = new SailRepository(
 					Utils.getInitializedShaclSail("complexBenchmark/shacl.trig"));
+			try {
 
-			((ShaclSail) repository.getSail()).setParallelValidation(true);
-			((ShaclSail) repository.getSail()).setCacheSelectNodes(true);
-//			((ShaclSail) repository.getSail()).setPerformanceLogging(true);
-			((ShaclSail) repository.getSail()).setTransactionalValidationLimit(1000000);
+				((ShaclSail) repository.getSail()).setParallelValidation(true);
+				((ShaclSail) repository.getSail()).setCacheSelectNodes(true);
+				// ((ShaclSail) repository.getSail()).setPerformanceLogging(true);
+				((ShaclSail) repository.getSail()).setTransactionalValidationLimit(1000000);
 
-			try (SailRepositoryConnection connection = repository.getConnection()) {
-				connection.begin(IsolationLevels.NONE);
-				connection.add(realData);
+				try (SailRepositoryConnection connection = repository.getConnection()) {
+					connection.begin(IsolationLevels.NONE);
+					connection.add(realData);
 
-				connection.commit();
+					connection.commit();
+				}
+
+			} finally {
+				repository.shutDown();
 			}
-
-			repository.shutDown();
-
 		} catch (IOException e) {
 			throw new RuntimeException(e);
 		}
@@ -200,21 +214,23 @@ public class ComplexLargeBenchmark {
 		try {
 			SailRepository repository = new SailRepository(
 					Utils.getInitializedShaclSail("complexBenchmark/shacl.trig"));
+			try {
 
-			((ShaclSail) repository.getSail()).setParallelValidation(true);
-			((ShaclSail) repository.getSail()).setCacheSelectNodes(false);
-//			((ShaclSail) repository.getSail()).setPerformanceLogging(true);
-			((ShaclSail) repository.getSail()).setTransactionalValidationLimit(1000000);
+				((ShaclSail) repository.getSail()).setParallelValidation(true);
+				((ShaclSail) repository.getSail()).setCacheSelectNodes(false);
+				// ((ShaclSail) repository.getSail()).setPerformanceLogging(true);
+				((ShaclSail) repository.getSail()).setTransactionalValidationLimit(1000000);
 
-			try (SailRepositoryConnection connection = repository.getConnection()) {
-				connection.begin(IsolationLevels.NONE);
-				connection.add(realData);
+				try (SailRepositoryConnection connection = repository.getConnection()) {
+					connection.begin(IsolationLevels.NONE);
+					connection.add(realData);
 
-				connection.commit();
+					connection.commit();
+				}
+
+			} finally {
+				repository.shutDown();
 			}
-
-			repository.shutDown();
-
 		} catch (IOException e) {
 			throw new RuntimeException(e);
 		}
@@ -227,28 +243,30 @@ public class ComplexLargeBenchmark {
 		try {
 			SailRepository repository = new SailRepository(
 					Utils.getInitializedShaclSail("complexBenchmark/shacl.trig"));
+			try {
 
-			((ShaclSail) repository.getSail()).setTransactionalValidationLimit(1000000);
-			((ShaclSail) repository.getSail()).setParallelValidation(false);
-			((ShaclSail) repository.getSail()).setCacheSelectNodes(true);
-//			((ShaclSail) repository.getSail()).setPerformanceLogging(true);
+				((ShaclSail) repository.getSail()).setTransactionalValidationLimit(1000000);
+				((ShaclSail) repository.getSail()).setParallelValidation(false);
+				((ShaclSail) repository.getSail()).setCacheSelectNodes(true);
+				// ((ShaclSail) repository.getSail()).setPerformanceLogging(true);
 
-			try (SailRepositoryConnection connection = repository.getConnection()) {
-				connection.begin(IsolationLevels.NONE, ShaclSail.TransactionSettings.ValidationApproach.Disabled);
-				SimpleValueFactory vf = SimpleValueFactory.getInstance();
-				connection.add(vf.createBNode(), DUMMY_PREDICATE, vf.createBNode());
-				connection.commit();
+				try (SailRepositoryConnection connection = repository.getConnection()) {
+					connection.begin(IsolationLevels.NONE, ShaclSail.TransactionSettings.ValidationApproach.Disabled);
+					SimpleValueFactory vf = SimpleValueFactory.getInstance();
+					connection.add(vf.createBNode(), DUMMY_PREDICATE, vf.createBNode());
+					connection.commit();
+				}
+
+				try (SailRepositoryConnection connection = repository.getConnection()) {
+					connection.begin(IsolationLevels.NONE);
+					connection.add(realData);
+
+					connection.commit();
+				}
+
+			} finally {
+				repository.shutDown();
 			}
-
-			try (SailRepositoryConnection connection = repository.getConnection()) {
-				connection.begin(IsolationLevels.NONE);
-				connection.add(realData);
-
-				connection.commit();
-			}
-
-			repository.shutDown();
-
 		} catch (IOException e) {
 			throw new RuntimeException(e);
 		}
@@ -261,29 +279,31 @@ public class ComplexLargeBenchmark {
 		try {
 			SailRepository repository = new SailRepository(
 					Utils.getInitializedShaclSail("complexBenchmark/shacl.trig"));
+			try {
 
-			((ShaclSail) repository.getSail()).setTransactionalValidationLimit(1000000);
-			((ShaclSail) repository.getSail()).setParallelValidation(false);
-			((ShaclSail) repository.getSail()).setCacheSelectNodes(true);
-//			((ShaclSail) repository.getSail()).setPerformanceLogging(true);
+				((ShaclSail) repository.getSail()).setTransactionalValidationLimit(1000000);
+				((ShaclSail) repository.getSail()).setParallelValidation(false);
+				((ShaclSail) repository.getSail()).setCacheSelectNodes(true);
+				// ((ShaclSail) repository.getSail()).setPerformanceLogging(true);
 
-			try (SailRepositoryConnection connection = repository.getConnection()) {
-				connection.begin(IsolationLevels.NONE, ShaclSail.TransactionSettings.ValidationApproach.Disabled);
-				SimpleValueFactory vf = SimpleValueFactory.getInstance();
-				connection.add(vf.createBNode(), DUMMY_PREDICATE, vf.createBNode());
-				connection.commit();
+				try (SailRepositoryConnection connection = repository.getConnection()) {
+					connection.begin(IsolationLevels.NONE, ShaclSail.TransactionSettings.ValidationApproach.Disabled);
+					SimpleValueFactory vf = SimpleValueFactory.getInstance();
+					connection.add(vf.createBNode(), DUMMY_PREDICATE, vf.createBNode());
+					connection.commit();
+				}
+
+				try (SailRepositoryConnection connection = repository.getConnection()) {
+					connection.begin(IsolationLevels.NONE);
+					connection.remove((Resource) null, DUMMY_PREDICATE, null);
+					connection.add(realData);
+
+					connection.commit();
+				}
+
+			} finally {
+				repository.shutDown();
 			}
-
-			try (SailRepositoryConnection connection = repository.getConnection()) {
-				connection.begin(IsolationLevels.NONE);
-				connection.remove((Resource) null, DUMMY_PREDICATE, null);
-				connection.add(realData);
-
-				connection.commit();
-			}
-
-			repository.shutDown();
-
 		} catch (IOException e) {
 			throw new RuntimeException(e);
 		}
@@ -296,28 +316,30 @@ public class ComplexLargeBenchmark {
 		try {
 			SailRepository repository = new SailRepository(
 					Utils.getInitializedShaclSail("complexBenchmark/shacl.trig"));
+			try {
 
-			((ShaclSail) repository.getSail()).setTransactionalValidationLimit(1000000);
+				((ShaclSail) repository.getSail()).setTransactionalValidationLimit(1000000);
 
-			try (SailRepositoryConnection connection = repository.getConnection()) {
-				connection.begin(IsolationLevels.NONE, ShaclSail.TransactionSettings.ValidationApproach.Disabled);
-				SimpleValueFactory vf = SimpleValueFactory.getInstance();
-				connection.add(vf.createBNode(), DUMMY_PREDICATE, vf.createBNode());
-				connection.commit();
+				try (SailRepositoryConnection connection = repository.getConnection()) {
+					connection.begin(IsolationLevels.NONE, ShaclSail.TransactionSettings.ValidationApproach.Disabled);
+					SimpleValueFactory vf = SimpleValueFactory.getInstance();
+					connection.add(vf.createBNode(), DUMMY_PREDICATE, vf.createBNode());
+					connection.commit();
+				}
+
+				((ShaclSail) repository.getSail()).setParallelValidation(true);
+				((ShaclSail) repository.getSail()).setCacheSelectNodes(true);
+				((ShaclSail) repository.getSail()).setPerformanceLogging(false);
+
+				try (SailRepositoryConnection connection = repository.getConnection()) {
+					connection.begin(IsolationLevels.NONE);
+					connection.add(realData);
+					connection.commit();
+				}
+
+			} finally {
+				repository.shutDown();
 			}
-
-			((ShaclSail) repository.getSail()).setParallelValidation(true);
-			((ShaclSail) repository.getSail()).setCacheSelectNodes(true);
-			((ShaclSail) repository.getSail()).setPerformanceLogging(false);
-
-			try (SailRepositoryConnection connection = repository.getConnection()) {
-				connection.begin(IsolationLevels.NONE);
-				connection.add(realData);
-				connection.commit();
-			}
-
-			repository.shutDown();
-
 		} catch (IOException e) {
 			throw new RuntimeException(e);
 		}
@@ -329,35 +351,43 @@ public class ComplexLargeBenchmark {
 
 		try {
 			File file = Files.newTemporaryFolder();
-			SailRepository repository = new SailRepository(new ShaclSail(new LmdbStore(file)));
-			try (SailRepositoryConnection connection = repository.getConnection()) {
-				connection.begin(ShaclSail.TransactionSettings.ValidationApproach.Disabled);
-				URL shacl = ComplexLargeBenchmark.class.getClassLoader().getResource("complexBenchmark/shacl.trig");
-				connection.add(shacl, RDFFormat.TRIG);
-				connection.commit();
+			try {
+				SailRepository repository = new SailRepository(new ShaclSail(new LmdbStore(file)));
+				try {
+					try (SailRepositoryConnection connection = repository.getConnection()) {
+						connection.begin(ShaclSail.TransactionSettings.ValidationApproach.Disabled);
+						URL shacl = ComplexLargeBenchmark.class.getClassLoader()
+								.getResource("complexBenchmark/shacl.trig");
+						connection.add(shacl, RDFFormat.TRIG);
+						connection.commit();
+					}
+
+					((ShaclSail) repository.getSail()).setTransactionalValidationLimit(1000000);
+
+					try (SailRepositoryConnection connection = repository.getConnection()) {
+						connection.begin(IsolationLevels.NONE,
+								ShaclSail.TransactionSettings.ValidationApproach.Disabled);
+						SimpleValueFactory vf = SimpleValueFactory.getInstance();
+						connection.add(vf.createBNode(), DUMMY_PREDICATE, vf.createBNode());
+						connection.commit();
+					}
+
+					((ShaclSail) repository.getSail()).setParallelValidation(true);
+					((ShaclSail) repository.getSail()).setCacheSelectNodes(true);
+					((ShaclSail) repository.getSail()).setPerformanceLogging(false);
+
+					try (SailRepositoryConnection connection = repository.getConnection()) {
+						connection.begin(IsolationLevels.NONE);
+						connection.add(realData);
+						connection.commit();
+					}
+
+				} finally {
+					repository.shutDown();
+				}
+			} finally {
+				FileUtils.deleteDirectory(file);
 			}
-
-			((ShaclSail) repository.getSail()).setTransactionalValidationLimit(1000000);
-
-			try (SailRepositoryConnection connection = repository.getConnection()) {
-				connection.begin(IsolationLevels.NONE, ShaclSail.TransactionSettings.ValidationApproach.Disabled);
-				SimpleValueFactory vf = SimpleValueFactory.getInstance();
-				connection.add(vf.createBNode(), DUMMY_PREDICATE, vf.createBNode());
-				connection.commit();
-			}
-
-			((ShaclSail) repository.getSail()).setParallelValidation(true);
-			((ShaclSail) repository.getSail()).setCacheSelectNodes(true);
-			((ShaclSail) repository.getSail()).setPerformanceLogging(false);
-
-			try (SailRepositoryConnection connection = repository.getConnection()) {
-				connection.begin(IsolationLevels.NONE);
-				connection.add(realData);
-				connection.commit();
-			}
-
-			repository.shutDown();
-
 		} catch (IOException e) {
 			throw new RuntimeException(e);
 		}
@@ -370,28 +400,30 @@ public class ComplexLargeBenchmark {
 		try {
 			SailRepository repository = new SailRepository(
 					Utils.getInitializedShaclSail("complexBenchmark/shacl.trig"));
+			try {
 
-			((ShaclSail) repository.getSail()).setTransactionalValidationLimit(1000000);
+				((ShaclSail) repository.getSail()).setTransactionalValidationLimit(1000000);
 
-			try (SailRepositoryConnection connection = repository.getConnection()) {
-				connection.begin(IsolationLevels.NONE, ShaclSail.TransactionSettings.ValidationApproach.Disabled);
-				SimpleValueFactory vf = SimpleValueFactory.getInstance();
-				connection.add(vf.createBNode(), DUMMY_PREDICATE, vf.createBNode());
-				connection.commit();
+				try (SailRepositoryConnection connection = repository.getConnection()) {
+					connection.begin(IsolationLevels.NONE, ShaclSail.TransactionSettings.ValidationApproach.Disabled);
+					SimpleValueFactory vf = SimpleValueFactory.getInstance();
+					connection.add(vf.createBNode(), DUMMY_PREDICATE, vf.createBNode());
+					connection.commit();
+				}
+
+				((ShaclSail) repository.getSail()).setParallelValidation(true);
+				((ShaclSail) repository.getSail()).setCacheSelectNodes(true);
+				((ShaclSail) repository.getSail()).setPerformanceLogging(false);
+
+				try (SailRepositoryConnection connection = repository.getConnection()) {
+					connection.begin(IsolationLevels.READ_COMMITTED);
+					connection.add(realData);
+					connection.commit();
+				}
+
+			} finally {
+				repository.shutDown();
 			}
-
-			((ShaclSail) repository.getSail()).setParallelValidation(true);
-			((ShaclSail) repository.getSail()).setCacheSelectNodes(true);
-			((ShaclSail) repository.getSail()).setPerformanceLogging(false);
-
-			try (SailRepositoryConnection connection = repository.getConnection()) {
-				connection.begin(IsolationLevels.READ_COMMITTED);
-				connection.add(realData);
-				connection.commit();
-			}
-
-			repository.shutDown();
-
 		} catch (IOException e) {
 			throw new RuntimeException(e);
 		}
@@ -404,29 +436,31 @@ public class ComplexLargeBenchmark {
 		try {
 			SailRepository repository = new SailRepository(
 					Utils.getInitializedShaclSail("complexBenchmark/shacl.trig"));
+			try {
 
-			((ShaclSail) repository.getSail()).setTransactionalValidationLimit(1000000);
+				((ShaclSail) repository.getSail()).setTransactionalValidationLimit(1000000);
 
-			try (SailRepositoryConnection connection = repository.getConnection()) {
-				connection.begin(IsolationLevels.NONE, ShaclSail.TransactionSettings.ValidationApproach.Disabled);
-				SimpleValueFactory vf = SimpleValueFactory.getInstance();
-				connection.add(vf.createBNode(), DUMMY_PREDICATE, vf.createBNode());
-				connection.commit();
+				try (SailRepositoryConnection connection = repository.getConnection()) {
+					connection.begin(IsolationLevels.NONE, ShaclSail.TransactionSettings.ValidationApproach.Disabled);
+					SimpleValueFactory vf = SimpleValueFactory.getInstance();
+					connection.add(vf.createBNode(), DUMMY_PREDICATE, vf.createBNode());
+					connection.commit();
+				}
+
+				((ShaclSail) repository.getSail()).setParallelValidation(true);
+				((ShaclSail) repository.getSail()).setCacheSelectNodes(true);
+				// ((ShaclSail) repository.getSail()).setPerformanceLogging(true);
+
+				try (SailRepositoryConnection connection = repository.getConnection()) {
+					connection.begin(IsolationLevels.NONE);
+					connection.remove((Resource) null, DUMMY_PREDICATE, null);
+					connection.add(realData);
+					connection.commit();
+				}
+
+			} finally {
+				repository.shutDown();
 			}
-
-			((ShaclSail) repository.getSail()).setParallelValidation(true);
-			((ShaclSail) repository.getSail()).setCacheSelectNodes(true);
-//			((ShaclSail) repository.getSail()).setPerformanceLogging(true);
-
-			try (SailRepositoryConnection connection = repository.getConnection()) {
-				connection.begin(IsolationLevels.NONE);
-				connection.remove((Resource) null, DUMMY_PREDICATE, null);
-				connection.add(realData);
-				connection.commit();
-			}
-
-			repository.shutDown();
-
 		} catch (IOException e) {
 			throw new RuntimeException(e);
 		}
@@ -442,28 +476,30 @@ public class ComplexLargeBenchmark {
 
 			SailRepository repository = new SailRepository(Utils
 					.getInitializedShaclSail(new NativeStore(file, "spoc,ospc,psoc"), "complexBenchmark/shacl.trig"));
+			try {
 
-			((ShaclSail) repository.getSail()).setTransactionalValidationLimit(1000000);
+				((ShaclSail) repository.getSail()).setTransactionalValidationLimit(1000000);
 
-			try (SailRepositoryConnection connection = repository.getConnection()) {
-				connection.begin(IsolationLevels.NONE, ShaclSail.TransactionSettings.ValidationApproach.Disabled);
-				SimpleValueFactory vf = SimpleValueFactory.getInstance();
-				connection.add(vf.createBNode(), DUMMY_PREDICATE, vf.createBNode());
-				connection.commit();
+				try (SailRepositoryConnection connection = repository.getConnection()) {
+					connection.begin(IsolationLevels.NONE, ShaclSail.TransactionSettings.ValidationApproach.Disabled);
+					SimpleValueFactory vf = SimpleValueFactory.getInstance();
+					connection.add(vf.createBNode(), DUMMY_PREDICATE, vf.createBNode());
+					connection.commit();
+				}
+
+				((ShaclSail) repository.getSail()).setParallelValidation(true);
+				((ShaclSail) repository.getSail()).setCacheSelectNodes(true);
+				((ShaclSail) repository.getSail()).setPerformanceLogging(false);
+
+				try (SailRepositoryConnection connection = repository.getConnection()) {
+					connection.begin(IsolationLevels.NONE);
+					connection.add(realData);
+					connection.commit();
+				}
+
+			} finally {
+				repository.shutDown();
 			}
-
-			((ShaclSail) repository.getSail()).setParallelValidation(true);
-			((ShaclSail) repository.getSail()).setCacheSelectNodes(true);
-			((ShaclSail) repository.getSail()).setPerformanceLogging(false);
-
-			try (SailRepositoryConnection connection = repository.getConnection()) {
-				connection.begin(IsolationLevels.NONE);
-				connection.add(realData);
-				connection.commit();
-			}
-
-			repository.shutDown();
-
 		} catch (IOException e) {
 			throw new RuntimeException(e);
 		} finally {
@@ -479,25 +515,27 @@ public class ComplexLargeBenchmark {
 		try {
 			SailRepository repository = new SailRepository(
 					Utils.getInitializedShaclSail("complexBenchmark/shacl.trig"));
+			try {
 
-			((ShaclSail) repository.getSail()).setParallelValidation(true);
-			((ShaclSail) repository.getSail()).setCacheSelectNodes(true);
-			((ShaclSail) repository.getSail()).setTransactionalValidationLimit(1000000);
+				((ShaclSail) repository.getSail()).setParallelValidation(true);
+				((ShaclSail) repository.getSail()).setCacheSelectNodes(true);
+				((ShaclSail) repository.getSail()).setTransactionalValidationLimit(1000000);
 
-			try (SailRepositoryConnection connection = repository.getConnection()) {
-				connection.begin(IsolationLevels.NONE, ShaclSail.TransactionSettings.ValidationApproach.Disabled);
-				connection.add(realData);
-				connection.commit();
+				try (SailRepositoryConnection connection = repository.getConnection()) {
+					connection.begin(IsolationLevels.NONE, ShaclSail.TransactionSettings.ValidationApproach.Disabled);
+					connection.add(realData);
+					connection.commit();
+				}
+
+				try (SailRepositoryConnection connection = repository.getConnection()) {
+					connection.begin(IsolationLevels.NONE);
+					((ShaclSailConnection) connection.getSailConnection()).revalidate();
+					connection.commit();
+				}
+
+			} finally {
+				repository.shutDown();
 			}
-
-			try (SailRepositoryConnection connection = repository.getConnection()) {
-				connection.begin(IsolationLevels.NONE);
-				((ShaclSailConnection) connection.getSailConnection()).revalidate();
-				connection.commit();
-			}
-
-			repository.shutDown();
-
 		} catch (IOException e) {
 			throw new RuntimeException(e);
 		}
@@ -510,25 +548,27 @@ public class ComplexLargeBenchmark {
 		try {
 			SailRepository repository = new SailRepository(
 					Utils.getInitializedShaclSail("complexBenchmark/shacl.trig"));
+			try {
 
-			((ShaclSail) repository.getSail()).setParallelValidation(false);
-			((ShaclSail) repository.getSail()).setCacheSelectNodes(false);
-			((ShaclSail) repository.getSail()).setTransactionalValidationLimit(1000000);
+				((ShaclSail) repository.getSail()).setParallelValidation(false);
+				((ShaclSail) repository.getSail()).setCacheSelectNodes(false);
+				((ShaclSail) repository.getSail()).setTransactionalValidationLimit(1000000);
 
-			try (SailRepositoryConnection connection = repository.getConnection()) {
-				connection.begin(IsolationLevels.NONE, ShaclSail.TransactionSettings.ValidationApproach.Disabled);
-				connection.add(realData);
-				connection.commit();
+				try (SailRepositoryConnection connection = repository.getConnection()) {
+					connection.begin(IsolationLevels.NONE, ShaclSail.TransactionSettings.ValidationApproach.Disabled);
+					connection.add(realData);
+					connection.commit();
+				}
+
+				try (SailRepositoryConnection connection = repository.getConnection()) {
+					connection.begin(IsolationLevels.NONE);
+					((ShaclSailConnection) connection.getSailConnection()).revalidate();
+					connection.commit();
+				}
+
+			} finally {
+				repository.shutDown();
 			}
-
-			try (SailRepositoryConnection connection = repository.getConnection()) {
-				connection.begin(IsolationLevels.NONE);
-				((ShaclSailConnection) connection.getSailConnection()).revalidate();
-				connection.commit();
-			}
-
-			repository.shutDown();
-
 		} catch (IOException e) {
 			throw new RuntimeException(e);
 		}
@@ -541,20 +581,22 @@ public class ComplexLargeBenchmark {
 		try {
 			SailRepository repository = new SailRepository(
 					Utils.getInitializedShaclSail("complexBenchmark/shacl.trig"));
+			try {
 
-			((ShaclSail) repository.getSail()).setParallelValidation(true);
-			((ShaclSail) repository.getSail()).setCacheSelectNodes(true);
-			((ShaclSail) repository.getSail()).setTransactionalValidationLimit(1000000);
+				((ShaclSail) repository.getSail()).setParallelValidation(true);
+				((ShaclSail) repository.getSail()).setCacheSelectNodes(true);
+				((ShaclSail) repository.getSail()).setTransactionalValidationLimit(1000000);
 
-			try (SailRepositoryConnection connection = repository.getConnection()) {
-				connection.begin(IsolationLevels.NONE, ShaclSail.TransactionSettings.ValidationApproach.Bulk);
-				connection.add(realData);
+				try (SailRepositoryConnection connection = repository.getConnection()) {
+					connection.begin(IsolationLevels.NONE, ShaclSail.TransactionSettings.ValidationApproach.Bulk);
+					connection.add(realData);
 
-				connection.commit();
+					connection.commit();
+				}
+
+			} finally {
+				repository.shutDown();
 			}
-
-			repository.shutDown();
-
 		} catch (IOException e) {
 			throw new RuntimeException(e);
 		}
@@ -567,22 +609,24 @@ public class ComplexLargeBenchmark {
 		try {
 			SailRepository repository = new SailRepository(
 					Utils.getInitializedShaclSail("complexBenchmark/shacl.trig"));
+			try {
 
-			((ShaclSail) repository.getSail()).setParallelValidation(false);
-			((ShaclSail) repository.getSail()).setCacheSelectNodes(false);
-			((ShaclSail) repository.getSail()).setTransactionalValidationLimit(1000000);
+				((ShaclSail) repository.getSail()).setParallelValidation(false);
+				((ShaclSail) repository.getSail()).setCacheSelectNodes(false);
+				((ShaclSail) repository.getSail()).setTransactionalValidationLimit(1000000);
 
-			try (SailRepositoryConnection connection = repository.getConnection()) {
-				connection.begin(IsolationLevels.NONE, ShaclSail.TransactionSettings.ValidationApproach.Bulk,
-						ShaclSail.TransactionSettings.PerformanceHint.ParallelValidation,
-						ShaclSail.TransactionSettings.PerformanceHint.CacheEnabled);
-				connection.add(realData);
+				try (SailRepositoryConnection connection = repository.getConnection()) {
+					connection.begin(IsolationLevels.NONE, ShaclSail.TransactionSettings.ValidationApproach.Bulk,
+							ShaclSail.TransactionSettings.PerformanceHint.ParallelValidation,
+							ShaclSail.TransactionSettings.PerformanceHint.CacheEnabled);
+					connection.add(realData);
 
-				connection.commit();
+					connection.commit();
+				}
+
+			} finally {
+				repository.shutDown();
 			}
-
-			repository.shutDown();
-
 		} catch (IOException e) {
 			throw new RuntimeException(e);
 		}
@@ -595,25 +639,28 @@ public class ComplexLargeBenchmark {
 		try {
 			SailRepository repository = new SailRepository(
 					Utils.getInitializedShaclSail("complexBenchmark/shacl.trig"));
+			try {
 
-			((ShaclSail) repository.getSail()).setTransactionalValidationLimit(600000);
+				((ShaclSail) repository.getSail()).setTransactionalValidationLimit(600000);
 
-			try (SailRepositoryConnection connection = repository.getConnection()) {
-				connection.begin(IsolationLevels.NONE);
-				connection.add(RDF.TYPE, RDF.TYPE, RDF.PROPERTY);
-				connection.commit();
+				try (SailRepositoryConnection connection = repository.getConnection()) {
+					connection.begin(IsolationLevels.NONE);
+					connection.add(RDF.TYPE, RDF.TYPE, RDF.PROPERTY);
+					connection.commit();
+				}
+
+				try (SailRepositoryConnection connection = repository.getConnection()) {
+					connection.begin(IsolationLevels.NONE,
+							ShaclSail.TransactionSettings.PerformanceHint.ParallelValidation,
+							ShaclSail.TransactionSettings.PerformanceHint.CacheEnabled);
+					connection.add(realData);
+
+					connection.commit();
+				}
+
+			} finally {
+				repository.shutDown();
 			}
-
-			try (SailRepositoryConnection connection = repository.getConnection()) {
-				connection.begin(IsolationLevels.NONE, ShaclSail.TransactionSettings.PerformanceHint.ParallelValidation,
-						ShaclSail.TransactionSettings.PerformanceHint.CacheEnabled);
-				connection.add(realData);
-
-				connection.commit();
-			}
-
-			repository.shutDown();
-
 		} catch (IOException e) {
 			throw new RuntimeException(e);
 		}
@@ -628,25 +675,27 @@ public class ComplexLargeBenchmark {
 
 			SailRepository repository = new SailRepository(Utils
 					.getInitializedShaclSail(new NativeStore(file, "spoc,ospc,psoc"), "complexBenchmark/shacl.trig"));
+			try {
 
-			((ShaclSail) repository.getSail()).setParallelValidation(true);
-			((ShaclSail) repository.getSail()).setCacheSelectNodes(true);
-			((ShaclSail) repository.getSail()).setTransactionalValidationLimit(1000000);
+				((ShaclSail) repository.getSail()).setParallelValidation(true);
+				((ShaclSail) repository.getSail()).setCacheSelectNodes(true);
+				((ShaclSail) repository.getSail()).setTransactionalValidationLimit(1000000);
 
-			try (SailRepositoryConnection connection = repository.getConnection()) {
-				connection.begin(IsolationLevels.NONE, ShaclSail.TransactionSettings.ValidationApproach.Disabled);
-				connection.add(realData);
-				connection.commit();
+				try (SailRepositoryConnection connection = repository.getConnection()) {
+					connection.begin(IsolationLevels.NONE, ShaclSail.TransactionSettings.ValidationApproach.Disabled);
+					connection.add(realData);
+					connection.commit();
+				}
+
+				try (SailRepositoryConnection connection = repository.getConnection()) {
+					connection.begin(IsolationLevels.NONE);
+					((ShaclSailConnection) connection.getSailConnection()).revalidate();
+					connection.commit();
+				}
+
+			} finally {
+				repository.shutDown();
 			}
-
-			try (SailRepositoryConnection connection = repository.getConnection()) {
-				connection.begin(IsolationLevels.NONE);
-				((ShaclSailConnection) connection.getSailConnection()).revalidate();
-				connection.commit();
-			}
-
-			repository.shutDown();
-
 		} catch (IOException e) {
 			throw new RuntimeException(e);
 		} finally {
@@ -662,20 +711,22 @@ public class ComplexLargeBenchmark {
 		try {
 			SailRepository repository = new SailRepository(
 					Utils.getInitializedShaclSail("complexBenchmark/shacl.trig"));
-			((ShaclSail) repository.getSail()).disableValidation();
-			((ShaclSail) repository.getSail()).setTransactionalValidationLimit(1000000);
+			try {
+				((ShaclSail) repository.getSail()).disableValidation();
+				((ShaclSail) repository.getSail()).setTransactionalValidationLimit(1000000);
 
-			try (SailRepositoryConnection connection = repository.getConnection()) {
-				connection.begin(IsolationLevels.NONE);
-				connection.add(realData);
+				try (SailRepositoryConnection connection = repository.getConnection()) {
+					connection.begin(IsolationLevels.NONE);
+					connection.add(realData);
 
-				connection.commit();
+					connection.commit();
+				}
+
+				((ShaclSail) repository.getSail()).enableValidation();
+
+			} finally {
+				repository.shutDown();
 			}
-
-			((ShaclSail) repository.getSail()).enableValidation();
-
-			repository.shutDown();
-
 		} catch (IOException e) {
 			throw new RuntimeException(e);
 		}
@@ -688,17 +739,19 @@ public class ComplexLargeBenchmark {
 		try {
 			SailRepository repository = new SailRepository(
 					Utils.getInitializedShaclSail("complexBenchmark/shacl.trig"));
-			((ShaclSail) repository.getSail()).setTransactionalValidationLimit(1000000);
+			try {
+				((ShaclSail) repository.getSail()).setTransactionalValidationLimit(1000000);
 
-			try (SailRepositoryConnection connection = repository.getConnection()) {
-				connection.begin(IsolationLevels.NONE, ShaclSail.TransactionSettings.ValidationApproach.Disabled);
-				connection.add(realData);
+				try (SailRepositoryConnection connection = repository.getConnection()) {
+					connection.begin(IsolationLevels.NONE, ShaclSail.TransactionSettings.ValidationApproach.Disabled);
+					connection.add(realData);
 
-				connection.commit();
+					connection.commit();
+				}
+
+			} finally {
+				repository.shutDown();
 			}
-
-			repository.shutDown();
-
 		} catch (IOException e) {
 			throw new RuntimeException(e);
 		}

@@ -6864,12 +6864,13 @@ class LmdbSailStore implements SailStore {
 				setFactoryFactory, statsFactory, asyncQueueCapacity, false);
 	}
 
-	private LmdbSailStore(File dataDir, StoreProperties properties, LmdbStoreConfig config,
+	private LmdbSailStore(File dataDir, StoreProperties properties, LmdbStoreConfig storeConfig,
 			boolean sketchBasedJoinEstimatorEnabled, LmdbStoreFormat format, QueryExecutionPolicy queryExecutionPolicy,
 			Runnable duringValueOverlayWarmupScanForTest, Consumer<ValueStore> afterValueStoreOpenForTest,
 			ValueStoreFactory valueStoreFactory, TripleStoreFactory tripleStoreFactory,
 			PersistentSetFactoryFactory setFactoryFactory, FilterSelectivityStatsFactory statsFactory,
 			int asyncQueueCapacity, boolean temporaryOverflow) throws IOException, SailException {
+		LmdbStoreConfig config = temporaryOverflow ? storeConfig.forTemporaryOverflow() : storeConfig;
 		this.opQueue = new CircularBuffer<>(asyncQueueCapacity);
 		this.backupBoundaryTrackingEnabled = !temporaryOverflow;
 		this.backupPublicationEnabled = !temporaryOverflow && config.getBackupJournalEnabled();
@@ -10149,6 +10150,11 @@ class LmdbSailStore implements SailStore {
 		@Override
 		public SailSource fork() {
 			throw new UnsupportedOperationException("This store does not support multiple datasets");
+		}
+
+		@Override
+		public SailDataset datasetForRead(IsolationLevel level) throws SailException {
+			return dataset(level);
 		}
 
 		@Override

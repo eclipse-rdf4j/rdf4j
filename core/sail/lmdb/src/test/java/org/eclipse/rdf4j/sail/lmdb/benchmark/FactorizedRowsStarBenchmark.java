@@ -80,61 +80,71 @@ public class FactorizedRowsStarBenchmark {
 
 	@Setup(Level.Trial)
 	public void setUp() {
-		dataDir = Files.newTemporaryFolder();
-		repository = new SailRepository(new LmdbStore(dataDir,
-				new LmdbStoreConfig("spoc,posc,ospc").setNativeEvaluationEnabled(true)));
-		try (SailRepositoryConnection conn = repository.getConnection()) {
-			ValueFactory vf = conn.getValueFactory();
-			IRI p1 = vf.createIRI(EX, "p1");
-			IRI p2 = vf.createIRI(EX, "p2");
-			IRI p3 = vf.createIRI(EX, "p3");
-			conn.begin();
-			for (int hub = 0; hub < HUBS; hub++) {
-				IRI subject = vf.createIRI(EX, "hub" + hub);
-				for (int i = 0; i < P1_FANOUT; i++) {
-					// middle nodes are shared across hubs so two-hop probes repeat keys
-					conn.add(subject, p1, vf.createIRI(EX, "a" + ((hub * P1_FANOUT + i) % A_DISTINCT_VALUES)));
+		try {
+			dataDir = Files.newTemporaryFolder();
+			repository = new SailRepository(new LmdbStore(dataDir,
+					new LmdbStoreConfig("spoc,posc,ospc").setNativeEvaluationEnabled(true)));
+			try (SailRepositoryConnection conn = repository.getConnection()) {
+				ValueFactory vf = conn.getValueFactory();
+				IRI p1 = vf.createIRI(EX, "p1");
+				IRI p2 = vf.createIRI(EX, "p2");
+				IRI p3 = vf.createIRI(EX, "p3");
+				conn.begin();
+				for (int hub = 0; hub < HUBS; hub++) {
+					IRI subject = vf.createIRI(EX, "hub" + hub);
+					for (int i = 0; i < P1_FANOUT; i++) {
+						// middle nodes are shared across hubs so two-hop probes repeat keys
+						conn.add(subject, p1, vf.createIRI(EX, "a" + ((hub * P1_FANOUT + i) % A_DISTINCT_VALUES)));
+					}
+					for (int i = 0; i < P2_FANOUT; i++) {
+						conn.add(subject, p2, vf.createIRI(EX, "b" + ((hub * P2_FANOUT + i) % P2_DISTINCT_VALUES)));
+					}
 				}
-				for (int i = 0; i < P2_FANOUT; i++) {
-					conn.add(subject, p2, vf.createIRI(EX, "b" + ((hub * P2_FANOUT + i) % P2_DISTINCT_VALUES)));
+				for (int a = 0; a < A_DISTINCT_VALUES; a++) {
+					IRI middle = vf.createIRI(EX, "a" + a);
+					for (int i = 0; i < P3_FANOUT; i++) {
+						conn.add(middle, p3, vf.createIRI(EX, "c" + (a * P3_FANOUT + i)));
+					}
 				}
+				conn.commit();
 			}
-			for (int a = 0; a < A_DISTINCT_VALUES; a++) {
-				IRI middle = vf.createIRI(EX, "a" + a);
-				for (int i = 0; i < P3_FANOUT; i++) {
-					conn.add(middle, p3, vf.createIRI(EX, "c" + (a * P3_FANOUT + i)));
-				}
+			long starSolutions = (long) HUBS * P1_FANOUT * P2_FANOUT;
+			switch (variant) {
+			case "selectHub":
+				query = star("?s");
+				expectedRows = starSolutions;
+				break;
+			case "selectDistinctHub":
+				query = star("DISTINCT ?s");
+				expectedRows = HUBS;
+				break;
+			case "selectTails":
+				query = star("?a ?b");
+				expectedRows = starSolutions;
+				break;
+			case "selectDistinctTail":
+				query = star("DISTINCT ?b");
+				expectedRows = P2_DISTINCT_VALUES;
+				break;
+			case "selectTwoHopLeaf":
+				query = "PREFIX ex: <" + EX + ">\n"
+						+ "SELECT ?s ?c WHERE {\n"
+						+ "  ?s ex:p1 ?a .\n"
+						+ "  ?a ex:p3 ?c .\n"
+						+ "}";
+				expectedRows = (long) HUBS * P1_FANOUT * P3_FANOUT;
+				break;
+			default:
+				throw new IllegalArgumentException(variant);
 			}
-			conn.commit();
-		}
-		long starSolutions = (long) HUBS * P1_FANOUT * P2_FANOUT;
-		switch (variant) {
-		case "selectHub":
-			query = star("?s");
-			expectedRows = starSolutions;
-			break;
-		case "selectDistinctHub":
-			query = star("DISTINCT ?s");
-			expectedRows = HUBS;
-			break;
-		case "selectTails":
-			query = star("?a ?b");
-			expectedRows = starSolutions;
-			break;
-		case "selectDistinctTail":
-			query = star("DISTINCT ?b");
-			expectedRows = P2_DISTINCT_VALUES;
-			break;
-		case "selectTwoHopLeaf":
-			query = "PREFIX ex: <" + EX + ">\n"
-					+ "SELECT ?s ?c WHERE {\n"
-					+ "  ?s ex:p1 ?a .\n"
-					+ "  ?a ex:p3 ?c .\n"
-					+ "}";
-			expectedRows = (long) HUBS * P1_FANOUT * P3_FANOUT;
-			break;
-		default:
-			throw new IllegalArgumentException(variant);
+
+		} catch (Exception | Error failure) {
+			try {
+				tearDown();
+			} catch (Exception | Error cleanupFailure) {
+				failure.addSuppressed(cleanupFailure);
+			}
+			throw failure;
 		}
 	}
 
@@ -148,8 +158,17 @@ public class FactorizedRowsStarBenchmark {
 
 	@TearDown(Level.Trial)
 	public void tearDown() throws IOException {
-		repository.shutDown();
-		FileUtil.deleteDir(dataDir);
+		try (java.io.Closeable directoryCleanup = () -> {
+			if (dataDir != null) {
+				FileUtil.deleteDir(dataDir);
+				dataDir = null;
+			}
+		}) {
+			if (repository != null) {
+				repository.shutDown();
+				repository = null;
+			}
+		}
 	}
 
 	@Benchmark

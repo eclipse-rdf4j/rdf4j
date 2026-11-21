@@ -57,7 +57,7 @@ import org.slf4j.LoggerFactory;
 import org.xml.sax.SAXException;
 
 class SPARQLResultsSAXParser extends SimpleSAXAdapter {
-	private final Logger logger = LoggerFactory.getLogger(this.getClass());
+	private static final Logger logger = LoggerFactory.getLogger(SPARQLResultsSAXParser.class);
 
 	/*-----------*
 	 * Variables *

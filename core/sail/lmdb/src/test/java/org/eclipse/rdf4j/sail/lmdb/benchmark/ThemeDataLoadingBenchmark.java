@@ -54,13 +54,23 @@ public class ThemeDataLoadingBenchmark {
 
 	@Setup(Level.Invocation)
 	public void setupInvocation() throws IOException {
-		Files.createDirectories(BENCHMARK_DIRECTORY);
-		storeDirectory = Files.createTempDirectory(BENCHMARK_DIRECTORY, "store-").toFile();
+		try {
+			Files.createDirectories(BENCHMARK_DIRECTORY);
+			storeDirectory = Files.createTempDirectory(BENCHMARK_DIRECTORY, "store-").toFile();
 
-		LmdbStoreConfig config = ConfigUtil.createConfig();
-		config.setIterationCacheSyncThreshold(0);
-		config.setSketchEstimatorEnabled(false);
-		repository = new SailRepository(new LmdbStore(storeDirectory, config));
+			LmdbStoreConfig config = ConfigUtil.createConfig();
+			config.setIterationCacheSyncThreshold(0);
+			config.setSketchEstimatorEnabled(false);
+			repository = new SailRepository(new LmdbStore(storeDirectory, config));
+
+		} catch (Exception | Error failure) {
+			try {
+				tearDownInvocation();
+			} catch (Exception | Error cleanupFailure) {
+				failure.addSuppressed(cleanupFailure);
+			}
+			throw failure;
+		}
 	}
 
 	@Benchmark

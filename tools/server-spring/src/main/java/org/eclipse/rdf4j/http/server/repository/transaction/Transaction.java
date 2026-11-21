@@ -14,6 +14,9 @@ package org.eclipse.rdf4j.http.server.repository.transaction;
 
 import java.io.IOException;
 import java.io.InputStream;
+import java.util.ArrayList;
+import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 import java.util.concurrent.Callable;
@@ -28,11 +31,14 @@ import org.eclipse.rdf4j.common.transaction.IsolationLevel;
 import org.eclipse.rdf4j.common.transaction.TransactionSetting;
 import org.eclipse.rdf4j.http.client.QueryCircuitBreakerHandle;
 import org.eclipse.rdf4j.http.client.QueryExecutionContext;
+import org.eclipse.rdf4j.http.client.QueryLoggingContext;
 import org.eclipse.rdf4j.model.IRI;
+import org.eclipse.rdf4j.model.Namespace;
 import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.Statement;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.ValueFactory;
+import org.eclipse.rdf4j.model.impl.SimpleNamespace;
 import org.eclipse.rdf4j.model.vocabulary.RDF4J;
 import org.eclipse.rdf4j.model.vocabulary.SESAME;
 import org.eclipse.rdf4j.query.BooleanQuery;
@@ -226,13 +232,13 @@ class Transaction implements AutoCloseable {
 	 * @throws ExecutionException   if an error occurs while executing the operation.
 	 */
 	TupleQueryResult evaluate(TupleQuery tQuery) throws InterruptedException, ExecutionException {
-		Future<TupleQueryResult> result = submit(tQuery::evaluate);
+		Future<TupleQueryResult> result = submitQuery(tQuery::evaluate);
 		return getFromFuture(result);
 	}
 
 	TupleQueryResult evaluate(QueryCircuitBreakerHandle handle, TupleQuery tQuery)
 			throws InterruptedException, ExecutionException {
-		Future<TupleQueryResult> result = submit(() -> executeWithBreaker(handle, tQuery::evaluate));
+		Future<TupleQueryResult> result = submitQuery(() -> executeWithBreaker(handle, tQuery::evaluate));
 		return getFromFuture(result);
 	}
 
@@ -245,13 +251,13 @@ class Transaction implements AutoCloseable {
 	 * @throws ExecutionException   if an error occurs while executing the operation.
 	 */
 	GraphQueryResult evaluate(GraphQuery gQuery) throws InterruptedException, ExecutionException {
-		Future<GraphQueryResult> result = submit(gQuery::evaluate);
+		Future<GraphQueryResult> result = submitQuery(gQuery::evaluate);
 		return getFromFuture(result);
 	}
 
 	GraphQueryResult evaluate(QueryCircuitBreakerHandle handle, GraphQuery gQuery)
 			throws InterruptedException, ExecutionException {
-		Future<GraphQueryResult> result = submit(() -> executeWithBreaker(handle, gQuery::evaluate));
+		Future<GraphQueryResult> result = submitQuery(() -> executeWithBreaker(handle, gQuery::evaluate));
 		return getFromFuture(result);
 	}
 
@@ -264,24 +270,24 @@ class Transaction implements AutoCloseable {
 	 * @throws ExecutionException   if an error occurs while executing the operation.
 	 */
 	boolean evaluate(BooleanQuery bQuery) throws InterruptedException, ExecutionException {
-		Future<Boolean> result = submit(() -> bQuery.evaluate());
+		Future<Boolean> result = submitQuery(bQuery::evaluate);
 		return getFromFuture(result);
 	}
 
 	boolean evaluate(QueryCircuitBreakerHandle handle, BooleanQuery bQuery)
 			throws InterruptedException, ExecutionException {
-		Future<Boolean> result = submit(() -> executeWithBreaker(handle, bQuery::evaluate));
+		Future<Boolean> result = submitQuery(() -> executeWithBreaker(handle, bQuery::evaluate));
 		return getFromFuture(result);
 	}
 
 	Explanation explain(Query query, Explanation.Level level) throws InterruptedException, ExecutionException {
-		Future<Explanation> result = submit(() -> query.explain(level));
+		Future<Explanation> result = submitQuery(() -> query.explain(level));
 		return getFromFuture(result);
 	}
 
 	Explanation explain(QueryCircuitBreakerHandle handle, Query query, Explanation.Level level)
 			throws InterruptedException, ExecutionException {
-		Future<Explanation> result = submit(() -> executeWithBreaker(handle, () -> query.explain(level)));
+		Future<Explanation> result = submitQuery(() -> executeWithBreaker(handle, () -> query.explain(level)));
 		return getFromFuture(result);
 	}
 
@@ -314,6 +320,45 @@ class Transaction implements AutoCloseable {
 	long getSize(Resource[] contexts) throws InterruptedException, ExecutionException {
 		Future<Long> result = submit(() -> txnConnection.size(contexts));
 		return getFromFuture(result);
+	}
+
+	String getNamespace(String prefix) throws InterruptedException, ExecutionException {
+		return getFromFuture(submit(() -> txnConnection.getNamespace(prefix)));
+	}
+
+	/** Detach namespaces on the owner thread so response serialization never consumes a live repository cursor. */
+	List<Namespace> getNamespaces() throws InterruptedException, ExecutionException {
+		return getFromFuture(submit(() -> {
+			List<Namespace> result = new ArrayList<>();
+			try (var namespaces = txnConnection.getNamespaces()) {
+				while (namespaces.hasNext()) {
+					Namespace namespace = namespaces.next();
+					result.add(new SimpleNamespace(namespace.getPrefix(), namespace.getName()));
+				}
+			}
+			return result;
+		}));
+	}
+
+	void setNamespace(String prefix, String name) throws InterruptedException, ExecutionException {
+		getFromFuture(submit(() -> {
+			txnConnection.setNamespace(prefix, name);
+			return null;
+		}));
+	}
+
+	void removeNamespace(String prefix) throws InterruptedException, ExecutionException {
+		getFromFuture(submit(() -> {
+			txnConnection.removeNamespace(prefix);
+			return null;
+		}));
+	}
+
+	void clearNamespaces() throws InterruptedException, ExecutionException {
+		getFromFuture(submit(() -> {
+			txnConnection.clearNamespaces();
+			return null;
+		}));
 	}
 
 	/**
@@ -527,6 +572,17 @@ class Transaction implements AutoCloseable {
 		// note that it need to be decremented once the Future completes
 		activeOperations.incrementAndGet();
 		return result;
+	}
+
+	/** Capture request identifiers before dispatch; the worker may outlive the originating servlet request. */
+	private <T> Future<T> submitQuery(Callable<T> callable) {
+		Map<String, String> loggingContext = new LinkedHashMap<>(QueryLoggingContext.captureMdc());
+		loggingContext.put(QueryLoggingContext.TRANSACTION_ID, id.toString());
+		return submit(() -> {
+			try (QueryLoggingContext.Activation ignored = QueryLoggingContext.activateMdc(loggingContext)) {
+				return callable.call();
+			}
+		});
 	}
 
 	/**

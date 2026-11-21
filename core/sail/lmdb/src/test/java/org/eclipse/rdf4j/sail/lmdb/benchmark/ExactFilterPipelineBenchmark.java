@@ -70,29 +70,39 @@ public class ExactFilterPipelineBenchmark {
 
 	@Setup(Level.Trial)
 	public void setUp() throws IOException {
-		dataDir = Files.newTemporaryFolder();
-		LmdbStoreConfig config = new LmdbStoreConfig("spoc,posc,ospc").setSketchEstimatorEnabled(true);
-		config.setExperimentalQueryOptimizations(true);
-		LmdbStore store = new LmdbStore(dataDir, config);
-		repository = new SailRepository(store);
-		BenchmarkJoinEstimatorSupport.prepareEstimatorForBulkLoad(repository, store);
-		loadData();
-		BenchmarkJoinEstimatorSupport.persistEstimatorAfterBulkLoad(repository, store);
-		store.setEvaluationStrategyFactory(new ExactFilterPipelineBenchmarkEvaluationStrategyFactory(
-				"candidatePipeline".equals(mode)));
+		try {
+			dataDir = Files.newTemporaryFolder();
+			LmdbStoreConfig config = new LmdbStoreConfig("spoc,posc,ospc").setSketchEstimatorEnabled(true);
+			config.setExperimentalQueryOptimizations(true);
+			LmdbStore store = new LmdbStore(dataDir, config);
+			repository = new SailRepository(store);
+			BenchmarkJoinEstimatorSupport.prepareEstimatorForBulkLoad(repository, store);
+			loadData();
+			BenchmarkJoinEstimatorSupport.persistEstimatorAfterBulkLoad(repository, store);
+			store.setEvaluationStrategyFactory(new ExactFilterPipelineBenchmarkEvaluationStrategyFactory(
+					"candidatePipeline".equals(mode)));
 
-		query = exactFilterQuery();
-		String optimizedPlan;
-		try (SailRepositoryConnection connection = repository.getConnection()) {
-			optimizedPlan = connection.prepareTupleQuery(QueryLanguage.SPARQL, query)
-					.explain(Explanation.Level.Optimized)
-					.toString();
-		}
-		boolean shouldRewrite = "candidatePipeline".equals(mode) && distinctValueCount <= 64;
-		boolean hasValues = optimizedPlan.contains("BindingSetAssignment");
-		if (hasValues != shouldRewrite) {
-			throw new IllegalStateException(mode + " with " + distinctValueCount
-					+ " constants produced an unexpected optimized shape:\n" + optimizedPlan);
+			query = exactFilterQuery();
+			String optimizedPlan;
+			try (SailRepositoryConnection connection = repository.getConnection()) {
+				optimizedPlan = connection.prepareTupleQuery(QueryLanguage.SPARQL, query)
+						.explain(Explanation.Level.Optimized)
+						.toString();
+			}
+			boolean shouldRewrite = "candidatePipeline".equals(mode) && distinctValueCount <= 64;
+			boolean hasValues = optimizedPlan.contains("BindingSetAssignment");
+			if (hasValues != shouldRewrite) {
+				throw new IllegalStateException(mode + " with " + distinctValueCount
+						+ " constants produced an unexpected optimized shape:\n" + optimizedPlan);
+			}
+
+		} catch (Exception | Error failure) {
+			try {
+				tearDown();
+			} catch (Exception | Error cleanupFailure) {
+				failure.addSuppressed(cleanupFailure);
+			}
+			throw failure;
 		}
 	}
 
@@ -139,11 +149,16 @@ public class ExactFilterPipelineBenchmark {
 
 	@TearDown(Level.Trial)
 	public void tearDown() throws IOException {
-		if (repository != null) {
-			repository.shutDown();
-		}
-		if (dataDir != null) {
-			FileUtil.deleteDir(dataDir);
+		try (java.io.Closeable directoryCleanup = () -> {
+			if (dataDir != null) {
+				FileUtil.deleteDir(dataDir);
+				dataDir = null;
+			}
+		}) {
+			if (repository != null) {
+				repository.shutDown();
+				repository = null;
+			}
 		}
 	}
 }

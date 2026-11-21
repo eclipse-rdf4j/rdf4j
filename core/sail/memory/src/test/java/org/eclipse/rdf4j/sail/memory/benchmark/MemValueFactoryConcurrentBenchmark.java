@@ -78,49 +78,61 @@ public class MemValueFactoryConcurrentBenchmark extends BaseConcurrentBenchmark 
 
 	@Setup(Level.Trial)
 	public void setup() throws Exception {
-		super.setup();
-		repository = new SailRepository(new MemoryStore());
+		boolean initialized = false;
+		try {
+			super.setup();
+			repository = new SailRepository(new MemoryStore());
 
-		try (SailRepositoryConnection connection = repository.getConnection()) {
-			connection.begin(IsolationLevels.NONE);
-			try (InputStream resourceAsStream = getResourceAsStream("benchmarkFiles/datagovbe-valid.ttl.gz")) {
-				connection.add(resourceAsStream, RDFFormat.TURTLE);
-			}
-			connection.commit();
+			try (SailRepositoryConnection connection = repository.getConnection()) {
+				connection.begin(IsolationLevels.NONE);
+				try (InputStream resourceAsStream = getResourceAsStream("benchmarkFiles/datagovbe-valid.ttl.gz")) {
+					connection.add(resourceAsStream, RDFFormat.TURTLE);
+				}
+				connection.commit();
 
-			List<Value> collect = connection.getStatements(null, null, null)
-					.stream()
-					.flatMap(s -> Stream.of(s.getSubject(), s.getPredicate(), s.getObject()))
-					.distinct()
-					.map(v -> {
-						if (v.isIRI()) {
-							return Values.iri(v.stringValue());
-						} else if (v.isBNode()) {
-							return Values.bnode(v.stringValue());
-						} else if (v.isLiteral()) {
-							Literal literal = (Literal) v;
-							if (literal.getLanguage().isPresent()) {
-								return Values.literal(literal.stringValue(), literal.getLanguage().get());
-							} else {
-								return Values.literal(literal.stringValue(), literal.getDatatype());
+				List<Value> collect = connection.getStatements(null, null, null)
+						.stream()
+						.flatMap(s -> Stream.of(s.getSubject(), s.getPredicate(), s.getObject()))
+						.distinct()
+						.map(v -> {
+							if (v.isIRI()) {
+								return Values.iri(v.stringValue());
+							} else if (v.isBNode()) {
+								return Values.bnode(v.stringValue());
+							} else if (v.isLiteral()) {
+								Literal literal = (Literal) v;
+								if (literal.getLanguage().isPresent()) {
+									return Values.literal(literal.stringValue(), literal.getLanguage().get());
+								} else {
+									return Values.literal(literal.stringValue(), literal.getDatatype());
+								}
 							}
-						}
-						throw new IllegalStateException("Could not map '" + v + "'");
-					})
-					.collect(Collectors.toList());
+							throw new IllegalStateException("Could not map '" + v + "'");
+						})
+						.collect(Collectors.toList());
 
-			Collections.shuffle(collect, new Random(4583295));
+				Collections.shuffle(collect, new Random(4583295));
 
-			values = Lists.partition(collect, BUCKET_SIZE);
+				values = Lists.partition(collect, BUCKET_SIZE);
 
+			}
+			initialized = true;
+		} finally {
+			if (!initialized) {
+				tearDown();
+			}
 		}
-
 	}
 
 	@TearDown(Level.Trial)
 	public void tearDown() throws Exception {
-		super.tearDown();
-		repository.shutDown();
+		try {
+			super.tearDown();
+		} finally {
+			if (repository != null) {
+				repository.shutDown();
+			}
+		}
 	}
 
 	@Benchmark
@@ -147,39 +159,47 @@ public class MemValueFactoryConcurrentBenchmark extends BaseConcurrentBenchmark 
 	public void readHeavy(Blackhole blackhole) throws Exception {
 
 		MemoryStore memoryStore = new MemoryStore();
-		memoryStore.init();
-		MemValueFactory valueFactory = (MemValueFactory) memoryStore.getValueFactory();
+		try {
+			memoryStore.init();
+			MemValueFactory valueFactory = (MemValueFactory) memoryStore.getValueFactory();
 
-		Random random = new Random(48593);
+			Random random = new Random(48593);
 
-		threads(100, () -> {
-			Random r = new Random(random.nextInt());
-			for (int i = 0; i < BUCKET_SIZE; i++) {
-				MemIRI orCreateMemURI = valueFactory
-						.getOrCreateMemURI(Values.iri("http://example.com", "" + r.nextInt(BUCKET_SIZE / 10)));
-				blackhole.consume(orCreateMemURI);
-			}
-		});
+			threads(100, () -> {
+				Random r = new Random(random.nextInt());
+				for (int i = 0; i < BUCKET_SIZE; i++) {
+					MemIRI orCreateMemURI = valueFactory
+							.getOrCreateMemURI(Values.iri("http://example.com", "" + r.nextInt(BUCKET_SIZE / 10)));
+					blackhole.consume(orCreateMemURI);
+				}
+			});
 
+		} finally {
+			memoryStore.shutDown();
+		}
 	}
 
 	@Benchmark
 	public void onlyWrites(Blackhole blackhole) throws Exception {
 
 		MemoryStore memoryStore = new MemoryStore();
-		memoryStore.init();
-		MemValueFactory valueFactory = (MemValueFactory) memoryStore.getValueFactory();
+		try {
+			memoryStore.init();
+			MemValueFactory valueFactory = (MemValueFactory) memoryStore.getValueFactory();
 
-		AtomicInteger atomicInteger = new AtomicInteger();
+			AtomicInteger atomicInteger = new AtomicInteger();
 
-		threads(100, () -> {
-			int base = atomicInteger.incrementAndGet();
-			for (int i = 0; i < BUCKET_SIZE; i++) {
-				IRI iri = valueFactory.createIRI("http://example.com", base + "-" + i);
-				blackhole.consume(iri);
-			}
-		});
+			threads(100, () -> {
+				int base = atomicInteger.incrementAndGet();
+				for (int i = 0; i < BUCKET_SIZE; i++) {
+					IRI iri = valueFactory.createIRI("http://example.com", base + "-" + i);
+					blackhole.consume(iri);
+				}
+			});
 
+		} finally {
+			memoryStore.shutDown();
+		}
 	}
 
 }

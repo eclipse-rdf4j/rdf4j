@@ -81,42 +81,52 @@ public class NativeMergeJoinBenchmark {
 
 	@Setup(Level.Trial)
 	public void setUp() {
-		System.setProperty(LmdbNativeMergeJoin.MIN_ROWS_PROPERTY, "0");
-		System.setProperty(LmdbNativeHashJoin.MIN_ROWS_PROPERTY, "0");
-		switch (mode) {
-		case "mergeJoin":
-			break;
-		case "hashJoin":
-			System.setProperty(LmdbNativeMergeJoin.ENABLED_PROPERTY, "false");
-			break;
-		case "generic":
-			System.setProperty(NATIVE_FLAG, "false");
-			break;
-		default:
-			throw new IllegalArgumentException(mode);
-		}
-		dataDir = Files.newTemporaryFolder();
-		repository = new SailRepository(new LmdbStore(dataDir,
-				new LmdbStoreConfig("spoc,posc,ospc").setNativeEvaluationEnabled(!"generic".equals(mode))));
-		try (SailRepositoryConnection conn = repository.getConnection()) {
-			ValueFactory vf = conn.getValueFactory();
-			IRI dense = vf.createIRI(EX, "p1");
-			IRI sparse = vf.createIRI(EX, "p2");
-			conn.begin();
-			expectedRows = 0;
-			for (int i = 0; i < DENSE_ROWS; i++) {
-				IRI joinObject = vf.createIRI(EX, "x" + i);
-				conn.add(vf.createIRI(EX, "a" + i), dense, joinObject);
-				if (i % matchEvery == 0) {
-					conn.add(vf.createIRI(EX, "b" + i), sparse, joinObject);
-					expectedRows++;
-				}
+		try {
+			System.setProperty(LmdbNativeMergeJoin.MIN_ROWS_PROPERTY, "0");
+			System.setProperty(LmdbNativeHashJoin.MIN_ROWS_PROPERTY, "0");
+			switch (mode) {
+			case "mergeJoin":
+				break;
+			case "hashJoin":
+				System.setProperty(LmdbNativeMergeJoin.ENABLED_PROPERTY, "false");
+				break;
+			case "generic":
+				System.setProperty(NATIVE_FLAG, "false");
+				break;
+			default:
+				throw new IllegalArgumentException(mode);
 			}
-			conn.commit();
+			dataDir = Files.newTemporaryFolder();
+			repository = new SailRepository(new LmdbStore(dataDir,
+					new LmdbStoreConfig("spoc,posc,ospc").setNativeEvaluationEnabled(!"generic".equals(mode))));
+			try (SailRepositoryConnection conn = repository.getConnection()) {
+				ValueFactory vf = conn.getValueFactory();
+				IRI dense = vf.createIRI(EX, "p1");
+				IRI sparse = vf.createIRI(EX, "p2");
+				conn.begin();
+				expectedRows = 0;
+				for (int i = 0; i < DENSE_ROWS; i++) {
+					IRI joinObject = vf.createIRI(EX, "x" + i);
+					conn.add(vf.createIRI(EX, "a" + i), dense, joinObject);
+					if (i % matchEvery == 0) {
+						conn.add(vf.createIRI(EX, "b" + i), sparse, joinObject);
+						expectedRows++;
+					}
+				}
+				conn.commit();
+			}
+			query = "PREFIX ex: <" + EX + ">\n"
+					+ "SELECT ?a ?b ?x WHERE { ?b ex:p2 ?x . ?a ex:p1 ?x }";
+			verifyModeEngagement();
+
+		} catch (Exception | Error failure) {
+			try {
+				tearDown();
+			} catch (Exception | Error cleanupFailure) {
+				failure.addSuppressed(cleanupFailure);
+			}
+			throw failure;
 		}
-		query = "PREFIX ex: <" + EX + ">\n"
-				+ "SELECT ?a ?b ?x WHERE { ?b ex:p2 ?x . ?a ex:p1 ?x }";
-		verifyModeEngagement();
 	}
 
 	/** One probe run proving the intended join operator actually engages for this mode. */
@@ -146,12 +156,22 @@ public class NativeMergeJoinBenchmark {
 
 	@TearDown(Level.Trial)
 	public void tearDown() throws IOException {
-		repository.shutDown();
-		FileUtil.deleteDir(dataDir);
-		System.clearProperty(NATIVE_FLAG);
-		System.clearProperty(LmdbNativeMergeJoin.ENABLED_PROPERTY);
-		System.clearProperty(LmdbNativeMergeJoin.MIN_ROWS_PROPERTY);
-		System.clearProperty(LmdbNativeHashJoin.MIN_ROWS_PROPERTY);
+		try (java.io.Closeable directoryCleanup = () -> {
+			if (dataDir != null) {
+				FileUtil.deleteDir(dataDir);
+				dataDir = null;
+			}
+		}) {
+			if (repository != null) {
+				repository.shutDown();
+				repository = null;
+			}
+		} finally {
+			System.clearProperty(NATIVE_FLAG);
+			System.clearProperty(LmdbNativeMergeJoin.ENABLED_PROPERTY);
+			System.clearProperty(LmdbNativeMergeJoin.MIN_ROWS_PROPERTY);
+			System.clearProperty(LmdbNativeHashJoin.MIN_ROWS_PROPERTY);
+		}
 	}
 
 	@Benchmark

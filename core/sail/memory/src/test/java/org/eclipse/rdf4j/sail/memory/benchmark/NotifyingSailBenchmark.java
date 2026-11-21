@@ -91,48 +91,52 @@ public class NotifyingSailBenchmark {
 		long count = 0;
 
 		Sail memoryStore = new TestNotifyingSail(new MemoryStore());
-		memoryStore.init();
+		try {
+			memoryStore.init();
 
-		try (SailConnection connection = memoryStore.getConnection()) {
-			connection.begin(IsolationLevels.valueOf(isolationLevel));
-			statementList.forEach(getStatementConsumer(connection));
+			try (SailConnection connection = memoryStore.getConnection()) {
+				connection.begin(IsolationLevels.valueOf(isolationLevel));
+				statementList.forEach(getStatementConsumer(connection));
 
-			connection.commit();
-			count += getCount(connection);
-		}
-		try (SailConnection connection = memoryStore.getConnection()) {
-			connection.begin(IsolationLevels.valueOf(isolationLevel));
-			realData.forEach(getStatementConsumer(connection));
-
-			connection.commit();
-		}
-
-		try (SailConnection connection = memoryStore.getConnection()) {
-
-			connection.begin(IsolationLevels.valueOf(isolationLevel));
-
-			realDataSmall.forEach(getStatementConsumer(connection));
-
-			ValueFactory vf = memoryStore.getValueFactory();
-			connection.addStatement(vf.createBNode(), RDFS.LABEL, vf.createLiteral("label"));
-
-			for (int i = 0; i < 10; i++) {
+				connection.commit();
 				count += getCount(connection);
 			}
+			try (SailConnection connection = memoryStore.getConnection()) {
+				connection.begin(IsolationLevels.valueOf(isolationLevel));
+				realData.forEach(getStatementConsumer(connection));
 
-			connection.commit();
+				connection.commit();
+			}
 
+			try (SailConnection connection = memoryStore.getConnection()) {
+
+				connection.begin(IsolationLevels.valueOf(isolationLevel));
+
+				realDataSmall.forEach(getStatementConsumer(connection));
+
+				ValueFactory vf = memoryStore.getValueFactory();
+				connection.addStatement(vf.createBNode(), RDFS.LABEL, vf.createLiteral("label"));
+
+				for (int i = 0; i < 10; i++) {
+					count += getCount(connection);
+				}
+
+				connection.commit();
+
+			}
+
+			try (SailConnection connection = memoryStore.getConnection()) {
+				connection.begin(IsolationLevels.valueOf(isolationLevel));
+				realDataRandom.forEach(getStatementConsumer(connection));
+
+				connection.commit();
+			}
+
+			return count;
+
+		} finally {
+			memoryStore.shutDown();
 		}
-
-		try (SailConnection connection = memoryStore.getConnection()) {
-			connection.begin(IsolationLevels.valueOf(isolationLevel));
-			realDataRandom.forEach(getStatementConsumer(connection));
-
-			connection.commit();
-		}
-
-		return count;
-
 	}
 
 	private long getCount(SailConnection connection) {
