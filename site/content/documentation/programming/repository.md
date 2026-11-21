@@ -674,6 +674,10 @@ keywordQuery.setBinding("keyword", literal(keyword));
 TupleQueryResult keywordQueryResult = keywordQuery.evaluate();
 ```
 
+#### Selecting GRAPH algebra for extension compatibility
+
+`QueryParseOptions` can select `AUTO`, `LEGACY`, or `GRAPH` algebra for subsequent query and update preparations. AUTO is resolved by the local evaluation path; standalone parsing retains legacy algebra. Use an explicit LEGACY setting when an extension cannot consume the new `Graph` node. See [GRAPH algebra compatibility](../graph-algebra-compatibility/) for policy precedence, historical limitations, and remote repository boundaries.
+
 #### Addressing a blank node by its repository ID
 
 RDF4J enables fixed blank node references in SPARQL by default. This deliberately revises the BNR-1 proposal's opt-in

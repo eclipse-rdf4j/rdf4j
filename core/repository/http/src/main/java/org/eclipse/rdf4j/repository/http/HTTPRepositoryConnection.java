@@ -185,6 +185,11 @@ class HTTPRepositoryConnection extends AbstractRepositoryConnection implements H
 	}
 
 	@Override
+	public boolean isQueryTextTransport() {
+		return true;
+	}
+
+	@Override
 	public void begin() throws RepositoryException {
 		verifyIsOpen();
 		verifyNotTxnActive("Connection already has an active transaction");

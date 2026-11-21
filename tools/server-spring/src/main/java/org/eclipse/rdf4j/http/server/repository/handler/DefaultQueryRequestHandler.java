@@ -197,7 +197,8 @@ public class DefaultQueryRequestHandler extends AbstractQueryRequestHandler {
 		String baseIRI = request.getParameter(Protocol.BASEURI_PARAM_NAME);
 
 		try {
-			repositoryCon.setQueryParseOptions(RepositoryInterceptor.getQueryParseOptions(request));
+			RepositoryInterceptor.applyQueryParseOptions(repositoryCon,
+					RepositoryInterceptor.getQueryParseOptions(request));
 			Query query = repositoryCon.prepareQuery(queryLn, queryString, baseIRI);
 
 			setQueryParameters(request, repositoryCon, query);

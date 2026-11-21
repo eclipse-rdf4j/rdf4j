@@ -15,14 +15,17 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.mockito.Mockito.doReturn;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 import java.util.Comparator;
+import java.util.List;
 import java.util.Set;
 
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
+import org.eclipse.rdf4j.common.iteration.CloseableIteratorIteration;
 import org.eclipse.rdf4j.common.iteration.EmptyIteration;
 import org.eclipse.rdf4j.common.order.StatementOrder;
 import org.eclipse.rdf4j.model.IRI;
@@ -37,6 +40,26 @@ import org.eclipse.rdf4j.sail.SailException;
 import org.junit.jupiter.api.Test;
 
 class UnionSailDatasetTest {
+
+	@Test
+	void overlappingContextIdsAreReturnedOnce() {
+		var factory = SimpleValueFactory.getInstance();
+		var shared = factory.createIRI("urn:shared");
+		var firstOnly = factory.createIRI("urn:first");
+		var secondOnly = factory.createBNode("second");
+		SailDataset first = mock(SailDataset.class);
+		SailDataset second = mock(SailDataset.class);
+		doReturn(new CloseableIteratorIteration<>(List.of(firstOnly, shared).iterator()))
+				.when(first)
+				.getContextIDs();
+		doReturn(new CloseableIteratorIteration<>(List.of(shared, secondOnly).iterator()))
+				.when(second)
+				.getContextIDs();
+		try (SailDataset dataset = UnionSailDataset.getInstance(first, second);
+				var contexts = dataset.getContextIDs()) {
+			assertEquals(List.of(firstOnly, shared, secondOnly), contexts.stream().toList());
+		}
+	}
 
 	@Test
 	void nestedNamespaceChangesPreserveNativeStatementCounting() {
