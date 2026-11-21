@@ -259,6 +259,41 @@ class LmdbRecordIteratorCancellationTest {
 	}
 
 	@Test
+	void genericCountAndExistenceObserveTheCallingOwner() throws Exception {
+		LmdbStore store = new LmdbStore(directory.toFile(), new LmdbStoreConfig("spoc")
+				.setDirectAdjacencyEnabled(false));
+		SailRepository repository = new SailRepository(store);
+		try {
+			repository.init();
+			var values = repository.getValueFactory();
+			IRI subject = values.createIRI("urn:generic-owner:subject");
+			IRI predicate = values.createIRI("urn:generic-owner:predicate");
+			try (var connection = repository.getConnection()) {
+				connection.add(subject, predicate, subject);
+			}
+			try (var dataset = NativeQuerySourceAccess.openExplicitDataset(store)) {
+				assertEquals(1L, dataset.getStatementCount(subject, predicate, null));
+				assertTrue(dataset.hasStatements(subject, predicate, null));
+				// These calls open and drain their cursor before returning, so no caller holds a handle to request
+				// cancellation on. The owner entered on the calling thread is the only signal that can stop them.
+				NativeCancellationToken owner = new NativeCancellationToken();
+				owner.requestCancellation();
+				try (var ownerScope = owner.enter()) {
+					var count = assertThrows(KernelQueryCancelledException.class,
+							() -> dataset.getStatementCount(subject, predicate, null));
+					assertSame(owner, count.origin());
+					var existence = assertThrows(KernelQueryCancelledException.class,
+							() -> dataset.hasStatements(subject, predicate, null));
+					assertSame(owner, existence.origin());
+				}
+				assertEquals(1L, dataset.getStatementCount(subject, predicate, null));
+			}
+		} finally {
+			repository.shutDown();
+		}
+	}
+
+	@Test
 	void repeatedShortProbesSharePollBudgetAcrossCursorAndScopeReentry() throws Exception {
 		LmdbStore store = new LmdbStore(directory.toFile(), new LmdbStoreConfig("spoc,posc")
 				.setDirectAdjacencyEnabled(false));

@@ -9764,8 +9764,11 @@ class LmdbSailStore implements SailStore {
 			}
 		}
 
+		// The scan opens and drains inside this call, so no caller holds a cursor to request cancellation on.
+		// Bind it to the owner entered on the calling thread, as the native count path does.
+		CursorCancellation cancellation = NativeLmdbQuerySource.captureCursorCancellation();
 		if (contexts.length == 0) {
-			return source.count(subjID, predID, objID, LmdbValue.UNKNOWN_ID);
+			return source.count(subjID, predID, objID, LmdbValue.UNKNOWN_ID, cancellation);
 		}
 
 		long count = 0;
@@ -9781,7 +9784,7 @@ class LmdbSailStore implements SailStore {
 			} else {
 				continue;
 			}
-			count += source.count(subjID, predID, objID, contextID);
+			count += source.count(subjID, predID, objID, contextID, cancellation);
 		}
 		return count;
 	}
@@ -9822,8 +9825,10 @@ class LmdbSailStore implements SailStore {
 			}
 		}
 
+		// As for counts: the existence scan never leaves this call, so only the calling owner can stop it.
+		CursorCancellation cancellation = NativeLmdbQuerySource.captureCursorCancellation();
 		if (contexts.length == 0) {
-			return source.has(subjID, predID, objID, LmdbValue.UNKNOWN_ID);
+			return source.has(subjID, predID, objID, LmdbValue.UNKNOWN_ID, null, cancellation);
 		}
 
 		for (Resource context : contexts) {
@@ -9838,7 +9843,7 @@ class LmdbSailStore implements SailStore {
 			} else {
 				continue;
 			}
-			if (source.has(subjID, predID, objID, contextID)) {
+			if (source.has(subjID, predID, objID, contextID, null, cancellation)) {
 				return true;
 			}
 		}

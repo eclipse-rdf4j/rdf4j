@@ -74,8 +74,8 @@ import org.eclipse.rdf4j.sail.features.SailResultValueExposure;
 import org.eclipse.rdf4j.sail.features.SailResultValueExtractor;
 import org.eclipse.rdf4j.sail.helpers.DefaultSailChangedEvent;
 import org.eclipse.rdf4j.sail.helpers.SlowQueryContextHolder;
-import org.eclipse.rdf4j.sail.lmdb.RepositoryValueIteration.SourcePull;
 import org.eclipse.rdf4j.sail.helpers.SlowQuerySupport;
+import org.eclipse.rdf4j.sail.lmdb.RepositoryValueIteration.SourcePull;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.NativeProjectedBindingSet;
 import org.eclipse.rdf4j.sail.lmdb.model.LmdbValue;
 
@@ -1036,7 +1036,7 @@ public class LmdbStoreConnection extends SailSourceConnection implements SailRes
 				}
 				TupleExpr attemptExpression = explanationCapture == null ? expression : (TupleExpr) expression.clone();
 				CloseableIteration<? extends BindingSet> evaluation = openEvaluation(attemptExpression, queryDataset,
-					queryBindings, queryIncludeInferred, valueScope);
+						queryBindings, queryIncludeInferred, valueScope);
 				if (explanationCapture != null) {
 					// The optimized model itself escapes through Explanation after its iteration is closed.
 					// Complete its values while this read attempt still owns its epoch and native capabilities.
