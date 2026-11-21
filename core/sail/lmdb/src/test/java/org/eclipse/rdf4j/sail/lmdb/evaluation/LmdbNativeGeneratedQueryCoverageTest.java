@@ -59,6 +59,7 @@ import org.eclipse.rdf4j.query.algebra.evaluation.impl.QueryEvaluationContext;
 import org.eclipse.rdf4j.query.algebra.helpers.AbstractQueryModelVisitor;
 import org.eclipse.rdf4j.query.explanation.Explanation;
 import org.eclipse.rdf4j.query.explanation.GenericPlanNode;
+import org.eclipse.rdf4j.query.explanation.StrategyDecision;
 import org.eclipse.rdf4j.query.impl.EmptyBindingSet;
 import org.eclipse.rdf4j.query.parser.ParsedQuery;
 import org.eclipse.rdf4j.query.parser.ParsedTupleQuery;
@@ -95,6 +96,9 @@ class LmdbNativeGeneratedQueryCoverageTest {
 	private static final int ENABLED_CATEGORY_COUNT = 17;
 	private static final int QUERY_TIMEOUT_SECONDS = 3;
 	private static final int KERNEL_WARMUP_RUNS = 6;
+	private static final String KERNEL_FAMILY_PREFERENCE = String.join(",", LmdbNativeAttemptMetrics.PATH_IR_KERNEL,
+			LmdbNativeAttemptMetrics.PATH_IR_KERNEL_INTERPRETED, LmdbNativeAttemptMetrics.PATH_IR_AGGREGATE,
+			LmdbNativeAttemptMetrics.PATH_IR_AGGREGATE_INTERPRETED);
 	private static final Pattern KERNEL_DECLINE = Pattern.compile("([A-Za-z][A-Za-z0-9]*):([^ ,)|]+)");
 	private static final Set<String> NON_CAPABILITY_REASONS = Set.of("below-threshold-or-pending",
 			"no-fusion-opportunity", "higher-cost", "outranked", "probe-trial-lost", "adaptive-higher-cost",
@@ -494,7 +498,8 @@ class LmdbNativeGeneratedQueryCoverageTest {
 						expected = genericRows(query.sparql(), unordered);
 					}
 					resetMetricsOnly();
-					List<String> actual = nativeRowsUntilClassified(query.sparql(), unordered);
+					List<String> actual = nativeRowsUntilClassified(query.sparql(), unordered,
+							KERNEL_FAMILY_PREFERENCE);
 					if (nondeterministic) {
 						counts.nondeterministic++;
 					} else if (!actual.equals(expected)) {
@@ -1422,7 +1427,17 @@ class LmdbNativeGeneratedQueryCoverageTest {
 	}
 
 	private List<String> nativeRowsUntilClassified(String query, boolean unordered) {
-		List<String> result = rows(query, unordered);
+		return nativeRowsUntilClassified(query, unordered, null);
+	}
+
+	/**
+	 * The census corpus prefers the kernel family at every decision point where a tier is a candidate (a soft
+	 * preference list: a pending compilation moves on to the interpreted tier, a point without a kernel candidate is
+	 * left to the selector). The measured selector prices every kernel above the sequential path on this fixture, so an
+	 * unforced census would never open a kernel and could not tell capability from cost.
+	 */
+	private List<String> nativeRowsUntilClassified(String query, boolean unordered, String forcedStrategy) {
+		List<String> result = rows(query, unordered, forcedStrategy);
 		for (int round = 1; round < KERNEL_WARMUP_RUNS && openedKernels() == 0L
 				&& (plannedKernels() > 0L || declinedKernels() > 0L); round++) {
 			try {
@@ -1433,7 +1448,7 @@ class LmdbNativeGeneratedQueryCoverageTest {
 				Thread.currentThread().interrupt();
 				throw new AssertionError("interrupted while waiting for Janino compilation", interrupted);
 			}
-			result = rows(query, unordered);
+			result = rows(query, unordered, forcedStrategy);
 		}
 		return result;
 	}
@@ -1584,8 +1599,40 @@ class LmdbNativeGeneratedQueryCoverageTest {
 			org.eclipse.rdf4j.query.TupleQuery prepared = connection.prepareTupleQuery(QueryLanguage.SPARQL, query);
 			prepared.setMaxExecutionTime(QUERY_TIMEOUT_SECONDS);
 			collectDeclineReasons(prepared.explain(Explanation.Level.Telemetry).toGenericPlanNode(), declines);
+			collectOutrankedKernels(prepared.explain(Explanation.Level.Optimized).toGenericPlanNode(), declines);
 		}
 		return declines;
+	}
+
+	/**
+	 * The dispatch loop records only admission-time declines in the telemetry metric. A kernel tier that was admitted
+	 * and priced but lost to a cheaper candidate is not a decline there; it appears in the Optimized strategy decision
+	 * as a candidate that can attempt and was not selected, which is the non-capability "outranked" state of the
+	 * coverage classification.
+	 */
+	private void collectOutrankedKernels(GenericPlanNode node, Set<StrategyDecline> declines) {
+		List<StrategyDecision> decisions = node.getStrategyDecisions();
+		if (decisions != null) {
+			for (StrategyDecision decision : decisions) {
+				for (StrategyDecision.Candidate candidate : decision.candidates()) {
+					String strategy = candidate.strategy();
+					if (!(strategy.startsWith("irKernel") || strategy.startsWith("irAggregate"))
+							|| strategy.equals(decision.wouldSelect())) {
+						continue;
+					}
+					if (!Boolean.FALSE.equals(candidate.canAttempt())) {
+						// admission-time declines are already in the telemetry metric; only the priced loser is new
+						declines.add(new StrategyDecline(strategy, "outranked"));
+					}
+				}
+			}
+		}
+		List<GenericPlanNode> children = node.getPlans();
+		if (children != null) {
+			for (GenericPlanNode child : children) {
+				collectOutrankedKernels(child, declines);
+			}
+		}
 	}
 
 	private void collectDeclineReasons(GenericPlanNode node, Set<StrategyDecline> declines) {

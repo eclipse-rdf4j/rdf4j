@@ -259,7 +259,6 @@ class LmdbNativeIrAggregateParallelTest {
 		System.setProperty("rdf4j.lmdb.parallel.threads", "4");
 		System.setProperty("rdf4j.lmdb.parallel.minWorkEstimate", "1");
 		System.setProperty("rdf4j.lmdb.parallel.startupWork", "0");
-		KernelExecutionTestAccess.resetCostCalibration();
 	}
 
 	@AfterEach
@@ -286,14 +285,16 @@ class LmdbNativeIrAggregateParallelTest {
 		long parallelBefore = LmdbNativeParallelKernelAggregate.PARALLEL_RUNS.get();
 		for (int round = 0; round < 300
 				&& LmdbNativeParallelKernelAggregate.PARALLEL_RUNS.get() == parallelBefore; round++) {
-			assertThat(rows(GROUPED_QUERY)).as("parity on round " + round)
+			assertThat(rows(GROUPED_QUERY, LmdbNativeAttemptMetrics.PATH_IR_AGGREGATE_PARALLEL))
+					.as("parity on round " + round)
 					.containsExactlyInAnyOrderElementsOf(expected);
 		}
 		assertThat(LmdbNativeParallelKernelAggregate.PARALLEL_RUNS.get())
 				.as("the compiled aggregate must run partitioned across workers")
 				.isGreaterThan(parallelBefore);
 		// one more run with the parallel path known-active must still be exact
-		assertThat(rows(GROUPED_QUERY)).containsExactlyInAnyOrderElementsOf(expected);
+		assertThat(rows(GROUPED_QUERY, LmdbNativeAttemptMetrics.PATH_IR_AGGREGATE_PARALLEL))
+				.containsExactlyInAnyOrderElementsOf(expected);
 	}
 
 	@Test
@@ -337,7 +338,6 @@ class LmdbNativeIrAggregateParallelTest {
 				.isTrue();
 		boolean completeWorkEvidence = irCandidate.path("workEvidenceComplete").asBoolean();
 		JsonNode partialEstimate = irCandidate.path("partialEstimate");
-		JsonNode expectedPrior = irCandidate.path("expectedPlanningPrior");
 		assertThat(completeWorkEvidence)
 				.as("the multi-stage IR lane is compared on its point-estimate planning quote, so its comparable "
 						+ "work is complete even though no typed physical total is proved: %s", irCandidate)
@@ -345,46 +345,6 @@ class LmdbNativeIrAggregateParallelTest {
 		assertThat(partialEstimate.isNull())
 				.as("expected work must not be smuggled into a model cost vector: %s", irCandidate)
 				.isTrue();
-		assertThat(expectedPrior.isObject())
-				.as("the IR candidate must retain a separate expected planning prior while hard work is incomplete; "
-						+ "candidate=%s inventory=%s", irCandidate, inventory)
-				.isTrue();
-		JsonNode expectedWork = expectedPrior.path("expectedTotalWork");
-		assertThat(expectedWork.isNumber())
-				.as("the expected planning prior must carry work units: %s", expectedPrior)
-				.isTrue();
-		assertThat(expectedWork.asDouble())
-				.as("the expected IR work must be finite and positive: %s", expectedPrior)
-				.isFinite()
-				.isPositive();
-		assertThat(expectedPrior.path("expectedBeforeFirstOutputWork").asDouble())
-				.as("aggregate output is materialized before its first row, so LIMIT cannot prorate this work")
-				.isEqualTo(expectedWork.asDouble());
-	}
-
-	@Test
-	void multiPatternAggregateProposalCarriesBudgetedExecutionResourceWitness() {
-		System.setProperty("rdf4j.lmdb.nativeQueryEngine.enabled", "true");
-		System.setProperty("rdf4j.lmdb.janinoCodegen.enabled", "false");
-
-		JsonNode inventory = parseQuotes(explainPlan(GROUPED_QUERY, null));
-		JsonNode candidate = candidate(inventory,
-				LmdbNativeAttemptMetrics.PATH_IR_AGGREGATE_PARALLEL_INTERPRETED);
-		assertThat(candidate).as("the interpreted parallel aggregate must pass lowering admission: %s", inventory)
-				.isNotNull();
-		JsonNode witness = candidate.path("executionResourceWitness");
-		assertThat(witness.isObject())
-				.as("normal selection needs a separate resource witness from admitted kernel ownership: %s", candidate)
-				.isTrue();
-		assertThat(witness.path("queryLedgerBounded").asBoolean())
-				.as("aggregate retained state must be charged to the query ledger: %s", witness)
-				.isTrue();
-		assertThat(witness.path("workerSlotsReservedOnOpen").asBoolean())
-				.as("parallel task slots must be reserved by the selected opener: %s", witness)
-				.isTrue();
-		assertThat(witness.has("inputReductionProof"))
-				.as("the resource witness must not claim input reduction or a cold physical anchor: %s", witness)
-				.isFalse();
 	}
 
 	@Test
@@ -548,13 +508,15 @@ class LmdbNativeIrAggregateParallelTest {
 		long parallelBefore = LmdbNativeParallelKernelAggregate.PARALLEL_RUNS.get();
 		for (int round = 0; round < 300
 				&& LmdbNativeParallelKernelAggregate.PARALLEL_RUNS.get() == parallelBefore; round++) {
-			assertThat(rows(DOMAIN_ROOT_QUERY)).as("parity on round " + round)
+			assertThat(rows(DOMAIN_ROOT_QUERY, LmdbNativeAttemptMetrics.PATH_IR_AGGREGATE_PARALLEL))
+					.as("parity on round " + round)
 					.containsExactlyInAnyOrderElementsOf(expected);
 		}
 		assertThat(LmdbNativeParallelKernelAggregate.PARALLEL_RUNS.get())
 				.as("a domain-rooted aggregate kernel must partition by domain slice")
 				.isGreaterThan(parallelBefore);
-		assertThat(rows(DOMAIN_ROOT_QUERY)).containsExactlyInAnyOrderElementsOf(expected);
+		assertThat(rows(DOMAIN_ROOT_QUERY, LmdbNativeAttemptMetrics.PATH_IR_AGGREGATE_PARALLEL))
+				.containsExactlyInAnyOrderElementsOf(expected);
 	}
 
 	@Test
@@ -569,14 +531,16 @@ class LmdbNativeIrAggregateParallelTest {
 		long parallelBefore = LmdbNativeParallelKernelAggregate.PARALLEL_RUNS.get();
 		for (int round = 0; round < 300
 				&& LmdbNativeParallelKernelAggregate.PARALLEL_RUNS.get() == parallelBefore; round++) {
-			assertThat(rows(FORKABLE_FILTER_QUERY)).as("parity on round " + round)
+			assertThat(rows(FORKABLE_FILTER_QUERY, LmdbNativeAttemptMetrics.PATH_IR_AGGREGATE_PARALLEL))
+					.as("parity on round " + round)
 					.containsExactlyInAnyOrderElementsOf(expected);
 		}
 		assertThat(LmdbNativeParallelKernelAggregate.PARALLEL_RUNS.get())
 				.as("a forkable filter must fork per worker, not force the sequential drain")
 				.isGreaterThan(parallelBefore);
 		// one more run with the parallel path known-active must still be exact
-		assertThat(rows(FORKABLE_FILTER_QUERY)).containsExactlyInAnyOrderElementsOf(expected);
+		assertThat(rows(FORKABLE_FILTER_QUERY, LmdbNativeAttemptMetrics.PATH_IR_AGGREGATE_PARALLEL))
+				.containsExactlyInAnyOrderElementsOf(expected);
 	}
 
 	@Test
@@ -591,13 +555,15 @@ class LmdbNativeIrAggregateParallelTest {
 		long parallelBefore = LmdbNativeParallelKernelAggregate.PARALLEL_RUNS.get();
 		for (int round = 0; round < 300
 				&& LmdbNativeParallelKernelAggregate.PARALLEL_RUNS.get() == parallelBefore; round++) {
-			assertThat(rows(CONTEXTUAL_TERM_FILTER_QUERY)).as("parity on round " + round)
+			assertThat(rows(CONTEXTUAL_TERM_FILTER_QUERY, LmdbNativeAttemptMetrics.PATH_IR_AGGREGATE_PARALLEL))
+					.as("parity on round " + round)
 					.containsExactlyInAnyOrderElementsOf(expected);
 		}
 		assertThat(LmdbNativeParallelKernelAggregate.PARALLEL_RUNS.get())
 				.as("contextual scalar filters must bind against the worker source before execution")
 				.isGreaterThan(parallelBefore);
-		assertThat(rows(CONTEXTUAL_TERM_FILTER_QUERY)).containsExactlyInAnyOrderElementsOf(expected);
+		assertThat(rows(CONTEXTUAL_TERM_FILTER_QUERY, LmdbNativeAttemptMetrics.PATH_IR_AGGREGATE_PARALLEL))
+				.containsExactlyInAnyOrderElementsOf(expected);
 	}
 
 	@Test
@@ -612,13 +578,15 @@ class LmdbNativeIrAggregateParallelTest {
 		long parallelBefore = LmdbNativeParallelKernelAggregate.PARALLEL_RUNS.get();
 		for (int round = 0; round < 300
 				&& LmdbNativeParallelKernelAggregate.PARALLEL_RUNS.get() == parallelBefore; round++) {
-			assertThat(rows(COMPUTED_GROUP_QUERY)).as("parity on round " + round)
+			assertThat(rows(COMPUTED_GROUP_QUERY, LmdbNativeAttemptMetrics.PATH_IR_AGGREGATE_PARALLEL))
+					.as("parity on round " + round)
 					.containsExactlyInAnyOrderElementsOf(expected);
 		}
 		assertThat(LmdbNativeParallelKernelAggregate.PARALLEL_RUNS.get())
 				.as("a pure replay-safe computed aggregate must run partitioned")
 				.isGreaterThan(parallelBefore);
-		assertThat(rows(COMPUTED_GROUP_QUERY)).containsExactlyInAnyOrderElementsOf(expected);
+		assertThat(rows(COMPUTED_GROUP_QUERY, LmdbNativeAttemptMetrics.PATH_IR_AGGREGATE_PARALLEL))
+				.containsExactlyInAnyOrderElementsOf(expected);
 	}
 
 	/**
@@ -643,13 +611,15 @@ class LmdbNativeIrAggregateParallelTest {
 		long parallelBefore = LmdbNativeParallelKernelAggregate.PARALLEL_RUNS.get();
 		for (int round = 0; round < 300
 				&& LmdbNativeParallelKernelAggregate.PARALLEL_RUNS.get() == parallelBefore; round++) {
-			assertThat(rows(DISTINCT_QUERY)).as("parity on round " + round)
+			assertThat(rows(DISTINCT_QUERY, LmdbNativeAttemptMetrics.PATH_IR_AGGREGATE_PARALLEL))
+					.as("parity on round " + round)
 					.containsExactlyInAnyOrderElementsOf(expected);
 		}
 		assertThat(LmdbNativeParallelKernelAggregate.PARALLEL_RUNS.get())
 				.as("DISTINCT channels merge as a union of id sets, so the rung must partition rather than decline")
 				.isGreaterThan(parallelBefore);
-		assertThat(rows(DISTINCT_QUERY)).containsExactlyInAnyOrderElementsOf(expected);
+		assertThat(rows(DISTINCT_QUERY, LmdbNativeAttemptMetrics.PATH_IR_AGGREGATE_PARALLEL))
+				.containsExactlyInAnyOrderElementsOf(expected);
 	}
 
 	@Test
@@ -691,13 +661,15 @@ class LmdbNativeIrAggregateParallelTest {
 		long parallelBefore = LmdbNativeParallelKernelAggregate.PARALLEL_RUNS.get();
 		for (int round = 0; round < 300
 				&& LmdbNativeParallelKernelAggregate.PARALLEL_RUNS.get() == parallelBefore; round++) {
-			assertThat(rows(DUPLICATE_TERM_EXTREMA_QUERY)).as("parity on round " + round)
+			assertThat(rows(DUPLICATE_TERM_EXTREMA_QUERY, LmdbNativeAttemptMetrics.PATH_IR_AGGREGATE_PARALLEL))
+					.as("parity on round " + round)
 					.containsExactlyInAnyOrderElementsOf(expected);
 		}
 		assertThat(LmdbNativeParallelKernelAggregate.PARALLEL_RUNS.get())
 				.as("equal RDF terms with different physical ids may keep either representative during extrema merge")
 				.isGreaterThan(parallelBefore);
-		assertThat(rows(DUPLICATE_TERM_EXTREMA_QUERY)).containsExactlyInAnyOrderElementsOf(expected);
+		assertThat(rows(DUPLICATE_TERM_EXTREMA_QUERY, LmdbNativeAttemptMetrics.PATH_IR_AGGREGATE_PARALLEL))
+				.containsExactlyInAnyOrderElementsOf(expected);
 	}
 
 	@Test
@@ -725,7 +697,7 @@ class LmdbNativeIrAggregateParallelTest {
 		KernelExecutionTestAccess.resetMetrics();
 		long parallelBefore = LmdbNativeParallelKernelAggregate.PARALLEL_RUNS.get();
 		for (int round = 0; round < 300 && KernelExecutionTestAccess.aggOpened() == 0; round++) {
-			rows(GROUPED_QUERY);
+			rows(GROUPED_QUERY, LmdbNativeAttemptMetrics.PATH_IR_AGGREGATE);
 		}
 		assertThat(KernelExecutionTestAccess.aggOpened()).isGreaterThan(0);
 		assertThat(LmdbNativeParallelKernelAggregate.PARALLEL_RUNS.get()).isEqualTo(parallelBefore);

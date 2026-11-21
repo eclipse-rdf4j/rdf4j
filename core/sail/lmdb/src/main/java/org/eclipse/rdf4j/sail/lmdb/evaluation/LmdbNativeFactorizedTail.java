@@ -146,6 +146,44 @@ final class FactorizedTail {
 		return branches.length;
 	}
 
+	/** How each branch is consumed, for the strategy's cost quote. */
+	LmdbNativeCostVectors.TailBranch[] costBranches() {
+		LmdbNativeCostVectors.TailBranch[] consumers = new LmdbNativeCostVectors.TailBranch[branches.length];
+		for (int b = 0; b < branches.length; b++) {
+			Branch branch = branches[b];
+			LmdbNativeCostVectors.BranchRole role = branch.existenceOnly ? LmdbNativeCostVectors.BranchRole.EXISTS
+					: branch.valueQuadPos.length > 0 ? LmdbNativeCostVectors.BranchRole.ENUM
+							: LmdbNativeCostVectors.BranchRole.COUNT;
+			// grouping by the tail value replays each memoised value of the (single) branch per prefix row
+			int valueSpecs = tailGroupPos >= 0 ? 1 : 0;
+			int distinctSpecs = 0;
+			for (int k = 0; k < specs.length; k++) {
+				if (specBranch[k] != b) {
+					continue;
+				}
+				if (specs[k].distinct) {
+					distinctSpecs++;
+				} else if (specs[k].kind != AggKind.COUNT) {
+					valueSpecs++;
+				}
+			}
+			consumers[b] = new LmdbNativeCostVectors.TailBranch(role,
+					branch.scanOnceAdmission == null ? -1 : branch.varyingSlot, valueSpecs, distinctSpecs);
+		}
+		return consumers;
+	}
+
+	/** Aggregate updates per prefix row: counts and prefix-valued specs fold the branch multiplicities. */
+	int rowSpecs() {
+		int rowSpecs = 0;
+		for (int k = 0; k < specs.length; k++) {
+			if (specBranch[k] < 0 || !specs[k].distinct && specs[k].kind == AggKind.COUNT) {
+				rowSpecs++;
+			}
+		}
+		return rowSpecs;
+	}
+
 	String describeEngagement() {
 		return LmdbNativeAttemptMetrics.PATH_FACTORIZED_TAIL + "(prefix=" + prefixStrategy + ", branches="
 				+ branches.length

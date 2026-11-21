@@ -13,26 +13,16 @@
 package org.eclipse.rdf4j.sail.lmdb.evaluation;
 
 import java.nio.file.Path;
-import java.util.UUID;
 import java.util.function.LongSupplier;
-import java.util.function.Supplier;
 
 import org.eclipse.rdf4j.common.annotation.Experimental;
 
 /**
- * Everything the adaptive cost model needs from the owning store beyond the opaque {@code costModelIdentity()}: where
- * to persist learned evidence ({@code dataDir}), how to fingerprint it ({@code storeUuid}, generations), and the live
- * signals the regime key is composed from. The suppliers cross the package boundary so the evaluation package never
- * needs visibility into {@code LmdbDirectAdjacencyStore}'s package-private state — the maintenance phase travels as its
- * enum name. A source without a context (tests, synthetic sources) reports {@code null} and degrades to the single
- * {@link LmdbNativeRegimeKey#STEADY} regime with no persistence.
+ * What the advisory learner needs from the owning store beyond the opaque {@code costModelIdentity()}: where to persist
+ * what it learned ({@code dataDir}), and a fingerprint of the store's index set ({@code indexGeneration}) that learned
+ * prices are keyed by. A source without a context (tests, synthetic sources) reports {@code null} and is not learned
+ * for. The supplier crosses the package boundary so the evaluation package needs no view of the store's internals.
  */
 @Experimental
-public record LmdbNativeCostModelContext(
-		Path dataDir,
-		UUID storeUuid,
-		LongSupplier adjacencyEpoch,
-		Supplier<String> maintenancePhase,
-		LongSupplier dataGeneration,
-		LongSupplier indexGeneration) {
+public record LmdbNativeCostModelContext(Path dataDir, LongSupplier indexGeneration) {
 }

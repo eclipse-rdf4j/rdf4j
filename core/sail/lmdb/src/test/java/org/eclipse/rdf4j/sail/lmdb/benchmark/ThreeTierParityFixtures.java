@@ -26,9 +26,11 @@ import java.util.concurrent.TimeUnit;
 import org.eclipse.rdf4j.common.transaction.IsolationLevels;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.ValueFactory;
+import org.eclipse.rdf4j.query.TupleQuery;
 import org.eclipse.rdf4j.query.TupleQueryResult;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
 import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
+import org.eclipse.rdf4j.repository.sail.SailTupleQuery;
 import org.eclipse.rdf4j.sail.lmdb.AdjacencyEngagementTestAccess;
 import org.eclipse.rdf4j.sail.lmdb.LmdbStore;
 import org.eclipse.rdf4j.sail.lmdb.LmdbTestUtil;
@@ -385,16 +387,29 @@ final class ThreeTierParityFixtures {
 			return store;
 		}
 
+		/**
+		 * The Janino regime measures the compiled kernels, so it forces that family wherever a decision offers one
+		 * (soft preference list: compiled first, the interpreted twin while compilation is pending, free elsewhere).
+		 * Unforced, the measured selector prices the serial paths below the kernels on corpora this small (2026-11-03),
+		 * and the regime would measure nothing.
+		 */
+		private static final String JANINO_FAMILY = "irKernel,irKernelInterpreted,irAggregate,irAggregateInterpreted";
+
 		/** Evaluates one corpus query and returns its row count. */
 		long execute(ThreeTierParityCorpus entry) {
-			try (SailRepositoryConnection connection = repository.getConnection();
-					TupleQueryResult result = connection.prepareTupleQuery(entry.query()).evaluate()) {
-				long rows = 0L;
-				while (result.hasNext()) {
-					result.next();
-					rows++;
+			try (SailRepositoryConnection connection = repository.getConnection()) {
+				TupleQuery query = connection.prepareTupleQuery(entry.query());
+				if (regime.janinoEnabled()) {
+					((SailTupleQuery) query).setForcedLmdbExecutionStrategy(JANINO_FAMILY);
 				}
-				return rows;
+				try (TupleQueryResult result = query.evaluate()) {
+					long rows = 0L;
+					while (result.hasNext()) {
+						result.next();
+						rows++;
+					}
+					return rows;
+				}
 			}
 		}
 

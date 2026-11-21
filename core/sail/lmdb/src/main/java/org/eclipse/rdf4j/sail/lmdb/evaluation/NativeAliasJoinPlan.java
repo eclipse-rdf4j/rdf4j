@@ -217,9 +217,11 @@ final class NativeAliasJoinPlan implements SlotPlan {
 			return new JoinPlan(left, right);
 		}
 		JoinPlan original = new JoinPlan(left, right);
-		if ((rightReads & ~rightMask) != 0L) {
+		if ((rightReads & ~rightMask) != 0L || SlotPlan.changesFilterFrame(right, left.producedMask())
+				|| SlotPlan.changesFilterFrame(base, rightMask | sourceBit | targets)) {
 			// The right fragment depends on values from the original left frame, so it cannot run as the inverted
-			// alternative. It can still be replayed in original order when its declared reads include those key values.
+			// alternative. Also protect a left predicate from values supplied by the right and reverse alias copies.
+			// It can still be replayed in original order when its declared reads include those key values.
 			return SlotPlan.encounterOrderReplaySafe(right)
 					? new NativeAliasJoinPlan(original, null, targets | sourceBit)
 					: original;

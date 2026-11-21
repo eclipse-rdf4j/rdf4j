@@ -150,7 +150,7 @@ class LmdbNativeRowCancellationTest {
 							assertThat(opens).as("a bare fragment must remain demand-driven across next() yields")
 									.hasValue(index);
 						} else {
-							// Ordinary rows may privately prefetch this small input with NativeProbeBufferHarness.
+							// Ordinary rows may privately prefetch this small input with a private prefetch buffer.
 							assertThat(opens.get()).isBetween(index, 3);
 						}
 					}

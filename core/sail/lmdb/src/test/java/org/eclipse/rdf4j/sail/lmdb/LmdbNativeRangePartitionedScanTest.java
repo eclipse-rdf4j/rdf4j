@@ -26,6 +26,7 @@ import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.QueryResults;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
 import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
+import org.eclipse.rdf4j.repository.sail.SailTupleQuery;
 import org.eclipse.rdf4j.sail.lmdb.LmdbStore;
 import org.eclipse.rdf4j.sail.lmdb.LmdbStoreConnection;
 import org.eclipse.rdf4j.sail.lmdb.config.LmdbStoreConfig;
@@ -85,7 +86,6 @@ public class LmdbNativeRangePartitionedScanTest {
 		System.setProperty(PACKED_FTREE_FLAG, "false");
 		System.setProperty(KERNEL_INTERPRETER_FLAG, "false");
 		System.setProperty(PARALLEL_STARTUP_FLAG, "0");
-		LmdbNativeCostCalibration.reset();
 		repository = new SailRepository(new LmdbStore(dataDir,
 				new LmdbStoreConfig("spoc,posc,ospc").setNativeEvaluationEnabled(true)));
 		try (SailRepositoryConnection connection = repository.getConnection()) {
@@ -116,7 +116,6 @@ public class LmdbNativeRangePartitionedScanTest {
 				repository.shutDown();
 			}
 		} finally {
-			LmdbNativeCostCalibration.reset();
 			restoreProperties(previousProperties);
 		}
 	}
@@ -241,7 +240,10 @@ public class LmdbNativeRangePartitionedScanTest {
 	private List<String> rows(String query) {
 		try (SailRepositoryConnection connection = repository.getConnection()) {
 			ArrayList<String> rows = new ArrayList<>();
-			for (BindingSet row : QueryResults.asList(connection.prepareTupleQuery(query).evaluate())) {
+			SailTupleQuery prepared = (SailTupleQuery) connection.prepareTupleQuery(query);
+			// this suite tests the range-partitioned parallel pipelines, so that operator is forced while enabled
+			prepared.setForcedLmdbExecutionStrategy(parallelEnabled() ? "parallelPipelines" : null);
+			for (BindingSet row : QueryResults.asList(prepared.evaluate())) {
 				rows.add(row.getValue("subject") + "|" + row.getValue("value"));
 			}
 			rows.sort(String::compareTo);
@@ -249,10 +251,16 @@ public class LmdbNativeRangePartitionedScanTest {
 		}
 	}
 
+	private static boolean parallelEnabled() {
+		return !"false".equals(System.getProperty(PARALLEL_FLAG));
+	}
+
 	private List<String> groupRows(String query) {
 		try (SailRepositoryConnection connection = repository.getConnection()) {
 			ArrayList<String> rows = new ArrayList<>();
-			for (BindingSet row : QueryResults.asList(connection.prepareTupleQuery(query).evaluate())) {
+			SailTupleQuery prepared = (SailTupleQuery) connection.prepareTupleQuery(query);
+			prepared.setForcedLmdbExecutionStrategy(parallelEnabled() ? "parallelAggregation" : null);
+			for (BindingSet row : QueryResults.asList(prepared.evaluate())) {
 				rows.add(row.getValue("subject") + "|" + row.getValue("count") + "|" + row.getValue("min"));
 			}
 			rows.sort(String::compareTo);

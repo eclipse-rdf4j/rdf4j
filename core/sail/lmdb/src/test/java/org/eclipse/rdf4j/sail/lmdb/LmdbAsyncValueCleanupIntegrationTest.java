@@ -985,6 +985,10 @@ class LmdbAsyncValueCleanupIntegrationTest {
 			LmdbGcTestMaintenance.awaitTrustedReclamationSetup(asynchronous);
 			add(asynchronous);
 			AsyncValueRetirementCoordinator coordinator = asynchronous.getBackingStore().asyncValueCleanupCoordinator();
+			// This fixture tests valid spool import, not expiry of the best-effort I/O budget. Keep spool time
+			// within budget regardless of filesystem latency; the worker-stop timeout still uses the real clock.
+			long spoolTime = System.nanoTime();
+			coordinator.spoolTimeForTest(() -> spoolTime);
 			try (PausedWorker paused = new PausedWorker(coordinator)) {
 				remove(asynchronous);
 				paused.awaitEntered();
@@ -994,7 +998,7 @@ class LmdbAsyncValueCleanupIntegrationTest {
 			asynchronous.shutDown();
 		}
 		assertTrue(Files.isRegularFile(directory.resolve("async-value-cleanup").resolve("pending.rgc")),
-				"clean shutdown must publish the saved work manifest");
+				"shutdown with an unexpired spool budget must publish the saved work manifest");
 		ObservedStore durable = new ObservedStore(directory.toFile(), configuration(false));
 		durable.init();
 		try {

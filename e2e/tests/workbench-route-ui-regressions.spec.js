@@ -98,15 +98,15 @@ test('route templates preserve paging, saved-query streams, export selection, an
 
 	await page.goto(`${repositoryBase}/explore`, { waitUntil: 'domcontentloaded' });
 	await expect(page.locator('#workbench-app')).toHaveAttribute('data-workbench-view', 'explore');
-	const exploreError = await page.locator('#workbench-app [role="alert"]').textContent().catch(() => null);
-	console.log('EXPLORE_PAGING_RED', JSON.stringify({
-		error: exploreError,
-		previousValue: await page.locator('#previousX').getAttribute('value').catch(() => null),
-		nextValue: await page.locator('#nextX').getAttribute('value').catch(() => null),
+	await expect(page.locator('#explore-form')).toBeVisible();
+	const exploreErrors = await page.locator('#workbench-app [role="alert"]').allTextContents();
+	console.log('EXPLORE_ROUTE_STATE', JSON.stringify({
+		errors: exploreErrors,
+		resourceControls: await page.locator('#resource').count(),
 		consoleErrors
 	}));
 	await expect.soft(page.locator('#workbench-page-surface')).toBeVisible();
-	expect.soft(exploreError, 'Explore must not fail while binding legacy paging controls').toBeNull();
+	expect.soft(exploreErrors, 'Explore must not fail while opening its route').toEqual([]);
 	expect.soft(consoleErrors.join('\n')).not.toContain("Cannot read properties of null (reading '0')");
 
 	const savedResponsePromise = page.waitForResponse(response => response.request().url().includes(`/repositories/${REPOSITORY_ID}/saved-queries`)

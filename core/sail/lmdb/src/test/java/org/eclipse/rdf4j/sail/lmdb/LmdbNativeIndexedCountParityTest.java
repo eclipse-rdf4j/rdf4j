@@ -95,13 +95,15 @@ class LmdbNativeIndexedCountParityTest {
 	}
 
 	@AfterAll
-	void shutdown() {
+	void shutdown() throws Exception {
+		List<AutoCloseable> cleanup = new ArrayList<>();
 		for (Backend backend : backends.values()) {
-			backend.repository.shutDown();
+			cleanup.add(backend.repository::shutDown);
 		}
 		if (reference != null) {
-			reference.repository.shutDown();
+			cleanup.add(reference.repository::shutDown);
 		}
+		LmdbTestUtil.cleanup(null, cleanup.toArray(AutoCloseable[]::new));
 	}
 
 	Stream<Arguments> queries() {
@@ -140,6 +142,8 @@ class LmdbNativeIndexedCountParityTest {
 		add(cases, "fixed-named", count("GRAPH <urn:g1> { ?s <urn:p> ?o }", "*"), true);
 		add(cases, "fixed-blank-graph", count("GRAPH <_:graph> { ?s <urn:p> ?o }", "*"), true);
 		add(cases, "unknown-graph", count("GRAPH <urn:missing> { ?s <urn:p> ?o }", "*"), false);
+		// GRAPH rdf4j:nil reaches the engine as a graph island, not a bare pattern; the adjacency census answers its
+		// COUNT(*) from the store's per-context metadata instead (LmdbNativeCensusAggregateTest)
 		add(cases, "parser-graph-nil-default", count("GRAPH <" + RDF4J.NIL + "> { ?s <urn:p> ?o }", "*"), false);
 		add(cases, "distinct-subject", count("?s <urn:p> ?o", "DISTINCT ?s"), false);
 		add(cases, "distinct-object", count("?s <urn:p> ?o", "DISTINCT ?o"), false);
@@ -387,24 +391,31 @@ class LmdbNativeIndexedCountParityTest {
 				.setDirectAdjacencyMode(adjacency ? DirectAdjacencyMode.PREFER : DirectAdjacencyMode.DISABLED)
 				.setDirectAdjacencyCoverage(DirectAdjacencyCoverage.FULL));
 		SailRepository repository = new SailRepository(store);
-		repository.init();
-		try (var connection = repository.getConnection()) {
-			connection.add(explicit);
-		}
-		try (InferencerConnection connection = (InferencerConnection) store.getConnection()) {
-			connection.begin();
-			for (var statement : inferred) {
-				connection.addInferredStatement(statement.getSubject(), statement.getPredicate(), statement.getObject(),
-						statement.getContext());
+		try {
+			repository.init();
+			try (var connection = repository.getConnection()) {
+				connection.add(explicit);
 			}
-			connection.commit();
+			try (InferencerConnection connection = (InferencerConnection) store.getConnection()) {
+				connection.begin();
+				for (var statement : inferred) {
+					connection.addInferredStatement(statement.getSubject(), statement.getPredicate(),
+							statement.getObject(),
+							statement.getContext());
+				}
+				connection.commit();
+			}
+			if (adjacency) {
+				assertThat(store.awaitDirectAdjacencyReady(60, TimeUnit.SECONDS))
+						.as(store.getDirectAdjacencyReadinessDescription())
+						.isTrue();
+			}
+			return new Backend(store, repository);
+		} catch (Exception | Error failure) {
+			try (var cleanup = LmdbTestUtil.onClose(repository::shutDown)) {
+				throw failure;
+			}
 		}
-		if (adjacency) {
-			assertThat(store.awaitDirectAdjacencyReady(60, TimeUnit.SECONDS))
-					.as(store.getDirectAdjacencyReadinessDescription())
-					.isTrue();
-		}
-		return new Backend(store, repository);
 	}
 
 	private static String count(String pattern, String argument) {

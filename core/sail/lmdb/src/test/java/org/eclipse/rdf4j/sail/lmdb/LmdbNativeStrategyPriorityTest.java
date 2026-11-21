@@ -43,13 +43,11 @@ public class LmdbNativeStrategyPriorityTest {
 	// This class asserts interpreted-strategy internals; the IR kernel rung must stay off so it cannot absorb the
 	// shapes first (plan: plans/lmdb-native-engine/20-kernel-lowering-row.md).
 	private static String previousJaninoCodegenEnabled;
-	private static String previousCostCalibrationEnabled;
 	private static String previousPackedFtreeEnabled;
 
 	@org.junit.jupiter.api.BeforeAll
 	static void disableKernelCodegen() {
 		previousJaninoCodegenEnabled = System.setProperty("rdf4j.lmdb.janinoCodegen.enabled", "false");
-		previousCostCalibrationEnabled = System.setProperty("rdf4j.lmdb.costCalibration.enabled", "false");
 		previousPackedFtreeEnabled = System.setProperty("rdf4j.lmdb.packedFtree.enabled", "false");
 	}
 
@@ -60,7 +58,6 @@ public class LmdbNativeStrategyPriorityTest {
 		} else {
 			System.setProperty("rdf4j.lmdb.janinoCodegen.enabled", previousJaninoCodegenEnabled);
 		}
-		restoreProperty("rdf4j.lmdb.costCalibration.enabled", previousCostCalibrationEnabled);
 		restoreProperty("rdf4j.lmdb.packedFtree.enabled", previousPackedFtreeEnabled);
 	}
 

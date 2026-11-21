@@ -31,48 +31,50 @@ public final class LmdbAsyncStartupProfile {
 		int commits = args.length < 2 ? 2_000 : Integer.parseInt(args[1]);
 		boolean preallocated = args.length > 2 && args[2].equals("preallocated");
 		Path directory = Files.createTempDirectory("rdf4j-async-startup-profile-");
-		System.out
-				.println("PROFILE directory=" + directory + ", seedStatements=" + statements + ", commits=" + commits);
-		LmdbStoreConfig seedConfig = configuration(preallocated).setDirectAdjacencyMode(DirectAdjacencyMode.DISABLED);
-		SailRepository seed = new SailRepository(new LmdbStore(directory.toFile(), seedConfig));
-		seed.init();
-		try (var connection = seed.getConnection()) {
-			connection.begin();
-			for (int i = 0; i < statements; i++) {
-				connection.add(Values.iri("urn:seed:" + i), Values.iri("urn:predicate:" + i % 16),
-						Values.iri("urn:object:" + i % 1024));
-			}
-			connection.commit();
-		} finally {
-			seed.shutDown();
-		}
-		LmdbStore sail = new LmdbStore(directory.toFile(), configuration(preallocated)
-				.setDirectAdjacencyEnabled(true)
-				.setDirectAdjacencyMaxBytes(512L << 20));
-		SailRepository repository = new SailRepository(sail);
-		long start = System.nanoTime();
-		repository.init();
-		long initialized = System.nanoTime();
-		try {
-			LmdbDirectAdjacencyStore adjacency = sail.getBackingStore().directAdjacencyStore();
-			write(repository, "startup", commits);
-			if (!sail.awaitDirectAdjacencyReady(120, TimeUnit.SECONDS)) {
-				throw new IllegalStateException(sail.getDirectAdjacencyReadinessDescription());
-			}
-			System.out.println("PROFILE startup.initMillis=" + (initialized - start) / 1_000_000.0
-					+ ", startup.writesAndReadinessMillis=" + (System.nanoTime() - initialized) / 1_000_000.0);
-			System.out.println("PROFILE startup " + sail.getDirectAdjacencyReadinessDescription());
-			System.out.println("PROFILE cutover.millis=" + adjacency.lastCutoverNanos() / 1_000_000.0
-					+ ", cutover.revisions=" + adjacency.lastCutoverRevisions());
-			long steadyStarted = System.nanoTime();
-			write(repository, "steady", commits);
+		try (var directoryCleanup = LmdbTestUtil.onClose(() -> LmdbTestUtil.deleteDir(directory))) {
 			System.out
-					.println("PROFILE steady.transactionMicros="
-							+ (System.nanoTime() - steadyStarted) / 1_000.0 / commits);
-			System.out.println("PROFILE steady " + sail.getDirectAdjacencyReadinessDescription());
-			System.out.println("PROFILE phases " + adjacency.phaseTimings());
-		} finally {
-			repository.shutDown();
+					.println("PROFILE directory=" + directory + ", seedStatements=" + statements + ", commits="
+							+ commits);
+			LmdbStoreConfig seedConfig = configuration(preallocated)
+					.setDirectAdjacencyMode(DirectAdjacencyMode.DISABLED);
+			SailRepository seed = new SailRepository(new LmdbStore(directory.toFile(), seedConfig));
+			try (var cleanup = LmdbTestUtil.onClose(seed::shutDown)) {
+				seed.init();
+				try (var connection = seed.getConnection()) {
+					connection.begin();
+					for (int i = 0; i < statements; i++) {
+						connection.add(Values.iri("urn:seed:" + i), Values.iri("urn:predicate:" + i % 16),
+								Values.iri("urn:object:" + i % 1024));
+					}
+					connection.commit();
+				}
+			}
+			LmdbStore sail = new LmdbStore(directory.toFile(), configuration(preallocated)
+					.setDirectAdjacencyEnabled(true)
+					.setDirectAdjacencyMaxBytes(512L << 20));
+			SailRepository repository = new SailRepository(sail);
+			long start = System.nanoTime();
+			try (var cleanup = LmdbTestUtil.onClose(repository::shutDown)) {
+				repository.init();
+				long initialized = System.nanoTime();
+				LmdbDirectAdjacencyStore adjacency = sail.getBackingStore().directAdjacencyStore();
+				write(repository, "startup", commits);
+				if (!sail.awaitDirectAdjacencyReady(120, TimeUnit.SECONDS)) {
+					throw new IllegalStateException(sail.getDirectAdjacencyReadinessDescription());
+				}
+				System.out.println("PROFILE startup.initMillis=" + (initialized - start) / 1_000_000.0
+						+ ", startup.writesAndReadinessMillis=" + (System.nanoTime() - initialized) / 1_000_000.0);
+				System.out.println("PROFILE startup " + sail.getDirectAdjacencyReadinessDescription());
+				System.out.println("PROFILE cutover.millis=" + adjacency.lastCutoverNanos() / 1_000_000.0
+						+ ", cutover.revisions=" + adjacency.lastCutoverRevisions());
+				long steadyStarted = System.nanoTime();
+				write(repository, "steady", commits);
+				System.out
+						.println("PROFILE steady.transactionMicros="
+								+ (System.nanoTime() - steadyStarted) / 1_000.0 / commits);
+				System.out.println("PROFILE steady " + sail.getDirectAdjacencyReadinessDescription());
+				System.out.println("PROFILE phases " + adjacency.phaseTimings());
+			}
 		}
 	}
 

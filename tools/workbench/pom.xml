@@ -222,73 +222,43 @@
 				</executions>
 			</plugin>
 			<plugin>
-				<groupId>com.github.eirslett</groupId>
-				<artifactId>frontend-maven-plugin</artifactId>
+				<!-- Builds the front end with the node and npm already installed on the PATH (node >= 22.12, see .nvmrc and
+				     package.json engines); nothing is downloaded. -->
+				<groupId>org.codehaus.mojo</groupId>
+				<artifactId>exec-maven-plugin</artifactId>
 				<configuration>
+					<executable>npm</executable>
+					<workingDirectory>${project.basedir}</workingDirectory>
 					<environmentVariables>
 						<npm_config_cache>${settings.localRepository}/npm-cache</npm_config_cache>
 						<npm_config_update_notifier>false</npm_config_update_notifier>
+						<!-- fail fast when the installed node does not satisfy package.json engines -->
+						<npm_config_engine_strict>true</npm_config_engine_strict>
 					</environmentVariables>
 				</configuration>
 				<executions>
 					<execution>
-						<id>install-node-and-npm</id>
-						<goals>
-							<goal>install-node-and-npm</goal>
-						</goals>
-						<phase>generate-resources</phase>
-						<configuration>
-							<skip>${skipFrontend}</skip>
-						</configuration>
-					</execution>
-					<execution>
 						<id>npm-ci</id>
 						<goals>
-							<goal>npm</goal>
+							<goal>exec</goal>
 						</goals>
 						<phase>generate-resources</phase>
 						<configuration>
-							<arguments>ci --prefer-offline --no-audit --no-fund</arguments>
+							<commandlineArgs>ci --prefer-offline --no-audit --no-fund</commandlineArgs>
 							<skip>${skipFrontendInstall}</skip>
 						</configuration>
 					</execution>
 					<execution>
 						<id>npm-build</id>
 						<goals>
-							<goal>npm</goal>
+							<goal>exec</goal>
 						</goals>
 						<phase>generate-resources</phase>
 						<configuration>
-							<arguments>run build</arguments>
+							<commandlineArgs>run build</commandlineArgs>
 							<skip>${skipFrontend}</skip>
 						</configuration>
 					</execution>
-				</executions>
-			</plugin>
-			<plugin>
-				<groupId>org.apache.maven.plugins</groupId>
-				<artifactId>maven-dependency-plugin</artifactId>
-				<executions>
-					<execution>
-						<id>resolve-notice-dependencies</id>
-						<phase>prepare-package</phase>
-						<goals>
-							<goal>build-classpath</goal>
-						</goals>
-						<configuration>
-							<includeScope>runtime</includeScope>
-							<includeTypes>jar</includeTypes>
-							<excludeGroupIds>org.eclipse.rdf4j</excludeGroupIds>
-							<outputFile>${project.build.directory}/licensing/java-classpath.txt</outputFile>
-							<regenerateFile>true</regenerateFile>
-						</configuration>
-					</execution>
-				</executions>
-			</plugin>
-			<plugin>
-				<groupId>org.codehaus.mojo</groupId>
-				<artifactId>exec-maven-plugin</artifactId>
-				<executions>
 					<execution>
 						<id>generate-third-party-notices</id>
 						<phase>prepare-package</phase>
@@ -317,6 +287,27 @@
 								<argument>${project.build.directory}/frontend/legal</argument>
 								<argument>${notices.completeness}</argument>
 							</arguments>
+						</configuration>
+					</execution>
+				</executions>
+			</plugin>
+			<plugin>
+				<groupId>org.apache.maven.plugins</groupId>
+				<artifactId>maven-dependency-plugin</artifactId>
+				<executions>
+					<execution>
+						<id>resolve-notice-dependencies</id>
+						<!-- Write the classpath before prepare-package regardless of plugin declaration order. -->
+						<phase>test</phase>
+						<goals>
+							<goal>build-classpath</goal>
+						</goals>
+						<configuration>
+							<includeScope>runtime</includeScope>
+							<includeTypes>jar</includeTypes>
+							<excludeGroupIds>org.eclipse.rdf4j</excludeGroupIds>
+							<outputFile>${project.build.directory}/licensing/java-classpath.txt</outputFile>
+							<regenerateFile>true</regenerateFile>
 						</configuration>
 					</execution>
 				</executions>
@@ -384,13 +375,13 @@
 			<build>
 				<plugins>
 					<plugin>
-						<groupId>com.github.eirslett</groupId>
-						<artifactId>frontend-maven-plugin</artifactId>
+						<groupId>org.codehaus.mojo</groupId>
+						<artifactId>exec-maven-plugin</artifactId>
 						<executions>
 							<execution>
 								<id>npm-ci</id>
 								<configuration>
-									<arguments>install --no-save --prefer-offline --no-audit --no-fund</arguments>
+									<commandlineArgs>install --no-save --prefer-offline --no-audit --no-fund</commandlineArgs>
 								</configuration>
 							</execution>
 						</executions>

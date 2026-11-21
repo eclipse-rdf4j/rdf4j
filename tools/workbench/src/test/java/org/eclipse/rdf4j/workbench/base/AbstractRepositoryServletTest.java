@@ -13,7 +13,9 @@ package org.eclipse.rdf4j.workbench.base;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -33,6 +35,7 @@ import javax.naming.spi.InitialContextFactory;
 import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.repository.Repository;
+import org.eclipse.rdf4j.repository.base.RepositoryWrapper;
 import org.eclipse.rdf4j.repository.http.HTTPRepository;
 import org.eclipse.rdf4j.repository.manager.RepositoryManager;
 import org.eclipse.rdf4j.rio.RDFFormat;
@@ -73,7 +76,28 @@ class AbstractRepositoryServletTest {
 
 		assertThat(servlet.exposeRepository()).isSameAs(repository);
 		assertThat(servlet.exposeValueFactory()).isSameAs(valueFactory);
-		verify(repository).setPreferredRDFFormat(RDFFormat.BINARY);
+		verify(repository, never()).setPreferredRDFFormat(any());
+	}
+
+	@Test
+	void settingASharedHttpRepositoryOnMultipleServletsPreservesItsPreferredFormat() {
+		HTTPRepository repository = new HTTPRepository("http://example.com/repositories/shared");
+		repository.setPreferredRDFFormat(RDFFormat.TURTLE);
+
+		new ExposedRepositoryServlet().setRepository(repository);
+		new ExposedRepositoryServlet().setRepository(repository);
+
+		assertThat(repository.getPreferredRDFFormat()).isEqualTo(RDFFormat.TURTLE);
+	}
+
+	@Test
+	void settingAWrappedHttpRepositoryPreservesItsPreferredFormat() {
+		HTTPRepository repository = new HTTPRepository("http://example.com/repositories/wrapped");
+		repository.setPreferredRDFFormat(RDFFormat.TURTLE);
+
+		new ExposedRepositoryServlet().setRepository(new RepositoryWrapper(repository));
+
+		assertThat(repository.getPreferredRDFFormat()).isEqualTo(RDFFormat.TURTLE);
 	}
 
 	@Test

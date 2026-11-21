@@ -29,9 +29,12 @@ import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.QueryResults;
+import org.eclipse.rdf4j.query.explanation.Explanation;
+import org.eclipse.rdf4j.query.explanation.GenericPlanNode;
 import org.eclipse.rdf4j.query.impl.EmptyBindingSet;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
 import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
+import org.eclipse.rdf4j.repository.sail.SailTupleQuery;
 import org.eclipse.rdf4j.sail.lmdb.LmdbStore;
 import org.eclipse.rdf4j.sail.lmdb.RecordIterator;
 import org.eclipse.rdf4j.sail.lmdb.config.LmdbStoreConfig;
@@ -89,7 +92,6 @@ class LmdbNativeHashJoinBatchTest {
 		setProperty("rdf4j.lmdb.janinoCodegen.enabled", "false");
 		setProperty("rdf4j.lmdb.kernelInterpreter.enabled", "false");
 		setProperty("rdf4j.lmdb.adaptiveFilterPlacement.enabled", "false");
-		setProperty("rdf4j.lmdb.costCalibration.enabled", "false");
 	}
 
 	@AfterEach
@@ -111,6 +113,69 @@ class LmdbNativeHashJoinBatchTest {
 			previousProperties.put(name, System.getProperty(name));
 		}
 		System.setProperty(name, value);
+	}
+
+	@Test
+	void hashJoinIsQuotedAsOneScanPerRelation() {
+		// 200 rows on each side joined on 20 keys: the hash join builds one side and scans the other once (measured
+		// 2026-11-03, starTwoHop on a spoc-only 3000-person store: 9.9 ms against 2.5 s for the probe chain it was
+		// quoted as, which priced it at 159 ms and handed the decision to a 1.4 s parallel pipeline)
+		System.setProperty(LmdbNativeMergeJoin.ENABLED_PROPERTY, "false");
+		Map<String, Double> batch;
+		try (SailRepositoryConnection connection = repository.getConnection()) {
+			GenericPlanNode plan = connection.prepareTupleQuery(QUERY)
+					.explain(Explanation.Level.Telemetry)
+					.toGenericPlanNode();
+			batch = proposalFeatures(plan).get("batch");
+		}
+		assertThat(batch).as("batch quote").isNotNull();
+		assertThat(batch.getOrDefault("HASH_BUILD_ROW", 0D)).as("build rows: %s", batch).isGreaterThan(0D);
+		assertThat(batch.getOrDefault("SCANNED_ROW", 0D) + batch.getOrDefault("DECODED_ROW", 0D))
+				.as("both relations read once, not a probe per build row: %s", batch)
+				.isLessThanOrEqualTo(2D * 400D);
+		assertThat(batch.getOrDefault("INDEX_SEEK", 0D)).as("no per-row probe seeks: %s", batch)
+				.isLessThanOrEqualTo(4D);
+	}
+
+	/** {@code strategy -> feature -> expected count} from the explain metric. */
+	private static Map<String, Map<String, Double>> proposalFeatures(GenericPlanNode plan) {
+		String metric = findMetric(plan, "nativeStrategyProposalFeatures");
+		assertThat(metric).as("proposal features").isNotNull();
+		Map<String, Map<String, Double>> features = new java.util.LinkedHashMap<>();
+		for (String entry : metric.split(",")) {
+			int eq = entry.indexOf('=');
+			if (eq <= 0) {
+				continue;
+			}
+			Map<String, Double> counts = new java.util.LinkedHashMap<>();
+			for (String count : entry.substring(eq + 1).split("\\|")) {
+				int colon = count.indexOf(':');
+				if (colon > 0) {
+					counts.put(count.substring(0, colon), Double.parseDouble(count.substring(colon + 1)));
+				}
+			}
+			features.put(entry.substring(0, eq).trim(), counts);
+		}
+		return features;
+	}
+
+	private static String findMetric(GenericPlanNode node, String metricName) {
+		if (node == null) {
+			return null;
+		}
+		String value = node.getStringMetricActual(metricName);
+		if (value != null) {
+			return value;
+		}
+		if (node.getPlans() != null) {
+			for (GenericPlanNode child : node.getPlans()) {
+				String found = findMetric(child, metricName);
+				if (found != null) {
+					return found;
+				}
+			}
+		}
+		return null;
 	}
 
 	@Test
@@ -430,7 +495,9 @@ class LmdbNativeHashJoinBatchTest {
 		System.setProperty(LmdbNativeHashJoin.BYTE_ADMISSION_PROPERTY, "true");
 		System.setProperty(NATIVE_FLAG, "true");
 		try (SailRepositoryConnection connection = repository.getConnection()) {
-			try (var result = connection.prepareTupleQuery(QUERY).evaluate()) {
+			SailTupleQuery prepared = (SailTupleQuery) connection.prepareTupleQuery(QUERY);
+			prepared.setForcedLmdbExecutionStrategy("batch,nestedLoop");
+			try (var result = prepared.evaluate()) {
 				assertThat(result.hasNext()).isTrue();
 				result.next();
 				// Abandon the rest: closing must release every reservation the admitted build holds.
@@ -502,7 +569,8 @@ class LmdbNativeHashJoinBatchTest {
 		System.setProperty(LmdbNativeMergeJoin.ENABLED_PROPERTY, "false");
 		assertThat(rows()).isEqualTo(genericNarrow);
 		long wildcardBatchesBefore = LmdbWildcardPredicateBatch.BATCHES.get();
-		assertThat(rows(wideQuery)).isEqualTo(genericWide);
+		// the wide query is about the wildcard batch specialist, so that family is forced
+		assertThat(rows(wideQuery, "wildcardPredicateBatch,wildcardPredicateReduced")).isEqualTo(genericWide);
 		assertThat(LmdbWildcardPredicateBatch.BATCHES.get())
 				.as("variable-predicate query keeps its specialist execution path")
 				.isGreaterThan(wildcardBatchesBefore);
@@ -608,9 +676,16 @@ class LmdbNativeHashJoinBatchTest {
 		return rows(QUERY);
 	}
 
+	/** The hash join is the operator under test: the batch strategy that carries it is forced (policy 2026-11-03). */
 	private List<String> rows(String query) {
+		return rows(query, "batch,nestedLoop");
+	}
+
+	private List<String> rows(String query, String forced) {
 		try (SailRepositoryConnection connection = repository.getConnection()) {
-			return QueryResults.asList(connection.prepareTupleQuery(query).evaluate())
+			SailTupleQuery prepared = (SailTupleQuery) connection.prepareTupleQuery(query);
+			prepared.setForcedLmdbExecutionStrategy(forced);
+			return QueryResults.asList(prepared.evaluate())
 					.stream()
 					.map(LmdbNativeHashJoinBatchTest::canonical)
 					.sorted()

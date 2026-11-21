@@ -213,7 +213,9 @@ applies because they are separate LMDB environments.
 ## Durability and uncertain outcomes
 
 `forceSync` remains `false` by default. In that mode the LMDB environments use `MDB_NOSYNC` and `MDB_NOMETASYNC`, so
-ordinary acknowledged commits have weaker power-loss durability. Journaled backup commits additionally force
+ordinary acknowledged commits have weaker power-loss durability. Backup journaling is disabled by default; full
+snapshots remain available. Explicitly opting in with `backupJournalEnabled=true` requires a fresh full baseline.
+Journaled backup commits additionally force
 dictionary state before the authoritative triples commit and force both environments before external publication can
 acknowledge the change, even with `forceSync=false`. Set `forceSync=true` when synchronous commit behavior is required
 for all native writes, and ensure the filesystem and storage stack honor flushes.

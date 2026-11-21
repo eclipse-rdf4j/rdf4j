@@ -267,23 +267,13 @@ public class LmdbRealEstateNativeParityTest {
 	}
 
 	private static String renderStrategyEvent(RecordedEvent event) {
-		return "evaluationId=" + event.getLong("evaluationId")
-				+ ", boundaryId=" + event.getLong("boundaryId")
-				+ ", decisionId=" + event.getLong("decisionId")
+		return "decisionId=" + event.getLong("decisionId")
 				+ ", decisionPoint=" + event.getString("decisionPoint")
-				+ ", phase=" + event.getString("phase")
-				+ ", strategy=" + event.getString("strategy")
-				+ ", variant=" + event.getString("variant")
-				+ ", workerBucket=" + event.getInt("workerBucket")
-				+ ", status=" + event.getString("status")
-				+ ", forcedStrategy=" + event.getString("forcedStrategy")
-				+ ", dispatchMode=" + event.getString("dispatchMode")
-				+ ", selectionReason=" + event.getString("selectionReason")
-				+ ", availabilityReason=" + event.getString("availabilityReason")
-				+ ", executionMode=" + event.getString("executionMode")
-				+ ", compilationCacheState=" + event.getString("compilationCacheState")
-				+ ", observationCompletion=" + event.getString("observationCompletion")
-				+ ", failureType=" + event.getString("failureType");
+				+ ", candidate=" + event.getString("candidate")
+				+ ", winner=" + event.getBoolean("winner")
+				+ ", reason=" + event.getString("reason")
+				+ ", declineReason=" + event.getString("declineReason")
+				+ ", eliminatedBy=" + event.getString("eliminatedBy");
 	}
 
 	private static List<String> canonicalRows(List<BindingSet> result) {

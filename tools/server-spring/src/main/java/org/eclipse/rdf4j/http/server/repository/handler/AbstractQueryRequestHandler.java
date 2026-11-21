@@ -29,6 +29,7 @@ import org.eclipse.rdf4j.http.client.QueryCircuitBreaker;
 import org.eclipse.rdf4j.http.client.QueryCircuitBreakerHandle;
 import org.eclipse.rdf4j.http.client.QueryExecutionContext;
 import org.eclipse.rdf4j.http.client.QueryExplanationRequestContext;
+import org.eclipse.rdf4j.http.client.QueryLoggingContext;
 import org.eclipse.rdf4j.http.client.QueryRequestContext;
 import org.eclipse.rdf4j.http.client.QueryResponseHeartbeat;
 import org.eclipse.rdf4j.http.protocol.Protocol;
@@ -151,6 +152,8 @@ public abstract class AbstractQueryRequestHandler implements QueryRequestHandler
 		QueryCircuitBreakerHandle breakerHandle = null;
 		CancellableOperationCoordinator.Handle queryHandle = null;
 		QueryResponseHeartbeat responseHeartbeat = null;
+		QueryLoggingContext.Activation requestLoggingContext = null;
+		QueryLoggingContext.Activation responseLoggingContext = null;
 
 		try {
 			Repository repository = repositoryResolver.getRepository(request);
@@ -193,6 +196,12 @@ public abstract class AbstractQueryRequestHandler implements QueryRequestHandler
 			long offset = getOffset(request);
 			boolean distinct = isDistinct(request);
 			final Optional<Explanation.Level> explainLevel = getExplain(request);
+			Map<String, String> loggingContext = ProtocolUtil.captureQueryLoggingContext(request);
+			loggingContext.put(QueryLoggingContext.REPOSITORY_ID, repositoryId);
+			loggingContext.put(QueryLoggingContext.HTTP_LIMIT, Long.toString(limit));
+			loggingContext.put(QueryLoggingContext.HTTP_OFFSET, Long.toString(offset));
+			loggingContext.put(QueryLoggingContext.HTTP_DISTINCT, Boolean.toString(distinct));
+			requestLoggingContext = QueryLoggingContext.activateMdc(loggingContext);
 
 			if (!headersOnly && explainLevel.isPresent() && explainRequestId.isPresent()) {
 				return handleRegisteredExplainRequest(request, response, repository, repositoryId, repositoryCon, query,
@@ -227,10 +236,16 @@ public abstract class AbstractQueryRequestHandler implements QueryRequestHandler
 			}
 
 			PreparedResponse preparedResponse = null;
-			if (!headersOnly && explainLevel.isEmpty()) {
+			if (!headersOnly && explainLevel.isEmpty() && useResponseHeartbeat(request, query, view)) {
 				CancellableOperationCoordinator.Handle registeredHandle = queryHandle;
 				preparedResponse = prepareResponse(request, response, registry, registeredHandle);
 				responseHeartbeat = preparedResponse.heartbeat;
+				responseLoggingContext = QueryLoggingContext.activateMdc(Map.of(
+						QueryLoggingContext.HTTP_RESPONSE_CONTENT_TYPE, preparedResponse.contentType,
+						QueryLoggingContext.HTTP_RESPONSE_HEARTBEAT_ENABLED,
+						Boolean.toString(responseHeartbeat.isProbing()),
+						QueryLoggingContext.HTTP_RESPONSE_HEARTBEAT_INTERVAL_MILLIS,
+						Long.toString(QueryResponseHeartbeat.DEFAULT_INTERVAL.toMillis())));
 			}
 
 			try {
@@ -324,6 +339,13 @@ public abstract class AbstractQueryRequestHandler implements QueryRequestHandler
 		} catch (Error e) {
 			cleanupAfterRequestFailure(responseHeartbeat, queryResponse, repositoryCon, breakerHandle, queryHandle);
 			throw e;
+		} finally {
+			if (responseLoggingContext != null) {
+				responseLoggingContext.close();
+			}
+			if (requestLoggingContext != null) {
+				requestLoggingContext.close();
+			}
 		}
 
 	}
@@ -532,7 +554,7 @@ public abstract class AbstractQueryRequestHandler implements QueryRequestHandler
 				throw new UnsupportedOperationException(
 						"Unsupported query result writer: " + factory.getClass().getName());
 			}
-			return new PreparedResponse(factory, heartbeat, writer);
+			return new PreparedResponse(factory, heartbeat, writer, mimeType);
 		} catch (IOException | RuntimeException e) {
 			cleanupResponseHeartbeatAfterFailure(heartbeat);
 			throw e;
@@ -580,11 +602,13 @@ public abstract class AbstractQueryRequestHandler implements QueryRequestHandler
 		private final Object factory;
 		private final QueryResponseHeartbeat heartbeat;
 		private final Object writer;
+		private final String contentType;
 
-		private PreparedResponse(Object factory, QueryResponseHeartbeat heartbeat, Object writer) {
+		private PreparedResponse(Object factory, QueryResponseHeartbeat heartbeat, Object writer, String contentType) {
 			this.factory = factory;
 			this.heartbeat = heartbeat;
 			this.writer = writer;
+			this.contentType = contentType;
 		}
 	}
 
@@ -595,6 +619,25 @@ public abstract class AbstractQueryRequestHandler implements QueryRequestHandler
 			throws ClientHTTPException;
 
 	abstract protected View getViewFor(Query query);
+
+	/**
+	 * Whether to start a response heartbeat for this request. A heartbeat writes keep-alive whitespace while the query
+	 * waits for its first result, which commits the response: an error status or headers can no longer be sent after
+	 * that.
+	 * <p>
+	 * By default a heartbeat is used only when the view declares that it consumes one, see
+	 * {@link QueryResultView#supportsResponseHeartbeat()}. Subclasses can turn it off per request, for example when the
+	 * response must stay uncommitted until evaluation has produced its first result.
+	 * </p>
+	 *
+	 * @param request the query request
+	 * @param query   the prepared query
+	 * @param view    the view that will render the result
+	 * @return {@code true} to start a heartbeat for this request
+	 */
+	protected boolean useResponseHeartbeat(HttpServletRequest request, Query query, View view) {
+		return view instanceof QueryResultView queryResultView && queryResultView.supportsResponseHeartbeat();
+	}
 
 	abstract protected FileFormatServiceRegistry<? extends FileFormat, ?> getResultWriterFor(Query query);
 

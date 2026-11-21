@@ -93,6 +93,34 @@ test('A14: opening the switcher twice while its list loads asks the server once'
     assert.deepEqual(shell.ids(), ['a']);
 });
 
+test('a repository list the server could not give forgets nothing this browser keeps', async () => {
+    const opened = (loaded) => {
+        const forgotten = [];
+        loaded.wb.workspace = { serverDigest: (identity) => identity,
+            forgetMissingRepositories: (...args) => forgotten.push(args) };
+        const shell = switcher();
+        const app = node('div', { 'data-workbench-server-identity': 'sha256:abc:session' });
+        const byId = shell.document.getElementById;
+        shell.document.getElementById = (id) => id === 'workbench-app' ? app : byId(id);
+        loaded.wb.views.bindContextBar({ ownerDocument: shell.document }, { basePath: '/workbench', repositoryId: 'a',
+            workbench: {} });
+        loaded.opens[0](shell.panel);
+        return { forgotten, shell };
+    };
+    const listed = opened(load(['a']));
+    await settle();
+    assert.equal(listed.forgotten.length, 1, 'a list the server gave forgets the repositories it no longer has');
+
+    const failing = load([]);
+    failing.wb.app.loadModel = () => Promise.resolve({ error: { code: 'server-unavailable',
+        message: 'The server is unavailable' }, vars: [], rowCount: 0,
+        rowStore: { read: () => Promise.resolve([]), dispose() {} } });
+    const failed = opened(failing);
+    await settle();
+    assert.deepEqual(failed.forgotten, [], 'an error page is not an empty repository list');
+    assert.deepEqual(failed.shell.ids(), []);
+});
+
 function bindingAfter(template, pattern) {
     if (Array.isArray(template)) {
         for (const item of template) { const found = bindingAfter(item, pattern); if (found) { return found; } }

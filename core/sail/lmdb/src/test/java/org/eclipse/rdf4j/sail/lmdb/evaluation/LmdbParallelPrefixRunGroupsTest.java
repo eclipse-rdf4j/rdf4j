@@ -58,7 +58,6 @@ public class LmdbParallelPrefixRunGroupsTest {
 		disable(LmdbNativeKernelInterpreter.ENABLED_PROPERTY);
 		disable("rdf4j.lmdb.packedFtree.enabled");
 		disable("rdf4j.lmdb.factorizedTail.enabled");
-		disable(LmdbNativeAdaptiveCostModel.ENABLED_PROPERTY);
 	}
 
 	@AfterEach

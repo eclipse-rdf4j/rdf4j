@@ -1,0 +1,226 @@
+/*******************************************************************************
+ * Copyright (c) 2026 Eclipse RDF4J contributors.
+ *
+ * All rights reserved. This program and the accompanying materials
+ * are made available under the terms of the Eclipse Distribution License v1.0
+ * which accompanies this distribution, and is available at
+ * http://www.eclipse.org/org/documents/edl-v10.php.
+ *
+ * SPDX-License-Identifier: BSD-3-Clause
+ *******************************************************************************/
+
+package org.eclipse.rdf4j.sail.lmdb;
+
+import static org.assertj.core.api.Assertions.assertThat;
+
+import java.util.ArrayList;
+import java.util.List;
+import java.util.Set;
+
+import org.eclipse.rdf4j.query.QueryLanguage;
+import org.eclipse.rdf4j.query.algebra.Extension;
+import org.eclipse.rdf4j.query.algebra.ExtensionElem;
+import org.eclipse.rdf4j.query.algebra.Group;
+import org.eclipse.rdf4j.query.algebra.GroupElem;
+import org.eclipse.rdf4j.query.algebra.Join;
+import org.eclipse.rdf4j.query.algebra.Order;
+import org.eclipse.rdf4j.query.algebra.Projection;
+import org.eclipse.rdf4j.query.algebra.QueryModelNode;
+import org.eclipse.rdf4j.query.algebra.QueryRoot;
+import org.eclipse.rdf4j.query.algebra.StatementPattern;
+import org.eclipse.rdf4j.query.algebra.TupleExpr;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.FilterOptimizer;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.IterativeEvaluationOptimizer;
+import org.eclipse.rdf4j.query.algebra.helpers.AbstractQueryModelVisitor;
+import org.eclipse.rdf4j.query.impl.EmptyBindingSet;
+import org.eclipse.rdf4j.query.parser.QueryParserUtil;
+import org.junit.jupiter.api.Test;
+
+class LmdbSubqueryGroupPushdownOptimizerTest {
+
+	private static final String PREFIXES = "PREFIX rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#>\n"
+			+ "PREFIX ex: <http://example.org/>\n";
+
+	private static final String INSTANCE_COUNT_SUBQUERY = "{ SELECT ?sourceClass (COUNT(DISTINCT ?source) AS ?instanceCount) "
+			+ "WHERE { ?source rdf:type ?sourceClass . } GROUP BY ?sourceClass }\n";
+
+	private static final String CENSUS = PREFIXES
+			+ "SELECT ?sourceClass ?instanceCount ?targetClass (COUNT(*) AS ?edgeCount) WHERE {\n"
+			+ INSTANCE_COUNT_SUBQUERY
+			+ "?source rdf:type ?sourceClass .\n"
+			+ "?source ?predicate ?target .\n"
+			+ "FILTER(?predicate != rdf:type)\n"
+			+ "?target rdf:type ?targetClass .\n"
+			+ "} GROUP BY ?sourceClass ?instanceCount ?targetClass ORDER BY ?sourceClass DESC(?edgeCount)";
+
+	private static TupleExpr parseAndPrepare(String query) {
+		TupleExpr tupleExpr = QueryParserUtil.parseTupleQuery(QueryLanguage.SPARQL, query, null).getTupleExpr();
+		if (!(tupleExpr instanceof QueryRoot)) {
+			tupleExpr = new QueryRoot(tupleExpr);
+		}
+		new FilterOptimizer(null, false, false).optimize(tupleExpr, null, EmptyBindingSet.getInstance());
+		new IterativeEvaluationOptimizer().optimize(tupleExpr, null, EmptyBindingSet.getInstance());
+		return tupleExpr;
+	}
+
+	private static TupleExpr rewrite(String query) {
+		TupleExpr tupleExpr = parseAndPrepare(query);
+		Set<String> before = tupleExpr.getBindingNames();
+		new LmdbSubqueryGroupPushdownOptimizer().optimize(tupleExpr, null, EmptyBindingSet.getInstance());
+		assertThat(tupleExpr.getBindingNames()).as("binding names of the whole query").isEqualTo(before);
+		return tupleExpr;
+	}
+
+	private static void assertUnchanged(String query) {
+		TupleExpr tupleExpr = parseAndPrepare(query);
+		String before = tupleExpr.toString();
+		new LmdbSubqueryGroupPushdownOptimizer().optimize(tupleExpr, null, EmptyBindingSet.getInstance());
+		assertThat(tupleExpr.toString()).isEqualTo(before);
+	}
+
+	private static List<TupleExpr> joinOperands(TupleExpr tupleExpr) {
+		List<TupleExpr> operands = new ArrayList<>();
+		collectOperands(tupleExpr, operands);
+		return operands;
+	}
+
+	private static void collectOperands(TupleExpr tupleExpr, List<TupleExpr> operands) {
+		if (tupleExpr instanceof Join join) {
+			collectOperands(join.getLeftArg(), operands);
+			collectOperands(join.getRightArg(), operands);
+		} else {
+			operands.add(tupleExpr);
+		}
+	}
+
+	private static <T> List<T> all(TupleExpr root, Class<T> type) {
+		List<T> found = new ArrayList<>();
+		root.visit(new AbstractQueryModelVisitor<RuntimeException>() {
+			@Override
+			protected void meetNode(QueryModelNode node) {
+				if (type.isInstance(node)) {
+					found.add(type.cast(node));
+				}
+				super.meetNode(node);
+			}
+		});
+		return found;
+	}
+
+	@Test
+	void censusQueryPushesTheGroupBelowTheSubqueryJoin() {
+		TupleExpr root = rewrite(CENSUS);
+
+		Projection outer = (Projection) ((QueryRoot) root).getArg();
+		Order order = (Order) outer.getArg();
+		assertThat(order.getArg()).as("empty aggregate Extension is removed").isInstanceOf(Join.class);
+
+		List<TupleExpr> operands = joinOperands(order.getArg());
+		assertThat(operands).hasSize(2).allSatisfy(operand -> {
+			assertThat(operand).isInstanceOf(Projection.class);
+			assertThat(((Projection) operand).isSubquery()).isTrue();
+		});
+
+		Projection original = (Projection) operands.get(0);
+		assertThat(original.getBindingNames()).containsExactlyInAnyOrder("sourceClass", "instanceCount");
+
+		Projection pushed = (Projection) operands.get(1);
+		assertThat(pushed.getBindingNames()).containsExactlyInAnyOrder("sourceClass", "targetClass", "edgeCount");
+		Extension extension = (Extension) pushed.getArg();
+		assertThat(extension.getElements()).extracting(ExtensionElem::getName).containsExactly("edgeCount");
+		Group inner = (Group) extension.getArg();
+		assertThat(inner.getGroupBindingNames()).containsExactlyInAnyOrder("sourceClass", "targetClass");
+		assertThat(inner.getGroupElements()).extracting(GroupElem::getName).containsExactly("edgeCount");
+
+		List<TupleExpr> rest = joinOperands(inner.getArg());
+		assertThat(rest).hasSize(3);
+		assertThat(all(inner.getArg(), StatementPattern.class)).hasSize(3);
+		assertThat(all(root, Group.class)).as("original subquery group plus the new inner group").hasSize(2);
+	}
+
+	@Test
+	void nonAggregateExtensionElementsStayAboveTheJoin() {
+		String query = PREFIXES + "SELECT ?sourceClass ?instanceCount ?targetClass (COUNT(*) AS ?edgeCount)"
+				+ " (?edgeCount * 2 AS ?double) WHERE {\n"
+				+ INSTANCE_COUNT_SUBQUERY
+				+ "?source rdf:type ?sourceClass . ?source ?predicate ?target . ?target rdf:type ?targetClass .\n"
+				+ "} GROUP BY ?sourceClass ?instanceCount ?targetClass";
+		TupleExpr root = rewrite(query);
+		List<Extension> extensions = all(root, Extension.class);
+		boolean doubleStaysAbove = false;
+		for (Extension extension : extensions) {
+			for (ExtensionElem element : extension.getElements()) {
+				if ("double".equals(element.getName())) {
+					doubleStaysAbove = extension.getArg() instanceof Join;
+				}
+			}
+		}
+		assertThat(doubleStaysAbove).as("non-aggregate ExtensionElem stays above the join").isTrue();
+		assertThat(all(root, Group.class)).hasSize(2);
+	}
+
+	@Test
+	void queryWithoutSubqueryIsUntouched() {
+		assertUnchanged(PREFIXES + "SELECT ?sourceClass ?targetClass (COUNT(*) AS ?edgeCount) WHERE {\n"
+				+ "?source rdf:type ?sourceClass . ?source ?predicate ?target . ?target rdf:type ?targetClass .\n"
+				+ "} GROUP BY ?sourceClass ?targetClass");
+	}
+
+	@Test
+	void subqueryGroupedByTwoKeysIsUntouched() {
+		assertUnchanged(PREFIXES + "SELECT ?sourceClass ?other ?c ?targetClass (COUNT(*) AS ?edgeCount) WHERE {\n"
+				+ "{ SELECT ?sourceClass ?other (COUNT(?source) AS ?c) WHERE { ?source rdf:type ?sourceClass . "
+				+ "?source ex:p ?other } GROUP BY ?sourceClass ?other }\n"
+				+ "?source rdf:type ?sourceClass . ?source ?predicate ?target . ?target rdf:type ?targetClass .\n"
+				+ "} GROUP BY ?sourceClass ?other ?c ?targetClass");
+	}
+
+	@Test
+	void subqueryVariableUsedInOuterAggregateIsUntouched() {
+		assertUnchanged(PREFIXES + "SELECT ?sourceClass ?targetClass (SUM(?instanceCount) AS ?total) WHERE {\n"
+				+ INSTANCE_COUNT_SUBQUERY
+				+ "?source rdf:type ?sourceClass . ?source ?predicate ?target . ?target rdf:type ?targetClass .\n"
+				+ "} GROUP BY ?sourceClass ?instanceCount ?targetClass");
+	}
+
+	@Test
+	void joinVariableOnlyOptionalInRestIsUntouched() {
+		assertUnchanged(PREFIXES + "SELECT ?sourceClass ?instanceCount (COUNT(*) AS ?edgeCount) WHERE {\n"
+				+ "?source ?predicate ?target . OPTIONAL { ?source rdf:type ?sourceClass }\n"
+				+ INSTANCE_COUNT_SUBQUERY
+				+ "} GROUP BY ?sourceClass ?instanceCount");
+	}
+
+	@Test
+	void subqueryVariableMissingFromOuterGroupByIsUntouched() {
+		assertUnchanged(PREFIXES + "SELECT ?sourceClass ?targetClass (COUNT(*) AS ?edgeCount) WHERE {\n"
+				+ INSTANCE_COUNT_SUBQUERY
+				+ "?source rdf:type ?sourceClass . ?source ?predicate ?target . ?target rdf:type ?targetClass .\n"
+				+ "} GROUP BY ?sourceClass ?targetClass");
+	}
+
+	@Test
+	void subqueryWithoutGroupByIsUntouched() {
+		assertUnchanged(PREFIXES + "SELECT ?sourceClass ?targetClass (COUNT(*) AS ?edgeCount) WHERE {\n"
+				+ "{ SELECT DISTINCT ?sourceClass WHERE { ?s rdf:type ?sourceClass } }\n"
+				+ "?source rdf:type ?sourceClass . ?source ?predicate ?target . ?target rdf:type ?targetClass .\n"
+				+ "} GROUP BY ?sourceClass ?targetClass");
+	}
+
+	@Test
+	void subqueryUnderOptionalIsUntouched() {
+		assertUnchanged(PREFIXES + "SELECT ?sourceClass ?instanceCount ?targetClass (COUNT(*) AS ?edgeCount) WHERE {\n"
+				+ "?source rdf:type ?sourceClass . ?source ?predicate ?target . ?target rdf:type ?targetClass .\n"
+				+ "OPTIONAL " + INSTANCE_COUNT_SUBQUERY
+				+ "} GROUP BY ?sourceClass ?instanceCount ?targetClass");
+	}
+
+	@Test
+	void filterOverTheSubqueryVariableInsideTheJoinIsUntouched() {
+		assertUnchanged(PREFIXES + "SELECT ?sourceClass ?instanceCount ?targetClass (COUNT(*) AS ?edgeCount) WHERE {\n"
+				+ INSTANCE_COUNT_SUBQUERY
+				+ "?source rdf:type ?sourceClass . ?source ?predicate ?target . ?target rdf:type ?targetClass .\n"
+				+ "FILTER(?instanceCount > 1)\n"
+				+ "} GROUP BY ?sourceClass ?instanceCount ?targetClass");
+	}
+}

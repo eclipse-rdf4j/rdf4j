@@ -19,7 +19,7 @@ import {
 } from "react";
 import { NODE_TEXT_LEFT } from "./graph-config.ts";
 import { edgeLabelSize, graphNodePresentation, nodeCornerRadius } from "./graph-geometry.ts";
-import { compactTerm } from "./graph-terms.ts";
+import { edgeTooltip, nodeTooltip } from "./graph-terms.ts";
 import type { EdgeCurve, EdgeLabelPlacement, GraphEdge, GraphNode } from "./graph-types.ts";
 import { nodeVisual, UNTYPED_IRI_TYPE } from "./graph-visuals.ts";
 import { moreLinksPhrase } from "./link-counts.ts";
@@ -127,7 +127,7 @@ export const NodeView = memo(function NodeView({
       onLostPointerCapture={(event) => handlers.pointerEnd(event, true)}
       onKeyDown={(event) => handlers.keyDown(node.id, event)}
     >
-      <title>{`${node.label} · ${typeLabels}`}</title>
+      <title>{nodeTooltip(node, typeLabels)}</title>
       <rect width={width} height={height} rx={nodeCornerRadius(node)} filter="url(#node-shadow)" />
       <circle cx="17" cy={height / 2} r="4" />
       <text x={NODE_TEXT_LEFT} y={height / 2 + 4}>
@@ -189,7 +189,7 @@ export const EdgeView = memo(function EdgeView({
   return (
     // The canvas picks edges on pointer-up (it captures the pointer, so a click here would land on the canvas).
     <g className={className} data-edge-id={edge.id} data-hover-node-id={hoverNodeId}>
-      <title>{`${sourceLabel} — ${edge.label} → ${targetLabel} (${compactTerm(edge.predicate, 32)})`}</title>
+      <title>{edgeTooltip(sourceLabel, edge, targetLabel)}</title>
       <path d={curve.path} markerEnd="url(#arrow)" />
       {labelPlacement && (
         <>

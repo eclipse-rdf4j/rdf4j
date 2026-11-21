@@ -464,6 +464,11 @@ class LmdbNativeChunkHashBuildTest {
 	void orderedFlatEnumRefusalRestartsClassicSort() {
 		String property = "rdf4j.lmdb.orderedFactorizedRows.enabled";
 		String previous = System.getProperty(property);
+		// the test pins the ordered factorized attempt's refusal and restart, not the ORDER BY selection: with the
+		// kernel tiers off the ordered factorized sort stays the selected strategy (the measured selector otherwise
+		// prefers the ordered kernel on this synthetic source under four workers)
+		String previousJanino = System.setProperty("rdf4j.lmdb.janinoCodegen.enabled", "false");
+		String previousInterpreter = System.setProperty("rdf4j.lmdb.kernelInterpreter.enabled", "false");
 		EnumMaterializationSource source = new EnumMaterializationSource(1, Map.of());
 		SingletonSet telemetry = new SingletonSet();
 		telemetry.setRuntimeTelemetryEnabled(true);
@@ -497,6 +502,8 @@ class LmdbNativeChunkHashBuildTest {
 					.isLessThan(restartedRows);
 		} finally {
 			restoreProperty(property, previous);
+			restoreProperty("rdf4j.lmdb.janinoCodegen.enabled", previousJanino);
+			restoreProperty("rdf4j.lmdb.kernelInterpreter.enabled", previousInterpreter);
 		}
 	}
 

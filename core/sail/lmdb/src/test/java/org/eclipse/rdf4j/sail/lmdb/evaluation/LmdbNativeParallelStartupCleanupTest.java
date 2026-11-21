@@ -107,19 +107,21 @@ class LmdbNativeParallelStartupCleanupTest {
 			AtomicInteger fallbackOpens = new AtomicInteger();
 			Throwable startupFailure = null;
 			try {
-				try (LmdbNativeStrategyArbiter<RowCursor> arbiter = LmdbNativeStrategyArbiter.forExpr(null)) {
-					arbiter.offer(() -> new LmdbNativeStrategyProposal<>(() -> {
-						cursor.start();
-						return cursor;
-					}, LmdbNativeWork.exact(0D), LmdbNativeAttemptMetrics.PATH_PARALLEL_PIPELINES, () -> {
-					}));
-					arbiter.offer(() -> new LmdbNativeStrategyProposal<>(() -> {
-						fallbackOpens.incrementAndGet();
-						throw new AssertionError("failed startup must not open a fallback");
-					}, LmdbNativeWork.exact(1_000D), LmdbNativeAttemptMetrics.PATH_NESTED_LOOP, () -> {
-					}));
-					startupFailure = catchThrowable(arbiter::select);
-				}
+				LmdbNativeOffers<RowCursor> offers = new LmdbNativeOffers<>(LmdbNativeDecisionPoint.ROW);
+				offers.offer(() -> new LmdbNativeStrategyProposal<>(() -> {
+					cursor.start();
+					return cursor;
+				}, LmdbNativeWork.exact(0D), LmdbNativeAttemptMetrics.PATH_PARALLEL_PIPELINES, () -> {
+				}));
+				// the parallel candidate is priced with one worker start per worker (measured 0.5 ms each), so the
+				// fallback must quote far more than that for the parallel pipeline to be the one opened
+				offers.offer(() -> new LmdbNativeStrategyProposal<>(() -> {
+					fallbackOpens.incrementAndGet();
+					throw new AssertionError("failed startup must not open a fallback");
+				}, LmdbNativeWork.exact(1_000_000_000D), LmdbNativeAttemptMetrics.PATH_NESTED_LOOP, () -> {
+				}));
+				startupFailure = catchThrowable(() -> new LmdbNativeDispatchLoop<>(LmdbNativeDecisionPoint.ROW,
+						offers.strategies(), null).dispatch(null));
 				Throwable observed = startupFailure;
 				// Assert before the fixture's final idempotent close: later close must not repair lost evidence.
 				assertAll("the real rejected submit must retain its unsubmitted-family cleanup failures",

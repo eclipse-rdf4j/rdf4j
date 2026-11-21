@@ -580,25 +580,25 @@ test('Explore links and the Explore form change the page without loading a docum
 	const type = '<http://www.w3.org/1999/02/22-rdf-syntax-ns#type>';
 	await page.goto(`${repositoryPageUrl(REPOSITORY_ID, 'explore')}?resource=${encodeURIComponent(type)}`);
 	await waitForRoute(page, 'explore');
-	await expect(page.locator('#explore-result-count')).toHaveText(/^Rows 1–/);
+	const predicateRows = page.locator('[data-explore-role="predicate"] [data-workbench-row-index]');
+	await expect(predicateRows.first()).toBeVisible();
 	const documents = recordDocumentRequests(page);
 
 	// Another resource from the results (each page shows the explored resource's statements).
 	const link = page.locator('#explore-results a[href*="explore?resource="]')
 		.filter({ hasNotText: 'rdf:type' }).first();
+	await expect(link).toBeVisible();
 	const target = new URL(await link.getAttribute('href'), page.url()).searchParams.get('resource');
 	await link.click();
 	await waitForRoute(page, 'explore', { url: (url) => url.searchParams.get('resource') === target });
 	await expect(page.locator('#resource')).toHaveValue(target);
-	await expect(page.locator('#explore-result-count')).toHaveText(/^Rows 1–/);
+	await expect(page.locator('#explore-results [data-explore-role] [data-workbench-row-index]').first()).toBeVisible();
 
-	// The form, with another result limit.
-	await page.locator('#explore-result-options-toggle').click();
-	await page.locator('#limit_explore').selectOption('10');
+	// The form returns to the original resource without replacing the document.
 	await page.locator('#resource').fill(type);
 	await page.locator('#resource').press('Enter');
-	await waitForRoute(page, 'explore', { url: (url) => url.searchParams.get('limit_explore') === '10' });
-	await expect(page.locator('#explore-result-count')).toHaveText(/^Rows 1–10\b/);
+	await waitForRoute(page, 'explore', { url: (url) => url.searchParams.get('resource') === type });
+	await expect(predicateRows.first()).toBeVisible();
 
 	expect(documents).toEqual([]);
 	expect(pageErrors).toEqual([]);
@@ -638,7 +638,7 @@ test('deleting a saved query shows the remaining ones without loading a document
 });
 
 // Plan task M13.4 (user request): each repository keeps its Query results in the browser tab.
-test('each repository keeps its Query results in the tab, and a new tab starts without them', async ({ page, context, request }) => {
+test('each repository keeps its Query results, also for a new browser tab', async ({ page, context, request }) => {
 	const other = uniqueRepositoryId('workbench-router-other');
 	await createSeededRepository(request, serverBaseUrl(), other, { graphs: [] });
 	try {
@@ -683,10 +683,18 @@ test('each repository keeps its Query results in the tab, and a new tab starts w
 		await expect(status).toContainText('2 rows');
 		expect(executions, 'no query ran again').toHaveLength(2);
 
+		// A new browser tab opens the repository's latest query tabs and shows the saved result (query tabs, Part 2).
 		const second = await context.newPage();
+		const secondExecutions = [];
+		second.on('request', (request) => {
+			if (request.method() === 'POST' && (request.postData() || '').includes('action=exec')) {
+				secondExecutions.push(request.url());
+			}
+		});
 		await second.goto(repositoryPageUrl(REPOSITORY_ID, 'query'));
 		await waitForRoute(second, 'query');
-		await expect(second.locator('#query-results [data-query-stream-root]')).toHaveCount(0);
+		await expect(second.locator('#query-results .query-result-status')).toContainText('3 rows');
+		expect(secondExecutions, 'shown from the saved result').toHaveLength(0);
 		await second.close();
 	} finally {
 		await deleteRepository(request, serverBaseUrl(), other);

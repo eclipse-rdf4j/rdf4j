@@ -117,7 +117,7 @@ class AbstractSailConnectionIterationCleanupTest {
 		try {
 			creator.cancel();
 			assertThatThrownBy(iteration::hasNext).isInstanceOf(SailException.class)
-					.hasMessage("The workload that created this result is shutting down");
+					.hasMessage("Sail is shutting down");
 			assertThat(CancellationSignal.current()).as("a rejected pull restores the caller's signal")
 					.isSameAs(CancellationSignal.NONE);
 		} finally {
@@ -195,6 +195,92 @@ class AbstractSailConnectionIterationCleanupTest {
 		assertThat(teardownStartedBeforePullReturned.get()).as("the pull returned before native teardown").isFalse();
 		assertThat(teardownStarted.get()).isTrue();
 		assertThat(delegate.closes.get()).as("exhaustion closes the delegate exactly once").isOne();
+	}
+
+	@Test
+	void resultClosedBySailShutdownFailsInsteadOfLookingExhausted() {
+		AbstractSail sail = newSail(false);
+		AbstractSailConnection connection = newConnection(sail);
+		CountingIteration delegate = new CountingIteration() {
+			@Override
+			public boolean hasNext() {
+				return true;
+			}
+		};
+		CloseableIteration<Integer> iteration = connection.registerIteration(delegate);
+		try {
+			assertThat(iteration.hasNext()).isTrue();
+			assertThat(iteration.next()).isOne();
+
+			// The sequence AbstractSail.shutDown() runs: cancel the Sail lifetime, then close from the shutdown
+			// thread, which closes still-reachable results before native teardown.
+			sail.shutdownSignal().cancel();
+			assertThatCode(connection::close).doesNotThrowAnyException();
+			assertThat(delegate.closes.get()).as("shutdown closed the unfinished result").isOne();
+
+			assertAll(
+					() -> assertThatThrownBy(iteration::hasNext)
+							.as("a result aborted by shutdown must not report exhaustion")
+							.isInstanceOf(SailException.class)
+							.hasMessage("Sail is shutting down"),
+					() -> assertThatThrownBy(iteration::next).isInstanceOf(SailException.class)
+							.hasMessage("Sail is shutting down"));
+		} finally {
+			iteration.close();
+			connection.close();
+		}
+		assertThat(delegate.closes.get()).isOne();
+	}
+
+	@Test
+	void resultExhaustedBeforeSailShutdownStillReportsExhaustion() {
+		AbstractSail sail = newSail(false);
+		AbstractSailConnection connection = newConnection(sail);
+		CloseableIteration<Integer> iteration = connection
+				.registerIteration(new CloseableIteratorIteration<>(Collections.singletonList(1).iterator()));
+		try {
+			assertThat(iteration.hasNext()).isTrue();
+			assertThat(iteration.next()).isOne();
+			assertThat(iteration.hasNext()).isFalse();
+
+			sail.shutdownSignal().cancel();
+			assertThatCode(connection::close).doesNotThrowAnyException();
+
+			assertAll(
+					() -> assertThat(iteration.hasNext()).isFalse(),
+					() -> assertThatThrownBy(iteration::next).isInstanceOf(NoSuchElementException.class));
+		} finally {
+			iteration.close();
+			connection.close();
+		}
+	}
+
+	@Test
+	void debugResultClosedByConnectionCloseFailsInsteadOfLookingExhausted() {
+		System.setProperty(DEBUG_PROPERTY, "true");
+		AbstractSailConnection connection = newConnection();
+		CountingIteration delegate = new CountingIteration() {
+			@Override
+			public boolean hasNext() {
+				return true;
+			}
+		};
+		CloseableIteration<Integer> iteration = connection.registerIteration(delegate);
+		try {
+			assertThat(iteration.hasNext()).isTrue();
+			assertThatThrownBy(connection::close).isInstanceOf(SailException.class)
+					.hasMessageStartingWith("Connection closed before all iterations were closed: ");
+			assertThat(delegate.closes.get()).isOne();
+
+			assertThatThrownBy(iteration::hasNext)
+					.as("a result force-closed by its connection must not report exhaustion")
+					.isInstanceOf(SailException.class)
+					.hasMessage("Connection closed");
+		} finally {
+			iteration.close();
+			connection.close();
+		}
+		assertThat(delegate.closes.get()).isOne();
 	}
 
 	@Test
@@ -479,9 +565,17 @@ class AbstractSailConnectionIterationCleanupTest {
 	}
 
 	private static AbstractSailConnection newConnection(boolean tracksResultPulls) {
+		return newConnection(newSail(tracksResultPulls));
+	}
+
+	private static AbstractSail newSail(boolean tracksResultPulls) {
 		AbstractSail sail = mock(AbstractSail.class,
 				withSettings().useConstructor().defaultAnswer(CALLS_REAL_METHODS));
 		doReturn(tracksResultPulls).when(sail).tracksResultPulls();
+		return sail;
+	}
+
+	private static AbstractSailConnection newConnection(AbstractSail sail) {
 		return mock(AbstractSailConnection.class, withSettings().useConstructor(sail)
 				.defaultAnswer(CALLS_REAL_METHODS));
 	}

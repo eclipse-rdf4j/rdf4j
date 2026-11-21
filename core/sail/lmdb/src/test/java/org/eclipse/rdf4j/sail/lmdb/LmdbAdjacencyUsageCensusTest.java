@@ -290,7 +290,6 @@ class LmdbAdjacencyUsageCensusTest {
 						"predicate_histogram").contains(scenario.name())) {
 					continue;
 				}
-				KernelExecutionTestAccess.resetCostCalibration();
 				LmdbAdjacencyMetrics.Snapshot before = direct.snapshotMetrics();
 				long rows = executeAndCount(scenario.query());
 				LmdbAdjacencyMetrics.Snapshot after = direct.snapshotMetrics();
@@ -437,8 +436,6 @@ class LmdbAdjacencyUsageCensusTest {
 				Map.entry("rdf4j.lmdb.parallel.startupWork", "0"),
 				Map.entry("rdf4j.lmdb.parallel.threads", "4"),
 				Map.entry("rdf4j.lmdb.parallel.maxTasks", "5"),
-				Map.entry("rdf4j.lmdb.adaptiveProbe.enabled", "false"),
-				Map.entry("rdf4j.lmdb.adaptiveHedge.enabled", "false"),
 				Map.entry(LmdbDirectAdjacencyStore.PARALLEL_ROW_PATH_PROPERTY, "true"));
 		Map<String, String> previous = replaceProperties(requested);
 		try {

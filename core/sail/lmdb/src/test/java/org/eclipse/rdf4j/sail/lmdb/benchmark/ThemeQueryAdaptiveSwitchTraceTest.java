@@ -43,7 +43,7 @@ import org.junit.jupiter.api.Timeout;
 public class ThemeQueryAdaptiveSwitchTraceTest {
 
 	private static final Pattern EXECUTION_PATH = Pattern.compile("nativeExecutionPath=(\\w+)");
-	private static final Pattern DECISION = Pattern.compile("nativeAdaptiveCostDecision=(.*?), native[A-Z]");
+	private static final Pattern DECISION = Pattern.compile("nativeDecisionOutcome=(.*?), native[A-Z]");
 	private static final Pattern DECLINES = Pattern
 			.compile("nativeStrategyDeclines=(.*?), (?:metricOrigin|hasNext|native[A-Z])");
 	private static final Pattern PROPOSAL_COSTS = Pattern.compile("nativeStrategyProposalCosts=(.*?), native[A-Z]");

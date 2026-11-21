@@ -575,7 +575,8 @@ test('Query editor and Explain match develop light theme and preserve dark color
 
     expect.soft(lightEditor.background).toBe('rgb(255, 255, 255)');
     expect.soft(lightEditor.foreground).toBe('rgb(0, 0, 0)');
-    expect.soft(lightEditor.gutter).toBe('rgb(247, 247, 247)');
+    // Query tabs (G2): the Query page's editor has no tinted gutter; the text reads as text on the island.
+    expect.soft(lightEditor.gutter).toBe('rgba(0, 0, 0, 0)');
     expect.soft(lightEditor.gutterBorder).toBe('rgb(221, 221, 221)');
     expect.soft(lightEditor.lineNumber).toBe('rgb(153, 153, 153)');
     // The cursor is drawn in the theme's ink colour (--workbench-ink), not yasqe's black, so it shows in both themes.
@@ -636,7 +637,7 @@ test('Query editor and Explain match develop light theme and preserve dark color
     expect.soft(lightJsonExplanation.number).toBe('rgb(17, 102, 68)');
     expect.soft(darkEditor.background).toBe('rgb(17, 26, 29)');
     expect.soft(darkEditor.foreground).toBe('rgb(206, 218, 223)');
-    expect.soft(darkEditor.gutter).toBe('rgb(24, 36, 40)');
+    expect.soft(darkEditor.gutter).toBe('rgba(0, 0, 0, 0)');
     expect.soft(darkEditor.cursor).toBe('rgb(232, 240, 243)');
     expect.soft(darkEditor.keyword).toBe('rgb(115, 196, 226)');
     for (const token of darkEditor.variables) {

@@ -12,7 +12,6 @@
 package org.eclipse.rdf4j.sail.lmdb.evaluation;
 
 import java.io.File;
-import java.io.IOException;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.HashMap;
@@ -30,12 +29,17 @@ import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.QueryLanguage;
 import org.eclipse.rdf4j.query.TupleQuery;
 import org.eclipse.rdf4j.query.TupleQueryResult;
+import org.eclipse.rdf4j.query.algebra.FunctionCall;
+import org.eclipse.rdf4j.query.algebra.helpers.AbstractSimpleQueryModelVisitor;
+import org.eclipse.rdf4j.query.parser.QueryParserUtil;
 import org.eclipse.rdf4j.queryrender.SparqlComprehensiveStreamingValidTest;
 import org.eclipse.rdf4j.queryrender.SparqlComprehensiveStreamingValidTest.GeneratedQuery;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
 import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
+import org.eclipse.rdf4j.repository.sail.SailTupleQuery;
 import org.eclipse.rdf4j.sail.lmdb.JaninoCeilingKernels;
 import org.eclipse.rdf4j.sail.lmdb.LmdbStore;
+import org.eclipse.rdf4j.sail.lmdb.LmdbTestUtil;
 import org.eclipse.rdf4j.sail.lmdb.config.LmdbStoreConfig;
 import org.openjdk.jmh.annotations.Benchmark;
 import org.openjdk.jmh.annotations.BenchmarkMode;
@@ -56,7 +60,9 @@ import org.openjdk.jmh.annotations.Warmup;
  * unsupported plan shapes that are not numeric DISTINCT and therefore also exercises normal bounded-cache churn; the
  * other two workloads isolate exact SUM(DISTINCT) and AVG(DISTINCT). Every invocation consumes and validates complete
  * results against a generic-evaluator digest. Generated kernels remain costed proposals, so a correct lower-cost
- * specialist or compile-pending fallback is part of the measured JANINO configuration.
+ * specialist or compile-pending fallback is part of the measured JANINO configuration. One bridge shape reads
+ * {@code NOW()}; its generic digest is only an oracle for the current clock reading and is re-read when that reading
+ * moves (see {@link #matchesOracle(int, long)}).
  */
 @State(Scope.Benchmark)
 @Warmup(iterations = 3, time = 1, timeUnit = TimeUnit.SECONDS)
@@ -84,60 +90,83 @@ public class LmdbNativeGeneratedCorpusBenchmark {
 	private File dataDir;
 	private SailRepository repository;
 	private SailRepositoryConnection connection;
+	private String[] sparql;
+	private boolean[] readsClock;
 	private TupleQuery[] queries;
 	private long[] expected;
 
 	@Setup(Level.Trial)
 	public void setUp() throws Exception {
-		boolean janino = "JANINO".equals(engine);
-		boolean bridge = janino && "PLAN_BRIDGE_49".equals(workload);
-		boolean numericDistinct = janino && workload.startsWith("DISTINCT_");
-		save(NATIVE_FLAG, "true");
-		save(WCOJ_FLAG, "false");
-		save(LmdbNativeJaninoCodegen.ENABLED_PROPERTY, Boolean.toString(janino));
-		save(LmdbNativeJaninoCodegen.THRESHOLD_ROWS_PROPERTY, "0");
-		save(LmdbNativeKernelLowering.PLAN_BRIDGE_PROPERTY, Boolean.toString(bridge));
-		save(LmdbNativeKernelLowering.DISTINCT_NUMERIC_PROPERTY, Boolean.toString(numericDistinct));
-		// The M7 context-column lowering graduates the corpus's GRAPH shape off the PlanRows bridge; this gate
-		// measures the bridge route on all 49 shapes, so pin the old lowering here.
-		save(LmdbNativeKernelLowering.CONTEXT_COLUMNS_PROPERTY, "false");
+		try {
+			boolean janino = "JANINO".equals(engine);
+			boolean bridge = janino && "PLAN_BRIDGE_49".equals(workload);
+			boolean numericDistinct = janino && workload.startsWith("DISTINCT_");
+			save(NATIVE_FLAG, "true");
+			save(WCOJ_FLAG, "false");
+			save(LmdbNativeJaninoCodegen.ENABLED_PROPERTY, Boolean.toString(janino));
+			save(LmdbNativeJaninoCodegen.THRESHOLD_ROWS_PROPERTY, "0");
+			save(LmdbNativeKernelLowering.PLAN_BRIDGE_PROPERTY, Boolean.toString(bridge));
+			save(LmdbNativeKernelLowering.DISTINCT_NUMERIC_PROPERTY, Boolean.toString(numericDistinct));
+			// The M7 context-column lowering graduates the corpus's GRAPH shape off the PlanRows bridge; this gate
+			// measures the bridge route on all 49 shapes, so pin the old lowering here.
+			save(LmdbNativeKernelLowering.CONTEXT_COLUMNS_PROPERTY, "false");
 
-		dataDir = Files.newTemporaryFolder();
-		LmdbStore store = new LmdbStore(dataDir,
-				new LmdbStoreConfig("spoc,ospc,psoc,posc").setNativeEvaluationEnabled(true)
-						.setDirectAdjacencyBuildOnStart(false));
-		repository = new SailRepository(store);
-		loadFixture();
-		JaninoCeilingKernels.buildDirectAdjacency(store);
-		connection = repository.getConnection();
+			dataDir = Files.newTemporaryFolder();
+			LmdbStore store = new LmdbStore(dataDir,
+					new LmdbStoreConfig("spoc,ospc,psoc,posc").setNativeEvaluationEnabled(true)
+							.setDirectAdjacencyBuildOnStart(false));
+			repository = new SailRepository(store);
+			loadFixture();
+			JaninoCeilingKernels.buildDirectAdjacency(store);
+			connection = repository.getConnection();
 
-		List<String> sparql = workloadQueries();
-		expected = genericDigests(sparql);
-		queries = new TupleQuery[sparql.size()];
-		for (int i = 0; i < queries.length; i++) {
-			queries[i] = connection.prepareTupleQuery(QueryLanguage.SPARQL, sparql.get(i));
+			sparql = workloadQueries().toArray(String[]::new);
+			readsClock = new boolean[sparql.length];
+			expected = new long[sparql.length];
+			queries = new TupleQuery[sparql.length];
+			for (int i = 0; i < queries.length; i++) {
+				readsClock[i] = readsClock(sparql[i]);
+				expected[i] = genericDigest(sparql[i]);
+			}
+			for (int i = 0; i < queries.length; i++) {
+				queries[i] = connection.prepareTupleQuery(QueryLanguage.SPARQL, sparql[i]);
+				if (janino) {
+					// the workload measures the generated kernels, which the measured selector may pass over on this
+					// corpus; force the kernel family (compiled first, interpreted while a compile is pending)
+					((SailTupleQuery) queries[i]).setForcedLmdbExecutionStrategy(
+							"irKernel,irKernelInterpreted,irAggregate,irAggregateInterpreted");
+				}
+			}
+			primeAndVerifyAdmission(janino, bridge);
+		} catch (Exception | Error failure) {
+			try {
+				tearDown();
+			} catch (Exception | Error cleanupFailure) {
+				failure.addSuppressed(cleanupFailure);
+			}
+			throw failure;
 		}
-		primeAndVerifyAdmission(janino, bridge);
 	}
 
 	@TearDown(Level.Trial)
-	public void tearDown() throws IOException {
-		if (connection != null) {
-			connection.close();
-		}
-		if (repository != null) {
-			repository.shutDown();
-		}
-		if (dataDir != null) {
-			FileUtil.deleteDir(dataDir);
-		}
-		for (Map.Entry<String, String> property : savedProperties.entrySet()) {
-			if (property.getValue() == null) {
-				System.clearProperty(property.getKey());
-			} else {
-				System.setProperty(property.getKey(), property.getValue());
+	public void tearDown() throws Exception {
+		LmdbTestUtil.cleanup(null, connection, () -> {
+			if (repository != null) {
+				repository.shutDown();
 			}
-		}
+		}, () -> {
+			if (dataDir != null) {
+				FileUtil.deleteDir(dataDir);
+			}
+		}, () -> {
+			for (Map.Entry<String, String> property : savedProperties.entrySet()) {
+				if (property.getValue() == null) {
+					System.clearProperty(property.getKey());
+				} else {
+					System.setProperty(property.getKey(), property.getValue());
+				}
+			}
+		});
 	}
 
 	@Benchmark
@@ -145,7 +174,7 @@ public class LmdbNativeGeneratedCorpusBenchmark {
 		long suiteDigest = 0x9E3779B97F4A7C15L;
 		for (int i = 0; i < queries.length; i++) {
 			long actual = digest(queries[i]);
-			if (actual != expected[i]) {
+			if (!matchesOracle(i, actual)) {
 				throw new IllegalStateException(workload + " query " + i + ": expected digest " + expected[i]
 						+ " but got " + actual);
 			}
@@ -218,17 +247,47 @@ public class LmdbNativeGeneratedCorpusBenchmark {
 		return result;
 	}
 
-	private long[] genericDigests(List<String> sparql) {
+	private long genericDigest(String query) {
 		System.setProperty(NATIVE_FLAG, "false");
 		try {
-			long[] digests = new long[sparql.size()];
-			for (int i = 0; i < digests.length; i++) {
-				digests[i] = digest(connection.prepareTupleQuery(QueryLanguage.SPARQL, sparql.get(i)));
-			}
-			return digests;
+			return digest(connection.prepareTupleQuery(QueryLanguage.SPARQL, query));
 		} finally {
 			System.setProperty(NATIVE_FLAG, "true");
 		}
+	}
+
+	/**
+	 * A pure query is checked against the digest cached at setup. A query that reads {@code NOW()} only reproduces that
+	 * digest while its clock-visible fields are unchanged (the corpus shape reads YEAR..HOURS, so a run straddling an
+	 * hour boundary changes its correct result). When the cached digest disagrees, the generic oracle is re-read after
+	 * the native evaluation, and the native result must equal that newer reading; the cache is then advanced so later
+	 * invocations compare against the current reading. This stays exact as long as the clock-visible value changes at
+	 * most once between the cached reading and the re-read, which holds because every change refreshes the cache and
+	 * invocations run back to back.
+	 */
+	private boolean matchesOracle(int index, long actual) {
+		if (actual == expected[index]) {
+			return true;
+		}
+		if (!readsClock[index]) {
+			return false;
+		}
+		expected[index] = genericDigest(sparql[index]);
+		return actual == expected[index];
+	}
+
+	private static boolean readsClock(String query) {
+		boolean[] found = { false };
+		QueryParserUtil.parseTupleQuery(QueryLanguage.SPARQL, query, null)
+				.getTupleExpr()
+				.visit(new AbstractSimpleQueryModelVisitor<RuntimeException>() {
+					@Override
+					public void meet(FunctionCall node) {
+						found[0] |= "NOW".equals(node.getURI());
+						super.meet(node);
+					}
+				});
+		return found[0];
 	}
 
 	private void primeAndVerifyAdmission(boolean janino, boolean bridge) throws Exception {
@@ -255,7 +314,7 @@ public class LmdbNativeGeneratedCorpusBenchmark {
 
 	private void verifyDigest(int index) {
 		long actual = digest(queries[index]);
-		if (actual != expected[index]) {
+		if (!matchesOracle(index, actual)) {
 			throw new IllegalStateException("warmup digest mismatch at query " + index);
 		}
 	}

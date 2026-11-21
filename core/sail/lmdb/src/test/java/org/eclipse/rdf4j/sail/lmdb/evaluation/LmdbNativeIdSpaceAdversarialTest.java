@@ -51,6 +51,7 @@ import org.eclipse.rdf4j.repository.sail.SailRepository;
 import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
 import org.eclipse.rdf4j.sail.base.SailDataset;
 import org.eclipse.rdf4j.sail.lmdb.LmdbStore;
+import org.eclipse.rdf4j.sail.lmdb.LmdbTestUtil;
 import org.eclipse.rdf4j.sail.lmdb.NativeQuerySourceAccess;
 import org.eclipse.rdf4j.sail.lmdb.config.LmdbStoreConfig;
 import org.junit.jupiter.api.AfterEach;
@@ -102,13 +103,8 @@ public class LmdbNativeIdSpaceAdversarialTest {
 	}
 
 	@AfterEach
-	public void tearDown() {
-		if (dataset != null) {
-			dataset.close();
-		}
-		if (repository != null) {
-			repository.shutDown();
-		}
+	public void tearDown() throws Exception {
+		LmdbTestUtil.cleanup(null, dataset, repository == null ? null : repository::shutDown);
 	}
 
 	@Test

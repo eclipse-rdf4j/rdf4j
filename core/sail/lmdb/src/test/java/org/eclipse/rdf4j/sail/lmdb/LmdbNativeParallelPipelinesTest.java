@@ -111,7 +111,6 @@ public class LmdbNativeParallelPipelinesTest {
 		System.setProperty(MAX_TASKS_FLAG, "5");
 		System.setProperty(PACKED_FTREE_FLAG, "false");
 		System.setProperty(KERNEL_INTERPRETER_FLAG, "false");
-		LmdbNativeCostCalibration.reset();
 		repository = new SailRepository(new LmdbStore(dataDir,
 				new LmdbStoreConfig("spoc,posc,ospc").setNativeEvaluationEnabled(true)));
 		try (SailRepositoryConnection connection = repository.getConnection()) {
@@ -142,7 +141,6 @@ public class LmdbNativeParallelPipelinesTest {
 				repository.shutDown();
 			}
 		} finally {
-			LmdbNativeCostCalibration.reset();
 			restoreProperties(previousProperties);
 		}
 	}
@@ -905,6 +903,13 @@ public class LmdbNativeParallelPipelinesTest {
 						}
 						return super.registerIteration(new IterationWrapper<T>(iteration) {
 							@Override
+							public boolean requestCancellation() {
+								// Keep native cancellation behind the close gate so owner-admission denial stops the
+								// workers.
+								return false;
+							}
+
+							@Override
 							protected void handleClose() {
 								delegateCloses.incrementAndGet();
 								delegateCloseEntered.countDown();
@@ -1083,6 +1088,13 @@ public class LmdbNativeParallelPipelinesTest {
 							return super.registerIteration(iteration);
 						}
 						return super.registerIteration(new IterationWrapper<T>(iteration) {
+							@Override
+							public boolean requestCancellation() {
+								// Keep the worker backpressured after result close until connection shutdown interrupts
+								// it.
+								return false;
+							}
+
 							@Override
 							protected void handleClose() {
 								delegateCloses.incrementAndGet();

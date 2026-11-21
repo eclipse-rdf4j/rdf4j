@@ -56,9 +56,11 @@ public class LmdbNativeDeepOptionalStrategyTest {
 	private static final String OUTSIDE_FROM_GRAPH = EX + "graph/outside-from";
 	private static final String NATIVE_FLAG = "rdf4j.lmdb.nativeQueryEngine.enabled";
 	private static final String EXECUTION_PATH_METRIC = "nativeExecutionPath";
+	/** Group-table representations the sequential GROUP BY path (strategy nestedLoop) reports as its execution path. */
+	private static final Set<String> SEQUENTIAL_REPRESENTATIONS = Set.of("hashGroups", "primitiveTupleGroups",
+			"singleSlotGroups", "aggState");
 	private static final String[] PROPERTIES = {
 			NATIVE_FLAG,
-			"rdf4j.lmdb.costCalibration.enabled",
 			"rdf4j.lmdb.janinoCodegen.enabled",
 			"rdf4j.lmdb.janinoCodegen.resumable",
 			"rdf4j.lmdb.janinoCodegen.synchronous",
@@ -78,7 +80,6 @@ public class LmdbNativeDeepOptionalStrategyTest {
 			previousProperties.put(property, System.getProperty(property));
 		}
 		System.setProperty(NATIVE_FLAG, "true");
-		System.setProperty("rdf4j.lmdb.costCalibration.enabled", "false");
 		System.setProperty("rdf4j.lmdb.janinoCodegen.enabled", "false");
 		System.setProperty("rdf4j.lmdb.janinoCodegen.resumable", "true");
 		System.setProperty("rdf4j.lmdb.kernelInterpreter.enabled", "true");
@@ -209,14 +210,17 @@ public class LmdbNativeDeepOptionalStrategyTest {
 	public void leadingBindsJoinedToPathsAcrossUnionBranchesAutomaticallyActivateNativeStrategy() {
 		String query = groupedOrderedFourLeadingBindPathUnionQuery();
 		List<BindingSet> genericRows = evaluate(query, false);
-		List<BindingSet> nativeRows = evaluate(query, true);
-		GenericPlanNode executedPlan = explain(query);
+		// the interpreted aggregate kernel is the operator under test: the measured selector prices it above the
+		// sequential path on this fixture, so force it and keep the unforced run as a parity control
+		List<BindingSet> nativeRows = evaluate(query, "irAggregateInterpreted");
+		GenericPlanNode executedPlan = explain(query, "irAggregateInterpreted");
 		Set<String> executionPaths = executionPaths(executedPlan);
 
+		assertThat(evaluate(query, true)).containsExactlyElementsOf(genericRows);
 		assertThat(nativeRows).containsExactlyElementsOf(genericRows);
 		assertThat(executionPaths)
-				.as("normal arbitration must activate a concrete non-nested strategy for this path UNION:%n%s",
-						executedPlan)
+				.as("the forced interpreted aggregate must activate a concrete non-nested strategy for this path "
+						+ "UNION:%n%s", executedPlan)
 				.contains("irAggregateInterpreted")
 				.doesNotContain("nestedLoop");
 		assertThat(executedPlan.toString()).doesNotContain("strategy: NOT_ACTIVATED");
@@ -266,14 +270,17 @@ public class LmdbNativeDeepOptionalStrategyTest {
 
 	private void assertUsesSetAtATimeStrategy(String query) {
 		List<BindingSet> genericRows = evaluate(query, false);
-		GenericPlanNode executedPlan = explain(query);
+		// the set-at-a-time IR strategy is the operator under test: the measured selector prices it above the
+		// ordered DISTINCT stream on this fixture, so force it and keep the unforced run as a parity control
+		GenericPlanNode executedPlan = explain(query, "irKernelInterpreted");
 		Set<String> executionPaths = executionPaths(executedPlan);
 
 		assertThat(genericRows).as("the fixture must exercise the query rather than an empty-plan shortcut")
 				.isNotEmpty();
 		assertThat(evaluate(query, true)).containsExactlyInAnyOrderElementsOf(genericRows);
+		assertThat(evaluate(query, "irKernelInterpreted")).containsExactlyInAnyOrderElementsOf(genericRows);
 		assertThat(executionPaths)
-				.as("a wide DISTINCT query must select the set-at-a-time IR strategy:%n%s", executedPlan)
+				.as("a wide DISTINCT query must execute the forced set-at-a-time IR strategy:%n%s", executedPlan)
 				.contains("irKernelInterpreted")
 				.doesNotContain("nestedLoop");
 	}
@@ -452,8 +459,11 @@ public class LmdbNativeDeepOptionalStrategyTest {
 					.toList();
 			assertThat(groupDecisions).as("complete GROUP BY inventory: %s", optimized).isNotEmpty();
 			assertThat(groupDecisions).allSatisfy(decision -> {
+				// the record lists the strategies the dispatch loop asked; the IR aggregate tiers are not offered
+				// to an ordinary dispatch while an ordered DISTINCT specialist is admitted (they remain forceable,
+				// which the forced runs in this class prove)
 				assertThat(decision.candidates()).extracting(candidate -> candidate.strategy())
-						.contains("orderedDistinctGroups", "irAggregate", "irAggregateInterpreted", "nestedLoop");
+						.contains("orderedDistinctGroups", "nestedLoop");
 				assertThat(decision.candidates()).allSatisfy(candidate -> {
 					if (Boolean.FALSE.equals(candidate.canAttempt())) {
 						assertThat(candidate.declineReason()).as(candidate.strategy()).isNotBlank();
@@ -462,7 +472,9 @@ public class LmdbNativeDeepOptionalStrategyTest {
 			});
 			Set<String> candidates = KernelExecutionTestAccess.eligibleStrategies(optimized);
 			assertThat(candidates).contains("orderedDistinctGroups", "nestedLoop");
-			assertThat(actualStrategies).isNotEmpty().allSatisfy(path -> assertThat(candidates).contains(path));
+			assertThat(actualStrategies).isNotEmpty()
+					.allSatisfy(path -> assertThat(candidates)
+							.contains(SEQUENTIAL_REPRESENTATIONS.contains(path) ? "nestedLoop" : path));
 		}
 	}
 

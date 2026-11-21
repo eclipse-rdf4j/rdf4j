@@ -23,6 +23,7 @@ import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
 import org.eclipse.rdf4j.sail.base.SailDataset;
 import org.eclipse.rdf4j.sail.lmdb.JaninoCeilingKernels;
 import org.eclipse.rdf4j.sail.lmdb.LmdbStore;
+import org.eclipse.rdf4j.sail.lmdb.LmdbTestUtil;
 import org.eclipse.rdf4j.sail.lmdb.config.LmdbStoreConfig;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.NativeLmdbQuerySource;
 import org.openjdk.jmh.annotations.Benchmark;
@@ -78,39 +79,43 @@ public class JaninoCeilingAnalyticsBenchmark {
 
 	@Setup(Level.Trial)
 	public void setup() throws Exception {
-		File storeDir = storeDirectory();
-		if (!new File(storeDir, "triples").isDirectory()) {
-			throw new IllegalStateException("Fixed theme store missing at " + storeDir.getAbsolutePath()
-					+ "; run ThemeQueryBenchmark once to build it");
-		}
-		System.setProperty("rdf4j.lmdb.nativeQueryEngine.enabled", "true");
+		try {
+			File storeDir = storeDirectory();
+			if (!new File(storeDir, "triples").isDirectory()) {
+				throw new IllegalStateException("Fixed theme store missing at " + storeDir.getAbsolutePath()
+						+ "; run ThemeQueryBenchmark once to build it");
+			}
+			System.setProperty("rdf4j.lmdb.nativeQueryEngine.enabled", "true");
 
-		LmdbStoreConfig config = new LmdbStoreConfig("spoc,ospc,psoc,posc");
-		config.setSketchEstimatorEnabled(false);
-		config.setForceSync(false);
-		config.setValueDBSize(1_073_741_824L);
-		config.setTripleDBSize(config.getValueDBSize());
-		config.setNativeEvaluationEnabled(true);
-		repository = new SailRepository(new LmdbStore(storeDir, config));
-		repository.init();
+			LmdbStoreConfig config = new LmdbStoreConfig("spoc,ospc,psoc,posc");
+			config.setSketchEstimatorEnabled(false);
+			config.setForceSync(false);
+			config.setValueDBSize(1_073_741_824L);
+			config.setTripleDBSize(config.getValueDBSize());
+			config.setNativeEvaluationEnabled(true);
+			repository = new SailRepository(new LmdbStore(storeDir, config));
+			repository.init();
 
-		dataset = JaninoCeilingKernels.openDataset((LmdbStore) repository.getSail());
-		source = (NativeLmdbQuerySource) dataset;
+			dataset = JaninoCeilingKernels.openDataset((LmdbStore) repository.getSail());
+			source = (NativeLmdbQuerySource) dataset;
 
-		long[][] rows = JaninoCeilingKernels.predicateSelectivity(source);
-		if (rows.length != 100) {
-			throw new IllegalStateException("expected 100 predicate rows, got " + rows.length);
+			long[][] rows = JaninoCeilingKernels.predicateSelectivity(source);
+			if (rows.length != 100) {
+				throw new IllegalStateException("expected 100 predicate rows, got " + rows.length);
+			}
+		} catch (Exception | Error failure) {
+			try {
+				tearDown();
+			} catch (Exception | Error cleanupFailure) {
+				failure.addSuppressed(cleanupFailure);
+			}
+			throw failure;
 		}
 	}
 
 	@TearDown(Level.Trial)
 	public void tearDown() throws Exception {
-		if (dataset != null) {
-			dataset.close();
-		}
-		if (repository != null) {
-			repository.shutDown();
-		}
+		LmdbTestUtil.cleanup(null, dataset, repository == null ? null : repository::shutDown);
 	}
 
 	@Benchmark

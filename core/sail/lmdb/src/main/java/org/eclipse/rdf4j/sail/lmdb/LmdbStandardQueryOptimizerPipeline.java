@@ -40,7 +40,9 @@ import org.eclipse.rdf4j.query.algebra.evaluation.QueryOptimizer;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryOptimizerPipeline;
 import org.eclipse.rdf4j.query.algebra.evaluation.TripleSource;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.EvaluationStatistics;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.FilterOptimizer;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.OrderLimitOptimizer;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.ParentReferenceChecker;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.QueryJoinOptimizer;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.StandardQueryOptimizerPipeline;
 import org.eclipse.rdf4j.query.algebra.helpers.AbstractSimpleQueryModelVisitor;
@@ -54,10 +56,22 @@ public final class LmdbStandardQueryOptimizerPipeline implements QueryOptimizerP
 	private final TripleSource tripleSource;
 	private final EvaluationStatistics evaluationStatistics;
 	private final EvaluationStrategy strategy;
+	private final boolean nativeEngine;
 
 	@InternalUseOnly
 	public LmdbStandardQueryOptimizerPipeline(EvaluationStrategy strategy, TripleSource tripleSource,
 			EvaluationStatistics evaluationStatistics) {
+		this(strategy, tripleSource, evaluationStatistics, false);
+	}
+
+	/**
+	 * @param nativeEngine when {@code true}, the pipeline is built for the native query engine and adds
+	 *                     {@link LmdbSubqueryGroupPushdownOptimizer} after the first {@link FilterOptimizer}.
+	 */
+	@InternalUseOnly
+	public LmdbStandardQueryOptimizerPipeline(EvaluationStrategy strategy, TripleSource tripleSource,
+			EvaluationStatistics evaluationStatistics, boolean nativeEngine) {
+		this.nativeEngine = nativeEngine;
 		this.delegate = new StandardQueryOptimizerPipeline(strategy, new OrderBlindTripleSource(tripleSource),
 				evaluationStatistics);
 		this.tripleSource = tripleSource;
@@ -73,7 +87,13 @@ public final class LmdbStandardQueryOptimizerPipeline implements QueryOptimizerP
 	@Override
 	public Iterable<QueryOptimizer> getOptimizers() {
 		if (!strategy.getQueryExecutionPolicy().experimentalQueryOptimizations()) {
-			return delegate.getOptimizers();
+			if (!nativeEngine) {
+				return delegate.getOptimizers();
+			}
+			List<QueryOptimizer> plain = new ArrayList<>();
+			delegate.getOptimizers().forEach(plain::add);
+			insertGroupPushdown(plain);
+			return plain;
 		}
 		List<QueryOptimizer> optimizers = new ArrayList<>();
 		boolean inserted = false;
@@ -93,7 +113,28 @@ public final class LmdbStandardQueryOptimizerPipeline implements QueryOptimizerP
 			optimizers.add(new LmdbOrderByOptimizer(tripleSource));
 		}
 
+		if (nativeEngine) {
+			insertGroupPushdown(optimizers);
+		}
 		return optimizers;
+	}
+
+	/**
+	 * The standard pipeline pushes filters onto their patterns only after {@link QueryJoinOptimizer}; the group
+	 * pushdown needs that to have happened (it accepts only plain joins below the group), so it goes right after the
+	 * first {@link FilterOptimizer} (and that optimizer's parent-reference check, when present).
+	 */
+	private static void insertGroupPushdown(List<QueryOptimizer> optimizers) {
+		for (int i = 0; i < optimizers.size(); i++) {
+			if (optimizers.get(i) instanceof FilterOptimizer) {
+				int position = i + 1;
+				if (position < optimizers.size() && optimizers.get(position) instanceof ParentReferenceChecker) {
+					position++;
+				}
+				optimizers.add(position, new LmdbSubqueryGroupPushdownOptimizer());
+				return;
+			}
+		}
 	}
 
 	private final class LmdbPhysicalJoinOrderOptimizer implements QueryOptimizer {

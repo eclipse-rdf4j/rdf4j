@@ -44,11 +44,13 @@ import java.util.concurrent.Semaphore;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicReference;
 import java.util.zip.GZIPInputStream;
 import java.util.zip.ZipEntry;
 import java.util.zip.ZipInputStream;
 
 import org.eclipse.rdf4j.common.iteration.CloseableIteratorIteration;
+import org.eclipse.rdf4j.http.client.BNodeOriginTransport;
 import org.eclipse.rdf4j.http.client.SharedHttpClientSessionManager;
 import org.eclipse.rdf4j.http.client.spi.RDF4JHttpClientConfig;
 import org.eclipse.rdf4j.model.IRI;
@@ -224,6 +226,57 @@ class ExportServletCoverageTest {
 			verify(response, never()).setHeader("Content-Encoding", "gzip");
 			Model parsed = Rio.parse(new ByteArrayInputStream(rdf), "urn:base:", RDFFormat.NQUADS);
 			assertThat(parsed).contains(statement);
+		}
+	}
+
+	@Test
+	void exportDownloadNegotiatesRemoteBlankNodeOriginsAndKeepsNQuadsParseable() throws Exception {
+		AtomicReference<String> requestedOrigin = new AtomicReference<>();
+		HttpServer server = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
+		server.createContext("/protocol", exchange -> {
+			byte[] version = "12".getBytes(StandardCharsets.UTF_8);
+			exchange.sendResponseHeaders(200, version.length);
+			try (exchange; OutputStream body = exchange.getResponseBody()) {
+				body.write(version);
+			}
+		});
+		server.createContext("/repositories/remote/statements", exchange -> {
+			requestedOrigin.set(exchange.getRequestHeaders().getFirst(BNodeOriginTransport.HEADER));
+			byte[] statements = "_:stored <urn:predicate> \"exported\" <urn:graph> .\n"
+					.getBytes(StandardCharsets.UTF_8);
+			exchange.getResponseHeaders().set("Content-Type", RDFFormat.NQUADS.getDefaultMIMEType());
+			exchange.sendResponseHeaders(200, statements.length);
+			try (exchange; OutputStream body = exchange.getResponseBody()) {
+				body.write(statements);
+			}
+		});
+		server.start();
+
+		HTTPRepository repository = new HTTPRepository(
+				"http://127.0.0.1:" + server.getAddress().getPort() + "/repositories/remote");
+		ExportServlet servlet = new ExportServlet();
+		WorkbenchRequest request = mock(WorkbenchRequest.class);
+		HttpServletResponse response = mock(HttpServletResponse.class);
+		CapturingServletOutputStream output = new CapturingServletOutputStream();
+		servlet.setRepository(repository);
+		when(request.getParameter("action")).thenReturn("download");
+		when(request.isParameterPresent("Accept")).thenReturn(true);
+		when(request.getParameter("Accept")).thenReturn(RDFFormat.NQUADS.getDefaultMIMEType());
+		when(response.getOutputStream()).thenReturn(output);
+
+		try {
+			servlet.service(request, response);
+
+			assertThat(requestedOrigin.get()).isEqualTo(BNodeOriginTransport.VERSION);
+			Model parsed = Rio.parse(new ByteArrayInputStream(output.bytes()), "urn:base:", RDFFormat.NQUADS);
+			assertThat(parsed).hasSize(1);
+			Statement statement = parsed.iterator().next();
+			assertThat(statement.getPredicate()).isEqualTo(SimpleValueFactory.getInstance().createIRI("urn:predicate"));
+			assertThat(statement.getObject()).isEqualTo(SimpleValueFactory.getInstance().createLiteral("exported"));
+			assertThat(statement.getContext()).isEqualTo(SimpleValueFactory.getInstance().createIRI("urn:graph"));
+		} finally {
+			repository.shutDown();
+			server.stop(0);
 		}
 	}
 

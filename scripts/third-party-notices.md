@@ -33,11 +33,12 @@ publish.
 
 Maven installs/builds the frontend; the Vite collector emits actual bundled
 module paths from both main and worker bundles into
-`tools/workbench/target/licensing/npm-modules.json`. At `prepare-package`,
+`tools/workbench/target/licensing/npm-modules.json`. In the `test` phase,
 `maven-dependency-plugin:build-classpath` resolves runtime JARs including
 transitive dependencies, excludes the project's own `org.eclipse.rdf4j` group,
-and writes `tools/workbench/target/licensing/java-classpath.txt`. The generator
-then consumes these exact inputs and writes the files bundled in the WAR under
+and writes `tools/workbench/target/licensing/java-classpath.txt`. This step also
+runs with `-DskipTests`. At `prepare-package` the generator consumes these exact
+inputs and writes the files bundled in the WAR under
 `tools/workbench/target/frontend/legal`.
 
 To rerun collection directly after those build inputs exist:

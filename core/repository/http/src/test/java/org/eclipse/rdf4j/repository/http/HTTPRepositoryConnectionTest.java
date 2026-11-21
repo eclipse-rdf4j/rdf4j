@@ -20,6 +20,7 @@ import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.ArgumentMatchers.isNull;
+import static org.mockito.Mockito.CALLS_REAL_METHODS;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
@@ -45,6 +46,10 @@ import org.eclipse.rdf4j.query.GraphQueryResult;
 import org.eclipse.rdf4j.query.QueryLanguage;
 import org.eclipse.rdf4j.query.TupleQueryResult;
 import org.eclipse.rdf4j.query.explanation.Explanation;
+import org.eclipse.rdf4j.query.resultio.TupleQueryResultFormat;
+import org.eclipse.rdf4j.repository.Repository;
+import org.eclipse.rdf4j.repository.RepositoryConnection;
+import org.eclipse.rdf4j.repository.base.RepositoryConnectionWrapper;
 import org.eclipse.rdf4j.rio.RDFFormat;
 import org.eclipse.rdf4j.rio.UnsupportedRDFormatException;
 import org.junit.jupiter.api.BeforeAll;
@@ -150,6 +155,51 @@ public class HTTPRepositoryConnectionTest {
 		verify(connection).flushTransactionState(Protocol.Action.QUERY);
 		verify(explainSession).sendQueryExplanation(eq(QueryLanguage.SPARQL), any(), isNull(), isNull(),
 				eq(true), eq(0), eq(Explanation.Level.Optimized));
+	}
+
+	@Test
+	public void enablingBlankNodeOriginsUsesBinaryFormatsAndRestoresConnectionPreferences() {
+		RDF4JProtocolSession client = mock(RDF4JProtocolSession.class, CALLS_REAL_METHODS);
+		client.setPreferredTupleQueryResultFormat(TupleQueryResultFormat.SPARQL);
+		client.setPreferredRDFFormat(RDFFormat.TURTLE);
+		HTTPRepositoryConnection connection = new HTTPRepositoryConnection(mock(HTTPRepository.class), client);
+
+		HTTPRepository.setBNodeOriginEnabled(connection, true);
+
+		assertThat(client.getPreferredTupleQueryResultFormat()).isEqualTo(TupleQueryResultFormat.BINARY);
+		assertThat(client.getPreferredRDFFormat()).isEqualTo(RDFFormat.BINARY);
+		verify(client).setBNodeOriginEnabled(true);
+
+		HTTPRepository.setBNodeOriginEnabled(connection, false);
+
+		assertThat(client.getPreferredTupleQueryResultFormat()).isEqualTo(TupleQueryResultFormat.SPARQL);
+		assertThat(client.getPreferredRDFFormat()).isEqualTo(RDFFormat.TURTLE);
+		verify(client).setBNodeOriginEnabled(false);
+	}
+
+	@Test
+	public void enablingBlankNodeOriginsFindsAnHTTPConnectionBehindNestedWrappers() {
+		RDF4JProtocolSession client = mock(RDF4JProtocolSession.class, CALLS_REAL_METHODS);
+		HTTPRepositoryConnection connection = new HTTPRepositoryConnection(mock(HTTPRepository.class), client);
+		Repository repository = mock(Repository.class);
+		RepositoryConnectionWrapper wrapped = new RepositoryConnectionWrapper(repository,
+				new RepositoryConnectionWrapper(repository, connection));
+
+		HTTPRepository.setBNodeOriginEnabled(wrapped, true);
+
+		verify(client).setBNodeOriginEnabled(true);
+	}
+
+	@Test
+	public void enablingBlankNodeOriginsStopsAtADelegationCycle() {
+		RepositoryConnectionWrapper cycle = new RepositoryConnectionWrapper(mock(Repository.class)) {
+			@Override
+			public RepositoryConnection getDelegate() {
+				return this;
+			}
+		};
+
+		assertThatCode(() -> HTTPRepository.setBNodeOriginEnabled(cycle, true)).doesNotThrowAnyException();
 	}
 
 	@Test

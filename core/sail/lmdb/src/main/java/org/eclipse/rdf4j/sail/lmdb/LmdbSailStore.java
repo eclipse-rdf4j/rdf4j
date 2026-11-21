@@ -20,7 +20,6 @@ import java.io.IOException;
 import java.io.UncheckedIOException;
 import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
-import java.nio.charset.StandardCharsets;
 import java.nio.file.FileVisitResult;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -45,7 +44,6 @@ import java.util.Optional;
 import java.util.OptionalDouble;
 import java.util.OptionalLong;
 import java.util.Set;
-import java.util.UUID;
 import java.util.WeakHashMap;
 import java.util.concurrent.ArrayBlockingQueue;
 import java.util.concurrent.CancellationException;
@@ -2864,6 +2862,10 @@ class LmdbSailStore implements SailStore {
 	private volatile CommitListener commitListener;
 	private PostCommitBackupPublisher postCommitBackupPublisher;
 	private final boolean backupPublicationEnabled;
+
+	private final boolean backupBoundaryTrackingEnabled;
+
+	private LmdbBackupJournalState backupJournalState;
 	private PostCommitBackupPublisher.Stage preparedBackupStage;
 	private long lastBackupPublicationAttempt = -1L;
 	private final LmdbBackupRecordBuffer pendingBackupRecords;
@@ -6862,14 +6864,16 @@ class LmdbSailStore implements SailStore {
 				setFactoryFactory, statsFactory, asyncQueueCapacity, false);
 	}
 
-	private LmdbSailStore(File dataDir, StoreProperties properties, LmdbStoreConfig config,
+	private LmdbSailStore(File dataDir, StoreProperties properties, LmdbStoreConfig storeConfig,
 			boolean sketchBasedJoinEstimatorEnabled, LmdbStoreFormat format, QueryExecutionPolicy queryExecutionPolicy,
 			Runnable duringValueOverlayWarmupScanForTest, Consumer<ValueStore> afterValueStoreOpenForTest,
 			ValueStoreFactory valueStoreFactory, TripleStoreFactory tripleStoreFactory,
 			PersistentSetFactoryFactory setFactoryFactory, FilterSelectivityStatsFactory statsFactory,
 			int asyncQueueCapacity, boolean temporaryOverflow) throws IOException, SailException {
+		LmdbStoreConfig config = temporaryOverflow ? storeConfig.forTemporaryOverflow() : storeConfig;
 		this.opQueue = new CircularBuffer<>(asyncQueueCapacity);
-		this.backupPublicationEnabled = !temporaryOverflow;
+		this.backupBoundaryTrackingEnabled = !temporaryOverflow;
+		this.backupPublicationEnabled = !temporaryOverflow && config.getBackupJournalEnabled();
 		this.queryExecutionPolicy = Objects.requireNonNull(queryExecutionPolicy);
 		this.learnedFilterSelectivity = queryExecutionPolicy.experimentalQueryOptimizations()
 				? new LmdbLearnedFilterSelectivity()
@@ -6877,7 +6881,9 @@ class LmdbSailStore implements SailStore {
 		sketchBasedJoinEstimatorEnabled &= queryExecutionPolicy.experimentalQueryOptimizations();
 		this.dataDir = dataDir;
 		// Supplementary snapshot copying includes every child of the store directory.
-		this.pendingBackupRecords = new LmdbBackupRecordBuffer(Path.of(System.getProperty("java.io.tmpdir")));
+		this.pendingBackupRecords = backupPublicationEnabled
+				? new LmdbBackupRecordBuffer(Path.of(System.getProperty("java.io.tmpdir")))
+				: null;
 		this.autoGrow = config.getAutoGrow();
 		this.asyncValueCleanup = config.getAsyncValueCleanup();
 		this.mapGrowthCoordinator = new MapGrowthCoordinator(config.getMapGrowthReadDrainTimeoutMillis());
@@ -6962,19 +6968,15 @@ class LmdbSailStore implements SailStore {
 			}
 			preparedImportBudget = new AlignedWriteBudget(calculatePreparedImportStatementLimit(
 					Runtime.getRuntime().maxMemory(), tripleStore.secondaryIndexCount()));
-			LmdbDirectAdjacencyStore adjacencyForContext = directAdjacency;
-			costModelContext = new LmdbNativeCostModelContext(
-					dataDir.toPath(),
-					UUID.nameUUIDFromBytes(dataDir.getAbsolutePath().getBytes(StandardCharsets.UTF_8)),
-					adjacencyForContext == null ? () -> 0L : adjacencyForContext::epochCount,
-					adjacencyForContext == null ? () -> "DISABLED"
-							: () -> adjacencyForContext.maintenanceState().name(),
-					costModelDataGeneration::get,
-					() -> 0L);
+			costModelContext = new LmdbNativeCostModelContext(dataDir.toPath(), tripleStore::indexGeneration);
 			postReadyInitialization = () -> initializePostReadyMaintenance(config, statsFactory,
 					directAdjacencyOptions.buildOnStart());
 			valueStore.setStartupValueOverlayScheduling(valueOverlayStartupScheduling);
 			logLmdbStats(Level.INFO, "on startup");
+			if (!temporaryOverflow) {
+				backupJournalState = LmdbBackupJournalState.open(dataDir.toPath(), backupPublicationEnabled,
+						getCurrentCommittedTxnId(), () -> PostCommitBackupPublisher.resetForNewGeneration(this));
+			}
 			if (backupPublicationEnabled) {
 				// Direct SailSource users need the same durable chain as owning LmdbStore connections.
 				// Disposable overflow input is backed up only when replayed into the authoritative store.
@@ -7172,6 +7174,10 @@ class LmdbSailStore implements SailStore {
 		return dataDir.toPath();
 	}
 
+	LmdbBackupJournalState backupJournalState() {
+		return backupJournalState;
+	}
+
 	PostCommitBackupPublisher backupPublisher() {
 		return postCommitBackupPublisher;
 	}
@@ -7216,7 +7222,10 @@ class LmdbSailStore implements SailStore {
 			for (Path child : (Iterable<Path>) children::iterator) {
 				String name = child.getFileName().toString();
 				if (TRIPLES_DIR_NAME.equals(name) || VALUES_DIR_NAME.equals(name)
-						|| PostCommitBackupPublisher.DIRECTORY.equals(name) || name.startsWith("backup-records-")) {
+						|| PostCommitBackupPublisher.DIRECTORY.equals(name)
+						|| PostCommitBackupPublisher.ARCHIVE_DIRECTORY.equals(name)
+						|| "backup".equals(name) || name.startsWith("backup-records-")
+						|| name.startsWith(".tmp-backup-journal-")) {
 					continue;
 				}
 				copyRecursively(child, targetDir.resolve(name));
@@ -7736,6 +7745,10 @@ class LmdbSailStore implements SailStore {
 					if (!backupRecords.isEmpty()) {
 						prepareBackupStage(previousRequiredTxn, backupRecords);
 						tripleStore.requireBackupPublication();
+					} else if (backupBoundaryTrackingEnabled && !backupPublicationEnabled) {
+						// Keep snapshot identities current without capturing or publishing recovery records.
+						// The boundary is stored in the same native commit, with the ordinary sync policy.
+						tripleStore.requireBackupPublication();
 					}
 					Set<Long> unusedIds = mutationUnusedIds();
 					if (namespacesChanged) {
@@ -7803,7 +7816,7 @@ class LmdbSailStore implements SailStore {
 					prepareBackupStage(previousRequiredTxn, backupRecords);
 					tripleStore.commitNamespaceSnapshot(currentNamespaces,
 							storeReplayDecision == null ? tripleStore.prepareReplayDecision() : storeReplayDecision,
-							backupPublicationEnabled);
+							backupBoundaryTrackingEnabled);
 					nativeCommitted = true;
 					publishCommittedDelta(previousRequiredTxn, backupRecords);
 				}
@@ -8048,6 +8061,9 @@ class LmdbSailStore implements SailStore {
 	}
 
 	private void clearPendingBackupRecords() {
+		if (pendingBackupRecords == null) {
+			return;
+		}
 		try {
 			pendingBackupRecords.clear();
 		} catch (IOException failure) {
@@ -9032,7 +9048,9 @@ class LmdbSailStore implements SailStore {
 		// already closed, and admitted publication/native owners have completed before we acquire it.
 		sinkStoreAccessLock.lock();
 		try {
-			failure = attemptClose(failure, pendingBackupRecords::close);
+			if (pendingBackupRecords != null) {
+				failure = attemptClose(failure, pendingBackupRecords::close);
+			}
 			if (valueStore != null && tripleStore != null) {
 				failure = attemptClose(failure, () -> logLmdbStats(Level.INFO, "on shutdown"));
 			}
@@ -10132,6 +10150,11 @@ class LmdbSailStore implements SailStore {
 		@Override
 		public SailSource fork() {
 			throw new UnsupportedOperationException("This store does not support multiple datasets");
+		}
+
+		@Override
+		public SailDataset datasetForRead(IsolationLevel level) throws SailException {
+			return dataset(level);
 		}
 
 		@Override
@@ -11239,7 +11262,7 @@ class LmdbSailStore implements SailStore {
 									: bulkOperationSize;
 							bulk = new BulkAddQuadsOperation(explicit, capacity);
 							bulk.estimatorCallback = this::queueEstimatorAdd;
-							bulk.backupCallback = this::queueBackupAdd;
+							bulk.backupCallback = backupPublicationEnabled ? this::queueBackupAdd : null;
 						} else if (bulk.size == bulk.capacity) {
 							// A weakly consistent set's size is only an allocation hint. Expand before resolving this
 							// row.
@@ -11369,7 +11392,7 @@ class LmdbSailStore implements SailStore {
 					q.pred = pred;
 					q.obj = obj;
 					q.estimatorCallback = this::queueEstimatorAdd;
-					q.backupCallback = this::queueBackupAdd;
+					q.backupCallback = backupPublicationEnabled ? this::queueBackupAdd : null;
 
 					if (multiThreadingActive) {
 						enqueueAsync(q);
@@ -11915,7 +11938,7 @@ class LmdbSailStore implements SailStore {
 			long retainedBytes = state.pendingBytes - pending.estimatedStorageBytes(pending.size);
 			state.pendingBytes = 0L;
 			BulkAddQuadsOperation batch = pending.prepare();
-			batch.backupCallback = this::queueBackupAdd;
+			batch.backupCallback = backupPublicationEnabled ? this::queueBackupAdd : null;
 			LmdbInitialRunImport runImport = acceptingInitialRunImport();
 			LmdbInitialRunImport ownImport = initialRunImport;
 			if (ownImport != null && ownImport.owner == writerOwner() && !ownImport.completing()
@@ -12374,7 +12397,7 @@ class LmdbSailStore implements SailStore {
 			q.pred = pred;
 			q.obj = obj;
 			q.estimatorCallback = this::queueEstimatorAdd;
-			q.backupCallback = this::queueBackupAdd;
+			q.backupCallback = backupPublicationEnabled ? this::queueBackupAdd : null;
 			submitOperation(q);
 		}
 
@@ -12408,15 +12431,17 @@ class LmdbSailStore implements SailStore {
 				for (long contextId : contexts) {
 					Consumer<long[]> removed = quad -> {
 						removeCount[0]++;
-						try {
-							Statement removedStatement = valueStore.withWriterCaptureContext(
-									(stack, txn) -> captureBackupStatement(quadToStatement(quad)));
-							queueBackupRemove(removedStatement);
-							if (explicit) {
-								queueEstimatorRemove(removedStatement);
+						if (backupPublicationEnabled || explicit && sketchBasedJoinEstimator != null) {
+							try {
+								Statement removedStatement = valueStore.withWriterCaptureContext(
+										(stack, txn) -> captureBackupStatement(quadToStatement(quad)));
+								queueBackupRemove(removedStatement);
+								if (explicit) {
+									queueEstimatorRemove(removedStatement);
+								}
+							} catch (IOException e) {
+								throw new UncheckedIOException(e);
 							}
-						} catch (IOException e) {
-							throw new UncheckedIOException(e);
 						}
 						for (long id : quad) {
 							if (id != 0L && !ValueIds.isInlined(id)) {
@@ -14082,6 +14107,11 @@ class LmdbSailStore implements SailStore {
 		}
 
 		@Override
+		public boolean mayHaveWildcardViews() {
+			return directAdjacency != null;
+		}
+
+		@Override
 		public RecordIterator statements(long subj, long pred, long obj, long context) throws IOException {
 			return statements(subj, pred, obj, context, (AdjacencyAccessObserver) null);
 		}
@@ -14263,6 +14293,14 @@ class LmdbSailStore implements SailStore {
 						observer, null, subj, pred, obj, context, true);
 			}
 			return statements(subj, pred, obj, context, observer);
+		}
+
+		@Override
+		public OptionalLong rootScanPartitionCountUpperBound(long subj, long pred, long obj, long context,
+				int targetPartitions) {
+			// planSplitKeys adds at most target - 1 splits; toRootScanPartitions adds one interval. This bound
+			// depends only on that algorithm, not on source contents, a transaction read or successful admission.
+			return OptionalLong.of(Math.max(1L, targetPartitions));
 		}
 
 		@Override
@@ -14778,6 +14816,12 @@ class LmdbSailStore implements SailStore {
 		}
 
 		@Override
+		public boolean countsContextFromMetadata(long context) throws IOException {
+			checkOpen();
+			return !hasStatementsInSource() || tripleStore.countContextIfAuthoritative(txn, context, explicit) >= 0;
+		}
+
+		@Override
 		public boolean has(long subj, long pred, long obj, long context) throws IOException {
 			return has(subj, pred, obj, context, null);
 		}
@@ -14908,6 +14952,37 @@ class LmdbSailStore implements SailStore {
 			return view == null
 					? OptionalLong.empty()
 					: directAdjacency.keyDomainCardinality(view, predicate, bySubject, explicit);
+		}
+
+		@Override
+		public OptionalLong predicateDomainCardinality() {
+			checkOpen();
+			if (!hasStatementsInSource() || directAdjacency == null) {
+				return OptionalLong.empty();
+			}
+			LmdbAdjacencyReadView view = exactAdjacencyView(false);
+			return view == null ? OptionalLong.empty() : directAdjacency.predicateDomainCardinality(view);
+		}
+
+		@Override
+		public OptionalDouble meanNodeDegree(boolean bySubject) {
+			checkOpen();
+			if (!hasStatementsInSource() || directAdjacency == null) {
+				return OptionalDouble.empty();
+			}
+			LmdbAdjacencyReadView view = exactAdjacencyView(false);
+			return view == null ? OptionalDouble.empty() : directAdjacency.meanNodeDegree(view, bySubject, explicit);
+		}
+
+		@Override
+		public OptionalDouble meanNodePredicates(boolean bySubject) {
+			checkOpen();
+			if (!hasStatementsInSource() || directAdjacency == null) {
+				return OptionalDouble.empty();
+			}
+			LmdbAdjacencyReadView view = exactAdjacencyView(false);
+			return view == null ? OptionalDouble.empty()
+					: directAdjacency.meanNodePredicates(view, bySubject, explicit);
 		}
 
 		@Override
@@ -15551,6 +15626,11 @@ class LmdbSailStore implements SailStore {
 		}
 
 		@Override
+		public boolean mayHaveWildcardViews() {
+			return directAdjacency != null;
+		}
+
+		@Override
 		public RecordIterator statements(long subj, long pred, long obj, long context) throws IOException {
 			return statements(subj, pred, obj, context, (AdjacencyAccessObserver) null);
 		}
@@ -15827,6 +15907,14 @@ class LmdbSailStore implements SailStore {
 					nativeSourceLock.unlockRead(readStamp);
 				}
 			}
+		}
+
+		@Override
+		public OptionalLong rootScanPartitionCountUpperBound(long subj, long pred, long obj, long context,
+				int targetPartitions) {
+			// Same split algorithm as ParallelSnapshotSource: at most target - 1 split keys plus one interval.
+			// The constant bound needs neither a native-source read lock nor any storage work.
+			return OptionalLong.of(Math.max(1L, targetPartitions));
 		}
 
 		@Override
@@ -16407,6 +16495,18 @@ class LmdbSailStore implements SailStore {
 		}
 
 		@Override
+		public boolean countsContextFromMetadata(long context) throws IOException {
+			long readStamp = acquireNativeSourceReadLock();
+			try {
+				assertNativeSourceOpen();
+				return !hasStatementsInSource()
+						|| tripleStore.countContextIfAuthoritative(txn, context, explicit) >= 0;
+			} finally {
+				nativeSourceLock.unlockRead(readStamp);
+			}
+		}
+
+		@Override
 		public boolean has(long subj, long pred, long obj, long context) throws IOException {
 			return has(subj, pred, obj, context, null);
 		}
@@ -16557,6 +16657,36 @@ class LmdbSailStore implements SailStore {
 					return OptionalLong.empty();
 				}
 				return directAdjacency.keyDomainCardinality(adjacencyView, predicate, bySubject, explicit);
+			});
+		}
+
+		@Override
+		public OptionalLong predicateDomainCardinality() {
+			return withNativeSourceRead(() -> {
+				if (!hasStatementsInSource() || !directEligible()) {
+					return OptionalLong.empty();
+				}
+				return directAdjacency.predicateDomainCardinality(adjacencyView);
+			});
+		}
+
+		@Override
+		public OptionalDouble meanNodeDegree(boolean bySubject) {
+			return withNativeSourceRead(() -> {
+				if (!hasStatementsInSource() || !directEligible()) {
+					return OptionalDouble.empty();
+				}
+				return directAdjacency.meanNodeDegree(adjacencyView, bySubject, explicit);
+			});
+		}
+
+		@Override
+		public OptionalDouble meanNodePredicates(boolean bySubject) {
+			return withNativeSourceRead(() -> {
+				if (!hasStatementsInSource() || !directEligible()) {
+					return OptionalDouble.empty();
+				}
+				return directAdjacency.meanNodePredicates(adjacencyView, bySubject, explicit);
 			});
 		}
 

@@ -19,6 +19,7 @@ const path = require('node:path');
 const vm = require('node:vm');
 const { FakeDocument } = require('./browser-fakes.js');
 const { installDetailDisclosureTemplateRuntime } = require('./workbench-detail-disclosure-runtime.js');
+const { createExploreModel } = require('./explore-section-fixtures.js');
 
 const scripts = require('./workbench-scripts.js').compiledScriptsDir();
 
@@ -39,7 +40,6 @@ function loadWorkbench(navigatorOverride) {
 }
 
 const EX = 'http://example.org/';
-const RDF = 'http://www.w3.org/1999/02/22-rdf-syntax-ns#';
 const RDFS = 'http://www.w3.org/2000/01/rdf-schema#';
 const iri = value => ({ kind: 'iri', value });
 const context = { basePath: '/rdf4j-workbench', repositoryId: 'a', workbench: {} };
@@ -103,15 +103,20 @@ function flatten(template, handlers) {
     return template === null || typeof template === 'undefined' ? '' : String(template);
 }
 
-function page(workbench, viewId, rows, vars, metadata) {
-    const model = {
-        viewId, vars, rows, rowStart: 0, rowCount: rows.length, rowTopSpacer: 0, rowBottomSpacer: 0, rowStore: null,
-        namespaceMap: { 'ex:': EX, 'rdfs:': RDFS }, links: [], metadata
-    };
+function page(workbench, viewId, rows, vars, metadata, sections) {
+    const model = viewId === 'explore'
+        ? createExploreModel({ metadata, namespaceMap: { 'ex:': EX, 'rdfs:': RDFS }, sections })
+        : { viewId, vars, rows, rowStart: 0, rowCount: rows.length, rowTopSpacer: 0, rowBottomSpacer: 0,
+            rowStore: null, namespaceMap: { 'ex:': EX, 'rdfs:': RDFS }, links: [], metadata };
     const mount = {};
+    const handlers = [];
+    if (viewId === 'explore') {
+        const host = {};
+        workbench.views.renderExploreSections({ querySelector: () => host }, model, context, runtime());
+        return { markup: flatten(host.template, handlers), handlers };
+    }
     workbench.views.render(mount, model, context, runtime());
     const outlet = workbench.views.outletOf ? workbench.views.outletOf(mount) : null;
-    const handlers = [];
     return { markup: flatten(outlet && outlet.template ? outlet.template : mount.template, handlers), handlers };
 }
 
@@ -123,21 +128,19 @@ function copyButtons(markup, handlers) {
     }));
 }
 
-test('Explore offers to copy its type chips and the members of its groups', () => {
+test('Explore offers to copy typed values from its independent sections', () => {
     const { workbench, copied } = loadWorkbench();
-    const graph = iri(EX + 'g');
-    const rows = [
-        [iri(EX + 'Class'), iri(RDF + 'type'), iri(RDFS + 'Class'), graph],
-        [iri(EX + 'Sub'), iri(RDFS + 'subClassOf'), iri(EX + 'Class'), graph]
-    ];
-    const { markup, handlers } = page(workbench, 'explore', rows, ['subject', 'predicate', 'object', 'context'],
-        { resource: 'ex:Class', 'explore-resource': '<' + EX + 'Class>', 'total-result-count': rows.length });
+    const { markup, handlers } = page(workbench, 'explore', [], [],
+        { resource: 'ex:Class', 'explore-resource': '<' + EX + 'Class>' }, {
+            types: { rows: [[iri(RDFS + 'Class')]] },
+            subClasses: { rows: [[iri(EX + 'Sub')]] }
+        });
 
-    const chips = markup.substring(markup.indexOf('explore-resource-card__types'));
-    const chipButtons = copyButtons(chips.substring(0, chips.indexOf('</ul>')), handlers);
-    assert.deepEqual(chipButtons.map(button => button.label), ['Copy ' + RDFS + 'Class']);
-    const group = markup.substring(markup.indexOf('data-workbench-explore-group=subClasses'));
-    const memberButtons = copyButtons(group.substring(0, group.indexOf('</section>')), handlers);
+    const types = markup.substring(markup.indexOf('data-explore-section=types'));
+    const typeButtons = copyButtons(types.substring(0, types.indexOf('</section>')), handlers);
+    assert.deepEqual(typeButtons.map(button => button.label), ['Copy ' + RDFS + 'Class']);
+    const subclasses = markup.substring(markup.indexOf('data-explore-section=subClasses'));
+    const memberButtons = copyButtons(subclasses.substring(0, subclasses.indexOf('</section>')), handlers);
     assert.deepEqual(memberButtons.map(button => button.label), ['Copy ' + EX + 'Sub']);
 
     memberButtons[0].click({ currentTarget: { ownerDocument: null }, preventDefault() {}, stopPropagation() {} });

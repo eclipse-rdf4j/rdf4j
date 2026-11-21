@@ -20,16 +20,22 @@ import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
+import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
+import java.io.OutputStream;
 import java.lang.reflect.Field;
 import java.lang.reflect.Method;
+import java.net.InetSocketAddress;
+import java.nio.charset.StandardCharsets;
 import java.util.List;
 import java.util.Map;
 import java.util.NoSuchElementException;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicLong;
+import java.util.concurrent.atomic.AtomicReference;
 
 import org.eclipse.rdf4j.common.iteration.CloseableIteratorIteration;
+import org.eclipse.rdf4j.http.client.BNodeOriginTransport;
 import org.eclipse.rdf4j.http.client.QueryCircuitBreaker;
 import org.eclipse.rdf4j.http.client.QueryPressureState;
 import org.eclipse.rdf4j.http.protocol.LmdbForceableStrategy;
@@ -48,6 +54,9 @@ import org.eclipse.rdf4j.query.explanation.GenericPlanNode;
 import org.eclipse.rdf4j.query.explanation.StrategyDecision;
 import org.eclipse.rdf4j.query.impl.IteratingTupleQueryResult;
 import org.eclipse.rdf4j.query.impl.MapBindingSet;
+import org.eclipse.rdf4j.query.resultio.QueryResultIO;
+import org.eclipse.rdf4j.query.resultio.TupleQueryResultFormat;
+import org.eclipse.rdf4j.query.resultio.text.csv.SPARQLResultsCSVWriter;
 import org.eclipse.rdf4j.repository.RepositoryConnection;
 import org.eclipse.rdf4j.repository.RepositoryException;
 import org.eclipse.rdf4j.repository.RepositoryResult;
@@ -57,6 +66,9 @@ import org.eclipse.rdf4j.repository.sail.SailRepository;
 import org.eclipse.rdf4j.repository.sail.SailTupleQuery;
 import org.eclipse.rdf4j.sail.memory.MemoryStore;
 import org.junit.jupiter.api.Test;
+
+import com.sun.net.httpserver.HttpExchange;
+import com.sun.net.httpserver.HttpServer;
 
 import jakarta.servlet.http.HttpServletResponse;
 
@@ -405,6 +417,70 @@ class QueryEvaluatorTest {
 
 		verify(builder, times(2)).result(org.mockito.ArgumentMatchers.any(Object[].class));
 		verify(cookies).addTotalResultCountCookie(req, resp, 3);
+	}
+
+	@Test
+	void genericTupleDownloadNegotiatesRemoteBlankNodeOriginsAndRemainsParseable() throws Exception {
+		AtomicReference<String> requestedOrigin = new AtomicReference<>();
+		HttpServer server = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
+		server.createContext("/protocol", exchange -> {
+			byte[] version = "12".getBytes(StandardCharsets.UTF_8);
+			exchange.sendResponseHeaders(200, version.length);
+			try (exchange; OutputStream body = exchange.getResponseBody()) {
+				body.write(version);
+			}
+		});
+		server.createContext("/repositories/remote/namespaces", exchange -> {
+			byte[] namespaces = ("{\"head\":{\"vars\":[\"prefix\",\"namespace\"]},"
+					+ "\"results\":{\"bindings\":[]}}")
+							.getBytes(StandardCharsets.UTF_8);
+			exchange.getResponseHeaders().set("Content-Type", TupleQueryResultFormat.JSON.getDefaultMIMEType());
+			exchange.sendResponseHeaders(200, namespaces.length);
+			try (exchange; OutputStream body = exchange.getResponseBody()) {
+				body.write(namespaces);
+			}
+		});
+		server.createContext("/repositories/remote", exchange -> {
+			requestedOrigin.set(exchange.getRequestHeaders().getFirst(BNodeOriginTransport.HEADER));
+			byte[] result = ("{\"head\":{\"vars\":[\"value\"]},"
+					+ "\"results\":{\"bindings\":[{\"value\":{\"type\":\"literal\","
+					+ "\"value\":\"remote-result\"}}]}}")
+							.getBytes(StandardCharsets.UTF_8);
+			exchange.getResponseHeaders().set("Content-Type", TupleQueryResultFormat.JSON.getDefaultMIMEType());
+			exchange.sendResponseHeaders(200, result.length);
+			try (exchange; OutputStream body = exchange.getResponseBody()) {
+				body.write(result);
+			}
+		});
+		server.start();
+
+		HTTPRepository repository = new HTTPRepository(
+				"http://127.0.0.1:" + server.getAddress().getPort() + "/repositories/remote");
+		try (RepositoryConnection connection = repository.getConnection()) {
+			String queryText = "select ?value where { values ?value { \"remote-result\" } }";
+			WorkbenchRequest request = mock(WorkbenchRequest.class);
+			when(request.getParameter("queryLn")).thenReturn("SPARQL");
+			when(request.isParameterPresent("Accept")).thenReturn(true);
+			when(request.getParameter("Accept")).thenReturn("text/csv");
+			ByteArrayOutputStream output = new ByteArrayOutputStream();
+			TupleResultBuilder builder = new TupleResultBuilder(new SPARQLResultsCSVWriter(output),
+					connection.getValueFactory());
+
+			QueryEvaluator.INSTANCE.extractQueryAndEvaluate(builder, mock(HttpServletResponse.class), output,
+					connection,
+					queryText, request, mock(CookieHandler.class), null);
+
+			assertThat(requestedOrigin.get()).isEqualTo(BNodeOriginTransport.VERSION);
+			try (var parsed = QueryResultIO.parseTuple(new ByteArrayInputStream(output.toByteArray()),
+					TupleQueryResultFormat.CSV, null)) {
+				assertThat(parsed.hasNext()).isTrue();
+				assertThat(parsed.next().getValue("value").stringValue()).isEqualTo("remote-result");
+				assertThat(parsed.hasNext()).isFalse();
+			}
+		} finally {
+			repository.shutDown();
+			server.stop(0);
+		}
 	}
 
 	@Test

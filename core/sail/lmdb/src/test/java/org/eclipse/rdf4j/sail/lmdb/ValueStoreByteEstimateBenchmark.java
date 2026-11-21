@@ -45,25 +45,35 @@ public class ValueStoreByteEstimateBenchmark {
 
 	@Setup(Level.Trial)
 	public void setup() throws Exception {
-		SimpleValueFactory vf = SimpleValueFactory.getInstance();
-		IRI predicate = vf.createIRI("urn:estimate-benchmark:p");
-		IRI termSubject = vf.createIRI("urn:estimate-benchmark:term");
-		directory = Files.createTempDirectory("value-byte-estimate-").toFile();
-		store = new ValueStore(directory, new LmdbStoreConfig());
-		String label = shape.equals("unicode") ? "雪😀é".repeat(4096) : "x".repeat(16384);
-		Value repeated = vf.createLiteral(label);
-		if (shape.equals("shared") || shape.equals("deep")) {
-			for (int i = 0; i < (shape.equals("deep") ? 32 : 4); i++) {
-				repeated = vf.createTripleTerm(termSubject, predicate, repeated);
+		try {
+			SimpleValueFactory vf = SimpleValueFactory.getInstance();
+			IRI predicate = vf.createIRI("urn:estimate-benchmark:p");
+			IRI termSubject = vf.createIRI("urn:estimate-benchmark:term");
+			directory = Files.createTempDirectory("value-byte-estimate-").toFile();
+			store = new ValueStore(directory, new LmdbStoreConfig());
+			String label = shape.equals("unicode") ? "雪😀é".repeat(4096) : "x".repeat(16384);
+			Value repeated = vf.createLiteral(label);
+			if (shape.equals("shared") || shape.equals("deep")) {
+				for (int i = 0; i < (shape.equals("deep") ? 32 : 4); i++) {
+					repeated = vf.createTripleTerm(termSubject, predicate, repeated);
+				}
 			}
-		}
-		int count = shape.equals("single") ? 1 : 256;
-		statements = new ArrayList<>(count);
-		for (int i = 0; i < count; i++) {
-			Value object = shape.equals("single") || shape.equals("distinct")
-					? vf.createLiteral("short label " + i)
-					: repeated;
-			statements.add(vf.createStatement(vf.createIRI("urn:estimate-benchmark:" + i), predicate, object));
+			int count = shape.equals("single") ? 1 : 256;
+			statements = new ArrayList<>(count);
+			for (int i = 0; i < count; i++) {
+				Value object = shape.equals("single") || shape.equals("distinct")
+						? vf.createLiteral("short label " + i)
+						: repeated;
+				statements.add(vf.createStatement(vf.createIRI("urn:estimate-benchmark:" + i), predicate, object));
+			}
+
+		} catch (Exception | Error failure) {
+			try {
+				tearDown();
+			} catch (Exception | Error cleanupFailure) {
+				failure.addSuppressed(cleanupFailure);
+			}
+			throw failure;
 		}
 	}
 

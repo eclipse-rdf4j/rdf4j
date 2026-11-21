@@ -153,15 +153,19 @@ class GraphExplorerNativeQueryTest {
 				"rdf4j.lmdb.kernelInterpreter.enabled", "true",
 				"rdf4j.lmdb.janinoCodegen.thresholdRows", "0",
 				"rdf4j.lmdb.janinoCodegen.synchronous", "true",
-				"rdf4j.lmdb.janinoCodegen.failOnError", "true");
+				"rdf4j.lmdb.janinoCodegen.failOnError", "true",
+				"rdf4j.lmdb.janinoCodegen.nodePredicates", "false",
+				"rdf4j.lmdb.janinoCodegen.wildcardPredicates", "true");
 		Map<String, String> previous = new LinkedHashMap<>();
 		requested.forEach((property, value) -> previous.put(property, System.setProperty(property, value)));
 		String tier = compiled ? "compiled" : "interpreted";
-		String family = name.equals("connections") ? "irKernelWildcard" : "irKernel";
+		Backend backend = backends.get(backendName);
+		// Index-only stores execute the ordinary scan kernel. The adjacency fixture explicitly disables
+		// node-predicate projection above so its wildcard tier check witnesses the actual wildcard plane.
+		String family = name.equals("connections") && backend.adjacency ? "irKernelWildcard" : "irKernel";
 		String strategy = compiled ? family : family + "Interpreted";
 		try {
 			String text = fixture(name + ".rq");
-			Backend backend = backends.get(backendName);
 			List<BindingSet> expected = rows(reference.repository, text);
 			try (RepositoryConnection connection = backend.repository.getConnection()) {
 				TupleQuery query = connection.prepareTupleQuery(text);
@@ -185,8 +189,9 @@ class GraphExplorerNativeQueryTest {
 						.containsExactlyInAnyOrderEntriesOf(bag(expected));
 				assertEfficientExecutedPlan(explanation, backendName + " / " + name + " / " + tier);
 				assertThat(executionPaths(explanation.toGenericPlanNode()))
-						.as("the requested tier must actually execute: %s / %s / %s", backendName, name, tier)
-						.anyMatch(path -> path.startsWith("irKernel") && path.contains("Interpreted") != compiled);
+						.as("the requested physical family and tier must actually execute: %s / %s / %s",
+								backendName, name, tier)
+						.contains(strategy);
 			}
 		} finally {
 			previous.forEach((property, value) -> {

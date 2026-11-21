@@ -168,6 +168,12 @@ public class SPARQLProtocolSession implements HttpClientDependent, AutoCloseable
 		bNodeOriginEnabled = enabled;
 	}
 
+	protected void addBNodeOriginHeader(HttpRequest method) {
+		if (bNodeOriginEnabled) {
+			method.addHeader(BNodeOriginTransport.HEADER, BNodeOriginTransport.VERSION);
+		}
+	}
+
 	private TupleQueryResultFormat preferredTQRFormat = TupleQueryResultFormat.SPARQL;
 
 	private BooleanQueryResultFormat preferredBQRFormat = BooleanQueryResultFormat.TEXT;
@@ -748,9 +754,7 @@ public class SPARQLProtocolSession implements HttpClientDependent, AutoCloseable
 	private HttpResponse sendTupleQueryViaHttp(HttpRequest method, Set<QueryResultFormat> tqrFormats)
 			throws RepositoryException, IOException, QueryInterruptedException, MalformedQueryException {
 
-		if (bNodeOriginEnabled) {
-			method.addHeader(BNodeOriginTransport.HEADER, BNodeOriginTransport.VERSION);
-		}
+		addBNodeOriginHeader(method);
 		final List<String> acceptValues = new ArrayList<>(tqrFormats.size());
 		for (QueryResultFormat format : tqrFormats) {
 
@@ -923,9 +927,7 @@ public class SPARQLProtocolSession implements HttpClientDependent, AutoCloseable
 			Set<RDFFormat> rdfFormats)
 			throws RepositoryException, IOException, QueryInterruptedException, MalformedQueryException {
 
-		if (bNodeOriginEnabled) {
-			method.addHeader(BNodeOriginTransport.HEADER, BNodeOriginTransport.VERSION);
-		}
+		addBNodeOriginHeader(method);
 		List<String> acceptParams = RDFFormat.getAcceptParams(rdfFormats, requireContext, getPreferredRDFFormat());
 
 		method.addHeader(ACCEPT_PARAM_NAME, String.join(", ", acceptParams));

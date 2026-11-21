@@ -24,6 +24,8 @@ namespace workbench {
             basePath?: string;
             repositoryId?: string | null;
             serverIdentity?: string | null;
+            /** The signed-in server user, '' when anonymous: each user has their own Graph additions. */
+            serverUser?: string | null;
         }
 
         export interface GraphAddition {
@@ -66,9 +68,21 @@ namespace workbench {
             return true;
         }
 
+        /** The server's digest ("sha256:…") without the browser session's or connection's scope. */
+        function serverDigest(context: GraphContext): string {
+            return String(context.serverIdentity || '').split(':').slice(0, 2).join(':');
+        }
+
+        /** Where the Graph page of this Workbench, server, user and repository keeps its state (repositoryScope). */
         function scopeOf(context: GraphContext): string {
-            return JSON.stringify(['repository-v2', String(context.basePath || '').replace(/\/+$/, ''),
-                context.serverIdentity, String(context.repositoryId || '')]);
+            return JSON.stringify(['repository-v3', String(context.basePath || '').replace(/\/+$/, ''),
+                serverDigest(context), String(context.serverUser || ''), String(context.repositoryId || '')]);
+        }
+
+        /** The repository itself, the same for every user (repositoryPlace). */
+        function placeOf(context: GraphContext): string {
+            return JSON.stringify(['repository-v3', String(context.basePath || '').replace(/\/+$/, ''),
+                serverDigest(context), String(context.repositoryId || '')]);
         }
 
         /** The localStorage key of a repository's queue. */
@@ -173,7 +187,7 @@ namespace workbench {
          * its cached Filters values by it (graph-explorer/data-revision.ts), so a write here makes it load them again.
          */
         export function dataRevisionKey(context: GraphContext): string {
-            return DATA_REVISION_PREFIX + scopeOf(context);
+            return DATA_REVISION_PREFIX + placeOf(context);
         }
 
         /** The repository's data may have changed: give it a new revision. Without a server identity nobody watches. */

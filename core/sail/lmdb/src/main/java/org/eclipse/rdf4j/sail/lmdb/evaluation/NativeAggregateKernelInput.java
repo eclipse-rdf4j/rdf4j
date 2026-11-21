@@ -29,8 +29,8 @@ import org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbNativeKernelIr.EnumerateWildca
 
 /** Pricing facts from the same lowered producer and projection schedule that a candidate opens. */
 record NativeAggregateKernelInput(SlotPlan input, LmdbNativeKernelLowering.Lowered lowered,
-		boolean interpreted, boolean parallel, NativeAggregatePhysicalPlan.Retention storage,
-		NativeAggregatePhysicalPlan.KeyProperties keyProperties)
+		boolean interpreted, boolean parallel, int workers, NativeAggregatePhysicalPlan.Retention storage,
+		boolean requiresHashing)
 		implements NativeAggregatePhysicalPlan.Producer {
 
 	@Override
@@ -128,7 +128,7 @@ record NativeAggregateKernelInput(SlotPlan input, LmdbNativeKernelLowering.Lower
 				if (predicateSetsOnly) {
 					// Predicate identity is bounded by this exact catalog, even though the schedule visits roots.
 					// Parallel partials and the final union each retain at most that domain per distinct channel.
-					double copies = parallel ? 1D + LmdbNativeParallelPipelines.configuredThreads() : 1D;
+					double copies = parallel ? 1D + workers : 1D;
 					return new NativeAggregatePhysicalPlan.Work(input, work.extra(),
 							1D + copies * sets * view.predicateCount());
 				}
@@ -174,8 +174,9 @@ record NativeAggregateKernelInput(SlotPlan input, LmdbNativeKernelLowering.Lower
 	private NativeAggregatePhysicalPlan.Work work(NativeAggregateCostQuotes.Input input, int planes,
 			double low, double high) {
 		LmdbNativeCostVector.Builder extra = LmdbNativeCostVector.builder()
-				.add(interpreted ? INTERPRETED_ROW : GENERATED_ROW, low, high, high);
-		if (storage == NativeAggregatePhysicalPlan.Retention.RESIDENT_STATE && keyProperties.requiresHashing()
+				.add(interpreted ? INTERPRETED_ROW : GENERATED_ROW, Math.min(Double.MAX_VALUE, low),
+						Math.min(Double.MAX_VALUE, high), high);
+		if (storage == NativeAggregatePhysicalPlan.Retention.RESIDENT_STATE && requiresHashing
 				&& lowered.kernel.terminal instanceof LmdbNativeKernelIr.Aggregate aggregate) {
 			int keyChannels = aggregate.groupCols.length == 0 ? 0 : 1;
 			for (int index = 0; index < aggregate.outputs.length; index++) {
@@ -186,13 +187,16 @@ record NativeAggregateKernelInput(SlotPlan input, LmdbNativeKernelLowering.Lower
 				}
 			}
 			double attempts = multiply(high, keyChannels);
+			double attemptsHigh = LmdbNativeCostVector.upperMultiply(high, keyChannels);
 			// These ledger-owned tables allocate/grow or decline. Their doubling rehash visits fewer than twice
 			// the accepted keys in addition to insertion; it cannot become an external membership sort.
-			extra.add(HASH_BUILD_ROW, 0D, attempts, multiply(parallel ? 9D : 3D, attempts));
+			extra.add(HASH_BUILD_ROW, 0D, attempts,
+					LmdbNativeCostVector.upperMultiply(parallel ? 9D : 3D, attemptsHigh));
 			if (parallel) {
 				// A key can enter a range partial, its worker's retained partial, and the coordinator union. The last
 				// two stages probe their own tables; duplicate/error eligibility remains an explicit interval.
-				extra.add(HASH_PROBE, 0D, multiply(2D, attempts), multiply(2D, attempts));
+				extra.add(HASH_PROBE, 0D, multiply(2D, attempts),
+						LmdbNativeCostVector.upperMultiply(2D, attemptsHigh));
 			}
 		}
 		if ((storage == NativeAggregatePhysicalPlan.Retention.RESIDENT_STATE
@@ -202,11 +206,11 @@ record NativeAggregateKernelInput(SlotPlan input, LmdbNativeKernelLowering.Lower
 			double groups = aggregate.groupCols.length == 0 ? 1D : high;
 			double comparisons = groups <= 1D ? 0D : multiply(groups, Math.log(groups) / Math.log(2D));
 			// An explicit output ORDER owns a separate sort even when membership stays in primitive tables.
-			extra.add(SORT_N_LOG2_N, 0D, comparisons, comparisons);
+			extra.add(SORT_N_LOG2_N, 0D, comparisons,
+					groups <= 1D ? 0D : LmdbNativeCostVector.upperMultiply(groups, Math.log(groups) / Math.log(2D)));
 		}
 		if (parallel && high > 0D && planes > 0) {
-			int threads = LmdbNativeParallelPipelines.configuredThreads();
-			extra.add(WORKER_START, Math.min(1D, threads), threads, threads);
+			extra.add(WORKER_START, Math.min(1D, workers), workers, workers);
 		}
 		return new NativeAggregatePhysicalPlan.Work(input, extra.build());
 	}

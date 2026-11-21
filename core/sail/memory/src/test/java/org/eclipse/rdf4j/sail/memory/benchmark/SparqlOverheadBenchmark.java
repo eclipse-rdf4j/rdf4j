@@ -83,15 +83,21 @@ public class SparqlOverheadBenchmark {
 
 	@Setup(Level.Trial)
 	public void beforeClass() throws IOException {
+		boolean initialized = false;
+		try {
+			repository = new SailRepository(new MemoryStore());
 
-		repository = new SailRepository(new MemoryStore());
-
-		try (SailRepositoryConnection connection = repository.getConnection()) {
-			connection.begin(IsolationLevels.NONE);
-			connection.add(getResourceAsStream("benchmarkFiles/datagovbe-valid.ttl.gz"), "", RDFFormat.TURTLE);
-			connection.commit();
+			try (SailRepositoryConnection connection = repository.getConnection()) {
+				connection.begin(IsolationLevels.NONE);
+				connection.add(getResourceAsStream("benchmarkFiles/datagovbe-valid.ttl.gz"), "", RDFFormat.TURTLE);
+				connection.commit();
+			}
+			initialized = true;
+		} finally {
+			if (!initialized) {
+				afterClass();
+			}
 		}
-
 	}
 
 	private static InputStream getResourceAsStream(String name) {
@@ -104,7 +110,9 @@ public class SparqlOverheadBenchmark {
 	@TearDown(Level.Trial)
 	public void afterClass() {
 
-		repository.shutDown();
+		if (repository != null) {
+			repository.shutDown();
+		}
 
 	}
 

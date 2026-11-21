@@ -211,9 +211,6 @@ public class LmdbNativeJaninoAggregateTest {
 		GenericPlanNode telemetry = explainUnusedValues(Explanation.Level.Telemetry);
 		assertEquals(LmdbNativeAttemptMetrics.PATH_ADJACENCY_AGGREGATE, findExecutionPath(telemetry),
 				"the unused one-row VALUES relation must retain the exact metadata specialist");
-		String quote = findMetric(telemetry, "nativeAggregateCostQuotesEstimated");
-		assertTrue(quote != null && quote.contains("\"physicalDominanceProof\":\""),
-				() -> "the selected zero-row reduction needs an actual plan-owned proof: " + telemetry);
 		assertEquals(0L, LmdbNativeKernelExecution.AGG_OPENED.get(),
 				"a proved metadata reduction needs no row-enumerating IR trial");
 	}

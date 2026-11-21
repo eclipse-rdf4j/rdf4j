@@ -115,7 +115,8 @@ class LegalMetadataTest(unittest.TestCase):
         pom = ET.parse(ROOT / "tools/workbench/pom.xml").getroot()
         copy = pom.find(".//m:execution[m:id='resolve-notice-dependencies']", NS)
         self.assertIsNotNone(copy)
-        self.assertEqual(copy.findtext("m:phase", namespaces=NS), "prepare-package")
+        # Different phases make ordering independent of plugin declaration order.
+        self.assertEqual(copy.findtext("m:phase", namespaces=NS), "test")
         self.assertEqual(copy.findtext("m:configuration/m:includeScope", namespaces=NS), "runtime")
         generate = pom.find(".//m:execution[m:id='generate-third-party-notices']", NS)
         self.assertIsNotNone(generate)
@@ -123,6 +124,11 @@ class LegalMetadataTest(unittest.TestCase):
         arguments = [node.text for node in generate.findall("m:configuration/m:arguments/m:argument", NS)]
         for required in ("--version", "${project.version}", "--npm-modules", "--java-classpath", "--maven-repo"):
             self.assertIn(required, arguments)
+        executors = pom.findall("m:build/m:plugins/m:plugin[m:artifactId='exec-maven-plugin']", NS)
+        self.assertEqual(len(executors), 1, "Maven must not coalesce duplicate exec plugin declarations")
+        executions = {node.findtext("m:id", namespaces=NS)
+                      for node in executors[0].findall("m:executions/m:execution", NS)}
+        self.assertTrue({"npm-ci", "npm-build", "generate-third-party-notices"} <= executions)
         strict = pom.find("m:profiles/m:profile[m:id='strict-notices']", NS)
         self.assertEqual(strict.findtext("m:properties/m:notices.completeness", namespaces=NS), "--strict")
 
