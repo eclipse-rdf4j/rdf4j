@@ -176,6 +176,13 @@ import org.slf4j.LoggerFactory;
 @Experimental
 @InternalUseOnly
 public class ValueStore extends AbstractValueFactory implements BNodeIdResolver, StoredBNodeIdResolver {
+
+	private final RepositoryValueExposureMetrics repositoryValueExposureMetrics = new RepositoryValueExposureMetrics();
+
+	RepositoryValueExposureMetrics repositoryValueExposureMetrics() {
+		return repositoryValueExposureMetrics;
+	}
+
 	@Override
 	public boolean hasStoredBNodeId(String id) {
 		return hasBNodeId(id);
@@ -2211,6 +2218,11 @@ public class ValueStore extends AbstractValueFactory implements BNodeIdResolver,
 		synchronized (unusedRevisionIds) {
 			return lazyRevisions.epochs.size();
 		}
+	}
+
+	/** Number of value resolution scopes that are open and not yet closed. */
+	int valueResolutionScopeCountForTest() {
+		return valueResolutionScopes.size();
 	}
 
 	/** Inert observation of existing maintenance decisions; negative sizes/visits were not evaluated. */
@@ -6906,6 +6918,7 @@ public class ValueStore extends AbstractValueFactory implements BNodeIdResolver,
 		if (value == null || env == 0) {
 			return value;
 		}
+		repositoryValueExposureMetrics.incrementExternalValueProtections();
 		ArrayDeque<Value> pending = new ArrayDeque<>();
 		pending.add(value);
 		while (!pending.isEmpty()) {

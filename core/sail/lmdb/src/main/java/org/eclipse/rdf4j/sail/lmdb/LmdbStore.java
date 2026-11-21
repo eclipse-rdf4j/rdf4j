@@ -108,6 +108,19 @@ public class LmdbStore extends AbstractNotifyingSail
 	}
 
 	/**
+	 * Counters describing how repository-boundary value exposure was served since the store was initialized.
+	 *
+	 * @param exposuresBound           exposures bound to a registered LMDB result, which skip per-row value protection
+	 * @param exposuresOpaque          exposures whose source could not be matched to a registered LMDB result; a rising
+	 *                                 count points at a delegating wrapper that lost its row pass-through
+	 * @param externalValueProtections calls of the conservative cold-value protection path
+	 */
+	@InternalUseOnly
+	public record RepositoryValueExposureStats(long exposuresBound, long exposuresOpaque,
+			long externalValueProtections) {
+	}
+
+	/**
 	 * A detached copy of LMDB's native {@code MDB_stat} fields for one database.
 	 *
 	 * @param pageSize      database page size in bytes
@@ -1018,6 +1031,24 @@ public class LmdbStore extends AbstractNotifyingSail
 		}
 		LmdbDirectAdjacencyStore adjacency = current.directAdjacencyStore();
 		return adjacency == null ? 0L : adjacency.snapshotMetrics().plannerStatsHits;
+	}
+
+	/**
+	 * Returns counters describing how repository-boundary value exposure was served.
+	 *
+	 * @throws IllegalStateException if the store is not initialized
+	 */
+	@InternalUseOnly
+	public RepositoryValueExposureStats getRepositoryValueExposureStats() {
+		LmdbSailStore current = backingStore;
+		if (current == null) {
+			throw new IllegalStateException("LMDB store is not initialized");
+		}
+		RepositoryValueExposureMetrics.Snapshot snapshot = current.valueStore()
+				.repositoryValueExposureMetrics()
+				.snapshot();
+		return new RepositoryValueExposureStats(snapshot.exposuresBound(), snapshot.exposuresOpaque(),
+				snapshot.externalValueProtections());
 	}
 
 	/**

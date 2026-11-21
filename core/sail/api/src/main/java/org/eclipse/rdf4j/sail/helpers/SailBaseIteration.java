@@ -18,6 +18,7 @@ import org.eclipse.rdf4j.common.iteration.CancellationSignal;
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.common.iteration.IndexReportingIterator;
 import org.eclipse.rdf4j.common.iteration.IterationWrapper;
+import org.eclipse.rdf4j.common.iteration.RowPassThroughIteration;
 import org.eclipse.rdf4j.sail.SailException;
 
 /**
@@ -26,7 +27,8 @@ import org.eclipse.rdf4j.sail.SailException;
  *
  * @author Jeen Broekstra
  */
-class SailBaseIteration<T, E extends Exception> extends IterationWrapper<T> implements IndexReportingIterator {
+class SailBaseIteration<T, E extends Exception> extends IterationWrapper<T>
+		implements IndexReportingIterator, RowPassThroughIteration {
 
 	private final AbstractSailConnection connection;
 	/**
@@ -207,6 +209,11 @@ class SailBaseIteration<T, E extends Exception> extends IterationWrapper<T> impl
 	@Deprecated
 	protected void forceClose() throws E {
 		close();
+	}
+
+	@Override
+	public CloseableIteration<?> passThroughSource() {
+		return wrappedIter;
 	}
 
 	@Override

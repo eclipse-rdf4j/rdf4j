@@ -1,0 +1,2681 @@
+From 31dd375b7bb6175bb704d5db6aa7ba817e767d44 Mon Sep 17 00:00:00 2001
+From: hottestad1 <hottestad1@bloomberg.net>
+Date: Thu, 5 Nov 2026 14:40:39 +0100
+Subject: [PATCH 1/2] GH-0000 Push a GROUP BY below a join with a
+ one-row-per-key subquery in the LMDB native engine
+
+A query that joins a subquery grouped by one variable (for example per-class
+instance counts) with further patterns and then groups by that variable, the
+subquery's outputs and more keys hid the aggregate's shape from the native
+planner: the subquery cannot be flattened into the join, so specialised
+strategies such as the type matrix were never offered and the whole join ran
+through a single-threaded generic aggregate.
+
+LmdbSubqueryGroupPushdownOptimizer rewrites
+  Group(Join(Sub, Rest), K, A)
+into
+  Join(Sub, Projection[subquery](Extension[A](Group(Rest, K', A))))
+when Sub has at most one row per join key c1, c1 is the only shared
+variable and is always bound on both sides, every other Sub variable is a
+grouping key, and no aggregate reads a Sub variable. The join then neither
+duplicates nor reorders Rest rows, so every aggregate sees the same rows per
+group. The aggregate extension elements the parser places above the group
+move with it, so the inner subquery has the shape of a hand-written one.
+
+The optimizer only runs in pipelines built by
+LmdbNativeEvaluationStrategyFactory (new nativeEngine constructor flag), after
+filters have been pushed onto their patterns.
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+---
+ .../sail/lmdb/LmdbQueryOptimizerPipeline.java |  25 +-
+ .../LmdbStandardQueryOptimizerPipeline.java   |  43 ++-
+ .../LmdbSubqueryGroupPushdownOptimizer.java   | 283 ++++++++++++++++++
+ .../LmdbNativeEvaluationStrategyFactory.java  |   4 +-
+ .../sail/lmdb/LmdbOptimizerPipelineTest.java  |  41 +++
+ ...mdbSubqueryGroupPushdownOptimizerTest.java | 226 ++++++++++++++
+ .../LmdbTypeMatrixSubqueryCensusTest.java     | 241 +++++++++++++++
+ 7 files changed, 857 insertions(+), 6 deletions(-)
+ create mode 100644 core/sail/lmdb/src/main/java/org/eclipse/rdf4j/sail/lmdb/LmdbSubqueryGroupPushdownOptimizer.java
+ create mode 100644 core/sail/lmdb/src/test/java/org/eclipse/rdf4j/sail/lmdb/LmdbSubqueryGroupPushdownOptimizerTest.java
+ create mode 100644 core/sail/lmdb/src/test/java/org/eclipse/rdf4j/sail/lmdb/evaluation/LmdbTypeMatrixSubqueryCensusTest.java
+
+diff --git a/core/sail/lmdb/src/main/java/org/eclipse/rdf4j/sail/lmdb/LmdbQueryOptimizerPipeline.java b/core/sail/lmdb/src/main/java/org/eclipse/rdf4j/sail/lmdb/LmdbQueryOptimizerPipeline.java
+index 038392cc0a..cf7c86ddc6 100644
+--- a/core/sail/lmdb/src/main/java/org/eclipse/rdf4j/sail/lmdb/LmdbQueryOptimizerPipeline.java
++++ b/core/sail/lmdb/src/main/java/org/eclipse/rdf4j/sail/lmdb/LmdbQueryOptimizerPipeline.java
+@@ -64,10 +64,23 @@ public final class LmdbQueryOptimizerPipeline implements QueryOptimizerPipeline
+ 	private final EvaluationStrategy strategy;
+ 	private final TripleSource tripleSource;
+ 	private final EvaluationStatistics evaluationStatistics;
++	private final boolean nativeEngine;
+ 
+ 	@InternalUseOnly
+ 	public LmdbQueryOptimizerPipeline(EvaluationStrategy strategy, TripleSource tripleSource,
+ 			EvaluationStatistics evaluationStatistics) {
++		this(strategy, tripleSource, evaluationStatistics, false);
++	}
++
++	/**
++	 * @param nativeEngine when {@code true}, the pipeline is built for the native query engine and adds
++	 *                     {@link LmdbSubqueryGroupPushdownOptimizer}, whose rewrite only pays off for the native
++	 *                     planner. Generic-engine pipelines pass {@code false}.
++	 */
++	@InternalUseOnly
++	public LmdbQueryOptimizerPipeline(EvaluationStrategy strategy, TripleSource tripleSource,
++			EvaluationStatistics evaluationStatistics, boolean nativeEngine) {
++		this.nativeEngine = nativeEngine;
+ 		this.strategy = strategy;
+ 		this.tripleSource = tripleSource;
+ 		this.evaluationStatistics = evaluationStatistics;
+@@ -81,9 +94,10 @@ public final class LmdbQueryOptimizerPipeline implements QueryOptimizerPipeline
+ 	@Override
+ 	public Iterable<QueryOptimizer> getOptimizers() {
+ 		if (!strategy.getQueryExecutionPolicy().experimentalQueryOptimizations()) {
+-			return new LmdbStandardQueryOptimizerPipeline(strategy, tripleSource, evaluationStatistics).getOptimizers();
++			return new LmdbStandardQueryOptimizerPipeline(strategy, tripleSource, evaluationStatistics, nativeEngine)
++					.getOptimizers();
+ 		}
+-		List<QueryOptimizer> optimizers = List.of(
++		List<QueryOptimizer> optimizers = new ArrayList<>(List.of(
+ 				BINDING_ASSIGNER,
+ 				GRAPH_SCOPE_OPTIMIZER,
+ 				StandardQueryOptimizerPipeline.TUPLE_FUNCTION_MAGIC_PROPERTY_OPTIMIZER,
+@@ -103,7 +117,12 @@ public final class LmdbQueryOptimizerPipeline implements QueryOptimizerPipeline
+ 				new LmdbSketchJoinOptimizer(evaluationStatistics, strategy.isTrackResultSize()),
+ 				StandardQueryOptimizerPipeline.getFilterInValuesOptimizer(),
+ 				ORDER_LIMIT_OPTIMIZER,
+-				new LmdbOrderByOptimizer(tripleSource));
++				new LmdbOrderByOptimizer(tripleSource)));
++		if (nativeEngine) {
++			// after FilterOptimizer has pushed filters onto their patterns, before the join optimizers
++			optimizers.add(optimizers.indexOf(ITERATIVE_EVALUATION_OPTIMIZER) + 1,
++					new LmdbSubqueryGroupPushdownOptimizer());
++		}
+ 
+ 		if (assertsEnabled) {
+ 			List<QueryOptimizer> checked = new ArrayList<>();
+diff --git a/core/sail/lmdb/src/main/java/org/eclipse/rdf4j/sail/lmdb/LmdbStandardQueryOptimizerPipeline.java b/core/sail/lmdb/src/main/java/org/eclipse/rdf4j/sail/lmdb/LmdbStandardQueryOptimizerPipeline.java
+index f626d1cba6..4e30098933 100644
+--- a/core/sail/lmdb/src/main/java/org/eclipse/rdf4j/sail/lmdb/LmdbStandardQueryOptimizerPipeline.java
++++ b/core/sail/lmdb/src/main/java/org/eclipse/rdf4j/sail/lmdb/LmdbStandardQueryOptimizerPipeline.java
+@@ -40,7 +40,9 @@ import org.eclipse.rdf4j.query.algebra.evaluation.QueryOptimizer;
+ import org.eclipse.rdf4j.query.algebra.evaluation.QueryOptimizerPipeline;
+ import org.eclipse.rdf4j.query.algebra.evaluation.TripleSource;
+ import org.eclipse.rdf4j.query.algebra.evaluation.impl.EvaluationStatistics;
++import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.FilterOptimizer;
+ import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.OrderLimitOptimizer;
++import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.ParentReferenceChecker;
+ import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.QueryJoinOptimizer;
+ import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.StandardQueryOptimizerPipeline;
+ import org.eclipse.rdf4j.query.algebra.helpers.AbstractSimpleQueryModelVisitor;
+@@ -54,10 +56,22 @@ public final class LmdbStandardQueryOptimizerPipeline implements QueryOptimizerP
+ 	private final TripleSource tripleSource;
+ 	private final EvaluationStatistics evaluationStatistics;
+ 	private final EvaluationStrategy strategy;
++	private final boolean nativeEngine;
+ 
+ 	@InternalUseOnly
+ 	public LmdbStandardQueryOptimizerPipeline(EvaluationStrategy strategy, TripleSource tripleSource,
+ 			EvaluationStatistics evaluationStatistics) {
++		this(strategy, tripleSource, evaluationStatistics, false);
++	}
++
++	/**
++	 * @param nativeEngine when {@code true}, the pipeline is built for the native query engine and adds
++	 *                     {@link LmdbSubqueryGroupPushdownOptimizer} after the first {@link FilterOptimizer}.
++	 */
++	@InternalUseOnly
++	public LmdbStandardQueryOptimizerPipeline(EvaluationStrategy strategy, TripleSource tripleSource,
++			EvaluationStatistics evaluationStatistics, boolean nativeEngine) {
++		this.nativeEngine = nativeEngine;
+ 		this.delegate = new StandardQueryOptimizerPipeline(strategy, new OrderBlindTripleSource(tripleSource),
+ 				evaluationStatistics);
+ 		this.tripleSource = tripleSource;
+@@ -73,7 +87,13 @@ public final class LmdbStandardQueryOptimizerPipeline implements QueryOptimizerP
+ 	@Override
+ 	public Iterable<QueryOptimizer> getOptimizers() {
+ 		if (!strategy.getQueryExecutionPolicy().experimentalQueryOptimizations()) {
+-			return delegate.getOptimizers();
++			if (!nativeEngine) {
++				return delegate.getOptimizers();
++			}
++			List<QueryOptimizer> plain = new ArrayList<>();
++			delegate.getOptimizers().forEach(plain::add);
++			insertGroupPushdown(plain);
++			return plain;
+ 		}
+ 		List<QueryOptimizer> optimizers = new ArrayList<>();
+ 		boolean inserted = false;
+@@ -93,9 +113,30 @@ public final class LmdbStandardQueryOptimizerPipeline implements QueryOptimizerP
+ 			optimizers.add(new LmdbOrderByOptimizer(tripleSource));
+ 		}
+ 
++		if (nativeEngine) {
++			insertGroupPushdown(optimizers);
++		}
+ 		return optimizers;
+ 	}
+ 
++	/**
++	 * The standard pipeline pushes filters onto their patterns only after {@link QueryJoinOptimizer}; the group
++	 * pushdown needs that to have happened (it accepts only plain joins below the group), so it goes right after the
++	 * first {@link FilterOptimizer} (and that optimizer's parent-reference check, when present).
++	 */
++	private static void insertGroupPushdown(List<QueryOptimizer> optimizers) {
++		for (int i = 0; i < optimizers.size(); i++) {
++			if (optimizers.get(i) instanceof FilterOptimizer) {
++				int position = i + 1;
++				if (position < optimizers.size() && optimizers.get(position) instanceof ParentReferenceChecker) {
++					position++;
++				}
++				optimizers.add(position, new LmdbSubqueryGroupPushdownOptimizer());
++				return;
++			}
++		}
++	}
++
+ 	private final class LmdbPhysicalJoinOrderOptimizer implements QueryOptimizer {
+ 
+ 		@Override
+diff --git a/core/sail/lmdb/src/main/java/org/eclipse/rdf4j/sail/lmdb/LmdbSubqueryGroupPushdownOptimizer.java b/core/sail/lmdb/src/main/java/org/eclipse/rdf4j/sail/lmdb/LmdbSubqueryGroupPushdownOptimizer.java
+new file mode 100644
+index 0000000000..e8b1f4bb9b
+--- /dev/null
++++ b/core/sail/lmdb/src/main/java/org/eclipse/rdf4j/sail/lmdb/LmdbSubqueryGroupPushdownOptimizer.java
+@@ -0,0 +1,283 @@
++/*******************************************************************************
++ * Copyright (c) 2026 Eclipse RDF4J contributors.
++ *
++ * All rights reserved. This program and the accompanying materials
++ * are made available under the terms of the Eclipse Distribution License v1.0
++ * which accompanies this distribution, and is available at
++ * http://www.eclipse.org/org/documents/edl-v10.php.
++ *
++ * SPDX-License-Identifier: BSD-3-Clause
++ *******************************************************************************/
++package org.eclipse.rdf4j.sail.lmdb;
++
++import java.util.ArrayList;
++import java.util.HashSet;
++import java.util.LinkedHashSet;
++import java.util.List;
++import java.util.Set;
++
++import org.eclipse.rdf4j.common.annotation.Experimental;
++import org.eclipse.rdf4j.common.annotation.InternalUseOnly;
++import org.eclipse.rdf4j.query.BindingSet;
++import org.eclipse.rdf4j.query.Dataset;
++import org.eclipse.rdf4j.query.algebra.AggregateOperator;
++import org.eclipse.rdf4j.query.algebra.Extension;
++import org.eclipse.rdf4j.query.algebra.ExtensionElem;
++import org.eclipse.rdf4j.query.algebra.Group;
++import org.eclipse.rdf4j.query.algebra.GroupElem;
++import org.eclipse.rdf4j.query.algebra.Join;
++import org.eclipse.rdf4j.query.algebra.Projection;
++import org.eclipse.rdf4j.query.algebra.ProjectionElem;
++import org.eclipse.rdf4j.query.algebra.ProjectionElemList;
++import org.eclipse.rdf4j.query.algebra.QueryModelNode;
++import org.eclipse.rdf4j.query.algebra.TupleExpr;
++import org.eclipse.rdf4j.query.algebra.evaluation.QueryOptimizer;
++import org.eclipse.rdf4j.query.algebra.helpers.AbstractSimpleQueryModelVisitor;
++import org.eclipse.rdf4j.query.algebra.helpers.TupleExprs;
++import org.eclipse.rdf4j.query.algebra.helpers.collectors.VarNameCollector;
++
++/**
++ * Moves a GROUP BY below a join with a subquery that has exactly one row per join key.
++ *
++ * <p>
++ * A query of the shape {@code Group(Join(Sub, Rest), K, A)}, where {@code Sub} is a subquery grouped by one variable
++ * {@code c1}, joins every row of {@code Rest} with at most one row of {@code Sub}. Grouping {@code Rest} by the keys
++ * that do not come from {@code Sub} and joining the (few) groups with {@code Sub} afterwards therefore yields the same
++ * rows, and exposes the inner group as a plain aggregate over {@code Rest} to the native planner (for example the type
++ * matrix). The rewrite is
++ * </p>
++ *
++ * <pre>
++ * Group(Join(Sub, Rest), K, A)  ==>  Join(Sub, Projection[subquery](Extension[A](Group(Rest, K', A))))
++ * </pre>
++ *
++ * <p>
++ * It applies only when all of the following hold, otherwise the query is left alone:
++ * </p>
++ * <ol>
++ * <li>{@code Sub} is a plain subquery projection (no renames, no graph or projection context) over optional extensions
++ * over a Group whose only grouping variable is {@code c1}.</li>
++ * <li>{@code Sub} and {@code Rest} share exactly the variable {@code c1}; no other variable of {@code Sub} is mentioned
++ * anywhere in {@code Rest}.</li>
++ * <li>{@code c1} is assured by both {@code Sub} and {@code Rest}.</li>
++ * <li>{@code c1} and every other variable of {@code Sub} are grouping keys of the outer group.</li>
++ * <li>No outer aggregate reads a variable of {@code Sub} other than {@code c1}.</li>
++ * <li>Only inner joins connect the operands: the group's argument is a tree of {@link Join}s whose operands include
++ * {@code Sub}.</li>
++ * </ol>
++ *
++ * <p>
++ * The SPARQL parser represents each aggregate twice, as a {@link GroupElem} and as an {@link ExtensionElem} above the
++ * group. The aggregate extension elements move with the group so the new subquery has the shape of a hand-written one;
++ * other extension elements stay where they are. The optimizer keeps no state between calls.
++ * </p>
++ */
++@Experimental
++@InternalUseOnly
++public final class LmdbSubqueryGroupPushdownOptimizer implements QueryOptimizer {
++
++	@Override
++	public void optimize(TupleExpr tupleExpr, Dataset dataset, BindingSet bindings) {
++		List<Group> groups = new ArrayList<>();
++		tupleExpr.visit(new AbstractSimpleQueryModelVisitor<RuntimeException>() {
++			@Override
++			public void meet(Group node) {
++				groups.add(node);
++				super.meet(node);
++			}
++		});
++		for (Group group : groups) {
++			rewrite(group);
++		}
++	}
++
++	private static void rewrite(Group group) {
++		if (!(group.getArg() instanceof Join) || group.getGroupElements().isEmpty()) {
++			return;
++		}
++		List<TupleExpr> operands = new ArrayList<>();
++		collectOperands(group.getArg(), operands);
++
++		Projection sub = null;
++		String joinKey = null;
++		for (TupleExpr operand : operands) {
++			String key = oneRowPerKeyVariable(operand);
++			if (key != null) {
++				if (sub != null) {
++					return; // more than one candidate, do not guess
++				}
++				sub = (Projection) operand;
++				joinKey = key;
++			}
++		}
++		if (sub == null) {
++			return;
++		}
++
++		List<TupleExpr> rest = new ArrayList<>(operands);
++		rest.remove(sub);
++		if (rest.isEmpty()) {
++			return;
++		}
++
++		Set<String> subNames = sub.getBindingNames();
++		Set<String> subOther = new LinkedHashSet<>(subNames);
++		subOther.remove(joinKey);
++
++		Set<String> restNames = new HashSet<>();
++		Set<String> restAssured = new HashSet<>();
++		Set<String> restMentioned = new HashSet<>();
++		for (TupleExpr operand : rest) {
++			restNames.addAll(operand.getBindingNames());
++			restAssured.addAll(operand.getAssuredBindingNames());
++			restMentioned.addAll(VarNameCollector.process(operand));
++		}
++
++		// rule 2: the only shared variable is the join key, and Rest never mentions another Sub variable
++		Set<String> shared = new HashSet<>(subNames);
++		shared.retainAll(restNames);
++		if (shared.size() != 1 || !shared.contains(joinKey)) {
++			return;
++		}
++		for (String name : subOther) {
++			if (restMentioned.contains(name)) {
++				return;
++			}
++		}
++		// rule 3
++		if (!sub.getAssuredBindingNames().contains(joinKey) || !restAssured.contains(joinKey)) {
++			return;
++		}
++		// rule 4
++		Set<String> keys = group.getGroupBindingNames();
++		if (!keys.contains(joinKey) || !keys.containsAll(subOther)) {
++			return;
++		}
++		List<String> pushedKeys = new ArrayList<>();
++		for (String key : keys) {
++			if (!subOther.contains(key)) {
++				pushedKeys.add(key);
++			}
++		}
++		// rule 5, plus: aggregate aliases must not collide with anything visible
++		List<GroupElem> groupElements = new ArrayList<>(group.getGroupElements());
++		for (GroupElem groupElement : groupElements) {
++			if (subNames.contains(groupElement.getName()) || keys.contains(groupElement.getName())
++					|| restNames.contains(groupElement.getName())) {
++				return;
++			}
++			for (String name : VarNameCollector.process(groupElement.getOperator())) {
++				if (subOther.contains(name)) {
++					return;
++				}
++			}
++		}
++
++		// the aggregate ExtensionElems that the parser put above the group
++		List<Extension> chain = new ArrayList<>();
++		TupleExpr top = group;
++		while (top.getParentNode() instanceof Extension extension && extension.getArg() == top) {
++			chain.add(extension);
++			top = extension;
++		}
++		List<ExtensionElem> moved = new ArrayList<>();
++		for (GroupElem groupElement : groupElements) {
++			ExtensionElem match = null;
++			for (Extension extension : chain) {
++				for (ExtensionElem element : extension.getElements()) {
++					if (element.getName().equals(groupElement.getName())
++							&& element.getExpr() instanceof AggregateOperator
++							&& element.getExpr().equals(groupElement.getOperator())) {
++						match = element;
++					}
++				}
++			}
++			if (match == null) {
++				return;
++			}
++			moved.add(match);
++		}
++
++		// all checks passed; from here on the tree is modified
++		TupleExpr restExpr = rest.get(0);
++		for (int i = 1; i < rest.size(); i++) {
++			restExpr = new Join(restExpr, rest.get(i));
++		}
++		Group pushed = new Group(restExpr, pushedKeys);
++		for (GroupElem groupElement : groupElements) {
++			pushed.addGroupElement(groupElement);
++		}
++		Extension pushedExtension = new Extension(pushed);
++		for (ExtensionElem element : moved) {
++			pushedExtension.addElement(element);
++		}
++		ProjectionElemList projected = new ProjectionElemList();
++		for (String key : pushedKeys) {
++			projected.addElement(new ProjectionElem(key));
++		}
++		for (GroupElem groupElement : groupElements) {
++			ProjectionElem aggregate = new ProjectionElem(groupElement.getName());
++			aggregate.setAggregateOperatorInExpression(true);
++			projected.addElement(aggregate);
++		}
++		Projection pushedSubquery = new Projection(pushedExtension, projected, true);
++
++		TupleExpr replacement = new Join(sub, pushedSubquery);
++		for (Extension extension : chain) {
++			List<ExtensionElem> remaining = new ArrayList<>(extension.getElements());
++			remaining.removeAll(moved);
++			if (!remaining.isEmpty()) {
++				extension.setElements(remaining);
++				extension.setArg(replacement);
++				replacement = extension;
++			}
++		}
++		if (replacement != top) {
++			top.replaceWith(replacement);
++		}
++	}
++
++	private static void collectOperands(TupleExpr tupleExpr, List<TupleExpr> operands) {
++		if (tupleExpr instanceof Join join && !join.isMergeJoin() && !TupleExprs.isVariableScopeChange(join)) {
++			collectOperands(join.getLeftArg(), operands);
++			collectOperands(join.getRightArg(), operands);
++		} else {
++			operands.add(tupleExpr);
++		}
++	}
++
++	/**
++	 * @return the single grouping variable when {@code operand} is a plain subquery that has at most one row per value
++	 *         of that variable, else {@code null}.
++	 */
++	private static String oneRowPerKeyVariable(TupleExpr operand) {
++		if (!(operand instanceof Projection projection) || !projection.isSubquery()
++				|| projection.getInheritedGraphParameter() != null || projection.getProjectionContext() != null) {
++			return null;
++		}
++		for (ProjectionElem element : projection.getProjectionElemList().getElements()) {
++			if (element.getProjectionAlias().filter(alias -> !alias.equals(element.getName())).isPresent()) {
++				return null;
++			}
++		}
++		Set<String> extended = new HashSet<>();
++		TupleExpr current = projection.getArg();
++		while (current instanceof Extension extension) {
++			for (ExtensionElem element : extension.getElements()) {
++				extended.add(element.getName());
++			}
++			current = extension.getArg();
++		}
++		if (!(current instanceof Group group) || group.getGroupBindingNames().size() != 1) {
++			return null;
++		}
++		String key = group.getGroupBindingNames().iterator().next();
++		if (extended.contains(key) || group.getAggregateBindingNames().contains(key)) {
++			return null;
++		}
++		if (!projection.getBindingNames().contains(key) || !projection.getAssuredBindingNames().contains(key)) {
++			return null;
++		}
++		return key;
++	}
++}
+diff --git a/core/sail/lmdb/src/main/java/org/eclipse/rdf4j/sail/lmdb/evaluation/LmdbNativeEvaluationStrategyFactory.java b/core/sail/lmdb/src/main/java/org/eclipse/rdf4j/sail/lmdb/evaluation/LmdbNativeEvaluationStrategyFactory.java
+index 36c83b3515..9c04625dac 100644
+--- a/core/sail/lmdb/src/main/java/org/eclipse/rdf4j/sail/lmdb/evaluation/LmdbNativeEvaluationStrategyFactory.java
++++ b/core/sail/lmdb/src/main/java/org/eclipse/rdf4j/sail/lmdb/evaluation/LmdbNativeEvaluationStrategyFactory.java
+@@ -51,8 +51,8 @@ public final class LmdbNativeEvaluationStrategyFactory extends StrictEvaluationS
+ 	private QueryOptimizerPipeline automaticPipeline(StrictEvaluationStrategy strategy, TripleSource tripleSource,
+ 			EvaluationStatistics evaluationStatistics) {
+ 		if (evaluationStatistics.supportsJoinEstimation()) {
+-			return new LmdbQueryOptimizerPipeline(strategy, tripleSource, evaluationStatistics);
++			return new LmdbQueryOptimizerPipeline(strategy, tripleSource, evaluationStatistics, true);
+ 		}
+-		return new LmdbStandardQueryOptimizerPipeline(strategy, tripleSource, evaluationStatistics);
++		return new LmdbStandardQueryOptimizerPipeline(strategy, tripleSource, evaluationStatistics, true);
+ 	}
+ }
+diff --git a/core/sail/lmdb/src/test/java/org/eclipse/rdf4j/sail/lmdb/LmdbOptimizerPipelineTest.java b/core/sail/lmdb/src/test/java/org/eclipse/rdf4j/sail/lmdb/LmdbOptimizerPipelineTest.java
+index bdbbbd9614..6226022ef6 100644
+--- a/core/sail/lmdb/src/test/java/org/eclipse/rdf4j/sail/lmdb/LmdbOptimizerPipelineTest.java
++++ b/core/sail/lmdb/src/test/java/org/eclipse/rdf4j/sail/lmdb/LmdbOptimizerPipelineTest.java
+@@ -313,6 +313,47 @@ class LmdbOptimizerPipelineTest {
+ 		assertFalse(optimizers.stream().anyMatch(LmdbSketchJoinOptimizer.class::isInstance));
+ 	}
+ 
++	@Test
++	void nativeStandardPipelineAddsGroupPushdownAfterFilterOptimizer() throws Exception {
++		LmdbStore store = new LmdbStore(new LmdbStoreConfig().setNativeEvaluationEnabled(true));
++		for (EvaluationStrategy strategy : List.of(createEvaluationStrategy(store.getEvaluationStrategyFactory()),
++				createExperimentalEvaluationStrategy(store.getEvaluationStrategyFactory()))) {
++			List<QueryOptimizer> optimizers = optimizers(strategy);
++			int pushdown = indexOf(optimizers, LmdbSubqueryGroupPushdownOptimizer.class);
++			assertTrue(pushdown >= 0, "native pipelines add the group pushdown");
++			assertTrue(pushdown > indexOf(optimizers, FilterOptimizer.class), "after FilterOptimizer");
++		}
++	}
++
++	@Test
++	void nativeLmdbPipelineAddsGroupPushdownBetweenIterativeEvaluationAndJoinOptimizers() throws Exception {
++		LmdbStore store = new LmdbStore(new LmdbStoreConfig().setNativeEvaluationEnabled(true));
++		EvaluationStatistics readyStatistics = new EvaluationStatistics() {
++			@Override
++			public boolean supportsJoinEstimation() {
++				return true;
++			}
++		};
++		List<QueryOptimizer> optimizers = optimizers(
++				createExperimentalEvaluationStrategy(store.getEvaluationStrategyFactory(), readyStatistics));
++		int pushdown = indexOf(optimizers, LmdbSubqueryGroupPushdownOptimizer.class);
++		assertTrue(pushdown > indexOf(optimizers, IterativeEvaluationOptimizer.class));
++		assertTrue(pushdown < indexOf(optimizers, LmdbSketchJoinOptimizer.class));
++	}
++
++	@Test
++	void genericEvaluationPipelinesDoNotAddGroupPushdown() throws Exception {
++		LmdbStoreConfig config = new LmdbStoreConfig();
++		config.setExperimentalQueryOptimizations(true);
++		LmdbStore store = new LmdbStore(config);
++		assertFalse(optimizers(createExperimentalEvaluationStrategy(store.getEvaluationStrategyFactory()))
++				.stream()
++				.anyMatch(LmdbSubqueryGroupPushdownOptimizer.class::isInstance));
++		assertFalse(optimizers(createEvaluationStrategy(store.getEvaluationStrategyFactory()))
++				.stream()
++				.anyMatch(LmdbSubqueryGroupPushdownOptimizer.class::isInstance));
++	}
++
+ 	@Test
+ 	void automaticLmdbStoreUsesNativeEvaluationWithLmdbPipelineAfterSketchesAreReady(@TempDir File dataDir)
+ 			throws Exception {
+diff --git a/core/sail/lmdb/src/test/java/org/eclipse/rdf4j/sail/lmdb/LmdbSubqueryGroupPushdownOptimizerTest.java b/core/sail/lmdb/src/test/java/org/eclipse/rdf4j/sail/lmdb/LmdbSubqueryGroupPushdownOptimizerTest.java
+new file mode 100644
+index 0000000000..d52bdf898b
+--- /dev/null
++++ b/core/sail/lmdb/src/test/java/org/eclipse/rdf4j/sail/lmdb/LmdbSubqueryGroupPushdownOptimizerTest.java
+@@ -0,0 +1,226 @@
++/*******************************************************************************
++ * Copyright (c) 2026 Eclipse RDF4J contributors.
++ *
++ * All rights reserved. This program and the accompanying materials
++ * are made available under the terms of the Eclipse Distribution License v1.0
++ * which accompanies this distribution, and is available at
++ * http://www.eclipse.org/org/documents/edl-v10.php.
++ *
++ * SPDX-License-Identifier: BSD-3-Clause
++ *******************************************************************************/
++
++package org.eclipse.rdf4j.sail.lmdb;
++
++import static org.assertj.core.api.Assertions.assertThat;
++
++import java.util.ArrayList;
++import java.util.List;
++import java.util.Set;
++
++import org.eclipse.rdf4j.query.QueryLanguage;
++import org.eclipse.rdf4j.query.algebra.Extension;
++import org.eclipse.rdf4j.query.algebra.ExtensionElem;
++import org.eclipse.rdf4j.query.algebra.Group;
++import org.eclipse.rdf4j.query.algebra.GroupElem;
++import org.eclipse.rdf4j.query.algebra.Join;
++import org.eclipse.rdf4j.query.algebra.Order;
++import org.eclipse.rdf4j.query.algebra.Projection;
++import org.eclipse.rdf4j.query.algebra.QueryModelNode;
++import org.eclipse.rdf4j.query.algebra.QueryRoot;
++import org.eclipse.rdf4j.query.algebra.StatementPattern;
++import org.eclipse.rdf4j.query.algebra.TupleExpr;
++import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.FilterOptimizer;
++import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.IterativeEvaluationOptimizer;
++import org.eclipse.rdf4j.query.algebra.helpers.AbstractQueryModelVisitor;
++import org.eclipse.rdf4j.query.impl.EmptyBindingSet;
++import org.eclipse.rdf4j.query.parser.QueryParserUtil;
++import org.junit.jupiter.api.Test;
++
++class LmdbSubqueryGroupPushdownOptimizerTest {
++
++	private static final String PREFIXES = "PREFIX rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#>\n"
++			+ "PREFIX ex: <http://example.org/>\n";
++
++	private static final String INSTANCE_COUNT_SUBQUERY = "{ SELECT ?sourceClass (COUNT(DISTINCT ?source) AS ?instanceCount) "
++			+ "WHERE { ?source rdf:type ?sourceClass . } GROUP BY ?sourceClass }\n";
++
++	private static final String CENSUS = PREFIXES
++			+ "SELECT ?sourceClass ?instanceCount ?targetClass (COUNT(*) AS ?edgeCount) WHERE {\n"
++			+ INSTANCE_COUNT_SUBQUERY
++			+ "?source rdf:type ?sourceClass .\n"
++			+ "?source ?predicate ?target .\n"
++			+ "FILTER(?predicate != rdf:type)\n"
++			+ "?target rdf:type ?targetClass .\n"
++			+ "} GROUP BY ?sourceClass ?instanceCount ?targetClass ORDER BY ?sourceClass DESC(?edgeCount)";
++
++	private static TupleExpr parseAndPrepare(String query) {
++		TupleExpr tupleExpr = QueryParserUtil.parseTupleQuery(QueryLanguage.SPARQL, query, null).getTupleExpr();
++		if (!(tupleExpr instanceof QueryRoot)) {
++			tupleExpr = new QueryRoot(tupleExpr);
++		}
++		new FilterOptimizer(null, false, false).optimize(tupleExpr, null, EmptyBindingSet.getInstance());
++		new IterativeEvaluationOptimizer().optimize(tupleExpr, null, EmptyBindingSet.getInstance());
++		return tupleExpr;
++	}
++
++	private static TupleExpr rewrite(String query) {
++		TupleExpr tupleExpr = parseAndPrepare(query);
++		Set<String> before = tupleExpr.getBindingNames();
++		new LmdbSubqueryGroupPushdownOptimizer().optimize(tupleExpr, null, EmptyBindingSet.getInstance());
++		assertThat(tupleExpr.getBindingNames()).as("binding names of the whole query").isEqualTo(before);
++		return tupleExpr;
++	}
++
++	private static void assertUnchanged(String query) {
++		TupleExpr tupleExpr = parseAndPrepare(query);
++		String before = tupleExpr.toString();
++		new LmdbSubqueryGroupPushdownOptimizer().optimize(tupleExpr, null, EmptyBindingSet.getInstance());
++		assertThat(tupleExpr.toString()).isEqualTo(before);
++	}
++
++	private static List<TupleExpr> joinOperands(TupleExpr tupleExpr) {
++		List<TupleExpr> operands = new ArrayList<>();
++		collectOperands(tupleExpr, operands);
++		return operands;
++	}
++
++	private static void collectOperands(TupleExpr tupleExpr, List<TupleExpr> operands) {
++		if (tupleExpr instanceof Join join) {
++			collectOperands(join.getLeftArg(), operands);
++			collectOperands(join.getRightArg(), operands);
++		} else {
++			operands.add(tupleExpr);
++		}
++	}
++
++	private static <T> List<T> all(TupleExpr root, Class<T> type) {
++		List<T> found = new ArrayList<>();
++		root.visit(new AbstractQueryModelVisitor<RuntimeException>() {
++			@Override
++			protected void meetNode(QueryModelNode node) {
++				if (type.isInstance(node)) {
++					found.add(type.cast(node));
++				}
++				super.meetNode(node);
++			}
++		});
++		return found;
++	}
++
++	@Test
++	void censusQueryPushesTheGroupBelowTheSubqueryJoin() {
++		TupleExpr root = rewrite(CENSUS);
++
++		Projection outer = (Projection) ((QueryRoot) root).getArg();
++		Order order = (Order) outer.getArg();
++		assertThat(order.getArg()).as("empty aggregate Extension is removed").isInstanceOf(Join.class);
++
++		List<TupleExpr> operands = joinOperands(order.getArg());
++		assertThat(operands).hasSize(2).allSatisfy(operand -> {
++			assertThat(operand).isInstanceOf(Projection.class);
++			assertThat(((Projection) operand).isSubquery()).isTrue();
++		});
++
++		Projection original = (Projection) operands.get(0);
++		assertThat(original.getBindingNames()).containsExactlyInAnyOrder("sourceClass", "instanceCount");
++
++		Projection pushed = (Projection) operands.get(1);
++		assertThat(pushed.getBindingNames()).containsExactlyInAnyOrder("sourceClass", "targetClass", "edgeCount");
++		Extension extension = (Extension) pushed.getArg();
++		assertThat(extension.getElements()).extracting(ExtensionElem::getName).containsExactly("edgeCount");
++		Group inner = (Group) extension.getArg();
++		assertThat(inner.getGroupBindingNames()).containsExactlyInAnyOrder("sourceClass", "targetClass");
++		assertThat(inner.getGroupElements()).extracting(GroupElem::getName).containsExactly("edgeCount");
++
++		List<TupleExpr> rest = joinOperands(inner.getArg());
++		assertThat(rest).hasSize(3);
++		assertThat(all(inner.getArg(), StatementPattern.class)).hasSize(3);
++		assertThat(all(root, Group.class)).as("original subquery group plus the new inner group").hasSize(2);
++	}
++
++	@Test
++	void nonAggregateExtensionElementsStayAboveTheJoin() {
++		String query = PREFIXES + "SELECT ?sourceClass ?instanceCount ?targetClass (COUNT(*) AS ?edgeCount)"
++				+ " (?edgeCount * 2 AS ?double) WHERE {\n"
++				+ INSTANCE_COUNT_SUBQUERY
++				+ "?source rdf:type ?sourceClass . ?source ?predicate ?target . ?target rdf:type ?targetClass .\n"
++				+ "} GROUP BY ?sourceClass ?instanceCount ?targetClass";
++		TupleExpr root = rewrite(query);
++		List<Extension> extensions = all(root, Extension.class);
++		boolean doubleStaysAbove = false;
++		for (Extension extension : extensions) {
++			for (ExtensionElem element : extension.getElements()) {
++				if ("double".equals(element.getName())) {
++					doubleStaysAbove = extension.getArg() instanceof Join;
++				}
++			}
++		}
++		assertThat(doubleStaysAbove).as("non-aggregate ExtensionElem stays above the join").isTrue();
++		assertThat(all(root, Group.class)).hasSize(2);
++	}
++
++	@Test
++	void queryWithoutSubqueryIsUntouched() {
++		assertUnchanged(PREFIXES + "SELECT ?sourceClass ?targetClass (COUNT(*) AS ?edgeCount) WHERE {\n"
++				+ "?source rdf:type ?sourceClass . ?source ?predicate ?target . ?target rdf:type ?targetClass .\n"
++				+ "} GROUP BY ?sourceClass ?targetClass");
++	}
++
++	@Test
++	void subqueryGroupedByTwoKeysIsUntouched() {
++		assertUnchanged(PREFIXES + "SELECT ?sourceClass ?other ?c ?targetClass (COUNT(*) AS ?edgeCount) WHERE {\n"
++				+ "{ SELECT ?sourceClass ?other (COUNT(?source) AS ?c) WHERE { ?source rdf:type ?sourceClass . "
++				+ "?source ex:p ?other } GROUP BY ?sourceClass ?other }\n"
++				+ "?source rdf:type ?sourceClass . ?source ?predicate ?target . ?target rdf:type ?targetClass .\n"
++				+ "} GROUP BY ?sourceClass ?other ?c ?targetClass");
++	}
++
++	@Test
++	void subqueryVariableUsedInOuterAggregateIsUntouched() {
++		assertUnchanged(PREFIXES + "SELECT ?sourceClass ?targetClass (SUM(?instanceCount) AS ?total) WHERE {\n"
++				+ INSTANCE_COUNT_SUBQUERY
++				+ "?source rdf:type ?sourceClass . ?source ?predicate ?target . ?target rdf:type ?targetClass .\n"
++				+ "} GROUP BY ?sourceClass ?instanceCount ?targetClass");
++	}
++
++	@Test
++	void joinVariableOnlyOptionalInRestIsUntouched() {
++		assertUnchanged(PREFIXES + "SELECT ?sourceClass ?instanceCount (COUNT(*) AS ?edgeCount) WHERE {\n"
++				+ "?source ?predicate ?target . OPTIONAL { ?source rdf:type ?sourceClass }\n"
++				+ INSTANCE_COUNT_SUBQUERY
++				+ "} GROUP BY ?sourceClass ?instanceCount");
++	}
++
++	@Test
++	void subqueryVariableMissingFromOuterGroupByIsUntouched() {
++		assertUnchanged(PREFIXES + "SELECT ?sourceClass ?targetClass (COUNT(*) AS ?edgeCount) WHERE {\n"
++				+ INSTANCE_COUNT_SUBQUERY
++				+ "?source rdf:type ?sourceClass . ?source ?predicate ?target . ?target rdf:type ?targetClass .\n"
++				+ "} GROUP BY ?sourceClass ?targetClass");
++	}
++
++	@Test
++	void subqueryWithoutGroupByIsUntouched() {
++		assertUnchanged(PREFIXES + "SELECT ?sourceClass ?targetClass (COUNT(*) AS ?edgeCount) WHERE {\n"
++				+ "{ SELECT DISTINCT ?sourceClass WHERE { ?s rdf:type ?sourceClass } }\n"
++				+ "?source rdf:type ?sourceClass . ?source ?predicate ?target . ?target rdf:type ?targetClass .\n"
++				+ "} GROUP BY ?sourceClass ?targetClass");
++	}
++
++	@Test
++	void subqueryUnderOptionalIsUntouched() {
++		assertUnchanged(PREFIXES + "SELECT ?sourceClass ?instanceCount ?targetClass (COUNT(*) AS ?edgeCount) WHERE {\n"
++				+ "?source rdf:type ?sourceClass . ?source ?predicate ?target . ?target rdf:type ?targetClass .\n"
++				+ "OPTIONAL " + INSTANCE_COUNT_SUBQUERY
++				+ "} GROUP BY ?sourceClass ?instanceCount ?targetClass");
++	}
++
++	@Test
++	void filterOverTheSubqueryVariableInsideTheJoinIsUntouched() {
++		assertUnchanged(PREFIXES + "SELECT ?sourceClass ?instanceCount ?targetClass (COUNT(*) AS ?edgeCount) WHERE {\n"
++				+ INSTANCE_COUNT_SUBQUERY
++				+ "?source rdf:type ?sourceClass . ?source ?predicate ?target . ?target rdf:type ?targetClass .\n"
++				+ "FILTER(?instanceCount > 1)\n"
++				+ "} GROUP BY ?sourceClass ?instanceCount ?targetClass");
++	}
++}
+diff --git a/core/sail/lmdb/src/test/java/org/eclipse/rdf4j/sail/lmdb/evaluation/LmdbTypeMatrixSubqueryCensusTest.java b/core/sail/lmdb/src/test/java/org/eclipse/rdf4j/sail/lmdb/evaluation/LmdbTypeMatrixSubqueryCensusTest.java
+new file mode 100644
+index 0000000000..bddbbe2719
+--- /dev/null
++++ b/core/sail/lmdb/src/test/java/org/eclipse/rdf4j/sail/lmdb/evaluation/LmdbTypeMatrixSubqueryCensusTest.java
+@@ -0,0 +1,241 @@
++/*******************************************************************************
++ * Copyright (c) 2026 Eclipse RDF4J contributors.
++ *
++ * All rights reserved. This program and the accompanying materials
++ * are made available under the terms of the Eclipse Distribution License v1.0
++ * which accompanies this distribution, and is available at
++ * http://www.eclipse.org/org/documents/edl-v10.php.
++ *
++ * SPDX-License-Identifier: BSD-3-Clause
++ *******************************************************************************/
++package org.eclipse.rdf4j.sail.lmdb.evaluation;
++
++import static org.assertj.core.api.Assertions.assertThat;
++
++import java.io.File;
++import java.util.ArrayList;
++import java.util.Collections;
++import java.util.HashMap;
++import java.util.HashSet;
++import java.util.List;
++import java.util.Map;
++import java.util.Random;
++import java.util.Set;
++import java.util.regex.Pattern;
++
++import org.eclipse.rdf4j.model.IRI;
++import org.eclipse.rdf4j.model.Literal;
++import org.eclipse.rdf4j.model.ValueFactory;
++import org.eclipse.rdf4j.model.vocabulary.RDF;
++import org.eclipse.rdf4j.query.BindingSet;
++import org.eclipse.rdf4j.query.QueryResults;
++import org.eclipse.rdf4j.query.explanation.Explanation;
++import org.eclipse.rdf4j.repository.sail.SailRepository;
++import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
++import org.eclipse.rdf4j.sail.lmdb.AdjacencyEngagementTestAccess;
++import org.eclipse.rdf4j.sail.lmdb.LmdbStore;
++import org.eclipse.rdf4j.sail.lmdb.config.DirectAdjacencyMode;
++import org.eclipse.rdf4j.sail.lmdb.config.LmdbStoreConfig;
++import org.junit.jupiter.api.AfterEach;
++import org.junit.jupiter.api.BeforeEach;
++import org.junit.jupiter.api.Test;
++import org.junit.jupiter.api.io.TempDir;
++import org.junit.jupiter.api.parallel.ResourceLock;
++import org.junit.jupiter.api.parallel.Resources;
++
++/**
++ * The class-linkage census query joins an instance-count subquery with the linkage patterns and groups by the
++ * subquery's count as well. The native engine pushes the GROUP BY below that join so that the inner group is the plain
++ * type matrix; the result must stay identical to the unrewritten evaluation.
++ */
++@ResourceLock(Resources.SYSTEM_PROPERTIES)
++public class LmdbTypeMatrixSubqueryCensusTest {
++
++	private static final String EX = "http://example.com/";
++	private static final String PREFIX = "PREFIX rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#>\n";
++
++	private static final String CENSUS = PREFIX
++			+ "SELECT ?sourceClass ?instanceCount ?targetClass (COUNT(*) AS ?edgeCount) WHERE {\n"
++			+ "  { SELECT ?sourceClass (COUNT(DISTINCT ?source) AS ?instanceCount) WHERE { ?source rdf:type ?sourceClass . } GROUP BY ?sourceClass }\n"
++			+ "  ?source rdf:type ?sourceClass .\n"
++			+ "  ?source ?predicate ?target .\n"
++			+ "  FILTER(?predicate != rdf:type)\n"
++			+ "  ?target rdf:type ?targetClass .\n"
++			+ "} GROUP BY ?sourceClass ?instanceCount ?targetClass";
++
++	private static final String CENSUS_ORDERED = CENSUS + " ORDER BY ?sourceClass DESC(?edgeCount)";
++
++	/** The instance-count subquery has two grouping keys, so the rewrite must not apply. */
++	private static final String TWO_KEY_SUBQUERY = PREFIX
++			+ "SELECT ?sourceClass ?kind ?perKind ?targetClass (COUNT(*) AS ?edgeCount) WHERE {\n"
++			+ "  { SELECT ?sourceClass ?kind (COUNT(?source) AS ?perKind) WHERE { ?source rdf:type ?sourceClass . ?source ?kind ?x . } GROUP BY ?sourceClass ?kind }\n"
++			+ "  ?source rdf:type ?sourceClass .\n"
++			+ "  ?source ?predicate ?target .\n"
++			+ "  FILTER(?predicate != rdf:type)\n"
++			+ "  ?target rdf:type ?targetClass .\n"
++			+ "} GROUP BY ?sourceClass ?kind ?perKind ?targetClass";
++
++	private static final Pattern TYPE_MATRIX_PATH = Pattern.compile(
++			"nativeExecutionPath=(typeMatrix|irAggregateTypeMatrix(Interpreted|Parallel|ParallelInterpreted)?)\\b");
++
++	@TempDir
++	File nativeDir;
++
++	@TempDir
++	File referenceDir;
++
++	private SailRepository nativeRepository;
++	private SailRepository referenceRepository;
++	private final Map<String, String> previousProperties = new HashMap<>();
++
++	@BeforeEach
++	public void pinProperties() {
++		for (String property : List.of("rdf4j.lmdb.janinoCodegen.enabled", "rdf4j.lmdb.kernelInterpreter.enabled",
++				"rdf4j.lmdb.directAdjacency.nodePredicateProjection.enabled",
++				AdjacencyEngagementTestAccess.NODE_PREDICATE_SERVE_PROPERTY)) {
++			previousProperties.put(property, System.getProperty(property));
++			System.setProperty(property, "false");
++		}
++		nativeRepository = open(nativeDir, true);
++		referenceRepository = open(referenceDir, false);
++	}
++
++	@AfterEach
++	public void tearDown() {
++		try {
++			if (nativeRepository != null) {
++				nativeRepository.shutDown();
++			}
++			if (referenceRepository != null) {
++				referenceRepository.shutDown();
++			}
++		} finally {
++			previousProperties.forEach((property, value) -> {
++				if (value == null) {
++					System.clearProperty(property);
++				} else {
++					System.setProperty(property, value);
++				}
++			});
++		}
++	}
++
++	@Test
++	public void censusQueryEqualsTheUnrewrittenEvaluation() {
++		List<String> expected = rows(referenceRepository, CENSUS, "sourceClass", "instanceCount", "targetClass",
++				"edgeCount");
++		assertThat(expected).as("fixture must produce linkage rows").hasSizeGreaterThan(5);
++		assertThat(rows(nativeRepository, CENSUS, "sourceClass", "instanceCount", "targetClass", "edgeCount"))
++				.isEqualTo(expected);
++	}
++
++	@Test
++	public void censusQueryRunsTheTypeMatrixForTheInnerGroup() {
++		long before = LmdbNativeTypeMatrix.RUNS.get();
++		try (SailRepositoryConnection connection = nativeRepository.getConnection()) {
++			String telemetry = connection.prepareTupleQuery(CENSUS).explain(Explanation.Level.Telemetry).toString();
++			assertThat(telemetry).containsPattern(TYPE_MATRIX_PATH);
++		}
++		assertThat(LmdbNativeTypeMatrix.RUNS.get()).isGreaterThanOrEqualTo(before);
++	}
++
++	@Test
++	public void orderedCensusQueryEqualsTheUnrewrittenEvaluationAndKeepsItsOrder() {
++		List<BindingSet> nativeRows;
++		try (SailRepositoryConnection connection = nativeRepository.getConnection()) {
++			nativeRows = QueryResults.asList(connection.prepareTupleQuery(CENSUS_ORDERED).evaluate());
++		}
++		for (int i = 1; i < nativeRows.size(); i++) {
++			String previousClass = nativeRows.get(i - 1).getValue("sourceClass").stringValue();
++			String currentClass = nativeRows.get(i).getValue("sourceClass").stringValue();
++			int byClass = previousClass.compareTo(currentClass);
++			assertThat(byClass).as("sourceClass ascending at row " + i).isLessThanOrEqualTo(0);
++			if (byClass == 0) {
++				long previousCount = ((Literal) nativeRows.get(i - 1).getValue("edgeCount")).longValue();
++				long currentCount = ((Literal) nativeRows.get(i).getValue("edgeCount")).longValue();
++				assertThat(previousCount).as("edgeCount descending at row " + i).isGreaterThanOrEqualTo(currentCount);
++			}
++		}
++		assertThat(rows(nativeRepository, CENSUS_ORDERED, "sourceClass", "instanceCount", "targetClass", "edgeCount"))
++				.isEqualTo(rows(referenceRepository, CENSUS_ORDERED, "sourceClass", "instanceCount", "targetClass",
++						"edgeCount"));
++		try (SailRepositoryConnection connection = nativeRepository.getConnection()) {
++			assertThat(connection.prepareTupleQuery(CENSUS_ORDERED).explain(Explanation.Level.Telemetry).toString())
++					.containsPattern(TYPE_MATRIX_PATH);
++		}
++	}
++
++	@Test
++	public void subqueryGroupedByTwoKeysStillReturnsTheUnrewrittenResult() {
++		List<String> expected = rows(referenceRepository, TWO_KEY_SUBQUERY, "sourceClass", "kind", "perKind",
++				"targetClass", "edgeCount");
++		assertThat(expected).isNotEmpty();
++		assertThat(rows(nativeRepository, TWO_KEY_SUBQUERY, "sourceClass", "kind", "perKind", "targetClass",
++				"edgeCount")).isEqualTo(expected);
++	}
++
++	private static List<String> rows(SailRepository repository, String query, String... variables) {
++		List<String> rows = new ArrayList<>();
++		try (SailRepositoryConnection connection = repository.getConnection()) {
++			for (BindingSet bindings : QueryResults.asList(connection.prepareTupleQuery(query).evaluate())) {
++				StringBuilder row = new StringBuilder();
++				for (String variable : variables) {
++					row.append(bindings.getValue(variable)).append('|');
++				}
++				rows.add(row.toString());
++			}
++		}
++		Collections.sort(rows);
++		return rows;
++	}
++
++	private static SailRepository open(File dir, boolean nativeEngine) {
++		LmdbStoreConfig config = new LmdbStoreConfig("spoc,posc,ospc,psoc").setNativeEvaluationEnabled(nativeEngine);
++		if (nativeEngine) {
++			config.setDirectAdjacencyEnabled(true)
++					.setDirectAdjacencyMode(DirectAdjacencyMode.PREFER)
++					.setDirectAdjacencyMaxBytes(1L << 30);
++		}
++		LmdbStore store = new LmdbStore(dir, config);
++		SailRepository repository = new SailRepository(store);
++		load(repository);
++		if (nativeEngine) {
++			assertThat(AdjacencyEngagementTestAccess.buildNow(store))
++					.as(store.getDirectAdjacencyReadinessDescription())
++					.isTrue();
++		}
++		return repository;
++	}
++
++	/** Typed, multi-typed and untyped nodes, literal objects and random edges; identical for both stores. */
++	private static void load(SailRepository repository) {
++		Set<String> typed = new HashSet<>();
++		try (SailRepositoryConnection connection = repository.getConnection()) {
++			ValueFactory vf = connection.getValueFactory();
++			connection.begin();
++			Random random = new Random(23);
++			for (int i = 0; i < 120; i++) {
++				String node = "n" + i;
++				if (random.nextInt(5) != 0) {
++					int types = 1 + random.nextInt(2);
++					for (int t = 0; t < types; t++) {
++						String type = "T" + random.nextInt(6);
++						if (typed.add(node + "|" + type)) {
++							connection.add(vf.createIRI(EX, node), RDF.TYPE, vf.createIRI(EX, type));
++						}
++					}
++				}
++			}
++			for (int i = 0; i < 600; i++) {
++				IRI source = vf.createIRI(EX, "n" + random.nextInt(120));
++				IRI predicate = vf.createIRI(EX, "p" + random.nextInt(4));
++				if (random.nextInt(8) == 0) {
++					connection.add(source, predicate, vf.createLiteral("v" + random.nextInt(10)));
++				} else {
++					connection.add(source, predicate, vf.createIRI(EX, "n" + random.nextInt(120)));
++				}
++			}
++			connection.commit();
++		}
++	}
++}
+-- 
+2.54.0 (Apple Git-157)
+
+
+From 3ccc734e783c3ccc62f64de2ed8b68b4777d7cb5 Mon Sep 17 00:00:00 2001
+From: hottestad1 <hottestad1@bloomberg.net>
+Date: Thu, 5 Nov 2026 14:40:39 +0100
+Subject: [PATCH 2/2] GH-0000 Let the LMDB native type-matrix kernel honour
+ query cancellation
+
+LmdbNativeTypeMatrix only polled the probe deadline, which is unset in normal
+execution, so a query timeout, client disconnect or close never stopped a
+running type-matrix scan; serial scans always ran to completion.
+
+The group step now passes its NativeCancellationToken to the type matrix,
+which enters it for the scan and polls it alongside every probe-deadline poll
+(amortised to every 1024 ticks, the probe poll's own mask). Parallel workers
+enter the same token and also check it once per claimed morsel or range; a
+cancellation propagates as KernelQueryCancelledException without triggering a
+fallback strategy.
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+---
+ .../lmdb/evaluation/LmdbNativeGroupStep.java  |   2 +-
+ .../lmdb/evaluation/LmdbNativeTypeMatrix.java | 288 ++++++-----
+ .../evaluation/NativeCancellationToken.java   |  10 +
+ .../LmdbNativeTypeMatrixCancellationTest.java | 448 ++++++++++++++++++
+ 4 files changed, 625 insertions(+), 123 deletions(-)
+ create mode 100644 core/sail/lmdb/src/test/java/org/eclipse/rdf4j/sail/lmdb/evaluation/LmdbNativeTypeMatrixCancellationTest.java
+
+diff --git a/core/sail/lmdb/src/main/java/org/eclipse/rdf4j/sail/lmdb/evaluation/LmdbNativeGroupStep.java b/core/sail/lmdb/src/main/java/org/eclipse/rdf4j/sail/lmdb/evaluation/LmdbNativeGroupStep.java
+index 6c45a1beba..b365e1b2e6 100644
+--- a/core/sail/lmdb/src/main/java/org/eclipse/rdf4j/sail/lmdb/evaluation/LmdbNativeGroupStep.java
++++ b/core/sail/lmdb/src/main/java/org/eclipse/rdf4j/sail/lmdb/evaluation/LmdbNativeGroupStep.java
+@@ -1702,7 +1702,7 @@ final class NativeGroupIteration implements CloseableIteration<BindingSet>, Coop
+ 
+ 	private List<BindingSet> evaluateTypeMatrixFallback() {
+ 		try (NativeReplayBindingList.Builder result = collectResults()) {
+-			try (CloseableIteration<BindingSet> rows = typeMatrix.evaluate(base, source)) {
++			try (CloseableIteration<BindingSet> rows = typeMatrix.evaluate(base, source, cancellation)) {
+ 				while (rows.hasNext()) {
+ 					cancellation.check();
+ 					result.add(rows.next());
+diff --git a/core/sail/lmdb/src/main/java/org/eclipse/rdf4j/sail/lmdb/evaluation/LmdbNativeTypeMatrix.java b/core/sail/lmdb/src/main/java/org/eclipse/rdf4j/sail/lmdb/evaluation/LmdbNativeTypeMatrix.java
+index 8f16c4f465..b466e0f9e2 100644
+--- a/core/sail/lmdb/src/main/java/org/eclipse/rdf4j/sail/lmdb/evaluation/LmdbNativeTypeMatrix.java
++++ b/core/sail/lmdb/src/main/java/org/eclipse/rdf4j/sail/lmdb/evaluation/LmdbNativeTypeMatrix.java
+@@ -252,6 +252,27 @@ final class LmdbNativeTypeMatrix implements QueryEvaluationStep {
+ 		return evaluateCurrentSource(bindings);
+ 	}
+ 
++	CloseableIteration<BindingSet> evaluate(BindingSet bindings, NativeLmdbQuerySource evaluationSource,
++			NativeCancellationToken cancellation) {
++		// The scan is eager, so the token stays entered for its whole duration. Loops on this thread see it through
++		// the thread-local; parallel workers are handed the token object and enter it themselves.
++		try (NativeCancellationToken.Scope ignored = NativeCancellationToken.inherit(cancellation)) {
++			return evaluate(bindings, evaluationSource);
++		}
++	}
++
++	/**
++	 * Masked poll shared by every long loop of the type-matrix scan: the probe deadline (arbiter trials) and the
++	 * evaluating query's cancellation token (timeout, client disconnect, close). Like the probe-deadline poll it is one
++	 * masked increment on the fast path; both checks run only every 1024 ticks.
++	 */
++	private static void pollCancellation(int tick) {
++		if ((tick & 1023) == 0) {
++			LmdbNativeProbeDeadline.poll(tick);
++			NativeCancellationToken.checkCurrent();
++		}
++	}
++
+ 	private CloseableIteration<BindingSet> evaluateCurrentSource(BindingSet bindings) {
+ 		if (!bindings.isEmpty()) {
+ 			return NativeExecutionContextCarrier.forEvaluation(genericStep().evaluate(bindings), source);
+@@ -298,7 +319,7 @@ final class LmdbNativeTypeMatrix implements QueryEvaluationStep {
+ 			ArrayList<BindingSet> results = new ArrayList<>(table.size());
+ 			int pollTick = 0;
+ 			for (Map.Entry<GroupKey, long[]> entry : table.entrySet()) {
+-				LmdbNativeProbeDeadline.poll(++pollTick);
++				pollCancellation(++pollTick);
+ 				QueryBindingSet row = new QueryBindingSet(groupNames.length + aggregateNames.length);
+ 				for (int i = 0; i < groupNames.length; i++) {
+ 					row.addBinding(groupNames[i],
+@@ -368,7 +389,7 @@ final class LmdbNativeTypeMatrix implements QueryEvaluationStep {
+ 			}
+ 			int pollTick = 0;
+ 			while (cursor.next()) {
+-				LmdbNativeProbeDeadline.poll(++pollTick);
++				pollCancellation(++pollTick);
+ 				long predicateId = cursor.prefixValue(TripleIndex.PRED_IDX);
+ 				int mark = row.mark();
+ 				try {
+@@ -438,7 +459,7 @@ final class LmdbNativeTypeMatrix implements QueryEvaluationStep {
+ 				RunMerge targetMerge = linkageMode() ? new RunMerge(outgoingRuns) : null;
+ 				int pollTick = 0;
+ 				while (typeRoots.advance()) {
+-					LmdbNativeProbeDeadline.poll(++pollTick);
++					pollCancellation(++pollTick);
+ 					TYPE_ROOTS_VISITED.incrementAndGet();
+ 					if (optimization != null) {
+ 						optimization.rootsVisited(1L);
+@@ -450,14 +471,14 @@ final class LmdbNativeTypeMatrix implements QueryEvaluationStep {
+ 					try {
+ 						long runSize = typeRoots.runSize();
+ 						for (long offset = 0L; offset < runSize;) {
+-							LmdbNativeProbeDeadline.poll(++pollTick);
++							pollCancellation(++pollTick);
+ 							long instance = typeRoots.neighborAt(offset);
+ 							if (optimization != null) {
+ 								optimization.neighborIdsDecoded(1L);
+ 							}
+ 							long next = offset + 1L;
+ 							while (next < runSize && typeRoots.neighborAt(next) == instance) {
+-								LmdbNativeProbeDeadline.poll(++pollTick);
++								pollCancellation(++pollTick);
+ 								if (optimization != null) {
+ 									optimization.neighborIdsDecoded(1L);
+ 								}
+@@ -507,7 +528,7 @@ final class LmdbNativeTypeMatrix implements QueryEvaluationStep {
+ 		long[] planeRootCounts = new long[predicateCatalog.length];
+ 		int pollTick = 0;
+ 		for (int predicateOrdinal = 0; predicateOrdinal < predicateCatalog.length; predicateOrdinal++) {
+-			LmdbNativeProbeDeadline.poll(++pollTick);
++			pollCancellation(++pollTick);
+ 			long predicate = predicateCatalog[predicateOrdinal];
+ 			if (eligiblePredicates != null && !eligiblePredicates.contains(predicate)) {
+ 				continue;
+@@ -529,7 +550,7 @@ final class LmdbNativeTypeMatrix implements QueryEvaluationStep {
+ 		if (linkageMode()) {
+ 			long incomingRoots = 0L;
+ 			for (int predicateOrdinal = 0; predicateOrdinal < predicateCatalog.length; predicateOrdinal++) {
+-				LmdbNativeProbeDeadline.poll(++pollTick);
++				pollCancellation(++pollTick);
+ 				long predicate = predicateCatalog[predicateOrdinal];
+ 				if (eligiblePredicates != null && !eligiblePredicates.contains(predicate)) {
+ 					continue;
+@@ -605,7 +626,7 @@ final class LmdbNativeTypeMatrix implements QueryEvaluationStep {
+ 					? new NativeAdjacency.NeighborSlice()
+ 					: null;
+ 			for (int predicateOrdinal = 0; predicateOrdinal < predicateCatalog.length; predicateOrdinal++) {
+-				LmdbNativeProbeDeadline.poll(++pollTick);
++				pollCancellation(++pollTick);
+ 				long predicate = predicateCatalog[predicateOrdinal];
+ 				if (eligiblePredicates != null && !eligiblePredicates.contains(predicate)) {
+ 					continue;
+@@ -620,7 +641,7 @@ final class LmdbNativeTypeMatrix implements QueryEvaluationStep {
+ 						return null;
+ 					}
+ 					while (edgeRoots.fillRoots(predicateOrdinal, roots, false) > 0) {
+-						LmdbNativeProbeDeadline.poll(++pollTick);
++						pollCancellation(++pollTick);
+ 						int rootCount = roots.size();
+ 						telemetry.predicateRoots += rootCount;
+ 						if (borrowedTypeSlices) {
+@@ -675,7 +696,7 @@ final class LmdbNativeTypeMatrix implements QueryEvaluationStep {
+ 		int acceptedCount = 0;
+ 		int pollTick = 0;
+ 		for (int predicateOrdinal = 0; predicateOrdinal < predicateCatalog.length; predicateOrdinal++) {
+-			LmdbNativeProbeDeadline.poll(++pollTick);
++			pollCancellation(++pollTick);
+ 			long predicate = predicateCatalog[predicateOrdinal];
+ 			if (acceptedPredicates != null && !acceptedPredicates.contains(predicate)) {
+ 				continue;
+@@ -699,7 +720,7 @@ final class LmdbNativeTypeMatrix implements QueryEvaluationStep {
+ 			}
+ 			int taskCount = (int) taskCountLong;
+ 			for (int task = 0; task < taskCount; task++) {
+-				LmdbNativeProbeDeadline.poll(++pollTick);
++				pollCancellation(++pollTick);
+ 				long fromOrdinal = (long) task * ROOT_MORSEL_ROWS;
+ 				long toOrdinal = Math.min(typeRootCount, fromOrdinal + ROOT_MORSEL_ROWS);
+ 				int worker = (int) ((long) task * workers / taskCount);
+@@ -713,6 +734,8 @@ final class LmdbNativeTypeMatrix implements QueryEvaluationStep {
+ 			}
+ 			AtomicReference<Throwable> workerFailure = new AtomicReference<>();
+ 			LmdbNativeProbeDeadline probeParent = LmdbNativeProbeDeadline.currentOrNull();
++			// Workers do not inherit the evaluating thread's thread-locals; hand them the query token explicitly.
++			NativeCancellationToken queryCancellation = NativeCancellationToken.current();
+ 			List<Future<ParallelPlaneResult>> futures = new ArrayList<>(workers);
+ 			Throwable primaryFailure = null;
+ 			try {
+@@ -725,7 +748,9 @@ final class LmdbNativeTypeMatrix implements QueryEvaluationStep {
+ 						futures.add(LmdbNativeParallelPipelines.pool().submit(() -> {
+ 							try (var replayScope = replayContext.activate();
+ 									LmdbNativeProbeDeadline.Scope ignored = LmdbNativeProbeDeadline
+-											.inherit(probeParent)) {
++											.inherit(probeParent);
++									NativeCancellationToken.Scope cancellationScope = NativeCancellationToken
++											.inherit(queryCancellation)) {
+ 								return scanSidewaysTypeMorsels(workerSource, workerIndex, deques, predicateCatalog,
+ 										workerAcceptedOrdinals, reverse, workerFailure);
+ 							} catch (IOException | RuntimeException | Error failure) {
+@@ -874,7 +899,7 @@ final class LmdbNativeTypeMatrix implements QueryEvaluationStep {
+ 		}
+ 		int pollTick = 0;
+ 		for (long predicate : predicateCatalog) {
+-			LmdbNativeProbeDeadline.poll(++pollTick);
++			pollCancellation(++pollTick);
+ 			if (acceptedPredicates != null && !acceptedPredicates.contains(predicate)) {
+ 				continue;
+ 			}
+@@ -913,7 +938,7 @@ final class LmdbNativeTypeMatrix implements QueryEvaluationStep {
+ 				}
+ 				int pollTick = 0;
+ 				while (pages.advance()) {
+-					LmdbNativeProbeDeadline.poll(++pollTick);
++					pollCancellation(++pollTick);
+ 					if (optimization != null) {
+ 						optimization.pageVisited();
+ 					}
+@@ -967,7 +992,7 @@ final class LmdbNativeTypeMatrix implements QueryEvaluationStep {
+ 			}
+ 			int pollTick = 0;
+ 			for (int predicateOrdinal : acceptedOrdinals) {
+-				LmdbNativeProbeDeadline.poll(++pollTick);
++				pollCancellation(++pollTick);
+ 				if (peerStopped(workerFailure, pollTick)) {
+ 					return new ParallelPlaneResult(counters, telemetry, true);
+ 				}
+@@ -983,7 +1008,9 @@ final class LmdbNativeTypeMatrix implements QueryEvaluationStep {
+ 			UsageAccumulator usage = linkageMode() ? null : new UsageAccumulator(predicateCatalog);
+ 			NativeAdjacency.FiberBatch fibers = linkageMode() ? new NativeAdjacency.FiberBatch(BATCH_ROWS) : null;
+ 			while (workerFailure.get() == null) {
+-				LmdbNativeProbeDeadline.poll(++pollTick);
++				pollCancellation(++pollTick);
++				// Morsels are coarse: poll the query token once per claimed morsel regardless of the tick mask.
++				NativeCancellationToken.checkCurrent();
+ 				TypeDomainMorsel morsel = deques[workerIndex].pollLast();
+ 				if (morsel == null) {
+ 					morsel = stealTypeDomainMorsel(workerIndex, deques);
+@@ -1011,7 +1038,7 @@ final class LmdbNativeTypeMatrix implements QueryEvaluationStep {
+ 				boolean hasUpperBound = morsel.toOrdinal < sourceTypes.keyCount();
+ 				long upperSubject = hasUpperBound ? sourceTypes.keyAt(morsel.toOrdinal) : 0L;
+ 				for (int predicateOrdinal : acceptedOrdinals) {
+-					LmdbNativeProbeDeadline.poll(++pollTick);
++					pollCancellation(++pollTick);
+ 					if (peerStopped(workerFailure, pollTick)) {
+ 						return new ParallelPlaneResult(counters, telemetry, true);
+ 					}
+@@ -1056,7 +1083,7 @@ final class LmdbNativeTypeMatrix implements QueryEvaluationStep {
+ 		int typeCursor = 0;
+ 		int pollTick = 0;
+ 		while (edgeRoots.advance()) {
+-			LmdbNativeProbeDeadline.poll(++pollTick);
++			pollCancellation(++pollTick);
+ 			if (peerStopped(workerFailure, pollTick)) {
+ 				return;
+ 			}
+@@ -1080,7 +1107,7 @@ final class LmdbNativeTypeMatrix implements QueryEvaluationStep {
+ 				continue;
+ 			}
+ 			do {
+-				LmdbNativeProbeDeadline.poll(++pollTick);
++				pollCancellation(++pollTick);
+ 				if (peerStopped(workerFailure, pollTick)) {
+ 					return;
+ 				}
+@@ -1103,7 +1130,7 @@ final class LmdbNativeTypeMatrix implements QueryEvaluationStep {
+ 		int pollTick = 0;
+ 		while ((copied = edgeRoots.fillRootCounts(usage.rootIds, 0, usage.rootMultiplicities, 0,
+ 				usage.rootIds.length)) != 0) {
+-			LmdbNativeProbeDeadline.poll(++pollTick);
++			pollCancellation(++pollTick);
+ 			if (peerStopped(workerFailure, pollTick)) {
+ 				return;
+ 			}
+@@ -1111,7 +1138,7 @@ final class LmdbNativeTypeMatrix implements QueryEvaluationStep {
+ 			telemetry.sidewaysEdgeProbes += copied;
+ 			telemetry.predicateRoots += copied;
+ 			for (int rootIndex = 0; rootIndex < copied; rootIndex++) {
+-				LmdbNativeProbeDeadline.poll(++pollTick);
++				pollCancellation(++pollTick);
+ 				if (peerStopped(workerFailure, pollTick)) {
+ 					return;
+ 				}
+@@ -1137,7 +1164,7 @@ final class LmdbNativeTypeMatrix implements QueryEvaluationStep {
+ 		int typeEnd = typeWindow.typeOffsets[sourceIndex] + typeWindow.typeLengths[sourceIndex];
+ 		int pollTick = 0;
+ 		for (int typeIndex = typeWindow.typeOffsets[sourceIndex]; typeIndex < typeEnd; typeIndex++) {
+-			LmdbNativeProbeDeadline.poll(++pollTick);
++			pollCancellation(++pollTick);
+ 			if (peerStopped(workerFailure, pollTick)) {
+ 				return;
+ 			}
+@@ -1179,7 +1206,7 @@ final class LmdbNativeTypeMatrix implements QueryEvaluationStep {
+ 		ArrayList<PageMorsel> tasks = new ArrayList<>();
+ 		int pollTick = 0;
+ 		for (int predicateOrdinal = 0; predicateOrdinal < predicateCatalog.length; predicateOrdinal++) {
+-			LmdbNativeProbeDeadline.poll(++pollTick);
++			pollCancellation(++pollTick);
+ 			long predicate = predicateCatalog[predicateOrdinal];
+ 			if (acceptedPredicates != null && !acceptedPredicates.contains(predicate)) {
+ 				continue;
+@@ -1196,7 +1223,7 @@ final class LmdbNativeTypeMatrix implements QueryEvaluationStep {
+ 					long page = 0L;
+ 					long firstRoot = 0L;
+ 					while (pages.advance()) {
+-						LmdbNativeProbeDeadline.poll(++pollTick);
++						pollCancellation(++pollTick);
+ 						if (page % PAGE_MORSEL_PAGES == 0L) {
+ 							fromPage = page;
+ 							firstRoot = pages.firstRow();
+@@ -1226,7 +1253,7 @@ final class LmdbNativeTypeMatrix implements QueryEvaluationStep {
+ 			}
+ 			int taskCount = tasks.size();
+ 			for (int task = 0; task < taskCount; task++) {
+-				LmdbNativeProbeDeadline.poll(++pollTick);
++				pollCancellation(++pollTick);
+ 				int worker = (int) ((long) task * workers / taskCount);
+ 				deques[worker].addLast(tasks.get(task));
+ 			}
+@@ -1241,6 +1268,8 @@ final class LmdbNativeTypeMatrix implements QueryEvaluationStep {
+ 			}
+ 			AtomicReference<Throwable> workerFailure = new AtomicReference<>();
+ 			LmdbNativeProbeDeadline probeParent = LmdbNativeProbeDeadline.currentOrNull();
++			// Workers do not inherit the evaluating thread's thread-locals; hand them the query token explicitly.
++			NativeCancellationToken queryCancellation = NativeCancellationToken.current();
+ 			List<Future<ParallelPlaneResult>> futures = new ArrayList<>(workers);
+ 			Throwable primaryFailure = null;
+ 			try {
+@@ -1252,7 +1281,9 @@ final class LmdbNativeTypeMatrix implements QueryEvaluationStep {
+ 						futures.add(LmdbNativeParallelPipelines.pool().submit(() -> {
+ 							try (var replayScope = replayContext.activate();
+ 									LmdbNativeProbeDeadline.Scope ignored = LmdbNativeProbeDeadline
+-											.inherit(probeParent)) {
++											.inherit(probeParent);
++									NativeCancellationToken.Scope cancellationScope = NativeCancellationToken
++											.inherit(queryCancellation)) {
+ 								return scanPageMorsels(workerSource, workerIndex, deques, predicateCatalog,
+ 										workerFailure);
+ 							} catch (IOException | RuntimeException | Error failure) {
+@@ -1328,7 +1359,9 @@ final class LmdbNativeTypeMatrix implements QueryEvaluationStep {
+ 			SourceTypeCache sourceTypeCache = new SourceTypeCache();
+ 			int pollTick = 0;
+ 			while (workerFailure.get() == null) {
+-				LmdbNativeProbeDeadline.poll(++pollTick);
++				pollCancellation(++pollTick);
++				// Morsels are coarse: poll the query token once per claimed morsel regardless of the tick mask.
++				NativeCancellationToken.checkCurrent();
+ 				PageMorsel morsel = deques[workerIndex].pollLast();
+ 				if (morsel == null) {
+ 					morsel = stealPageTask(workerIndex, deques);
+@@ -1351,7 +1384,7 @@ final class LmdbNativeTypeMatrix implements QueryEvaluationStep {
+ 							return new ParallelPlaneResult(counters, telemetry, false);
+ 						}
+ 						while (pages.advance()) {
+-							LmdbNativeProbeDeadline.poll(++pollTick);
++							pollCancellation(++pollTick);
+ 							if (peerStopped(workerFailure, pollTick)) {
+ 								return new ParallelPlaneResult(counters, telemetry, true);
+ 							}
+@@ -1374,7 +1407,7 @@ final class LmdbNativeTypeMatrix implements QueryEvaluationStep {
+ 								throw new IllegalStateException("CSF page exceeds the root-morsel contract");
+ 							}
+ 							for (int root = 0; root < rootCount; root++) {
+-								LmdbNativeProbeDeadline.poll(++pollTick);
++								pollCancellation(++pollTick);
+ 								rootIds[root] = pages.rowAt(root);
+ 								rootMultiplicities[root] = pages.rowQuadCount(root);
+ 							}
+@@ -1400,7 +1433,7 @@ final class LmdbNativeTypeMatrix implements QueryEvaluationStep {
+ 	private static int pageRepresentativeNeighborKind(NativeAdjacency.AdjacencyPageCursor page) {
+ 		int pollTick = 0;
+ 		for (int row = 0; row < page.rowCount(); row++) {
+-			LmdbNativeProbeDeadline.poll(++pollTick);
++			pollCancellation(++pollTick);
+ 			if (page.rowFiberCount(row) > 0) {
+ 				return ValueIds.termKind(page.neighborAt(row, 0));
+ 			}
+@@ -1416,7 +1449,7 @@ final class LmdbNativeTypeMatrix implements QueryEvaluationStep {
+ 			AtomicReference<Throwable> workerFailure) {
+ 		int pollTick = 0;
+ 		for (int root = 0; root < rootCount; root++) {
+-			LmdbNativeProbeDeadline.poll(++pollTick);
++			pollCancellation(++pollTick);
+ 			if (peerStopped(workerFailure, pollTick)) {
+ 				return;
+ 			}
+@@ -1437,7 +1470,7 @@ final class LmdbNativeTypeMatrix implements QueryEvaluationStep {
+ 			}
+ 			int fiber = 0;
+ 			while (true) {
+-				LmdbNativeProbeDeadline.poll(++pollTick);
++				pollCancellation(++pollTick);
+ 				if (peerStopped(workerFailure, pollTick)) {
+ 					return;
+ 				}
+@@ -1495,14 +1528,14 @@ final class LmdbNativeTypeMatrix implements QueryEvaluationStep {
+ 			long morselCount = 0L;
+ 			int pollTick = 0;
+ 			for (int predicateOrdinal = 0; predicateOrdinal < predicateCatalog.length; predicateOrdinal++) {
+-				LmdbNativeProbeDeadline.poll(++pollTick);
++				pollCancellation(++pollTick);
+ 				long predicate = predicateCatalog[predicateOrdinal];
+ 				if (acceptedPredicates != null && !acceptedPredicates.contains(predicate)) {
+ 					continue;
+ 				}
+ 				long rootCount = planeRootCounts[predicateOrdinal];
+ 				for (long from = 0L; from < rootCount; from += ROOT_MORSEL_ROWS) {
+-					LmdbNativeProbeDeadline.poll(++pollTick);
++					pollCancellation(++pollTick);
+ 					long to = Math.min(rootCount, from + ROOT_MORSEL_ROWS);
+ 					deques[(int) (morselCount % workers)]
+ 							.addLast(new PlaneMorsel(predicateOrdinal, predicate, from, to));
+@@ -1520,6 +1553,8 @@ final class LmdbNativeTypeMatrix implements QueryEvaluationStep {
+ 			}
+ 			AtomicReference<Throwable> workerFailure = new AtomicReference<>();
+ 			LmdbNativeProbeDeadline probeParent = LmdbNativeProbeDeadline.currentOrNull();
++			// Workers do not inherit the evaluating thread's thread-locals; hand them the query token explicitly.
++			NativeCancellationToken queryCancellation = NativeCancellationToken.current();
+ 			List<Future<ParallelPlaneResult>> futures = new ArrayList<>(workers);
+ 			Throwable primaryFailure = null;
+ 			try {
+@@ -1531,7 +1566,9 @@ final class LmdbNativeTypeMatrix implements QueryEvaluationStep {
+ 						futures.add(LmdbNativeParallelPipelines.pool().submit(() -> {
+ 							try (var replayScope = replayContext.activate();
+ 									LmdbNativeProbeDeadline.Scope ignored = LmdbNativeProbeDeadline
+-											.inherit(probeParent)) {
++											.inherit(probeParent);
++									NativeCancellationToken.Scope cancellationScope = NativeCancellationToken
++											.inherit(queryCancellation)) {
+ 								return scanPlaneMorsels(workerSource, workerIndex, deques, workerFailure);
+ 							} catch (IOException | RuntimeException | Error failure) {
+ 								workerFailure.compareAndSet(null, failure);
+@@ -1616,7 +1653,9 @@ final class LmdbNativeTypeMatrix implements QueryEvaluationStep {
+ 				TypeScratch sourceTypeScratch = borrowedTypeSlices ? null : new TypeScratch();
+ 				int pollTick = 0;
+ 				while (workerFailure.get() == null) {
+-					LmdbNativeProbeDeadline.poll(++pollTick);
++					pollCancellation(++pollTick);
++					// Morsels are coarse: poll the query token once per claimed morsel regardless of the tick mask.
++					NativeCancellationToken.checkCurrent();
+ 					PlaneMorsel morsel = deques[workerIndex].pollLast();
+ 					if (morsel == null) {
+ 						morsel = stealMorsel(workerIndex, deques);
+@@ -1638,7 +1677,7 @@ final class LmdbNativeTypeMatrix implements QueryEvaluationStep {
+ 								return new ParallelPlaneResult(counters, telemetry, false);
+ 							}
+ 							while (edgeRoots.fillRoots(morsel.predicateOrdinal, roots, false) > 0) {
+-								LmdbNativeProbeDeadline.poll(++pollTick);
++								pollCancellation(++pollTick);
+ 								if (peerStopped(workerFailure, pollTick)) {
+ 									return new ParallelPlaneResult(counters, telemetry, true);
+ 								}
+@@ -1751,7 +1790,7 @@ final class LmdbNativeTypeMatrix implements QueryEvaluationStep {
+ 			PairCountMap counters, PlaneMorselTelemetry telemetry, AtomicReference<Throwable> workerFailure) {
+ 		int pollTick = 0;
+ 		for (int rootIndex = 0; rootIndex < roots.size(); rootIndex++) {
+-			LmdbNativeProbeDeadline.poll(++pollTick);
++			pollCancellation(++pollTick);
+ 			if (peerStopped(workerFailure, pollTick)) {
+ 				return;
+ 			}
+@@ -1773,7 +1812,7 @@ final class LmdbNativeTypeMatrix implements QueryEvaluationStep {
+ 			}
+ 			long edgeRunHandle = roots.runHandles()[rootIndex];
+ 			do {
+-				LmdbNativeProbeDeadline.poll(++pollTick);
++				pollCancellation(++pollTick);
+ 				if (peerStopped(workerFailure, pollTick)) {
+ 					return;
+ 				}
+@@ -1783,7 +1822,7 @@ final class LmdbNativeTypeMatrix implements QueryEvaluationStep {
+ 				}
+ 				telemetry.edgeFibers += fiberCount;
+ 				for (int fiber = 0; fiber < fiberCount; fiber++) {
+-					LmdbNativeProbeDeadline.poll(++pollTick);
++					pollCancellation(++pollTick);
+ 					if (peerStopped(workerFailure, pollTick)) {
+ 						return;
+ 					}
+@@ -1815,14 +1854,14 @@ final class LmdbNativeTypeMatrix implements QueryEvaluationStep {
+ 		int end = sourceTypes.offset() + sourceTypes.length();
+ 		int pollTick = 0;
+ 		for (int at = sourceTypes.offset(); at < end;) {
+-			LmdbNativeProbeDeadline.poll(++pollTick);
++			pollCancellation(++pollTick);
+ 			if (peerStopped(workerFailure, pollTick)) {
+ 				return;
+ 			}
+ 			long type = values[at];
+ 			int next = at + 1;
+ 			while (next < end && values[next] == type) {
+-				LmdbNativeProbeDeadline.poll(++pollTick);
++				pollCancellation(++pollTick);
+ 				if (peerStopped(workerFailure, pollTick)) {
+ 					return;
+ 				}
+@@ -1842,14 +1881,14 @@ final class LmdbNativeTypeMatrix implements QueryEvaluationStep {
+ 		int targetEnd = targetTypes.offset() + targetTypes.length();
+ 		int pollTick = 0;
+ 		for (int sourceAt = sourceTypes.offset(); sourceAt < sourceEnd;) {
+-			LmdbNativeProbeDeadline.poll(++pollTick);
++			pollCancellation(++pollTick);
+ 			if (peerStopped(workerFailure, pollTick)) {
+ 				return;
+ 			}
+ 			long sourceType = sourceValues[sourceAt];
+ 			int sourceNext = sourceAt + 1;
+ 			while (sourceNext < sourceEnd && sourceValues[sourceNext] == sourceType) {
+-				LmdbNativeProbeDeadline.poll(++pollTick);
++				pollCancellation(++pollTick);
+ 				if (peerStopped(workerFailure, pollTick)) {
+ 					return;
+ 				}
+@@ -1857,14 +1896,14 @@ final class LmdbNativeTypeMatrix implements QueryEvaluationStep {
+ 			}
+ 			long sourceAndEdge = Math.multiplyExact((long) (sourceNext - sourceAt), edgeMultiplicity);
+ 			for (int targetAt = targetTypes.offset(); targetAt < targetEnd;) {
+-				LmdbNativeProbeDeadline.poll(++pollTick);
++				pollCancellation(++pollTick);
+ 				if (peerStopped(workerFailure, pollTick)) {
+ 					return;
+ 				}
+ 				long targetType = targetValues[targetAt];
+ 				int targetNext = targetAt + 1;
+ 				while (targetNext < targetEnd && targetValues[targetNext] == targetType) {
+-					LmdbNativeProbeDeadline.poll(++pollTick);
++					pollCancellation(++pollTick);
+ 					if (peerStopped(workerFailure, pollTick)) {
+ 						return;
+ 					}
+@@ -1882,7 +1921,7 @@ final class LmdbNativeTypeMatrix implements QueryEvaluationStep {
+ 			PairCountMap counters, AtomicReference<Throwable> workerFailure) {
+ 		int pollTick = 0;
+ 		for (int typeIndex = 0; typeIndex < sourceTypes.size; typeIndex++) {
+-			LmdbNativeProbeDeadline.poll(++pollTick);
++			pollCancellation(++pollTick);
+ 			if (peerStopped(workerFailure, pollTick)) {
+ 				return;
+ 			}
+@@ -1900,7 +1939,7 @@ final class LmdbNativeTypeMatrix implements QueryEvaluationStep {
+ 		telemetry.sourceTypeBatchLookups++;
+ 		int pollTick = 0;
+ 		for (int rootIndex = 0; rootIndex < rootCount; rootIndex++) {
+-			LmdbNativeProbeDeadline.poll(++pollTick);
++			pollCancellation(++pollTick);
+ 			if (peerStopped(workerFailure, pollTick)) {
+ 				return;
+ 			}
+@@ -1924,7 +1963,7 @@ final class LmdbNativeTypeMatrix implements QueryEvaluationStep {
+ 			long rootId = roots.rootIds()[rootIndex];
+ 			long edgeRunHandle = roots.runHandles()[rootIndex];
+ 			do {
+-				LmdbNativeProbeDeadline.poll(++pollTick);
++				pollCancellation(++pollTick);
+ 				if (peerStopped(workerFailure, pollTick)) {
+ 					return;
+ 				}
+@@ -1955,7 +1994,7 @@ final class LmdbNativeTypeMatrix implements QueryEvaluationStep {
+ 			}
+ 			int pollTick = 0;
+ 			while (cursor.next()) {
+-				LmdbNativeProbeDeadline.poll(++pollTick);
++				pollCancellation(++pollTick);
+ 				if (size == predicates.length) {
+ 					predicates = Arrays.copyOf(predicates, size << 1);
+ 				}
+@@ -1994,7 +2033,7 @@ final class LmdbNativeTypeMatrix implements QueryEvaluationStep {
+ 			CursorTargetMerge targetMerge = linkageMode() ? new CursorTargetMerge() : null;
+ 			int pollTick = 0;
+ 			while (subjectSweep.advanceSubject()) {
+-				LmdbNativeProbeDeadline.poll(++pollTick);
++				pollCancellation(++pollTick);
+ 				long sourceTypeRunSize = sourceTypeRuns.bind(subjectSweep.subject());
+ 				if (sourceTypeRunSize == NativeAdjacency.NOT_FOUND) {
+ 					continue;
+@@ -2011,7 +2050,7 @@ final class LmdbNativeTypeMatrix implements QueryEvaluationStep {
+ 				}
+ 				targetMerge.reset(subjectSweep);
+ 				while (targetMerge.advanceTarget()) {
+-					LmdbNativeProbeDeadline.poll(++pollTick);
++					pollCancellation(++pollTick);
+ 					long targetTypeRunSize = targetTypeRuns.bind(targetMerge.target());
+ 					TARGET_TYPE_LOOKUPS.incrementAndGet();
+ 					if (targetTypeRunSize == NativeAdjacency.NOT_FOUND) {
+@@ -2034,11 +2073,11 @@ final class LmdbNativeTypeMatrix implements QueryEvaluationStep {
+ 			PairCountMap counters) {
+ 		int pollTick = 0;
+ 		for (int predicateIndex = 0; predicateIndex < subjectSweep.activeSize(); predicateIndex++) {
+-			LmdbNativeProbeDeadline.poll(++pollTick);
++			pollCancellation(++pollTick);
+ 			SubjectPredicateSweep.Plane plane = subjectSweep.activePlane(predicateIndex);
+ 			long edgeMultiplicity = plane.cursor.runSize();
+ 			for (int typeIndex = 0; typeIndex < sourceTypes.size; typeIndex++) {
+-				LmdbNativeProbeDeadline.poll(++pollTick);
++				pollCancellation(++pollTick);
+ 				counters.add(sourceTypes.values[typeIndex], plane.predicate,
+ 						Math.multiplyExact(sourceTypes.multiplicities[typeIndex], edgeMultiplicity));
+ 			}
+@@ -2049,10 +2088,10 @@ final class LmdbNativeTypeMatrix implements QueryEvaluationStep {
+ 			long edgeMultiplicity, PairCountMap counters) {
+ 		int pollTick = 0;
+ 		for (int sourceIndex = 0; sourceIndex < sourceTypes.size; sourceIndex++) {
+-			LmdbNativeProbeDeadline.poll(++pollTick);
++			pollCancellation(++pollTick);
+ 			long sourceAndEdge = Math.multiplyExact(sourceTypes.multiplicities[sourceIndex], edgeMultiplicity);
+ 			for (int targetIndex = 0; targetIndex < targetTypes.size; targetIndex++) {
+-				LmdbNativeProbeDeadline.poll(++pollTick);
++				pollCancellation(++pollTick);
+ 				counters.add(sourceTypes.values[sourceIndex], targetTypes.values[targetIndex],
+ 						Math.multiplyExact(sourceAndEdge, targetTypes.multiplicities[targetIndex]));
+ 			}
+@@ -2064,7 +2103,7 @@ final class LmdbNativeTypeMatrix implements QueryEvaluationStep {
+ 		long[] keys = new long[2];
+ 		int pollTick = 0;
+ 		for (int i = 0; i < counters.firstKeys.length; i++) {
+-			LmdbNativeProbeDeadline.poll(++pollTick);
++			pollCancellation(++pollTick);
+ 			if (!counters.used[i]) {
+ 				continue;
+ 			}
+@@ -2101,7 +2140,7 @@ final class LmdbNativeTypeMatrix implements QueryEvaluationStep {
+ 			boolean hasPrevious = false;
+ 			int pollTick = 0;
+ 			while (offset < runSize) {
+-				LmdbNativeProbeDeadline.poll(++pollTick);
++				pollCancellation(++pollTick);
+ 				int requested = (int) Math.min(block.length, runSize - offset);
+ 				int copied = cursor.copyNeighbors(offset, requested, block, 0);
+ 				if (copied <= 0) {
+@@ -2109,7 +2148,7 @@ final class LmdbNativeTypeMatrix implements QueryEvaluationStep {
+ 				}
+ 				BULK_NEIGHBORS_DECODED.addAndGet(copied);
+ 				for (int i = 0; i < copied; i++) {
+-					LmdbNativeProbeDeadline.poll(++pollTick);
++					pollCancellation(++pollTick);
+ 					long value = block[i];
+ 					if (!hasPrevious) {
+ 						previous = value;
+@@ -2139,7 +2178,7 @@ final class LmdbNativeTypeMatrix implements QueryEvaluationStep {
+ 			boolean hasPrevious = false;
+ 			int pollTick = 0;
+ 			while (offset < runSize) {
+-				LmdbNativeProbeDeadline.poll(++pollTick);
++				pollCancellation(++pollTick);
+ 				int requested = (int) Math.min(block.length, runSize - offset);
+ 				int copied = cursor.copyNeighbors(offset, requested, block, 0);
+ 				if (copied <= 0) {
+@@ -2147,7 +2186,7 @@ final class LmdbNativeTypeMatrix implements QueryEvaluationStep {
+ 				}
+ 				telemetry.bulkNeighborsDecoded += copied;
+ 				for (int i = 0; i < copied; i++) {
+-					LmdbNativeProbeDeadline.poll(++pollTick);
++					pollCancellation(++pollTick);
+ 					long value = block[i];
+ 					if (!hasPrevious) {
+ 						previous = value;
+@@ -2191,7 +2230,7 @@ final class LmdbNativeTypeMatrix implements QueryEvaluationStep {
+ 			boolean hasPrevious = false;
+ 			int pollTick = 0;
+ 			while (offset < runSize) {
+-				LmdbNativeProbeDeadline.poll(++pollTick);
++				pollCancellation(++pollTick);
+ 				int requested = (int) Math.min(block.length, runSize - offset);
+ 				int copied = view.copyNeighbors(runHandle, offset, requested, block, 0);
+ 				if (copied <= 0) {
+@@ -2203,7 +2242,7 @@ final class LmdbNativeTypeMatrix implements QueryEvaluationStep {
+ 					telemetry.bulkNeighborsDecoded += copied;
+ 				}
+ 				for (int i = 0; i < copied; i++) {
+-					LmdbNativeProbeDeadline.poll(++pollTick);
++					pollCancellation(++pollTick);
+ 					long value = block[i];
+ 					if (!hasPrevious) {
+ 						previous = value;
+@@ -2303,7 +2342,7 @@ final class LmdbNativeTypeMatrix implements QueryEvaluationStep {
+ 			uniformSubjectIdType = MIXED_SUBJECT_ID_TYPES;
+ 			int pollTick = 0;
+ 			while (typeRoots.advance()) {
+-				LmdbNativeProbeDeadline.poll(++pollTick);
++				pollCancellation(++pollTick);
+ 				if (size == subjectIds.length) {
+ 					throw new IllegalStateException("rdf:type root cursor exceeded its morsel window");
+ 				}
+@@ -2451,7 +2490,7 @@ final class LmdbNativeTypeMatrix implements QueryEvaluationStep {
+ 		void bindTypes(TypeDomainWindow window) {
+ 			int pollTick = 0;
+ 			for (int index = 0; index < window.typeValueCount; index++) {
+-				LmdbNativeProbeDeadline.poll(++pollTick);
++				pollCancellation(++pollTick);
+ 				window.typeResultOrdinals[index] = ordinal(window.typeValues[index]);
+ 			}
+ 		}
+@@ -2471,13 +2510,13 @@ final class LmdbNativeTypeMatrix implements QueryEvaluationStep {
+ 		void emit(PairCountMap target) {
+ 			int pollTick = 0;
+ 			for (int predicateOrdinal = 0; predicateOrdinal < counts.length; predicateOrdinal++) {
+-				LmdbNativeProbeDeadline.poll(++pollTick);
++				pollCancellation(++pollTick);
+ 				long[] plane = counts[predicateOrdinal];
+ 				if (plane == null) {
+ 					continue;
+ 				}
+ 				for (int typeOrdinal = 0; typeOrdinal < typeCount; typeOrdinal++) {
+-					LmdbNativeProbeDeadline.poll(++pollTick);
++					pollCancellation(++pollTick);
+ 					long count = plane[typeOrdinal];
+ 					if (count != 0L) {
+ 						target.add(typeValues[typeOrdinal], predicates[predicateOrdinal], count);
+@@ -2651,7 +2690,7 @@ final class LmdbNativeTypeMatrix implements QueryEvaluationStep {
+ 			int sourceEnd = sourceOffset + sourceTypes.typeLengths[sourceIndex];
+ 			int pollTick = 0;
+ 			for (int fiber = 0; fiber < count; fiber++) {
+-				LmdbNativeProbeDeadline.poll(++pollTick);
++				pollCancellation(++pollTick);
+ 				if (peerStopped(workerFailure, pollTick)) {
+ 					return;
+ 				}
+@@ -2662,7 +2701,7 @@ final class LmdbNativeTypeMatrix implements QueryEvaluationStep {
+ 					continue;
+ 				}
+ 				for (int sourceType = sourceOffset; sourceType < sourceEnd; sourceType++) {
+-					LmdbNativeProbeDeadline.poll(++pollTick);
++					pollCancellation(++pollTick);
+ 					if (peerStopped(workerFailure, pollTick)) {
+ 						return;
+ 					}
+@@ -2689,7 +2728,7 @@ final class LmdbNativeTypeMatrix implements QueryEvaluationStep {
+ 			long runOffset = 0L;
+ 			int pollTick = 0;
+ 			while (runOffset < edgeRunSize) {
+-				LmdbNativeProbeDeadline.poll(++pollTick);
++				pollCancellation(++pollTick);
+ 				if (peerStopped(workerFailure, pollTick)) {
+ 					return;
+ 				}
+@@ -2708,7 +2747,7 @@ final class LmdbNativeTypeMatrix implements QueryEvaluationStep {
+ 				}
+ 				long consumed = 0L;
+ 				for (int input = start; input < start + copied; input++) {
+-					LmdbNativeProbeDeadline.poll(++pollTick);
++					pollCancellation(++pollTick);
+ 					if (peerStopped(workerFailure, pollTick)) {
+ 						return;
+ 					}
+@@ -2757,7 +2796,7 @@ final class LmdbNativeTypeMatrix implements QueryEvaluationStep {
+ 			}
+ 			int pollTick = 0;
+ 			for (int i = 0; i < count; i++) {
+-				LmdbNativeProbeDeadline.poll(++pollTick);
++				pollCancellation(++pollTick);
+ 				if (peerStopped(workerFailure, pollTick)) {
+ 					return;
+ 				}
+@@ -2826,7 +2865,7 @@ final class LmdbNativeTypeMatrix implements QueryEvaluationStep {
+ 			telemetry.uniqueTargetsResolved += uniqueTargetCount;
+ 			int pollTick = 0;
+ 			for (int target = 0; target < uniqueTargetCount; target++) {
+-				LmdbNativeProbeDeadline.poll(++pollTick);
++				pollCancellation(++pollTick);
+ 				if (peerStopped(workerFailure, pollTick)) {
+ 					return;
+ 				}
+@@ -2867,7 +2906,7 @@ final class LmdbNativeTypeMatrix implements QueryEvaluationStep {
+ 			int uniqueTargetCount = 0;
+ 			int pollTick = 0;
+ 			for (int edge = 0; edge < fiberCount; edge++) {
+-				LmdbNativeProbeDeadline.poll(++pollTick);
++				pollCancellation(++pollTick);
+ 				if (peerStopped(workerFailure, pollTick)) {
+ 					return false;
+ 				}
+@@ -2882,7 +2921,7 @@ final class LmdbNativeTypeMatrix implements QueryEvaluationStep {
+ 			}
+ 			int target = 0;
+ 			for (int bit = 0; bit < span; bit++) {
+-				LmdbNativeProbeDeadline.poll(++pollTick);
++				pollCancellation(++pollTick);
+ 				if (peerStopped(workerFailure, pollTick)) {
+ 					return false;
+ 				}
+@@ -2897,7 +2936,7 @@ final class LmdbNativeTypeMatrix implements QueryEvaluationStep {
+ 			telemetry.uniqueTargetsResolved += uniqueTargetCount;
+ 			int targetTypeValueCount = 0;
+ 			for (int ordinal = 0; ordinal < uniqueTargetCount; ordinal++) {
+-				LmdbNativeProbeDeadline.poll(++pollTick);
++				pollCancellation(++pollTick);
+ 				if (peerStopped(workerFailure, pollTick)) {
+ 					return false;
+ 				}
+@@ -2927,7 +2966,7 @@ final class LmdbNativeTypeMatrix implements QueryEvaluationStep {
+ 		private void accumulateDenseTargets(PairCountMap counters, AtomicReference<Throwable> workerFailure) {
+ 			int pollTick = 0;
+ 			for (int edge = 0; edge < fiberCount; edge++) {
+-				LmdbNativeProbeDeadline.poll(++pollTick);
++				pollCancellation(++pollTick);
+ 				if (peerStopped(workerFailure, pollTick)) {
+ 					return;
+ 				}
+@@ -2937,7 +2976,7 @@ final class LmdbNativeTypeMatrix implements QueryEvaluationStep {
+ 				if (source == DIRECT_SOURCE_TYPE) {
+ 					int targetEnd = denseTargetTypeOffsets[ordinal] + denseTargetTypeLengths[ordinal];
+ 					for (int targetType = denseTargetTypeOffsets[ordinal]; targetType < targetEnd; targetType++) {
+-						LmdbNativeProbeDeadline.poll(++pollTick);
++						pollCancellation(++pollTick);
+ 						if (peerStopped(workerFailure, pollTick)) {
+ 							return;
+ 						}
+@@ -2961,14 +3000,14 @@ final class LmdbNativeTypeMatrix implements QueryEvaluationStep {
+ 				int sourceEnd = sourceOffset + sourceTypeLengths[source];
+ 				int targetEnd = denseTargetTypeOffsets[ordinal] + denseTargetTypeLengths[ordinal];
+ 				for (int sourceType = sourceOffset; sourceType < sourceEnd; sourceType++) {
+-					LmdbNativeProbeDeadline.poll(++pollTick);
++					pollCancellation(++pollTick);
+ 					if (peerStopped(workerFailure, pollTick)) {
+ 						return;
+ 					}
+ 					long knownAndEdge = Math.multiplyExact(sourceMultiplicities[sourceType],
+ 							edgeMultiplicities[edge]);
+ 					for (int targetType = denseTargetTypeOffsets[ordinal]; targetType < targetEnd; targetType++) {
+-						LmdbNativeProbeDeadline.poll(++pollTick);
++						pollCancellation(++pollTick);
+ 						if (peerStopped(workerFailure, pollTick)) {
+ 							return;
+ 						}
+@@ -2989,7 +3028,7 @@ final class LmdbNativeTypeMatrix implements QueryEvaluationStep {
+ 			long previous = 0L;
+ 			int pollTick = 0;
+ 			for (int sorted = 0; sorted < fiberCount; sorted++) {
+-				LmdbNativeProbeDeadline.poll(++pollTick);
++				pollCancellation(++pollTick);
+ 				if (peerStopped(workerFailure, pollTick)) {
+ 					return uniqueTargetCount;
+ 				}
+@@ -3008,7 +3047,7 @@ final class LmdbNativeTypeMatrix implements QueryEvaluationStep {
+ 				AtomicReference<Throwable> workerFailure) {
+ 			int pollTick = 0;
+ 			for (int sorted = targetGroupStarts[target]; sorted < targetGroupStarts[target + 1]; sorted++) {
+-				LmdbNativeProbeDeadline.poll(++pollTick);
++				pollCancellation(++pollTick);
+ 				if (peerStopped(workerFailure, pollTick)) {
+ 					return;
+ 				}
+@@ -3017,7 +3056,7 @@ final class LmdbNativeTypeMatrix implements QueryEvaluationStep {
+ 				long edgeMultiplicity = edgeMultiplicities[edge];
+ 				if (source == DIRECT_SOURCE_TYPE) {
+ 					for (int targetType = 0; targetType < targetScratch.size; targetType++) {
+-						LmdbNativeProbeDeadline.poll(++pollTick);
++						pollCancellation(++pollTick);
+ 						if (peerStopped(workerFailure, pollTick)) {
+ 							return;
+ 						}
+@@ -3038,13 +3077,13 @@ final class LmdbNativeTypeMatrix implements QueryEvaluationStep {
+ 				int sourceOffset = sourceCode < 0 ? borrowedSourceTypes.typeOffsets[~sourceCode] : sourceCode;
+ 				int sourceEnd = sourceOffset + sourceTypeLengths[source];
+ 				for (int sourceType = sourceOffset; sourceType < sourceEnd; sourceType++) {
+-					LmdbNativeProbeDeadline.poll(++pollTick);
++					pollCancellation(++pollTick);
+ 					if (peerStopped(workerFailure, pollTick)) {
+ 						return;
+ 					}
+ 					long knownAndEdge = Math.multiplyExact(sourceMultiplicities[sourceType], edgeMultiplicity);
+ 					for (int targetType = 0; targetType < targetScratch.size; targetType++) {
+-						LmdbNativeProbeDeadline.poll(++pollTick);
++						pollCancellation(++pollTick);
+ 						if (peerStopped(workerFailure, pollTick)) {
+ 							return;
+ 						}
+@@ -3064,7 +3103,7 @@ final class LmdbNativeTypeMatrix implements QueryEvaluationStep {
+ 				PairCountMap counters, AtomicReference<Throwable> workerFailure) {
+ 			int pollTick = 0;
+ 			for (int sorted = targetGroupStarts[target]; sorted < targetGroupStarts[target + 1]; sorted++) {
+-				LmdbNativeProbeDeadline.poll(++pollTick);
++				pollCancellation(++pollTick);
+ 				if (peerStopped(workerFailure, pollTick)) {
+ 					return;
+ 				}
+@@ -3087,7 +3126,7 @@ final class LmdbNativeTypeMatrix implements QueryEvaluationStep {
+ 				int sourceEnd = sourceOffset + sourceTypeLengths[source];
+ 				long edgeMultiplicity = edgeMultiplicities[edge];
+ 				for (int sourceType = sourceOffset; sourceType < sourceEnd; sourceType++) {
+-					LmdbNativeProbeDeadline.poll(++pollTick);
++					pollCancellation(++pollTick);
+ 					if (peerStopped(workerFailure, pollTick)) {
+ 						return;
+ 					}
+@@ -3117,7 +3156,7 @@ final class LmdbNativeTypeMatrix implements QueryEvaluationStep {
+ 			long first = keys[0] >>> tagShift;
+ 			long differingBits = 0L;
+ 			for (int i = 1; i < length; i++) {
+-				LmdbNativeProbeDeadline.poll(++pollTick);
++				pollCancellation(++pollTick);
+ 				if (peerStopped(workerFailure, pollTick)) {
+ 					return;
+ 				}
+@@ -3127,7 +3166,7 @@ final class LmdbNativeTypeMatrix implements QueryEvaluationStep {
+ 					: (Long.SIZE - Long.numberOfLeadingZeros(differingBits) + radixBits - 1) / radixBits;
+ 			if (passes == 0) {
+ 				for (int i = 0; i < length; i++) {
+-					LmdbNativeProbeDeadline.poll(++pollTick);
++					pollCancellation(++pollTick);
+ 					if (peerStopped(workerFailure, pollTick)) {
+ 						return;
+ 					}
+@@ -3138,21 +3177,21 @@ final class LmdbNativeTypeMatrix implements QueryEvaluationStep {
+ 			int[] source = (passes & 1) == 0 ? output : scratch;
+ 			int[] target = source == output ? scratch : output;
+ 			for (int i = 0; i < length; i++) {
+-				LmdbNativeProbeDeadline.poll(++pollTick);
++				pollCancellation(++pollTick);
+ 				if (peerStopped(workerFailure, pollTick)) {
+ 					return;
+ 				}
+ 				source[i] = i;
+ 			}
+ 			for (int pass = 0; pass < passes; pass++) {
+-				LmdbNativeProbeDeadline.poll(++pollTick);
++				pollCancellation(++pollTick);
+ 				if (peerStopped(workerFailure, pollTick)) {
+ 					return;
+ 				}
+ 				Arrays.fill(counts, 0, bucketCount, 0);
+ 				int shift = tagShift + pass * radixBits;
+ 				for (int i = 0; i < length; i++) {
+-					LmdbNativeProbeDeadline.poll(++pollTick);
++					pollCancellation(++pollTick);
+ 					if (peerStopped(workerFailure, pollTick)) {
+ 						return;
+ 					}
+@@ -3160,7 +3199,7 @@ final class LmdbNativeTypeMatrix implements QueryEvaluationStep {
+ 				}
+ 				int offset = 0;
+ 				for (int bucket = 0; bucket < bucketCount; bucket++) {
+-					LmdbNativeProbeDeadline.poll(++pollTick);
++					pollCancellation(++pollTick);
+ 					if (peerStopped(workerFailure, pollTick)) {
+ 						return;
+ 					}
+@@ -3169,7 +3208,7 @@ final class LmdbNativeTypeMatrix implements QueryEvaluationStep {
+ 					offset += size;
+ 				}
+ 				for (int i = 0; i < length; i++) {
+-					LmdbNativeProbeDeadline.poll(++pollTick);
++					pollCancellation(++pollTick);
+ 					if (peerStopped(workerFailure, pollTick)) {
+ 						return;
+ 					}
+@@ -3294,7 +3333,7 @@ final class LmdbNativeTypeMatrix implements QueryEvaluationStep {
+ 			int pollTick = 0;
+ 			try {
+ 				for (long predicate : predicateCatalog) {
+-					LmdbNativeProbeDeadline.poll(++pollTick);
++					pollCancellation(++pollTick);
+ 					if (acceptedPredicates != null && !acceptedPredicates.contains(predicate)) {
+ 						continue;
+ 					}
+@@ -3322,7 +3361,7 @@ final class LmdbNativeTypeMatrix implements QueryEvaluationStep {
+ 		boolean advanceSubject() {
+ 			int pollTick = 0;
+ 			for (int i = 0; i < activeSize; i++) {
+-				LmdbNativeProbeDeadline.poll(++pollTick);
++				pollCancellation(++pollTick);
+ 				int plane = active[i];
+ 				if (advancePlane(plane)) {
+ 					push(plane);
+@@ -3356,7 +3395,7 @@ final class LmdbNativeTypeMatrix implements QueryEvaluationStep {
+ 			Plane plane = planes[index];
+ 			int pollTick = 0;
+ 			while (plane.cursor.advance()) {
+-				LmdbNativeProbeDeadline.poll(++pollTick);
++				pollCancellation(++pollTick);
+ 				PREDICATE_ROOTS_VISITED.incrementAndGet();
+ 				if (plane.cursor.runSize() > 0L) {
+ 					plane.subject = plane.cursor.key();
+@@ -3463,7 +3502,7 @@ final class LmdbNativeTypeMatrix implements QueryEvaluationStep {
+ 			ensureCapacity(entries);
+ 			int pollTick = 0;
+ 			for (int i = 0; i < entries; i++) {
+-				LmdbNativeProbeDeadline.poll(++pollTick);
++				pollCancellation(++pollTick);
+ 				NativeAdjacency.KeyRunCursor cursor = sweep.activePlane(i).cursor;
+ 				cursors[i] = cursor;
+ 				sizes[i] = cursor.runSize();
+@@ -3483,10 +3522,10 @@ final class LmdbNativeTypeMatrix implements QueryEvaluationStep {
+ 			multiplicity = 0L;
+ 			int pollTick = 0;
+ 			do {
+-				LmdbNativeProbeDeadline.poll(++pollTick);
++				pollCancellation(++pollTick);
+ 				int entry = pop();
+ 				do {
+-					LmdbNativeProbeDeadline.poll(++pollTick);
++					pollCancellation(++pollTick);
+ 					multiplicity = Math.addExact(multiplicity, 1L);
+ 				} while (advanceEntry(entry) && current[entry] == target);
+ 				if (hasCurrent(entry)) {
+@@ -3626,7 +3665,7 @@ final class LmdbNativeTypeMatrix implements QueryEvaluationStep {
+ 		void mergeFrom(PairCountMap other) {
+ 			int pollTick = 0;
+ 			for (int index = 0; index < other.firstKeys.length; index++) {
+-				LmdbNativeProbeDeadline.poll(++pollTick);
++				pollCancellation(++pollTick);
+ 				if (other.used[index]) {
+ 					add(other.firstKeys[index], other.secondKeys[index], other.counts[index]);
+ 				}
+@@ -3857,7 +3896,7 @@ final class LmdbNativeTypeMatrix implements QueryEvaluationStep {
+ 			DYNAMIC_PREDICATE_SWEEPS.incrementAndGet();
+ 			int pollTick = 0;
+ 			for (long predicate : predicateCatalog) {
+-				LmdbNativeProbeDeadline.poll(++pollTick);
++				pollCancellation(++pollTick);
+ 				if (acceptedPredicates != null && !acceptedPredicates.contains(predicate)) {
+ 					continue;
+ 				}
+@@ -3882,7 +3921,7 @@ final class LmdbNativeTypeMatrix implements QueryEvaluationStep {
+ 			NODE_PREDICATE_ROWS_VISITED.incrementAndGet();
+ 			int pollTick = 0;
+ 			do {
+-				LmdbNativeProbeDeadline.poll(++pollTick);
++				pollCancellation(++pollTick);
+ 				long predicate = cursor.predicate();
+ 				if (acceptedPredicates == null || acceptedPredicates.contains(predicate)) {
+ 					long contribution = Math.multiplyExact(sourceTypeMultiplicity,
+@@ -3902,7 +3941,7 @@ final class LmdbNativeTypeMatrix implements QueryEvaluationStep {
+ 			targetMerge.clear();
+ 			int pollTick = 0;
+ 			for (long predicate : predicateCatalog) {
+-				LmdbNativeProbeDeadline.poll(++pollTick);
++				pollCancellation(++pollTick);
+ 				if (acceptedPredicates != null && !acceptedPredicates.contains(predicate)) {
+ 					continue;
+ 				}
+@@ -3929,7 +3968,7 @@ final class LmdbNativeTypeMatrix implements QueryEvaluationStep {
+ 			NODE_PREDICATE_ROWS_VISITED.incrementAndGet();
+ 			int pollTick = 0;
+ 			do {
+-				LmdbNativeProbeDeadline.poll(++pollTick);
++				pollCancellation(++pollTick);
+ 				if (acceptedPredicates == null || acceptedPredicates.contains(cursor.predicate())) {
+ 					long run = cursor.runHandle();
+ 					long runSize = outgoingPredicates.size(run);
+@@ -3947,7 +3986,7 @@ final class LmdbNativeTypeMatrix implements QueryEvaluationStep {
+ 			NativeAdjacency.BoundRunCursor targetTypeRuns, RunMerge targetMerge, LongCountMap counters) {
+ 		int pollTick = 0;
+ 		while (targetMerge.advanceTarget()) {
+-			LmdbNativeProbeDeadline.poll(++pollTick);
++			pollCancellation(++pollTick);
+ 			long target = targetMerge.target();
+ 			long targetTypeRunSize = targetTypeRuns.bind(target);
+ 			TARGET_TYPE_LOOKUPS.incrementAndGet();
+@@ -3961,11 +4000,11 @@ final class LmdbNativeTypeMatrix implements QueryEvaluationStep {
+ 			long sourceAndEdgeMultiplicity = Math.multiplyExact(sourceTypeMultiplicity,
+ 					targetMerge.multiplicity());
+ 			for (long offset = 0L; offset < targetTypeRunSize;) {
+-				LmdbNativeProbeDeadline.poll(++pollTick);
++				pollCancellation(++pollTick);
+ 				long targetType = targetTypeRuns.neighborAt(offset);
+ 				long next = offset + 1L;
+ 				while (next < targetTypeRunSize && targetTypeRuns.neighborAt(next) == targetType) {
+-					LmdbNativeProbeDeadline.poll(++pollTick);
++					pollCancellation(++pollTick);
+ 					next++;
+ 				}
+ 				counters.add(targetType, Math.multiplyExact(sourceAndEdgeMultiplicity, next - offset));
+@@ -3977,7 +4016,7 @@ final class LmdbNativeTypeMatrix implements QueryEvaluationStep {
+ 	private void emitTypeCounters(List<BindingSet> results, long sourceType, LongCountMap counters) {
+ 		int pollTick = 0;
+ 		for (int i = 0; i < counters.keys.length; i++) {
+-			LmdbNativeProbeDeadline.poll(++pollTick);
++			pollCancellation(++pollTick);
+ 			if (!counters.used[i]) {
+ 				continue;
+ 			}
+@@ -4041,12 +4080,12 @@ final class LmdbNativeTypeMatrix implements QueryEvaluationStep {
+ 			multiplicity = 0L;
+ 			int pollTick = 0;
+ 			do {
+-				LmdbNativeProbeDeadline.poll(++pollTick);
++				pollCancellation(++pollTick);
+ 				int entry = pop();
+ 				long offset = offsets[entry];
+ 				long size = sizes[entry];
+ 				do {
+-					LmdbNativeProbeDeadline.poll(++pollTick);
++					pollCancellation(++pollTick);
+ 					multiplicity = Math.addExact(multiplicity, 1L);
+ 					offset++;
+ 				} while (offset < size && view.neighborAt(handles[entry], offset) == target);
+@@ -4144,13 +4183,13 @@ final class LmdbNativeTypeMatrix implements QueryEvaluationStep {
+ 		int filled;
+ 		int pollTick = 0;
+ 		scan: while (workerFailure == null || workerFailure.get() == null) {
+-			LmdbNativeProbeDeadline.poll(++pollTick);
++			pollCancellation(++pollTick);
+ 			filled = rows.fill(batch, BATCH_ROWS);
+ 			if (filled <= 0) {
+ 				break;
+ 			}
+ 			for (int i = 0; i < filled; i++) {
+-				LmdbNativeProbeDeadline.poll(++pollTick);
++				pollCancellation(++pollTick);
+ 				if (peerStopped(workerFailure, pollTick)) {
+ 					break scan;
+ 				}
+@@ -4195,7 +4234,7 @@ final class LmdbNativeTypeMatrix implements QueryEvaluationStep {
+ 		int typeCount = 0;
+ 		int pollTick = 0;
+ 		for (int i = 0; i < runSize; i++) {
+-			LmdbNativeProbeDeadline.poll(++pollTick);
++			pollCancellation(++pollTick);
+ 			if (peerStopped(workerFailure, pollTick)) {
+ 				return;
+ 			}
+@@ -4209,7 +4248,7 @@ final class LmdbNativeTypeMatrix implements QueryEvaluationStep {
+ 		long[] subjectTypes = new long[typeCount];
+ 		int t = 0;
+ 		for (int i = 0; i < runSize; i++) {
+-			LmdbNativeProbeDeadline.poll(++pollTick);
++			pollCancellation(++pollTick);
+ 			if (peerStopped(workerFailure, pollTick)) {
+ 				return;
+ 			}
+@@ -4218,7 +4257,7 @@ final class LmdbNativeTypeMatrix implements QueryEvaluationStep {
+ 			}
+ 		}
+ 		for (int i = 0; i < runSize; i++) {
+-			LmdbNativeProbeDeadline.poll(++pollTick);
++			pollCancellation(++pollTick);
+ 			if (peerStopped(workerFailure, pollTick)) {
+ 				return;
+ 			}
+@@ -4231,13 +4270,13 @@ final class LmdbNativeTypeMatrix implements QueryEvaluationStep {
+ 				try (RecordIterator targetTypes = targetTypeProbe.open(object, objectTypePredicate, UNKNOWN, UNKNOWN)) {
+ 					long[] targetTypeRow;
+ 					while ((targetTypeRow = targetTypes.next()) != null) {
+-						LmdbNativeProbeDeadline.poll(++pollTick);
++						pollCancellation(++pollTick);
+ 						if (peerStopped(workerFailure, pollTick)) {
+ 							return;
+ 						}
+ 						long targetType = targetTypeRow[TripleIndex.OBJ_IDX];
+ 						for (long subjectType : subjectTypes) {
+-							LmdbNativeProbeDeadline.poll(++pollTick);
++							pollCancellation(++pollTick);
+ 							if (peerStopped(workerFailure, pollTick)) {
+ 								return;
+ 							}
+@@ -4247,7 +4286,7 @@ final class LmdbNativeTypeMatrix implements QueryEvaluationStep {
+ 				}
+ 			} else {
+ 				for (long subjectType : subjectTypes) {
+-					LmdbNativeProbeDeadline.poll(++pollTick);
++					pollCancellation(++pollTick);
+ 					if (peerStopped(workerFailure, pollTick)) {
+ 						return;
+ 					}
+@@ -4307,6 +4346,8 @@ final class LmdbNativeTypeMatrix implements QueryEvaluationStep {
+ 			List<Future<Map<GroupKey, long[]>>> futures = new ArrayList<>(workers);
+ 			AtomicReference<Throwable> workerFailure = new AtomicReference<>();
+ 			LmdbNativeProbeDeadline probeParent = LmdbNativeProbeDeadline.currentOrNull();
++			// Workers do not inherit the evaluating thread's thread-locals; hand them the query token explicitly.
++			NativeCancellationToken queryCancellation = NativeCancellationToken.current();
+ 			Throwable primaryFailure = null;
+ 			try {
+ 				int ranges = splits.length + 1;
+@@ -4323,13 +4364,16 @@ final class LmdbNativeTypeMatrix implements QueryEvaluationStep {
+ 							try (var replayScope = replayContext.activate();
+ 									LmdbNativeProbeDeadline.Scope ignored = LmdbNativeProbeDeadline
+ 											.inherit(probeParent);
++									NativeCancellationToken.Scope cancellationScope = NativeCancellationToken
++											.inherit(queryCancellation);
+ 									NativeLmdbQuerySource.NativeProbe targetTypes = linkageMode()
+ 											? workerSource.newProbe()
+ 											: null) {
+ 								Integer range;
+ 								int pollTick = 0;
+ 								while (workerFailure.get() == null && (range = queue.poll()) != null) {
+-									LmdbNativeProbeDeadline.poll(++pollTick);
++									NativeCancellationToken.checkCurrent();
++									pollCancellation(++pollTick);
+ 									long[] lo = range == 0 ? null : splits[range - 1];
+ 									long[] hi = range == splits.length ? null : splits[range];
+ 									try (RecordIterator rows = workerSource.lmdbStatements(StatementOrder.S, UNKNOWN,
+@@ -4357,10 +4401,10 @@ final class LmdbNativeTypeMatrix implements QueryEvaluationStep {
+ 				Map<GroupKey, long[]> merged = new HashMap<>();
+ 				int mergePollTick = 0;
+ 				for (Future<Map<GroupKey, long[]>> future : futures) {
+-					LmdbNativeProbeDeadline.poll(++mergePollTick);
++					pollCancellation(++mergePollTick);
+ 					try {
+ 						for (Map.Entry<GroupKey, long[]> entry : future.get().entrySet()) {
+-							LmdbNativeProbeDeadline.poll(++mergePollTick);
++							pollCancellation(++mergePollTick);
+ 							merged.computeIfAbsent(entry.getKey(), ignored -> new long[1])[0] += entry.getValue()[0];
+ 						}
+ 					} catch (InterruptedException e) {
+diff --git a/core/sail/lmdb/src/main/java/org/eclipse/rdf4j/sail/lmdb/evaluation/NativeCancellationToken.java b/core/sail/lmdb/src/main/java/org/eclipse/rdf4j/sail/lmdb/evaluation/NativeCancellationToken.java
+index 6b812482bf..77129235c1 100644
+--- a/core/sail/lmdb/src/main/java/org/eclipse/rdf4j/sail/lmdb/evaluation/NativeCancellationToken.java
++++ b/core/sail/lmdb/src/main/java/org/eclipse/rdf4j/sail/lmdb/evaluation/NativeCancellationToken.java
+@@ -190,6 +190,16 @@ final class NativeCancellationToken implements KernelCancellation.QueryCancellat
+ 		}
+ 	}
+ 
++	/** The token entered on this thread, or null when no evaluation is active here. */
++	static NativeCancellationToken current() {
++		return CURRENT.get();
++	}
++
++	/** Worker-side attach: a null token is a no-op scope, so callers need no conditional. */
++	static Scope inherit(NativeCancellationToken token) {
++		return token == null ? Scope.UNCHANGED : token.enter();
++	}
++
+ 	static void checkCurrent() {
+ 		NativeCancellationToken current = CURRENT.get();
+ 		if (current != null) {
+diff --git a/core/sail/lmdb/src/test/java/org/eclipse/rdf4j/sail/lmdb/evaluation/LmdbNativeTypeMatrixCancellationTest.java b/core/sail/lmdb/src/test/java/org/eclipse/rdf4j/sail/lmdb/evaluation/LmdbNativeTypeMatrixCancellationTest.java
+new file mode 100644
+index 0000000000..ef749efbf1
+--- /dev/null
++++ b/core/sail/lmdb/src/test/java/org/eclipse/rdf4j/sail/lmdb/evaluation/LmdbNativeTypeMatrixCancellationTest.java
+@@ -0,0 +1,448 @@
++/*******************************************************************************
++ * Copyright (c) 2026 Eclipse RDF4J contributors.
++ *
++ * All rights reserved. This program and the accompanying materials
++ * are made available under the terms of the Eclipse Distribution License v1.0
++ * which accompanies this distribution, and is available at
++ * http://www.eclipse.org/org/documents/edl-v10.php.
++ *
++ * SPDX-License-Identifier: BSD-3-Clause
++ *******************************************************************************/
++package org.eclipse.rdf4j.sail.lmdb.evaluation;
++
++import static org.assertj.core.api.Assertions.assertThat;
++import static org.assertj.core.api.Assertions.catchThrowable;
++import static org.junit.jupiter.api.Assertions.assertTimeoutPreemptively;
++
++import java.time.Duration;
++import java.util.List;
++import java.util.Map;
++import java.util.concurrent.atomic.AtomicInteger;
++
++import org.eclipse.rdf4j.common.iteration.CloseableIteration;
++import org.eclipse.rdf4j.common.order.StatementOrder;
++import org.eclipse.rdf4j.model.Value;
++import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
++import org.eclipse.rdf4j.query.BindingSet;
++import org.eclipse.rdf4j.query.impl.EmptyBindingSet;
++import org.eclipse.rdf4j.sail.lmdb.LmdbPrefixRunCursor;
++import org.eclipse.rdf4j.sail.lmdb.LmdbPrefixRunPlan;
++import org.eclipse.rdf4j.sail.lmdb.LmdbPrefixRunPlanTestAccess;
++import org.eclipse.rdf4j.sail.lmdb.RecordIterator;
++import org.eclipse.rdf4j.sail.lmdb.TripleIndex;
++import org.eclipse.rdf4j.sail.lmdb.evaluation.codegen.KernelQueryCancelledException;
++import org.junit.jupiter.api.Test;
++import org.junit.jupiter.api.parallel.ResourceLock;
++import org.junit.jupiter.api.parallel.Resources;
++
++/**
++ * A query cancellation (timeout, client disconnect, close) must stop a running non-IR type-matrix scan at its next
++ * poll, on the evaluating thread and in parallel workers. The fixtures request cancellation from inside the scan after
++ * a fixed number of rows so the test is deterministic: before the fix the scan simply runs to completion.
++ */
++@ResourceLock(Resources.SYSTEM_PROPERTIES)
++class LmdbNativeTypeMatrixCancellationTest {
++
++	private static final long SUBJECT_TYPE_PREDICATE = 2L;
++	private static final long EDGE_PREDICATE = 3L;
++	private static final int ROWS = 1 << 14;
++	private static final int CANCEL_AFTER = 100;
++	private static final Duration BOUND = Duration.ofSeconds(60);
++
++	@Test
++	void serialPredicatePrecomputeStopsOnQueryCancellation() {
++		NativeCancellationToken token = new NativeCancellationToken();
++		SerialSource source = new SerialSource(token);
++		NativeSlotLayout layout = new NativeSlotLayout(Map.of("predicate", 0), null);
++		layout.freeze(List.of("predicate"));
++		LmdbNativeTypeMatrix matrix = new LmdbNativeTypeMatrix(source, SUBJECT_TYPE_PREDICATE,
++				NativeLmdbQuerySource.UNKNOWN_ID, 0, new String[] { "type", "predicate" }, new String[] { "count" },
++				new MaskedFilter[] { new MaskedFilter(row -> true, 1L) }, 0, layout, null, null, null);
++
++		Throwable failure = assertTimeoutPreemptively(BOUND,
++				() -> catchThrowable(() -> evaluate(matrix, source, token)));
++
++		assertThat(failure).isInstanceOf(KernelQueryCancelledException.class);
++		assertThat(token.owns((KernelQueryCancelledException) failure)).isTrue();
++		assertThat(source.prefixCursor.closed).as("prefix cursor must be closed on cancellation").isTrue();
++		assertThat(source.prefixCursor.index).as("precompute must stop at its next poll").isLessThan(ROWS);
++	}
++
++	@Test
++	void serialCoScanStopsOnQueryCancellation() {
++		NativeCancellationToken token = new NativeCancellationToken();
++		SerialSource source = new SerialSource(token);
++		LmdbNativeTypeMatrix matrix = new LmdbNativeTypeMatrix(source, SUBJECT_TYPE_PREDICATE,
++				NativeLmdbQuerySource.UNKNOWN_ID, 0, new String[] { "type", "predicate" }, new String[] { "count" },
++				new MaskedFilter[0], 0, NativeSlotLayout.empty(), null, null, null);
++
++		Throwable failure = assertTimeoutPreemptively(BOUND,
++				() -> catchThrowable(() -> evaluate(matrix, source, token)));
++
++		assertThat(failure).isInstanceOf(KernelQueryCancelledException.class);
++		assertThat(token.owns((KernelQueryCancelledException) failure)).isTrue();
++		assertThat(source.statementsRead.get()).as("co-scan must stop at its next poll").isLessThan(ROWS);
++	}
++
++	@Test
++	void parallelCoScanWorkersStopOnQueryCancellation() {
++		String previousThreads = System.getProperty("rdf4j.lmdb.parallel.threads");
++		String previousMaxTasks = System.getProperty("rdf4j.lmdb.parallel.maxTasks");
++		String previousThreshold = System.getProperty(LmdbNativeParallelPrefixRuns.PARALLEL_MIN_ESTIMATE_PROPERTY);
++		try {
++			System.setProperty("rdf4j.lmdb.parallel.threads", "2");
++			System.setProperty("rdf4j.lmdb.parallel.maxTasks", "2");
++			System.setProperty(LmdbNativeParallelPrefixRuns.PARALLEL_MIN_ESTIMATE_PROPERTY, "0");
++
++			NativeCancellationToken token = new NativeCancellationToken();
++			ParallelFixture source = new ParallelFixture(new AtomicInteger(), token);
++			LmdbNativeTypeMatrix matrix = new LmdbNativeTypeMatrix(source, SUBJECT_TYPE_PREDICATE,
++					NativeLmdbQuerySource.UNKNOWN_ID, 0, new String[] { "type", "predicate" },
++					new String[] { "count" }, new MaskedFilter[0], 0, NativeSlotLayout.empty(), null, null, null);
++
++			Throwable failure = assertTimeoutPreemptively(BOUND,
++					() -> catchThrowable(() -> evaluate(matrix, source, token)));
++
++			assertThat(failure).isInstanceOf(KernelQueryCancelledException.class);
++			assertThat(token.owns((KernelQueryCancelledException) failure)).isTrue();
++			assertThat(source.workers).isNotEmpty().allSatisfy(worker -> assertThat(worker.closed).isTrue());
++			assertThat(source.read.get()).as("workers must stop at their next poll").isLessThan(2 * ROWS);
++		} finally {
++			restoreProperty("rdf4j.lmdb.parallel.threads", previousThreads);
++			restoreProperty("rdf4j.lmdb.parallel.maxTasks", previousMaxTasks);
++			restoreProperty(LmdbNativeParallelPrefixRuns.PARALLEL_MIN_ESTIMATE_PROPERTY, previousThreshold);
++		}
++	}
++
++	private static void evaluate(LmdbNativeTypeMatrix matrix, NativeLmdbQuerySource source,
++			NativeCancellationToken token) {
++		try (CloseableIteration<BindingSet> result = matrix.evaluate(EmptyBindingSet.getInstance(), source, token)) {
++			while (result.hasNext()) {
++				result.next();
++			}
++		}
++	}
++
++	private static void restoreProperty(String property, String value) {
++		if (value == null) {
++			System.clearProperty(property);
++		} else {
++			System.setProperty(property, value);
++		}
++	}
++
++	private static class SerialSource implements NativeLmdbQuerySource {
++		final NativeCancellationToken token;
++		final AtomicInteger statementsRead = new AtomicInteger();
++		PrefixCursor prefixCursor;
++
++		SerialSource(NativeCancellationToken token) {
++			this.token = token;
++		}
++
++		@Override
++		public long idOf(Value value) {
++			return NativeLmdbQuerySource.UNKNOWN_ID;
++		}
++
++		@Override
++		public Value lazyValue(long id) {
++			return SimpleValueFactory.getInstance().createIRI("urn:type-matrix:id:" + id);
++		}
++
++		@Override
++		public Object idSpace() {
++			return this;
++		}
++
++		@Override
++		public RecordIterator statements(long subj, long pred, long obj, long context) {
++			return new RecordIterator() {
++				private int index;
++
++				@Override
++				public long[] next() {
++					if (index == ROWS) {
++						return null;
++					}
++					if (statementsRead.incrementAndGet() == CANCEL_AFTER) {
++						token.requestCancellation();
++					}
++					int row = index++;
++					return row == 0 ? new long[] { 1L, SUBJECT_TYPE_PREDICATE, 10L, 0L }
++							: new long[] { 1L, EDGE_PREDICATE + row, 11L, 0L };
++				}
++
++				@Override
++				public void close() {
++				}
++			};
++		}
++
++		@Override
++		public RecordIterator statements(StatementOrder order, long subj, long pred, long obj, long context) {
++			return statements(subj, pred, obj, context);
++		}
++
++		@Override
++		public LmdbPrefixRunPlan prefixRunPlan(int[] prefixFields, long subj, long pred, long obj, long context) {
++			return prefixFields.length == 1 && prefixFields[0] == TripleIndex.PRED_IDX
++					? LmdbPrefixRunPlanTestAccess.adjacencyPredicate(prefixFields)
++					: null;
++		}
++
++		@Override
++		public LmdbPrefixRunCursor prefixRuns(LmdbPrefixRunPlan plan, long subj, long pred, long obj, long context,
++				boolean countRunRows) {
++			prefixCursor = new PrefixCursor(token);
++			return prefixCursor;
++		}
++
++		@Override
++		public long count(long subj, long pred, long obj, long context) {
++			return ROWS;
++		}
++
++		@Override
++		public boolean has(long subj, long pred, long obj, long context) {
++			return true;
++		}
++
++		@Override
++		public double estimate(long subj, long pred, long obj, long context) {
++			return ROWS;
++		}
++
++		@Override
++		public boolean hasStatementsInSource() {
++			return true;
++		}
++	}
++
++	private static final class ParallelFixture extends SerialSource implements NativeLmdbQuerySource.ParallelSource {
++		private static final Object ID_SPACE = new Object();
++		final AtomicInteger read;
++		volatile List<ParallelFixture> workers = List.of();
++		volatile boolean closed;
++
++		ParallelFixture(AtomicInteger read, NativeCancellationToken token) {
++			super(token);
++			this.read = read;
++		}
++
++		@Override
++		public Object idSpace() {
++			return ID_SPACE;
++		}
++
++		@Override
++		public LmdbPrefixRunPlan prefixRunPlan(int[] prefixFields, long subj, long pred, long obj, long context) {
++			if (prefixFields.length != 1) {
++				return null;
++			}
++			return switch (prefixFields[0]) {
++			case TripleIndex.PRED_IDX -> LmdbPrefixRunPlanTestAccess.adjacencyPredicate(prefixFields);
++			case TripleIndex.SUBJ_IDX -> LmdbPrefixRunPlanTestAccess.adjacencySubject(prefixFields);
++			default -> null;
++			};
++		}
++
++		@Override
++		public LmdbPrefixRunCursor prefixRuns(LmdbPrefixRunPlan plan, long subj, long pred, long obj, long context,
++				boolean countRunRows) {
++			return new ParallelPrefixCursor();
++		}
++
++		@Override
++		public long[][] prefixRunSplitValues(LmdbPrefixRunPlan plan, long subj, long pred, long obj, long context,
++				int targetPartitions, int tupleLength) {
++			return new long[][] { { 2L } };
++		}
++
++		@Override
++		public NativeLmdbQuerySource.ParallelSource[] openParallelSources(int count) {
++			ParallelFixture[] opened = new ParallelFixture[count];
++			for (int i = 0; i < count; i++) {
++				opened[i] = new ParallelFixture(read, token);
++			}
++			workers = List.of(opened);
++			return opened;
++		}
++
++		@Override
++		public RecordIterator statements(long subj, long pred, long obj, long context) {
++			return new RecordIterator() {
++				private int index;
++
++				@Override
++				public long[] next() {
++					if (index == ROWS) {
++						return null;
++					}
++					if (read.incrementAndGet() == CANCEL_AFTER) {
++						token.requestCancellation();
++					}
++					int row = index++;
++					return row == 0 ? new long[] { 1L, SUBJECT_TYPE_PREDICATE, 10L, 0L }
++							: new long[] { 1L, EDGE_PREDICATE, 11L, 0L };
++				}
++
++				@Override
++				public boolean seekForward(long targetSubject, long ignoredPredicate, long ignoredObject,
++						long ignoredContext) {
++					index = targetSubject <= 1L ? index : ROWS;
++					return true;
++				}
++
++				@Override
++				public void close() {
++				}
++			};
++		}
++
++		@Override
++		public double estimate(long subj, long pred, long obj, long context) {
++			return ROWS;
++		}
++
++		@Override
++		public void close() {
++			closed = true;
++		}
++	}
++
++	private static final class ParallelPrefixCursor implements LmdbPrefixRunCursor {
++		private int index;
++
++		@Override
++		public boolean next() {
++			return index++ < 2;
++		}
++
++		@Override
++		public long prefixValue(int field) {
++			return field == TripleIndex.PRED_IDX ? (index == 1 ? SUBJECT_TYPE_PREDICATE : EDGE_PREDICATE) : 0L;
++		}
++
++		@Override
++		public boolean seekTo(long value) {
++			return false;
++		}
++
++		@Override
++		public boolean seekTo(long[] prefixValues) {
++			return false;
++		}
++
++		@Override
++		public void stopBefore(long[] prefixValues) {
++		}
++
++		@Override
++		public long[] quad() {
++			return new long[] { 1L, prefixValue(TripleIndex.PRED_IDX), 0L, 0L };
++		}
++
++		@Override
++		public long runRowCount() {
++			return 1L;
++		}
++
++		@Override
++		public long getSourceRowsScannedActual() {
++			return index;
++		}
++
++		@Override
++		public long getSourceRowsMatchedActual() {
++			return index;
++		}
++
++		@Override
++		public long getSourceRowsFilteredActual() {
++			return 0L;
++		}
++
++		@Override
++		public String getIndexName() {
++			return "type-matrix-cancellation-test";
++		}
++
++		@Override
++		public void close() {
++		}
++	}
++
++	private static final class PrefixCursor implements LmdbPrefixRunCursor {
++		private final NativeCancellationToken token;
++		private int index;
++		private long[] current;
++		private boolean closed;
++
++		private PrefixCursor(NativeCancellationToken token) {
++			this.token = token;
++		}
++
++		@Override
++		public boolean next() {
++			if (index >= ROWS) {
++				return false;
++			}
++			if (index == CANCEL_AFTER) {
++				token.requestCancellation();
++			}
++			current = new long[] { 1L, SUBJECT_TYPE_PREDICATE + index, 10L, 0L };
++			index++;
++			return true;
++		}
++
++		@Override
++		public boolean seekTo(long value) {
++			return false;
++		}
++
++		@Override
++		public boolean seekTo(long[] prefixValues) {
++			return false;
++		}
++
++		@Override
++		public void stopBefore(long[] prefixValues) {
++		}
++
++		@Override
++		public long[] quad() {
++			return current;
++		}
++
++		@Override
++		public long runRowCount() {
++			return 1L;
++		}
++
++		@Override
++		public long getSourceRowsScannedActual() {
++			return index;
++		}
++
++		@Override
++		public long getSourceRowsMatchedActual() {
++			return index;
++		}
++
++		@Override
++		public long getSourceRowsFilteredActual() {
++			return 0L;
++		}
++
++		@Override
++		public String getIndexName() {
++			return "type-matrix-cancellation-test";
++		}
++
++		@Override
++		public void close() {
++			closed = true;
++		}
++	}
++}
+-- 
+2.54.0 (Apple Git-157)
+

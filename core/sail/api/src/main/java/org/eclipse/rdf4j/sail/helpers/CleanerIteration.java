@@ -19,10 +19,12 @@ import org.eclipse.rdf4j.common.concurrent.locks.diagnostics.ConcurrentCleaner;
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.common.iteration.CooperativeCancellation;
 import org.eclipse.rdf4j.common.iteration.IndexReportingIterator;
+import org.eclipse.rdf4j.common.iteration.RowPassThroughIteration;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-final class CleanerIteration<E> implements CloseableIteration<E>, CooperativeCancellation, IndexReportingIterator {
+final class CleanerIteration<E> implements CloseableIteration<E>, CooperativeCancellation, IndexReportingIterator,
+		RowPassThroughIteration {
 
 	private static final Logger logger = LoggerFactory.getLogger(CleanerIteration.class);
 
@@ -67,6 +69,11 @@ final class CleanerIteration<E> implements CloseableIteration<E>, CooperativeCan
 	@Override
 	public void remove() {
 		delegate.remove();
+	}
+
+	@Override
+	public CloseableIteration<?> passThroughSource() {
+		return delegate;
 	}
 
 	@Override
