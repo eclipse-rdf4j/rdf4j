@@ -31,6 +31,7 @@ import org.eclipse.rdf4j.model.vocabulary.RDF;
 import org.eclipse.rdf4j.model.vocabulary.XSD;
 import org.eclipse.rdf4j.query.QueryResults;
 import org.eclipse.rdf4j.query.TupleQuery;
+import org.eclipse.rdf4j.query.explanation.Explanation;
 import org.eclipse.rdf4j.repository.RepositoryConnection;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
 import org.eclipse.rdf4j.sail.inferencer.InferencerConnection;
@@ -40,6 +41,7 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 import org.junit.jupiter.api.parallel.Isolated;
 import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.EnumSource;
 import org.junit.jupiter.params.provider.ValueSource;
 
 @Isolated("Measures process-wide LMDB prefix and partitioned DISTINCT counters")
@@ -70,6 +72,28 @@ class LmdbDefaultDistinctQueriesTest {
 	void shutDown() {
 		if (repository != null) {
 			repository.shutDown();
+		}
+	}
+
+	@ParameterizedTest
+	@EnumSource(value = Explanation.Level.class, names = { "Executed", "Timed", "Telemetry" })
+	void indexedDistinctReportsPrefixIndex(Explanation.Level level) {
+		assertExplainedPrefixIndex(PREDICATES, level);
+	}
+
+	@ParameterizedTest
+	@EnumSource(value = Explanation.Level.class, names = { "Executed", "Timed", "Telemetry" })
+	void indexedDistinctCountReportsPrefixIndex(Explanation.Level level) {
+		assertExplainedPrefixIndex("SELECT ?p (COUNT(DISTINCT ?o) AS ?n) WHERE { ?s ?p ?o } GROUP BY ?p", level);
+	}
+
+	private void assertExplainedPrefixIndex(String sparql, Explanation.Level level) {
+		openRepository(false);
+		try (RepositoryConnection connection = repository.getConnection()) {
+			long before = LmdbPrefixRunPlan.OPENED.get();
+			String plan = connection.prepareTupleQuery(sparql).explain(level).toString();
+			assertThat(LmdbPrefixRunPlan.OPENED.get()).isGreaterThan(before);
+			assertThat(plan).contains("indexName=posc");
 		}
 	}
 

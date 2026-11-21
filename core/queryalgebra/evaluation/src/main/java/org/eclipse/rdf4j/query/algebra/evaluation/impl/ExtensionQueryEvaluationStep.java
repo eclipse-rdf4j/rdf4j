@@ -12,6 +12,7 @@
 package org.eclipse.rdf4j.query.algebra.evaluation.impl;
 
 import java.util.function.Consumer;
+import java.util.function.Function;
 import java.util.function.UnaryOperator;
 
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
@@ -21,16 +22,20 @@ import org.eclipse.rdf4j.query.algebra.Extension;
 import org.eclipse.rdf4j.query.algebra.evaluation.EvaluationStrategy;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryEvaluationStep;
 import org.eclipse.rdf4j.query.algebra.evaluation.ValueExprEvaluationException;
+import org.eclipse.rdf4j.query.algebra.evaluation.impl.evaluationsteps.ScopedUnionInput;
 import org.eclipse.rdf4j.query.algebra.evaluation.iterator.ExtensionIterator;
 
 public final class ExtensionQueryEvaluationStep implements QueryEvaluationStep {
 	private final QueryEvaluationStep arg;
-	private final Consumer<MutableBindingSet> consumer;
+	private final Extension extension;
+	private final Function<BindingSet, Consumer<MutableBindingSet>> consumer;
 	private final QueryEvaluationContext context;
 
-	private ExtensionQueryEvaluationStep(QueryEvaluationStep arg, Consumer<MutableBindingSet> consumer,
+	private ExtensionQueryEvaluationStep(QueryEvaluationStep arg, Extension extension,
+			Function<BindingSet, Consumer<MutableBindingSet>> consumer,
 			QueryEvaluationContext context) {
 		this.arg = arg;
+		this.extension = extension;
 		this.consumer = consumer;
 		this.context = context;
 	}
@@ -38,23 +43,23 @@ public final class ExtensionQueryEvaluationStep implements QueryEvaluationStep {
 	/** Compiles the assignments independently of the physical argument step. */
 	static UnaryOperator<QueryEvaluationStep> prepare(Extension extension, EvaluationStrategy strategy,
 			QueryEvaluationContext context) {
-		Consumer<MutableBindingSet> consumer = ExtensionIterator.buildLambdaToEvaluateTheExpressions(extension,
+		var consumer = ExtensionIterator.prepareAssignments(extension,
 				strategy,
 				context);
-		return arg -> new ExtensionQueryEvaluationStep(arg, consumer, context);
+		return arg -> new ExtensionQueryEvaluationStep(arg, extension, consumer, context);
 	}
 
 	@Override
 	public CloseableIteration<BindingSet> evaluate(BindingSet bs) {
 		CloseableIteration<BindingSet> result;
 		try {
-			result = arg.evaluate(bs);
+			result = arg.evaluate(ScopedUnionInput.argument(extension, bs));
 		} catch (ValueExprEvaluationException e) {
 			// a type error in an extension argument should be silently ignored
 			// and
 			// result in zero bindings.
 			result = QueryEvaluationStep.EMPTY_ITERATION;
 		}
-		return new ExtensionIterator(result, consumer, context);
+		return new ExtensionIterator(result, consumer.apply(bs), context);
 	}
 }

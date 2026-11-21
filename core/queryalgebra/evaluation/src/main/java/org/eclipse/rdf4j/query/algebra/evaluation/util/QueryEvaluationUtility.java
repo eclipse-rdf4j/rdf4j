@@ -570,6 +570,11 @@ public class QueryEvaluationUtility {
 	 */
 	@Experimental
 	public static boolean usesMappingParameterizedEvaluation(TupleExpr subtree) {
+		return usesMappingParameterizedEvaluation((QueryModelNode) subtree);
+	}
+
+	@InternalUseOnly
+	public static boolean usesMappingParameterizedEvaluation(QueryModelNode subtree) {
 		return snapshotFor(subtree).usesMappingParameterizedEvaluation(subtree);
 	}
 

@@ -28,6 +28,7 @@ import java.util.Queue;
 import java.util.Set;
 import java.util.concurrent.ConcurrentLinkedQueue;
 import java.util.concurrent.locks.ReentrantLock;
+import java.util.function.BooleanSupplier;
 
 import javax.management.NotificationEmitter;
 import javax.management.openmbean.CompositeData;
@@ -239,21 +240,13 @@ public abstract class AbstractMemoryOverflowModel<T extends AbstractModel> exten
 	@Override
 	public synchronized boolean add(Resource subj, IRI pred, Value obj, Resource... contexts) {
 		checkMemoryOverflow(false);
-		if (spillPayload != null) {
-			spillPayload.accountFor(subj);
-			spillPayload.accountFor(pred);
-			spillPayload.accountFor(obj);
-			if (contexts != null) {
-				for (Resource context : contexts) {
-					spillPayload.accountFor(context);
-				}
-			}
+		Model delegate = getDelegate();
+		boolean added = spillPayload == null ? delegate.add(subj, pred, obj, contexts)
+				: spillPayload.trackGrowth(delegate, () -> delegate.add(subj, pred, obj, contexts));
+		if (added && delegate instanceof DynamicModel dynamicModel) {
+			dynamicModel.maybeRegisterLargeStatementSetForReuse(dynamicModel);
 		}
-		boolean add = getDelegate().add(subj, pred, obj, contexts);
-		if (add && memory instanceof DynamicModel) {
-			((DynamicModel) memory).maybeRegisterLargeStatementSetForReuse((DynamicModel) memory);
-		}
-		return add;
+		return added;
 	}
 
 	long count = 0;
@@ -266,10 +259,10 @@ public abstract class AbstractMemoryOverflowModel<T extends AbstractModel> exten
 			checkMemoryOverflow(false);
 			delegate = getDelegate();
 		}
-		if (spillPayload != null) {
-			spillPayload.accountFor(st);
-		}
 		boolean add = delegate.add(st);
+		if (add && spillPayload != null) {
+			spillPayload.accountForAddedStatements(delegate, 1);
+		}
 		if (add && delegate instanceof DynamicModel dynamicModel) {
 			dynamicModel.maybeRegisterLargeStatementSetForReuse(dynamicModel);
 		}
@@ -280,22 +273,20 @@ public abstract class AbstractMemoryOverflowModel<T extends AbstractModel> exten
 	public synchronized boolean addAll(Collection<? extends Statement> c) {
 		checkMemoryOverflow(false);
 		if (disk != null || c.size() <= BATCH_SIZE) {
-			accountForIncomingPayload(c);
-			return getDelegate().addAll(c);
+			return addBatch(c);
 		} else {
 			boolean ret = false;
 			HashSet<Statement> buffer = new HashSet<>();
 			for (Statement st : c) {
 				buffer.add(st);
 				if (buffer.size() >= BATCH_SIZE) {
-					ret |= getDelegate().addAll(buffer);
+					ret |= addBatch(buffer);
 					buffer.clear();
 					checkMemoryOverflow(false);
 				}
 			}
 			if (!buffer.isEmpty()) {
-				accountForIncomingPayload(buffer);
-				ret |= getDelegate().addAll(buffer);
+				ret |= addBatch(buffer);
 				buffer.clear();
 			}
 
@@ -309,16 +300,10 @@ public abstract class AbstractMemoryOverflowModel<T extends AbstractModel> exten
 
 	}
 
-	private void accountForIncomingPayload(Collection<? extends Statement> statements) {
-		SpillPayload payload = spillPayload;
-		if (payload != null) {
-			for (Statement statement : statements) {
-				payload.accountFor(statement);
-				if (payload.atLimit()) {
-					break;
-				}
-			}
-		}
+	private boolean addBatch(Collection<? extends Statement> statements) {
+		Model delegate = getDelegate();
+		return spillPayload == null ? delegate.addAll(statements)
+				: spillPayload.trackGrowth(delegate, () -> delegate.addAll(statements));
 	}
 
 	@Override
@@ -582,6 +567,36 @@ public abstract class AbstractMemoryOverflowModel<T extends AbstractModel> exten
 
 		boolean atLimit() {
 			return remaining <= 0;
+		}
+
+		boolean trackGrowth(Model model, BooleanSupplier add) {
+			int before = model.size();
+			try {
+				return add.getAsBoolean();
+			} finally {
+				// A collection can fail partway through insertion.
+				accountForAddedStatements(model, model.size() - before);
+			}
+		}
+
+		private void accountForAddedStatements(Model model, int added) {
+			if (added <= 0 || atLimit()) {
+				return;
+			}
+			// Count the canonical terms retained by the delegate. New statements occupy the tail in
+			// insertion order even when a bulk call mixes duplicates and successful insertions.
+			var statements = model instanceof DynamicModel dynamic ? dynamic.statementsInInsertionOrder() : null;
+			if (statements == null) {
+				// A delegate without insertion order requires a fresh measurement at the next check.
+				remaining = 0;
+			} else if (added == 1) {
+				accountFor(statements.getLast());
+			} else {
+				var newest = statements.reversed().iterator();
+				for (int i = 0; i < added && !atLimit(); i++) {
+					accountFor(newest.next());
+				}
+			}
 		}
 
 		void accountFor(Statement statement) {

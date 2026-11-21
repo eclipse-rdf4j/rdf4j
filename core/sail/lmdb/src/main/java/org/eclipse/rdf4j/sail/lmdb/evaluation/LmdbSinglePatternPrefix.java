@@ -152,7 +152,9 @@ final class LmdbSinglePatternPrefix {
 				return;
 			}
 			synchronized (statement) {
-				statement.setStringMetricActual(TelemetryMetricNames.INDEX_NAME, cursor.getIndexName());
+				String indexName = cursor.getIndexName();
+				statement.setIndexName(indexName);
+				statement.setStringMetricActual(TelemetryMetricNames.INDEX_NAME, indexName);
 				if (!statement.isRuntimeTelemetryEnabled()) {
 					return;
 				}

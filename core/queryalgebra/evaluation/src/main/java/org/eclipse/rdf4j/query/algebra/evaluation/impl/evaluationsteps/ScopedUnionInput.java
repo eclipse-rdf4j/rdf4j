@@ -14,8 +14,12 @@ package org.eclipse.rdf4j.query.algebra.evaluation.impl.evaluationsteps;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.Set;
+import java.util.concurrent.atomic.AtomicLong;
+import java.util.function.BiFunction;
+import java.util.function.Function;
 import java.util.function.Supplier;
 
+import org.eclipse.rdf4j.common.annotation.InternalUseOnly;
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.common.iteration.IndexReportingIterator;
 import org.eclipse.rdf4j.common.iteration.IterationWrapper;
@@ -23,31 +27,45 @@ import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.MutableBindingSet;
 import org.eclipse.rdf4j.query.algebra.Projection;
+import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.algebra.Union;
+import org.eclipse.rdf4j.query.algebra.ValueExpr;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryEvaluationStep;
+import org.eclipse.rdf4j.query.algebra.evaluation.QueryValueEvaluationStep;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.GraphFrameBindings;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.QueryEvaluationContext;
+import org.eclipse.rdf4j.query.algebra.evaluation.util.QueryEvaluationUtility;
 
 /** Input restrictions owned by the built-in operators that a custom physical step may delegate to. */
-final class ScopedUnionInput {
+@InternalUseOnly
+public final class ScopedUnionInput {
 
 	private static final ThreadLocal<ScopedUnionInput> CURRENT = new ThreadLocal<>();
+	private static final AtomicLong ROW_SCOPE_IDS = new AtomicLong();
 
 	record Scope(Set<String> parameters, Set<String> left, Set<String> right) {
 	}
 
-	record Layout(Map<Union, Scope> unions, Map<Projection, Set<String>> projections) {
+	record RowScope(Set<String> withheld, Map<ValueExpr, Set<String>> scalarReads) {
+	}
+
+	record Layout(Map<Union, Scope> unions, Map<Projection, Set<String>> projections,
+			Map<TupleExpr, RowScope> rowScopes) {
 	}
 
 	private final BindingSet entry;
 	private final Layout layout;
 	private final QueryEvaluationContext context;
 	private final Map<String, Value> supplied = new HashMap<>();
+	private final ScopedUnionInput enclosing;
+	private final long rowScope;
 
 	ScopedUnionInput(BindingSet entry, Layout layout, QueryEvaluationContext context) {
 		this.entry = entry;
 		this.layout = layout;
 		this.context = context;
+		this.enclosing = current();
+		this.rowScope = hasRowScopes() ? ROW_SCOPE_IDS.incrementAndGet() : 0;
 	}
 
 	static ScopedUnionInput current() {
@@ -56,6 +74,78 @@ final class ScopedUnionInput {
 
 	Scope scope(Union union) {
 		return layout.unions().get(union);
+	}
+
+	boolean hasRowScopes() {
+		return !layout.rowScopes().isEmpty();
+	}
+
+	public static boolean tracksClearedSiblingInputs() {
+		for (ScopedUnionInput active = current(); active != null; active = active.enclosing) {
+			if (active.hasRowScopes()) {
+				return true;
+			}
+		}
+		return false;
+	}
+
+	public static void clearedByAssignment(MutableBindingSet row, String name) {
+		for (ScopedUnionInput active = current(); active != null; active = active.enclosing) {
+			if (active.hasRowScopes() && active.supplied.containsKey(name)) {
+				GraphFrameBindings.markSiblingInputCleared(row, active.rowScope, name);
+			}
+		}
+	}
+
+	public static boolean hasRowScope(TupleExpr owner) {
+		ScopedUnionInput active = current();
+		return active != null && active.layout.rowScopes().containsKey(owner);
+	}
+
+	/** Pass sibling parameters to a scalar without also narrowing its owner's relational argument. */
+	public static BindingSet argument(TupleExpr owner, BindingSet bindings) {
+		ScopedUnionInput active = current();
+		RowScope scope = active == null ? null : active.layout.rowScopes().get(owner);
+		return scope == null ? bindings : active.restrict(bindings, scope.withheld(), Set.of());
+	}
+
+	public static BiFunction<BindingSet, BindingSet, Value> prepareScalar(TupleExpr owner, ValueExpr expression,
+			QueryValueEvaluationStep step) {
+		return QueryEvaluationUtility.usesMappingParameterizedEvaluation(expression)
+				? (row, invocation) -> step.evaluate(scalar(owner, expression, row, invocation))
+				: (row, invocation) -> step.evaluate(row);
+	}
+
+	private static BindingSet scalar(TupleExpr owner, ValueExpr expression, BindingSet row, BindingSet invocation) {
+		ScopedUnionInput active = current();
+		RowScope scope = active == null ? null : active.layout.rowScopes().get(owner);
+		Set<String> names = scope == null ? null : scope.scalarReads().get(expression);
+		return names == null || invocation == null ? row : active.supplyScalar(names, invocation, row, row);
+	}
+
+	/** Keeps an explicit FILTER visibility projection while preserving the source row's shadowing. */
+	public static Function<BindingSet, BindingSet> filterInput(TupleExpr owner, ValueExpr expression,
+			BindingSet invocation, Function<BindingSet, BindingSet> retain) {
+		ScopedUnionInput active = current();
+		RowScope scope = active == null ? null : active.layout.rowScopes().get(owner);
+		Set<String> names = scope == null ? null : scope.scalarReads().get(expression);
+		return names == null ? retain : row -> active.supplyScalar(names, invocation, row, retain.apply(row));
+	}
+
+	private BindingSet supplyScalar(Set<String> names, BindingSet invocation, BindingSet source, BindingSet row) {
+		MutableBindingSet selected = null;
+		for (String name : names) {
+			// A custom evaluator may remove or replace a parameter before invoking a stock row operator.
+			Value value = supplied.containsKey(name) ? invocation.getValue(name) : null;
+			if (value != null && !row.hasBinding(name)
+					&& !GraphFrameBindings.isSiblingInputCleared(source, rowScope, name)) {
+				if (selected == null) {
+					selected = GraphFrameBindings.preserve(row, context.createBindingSet(row));
+				}
+				selected.setBinding(name, value);
+			}
+		}
+		return selected == null ? row : selected;
 	}
 
 	static BindingSet projectionParent(Projection projection, BindingSet bindings) {
@@ -88,6 +178,10 @@ final class ScopedUnionInput {
 		// sibling value is eligible for removal in a stock operator.
 		layout.unions().values().forEach(scope -> capture(bindings, scope.parameters()));
 		layout.projections().values().forEach(parameters -> capture(bindings, parameters));
+		layout.rowScopes().values().forEach(scope -> {
+			capture(bindings, scope.withheld());
+			scope.scalarReads().values().forEach(names -> capture(bindings, names));
+		});
 		return call(() -> new ScopedIteration(step.evaluate(bindings)));
 	}
 

@@ -27,6 +27,7 @@ import java.util.TreeSet;
 
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.common.iteration.EmptyIteration;
+import org.eclipse.rdf4j.common.iteration.Iterations;
 import org.eclipse.rdf4j.common.order.StatementOrder;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Resource;
@@ -34,21 +35,35 @@ import org.eclipse.rdf4j.model.Statement;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
+import org.eclipse.rdf4j.model.vocabulary.RDF4J;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.QueryLanguage;
+import org.eclipse.rdf4j.query.QueryResults;
 import org.eclipse.rdf4j.query.TupleQuery;
 import org.eclipse.rdf4j.query.algebra.Compare;
 import org.eclipse.rdf4j.query.algebra.Compare.CompareOp;
 import org.eclipse.rdf4j.query.algebra.Extension;
 import org.eclipse.rdf4j.query.algebra.ExtensionElem;
 import org.eclipse.rdf4j.query.algebra.Filter;
+import org.eclipse.rdf4j.query.algebra.FunctionCall;
 import org.eclipse.rdf4j.query.algebra.Join;
 import org.eclipse.rdf4j.query.algebra.LeftJoin;
+import org.eclipse.rdf4j.query.algebra.LmdbIndexOrder;
+import org.eclipse.rdf4j.query.algebra.Order;
+import org.eclipse.rdf4j.query.algebra.OrderElem;
+import org.eclipse.rdf4j.query.algebra.Projection;
+import org.eclipse.rdf4j.query.algebra.ProjectionElem;
+import org.eclipse.rdf4j.query.algebra.ProjectionElemList;
+import org.eclipse.rdf4j.query.algebra.QueryRoot;
 import org.eclipse.rdf4j.query.algebra.StatementPattern;
+import org.eclipse.rdf4j.query.algebra.StatementPattern.Scope;
+import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.query.algebra.evaluation.TripleSource;
 import org.eclipse.rdf4j.query.algebra.helpers.TupleExprs;
 import org.eclipse.rdf4j.query.explanation.Explanation;
+import org.eclipse.rdf4j.query.impl.EmptyBindingSet;
+import org.eclipse.rdf4j.query.impl.SimpleDataset;
 import org.eclipse.rdf4j.repository.Repository;
 import org.eclipse.rdf4j.repository.RepositoryConnection;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
@@ -56,6 +71,8 @@ import org.eclipse.rdf4j.sail.lmdb.config.LmdbStoreConfig;
 import org.eclipse.rdf4j.sail.memory.MemoryStore;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.CsvSource;
 
 /** ORDER BY STABLE_INDEX must not lose rows when a filter was pushed onto the pattern it would move. */
 class LmdbStableIndexFilterSafetyTest {
@@ -75,6 +92,108 @@ class LmdbStableIndexFilterSafetyTest {
 
 	@TempDir
 	File dir;
+
+	@ParameterizedTest
+	@CsvSource({ "false,0,1", "true,0,1", "false,1,1", "true,1,1", "false,1,-1", "true,1,-1" })
+	void outerStableIndexKeepsInnerStableIndexSlice(boolean nativeEnabled, int offset, int limit) {
+		LmdbStoreConfig config = new LmdbStoreConfig("spoc,ospc").setNativeEvaluationEnabled(nativeEnabled);
+		config.setExperimentalQueryOptimizations(true);
+		SailRepository repository = new SailRepository(new LmdbStore(dir, config));
+		repository.init();
+		IRI firstSubject = VF.createIRI("urn:subject-1");
+		IRI secondSubject = VF.createIRI("urn:subject-2");
+		IRI thirdSubject = VF.createIRI("urn:subject-3");
+		IRI firstObject = VF.createIRI("urn:object-1");
+		IRI secondObject = VF.createIRI("urn:object-2");
+		IRI thirdObject = VF.createIRI("urn:object-3");
+		IRI predicate = VF.createIRI("urn:predicate");
+		IRI seed = VF.createIRI("urn:seed");
+		IRI seedPredicate = VF.createIRI("urn:seed-predicate");
+		try (RepositoryConnection connection = repository.getConnection()) {
+			// Assign the object IDs first so that subject and object scans have different first rows.
+			connection.add(seed, seedPredicate, firstObject);
+			connection.add(seed, seedPredicate, secondObject);
+			connection.add(firstSubject, predicate, thirdObject);
+			connection.add(secondSubject, predicate, firstObject);
+			connection.add(thirdSubject, predicate, secondObject);
+
+			String inner = "SELECT ?s ?o WHERE { ?s <urn:predicate> ?o } ORDER BY STABLE_INDEX(?s) OFFSET " + offset;
+			if (limit >= 0) {
+				inner += " LIMIT " + limit;
+			}
+			List<IRI> expected = offset == 0 ? List.of(firstSubject)
+					: limit >= 0 ? List.of(secondSubject) : List.of(secondSubject, thirdSubject);
+			assertThat(QueryResults.asList(connection.prepareTupleQuery(inner).evaluate()))
+					.extracting(row -> row.getValue("s"))
+					.containsExactlyElementsOf(expected);
+
+			String outer = "SELECT ?s ?o WHERE { { " + inner + " } } ORDER BY STABLE_INDEX";
+			assertThat(QueryResults.asList(connection.prepareTupleQuery(outer + "(?o)").evaluate()))
+					.extracting(row -> row.getValue("s"))
+					.containsExactlyElementsOf(expected);
+			TupleQuery sameOrder = connection.prepareTupleQuery(outer + "(?s)");
+			assertThat(sameOrder.explain(Explanation.Level.Optimized).toString()).doesNotContain("OrderElem");
+			assertThat(QueryResults.asList(sameOrder.evaluate())).extracting(row -> row.getValue("s"))
+					.containsExactlyElementsOf(expected);
+		} finally {
+			repository.shutDown();
+		}
+	}
+
+	@ParameterizedTest
+	@CsvSource({ "false, false", "true, false", "false, true", "true, true" })
+	void stableIndexOrdersJoinOnNullableContext(boolean namedDefaultGraph, boolean nestedUnderOptional) {
+		LmdbStoreConfig config = new LmdbStoreConfig("spoc,posc,cspo").setNativeEvaluationEnabled(false);
+		config.setExperimentalQueryOptimizations(true);
+		LmdbStore store = new LmdbStore(dir, config);
+		store.init();
+		IRI first = VF.createIRI("urn:a");
+		IRI second = VF.createIRI("urn:b");
+		IRI leftPredicate = VF.createIRI("urn:left");
+		IRI rightPredicate = VF.createIRI("urn:right");
+		IRI leftObject = VF.createIRI("urn:o");
+		IRI rightSubject = VF.createIRI("urn:r");
+		IRI optionalPredicate = VF.createIRI("urn:optional");
+		try (var connection = store.getConnection()) {
+			connection.begin();
+			connection.addStatement(first, leftPredicate, leftObject);
+			connection.addStatement(second, leftPredicate, leftObject);
+			connection.addStatement(first, optionalPredicate, leftObject);
+			for (int i = 0; i < 4; i++) {
+				connection.addStatement(rightSubject, rightPredicate, VF.createIRI("urn:g" + i));
+			}
+			connection.commit();
+
+			StatementPattern left = new StatementPattern(
+					namedDefaultGraph ? Scope.NAMED_CONTEXTS : Scope.DEFAULT_CONTEXTS,
+					Var.of("s"), TupleExprs.createConstVar(leftPredicate), TupleExprs.createConstVar(leftObject),
+					Var.of("g"));
+			StatementPattern right = new StatementPattern(TupleExprs.createConstVar(rightSubject),
+					TupleExprs.createConstVar(rightPredicate), Var.of("g"));
+			TupleExpr argument = new Join(left, right);
+			if (nestedUnderOptional) {
+				argument = new LeftJoin(argument,
+						new StatementPattern(Var.of("s"), TupleExprs.createConstVar(optionalPredicate), Var.of("tag")));
+			}
+			Projection projected = new Projection(argument,
+					new ProjectionElemList(new ProjectionElem("s"), new ProjectionElem("g"),
+							new ProjectionElem("tag")));
+			QueryRoot query = new QueryRoot(new Order(projected,
+					new OrderElem(new FunctionCall(LmdbIndexOrder.FUNCTION_URI, Var.of("s")), true)));
+			SimpleDataset dataset = null;
+			if (namedDefaultGraph) {
+				dataset = new SimpleDataset();
+				dataset.addDefaultGraph(RDF4J.NIL);
+				dataset.addNamedGraph(RDF4J.NIL);
+			}
+			try (var result = connection.evaluate(query, dataset, EmptyBindingSet.getInstance(), false)) {
+				assertThat(Iterations.asList(result)).extracting(row -> row.getValue("s"))
+						.containsExactly(first, first, first, first, second, second, second, second);
+			}
+		} finally {
+			store.shutDown();
+		}
+	}
 
 	@Test
 	void stableIndexKeepsRowsUnderBindGeneric() {

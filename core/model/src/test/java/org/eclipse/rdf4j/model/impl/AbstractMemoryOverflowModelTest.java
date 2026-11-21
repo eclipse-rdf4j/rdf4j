@@ -114,6 +114,19 @@ public class AbstractMemoryOverflowModelTest {
 		runInConstrainedHeap("repeated-pressure-probes");
 	}
 
+	@ParameterizedTest
+	@ValueSource(strings = { "statement", "components", "collection", "mixed-collection", "mixed-contexts" })
+	void duplicatePayloadDoesNotRescanRetainedStatements(String path) throws Exception {
+		runInConstrainedHeap("duplicate-payload-" + path);
+	}
+
+	@ParameterizedTest
+	@ValueSource(strings = { "shared-statement", "shared-components", "shared-collection",
+			"indexed-shared-statement", "indexed-shared-components", "indexed-shared-collection" })
+	void addedStatementsChargeOnlyTheirRetainedTerms(String path) throws Exception {
+		runInConstrainedHeap("duplicate-payload-" + path);
+	}
+
 	@Test
 	void pressureProbesRevalidateAfterStatementChanges() throws Exception {
 		runInConstrainedHeap("pressure-probes-after-changes");
@@ -135,6 +148,10 @@ public class AbstractMemoryOverflowModelTest {
 			AbstractMemoryOverflowModel.BATCH_SIZE = 1;
 		}
 		AbstractMemoryOverflowModelTest test = new AbstractMemoryOverflowModelTest();
+		if (args[0].startsWith("duplicate-payload-")) {
+			test.duplicatePayloadProbe(args[0].substring("duplicate-payload-".length()));
+			return;
+		}
 		if (args[0].startsWith("shrink-")) {
 			test.shrinkProbe(args[0].substring("shrink-".length()));
 			return;
@@ -599,6 +616,62 @@ public class AbstractMemoryOverflowModelTest {
 			}
 
 			assertThat(literal.labelReads).isEqualTo(readsAfterFirstProbe);
+			assertThat(model.spillCount).isZero();
+		}
+	}
+
+	private void duplicatePayloadProbe(String path) {
+		var values = SimpleValueFactory.getInstance();
+		var subject = values.createIRI("urn:subject");
+		var predicate = values.createIRI("urn:predicate");
+		var marker = new CountingLiteral("unrelated payload");
+		String lexical = "x".repeat(70_000);
+		var largeContext = values.createIRI("urn:" + lexical);
+		try (RecordingOverflowModel model = new RecordingOverflowModel()) {
+			for (int i = 0; i < 16; i++) {
+				model.add(values.createIRI("urn:marker:" + i), predicate, marker);
+			}
+			if (path.equals("mixed-contexts")) {
+				model.add(subject, predicate, subject, largeContext);
+			} else {
+				model.add(subject, predicate, values.createLiteral(lexical));
+			}
+			if (path.startsWith("indexed-")) {
+				// A wildcard removal selects the indexed delegate without changing the retained statements.
+				assertThat(model.remove(values.createIRI("urn:absent"), null, null)).isFalse();
+				path = path.substring("indexed-".length());
+			}
+			AbstractMemoryOverflowModel.MIN_AVAILABLE_MEM_BEFORE_OVERFLOWING = minimumAboveMaxHeapMiB();
+			model.spillToDiskIfNeeded();
+			int reads = marker.labelReads;
+			for (int i = 0; i < 3; i++) {
+				var duplicate = values.createLiteral(new String(lexical));
+				var next = values.createIRI("urn:added:" + i);
+				switch (path) {
+				case "statement" ->
+					assertThat(model.add(values.createStatement(subject, predicate, duplicate))).isFalse();
+				case "components" -> assertThat(model.add(subject, predicate, duplicate)).isFalse();
+				case "collection" ->
+					assertThat(model.addAll(List.of(values.createStatement(subject, predicate, duplicate))))
+							.isFalse();
+				case "mixed-collection" -> assertThat(model.addAll(List.of(
+						values.createStatement(subject, predicate, duplicate),
+						values.createStatement(next, predicate, next))))
+								.isTrue();
+				case "mixed-contexts" -> assertThat(model.add(subject, predicate, subject,
+						values.createIRI(new String(largeContext.stringValue())), next)).isTrue();
+				case "shared-statement" -> assertThat(model.add(values.createStatement(next, predicate, duplicate)))
+						.isTrue();
+				case "shared-components" -> assertThat(model.add(next, predicate, duplicate)).isTrue();
+				case "shared-collection" -> assertThat(model.addAll(List.of(
+						values.createStatement(next, predicate, duplicate),
+						values.createStatement(subject, predicate, duplicate))))
+								.isTrue();
+				default -> throw new IllegalArgumentException(path);
+				}
+			}
+			assertThat(marker.labelReads).as("reads of unrelated retained statements while adding shared payload")
+					.isEqualTo(reads);
 			assertThat(model.spillCount).isZero();
 		}
 	}

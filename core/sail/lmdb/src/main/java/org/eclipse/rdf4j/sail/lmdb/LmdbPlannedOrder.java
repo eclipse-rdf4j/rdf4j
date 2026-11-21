@@ -109,6 +109,16 @@ final class LmdbPlannedOrder {
 		return Optional.empty();
 	}
 
+	/** Whether the finished plan carries an index order through to this binding. */
+	boolean isOrderedBy(String bindingName) {
+		Leading leading = walk(bindingName);
+		if (leading == null || leading.sourceName == null) {
+			return false;
+		}
+		Var order = leading.statementPattern.getOrder();
+		return order != null && leading.sourceName.equals(order.getName());
+	}
+
 	/**
 	 * The statement pattern at the end of {@code arg}'s driving path, whose ordering the whole subtree inherits, or
 	 * {@code null} when the path runs into an operator that does not preserve grouping.

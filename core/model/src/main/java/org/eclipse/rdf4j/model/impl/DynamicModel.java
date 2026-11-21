@@ -34,6 +34,9 @@ import java.util.Map;
 import java.util.NoSuchElementException;
 import java.util.Objects;
 import java.util.Optional;
+import java.util.SequencedCollection;
+import java.util.SequencedMap;
+import java.util.SequencedSet;
 import java.util.Set;
 import java.util.stream.Collectors;
 
@@ -110,6 +113,18 @@ public class DynamicModel extends AbstractSet<Statement> implements Model {
 
 	long statementVersion() {
 		return statementVersion;
+	}
+
+	/** The retained statements when the current backing store preserves insertion order. */
+	SequencedCollection<? extends Statement> statementsInInsertionOrder() {
+		if (model == null && statements instanceof SequencedMap<Statement, Statement> ordered) {
+			return ordered.sequencedValues();
+		}
+		if (model instanceof LinkedHashModel indexed
+				&& indexed.statements instanceof SequencedSet<LinkedHashModel.ModelStatement> ordered) {
+			return ordered;
+		}
+		return null;
 	}
 
 	@Override

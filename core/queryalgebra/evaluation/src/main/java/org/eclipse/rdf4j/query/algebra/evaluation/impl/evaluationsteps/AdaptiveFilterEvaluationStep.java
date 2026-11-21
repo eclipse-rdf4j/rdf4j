@@ -321,6 +321,10 @@ public final class AdaptiveFilterEvaluationStep implements QueryEvaluationStep {
 
 	@Override
 	public CloseableIteration<BindingSet> evaluate(BindingSet bindings) {
+		ScopedUnionInput scoped = ScopedUnionInput.current();
+		if (scoped != null && scoped.hasRowScopes()) {
+			return fallback.evaluate(bindings);
+		}
 		// Admit normal correlated invocations only when the complete incoming frame satisfies the compile-time
 		// proof. An extra external binding can otherwise turn an EXISTS-local name into an injected binding.
 		if (!matchesInput(bindings, expectedInput)) {

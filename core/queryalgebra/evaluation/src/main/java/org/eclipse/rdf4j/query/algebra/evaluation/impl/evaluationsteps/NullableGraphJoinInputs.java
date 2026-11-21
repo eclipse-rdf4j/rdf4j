@@ -13,6 +13,7 @@ package org.eclipse.rdf4j.query.algebra.evaluation.impl.evaluationsteps;
 
 import java.util.ArrayList;
 import java.util.Collections;
+import java.util.HashSet;
 import java.util.IdentityHashMap;
 import java.util.List;
 import java.util.Map;
@@ -24,6 +25,7 @@ import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.MutableBindingSet;
 import org.eclipse.rdf4j.query.algebra.Extension;
+import org.eclipse.rdf4j.query.algebra.ExtensionElem;
 import org.eclipse.rdf4j.query.algebra.Filter;
 import org.eclipse.rdf4j.query.algebra.Projection;
 import org.eclipse.rdf4j.query.algebra.QueryModelNode;
@@ -31,12 +33,15 @@ import org.eclipse.rdf4j.query.algebra.StatementPattern;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.algebra.UnaryTupleOperator;
 import org.eclipse.rdf4j.query.algebra.Union;
+import org.eclipse.rdf4j.query.algebra.ValueExpr;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryEvaluationStep;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.GraphFrameBindings;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.QueryEvaluationContext;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.evaluationsteps.ScopedUnionInput.Layout;
+import org.eclipse.rdf4j.query.algebra.evaluation.impl.evaluationsteps.ScopedUnionInput.RowScope;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.evaluationsteps.ScopedUnionInput.Scope;
 import org.eclipse.rdf4j.query.algebra.evaluation.util.QueryEvaluationUtility;
+import org.eclipse.rdf4j.query.algebra.helpers.FilterBindingScope;
 import org.eclipse.rdf4j.query.algebra.helpers.TupleExprs;
 import org.eclipse.rdf4j.query.algebra.helpers.collectors.VarNameCollector;
 
@@ -51,7 +56,7 @@ record NullableGraphJoinInputs(Set<String> parameters, List<Arm> arms) {
 
 	private static NullableGraphJoinInputs analyze(TupleExpr expression, Set<String> candidates,
 			Predicate<StatementPattern> defaultContextScan,
-			QueryEvaluationStep prepared, Map<Union, Scope> delegatedScopes) {
+			QueryEvaluationStep prepared, DelegatedScopes delegatedScopes) {
 		if (candidates.isEmpty()) {
 			return indivisible(expression, Set.of(), defaultContextScan, prepared);
 		}
@@ -60,14 +65,14 @@ record NullableGraphJoinInputs(Set<String> parameters, List<Arm> arms) {
 		// actual prepared children can be split; a custom strategy may own any of those steps.
 		if (prepared != null && physical == null) {
 			if (expression instanceof Union || rowLocalArgument(expression) != null) {
-				Map<Union, Scope> scopes = new IdentityHashMap<>();
+				DelegatedScopes scopes = new DelegatedScopes();
 				NullableGraphJoinInputs layout = analyze(expression, candidates, defaultContextScan, null, scopes);
 				if (layout != null && !scopes.isEmpty()) {
 					// Keep the custom operator authoritative. When it calls the built-in UNION, the
 					// invocation gives that UNION the constraints for each of its branches.
 					Arm arm = new Arm(prepared, layout.parameters, false,
 							QueryEvaluationUtility.canDiscardWithoutEvaluation(expression),
-							new Layout(Collections.unmodifiableMap(scopes), projectionScopes(scopes)));
+							scopes.layout(), layout.inheritedParameters());
 					return new NullableGraphJoinInputs(layout.parameters, List.of(arm));
 				}
 			}
@@ -87,7 +92,7 @@ record NullableGraphJoinInputs(Set<String> parameters, List<Arm> arms) {
 				return indivisible(expression, parameters, defaultContextScan, prepared);
 			}
 			if (delegatedScopes != null) {
-				delegatedScopes.put(union, new Scope(parameters, left.parameters, right.parameters));
+				delegatedScopes.unions.put(union, new Scope(parameters, left.parameters, right.parameters));
 			}
 			List<Arm> arms = new ArrayList<>(left.arms);
 			arms.addAll(right.arms);
@@ -96,65 +101,82 @@ record NullableGraphJoinInputs(Set<String> parameters, List<Arm> arms) {
 		}
 		TupleExpr argument = rowLocalArgument(expression);
 		if (argument != null) {
-			List<? extends QueryModelNode> rowExpressions = rowExpressions(expression);
-			Set<String> localParameters = new TreeSet<>();
-			for (QueryModelNode rowExpression : rowExpressions) {
-				localParameters.addAll(QueryEvaluationUtility.mappingParameterNames(rowExpression, candidates));
+			NullableGraphJoinInputs child = analyze(argument, candidates, defaultContextScan,
+					physical == null ? null : physical.left(), delegatedScopes);
+			if (child == null) {
+				return null;
 			}
-			// A scalar-owned parameter can travel through an arm that does not observe it. If the
-			// argument uses the same name, the ordinary evaluator cannot supply it to the scalar without
-			// also narrowing the argument (for example, hiding rows from the default graph).
-			if (localParameters.isEmpty()
-					|| Collections.disjoint(localParameters, argument.getBindingNames())
-							&& Collections.disjoint(localParameters, VarNameCollector.process(argument))) {
-				NullableGraphJoinInputs child = analyze(argument, candidates, defaultContextScan,
-						physical == null ? null : physical.left(), delegatedScopes);
-				if (child == null) {
-					return null;
-				}
-				Set<String> parameters = union(child.parameters, localParameters);
-				if (child.arms.size() == 1 && child.arms.getFirst().scopedLayout == null) {
-					return indivisible(expression, parameters, defaultContextScan, prepared);
-				}
-				boolean repeatable = rowExpressions.stream().allMatch(QueryEvaluationUtility::isRepeatable);
-				boolean discardable = rowExpressions.stream()
-						.allMatch(QueryEvaluationUtility::canDiscardWithoutEvaluation);
-				List<Arm> arms = child.arms.stream()
-						.map(arm -> wrap(physical, arm, localParameters, repeatable, discardable))
-						.toList();
-				if (physical != null && expression instanceof Projection projection) {
-					arms = scopeProjection(projection, child, arms);
-				}
-				return new NullableGraphJoinInputs(parameters, arms);
+			RowExpressions local = rowExpressions(expression, candidates);
+			Set<String> overlap = overlappingParameters(local.parameters, argument);
+			Set<String> parameters = union(child.parameters, local.parameters);
+			if (overlap.isEmpty() && child.arms.size() == 1 && child.arms.getFirst().scopedLayout == null) {
+				return indivisible(expression, parameters, defaultContextScan, prepared);
 			}
+			if (delegatedScopes != null && !overlap.isEmpty()) {
+				delegatedScopes.rows.put(expression, local.scope(overlap, child.parameters));
+			}
+			Set<String> inheritedLocal = difference(local.parameters, overlap);
+			List<Arm> arms = child.arms.stream().map(arm -> {
+				Arm wrapped = wrap(physical, arm, local.parameters, local.repeatable, local.discardable);
+				return overlap.isEmpty() ? wrapped
+						: wrapped.withRows(expression, local.scope(overlap, arm.parameters),
+								union(arm.inheritedParameters, inheritedLocal));
+			}).toList();
+			if (physical != null && expression instanceof Projection projection) {
+				arms = scopeProjection(projection, child, arms);
+			}
+			return new NullableGraphJoinInputs(parameters, arms);
 		}
 		return indivisible(expression, QueryEvaluationUtility.mappingParameterNames(expression, candidates),
 				defaultContextScan, prepared);
 	}
 
 	private static List<Arm> scopeProjection(Projection projection, NullableGraphJoinInputs child, List<Arm> arms) {
-		Set<String> shared = new TreeSet<>(child.parameters);
-		for (Arm arm : child.arms) {
-			shared.retainAll(arm.parameters);
-		}
 		Set<String> mixed = new TreeSet<>(child.parameters);
-		mixed.removeAll(shared);
+		mixed.removeAll(child.inheritedParameters());
 		return mixed.isEmpty() ? arms : arms.stream().map(arm -> arm.withProjection(projection, mixed)).toList();
 	}
 
-	private static Map<Projection, Set<String>> projectionScopes(Map<Union, Scope> scopes) {
-		Map<Projection, Set<String>> projections = new IdentityHashMap<>();
-		scopes.forEach((union, scope) -> {
-			Set<String> mixed = new TreeSet<>(scope.parameters());
-			mixed.removeIf(name -> scope.left().contains(name) && scope.right().contains(name));
-			for (QueryModelNode parent = union.getParentNode(); parent instanceof TupleExpr tuple
-					&& (tuple instanceof Union || rowLocalArgument(tuple) != null); parent = parent.getParentNode()) {
-				if (tuple instanceof Projection projection && !mixed.isEmpty()) {
-					projections.merge(projection, mixed, NullableGraphJoinInputs::union);
-				}
+	private Set<String> inheritedParameters() {
+		Set<String> shared = new HashSet<>(parameters);
+		for (Arm arm : arms) {
+			shared.retainAll(arm.inheritedParameters);
+		}
+		return shared;
+	}
+
+	private static class DelegatedScopes {
+		private final Map<Union, Scope> unions = new IdentityHashMap<>();
+		private final Map<TupleExpr, RowScope> rows = new IdentityHashMap<>();
+
+		boolean isEmpty() {
+			return unions.isEmpty() && rows.isEmpty();
+		}
+
+		Layout layout() {
+			Map<Projection, Set<String>> projections = new IdentityHashMap<>();
+			unions.forEach((union, scope) -> {
+				Set<String> mixed = new TreeSet<>(scope.parameters());
+				mixed.removeIf(name -> scope.left().contains(name) && scope.right().contains(name));
+				noteProjectionScopes(projections, union, mixed);
+			});
+			rows.forEach((owner, scope) -> noteProjectionScopes(projections, owner, scope.withheld()));
+			return new Layout(Collections.unmodifiableMap(unions), Collections.unmodifiableMap(projections),
+					Collections.unmodifiableMap(rows));
+		}
+	}
+
+	private static void noteProjectionScopes(Map<Projection, Set<String>> projections, TupleExpr child,
+			Set<String> names) {
+		if (names.isEmpty()) {
+			return;
+		}
+		for (QueryModelNode parent = child.getParentNode(); parent instanceof TupleExpr tuple
+				&& (tuple instanceof Union || rowLocalArgument(tuple) != null); parent = parent.getParentNode()) {
+			if (tuple instanceof Projection projection) {
+				projections.merge(projection, names, NullableGraphJoinInputs::union);
 			}
-		});
-		return Collections.unmodifiableMap(projections);
+		}
 	}
 
 	private static NullableGraphJoinInputs indivisible(TupleExpr expression, Set<String> parameters,
@@ -164,7 +186,7 @@ record NullableGraphJoinInputs(Set<String> parameters, List<Arm> arms) {
 			return null;
 		}
 		Arm arm = new Arm(prepared, parameters, QueryEvaluationUtility.isRepeatable(expression),
-				QueryEvaluationUtility.canDiscardWithoutEvaluation(expression));
+				QueryEvaluationUtility.canDiscardWithoutEvaluation(expression), null, parameters);
 		return new NullableGraphJoinInputs(parameters, List.of(arm));
 	}
 
@@ -177,21 +199,75 @@ record NullableGraphJoinInputs(Set<String> parameters, List<Arm> arms) {
 		return null;
 	}
 
-	private static List<? extends QueryModelNode> rowExpressions(TupleExpr expression) {
+	private static RowExpressions rowExpressions(TupleExpr expression, Set<String> candidates) {
+		Map<ValueExpr, Set<String>> reads = new IdentityHashMap<>();
+		Set<String> writes = new HashSet<>();
+		List<ValueExpr> expressions = new ArrayList<>();
 		if (expression instanceof Extension extension) {
-			return extension.getElements().stream().filter(TupleExprs::isEvaluatedExtensionElement).toList();
+			for (ExtensionElem element : extension.getElements()) {
+				if (TupleExprs.isEvaluatedExtensionElement(element)) {
+					ValueExpr scalar = element.getExpr();
+					expressions.add(scalar);
+					reads.put(scalar,
+							difference(QueryEvaluationUtility.mappingParameterNames(scalar, candidates), writes));
+					writes.add(element.getName());
+				}
+			}
 		}
 		if (expression instanceof Filter filter) {
-			return List.of(filter.getCondition());
+			ValueExpr scalar = filter.getCondition();
+			expressions.add(scalar);
+			Set<String> names = QueryEvaluationUtility.mappingParameterNames(scalar, candidates);
+			var scope = FilterBindingScope.resolve(filter);
+			reads.put(scalar, scope.retainsAllBindings() ? names : intersection(names, scope.bindingNames()));
 		}
-		return List.of();
+		Set<String> parameters = new TreeSet<>();
+		reads.values().forEach(parameters::addAll);
+		return new RowExpressions(parameters, reads,
+				expressions.stream().allMatch(QueryEvaluationUtility::isRepeatable),
+				expressions.stream().allMatch(QueryEvaluationUtility::canDiscardWithoutEvaluation));
+	}
+
+	private record RowExpressions(Set<String> parameters, Map<ValueExpr, Set<String>> reads,
+			boolean repeatable, boolean discardable) {
+		RowScope scope(Set<String> overlap, Set<String> childParameters) {
+			Set<String> withheld = difference(overlap, childParameters);
+			Map<ValueExpr, Set<String>> scoped = new IdentityHashMap<>();
+			reads.forEach((expr, names) -> {
+				Set<String> selected = intersection(overlap, names);
+				if (!selected.isEmpty()) {
+					scoped.put(expr, selected);
+				}
+			});
+			return new RowScope(withheld, Collections.unmodifiableMap(scoped));
+		}
+	}
+
+	private static Set<String> overlappingParameters(Set<String> parameters, TupleExpr argument) {
+		if (parameters.isEmpty()) {
+			return Set.of();
+		}
+		return intersection(parameters, union(argument.getBindingNames(), VarNameCollector.process(argument)));
 	}
 
 	private static Arm wrap(RebindableQueryEvaluationStep physical, Arm arm, Set<String> addedParameters,
 			boolean repeatable, boolean discardable) {
 		QueryEvaluationStep prepared = physical == null ? null : physical.withArgument(arm.step);
 		return new Arm(prepared, union(arm.parameters, addedParameters), arm.repeatable && repeatable,
-				arm.discardable && discardable, arm.scopedLayout);
+				arm.discardable && discardable, arm.scopedLayout,
+				union(arm.inheritedParameters, addedParameters));
+	}
+
+	private static Set<String> intersection(Set<String> first, Set<String> second) {
+		Set<String> result = new HashSet<>(first);
+		result.retainAll(second);
+		return result;
+	}
+
+	private static Set<String> difference(Set<String> first, Set<String> second) {
+		Set<String> result = new HashSet<>(first);
+		result.removeAll(second);
+		return result;
 	}
 
 	private static Set<String> union(Set<String> first, Set<String> second) {
@@ -207,20 +283,25 @@ record NullableGraphJoinInputs(Set<String> parameters, List<Arm> arms) {
 	}
 
 	record Arm(QueryEvaluationStep step, Set<String> parameters, boolean repeatable, boolean discardable,
-			Layout scopedLayout) {
-		Arm(QueryEvaluationStep step, Set<String> parameters, boolean repeatable, boolean discardable) {
-			this(step, parameters, repeatable, discardable, null);
+			Layout scopedLayout, Set<String> inheritedParameters) {
+		private Layout layout() {
+			return scopedLayout == null ? new Layout(Map.of(), Map.of(), Map.of()) : scopedLayout;
 		}
 
 		Arm withProjection(Projection projection, Set<String> names) {
-			Map<Projection, Set<String>> projections = new IdentityHashMap<>();
-			if (scopedLayout != null) {
-				projections.putAll(scopedLayout.projections());
-			}
+			Layout layout = layout();
+			Map<Projection, Set<String>> projections = new IdentityHashMap<>(layout.projections());
 			projections.merge(projection, names, NullableGraphJoinInputs::union);
-			Layout scope = new Layout(scopedLayout == null ? Map.of() : scopedLayout.unions(),
-					Collections.unmodifiableMap(projections));
-			return new Arm(step, parameters, repeatable, discardable, scope);
+			Layout scope = new Layout(layout.unions(), Collections.unmodifiableMap(projections), layout.rowScopes());
+			return new Arm(step, parameters, repeatable, discardable, scope, inheritedParameters);
+		}
+
+		Arm withRows(TupleExpr owner, RowScope scope, Set<String> inherited) {
+			Layout layout = layout();
+			Map<TupleExpr, RowScope> rows = new IdentityHashMap<>(layout.rowScopes());
+			rows.put(owner, scope);
+			Layout scoped = new Layout(layout.unions(), layout.projections(), Collections.unmodifiableMap(rows));
+			return new Arm(step, parameters, repeatable, discardable, scoped, inherited);
 		}
 
 		QueryEvaluationStep bind(BindingSet entry, QueryEvaluationContext context) {

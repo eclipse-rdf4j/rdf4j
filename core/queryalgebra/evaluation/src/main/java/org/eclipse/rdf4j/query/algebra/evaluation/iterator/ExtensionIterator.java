@@ -12,7 +12,9 @@
 package org.eclipse.rdf4j.query.algebra.evaluation.iterator;
 
 import java.util.function.BiConsumer;
+import java.util.function.BiFunction;
 import java.util.function.Consumer;
+import java.util.function.Function;
 
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.common.iteration.ConvertingIteration;
@@ -25,7 +27,9 @@ import org.eclipse.rdf4j.query.algebra.ExtensionElem;
 import org.eclipse.rdf4j.query.algebra.evaluation.EvaluationStrategy;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryValueEvaluationStep;
 import org.eclipse.rdf4j.query.algebra.evaluation.ValueExprEvaluationException;
+import org.eclipse.rdf4j.query.algebra.evaluation.impl.GraphFrameBindings;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.QueryEvaluationContext;
+import org.eclipse.rdf4j.query.algebra.evaluation.impl.evaluationsteps.ScopedUnionInput;
 import org.eclipse.rdf4j.query.algebra.helpers.TupleExprs;
 import org.eclipse.rdf4j.query.impl.BlankNodeAllocationScope;
 
@@ -33,12 +37,14 @@ public class ExtensionIterator extends ConvertingIteration<BindingSet, BindingSe
 
 	private final Consumer<MutableBindingSet> setter;
 	private final QueryEvaluationContext context;
+	private final boolean trackClearedSiblingInputs;
 
 	public ExtensionIterator(Extension extension, CloseableIteration<BindingSet> iter,
 			EvaluationStrategy strategy, QueryEvaluationContext context) throws QueryEvaluationException {
 		super(iter);
 		this.context = context;
 		this.setter = buildLambdaToEvaluateTheExpressions(extension, strategy, context);
+		this.trackClearedSiblingInputs = ScopedUnionInput.tracksClearedSiblingInputs();
 	}
 
 	public ExtensionIterator(CloseableIteration<BindingSet> iter,
@@ -46,11 +52,17 @@ public class ExtensionIterator extends ConvertingIteration<BindingSet, BindingSe
 		super(iter);
 		this.setter = setter;
 		this.context = context;
+		this.trackClearedSiblingInputs = ScopedUnionInput.tracksClearedSiblingInputs();
 	}
 
 	public static Consumer<MutableBindingSet> buildLambdaToEvaluateTheExpressions(Extension extension,
 			EvaluationStrategy strategy, QueryEvaluationContext context) {
-		Consumer<MutableBindingSet> consumer = null;
+		return prepareAssignments(extension, strategy, context).apply(null);
+	}
+
+	public static Function<BindingSet, Consumer<MutableBindingSet>> prepareAssignments(Extension extension,
+			EvaluationStrategy strategy, QueryEvaluationContext context) {
+		BiConsumer<MutableBindingSet, BindingSet> consumer = null;
 		for (ExtensionElem extElem : extension.getElements()) {
 			if (TupleExprs.isEvaluatedExtensionElement(extElem)) {
 				QueryValueEvaluationStep preparedStep;
@@ -61,19 +73,23 @@ public class ExtensionIterator extends ConvertingIteration<BindingSet, BindingSe
 					// processed, so the existing row-local extension error handling can leave the binding unset.
 					preparedStep = new QueryValueEvaluationStep.Fail(e.getMessage());
 				}
-				final QueryValueEvaluationStep prepared = preparedStep;
+				var prepared = ScopedUnionInput.prepareScalar(extension, extElem.getExpr(),
+						preparedStep);
 				BiConsumer<Value, MutableBindingSet> setBinding = context.setBinding(extElem.getName());
-				Consumer<MutableBindingSet> removeBinding = context.removeBinding(extElem.getName());
-				consumer = andThen(consumer,
-						targetBindings -> setValue(setBinding, removeBinding, prepared, targetBindings));
+				String name = extElem.getName();
+				Consumer<MutableBindingSet> removeBinding = context.removeBinding(name);
+				BiConsumer<MutableBindingSet, BindingSet> assignment = (target, invocation) -> setValue(setBinding,
+						removeBinding, prepared, target, invocation, name);
+				consumer = consumer == null ? assignment : consumer.andThen(assignment);
 			}
 		}
 		if (consumer == null) {
-			return bs -> {
+			return input -> row -> {
 
 			};
 		}
-		return consumer;
+		BiConsumer<MutableBindingSet, BindingSet> apply = consumer;
+		return invocation -> row -> apply.accept(row, invocation);
 	}
 
 	/**
@@ -86,38 +102,33 @@ public class ExtensionIterator extends ConvertingIteration<BindingSet, BindingSe
 	}
 
 	private static void setValue(BiConsumer<Value, MutableBindingSet> setBinding,
-			Consumer<MutableBindingSet> removeBinding, QueryValueEvaluationStep prepared,
-			MutableBindingSet targetBindings) {
+			Consumer<MutableBindingSet> removeBinding, BiFunction<BindingSet, BindingSet, Value> prepared,
+			MutableBindingSet targetBindings, BindingSet invocation, String name) {
 		try {
 			// we evaluate each extension element over the targetbindings, so that bindings from
 			// a previous extension element in this same extension can be used by other extension elements.
 			// e.g. if a projection contains (?a + ?b as ?c) (?c * 2 as ?d)
-			Value targetValue = prepared.evaluate(targetBindings);
+			Value targetValue = prepared.apply(targetBindings, invocation);
 
 			if (targetValue != null) {
 				// Potentially overwrites bindings from super
 				setBinding.accept(targetValue, targetBindings);
-			} else {
-				removeBinding.accept(targetBindings);
+				return;
 			}
 		} catch (ValueExprEvaluationException e) {
-			// The failed expression produced no value, so the target must be unbound even if it was in the input.
-			removeBinding.accept(targetBindings);
+			// The error leaves this assignment unbound.
 		}
-	}
-
-	private static Consumer<MutableBindingSet> andThen(Consumer<MutableBindingSet> consumer,
-			Consumer<MutableBindingSet> next) {
-		if (consumer == null) {
-			return next;
-		} else {
-			return consumer.andThen(next);
-		}
+		removeBinding.accept(targetBindings);
+		ScopedUnionInput.clearedByAssignment(targetBindings, name);
 	}
 
 	@Override
 	public BindingSet convert(BindingSet sourceBindings) throws QueryEvaluationException {
 		MutableBindingSet targetBindings = context.createBindingSet(sourceBindings);
+		if (trackClearedSiblingInputs) {
+			targetBindings = GraphFrameBindings.trackClearedSiblingInputs(
+					GraphFrameBindings.preserveClearedSiblingInputs(sourceBindings, targetBindings));
+		}
 		try (BlankNodeAllocationScope.SolutionActivation ignored = context.getBlankNodeAllocationScope()
 				.beginSolutionOccurrence(targetBindings)) {
 			setter.accept(targetBindings);

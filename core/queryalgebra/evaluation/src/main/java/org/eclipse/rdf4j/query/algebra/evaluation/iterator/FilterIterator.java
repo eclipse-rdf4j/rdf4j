@@ -53,6 +53,7 @@ import org.eclipse.rdf4j.query.algebra.evaluation.impl.QueryEvaluationContext;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.evaluationsteps.AdaptiveFilterEvaluationStep;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.evaluationsteps.BatchCorrelatedJoinProvider;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.evaluationsteps.RebindableQueryEvaluationStep;
+import org.eclipse.rdf4j.query.algebra.evaluation.impl.evaluationsteps.ScopedUnionInput;
 import org.eclipse.rdf4j.query.algebra.evaluation.util.QueryEvaluationUtil;
 import org.eclipse.rdf4j.query.algebra.evaluation.util.QueryEvaluationUtility;
 import org.eclipse.rdf4j.query.algebra.helpers.AbstractSimpleQueryModelVisitor;
@@ -109,8 +110,9 @@ public class FilterIterator extends FilterIteration<BindingSet> implements Index
 		}
 		Function<BindingSet, BindingSet> retain = bindingScope.retainsAllBindings() ? Function.identity()
 				: retainBindings(bindingScope.bindingNames(), context);
-
-		return arg -> bs -> new FilterIterator(filter, arg.evaluate(bs), ves, strategy, retain, evaluationStatistics,
+		ValueExpr condition = filter.getCondition();
+		return arg -> bs -> new FilterIterator(filter, arg.evaluate(ScopedUnionInput.argument(filter, bs)), ves,
+				strategy, ScopedUnionInput.filterInput(filter, condition, bs, retain), evaluationStatistics,
 				context.getBlankNodeAllocationScope());
 	}
 
@@ -173,6 +175,9 @@ public class FilterIterator extends FilterIteration<BindingSet> implements Index
 		Set<String> guardNames = new LinkedHashSet<>(subNames);
 		guardNames.removeAll(outerNames);
 		return bs -> {
+			if (ScopedUnionInput.hasRowScope(filter)) {
+				return generic.evaluate(bs);
+			}
 			for (String name : guardNames) {
 				if (bs.hasBinding(name)) {
 					return generic.evaluate(bs);

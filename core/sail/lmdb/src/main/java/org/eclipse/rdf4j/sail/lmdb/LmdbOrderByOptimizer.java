@@ -17,11 +17,12 @@ import java.util.List;
 
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.Dataset;
-import org.eclipse.rdf4j.query.QueryEvaluationException;
 import org.eclipse.rdf4j.query.algebra.FunctionCall;
 import org.eclipse.rdf4j.query.algebra.LmdbIndexOrder;
 import org.eclipse.rdf4j.query.algebra.Order;
 import org.eclipse.rdf4j.query.algebra.OrderElem;
+import org.eclipse.rdf4j.query.algebra.QueryModelNode;
+import org.eclipse.rdf4j.query.algebra.Slice;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.algebra.ValueExpr;
 import org.eclipse.rdf4j.query.algebra.Var;
@@ -31,8 +32,6 @@ import org.eclipse.rdf4j.query.algebra.helpers.AbstractSimpleQueryModelVisitor;
 import org.eclipse.rdf4j.sail.base.SailDatasetTripleTermSource;
 
 class LmdbOrderByOptimizer implements QueryOptimizer {
-
-	private static final String DIRTY_TRANSACTION_ERROR = "STABLE_INDEX(...) is unavailable after the current transaction has pending changes";
 
 	private final LmdbStableOrderPlanner stableOrderPlanner;
 	private final boolean pendingTransactionChanges;
@@ -84,12 +83,38 @@ class LmdbOrderByOptimizer implements QueryOptimizer {
 				continue;
 			}
 
-			stableOrderPlanner.plan(order.getArg(), requestedVar.getName())
-					.ifPresent(resolution -> {
-						resolution.apply();
-						order.replaceWith(order.getArg());
-					});
+			// The candidate can swap joins. Validate its final driving path without changing which rows reach
+			// the fallback sort. Keep the ancestor chain so the proof can see the enclosing GRAPH scope.
+			TupleExpr originalArgument = order.getArg();
+			TupleExpr orderedArgument = originalArgument.clone();
+			orderedArgument.setParentNode(order);
+			stableOrderPlanner.plan(orderedArgument, requestedVar.getName()).ifPresent(resolution -> {
+				TupleExpr candidate;
+				if (crossesResultSlice(resolution.getStatementPattern(), orderedArgument)) {
+					// Rewriting underneath LIMIT or OFFSET can change which rows survive. Use the slice's
+					// existing order if it already satisfies this hint, or sort the selected rows above it.
+					candidate = originalArgument;
+				} else {
+					resolution.apply();
+					candidate = orderedArgument;
+				}
+				if (new LmdbPlannedOrder(candidate, dataset).isOrderedBy(requestedVar.getName())) {
+					order.replaceWith(candidate);
+				} else {
+					order.getElements().get(0).setExpr(requestedVar.clone());
+				}
+			});
 		}
+	}
+
+	private static boolean crossesResultSlice(TupleExpr anchor, TupleExpr argument) {
+		QueryModelNode boundary = argument.getParentNode();
+		for (QueryModelNode node = anchor.getParentNode(); node != boundary; node = node.getParentNode()) {
+			if (node instanceof Slice slice && (slice.hasLimit() || slice.hasOffset())) {
+				return true;
+			}
+		}
+		return false;
 	}
 
 	private Var extractRequestedVar(Order order) {

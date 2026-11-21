@@ -168,7 +168,6 @@ import org.eclipse.rdf4j.query.algebra.evaluation.impl.evaluationsteps.RegexValu
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.evaluationsteps.ServiceQueryEvaluationStep;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.evaluationsteps.SliceQueryEvaluationStep;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.evaluationsteps.StatementPatternQueryEvaluationStep;
-import org.eclipse.rdf4j.query.algebra.evaluation.impl.evaluationsteps.UnionQueryEvaluationStep;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.evaluationsteps.WindowQueryEvaluationStep;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.evaluationsteps.ZeroLengthPathEvaluationStep;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.evaluationsteps.values.AndValueEvaluationStep;
@@ -954,7 +953,7 @@ public class DefaultEvaluationStrategy implements EvaluationStrategy, FederatedS
 
 		QueryEvaluationStep union = RebindableQueryEvaluationStep.union(node, leftQes, rightQes);
 		return AdaptiveFilterEvaluationStep.binary(context, node, union,
-				UnionQueryEvaluationStep::new);
+				(left, right) -> RebindableQueryEvaluationStep.union(node, left, right));
 	}
 
 	protected QueryEvaluationStep prepare(Slice node, QueryEvaluationContext context) throws QueryEvaluationException {
