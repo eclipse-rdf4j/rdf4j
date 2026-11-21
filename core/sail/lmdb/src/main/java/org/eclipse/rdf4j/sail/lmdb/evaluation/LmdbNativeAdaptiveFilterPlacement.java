@@ -1114,6 +1114,7 @@ final class AdaptiveJoinCursor implements RowCursor {
 	final int depth;
 	final int[] replaySlots;
 	final PatternPlan patternRight;
+	PatternPlan selectedPatternRight;
 	RowCursor rightCursor;
 	NativeLmdbQuerySource.NativeProbe rightProbe;
 	PatternCursor patternCursor;
@@ -1197,7 +1198,8 @@ final class AdaptiveJoinCursor implements RowCursor {
 			if (patternCursor == null) {
 				patternCursor = new PatternCursor();
 			}
-			PatternCursor raw = patternRight.openRaw(row, rightProbe, patternCursor);
+			selectedPatternRight = patternRight.effectivePattern(row);
+			PatternCursor raw = selectedPatternRight.openRaw(row, rightProbe, patternCursor);
 			if (raw == PatternCursor.EMPTY) {
 				return EmptyCursor.INSTANCE;
 			}
@@ -1268,7 +1270,7 @@ final class AdaptiveJoinCursor implements RowCursor {
 
 	private boolean bindPattern(long[] quad, int offset) {
 		int mark = row.mark();
-		if (patternRight.bind(quad, offset, row)) {
+		if (selectedPatternRight.bind(quad, offset, row)) {
 			patternMark = mark;
 			return true;
 		}

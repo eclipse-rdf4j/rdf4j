@@ -33,16 +33,17 @@ import org.eclipse.rdf4j.query.QueryEvaluationException;
 import org.eclipse.rdf4j.query.algebra.Service;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.algebra.Var;
+import org.eclipse.rdf4j.query.algebra.evaluation.QueryBindingSet;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryEvaluationStep;
 import org.eclipse.rdf4j.query.algebra.evaluation.federation.FederatedService;
 import org.eclipse.rdf4j.query.algebra.evaluation.federation.FederatedServiceIdentity;
 import org.eclipse.rdf4j.query.algebra.evaluation.federation.FederatedServiceResolver;
+import org.eclipse.rdf4j.query.algebra.evaluation.impl.BindingFrameBindings;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.QueryEvaluationContext;
 import org.eclipse.rdf4j.query.algebra.evaluation.util.ExternalValuePreparation;
 import org.eclipse.rdf4j.query.algebra.helpers.QueryAlgebraBindingAnalysis;
 import org.eclipse.rdf4j.query.explanation.TelemetryMetricNames;
 import org.eclipse.rdf4j.query.impl.BlankNodeAllocationScope;
-import org.eclipse.rdf4j.query.impl.MapBindingSet;
 import org.eclipse.rdf4j.query.impl.RemoteBNode;
 import org.eclipse.rdf4j.query.parser.sparql.SPARQLQueries;
 
@@ -52,6 +53,9 @@ public final class ServiceQueryEvaluationStep implements QueryEvaluationStep {
 	private final FederatedServiceResolver serviceResolver;
 	private final BlankNodeAllocationScope allocation;
 	private final ValueFactory localFactory;
+	private final QueryEvaluationContext context;
+	private final Set<String> parameterNames;
+	private final BindingFrameBindings.ConditionInputs ownerInputs;
 
 	public ServiceQueryEvaluationStep(Service service, Var serviceRef, FederatedServiceResolver serviceResolver) {
 		this(service, serviceRef, serviceResolver, new QueryEvaluationContext.Minimal(null),
@@ -65,6 +69,13 @@ public final class ServiceQueryEvaluationStep implements QueryEvaluationStep {
 		this.service = service;
 		this.serviceRef = serviceRef;
 		this.serviceResolver = serviceResolver;
+		this.context = context;
+		Set<String> parameters = new HashSet<>(service.getServiceVars());
+		if (!serviceRef.isConstant()) {
+			parameters.add(serviceRef.getName());
+		}
+		parameterNames = Set.copyOf(parameters);
+		ownerInputs = BindingFrameBindings.parameterInputs(service, parameterNames, true);
 	}
 
 	@Override
@@ -72,8 +83,9 @@ public final class ServiceQueryEvaluationStep implements QueryEvaluationStep {
 		boolean runtimeTelemetryEnabled = isRuntimeTelemetryEnabled(service);
 		BindingSet originalBindings = RemoteBNode.originalBindings(bindings);
 		BindingSet resultBindings = originalBindings;
+		BindingSet parameterBindings = ownerInputs.materializeParameters(originalBindings, parameterNames);
 		Value endpoint = serviceRef.hasValue() ? serviceRef.getValue()
-				: bindings == null ? null : bindings.getValue(serviceRef.getName());
+				: parameterBindings == null ? null : parameterBindings.getValue(serviceRef.getName());
 		if (endpoint == null) {
 			throw new QueryEvaluationException("SERVICE variables must be bound at evaluation time.");
 		}
@@ -92,7 +104,8 @@ public final class ServiceQueryEvaluationStep implements QueryEvaluationStep {
 					outputs.possibleOutputsKnown() ? outputs.possibleOutputs() : service.getServiceVars());
 			resultBindings = restoreRuntimeBindings(originalBindings,
 					FederatedServiceIdentity.runtimeAssignedInputs(service, originalBindings, visibleNames, analysis));
-			BindingSet invocationBindings = resultBindings;
+			BindingSet invocationBindings = ownerInputs.materializeParameters(resultBindings, parameterNames);
+			BindingSet logicalBindings = resultBindings;
 			if (!(endpoint instanceof IRI)) {
 				throw new QueryEvaluationException("SERVICE endpoint must be an IRI bound at evaluation time");
 			}
@@ -105,10 +118,9 @@ public final class ServiceQueryEvaluationStep implements QueryEvaluationStep {
 						"Unsupported blank-node identity: receiving SERVICE lacks reference support");
 			}
 
-			// create a copy of the free variables, and remove those for which
-			// bindings are available (we can set them as constraints!)
+			// Explicit-null caller names remain in the result domain and still leave the remote variable free.
 			Set<String> freeVars = new HashSet<>(visibleNames);
-			freeVars.removeAll(invocationBindings.getBindingNames());
+			freeVars.removeIf(name -> invocationBindings.getValue(name) != null);
 
 			bindings = prepareOutgoingBindings(service, invocationBindings, receivingScope, referenceSupport,
 					canonicalIDs);
@@ -138,7 +150,8 @@ public final class ServiceQueryEvaluationStep implements QueryEvaluationStep {
 
 				// check if triples are available (with inserted bindings)
 				if (exists) {
-					return new SingletonIteration<>(invocationBindings);
+					return new SingletonIteration<>(successfulResult(logicalBindings, invocationBindings,
+							invocationBindings, visibleNames));
 				} else {
 					return EMPTY_ITERATION;
 				}
@@ -165,7 +178,8 @@ public final class ServiceQueryEvaluationStep implements QueryEvaluationStep {
 				results = new ConvertingIteration<BindingSet, BindingSet>(results) {
 					@Override
 					protected BindingSet convert(BindingSet row) {
-						return response.map(row, invocationBindings);
+						return successfulResult(logicalBindings, invocationBindings,
+								response.map(row, invocationBindings), visibleNames);
 					}
 				};
 				CloseableIteration<BindingSet> checked = ExternalValuePreparation.checkReplayAfterCalls(results);
@@ -205,14 +219,27 @@ public final class ServiceQueryEvaluationStep implements QueryEvaluationStep {
 	}
 
 	private static BindingSet restoreRuntimeBindings(BindingSet originals, BindingSet runtimeInputs) {
-		MapBindingSet restored = new MapBindingSet(originals.size() + 1);
-		for (Binding binding : originals) {
-			restored.addBinding(binding);
-		}
+		QueryBindingSet restored = new QueryBindingSet(originals);
 		for (Binding binding : runtimeInputs) {
 			restored.addBinding(binding);
 		}
 		return restored;
+	}
+
+	/** A successful constrained query witnesses its declared outputs even when they were omitted from SELECT rows. */
+	private BindingSet successfulResult(BindingSet logical, BindingSet invocation, BindingSet raw,
+			Set<String> declaredOutputs) {
+		if (!BindingFrameBindings.hasFrame(logical)) {
+			return raw;
+		}
+		QueryBindingSet witnessed = new QueryBindingSet(raw);
+		for (String name : declaredOutputs) {
+			Value constrained = invocation.getValue(name);
+			if (!witnessed.hasBinding(name) && constrained != null) {
+				witnessed.addBinding(name, constrained);
+			}
+		}
+		return BindingFrameBindings.produced(logical, witnessed, declaredOutputs, context);
 	}
 
 	/** Shared validation for scalar and vectored SERVICE inputs; lexical constants remain receiving-service owned. */

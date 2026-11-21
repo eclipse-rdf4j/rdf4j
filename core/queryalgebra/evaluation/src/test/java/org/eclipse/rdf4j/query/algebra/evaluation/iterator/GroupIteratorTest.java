@@ -14,6 +14,7 @@ package org.eclipse.rdf4j.query.algebra.evaluation.iterator;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatExceptionOfType;
+import static org.junit.jupiter.api.Assertions.assertAll;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -26,6 +27,7 @@ import java.util.Collections;
 import java.util.Date;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
@@ -83,6 +85,7 @@ import org.eclipse.rdf4j.query.algebra.evaluation.EvaluationStrategy;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryBindingSet;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryEvaluationStep;
 import org.eclipse.rdf4j.query.algebra.evaluation.ValueExprEvaluationException;
+import org.eclipse.rdf4j.query.algebra.evaluation.impl.BindingFrameBindings;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.DefaultEvaluationStrategy;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.EmptyTripleSource;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.QueryEvaluationContext;
@@ -138,6 +141,36 @@ public class GroupIteratorTest {
 		};
 
 		private BatchAwareEvaluationStrategy() {
+			super(new EmptyTripleSource(), null);
+		}
+
+		@Override
+		public BatchCorrelatedJoinProvider batchCorrelatedJoinProvider() {
+			return provider;
+		}
+	}
+
+	/** The test's right operand is known to be empty, so LEFT returns every outer mapping unchanged. */
+	private static final class EmptyRightBatchEvaluationStrategy extends DefaultEvaluationStrategy
+			implements BatchCorrelatedJoinProvider.Host {
+		private final AtomicInteger batchJoinCalls = new AtomicInteger();
+		private final BatchCorrelatedJoinProvider provider = new BatchCorrelatedJoinProvider() {
+			@Override
+			public boolean supports(QueryEvaluationStep rightStep, String[] sharedVariables, Mode mode,
+					boolean hasCondition) {
+				return mode == Mode.LEFT && !hasCondition;
+			}
+
+			@Override
+			public CloseableIteration<BindingSet> tryBatchJoin(BatchCorrelationRequest request,
+					QueryEvaluationStep rightStep) {
+				assertThat(request.mode()).isEqualTo(Mode.LEFT);
+				batchJoinCalls.incrementAndGet();
+				return request.outer();
+			}
+		};
+
+		private EmptyRightBatchEvaluationStrategy() {
 			super(new EmptyTripleSource(), null);
 		}
 
@@ -468,9 +501,21 @@ public class GroupIteratorTest {
 
 		QueryBindingSet parentBindings = new QueryBindingSet();
 		parentBindings.addBinding("optional", VF.createLiteral("provided"));
-		try (var ignored = step.evaluate(parentBindings)) {
-			assertThat(leftJoin.getAlgorithmName()).isEqualTo(BadlyDesignedLeftJoinIterator.class.getSimpleName());
-		}
+		QueryBindingSet expected = new QueryBindingSet(leftBindings);
+		expected.addBinding("optional", VF.createLiteral("provided"));
+		List<BindingSet> guarded = collect(step.evaluate(parentBindings));
+		String guardedAlgorithm = leftJoin.getAlgorithmName();
+		BindingSet marked = BindingFrameBindings.withSubstitutionDomain(parentBindings, Set.of(), CONTEXT);
+		assertThat(BindingFrameBindings.substitutionDomain(marked)).isEmpty();
+		List<BindingSet> guardedMarked = collect(step.evaluate(marked));
+		List<BindingSet> unguarded = collect(step.evaluate(EmptyBindingSet.getInstance()));
+		String unguardedAlgorithm = leftJoin.getAlgorithmName();
+		assertAll(
+				() -> assertThat(guarded).containsExactly(expected),
+				() -> assertThat(guardedAlgorithm).isEqualTo(ScopedLeftJoinIterator.class.getSimpleName()),
+				() -> assertThat(guardedMarked).containsExactly(expected),
+				() -> assertThat(unguarded).containsExactly(leftBindings),
+				() -> assertThat(unguardedAlgorithm).isEqualTo(LeftJoinIterator.class.getSimpleName()));
 	}
 
 	@Test
@@ -521,19 +566,37 @@ public class GroupIteratorTest {
 		Join right = new Join(sharedRight,
 				new StatementPattern(Var.of("optionalSubject"), Var.of("optionalPredicate"), Var.of("optional")));
 		LeftJoin leftJoin = new LeftJoin(left, right);
-		BatchAwareEvaluationStrategy strategy = new BatchAwareEvaluationStrategy();
+		EmptyRightBatchEvaluationStrategy strategy = new EmptyRightBatchEvaluationStrategy();
 		QueryEvaluationStep step = strategy.precompile(leftJoin, CONTEXT);
 
 		assertThat(leftJoin.getAlgorithmName()).isEqualTo(BatchCorrelatedJoinProvider.class.getSimpleName());
 		QueryBindingSet guardedEntryBindings = new QueryBindingSet();
 		guardedEntryBindings.addBinding("optional", VF.createLiteral("pre-bound"));
-		try (var ignored = step.evaluate(guardedEntryBindings)) {
-			assertThat(leftJoin.getAlgorithmName()).isEqualTo(BadlyDesignedLeftJoinIterator.class.getSimpleName());
+		QueryBindingSet expectedGuarded = new QueryBindingSet(leftRow);
+		expectedGuarded.addBinding("optional", VF.createLiteral("pre-bound"));
+		List<BindingSet> guarded = collect(step.evaluate(guardedEntryBindings));
+		int guardedCalls = strategy.batchJoinCalls.get();
+		String guardedAlgorithm = leftJoin.getAlgorithmName();
+		List<BindingSet> unguarded = collect(step.evaluate(EmptyBindingSet.getInstance()));
+		int totalCalls = strategy.batchJoinCalls.get();
+		String unguardedAlgorithm = leftJoin.getAlgorithmName();
+		assertAll(
+				() -> assertThat(guarded).containsExactly(expectedGuarded),
+				() -> assertThat(guardedCalls).isZero(),
+				() -> assertThat(guardedAlgorithm).isEqualTo(ScopedLeftJoinIterator.class.getSimpleName()),
+				() -> assertThat(unguarded).containsExactly(leftRow),
+				() -> assertThat(unguardedAlgorithm).isEqualTo(BatchCorrelatedJoinProvider.class.getSimpleName()),
+				() -> assertThat(totalCalls).isEqualTo(1));
+	}
+
+	private static List<BindingSet> collect(CloseableIteration<BindingSet> iteration) {
+		try (iteration) {
+			List<BindingSet> rows = new ArrayList<>();
+			while (iteration.hasNext()) {
+				rows.add(iteration.next());
+			}
+			return rows;
 		}
-		try (var ignored = step.evaluate(EmptyBindingSet.getInstance())) {
-			assertThat(leftJoin.getAlgorithmName()).isEqualTo(BatchCorrelatedJoinProvider.class.getSimpleName());
-		}
-		assertThat(strategy.batchJoinCalls.get()).isEqualTo(1);
 	}
 
 	@Test

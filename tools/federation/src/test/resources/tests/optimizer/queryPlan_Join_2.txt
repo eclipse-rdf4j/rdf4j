@@ -2,7 +2,7 @@ QueryRoot
    Projection
       ProjectionElemList
          ProjectionElem "person"
-      NJoin
+      NJoin (new scope)
          ExclusiveStatement
             Var (name=_const_0, value=http://example.org/a, anonymous)
             Var (name=_const_1, value=http://xmlns.com/foaf/0.1/name, anonymous)

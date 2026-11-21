@@ -13,26 +13,361 @@ package org.eclipse.rdf4j.query.algebra.evaluation.util;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.junit.jupiter.api.Assertions.assertAll;
 
+import java.util.ArrayList;
+import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.atomic.AtomicInteger;
 
+import org.eclipse.rdf4j.model.Value;
+import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.query.QueryExecutionPolicy;
+import org.eclipse.rdf4j.query.algebra.And;
 import org.eclipse.rdf4j.query.algebra.BNodeGenerator;
+import org.eclipse.rdf4j.query.algebra.BindingSetAssignment;
+import org.eclipse.rdf4j.query.algebra.Bound;
+import org.eclipse.rdf4j.query.algebra.Distinct;
+import org.eclipse.rdf4j.query.algebra.Exists;
 import org.eclipse.rdf4j.query.algebra.Extension;
 import org.eclipse.rdf4j.query.algebra.ExtensionElem;
+import org.eclipse.rdf4j.query.algebra.Filter;
+import org.eclipse.rdf4j.query.algebra.Graph;
 import org.eclipse.rdf4j.query.algebra.Join;
+import org.eclipse.rdf4j.query.algebra.Lateral;
+import org.eclipse.rdf4j.query.algebra.Order;
+import org.eclipse.rdf4j.query.algebra.Projection;
+import org.eclipse.rdf4j.query.algebra.ProjectionElem;
+import org.eclipse.rdf4j.query.algebra.ProjectionElemList;
 import org.eclipse.rdf4j.query.algebra.QueryModelNode;
 import org.eclipse.rdf4j.query.algebra.QueryModelVisitor;
 import org.eclipse.rdf4j.query.algebra.QueryRoot;
+import org.eclipse.rdf4j.query.algebra.Reduced;
 import org.eclipse.rdf4j.query.algebra.Service;
 import org.eclipse.rdf4j.query.algebra.SingletonSet;
+import org.eclipse.rdf4j.query.algebra.StatementPattern;
+import org.eclipse.rdf4j.query.algebra.TupleExpr;
+import org.eclipse.rdf4j.query.algebra.Union;
+import org.eclipse.rdf4j.query.algebra.ValueConstant;
 import org.eclipse.rdf4j.query.algebra.Var;
+import org.eclipse.rdf4j.query.algebra.evaluation.iterator.ScopedLeftJoinIterator.GraphFrameMapping;
 import org.eclipse.rdf4j.query.algebra.evaluation.util.QueryEvaluationUtility.QueryModelPreparation;
+import org.eclipse.rdf4j.query.algebra.helpers.FilterBindingScope;
+import org.eclipse.rdf4j.query.impl.EmptyBindingSet;
+import org.eclipse.rdf4j.query.impl.MapBindingSet;
 import org.junit.jupiter.api.Test;
 
 class PreparedSafetyAnalysisTest {
+
+	@Test
+	void graphOnlyParametersRequireTheActualSiblingSelector() {
+		StatementPattern body = new StatementPattern(Var.of("s"), Var.of("p"), Var.of("o"));
+		StatementPattern unrelated = new StatementPattern(Var.of("s"), Var.of("edge"), Var.of("next"));
+		StatementPattern carrier = new StatementPattern(Var.of("s"), Var.of("edge"), Var.of("g"));
+		Graph fixed = new Graph(Var.of("g", SimpleValueFactory.getInstance().createIRI("urn:fixed"), true, true),
+				body.clone());
+		Graph variable = new Graph(Var.of("g"), body.clone());
+		Lateral lateral = new Lateral(new SingletonSet(), new SingletonSet());
+		assertThat(QueryEvaluationUtility.usesMappingParameterizedEvaluation(fixed)).isTrue();
+		assertThat(QueryEvaluationUtility.needsSiblingMappingParameters(fixed, carrier)).isFalse();
+		assertThat(QueryEvaluationUtility.needsSiblingMappingParameters(variable, unrelated)).isFalse();
+		assertThat(QueryEvaluationUtility.needsSiblingMappingParameters(variable, carrier)).isTrue();
+		assertThat(QueryEvaluationUtility.needsSiblingMappingParameters(new Join(fixed.clone(), lateral), unrelated))
+				.isTrue();
+	}
+
+	@Test
+	void silentServiceRequiresItsOwnPreparedNonNullProvider() {
+		ExtensionElem endpoint = new ExtensionElem(
+				new ValueConstant(SimpleValueFactory.getInstance().createIRI("urn:service")), "endpoint");
+		Extension provider = new Extension(new SingletonSet(), endpoint);
+		Service service = new Service(Var.of("endpoint"), new SingletonSet(), "", Map.of(), null, true);
+		Join subtree = new Join(provider, service);
+		QueryEvaluationUtility.QuerySafetySnapshot snapshot = QueryEvaluationUtility.querySafetySnapshot(subtree);
+
+		assertThat(snapshot.mayRaiseQueryFatalError(service)).isTrue();
+		assertThat(snapshot.mayRaiseQueryFatalError(subtree)).isFalse();
+		assertThat(snapshot.isRepeatable(subtree)).isFalse();
+
+		endpoint.setExpr(Var.of("missing"));
+		assertThat(snapshot.mayRaiseQueryFatalError(subtree)).as("facts remain pinned until refresh").isFalse();
+		snapshot.refreshFrom(provider);
+		assertThat(snapshot.mayRaiseQueryFatalError(subtree)).isTrue();
+	}
+
+	@Test
+	void silentServiceFatalProofOnlyRequiresANonNullEndpoint() {
+		Extension provider = new Extension(new SingletonSet(), new ExtensionElem(
+				new ValueConstant(SimpleValueFactory.getInstance().createLiteral("not-an-iri")), "endpoint"));
+		Service service = new Service(Var.of("endpoint"), new SingletonSet(), "", Map.of(), null, true);
+		Join subtree = new Join(provider, service);
+
+		assertThat(QueryEvaluationUtility.mayRaiseQueryFatalError(service)).isTrue();
+		assertThat(QueryEvaluationUtility.mayRaiseQueryFatalError(subtree)).isFalse();
+	}
+
+	@Test
+	void silentServiceDemandsRespectNullableAndPrivateBranches() {
+		MapBindingSet bound = new MapBindingSet();
+		bound.addBinding("endpoint", SimpleValueFactory.getInstance().createIRI("urn:service"));
+		BindingSetAssignment nullable = new BindingSetAssignment();
+		nullable.setBindingNames(Set.of("endpoint"));
+		nullable.setBindingSets(List.of(bound, EmptyBindingSet.getInstance()));
+		Join nullableJoin = new Join(nullable, silentVariableService());
+		assertThat(QueryEvaluationUtility.mayRaiseQueryFatalError(nullableJoin)).isTrue();
+
+		Projection privateBranch = new Projection(silentVariableService(),
+				new ProjectionElemList(new ProjectionElem("private")), true);
+		Join mixed = new Join(endpointProvider(), new Union(silentVariableService(), privateBranch));
+		assertThat(QueryEvaluationUtility.mayRaiseQueryFatalError(mixed)).isTrue();
+	}
+
+	@Test
+	void silentServiceDemandsCrossTransparentParameterEdges() {
+		Filter filtered = new Filter(silentVariableService(),
+				new ValueConstant(SimpleValueFactory.getInstance().createLiteral(true)));
+		Join filteredJoin = new Join(endpointProvider(), filtered);
+		Projection projected = new Projection(silentVariableService(),
+				new ProjectionElemList(new ProjectionElem("endpoint")), false);
+		Join projectedJoin = new Join(endpointProvider(), projected);
+		Join nested = new Join(endpointProvider(), new Join(new SingletonSet(), silentVariableService()));
+
+		assertThat(QueryEvaluationUtility.mayRaiseQueryFatalError(filteredJoin)).isFalse();
+		assertThat(QueryEvaluationUtility.mayRaiseQueryFatalError(projectedJoin)).isFalse();
+		assertThat(QueryEvaluationUtility.mayRaiseQueryFatalError(nested)).isFalse();
+	}
+
+	@Test
+	void serviceEffectsFollowGraphCarrierDirectionAndPriority() {
+		Join neither = new Join(endpointProvider(), new Join(values("g"), silentVariableService()));
+		Join rightCarrier = new Join(graphSelect(endpointProvider(), Var.of("g"), "privateG", "endpoint"),
+				new Join(values("g"), silentVariableService()));
+		Join leftCarrier = new Join(new Join(endpointProvider(), values("h")),
+				new Join(graphSelect(values("g"), Var.of("h"), "privateH", "g"), silentVariableService()));
+		Join both = twoSidedGraphOwner(Var.of("h"), "privateH", false, false);
+
+		assertAll(
+				() -> assertGraphDirection(neither, false, false, false),
+				() -> assertGraphDirection(rightCarrier, true, false, true),
+				() -> assertGraphDirection(leftCarrier, false, true, false),
+				() -> assertGraphDirection(both, true, true, false));
+	}
+
+	@Test
+	void graphDirectionStopsAtFirstSelectAndIgnoresNonqualifyingCallers() {
+		Join hidden = twoSidedGraphOwner(Var.of("h"), "privateH", true, false);
+		Join transparent = twoSidedGraphOwner(Var.of("h"), "privateH", true, true);
+		Join fixed = twoSidedGraphOwner(Var.of("h", SimpleValueFactory.getInstance().createIRI("urn:h")),
+				"privateH", false, false);
+		Join absent = twoSidedGraphOwner(Var.of("h"), null, false, false);
+
+		assertAll(
+				() -> assertGraphDirection(hidden, true, false, true),
+				() -> assertGraphDirection(transparent, true, true, false),
+				() -> assertGraphDirection(fixed, true, false, true),
+				() -> assertGraphDirection(absent, true, false, true));
+	}
+
+	@Test
+	void graphDirectionRetainsAliasesAndDistinctParameterPairs() {
+		Extension provider = new Extension(values("source"), new ExtensionElem(
+				new ValueConstant(SimpleValueFactory.getInstance().createIRI("urn:service")), "endpoint"));
+		ProjectionElemList aliases = new ProjectionElemList(new ProjectionElem("endpoint"),
+				new ProjectionElem("source", "h"));
+		Projection left = new Projection(provider, aliases, true);
+		left.setProjectionContext(Var.of("g"));
+		left.setInheritedGraphParameter("privateG");
+		Projection first = graphSelect(values("g"), Var.of("h"), "privateH1", "g");
+		Projection second = graphSelect(values("g"), Var.of("h"), "privateH2", "g");
+		Join right = new Join(new Join(first, second), silentVariableService());
+		Join owner = new Join(left, right);
+		assertThat(GraphFrameMapping.forSubqueries(right, left)).hasSize(2);
+		assertGraphDirection(owner, true, true, false);
+	}
+
+	@Test
+	void unknownGraphProjectionDispatchKeepsItsFatalSafety() {
+		ForeignGraphProjection foreign = new ForeignGraphProjection(new SingletonSet());
+		foreign.setProjectionContext(Var.of("h"));
+		foreign.setInheritedGraphParameter("privateH");
+		Join owner = new Join(new Join(endpointProvider(), values("h")),
+				new Join(foreign, silentVariableService()));
+		assertThat(GraphFrameMapping.forSubqueries(owner.getRightArg(), owner.getLeftArg())).isEmpty();
+		assertThat(QueryEvaluationUtility.preparedGraphCarrierOnLeft(owner)).isNull();
+		assertThat(QueryEvaluationUtility.mayRaiseQueryFatalError(owner)).isTrue();
+	}
+
+	@Test
+	void omittedGraphChildKeepsItsFatalSafetyAndPhysicalFallback() {
+		Filter omitted = new OmittedGraphFilter(graphSelect(values("g"), Var.of("h"), "privateH", "g"));
+		Join owner = new Join(new Join(endpointProvider(), values("h")),
+				new Join(omitted, silentVariableService()));
+		assertThat(GraphFrameMapping.forSubqueries(owner.getRightArg(), owner.getLeftArg())).isEmpty();
+		assertThat(QueryEvaluationUtility.preparedGraphCarrierOnLeft(owner)).isNull();
+		assertThat(QueryEvaluationUtility.mayRaiseQueryFatalError(owner)).isTrue();
+	}
+
+	@Test
+	void graphDirectionIncludesVisitorVisibleScalarSubqueries() {
+		Projection left = graphSelect(new Join(endpointProvider(), values("h")), Var.of("g"), "privateG",
+				"endpoint", "h");
+		Filter filtered = new Filter(new SingletonSet(),
+				new Exists(graphSelect(values("g"), Var.of("h"), "privateH", "g")));
+		Join owner = new Join(left, new Join(filtered, silentVariableService()));
+		assertGraphDirection(owner, true, true, false);
+	}
+
+	@Test
+	void refreshedGraphCarrierDirectionUsesOneCoherentGeneration() {
+		Projection left = graphSelect(endpointProvider(), Var.of("g"), "privateG", "endpoint");
+		Join owner = new Join(left, new Join(values("g"), silentVariableService()));
+		QueryEvaluationUtility.QuerySafetySnapshot snapshot = QueryEvaluationUtility.querySafetySnapshot(owner);
+		assertThat(snapshot.mayRaiseQueryFatalError(owner)).isTrue();
+		left.setProjectionContext(Var.of("unrelated"));
+		assertThat(snapshot.mayRaiseQueryFatalError(owner)).isTrue();
+		snapshot.refreshFrom(left);
+		assertThat(snapshot.mayRaiseQueryFatalError(owner)).isFalse();
+	}
+
+	private static void assertGraphDirection(Join owner, boolean leftDependsOnRight, boolean rightDependsOnLeft,
+			boolean fatal) {
+		assertThat(GraphFrameMapping.forSubqueries(owner.getLeftArg(), owner.getRightArg()).length > 0)
+				.isEqualTo(leftDependsOnRight);
+		assertThat(GraphFrameMapping.forSubqueries(owner.getRightArg(), owner.getLeftArg()).length > 0)
+				.isEqualTo(rightDependsOnLeft);
+		assertThat(QueryEvaluationUtility.preparedGraphCarrierOnLeft(owner))
+				.isEqualTo(rightDependsOnLeft || !leftDependsOnRight);
+		assertThat(QueryEvaluationUtility.mayRaiseQueryFatalError(owner)).isEqualTo(fatal);
+	}
+
+	private static Join twoSidedGraphOwner(Var rightCaller, String rightParameter, boolean wrap,
+			boolean transparent) {
+		Projection left = graphSelect(new Join(endpointProvider(), values("h")), Var.of("g"), "privateG",
+				"endpoint", "h");
+		Projection inner = graphSelect(values("g"), rightCaller, rightParameter, "g");
+		TupleExpr projected = wrap ? new Projection(inner, new ProjectionElemList(new ProjectionElem("g")),
+				!transparent) : inner;
+		return new Join(left, new Join(projected, silentVariableService()));
+	}
+
+	private static Projection graphSelect(TupleExpr argument, Var caller, String parameter, String... outputs) {
+		ProjectionElemList elements = new ProjectionElemList();
+		for (String name : outputs) {
+			elements.addElement(new ProjectionElem(name));
+		}
+		Projection projection = new Projection(argument, elements, true);
+		projection.setProjectionContext(caller);
+		projection.setInheritedGraphParameter(parameter);
+		return projection;
+	}
+
+	private static BindingSetAssignment values(String name) {
+		BindingSetAssignment assignment = new BindingSetAssignment();
+		assignment.setBindingNames(Set.of(name));
+		MapBindingSet row = new MapBindingSet();
+		row.addBinding(name, SimpleValueFactory.getInstance().createIRI("urn:" + name));
+		assignment.setBindingSets(List.of(row));
+		return assignment;
+	}
+
+	private static final class ForeignGraphProjection extends Projection {
+		private ForeignGraphProjection(TupleExpr argument) {
+			super(argument, new ProjectionElemList(), true);
+		}
+
+		@Override
+		public <X extends Exception> void visit(QueryModelVisitor<X> visitor) throws X {
+			visitor.meetOther(this);
+		}
+	}
+
+	private static final class OmittedGraphFilter extends Filter {
+		private OmittedGraphFilter(TupleExpr argument) {
+			super(argument, new ValueConstant(SimpleValueFactory.getInstance().createLiteral(true)));
+		}
+
+		@Override
+		public <X extends Exception> void visitChildren(QueryModelVisitor<X> visitor) throws X {
+			getCondition().visit(visitor);
+		}
+	}
+
+	@Test
+	void failedSilentServiceDoesNotGuaranteeItsBodyOutputs() {
+		Service provider = new Service(Var.of("fixed", SimpleValueFactory.getInstance().createIRI("urn:fail")),
+				endpointProvider(), "", Map.of(), null, true);
+		Join subtree = new Join(provider, silentVariableService());
+		assertThat(QueryEvaluationUtility.mayRaiseQueryFatalError(subtree)).isTrue();
+	}
+
+	@Test
+	void defaultContextSlotDoesNotGuaranteeAServiceEndpoint() {
+		StatementPattern provider = new StatementPattern(StatementPattern.Scope.DEFAULT_CONTEXTS,
+				Var.of("s"), Var.of("p"), Var.of("o"), Var.of("endpoint"));
+		assertThat(provider.getBindingNames()).contains("endpoint");
+		assertThat(provider.getAssuredBindingNames()).doesNotContain("endpoint");
+		assertThat(QueryEvaluationUtility.mayRaiseQueryFatalError(new Join(provider, silentVariableService())))
+				.isTrue();
+	}
+
+	@Test
+	void valuedStatementEndpointFactsStayPinnedUntilRefresh() {
+		Value endpoint = SimpleValueFactory.getInstance().createIRI("urn:service");
+		Var original = Var.of("endpoint", endpoint);
+		StatementPattern provider = new StatementPattern(Var.of("s"), Var.of("p"), original);
+		Join subtree = new Join(provider, silentVariableService());
+		QueryEvaluationUtility.QuerySafetySnapshot snapshot = QueryEvaluationUtility.querySafetySnapshot(subtree);
+		assertThat(snapshot.mayRaiseQueryFatalError(subtree)).isFalse();
+
+		provider.replaceChildNode(original, Var.of("endpoint", endpoint, true, true));
+		assertThat(snapshot.mayRaiseQueryFatalError(subtree)).isFalse();
+		snapshot.refreshFrom(provider);
+		assertThat(snapshot.mayRaiseQueryFatalError(subtree)).isTrue();
+	}
+
+	@Test
+	void serviceEndpointGuaranteeFollowsSequentialExtensionWrites() {
+		Value value = SimpleValueFactory.getInstance().createIRI("urn:service");
+		Extension failedOverwrite = new Extension(new SingletonSet(),
+				new ExtensionElem(new ValueConstant(value), "endpoint"),
+				new ExtensionElem(Var.of("missing"), "endpoint"));
+		assertThat(QueryEvaluationUtility.mayRaiseQueryFatalError(new Join(failedOverwrite, silentVariableService())))
+				.isTrue();
+
+		Extension propagated = new Extension(new SingletonSet(),
+				new ExtensionElem(new ValueConstant(value), "local"),
+				new ExtensionElem(Var.of("local"), "endpoint"));
+		assertThat(QueryEvaluationUtility.mayRaiseQueryFatalError(new Join(propagated, silentVariableService())))
+				.isFalse();
+	}
+
+	@Test
+	void opaqueServiceReferenceRetainsItsOwnFatalHazard() {
+		Var endpoint = new OpaqueEndpointVar("endpoint", SimpleValueFactory.getInstance().createIRI("urn:service"));
+		Service service = new Service(endpoint, new SingletonSet(), "", Map.of(), null, true);
+		assertThat(QueryEvaluationUtility.mayRaiseQueryFatalError(service)).isTrue();
+	}
+
+	private static Extension endpointProvider() {
+		return new Extension(new SingletonSet(), new ExtensionElem(
+				new ValueConstant(SimpleValueFactory.getInstance().createIRI("urn:service")), "endpoint"));
+	}
+
+	private static Service silentVariableService() {
+		return new Service(Var.of("endpoint"), new SingletonSet(), "", Map.of(), null, true);
+	}
+
+	private static final class OpaqueEndpointVar extends Var {
+		private OpaqueEndpointVar(String name, Value value) {
+			super(name, value);
+		}
+
+		@Override
+		public <X extends Exception> void visit(QueryModelVisitor<X> visitor) throws X {
+			visitor.meetOther(this);
+		}
+	}
 
 	@Test
 	void preparedPhasesOnlyAnalyzeSafetyWhenRequested() {
@@ -59,6 +394,77 @@ class PreparedSafetyAnalysisTest {
 	}
 
 	@Test
+	void capturedLocalOutputsAreReusedAndStayInTheirGeneration() {
+		CountingSingletonSet counted = new CountingSingletonSet();
+		BindingSetAssignment input = values("x");
+		QueryRoot root = new QueryRoot(new Join(input, counted));
+		QueryEvaluationUtility.withPreparedQuerySafetySnapshot(root, IdentityPreparation::new, prepared -> {
+			var oldView = QueryEvaluationUtility.preparedLocalNonNullOutputs(prepared);
+			int visits = counted.visits.get();
+			assertThat(oldView.test(input, "x")).isTrue();
+			for (int i = 0; i < 1_000; i++) {
+				assertThat(oldView.test(prepared, "x")).isTrue();
+				assertThat(oldView.test(counted, "x")).isFalse();
+			}
+			assertThat(counted.visits).hasValue(visits);
+
+			input.setBindingSets(List.of(new MapBindingSet()));
+			QueryEvaluationUtility.refreshQuerySafetySnapshot(input);
+			var currentView = QueryEvaluationUtility.preparedLocalNonNullOutputs(prepared);
+			assertThat(oldView.test(input, "x")).isTrue();
+			assertThat(currentView.test(input, "x")).isFalse();
+			return prepared;
+		});
+	}
+
+	@Test
+	void filterPlacementExpressionProofRejectsInheritedGraphCaller() {
+		Projection graphProjection = graphSelect(values("x"), Var.of("g"), "privateGraph", "x");
+		Exists condition = new Exists(graphProjection);
+		Bound plain = new Bound(Var.of("x"));
+		Filter filter = new Filter(values("x"), new And(plain, condition));
+		assertThat(GraphFrameMapping.forSubqueries(filter, Set.of("g")))
+				.containsExactly(new GraphFrameMapping("g", "privateGraph"));
+		QueryEvaluationUtility.withPreparedQuerySafetySnapshot(filter, IdentityPreparation::new, prepared -> {
+			var oldView = QueryEvaluationUtility.preparedFilterPlacementFacts(prepared);
+			assertThat(oldView.stableFilterExpression(plain)).isTrue();
+			assertThat(oldView.stableFilterExpression(condition)).isFalse();
+			graphProjection.setInheritedGraphParameter(null);
+			QueryEvaluationUtility.refreshQuerySafetySnapshot(graphProjection);
+			var currentView = QueryEvaluationUtility.preparedFilterPlacementFacts(prepared);
+			assertThat(oldView.stableFilterExpression(condition)).isFalse();
+			assertThat(currentView.stableFilterExpression(condition)).isTrue();
+			return prepared;
+		});
+	}
+
+	@Test
+	void producerInputBoundaryFollowsOnlyInputForwardingEdgesAndRefreshes() {
+		StatementPattern marked = new StatementPattern(Var.of("s"), Var.of("p"), Var.of("o"));
+		marked.setVariableScopeChange(true);
+		List<TupleExpr> wrappers = List.of(new Filter(marked.clone(), new Bound(Var.of("o"))),
+				new Distinct(marked.clone()), new Reduced(marked.clone()), new Order(marked.clone()),
+				new Extension(marked.clone()), new QueryRoot(marked.clone()));
+		for (TupleExpr wrapper : wrappers) {
+			assertThat(QueryEvaluationUtility.hasProducerInputBoundary(wrapper)).isTrue();
+		}
+		assertThat(QueryEvaluationUtility.hasProducerInputBoundary(new Join(marked.clone(), new SingletonSet())))
+				.isFalse();
+		Projection projection = new Projection(marked.clone(),
+				new ProjectionElemList(new ProjectionElem("o")), false);
+		assertThat(QueryEvaluationUtility.hasProducerInputBoundary(projection)).isFalse();
+		Filter outer = new Filter(marked, new Bound(Var.of("o")));
+		QueryEvaluationUtility.withPreparedQuerySafetySnapshot(outer, IdentityPreparation::new, prepared -> {
+			assertThat(QueryEvaluationUtility.hasProducerInputBoundary(prepared)).isTrue();
+			marked.setVariableScopeChange(false);
+			assertThat(QueryEvaluationUtility.hasProducerInputBoundary(prepared)).isTrue();
+			QueryEvaluationUtility.refreshQuerySafetySnapshot(marked);
+			assertThat(QueryEvaluationUtility.hasProducerInputBoundary(prepared)).isFalse();
+			return prepared;
+		});
+	}
+
+	@Test
 	void freshPhasesRecomputeSafetyAfterAnEarlierOptimizerRewritesTheTree() {
 		QueryRoot root = new QueryRoot(new SingletonSet());
 		QueryEvaluationUtility.withPreparedQuerySafetySnapshot(root, IdentityPreparation::new, prepared -> {
@@ -79,7 +485,12 @@ class PreparedSafetyAnalysisTest {
 	@Test
 	void refreshingBeforeTheFirstSafetyQueryIncludesUnvisitedAncestorsAndSiblings() {
 		Extension sibling = new Extension(new SingletonSet(), new ExtensionElem(new BNodeGenerator(), "fresh"));
-		Join join = new Join(new SingletonSet(), sibling);
+		BindingSetAssignment ownerInputs = new BindingSetAssignment();
+		ownerInputs.setBindingNames(Set.of("scopeRead"));
+		Filter scopedFilter = new Filter(new SingletonSet(), new Bound(Var.of("scopeRead")));
+		Join scopedOwner = new Join(ownerInputs, scopedFilter);
+		Join right = new Join(scopedOwner, sibling);
+		Join join = new Join(new SingletonSet(), right);
 		QueryRoot root = new QueryRoot(join);
 		QueryEvaluationUtility.withPreparedQuerySafetySnapshot(root, IdentityPreparation::new, prepared -> {
 			join.setLeftArg(new SingletonSet());
@@ -89,8 +500,91 @@ class PreparedSafetyAnalysisTest {
 			assertThat(QueryEvaluationUtility.usesMappingParameterizedEvaluation(prepared)).isFalse();
 			assertThat(QueryEvaluationUtility.permitsBindingInjection(join, Set.of("fresh"))).isFalse();
 			assertThat(QueryEvaluationUtility.permitsBindingInjection(join, Set.of("outside"))).isTrue();
+			assertThat(QueryEvaluationUtility.requiresScopedFilterInput(scopedOwner)).isTrue();
+			assertThat(QueryEvaluationUtility.mayIntroduceFilterInput(scopedOwner, Set.of("scopeRead"), false))
+					.isTrue();
+			assertThat(QueryEvaluationUtility.requiresBindingFrameReplayPartition(scopedOwner)).isTrue();
 			return prepared;
 		});
+	}
+
+	@Test
+	void refreshPreparesAllIndependentRootsAfterOneResetBeforeSafetyRecapture() {
+		List<String> events = new ArrayList<>();
+		QueryRoot first = new QueryRoot(new TraceSingletonSet(events, "first"));
+		QueryRoot second = new QueryRoot(new TraceSingletonSet(events, "second"));
+		QueryModelPreparation preparation = new QueryModelPreparation() {
+			@Override
+			public QueryModelNode prepare(QueryModelNode root) {
+				events.add(root == first ? "prepare:first" : root == second ? "prepare:second" : "prepare:other");
+				return root;
+			}
+
+			@Override
+			public void resetTraversal() {
+				events.add("reset");
+			}
+
+			@Override
+			public void invalidate(QueryModelNode changedNode) {
+			}
+
+			@Override
+			public void close() {
+			}
+		};
+
+		QueryEvaluationUtility.withPreparedQuerySafetySnapshot(first, () -> preparation, prepared -> {
+			assertThat(QueryEvaluationUtility.isRepeatable(first)).isTrue();
+			assertThat(QueryEvaluationUtility.isRepeatable(second)).isTrue();
+			events.clear();
+			QueryEvaluationUtility.refreshQuerySafetySnapshot(first);
+
+			assertThat(events.stream().filter("reset"::equals)).hasSize(1);
+			assertThat(events.getFirst()).isEqualTo("reset");
+			int lastInitialPreparation = Math.max(events.indexOf("prepare:first"), events.indexOf("prepare:second"));
+			int firstSafetyVisit = Math.min(events.indexOf("visit:first"), events.indexOf("visit:second"));
+			assertThat(events).contains("prepare:first", "prepare:second", "visit:first", "visit:second");
+			assertThat(lastInitialPreparation).isLessThan(firstSafetyVisit);
+			return prepared;
+		});
+	}
+
+	@Test
+	void publicSnapshotCapturesProjectionReplayFactsBeforeFirstDemand() {
+		Projection originallyIndependent = new Projection(new SingletonSet());
+		QueryEvaluationUtility.QuerySafetySnapshot independentSnapshot = QueryEvaluationUtility
+				.querySafetySnapshot(originallyIndependent);
+		originallyIndependent.setInheritedGraphParameter("privateGraph");
+
+		assertThat(independentSnapshot.requiresBindingFrameReplayPartition(originallyIndependent)).isFalse();
+
+		Projection originallyScoped = new Projection(new SingletonSet());
+		originallyScoped.setInheritedGraphParameter("privateGraph");
+		QueryEvaluationUtility.QuerySafetySnapshot scopedSnapshot = QueryEvaluationUtility
+				.querySafetySnapshot(originallyScoped);
+		originallyScoped.setInheritedGraphParameter(null);
+
+		assertThat(scopedSnapshot.requiresBindingFrameReplayPartition(originallyScoped)).isTrue();
+	}
+
+	@Test
+	void blankNodeGeneratorReadsAreExplicitWithoutMakingGenerationRepeatable() {
+		BNodeGenerator zeroArgument = new BNodeGenerator();
+		BNodeGenerator withNodeId = new BNodeGenerator(Var.of("seed"));
+
+		assertThat(FilterBindingScope.scalarReadsAreExplicit(zeroArgument)).isTrue();
+		assertThat(FilterBindingScope.conditionBindingReads(zeroArgument).complete()).isTrue();
+		assertThat(FilterBindingScope.conditionBindingReads(zeroArgument).bindingNames()).isEmpty();
+		assertThat(FilterBindingScope.scalarReadsAreExplicit(withNodeId)).isTrue();
+		assertThat(FilterBindingScope.conditionBindingReads(withNodeId).complete()).isTrue();
+		assertThat(FilterBindingScope.conditionBindingReads(withNodeId).bindingNames()).containsExactly("seed");
+		assertThat(QueryEvaluationUtility.permitsBindingInjection(new Filter(new SingletonSet(), withNodeId),
+				Set.of("seed")))
+						.isFalse();
+		assertThat(QueryEvaluationUtility.isRepeatable(zeroArgument)).isFalse();
+		assertThat(QueryEvaluationUtility.isRepeatable(withNodeId)).isFalse();
+		assertThat(QueryEvaluationUtility.mayRaiseQueryFatalError(withNodeId)).isFalse();
 	}
 
 	@Test
@@ -164,6 +658,22 @@ class PreparedSafetyAnalysisTest {
 		@Override
 		public <X extends Exception> void visit(QueryModelVisitor<X> visitor) throws X {
 			visits.incrementAndGet();
+			super.visit(visitor);
+		}
+	}
+
+	private static final class TraceSingletonSet extends SingletonSet {
+		private final List<String> events;
+		private final String name;
+
+		private TraceSingletonSet(List<String> events, String name) {
+			this.events = events;
+			this.name = name;
+		}
+
+		@Override
+		public <X extends Exception> void visit(QueryModelVisitor<X> visitor) throws X {
+			events.add("visit:" + name);
 			super.visit(visitor);
 		}
 	}

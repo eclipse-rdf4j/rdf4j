@@ -149,7 +149,7 @@ final class LmdbAdjacencyAggregatePlan implements NativeAggregatePhysicalPlan.Pr
 	}
 
 	boolean handles(RowState row) {
-		return enabled()
+		return enabled() && pattern.supportsContextShortcut(row, row.boundMask(), 0L)
 				&& (subject != UNKNOWN ? pattern.s.lookup(row.slots) == subject
 						: pattern.s.lookup(row.slots) == UNKNOWN)
 				&& (object != UNKNOWN ? pattern.o.lookup(row.slots) == object

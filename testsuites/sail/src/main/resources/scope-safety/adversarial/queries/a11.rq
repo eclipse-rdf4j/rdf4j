@@ -1,0 +1,5 @@
+# #4882: a BIND expression in the OPTIONAL right operand cannot read an outer-only ?x.
+SELECT ?x ?y WHERE {
+  VALUES ?x { "left" }
+  OPTIONAL { BIND(?x AS ?y) }
+}

@@ -340,6 +340,14 @@ final class LmdbNativeFactorizedRows {
 		}
 		SlotPlan[] order = derived.order;
 		int n = order.length;
+		long possibleInputs = seedMask;
+		for (SlotPlan child : order) {
+			if (child instanceof PatternPlan pattern && !pattern.supportsContextShortcut(row, possibleInputs, 0L)
+					&& !pattern.supportsSiblingContextKey(row)) {
+				return null;
+			}
+			possibleInputs |= child.producedMask();
+		}
 		long[] fresh = split.fresh;
 		long[] reads = split.reads;
 		int flatCount = plannedFlatCount(split, requiredPrefixMask, minimumFlatCount);

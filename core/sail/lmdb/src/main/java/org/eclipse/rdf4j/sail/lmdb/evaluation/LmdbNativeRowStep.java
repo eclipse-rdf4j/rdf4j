@@ -16,10 +16,12 @@ import static org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbNativeAggregateCompiler
 import static org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbNativeAggregateCompiler.NULL_CONTEXT_ID;
 import static org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbNativeAggregateCompiler.UNKNOWN;
 import static org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbNativeAggregateCompiler.initializeRow;
+import static org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbNativeAggregateCompiler.isNullContextValue;
 
 import java.io.IOException;
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.Collections;
 import java.util.List;
 import java.util.NoSuchElementException;
 import java.util.OptionalLong;
@@ -38,16 +40,25 @@ import org.eclipse.rdf4j.query.Binding;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.QueryEvaluationException;
 import org.eclipse.rdf4j.query.QueryExecutionPolicy;
+import org.eclipse.rdf4j.query.algebra.Exists;
+import org.eclipse.rdf4j.query.algebra.QueryModelNode;
+import org.eclipse.rdf4j.query.algebra.StatementPattern;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
+import org.eclipse.rdf4j.query.algebra.TupleFunctionCall;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryBindingSet;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryEvaluationStep;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryValueEvaluationStep;
+import org.eclipse.rdf4j.query.algebra.evaluation.impl.BindingFrameBindings;
+import org.eclipse.rdf4j.query.algebra.evaluation.impl.GraphFrameBindings;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.QueryEvaluationContext;
 import org.eclipse.rdf4j.query.algebra.evaluation.util.QueryEvaluationUtility;
+import org.eclipse.rdf4j.query.algebra.helpers.AbstractQueryModelVisitor;
+import org.eclipse.rdf4j.query.algebra.helpers.QueryAlgebraBindingAnalysis.OptionalCallerRequirement;
 import org.eclipse.rdf4j.query.explanation.QueryExplanationContext;
 import org.eclipse.rdf4j.sail.lmdb.LmdbPrefixRunCursor;
 import org.eclipse.rdf4j.sail.lmdb.LmdbPrefixRunPlan;
 import org.eclipse.rdf4j.sail.lmdb.ValueIds;
+import org.eclipse.rdf4j.sail.lmdb.evaluation.NativeValuesElisions.Requirement;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.codegen.KernelQueryCancelledException;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.codegen.KernelRuntime;
 
@@ -245,20 +256,31 @@ final class NativeOrderedRowsIteration extends DelayedIteration<BindingSet> impl
 	private NativeRowsStep step;
 	private NativeLmdbQuerySource source;
 	private BindingSet base;
+	private BindingSet outputBase;
+	private BindingSet lexicalBase;
 	private final NativeCancellationToken cancellation;
 	private volatile boolean cancellationClosed;
 
-	NativeOrderedRowsIteration(NativeRowsStep step, NativeLmdbQuerySource source, BindingSet base) {
+	NativeOrderedRowsIteration(NativeRowsStep step, NativeLmdbQuerySource source, BindingSet base,
+			BindingSet outputBase) {
+		this(step, source, base, outputBase, base);
+	}
+
+	NativeOrderedRowsIteration(NativeRowsStep step, NativeLmdbQuerySource source, BindingSet base,
+			BindingSet outputBase, BindingSet lexicalBase) {
 		this.step = step;
 		this.source = source;
 		this.base = base;
+		this.outputBase = outputBase;
+		this.lexicalBase = lexicalBase;
 		this.cancellation = NativeCancellationToken.forSource(source);
 	}
 
 	@Override
 	protected CloseableIteration<BindingSet> createIteration() {
 		try {
-			return new CloseableIteratorIteration<>(step.evaluateAll(base, source, cancellation).iterator());
+			return new CloseableIteratorIteration<>(
+					step.evaluateAll(base, outputBase, lexicalBase, source, cancellation).iterator());
 		} catch (KernelQueryCancelledException cancelled) {
 			if (cancellation.unownedCancellation(cancelled) || cancelled.getSuppressed().length != 0) {
 				KernelRuntime.rethrowCloseFailure(cancelled);
@@ -293,11 +315,14 @@ final class NativeOrderedRowsIteration extends DelayedIteration<BindingSet> impl
 		step = null;
 		source = null;
 		base = null;
+		outputBase = null;
+		lexicalBase = null;
 	}
 }
 
 @Experimental
-final class NativeRowsStep implements NativeResultStep, LmdbNativePhysicalPlan {
+final class NativeRowsStep implements NativeResultStep, LmdbNativePhysicalPlan,
+		BindingFrameBindings.PhysicalLookupCapability, BindingFrameBindings.TupleParameterConsumer {
 	/** Test observability: ORDER BY evaluations that sorted flat factorized rows instead of enumerated rows. */
 	static final AtomicLong ORDERED_FACTORIZED_SORTS = new AtomicLong();
 	/** Test observability: ORDER BY + LIMIT evaluations that kept a bounded heap of flat factorized rows. */
@@ -328,6 +353,11 @@ final class NativeRowsStep implements NativeResultStep, LmdbNativePhysicalPlan {
 	final TupleExpr originalExpr;
 	final QueryEvaluationContext context;
 	final String[] optionalOnlyNames;
+	final OptionalCallerRequirement optionalCallerRequirement;
+	final Requirement valuesRequirement;
+	final Set<String> localAssignmentNames;
+	final boolean ambiguousLateralEntry;
+	final List<BindingFrameBindings.ConditionInputs> lateralOwnerInputs;
 	final PatternPlan prefixPattern;
 	final LmdbPrefixRunPlan prefixRunPlan;
 	final NativeTupleDistinctPlan distinctPlan;
@@ -338,12 +368,41 @@ final class NativeRowsStep implements NativeResultStep, LmdbNativePhysicalPlan {
 	 * instead of projections — the contract for BGP fragments the generic evaluator drives with its own bindings.
 	 */
 	boolean snapshotRows;
+	/** A semantic Projection writes bound targets; a projected representation of a bare fragment does not. */
+	boolean projectionBoundary;
 	/** Optional route label recorded before this step's ordinary bulk dispatcher chooses its concrete strategy. */
 	String entryPath;
 	QueryEvaluationStep genericStep;
 	/** Root-host compiles only: one evaluate() is one query evaluation, so generic fallbacks may prepare per call. */
 	boolean rootEvaluationScoped;
+	/** A closed owner proof does not authorize importing an inherited generic binding frame. */
+	boolean certifiedFilterScope;
+	Set<String> certifiedContextEntryHazards = Set.of();
+	/** The original SELECT entry and its private graph caller are captured before this step is opened. */
+	NativeEntryBindings.GraphInput graphInput;
 	private GenericSubplanDescriptor genericFallbackDescriptor;
+	private GenericSubplanDescriptor graphAssignmentDescriptor;
+	private QueryEvaluationStep graphAssignmentStep;
+	private volatile QueryEvaluationStep scopedStatementLookup;
+	private volatile boolean scopedStatementHasLookupInputs;
+
+	void enableScopedStatementLookup(Set<String> inputs, StatementPattern pattern, QueryEvaluationContext context) {
+		scopedStatementHasLookupInputs = !inputs.isEmpty();
+		scopedStatementLookup = BindingFrameBindings.scopedStatementLookup(this::evaluateWithoutScopedLookup, inputs,
+				pattern, context);
+	}
+
+	@Override
+	public boolean supportsPhysicalLookups() {
+		return scopedStatementLookup != null && scopedStatementHasLookupInputs;
+	}
+
+	@Override
+	public BindingFrameBindings.TupleParameterGrant tupleParameterGrant() {
+		return originalExpr != null && originalExpr.getClass() == TupleFunctionCall.class
+				&& arg instanceof TupleFunctionPlan tuple && !distinct && orderSlots.length == 0
+				&& offset == 0L && limit < 0L ? tuple.argumentGrant() : null;
+	}
 
 	/** A bare BGP fragment with no optional-only variables (no OPTIONAL, or none binding new names). */
 	static NativeBareRowsStep bareFragment(NativeLmdbQuerySource source, SlotPlan arg, NativeSlotLayout layout,
@@ -357,8 +416,25 @@ final class NativeRowsStep implements NativeResultStep, LmdbNativePhysicalPlan {
 	static NativeBareRowsStep bareFragment(NativeLmdbQuerySource source, SlotPlan arg, NativeSlotLayout layout,
 			int[] sourceSlots, String[] targetNames, boolean strictCompare, LmdbNativeEvaluationStrategy strategy,
 			TupleExpr originalExpr, QueryEvaluationContext context, Set<String> optionalOnlyNames) {
+		return bareFragment(source, arg, layout, sourceSlots, targetNames, strictCompare, strategy, originalExpr,
+				context, optionalOnlyNames, NativeEntryBindingVariant.NO_OPTIONAL_CALLER_REQUIREMENT);
+	}
+
+	static NativeBareRowsStep bareFragment(NativeLmdbQuerySource source, SlotPlan arg, NativeSlotLayout layout,
+			int[] sourceSlots, String[] targetNames, boolean strictCompare, LmdbNativeEvaluationStrategy strategy,
+			TupleExpr originalExpr, QueryEvaluationContext context, Set<String> optionalOnlyNames,
+			OptionalCallerRequirement optionalCallerRequirement) {
+		return bareFragment(source, arg, layout, sourceSlots, targetNames, strictCompare, strategy, originalExpr,
+				context, optionalOnlyNames, optionalCallerRequirement, Requirement.NONE);
+	}
+
+	static NativeBareRowsStep bareFragment(NativeLmdbQuerySource source, SlotPlan arg, NativeSlotLayout layout,
+			int[] sourceSlots, String[] targetNames, boolean strictCompare, LmdbNativeEvaluationStrategy strategy,
+			TupleExpr originalExpr, QueryEvaluationContext context, Set<String> optionalOnlyNames,
+			OptionalCallerRequirement optionalCallerRequirement, Requirement valuesRequirement) {
 		NativeRowsStep bulk = new NativeRowsStep(source, arg, layout, sourceSlots, targetNames, false, new int[0],
-				new boolean[0], 0L, -1L, strictCompare, strategy, originalExpr, context, optionalOnlyNames, null, null);
+				new boolean[0], 0L, -1L, strictCompare, strategy, originalExpr, context, optionalOnlyNames, null, null,
+				optionalCallerRequirement, valuesRequirement);
 		bulk.snapshotRows = true;
 		bulk.entryPath = LmdbNativeAttemptMetrics.PATH_BARE_BULK;
 		return new NativeBareRowsStep(source, arg, layout, originalExpr, bulk);
@@ -369,6 +445,39 @@ final class NativeRowsStep implements NativeResultStep, LmdbNativePhysicalPlan {
 			long limit, boolean strictCompare, LmdbNativeEvaluationStrategy strategy, TupleExpr originalExpr,
 			QueryEvaluationContext context, Set<String> optionalOnlyNames, PatternPlan prefixPattern,
 			LmdbPrefixRunPlan prefixRunPlan) {
+		this(source, arg, layout, sourceSlots, targetNames, distinct, orderSlots, orderAscending, offset, limit,
+				strictCompare, strategy, originalExpr, context, optionalOnlyNames, prefixPattern, prefixRunPlan,
+				NativeEntryBindingVariant.NO_OPTIONAL_CALLER_REQUIREMENT);
+	}
+
+	NativeRowsStep(NativeLmdbQuerySource source, SlotPlan arg, NativeSlotLayout layout, int[] sourceSlots,
+			String[] targetNames, boolean distinct, int[] orderSlots, boolean[] orderAscending, long offset,
+			long limit, boolean strictCompare, LmdbNativeEvaluationStrategy strategy, TupleExpr originalExpr,
+			QueryEvaluationContext context, Set<String> optionalOnlyNames, PatternPlan prefixPattern,
+			LmdbPrefixRunPlan prefixRunPlan, OptionalCallerRequirement optionalCallerRequirement) {
+		this(source, arg, layout, sourceSlots, targetNames, distinct, orderSlots, orderAscending, offset, limit,
+				strictCompare, strategy, originalExpr, context, optionalOnlyNames, prefixPattern, prefixRunPlan,
+				optionalCallerRequirement, Requirement.NONE);
+	}
+
+	NativeRowsStep(NativeLmdbQuerySource source, SlotPlan arg, NativeSlotLayout layout, int[] sourceSlots,
+			String[] targetNames, boolean distinct, int[] orderSlots, boolean[] orderAscending, long offset,
+			long limit, boolean strictCompare, LmdbNativeEvaluationStrategy strategy, TupleExpr originalExpr,
+			QueryEvaluationContext context, Set<String> optionalOnlyNames, PatternPlan prefixPattern,
+			LmdbPrefixRunPlan prefixRunPlan, OptionalCallerRequirement optionalCallerRequirement,
+			Requirement valuesRequirement) {
+		this(source, arg, layout, sourceSlots, targetNames, distinct, orderSlots, orderAscending, offset, limit,
+				strictCompare, strategy, originalExpr, context, optionalOnlyNames, prefixPattern, prefixRunPlan,
+				optionalCallerRequirement, valuesRequirement,
+				NativeEntryBindingVariant.lateralOwnerInputs(originalExpr));
+	}
+
+	private NativeRowsStep(NativeLmdbQuerySource source, SlotPlan arg, NativeSlotLayout layout, int[] sourceSlots,
+			String[] targetNames, boolean distinct, int[] orderSlots, boolean[] orderAscending, long offset,
+			long limit, boolean strictCompare, LmdbNativeEvaluationStrategy strategy, TupleExpr originalExpr,
+			QueryEvaluationContext context, Set<String> optionalOnlyNames, PatternPlan prefixPattern,
+			LmdbPrefixRunPlan prefixRunPlan, OptionalCallerRequirement optionalCallerRequirement,
+			Requirement valuesRequirement, List<BindingFrameBindings.ConditionInputs> lateralOwnerInputs) {
 		this.source = source;
 		this.arg = arg;
 		this.replaySafe = SlotPlan.encounterOrderReplaySafe(arg);
@@ -392,6 +501,11 @@ final class NativeRowsStep implements NativeResultStep, LmdbNativePhysicalPlan {
 		this.context = context;
 		this.optionalOnlyNames = optionalOnlyNames.isEmpty() ? NO_OPTIONAL_ONLY_NAMES
 				: optionalOnlyNames.toArray(String[]::new);
+		this.optionalCallerRequirement = optionalCallerRequirement;
+		this.valuesRequirement = valuesRequirement;
+		this.localAssignmentNames = NativeEntryBindingVariant.localAssignmentNames(originalExpr);
+		this.ambiguousLateralEntry = NativeEntryBindingVariant.ambiguousLateralEntry(originalExpr, arg);
+		this.lateralOwnerInputs = lateralOwnerInputs;
 		this.prefixPattern = prefixPattern;
 		this.prefixRunPlan = prefixRunPlan;
 		this.generatedKeys = distinct ? NativeGeneratedKeyPlan.distinct(arg, sourceSlots) : NativeGeneratedKeyPlan.NONE;
@@ -474,34 +588,61 @@ final class NativeRowsStep implements NativeResultStep, LmdbNativePhysicalPlan {
 
 	@Override
 	public CloseableIteration<BindingSet> evaluate(BindingSet bindings) {
-		if (requiresPhysicalResults()) {
-			return NativeResultSteps.rdf(evaluateNative(bindings));
+		return scopedStatementLookup == null ? evaluateWithoutScopedLookup(bindings)
+				: scopedStatementLookup.evaluate(bindings);
+	}
+
+	private CloseableIteration<BindingSet> evaluateWithoutScopedLookup(BindingSet bindings) {
+		return evaluateWithoutScopedLookup(bindings, bindings);
+	}
+
+	CloseableIteration<BindingSet> evaluateWithoutScopedLookup(BindingSet logical, BindingSet bindings) {
+		BindingSet body = graphInput == null ? bindings : graphInput.apply(logical, context);
+		BindingSet queryBase = graphInput == null ? logical : body;
+		if (graphInput != null && logical != bindings) {
+			// A physical lookup projection is not an authority for the SELECT caller.
+			return genericFallback(logical, evaluationSource(body), false, "graphInputLookup", true);
 		}
-		NativeLmdbQuerySource evalSource = evaluationSource(bindings);
-		initializeQueryBase(evalSource, bindings);
+		String semanticReason = semanticEntryFallbackReason(logical, body);
+		if (semanticReason != null) {
+			NativeLmdbQuerySource evaluation = evaluationSource(queryBase);
+			return genericFallback(logical, evaluation, false, semanticReason, true);
+		}
+		if (requiresPhysicalResults()) {
+			if (graphInput != null && hasOptionalOnlyBinding(body)) {
+				return genericFallback(logical, evaluationSource(body), false, "optionalOnlyBinding");
+			}
+			return NativeResultSteps.rdf(evaluateNativeDirect(logical, body));
+		}
+		NativeLmdbQuerySource evalSource = evaluationSource(queryBase);
+		initializeQueryBase(evalSource, queryBase);
 		NativeRowsStep nativeStep = this;
-		BindingSet nativeBindings = bindings;
-		if (hasOptionalOnlyBinding(bindings)) {
-			NativeEntryBindingVariant variant = NativeEntryBindingVariant.tryCreate(evalSource, layout, bindings,
-					optionalOnlyNames);
+		BindingSet nativeBindings = body;
+		NativeEntryBindingVariant variant = null;
+		Set<String> problemBindings = NativeEntryBindingVariant.problemBindings(body, optionalOnlyNames, context);
+		if (!problemBindings.isEmpty()) {
+			variant = NativeEntryBindingVariant.tryCreate(evalSource, layout, body, problemBindings);
 			if (variant == null) {
-				return genericFallback(bindings, evalSource, false, "optionalOnlyBinding");
+				return genericFallback(logical, evalSource, false, "optionalOnlyBinding");
 			}
 			LmdbNativeExplain.recordExecutionPath(originalExpr, variant.executionPath());
 			nativeStep = withEntryBindingVariant(variant);
 			nativeBindings = variant.filteredBase;
 		}
 		if (!NativeRowSeeder.supports(nativeBindings, layout, evalSource)) {
-			return genericFallback(bindings, evalSource, false, "unrepresentableEntry");
+			return genericFallback(logical, evalSource, false, "unrepresentableEntry");
 		}
-		return nativeStep.evaluateNative(nativeBindings, evalSource);
+		return nativeStep.evaluateNative(nativeBindings, evalSource, variant, graphInput == null ? bindings : logical,
+				graphInput == null ? logical : body);
 	}
 
-	private CloseableIteration<BindingSet> evaluateNative(BindingSet bindings, NativeLmdbQuerySource evalSource) {
-		if (orderSlots.length == 0) {
-			return withContextLifetime(new NativeRowsIteration(this, evalSource, bindings), evalSource);
-		}
-		return withContextLifetime(new NativeOrderedRowsIteration(this, evalSource, bindings), evalSource);
+	private CloseableIteration<BindingSet> evaluateNative(BindingSet bindings, NativeLmdbQuerySource evalSource,
+			NativeEntryBindingVariant variant, BindingSet original, BindingSet lexicalBase) {
+		BindingSet outputBase = graphInput == null ? bindings : original;
+		CloseableIteration<BindingSet> rows = orderSlots.length == 0
+				? new NativeRowsIteration(this, evalSource, bindings, outputBase, lexicalBase)
+				: new NativeOrderedRowsIteration(this, evalSource, bindings, outputBase, lexicalBase);
+		return withContextLifetime(variant == null ? rows : variant.restoreFrames(rows, original), evalSource);
 	}
 
 	@Override
@@ -512,40 +653,59 @@ final class NativeRowsStep implements NativeResultStep, LmdbNativePhysicalPlan {
 	@Override
 	public NativeResultCursor evaluateNative(BindingSet bindings) {
 		if (!requiresPhysicalResults()) {
+			// A guarded semantic fallback returns full RDF values, which physical consumers can also accept.
 			return NativeResultSteps.open(ignored -> evaluate(bindings), bindings);
 		}
-		return evaluateNativeDirect(bindings);
+		BindingSet body = graphInput == null ? bindings : graphInput.apply(bindings, context);
+		String reason = semanticEntryFallbackReason(bindings, body);
+		if (reason != null || graphInput != null && hasOptionalOnlyBinding(body)) {
+			NativeLmdbQuerySource evaluation = evaluationSource(body);
+			return NativeResultSteps.open(ignored -> genericFallback(bindings, evaluation, false,
+					reason == null ? "optionalOnlyBinding" : reason, reason != null), bindings);
+		}
+		return evaluateNativeDirect(bindings, body);
 	}
 
-	private NativeResultCursor evaluateNativeDirect(BindingSet bindings) {
-		if (distinct || orderSlots.length != 0 || snapshotRows || hasOptionalOnlyBinding(bindings)) {
+	private NativeResultCursor evaluateNativeDirect(BindingSet logical, BindingSet body) {
+		if (distinct || orderSlots.length != 0 || snapshotRows || hasOptionalOnlyBinding(body)
+				|| legacySemanticEntryFallbackReason(body) != null) {
 			throw new IllegalStateException("An RDF mapping observer requires FULL_VALUE aggregate demand");
 		}
-		NativeLmdbQuerySource evaluation = evaluationSource(bindings);
-		initializeQueryBase(evaluation, bindings);
+		NativeLmdbQuerySource evaluation = evaluationSource(body);
+		initializeQueryBase(evaluation, body);
+		if (graphInput != null && !NativeRowSeeder.supports(body, layout, evaluation)) {
+			return NativeResultSteps.open(ignored -> genericFallback(logical, evaluation, false,
+					"unrepresentableEntry"), logical);
+		}
 		NativeExecutionContext owner = NativeExecutionContextCarrier.contextOf(evaluation);
 		if (evaluation instanceof SyntheticValueSource synthetic) {
 			owner = synthetic.executionContext();
 		}
-		return new NativeRowsResultCursor(this, evaluation, bindings, owner,
+		return new NativeRowsResultCursor(this, evaluation, body, graphInput == null ? body : logical,
+				graphInput == null ? logical : body, owner,
 				evaluation != source && evaluation instanceof SyntheticValueSource synthetic
 						&& !SyntheticValueSource.inheritedEvaluation(synthetic));
 	}
 
 	@Override
 	public NativePhysicalResultPlan physicalPlan(BindingSet bindings) {
+		BindingSet body = graphInput == null ? bindings : graphInput.apply(bindings, context);
 		if (distinct || orderSlots.length != 0 || offset != 0L || limit >= 0L || snapshotRows
-				|| hasOptionalOnlyBinding(bindings)) {
+				|| hasOptionalOnlyBinding(body) || semanticEntryFallbackReason(bindings, body) != null
+				|| NativeEntryBindingVariant.hasLateralOwnerInput(lateralOwnerInputs, bindings)) {
 			return null;
 		}
 		SyntheticValueSource planningSource = SyntheticValueSource.forInvocation(source, queryExecutionPolicy(),
-				bindings);
+				body);
 		RowState acquiredRow = null;
 		Throwable failure = null;
 		try {
-			RowState row = new RowState(planningSource, layout, bindings);
+			if (graphInput != null && !NativeRowSeeder.supports(body, layout, planningSource)) {
+				return null;
+			}
+			RowState row = new RowState(planningSource, layout, body);
 			acquiredRow = row;
-			if (!initializeRow(row, bindings, planningSource, layout)) {
+			if (!initializeRow(row, body, planningSource, layout)) {
 				return null;
 			}
 			SlotPlan input = NativeAggregatePhysicalPlan.bindLexicalInputs(arg, row);
@@ -558,7 +718,7 @@ final class NativeRowsStep implements NativeResultStep, LmdbNativePhysicalPlan {
 			NativePhysicalOutputEvidence evidence = NativeLogicalResultTransferPlan.projectedEvidence(input,
 					planningSource, sourceSlots, targetNames, output);
 			if (evidence == null && !SlotPlan.requiresPhysicalCells(input)) {
-				evidence = NativePhysicalOutputEvidence.rdfRows(input, output, planningSource, bindings, sourceSlots,
+				evidence = NativePhysicalOutputEvidence.rdfRows(input, output, planningSource, body, sourceSlots,
 						targetNames);
 			}
 			return physicalResult(input, output, evidence, NativeEntryBindings.snapshot(bindings));
@@ -581,11 +741,28 @@ final class NativeRowsStep implements NativeResultStep, LmdbNativePhysicalPlan {
 			NativePhysicalOutputEvidence evidence, BindingSet quotedBindings) {
 		NativeRowsStep bound = new NativeRowsStep(source, input, layout, sourceSlots, targetNames, false,
 				orderSlots, orderAscending, 0L, -1L, strictCompare, strategy, originalExpr, context, Set.of(), null,
-				null);
+				null, optionalCallerRequirement, valuesRequirement, lateralOwnerInputs);
+		bound.projectionBoundary = projectionBoundary;
+		bound.graphInput = graphInput;
+		bound.certifiedContextEntryHazards = certifiedContextEntryHazards;
 		NativeResultStep executable = new NativeResultStep() {
 			@Override
 			public NativeResultCursor evaluateNative(BindingSet bindings) {
-				return bound.evaluateNativeDirect(bindings);
+				if (graphInput != null && !NativeEntryBindings.sameGraphEntry(quotedBindings, bindings)) {
+					return NativeResultSteps.open(ignored -> NativeRowsStep.this.evaluate(bindings), bindings);
+				}
+				BindingSet body = graphInput == null ? bindings : graphInput.apply(bindings, context);
+				String reason = semanticEntryFallbackReason(bindings, body);
+				if (graphInput != null && (reason != null || hasOptionalOnlyBinding(body))) {
+					NativeLmdbQuerySource evaluation = evaluationSource(body);
+					return NativeResultSteps.open(ignored -> genericFallback(bindings, evaluation, false,
+							reason == null ? "optionalOnlyBinding" : reason, reason != null), bindings);
+				}
+				if (reason != null || NativeEntryBindingVariant.hasLateralOwnerInput(lateralOwnerInputs, bindings)) {
+					// A quote made for another entry does not carry the direct LATERAL recipient transition.
+					return NativeResultSteps.open(ignored -> NativeRowsStep.this.evaluate(bindings), bindings);
+				}
+				return bound.evaluateNativeDirect(bindings, body);
 			}
 
 			@Override
@@ -604,14 +781,22 @@ final class NativeRowsStep implements NativeResultStep, LmdbNativePhysicalPlan {
 				evidence == null || recipe == null || !NativeWorkerPlanBinder.canBind(input) ? null
 						: (prepared, worker, bindings) -> {
 							if (!(prepared instanceof NativeRowsStep actual)
+									|| (graphInput == null ? actual.graphInput != null
+											: !graphInput.sameTransition(actual.graphInput))
 									|| !Arrays.equals(sourceSlots, actual.sourceSlots)
-									|| !Arrays.equals(targetNames, actual.targetNames) || actual.distinct
+									|| !Arrays.equals(targetNames, actual.targetNames)
+									|| projectionBoundary != actual.projectionBoundary || actual.distinct
 									|| actual.orderSlots.length != 0 || actual.snapshotRows || actual.offset != 0L
 									|| actual.limit >= 0L || strictCompare != actual.strictCompare
 									|| queryExecutionPolicy() != actual.queryExecutionPolicy()
 									|| !Set.copyOf(Arrays.asList(optionalOnlyNames))
 											.equals(Set.copyOf(Arrays.asList(actual.optionalOnlyNames)))
-									|| !NativePhysicalOutputEvidence.sameEntry(quotedBindings, bindings)
+									|| !optionalCallerRequirement.equals(actual.optionalCallerRequirement)
+									|| !valuesRequirement.equals(actual.valuesRequirement)
+									|| !certifiedContextEntryHazards.equals(actual.certifiedContextEntryHazards)
+									|| !(graphInput == null
+											? NativePhysicalOutputEvidence.sameEntry(quotedBindings, bindings)
+											: NativeEntryBindings.sameGraphEntry(quotedBindings, bindings))
 									|| !evidence.validFor(worker.source())
 									|| !evidence.sourceFamilyMatches(actual.source)
 									|| !recipe.matches(actual.arg)) {
@@ -626,6 +811,11 @@ final class NativeRowsStep implements NativeResultStep, LmdbNativePhysicalPlan {
 
 	CloseableIteration<BindingSet> genericFallback(BindingSet bindings, NativeLmdbQuerySource evalSource,
 			boolean borrowed, String reason) {
+		return genericFallback(bindings, evalSource, borrowed, reason, false);
+	}
+
+	private CloseableIteration<BindingSet> genericFallback(BindingSet bindings, NativeLmdbQuerySource evalSource,
+			boolean borrowed, String reason, boolean genericOnly) {
 		SyntheticValueSource synthetic = evalSource instanceof SyntheticValueSource existing ? existing
 				: SyntheticValueSource.forInvocation(evalSource, queryExecutionPolicy(), bindings);
 		initializeQueryBase(synthetic, bindings);
@@ -634,10 +824,12 @@ final class NativeRowsStep implements NativeResultStep, LmdbNativePhysicalPlan {
 		boolean closeContext = (!borrowed || synthetic != evalSource)
 				&& !SyntheticValueSource.inheritedEvaluation(synthetic);
 		return NativeExecutionContextCarrier.evaluate(() -> {
-			if (strategy == null && genericStep == null) {
+			if (strategy == null && (genericOnly || genericStep == null)) {
 				throw new IllegalStateException("unsupported native entry requires a semantic evaluation strategy");
 			}
-			return genericStep(synthetic.executionContext()).evaluate(bindings);
+			QueryEvaluationStep fallback = genericOnly ? graphAssignmentStep(synthetic.executionContext())
+					: genericStep(synthetic.executionContext());
+			return fallback.evaluate(bindings);
 		}, synthetic, closeContext);
 	}
 
@@ -660,20 +852,98 @@ final class NativeRowsStep implements NativeResultStep, LmdbNativePhysicalPlan {
 				distinct,
 				orderSlots, orderAscending, offset, limit, strictCompare, strategy, originalExpr, context, Set.of(),
 				null,
-				null);
+				null, optionalCallerRequirement, valuesRequirement, lateralOwnerInputs);
 		result.snapshotRows = snapshotRows;
+		result.projectionBoundary = projectionBoundary;
 		result.entryPath = entryPath;
 		result.rootEvaluationScoped = rootEvaluationScoped;
+		result.certifiedFilterScope = certifiedFilterScope;
+		result.certifiedContextEntryHazards = certifiedContextEntryHazards;
+		result.graphInput = graphInput;
 		return result;
 	}
 
 	boolean hasOptionalOnlyBinding(BindingSet bindings) {
-		for (String name : optionalOnlyNames) {
-			if (bindings.hasBinding(name)) {
-				return true;
-			}
+		return !NativeEntryBindingVariant.problemBindings(bindings, optionalOnlyNames, context).isEmpty();
+	}
+
+	String semanticEntryFallbackReason(BindingSet bindings) {
+		return semanticEntryFallbackReason(bindings, bindings);
+	}
+
+	String semanticEntryFallbackReason(BindingSet logical, BindingSet bindings) {
+		if (!valuesRequirement.admits(logical)) {
+			return "valuesEntry";
 		}
-		return false;
+		if (hasOccupiedCertifiedContext(logical) || logical != bindings && hasOccupiedCertifiedContext(bindings)) {
+			return "certifiedContextInput";
+		}
+		if (NativeEntryBindingVariant.hasLateralOwnerInput(lateralOwnerInputs, logical)
+				&& (!(arg instanceof LateralPlan lateral) || !admitsOwnerLateral(lateral, logical, bindings))) {
+			return "lateralOwnerInput";
+		}
+		String existing = legacySemanticEntryFallbackReason(bindings);
+		return existing != null ? existing : optionalCallerRequiresSemanticEvaluation(logical) ? "optionalEntry" : null;
+	}
+
+	private boolean hasOccupiedCertifiedContext(BindingSet bindings) {
+		return !certifiedContextEntryHazards.isEmpty()
+				&& !Collections.disjoint(certifiedContextEntryHazards, bindings.getBindingNames());
+	}
+
+	private boolean admitsOwnerLateral(LateralPlan lateral, BindingSet logical, BindingSet bindings) {
+		String forced = forcedExecutionStrategyName();
+		return lateral == arg && lateral.ownerInput != null && lateral.ownerInput.occurrence == originalExpr
+				&& logical == bindings && graphInput == null && !projectionBoundary && !distinct
+				&& orderSlots.length == 0 && offset == 0L && limit < 0L && !requiresPhysicalResults()
+				&& !hasOptionalOnlyBinding(bindings)
+				&& (LmdbNativeForceableStrategies.isNoForcing(forced)
+						|| LmdbNativeForceableStrategies.options(forced)
+								.equals(List.of(LmdbNativeAttemptMetrics.PATH_NESTED_LOOP)))
+				&& lateral.ownerInput.admits(bindings);
+	}
+
+	private boolean optionalCallerRequiresSemanticEvaluation(BindingSet bindings) {
+		return NativeEntryBindingVariant.optionalCallerRequiresSemanticEvaluation(bindings, optionalCallerRequirement,
+				context);
+	}
+
+	private String legacySemanticEntryFallbackReason(BindingSet bindings) {
+		if (certifiedFilterScope && BindingFrameBindings.hasFrame(bindings)) {
+			return "certifiedFilterFrame";
+		}
+		if (NativeEntryBindingVariant.graphAssignmentNeedsSemanticEvaluation(bindings, localAssignmentNames)) {
+			return "graphAssignment";
+		}
+		if (NativeEntryBindingVariant.assignmentOverwritesInput(bindings, localAssignmentNames)) {
+			return "entryAssignment";
+		}
+		return ambiguousLateralEntry && BindingFrameBindings.substitutionDomain(bindings) != null
+				? "semanticLateralEntry"
+				: null;
+	}
+
+	private synchronized QueryEvaluationStep graphAssignmentStep(NativeExecutionContext executionContext) {
+		if (graphAssignmentDescriptor == null) {
+			graphAssignmentDescriptor = GenericSubplanDescriptor.create(originalExpr, strategy, valuePositions);
+		}
+		if (!graphAssignmentDescriptor.shareableAcrossEvaluations()) {
+			return executionContext.genericStep(graphAssignmentDescriptor, () -> {
+				QueryEvaluationContext scoped = executionContext.genericContext(context, strategy);
+				return compileSemanticFallback(scoped);
+			});
+		}
+		if (graphAssignmentStep == null) {
+			graphAssignmentStep = compileSemanticFallback(context);
+		}
+		return graphAssignmentStep;
+	}
+
+	private QueryEvaluationStep compileSemanticFallback(QueryEvaluationContext scoped) {
+		if (arg instanceof TupleFunctionPlan tuple && originalExpr instanceof TupleFunctionCall) {
+			return graphAssignmentDescriptor.genericTuplePrecompile(strategy, scoped, tuple.argumentGrant());
+		}
+		return graphAssignmentDescriptor.precompile(strategy.genericOnlyView(), scoped);
 	}
 
 	synchronized QueryEvaluationStep genericStep() {
@@ -683,11 +953,10 @@ final class NativeRowsStep implements NativeResultStep, LmdbNativePhysicalPlan {
 		if (rootEvaluationScoped && !genericFallbackDescriptor.shareableAcrossEvaluations()) {
 			// Query-scope state (NOW/BNODE/volatiles) present: this is called from evaluate(), and for a root step one
 			// evaluate() is one query evaluation, so compile the pinned snapshot fresh with a per-evaluation scope.
-			return genericFallbackDescriptor.genericPrecompile(strategy,
-					EvaluationScopedQueryEvaluationContext.create(context, strategy));
+			return compileGenericFallback(EvaluationScopedQueryEvaluationContext.create(context, strategy));
 		}
 		if (genericStep == null) {
-			genericStep = genericFallbackDescriptor.genericPrecompile(strategy, context);
+			genericStep = compileGenericFallback(context);
 		}
 		return genericStep;
 	}
@@ -700,10 +969,17 @@ final class NativeRowsStep implements NativeResultStep, LmdbNativePhysicalPlan {
 			return executionContext.genericStep(genericFallbackDescriptor, () -> {
 				QueryEvaluationContext scoped = executionContext
 						.genericContext(context, strategy);
-				return genericFallbackDescriptor.genericPrecompile(strategy, scoped);
+				return compileGenericFallback(scoped);
 			});
 		}
 		return genericStep();
+	}
+
+	private QueryEvaluationStep compileGenericFallback(QueryEvaluationContext scoped) {
+		if (arg instanceof TupleFunctionPlan tuple && originalExpr instanceof TupleFunctionCall) {
+			return genericFallbackDescriptor.genericTuplePrecompile(strategy, scoped, tuple.argumentGrant());
+		}
+		return genericFallbackDescriptor.genericPrecompile(strategy, scoped);
 	}
 
 	/**
@@ -786,23 +1062,34 @@ final class NativeRowsStep implements NativeResultStep, LmdbNativePhysicalPlan {
 
 	List<BindingSet> evaluateAll(BindingSet base, NativeLmdbQuerySource evalSource,
 			NativeCancellationToken cancellation) {
+		return evaluateAll(base, base, evalSource, cancellation);
+	}
+
+	List<BindingSet> evaluateAll(BindingSet base, BindingSet outputBase, NativeLmdbQuerySource evalSource,
+			NativeCancellationToken cancellation) {
+		return evaluateAll(base, outputBase, base, evalSource, cancellation);
+	}
+
+	List<BindingSet> evaluateAll(BindingSet base, BindingSet outputBase, BindingSet lexicalBase,
+			NativeLmdbQuerySource evalSource, NativeCancellationToken cancellation) {
 		try (NativeCancellationToken.Scope cancellationScope = cancellation.enter();
 				NativeExecutionPhaseEvent.Span phase = NativeExecutionPhaseEvent.start("rows", cancellation);
 				NativeExecutionPhaseEvent.InputScope inputPhases = NativeExecutionPhaseEvent.inputScope(cancellation)) {
-			List<BindingSet> result = evaluateAllUnmeasured(base, evalSource, cancellation);
+			List<BindingSet> result = evaluateAllUnmeasured(base, outputBase, lexicalBase, evalSource, cancellation);
 			inputPhases.complete();
 			phase.complete();
 			return result;
 		}
 	}
 
-	private List<BindingSet> evaluateAllUnmeasured(BindingSet base, NativeLmdbQuerySource evalSource,
+	private List<BindingSet> evaluateAllUnmeasured(BindingSet base, BindingSet outputBase, BindingSet lexicalBase,
+			NativeLmdbQuerySource evalSource,
 			NativeCancellationToken cancellation) {
 		cancellation.check();
 		initializeQueryBase(evalSource, base);
 		if (!NativeRowSeeder.supports(base, layout, evalSource)) {
 			List<BindingSet> result = new ArrayList<>();
-			try (CloseableIteration<BindingSet> rows = genericFallback(base, evalSource, true,
+			try (CloseableIteration<BindingSet> rows = genericFallback(outputBase, evalSource, true,
 					"unrepresentableEntry")) {
 				while (!cancellation.isCancellationRequested() && rows.hasNext()) {
 					result.add(materialize(rows.next()));
@@ -811,6 +1098,7 @@ final class NativeRowsStep implements NativeResultStep, LmdbNativePhysicalPlan {
 			return result;
 		}
 		RowState row = new RowState(evalSource, layout, base, originalExpr, cancellation);
+		row.restrictLexicalInputs(lexicalBase);
 		if (!initializeRow(row, base, evalSource, layout)) {
 			LmdbNativeExplain.recordExecutionPath(originalExpr, LmdbNativeAttemptMetrics.PATH_EMPTY_SEED);
 			return List.of();
@@ -826,7 +1114,7 @@ final class NativeRowsStep implements NativeResultStep, LmdbNativePhysicalPlan {
 				: inherited;
 		boolean completed = false;
 		try (LmdbFusedSipFactorizedRuntime.Scope ignored = LmdbFusedSipFactorizedRuntime.attach(session)) {
-			List<BindingSet> result = withForeignBase(evaluateAllInitialized(base, row), base);
+			List<BindingSet> result = withForeignBase(evaluateAllInitialized(base, row), outputBase);
 			cancellation.check();
 			session.recordMaterializationBoundary(result.size());
 			completed = true;
@@ -1117,7 +1405,7 @@ final class NativeRowsStep implements NativeResultStep, LmdbNativePhysicalPlan {
 	 * the classic enumerated sort then runs unchanged.
 	 */
 	private List<BindingSet> tryEvaluateOrderedFactorized(BindingSet base, AggContext values,
-			PackedRowComparator comparator, long emitCap) {
+			PackedRowComparator comparator, long emitCap, long lexicalInputMask) {
 		MultiJoinPlan input = orderedFactorizedInput();
 		if (!orderedFactorizedEnabled() || distinct || snapshotRows || input == null
 				|| input.children.length == 0 || !SlotPlan.encounterOrderReplaySafe(arg)
@@ -1125,6 +1413,7 @@ final class NativeRowsStep implements NativeResultStep, LmdbNativePhysicalPlan {
 			return null;
 		}
 		RowState row = new RowState(values.source, layout, base, originalExpr);
+		row.lexicalInputMask &= lexicalInputMask;
 		if (!initializeRow(row, base, values.source, layout)) {
 			return null;
 		}
@@ -1474,6 +1763,22 @@ final class NativeRowsStep implements NativeResultStep, LmdbNativePhysicalPlan {
 	}
 
 	NativeUnorderedInput openUnorderedInput(RowState row, NativeTupleDistinctPlan distinctPlan) throws IOException {
+		if (arg instanceof LateralPlan lateral && lateral.ownerInput != null
+				&& lateral.ownerInput.hasOwnerInput(row.base) && admitsOwnerLateral(lateral, row.base, row.base)) {
+			if (row.boundMask() != row.baseBindingMask || row.activeLateralOccurrence() != null) {
+				throw new IllegalStateException("selected LATERAL entry is not its prepared root invocation");
+			}
+			// Commit the exact serial producer before either child can run or a callback can be observed.
+			row.encounterOrderRequired = true;
+			row.admittedOwnerLateral = lateral;
+			LmdbNativeDispatchLoop.logDirect(originalExpr, "LATERAL owner entry",
+					LmdbNativeAttemptMetrics.PATH_NESTED_LOOP, "Selected single-pass owner transition");
+			LmdbNativeExplain.recordExecutionPath(originalExpr, LmdbNativeAttemptMetrics.PATH_NESTED_LOOP);
+			activateOrder(row, LmdbNativeAttemptMetrics.PATH_NESTED_LOOP, null);
+			NativeUnorderedInput input = NativeUnorderedInput.rows(row, lateral.open(row));
+			input.acceptScalarFilterAttempt();
+			return input;
+		}
 		MultiJoinPlan multiJoin = arg instanceof MultiJoinPlan && ((MultiJoinPlan) arg).children.length > 0
 				? (MultiJoinPlan) arg
 				: null;
@@ -1619,7 +1924,8 @@ final class NativeRowsStep implements NativeResultStep, LmdbNativePhysicalPlan {
 		strategies.add(LmdbNativeStrategy.of(LmdbNativeDecisionPoint.ORDER, factorizedTag,
 				context -> factorizedQuote == null ? LmdbNativeAdmission.declined("not-multi-join")
 						: LmdbNativeAdmission.of(LmdbNativeCandidate.of(factorizedTag, factorizedQuote,
-								() -> tryEvaluateOrderedFactorized(base, values, comparator, emitCap)))));
+								() -> tryEvaluateOrderedFactorized(base, values, comparator, emitCap,
+										row.lexicalInputMask)))));
 		return strategies;
 	}
 
@@ -1690,7 +1996,7 @@ final class NativeRowsStep implements NativeResultStep, LmdbNativePhysicalPlan {
 			arbiter.offer(() -> planProposal(() -> acceptOrderedDistinct(row, distinctPlan.arg.open(row)),
 					LmdbNativeAttemptMetrics.PATH_ORDERED_DISTINCT, distinctPlan.arg, row));
 		}
-		LmdbNativeLeapfrogJoin.Shape leapfrog = LmdbNativeLeapfrogJoin.shape(arg, row.boundMask());
+		LmdbNativeLeapfrogJoin.Shape leapfrog = LmdbNativeLeapfrogJoin.shape(arg, row);
 		if (leapfrog != null) {
 			// priced level by level as the cursor searches (frontiers per distinct prefix, galloping merges); the
 			// set-at-a-time form stays the ceiling when a frontier size is unknown
@@ -1799,9 +2105,16 @@ final class NativeRowsStep implements NativeResultStep, LmdbNativePhysicalPlan {
 	}
 
 	private void explainStrategies(BindingSet bindings) {
-		if (hasOptionalOnlyBinding(bindings)) {
+		if (!certifiedContextEntryHazards.isEmpty() && (hasOccupiedCertifiedContext(bindings)
+				|| graphInput != null && hasOccupiedCertifiedContext(graphInput.apply(bindings, context)))) {
+			LmdbNativeStrategyPreview.direct("row/join dispatch", LmdbNativeAttemptMetrics.PATH_GENERIC_FALLBACK,
+					"An occupied context binding requires semantic evaluation", null);
+			return;
+		}
+		Set<String> problemBindings = NativeEntryBindingVariant.problemBindings(bindings, optionalOnlyNames, context);
+		if (!problemBindings.isEmpty()) {
 			NativeEntryBindingVariant variant = NativeEntryBindingVariant.tryCreate(source, layout, bindings,
-					optionalOnlyNames);
+					problemBindings);
 			if (variant == null) {
 				LmdbNativeStrategyPreview.direct("optional entry binding dispatch",
 						LmdbNativeAttemptMetrics.PATH_GENERIC_FALLBACK,
@@ -2567,32 +2880,54 @@ final class NativeRowsStep implements NativeResultStep, LmdbNativePhysicalPlan {
 		return !rootEvaluationScoped && base != null && !base.isEmpty();
 	}
 
-	/** Adds the base bindings whose names the projection does not emit; projected names win over the base. */
+	/** Adds foreign base bindings and preserves the invocation metadata even when the visible base is empty. */
 	BindingSet withForeignBase(BindingSet projected, BindingSet base) {
-		if (!carriesForeignBase(base)) {
-			return projected;
-		}
-		boolean foreign = false;
-		for (String name : base.getBindingNames()) {
-			if (!projected.hasBinding(name)) {
-				foreign = true;
-				break;
+		GraphFrameBindings graphFrames = GraphFrameBindings.from(base);
+		if (projectionBoundary && graphFrames != GraphFrameBindings.EMPTY) {
+			// Copying a mapping preserves authority; writing a bound projection target revokes that target's grant.
+			for (String target : targetNames) {
+				if (projected.hasBinding(target)) {
+					graphFrames = graphFrames.without(target);
+				}
 			}
 		}
-		if (!foreign) {
+		boolean foreign = false;
+		if (carriesForeignBase(base)) {
+			for (String name : base.getBindingNames()) {
+				if (!projected.hasBinding(name)) {
+					foreign = true;
+					break;
+				}
+			}
+		}
+		if (foreign) {
+			QueryBindingSet merged = new QueryBindingSet(base.size() + projected.size());
+			merged.addAll(base);
+			for (Binding binding : projected) {
+				merged.setBinding(binding);
+			}
+			merged.setGraphFrameBindings(graphFrames);
+			return BindingFrameBindings.preserve(base, merged);
+		}
+		if (!carriesFrames(base)) {
 			return projected;
 		}
-		QueryBindingSet merged = new QueryBindingSet(base.size() + projected.size());
-		merged.addAll(base);
-		for (Binding binding : projected) {
-			merged.setBinding(binding);
+		if (projected instanceof NativeProjectedBindingSet nativeProjection) {
+			nativeProjection.preserveFrames(base, graphFrames);
+			return nativeProjection;
 		}
-		return merged;
+		QueryBindingSet result = new QueryBindingSet(projected);
+		result.setGraphFrameBindings(graphFrames);
+		return BindingFrameBindings.preserve(base, result);
+	}
+
+	private static boolean carriesFrames(BindingSet base) {
+		return BindingFrameBindings.hasFrame(base) || GraphFrameBindings.from(base) != GraphFrameBindings.EMPTY;
 	}
 
 	/** {@link #withForeignBase(BindingSet, BindingSet)} over a materialized result list. */
 	List<BindingSet> withForeignBase(List<BindingSet> rows, BindingSet base) {
-		if (!carriesForeignBase(base) || rows.isEmpty()) {
+		if ((!carriesForeignBase(base) && !carriesFrames(base)) || rows.isEmpty()) {
 			return rows;
 		}
 		List<BindingSet> merged = new ArrayList<>(rows.size());
@@ -2634,11 +2969,7 @@ final class NativeRowsStep implements NativeResultStep, LmdbNativePhysicalPlan {
 
 	/** Copies a lazy row into a plain binding set, resolving every value through the still-open evaluation. */
 	static BindingSet materialize(BindingSet view) {
-		QueryBindingSet result = new QueryBindingSet(view.size());
-		for (Binding binding : view) {
-			result.addBinding(binding.getName(), binding.getValue());
-		}
-		return result;
+		return new QueryBindingSet(view);
 	}
 
 	List<BindingSet> slice(ArrayList<BindingSet> results) {
@@ -2651,12 +2982,32 @@ final class NativeRowsStep implements NativeResultStep, LmdbNativePhysicalPlan {
 }
 
 @Experimental
-final class NativeBareRowsStep implements QueryEvaluationStep, LmdbNativePhysicalPlan {
+final class NativeBareRowsStep implements QueryEvaluationStep, LmdbNativePhysicalPlan,
+		BindingFrameBindings.PhysicalLookupCapability, BindingFrameBindings.TupleParameterConsumer {
 	final NativeLmdbQuerySource source;
 	final SlotPlan arg;
 	final NativeSlotLayout layout;
 	final TupleExpr originalExpr;
 	final NativeRowsStep bulk;
+	private volatile Boolean accumulateRestartSafe;
+	private volatile QueryEvaluationStep scopedStatementLookup;
+	private volatile boolean scopedStatementHasLookupInputs;
+
+	void enableScopedStatementLookup(Set<String> inputs, StatementPattern pattern, QueryEvaluationContext context) {
+		scopedStatementHasLookupInputs = !inputs.isEmpty();
+		scopedStatementLookup = BindingFrameBindings.scopedStatementLookup(this::evaluateWithoutScopedLookup, inputs,
+				pattern, context);
+	}
+
+	@Override
+	public boolean supportsPhysicalLookups() {
+		return scopedStatementLookup != null && scopedStatementHasLookupInputs;
+	}
+
+	@Override
+	public BindingFrameBindings.TupleParameterGrant tupleParameterGrant() {
+		return arg instanceof TupleFunctionPlan tuple ? tuple.argumentGrant() : null;
+	}
 
 	NativeBareRowsStep(NativeLmdbQuerySource source, SlotPlan arg, NativeSlotLayout layout, TupleExpr originalExpr,
 			NativeRowsStep bulk) {
@@ -2667,23 +3018,79 @@ final class NativeBareRowsStep implements QueryEvaluationStep, LmdbNativePhysica
 		this.bulk = bulk;
 	}
 
+	/**
+	 * A partial accumulate sweep may be discarded only when both the algebra and concrete native plan prove stable
+	 * occurrence identity and exclude query-fatal effects. The native contracts compose through known snapshot reads,
+	 * fixed VALUES and their safe relational combinations; unknown and expression-bearing plans decline. This is
+	 * computed once for this prepared step, before the provider opens a sweep or consumes its outer input.
+	 */
+	boolean accumulateRestartSafe() {
+		Boolean safe = accumulateRestartSafe;
+		if (safe == null) {
+			synchronized (this) {
+				safe = accumulateRestartSafe;
+				if (safe == null) {
+					safe = computeAccumulateRestartSafe();
+					accumulateRestartSafe = safe;
+				}
+			}
+		}
+		return safe;
+	}
+
+	private boolean computeAccumulateRestartSafe() {
+		if (originalExpr == null || bulk.strategy == null || !source.readsAreRestartSafe()
+				|| bulk.strategy.isTrackTime()
+				|| bulk.strategy.isTrackResultSize() || !SlotPlan.encounterOrderReplaySafe(arg)
+				|| !SlotPlan.discardable(arg)) {
+			return false;
+		}
+		boolean[] instrumented = { false };
+		originalExpr.visit(new AbstractQueryModelVisitor<RuntimeException>() {
+			@Override
+			protected void meetNode(QueryModelNode node) {
+				instrumented[0] |= node.isRuntimeTelemetryEnabled() || node.isExecutionSummaryEnabled()
+						|| node instanceof TupleExpr tuple && LmdbNativeExplain.recordsLogicalExecutionPaths(tuple);
+				if (!instrumented[0]) {
+					super.meetNode(node);
+				}
+			}
+		});
+		if (instrumented[0]) {
+			return false;
+		}
+		QueryEvaluationUtility.QuerySafetySnapshot safety = QueryEvaluationUtility.querySafetySnapshot(originalExpr,
+				bulk.strategy.getQueryExecutionPolicy());
+		return safety.isRepeatable(originalExpr) && !safety.mayRaiseQueryFatalError(originalExpr)
+				&& !safety.usesMappingParameterizedEvaluation(originalExpr);
+	}
+
 	@Override
 	public CloseableIteration<BindingSet> evaluate(BindingSet bindings) {
+		return scopedStatementLookup == null ? evaluateWithoutScopedLookup(bindings)
+				: scopedStatementLookup.evaluate(bindings);
+	}
+
+	private CloseableIteration<BindingSet> evaluateWithoutScopedLookup(BindingSet bindings) {
+		return evaluateWithoutScopedLookup(bindings, bindings);
+	}
+
+	private CloseableIteration<BindingSet> evaluateWithoutScopedLookup(BindingSet logical, BindingSet bindings) {
 		if (bindings == null || bindings.isEmpty()) {
-			return bulk.evaluate(bindings);
+			return bulk.evaluateWithoutScopedLookup(logical, bindings);
 		}
 		// A base binding for an optional-only variable can turn a well-designed OPTIONAL badly designed at runtime;
 		// the per-call native path cannot honor that binding, so defer to the generic evaluator (mirrors the guard in
 		// NativeRowsStep.evaluate for the bulk path).
-		if (bulk.hasOptionalOnlyBinding(bindings)) {
-			return bulk.evaluate(bindings);
+		if (bulk.hasOptionalOnlyBinding(bindings) || bulk.semanticEntryFallbackReason(logical, bindings) != null) {
+			return bulk.evaluateWithoutScopedLookup(logical, bindings);
 		}
-		NativeLmdbQuerySource evalSource = bulk.evaluationSource(bindings);
-		NativeRowsStep.initializeQueryBase(evalSource, bindings);
+		NativeLmdbQuerySource evalSource = bulk.evaluationSource(logical);
+		NativeRowsStep.initializeQueryBase(evalSource, logical);
 		if (!NativeRowSeeder.supports(bindings, layout, evalSource)) {
-			return bulk.genericFallback(bindings, evalSource, false, "unrepresentableEntry");
+			return bulk.genericFallback(logical, evalSource, false, "unrepresentableEntry");
 		}
-		return bulk.withContextLifetime(new NativeBareRowsIteration(this, evalSource, bindings), evalSource);
+		return bulk.withContextLifetime(new NativeBareRowsIteration(this, evalSource, bindings, logical), evalSource);
 	}
 
 	@Override
@@ -2728,11 +3135,36 @@ final class NativeExistsValueStep implements QueryValueEvaluationStep {
 	final NativeBareRowsStep step;
 	final NativeExistsPatternCursor.Plan existsPlan;
 	final boolean rowLocal;
+	private final GenericSubplanDescriptor semanticDescriptor;
+	private final QueryValueEvaluationStep sharedSemanticStep;
+	private final long dynamicContextMask;
 
 	NativeExistsValueStep(NativeBareRowsStep step, NativeExistsPatternCursor.Plan existsPlan) {
 		this.step = step;
 		this.existsPlan = existsPlan;
 		this.rowLocal = LmdbNativeAggregateCompiler.memoReadMask(step.arg) >= 0L;
+		long contexts = 0L;
+		for (PatternPlan pattern : existsPlan.patterns) {
+			if (pattern.dynamicContext != null) {
+				contexts |= 1L << pattern.dynamicContext.slot;
+			}
+		}
+		this.dynamicContextMask = contexts;
+		OptionalCallerRequirement requirement = step.bulk.optionalCallerRequirement;
+		if (requirement.unknown() || !requirement.names().isEmpty() || requirement.gateUnknown()
+				|| requirement.gateAlways() || !requirement.gateNames().isEmpty()
+				|| !step.bulk.valuesRequirement.isEmpty() || dynamicContextMask != 0L) {
+			TupleExpr body = step.originalExpr.clone();
+			NativeGraphFusion.preserveLexicalScopes(step.originalExpr, body);
+			semanticDescriptor = GenericSubplanDescriptor.create(new Exists(body), step.bulk.strategy,
+					step.bulk.valuePositions);
+			sharedSemanticStep = semanticDescriptor.shareableAcrossEvaluations()
+					? semanticDescriptor.precompileValue(step.bulk.strategy.genericOnlyView(), step.bulk.context)
+					: null;
+		} else {
+			semanticDescriptor = null;
+			sharedSemanticStep = null;
+		}
 	}
 
 	void explainStrategies() {
@@ -2746,13 +3178,54 @@ final class NativeExistsValueStep implements QueryValueEvaluationStep {
 
 	@Override
 	public Value evaluate(BindingSet bindings) {
-		NativeLmdbQuerySource source = rowLocal ? step.bulk.evaluationSource() : step.bulk.evaluationSource(bindings);
+		return evaluate(bindings, bindings);
+	}
+
+	/** The semantic fallback receives the original frame; only the native entry check sees scalar inputs. */
+	Value evaluate(BindingSet logical, BindingSet scalarInput) {
+		if (!step.bulk.valuesRequirement.admits(logical)) {
+			return semanticFallback(logical, "valuesEntry");
+		}
+		if (NativeEntryBindingVariant.optionalCallerRequiresSemanticEvaluation(scalarInput,
+				step.bulk.optionalCallerRequirement, step.bulk.context)) {
+			return semanticFallback(logical, "optionalEntry");
+		}
+		long contexts = dynamicContextMask;
+		while (contexts != 0L) {
+			int slot = Long.numberOfTrailingZeros(contexts);
+			contexts &= contexts - 1L;
+			if (isNullContextValue(scalarInput.getValue(step.layout.slotName(slot)))) {
+				return semanticFallback(logical, "contextEntry");
+			}
+		}
+		NativeLmdbQuerySource source = rowLocal ? step.bulk.evaluationSource() : step.bulk.evaluationSource(logical);
 		NativeExecutionContext ownedContext = source != step.source && source instanceof SyntheticValueSource synthetic
 				&& !SyntheticValueSource.inheritedEvaluation(source) ? synthetic.executionContext() : null;
 		try (ownedContext;
 				SyntheticValueSource.EvaluationScope ignored = SyntheticValueSource.attachEvaluation(source)) {
-			NativeRowsStep.initializeQueryBase(source, bindings);
-			return evaluate(bindings, source);
+			NativeRowsStep.initializeQueryBase(source, logical);
+			return evaluate(scalarInput, source);
+		}
+	}
+
+	private Value semanticFallback(BindingSet logical, String reason) {
+		NativeLmdbQuerySource source = step.bulk.evaluationSource(logical);
+		SyntheticValueSource synthetic = source instanceof SyntheticValueSource existing ? existing
+				: SyntheticValueSource.forInvocation(source, step.bulk.strategy.getQueryExecutionPolicy(), logical);
+		NativeExecutionContext ownedContext = synthetic != step.source
+				&& !SyntheticValueSource.inheritedEvaluation(synthetic) ? synthetic.executionContext() : null;
+		try (ownedContext;
+				SyntheticValueSource.EvaluationScope ignored = SyntheticValueSource.attachEvaluation(synthetic)) {
+			NativeRowsStep.initializeQueryBase(synthetic, logical);
+			LmdbNativeExplain.recordExecutionPath(step.originalExpr,
+					LmdbNativeAttemptMetrics.PATH_GENERIC_FALLBACK + "(" + reason + ")");
+			QueryValueEvaluationStep semantic = sharedSemanticStep != null ? sharedSemanticStep
+					: synthetic.executionContext().genericStep(semanticDescriptor, () -> {
+						QueryEvaluationContext scoped = synthetic.executionContext()
+								.genericContext(step.bulk.context, step.bulk.strategy);
+						return semanticDescriptor.precompileValue(step.bulk.strategy.genericOnlyView(), scoped);
+					});
+			return semantic.evaluate(logical);
 		}
 	}
 
@@ -2984,12 +3457,14 @@ final class NativeExistsPatternCursor implements AutoCloseable {
 
 	static final class Frame {
 		PatternCursor cursor;
+		PatternPlan selectedPattern;
 		boolean opened;
 		int activeMark = -1;
 		int probePollTick;
 
 		void open(PatternPlan pattern, RowState row) throws IOException {
-			cursor = pattern.openRawForExistence(row);
+			selectedPattern = pattern.effectivePattern(row);
+			cursor = selectedPattern.openRawForExistence(row);
 			opened = true;
 		}
 
@@ -2999,7 +3474,7 @@ final class NativeExistsPatternCursor implements AutoCloseable {
 			while ((quad = cursor.next()) != null) {
 				LmdbNativeProbeDeadline.poll(++probePollTick);
 				int mark = row.mark();
-				if (pattern.bind(quad, row)) {
+				if (selectedPattern.bind(quad, row)) {
 					activeMark = mark;
 					return true;
 				}
@@ -3012,6 +3487,7 @@ final class NativeExistsPatternCursor implements AutoCloseable {
 			release(row);
 			PatternCursor activeCursor = cursor;
 			cursor = null;
+			selectedPattern = null;
 			opened = false;
 			if (activeCursor != null) {
 				activeCursor.close();
@@ -3033,6 +3509,7 @@ final class NativeBareRowsIteration implements CloseableIteration<BindingSet>, C
 	/** This evaluation's value source (see {@link NativeRowsStep#evaluationSource()}). */
 	final NativeLmdbQuerySource source;
 	BindingSet base;
+	BindingSet lexicalBase;
 	volatile boolean closed;
 	volatile boolean ownerCloseRequested;
 	volatile boolean explicitCancellationRequested;
@@ -3050,9 +3527,15 @@ final class NativeBareRowsIteration implements CloseableIteration<BindingSet>, C
 	final NativeExecutionPhaseEvent.InputOwner inputPhases;
 
 	NativeBareRowsIteration(NativeBareRowsStep step, NativeLmdbQuerySource source, BindingSet base) {
+		this(step, source, base, base);
+	}
+
+	NativeBareRowsIteration(NativeBareRowsStep step, NativeLmdbQuerySource source, BindingSet base,
+			BindingSet lexicalBase) {
 		this.step = step;
 		this.source = source;
 		this.base = base;
+		this.lexicalBase = lexicalBase;
 		this.cancellation = NativeCancellationToken.forSource(source);
 		this.inputPhases = NativeExecutionPhaseEvent.inputOwner(cancellation);
 	}
@@ -3164,6 +3647,7 @@ final class NativeBareRowsIteration implements CloseableIteration<BindingSet>, C
 	private boolean initializeWithinScope() throws IOException {
 		initialized = true;
 		row = new RowState(source, step.layout, base, step.originalExpr, cancellation);
+		row.restrictLexicalInputs(lexicalBase);
 		if (!initializeRow(row, base, source, step.layout)) {
 			LmdbNativeExplain.recordExecutionPath(step.originalExpr, LmdbNativeAttemptMetrics.PATH_EMPTY_SEED);
 			return false;
@@ -3331,6 +3815,7 @@ final class NativeBareRowsIteration implements CloseableIteration<BindingSet>, C
 		fusedSession = null;
 		step = null;
 		base = null;
+		lexicalBase = null;
 		row = null;
 		next = null;
 		return failure;
@@ -3610,6 +4095,8 @@ final class MaterializedUnorderedRowCursor implements RowCursor {
 final class NativeRowsIteration implements CloseableIteration<BindingSet>, CooperativeCancellation {
 	NativeRowsStep step;
 	BindingSet base;
+	BindingSet outputBase;
+	BindingSet lexicalBase;
 	NativeOrderedDistinctTracker distinctRows;
 	NativeTupleDistinctPlan distinctPlan;
 	long remainingOffset;
@@ -3636,9 +4123,20 @@ final class NativeRowsIteration implements CloseableIteration<BindingSet>, Coope
 	final NativeExecutionPhaseEvent.InputOwner inputPhases;
 
 	NativeRowsIteration(NativeRowsStep step, NativeLmdbQuerySource source, BindingSet base) {
+		this(step, source, base, base);
+	}
+
+	NativeRowsIteration(NativeRowsStep step, NativeLmdbQuerySource source, BindingSet base, BindingSet outputBase) {
+		this(step, source, base, outputBase, base);
+	}
+
+	NativeRowsIteration(NativeRowsStep step, NativeLmdbQuerySource source, BindingSet base, BindingSet outputBase,
+			BindingSet lexicalBase) {
 		this.step = step;
 		this.source = source;
 		this.base = base;
+		this.outputBase = outputBase;
+		this.lexicalBase = lexicalBase;
 		this.cancellation = NativeCancellationToken.forSource(source);
 		this.inputPhases = NativeExecutionPhaseEvent.inputOwner(cancellation);
 		this.remainingOffset = Math.max(0L, step.offset);
@@ -3789,7 +4287,7 @@ final class NativeRowsIteration implements CloseableIteration<BindingSet>, Coope
 					continue;
 				}
 			}
-			repeated = step.emit(row.slots, values, base);
+			repeated = step.emit(row.slots, values, outputBase);
 			remainingMultiplicity = multiplicity - 1;
 			consumeLimitSlot();
 			return repeated;
@@ -3824,7 +4322,7 @@ final class NativeRowsIteration implements CloseableIteration<BindingSet>, Coope
 				continue;
 			}
 			consumeLimitSlot();
-			return step.emit(row.slots, values, base);
+			return step.emit(row.slots, values, outputBase);
 		}
 		return null;
 	}
@@ -3843,6 +4341,7 @@ final class NativeRowsIteration implements CloseableIteration<BindingSet>, Coope
 	private boolean initializeWithinScope() throws IOException {
 		initialized = true;
 		row = new RowState(source, step.layout, base, step.originalExpr, cancellation);
+		row.restrictLexicalInputs(lexicalBase);
 		if (!initializeRow(row, base, source, step.layout)) {
 			LmdbNativeExplain.recordExecutionPath(step.originalExpr, LmdbNativeAttemptMetrics.PATH_EMPTY_SEED);
 			return false;
@@ -4000,6 +4499,8 @@ final class NativeRowsIteration implements CloseableIteration<BindingSet>, Coope
 		}
 		step = null;
 		base = null;
+		outputBase = null;
+		lexicalBase = null;
 		distinctRows = null;
 		distinctPlan = null;
 		next = null;

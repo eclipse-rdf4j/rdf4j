@@ -39,6 +39,9 @@ import org.eclipse.rdf4j.query.algebra.Service;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.algebra.ValueConstant;
 import org.eclipse.rdf4j.query.algebra.Var;
+import org.eclipse.rdf4j.query.algebra.evaluation.QueryBindingSet;
+import org.eclipse.rdf4j.query.algebra.evaluation.impl.BindingFrameBindings;
+import org.eclipse.rdf4j.query.algebra.evaluation.impl.GraphFrameBindings;
 import org.eclipse.rdf4j.query.algebra.helpers.AbstractQueryModelVisitor;
 import org.eclipse.rdf4j.query.impl.BlankNodeAllocationScope;
 import org.eclipse.rdf4j.query.impl.RemoteBNode;
@@ -215,7 +218,27 @@ public final class EndpointIdentity {
 	}
 
 	public BindingSet incoming(BindingSet row, BindingSet originals) {
-		return response.map(row, originals);
+		BindingSet mapped = response.map(row, originals);
+		if (mapped == row) {
+			return row;
+		}
+		var frame = BindingFrameBindings.from(row);
+		GraphFrameBindings graphFrames = GraphFrameBindings.from(row);
+		if (frame == null && graphFrames == GraphFrameBindings.EMPTY) {
+			return mapped;
+		}
+		QueryBindingSet result = new QueryBindingSet(mapped);
+		result.setBindingFrame(frame);
+		result.setGraphFrameBindings(graphFrames);
+		// Remapping changes the representation of the same returned term. Transfer only GRAPH origins that the
+		// source row actually possessed; hidden parameters remain untouched and never become visible bindings.
+		graphFrames.visit((name, ignored) -> {
+			Value value = mapped.getValue(name);
+			if (value != null && GraphFrameBindings.isSupplied(row, name)) {
+				GraphFrameBindings.supply(result, name, value);
+			}
+		});
+		return result;
 	}
 
 	public CloseableIteration<BindingSet> incoming(CloseableIteration<BindingSet> rows, BindingSet originals) {

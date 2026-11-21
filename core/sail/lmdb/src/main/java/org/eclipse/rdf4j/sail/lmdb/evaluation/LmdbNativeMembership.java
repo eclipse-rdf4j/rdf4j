@@ -59,7 +59,9 @@ final class PatternMembershipProbe {
 		if (pattern == null || pattern.range != null) {
 			return null;
 		}
-		return tryCreate(pattern.s, pattern.p, pattern.o, pattern.c, pattern.contexts, pattern.namedContextScope);
+		PatternMembershipProbe candidate = tryCreate(pattern.s, pattern.p, pattern.o, pattern.c, pattern.contexts,
+				pattern.namedContextScope);
+		return candidate == null ? null : new PatternMembershipProbe(pattern, candidate.varyingSlots);
 	}
 
 	static PatternMembershipProbe tryCreate(Term s, Term p, Term o, Term c, ContextConstraint contexts,
@@ -89,6 +91,13 @@ final class PatternMembershipProbe {
 			return NOT_APPLICABLE;
 		}
 		int boundSlots = collectBoundSlots(row);
+		long unboundMask = 0L;
+		for (int i = 0; i < boundSlots; i++) {
+			unboundMask |= 1L << slotScratch[i];
+		}
+		if (!pattern.supportsContextShortcut(row, row.boundMask(), unboundMask)) {
+			return NOT_APPLICABLE;
+		}
 		if (boundSlots == 0 || !sameOrCaptureKeyShape(boundSlots)) {
 			return NOT_APPLICABLE;
 		}

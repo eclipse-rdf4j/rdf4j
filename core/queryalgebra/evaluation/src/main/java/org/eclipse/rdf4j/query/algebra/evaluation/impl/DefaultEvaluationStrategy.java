@@ -26,7 +26,6 @@ import java.util.HashSet;
 import java.util.List;
 import java.util.Objects;
 import java.util.Set;
-import java.util.concurrent.ConcurrentHashMap;
 import java.util.function.BiFunction;
 import java.util.function.Consumer;
 import java.util.function.Function;
@@ -35,6 +34,7 @@ import java.util.function.Supplier;
 
 import org.eclipse.rdf4j.collection.factory.api.CollectionFactory;
 import org.eclipse.rdf4j.collection.factory.impl.DefaultCollectionFactory;
+import org.eclipse.rdf4j.common.annotation.InternalUseOnly;
 import org.eclipse.rdf4j.common.iteration.AbstractCloseableIteration;
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.common.iteration.ConvertingIteration;
@@ -203,7 +203,9 @@ import org.eclipse.rdf4j.query.algebra.evaluation.util.QueryEvaluationUtility;
 import org.eclipse.rdf4j.query.algebra.evaluation.util.ValueComparator;
 import org.eclipse.rdf4j.query.algebra.evaluation.util.XMLDatatypeMathUtil;
 import org.eclipse.rdf4j.query.algebra.helpers.AbstractSimpleQueryModelVisitor;
+import org.eclipse.rdf4j.query.algebra.helpers.FilterBindingScope;
 import org.eclipse.rdf4j.query.algebra.helpers.LocalBNodeReferences;
+import org.eclipse.rdf4j.query.algebra.helpers.collectors.VarNameCollector;
 import org.eclipse.rdf4j.query.explanation.TelemetryMetricNames;
 import org.eclipse.rdf4j.query.impl.BlankNodeAllocationScope;
 import org.eclipse.rdf4j.query.impl.EmptyBindingSet;
@@ -233,6 +235,10 @@ public class DefaultEvaluationStrategy implements EvaluationStrategy, FederatedS
 	protected final Dataset dataset;
 	private final BlankNodeAllocationScope blankNodes;
 	private final ThreadLocal<int[]> compilationDepth = ThreadLocal.withInitial(() -> new int[1]);
+	private final ThreadLocal<TupleGrantOverride> tupleGrantOverride = new ThreadLocal<>();
+
+	private record TupleGrantOverride(TupleFunctionCall call, BindingFrameBindings.TupleParameterGrant grant) {
+	}
 
 	protected FederatedServiceResolver serviceResolver;
 
@@ -261,6 +267,24 @@ public class DefaultEvaluationStrategy implements EvaluationStrategy, FederatedS
 	protected static CloseableIteration<BindingSet> evaluate(TupleFunction func,
 			final List<Var> resultVars, final BindingSet bindings, ValueFactory valueFactory, Value... argValues)
 			throws QueryEvaluationException {
+		return evaluateTupleFunction(func, tupleResultPositions(resultVars), bindings, valueFactory, argValues);
+	}
+
+	private record TupleResultPosition(String name, Value constant) {
+	}
+
+	private static TupleResultPosition[] tupleResultPositions(List<Var> resultVars) {
+		TupleResultPosition[] positions = new TupleResultPosition[resultVars.size()];
+		for (int i = 0; i < positions.length; i++) {
+			Var result = resultVars.get(i);
+			positions[i] = new TupleResultPosition(result.getName(), result.getValue());
+		}
+		return positions;
+	}
+
+	private static CloseableIteration<BindingSet> evaluateTupleFunction(TupleFunction func,
+			TupleResultPosition[] positions, BindingSet bindings, ValueFactory valueFactory, Value... argValues) {
+		final BindingSet constraints = bindings;
 		CloseableIteration<? extends List<? extends Value>> iter;
 		QueryExecutionContext.initializeExternalValues(argValues);
 		try (QueryExecutionContext.Activation ignored = QueryExecutionContext.deferReplaySafepoints()) {
@@ -297,21 +321,20 @@ public class DefaultEvaluationStrategy implements EvaluationStrategy, FederatedS
 								values = iter.next();
 							}
 							QueryExecutionContext.checkpointReplaySafepoint();
-							if (resultVars.size() != values.size()) {
+							if (positions.length != values.size()) {
 								throw new QueryEvaluationException(
 										"Incorrect number of result vars: require " + values.size());
 							}
 							for (int i = 0; i < values.size(); i++) {
 								Value result = values.get(i);
-								Var resultVar = resultVars.get(i);
-								Value varValue = resultVar.getValue();
-								String varName = resultVar.getName();
-								Value boundValue = bindings.getValue(varName);
+								TupleResultPosition position = positions[i];
+								Value varValue = position.constant();
+								String varName = position.name();
+								Value boundValue = constraints.getValue(varName);
 								if ((varValue == null || result.equals(varValue))
 										&& (boundValue == null || result.equals(boundValue))) {
-									if (boundValue == null) { // if not already present
-										resultBindings.addBinding(varName, result);
-									}
+									// A positional result is produced even if it equals a borrowed constraint.
+									resultBindings.setBinding(varName, result);
 								} else {
 									resultBindings = null;
 									break;
@@ -719,6 +742,28 @@ public class DefaultEvaluationStrategy implements EvaluationStrategy, FederatedS
 	private QueryEvaluationStep precompilePlanned(TupleExpr expr, QueryEvaluationContext context, boolean generic) {
 		QueryEvaluationStep prepared = generic ? precompileGenericPlanned(expr, context)
 				: precompileTupleExpr(expr, context);
+		if (expr.getClass() == TupleFunctionCall.class) {
+			TupleFunctionCall call = (TupleFunctionCall) expr;
+			Set<String> names = new HashSet<>(call.getBindingNames());
+			boolean complete = true;
+			for (ValueExpr argument : call.getArgs()) {
+				FilterBindingScope.ConditionBindingReads reads = FilterBindingScope.conditionBindingReads(argument);
+				names.addAll(reads.bindingNames());
+				complete &= reads.complete();
+			}
+			prepared = BindingFrameBindings.parameterized(prepared,
+					BindingFrameBindings.parameterInputs(call, names, complete), call.getBindingNames(), context);
+		} else if (QueryEvaluationUtility.isUnknownTupleOperator(expr)) {
+			prepared = BindingFrameBindings.opaque(prepared, expr.getBindingNames(), context);
+		}
+		// The built-in statement step restores its own result boundary, preserving its typed fast paths.
+		if (prepared.getClass() != StatementPatternQueryEvaluationStep.class) {
+			prepared = AdaptiveFilterEvaluationStep.decorateSemantic(prepared,
+					step -> BindingFrameBindings.restore(step, context));
+		}
+		if (BindingFrameReplay.independentRegion(expr)) {
+			prepared = BindingFrameReplay.region(expr, prepared, context);
+		}
 		QueryEvaluationStep tracked = trackPreparedStep(expr, prepared);
 		AdaptiveFilterEvaluationStep.recordPrepared(context, expr, tracked);
 		return tracked;
@@ -781,6 +826,10 @@ public class DefaultEvaluationStrategy implements EvaluationStrategy, FederatedS
 				return ret;
 			}
 			return AdaptiveFilterEvaluationStep.decorate(ret, prepared -> {
+				BindingFrameBindings.TupleParameterConsumer consumer = BindingFrameBindings.unframedCapability(prepared,
+						BindingFrameBindings.TupleParameterConsumer.class);
+				BindingFrameBindings.TupleParameterGrant grant = consumer == null ? null
+						: consumer.tupleParameterGrant();
 				QueryEvaluationStep tracked = prepared;
 				if (trackTime) {
 					tracked = trackTime(expr, tracked);
@@ -788,7 +837,7 @@ public class DefaultEvaluationStrategy implements EvaluationStrategy, FederatedS
 				if (trackResultSize) {
 					tracked = trackResultSize(expr, tracked);
 				}
-				return tracked;
+				return grant == null ? tracked : BindingFrameBindings.tupleParameterConsumer(tracked, grant);
 			});
 		}
 		throw new IllegalArgumentException("prepared step must not be null");
@@ -868,8 +917,10 @@ public class DefaultEvaluationStrategy implements EvaluationStrategy, FederatedS
 		final Var objVar = alp.getObjectVar();
 		final Var contextVar = alp.getContextVar();
 		final long minLength = alp.getMinLength();
-		return bindings -> new PathIteration(DefaultEvaluationStrategy.this, scope, subjectVar, pathExpression, objVar,
-				contextVar, minLength, bindings, context);
+		QueryEvaluationStep leaf = bindings -> new PathIteration(DefaultEvaluationStrategy.this, scope, subjectVar,
+				pathExpression, objVar, contextVar, minLength, bindings, context);
+		return BindingFrameBindings.parameterized(leaf,
+				BindingFrameBindings.variableNames(subjectVar, objVar, contextVar), alp.getBindingNames(), context);
 	}
 
 	protected QueryEvaluationStep prepare(ZeroLengthPath zlp, QueryEvaluationContext context)
@@ -881,8 +932,10 @@ public class DefaultEvaluationStrategy implements EvaluationStrategy, FederatedS
 		QueryValueEvaluationStep subPrep = precompile(subjectVar, context);
 		QueryValueEvaluationStep objPrep = precompile(objVar, context);
 
-		return new ZeroLengthPathEvaluationStep(subjectVar, objVar, contextVar, subPrep, objPrep, this, context,
-				zlp.getScope());
+		QueryEvaluationStep leaf = new ZeroLengthPathEvaluationStep(subjectVar, objVar, contextVar, subPrep, objPrep,
+				this, context, zlp.getScope());
+		return BindingFrameBindings.parameterized(leaf,
+				BindingFrameBindings.variableNames(subjectVar, objVar, contextVar), zlp.getBindingNames(), context);
 	}
 
 	protected QueryEvaluationStep prepare(Difference node, QueryEvaluationContext context)
@@ -919,10 +972,15 @@ public class DefaultEvaluationStrategy implements EvaluationStrategy, FederatedS
 	protected QueryEvaluationStep prepare(MultiProjection node, QueryEvaluationContext context)
 			throws QueryEvaluationException {
 		QueryEvaluationStep arg = precompile(node.getArg(), context);
+		Set<String> sources = new HashSet<>();
+		node.getProjections()
+				.forEach(projection -> projection.getElements().forEach(element -> sources.add(element.getName())));
+		Set<String> sourceNames = Set.copyOf(sources);
 		return bindings -> {
 			CloseableIteration<BindingSet> evaluate = null;
 			try {
-				evaluate = arg.evaluate(bindings);
+				evaluate = arg
+						.evaluate(BindingFrameBindings.hideLateralProjectionInputs(bindings, sourceNames, context));
 				return new MultiProjectionIterator(node, evaluate, bindings);
 			} catch (Throwable t) {
 				if (evaluate != null) {
@@ -942,7 +1000,17 @@ public class DefaultEvaluationStrategy implements EvaluationStrategy, FederatedS
 	protected QueryEvaluationStep prepare(QueryRoot node, QueryEvaluationContext context)
 			throws QueryEvaluationException {
 
-		QueryEvaluationStep arg = precompile(node.getArg(), context);
+		GroupInvocationBindings.Prepared invocation = GroupInvocationBindings.prepare(node.getArg());
+		QueryEvaluationStep arg;
+		try {
+			arg = precompile(node.getArg(), context);
+		} finally {
+			GroupInvocationBindings.finished(invocation);
+		}
+		if (invocation != null) {
+			// This wrapper runs inside captureBindings, at the actual immediate Group edge.
+			arg = invocation.invocation(arg);
+		}
 		var capturer = valueCapturer();
 		return capturer == null ? arg : new QueryRootQueryEvaluationStep(arg, capturer);
 	}
@@ -1208,7 +1276,8 @@ public class DefaultEvaluationStrategy implements EvaluationStrategy, FederatedS
 				}
 			}
 		}
-		return captured == null ? bindings : captured;
+		// Capturing replaces representations of the same RDF values, not their semantic binding origins.
+		return captured == null ? bindings : GraphFrameBindings.preserve(bindings, captured);
 	}
 
 	protected QueryEvaluationStep prepare(DescribeOperator node, QueryEvaluationContext context)
@@ -1377,14 +1446,25 @@ public class DefaultEvaluationStrategy implements EvaluationStrategy, FederatedS
 		}
 
 		private void writeObject(ObjectOutputStream output) throws IOException {
-			// Serialize visible bindings, not implementation-specific unbound markers or Binding state.
+			// Serialize the logical domain and RDF values, not implementation-specific markers or Binding state.
 			// A private stream also isolates values from disk factories' custom class-descriptor handling.
 			ByteArrayOutputStream bytes = new ByteArrayOutputStream();
 			try (ObjectOutputStream values = new ObjectOutputStream(bytes)) {
 				values.writeInt(bindings.size());
+				int written = 0;
 				for (Binding binding : bindings) {
 					values.writeObject(binding.getName());
 					values.writeObject(binding.getValue());
+					written++;
+				}
+				if (written != bindings.size()) {
+					// Logical null shadows are omitted by RDF iteration; declared-but-absent slots are not keys.
+					for (String name : bindings.getBindingNames()) {
+						if (bindings.hasBinding(name) && bindings.getValue(name) == null) {
+							values.writeObject(name);
+							values.writeObject(null);
+						}
+					}
 				}
 			}
 			output.writeInt(bytes.size());
@@ -1396,9 +1476,9 @@ public class DefaultEvaluationStrategy implements EvaluationStrategy, FederatedS
 			input.readFully(bytes);
 			try (ObjectInputStream values = new ObjectInputStream(new ByteArrayInputStream(bytes))) {
 				int size = values.readInt();
-				MapBindingSet snapshot = new MapBindingSet(size);
+				QueryBindingSet snapshot = new QueryBindingSet(size);
 				for (int i = 0; i < size; i++) {
-					snapshot.addBinding((String) values.readObject(), (Value) values.readObject());
+					snapshot.setBinding((String) values.readObject(), (Value) values.readObject());
 				}
 				bindings = snapshot;
 			}
@@ -1415,22 +1495,72 @@ public class DefaultEvaluationStrategy implements EvaluationStrategy, FederatedS
 			throws QueryEvaluationException {
 		TupleFunction func = tupleFuncRegistry.get(expr.getURI())
 				.orElseThrow(() -> new QueryEvaluationException("Unknown tuple function '" + expr.getURI() + "'"));
+		return prepareTupleFunction(expr, context, func);
+	}
 
-		List<ValueExpr> args = expr.getArgs();
+	/** Shared by the standard and registry-specific tuple evaluators. */
+	protected QueryEvaluationStep prepareTupleFunction(TupleFunctionCall expr, QueryEvaluationContext context,
+			TupleFunction func) {
+		TupleGrantOverride override = tupleGrantOverride.get();
+		return prepareTupleFunction(expr, context, func, override != null && override.call() == expr
+				? override.grant()
+				: null);
+	}
+
+	/** Prepares a cloned tuple leaf with the exact grant held by its already prepared native counterpart. */
+	@InternalUseOnly
+	public final QueryEvaluationStep precompileTupleFunctionWithGrant(TupleFunctionCall expr,
+			QueryEvaluationContext context, BindingFrameBindings.TupleParameterGrant grant) {
+		TupleGrantOverride previous = tupleGrantOverride.get();
+		tupleGrantOverride.set(new TupleGrantOverride(expr, Objects.requireNonNull(grant)));
+		try {
+			return precompileGenericTupleExpr(expr, context);
+		} finally {
+			if (previous == null) {
+				tupleGrantOverride.remove();
+			} else {
+				tupleGrantOverride.set(previous);
+			}
+		}
+	}
+
+	private QueryEvaluationStep prepareTupleFunction(TupleFunctionCall expr, QueryEvaluationContext context,
+			TupleFunction func, BindingFrameBindings.TupleParameterGrant suppliedGrant) {
+		List<ValueExpr> args = List.copyOf(expr.getArgs());
+		Set<String> argumentNames = new HashSet<>();
+		boolean complete = true;
+		for (ValueExpr argument : args) {
+			FilterBindingScope.ConditionBindingReads reads = FilterBindingScope.conditionBindingReads(argument);
+			argumentNames.addAll(reads.bindingNames());
+			complete &= reads.complete();
+		}
+		Set<String> authorizedNames = Set.copyOf(argumentNames);
+		boolean completeReads = complete;
+		if (suppliedGrant != null && (!completeReads || !suppliedGrant.names().equals(authorizedNames))) {
+			throw new IllegalArgumentException("tuple argument grant does not match the prepared leaf");
+		}
+		BindingFrameBindings.TupleParameterGrant grant = completeReads
+				? suppliedGrant == null ? new BindingFrameBindings.TupleParameterGrant(authorizedNames) : suppliedGrant
+				: null;
 		QueryValueEvaluationStep[] argEpresions = new QueryValueEvaluationStep[args.size()];
 		for (int i = 0; i < args.size(); i++) {
 			argEpresions[i] = precompile(args.get(i), context);
 		}
+		TupleResultPosition[] positions = tupleResultPositions(expr.getResultVars());
 
-		return captureResultValues(bindings -> {
-			Value[] argValues = new Value[args.size()];
-			for (int i = 0; i < args.size(); i++) {
-				argValues[i] = argEpresions[i].evaluate(bindings);
+		QueryEvaluationStep step = captureResultValues(bindings -> {
+			BindingSet arguments = completeReads
+					? grant.materialize(bindings)
+					: BindingFrameBindings.materializeWithheldInputs(bindings);
+			Value[] argValues = new Value[argEpresions.length];
+			for (int i = 0; i < argEpresions.length; i++) {
+				argValues[i] = argEpresions[i].evaluate(arguments);
 			}
 
-			return evaluate(func, expr.getResultVars(), bindings,
+			return evaluateTupleFunction(func, positions, bindings,
 					tripleSource.getValueFactory(), argValues);
 		});
+		return grant == null ? step : BindingFrameBindings.tupleParameterConsumer(step, grant);
 	}
 
 	public static Value getVarValue(Var var, BindingSet bindings) {
@@ -2279,72 +2409,76 @@ public class DefaultEvaluationStrategy implements EvaluationStrategy, FederatedS
 
 	protected QueryValueEvaluationStep prepare(Exists node, QueryEvaluationContext context)
 			throws QueryEvaluationException {
-		// Optimization/semantic shortcut: EXISTS { OPTIONAL { ... } } is always true.
-		// In algebra, OPTIONAL is a LeftJoin. With a SingletonSet left-arg, LeftJoin
-		// always yields at least the input binding set. Therefore EXISTS evaluates to TRUE.
+		// A singleton-left OPTIONAL always produces a row, provided its unevaluated right side cannot raise a
+		// query-fatal error that the shortcut would otherwise suppress.
 		TupleExpr subQuery = node.getSubQuery();
 		if (subQuery instanceof LeftJoin leftJoin) {
-			if (leftJoin.getLeftArg() instanceof SingletonSet) {
+			if (leftJoin.getLeftArg() instanceof SingletonSet
+					&& QueryEvaluationUtility.canDiscardWithoutEvaluation(leftJoin)) {
 				return bindings -> BooleanLiteral.TRUE;
 			}
 		}
+		// Capture mutable VALUES and compile the body once, before concurrent invocations can observe it.
+		return withPreparedTupleExpr(subQuery, prepared -> prepareExistsBody(node, prepared, context));
+	}
 
-		Set<String> pathVariables = new HashSet<>();
-		subQuery.visit(new AbstractSimpleQueryModelVisitor<RuntimeException>() {
-			@Override
-			public void meet(Exists nested) {
-				// A nested invocation captures its own binding domain, including bindings produced by this body.
-			}
+	private QueryValueEvaluationStep prepareExistsBody(Exists node, TupleExpr subQuery,
+			QueryEvaluationContext context) {
+		FilterBindingScope.ConditionBindingReads reads = FilterBindingScope.conditionBindingReads(node);
+		Set<String> collectedNames = new HashSet<>(VarNameCollector.process(subQuery));
+		collectedNames.addAll(subQuery.getBindingNames());
+		collectedNames.addAll(reads.bindingNames());
+		Set<String> invocationNames = Set.copyOf(collectedNames);
+		Function<BindingSet, BindingSet> invocationInput = reads.complete()
+				? bindings -> BindingFrameBindings.materializeWithheldInputs(bindings, invocationNames)
+				: BindingFrameBindings::materializeWithheldInputs;
 
-			@Override
-			public void meet(ZeroLengthPath path) {
-				addEndpoint(path.getSubjectVar());
-				addEndpoint(path.getObjectVar());
+		QueryEvaluationUtility.ExistsSubstitutionInputs requirements = QueryEvaluationUtility
+				.existsSubstitutionInputs(subQuery);
+		if (!requirements.needsDynamicDomain()) {
+			GroupInvocationBindings.Prepared invocation = GroupInvocationBindings.prepare(subQuery);
+			QueryEvaluationStep body;
+			try {
+				body = precompile(subQuery, context);
+			} finally {
+				GroupInvocationBindings.finished(invocation);
 			}
-
-			@Override
-			public void meet(ArbitraryLengthPath path) {
-				addEndpoint(path.getSubjectVar());
-				addEndpoint(path.getObjectVar());
-				super.meet(path);
-			}
-
-			@Override
-			public void meetOther(QueryModelNode node) {
-				if (node instanceof ZeroLengthPath path) {
-					meet(path);
-				} else if (node instanceof ArbitraryLengthPath path) {
-					meet(path);
-				} else {
-					super.meetOther(node);
-				}
-			}
-
-			private void addEndpoint(Var endpoint) {
-				if (!endpoint.isConstant()) {
-					pathVariables.add(endpoint.getName());
-				}
-			}
-		});
-		if (pathVariables.isEmpty()) {
-			return new ExistsQueryValueEvaluationStep(precompile(subQuery, context));
+			QueryEvaluationStep invoked = invocation == null ? body : invocation.invocation(body);
+			QueryValueEvaluationStep exists = new ExistsQueryValueEvaluationStep(body,
+					bindings -> BindingFrameReplay.fresh(invoked, bindings, getCollectionFactory(), context));
+			QueryEvaluationContext entryContext = new BindingSetQueryEvaluationContext(context);
+			return bindings -> {
+				BindingSet input = invocationInput.apply(bindings);
+				// Even an empty EXISTS domain is newer than an enclosing LATERAL's private-input authority.
+				return exists.evaluate(BindingFrameBindings.hasFrame(input)
+						? BindingFrameBindings.withSubstitutionDomain(input, Set.of(), entryContext)
+						: input);
+			};
 		}
 
-		Set<String> referencedNames = Set.copyOf(pathVariables);
-		var variants = new ConcurrentHashMap<Set<String>, QueryEvaluationStep>();
-		return new ExistsQueryValueEvaluationStep(bindings -> {
+		// Unknown reads cannot use a fixed array layout: it can discard genuine caller columns absent from that layout.
+		QueryEvaluationContext entryContext = requirements.unknown() ? new BindingSetQueryEvaluationContext(context)
+				: context;
+		GroupInvocationBindings.Prepared invocation = GroupInvocationBindings.prepare(subQuery);
+		QueryEvaluationStep body;
+		try {
+			body = precompile(subQuery, BindingSubstitutionQueryEvaluationContext.dynamic(entryContext));
+		} finally {
+			GroupInvocationBindings.finished(invocation);
+		}
+		QueryEvaluationStep invoked = invocation == null ? body : invocation.invocation(body);
+		QueryValueEvaluationStep exists = new ExistsQueryValueEvaluationStep(
+				bindings -> BindingFrameReplay.fresh(invoked, bindings, getCollectionFactory(), entryContext));
+		return bindings -> {
+			BindingSet input = invocationInput.apply(bindings);
 			Set<String> domain = new HashSet<>();
-			for (String name : referencedNames) {
-				if (bindings.getValue(name) != null) {
+			for (String name : requirements.unknown() ? input.getBindingNames() : requirements.bindingNames()) {
+				if (input.getValue(name) != null) {
 					domain.add(name);
 				}
 			}
-			// Cache prepared code by domain, never values. Each variant has immutable substitution provenance, so
-			// concurrent/lazy invocations cannot change another invocation's interpretation of its path endpoints.
-			QueryEvaluationStep variant = variants.computeIfAbsent(Set.copyOf(domain),
-					names -> precompile(subQuery, new BindingSubstitutionQueryEvaluationContext(context, names)));
-			return variant.evaluate(bindings);
-		});
+			return exists.evaluate(BindingFrameBindings.withSubstitutionDomain(input, domain, entryContext));
+		};
 	}
 
 	@Override

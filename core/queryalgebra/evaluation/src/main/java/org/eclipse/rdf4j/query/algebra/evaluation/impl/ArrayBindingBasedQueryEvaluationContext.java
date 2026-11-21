@@ -43,6 +43,7 @@ import org.eclipse.rdf4j.query.algebra.ExtensionElem;
 import org.eclipse.rdf4j.query.algebra.Group;
 import org.eclipse.rdf4j.query.algebra.GroupElem;
 import org.eclipse.rdf4j.query.algebra.MultiProjection;
+import org.eclipse.rdf4j.query.algebra.PrivateGraphContextRole;
 import org.eclipse.rdf4j.query.algebra.Projection;
 import org.eclipse.rdf4j.query.algebra.ProjectionElem;
 import org.eclipse.rdf4j.query.algebra.QueryModelNode;
@@ -164,6 +165,11 @@ public final class ArrayBindingBasedQueryEvaluationContext implements QueryEvalu
 		return new ArrayBindingSet(allVariables, sortedBindingNamesCache);
 	}
 
+	private boolean hasOwnLayout(BindingSet bindings) {
+		return bindings.getClass() == ArrayBindingSet.class
+				&& defaultArrayBindingSet.sharesLayoutWith((ArrayBindingSet) bindings);
+	}
+
 	@Override
 	public Predicate<BindingSet> hasBinding(String variableName) {
 		if (initialized) {
@@ -179,7 +185,7 @@ public final class ArrayBindingBasedQueryEvaluationContext implements QueryEvalu
 				}
 			}
 
-			return HAS_BINDING_FALSE;
+			return bindings -> !hasOwnLayout(bindings) && bindings.hasBinding(variableName);
 		}
 
 		assert variableName != null && !variableName.isEmpty();
@@ -190,12 +196,12 @@ public final class ArrayBindingBasedQueryEvaluationContext implements QueryEvalu
 			return new HasBinding(variableName, directHasVariable);
 		} else {
 			// If the variable is not in the default set, it can never be part of this array binding
-			return HAS_BINDING_FALSE;
+			return bindings -> !hasOwnLayout(bindings) && bindings.hasBinding(variableName);
 		}
 
 	}
 
-	static private class HasBinding implements Predicate<BindingSet> {
+	private class HasBinding implements Predicate<BindingSet> {
 
 		private final String variableName;
 		private final Function<ArrayBindingSet, Boolean> directHasVariable;
@@ -210,7 +216,7 @@ public final class ArrayBindingBasedQueryEvaluationContext implements QueryEvalu
 			if (bs.isEmpty()) {
 				return false;
 			}
-			if (bs instanceof ArrayBindingSet) {
+			if (hasOwnLayout(bs)) {
 				return directHasVariable.apply((ArrayBindingSet) bs);
 			} else {
 				return bs.hasBinding(variableName);
@@ -233,7 +239,7 @@ public final class ArrayBindingBasedQueryEvaluationContext implements QueryEvalu
 				}
 			}
 
-			return GET_BINDING_NULL;
+			return bindings -> hasOwnLayout(bindings) ? null : bindings.getBinding(variableName);
 		}
 
 		Function<ArrayBindingSet, Binding> directAccessForVariable = defaultArrayBindingSet
@@ -243,14 +249,14 @@ public final class ArrayBindingBasedQueryEvaluationContext implements QueryEvalu
 			return (bs) -> {
 				if (bs.isEmpty()) {
 					return null;
-				} else if (bs instanceof ArrayBindingSet) {
+				} else if (hasOwnLayout(bs)) {
 					return directAccessForVariable.apply((ArrayBindingSet) bs);
 				} else {
 					return bs.getBinding(variableName);
 				}
 			};
 		} else {
-			return GET_BINDING_NULL;
+			return bindings -> hasOwnLayout(bindings) ? null : bindings.getBinding(variableName);
 		}
 	}
 
@@ -269,7 +275,7 @@ public final class ArrayBindingBasedQueryEvaluationContext implements QueryEvalu
 				}
 			}
 
-			return GET_VALUE_NULL;
+			return bindings -> hasOwnLayout(bindings) ? null : bindings.getValue(variableName);
 		}
 
 		Function<ArrayBindingSet, Value> directAccessForVariable = defaultArrayBindingSet
@@ -279,12 +285,12 @@ public final class ArrayBindingBasedQueryEvaluationContext implements QueryEvalu
 			return new ValueGetter(variableName, directAccessForVariable);
 		} else {
 			// If the variable is not in the default set, it can never be part of this array binding
-			return GET_VALUE_NULL;
+			return bindings -> hasOwnLayout(bindings) ? null : bindings.getValue(variableName);
 		}
 
 	}
 
-	private static class ValueGetter implements Function<BindingSet, Value> {
+	private class ValueGetter implements Function<BindingSet, Value> {
 
 		private final String variableName;
 		private final Function<ArrayBindingSet, Value> directAccessForVariable;
@@ -300,7 +306,7 @@ public final class ArrayBindingBasedQueryEvaluationContext implements QueryEvalu
 			if (bs.isEmpty()) {
 				return null;
 			}
-			if (bs instanceof ArrayBindingSet) {
+			if (hasOwnLayout(bs)) {
 				return directAccessForVariable.apply((ArrayBindingSet) bs);
 			} else {
 				return bs.getValue(variableName);
@@ -323,21 +329,29 @@ public final class ArrayBindingBasedQueryEvaluationContext implements QueryEvalu
 				}
 			}
 
-			return SET_BINDING_NO_OP;
+			return (value, bindings) -> {
+				if (!hasOwnLayout(bindings)) {
+					bindings.setBinding(variableName, value);
+				}
+			};
 		}
 
 		BiConsumer<Value, ArrayBindingSet> directAccessForVariable = defaultArrayBindingSet
 				.getDirectSetBinding(variableName);
 		if (directAccessForVariable != null) {
 			return (val, bs) -> {
-				if (bs instanceof ArrayBindingSet) {
+				if (hasOwnLayout(bs)) {
 					directAccessForVariable.accept(val, (ArrayBindingSet) bs);
 				} else {
 					bs.setBinding(variableName, val);
 				}
 			};
 		} else {
-			return SET_BINDING_NO_OP;
+			return (value, bindings) -> {
+				if (!hasOwnLayout(bindings)) {
+					bindings.setBinding(variableName, value);
+				}
+			};
 		}
 	}
 
@@ -363,8 +377,8 @@ public final class ArrayBindingBasedQueryEvaluationContext implements QueryEvalu
 				.getDirectSetBinding(variableName);
 		if (directAccessForVariable != null) {
 			return bindings -> {
-				if (bindings instanceof ArrayBindingSet arrayBindingSet) {
-					directAccessForVariable.accept(null, arrayBindingSet);
+				if (hasOwnLayout(bindings)) {
+					directAccessForVariable.accept(null, (ArrayBindingSet) bindings);
 				} else {
 					bindings.removeBinding(variableName);
 				}
@@ -388,20 +402,28 @@ public final class ArrayBindingBasedQueryEvaluationContext implements QueryEvalu
 				}
 			}
 
-			return ADD_BINDING_NO_OP;
+			return (value, bindings) -> {
+				if (!hasOwnLayout(bindings)) {
+					bindings.addBinding(variableName, value);
+				}
+			};
 		}
 
 		BiConsumer<Value, ArrayBindingSet> wrapped = defaultArrayBindingSet.getDirectAddBinding(variableName);
 		if (wrapped != null) {
 			return (val, bs) -> {
-				if (bs instanceof ArrayBindingSet) {
+				if (hasOwnLayout(bs)) {
 					wrapped.accept(val, (ArrayBindingSet) bs);
 				} else {
 					bs.addBinding(variableName, val);
 				}
 			};
 		} else {
-			return ADD_BINDING_NO_OP;
+			return (value, bindings) -> {
+				if (!hasOwnLayout(bindings)) {
+					bindings.addBinding(variableName, value);
+				}
+			};
 		}
 	}
 
@@ -492,6 +514,15 @@ public final class ArrayBindingBasedQueryEvaluationContext implements QueryEvalu
 			}
 
 			@Override
+			public void meet(StatementPattern node) throws QueryEvaluationException {
+				String publicContext = PrivateGraphContextRole.publicContextName(node, node.getContextVar());
+				if (publicContext != null) {
+					varNames.computeIfAbsent(publicContext, k -> k);
+				}
+				super.meet(node);
+			}
+
+			@Override
 			public void meet(Var node) throws QueryEvaluationException {
 				super.meet(node);
 				// We can skip constants that are only used in StatementPatterns since these are never added to the
@@ -504,7 +535,9 @@ public final class ArrayBindingBasedQueryEvaluationContext implements QueryEvalu
 					}
 					replacement.setGraphContextDepth(node.getGraphContextDepth());
 					replacement.setVariableScopeChange(node.isVariableScopeChange());
-					node.replaceWith(replacement);
+					if (PrivateGraphContextRole.canPreserveRole(node, replacement)) {
+						PrivateGraphContextRole.replacePreservingRole(node, replacement);
+					}
 				}
 			}
 

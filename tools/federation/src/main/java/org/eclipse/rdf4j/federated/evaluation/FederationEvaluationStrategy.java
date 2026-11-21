@@ -110,6 +110,7 @@ import org.eclipse.rdf4j.federated.optimizer.UnionOptimizer;
 import org.eclipse.rdf4j.federated.structures.FedXDataset;
 import org.eclipse.rdf4j.federated.structures.QueryInfo;
 import org.eclipse.rdf4j.federated.structures.QueryType;
+import org.eclipse.rdf4j.federated.util.EndpointGroupSafety;
 import org.eclipse.rdf4j.federated.util.FedXUtil;
 import org.eclipse.rdf4j.federated.util.QueryAlgebraUtil;
 import org.eclipse.rdf4j.federated.util.QueryStringUtil;
@@ -145,6 +146,7 @@ import org.eclipse.rdf4j.query.algebra.evaluation.ValueExprEvaluationException;
 import org.eclipse.rdf4j.query.algebra.evaluation.federation.FederatedService;
 import org.eclipse.rdf4j.query.algebra.evaluation.federation.ServiceJoinIterator;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.ActiveGraphQueryEvaluationContext;
+import org.eclipse.rdf4j.query.algebra.evaluation.impl.BindingFrameBindings;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.EvaluationStatistics;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.QueryEvaluationContext;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.QueryEvaluationContext.ActiveGraph;
@@ -752,8 +754,21 @@ public class FederationEvaluationStrategy extends StrictEvaluationStrategy {
 	public CloseableIteration<BindingSet> evaluate(
 			TupleExpr expr, BindingSet bindings)
 			throws QueryEvaluationException {
+		var frame = BindingFrameBindings.from(bindings);
+		CloseableIteration<BindingSet> result = evaluateFederated(expr, bindings);
+		return frame == null ? result
+				: BindingFrameBindings.restore(frame, result, new QueryEvaluationContext.Minimal(dataset));
+	}
+
+	private CloseableIteration<BindingSet> evaluateFederated(TupleExpr expr, BindingSet bindings) {
+		if (expr instanceof PreparedExclusiveGroup.Operand operand) {
+			return operand.prepared().evaluate(bindings);
+		}
 		if (expr == snapshotQueryRoot) {
 			prepareGraphSnapshots(snapshotCandidates, snapshotQueryInfo);
+		}
+		if (expr instanceof ExclusiveGroup group && PreparedExclusiveGroup.needsAtomicPreparation(group)) {
+			return precompile(group).evaluate(bindings);
 		}
 
 		if (expr instanceof QueryRef && NativeGraphQuery.isRequired(expr, bindings)) {
@@ -815,71 +830,44 @@ public class FederationEvaluationStrategy extends StrictEvaluationStrategy {
 	public QueryEvaluationStep precompile(
 			TupleExpr expr, QueryEvaluationContext context)
 			throws QueryEvaluationException {
-		if (expr == snapshotQueryRoot) {
-			QueryEvaluationStep prepared = super.precompile(expr, context);
-			return bindings -> {
+		QueryEvaluationStep prepared;
+		if (expr instanceof PreparedExclusiveGroup.Operand operand) {
+			prepared = operand.prepared();
+		} else if (expr == snapshotQueryRoot) {
+			QueryEvaluationStep snapshotBody = super.precompile(expr, context);
+			prepared = bindings -> {
 				prepareGraphSnapshots(snapshotCandidates, snapshotQueryInfo);
-				return prepared.evaluate(bindings);
+				return snapshotBody.evaluate(bindings);
 			};
+		} else if (expr instanceof ExclusiveGroup group && PreparedExclusiveGroup.needsAtomicPreparation(group)) {
+			prepared = PreparedExclusiveGroup.prepare(this, group);
+		} else if (expr instanceof QueryRef && NativeGraphQuery.isRequired(expr)) {
+			prepared = prepareNativeGraphQuery(expr);
+		} else if (expr instanceof FedXGraph graph) {
+			prepared = prepareGraph(graph, context);
+		} else if (expr instanceof StatementTupleExpr) {
+			prepared = QueryEvaluationStep.minimal(this, expr);
+		} else if (expr instanceof NJoin join) {
+			prepared = prepareNJoin(join, context);
+		} else if (expr instanceof NUnion union) {
+			prepared = prepareNaryUnion(union, context);
+		} else if (expr instanceof ExclusiveGroup) {
+			prepared = QueryEvaluationStep.minimal(this, expr);
+		} else if (expr instanceof ExclusiveTupleExpr exclusive) {
+			prepared = prepareExclusiveTupleExpr(exclusive, context);
+		} else if (expr instanceof FedXLeftJoin leftJoin) {
+			prepared = prepareLeftJoin(leftJoin, context);
+		} else if (expr instanceof SingleSourceQuery || expr instanceof FedXService
+				|| expr instanceof TripleRefJoinGroup || expr instanceof EmptyResult) {
+			prepared = QueryEvaluationStep.minimal(this, expr);
+		} else if (expr instanceof FedXArbitraryLengthPath path) {
+			prepared = prepare(path, context);
+		} else if (expr instanceof FedXZeroLengthPath path) {
+			prepared = prepare(path, context);
+		} else {
+			return super.precompile(expr, context);
 		}
-		if (expr instanceof QueryRef && NativeGraphQuery.isRequired(expr)) {
-			return prepareNativeGraphQuery(expr);
-		}
-		if (expr instanceof FedXGraph graph) {
-			return prepareGraph(graph, context);
-		}
-		if (expr instanceof Join && !hasScopedContext(context)) {
-			return QueryEvaluationStep.minimal(this, expr);
-		}
-		if (expr instanceof StatementTupleExpr) {
-			return QueryEvaluationStep.minimal(this, expr);
-		}
-
-		if (expr instanceof NJoin) {
-			return prepareNJoin((NJoin) expr, context);
-		}
-
-		if (expr instanceof NUnion) {
-			return prepareNaryUnion((NUnion) expr, context);
-		}
-
-		if (expr instanceof ExclusiveGroup) {
-			return QueryEvaluationStep.minimal(this, expr);
-		}
-
-		if (expr instanceof ExclusiveTupleExpr) {
-			return prepareExclusiveTupleExpr((ExclusiveTupleExpr) expr, context);
-		}
-
-		if (expr instanceof FedXLeftJoin) {
-			return prepareLeftJoin((FedXLeftJoin) expr, context);
-		}
-
-		if (expr instanceof SingleSourceQuery) {
-			return QueryEvaluationStep.minimal(this, expr);
-		}
-
-		if (expr instanceof FedXService) {
-			return QueryEvaluationStep.minimal(this, expr);
-		}
-
-		if (expr instanceof TripleRefJoinGroup) {
-			return QueryEvaluationStep.minimal(this, expr);
-		}
-
-		if (expr instanceof FedXArbitraryLengthPath) {
-			return prepare((FedXArbitraryLengthPath) expr, context);
-		}
-
-		if (expr instanceof FedXZeroLengthPath) {
-			return prepare((FedXZeroLengthPath) expr, context);
-		}
-
-		if (expr instanceof EmptyResult) {
-			return QueryEvaluationStep.minimal(this, expr);
-		}
-
-		return super.precompile(expr, context);
+		return BindingFrameBindings.restore(prepared, context);
 	}
 
 	private QueryEvaluationStep prepareNativeGraphQuery(TupleExpr expression) {
@@ -1131,33 +1119,65 @@ public class FederationEvaluationStrategy extends StrictEvaluationStrategy {
 		QueryEvaluationStep resultProvider = precompile(join.getArg(0), context);
 
 		ControlledWorkerScheduler<BindingSet> joinScheduler = federationContext.getManager().getJoinScheduler();
-		QueryEvaluationStep[] independent = new QueryEvaluationStep[join.getNumberOfArguments()];
-		String[][] keys = new String[join.getNumberOfArguments()][];
-		Set<String> leftNames = new HashSet<>(join.getArg(0).getBindingNames());
+		int argumentCount = join.getNumberOfArguments();
+		QueryEvaluationStep[] independent = new QueryEvaluationStep[argumentCount];
+		boolean[] preserveLeftInput = new boolean[argumentCount];
+		TupleExpr[] rightOperands = new TupleExpr[argumentCount];
+		List<Set<String>> joinVariables = new ArrayList<>(argumentCount);
+		joinVariables.add(Set.of());
+		String[][] keys = new String[argumentCount][];
+		EndpointGroupSafety.OutputNames firstOutput = EndpointGroupSafety.outputNames(join.getArg(0));
+		Set<String> leftNames = new HashSet<>(firstOutput.names());
+		boolean leftNamesKnown = firstOutput.known();
 		for (int i = 1; i < independent.length; i++) {
-			TupleExpr right = join.getArg(i);
-			if (TupleExprs.requiresIndependentEvaluation(right)) {
+			TupleExpr original = join.getArg(i);
+			TupleExpr right = original;
+			boolean separate = TupleExprs.requiresIndependentEvaluation(original);
+			if (original instanceof ExclusiveGroup group && PreparedExclusiveGroup.needsAtomicPreparation(group)) {
+				PreparedExclusiveGroup.Operand operand = PreparedExclusiveGroup.operand(this, group);
+				right = operand;
+				EndpointGroupSafety.Proof proof = operand.proof();
+				boolean safe = proof.safeInjection(leftNames, leftNamesKnown);
+				if (!separate && proof.hasScope() && !safe) {
+					if (!proof.safeOuterInjection(leftNames, leftNamesKnown)) {
+						throw new QueryEvaluationException("Cannot preserve nested endpoint scope inputs");
+					}
+					separate = true;
+				} else if (!separate && safe && !proof.repeatable()) {
+					separate = true;
+				}
+			}
+			rightOperands[i] = right;
+			joinVariables.add(Set.copyOf(join.getJoinVariables(i)));
+			if (separate) {
 				independent[i] = precompile(right, context);
+				preserveLeftInput[i] = right instanceof PreparedExclusiveGroup.Operand;
 				Set<String> shared = new HashSet<>(leftNames);
 				shared.retainAll(right.getBindingNames());
 				keys[i] = shared.toArray(String[]::new);
 			}
-			leftNames.addAll(right.getBindingNames());
+			EndpointGroupSafety.OutputNames output = EndpointGroupSafety.outputNames(original);
+			leftNames.addAll(output.names());
+			leftNamesKnown &= output.known();
 		}
+		QueryInfo queryInfo = join.getQueryInfo();
 		return bindings -> {
 			CloseableIteration<BindingSet> result = null;
 			try {
 				result = resultProvider.evaluate(bindings);
 
-				for (int i = 1, n = join.getNumberOfArguments(); i < n; i++) {
+				for (int i = 1; i < argumentCount; i++) {
 
 					if (independent[i] == null) {
-						result = executeJoin(joinScheduler, result, join.getArg(i), join.getJoinVariables(i), bindings,
-								join.getQueryInfo(), context);
+						result = executeJoin(joinScheduler, result, rightOperands[i], joinVariables.get(i), bindings,
+								queryInfo, context);
 					} else {
 						CloseableIteration<BindingSet> left = result;
-						result = new HashJoinIteration(ignored -> left, independent[i], bindings, false, keys[i],
-								context);
+						result = preserveLeftInput[i]
+								? HashJoinIteration.preservingLeftInput(ignored -> left, independent[i], bindings,
+										keys[i], context)
+								: new HashJoinIteration(ignored -> left, independent[i], bindings, false, keys[i],
+										context);
 					}
 				}
 			} catch (Throwable t) {
@@ -1411,8 +1431,11 @@ public class FederationEvaluationStrategy extends StrictEvaluationStrategy {
 				join = new ControlledWorkerBindJoin(joinScheduler, this, leftIter, rightArg,
 						bindings, queryInfo);
 			} else {
+				QueryEvaluationStep prepared = rightArg instanceof PreparedExclusiveGroup.Operand operand
+						? operand.prepared()
+						: context == null ? null : precompile(rightArg, context);
 				join = new ControlledWorkerJoin(joinScheduler, this, leftIter, rightArg, bindings,
-						queryInfo, context == null ? null : precompile(rightArg, context));
+						queryInfo, prepared);
 			}
 
 			join.setJoinVars(joinVars);
@@ -1525,6 +1548,9 @@ public class FederationEvaluationStrategy extends StrictEvaluationStrategy {
 	public CloseableIteration<BindingSet> evaluateExclusiveGroup(
 			ExclusiveGroup group, BindingSet bindings) throws RepositoryException,
 			MalformedQueryException, QueryEvaluationException {
+		if (PreparedExclusiveGroup.needsAtomicPreparation(group)) {
+			return precompile(group).evaluate(bindings);
+		}
 		if (NativeGraphQuery.isRequired(group, bindings)) {
 			return prepareNativeGraphQuery(group).evaluate(bindings);
 		}

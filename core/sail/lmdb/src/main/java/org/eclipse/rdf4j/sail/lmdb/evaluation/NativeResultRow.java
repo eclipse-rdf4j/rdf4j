@@ -15,8 +15,12 @@ import java.util.HashMap;
 import java.util.Map;
 import java.util.Objects;
 
+import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryBindingSet;
+import org.eclipse.rdf4j.query.algebra.evaluation.impl.BindingFrame;
+import org.eclipse.rdf4j.query.algebra.evaluation.impl.BindingFrameBindings;
+import org.eclipse.rdf4j.query.algebra.evaluation.impl.GraphFrameBindings;
 
 /** Immutable physical cells with a schema shared by every row of a native result. */
 final class NativeResultRow {
@@ -51,12 +55,26 @@ final class NativeResultRow {
 
 	private final Schema schema;
 	private final NativeResultCell[] cells;
+	private final BindingFrame bindingFrame;
+	private final GraphFrameBindings graphFrames;
 
 	NativeResultRow(String[] names, NativeResultCell[] cells) {
 		this(new Schema(names), cells);
 	}
 
 	NativeResultRow(Schema schema, NativeResultCell[] cells) {
+		this(schema, cells, null, GraphFrameBindings.EMPTY);
+	}
+
+	NativeResultRow(Schema schema, NativeResultCell[] cells, BindingSet metadata) {
+		this(schema, cells, BindingFrameBindings.from(metadata), GraphFrameBindings.from(metadata));
+	}
+
+	NativeResultRow(Schema schema, NativeResultCell[] cells, NativeResultRow metadata) {
+		this(schema, cells, metadata.bindingFrame, metadata.graphFrames);
+	}
+
+	NativeResultRow(Schema schema, NativeResultCell[] cells, BindingFrame frame, GraphFrameBindings graphFrames) {
 		this.schema = Objects.requireNonNull(schema, "result schema");
 		if (cells.length != schema.size()) {
 			throw new IllegalArgumentException("Result cell count does not match schema");
@@ -65,6 +83,8 @@ final class NativeResultRow {
 		for (NativeResultCell cell : this.cells) {
 			Objects.requireNonNull(cell, "result cell");
 		}
+		bindingFrame = frame;
+		this.graphFrames = Objects.requireNonNull(graphFrames, "graph frames");
 	}
 
 	static NativeResultRow fromBindingSet(BindingSet bindings) {
@@ -78,11 +98,43 @@ final class NativeResultRow {
 			var value = bindings.getValue(schema.name(index));
 			cells[index] = value == null ? NativeResultCell.unbound() : NativeResultCell.term(value);
 		}
-		return new NativeResultRow(schema, cells);
+		return new NativeResultRow(schema, cells, bindings);
 	}
 
 	Schema schema() {
 		return schema;
+	}
+
+	BindingFrame bindingFrame() {
+		return bindingFrame;
+	}
+
+	GraphFrameBindings graphFrames() {
+		return graphFrames;
+	}
+
+	/** Conservative ownership charge for private metadata held by a resident result row. */
+	long retainedMetadataBytes() {
+		if (bindingFrame == null && graphFrames == GraphFrameBindings.EMPTY) {
+			return 0L;
+		}
+		long[] bytes = { 0L };
+		BindingFrameBindings.visitFrames(bindingFrame, () -> bytes[0] = Math.addExact(bytes[0], 160L),
+				(name, value) -> bytes[0] = Math.addExact(bytes[0], retainedMetadataEntryBytes(name, value)));
+		BindingFrameBindings.visitSubstitutionDomains(bindingFrame,
+				() -> bytes[0] = Math.addExact(bytes[0], 64L),
+				name -> bytes[0] = Math.addExact(bytes[0], Math.addExact(80L, Math.multiplyExact(2L, name.length()))));
+		if (graphFrames != GraphFrameBindings.EMPTY) {
+			bytes[0] = Math.addExact(bytes[0], 96L);
+			graphFrames.visit(
+					(name, value) -> bytes[0] = Math.addExact(bytes[0], retainedMetadataEntryBytes(name, value)));
+		}
+		return bytes[0];
+	}
+
+	private static long retainedMetadataEntryBytes(String name, Value value) {
+		long names = Math.addExact(80L, Math.multiplyExact(2L, name.length()));
+		return Math.addExact(names, NativeRuntimeValueTable.retainedValueBytes(value, 0));
 	}
 
 	NativeResultCell cell(int index) {
@@ -106,6 +158,8 @@ final class NativeResultRow {
 				bindings.addBinding(schema.name(index), cell.value());
 			}
 		}
+		bindings.setBindingFrame(bindingFrame);
+		bindings.setGraphFrameBindings(graphFrames);
 		return bindings;
 	}
 }

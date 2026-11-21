@@ -111,6 +111,7 @@ public class ConjunctiveConstraintSplitterOptimizer implements QueryOptimizer {
 				ValueExpr condition = null;
 				QueryAlgebraBindingAnalysis.ReadOnlyContext conditionInput = analysis.contextAt(node.getCondition());
 				QueryAlgebraBindingAnalysis.ReadOnlyContext rightInput = analysis.contextAt(arg);
+				QueryAlgebraBindingAnalysis.ReadOnlyContext entryInput = analysis.contextAt(node);
 				QueryAlgebraBindingAnalysis.OutputFacts leftFacts = analysis.outputFacts(node.getLeftArg(),
 						analysis.contextAt(node.getLeftArg()));
 				QueryAlgebraBindingAnalysis.OutputFacts rightFacts = analysis.outputFacts(arg, rightInput);
@@ -118,7 +119,8 @@ public class ConjunctiveConstraintSplitterOptimizer implements QueryOptimizer {
 				for (ValueExpr constraint : conjunctiveConstraints) {
 					QueryAlgebraBindingAnalysis.Dependencies dependencies = analysis.dependencies(constraint,
 							conditionInput);
-					if (isWithinBindingScope(leftFacts, rightFacts, rightInput, conditionInput, dependencies)) {
+					if (isWithinBindingScope(leftFacts, rightFacts, entryInput, rightInput, conditionInput,
+							dependencies)) {
 						arg = new Filter(arg, constraint.clone());
 					} else if (condition == null) {
 						condition = constraint;
@@ -144,6 +146,7 @@ public class ConjunctiveConstraintSplitterOptimizer implements QueryOptimizer {
 
 		private boolean isWithinBindingScope(QueryAlgebraBindingAnalysis.OutputFacts leftFacts,
 				QueryAlgebraBindingAnalysis.OutputFacts rightFacts,
+				QueryAlgebraBindingAnalysis.ReadOnlyContext entryInput,
 				QueryAlgebraBindingAnalysis.ReadOnlyContext rightInput,
 				QueryAlgebraBindingAnalysis.ReadOnlyContext conditionInput,
 				QueryAlgebraBindingAnalysis.Dependencies dependencies) {
@@ -157,8 +160,18 @@ public class ConjunctiveConstraintSplitterOptimizer implements QueryOptimizer {
 				return false;
 			}
 			for (String name : references) {
+				if (!rightFacts.possibleOutputs().contains(name) && !entryInput.maybeBoundNames().contains(name)) {
+					// A relational RHS can be probed with a left-row value, but wrapping it in a FILTER can
+					// select independent evaluation. Such a probe is not the OPTIONAL's semantic entry.
+					return false;
+				}
 				boolean leftMayBind = leftFacts.possibleOutputs().contains(name)
 						|| leftFacts.retainedInputNames().contains(name);
+				if (leftMayBind && !rightFacts.guaranteedOutputs().contains(name)
+						&& !entryInput.guaranteedNames().contains(name)) {
+					// An unbound right-side value can be supplied by a matching left row only after the merge.
+					return false;
+				}
 				if (rightFacts.overwrittenInputNames().contains(name)
 						&& (leftMayBind || rightInput.maybeBoundNames().contains(name))) {
 					// The original OPTIONAL condition can observe the left row's value before an RHS Extension replaces

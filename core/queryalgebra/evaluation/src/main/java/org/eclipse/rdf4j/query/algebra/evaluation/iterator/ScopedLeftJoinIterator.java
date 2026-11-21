@@ -35,6 +35,7 @@ import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryEvaluationStep;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryValueEvaluationStep;
+import org.eclipse.rdf4j.query.algebra.evaluation.impl.BindingFrameBindings;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.GraphFrameBindings;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.QueryEvaluationContext;
 import org.eclipse.rdf4j.query.algebra.evaluation.util.QueryEvaluationUtility;
@@ -91,6 +92,33 @@ public final class ScopedLeftJoinIterator extends LookAheadIteration<BindingSet>
 				}
 			}
 			return frames.toArray(GraphFrameMapping[]::new);
+		}
+
+		static String[] privateParameters(GraphFrameMapping[] frames, BindingSet entry) {
+			if (frames.length == 0) {
+				return NO_FRAME;
+			}
+			return Arrays.stream(frames)
+					.filter(frame -> !frame.sourceName().equals(frame.parameterName()))
+					.map(GraphFrameMapping::parameterName)
+					.distinct()
+					.filter(parameter -> !GraphFrameBindings.isSupplied(entry, parameter))
+					.toArray(String[]::new);
+		}
+
+		static BindingSet export(BindingSet row, String[] privateParameters, QueryEvaluationContext context) {
+			MutableBindingSet exported = null;
+			GraphFrameBindings graphParameters = GraphFrameBindings.from(row);
+			for (String parameter : privateParameters) {
+				if (row.hasBinding(parameter) || graphParameters.hasParameter(parameter)) {
+					if (exported == null) {
+						exported = BindingFrameBindings.preserve(row,
+								GraphFrameBindings.preserve(row, context.createBindingSet(row)));
+					}
+					exported.removeBinding(parameter);
+				}
+			}
+			return exported == null ? row : exported;
 		}
 	}
 
@@ -154,11 +182,7 @@ public final class ScopedLeftJoinIterator extends LookAheadIteration<BindingSet>
 				.map(GraphFrameMapping::parameterName)
 				.distinct()
 				.toArray(String[]::new);
-		this.privateParameters = Arrays.stream(graphFrames)
-				.filter(frame -> !frame.sourceName().equals(frame.parameterName()))
-				.map(GraphFrameMapping::parameterName)
-				.distinct()
-				.toArray(String[]::new);
+		this.privateParameters = GraphFrameMapping.privateParameters(graphFrames, bindings);
 		leftIter = left.evaluate(bindings);
 		rightStep = right;
 		inputBindings = bindings;
@@ -227,19 +251,7 @@ public final class ScopedLeftJoinIterator extends LookAheadIteration<BindingSet>
 		try {
 			while (!isClosed() && iter.hasNext()) {
 				CancellationPoints.check(isCancellationRequested());
-				BindingSet row = iter.next();
-				MutableBindingSet exported = null;
-				for (String parameter : privateParameters) {
-					if (row.hasBinding(parameter)) {
-						if (exported == null) {
-							exported = context.createBindingSet(row);
-						}
-						exported.removeBinding(parameter);
-					}
-				}
-				if (exported != null) {
-					row = exported;
-				}
+				BindingSet row = GraphFrameMapping.export(iter.next(), privateParameters, context);
 				rowsByKey.computeIfAbsent(BindingSetHashKey.create(joinAttributes, row), k -> new ArrayList<>())
 						.add(row);
 			}
@@ -277,7 +289,11 @@ public final class ScopedLeftJoinIterator extends LookAheadIteration<BindingSet>
 	}
 
 	private BindingSet merge(BindingSet leftRow, BindingSet rightRow) {
-		return HashJoinIteration.merge(context.createBindingSet(leftRow), rightRow);
+		if (graphFrames.length == 0) {
+			return HashJoinIteration.merge(context.createBindingSet(leftRow), rightRow);
+		}
+		MutableBindingSet merged = GraphFrameBindings.preserve(leftRow, context.createBindingSet(leftRow));
+		return HashJoinIteration.mergeGraphFrames(merged, rightRow);
 	}
 
 	private void closeOnFailure(Throwable failure) {

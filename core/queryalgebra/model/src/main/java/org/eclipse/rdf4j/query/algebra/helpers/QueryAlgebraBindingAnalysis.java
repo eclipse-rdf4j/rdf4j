@@ -14,6 +14,7 @@ package org.eclipse.rdf4j.query.algebra.helpers;
 
 import java.util.ArrayDeque;
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.Deque;
 import java.util.HashMap;
 import java.util.HashSet;
@@ -35,6 +36,7 @@ import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.algebra.AggregateOperator;
 import org.eclipse.rdf4j.query.algebra.And;
 import org.eclipse.rdf4j.query.algebra.ArbitraryLengthPath;
+import org.eclipse.rdf4j.query.algebra.BinaryTupleOperator;
 import org.eclipse.rdf4j.query.algebra.BindingSetAssignment;
 import org.eclipse.rdf4j.query.algebra.Bound;
 import org.eclipse.rdf4j.query.algebra.DescribeOperator;
@@ -95,32 +97,452 @@ import org.eclipse.rdf4j.query.impl.EmptyBindingSet;
  *
  * <p>
  * Exported tuple names, inherited input bindings, expression references, and exact RDF values are kept as separate
- * domains. Unknown output semantics never imply an empty output set. Physical join-prefix facts are intentionally not
- * stored here; they are cost hints and cannot authorize semantic rewrites.
+ * domains. Unknown output semantics never imply an empty output set. Physical EXPLAIN inputs have a separate opt-in
+ * diagnostic view; they cannot authorize semantic rewrites.
  */
 @InternalUseOnly
 public final class QueryAlgebraBindingAnalysis {
 
-	private static final Set<String> INPUT_ONLY_JOIN_ALGORITHMS = Set.of(
-			"HashJoinIteration",
-			"InnerMergeJoinIterator",
-			"ScopedLeftJoinIterator");
-	private static final Set<String> LEFT_ROW_JOIN_ALGORITHMS = Set.of(
-			"JoinIterator",
-			"ServiceJoinIterator",
-			"BoundStatementPatternJoinIteration",
-			"BoundStatementPatternGuardJoinIteration",
-			"BoundStatementPatternLeftJoinIteration");
+	/** Immutable captured name sets supplied by an evaluator preparation generation. */
+	@InternalUseOnly
+	public interface NameDomain {
+		NameDomain union(NameDomain other);
+
+		NameDomain intersect(NameDomain other);
+
+		NameDomain difference(NameDomain other);
+
+		boolean contains(String name);
+
+		boolean isEmpty();
+
+		Set<String> names();
+	}
+
+	/** Shared OPTIONAL input names, or {@code null} when the captured shape is incomplete. */
+	@InternalUseOnly
+	public interface OptionalInputNameProvider {
+		NameDomain optionalInputNames(LeftJoin leftJoin);
+
+		NameDomain names(Set<String> names);
+
+		ExpressionInputNames expressionInputNames(ValueExpr expression);
+
+		/** A scalar callback cannot borrow a tuple subtree's separate execution capability. */
+		default boolean invocationReadsAreScalar(ValueExpr expression) {
+			return false;
+		}
+
+		List<ProjectionName> projectionNames(ProjectionElemList elements);
+
+		OptionalFilter optionalFilter(LeftJoin leftJoin);
+
+		/** A generation-owned description; null means the occurrence or an output fact was not captured. */
+		default CapturedCallerNode callerNode(TupleExpr node) {
+			return null;
+		}
+
+		boolean mayContainOptional(TupleExpr root);
+
+		/** Null means that no conservative null-rejection proof was captured. */
+		default NameDomain nullRejectingGate(LeftJoin leftJoin) {
+			return null;
+		}
+
+		OptionalInputNameProvider forRoot(TupleExpr root);
+
+		OptionalInputNameProvider refresh(TupleExpr root);
+	}
+
+	/** Captured explicit scalar reads and whether those reads describe the complete expression. */
+	@InternalUseOnly
+	public record ExpressionInputNames(NameDomain names, boolean complete) {
+	}
+
+	/** A captured projection source and its public target. */
+	@InternalUseOnly
+	public record ProjectionName(String source, String target) {
+	}
+
+	/** Input-edge choices shared by the ordinary transfer and a captured symbolic consumer. */
+	@InternalUseOnly
+	public enum CallerInputEdge {
+		FORWARD,
+		JOIN_RIGHT_FILTER,
+		JOIN_RIGHT_OUTPUT,
+		OPTIONAL_LEFT,
+		FILTER_ARGUMENT,
+		NEW_SCOPE,
+		UNKNOWN
+	}
+
+	/** Classifies only edges whose input contract is established by the existing tuple transfer. */
+	@InternalUseOnly
+	public static CallerInputEdge callerInputEdge(QueryModelNode parent, QueryModelNode child) {
+		if (parent instanceof Join join) {
+			if (child == join.getLeftArg()) {
+				return CallerInputEdge.FORWARD;
+			}
+			if (child != join.getRightArg()) {
+				return CallerInputEdge.UNKNOWN;
+			}
+			if (child instanceof Filter filter && !TupleExprs.isVariableScopeChange(filter)) {
+				return CallerInputEdge.JOIN_RIGHT_FILTER;
+			}
+			// A non-atomic parameterized operand keeps its semantic entry; its recipients may borrow owner inputs.
+			return (BindingScopePolicy.receivesLeftRow(join, child)
+					&& BindingScopePolicy.isAtomicMappingParameterized(join.getRightArg()))
+					|| BindingScopePolicy.isRelationalBindingLeaf(join.getRightArg())
+							? CallerInputEdge.JOIN_RIGHT_OUTPUT
+							: CallerInputEdge.FORWARD;
+		}
+		if (parent instanceof Lateral lateral && child == lateral.getLeftArg()) {
+			return CallerInputEdge.FORWARD;
+		}
+		if (parent instanceof LeftJoin optional && parent.getClass() == LeftJoin.class
+				&& child == optional.getLeftArg()) {
+			return CallerInputEdge.OPTIONAL_LEFT;
+		}
+		if (parent instanceof Difference minus && parent.getClass() == Difference.class
+				&& (child == minus.getLeftArg() || child == minus.getRightArg())) {
+			return CallerInputEdge.FORWARD;
+		}
+		if (parent instanceof Filter filter && child == filter.getArg()) {
+			return CallerInputEdge.FILTER_ARGUMENT;
+		}
+		if (parent instanceof Union union && (child == union.getLeftArg() || child == union.getRightArg())) {
+			return TupleExprs.isVariableScopeChange(union) ? CallerInputEdge.NEW_SCOPE : CallerInputEdge.FORWARD;
+		}
+		if (parent instanceof Extension extension && child == extension.getArg()) {
+			return CallerInputEdge.FORWARD;
+		}
+		if ((parent instanceof QueryRoot || parent instanceof Distinct || parent instanceof Reduced
+				|| parent instanceof Slice || parent instanceof Order)
+				&& child == ((UnaryTupleOperator) parent).getArg()) {
+			return CallerInputEdge.FORWARD;
+		}
+		return CallerInputEdge.UNKNOWN;
+	}
+
+	/** Output-recipe choices shared by the ordinary transfer and captured symbolic preparation. */
+	@InternalUseOnly
+	public enum CallerOutputKind {
+		PROJECTION,
+		MULTI_PROJECTION,
+		EXTENSION,
+		LEFT,
+		BINARY,
+		OPTIONAL,
+		UNARY,
+		GRAPH,
+		LEAF,
+		UNKNOWN
+	}
+
+	/** Complete entry-preserving shapes. An absent fact leaves the transfer unproved. */
+	@InternalUseOnly
+	public enum EntryCompatibilityKind {
+		COMPATIBLE_LEAF,
+		POSITIVE_JOIN,
+		PROJECTED_OUTPUT,
+		PROJECTED_PREFIX,
+		NORMAL_OPTIONAL,
+		OPTIONAL_GATE
+	}
+
+	/**
+	 * Complete entry-preserving laws copy compatible input names including names outside the local output domain.
+	 * Projected outputs carry a pending compatibility check until the independent OPTIONAL combines them with a
+	 * preserving left row. Root vetoes and OPTIONAL masks are separate: only the latter may be discharged by retained
+	 * GRAPH origin. The added-input veto applies independently to physical sibling inputs.
+	 */
+	@InternalUseOnly
+	public record EntryCompatibilityFacts(EntryCompatibilityKind kind, NameDomain declaredOutputs,
+			NameDomain possibleOutputs, NameDomain assuredOutputs, NameDomain rootVetoes, NameDomain optionalMasks,
+			NameDomain addedInputVetoes, ValueExpr gateCondition, NameDomain gateReads, boolean positiveOnly) {
+		public boolean pendingProjectionCompatibility() {
+			return kind == EntryCompatibilityKind.PROJECTED_OUTPUT || kind == EntryCompatibilityKind.PROJECTED_PREFIX;
+		}
+	}
+
+	/** The captured identity and shared transfer classifications for one tuple occurrence. */
+	@InternalUseOnly
+	public record CapturedCallerNode(QueryModelNode parent, CallerInputEdge input, CallerOutputKind output,
+			List<TupleExpr> children, NameDomain possibleOutputs, NameDomain possibleWrites,
+			boolean outputsKnown, boolean writesKnown, EntryCompatibilityFacts entryCompatibility,
+			ValueExpr optionalCondition) {
+		public CapturedCallerNode {
+			children = List.copyOf(children);
+		}
+
+		public boolean matchesTupleChildren(TupleExpr operator) {
+			if (operator instanceof BinaryTupleOperator binary) {
+				return children.size() == 2 && children.get(0) == binary.getLeftArg()
+						&& children.get(1) == binary.getRightArg()
+						&& (!(binary instanceof LeftJoin optional) || optionalCondition == optional.getCondition());
+			}
+			return !(operator instanceof UnaryTupleOperator unary)
+					|| children.size() == 1 && children.getFirst() == unary.getArg();
+		}
+	}
+
+	/** Pure semantic input transitions; these say nothing about repeatability or physical execution. */
+	@InternalUseOnly
+	public enum SemanticInvocationKind {
+		LEAF,
+		FORWARD,
+		JOIN,
+		OPTIONAL,
+		PROJECTION,
+		LATERAL,
+		PARAMETER
+	}
+
+	/**
+	 * An immutable occurrence from the existing preparation graph. OPTIONAL masks are conditional on the nearest
+	 * substitution domain; LATERAL adds only its declared inputs, and the incoming mapping wins collisions.
+	 */
+	@InternalUseOnly
+	public record SemanticInvocationTransition(TupleExpr occurrence, SemanticInvocationKind kind,
+			List<TupleExpr> children, NameDomain maskedInputs, Set<String> parameterInputs, NameDomain exposedReads,
+			NameDomain noNames, EntryCompatibilityFacts entryCompatibility) {
+		public SemanticInvocationTransition {
+			children = List.copyOf(children);
+			parameterInputs = Set.copyOf(parameterInputs);
+		}
+	}
+
+	/** Capture from the shared generation instead of traversing the algebra again for each physical candidate. */
+	@InternalUseOnly
+	public SemanticInvocationTransition semanticInvocationTransition(TupleExpr occurrence) {
+		if (semanticInvocationTransitions.containsKey(occurrence)) {
+			return semanticInvocationTransitions.get(occurrence);
+		}
+		SemanticInvocationTransition captured = captureSemanticInvocationTransition(occurrence);
+		semanticInvocationTransitions.put(occurrence, captured);
+		return captured;
+	}
+
+	private record InvocationRegionVisit(TupleExpr occurrence, boolean childrenReady) {
+	}
+
+	/**
+	 * A generic island can retain this input contract only when every captured tuple edge preserves its entry domain.
+	 * In particular, a projection can drop a supplied Group key even when its output has no conflicting value. Solve
+	 * the captured DAG once, without recursively revisiting nested OPTIONAL regions or traversing runtime algebra.
+	 */
+	@InternalUseOnly
+	public boolean semanticInvocationRegionKnown(TupleExpr occurrence) {
+		Deque<InvocationRegionVisit> pending = new ArrayDeque<>();
+		pending.push(new InvocationRegionVisit(occurrence, false));
+		while (!pending.isEmpty()) {
+			InvocationRegionVisit visit = pending.pop();
+			if (semanticInvocationRegions.containsKey(visit.occurrence())) {
+				continue;
+			}
+			SemanticInvocationTransition input = semanticInvocationTransition(visit.occurrence());
+			if (input == null || input.kind() == SemanticInvocationKind.PROJECTION) {
+				semanticInvocationRegions.put(visit.occurrence(), false);
+			} else if (visit.childrenReady()) {
+				boolean complete = true;
+				for (TupleExpr child : input.children()) {
+					complete &= Boolean.TRUE.equals(semanticInvocationRegions.get(child));
+				}
+				semanticInvocationRegions.put(visit.occurrence(), complete);
+			} else {
+				pending.push(new InvocationRegionVisit(visit.occurrence(), true));
+				for (TupleExpr child : input.children()) {
+					pending.push(new InvocationRegionVisit(child, false));
+				}
+			}
+		}
+		return Boolean.TRUE.equals(semanticInvocationRegions.get(occurrence));
+	}
+
+	private SemanticInvocationTransition captureSemanticInvocationTransition(TupleExpr occurrence) {
+		CapturedCallerNode captured = optionalInputNameProvider == null ? null
+				: optionalInputNameProvider.callerNode(occurrence);
+		if (captured == null || captured.parent() != occurrence.getParentNode()
+				|| !captured.matchesTupleChildren(occurrence)) {
+			return null;
+		}
+		Class<?> type = occurrence.getClass();
+		SemanticInvocationKind kind;
+		NameDomain empty = optionalInputNameProvider.names(Set.of());
+		NameDomain masked = empty;
+		NameDomain reads = empty;
+		Set<String> parameters = Set.of();
+		List<TupleExpr> children = captured.children();
+		if (type == SingletonSet.class || type == BindingSetAssignment.class || type == StatementPattern.class) {
+			kind = SemanticInvocationKind.LEAF;
+		} else if (type == TupleFunctionCall.class) {
+			kind = SemanticInvocationKind.PARAMETER;
+			for (ValueExpr argument : ((TupleFunctionCall) occurrence).getArgs()) {
+				NameDomain argumentReads = semanticInvocationReads(argument);
+				if (argumentReads == null) {
+					return null;
+				}
+				reads = reads.union(argumentReads);
+			}
+		} else if (type == Filter.class || type == Extension.class) {
+			kind = SemanticInvocationKind.FORWARD;
+			if (occurrence instanceof Filter filter) {
+				reads = semanticInvocationReads(filter.getCondition());
+			} else {
+				for (ExtensionElem element : ((Extension) occurrence).getElements()) {
+					NameDomain elementReads = semanticInvocationReads(element.getExpr());
+					if (elementReads == null) {
+						return null;
+					}
+					reads = reads.union(elementReads);
+				}
+			}
+			if (reads == null) {
+				return null;
+			}
+		} else if (type == Join.class) {
+			kind = SemanticInvocationKind.JOIN;
+		} else if (type == Projection.class && captured.entryCompatibility() != null
+				&& captured.entryCompatibility().kind() == EntryCompatibilityKind.PROJECTED_OUTPUT) {
+			Projection projection = (Projection) occurrence;
+			List<ProjectionName> names = optionalInputNameProvider.projectionNames(projection.getProjectionElemList());
+			if (projection.isSubquery() || projection.getProjectionContext() != null
+					|| projection.getInheritedGraphParameter() != null || TupleExprs.isVariableScopeChange(projection)
+					|| !matchesPositiveProjectionArgument(projection.getArg())
+					|| names == null || !names.equals(projection.getProjectionElemList()
+							.getElements()
+							.stream()
+							.map(element -> new ProjectionName(element.getName(),
+									element.getProjectionAlias().orElse(element.getName())))
+							.toList())) {
+				return null;
+			}
+			// A selected generic projection evaluates its frozen semantic child internally.
+			kind = SemanticInvocationKind.PROJECTION;
+			children = List.of();
+		} else if (type == Lateral.class) {
+			kind = SemanticInvocationKind.LATERAL;
+			parameters = Set.copyOf(((Lateral) occurrence).getRightInputBindingNames());
+		} else if (type == LeftJoin.class) {
+			kind = SemanticInvocationKind.OPTIONAL;
+			LeftJoin optional = (LeftJoin) occurrence;
+			if (optional.hasCondition()) {
+				reads = semanticInvocationReads(optional.getCondition());
+				if (reads == null) {
+					return null;
+				}
+			}
+			NameDomain names = optionalInputNameProvider.optionalInputNames((LeftJoin) occurrence);
+			if (names == null) {
+				return null;
+			}
+			masked = names;
+		} else {
+			return null;
+		}
+		return new SemanticInvocationTransition(occurrence, kind, children, masked, parameters, reads, empty,
+				captured.entryCompatibility());
+	}
+
+	/** The projection is atomic in the selected plan, so validate its captured body before dropping that lineage. */
+	private boolean matchesPositiveProjectionArgument(TupleExpr argument) {
+		Deque<TupleExpr> pending = new ArrayDeque<>();
+		Set<TupleExpr> visited = Collections.newSetFromMap(new IdentityHashMap<>());
+		pending.push(argument);
+		while (!pending.isEmpty()) {
+			TupleExpr node = pending.pop();
+			CapturedCallerNode captured = optionalInputNameProvider.callerNode(node);
+			if (!visited.add(node) || captured == null || captured.parent() != node.getParentNode()
+					|| !captured.matchesTupleChildren(node) || TupleExprs.isVariableScopeChange(node)
+					|| captured.entryCompatibility() == null || !captured.entryCompatibility().positiveOnly()) {
+				return false;
+			}
+			pending.addAll(captured.children());
+		}
+		return true;
+	}
+
+	/** Reads not assured by local production can distinguish a masked entry from a seeded physical row. */
+	private NameDomain semanticInvocationReads(ValueExpr expression) {
+		ExpressionInputNames reads = optionalInputNameProvider.expressionInputNames(expression);
+		return reads == null || !reads.complete() || !optionalInputNameProvider.invocationReadsAreScalar(expression)
+				? null
+				: reads.names().difference(optionalInputNameProvider.names(contextAt(expression).guaranteedNames));
+	}
+
+	@InternalUseOnly
+	public static CallerOutputKind callerOutputKind(TupleExpr expression) {
+		if (!FilterBindingScope.tupleReadsAreExplicit(expression) && expression.getClass() != Graph.class
+				&& expression.getClass() != StatementPattern.class && expression.getClass() != ZeroLengthPath.class
+				&& expression.getClass() != TripleRef.class) {
+			return CallerOutputKind.UNKNOWN;
+		}
+		if (expression instanceof Projection) {
+			return CallerOutputKind.PROJECTION;
+		}
+		if (expression instanceof MultiProjection) {
+			return CallerOutputKind.MULTI_PROJECTION;
+		}
+		if (expression instanceof Extension) {
+			return CallerOutputKind.EXTENSION;
+		}
+		if (expression instanceof Difference) {
+			return CallerOutputKind.LEFT;
+		}
+		if (expression instanceof LeftJoin) {
+			return CallerOutputKind.OPTIONAL;
+		}
+		if (expression instanceof Join || expression instanceof Union
+				|| expression instanceof Intersection || expression instanceof Lateral) {
+			return CallerOutputKind.BINARY;
+		}
+		if (expression instanceof Graph) {
+			return CallerOutputKind.GRAPH;
+		}
+		if (expression instanceof Filter || expression instanceof Distinct || expression instanceof Reduced
+				|| expression instanceof Slice || expression instanceof Order || expression instanceof QueryRoot) {
+			return CallerOutputKind.UNARY;
+		}
+		if (expression instanceof StatementPattern || expression instanceof BindingSetAssignment
+				|| expression instanceof SingletonSet || expression instanceof EmptySet
+				|| expression instanceof ZeroLengthPath || expression instanceof TripleRef) {
+			return CallerOutputKind.LEAF;
+		}
+		return CallerOutputKind.UNKNOWN;
+	}
+
+	/** A direct FILTER/OPTIONAL edge and its already captured output domains. */
+	@InternalUseOnly
+	public record OptionalFilter(Filter filter, NameDomain rightOnlyNames, NameDomain outputNames,
+			boolean complete) {
+	}
 
 	private final TupleExpr root;
-	private final ReadOnlyContext rootContext;
+	private ReadOnlyContext rootContext;
 	private final boolean bindingAssignment;
+	private OptionalInputNameProvider optionalInputNameProvider;
+	private final Map<TupleExpr, SemanticInvocationTransition> semanticInvocationTransitions = new IdentityHashMap<>();
+	private final Map<TupleExpr, Boolean> semanticInvocationRegions = new IdentityHashMap<>();
+	private final List<CallerRecipe> callerRecipes = new ArrayList<>();
+	private CallerRecipe rootCallerRecipe;
+	private int callerStructuralVisits;
 	private final Map<QueryModelNode, ReadOnlyContext> contextCache = new IdentityHashMap<>();
-	private final Map<QueryModelNode, Long> scopeIdentities = new IdentityHashMap<>();
+	// Diagnostic inputs share the lexical traversal and transfer cache, but never authorize semantic rewrites.
+	private Map<QueryModelNode, ReadOnlyContext> explainInputCache;
+	private final Map<QueryModelNode, ScopeIdentity> scopeIdentities = new IdentityHashMap<>();
+	private final QueryAlgebraBindingAnalysis scopeIdentitySource;
+	private final Map<QueryModelNode, QueryModelNode> originalScopeNodes;
+	private GraphContextCapture inheritedGraphContexts;
+	private Boolean completeGraphRoot;
+	private final Map<QueryModelNode, Boolean> cloneGraphLineage = new IdentityHashMap<>();
+	private final Map<QueryModelNode, Set<QueryModelNode>> cloneGraphChildren = new IdentityHashMap<>();
 	private final Map<OutputKey, OutputFacts> outputCache = new HashMap<>();
 	private final Map<OutputKey, Boolean> resultSetModifierCache = new HashMap<>();
 	private final Map<ChildInputKey, ReadOnlyContext> childInputCache = new HashMap<>();
 	private final Map<OutputKey, ReadOnlyContext> leftJoinInputCache = new HashMap<>();
+	private final Map<OutputKey, ReadOnlyContext> filterArgumentInputs = new HashMap<>();
+	// Owner headers are structural: capture them once per LATERAL occurrence and analysis generation.
+	private final Map<Lateral, List<BindingScopePolicy.FilterInputEdge>> lateralParameterInputs = new IdentityHashMap<>();
 	private final AtomicLong nextScopeIdentity = new AtomicLong(1);
 
 	private QueryAlgebraBindingAnalysis(TupleExpr root, BindingSet initialBindings, Set<String> externalNames,
@@ -132,6 +554,10 @@ public final class QueryAlgebraBindingAnalysis {
 			Set<String> possibleInputNames, boolean bindingAssignment) {
 		this.root = root;
 		this.bindingAssignment = bindingAssignment;
+		this.optionalInputNameProvider = null;
+		this.rootCallerRecipe = null;
+		this.scopeIdentitySource = null;
+		this.originalScopeNodes = Map.of();
 		Map<String, Value> values = new HashMap<>();
 		if (initialBindings != null) {
 			for (String name : initialBindings.getBindingNames()) {
@@ -141,18 +567,34 @@ public final class QueryAlgebraBindingAnalysis {
 				}
 			}
 		}
-		this.rootContext = ReadOnlyContext.external(values, externalNames, 0).withPossibleInputs(possibleInputNames);
+		this.rootContext = ReadOnlyContext.external(values, externalNames, new ScopeIdentity(0))
+				.withPossibleInputs(possibleInputNames);
 		if (root != null) {
 			contextCache.put(root, rootContext);
 		}
 	}
 
 	private QueryAlgebraBindingAnalysis(TupleExpr root, ReadOnlyContext rootContext) {
+		this(root, rootContext, null, Map.of());
+	}
+
+	private QueryAlgebraBindingAnalysis(TupleExpr root, ReadOnlyContext rootContext,
+			QueryAlgebraBindingAnalysis scopeIdentitySource, Map<QueryModelNode, QueryModelNode> originalScopeNodes) {
+		this(root, rootContext, scopeIdentitySource, originalScopeNodes, null);
+	}
+
+	private QueryAlgebraBindingAnalysis(TupleExpr root, ReadOnlyContext rootContext,
+			QueryAlgebraBindingAnalysis scopeIdentitySource, Map<QueryModelNode, QueryModelNode> originalScopeNodes,
+			OptionalInputNameProvider optionalInputNameProvider) {
 		this.root = root;
-		this.rootContext = rootContext;
 		this.bindingAssignment = false;
+		this.optionalInputNameProvider = optionalInputNameProvider;
+		this.rootCallerRecipe = optionalInputNameProvider == null ? null : callerRecipe(CallerRecipeKind.ROOT);
+		this.rootContext = rootCallerRecipe == null ? rootContext : rootContext.withCallerRecipe(rootCallerRecipe);
+		this.scopeIdentitySource = scopeIdentitySource;
+		this.originalScopeNodes = new IdentityHashMap<>(originalScopeNodes);
 		if (root != null) {
-			contextCache.put(root, rootContext);
+			contextCache.put(root, this.rootContext);
 		}
 	}
 
@@ -184,6 +626,7 @@ public final class QueryAlgebraBindingAnalysis {
 				public void meet(Projection projection) {
 					// Private GRAPH inputs come from evaluator frames, never from same-spelled API parameters.
 					names.remove(projection.getInheritedGraphParameter());
+					names.remove(projection.getFixedGraphParameter());
 					super.meet(projection);
 				}
 			});
@@ -202,13 +645,169 @@ public final class QueryAlgebraBindingAnalysis {
 				.withPossibleInputs(Set.copyOf(Objects.requireNonNull(possibleInputNames, "possibleInputNames"))));
 	}
 
+	/** Reuses a preparation generation's OPTIONAL names while retaining the ordinary child-input semantics. */
+	@InternalUseOnly
+	public static QueryAlgebraBindingAnalysis withInputContextAndPossibleInputs(TupleExpr root, ReadOnlyContext input,
+			Set<String> possibleInputNames, OptionalInputNameProvider optionalInputNameProvider) {
+		return new QueryAlgebraBindingAnalysis(
+				Objects.requireNonNull(root, "root"), Objects.requireNonNull(input, "input")
+						.withPossibleInputs(
+								Set.copyOf(Objects.requireNonNull(possibleInputNames, "possibleInputNames"))),
+				null, Map.of(), Objects.requireNonNull(optionalInputNameProvider, "optionalInputNameProvider"));
+	}
+
+	/** Analyzes a structural clone while preserving the identity of corresponding unchanged scope boundaries. */
+	public QueryAlgebraBindingAnalysis forClone(TupleExpr clone, ReadOnlyContext input,
+			Map<QueryModelNode, QueryModelNode> originalNodes) {
+		return new QueryAlgebraBindingAnalysis(Objects.requireNonNull(clone, "clone"),
+				Objects.requireNonNull(input, "input"), this, Objects.requireNonNull(originalNodes, "originalNodes"),
+				optionalInputNameProvider == null ? null : optionalInputNameProvider.forRoot(clone));
+	}
+
 	public static QueryAlgebraBindingAnalysis withGuaranteedInputNames(TupleExpr root, Set<String> inputNames) {
 		Set<String> names = Set.copyOf(Objects.requireNonNull(inputNames, "inputNames"));
 		return new QueryAlgebraBindingAnalysis(root, EmptyBindingSet.getInstance(), names, Set.of());
 	}
 
+	/** Opt-in input reporting for the converter; all ordinary analysis APIs remain lexical. */
+	static QueryAlgebraBindingAnalysis forExplanation(TupleExpr root, Set<String> inputNames) {
+		QueryAlgebraBindingAnalysis analysis = withGuaranteedInputNames(root, inputNames);
+		analysis.explainInputCache = new IdentityHashMap<>();
+		if (root != null) {
+			analysis.explainInputCache.put(root, analysis.rootContext);
+		}
+		return analysis;
+	}
+
+	BindingState bindingStateForExplanation(Var var) {
+		ReadOnlyContext lexical = contextAt(var);
+		return bindingState(var, explainInputCache == null ? lexical : explainInputCache.get(var));
+	}
+
 	public ReadOnlyContext rootContext() {
 		return rootContext;
+	}
+
+	/** Input equivalence at captured tuple occurrences, rebased to this analysis's actual lexical root. */
+	@InternalUseOnly
+	public static final class RootCallerEquivalence {
+		private final Map<TupleExpr, RootCallerState> entries;
+		private final int structuralEdges;
+		private final int transfers;
+
+		private RootCallerEquivalence(Map<TupleExpr, RootCallerState> entries, int structuralEdges, int transfers) {
+			this.entries = Collections.unmodifiableMap(new IdentityHashMap<>(entries));
+			this.structuralEdges = structuralEdges;
+			this.transfers = transfers;
+		}
+
+		/** Both present and absent root inputs must retain their meaning at the requested occurrence. */
+		public boolean preserves(TupleExpr occurrence, Set<String> names) {
+			RootCallerState entry = entries.get(occurrence);
+			if (entry == null) {
+				return false;
+			}
+			for (String name : names) {
+				if (!entry.mustPreserve().contains(name) || entry.mayBind().contains(name)) {
+					return false;
+				}
+			}
+			return true;
+		}
+
+		public int structuralEdges() {
+			return structuralEdges;
+		}
+
+		public int transfers() {
+			return transfers;
+		}
+	}
+
+	private record RootCallerState(NameDomain mustPreserve, NameDomain mayBind) {
+	}
+
+	private record RootCallerVisit(TupleExpr node, RootCallerState input, RootCallerState filterArgument) {
+	}
+
+	/**
+	 * Solves the shared captured input edges once for all requested names. Local output domains and replacement targets
+	 * are persistent generation-owned sets; no ordinary join-prefix contexts or name sets are materialized. An
+	 * unclassified edge, an incomplete output, or a mismatched occurrence leaves only that descendant unproved.
+	 */
+	@InternalUseOnly
+	public RootCallerEquivalence rootCallerEquivalence(Set<String> candidates) {
+		Objects.requireNonNull(candidates, "candidates");
+		Map<TupleExpr, RootCallerState> entries = new IdentityHashMap<>();
+		if (root == null || optionalInputNameProvider == null || scopeIdentitySource != null
+				|| !rootContext.bindingDomainKnown
+				|| optionalInputNameProvider.callerNode(root) == null) {
+			return new RootCallerEquivalence(entries, 0, 0);
+		}
+		RootCallerState initial = new RootCallerState(optionalInputNameProvider.names(candidates),
+				optionalInputNameProvider.names(Set.of()));
+		Deque<RootCallerVisit> pending = new ArrayDeque<>();
+		pending.push(new RootCallerVisit(root, initial, null));
+		int structuralEdges = 0;
+		int transfers = 0;
+		while (!pending.isEmpty()) {
+			RootCallerVisit visit = pending.pop();
+			CapturedCallerNode parent = optionalInputNameProvider.callerNode(visit.node());
+			if (parent == null || parent.output() == CallerOutputKind.UNKNOWN
+					|| !parent.matchesTupleChildren(visit.node())
+					|| entries.putIfAbsent(visit.node(), visit.input()) != null) {
+				continue;
+			}
+			for (TupleExpr child : parent.children()) {
+				structuralEdges++;
+				CapturedCallerNode captured = optionalInputNameProvider.callerNode(child);
+				if (captured == null || captured.parent() != visit.node() || child.getParentNode() != visit.node()) {
+					continue;
+				}
+				RootCallerState next = visit.input();
+				RootCallerState argument = null;
+				switch (captured.input()) {
+				case FORWARD:
+					if (visit.node() instanceof Union union && TupleExprs.isVariableScopeChange(union)) {
+						continue;
+					}
+					break;
+				case OPTIONAL_LEFT:
+					NameDomain withheld = optionalInputNameProvider.optionalInputNames((LeftJoin) visit.node());
+					if (withheld == null) {
+						continue;
+					}
+					// An elision checked at the root may rely only on caller names unchanged in the left entry.
+					next = new RootCallerState(next.mustPreserve().difference(withheld), next.mayBind());
+					transfers++;
+					break;
+				case FILTER_ARGUMENT:
+					next = visit.filterArgument() == null ? next : visit.filterArgument();
+					break;
+				case JOIN_RIGHT_FILTER:
+				case JOIN_RIGHT_OUTPUT:
+					if (parent.children().size() != 2 || parent.children().get(1) != child) {
+						continue;
+					}
+					CapturedCallerNode left = optionalInputNameProvider.callerNode(parent.children().get(0));
+					if (left == null || !left.outputsKnown() || !left.writesKnown()) {
+						continue;
+					}
+					next = new RootCallerState(next.mustPreserve().difference(left.possibleWrites()),
+							next.mayBind().union(left.possibleOutputs()));
+					transfers++;
+					if (captured.input() == CallerInputEdge.JOIN_RIGHT_FILTER) {
+						argument = visit.input();
+					}
+					break;
+				case NEW_SCOPE:
+				case UNKNOWN:
+					continue;
+				}
+				pending.push(new RootCallerVisit(child, next, argument));
+			}
+		}
+		return new RootCallerEquivalence(entries, structuralEdges, transfers);
 	}
 
 	/** Returns a read-only frame at the node's actual evaluator position. */
@@ -225,15 +824,93 @@ public final class QueryAlgebraBindingAnalysis {
 			current = current.getParentNode();
 		}
 		ReadOnlyContext context = current == null ? rootContext : contextCache.get(current);
+		ReadOnlyContext physical = explainInputCache == null || current == null ? context
+				: explainInputCache.get(current);
 		while (!path.isEmpty()) {
 			QueryModelNode child = path.pop();
 			QueryModelNode parent = child.getParentNode();
 			if (parent != null) {
 				context = childInput(parent, child, context);
+				if (explainInputCache != null) {
+					physical = explainChildInput(parent, child, physical, context);
+				}
 			}
 			contextCache.put(child, context);
+			if (explainInputCache != null) {
+				explainInputCache.put(child, physical);
+			}
 		}
 		return contextCache.get(node);
+	}
+
+	private ReadOnlyContext explainChildInput(QueryModelNode parent, QueryModelNode child, ReadOnlyContext input,
+			ReadOnlyContext lexicalChild) {
+		// Scalar phases, including their correlated tuple subqueries, receive their actual lexical row. A selected
+		// lookup algorithm must never make an independent BIND/FILTER expression observe its sibling's probe inputs.
+		if (!(parent instanceof TupleExpr)
+				|| !(child instanceof TupleExpr) && !isTupleLookupOperand(parent, child)) {
+			return lexicalChild;
+		}
+		if (parent instanceof Join join) {
+			if (child != join.getRightArg()) {
+				return input;
+			}
+			String algorithm = join.getAlgorithmName();
+			if (algorithm == null || algorithm.isEmpty()) {
+				if (child instanceof Service) {
+					return explainLeftResult(join.getLeftArg(), input);
+				}
+				return join.isMergeJoin() ? input : childInput(parent, child, input);
+			}
+			return switch (algorithm) {
+			case "JoinIterator", "ServiceJoinIterator", "BoundStatementPatternJoinIteration",
+					"BoundStatementPatternGuardJoinIteration", "BoundStatementPatternLeftJoinIteration" ->
+				explainLeftResult(join.getLeftArg(), input);
+			case "HashJoinIteration", "InnerMergeJoinIterator", "MaterializedReplayJoinIterator",
+					"ScopedLeftJoinIterator", "ScopedCorrelatedJoinIterator",
+					"FilteredBindingSetAssignmentJoinIteration" ->
+				input;
+			default -> input.withUnknownDomain();
+			};
+		}
+		if (parent instanceof LeftJoin join) {
+			ReadOnlyContext entry = leftJoinInput(join, input);
+			if (child != join.getRightArg()) {
+				return entry;
+			}
+			String algorithm = join.getAlgorithmName();
+			if (algorithm == null || algorithm.isEmpty()) {
+				return childInput(parent, child, input);
+			}
+			return switch (algorithm) {
+			case "LeftJoinIterator", "BadlyDesignedLeftJoinIterator" -> explainLeftResult(join.getLeftArg(), entry);
+			case "HashJoinIteration", "InnerMergeJoinIterator", "MaterializedReplayJoinIterator",
+					"ScopedLeftJoinIterator", "ScopedCorrelatedJoinIterator" ->
+				entry;
+			// A batch provider owns both independent fragment execution and per-row fallback. Its name alone does
+			// not prove a single visible left-row input for the right subtree.
+			default -> entry.withUnknownDomain();
+			};
+		}
+		return childInput(parent, child, input);
+	}
+
+	private ReadOnlyContext explainLeftResult(TupleExpr left, ReadOnlyContext input) {
+		OutputFacts facts = outputFacts(left, input);
+		// A pass-through transfer can return child-owned facts. Always retain the exact producing input; applying
+		// lexical facts to a different physical receiver does not rebase their inherited-input domain.
+		return withOutput(facts.inheritedInput, facts);
+	}
+
+	private static boolean isTupleLookupOperand(QueryModelNode parent, QueryModelNode child) {
+		if (!(child instanceof Var)) {
+			return false;
+		}
+		return parent instanceof StatementPattern || parent instanceof ZeroLengthPath
+				|| parent instanceof ArbitraryLengthPath || parent instanceof TripleRef
+				|| parent instanceof Graph graph && child == graph.getGraphName()
+				|| parent instanceof Service service && child == service.getServiceRef()
+				|| parent instanceof Projection projection && child == projection.getProjectionContext();
 	}
 
 	/** Visits a model subtree with the child input phase used by its evaluator. */
@@ -267,6 +944,9 @@ public final class QueryAlgebraBindingAnalysis {
 			return cached;
 		}
 		OutputFacts result = transfer(expression, input);
+		if (optionalInputNameProvider != null) {
+			result = result.withCallerRecipe(callerOutput(expression, input));
+		}
 		outputCache.put(key, result);
 		return result;
 	}
@@ -305,6 +985,13 @@ public final class QueryAlgebraBindingAnalysis {
 				&& bindingFactsStableAt(names, source, destinationInput, destinationFacts, crossedSiblingFacts);
 	}
 
+	/** Compares already-computed condition frames while retaining crossed-sibling compatibility checks. */
+	public boolean bindingsStableAt(Set<String> names, ReadOnlyContext source, ReadOnlyContext destination,
+			OutputFacts crossedSiblingFacts) {
+		return source.scopeIdentity == destination.scopeIdentity
+				&& bindingFramesStableAt(names, source, destination, crossedSiblingFacts);
+	}
+
 	/**
 	 * Checks whether an expression observes the same binding facts at its destination, without requiring matching
 	 * lexical scope identities. Callers may use this only after proving that the scope difference comes from a
@@ -317,6 +1004,14 @@ public final class QueryAlgebraBindingAnalysis {
 			return false;
 		}
 		ReadOnlyContext destination = withOutput(destinationInput, destinationFacts);
+		return bindingFramesStableAt(names, source, destination, crossedSiblingFacts);
+	}
+
+	private boolean bindingFramesStableAt(Set<String> names, ReadOnlyContext source, ReadOnlyContext destination,
+			OutputFacts crossedSiblingFacts) {
+		if (crossedSiblingFacts != null && !crossedSiblingFacts.possibleOutputsKnown) {
+			return false;
+		}
 		if (!bindingFactsEquivalent(names, source, destination)) {
 			return false;
 		}
@@ -412,15 +1107,35 @@ public final class QueryAlgebraBindingAnalysis {
 	}
 
 	public void invalidate() {
+		if (optionalInputNameProvider != null) {
+			optionalInputNameProvider = optionalInputNameProvider.refresh(root);
+			callerRecipes.clear();
+			rootCallerRecipe = callerRecipe(CallerRecipeKind.ROOT);
+			rootContext = rootContext.withCallerRecipe(rootCallerRecipe);
+		}
 		contextCache.clear();
+		semanticInvocationTransitions.clear();
+		semanticInvocationRegions.clear();
+		if (explainInputCache != null) {
+			explainInputCache.clear();
+		}
 		if (root != null) {
 			contextCache.put(root, rootContext);
+			if (explainInputCache != null) {
+				explainInputCache.put(root, rootContext);
+			}
 		}
 		outputCache.clear();
 		resultSetModifierCache.clear();
 		childInputCache.clear();
 		leftJoinInputCache.clear();
+		filterArgumentInputs.clear();
+		lateralParameterInputs.clear();
 		scopeIdentities.clear();
+		inheritedGraphContexts = null;
+		completeGraphRoot = null;
+		cloneGraphLineage.clear();
+		cloneGraphChildren.clear();
 	}
 
 	/** Creates a local mutable owner; consumers must export an immutable snapshot before sharing it. */
@@ -454,7 +1169,8 @@ public final class QueryAlgebraBindingAnalysis {
 		externalNames.addAll(parameters.keySet());
 		parameters.forEach((name, value) -> kinds.put(name, Set.of(valueKind(value))));
 		return new ReadOnlyContext(visible, maybe, guaranteed, fixed, kinds, external, externalNames,
-				frame.scopeIdentity, frame.bindingDomainKnown, frame.lateralInputs);
+				frame.scopeIdentity, frame.bindingDomainKnown, frame.lateralInputs, frame.filterOwners,
+				frame.callerRecipe);
 	}
 
 	public Dependencies dependencies(ValueExpr expression, ReadOnlyContext input) {
@@ -524,8 +1240,63 @@ public final class QueryAlgebraBindingAnalysis {
 			return cached;
 		}
 		ReadOnlyContext result = computeChildInput(parent, child, input);
+		if (parent instanceof Join join && child == join.getRightArg()
+				|| parent instanceof LeftJoin leftJoin && child == leftJoin.getRightArg()) {
+			ReadOnlyContext unmarked = result;
+			result = result.withFilterOwner(parent, input);
+			if (child instanceof Filter filter) {
+				ReadOnlyContext argument = filterArgumentInputs.get(new OutputKey(filter, unmarked));
+				if (argument != null) {
+					filterArgumentInputs.put(new OutputKey(filter, result), argument.withFilterOwner(parent, input));
+				}
+			}
+		}
 		childInputCache.put(key, result);
 		return result;
+	}
+
+	/** The distinct invocation, argument, and condition frames of a FILTER gate. */
+	public record FilterInputFrames(ReadOnlyContext entry, ReadOnlyContext argument, ReadOnlyContext condition) {
+	}
+
+	/** Frames of an existing FILTER at its actual evaluator position. */
+	public FilterInputFrames filterInputFrames(Filter filter) {
+		ReadOnlyContext entry = contextAt(filter);
+		return new FilterInputFrames(entry, childInput(filter, filter.getArg(), entry),
+				childInput(filter, filter.getCondition(), entry));
+	}
+
+	/** Frames for a gate placed above an existing argument, without mutating the algebra. */
+	public FilterInputFrames filterInputFramesForGate(TupleExpr argument, ConditionBindingScope scope,
+			boolean gateChangesScope, List<BindingScopePolicy.FilterInputEdge> owners) {
+		QueryModelNode parent = argument.getParentNode();
+		ReadOnlyContext entry;
+		ReadOnlyContext argumentInput;
+		if (parent == null) {
+			entry = contextAt(argument);
+			argumentInput = entry;
+		} else {
+			ReadOnlyContext parentInput = contextAt(parent);
+			if (parent instanceof Join join && argument == join.getRightArg()) {
+				argumentInput = parentInput.withFilterOwner(parent, parentInput);
+				entry = gateChangesScope ? argumentInput
+						: withOutput(parentInput, outputFacts(join.getLeftArg(), parentInput))
+								.withFilterOwner(parent, parentInput);
+			} else if (parent instanceof LeftJoin join && argument == join.getRightArg()) {
+				ReadOnlyContext optionalInput = leftJoinInput(join, parentInput);
+				argumentInput = optionalInput.withFilterOwner(parent, parentInput);
+				entry = gateChangesScope ? argumentInput
+						: withOutput(optionalInput, outputFacts(join.getLeftArg(), optionalInput))
+								.withFilterOwner(parent, parentInput);
+			} else {
+				entry = childInput(parent, argument, parentInput);
+				argumentInput = entry;
+			}
+		}
+		ReadOnlyContext conditionEntry = filterConditionEntry(argumentInput, entry, owners);
+		OutputFacts output = outputFacts(argument, argumentInput);
+		ReadOnlyContext conditionInput = withOutput(conditionEntry, rebaseConditionOutput(output, conditionEntry));
+		return new FilterInputFrames(entry, argumentInput, scopedFilterConditionInput(scope, conditionInput));
 	}
 
 	private ReadOnlyContext computeChildInput(QueryModelNode parent, QueryModelNode child, ReadOnlyContext input) {
@@ -533,13 +1304,23 @@ public final class QueryAlgebraBindingAnalysis {
 			return input;
 		}
 		if (parent instanceof Filter filter) {
+			ReadOnlyContext argumentInput = filterArgumentInputs.getOrDefault(new OutputKey(filter, input), input);
+			if (callerInputEdge(parent, child) == CallerInputEdge.FILTER_ARGUMENT) {
+				return argumentInput;
+			}
 			if (child == filter.getCondition()) {
-				ReadOnlyContext conditionInput = withOutput(input, outputFacts(filter.getArg(), input));
+				ReadOnlyContext conditionInput = filterConditionEntry(argumentInput, input,
+						BindingScopePolicy.filterInputEdges(filter));
+				OutputFacts argument = outputFacts(filter.getArg(), argumentInput);
+				conditionInput = withOutput(conditionInput, rebaseConditionOutput(argument, conditionInput));
 				return scopedFilterConditionInput(filter, conditionInput);
 			}
-			return input;
+			return argumentInput;
 		}
 		if (parent instanceof Extension extension) {
+			if (callerInputEdge(parent, child) == CallerInputEdge.FORWARD) {
+				return input;
+			}
 			if (child instanceof ExtensionElem element) {
 				Group aggregateGroup = findAggregateGroup(extension.getArg(), element);
 				if (aggregateGroup != null) {
@@ -547,6 +1328,22 @@ public final class QueryAlgebraBindingAnalysis {
 					return withOutput(rowInput, outputFacts(aggregateGroup.getArg(), rowInput));
 				}
 				MutableScope scope = mutableScope(withOutput(input, outputFacts(extension.getArg(), input)));
+				if (optionalInputNameProvider != null) {
+					// Share each before-write recipe through the existing edge cache. Rebuilding all earlier
+					// recipes separately for every scalar element would make sequential BIND demand quadratic.
+					for (ExtensionElem current : extension.getElements()) {
+						if (findAggregateGroup(extension.getArg(), current) == null) {
+							childInputCache.putIfAbsent(new ChildInputKey(extension, current, input), scope.snapshot());
+						}
+						addExtensionElement(scope, current);
+						if (scope.callerRecipe != null && current.getName() != null
+								&& TupleExprs.isEvaluatedExtensionElement(current)) {
+							scope.callerRecipe = callerWrite(scope.callerRecipe, current);
+						}
+					}
+					ReadOnlyContext captured = childInputCache.get(new ChildInputKey(extension, element, input));
+					return captured == null ? scope.snapshot() : captured;
+				}
 				for (ExtensionElem previous : extension.getElements()) {
 					if (previous == element) {
 						break;
@@ -560,17 +1357,27 @@ public final class QueryAlgebraBindingAnalysis {
 		if (parent instanceof LeftJoin leftJoin) {
 			ReadOnlyContext leftJoinInput = leftJoinInput(leftJoin, input);
 			if (child == leftJoin.getRightArg()) {
+				if (child instanceof Filter filter && !TupleExprs.isVariableScopeChange(filter)) {
+					return filterInput(filter, leftJoinInput, outputFacts(leftJoin.getLeftArg(), leftJoinInput));
+				}
 				if (TupleExprs.containsSubquery(leftJoin.getRightArg())
 						|| TupleExprs.subqueryObservesInjectedBindings(leftJoin.getRightArg(),
 								leftJoin.getLeftArg().getBindingNames())) {
-					// ScopedLeftJoinIterator withholds the left row, but forwards the OPTIONAL's entry input.
-					return input.withScopeIdentity(nextScopeId(leftJoin.getRightArg()));
+					// ScopedLeftJoinIterator withholds the left row and receives the projected OPTIONAL entry.
+					return leftJoinInput.withScopeIdentity(nextScopeId(leftJoin.getRightArg()));
 				}
 				if (TupleExprs.requiresIndependentEvaluation(leftJoin.getRightArg())
-						|| containsResultSetModifier(leftJoin.getRightArg(), input)) {
-					return input;
+						|| containsResultSetModifier(leftJoin.getRightArg(), leftJoinInput)) {
+					return leftJoinInput;
 				}
-				return withOutput(leftJoinInput, outputFacts(leftJoin.getLeftArg(), leftJoinInput));
+				if ((BindingScopePolicy.receivesLeftRow(leftJoin, child)
+						&& BindingScopePolicy.isAtomicMappingParameterized(leftJoin.getRightArg()))
+						|| BindingScopePolicy.isRelationalBindingLeaf(leftJoin.getRightArg())) {
+					return withOutput(leftJoinInput, outputFacts(leftJoin.getLeftArg(), leftJoinInput));
+				}
+				// A bind join may use the left solution as a physical lookup constraint, but that does not make it
+				// a semantic input to expressions in an independent OPTIONAL operand.
+				return leftJoinInput;
 			}
 			if (child == leftJoin.getLeftArg()) {
 				return leftJoinInput;
@@ -589,7 +1396,7 @@ public final class QueryAlgebraBindingAnalysis {
 			}
 			return input;
 		}
-		if (parent instanceof Lateral lateral && child == lateral.getRightArg()) {
+		if (parent instanceof Lateral lateral && BindingScopePolicy.receivesLeftRow(parent, child)) {
 			return lateralRightInput(lateral, input);
 		}
 		if (parent instanceof Window window && child == window.getArg()) {
@@ -607,7 +1414,11 @@ public final class QueryAlgebraBindingAnalysis {
 		if (parent instanceof Union union) {
 			// UNION forwards its incoming mapping unchanged. Its parent join, not this lexical identity, decides
 			// whether an ordinary left row may be injected. EXISTS substitution inputs must survive this boundary.
-			return TupleExprs.isVariableScopeChange(union) ? input.withScopeIdentity(nextScopeId(union)) : input;
+			CallerInputEdge edge = callerInputEdge(parent, child);
+			return (edge == CallerInputEdge.NEW_SCOPE
+					|| edge == CallerInputEdge.UNKNOWN && TupleExprs.isVariableScopeChange(union))
+							? input.withScopeIdentity(nextScopeId(union))
+							: input;
 		}
 		if (parent instanceof Difference || parent instanceof Intersection) {
 			return input;
@@ -632,6 +1443,9 @@ public final class QueryAlgebraBindingAnalysis {
 		if (parent instanceof Order order && child instanceof OrderElem) {
 			return withOutput(input, outputFacts(order.getArg(), input));
 		}
+		if (callerInputEdge(parent, child) == CallerInputEdge.FORWARD) {
+			return input;
+		}
 		if (parent instanceof QueryRoot || parent instanceof Distinct || parent instanceof Reduced
 				|| parent instanceof Slice || parent instanceof Order || parent instanceof Projection
 				|| parent instanceof MultiProjection || parent instanceof Service
@@ -639,7 +1453,9 @@ public final class QueryAlgebraBindingAnalysis {
 			return input;
 		}
 		if (parent instanceof Exists exists && child == exists.getSubQuery()) {
-			return input.withScopeIdentity(nextScopeId(exists));
+			// EXISTS evaluates its body with the current logical row as its substitution domain. Keep that entry
+			// distinct from API inputs and ordinary sibling-owner probes, including through projected subqueries.
+			return input.withScopeIdentity(nextScopeId(exists)).withFilterOwner(exists, input);
 		}
 		if (parent instanceof SubQueryValueOperator subQuery && child instanceof TupleExpr) {
 			return input.withScopeIdentity(nextScopeId(subQuery));
@@ -663,7 +1479,10 @@ public final class QueryAlgebraBindingAnalysis {
 		if (bindingAssignment && filter.getConditionBindingScope().isAuto()) {
 			return conditionInput;
 		}
-		ConditionBindingScope scope = FilterBindingScope.resolve(filter);
+		return scopedFilterConditionInput(FilterBindingScope.resolve(filter), conditionInput);
+	}
+
+	private ReadOnlyContext scopedFilterConditionInput(ConditionBindingScope scope, ReadOnlyContext conditionInput) {
 		if (scope.retainsAllBindings()) {
 			return conditionInput;
 		}
@@ -677,37 +1496,85 @@ public final class QueryAlgebraBindingAnalysis {
 	}
 
 	private ReadOnlyContext joinRightInput(Join join, ReadOnlyContext input) {
-		TupleExpr right = join.getRightArg();
-		String algorithm = join.getAlgorithmName();
-		if (algorithm == null || algorithm.isEmpty()) {
-			// Direct SERVICE joins are prepared before the merge candidate flag is considered.
-			if (right instanceof Service) {
-				return withOutput(input, outputFacts(join.getLeftArg(), input));
+		return switch (callerInputEdge(join, join.getRightArg())) {
+		case JOIN_RIGHT_FILTER -> filterInput((Filter) join.getRightArg(), input,
+				outputFacts(join.getLeftArg(), input));
+		case JOIN_RIGHT_OUTPUT -> withOutput(input, outputFacts(join.getLeftArg(), input));
+		default -> input;
+		};
+	}
+
+	private ReadOnlyContext filterInput(Filter filter, ReadOnlyContext argumentInput, OutputFacts sibling) {
+		ReadOnlyContext conditionInput = withOutput(argumentInput, sibling);
+		filterArgumentInputs.put(new OutputKey(filter, conditionInput), argumentInput);
+		return conditionInput;
+	}
+
+	private ReadOnlyContext filterConditionEntry(ReadOnlyContext argumentInput, ReadOnlyContext provenance,
+			List<BindingScopePolicy.FilterInputEdge> owners) {
+		MutableScope entry = mutableScope(argumentInput);
+		for (BindingScopePolicy.FilterInputEdge edge : owners) {
+			QueryModelNode owner = edge.owner();
+			ReadOnlyContext ownerInput = provenance.filterOwnerInput(owner);
+			if (ownerInput == null) {
+				// A detached or hypothetical analysis need not include this ancestor. Do not invent its fixed values.
+				for (String name : edge.names()) {
+					if (!entry.guaranteedNames.contains(name)) {
+						entry.possible(name);
+					}
+				}
+				continue;
 			}
-			if (join.isMergeJoin()) {
-				// An unprepared merge candidate evaluates both sides from the incoming frame.
-				return input;
+			if (optionalInputNameProvider != null) {
+				// A detached or refreshed analysis can retain an older ordinary owner frame. Its values remain valid,
+				// but its preparation-local caller recipe cannot be linked into this generation's DAG.
+				ownerInput = ownerInput.withCallerRecipe(currentCallerRecipe(ownerInput));
 			}
-			// Classify from the frame before this join's left side is evaluated. Modifier analysis roots itself at the
-			// right subtree, so its inherited input is preserved while parent links outside that subtree are ignored.
-			if (!isOutOfScopeForLeftBindings(right, input)
-					&& !TupleExprs.subqueryObservesInjectedBindings(right, join.getLeftArg().getBindingNames())) {
-				return withOutput(input, outputFacts(join.getLeftArg(), input));
+			TupleExpr left = owner instanceof Join join ? join.getLeftArg() : ((LeftJoin) owner).getLeftArg();
+			OutputFacts facts = outputFacts(left, childInput(owner, left, ownerInput));
+			ReadOnlyContext sibling = withOutput(ownerInput, facts);
+			if (entry.callerRecipe != null) {
+				entry.callerRecipe = callerMerge(entry.callerRecipe, callerOnly(sibling.callerRecipe, edge.names()));
 			}
-			return input;
+			for (String name : edge.names()) {
+				if (entry.guaranteedNames.contains(name)) {
+					continue;
+				}
+				boolean alreadyPossible = entry.maybeBoundNames.contains(name) || !entry.bindingDomainKnown;
+				if (sibling.guaranteedNames.contains(name)) {
+					entry.bind(name, alreadyPossible ? null : sibling.fixedValues.get(name),
+							alreadyPossible ? Set.of() : sibling.valueKinds.getOrDefault(name, Set.of()));
+				} else if (sibling.maybeBoundNames.contains(name) || !sibling.bindingDomainKnown) {
+					entry.possible(name);
+				}
+			}
 		}
-		// Preparation may have selected another contract after the optimizer marked a merge candidate.
-		if (INPUT_ONLY_JOIN_ALGORITHMS.contains(algorithm)) {
-			return input;
+		return entry.snapshot();
+	}
+
+	private OutputFacts rebaseConditionOutput(OutputFacts facts, ReadOnlyContext input) {
+		if (!facts.possibleOutputsKnown) {
+			return OutputFacts.unknown(input);
 		}
-		if (LEFT_ROW_JOIN_ALGORITHMS.contains(algorithm)) {
-			return withOutput(input, outputFacts(join.getLeftArg(), input));
-		}
-		return input.withUnknownDomain();
+		Set<String> retained = new HashSet<>(facts.retainedInputNames);
+		Set<String> conditionOnly = new HashSet<>(input.maybeBoundNames);
+		conditionOnly.removeAll(facts.inheritedInput.maybeBoundNames);
+		retained.addAll(conditionOnly);
+		retained.removeAll(facts.possibleOutputs);
+		retained.removeAll(facts.overwrittenInputNames);
+		OutputFacts rebased = new OutputFacts(facts.possibleOutputsKnown, facts.guaranteedOutputsKnown,
+				facts.possibleOutputs,
+				facts.guaranteedOutputs, facts.fixedValues, facts.valueKinds, input, retained,
+				facts.overwrittenInputNames, facts.canProduceRows);
+		return input.callerRecipe == null ? rebased
+				: rebased.withCallerRecipe(callerMerge(input.callerRecipe, facts.callerRecipe));
 	}
 
 	private ReadOnlyContext unknownChildInput(QueryModelNode parent, ReadOnlyContext input) {
-		return input.enterUnknownScope(nextScopeId(parent));
+		ReadOnlyContext result = input.enterUnknownScope(nextScopeId(parent));
+		return input.callerRecipe == null ? result
+				: result.withCallerRecipe(callerRecipe(CallerRecipeKind.UNKNOWN, input.callerRecipe, null, null,
+						List.of(), false, null, null));
 	}
 
 	/**
@@ -749,20 +1616,99 @@ public final class QueryAlgebraBindingAnalysis {
 	}
 
 	private ReadOnlyContext computeLeftJoinInput(LeftJoin leftJoin, ReadOnlyContext input) {
-		if (TupleExprs.requiresIndependentEvaluation(leftJoin.getRightArg())
+		if (bindingAssignment && (TupleExprs.requiresIndependentEvaluation(leftJoin.getRightArg())
 				|| TupleExprs.subqueryObservesInjectedBindings(leftJoin.getRightArg(),
-						leftJoin.getLeftArg().getBindingNames())) {
+						leftJoin.getLeftArg().getBindingNames()))) {
 			return input;
 		}
-		Set<String> optionalInputNames = new HashSet<>(VarNameCollector.process(leftJoin.getRightArg()));
-		if (leftJoin.hasCondition()) {
-			optionalInputNames.addAll(VarNameCollector.process(leftJoin.getCondition()));
+		NameDomain capturedNames = optionalInputNameProvider == null ? null
+				: optionalInputNameProvider.optionalInputNames(leftJoin);
+		if (capturedNames != null && !bindingAssignment) {
+			return computeCapturedLeftJoinInput(input, capturedNames);
 		}
-		optionalInputNames.removeAll(leftJoin.getLeftArg().getBindingNames());
+		Set<String> optionalInputNames = new HashSet<>(capturedNames == null
+				? BindingScopePolicy.optionalInputNames(leftJoin)
+				: capturedNames.names());
 		if (bindingAssignment) {
 			optionalInputNames.removeAll(input.externalGuaranteedNames);
 		}
-		return input.without(optionalInputNames);
+		ReadOnlyContext existsEntry = existsEntry(input);
+		if (existsEntry == null) {
+			ReadOnlyContext result = input.without(optionalInputNames);
+			return input.callerRecipe == null ? result
+					: result.withCallerRecipe(callerMask(input.callerRecipe, optionalInputNames));
+		}
+		optionalInputNames.removeAll(existsEntry.guaranteedNames);
+		Set<String> possibleSubstitutions = new HashSet<>();
+		for (String name : optionalInputNames) {
+			if ((!existsEntry.bindingDomainKnown || existsEntry.maybeBoundNames.contains(name))
+					&& (!input.bindingDomainKnown || input.maybeBoundNames.contains(name))) {
+				possibleSubstitutions.add(name);
+			}
+		}
+		ReadOnlyContext result = input.without(optionalInputNames).withPossibleInputs(possibleSubstitutions);
+		if (input.callerRecipe != null) {
+			CallerRecipe retained = callerMask(input.callerRecipe, optionalInputNames);
+			CallerRecipe substitution = callerOnly(currentCallerRecipe(existsEntry), possibleSubstitutions);
+			return result.withCallerRecipe(callerMerge(retained, substitution));
+		}
+		return result;
+	}
+
+	private ReadOnlyContext computeCapturedLeftJoinInput(ReadOnlyContext input, NameDomain candidates) {
+		ReadOnlyContext exists = existsEntry(input);
+		NameDomain effective = exists == null || exists.guaranteedNames.isEmpty() ? candidates
+				: candidates.difference(optionalInputNameProvider.names(exists.guaranteedNames));
+		// The ordinary frame only stores finite known names. Test those against the captured domain rather than
+		// flattening every OPTIONAL's (possibly much larger) complete candidate set.
+		Set<String> present = new HashSet<>();
+		addPresentNames(present, input.visibleNames, effective);
+		addPresentNames(present, input.maybeBoundNames, effective);
+		addPresentNames(present, input.guaranteedNames, effective);
+		addPresentNames(present, input.fixedValues.keySet(), effective);
+		addPresentNames(present, input.valueKinds.keySet(), effective);
+		addPresentNames(present, input.externalValues.keySet(), effective);
+		addPresentNames(present, input.externalGuaranteedNames, effective);
+		ReadOnlyContext result = input.without(present);
+		CallerRecipe retained = callerMask(input.callerRecipe, effective);
+		if (exists == null) {
+			return input.callerRecipe == null ? result : result.withCallerRecipe(retained);
+		}
+
+		// An unknown EXISTS and unknown input can admit every candidate; the legacy child transition must retain
+		// exact membership in that case. Materialize the shared candidate only at this existing set consumer.
+		Set<String> possible = new HashSet<>();
+		Set<String> universe = input.bindingDomainKnown ? input.maybeBoundNames
+				: exists.bindingDomainKnown ? exists.maybeBoundNames : effective.names();
+		for (String name : universe) {
+			if (effective.contains(name)
+					&& (!exists.bindingDomainKnown || exists.maybeBoundNames.contains(name))
+					&& (!input.bindingDomainKnown || input.maybeBoundNames.contains(name))) {
+				possible.add(name);
+			}
+		}
+		result = result.withPossibleInputs(possible);
+		return input.callerRecipe == null ? result
+				: result.withCallerRecipe(
+						callerMerge(retained, callerOnly(currentCallerRecipe(exists), possible)));
+	}
+
+	private static void addPresentNames(Set<String> result, Set<String> known, NameDomain domain) {
+		for (String name : known) {
+			if (domain.contains(name)) {
+				result.add(name);
+			}
+		}
+	}
+
+	/** The innermost EXISTS replaces, rather than extends, an enclosing invocation's substitution domain. */
+	private ReadOnlyContext existsEntry(ReadOnlyContext input) {
+		for (FilterOwnerFrame frame = input.filterOwners; frame != null; frame = frame.previous) {
+			if (frame.owner instanceof Exists) {
+				return frame.input;
+			}
+		}
+		return null;
 	}
 
 	/**
@@ -797,7 +1743,20 @@ public final class QueryAlgebraBindingAnalysis {
 				rightInput.possible(name);
 			}
 		}
-		return rightInput.snapshot().withLateralInputs(lateral, input);
+		ReadOnlyContext result = rightInput.snapshot();
+		List<BindingScopePolicy.FilterInputEdge> owners = lateralParameterInputs.computeIfAbsent(lateral,
+				node -> BindingScopePolicy.parameterInputEdges(node, node.getRightInputBindingNames(), true));
+		if (!owners.isEmpty()) {
+			// The LATERAL left receives the semantic entry. Declared right inputs may additionally borrow from
+			// current same-scope owners, after local left values and without exposing other sibling names.
+			result = filterConditionEntry(result, input, owners);
+		}
+		result = result.withLateralInputs(lateral, input);
+		if (input.callerRecipe != null) {
+			return result.withCallerRecipe(callerMerge(result.callerRecipe,
+					callerOnly(left.callerRecipe, lateral.getRightInputBindingNames())));
+		}
+		return result;
 	}
 
 	private Set<ValueKind> unionKinds(Set<ValueKind> left, Set<ValueKind> right) {
@@ -845,12 +1804,6 @@ public final class QueryAlgebraBindingAnalysis {
 		return found[0];
 	}
 
-	private boolean isOutOfScopeForLeftBindings(TupleExpr expression, ReadOnlyContext input) {
-		return TupleExprs.requiresIndependentEvaluation(expression)
-				|| containsResultSetModifier(expression, input)
-				|| containsDifferenceInScope(expression);
-	}
-
 	/**
 	 * Same classification as {@link TupleExprs#containsResultSetModifier(TupleExpr, ReadOnlyContext)}, but computed
 	 * top-down within this analysis and memoized, so that nested right-hand joins do not each rebuild a fresh analysis
@@ -895,23 +1848,353 @@ public final class QueryAlgebraBindingAnalysis {
 		return false;
 	}
 
-	private boolean containsDifferenceInScope(TupleExpr expression) {
-		if (expression instanceof Difference) {
-			return true;
-		}
-		if (expression instanceof Service || expression instanceof Lateral) {
-			return false;
-		}
-		for (TupleExpr child : TupleExprs.getChildren(expression)) {
-			if (containsDifferenceInScope(child)) {
-				return true;
+	private ScopeIdentity nextScopeId(QueryModelNode scope) {
+		return scopeIdentities.computeIfAbsent(scope, node -> {
+			QueryModelNode original = originalScopeNodes.get(node);
+			if (scopeIdentitySource != null && sameScopeBoundary(node, original)) {
+				return scopeIdentitySource.nextScopeId(original);
 			}
-		}
-		return false;
+			return new ScopeIdentity(nextScopeIdentity.getAndIncrement());
+		});
 	}
 
-	private long nextScopeId(QueryModelNode scope) {
-		return scopeIdentities.computeIfAbsent(scope, ignored -> nextScopeIdentity.getAndIncrement());
+	private static boolean sameScopeBoundary(QueryModelNode clone, QueryModelNode original) {
+		if (original == null || clone.getClass() != original.getClass()) {
+			return false;
+		}
+		if (clone instanceof TupleExpr tuple && original instanceof TupleExpr originalTuple
+				&& TupleExprs.isVariableScopeChange(tuple) != TupleExprs.isVariableScopeChange(originalTuple)) {
+			return false;
+		}
+		return !(clone instanceof Projection projection) || projection.isSubquery() == ((Projection) original)
+				.isSubquery();
+	}
+
+	/** Captures each context occurrence's SELECT ancestry once for this analysis generation. */
+	private Boolean inheritedGraphContext(QueryModelNode owner, Var context) {
+		if (context == null || context.getGraphContextDepth() == 0) {
+			return false;
+		}
+		if (scopeIdentitySource != null) {
+			// A partial clone can recapture its own role only when it contains the defining SELECT domain.
+			// Its inherited input frame alone cannot prove that an omitted source ancestry still applies.
+			if (!hasCompleteGraphRoot()) {
+				CapturedGraphContext captured = graphContextCapture().roles.get(owner);
+				return captured != null && captured.covered() ? captured.inherited() : null;
+			}
+			QueryModelNode original = originalScopeNodes.get(owner);
+			Var originalContext = graphContext(original);
+			CapturedGraphContext captured = scopeIdentitySource.graphContextCapture().roles.get(original);
+			if (captured != null && captured.matches(context) && captured.matches(originalContext)
+					&& context.getParentNode() == owner && GraphContextCapture.hasDirectChild(owner, context)
+					&& hasCloneGraphLineage(owner)) {
+				return scopeIdentitySource.inheritedGraphContext(original, originalContext);
+			}
+			// A complete detached clone can recapture its own current ancestry once for this generation.
+		}
+		CapturedGraphContext captured = graphContextCapture().roles.get(owner);
+		return captured == null ? null : captured.inherited();
+	}
+
+	private GraphContextCapture graphContextCapture() {
+		if (inheritedGraphContexts == null) {
+			inheritedGraphContexts = GraphContextCapture.capture(root);
+		}
+		return inheritedGraphContexts;
+	}
+
+	private boolean hasCompleteGraphRoot() {
+		if (root == null || root.getParentNode() != null) {
+			return false;
+		}
+		if (completeGraphRoot == null) {
+			completeGraphRoot = scopeIdentitySource == null || originalScopeNodes.get(root) == scopeIdentitySource.root
+					&& scopeIdentitySource.hasCompleteGraphRoot();
+		}
+		return completeGraphRoot;
+	}
+
+	private boolean hasCloneGraphLineage(QueryModelNode node) {
+		Boolean known = cloneGraphLineage.get(node);
+		if (known != null) {
+			return known;
+		}
+		QueryModelNode original = originalScopeNodes.get(node);
+		boolean valid = sameScopeBoundary(node, original) && GraphContextCapture.typedDispatch(node)
+				&& GraphContextCapture.typedDispatch(original);
+		if (valid) {
+			GraphContextCapture source = scopeIdentitySource.graphContextCapture();
+			valid = source.parents.containsKey(original) && source.parents.get(original) == original.getParentNode();
+		}
+		if (valid && node instanceof Projection projection) {
+			CapturedGraphProjection captured = scopeIdentitySource.graphContextCapture().projections.get(original);
+			valid = captured != null && captured.matches(projection) && captured.matches((Projection) original);
+		}
+		if (valid && node != root) {
+			QueryModelNode parent = node.getParentNode();
+			valid = parent != null && original.getParentNode() != null
+					&& originalScopeNodes.get(parent) == original.getParentNode()
+					&& hasCloneGraphChild(parent, node)
+					&& hasCloneGraphChild(original.getParentNode(), original)
+					&& hasCloneGraphLineage(parent);
+		}
+		cloneGraphLineage.put(node, valid);
+		return valid;
+	}
+
+	private boolean hasCloneGraphChild(QueryModelNode parent, QueryModelNode child) {
+		Set<QueryModelNode> children = cloneGraphChildren.computeIfAbsent(parent, node -> {
+			Set<QueryModelNode> direct = Collections.newSetFromMap(new IdentityHashMap<>());
+			node.visitChildren(new AbstractQueryModelVisitor<RuntimeException>() {
+				@Override
+				protected void meetNode(QueryModelNode visited) {
+					direct.add(visited);
+				}
+
+				@Override
+				public void meetOther(QueryModelNode visited) {
+					direct.add(visited);
+				}
+			});
+			return direct;
+		});
+		return children.contains(child);
+	}
+
+	private static Var graphContext(QueryModelNode node) {
+		if (node instanceof StatementPattern statement) {
+			return statement.getContextVar();
+		}
+		if (node instanceof ArbitraryLengthPath path) {
+			return path.getContextVar();
+		}
+		return node instanceof ZeroLengthPath path ? path.getContextVar() : null;
+	}
+
+	private record CapturedGraphContext(String name, int depth, boolean inherited, boolean covered) {
+		private boolean matches(Var context) {
+			return context != null && depth == context.getGraphContextDepth()
+					&& Objects.equals(name, context.getName());
+		}
+	}
+
+	private record CapturedGraphSelector(String name, Value value, int depth, boolean anonymous, boolean constant,
+			boolean blankNode, boolean apiInput) {
+		private static CapturedGraphSelector of(Var selector) {
+			return selector == null ? null
+					: new CapturedGraphSelector(selector.getName(), selector.getValue(),
+							selector.getGraphContextDepth(), selector.isAnonymous(), selector.isConstant(),
+							selector.isBNode(), selector.hasApiInputOrigin());
+		}
+
+		private boolean matches(Var selector) {
+			return selector != null && Objects.equals(name, selector.getName())
+					&& Objects.equals(value, selector.getValue())
+					&& depth == selector.getGraphContextDepth() && anonymous == selector.isAnonymous()
+					&& constant == selector.isConstant() && blankNode == selector.isBNode()
+					&& apiInput == selector.hasApiInputOrigin();
+		}
+	}
+
+	private record CapturedGraphProjection(boolean subquery, CapturedGraphSelector selector, String inherited,
+			String fixed) {
+		private static CapturedGraphProjection of(Projection projection) {
+			return new CapturedGraphProjection(projection.isSubquery(),
+					CapturedGraphSelector.of(projection.getProjectionContext()),
+					projection.getInheritedGraphParameter(),
+					projection.getFixedGraphParameter());
+		}
+
+		private boolean matches(Projection projection) {
+			return subquery == projection.isSubquery()
+					&& (selector == null ? projection.getProjectionContext() == null
+							: selector.matches(projection.getProjectionContext()))
+					&& Objects.equals(inherited, projection.getInheritedGraphParameter())
+					&& Objects.equals(fixed, projection.getFixedGraphParameter());
+		}
+	}
+
+	private static final class GraphContextCapture extends AbstractQueryModelVisitor<RuntimeException> {
+		private final Map<QueryModelNode, CapturedGraphContext> roles = new IdentityHashMap<>();
+		private final Map<QueryModelNode, CapturedGraphProjection> projections = new IdentityHashMap<>();
+		private final Map<QueryModelNode, QueryModelNode> parents = new IdentityHashMap<>();
+		private final Deque<QueryModelNode> traversal = new ArrayDeque<>();
+		private final Map<Integer, Integer> domains = new HashMap<>();
+		private final Map<Integer, Integer> coveredDomains = new HashMap<>();
+		private final Map<String, Integer> privateNames = new HashMap<>();
+		private int selectDepth;
+		private boolean capturingTarget;
+
+		private static GraphContextCapture capture(TupleExpr root) {
+			GraphContextCapture capture = new GraphContextCapture();
+			if (root == null) {
+				return capture;
+			}
+			Deque<QueryModelNode> ancestors = new ArrayDeque<>();
+			Set<QueryModelNode> seen = Collections.newSetFromMap(new IdentityHashMap<>());
+			QueryModelNode child = root;
+			while (child.getParentNode() != null) {
+				QueryModelNode parent = child.getParentNode();
+				if (!seen.add(parent) || !typedDispatch(parent) || !hasDirectChild(parent, child)) {
+					return capture;
+				}
+				ancestors.push(parent);
+				child = parent;
+			}
+			while (!ancestors.isEmpty()) {
+				QueryModelNode ancestor = ancestors.pop();
+				capture.parents.put(ancestor, ancestor.getParentNode());
+				if (ancestor instanceof Projection projection && projection.isSubquery()) {
+					capture.enter(projection);
+				}
+			}
+			// Ancestors seed the actual role, but only SELECTs inside the target cover a partial clone.
+			capture.capturingTarget = true;
+			root.visit(capture);
+			return capture;
+		}
+
+		private static boolean typedDispatch(QueryModelNode node) {
+			boolean[] typed = { false };
+			node.visit(new AbstractQueryModelVisitor<RuntimeException>() {
+				@Override
+				protected void meetNode(QueryModelNode visited) {
+					typed[0] = true;
+				}
+
+				@Override
+				public void meetOther(QueryModelNode visited) {
+					// Foreign dispatch does not prove a core operator's structural contract.
+				}
+			});
+			return typed[0];
+		}
+
+		private static boolean hasDirectChild(QueryModelNode parent, QueryModelNode child) {
+			boolean[] found = { false };
+			parent.visitChildren(new AbstractQueryModelVisitor<RuntimeException>() {
+				@Override
+				protected void meetNode(QueryModelNode visited) {
+					found[0] |= visited == child;
+				}
+
+				@Override
+				public void meetOther(QueryModelNode visited) {
+					found[0] |= visited == child;
+				}
+			});
+			return found[0];
+		}
+
+		private void enter(Projection projection) {
+			projections.put(projection, CapturedGraphProjection.of(projection));
+			Var caller = projection.getProjectionContext();
+			if (caller != null) {
+				int domain = caller.getGraphContextDepth() - selectDepth;
+				domains.merge(domain, 1, Integer::sum);
+				if (capturingTarget) {
+					coveredDomains.merge(domain, 1, Integer::sum);
+				}
+			}
+			addPrivate(projection.getInheritedGraphParameter());
+			addPrivate(projection.getFixedGraphParameter());
+			selectDepth++;
+		}
+
+		private void leave(Projection projection) {
+			selectDepth--;
+			Var caller = projection.getProjectionContext();
+			if (caller != null) {
+				int domain = caller.getGraphContextDepth() - selectDepth;
+				domains.computeIfPresent(domain, (key, count) -> count == 1 ? null : count - 1);
+				coveredDomains.computeIfPresent(domain, (key, count) -> count == 1 ? null : count - 1);
+			}
+			removePrivate(projection.getInheritedGraphParameter());
+			removePrivate(projection.getFixedGraphParameter());
+		}
+
+		private void addPrivate(String name) {
+			if (name != null) {
+				privateNames.merge(name, 1, Integer::sum);
+			}
+		}
+
+		private void removePrivate(String name) {
+			if (name != null) {
+				privateNames.computeIfPresent(name, (key, count) -> count == 1 ? null : count - 1);
+			}
+		}
+
+		private void record(QueryModelNode owner, Var context) {
+			if (context != null && context.getParentNode() == owner && hasDirectChild(owner, context)) {
+				int domain = context.getGraphContextDepth() - selectDepth;
+				roles.put(owner, new CapturedGraphContext(context.getName(), context.getGraphContextDepth(),
+						!privateNames.containsKey(context.getName()) && domains.containsKey(domain),
+						coveredDomains.containsKey(domain)));
+			}
+		}
+
+		private boolean isVisibleChild(QueryModelNode node) {
+			return traversal.isEmpty() || node.getParentNode() == traversal.peek();
+		}
+
+		@Override
+		protected void meetNode(QueryModelNode node) {
+			if (!isVisibleChild(node)) {
+				return;
+			}
+			parents.put(node, node.getParentNode());
+			traversal.push(node);
+			super.meetNode(node);
+			traversal.pop();
+		}
+
+		@Override
+		public void meet(Projection projection) {
+			if (!isVisibleChild(projection)) {
+				return;
+			}
+			if (projection.isSubquery()) {
+				enter(projection);
+				super.meet(projection);
+				leave(projection);
+			} else {
+				projections.put(projection, CapturedGraphProjection.of(projection));
+				super.meet(projection);
+			}
+		}
+
+		@Override
+		public void meet(StatementPattern statement) {
+			if (!isVisibleChild(statement)) {
+				return;
+			}
+			record(statement, statement.getContextVar());
+			super.meet(statement);
+		}
+
+		@Override
+		public void meet(ArbitraryLengthPath path) {
+			if (!isVisibleChild(path)) {
+				return;
+			}
+			record(path, path.getContextVar());
+			super.meet(path);
+		}
+
+		@Override
+		public void meet(ZeroLengthPath path) {
+			if (!isVisibleChild(path)) {
+				return;
+			}
+			record(path, path.getContextVar());
+			super.meet(path);
+		}
+
+		@Override
+		public void meetOther(QueryModelNode node) {
+			// Unknown visitor dispatch cannot establish inherited context ownership.
+		}
 	}
 
 	private OutputFacts transfer(TupleExpr expression, ReadOnlyContext input) {
@@ -944,27 +2227,60 @@ public final class QueryAlgebraBindingAnalysis {
 			return OutputFacts.known(Set.of(), Set.of(), Map.of(), Map.of(), input, true);
 		}
 		if (expression instanceof StatementPattern statement) {
-			Set<String> names = variableNames(statement.getVarList());
-			Map<String, Value> fixed = fixedFromVars(statement.getVarList(), input);
-			return OutputFacts.known(names, names, fixed, kindsFromValues(fixed), input, true);
+			Boolean inherited = inheritedGraphContext(statement, statement.getContextVar());
+			if (inherited == null) {
+				return OutputFacts.unknown(input);
+			}
+			List<Var> variables = new ArrayList<>(List.of(statement.getSubjectVar(), statement.getPredicateVar(),
+					statement.getObjectVar()));
+			if (!inherited && statement.getContextVar() != null) {
+				variables.add(statement.getContextVar());
+			}
+			Set<String> names = variableNames(variables);
+			Set<String> guaranteed = variableNames(statement.getSubjectVar(), statement.getPredicateVar(),
+					statement.getObjectVar());
+			Var context = statement.getContextVar();
+			if (!inherited && context != null && context.hasValue() && !context.isConstant()) {
+				guaranteed.add(context.getName());
+			}
+			// A genuine external input remains present, even when this pattern's context itself can be null.
+			// A possible sibling lookup input is not an external value and cannot establish local assurance.
+			for (String name : input.externalGuaranteedNames) {
+				if (names.contains(name)) {
+					guaranteed.add(name);
+				}
+			}
+			Map<String, Value> fixed = fixedFromVars(variables, input);
+			fixed.keySet().retainAll(guaranteed);
+			return OutputFacts.known(names, guaranteed, fixed, kindsFromValues(fixed), input, true);
 		}
 		if (expression instanceof ZeroLengthPath path) {
-			Set<String> names = variableNames(path.getVarList());
+			Boolean inherited = inheritedGraphContext(path, path.getContextVar());
+			if (inherited == null) {
+				return OutputFacts.unknown(input);
+			}
+			Var context = inherited ? null : path.getContextVar();
+			Set<String> names = variableNames(path.getSubjectVar(), path.getObjectVar(), context);
 			Set<String> guaranteed = new HashSet<>(names);
 			if (zeroLengthEndpointMayBeBound(path.getSubjectVar(), path.getObjectVar(), input)) {
-				guaranteed.removeAll(variableNames(path.getContextVar()));
+				guaranteed.removeAll(variableNames(context));
 			}
 			return OutputFacts.known(names, guaranteed, Map.of(), Map.of(), input, true);
 		}
 		if (expression instanceof ArbitraryLengthPath path) {
-			Set<String> possible = variableNames(path.getSubjectVar(), path.getObjectVar(), path.getContextVar());
+			Boolean inherited = inheritedGraphContext(path, path.getContextVar());
+			if (inherited == null) {
+				return OutputFacts.unknown(input);
+			}
+			Var context = inherited ? null : path.getContextVar();
+			Set<String> possible = variableNames(path.getSubjectVar(), path.getObjectVar(), context);
 			Set<String> guaranteed = new HashSet<>(possible);
 			if (path.getMinLength() == 0
 					&& zeroLengthEndpointMayBeBound(path.getSubjectVar(), path.getObjectVar(), input)) {
-				guaranteed.removeAll(variableNames(path.getContextVar()));
+				guaranteed.removeAll(variableNames(context));
 			}
 			Map<String, Value> fixed = fixedFromVars(input, path.getSubjectVar(), path.getObjectVar(),
-					path.getContextVar());
+					context);
 			if (path.getPathExpression() != null) {
 				OutputFacts pathFacts = outputFacts(path.getPathExpression(), input);
 				if (!pathFacts.possibleOutputsKnown) {
@@ -1769,6 +3085,286 @@ public final class QueryAlgebraBindingAnalysis {
 		}
 	}
 
+	private enum CallerRecipeKind {
+		ROOT,
+		MERGE,
+		MASK,
+		ONLY,
+		PROJECT,
+		WRITE,
+		UNKNOWN
+	}
+
+	/** A preparation-local symbolic transfer; references always point to earlier recipes. */
+	private record CallerRecipe(int index, CallerRecipeKind kind, CallerRecipe first, CallerRecipe second,
+			NameDomain names, List<ProjectionName> projection, boolean includeParent, String target,
+			ExpressionInputNames expressionInputs) {
+	}
+
+	private CallerRecipe callerRecipe(CallerRecipeKind kind) {
+		return callerRecipe(kind, null, null, null, List.of(), false, null, null);
+	}
+
+	private CallerRecipe currentCallerRecipe(ReadOnlyContext frame) {
+		CallerRecipe recipe = frame.callerRecipe;
+		if (recipe != null && recipe.index >= 0 && recipe.index < callerRecipes.size()
+				&& callerRecipes.get(recipe.index) == recipe) {
+			return recipe;
+		}
+		// The older frame can contain aliases that the new root did not capture. Reusing its current spelling as
+		// a root input would silently turn an unknown transfer into an identity proof.
+		return rootCallerRecipe == null ? null
+				: callerRecipe(CallerRecipeKind.UNKNOWN, rootCallerRecipe, null, null, List.of(), false, null, null);
+	}
+
+	private CallerRecipe callerRecipe(CallerRecipeKind kind, CallerRecipe first, CallerRecipe second,
+			NameDomain names, List<ProjectionName> projection, boolean includeParent, String target,
+			ExpressionInputNames expressionInputs) {
+		CallerRecipe recipe = new CallerRecipe(callerRecipes.size(), kind, first, second, names,
+				List.copyOf(projection), includeParent, target, expressionInputs);
+		callerRecipes.add(recipe);
+		return recipe;
+	}
+
+	private CallerRecipe callerMerge(CallerRecipe first, CallerRecipe second) {
+		if (first == null || first == second) {
+			return second;
+		}
+		if (second == null) {
+			return first;
+		}
+		return callerRecipe(CallerRecipeKind.MERGE, first, second, null, List.of(), false, null, null);
+	}
+
+	private CallerRecipe callerMask(CallerRecipe source, Set<String> names) {
+		return source == null || names.isEmpty() ? source
+				: callerRecipe(CallerRecipeKind.MASK, source, null, optionalInputNameProvider.names(names),
+						List.of(), false, null, null);
+	}
+
+	private CallerRecipe callerMask(CallerRecipe source, NameDomain names) {
+		return source == null || names.isEmpty() ? source
+				: callerRecipe(CallerRecipeKind.MASK, source, null, names, List.of(), false, null, null);
+	}
+
+	private CallerRecipe callerOnly(CallerRecipe source, Set<String> names) {
+		return source == null ? null
+				: callerRecipe(CallerRecipeKind.ONLY, source, null, optionalInputNameProvider.names(names),
+						List.of(), false, null, null);
+	}
+
+	private CallerRecipe callerProject(CallerRecipe child, CallerRecipe entry, ProjectionElemList elements,
+			boolean includeParent) {
+		List<ProjectionName> pairs = optionalInputNameProvider.projectionNames(elements);
+		if (pairs == null) {
+			return callerRecipe(CallerRecipeKind.UNKNOWN, callerMerge(child, entry), null, null, List.of(), false,
+					null, null);
+		}
+		return callerRecipe(CallerRecipeKind.PROJECT, child, entry, null, pairs, includeParent, null, null);
+	}
+
+	private CallerRecipe callerWrite(CallerRecipe source, ExtensionElem element) {
+		return callerRecipe(CallerRecipeKind.WRITE, source, null, null, List.of(), false, element.getName(),
+				optionalInputNameProvider.expressionInputNames(element.getExpr()));
+	}
+
+	private CallerRecipe callerOutput(TupleExpr expression, ReadOnlyContext input) {
+		CallerRecipe entry = input.callerRecipe;
+		CallerOutputKind kind = callerOutputKind(expression);
+		if (kind == CallerOutputKind.UNKNOWN) {
+			return callerRecipe(CallerRecipeKind.UNKNOWN, entry, null, null, List.of(), false, null, null);
+		}
+		if (kind == CallerOutputKind.PROJECTION) {
+			Projection projection = (Projection) expression;
+			OutputFacts child = outputFacts(projection.getArg(), childInput(projection, projection.getArg(), input));
+			// The evaluator context can retain an enclosing SELECT after detachment, so retain both possible
+			// parent-source and parent-output behaviors when that mode is not proven by this preparation.
+			return callerProject(child.callerRecipe, entry, projection.getProjectionElemList(), true);
+		}
+		if (kind == CallerOutputKind.MULTI_PROJECTION) {
+			MultiProjection projection = (MultiProjection) expression;
+			OutputFacts child = outputFacts(projection.getArg(), childInput(projection, projection.getArg(), input));
+			CallerRecipe result = null;
+			for (ProjectionElemList elements : projection.getProjections()) {
+				result = callerMerge(result, callerProject(child.callerRecipe, entry, elements, true));
+			}
+			return result;
+		}
+		if (kind == CallerOutputKind.EXTENSION) {
+			Extension extension = (Extension) expression;
+			CallerRecipe result = outputFacts(extension.getArg(),
+					childInput(extension, extension.getArg(), input)).callerRecipe;
+			for (ExtensionElem element : extension.getElements()) {
+				if (element.getName() != null && TupleExprs.isEvaluatedExtensionElement(element)) {
+					result = callerWrite(result, element);
+				}
+			}
+			return result;
+		}
+		if (kind == CallerOutputKind.LEFT) {
+			Difference difference = (Difference) expression;
+			return outputFacts(difference.getLeftArg(),
+					childInput(difference, difference.getLeftArg(), input)).callerRecipe;
+		}
+		if (kind == CallerOutputKind.BINARY || kind == CallerOutputKind.OPTIONAL) {
+			BinaryTupleOperator binary = (BinaryTupleOperator) expression;
+			CallerRecipe left = outputFacts(binary.getLeftArg(),
+					childInput(expression, binary.getLeftArg(), input)).callerRecipe;
+			CallerRecipe right = outputFacts(binary.getRightArg(),
+					childInput(expression, binary.getRightArg(), input)).callerRecipe;
+			return callerMerge(entry, callerMerge(left, right));
+		}
+		if (kind == CallerOutputKind.UNARY || kind == CallerOutputKind.GRAPH) {
+			TupleExpr child = ((UnaryTupleOperator) expression).getArg();
+			CallerRecipe output = outputFacts(child, childInput(expression, child, input)).callerRecipe;
+			return kind == CallerOutputKind.GRAPH ? callerMerge(entry, output) : output;
+		}
+		if (kind == CallerOutputKind.LEAF) {
+			return entry;
+		}
+		return callerRecipe(CallerRecipeKind.UNKNOWN, entry, null, null, List.of(), false, null, null);
+	}
+
+	/** Separate entry-compatibility and fallback-gate requirements for one prepared native root. */
+	@InternalUseOnly
+	public record OptionalCallerRequirement(Set<String> names, boolean unknown, Set<String> gateNames,
+			boolean gateUnknown, boolean gateAlways) {
+		public OptionalCallerRequirement {
+			names = Set.copyOf(names);
+			gateNames = Set.copyOf(gateNames);
+		}
+
+		public OptionalCallerRequirement(Set<String> names, boolean unknown) {
+			this(names, unknown, Set.of(), false, false);
+		}
+	}
+
+	/** Resolves all OPTIONAL demands over the shared transfer DAG once for this prepared root. */
+	@InternalUseOnly
+	public OptionalCallerRequirement optionalCallerRequirement() {
+		if (optionalInputNameProvider == null || root == null) {
+			throw new IllegalStateException("OPTIONAL caller facts were not requested for this analysis");
+		}
+		Map<CallerRecipe, NameDomain> compatibility = new IdentityHashMap<>();
+		Map<CallerRecipe, NameDomain> gateVisibility = new IdentityHashMap<>();
+		boolean[] unknownCompatibility = { false };
+		boolean[] unknownGate = { false };
+		boolean[] gateAlways = { false };
+		callerStructuralVisits = 0;
+		visitScoped(root, rootContext, (node, input) -> {
+			callerStructuralVisits++;
+			if (node instanceof LeftJoin leftJoin) {
+				NameDomain names = optionalInputNameProvider.optionalInputNames(leftJoin);
+				if (names == null || input.callerRecipe == null) {
+					unknownCompatibility[0] = true;
+				} else {
+					NameDomain gate = optionalInputNameProvider.nullRejectingGate(leftJoin);
+					if (gate == null) {
+						addCallerDemand(compatibility, input.callerRecipe, names);
+					} else {
+						addCallerDemand(gateVisibility, input.callerRecipe, gate);
+						// A local producer can bind a gate name even with no caller value. Unknown input domains
+						// cannot establish that the fallback FILTER will see an unbound name either.
+						if (!input.bindingDomainKnown || intersects(input.maybeBoundNames, gate)) {
+							gateAlways[0] = true;
+						}
+					}
+				}
+			}
+			return true;
+		});
+		for (int i = callerRecipes.size() - 1; i >= 0; i--) {
+			CallerRecipe recipe = callerRecipes.get(i);
+			propagateCallerDemand(recipe, compatibility, unknownCompatibility);
+			propagateCallerDemand(recipe, gateVisibility, unknownGate);
+		}
+		NameDomain rootNames = compatibility.get(rootCallerRecipe);
+		NameDomain rootGate = gateVisibility.get(rootCallerRecipe);
+		return new OptionalCallerRequirement(rootNames == null ? Set.of() : rootNames.names(),
+				unknownCompatibility[0], rootGate == null ? Set.of() : rootGate.names(), unknownGate[0], gateAlways[0]);
+	}
+
+	/** Preparation-only counters; they do not count persistent name-set operations or other QABA work. */
+	@InternalUseOnly
+	public int callerStructuralVisits() {
+		return callerStructuralVisits;
+	}
+
+	@InternalUseOnly
+	public int callerRecipeCount() {
+		return callerRecipes.size();
+	}
+
+	private static boolean intersects(Set<String> names, NameDomain domain) {
+		for (String name : names) {
+			if (domain.contains(name)) {
+				return true;
+			}
+		}
+		return false;
+	}
+
+	private void propagateCallerDemand(CallerRecipe recipe, Map<CallerRecipe, NameDomain> demands,
+			boolean[] unknown) {
+		NameDomain names = demands.get(recipe);
+		if (names == null || names.isEmpty()) {
+			return;
+		}
+		switch (recipe.kind) {
+		case ROOT:
+			break;
+		case MERGE:
+			addCallerDemand(demands, recipe.first, names);
+			addCallerDemand(demands, recipe.second, names);
+			break;
+		case MASK:
+			addCallerDemand(demands, recipe.first, names.difference(recipe.names));
+			break;
+		case ONLY:
+			addCallerDemand(demands, recipe.first, names.intersect(recipe.names));
+			break;
+		case PROJECT:
+			Set<String> sources = new HashSet<>();
+			for (ProjectionName pair : recipe.projection) {
+				if (names.contains(pair.target)) {
+					sources.add(pair.source);
+				}
+			}
+			NameDomain projected = optionalInputNameProvider.names(sources);
+			addCallerDemand(demands, recipe.first, projected);
+			addCallerDemand(demands, recipe.second, projected);
+			if (recipe.includeParent) {
+				addCallerDemand(demands, recipe.second, names);
+			}
+			break;
+		case WRITE:
+			NameDomain before = names.difference(optionalInputNameProvider.names(Set.of(recipe.target)));
+			if (names.contains(recipe.target)) {
+				if (recipe.expressionInputs == null || !recipe.expressionInputs.complete()) {
+					unknown[0] = true;
+				} else {
+					before = before.union(recipe.expressionInputs.names());
+				}
+			}
+			addCallerDemand(demands, recipe.first, before);
+			break;
+		case UNKNOWN:
+			unknown[0] = true;
+			addCallerDemand(demands, recipe.first, names);
+			break;
+		default:
+			throw new IllegalStateException("Unknown caller transfer: " + recipe.kind);
+		}
+	}
+
+	private static void addCallerDemand(Map<CallerRecipe, NameDomain> demands, CallerRecipe recipe,
+			NameDomain names) {
+		if (recipe == null || names.isEmpty()) {
+			return;
+		}
+		demands.merge(recipe, names, NameDomain::union);
+	}
+
 	private record ValueExprFacts(boolean guaranteed, Value fixedValue, Set<ValueKind> kinds) {
 		private ValueExprFacts {
 			kinds = Set.copyOf(kinds);
@@ -1808,11 +3404,23 @@ public final class QueryAlgebraBindingAnalysis {
 		private final Set<String> retainedInputNames;
 		private final Set<String> overwrittenInputNames;
 		private final boolean canProduceRows;
+		private final CallerRecipe callerRecipe;
 
 		private OutputFacts(boolean possibleOutputsKnown, boolean guaranteedOutputsKnown, Set<String> possibleOutputs,
 				Set<String> guaranteedOutputs, Map<String, Value> fixedValues,
 				Map<String, Set<ValueKind>> valueKinds, ReadOnlyContext inheritedInput,
 				Set<String> retainedInputNames, Set<String> overwrittenInputNames, boolean canProduceRows) {
+			this(possibleOutputsKnown, guaranteedOutputsKnown, possibleOutputs, guaranteedOutputs, fixedValues,
+					valueKinds,
+					inheritedInput, retainedInputNames, overwrittenInputNames, canProduceRows,
+					inheritedInput.callerRecipe);
+		}
+
+		private OutputFacts(boolean possibleOutputsKnown, boolean guaranteedOutputsKnown, Set<String> possibleOutputs,
+				Set<String> guaranteedOutputs, Map<String, Value> fixedValues,
+				Map<String, Set<ValueKind>> valueKinds, ReadOnlyContext inheritedInput,
+				Set<String> retainedInputNames, Set<String> overwrittenInputNames, boolean canProduceRows,
+				CallerRecipe callerRecipe) {
 			this.possibleOutputsKnown = possibleOutputsKnown;
 			this.guaranteedOutputsKnown = guaranteedOutputsKnown;
 			this.possibleOutputs = Set.copyOf(possibleOutputs);
@@ -1826,6 +3434,26 @@ public final class QueryAlgebraBindingAnalysis {
 			this.retainedInputNames = Set.copyOf(retainedInputNames);
 			this.overwrittenInputNames = Set.copyOf(overwrittenInputNames);
 			this.canProduceRows = canProduceRows;
+			this.callerRecipe = callerRecipe;
+		}
+
+		private OutputFacts(OutputFacts original, CallerRecipe callerRecipe) {
+			this.possibleOutputsKnown = original.possibleOutputsKnown;
+			this.guaranteedOutputsKnown = original.guaranteedOutputsKnown;
+			this.possibleOutputs = original.possibleOutputs;
+			this.guaranteedOutputs = original.guaranteedOutputs;
+			this.fixedValues = original.fixedValues;
+			this.valueKinds = original.valueKinds;
+			this.inheritedInput = original.inheritedInput;
+			this.inheritedInputNames = original.inheritedInputNames;
+			this.retainedInputNames = original.retainedInputNames;
+			this.overwrittenInputNames = original.overwrittenInputNames;
+			this.canProduceRows = original.canProduceRows;
+			this.callerRecipe = callerRecipe;
+		}
+
+		private OutputFacts withCallerRecipe(CallerRecipe recipe) {
+			return recipe == callerRecipe ? this : new OutputFacts(this, recipe);
 		}
 
 		static OutputFacts unknown(ReadOnlyContext input) {
@@ -1861,7 +3489,8 @@ public final class QueryAlgebraBindingAnalysis {
 			retained.removeAll(possibleOutputs);
 			retained.removeAll(overwrittenInputNames);
 			return new OutputFacts(possibleOutputsKnown, guaranteedOutputsKnown, possibleOutputs, guaranteedOutputs,
-					fixedValues, valueKinds, inheritedInput, retained, overwrittenInputNames, canProduceRows);
+					fixedValues, valueKinds, inheritedInput, retained, overwrittenInputNames, canProduceRows,
+					callerRecipe);
 		}
 
 		OutputFacts withOverwrittenInputs(Set<String> names) {
@@ -1870,7 +3499,7 @@ public final class QueryAlgebraBindingAnalysis {
 			Set<String> retained = new HashSet<>(retainedInputNames);
 			retained.removeAll(names);
 			return new OutputFacts(possibleOutputsKnown, guaranteedOutputsKnown, possibleOutputs, guaranteedOutputs,
-					fixedValues, valueKinds, inheritedInput, retained, overwritten, canProduceRows);
+					fixedValues, valueKinds, inheritedInput, retained, overwritten, canProduceRows, callerRecipe);
 		}
 
 		public boolean isKnownEmpty() {
@@ -1923,7 +3552,7 @@ public final class QueryAlgebraBindingAnalysis {
 			Set<String> retained = new HashSet<>(retainedInputNames);
 			retained.retainAll(names);
 			return new OutputFacts(possibleOutputsKnown, guaranteedOutputsKnown, possible, guaranteed, fixed, kinds,
-					inheritedInput, retained, overwrittenInputNames, canProduceRows);
+					inheritedInput, retained, overwrittenInputNames, canProduceRows, callerRecipe);
 		}
 
 		public boolean possibleOutputsKnown() {
@@ -1976,6 +3605,19 @@ public final class QueryAlgebraBindingAnalysis {
 			LateralInputFrame previous) {
 	}
 
+	/** The semantic entry at an enclosing operand edge, including hypothetical optimizer inputs. */
+	private record FilterOwnerFrame(QueryModelNode owner, ReadOnlyContext input, FilterOwnerFrame previous) {
+	}
+
+	/** The label is diagnostic; object identity distinguishes scopes from separate analyses. */
+	private static final class ScopeIdentity {
+		private final long label;
+
+		private ScopeIdentity(long label) {
+			this.label = label;
+		}
+	}
+
 	public static final class ReadOnlyContext {
 		private final Set<String> visibleNames;
 		private final Set<String> maybeBoundNames;
@@ -1984,22 +3626,33 @@ public final class QueryAlgebraBindingAnalysis {
 		private final Map<String, Set<ValueKind>> valueKinds;
 		private final Map<String, Value> externalValues;
 		private final Set<String> externalGuaranteedNames;
-		private final long scopeIdentity;
+		private final ScopeIdentity scopeIdentity;
 		private final boolean bindingDomainKnown;
 		private final LateralInputFrame lateralInputs;
+		private final FilterOwnerFrame filterOwners;
+		private final CallerRecipe callerRecipe;
 
 		private ReadOnlyContext(Set<String> visibleNames, Set<String> maybeBoundNames, Set<String> guaranteedNames,
 				Map<String, Value> fixedValues, Map<String, Set<ValueKind>> valueKinds,
-				Map<String, Value> externalValues, Set<String> externalGuaranteedNames, long scopeIdentity,
+				Map<String, Value> externalValues, Set<String> externalGuaranteedNames, ScopeIdentity scopeIdentity,
 				boolean bindingDomainKnown) {
 			this(visibleNames, maybeBoundNames, guaranteedNames, fixedValues, valueKinds, externalValues,
-					externalGuaranteedNames, scopeIdentity, bindingDomainKnown, null);
+					externalGuaranteedNames, scopeIdentity, bindingDomainKnown, null, null, null);
 		}
 
 		private ReadOnlyContext(Set<String> visibleNames, Set<String> maybeBoundNames, Set<String> guaranteedNames,
 				Map<String, Value> fixedValues, Map<String, Set<ValueKind>> valueKinds,
-				Map<String, Value> externalValues, Set<String> externalGuaranteedNames, long scopeIdentity,
-				boolean bindingDomainKnown, LateralInputFrame lateralInputs) {
+				Map<String, Value> externalValues, Set<String> externalGuaranteedNames, ScopeIdentity scopeIdentity,
+				boolean bindingDomainKnown, LateralInputFrame lateralInputs, FilterOwnerFrame filterOwners) {
+			this(visibleNames, maybeBoundNames, guaranteedNames, fixedValues, valueKinds, externalValues,
+					externalGuaranteedNames, scopeIdentity, bindingDomainKnown, lateralInputs, filterOwners, null);
+		}
+
+		private ReadOnlyContext(Set<String> visibleNames, Set<String> maybeBoundNames, Set<String> guaranteedNames,
+				Map<String, Value> fixedValues, Map<String, Set<ValueKind>> valueKinds,
+				Map<String, Value> externalValues, Set<String> externalGuaranteedNames, ScopeIdentity scopeIdentity,
+				boolean bindingDomainKnown, LateralInputFrame lateralInputs, FilterOwnerFrame filterOwners,
+				CallerRecipe callerRecipe) {
 			this.visibleNames = Set.copyOf(visibleNames);
 			this.maybeBoundNames = Set.copyOf(maybeBoundNames);
 			this.guaranteedNames = Set.copyOf(guaranteedNames);
@@ -2012,10 +3665,59 @@ public final class QueryAlgebraBindingAnalysis {
 			this.scopeIdentity = scopeIdentity;
 			this.bindingDomainKnown = bindingDomainKnown;
 			this.lateralInputs = lateralInputs;
+			this.filterOwners = filterOwners;
+			this.callerRecipe = callerRecipe;
+		}
+
+		private ReadOnlyContext(ReadOnlyContext original, FilterOwnerFrame filterOwners) {
+			this.visibleNames = original.visibleNames;
+			this.maybeBoundNames = original.maybeBoundNames;
+			this.guaranteedNames = original.guaranteedNames;
+			this.fixedValues = original.fixedValues;
+			this.valueKinds = original.valueKinds;
+			this.externalValues = original.externalValues;
+			this.externalGuaranteedNames = original.externalGuaranteedNames;
+			this.scopeIdentity = original.scopeIdentity;
+			this.bindingDomainKnown = original.bindingDomainKnown;
+			this.lateralInputs = original.lateralInputs;
+			this.filterOwners = filterOwners;
+			this.callerRecipe = original.callerRecipe;
+		}
+
+		private ReadOnlyContext(ReadOnlyContext original, CallerRecipe callerRecipe) {
+			this.visibleNames = original.visibleNames;
+			this.maybeBoundNames = original.maybeBoundNames;
+			this.guaranteedNames = original.guaranteedNames;
+			this.fixedValues = original.fixedValues;
+			this.valueKinds = original.valueKinds;
+			this.externalValues = original.externalValues;
+			this.externalGuaranteedNames = original.externalGuaranteedNames;
+			this.scopeIdentity = original.scopeIdentity;
+			this.bindingDomainKnown = original.bindingDomainKnown;
+			this.lateralInputs = original.lateralInputs;
+			this.filterOwners = original.filterOwners;
+			this.callerRecipe = callerRecipe;
+		}
+
+		private ReadOnlyContext withCallerRecipe(CallerRecipe recipe) {
+			return recipe == callerRecipe ? this : new ReadOnlyContext(this, recipe);
+		}
+
+		private ReadOnlyContext withFilterOwner(QueryModelNode owner, ReadOnlyContext input) {
+			return new ReadOnlyContext(this, new FilterOwnerFrame(owner, input, filterOwners));
+		}
+
+		private ReadOnlyContext filterOwnerInput(QueryModelNode owner) {
+			for (FilterOwnerFrame frame = filterOwners; frame != null; frame = frame.previous) {
+				if (frame.owner == owner) {
+					return frame.input;
+				}
+			}
+			return null;
 		}
 
 		private static ReadOnlyContext external(Map<String, Value> values, Set<String> externalNames,
-				long scopeIdentity) {
+				ScopeIdentity scopeIdentity) {
 			Set<String> names = Set.copyOf(externalNames);
 			Map<String, Set<ValueKind>> kinds = new HashMap<>();
 			values.forEach((name, value) -> kinds.put(name, Set.of(valueKindOf(value))));
@@ -2028,7 +3730,8 @@ public final class QueryAlgebraBindingAnalysis {
 			visible.addAll(names);
 			maybe.addAll(names);
 			return new ReadOnlyContext(visible, maybe, guaranteedNames, fixedValues, valueKinds, externalValues,
-					externalGuaranteedNames, scopeIdentity, bindingDomainKnown, lateralInputs);
+					externalGuaranteedNames, scopeIdentity, bindingDomainKnown, lateralInputs, filterOwners,
+					callerRecipe);
 		}
 
 		private ReadOnlyContext withLateralInputs(Lateral lateral, ReadOnlyContext original) {
@@ -2049,7 +3752,8 @@ public final class QueryAlgebraBindingAnalysis {
 			}
 			return new ReadOnlyContext(visibleNames, maybeBoundNames, guaranteedNames, fixedValues, valueKinds,
 					externalValues, externalGuaranteedNames, scopeIdentity, bindingDomainKnown,
-					new LateralInputFrame(original, Set.copyOf(candidates), conditional, lateralInputs));
+					new LateralInputFrame(original, Set.copyOf(candidates), conditional, lateralInputs), filterOwners,
+					callerRecipe);
 		}
 
 		private ReadOnlyContext selectLateralProjectionInput(List<ProjectionElemList> projections) {
@@ -2139,7 +3843,7 @@ public final class QueryAlgebraBindingAnalysis {
 			if (!facts.possibleOutputsKnown || !facts.canProduceRows) {
 				return new ReadOnlyContext(Set.of(), Set.of(), Set.of(), Map.of(), Map.of(), Map.of(), Set.of(),
 						facts.inheritedInput.scopeIdentity, facts.possibleOutputsKnown,
-						facts.inheritedInput.lateralInputs);
+						facts.inheritedInput.lateralInputs, facts.inheritedInput.filterOwners, facts.callerRecipe);
 			}
 			for (String name : facts.possibleOutputs) {
 				visible.add(name);
@@ -2169,7 +3873,7 @@ public final class QueryAlgebraBindingAnalysis {
 			return new ReadOnlyContext(visible, maybe, guaranteed, values, kinds, external, externalNames,
 					facts.inheritedInput.scopeIdentity,
 					facts.possibleOutputsKnown && facts.inheritedInput.bindingDomainKnown,
-					facts.inheritedInput.lateralInputs);
+					facts.inheritedInput.lateralInputs, facts.inheritedInput.filterOwners, facts.callerRecipe);
 		}
 
 		ReadOnlyContext without(Set<String> names) {
@@ -2191,24 +3895,26 @@ public final class QueryAlgebraBindingAnalysis {
 			external.keySet().removeAll(names);
 			externalNames.removeAll(names);
 			return new ReadOnlyContext(visible, maybe, guaranteed, values, kinds, external, externalNames,
-					scopeIdentity, bindingDomainKnown, lateralInputs);
+					scopeIdentity, bindingDomainKnown, lateralInputs, filterOwners, callerRecipe);
 		}
 
-		ReadOnlyContext enterUnknownScope(long newIdentity) {
+		ReadOnlyContext enterUnknownScope(ScopeIdentity newIdentity) {
 			return new ReadOnlyContext(Set.of(), Set.of(), Set.of(), Map.of(), Map.of(), Map.of(), Set.of(),
 					newIdentity,
-					false, lateralInputs);
+					false, lateralInputs, filterOwners, callerRecipe);
 		}
 
 		/** Changes lexical identity without changing the input mapping already selected by the caller. */
-		ReadOnlyContext withScopeIdentity(long newIdentity) {
+		ReadOnlyContext withScopeIdentity(ScopeIdentity newIdentity) {
 			return new ReadOnlyContext(visibleNames, maybeBoundNames, guaranteedNames, fixedValues, valueKinds,
-					externalValues, externalGuaranteedNames, newIdentity, bindingDomainKnown, lateralInputs);
+					externalValues, externalGuaranteedNames, newIdentity, bindingDomainKnown, lateralInputs,
+					filterOwners, callerRecipe);
 		}
 
 		ReadOnlyContext withUnknownDomain() {
 			return new ReadOnlyContext(visibleNames, maybeBoundNames, guaranteedNames, fixedValues, valueKinds,
-					externalValues, externalGuaranteedNames, scopeIdentity, false, lateralInputs);
+					externalValues, externalGuaranteedNames, scopeIdentity, false, lateralInputs, filterOwners,
+					callerRecipe);
 		}
 
 		private static ValueKind valueKindOf(Value value) {
@@ -2260,7 +3966,12 @@ public final class QueryAlgebraBindingAnalysis {
 		}
 
 		public long scopeIdentity() {
-			return scopeIdentity;
+			return scopeIdentity.label;
+		}
+
+		/** The numeric label is local to an analysis; compare scopes by their shared identity instead. */
+		public boolean sameScopeAs(ReadOnlyContext other) {
+			return other != null && scopeIdentity == other.scopeIdentity;
 		}
 
 		@Override
@@ -2270,6 +3981,7 @@ public final class QueryAlgebraBindingAnalysis {
 			}
 			return other instanceof ReadOnlyContext context && scopeIdentity == context.scopeIdentity
 					&& lateralInputs == context.lateralInputs
+					&& filterOwners == context.filterOwners
 					&& bindingDomainKnown == context.bindingDomainKnown
 					&& visibleNames.equals(context.visibleNames) && maybeBoundNames.equals(context.maybeBoundNames)
 					&& guaranteedNames.equals(context.guaranteedNames) && fixedValues.equals(context.fixedValues)
@@ -2286,7 +3998,7 @@ public final class QueryAlgebraBindingAnalysis {
 			if (h == 0) {
 				h = Objects.hash(visibleNames, maybeBoundNames, guaranteedNames, fixedValues, valueKinds,
 						externalValues, externalGuaranteedNames, scopeIdentity, bindingDomainKnown,
-						System.identityHashCode(lateralInputs));
+						System.identityHashCode(lateralInputs), System.identityHashCode(filterOwners));
 				if (h == 0) {
 					h = 1;
 				}
@@ -2298,6 +4010,8 @@ public final class QueryAlgebraBindingAnalysis {
 
 	static final class MutableScope {
 		private LateralInputFrame lateralInputs;
+		private final FilterOwnerFrame filterOwners;
+		private CallerRecipe callerRecipe;
 		private final Set<String> visibleNames;
 		private final Set<String> maybeBoundNames;
 		private final Set<String> guaranteedNames;
@@ -2305,11 +4019,13 @@ public final class QueryAlgebraBindingAnalysis {
 		private final Map<String, Set<ValueKind>> valueKinds;
 		private final Map<String, Value> externalValues;
 		private final Set<String> externalGuaranteedNames;
-		private final long scopeIdentity;
+		private final ScopeIdentity scopeIdentity;
 		private final boolean bindingDomainKnown;
 
 		private MutableScope(ReadOnlyContext initial) {
 			this.lateralInputs = initial.lateralInputs;
+			this.filterOwners = initial.filterOwners;
+			this.callerRecipe = initial.callerRecipe;
 			this.visibleNames = new HashSet<>(initial.visibleNames);
 			this.maybeBoundNames = new HashSet<>(initial.maybeBoundNames);
 			this.guaranteedNames = new HashSet<>(initial.guaranteedNames);
@@ -2353,7 +4069,8 @@ public final class QueryAlgebraBindingAnalysis {
 
 		ReadOnlyContext snapshot() {
 			return new ReadOnlyContext(visibleNames, maybeBoundNames, guaranteedNames, fixedValues, valueKinds,
-					externalValues, externalGuaranteedNames, scopeIdentity, bindingDomainKnown, lateralInputs);
+					externalValues, externalGuaranteedNames, scopeIdentity, bindingDomainKnown, lateralInputs,
+					filterOwners, callerRecipe);
 		}
 	}
 

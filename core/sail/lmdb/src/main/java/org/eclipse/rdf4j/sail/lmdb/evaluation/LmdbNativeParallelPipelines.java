@@ -236,6 +236,14 @@ final class LmdbNativeParallelPipelines {
 			return reject(step, "non-pattern-root");
 		}
 		PatternPlan root = (PatternPlan) derived.order[0];
+		long possibleInputs = consumerRow.boundMask();
+		for (SlotPlan child : derived.order) {
+			if (child instanceof PatternPlan pattern
+					&& !pattern.supportsContextShortcut(consumerRow, possibleInputs, 0L)) {
+				return reject(step, "context-choice");
+			}
+			possibleInputs |= child.producedMask();
+		}
 		double totalWork = plan.estimate(consumerRow);
 		if (!(totalWork >= minimumWorkEstimate()) && !LmdbNativeForceableStrategies.forces(
 				LmdbNativeEvaluationStrategy.requestedForcedExecutionStrategy(),
@@ -1043,6 +1051,7 @@ final class LmdbNativeParallelPipelines {
 				NativeLmdbQuerySource producerSource = sources[workerPlans.length];
 				producerRow = new RowState(producerSource, step.layout, consumerRow.base,
 						consumerRow.exactValuesMetrics, consumerRow.cancellation);
+				producerRow.lexicalInputMask = consumerRow.lexicalInputMask;
 				producerRow.memoryScope = consumerRow.memoryScope;
 				producerRow.runtimePlan = consumerRow.runtimePlan;
 				if (NativeRowSeeder.seed(producerRow.slots, step.layout, consumerRow.base, producerSource)) {
@@ -1112,6 +1121,7 @@ final class LmdbNativeParallelPipelines {
 			NativeLmdbQuerySource source = sources[worker];
 			RowState row = new RowState(source, step.layout, consumerRow.base, consumerRow.exactValuesMetrics,
 					consumerRow.cancellation);
+			row.lexicalInputMask = consumerRow.lexicalInputMask;
 			row.parallelOwnership = RowState.ParallelOwnership.OUTER_PIPELINE;
 			row.memoryScope = consumerRow.memoryScope;
 			row.runtimePlan = consumerRow.runtimePlan;

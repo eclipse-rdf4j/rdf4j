@@ -146,6 +146,10 @@ final class LmdbNativeMergeJoin {
 			return rejectAdmission(row, "preordered-pattern", record);
 		}
 		long keyMask = left.producedMask & right.producedMask & ~row.boundMask();
+		if (!left.supportsContextShortcut(row, row.boundMask() | right.producedMask(), keyMask)
+				|| !right.supportsContextShortcut(row, row.boundMask() | left.producedMask(), keyMask)) {
+			return rejectAdmission(row, "context-choice", record);
+		}
 		int keyWidth = Long.bitCount(keyMask);
 		if (keyWidth == 0 || keyWidth > MAX_KEY_WIDTH) {
 			return rejectAdmission(row, "join-key-width", record);

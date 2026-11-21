@@ -26,6 +26,7 @@ import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.vocabulary.RDF;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.Dataset;
+import org.eclipse.rdf4j.query.algebra.Extension;
 import org.eclipse.rdf4j.query.algebra.Join;
 import org.eclipse.rdf4j.query.algebra.Lateral;
 import org.eclipse.rdf4j.query.algebra.QueryModelNode;
@@ -74,6 +75,22 @@ public class TupleFunctionMagicPropertyOptimizer implements QueryOptimizer {
 
 	@Override
 	public void optimize(TupleExpr tupleExpr, Dataset dataset, BindingSet bindings) {
+		new GraphScopeOptimizer().optimizeForMagic(tupleExpr, dataset, bindings, this::containsMagic);
+		rewriteGroups(tupleExpr);
+	}
+
+	private boolean containsMagic(TupleExpr expression) {
+		boolean[] found = { false };
+		expression.visit(new AbstractSimpleQueryModelVisitor<RuntimeException>(false) {
+			@Override
+			public void meet(StatementPattern node) {
+				found[0] |= isMagicPattern(node);
+			}
+		});
+		return found[0];
+	}
+
+	private void rewriteGroups(TupleExpr tupleExpr) {
 		List<TupleExpr> groups = new ArrayList<>();
 		Set<TupleExpr> seen = Collections.newSetFromMap(new IdentityHashMap<>());
 		tupleExpr.visit(new AbstractSimpleQueryModelVisitor<RuntimeException>(false) {
@@ -142,9 +159,22 @@ public class TupleFunctionMagicPropertyOptimizer implements QueryOptimizer {
 				ordinary.add(operand.clone());
 			}
 		}
+		QueryModelNode parent = root.getParentNode();
 		Lateral lateral = new Lateral(join(ordinary), join(calls), inputNames);
-		lateral.setVariableScopeChange(TupleExprs.isVariableScopeChange(root));
-		root.replaceWith(lateral);
+		TupleExpr replacement = lateral;
+		if (TupleExprs.isVariableScopeChange(root)) {
+			Extension boundary = new Extension(lateral);
+			boundary.setVariableScopeChange(true);
+			replacement = boundary;
+		}
+		if (parent instanceof Extension graphBoundary && graphBoundary.isGraphScopeBoundary()
+				&& graphBoundary.getArg() == root && graphBoundary.getElements().isEmpty()) {
+			// Only a rewrite of the graph's own root group consumes the graph-added layer. A separate real
+			// group, if present on the body, remains represented by the replacement above.
+			graphBoundary.replaceWith(replacement);
+		} else {
+			root.replaceWith(replacement);
+		}
 	}
 
 	private static TupleExpr join(List<TupleExpr> operands) {
@@ -178,11 +208,11 @@ public class TupleFunctionMagicPropertyOptimizer implements QueryOptimizer {
 		return call;
 	}
 
-	/** Walks up through plain joins (stopping at a scope-changing join) to the root of the basic graph pattern. */
+	/** Walks up through plain joins without crossing any real group boundary. */
 	private static TupleExpr groupRoot(TupleExpr node) {
 		TupleExpr root = node;
 		while (root.getParentNode() instanceof Join parent
-				&& !(root instanceof Join join && join.isVariableScopeChange())) {
+				&& !TupleExprs.isVariableScopeChange(root)) {
 			root = parent;
 		}
 		return root;

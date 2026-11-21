@@ -16,7 +16,7 @@ QueryRoot
                   Var (name=obj)
             ExtensionElem (nameOut)
                Var (name=name)
-         ExclusiveStatement
+         ExclusiveStatement (new scope)
             Var (name=person)
             Var (name=_const_2, value=http://xmlns.com/foaf/0.1/interest, anonymous)
             Var (name=o)

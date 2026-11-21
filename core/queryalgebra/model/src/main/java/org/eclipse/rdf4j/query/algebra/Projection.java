@@ -21,6 +21,8 @@ import org.eclipse.rdf4j.common.annotation.InternalUseOnly;
  */
 public class Projection extends UnaryTupleOperator {
 
+	private static final long serialVersionUID = -28043218444318431L;
+
 	/*-----------*
 	 * Variables *
 	 *-----------*/
@@ -30,6 +32,7 @@ public class Projection extends UnaryTupleOperator {
 	private Var projectionContext = null;
 
 	private String inheritedGraphParameter;
+	private String fixedGraphParameter;
 
 	private boolean subquery = true;
 
@@ -38,12 +41,12 @@ public class Projection extends UnaryTupleOperator {
 	 *--------------*/
 
 	public Projection() {
-		projElemList = new ProjectionElemList();
+		setProjectionElemList(new ProjectionElemList());
 	}
 
 	public Projection(TupleExpr arg) {
 		super(arg);
-		projElemList = new ProjectionElemList();
+		setProjectionElemList(new ProjectionElemList());
 	}
 
 	public Projection(TupleExpr arg, ProjectionElemList elements) {
@@ -114,7 +117,8 @@ public class Projection extends UnaryTupleOperator {
 				return projElemList.equals(o.getProjectionElemList())
 						&& subquery == o.subquery
 						&& Objects.equals(projectionContext, o.projectionContext)
-						&& Objects.equals(inheritedGraphParameter, o.inheritedGraphParameter);
+						&& Objects.equals(inheritedGraphParameter, o.inheritedGraphParameter)
+						&& Objects.equals(fixedGraphParameter, o.fixedGraphParameter);
 			}
 		}
 
@@ -123,7 +127,8 @@ public class Projection extends UnaryTupleOperator {
 
 	@Override
 	public int hashCode() {
-		return Objects.hash(super.hashCode(), projElemList, projectionContext, subquery, inheritedGraphParameter);
+		return Objects.hash(super.hashCode(), projElemList, projectionContext, subquery, inheritedGraphParameter,
+				fixedGraphParameter);
 	}
 
 	@Override
@@ -162,6 +167,17 @@ public class Projection extends UnaryTupleOperator {
 		this.inheritedGraphParameter = inheritedGraphParameter;
 	}
 
+	/** Private comparison identity for an inherited GRAPH domain with a fixed context occurrence. */
+	@InternalUseOnly
+	public String getFixedGraphParameter() {
+		return fixedGraphParameter;
+	}
+
+	@InternalUseOnly
+	public void setFixedGraphParameter(String fixedGraphParameter) {
+		this.fixedGraphParameter = fixedGraphParameter;
+	}
+
 	/** Whether a context occurrence inherits this SELECT's caller graph, rather than a local GRAPH. */
 	@InternalUseOnly
 	public boolean isInheritedGraphContext(QueryModelNode owner, Var context) {
@@ -185,9 +201,9 @@ public class Projection extends UnaryTupleOperator {
 	public Var getVisibleProjectionContext() {
 		Var visible = projectionContext;
 		for (QueryModelNode node = getParentNode(); visible != null && node != null; node = node.getParentNode()) {
-			if (node instanceof Projection projection
-					&& projection.getInheritedGraphParameter() != null
-					&& Objects.equals(visible.getName(), projection.getInheritedGraphParameter())) {
+			if (visible.getName() != null && node instanceof Projection projection
+					&& (Objects.equals(visible.getName(), projection.getInheritedGraphParameter())
+							|| Objects.equals(visible.getName(), projection.getFixedGraphParameter()))) {
 				visible = projection.getProjectionContext();
 			}
 		}

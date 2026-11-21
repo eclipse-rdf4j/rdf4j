@@ -27,6 +27,7 @@ import java.util.stream.Collectors;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.query.BindingSet;
+import org.eclipse.rdf4j.query.QueryEvaluationException;
 import org.eclipse.rdf4j.query.QueryResults;
 import org.eclipse.rdf4j.query.explanation.Explanation;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
@@ -690,8 +691,12 @@ public class LmdbNativeOrderedFactorizedTest {
 			try (SailRepositoryConnection connection = repository.getConnection()) {
 				SailTupleQuery forced = (SailTupleQuery) connection.prepareTupleQuery(query);
 				forced.setForcedLmdbExecutionStrategy(LmdbNativeAttemptMetrics.PATH_ORDERED_FACTORIZED_TOP_K);
-				assertThat(canonicalize(QueryResults.asList(forced.evaluate()))).as(query)
-						.containsExactlyInAnyOrderElementsOf(expected);
+				try {
+					assertThat(canonicalize(QueryResults.asList(forced.evaluate()))).as(query)
+							.containsExactlyInAnyOrderElementsOf(expected);
+				} catch (QueryEvaluationException failure) {
+					throw new AssertionError(query, failure);
+				}
 				assertThat(NativeRowsStep.ORDERED_FACTORIZED_TOPK.get()).isGreaterThan(before);
 				assertThat(forced.explain(Explanation.Level.Telemetry).toString())
 						.contains("nativeExecutionPath=orderedFactorizedTopK");

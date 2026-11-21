@@ -194,9 +194,19 @@ final class LmdbNativeExplain {
 		return expr != null && (expr.isExecutionSummaryEnabled() || expr.isRuntimeTelemetryEnabled());
 	}
 
+	/** Whether execution diagnostics would be recorded on the expression's canonical logical node. */
+	static boolean recordsLogicalExecutionPaths(TupleExpr expr) {
+		return recordsExecutionPaths(logicalOrigin(expr));
+	}
+
 	/** Begins an execution-local physical-plan witness before specialized path selection. */
 	static LmdbNativeRuntimePlan.Invocation recordRuntimeEntryPlan(TupleExpr expr, SlotPlan plan,
 			NativeSlotLayout layout, long boundMask) {
+		return recordRuntimeEntryPlan(expr, plan, layout, boundMask, null);
+	}
+
+	static LmdbNativeRuntimePlan.Invocation recordRuntimeEntryPlan(TupleExpr expr, SlotPlan plan,
+			NativeSlotLayout layout, long boundMask, NativeGroupInvocationWitness.Admission directInput) {
 		expr = logicalOrigin(expr);
 		if (expr == null || !expr.isRuntimeTelemetryEnabled()) {
 			return null;
@@ -219,7 +229,7 @@ final class LmdbNativeExplain {
 				}
 			}
 		}
-		return LmdbNativeRuntimePlan.begin(expr, plan, layout, boundMask);
+		return LmdbNativeRuntimePlan.begin(expr, plan, layout, boundMask, directInput);
 	}
 
 	static void addRuntimeMetric(TupleExpr expr, String metricName, long delta) {
@@ -314,6 +324,19 @@ final class LmdbNativeExplain {
 		}
 	}
 
+	static void markHostedRoot(TupleExpr expr, String physicalPlan, boolean allowChildClaims) {
+		expr = logicalOrigin(expr);
+		markNode(expr, KIND_GENERIC_HOSTED, physicalPlan);
+		if (expr instanceof QueryRoot root) {
+			TupleExpr child = root.getArg();
+			if (!allowChildClaims || child.getStringMetricPlanned(PHYSICAL_PLAN) == null
+					|| KIND_GENERIC_HOSTED
+							.equals(child.getStringMetricPlanned(TelemetryMetricNames.PLANNED_EXECUTION_KIND))) {
+				markNode(child, KIND_GENERIC_HOSTED, physicalPlan);
+			}
+		}
+	}
+
 	private static void markNode(TupleExpr expr, String kind, String physicalPlan) {
 		expr.setStringMetricPlanned(TelemetryMetricNames.PLANNED_EXECUTION_ENGINE, ENGINE);
 		expr.setStringMetricPlanned(TelemetryMetricNames.PLANNED_EXECUTION_KIND, kind);
@@ -352,6 +375,11 @@ final class LmdbNativeExplain {
 		}
 		if (plan instanceof PatternPlan) {
 			return describePattern((PatternPlan) plan, slotNames);
+		}
+		if (plan instanceof SharedValuesPatternPlan shared) {
+			return "ExactDomainDrive(slot=" + slot(shared.constrainedSlot, slotNames) + ", arity="
+					+ shared.witnessCount() + ", access=per-value-index, witness=" + slot(shared.witnessSlot, slotNames)
+					+ ", fallback=occupied-operand)";
 		}
 		if (plan instanceof MultiValuePatternPlan) {
 			MultiValuePatternPlan multi = (MultiValuePatternPlan) plan;

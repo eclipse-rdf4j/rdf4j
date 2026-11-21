@@ -70,7 +70,7 @@ public class QueryModelTreeToGenericPlanNode extends AbstractQueryModelVisitor<R
 		this.level = level == null ? defaultExplanationLevel(topTupleExpr) : level;
 		this.rootIncomingBindings = rootIncomingBindings == null ? Collections.emptySet()
 				: Collections.unmodifiableSet(new LinkedHashSet<>(rootIncomingBindings));
-		this.bindingAnalysis = QueryAlgebraBindingAnalysis.withGuaranteedInputNames(
+		this.bindingAnalysis = QueryAlgebraBindingAnalysis.forExplanation(
 				this.topTupleExpr instanceof TupleExpr tupleExpr ? tupleExpr : null, this.rootIncomingBindings);
 		this.cartesianJoinExplainAnalyzer = this.level.includesEvaluationAnnotations()
 				? new CartesianJoinExplainAnalyzer(this.topTupleExpr, this.rootIncomingBindings)
@@ -307,8 +307,7 @@ public class QueryModelTreeToGenericPlanNode extends AbstractQueryModelVisitor<R
 		if (node instanceof Var) {
 			Var var = (Var) node;
 			if (!var.isConstant()) {
-				QueryAlgebraBindingAnalysis.BindingState state = bindingAnalysis.bindingState(var,
-						bindingAnalysis.contextAt(var));
+				QueryAlgebraBindingAnalysis.BindingState state = bindingAnalysis.bindingStateForExplanation(var);
 				genericPlanNode.setStringMetricActual(TelemetryMetricNames.BINDING_STATE, bindingStateName(state));
 			}
 		}

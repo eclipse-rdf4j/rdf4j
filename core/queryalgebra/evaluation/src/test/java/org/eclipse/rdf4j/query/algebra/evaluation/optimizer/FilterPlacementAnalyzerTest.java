@@ -15,15 +15,18 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.Collections;
 import java.util.IdentityHashMap;
 import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Set;
 import java.util.concurrent.atomic.AtomicInteger;
 
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
+import org.eclipse.rdf4j.common.iteration.CloseableIteratorIteration;
 import org.eclipse.rdf4j.common.iteration.EmptyIteration;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Resource;
@@ -50,19 +53,25 @@ import org.eclipse.rdf4j.query.algebra.Group;
 import org.eclipse.rdf4j.query.algebra.If;
 import org.eclipse.rdf4j.query.algebra.Intersection;
 import org.eclipse.rdf4j.query.algebra.Join;
+import org.eclipse.rdf4j.query.algebra.Lateral;
 import org.eclipse.rdf4j.query.algebra.LeftJoin;
 import org.eclipse.rdf4j.query.algebra.Not;
 import org.eclipse.rdf4j.query.algebra.Or;
+import org.eclipse.rdf4j.query.algebra.Order;
+import org.eclipse.rdf4j.query.algebra.OrderElem;
 import org.eclipse.rdf4j.query.algebra.Projection;
 import org.eclipse.rdf4j.query.algebra.ProjectionElem;
 import org.eclipse.rdf4j.query.algebra.ProjectionElemList;
 import org.eclipse.rdf4j.query.algebra.QueryModelNode;
 import org.eclipse.rdf4j.query.algebra.QueryModelVisitor;
 import org.eclipse.rdf4j.query.algebra.QueryRoot;
+import org.eclipse.rdf4j.query.algebra.Reduced;
 import org.eclipse.rdf4j.query.algebra.SingletonSet;
 import org.eclipse.rdf4j.query.algebra.Slice;
 import org.eclipse.rdf4j.query.algebra.StatementPattern;
+import org.eclipse.rdf4j.query.algebra.Str;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
+import org.eclipse.rdf4j.query.algebra.UnaryTupleOperator;
 import org.eclipse.rdf4j.query.algebra.Union;
 import org.eclipse.rdf4j.query.algebra.ValueConstant;
 import org.eclipse.rdf4j.query.algebra.ValueExpr;
@@ -78,6 +87,7 @@ import org.eclipse.rdf4j.query.algebra.helpers.QueryAlgebraBindingAnalysis;
 import org.eclipse.rdf4j.query.algebra.helpers.TupleExprs;
 import org.eclipse.rdf4j.query.impl.EmptyBindingSet;
 import org.eclipse.rdf4j.query.impl.ListBindingSet;
+import org.eclipse.rdf4j.query.impl.MapBindingSet;
 import org.junit.jupiter.api.Test;
 
 class FilterPlacementAnalyzerTest {
@@ -135,8 +145,7 @@ class FilterPlacementAnalyzerTest {
 	void supportedSubtreeAnalysisPreservesInheritedBindingFacts() {
 		Filter filter = new Filter(new Join(values("x", 1), values("y", 2)), new Bound(Var.of("x")));
 		Slice island = new Slice(filter, 0, -1);
-		Join parent = new Join(values("outer", 3), island);
-		parent.setAlgorithm("JoinIterator");
+		Lateral parent = new Lateral(values("outer", 3), island);
 		QueryRoot root = new QueryRoot(parent);
 		QueryAlgebraBindingAnalysis analysis = QueryAlgebraBindingAnalysis.withBindingValues(root,
 				EmptyBindingSet.getInstance());
@@ -152,6 +161,21 @@ class FilterPlacementAnalyzerTest {
 			}
 		});
 		assertEveryPlacementPreservesBag(root, filter, envelope);
+	}
+
+	@Test
+	void ordinaryJoinLabelDoesNotIntroduceInheritedBindingFacts() {
+		Filter filter = new Filter(new Join(values("x", 1), values("y", 2)), new Bound(Var.of("x")));
+		Slice island = new Slice(filter, 0, -1);
+		Join parent = new Join(values("outer", 3), island);
+		parent.setAlgorithm("JoinIterator");
+		QueryRoot root = new QueryRoot(parent);
+		QueryAlgebraBindingAnalysis analysis = QueryAlgebraBindingAnalysis.withBindingValues(root,
+				EmptyBindingSet.getInstance());
+		assertThat(analysis.contextAt(island).guaranteedNames()).doesNotContain("outer");
+		assertThat(evaluate(root.clone())).containsExactly(new ListBindingSet(List.of("outer", "x", "y"),
+				VF.createLiteral(3), VF.createLiteral(1), VF.createLiteral(2)));
+		assertEveryPlacementPreservesBag(root, filter, new FilterPlacementAnalyzer(island, analysis).analyze(filter));
 	}
 
 	@Test
@@ -195,6 +219,25 @@ class FilterPlacementAnalyzerTest {
 				.singleElement()
 				.satisfies(site -> assertThat(site.argument()).isSameAs(local.getLeftArg()));
 		assertThat(envelope.alternatives(argument -> false)).isEmpty();
+		assertEveryPlacementPreservesBag(root, filter, envelope);
+	}
+
+	@Test
+	void transparentSubtreeConditionPreservesEnclosingOwner() {
+		Join local = new Join(values("x", 1), values("y", 2));
+		Filter filter = new Filter(local, new Compare(Var.of("outer"), constant(1), Compare.CompareOp.GT));
+		Slice island = new Slice(filter, 0, -1);
+		QueryRoot root = new QueryRoot(new Join(values("outer", 3), island));
+		QueryAlgebraBindingAnalysis analysis = QueryAlgebraBindingAnalysis.withBindingValues(root,
+				EmptyBindingSet.getInstance());
+		Envelope envelope = new FilterPlacementAnalyzer(island, analysis).analyze(filter);
+
+		assertThat(evaluate(root.clone())).containsExactly(new ListBindingSet(List.of("outer", "x", "y"),
+				VF.createLiteral(3), VF.createLiteral(1), VF.createLiteral(2)));
+		assertThat(envelope.originalSite().conditionFrame().guaranteedNames()).contains("outer");
+		assertThat(singletonSites(envelope)).containsExactlyInAnyOrder(local, local.getLeftArg(), local.getRightArg());
+		assertThat(envelope.singletonAlternatives()).allSatisfy(
+				alternative -> assertThat(alternative.cut().getFirst().retainedBindingNames()).contains("outer"));
 		assertEveryPlacementPreservesBag(root, filter, envelope);
 	}
 
@@ -611,12 +654,8 @@ class FilterPlacementAnalyzerTest {
 				Envelope envelope = analyzer(root).analyze(filter);
 
 				assertThat(singletonSites(envelope)).contains(argument);
-				if (scopedSource && argument instanceof Union) {
-					// Moving the gate cannot replace an independently evaluated scoped UNION on the right.
-					assertThat(singletonSites(envelope)).doesNotContain(parent);
-				} else {
-					assertThat(singletonSites(envelope)).contains(parent);
-				}
+				// Both UNION arms supply x locally; the source boundary remains on the detached argument.
+				assertThat(singletonSites(envelope)).contains(parent);
 				assertThat(envelope.potentialSites(candidate -> true))
 						.allSatisfy(candidate -> assertThat(before).anyMatch(node -> node == candidate));
 				assertThat(alternatives(envelope))
@@ -630,6 +669,37 @@ class FilterPlacementAnalyzerTest {
 	}
 
 	@Test
+	void scopedUnionLocalConditionCanMoveAboveItsParentWithExactBag() {
+		Union union = new Union(values("x", 1, 1, 2), values("x", 2, 3));
+		Filter filter = new Filter(union, new And(new Bound(Var.of("x")),
+				new Compare(Var.of("x"), constant(1), Compare.CompareOp.GT)));
+		filter.setVariableScopeChange(true);
+		Join parent = new Join(values("outer", 9), filter);
+		QueryRoot root = new QueryRoot(parent);
+		Envelope envelope = analyzer(root).analyze(filter);
+		assertThat(evaluate(root.clone())).containsExactlyInAnyOrder(
+				new ListBindingSet(List.of("outer", "x"), VF.createLiteral(9), VF.createLiteral(2)),
+				new ListBindingSet(List.of("outer", "x"), VF.createLiteral(9), VF.createLiteral(2)),
+				new ListBindingSet(List.of("outer", "x"), VF.createLiteral(9), VF.createLiteral(3)));
+		assertThat(singletonSites(envelope)).contains(parent);
+		assertEveryPlacementPreservesBag(root, filter, envelope);
+	}
+
+	@Test
+	void scopedUnionCannotAcquireOuterValueForAnUnboundArm() {
+		Union union = new Union(values("x", 2), values("other", 3));
+		Filter filter = new Filter(union, new And(new Bound(Var.of("x")),
+				new Compare(Var.of("x"), constant(1), Compare.CompareOp.GT)));
+		filter.setVariableScopeChange(true);
+		Join parent = new Join(values("x", 9), filter);
+		QueryRoot root = new QueryRoot(parent);
+		Envelope envelope = analyzer(root).analyze(filter);
+		assertThat(evaluate(root.clone())).isEmpty();
+		assertThat(singletonSites(envelope)).doesNotContain(parent);
+		assertEveryPlacementPreservesBag(root, filter, envelope);
+	}
+
+	@Test
 	void scopedUnionCutsKeepGroupInputsSeparateFromConditionVisibility() {
 		for (boolean sourceMarker : List.of(false, true)) {
 			BindingSetAssignment first = values("x", 1, 1, 2);
@@ -640,10 +710,56 @@ class FilterPlacementAnalyzerTest {
 			filter.setVariableScopeChange(sourceMarker);
 			QueryRoot root = new QueryRoot(new Join(values("x", 9), filter));
 			Envelope envelope = analyzer(root).analyze(filter);
+			if (sourceMarker) {
+				// The source boundary excludes the outer owner, and remains on the UNION after relocation.
+				assertThat(alternatives(envelope))
+						.anySatisfy(alternative -> assertThat(arguments(alternative)).containsExactly(first, second));
+			} else {
+				// The original condition can borrow x=9; the scoped UNION blocks that owner from its arms.
+				assertThat(evaluate(root.clone())).containsExactlyInAnyOrder(
+						new ListBindingSet(List.of("x", "other"), VF.createLiteral(9), VF.createLiteral(3)),
+						new ListBindingSet(List.of("x", "other"), VF.createLiteral(9), VF.createLiteral(4)));
+				assertThat(alternatives(envelope)).noneMatch(alternative -> arguments(alternative)
+						.equals(List.of(first, second)));
+			}
+			assertEveryPlacementPreservesBag(root, filter, envelope);
+		}
+	}
+
+	@Test
+	void scopedUnionCutsRemainAvailableForLocalConditionValues() {
+		for (boolean sourceMarker : List.of(false, true)) {
+			BindingSetAssignment first = values("x", 1, 1, 2);
+			BindingSetAssignment second = values("other", 3, 4);
+			Union union = new Union(first, second);
+			union.setVariableScopeChange(!sourceMarker);
+			Filter filter = new Filter(union, new Compare(Var.of("x"), constant(1), Compare.CompareOp.GT));
+			filter.setVariableScopeChange(sourceMarker);
+			QueryRoot root = new QueryRoot(new Join(values("outer", 9), filter));
+			Envelope envelope = analyzer(root).analyze(filter);
+			assertThat(evaluate(root.clone())).containsExactly(
+					new ListBindingSet(List.of("outer", "x"), VF.createLiteral(9), VF.createLiteral(2)));
 			assertThat(alternatives(envelope))
 					.anySatisfy(alternative -> assertThat(arguments(alternative)).containsExactly(first, second));
 			assertEveryPlacementPreservesBag(root, filter, envelope);
 		}
+	}
+
+	@Test
+	void optimizerKeepsConditionWithOwnerOutsideScopedUnion() {
+		Union union = new Union(values("x", 1, 1, 2), values("other", 3, 4));
+		union.setVariableScopeChange(true);
+		Filter filter = new Filter(union, new Compare(Var.of("x"), constant(1), Compare.CompareOp.GT));
+		QueryRoot root = new QueryRoot(new Join(values("x", 9), filter));
+		List<BindingSet> expected = List.of(
+				new ListBindingSet(List.of("x", "other"), VF.createLiteral(9), VF.createLiteral(3)),
+				new ListBindingSet(List.of("x", "other"), VF.createLiteral(9), VF.createLiteral(4)));
+		assertThat(evaluate(root.clone())).containsExactlyInAnyOrderElementsOf(expected);
+
+		new FilterOptimizer().optimize(root, null, EmptyBindingSet.getInstance());
+
+		assertThat(evaluate(root.clone())).containsExactlyInAnyOrderElementsOf(expected);
+		assertThat(((Join) root.getArg()).getRightArg()).isSameAs(filter);
 	}
 
 	@Test
@@ -856,6 +972,238 @@ class FilterPlacementAnalyzerTest {
 	}
 
 	@Test
+	void scopedModifiersDoNotLoseNewlyAcquiredFilterOwners() {
+		List<UnaryTupleOperator> modifiers = List.of(new Distinct(values("y", 2, 3)),
+				new Reduced(values("y", 2, 3)), new Order(values("y", 2, 3), new OrderElem(Var.of("y"))));
+		for (UnaryTupleOperator modifier : modifiers) {
+			modifier.setVariableScopeChange(true);
+			Filter filter = new Filter(new Join(values("x", 1, 2), modifier),
+					new Compare(Var.of("x"), Var.of("y"), Compare.CompareOp.LT));
+			QueryRoot root = new QueryRoot(filter);
+			Envelope envelope = analyzer(root).analyze(filter);
+			assertThat(evaluate(root.clone())).hasSize(3);
+			assertThat(singletonSites(envelope)).as(modifier.getClass().getSimpleName())
+					.doesNotContain(modifier.getArg());
+			assertEveryPlacementPreservesBag(root, filter, envelope);
+		}
+	}
+
+	@Test
+	void unscopedModifiersStillAllowEquivalentLocalPlacements() {
+		List<UnaryTupleOperator> modifiers = List.of(new Distinct(values("x", 1, 2)),
+				new Reduced(values("x", 1, 2)), new Order(values("x", 1, 2), new OrderElem(Var.of("x"))));
+		for (UnaryTupleOperator modifier : modifiers) {
+			Filter filter = new Filter(modifier, new Compare(Var.of("x"), constant(2), Compare.CompareOp.LT));
+			QueryRoot root = new QueryRoot(filter);
+			Envelope envelope = analyzer(root).analyze(filter);
+			assertThat(singletonSites(envelope)).as(modifier.getClass().getSimpleName()).contains(modifier.getArg());
+			assertEveryPlacementPreservesBag(root, filter, envelope);
+		}
+	}
+
+	@Test
+	void scopedModifiersStillAllowLocallyProducedFilterInputs() {
+		List<UnaryTupleOperator> modifiers = List.of(new Distinct(values("x", 1, 2)),
+				new Reduced(values("x", 1, 2)), new Order(values("x", 1, 2), new OrderElem(Var.of("x"))));
+		for (UnaryTupleOperator modifier : modifiers) {
+			modifier.setVariableScopeChange(true);
+			Filter filter = new Filter(modifier, new Compare(Var.of("x"), constant(2), Compare.CompareOp.LT));
+			QueryRoot root = new QueryRoot(filter);
+			Envelope envelope = analyzer(root).analyze(filter);
+			assertThat(singletonSites(envelope)).as(modifier.getClass().getSimpleName()).contains(modifier.getArg());
+			assertEveryPlacementPreservesBag(root, filter, envelope);
+		}
+	}
+
+	@Test
+	void unscopedModifiersPreserveNewlyAcquiredOwners() {
+		List<UnaryTupleOperator> modifiers = List.of(new Distinct(values("y", 2, 3)),
+				new Reduced(values("y", 2, 3)), new Order(values("y", 2, 3), new OrderElem(Var.of("y"))));
+		for (UnaryTupleOperator modifier : modifiers) {
+			Filter filter = new Filter(new Join(values("x", 1, 2), modifier),
+					new Compare(Var.of("x"), Var.of("y"), Compare.CompareOp.LT));
+			QueryRoot root = new QueryRoot(filter);
+			Envelope envelope = analyzer(root).analyze(filter);
+			assertThat(evaluate(root.clone())).hasSize(3);
+			assertThat(singletonSites(envelope)).as(modifier.getClass().getSimpleName()).contains(modifier.getArg());
+			assertEveryPlacementPreservesBag(root, filter, envelope);
+		}
+	}
+
+	@Test
+	void unionDistributionKeepsBranchSpecificUnboundInputs() {
+		BindingSetAssignment bound = values("x", 1);
+		BindingSetAssignment unbound = values("y", 2);
+		Filter filter = new Filter(new Union(bound, unbound), new Not(new Bound(Var.of("x"))));
+		QueryRoot root = new QueryRoot(filter);
+		Envelope envelope = analyzer(root).analyze(filter);
+		assertThat(evaluate(root.clone())).containsExactly(new ListBindingSet(List.of("y"), VF.createLiteral(2)));
+		assertThat(alternatives(envelope)).anySatisfy(alternative -> assertThat(arguments(alternative))
+				.containsExactly(bound, unbound));
+		assertEveryPlacementPreservesBag(root, filter, envelope);
+	}
+
+	@Test
+	void unionDistributionCanMixLocalAndOwnerSuppliedValues() {
+		BindingSetAssignment local = values("x", 1, 1);
+		BindingSetAssignment ownerSupplied = values("y", 2);
+		Union union = new Union(local, ownerSupplied);
+		Filter filter = new Filter(union, new Bound(Var.of("x")));
+		QueryRoot root = new QueryRoot(new Join(values("x", 1), filter));
+		Envelope envelope = analyzer(root).analyze(filter);
+		BindingSet localRow = new ListBindingSet(List.of("x"), VF.createLiteral(1));
+		BindingSet ownerRow = new ListBindingSet(List.of("x", "y"), VF.createLiteral(1), VF.createLiteral(2));
+		assertThat(evaluate(root.clone())).containsExactlyInAnyOrder(localRow, localRow, ownerRow);
+		assertThat(alternatives(envelope)).anySatisfy(alternative -> assertThat(arguments(alternative))
+				.containsExactly(local, ownerSupplied));
+		assertEveryPlacementPreservesBag(root, filter, envelope);
+	}
+
+	@Test
+	void nullableOwnerFallbackAndLocalMaskSurviveModifierPlacement() {
+		for (boolean local : List.of(false, true)) {
+			BindingSetAssignment inner = new BindingSetAssignment();
+			inner.setBindingNames(Set.of("x"));
+			inner.setBindingSets(List.of(new ListBindingSet(List.of("x"), VF.createLiteral(2)), new MapBindingSet()));
+			TupleExpr input = local ? new Join(values("x", 5), values("z", 3)) : values("z", 3);
+			Distinct scoped = new Distinct(input);
+			scoped.setVariableScopeChange(true);
+			ValueExpr condition = local ? new Compare(Var.of("x"), constant(5), Compare.CompareOp.EQ)
+					: new Bound(Var.of("x"));
+			Filter filter = new Filter(scoped, condition);
+			Projection projected = new Projection(new Join(inner, filter),
+					new ProjectionElemList(new ProjectionElem("z")), false);
+			QueryRoot root = new QueryRoot(new Join(values("x", 1), projected));
+			Envelope envelope = analyzer(root).analyze(filter);
+			BindingSet expected = new ListBindingSet(List.of("x", "z"), VF.createLiteral(1), VF.createLiteral(3));
+			if (local) {
+				assertThat(evaluate(root.clone())).containsExactly(expected);
+				assertThat(singletonSites(envelope)).contains(input);
+			} else {
+				assertThat(evaluate(root.clone())).containsExactlyInAnyOrder(expected, expected);
+				assertThat(singletonSites(envelope)).doesNotContain(input);
+			}
+			assertEveryPlacementPreservesBag(root, filter, envelope);
+		}
+	}
+
+	@Test
+	void projectionDropCannotReplaceAnOuterFilterInput() {
+		TupleExpr child = new Join(values("x", 2), values("y", 3));
+		Projection projection = new Projection(child, new ProjectionElemList(new ProjectionElem("y")), false);
+		Filter filter = new Filter(projection, new Compare(Var.of("x"), constant(1), Compare.CompareOp.EQ));
+		QueryRoot root = new QueryRoot(new Join(values("x", 1), filter));
+		Envelope envelope = analyzer(root).analyze(filter);
+		assertThat(evaluate(root.clone())).containsExactly(
+				new ListBindingSet(List.of("x", "y"), VF.createLiteral(1), VF.createLiteral(3)));
+		assertThat(singletonSites(envelope)).contains(projection).doesNotContain(child);
+		assertEveryPlacementPreservesBag(root, filter, envelope);
+
+		BindingSetAssignment local = values("x", 1, 2);
+		Projection identity = new Projection(local, new ProjectionElemList(new ProjectionElem("x")), false);
+		Filter localFilter = new Filter(identity, new Compare(Var.of("x"), constant(2), Compare.CompareOp.LT));
+		QueryRoot localRoot = new QueryRoot(localFilter);
+		Envelope localEnvelope = analyzer(localRoot).analyze(localFilter);
+		assertThat(evaluate(localRoot.clone())).containsExactly(new ListBindingSet(List.of("x"), VF.createLiteral(1)));
+		assertThat(singletonSites(localEnvelope)).contains(identity);
+		assertEveryPlacementPreservesBag(localRoot, localFilter, localEnvelope);
+	}
+
+	@Test
+	void scopedStatementProducerCannotBeWrappedAsAJoinCandidate() {
+		MapBindingSet owner = new MapBindingSet();
+		owner.addBinding("g", VF.createIRI("urn:scope:absentGraph"));
+		BindingSetAssignment left = new BindingSetAssignment();
+		left.setBindingNames(Set.of("g"));
+		left.setBindingSets(List.of(owner));
+		StatementPattern right = new StatementPattern(StatementPattern.Scope.DEFAULT_CONTEXTS,
+				Var.of("subject", VF.createIRI("urn:scope:s"), true, true),
+				Var.of("predicate", VF.createIRI("urn:scope:p"), true, true), Var.of("o"), Var.of("g"));
+		right.setVariableScopeChange(true);
+		Filter filter = new Filter(new Join(left, right),
+				new Compare(new Str(Var.of("o")), new ValueConstant(VF.createLiteral("keep")), Compare.CompareOp.EQ));
+		Envelope envelope = analyzer(new QueryRoot(filter)).analyze(filter);
+		assertThat(singletonSites(envelope)).doesNotContain(right);
+	}
+
+	@Test
+	void scopedJoinProducerRetainsItsRootWhenAFilterMovesInside() {
+		StatementPattern statement = new StatementPattern(StatementPattern.Scope.DEFAULT_CONTEXTS,
+				Var.of("subject", VF.createIRI("urn:scope:s"), true, true),
+				Var.of("predicate", VF.createIRI("urn:scope:p"), true, true), Var.of("o"), Var.of("g"));
+		Join scoped = new Join(statement, values("z", 3));
+		scoped.setVariableScopeChange(true);
+		Filter filter = new Filter(scoped,
+				new Compare(new Str(Var.of("o")), new ValueConstant(VF.createLiteral("keep")), Compare.CompareOp.EQ));
+		BindingSetAssignment owner = new BindingSetAssignment();
+		owner.setBindingNames(Set.of("g"));
+		MapBindingSet row = new MapBindingSet();
+		row.addBinding("g", VF.createIRI("urn:scope:absentGraph"));
+		owner.setBindingSets(List.of(row));
+		Envelope envelope = analyzer(new QueryRoot(new Join(owner, filter))).analyze(filter);
+		assertThat(singletonSites(envelope)).contains(scoped, statement);
+	}
+
+	@Test
+	void scopedJoinLocalFilterAlternativesKeepTheIndependentResult() {
+		IRI subject = VF.createIRI("urn:scope:s");
+		IRI predicate = VF.createIRI("urn:scope:p");
+		IRI graph = VF.createIRI("urn:scope:absentGraph");
+		Value object = VF.createLiteral("keep");
+		StatementPattern statement = new StatementPattern(StatementPattern.Scope.DEFAULT_CONTEXTS,
+				Var.of("subject", subject, true, true), Var.of("predicate", predicate, true, true), Var.of("o"),
+				Var.of("g"));
+		Join scoped = new Join(statement, values("z", 3));
+		scoped.setVariableScopeChange(true);
+		Filter filter = new Filter(scoped,
+				new Compare(new Str(Var.of("o")), new ValueConstant(object), Compare.CompareOp.EQ));
+		BindingSetAssignment owner = new BindingSetAssignment();
+		owner.setBindingNames(Set.of("g"));
+		MapBindingSet row = new MapBindingSet();
+		row.addBinding("g", graph);
+		owner.setBindingSets(List.of(row));
+		QueryRoot root = new QueryRoot(new Join(owner, filter));
+		Envelope envelope = analyzer(root).analyze(filter);
+		TripleSource source = oneStatementSource(VF.createStatement(subject, predicate, object));
+		MapBindingSet expected = new MapBindingSet();
+		expected.addBinding("g", graph);
+		expected.addBinding("o", object);
+		expected.addBinding("z", VF.createLiteral(3));
+		assertThat(evaluate(root.clone(), source)).containsExactly(expected);
+		assertThat(singletonSites(envelope)).contains(statement);
+		assertEveryPlacementPreservesBag(root, filter, envelope, source);
+	}
+
+	@Test
+	void scopedJoinDoesNotMoveAConditionThatNeedsItsOuterOwner() {
+		IRI subject = VF.createIRI("urn:scope:s");
+		IRI predicate = VF.createIRI("urn:scope:p");
+		IRI graph = VF.createIRI("urn:scope:absentGraph");
+		Value object = VF.createLiteral("keep");
+		StatementPattern statement = new StatementPattern(StatementPattern.Scope.DEFAULT_CONTEXTS,
+				Var.of("subject", subject, true, true), Var.of("predicate", predicate, true, true), Var.of("o"),
+				Var.of("g"));
+		Join scoped = new Join(statement, values("z", 3));
+		scoped.setVariableScopeChange(true);
+		Filter filter = new Filter(scoped, new Bound(Var.of("g")));
+		BindingSetAssignment owner = new BindingSetAssignment();
+		owner.setBindingNames(Set.of("g"));
+		MapBindingSet row = new MapBindingSet();
+		row.addBinding("g", graph);
+		owner.setBindingSets(List.of(row));
+		QueryRoot root = new QueryRoot(new Join(owner, filter));
+		Envelope envelope = analyzer(root).analyze(filter);
+		TripleSource source = oneStatementSource(VF.createStatement(subject, predicate, object));
+		MapBindingSet expected = new MapBindingSet();
+		expected.addBinding("g", graph);
+		expected.addBinding("o", object);
+		expected.addBinding("z", VF.createLiteral(3));
+		assertThat(evaluate(root.clone(), source)).containsExactly(expected);
+		assertThat(singletonSites(envelope)).doesNotContain(statement);
+		assertEveryPlacementPreservesBag(root, filter, envelope, source);
+	}
+
+	@Test
 	void volatileConditionsAndEffectsDoNotAcquireAlternativePlacements() {
 		BindingSetAssignment input = values("x", 1, 2);
 		Filter filter = new Filter(input, new FunctionCall("urn:unknown-effect"));
@@ -931,7 +1279,12 @@ class FilterPlacementAnalyzerTest {
 	}
 
 	private static void assertEveryPlacementPreservesBag(QueryRoot root, Filter logicalFilter, Envelope envelope) {
-		List<BindingSet> expected = evaluate(root.clone());
+		assertEveryPlacementPreservesBag(root, logicalFilter, envelope, emptyTripleSource());
+	}
+
+	private static void assertEveryPlacementPreservesBag(QueryRoot root, Filter logicalFilter, Envelope envelope,
+			TripleSource source) {
+		List<BindingSet> expected = evaluate(root.clone(), source);
 		for (Alternative alternative : envelope.alternatives()) {
 			QueryRoot placed = root.clone();
 			List<QueryModelNode> original = nodes(root);
@@ -941,12 +1294,28 @@ class FilterPlacementAnalyzerTest {
 				clones.put(original.get(i), copied.get(i));
 			}
 			Filter old = (Filter) clones.get(logicalFilter);
-			QueryModelNormalizerOptimizer.replacePreservingScope(old, old.getArg());
+			TupleExpr oldArgument = old.getArg();
+			boolean sourceScope = TupleExprs.isVariableScopeChange(logicalFilter);
+			boolean argumentScope = TupleExprs.isVariableScopeChange(logicalFilter.getArg());
+			assertThat(TupleExprs.isVariableScopeChange(old)).isEqualTo(sourceScope);
+			assertThat(TupleExprs.isVariableScopeChange(oldArgument)).isEqualTo(argumentScope);
+			if (alternative.cut().size() == 1 && alternative.cut().getFirst().argument() == logicalFilter.getArg()) {
+				assertThat(evaluate(placed, source)).as("original placement %s", arguments(alternative))
+						.containsExactlyInAnyOrderElementsOf(expected);
+				continue;
+			}
+			QueryModelNormalizerOptimizer.replacePreservingScope(old, oldArgument);
+			if (sourceScope) {
+				assertThat(TupleExprs.isVariableScopeChange(oldArgument)).isTrue();
+			} else if (argumentScope) {
+				assertThat(oldArgument.getParentNode()).isInstanceOf(Extension.class);
+				assertThat(TupleExprs.isVariableScopeChange((TupleExpr) oldArgument.getParentNode())).isFalse();
+			}
 			for (FilterPlacementAnalyzer.Site site : alternative.cut()) {
 				TupleExpr child = (TupleExpr) clones.get(site.argument());
 				Filter replacement = new Filter();
 				replacement.setCondition(logicalFilter.getCondition().clone());
-				replacement.setVariableScopeChange(TupleExprs.isVariableScopeChange(child));
+				replacement.setVariableScopeChange(false);
 				replacement.setConditionBindingScope(site.retainsAllBindings() ? ConditionBindingScope.ALL
 						: ConditionBindingScope.retain(site.retainedBindingNames()));
 				if (child.getParentNode() == null) {
@@ -956,7 +1325,7 @@ class FilterPlacementAnalyzerTest {
 				child.replaceWith(replacement);
 				replacement.setArg(child);
 			}
-			assertThat(evaluate(placed)).as("placement %s", arguments(alternative))
+			assertThat(evaluate(placed, source)).as("placement %s", arguments(alternative))
 					.containsExactlyInAnyOrderElementsOf(expected);
 		}
 	}
@@ -974,7 +1343,11 @@ class FilterPlacementAnalyzerTest {
 	}
 
 	private static List<BindingSet> evaluate(TupleExpr root) {
-		DefaultEvaluationStrategy strategy = new DefaultEvaluationStrategy(emptyTripleSource(), null);
+		return evaluate(root, emptyTripleSource());
+	}
+
+	private static List<BindingSet> evaluate(TupleExpr root, TripleSource source) {
+		DefaultEvaluationStrategy strategy = new DefaultEvaluationStrategy(source, null);
 		List<BindingSet> rows = new ArrayList<>();
 		try (CloseableIteration<BindingSet> result = strategy.evaluate(root, EmptyBindingSet.getInstance())) {
 			while (result.hasNext()) {
@@ -982,6 +1355,27 @@ class FilterPlacementAnalyzerTest {
 			}
 		}
 		return rows;
+	}
+
+	private static TripleSource oneStatementSource(Statement statement) {
+		return new TripleSource() {
+			@Override
+			public CloseableIteration<? extends Statement> getStatements(Resource subject, IRI predicate, Value object,
+					Resource... contexts) {
+				boolean matches = (subject == null || subject.equals(statement.getSubject()))
+						&& (predicate == null || predicate.equals(statement.getPredicate()))
+						&& (object == null || object.equals(statement.getObject()))
+						&& (contexts.length == 0 || Arrays.stream(contexts)
+								.anyMatch(context -> Objects.equals(context, statement.getContext())));
+				return new CloseableIteratorIteration<>(
+						(matches ? List.of(statement) : List.<Statement>of()).iterator());
+			}
+
+			@Override
+			public ValueFactory getValueFactory() {
+				return VF;
+			}
+		};
 	}
 
 	private static TripleSource emptyTripleSource() {

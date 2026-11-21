@@ -31,10 +31,19 @@ import org.eclipse.rdf4j.common.annotation.Experimental;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.algebra.Compare;
+import org.eclipse.rdf4j.query.algebra.Exists;
 import org.eclipse.rdf4j.query.algebra.Filter;
+import org.eclipse.rdf4j.query.algebra.Filter.ConditionBindingScope;
+import org.eclipse.rdf4j.query.algebra.TripleRef;
+import org.eclipse.rdf4j.query.algebra.ValueExpr;
+import org.eclipse.rdf4j.query.algebra.evaluation.NativeTripleTermSource;
+import org.eclipse.rdf4j.query.algebra.evaluation.impl.BindingFrameBindings;
+import org.eclipse.rdf4j.query.algebra.evaluation.impl.BindingSetQueryEvaluationContext;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.EvaluationStatistics;
+import org.eclipse.rdf4j.query.algebra.evaluation.impl.QueryEvaluationContext;
 import org.eclipse.rdf4j.query.algebra.evaluation.util.QueryEvaluationUtil;
 import org.eclipse.rdf4j.query.algebra.evaluation.util.QueryEvaluationUtility;
+import org.eclipse.rdf4j.query.algebra.helpers.AbstractQueryModelVisitor;
 import org.eclipse.rdf4j.sail.SailException;
 import org.eclipse.rdf4j.sail.lmdb.RecordIterator;
 import org.eclipse.rdf4j.sail.lmdb.TripleIndex;
@@ -119,6 +128,76 @@ interface NativeBooleanFilter {
 	}
 }
 
+/** Retains the complete read mask and original owner proof through native plan copies. */
+final class CertifiedNativeBooleanFilter implements NativeBooleanFilter {
+	final NativeBooleanFilter delegate;
+	private final long reads;
+	private final long ownerInputs;
+
+	CertifiedNativeBooleanFilter(NativeBooleanFilter delegate, long reads, long ownerInputs) {
+		this.delegate = delegate;
+		this.reads = reads;
+		this.ownerInputs = ownerInputs;
+	}
+
+	@Override
+	public NativePredicateCapabilities capabilities() {
+		return delegate.capabilities().withCertifiedInputs(reads, ownerInputs);
+	}
+
+	@Override
+	public boolean accept(RowState row) {
+		return delegate.accept(row);
+	}
+
+	@Override
+	public int selectBatch(NativeBatch batch, int[] selection, int count, RowState scratch) {
+		return delegate.selectBatch(batch, selection, count, scratch);
+	}
+
+	@Override
+	public long batchReadMask() {
+		return delegate.batchReadMask();
+	}
+
+	@Override
+	public KernelTermKindProof pageProof(int[] slots) {
+		return delegate.pageProof(slots);
+	}
+
+	@Override
+	public void explainStrategies() {
+		delegate.explainStrategies();
+	}
+
+	@Override
+	public boolean variablePredicateExists() {
+		return delegate.variablePredicateExists();
+	}
+
+	@Override
+	public boolean parallelWorkerForkable() {
+		return delegate.parallelWorkerForkable();
+	}
+
+	@Override
+	public NativeBooleanFilter forkForParallelWorker() {
+		NativeBooleanFilter forked = delegate.forkForParallelWorker();
+		return forked == null ? null : new CertifiedNativeBooleanFilter(forked, reads, ownerInputs);
+	}
+
+	@Override
+	public NativeBooleanFilter forkForParallelWorker(NativeScalarPlan.WorkerContext context) {
+		NativeBooleanFilter forked = delegate.forkForParallelWorker(context);
+		return forked == null ? null : new CertifiedNativeBooleanFilter(forked, reads, ownerInputs);
+	}
+
+	@Override
+	public void close() {
+		delegate.close();
+	}
+}
+
 /** A structural proof attached to an existing specialized predicate without changing its fast execution path. */
 final class PlannedNativeBooleanFilter implements NativeBooleanFilter {
 	final NativeBooleanFilter delegate;
@@ -187,6 +266,11 @@ final class PlannedNativeBooleanFilter implements NativeBooleanFilter {
  */
 @Experimental
 final class NativeValueOutcomeBooleanFilter implements NativeBooleanFilter {
+	@FunctionalInterface
+	interface WorkerFactory {
+		NativeBindingSetValueEvaluator bind(NativeScalarPlan.WorkerContext worker);
+	}
+
 	/** The shared evaluator (compile-once mode); null in per-evaluation mode. */
 	private final NativeBindingSetValueEvaluator evaluator;
 	private final long readMask;
@@ -194,14 +278,21 @@ final class NativeValueOutcomeBooleanFilter implements NativeBooleanFilter {
 	private final GenericSubplanDescriptor descriptor;
 	private final Function<NativeExecutionContext, NativeBindingSetValueEvaluator> perEvaluationCompile;
 	private final Supplier<NativeBindingSetValueEvaluator> sharedFallbackCompile;
+	private final WorkerFactory workerFactory;
 	private volatile NativeBindingSetValueEvaluator sharedFallback;
 
 	NativeValueOutcomeBooleanFilter(NativeBindingSetValueEvaluator evaluator, long readMask) {
+		this(evaluator, readMask, null);
+	}
+
+	NativeValueOutcomeBooleanFilter(NativeBindingSetValueEvaluator evaluator, long readMask,
+			WorkerFactory workerFactory) {
 		this.evaluator = evaluator;
 		this.readMask = readMask;
 		this.descriptor = null;
 		this.perEvaluationCompile = null;
 		this.sharedFallbackCompile = null;
+		this.workerFactory = workerFactory;
 	}
 
 	/**
@@ -218,6 +309,7 @@ final class NativeValueOutcomeBooleanFilter implements NativeBooleanFilter {
 		this.descriptor = descriptor;
 		this.perEvaluationCompile = perEvaluationCompile;
 		this.sharedFallbackCompile = sharedFallbackCompile;
+		this.workerFactory = null;
 	}
 
 	@Override
@@ -260,7 +352,19 @@ final class NativeValueOutcomeBooleanFilter implements NativeBooleanFilter {
 
 	@Override
 	public NativePredicateCapabilities capabilities() {
-		return NativePredicateCapabilities.semantic(readMask);
+		return workerFactory == null ? NativePredicateCapabilities.semantic(readMask)
+				: NativePredicateCapabilities.snapshot(readMask, true, true);
+	}
+
+	@Override
+	public boolean parallelWorkerForkable() {
+		return workerFactory != null;
+	}
+
+	@Override
+	public NativeBooleanFilter forkForParallelWorker(NativeScalarPlan.WorkerContext worker) {
+		return worker == null || workerFactory == null ? null
+				: new NativeValueOutcomeBooleanFilter(workerFactory.bind(worker), readMask, workerFactory);
 	}
 }
 
@@ -558,6 +662,8 @@ final class StatementPatternExistsFilter implements NativeBooleanFilter {
 	final Term c;
 	final ContextConstraint contexts;
 	final boolean namedContextScope;
+	private final SemanticRecipe semanticRecipe;
+	final PatternPlan contextPattern;
 	/**
 	 * Slots whose current values determine the outcome; the terms are explicit so this is exact. Correlated probes
 	 * repeat the same slot values constantly (per outer row of a join), so the LMDB lookups are memoized on those
@@ -567,12 +673,25 @@ final class StatementPatternExistsFilter implements NativeBooleanFilter {
 
 	StatementPatternExistsFilter(NativeLmdbQuerySource source, Term s, Term p, Term o, Term c,
 			ContextConstraint contexts, boolean namedContextScope) {
+		this(source, s, p, o, c, contexts, namedContextScope, null);
+	}
+
+	StatementPatternExistsFilter(NativeLmdbQuerySource source, Term s, Term p, Term o, Term c,
+			ContextConstraint contexts, boolean namedContextScope, SemanticRecipe semanticRecipe) {
+		this(source, s, p, o, c, contexts, namedContextScope, semanticRecipe, null);
+	}
+
+	StatementPatternExistsFilter(NativeLmdbQuerySource source, Term s, Term p, Term o, Term c,
+			ContextConstraint contexts, boolean namedContextScope, SemanticRecipe semanticRecipe,
+			PatternPlan contextPattern) {
 		this.s = s;
 		this.p = p;
 		this.o = o;
 		this.c = c;
 		this.contexts = contexts;
 		this.namedContextScope = namedContextScope;
+		this.semanticRecipe = semanticRecipe;
+		this.contextPattern = contextPattern;
 		int[] varying = new int[4];
 		int n = 0;
 		for (Term term : new Term[] { s, p, o, c }) {
@@ -594,19 +713,23 @@ final class StatementPatternExistsFilter implements NativeBooleanFilter {
 
 	@Override
 	public boolean parallelWorkerForkable() {
-		return capabilities().workerBindable();
+		return capabilities().workerBindable() && (semanticRecipe == null || semanticRecipe.workerForkable());
 	}
 
 	@Override
 	public NativeBooleanFilter forkForParallelWorker() {
-		// The recipe holds terms/context constraints only; mutable probes are keyed by this new identity in the
-		// worker's evaluation context and resolve exclusively through the accepting row's sibling source.
-		return new StatementPatternExistsFilter(null, s, p, o, c, contexts, namedContextScope);
+		if (!parallelWorkerForkable()) {
+			return null;
+		}
+		return new StatementPatternExistsFilter(null, s, p, o, c, contexts, namedContextScope,
+				semanticRecipe == null ? null : semanticRecipe.forWorker(null), contextPattern);
 	}
 
 	@Override
 	public NativeBooleanFilter forkForParallelWorker(NativeScalarPlan.WorkerContext context) {
-		return context == null ? null : forkForParallelWorker();
+		return context == null || !parallelWorkerForkable() ? null
+				: new StatementPatternExistsFilter(null, s, p, o, c, contexts, namedContextScope,
+						semanticRecipe == null ? null : semanticRecipe.forWorker(context), contextPattern);
 	}
 
 	@Override
@@ -628,6 +751,12 @@ final class StatementPatternExistsFilter implements NativeBooleanFilter {
 	}
 
 	private boolean accept(RowState row, State state) {
+		if (contextPattern != null && contextPattern.effectivePattern(row, row.boundMask()) != contextPattern) {
+			return semanticRecipe.evaluate(row);
+		}
+		if (semanticRecipe != null && semanticRecipe.needsEvaluation(row, false)) {
+			return semanticRecipe.evaluate(row);
+		}
 		if (hasUnboundMarker(row)) {
 			return acceptUnboundMarker(row, state);
 		}
@@ -715,6 +844,9 @@ final class StatementPatternExistsFilter implements NativeBooleanFilter {
 		NativeExecutionContext execution = executionContext(scratch);
 		State state = execution == null ? new State() : execution.nativeState(this, State::new);
 		try {
+			if (hasWithheldInput(scratch) || hasContextAlias(batch, sel, n, scratch)) {
+				return selectBatchScalar(batch, sel, n, scratch, state, false);
+			}
 			int wildcard = state.selectWildcard(batch, sel, n, scratch, false);
 			if (wildcard >= 0) {
 				return wildcard;
@@ -745,6 +877,9 @@ final class StatementPatternExistsFilter implements NativeBooleanFilter {
 		NativeExecutionContext execution = executionContext(scratch);
 		State state = execution == null ? new State() : execution.nativeState(this, State::new);
 		try {
+			if (hasWithheldInput(scratch) || hasContextAlias(batch, sel, n, scratch)) {
+				return selectBatchScalar(batch, sel, n, scratch, state, true);
+			}
 			int wildcard = state.selectWildcard(batch, sel, n, scratch, true);
 			if (wildcard >= 0) {
 				return wildcard;
@@ -769,6 +904,150 @@ final class StatementPatternExistsFilter implements NativeBooleanFilter {
 			}
 		}
 		return accepted;
+	}
+
+	private boolean hasContextAlias(NativeBatch batch, int[] selection, int count, RowState row) {
+		if (contextPattern == null || contextPattern.dynamicContext == null) {
+			return false;
+		}
+		int slot = contextPattern.dynamicContext.slot;
+		for (int i = 0; i < count; i++) {
+			if (contextPattern.isContextAlias(row, batch.get(slot, selection[i]))) {
+				return true;
+			}
+		}
+		return false;
+	}
+
+	/** A lowering that bypasses this predicate must preserve every retained invocation parameter. */
+	boolean hasWithheldInput(RowState row) {
+		return semanticRecipe != null && semanticRecipe.hasWithheldInput(row.base);
+	}
+
+	/** Immutable semantic inputs; each filter/worker lazily owns its own prepared evaluator. */
+	static final class SemanticRecipe {
+		private final Exists expression;
+		private final ConditionBindingScope scope;
+		private final Set<String> reads;
+		private final LmdbNativeEvaluationStrategy strategy;
+		private final QueryEvaluationContext context;
+		private final boolean conditionBoundary;
+		private final boolean workerForkable;
+		private final boolean bindWorkerAtFirstUse;
+		private volatile NativeBindingSetValueEvaluator evaluator;
+
+		SemanticRecipe(Exists expression, ConditionBindingScope scope, Set<String> reads,
+				LmdbNativeEvaluationStrategy strategy, QueryEvaluationContext context, boolean conditionBoundary) {
+			this(expression, scope, reads, strategy, context, conditionBoundary, workerForkable(expression, strategy),
+					false);
+		}
+
+		private SemanticRecipe(Exists expression, ConditionBindingScope scope, Set<String> reads,
+				LmdbNativeEvaluationStrategy strategy, QueryEvaluationContext context, boolean conditionBoundary,
+				boolean workerForkable, boolean bindWorkerAtFirstUse) {
+			this.expression = expression;
+			this.scope = scope;
+			this.reads = reads;
+			this.strategy = strategy;
+			this.context = context;
+			this.conditionBoundary = conditionBoundary;
+			this.workerForkable = workerForkable;
+			this.bindWorkerAtFirstUse = bindWorkerAtFirstUse;
+		}
+
+		static boolean workerForkable(ValueExpr expression, LmdbNativeEvaluationStrategy strategy) {
+			if (!(strategy.graphTripleSource() instanceof NativeTripleTermSource)) {
+				return true;
+			}
+			boolean[] tripleRef = { false };
+			expression.visit(new AbstractQueryModelVisitor<RuntimeException>() {
+				@Override
+				public void meet(TripleRef ref) {
+					tripleRef[0] = true;
+				}
+			});
+			return !tripleRef[0];
+		}
+
+		boolean workerForkable() {
+			return workerForkable;
+		}
+
+		SemanticRecipe copy() {
+			return new SemanticRecipe(expression, scope, reads, strategy, context, conditionBoundary, workerForkable,
+					bindWorkerAtFirstUse);
+		}
+
+		SemanticRecipe forWorker(NativeScalarPlan.WorkerContext worker) {
+			return worker == null
+					? new SemanticRecipe(expression, scope, reads, strategy, context, conditionBoundary, workerForkable,
+							true)
+					: new SemanticRecipe(expression, scope, reads, strategy.forWorker(worker.source()),
+							worker.evaluationContext() == null ? context : worker.evaluationContext(),
+							conditionBoundary,
+							workerForkable, false);
+		}
+
+		boolean hasWithheldInput(BindingSet bindings) {
+			if (!BindingFrameBindings.hasFrame(bindings)) {
+				return false;
+			}
+			if (reads == null) {
+				return BindingFrameBindings.materializeWithheldInputs(bindings) != bindings;
+			}
+			for (String name : reads) {
+				if (BindingFrameBindings.withheldInput(bindings, name) != null) {
+					return true;
+				}
+			}
+			return false;
+		}
+
+		boolean needsEvaluation(RowState row, boolean probesMayMatter) {
+			if (probesMayMatter && conditionBoundary && BindingFrameBindings.hasVisibleProbes(row.base)) {
+				return true;
+			}
+			if (!hasWithheldInput(row.base)) {
+				return false;
+			}
+			if (reads == null) {
+				return BindingFrameBindings.materializeWithheldInputs(row.view) != row.view;
+			}
+			for (String name : reads) {
+				if (row.view.getValue(name) == null && BindingFrameBindings.withheldInput(row.base, name) != null) {
+					return true;
+				}
+			}
+			return false;
+		}
+
+		boolean hasSensitiveInput(RowState row) {
+			return hasWithheldInput(row.base)
+					|| conditionBoundary && BindingFrameBindings.hasVisibleProbes(row.base);
+		}
+
+		boolean evaluate(RowState row) {
+			NativeBindingSetValueEvaluator prepared = evaluator;
+			if (prepared == null) {
+				synchronized (this) {
+					prepared = evaluator;
+					if (prepared == null) {
+						LmdbNativeEvaluationStrategy compiler = bindWorkerAtFirstUse
+								? strategy.forWorker(row.source)
+								: strategy;
+						prepared = conditionBoundary
+								? LmdbNativeAggregateFilterCompiler.compileConditionValue(compiler.genericOnlyView(),
+										expression.clone(), new BindingSetQueryEvaluationContext(context), scope)
+								: LmdbNativeAggregateFilterCompiler.compileProjectedValue(compiler.genericOnlyView(),
+										expression.clone(), new BindingSetQueryEvaluationContext(context), scope);
+						evaluator = prepared;
+					}
+				}
+			}
+			NativeExecutionContext execution = executionContext(row);
+			NativeValueOutcome outcome = prepared.evaluate(row.view, execution);
+			return outcome.isBound() && QueryEvaluationUtility.getEffectiveBooleanValue(outcome.value()).orElse(false);
+		}
 	}
 
 	private boolean acceptPrepared(NativeBatch batch, int physicalRow, int preparedIndex, RowState row, State state) {
@@ -935,8 +1214,9 @@ final class StatementPatternExistsFilter implements NativeBooleanFilter {
 	}
 
 	private final class State implements AutoCloseable {
-		final PatternMembershipProbe membershipProbe = PatternMembershipProbe.tryCreate(s, p, o, c, contexts,
-				namedContextScope);
+		final PatternMembershipProbe membershipProbe = contextPattern == null
+				? PatternMembershipProbe.tryCreate(s, p, o, c, contexts, namedContextScope)
+				: PatternMembershipProbe.tryCreate(contextPattern);
 		final AdjacencyIntersectionProbe adjacencyProbe = AdjacencyIntersectionProbe.tryCreate(s, p, o, c, contexts,
 				namedContextScope);
 		KeyedMatches memo;
@@ -982,6 +1262,7 @@ final class ExistsFilter implements NativeBooleanFilter {
 	private final NativeWorkerPlanBinder workerBinding;
 	/** Null retains the caller's complete row; otherwise this witness owns an exact projected native input frame. */
 	final Set<String> retainedBindingNames;
+	final StatementPatternExistsFilter.SemanticRecipe semanticRecipe;
 	/**
 	 * When the subplan's outcome depends only on the current values of a known slot set (see {@link #memoReadMask}),
 	 * the per-row existence probe is memoized on those values instead of reopening the whole subplan cursor tree per
@@ -989,20 +1270,37 @@ final class ExistsFilter implements NativeBooleanFilter {
 	 * be evaluated repeatedly or concurrently across transaction snapshots.
 	 */
 	final int[] memoSlots;
+	private final long dynamicContextMask;
 
 	ExistsFilter(SlotPlan subPlan) {
 		this(subPlan, null);
 	}
 
 	ExistsFilter(SlotPlan subPlan, Set<String> retainedBindingNames) {
-		this(subPlan, retainedBindingNames, null);
+		this(subPlan, retainedBindingNames, null, null);
 	}
 
-	private ExistsFilter(SlotPlan subPlan, Set<String> retainedBindingNames, NativeWorkerPlanBinder workerBinding) {
+	ExistsFilter(SlotPlan subPlan, Set<String> retainedBindingNames,
+			StatementPatternExistsFilter.SemanticRecipe semanticRecipe) {
+		this(subPlan, retainedBindingNames, semanticRecipe, null);
+	}
+
+	private ExistsFilter(SlotPlan subPlan, Set<String> retainedBindingNames,
+			StatementPatternExistsFilter.SemanticRecipe semanticRecipe, NativeWorkerPlanBinder workerBinding) {
 		this.subPlan = subPlan;
 		this.retainedBindingNames = retainedBindingNames == null ? null : Set.copyOf(retainedBindingNames);
+		this.semanticRecipe = semanticRecipe;
 		this.workerBinding = workerBinding;
 		this.existsPlan = NativeExistsPatternCursor.plan(subPlan);
+		long contexts = 0L;
+		if (existsPlan != null) {
+			for (PatternPlan pattern : existsPlan.patterns) {
+				if (pattern.dynamicContext != null) {
+					contexts |= 1L << pattern.dynamicContext.slot;
+				}
+			}
+		}
+		this.dynamicContextMask = contexts;
 		long readMask = memoReadMask(subPlan);
 		this.memoSlots = readMask < 0L ? null : slotsOf(readMask);
 	}
@@ -1016,7 +1314,8 @@ final class ExistsFilter implements NativeBooleanFilter {
 	@Override
 	public boolean parallelWorkerForkable() {
 		NativePredicateCapabilities proof = capabilities();
-		return proof.replaySafe() && proof.workerBindable();
+		return proof.replaySafe() && proof.workerBindable()
+				&& (semanticRecipe == null || semanticRecipe.workerForkable());
 	}
 
 	@Override
@@ -1026,7 +1325,8 @@ final class ExistsFilter implements NativeBooleanFilter {
 		}
 		NativeWorkerPlanBinder binder = new NativeWorkerPlanBinder(context);
 		try {
-			return new ExistsFilter(binder.bind(subPlan), retainedBindingNames, binder);
+			return new ExistsFilter(binder.bind(subPlan), retainedBindingNames,
+					semanticRecipe == null ? null : semanticRecipe.forWorker(context), binder);
 		} catch (IOException failure) {
 			SailException problem = new SailException(failure);
 			binder.abort(problem);
@@ -1058,6 +1358,12 @@ final class ExistsFilter implements NativeBooleanFilter {
 	}
 
 	private boolean accept(RowState row, State state) {
+		if (semanticRecipe != null && semanticRecipe.needsEvaluation(row, true)) {
+			return semanticRecipe.evaluate(row);
+		}
+		if (hasContextChoice(row)) {
+			return exists(row);
+		}
 		if (state.adjacencyProbe != null) {
 			return acceptWithAdjacency(row, state);
 		}
@@ -1123,7 +1429,8 @@ final class ExistsFilter implements NativeBooleanFilter {
 
 	@Override
 	public int selectBatch(NativeBatch batch, int[] sel, int n, RowState scratch) {
-		if (retainedBindingNames != null || memoSlots == null || memoSlots.length < 2 || memoSlots.length > 4) {
+		if (hasSensitiveInput(scratch) || retainedBindingNames != null || memoSlots == null
+				|| memoSlots.length < 2 || memoSlots.length > 4 || hasContextAlias(batch, sel, n, scratch)) {
 			return NativeBooleanFilter.super.selectBatch(batch, sel, n, scratch);
 		}
 		NativeExecutionContext execution = executionContext(scratch);
@@ -1146,6 +1453,36 @@ final class ExistsFilter implements NativeBooleanFilter {
 				state.close();
 			}
 		}
+	}
+
+	private boolean hasContextChoice(RowState row) {
+		if ((row.boundMask() & dynamicContextMask) == 0L) {
+			return false;
+		}
+		for (PatternPlan pattern : existsPlan.patterns) {
+			if (pattern.effectivePattern(row, row.boundMask()) != pattern) {
+				return true;
+			}
+		}
+		return false;
+	}
+
+	private boolean hasContextAlias(NativeBatch batch, int[] selection, int count, RowState row) {
+		if (dynamicContextMask == 0L) {
+			return false;
+		}
+		for (PatternPlan pattern : existsPlan.patterns) {
+			if (pattern.dynamicContext == null) {
+				continue;
+			}
+			int slot = pattern.dynamicContext.slot;
+			for (int i = 0; i < count; i++) {
+				if (pattern.isContextAlias(row, batch.get(slot, selection[i]))) {
+					return true;
+				}
+			}
+		}
+		return false;
 	}
 
 	private boolean acceptPrepared(NativeBatch batch, int physicalRow, int preparedIndex, RowState row, State state) {
@@ -1212,6 +1549,10 @@ final class ExistsFilter implements NativeBooleanFilter {
 			}
 		}
 		return existsInScope(row);
+	}
+
+	boolean hasSensitiveInput(RowState row) {
+		return semanticRecipe != null && semanticRecipe.hasSensitiveInput(row);
 	}
 
 	private boolean existsInScope(RowState row) {

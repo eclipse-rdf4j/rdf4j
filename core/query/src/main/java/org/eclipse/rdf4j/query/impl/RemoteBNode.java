@@ -451,7 +451,7 @@ public final class RemoteBNode extends SimpleBNode {
 		if (original instanceof TripleTerm originalTriple && captured instanceof TripleTerm capturedTriple) {
 			return preserveTripleProvenance(originalTriple, capturedTriple);
 		}
-		if (!(captured instanceof TripleTerm) && containsRemoteIdentity(original)) {
+		if (!(captured instanceof TripleTerm) && containsProtectedIdentity(original)) {
 			throw new QueryEvaluationException("Unsupported blank-node identity: value copy lost nested provenance");
 		}
 		return captured;
@@ -507,10 +507,16 @@ public final class RemoteBNode extends SimpleBNode {
 				active.remove(frame.key);
 				continue;
 			}
+			if (frame.original instanceof GeneratedBNode || frame.original instanceof RepositoryBNode) {
+				completed.put(frame.key, preserveProvenance(frame.original, frame.captured));
+				pending.pop();
+				active.remove(frame.key);
+				continue;
+			}
 
 			if (!(frame.original instanceof TripleTerm originalTriple)
 					|| !(frame.captured instanceof TripleTerm capturedTriple)) {
-				if (!(frame.captured instanceof TripleTerm) && containsRemoteIdentity(frame.original)) {
+				if (!(frame.captured instanceof TripleTerm) && containsProtectedIdentity(frame.original)) {
 					throw new QueryEvaluationException(
 							"Unsupported blank-node identity: value copy lost nested provenance");
 				}
@@ -636,6 +642,30 @@ public final class RemoteBNode extends SimpleBNode {
 		while (!pending.isEmpty()) {
 			Value current = pending.pop();
 			if (current instanceof RemoteBNode) {
+				return true;
+			}
+			if (current instanceof TripleTerm triple && visited.add(current)) {
+				pending.push(triple.getSubject());
+				pending.push(triple.getObject());
+			}
+		}
+		return false;
+	}
+
+	private static boolean containsProtectedIdentity(Value value) {
+		if (value instanceof RemoteBNode || value instanceof RepositoryBNode || value instanceof GeneratedBNode) {
+			return true;
+		}
+		if (!(value instanceof TripleTerm)) {
+			return false;
+		}
+		Set<Value> visited = Collections.newSetFromMap(new IdentityHashMap<>());
+		ArrayDeque<Value> pending = new ArrayDeque<>();
+		pending.push(value);
+		while (!pending.isEmpty()) {
+			Value current = pending.pop();
+			if (current instanceof RemoteBNode || current instanceof RepositoryBNode
+					|| current instanceof GeneratedBNode) {
 				return true;
 			}
 			if (current instanceof TripleTerm triple && visited.add(current)) {

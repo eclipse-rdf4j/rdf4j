@@ -15,6 +15,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.junit.jupiter.api.DynamicTest.dynamicTest;
 
 import java.io.InputStream;
+import java.io.StringReader;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -25,9 +26,11 @@ import java.util.stream.Stream;
 
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
+import org.eclipse.rdf4j.model.vocabulary.XSD;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.QueryLanguage;
 import org.eclipse.rdf4j.query.TupleQueryResult;
+import org.eclipse.rdf4j.query.impl.MapBindingSet;
 import org.eclipse.rdf4j.query.resultio.QueryResultIO;
 import org.eclipse.rdf4j.query.resultio.TupleQueryResultFormat;
 import org.eclipse.rdf4j.query.resultio.helpers.QueryResultCollector;
@@ -35,6 +38,7 @@ import org.eclipse.rdf4j.repository.sail.SailRepository;
 import org.eclipse.rdf4j.rio.RDFFormat;
 import org.eclipse.rdf4j.sail.Sail;
 import org.junit.jupiter.api.DynamicTest;
+import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.TestFactory;
 import org.junit.jupiter.api.io.TempDir;
 
@@ -48,11 +52,115 @@ public abstract class ScopeSafetyStoreTest {
 
 	protected abstract Sail createSail(Path dataDirectory);
 
+	@Test
+	public void outerFilterAndGroupedSubselectKeepTheirOwnInputs() throws Exception {
+		String data = "@prefix ex: <urn:subselect:> . "
+				+ "@prefix dcat: <http://www.w3.org/ns/dcat#> . "
+				+ "@prefix dct: <http://purl.org/dc/terms/> . "
+				+ "ex:b a ex:Catalog; dcat:dataset ex:a . "
+				+ "ex:a a ex:Dataset; dcat:distribution ex:d1, ex:d2, ex:d3; "
+				+ "dct:language ex:en; dct:identifier 'id' .";
+		String query = "PREFIX dcat: <http://www.w3.org/ns/dcat#> PREFIX dct: <http://purl.org/dc/terms/> "
+				+ "SELECT ?type1 ?type2 ?language2 ?mbox ?count ?identifier2 WHERE { "
+				+ "?a a ?type2 . ?b a ?type1; dcat:dataset ?a . "
+				+ "?a dcat:distribution ?mbox; dct:language ?language; dct:identifier ?identifier . "
+				+ "FILTER(?type1 != ?type2) BIND(?a AS ?c) "
+				+ "{ SELECT DISTINCT ?c (COUNT(?dist) AS ?count) ?language2 WHERE { "
+				+ "?c a ?type2; dcat:distribution ?dist; dct:language ?language2 . } "
+				+ "GROUP BY ?c ?language2 HAVING(?count > 2) } } "
+				+ "GROUP BY ?type1 ?type2 ?language2 ?mbox ?count ?identifier2";
+		var vf = SimpleValueFactory.getInstance();
+		List<BindingSet> expected = new ArrayList<>();
+		for (String name : List.of("d1", "d2", "d3")) {
+			expected.add(row("type1", vf.createIRI("urn:subselect:Catalog"), "type2",
+					vf.createIRI("urn:subselect:Dataset"), "language2", vf.createIRI("urn:subselect:en"),
+					"mbox", vf.createIRI("urn:subselect:" + name), "count", vf.createLiteral("3", XSD.INTEGER)));
+		}
+		assertThat(evaluateWithData("grouped-subselect", data, query)).containsExactlyInAnyOrderElementsOf(expected);
+	}
+
+	@Test
+	public void unionAliasJoinKeepsItsIndependentResultBag() throws Exception {
+		String data = "<urn:union:hub> <urn:union:source-predicate:0> 'keep'; <urn:rating> 'keep' . "
+				+ "<urn:union:statement-graph> { <urn:union:hub> <urn:union:source-predicate:0> 'keep' . } "
+				+ "<urn:union:facet-graph> { <urn:union:hub> <urn:rating> 'keep' . }";
+		String query = "SELECT DISTINCT ?source ?predicate ?wanted WHERE { "
+				+ "{ { ?source ?predicate ?wanted . } UNION { GRAPH ?statementGraph { ?source ?predicate ?wanted . } } } "
+				+ "BIND(?source AS ?focus) "
+				+ "{ ?focus <urn:rating> ?facetValue . } UNION "
+				+ "{ GRAPH ?facetGraph { ?focus <urn:rating> ?facetValue . } } "
+				+ "FILTER(STR(?facetValue) = 'keep' && ?wanted != <urn:union:never> "
+				+ "&& STRSTARTS(STR(?predicate), 'urn:union:source-predicate:')) } LIMIT 64";
+		var vf = SimpleValueFactory.getInstance();
+		BindingSet expected = row("source", vf.createIRI("urn:union:hub"), "predicate",
+				vf.createIRI("urn:union:source-predicate:0"), "wanted", vf.createLiteral("keep"));
+		assertThat(evaluateWithData("union-alias", data, query)).containsExactly(expected);
+	}
+
+	@Test
+	public void unionBranchesDoNotSeeOuterFilterOwners() throws Exception {
+		String query = "SELECT ?wanted ?x ?private WHERE { VALUES ?wanted { 1 } "
+				+ "{ BIND(1 AS ?x) BIND(BOUND(?wanted) AS ?private) } UNION "
+				+ "{ BIND(2 AS ?x) BIND(BOUND(?wanted) AS ?private) } FILTER(?wanted = ?x) }";
+		var vf = SimpleValueFactory.getInstance();
+		BindingSet expected = row("wanted", vf.createLiteral("1", XSD.INTEGER), "x",
+				vf.createLiteral("1", XSD.INTEGER), "private", vf.createLiteral(false));
+		assertThat(evaluateWithData("union-owner", "", query)).containsExactly(expected);
+	}
+
+	@Test
+	public void nestedUnionOptionalsPreserveConflictingLeftBinding() throws Exception {
+		String data = "@prefix ex: <urn:scope-optional:> . "
+				+ "@prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#> . "
+				+ "ex:a ex:p ex:A; rdfs:label 'label'; ex:prop1 'first'; ex:prop2 'second' .";
+		String query = "PREFIX ex: <urn:scope-optional:> PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#> "
+				+ "SELECT * { { ex:a ?p ?prop1 FILTER (?p = ex:prop1) } UNION { "
+				+ "?s ex:p ex:A ; { { ?s ?p ?l . FILTER (?p = rdfs:label) } "
+				+ "OPTIONAL { ?s ?p ?opt1 . FILTER (?p = ex:prop1) } "
+				+ "OPTIONAL { ?s ?p ?opt2 . FILTER (?p = ex:prop2) } } } }";
+		var vf = SimpleValueFactory.getInstance();
+		List<BindingSet> expected = List.of(
+				row("p", vf.createIRI("urn:scope-optional:prop1"), "prop1", vf.createLiteral("first")),
+				row("s", vf.createIRI("urn:scope-optional:a"), "p",
+						vf.createIRI("http://www.w3.org/2000/01/rdf-schema#label"), "l", vf.createLiteral("label")));
+		assertThat(evaluateWithData("nested-optional", data, query)).containsExactlyInAnyOrderElementsOf(expected);
+	}
+
+	private static BindingSet row(Object... namesAndValues) {
+		MapBindingSet result = new MapBindingSet();
+		for (int i = 0; i < namesAndValues.length; i += 2) {
+			result.addBinding((String) namesAndValues[i], (Value) namesAndValues[i + 1]);
+		}
+		return result;
+	}
+
+	private List<BindingSet> evaluateWithData(String id, String data, String query) throws Exception {
+		Path storeDirectory = Files.createDirectories(dataDirectory.resolve(id));
+		SailRepository repository = new SailRepository(createSail(storeDirectory));
+		try {
+			repository.init();
+			try (var connection = repository.getConnection()) {
+				connection.add(new StringReader(data), "urn:scope-safety:", RDFFormat.TRIG);
+				try (TupleQueryResult result = connection.prepareTupleQuery(QueryLanguage.SPARQL, query).evaluate()) {
+					List<BindingSet> rows = new ArrayList<>();
+					while (result.hasNext()) {
+						BindingSet row = result.next();
+						assertEveryBindingHasValue(id, row);
+						rows.add(row);
+					}
+					return rows;
+				}
+			}
+		} finally {
+			repository.shutDown();
+		}
+	}
+
 	@TestFactory
 	public Stream<DynamicTest> scopeSafetyQueriesMatchGoldenResults() {
 		Stream<DynamicTest> regularQueries = IntStream.rangeClosed(1, 50)
 				.mapToObj(number -> regularQueryTest("q%02d".formatted(number)));
-		Stream<DynamicTest> adversarialQueries = IntStream.rangeClosed(1, 10)
+		Stream<DynamicTest> adversarialQueries = IntStream.rangeClosed(1, 28)
 				.mapToObj(number -> adversarialQueryTest("a%02d".formatted(number)));
 		return Stream.concat(regularQueries, adversarialQueries);
 	}

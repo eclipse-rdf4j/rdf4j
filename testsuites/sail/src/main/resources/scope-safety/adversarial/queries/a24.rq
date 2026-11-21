@@ -1,0 +1,1 @@
+SELECT * { VALUES ?x {"left"} OPTIONAL { VALUES ?o {"left"} MINUS {BIND(?x AS ?o)} } }

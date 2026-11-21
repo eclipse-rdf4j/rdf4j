@@ -16,6 +16,7 @@ import java.util.HashMap;
 import java.util.Iterator;
 import java.util.Map;
 import java.util.Set;
+import java.util.function.BiConsumer;
 
 import org.eclipse.rdf4j.common.annotation.InternalUseOnly;
 import org.eclipse.rdf4j.model.Value;
@@ -55,6 +56,20 @@ public final class GraphFrameBindings implements Serializable {
 		return EMPTY;
 	}
 
+	Map<String, Value> parameters() {
+		return parameters;
+	}
+
+	/** Visits the exact retained private parameters, independently of the visible solution mapping. */
+	public void visit(BiConsumer<String, Value> parameter) {
+		parameters.forEach(parameter);
+	}
+
+	/** Whether provenance is retained for the parameter, including when its value is withheld. */
+	public boolean hasParameter(String parameter) {
+		return parameters.containsKey(parameter);
+	}
+
 	public static boolean isSupplied(BindingSet bindings, String parameter) {
 		Value supplied = from(bindings).parameters.get(parameter);
 		return supplied != null && supplied.equals(bindings.getValue(parameter));
@@ -70,6 +85,25 @@ public final class GraphFrameBindings implements Serializable {
 		Map<String, Value> combined = new HashMap<>(parameters);
 		combined.putAll(other.parameters);
 		return new GraphFrameBindings(combined);
+	}
+
+	/**
+	 * Restricts provenance after source-present values have actually been copied to the target. Callers must perform
+	 * later local writes through the target's setters, which revoke their origin. A hidden source parameter remains
+	 * latent when the target also omits it; it cannot authorize a value already present only in the target. Neither
+	 * advertised names nor equal values establish that a value was copied.
+	 */
+	public GraphFrameBindings forCopy(BindingSet source, BindingSet target) {
+		Map<String, Value> retained = null;
+		for (String name : parameters.keySet()) {
+			if (!source.hasBinding(name) && target.hasBinding(name)) {
+				if (retained == null) {
+					retained = new HashMap<>(parameters);
+				}
+				retained.remove(name);
+			}
+		}
+		return retained == null ? this : retained.isEmpty() ? EMPTY : new GraphFrameBindings(retained);
 	}
 
 	public GraphFrameBindings without(String parameter) {
@@ -96,9 +130,9 @@ public final class GraphFrameBindings implements Serializable {
 		return attach(bindings, new GraphFrameBindings(combined));
 	}
 
-	/** Preserves provenance when an internal boundary copies to a different mutable binding representation. */
+	/** Preserves provenance of already-copied values across an internal representation boundary. */
 	public static MutableBindingSet preserve(BindingSet original, MutableBindingSet copy) {
-		return attach(copy, from(copy).merge(from(original)));
+		return attach(copy, from(copy).merge(from(original).forCopy(original, copy)));
 	}
 
 	private static MutableBindingSet attach(MutableBindingSet bindings, GraphFrameBindings frames) {
@@ -114,14 +148,26 @@ public final class GraphFrameBindings implements Serializable {
 
 	/** Keeps custom evaluation-context binding representations usable without requiring a public API change. */
 	private static final class SuppliedBindings extends AbstractBindingSet
-			implements MutableBindingSet, MutableCarrier {
+			implements MutableBindingSet, MutableCarrier, BindingFrameBindings.MutableCarrier {
 		private static final long serialVersionUID = 1L;
 		private final MutableBindingSet delegate;
 		private GraphFrameBindings frames;
+		private BindingFrame bindingFrame;
 
 		private SuppliedBindings(MutableBindingSet delegate, GraphFrameBindings frames) {
 			this.delegate = delegate;
 			this.frames = frames;
+			bindingFrame = BindingFrameBindings.from(delegate);
+		}
+
+		@Override
+		public BindingFrame getBindingFrame() {
+			return bindingFrame;
+		}
+
+		@Override
+		public void setBindingFrame(BindingFrame frame) {
+			bindingFrame = frame;
 		}
 
 		@Override

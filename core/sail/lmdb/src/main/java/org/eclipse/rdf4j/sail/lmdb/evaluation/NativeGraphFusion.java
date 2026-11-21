@@ -24,12 +24,16 @@ import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.vocabulary.RDF4J;
 import org.eclipse.rdf4j.model.vocabulary.SESAME;
 import org.eclipse.rdf4j.query.Dataset;
+import org.eclipse.rdf4j.query.algebra.Extension;
 import org.eclipse.rdf4j.query.algebra.Filter;
 import org.eclipse.rdf4j.query.algebra.Graph;
+import org.eclipse.rdf4j.query.algebra.Projection;
 import org.eclipse.rdf4j.query.algebra.QueryModelNode;
 import org.eclipse.rdf4j.query.algebra.Service;
 import org.eclipse.rdf4j.query.algebra.StatementPattern;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
+import org.eclipse.rdf4j.query.algebra.Var;
+import org.eclipse.rdf4j.query.algebra.evaluation.impl.evaluationsteps.ProjectionQueryEvaluationStep;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.GraphScopeOptimizer;
 import org.eclipse.rdf4j.query.algebra.helpers.AbstractQueryModelVisitor;
 import org.eclipse.rdf4j.query.algebra.helpers.FilterBindingScope;
@@ -49,7 +53,13 @@ final class NativeGraphFusion {
 		if (SEMANTIC_BOUNDARIES.get() != null || !containsFusibleGraph(expression, dataset)) {
 			return new Prepared(expression, null, Set.of());
 		}
+		GenericSubplanDescriptor.LateralOwnerCopies owners = GenericSubplanDescriptor
+				.captureLateralOwnerInputs(expression);
 		TupleExpr physical = expression.clone();
+		GenericSubplanDescriptor.MappedLateralOwners mappedOwners = owners.mapTo(physical);
+		if (mappedOwners == null) {
+			return new Prepared(expression, null, Set.of());
+		}
 		linkLogicalOrigins(expression, physical);
 		NativeValuePositionAnalysis positions = strategy.copyValuePositions(expression, physical);
 		Map<Graph, TupleExpr> replacements = new IdentityHashMap<>();
@@ -79,6 +89,11 @@ final class NativeGraphFusion {
 				}
 			});
 		}
+		// Lowering may change local binding headers. Validate the final copy before installing only the grants captured
+		// from attached occurrences; a changed owner edge declines this fusion before any evaluation.
+		if (!mappedOwners.preserve(physical)) {
+			return new Prepared(expression, null, Set.of());
+		}
 		return new Prepared(physical, positions == null ? null : positions.withGraphReplacements(replacements),
 				Set.copyOf(guarded));
 	}
@@ -90,17 +105,28 @@ final class NativeGraphFusion {
 	}
 
 	static void linkLogicalOrigins(QueryModelNode logical, QueryModelNode physical) {
+		preserveOptionalEntry(logical, physical);
 		copyCompilationMetadata(logical, physical, true);
 	}
 
 	/** A detached lexical recipe must retain the condition input selected before its ancestors disappeared. */
 	static void preserveLexicalScopes(QueryModelNode logical, QueryModelNode physical) {
+		preserveOptionalEntry(logical, physical);
 		copyCompilationMetadata(logical, physical, false);
+	}
+
+	private static void preserveOptionalEntry(QueryModelNode logical, QueryModelNode physical) {
+		if (logical instanceof TupleExpr original && physical instanceof TupleExpr copy) {
+			ProjectionQueryEvaluationStep.preserveOptionalRestorationOwner(original, copy);
+		}
 	}
 
 	private static void copyCompilationMetadata(QueryModelNode logical, QueryModelNode physical, boolean origins) {
 		if (logical instanceof Filter original && physical instanceof Filter copied) {
 			FilterBindingScope.preserve(copied, FilterBindingScope.resolve(original));
+		}
+		if (logical instanceof Projection original && physical instanceof Projection copied) {
+			ProjectionQueryEvaluationStep.preservePrivateGraphCaller(original, copied);
 		}
 		if (origins && logical instanceof TupleExpr logicalTuple && physical instanceof TupleExpr physicalTuple) {
 			LmdbNativeExplain.bindLogicalOrigin(physicalTuple, logicalTuple);
@@ -167,6 +193,24 @@ final class NativeGraphFusion {
 
 	static boolean isDefaultAlias(Value value) {
 		return RDF4J.NIL.equals(value) || SESAME.NIL.equals(value);
+	}
+
+	/** A lowered fixed GRAPH remains a lexical boundary, with a single positive named-context scan inside it. */
+	static StatementPattern fixedScopedPattern(TupleExpr expression) {
+		if (expression.getClass() != Extension.class) {
+			return null;
+		}
+		Extension boundary = (Extension) expression;
+		if (!boundary.isGraphScopeBoundary() || !boundary.getElements().isEmpty()
+				|| boundary.getArg().getClass() != StatementPattern.class) {
+			return null;
+		}
+		StatementPattern pattern = (StatementPattern) boundary.getArg();
+		Var context = pattern.getContextVar();
+		return pattern.getParentNode() == boundary && pattern.getScope() == StatementPattern.Scope.NAMED_CONTEXTS
+				&& context != null && context.isConstant() && !context.hasApiInputOrigin()
+				&& context.getValue() instanceof Resource name && !name.isTripleTerm() && !isDefaultAlias(name)
+				&& !NativeEntryBindings.hasProtectedAuthority(name) ? pattern : null;
 	}
 
 	/** A lexical compiler mode for the semantic alternative; it is restored even if compilation fails. */

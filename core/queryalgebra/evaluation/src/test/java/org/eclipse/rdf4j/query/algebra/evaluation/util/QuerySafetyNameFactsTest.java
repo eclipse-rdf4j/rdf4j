@@ -12,9 +12,13 @@
 package org.eclipse.rdf4j.query.algebra.evaluation.util;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.junit.jupiter.api.Assertions.assertAll;
 
+import java.lang.management.ManagementFactory;
 import java.util.ArrayList;
+import java.util.LinkedList;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.BrokenBarrierException;
 import java.util.concurrent.CyclicBarrier;
@@ -24,24 +28,749 @@ import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
+import java.util.concurrent.atomic.AtomicInteger;
+import java.util.function.Predicate;
 
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
+import org.eclipse.rdf4j.model.vocabulary.FN;
+import org.eclipse.rdf4j.query.QueryExecutionPolicy;
+import org.eclipse.rdf4j.query.algebra.And;
+import org.eclipse.rdf4j.query.algebra.BNodeGenerator;
 import org.eclipse.rdf4j.query.algebra.BindingSetAssignment;
 import org.eclipse.rdf4j.query.algebra.Bound;
+import org.eclipse.rdf4j.query.algebra.Compare;
+import org.eclipse.rdf4j.query.algebra.Difference;
+import org.eclipse.rdf4j.query.algebra.Distinct;
+import org.eclipse.rdf4j.query.algebra.Exists;
 import org.eclipse.rdf4j.query.algebra.Extension;
 import org.eclipse.rdf4j.query.algebra.ExtensionElem;
 import org.eclipse.rdf4j.query.algebra.Filter;
+import org.eclipse.rdf4j.query.algebra.FunctionCall;
+import org.eclipse.rdf4j.query.algebra.Graph;
 import org.eclipse.rdf4j.query.algebra.Join;
+import org.eclipse.rdf4j.query.algebra.Lateral;
 import org.eclipse.rdf4j.query.algebra.LeftJoin;
+import org.eclipse.rdf4j.query.algebra.MathExpr;
+import org.eclipse.rdf4j.query.algebra.Not;
+import org.eclipse.rdf4j.query.algebra.Projection;
+import org.eclipse.rdf4j.query.algebra.ProjectionElem;
+import org.eclipse.rdf4j.query.algebra.ProjectionElemList;
+import org.eclipse.rdf4j.query.algebra.QueryModelVisitor;
+import org.eclipse.rdf4j.query.algebra.QueryRoot;
+import org.eclipse.rdf4j.query.algebra.SingletonSet;
 import org.eclipse.rdf4j.query.algebra.StatementPattern;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.algebra.Union;
 import org.eclipse.rdf4j.query.algebra.ValueConstant;
+import org.eclipse.rdf4j.query.algebra.ValueExpr;
 import org.eclipse.rdf4j.query.algebra.Var;
+import org.eclipse.rdf4j.query.algebra.ZeroLengthPath;
+import org.eclipse.rdf4j.query.algebra.helpers.BindingScopePolicy;
+import org.eclipse.rdf4j.query.algebra.helpers.FilterBindingScope;
+import org.eclipse.rdf4j.query.algebra.helpers.QueryAlgebraBindingAnalysis;
+import org.eclipse.rdf4j.query.algebra.helpers.QueryAlgebraBindingAnalysis.OptionalInputNameProvider;
+import org.eclipse.rdf4j.query.impl.EmptyBindingSet;
+import org.eclipse.rdf4j.query.impl.MapBindingSet;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
+
+import com.sun.management.ThreadMXBean;
 
 class QuerySafetyNameFactsTest {
 	private static final SimpleValueFactory VALUE_FACTORY = SimpleValueFactory.getInstance();
+
+	@Test
+	void capturedCallerEdgesMatchOrdinaryJoinAndFilterInputs() {
+		BindingSetAssignment source = valuesWithBoundRow("source");
+		BindingSetAssignment target = valuesWithBoundRow("target");
+		Join direct = new Join(source, target);
+		QueryAlgebraBindingAnalysis directAnalysis = QueryAlgebraBindingAnalysis.withBindingValues(direct,
+				EmptyBindingSet.getInstance());
+		assertThat(QueryAlgebraBindingAnalysis.callerInputEdge(direct, source))
+				.isEqualTo(QueryAlgebraBindingAnalysis.CallerInputEdge.FORWARD);
+		assertThat(QueryAlgebraBindingAnalysis.callerInputEdge(direct, target))
+				.isEqualTo(QueryAlgebraBindingAnalysis.CallerInputEdge.JOIN_RIGHT_OUTPUT);
+		assertThat(directAnalysis.contextAt(source).maybeBoundNames()).doesNotContain("source");
+		assertThat(directAnalysis.contextAt(target).guaranteedNames()).contains("source");
+
+		BindingSetAssignment filteredSource = valuesWithBoundRow("source");
+		BindingSetAssignment filteredTarget = valuesWithBoundRow("target");
+		Filter filter = new Filter(filteredTarget, new Bound(Var.of("source")));
+		Join owned = new Join(filteredSource, filter);
+		QueryAlgebraBindingAnalysis scoped = QueryAlgebraBindingAnalysis.withBindingValues(owned,
+				EmptyBindingSet.getInstance());
+		assertThat(QueryAlgebraBindingAnalysis.callerInputEdge(owned, filter))
+				.isEqualTo(QueryAlgebraBindingAnalysis.CallerInputEdge.JOIN_RIGHT_FILTER);
+		assertThat(QueryAlgebraBindingAnalysis.callerInputEdge(filter, filteredTarget))
+				.isEqualTo(QueryAlgebraBindingAnalysis.CallerInputEdge.FILTER_ARGUMENT);
+		assertThat(scoped.contextAt(filter).guaranteedNames()).contains("source");
+		assertThat(scoped.contextAt(filteredTarget).maybeBoundNames()).doesNotContain("source");
+
+		Union union = new Union(new SingletonSet(), new SingletonSet());
+		assertThat(QueryAlgebraBindingAnalysis.callerInputEdge(union, union.getLeftArg()))
+				.isEqualTo(QueryAlgebraBindingAnalysis.CallerInputEdge.FORWARD);
+		union.setVariableScopeChange(true);
+		assertThat(QueryAlgebraBindingAnalysis.callerInputEdge(union, union.getRightArg()))
+				.isEqualTo(QueryAlgebraBindingAnalysis.CallerInputEdge.NEW_SCOPE);
+		assertThat(QueryAlgebraBindingAnalysis.callerOutputKind(direct))
+				.isEqualTo(QueryAlgebraBindingAnalysis.CallerOutputKind.BINARY);
+		assertThat(QueryAlgebraBindingAnalysis.callerOutputKind(source))
+				.isEqualTo(QueryAlgebraBindingAnalysis.CallerOutputKind.LEAF);
+	}
+
+	private static BindingSetAssignment valuesWithBoundRow(String name) {
+		BindingSetAssignment assignment = values(name);
+		MapBindingSet row = new MapBindingSet();
+		row.addBinding(name, VALUE_FACTORY.createIRI("urn:captured:" + name));
+		assignment.setBindingSets(List.of(row));
+		return assignment;
+	}
+
+	@Test
+	void callerEquivalenceTracksPresentAndAbsentInputsAcrossJoinAndFilter() {
+		BindingSetAssignment source = valuesWithBoundRow("source");
+		BindingSetAssignment target = valuesWithBoundRow("target");
+		Join root = new Join(source, target);
+		QueryEvaluationUtility.QuerySafetySnapshot snapshot = QueryEvaluationUtility.querySafetySnapshot(root);
+		QueryAlgebraBindingAnalysis analysis = callerAnalysis(root, snapshot.preparedOptionalInputNames(root));
+		var proof = analysis.rootCallerEquivalence(Set.of("source", "target", "other"));
+		assertThat(proof.preserves(source, Set.of("source", "target"))).isTrue();
+		assertThat(proof.preserves(target, Set.of("target", "other"))).isTrue();
+		assertThat(proof.preserves(target, Set.of("source"))).isFalse();
+		assertThat(analysis.contextAt(target).guaranteedNames()).contains("source");
+		assertThat(analysis.contextAt(target).maybeBoundNames()).doesNotContain("target");
+		MapBindingSet supplied = new MapBindingSet();
+		supplied.addBinding("target", VALUE_FACTORY.createIRI("urn:caller"));
+		QueryAlgebraBindingAnalysis ordinary = QueryAlgebraBindingAnalysis.withBindingValues(root, supplied);
+		assertThat(ordinary.contextAt(target).fixedValues()).containsEntry("target", supplied.getValue("target"));
+		BindingSetAssignment distinctValues = valuesWithBoundRow("distinct");
+		Distinct distinct = new Distinct(distinctValues);
+		var distinctSnapshot = QueryEvaluationUtility.querySafetySnapshot(distinct);
+		var distinctAnalysis = callerAnalysis(distinct, distinctSnapshot.preparedOptionalInputNames(distinct));
+		assertThat(distinctAnalysis.rootCallerEquivalence(Set.of("distinct"))
+				.preserves(distinctValues, Set.of("distinct"))).isTrue();
+
+		BindingSetAssignment filteredSource = valuesWithBoundRow("source");
+		BindingSetAssignment filteredTarget = valuesWithBoundRow("target");
+		Filter filter = new Filter(filteredTarget, new Bound(Var.of("source")));
+		Join owned = new Join(filteredSource, filter);
+		QueryEvaluationUtility.QuerySafetySnapshot ownedSnapshot = QueryEvaluationUtility.querySafetySnapshot(owned);
+		var ownedAnalysis = callerAnalysis(owned, ownedSnapshot.preparedOptionalInputNames(owned));
+		var ownedProof = ownedAnalysis.rootCallerEquivalence(Set.of("source", "target"));
+		assertThat(ownedProof.preserves(filter, Set.of("source"))).isFalse();
+		assertThat(ownedProof.preserves(filteredTarget, Set.of("source", "target"))).isTrue();
+		assertThat(ownedAnalysis.contextAt(filteredTarget).maybeBoundNames()).doesNotContain("source");
+	}
+
+	@Test
+	void callerEquivalenceHandlesUndefWritesScopesAndRefresh() {
+		BindingSetAssignment undef = values("x");
+		undef.setBindingSets(List.of(new MapBindingSet()));
+		BindingSetAssignment target = valuesWithBoundRow("target");
+		Join root = new Join(undef, target);
+		QueryEvaluationUtility.QuerySafetySnapshot snapshot = QueryEvaluationUtility.querySafetySnapshot(root);
+		var analysis = callerAnalysis(root, snapshot.preparedOptionalInputNames(root));
+		assertThat(analysis.rootCallerEquivalence(Set.of("x")).preserves(target, Set.of("x"))).isTrue();
+		assertThat(analysis.contextAt(target).maybeBoundNames()).doesNotContain("x");
+
+		root.setLeftArg(new Extension(new SingletonSet(), extensionElement("x")));
+		analysis.invalidate(root);
+		assertThat(analysis.rootCallerEquivalence(Set.of("x")).preserves(target, Set.of("x"))).isFalse();
+		assertThat(analysis.contextAt(target).maybeBoundNames()).contains("x");
+
+		BindingSetAssignment first = valuesWithBoundRow("a");
+		BindingSetAssignment second = valuesWithBoundRow("b");
+		Union union = new Union(first, second);
+		var unionSnapshot = QueryEvaluationUtility.querySafetySnapshot(union);
+		var unionAnalysis = callerAnalysis(union, unionSnapshot.preparedOptionalInputNames(union));
+		assertThat(unionAnalysis.rootCallerEquivalence(Set.of("a")).preserves(second, Set.of("a"))).isTrue();
+		union.setVariableScopeChange(true);
+		unionAnalysis.invalidate(union);
+		assertThat(unionAnalysis.rootCallerEquivalence(Set.of("a")).preserves(second, Set.of("a"))).isFalse();
+
+		BindingSetAssignment projected = valuesWithBoundRow("target");
+		Projection projection = new Projection(projected, new ProjectionElemList(new ProjectionElem("target")));
+		var projectionSnapshot = QueryEvaluationUtility.querySafetySnapshot(projection);
+		var projectionAnalysis = callerAnalysis(projection, projectionSnapshot.preparedOptionalInputNames(projection));
+		assertThat(projectionAnalysis.rootCallerEquivalence(Set.of("target"))
+				.preserves(projected, Set.of("target"))).isFalse();
+		LeftJoin optional = new LeftJoin(new SingletonSet(), valuesWithBoundRow("target"));
+		var optionalSnapshot = QueryEvaluationUtility.querySafetySnapshot(optional);
+		var optionalAnalysis = callerAnalysis(optional, optionalSnapshot.preparedOptionalInputNames(optional));
+		assertThat(optionalAnalysis.rootCallerEquivalence(Set.of("target"))
+				.preserves(optional.getRightArg(), Set.of("target"))).isFalse();
+
+		LeftJoin precedingOptional = new LeftJoin(new SingletonSet(), valuesWithBoundRow("masked"));
+		BindingSetAssignment afterOptional = valuesWithBoundRow("later");
+		Join optionalRoot = new Join(precedingOptional, afterOptional);
+		var precedingSnapshot = QueryEvaluationUtility.querySafetySnapshot(optionalRoot);
+		var precedingAnalysis = callerAnalysis(optionalRoot,
+				precedingSnapshot.preparedOptionalInputNames(optionalRoot));
+		var optionalProof = precedingAnalysis.rootCallerEquivalence(Set.of("masked", "independent"));
+		assertThat(optionalProof.preserves(afterOptional, Set.of("masked"))).isFalse();
+		assertThat(optionalProof.preserves(afterOptional, Set.of("independent"))).isTrue();
+
+		Join clone = root.clone();
+		var cloneAnalysis = analysis.forClone(clone, analysis.rootContext(), Map.of());
+		assertThat(cloneAnalysis.rootCallerEquivalence(Set.of("x"))
+				.preserves(clone.getRightArg(), Set.of("x"))).isFalse();
+
+		BindingSetAssignment lateralTarget = valuesWithBoundRow("target");
+		Lateral lateral = new Lateral(new SingletonSet(), lateralTarget, Set.of("target"));
+		var lateralSnapshot = QueryEvaluationUtility.querySafetySnapshot(lateral);
+		var lateralAnalysis = callerAnalysis(lateral, lateralSnapshot.preparedOptionalInputNames(lateral));
+		assertThat(lateralAnalysis.rootCallerEquivalence(Set.of("target"))
+				.preserves(lateralTarget, Set.of("target"))).isFalse();
+		BindingSetAssignment existsTarget = valuesWithBoundRow("target");
+		Filter exists = new Filter(new SingletonSet(), new Exists(existsTarget));
+		var existsSnapshot = QueryEvaluationUtility.querySafetySnapshot(exists);
+		var existsAnalysis = callerAnalysis(exists, existsSnapshot.preparedOptionalInputNames(exists));
+		assertThat(existsAnalysis.rootCallerEquivalence(Set.of("target"))
+				.preserves(existsTarget, Set.of("target"))).isFalse();
+	}
+
+	@Test
+	void capturedCallerEquivalencePreservesLateralLeftButNotUnprovedRight() {
+		SingletonSet left = new SingletonSet();
+		SingletonSet right = new SingletonSet();
+		Lateral lateral = new Lateral(left, right, Set.of("sibling"));
+		Join owner = new Join(valuesWithBoundRow("sibling"), lateral);
+		QueryRoot root = new QueryRoot(owner);
+		QueryEvaluationUtility.QuerySafetySnapshot snapshot = QueryEvaluationUtility.querySafetySnapshot(root);
+		QueryAlgebraBindingAnalysis analysis = callerAnalysis(root, snapshot.preparedOptionalInputNames(root));
+		Set<String> names = Set.of("caller", "sibling");
+		QueryAlgebraBindingAnalysis.RootCallerEquivalence proof = analysis.rootCallerEquivalence(names);
+
+		assertAll(
+				() -> assertThat(proof.preserves(lateral, names)).as("LATERAL receives the semantic entry").isTrue(),
+				() -> assertThat(proof.preserves(left, names)).as("left receives that same entry").isTrue(),
+				() -> assertThat(proof.preserves(right, names)).as("right transition is not proved").isFalse(),
+				() -> assertThat(QueryAlgebraBindingAnalysis.callerInputEdge(lateral, right))
+						.isEqualTo(QueryAlgebraBindingAnalysis.CallerInputEdge.UNKNOWN));
+	}
+
+	@Test
+	void capturedValuesObserversRespectLocalAndExternalOwners() {
+		BindingSetAssignment localValues = valuesWithBoundRow("t");
+		Filter local = new Filter(new Join(statementPattern("s", "p", "x"), localValues),
+				new Compare(Var.of("x"), Var.of("t"), Compare.CompareOp.EQ));
+		QueryEvaluationUtility.withQuerySafetySnapshot(local, () -> {
+			var analysis = callerAnalysis(local, QueryEvaluationUtility.preparedOptionalInputNames(local));
+			var region = QueryEvaluationUtility.preparedValuesScope(local, analysis);
+			assertThat(region.complete()).isTrue();
+			assertThat(region.soleProducer("t", localValues)).isTrue();
+			assertThat(region.onlyReader("t", local)).isTrue();
+			assertThat(region.observerReceives(local, "t")).isTrue();
+			return null;
+		});
+
+		BindingSetAssignment ownerValues = valuesWithBoundRow("t");
+		Filter owned = new Filter(statementPattern("s", "p", "x"),
+				new Compare(Var.of("x"), Var.of("t"), Compare.CompareOp.EQ));
+		Join root = new Join(ownerValues, owned);
+		QueryEvaluationUtility.withQuerySafetySnapshot(root, () -> {
+			var analysis = callerAnalysis(root, QueryEvaluationUtility.preparedOptionalInputNames(root));
+			var region = QueryEvaluationUtility.preparedValuesScope(root, analysis);
+			assertThat(region.complete()).isTrue();
+			assertThat(region.observerReceives(owned, "t")).isTrue();
+			var nestedAnalysis = callerAnalysis(owned, QueryEvaluationUtility.preparedOptionalInputNames(owned));
+			assertThat(QueryEvaluationUtility.preparedValuesScope(owned, nestedAnalysis).complete()).isFalse();
+			return null;
+		});
+	}
+
+	@Test
+	void optionalCallerFactsRefreshAndCloneWithinCapturedGeneration() {
+		BindingSetAssignment right = values("old");
+		LeftJoin root = new LeftJoin(new SingletonSet(), right);
+		QueryEvaluationUtility.QuerySafetySnapshot snapshot = QueryEvaluationUtility.querySafetySnapshot(root);
+		OptionalInputNameProvider captured = snapshot.preparedOptionalInputNames(root);
+		var names = captured.optionalInputNames(root);
+		assertThat(names).isNotNull();
+		assertThat(names.names()).isEqualTo(BindingScopePolicy.optionalInputNames(root)).containsExactly("old");
+		assertThat(names.names()).as("one captured candidate materialization is shared").isSameAs(names.names());
+		QueryAlgebraBindingAnalysis analysis = callerAnalysis(root, captured);
+		assertThat(analysis.optionalCallerRequirement().names()).containsExactly("old");
+		LeftJoin clone = root.clone();
+		QueryAlgebraBindingAnalysis copy = analysis.forClone(clone, analysis.rootContext(), Map.of());
+		assertThat(copy.optionalCallerRequirement().names()).containsExactly("old");
+		right.setDeclaredBindingNames(Set.of("new"));
+		analysis.invalidate(root);
+		assertThat(analysis.optionalCallerRequirement().names()).containsExactly("new");
+		assertThat(names.names()).as("an escaped earlier generation remains immutable").containsExactly("old");
+	}
+
+	@Test
+	void optionalCallerDemandPullsBackOnlyTheRelevantProjectionAlias() {
+		Projection projection = new Projection(new SingletonSet(),
+				new ProjectionElemList(new ProjectionElem("source", "target"),
+						new ProjectionElem("unrelatedSource", "unrelatedTarget")),
+				false);
+		LeftJoin optional = new LeftJoin(new SingletonSet(), values("target"));
+		Lateral root = new Lateral(projection, optional, Set.of("target"));
+		QueryEvaluationUtility.QuerySafetySnapshot snapshot = QueryEvaluationUtility.querySafetySnapshot(root);
+		var requirement = callerAnalysis(root, snapshot.preparedOptionalInputNames(root)).optionalCallerRequirement();
+		assertThat(requirement.unknown()).isFalse();
+		assertThat(requirement.names()).contains("source", "target").doesNotContain("unrelatedSource");
+	}
+
+	@Test
+	void optionalCallerDemandRetainsNullableUnionAndProjectionParent() {
+		Projection alias = new Projection(new SingletonSet(),
+				new ProjectionElemList(new ProjectionElem("source", "target")), false);
+		Union nullable = new Union(alias, new SingletonSet());
+		Lateral root = new Lateral(nullable, new LeftJoin(new SingletonSet(), values("target")), Set.of("target"));
+		QueryEvaluationUtility.QuerySafetySnapshot snapshot = QueryEvaluationUtility.querySafetySnapshot(root);
+		var requirement = callerAnalysis(root, snapshot.preparedOptionalInputNames(root)).optionalCallerRequirement();
+		assertThat(requirement.names()).contains("source", "target");
+	}
+
+	@Test
+	void optionalCallerDemandSurvivesExistsSelectAndGraphBoundaries() {
+		LeftJoin optional = new LeftJoin(new SingletonSet(), values("x"));
+		Graph graph = new Graph(Var.of("g"), optional);
+		Projection select = new Projection(graph, new ProjectionElemList(new ProjectionElem("x")), true);
+		Filter root = new Filter(new SingletonSet(), new Exists(select));
+		var requirement = callerRequirement(root);
+		assertThat(requirement.names()).contains("x");
+	}
+
+	@Test
+	void detachedCallerDemandDoesNotInventIdentityForAnOlderExistsFrame() {
+		Projection alias = new Projection(new SingletonSet(),
+				new ProjectionElemList(new ProjectionElem("source", "x")), false);
+		LeftJoin inner = new LeftJoin(new SingletonSet(), values("x"));
+		LeftJoin outer = new LeftJoin(new SingletonSet(), inner);
+		Filter filter = new Filter(new SingletonSet(), new Exists(outer));
+		filter.setConditionBindingScope(Filter.ConditionBindingScope.ALL);
+		Lateral root = new Lateral(alias, filter, Set.of("x"));
+		QueryEvaluationUtility.QuerySafetySnapshot snapshot = QueryEvaluationUtility.querySafetySnapshot(root);
+		var initial = QueryAlgebraBindingAnalysis.withBindingValues(root, EmptyBindingSet.getInstance());
+		var analysis = QueryAlgebraBindingAnalysis.withInputContextAndPossibleInputs(root, initial.rootContext(),
+				Set.of("source"), snapshot.preparedOptionalInputNames(root));
+		var detached = analysis.forClone(outer.clone(), analysis.contextAt(outer), Map.of());
+		assertThat(detached.optionalCallerRequirement().unknown())
+				.as("an older aliased EXISTS entry has no proven transfer in the new generation")
+				.isTrue();
+	}
+
+	@Test
+	void optionalCallerDemandUsesEachSequentialBindBeforeExists() {
+		Extension copy = sequentialExists(false, false);
+		Extension constantThenCopy = sequentialExists(true, false);
+		Extension errorThenCopy = sequentialExists(true, true);
+		var copied = callerRequirement(copy);
+		var constant = callerRequirement(constantThenCopy);
+		var error = callerRequirement(errorThenCopy);
+		assertThat(copied.unknown()).isFalse();
+		assertThat(copied.names()).containsExactly("source");
+		assertThat(constant.unknown()).isFalse();
+		assertThat(constant.names()).isEmpty();
+		assertThat(error.unknown()).isFalse();
+		assertThat(error.names()).isEmpty();
+	}
+
+	@Test
+	void sequentialBindCallerRecipesShareBeforeWritePrefixes() {
+		int small = sequentialBindRecipes(32);
+		int large = sequentialBindRecipes(64);
+		System.out.printf("optional-caller sequential BIND recipes small=%d large=%d%n", small, large);
+		assertThat(large).isLessThanOrEqualTo(3 * small);
+	}
+
+	private static int sequentialBindRecipes(int count) {
+		Extension extension = new Extension(new SingletonSet());
+		for (int i = 0; i < count; i++) {
+			extension.addElement(new ExtensionElem(Var.of("source" + i), "output" + i));
+		}
+		extension.addElement(new ExtensionElem(new Exists(new LeftJoin(new SingletonSet(),
+				values("output" + (count - 1)))), "witness"));
+		QueryEvaluationUtility.QuerySafetySnapshot snapshot = QueryEvaluationUtility.querySafetySnapshot(extension);
+		QueryAlgebraBindingAnalysis analysis = callerAnalysis(extension,
+				snapshot.preparedOptionalInputNames(extension));
+		assertThat(analysis.optionalCallerRequirement().names()).containsExactly("source" + (count - 1));
+		return analysis.callerRecipeCount();
+	}
+
+	@Test
+	void nestedOptionalMinusReportsSharedCaptureAndMaterializationSeparately() {
+		CallerCapture small = measureOptionalCallerCapture(32);
+		CallerCapture large = measureOptionalCallerCapture(64);
+		System.out.printf("optional-caller capture small=%s large=%s%n", small, large);
+		assertThat(large.structuralNodes()).isLessThanOrEqualTo(3 * small.structuralNodes());
+		assertThat(large.visits()).isLessThanOrEqualTo(3 * small.visits());
+		assertThat(large.recipes()).isLessThanOrEqualTo(3 * small.recipes());
+		assertThat(small.candidateMaterializations()).isLessThanOrEqualTo(1);
+		assertThat(large.candidateMaterializations()).isLessThanOrEqualTo(1);
+		assertThat(large.trieAfter()).isGreaterThanOrEqualTo(large.trieBefore());
+	}
+
+	@Test
+	void nestedUnionCandidateSnapshotsReportStructuralAndNameWork() {
+		CandidateCapture small = measureUnionCandidates(16);
+		CandidateCapture large = measureUnionCandidates(32);
+		System.out.printf("union candidate snapshots small=%s large=%s%n", small, large);
+		assertThat(small.structuralNodes()).isPositive();
+		assertThat(large.structuralNodes()).isGreaterThan(small.structuralNodes());
+		assertThat(large.nameUnits()).isGreaterThan(small.nameUnits());
+	}
+
+	@Test
+	void localInjectionProofDoesNotVisitAnEnclosingSibling() {
+		AtomicInteger siblingVisits = new AtomicInteger();
+		Union candidate = new Union(statementPattern("s1", "p1", "o1"),
+				statementPattern("s2", "p2", "o2"));
+		Join owner = new Join(new CountedSingleton(siblingVisits), candidate);
+		assertThat(candidate.getParentNode()).isSameAs(owner);
+		assertThat(QueryEvaluationUtility.permitsBindingInjectionInSubtree(candidate, Set.of("independent"))).isTrue();
+		assertThat(siblingVisits).hasValue(0);
+	}
+
+	private static CandidateCapture measureUnionCandidates(int depth) {
+		List<Union> candidates = new ArrayList<>();
+		TupleExpr branch = statementPattern("subject0", "predicate0", "object0");
+		for (int i = 1; i <= depth; i++) {
+			Union candidate = new Union(branch, statementPattern("subject" + i, "predicate" + i, "object" + i));
+			candidate.setVariableScopeChange(false);
+			candidates.add(candidate);
+			branch = candidate;
+		}
+		long nodes = 0;
+		long nameUnits = 0;
+		for (Union candidate : candidates) {
+			QueryEvaluationUtility.QuerySafetySnapshot snapshot = QueryEvaluationUtility
+					.localBindingInjectionSnapshot(candidate);
+			nodes += snapshot.capturedStructuralNodes();
+			long before = snapshot.retainedNameFactStorageUnits();
+			assertThat(snapshot.permitsBindingInjection(candidate, Set.of("independent"))).isTrue();
+			nameUnits += snapshot.retainedNameFactStorageUnits() - before;
+		}
+		return new CandidateCapture(nodes, nameUnits);
+	}
+
+	private record CandidateCapture(long structuralNodes, long nameUnits) {
+	}
+
+	private static Extension sequentialExists(boolean overwriteSource, boolean error) {
+		Extension extension = new Extension(new SingletonSet());
+		if (overwriteSource) {
+			ValueExpr initial = error
+					? new MathExpr(new ValueConstant(VALUE_FACTORY.createLiteral(1)),
+							new ValueConstant(VALUE_FACTORY.createLiteral(0)), MathExpr.MathOp.DIVIDE)
+					: new ValueConstant(VALUE_FACTORY.createLiteral("fixed"));
+			extension.addElement(new ExtensionElem(initial, "source"));
+		}
+		extension.addElement(new ExtensionElem(Var.of("source"), "target"));
+		extension.addElement(new ExtensionElem(new Exists(new LeftJoin(new SingletonSet(), values("target"))),
+				"witness"));
+		return extension;
+	}
+
+	private static QueryAlgebraBindingAnalysis.OptionalCallerRequirement callerRequirement(TupleExpr root) {
+		QueryEvaluationUtility.QuerySafetySnapshot snapshot = QueryEvaluationUtility.querySafetySnapshot(root);
+		return callerAnalysis(root, snapshot.preparedOptionalInputNames(root)).optionalCallerRequirement();
+	}
+
+	private static QueryAlgebraBindingAnalysis callerAnalysis(TupleExpr root, OptionalInputNameProvider names) {
+		var input = QueryAlgebraBindingAnalysis.withBindingValues(root, EmptyBindingSet.getInstance());
+		return QueryAlgebraBindingAnalysis.withInputContextAndPossibleInputs(root, input.rootContext(), Set.of(),
+				names);
+	}
+
+	private record CallerCapture(int structuralNodes, long trieBefore, long trieAfter, long candidateMaterializations,
+			int visits, int recipes) {
+	}
+
+	private static CallerCapture measureOptionalCallerCapture(int depth) {
+		TupleExpr root = new SingletonSet();
+		for (int i = 0; i < depth; i++) {
+			root = new Difference(new LeftJoin(root, values("optional" + i)), values("minus" + i));
+		}
+		QueryEvaluationUtility.QuerySafetySnapshot snapshot = QueryEvaluationUtility.querySafetySnapshot(root);
+		int nodes = snapshot.capturedStructuralNodes();
+		long before = snapshot.retainedHeaderTrieNodes();
+		QueryAlgebraBindingAnalysis analysis = callerAnalysis(root, snapshot.preparedOptionalInputNames(root));
+		analysis.optionalCallerRequirement();
+		return new CallerCapture(nodes, before, snapshot.retainedHeaderTrieNodes(),
+				snapshot.optionalCandidateMaterializations(), analysis.callerStructuralVisits(),
+				analysis.callerRecipeCount());
+	}
+
+	@Test
+	void ownerLookupProofRetainsItsCapturedGenerationAcrossRefresh() {
+		Filter filter = new Filter(statementPattern("b", "q", "c"), new Bound(Var.of("a")));
+		Join owner = new Join(statementPattern("a", "p", "b"),
+				new Join(filter, statementPattern("c", "r", "a")));
+		QueryEvaluationUtility.withQuerySafetySnapshot(owner, () -> {
+			Predicate<String> original = QueryEvaluationUtility.preparedScopedLookupInputs(owner);
+			assertThat(original).isNotNull();
+			assertThat(original.test("a")).as("the FILTER reads from this owner").isTrue();
+			filter.setConditionBindingScope(Filter.ConditionBindingScope.retain(Set.of("b", "c")));
+			assertThat(original.test("a")).as("prepared authority stays captured before refresh").isTrue();
+			QueryEvaluationUtility.refreshQuerySafetySnapshot(filter);
+			Predicate<String> refreshed = QueryEvaluationUtility.preparedScopedLookupInputs(owner);
+			assertThat(refreshed).isNotNull();
+			assertThat(refreshed.test("a")).as("the refreshed private FILTER vetoes the lookup").isFalse();
+			assertThat(original.test("a")).as("an old prepared step keeps its immutable generation").isTrue();
+			assertThat(refreshed.test("b")).isTrue();
+			return null;
+		});
+	}
+
+	@Test
+	void sameNamePrivateFilterVetoesAnotherAuthorizedFilterRead() {
+		Filter visible = new Filter(statementPattern("b", "q", "c"), new Bound(Var.of("a")));
+		Filter privateFilter = new Filter(statementPattern("c", "s", "d"), new Bound(Var.of("a")));
+		privateFilter.setConditionBindingScope(Filter.ConditionBindingScope.retain(Set.of("c", "d")));
+		Join owner = new Join(statementPattern("a", "p", "b"),
+				new Join(visible, new Join(privateFilter, statementPattern("d", "r", "a"))));
+		Predicate<String> proof = QueryEvaluationUtility.preparedScopedLookupInputs(owner);
+		assertThat(proof).isNotNull();
+		assertThat(proof.test("a")).as("one private demand must not be erased by a separate authorized demand")
+				.isFalse();
+		assertThat(proof.test("b")).isTrue();
+	}
+
+	@Test
+	void nullableNearerFilterOwnerVetoesAnOuterLookupOfTheSameName() {
+		Filter filter = new Filter(statementPattern("c", "r", "d"), new Bound(Var.of("a")));
+		Union nullable = new Union(statementPattern("a", "q", "c"), statementPattern("x", "q", "c"));
+		Join nearOwner = new Join(nullable, filter);
+		Join owner = new Join(statementPattern("a", "p", "b"), nearOwner);
+		Predicate<String> proof = QueryEvaluationUtility.preparedScopedLookupInputs(owner);
+		assertThat(proof == null || !proof.test("a"))
+				.as("an outer owner cannot discharge a nullable nearer FILTER input")
+				.isTrue();
+	}
+
+	@Test
+	void escapedOwnerProofSurvivesConcurrentSnapshotGrowthAndRefresh() {
+		Filter visible = new Filter(statementPattern("b", "q", "c"), new Bound(Var.of("a")));
+		Filter privateFilter = new Filter(statementPattern("c", "s", "d"), new Bound(Var.of("blocked")));
+		privateFilter.setConditionBindingScope(Filter.ConditionBindingScope.retain(Set.of("c", "d")));
+		Join right = new Join(visible, new Join(privateFilter,
+				new Join(statementPattern("d", "r", "blocked"), statementPattern("blocked", "t", "a"))));
+		Join owner = new Join(values("a", "b", "blocked"), right);
+		TupleExpr firstAdditionalRoot = externalFilterPrefix(128);
+		TupleExpr secondAdditionalRoot = wrappedExistsPrefix(128);
+		QueryEvaluationUtility.withQuerySafetySnapshot(owner, () -> {
+			Predicate<String> proof = QueryEvaluationUtility.preparedScopedLookupInputs(owner);
+			assertThat(proof).isNotNull();
+			assertThat(proof.test("a")).isTrue();
+			assertThat(proof.test("blocked")).isFalse();
+			CyclicBarrier start = new CyclicBarrier(2);
+			try (ExecutorService executor = Executors.newSingleThreadExecutor()) {
+				Future<?> concurrentReads = executor.submit(() -> {
+					awaitFirstDemand(start);
+					for (int i = 0; i < 50_000; i++) {
+						assertThat(proof.test("a")).isTrue();
+						assertThat(proof.test("blocked")).isFalse();
+					}
+				});
+				awaitFirstDemand(start);
+				QueryEvaluationUtility.requiresScopedFilterInput(firstAdditionalRoot);
+				QueryEvaluationUtility.requiresScopedFilterInput(secondAdditionalRoot);
+				QueryEvaluationUtility.refreshQuerySafetySnapshot(owner);
+				Predicate<String> refreshed = QueryEvaluationUtility.preparedScopedLookupInputs(owner);
+				assertThat(refreshed).isNotNull();
+				assertThat(refreshed.test("a")).isTrue();
+				assertThat(refreshed.test("blocked")).isFalse();
+				try {
+					concurrentReads.get(30, TimeUnit.SECONDS);
+				} catch (InterruptedException e) {
+					Thread.currentThread().interrupt();
+					throw new AssertionError("interrupted during concurrent proof reads", e);
+				} catch (ExecutionException | TimeoutException e) {
+					throw new AssertionError("the captured proof must survive growth and refresh", e);
+				}
+			}
+			return null;
+		});
+	}
+
+	@ParameterizedTest(name = "malformed traversal={0}")
+	@ValueSource(strings = { "omitted", "extra", "reordered", "repeated" })
+	void inconsistentFunctionArgumentsCannotProveBindingInjection(String variant) {
+		VisitingFunctionCall call = malformedCall(variant);
+		Extension root = new Extension(new SingletonSet(), new ExtensionElem(call, "result"));
+		QueryEvaluationUtility.QuerySafetySnapshot snapshot = QueryEvaluationUtility.querySafetySnapshot(root,
+				QueryExecutionPolicy.DEFAULT);
+		assertThat(snapshot.permitsBindingInjection(root, Set.of("probe"))).isFalse();
+		assertThat(snapshot.permitsBindingInjection(root, Set.of())).isTrue();
+	}
+
+	@Test
+	void inconsistentFunctionConditionHasUnknownReadsWithoutTupleMapping() {
+		Filter filter = new Filter(new SingletonSet(), malformedCall("omitted"));
+		QueryEvaluationUtility.QuerySafetySnapshot snapshot = QueryEvaluationUtility.querySafetySnapshot(filter,
+				QueryExecutionPolicy.DEFAULT);
+		assertThat(snapshot.mayIntroduceFilterInput(filter, Set.of("unseen"), false)).isTrue();
+		assertThat(snapshot.isRepeatable(filter)).isFalse();
+		assertThat(snapshot.mayRaiseQueryFatalError(filter)).isTrue();
+		assertThat(snapshot.usesMappingParameterizedEvaluation(filter)).isFalse();
+	}
+
+	@Test
+	void unknownDispatchFunctionFailsClosedWithoutInventingTupleMapping() {
+		FunctionCall call = new UnknownDispatchFunctionCall(FN.CONTAINS.stringValue(),
+				new ValueConstant(VALUE_FACTORY.createLiteral("needle")),
+				new ValueConstant(VALUE_FACTORY.createLiteral("needle")));
+		Extension root = new Extension(new SingletonSet(), new ExtensionElem(call, "result"));
+		QueryEvaluationUtility.QuerySafetySnapshot snapshot = QueryEvaluationUtility.querySafetySnapshot(root,
+				QueryExecutionPolicy.DEFAULT);
+		assertThat(snapshot.usesMappingParameterizedEvaluation(root)).isFalse();
+		assertThat(snapshot.isRepeatable(root)).isFalse();
+		assertThat(snapshot.mayRaiseQueryFatalError(root)).isTrue();
+		assertThat(snapshot.permitsBindingInjection(root, Set.of("probe"))).isFalse();
+		assertThat(FilterBindingScope.conditionBindingReads(call).complete()).isFalse();
+	}
+
+	@Test
+	void inconsistentFunctionReportsIncompleteUncachedConditionReads() {
+		assertThat(FilterBindingScope.conditionBindingReads(malformedCall("omitted")).complete()).isFalse();
+	}
+
+	@ParameterizedTest(name = "malformed traversal={0}")
+	@ValueSource(strings = { "omitted", "extra", "reordered", "repeated" })
+	void existsSubstitutionRejectsInconsistentFunctionVisitors(String variant) {
+		FunctionCall call = malformedCall(variant);
+		Filter body = new Filter(new SingletonSet(), call);
+		assertThat(FilterBindingScope.conditionBindingReads(call).complete()).isFalse();
+		assertThat(QueryEvaluationUtility.existsSubstitutionInputs(body).unknown()).isTrue();
+		assertThat(QueryEvaluationUtility.existsSubstitutionInputs(body).needsDynamicDomain()).isTrue();
+	}
+
+	@Test
+	void existsSubstitutionRejectsUnknownScalarDispatch() {
+		FunctionCall call = new UnknownDispatchFunctionCall(FN.CONTAINS.stringValue(), Var.of("hidden"),
+				new ValueConstant(VALUE_FACTORY.createLiteral("needle")));
+		Filter body = new Filter(new SingletonSet(), call);
+		assertThat(FilterBindingScope.conditionBindingReads(call).complete()).isFalse();
+		assertThat(QueryEvaluationUtility.existsSubstitutionInputs(body).unknown()).isTrue();
+	}
+
+	@Test
+	void existsSubstitutionPreservesConformingCallsAndKnownDomains() {
+		FunctionCall call = new VisitingFunctionCall(FN.CONTAINS.stringValue(), new int[] { 0, 1 },
+				Var.of("hidden"), new ValueConstant(VALUE_FACTORY.createLiteral("needle")));
+		Filter body = new Filter(new SingletonSet(), call);
+		assertThat(FilterBindingScope.conditionBindingReads(call).complete()).isTrue();
+		assertThat(QueryEvaluationUtility.existsSubstitutionInputs(body).needsDynamicDomain()).isFalse();
+
+		ZeroLengthPath path = new ZeroLengthPath(Var.of("start"), Var.of("end"));
+		QueryEvaluationUtility.ExistsSubstitutionInputs inputs = QueryEvaluationUtility.existsSubstitutionInputs(path);
+		assertThat(inputs.unknown()).isFalse();
+		assertThat(inputs.bindingNames()).containsExactlyInAnyOrder("start", "end");
+		assertThat(inputs.needsDynamicDomain()).isTrue();
+	}
+
+	@Test
+	void nestedExistsKeepsItsOwnUnknownSubstitutionDomain() {
+		Filter nestedBody = new Filter(new SingletonSet(), malformedCall("omitted"));
+		Filter outerBody = new Filter(new SingletonSet(), new Exists(nestedBody));
+		assertThat(QueryEvaluationUtility.existsSubstitutionInputs(nestedBody).unknown()).isTrue();
+		assertThat(QueryEvaluationUtility.existsSubstitutionInputs(outerBody).unknown()).isFalse();
+
+		Filter nestedInGraph = new Filter(new SingletonSet(),
+				new Exists(new Filter(new SingletonSet(), malformedCall("omitted"))));
+		Graph graph = new Graph(Var.of("graph", VALUE_FACTORY.createIRI("urn:graph"), false, true), nestedInGraph);
+		assertThat(QueryEvaluationUtility.existsSubstitutionInputs(graph).unknown()).isTrue();
+	}
+
+	@Test
+	void existsSubstitutionLocalVerdictChangesOnlyAfterRefresh() {
+		VisitingFunctionCall call = malformedCall("omitted");
+		Filter body = new Filter(new SingletonSet(), call);
+		QueryEvaluationUtility.withQuerySafetySnapshot(body, () -> {
+			assertThat(QueryEvaluationUtility.existsSubstitutionInputs(body).unknown()).isTrue();
+			call.order = new int[] { 0, 1 };
+			assertThat(QueryEvaluationUtility.existsSubstitutionInputs(body).unknown()).isTrue();
+			QueryEvaluationUtility.refreshQuerySafetySnapshot(call);
+			assertThat(QueryEvaluationUtility.existsSubstitutionInputs(body).unknown()).isFalse();
+			call.order = new int[] { 1 };
+			assertThat(QueryEvaluationUtility.existsSubstitutionInputs(body).unknown()).isFalse();
+			QueryEvaluationUtility.refreshQuerySafetySnapshot(call);
+			assertThat(QueryEvaluationUtility.existsSubstitutionInputs(body).unknown()).isTrue();
+			return null;
+		});
+	}
+
+	@Test
+	void inconsistentFunctionRetainsExposedMappingDependencies() {
+		Exists exposed = new Exists(new Lateral(new SingletonSet(), new SingletonSet()));
+		FunctionCall call = new VisitingFunctionCall(FN.CONCAT.stringValue(), new int[] { 1 },
+				new ValueConstant(VALUE_FACTORY.createLiteral("omitted")), exposed);
+		Extension root = new Extension(new SingletonSet(), new ExtensionElem(call, "result"));
+		QueryEvaluationUtility.QuerySafetySnapshot snapshot = QueryEvaluationUtility.querySafetySnapshot(root,
+				QueryExecutionPolicy.DEFAULT);
+		assertThat(snapshot.usesMappingParameterizedEvaluation(root)).isTrue();
+		assertThat(snapshot.containsLateral(root)).isTrue();
+		assertThat(snapshot.isRepeatable(root)).isFalse();
+	}
+
+	@Test
+	void functionVisitorContractIsFrozenUntilSnapshotRefresh() {
+		VisitingFunctionCall call = malformedCall("omitted");
+		Filter filter = new Filter(new SingletonSet(), call);
+		QueryEvaluationUtility.QuerySafetySnapshot snapshot = QueryEvaluationUtility.querySafetySnapshot(filter,
+				QueryExecutionPolicy.DEFAULT);
+		assertThat(snapshot.mayIntroduceFilterInput(filter, Set.of("other"), false)).isTrue();
+		assertThat(snapshot.permitsBindingInjection(filter, Set.of("other"))).isFalse();
+
+		call.order = new int[] { 0, 1 };
+		assertThat(snapshot.mayIntroduceFilterInput(filter, Set.of("other"), false)).isTrue();
+		assertThat(snapshot.permitsBindingInjection(filter, Set.of("other"))).isFalse();
+		snapshot.refreshFrom(call);
+		assertThat(snapshot.mayIntroduceFilterInput(filter, Set.of("other"), false)).isFalse();
+		assertThat(snapshot.permitsBindingInjection(filter, Set.of("other"))).isTrue();
+		assertThat(snapshot.permitsBindingInjection(filter, Set.of("hidden"))).isFalse();
+
+		call.order = new int[] { 1 };
+		assertThat(snapshot.permitsBindingInjection(filter, Set.of("other"))).isTrue();
+		snapshot.refreshFrom(call);
+		assertThat(snapshot.permitsBindingInjection(filter, Set.of("other"))).isFalse();
+	}
+
+	@Test
+	void completeFunctionArgumentsPreserveSafeFastPaths() {
+		ValueExpr first = new ValueConstant(VALUE_FACTORY.createLiteral("needle"));
+		ValueExpr second = new ValueConstant(VALUE_FACTORY.createLiteral("needle"));
+		ValueExpr repeated = new ValueConstant(VALUE_FACTORY.createLiteral("same"));
+		FunctionCall ordinary = new FunctionCall(FN.CONTAINS.stringValue(), first, second);
+		FunctionCall subclass = new VisitingFunctionCall(FN.CONTAINS.stringValue(), new int[] { 0, 1 },
+				first.clone(), second.clone());
+		FunctionCall pinned = QueryEvaluationUtility.pinFunctions(ordinary.clone());
+		FunctionCall zero = new FunctionCall(FN.CONCAT.stringValue());
+		FunctionCall repeatedArgument = new FunctionCall(FN.CONTAINS.stringValue(), repeated, repeated);
+		FunctionCall linkedArguments = new LinkedArgumentsCall(FN.CONTAINS.stringValue(), first.clone(),
+				second.clone());
+		for (FunctionCall call : List.of(ordinary, subclass, pinned, zero, repeatedArgument, linkedArguments)) {
+			Extension root = new Extension(new SingletonSet(), new ExtensionElem(call, "result"));
+			QueryEvaluationUtility.QuerySafetySnapshot snapshot = QueryEvaluationUtility.querySafetySnapshot(root,
+					QueryExecutionPolicy.DEFAULT);
+			assertThat(snapshot.permitsBindingInjection(root, Set.of("probe"))).as(call.getClass().getName()).isTrue();
+			assertThat(FilterBindingScope.conditionBindingReads(call).complete()).isTrue();
+			assertThat(snapshot.isRepeatable(root)).isTrue();
+			assertThat(snapshot.usesMappingParameterizedEvaluation(root)).isFalse();
+			assertThat(snapshot.mayRaiseQueryFatalError(root)).isFalse();
+		}
+		assertThat(pinned.getClass()).isNotEqualTo(FunctionCall.class);
+	}
+
+	private static VisitingFunctionCall malformedCall(String variant) {
+		Var variable = Var.of("hidden");
+		ValueExpr constant = new ValueConstant(VALUE_FACTORY.createLiteral("needle"));
+		return switch (variant) {
+		case "omitted" -> new VisitingFunctionCall(FN.CONTAINS.stringValue(), new int[] { 1 }, variable, constant);
+		case "extra" -> new VisitingFunctionCall(FN.CONTAINS.stringValue(), new int[] { 0, 1, 0 },
+				variable, constant);
+		case "reordered" -> new VisitingFunctionCall(FN.CONTAINS.stringValue(), new int[] { 1, 0 },
+				variable, constant);
+		case "repeated" -> new VisitingFunctionCall(FN.CONTAINS.stringValue(), new int[] { 0 }, constant, constant);
+		default -> throw new IllegalArgumentException(variant);
+		};
+	}
 
 	@Test
 	void cheapSafetyFactsDoNotMaterializeBindingNameStorage() {
@@ -61,6 +790,371 @@ class QuerySafetyNameFactsTest {
 		assertThat(snapshot.permitsBindingInjection(query, Set.of("extensionTarget"))).isFalse();
 		assertThat(snapshot.permitsBindingInjection(query, Set.of("subject"))).isTrue();
 		assertThat(snapshot.retainedNameFactStorageUnits()).isPositive();
+	}
+
+	@Test
+	void safetyCaptureDoesNotRetainEveryRecursiveTupleOutputHeader() {
+		int leafCount = 128;
+		TupleExpr root = values("header0");
+		for (int i = 1; i < leafCount; i++) {
+			root = new Filter(new Join(root, values("header" + i)), new Bound(Var.of("header" + i)));
+		}
+		QueryEvaluationUtility.QuerySafetySnapshot snapshot = QueryEvaluationUtility.querySafetySnapshot(root);
+
+		assertThat(snapshot.isRepeatable(root)).isTrue();
+		assertThat(snapshot.retainedTupleHeaderNameEntries())
+				.as("captured tuple output headers do not retain every recursive prefix")
+				.isLessThanOrEqualTo(leafCount * 4L);
+	}
+
+	@Test
+	void nestedFilterStorageRemainsLinearBeforeAndAfterScopedDemand() {
+		TupleExpr smallRoot = filterPrefix(64);
+		TupleExpr largeRoot = filterPrefix(128);
+		QueryEvaluationUtility.QuerySafetySnapshot small = QueryEvaluationUtility.querySafetySnapshot(smallRoot);
+		QueryEvaluationUtility.QuerySafetySnapshot large = QueryEvaluationUtility.querySafetySnapshot(largeRoot);
+
+		assertThat(large.retainedSnapshotStorageUnits()).isLessThanOrEqualTo(3 * small.retainedSnapshotStorageUnits());
+		assertThat(small.requiresScopedFilterInput(smallRoot)).isFalse();
+		assertThat(large.requiresScopedFilterInput(largeRoot)).isFalse();
+		assertThat(large.retainedTupleHeaderNameEntries()).isLessThanOrEqualTo(128 * 4L);
+		assertThat(large.retainedSnapshotStorageUnits()).isLessThanOrEqualTo(3 * small.retainedSnapshotStorageUnits());
+	}
+
+	@Test
+	void ancestorOnlyFiltersRetainNearLinearCapturedStorage() {
+		Filter smallRoot = ancestorOnlyFilter(64);
+		Filter largeRoot = ancestorOnlyFilter(128);
+		QueryEvaluationUtility.QuerySafetySnapshot small = QueryEvaluationUtility.querySafetySnapshot(smallRoot);
+		QueryEvaluationUtility.QuerySafetySnapshot large = QueryEvaluationUtility.querySafetySnapshot(largeRoot);
+		assertThat(large.retainedSnapshotStorageUnits()).isLessThanOrEqualTo(3 * small.retainedSnapshotStorageUnits());
+		assertThat(small.requiresBindingFrameReplayPartition(smallRoot)).isTrue();
+		assertThat(large.requiresBindingFrameReplayPartition(largeRoot)).isTrue();
+		assertThat(large.retainedSnapshotStorageUnits()).isLessThanOrEqualTo(3 * small.retainedSnapshotStorageUnits());
+	}
+
+	@Test
+	void nestedFiltersWithExternalReadsAvoidQuadraticOwnerPreparation() {
+		ThreadMXBean memory = (ThreadMXBean) ManagementFactory.getThreadMXBean();
+		if (!memory.isThreadAllocatedMemoryEnabled()) {
+			memory.setThreadAllocatedMemoryEnabled(true);
+		}
+		allocatedScopedDemand(memory, externalFilterPrefix(16));
+		long small = allocatedScopedDemand(memory, externalFilterPrefix(96));
+		long large = allocatedScopedDemand(memory, externalFilterPrefix(192));
+
+		// Two times the input should be close to twice the work; allow 50% headroom for fixed costs and JIT effects.
+		assertThat(large).as("doubling filter depth should not copy every ancestor path; small=%s", small)
+				.isLessThanOrEqualTo(3 * small);
+	}
+
+	@Test
+	void wrappedExistsWithAnOuterOwnerAvoidsQuadraticScopePreparation() {
+		ThreadMXBean memory = (ThreadMXBean) ManagementFactory.getThreadMXBean();
+		if (!memory.isThreadAllocatedMemoryEnabled()) {
+			memory.setThreadAllocatedMemoryEnabled(true);
+		}
+		allocatedScopedDemand(memory, wrappedExistsPrefix(16));
+		long small = allocatedScopedDemand(memory, wrappedExistsPrefix(64));
+		long large = allocatedScopedDemand(memory, wrappedExistsPrefix(128));
+
+		// As for direct reads, allow 50% headroom over twice the input's expected work.
+		assertThat(large).as("wrapped EXISTS scope preparation; small=%s", small).isLessThanOrEqualTo(3 * small);
+	}
+
+	@Test
+	void wrappedExistsWithAnOuterOwnerRetainsNearLinearCapturedStorage() {
+		TupleExpr smallRoot = wrappedExistsPrefix(64);
+		TupleExpr largeRoot = wrappedExistsPrefix(128);
+		QueryEvaluationUtility.QuerySafetySnapshot small = QueryEvaluationUtility.querySafetySnapshot(smallRoot);
+		QueryEvaluationUtility.QuerySafetySnapshot large = QueryEvaluationUtility.querySafetySnapshot(largeRoot);
+		assertThat(large.retainedSnapshotStorageUnits()).isLessThanOrEqualTo(3 * small.retainedSnapshotStorageUnits());
+		assertThat(small.requiresScopedFilterInput(smallRoot)).isFalse();
+		assertThat(large.requiresScopedFilterInput(largeRoot)).isFalse();
+		assertThat(large.retainedSnapshotStorageUnits()).isLessThanOrEqualTo(3 * small.retainedSnapshotStorageUnits());
+	}
+
+	@Test
+	void farthestOwnerComplexScopesDoNotRescanEveryPrecedingEvent() {
+		ThreadMXBean memory = (ThreadMXBean) ManagementFactory.getThreadMXBean();
+		if (!memory.isThreadAllocatedMemoryEnabled()) {
+			memory.setThreadAllocatedMemoryEnabled(true);
+		}
+		measureScopedDemand(memory, farthestOwnerPrefix(16), true);
+		ScopeMeasurement small = measureScopedDemand(memory, farthestOwnerPrefix(64), true);
+		ScopeMeasurement large = measureScopedDemand(memory, farthestOwnerPrefix(128), true);
+
+		// A 3x ceiling permits substantial fixed trie/index overhead over the expected near-linear growth.
+		assertThat(large.allocated()).as("small allocated=%s; retained small=%s, large=%s", small.allocated(),
+				small.retained(), large.retained()).isLessThanOrEqualTo(3 * small.allocated());
+		assertThat(large.retained()).isLessThanOrEqualTo(3 * small.retained());
+	}
+
+	@Test
+	void indexedScopesShareOverlappingAndDisjointOwnerHeaders() {
+		TupleExpr smallRoot = overlappingOwnerPrefix(48);
+		TupleExpr largeRoot = overlappingOwnerPrefix(96);
+		QueryEvaluationUtility.QuerySafetySnapshot small = QueryEvaluationUtility.querySafetySnapshot(smallRoot);
+		QueryEvaluationUtility.QuerySafetySnapshot large = QueryEvaluationUtility.querySafetySnapshot(largeRoot);
+		assertThat(small.requiresScopedFilterInput(smallRoot)).isTrue();
+		assertThat(large.requiresScopedFilterInput(largeRoot)).isTrue();
+		assertThat(large.retainedSnapshotStorageUnits()).isLessThanOrEqualTo(3 * small.retainedSnapshotStorageUnits());
+	}
+
+	@Test
+	void nestedExistsConditionFactsDoNotRetainEveryReadPrefix() {
+		TupleExpr smallRoot = nestedExists(128);
+		TupleExpr largeRoot = nestedExists(256);
+		QueryEvaluationUtility.QuerySafetySnapshot small = QueryEvaluationUtility.querySafetySnapshot(smallRoot);
+		QueryEvaluationUtility.QuerySafetySnapshot large = QueryEvaluationUtility.querySafetySnapshot(largeRoot);
+
+		// The storage count is deterministic; 2.2x allows trie-node boundaries while detecting copied prefixes.
+		assertThat(large.retainedSnapshotStorageUnits())
+				.as("doubling nested EXISTS must not retain every copied condition read prefix")
+				.isLessThanOrEqualTo(11 * small.retainedSnapshotStorageUnits() / 5);
+	}
+
+	@Test
+	void customTupleHeadersAreCapturedWithoutAssumingBaseClassSemantics() {
+		CustomHeader source = new CustomHeader(Set.of("before"), Set.of());
+		Filter filter = new Filter(new SingletonSet(), new Bound(Var.of("before")));
+		Join owner = new Join(source, filter);
+		QueryEvaluationUtility.QuerySafetySnapshot snapshot = QueryEvaluationUtility.querySafetySnapshot(owner);
+
+		source.ordinary = Set.of("after");
+		source.assured = Set.of("after");
+		assertThat(snapshot.requiresScopedFilterInput(owner)).isTrue();
+		snapshot.refreshFrom(source);
+		assertThat(snapshot.requiresScopedFilterInput(owner)).isFalse();
+	}
+
+	@Test
+	void customFilterWithOpaqueChildrenStillCapturesItsCondition() {
+		HiddenConditionFilter filter = new HiddenConditionFilter();
+		QueryEvaluationUtility.QuerySafetySnapshot snapshot = QueryEvaluationUtility.querySafetySnapshot(filter);
+		assertThat(snapshot.mayIntroduceFilterInput(filter, Set.of("hidden"), false)).isTrue();
+		assertThat(snapshot.mayIntroduceFilterInput(filter, Set.of("other"), false)).isTrue();
+		assertThat(snapshot.permitsBindingInjection(filter, Set.of("hidden"))).isFalse();
+		assertThat(QueryEvaluationUtility.permitsDirectCorrelatedFilter(filter, Set.of("hidden"))).isFalse();
+	}
+
+	@Test
+	void unknownTupleSubclassCannotAcquireAnInjectionProofFromItsBaseClass() {
+		UnknownSingleton custom = new UnknownSingleton();
+		QueryEvaluationUtility.QuerySafetySnapshot snapshot = QueryEvaluationUtility.querySafetySnapshot(custom);
+		assertThat(snapshot.isUnknownTupleOperator(custom)).isTrue();
+		assertThat(snapshot.permitsBindingInjection(custom, Set.of("hidden"))).isFalse();
+	}
+
+	@Test
+	void emptyInjectionRemainsSafeForUnknownTupleSnapshots() {
+		UnknownSingleton custom = new UnknownSingleton();
+		QueryEvaluationUtility.QuerySafetySnapshot snapshot = QueryEvaluationUtility.querySafetySnapshot(custom);
+		assertThat(QueryEvaluationUtility.permitsBindingInjection(custom, Set.of())).isTrue();
+		assertThat(QueryEvaluationUtility.preparedBindingInjectionProof(custom).test(Set.of())).isTrue();
+		assertThat(snapshot.permitsBindingInjection(custom, Set.of())).isTrue();
+		assertThat(snapshot.permitsBindingInjection(custom, Set.of("hidden"))).isFalse();
+	}
+
+	@Test
+	void unknownExtensionWithOmittedElementsFailsClosedWithoutInspectingThem() {
+		UnknownExtension custom = new UnknownExtension();
+		Join root = new Join(values("left"), custom);
+		QueryEvaluationUtility.QuerySafetySnapshot snapshot = QueryEvaluationUtility.querySafetySnapshot(root);
+		assertThat(snapshot.isUnknownTupleOperator(custom)).isTrue();
+		assertThat(snapshot.isRepeatable(root)).isFalse();
+		assertThat(snapshot.mayRaiseQueryFatalError(root)).isTrue();
+		assertThat(snapshot.permitsBindingInjection(root, Set.of("hidden"))).isFalse();
+	}
+
+	@Test
+	void customFilterWithAnOmittedArgumentFailsClosed() {
+		HiddenArgumentFilter filter = new HiddenArgumentFilter();
+		QueryEvaluationUtility.QuerySafetySnapshot snapshot = QueryEvaluationUtility.querySafetySnapshot(filter);
+		assertThat(snapshot.isUnknownTupleOperator(filter)).isTrue();
+		assertThat(snapshot.mayIntroduceFilterInput(filter, Set.of("hidden"), false)).isTrue();
+		assertThat(snapshot.mayIntroduceFilterInput(filter, Set.of("other"), false)).isTrue();
+		assertThat(snapshot.permitsBindingInjection(filter, Set.of("hidden"))).isFalse();
+	}
+
+	@Test
+	void typedExtensionWithOmittedElementsFailsClosed() {
+		Extension custom = new HiddenElementsExtension();
+		QueryEvaluationUtility.QuerySafetySnapshot snapshot = QueryEvaluationUtility.querySafetySnapshot(custom);
+		assertThat(snapshot.isUnknownTupleOperator(custom)).isTrue();
+		assertThat(snapshot.isRepeatable(custom)).isFalse();
+		assertThat(snapshot.permitsBindingInjection(custom, Set.of("hidden"))).isFalse();
+	}
+
+	@Test
+	void typedJoinWithAnOmittedRightOperandFailsClosed() {
+		Join custom = new HiddenRightJoin();
+		QueryEvaluationUtility.QuerySafetySnapshot snapshot = QueryEvaluationUtility.querySafetySnapshot(custom);
+		assertThat(snapshot.isUnknownTupleOperator(custom)).isTrue();
+		assertThat(snapshot.isRepeatable(custom)).isFalse();
+		assertThat(snapshot.permitsBindingInjection(custom, Set.of("hidden"))).isFalse();
+	}
+
+	@Test
+	void typedOptionalWithAnOmittedConditionFailsClosed() {
+		LeftJoin custom = new HiddenOptionalCondition();
+		QueryEvaluationUtility.QuerySafetySnapshot snapshot = QueryEvaluationUtility.querySafetySnapshot(custom);
+		assertThat(snapshot.isUnknownTupleOperator(custom)).isTrue();
+		assertThat(snapshot.isRepeatable(custom)).isFalse();
+		assertThat(snapshot.permitsBindingInjection(custom, Set.of("hidden"))).isFalse();
+	}
+
+	@Test
+	void typedSingletonWithExtraChildrenFailsClosed() {
+		SingletonSet custom = new SingletonWithExtraChild();
+		QueryEvaluationUtility.QuerySafetySnapshot snapshot = QueryEvaluationUtility.querySafetySnapshot(custom);
+		assertThat(snapshot.isUnknownTupleOperator(custom)).isTrue();
+		assertThat(snapshot.permitsBindingInjection(custom, Set.of("hidden"))).isFalse();
+	}
+
+	@Test
+	void typedValuesWithExtraChildrenFailsClosed() {
+		BindingSetAssignment custom = new ValuesWithExtraChild();
+		QueryEvaluationUtility.QuerySafetySnapshot snapshot = QueryEvaluationUtility.querySafetySnapshot(custom);
+		assertThat(snapshot.isUnknownTupleOperator(custom)).isTrue();
+		assertThat(snapshot.permitsBindingInjection(custom, Set.of("hidden"))).isFalse();
+	}
+
+	@Test
+	void typedStatementWithAnOmittedTermFailsClosed() {
+		StatementPattern custom = new StatementWithOmittedTerm();
+		QueryEvaluationUtility.QuerySafetySnapshot snapshot = QueryEvaluationUtility.querySafetySnapshot(custom);
+		assertThat(snapshot.isUnknownTupleOperator(custom)).isTrue();
+		assertThat(snapshot.permitsBindingInjection(custom, Set.of("hidden"))).isFalse();
+	}
+
+	@Test
+	void typedStatementWithExtraChildrenFailsClosed() {
+		StatementPattern custom = new StatementWithExtraChild();
+		QueryEvaluationUtility.QuerySafetySnapshot snapshot = QueryEvaluationUtility.querySafetySnapshot(custom);
+		assertThat(snapshot.isUnknownTupleOperator(custom)).isTrue();
+		assertThat(snapshot.permitsBindingInjection(custom, Set.of("hidden"))).isFalse();
+	}
+
+	@Test
+	void statementWithAnUnknownVariableCannotProveInjectionSafe() {
+		StatementPattern custom = new StatementPattern(new UnknownVar("subject"), Var.of("predicate"),
+				Var.of("object"));
+		assertThat(QueryEvaluationUtility.permitsBindingInjection(custom, Set.of("subject"))).isFalse();
+		assertThat(QueryEvaluationUtility.permitsBindingInjection(
+				statementPattern("subject", "predicate", "object"), Set.of("subject"))).isTrue();
+		StatementPattern declared = new StatementPattern(new DeclaredVar("subject"), Var.of("predicate"),
+				Var.of("object"));
+		assertThat(QueryEvaluationUtility.permitsBindingInjection(declared, Set.of("subject"))).isTrue();
+	}
+
+	@Test
+	void statementWithAVariableExposingChildrenCannotProveInjectionSafe() {
+		StatementPattern custom = new StatementPattern(new VarWithExtraChild("subject"), Var.of("predicate"),
+				Var.of("object"));
+		assertThat(QueryEvaluationUtility.permitsBindingInjection(custom, Set.of("subject"))).isFalse();
+	}
+
+	@Test
+	void typedJoinWithAnOmittedLeftOperandCapturesItsScopeHeader() {
+		BindingSetAssignment left = values("owner");
+		left.setBindingSets(() -> {
+			throw new AssertionError("scope analysis must not consume the one-shot rows");
+		});
+		Filter right = new Filter(new SingletonSet(), new Bound(Var.of("owner")));
+		Join custom = new HiddenLeftJoin(left, right);
+		QueryEvaluationUtility.QuerySafetySnapshot snapshot = QueryEvaluationUtility.querySafetySnapshot(custom);
+		left.setDeclaredBindingNames(Set.of("changed"));
+		assertThat(snapshot.isUnknownTupleOperator(custom)).isTrue();
+		assertThat(snapshot.requiresScopedFilterInput(custom)).isTrue();
+		assertThat(snapshot.requiresBindingFrameReplayPartition(right)).isTrue();
+		snapshot.refreshFrom(left);
+		assertThat(snapshot.requiresScopedFilterInput(custom)).isFalse();
+	}
+
+	@Test
+	void inheritedVisitorDispatchCannotProveUnknownTupleInjectionSafe() {
+		// SingletonSet declares no output names; this subtype contradicts that typed operator contract.
+		TupleExpr custom = new CustomHeader(Set.of("known"), Set.of());
+		TupleExpr root = new Join(values("left"), custom);
+		assertThat(QueryEvaluationUtility.permitsBindingInjection(custom, Set.of("hidden"))).isFalse();
+		assertThat(QueryEvaluationUtility.permitsBindingInjection(root, Set.of("hidden"))).isFalse();
+		assertThat(QueryEvaluationUtility.permitsBindingInjection(new SingletonSet(), Set.of("hidden"))).isTrue();
+		assertThat(QueryEvaluationUtility.permitsBindingInjection(values("known"), Set.of("hidden"))).isTrue();
+	}
+
+	@Test
+	void hiddenFilterConditionContributesVolatility() {
+		HiddenConditionFilter filter = new HiddenConditionFilter(new BNodeGenerator());
+		assertThat(QueryEvaluationUtility.querySafetySnapshot(filter).isRepeatable(filter)).isFalse();
+	}
+
+	@Test
+	void enclosingOptionalConditionNeedsNoUncapturedSiblingHeaders() {
+		Filter body = new Filter(new SingletonSet(), new Bound(Var.of("local")));
+		new LeftJoin(values("left"), values("right"), new Exists(body));
+		QueryEvaluationUtility.QuerySafetySnapshot snapshot = QueryEvaluationUtility.querySafetySnapshot(body);
+		assertThat(snapshot.requiresBindingFrameReplayPartition(body)).isFalse();
+		assertThat(snapshot.mayIntroduceFilterInput(body, Set.of("local"), false)).isTrue();
+	}
+
+	@Test
+	void opaqueFiltersCombineAnyExceptTheirOwnAssuredNames() {
+		Filter assuredA = new Filter(values("a"), new OpaqueCondition());
+		Filter assuredB = new Filter(values("b"), new OpaqueCondition());
+		Join owner = new Join(values("a", "b"), new Union(assuredA, assuredB));
+		QueryEvaluationUtility.QuerySafetySnapshot snapshot = QueryEvaluationUtility.querySafetySnapshot(owner);
+
+		assertThat(snapshot.requiresScopedFilterInput(owner)).isTrue();
+		assertThat(snapshot.mayIntroduceFilterInput(owner, Set.of("a"), false)).isTrue();
+		assertThat(snapshot.requiresBindingFrameReplayPartition(assuredA)).isTrue();
+		assertThat(snapshot.requiresBindingFrameReplayPartition(assuredB)).isTrue();
+
+		Filter assuredOnly = new Filter(values("a"), new OpaqueCondition());
+		Join noOwner = new Join(values("a"), assuredOnly);
+		assertThat(QueryEvaluationUtility.querySafetySnapshot(noOwner).requiresScopedFilterInput(noOwner)).isFalse();
+	}
+
+	@Test
+	void opaqueFilterScopeStopsAtTheFirstPrefixCoveringItsVariables() {
+		Filter inner = new Filter(new SingletonSet(), new OpaqueBound(Var.of("far")));
+		Join near = new Join(values("near", "shared"), inner);
+		Join far = new Join(values("far", "shared"), near);
+		QueryEvaluationUtility.QuerySafetySnapshot snapshot = QueryEvaluationUtility.querySafetySnapshot(far);
+		assertThat(snapshot.requiresScopedFilterInput(near)).isTrue();
+		assertThat(snapshot.requiresScopedFilterInput(far)).isTrue();
+
+		Filter covered = new Filter(new SingletonSet(), new OpaqueBound(Var.of("far")));
+		Join covering = new Join(values("far", "near"), covered);
+		Join beyond = new Join(values("outside"), covering);
+		QueryEvaluationUtility.QuerySafetySnapshot limited = QueryEvaluationUtility.querySafetySnapshot(beyond);
+		assertThat(limited.requiresScopedFilterInput(covering)).isTrue();
+		assertThat(limited.requiresScopedFilterInput(beyond)).isFalse();
+	}
+
+	@Test
+	void directAndWrappedExistsKeepTheirDistinctCapturedScopes() {
+		Filter direct = new Filter(new SingletonSet(), new Exists(values("declared")));
+		Join directOwner = new Join(values("declared"), direct);
+		assertThat(QueryEvaluationUtility.querySafetySnapshot(directOwner).requiresScopedFilterInput(directOwner))
+				.isTrue();
+
+		Filter wrapped = new Filter(new SingletonSet(), new Not(new Exists(values("declared"))));
+		Join wrappedOwner = new Join(values("declared"), wrapped);
+		assertThat(QueryEvaluationUtility.querySafetySnapshot(wrappedOwner).requiresScopedFilterInput(wrappedOwner))
+				.isFalse();
+	}
+
+	@Test
+	void enclosingFilterOutsideSnapshotRootStillPassesOwnerContextToCapturedFilter() {
+		Filter inner = new Filter(new SingletonSet(), new Bound(Var.of("x")));
+		Filter outer = new Filter(inner, new Bound(Var.of("y")));
+		new Join(values("x"), outer);
+		QueryEvaluationUtility.QuerySafetySnapshot snapshot = QueryEvaluationUtility.querySafetySnapshot(inner);
+
+		assertThat(snapshot.requiresScopedFilterInput(inner)).isFalse();
+		assertThat(snapshot.mayIntroduceFilterInput(inner, Set.of("x"), false)).isTrue();
+		assertThat(snapshot.requiresBindingFrameReplayPartition(inner)).isTrue();
 	}
 
 	@Test
@@ -131,6 +1225,246 @@ class QuerySafetyNameFactsTest {
 	}
 
 	@Test
+	void scopedFilterFactsRemainCapturedUntilRefreshWhenConditionChangesBeforeFirstDemand() {
+		Filter filter = new Filter(new SingletonSet(), new Bound(Var.of("before")));
+		Join owner = new Join(values("before"), filter);
+		QueryEvaluationUtility.QuerySafetySnapshot snapshot = QueryEvaluationUtility.querySafetySnapshot(owner);
+
+		filter.setCondition(new Bound(Var.of("after")));
+
+		assertThat(snapshot.requiresScopedFilterInput(owner)).isTrue();
+		assertThat(snapshot.mayIntroduceFilterInput(owner, Set.of("before"), false)).isTrue();
+		assertThat(snapshot.mayIntroduceFilterInput(owner, Set.of("after"), false)).isFalse();
+
+		snapshot.refreshFrom(filter);
+		assertThat(snapshot.requiresScopedFilterInput(owner)).isFalse();
+		assertThat(snapshot.mayIntroduceFilterInput(owner, Set.of("before"), false)).isFalse();
+		assertThat(snapshot.mayIntroduceFilterInput(owner, Set.of("after"), false)).isTrue();
+	}
+
+	@Test
+	void refreshFromOwnerDropsFactsForRemovedFilterSubtrees() {
+		Filter filter = new Filter(new SingletonSet(), new Bound(Var.of("removedRead")));
+		Join owner = new Join(values("removedRead"), filter);
+		QueryEvaluationUtility.QuerySafetySnapshot snapshot = QueryEvaluationUtility.querySafetySnapshot(owner);
+
+		assertThat(snapshot.requiresScopedFilterInput(owner)).isTrue();
+		assertThat(snapshot.mayIntroduceFilterInput(owner, Set.of("removedRead"), false)).isTrue();
+		assertThat(snapshot.requiresBindingFrameReplayPartition(owner)).isTrue();
+
+		owner.setRightArg(new SingletonSet());
+		snapshot.refreshFrom(owner);
+
+		assertThat(snapshot.requiresScopedFilterInput(owner)).isFalse();
+		assertThat(snapshot.mayIntroduceFilterInput(owner, Set.of("removedRead"), false)).isFalse();
+		assertThat(snapshot.requiresBindingFrameReplayPartition(owner)).isFalse();
+	}
+
+	@Test
+	void capturedFilterPropagationIgnoresScopeChangesUntilRefresh() {
+		Filter filter = new Filter(new SingletonSet(), new Bound(Var.of("scopeRead")));
+		Join owner = new Join(values("scopeRead"), filter);
+		QueryEvaluationUtility.QuerySafetySnapshot snapshot = QueryEvaluationUtility.querySafetySnapshot(owner);
+
+		filter.setVariableScopeChange(true);
+
+		assertThat(snapshot.requiresScopedFilterInput(owner)).isTrue();
+		assertThat(snapshot.mayIntroduceFilterInput(owner, Set.of("scopeRead"), false)).isTrue();
+
+		snapshot.refreshFrom(filter);
+		assertThat(snapshot.requiresScopedFilterInput(owner)).isFalse();
+		assertThat(snapshot.mayIntroduceFilterInput(owner, Set.of("scopeRead"), false)).isFalse();
+	}
+
+	@Test
+	void capturedFilterPropagationKeepsItsOriginalAncestorsUntilRefresh() {
+		Filter filter = new Filter(new SingletonSet(), new Bound(Var.of("parentRead")));
+		Join originalOwner = new Join(values("parentRead"), filter);
+		QueryEvaluationUtility.QuerySafetySnapshot snapshot = QueryEvaluationUtility.querySafetySnapshot(originalOwner);
+		Join replacementOwner = new Join(values("parentRead"), new SingletonSet());
+		replacementOwner.setRightArg(filter);
+
+		assertThat(snapshot.requiresScopedFilterInput(originalOwner)).isTrue();
+		assertThat(snapshot.mayIntroduceFilterInput(originalOwner, Set.of("parentRead"), false)).isTrue();
+	}
+
+	@Test
+	void refreshFromOwnerDropsInsertedThenRemovedNestedFilterSubtreeFacts() {
+		Join owner = new Join(values("nestedRead"), new SingletonSet());
+		QueryEvaluationUtility.QuerySafetySnapshot snapshot = QueryEvaluationUtility.querySafetySnapshot(owner);
+		Filter filter = new Filter(new SingletonSet(), new Bound(Var.of("nestedRead")));
+		Join inserted = new Join(values("nestedRead"), filter);
+
+		owner.setRightArg(inserted);
+		snapshot.refreshFrom(owner);
+		assertThat(snapshot.requiresScopedFilterInput(owner)).isTrue();
+		assertThat(snapshot.mayIntroduceFilterInput(owner, Set.of("nestedRead"), false)).isTrue();
+		assertThat(snapshot.requiresBindingFrameReplayPartition(owner)).isTrue();
+
+		owner.setRightArg(new SingletonSet());
+		snapshot.refreshFrom(owner);
+
+		assertThat(snapshot.requiresScopedFilterInput(owner)).isFalse();
+		assertThat(snapshot.mayIntroduceFilterInput(owner, Set.of("nestedRead"), false)).isFalse();
+		assertThat(snapshot.requiresBindingFrameReplayPartition(owner)).isFalse();
+	}
+
+	@Test
+	void refreshFromOwnerDropsSubtreeDemandedBeforeItsFirstRefresh() {
+		Join owner = new Join(values("demandedRead"), new SingletonSet());
+		QueryEvaluationUtility.QuerySafetySnapshot snapshot = QueryEvaluationUtility.querySafetySnapshot(owner);
+		Filter filter = new Filter(new SingletonSet(), new Bound(Var.of("demandedRead")));
+		Join inserted = new Join(values("demandedRead"), filter);
+
+		owner.setRightArg(inserted);
+		assertThat(snapshot.requiresScopedFilterInput(inserted)).isTrue();
+		assertThat(snapshot.requiresScopedFilterInput(owner)).isFalse();
+		assertThat(snapshot.mayIntroduceFilterInput(owner, Set.of("demandedRead"), false)).isFalse();
+		assertThat(snapshot.requiresBindingFrameReplayPartition(owner)).isFalse();
+		snapshot.refreshFrom(owner);
+		assertThat(snapshot.requiresScopedFilterInput(owner)).isTrue();
+
+		owner.setRightArg(new SingletonSet());
+		snapshot.refreshFrom(owner);
+
+		assertThat(snapshot.requiresScopedFilterInput(owner)).isFalse();
+		assertThat(snapshot.mayIntroduceFilterInput(owner, Set.of("demandedRead"), false)).isFalse();
+		assertThat(snapshot.requiresBindingFrameReplayPartition(owner)).isFalse();
+	}
+
+	@Test
+	void refreshingAnEmptySnapshotBeforeFirstDemandRegistersItsScopedRoot() {
+		Filter filter = new Filter(new SingletonSet(), new Bound(Var.of("lazyRead")));
+		Join owner = new Join(values("lazyRead"), filter);
+		QueryEvaluationUtility.QuerySafetySnapshot snapshot = new QueryEvaluationUtility.QuerySafetySnapshot();
+
+		snapshot.refreshFrom(owner);
+
+		assertThat(snapshot.requiresScopedFilterInput(owner)).isTrue();
+		assertThat(snapshot.mayIntroduceFilterInput(owner, Set.of("lazyRead"), false)).isTrue();
+		assertThat(snapshot.requiresBindingFrameReplayPartition(owner)).isTrue();
+	}
+
+	@Test
+	void refreshingOneBranchRetainsUntouchedSiblingScopeFactsUntilTheirOwnRefresh() {
+		Filter filter = new Filter(new SingletonSet(), new Bound(Var.of("capturedRead")));
+		Join filterOwner = new Join(values("capturedRead"), filter);
+		Projection projection = new Projection(new SingletonSet());
+		projection.setInheritedGraphParameter("privateGraph");
+		Join untouchedBranch = new Join(filterOwner, projection);
+		Join owner = new Join(values("unrelated"), untouchedBranch);
+		QueryEvaluationUtility.QuerySafetySnapshot snapshot = QueryEvaluationUtility.querySafetySnapshot(owner);
+
+		BindingSetAssignment replacementLeft = values("unrelated");
+		owner.setLeftArg(replacementLeft);
+		snapshot.refreshFrom(replacementLeft);
+
+		filter.setCondition(new Bound(Var.of("liveRead")));
+		filter.setVariableScopeChange(true);
+		projection.setInheritedGraphParameter(null);
+
+		assertThat(snapshot.requiresScopedFilterInput(filterOwner)).isTrue();
+		assertThat(snapshot.mayIntroduceFilterInput(filterOwner, Set.of("capturedRead"), false)).isTrue();
+		assertThat(snapshot.mayIntroduceFilterInput(filterOwner, Set.of("liveRead"), false)).isFalse();
+		assertThat(snapshot.requiresBindingFrameReplayPartition(filterOwner)).isTrue();
+		assertThat(snapshot.requiresBindingFrameReplayPartition(projection)).isTrue();
+	}
+
+	@Test
+	void refreshingASecondIndependentRootAddsItsScopedFacts() {
+		QueryEvaluationUtility.QuerySafetySnapshot snapshot = QueryEvaluationUtility
+				.querySafetySnapshot(new SingletonSet());
+		Filter filter = new Filter(new SingletonSet(), new Bound(Var.of("independentRead")));
+		Join owner = new Join(values("independentRead"), filter);
+
+		snapshot.refreshFrom(owner);
+
+		assertThat(snapshot.requiresScopedFilterInput(owner)).isTrue();
+		assertThat(snapshot.mayIntroduceFilterInput(owner, Set.of("independentRead"), false)).isTrue();
+		assertThat(snapshot.requiresBindingFrameReplayPartition(owner)).isTrue();
+	}
+
+	@Test
+	void refreshingAReparentedPreviouslySummarizedFilterCapturesItsNewOwner() {
+		Filter filter = new Filter(new SingletonSet(), new Bound(Var.of("reparentedRead")));
+		QueryEvaluationUtility.QuerySafetySnapshot snapshot = QueryEvaluationUtility.querySafetySnapshot(filter);
+		Join owner = new Join(values("reparentedRead"), filter);
+
+		snapshot.refreshFrom(owner);
+
+		assertThat(snapshot.requiresScopedFilterInput(owner)).isTrue();
+		assertThat(snapshot.mayIntroduceFilterInput(owner, Set.of("reparentedRead"), false)).isTrue();
+		assertThat(snapshot.requiresBindingFrameReplayPartition(owner)).isTrue();
+	}
+
+	@Test
+	void refreshingAReparentedFilterRefreshesItsCurrentParentChain() {
+		Filter filter = new Filter(new SingletonSet(), new Bound(Var.of("reparentedRead")));
+		Join originalOwner = new Join(values("reparentedRead"), filter);
+		QueryEvaluationUtility.QuerySafetySnapshot snapshot = QueryEvaluationUtility.querySafetySnapshot(originalOwner);
+
+		originalOwner.setRightArg(new SingletonSet());
+		Join newOwner = new Join(values("reparentedRead"), new SingletonSet());
+		newOwner.setRightArg(filter);
+		snapshot.refreshFrom(filter);
+
+		assertThat(snapshot.requiresScopedFilterInput(originalOwner)).isFalse();
+		assertThat(snapshot.mayIntroduceFilterInput(originalOwner, Set.of("reparentedRead"), false)).isFalse();
+		assertThat(snapshot.requiresScopedFilterInput(newOwner)).isTrue();
+		assertThat(snapshot.mayIntroduceFilterInput(newOwner, Set.of("reparentedRead"), false)).isTrue();
+		assertThat(snapshot.requiresBindingFrameReplayPartition(newOwner)).isTrue();
+	}
+
+	@Test
+	void refreshingAReplacementOperandUpdatesItsCapturedOwnerHeader() {
+		Filter filter = new Filter(new SingletonSet(), new Bound(Var.of("newInput")));
+		Join owner = new Join(values("oldInput"), filter);
+		QueryEvaluationUtility.QuerySafetySnapshot snapshot = QueryEvaluationUtility.querySafetySnapshot(owner);
+		BindingSetAssignment replacement = values("newInput");
+
+		owner.setLeftArg(replacement);
+		snapshot.refreshFrom(replacement);
+
+		assertThat(snapshot.requiresScopedFilterInput(owner)).isTrue();
+		assertThat(snapshot.mayIntroduceFilterInput(owner, Set.of("newInput"), false)).isTrue();
+		assertThat(snapshot.mayIntroduceFilterInput(owner, Set.of("oldInput"), false)).isFalse();
+	}
+
+	@Test
+	void refreshingAProjectionElementUpdatesItsCapturedOwnerHeader() {
+		ProjectionElem element = new ProjectionElem("projectedX");
+		Projection left = new Projection(values("projectedX", "projectedY"),
+				new ProjectionElemList(element), false);
+		Filter filter = new Filter(new SingletonSet(), new Bound(Var.of("projectedY")));
+		Join owner = new Join(left, filter);
+		QueryEvaluationUtility.QuerySafetySnapshot snapshot = QueryEvaluationUtility.querySafetySnapshot(owner);
+
+		assertThat(snapshot.requiresScopedFilterInput(owner)).isFalse();
+		element.setName("projectedY");
+		snapshot.refreshFrom(element);
+
+		assertThat(snapshot.requiresScopedFilterInput(owner)).isTrue();
+		assertThat(QueryEvaluationUtility.querySafetySnapshot(owner).requiresScopedFilterInput(owner)).isTrue();
+	}
+
+	@ParameterizedTest
+	@ValueSource(booleans = { false, true })
+	void detachingASummarizedSubtreePreservesItsReplayFacts(boolean demandBeforeDetaching) {
+		Projection projection = new Projection(new SingletonSet(), new ProjectionElemList(), false);
+		projection.setInheritedGraphParameter("privateGraph");
+		QueryRoot originalParent = new QueryRoot(projection);
+		QueryEvaluationUtility.QuerySafetySnapshot snapshot = QueryEvaluationUtility.querySafetySnapshot(projection);
+
+		if (demandBeforeDetaching) {
+			assertThat(snapshot.requiresBindingFrameReplayPartition(projection)).isTrue();
+		}
+		originalParent.setArg(new SingletonSet());
+		snapshot.refreshFrom(projection);
+
+		assertThat(snapshot.requiresBindingFrameReplayPartition(projection)).isTrue();
+	}
+
+	@Test
 	void concurrentFirstBindingNameDemandKeepsDistinctSubtreeFactsIsolated() throws Exception {
 		Extension left = namedFilter("leftRead", "leftTarget");
 		Extension right = namedFilter("rightRead", "rightTarget");
@@ -159,6 +1493,36 @@ class QuerySafetyNameFactsTest {
 
 			assertThat(failures).as("concurrent name-fact materialization completes without worker failures").isEmpty();
 			assertThat(results).containsExactly(List.of(false, true), List.of(false, true));
+		}
+	}
+
+	@Test
+	void concurrentSafetyReadsSurviveIndependentSnapshotRootDemands() throws Exception {
+		StatementPattern existingRoot = statementPattern("existingSubject", "existingPredicate", "existingObject");
+		QueryEvaluationUtility.QuerySafetySnapshot snapshot = QueryEvaluationUtility.querySafetySnapshot(existingRoot);
+		List<TupleExpr> independentRoots = new ArrayList<>();
+		for (int i = 0; i < 2_000; i++) {
+			independentRoots.add(statementPattern("subject" + i, "predicate" + i, "object" + i));
+		}
+		CyclicBarrier start = new CyclicBarrier(2);
+
+		try (ExecutorService executor = Executors.newFixedThreadPool(2)) {
+			Future<?> rootDemands = executor.submit(() -> {
+				awaitFirstDemand(start);
+				for (TupleExpr root : independentRoots) {
+					assertThat(snapshot.isRepeatable(root)).isTrue();
+				}
+			});
+			Future<?> existingReads = executor.submit(() -> {
+				awaitFirstDemand(start);
+				for (int i = 0; i < 50_000; i++) {
+					assertThat(snapshot.isRepeatable(existingRoot)).isTrue();
+					assertThat(snapshot.mayRaiseQueryFatalError(existingRoot)).isFalse();
+				}
+			});
+
+			rootDemands.get(20, TimeUnit.SECONDS);
+			existingReads.get(20, TimeUnit.SECONDS);
 		}
 	}
 
@@ -215,6 +1579,338 @@ class QuerySafetyNameFactsTest {
 		BindingSetAssignment assignment = new BindingSetAssignment();
 		assignment.setBindingNames(Set.of(names));
 		return assignment;
+	}
+
+	private static TupleExpr filterPrefix(int count) {
+		TupleExpr root = values("prefix0");
+		for (int i = 1; i < count; i++) {
+			root = new Filter(new Join(root, values("prefix" + i)), new Bound(Var.of("prefix" + i)));
+		}
+		return root;
+	}
+
+	private static Filter ancestorOnlyFilter(int count) {
+		Filter leaf = new Filter(new SingletonSet(), new Bound(Var.of("external")));
+		TupleExpr current = leaf;
+		for (int i = 0; i < count; i++) {
+			String owner = i == count - 1 ? "external" : "owner" + i;
+			current = new Filter(new Join(values(owner), current), new Bound(Var.of("intermediate" + i)));
+		}
+		return leaf;
+	}
+
+	private static TupleExpr externalFilterPrefix(int count) {
+		TupleExpr root = values("prefix0");
+		for (int i = 1; i < count; i++) {
+			root = new Filter(new Join(root, values("prefix" + i)), new Bound(Var.of("external")));
+		}
+		return root;
+	}
+
+	private static TupleExpr nestedExists(int count) {
+		TupleExpr root = values("exists0");
+		for (int i = 1; i < count; i++) {
+			root = new Filter(values("exists" + i), new Exists(root));
+		}
+		return root;
+	}
+
+	private static TupleExpr wrappedExistsPrefix(int count) {
+		TupleExpr root = values("wrapped0");
+		for (int i = 1; i < count; i++) {
+			root = new Filter(new Join(root, values("wrapped" + i)), new Not(new Exists(values("external"))));
+		}
+		return new Join(values("external"), root);
+	}
+
+	private static TupleExpr farthestOwnerPrefix(int count) {
+		TupleExpr root = values("leaf");
+		for (int i = 1; i < count; i++) {
+			root = new Filter(new Join(values("preceding" + i), root),
+					new And(new Bound(Var.of("external")), new Not(new Exists(values("declared")))));
+		}
+		return new Join(values("external"), root);
+	}
+
+	private static TupleExpr overlappingOwnerPrefix(int count) {
+		TupleExpr root = values("leaf");
+		for (int i = 1; i < count; i++) {
+			root = new Filter(new Join(values("preceding" + i, "shared"), root),
+					new And(new Bound(Var.of("external")), new Not(new Exists(values("declared")))));
+		}
+		return new Join(values("external", "shared"), root);
+	}
+
+	private record ScopeMeasurement(long allocated, long retained) {
+	}
+
+	private static ScopeMeasurement measureScopedDemand(ThreadMXBean memory, TupleExpr root, boolean expectedOwner) {
+		QueryEvaluationUtility.QuerySafetySnapshot snapshot = QueryEvaluationUtility.querySafetySnapshot(root);
+		long thread = Thread.currentThread().threadId();
+		long before = memory.getThreadAllocatedBytes(thread);
+		assertThat(snapshot.requiresScopedFilterInput(root)).isEqualTo(expectedOwner);
+		long allocated = memory.getThreadAllocatedBytes(thread) - before;
+		return new ScopeMeasurement(allocated, snapshot.retainedSnapshotStorageUnits());
+	}
+
+	private static long allocatedScopedDemand(ThreadMXBean memory, TupleExpr root) {
+		QueryEvaluationUtility.QuerySafetySnapshot snapshot = QueryEvaluationUtility.querySafetySnapshot(root);
+		long thread = Thread.currentThread().threadId();
+		long before = memory.getThreadAllocatedBytes(thread);
+		assertThat(snapshot.requiresScopedFilterInput(root)).isFalse();
+		return memory.getThreadAllocatedBytes(thread) - before;
+	}
+
+	private static final class VisitingFunctionCall extends FunctionCall {
+		private int[] order;
+
+		private VisitingFunctionCall(String uri, int[] order, ValueExpr... args) {
+			super(uri, args);
+			this.order = order;
+		}
+
+		@Override
+		public <X extends Exception> void visitChildren(QueryModelVisitor<X> visitor) throws X {
+			for (int index : order) {
+				getArgs().get(index).visit(visitor);
+			}
+		}
+	}
+
+	private static final class UnknownDispatchFunctionCall extends FunctionCall {
+		private UnknownDispatchFunctionCall(String uri, ValueExpr... args) {
+			super(uri, args);
+		}
+
+		@Override
+		public <X extends Exception> void visit(QueryModelVisitor<X> visitor) throws X {
+			visitor.meetOther(this);
+		}
+	}
+
+	private static final class LinkedArgumentsCall extends FunctionCall {
+		private LinkedArgumentsCall(String uri, ValueExpr... args) {
+			super(uri, args);
+		}
+
+		@Override
+		public List<ValueExpr> getArgs() {
+			return new LinkedList<>(super.getArgs());
+		}
+	}
+
+	private static final class CustomHeader extends SingletonSet {
+		private Set<String> ordinary;
+		private Set<String> assured;
+
+		private CustomHeader(Set<String> ordinary, Set<String> assured) {
+			this.ordinary = ordinary;
+			this.assured = assured;
+		}
+
+		@Override
+		public Set<String> getBindingNames() {
+			return ordinary;
+		}
+
+		@Override
+		public Set<String> getAssuredBindingNames() {
+			return assured;
+		}
+	}
+
+	private static final class OpaqueCondition extends ValueConstant {
+		private OpaqueCondition() {
+			super(VALUE_FACTORY.createLiteral(true));
+		}
+	}
+
+	private static final class OpaqueBound extends Bound {
+		private OpaqueBound(Var variable) {
+			super(variable);
+		}
+	}
+
+	private static final class HiddenConditionFilter extends Filter {
+		private HiddenConditionFilter() {
+			this(new Bound(Var.of("hidden")));
+		}
+
+		private HiddenConditionFilter(ValueExpr condition) {
+			super(new SingletonSet(), condition);
+		}
+
+		@Override
+		public <X extends Exception> void visitChildren(QueryModelVisitor<X> visitor) throws X {
+			getArg().visit(visitor);
+		}
+	}
+
+	private static final class CountedSingleton extends SingletonSet {
+		private final AtomicInteger visits;
+
+		private CountedSingleton(AtomicInteger visits) {
+			this.visits = visits;
+		}
+
+		@Override
+		public <X extends Exception> void visit(QueryModelVisitor<X> visitor) throws X {
+			visits.incrementAndGet();
+			super.visit(visitor);
+		}
+	}
+
+	private static final class UnknownSingleton extends SingletonSet {
+		@Override
+		public <X extends Exception> void visit(QueryModelVisitor<X> visitor) throws X {
+			visitor.meetOther(this);
+		}
+	}
+
+	private static final class UnknownExtension extends Extension {
+		private UnknownExtension() {
+			super(new SingletonSet(), extensionElement("hidden"));
+		}
+
+		@Override
+		public <X extends Exception> void visit(QueryModelVisitor<X> visitor) throws X {
+			visitor.meetOther(this);
+		}
+
+		@Override
+		public <X extends Exception> void visitChildren(QueryModelVisitor<X> visitor) throws X {
+			getArg().visit(visitor);
+		}
+	}
+
+	private static final class HiddenElementsExtension extends Extension {
+		private HiddenElementsExtension() {
+			super(new SingletonSet(), extensionElement("hidden"));
+		}
+
+		@Override
+		public <X extends Exception> void visitChildren(QueryModelVisitor<X> visitor) throws X {
+			getArg().visit(visitor);
+		}
+	}
+
+	private static final class HiddenRightJoin extends Join {
+		private HiddenRightJoin() {
+			super(new SingletonSet(), new Extension(new SingletonSet(), extensionElement("hidden")));
+		}
+
+		@Override
+		public <X extends Exception> void visitChildren(QueryModelVisitor<X> visitor) throws X {
+			getLeftArg().visit(visitor);
+		}
+	}
+
+	private static final class HiddenLeftJoin extends Join {
+		private HiddenLeftJoin(TupleExpr left, TupleExpr right) {
+			super(left, right);
+		}
+
+		@Override
+		public <X extends Exception> void visitChildren(QueryModelVisitor<X> visitor) throws X {
+			getRightArg().visit(visitor);
+		}
+	}
+
+	private static final class HiddenOptionalCondition extends LeftJoin {
+		private HiddenOptionalCondition() {
+			super(new SingletonSet(), new SingletonSet(), new Bound(Var.of("hidden")));
+		}
+
+		@Override
+		public <X extends Exception> void visitChildren(QueryModelVisitor<X> visitor) throws X {
+			getLeftArg().visit(visitor);
+			getRightArg().visit(visitor);
+		}
+	}
+
+	private static final class SingletonWithExtraChild extends SingletonSet {
+		private final Bound extra = new Bound(Var.of("hidden"));
+
+		@Override
+		public <X extends Exception> void visitChildren(QueryModelVisitor<X> visitor) throws X {
+			extra.visit(visitor);
+		}
+	}
+
+	private static final class ValuesWithExtraChild extends BindingSetAssignment {
+		private final Bound extra = new Bound(Var.of("hidden"));
+
+		@Override
+		public <X extends Exception> void visitChildren(QueryModelVisitor<X> visitor) throws X {
+			extra.visit(visitor);
+		}
+	}
+
+	private static final class StatementWithOmittedTerm extends StatementPattern {
+		private StatementWithOmittedTerm() {
+			super(Var.of("subject"), Var.of("predicate"), Var.of("object"));
+		}
+
+		@Override
+		public <X extends Exception> void visitChildren(QueryModelVisitor<X> visitor) throws X {
+			getSubjectVar().visit(visitor);
+			getPredicateVar().visit(visitor);
+		}
+	}
+
+	private static final class StatementWithExtraChild extends StatementPattern {
+		private final Bound extra = new Bound(Var.of("hidden"));
+
+		private StatementWithExtraChild() {
+			super(Var.of("subject"), Var.of("predicate"), Var.of("object"));
+		}
+
+		@Override
+		public <X extends Exception> void visitChildren(QueryModelVisitor<X> visitor) throws X {
+			super.visitChildren(visitor);
+			extra.visit(visitor);
+		}
+	}
+
+	private static final class UnknownVar extends Var {
+		private UnknownVar(String name) {
+			super(name, null, false, false, false);
+		}
+
+		@Override
+		public <X extends Exception> void visit(QueryModelVisitor<X> visitor) throws X {
+			visitor.meetOther(this);
+		}
+	}
+
+	private static final class DeclaredVar extends Var {
+		private DeclaredVar(String name) {
+			super(name, null, false, false, false);
+		}
+	}
+
+	private static final class VarWithExtraChild extends Var {
+		private final Bound extra = new Bound(Var.of("hidden"));
+
+		private VarWithExtraChild(String name) {
+			super(name, null, false, false, false);
+		}
+
+		@Override
+		public <X extends Exception> void visitChildren(QueryModelVisitor<X> visitor) throws X {
+			extra.visit(visitor);
+		}
+	}
+
+	private static final class HiddenArgumentFilter extends Filter {
+		private HiddenArgumentFilter() {
+			super(new SingletonSet(), new Bound(Var.of("hidden")));
+		}
+
+		@Override
+		public <X extends Exception> void visitChildren(QueryModelVisitor<X> visitor) throws X {
+			getCondition().visit(visitor);
+		}
 	}
 
 	private static StatementPattern statementPattern(String subject, String predicate, String object) {

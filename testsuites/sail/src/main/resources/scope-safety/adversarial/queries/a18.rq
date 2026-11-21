@@ -1,0 +1,8 @@
+# #6389: an expression error in BIND leaves both ?x and the right-side ?o mapping available.
+SELECT ?x ?o WHERE {
+  VALUES ?x { "left" }
+  OPTIONAL {
+    VALUES ?o { "abc" }
+    BIND(?o + 1 AS ?x)
+  }
+}

@@ -143,9 +143,31 @@ public class LmdbNativeWideQueryTest {
 			List<String> hybrid = rows(query);
 			assertThat(hybrid).isEqualTo(generic);
 			assertThat(LmdbNativeAggregateCompiler.WIDE_QUERY_DEMOTIONS.get() - demotionsBefore)
-					.as("the slot-starved root must be rescued by internal-variable island demotion")
+					.as(() -> "the slot-starved root must be rescued by internal-variable island demotion\n"
+							+ explain(query))
 					.isEqualTo(1);
 		});
+	}
+
+	@Test
+	public void demotionRetainsJoinColumnsDeclaredByAssignments() {
+		for (boolean compatible : List.of(false, true)) {
+			String left = "{ ?s <" + EX + "p0> ?privateLeft BIND(<" + EX + "same> AS ?joinKey) } ";
+			String right = "{ ?s <" + EX + "p1> ?privateRight VALUES ?joinKey { <" + EX
+					+ (compatible ? "same" : "different") + "> <" + EX
+					+ (compatible ? "same" : "different") + "> } }";
+			String wide = internalHeavyQuery();
+			String query = wide.substring(0, wide.length() - 1) + left + right + " }";
+			List<String> expected = compatible ? List.of("s=" + EX + "hub", "s=" + EX + "hub") : List.of();
+			assertThat(genericRows(query)).containsExactlyElementsOf(expected);
+			withProperty(ISLANDS_FLAG, "true", () -> {
+				long before = LmdbNativeAggregateCompiler.WIDE_QUERY_DEMOTIONS.get();
+				assertThat(rows(query)).containsExactlyElementsOf(expected);
+				assertThat(LmdbNativeAggregateCompiler.WIDE_QUERY_DEMOTIONS.get())
+						.as("the selected demotion must retain the shared assignment column")
+						.isGreaterThan(before);
+			});
+		}
 	}
 
 	@Test

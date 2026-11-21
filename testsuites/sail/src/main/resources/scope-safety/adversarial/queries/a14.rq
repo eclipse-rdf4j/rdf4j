@@ -1,0 +1,5 @@
+# #4882: IF falls back because BOUND(?x) is false in the OPTIONAL right operand.
+SELECT ?x ?y WHERE {
+  VALUES ?x { "left" }
+  OPTIONAL { BIND(IF(BOUND(?x), 1/0, "fallback") AS ?y) }
+}

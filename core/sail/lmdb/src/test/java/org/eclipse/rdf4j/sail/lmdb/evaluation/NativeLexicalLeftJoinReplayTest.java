@@ -25,12 +25,20 @@ import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.atomic.AtomicReference;
 
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
+import org.eclipse.rdf4j.query.BindingSet;
+import org.eclipse.rdf4j.query.Dataset;
+import org.eclipse.rdf4j.query.MutableBindingSet;
+import org.eclipse.rdf4j.query.algebra.evaluation.QueryBindingSet;
+import org.eclipse.rdf4j.query.algebra.evaluation.impl.BindingFrameBindings;
+import org.eclipse.rdf4j.query.algebra.evaluation.impl.GraphFrameBindings;
+import org.eclipse.rdf4j.query.algebra.evaluation.impl.QueryEvaluationContext;
 import org.eclipse.rdf4j.query.impl.EmptyBindingSet;
 import org.eclipse.rdf4j.sail.lmdb.LmdbQueryMemoryManager;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.codegen.KernelQueryCancelledException;
@@ -38,6 +46,8 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 import org.junit.jupiter.api.parallel.ResourceLock;
 import org.junit.jupiter.api.parallel.Resources;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 
 import jdk.jfr.Recording;
 import jdk.jfr.consumer.RecordingFile;
@@ -51,6 +61,134 @@ class NativeLexicalLeftJoinReplayTest {
 	private static final int SUMMARY = 3;
 	private static final long UNKNOWN = NativeLmdbQuerySource.UNKNOWN_ID;
 	private static final long REPLAY_LIMIT = 16_384L;
+
+	@Test
+	void leasedLexicalOptionalRetainsItsCondition() throws IOException {
+		try (Fixture fixture = new Fixture("key", "right", "left")) {
+			long value = fixture.term(SimpleValueFactory.getInstance().createLiteral("right"));
+			SlotPlan right = SlotPlan.values(new ValuesRow[] {
+					new ValuesRow(new int[] { RIGHT }, new long[] { value }) });
+			LeftJoinPlan original = new LeftJoinPlan(SingletonPlan.INSTANCE, right, new int[0], true, null,
+					ignored -> false);
+			NativeFilterLease lease = new NativeFilterLease();
+			try {
+				for (SlotPlan plan : List.of(original, lease.borrow(original))) {
+					try (RowCursor cursor = plan.open(fixture.row)) {
+						assertThat(cursor.next()).isTrue();
+						assertThat(fixture.row.id(RIGHT)).as("false OPTIONAL condition emits only the left row")
+								.isEqualTo(UNKNOWN);
+						assertThat(cursor.next()).isFalse();
+					}
+				}
+			} finally {
+				lease.discard();
+			}
+		}
+	}
+
+	@Test
+	void lexicalOptionalWithholdsEntryForAuthorizedRightConsumerAndFinalMerge() throws IOException {
+		try (Fixture fixture = new Fixture("key", "right", "left")) {
+			var vf = SimpleValueFactory.getInstance();
+			Value entryValue = vf.createIRI("urn:lexical:entry");
+			Value otherValue = vf.createIRI("urn:lexical:other");
+			long entryId = fixture.term(entryValue);
+			long otherId = fixture.term(otherValue);
+			for (int variant = 0; variant < 3; variant++) {
+				QueryBindingSet entry = new QueryBindingSet();
+				entry.addBinding("right", entryValue);
+				RowState row = new RowState(fixture.source, fixture.layout, entry);
+				assertThat(NativeRowSeeder.seed(row.slots, fixture.layout, entry, fixture.source)).isTrue();
+				row.recomputeBoundMask();
+				ValuesRow[] values = variant == 2 ? new ValuesRow[0]
+						: new ValuesRow[] {
+								new ValuesRow(new int[] { RIGHT }, new long[] { variant == 0 ? entryId : otherId }) };
+				SlotPlan local = SlotPlan.values(values);
+				AtomicInteger opened = new AtomicInteger();
+				SlotPlan parameterized = new SlotPlan() {
+					@Override
+					public RowCursor open(RowState input) throws IOException {
+						opened.incrementAndGet();
+						assertThat(BindingFrameBindings.hasFrame(input.base)).isTrue();
+						assertThat(input.base.getValue("right")).isNull();
+						assertThat(BindingFrameBindings.withheldInput(input.base, "right"))
+								.as("the parameterized RHS receives the genuine invocation input")
+								.isEqualTo(entryValue);
+						return local.open(input);
+					}
+
+					@Override
+					public long producedMask() {
+						return 1L << RIGHT;
+					}
+				};
+				try (RowCursor cursor = new LexicalFrameLeftJoinCursor(SingletonPlan.INSTANCE, parameterized,
+						new int[] { RIGHT }, new int[0], null, row)) {
+					boolean hasResult = cursor.next();
+					assertThat(hasResult).as("variant %s", variant).isEqualTo(variant != 1);
+					if (hasResult) {
+						assertThat(row.view.getValue("right")).isEqualTo(entryValue);
+						assertThat(cursor.next()).isFalse();
+					}
+				}
+				assertThat(opened).hasValue(1);
+			}
+		}
+	}
+
+	@ParameterizedTest(name = "{0}")
+	@ValueSource(strings = { "legacy", "marker", "nested-empty", "graph-overwrite" })
+	void lexicalOptionalUsesTheNearestEntryAuthorization(String kind) throws IOException {
+		try (Fixture fixture = new Fixture("key", "right", "left")) {
+			var vf = SimpleValueFactory.getInstance();
+			Value outer = vf.createIRI("urn:lexical-domain:outer");
+			Value local = vf.createIRI("urn:lexical-domain:local");
+			Value other = vf.createIRI("urn:lexical-domain:other");
+			long localId = fixture.term(local);
+			long otherId = fixture.term(other);
+			fixture.term(outer);
+			QueryBindingSet entry = new QueryBindingSet();
+			BindingSet input;
+			if (kind.equals("graph-overwrite")) {
+				MutableBindingSet supplied = GraphFrameBindings.supply(entry, "right", outer);
+				input = supplied;
+			} else {
+				entry.addBinding("right", outer);
+				input = entry;
+				if (!kind.equals("legacy")) {
+					QueryEvaluationContext context = new QueryEvaluationContext.Minimal((Dataset) null);
+					input = BindingFrameBindings.withSubstitutionDomain(input, Set.of("right"), context);
+					if (kind.equals("nested-empty")) {
+						input = BindingFrameBindings.withSubstitutionDomain(input, Set.of(), context);
+					}
+				}
+			}
+			RowState row = new RowState(fixture.source, fixture.layout, input);
+			assertThat(NativeRowSeeder.seed(row.slots, fixture.layout, input, fixture.source)).isTrue();
+			row.recomputeBoundMask();
+			long previous = row.enterLexicalScope(1L << RIGHT);
+			if (kind.equals("graph-overwrite")) {
+				row.replaceSlot(RIGHT, localId);
+				assertThat(GraphFrameBindings.isSupplied(row.view, "right")).isFalse();
+			}
+			SlotPlan right = SlotPlan.values(new ValuesRow[] {
+					new ValuesRow(new int[] { RIGHT }, new long[] { otherId }),
+					new ValuesRow(new int[] { RIGHT }, new long[] { otherId }) });
+			try {
+				try (RowCursor cursor = new LexicalFrameLeftJoinCursor(SingletonPlan.INSTANCE, right,
+						new int[] { RIGHT }, row)) {
+					boolean expectedFallback = kind.equals("legacy") || kind.equals("marker");
+					assertThat(cursor.next()).as("%s", kind).isEqualTo(expectedFallback);
+					if (expectedFallback) {
+						assertThat(row.view.getValue("right")).isEqualTo(outer);
+						assertThat(cursor.next()).isFalse();
+					}
+				}
+			} finally {
+				row.restoreLexicalScope(previous);
+			}
+		}
+	}
 
 	@Test
 	void lexicalRightRowsUseBoundedSpillReplayAndReleaseAfterExactFanout(@TempDir Path directory) throws Exception {

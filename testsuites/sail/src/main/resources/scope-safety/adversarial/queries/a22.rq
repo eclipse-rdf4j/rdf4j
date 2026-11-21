@@ -1,0 +1,5 @@
+# Repeated input mappings remain repeated when the OPTIONAL right operand has no match.
+SELECT ?x ?y WHERE {
+  VALUES ?x { "left" "left" }
+  OPTIONAL { BIND(?x AS ?y) }
+}

@@ -13,6 +13,10 @@ package org.eclipse.rdf4j.query.algebra.evaluation.impl;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+import java.io.ByteArrayInputStream;
+import java.io.ByteArrayOutputStream;
+import java.io.ObjectInputStream;
+import java.io.ObjectOutputStream;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Iterator;
@@ -21,10 +25,12 @@ import java.util.Set;
 
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.common.iteration.CloseableIteratorIteration;
+import org.eclipse.rdf4j.common.iteration.SingletonIteration;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.Statement;
 import org.eclipse.rdf4j.model.Value;
+import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.model.vocabulary.RDF4J;
 import org.eclipse.rdf4j.model.vocabulary.SESAME;
@@ -34,21 +40,34 @@ import org.eclipse.rdf4j.query.Dataset;
 import org.eclipse.rdf4j.query.QueryEvaluationException;
 import org.eclipse.rdf4j.query.QueryLanguage;
 import org.eclipse.rdf4j.query.algebra.BindingSetAssignment;
+import org.eclipse.rdf4j.query.algebra.EmptySet;
+import org.eclipse.rdf4j.query.algebra.Extension;
 import org.eclipse.rdf4j.query.algebra.Graph;
+import org.eclipse.rdf4j.query.algebra.Join;
 import org.eclipse.rdf4j.query.algebra.Lateral;
+import org.eclipse.rdf4j.query.algebra.Projection;
+import org.eclipse.rdf4j.query.algebra.ProjectionElem;
+import org.eclipse.rdf4j.query.algebra.ProjectionElemList;
 import org.eclipse.rdf4j.query.algebra.QueryModelVisitor;
 import org.eclipse.rdf4j.query.algebra.QueryRoot;
 import org.eclipse.rdf4j.query.algebra.Service;
 import org.eclipse.rdf4j.query.algebra.StatementPattern;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.algebra.UnaryTupleOperator;
+import org.eclipse.rdf4j.query.algebra.Union;
 import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryOptimizer;
 import org.eclipse.rdf4j.query.algebra.evaluation.TripleSource;
 import org.eclipse.rdf4j.query.algebra.evaluation.federation.FederatedService;
 import org.eclipse.rdf4j.query.algebra.evaluation.federation.FederatedServiceResolver;
+import org.eclipse.rdf4j.query.algebra.evaluation.function.TupleFunction;
+import org.eclipse.rdf4j.query.algebra.evaluation.function.TupleFunctionRegistry;
+import org.eclipse.rdf4j.query.algebra.evaluation.function.tuple.AbstractTupleFunction;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.GraphScopeOptimizer;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.ProjectionRemovalOptimizer;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.QueryModelNormalizerOptimizer;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.StandardQueryOptimizerPipeline;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.TupleFunctionMagicPropertyOptimizer;
 import org.eclipse.rdf4j.query.algebra.helpers.AbstractQueryModelVisitor;
 import org.eclipse.rdf4j.query.algebra.helpers.QueryAlgebraBindingAnalysis;
 import org.eclipse.rdf4j.query.impl.EmptyBindingSet;
@@ -56,6 +75,8 @@ import org.eclipse.rdf4j.query.impl.MapBindingSet;
 import org.eclipse.rdf4j.query.impl.SimpleDataset;
 import org.eclipse.rdf4j.query.parser.QueryParserUtil;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 
 class GraphScopeOptimizerTest {
 
@@ -66,16 +87,188 @@ class GraphScopeOptimizerTest {
 	private static final IRI ABSENT_GRAPH = VF.createIRI("urn:absent");
 
 	@Test
+	void standaloneGraphLoweringStillReadsDataForRegisteredMagicPredicate() {
+		String uri = "urn:scope:standalone-magic";
+		TupleFunction function = echoTupleFunction(uri);
+		TupleFunctionRegistry.getInstance().add(function);
+		try {
+			CountingTripleSource source = new CountingTripleSource();
+			IRI subject = VF.createIRI("urn:standalone:s");
+			IRI object = VF.createIRI("urn:standalone:o");
+			source.data.add(VF.createStatement(subject, VF.createIRI(uri), object, TARGET_GRAPH));
+			TupleExpr plan = parse("SELECT ?s ?o WHERE { GRAPH <urn:target> { ?s <" + uri + "> ?o } }");
+			new GraphScopeOptimizer().optimize(plan, null, EmptyBindingSet.getInstance());
+			assertThat(statements(plan)).singleElement()
+					.satisfies(statement -> assertThat(statement.getScope())
+							.isEqualTo(StatementPattern.Scope.NAMED_CONTEXTS));
+			DefaultEvaluationStrategy strategy = new DefaultEvaluationStrategy(source, null);
+			MapBindingSet expected = bindings("s", subject);
+			expected.addBinding("o", object);
+			assertThat(evaluate(strategy, plan, EmptyBindingSet.getInstance())).containsExactly(expected);
+		} finally {
+			TupleFunctionRegistry.getInstance().remove(function);
+		}
+	}
+
+	@ParameterizedTest(name = "magic before graph={0}")
+	@ValueSource(booleans = { false, true })
+	void customRegistryGraphMagicUsesItsActualPipeline(boolean magicFirst) {
+		String uri = "urn:scope:custom-magic";
+		TupleFunctionRegistry registry = new TupleFunctionRegistry();
+		registry.add(echoTupleFunction(uri));
+		CountingTripleSource source = new CountingTripleSource();
+		EvaluationStatistics statistics = new EvaluationStatistics();
+		DefaultEvaluationStrategy strategy = new DefaultEvaluationStrategy(source, null, null, 0, statistics, false,
+				registry);
+		QueryOptimizer graph = new GraphScopeOptimizer();
+		QueryOptimizer magic = new TupleFunctionMagicPropertyOptimizer(registry);
+		strategy.setOptimizerPipeline(() -> magicFirst ? List.of(magic, graph) : List.of(graph, magic));
+		TupleExpr plan = parse("SELECT ?a ?x WHERE { VALUES ?a { \"input\" } GRAPH <urn:absent> { ?a <"
+				+ uri + "> ?x } }");
+		strategy.optimize(plan, statistics, EmptyBindingSet.getInstance());
+		MapBindingSet expected = bindings("a", VF.createLiteral("input"));
+		expected.addBinding("x", VF.createLiteral("input"));
+		assertThat(evaluate(strategy, plan, EmptyBindingSet.getInstance())).containsExactly(expected);
+	}
+
+	@ParameterizedTest(name = "boundary copy={0}")
+	@ValueSource(strings = { "clone-flat", "serialized-flat", "clone-nested", "serialized-nested" })
+	void graphBoundaryRetainsItsOriginAcrossAlgebraCopies(String kind) throws Exception {
+		String uri = "urn:scope:copied-custom-magic";
+		TupleFunctionRegistry registry = new TupleFunctionRegistry();
+		registry.add(echoTupleFunction(uri));
+		CountingTripleSource source = new CountingTripleSource();
+		DefaultEvaluationStrategy strategy = new DefaultEvaluationStrategy(source, null, null, 0,
+				new EvaluationStatistics(), false, registry);
+		String magic = "?a <" + uri + "> ?x";
+		if (kind.endsWith("nested")) {
+			magic = "{ " + magic + " }";
+		}
+		TupleExpr plan = parse("SELECT ?a ?x WHERE { VALUES ?a { \"input\" } GRAPH <urn:absent> { "
+				+ magic + " } }");
+		new GraphScopeOptimizer().optimize(plan, null, EmptyBindingSet.getInstance());
+		if (kind.startsWith("clone")) {
+			plan = plan.clone();
+		} else {
+			ByteArrayOutputStream bytes = new ByteArrayOutputStream();
+			try (ObjectOutputStream output = new ObjectOutputStream(bytes)) {
+				output.writeObject(plan);
+			}
+			try (ObjectInputStream input = new ObjectInputStream(new ByteArrayInputStream(bytes.toByteArray()))) {
+				plan = (TupleExpr) input.readObject();
+			}
+		}
+		new TupleFunctionMagicPropertyOptimizer(registry).optimize(plan, null, EmptyBindingSet.getInstance());
+		List<BindingSet> actual = evaluate(strategy, plan, EmptyBindingSet.getInstance());
+		if (kind.endsWith("nested")) {
+			assertThat(actual).isEmpty();
+		} else {
+			MapBindingSet expected = bindings("a", VF.createLiteral("input"));
+			expected.addBinding("x", VF.createLiteral("input"));
+			assertThat(actual).containsExactly(expected);
+		}
+	}
+
+	private static TupleFunction echoTupleFunction(String uri) {
+		return new AbstractTupleFunction() {
+			@Override
+			public String getURI() {
+				return uri;
+			}
+
+			@Override
+			protected CloseableIteration<? extends List<? extends Value>> rows(ValueFactory factory, Value[] args) {
+				return new SingletonIteration<>(List.of(args[0]));
+			}
+		};
+	}
+
+	@Test
+	void loweredGraphScopeIsDistinctFromAnOrdinaryExtension() {
+		StatementPattern statement = new StatementPattern(Var.of("s"), Var.of("p", P, true, true), Var.of("o"));
+		QueryRoot plan = new QueryRoot(new Graph(Var.of("g", TARGET_GRAPH, true, true), statement));
+		new GraphScopeOptimizer().optimize(plan, null, EmptyBindingSet.getInstance());
+		assertThat(plan.getArg()).isInstanceOf(Extension.class);
+		Extension graphBoundary = (Extension) plan.getArg();
+		assertThat(graphBoundary.isVariableScopeChange()).isTrue();
+		assertThat(graphBoundary.getArg()).isInstanceOf(StatementPattern.class);
+		assertThat(((StatementPattern) graphBoundary.getArg()).isVariableScopeChange()).isFalse();
+		Extension ordinary = new Extension(graphBoundary.getArg().clone());
+		ordinary.setVariableScopeChange(true);
+		assertThat(graphBoundary).isNotEqualTo(ordinary);
+		assertThat(ordinary).isNotEqualTo(graphBoundary);
+		assertThat(graphBoundary.clone()).isEqualTo(graphBoundary).hasSameHashCodeAs(graphBoundary);
+		graphBoundary.clearQueryModelMetadata();
+		assertThat(graphBoundary).isNotEqualTo(ordinary);
+	}
+
+	@Test
+	void normalizingScopedUnionKeepsItsGroupOutsideLoweredGraph() {
+		String uri = "urn:scope:normalized-custom-magic";
+		TupleFunctionRegistry registry = new TupleFunctionRegistry();
+		registry.add(echoTupleFunction(uri));
+		BindingSetAssignment values = new BindingSetAssignment();
+		values.setBindingNames(Set.of("a"));
+		values.setBindingSets(List.of(bindings("a", VF.createLiteral("input"))));
+		StatementPattern call = new StatementPattern(Var.of("a"), Var.of("p", VF.createIRI(uri), true, true),
+				Var.of("x"));
+		Graph graph = new Graph(Var.of("g", ABSENT_GRAPH, true, true), call);
+		Union scoped = new Union(graph, new EmptySet());
+		scoped.setVariableScopeChange(true);
+		TupleExpr plan = new QueryRoot(new Join(values, scoped));
+		new GraphScopeOptimizer().optimize(plan, null, EmptyBindingSet.getInstance());
+		new QueryModelNormalizerOptimizer().optimize(plan, null, EmptyBindingSet.getInstance());
+		new TupleFunctionMagicPropertyOptimizer(registry).optimize(plan, null, EmptyBindingSet.getInstance());
+		DefaultEvaluationStrategy strategy = new DefaultEvaluationStrategy(new CountingTripleSource(), null, null, 0,
+				new EvaluationStatistics(), false, registry);
+		assertThat(evaluate(strategy, plan, EmptyBindingSet.getInstance())).isEmpty();
+	}
+
+	@Test
+	void identitySubqueryKeepsItsOwnScopeOutsideLoweredGraph() {
+		String uri = "urn:scope:projected-custom-magic";
+		TupleFunctionRegistry registry = new TupleFunctionRegistry();
+		registry.add(echoTupleFunction(uri));
+		BindingSetAssignment values = new BindingSetAssignment();
+		values.setBindingNames(Set.of("a"));
+		values.setBindingSets(List.of(bindings("a", VF.createLiteral("input"))));
+		StatementPattern call = new StatementPattern(Var.of("a"), Var.of("p", VF.createIRI(uri), true, true),
+				Var.of("x"));
+		Graph graph = new Graph(Var.of("g", ABSENT_GRAPH, true, true), call);
+		Projection subquery = new Projection(graph,
+				new ProjectionElemList(new ProjectionElem("a"), new ProjectionElem("x")), true);
+		TupleExpr plan = new QueryRoot(new Join(values, subquery));
+		new GraphScopeOptimizer().optimize(plan, null, EmptyBindingSet.getInstance());
+		new ProjectionRemovalOptimizer().optimize(plan, null, EmptyBindingSet.getInstance());
+		new TupleFunctionMagicPropertyOptimizer(registry).optimize(plan, null, EmptyBindingSet.getInstance());
+		DefaultEvaluationStrategy strategy = new DefaultEvaluationStrategy(new CountingTripleSource(), null, null, 0,
+				new EvaluationStatistics(), false, registry);
+		assertThat(evaluate(strategy, plan, EmptyBindingSet.getInstance())).isEmpty();
+	}
+
+	@Test
 	void positiveGraphIsLoweredBeforeJoinSelection() {
 		DefaultEvaluationStrategy strategy = new DefaultEvaluationStrategy(new EmptyTripleSource(), null);
 		TupleExpr plan = parse("SELECT * WHERE { VALUES ?s { <urn:s> } GRAPH <urn:g> { ?s <urn:p> ?o } }");
 		strategy.optimize(plan, new EvaluationStatistics(), EmptyBindingSet.getInstance());
 		assertThat(graphs(plan)).isEmpty();
+		List<Extension> graphBoundaries = new ArrayList<>();
+		plan.visit(new AbstractQueryModelVisitor<RuntimeException>() {
+			@Override
+			public void meet(Extension node) {
+				if (node.isGraphScopeBoundary()) {
+					graphBoundaries.add(node);
+				}
+				super.meet(node);
+			}
+		});
+		assertThat(graphBoundaries).singleElement()
+				.satisfies(boundary -> assertThat(boundary.isVariableScopeChange()).isTrue());
 		assertThat(statements(plan)).singleElement().satisfies(statement -> {
 			assertThat(statement.getScope()).isEqualTo(StatementPattern.Scope.NAMED_CONTEXTS);
 			assertThat(statement.getContextVar().getValue()).isEqualTo(VF.createIRI("urn:g"));
 			assertThat(statement.getSubjectVar().getName()).isEqualTo("s");
-			assertThat(statement.isVariableScopeChange()).isTrue();
+			assertThat(statement.isVariableScopeChange()).isFalse();
 		});
 	}
 
@@ -120,7 +313,11 @@ class GraphScopeOptimizerTest {
 
 		assertThat(graphs(plan)).singleElement().satisfies(graph -> {
 			assertThat(graph.getGraphName().getValue()).isEqualTo(TARGET_GRAPH);
-			assertThat(graph.getArg()).isInstanceOf(StatementPattern.class);
+			assertThat(graph.getArg()).isInstanceOf(Extension.class);
+			Extension loweredInnerGraph = (Extension) graph.getArg();
+			assertThat(loweredInnerGraph.isGraphScopeBoundary()).isTrue();
+			assertThat(loweredInnerGraph.isVariableScopeChange()).isTrue();
+			assertThat(loweredInnerGraph.getArg()).isInstanceOf(StatementPattern.class);
 		});
 		assertThat(statements(plan)).singleElement().satisfies(statement -> {
 			assertThat(statement.getScope()).isEqualTo(StatementPattern.Scope.NAMED_CONTEXTS);

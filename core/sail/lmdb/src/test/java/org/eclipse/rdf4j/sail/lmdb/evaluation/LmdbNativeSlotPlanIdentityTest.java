@@ -12,13 +12,25 @@
 package org.eclipse.rdf4j.sail.lmdb.evaluation;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.verifyNoInteractions;
+import static org.mockito.Mockito.when;
 
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.LinkedHashMap;
+import java.util.List;
 
+import org.eclipse.rdf4j.query.algebra.Filter;
+import org.eclipse.rdf4j.query.algebra.SameTerm;
+import org.eclipse.rdf4j.query.algebra.SingletonSet;
+import org.eclipse.rdf4j.query.algebra.Var;
+import org.eclipse.rdf4j.query.algebra.evaluation.impl.EvaluationStatistics;
 import org.eclipse.rdf4j.query.impl.EmptyBindingSet;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 
 /** Regression coverage for unused-VALUES elimination preserving a Janino-lowerable flat join. */
 class LmdbNativeSlotPlanIdentityTest {
@@ -63,6 +75,62 @@ class LmdbNativeSlotPlanIdentityTest {
 		NativeFilterLease lease = new NativeFilterLease();
 		try {
 			assertThat(lease.borrow(stale)).isSameAs(values);
+		} finally {
+			lease.discard();
+		}
+	}
+
+	@ParameterizedTest(name = "commit={0}")
+	@ValueSource(booleans = { false, true })
+	void sharedValuesFallbackPublishesFeedbackOnlyOnLeaseCommit(boolean commit) throws Exception {
+		RowState row = new RowState(null, layout(2), EmptyBindingSet.getInstance());
+		Arrays.fill(row.slots, NativeLmdbQuerySource.UNKNOWN_ID);
+		assertThat(row.bind(1, 11L)).isTrue();
+		PatternPlan pattern = mock(PatternPlan.class);
+		when(pattern.producedMask()).thenReturn(1L << 1);
+		RowCursor fallback = mock(RowCursor.class);
+		when(fallback.next()).thenReturn(true, false);
+		when(pattern.open(row)).thenReturn(fallback);
+		PatternPlan probe = mock(PatternPlan.class);
+		ValuesPlan witness = new ValuesPlan(new ValuesRow[] { new ValuesRow(new int[] { 0 }, new long[] { 11L }) });
+		Filter observer = new Filter(new SingletonSet(), new SameTerm(Var.of("v0"), Var.of("v1")));
+		record Outcome(Filter observer, long passed, long filtered) {
+		}
+		List<Outcome> published = new ArrayList<>();
+		EvaluationStatistics statistics = new EvaluationStatistics() {
+			@Override
+			public void recordFilterOutcome(Filter filter, long passedCount, long filteredCount) {
+				published.add(new Outcome(filter, passedCount, filteredCount));
+			}
+		};
+		NativeBooleanFilter condition = mock(NativeBooleanFilter.class);
+		when(condition.accept(row)).thenAnswer(invocation -> {
+			assertThat(row.slots).containsExactly(11L, 11L);
+			return true;
+		});
+		SlotPlan drive = new SharedValuesPatternPlan(witness, pattern,
+				new RecordingNativeBooleanFilter(condition, observer, statistics), 0, 1,
+				new PatternPlan[] { probe }, new long[] { 11L });
+
+		NativeFilterLease lease = new NativeFilterLease();
+		try {
+			try (RowCursor cursor = lease.borrow(drive).open(row)) {
+				assertThat(cursor.next()).isTrue();
+				assertThat(cursor.next()).isFalse();
+			}
+			verify(condition).accept(row);
+			verify(pattern).open(row);
+			verify(fallback).close();
+			verifyNoInteractions(probe);
+			int beforeDecision = published.size();
+			if (commit) {
+				lease.commit();
+				assertThat(published).containsExactly(new Outcome(observer, 1L, 0L));
+			} else {
+				lease.discard();
+				assertThat(published).as("discarded attempt feedback").isEmpty();
+			}
+			assertThat(beforeDecision).as("feedback before lease finalization").isZero();
 		} finally {
 			lease.discard();
 		}

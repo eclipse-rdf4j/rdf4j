@@ -56,6 +56,7 @@ public abstract class FedXStatementPattern extends StatementPattern
 	public FedXStatementPattern(StatementPattern node, QueryInfo queryInfo) {
 		super(node.getScope(), node.getSubjectVar().clone(), node.getPredicateVar().clone(),
 				node.getObjectVar().clone(), node.getContextVar() != null ? node.getContextVar().clone() : null);
+		setVariableScopeChange(node.isVariableScopeChange());
 		this.id = NodeFactory.getNextId();
 		this.queryInfo = queryInfo;
 		initFreeVars();
@@ -78,6 +79,7 @@ public abstract class FedXStatementPattern extends StatementPattern
 	}
 
 	private void copyAnnotations(FedXStatementPattern target) {
+		target.setVariableScopeChange(isVariableScopeChange());
 		target.statementSources = new ArrayList<>(statementSources);
 		target.freeVars = new ArrayList<>(freeVars);
 		target.filterExpr = filterExpr == null ? null : (FilterValueExpr) filterExpr.clone();

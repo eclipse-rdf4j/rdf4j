@@ -45,6 +45,11 @@ import org.eclipse.rdf4j.sail.lmdb.ValuePosition;
 /** Immutable lexical binding metadata captured before optimizers discard pattern uses or aliases. */
 final class NativeValuePositionAnalysis {
 
+	/** Whether this occurrence denotes a physical binding, including valued anonymous occurrences. */
+	static boolean isBindingOccurrence(Var var) {
+		return var != null && var.getName() != null && !var.isConstant();
+	}
+
 	private final IdentityHashMap<QueryModelNode, Map<String, Integer>> scopes;
 	private final IdentityHashMap<Group, Map<String, Integer>> groupInputs;
 	private final NativeAggregateDemandAnalysis aggregateDemands;
@@ -266,13 +271,13 @@ final class NativeValuePositionAnalysis {
 		}
 
 		private void position(Var var, int mask) {
-			if (variable(var)) {
+			if (isBindingOccurrence(var)) {
 				scope.symbol(var.getName()).root().mask |= mask;
 			}
 		}
 
 		private static boolean variable(Var var) {
-			return var != null && !var.isConstant() && (!var.hasValue() || !var.isAnonymous());
+			return isBindingOccurrence(var) && (!var.hasValue() || !var.isAnonymous());
 		}
 
 		@Override

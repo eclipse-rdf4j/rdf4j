@@ -31,7 +31,9 @@ import java.util.Set;
 
 import org.eclipse.rdf4j.federated.FedXFactory;
 import org.eclipse.rdf4j.federated.FederationContext;
+import org.eclipse.rdf4j.federated.algebra.ExclusiveGroup;
 import org.eclipse.rdf4j.federated.algebra.ExclusiveStatement;
+import org.eclipse.rdf4j.federated.algebra.FilterExpr;
 import org.eclipse.rdf4j.federated.algebra.ResolvedGraphSelection;
 import org.eclipse.rdf4j.federated.algebra.StatementSource;
 import org.eclipse.rdf4j.federated.algebra.StatementSource.StatementSourceType;
@@ -48,7 +50,9 @@ import org.eclipse.rdf4j.query.QueryEvaluationException;
 import org.eclipse.rdf4j.query.QueryLanguage;
 import org.eclipse.rdf4j.query.QueryResults;
 import org.eclipse.rdf4j.query.TupleQuery;
+import org.eclipse.rdf4j.query.algebra.Compare;
 import org.eclipse.rdf4j.query.algebra.StatementPattern;
+import org.eclipse.rdf4j.query.algebra.ValueConstant;
 import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryBindingSet;
 import org.eclipse.rdf4j.query.impl.EmptyBindingSet;
@@ -113,6 +117,53 @@ class FedXNativeGraphIdentityTest {
 				assertEquals(SUBJECT, result.get(0).getValue("s"));
 			}
 		} finally {
+			repository.shutDown();
+		}
+	}
+
+	@Test
+	void preparedNativeGraphGroupRetainsNestedFilterAcrossReuse() {
+		SailRepository repository = repository();
+		try (var connection = repository.getConnection()) {
+			connection.add(VF.createIRI("urn:other"), PREDICATE, VF.createLiteral("other"), GRAPH);
+		}
+		var federation = FedXFactory.newFederation()
+				.withMembers(List.of(EndpointFactory.loadEndpoint("first", repository)))
+				.create();
+		try {
+			federation.init();
+			var context = federation.getFederationContext();
+			var strategy = context.createStrategy(null);
+			QueryInfo info = new QueryInfo(null, null, QueryType.SELECT, 0, false, context, strategy, null);
+			Endpoint endpoint = context.getFederation().getMembers().get(0);
+			Resource graph = (Resource) new EndpointIdentity(endpoint, info).incoming(GRAPH);
+			StatementSource owner = new StatementSource(endpoint.getId(), StatementSourceType.LOCAL);
+			ExclusiveStatement first = new ExclusiveStatement(
+					new StatementPattern(StatementPattern.Scope.NAMED_CONTEXTS,
+							Var.of("s"), Var.of("p1", PREDICATE, true, true), Var.of("o"),
+							Var.of("g", graph, true, true)),
+					owner, info);
+			ExclusiveGroup nested = new ExclusiveGroup(List.of(first), owner, info);
+			nested.addFilterExpr(new FilterExpr(new Compare(Var.of("o"), new ValueConstant(VF.createLiteral("value")),
+					Compare.CompareOp.EQ), new HashSet<>(Set.of("o"))));
+			ExclusiveStatement second = new ExclusiveStatement(
+					new StatementPattern(StatementPattern.Scope.NAMED_CONTEXTS,
+							Var.of("s"), Var.of("p2", PREDICATE, true, true), Var.of("other"),
+							Var.of("g2", graph, true, true)),
+					owner, info);
+			ExclusiveGroup group = new ExclusiveGroup(List.of(nested, second), owner, info);
+			assertTrue(NativeGraphQuery.isRequired(group));
+			var prepared = strategy.precompile(group);
+			for (int i = 0; i < 2; i++) {
+				try (var rows = prepared.evaluate(EmptyBindingSet.getInstance())) {
+					var result = QueryResults.asList(rows);
+					assertEquals(1, result.size());
+					assertEquals(SUBJECT, result.get(0).getValue("s"));
+					assertEquals(VF.createLiteral("value"), result.get(0).getValue("o"));
+				}
+			}
+		} finally {
+			federation.shutDown();
 			repository.shutDown();
 		}
 	}

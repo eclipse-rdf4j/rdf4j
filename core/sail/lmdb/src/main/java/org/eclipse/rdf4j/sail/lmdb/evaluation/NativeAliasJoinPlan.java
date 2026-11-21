@@ -115,6 +115,8 @@ final class NativeAliasJoinPlan implements SlotPlan {
 			return left.lexicalHashKeys == right.lexicalHashKeys
 					&& Arrays.equals(left.lexicalSharedSlots, right.lexicalSharedSlots)
 					&& Arrays.equals(left.lexicalProblemSlots, right.lexicalProblemSlots)
+					&& left.lexicalStaticInputs.equals(right.lexicalStaticInputs)
+					&& left.lexicalCondition == right.lexicalCondition
 					&& sameOrderedShape(left.left, right.left) && sameOrderedShape(left.right, right.right);
 		}
 		if (original instanceof MinusPlan left && cloned instanceof MinusPlan right) {
@@ -140,7 +142,8 @@ final class NativeAliasJoinPlan implements SlotPlan {
 			return true;
 		}
 		if (original instanceof LateralPlan left && cloned instanceof LateralPlan right) {
-			return left.rightInputMask == right.rightInputMask && sameOrderedShape(left.left, right.left)
+			return left.rightInputMask == right.rightInputMask && left.semanticEntry == right.semanticEntry
+					&& sameOrderedShape(left.left, right.left)
 					&& sameOrderedShape(left.right, right.right);
 		}
 		if (original instanceof RowDistinctPlan left && cloned instanceof RowDistinctPlan right) {

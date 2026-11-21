@@ -1,0 +1,5 @@
+# #4882: BOUND(?x) is false in the OPTIONAL right operand.
+SELECT ?x ?y WHERE {
+  VALUES ?x { "left" }
+  OPTIONAL { BIND(BOUND(?x) AS ?y) }
+}

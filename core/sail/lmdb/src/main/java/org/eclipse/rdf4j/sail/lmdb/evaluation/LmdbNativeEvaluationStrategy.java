@@ -15,6 +15,7 @@ package org.eclipse.rdf4j.sail.lmdb.evaluation;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.Set;
 import java.util.function.Supplier;
 
 import org.eclipse.rdf4j.collection.factory.api.CollectionFactory;
@@ -28,21 +29,30 @@ import org.eclipse.rdf4j.query.Dataset;
 import org.eclipse.rdf4j.query.QueryEvaluationException;
 import org.eclipse.rdf4j.query.algebra.Distinct;
 import org.eclipse.rdf4j.query.algebra.Exists;
+import org.eclipse.rdf4j.query.algebra.Filter;
+import org.eclipse.rdf4j.query.algebra.Graph;
 import org.eclipse.rdf4j.query.algebra.GroupElem;
 import org.eclipse.rdf4j.query.algebra.Join;
+import org.eclipse.rdf4j.query.algebra.Projection;
 import org.eclipse.rdf4j.query.algebra.QueryModelNode;
 import org.eclipse.rdf4j.query.algebra.QueryRoot;
 import org.eclipse.rdf4j.query.algebra.Reduced;
+import org.eclipse.rdf4j.query.algebra.StatementPattern;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryEvaluationStep;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryOptimizerPipeline;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryValueEvaluationStep;
 import org.eclipse.rdf4j.query.algebra.evaluation.TripleSource;
 import org.eclipse.rdf4j.query.algebra.evaluation.federation.FederatedServiceResolver;
+import org.eclipse.rdf4j.query.algebra.evaluation.impl.BindingFrameBindings;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.EvaluationStatistics;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.QueryEvaluationContext;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.StrictEvaluationStrategy;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.evaluationsteps.AdaptiveFilterEvaluationStep;
+import org.eclipse.rdf4j.query.algebra.evaluation.util.QueryEvaluationUtility;
+import org.eclipse.rdf4j.query.algebra.helpers.AbstractQueryModelVisitor;
+import org.eclipse.rdf4j.query.algebra.helpers.BindingScopePolicy;
+import org.eclipse.rdf4j.query.algebra.helpers.FilterBindingScope;
 import org.eclipse.rdf4j.sail.base.SailDatasetTripleTermSource;
 import org.eclipse.rdf4j.sail.helpers.SlowQueryContextHolder;
 import org.eclipse.rdf4j.sail.lmdb.LmdbPartitionedDistinctIteration;
@@ -59,6 +69,7 @@ public final class LmdbNativeEvaluationStrategy extends StrictEvaluationStrategy
 		implements org.eclipse.rdf4j.query.algebra.evaluation.impl.evaluationsteps.BatchCorrelatedJoinProvider.Host {
 
 	private final NativeLmdbQuerySource nativeSource;
+	private NativeLmdbQuerySource semanticWorkerSource;
 	private final boolean nativeEnabled;
 	private final boolean forceRootGeneric;
 	private final String forcedExecutionStrategy;
@@ -331,6 +342,24 @@ public final class LmdbNativeEvaluationStrategy extends StrictEvaluationStrategy
 		return forWorker(source, valuePositionSnapshot());
 	}
 
+	/** A worker-local semantic predicate may prepare exact lexical producers over its explicit source. */
+	LmdbNativeEvaluationStrategy forSemanticWorker(NativeLmdbQuerySource source) {
+		LmdbNativeEvaluationStrategy worker = forWorker(source);
+		worker.semanticWorkerSource = source;
+		return worker;
+	}
+
+	boolean preparesSemanticWorkerProducers() {
+		return semanticWorkerSource != null;
+	}
+
+	NativeLmdbQuerySource valueEvaluationSource(NativeExecutionContext evaluation) {
+		if (tripleSourceArg instanceof NativeWorkerTripleSource worker) {
+			return worker.source;
+		}
+		return evaluation == null ? null : evaluation.evaluationSource();
+	}
+
 	LmdbNativeEvaluationStrategy forWorker(NativeLmdbQuerySource source, NativeValuePositionAnalysis positions) {
 		LmdbNativeEvaluationStrategy worker = new LmdbNativeEvaluationStrategy(
 				new NativeWorkerTripleSource(source, valueFactory()), datasetArg, serviceResolverShadow,
@@ -456,6 +485,20 @@ public final class LmdbNativeEvaluationStrategy extends StrictEvaluationStrategy
 	}
 
 	private QueryEvaluationStep precompileWithPreparedValues(TupleExpr expr, QueryEvaluationContext context) {
+		if (semanticWorkerSource != null && !hasExternalFilterOwner(expr)) {
+			if (expr.getClass() == Graph.class) {
+				return NativeGraphPlan.bindSemanticWorker((Graph) expr, context, this, semanticWorkerSource);
+			}
+			if (expr.getClass() == Projection.class && ((Projection) expr).isSubquery()) {
+				return NativeSubqueryPlan.bindSemanticWorker((Projection) expr, context, this, semanticWorkerSource,
+						() -> super.precompileTupleExpr(expr, context));
+			}
+		}
+		if (nativeEnabled && nativeSource != null && hasExternalFilterOwner(expr)) {
+			// Native slots do not expose a generic operand's hidden owner inputs to an individual FILTER. Keep
+			// the complete fragment generic so the original filter-to-owner edges remain available there.
+			return super.precompileTupleExpr(expr, context);
+		}
 		if (nativeEnabled && nativeSource != null) {
 			if (expr instanceof QueryRoot) {
 				return compileHostedPlan(expr, context);
@@ -464,11 +507,45 @@ public final class LmdbNativeEvaluationStrategy extends StrictEvaluationStrategy
 				QueryEvaluationStep aggregateStep = LmdbNativeAggregateCompiler.tryCompile(expr, context, this,
 						nativeSource);
 				if (aggregateStep != null) {
+					if (expr.getClass() == StatementPattern.class) {
+						StatementPattern pattern = (StatementPattern) expr;
+						Set<String> inputs = BindingScopePolicy.statementBorrowedLookupNames(pattern);
+						if (aggregateStep instanceof NativeBareRowsStep bare) {
+							bare.enableScopedStatementLookup(inputs, pattern, context);
+						} else if (aggregateStep instanceof NativeRowsStep rows) {
+							rows.enableScopedStatementLookup(inputs, pattern, context);
+						}
+					}
 					return aggregateStep;
 				}
 			}
 		}
 		return super.precompileTupleExpr(expr, context);
+	}
+
+	private static boolean hasExternalFilterOwner(TupleExpr expr) {
+		if (!QueryEvaluationUtility.requiresBindingFrameReplayPartition(expr)) {
+			return false;
+		}
+		boolean[] external = { false };
+		expr.visit(new AbstractQueryModelVisitor<RuntimeException>() {
+			@Override
+			public void meet(Filter filter) {
+				for (BindingScopePolicy.FilterInputEdge edge : BindingScopePolicy.filterInputEdges(filter)) {
+					for (QueryModelNode current = filter; current != null
+							&& current != edge.owner(); current = current.getParentNode()) {
+						if (current == expr) {
+							external[0] = true;
+							return;
+						}
+					}
+				}
+				if (!external[0]) {
+					super.meet(filter);
+				}
+			}
+		});
+		return external[0];
 	}
 
 	/**
@@ -502,7 +579,7 @@ public final class LmdbNativeEvaluationStrategy extends StrictEvaluationStrategy
 				outcome.hostReason(), expr);
 		LmdbNativeAggregateCompiler.HOSTED_GENERIC.incrementAndGet();
 		if (LmdbNativeExplain.recordsExecutionPaths(expr)) {
-			LmdbNativeExplain.mark(expr, LmdbNativeExplain.KIND_GENERIC_HOSTED, hosted.nativePhysicalPlan());
+			LmdbNativeExplain.markHostedRoot(expr, hosted.nativePhysicalPlan(), !forceRootGeneric);
 		}
 		LmdbNativeStrategyPreview.inspect(hosted);
 		return hosted;
@@ -537,14 +614,25 @@ public final class LmdbNativeEvaluationStrategy extends StrictEvaluationStrategy
 	@Override
 	protected QueryValueEvaluationStep prepare(Exists node, QueryEvaluationContext context)
 			throws QueryEvaluationException {
-		if (nativeEnabled && nativeSource != null && nativeSource.hasStatementsInSource()) {
-			QueryValueEvaluationStep existsStep = LmdbNativeAggregateCompiler.tryCompileExists(node.getSubQuery(),
-					context, this, nativeSource);
-			if (existsStep != null) {
-				return existsStep;
+		// Speculation and its generic fallback must share one VALUES and graph preparation phase.
+		return withPreparedTupleExpr(node.getSubQuery(), prepared -> {
+			if (nativeEnabled && nativeSource != null && nativeSource.hasStatementsInSource()) {
+				QueryValueEvaluationStep existsStep = LmdbNativeAggregateCompiler.tryCompileExists(prepared,
+						context, this, nativeSource);
+				if (existsStep != null) {
+					FilterBindingScope.ConditionBindingReads reads = FilterBindingScope.conditionBindingReads(node);
+					return bindings -> {
+						BindingSet scalarInput = reads.complete()
+								? BindingFrameBindings.materializeWithheldInputs(bindings, reads.bindingNames())
+								: BindingFrameBindings.materializeWithheldInputs(bindings);
+						return existsStep instanceof NativeExistsValueStep nativeExists
+								? nativeExists.evaluate(bindings, scalarInput)
+								: existsStep.evaluate(scalarInput);
+					};
+				}
 			}
-		}
-		return super.prepare(node, context);
+			return super.prepare(node, context);
+		});
 	}
 
 	private QueryEvaluationStep preparePartitioned(TupleExpr tupleExpr,

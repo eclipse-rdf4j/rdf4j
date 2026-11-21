@@ -47,6 +47,7 @@ final class NativeLazyResultReplay implements AutoCloseable, CooperativeCancella
 	private final NativeCancellationToken cancellation;
 	private final NativeSpillValueCodec codec;
 	private final KernelRuntime.AggregateMemory memory;
+	private final NativeResultFrameCodec frameCodec;
 	private final long maxBytes;
 	private final List<Cursor> readers = new ArrayList<>();
 	private List<NativeResultRow> resident = new ArrayList<>();
@@ -69,6 +70,8 @@ final class NativeLazyResultReplay implements AutoCloseable, CooperativeCancella
 		this.codec = new NativeSpillValueCodec(this.cancellation,
 				context == null ? null : context::authoritativeQueryScopedValue);
 		this.memory = KernelRuntime.AggregateMemory.forLedger(context == null ? null : context.memoryLedger());
+		this.frameCodec = new NativeResultFrameCodec(context == null ? null : context.memoryLedger(),
+				this.cancellation);
 		NativeExecutionContext.Lease activeLease = null;
 		Throwable failure = null;
 		try {
@@ -135,7 +138,7 @@ final class NativeLazyResultReplay implements AutoCloseable, CooperativeCancella
 		for (int index = 0; index < cells.length; index++) {
 			cells[index] = next.cell(schema.name(index));
 		}
-		NativeResultRow row = new NativeResultRow(schema, cells);
+		NativeResultRow row = new NativeResultRow(schema, cells, next);
 		long retained = retainedBytes(row);
 		if (path == null && retained <= maxBytes - WORKSPACE_BYTES - residentBytes && memory.tryReserve(retained)) {
 			resident.add(row);
@@ -193,6 +196,7 @@ final class NativeLazyResultReplay implements AutoCloseable, CooperativeCancella
 				}
 			}
 		}
+		frameCodec.write(output, row);
 	}
 
 	private static long retainedBytes(NativeResultRow row) {
@@ -203,7 +207,7 @@ final class NativeLazyResultReplay implements AutoCloseable, CooperativeCancella
 				bytes = Math.addExact(bytes, NativeRuntimeValueTable.retainedValueBytes(cell.value(), 0));
 			}
 		}
-		return bytes;
+		return Math.addExact(bytes, row.retainedMetadataBytes());
 	}
 
 	private void checkState() {
@@ -264,6 +268,7 @@ final class NativeLazyResultReplay implements AutoCloseable, CooperativeCancella
 			}
 		}, failure);
 		resident = null;
+		failure = KernelRuntime.closeResource(frameCodec, failure);
 		return KernelRuntime.closeResource(memory, failure);
 	}
 
@@ -383,8 +388,9 @@ final class NativeLazyResultReplay implements AutoCloseable, CooperativeCancella
 						: NativeResultCell.lexicalLength(input.readLong());
 				};
 			}
+			NativeResultRow row = frameCodec.read(input, schema, cells, localCancellation);
 			offset = Math.addExact(offset, countedInput.count - before);
-			return new NativeResultRow(schema, cells);
+			return row;
 		}
 
 		@Override

@@ -19,6 +19,7 @@ import java.util.function.BiConsumer;
 import java.util.function.BiFunction;
 import java.util.function.Function;
 
+import org.eclipse.rdf4j.common.annotation.InternalUseOnly;
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.common.iteration.CloseableIteratorIteration;
 import org.eclipse.rdf4j.common.iteration.CooperativeCancellation;
@@ -37,6 +38,8 @@ import org.eclipse.rdf4j.query.algebra.evaluation.EvaluationStrategy;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryEvaluationStep;
 import org.eclipse.rdf4j.query.algebra.evaluation.TripleSource;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.ActiveGraphQueryEvaluationContext;
+import org.eclipse.rdf4j.query.algebra.evaluation.impl.BindingFrameBindings;
+import org.eclipse.rdf4j.query.algebra.evaluation.impl.BindingFrameReplay;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.QueryEvaluationContext;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.QueryEvaluationContext.ActiveGraph;
 import org.eclipse.rdf4j.query.impl.RemoteBNode;
@@ -50,6 +53,7 @@ public final class GraphQueryEvaluationStep implements QueryEvaluationStep {
 	private final QueryEvaluationContext context;
 	private final Set<Resource> namedGraphs;
 	private final Function<Value, Value> capturer;
+	private final BindingFrameBindings.ConditionInputs selectorInputs;
 
 	public static QueryEvaluationStep supply(Graph graph, EvaluationStrategy strategy, TripleSource source,
 			QueryEvaluationContext context) {
@@ -58,15 +62,35 @@ public final class GraphQueryEvaluationStep implements QueryEvaluationStep {
 
 	public static QueryEvaluationStep supply(Graph graph, TripleSource source, QueryEvaluationContext context,
 			BiFunction<TupleExpr, QueryEvaluationContext, QueryEvaluationStep> childPreparer) {
-		return new GraphQueryEvaluationStep(graph, source, context, childPreparer);
+		return supply(graph, source, context, prepareSelectorInputs(graph), childPreparer);
+	}
+
+	/** Captures selector authority while the GRAPH has its prepared lexical ancestry. */
+	@InternalUseOnly
+	public static BindingFrameBindings.ConditionInputs prepareSelectorInputs(Graph graph) {
+		Var graphName = graph.getGraphName();
+		Set<String> selectorNames = graphName.hasValue() || graphName.getName() == null
+				? Set.of()
+				: Set.of(graphName.getName());
+		return BindingFrameBindings.parameterInputs(graph, selectorNames, true);
+	}
+
+	/** Reuses a selector grant when a prepared native worker evaluates a detached GRAPH clone. */
+	@InternalUseOnly
+	public static QueryEvaluationStep supply(Graph graph, TripleSource source, QueryEvaluationContext context,
+			BindingFrameBindings.ConditionInputs selectorInputs,
+			BiFunction<TupleExpr, QueryEvaluationContext, QueryEvaluationStep> childPreparer) {
+		return new GraphQueryEvaluationStep(graph, source, context, selectorInputs, childPreparer);
 	}
 
 	private GraphQueryEvaluationStep(Graph graph, TripleSource source, QueryEvaluationContext context,
+			BindingFrameBindings.ConditionInputs selectorInputs,
 			BiFunction<TupleExpr, QueryEvaluationContext, QueryEvaluationStep> childPreparer) {
 		this.graph = graph;
 		this.childPreparer = childPreparer;
 		this.source = source;
 		this.context = context;
+		this.selectorInputs = Objects.requireNonNull(selectorInputs);
 		Dataset dataset = context.getDataset();
 		// Unspecified read sets retain store defaults; an explicitly empty read dataset excludes every named graph.
 		if (dataset == null || !dataset.isExplicitReadDataset()
@@ -103,12 +127,15 @@ public final class GraphQueryEvaluationStep implements QueryEvaluationStep {
 		return RDF4J.NIL.equals(value) || SESAME.NIL.equals(value);
 	}
 
-	private boolean isMember(Resource graphName) {
+	private boolean isMember(Resource graphName, boolean fixedSelection) {
 		if (namedGraphs != null) {
 			return namedGraphs.stream().anyMatch(candidate -> sameGraphIdentity(graphName, candidate));
 		}
-		if (isDefaultAlias(graphName)) {
+		if (fixedSelection && isDefaultAlias(graphName)) {
 			return true;
+		}
+		if (!(graphName instanceof RemoteBNode) && source instanceof TripleSource.NamedContextLookup lookup) {
+			return lookup.hasNamedContext(graphName);
 		}
 		try (CloseableIteration<? extends Resource> names = source.getContextIDs()) {
 			while (names.hasNext()) {
@@ -158,15 +185,27 @@ public final class GraphQueryEvaluationStep implements QueryEvaluationStep {
 						}
 						// A compatible optimizer value constrains a public variable without replacing its caller's
 						// alias.
-						Value supplied = bindings.getValue(graphName.getName());
+						Value logicalInput = bindings.getValue(graphName.getName());
+						Value supplied = logicalInput;
+						Value withheld = !graphName.hasValue() && supplied == null
+								? BindingFrameBindings.invocationWithheldInput(bindings, graphName.getName())
+								: null;
+						if (supplied == null) {
+							supplied = withheld != null ? withheld
+									: graphName.hasValue() ? null
+											: selectorInputs.borrowedValue(bindings, graphName.getName());
+						}
 						Value fixed = supplied != null && !graphName.isConstant() ? supplied
 								: graphName.hasValue() ? graphName.getValue() : supplied;
 						if (fixed != null) {
-							if (!(fixed instanceof Resource resource) || !isMember(resource)) {
+							// A selector borrowed from an ordinary sibling is a constrained variable selection. It must
+							// have the same membership and active context as enumeration, even for reserved aliases.
+							boolean fixedSelection = graphName.hasValue() || logicalInput != null || withheld != null;
+							if (!(fixed instanceof Resource resource) || !isMember(resource, fixedSelection)) {
 								return null;
 							}
 							selected = capture(resource);
-							openChild(true);
+							openChild(fixedSelection);
 						} else if (bindings.hasBinding(graphName.getName())) {
 							return null;
 						} else {
@@ -218,7 +257,13 @@ public final class GraphQueryEvaluationStep implements QueryEvaluationStep {
 			}
 
 			private void openChild(boolean fixedSelection) {
-				child = prepare(selected, fixedSelection).evaluate(bindings);
+				QueryEvaluationStep prepared = prepare(selected, fixedSelection);
+				Resource physical = isDefaultAlias(selected)
+						&& !(namedGraphs == null ? !fixedSelection : fixedSelection && namedGraphs.contains(selected))
+								? null
+								: selected;
+				child = prepared.evaluate(BindingFrameReplay.graph(graph, new ActiveGraph(selected, physical),
+						bindings, context));
 				childOwnsBindings = StatementPatternQueryEvaluationStep.ownsBindingSets(child);
 			}
 

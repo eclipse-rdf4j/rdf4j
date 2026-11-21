@@ -44,6 +44,7 @@ final class NativeResultReplay implements AutoCloseable {
 	private final NativeExecutionContext.Lease lease;
 	private final NativeCancellationToken cancellation;
 	private final KernelRuntime.AggregateMemory memory;
+	private final NativeResultFrameCodec frameCodec;
 	private final long maxBytes;
 	private NativeSpillValueCodec writerCodec;
 	/** Dictionary authority for spilling store-backed terms as IDs; null keeps the exact lexical codec only. */
@@ -87,6 +88,7 @@ final class NativeResultReplay implements AutoCloseable {
 			}
 			throw new QueryEvaluationException("Result replay owner refused by query memory ledger");
 		}
+		frameCodec = new NativeResultFrameCodec(ledger, cancellation);
 	}
 
 	/**
@@ -239,6 +241,7 @@ final class NativeResultReplay implements AutoCloseable {
 				}
 			}
 		}
+		frameCodec.write(output, row);
 	}
 
 	private void checkSchema(NativeResultRow row) {
@@ -260,7 +263,7 @@ final class NativeResultReplay implements AutoCloseable {
 				bytes = Math.addExact(bytes, NativeRuntimeValueTable.retainedValueBytes(cell.value(), 0));
 			}
 		}
-		return bytes;
+		return Math.addExact(bytes, row.retainedMetadataBytes());
 	}
 
 	private void checkWritable() {
@@ -295,6 +298,7 @@ final class NativeResultReplay implements AutoCloseable {
 				Files.deleteIfExists(path);
 			}
 		}, failure);
+		failure = KernelRuntime.closeResource(frameCodec, failure);
 		failure = KernelRuntime.closeResource(memory, failure);
 		failure = KernelRuntime.closeResource(lease, failure);
 		if (failure != null) {
@@ -363,10 +367,11 @@ final class NativeResultReplay implements AutoCloseable {
 							: NativeResultCell.lexicalLength(input.readLong());
 					};
 				}
+				NativeResultRow result = frameCodec.read(input, schema, cells, localCancellation);
 				localCancellation.poll(tick);
 				LmdbNativeProbeDeadline.poll(tick++);
 				position++;
-				return new NativeResultRow(schema, cells);
+				return result;
 			} catch (Throwable failure) {
 				NativeContextClosingIteration.throwFailure(KernelRuntime.closeResource(this, failure));
 				throw new AssertionError("unreachable");

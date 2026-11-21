@@ -53,6 +53,7 @@ import org.eclipse.rdf4j.query.algebra.ExtensionElem;
 import org.eclipse.rdf4j.query.algebra.Filter;
 import org.eclipse.rdf4j.query.algebra.Filter.ConditionBindingScope;
 import org.eclipse.rdf4j.query.algebra.Join;
+import org.eclipse.rdf4j.query.algebra.Lateral;
 import org.eclipse.rdf4j.query.algebra.Not;
 import org.eclipse.rdf4j.query.algebra.QueryModelNode;
 import org.eclipse.rdf4j.query.algebra.QueryRoot;
@@ -62,6 +63,7 @@ import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.algebra.Union;
 import org.eclipse.rdf4j.query.algebra.ValueConstant;
 import org.eclipse.rdf4j.query.algebra.Var;
+import org.eclipse.rdf4j.query.algebra.VariableScopeChange;
 import org.eclipse.rdf4j.query.algebra.evaluation.TripleSource;
 import org.eclipse.rdf4j.query.algebra.evaluation.federation.FederatedService;
 import org.eclipse.rdf4j.query.algebra.evaluation.function.Function;
@@ -498,19 +500,85 @@ class ScopedUnionFilterOptimizerTest {
 
 	@Test
 	void splittingAGroupRootConjunctionPreservesInternalJoinInputs() throws Exception {
-		Coalesce local = new Coalesce(List.of(Var.of("x"), constant(9)));
-		Extension right = new Extension(values("y", 3), new ExtensionElem(local, "z"));
-		Filter filter = new Filter(new Join(values("x", 1, 2), right),
+		Value one = SimpleValueFactory.getInstance().createLiteral(1);
+		Value two = SimpleValueFactory.getInstance().createLiteral(2);
+		Value three = SimpleValueFactory.getInstance().createLiteral(3);
+		Value seven = SimpleValueFactory.getInstance().createLiteral(7);
+		Value nine = SimpleValueFactory.getInstance().createLiteral(9);
+		List<BindingSet> independentExpected = List.of(
+				bindingSet("outer", seven, "x", one, "y", three, "z", nine),
+				bindingSet("outer", seven, "x", two, "y", three, "z", nine));
+
+		Filter independentControl = new Filter(new Join(values("x", 1, 2),
+				new Extension(values("y", 3), new ExtensionElem(
+						new Coalesce(List.of(Var.of("x"), constant(9))), "z"))),
+				new And(new Compare(Var.of("x"), constant(0), Compare.CompareOp.GT),
+						new Compare(Var.of("z"), constant(9))));
+		independentControl.setVariableScopeChange(true);
+		QueryRoot independentRoot = new QueryRoot(new Join(values("outer", 7), independentControl));
+		assertThat(evaluate(independentRoot.clone())).containsExactlyInAnyOrderElementsOf(independentExpected);
+		TupleExpr optimizedIndependent = independentRoot.clone();
+		new FilterOptimizer(null, false, false).optimize(optimizedIndependent, null,
+				EmptyBindingSet.getInstance());
+		assertThat(evaluate(optimizedIndependent)).containsExactlyInAnyOrderElementsOf(independentExpected);
+		assertSplitFiltersRetainScopeBoundary(optimizedIndependent);
+
+		Filter independentWrongValue = new Filter(new Join(values("x", 1, 2),
+				new Extension(values("y", 3), new ExtensionElem(
+						new Coalesce(List.of(Var.of("x"), constant(9))), "z"))),
 				new And(new Compare(Var.of("x"), constant(0), Compare.CompareOp.GT),
 						new Compare(Var.of("z"), constant(1))));
-		filter.setVariableScopeChange(true);
-		QueryRoot root = new QueryRoot(new Join(values("outer", 7), filter));
-		List<BindingSet> expected = evaluate(root.clone());
-		assertThat(expected).singleElement()
-				.satisfies(row -> assertThat(row.getValue("z"))
-						.isEqualTo(SimpleValueFactory.getInstance().createLiteral(1)));
-		new FilterOptimizer(null, false, false).optimize(root, null, EmptyBindingSet.getInstance());
-		assertThat(evaluate(root)).containsExactlyInAnyOrderElementsOf(expected);
+		independentWrongValue.setVariableScopeChange(true);
+		QueryRoot independentWrongRoot = new QueryRoot(new Join(values("outer", 7), independentWrongValue));
+		assertThat(evaluate(independentWrongRoot.clone())).isEmpty();
+		TupleExpr optimizedIndependentWrong = independentWrongRoot.clone();
+		new FilterOptimizer(null, false, false).optimize(optimizedIndependentWrong, null,
+				EmptyBindingSet.getInstance());
+		assertThat(evaluate(optimizedIndependentWrong)).isEmpty();
+
+		Filter localOverwriteFilter = new Filter(new Join(values("y", 3),
+				new Extension(values("x", 1, 2), new ExtensionElem(
+						new Coalesce(List.of(Var.of("x"), constant(9))), "z"))),
+				new And(new Compare(Var.of("x"), constant(0), Compare.CompareOp.GT),
+						new Compare(Var.of("z"), constant(1))));
+		localOverwriteFilter.setVariableScopeChange(true);
+		QueryRoot localOverwriteRoot = new QueryRoot(new Join(values("outer", 7), localOverwriteFilter));
+		List<BindingSet> localExpected = List.of(bindingSet("outer", seven, "x", one, "y", three, "z", one));
+		assertThat(evaluate(localOverwriteRoot.clone())).containsExactlyInAnyOrderElementsOf(localExpected);
+		TupleExpr optimizedLocalOverwrite = localOverwriteRoot.clone();
+		new FilterOptimizer(null, false, false).optimize(optimizedLocalOverwrite, null,
+				EmptyBindingSet.getInstance());
+		assertThat(evaluate(optimizedLocalOverwrite)).containsExactlyInAnyOrderElementsOf(localExpected);
+		assertSplitFiltersRetainScopeBoundary(optimizedLocalOverwrite);
+
+		Lateral lateral = new Lateral(values("x", 1, 2),
+				new Extension(values("y", 3), new ExtensionElem(
+						new Coalesce(List.of(Var.of("x"), constant(9))), "z")),
+				Set.of("x"));
+		Filter lateralFilter = new Filter(lateral,
+				new And(new Compare(Var.of("x"), constant(0), Compare.CompareOp.GT),
+						new Compare(Var.of("z"), constant(1))));
+		lateralFilter.setVariableScopeChange(true);
+		QueryRoot lateralRoot = new QueryRoot(new Join(values("outer", 7), lateralFilter));
+		assertThat(evaluate(lateralRoot.clone())).containsExactlyInAnyOrderElementsOf(localExpected);
+		TupleExpr optimizedLateral = lateralRoot.clone();
+		new FilterOptimizer(null, false, false).optimize(optimizedLateral, null, EmptyBindingSet.getInstance());
+		assertThat(evaluate(optimizedLateral)).containsExactlyInAnyOrderElementsOf(localExpected);
+		assertSplitFiltersRetainScopeBoundary(optimizedLateral);
+	}
+
+	private static void assertSplitFiltersRetainScopeBoundary(TupleExpr expression) {
+		List<Filter> filters = filtersIn(expression);
+		assertThat(filters).hasSize(2);
+		assertThat(expression).isInstanceOf(QueryRoot.class);
+		TupleExpr outerJoin = ((QueryRoot) expression).getArg();
+		assertThat(outerJoin).isInstanceOf(Join.class);
+		TupleExpr scopedGroup = ((Join) outerJoin).getRightArg();
+		assertThat(scopedGroup).isInstanceOf(VariableScopeChange.class);
+		assertThat(((VariableScopeChange) scopedGroup).isVariableScopeChange())
+				.as("the original group-root scope boundary must remain on the outer Join's right operand:\n%s",
+						expression)
+				.isTrue();
 	}
 
 	@Test
@@ -586,6 +654,70 @@ class ScopedUnionFilterOptimizerTest {
 		assertThat(filtersIn(optimizedUnion.getRightArg())).as("the right arm receives its own filter").hasSize(1);
 		assertThat(filtersIn(optimized)).as("the parent filter is replaced by a complete UNION cut").hasSize(2);
 		assertThat(evaluate(optimized)).containsExactlyInAnyOrderElementsOf(expected);
+	}
+
+	@Test
+	void independentRightUnionFiltersOnlyCompleteLocalOutput() throws Exception {
+		ValueFactory vf = SimpleValueFactory.getInstance();
+		IRI graph = vf.createIRI("urn:union:graph");
+		IRI p = vf.createIRI("urn:union:p");
+		IRI direct = vf.createIRI("urn:union:direct");
+		IRI named = vf.createIRI("urn:union:named");
+		Value keep = vf.createLiteral("keep");
+		Value reject = vf.createLiteral("reject");
+		ListTripleSource triples = new ListTripleSource(List.of(vf.createStatement(direct, p, keep),
+				vf.createStatement(direct, p, reject), vf.createStatement(named, p, keep, graph),
+				vf.createStatement(named, p, reject, graph)));
+		TripleSource source = new EmptyTripleSource() {
+			@Override
+			public CloseableIteration<? extends Statement> getStatements(Resource subject, IRI predicate, Value object,
+					Resource... contexts) {
+				return triples.getStatements(subject, predicate, object, contexts);
+			}
+
+			@Override
+			public CloseableIteration<? extends Resource> getContextIDs() {
+				return new CloseableIteratorIteration<>(List.of(graph).iterator());
+			}
+		};
+		for (boolean locallyBound : List.of(true, false)) {
+			String query = """
+					SELECT ?arm ?facet WHERE {
+					  %s
+					  { <urn:union:direct> <urn:union:p> ?facet . BIND("direct" AS ?arm) }
+					  UNION
+					  { GRAPH <urn:union:graph> { <urn:union:named> <urn:union:p> ?%s . }
+					    BIND("named" AS ?arm) }
+					  FILTER(STR(?facet) = "keep")
+					}
+					""".formatted(locallyBound ? "VALUES ?seed { 1 }" : "VALUES (?seed ?facet) { (1 \"keep\") }",
+					locallyBound ? "facet" : "other");
+			TupleExpr optimized = parse(query);
+			Union union = findOnlyUnion(optimized);
+			QueryModelNode originalParent = union.getParentNode();
+			assertThat(originalParent).isInstanceOf(Join.class);
+			assertThat(((Join) originalParent).getRightArg()).isSameAs(union);
+			BindingSet directRow = bindingSet("arm", vf.createLiteral("direct"), "facet", keep);
+			BindingSet namedRow = bindingSet("arm", vf.createLiteral("named"), "facet", keep);
+			List<BindingSet> expected = locallyBound ? List.of(directRow, namedRow)
+					: List.of(directRow, namedRow, namedRow);
+			assertThat(evaluate(optimized.clone(), EmptyBindingSet.getInstance(), source))
+					.containsExactlyInAnyOrderElementsOf(expected);
+			new FilterOptimizer(null, false, false).optimize(optimized, null, EmptyBindingSet.getInstance());
+			assertThat(evaluate(optimized, EmptyBindingSet.getInstance(), source))
+					.containsExactlyInAnyOrderElementsOf(expected);
+			assertThat(union.isVariableScopeChange()).isTrue();
+			assertThat(union.getParentNode()).isSameAs(originalParent);
+			if (locallyBound) {
+				assertThat(filtersIn(union.getLeftArg())).hasSize(1);
+				assertThat(filtersIn(union.getRightArg())).hasSize(1);
+				assertThat(filtersIn(optimized)).hasSize(2);
+			} else {
+				assertThat(filtersIn(union.getRightArg()))
+						.as("a value supplied only after the independent arm may still pass the original filter")
+						.isEmpty();
+			}
+		}
 	}
 
 	@Test

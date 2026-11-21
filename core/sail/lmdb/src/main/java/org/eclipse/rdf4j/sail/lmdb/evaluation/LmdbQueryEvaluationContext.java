@@ -53,6 +53,9 @@ final class LmdbQueryEvaluationContext implements QueryEvaluationContext {
 		if (context instanceof SlotAwareQueryEvaluationContext) {
 			return layoutOf(((SlotAwareQueryEvaluationContext) context).delegate());
 		}
+		if (context instanceof GenericSubplanDescriptor.ProjectionContext) {
+			return layoutOf(((GenericSubplanDescriptor.ProjectionContext) context).delegate());
+		}
 		return null;
 	}
 

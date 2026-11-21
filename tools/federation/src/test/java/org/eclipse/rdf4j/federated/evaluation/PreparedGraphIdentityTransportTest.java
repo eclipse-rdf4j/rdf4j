@@ -13,6 +13,7 @@ package org.eclipse.rdf4j.federated.evaluation;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.assertj.core.api.Assertions.tuple;
 import static org.eclipse.rdf4j.federated.util.BlankNodeIdentityTestUtil.identity;
 import static org.eclipse.rdf4j.federated.util.BlankNodeIdentityTestUtil.memberValue;
 import static org.mockito.ArgumentMatchers.any;
@@ -24,21 +25,30 @@ import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
+import java.io.ByteArrayInputStream;
+import java.io.ByteArrayOutputStream;
+import java.io.ObjectInputStream;
+import java.io.ObjectOutputStream;
 import java.lang.ref.WeakReference;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 
+import org.eclipse.rdf4j.common.transaction.QueryEvaluationMode;
 import org.eclipse.rdf4j.federated.EndpointManager;
 import org.eclipse.rdf4j.federated.FedXConfig;
 import org.eclipse.rdf4j.federated.FedXFactory;
 import org.eclipse.rdf4j.federated.FederationContext;
+import org.eclipse.rdf4j.federated.FederationManager;
 import org.eclipse.rdf4j.federated.algebra.ExclusiveGroup;
 import org.eclipse.rdf4j.federated.algebra.ExclusiveStatement;
 import org.eclipse.rdf4j.federated.algebra.FilterExpr;
+import org.eclipse.rdf4j.federated.algebra.FilterValueExpr;
 import org.eclipse.rdf4j.federated.algebra.ResolvedGraphSelection;
 import org.eclipse.rdf4j.federated.algebra.StatementSource;
 import org.eclipse.rdf4j.federated.algebra.StatementSourcePattern;
@@ -57,8 +67,11 @@ import org.eclipse.rdf4j.http.protocol.Protocol;
 import org.eclipse.rdf4j.model.BNode;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Resource;
+import org.eclipse.rdf4j.model.TripleTerm;
 import org.eclipse.rdf4j.model.Value;
+import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
+import org.eclipse.rdf4j.model.vocabulary.XSD;
 import org.eclipse.rdf4j.query.Binding;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.Dataset;
@@ -66,10 +79,22 @@ import org.eclipse.rdf4j.query.QueryEvaluationException;
 import org.eclipse.rdf4j.query.QueryLanguage;
 import org.eclipse.rdf4j.query.QueryResults;
 import org.eclipse.rdf4j.query.TupleQuery;
+import org.eclipse.rdf4j.query.algebra.And;
+import org.eclipse.rdf4j.query.algebra.Bound;
 import org.eclipse.rdf4j.query.algebra.Compare;
+import org.eclipse.rdf4j.query.algebra.FunctionCall;
+import org.eclipse.rdf4j.query.algebra.Service;
 import org.eclipse.rdf4j.query.algebra.StatementPattern;
+import org.eclipse.rdf4j.query.algebra.ValueConstant;
 import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryBindingSet;
+import org.eclipse.rdf4j.query.algebra.evaluation.QueryEvaluationStep;
+import org.eclipse.rdf4j.query.algebra.evaluation.ValueExprEvaluationException;
+import org.eclipse.rdf4j.query.algebra.evaluation.function.Function;
+import org.eclipse.rdf4j.query.algebra.evaluation.function.FunctionRegistry;
+import org.eclipse.rdf4j.query.algebra.evaluation.impl.BindingFrameBindings;
+import org.eclipse.rdf4j.query.algebra.evaluation.impl.GraphFrameBindings;
+import org.eclipse.rdf4j.query.algebra.evaluation.impl.QueryEvaluationContext;
 import org.eclipse.rdf4j.query.impl.BlankNodeAllocationScope;
 import org.eclipse.rdf4j.query.impl.EmptyBindingSet;
 import org.eclipse.rdf4j.query.impl.IteratingTupleQueryResult;
@@ -81,6 +106,7 @@ import org.eclipse.rdf4j.repository.base.RepositoryConnectionWrapper;
 import org.eclipse.rdf4j.repository.http.HTTPRepository;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
 import org.eclipse.rdf4j.repository.sparql.SPARQLRepository;
+import org.eclipse.rdf4j.repository.sparql.federation.RepositoryFederatedService;
 import org.eclipse.rdf4j.sail.memory.MemoryStore;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
@@ -111,14 +137,119 @@ class PreparedGraphIdentityTransportTest {
 		}
 		queryInfo = mock(QueryInfo.class);
 		when(queryInfo.getBlankNodeAllocationScope()).thenReturn(new BlankNodeAllocationScope());
+		when(queryInfo.getMaxRemainingTimeMS()).thenReturn(Long.MAX_VALUE);
 		context = mock(FederationContext.class);
 		when(context.getConfig()).thenReturn(new FedXConfig());
 		when(context.getMonitoringService()).thenReturn(mock(Monitoring.class));
+		when(context.getManager()).thenReturn(mock(FederationManager.class));
 	}
 
 	@AfterEach
 	void closeData() {
 		data.shutDown();
+	}
+
+	@Test
+	void blankNodeResponseRemappingPreservesFrameAndOnlySuppliedGraphOrigins() {
+		QueryBindingSet entry = new QueryBindingSet();
+		GraphFrameBindings.supply(entry, "graph", GRAPH);
+		entry.addBinding("local", GRAPH);
+		entry.addBinding("nested", VF.createTripleTerm(GRAPH, P, GRAPH));
+		QueryBindingSet probe = new QueryBindingSet();
+		probe.addBinding("private", VF.createLiteral("probe"));
+		QueryEvaluationContext evaluationContext = new QueryEvaluationContext.Minimal(null);
+		BindingSet framed = BindingFrameBindings.push(new BindingFrameBindings.Scope(), entry, probe,
+				evaluationContext);
+		framed = BindingFrameBindings.withSubstitutionDomain(framed, Set.of(), evaluationContext);
+		BindingSet mapped = new EndpointIdentity(endpoint(data), queryInfo).incoming(framed,
+				EmptyBindingSet.getInstance());
+		assertThat(mapped.getValue("graph")).isInstanceOf(RemoteBNode.class);
+		assertThat(mapped.getValue("local")).isSameAs(mapped.getValue("graph"));
+		TripleTerm nested = (TripleTerm) mapped.getValue("nested");
+		assertThat(nested.getSubject()).isSameAs(mapped.getValue("graph"));
+		assertThat(nested.getObject()).isSameAs(mapped.getValue("graph"));
+		assertThat(BindingFrameBindings.from(mapped)).isSameAs(BindingFrameBindings.from(framed));
+		assertThat(BindingFrameBindings.substitutionDomain(mapped)).isEmpty();
+		assertThat(BindingFrameBindings.probeValue(mapped, "private")).isEqualTo(VF.createLiteral("probe"));
+		assertThat(mapped.getValue("private")).isNull();
+		assertThat(GraphFrameBindings.isSupplied(mapped, "graph")).isTrue();
+		assertThat(GraphFrameBindings.isSupplied(mapped, "local")).isFalse();
+	}
+
+	@Test
+	void blankNodeResponseRemappingKeepsHiddenGraphParameterWithoutRevivingLocalWrite() {
+		QueryBindingSet supplied = new QueryBindingSet();
+		GraphFrameBindings.supply(supplied, "hiddenGraph", GRAPH);
+		QueryBindingSet row = new QueryBindingSet();
+		GraphFrameBindings.preserve(supplied, row);
+		GraphFrameBindings.supply(row, "local", GRAPH);
+		row.setBinding("local", GRAPH);
+		row.addBinding("s", GRAPH);
+		assertThat(GraphFrameBindings.isSupplied(row, "local")).isFalse();
+		BindingSet mapped = new EndpointIdentity(endpoint(data), queryInfo).incoming(row,
+				EmptyBindingSet.getInstance());
+		assertThat(mapped.getValue("s")).isInstanceOf(RemoteBNode.class);
+		assertThat(mapped.getValue("hiddenGraph")).isNull();
+		Map<String, Value> retained = new HashMap<>();
+		GraphFrameBindings.from(mapped).visit(retained::put);
+		assertThat(retained).containsOnlyKeys("hiddenGraph");
+		assertThat(retained.get("hiddenGraph")).isSameAs(GRAPH);
+		assertThat(GraphFrameBindings.isSupplied(mapped, "local")).isFalse();
+	}
+
+	@ParameterizedTest
+	@ValueSource(strings = { "empty-plain", "empty-foreign", "visible-plain", "visible-foreign" })
+	void preparedSourceKeepsInvocationFrameWithoutTransportingProbes(String kind) throws Exception {
+		boolean visible = kind.startsWith("visible");
+		boolean foreign = kind.endsWith("foreign");
+		SPARQLProtocolSession session = mock(SPARQLProtocolSession.class);
+		AtomicInteger requests = new AtomicInteger();
+		QueryEvaluationContext evaluationContext = new QueryEvaluationContext.Minimal(null);
+		when(session.sendTupleQuery(any(QueryLanguage.class), anyString(), nullable(String.class),
+				nullable(Dataset.class), anyBoolean(), anyInt(), ArgumentMatchers.<WeakReference<?>>isNull(),
+				any(Binding[].class))).thenAnswer(invocation -> {
+					requests.incrementAndGet();
+					assertThat((String) invocation.getArgument(1)).doesNotContain("urn:hidden-probe");
+					Binding[] wireBindings = (Binding[]) invocation.getRawArguments()[7];
+					assertThat(wireBindings).extracting(Binding::getName).doesNotContain("hidden");
+					QueryBindingSet row = new QueryBindingSet();
+					row.addBinding("o", VF.createLiteral("remote"));
+					BindingSet backend = row;
+					if (foreign) {
+						QueryBindingSet privateProbe = new QueryBindingSet();
+						privateProbe.addBinding("foreign", VF.createLiteral("backend"));
+						backend = BindingFrameBindings.push(new BindingFrameBindings.Scope(), row, privateProbe,
+								evaluationContext);
+					}
+					return new IteratingTupleQueryResult(List.of("o"), List.of(backend));
+				});
+		SPARQLRepository repository = sparqlRepository(session);
+		try {
+			QueryBindingSet entry = new QueryBindingSet();
+			if (visible) {
+				entry.addBinding("input", VF.createLiteral("visible"));
+			}
+			QueryBindingSet privateProbe = new QueryBindingSet();
+			privateProbe.addBinding("hidden", VF.createIRI("urn:hidden-probe"));
+			BindingSet framed = BindingFrameBindings.push(new BindingFrameBindings.Scope(), entry, privateProbe,
+					evaluationContext);
+			framed = BindingFrameBindings.withSubstitutionDomain(framed, Set.of(), evaluationContext);
+			try (var rows = source(repository).getStatements("SELECT ?o WHERE { <urn:s> <urn:p> ?o }", framed,
+					(FilterValueExpr) null, queryInfo)) {
+				BindingSet row = rows.next();
+				assertThat(row.getValue("o")).isEqualTo(VF.createLiteral("remote"));
+				assertThat(row.getValue("input")).isEqualTo(entry.getValue("input"));
+				assertThat(row.getValue("hidden")).isNull();
+				assertThat(BindingFrameBindings.from(row)).isSameAs(BindingFrameBindings.from(framed));
+				assertThat(BindingFrameBindings.substitutionDomain(row)).isEmpty();
+				assertThat(BindingFrameBindings.probeValue(row, "hidden")).isEqualTo(VF.createIRI("urn:hidden-probe"));
+				assertThat(BindingFrameBindings.probeValue(row, "foreign")).isNull();
+				assertThat(rows.hasNext()).isFalse();
+			}
+			assertThat(requests).hasValue(1);
+		} finally {
+			repository.shutDown();
+		}
 	}
 
 	@Test
@@ -134,6 +265,598 @@ class PreparedGraphIdentityTransportTest {
 			assertThat(QueryResults.asList(rows)).hasSize(2).allSatisfy(row -> {
 				assertThat(row.getBindingNames()).containsExactlyInAnyOrder("__fedx_graph_0", "o", "__fedx_graph_1");
 			});
+		}
+	}
+
+	@Test
+	void nativeGraphGroupRetainsItsNestedFilter() {
+		try (RepositoryConnection connection = data.getConnection()) {
+			connection.add(A, P, VF.createLiteral("outer-a"));
+			connection.add(B, P, VF.createLiteral("outer-b"));
+		}
+		EndpointManager endpoints = mock(EndpointManager.class);
+		Endpoint member = endpoint(data);
+		when(queryInfo.getFederationContext()).thenReturn(context);
+		when(context.getEndpointManager()).thenReturn(endpoints);
+		when(endpoints.getEndpoint("member")).thenReturn(member);
+		StatementSource owner = new StatementSource("member", StatementSource.StatementSourceType.REMOTE);
+		ExclusiveGroup nested = new ExclusiveGroup(List.of(statement("s")), owner, queryInfo);
+		nested.addFilterExpr(new FilterExpr(new Compare(Var.of("o"), new ValueConstant(VF.createLiteral("a")),
+				Compare.CompareOp.EQ), new HashSet<>(Set.of("o"))));
+		ExclusiveStatement outer = new ExclusiveStatement(new StatementPattern(Var.of("s"), Var.of("p2", P, true, true),
+				Var.of("outer")), owner, queryInfo);
+		ExclusiveGroup group = new ExclusiveGroup(List.of(nested, outer), owner, queryInfo);
+		NativeGraphQuery.Prepared prepared = NativeGraphQuery.select(group, EmptyBindingSet.getInstance());
+		assertThat(prepared.queryString()).contains("FILTER").contains("GRAPH ?__fedx_graph_");
+		assertThat(prepared.graphBindings().size()).isEqualTo(1);
+		try (var rows = source(data).getStatements(prepared, queryInfo)) {
+			// The default dataset combines the default and named contexts: both values for A match the outer pattern.
+			assertThat(QueryResults.asList(rows))
+					.extracting(row -> tuple(row.getValue("s"), row.getValue("o"), row.getValue("outer")))
+					.containsExactlyInAnyOrder(tuple(A, VF.createLiteral("a"), VF.createLiteral("a")),
+							tuple(A, VF.createLiteral("a"), VF.createLiteral("outer-a")));
+		}
+	}
+
+	@Test
+	void nativeGraphFullyBoundProbeRetainsItsNestedFilter() {
+		EndpointManager endpoints = mock(EndpointManager.class);
+		Endpoint member = endpoint(data);
+		when(queryInfo.getFederationContext()).thenReturn(context);
+		when(context.getEndpointManager()).thenReturn(endpoints);
+		when(endpoints.getEndpoint("member")).thenReturn(member);
+		StatementSource owner = new StatementSource("member", StatementSource.StatementSourceType.REMOTE);
+		ExclusiveGroup nested = new ExclusiveGroup(List.of(statement("s")), owner, queryInfo);
+		nested.addFilterExpr(new FilterExpr(new Compare(Var.of("o"), new ValueConstant(VF.createLiteral("a")),
+				Compare.CompareOp.EQ), new HashSet<>(Set.of("o"))));
+		ExclusiveGroup group = new ExclusiveGroup(List.of(nested), owner, queryInfo);
+		QueryBindingSet denied = new QueryBindingSet();
+		denied.addBinding("s", B);
+		denied.addBinding("o", VF.createLiteral("b"));
+		NativeGraphQuery.Prepared prepared = NativeGraphQuery.select(group, denied);
+		assertThat(prepared.existenceCheck()).isTrue();
+		assertThat(prepared.queryString()).contains("FILTER");
+		try (var rows = source(data).getStatements(prepared, queryInfo)) {
+			assertThat(QueryResults.asList(rows)).isEmpty();
+		}
+	}
+
+	@ParameterizedTest
+	@ValueSource(strings = { "plain", "nested-filter", "sibling-unbound", "multi-level", "root-only" })
+	void parentOwnedBoundFiltersPreserveChildResultsAndCompatibility(String variant) {
+		IRI p1 = VF.createIRI("urn:bound:p1");
+		IRI p2 = VF.createIRI("urn:bound:p2");
+		try (RepositoryConnection connection = data.getConnection()) {
+			connection.add(A, p1, VF.createLiteral("one"));
+			connection.add(A, p1, VF.createLiteral("two"));
+			connection.add(A, p2, VF.createLiteral("joined"));
+			connection.add(B, p1, VF.createLiteral("other"));
+			connection.add(B, p2, VF.createLiteral("other"));
+		}
+		EndpointManager endpoints = mock(EndpointManager.class);
+		Endpoint member = endpoint(data);
+		SparqlTripleSource source = new SparqlTripleSource(member, context);
+		when(member.getTripleSource()).thenReturn(source);
+		when(context.getEndpointManager()).thenReturn(endpoints);
+		when(endpoints.getEndpoint("member")).thenReturn(member);
+		when(queryInfo.getFederationContext()).thenReturn(context);
+		FederationEvaluationStrategy strategy = new FederationEvaluationStrategy(context);
+		when(queryInfo.getStrategy()).thenReturn(strategy);
+		StatementSource owner = new StatementSource("member", StatementSource.StatementSourceType.REMOTE);
+		ExclusiveStatement first = new ExclusiveStatement(new StatementPattern(Var.of("s"),
+				Var.of("p1", p1), Var.of("first")), owner, queryInfo);
+		ExclusiveStatement second = new ExclusiveStatement(new StatementPattern(Var.of("s"),
+				Var.of("p2", p2), Var.of("second")), owner, queryInfo);
+		ExclusiveGroup nested = variant.equals("multi-level") ? new ExclusiveGroup(List.of(first), owner, queryInfo)
+				: null;
+		ExclusiveGroup group = new ExclusiveGroup(nested == null ? List.of(first, second) : List.of(nested, second),
+				owner, queryInfo);
+		group.addBoundFilter("s", A);
+		if (nested != null) {
+			nested.addBoundFilter("s", A);
+		}
+		if (!variant.equals("root-only")) {
+			first.addBoundFilter("s", A);
+		}
+		if (!variant.equals("sibling-unbound") && !variant.equals("root-only")) {
+			second.addBoundFilter("s", A);
+		}
+		if (variant.equals("nested-filter")) {
+			first.addFilterExpr(new FilterExpr(new And(new Bound(Var.of("s")), new Bound(Var.of("first"))),
+					new HashSet<>(Set.of("s", "first"))));
+		}
+		QueryEvaluationStep prepared = strategy.precompile(group);
+		for (BindingSet input : List.of(EmptyBindingSet.getInstance(), row("s", A))) {
+			try (var rows = prepared.evaluate(input)) {
+				List<BindingSet> results = QueryResults.asList(rows);
+				assertThat(results).extracting(result -> tuple(result.getValue("s"), result.getValue("first"),
+						result.getValue("second")))
+						.containsExactlyInAnyOrder(tuple(A, VF.createLiteral("one"), VF.createLiteral("joined")),
+								tuple(A, VF.createLiteral("two"), VF.createLiteral("joined")));
+				assertThat(results).extracting(result -> tuple(result.getValue("s"), result.getValue("second")))
+						.containsExactly(tuple(A, VF.createLiteral("joined")), tuple(A, VF.createLiteral("joined")));
+			}
+		}
+		try (var rows = prepared.evaluate(row("s", B))) {
+			assertThat(QueryResults.asList(rows)).isEmpty();
+		}
+	}
+
+	@ParameterizedTest
+	@ValueSource(booleans = { true, false })
+	void fullyBoundCoveredGroupPreservesExistenceAndItsOutput(boolean present) {
+		IRI p1 = VF.createIRI("urn:fully-bound:p1");
+		IRI p2 = VF.createIRI("urn:fully-bound:p2");
+		try (RepositoryConnection connection = data.getConnection()) {
+			connection.add(A, p1, VF.createLiteral("one"));
+			connection.add(A, p2, VF.createLiteral("two"));
+		}
+		EndpointManager endpoints = mock(EndpointManager.class);
+		Endpoint member = endpoint(data);
+		SparqlTripleSource source = new SparqlTripleSource(member, context);
+		when(member.getTripleSource()).thenReturn(source);
+		when(context.getEndpointManager()).thenReturn(endpoints);
+		when(endpoints.getEndpoint("member")).thenReturn(member);
+		when(queryInfo.getFederationContext()).thenReturn(context);
+		FederationEvaluationStrategy strategy = new FederationEvaluationStrategy(context);
+		when(queryInfo.getStrategy()).thenReturn(strategy);
+		StatementSource owner = new StatementSource("member", StatementSource.StatementSourceType.REMOTE);
+		ExclusiveStatement first = new ExclusiveStatement(new StatementPattern(Var.of("s"), Var.of("p1", p1),
+				Var.of("first", VF.createLiteral("one"))), owner, queryInfo);
+		ExclusiveStatement second = new ExclusiveStatement(new StatementPattern(Var.of("s"), Var.of("p2", p2),
+				Var.of("second", VF.createLiteral(present ? "two" : "missing"))), owner, queryInfo);
+		ExclusiveGroup group = new ExclusiveGroup(List.of(first, second), owner, queryInfo);
+		group.addBoundFilter("s", A);
+		first.addBoundFilter("s", A);
+		second.addBoundFilter("s", A);
+		QueryEvaluationStep prepared = strategy.precompile(group);
+		try (var rows = prepared.evaluate(EmptyBindingSet.getInstance())) {
+			if (present) {
+				assertThat(QueryResults.asList(rows)).containsExactly(row("s", A));
+			} else {
+				assertThat(QueryResults.asList(rows)).isEmpty();
+			}
+		}
+	}
+
+	@Test
+	void conflictingLogicalInputDoesNotMatchRootBoundFilter() {
+		QueryEvaluationStep prepared = preparedRootBoundGroup(false);
+		try (var rows = prepared.evaluate(row("s", B))) {
+			assertThat(QueryResults.asList(rows)).isEmpty();
+		}
+	}
+
+	@Test
+	void hiddenProbeDoesNotBecomeRootBoundFilterInputOrOutput() {
+		QueryEvaluationStep prepared = preparedRootBoundGroup(true);
+		QueryBindingSet probes = new QueryBindingSet();
+		probes.addBinding("s", B);
+		probes.addBinding("private", VF.createLiteral("hidden"));
+		QueryEvaluationContext evaluationContext = new QueryEvaluationContext.Minimal(null);
+		BindingSet framed = BindingFrameBindings.push(new BindingFrameBindings.Scope(),
+				EmptyBindingSet.getInstance(), probes, evaluationContext);
+		assertThat(framed.getValue("s")).isNull();
+		assertThat(BindingFrameBindings.probeValue(framed, "s")).isEqualTo(B);
+		try (var rows = prepared.evaluate(framed)) {
+			assertThat(QueryResults.asList(rows)).singleElement().satisfies(result -> {
+				assertThat(result.getValue("s")).isEqualTo(A);
+				assertThat(result.getValue("private")).isNull();
+				assertThat(BindingFrameBindings.from(result)).isNotNull();
+				assertThat(BindingFrameBindings.probeValue(result, "private")).isEqualTo(VF.createLiteral("hidden"));
+			});
+		}
+	}
+
+	private QueryEvaluationStep preparedRootBoundGroup(boolean bindChildren) {
+		IRI p1 = VF.createIRI("urn:probe:p1");
+		IRI p2 = VF.createIRI("urn:probe:p2");
+		try (RepositoryConnection connection = data.getConnection()) {
+			connection.add(A, p1, VF.createLiteral("a1"));
+			connection.add(A, p2, VF.createLiteral("a2"));
+			connection.add(B, p1, VF.createLiteral("b1"));
+			connection.add(B, p2, VF.createLiteral("b2"));
+		}
+		EndpointManager endpoints = mock(EndpointManager.class);
+		Endpoint member = endpoint(data);
+		SparqlTripleSource source = new SparqlTripleSource(member, context);
+		when(member.getTripleSource()).thenReturn(source);
+		when(context.getEndpointManager()).thenReturn(endpoints);
+		when(endpoints.getEndpoint("member")).thenReturn(member);
+		when(queryInfo.getFederationContext()).thenReturn(context);
+		FederationEvaluationStrategy strategy = new FederationEvaluationStrategy(context);
+		when(queryInfo.getStrategy()).thenReturn(strategy);
+		StatementSource owner = new StatementSource("member", StatementSource.StatementSourceType.REMOTE);
+		ExclusiveStatement first = new ExclusiveStatement(new StatementPattern(Var.of("s"), Var.of("p1", p1),
+				Var.of("first")), owner, queryInfo);
+		ExclusiveStatement second = new ExclusiveStatement(new StatementPattern(Var.of("s"), Var.of("p2", p2),
+				Var.of("second")), owner, queryInfo);
+		ExclusiveGroup group = new ExclusiveGroup(List.of(first, second), owner, queryInfo);
+		group.addBoundFilter("s", A);
+		if (bindChildren) {
+			first.addBoundFilter("s", A);
+			second.addBoundFilter("s", A);
+		}
+		return strategy.precompile(group);
+	}
+
+	private static BindingSet row(String name, Value value) {
+		QueryBindingSet row = new QueryBindingSet();
+		row.addBinding(name, value);
+		return row;
+	}
+
+	@ParameterizedTest
+	@ValueSource(strings = { "unbound", "match", "mismatch" })
+	void nativeGraphNestedFilterReceivesAuthorizedEntryBinding(String kind) {
+		EndpointManager endpoints = mock(EndpointManager.class);
+		Endpoint member = endpoint(data);
+		when(queryInfo.getFederationContext()).thenReturn(context);
+		when(context.getEndpointManager()).thenReturn(endpoints);
+		when(endpoints.getEndpoint("member")).thenReturn(member);
+		StatementSource owner = new StatementSource("member", StatementSource.StatementSourceType.REMOTE);
+		ExclusiveGroup nested = new ExclusiveGroup(List.of(statement("s")), owner, queryInfo);
+		nested.addFilterExpr(new FilterExpr(new Compare(Var.of("o"), new ValueConstant(VF.createLiteral("a")),
+				Compare.CompareOp.EQ), new HashSet<>(Set.of("o"))));
+		ExclusiveGroup group = new ExclusiveGroup(List.of(nested), owner, queryInfo);
+		QueryBindingSet input = new QueryBindingSet();
+		if (!kind.equals("unbound")) {
+			input.addBinding("o", VF.createLiteral(kind.equals("match") ? "a" : "b"));
+		}
+		NativeGraphQuery.Prepared prepared = NativeGraphQuery.select(group, input);
+		// The private graph selector is always present; a non-null genuine entry ?o is also needed by the filter.
+		assertThat(prepared.graphBindings().size()).isEqualTo(kind.equals("unbound") ? 1 : 2);
+		assertThat(prepared.graphBindings().getValue("o")).isEqualTo(input.getValue("o"));
+		assertThat(prepared.graphBindings()
+				.getBindingNames()
+				.stream()
+				.filter(name -> name.startsWith("__fedx_graph_"))
+				.map(prepared.graphBindings()::getValue))
+						.containsExactly(GRAPH);
+		try (var rows = source(data).getStatements(prepared, queryInfo)) {
+			var result = QueryResults.asList(rows);
+			if (kind.equals("mismatch")) {
+				assertThat(result).isEmpty();
+			} else {
+				assertThat(result).extracting(row -> tuple(row.getValue("s"), row.getValue("o")))
+						.containsExactly(tuple(A, VF.createLiteral("a")));
+			}
+		}
+	}
+
+	@Test
+	void nativeGraphNestedFilterCannotSeeAnUnownedProbe() {
+		EndpointManager endpoints = mock(EndpointManager.class);
+		Endpoint member = endpoint(data);
+		when(queryInfo.getFederationContext()).thenReturn(context);
+		when(context.getEndpointManager()).thenReturn(endpoints);
+		when(endpoints.getEndpoint("member")).thenReturn(member);
+		StatementSource owner = new StatementSource("member", StatementSource.StatementSourceType.REMOTE);
+		ExclusiveGroup nested = new ExclusiveGroup(List.of(statement("s")), owner, queryInfo);
+		nested.addFilterExpr(new FilterExpr(new Compare(Var.of("o"), new ValueConstant(VF.createLiteral("a")),
+				Compare.CompareOp.EQ), new HashSet<>(Set.of("o"))));
+		ExclusiveGroup group = new ExclusiveGroup(List.of(nested), owner, queryInfo);
+		QueryBindingSet probe = new QueryBindingSet();
+		probe.addBinding("o", VF.createLiteral("b"));
+		BindingSet input = BindingFrameBindings.push(new BindingFrameBindings.Scope(), EmptyBindingSet.getInstance(),
+				probe, new QueryEvaluationContext.Minimal((Dataset) null));
+		assertThat(input.getValue("o")).isNull();
+		NativeGraphQuery.Prepared prepared = NativeGraphQuery.select(group, input);
+		assertThat(prepared.graphBindings().getValue("o")).isNull();
+		try (var rows = source(data).getStatements(prepared, queryInfo)) {
+			assertThat(QueryResults.asList(rows)).extracting(row -> tuple(row.getValue("s"), row.getValue("o")))
+					.containsExactly(tuple(A, VF.createLiteral("a")));
+		}
+	}
+
+	@Test
+	void nativeGraphNestedFilterKeepsCallerLiteralAsTypedInput() {
+		Value literal = VF.createLiteral("quote' backslash\\ and newline\n");
+		try (RepositoryConnection connection = data.getConnection()) {
+			connection.add(A, P, literal, GRAPH);
+		}
+		EndpointManager endpoints = mock(EndpointManager.class);
+		Endpoint member = endpoint(data);
+		when(queryInfo.getFederationContext()).thenReturn(context);
+		when(context.getEndpointManager()).thenReturn(endpoints);
+		when(endpoints.getEndpoint("member")).thenReturn(member);
+		StatementSource owner = new StatementSource("member", StatementSource.StatementSourceType.REMOTE);
+		ExclusiveGroup nested = new ExclusiveGroup(List.of(statement("s")), owner, queryInfo);
+		nested.addFilterExpr(new FilterExpr(new Compare(Var.of("o"), new ValueConstant(literal),
+				Compare.CompareOp.EQ), new HashSet<>(Set.of("o"))));
+		ExclusiveGroup group = new ExclusiveGroup(List.of(nested), owner, queryInfo);
+		QueryBindingSet input = new QueryBindingSet();
+		input.addBinding("o", literal);
+		NativeGraphQuery.Prepared prepared = NativeGraphQuery.select(group, input);
+		try (var rows = source(data).getStatements(prepared, queryInfo)) {
+			assertThat(QueryResults.asList(rows)).extracting(row -> tuple(row.getValue("s"), row.getValue("o")))
+					.containsExactly(tuple(A, literal));
+		}
+	}
+
+	@Test
+	void sailGroupRetainsItsNestedFilter() {
+		try (RepositoryConnection connection = data.getConnection()) {
+			connection.add(A, P, VF.createLiteral("outer-a"));
+			connection.add(B, P, VF.createLiteral("outer-b"));
+		}
+		EndpointManager endpoints = mock(EndpointManager.class);
+		Endpoint member = endpoint(data);
+		when(queryInfo.getFederationContext()).thenReturn(context);
+		when(context.getEndpointManager()).thenReturn(endpoints);
+		when(endpoints.getEndpoint("member")).thenReturn(member);
+		StatementSource owner = new StatementSource("member", StatementSource.StatementSourceType.LOCAL);
+		ExclusiveStatement inner = new ExclusiveStatement(new StatementPattern(Var.of("s"), Var.of("p1", P, true, true),
+				Var.of("o")), owner, queryInfo);
+		ExclusiveGroup nested = new ExclusiveGroup(List.of(inner), owner, queryInfo);
+		nested.addFilterExpr(new FilterExpr(new Compare(Var.of("o"), new ValueConstant(VF.createLiteral("outer-a")),
+				Compare.CompareOp.EQ), new HashSet<>(Set.of("o"))));
+		ExclusiveStatement outer = new ExclusiveStatement(new StatementPattern(Var.of("s"), Var.of("p2", P, true, true),
+				Var.of("outer")), owner, queryInfo);
+		ExclusiveGroup group = new ExclusiveGroup(List.of(nested, outer), owner, queryInfo);
+		try (var rows = new SailTripleSource(endpoint(data), context).getStatements(group,
+				EmptyBindingSet.getInstance())) {
+			assertThat(QueryResults.asList(rows))
+					.extracting(row -> tuple(row.getValue("s"), row.getValue("o"), row.getValue("outer")))
+					.containsExactlyInAnyOrder(tuple(A, VF.createLiteral("outer-a"), VF.createLiteral("a")),
+							tuple(A, VF.createLiteral("outer-a"), VF.createLiteral("outer-a")));
+		}
+	}
+
+	@Test
+	void sailFullyBoundProbeRetainsItsNestedFilter() {
+		try (RepositoryConnection connection = data.getConnection()) {
+			connection.add(A, P, VF.createLiteral("outer-a"));
+			connection.add(B, P, VF.createLiteral("outer-b"));
+		}
+		EndpointManager endpoints = mock(EndpointManager.class);
+		Endpoint member = endpoint(data);
+		when(queryInfo.getFederationContext()).thenReturn(context);
+		when(context.getEndpointManager()).thenReturn(endpoints);
+		when(endpoints.getEndpoint("member")).thenReturn(member);
+		StatementSource owner = new StatementSource("member", StatementSource.StatementSourceType.LOCAL);
+		ExclusiveStatement inner = new ExclusiveStatement(new StatementPattern(Var.of("s"), Var.of("p1", P, true, true),
+				Var.of("o")), owner, queryInfo);
+		ExclusiveGroup nested = new ExclusiveGroup(List.of(inner), owner, queryInfo);
+		nested.addFilterExpr(new FilterExpr(new Compare(Var.of("o"), new ValueConstant(VF.createLiteral("outer-a")),
+				Compare.CompareOp.EQ), new HashSet<>(Set.of("o"))));
+		ExclusiveGroup group = new ExclusiveGroup(List.of(nested), owner, queryInfo);
+		QueryBindingSet denied = new QueryBindingSet();
+		denied.addBinding("s", B);
+		denied.addBinding("o", VF.createLiteral("outer-b"));
+		try (var rows = new SailTripleSource(endpoint(data), context).getStatements(group, denied)) {
+			assertThat(QueryResults.asList(rows)).isEmpty();
+		}
+	}
+
+	@Test
+	void preparedSailNestedComparisonUsesFederationStrictMode() {
+		((MemoryStore) data.getSail()).setDefaultQueryEvaluationMode(QueryEvaluationMode.STANDARD);
+		IRI predicate = VF.createIRI("urn:duration-predicate");
+		try (RepositoryConnection connection = data.getConnection()) {
+			connection.add(A, predicate, VF.createLiteral("P1D", XSD.DURATION));
+			try (var rows = connection.prepareTupleQuery("SELECT ?o WHERE { <urn:a> <urn:duration-predicate> ?o . "
+					+ "FILTER(?o < \"P2D\"^^<http://www.w3.org/2001/XMLSchema#duration>) }").evaluate()) {
+				assertThat(QueryResults.asList(rows)).hasSize(1);
+			}
+		}
+		EndpointManager endpoints = mock(EndpointManager.class);
+		Endpoint member = endpoint(data);
+		SailTripleSource source = new SailTripleSource(member, context);
+		when(member.getTripleSource()).thenReturn(source);
+		when(queryInfo.getFederationContext()).thenReturn(context);
+		when(context.getEndpointManager()).thenReturn(endpoints);
+		when(endpoints.getEndpoint("member")).thenReturn(member);
+		FederationEvaluationStrategy strategy = new FederationEvaluationStrategy(context);
+		assertThat(strategy.getQueryEvaluationMode()).isEqualTo(QueryEvaluationMode.STRICT);
+		when(queryInfo.getStrategy()).thenReturn(strategy);
+		StatementSource owner = new StatementSource("member", StatementSource.StatementSourceType.LOCAL);
+		ExclusiveStatement inner = new ExclusiveStatement(new StatementPattern(Var.of("s"),
+				Var.of("p", predicate, true, true), Var.of("o")), owner, queryInfo);
+		ExclusiveGroup nested = new ExclusiveGroup(List.of(inner), owner, queryInfo);
+		FilterExpr comparison = new FilterExpr(new Compare(Var.of("o"),
+				new ValueConstant(VF.createLiteral("P2D", XSD.DURATION)), Compare.CompareOp.LT),
+				new HashSet<>(Set.of("o")));
+		QueryBindingSet strictInput = new QueryBindingSet();
+		strictInput.addBinding("o", VF.createLiteral("P1D", XSD.DURATION));
+		assertThatThrownBy(() -> strategy.evaluate(comparison.getExpression(), strictInput))
+				.isInstanceOf(ValueExprEvaluationException.class);
+		nested.addFilterExpr(comparison);
+		QueryEvaluationStep prepared = strategy.precompile(new ExclusiveGroup(List.of(nested), owner, queryInfo));
+		try (var rows = prepared.evaluate(EmptyBindingSet.getInstance())) {
+			assertThat(QueryResults.asList(rows)).isEmpty();
+		}
+	}
+
+	@ParameterizedTest
+	@ValueSource(booleans = { false, true })
+	void preparedSailComparisonPreservesOperatorAndMode(boolean strict) {
+		((MemoryStore) data.getSail()).setDefaultQueryEvaluationMode(
+				strict ? QueryEvaluationMode.STANDARD : QueryEvaluationMode.STRICT);
+		IRI predicate = VF.createIRI("urn:numeric-predicate");
+		try (RepositoryConnection connection = data.getConnection()) {
+			connection.add(A, predicate, VF.createLiteral(1));
+		}
+		EndpointManager endpoints = mock(EndpointManager.class);
+		Endpoint member = endpoint(data);
+		SailTripleSource source = new SailTripleSource(member, context);
+		when(member.getTripleSource()).thenReturn(source);
+		when(queryInfo.getFederationContext()).thenReturn(context);
+		when(context.getEndpointManager()).thenReturn(endpoints);
+		when(endpoints.getEndpoint("member")).thenReturn(member);
+		FederationEvaluationStrategy strategy = new FederationEvaluationStrategy(context);
+		strategy.setQueryEvaluationMode(strict ? QueryEvaluationMode.STRICT : QueryEvaluationMode.STANDARD);
+		when(queryInfo.getStrategy()).thenReturn(strategy);
+		StatementSource owner = new StatementSource("member", StatementSource.StatementSourceType.LOCAL);
+		for (Compare.CompareOp op : Compare.CompareOp.values()) {
+			ExclusiveStatement inner = new ExclusiveStatement(new StatementPattern(Var.of("s"),
+					Var.of("p", predicate, true, true), Var.of("o")), owner, queryInfo);
+			ExclusiveGroup nested = new ExclusiveGroup(List.of(inner), owner, queryInfo);
+			nested.addFilterExpr(new FilterExpr(new Compare(Var.of("o"), new ValueConstant(VF.createLiteral(2)), op),
+					new HashSet<>(Set.of("o"))));
+			QueryEvaluationStep prepared = strategy.precompile(new ExclusiveGroup(List.of(nested), owner, queryInfo));
+			boolean expected = op == Compare.CompareOp.NE || op == Compare.CompareOp.LT || op == Compare.CompareOp.LE;
+			try (var rows = prepared.evaluate(EmptyBindingSet.getInstance())) {
+				assertThat(QueryResults.asList(rows)).hasSize(expected ? 1 : 0);
+			}
+		}
+	}
+
+	@ParameterizedTest
+	@ValueSource(booleans = { false, true })
+	void preparedSailDistinctComparisonOperatorsCannotCollapse(boolean strict) {
+		((MemoryStore) data.getSail()).setDefaultQueryEvaluationMode(
+				strict ? QueryEvaluationMode.STANDARD : QueryEvaluationMode.STRICT);
+		IRI predicate = VF.createIRI("urn:numeric-predicate");
+		try (RepositoryConnection connection = data.getConnection()) {
+			connection.add(A, predicate, VF.createLiteral(1));
+		}
+		EndpointManager endpoints = mock(EndpointManager.class);
+		Endpoint member = endpoint(data);
+		SailTripleSource source = new SailTripleSource(member, context);
+		when(member.getTripleSource()).thenReturn(source);
+		when(queryInfo.getFederationContext()).thenReturn(context);
+		when(context.getEndpointManager()).thenReturn(endpoints);
+		when(endpoints.getEndpoint("member")).thenReturn(member);
+		FederationEvaluationStrategy strategy = new FederationEvaluationStrategy(context);
+		strategy.setQueryEvaluationMode(strict ? QueryEvaluationMode.STRICT : QueryEvaluationMode.STANDARD);
+		when(queryInfo.getStrategy()).thenReturn(strategy);
+		StatementSource owner = new StatementSource("member", StatementSource.StatementSourceType.LOCAL);
+		ExclusiveStatement inner = new ExclusiveStatement(new StatementPattern(Var.of("s"),
+				Var.of("p", predicate, true, true), Var.of("o")), owner, queryInfo);
+		ExclusiveGroup nested = new ExclusiveGroup(List.of(inner), owner, queryInfo);
+		ValueConstant one = new ValueConstant(VF.createLiteral(1));
+		And contradiction = new And(new Compare(Var.of("o"), one, Compare.CompareOp.EQ),
+				new Compare(Var.of("o"), one.clone(), Compare.CompareOp.NE));
+		nested.addFilterExpr(new FilterExpr(contradiction, new HashSet<>(Set.of("o"))));
+		QueryEvaluationStep prepared = strategy.precompile(new ExclusiveGroup(List.of(nested), owner, queryInfo));
+		try (var rows = prepared.evaluate(EmptyBindingSet.getInstance())) {
+			assertThat(QueryResults.asList(rows)).isEmpty();
+		}
+	}
+
+	@ParameterizedTest
+	@ValueSource(booleans = { false, true })
+	void preparedSailNestedFilterKeepsBuiltinAfterRegistryReplacement(boolean fullyBound) {
+		try (RepositoryConnection connection = data.getConnection()) {
+			connection.add(A, P, VF.createLiteral("outer-a"));
+		}
+		EndpointManager endpoints = mock(EndpointManager.class);
+		Endpoint member = endpoint(data);
+		SailTripleSource source = new SailTripleSource(member, context);
+		when(member.getTripleSource()).thenReturn(source);
+		when(queryInfo.getFederationContext()).thenReturn(context);
+		when(context.getEndpointManager()).thenReturn(endpoints);
+		when(endpoints.getEndpoint("member")).thenReturn(member);
+		FederationEvaluationStrategy strategy = new FederationEvaluationStrategy(context);
+		when(queryInfo.getStrategy()).thenReturn(strategy);
+		StatementSource owner = new StatementSource("member", StatementSource.StatementSourceType.LOCAL);
+		ExclusiveStatement inner = new ExclusiveStatement(new StatementPattern(Var.of("s"), Var.of("p1", P, true, true),
+				Var.of("o")), owner, queryInfo);
+		ExclusiveGroup nested = new ExclusiveGroup(List.of(inner), owner, queryInfo);
+		nested.addFilterExpr(
+				new FilterExpr(new Compare(new FunctionCall("RAND"), new ValueConstant(VF.createLiteral(0)),
+						Compare.CompareOp.LT), new HashSet<>()));
+		ExclusiveGroup group = new ExclusiveGroup(List.of(nested), owner, queryInfo);
+		QueryEvaluationStep prepared = strategy.precompile(group);
+		QueryBindingSet input = new QueryBindingSet();
+		if (fullyBound) {
+			input.addBinding("s", A);
+			input.addBinding("o", VF.createLiteral("outer-a"));
+		}
+		FunctionRegistry registry = FunctionRegistry.getInstance();
+		Function original = registry.get("RAND").orElseThrow();
+		registry.add(new Function() {
+			@Override
+			public String getURI() {
+				return "RAND";
+			}
+
+			@Override
+			public Value evaluate(ValueFactory valueFactory, Value... arguments) {
+				return valueFactory.createLiteral(-1);
+			}
+		});
+		try {
+			for (int i = 0; i < 2; i++) {
+				try (var rows = prepared.evaluate(input)) {
+					assertThat(QueryResults.asList(rows)).isEmpty();
+				}
+			}
+		} finally {
+			registry.add(original);
+		}
+	}
+
+	@Test
+	void preparedSnapshotNestedFilterKeepsBuiltinAfterRegistryReplacement() {
+		QueryBindingSet captured = new QueryBindingSet();
+		captured.addBinding("g", GRAPH);
+		captured.addBinding("s", A);
+		captured.addBinding("p", P);
+		captured.addBinding("o", VF.createLiteral("a"));
+		TupleQuery capture = mock(TupleQuery.class);
+		when(capture.evaluate()).thenReturn(new IteratingTupleQueryResult(List.of("g", "s", "p", "o"),
+				List.of(captured)));
+		RemoteGraphSnapshot snapshot = RemoteGraphSnapshot.capture(capture, "member",
+				new RemoteGraphSnapshot.Load(queryInfo));
+		try {
+			EndpointManager endpoints = mock(EndpointManager.class);
+			Endpoint member = mock(Endpoint.class);
+			RepositoryConnection connection = mock(RepositoryConnection.class);
+			TupleQuery query = mock(TupleQuery.class);
+			SparqlTripleSource source = new SparqlTripleSource(member, context);
+			when(member.getId()).thenReturn("member");
+			when(member.getConnection()).thenReturn(connection);
+			when(member.getTripleSource()).thenReturn(source);
+			when(connection.prepareTupleQuery(any(QueryLanguage.class), anyString(), nullable(String.class)))
+					.thenReturn(query);
+			when(query.getBindings()).thenReturn(EmptyBindingSet.getInstance());
+			when(context.getEndpointManager()).thenReturn(endpoints);
+			when(endpoints.getEndpoint("member")).thenReturn(member);
+			when(queryInfo.getFederationContext()).thenReturn(context);
+			FederationEvaluationStrategy strategy = new FederationEvaluationStrategy(context) {
+				@Override
+				synchronized RemoteGraphSnapshot getGraphSnapshot(Endpoint endpoint) {
+					return snapshot;
+				}
+			};
+			when(queryInfo.getStrategy()).thenReturn(strategy);
+			Resource graph = snapshot.graphNames().getFirst();
+			StatementSource owner = new StatementSource("member", StatementSource.StatementSourceType.REMOTE);
+			ExclusiveStatement inner = new ExclusiveStatement(
+					new StatementPattern(StatementPattern.Scope.NAMED_CONTEXTS,
+							Var.of("s"), Var.of("p", P, true, true), Var.of("o"), Var.of("g", graph, true, true)),
+					owner, queryInfo);
+			inner.setResolvedGraphSelection(new ResolvedGraphSelection(graph, graph, false));
+			ExclusiveGroup nested = new ExclusiveGroup(List.of(inner), owner, queryInfo);
+			nested.addFilterExpr(new FilterExpr(new Compare(new FunctionCall("RAND"),
+					new ValueConstant(VF.createLiteral(0)), Compare.CompareOp.LT), new HashSet<>()));
+			QueryEvaluationStep prepared = strategy.precompile(new ExclusiveGroup(List.of(nested), owner, queryInfo));
+			FunctionRegistry registry = FunctionRegistry.getInstance();
+			Function original = registry.get("RAND").orElseThrow();
+			registry.add(new Function() {
+				@Override
+				public String getURI() {
+					return "RAND";
+				}
+
+				@Override
+				public Value evaluate(ValueFactory valueFactory, Value... arguments) {
+					return valueFactory.createLiteral(-1);
+				}
+			});
+			try {
+				for (int i = 0; i < 2; i++) {
+					try (var rows = prepared.evaluate(EmptyBindingSet.getInstance())) {
+						assertThat(QueryResults.asList(rows)).isEmpty();
+					}
+				}
+			} finally {
+				registry.add(original);
+			}
+		} finally {
+			snapshot.release();
 		}
 	}
 
@@ -179,6 +902,156 @@ class PreparedGraphIdentityTransportTest {
 			}
 		}
 		assertThat(preparedCount).hasValue(1);
+	}
+
+	@ParameterizedTest
+	@ValueSource(strings = { "binding", "dataset" })
+	void preparedNestedGroupHonorsConnectionWrapperSettings(String setting) {
+		AtomicInteger preparedCount = new AtomicInteger();
+		EndpointManager endpoints = mock(EndpointManager.class);
+		Endpoint member = mock(Endpoint.class);
+		when(member.getId()).thenReturn("member");
+		when(member.getRepository()).thenReturn(data);
+		when(member.getConnection()).thenAnswer(invocation -> new RepositoryConnectionWrapper(data,
+				data.getConnection()) {
+			@Override
+			public TupleQuery prepareTupleQuery(QueryLanguage language, String text, String base) {
+				preparedCount.incrementAndGet();
+				TupleQuery query = super.prepareTupleQuery(language, text, base);
+				if (setting.equals("binding")) {
+					query.setBinding("s", A);
+				} else {
+					SimpleDataset selected = new SimpleDataset();
+					selected.addNamedGraph(VF.createIRI("urn:allowed"));
+					query.setDataset(selected);
+				}
+				return query;
+			}
+		});
+		SparqlTripleSource source = new SparqlTripleSource(member, context);
+		when(member.getTripleSource()).thenReturn(source);
+		when(context.getEndpointManager()).thenReturn(endpoints);
+		when(endpoints.getEndpoint("member")).thenReturn(member);
+		when(queryInfo.getFederationContext()).thenReturn(context);
+		FederationEvaluationStrategy strategy = new FederationEvaluationStrategy(context);
+		when(queryInfo.getStrategy()).thenReturn(strategy);
+		StatementSource owner = new StatementSource("member", StatementSource.StatementSourceType.REMOTE);
+		ExclusiveGroup nested = new ExclusiveGroup(List.of(statement("s")), owner, queryInfo);
+		nested.addFilterExpr(new FilterExpr(new Bound(Var.of("o")),
+				new HashSet<>(Set.of("o"))));
+		QueryEvaluationStep prepared = strategy.precompile(new ExclusiveGroup(List.of(nested), owner, queryInfo));
+		try (var rows = prepared.evaluate(EmptyBindingSet.getInstance())) {
+			List<BindingSet> result = QueryResults.asList(rows);
+			if (setting.equals("binding")) {
+				assertThat(result).singleElement().satisfies(row -> assertThat(row.getValue("s")).isEqualTo(A));
+			} else {
+				assertThat(result).isEmpty();
+			}
+		}
+		assertThat(preparedCount).hasValue(1);
+	}
+
+	@Test
+	void preparedNestedGroupRetainsAnExplicitEmptyDataset() {
+		EndpointManager endpoints = mock(EndpointManager.class);
+		Endpoint member = endpoint(data);
+		SparqlTripleSource source = new SparqlTripleSource(member, context);
+		when(member.getTripleSource()).thenReturn(source);
+		when(context.getEndpointManager()).thenReturn(endpoints);
+		when(endpoints.getEndpoint("member")).thenReturn(member);
+		when(queryInfo.getFederationContext()).thenReturn(context);
+		FederationEvaluationStrategy strategy = new FederationEvaluationStrategy(context);
+		when(queryInfo.getStrategy()).thenReturn(strategy);
+		StatementSource owner = new StatementSource("member", StatementSource.StatementSourceType.REMOTE);
+		ExclusiveGroup nested = new ExclusiveGroup(List.of(statement("s")), owner, queryInfo);
+		SimpleDataset empty = new SimpleDataset();
+		empty.setExplicitReadDataset(true);
+		nested.setExecutionDataset(empty);
+		nested.addFilterExpr(new FilterExpr(new Bound(Var.of("o")),
+				new HashSet<>(Set.of("o"))));
+		QueryEvaluationStep prepared = strategy.precompile(new ExclusiveGroup(List.of(nested), owner, queryInfo));
+		try (var rows = prepared.evaluate(EmptyBindingSet.getInstance())) {
+			assertThat(QueryResults.asList(rows)).isEmpty();
+		}
+	}
+
+	@Test
+	void incompatibleNestedDatasetIsRejectedBeforeOpeningSource() {
+		EndpointManager endpoints = mock(EndpointManager.class);
+		Endpoint member = mock(Endpoint.class);
+		when(member.getId()).thenReturn("member");
+		when(member.getRepository()).thenReturn(data);
+		AtomicInteger opens = new AtomicInteger();
+		when(member.getConnection()).thenAnswer(invocation -> {
+			opens.incrementAndGet();
+			return data.getConnection();
+		});
+		SparqlTripleSource source = new SparqlTripleSource(member, context);
+		when(member.getTripleSource()).thenReturn(source);
+		when(context.getEndpointManager()).thenReturn(endpoints);
+		when(endpoints.getEndpoint("member")).thenReturn(member);
+		when(queryInfo.getFederationContext()).thenReturn(context);
+		FederationEvaluationStrategy strategy = new FederationEvaluationStrategy(context);
+		when(queryInfo.getStrategy()).thenReturn(strategy);
+		StatementSource owner = new StatementSource("member", StatementSource.StatementSourceType.REMOTE);
+		ExclusiveGroup nested = new ExclusiveGroup(List.of(statement("s")), owner, queryInfo);
+		SimpleDataset selected = new SimpleDataset();
+		selected.addNamedGraph(VF.createIRI("urn:other-graph"));
+		nested.setExecutionDataset(selected);
+		nested.addFilterExpr(new FilterExpr(new Bound(Var.of("o")), new HashSet<>(Set.of("o"))));
+		ExclusiveGroup group = new ExclusiveGroup(List.of(nested), owner, queryInfo);
+		assertThatThrownBy(() -> strategy.precompile(group)).isInstanceOf(QueryEvaluationException.class)
+				.hasMessageContaining("dataset");
+		assertThat(opens).hasValue(0);
+	}
+
+	@ParameterizedTest
+	@ValueSource(strings = { "owner", "query", "selection", "limit", "bound" })
+	void incompatibleNestedGroupContractIsRejectedBeforeOpeningSource(String variant) {
+		EndpointManager endpoints = mock(EndpointManager.class);
+		Endpoint member = mock(Endpoint.class);
+		when(member.getId()).thenReturn("member");
+		when(member.getRepository()).thenReturn(data);
+		AtomicInteger opens = new AtomicInteger();
+		when(member.getConnection()).thenAnswer(invocation -> {
+			opens.incrementAndGet();
+			return data.getConnection();
+		});
+		SparqlTripleSource source = new SparqlTripleSource(member, context);
+		when(member.getTripleSource()).thenReturn(source);
+		when(context.getEndpointManager()).thenReturn(endpoints);
+		when(endpoints.getEndpoint(anyString())).thenReturn(member);
+		when(queryInfo.getFederationContext()).thenReturn(context);
+		FederationEvaluationStrategy strategy = new FederationEvaluationStrategy(context);
+		when(queryInfo.getStrategy()).thenReturn(strategy);
+		QueryInfo nestedInfo = queryInfo;
+		if (variant.equals("query")) {
+			nestedInfo = mock(QueryInfo.class);
+			when(nestedInfo.getFederationContext()).thenReturn(context);
+		}
+		StatementSource owner = new StatementSource("member", StatementSource.StatementSourceType.REMOTE);
+		StatementSource nestedOwner = variant.equals("owner")
+				? new StatementSource("other", StatementSource.StatementSourceType.REMOTE)
+				: owner;
+		ExclusiveStatement statement = statement("s");
+		if (variant.equals("limit")) {
+			statement.setUpperLimit(1);
+		}
+		ExclusiveGroup nested = new ExclusiveGroup(List.of(statement), nestedOwner, nestedInfo);
+		if (variant.equals("bound")) {
+			nested.addBoundFilter("s", A);
+			assertThat(nested.getBoundFilters()).isNotNull();
+			assertThat(nested.getBoundFilters().getValue("s")).isEqualTo(A);
+		}
+		if (variant.equals("selection")) {
+			IRI different = VF.createIRI("urn:different");
+			nested.setResolvedGraphSelection(new ResolvedGraphSelection(different, different, false));
+		}
+		nested.addFilterExpr(new FilterExpr(new Bound(Var.of("o")), new HashSet<>(Set.of("o"))));
+		ExclusiveGroup group = new ExclusiveGroup(List.of(nested), owner, queryInfo);
+		assertThatThrownBy(() -> strategy.precompile(group)).isInstanceOf(QueryEvaluationException.class)
+				.hasMessageContaining("nested");
+		assertThat(opens).hasValue(0);
 	}
 
 	@Test
@@ -275,6 +1148,51 @@ class PreparedGraphIdentityTransportTest {
 			assertThat(requests).containsExactly(text);
 		} finally {
 			federation.shutDown();
+			repository.shutDown();
+		}
+	}
+
+	@Test
+	void serializedPrivateFrameProbeIsNotTransportedToService() throws Exception {
+		SPARQLProtocolSession session = mock(SPARQLProtocolSession.class);
+		AtomicInteger requests = new AtomicInteger();
+		when(session.sendTupleQuery(any(QueryLanguage.class), anyString(), nullable(String.class),
+				nullable(Dataset.class), anyBoolean(), anyInt(), ArgumentMatchers.<WeakReference<?>>isNull(),
+				any(Binding[].class))).thenAnswer(invocation -> {
+					requests.incrementAndGet();
+					assertThat((String) invocation.getArgument(1)).doesNotContain("urn:private-frame-probe");
+					Binding[] bindings = (Binding[]) invocation.getRawArguments()[7];
+					assertThat(bindings).extracting(Binding::getName).doesNotContain("s");
+					QueryBindingSet row = new QueryBindingSet();
+					row.addBinding("o", VF.createLiteral("remote"));
+					return new IteratingTupleQueryResult(List.of("o"), List.of(row));
+				});
+		SPARQLRepository repository = sparqlRepository(session);
+		QueryBindingSet privateProbe = new QueryBindingSet();
+		privateProbe.addBinding("s", VF.createIRI("urn:private-frame-probe"));
+		BindingSet framed = BindingFrameBindings.push(new BindingFrameBindings.Scope(), EmptyBindingSet.getInstance(),
+				privateProbe, new QueryEvaluationContext.Minimal(null));
+		ByteArrayOutputStream bytes = new ByteArrayOutputStream();
+		try (ObjectOutputStream output = new ObjectOutputStream(bytes)) {
+			output.writeObject(framed);
+		}
+		BindingSet restored;
+		try (ObjectInputStream input = new ObjectInputStream(new ByteArrayInputStream(bytes.toByteArray()))) {
+			restored = (BindingSet) input.readObject();
+		}
+		assertThat(BindingFrameBindings.probeValue(restored, "s")).isEqualTo(VF.createIRI("urn:private-frame-probe"));
+		assertThat(restored.hasBinding("s")).isFalse();
+		StatementPattern pattern = new StatementPattern(Var.of("s"), Var.of("p", P), Var.of("o"));
+		Service expression = new Service(Var.of("endpoint", VF.createIRI("urn:service")), pattern,
+				"?s <urn:p> ?o .", Map.of(), null, false);
+		RepositoryFederatedService service = new RepositoryFederatedService(repository);
+		try {
+			try (var rows = service.select(expression, Set.of("o"), restored, null)) {
+				assertThat(rows.next().getValue("o")).isEqualTo(VF.createLiteral("remote"));
+			}
+			assertThat(requests).hasValue(1);
+		} finally {
+			service.shutdown();
 			repository.shutDown();
 		}
 	}

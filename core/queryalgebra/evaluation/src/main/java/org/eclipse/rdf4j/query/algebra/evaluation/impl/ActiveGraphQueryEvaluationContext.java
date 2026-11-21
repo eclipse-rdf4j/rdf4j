@@ -92,7 +92,8 @@ public final class ActiveGraphQueryEvaluationContext implements QueryEvaluationC
 
 	@Override
 	public MutableBindingSet createBindingSet(BindingSet bindings) {
-		return delegate.createBindingSet(bindings);
+		return BindingFrameBindings.preserve(bindings,
+				GraphFrameBindings.preserve(bindings, delegate.createBindingSet(bindings)));
 	}
 
 	@Override

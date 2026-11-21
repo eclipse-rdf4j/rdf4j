@@ -19,19 +19,28 @@ import org.eclipse.rdf4j.query.QueryEvaluationException;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryEvaluationStep;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryValueEvaluationStep;
 import org.eclipse.rdf4j.query.algebra.evaluation.ValueExprEvaluationException;
+import org.eclipse.rdf4j.query.algebra.evaluation.impl.BindingFrameBindings;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.evaluationsteps.StatementPatternQueryEvaluationStep;
 
 public final class ExistsQueryValueEvaluationStep implements QueryValueEvaluationStep {
 	private final QueryEvaluationStep subquery;
+	private final StatementPatternQueryEvaluationStep unframedStatementPattern;
 
 	public ExistsQueryValueEvaluationStep(QueryEvaluationStep subquery) {
+		this(subquery, subquery);
+	}
+
+	/** Inspects the prepared capability separately from the complete framed runtime step. */
+	public ExistsQueryValueEvaluationStep(QueryEvaluationStep capabilitySource, QueryEvaluationStep subquery) {
 		this.subquery = subquery;
+		this.unframedStatementPattern = BindingFrameBindings.unframedCapability(capabilitySource,
+				StatementPatternQueryEvaluationStep.class);
 	}
 
 	@Override
 	public Value evaluate(BindingSet bindings) throws ValueExprEvaluationException, QueryEvaluationException {
-		if (subquery instanceof StatementPatternQueryEvaluationStep statementPatternStep) {
-			return BooleanLiteral.valueOf(statementPatternStep.hasStatement(bindings));
+		if (unframedStatementPattern != null && !BindingFrameBindings.hasFrame(bindings)) {
+			return BooleanLiteral.valueOf(unframedStatementPattern.hasStatement(bindings));
 		}
 
 		try (CloseableIteration<BindingSet> iter = subquery.evaluate(bindings)) {

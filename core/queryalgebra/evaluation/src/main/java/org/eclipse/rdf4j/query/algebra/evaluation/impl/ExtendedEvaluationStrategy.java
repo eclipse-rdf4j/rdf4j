@@ -27,7 +27,6 @@ import org.eclipse.rdf4j.query.algebra.Compare;
 import org.eclipse.rdf4j.query.algebra.MathExpr;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.algebra.TupleFunctionCall;
-import org.eclipse.rdf4j.query.algebra.ValueExpr;
 import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryEvaluationStep;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryValueEvaluationStep;
@@ -119,11 +118,7 @@ public class ExtendedEvaluationStrategy extends StrictEvaluationStrategy {
 	@Override
 	public QueryEvaluationStep precompile(TupleExpr expr, QueryEvaluationContext context)
 			throws QueryEvaluationException {
-		if (expr instanceof TupleFunctionCall) {
-			return prepare((TupleFunctionCall) expr, context);
-		} else {
-			return super.precompile(expr, context);
-		}
+		return super.precompile(expr, context);
 	}
 
 	protected QueryEvaluationStep prepare(TupleFunctionCall expr, QueryEvaluationContext context)
@@ -131,24 +126,6 @@ public class ExtendedEvaluationStrategy extends StrictEvaluationStrategy {
 		TupleFunction func = tupleFuncRegistry.get(expr.getURI())
 				.orElseThrow(() -> new QueryEvaluationException("Unknown tuple function '" + expr.getURI() + "'"));
 
-		List<ValueExpr> args = expr.getArgs();
-		QueryValueEvaluationStep[] argEpresions = new QueryValueEvaluationStep[args.size()];
-		for (int i = 0; i < args.size(); i++) {
-			argEpresions[i] = precompile(args.get(i), context);
-		}
-
-		return captureResultValues(new QueryEvaluationStep() {
-
-			@Override
-			public CloseableIteration<BindingSet> evaluate(BindingSet bindings) {
-				Value[] argValues = new Value[args.size()];
-				for (int i = 0; i < args.size(); i++) {
-					argValues[i] = argEpresions[i].evaluate(bindings);
-				}
-
-				return ExtendedEvaluationStrategy.evaluate(func, expr.getResultVars(), bindings,
-						tripleSource.getValueFactory(), argValues);
-			}
-		});
+		return prepareTupleFunction(expr, context, func);
 	}
 }

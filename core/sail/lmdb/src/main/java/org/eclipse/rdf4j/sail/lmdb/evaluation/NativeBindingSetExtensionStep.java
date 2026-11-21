@@ -27,6 +27,7 @@ import org.eclipse.rdf4j.model.base.CoreDatatype;
 import org.eclipse.rdf4j.model.vocabulary.FN;
 import org.eclipse.rdf4j.query.Binding;
 import org.eclipse.rdf4j.query.BindingSet;
+import org.eclipse.rdf4j.query.MutableBindingSet;
 import org.eclipse.rdf4j.query.algebra.AggregateOperator;
 import org.eclipse.rdf4j.query.algebra.Extension;
 import org.eclipse.rdf4j.query.algebra.ExtensionElem;
@@ -40,6 +41,8 @@ import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryEvaluationStep;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryValueEvaluationStep;
 import org.eclipse.rdf4j.query.algebra.evaluation.ValueExprEvaluationException;
+import org.eclipse.rdf4j.query.algebra.evaluation.impl.BindingFrameBindings;
+import org.eclipse.rdf4j.query.algebra.evaluation.impl.GraphFrameBindings;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.QueryEvaluationContext;
 import org.eclipse.rdf4j.query.algebra.evaluation.util.MathUtil;
 import org.eclipse.rdf4j.query.algebra.evaluation.util.QueryEvaluationUtility;
@@ -225,12 +228,13 @@ final class NativeBindingSetExtensionStep implements NativeResultStep, LmdbNativ
 			for (int index = 0; index < cells.length; index++) {
 				cells[index] = source.cell(schema.name(index));
 			}
-			NativeResultRow current = new NativeResultRow(schema, cells);
+			NativeResultRow current = new NativeResultRow(schema, cells, source);
 			for (Assignment assignment : assignments) {
 				cells[indices.get(assignment.name())] = assignment.physical()
 						.evaluate(current,
 								delegate.executionContext());
-				current = new NativeResultRow(schema, cells);
+				current = new NativeResultRow(schema, cells, current.bindingFrame(),
+						current.graphFrames().without(assignment.name()));
 			}
 			return current;
 		});
@@ -360,10 +364,12 @@ final class NativeBindingSetExtensionStep implements NativeResultStep, LmdbNativ
 			}
 			try {
 				BindingSet source = delegate.next();
-				MapBindingSet result = new MapBindingSet(source.size() + assignments.length);
+				MapBindingSet copy = new MapBindingSet(source.size() + assignments.length);
 				for (Binding binding : source) {
-					result.setBinding(binding);
+					copy.setBinding(binding);
 				}
+				MutableBindingSet result = BindingFrameBindings.preserve(source,
+						GraphFrameBindings.preserve(source, copy));
 				for (Assignment assignment : assignments) {
 					NativeValueOutcome outcome = assignment.evaluator().evaluate(result, executionContext);
 					if (outcome.isBound()) {
@@ -466,7 +472,7 @@ final class NativeBindingSetValueCompiler {
 
 			@Override
 			public NativeValueOutcome evaluate(BindingSet bindings, NativeExecutionContext executionContext) {
-				SyntheticValueSource source = executionContext == null ? null : executionContext.evaluationSource();
+				NativeLmdbQuerySource source = strategy.valueEvaluationSource(executionContext);
 				try (SyntheticValueSource.EvaluationScope ignored = SyntheticValueSource.attachEvaluation(source)) {
 					try {
 						return NativeValueOutcome.bound(valueStep.evaluate(bindings));
@@ -509,7 +515,7 @@ final class NativeBindingSetValueCompiler {
 								.genericContext(compileContext, strategy);
 						return descriptor.precompileValue(strategy, scoped);
 					});
-			SyntheticValueSource source = executionContext == null ? null : executionContext.evaluationSource();
+			NativeLmdbQuerySource source = strategy.valueEvaluationSource(executionContext);
 			try (SyntheticValueSource.EvaluationScope ignored = SyntheticValueSource.attachEvaluation(source)) {
 				try {
 					return NativeValueOutcome.bound(valueStep.evaluate(bindings));

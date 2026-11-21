@@ -18,6 +18,7 @@ import java.util.concurrent.atomic.AtomicLong;
 
 import org.eclipse.rdf4j.query.algebra.Graph;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryEvaluationStep;
+import org.eclipse.rdf4j.query.algebra.evaluation.impl.BindingFrameBindings;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.QueryEvaluationContext;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.evaluationsteps.GraphQueryEvaluationStep;
 import org.eclipse.rdf4j.query.algebra.evaluation.util.QueryEvaluationUtility;
@@ -40,12 +41,21 @@ final class NativeGraphPlan implements SlotPlan {
 	private final String[] frameInputNames;
 	private final Set<String> inheritedFrameInputs;
 	private final Set<String> lateralFrameInputs;
+	private final BindingFrameBindings.ConditionInputs selectorInputs;
 	private final long produced;
 	private final long assured;
 
 	NativeGraphPlan(Graph graph, QueryEvaluationContext structural, LmdbNativeEvaluationStrategy strategy,
 			NativeLmdbQuerySource source, int[] outSlots, String[] outNames, int[] frameInputSlots,
 			String[] frameInputNames, Set<String> inheritedFrameInputs, Set<String> lateralFrameInputs) {
+		this(graph, structural, strategy, source, outSlots, outNames, frameInputSlots, frameInputNames,
+				inheritedFrameInputs, lateralFrameInputs, GraphQueryEvaluationStep.prepareSelectorInputs(graph));
+	}
+
+	private NativeGraphPlan(Graph graph, QueryEvaluationContext structural, LmdbNativeEvaluationStrategy strategy,
+			NativeLmdbQuerySource source, int[] outSlots, String[] outNames, int[] frameInputSlots,
+			String[] frameInputNames, Set<String> inheritedFrameInputs, Set<String> lateralFrameInputs,
+			BindingFrameBindings.ConditionInputs selectorInputs) {
 		this.graph = graph;
 		this.structural = structural;
 		this.strategy = strategy;
@@ -56,6 +66,7 @@ final class NativeGraphPlan implements SlotPlan {
 		this.frameInputNames = frameInputNames;
 		this.inheritedFrameInputs = Set.copyOf(inheritedFrameInputs);
 		this.lateralFrameInputs = Set.copyOf(lateralFrameInputs);
+		this.selectorInputs = selectorInputs;
 		long produced = 0L;
 		long assured = 0L;
 		Set<String> assuredNames = graph.getAssuredBindingNames();
@@ -107,11 +118,35 @@ final class NativeGraphPlan implements SlotPlan {
 
 	NativeGraphPlan forWorker(NativeScalarPlan.WorkerContext worker) {
 		Graph copy = graph.clone();
+		NativeGraphFusion.preserveLexicalScopes(graph, copy);
 		LmdbNativeEvaluationStrategy workerStrategy = strategy.forWorker(worker.source(),
 				strategy.copyValuePositions(graph, copy));
 		WORKER_BINDINGS.incrementAndGet();
 		return new NativeGraphPlan(copy, structural, workerStrategy, worker.source(), outSlots, outNames,
-				frameInputSlots, frameInputNames, inheritedFrameInputs, lateralFrameInputs);
+				frameInputSlots, frameInputNames, inheritedFrameInputs, lateralFrameInputs, selectorInputs);
+	}
+
+	static QueryEvaluationStep bindSemanticWorker(Graph graph, QueryEvaluationContext context,
+			LmdbNativeEvaluationStrategy strategy, NativeLmdbQuerySource source) {
+		QueryEvaluationStep step = prepareGraph(graph, context, strategy, source,
+				GraphQueryEvaluationStep.prepareSelectorInputs(graph), Set.of(), Set.of(), true);
+		return NativeSubqueryPlan.workerEntry(step, source);
+	}
+
+	private static QueryEvaluationStep prepareGraph(Graph graph, QueryEvaluationContext context,
+			LmdbNativeEvaluationStrategy strategy, NativeLmdbQuerySource source,
+			BindingFrameBindings.ConditionInputs selectorInputs, Set<String> inheritedFrames, Set<String> lateralFrames,
+			boolean semanticWorker) {
+		return GraphQueryEvaluationStep.supply(graph, strategy.graphTripleSource(), context, selectorInputs,
+				(body, activeGraph) -> {
+					QueryEvaluationStep nativeBody = LmdbNativeAggregateCompiler.tryCompileSemanticSubquery(body,
+							activeGraph, strategy, source, inheritedFrames, lateralFrames);
+					if (nativeBody == null) {
+						return strategy.precompile(body, activeGraph);
+					}
+					return semanticWorker ? NativeSubqueryPlan.recordWorkerSelection(nativeBody, WORKER_BINDINGS)
+							: nativeBody;
+				});
 	}
 
 	@Override
@@ -122,14 +157,8 @@ final class NativeGraphPlan implements SlotPlan {
 		NativeExecutionContext execution = synthetic.executionContext();
 		NativeSubqueryPlan delegate = execution.nativeState(this, () -> {
 			QueryEvaluationContext scoped = execution.genericContext(structural, strategy);
-			QueryEvaluationStep selected = GraphQueryEvaluationStep.supply(graph, strategy.graphTripleSource(), scoped,
-					(body, activeGraph) -> {
-						QueryEvaluationStep nativeBody = LmdbNativeAggregateCompiler.tryCompileSemanticSubquery(body,
-								activeGraph, strategy, source, inheritedFrameInputs, lateralFrameInputs);
-						// Unsupported backend extensions keep the same ordinary evaluator fallback as other native
-						// semantic boundaries. Supported bodies retain native compilation under this exact graph.
-						return nativeBody != null ? nativeBody : strategy.precompile(body, activeGraph);
-					});
+			QueryEvaluationStep selected = prepareGraph(graph, scoped, strategy, source, selectorInputs,
+					inheritedFrameInputs, lateralFrameInputs, strategy.preparesSemanticWorkerProducers());
 			return new NativeSubqueryPlan(selected, outSlots, outNames, frameInputSlots, frameInputNames,
 					frameInputNames, new String[0], null, scoped);
 		});

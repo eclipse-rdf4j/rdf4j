@@ -13,6 +13,7 @@ package org.eclipse.rdf4j.query.algebra.evaluation.impl.evaluationsteps;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.groups.Tuple.tuple;
+import static org.junit.jupiter.api.Assertions.assertAll;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.mock;
@@ -22,6 +23,7 @@ import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Iterator;
 import java.util.List;
+import java.util.Set;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.function.Function;
 
@@ -34,12 +36,15 @@ import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.Statement;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.ValueFactory;
+import org.eclipse.rdf4j.model.impl.BooleanLiteral;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.model.vocabulary.RDF4J;
 import org.eclipse.rdf4j.model.vocabulary.SESAME;
 import org.eclipse.rdf4j.query.BindingSet;
+import org.eclipse.rdf4j.query.MutableBindingSet;
 import org.eclipse.rdf4j.query.QueryEvaluationException;
 import org.eclipse.rdf4j.query.QueryResults;
+import org.eclipse.rdf4j.query.algebra.Exists;
 import org.eclipse.rdf4j.query.algebra.Graph;
 import org.eclipse.rdf4j.query.algebra.SingletonSet;
 import org.eclipse.rdf4j.query.algebra.StatementPattern;
@@ -49,7 +54,9 @@ import org.eclipse.rdf4j.query.algebra.evaluation.EvaluationStrategy;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryBindingSet;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryEvaluationStep;
 import org.eclipse.rdf4j.query.algebra.evaluation.TripleSource;
+import org.eclipse.rdf4j.query.algebra.evaluation.impl.BindingFrameBindings;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.DefaultEvaluationStrategy;
+import org.eclipse.rdf4j.query.algebra.evaluation.impl.GraphFrameBindings;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.QueryEvaluationContext;
 import org.eclipse.rdf4j.query.impl.BlankNodeAllocationScope;
 import org.eclipse.rdf4j.query.impl.EmptyBindingSet;
@@ -64,6 +71,87 @@ public class GraphQueryEvaluationStepTest {
 	private static final ValueFactory VF = SimpleValueFactory.getInstance();
 	private static final IRI G1 = VF.createIRI("urn:g1");
 	private static final IRI G2 = VF.createIRI("urn:g2");
+
+	@Test
+	public void existsGraphUsesTheNearestInvocationRatherThanAnOlderWithheldSelector() {
+		SimpleDataset dataset = new SimpleDataset();
+		dataset.addNamedGraph(G1);
+		QueryEvaluationContext context = new QueryEvaluationContext.Minimal(dataset);
+		IRI absent = VF.createIRI("urn:absent-graph");
+		QueryBindingSet initial = new QueryBindingSet();
+		initial.addBinding("selector", absent);
+		BindingSet older = BindingFrameBindings.withSubstitutionDomain(initial, Set.of("selector"), context);
+		BindingSet hidden = BindingFrameBindings.without(older, Set.of("selector"), context);
+		BindingSet declaredUnbound = BindingFrameBindings.withLateralDomain(hidden, Set.of("selector"),
+				Set.of("selector"), context);
+		BindingSet emptyExists = BindingFrameBindings.withSubstitutionDomain(hidden, Set.of(), context);
+		MutableBindingSet bound = BindingFrameBindings.preserve(declaredUnbound,
+				context.createBindingSet(declaredUnbound));
+		bound.setBinding("selector", G1);
+		MutableBindingSet removed = BindingFrameBindings.preserve(bound, context.createBindingSet(bound));
+		removed.removeBinding("selector");
+		MutableBindingSet locallyProduced = BindingFrameBindings.preserve(emptyExists,
+				context.createBindingSet(emptyExists));
+		locallyProduced.setBinding("selector", absent);
+		BindingSet olderEmpty = BindingFrameBindings.withSubstitutionDomain(EmptyBindingSet.getInstance(), Set.of(),
+				context);
+		MutableBindingSet laterValue = BindingFrameBindings.preserve(olderEmpty, context.createBindingSet(olderEmpty));
+		laterValue.setBinding("selector", G1);
+		BindingSet newerDeclared = BindingFrameBindings.withLateralDomain(laterValue, Set.of("selector"),
+				Set.of("selector"), context);
+		MutableBindingSet graphLocal = BindingFrameBindings.preserve(olderEmpty,
+				context.createBindingSet(olderEmpty));
+		graphLocal = GraphFrameBindings.supply(graphLocal, "privateGraph", G1);
+		graphLocal.setBinding("selector", absent);
+		BindingSet currentWithheld = BindingFrameBindings.without(graphLocal, Set.of("selector"), context);
+		BindingSet recoveredCurrent = BindingFrameBindings.materializeWithheldInputs(currentWithheld,
+				Set.of("selector"));
+
+		assertAll(
+				() -> assertThat(existsGraph(EmptyBindingSet.getInstance(), context)).as("no marker").isTrue(),
+				() -> assertThat(existsGraph(older, context)).as("older bound absent selector").isFalse(),
+				() -> assertThat(existsGraph(declaredUnbound, context)).as("newer declared UNDEF").isTrue(),
+				() -> assertThat(existsGraph(emptyExists, context)).as("newer explicitly empty domain").isTrue(),
+				() -> assertThat(existsGraph(bound, context)).as("newly bound selector").isTrue(),
+				() -> assertThat(existsGraph(removed, context)).as("locally removed selector").isTrue(),
+				() -> assertThat(existsGraph(locallyProduced, context)).as("current local value starts EXISTS")
+						.isFalse(),
+				() -> assertThat(existsGraph(newerDeclared, context)).as("LATERAL after older empty EXISTS").isTrue(),
+				() -> assertThat(existsGraph(currentWithheld, context))
+						.as("current withheld selector starts a new EXISTS")
+						.isFalse(),
+				() -> assertThat(recoveredCurrent.getValue("selector")).as("current entry recovery").isEqualTo(absent),
+				() -> assertThat(GraphFrameBindings.isSupplied(recoveredCurrent, "privateGraph"))
+						.as("supplied GRAPH environment survives entry recovery")
+						.isTrue());
+	}
+
+	@Test
+	public void newExistsGraphDoesNotUseAnUnownedPhysicalProbe() {
+		SimpleDataset dataset = new SimpleDataset();
+		dataset.addNamedGraph(G1);
+		QueryEvaluationContext context = new QueryEvaluationContext.Minimal(dataset);
+		IRI absent = VF.createIRI("urn:absent-graph");
+		QueryBindingSet probe = new QueryBindingSet();
+		probe.addBinding("selector", absent);
+		BindingSet unownedProbe = BindingFrameBindings.push(new BindingFrameBindings.Scope(),
+				EmptyBindingSet.getInstance(), probe, context);
+		QueryBindingSet presentInput = new QueryBindingSet();
+		presentInput.addBinding("selector", G1);
+		QueryBindingSet absentInput = new QueryBindingSet();
+		absentInput.addBinding("selector", absent);
+
+		assertAll(
+				() -> assertThat(existsGraph(unownedProbe, context)).as("unowned physical probe").isTrue(),
+				() -> assertThat(existsGraph(presentInput, context)).as("present logical input").isTrue(),
+				() -> assertThat(existsGraph(absentInput, context)).as("absent logical input").isFalse());
+	}
+
+	private static boolean existsGraph(BindingSet input, QueryEvaluationContext context) {
+		DefaultEvaluationStrategy strategy = new DefaultEvaluationStrategy(new Fixture(), null);
+		return BooleanLiteral.TRUE.equals(strategy.precompile(
+				new Exists(new Graph(Var.of("selector"), new SingletonSet())), context).evaluate(input));
+	}
 
 	@Test
 	public void candidatesAndChildrenAreLazyAndEarlyCloseReleasesBoth() {

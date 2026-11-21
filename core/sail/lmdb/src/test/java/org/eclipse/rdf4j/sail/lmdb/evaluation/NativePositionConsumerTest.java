@@ -14,6 +14,11 @@ package org.eclipse.rdf4j.sail.lmdb.evaluation;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
+import java.io.ByteArrayInputStream;
+import java.io.ByteArrayOutputStream;
+import java.io.IOException;
+import java.io.ObjectInputStream;
+import java.io.ObjectOutputStream;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -27,8 +32,11 @@ import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.function.Function;
 
+import org.assertj.core.api.SoftAssertions;
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
+import org.eclipse.rdf4j.common.iteration.CloseableIteratorIteration;
 import org.eclipse.rdf4j.common.iteration.EmptyIteration;
+import org.eclipse.rdf4j.common.iteration.SingletonIteration;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.Statement;
@@ -36,20 +44,43 @@ import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.query.BindingSet;
+import org.eclipse.rdf4j.query.QueryResults;
+import org.eclipse.rdf4j.query.algebra.ArbitraryLengthPath;
 import org.eclipse.rdf4j.query.algebra.BindingSetAssignment;
+import org.eclipse.rdf4j.query.algebra.Difference;
+import org.eclipse.rdf4j.query.algebra.Exists;
+import org.eclipse.rdf4j.query.algebra.Extension;
+import org.eclipse.rdf4j.query.algebra.ExtensionElem;
 import org.eclipse.rdf4j.query.algebra.Filter;
+import org.eclipse.rdf4j.query.algebra.Group;
 import org.eclipse.rdf4j.query.algebra.Join;
+import org.eclipse.rdf4j.query.algebra.Or;
+import org.eclipse.rdf4j.query.algebra.PrivateGraphContextRole;
+import org.eclipse.rdf4j.query.algebra.Projection;
+import org.eclipse.rdf4j.query.algebra.ProjectionElem;
+import org.eclipse.rdf4j.query.algebra.ProjectionElemList;
 import org.eclipse.rdf4j.query.algebra.QueryRoot;
 import org.eclipse.rdf4j.query.algebra.SameTerm;
 import org.eclipse.rdf4j.query.algebra.SingletonSet;
 import org.eclipse.rdf4j.query.algebra.StatementPattern;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
+import org.eclipse.rdf4j.query.algebra.ValueConstant;
 import org.eclipse.rdf4j.query.algebra.Var;
+import org.eclipse.rdf4j.query.algebra.ZeroLengthPath;
+import org.eclipse.rdf4j.query.algebra.evaluation.QueryEvaluationStep;
 import org.eclipse.rdf4j.query.algebra.evaluation.TripleSource;
+import org.eclipse.rdf4j.query.algebra.evaluation.impl.DefaultEvaluationStrategy;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.EvaluationStatistics;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.QueryEvaluationContext;
+import org.eclipse.rdf4j.query.algebra.evaluation.impl.evaluationsteps.LateralQueryEvaluationStep;
+import org.eclipse.rdf4j.query.algebra.evaluation.impl.evaluationsteps.MinusQueryEvaluationStep;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.BindingSetAssignmentInlinerOptimizer;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.QueryModelNormalizerOptimizer;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.SameTermFilterOptimizer;
+import org.eclipse.rdf4j.query.algebra.evaluation.util.QueryEvaluationUtility;
 import org.eclipse.rdf4j.query.impl.EmptyBindingSet;
 import org.eclipse.rdf4j.query.impl.ListBindingSet;
+import org.eclipse.rdf4j.query.impl.MapBindingSet;
 import org.eclipse.rdf4j.query.parser.sparql.SPARQLParser;
 import org.eclipse.rdf4j.sail.lmdb.RecordIterator;
 import org.eclipse.rdf4j.sail.lmdb.ValueIds;
@@ -58,6 +89,711 @@ import org.junit.jupiter.api.Test;
 class NativePositionConsumerTest {
 
 	private static final ValueFactory VF = SimpleValueFactory.getInstance();
+
+	@Test
+	void normalizerPreservesDistinctPrivateAndLocalMinusInExists() throws Exception {
+		Projection prepared = publiclyPreparedInheritedMinus(false);
+		String graphName = prepared.getFixedGraphParameter();
+		Difference privateMinus = (Difference) serializedTuple(((Difference) prepared.getArg()).clone());
+		Difference ordinaryMinus = privateMinus.clone();
+		for (TupleExpr operand : List.of(ordinaryMinus.getLeftArg(), ordinaryMinus.getRightArg())) {
+			StatementPattern pattern = (StatementPattern) operand;
+			pattern.replaceChildNode(pattern.getContextVar(), pattern.getContextVar().clone());
+		}
+		StatementPattern privateLeft = (StatementPattern) privateMinus.getLeftArg();
+		StatementPattern localLeft = (StatementPattern) ordinaryMinus.getLeftArg();
+		assertThat(PrivateGraphContextRole.isPrivateContext(privateLeft, privateLeft.getContextVar())).isTrue();
+		assertThat(PrivateGraphContextRole.isPrivateContext(localLeft, localLeft.getContextVar())).isFalse();
+		assertThat(
+				MinusQueryEvaluationStep.comparisonBindingNames(privateMinus.getLeftArg(), privateMinus.getRightArg()))
+						.as("the private occurrence does not create a shared MINUS name")
+						.isEmpty();
+		assertThat(MinusQueryEvaluationStep.comparisonBindingNames(ordinaryMinus.getLeftArg(),
+				ordinaryMinus.getRightArg()))
+						.as("the equal-looking ordinary context is a shared MINUS name")
+						.containsExactly(graphName);
+		Difference serialized = (Difference) serializedTuple(privateMinus.clone());
+		StatementPattern serializedLeft = (StatementPattern) serialized.getLeftArg();
+		assertThat(serialized).isEqualTo(privateMinus);
+		assertThat(PrivateGraphContextRole.isPrivateContext(serializedLeft, serializedLeft.getContextVar())).isTrue();
+
+		IRI graph = VF.createIRI("urn:serialized-minus:graph");
+		IRI subject = VF.createIRI("urn:serialized-minus:subject");
+		IRI predicate = VF.createIRI("urn:serialized-minus:predicate");
+		IRI object = VF.createIRI("urn:serialized-minus:object");
+		Statement statement = VF.createStatement(subject, predicate, object, graph);
+		MapBindingSet expectedPrivate = new MapBindingSet();
+		expectedPrivate.addBinding("left", subject);
+		expectedPrivate.addBinding("p1", predicate);
+		expectedPrivate.addBinding("o1", object);
+		expectedPrivate.addBinding(graphName, graph);
+		assertThat(evaluateWithStatement(privateMinus.clone(), statement)).containsExactly(expectedPrivate);
+		assertThat(evaluateWithStatement(ordinaryMinus.clone(), statement)).isEmpty();
+
+		Filter filter = new Filter(new SingletonSet(),
+				new Or(new Exists(ordinaryMinus.clone()), new Exists(privateMinus.clone())));
+		QueryRoot root = new QueryRoot(filter);
+		List<BindingSet> expected = List.of(EmptyBindingSet.getInstance());
+		assertThat(evaluateWithStatement(root.clone(), statement)).as("before normalization")
+				.containsExactlyElementsOf(expected);
+		new QueryModelNormalizerOptimizer().optimize(root, null, EmptyBindingSet.getInstance());
+		assertThat(evaluateWithStatement(root, statement)).as("after normalization")
+				.containsExactlyElementsOf(expected);
+	}
+
+	private static List<BindingSet> evaluateWithStatement(TupleExpr expression, Statement statement) {
+		TripleSource source = new TripleSource() {
+			@Override
+			public CloseableIteration<? extends Statement> getStatements(Resource subject, IRI predicate, Value object,
+					Resource... contexts) {
+				boolean matches = (subject == null || subject.equals(statement.getSubject()))
+						&& (predicate == null || predicate.equals(statement.getPredicate()))
+						&& (object == null || object.equals(statement.getObject()));
+				if (contexts.length > 0) {
+					boolean contextMatches = false;
+					for (Resource context : contexts) {
+						contextMatches |= context != null && context.equals(statement.getContext());
+					}
+					matches &= contextMatches;
+				}
+				return matches ? new SingletonIteration<>(statement) : new EmptyIteration<>();
+			}
+
+			@Override
+			public ValueFactory getValueFactory() {
+				return VF;
+			}
+		};
+		DefaultEvaluationStrategy strategy = new DefaultEvaluationStrategy(source, null);
+		try (CloseableIteration<BindingSet> rows = strategy.evaluate(expression, EmptyBindingSet.getInstance())) {
+			return QueryResults.asList(rows);
+		}
+	}
+
+	@Test
+	void detachedMinusKeepsPrivateComparisonDomainThroughGenericAndWorkerCopies() {
+		IRI graph = VF.createIRI("urn:minus-scope:graph");
+		String graphName = "_rdf4j_graph_context_user";
+		SoftAssertions softly = new SoftAssertions();
+		for (boolean privateGraph : List.of(false, true)) {
+			for (boolean shared : List.of(false, true)) {
+				Var leftGraph = Var.of(graphName, graph, true, false);
+				Var rightGraph = Var.of(graphName, graph, true, false);
+				leftGraph.setGraphContextDepth(privateGraph ? 1 : 0);
+				rightGraph.setGraphContextDepth(privateGraph ? 1 : 0);
+				StatementPattern left = new StatementPattern(StatementPattern.Scope.NAMED_CONTEXTS,
+						Var.of(shared ? "shared" : "left"), Var.of("p1"), Var.of("o1"), leftGraph);
+				StatementPattern right = new StatementPattern(StatementPattern.Scope.NAMED_CONTEXTS,
+						Var.of(shared ? "shared" : "right"), Var.of("p2"), Var.of("o2"), rightGraph);
+				Difference difference = new Difference(left, right);
+				difference.setVariableScopeChange(true);
+				Projection select = new Projection(difference,
+						new ProjectionElemList(new ProjectionElem(shared ? "shared" : "left")), true);
+				select.setProjectionContext(Var.of("selector"));
+				if (privateGraph) {
+					select.setFixedGraphParameter(graphName);
+				}
+				strategy().genericOnlyView().precompile(select, new QueryEvaluationContext.Minimal(null));
+				difference = (Difference) select.getArg();
+				Set<String> expected = privateGraph ? shared ? Set.of("shared") : Set.of()
+						: shared ? Set.of("shared", graphName) : Set.of(graphName);
+				Difference pinned = GenericSubplanDescriptor.create(difference).pinnedExpr();
+				Difference recipe = difference.clone();
+				NativeGraphFusion.linkLogicalOrigins(difference, recipe);
+				Difference worker = recipe.clone();
+				NativeGraphFusion.linkLogicalOrigins(recipe, worker);
+				String label = "private=" + privateGraph + ", shared=" + shared;
+				softly.assertThat(pinned.getParentNode()).as("generic parent " + label).isNull();
+				softly.assertThat(worker.getParentNode()).as("worker parent " + label).isNull();
+				softly.assertThat(
+						MinusQueryEvaluationStep.comparisonBindingNames(pinned.getLeftArg(), pinned.getRightArg()))
+						.as("generic domain " + label)
+						.containsExactlyInAnyOrderElementsOf(expected);
+				softly.assertThat(
+						MinusQueryEvaluationStep.comparisonBindingNames(worker.getLeftArg(), worker.getRightArg()))
+						.as("worker domain " + label)
+						.containsExactlyInAnyOrderElementsOf(expected);
+			}
+		}
+		softly.assertAll();
+	}
+
+	@Test
+	void serializedPubliclyPreparedMinusKeepsPrivateContextOutsideDetachedDomain() throws Exception {
+		SoftAssertions softly = new SoftAssertions();
+		for (boolean shared : List.of(false, true)) {
+			Projection select = publiclyPreparedInheritedMinus(shared);
+			String privateName = select.getFixedGraphParameter();
+			assertThat(privateName).isNotNull().isNotEqualTo("g");
+			Difference original = (Difference) select.getArg();
+			Set<String> expectedDomain = shared ? Set.of("g") : Set.of();
+			softly.assertThat(MinusQueryEvaluationStep.comparisonBindingNames(original.getLeftArg(),
+					original.getRightArg()))
+					.as("attached shared=" + shared)
+					.containsExactlyInAnyOrderElementsOf(expectedDomain);
+			Difference serializedDifference = (Difference) serializedTuple(original.clone());
+			Difference independentlyCopiedStatements = new Difference(serializedTuple(original.getLeftArg().clone()),
+					serializedTuple(original.getRightArg().clone()));
+			Projection restored = serializedCopy(select);
+			Difference attached = (Difference) restored.getArg();
+			Difference pinned = GenericSubplanDescriptor.create(attached).pinnedExpr();
+			Difference recipe = attached.clone();
+			NativeGraphFusion.linkLogicalOrigins(attached, recipe);
+			Difference worker = recipe.clone();
+			NativeGraphFusion.linkLogicalOrigins(recipe, worker);
+			Value graph = VF.createIRI("urn:serialized-minus:graph");
+			Value subject = VF.createIRI("urn:serialized-minus:subject");
+			BindingSet left = new ListBindingSet(List.of(shared ? "g" : "left", privateName), subject, graph);
+			BindingSet right = new ListBindingSet(List.of(shared ? "g" : "right", privateName), subject, graph);
+			List<BindingSet> expectedRows = shared ? List.of() : List.of(left);
+			for (Difference copy : List.of(serializedDifference, independentlyCopiedStatements, pinned, worker)) {
+				String label = (copy == pinned ? "generic" : copy == worker ? "worker" : "serialized")
+						+ ", shared=" + shared;
+				softly.assertThat(copy.getParentNode()).as(label + " is detached").isNull();
+				softly.assertThat(
+						MinusQueryEvaluationStep.comparisonBindingNames(copy.getLeftArg(), copy.getRightArg()))
+						.as(label + " comparison domain")
+						.containsExactlyInAnyOrderElementsOf(expectedDomain);
+				QueryEvaluationStep leftStep = ignored -> new SingletonIteration<>(left);
+				QueryEvaluationStep rightStep = ignored -> new SingletonIteration<>(right);
+				QueryEvaluationStep minus = new MinusQueryEvaluationStep(leftStep, rightStep, copy.getLeftArg(),
+						copy.getRightArg());
+				try (CloseableIteration<BindingSet> rows = minus.evaluate(EmptyBindingSet.getInstance())) {
+					softly.assertThat(QueryResults.asList(rows))
+							.as(label + " result bag")
+							.containsExactlyElementsOf(expectedRows);
+				}
+			}
+		}
+		softly.assertAll();
+	}
+
+	@Test
+	void publiclyPreparedPathContextsSurviveDetachedCloneAndSerialization() throws Exception {
+		SoftAssertions softly = new SoftAssertions();
+		for (boolean arbitrary : List.of(false, true)) {
+			for (boolean shared : List.of(false, true)) {
+				Projection select = publiclyPreparedInheritedPathMinus(arbitrary, shared);
+				String privateName = select.getFixedGraphParameter();
+				assertThat(privateName).isNotNull().isNotEqualTo("g");
+				Difference attached = (Difference) select.getArg();
+				Set<String> expectedDomain = shared ? Set.of("g") : Set.of();
+				String label = "arbitrary=" + arbitrary + ", shared=" + shared;
+				softly.assertThat(MinusQueryEvaluationStep.comparisonBindingNames(attached.getLeftArg(),
+						attached.getRightArg()))
+						.as("attached " + label)
+						.containsExactlyInAnyOrderElementsOf(expectedDomain);
+				Difference serializedDifference = (Difference) serializedTuple(attached.clone());
+				Difference independentlyCopiedProducers = new Difference(serializedTuple(attached.getLeftArg().clone()),
+						serializedTuple(attached.getRightArg().clone()));
+				Difference generic = GenericSubplanDescriptor.create(serializedDifference).pinnedExpr();
+				Difference recipe = serializedDifference.clone();
+				NativeGraphFusion.linkLogicalOrigins(serializedDifference, recipe);
+				Difference worker = recipe.clone();
+				NativeGraphFusion.linkLogicalOrigins(recipe, worker);
+				Value graph = VF.createIRI("urn:serialized-minus:graph");
+				Value subject = VF.createIRI("urn:serialized-minus:subject");
+				BindingSet left = new ListBindingSet(List.of(shared ? "g" : "left", privateName), subject, graph);
+				BindingSet right = new ListBindingSet(List.of(shared ? "g" : "right", privateName), subject, graph);
+				List<BindingSet> expectedRows = shared ? List.of() : List.of(left);
+				for (Difference copy : List.of(serializedDifference, independentlyCopiedProducers, generic, worker)) {
+					softly.assertThat(MinusQueryEvaluationStep.comparisonBindingNames(copy.getLeftArg(),
+							copy.getRightArg()))
+							.as("detached " + label)
+							.containsExactlyInAnyOrderElementsOf(expectedDomain);
+					QueryEvaluationStep minus = new MinusQueryEvaluationStep(ignored -> new SingletonIteration<>(left),
+							ignored -> new SingletonIteration<>(right), copy.getLeftArg(), copy.getRightArg());
+					try (CloseableIteration<BindingSet> rows = minus.evaluate(EmptyBindingSet.getInstance())) {
+						softly.assertThat(QueryResults.asList(rows))
+								.as("detached bag " + label)
+								.containsExactlyElementsOf(expectedRows);
+					}
+				}
+			}
+		}
+		softly.assertAll();
+	}
+
+	@Test
+	void semanticMinusKeepsSameSpelledLocalOutputsAndUndefDuplicates() throws Exception {
+		SoftAssertions softly = new SoftAssertions();
+		for (String producer : List.of("subject", "predicate", "object", "values", "extension")) {
+			Projection select = publiclyPreparedInheritedProducerMinus(producer);
+			String privateName = select.getFixedGraphParameter();
+			assertThat(privateName).isNotNull().isNotEqualTo("g");
+			Difference attached = (Difference) select.getArg();
+			softly.assertThat(MinusQueryEvaluationStep.comparisonBindingNames(attached.getLeftArg(),
+					attached.getRightArg())).as("attached " + producer).containsExactly("g");
+			Difference detached = (Difference) serializedTuple(attached.clone());
+			Difference pinned = GenericSubplanDescriptor.create(detached).pinnedExpr();
+			Value graph = VF.createIRI("urn:serialized-minus:graph");
+			Value local = VF.createIRI("urn:serialized-minus:local");
+			BindingSet left = new ListBindingSet(List.of("g", privateName), local, graph);
+			BindingSet rightUndef = new ListBindingSet(List.of(privateName), graph);
+			List<BindingSet> leftRows = List.of(left, left);
+			BindingSet right = producer.equals("values") ? rightUndef : left;
+			List<BindingSet> expectedRows = producer.equals("values") ? leftRows : List.of();
+			for (Difference copy : List.of(detached, pinned)) {
+				softly.assertThat(MinusQueryEvaluationStep.comparisonBindingNames(copy.getLeftArg(),
+						copy.getRightArg())).as("detached " + producer).containsExactly("g");
+				QueryEvaluationStep minus = new MinusQueryEvaluationStep(
+						ignored -> new CloseableIteratorIteration<>(leftRows.iterator()),
+						ignored -> new SingletonIteration<>(right), copy.getLeftArg(), copy.getRightArg());
+				try (CloseableIteration<BindingSet> rows = minus.evaluate(EmptyBindingSet.getInstance())) {
+					softly.assertThat(QueryResults.asList(rows))
+							.as("UNDEF and duplicate bag " + producer)
+							.containsExactlyElementsOf(expectedRows);
+				}
+			}
+		}
+		softly.assertAll();
+	}
+
+	@Test
+	void groupAndProjectionTargetsRemainSemanticWhenTheyMatchThePrivateContext() {
+		Projection prepared = publiclyPreparedInheritedMinus(false);
+		String name = prepared.getFixedGraphParameter();
+		Difference original = (Difference) prepared.getArg();
+		IRI graph = VF.createIRI("urn:serialized-minus:graph");
+		Statement statement = VF.createStatement(VF.createIRI("urn:serialized-minus:subject"),
+				VF.createIRI("urn:serialized-minus:predicate"), VF.createIRI("urn:serialized-minus:object"), graph);
+		for (boolean group : List.of(false, true)) {
+			TupleExpr left = original.getLeftArg().clone();
+			TupleExpr right = original.getRightArg().clone();
+			if (group) {
+				left = new Group(left, Set.of(name));
+				right = new Group(right, Set.of(name));
+			} else {
+				left = new Projection(left, new ProjectionElemList(new ProjectionElem("left", name)));
+				right = new Projection(right, new ProjectionElemList(new ProjectionElem("right", name)));
+			}
+			Difference difference = new Difference(left, right);
+			assertThat(MinusQueryEvaluationStep.comparisonBindingNames(left, right))
+					.as("declared %s output", group ? "group" : "projection")
+					.containsExactly(name);
+			assertThat(evaluateWithStatement(difference, statement))
+					.as("equal declared %s results are subtracted", group ? "group" : "projection")
+					.isEmpty();
+		}
+	}
+
+	@Test
+	void minusDoesNotCompareBindingsProducedOnlyInsideFilterExists() {
+		Projection prepared = publiclyPreparedInheritedMinus(false);
+		String privateName = prepared.getFixedGraphParameter();
+		StatementPattern left = (StatementPattern) ((Difference) prepared.getArg()).getLeftArg().clone();
+		IRI graph = VF.createIRI("urn:serialized-minus:graph");
+		IRI subject = VF.createIRI("urn:serialized-minus:subject");
+		IRI predicate = VF.createIRI("urn:serialized-minus:predicate");
+		IRI object = VF.createIRI("urn:serialized-minus:object");
+		StatementPattern witness = new StatementPattern(StatementPattern.Scope.NAMED_CONTEXTS,
+				Var.of("conditionOnly"), Var.of("predicate", predicate, true, true),
+				Var.of("object", object, true, true), Var.of("graph", graph, true, true));
+		Filter filtered = new Filter(left, new Exists(witness));
+		MapBindingSet rightRow = new MapBindingSet();
+		rightRow.addBinding("conditionOnly", subject);
+		BindingSetAssignment right = new BindingSetAssignment();
+		right.setBindingNames(Set.of("conditionOnly"));
+		right.setBindingSets(List.of(rightRow));
+		Difference difference = new Difference(filtered, right);
+		assertThat(MinusQueryEvaluationStep.comparisonBindingNames(filtered, right)).isEmpty();
+		MapBindingSet expected = new MapBindingSet();
+		expected.addBinding("left", subject);
+		expected.addBinding("p1", predicate);
+		expected.addBinding("o1", object);
+		expected.addBinding(privateName, graph);
+		assertThat(evaluateWithStatement(difference, VF.createStatement(subject, predicate, object, graph)))
+				.containsExactly(expected);
+	}
+
+	@Test
+	void refreshedMinusDomainObservesExactContextReplacement() {
+		Projection prepared = publiclyPreparedInheritedMinus(false);
+		String name = prepared.getFixedGraphParameter();
+		Difference difference = ((Difference) prepared.getArg()).clone();
+		QueryEvaluationUtility.withQuerySafetySnapshot(difference, () -> {
+			Set<String> original = MinusQueryEvaluationStep.comparisonBindingNames(difference.getLeftArg(),
+					difference.getRightArg());
+			assertThat(original).isEmpty();
+			for (TupleExpr operand : List.of(difference.getLeftArg(), difference.getRightArg())) {
+				StatementPattern pattern = (StatementPattern) operand;
+				pattern.replaceChildNode(pattern.getContextVar(), pattern.getContextVar().clone());
+			}
+			assertThat(
+					MinusQueryEvaluationStep.comparisonBindingNames(difference.getLeftArg(), difference.getRightArg()))
+							.as("the existing generation remains pinned")
+							.isEmpty();
+			QueryEvaluationUtility.refreshQuerySafetySnapshot(difference);
+			assertThat(
+					MinusQueryEvaluationStep.comparisonBindingNames(difference.getLeftArg(), difference.getRightArg()))
+							.as("the refreshed generation sees ordinary contexts")
+							.containsExactly(name);
+			assertThat(original).isEmpty();
+			return null;
+		});
+	}
+
+	@Test
+	void sameTermDeclinesAContextRenameThatCannotPreserveItsRole() {
+		IRI graph = VF.createIRI("urn:same-term-role:graph");
+		IRI predicate = VF.createIRI("urn:same-term-role:predicate");
+		Var context = Var.of("shared");
+		context.setGraphContextDepth(1);
+		StatementPattern statement = new StatementPattern(StatementPattern.Scope.NAMED_CONTEXTS,
+				Var.of("shared"), Var.of("predicate"), Var.of("object"), context);
+		PrivateGraphContextRole.mark(statement, context);
+		Var contextRead = Var.of("shared");
+		contextRead.setGraphContextDepth(1);
+		Filter filter = new Filter(statement, new SameTerm(Var.of("object"), contextRead));
+		QueryRoot root = new QueryRoot(filter);
+		Statement witness = VF.createStatement(graph, predicate, graph, graph);
+		MapBindingSet expected = new MapBindingSet();
+		expected.addBinding("shared", graph);
+		expected.addBinding("predicate", predicate);
+		expected.addBinding("object", graph);
+		assertThat(evaluateWithStatement(root.clone(), witness)).containsExactly(expected);
+		new SameTermFilterOptimizer().optimize(root, null, EmptyBindingSet.getInstance());
+		assertThat(root.getArg()).as("the original FILTER retains its context-role constraint")
+				.isInstanceOf(Filter.class);
+		StatementPattern retained = (StatementPattern) ((Filter) root.getArg()).getArg();
+		assertThat(PrivateGraphContextRole.isPrivateContext(retained, retained.getContextVar())).isTrue();
+		assertThat(evaluateWithStatement(root, witness)).containsExactly(expected);
+	}
+
+	@Test
+	void valuesInlinerDoesNotTurnPrivateContextIntoAComparisonBinding() {
+		String privateName = "preparedGraph";
+		Var leftContext = Var.of("g");
+		Var rightContext = Var.of("g");
+		leftContext.setGraphContextDepth(1);
+		rightContext.setGraphContextDepth(1);
+		StatementPattern left = new StatementPattern(StatementPattern.Scope.NAMED_CONTEXTS,
+				Var.of("left"), Var.of("leftPredicate"), Var.of("leftObject"), leftContext);
+		StatementPattern right = new StatementPattern(StatementPattern.Scope.NAMED_CONTEXTS,
+				Var.of("right"), Var.of("rightPredicate"), Var.of("rightObject"), rightContext);
+		Projection select = new Projection(new Difference(left, right),
+				new ProjectionElemList(new ProjectionElem("left")), true);
+		select.setProjectionContext(Var.of("g"));
+		select.setInheritedGraphParameter(privateName);
+		strategy().genericOnlyView().precompile(select, new QueryEvaluationContext.Minimal(null));
+		Difference detached = ((Difference) select.getArg()).clone();
+		StatementPattern detachedLeft = (StatementPattern) detached.getLeftArg();
+		StatementPattern detachedRight = (StatementPattern) detached.getRightArg();
+		Var beforeLeft = detachedLeft.getContextVar();
+		Var beforeRight = detachedRight.getContextVar();
+		assertThat(PrivateGraphContextRole.isPrivateContext(detachedLeft, beforeLeft)).isTrue();
+		assertThat(PrivateGraphContextRole.isPrivateContext(detachedRight, beforeRight)).isTrue();
+		assertThat(MinusQueryEvaluationStep.comparisonBindingNames(detachedLeft, detachedRight)).isEmpty();
+		IRI graph = VF.createIRI("urn:inliner-role:graph");
+		IRI subject = VF.createIRI("urn:inliner-role:subject");
+		BindingSet leftRow = new ListBindingSet(List.of("left", privateName), subject, graph);
+		BindingSet rightRow = new ListBindingSet(List.of("right", privateName), subject, graph);
+		assertThat(minusBag(detached, leftRow, rightRow)).containsExactly(leftRow);
+		MapBindingSet input = new MapBindingSet();
+		input.addBinding(privateName, graph);
+		new BindingSetAssignmentInlinerOptimizer().optimize(detached, null, input);
+		System.out.printf("values-inliner private contexts: leftReplaced=%s rightReplaced=%s "
+				+ "leftRole=%s rightRole=%s%n", beforeLeft != detachedLeft.getContextVar(),
+				beforeRight != detachedRight.getContextVar(),
+				PrivateGraphContextRole.isPrivateContext(detachedLeft, detachedLeft.getContextVar()),
+				PrivateGraphContextRole.isPrivateContext(detachedRight, detachedRight.getContextVar()));
+		SoftAssertions softly = new SoftAssertions();
+		softly.assertThat(PrivateGraphContextRole.isPrivateContext(detachedLeft, detachedLeft.getContextVar()))
+				.as("left prepared context keeps its role")
+				.isTrue();
+		softly.assertThat(PrivateGraphContextRole.isPrivateContext(detachedRight, detachedRight.getContextVar()))
+				.as("right prepared context keeps its role")
+				.isTrue();
+		for (StatementPattern pattern : List.of(detachedLeft, detachedRight)) {
+			Var original = pattern == detachedLeft ? beforeLeft : beforeRight;
+			Var replacement = pattern.getContextVar();
+			softly.assertThat(replacement).as("the inliner still applies its proved replacement").isNotSameAs(original);
+			softly.assertThat(replacement.getParentNode()).isSameAs(pattern);
+			softly.assertThat(replacement.getName()).isEqualTo(original.getName());
+			softly.assertThat(replacement.getValue()).isEqualTo(graph);
+			softly.assertThat(replacement.isConstant()).isEqualTo(original.isConstant());
+			softly.assertThat(replacement.isAnonymous()).isEqualTo(original.isAnonymous());
+			softly.assertThat(replacement.isBNode()).isEqualTo(original.isBNode());
+			softly.assertThat(replacement.hasApiInputOrigin()).isEqualTo(original.hasApiInputOrigin());
+			softly.assertThat(replacement.getGraphContextDepth()).isEqualTo(original.getGraphContextDepth());
+			softly.assertThat(replacement.isVariableScopeChange()).isEqualTo(original.isVariableScopeChange());
+		}
+		softly.assertThat(MinusQueryEvaluationStep.comparisonBindingNames(detachedLeft, detachedRight))
+				.as("private contexts remain outside the semantic MINUS domain")
+				.isEmpty();
+		softly.assertThat(minusBag(detached, leftRow, rightRow))
+				.as("a disjoint MINUS retains its left row")
+				.containsExactly(leftRow);
+		softly.assertAll();
+	}
+
+	@Test
+	void scopedTrueFilterNormalizationKeepsPrivateMinusContexts() {
+		Projection select = publiclyPreparedInheritedMinus(false);
+		String privateName = select.getFixedGraphParameter();
+		Difference prepared = ((Difference) select.getArg()).clone();
+		Filter left = new Filter(prepared.getLeftArg().clone(), new ValueConstant(VF.createLiteral(true)));
+		Filter right = new Filter(prepared.getRightArg().clone(), new ValueConstant(VF.createLiteral(true)));
+		left.setVariableScopeChange(true);
+		right.setVariableScopeChange(true);
+		Difference difference = new Difference(left, right);
+		QueryRoot root = new QueryRoot(difference);
+		IRI graph = VF.createIRI("urn:serialized-minus:graph");
+		IRI subject = VF.createIRI("urn:serialized-minus:subject");
+		BindingSet leftRow = new ListBindingSet(List.of("left", privateName), subject, graph);
+		BindingSet rightRow = new ListBindingSet(List.of("right", privateName), subject, graph);
+		IRI predicate = VF.createIRI("urn:serialized-minus:predicate");
+		IRI object = VF.createIRI("urn:serialized-minus:object");
+		Statement statement = VF.createStatement(subject, predicate, object, graph);
+		MapBindingSet expected = new MapBindingSet();
+		expected.addBinding("left", subject);
+		expected.addBinding("p1", predicate);
+		expected.addBinding("o1", object);
+		expected.addBinding(privateName, graph);
+		assertThat(MinusQueryEvaluationStep.comparisonBindingNames(difference.getLeftArg(), difference.getRightArg()))
+				.as("before normalization")
+				.isEmpty();
+		assertThat(minusBag(difference, leftRow, rightRow)).containsExactly(leftRow);
+		assertThat(evaluateWithStatement(root.clone(), statement)).as("real source before normalization")
+				.containsExactly(expected);
+		new QueryModelNormalizerOptimizer().optimize(root, null, EmptyBindingSet.getInstance());
+		assertThat(difference.getLeftArg()).isInstanceOf(StatementPattern.class);
+		assertThat(difference.getRightArg()).isInstanceOf(StatementPattern.class);
+		StatementPattern normalizedLeft = (StatementPattern) difference.getLeftArg();
+		StatementPattern normalizedRight = (StatementPattern) difference.getRightArg();
+		SoftAssertions softly = new SoftAssertions();
+		softly.assertThat(normalizedLeft.isVariableScopeChange()).as("left scope boundary remains").isTrue();
+		softly.assertThat(normalizedRight.isVariableScopeChange()).as("right scope boundary remains").isTrue();
+		softly.assertThat(PrivateGraphContextRole.isPrivateContext(normalizedLeft, normalizedLeft.getContextVar()))
+				.as("left graph context remains private")
+				.isTrue();
+		softly.assertThat(PrivateGraphContextRole.isPrivateContext(normalizedRight, normalizedRight.getContextVar()))
+				.as("right graph context remains private")
+				.isTrue();
+		softly.assertThat(MinusQueryEvaluationStep.comparisonBindingNames(normalizedLeft, normalizedRight))
+				.as("after normalization")
+				.isEmpty();
+		softly.assertThat(minusBag(difference, leftRow, rightRow)).as("after normalization").containsExactly(leftRow);
+		softly.assertThat(evaluateWithStatement(root.clone(), statement))
+				.as("real source after normalization")
+				.containsExactly(expected);
+		softly.assertAll();
+	}
+
+	private static List<BindingSet> minusBag(Difference difference, BindingSet left, BindingSet right) {
+		QueryEvaluationStep step = new MinusQueryEvaluationStep(ignored -> new SingletonIteration<>(left),
+				ignored -> new SingletonIteration<>(right), difference.getLeftArg(), difference.getRightArg());
+		try (CloseableIteration<BindingSet> rows = step.evaluate(EmptyBindingSet.getInstance())) {
+			return QueryResults.asList(rows);
+		}
+	}
+
+	@Test
+	void replacedContextAndSameSpelledSubjectKeepTheirOwnMinusRoles() throws Exception {
+		Projection select = serializedCopy(publiclyPreparedInheritedMinus(false));
+		String privateName = select.getFixedGraphParameter();
+		Difference difference = (Difference) select.getArg();
+		StatementPattern left = (StatementPattern) difference.getLeftArg();
+		StatementPattern right = (StatementPattern) difference.getRightArg();
+		left.replaceChildNode(left.getSubjectVar(), Var.of(privateName));
+		right.replaceChildNode(right.getSubjectVar(), Var.of(privateName));
+		assertThat(MinusQueryEvaluationStep.comparisonBindingNames(left, right))
+				.as("real subjects remain semantic even when their spelling matches the private context")
+				.containsExactly(privateName);
+		Difference pinned = GenericSubplanDescriptor.create(difference).pinnedExpr();
+		assertThat(MinusQueryEvaluationStep.comparisonBindingNames(pinned.getLeftArg(), pinned.getRightArg()))
+				.containsExactly(privateName);
+
+		Projection changed = serializedCopy(publiclyPreparedInheritedMinus(false));
+		Difference changedDifference = (Difference) changed.getArg();
+		StatementPattern changedLeft = (StatementPattern) changedDifference.getLeftArg();
+		StatementPattern changedRight = (StatementPattern) changedDifference.getRightArg();
+		Value graph = VF.createIRI("urn:serialized-minus:graph");
+		changedLeft.replaceChildNode(changedLeft.getContextVar(), Var.of("localGraph", graph));
+		changedRight.replaceChildNode(changedRight.getContextVar(), Var.of("localGraph", graph));
+		Difference changedPinned = GenericSubplanDescriptor.create(changedDifference).pinnedExpr();
+		assertThat(MinusQueryEvaluationStep.comparisonBindingNames(changedPinned.getLeftArg(),
+				changedPinned.getRightArg())).as("a replaced local context does not retain the prior private role")
+						.containsExactly("localGraph");
+	}
+
+	@Test
+	void equalLookingContextReplacementInvalidatesRoleUntilPublicRepreparation() throws Exception {
+		Projection original = publiclyPreparedInheritedMinus(false);
+		String privateName = original.getFixedGraphParameter();
+		Projection cloned = original.clone();
+		strategy().genericOnlyView().precompile(cloned, new QueryEvaluationContext.Minimal(null));
+		assertThat(cloned.getFixedGraphParameter()).isEqualTo(privateName);
+		Difference difference = (Difference) cloned.getArg();
+		StatementPattern left = (StatementPattern) difference.getLeftArg();
+		StatementPattern right = (StatementPattern) difference.getRightArg();
+		Var oldLeft = left.getContextVar();
+		Var oldRight = right.getContextVar();
+		Var newLeft = oldLeft.clone();
+		Var newRight = oldRight.clone();
+		assertThat(newLeft).isEqualTo(oldLeft).isNotSameAs(oldLeft);
+		assertThat(newRight).isEqualTo(oldRight).isNotSameAs(oldRight);
+		left.replaceChildNode(oldLeft, newLeft);
+		right.replaceChildNode(oldRight, newRight);
+		Difference detached = (Difference) serializedTuple(difference.clone());
+		assertThat(MinusQueryEvaluationStep.comparisonBindingNames(detached.getLeftArg(), detached.getRightArg()))
+				.as("new equal-looking children do not inherit a stale private role")
+				.containsExactly(privateName);
+		strategy().genericOnlyView().precompile(cloned, new QueryEvaluationContext.Minimal(null));
+		Difference refreshed = (Difference) serializedTuple(((Difference) cloned.getArg()).clone());
+		assertThat(MinusQueryEvaluationStep.comparisonBindingNames(refreshed.getLeftArg(), refreshed.getRightArg()))
+				.as("public preparation may prove the inherited contexts again")
+				.isEmpty();
+	}
+
+	@Test
+	void equalLookingPathContextReplacementNeedsFreshOwnershipProof() throws Exception {
+		SoftAssertions softly = new SoftAssertions();
+		for (boolean arbitrary : List.of(false, true)) {
+			Projection select = publiclyPreparedInheritedPathMinus(arbitrary, false);
+			String privateName = select.getFixedGraphParameter();
+			Difference difference = (Difference) select.getArg();
+			replacePathContextWithEqualCopy(difference.getLeftArg());
+			replacePathContextWithEqualCopy(difference.getRightArg());
+			Difference detached = (Difference) serializedTuple(difference.clone());
+			softly.assertThat(MinusQueryEvaluationStep.comparisonBindingNames(detached.getLeftArg(),
+					detached.getRightArg()))
+					.as("replaced path context, arbitrary=" + arbitrary)
+					.containsExactly(privateName);
+			strategy().genericOnlyView().precompile(select, new QueryEvaluationContext.Minimal(null));
+			Difference refreshed = (Difference) serializedTuple(((Difference) select.getArg()).clone());
+			softly.assertThat(MinusQueryEvaluationStep.comparisonBindingNames(refreshed.getLeftArg(),
+					refreshed.getRightArg())).as("reprepared path context, arbitrary=" + arbitrary).isEmpty();
+		}
+		softly.assertAll();
+	}
+
+	@Test
+	void lateralRenamingKeepsPreparedContextRoleAndSelectorAligned() throws Exception {
+		Projection select = publiclyPreparedInheritedMinus(false);
+		String privateName = select.getFixedGraphParameter();
+		TupleExpr right = new Join(new SingletonSet(), select);
+		Join renamed = (Join) LateralQueryEvaluationStep.prepareRightScope(right, Set.of(privateName), Set.of());
+		Projection renamedSelect = (Projection) renamed.getRightArg();
+		Difference difference = (Difference) renamedSelect.getArg();
+		StatementPattern left = (StatementPattern) difference.getLeftArg();
+		StatementPattern other = (StatementPattern) difference.getRightArg();
+		String renamedContext = left.getContextVar().getName();
+		assertThat(renamedContext).isNotEqualTo(privateName).isEqualTo(other.getContextVar().getName());
+		assertThat(renamedSelect.getFixedGraphParameter()).as("the selector follows its exact context rename")
+				.isEqualTo(renamedContext);
+		Difference detached = (Difference) serializedTuple(difference.clone());
+		assertThat(MinusQueryEvaluationStep.comparisonBindingNames(detached.getLeftArg(), detached.getRightArg()))
+				.as("the renamed context remains private after detaching")
+				.isEmpty();
+	}
+
+	private static void replacePathContextWithEqualCopy(TupleExpr expression) {
+		if (expression instanceof ZeroLengthPath path) {
+			Var old = path.getContextVar();
+			Var replacement = old.clone();
+			assertThat(replacement).isEqualTo(old).isNotSameAs(old);
+			path.setContextVar(replacement);
+		} else if (expression instanceof ArbitraryLengthPath path) {
+			Var old = path.getContextVar();
+			Var replacement = old.clone();
+			assertThat(replacement).isEqualTo(old).isNotSameAs(old);
+			path.setContextVar(replacement);
+		} else {
+			throw new IllegalArgumentException("Expected a path expression");
+		}
+	}
+
+	private static Projection publiclyPreparedInheritedMinus(boolean shared) {
+		Value graph = VF.createIRI("urn:serialized-minus:graph");
+		Var leftGraph = Var.of("g", graph);
+		Var rightGraph = Var.of("g", graph);
+		leftGraph.setGraphContextDepth(1);
+		rightGraph.setGraphContextDepth(1);
+		StatementPattern left = new StatementPattern(StatementPattern.Scope.NAMED_CONTEXTS,
+				Var.of(shared ? "g" : "left"), Var.of("p1"), Var.of("o1"), leftGraph);
+		StatementPattern right = new StatementPattern(StatementPattern.Scope.NAMED_CONTEXTS,
+				Var.of(shared ? "g" : "right"), Var.of("p2"), Var.of("o2"), rightGraph);
+		Projection select = new Projection(new Difference(left, right),
+				new ProjectionElemList(new ProjectionElem(shared ? "g" : "left")), true);
+		select.setProjectionContext(Var.of("g"));
+		strategy().genericOnlyView().precompile(select, new QueryEvaluationContext.Minimal(null));
+		return select;
+	}
+
+	private static Projection publiclyPreparedInheritedPathMinus(boolean arbitrary, boolean shared) {
+		TupleExpr left = inheritedPath(arbitrary, shared ? "g" : "left", "leftEnd");
+		TupleExpr right = inheritedPath(arbitrary, shared ? "g" : "right", "rightEnd");
+		Projection select = new Projection(new Difference(left, right),
+				new ProjectionElemList(new ProjectionElem(shared ? "g" : "left")), true);
+		select.setProjectionContext(Var.of("g"));
+		strategy().genericOnlyView().precompile(select, new QueryEvaluationContext.Minimal(null));
+		return select;
+	}
+
+	private static Projection publiclyPreparedInheritedProducerMinus(String producer) {
+		TupleExpr left = inheritedProducer(producer, "left");
+		TupleExpr right = inheritedProducer(producer, "right");
+		Projection select = new Projection(new Difference(left, right),
+				new ProjectionElemList(new ProjectionElem("g")), true);
+		select.setProjectionContext(Var.of("g"));
+		strategy().genericOnlyView().precompile(select, new QueryEvaluationContext.Minimal(null));
+		return select;
+	}
+
+	private static TupleExpr inheritedProducer(String producer, String side) {
+		Var graph = Var.of("g", VF.createIRI("urn:serialized-minus:graph"));
+		graph.setGraphContextDepth(1);
+		StatementPattern statement = new StatementPattern(StatementPattern.Scope.NAMED_CONTEXTS,
+				Var.of(producer.equals("subject") ? "g" : side + "Subject"),
+				Var.of(producer.equals("predicate") ? "g" : side + "Predicate"),
+				Var.of(producer.equals("object") ? "g" : side + "Object"), graph);
+		if (producer.equals("values")) {
+			MapBindingSet row = new MapBindingSet();
+			row.addBinding("g", VF.createIRI("urn:serialized-minus:local"));
+			BindingSetAssignment values = new BindingSetAssignment();
+			values.setBindingNames(Set.of("g"));
+			values.setBindingSets(List.of(row, EmptyBindingSet.getInstance()));
+			return new Join(statement, values);
+		}
+		if (producer.equals("extension")) {
+			return new Extension(statement, new ExtensionElem(
+					new ValueConstant(VF.createIRI("urn:serialized-minus:local")), "g"));
+		}
+		return statement;
+	}
+
+	private static TupleExpr inheritedPath(boolean arbitrary, String subject, String object) {
+		Var graph = Var.of("g", VF.createIRI("urn:serialized-minus:graph"));
+		graph.setGraphContextDepth(1);
+		if (!arbitrary) {
+			return new ZeroLengthPath(StatementPattern.Scope.NAMED_CONTEXTS, Var.of(subject), Var.of(object), graph);
+		}
+		StatementPattern edge = new StatementPattern(StatementPattern.Scope.NAMED_CONTEXTS, Var.of(subject),
+				Var.of(object + "Predicate"), Var.of(object), graph.clone());
+		return new ArbitraryLengthPath(StatementPattern.Scope.NAMED_CONTEXTS, Var.of(subject), edge,
+				Var.of(object), graph, 1);
+	}
+
+	private static TupleExpr serializedTuple(TupleExpr expression) throws IOException, ClassNotFoundException {
+		ByteArrayOutputStream bytes = new ByteArrayOutputStream();
+		try (ObjectOutputStream output = new ObjectOutputStream(bytes)) {
+			output.writeObject(expression);
+		}
+		try (ObjectInputStream input = new ObjectInputStream(new ByteArrayInputStream(bytes.toByteArray()))) {
+			return (TupleExpr) input.readObject();
+		}
+	}
+
+	private static Projection serializedCopy(Projection select) throws IOException, ClassNotFoundException {
+		ByteArrayOutputStream bytes = new ByteArrayOutputStream();
+		try (ObjectOutputStream output = new ObjectOutputStream(bytes)) {
+			output.writeObject(select);
+		}
+		try (ObjectInputStream input = new ObjectInputStream(new ByteArrayInputStream(bytes.toByteArray()))) {
+			return (Projection) input.readObject();
+		}
+	}
 
 	@Test
 	void specializedFallbackKeepsItsOriginalScopeAfterStrategyReuse() {

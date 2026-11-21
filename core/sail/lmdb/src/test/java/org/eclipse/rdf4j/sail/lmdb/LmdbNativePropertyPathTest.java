@@ -1677,6 +1677,62 @@ public class LmdbNativePropertyPathTest {
 	}
 
 	@Test
+	public void sameEndpointPathPreservesItsValuedPredicateDomain() {
+		ValueFactory factory = repository.getValueFactory();
+		IRI predicate = factory.createIRI(EX, "p");
+		IRI other = factory.createIRI(EX, "q");
+		IRI self = factory.createIRI(EX, "f");
+		QueryBindingSet matching = new QueryBindingSet();
+		matching.addBinding("pathPredicate", predicate);
+		QueryBindingSet conflicting = new QueryBindingSet();
+		conflicting.addBinding("pathPredicate", other);
+		long before = PathPlan.ENGAGED.get();
+		for (long min : List.of(0L, 1L)) {
+			Var endpoint = Var.of("x", self);
+			StatementPattern step = new StatementPattern(endpoint.clone(), Var.of("pathPredicate", predicate, true),
+					endpoint.clone());
+			ArbitraryLengthPath path = new ArbitraryLengthPath(endpoint.clone(), step, endpoint.clone(), min);
+			TupleExpr root = new QueryRoot(new Projection(path,
+					new ProjectionElemList(new ProjectionElem("x"), new ProjectionElem("pathPredicate"))));
+			for (BindingSet bindings : List.of(EmptyBindingSet.getInstance(), matching, conflicting)) {
+				// The zero-length identity emits only the endpoint. A nonzero result carries the fixed value
+				// from the path step's own mapping, including when the outer projection was given another value.
+				List<String> expected = List.of(min == 0L ? "[x=" + self + "]"
+						: "[pathPredicate=" + predicate + ";x=" + self + "]");
+				for (boolean nativeEngine : List.of(false, true)) {
+					assertThat(algebraRows(root.clone(), nativeEngine, bindings))
+							.as("minimum length %d, native %s, caller %s", min, nativeEngine, bindings)
+							.containsExactlyElementsOf(expected);
+				}
+			}
+		}
+		assertThat(PathPlan.ENGAGED.get()).as("an endpoint-only plan cannot own the predicate binding")
+				.isEqualTo(before);
+	}
+
+	@Test
+	public void publicPathRetainsTheSelectedStepEndpointValue() {
+		ValueFactory factory = repository.getValueFactory();
+		IRI predicate = factory.createIRI(EX, "manual-path-step");
+		IRI start = factory.createIRI(EX, "manual-path-start");
+		IRI other = factory.createIRI(EX, "manual-path-other");
+		try (SailRepositoryConnection connection = repository.getConnection()) {
+			connection.begin();
+			connection.add(start, predicate, start);
+			connection.add(other, predicate, other);
+			connection.commit();
+		}
+		StatementPattern step = new StatementPattern(Var.of("s", start), Var.of("p", predicate, true, true),
+				Var.of("o"));
+		ArbitraryLengthPath path = new ArbitraryLengthPath(Var.of("s"), step, Var.of("o"), 1L);
+		TupleExpr root = new QueryRoot(new Projection(path,
+				new ProjectionElemList(new ProjectionElem("s"), new ProjectionElem("o"))));
+		String expected = "[o=" + start + ";s=" + start + "]";
+		assertThat(algebraRows(root.clone(), false, EmptyBindingSet.getInstance())).containsExactly(expected);
+		assertThat(algebraRows(root, true, EmptyBindingSet.getInstance())).containsExactly(expected);
+	}
+
+	@Test
 	public void zeroOrOnePath() {
 		assertSameAsGeneric(q("SELECT ?o WHERE { ex:a ex:p? ?o . }"));
 	}
@@ -1719,10 +1775,14 @@ public class LmdbNativePropertyPathTest {
 	}
 
 	private List<String> algebraRows(TupleExpr root, boolean nativeEngine) {
+		return algebraRows(root, nativeEngine, EmptyBindingSet.getInstance());
+	}
+
+	private List<String> algebraRows(TupleExpr root, boolean nativeEngine, BindingSet bindings) {
 		String previous = System.getProperty(NATIVE_FLAG);
 		System.setProperty(NATIVE_FLAG, Boolean.toString(nativeEngine));
 		try (SailRepositoryConnection connection = repository.getConnection();
-				var rows = connection.getSailConnection().evaluate(root, null, EmptyBindingSet.getInstance(), true)) {
+				var rows = connection.getSailConnection().evaluate(root, null, bindings, true)) {
 			List<String> result = new ArrayList<>();
 			while (rows.hasNext()) {
 				result.add(renderRow(rows.next()));

@@ -1,0 +1,8 @@
+# #6402: the MINUS RHS must not receive ?x from the OPTIONAL's outer mapping.
+SELECT ?x ?o WHERE {
+  VALUES ?x { "left" }
+  OPTIONAL {
+    VALUES ?o { "left" }
+    MINUS { BIND(?x AS ?o) }
+  }
+}

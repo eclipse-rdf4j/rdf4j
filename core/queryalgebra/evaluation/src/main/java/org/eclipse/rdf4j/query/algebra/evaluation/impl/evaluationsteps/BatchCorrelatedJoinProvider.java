@@ -26,7 +26,7 @@ import org.eclipse.rdf4j.query.algebra.evaluation.QueryEvaluationStep;
  * domain, execute the right fragment once, and probe the accumulated rows.
  *
  * <p>
- * Consultation protocol: the generic step asks {@link #supports} ONCE at precompile time with the RAW (unwrapped)
+ * Consultation protocol: the generic step asks {@link #supports} ONCE at precompile time with the prepared
  * right-operand step; a {@code false} answer keeps today's evaluation with zero added overhead. When {@code true},
  * {@link #tryBatchJoin} is invoked per evaluation and MUST return a complete evaluation — the provider owns every
  * internal fallback (per-outer-row evaluation for rows it cannot batch, budget-refusal tails, entry-binding
@@ -66,27 +66,34 @@ public interface BatchCorrelatedJoinProvider {
 	 * common to both operands (all overlapping names, 1–4 of them). {@code condition}, when non-null, is the join
 	 * condition evaluated against each merged outer×right row (scoping and error-to-false semantics are the caller's
 	 * responsibility — the provider only calls {@link java.util.function.Predicate#test}); a LEFT outer row whose every
-	 * match is rejected emits bare.
+	 * match is rejected emits bare. When present, {@code perRowRight} is the complete runtime step to use for fallback;
+	 * it may include execution scopes or instrumentation absent from the step inspected for the batch capability.
 	 */
 	@Experimental
 	record BatchCorrelationRequest(CloseableIteration<BindingSet> outer, BindingSet entryBindings,
-			String[] sharedVariables, Mode mode, Predicate<BindingSet> condition) {
+			String[] sharedVariables, Mode mode, Predicate<BindingSet> condition, QueryEvaluationStep perRowRight) {
+
+		public BatchCorrelationRequest(CloseableIteration<BindingSet> outer, BindingSet entryBindings,
+				String[] sharedVariables, Mode mode, Predicate<BindingSet> condition) {
+			this(outer, entryBindings, sharedVariables, mode, condition, null);
+		}
 
 		public BatchCorrelationRequest(CloseableIteration<BindingSet> outer, BindingSet entryBindings,
 				String[] sharedVariables, Mode mode) {
-			this(outer, entryBindings, sharedVariables, mode, null);
+			this(outer, entryBindings, sharedVariables, mode, null, null);
 		}
 	}
 
 	/**
-	 * Precompile-time shape check with the RAW right-operand step. Must be cheap and side-effect free; a {@code false}
-	 * keeps the generic evaluation unchanged.
+	 * Precompile-time shape check with the prepared right-operand step. Must be cheap and side-effect free; a
+	 * {@code false} keeps the generic evaluation unchanged.
 	 */
 	boolean supports(QueryEvaluationStep rightStep, String[] sharedVariables, Mode mode, boolean hasCondition);
 
 	/**
 	 * Evaluates the request against the right-operand step {@link #supports} approved. Never returns {@code null}; rows
-	 * the batch path cannot serve flow through the provider's internal per-outer-row fallback.
+	 * the batch path cannot serve flow through the provider's internal per-outer-row fallback. The fallback must use
+	 * {@link BatchCorrelationRequest#perRowRight()} when supplied, otherwise {@code rightStep}.
 	 */
 	CloseableIteration<BindingSet> tryBatchJoin(BatchCorrelationRequest request, QueryEvaluationStep rightStep);
 }

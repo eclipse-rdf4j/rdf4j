@@ -16,6 +16,7 @@ import static org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbNativeAggregateCompiler
 
 import java.io.IOException;
 import java.util.Arrays;
+import java.util.HashSet;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
@@ -26,9 +27,13 @@ import java.util.function.Supplier;
 import org.eclipse.rdf4j.common.annotation.Experimental;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.query.BindingSet;
+import org.eclipse.rdf4j.query.Dataset;
 import org.eclipse.rdf4j.query.algebra.Filter.ConditionBindingScope;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryBindingSet;
+import org.eclipse.rdf4j.query.algebra.evaluation.impl.BindingFrameBindings;
+import org.eclipse.rdf4j.query.algebra.evaluation.impl.BindingSetQueryEvaluationContext;
+import org.eclipse.rdf4j.query.algebra.evaluation.impl.QueryEvaluationContext;
 import org.eclipse.rdf4j.sail.lmdb.LmdbQueryMemoryManager;
 
 @Experimental
@@ -69,6 +74,8 @@ final class RowState implements LmdbNativeSlotReader {
 	PathResultMemo pathEstimateMemos;
 	/** Replay the ordinary generic source order without mandating adjacency or LMDB. */
 	boolean encounterOrderRequired;
+	/** The committed GRAPH input of this Group invocation, absent on derived rows and outside its input lifetime. */
+	NativeGroupInvocationWitness.Admission directGroupInput;
 	int trailSize;
 	long boundMask;
 	/**
@@ -81,6 +88,8 @@ final class RowState implements LmdbNativeSlotReader {
 	int lexicalScopeDepth;
 	/** The currently active direct-LATERAL RHS occurrence, if one is being opened or advanced. */
 	private LateralOccurrence lateralOccurrence;
+	/** Exact root LATERAL admitted for this invocation, never inherited by workers or derived rows. */
+	LateralPlan admittedOwnerLateral;
 	long logicalSolutionIdentity;
 	/**
 	 * Query-scoped memory ledger holder. Fresh per root row; derived rows (parallel workers, rescan rows, kernel
@@ -441,11 +450,39 @@ final class RowState implements LmdbNativeSlotReader {
 					.forConditionBindings(ConditionBindingScope.retain(retainedNames), synthetic)
 					.evaluationSource();
 		}
-		RowState projected = new RowState(projectedSource, layout, NativeEntryBindings.preserve(base, projectedBase),
+		BindingSet restricted = BindingFrameBindings.isolateCondition(
+				BindingFrameBindings.retainWithheldInputs(base, projectedBase, retainedNames));
+		RowState projected = new RowState(projectedSource, layout, NativeEntryBindings.preserve(base, restricted),
 				telemetryTarget, exactValuesMetrics,
 				cancellation);
 		projected.copyConditionInput(this, retainedNames);
 		return projected;
+	}
+
+	/** OPTIONAL removes selected entry bindings for local evaluation but keeps them as invocation parameters. */
+	RowState withholdOptionalInputs(Set<String> visibleNames) {
+		Set<String> hidden = new HashSet<>(Arrays.asList(layout.slotNames()));
+		hidden.removeAll(visibleNames);
+		BindingSet entry = NativeEntryBindings.snapshot(view);
+		QueryEvaluationContext context = new BindingSetQueryEvaluationContext(
+				new QueryEvaluationContext.Minimal((Dataset) null));
+		BindingSet withheld = NativeEntryBindings.preserve(entry, BindingFrameBindings.without(entry, hidden, context));
+		SyntheticValueSource invocation = SyntheticValueSource.forInvocation(source, withheld);
+		RowState projected = new RowState(invocation, layout, withheld, telemetryTarget, exactValuesMetrics,
+				cancellation);
+		try {
+			projected.copyConditionInput(this, visibleNames);
+			return projected;
+		} catch (RuntimeException | Error failure) {
+			try {
+				invocation.executionContext().close();
+			} catch (RuntimeException | Error closeFailure) {
+				if (closeFailure != failure) {
+					failure.addSuppressed(closeFailure);
+				}
+			}
+			throw failure;
+		}
 	}
 
 	void copyConditionInput(RowState parent, Set<String> retainedNames) {
@@ -468,6 +505,7 @@ final class RowState implements LmdbNativeSlotReader {
 		scalarFilterAttempt = parent.scalarFilterAttempt;
 		lexicalInputMask = parent.lexicalInputMask & boundMask;
 		lexicalScopeDepth = parent.lexicalScopeDepth;
+		lateralOccurrence = parent.lateralOccurrence;
 		logicalSolutionIdentity = parent.logicalSolutionIdentity;
 		encounterOrderRequired = parent.encounterOrderRequired;
 		parallelOwnership = parent.parallelOwnership;
@@ -704,6 +742,17 @@ final class RowState implements LmdbNativeSlotReader {
 		return previous;
 	}
 
+	/** A physical lookup may seed more slots than the logical invocation owns. */
+	void restrictLexicalInputs(BindingSet logical) {
+		long authorized = 0L;
+		for (int slot = 0; slot < slots.length; slot++) {
+			if (logical != null && logical.hasBinding(layout.slotName(slot))) {
+				authorized |= 1L << slot;
+			}
+		}
+		lexicalInputMask &= authorized;
+	}
+
 	void restoreLexicalScope(long previous) {
 		lexicalInputMask = previous;
 		lexicalScopeDepth--;
@@ -711,7 +760,12 @@ final class RowState implements LmdbNativeSlotReader {
 
 	/** Creates one lexical identity for a direct LATERAL right-hand evaluation. */
 	LateralOccurrence newLateralOccurrence() {
-		return new LateralOccurrence();
+		return new LateralOccurrence(null, null, null);
+	}
+
+	LateralOccurrence newLateralOccurrence(GenericEvalPlan recipient, BindingSet input,
+			QueryEvaluationContext context) {
+		return new LateralOccurrence(recipient, input, context);
 	}
 
 	/** Temporarily activates an occurrence while a right-hand cursor opens, advances, or closes. */
@@ -732,7 +786,24 @@ final class RowState implements LmdbNativeSlotReader {
 
 	static final class LateralOccurrence {
 		private final Map<Object, Object> replayStates = new ConcurrentHashMap<>();
+		private final GenericEvalPlan recipient;
+		private final BindingSet input;
+		private final QueryEvaluationContext context;
 		private volatile boolean closed;
+
+		private LateralOccurrence(GenericEvalPlan recipient, BindingSet input, QueryEvaluationContext context) {
+			this.recipient = recipient;
+			this.input = input;
+			this.context = context;
+		}
+
+		BindingSet inputFor(GenericEvalPlan candidate) {
+			return recipient == candidate ? input : null;
+		}
+
+		QueryEvaluationContext inputContext() {
+			return context;
+		}
 
 		@SuppressWarnings("unchecked")
 		<T> T state(Object key, Supplier<T> factory) {

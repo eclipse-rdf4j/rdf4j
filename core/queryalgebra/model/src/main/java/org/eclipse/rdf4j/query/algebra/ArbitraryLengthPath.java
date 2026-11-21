@@ -24,6 +24,8 @@ import org.eclipse.rdf4j.query.algebra.StatementPattern.Scope;
  */
 public class ArbitraryLengthPath extends AbstractQueryModelNode implements TupleExpr {
 
+	private static final long serialVersionUID = 8462719602298112812L;
+
 	/*-----------*
 	 * Variables *
 	 *-----------*/
@@ -37,6 +39,8 @@ public class ArbitraryLengthPath extends AbstractQueryModelNode implements Tuple
 	private Var objectVar;
 
 	private Var contextVar;
+
+	private PrivateGraphContextRole privateGraphContextRole;
 
 	private long minLength;
 
@@ -101,6 +105,9 @@ public class ArbitraryLengthPath extends AbstractQueryModelNode implements Tuple
 	 */
 	public void setScope(Scope scope) {
 		assert scope != null : "scope must not be null";
+		if (this.scope != scope) {
+			privateGraphContextRole = null;
+		}
 		this.scope = scope;
 	}
 
@@ -148,7 +155,18 @@ public class ArbitraryLengthPath extends AbstractQueryModelNode implements Tuple
 		return contextVar;
 	}
 
+	PrivateGraphContextRole privateGraphContextRole() {
+		return privateGraphContextRole;
+	}
+
+	void privateGraphContextRole(PrivateGraphContextRole role) {
+		privateGraphContextRole = role;
+	}
+
 	public void setContextVar(Var context) {
+		if (contextVar != context) {
+			privateGraphContextRole = null;
+		}
 		if (context != null) {
 			context.setParentNode(this);
 		}
@@ -234,7 +252,9 @@ public class ArbitraryLengthPath extends AbstractQueryModelNode implements Tuple
 			ArbitraryLengthPath o = (ArbitraryLengthPath) other;
 			return subjectVar.equals(o.getSubjectVar()) && pathExpression.equals(o.getPathExpression())
 					&& objectVar.equals(o.getObjectVar()) && Objects.equals(contextVar, o.getContextVar())
-					&& scope.equals(o.getScope()) && minLength == o.getMinLength();
+					&& scope.equals(o.getScope()) && minLength == o.getMinLength()
+					&& Objects.equals(PrivateGraphContextRole.semanticIdentity(this),
+							PrivateGraphContextRole.semanticIdentity(o));
 		}
 		return false;
 	}
@@ -251,18 +271,24 @@ public class ArbitraryLengthPath extends AbstractQueryModelNode implements Tuple
 		if (scope == Scope.NAMED_CONTEXTS) {
 			result = ~result;
 		}
+		result ^= Objects.hashCode(PrivateGraphContextRole.semanticIdentity(this));
 		return result;
 	}
 
 	@Override
 	public ArbitraryLengthPath clone() {
+		boolean privateContext = PrivateGraphContextRole.isPrivateContext(this, contextVar);
 		ArbitraryLengthPath clone = (ArbitraryLengthPath) super.clone();
+		clone.privateGraphContextRole = null;
 		clone.setSubjectVar(getSubjectVar().clone());
 		clone.setPathExpression(getPathExpression().clone());
 		clone.setObjectVar(getObjectVar().clone());
 
 		if (getContextVar() != null) {
 			clone.setContextVar(getContextVar().clone());
+		}
+		if (privateContext) {
+			PrivateGraphContextRole.mark(clone, clone.contextVar);
 		}
 
 		return clone;

@@ -27,6 +27,7 @@ import org.eclipse.rdf4j.query.QueryEvaluationException;
 import org.eclipse.rdf4j.query.QueryExecutionPolicy;
 import org.eclipse.rdf4j.query.algebra.Filter.ConditionBindingScope;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryBindingSet;
+import org.eclipse.rdf4j.query.algebra.evaluation.impl.BindingFrameBindings;
 import org.eclipse.rdf4j.sail.lmdb.LmdbKeyRange;
 import org.eclipse.rdf4j.sail.lmdb.LmdbPrefixRunCursor;
 import org.eclipse.rdf4j.sail.lmdb.LmdbPrefixRunPlan;
@@ -86,6 +87,24 @@ class SyntheticValueSource implements NativeLmdbQuerySource {
 		this(delegate, catalog, null, null, policy);
 	}
 
+	/** The known bare-plan decorator preserves the restart proof of its delegate and immutable plan catalog. */
+	static SyntheticValueSource forBarePlan(NativeLmdbQuerySource delegate, PlanValueCatalog catalog,
+			QueryExecutionPolicy policy) {
+		return new BarePlanSyntheticValueSource(delegate, catalog, policy);
+	}
+
+	private static final class BarePlanSyntheticValueSource extends SyntheticValueSource {
+		private BarePlanSyntheticValueSource(NativeLmdbQuerySource delegate, PlanValueCatalog catalog,
+				QueryExecutionPolicy policy) {
+			super(delegate, catalog, policy);
+		}
+
+		@Override
+		public boolean readsAreRestartSafe() {
+			return delegate.readsAreRestartSafe();
+		}
+	}
+
 	private SyntheticValueSource(NativeLmdbQuerySource delegate, PlanValueCatalog catalog,
 			NativeExecutionContext context) {
 		this(delegate, catalog, context, null, context.queryExecutionPolicy);
@@ -143,13 +162,18 @@ class SyntheticValueSource implements NativeLmdbQuerySource {
 	NativeExecutionContext forConditionBindings(ConditionBindingScope scope) {
 		BindingSet base = context.queryBase();
 		QueryBindingSet projected = NativeEntryBindings.copyValues(base);
-		for (String name : base.getBindingNames()) {
-			if (!scope.bindingNames().contains(name)) {
-				projected.removeBinding(name);
+		if (!scope.retainsAllBindings()) {
+			for (String name : base.getBindingNames()) {
+				if (!scope.bindingNames().contains(name)) {
+					projected.removeBinding(name);
+				}
 			}
 		}
+		BindingSet restricted = scope.retainsAllBindings() ? projected
+				: BindingFrameBindings.retainWithheldInputs(base, projected, scope.bindingNames());
+		restricted = BindingFrameBindings.isolateCondition(restricted);
 		NativeExecutionContext projectedContext = new NativeExecutionContext(context,
-				NativeEntryBindings.preserve(base, projected));
+				NativeEntryBindings.preserve(base, restricted));
 		new SyntheticValueSource(delegate, catalog, projectedContext, idSpace(), queryExecutionPolicy);
 		return projectedContext;
 	}
@@ -909,6 +933,11 @@ class SyntheticValueSource implements NativeLmdbQuerySource {
 			// themselves
 			// stay in the shared id space and therefore remain valid when partial results are merged before close.
 			installGeneratedKeyPolicy(generatedKeyPlan);
+		}
+
+		@Override
+		public boolean readsAreRestartSafe() {
+			return owned.readsAreRestartSafe();
 		}
 
 		@Override

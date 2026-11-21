@@ -515,6 +515,9 @@ final class FactorizedTail {
 		Branch[] branches = new Branch[branchCount];
 		for (int b = 0; b < branchCount; b++) {
 			PatternPlan pattern = (PatternPlan) order[branchStart + b];
+			if (!pattern.supportsContextShortcut(null, boundByPrefix, boundByPrefix & pattern.producedMask())) {
+				return null;
+			}
 			int[] valueQuadPos = new int[valueColumnsPerBranch[b]];
 			int n = 0;
 			for (int i = 0; i < aggregates.length; i++) {

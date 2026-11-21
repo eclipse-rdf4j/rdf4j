@@ -24,13 +24,17 @@ import java.util.function.Predicate;
 
 import org.eclipse.rdf4j.common.annotation.Experimental;
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
+import org.eclipse.rdf4j.common.iteration.CooperativeCancellation;
 import org.eclipse.rdf4j.common.iteration.LookAheadIteration;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.QueryEvaluationException;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryBindingSet;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryEvaluationStep;
+import org.eclipse.rdf4j.query.algebra.evaluation.impl.BindingFrameBindings;
+import org.eclipse.rdf4j.query.algebra.evaluation.impl.GraphFrameBindings;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.evaluationsteps.BatchCorrelatedJoinProvider;
+import org.eclipse.rdf4j.query.algebra.evaluation.iterator.CancellationPoints;
 import org.eclipse.rdf4j.query.impl.EmptyBindingSet;
 import org.eclipse.rdf4j.sail.lmdb.LmdbQueryMemoryManager;
 
@@ -52,7 +56,7 @@ final class LmdbNativeAccumulateJoin implements BatchCorrelatedJoinProvider {
 
 	static final LmdbNativeAccumulateJoin INSTANCE = new LmdbNativeAccumulateJoin();
 
-	/** Bytes reserved per accumulated outer row (reference + retained BindingSet ballpark). */
+	/** Bytes reserved per retained outer or fragment row (reference + retained BindingSet ballpark). */
 	private static final long ROW_BYTES = 128;
 	/** Rows accumulated between ledger growth checks. */
 	private static final int GROW_STEP = 1024;
@@ -85,7 +89,8 @@ final class LmdbNativeAccumulateJoin implements BatchCorrelatedJoinProvider {
 		if (hasCondition && mode != Mode.LEFT && mode != Mode.INNER) {
 			return false;
 		}
-		if (!(rightStep instanceof NativeBareRowsStep step)) {
+		NativeBareRowsStep step = BindingFrameBindings.unframedCapability(rightStep, NativeBareRowsStep.class);
+		if (step == null || !step.bulk.valuesRequirement.isEmpty() || !step.accumulateRestartSafe()) {
 			return false;
 		}
 		for (String name : sharedVariables) {
@@ -98,7 +103,12 @@ final class LmdbNativeAccumulateJoin implements BatchCorrelatedJoinProvider {
 
 	@Override
 	public CloseableIteration<BindingSet> tryBatchJoin(BatchCorrelationRequest request, QueryEvaluationStep rightStep) {
-		return new AccumulateJoinIteration((NativeBareRowsStep) rightStep, request);
+		NativeBareRowsStep step = BindingFrameBindings.unframedCapability(rightStep, NativeBareRowsStep.class);
+		if (step == null) {
+			throw new IllegalArgumentException("Unsupported native batch operand");
+		}
+		QueryEvaluationStep perRowRight = request.perRowRight() == null ? rightStep : request.perRowRight();
+		return new AccumulateJoinIteration(step, perRowRight, request);
 	}
 
 	private static int slotOf(NativeSlotLayout layout, String name) {
@@ -121,6 +131,7 @@ final class LmdbNativeAccumulateJoin implements BatchCorrelatedJoinProvider {
 	private static final class AccumulateJoinIteration extends LookAheadIteration<BindingSet> {
 
 		private final NativeBareRowsStep step;
+		private final QueryEvaluationStep rightPrepared;
 		private final BatchCorrelationRequest request;
 		private final String[] sharedNames;
 		private final Mode mode;
@@ -128,12 +139,13 @@ final class LmdbNativeAccumulateJoin implements BatchCorrelatedJoinProvider {
 
 		private boolean initialized;
 		private List<BindingSet> outerRows;
-		private List<BindingSet> perRowRows;
 		private Map<List<Value>, List<BindingSet>> matches;
 		private boolean overflow;
+		private boolean usePerRow;
 
 		private LmdbQueryMemoryManager.QueryLedger ledger;
 		private LmdbQueryMemoryManager.Reservation reservation;
+		private int remainingRows;
 
 		private int outerIndex;
 		private List<BindingSet> currentMatches;
@@ -141,13 +153,15 @@ final class LmdbNativeAccumulateJoin implements BatchCorrelatedJoinProvider {
 		private boolean anyAccepted;
 		private BindingSet currentOuter;
 
-		private int perRowIndex;
-		private CloseableIteration<BindingSet> perRowIteration;
+		private volatile CloseableIteration<BindingSet> perRowIteration;
+		private volatile CloseableIteration<BindingSet> activeSweep;
 		private BindingSet perRowOuter;
 		private boolean perRowMatched;
 
-		AccumulateJoinIteration(NativeBareRowsStep step, BatchCorrelationRequest request) {
+		AccumulateJoinIteration(NativeBareRowsStep step, QueryEvaluationStep rightPrepared,
+				BatchCorrelationRequest request) {
 			this.step = step;
+			this.rightPrepared = rightPrepared;
 			this.request = request;
 			this.sharedNames = request.sharedVariables();
 			this.mode = request.mode();
@@ -156,15 +170,35 @@ final class LmdbNativeAccumulateJoin implements BatchCorrelatedJoinProvider {
 
 		@Override
 		protected BindingSet getNextElement() throws QueryEvaluationException {
+			try {
+				return nextResult();
+			} catch (RuntimeException | Error failure) {
+				try {
+					close();
+				} catch (RuntimeException | Error closing) {
+					if (closing != failure) {
+						failure.addSuppressed(closing);
+					}
+				}
+				throw failure;
+			}
+		}
+
+		private BindingSet nextResult() {
+			CancellationPoints.check(isCancellationRequested());
 			if (!initialized) {
 				initialize();
 			}
 			while (true) {
+				CancellationPoints.check(isCancellationRequested());
 				// 1: verdict/products of the current accumulated outer row
 				if (currentMatches != null) {
 					while (matchIndex < currentMatches.size()) {
+						CancellationPoints.check(isCancellationRequested());
 						BindingSet merged = merge(currentOuter, currentMatches.get(matchIndex++));
-						if (condition == null || condition.test(merged)) {
+						boolean accepted = condition == null || condition.test(merged);
+						CancellationPoints.check(isCancellationRequested());
+						if (accepted) {
 							anyAccepted = true;
 							if (mode == Mode.LEFT || mode == Mode.INNER) {
 								return merged;
@@ -173,6 +207,7 @@ final class LmdbNativeAccumulateJoin implements BatchCorrelatedJoinProvider {
 							matchIndex = currentMatches.size();
 						}
 					}
+					CancellationPoints.check(isCancellationRequested());
 					currentMatches = null;
 					if (mode == Mode.SEMI && anyAccepted) {
 						return currentOuter;
@@ -182,24 +217,34 @@ final class LmdbNativeAccumulateJoin implements BatchCorrelatedJoinProvider {
 					}
 					continue;
 				}
-				// 2: next accumulated outer row
+				// Finish a per-row fallback before opening the next outer row.
+				BindingSet next = nextPerRowResult();
+				if (next != null) {
+					return next;
+				}
+				// Process accumulated rows in arrival order, including rows that require per-row evaluation.
 				if (outerIndex < outerRows.size()) {
 					currentOuter = outerRows.get(outerIndex++);
+					if (usePerRow || !batchable(currentOuter)) {
+						startPerRow(currentOuter);
+						continue;
+					}
 					List<BindingSet> found = matches.get(keyOf(currentOuter));
 					currentMatches = found == null ? List.of() : found;
 					matchIndex = 0;
 					anyAccepted = false;
 					continue;
 				}
-				// 3: per-row fallback rows (unbound shared variable)
-				BindingSet next = nextPerRowResult();
-				if (next != null) {
-					return next;
-				}
-				// 4: budget-refusal tail — stream the remaining outer rows per-row
-				if (overflow && request.outer().hasNext()) {
-					startPerRow(request.outer().next());
-					continue;
+				// Budget-refusal tail: stream the remaining outer rows per-row.
+				if (overflow) {
+					boolean hasNext = request.outer().hasNext();
+					CancellationPoints.check(isCancellationRequested());
+					if (hasNext) {
+						BindingSet outerRow = request.outer().next();
+						CancellationPoints.check(isCancellationRequested());
+						startPerRow(outerRow);
+						continue;
+					}
 				}
 				return null;
 			}
@@ -207,25 +252,39 @@ final class LmdbNativeAccumulateJoin implements BatchCorrelatedJoinProvider {
 
 		private void initialize() {
 			initialized = true;
-			BATCHES.incrementAndGet();
 			outerRows = new ArrayList<>();
-			perRowRows = new ArrayList<>();
+			matches = Map.of();
+			if (!step.accumulateRestartSafe()) {
+				// Unknown effects or failures cannot be replayed after a partial sweep. Decline before input is read.
+				overflow = true;
+				return;
+			}
+			BATCHES.incrementAndGet();
 			ledger = LmdbQueryMemoryManager.process().openQuery();
 			reservation = ledger.reserve(GROW_STEP * ROW_BYTES, null);
 			if (reservation == null) {
 				overflow = true;
+				return;
 			}
+			remainingRows = GROW_STEP;
 			Set<List<Long>> keyTuples = new HashSet<>();
-			int sinceGrow = 0;
-			outer: while (!overflow && request.outer().hasNext()) {
-				BindingSet row = request.outer().next();
-				for (String name : sharedNames) {
-					if (row.getValue(name) == null) {
-						perRowRows.add(row);
-						continue outer;
-					}
+			while (true) {
+				CancellationPoints.check(isCancellationRequested());
+				boolean hasNext = request.outer().hasNext();
+				CancellationPoints.check(isCancellationRequested());
+				if (!hasNext) {
+					break;
 				}
+				if (!reserveRow()) {
+					overflow = true;
+					break;
+				}
+				BindingSet row = request.outer().next();
+				CancellationPoints.check(isCancellationRequested());
 				outerRows.add(row);
+				if (!batchable(row)) {
+					continue;
+				}
 				List<Long> ids = new ArrayList<>(sharedNames.length);
 				boolean known = true;
 				for (String name : sharedNames) {
@@ -240,14 +299,43 @@ final class LmdbNativeAccumulateJoin implements BatchCorrelatedJoinProvider {
 				if (known) {
 					keyTuples.add(ids);
 				}
-				if (++sinceGrow >= GROW_STEP) {
-					sinceGrow = 0;
-					if (!reservation.tryGrow(GROW_STEP * ROW_BYTES)) {
-						overflow = true;
+			}
+			if (!keyTuples.isEmpty()) {
+				Map<List<Value>, List<BindingSet>> collected = sweepFragmentOnce(keyTuples);
+				if (collected == null) {
+					// No output has escaped. The prepared safety proof permits reopening the fragment per row.
+					usePerRow = true;
+					long excess = reservation.bytes() - (long) outerRows.size() * ROW_BYTES;
+					if (excess > 0) {
+						reservation.release(excess);
 					}
+				} else {
+					matches = collected;
 				}
 			}
-			matches = keyTuples.isEmpty() ? Map.of() : sweepFragmentOnce(keyTuples);
+		}
+
+		private boolean batchable(BindingSet row) {
+			if (BindingFrameBindings.hasFrame(row) || GraphFrameBindings.from(row) != GraphFrameBindings.EMPTY) {
+				return false;
+			}
+			for (String name : sharedNames) {
+				if (row.getValue(name) == null) {
+					return false;
+				}
+			}
+			return true;
+		}
+
+		private boolean reserveRow() {
+			if (remainingRows == 0) {
+				if (!reservation.tryGrow(GROW_STEP * ROW_BYTES)) {
+					return false;
+				}
+				remainingRows = GROW_STEP;
+			}
+			remainingRows--;
+			return true;
 		}
 
 		/** One native execution of the fragment, key-bounded by a VALUES table over the outer id-tuple domain. */
@@ -273,10 +361,23 @@ final class LmdbNativeAccumulateJoin implements BatchCorrelatedJoinProvider {
 			FRAGMENT_EXECUTIONS.incrementAndGet();
 			Map<List<Value>, List<BindingSet>> result = new HashMap<>();
 			try (CloseableIteration<BindingSet> iteration = sweep.evaluate(EmptyBindingSet.getInstance())) {
-				while (iteration.hasNext()) {
+				activeSweep = iteration;
+				while (true) {
+					CancellationPoints.check(isCancellationRequested());
+					boolean hasNext = iteration.hasNext();
+					CancellationPoints.check(isCancellationRequested());
+					if (!hasNext) {
+						break;
+					}
+					if (!reserveRow()) {
+						return null;
+					}
 					BindingSet fragmentRow = iteration.next();
+					CancellationPoints.check(isCancellationRequested());
 					result.computeIfAbsent(keyOf(fragmentRow), key -> new ArrayList<>()).add(fragmentRow);
 				}
+			} finally {
+				activeSweep = null;
 			}
 			return result;
 		}
@@ -291,34 +392,37 @@ final class LmdbNativeAccumulateJoin implements BatchCorrelatedJoinProvider {
 		}
 
 		private BindingSet nextPerRowResult() {
-			while (true) {
-				if (perRowIteration != null) {
-					while (perRowIteration.hasNext()) {
-						BindingSet row = perRowIteration.next();
-						if (condition == null || condition.test(row)) {
-							perRowMatched = true;
-							if (mode == Mode.LEFT || mode == Mode.INNER) {
-								return row;
-							}
-							// SEMI/ANTI: presence settled
-							break;
+			if (perRowIteration != null) {
+				while (true) {
+					CancellationPoints.check(isCancellationRequested());
+					boolean hasNext = perRowIteration.hasNext();
+					CancellationPoints.check(isCancellationRequested());
+					if (!hasNext) {
+						break;
+					}
+					BindingSet row = perRowIteration.next();
+					boolean accepted = condition == null || condition.test(row);
+					CancellationPoints.check(isCancellationRequested());
+					if (accepted) {
+						perRowMatched = true;
+						if (mode == Mode.LEFT || mode == Mode.INNER) {
+							return row;
 						}
-					}
-					perRowIteration.close();
-					perRowIteration = null;
-					if (mode == Mode.SEMI && perRowMatched) {
-						return perRowOuter;
-					}
-					if (!perRowMatched && (mode == Mode.LEFT || mode == Mode.ANTI)) {
-						return perRowOuter;
+						// SEMI/ANTI: presence settled.
+						break;
 					}
 				}
-				if (perRowIndex < perRowRows.size()) {
-					startPerRow(perRowRows.get(perRowIndex++));
-				} else {
-					return null;
+				perRowIteration.close();
+				perRowIteration = null;
+				CancellationPoints.check(isCancellationRequested());
+				if (mode == Mode.SEMI && perRowMatched) {
+					return perRowOuter;
+				}
+				if (!perRowMatched && (mode == Mode.LEFT || mode == Mode.ANTI)) {
+					return perRowOuter;
 				}
 			}
+			return null;
 		}
 
 		/** Today's per-outer-row evaluation for one row the batch cannot serve. */
@@ -326,7 +430,7 @@ final class LmdbNativeAccumulateJoin implements BatchCorrelatedJoinProvider {
 			PER_ROW_FALLBACK_ROWS.incrementAndGet();
 			perRowOuter = outerRow;
 			perRowMatched = false;
-			perRowIteration = step.evaluate(outerRow);
+			perRowIteration = rightPrepared.evaluate(outerRow);
 		}
 
 		private BindingSet merge(BindingSet outer, BindingSet fragment) {
@@ -345,21 +449,37 @@ final class LmdbNativeAccumulateJoin implements BatchCorrelatedJoinProvider {
 		@Override
 		protected void handleClose() throws QueryEvaluationException {
 			try {
-				if (perRowIteration != null) {
-					perRowIteration.close();
-					perRowIteration = null;
+				if (activeSweep != null) {
+					activeSweep.close();
 				}
 			} finally {
 				try {
-					request.outer().close();
+					if (perRowIteration != null) {
+						perRowIteration.close();
+						perRowIteration = null;
+					}
 				} finally {
-					if (ledger != null) {
-						ledger.close();
-						ledger = null;
-						reservation = null;
+					try {
+						request.outer().close();
+					} finally {
+						if (ledger != null) {
+							ledger.close();
+							ledger = null;
+							reservation = null;
+						}
+						outerRows = null;
+						matches = null;
+						currentMatches = null;
+						currentOuter = null;
+						perRowOuter = null;
 					}
 				}
 			}
+		}
+
+		@Override
+		protected boolean forwardCancellation() {
+			return CooperativeCancellation.forwardAll(request.outer(), perRowIteration, activeSweep) | true;
 		}
 	}
 }

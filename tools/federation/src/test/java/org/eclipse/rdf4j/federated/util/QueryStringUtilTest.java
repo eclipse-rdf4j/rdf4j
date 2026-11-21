@@ -43,7 +43,24 @@ public class QueryStringUtilTest {
 	public void directedLanguageLiteralIncludesBaseDirection() {
 		Literal literal = Values.getValueFactory().createLiteral("שלום", "he", Literal.BaseDirection.RTL);
 
-		assertEquals("'''שלום'''@he--rtl", QueryStringUtil.appendValue(new StringBuilder(), literal).toString());
+		assertEquals("\"שלום\"@he--rtl", QueryStringUtil.appendValue(new StringBuilder(), literal).toString());
+	}
+
+	@Test
+	public void directedLanguageLiteralRoundTripsThroughSparqlParser() {
+		Literal literal = Values.getValueFactory().createLiteral("שלום", "he", Literal.BaseDirection.RTL);
+		String rendered = QueryStringUtil.appendValue(new StringBuilder(), literal).toString();
+		List<Literal> objects = new ArrayList<>();
+		parse("SELECT * WHERE { ?s ?p " + rendered + " . }")
+				.visit(new AbstractSimpleQueryModelVisitor<RuntimeException>(true) {
+					@Override
+					public void meet(StatementPattern statement) {
+						objects.add((Literal) statement.getObjectVar().getValue());
+						super.meet(statement);
+					}
+				});
+		assertThat(objects).containsExactly(literal);
+		assertThat(objects.getFirst().getBaseDirection()).isEqualTo(Literal.BaseDirection.RTL);
 	}
 
 	@Test

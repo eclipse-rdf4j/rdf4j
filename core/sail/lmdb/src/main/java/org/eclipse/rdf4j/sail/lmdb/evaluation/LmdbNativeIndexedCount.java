@@ -165,6 +165,9 @@ final class LmdbNativeIndexedCount {
 	 */
 	PreparedCount prepare(RowState row) {
 		row.cancellation.check();
+		if (!pattern.supportsContextShortcut(row, row.boundMask(), 0L)) {
+			return null;
+		}
 		if (conflictingConstant(pattern.s, row) || conflictingConstant(pattern.p, row)
 				|| conflictingConstant(pattern.o, row) || conflictingConstant(pattern.c, row)
 				|| pattern.contexts.isEmpty() || pattern.contexts.isFixed() || pattern.namedContextScope) {
@@ -184,12 +187,25 @@ final class LmdbNativeIndexedCount {
 	}
 
 	long count(RowState row) throws IOException {
+		PatternPlan selected = pattern.effectivePattern(row);
+		if (selected != pattern) {
+			long count = 0L;
+			try (RowCursor cursor = selected.open(row)) {
+				while (cursor.next()) {
+					count = Math.addExact(count, 1L);
+				}
+			}
+			return count;
+		}
 		return countFromSource(row);
 	}
 
 	/** Returns null when this row no longer matches a prepared source quote, so arbitration may try another arm. */
 	Long count(RowState row, PreparedCount prepared) throws IOException {
 		row.cancellation.check();
+		if (!pattern.supportsContextShortcut(row, row.boundMask(), 0L)) {
+			return null;
+		}
 		if (prepared != null) {
 			if (conflictingConstant(pattern.s, row) || conflictingConstant(pattern.p, row)
 					|| conflictingConstant(pattern.o, row) || conflictingConstant(pattern.c, row)

@@ -13,29 +13,577 @@ package org.eclipse.rdf4j.query.algebra.evaluation.impl.evaluationsteps;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+import java.util.Arrays;
+import java.util.IdentityHashMap;
 import java.util.List;
+import java.util.Map;
+import java.util.Objects;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicReference;
+import java.util.function.Function;
 
+import org.assertj.core.api.SoftAssertions;
+import org.eclipse.rdf4j.collection.factory.impl.DefaultCollectionFactory;
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.common.iteration.CloseableIteratorIteration;
+import org.eclipse.rdf4j.common.iteration.SingletonIteration;
+import org.eclipse.rdf4j.model.BNode;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.Statement;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.ValueFactory;
+import org.eclipse.rdf4j.model.impl.BooleanLiteral;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.Dataset;
 import org.eclipse.rdf4j.query.MutableBindingSet;
 import org.eclipse.rdf4j.query.QueryEvaluationException;
+import org.eclipse.rdf4j.query.algebra.Exists;
 import org.eclipse.rdf4j.query.algebra.StatementPattern;
 import org.eclipse.rdf4j.query.algebra.Var;
+import org.eclipse.rdf4j.query.algebra.evaluation.QueryEvaluationStep;
+import org.eclipse.rdf4j.query.algebra.evaluation.QueryValueEvaluationStep;
 import org.eclipse.rdf4j.query.algebra.evaluation.TripleSource;
+import org.eclipse.rdf4j.query.algebra.evaluation.impl.ArrayBindingBasedQueryEvaluationContext;
+import org.eclipse.rdf4j.query.algebra.evaluation.impl.BindingFrame;
+import org.eclipse.rdf4j.query.algebra.evaluation.impl.BindingFrameBindings;
+import org.eclipse.rdf4j.query.algebra.evaluation.impl.BindingFrameReplay;
+import org.eclipse.rdf4j.query.algebra.evaluation.impl.DefaultEvaluationStrategy;
+import org.eclipse.rdf4j.query.algebra.evaluation.impl.GraphFrameBindings;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.QueryEvaluationContext;
+import org.eclipse.rdf4j.query.impl.BlankNodeAllocationScope;
+import org.eclipse.rdf4j.query.impl.EmptyBindingSet;
+import org.eclipse.rdf4j.query.impl.RemoteBNode;
+import org.eclipse.rdf4j.query.impl.RepositoryBNode;
 import org.eclipse.rdf4j.query.impl.SimpleDataset;
 import org.junit.jupiter.api.Test;
 
 class StatementPatternHasStatementTest {
+
+	@Test
+	void valuedVariableKeepsTheCallerBlankNodeAuthority() {
+		ValueFactory vf = SimpleValueFactory.getInstance();
+		BNode captured = (BNode) RemoteBNode.newResponseScope(new BlankNodeAllocationScope(), vf, new Object(), true)
+				.map(vf.createBNode("remote"));
+		BNode caller = vf.createBNode(captured.getID());
+		IRI subject = vf.createIRI("urn:authority:subject");
+		IRI predicate = vf.createIRI("urn:authority:predicate");
+		Statement statement = vf.createStatement(subject, predicate, caller);
+		QueryEvaluationContext context = new QueryEvaluationContext.Minimal((Dataset) null);
+		StatementPattern pattern = new StatementPattern(Var.of("s"), Var.of("p", predicate, true, true),
+				Var.of("x", captured));
+		StatementPatternQueryEvaluationStep step = new StatementPatternQueryEvaluationStep(pattern, context,
+				singleStatementSource(statement, null));
+		MutableBindingSet input = context.createBindingSet();
+		input.addBinding("x", caller);
+		try (CloseableIteration<BindingSet> rows = step.evaluate(input)) {
+			assertThat(rows.hasNext()).isTrue();
+			BindingSet row = rows.next();
+			assertThat(row.getValue("s")).isEqualTo(subject);
+			assertThat(row.getValue("x")).isSameAs(caller).isNotInstanceOf(RemoteBNode.class);
+			assertThat(rows.hasNext()).isFalse();
+		}
+	}
+
+	@Test
+	void certifiedProbeDoesNotReplaceTheFixedVariableAuthority() {
+		ValueFactory vf = SimpleValueFactory.getInstance();
+		RemoteBNode fixed = (RemoteBNode) RemoteBNode.newResponseScope(new BlankNodeAllocationScope(), vf,
+				new Object(), true).map(vf.createBNode("remote"));
+		BNode probeValue = vf.createBNode(fixed.getID());
+		IRI predicate = vf.createIRI("urn:authority:predicate");
+		Statement statement = vf.createStatement(probeValue, predicate, probeValue);
+		QueryEvaluationContext context = new QueryEvaluationContext.Minimal((Dataset) null);
+		StatementPattern pattern = new StatementPattern(Var.of("x", fixed), Var.of("p", predicate, true, true),
+				Var.of("x"));
+		StatementPatternQueryEvaluationStep step = new StatementPatternQueryEvaluationStep(pattern, context,
+				singleStatementSource(statement, null));
+		BindingFrameBindings.Scope owner = new BindingFrameBindings.Scope();
+		try (BindingFrameReplay.Invocation invocation = new BindingFrameReplay.Invocation(DefaultCollectionFactory::new,
+				null)) {
+			invocation.root.registerLookupInputs(owner, "x"::equals);
+			MutableBindingSet probes = context.createBindingSet();
+			probes.addBinding("x", probeValue);
+			BindingSet input = BindingFrameBindings.push(owner, EmptyBindingSet.getInstance(), probes, context,
+					invocation.root);
+			try (CloseableIteration<BindingSet> rows = step.evaluate(input)) {
+				assertThat(rows.hasNext()).isTrue();
+				Value output = rows.next().getValue("x");
+				assertThat(output).isInstanceOf(RemoteBNode.class);
+				assertThat(RemoteBNode.sameTrustedIdentity((RemoteBNode) output, fixed)).isTrue();
+				assertThat(rows.hasNext()).isFalse();
+			}
+		}
+	}
+
+	@Test
+	void certifiedRemoteProbeCannotGrantAuthorityToTheFixedPlainNode() {
+		ValueFactory vf = SimpleValueFactory.getInstance();
+		RemoteBNode probeValue = (RemoteBNode) RemoteBNode.newResponseScope(new BlankNodeAllocationScope(), vf,
+				new Object(), true).map(vf.createBNode("remote"));
+		BNode fixed = vf.createBNode(probeValue.getID());
+		IRI predicate = vf.createIRI("urn:authority:predicate");
+		Statement statement = vf.createStatement(fixed, predicate, fixed);
+		QueryEvaluationContext context = new QueryEvaluationContext.Minimal((Dataset) null);
+		StatementPattern pattern = new StatementPattern(Var.of("x", fixed), Var.of("p", predicate, true, true),
+				Var.of("x"));
+		StatementPatternQueryEvaluationStep step = new StatementPatternQueryEvaluationStep(pattern, context,
+				singleStatementSource(statement, null));
+		BindingFrameBindings.Scope owner = new BindingFrameBindings.Scope();
+		try (BindingFrameReplay.Invocation invocation = new BindingFrameReplay.Invocation(DefaultCollectionFactory::new,
+				null)) {
+			invocation.root.registerLookupInputs(owner, "x"::equals);
+			MutableBindingSet probes = context.createBindingSet();
+			probes.addBinding("x", probeValue);
+			BindingSet input = BindingFrameBindings.push(owner, EmptyBindingSet.getInstance(), probes, context,
+					invocation.root);
+			try (CloseableIteration<BindingSet> rows = step.evaluate(input)) {
+				assertThat(rows.hasNext()).isTrue();
+				Value output = rows.next().getValue("x");
+				assertThat(output).isSameAs(fixed).isNotInstanceOf(RemoteBNode.class);
+				assertThat(rows.hasNext()).isFalse();
+			}
+		}
+	}
+
+	@Test
+	void certifiedRemoteProbeDoesNotBecomeAnUnvaluedStatementOutput() {
+		ValueFactory vf = SimpleValueFactory.getInstance();
+		RemoteBNode probeValue = (RemoteBNode) RemoteBNode.newResponseScope(new BlankNodeAllocationScope(), vf,
+				new Object(), true).map(vf.createBNode("remote"));
+		BNode witnessed = vf.createBNode(probeValue.getID());
+		IRI predicate = vf.createIRI("urn:authority:predicate");
+		IRI object = vf.createIRI("urn:authority:object");
+		Statement statement = vf.createStatement(witnessed, predicate, object);
+		QueryEvaluationContext context = new QueryEvaluationContext.Minimal((Dataset) null);
+		StatementPattern pattern = new StatementPattern(Var.of("x"), Var.of("p", predicate, true, true),
+				Var.of("o", object, true, true));
+		StatementPatternQueryEvaluationStep step = new StatementPatternQueryEvaluationStep(pattern, context,
+				singleStatementSource(statement, null));
+		BindingFrameBindings.Scope owner = new BindingFrameBindings.Scope();
+		try (BindingFrameReplay.Invocation invocation = new BindingFrameReplay.Invocation(DefaultCollectionFactory::new,
+				null)) {
+			invocation.root.registerLookupInputs(owner, "x"::equals);
+			MutableBindingSet probes = context.createBindingSet();
+			probes.addBinding("x", probeValue);
+			BindingSet input = BindingFrameBindings.push(owner, EmptyBindingSet.getInstance(), probes, context,
+					invocation.root);
+			try (CloseableIteration<BindingSet> rows = step.evaluate(input)) {
+				assertThat(rows.hasNext()).isTrue();
+				assertThat(rows.next().getValue("x")).isSameAs(witnessed).isNotInstanceOf(RemoteBNode.class);
+				assertThat(rows.hasNext()).isFalse();
+			}
+		}
+	}
+
+	@Test
+	void certifiedNestedRemoteProbeDoesNotBecomeAnUnvaluedOutput() {
+		ValueFactory vf = SimpleValueFactory.getInstance();
+		RemoteBNode remote = (RemoteBNode) RemoteBNode.newResponseScope(new BlankNodeAllocationScope(), vf,
+				new Object(), true).map(vf.createBNode("remote"));
+		BNode local = vf.createBNode(remote.getID());
+		IRI predicate = vf.createIRI("urn:authority:predicate");
+		IRI subject = vf.createIRI("urn:authority:subject");
+		Value witnessed = vf.createTripleTerm(local, predicate, vf.createLiteral("quoted"));
+		Value probe = vf.createTripleTerm(remote, predicate, vf.createLiteral("quoted"));
+		Statement statement = vf.createStatement(subject, predicate, witnessed);
+		QueryEvaluationContext context = new QueryEvaluationContext.Minimal((Dataset) null);
+		StatementPattern pattern = new StatementPattern(Var.of("s", subject, true, true),
+				Var.of("p", predicate, true, true), Var.of("x"));
+		StatementPatternQueryEvaluationStep step = new StatementPatternQueryEvaluationStep(pattern, context,
+				singleStatementSource(statement, null));
+		BindingFrameBindings.Scope owner = new BindingFrameBindings.Scope();
+		try (BindingFrameReplay.Invocation invocation = new BindingFrameReplay.Invocation(DefaultCollectionFactory::new,
+				null)) {
+			invocation.root.registerLookupInputs(owner, "x"::equals);
+			MutableBindingSet probes = context.createBindingSet();
+			probes.addBinding("x", probe);
+			BindingSet input = BindingFrameBindings.push(owner, EmptyBindingSet.getInstance(), probes, context,
+					invocation.root);
+			try (CloseableIteration<BindingSet> rows = step.evaluate(input)) {
+				assertThat(rows.hasNext()).isTrue();
+				assertThat(rows.next().getValue("x")).isSameAs(witnessed);
+				assertThat(rows.hasNext()).isFalse();
+			}
+		}
+	}
+
+	@Test
+	void certifiedIriAndLiteralProbesRetainTheFullyBoundCountPath() {
+		for (boolean prepared : List.of(false, true)) {
+			ExistsProbeTripleSource source = new ExistsProbeTripleSource(prepared);
+			QueryEvaluationContext context = new QueryEvaluationContext.Minimal((Dataset) null);
+			StatementPatternQueryEvaluationStep step = new StatementPatternQueryEvaluationStep(
+					new StatementPattern(Var.of("s"), Var.of("p"), Var.of("o")), context, source);
+			BindingFrameBindings.Scope owner = new BindingFrameBindings.Scope();
+			try (BindingFrameReplay.Invocation invocation = new BindingFrameReplay.Invocation(
+					DefaultCollectionFactory::new,
+					null)) {
+				invocation.root.registerLookupInputs(owner, name -> true);
+				MutableBindingSet probes = context.createBindingSet();
+				probes.addBinding("s", source.statement.getSubject());
+				probes.addBinding("p", source.statement.getPredicate());
+				probes.addBinding("o", source.statement.getObject());
+				BindingSet input = BindingFrameBindings.push(owner, EmptyBindingSet.getInstance(), probes, context,
+						invocation.root);
+				for (int call = 0; call < 2; call++) {
+					try (CloseableIteration<BindingSet> rows = step.evaluate(input)) {
+						assertThat(rows.hasNext()).isTrue();
+						BindingSet row = rows.next();
+						assertThat(row.getValue("s")).isEqualTo(source.statement.getSubject());
+						assertThat(row.getValue("p")).isEqualTo(source.statement.getPredicate());
+						assertThat(row.getValue("o")).isEqualTo(source.statement.getObject());
+						assertThat(rows.hasNext()).isFalse();
+					}
+				}
+			}
+			// Prepared IRIs are recreated per call; the direct-lookup cache deliberately keys by identity.
+			assertThat(source.statementCountLookups).as("prepared %s count", prepared).hasValue(prepared ? 2 : 1);
+			assertThat(source.materializingLookups).as("prepared %s statement rows", prepared).hasValue(0);
+		}
+	}
+
+	@Test
+	void preparedNeutralGraphInputRetainsItsSuppliedOrigin() {
+		ValueFactory vf = SimpleValueFactory.getInstance();
+		IRI subject = vf.createIRI("urn:prepared-origin:subject");
+		IRI predicate = vf.createIRI("urn:prepared-origin:predicate");
+		IRI object = vf.createIRI("urn:prepared-origin:object");
+		IRI graph = vf.createIRI("urn:prepared-origin:graph");
+		Statement statement = vf.createStatement(subject, predicate, object, graph);
+		SoftAssertions softly = new SoftAssertions();
+		for (boolean array : List.of(false, true)) {
+			Map<Value, Value> prepared = new IdentityHashMap<>();
+			Function<Value, Value> preparer = value -> value.isIRI()
+					? prepared.computeIfAbsent(value, v -> vf.createIRI(v.stringValue()))
+					: value;
+			QueryEvaluationContext base = new QueryEvaluationContext.Minimal((Dataset) null);
+			QueryEvaluationContext context = array
+					? new ArrayBindingBasedQueryEvaluationContext(base, new String[] { "g", "s", "p", "o" }, null)
+					: base;
+			StatementPattern pattern = new StatementPattern(StatementPattern.Scope.NAMED_CONTEXTS,
+					Var.of("s", subject, true, true), Var.of("p", predicate, true, true),
+					Var.of("o", object, true, true), Var.of("g"));
+			StatementPatternQueryEvaluationStep step = new StatementPatternQueryEvaluationStep(pattern, context,
+					singleStatementSource(statement, preparer));
+			MutableBindingSet input = GraphFrameBindings.supply(context.createBindingSet(), "g", graph);
+			try (CloseableIteration<BindingSet> rows = step.evaluate(input)) {
+				softly.assertThat(rows.hasNext()).as("array=%s row", array).isTrue();
+				if (rows.hasNext()) {
+					BindingSet row = rows.next();
+					softly.assertThat(row.getValue("g"))
+							.as("array=%s prepared graph", array)
+							.isSameAs(prepared.get(graph));
+					softly.assertThat(GraphFrameBindings.isSupplied(row, "g")).as("array=%s origin", array).isTrue();
+				}
+				softly.assertThat(rows.hasNext()).as("array=%s multiplicity", array).isFalse();
+			}
+			softly.assertThat(input.getValue("g")).as("array=%s caller", array).isSameAs(graph);
+		}
+		softly.assertAll();
+	}
+
+	@Test
+	void fullyBoundStatementAndBothGuardsKeepLogicalInputAuthority() {
+		ValueFactory vf = SimpleValueFactory.getInstance();
+		BNode caller = vf.createBNode("caller");
+		IRI subject = vf.createIRI("urn:authority:subject");
+		IRI predicate = vf.createIRI("urn:authority:predicate");
+		Statement statement = vf.createStatement(subject, predicate, caller);
+		Function<Value, Value> preparer = value -> value instanceof BNode node
+				? RepositoryBNode.fromNegotiatedResult(node.getID(), "raw", true)
+				: value;
+		QueryEvaluationContext context = new QueryEvaluationContext.Minimal((Dataset) null);
+		StatementPatternQueryEvaluationStep step = new StatementPatternQueryEvaluationStep(
+				new StatementPattern(Var.of("s"), Var.of("p"), Var.of("x")), context,
+				singleStatementSource(statement, preparer));
+		MutableBindingSet input = context.createBindingSet();
+		input.addBinding("s", subject);
+		input.addBinding("p", predicate);
+		input.addBinding("x", caller);
+		SoftAssertions softly = new SoftAssertions();
+		for (int route = 0; route < 3; route++) {
+			QueryEvaluationStep identity = SingletonIteration::new;
+			try (CloseableIteration<BindingSet> rows = switch (route) {
+			case 0 -> step.evaluate(input);
+			case 1 -> new BoundStatementPatternJoinIteration(new SingletonIteration<>(input), step, step);
+			default -> new BoundStatementPatternLeftJoinIteration(step, step, identity, input);
+			}) {
+				softly.assertThat(rows.hasNext()).as("route %s", route).isTrue();
+				if (rows.hasNext()) {
+					Value output = rows.next().getValue("x");
+					softly.assertThat(output)
+							.as("route %s caller authority", route)
+							.isSameAs(caller)
+							.isNotInstanceOf(RepositoryBNode.class);
+				}
+				softly.assertThat(rows.hasNext()).as("route %s multiplicity", route).isFalse();
+			}
+		}
+		softly.assertAll();
+	}
+
+	private static TripleSource singleStatementSource(Statement statement, Function<Value, Value> preparer) {
+		return new TripleSource() {
+			@Override
+			public CloseableIteration<? extends Statement> getStatements(Resource subject, IRI predicate, Value object,
+					Resource... contexts) {
+				boolean matches = (subject == null || subject.equals(statement.getSubject()))
+						&& (predicate == null || predicate.equals(statement.getPredicate()))
+						&& (object == null || object.equals(statement.getObject()))
+						&& (contexts.length == 0 || Arrays.stream(contexts)
+								.anyMatch(value -> Objects.equals(value, statement.getContext())));
+				return new CloseableIteratorIteration<>(
+						(matches ? List.of(statement) : List.<Statement>of()).iterator());
+			}
+
+			@Override
+			public ValueFactory getValueFactory() {
+				return SimpleValueFactory.getInstance();
+			}
+
+			@Override
+			public Function<Value, Value> getValuePreparer() {
+				return preparer;
+			}
+		};
+	}
+
+	@Test
+	void valuedVariablesRejectConflictingLogicalInputsAcrossLookupPaths() {
+		SoftAssertions softly = new SoftAssertions();
+		for (boolean anonymous : new boolean[] { false, true }) {
+			for (boolean prepared : new boolean[] { false, true }) {
+				for (boolean objectBound : new boolean[] { false, true }) {
+					QueryEvaluationContext context = new QueryEvaluationContext.Minimal((Dataset) null);
+					ExistsProbeTripleSource source = new ExistsProbeTripleSource(prepared);
+					Var fixedPredicate = Var.of("p", source.statement.getPredicate(), anonymous, false);
+					StatementPatternQueryEvaluationStep step = new StatementPatternQueryEvaluationStep(
+							new StatementPattern(Var.of("s"), fixedPredicate, Var.of("o")), context, source);
+					MutableBindingSet conflict = context.createBindingSet();
+					conflict.addBinding("s", source.statement.getSubject());
+					conflict.addBinding("p", source.valueFactory.createIRI("urn:different"));
+					if (objectBound) {
+						conflict.addBinding("o", source.statement.getObject());
+					}
+					String label = "anonymous=" + anonymous + ", prepared=" + prepared + ", objectBound=" + objectBound;
+					try (CloseableIteration<BindingSet> rows = step.evaluate(conflict)) {
+						softly.assertThat(rows.hasNext()).as(label + " rows").isFalse();
+					}
+					softly.assertThat(step.hasStatement(conflict)).as(label + " existence").isFalse();
+					softly.assertThat(step.getFullyBoundStatementCount(conflict)).as(label + " count").isZero();
+					softly.assertThat(source.materializingLookups.get() + source.hasStatementLookups.get()
+							+ source.statementCountLookups.get()).as(label + " physical lookups").isZero();
+				}
+			}
+		}
+		softly.assertAll();
+	}
+
+	@Test
+	void valuedVariableCompatibilityIgnoresConstantsAndHiddenProbes() {
+		QueryEvaluationContext context = new QueryEvaluationContext.Minimal((Dataset) null);
+		ExistsProbeTripleSource source = new ExistsProbeTripleSource();
+		IRI other = source.valueFactory.createIRI("urn:different");
+		MutableBindingSet input = context.createBindingSet();
+		input.addBinding("s", source.statement.getSubject());
+		input.addBinding("p", other);
+		input.addBinding("o", source.statement.getObject());
+		StatementPatternQueryEvaluationStep constant = new StatementPatternQueryEvaluationStep(
+				new StatementPattern(Var.of("s"), Var.of("p", source.statement.getPredicate(), true, true),
+						Var.of("o")),
+				context, source);
+		try (CloseableIteration<BindingSet> rows = constant.evaluate(input)) {
+			assertThat(rows.hasNext()).isTrue();
+			assertThat(rows.next().getValue("p")).isEqualTo(other);
+			assertThat(rows.hasNext()).isFalse();
+		}
+		assertThat(constant.hasStatement(input)).isTrue();
+		assertThat(constant.getFullyBoundStatementCount(input)).isOne();
+
+		MutableBindingSet visible = context.createBindingSet();
+		visible.addBinding("s", source.statement.getSubject());
+		MutableBindingSet probes = context.createBindingSet();
+		probes.addBinding("p", other);
+		BindingSet framed = BindingFrameBindings.push(new BindingFrameBindings.Scope(), visible, probes, context);
+		StatementPatternQueryEvaluationStep named = new StatementPatternQueryEvaluationStep(
+				new StatementPattern(Var.of("s"), Var.of("p", source.statement.getPredicate(), false, false),
+						Var.of("o")),
+				context, source);
+		try (CloseableIteration<BindingSet> rows = named.evaluate(framed)) {
+			assertThat(rows.hasNext()).isTrue();
+			BindingSet row = rows.next();
+			assertThat(row.getValue("p")).isEqualTo(source.statement.getPredicate());
+			assertThat(row.getValue("o")).isEqualTo(source.statement.getObject());
+			assertThat(rows.hasNext()).isFalse();
+		}
+
+		MutableBindingSet compatible = context.createBindingSet();
+		compatible.addBinding("s", source.statement.getSubject());
+		compatible.addBinding("p", source.valueFactory.createIRI(source.statement.getPredicate().stringValue()));
+		compatible.addBinding("o", source.statement.getObject());
+		try (CloseableIteration<BindingSet> rows = named.evaluate(compatible)) {
+			assertThat(rows.hasNext()).isTrue();
+			assertThat(rows.next()).isEqualTo(compatible);
+			assertThat(rows.hasNext()).isFalse();
+		}
+		assertThat(named.hasStatement(compatible)).isTrue();
+		assertThat(named.getFullyBoundStatementCount(compatible)).isOne();
+	}
+
+	@Test
+	void valuedVariablesCheckEveryStatementPosition() {
+		SoftAssertions softly = new SoftAssertions();
+		for (int fixedPosition = 0; fixedPosition < 4; fixedPosition++) {
+			for (boolean prepared : new boolean[] { false, true }) {
+				QueryEvaluationContext context = new QueryEvaluationContext.Minimal((Dataset) null);
+				ExistsProbeTripleSource source = new ExistsProbeTripleSource(prepared);
+				String[] names = { "s", "p", "o", "g" };
+				Value[] values = { source.statement.getSubject(), source.statement.getPredicate(),
+						source.statement.getObject(), source.statement.getContext() };
+				Var[] vars = new Var[names.length];
+				MutableBindingSet conflict = context.createBindingSet();
+				for (int i = 0; i < names.length; i++) {
+					vars[i] = i == fixedPosition ? Var.of(names[i], values[i], false, false) : Var.of(names[i]);
+					conflict.addBinding(names[i],
+							i == fixedPosition ? source.valueFactory.createIRI("urn:different") : values[i]);
+				}
+				StatementPatternQueryEvaluationStep step = new StatementPatternQueryEvaluationStep(
+						new StatementPattern(StatementPattern.Scope.NAMED_CONTEXTS, vars[0], vars[1], vars[2], vars[3]),
+						context, source);
+				String label = names[fixedPosition] + ", prepared=" + prepared;
+				try (CloseableIteration<BindingSet> rows = step.evaluate(conflict)) {
+					softly.assertThat(rows.hasNext()).as(label + " rows").isFalse();
+				}
+				softly.assertThat(step.hasStatement(conflict)).as(label + " existence").isFalse();
+				softly.assertThat(step.getFullyBoundStatementCount(conflict)).as(label + " count").isZero();
+			}
+		}
+		softly.assertAll();
+	}
+
+	@Test
+	void statementGuardFallbacksExecuteThePreparedStep() {
+		for (boolean leftGuard : new boolean[] { false, true }) {
+			for (boolean framed : new boolean[] { false, true }) {
+				QueryEvaluationContext context = new QueryEvaluationContext.Minimal((Dataset) null);
+				ExistsProbeTripleSource source = new ExistsProbeTripleSource();
+				StatementPatternQueryEvaluationStep physical = new StatementPatternQueryEvaluationStep(
+						new StatementPattern(Var.of("s"), Var.of("p"), Var.of("o")), context, source);
+				MutableBindingSet visible = context.createBindingSet();
+				visible.addBinding("s", source.statement.getSubject());
+				visible.addBinding("p", source.statement.getPredicate());
+				BindingSet input = visible;
+				if (framed) {
+					visible.addBinding("o", source.statement.getObject());
+					MutableBindingSet probes = context.createBindingSet();
+					probes.addBinding("hidden", source.valueFactory.createLiteral("outer"));
+					input = BindingFrameBindings.push(new BindingFrameBindings.Scope(), visible, probes, context);
+				}
+				AtomicInteger runtimeCalls = new AtomicInteger();
+				QueryEvaluationStep runtime = bindings -> {
+					runtimeCalls.incrementAndGet();
+					return physical.evaluate(bindings);
+				};
+				QueryEvaluationStep identity = SingletonIteration::new;
+				try (CloseableIteration<BindingSet> rows = leftGuard
+						? new BoundStatementPatternLeftJoinIteration(physical, runtime, identity, input)
+						: new BoundStatementPatternJoinIteration(new SingletonIteration<>(input), physical, runtime)) {
+					assertThat(rows.hasNext()).as("left=%s, framed=%s", leftGuard, framed).isTrue();
+					BindingSet row = rows.next();
+					assertThat(row.getValue("o")).isEqualTo(source.statement.getObject());
+					if (framed) {
+						assertThat(BindingFrameBindings.probeValue(row, "hidden"))
+								.isEqualTo(source.valueFactory.createLiteral("outer"));
+					}
+					assertThat(rows.hasNext()).isFalse();
+				}
+				assertThat(runtimeCalls).as("left=%s, framed=%s", leftGuard, framed).hasValue(1);
+			}
+		}
+	}
+
+	@Test
+	void compositeGuardUsesPreparedStepForFramedRows() {
+		QueryEvaluationContext context = new QueryEvaluationContext.Minimal((Dataset) null);
+		MutableBindingSet probes = context.createBindingSet();
+		Value hidden = SimpleValueFactory.getInstance().createLiteral("outer");
+		probes.addBinding("hidden", hidden);
+		BindingSet framed = BindingFrameBindings.push(new BindingFrameBindings.Scope(), EmptyBindingSet.getInstance(),
+				probes, context);
+		AtomicInteger guardCalls = new AtomicInteger();
+		AtomicInteger runtimeCalls = new AtomicInteger();
+		try (var rows = new BoundStatementPatternGuardJoinIteration(new SingletonIteration<>(framed), bindings -> {
+			guardCalls.incrementAndGet();
+			return 1;
+		}, bindings -> {
+			runtimeCalls.incrementAndGet();
+			return new SingletonIteration<>(bindings);
+		})) {
+			assertThat(rows.hasNext()).isTrue();
+			assertThat(BindingFrameBindings.probeValue(rows.next(), "hidden")).isEqualTo(hidden);
+			assertThat(rows.hasNext()).isFalse();
+		}
+		assertThat(guardCalls).hasValue(0);
+		assertThat(runtimeCalls).hasValue(1);
+	}
+
+	@Test
+	void preparedExistsUsesTheUnframedExistenceProbe() {
+		QueryEvaluationContext context = new QueryEvaluationContext.Minimal((Dataset) null);
+		ExistsProbeTripleSource source = new ExistsProbeTripleSource();
+		DefaultEvaluationStrategy strategy = new DefaultEvaluationStrategy(source, null);
+		QueryValueEvaluationStep exists = strategy.precompile(
+				new Exists(new StatementPattern(Var.of("s"), Var.of("p"), Var.of("o"))), context);
+		MutableBindingSet bindings = context.createBindingSet();
+		bindings.addBinding("s", source.statement.getSubject());
+		bindings.addBinding("p", source.statement.getPredicate());
+		bindings.addBinding("o", source.statement.getObject());
+
+		assertThat(exists.evaluate(bindings)).isEqualTo(BooleanLiteral.TRUE);
+		assertThat(source.hasStatementLookups).hasValue(1);
+		assertThat(source.statementCountLookups).hasValue(0);
+		assertThat(source.materializingLookups).hasValue(0);
+	}
+
+	@Test
+	void preparedExistsUsesFreshReplayForEachFramedInvocation() {
+		AtomicReference<BindingFrame> observedFrame = new AtomicReference<>();
+		AtomicReference<BindingFrameReplay.Domain> observedDomain = new AtomicReference<>();
+		QueryEvaluationContext context = new QueryEvaluationContext.Minimal((Dataset) null) {
+			@Override
+			public Function<BindingSet, Value> getValue(String name) {
+				return bindings -> {
+					observedFrame.set(BindingFrameBindings.from(bindings));
+					observedDomain.set(BindingFrameReplay.domain(bindings));
+					return bindings.getValue(name);
+				};
+			}
+		};
+		ExistsProbeTripleSource source = new ExistsProbeTripleSource();
+		DefaultEvaluationStrategy strategy = new DefaultEvaluationStrategy(source, null);
+		QueryValueEvaluationStep exists = strategy.precompile(
+				new Exists(new StatementPattern(Var.of("s"), Var.of("p"), Var.of("o"))), context);
+		MutableBindingSet visible = context.createBindingSet();
+		visible.addBinding("s", source.statement.getSubject());
+		visible.addBinding("p", source.statement.getPredicate());
+		visible.addBinding("o", source.statement.getObject());
+		try (BindingFrameReplay.Invocation outer = new BindingFrameReplay.Invocation(DefaultCollectionFactory::new,
+				null)) {
+			BindingSet framed = BindingFrameBindings.push(new BindingFrameBindings.Scope(), visible,
+					EmptyBindingSet.getInstance(), context, outer.root);
+			assertThat(exists.evaluate(framed)).isEqualTo(BooleanLiteral.TRUE);
+			BindingFrameReplay.Domain first = observedDomain.get();
+			assertThat(first).isNotNull().isNotSameAs(outer.root);
+			assertThat(BindingFrameBindings.hasLiveReplayDomain(observedFrame.get())).isFalse();
+			assertThat(BindingFrameBindings.hasLiveReplayDomain(BindingFrameBindings.from(framed))).isTrue();
+			assertThat(exists.evaluate(framed)).isEqualTo(BooleanLiteral.TRUE);
+			assertThat(observedDomain.get()).isNotNull().isNotSameAs(first).isNotSameAs(outer.root);
+			assertThat(BindingFrameBindings.hasLiveReplayDomain(observedFrame.get())).isFalse();
+			assertThat(source.hasStatementLookups).hasValue(0);
+		}
+	}
 
 	@Test
 	void hasStatementUsesTripleSourceExistenceProbe() {
@@ -96,6 +644,20 @@ class StatementPatternHasStatementTest {
 				valueFactory.createLiteral("o"),
 				valueFactory.createIRI("urn:graph:one"));
 		private Resource[] lastContexts;
+		private final boolean prepared;
+
+		private ExistsProbeTripleSource() {
+			this(false);
+		}
+
+		private ExistsProbeTripleSource(boolean prepared) {
+			this.prepared = prepared;
+		}
+
+		@Override
+		public Function<Value, Value> getValuePreparer() {
+			return prepared ? value -> value.isIRI() ? valueFactory.createIRI(value.stringValue()) : value : null;
+		}
 
 		@Override
 		public boolean hasStatements(Resource subj, IRI pred, Value obj, Resource... contexts)

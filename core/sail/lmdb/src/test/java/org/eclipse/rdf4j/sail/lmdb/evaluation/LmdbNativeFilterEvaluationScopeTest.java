@@ -41,8 +41,12 @@ import org.eclipse.rdf4j.query.algebra.ValueConstant;
 import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryBindingSet;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryEvaluationStep;
+import org.eclipse.rdf4j.query.algebra.evaluation.impl.ArrayBindingBasedQueryEvaluationContext;
+import org.eclipse.rdf4j.query.algebra.evaluation.impl.BindingFrameBindings;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.GraphFrameBindings;
+import org.eclipse.rdf4j.query.algebra.evaluation.impl.QueryEvaluationContext;
 import org.eclipse.rdf4j.query.impl.EmptyBindingSet;
+import org.eclipse.rdf4j.query.impl.ListBindingSet;
 import org.eclipse.rdf4j.sail.lmdb.ValueStore;
 import org.junit.jupiter.api.Test;
 
@@ -51,6 +55,81 @@ class LmdbNativeFilterEvaluationScopeTest {
 	private static final long SUBJECT = 11L;
 	private static final long PREDICATE = 12L;
 	private static final long OBJECT = 13L;
+
+	@Test
+	void nullContextDomainEqualityIgnoresAbsentDeclaredBaseSlots() throws Exception {
+		SyntheticValueSource source = evaluationSource(false);
+		BindingSet declaredOnlyBase = new ListBindingSet(List.of("y"), (Value) null);
+		RowState marker = nullContextRow(source, singleSlotLayout("x"), declaredOnlyBase);
+		try {
+			BindingSet nativeRow = marker.view;
+			assertThat(nativeRow.size()).isEqualTo(1);
+			assertThat(nativeRow.getBindingNames()).containsExactlyInAnyOrder("x", "y");
+			assertThat(nativeRow.hasBinding("x")).isTrue();
+			assertThat(nativeRow.hasBinding("y")).as("the base only declares y; it does not supply it").isFalse();
+			assertThat(nativeRow.getBinding("x")).isNull();
+			assertThat(nativeRow.iterator().hasNext()).isFalse();
+			QueryBindingSet expected = new QueryBindingSet();
+			expected.setBinding("x", null);
+			BindingSet directCopy = new QueryBindingSet(nativeRow);
+			BindingSet arrayCopy = new ArrayBindingBasedQueryEvaluationContext(new QueryEvaluationContext.Minimal(null),
+					new String[] { "x", "y" }, null).createBindingSet(nativeRow);
+			BindingSet[] equivalents = { nativeRow, expected, directCopy, arrayCopy };
+			SoftAssertions softly = new SoftAssertions();
+			for (BindingSet left : equivalents) {
+				softly.assertThat(left.size()).isEqualTo(1);
+				softly.assertThat(left.hasBinding("x")).isTrue();
+				softly.assertThat(left.hasBinding("y")).isFalse();
+				softly.assertThat(left.getBindingNames()).filteredOn(left::hasBinding).containsExactly("x");
+				softly.assertThat(left.getValue("x")).isNull();
+				softly.assertThat(left.getBinding("x")).isNull();
+				softly.assertThat(left.hashCode()).isEqualTo(expected.hashCode());
+				for (BindingSet right : equivalents) {
+					softly.assertThatCode(() -> assertThat(left.equals(right)).isTrue())
+							.as("source presence determines equality in both directions")
+							.doesNotThrowAnyException();
+				}
+			}
+			softly.assertThatCode(() -> {
+				assertThat(expected.equals(directCopy)).isTrue();
+				assertThat(directCopy.equals(nativeRow)).isTrue();
+				assertThat(expected.equals(nativeRow)).as("equality remains transitive").isTrue();
+			}).doesNotThrowAnyException();
+			softly.assertThat(declaredOnlyBase.hasBinding("y")).isFalse();
+			softly.assertThat(nativeRow.hasBinding("x")).isTrue();
+			softly.assertAll();
+		} finally {
+			source.executionContext().close();
+		}
+	}
+
+	@Test
+	void projectedNativeFramesRetainOnlyAllowedWithheldInputs() throws Exception {
+		QueryEvaluationContext context = new QueryEvaluationContext.Minimal(null);
+		Value allowed = SimpleValueFactory.getInstance().createLiteral("allowed");
+		Value hidden = SimpleValueFactory.getInstance().createLiteral("hidden");
+		QueryBindingSet invocation = new QueryBindingSet();
+		invocation.addBinding("keep", allowed);
+		invocation.addBinding("hidden", hidden);
+		BindingSet framed = BindingFrameBindings.without(invocation, Set.of("keep", "hidden"), context);
+		SyntheticValueSource source = evaluationSource(false);
+		try {
+			source.executionContext().initializeQueryBase(framed);
+			NativeSlotLayout layout = singleSlotLayout("keep");
+			RowState row = new RowState(source, layout, framed);
+			RowState projected = row.projectConditionInput(Set.of("keep"));
+			BindingSet projectedBase = projected.base;
+			BindingSet queryBase = ((SyntheticValueSource) projected.source).executionContext().queryBase();
+			SoftAssertions softly = new SoftAssertions();
+			softly.assertThat(BindingFrameBindings.withheldInput(projectedBase, "keep")).isEqualTo(allowed);
+			softly.assertThat(BindingFrameBindings.withheldInput(projectedBase, "hidden")).isNull();
+			softly.assertThat(BindingFrameBindings.withheldInput(queryBase, "keep")).isEqualTo(allowed);
+			softly.assertThat(BindingFrameBindings.withheldInput(queryBase, "hidden")).isNull();
+			softly.assertAll();
+		} finally {
+			source.executionContext().close();
+		}
+	}
 
 	@Test
 	void existsPredicatesBindIndependentWorkersWithoutSharingSnapshotMemo() throws Exception {

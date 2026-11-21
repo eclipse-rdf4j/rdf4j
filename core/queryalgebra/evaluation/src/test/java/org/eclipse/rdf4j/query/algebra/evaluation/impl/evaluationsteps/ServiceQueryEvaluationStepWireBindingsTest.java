@@ -43,10 +43,12 @@ import org.eclipse.rdf4j.query.QueryLanguage;
 import org.eclipse.rdf4j.query.algebra.Service;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.algebra.Var;
+import org.eclipse.rdf4j.query.algebra.evaluation.QueryBindingSet;
 import org.eclipse.rdf4j.query.algebra.evaluation.TripleSource;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.DefaultEvaluationStrategy;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.BindingSetAssignmentInlinerOptimizer;
 import org.eclipse.rdf4j.query.algebra.helpers.AbstractSimpleQueryModelVisitor;
+import org.eclipse.rdf4j.query.impl.BindingSetSnapshots;
 import org.eclipse.rdf4j.query.impl.EmptyBindingSet;
 import org.eclipse.rdf4j.query.impl.IteratingTupleQueryResult;
 import org.eclipse.rdf4j.query.impl.MapBindingSet;
@@ -103,6 +105,28 @@ class ServiceQueryEvaluationStepWireBindingsTest {
 	}
 
 	@Test
+	void explicitNullCallerNamesRemainPresentAcrossScalarService() throws Exception {
+		QueryBindingSet caller = new QueryBindingSet();
+		caller.setBinding("o", null);
+		caller.setBinding("callerOnly", null);
+		QueryBindingSet first = new QueryBindingSet(caller);
+		first.setBinding("x", FIRST);
+		QueryBindingSet second = new QueryBindingSet(caller);
+		second.setBinding("x", SECOND);
+
+		assertWireRows("?x <urn:p> ?o", caller, Set.of(), List.of(first, second));
+	}
+
+	@Test
+	void explicitNullsForAllServiceOutputsStillRequireSelectMultiplicity() throws Exception {
+		QueryBindingSet caller = new QueryBindingSet();
+		caller.setBinding("x", null);
+		caller.setBinding("o", null);
+
+		assertWireRows("?x <urn:p> ?o", caller, Set.of(), List.of(caller, caller));
+	}
+
+	@Test
 	void trueApiInputConstrainsValuesUnionWithoutBeingOverwritten() throws Exception {
 		MapBindingSet input = new MapBindingSet();
 		input.addBinding("x", FIRST);
@@ -140,6 +164,11 @@ class ServiceQueryEvaluationStepWireBindingsTest {
 		List<BindingSet> expected = evaluate(sourceQuery, input).stream().map(row -> merge(input, row)).toList();
 		assertThat(expected).as("the independent source request must produce rows").isNotEmpty();
 
+		assertWireRows(body, input, expectedAssigned, expected);
+	}
+
+	private static void assertWireRows(String body, BindingSet input, Set<Value> expectedAssigned,
+			List<BindingSet> expected) throws Exception {
 		AtomicReference<Service> serviceHolder = new AtomicReference<>();
 		TupleExpr parsed = QueryParserUtil.parseTupleQuery(QueryLanguage.SPARQL,
 				"SELECT * WHERE { SERVICE <urn:endpoint> { " + body + " } }", null).getTupleExpr();
@@ -226,7 +255,7 @@ class ServiceQueryEvaluationStepWireBindingsTest {
 	private static List<BindingSet> collect(CloseableIteration<BindingSet> rows) {
 		List<BindingSet> collected = new ArrayList<>();
 		while (rows.hasNext()) {
-			collected.add(merge(EmptyBindingSet.getInstance(), rows.next()));
+			collected.add(BindingSetSnapshots.copyOf(rows.next()));
 		}
 		return collected;
 	}

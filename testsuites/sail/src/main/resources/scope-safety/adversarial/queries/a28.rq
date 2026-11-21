@@ -1,0 +1,1 @@
+PREFIX : <http://example.org/> SELECT * WHERE { VALUES ?x { :x } OPTIONAL { FILTER(BOUND(?x)) BIND(:y AS ?y) BIND(?x AS ?z) } }

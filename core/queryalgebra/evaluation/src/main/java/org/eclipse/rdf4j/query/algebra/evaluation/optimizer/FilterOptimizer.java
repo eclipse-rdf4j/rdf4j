@@ -13,7 +13,9 @@ package org.eclipse.rdf4j.query.algebra.evaluation.optimizer;
 
 import java.util.ArrayList;
 import java.util.HashSet;
+import java.util.IdentityHashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
 
@@ -125,16 +127,55 @@ public class FilterOptimizer implements QueryOptimizer {
 		Objects.requireNonNull(tupleExpr, "tupleExpr must not be null");
 		QueryEvaluationUtility.withQuerySafetySnapshot(tupleExpr, () -> {
 			QueryAlgebraBindingAnalysis analysis = QueryAlgebraBindingAnalysis.withBindingValues(tupleExpr, bindings);
-			optimizeScope(tupleExpr, analysis);
+			LocalOutputProof localOutputs = new LocalOutputProof(
+					QueryEvaluationUtility.preparedFilterPlacementFacts(tupleExpr));
+			optimizeScope(tupleExpr, analysis, localOutputs);
 			return null;
 		});
+	}
+
+	/** Invalidation-only overlay on the phase's immutable non-null output facts. */
+	private static final class LocalOutputProof implements QueryEvaluationUtility.PreparedFilterPlacementFacts {
+		private final QueryEvaluationUtility.PreparedFilterPlacementFacts captured;
+		private final Map<QueryModelNode, QueryModelNode> dirtyParents = new IdentityHashMap<>();
+
+		private LocalOutputProof(QueryEvaluationUtility.PreparedFilterPlacementFacts captured) {
+			this.captured = captured;
+		}
+
+		@Override
+		public boolean test(QueryModelNode node, String name) {
+			return !dirtyParents.containsKey(node) && captured.test(node, name);
+		}
+
+		@Override
+		public boolean cannotInjectIntoProducer(QueryModelNode node) {
+			return !dirtyParents.containsKey(node) && captured.cannotInjectIntoProducer(node);
+		}
+
+		@Override
+		public boolean stableFilterExpression(QueryModelNode node) {
+			return !dirtyParents.containsKey(node) && captured.stableFilterExpression(node);
+		}
+
+		private void invalidate(QueryModelNode node) {
+			while (node != null) {
+				QueryModelNode parent = node.getParentNode();
+				boolean unchangedPath = dirtyParents.containsKey(node) && dirtyParents.get(node) == parent;
+				dirtyParents.put(node, parent);
+				if (unchangedPath) {
+					break;
+				}
+				node = parent;
+			}
+		}
 	}
 
 	/**
 	 * Bottom‑up optimisation: optimise each child subtree that starts a new variable scope, then run the three filter
 	 * passes on the current subtree.
 	 */
-	private void optimizeScope(TupleExpr expr, QueryAlgebraBindingAnalysis analysis) {
+	private void optimizeScope(TupleExpr expr, QueryAlgebraBindingAnalysis analysis, LocalOutputProof localOutputs) {
 		// 1) recurse into nested scopes first
 		expr.visit(new AbstractQueryModelVisitor<>() {
 			final TupleExpr current = expr;
@@ -144,7 +185,7 @@ public class FilterOptimizer implements QueryOptimizer {
 				if (node != current && node instanceof TupleExpr && node instanceof VariableScopeChange
 						&& ((VariableScopeChange) node).isVariableScopeChange()) {
 
-					optimizeScope(((TupleExpr) node), analysis);
+					optimizeScope(((TupleExpr) node), analysis, localOutputs);
 					// do NOT traverse further into that subtree with this visitor
 				} else {
 					super.meetNode(node);
@@ -154,10 +195,10 @@ public class FilterOptimizer implements QueryOptimizer {
 		});
 
 		// 2) run the three filter passes for *this* scope
-		expr.visit(new FilterUnMerger(analysis));
-		expr.visit(new FilterOrganizer(statistics, considerJoinPlacementCost, analysis, strategy));
+		expr.visit(new FilterUnMerger(analysis, localOutputs));
+		expr.visit(new FilterOrganizer(statistics, considerJoinPlacementCost, analysis, strategy, localOutputs));
 		if (mergeAdjacentFilters) {
-			expr.visit(new FilterMerger(statistics, analysis));
+			expr.visit(new FilterMerger(statistics, analysis, localOutputs));
 		}
 	}
 
@@ -274,10 +315,12 @@ public class FilterOptimizer implements QueryOptimizer {
 	private static class FilterUnMerger extends AbstractSimpleQueryModelVisitor<RuntimeException> {
 
 		private final QueryAlgebraBindingAnalysis analysis;
+		private final LocalOutputProof localOutputs;
 
-		private FilterUnMerger(QueryAlgebraBindingAnalysis analysis) {
+		private FilterUnMerger(QueryAlgebraBindingAnalysis analysis, LocalOutputProof localOutputs) {
 			super(false);
 			this.analysis = analysis;
+			this.localOutputs = localOutputs;
 		}
 
 		@Override
@@ -290,6 +333,7 @@ public class FilterOptimizer implements QueryOptimizer {
 					return;
 				}
 				ConditionBindingScope bindingScope = FilterBindingScope.resolve(filter);
+				localOutputs.invalidate(filter);
 				TupleExpr newArg = filter.getArg().clone();
 				for (int i = 0; i < constraints.size() - 1; i++) {
 					Filter newFilter = new Filter(newArg, FilterBindingScope
@@ -302,6 +346,7 @@ public class FilterOptimizer implements QueryOptimizer {
 						declarations));
 				filter.setConditionBindingScope(bindingScope);
 				filter.replaceChildNode(filter.getArg(), newArg);
+				localOutputs.invalidate(filter);
 				analysis.invalidate();
 			}
 			super.meet(filter);
@@ -321,11 +366,14 @@ public class FilterOptimizer implements QueryOptimizer {
 
 		private final EvaluationStatistics statistics;
 		private final QueryAlgebraBindingAnalysis analysis;
+		private final LocalOutputProof localOutputs;
 
-		private FilterMerger(EvaluationStatistics statistics, QueryAlgebraBindingAnalysis analysis) {
+		private FilterMerger(EvaluationStatistics statistics, QueryAlgebraBindingAnalysis analysis,
+				LocalOutputProof localOutputs) {
 			super(false);
 			this.statistics = statistics;
 			this.analysis = analysis;
+			this.localOutputs = localOutputs;
 		}
 
 		@Override
@@ -351,7 +399,9 @@ public class FilterOptimizer implements QueryOptimizer {
 					newFilter.setConditionBindingScope(FilterBindingScope.resolve(filter));
 				}
 				FilterSelectivityTelemetry.annotate(newFilter, statistics);
+				localOutputs.invalidate(filter);
 				parent.replaceChildNode(filter, newFilter);
+				localOutputs.invalidate(newFilter);
 				analysis.invalidate();
 			}
 		}
@@ -363,20 +413,22 @@ public class FilterOptimizer implements QueryOptimizer {
 		private final boolean considerJoinPlacementCost;
 		private final QueryAlgebraBindingAnalysis analysis;
 		private final EvaluationStrategy strategy;
+		private final LocalOutputProof localOutputs;
 
 		public FilterOrganizer(EvaluationStatistics statistics, boolean considerJoinPlacementCost,
-				QueryAlgebraBindingAnalysis analysis, EvaluationStrategy strategy) {
+				QueryAlgebraBindingAnalysis analysis, EvaluationStrategy strategy, LocalOutputProof localOutputs) {
 			super(false);
 			this.statistics = statistics;
 			this.considerJoinPlacementCost = considerJoinPlacementCost;
 			this.analysis = analysis;
 			this.strategy = strategy;
+			this.localOutputs = localOutputs;
 		}
 
 		@Override
 		public void meet(Filter filter) {
 			super.meet(filter);
-			FilterRelocator.optimize(filter, statistics, considerJoinPlacementCost, analysis, strategy);
+			FilterRelocator.optimize(filter, statistics, considerJoinPlacementCost, analysis, strategy, localOutputs);
 			FilterSelectivityTelemetry.annotate(filter, statistics);
 		}
 	}
@@ -389,29 +441,32 @@ public class FilterOptimizer implements QueryOptimizer {
 		private final QueryAlgebraBindingAnalysis analysis;
 		private final FilterPlacementRules placementRules;
 		private final EvaluationStrategy strategy;
+		private final LocalOutputProof localOutputs;
 
 		private FilterRelocator(Filter filter, EvaluationStatistics statistics, boolean considerJoinPlacementCost,
-				QueryAlgebraBindingAnalysis analysis, EvaluationStrategy strategy) {
+				QueryAlgebraBindingAnalysis analysis, EvaluationStrategy strategy, LocalOutputProof localOutputs) {
 			this.filter = filter;
 			this.statistics = statistics;
 			this.considerJoinPlacementCost = considerJoinPlacementCost;
 			this.analysis = analysis;
-			this.placementRules = new FilterPlacementRules(filter, analysis);
+			this.placementRules = new FilterPlacementRules(filter, analysis, localOutputs);
 			this.strategy = strategy;
+			this.localOutputs = localOutputs;
 		}
 
 		public static void optimize(Filter filter, EvaluationStatistics statistics, boolean considerJoinPlacementCost,
-				QueryAlgebraBindingAnalysis analysis, EvaluationStrategy strategy) {
-			if (filter.getParentNode() == null || simplify(filter, analysis, strategy)) {
+				QueryAlgebraBindingAnalysis analysis, EvaluationStrategy strategy, LocalOutputProof localOutputs) {
+			if (filter.getParentNode() == null || simplify(filter, analysis, strategy, localOutputs)) {
 				return;
 			}
 			if (filter.getParentNode() != null && AlgebraEvaluationSafety.isRepeatable(filter.getCondition())) {
-				filter.visit(new FilterRelocator(filter, statistics, considerJoinPlacementCost, analysis, strategy));
+				filter.visit(new FilterRelocator(filter, statistics, considerJoinPlacementCost, analysis, strategy,
+						localOutputs));
 			}
 		}
 
 		private static boolean simplify(Filter filter, QueryAlgebraBindingAnalysis analysis,
-				EvaluationStrategy strategy) {
+				EvaluationStrategy strategy, LocalOutputProof localOutputs) {
 			// This is the argument's output before this filter. Filter output facts already include BOUND/type
 			// refinements and would make a proof that the same condition is redundant circular.
 			var input = analysis.childInput(filter, filter.getCondition(), analysis.contextAt(filter));
@@ -423,13 +478,18 @@ public class FilterOptimizer implements QueryOptimizer {
 				empty.setDeclaredBindingNames(filter.getBindingNames());
 				empty.setBindingSets(List.of());
 				empty.setCardinality(0);
+				localOutputs.invalidate(filter);
 				QueryModelNormalizerOptimizer.replacePreservingScope(filter, empty);
+				localOutputs.invalidate(empty);
 				analysis.invalidate();
 				return true;
 			}
 			if (simplified.verdict() == FilterConditionSimplifier.FilterVerdict.ALWAYS_TRUE
 					&& filter.getBindingNames().equals(filter.getArg().getBindingNames())) {
-				QueryModelNormalizerOptimizer.replacePreservingScope(filter, filter.getArg());
+				TupleExpr replacement = filter.getArg();
+				localOutputs.invalidate(filter);
+				QueryModelNormalizerOptimizer.replacePreservingScope(filter, replacement);
+				localOutputs.invalidate(replacement);
 				analysis.invalidate();
 				return true;
 			}
@@ -440,6 +500,7 @@ public class FilterOptimizer implements QueryOptimizer {
 				Set<String> declarations = filter.getBindingNames();
 				Filter candidate = new Filter(filter.getArg().clone(), simplified.condition().clone());
 				if (declarations.equals(candidate.getBindingNames())) {
+					localOutputs.invalidate(filter);
 					filter.setConditionBindingScope(bindingScope);
 					filter.setCondition(simplified.condition());
 					analysis.invalidate();
@@ -465,6 +526,10 @@ public class FilterOptimizer implements QueryOptimizer {
 					// The left operand preserves the condition's required values for every row.
 					join.getLeftArg().visit(this);
 				}
+			} else if (join.getRightArg() instanceof Union union
+					&& placementRules.canDistributeIntoScopedJoinRight(join, union)) {
+				// Keep the UNION itself in the join's independent operand position.
+				placeUnionArmFilters(union);
 			} else if (placementRules.canMoveIntoJoinChild(join.getRightArg(), join.getLeftArg(), false)) {
 				if (shouldKeepFilterAtJoin(join, join.getRightArg())) {
 					relocate(filter, join);
@@ -501,23 +566,28 @@ public class FilterOptimizer implements QueryOptimizer {
 				relocate(filter, placementRules.scopeBoundaryTarget(union));
 				return;
 			}
+			Filter clone = placeUnionArmFilters(union);
+			FilterRelocator.optimize(filter, statistics, considerJoinPlacementCost, analysis, strategy, localOutputs);
+			FilterRelocator.optimize(clone, statistics, considerJoinPlacementCost, analysis, strategy, localOutputs);
+			collapseEmptyUnion(union);
+		}
 
+		private Filter placeUnionArmFilters(Union union) {
 			TupleExpr rightArg = union.getRightArg();
 			Filter clone = new Filter();
 			clone.setCondition(filter.getCondition().clone());
 			boolean explicitScope = !filter.getConditionBindingScope().isAuto();
+			localOutputs.invalidate(union);
 			union.replaceChildNode(rightArg, clone);
 			clone.setArg(rightArg);
+			localOutputs.invalidate(clone);
 			if (explicitScope || !FilterBindingScope.resolve(clone).equals(placementRules.conditionBindingScope())) {
 				clone.setConditionBindingScope(placementRules.conditionBindingScope());
 			}
 			analysis.invalidate();
 
 			relocate(filter, union.getLeftArg());
-
-			FilterRelocator.optimize(filter, statistics, considerJoinPlacementCost, analysis, strategy);
-			FilterRelocator.optimize(clone, statistics, considerJoinPlacementCost, analysis, strategy);
-			collapseEmptyUnion(union);
+			return clone;
 		}
 
 		private void collapseEmptyUnion(Union union) {
@@ -535,12 +605,16 @@ public class FilterOptimizer implements QueryOptimizer {
 				empty.setDeclaredBindingNames(union.getBindingNames());
 				empty.setBindingSets(List.of());
 				empty.setCardinality(0);
+				localOutputs.invalidate(union);
 				QueryModelNormalizerOptimizer.replacePreservingScope(union, empty);
+				localOutputs.invalidate(empty);
 				analysis.invalidate();
 			} else if (leftEmpty || rightEmpty) {
 				TupleExpr live = leftEmpty ? union.getRightArg() : union.getLeftArg();
 				if (union.getBindingNames().equals(live.getBindingNames())) {
+					localOutputs.invalidate(union);
 					QueryModelNormalizerOptimizer.replacePreservingScope(union, live);
+					localOutputs.invalidate(live);
 					analysis.invalidate();
 				}
 			}
@@ -548,7 +622,7 @@ public class FilterOptimizer implements QueryOptimizer {
 
 		@Override
 		public void meet(Difference node) {
-			if (placementRules.candidateHasKnownDependencies(node.getLeftArg())
+			if (placementRules.canMoveIntoDifferenceLeft(node)
 					&& AlgebraEvaluationSafety.isRepeatable(node.getRightArg())) {
 				// A filter over MINUS may be pushed into the left argument when all of its variables are left-visible.
 				// It
@@ -556,7 +630,8 @@ public class FilterOptimizer implements QueryOptimizer {
 				// and
 				// changes whether a compatible right row removes the left row.
 				relocate(filter, node.getLeftArg());
-				FilterRelocator.optimize(filter, statistics, considerJoinPlacementCost, analysis, strategy);
+				FilterRelocator.optimize(filter, statistics, considerJoinPlacementCost, analysis, strategy,
+						localOutputs);
 			} else {
 				relocate(filter, node);
 			}
@@ -574,14 +649,16 @@ public class FilterOptimizer implements QueryOptimizer {
 			clone.setCondition(filter.getCondition().clone());
 			transferScopeChange(filter, clone);
 			clone.setConditionBindingScope(placementRules.conditionBindingScope());
+			localOutputs.invalidate(node);
 			node.replaceChildNode(rightArg, clone);
 			clone.setArg(rightArg);
+			localOutputs.invalidate(clone);
 			analysis.invalidate();
 
 			relocate(filter, node.getLeftArg());
 
-			FilterRelocator.optimize(filter, statistics, considerJoinPlacementCost, analysis, strategy);
-			FilterRelocator.optimize(clone, statistics, considerJoinPlacementCost, analysis, strategy);
+			FilterRelocator.optimize(filter, statistics, considerJoinPlacementCost, analysis, strategy, localOutputs);
+			FilterRelocator.optimize(clone, statistics, considerJoinPlacementCost, analysis, strategy, localOutputs);
 		}
 
 		@Override
@@ -597,7 +674,10 @@ public class FilterOptimizer implements QueryOptimizer {
 		public void meet(EmptySet node) {
 			if (filter.getParentNode() != null) {
 				// Remove filter from its original location
-				filter.replaceWith(filter.getArg().clone());
+				TupleExpr replacement = filter.getArg().clone();
+				localOutputs.invalidate(filter);
+				filter.replaceWith(replacement);
+				localOutputs.invalidate(replacement);
 				analysis.invalidate();
 			}
 		}
@@ -623,7 +703,11 @@ public class FilterOptimizer implements QueryOptimizer {
 
 		@Override
 		public void meet(Distinct node) {
-			node.getArg().visit(this);
+			if (placementRules.canMoveThroughModifier(node)) {
+				node.getArg().visit(this);
+			} else {
+				relocate(filter, placementRules.scopeBoundaryTarget(node));
+			}
 		}
 
 		@Override
@@ -631,32 +715,45 @@ public class FilterOptimizer implements QueryOptimizer {
 			if (placementRules.canMoveThroughOrder(node)) {
 				node.getArg().visit(this);
 			} else {
-				relocate(filter, node);
+				relocate(filter, placementRules.scopeBoundaryTarget(node));
 			}
 		}
 
 		@Override
 		public void meet(QueryRoot node) {
-			node.getArg().visit(this);
+			if (placementRules.canMoveThroughModifier(node)) {
+				node.getArg().visit(this);
+			} else {
+				relocate(filter, node);
+			}
 		}
 
 		@Override
 		public void meet(Reduced node) {
-			node.getArg().visit(this);
+			if (placementRules.canMoveThroughModifier(node)) {
+				node.getArg().visit(this);
+			} else {
+				relocate(filter, placementRules.scopeBoundaryTarget(node));
+			}
 		}
 
 		private void relocate(Filter filter, TupleExpr newFilterArg) {
-			if (filter.getArg() != newFilterArg && filter.getParentNode() != null) {
+			if (filter.getArg() != newFilterArg && filter.getParentNode() != null
+					&& placementRules.candidateKeepsConditionOwners(newFilterArg)) {
 				ConditionBindingScope originalScope = placementRules.conditionBindingScope();
 				boolean explicitScope = !filter.getConditionBindingScope().isAuto();
 				// Preserve the group's input boundary, including an unmarked layer around an already marked child.
 				// The moved condition is a gate, not a new branch-local group root.
+				localOutputs.invalidate(filter);
+				localOutputs.invalidate(newFilterArg);
 				QueryModelNormalizerOptimizer.replacePreservingScope(filter, filter.getArg());
 				filter.setVariableScopeChange(false);
 
 				// Insert filter at the new location
 				newFilterArg.replaceWith(filter);
 				filter.setArg(newFilterArg);
+				localOutputs.invalidate(filter);
+				localOutputs.invalidate(newFilterArg);
 				if (explicitScope) {
 					filter.setConditionBindingScope(originalScope);
 				} else {

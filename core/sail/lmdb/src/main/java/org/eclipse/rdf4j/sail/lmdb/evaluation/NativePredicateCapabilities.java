@@ -19,17 +19,24 @@ import org.eclipse.rdf4j.sail.lmdb.evaluation.fragment.EffectClass;
  * shared or rebound. The read mask is -1 when a lexical dependency is not expressible in the current slot frame.
  */
 record NativePredicateCapabilities(long correlationReads, EffectClass effects, boolean fixedPlacement,
-		boolean replaySafe, boolean workerBindable, boolean requiresQueryScope, boolean requiresCompleteReads) {
+		boolean replaySafe, boolean workerBindable, boolean requiresQueryScope, boolean requiresCompleteReads,
+		long certifiedOwnerInputs) {
+
+	NativePredicateCapabilities(long correlationReads, EffectClass effects, boolean fixedPlacement,
+			boolean replaySafe, boolean workerBindable, boolean requiresQueryScope, boolean requiresCompleteReads) {
+		this(correlationReads, effects, fixedPlacement, replaySafe, workerBindable, requiresQueryScope,
+				requiresCompleteReads, 0L);
+	}
 
 	static NativePredicateCapabilities opaque(long reads) {
 		return new NativePredicateCapabilities(reads, EffectClass.SIDE_EFFECTING_OR_UNSUPPORTED, true, false, false,
-				false, false);
+				false, false, 0L);
 	}
 
 	/** Semantic callbacks may read implicit input names that a placement mask alone cannot describe. */
 	static NativePredicateCapabilities semantic(long reads) {
 		return new NativePredicateCapabilities(reads, EffectClass.SIDE_EFFECTING_OR_UNSUPPORTED, true, false, false,
-				false, true);
+				false, true, 0L);
 	}
 
 	static NativePredicateCapabilities scalar(NativeScalarPlan plan) {
@@ -38,17 +45,17 @@ record NativePredicateCapabilities(long correlationReads, EffectClass effects, b
 		}
 		return new NativePredicateCapabilities(plan.dependencyMask(), plan.effect(), false,
 				plan.canReuseAcrossSolutions(true), plan.workerBindable(), plan.effect() == EffectClass.QUERY_STABLE,
-				false);
+				false, 0L);
 	}
 
 	static NativePredicateCapabilities snapshot(long reads, boolean replaySafe, boolean workerBindable) {
 		return new NativePredicateCapabilities(reads, EffectClass.QUERY_STABLE, true, replaySafe, workerBindable,
-				false, true);
+				false, true, 0L);
 	}
 
 	NativePredicateCapabilities atPlacement(long placementMask) {
 		return new NativePredicateCapabilities(correlationReads, effects, placementMask < 0L, replaySafe,
-				workerBindable, requiresQueryScope, requiresCompleteReads);
+				workerBindable, requiresQueryScope, requiresCompleteReads, certifiedOwnerInputs);
 	}
 
 	/** A specialized wrapper must not erase an underlying callback's independent runtime read contract. */
@@ -59,7 +66,13 @@ record NativePredicateCapabilities(long correlationReads, EffectClass effects, b
 		long reads = correlationReads < 0L || underlying.correlationReads < 0L ? -1L
 				: correlationReads | underlying.correlationReads;
 		return new NativePredicateCapabilities(reads, effects, fixedPlacement, replaySafe, workerBindable,
-				requiresQueryScope, true);
+				requiresQueryScope, true, certifiedOwnerInputs & underlying.certifiedOwnerInputs);
+	}
+
+	NativePredicateCapabilities withCertifiedInputs(long reads, long ownerInputs) {
+		long complete = correlationReads < 0L ? -1L : correlationReads | reads;
+		return new NativePredicateCapabilities(complete, effects, fixedPlacement, replaySafe, workerBindable,
+				requiresQueryScope, true, ownerInputs);
 	}
 
 	/**
@@ -88,6 +101,7 @@ record NativePredicateCapabilities(long correlationReads, EffectClass effects, b
 		EffectClass effect = effects.ordinal() >= other.effects.ordinal() ? effects : other.effects;
 		return new NativePredicateCapabilities(reads, effect, fixedPlacement || other.fixedPlacement,
 				replaySafe && other.replaySafe, workerBindable && other.workerBindable,
-				requiresQueryScope || other.requiresQueryScope, requiresCompleteReads || other.requiresCompleteReads);
+				requiresQueryScope || other.requiresQueryScope, requiresCompleteReads || other.requiresCompleteReads,
+				certifiedOwnerInputs & other.certifiedOwnerInputs);
 	}
 }

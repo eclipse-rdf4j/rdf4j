@@ -15,6 +15,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.eclipse.rdf4j.query.algebra.evaluation.impl.evaluationsteps.AdaptiveFilterPlacementController.CONTROL_COHORTS;
 import static org.eclipse.rdf4j.query.algebra.evaluation.impl.evaluationsteps.AdaptiveFilterPlacementController.TRIAL_COHORTS;
+import static org.junit.jupiter.api.Assertions.assertAll;
 
 import java.util.ArrayList;
 import java.util.HashMap;
@@ -30,11 +31,13 @@ import java.util.function.IntFunction;
 
 import org.eclipse.rdf4j.common.iteration.AbstractCloseableIteration;
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
+import org.eclipse.rdf4j.common.iteration.SingletonIteration;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.Statement;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.ValueFactory;
+import org.eclipse.rdf4j.model.impl.BooleanLiteral;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.QueryEvaluationException;
@@ -43,18 +46,24 @@ import org.eclipse.rdf4j.query.algebra.Compare;
 import org.eclipse.rdf4j.query.algebra.Exists;
 import org.eclipse.rdf4j.query.algebra.Filter;
 import org.eclipse.rdf4j.query.algebra.Join;
+import org.eclipse.rdf4j.query.algebra.Lateral;
 import org.eclipse.rdf4j.query.algebra.LeftJoin;
 import org.eclipse.rdf4j.query.algebra.Not;
 import org.eclipse.rdf4j.query.algebra.Order;
 import org.eclipse.rdf4j.query.algebra.QueryRoot;
+import org.eclipse.rdf4j.query.algebra.SingletonSet;
 import org.eclipse.rdf4j.query.algebra.StatementPattern;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
+import org.eclipse.rdf4j.query.algebra.TupleFunctionCall;
 import org.eclipse.rdf4j.query.algebra.Union;
 import org.eclipse.rdf4j.query.algebra.ValueConstant;
 import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryBindingSet;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryEvaluationStep;
 import org.eclipse.rdf4j.query.algebra.evaluation.TripleSource;
+import org.eclipse.rdf4j.query.algebra.evaluation.function.TupleFunction;
+import org.eclipse.rdf4j.query.algebra.evaluation.function.TupleFunctionRegistry;
+import org.eclipse.rdf4j.query.algebra.evaluation.impl.BindingFrameBindings;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.DefaultEvaluationStrategy;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.EvaluationStatistics;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.QueryEvaluationContext;
@@ -72,6 +81,95 @@ class AdaptiveFilterPlacementTest {
 	private static final IRI CONDITION = VF.createIRI("urn:condition");
 	private static final IRI NAME = VF.createIRI("urn:name");
 	private static final int SUBJECTS = 4096;
+
+	@Test
+	void adaptiveTupleArgumentKeepsItsPrivateRecipient() {
+		CountingSource source = passingSource(1, 1);
+		String uri = "urn:adaptive:tuple-private-argument";
+		Value caller = VF.createLiteral("adaptive caller");
+		Value local = VF.createLiteral("adaptive local");
+		List<List<Value>> observed = new ArrayList<>();
+		List<QueryEvaluationStep> preparedLeaves = new ArrayList<>();
+		List<QueryEvaluationContext> leafContexts = new ArrayList<>();
+		TupleFunction function = new TupleFunction() {
+			@Override
+			public String getURI() {
+				return uri;
+			}
+
+			@Override
+			public CloseableIteration<? extends List<? extends Value>> evaluate(ValueFactory factory, Value... args) {
+				observed.add(List.of(args));
+				return new SingletonIteration<>(List.of(local));
+			}
+		};
+		TupleFunctionRegistry registry = TupleFunctionRegistry.getInstance();
+		registry.add(function);
+		try {
+			Filter adaptive = (Filter) passingQuery();
+			TupleFunctionCall call = new TupleFunctionCall();
+			call.setURI(uri);
+			call.addArg(Var.of("x"));
+			call.addArg(new Exists(adaptive));
+			call.addResultVar(Var.of("x"));
+			Lateral lateral = new Lateral(new SingletonSet(), call, Set.of("x"));
+			DefaultEvaluationStrategy strategy = new DefaultEvaluationStrategy(source, null) {
+				@Override
+				protected QueryEvaluationStep prepare(TupleFunctionCall expression, QueryEvaluationContext context) {
+					QueryEvaluationStep prepared = super.prepare(expression, context);
+					preparedLeaves.add(prepared);
+					leafContexts.add(context);
+					return prepared;
+				}
+			};
+			QueryEvaluationContext context = new QueryEvaluationContext.Minimal(null);
+			QueryEvaluationStep group = TupleFunctionGroupQueryEvaluationStep.tryPrepare(call, strategy, context);
+			assertThat(group).isNotNull();
+			assertThat(adaptive.getStringMetricPlanned("adaptiveFilterPlacementPlanned"))
+					.as("the nested FILTER/JOIN was actually admitted at preparation")
+					.contains("Complete legal cuts");
+			QueryBindingSet callerRow = new QueryBindingSet();
+			callerRow.addBinding("x", caller);
+			BindingSet withheld = BindingFrameBindings.without(callerRow, Set.of("x"), context);
+			LateralQueryEvaluationStep supplied = new LateralQueryEvaluationStep(
+					bindings -> new SingletonIteration<>(bindings), group, lateral);
+			List<BindingSet> rows;
+			try (CloseableIteration<BindingSet> result = supplied.evaluate(withheld)) {
+				rows = result.stream().toList();
+			}
+			BindingSet expected = new ListBindingSet(List.of("x"), local);
+			assertAll(
+					() -> assertThat(rows).as("local tuple output remains independent of the caller")
+							.containsExactly(expected),
+					() -> assertThat(observed).as("actual tuple arguments")
+							.containsExactly(List.of(caller,
+									BooleanLiteral.TRUE)),
+					() -> assertThat(source.closed.sum()).as("all statement iterations close")
+							.isEqualTo(source.opened.sum()),
+					() -> {
+						assertThat(preparedLeaves).hasSize(1);
+						BindingFrameBindings.TupleParameterConsumer leaf = BindingFrameBindings.unframedCapability(
+								preparedLeaves.get(0), BindingFrameBindings.TupleParameterConsumer.class);
+						assertThat(leaf).isNotNull();
+						assertThat(((BindingFrameBindings.DeferredParameterInputs) group).tupleParameterGrants())
+								.singleElement()
+								.isSameAs(leaf.tupleParameterGrant());
+					},
+					() -> {
+						assertThat(preparedLeaves).hasSize(1);
+						assertThat(leafContexts).hasSize(1);
+						QueryEvaluationStep leaf = preparedLeaves.get(0);
+						QueryEvaluationStep opaque = bindings -> leaf.evaluate(bindings);
+						QueryEvaluationStep scoped = AdaptiveFilterEvaluationStep.scope(opaque, leafContexts.get(0));
+						assertThat(scoped).isNotSameAs(opaque);
+						assertThat(BindingFrameBindings.unframedCapability(scoped,
+								BindingFrameBindings.TupleParameterConsumer.class)).isNull();
+						assertThat(AdaptiveFilterEvaluationStep.scope(leaf, context)).isSameAs(leaf);
+					});
+		} finally {
+			registry.remove(function);
+		}
+	}
 
 	@Test
 	void triesEarlyRejectionBeforeOpeningDownstreamObservations() {
@@ -528,6 +626,26 @@ class AdaptiveFilterPlacementTest {
 		bindings.addBinding("subject", subject(1));
 		bindings.addBinding("local", VF.createIRI("urn:external"));
 		assertThat(consume(prepared, bindings)).hasSize(3);
+		assertThat(query.getStringMetricActual("adaptiveFilterBoundaryActual"))
+				.isEqualTo("Invocation differs from the proven input frame");
+		assertThat(source.closed.sum()).isEqualTo(source.opened.sum());
+	}
+
+	@Test
+	void aRetainedBindingFrameUsesTheDecoratedStaticPath() {
+		CountingSource source = passingSource(4, 3);
+		TupleExpr query = passingQuery();
+		query.setRuntimeTelemetryEnabled(true);
+		QueryEvaluationContext context = new QueryEvaluationContext.Minimal(null);
+		QueryBindingSet probes = new QueryBindingSet();
+		probes.addBinding("hidden", VF.createLiteral("outer"));
+		BindingSet input = BindingFrameBindings.push(new BindingFrameBindings.Scope(), EmptyBindingSet.getInstance(),
+				probes, context);
+		QueryEvaluationStep prepared = new DefaultEvaluationStrategy(source, null).precompile(new QueryRoot(query));
+		Map<BindingSet, Integer> results = consume(prepared, input);
+		assertThat(results).hasSize(12);
+		assertThat(results.keySet()).allSatisfy(row -> assertThat(BindingFrameBindings.probeValue(row, "hidden"))
+				.isEqualTo(VF.createLiteral("outer")));
 		assertThat(query.getStringMetricActual("adaptiveFilterBoundaryActual"))
 				.isEqualTo("Invocation differs from the proven input frame");
 		assertThat(source.closed.sum()).isEqualTo(source.opened.sum());

@@ -1812,6 +1812,11 @@ public class TupleExprBuilder extends AbstractASTVisitor {
 
 		TupleExpr te = graphPattern.buildTupleExpr();
 		if (node.isScopeChange()) {
+			if (te instanceof Lateral) {
+				// The LATERAL invocation already has a scope of its own; the surrounding group is a distinct
+				// boundary and must survive later normalization.
+				te = new Extension(te);
+			}
 			((VariableScopeChange) te).setVariableScopeChange(true);
 		}
 		parentGP.addRequiredTE(te);

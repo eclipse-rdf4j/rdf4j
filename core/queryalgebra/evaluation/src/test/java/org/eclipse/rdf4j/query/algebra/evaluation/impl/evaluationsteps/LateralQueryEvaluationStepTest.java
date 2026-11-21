@@ -12,6 +12,7 @@
 package org.eclipse.rdf4j.query.algebra.evaluation.impl.evaluationsteps;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.junit.jupiter.api.Assertions.assertAll;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
@@ -20,34 +21,664 @@ import java.util.ArrayList;
 import java.util.Iterator;
 import java.util.List;
 import java.util.Set;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.ExecutionException;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicReference;
 
+import org.eclipse.rdf4j.collection.factory.impl.DefaultCollectionFactory;
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.common.iteration.CloseableIteratorIteration;
+import org.eclipse.rdf4j.common.iteration.CooperativeCancellation;
+import org.eclipse.rdf4j.common.iteration.LookAheadIteration;
+import org.eclipse.rdf4j.common.iteration.SingletonIteration;
 import org.eclipse.rdf4j.model.Value;
+import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.query.BindingSet;
+import org.eclipse.rdf4j.query.MutableBindingSet;
 import org.eclipse.rdf4j.query.algebra.BindingSetAssignment;
 import org.eclipse.rdf4j.query.algebra.Bound;
+import org.eclipse.rdf4j.query.algebra.Extension;
+import org.eclipse.rdf4j.query.algebra.ExtensionElem;
 import org.eclipse.rdf4j.query.algebra.Filter;
 import org.eclipse.rdf4j.query.algebra.Join;
 import org.eclipse.rdf4j.query.algebra.Lateral;
+import org.eclipse.rdf4j.query.algebra.PrivateGraphContextRole;
 import org.eclipse.rdf4j.query.algebra.Projection;
 import org.eclipse.rdf4j.query.algebra.ProjectionElem;
 import org.eclipse.rdf4j.query.algebra.ProjectionElemList;
 import org.eclipse.rdf4j.query.algebra.SingletonSet;
 import org.eclipse.rdf4j.query.algebra.StatementPattern;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
+import org.eclipse.rdf4j.query.algebra.TupleFunctionCall;
 import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.query.algebra.evaluation.EvaluationStrategy;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryBindingSet;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryEvaluationStep;
+import org.eclipse.rdf4j.query.algebra.evaluation.TripleSource;
+import org.eclipse.rdf4j.query.algebra.evaluation.ValueExprEvaluationException;
+import org.eclipse.rdf4j.query.algebra.evaluation.function.TupleFunction;
+import org.eclipse.rdf4j.query.algebra.evaluation.function.TupleFunctionRegistry;
+import org.eclipse.rdf4j.query.algebra.evaluation.impl.BindingFrameBindings;
+import org.eclipse.rdf4j.query.algebra.evaluation.impl.DefaultEvaluationStrategy;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.QueryEvaluationContext;
 import org.eclipse.rdf4j.query.algebra.helpers.AbstractSimpleQueryModelVisitor;
 import org.eclipse.rdf4j.query.impl.EmptyBindingSet;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.CsvSource;
 
 class LateralQueryEvaluationStepTest {
+	@Test
+	void suppliedTupleGroupKeepsWithheldArgumentSeparateFromLocalOutput() {
+		ValueFactory vf = SimpleValueFactory.getInstance();
+		Value caller = vf.createLiteral("caller");
+		Value local = vf.createLiteral("local");
+		String uri = "urn:tuple-group:supplied-self-input-output";
+		List<Value> observed = new ArrayList<>();
+		TupleFunction function = new TupleFunction() {
+			@Override
+			public String getURI() {
+				return uri;
+			}
+
+			@Override
+			public CloseableIteration<? extends List<? extends Value>> evaluate(ValueFactory factory, Value... args) {
+				observed.add(args[0]);
+				return new SingletonIteration<>(List.of(local));
+			}
+		};
+		TupleFunctionRegistry registry = TupleFunctionRegistry.getInstance();
+		registry.add(function);
+		try {
+			TupleFunctionCall call = new TupleFunctionCall();
+			call.setURI(uri);
+			call.addArg(Var.of("x"));
+			call.addResultVar(Var.of("x"));
+			Lateral lateral = new Lateral(new SingletonSet(), call, Set.of("x"));
+			TripleSource source = mock(TripleSource.class);
+			when(source.getValueFactory()).thenReturn(vf);
+			DefaultEvaluationStrategy strategy = new DefaultEvaluationStrategy(source, null);
+			QueryEvaluationContext context = new QueryEvaluationContext.Minimal(null);
+			QueryEvaluationStep group = TupleFunctionGroupQueryEvaluationStep.tryPrepare(call, strategy, context);
+			assertThat(group).isNotNull();
+			QueryBindingSet callerRow = new QueryBindingSet();
+			callerRow.addBinding("x", caller);
+			BindingSet withheld = BindingFrameBindings.without(callerRow, Set.of("x"), context);
+			LateralQueryEvaluationStep supplied = new LateralQueryEvaluationStep(
+					bindings -> new SingletonIteration<>(bindings), group, lateral);
+			QueryBindingSet expected = new QueryBindingSet();
+			expected.addBinding("x", local);
+			List<BindingSet> rows = results(supplied.evaluate(withheld));
+			assertAll(
+					() -> assertThat(rows).as("local tuple output remains independent of the input")
+							.containsExactly(expected),
+					() -> assertThat(observed).as("actual supplied tuple-function argument")
+							.isNotEmpty()
+							.allMatch(caller::equals));
+			Value second = vf.createLiteral("second caller");
+			QueryBindingSet secondRow = new QueryBindingSet();
+			secondRow.addBinding("x", second);
+			BindingSet secondWithheld = BindingFrameBindings.without(secondRow, Set.of("x"), context);
+			observed.clear();
+			assertThat(results(supplied.evaluate(secondWithheld))).containsExactly(expected);
+			assertThat(observed).isNotEmpty().allMatch(second::equals);
+			observed.clear();
+			assertThat(results(supplied.evaluate(withheld))).containsExactly(expected);
+			assertThat(observed).isNotEmpty().allMatch(caller::equals);
+		} finally {
+			registry.remove(function);
+		}
+	}
+
+	@Test
+	void suppliedTupleGroupWithTrackedTimeKeepsPrivateArgument() {
+		assertTrackedSuppliedTupleGroupKeepsPrivateArgument(true, false);
+	}
+
+	@Test
+	void suppliedTupleGroupWithTrackedResultSizeKeepsPrivateArgument() {
+		assertTrackedSuppliedTupleGroupKeepsPrivateArgument(false, true);
+	}
+
+	@Test
+	void suppliedTupleGroupWithBothTrackingModesKeepsPrivateArgument() {
+		assertTrackedSuppliedTupleGroupKeepsPrivateArgument(true, true);
+	}
+
+	@Test
+	void trackedTupleRecipientPreservesMetricsCancellationAndClose() {
+		ValueFactory vf = SimpleValueFactory.getInstance();
+		TripleSource source = mock(TripleSource.class);
+		when(source.getValueFactory()).thenReturn(vf);
+		DefaultEvaluationStrategy strategy = new DefaultEvaluationStrategy(source, null);
+		strategy.setTrackTime(true);
+		strategy.setTrackResultSize(true);
+		TupleFunctionCall call = new TupleFunctionCall();
+		BindingFrameBindings.TupleParameterGrant grant = new BindingFrameBindings.TupleParameterGrant(Set.of("x"));
+		AtomicInteger cancelled = new AtomicInteger();
+		AtomicInteger closed = new AtomicInteger();
+		QueryEvaluationStep leaf = BindingFrameBindings.tupleParameterConsumer(bindings -> new LookAheadIteration<>() {
+			private boolean emitted;
+
+			@Override
+			protected BindingSet getNextElement() {
+				if (emitted) {
+					return null;
+				}
+				emitted = true;
+				return EmptyBindingSet.getInstance();
+			}
+
+			@Override
+			protected boolean forwardCancellation() {
+				cancelled.incrementAndGet();
+				return true;
+			}
+
+			@Override
+			protected void handleClose() {
+				closed.incrementAndGet();
+			}
+		}, grant);
+		QueryEvaluationStep tracked = strategy.trackPreparedStep(call, leaf);
+		BindingFrameBindings.TupleParameterConsumer recipient = BindingFrameBindings.unframedCapability(tracked,
+				BindingFrameBindings.TupleParameterConsumer.class);
+		assertThat(recipient).isNotNull();
+		assertThat(recipient.tupleParameterGrant()).isSameAs(grant);
+		try (CloseableIteration<BindingSet> rows = tracked.evaluate(EmptyBindingSet.getInstance())) {
+			assertThat(rows.hasNext()).isTrue();
+			assertThat(rows.next()).isEqualTo(EmptyBindingSet.getInstance());
+			assertThat(((CooperativeCancellation) rows).requestCancellation()).isTrue();
+		}
+		assertThat(cancelled).hasValue(1);
+		assertThat(closed).hasValue(1);
+		assertThat(call.getTotalTimeNanosActual()).isGreaterThanOrEqualTo(0L);
+		assertThat(call.getResultSizeActual()).isEqualTo(1L);
+	}
+
+	private void assertTrackedSuppliedTupleGroupKeepsPrivateArgument(boolean trackTime, boolean trackSize) {
+		ValueFactory vf = SimpleValueFactory.getInstance();
+		Value caller = vf.createLiteral("tracked caller");
+		Value local = vf.createLiteral("tracked local");
+		String uri = "urn:tuple-group:tracked-self-input-output:" + trackTime + ":" + trackSize;
+		List<Value> observed = new ArrayList<>();
+		TupleFunction function = new TupleFunction() {
+			@Override
+			public String getURI() {
+				return uri;
+			}
+
+			@Override
+			public CloseableIteration<? extends List<? extends Value>> evaluate(ValueFactory factory, Value... args) {
+				observed.add(args[0]);
+				return new SingletonIteration<>(List.of(local));
+			}
+		};
+		TupleFunctionRegistry registry = TupleFunctionRegistry.getInstance();
+		registry.add(function);
+		try {
+			TupleFunctionCall call = new TupleFunctionCall();
+			call.setURI(uri);
+			call.addArg(Var.of("x"));
+			call.addResultVar(Var.of("x"));
+			Lateral lateral = new Lateral(new SingletonSet(), call, Set.of("x"));
+			TripleSource source = mock(TripleSource.class);
+			when(source.getValueFactory()).thenReturn(vf);
+			DefaultEvaluationStrategy strategy = new DefaultEvaluationStrategy(source, null);
+			strategy.setTrackTime(trackTime);
+			strategy.setTrackResultSize(trackSize);
+			QueryEvaluationContext context = new QueryEvaluationContext.Minimal(null);
+			QueryEvaluationStep group = TupleFunctionGroupQueryEvaluationStep.tryPrepare(call, strategy, context);
+			assertThat(group).isNotNull();
+			QueryBindingSet input = new QueryBindingSet();
+			input.addBinding("x", caller);
+			BindingSet withheld = BindingFrameBindings.without(input, Set.of("x"), context);
+			LateralQueryEvaluationStep supplied = new LateralQueryEvaluationStep(
+					bindings -> new SingletonIteration<>(bindings), group, lateral);
+			QueryBindingSet expected = new QueryBindingSet();
+			expected.addBinding("x", local);
+			List<BindingSet> rows = results(supplied.evaluate(withheld));
+			assertAll(
+					() -> assertThat(rows).as("tracked supplied tuple returns the distinct local output")
+							.containsExactly(expected),
+					() -> assertThat(observed).as("the function received the actual caller argument")
+							.containsExactly(caller),
+					() -> assertThat(!trackTime || call.getTotalTimeNanosActual() >= 0L)
+							.as("time instrumentation actually ran when requested")
+							.isTrue(),
+					() -> assertThat(!trackSize || call.getResultSizeActual() >= 0L)
+							.as("result-size instrumentation actually ran when requested")
+							.isTrue());
+		} finally {
+			registry.remove(function);
+		}
+	}
+
+	@ParameterizedTest(name = "reverse={0}, tracking={1}, callerBound={2}, callerSeen={3}")
+	@CsvSource({ "false, none, false, false", "true, none, false, false", "false, none, true, false",
+			"true, none, true, false", "false, time, true, false", "true, time, true, false",
+			"false, size, true, false", "true, size, true, false", "false, none, true, true",
+			"true, none, true, true" })
+	void suppliedTupleGroupKeepsOutputOnlyNameSeparate(boolean reverse, String tracking, boolean callerBound,
+			boolean callerSeen) {
+		ValueFactory vf = SimpleValueFactory.getInstance();
+		Value caller = vf.createLiteral("group caller");
+		Value local = vf.createLiteral("group local");
+		String suffix = reverse + ":" + tracking + ":" + callerBound + ":" + callerSeen;
+		String producerUri = "urn:tuple-group:output-only:producer:" + suffix;
+		String consumerUri = "urn:tuple-group:output-only:consumer:" + suffix;
+		List<Value> observed = new ArrayList<>();
+		TupleFunction producer = new TupleFunction() {
+			@Override
+			public String getURI() {
+				return producerUri;
+			}
+
+			@Override
+			public CloseableIteration<? extends List<? extends Value>> evaluate(ValueFactory factory, Value... args) {
+				return new SingletonIteration<>(List.of(local));
+			}
+		};
+		TupleFunction consumer = new TupleFunction() {
+			@Override
+			public String getURI() {
+				return consumerUri;
+			}
+
+			@Override
+			public CloseableIteration<? extends List<? extends Value>> evaluate(ValueFactory factory, Value... args) {
+				observed.add(args[0]);
+				return new SingletonIteration<>(List.of(args[0]));
+			}
+		};
+		TupleFunctionRegistry registry = TupleFunctionRegistry.getInstance();
+		registry.add(producer);
+		registry.add(consumer);
+		try {
+			TupleFunctionCall write = new TupleFunctionCall();
+			write.setURI(producerUri);
+			write.addResultVar(Var.of("x"));
+			TupleFunctionCall read = new TupleFunctionCall();
+			read.setURI(consumerUri);
+			read.addArg(Var.of("x"));
+			read.addResultVar(Var.of("seen"));
+			TupleExpr calls = reverse ? new Join(read, write) : new Join(write, read);
+			Lateral lateral = new Lateral(new SingletonSet(), calls, Set.of("x", "seen"));
+			TripleSource source = mock(TripleSource.class);
+			when(source.getValueFactory()).thenReturn(vf);
+			DefaultEvaluationStrategy strategy = new DefaultEvaluationStrategy(source, null);
+			strategy.setTrackTime("time".equals(tracking));
+			strategy.setTrackResultSize("size".equals(tracking));
+			QueryEvaluationContext context = new QueryEvaluationContext.Minimal(null);
+			QueryEvaluationStep group = TupleFunctionGroupQueryEvaluationStep.tryPrepare(calls, strategy, context);
+			assertThat(group).isNotNull();
+			QueryBindingSet input = new QueryBindingSet();
+			if (callerBound) {
+				input.addBinding("x", caller);
+			}
+			if (callerSeen) {
+				input.addBinding("seen", caller);
+			}
+			BindingSet withheld = BindingFrameBindings.without(input, Set.of("x", "seen"), context);
+			LateralQueryEvaluationStep supplied = new LateralQueryEvaluationStep(
+					bindings -> new SingletonIteration<>(bindings), group, lateral);
+			QueryBindingSet expected = new QueryBindingSet();
+			expected.addBinding("x", local);
+			expected.addBinding("seen", local);
+			List<BindingSet> rows = results(supplied.evaluate(withheld));
+			assertAll(
+					() -> assertThat(rows).as("the local producer and consumer outputs").containsExactly(expected),
+					() -> assertThat(observed).as("the consumer reads the local producer value")
+							.containsExactly(local));
+		} finally {
+			registry.remove(consumer);
+			registry.remove(producer);
+		}
+	}
+
+	@Test
+	void tupleGroupRequiresRecipientOnlyForDeclaredDeferredReads() {
+		TupleFunctionCall write = new TupleFunctionCall();
+		write.setURI("urn:tuple-group:ungranted-producer");
+		write.addResultVar(Var.of("x"));
+		TupleFunctionCall read = new TupleFunctionCall();
+		read.setURI("urn:tuple-group:ungranted-consumer");
+		read.addArg(Var.of("x"));
+		read.addResultVar(Var.of("seen"));
+		EvaluationStrategy strategy = mock(EvaluationStrategy.class);
+		when(strategy.precompile(any(TupleExpr.class), any(QueryEvaluationContext.class)))
+				.thenReturn(bindings -> iteration(bindings));
+		QueryEvaluationStep prepared = TupleFunctionGroupQueryEvaluationStep.tryPrepare(new Join(write, read), strategy,
+				new QueryEvaluationContext.Minimal(null));
+		assertThat(prepared).isInstanceOf(TupleFunctionGroupQueryEvaluationStep.class);
+		TupleFunctionGroupQueryEvaluationStep group = (TupleFunctionGroupQueryEvaluationStep) prepared;
+		assertThat(group.deferredWithheldInputs()).containsExactlyInAnyOrder("x", "seen");
+		assertThat(group.deferredArgumentInputs()).containsExactly("x");
+		assertThat(group.supportsDeferredInputs(Set.of("seen"))).isTrue();
+		assertThat(group.supportsDeferredInputs(Set.of("x"))).isFalse();
+		assertThat(group.supportsDeferredInputs(Set.of("x", "seen"))).isFalse();
+	}
+
+	@Test
+	void tupleGroupDoesNotScheduleAnOlderWithheldArgumentBeforeTheCurrentProducer() {
+		ValueFactory vf = SimpleValueFactory.getInstance();
+		Value old = vf.createLiteral("old");
+		Value seed = vf.createLiteral("current");
+		Value produced = vf.createLiteral("produced");
+		String producerUri = "urn:tuple-group:current-producer";
+		String consumerUri = "urn:tuple-group:current-consumer";
+		TupleFunction producer = new TupleFunction() {
+			@Override
+			public String getURI() {
+				return producerUri;
+			}
+
+			@Override
+			public CloseableIteration<? extends List<? extends Value>> evaluate(ValueFactory factory, Value... args) {
+				if (!seed.equals(args[0])) {
+					throw new ValueExprEvaluationException("producer requires the current seed");
+				}
+				return new SingletonIteration<>(List.of(produced));
+			}
+		};
+		TupleFunction consumer = new TupleFunction() {
+			@Override
+			public String getURI() {
+				return consumerUri;
+			}
+
+			@Override
+			public CloseableIteration<? extends List<? extends Value>> evaluate(ValueFactory factory, Value... args) {
+				return new SingletonIteration<>(List.of(args[0]));
+			}
+		};
+		TupleFunctionRegistry registry = TupleFunctionRegistry.getInstance();
+		registry.add(producer);
+		registry.add(consumer);
+		try {
+			TupleFunctionCall read = new TupleFunctionCall();
+			read.setURI(consumerUri);
+			read.addArg(Var.of("x"));
+			read.addResultVar(Var.of("seen"));
+			TupleFunctionCall write = new TupleFunctionCall();
+			write.setURI(producerUri);
+			write.addArg(Var.of("seed"));
+			write.addResultVar(Var.of("x"));
+			Join calls = new Join(read, write);
+			new Lateral(new SingletonSet(), calls, Set.of("seed"));
+			TripleSource source = mock(TripleSource.class);
+			when(source.getValueFactory()).thenReturn(vf);
+			DefaultEvaluationStrategy strategy = new DefaultEvaluationStrategy(source, null);
+			QueryEvaluationContext context = new QueryEvaluationContext.Minimal(null);
+			QueryEvaluationStep group = TupleFunctionGroupQueryEvaluationStep.tryPrepare(calls, strategy, context);
+			assertThat(group).isNotNull();
+
+			QueryBindingSet oldRow = new QueryBindingSet();
+			oldRow.addBinding("x", old);
+			BindingSet oldInvocation = BindingFrameBindings.withSubstitutionDomain(oldRow, Set.of("x"), context);
+			BindingSet hiddenOld = BindingFrameBindings.without(oldInvocation, Set.of("x"), context);
+			BindingSet newer = BindingFrameBindings.withSubstitutionDomain(hiddenOld, Set.of(), context);
+			MutableBindingSet current = BindingFrameBindings.preserve(newer, context.createBindingSet(newer));
+			current.setBinding("seed", seed);
+			BindingSet hiddenCurrent = BindingFrameBindings.without(current, Set.of("seed"), context);
+			QueryBindingSet expected = new QueryBindingSet();
+			expected.addBinding("x", produced);
+			expected.addBinding("seen", produced);
+			QueryBindingSet visibleExpected = new QueryBindingSet(expected);
+			visibleExpected.addBinding("seed", seed);
+			assertThat(results(group.evaluate(current))).as("visible current producer input")
+					.containsExactly(visibleExpected);
+			assertThat(results(group.evaluate(hiddenCurrent))).as("current withheld input above the newer marker")
+					.containsExactly(expected);
+		} finally {
+			registry.remove(consumer);
+			registry.remove(producer);
+		}
+	}
+
+	@Test
+	void rightSideIsPreparedOnceAcrossDeclaredInputSubsets() {
+		Set<String> names = Set.of("a", "b", "c", "d", "e", "f");
+		Lateral lateral = lateralWithPrivateProjection(names);
+		QueryEvaluationContext context = new QueryEvaluationContext.Minimal(null);
+		AtomicInteger rightPreparations = new AtomicInteger();
+		EvaluationStrategy strategy = mock(EvaluationStrategy.class);
+		when(strategy.getCollectionFactory()).thenReturn(DefaultCollectionFactory::new);
+		when(strategy.precompile(any(TupleExpr.class), any(QueryEvaluationContext.class))).thenAnswer(invocation -> {
+			TupleExpr expression = invocation.getArgument(0);
+			if (expression == lateral.getLeftArg()) {
+				return (QueryEvaluationStep) LateralQueryEvaluationStepTest::iteration;
+			}
+			rightPreparations.incrementAndGet();
+			return (QueryEvaluationStep) LateralQueryEvaluationStepTest::iteration;
+		});
+		QueryEvaluationStep prepared = LateralQueryEvaluationStep.supply(strategy, lateral, context);
+		List<String> ordered = List.of("a", "b", "c", "d", "e", "f");
+		for (int mask = 0; mask < 1 << ordered.size(); mask++) {
+			QueryBindingSet input = new QueryBindingSet();
+			input.addBinding("id", SimpleValueFactory.getInstance().createLiteral(mask));
+			for (int bit = 0; bit < ordered.size(); bit++) {
+				if ((mask & 1 << bit) != 0) {
+					input.addBinding(ordered.get(bit), SimpleValueFactory.getInstance().createLiteral(bit));
+				}
+			}
+			BindingSet invocation = (mask & 1) == 0
+					? BindingFrameBindings.withSubstitutionDomain(input, Set.of(), context)
+					: input;
+			assertThat(results(prepared.evaluate(invocation))).containsExactly(input);
+		}
+		assertThat(rightPreparations).as("one prepared RHS for all 64 binding subsets").hasValue(1);
+	}
+
+	@Test
+	void lateralCreatesAnExplicitEmptyInvocationDomain() {
+		Lateral lateral = lateralWithPrivateProjection(Set.of("x"));
+		QueryEvaluationContext context = new QueryEvaluationContext.Minimal(null);
+		AtomicReference<Set<String>> domain = new AtomicReference<>();
+		EvaluationStrategy strategy = mock(EvaluationStrategy.class);
+		when(strategy.getCollectionFactory()).thenReturn(DefaultCollectionFactory::new);
+		when(strategy.precompile(any(TupleExpr.class), any(QueryEvaluationContext.class))).thenAnswer(invocation -> {
+			TupleExpr expression = invocation.getArgument(0);
+			if (expression == lateral.getLeftArg()) {
+				return (QueryEvaluationStep) LateralQueryEvaluationStepTest::iteration;
+			}
+			return (QueryEvaluationStep) bindings -> {
+				domain.set(BindingFrameBindings.substitutionDomain(bindings));
+				return iteration(bindings);
+			};
+		});
+		QueryEvaluationStep prepared = LateralQueryEvaluationStep.supply(strategy, lateral, context);
+		assertThat(results(prepared.evaluate(EmptyBindingSet.getInstance())))
+				.containsExactly(EmptyBindingSet.getInstance());
+		assertThat(domain.get()).as("empty LATERAL invocation shadows older authority").isEmpty();
+	}
+
+	@Test
+	void concurrentInvocationsShareOneRightPreparationAndKeepTheirDomains() throws Exception {
+		Lateral lateral = lateralWithPrivateProjection(Set.of("x", "y"));
+		QueryEvaluationContext context = new QueryEvaluationContext.Minimal(null);
+		AtomicInteger rightPreparations = new AtomicInteger();
+		CountDownLatch bothEntered = new CountDownLatch(2);
+		ConcurrentHashMap<String, Set<String>> observedDomains = new ConcurrentHashMap<>();
+		EvaluationStrategy strategy = mock(EvaluationStrategy.class);
+		when(strategy.getCollectionFactory()).thenReturn(DefaultCollectionFactory::new);
+		when(strategy.precompile(any(TupleExpr.class), any(QueryEvaluationContext.class))).thenAnswer(invocation -> {
+			TupleExpr expression = invocation.getArgument(0);
+			if (expression == lateral.getLeftArg()) {
+				return (QueryEvaluationStep) LateralQueryEvaluationStepTest::iteration;
+			}
+			rightPreparations.incrementAndGet();
+			return (QueryEvaluationStep) bindings -> {
+				bothEntered.countDown();
+				try {
+					assertThat(bothEntered.await(5, TimeUnit.SECONDS)).isTrue();
+				} catch (InterruptedException interrupted) {
+					Thread.currentThread().interrupt();
+					throw new AssertionError(interrupted);
+				}
+				observedDomains.put(bindings.getValue("id").stringValue(),
+						BindingFrameBindings.substitutionDomain(bindings));
+				return iteration(bindings);
+			};
+		});
+		QueryEvaluationStep prepared = LateralQueryEvaluationStep.supply(strategy, lateral, context);
+		QueryBindingSet first = input("first", "x");
+		QueryBindingSet second = input("second", "y");
+		ExecutorService executor = Executors.newFixedThreadPool(2);
+		try {
+			Future<List<BindingSet>> firstRows = executor.submit(() -> results(prepared.evaluate(first)));
+			Future<List<BindingSet>> secondRows = executor.submit(() -> results(prepared.evaluate(second)));
+			assertThat(firstRows.get(10, TimeUnit.SECONDS)).containsExactly(first);
+			assertThat(secondRows.get(10, TimeUnit.SECONDS)).containsExactly(second);
+			assertThat(observedDomains).containsEntry("first", Set.of("x")).containsEntry("second", Set.of("y"));
+			assertThat(rightPreparations).as("concurrent invocations share one RHS").hasValue(1);
+		} finally {
+			executor.shutdownNow();
+		}
+	}
+
+	private static Lateral lateralWithPrivateProjection(Set<String> names) {
+		Projection projection = new Projection(new SingletonSet(),
+				new ProjectionElemList(new ProjectionElem("visible")));
+		return new Lateral(new SingletonSet(), new Join(projection, new SingletonSet()), names);
+	}
+
+	private static QueryBindingSet input(String id, String name) {
+		QueryBindingSet result = new QueryBindingSet();
+		result.addBinding("id", SimpleValueFactory.getInstance().createLiteral(id));
+		result.addBinding(name, SimpleValueFactory.getInstance().createLiteral(id));
+		return result;
+	}
+
+	@Test
+	void tupleGroupForwardsCancellationToAllOpenResults() throws Exception {
+		TupleFunctionCall first = new TupleFunctionCall();
+		first.setURI("urn:cancel:first");
+		TupleFunctionCall second = new TupleFunctionCall();
+		second.setURI("urn:cancel:second");
+		CountDownLatch entered = new CountDownLatch(1);
+		CountDownLatch release = new CountDownLatch(1);
+		AtomicInteger firstRequests = new AtomicInteger();
+		AtomicInteger secondRequests = new AtomicInteger();
+		EvaluationStrategy strategy = mock(EvaluationStrategy.class);
+		when(strategy.precompile(any(TupleExpr.class), any(QueryEvaluationContext.class))).thenAnswer(invocation -> {
+			TupleExpr call = invocation.getArgument(0);
+			if (call == first) {
+				return (QueryEvaluationStep) bindings -> new LookAheadIteration<BindingSet>() {
+					private boolean emitted;
+
+					@Override
+					protected BindingSet getNextElement() {
+						if (emitted) {
+							return null;
+						}
+						emitted = true;
+						return bindings;
+					}
+
+					@Override
+					protected boolean forwardCancellation() {
+						firstRequests.incrementAndGet();
+						return true;
+					}
+
+					@Override
+					protected void handleClose() {
+					}
+				};
+			}
+			return (QueryEvaluationStep) bindings -> new LookAheadIteration<BindingSet>() {
+				@Override
+				protected BindingSet getNextElement() {
+					entered.countDown();
+					try {
+						release.await();
+					} catch (InterruptedException interrupted) {
+						Thread.currentThread().interrupt();
+					}
+					return null;
+				}
+
+				@Override
+				protected boolean forwardCancellation() {
+					secondRequests.incrementAndGet();
+					release.countDown();
+					return true;
+				}
+
+				@Override
+				protected void handleClose() {
+					release.countDown();
+				}
+			};
+		});
+		QueryEvaluationStep group = TupleFunctionGroupQueryEvaluationStep.tryPrepare(new Join(first, second),
+				strategy, new QueryEvaluationContext.Minimal(null));
+		CloseableIteration<BindingSet> rows = group.evaluate(EmptyBindingSet.getInstance());
+		ExecutorService executor = Executors.newSingleThreadExecutor();
+		Future<?> worker = executor.submit(rows::hasNext);
+		try {
+			assertThat(entered.await(5, TimeUnit.SECONDS)).isTrue();
+			assertThat(((CooperativeCancellation) rows).requestCancellation()).isTrue();
+			assertThat(firstRequests).hasValue(1);
+			assertThat(secondRequests).hasValue(1);
+		} finally {
+			release.countDown();
+			try {
+				worker.get(5, TimeUnit.SECONDS);
+			} catch (ExecutionException expectedCancellation) {
+				// The scheduler can report cancellation while unwinding its open results.
+			} finally {
+				rows.close();
+				executor.shutdownNow();
+			}
+		}
+	}
+
+	@Test
+	void tupleGroupTreatsNullMarkerAsAnUnboundArgument() {
+		Value local = SimpleValueFactory.getInstance().createLiteral("local");
+		TupleFunctionCall consumer = new TupleFunctionCall();
+		consumer.setURI("urn:consumer");
+		consumer.addArg(Var.of("x"));
+		consumer.addResultVar(Var.of("seen"));
+		TupleFunctionCall producer = new TupleFunctionCall();
+		producer.setURI("urn:producer");
+		producer.addResultVar(Var.of("x"));
+		EvaluationStrategy strategy = mock(EvaluationStrategy.class);
+		QueryEvaluationContext context = new QueryEvaluationContext.Minimal(null);
+		when(strategy.precompile(any(TupleExpr.class), any(QueryEvaluationContext.class))).thenAnswer(invocation -> {
+			TupleFunctionCall call = invocation.getArgument(0);
+			return (QueryEvaluationStep) bindings -> {
+				QueryBindingSet row = new QueryBindingSet(bindings);
+				if (call == producer) {
+					row.setBinding("x", local);
+				} else {
+					Value value = bindings.getValue("x");
+					if (value == null) {
+						throw new ValueExprEvaluationException("unbound tuple argument");
+					}
+					row.setBinding("seen", value);
+				}
+				return iteration(row);
+			};
+		});
+		QueryEvaluationStep group = TupleFunctionGroupQueryEvaluationStep.tryPrepare(new Join(consumer, producer),
+				strategy, context);
+		QueryBindingSet input = new QueryBindingSet();
+		input.setBinding("x", null);
+		assertThat(results(group.evaluate(input))).singleElement().satisfies(row -> {
+			assertThat(row.getValue("x")).isEqualTo(local);
+			assertThat(row.getValue("seen")).isEqualTo(local);
+		});
+	}
 
 	@Test
 	void passesOriginalBindingsToRightSideWhenNoLeftBindingsAreAllowed() {
@@ -101,8 +732,10 @@ class LateralQueryEvaluationStepTest {
 		QueryEvaluationStep step = LateralQueryEvaluationStep.supply(strategy, outerLateral, context);
 		step.evaluate(EmptyBindingSet.getInstance()).close();
 
-		assertThat(precompiled).hasSize(3);
-		assertThat(firstLateral(precompiled.get(2)).getRightInputBindingNames())
+		assertThat(precompiled).hasSize(2);
+		TupleExpr scoped = LateralQueryEvaluationStep.prepareRightScope(precompiled.get(1), Set.of("lateral"),
+				Set.of());
+		assertThat(firstLateral(scoped).getRightInputBindingNames())
 				.singleElement()
 				.asString()
 				.startsWith("-lateral-hidden-")
@@ -168,6 +801,27 @@ class LateralQueryEvaluationStepTest {
 		assertThat(renamed.getDeclaredBindingNames())
 				.as("rows-only VALUES names remain inferred from replacement rows")
 				.containsExactly("replacement");
+	}
+
+	@Test
+	void hiddenLateralInputRenamesThePublishedGraphInputWithItsOutput() {
+		Var graph = Var.of("privateGraph");
+		graph.setGraphContextDepth(1);
+		StatementPattern producer = new StatementPattern(StatementPattern.Scope.NAMED_CONTEXTS, Var.of("s"),
+				Var.of("p"), Var.of("o"), graph);
+		PrivateGraphContextRole.mark(producer, graph, "g");
+		Extension output = new Extension(producer, new ExtensionElem(Var.of("privateGraph"), "g"));
+		Projection projection = new Projection(output, new ProjectionElemList(new ProjectionElem("s")));
+		Join body = new Join(projection, new SingletonSet());
+		Join copy = (Join) LateralQueryEvaluationStep.prepareRightScope(body, Set.of("g"), Set.of());
+		Extension copiedOutput = (Extension) ((Projection) copy.getLeftArg()).getArg();
+		StatementPattern copiedProducer = (StatementPattern) copiedOutput.getArg();
+		assertThat(copiedProducer).isNotSameAs(producer);
+		String target = copiedOutput.getElements().getFirst().getName();
+		assertThat(target).startsWith("-lateral-hidden-").endsWith("-g");
+		assertThat(PrivateGraphContextRole.publicContextName(copiedProducer, copiedProducer.getContextVar()))
+				.isEqualTo(target);
+		assertThat(PrivateGraphContextRole.publicContextName(producer, graph)).isEqualTo("g");
 	}
 
 	@Test

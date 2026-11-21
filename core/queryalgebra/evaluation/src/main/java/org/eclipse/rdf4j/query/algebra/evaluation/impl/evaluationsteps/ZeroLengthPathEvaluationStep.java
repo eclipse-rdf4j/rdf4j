@@ -102,7 +102,10 @@ public final class ZeroLengthPathEvaluationStep implements QueryEvaluationStep {
 				return EMPTY_ITERATION;
 			}
 		}
-		if (scope == Scope.NAMED_CONTEXTS && (subj != null || obj != null)) {
+		if (scope == Scope.NAMED_CONTEXTS && (subj != null || obj != null)
+				&& (subjectVar.hasValue() || objVar.hasValue()
+						|| !ZeroLengthPathIteration.requiresNodeMembership(subjectVar, objVar, subj, obj, bindings,
+								context))) {
 			return fixedEndpointGraphs(bindings, subj != null ? subj : obj);
 		}
 		return getZeroLengthPathIterator(bindings, subjectVar, objVar, contextVar, subj, obj, context);
@@ -185,6 +188,7 @@ public final class ZeroLengthPathEvaluationStep implements QueryEvaluationStep {
 
 	protected ZeroLengthPathIteration getZeroLengthPathIterator(final BindingSet bindings, final Var subjectVar,
 			final Var objVar, final Var contextVar, Value subj, Value obj, QueryEvaluationContext context) {
-		return new ZeroLengthPathIteration(strategy, subjectVar, objVar, subj, obj, contextVar, bindings, context);
+		return new ZeroLengthPathIteration(strategy, subjectVar, objVar, subj, obj, contextVar, bindings, context,
+				scope);
 	}
 }

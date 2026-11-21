@@ -821,7 +821,8 @@ final class MinusCursor implements FactorizedRowCursor {
 			// bound shared values is therefore an exact MINUS compatibility test, unlike a UNION/OPTIONAL arm that may
 			// emit a row with those variables unbound. Use the cheap existence probe while membership admission warms
 			// up; only the eventual membership build performs the unbound sweep.
-			try (PatternCursor cursor = ((PatternPlan) right).openRawForExistence(row)) {
+			PatternPlan selected = ((PatternPlan) right).effectivePattern(row);
+			try (PatternCursor cursor = selected.openRawForExistence(row)) {
 				boolean matched = cursor.next() != null;
 				membershipProbe.recordDirectResult(matched);
 				return matched;

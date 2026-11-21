@@ -1,0 +1,11 @@
+# #6404: the nested OPTIONAL condition does not make its right-side ?z match.
+SELECT ?x ?o ?z WHERE {
+  VALUES ?x { "left" }
+  OPTIONAL {
+    VALUES ?o { "o" }
+    OPTIONAL {
+      VALUES ?z { "z" }
+      FILTER(BOUND(?x))
+    }
+  }
+}

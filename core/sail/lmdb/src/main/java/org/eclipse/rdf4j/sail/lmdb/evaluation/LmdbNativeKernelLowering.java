@@ -36,6 +36,7 @@ import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.algebra.ValueConstant;
 import org.eclipse.rdf4j.query.algebra.ValueExpr;
 import org.eclipse.rdf4j.query.algebra.Var;
+import org.eclipse.rdf4j.query.algebra.evaluation.impl.BindingFrameBindings;
 import org.eclipse.rdf4j.sail.lmdb.LmdbKeyRange;
 import org.eclipse.rdf4j.sail.lmdb.TripleIndex;
 import org.eclipse.rdf4j.sail.lmdb.ValueIds;
@@ -1287,7 +1288,8 @@ final class LmdbNativeKernelLowering {
 		if (condition instanceof RecordingNativeBooleanFilter recording) {
 			condition = NativeFilterLease.inspect(recording.delegate);
 		}
-		if (!(condition instanceof StatementPatternExistsFilter exists) || exists.varyingSlots.length != 1
+		if (!(condition instanceof StatementPatternExistsFilter exists) || exists.hasWithheldInput(row)
+				|| exists.varyingSlots.length != 1
 				|| exists.varyingSlots[0] != aggregate.slot || !unrestrictedNodeDomain(outer)
 				|| !unrestrictedNodeDomain(exists)) {
 			return null;
@@ -1775,7 +1777,7 @@ final class LmdbNativeKernelLowering {
 					physicalTerms[3],
 					original.contexts, original.namedContextScope, original.statementOrder, original.indexName,
 					original.range,
-					original.staticEstimate, original.accessProfile);
+					original.staticEstimate, original.accessProfile, original.dynamicContext);
 			return new PhysicalPattern(physical, java.util.Arrays.copyOf(slots, count),
 					java.util.Arrays.copyOf(ids, count));
 		}
@@ -2483,6 +2485,18 @@ final class LmdbNativeKernelLowering {
 			return mask;
 		}
 
+		/** The current producer's visible graph input. A column pinned by another UNION arm is still fresh here. */
+		private long patternContextInputMask(PatternPlan pattern) {
+			if (pattern.dynamicContext == null) {
+				return 0L;
+			}
+			int slot = pattern.dynamicContext.slot;
+			long mask = 1L << slot;
+			return (hiddenSlotMask & mask) == 0L && ((entryMask & mask) != 0L || slotColumn[slot] >= 0)
+					? mask
+					: 0L;
+		}
+
 		private boolean hasNullableInputs(SlotPlan plan) {
 			for (long mask = plan.producedMask(); mask != 0; mask &= mask - 1) {
 				Operand operand = slotOperand(Long.numberOfTrailingZeros(mask));
@@ -2659,9 +2673,21 @@ final class LmdbNativeKernelLowering {
 				// entry point only peels a left-deep chain at the root), the aggregate rung for any OPTIONAL at all.
 				LeftJoinPlan leftJoin = (LeftJoinPlan) plan;
 				if (leftJoin.lexicalSharedSlots != null) {
+					if (canProbeIndependentPattern(leftJoin, top)) {
+						SlotPlan arm = leftJoin.lexicalCondition == null ? leftJoin.right
+								: new FilterPlan(leftJoin.right, leftJoin.lexicalCondition, -1L);
+						return lowerJoinOperand(leftJoin.left, filters, row, false) && lowerOptionalArm(arm);
+					}
 					return lowerNativeOperator(leftJoin);
 				}
 				if (leftJoin.lexicalProblemSlots != null) {
+					for (int slot : leftJoin.lexicalProblemSlots) {
+						if (slotOperand(slot) != null) {
+							// The semantic cursor owns the entry projection, RDF-term compatibility and nullable
+							// output merge. Keep that boundary intact inside interpreted and generated kernels.
+							return lowerNativeOperator(leftJoin);
+						}
+					}
 					return lowerLexicalFrameLeftJoin(leftJoin, filters, row);
 				}
 				return lowerJoinOperand(leftJoin.left, filters, row, false) && lowerOptionalArm(leftJoin.right);
@@ -2684,6 +2710,45 @@ final class LmdbNativeKernelLowering {
 			}
 			reason = reasonPrefix + (top ? "unsupported:" : "child:") + plan.getClass().getSimpleName();
 			return false;
+		}
+
+		/** Selects a fixed physical relation by its shared stored RDF terms, after keeping the real left producer. */
+		private boolean canProbeIndependentPattern(LeftJoinPlan optional, boolean top) {
+			if (!top || entryMask != 0L || !row.base.isEmpty() || row.lexicalScopeDepth != 0
+					|| BindingFrameBindings.hasFrame(row.base) || row.encounterOrderRequired
+					|| optional.lexicalProblemSlots != null || !(optional.right instanceof PatternPlan pattern)
+					|| pattern.dynamicContext != null || pattern.c.hasSlot()) {
+				return false;
+			}
+			long shared = optional.left.producedMask() & pattern.producedMask();
+			if (shared == 0L || (shared & ~storedPatternVariables(pattern)) != 0L) {
+				return false;
+			}
+			if (optional.left instanceof PatternPlan left) {
+				return (shared & ~storedPatternVariables(left)) == 0L && left.dynamicContext == null;
+			}
+			if (!(optional.left instanceof MultiJoinPlan left)) {
+				return false;
+			}
+			long stored = 0L;
+			for (SlotPlan child : left.children) {
+				if (!(child instanceof PatternPlan leaf) || leaf.dynamicContext != null || leaf.c.hasSlot()
+						|| (leaf.producedMask() & shared & ~storedPatternVariables(leaf)) != 0L) {
+					return false;
+				}
+				stored |= storedPatternVariables(leaf);
+			}
+			return (shared & ~stored) == 0L;
+		}
+
+		private static long storedPatternVariables(PatternPlan pattern) {
+			long mask = 0L;
+			for (Term term : new Term[] { pattern.s, pattern.p, pattern.o }) {
+				if (term.hasSlot() && !term.isConstant()) {
+					mask |= 1L << term.slot;
+				}
+			}
+			return mask;
 		}
 
 		/** Returns the bindings that can be read safely by a new producer at the current lowering depth. */
@@ -3566,6 +3631,9 @@ final class LmdbNativeKernelLowering {
 
 		/** Lowers a pattern into the current depth (used directly and by the multi-value seed). */
 		private boolean lowerPatternInline(PatternPlan pattern) {
+			if (!pattern.supportsContextShortcut(row, patternContextInputMask(pattern), 0L)) {
+				return lowerNativeOperator(pattern);
+			}
 			PhysicalPattern physical = physicalPattern(pattern);
 			PatternPlan physicalPattern = physical.pattern;
 			// UNKNOWN is a wildcard binding in a join, never an adjacency key. The native scan binds nullable
@@ -3887,28 +3955,19 @@ final class LmdbNativeKernelLowering {
 			}
 			Operand[] terms = new Operand[4];
 			int[] outCols = { -1, -1, -1, -1 };
-			int[] claimedSlots = { -1, -1, -1 };
+			int[] claimedSlots = { -1, -1, -1, -1 };
 			List<Node> repeats = new ArrayList<>(0);
 			if (!scanTerm(pattern.s, LmdbNativeKernelIr.ScanQuad.SUBJ, terms, outCols, claimedSlots, repeats)
 					|| !scanTerm(pattern.p, LmdbNativeKernelIr.ScanQuad.PRED, terms, outCols, claimedSlots, repeats)
 					|| !scanTerm(pattern.o, LmdbNativeKernelIr.ScanQuad.OBJ, terms, outCols, claimedSlots, repeats)) {
 				return false;
 			}
-			Operand contextOperand = null;
-			if (pattern.c.isConstant()) {
-				contextOperand = Operand.constant(constantIndex(pattern.c.constant));
-			} else if (pattern.c.hasSlot()) {
-				contextOperand = operandOf(pattern.c);
+			// An unconstrained context without a slot remains an unprojected scan position.
+			if ((pattern.c.hasSlot() || pattern.c.isConstant())
+					&& !scanTerm(pattern.c, LmdbNativeKernelIr.ScanQuad.CTX, terms, outCols, claimedSlots, repeats)) {
+				return false;
 			}
-			if (pattern.c.hasSlot()) {
-				if (contextOperand != null) {
-					terms[LmdbNativeKernelIr.ScanQuad.CTX] = contextOperand;
-				} else {
-					outCols[LmdbNativeKernelIr.ScanQuad.CTX] = newColumn(pattern.c.slot);
-				}
-			} else if (contextOperand != null) {
-				terms[LmdbNativeKernelIr.ScanQuad.CTX] = contextOperand;
-			}
+			Operand contextOperand = terms[LmdbNativeKernelIr.ScanQuad.CTX];
 			if (outCols[0] < 0 && outCols[1] < 0 && outCols[2] < 0
 					&& outCols[LmdbNativeKernelIr.ScanQuad.CTX] < 0) {
 				// A fully bound pattern still contributes one row per match. Keep that multiplicity in a scratch
@@ -3930,14 +3989,14 @@ final class LmdbNativeKernelLowering {
 			}
 			// The equality guards belong with the scan, at the same depth, so they run per scanned quad.
 			currentDepthNodes().addAll(repeats);
-			if (pattern.namedContextScope) {
+			if (pattern.rejectsNullContextAtBind()) {
 				// `PatternPlan.rejectsNullContextAtBind()`: with an unfixed dataset, a named-graph-scoped pattern drops
 				// default-graph quads at bind time. The scan itself has no such notion — it is opened with the context
 				// unbound and therefore returns them — so the rejection is re-expressed as a guard on the context
 				// column against the default-graph sentinel.
-				Operand projectedContext = contextOperand != null
-						? contextOperand
-						: Operand.col(outCols[LmdbNativeKernelIr.ScanQuad.CTX]);
+				Operand projectedContext = outCols[LmdbNativeKernelIr.ScanQuad.CTX] >= 0
+						? Operand.col(outCols[LmdbNativeKernelIr.ScanQuad.CTX])
+						: contextOperand;
 				currentDepthNodes().add(new LmdbNativeKernelIr.FilterCompareId(true, projectedContext,
 						Operand.constant(constantIndex(LmdbNativeAggregateCompiler.NULL_CONTEXT_ID))));
 			}
@@ -5183,6 +5242,10 @@ final class LmdbNativeKernelLowering {
 			}
 			if (filter instanceof StatementPatternExistsFilter) {
 				StatementPatternExistsFilter exists = (StatementPatternExistsFilter) filter;
+				if (exists.hasWithheldInput(row)) {
+					reason = "agg:witness-withheld-input";
+					return false;
+				}
 				if (!statementWitnessEligible(exists)) {
 					reason = "agg:witness-pattern-guards";
 					return false;
@@ -5191,8 +5254,9 @@ final class LmdbNativeKernelLowering {
 				WitnessColumns witnessCols = new WitnessColumns();
 				boolean lowered;
 				if (prefersPredicateScan(exists.p.constant)) {
-					PatternPlan pattern = new PatternPlan(exists.s, exists.p, exists.o, exists.c, exists.contexts,
-							exists.namedContextScope, 1D);
+					PatternPlan pattern = exists.contextPattern != null ? exists.contextPattern
+							: new PatternPlan(exists.s, exists.p, exists.o, exists.c, exists.contexts,
+									exists.namedContextScope, 1D);
 					lowered = lowerWitnessPatternPlan(pattern, witnessCols, pipeline);
 				} else {
 					lowered = lowerWitnessPattern(exists.s, exists.p.constant, exists.o, witnessCols, pipeline);
@@ -5204,6 +5268,10 @@ final class LmdbNativeKernelLowering {
 			}
 			if (filter instanceof ExistsFilter) {
 				ExistsFilter exists = (ExistsFilter) filter;
+				if (exists.hasSensitiveInput(row)) {
+					reason = "agg:witness-condition-input";
+					return false;
+				}
 				long previousHidden = hiddenSlotMask;
 				try {
 					if (exists.retainedBindingNames != null) {
@@ -5744,6 +5812,14 @@ final class LmdbNativeKernelLowering {
 
 		private boolean lowerWitnessPatternPlan(PatternPlan pattern, WitnessColumns witnessCols,
 				List<Node> pipeline) {
+			long available = patternContextInputMask(pattern);
+			if (pattern.dynamicContext != null && witnessCols.containsKey(pattern.dynamicContext.slot)) {
+				available |= 1L << pattern.dynamicContext.slot;
+			}
+			if (!pattern.supportsContextShortcut(row, available, 0L, row.boundMask())) {
+				reason = "agg:witness-context-choice";
+				return false;
+			}
 			PhysicalPattern physical = physicalPattern(pattern);
 			PatternPlan physicalPattern = physical.pattern;
 			if (witnessLocalMaybeNull(physicalPattern.s, witnessCols)

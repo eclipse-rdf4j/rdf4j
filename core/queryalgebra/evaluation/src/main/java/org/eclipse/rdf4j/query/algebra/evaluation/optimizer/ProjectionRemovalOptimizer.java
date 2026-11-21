@@ -15,6 +15,7 @@ import java.util.Set;
 
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.Dataset;
+import org.eclipse.rdf4j.query.algebra.Extension;
 import org.eclipse.rdf4j.query.algebra.Projection;
 import org.eclipse.rdf4j.query.algebra.ProjectionElem;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
@@ -80,6 +81,11 @@ public class ProjectionRemovalOptimizer implements QueryOptimizer {
 			}
 
 			if (projection.getParentNode() == null) {
+				return;
+			}
+			if (projection.isVariableScopeChange() && child instanceof Extension extension
+					&& extension.isGraphScopeBoundary()) {
+				// Removing this projection would merge its own scope into the distinct GRAPH boundary.
 				return;
 			}
 			if (projection.isVariableScopeChange() && child instanceof VariableScopeChange scopeChange) {

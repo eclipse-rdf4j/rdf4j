@@ -17,6 +17,8 @@ import java.util.Map;
 
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.query.BindingSet;
+import org.eclipse.rdf4j.query.algebra.evaluation.impl.BindingFrameBindings;
+import org.eclipse.rdf4j.query.algebra.evaluation.impl.GraphFrameBindings;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.codegen.KernelRuntime;
 
 /** Native row projection that preserves physical cells until their typed scalar consumer runs. */
@@ -24,6 +26,8 @@ final class NativeRowsResultCursor implements NativeResultCursor {
 	private final NativeRowsStep step;
 	private final NativeLmdbQuerySource source;
 	private final BindingSet base;
+	private final BindingSet outputBase;
+	private final BindingSet lexicalBase;
 	private final NativeExecutionContext context;
 	private final NativeExecutionContext.Lease lease;
 	private final boolean closeContext;
@@ -39,9 +43,21 @@ final class NativeRowsResultCursor implements NativeResultCursor {
 
 	NativeRowsResultCursor(NativeRowsStep step, NativeLmdbQuerySource source, BindingSet base,
 			NativeExecutionContext context, boolean closeContext) {
+		this(step, source, base, base, context, closeContext);
+	}
+
+	NativeRowsResultCursor(NativeRowsStep step, NativeLmdbQuerySource source, BindingSet base, BindingSet outputBase,
+			NativeExecutionContext context, boolean closeContext) {
+		this(step, source, base, outputBase, base, context, closeContext);
+	}
+
+	NativeRowsResultCursor(NativeRowsStep step, NativeLmdbQuerySource source, BindingSet base, BindingSet outputBase,
+			BindingSet lexicalBase, NativeExecutionContext context, boolean closeContext) {
 		this.step = step;
 		this.source = source;
 		this.base = base;
+		this.outputBase = outputBase;
+		this.lexicalBase = lexicalBase;
 		this.context = context;
 		this.closeContext = closeContext;
 		this.lease = closeContext && context != null ? context.retainLease() : null;
@@ -125,6 +141,7 @@ final class NativeRowsResultCursor implements NativeResultCursor {
 		if (!initialized) {
 			initialized = true;
 			row = new RowState(source, step.layout, base, step.originalExpr, cancellation);
+			row.restrictLexicalInputs(lexicalBase);
 			if (!LmdbNativeAggregateCompiler.initializeRow(row, base, source, step.layout)) {
 				return null;
 			}
@@ -175,7 +192,15 @@ final class NativeRowsResultCursor implements NativeResultCursor {
 				cells[targets[index]] = cell;
 			}
 		}
-		return new NativeResultRow(schema, cells);
+		GraphFrameBindings graphFrames = GraphFrameBindings.from(outputBase);
+		if (step.projectionBoundary && graphFrames != GraphFrameBindings.EMPTY) {
+			for (int index = 0; index < cells.length; index++) {
+				if (cells[index].state() == NativeResultCell.State.BOUND) {
+					graphFrames = graphFrames.without(schema.name(index));
+				}
+			}
+		}
+		return new NativeResultRow(schema, cells, BindingFrameBindings.from(outputBase), graphFrames);
 	}
 
 	@Override

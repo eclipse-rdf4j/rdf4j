@@ -322,6 +322,10 @@ final class PatternCursor implements AutoCloseable {
 	}
 
 	long[] next() throws IOException {
+		return next(false);
+	}
+
+	long[] next(boolean committedGroup) throws IOException {
 		if (closed) {
 			return null;
 		}
@@ -342,9 +346,16 @@ final class PatternCursor implements AutoCloseable {
 					endOfInput();
 					return null;
 				}
+				if (committedGroup) {
+					pollResidualCancellationNow();
+				}
 				current = openIterator(contexts[contextIndex++]);
 			}
 			long[] row = current.next();
+			if (committedGroup) {
+				// A stopped read must not open the next context or continue a residual scan after it unblocks.
+				pollResidualCancellationNow();
+			}
 			if (row != null) {
 				if (range != null) {
 					pollResidualFilter();
@@ -354,8 +365,9 @@ final class PatternCursor implements AutoCloseable {
 				}
 				return row;
 			}
-			current.close();
+			RecordIterator exhausted = current;
 			current = null;
+			exhausted.close();
 		}
 	}
 

@@ -110,14 +110,25 @@ public class TupleExprs {
 	 * sibling's produced bindings. Remote SERVICE bodies have their own scope and are not inspected.
 	 */
 	public static boolean containsGraphBoundary(TupleExpr expression) {
-		if (expression instanceof Graph) {
+		return containsGraphBoundary(expression, true);
+	}
+
+	/** Identifies a GRAPH that still chooses a graph at evaluation time. */
+	@InternalUseOnly
+	public static boolean containsGraphSelection(TupleExpr expression) {
+		return containsGraphBoundary(expression, false);
+	}
+
+	private static boolean containsGraphBoundary(TupleExpr expression, boolean includeLowered) {
+		if (expression instanceof Graph
+				|| includeLowered && expression instanceof Extension extension && extension.isGraphScopeBoundary()) {
 			return true;
 		}
 		if (expression instanceof Service) {
 			return false;
 		}
 		for (TupleExpr child : getChildren(expression)) {
-			if (containsGraphBoundary(child)) {
+			if (containsGraphBoundary(child, includeLowered)) {
 				return true;
 			}
 		}
@@ -281,15 +292,27 @@ public class TupleExprs {
 	 *         subquery), <code>false</code> otherwise.
 	 */
 	public static boolean containsExtension(TupleExpr t) {
+		return containsExtension(t, true);
+	}
+
+	/** Finds value assignments that can give a join operand BIND priority. */
+	@InternalUseOnly
+	public static boolean containsExtensionAssignment(TupleExpr tuple) {
+		return containsExtension(tuple, false);
+	}
+
+	private static boolean containsExtension(TupleExpr t, boolean includeEmpty) {
 		TupleExpr n = t;
 		Deque<TupleExpr> queue = null;
 
 		do {
-			if (n instanceof Extension) {
+			if (n instanceof Extension extension
+					&& (includeEmpty || extension.getClass() != Extension.class
+							|| !extension.getElements().isEmpty())) {
 				return true;
 			} else if (n instanceof Join
 					|| (n instanceof Projection && ((Projection) n).isSubquery())
-					|| (n instanceof Service)) {
+					|| (n instanceof Service) || n instanceof Extension && isVariableScopeChange(n)) {
 				return false;
 			} else {
 				List<TupleExpr> children = getChildren(n);

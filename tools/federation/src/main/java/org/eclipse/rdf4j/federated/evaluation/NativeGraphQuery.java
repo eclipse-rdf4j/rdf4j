@@ -26,6 +26,7 @@ import org.eclipse.rdf4j.federated.algebra.GraphSelectionAware;
 import org.eclipse.rdf4j.federated.algebra.QueryRef;
 import org.eclipse.rdf4j.federated.algebra.TripleRefJoinGroup;
 import org.eclipse.rdf4j.federated.exception.IllegalQueryException;
+import org.eclipse.rdf4j.federated.util.FilterUtils;
 import org.eclipse.rdf4j.federated.util.QueryAlgebraUtil;
 import org.eclipse.rdf4j.federated.util.QueryStringUtil;
 import org.eclipse.rdf4j.model.BNode;
@@ -107,6 +108,11 @@ final class NativeGraphQuery {
 	}
 
 	static Prepared select(TupleExpr expression, BindingSet bindings, Dataset dataset) {
+		return select(expression, bindings, dataset, null);
+	}
+
+	static Prepared select(TupleExpr expression, BindingSet bindings, Dataset dataset,
+			FilterUtils.RemoteCapabilities capabilities) {
 		FilterValueExpr filter = expression instanceof FilterTuple filtered ? filtered.getFilterExpr() : null;
 		QueryBindingSet graphBindings = new QueryBindingSet();
 		QueryBindingSet resultBindings = new QueryBindingSet(bindings);
@@ -118,7 +124,8 @@ final class NativeGraphQuery {
 		boolean existenceCheck = false;
 		try {
 			if (expression instanceof ExclusiveGroup group) {
-				text = QueryStringUtil.selectQueryString(group, bindings, filter, evaluated, null, graphBindings);
+				text = QueryStringUtil.selectQueryString(group, bindings, filter, evaluated, null, graphBindings,
+						capabilities);
 			} else if (expression instanceof StatementPattern statement) {
 				text = QueryStringUtil.selectQueryString(statement, bindings, filter, evaluated, null,
 						graphBindings);
@@ -140,22 +147,33 @@ final class NativeGraphQuery {
 			if (expression instanceof StatementPattern statement) {
 				text = QueryStringUtil.selectQueryStringLimit1(statement, bindings, null, graphBindings);
 			} else if (expression instanceof ExclusiveTupleExpr exclusive) {
-				text = QueryStringUtil.selectQueryStringLimit1(exclusive, bindings, null, graphBindings);
+				text = QueryStringUtil.selectQueryStringLimit1(exclusive, bindings, null, graphBindings, capabilities);
+				if (capabilities != null && filter != null) {
+					evaluated.set(true);
+				}
 			} else {
 				throw new QueryEvaluationException("Cannot prepare selected graph expression "
 						+ expression.getClass().getName(), fullyBound);
 			}
 		}
-		if (filter != null && evaluated.get()) {
-			filter.visit(new AbstractQueryModelVisitor<RuntimeException>() {
-				@Override
-				public void meet(Var variable) {
-					if (!variable.hasValue() && bindings.hasBinding(variable.getName())) {
-						graphBindings.setBinding(variable.getName(), bindings.getValue(variable.getName()));
-					}
+		expression.visit(new AbstractQueryModelVisitor<RuntimeException>() {
+			@Override
+			protected void meetNode(QueryModelNode node) {
+				if (node instanceof FilterTuple filtered && filtered.getFilterExpr() != null
+						&& (node != expression || evaluated.get())) {
+					filtered.getFilterExpr().visit(new AbstractQueryModelVisitor<RuntimeException>() {
+						@Override
+						public void meet(Var variable) {
+							Value value = bindings.getValue(variable.getName());
+							if (!variable.hasValue() && value != null) {
+								graphBindings.setBinding(variable.getName(), value);
+							}
+						}
+					});
 				}
-			});
-		}
+				super.meetNode(node);
+			}
+		});
 		return new Prepared(text, graphBindings, resultBindings, evaluated.get() ? null : filter, existenceCheck,
 				dataset, selectedGraphIdentities(expression));
 	}

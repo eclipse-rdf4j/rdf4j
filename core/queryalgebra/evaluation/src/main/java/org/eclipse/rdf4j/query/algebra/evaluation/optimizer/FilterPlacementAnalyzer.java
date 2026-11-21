@@ -26,10 +26,11 @@ import java.util.NoSuchElementException;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.Set;
+import java.util.function.BiPredicate;
 import java.util.function.Function;
 import java.util.function.Predicate;
 
-import org.eclipse.rdf4j.model.impl.BooleanLiteral;
+import org.eclipse.rdf4j.common.annotation.InternalUseOnly;
 import org.eclipse.rdf4j.query.algebra.BinaryTupleOperator;
 import org.eclipse.rdf4j.query.algebra.Bound;
 import org.eclipse.rdf4j.query.algebra.Difference;
@@ -54,9 +55,10 @@ import org.eclipse.rdf4j.query.algebra.Slice;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.algebra.UnaryTupleOperator;
 import org.eclipse.rdf4j.query.algebra.Union;
-import org.eclipse.rdf4j.query.algebra.ValueConstant;
 import org.eclipse.rdf4j.query.algebra.ValueExpr;
+import org.eclipse.rdf4j.query.algebra.evaluation.util.QueryEvaluationUtility;
 import org.eclipse.rdf4j.query.algebra.helpers.AbstractQueryModelVisitor;
+import org.eclipse.rdf4j.query.algebra.helpers.BindingScopePolicy;
 import org.eclipse.rdf4j.query.algebra.helpers.FilterBindingScope;
 import org.eclipse.rdf4j.query.algebra.helpers.QueryAlgebraBindingAnalysis;
 import org.eclipse.rdf4j.query.algebra.helpers.TupleExprs;
@@ -256,6 +258,7 @@ public final class FilterPlacementAnalyzer {
 	private final TupleExpr root;
 	private final TupleExpr snapshot;
 	private final QueryAlgebraBindingAnalysis analysis;
+	private final BiPredicate<QueryModelNode, String> localNonNull;
 	private final QueryAlgebraBindingAnalysis.ReadOnlyContext rootInput;
 	private final List<QueryModelNode> nodes;
 	private final Map<QueryModelNode, Integer> nodeIds = new IdentityHashMap<>();
@@ -267,8 +270,16 @@ public final class FilterPlacementAnalyzer {
 	private final Map<TupleExpr, Set<String>> bindingNames = new IdentityHashMap<>();
 
 	public FilterPlacementAnalyzer(TupleExpr root, QueryAlgebraBindingAnalysis analysis) {
+		this(root, analysis, QueryEvaluationUtility.preparedFilterPlacementFacts(root));
+	}
+
+	/** Shares one immutable phase view across multiple placement roots. */
+	@InternalUseOnly
+	public FilterPlacementAnalyzer(TupleExpr root, QueryAlgebraBindingAnalysis analysis,
+			BiPredicate<QueryModelNode, String> localNonNull) {
 		this.root = Objects.requireNonNull(root);
 		this.analysis = Objects.requireNonNull(analysis);
+		this.localNonNull = Objects.requireNonNull(localNonNull);
 		this.rootInput = analysis.contextAt(root);
 		this.nodes = collectNodes(root);
 		for (int i = 0; i < nodes.size(); i++) {
@@ -502,16 +513,17 @@ public final class FilterPlacementAnalyzer {
 		private final Map<QueryModelNode, QueryModelNode> clones = new IdentityHashMap<>();
 		private final Map<QueryModelNode, QueryModelNode> originals = new IdentityHashMap<>();
 		private final QueryAlgebraBindingAnalysis bindingAnalysis;
+		private final QueryRoot scratchRoot;
 		private final Function<TupleExpr, Set<String>> names = clone -> {
 			QueryModelNode original = originals.get(clone);
 			return original instanceof TupleExpr tuple ? bindingNamesOf(tuple) : clone.getBindingNames();
 		};
 
 		private Skeleton(Filter detached) {
-			// The shared skeleton never changes structure (gate splices are undone within the call), so the snapshot
-			// taken for isCurrent() serves as-is; a detached filter needs a copy of its own.
+			// Hypothetical gates do not mutate the shared snapshot; a detached filter needs a copy of its own.
 			TupleExpr copiedRoot = detached == null ? snapshot : snapshot.clone();
 			QueryRoot scratch = copiedRoot instanceof QueryRoot queryRoot ? queryRoot : new QueryRoot(copiedRoot);
+			this.scratchRoot = scratch;
 			List<QueryModelNode> copied = collectNodes(copiedRoot);
 			for (int i = 0; i < nodes.size(); i++) {
 				clones.put(nodes.get(i), copied.get(i));
@@ -533,8 +545,7 @@ public final class FilterPlacementAnalyzer {
 				// surviving tuple root, independently of this detached logical condition.
 				clone.setVariableScopeChange(false);
 			}
-			this.bindingAnalysis = QueryAlgebraBindingAnalysis.withInputContextAndPossibleInputs(scratch,
-					rootInput, Set.of());
+			this.bindingAnalysis = analysis.forClone(scratch, rootInput, originals);
 		}
 	}
 
@@ -570,10 +581,10 @@ public final class FilterPlacementAnalyzer {
 	}
 
 	/**
-	 * One filter's view of the island. A gate is never inserted; its frame is derived from the node it would wrap,
-	 * which is exact because a Filter is transparent to its argument's input and the rules only read facts at or below
-	 * the gate. Every site frame and every downward move is computed at most once per filter, so an enumeration of
-	 * {@code k} cuts costs {@code O(k)} lookups instead of {@code k} re-analyses of the subtree.
+	 * One filter's view of the island. A gate is never inserted; its argument and condition frames are derived from the
+	 * node it would wrap and the preserved ancestor owner inputs. Every site frame and every downward move is computed
+	 * at most once per filter, so an enumeration of {@code k} cuts costs {@code O(k)} lookups instead of {@code k}
+	 * re-analyses of the subtree.
 	 * <p>
 	 * A filter that neither changes variable scope nor narrows facts (see {@link #narrowsFacts}) leaves every other
 	 * node's facts unchanged, so it probes the skeleton shared by all such filters, and its own clone simply stands in
@@ -581,13 +592,13 @@ public final class FilterPlacementAnalyzer {
 	 * detached, exactly as a physical relocation would see it.
 	 */
 	private final class Probe {
+		private final Filter original;
 		private final Filter logical;
-		private final boolean scopeChange;
 		private final FilterPlacementRules.Condition condition;
 		private final Skeleton skeleton;
 		private final QueryAlgebraBindingAnalysis bindingAnalysis;
 		private final Function<TupleExpr, Set<String>> names;
-		private final Map<TupleExpr, QueryAlgebraBindingAnalysis.ReadOnlyContext> gateInputs = new IdentityHashMap<>();
+		private final Map<TupleExpr, FilterPlacementRules.ConditionVisibility> gateFrames = new IdentityHashMap<>();
 		private final Map<TupleExpr, Site> sites = new IdentityHashMap<>();
 		private final Map<TupleExpr, List<List<TupleExpr>>> moves = new IdentityHashMap<>();
 
@@ -597,9 +608,11 @@ public final class FilterPlacementAnalyzer {
 			this.skeleton = transparent ? sharedSkeleton() : new Skeleton(logicalFilter);
 			this.bindingAnalysis = skeleton.bindingAnalysis;
 			this.names = skeleton.names;
+			this.original = logicalFilter;
 			this.logical = (Filter) skeleton.clones.get(logicalFilter);
-			this.scopeChange = TupleExprs.isVariableScopeChange(logical);
-			this.condition = new FilterPlacementRules.Condition(logical);
+			this.condition = new FilterPlacementRules.Condition(logical,
+					TupleExprs.isVariableScopeChange(logicalFilter),
+					logicalFilter, node -> skeleton.originals.getOrDefault(node, node), localNonNull);
 		}
 
 		/**
@@ -613,9 +626,7 @@ public final class FilterPlacementAnalyzer {
 		private Site site(TupleExpr argument) {
 			Site cached = sites.get(argument);
 			if (cached == null) {
-				TupleExpr node = cloneOf(argument);
-				cached = siteOf(argument, FilterPlacementRules.conditionVisibility(condition, node, gateInput(node),
-						bindingAnalysis, names));
+				cached = siteOf(argument, gateFrames(argument));
 				sites.put(argument, cached);
 			}
 			return cached;
@@ -635,56 +646,45 @@ public final class FilterPlacementAnalyzer {
 			return downward(parent).stream().anyMatch(children -> sameIdentities(children, replaced));
 		}
 
-		/**
-		 * The input a gate wrapping {@code node} would receive from {@code node}'s parent. A Filter passes its own
-		 * input through unchanged, but a Join (and a Lateral) decides its right operand's input from that operand's
-		 * scope flag and subtree, so the parent is asked with a throw-away gate spliced in for the duration of one
-		 * call.
-		 */
-		private QueryAlgebraBindingAnalysis.ReadOnlyContext gateInput(TupleExpr node) {
-			QueryAlgebraBindingAnalysis.ReadOnlyContext cached = gateInputs.get(node);
-			if (cached != null) {
-				return cached;
-			}
-			QueryModelNode parent = node.getParentNode();
-			QueryAlgebraBindingAnalysis.ReadOnlyContext input;
-			if (parent == null) {
-				input = bindingAnalysis.contextAt(node);
-			} else {
-				QueryAlgebraBindingAnalysis.ReadOnlyContext parentInput = bindingAnalysis.contextAt(parent);
-				Filter gate = new Filter();
-				gate.setCondition(new ValueConstant(BooleanLiteral.TRUE));
-				// A runtime gate preserves its physical operand's input contract; it cannot turn a prepared
-				// independent join into a bind join, or create an independent branch-local operand.
-				gate.setVariableScopeChange(TupleExprs.isVariableScopeChange(node));
-				node.replaceWith(gate);
-				gate.setArg(node);
-				try {
-					input = bindingAnalysis.childInput(parent, gate, parentInput);
-				} finally {
-					gate.replaceWith(node);
+		private FilterPlacementRules.ConditionVisibility gateFrames(TupleExpr argument) {
+			FilterPlacementRules.ConditionVisibility cached = gateFrames.get(argument);
+			if (cached == null) {
+				if (argument == filterArguments.get(original)) {
+					cached = FilterPlacementRules.conditionVisibility(original, analysis,
+							FilterPlacementAnalyzer.this::bindingNamesOf);
+				} else {
+					TupleExpr node = cloneOf(argument);
+					cached = FilterPlacementRules.conditionVisibility(condition, node, bindingAnalysis,
+							names, false, this::parentForGate);
 				}
+				gateFrames.put(argument, cached);
 			}
-			gateInputs.put(node, input);
-			return input;
+			return cached;
+		}
+
+		private BindingScopePolicy.FilterParent parentForGate(QueryModelNode current) {
+			if (current == skeleton.scratchRoot) {
+				return new BindingScopePolicy.FilterParent(root, root.getParentNode());
+			}
+			QueryModelNode parent = current.getParentNode();
+			if (parent == logical) {
+				return TupleExprs.isVariableScopeChange(original) ? null
+						: new BindingScopePolicy.FilterParent(logical, logical.getParentNode());
+			}
+			return new BindingScopePolicy.FilterParent(current, parent);
 		}
 
 		private List<List<TupleExpr>> computeDownward(TupleExpr argument) {
 			TupleExpr node = cloneOf(argument);
 			FilterPlacementRules rules = new FilterPlacementRules(condition, node, site(argument).conditionFrame(),
-					bindingAnalysis, names);
+					bindingAnalysis, names, child -> gateFrames(originalOf(child)));
 			List<List<TupleExpr>> result = new ArrayList<>(2);
 			if (node instanceof Join join) {
 				if (rules.canMoveIntoJoinChild(join.getLeftArg(), join.getRightArg(), true)
 						&& AlgebraEvaluationSafety.isRepeatable(join.getRightArg())) {
 					result.add(List.of(originalOf(join.getLeftArg())));
 				}
-				// The right operand is this join's right argument by construction, so a scope-changing UNION or Filter
-				// there is exactly what FilterPlacementRules.scopeBoundaryTarget would redirect to the join.
-				TupleExpr right = target(join.getRightArg());
-				boolean rightKeepsScopeRoot = !(right instanceof Union || right instanceof Filter)
-						|| !TupleExprs.isVariableScopeChange(right);
-				if (rightKeepsScopeRoot && rules.canMoveIntoJoinChild(join.getRightArg(), join.getLeftArg(), false)) {
+				if (rules.canMoveIntoJoinChild(join.getRightArg(), join.getLeftArg(), false)) {
 					result.add(List.of(originalOf(join.getRightArg())));
 				}
 			} else if (node instanceof LeftJoin leftJoin) {
@@ -701,7 +701,7 @@ public final class FilterPlacementAnalyzer {
 					result.add(List.of(originalOf(intersection.getLeftArg()), originalOf(intersection.getRightArg())));
 				}
 			} else if (node instanceof Difference difference) {
-				if (rules.candidateHasKnownDependencies(difference.getLeftArg())
+				if (rules.canMoveIntoDifferenceLeft(difference)
 						&& AlgebraEvaluationSafety.isRepeatable(difference.getRightArg())) {
 					result.add(List.of(originalOf(difference.getLeftArg())));
 				}
@@ -714,10 +714,15 @@ public final class FilterPlacementAnalyzer {
 					result.add(List.of(originalOf(filter.getArg())));
 				}
 			} else if (node instanceof Distinct || node instanceof Reduced || node instanceof QueryRoot) {
-				result.add(List.of(originalOf(((UnaryTupleOperator) node).getArg())));
+				UnaryTupleOperator modifier = (UnaryTupleOperator) node;
+				if (rules.canMoveThroughModifier(modifier)) {
+					result.add(List.of(originalOf(modifier.getArg())));
+				}
 			} else if (node instanceof Order order && rules.canMoveThroughOrder(order)) {
 				result.add(List.of(originalOf(order.getArg())));
 			}
+			result.removeIf(replacement -> replacement.stream()
+					.anyMatch(child -> !rules.candidateKeepsConditionOwners(cloneOf(child))));
 			return result;
 		}
 

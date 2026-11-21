@@ -115,6 +115,28 @@ class RemoteBNodeProvenanceTraversalTest {
 	}
 
 	@Test
+	void deepNestedRepositoryAndGeneratedNodesKeepAuthorityAndRejectMismatchedCopies() {
+		int depth = 10_000;
+		for (BNode originalNode : new BNode[] {
+				RepositoryBNode.fromNegotiatedResult("wire", "raw", true), GeneratedBNode.restore("generated") }) {
+			Value original = chain(depth, originalNode, new AtomicInteger());
+			Value captured = chain(depth, VF.createBNode(originalNode.getID()), new AtomicInteger());
+			Value preserved = RemoteBNode.preserveProvenance(original, captured);
+			for (int level = 0; level < depth; level++) {
+				preserved = ((TripleTerm) preserved).getObject();
+			}
+			assertThat(preserved).as("the trusted original survives a deep copy").isSameAs(originalNode);
+			Value mismatched = chain(depth, VF.createBNode("different"), new AtomicInteger());
+			assertThatThrownBy(() -> RemoteBNode.preserveProvenance(original, mismatched))
+					.isInstanceOf(QueryEvaluationException.class)
+					.hasMessageContaining("value copy changed result identity");
+			assertThatThrownBy(() -> RemoteBNode.preserveProvenance(original, VF.createIRI("urn:lost-copy")))
+					.isInstanceOf(QueryEvaluationException.class)
+					.hasMessageContaining("value copy lost nested provenance");
+		}
+	}
+
+	@Test
 	void containsRemoteIdentityTraversesDeepForeignValuesWithoutRecursion() {
 		int depth = 50_000;
 		AtomicInteger reads = new AtomicInteger();

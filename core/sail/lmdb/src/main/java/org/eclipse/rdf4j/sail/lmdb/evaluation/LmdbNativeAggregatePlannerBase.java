@@ -72,12 +72,16 @@ import org.eclipse.rdf4j.query.algebra.ValueExpr;
 import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.QueryEvaluationContext;
 import org.eclipse.rdf4j.query.algebra.evaluation.util.QueryEvaluationUtility;
+import org.eclipse.rdf4j.query.algebra.evaluation.util.QueryEvaluationUtility.PreparedFilterScope;
 import org.eclipse.rdf4j.query.algebra.evaluation.util.QueryEvaluationUtility.QuerySafetySnapshot;
 import org.eclipse.rdf4j.query.algebra.helpers.AbstractQueryModelVisitor;
+import org.eclipse.rdf4j.query.algebra.helpers.BindingScopePolicy;
 import org.eclipse.rdf4j.query.algebra.helpers.FilterBindingScope;
 import org.eclipse.rdf4j.query.algebra.helpers.TupleExprs;
 import org.eclipse.rdf4j.query.algebra.helpers.collectors.VarNameCollector;
 import org.eclipse.rdf4j.sail.lmdb.ValuePosition;
+import org.eclipse.rdf4j.sail.lmdb.evaluation.NativeValuesElisions.Elisions;
+import org.eclipse.rdf4j.sail.lmdb.evaluation.NativeValuesElisions.Fragment;
 
 @Experimental
 abstract class LmdbNativeAggregatePlannerBase {
@@ -90,6 +94,7 @@ abstract class LmdbNativeAggregatePlannerBase {
 	}
 
 	final NativeLmdbQuerySource source;
+	Map<TupleExpr, PreparedFilterScope> preparedFilterScopes = Map.of();
 	final Map<String, Integer> slots = new HashMap<>();
 	final NativeSlotLayout layout;
 	QueryEvaluationContext slotAwareContext;
@@ -148,6 +153,8 @@ abstract class LmdbNativeAggregatePlannerBase {
 	 * variables never claim slots. Keyed by node identity; the value is the names the rest of the query observes.
 	 */
 	Map<TupleExpr, Set<String>> demotedIslands = java.util.Collections.emptyMap();
+	/** Private names of the selected demotions, including those nested in a larger independent join operand. */
+	Set<String> demotedInternalNames = Set.of();
 	/** Whether this compile failed because the 60-slot budget ran out (gates the M-A4 demotion retry). */
 	boolean slotBudgetExceeded;
 	/**
@@ -342,11 +349,22 @@ abstract class LmdbNativeAggregatePlannerBase {
 		this.layout = new NativeSlotLayout(slots, LmdbQueryEvaluationContext.layoutOf(context));
 	}
 
-	abstract SlotPlan compileTuple(TupleExpr expr, boolean duplicateInsensitive);
+	abstract Fragment compileTuple(TupleExpr expr, boolean duplicateInsensitive);
+
+	/** Exact, preparation-owned admission for a particular VALUES removal and its optional observer. */
+	abstract boolean allowsValuesElision(BindingSetAssignment values, Filter observer);
+
+	/** A recognizer that cannot carry entry obligations must decline that candidate. */
+	SlotPlan compileTupleWithoutElisions(TupleExpr expr, boolean duplicateInsensitive) {
+		Fragment result = compileTuple(expr, duplicateInsensitive);
+		return result != null && result.elisions() == Elisions.NONE ? result.plan() : null;
+	}
 
 	abstract NativeBooleanFilter compileBoolean(ValueExpr expr);
 
 	abstract NativeBooleanFilter compileBoolean(ValueExpr expr, long assuredMask);
+
+	abstract NativeBooleanFilter compileFilterBoolean(Filter filter, long assuredMask);
 
 	abstract long placeableFilterMask(ValueExpr condition);
 
@@ -531,11 +549,10 @@ abstract class LmdbNativeAggregatePlannerBase {
 
 	Set<String> leftJoinOptionalOnlyNames(LeftJoin leftJoin) {
 		Set<String> rightNames = bindingAndExtensionNames(leftJoin.getRightArg());
-		if (leftJoin.hasCondition()) {
-			rightNames.addAll(VarNameCollector.process(leftJoin.getCondition()));
-		}
-		java.util.HashSet<String> optionalOnly = new java.util.HashSet<>(rightNames);
-		optionalOnly.removeAll(leftJoin.getLeftArg().getBindingNames());
+		rightNames.removeAll(leftJoin.getLeftArg().getBindingNames());
+		Set<String> optionalOnly = new HashSet<>(BindingScopePolicy.optionalInputNames(leftJoin));
+		// Preserve the planner's additional check for extension targets hidden inside a subtree.
+		optionalOnly.addAll(rightNames);
 		return optionalOnly;
 	}
 
@@ -617,7 +634,7 @@ abstract class LmdbNativeAggregatePlannerBase {
 					// valued Var while retaining its variable identity. It must still use the store's
 					// raw term id: assigning the corresponding VALUES binding a synthetic id would make
 					// the two occurrences incompatible even though they represent the same RDF term.
-					if (var.getName() != null && !var.isAnonymous() && !var.isConstant()) {
+					if (NativeValuePositionAnalysis.isBindingOccurrence(var)) {
 						patternOrCopyVars.add(var.getName());
 					}
 				}
@@ -1315,7 +1332,7 @@ abstract class LmdbNativeAggregatePlannerBase {
 		if (var == null) {
 			return Term.unbound();
 		}
-		if (!var.isConstant() && (!var.hasValue() || !var.isAnonymous())) {
+		if (NativeValuePositionAnalysis.isBindingOccurrence(var)) {
 			layout.patternPosition(var.getName(), 1 << field.ordinal());
 		}
 		if (var.hasValue()) {
@@ -1330,10 +1347,10 @@ abstract class LmdbNativeAggregatePlannerBase {
 			if (id == UNKNOWN) {
 				return null;
 			}
-			if (var.isAnonymous()) {
+			if (!NativeValuePositionAnalysis.isBindingOccurrence(var)) {
 				return Term.constant(id);
 			}
-			// a named var carrying an optimizer-assigned value (e.g. an inlined prepared-query binding)
+			// A nonconstant Var carrying an optimizer-assigned value (e.g. an inlined prepared-query binding)
 			// must both constrain the scan and still emit the binding under its name, exactly like the
 			// generic engine; compiling it as a bare constant would make the name invisible to filters
 			// and drop it from result rows
@@ -1397,15 +1414,15 @@ abstract class LmdbNativeAggregatePlannerBase {
 	}
 
 	/** {@code compileTuple} with the island fallback at a decline (M-A1b). */
-	SlotPlan compileTupleOrIsland(TupleExpr expr, boolean duplicateInsensitive) {
-		SlotPlan plan = compileTuple(expr, duplicateInsensitive);
-		return plan != null ? plan : island(expr);
+	Fragment compileTupleOrIsland(TupleExpr expr, boolean duplicateInsensitive) {
+		Fragment plan = compileTuple(expr, duplicateInsensitive);
+		return plan != null ? plan : Fragment.plain(island(expr));
 	}
 
 	/** Force-mode arm compile: prefer an island even where native compilation would succeed. */
-	SlotPlan islandPreferred(TupleExpr expr, boolean duplicateInsensitive) {
+	Fragment islandPreferred(TupleExpr expr, boolean duplicateInsensitive) {
 		SlotPlan forced = island(expr);
-		return forced != null ? forced : compileTuple(expr, duplicateInsensitive);
+		return forced != null ? Fragment.plain(forced) : compileTuple(expr, duplicateInsensitive);
 	}
 
 	/** Whether the generic engine may skip evaluating this subtree entirely (no query-fatal effects). */
@@ -1444,6 +1461,10 @@ abstract class LmdbNativeAggregatePlannerBase {
 	 * dictionary miss does not prove term absence for them.
 	 */
 	long idOfExtensionConstant(Value value, String targetName) {
+		if (NativeEntryBindings.hasProtectedAuthority(value)) {
+			// A store ID captures RDF equality, but cannot carry the caller's blank-node authority.
+			return UNKNOWN;
+		}
 		long id = idOf(value, layout.positionMask(targetName));
 		if (id != UNKNOWN || !termSafeAbsenceProof(value)) {
 			return id;

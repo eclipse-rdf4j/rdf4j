@@ -65,6 +65,16 @@ final class CompositeNativeLmdbQuerySource implements NativeLmdbQuerySource {
 	}
 
 	@Override
+	public boolean readsAreRestartSafe() {
+		for (NativeLmdbQuerySource source : sources) {
+			if (!source.readsAreRestartSafe()) {
+				return false;
+			}
+		}
+		return true;
+	}
+
+	@Override
 	public long idOf(Value value) throws QueryEvaluationException {
 		return sources.get(0).idOf(value);
 	}
@@ -1225,6 +1235,11 @@ final class CompositeNativeLmdbQuerySource implements NativeLmdbQuerySource {
 		}
 
 		@Override
+		public boolean readsAreRestartSafe() {
+			return delegate.readsAreRestartSafe();
+		}
+
+		@Override
 		public long snapshotId() {
 			return snapshotId;
 		}
@@ -2023,6 +2038,7 @@ final class CompositeNativeLmdbQuerySource implements NativeLmdbQuerySource {
 			}
 			while (index < sources.size()) {
 				if (current == null) {
+					NativeCancellationToken.checkCurrent();
 					try {
 						NativeLmdbQuerySource source = sources.get(index);
 						current = range != null
@@ -2041,9 +2057,8 @@ final class CompositeNativeLmdbQuerySource implements NativeLmdbQuerySource {
 				if (row != null) {
 					return row;
 				}
-				current.close();
-				current = null;
 				index++;
+				closeCurrent();
 			}
 			close();
 			return null;
@@ -2066,10 +2081,15 @@ final class CompositeNativeLmdbQuerySource implements NativeLmdbQuerySource {
 		public void close() {
 			if (!closed) {
 				closed = true;
-				if (current != null) {
-					current.close();
-					current = null;
-				}
+				closeCurrent();
+			}
+		}
+
+		private void closeCurrent() {
+			RecordIterator owned = current;
+			current = null;
+			if (owned != null) {
+				owned.close();
 			}
 		}
 	}

@@ -26,6 +26,7 @@ import java.util.function.Supplier;
 import java.util.stream.Stream;
 
 import org.eclipse.rdf4j.common.annotation.Experimental;
+import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.MutableBindingSet;
@@ -58,6 +59,10 @@ final class NativeSubqueryPlan implements SlotPlan {
 			BiFunction<Set<String>, NativeExecutionContext, QueryEvaluationStep> lateralStepFactory) {
 	}
 
+	/** A finite estimate and assured RDF output keys of a repeatable independent join operand. */
+	record IndependentSweep(double rows, long assuredKeys) {
+	}
+
 	private final QueryEvaluationStep step;
 	private final int[] outSlots;
 	private final String[] outNames;
@@ -67,6 +72,8 @@ final class NativeSubqueryPlan implements SlotPlan {
 	private final String[] privateGraphParameters;
 	private final boolean[] graphFrameInputs;
 	private final Projection projection;
+	private final boolean privateGraphCaller;
+	private final boolean projectionInputOwnedByStep;
 	private final QueryEvaluationContext context;
 	private final long producedMask;
 	private final WorkerFactory workerFactory;
@@ -74,6 +81,7 @@ final class NativeSubqueryPlan implements SlotPlan {
 	private final NativeAggregateCostQuotes.Input physicalInput;
 	private final NativePhysicalResultPlan physicalRecipe;
 	private final BindingSet physicalBindings;
+	private final IndependentSweep independentSweep;
 
 	NativeSubqueryPlan(QueryEvaluationStep step, int[] outSlots, String[] outNames, int[] frameInputSlots,
 			String[] frameInputNames) {
@@ -99,6 +107,24 @@ final class NativeSubqueryPlan implements SlotPlan {
 			Projection projection, QueryEvaluationContext context,
 			WorkerFactory workerFactory,
 			BiFunction<Set<String>, NativeExecutionContext, QueryEvaluationStep> lateralStepFactory) {
+		this(step, outSlots, outNames, frameInputSlots, frameInputNames, frameParameterNames, privateGraphParameters,
+				projection, context, workerFactory, lateralStepFactory, false);
+	}
+
+	NativeSubqueryPlan(QueryEvaluationStep step, int[] outSlots, String[] outNames, int[] frameInputSlots,
+			String[] frameInputNames, String[] frameParameterNames, String[] privateGraphParameters,
+			Projection projection, QueryEvaluationContext context, WorkerFactory workerFactory,
+			BiFunction<Set<String>, NativeExecutionContext, QueryEvaluationStep> lateralStepFactory,
+			boolean projectionInputOwnedByStep) {
+		this(step, outSlots, outNames, frameInputSlots, frameInputNames, frameParameterNames, privateGraphParameters,
+				projection, context, workerFactory, lateralStepFactory, projectionInputOwnedByStep, null);
+	}
+
+	NativeSubqueryPlan(QueryEvaluationStep step, int[] outSlots, String[] outNames, int[] frameInputSlots,
+			String[] frameInputNames, String[] frameParameterNames, String[] privateGraphParameters,
+			Projection projection, QueryEvaluationContext context, WorkerFactory workerFactory,
+			BiFunction<Set<String>, NativeExecutionContext, QueryEvaluationStep> lateralStepFactory,
+			boolean projectionInputOwnedByStep, IndependentSweep independentSweep) {
 		this.step = step;
 		this.outSlots = outSlots.clone();
 		this.outNames = outNames.clone();
@@ -112,12 +138,15 @@ final class NativeSubqueryPlan implements SlotPlan {
 			graphFrameInputs[i] = graphParameters.contains(frameParameterNames[i]);
 		}
 		this.projection = projection;
+		this.privateGraphCaller = projection != null && ProjectionQueryEvaluationStep.hasPrivateGraphCaller(projection);
+		this.projectionInputOwnedByStep = projectionInputOwnedByStep;
 		this.context = context;
 		this.workerFactory = workerFactory;
 		this.lateralStepFactory = lateralStepFactory;
 		this.physicalInput = null;
 		this.physicalRecipe = null;
 		this.physicalBindings = null;
+		this.independentSweep = independentOfOuterRow() ? independentSweep : null;
 		long mask = 0L;
 		for (int slot : outSlots) {
 			mask |= 1L << slot;
@@ -135,6 +164,8 @@ final class NativeSubqueryPlan implements SlotPlan {
 		privateGraphParameters = original.privateGraphParameters;
 		graphFrameInputs = original.graphFrameInputs;
 		projection = original.projection;
+		privateGraphCaller = original.privateGraphCaller;
+		projectionInputOwnedByStep = original.projectionInputOwnedByStep;
 		context = original.context;
 		producedMask = original.producedMask;
 		workerFactory = original.workerFactory;
@@ -142,6 +173,7 @@ final class NativeSubqueryPlan implements SlotPlan {
 		physicalInput = recipe.input();
 		physicalRecipe = recipe;
 		physicalBindings = NativeEntryBindings.copyValues(bindings);
+		independentSweep = original.independentSweep;
 	}
 
 	boolean workerBindable() {
@@ -213,8 +245,9 @@ final class NativeSubqueryPlan implements SlotPlan {
 			return null;
 		}
 		BindingSet input = frameBindings(row, execution.queryBase());
-		BindingSet body = NativeEntryBindings.preserve(input, projection == null ? input
-				: ProjectionQueryEvaluationStep.withInheritedGraphInput(projection, input, context));
+		BindingSet body = NativeEntryBindings.preserve(input, projection == null || projectionInputOwnedByStep ? input
+				: ProjectionQueryEvaluationStep.withInheritedGraphInput(projection, input, context,
+						privateGraphCaller));
 		NativePhysicalResultPlan recipe = inLexicalScope(row.source, row.cancellation,
 				() -> {
 					NativePhysicalResultPlan selected = nativeStep.physicalPlan(body);
@@ -247,7 +280,7 @@ final class NativeSubqueryPlan implements SlotPlan {
 		NativeSubqueryPlan result = new NativeSubqueryPlan(bound.step(), outSlots, outNames, frameInputSlots,
 				frameInputNames,
 				frameParameterNames, privateGraphParameters, projection, bound.context(), workerFactory,
-				bound.lateralStepFactory());
+				bound.lateralStepFactory(), projectionInputOwnedByStep, independentSweep);
 		if (physicalInput != null) {
 			NativePhysicalResultPlan recipe;
 			try (SyntheticValueSource.EvaluationScope ignored = SyntheticValueSource
@@ -260,6 +293,43 @@ final class NativeSubqueryPlan implements SlotPlan {
 			result = result.boundPhysical(recipe, physicalBindings);
 		}
 		return result;
+	}
+
+	/** A worker's semantic value expression gives its SELECT the invocation mapping directly. */
+	static QueryEvaluationStep bindSemanticWorker(Projection projection, QueryEvaluationContext context,
+			LmdbNativeEvaluationStrategy strategy, NativeLmdbQuerySource source,
+			Supplier<QueryEvaluationStep> semanticPreparation) {
+		QueryEvaluationStep selected = LmdbNativeAggregateCompiler.tryCompileSemanticSubquery(projection,
+				context, strategy, source);
+		return workerEntry(selected == null ? semanticPreparation.get()
+				: recordWorkerSelection(selected, WORKER_BINDINGS), source);
+	}
+
+	/** Records only an opened native recipe, once for this worker-owned preparation. */
+	static QueryEvaluationStep recordWorkerSelection(QueryEvaluationStep selected, AtomicLong executions) {
+		return new QueryEvaluationStep() {
+			private boolean opened;
+
+			@Override
+			public CloseableIteration<BindingSet> evaluate(BindingSet input) {
+				CloseableIteration<BindingSet> rows = selected.evaluate(input);
+				if (!opened) {
+					opened = true;
+					executions.incrementAndGet();
+				}
+				return rows;
+			}
+		};
+	}
+
+	/** Retains the worker source during lazy evaluation and closes only the caller's own child iteration. */
+	static QueryEvaluationStep workerEntry(QueryEvaluationStep step, NativeLmdbQuerySource source) {
+		NativeCancellationToken cancellation = NativeCancellationToken.forSource(source);
+		NativeExecutionContext execution = source instanceof SyntheticValueSource synthetic
+				? synthetic.executionContext()
+				: null;
+		return bindings -> inLexicalScope(source, cancellation,
+				() -> new NativeContextClosingIteration(step.evaluate(bindings), execution, false, source));
 	}
 
 	@Override
@@ -332,6 +402,10 @@ final class NativeSubqueryPlan implements SlotPlan {
 	/** Whether this boundary's solutions depend on the entry base only, never on the current outer row. */
 	boolean independentOfOuterRow() {
 		return frameInputSlots.length == 0 && privateGraphParameters.length == 0 && lateralStepFactory == null;
+	}
+
+	IndependentSweep independentSweep() {
+		return requiresPhysicalResults() ? null : independentSweep;
 	}
 
 	/** Visible output variable names, parallel to {@link #outSlots()}. */
@@ -466,8 +540,10 @@ final class NativeSubqueryPlan implements SlotPlan {
 	private NativeLazyResultReplay prepareReplay(RowState row, BindingSet input, NativeExecutionContext owner) {
 		row.cancellation.check();
 		QueryEvaluationStep prepared = preparedStep(row);
-		BindingSet bodyInput = NativeEntryBindings.preserve(input, projection == null ? input
-				: ProjectionQueryEvaluationStep.withInheritedGraphInput(projection, input, context));
+		BindingSet bodyInput = NativeEntryBindings.preserve(input,
+				projection == null || projectionInputOwnedByStep ? input
+						: ProjectionQueryEvaluationStep.withInheritedGraphInput(projection, input, context,
+								privateGraphCaller));
 		NativeLmdbQuerySource source = row.source;
 		NativeCancellationToken cancellation = row.cancellation;
 		NativeResultCursor delegate = inLexicalScope(source, cancellation,

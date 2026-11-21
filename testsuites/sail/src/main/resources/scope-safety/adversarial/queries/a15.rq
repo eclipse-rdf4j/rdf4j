@@ -1,0 +1,9 @@
+# #4882: the lifted OPTIONAL condition can see ?x while right-operand BIND cannot.
+SELECT ?x ?y ?z WHERE {
+  VALUES ?x { "left" }
+  OPTIONAL {
+    FILTER(BOUND(?x))
+    BIND("yes" AS ?y)
+    BIND(?x AS ?z)
+  }
+}

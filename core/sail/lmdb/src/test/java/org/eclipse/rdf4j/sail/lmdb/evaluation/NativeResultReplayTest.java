@@ -25,9 +25,19 @@ import static org.mockito.Mockito.CALLS_REAL_METHODS;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
+import java.io.ByteArrayInputStream;
+import java.io.ByteArrayOutputStream;
+import java.io.DataInputStream;
+import java.io.DataOutputStream;
+import java.io.FilterInputStream;
+import java.io.IOException;
+import java.io.ObjectInputStream;
+import java.io.OutputStream;
 import java.math.BigInteger;
+import java.nio.ByteBuffer;
 import java.nio.file.Path;
 import java.time.Duration;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -38,6 +48,10 @@ import org.eclipse.rdf4j.common.iteration.CloseableIteratorIteration;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.query.BindingSet;
+import org.eclipse.rdf4j.query.QueryEvaluationException;
+import org.eclipse.rdf4j.query.algebra.evaluation.QueryBindingSet;
+import org.eclipse.rdf4j.query.algebra.evaluation.impl.BindingFrameBindings;
+import org.eclipse.rdf4j.query.algebra.evaluation.impl.QueryEvaluationContext;
 import org.eclipse.rdf4j.query.impl.EmptyBindingSet;
 import org.eclipse.rdf4j.query.impl.GeneratedBNode;
 import org.eclipse.rdf4j.query.impl.MapBindingSet;
@@ -53,6 +67,260 @@ import jdk.jfr.Recording;
 import jdk.jfr.consumer.RecordingFile;
 
 class NativeResultReplayTest {
+	@Test
+	void spillPreservesTupleOnlyRecipientAndUnboundShadow() throws IOException {
+		QueryEvaluationContext context = new QueryEvaluationContext.Minimal(null);
+		Value value = SimpleValueFactory.getInstance().createLiteral("tuple argument");
+		Value probe = SimpleValueFactory.getInstance().createLiteral("older probe");
+		BindingFrameBindings.TupleParameterGrant grant = new BindingFrameBindings.TupleParameterGrant(Set.of("x"));
+		BindingFrameBindings.TupleParameterGrant wrong = new BindingFrameBindings.TupleParameterGrant(Set.of("x"));
+		QueryBindingSet caller = new QueryBindingSet();
+		caller.addBinding("x", value);
+		BindingSet withheld = BindingFrameBindings.without(caller, Set.of("x"), context);
+		QueryBindingSet probeRow = new QueryBindingSet();
+		probeRow.addBinding("x", probe);
+		BindingSet older = BindingFrameBindings.push(new BindingFrameBindings.Scope(), withheld, probeRow, context);
+		BindingSet unboundOlder = BindingFrameBindings.push(new BindingFrameBindings.Scope(),
+				EmptyBindingSet.getInstance(), probeRow, context);
+		BindingSet argument = BindingFrameBindings.withLateralDomain(older, Set.of(), Set.of("x"), older,
+				Set.of("x"), Set.of("x"), List.of(grant), context);
+		BindingSet unbound = BindingFrameBindings.withLateralDomain(unboundOlder, Set.of(), Set.of("x"), unboundOlder,
+				Set.of("x"), Set.of("x"), List.of(grant), context);
+		NativeResultRow.Schema schema = new NativeResultRow.Schema();
+		BindingSet noRecipient = BindingFrameBindings.withLateralDomain(unboundOlder, Set.of(), Set.of("x"), context);
+		assertTrue(
+				NativeResultRow.fromBindingSet(schema, unbound)
+						.retainedMetadataBytes() > NativeResultRow.fromBindingSet(schema, noRecipient)
+								.retainedMetadataBytes() + 160L,
+				"an unbound recipient's shadow names are accounted separately from its frame");
+		for (BindingSet input : List.of(argument, unbound)) {
+			byte[] encoded = encodeFrame(NativeResultRow.fromBindingSet(schema, input));
+			LmdbQueryMemoryManager memory = LmdbQueryMemoryManager.createForTesting(1L << 20, 1L << 20);
+			NativeCancellationToken cancellation = new NativeCancellationToken();
+			try (var ledger = memory.openQuery();
+					NativeResultFrameCodec codec = new NativeResultFrameCodec(ledger, cancellation);
+					DataInputStream stream = new DataInputStream(new ByteArrayInputStream(encoded))) {
+				BindingSet restored = codec.read(stream, schema, new NativeResultCell[0], cancellation).toBindingSet();
+				assertTrue(restored.isEmpty());
+				assertEquals(Set.of(), BindingFrameBindings.substitutionDomain(restored));
+				assertEquals(input == argument ? value : null, grant.value(restored, "x"));
+				assertNull(wrong.value(restored, "x"));
+				assertNull(BindingFrameBindings.probeValue(restored, "x"));
+				assertFalse(BindingFrameBindings.hasVisibleProbes(restored));
+			}
+			assertEquals(0L, memory.usedBytes());
+		}
+	}
+
+	@Test
+	void spillPreservesAndAccountsForWithheldInvocationInputs() throws IOException {
+		QueryEvaluationContext context = new QueryEvaluationContext.Minimal(null);
+		Value value = SimpleValueFactory.getInstance().createLiteral("withheld invocation value");
+		QueryBindingSet input = new QueryBindingSet();
+		input.addBinding("parameter", value);
+		BindingSet withheld = BindingFrameBindings.without(input, Set.of("parameter"), context);
+		NativeResultRow.Schema schema = new NativeResultRow.Schema();
+		NativeResultRow original = NativeResultRow.fromBindingSet(schema, withheld);
+		assertTrue(original.retainedMetadataBytes() > emptyProbeFrameRow(1).retainedMetadataBytes(),
+				"the withheld value and its name must be included in the resident metadata charge");
+		byte[] encoded = encodeFrame(original);
+		LmdbQueryMemoryManager memory = LmdbQueryMemoryManager.createForTesting(1L << 20, 1L << 20);
+		NativeCancellationToken cancellation = new NativeCancellationToken();
+		try (var ledger = memory.openQuery();
+				NativeResultFrameCodec codec = new NativeResultFrameCodec(ledger, cancellation);
+				DataInputStream stream = new DataInputStream(new ByteArrayInputStream(encoded))) {
+			BindingSet restored = codec.read(stream, schema, new NativeResultCell[0], cancellation).toBindingSet();
+			assertTrue(restored.isEmpty());
+			assertNull(BindingFrameBindings.probeValue(restored, "parameter"));
+			assertEquals(value, BindingFrameBindings.parameterValue(restored, "parameter"));
+		}
+		assertEquals(0L, memory.usedBytes());
+	}
+
+	@Test
+	void spillPreservesAndAccountsForNestedSubstitutionDomains() throws IOException {
+		QueryEvaluationContext context = new QueryEvaluationContext.Minimal(null);
+		BindingSet outer = BindingFrameBindings.withSubstitutionDomain(EmptyBindingSet.getInstance(),
+				Set.of("parameter"), context);
+		BindingSet nested = BindingFrameBindings.withSubstitutionDomain(outer, Set.of(), context);
+		NativeResultRow.Schema schema = new NativeResultRow.Schema();
+		NativeResultRow original = NativeResultRow.fromBindingSet(schema, nested);
+		assertTrue(original.retainedMetadataBytes() > emptyProbeFrameRow(2).retainedMetadataBytes(),
+				"both domain sets and their names must be charged");
+		byte[] encoded = encodeFrame(original);
+		LmdbQueryMemoryManager memory = LmdbQueryMemoryManager.createForTesting(1L << 20, 1L << 20);
+		NativeCancellationToken cancellation = new NativeCancellationToken();
+		try (var ledger = memory.openQuery();
+				NativeResultFrameCodec codec = new NativeResultFrameCodec(ledger, cancellation);
+				DataInputStream stream = new DataInputStream(new ByteArrayInputStream(encoded))) {
+			BindingSet restored = codec.read(stream, schema, new NativeResultCell[0], cancellation).toBindingSet();
+			assertTrue(restored.isEmpty());
+			assertEquals(Set.of(), BindingFrameBindings.substitutionDomain(restored));
+			AtomicInteger domains = new AtomicInteger();
+			List<String> names = new ArrayList<>();
+			BindingFrameBindings.visitSubstitutionDomains(BindingFrameBindings.from(restored), domains::incrementAndGet,
+					names::add);
+			assertEquals(2, domains.get());
+			assertEquals(List.of("parameter"), names);
+		}
+		assertEquals(0L, memory.usedBytes());
+	}
+
+	@Test
+	void spillFrameWriteReservesDepthScratchBeforeEncoding() throws IOException {
+		LmdbQueryMemoryManager memory = LmdbQueryMemoryManager.createForTesting(20_480L, 20_480L);
+		NativeCancellationToken cancellation = new NativeCancellationToken();
+		NativeResultRow row = emptyProbeFrameRow(128);
+		try (var ledger = memory.openQuery();
+				NativeResultFrameCodec codec = new NativeResultFrameCodec(ledger, cancellation);
+				ByteArrayOutputStream bytes = new ByteArrayOutputStream();
+				DataOutputStream output = new DataOutputStream(bytes)) {
+			assertThrows(QueryEvaluationException.class, () -> codec.write(output, row));
+			assertEquals(0L, memory.usedBytes(), "a refused encoding must release temporary reservations");
+		}
+		assertEquals(0L, memory.usedBytes());
+	}
+
+	@Test
+	void spillFrameReadReservesDepthScratchBeforeDecoding() throws IOException {
+		NativeCancellationToken cancellation = new NativeCancellationToken();
+		NativeResultRow row = emptyProbeFrameRow(128);
+		NativeResultRow.Schema schema = new NativeResultRow.Schema();
+		byte[] encoded = encodeFrame(row);
+		LmdbQueryMemoryManager bounded = LmdbQueryMemoryManager.createForTesting(20_480L, 20_480L);
+		try (var ledger = bounded.openQuery();
+				NativeResultFrameCodec codec = new NativeResultFrameCodec(ledger, cancellation);
+				DataInputStream input = new DataInputStream(new ByteArrayInputStream(encoded))) {
+			assertThrows(QueryEvaluationException.class,
+					() -> codec.read(input, schema, new NativeResultCell[0], cancellation));
+			assertEquals(0L, bounded.usedBytes(), "a refused decoding must release temporary reservations");
+		}
+		assertEquals(0L, bounded.usedBytes());
+	}
+
+	@Test
+	void mismatchedSpillDepthIsRejectedBeforeDecodingProbeValues() throws IOException {
+		QueryEvaluationContext context = new QueryEvaluationContext.Minimal(null);
+		BindingFrameBindings.Scope owner = new BindingFrameBindings.Scope();
+		QueryBindingSet probe = new QueryBindingSet();
+		probe.addBinding("probe", new DecodeObservedValue());
+		BindingSet frame = EmptyBindingSet.getInstance();
+		for (int index = 0; index < 128; index++) {
+			frame = BindingFrameBindings.push(owner, frame, probe, context);
+		}
+		byte[] encoded = encodeFrame(NativeResultRow.fromBindingSet(new NativeResultRow.Schema(), frame));
+		ByteBuffer.wrap(encoded, 1, Integer.BYTES).putInt(1);
+		DecodeObservedValue.DECODES.set(0);
+		LmdbQueryMemoryManager memory = LmdbQueryMemoryManager.createForTesting(1L << 20, 1L << 20);
+		NativeCancellationToken cancellation = new NativeCancellationToken();
+		try (var ledger = memory.openQuery();
+				NativeResultFrameCodec codec = new NativeResultFrameCodec(ledger, cancellation);
+				DataInputStream input = new DataInputStream(new ByteArrayInputStream(encoded))) {
+			assertThrows(IOException.class,
+					() -> codec.read(input, new NativeResultRow.Schema(), new NativeResultCell[0], cancellation));
+			assertEquals(0, DecodeObservedValue.DECODES.get(), "invalid depth must be rejected before probe decoding");
+			assertEquals(0L, memory.usedBytes());
+		}
+	}
+
+	private static final class DecodeObservedValue implements Value {
+		private static final long serialVersionUID = 1L;
+		private static final AtomicInteger DECODES = new AtomicInteger();
+
+		@Override
+		public String stringValue() {
+			return "observed";
+		}
+
+		private void readObject(ObjectInputStream input) throws IOException, ClassNotFoundException {
+			input.defaultReadObject();
+			DECODES.incrementAndGet();
+		}
+	}
+
+	@Test
+	void failedFrameEncodingReleasesScratchAndHandleCharges() throws IOException {
+		LmdbQueryMemoryManager memory = LmdbQueryMemoryManager.createForTesting(1L << 20, 1L << 20);
+		NativeCancellationToken cancellation = new NativeCancellationToken();
+		try (var ledger = memory.openQuery();
+				NativeResultFrameCodec codec = new NativeResultFrameCodec(ledger, cancellation);
+				DataOutputStream output = new DataOutputStream(new OutputStream() {
+					private int written;
+
+					@Override
+					public void write(int value) throws IOException {
+						if (++written > 300) {
+							throw new IOException("deliberate spill failure");
+						}
+					}
+				})) {
+			assertThrows(IOException.class, () -> codec.write(output, emptyProbeFrameRow(128)));
+			assertEquals(0L, memory.usedBytes(), "failed encoding must release its temporary charges");
+		}
+		assertEquals(0L, memory.usedBytes());
+	}
+
+	@Test
+	void cancelledFrameDecodingReleasesScratchAndHandleCharges() throws IOException {
+		byte[] encoded = encodeFrame(emptyProbeFrameRow(128));
+		LmdbQueryMemoryManager memory = LmdbQueryMemoryManager.createForTesting(1L << 20, 1L << 20);
+		NativeCancellationToken cancellation = new NativeCancellationToken();
+		try (var ledger = memory.openQuery();
+				NativeResultFrameCodec codec = new NativeResultFrameCodec(ledger, cancellation);
+				DataInputStream input = new DataInputStream(new FilterInputStream(new ByteArrayInputStream(encoded)) {
+					private int read;
+
+					@Override
+					public int read() throws IOException {
+						int value = in.read();
+						if (value >= 0 && ++read >= 64) {
+							cancellation.requestCancellation();
+						}
+						return value;
+					}
+
+					@Override
+					public int read(byte[] target, int offset, int length) throws IOException {
+						int count = in.read(target, offset, length);
+						if (count > 0 && (read += count) >= 64) {
+							cancellation.requestCancellation();
+						}
+						return count;
+					}
+				})) {
+			assertThrows(KernelQueryCancelledException.class,
+					() -> codec.read(input, new NativeResultRow.Schema(), new NativeResultCell[0], cancellation));
+			assertEquals(0L, memory.usedBytes(), "cancelled decoding must release its temporary charges");
+		}
+		assertEquals(0L, memory.usedBytes());
+	}
+
+	private static byte[] encodeFrame(NativeResultRow row) throws IOException {
+		LmdbQueryMemoryManager memory = LmdbQueryMemoryManager.createForTesting(1L << 20, 1L << 20);
+		NativeCancellationToken cancellation = new NativeCancellationToken();
+		byte[] encoded;
+		try (var ledger = memory.openQuery();
+				NativeResultFrameCodec codec = new NativeResultFrameCodec(ledger, cancellation);
+				ByteArrayOutputStream bytes = new ByteArrayOutputStream();
+				DataOutputStream output = new DataOutputStream(bytes)) {
+			codec.write(output, row);
+			output.flush();
+			encoded = bytes.toByteArray();
+		}
+		assertEquals(0L, memory.usedBytes());
+		return encoded;
+	}
+
+	private static NativeResultRow emptyProbeFrameRow(int depth) {
+		QueryEvaluationContext context = new QueryEvaluationContext.Minimal(null);
+		BindingFrameBindings.Scope owner = new BindingFrameBindings.Scope();
+		BindingSet frame = EmptyBindingSet.getInstance();
+		for (int index = 0; index < depth; index++) {
+			frame = BindingFrameBindings.push(owner, frame, EmptyBindingSet.getInstance(), context);
+		}
+		return NativeResultRow.fromBindingSet(new NativeResultRow.Schema(), frame);
+	}
+
 	@Test
 	void smallResidentReplayDoesNotReserveSpillWorkspace() {
 		LmdbQueryMemoryManager memory = LmdbQueryMemoryManager.createForTesting(5_000L, 5_000L);

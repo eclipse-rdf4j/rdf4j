@@ -1,0 +1,5 @@
+# #4882: COALESCE sees ?x unbound in the OPTIONAL right operand.
+SELECT ?x ?y WHERE {
+  VALUES ?x { "left" }
+  OPTIONAL { BIND(COALESCE(?x, "fallback") AS ?y) }
+}

@@ -1,0 +1,5 @@
+# #6389: a right-side BIND target conflict leaves the OPTIONAL's left value intact.
+SELECT ?x WHERE {
+  VALUES ?x { "left" }
+  OPTIONAL { BIND("right" AS ?x) }
+}

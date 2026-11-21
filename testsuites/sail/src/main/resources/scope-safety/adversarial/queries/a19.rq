@@ -1,0 +1,9 @@
+# #6403: the UNION arm filtered by outer-only ?x does not match; the other arm remains.
+SELECT ?x ?y WHERE {
+  VALUES ?x { "left" }
+  OPTIONAL {
+    { FILTER(BOUND(?x)) BIND("yes" AS ?y) }
+    UNION
+    { BIND("other" AS ?y) }
+  }
+}

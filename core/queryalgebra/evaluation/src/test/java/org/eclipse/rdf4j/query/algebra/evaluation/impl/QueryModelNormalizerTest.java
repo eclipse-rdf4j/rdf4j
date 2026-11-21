@@ -12,6 +12,7 @@
 package org.eclipse.rdf4j.query.algebra.evaluation.impl;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.junit.jupiter.api.Assertions.assertAll;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -21,16 +22,19 @@ import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
+import java.util.function.Consumer;
 
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.common.iteration.CloseableIteratorIteration;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.Statement;
+import org.eclipse.rdf4j.model.TripleTerm;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.impl.BooleanLiteral;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.query.BindingSet;
+import org.eclipse.rdf4j.query.Dataset;
 import org.eclipse.rdf4j.query.QueryLanguage;
 import org.eclipse.rdf4j.query.algebra.And;
 import org.eclipse.rdf4j.query.algebra.BindingSetAssignment;
@@ -44,6 +48,8 @@ import org.eclipse.rdf4j.query.algebra.Join;
 import org.eclipse.rdf4j.query.algebra.LeftJoin;
 import org.eclipse.rdf4j.query.algebra.Or;
 import org.eclipse.rdf4j.query.algebra.Projection;
+import org.eclipse.rdf4j.query.algebra.ProjectionElem;
+import org.eclipse.rdf4j.query.algebra.ProjectionElemList;
 import org.eclipse.rdf4j.query.algebra.QueryRoot;
 import org.eclipse.rdf4j.query.algebra.SingletonSet;
 import org.eclipse.rdf4j.query.algebra.StatementPattern;
@@ -55,11 +61,16 @@ import org.eclipse.rdf4j.query.algebra.evaluation.QueryOptimizerTest;
 import org.eclipse.rdf4j.query.algebra.evaluation.TripleSource;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.QueryModelNormalizerOptimizer;
 import org.eclipse.rdf4j.query.algebra.helpers.AbstractQueryModelVisitor;
+import org.eclipse.rdf4j.query.impl.BlankNodeAllocationScope;
 import org.eclipse.rdf4j.query.impl.EmptyBindingSet;
 import org.eclipse.rdf4j.query.impl.ListBindingSet;
+import org.eclipse.rdf4j.query.impl.RemoteBNode;
+import org.eclipse.rdf4j.query.impl.RepositoryBNode;
 import org.eclipse.rdf4j.query.parser.QueryParserUtil;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 
 public class QueryModelNormalizerTest extends QueryOptimizerTest {
 
@@ -214,6 +225,25 @@ public class QueryModelNormalizerTest extends QueryOptimizerTest {
 		subject.optimize(normalized, null, EmptyBindingSet.getInstance());
 
 		assertThat(evaluate(normalized)).containsExactlyElementsOf(expected);
+	}
+
+	@ParameterizedTest(name = "{0}")
+	@ValueSource(strings = { "values", "alias" })
+	public void directVisitorKeepsDeclaredOptionalOutputBeforeConflictingSibling(String producer) throws Exception {
+		IRI left = SimpleValueFactory.getInstance().createIRI("urn:visitor:left");
+		IRI right = SimpleValueFactory.getInstance().createIRI("urn:visitor:right");
+		TupleExpr output = producer.equals("values") ? bindingSetAssignment("x", right)
+				: new Projection(bindingSetAssignment("local", right),
+						new ProjectionElemList(new ProjectionElem("local", "x")), false);
+		QueryRoot root = new QueryRoot(new Join(new LeftJoin(new SingletonSet(), output),
+				bindingSetAssignment("x", left)));
+		assertThat(evaluate(root.clone())).as("unmodified algebra").isEmpty();
+
+		root.visit(subject);
+
+		assertThat(evaluate(root.clone())).as("after direct visitor").isEmpty();
+		assertThat(root.getArg()).isInstanceOf(Join.class);
+		assertThat(((Join) root.getArg()).getLeftArg()).isInstanceOf(LeftJoin.class);
 	}
 
 	@Test
@@ -452,7 +482,28 @@ public class QueryModelNormalizerTest extends QueryOptimizerTest {
 		Extension siblingOverwrite = new Extension(new SingletonSet(),
 				new ExtensionElem(new ValueConstant(newValue), "x"));
 		QueryRoot original = new QueryRoot(new Join(optional, siblingOverwrite));
-		List<BindingSet> expected = List.of(new ListBindingSet(List.of("x", "y"), newValue, yValue));
+		// The outer sibling independently produces x=new, which is incompatible with the OPTIONAL's x=old.
+		List<BindingSet> expected = List.of();
+		assertThat(evaluate(original.clone())).containsExactlyElementsOf(expected);
+
+		QueryRoot normalized = original.clone();
+		subject.optimize(normalized, null, EmptyBindingSet.getInstance());
+
+		assertThat(evaluate(normalized)).containsExactlyElementsOf(expected);
+	}
+
+	@Test
+	public void preservesOptionalFilterWithCompatibleLocalSiblingOverwrite() throws Exception {
+		IRI oldValue = SimpleValueFactory.getInstance().createIRI("urn:old");
+		IRI newValue = SimpleValueFactory.getInstance().createIRI("urn:new");
+		IRI yValue = SimpleValueFactory.getInstance().createIRI("urn:y");
+		TupleExpr optionalRight = new Filter(bindingSetAssignment("y", yValue),
+				new Compare(new Var("x"), new ValueConstant(oldValue)));
+		LeftJoin optional = new LeftJoin(bindingSetAssignment("x", oldValue), optionalRight);
+		Extension sibling = new Extension(bindingSetAssignment("x", newValue),
+				new ExtensionElem(new ValueConstant(oldValue), "x"));
+		QueryRoot original = new QueryRoot(new Join(optional, sibling));
+		List<BindingSet> expected = List.of(new ListBindingSet(List.of("x", "y"), oldValue, yValue));
 		assertThat(evaluate(original.clone())).containsExactlyElementsOf(expected);
 
 		QueryRoot normalized = original.clone();
@@ -537,8 +588,7 @@ public class QueryModelNormalizerTest extends QueryOptimizerTest {
 		LeftJoin optional = new LeftJoin(bindingSetAssignment("x", oldValue), optionalRight);
 		QueryRoot original = new QueryRoot(new Join(optional, bindingSetAssignment("x", replacement)));
 		List<BindingSet> expected = evaluate(original.clone());
-		assertThat(expected).hasSize(2)
-				.allSatisfy(row -> assertThat(row.getValue("x")).isEqualTo(replacement));
+		assertThat(expected).isEmpty();
 
 		QueryRoot normalized = original.clone();
 		subject.optimize(normalized, null, EmptyBindingSet.getInstance());
@@ -546,6 +596,25 @@ public class QueryModelNormalizerTest extends QueryOptimizerTest {
 		assertThat(evaluate(normalized)).containsExactlyElementsOf(expected);
 		assertThat(normalized.getArg()).isInstanceOf(Join.class);
 		assertThat(((Join) normalized.getArg()).getLeftArg()).isInstanceOf(LeftJoin.class);
+	}
+
+	@Test
+	public void preservesDuplicateCompatibleNestedOptionalOutputs() throws Exception {
+		IRI oldValue = SimpleValueFactory.getInstance().createIRI("urn:old");
+		IRI replacement = SimpleValueFactory.getInstance().createIRI("urn:replacement");
+		TupleExpr branch = new Join(bindingSetAssignment("a", oldValue),
+				new Extension(bindingSetAssignment("b", oldValue),
+						new ExtensionElem(new ValueConstant(replacement), "x")));
+		LeftJoin optional = new LeftJoin(bindingSetAssignment("x", replacement), new Union(branch, branch.clone()));
+		QueryRoot original = new QueryRoot(new Join(optional, bindingSetAssignment("x", replacement)));
+		BindingSet row = new ListBindingSet(List.of("x", "a", "b"), replacement, oldValue, oldValue);
+		List<BindingSet> expected = List.of(row, row);
+		assertThat(evaluate(original.clone())).containsExactlyInAnyOrderElementsOf(expected);
+
+		QueryRoot normalized = original.clone();
+		subject.optimize(normalized, null, EmptyBindingSet.getInstance());
+
+		assertThat(evaluate(normalized)).containsExactlyInAnyOrderElementsOf(expected);
 	}
 
 	@Test
@@ -573,6 +642,139 @@ public class QueryModelNormalizerTest extends QueryOptimizerTest {
 
 		assertThat(nestedRoot.getArg()).isInstanceOf(SingletonSet.class);
 		assertThat(outerRoot.getArg()).isInstanceOf(LeftJoin.class);
+	}
+
+	@Test
+	public void reordersCompatibleFixedOptionalOutputWithRuntimeInput() throws Exception {
+		IRI value = SimpleValueFactory.getInstance().createIRI("urn:shared");
+		BindingSet input = new ListBindingSet(List.of("x"), value);
+		QueryRoot root = new QueryRoot(new Join(new LeftJoin(new SingletonSet(), bindingSetAssignment("x", value)),
+				bindingSetAssignment("x", value)));
+		List<BindingSet> expected = evaluate(root.clone(), input);
+
+		subject.optimize(root, null, input);
+
+		assertThat(root.getArg()).isInstanceOf(LeftJoin.class);
+		assertThat(evaluate(root, input)).containsExactlyElementsOf(expected).hasSize(1);
+	}
+
+	@Test
+	public void keepsConflictingOptionalOutputFromCreatingAFallbackDuringReorder() throws Exception {
+		IRI value = SimpleValueFactory.getInstance().createIRI("urn:api");
+		IRI other = SimpleValueFactory.getInstance().createIRI("urn:local");
+		BindingSet input = new ListBindingSet(List.of("x"), value);
+		BindingSet marked = BindingFrameBindings.withSubstitutionDomain(input, Set.of(),
+				new QueryEvaluationContext.Minimal((Dataset) null));
+		assertThat(BindingFrameBindings.substitutionDomain(marked)).isEmpty();
+		QueryRoot root = new QueryRoot(new Join(new LeftJoin(new SingletonSet(), bindingSetAssignment("x", other)),
+				bindingSetAssignment("x", value)));
+		List<BindingSet> beforeCaller = evaluate(root.clone(), input);
+		List<BindingSet> beforeMarked = evaluate(root.clone(), marked);
+
+		subject.optimize(root, null, input);
+
+		List<BindingSet> afterCaller = evaluate(root, input);
+		List<BindingSet> afterMarked = evaluate(root, marked);
+		assertAll(
+				() -> assertThat(beforeCaller).containsExactly(input),
+				() -> assertThat(beforeMarked).isEmpty(),
+				() -> assertThat(root.getArg()).isInstanceOfSatisfying(Join.class,
+						join -> assertThat(join.getLeftArg()).isInstanceOf(LeftJoin.class)),
+				() -> assertThat(afterCaller).containsExactly(input),
+				() -> assertThat(afterMarked).isEmpty());
+	}
+
+	@Test
+	public void preservesNullableOptionalOutputMultiplicityDuringReorder() throws Exception {
+		IRI value = SimpleValueFactory.getInstance().createIRI("urn:shared");
+		BindingSet input = new ListBindingSet(List.of("x"), value);
+		BindingSetAssignment right = new BindingSetAssignment();
+		right.setBindingNames(Set.of("x"));
+		right.setBindingSets(List.of(new ListBindingSet(List.of("x"), value), EmptyBindingSet.getInstance()));
+		QueryRoot root = new QueryRoot(new Join(new LeftJoin(new SingletonSet(), right),
+				bindingSetAssignment("x", value)));
+		List<BindingSet> expected = evaluate(root.clone(), input);
+		assertThat(expected).hasSize(2);
+
+		subject.optimize(root, null, input);
+
+		assertThat(evaluate(root, input)).containsExactlyElementsOf(expected);
+	}
+
+	@Test
+	public void optionalReorderPreservesNegotiatedBlankNodeAuthority() throws Exception {
+		Value plain = SimpleValueFactory.getInstance().createBNode("wire");
+		Value reference = RepositoryBNode.fromNegotiatedResult("wire", "raw", true);
+		assertOptionalReorderPreservesAuthority(plain, reference, QueryModelNormalizerTest::assertRepositoryReference);
+	}
+
+	@Test
+	public void optionalReorderPreservesNestedBlankNodeAuthority() throws Exception {
+		var factory = SimpleValueFactory.getInstance();
+		IRI predicate = factory.createIRI("urn:p");
+		Value plain = factory.createTripleTerm(factory.createBNode("wire"), predicate, factory.createLiteral("object"));
+		Value reference = factory.createTripleTerm(RepositoryBNode.fromNegotiatedResult("wire", "raw", true),
+				predicate, factory.createLiteral("object"));
+		assertOptionalReorderPreservesAuthority(plain, reference, value -> assertThat(value)
+				.isInstanceOfSatisfying(TripleTerm.class, term -> assertRepositoryReference(term.getSubject())));
+	}
+
+	@Test
+	public void optionalReorderPreservesRemoteBlankNodeAuthority() throws Exception {
+		var factory = SimpleValueFactory.getInstance();
+		Object identityScope = new Object();
+		RemoteBNode reference = (RemoteBNode) RemoteBNode.newResponseScope(new BlankNodeAllocationScope(), factory,
+				identityScope, true).map(factory.createBNode("remote"));
+		Value plain = factory.createBNode(reference.getID());
+		assertOptionalReorderPreservesAuthority(plain, reference, value -> assertThat(value)
+				.isInstanceOfSatisfying(RemoteBNode.class,
+						node -> assertThat(node.getProvenance().identityScope()).isSameAs(identityScope)));
+	}
+
+	@Test
+	public void optionalReorderPreservesDifferentAuthoritiesForEqualRows() throws Exception {
+		Value plain = SimpleValueFactory.getInstance().createBNode("wire");
+		Value reference = RepositoryBNode.fromNegotiatedResult("wire", "raw", true);
+		BindingSet input = new ListBindingSet(List.of("x"), plain);
+		BindingSetAssignment right = new BindingSetAssignment();
+		right.setBindingNames(Set.of("x"));
+		right.setBindingSets(List.of(new ListBindingSet(List.of("x"), plain),
+				new ListBindingSet(List.of("x"), reference)));
+		QueryRoot root = new QueryRoot(new Join(new LeftJoin(new SingletonSet(), right),
+				bindingSetAssignment("x", plain)));
+		List<BindingSet> before = evaluate(root.clone(), input);
+		assertThat(before).hasSize(2);
+		assertRepositoryReference(before.get(1).getValue("x"));
+
+		subject.optimize(root, null, input);
+
+		List<BindingSet> after = evaluate(root, input);
+		assertThat(after).hasSize(2);
+		assertRepositoryReference(after.get(1).getValue("x"));
+	}
+
+	private void assertOptionalReorderPreservesAuthority(Value entry, Value local, Consumer<Value> authority)
+			throws Exception {
+		assertThat(entry).isEqualTo(local);
+		BindingSet input = new ListBindingSet(List.of("x"), entry);
+		QueryRoot root = new QueryRoot(new Join(new LeftJoin(new SingletonSet(), bindingSetAssignment("x", local)),
+				bindingSetAssignment("x", entry)));
+		List<BindingSet> before = evaluate(root.clone(), input);
+		assertThat(before).hasSize(1);
+		authority.accept(before.getFirst().getValue("x"));
+
+		subject.optimize(root, null, input);
+
+		List<BindingSet> after = evaluate(root, input);
+		assertThat(after).hasSize(1);
+		authority.accept(after.getFirst().getValue("x"));
+	}
+
+	private static void assertRepositoryReference(Value value) {
+		assertThat(value).isInstanceOfSatisfying(RepositoryBNode.class, node -> {
+			assertThat(node.getRawID()).isEqualTo("raw");
+			assertThat(node.isReference()).isTrue();
+		});
 	}
 
 	@Test
@@ -624,7 +826,7 @@ public class QueryModelNormalizerTest extends QueryOptimizerTest {
 		assertThat(withoutInputBinding.getArg()).isInstanceOf(Join.class);
 	}
 
-	private static BindingSetAssignment bindingSetAssignment(String name, IRI value) {
+	private static BindingSetAssignment bindingSetAssignment(String name, Value value) {
 		BindingSetAssignment assignment = new BindingSetAssignment();
 		assignment.setBindingNames(Set.of(name));
 		assignment.setBindingSets(new ArrayList<>(List.of(new ListBindingSet(List.of(name), value))));
@@ -684,6 +886,17 @@ public class QueryModelNormalizerTest extends QueryOptimizerTest {
 
 	private static List<BindingSet> evaluate(TupleExpr expression) throws Exception {
 		return evaluate(expression, new EmptyTripleSource());
+	}
+
+	private static List<BindingSet> evaluate(TupleExpr expression, BindingSet bindings) throws Exception {
+		DefaultEvaluationStrategy strategy = new DefaultEvaluationStrategy(new EmptyTripleSource(), null);
+		List<BindingSet> results = new ArrayList<>();
+		try (CloseableIteration<BindingSet> iteration = strategy.evaluate(expression, bindings)) {
+			while (iteration.hasNext()) {
+				results.add(iteration.next());
+			}
+		}
+		return results;
 	}
 
 	private static List<BindingSet> evaluate(TupleExpr expression, TripleSource tripleSource) throws Exception {

@@ -15,6 +15,7 @@ package org.eclipse.rdf4j.sail.lmdb.evaluation;
 import java.io.IOException;
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.Set;
 
 import org.eclipse.rdf4j.common.annotation.Experimental;
 
@@ -217,7 +218,9 @@ interface SlotPlan {
 		}
 		if (plan instanceof LmdbNativePackedMorsels.Leaf leaf)
 			return assuredMask(leaf.template);
-		if (plan instanceof PatternPlan || plan instanceof MultiValuePatternPlan || plan instanceof TupleFunctionPlan) {
+		if (plan instanceof PatternPlan || plan instanceof MultiValuePatternPlan
+				|| plan instanceof SharedValuesPatternPlan
+				|| plan instanceof TupleFunctionPlan) {
 			return plan.producedMask();
 		}
 		if (plan instanceof ValuesPlan) {
@@ -285,7 +288,8 @@ interface SlotPlan {
 		if (plan instanceof LmdbNativePackedMorsels.Leaf leaf)
 			return encounterOrderReplaySafe(leaf.template);
 		if (plan instanceof EmptyPlan || plan instanceof SingletonPlan || plan instanceof PatternPlan
-				|| plan instanceof MultiValuePatternPlan || plan instanceof ValuesPlan || plan instanceof PathPlan) {
+				|| plan instanceof MultiValuePatternPlan || plan instanceof SharedValuesPatternPlan
+				|| plan instanceof ValuesPlan || plan instanceof PathPlan) {
 			return true;
 		}
 		if (plan instanceof FilterPlan filter) {
@@ -328,7 +332,9 @@ interface SlotPlan {
 					&& !NativeWorkerPlanBinder.canBind(plan)) {
 				return false;
 			}
-			return encounterOrderReplaySafe(leftJoin.left) && encounterOrderReplaySafe(leftJoin.right);
+			return encounterOrderReplaySafe(leftJoin.left) && encounterOrderReplaySafe(leftJoin.right)
+					&& (leftJoin.lexicalCondition == null
+							|| leftJoin.lexicalCondition.capabilities().atPlacement(-1L).replaySafe());
 		}
 		if (plan instanceof UnionPlan union) {
 			return encounterOrderReplaySafe(union.left) && encounterOrderReplaySafe(union.right);
@@ -340,7 +346,8 @@ interface SlotPlan {
 			return encounterOrderReplaySafe(minus.left) && encounterOrderReplaySafe(minus.right);
 		}
 		if (plan instanceof LateralPlan lateral) {
-			return encounterOrderReplaySafe(lateral.left) && encounterOrderReplaySafe(lateral.right);
+			return lateral.semanticEntry == null && encounterOrderReplaySafe(lateral.left)
+					&& encounterOrderReplaySafe(lateral.right);
 		}
 		if (plan instanceof RowDistinctPlan distinct) {
 			return encounterOrderReplaySafe(distinct.arg);
@@ -427,7 +434,7 @@ interface SlotPlan {
 		if (reads >= 0L) {
 			// Even a name mentioned in the placement mask may have been unbound on the original input. A later
 			// sibling can then change the witness by binding it, unless that input assured the value already.
-			return (reads & ~assuredBefore & siblingSlots) != 0L;
+			return (reads & ~(assuredBefore | capabilities.certifiedOwnerInputs()) & siblingSlots) != 0L;
 		}
 		// Legacy predicates retain their established placement-mask contract. Witnesses and semantic callbacks
 		// explicitly require a separate complete read proof, including through worker and composition wrappers.
@@ -475,7 +482,7 @@ interface SlotPlan {
 			return discardable(union.left) && discardable(union.right);
 		}
 		if (plan instanceof LeftJoinPlan join) {
-			return discardable(join.left) && discardable(join.right);
+			return join.lexicalCondition == null && discardable(join.left) && discardable(join.right);
 		}
 		if (plan instanceof MinusPlan minus) {
 			return discardable(minus.left) && discardable(minus.right);
@@ -517,20 +524,35 @@ interface SlotPlan {
 	}
 
 	static SlotPlan lexicalLeftJoin(SlotPlan left, SlotPlan right, int[] sharedSlots, boolean hashKeys) {
+		return lexicalLeftJoin(left, right, sharedSlots, hashKeys, null);
+	}
+
+	static SlotPlan lexicalLeftJoin(SlotPlan left, SlotPlan right, int[] sharedSlots, boolean hashKeys,
+			NativeBooleanFilter condition) {
 		if (left == EmptyPlan.INSTANCE) {
 			return EmptyPlan.INSTANCE;
 		}
 		if (right == EmptyPlan.INSTANCE) {
 			return left;
 		}
-		return new LeftJoinPlan(left, right, sharedSlots, hashKeys);
+		return new LeftJoinPlan(left, right, sharedSlots, hashKeys, null, condition);
 	}
 
 	static SlotPlan lexicalFrameLeftJoin(SlotPlan left, SlotPlan right, int[] problemSlots) {
+		return lexicalFrameLeftJoin(left, right, problemSlots, null, null);
+	}
+
+	static SlotPlan lexicalFrameLeftJoin(SlotPlan left, SlotPlan right, int[] problemSlots, int[] sharedSlots,
+			NativeBooleanFilter condition) {
+		return lexicalFrameLeftJoin(left, right, problemSlots, sharedSlots, condition, Set.of());
+	}
+
+	static SlotPlan lexicalFrameLeftJoin(SlotPlan left, SlotPlan right, int[] problemSlots, int[] sharedSlots,
+			NativeBooleanFilter condition, Set<String> staticInputs) {
 		if (left == EmptyPlan.INSTANCE) {
 			return EmptyPlan.INSTANCE;
 		}
-		return new LeftJoinPlan(left, right, null, false, problemSlots);
+		return new LeftJoinPlan(left, right, sharedSlots, false, problemSlots, condition, staticInputs);
 	}
 
 	static SlotPlan union(SlotPlan left, SlotPlan right) {
@@ -641,6 +663,11 @@ final class SingletonPlan implements SlotPlan {
 	@Override
 	public RowCursor open(RowState row) {
 		return new SingletonCursor();
+	}
+
+	@Override
+	public BatchCursor openBatch(RowState row, int capacity) {
+		return new RowBatchCursor(open(row), row);
 	}
 
 	@Override

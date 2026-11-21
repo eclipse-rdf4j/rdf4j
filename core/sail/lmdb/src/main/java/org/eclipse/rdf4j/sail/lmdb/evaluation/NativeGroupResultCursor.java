@@ -274,7 +274,9 @@ final class NativeGroupResultCursor implements NativeResultCursor {
 		}
 		NativeGroupStep full = owner.fullValueAlternative();
 		FullAttempt fullAttempt = null;
-		if (full != null) {
+		// This representation has its own layout and does not use the parent's OPTIONAL compatibility wrapper.
+		// Check its original logical entry before constructing FullAttempt, which seeds its row immediately.
+		if (full != null && full.acceptsUnwrappedInput(iteration.base)) {
 			fullAttempt = new FullAttempt(full, iteration);
 			ownAlternative(fullAttempt);
 			fullAttempt.offer(offers, telemetry);
@@ -556,7 +558,8 @@ final class NativeGroupResultCursor implements NativeResultCursor {
 				accepted.alternatives = full.alternatives;
 				acceptedRow = new RowState(evaluation, full.layout, parent.base, parent.explainTarget,
 						accepted.cancellation);
-				seeded = accepted.initialize(acceptedRow);
+				seeded = NativeRowSeeder.supports(parent.base, full.layout, evaluation)
+						&& accepted.initialize(acceptedRow);
 				iteration = accepted;
 				row = acceptedRow;
 			} catch (RuntimeException | Error failure) {

@@ -22,11 +22,15 @@ import org.eclipse.rdf4j.common.iteration.CooperativeCancellation;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.query.Binding;
 import org.eclipse.rdf4j.query.BindingSet;
+import org.eclipse.rdf4j.query.MutableBindingSet;
 import org.eclipse.rdf4j.query.algebra.MultiProjection;
 import org.eclipse.rdf4j.query.algebra.Projection;
 import org.eclipse.rdf4j.query.algebra.ProjectionElem;
 import org.eclipse.rdf4j.query.algebra.QueryModelNode;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryEvaluationStep;
+import org.eclipse.rdf4j.query.algebra.evaluation.impl.BindingFrameBindings;
+import org.eclipse.rdf4j.query.algebra.evaluation.impl.GraphFrameBindings;
+import org.eclipse.rdf4j.query.algebra.evaluation.impl.QueryEvaluationContext;
 import org.eclipse.rdf4j.query.impl.MapBindingSet;
 
 /** Semantic native projection over an already-native BindingSet producer. */
@@ -37,9 +41,21 @@ final class NativeBindingSetProjectionStep implements NativeResultStep, LmdbNati
 	private final String[] sourceNames;
 	private final String[] targetNames;
 	private final boolean includeAllParentBindings;
+	private final NativeEntryBindings.GraphInput graphInput;
+	private final QueryEvaluationContext context;
+	private final BindingSet quotedGraphEntry;
+	private final NativeBindingSetProjectionStep selectedFallback;
 
 	NativeBindingSetProjectionStep(QueryEvaluationStep arg, Projection projection) {
+		this(arg, projection, null);
+	}
+
+	NativeBindingSetProjectionStep(QueryEvaluationStep arg, Projection projection, QueryEvaluationContext context) {
 		this.arg = arg;
+		this.context = context;
+		this.graphInput = context == null ? null : NativeEntryBindings.GraphInput.capture(projection);
+		this.quotedGraphEntry = null;
+		this.selectedFallback = null;
 		var elements = projection.getProjectionElemList().getElements();
 		this.sourceNames = new String[elements.size()];
 		this.targetNames = new String[elements.size()];
@@ -51,22 +67,30 @@ final class NativeBindingSetProjectionStep implements NativeResultStep, LmdbNati
 		this.includeAllParentBindings = !isOuterProjection(projection);
 	}
 
-	private NativeBindingSetProjectionStep(QueryEvaluationStep arg, NativeBindingSetProjectionStep original) {
+	private NativeBindingSetProjectionStep(QueryEvaluationStep arg, NativeBindingSetProjectionStep original,
+			BindingSet quotedGraphEntry) {
 		this.arg = arg;
 		this.sourceNames = original.sourceNames;
 		this.targetNames = original.targetNames;
 		this.includeAllParentBindings = original.includeAllParentBindings;
+		this.graphInput = original.graphInput;
+		this.context = original.context;
+		this.quotedGraphEntry = quotedGraphEntry;
+		this.selectedFallback = quotedGraphEntry == null ? null : original;
 	}
 
 	@Override
 	public NativePhysicalResultPlan physicalPlan(BindingSet bindings) {
-		NativePhysicalResultPlan child = arg instanceof NativeResultStep nativeStep
-				? nativeStep.physicalPlan(bindings)
-				: null;
-		return child == null ? null : physicalResult(child);
+		BindingSet body = graphInput == null ? bindings : graphInput.apply(bindings, context);
+		NativePhysicalResultPlan child = graphInput != null && arg instanceof NativeGroupStep group
+				? group.physicalPlan(body, graphInput)
+				: arg instanceof NativeResultStep nativeStep ? nativeStep.physicalPlan(body) : null;
+		return child == null ? null
+				: physicalResult(child,
+						graphInput == null ? null : NativeEntryBindings.snapshot(bindings));
 	}
 
-	private NativePhysicalResultPlan physicalResult(NativePhysicalResultPlan child) {
+	private NativePhysicalResultPlan physicalResult(NativePhysicalResultPlan child, BindingSet quotedBindings) {
 		NativePhysicalOutputEvidence evidence = child.outputEvidence();
 		if (evidence != null) {
 			Map<String, NativePhysicalOutputEvidence.Column> mapped = new LinkedHashMap<>();
@@ -85,30 +109,40 @@ final class NativeBindingSetProjectionStep implements NativeResultStep, LmdbNati
 				evidence = evidence.withColumns(child.input(), mapped);
 			}
 		}
-		return physicalResult(child, evidence);
+		return physicalResult(child, evidence, quotedBindings);
 	}
 
 	private NativePhysicalResultPlan physicalResult(NativePhysicalResultPlan child,
-			NativePhysicalOutputEvidence evidence) {
-		return new NativePhysicalResultPlan(new NativeBindingSetProjectionStep(child.step(), this), child.input(),
+			NativePhysicalOutputEvidence evidence, BindingSet quotedBindings) {
+		return new NativePhysicalResultPlan(new NativeBindingSetProjectionStep(child.step(), this, quotedBindings),
+				child.input(),
 				child.rebindRecipe() == null ? null : (prepared, worker, bindings) -> {
 					if (!(prepared instanceof NativeBindingSetProjectionStep actual)
+							|| (graphInput == null ? actual.graphInput != null
+									: !graphInput.sameTransition(actual.graphInput)
+											|| !NativeEntryBindings.sameGraphEntry(quotedBindings, bindings))
 							|| !Arrays.equals(sourceNames, actual.sourceNames)
 							|| !Arrays.equals(targetNames, actual.targetNames)
 							|| includeAllParentBindings != actual.includeAllParentBindings) {
 						return null;
 					}
-					NativePhysicalResultPlan rebound = child.rebind(actual.arg, worker, bindings);
-					return rebound == null ? null : actual.physicalResult(rebound, evidence);
+					BindingSet body = actual.graphInput == null ? bindings
+							: actual.graphInput.apply(bindings, actual.context);
+					NativePhysicalResultPlan rebound = child.rebind(actual.arg, worker, body);
+					return rebound == null ? null : actual.physicalResult(rebound, evidence, quotedBindings);
 				}, "PROJECTION[" + child.physicalProperties() + ']', evidence);
 	}
 
 	@Override
 	public CloseableIteration<BindingSet> evaluate(BindingSet bindings) {
+		if (quotedGraphEntry != null && !NativeEntryBindings.sameGraphEntry(quotedGraphEntry, bindings)) {
+			return selectedFallback.evaluate(bindings);
+		}
 		if (requiresPhysicalResults()) {
 			return NativeResultSteps.rdf(evaluateNative(bindings));
 		}
-		CloseableIteration<BindingSet> delegate = arg.evaluate(bindings);
+		BindingSet body = graphInput == null ? bindings : graphInput.apply(bindings, context);
+		CloseableIteration<BindingSet> delegate = arg.evaluate(body);
 		return new ProjectionIteration(delegate, bindings, sourceNames, targetNames, includeAllParentBindings,
 				NativeExecutionContextCarrier.contextOf(delegate));
 	}
@@ -120,7 +154,11 @@ final class NativeBindingSetProjectionStep implements NativeResultStep, LmdbNati
 
 	@Override
 	public NativeResultCursor evaluateNative(BindingSet bindings) {
-		NativeResultCursor delegate = NativeResultSteps.open(arg, bindings);
+		if (quotedGraphEntry != null && !NativeEntryBindings.sameGraphEntry(quotedGraphEntry, bindings)) {
+			return NativeResultSteps.open(selectedFallback, bindings);
+		}
+		BindingSet body = graphInput == null ? bindings : graphInput.apply(bindings, context);
+		NativeResultCursor delegate = NativeResultSteps.open(arg, body);
 		Map<String, Integer> indices = new LinkedHashMap<>();
 		if (includeAllParentBindings) {
 			bindings.getBindingNames().forEach(name -> indices.put(name, indices.size()));
@@ -131,6 +169,7 @@ final class NativeBindingSetProjectionStep implements NativeResultStep, LmdbNati
 		NativeResultRow.Schema schema = new NativeResultRow.Schema(indices.keySet().toArray(String[]::new));
 		return NativeResultSteps.map(delegate, source -> {
 			NativeResultCell[] cells = new NativeResultCell[schema.size()];
+			GraphFrameBindings graphFrames = GraphFrameBindings.from(bindings);
 			for (int index = 0; index < cells.length; index++) {
 				Value value = includeAllParentBindings ? bindings.getValue(schema.name(index)) : null;
 				cells[index] = value == null ? NativeResultCell.unbound() : NativeResultCell.term(value);
@@ -145,9 +184,10 @@ final class NativeBindingSetProjectionStep implements NativeResultStep, LmdbNati
 				}
 				if (cell.state() == NativeResultCell.State.BOUND) {
 					cells[indices.get(targetNames[index])] = cell;
+					graphFrames = graphFrames.without(targetNames[index]);
 				}
 			}
-			return new NativeResultRow(schema, cells);
+			return new NativeResultRow(schema, cells, BindingFrameBindings.from(bindings), graphFrames);
 		});
 	}
 
@@ -269,12 +309,13 @@ final class NativeBindingSetProjectionStep implements NativeResultStep, LmdbNati
 
 	static BindingSet project(BindingSet source, BindingSet parentBindings, String[] sourceNames, String[] targetNames,
 			boolean includeAllParentBindings) {
-		MapBindingSet result = new MapBindingSet(parentBindings.size() + targetNames.length);
+		MapBindingSet copy = new MapBindingSet(parentBindings.size() + targetNames.length);
 		if (includeAllParentBindings) {
 			for (Binding binding : parentBindings) {
-				result.setBinding(binding);
+				copy.setBinding(binding);
 			}
 		}
+		MutableBindingSet result = GraphFrameBindings.preserve(parentBindings, copy);
 		for (int i = 0; i < sourceNames.length; i++) {
 			Value value = source.getValue(sourceNames[i]);
 			if (!includeAllParentBindings && value == null) {
@@ -286,6 +327,6 @@ final class NativeBindingSetProjectionStep implements NativeResultStep, LmdbNati
 				result.setBinding(targetNames[i], value);
 			}
 		}
-		return result;
+		return BindingFrameBindings.preserve(parentBindings, result);
 	}
 }

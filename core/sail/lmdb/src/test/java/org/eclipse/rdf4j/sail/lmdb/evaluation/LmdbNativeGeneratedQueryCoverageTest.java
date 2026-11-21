@@ -12,6 +12,7 @@
 package org.eclipse.rdf4j.sail.lmdb.evaluation;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.mockStatic;
 
@@ -468,6 +469,19 @@ class LmdbNativeGeneratedQueryCoverageTest {
 	}
 
 	@Test
+	void generatedNamedGraphPathKeepsRepeatedOptionalParity() {
+		GeneratedQuery query = generatedQueriesAt(2221).get(2221);
+		assertThat(query).isNotNull();
+		List<String> expected = assertDoesNotThrow(() -> genericRows(query.sparql(), true),
+				"generic generated query index 2221");
+		resetMetricsOnly();
+		List<String> actual = assertDoesNotThrow(
+				() -> nativeRowsUntilClassified(query.sparql(), true, KERNEL_FAMILY_PREFERENCE),
+				"native generated query index 2221");
+		assertThat(actual).containsExactlyElementsOf(expected);
+	}
+
+	@Test
 	void everyLocalGeneratedTupleQueryHasParityAndAnExplicitJaninoCoverageState() throws Exception {
 		Map<String, CoverageCounts> coverage = new LinkedHashMap<>();
 		List<String> failures = new ArrayList<>();
@@ -493,10 +507,12 @@ class LmdbNativeGeneratedQueryCoverageTest {
 						|| hasOrderDependentSlice(query.sparql());
 				boolean unordered = !query.sparql().toUpperCase(Locale.ROOT).contains("ORDER BY");
 				List<String> expected = null;
+				String route = "generic";
 				try {
 					if (!nondeterministic) {
 						expected = genericRows(query.sparql(), unordered);
 					}
+					route = "native";
 					resetMetricsOnly();
 					List<String> actual = nativeRowsUntilClassified(query.sparql(), unordered,
 							KERNEL_FAMILY_PREFERENCE);
@@ -510,7 +526,8 @@ class LmdbNativeGeneratedQueryCoverageTest {
 								+ "\nGENERIC:\n" + expected + "\nNATIVE:\n" + actual);
 					}
 				} catch (RuntimeException problem) {
-					failures.add(query.category() + " execution failed at generated index " + total + ": " + problem
+					failures.add(query.category() + " " + route + " execution failed at generated index " + total + ": "
+							+ problem
 							+ "\n" + query.sparql());
 					continue;
 				}

@@ -26,6 +26,7 @@ import org.eclipse.rdf4j.query.algebra.Extension;
 import org.eclipse.rdf4j.query.algebra.ExtensionElem;
 import org.eclipse.rdf4j.query.algebra.Graph;
 import org.eclipse.rdf4j.query.algebra.LeftJoin;
+import org.eclipse.rdf4j.query.algebra.PrivateGraphContextRole;
 import org.eclipse.rdf4j.query.algebra.Projection;
 import org.eclipse.rdf4j.query.algebra.QueryModelNode;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
@@ -98,6 +99,10 @@ public class BindingAssignerOptimizer implements QueryOptimizer {
 		public void meet(Var var) {
 			if (var.hasValue() || var.getName() == null
 					|| !analysis.rootContext().externalValues().containsKey(var.getName())) {
+				return;
+			}
+			if (PrivateGraphContextRole.isPrivateContext(var.getParentNode(), var)) {
+				// This execution alias receives only its prepared GRAPH carrier, not a public same-named input.
 				return;
 			}
 			if (unknownOperatorDepth > 0) {

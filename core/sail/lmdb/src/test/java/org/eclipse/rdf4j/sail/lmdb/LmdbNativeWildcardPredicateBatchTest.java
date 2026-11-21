@@ -126,7 +126,9 @@ class LmdbNativeWildcardPredicateBatchTest {
 			long batches = LmdbNativeKernelIrTestAccess.wildcardBatches();
 			long payload = LmdbNativeKernelIrTestAccess.wildcardPayloadRowsDecoded();
 			assertThat(allRows(query)).containsExactlyElementsOf(expected);
-			assertThat(LmdbNativeKernelIrTestAccess.wildcardBatches()).isGreaterThan(batches);
+			assertThat(LmdbNativeKernelIrTestAccess.wildcardBatches())
+					.as("fixed GRAPH shape uses wildcard batching: %s", body)
+					.isGreaterThan(batches);
 			assertThat(LmdbNativeKernelIrTestAccess.wildcardPayloadRowsDecoded() - payload)
 					.as("graph-disjoint direct/routed payload, scalar, grouped and OPTIONAL demands: %s", body)
 					.isZero();

@@ -14,6 +14,7 @@ package org.eclipse.rdf4j.sail.lmdb.evaluation;
 
 import java.util.Collections;
 import java.util.IdentityHashMap;
+import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.atomic.AtomicLong;
 
@@ -26,12 +27,19 @@ import org.eclipse.rdf4j.model.vocabulary.SESAME;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.algebra.Filter;
 import org.eclipse.rdf4j.query.algebra.Group;
+import org.eclipse.rdf4j.query.algebra.QueryModelNode;
 import org.eclipse.rdf4j.query.algebra.QueryRoot;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
+import org.eclipse.rdf4j.query.algebra.TupleFunctionCall;
 import org.eclipse.rdf4j.query.algebra.UnaryTupleOperator;
+import org.eclipse.rdf4j.query.algebra.ValueExpr;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryEvaluationStep;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryValueEvaluationStep;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.QueryEvaluationContext;
+import org.eclipse.rdf4j.query.algebra.evaluation.util.QueryEvaluationUtility;
+import org.eclipse.rdf4j.query.algebra.evaluation.util.QueryEvaluationUtility.PreparedFilterScope;
+import org.eclipse.rdf4j.query.algebra.helpers.AbstractQueryModelVisitor;
+import org.eclipse.rdf4j.query.algebra.helpers.FilterBindingScope;
 import org.eclipse.rdf4j.sail.lmdb.ValueIds;
 
 /**
@@ -207,6 +215,9 @@ final class LmdbNativeAggregateCompiler {
 	 */
 	static QueryValueEvaluationStep tryCompileExists(TupleExpr expr, QueryEvaluationContext context,
 			LmdbNativeEvaluationStrategy strategy, NativeLmdbQuerySource source) {
+		if (!tupleArgumentReadsComplete(expr)) {
+			return null;
+		}
 		LmdbNativeAggregatePlanner planner = new LmdbNativeAggregatePlanner(context, strategy, source);
 		QueryEvaluationStep rows = planner.compileBareExists(expr);
 		if (!(rows instanceof NativeBareRowsStep)) {
@@ -292,10 +303,23 @@ final class LmdbNativeAggregateCompiler {
 	private static CompileResult compile(TupleExpr expr, QueryEvaluationContext context,
 			LmdbNativeEvaluationStrategy strategy, NativeLmdbQuerySource source, boolean rootEvaluation,
 			Set<String> inheritedFrameInputNames, Set<String> inheritedLateralFrameInputNames) {
+		return QueryEvaluationUtility.withQuerySafetySnapshot(expr,
+				() -> compileCaptured(expr, context, strategy, source, rootEvaluation, inheritedFrameInputNames,
+						inheritedLateralFrameInputNames));
+	}
+
+	private static CompileResult compileCaptured(TupleExpr expr, QueryEvaluationContext context,
+			LmdbNativeEvaluationStrategy strategy, NativeLmdbQuerySource source, boolean rootEvaluation,
+			Set<String> inheritedFrameInputNames, Set<String> inheritedLateralFrameInputNames) {
 		NativeGraphFusion.Prepared physical = NativeGraphFusion.prepare(expr, context.getDataset(), strategy);
+		// A fused GRAPH can erase a lexical boundary. Until that transformation carries its owner proof, retain the
+		// ordinary guarded route for such fragments.
+		Map<TupleExpr, PreparedFilterScope> scopes = physical.expression() == expr
+				? preparedFilterScopes(expr)
+				: Map.of();
 		CompileResult result = strategy.withValuePositions(physical.positions(),
 				() -> compilePhysical(physical.expression(), context, strategy, source, rootEvaluation,
-						inheritedFrameInputNames, inheritedLateralFrameInputNames));
+						inheritedFrameInputNames, inheritedLateralFrameInputNames, scopes));
 		if (result.step != null && !physical.guardedSelectors().isEmpty()) {
 			QueryEvaluationStep guarded = new NativeGraphAliasGuardStep(result.step, physical.guardedSelectors(),
 					() -> compile(expr, context, strategy, source, rootEvaluation, inheritedFrameInputNames,
@@ -305,10 +329,37 @@ final class LmdbNativeAggregateCompiler {
 		return result;
 	}
 
+	private static Map<TupleExpr, PreparedFilterScope> preparedFilterScopes(TupleExpr expr) {
+		if (QueryEvaluationUtility.requiresBindingFrameReplayPartition(expr)) {
+			Map<TupleExpr, PreparedFilterScope> scopes = QueryEvaluationUtility.preparedFilterScopes(expr);
+			if (!scopes.isEmpty()) {
+				return scopes;
+			}
+		}
+		// Group is an input boundary, not a transparent selection wrapper. Capture its actual attached argument,
+		// while its FILTER owners and their identities are still present in the preparation snapshot.
+		TupleExpr node = expr;
+		while (!(node instanceof Group) && node instanceof UnaryTupleOperator unary) {
+			node = unary.getArg();
+		}
+		if (node instanceof Group group
+				&& QueryEvaluationUtility.requiresBindingFrameReplayPartition(group.getArg())) {
+			return QueryEvaluationUtility.preparedFilterScopes(group.getArg());
+		}
+		return Map.of();
+	}
+
 	private static CompileResult compilePhysical(TupleExpr expr, QueryEvaluationContext context,
 			LmdbNativeEvaluationStrategy strategy, NativeLmdbQuerySource source, boolean rootEvaluation,
-			Set<String> inheritedFrameInputNames, Set<String> inheritedLateralFrameInputNames) {
+			Set<String> inheritedFrameInputNames, Set<String> inheritedLateralFrameInputNames,
+			Map<TupleExpr, PreparedFilterScope> scopes) {
+		if (!tupleArgumentReadsComplete(expr)) {
+			// An opaque argument can inspect the whole semantic mapping. A native island after a sibling has
+			// run cannot reconstruct that mapping from physical slots, so decline before the fragment opens.
+			return new CompileResult(null, LmdbNativeExplain.KIND_ROW, false, false);
+		}
 		LmdbNativeAggregatePlanner compiler = new LmdbNativeAggregatePlanner(context, strategy, source);
+		compiler.preparedFilterScopes = scopes;
 		// Root-host compiles (one evaluate() = one query evaluation) may prepare generic bridges per evaluation;
 		// interior compiles must not — their steps evaluate once per outer input mapping (M-A1a).
 		compiler.rootEvaluationScoped = rootEvaluation;
@@ -346,7 +397,7 @@ final class LmdbNativeAggregateCompiler {
 			if (step == null && NativeRootPipeline.enabled()) {
 				// Modifier stacks are peeled before the ordinary row compiler: an aggregate projection beneath
 				// ORDER/SLICE must reach the aggregate entry point, not be mistaken for computed BIND expressions.
-				step = NativeRootPipeline.tryCompile(expr, context, strategy, source, rootEvaluation);
+				step = NativeRootPipeline.tryCompile(expr, context, strategy, source, rootEvaluation, scopes);
 			}
 			if (step == null && !rowRootAttempted) {
 				step = compiler.compileRowRoot(expr);
@@ -362,7 +413,9 @@ final class LmdbNativeAggregateCompiler {
 				// bare BGP fragments (no Projection root): a fresh planner, because the row-root
 				// attempt may have allocated slot state that must not leak into this compile. Bare fragments stay
 				// non-root-scoped: under a generic host they evaluate per outer row.
-				step = new LmdbNativeAggregatePlanner(context, strategy, source).compileBareRoot(expr);
+				LmdbNativeAggregatePlanner bare = new LmdbNativeAggregatePlanner(context, strategy, source);
+				bare.preparedFilterScopes = scopes;
+				step = bare.compileBareRoot(expr);
 				kind = LmdbNativeExplain.KIND_BGP;
 			}
 		}
@@ -371,6 +424,22 @@ final class LmdbNativeAggregateCompiler {
 			kind = LmdbNativeExplain.KIND_HYBRID;
 		}
 		return new CompileResult(step, kind, compiler.slotBudgetExceeded, compiler.sawIsland);
+	}
+
+	private static boolean tupleArgumentReadsComplete(TupleExpr expression) {
+		boolean[] complete = { true };
+		expression.visit(new AbstractQueryModelVisitor<RuntimeException>() {
+			@Override
+			public void meetOther(QueryModelNode node) {
+				if (node instanceof TupleFunctionCall call) {
+					for (ValueExpr argument : call.getArgs()) {
+						complete[0] &= FilterBindingScope.conditionBindingReads(argument).complete();
+					}
+				}
+				super.meetOther(node);
+			}
+		});
+		return complete[0];
 	}
 
 	private static boolean hasGroupOnModifierSpine(TupleExpr expr) {

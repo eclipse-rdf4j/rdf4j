@@ -28,6 +28,100 @@ import org.junit.jupiter.api.Test;
 
 class QueryModelSerializationTest {
 	@Test
+	void defaultProjectionConstructorOwnsItsEmptyElementList() {
+		Projection projection = new Projection();
+		assertThat(projection.isSubquery()).isTrue();
+		assertThat(projection.getProjectionElemList().getElements()).isEmpty();
+		assertThat(projection.getProjectionElemList().getParentNode() == projection)
+				.as("the default projection owns its element list")
+				.isTrue();
+	}
+
+	@Test
+	void projectionArgumentConstructorOwnsItsEmptyElementList() {
+		Projection projection = new Projection(new SingletonSet());
+		assertThat(projection.isSubquery()).isTrue();
+		assertThat(projection.getProjectionElemList().getElements()).isEmpty();
+		assertThat(projection.getProjectionElemList().getParentNode()).isSameAs(projection);
+	}
+
+	@Test
+	void defaultProjectionCopiesKeepElementListOwnership() throws Exception {
+		Projection projection = new Projection();
+		projection.setArg(new SingletonSet());
+		assertProjectionCopiesOwnTheirLists(projection);
+	}
+
+	@Test
+	void argumentProjectionCopiesKeepElementListOwnership() throws Exception {
+		assertProjectionCopiesOwnTheirLists(new Projection(new SingletonSet()));
+	}
+
+	@Test
+	void explicitNonemptyProjectionListAndCopiesStayOwned() throws Exception {
+		ProjectionElemList elements = new ProjectionElemList(new ProjectionElem("x", "result"));
+		Projection projection = new Projection(new SingletonSet(), elements, true);
+		assertThat(elements.getParentNode()).isSameAs(projection);
+		assertThat(elements.getElements().getFirst().getParentNode()).isSameAs(elements);
+		assertThat(projection.getBindingNames()).containsExactly("result");
+		assertProjectionCopiesOwnTheirLists(projection);
+	}
+
+	@Test
+	void genuinelyDetachedProjectionListIsNotRepairedBySerialization() throws Exception {
+		ProjectionElemList elements = new ProjectionElemList(new ProjectionElem("x"));
+		Projection projection = new Projection(new SingletonSet(), elements, true);
+		elements.setParentNode(null);
+		assertThat(elements.getParentNode()).isNull();
+		Projection clone = projection.clone();
+		assertThat(clone.getProjectionElemList().getParentNode()).isSameAs(clone);
+		assertThat(elements.getParentNode()).isNull();
+		Projection restored = serializedProjection(projection);
+		assertThat(restored.getProjectionElemList().getParentNode()).isNull();
+	}
+
+	@Test
+	void genuinelyReparentedProjectionListKeepsItsForeignOwner() throws Exception {
+		ProjectionElemList elements = new ProjectionElemList(new ProjectionElem("x"));
+		Projection projection = new Projection(new SingletonSet(), elements, true);
+		Projection foreign = new Projection(new SingletonSet(), new ProjectionElemList(), true);
+		elements.setParentNode(foreign);
+		assertThat(elements.getParentNode()).isSameAs(foreign);
+		Projection clone = projection.clone();
+		assertThat(clone.getProjectionElemList().getParentNode()).isSameAs(clone);
+		assertThat(elements.getParentNode()).isSameAs(foreign);
+		Projection restored = serializedProjection(projection);
+		assertThat(restored.getProjectionElemList().getParentNode())
+				.isInstanceOf(Projection.class)
+				.isNotSameAs(restored);
+	}
+
+	private static void assertProjectionCopiesOwnTheirLists(Projection projection) throws Exception {
+		Projection clone = projection.clone();
+		assertThat(clone.isSubquery()).isTrue();
+		assertThat(clone.getProjectionElemList()).isNotSameAs(projection.getProjectionElemList());
+		assertThat(clone.getProjectionElemList().getParentNode()).isSameAs(clone);
+		assertThat(clone.getArg().getParentNode()).isSameAs(clone);
+		Projection restored = serializedProjection(projection);
+		assertThat(restored.isSubquery()).isTrue();
+		assertThat(restored.getProjectionElemList().getParentNode()).isSameAs(restored);
+		assertThat(restored.getArg().getParentNode()).isSameAs(restored);
+		for (ProjectionElem element : restored.getProjectionElemList().getElements()) {
+			assertThat(element.getParentNode()).isSameAs(restored.getProjectionElemList());
+		}
+	}
+
+	private static Projection serializedProjection(Projection projection) throws Exception {
+		ByteArrayOutputStream bytes = new ByteArrayOutputStream();
+		try (ObjectOutputStream output = new ObjectOutputStream(bytes)) {
+			output.writeObject(projection);
+		}
+		try (ObjectInputStream input = new ObjectInputStream(new ByteArrayInputStream(bytes.toByteArray()))) {
+			return (Projection) input.readObject();
+		}
+	}
+
+	@Test
 	void filterSerializedBeforeConditionScopesRetainsAutomaticVisibility() throws Exception {
 		// Captured from immutable pre-change commit a794f9432d08978d91f9c5dd4cd37cc19647b364.
 		try (ObjectInputStream input = new ObjectInputStream(getClass()
