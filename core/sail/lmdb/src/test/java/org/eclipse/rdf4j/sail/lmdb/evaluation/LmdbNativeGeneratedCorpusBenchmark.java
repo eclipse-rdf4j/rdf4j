@@ -12,7 +12,6 @@
 package org.eclipse.rdf4j.sail.lmdb.evaluation;
 
 import java.io.File;
-import java.io.IOException;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.HashMap;
@@ -40,6 +39,7 @@ import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
 import org.eclipse.rdf4j.repository.sail.SailTupleQuery;
 import org.eclipse.rdf4j.sail.lmdb.JaninoCeilingKernels;
 import org.eclipse.rdf4j.sail.lmdb.LmdbStore;
+import org.eclipse.rdf4j.sail.lmdb.LmdbTestUtil;
 import org.eclipse.rdf4j.sail.lmdb.config.LmdbStoreConfig;
 import org.openjdk.jmh.annotations.Benchmark;
 import org.openjdk.jmh.annotations.BenchmarkMode;
@@ -97,66 +97,76 @@ public class LmdbNativeGeneratedCorpusBenchmark {
 
 	@Setup(Level.Trial)
 	public void setUp() throws Exception {
-		boolean janino = "JANINO".equals(engine);
-		boolean bridge = janino && "PLAN_BRIDGE_49".equals(workload);
-		boolean numericDistinct = janino && workload.startsWith("DISTINCT_");
-		save(NATIVE_FLAG, "true");
-		save(WCOJ_FLAG, "false");
-		save(LmdbNativeJaninoCodegen.ENABLED_PROPERTY, Boolean.toString(janino));
-		save(LmdbNativeJaninoCodegen.THRESHOLD_ROWS_PROPERTY, "0");
-		save(LmdbNativeKernelLowering.PLAN_BRIDGE_PROPERTY, Boolean.toString(bridge));
-		save(LmdbNativeKernelLowering.DISTINCT_NUMERIC_PROPERTY, Boolean.toString(numericDistinct));
-		// The M7 context-column lowering graduates the corpus's GRAPH shape off the PlanRows bridge; this gate
-		// measures the bridge route on all 49 shapes, so pin the old lowering here.
-		save(LmdbNativeKernelLowering.CONTEXT_COLUMNS_PROPERTY, "false");
+		try {
+			boolean janino = "JANINO".equals(engine);
+			boolean bridge = janino && "PLAN_BRIDGE_49".equals(workload);
+			boolean numericDistinct = janino && workload.startsWith("DISTINCT_");
+			save(NATIVE_FLAG, "true");
+			save(WCOJ_FLAG, "false");
+			save(LmdbNativeJaninoCodegen.ENABLED_PROPERTY, Boolean.toString(janino));
+			save(LmdbNativeJaninoCodegen.THRESHOLD_ROWS_PROPERTY, "0");
+			save(LmdbNativeKernelLowering.PLAN_BRIDGE_PROPERTY, Boolean.toString(bridge));
+			save(LmdbNativeKernelLowering.DISTINCT_NUMERIC_PROPERTY, Boolean.toString(numericDistinct));
+			// The M7 context-column lowering graduates the corpus's GRAPH shape off the PlanRows bridge; this gate
+			// measures the bridge route on all 49 shapes, so pin the old lowering here.
+			save(LmdbNativeKernelLowering.CONTEXT_COLUMNS_PROPERTY, "false");
 
-		dataDir = Files.newTemporaryFolder();
-		LmdbStore store = new LmdbStore(dataDir,
-				new LmdbStoreConfig("spoc,ospc,psoc,posc").setNativeEvaluationEnabled(true)
-						.setDirectAdjacencyBuildOnStart(false));
-		repository = new SailRepository(store);
-		loadFixture();
-		JaninoCeilingKernels.buildDirectAdjacency(store);
-		connection = repository.getConnection();
+			dataDir = Files.newTemporaryFolder();
+			LmdbStore store = new LmdbStore(dataDir,
+					new LmdbStoreConfig("spoc,ospc,psoc,posc").setNativeEvaluationEnabled(true)
+							.setDirectAdjacencyBuildOnStart(false));
+			repository = new SailRepository(store);
+			loadFixture();
+			JaninoCeilingKernels.buildDirectAdjacency(store);
+			connection = repository.getConnection();
 
-		sparql = workloadQueries().toArray(String[]::new);
-		readsClock = new boolean[sparql.length];
-		expected = new long[sparql.length];
-		queries = new TupleQuery[sparql.length];
-		for (int i = 0; i < queries.length; i++) {
-			readsClock[i] = readsClock(sparql[i]);
-			expected[i] = genericDigest(sparql[i]);
-		}
-		for (int i = 0; i < queries.length; i++) {
-			queries[i] = connection.prepareTupleQuery(QueryLanguage.SPARQL, sparql[i]);
-			if (janino) {
-				// the workload measures the generated kernels, which the measured selector may pass over on this
-				// corpus; force the kernel family (compiled first, interpreted while a compile is pending)
-				((SailTupleQuery) queries[i]).setForcedLmdbExecutionStrategy(
-						"irKernel,irKernelInterpreted,irAggregate,irAggregateInterpreted");
+			sparql = workloadQueries().toArray(String[]::new);
+			readsClock = new boolean[sparql.length];
+			expected = new long[sparql.length];
+			queries = new TupleQuery[sparql.length];
+			for (int i = 0; i < queries.length; i++) {
+				readsClock[i] = readsClock(sparql[i]);
+				expected[i] = genericDigest(sparql[i]);
 			}
+			for (int i = 0; i < queries.length; i++) {
+				queries[i] = connection.prepareTupleQuery(QueryLanguage.SPARQL, sparql[i]);
+				if (janino) {
+					// the workload measures the generated kernels, which the measured selector may pass over on this
+					// corpus; force the kernel family (compiled first, interpreted while a compile is pending)
+					((SailTupleQuery) queries[i]).setForcedLmdbExecutionStrategy(
+							"irKernel,irKernelInterpreted,irAggregate,irAggregateInterpreted");
+				}
+			}
+			primeAndVerifyAdmission(janino, bridge);
+		} catch (Exception | Error failure) {
+			try {
+				tearDown();
+			} catch (Exception | Error cleanupFailure) {
+				failure.addSuppressed(cleanupFailure);
+			}
+			throw failure;
 		}
-		primeAndVerifyAdmission(janino, bridge);
 	}
 
 	@TearDown(Level.Trial)
-	public void tearDown() throws IOException {
-		if (connection != null) {
-			connection.close();
-		}
-		if (repository != null) {
-			repository.shutDown();
-		}
-		if (dataDir != null) {
-			FileUtil.deleteDir(dataDir);
-		}
-		for (Map.Entry<String, String> property : savedProperties.entrySet()) {
-			if (property.getValue() == null) {
-				System.clearProperty(property.getKey());
-			} else {
-				System.setProperty(property.getKey(), property.getValue());
+	public void tearDown() throws Exception {
+		LmdbTestUtil.cleanup(null, connection, () -> {
+			if (repository != null) {
+				repository.shutDown();
 			}
-		}
+		}, () -> {
+			if (dataDir != null) {
+				FileUtil.deleteDir(dataDir);
+			}
+		}, () -> {
+			for (Map.Entry<String, String> property : savedProperties.entrySet()) {
+				if (property.getValue() == null) {
+					System.clearProperty(property.getKey());
+				} else {
+					System.setProperty(property.getKey(), property.getValue());
+				}
+			}
+		});
 	}
 
 	@Benchmark

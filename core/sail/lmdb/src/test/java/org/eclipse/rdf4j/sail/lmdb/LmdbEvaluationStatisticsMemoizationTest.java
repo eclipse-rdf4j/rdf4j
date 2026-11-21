@@ -94,6 +94,9 @@ import org.junit.jupiter.api.io.TempDir;
 
 class LmdbEvaluationStatisticsMemoizationTest {
 
+	@TempDir
+	Path temporaryRoot;
+
 	@Test
 	void checksSupportsJoinEstimationReadinessOnEachCall() {
 		SketchBasedJoinEstimator estimator = mock(SketchBasedJoinEstimator.class);
@@ -233,7 +236,7 @@ class LmdbEvaluationStatisticsMemoizationTest {
 
 	@Test
 	void cachesEquivalentStatementPatternCardinalitiesByResolvedIds() throws Exception {
-		File dataDir = Files.createTempDirectory("lmdb-eval-stats-memoization").toFile();
+		File dataDir = Files.createTempDirectory(temporaryRoot, "lmdb-eval-stats-memoization").toFile();
 		SailRepository repository = new SailRepository(new LmdbStore(dataDir, new LmdbStoreConfig()));
 		try {
 			sharedCardinalityCache().clear();
@@ -259,7 +262,7 @@ class LmdbEvaluationStatisticsMemoizationTest {
 
 	@Test
 	void invalidatesSharedCardinalityCacheAfterTripleOnlyCommit() throws Exception {
-		File dataDir = Files.createTempDirectory("lmdb-eval-stats-triple-only-commit").toFile();
+		File dataDir = Files.createTempDirectory(temporaryRoot, "lmdb-eval-stats-triple-only-commit").toFile();
 		SailRepository repository = new SailRepository(new LmdbStore(dataDir, new LmdbStoreConfig()));
 		try {
 			sharedCardinalityCache().clear();
@@ -422,7 +425,7 @@ class LmdbEvaluationStatisticsMemoizationTest {
 
 	@Test
 	void usesSketchEstimatorForLeftJoinCardinalityWhenReady() throws Exception {
-		File dataDir = Files.createTempDirectory("lmdb-eval-stats-leftjoin").toFile();
+		File dataDir = Files.createTempDirectory(temporaryRoot, "lmdb-eval-stats-leftjoin").toFile();
 		SailRepository repository = new SailRepository(new LmdbStore(dataDir, sketchEnabledConfig()));
 		try {
 			loadData(repository);
@@ -454,7 +457,7 @@ class LmdbEvaluationStatisticsMemoizationTest {
 
 	@Test
 	void usesSketchEstimatorForFilterWrappedStatementPatternsWhenReady() throws Exception {
-		File dataDir = Files.createTempDirectory("lmdb-eval-stats-filter-wrapped-join").toFile();
+		File dataDir = Files.createTempDirectory(temporaryRoot, "lmdb-eval-stats-filter-wrapped-join").toFile();
 		SailRepository repository = new SailRepository(new LmdbStore(dataDir, sketchEnabledConfig()));
 		try {
 			loadData(repository);
@@ -499,7 +502,7 @@ class LmdbEvaluationStatisticsMemoizationTest {
 
 	@Test
 	void usesSketchEstimatorForFilterCardinalityWhenReady() throws Exception {
-		File dataDir = Files.createTempDirectory("lmdb-eval-stats-filter-cardinality").toFile();
+		File dataDir = Files.createTempDirectory(temporaryRoot, "lmdb-eval-stats-filter-cardinality").toFile();
 		SailRepository repository = new SailRepository(new LmdbStore(dataDir, sketchEnabledConfig()));
 		try {
 			loadData(repository);
@@ -530,7 +533,7 @@ class LmdbEvaluationStatisticsMemoizationTest {
 
 	@Test
 	void optimizedPlanDumpShowsCurrentPlannerEstimatesForNodes() throws Exception {
-		File dataDir = Files.createTempDirectory("lmdb-plan-estimate-dump").toFile();
+		File dataDir = Files.createTempDirectory(temporaryRoot, "lmdb-plan-estimate-dump").toFile();
 		SailRepository repository = new SailRepository(new LmdbStore(dataDir, sketchEnabledConfig()));
 		try {
 			loadData(repository);
@@ -573,7 +576,7 @@ class LmdbEvaluationStatisticsMemoizationTest {
 
 	@Test
 	void optimizedPlanDumpAnnotatesCompleteTupleExprCosting() throws Exception {
-		File dataDir = Files.createTempDirectory("lmdb-plan-complete-cost-dump").toFile();
+		File dataDir = Files.createTempDirectory(temporaryRoot, "lmdb-plan-complete-cost-dump").toFile();
 		SailRepository repository = new SailRepository(new LmdbStore(dataDir, sketchEnabledConfig()));
 		try {
 			loadData(repository);
@@ -625,7 +628,7 @@ class LmdbEvaluationStatisticsMemoizationTest {
 
 	@Test
 	void leftJoinNodeReceivesCurrentRowsAndSubtreeWork() throws Exception {
-		File dataDir = Files.createTempDirectory("lmdb-plan-leftjoin-cost").toFile();
+		File dataDir = Files.createTempDirectory(temporaryRoot, "lmdb-plan-leftjoin-cost").toFile();
 		SailRepository repository = new SailRepository(new LmdbStore(dataDir, sketchEnabledConfig()));
 		try {
 			loadData(repository);
@@ -650,7 +653,7 @@ class LmdbEvaluationStatisticsMemoizationTest {
 
 	@Test
 	void unionNodeReceivesSummedRowsAndWork() throws Exception {
-		File dataDir = Files.createTempDirectory("lmdb-plan-union-cost").toFile();
+		File dataDir = Files.createTempDirectory(temporaryRoot, "lmdb-plan-union-cost").toFile();
 		SailRepository repository = new SailRepository(new LmdbStore(dataDir, sketchEnabledConfig()));
 		try {
 			loadData(repository);
@@ -676,7 +679,7 @@ class LmdbEvaluationStatisticsMemoizationTest {
 
 	@Test
 	void groupNodeUsesDistinctGroupEstimateOrSyntheticUpperBound() throws Exception {
-		File dataDir = Files.createTempDirectory("lmdb-plan-group-cost").toFile();
+		File dataDir = Files.createTempDirectory(temporaryRoot, "lmdb-plan-group-cost").toFile();
 		SailRepository repository = new SailRepository(new LmdbStore(dataDir, sketchEnabledConfig()));
 		try {
 			loadData(repository);
@@ -736,7 +739,7 @@ class LmdbEvaluationStatisticsMemoizationTest {
 
 	@Test
 	void samplesPatternLocalFilterPassRatioWhenLearnedStatsUnavailable() throws Exception {
-		File dataDir = Files.createTempDirectory("lmdb-eval-stats-sampled-filter").toFile();
+		File dataDir = Files.createTempDirectory(temporaryRoot, "lmdb-eval-stats-sampled-filter").toFile();
 		LmdbStoreConfig config = new LmdbStoreConfig()
 				.setNativeEvaluationEnabled(true)
 				.setSketchEstimatorEnabled(true)
@@ -771,7 +774,7 @@ class LmdbEvaluationStatisticsMemoizationTest {
 
 	@Test
 	void samplesPatternLocalFilterAcrossAnOrderIndependentOfTheFilteredVariable() throws Exception {
-		File dataDir = Files.createTempDirectory("lmdb-eval-stats-ordered-filter").toFile();
+		File dataDir = Files.createTempDirectory(temporaryRoot, "lmdb-eval-stats-ordered-filter").toFile();
 		LmdbStoreConfig config = new LmdbStoreConfig()
 				.setNativeEvaluationEnabled(true)
 				.setSketchEstimatorEnabled(true)
@@ -812,7 +815,7 @@ class LmdbEvaluationStatisticsMemoizationTest {
 
 	@Test
 	void samplesZeroHitPatternLocalFilterPassRatioWhenLearnedStatsUnavailable() throws Exception {
-		File dataDir = Files.createTempDirectory("lmdb-eval-stats-zero-sampled-filter").toFile();
+		File dataDir = Files.createTempDirectory(temporaryRoot, "lmdb-eval-stats-zero-sampled-filter").toFile();
 		LmdbStoreConfig config = new LmdbStoreConfig()
 				.setNativeEvaluationEnabled(true)
 				.setSketchEstimatorEnabled(true)
@@ -850,7 +853,7 @@ class LmdbEvaluationStatisticsMemoizationTest {
 
 	@Test
 	void optimizerSamplingCanBeDisabledForUnlearnedFilters() throws Exception {
-		File dataDir = Files.createTempDirectory("lmdb-eval-stats-sampling-disabled").toFile();
+		File dataDir = Files.createTempDirectory(temporaryRoot, "lmdb-eval-stats-sampling-disabled").toFile();
 		LmdbStoreConfig config = new LmdbStoreConfig()
 				.setNativeEvaluationEnabled(true)
 				.setSketchEstimatorEnabled(true)
@@ -880,7 +883,7 @@ class LmdbEvaluationStatisticsMemoizationTest {
 
 	@Test
 	void optimizerVotesUnlearnedFilterForBackgroundSamplingWhenForegroundSamplingDisabled() throws Exception {
-		File dataDir = Files.createTempDirectory("lmdb-eval-stats-background-vote").toFile();
+		File dataDir = Files.createTempDirectory(temporaryRoot, "lmdb-eval-stats-background-vote").toFile();
 		LmdbStoreConfig config = new LmdbStoreConfig()
 				.setNativeEvaluationEnabled(true)
 				.setSketchEstimatorEnabled(true)
@@ -924,7 +927,7 @@ class LmdbEvaluationStatisticsMemoizationTest {
 	@Test
 	void medicalAggregateInFilterUsesBackgroundSampledRecordedOnSelectivityWhenForegroundSamplingDisabled()
 			throws Exception {
-		File dataDir = Files.createTempDirectory("lmdb-eval-stats-medical-background-vote").toFile();
+		File dataDir = Files.createTempDirectory(temporaryRoot, "lmdb-eval-stats-medical-background-vote").toFile();
 		LmdbStoreConfig config = new LmdbStoreConfig()
 				.setNativeEvaluationEnabled(true)
 				.setSketchEstimatorEnabled(true)
@@ -1016,7 +1019,7 @@ class LmdbEvaluationStatisticsMemoizationTest {
 
 	@Test
 	void backgroundRawSamplingDisabledPreventsQueueingAndSampling() throws Exception {
-		File dataDir = Files.createTempDirectory("lmdb-eval-stats-background-disabled").toFile();
+		File dataDir = Files.createTempDirectory(temporaryRoot, "lmdb-eval-stats-background-disabled").toFile();
 		LmdbStoreConfig config = new LmdbStoreConfig()
 				.setNativeEvaluationEnabled(true)
 				.setSketchEstimatorEnabled(true)
@@ -1051,7 +1054,7 @@ class LmdbEvaluationStatisticsMemoizationTest {
 
 	@Test
 	void backgroundCycleSamplesQueuedFilterWhenForegroundSamplingDisabled() throws Exception {
-		File dataDir = Files.createTempDirectory("lmdb-eval-stats-background-cycle").toFile();
+		File dataDir = Files.createTempDirectory(temporaryRoot, "lmdb-eval-stats-background-cycle").toFile();
 		LmdbStoreConfig config = new LmdbStoreConfig()
 				.setNativeEvaluationEnabled(true)
 				.setSketchEstimatorEnabled(true)
@@ -1092,7 +1095,7 @@ class LmdbEvaluationStatisticsMemoizationTest {
 
 	@Test
 	void repeatedOptimizerNeedPromotesBackgroundSamplingRequestToFront() throws Exception {
-		File dataDir = Files.createTempDirectory("lmdb-eval-stats-background-promotion").toFile();
+		File dataDir = Files.createTempDirectory(temporaryRoot, "lmdb-eval-stats-background-promotion").toFile();
 		LmdbStoreConfig config = new LmdbStoreConfig()
 				.setNativeEvaluationEnabled(true)
 				.setSketchEstimatorEnabled(true)
@@ -1195,7 +1198,7 @@ class LmdbEvaluationStatisticsMemoizationTest {
 
 	@Test
 	void recordsLearnedFilterPassRatioForExternalBoundPatternLocalFilter() throws Exception {
-		File dataDir = Files.createTempDirectory("lmdb-eval-stats-learned-filter").toFile();
+		File dataDir = Files.createTempDirectory(temporaryRoot, "lmdb-eval-stats-learned-filter").toFile();
 		SailRepository repository = new SailRepository(new LmdbStore(dataDir, sketchEnabledConfig()));
 		try {
 			loadData(repository);

@@ -377,9 +377,15 @@ class LmdbStreamingPreflightTest {
 					.setTripleDBSize(MAP_SIZE)
 					.setValueDBSize(MAP_SIZE);
 			store = new LmdbStore(dataDir, config);
-			store.init();
-			SailSource backing = store.getBackingStore().getExplicitSailSource(owner);
-			branch = StreamingPreflightBranchFactory.create(backing);
+			try {
+				store.init();
+				SailSource backing = store.getBackingStore().getExplicitSailSource(owner);
+				branch = StreamingPreflightBranchFactory.create(backing);
+			} catch (Exception | Error failure) {
+				try (var cleanup = LmdbTestUtil.onClose(store::shutDown)) {
+					throw failure;
+				}
+			}
 		}
 
 		private StreamingPreflightBranchFactory newExplicitBranch() {

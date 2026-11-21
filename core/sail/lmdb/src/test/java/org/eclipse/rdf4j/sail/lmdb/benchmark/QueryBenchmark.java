@@ -139,26 +139,40 @@ public class QueryBenchmark {
 
 	@Setup(Level.Trial)
 	public void beforeClass() throws IOException {
-		file = Files.newTemporaryFolder();
+		try {
+			file = Files.newTemporaryFolder();
 
-		repository = new SailRepository(
-				new LmdbStore(file, ConfigUtil.createConfig().setSketchEstimatorEnabled(false)));
+			repository = new SailRepository(
+					new LmdbStore(file, ConfigUtil.createConfig().setSketchEstimatorEnabled(false)));
 
-		try (SailRepositoryConnection connection = repository.getConnection()) {
-			connection.begin(IsolationLevels.NONE);
-			try (InputStream resourceAsStream = getResourceAsStream("benchmarkFiles/datagovbe-valid.ttl.gz")) {
-				connection.add(resourceAsStream, RDFFormat.TURTLE);
+			try (SailRepositoryConnection connection = repository.getConnection()) {
+				connection.begin(IsolationLevels.NONE);
+				try (InputStream resourceAsStream = getResourceAsStream("benchmarkFiles/datagovbe-valid.ttl.gz")) {
+					connection.add(resourceAsStream, RDFFormat.TURTLE);
+				}
+				connection.commit();
 			}
-			connection.commit();
+
+		} catch (Exception | Error failure) {
+			try {
+				afterClass();
+			} catch (Exception | Error cleanupFailure) {
+				failure.addSuppressed(cleanupFailure);
+			}
+			throw failure;
 		}
 	}
 
 	@TearDown(Level.Trial)
 	public void afterClass() throws IOException {
 		try {
-			repository.shutDown();
+			if (repository != null) {
+				repository.shutDown();
+				repository = null;
+			}
 		} finally {
 			LmdbTestUtil.deleteDir(file);
+			file = null;
 		}
 	}
 

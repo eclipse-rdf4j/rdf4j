@@ -83,26 +83,29 @@ public class MemorySparqlBindTest {
 				                """;
 
 		Repository repository = new SailRepository(new MemoryStore());
+		try {
 
-		try (var conn = repository.getConnection()) {
+			try (var conn = repository.getConnection()) {
 
-			// load test data
-			try (var reader = new StringReader(data)) {
-				conn.add(reader, RDFFormat.TRIG);
+				// load test data
+				try (var reader = new StringReader(data)) {
+					conn.add(reader, RDFFormat.TRIG);
+				}
+
+				// query
+				var tq = conn.prepareTupleQuery(testQuery);
+				var res = Iterations.asList(tq.evaluate());
+
+				Assertions.assertEquals(Set.of(Values.iri("http://www.example.com/resource/Bob")),
+						res.stream().map(bs -> bs.getValue("node3")).collect(Collectors.toSet()));
+
+				// the expected result is two paths
+				Assertions.assertEquals(2, res.size());
 			}
 
-			// query
-			var tq = conn.prepareTupleQuery(testQuery);
-			var res = Iterations.asList(tq.evaluate());
-
-			Assertions.assertEquals(Set.of(Values.iri("http://www.example.com/resource/Bob")),
-					res.stream().map(bs -> bs.getValue("node3")).collect(Collectors.toSet()));
-
-			// the expected result is two paths
-			Assertions.assertEquals(2, res.size());
+		} finally {
+			repository.shutDown();
 		}
-
-		repository.shutDown();
 	}
 
 }

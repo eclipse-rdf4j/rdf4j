@@ -33,7 +33,7 @@ import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.Test;
 
-class SketchBasedJoinEstimatorTupleSketchJoinAccuracyTest {
+class SketchBasedJoinEstimatorTupleSketchJoinAccuracyTest extends AbstractSketchBasedJoinEstimatorTest {
 
 	private static final ValueFactory VF = SimpleValueFactory.getInstance();
 
@@ -50,7 +50,7 @@ class SketchBasedJoinEstimatorTupleSketchJoinAccuracyTest {
 		addRows(store, "urn:tuple:right:hot:", rightPredicate, hot, 2);
 		addRows(store, "urn:tuple:right:cold:", rightPredicate, cold, 50);
 
-		SketchBasedJoinEstimator estimator = new SketchBasedJoinEstimator(store, config());
+		SketchBasedJoinEstimator estimator = createEstimator(store, config());
 		estimator.rebuild();
 
 		double estimate = estimator.estimateJoinOn(SketchBasedJoinEstimator.Component.O,
@@ -66,7 +66,7 @@ class SketchBasedJoinEstimatorTupleSketchJoinAccuracyTest {
 		IRI leftPredicate = VF.createIRI("urn:tuple:delete:left");
 		IRI rightPredicate = VF.createIRI("urn:tuple:delete:right");
 		Resource shared = VF.createIRI("urn:tuple:delete:key");
-		SketchBasedJoinEstimator estimator = new SketchBasedJoinEstimator(new StubSketchStatementSource(), config());
+		SketchBasedJoinEstimator estimator = createEstimator(new StubSketchStatementSource(), config());
 		Statement leftOne = statement("urn:tuple:delete:left:1", leftPredicate, shared);
 		Statement leftTwo = statement("urn:tuple:delete:left:2", leftPredicate, shared);
 		Statement leftThree = statement("urn:tuple:delete:left:3", leftPredicate, shared);
@@ -96,7 +96,7 @@ class SketchBasedJoinEstimatorTupleSketchJoinAccuracyTest {
 		IRI rightPairPredicate = VF.createIRI("urn:tuple:tombstone:rightPair");
 		Resource leftPairObject = VF.createIRI("urn:tuple:tombstone:leftPairObject");
 		Resource rightPairObject = VF.createIRI("urn:tuple:tombstone:rightPairObject");
-		SketchBasedJoinEstimator estimator = new SketchBasedJoinEstimator(new StubSketchStatementSource(),
+		SketchBasedJoinEstimator estimator = createEstimator(new StubSketchStatementSource(),
 				largeExactConfig());
 		List<Statement> statements = new ArrayList<>();
 

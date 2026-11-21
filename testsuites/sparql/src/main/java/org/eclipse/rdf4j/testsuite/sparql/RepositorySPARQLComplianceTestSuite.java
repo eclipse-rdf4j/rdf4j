@@ -221,6 +221,17 @@ public abstract class RepositorySPARQLComplianceTestSuite {
 			try (RepositoryConnection con = repository.getConnection()) {
 				con.clear();
 				con.clearNamespaces();
+			} catch (RuntimeException | Error failure) {
+				try {
+					try {
+						repository.shutDown();
+					} finally {
+						deleteDataDir(tmpDirPerRepo);
+					}
+				} catch (RuntimeException | Error cleanupFailure) {
+					failure.addSuppressed(cleanupFailure);
+				}
+				throw failure;
 			}
 			if (!deleteDataDirAfterShutdown()) {
 				return repository;
