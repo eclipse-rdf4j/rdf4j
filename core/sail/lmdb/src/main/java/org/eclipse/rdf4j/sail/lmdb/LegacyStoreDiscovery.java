@@ -1981,7 +1981,10 @@ final class LegacyStoreDiscovery {
 			E(mdb_cursor_open(transaction, database, handle));
 			long cursor = handle.get(0);
 			try {
-				MDBVal key = MDBVal.calloc(stack).mv_data(encoded.duplicate());
+				// LMDB reads the key through its native address: a heap buffer has none and would be read as garbage.
+				ByteBuffer seek = encoded.isDirect() ? encoded.duplicate()
+						: stack.malloc(encoded.remaining()).put(encoded.duplicate()).flip();
+				MDBVal key = MDBVal.calloc(stack).mv_data(seek);
 				MDBVal value = MDBVal.calloc(stack);
 				int rc = mdb_cursor_get(cursor, key, value, MDB_SET_RANGE);
 				if (rc == MDB_NOTFOUND) {

@@ -110,6 +110,14 @@ class LmdbStorePartialIndexesTest {
 			} finally {
 				repo.shutDown();
 			}
+			// store.properties is a sidecar written at open: the background build publishes into the native
+			// manifest, and the next open (with the same, now satisfied, request) persists it to the sidecar.
+			SailRepository reopened = new SailRepository(new LmdbStore(dir, config));
+			try {
+				reopened.init();
+			} finally {
+				reopened.shutDown();
+			}
 			StoreProperties properties = new StoreProperties(dir);
 			properties.load();
 			assertEquals(Set.of("spoc", "cspo", termIndex),

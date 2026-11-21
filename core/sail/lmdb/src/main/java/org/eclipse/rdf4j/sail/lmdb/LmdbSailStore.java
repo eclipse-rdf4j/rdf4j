@@ -3737,8 +3737,8 @@ class LmdbSailStore implements SailStore {
 			return tripleStore.getLegacySemanticTriplesForWrite(subject, predicate, object, context, explicit,
 					expected);
 		}
-		RecordIterator physical = tripleStore.getTriples(tripleStore.getTxnManager().createReadTxn(), subject,
-				predicate,
+		// The writer's own transaction: a committed snapshot cannot see an open NONE writer's pending rows.
+		RecordIterator physical = tripleStore.getTriplesForWrite(subject, predicate,
 				semantic ? LmdbValue.UNKNOWN_ID : object, context, explicit);
 		if (!semantic) {
 			return physical;
