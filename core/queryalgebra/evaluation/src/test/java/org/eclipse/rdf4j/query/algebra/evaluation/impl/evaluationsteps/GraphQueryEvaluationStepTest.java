@@ -25,6 +25,8 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.function.BiConsumer;
+import java.util.function.Consumer;
 import java.util.function.Function;
 
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
@@ -41,6 +43,7 @@ import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.model.vocabulary.RDF4J;
 import org.eclipse.rdf4j.model.vocabulary.SESAME;
 import org.eclipse.rdf4j.query.BindingSet;
+import org.eclipse.rdf4j.query.MutableBindingSet;
 import org.eclipse.rdf4j.query.QueryEvaluationException;
 import org.eclipse.rdf4j.query.QueryResults;
 import org.eclipse.rdf4j.query.algebra.BindingSetAssignment;
@@ -51,6 +54,7 @@ import org.eclipse.rdf4j.query.algebra.Extension;
 import org.eclipse.rdf4j.query.algebra.ExtensionElem;
 import org.eclipse.rdf4j.query.algebra.Filter;
 import org.eclipse.rdf4j.query.algebra.Graph;
+import org.eclipse.rdf4j.query.algebra.If;
 import org.eclipse.rdf4j.query.algebra.Join;
 import org.eclipse.rdf4j.query.algebra.LeftJoin;
 import org.eclipse.rdf4j.query.algebra.Not;
@@ -72,9 +76,12 @@ import org.eclipse.rdf4j.query.algebra.evaluation.QueryBindingSet;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryEvaluationStep;
 import org.eclipse.rdf4j.query.algebra.evaluation.TripleSource;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.DefaultEvaluationStrategy;
+import org.eclipse.rdf4j.query.algebra.evaluation.impl.GraphFrameBindings;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.QueryEvaluationContext;
+import org.eclipse.rdf4j.query.algebra.evaluation.iterator.ExtensionIterator;
 import org.eclipse.rdf4j.query.impl.BlankNodeAllocationScope;
 import org.eclipse.rdf4j.query.impl.EmptyBindingSet;
+import org.eclipse.rdf4j.query.impl.MapBindingSet;
 import org.eclipse.rdf4j.query.impl.RemoteBNode;
 import org.eclipse.rdf4j.query.impl.SimpleDataset;
 import org.junit.jupiter.api.Test;
@@ -401,6 +408,162 @@ public class GraphQueryEvaluationStepTest {
 					.containsExactlyInAnyOrder(tuple(G1, null, VF.createLiteral(true)),
 							tuple(null, G1, VF.createLiteral(sameExtension)));
 		}
+	}
+
+	@Test
+	void nullableGraphUnionBindUsesTheContextOwnedMutableRow() {
+		StatementFixture fixture = new StatementFixture();
+		fixture.statements = List.of(VF.createStatement(G1, fixture.predicate, G2));
+		var union = new Union(nullableLookup(fixture), new ZeroLengthPath(Var.of("g"), Var.of("end")));
+		var check = new Exists(new ZeroLengthPath(Var.of("g"), Var.of("fixed", G1, true, true)));
+		var right = new Extension(union, new ExtensionElem(check, "check"));
+		var query = new QueryRoot(new LeftJoin(graphJoinInput(null), right));
+		try (var rows = new DefaultEvaluationStrategy(fixture, null).precompile(query, typedRowContext())
+				.evaluate(EmptyBindingSet.getInstance())) {
+			var yes = VF.createLiteral(true);
+			assertThat(QueryResults.asList(rows)).extracting(row -> row.getValue("s"), row -> row.getValue("end"),
+					row -> row.getValue("check"))
+					.containsExactlyInAnyOrder(tuple(G1, null, yes), tuple(null, G1, yes));
+		}
+	}
+
+	@ParameterizedTest
+	@CsvSource({ "false,false", "true,false", "true,true" })
+	void typedBindClearsASiblingInputAcrossNestedProjectionAndFeedsLaterAssignments(boolean project,
+			boolean projectsGraph) {
+		StatementFixture fixture = new StatementFixture();
+		fixture.statements = List.of(VF.createStatement(G1, fixture.predicate, G2));
+		TupleExpr path = new Extension(new ZeroLengthPath(Var.of("g"), Var.of("end")),
+				new ExtensionElem(new ValueConstant(G2), "check"),
+				new ExtensionElem(Var.of("missing"), "g"));
+		if (project) {
+			var projection = new Projection(path,
+					new ProjectionElemList(new ProjectionElem("end"), new ProjectionElem("check")));
+			if (projectsGraph) {
+				projection.getProjectionElemList().addElement(new ProjectionElem("g"));
+			}
+			projection.setSubquery(false);
+			path = projection;
+		}
+		var union = new Union(nullableLookup(fixture), path);
+		var exists = new Exists(new ZeroLengthPath(Var.of("g"), Var.of("fixed", G2, true, true)));
+		var right = new Extension(union, new ExtensionElem(exists, "check"),
+				new ExtensionElem(Var.of("check"), "copied"),
+				new ExtensionElem(new If(Var.of("check"), exists.clone(), new ValueConstant(VF.createLiteral(false))),
+						"composite"),
+				new ExtensionElem(new ValueConstant(G1), "g"),
+				new ExtensionElem(exists.clone(), "afterRestore"));
+		var query = new QueryRoot(new LeftJoin(graphJoinInput(null), right));
+		var stock = new DefaultEvaluationStrategy(fixture, null).precompile(query.clone());
+		var typed = new DefaultEvaluationStrategy(fixture, null).precompile(query, typedRowContext());
+		try (var stockRows = stock.evaluate(EmptyBindingSet.getInstance());
+				var typedRows = typed.evaluate(EmptyBindingSet.getInstance())) {
+			var yes = VF.createLiteral(true);
+			var no = VF.createLiteral(false);
+			var afterProjection = projectsGraph ? no : yes;
+			List<BindingSet> expected = QueryResults.asList(stockRows);
+			List<BindingSet> actual = QueryResults.asList(typedRows);
+			assertThat(actual).containsExactlyInAnyOrderElementsOf(expected);
+			assertThat(actual).extracting(row -> row.getValue("s"), row -> row.getValue("end"),
+					row -> row.getValue("check"), row -> row.getValue("copied"), row -> row.getValue("composite"),
+					row -> row.getValue("afterRestore"))
+					.containsExactlyInAnyOrder(tuple(G1, null, no, no, no, no),
+							tuple(null, G1, afterProjection, afterProjection, afterProjection, no));
+		}
+	}
+
+	@Test
+	void publicExtensionCallbackReceivesTheContextOwnedRowInsideARowScope() {
+		StatementFixture fixture = new StatementFixture();
+		fixture.statements = List.of(VF.createStatement(G1, fixture.predicate, G2));
+		var custom = new Extension(new ZeroLengthPath(Var.of("g"), Var.of("end")),
+				new ExtensionElem(new ValueConstant(G2), "custom"));
+		var union = new Union(nullableLookup(fixture), custom);
+		var check = new Exists(new ZeroLengthPath(Var.of("g"), Var.of("fixed", G1, true, true)));
+		var query = new QueryRoot(new LeftJoin(graphJoinInput(null),
+				new Extension(union, new ExtensionElem(check, "check"))));
+		var strategy = new DefaultEvaluationStrategy(fixture, null) {
+			@Override
+			protected QueryEvaluationStep prepare(Extension extension, QueryEvaluationContext context) {
+				if (extension == custom) {
+					var child = precompile(extension.getArg(), context);
+					return input -> new ExtensionIterator(child.evaluate(input),
+							row -> ((ContextRow) row).setBinding("custom", G2), context);
+				}
+				return super.prepare(extension, context);
+			}
+		};
+		try (var rows = strategy.precompile(query, typedRowContext()).evaluate(EmptyBindingSet.getInstance())) {
+			assertThat(QueryResults.asList(rows)).extracting(row -> row.getValue("s"), row -> row.getValue("end"),
+					row -> row.getValue("custom"))
+					.containsExactlyInAnyOrder(tuple(G1, null, null), tuple(null, G1, G2));
+		}
+	}
+
+	@Test
+	void typedScalarReadsUseTheOwnedRowAndNestedTupleKeepsGraphAuthority() {
+		StatementFixture fixture = new StatementFixture();
+		fixture.statements = List.of(VF.createStatement(G2, fixture.predicate, G1, G2));
+		var pattern = new StatementPattern(StatementPattern.Scope.NAMED_CONTEXTS, Var.of("s"),
+				Var.of("p", fixture.predicate, true, true), Var.of("o"), Var.of("privateGraph"));
+		var nested = new Projection(pattern, new ProjectionElemList(new ProjectionElem("s")));
+		nested.setProjectionContext(Var.of("callerGraph"));
+		nested.setInheritedGraphParameter("privateGraph");
+		var scalar = new If(Var.of("check"), new Exists(nested), new ValueConstant(VF.createLiteral(true)));
+		var plan = new DefaultEvaluationStrategy(fixture, null).precompile(scalar, typedRowContext());
+		for (IRI graph : List.of(G1, G2)) {
+			var nativeRow = new ContextRow();
+			nativeRow.setBinding("check", VF.createLiteral(true));
+			var framed = GraphFrameBindings.supply(nativeRow, "privateGraph", graph);
+			assertThat(plan.evaluate(framed)).isEqualTo(VF.createLiteral(graph.equals(G2)));
+		}
+	}
+
+	private static QueryEvaluationContext typedRowContext() {
+		return new QueryEvaluationContext.Minimal(null) {
+			@Override
+			public MutableBindingSet createBindingSet() {
+				return new ContextRow();
+			}
+
+			@Override
+			public MutableBindingSet createBindingSet(BindingSet bindings) {
+				var copy = new ContextRow();
+				bindings.forEach(copy::addBinding);
+				return copy;
+			}
+
+			@Override
+			public BiConsumer<Value, MutableBindingSet> setBinding(String name) {
+				return (value, row) -> ((ContextRow) row).setBinding(name, value);
+			}
+
+			@Override
+			public BiConsumer<Value, MutableBindingSet> addBinding(String name) {
+				return (value, row) -> {
+					if (value != null) {
+						row.addBinding(name, value);
+					}
+				};
+			}
+
+			@Override
+			public Consumer<MutableBindingSet> removeBinding(String name) {
+				return row -> ((ContextRow) row).removeBinding(name);
+			}
+
+			@Override
+			public Function<BindingSet, Value> getValue(String name) {
+				if ("check".equals(name)) {
+					return row -> row.hasBinding(name) ? ((ContextRow) row).getValue(name) : null;
+				}
+				return super.getValue(name);
+			}
+		};
+	}
+
+	private static final class ContextRow extends MapBindingSet {
+		private static final long serialVersionUID = 1L;
 	}
 
 	@ParameterizedTest

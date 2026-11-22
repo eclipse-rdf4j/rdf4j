@@ -683,6 +683,103 @@ class LmdbPartitionedDistinctRegressionTest {
 		return largest;
 	}
 
+	private static long largestScanUnderDistinct(GenericPlanNode plan) {
+		if (plan.getType().equals("Distinct")) {
+			return largestScan(plan);
+		}
+		return plan.getPlans() == null ? 0
+				: plan.getPlans().stream().mapToLong(child -> largestScanUnderDistinct(child)).max().orElse(0);
+	}
+
+	@ParameterizedTest
+	@ValueSource(booleans = { false, true })
+	void distinctInCorrelatedNotExistsKeepsPredicatePrefix(boolean nativeEvaluation) {
+		IRI outer = VF.createIRI("urn:outer");
+		IRI mark = VF.createIRI("urn:mark");
+		IRI missing = VF.createIRI("urn:missing");
+		IRI common = VF.createIRI("urn:common");
+		IRI object = VF.createIRI("urn:o");
+		LmdbStore store = openStore(nativeEvaluation, "spoc,posc,ospc");
+		try (var connection = store.getConnection()) {
+			connection.begin();
+			connection.addStatement(outer, mark, missing);
+			for (int i = 0; i < 64; i++) {
+				connection.addStatement(VF.createIRI("urn:s" + i), common, object);
+			}
+			connection.commit();
+
+			var query = parse("""
+					SELECT ?outer WHERE {
+						?outer <urn:mark> ?p
+						FILTER NOT EXISTS { SELECT DISTINCT ?s WHERE { ?s ?p ?o } }
+					}
+					""");
+			assertThat(evaluate(connection, query)).extracting(row -> row.getValue("outer")).containsExactly(outer);
+			if (!nativeEvaluation) {
+				var plan = connection.explain(Explanation.Level.Telemetry, query, null,
+						EmptyBindingSet.getInstance(), false, 10).toGenericPlanNode();
+				assertThat(largestScan(plan)).as("largest scan, including the unsuccessful predicate seek")
+						.isEqualTo(1L);
+			}
+		} finally {
+			store.shutDown();
+		}
+	}
+
+	@ParameterizedTest
+	@ValueSource(booleans = { false, true })
+	void distinctInBindUsesTheSeekForNullablePredicatesAndAliasedSubjects(boolean subjectOrderPreservesPrefix) {
+		IRI hit = VF.createIRI("urn:hit");
+		IRI miss = VF.createIRI("urn:miss");
+		IRI unbound = VF.createIRI("urn:unbound");
+		IRI mark = VF.createIRI("urn:mark");
+		IRI common = VF.createIRI("urn:common");
+		IRI missing = VF.createIRI("urn:missing");
+		IRI object = VF.createIRI("urn:o");
+		String indexes = subjectOrderPreservesPrefix ? "spoc,psoc,posc,ospc" : "spoc,posc,ospc";
+		LmdbStore store = openStore(false, indexes);
+		try (var connection = store.getConnection()) {
+			connection.begin();
+			connection.addStatement(hit, mark, common);
+			connection.addStatement(miss, mark, missing);
+			for (int i = 0; i < 64; i++) {
+				connection.addStatement(VF.createIRI("urn:s" + i), common, object);
+			}
+			connection.commit();
+
+			var query = parse("""
+					SELECT ?outer ?matches WHERE {
+						VALUES ?outer { <urn:hit> <urn:miss> <urn:unbound> }
+						OPTIONAL { ?outer <urn:mark> ?p }
+						BIND(EXISTS { SELECT DISTINCT (?s AS ?key) WHERE { ?s ?p ?o } } AS ?matches)
+					}
+					""");
+			assertThat(evaluate(connection, query))
+					.extracting(row -> row.getValue("outer"), row -> row.getValue("matches"))
+					.containsExactlyInAnyOrder(tuple(hit, VF.createLiteral(true)), tuple(miss, VF.createLiteral(false)),
+							tuple(unbound, VF.createLiteral(true)));
+			var plan = connection.explain(Explanation.Level.Telemetry, query, null,
+					EmptyBindingSet.getInstance(), false, 10);
+			assertThat(largestScanUnderDistinct(plan.toGenericPlanNode()))
+					.as("one index key each for the hit and the unbound probe")
+					.isEqualTo(2L);
+			assertThat(plan.toString().contains("statementOrder: S")).isEqualTo(subjectOrderPreservesPrefix);
+
+			var independent = parse("""
+					SELECT ?outer WHERE {
+						?outer <urn:mark> ?p
+						FILTER EXISTS { SELECT DISTINCT ?s WHERE { ?s ?unrelated ?o } }
+					}
+					""");
+			var independentPlan = connection.explain(Explanation.Level.Telemetry, independent, null,
+					EmptyBindingSet.getInstance(), false, 10);
+			assertThat(independentPlan.toGenericPlanNode().getResultSizeActual()).isEqualTo(2L);
+			assertThat(independentPlan.toString()).contains("statementOrder: S");
+		} finally {
+			store.shutDown();
+		}
+	}
+
 	@Test
 	void singletonPartitionsDoNotKeepClearingAnOversizedMembershipTable() {
 		List<BindingSet> rows = aliasedRows(VF.createIRI("urn:large"), 128);

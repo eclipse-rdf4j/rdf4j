@@ -28,6 +28,7 @@ import org.eclipse.rdf4j.query.algebra.evaluation.EvaluationStrategy;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryValueEvaluationStep;
 import org.eclipse.rdf4j.query.algebra.evaluation.ValueExprEvaluationException;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.GraphFrameBindings;
+import org.eclipse.rdf4j.query.algebra.evaluation.impl.GraphFrameBindings.MutableCarrier;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.QueryEvaluationContext;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.evaluationsteps.ScopedUnionInput;
 import org.eclipse.rdf4j.query.algebra.helpers.TupleExprs;
@@ -41,18 +42,22 @@ public class ExtensionIterator extends ConvertingIteration<BindingSet, BindingSe
 
 	public ExtensionIterator(Extension extension, CloseableIteration<BindingSet> iter,
 			EvaluationStrategy strategy, QueryEvaluationContext context) throws QueryEvaluationException {
-		super(iter);
-		this.context = context;
-		this.setter = buildLambdaToEvaluateTheExpressions(extension, strategy, context);
-		this.trackClearedSiblingInputs = ScopedUnionInput.tracksClearedSiblingInputs();
+		this(iter, buildLambdaToEvaluateTheExpressions(extension, strategy, context), context);
 	}
 
 	public ExtensionIterator(CloseableIteration<BindingSet> iter,
 			Consumer<MutableBindingSet> setter, QueryEvaluationContext context) throws QueryEvaluationException {
 		super(iter);
-		this.setter = setter;
 		this.context = context;
 		this.trackClearedSiblingInputs = ScopedUnionInput.tracksClearedSiblingInputs();
+		if (setter instanceof CompiledAssignments assignments) {
+			this.setter = trackClearedSiblingInputs ? assignments::acceptScoped : assignments::acceptOrdinary;
+		} else {
+			this.setter = trackClearedSiblingInputs ? row -> {
+				setter.accept(GraphFrameBindings.contextRow(row));
+				GraphFrameBindings.removeClearsForBoundNames(row);
+			} : setter;
+		}
 	}
 
 	public static Consumer<MutableBindingSet> buildLambdaToEvaluateTheExpressions(Extension extension,
@@ -63,6 +68,7 @@ public class ExtensionIterator extends ConvertingIteration<BindingSet, BindingSe
 	public static Function<BindingSet, Consumer<MutableBindingSet>> prepareAssignments(Extension extension,
 			EvaluationStrategy strategy, QueryEvaluationContext context) {
 		BiConsumer<MutableBindingSet, BindingSet> consumer = null;
+		BiConsumer<MutableBindingSet, BindingSet> scopedConsumer = null;
 		for (ExtensionElem extElem : extension.getElements()) {
 			if (TupleExprs.isEvaluatedExtensionElement(extElem)) {
 				QueryValueEvaluationStep preparedStep;
@@ -73,14 +79,24 @@ public class ExtensionIterator extends ConvertingIteration<BindingSet, BindingSe
 					// processed, so the existing row-local extension error handling can leave the binding unset.
 					preparedStep = new QueryValueEvaluationStep.Fail(e.getMessage());
 				}
-				var prepared = ScopedUnionInput.prepareScalar(extension, extElem.getExpr(),
-						preparedStep);
+				QueryValueEvaluationStep step = preparedStep;
+				BiFunction<BindingSet, BindingSet, Value> ordinaryStep = (row, invocation) -> step.evaluate(row);
+				var scopedStep = ScopedUnionInput.prepareScalar(extension, extElem.getExpr(), step);
 				BiConsumer<Value, MutableBindingSet> setBinding = context.setBinding(extElem.getName());
 				String name = extElem.getName();
 				Consumer<MutableBindingSet> removeBinding = context.removeBinding(name);
 				BiConsumer<MutableBindingSet, BindingSet> assignment = (target, invocation) -> setValue(setBinding,
-						removeBinding, prepared, target, invocation, name);
+						removeBinding, ordinaryStep, target, invocation);
+				BiConsumer<Value, MutableBindingSet> scopedSetter = (value, row) -> setBinding.accept(value,
+						GraphFrameBindings.assignmentTarget(row, name));
+				Consumer<MutableBindingSet> scopedRemover = row -> {
+					removeBinding.accept(GraphFrameBindings.assignmentTarget(row, name));
+					ScopedUnionInput.clearedByAssignment(row, name);
+				};
+				BiConsumer<MutableBindingSet, BindingSet> scopedAssignment = (target, invocation) -> setValue(
+						scopedSetter, scopedRemover, scopedStep, target, invocation);
 				consumer = consumer == null ? assignment : consumer.andThen(assignment);
+				scopedConsumer = scopedConsumer == null ? scopedAssignment : scopedConsumer.andThen(scopedAssignment);
 			}
 		}
 		if (consumer == null) {
@@ -89,7 +105,29 @@ public class ExtensionIterator extends ConvertingIteration<BindingSet, BindingSe
 			};
 		}
 		BiConsumer<MutableBindingSet, BindingSet> apply = consumer;
-		return invocation -> row -> apply.accept(row, invocation);
+		BiConsumer<MutableBindingSet, BindingSet> applyScoped = scopedConsumer;
+		return invocation -> new CompiledAssignments(invocation, apply, applyScoped);
+	}
+
+	private record CompiledAssignments(BindingSet invocation,
+			BiConsumer<MutableBindingSet, BindingSet> ordinary,
+			BiConsumer<MutableBindingSet, BindingSet> scoped) implements Consumer<MutableBindingSet> {
+		@Override
+		public void accept(MutableBindingSet row) {
+			if (row instanceof MutableCarrier && ScopedUnionInput.tracksClearedSiblingInputs()) {
+				acceptScoped(row);
+			} else {
+				acceptOrdinary(row);
+			}
+		}
+
+		private void acceptOrdinary(MutableBindingSet row) {
+			ordinary.accept(row, invocation);
+		}
+
+		private void acceptScoped(MutableBindingSet row) {
+			scoped.accept(row, invocation);
+		}
 	}
 
 	/**
@@ -103,7 +141,7 @@ public class ExtensionIterator extends ConvertingIteration<BindingSet, BindingSe
 
 	private static void setValue(BiConsumer<Value, MutableBindingSet> setBinding,
 			Consumer<MutableBindingSet> removeBinding, BiFunction<BindingSet, BindingSet, Value> prepared,
-			MutableBindingSet targetBindings, BindingSet invocation, String name) {
+			MutableBindingSet targetBindings, BindingSet invocation) {
 		try {
 			// we evaluate each extension element over the targetbindings, so that bindings from
 			// a previous extension element in this same extension can be used by other extension elements.
@@ -119,7 +157,6 @@ public class ExtensionIterator extends ConvertingIteration<BindingSet, BindingSe
 			// The error leaves this assignment unbound.
 		}
 		removeBinding.accept(targetBindings);
-		ScopedUnionInput.clearedByAssignment(targetBindings, name);
 	}
 
 	@Override

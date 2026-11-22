@@ -29,8 +29,14 @@ import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.query.algebra.Distinct;
+import org.eclipse.rdf4j.query.algebra.Exists;
+import org.eclipse.rdf4j.query.algebra.Extension;
+import org.eclipse.rdf4j.query.algebra.ExtensionElem;
+import org.eclipse.rdf4j.query.algebra.Filter;
 import org.eclipse.rdf4j.query.algebra.Join;
+import org.eclipse.rdf4j.query.algebra.LeftJoin;
 import org.eclipse.rdf4j.query.algebra.MultiProjection;
+import org.eclipse.rdf4j.query.algebra.Not;
 import org.eclipse.rdf4j.query.algebra.Order;
 import org.eclipse.rdf4j.query.algebra.OrderElem;
 import org.eclipse.rdf4j.query.algebra.Projection;
@@ -39,10 +45,12 @@ import org.eclipse.rdf4j.query.algebra.ProjectionElemList;
 import org.eclipse.rdf4j.query.algebra.Reduced;
 import org.eclipse.rdf4j.query.algebra.SingletonSet;
 import org.eclipse.rdf4j.query.algebra.StatementPattern;
+import org.eclipse.rdf4j.query.algebra.ValueConstant;
 import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.query.algebra.evaluation.TripleSource;
 import org.eclipse.rdf4j.query.algebra.helpers.TupleExprs;
 import org.eclipse.rdf4j.query.impl.EmptyBindingSet;
+import org.eclipse.rdf4j.query.impl.MapBindingSet;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.ValueSource;
@@ -117,6 +125,46 @@ class LmdbDistinctOrderMarkerTest {
 		new Join(onLeft, pattern("n", "urn:r", "o"));
 		assertThat(LmdbDistinctOrderMarker.boundOutside(onLeft, EmptyBindingSet.getInstance())).isEmpty();
 		assertThat(join.getRightArg()).isSameAs(inner);
+	}
+
+	@Test
+	void nestedExistsUsesEachFilterInputAndEnclosingJoinInput() {
+		var distinct = new Distinct(new StatementPattern(Var.of("s"), Var.of("p"), Var.of("o")));
+		var inner = new Filter(pattern("middle", "urn:inner", "p"), new Not(new Exists(distinct)));
+		var outer = new Filter(pattern("outer", "urn:outer", "other"), new Exists(inner));
+		new Join(pattern("left", "urn:left", "join"), outer);
+		var initial = new MapBindingSet();
+		initial.addBinding("query", vf.createIRI("urn:input"));
+
+		assertThat(LmdbDistinctOrderMarker.boundOutside(distinct, initial))
+				.contains("middle", "p", "outer", "other", "left", "join", "query")
+				.doesNotContain("s", "o");
+	}
+
+	@Test
+	void optionalConditionUsesBothArgumentsIncludingNullableAndProjectedNames() {
+		var distinct = new Distinct(new StatementPattern(Var.of("s"), Var.of("p"), Var.of("o")));
+		var right = new Projection(pattern("hidden", "urn:right", "source"),
+				new ProjectionElemList(new ProjectionElem("source", "p")));
+		new LeftJoin(pattern("left", "urn:left", "gate"), right, new Not(new Exists(distinct)));
+
+		assertThat(LmdbDistinctOrderMarker.boundOutside(distinct, EmptyBindingSet.getInstance()))
+				.contains("left", "gate", "p")
+				.doesNotContain("hidden", "source", "s", "o");
+	}
+
+	@Test
+	void extensionExpressionUsesEarlierAssignmentsButNotItsOwnOrLaterTargets() {
+		var distinct = new Distinct(new StatementPattern(Var.of("s"), Var.of("p"), Var.of("o")));
+		var value = new ValueConstant(vf.createIRI("urn:predicate"));
+		new Extension(pattern("left", "urn:left", "arg"),
+				new ExtensionElem(value, "p"),
+				new ExtensionElem(new Exists(distinct), "exists"),
+				new ExtensionElem(value.clone(), "later"));
+
+		assertThat(LmdbDistinctOrderMarker.boundOutside(distinct, EmptyBindingSet.getInstance()))
+				.contains("left", "arg", "p")
+				.doesNotContain("exists", "later", "s", "o");
 	}
 
 	@Test

@@ -25,6 +25,8 @@ import org.eclipse.rdf4j.common.annotation.InternalUseOnly;
 import org.eclipse.rdf4j.common.order.StatementOrder;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.Dataset;
+import org.eclipse.rdf4j.query.algebra.Extension;
+import org.eclipse.rdf4j.query.algebra.ExtensionElem;
 import org.eclipse.rdf4j.query.algebra.Graph;
 import org.eclipse.rdf4j.query.algebra.Join;
 import org.eclipse.rdf4j.query.algebra.Lateral;
@@ -35,6 +37,7 @@ import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.algebra.UnaryTupleOperator;
 import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.query.algebra.evaluation.TripleSource;
+import org.eclipse.rdf4j.query.algebra.helpers.TupleExprs;
 import org.eclipse.rdf4j.sail.base.SailDatasetTripleTermSource;
 
 /**
@@ -74,8 +77,8 @@ public final class LmdbDistinctOrderMarker {
 	 * @param distinctArg  the argument of the {@code Distinct}
 	 * @param tripleSource used to ask the leading pattern which orders it can be read in
 	 * @param dataset      the dataset the statement pattern will read
-	 * @param boundOutside binding names fixed by the enclosing scope; partitioning on such a name never reaches a group
-	 *                     boundary, so they are not eligible
+	 * @param boundOutside binding names the enclosing scope can supply. For an invocation with a supplied binding,
+	 *                     partitioning on that name never reaches a group boundary.
 	 */
 	@InternalUseOnly
 	public static Optional<String> mark(TupleExpr distinctArg, TripleSource tripleSource, Dataset dataset,
@@ -179,9 +182,10 @@ public final class LmdbDistinctOrderMarker {
 	}
 
 	/**
-	 * The binding names that are already fixed when {@code distinctLike} is evaluated: the bindings of the query
-	 * itself, plus the left argument's bindings from each enclosing {@code Join}, {@code LeftJoin} or {@code Lateral}
-	 * where this node occurs in the right argument.
+	 * The binding names that can already be supplied when {@code distinctLike} is evaluated. These can come from the
+	 * query's initial bindings, the left input when evaluating a join's right operand, or the row on which an enclosing
+	 * value expression is evaluated. Include nullable bindings because an index order must preserve the available seek
+	 * prefix for every input row.
 	 */
 	@InternalUseOnly
 	public static Set<String> boundOutside(UnaryTupleOperator distinctLike, BindingSet queryBindings) {
@@ -192,12 +196,30 @@ public final class LmdbDistinctOrderMarker {
 		QueryModelNode child = distinctLike;
 		QueryModelNode parent = distinctLike.getParentNode();
 		while (parent != null) {
-			if (parent instanceof Join && ((Join) parent).getRightArg() == child) {
-				names.addAll(((Join) parent).getLeftArg().getBindingNames());
-			} else if (parent instanceof LeftJoin && ((LeftJoin) parent).getRightArg() == child) {
-				names.addAll(((LeftJoin) parent).getLeftArg().getBindingNames());
+			if (parent instanceof Join join && join.getRightArg() == child) {
+				names.addAll(join.getLeftArg().getBindingNames());
+			} else if (parent instanceof LeftJoin optional) {
+				if (optional.getRightArg() == child) {
+					names.addAll(optional.getLeftArg().getBindingNames());
+				} else if (optional.getCondition() == child) {
+					names.addAll(optional.getBindingNames());
+				}
 			} else if (parent instanceof Lateral lateral && lateral.getRightArg() == child) {
 				names.addAll(lateral.getLeftArg().getBindingNames());
+			} else if (parent instanceof UnaryTupleOperator operator && operator.getArg() != child) {
+				// Expressions such as FILTER, BIND, aggregate arguments and ORDER BY evaluate on the input row.
+				// This edge works through any intervening expression, including nested EXISTS and NOT EXISTS.
+				names.addAll(operator.getArg().getBindingNames());
+				if (operator instanceof Extension extension && child instanceof ExtensionElem) {
+					for (ExtensionElem element : extension.getElements()) {
+						if (element == child) {
+							break;
+						}
+						if (TupleExprs.isEvaluatedExtensionElement(element)) {
+							names.add(element.getName());
+						}
+					}
+				}
 			}
 			child = parent;
 			parent = parent.getParentNode();

@@ -140,6 +140,38 @@ public final class GraphFrameBindings implements Serializable {
 		return bindings instanceof MutableCarrier ? bindings : new SuppliedBindings(bindings, from(bindings));
 	}
 
+	/** Exposes the representation created by the evaluation context to its accessors. */
+	public static BindingSet contextRow(BindingSet bindings) {
+		return bindings instanceof SuppliedBindings supplied ? supplied.delegate : bindings;
+	}
+
+	public static MutableBindingSet contextRow(MutableBindingSet bindings) {
+		return bindings instanceof SuppliedBindings supplied ? supplied.delegate : bindings;
+	}
+
+	/** Invalidates the assignment's old provenance while leaving typed mutation to the context. */
+	public static MutableBindingSet assignmentTarget(MutableBindingSet bindings, String name) {
+		if (bindings instanceof SuppliedBindings supplied) {
+			supplied.frames = supplied.frames.without(name);
+			return supplied.delegate;
+		}
+		return bindings;
+	}
+
+	/** An arbitrary assignment callback does not expose its output names. */
+	public static void removeClearsForBoundNames(MutableBindingSet bindings) {
+		if (bindings instanceof SuppliedBindings supplied) {
+			GraphFrameBindings frames = supplied.frames;
+			Set<ClearedInput> cleared = frames.clearedInputs();
+			if (!cleared.isEmpty()) {
+				Set<ClearedInput> remaining = new HashSet<>(cleared);
+				if (remaining.removeIf(input -> supplied.delegate.getValue(input.name()) != null)) {
+					supplied.frames = new GraphFrameBindings(frames.parameters, remaining);
+				}
+			}
+		}
+	}
+
 	/** Carries local shadowing through projection without granting private active-graph authority. */
 	public static MutableBindingSet preserveClearedSiblingInputs(BindingSet source, MutableBindingSet target) {
 		GraphFrameBindings projected = from(source);

@@ -1667,8 +1667,10 @@ public class DefaultEvaluationStrategy implements EvaluationStrategy, FederatedS
 			Function<BindingSet, Value> getValue = context.getValue(var.getName());
 			Predicate<BindingSet> hasValue = context.hasBinding(var.getName());
 			return bindings -> {
-				if (hasValue.test(bindings)) {
-					Value boundValue = getValue.apply(bindings);
+				// Nested tuple evaluators still see the graph frame. Variable accessors use the context's own row.
+				BindingSet row = GraphFrameBindings.contextRow(bindings);
+				if (hasValue.test(row)) {
+					Value boundValue = getValue.apply(row);
 					if (boundValue != null) {
 						return boundValue;
 					}

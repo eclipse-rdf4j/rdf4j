@@ -271,10 +271,9 @@ public abstract class AbstractMemoryOverflowModel<T extends AbstractModel> exten
 			checkMemoryOverflow(partialBatchDue);
 			delegate = getDelegate();
 		}
-		boolean add = delegate.add(st);
-		if (add && spillPayload != null) {
-			spillPayload.accountForAddedStatements(delegate, 1);
-		}
+		Model appendTarget = delegate;
+		boolean add = spillPayload == null ? appendTarget.add(st)
+				: spillPayload.trackGrowth(appendTarget, () -> appendTarget.add(st));
 		if (add && delegate instanceof DynamicModel dynamicModel) {
 			dynamicModel.maybeRegisterLargeStatementSetForReuse(dynamicModel);
 		}
@@ -578,20 +577,25 @@ public abstract class AbstractMemoryOverflowModel<T extends AbstractModel> exten
 				.newSetFromMap(new MapMaker().weakKeys().concurrencyLevel(1).makeMap());
 		private final ArrayDeque<Value> pending = new ArrayDeque<>();
 		private final int batchSize = BATCH_SIZE;
-		private final int statementCount;
-		private final long statementVersion;
+		private int statementCount;
+		private long statementVersion;
+		private long retainedTermVersion;
 		private long remaining = (long) batchSize * ESTIMATED_BYTES_PER_STATEMENT;
 
 		SpillPayload(Model model, int size) {
 			statementCount = size;
-			statementVersion = model instanceof DynamicModel dynamic ? dynamic.statementVersion() : 0;
+			if (model instanceof DynamicModel dynamic) {
+				statementVersion = dynamic.statementVersion();
+				retainedTermVersion = dynamic.retainedTermVersion();
+			}
 		}
 
 		boolean isCurrent(Model model, int size) {
 			// Filtered iterators can remove directly from the indexed delegate. Compare the size as well as the
 			// revision so those removals invalidate the measurement.
 			return !atLimit() && batchSize == BATCH_SIZE && statementCount == size
-					&& model instanceof DynamicModel dynamic && statementVersion == dynamic.statementVersion();
+					&& model instanceof DynamicModel dynamic && statementVersion == dynamic.statementVersion()
+					&& retainedTermVersion == dynamic.retainedTermVersion();
 		}
 
 		boolean atLimit() {
@@ -599,22 +603,44 @@ public abstract class AbstractMemoryOverflowModel<T extends AbstractModel> exten
 		}
 
 		boolean trackGrowth(Model model, BooleanSupplier add) {
-			int before = model.size();
+			int beforeSize = model.size();
+			long beforeVersion = model instanceof DynamicModel dynamic ? dynamic.statementVersion() : 0;
+			long beforeRetainedTermVersion = model instanceof DynamicModel dynamic ? dynamic.retainedTermVersion() : 0;
+			boolean currentBefore = isCurrent(model, beforeSize);
+			boolean result;
 			try {
-				return add.getAsBoolean();
-			} finally {
-				// A collection can fail partway through insertion.
-				accountForAddedStatements(model, model.size() - before);
+				result = add.getAsBoolean();
+			} catch (RuntimeException | Error failure) {
+				// A collection can fail partway through insertion. Re-measure once on the next check, and keep the
+				// insertion failure as the primary exception even if payload inspection would also fail.
+				remaining = 0;
+				throw failure;
 			}
+			accountForAddedStatements(model, beforeSize, beforeVersion, beforeRetainedTermVersion, currentBefore,
+					model.size() - beforeSize);
+			return result;
 		}
 
-		private void accountForAddedStatements(Model model, int added) {
-			if (added <= 0 || atLimit()) {
+		private void accountForAddedStatements(Model model, int beforeSize, long beforeVersion,
+				long beforeRetainedTermVersion, boolean currentBefore, int added) {
+			if (atLimit()) {
+				return;
+			}
+			if (!currentBefore || !(model instanceof DynamicModel dynamic)
+					|| added < 0 || dynamic.statementVersion() != beforeVersion + (added > 0 ? 1 : 0)
+					|| dynamic.retainedTermVersion() != beforeRetainedTermVersion) {
+				// The measured baseline changed outside this append, or the delegate cannot prove that only this
+				// operation changed it. This includes an equal-size retained-term replacement. Force a new measurement
+				// before reusing the partial-batch budget.
+				remaining = 0;
+				return;
+			}
+			if (added == 0) {
 				return;
 			}
 			// Count the canonical terms retained by the delegate. New statements occupy the tail in
 			// insertion order even when a bulk call mixes duplicates and successful insertions.
-			var statements = model instanceof DynamicModel dynamic ? dynamic.statementsInInsertionOrder() : null;
+			var statements = dynamic.statementsInInsertionOrder();
 			if (statements == null) {
 				// A delegate without insertion order requires a fresh measurement at the next check.
 				remaining = 0;
@@ -625,6 +651,11 @@ public abstract class AbstractMemoryOverflowModel<T extends AbstractModel> exten
 				for (int i = 0; i < added && !atLimit(); i++) {
 					accountFor(newest.next());
 				}
+			}
+			if (!atLimit()) {
+				statementCount = beforeSize + added;
+				statementVersion = dynamic.statementVersion();
+				retainedTermVersion = dynamic.retainedTermVersion();
 			}
 		}
 

@@ -5153,6 +5153,15 @@ namespace workbench {
                     && repository.title === right[index].title);
         }
 
+        /** Cleanup must not delay the rendered list or replace the result of reading it. */
+        function disposeRepositoryListStore(model: PageModel): void {
+            void Promise.resolve().then(() => model.rowStore.dispose()).catch((error: any) => {
+                if (typeof console !== 'undefined' && console.warn) {
+                    console.warn('Repository switcher row store could not be disposed.', error);
+                }
+            });
+        }
+
         /**
          * Fill the repository switcher. The current repository and the page shown change with in-page navigation
          * (M8.3), and repositories are created and deleted in the page, so every opening renders the list known so far
@@ -5178,7 +5187,7 @@ namespace workbench {
                     forgetMissingRepositories(panel.ownerDocument, model, repositories);
                     return repositories;
                 } finally {
-                    await model.rowStore.dispose();
+                    disposeRepositoryListStore(model);
                 }
             }).then((repositories: any[]) => {
                 panel.__rdf4jRepositoriesLoading = null;

@@ -66,6 +66,7 @@ import org.eclipse.rdf4j.query.algebra.Union;
 import org.eclipse.rdf4j.query.algebra.ValueExpr;
 import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.query.algebra.ZeroLengthPath;
+import org.eclipse.rdf4j.query.algebra.evaluation.federation.FederatedServiceIdentity;
 import org.eclipse.rdf4j.query.algebra.evaluation.function.Function;
 import org.eclipse.rdf4j.query.algebra.evaluation.function.FunctionRegistry;
 import org.eclipse.rdf4j.query.algebra.evaluation.function.datetime.Day;
@@ -988,7 +989,12 @@ public class QueryEvaluationUtility {
 			if (!summaries.get(node).mappingParameterized) {
 				return;
 			}
-			if (node instanceof Service || node instanceof ArbitraryLengthPath || node instanceof ZeroLengthPath
+			if (node instanceof Service service) {
+				names.addAll(VarNameCollector.process(service));
+				names.addAll(FederatedServiceIdentity.invocationValuesBindingNames(service));
+				return;
+			}
+			if (node instanceof ArbitraryLengthPath || node instanceof ZeroLengthPath
 					|| node instanceof TripleRef || node instanceof TupleFunctionCall) {
 				names.addAll(VarNameCollector.process(node));
 				return;

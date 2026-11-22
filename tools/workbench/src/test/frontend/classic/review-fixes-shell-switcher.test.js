@@ -95,6 +95,108 @@ test('A14: opening the switcher twice while its list loads asks the server once'
     assert.deepEqual(shell.ids(), ['a']);
 });
 
+test('repository choices render before row-store disposal settles', async () => {
+    const loaded = load(['a']);
+    const originalLoadModel = loaded.wb.app.loadModel;
+    let finishDispose;
+    let disposeStarted = false;
+    let disposeCalls = 0;
+    const disposal = new Promise((resolve) => { finishDispose = resolve; });
+    loaded.wb.app.loadModel = (...args) => originalLoadModel(...args).then((model) => {
+        model.rowStore.dispose = () => { disposeCalls++; disposeStarted = true; return disposal; };
+        return model;
+    });
+    const shell = switcher();
+    loaded.wb.views.bindContextBar({ ownerDocument: shell.document }, { basePath: '/workbench', repositoryId: 'a',
+        workbench: {} });
+    loaded.opens[0](shell.panel);
+    const loading = shell.panel.__rdf4jRepositoriesLoading;
+
+    try {
+        await settle();
+        assert.equal(disposeStarted, true, 'the row store is cleaned up after reading');
+        assert.equal(disposeCalls, 1, 'the row store is disposed once');
+        assert.deepEqual(shell.ids(), ['a'], 'the successful repository list does not wait for disposal');
+        assert.equal(shell.panel.__rdf4jRepositoriesLoaded, true);
+    } finally {
+        finishDispose();
+    }
+    await loading;
+});
+
+test('row-store cleanup rejection does not discard valid repository results or become unhandled', async () => {
+    const unhandled = [];
+    const onUnhandled = (reason) => unhandled.push(reason);
+    process.on('unhandledRejection', onUnhandled);
+    try {
+        const listed = load(['a']);
+        const originalListedLoad = listed.wb.app.loadModel;
+        let disposeCalls = 0;
+        listed.wb.app.loadModel = (...args) => originalListedLoad(...args).then((model) => {
+            model.rowStore.dispose = () => { disposeCalls++; return Promise.reject(new Error('dispose failed')); };
+            return model;
+        });
+        const listedShell = switcher();
+        listed.wb.views.bindContextBar({ ownerDocument: listedShell.document }, { basePath: '/workbench',
+            repositoryId: 'a', workbench: {} });
+        listed.opens[0](listedShell.panel);
+        await listedShell.panel.__rdf4jRepositoriesLoading;
+        await settle();
+        assert.deepEqual(listedShell.ids(), ['a'], 'cleanup rejection does not discard valid repository rows');
+        assert.equal(disposeCalls, 1, 'the row store is disposed once');
+        assert.deepEqual(unhandled, []);
+    } finally {
+        process.removeListener('unhandledRejection', onUnhandled);
+    }
+});
+
+test('synchronous row-store cleanup failure does not discard repository results', async () => {
+    const loaded = load(['a']);
+    const originalLoadModel = loaded.wb.app.loadModel;
+    let disposeCalls = 0;
+    loaded.wb.app.loadModel = (...args) => originalLoadModel(...args).then((model) => {
+        model.rowStore.dispose = () => { disposeCalls++; throw new Error('dispose failed'); };
+        return model;
+    });
+    const shell = switcher();
+    loaded.wb.views.bindContextBar({ ownerDocument: shell.document }, { basePath: '/workbench', repositoryId: 'a',
+        workbench: {} });
+    loaded.opens[0](shell.panel);
+    await shell.panel.__rdf4jRepositoriesLoading;
+    assert.deepEqual(shell.ids(), ['a']);
+    assert.equal(disposeCalls, 1);
+});
+
+test('row-store cleanup rejection does not mask the original repository read failure', async () => {
+    const unhandled = [];
+    const onUnhandled = (reason) => unhandled.push(reason);
+    process.on('unhandledRejection', onUnhandled);
+    try {
+        const failed = load([]);
+        const readFailure = new Error('repository read failed');
+        failed.wb.workspace.readRepositoryList = () => Promise.reject(readFailure);
+        const originalFailedLoad = failed.wb.app.loadModel;
+        let disposeCalls = 0;
+        failed.wb.app.loadModel = (...args) => originalFailedLoad(...args).then((model) => {
+            model.rowStore.dispose = () => { disposeCalls++; return Promise.reject(new Error('dispose failed')); };
+            return model;
+        });
+        const failedShell = switcher();
+        failed.wb.views.bindContextBar({ ownerDocument: failedShell.document }, { basePath: '/workbench',
+            repositoryId: 'a', workbench: {} });
+        failed.opens[0](failedShell.panel);
+        await failedShell.panel.__rdf4jRepositoriesLoading;
+        await settle();
+        assert.equal(failedShell.panel.querySelector('.workbench-popover__status').textContent,
+            'Unable to load repositories: repository read failed');
+        assert.equal(disposeCalls, 1, 'the row store is disposed once after a failed read');
+        await settle();
+        assert.deepEqual(unhandled, []);
+    } finally {
+        process.removeListener('unhandledRejection', onUnhandled);
+    }
+});
+
 test('a repository list the server could not give forgets nothing this browser keeps', async () => {
     const opened = (loaded) => {
         const forgotten = [];

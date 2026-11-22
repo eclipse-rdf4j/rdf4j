@@ -21,7 +21,9 @@ import java.lang.reflect.Method;
 import java.lang.reflect.Modifier;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Path;
+import java.util.AbstractCollection;
 import java.util.ArrayList;
+import java.util.Collection;
 import java.util.Iterator;
 import java.util.List;
 import java.util.concurrent.BlockingQueue;
@@ -31,8 +33,11 @@ import java.util.concurrent.TimeUnit;
 import javax.management.NotificationEmitter;
 import javax.management.NotificationListener;
 
+import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Model;
+import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.Statement;
+import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.model.base.AbstractIRI;
 import org.junit.jupiter.api.Test;
@@ -112,6 +117,26 @@ public class AbstractMemoryOverflowModelTest {
 	@Test
 	void repeatedPressureProbesDoNotRescanAnUnchangedModel() throws Exception {
 		runInConstrainedHeap("repeated-pressure-probes");
+	}
+
+	@Test
+	void appendingUnderPressureDoesNotRescanThePartialBatch() throws Exception {
+		runInConstrainedHeap("incremental-appends");
+	}
+
+	@Test
+	void allAppendPathsTrackPartialMutationsIncrementally() throws Exception {
+		runInConstrainedHeap("append-paths");
+	}
+
+	@Test
+	void customDuplicateStatementReplacementInvalidatesPayloadAccounting() throws Exception {
+		runInConstrainedHeap("custom-duplicate");
+	}
+
+	@Test
+	void componentOverloadDuplicateReplacementInvalidatesPayloadAccounting() throws Exception {
+		runInConstrainedHeap("component-duplicate");
 	}
 
 	@ParameterizedTest
@@ -222,6 +247,18 @@ public class AbstractMemoryOverflowModelTest {
 			break;
 		case "repeated-pressure-probes":
 			test.repeatedPressureProbes();
+			break;
+		case "incremental-appends":
+			test.incrementalAppendsProbe();
+			break;
+		case "append-paths":
+			test.appendPathsProbe();
+			break;
+		case "custom-duplicate":
+			test.customDuplicateProbe();
+			break;
+		case "component-duplicate":
+			test.componentDuplicateProbe();
 			break;
 		case "pressure-probes-after-changes":
 			test.pressureProbesAfterChanges();
@@ -653,6 +690,279 @@ public class AbstractMemoryOverflowModelTest {
 		}
 	}
 
+	private void incrementalAppendsProbe() {
+		int oldBatchSize = AbstractMemoryOverflowModel.BATCH_SIZE;
+		int oldMinimum = AbstractMemoryOverflowModel.MIN_AVAILABLE_MEM_BEFORE_OVERFLOWING;
+		try (RecordingOverflowModel model = new RecordingOverflowModel()) {
+			AbstractMemoryOverflowModel.BATCH_SIZE = 512;
+			AbstractMemoryOverflowModel.MIN_AVAILABLE_MEM_BEFORE_OVERFLOWING = minimumAboveMaxHeapMiB();
+			ValueFactory values = SimpleValueFactory.getInstance();
+			var predicate = values.createIRI("urn:overflow:predicate");
+			List<CountingLiteral> literals = new ArrayList<>();
+			for (int adds : List.of(128, 256)) {
+				for (int i = literals.size(); i < adds; i++) {
+					CountingLiteral literal = new CountingLiteral("payload-" + i);
+					literals.add(literal);
+					Statement statement = values.createStatement(values.createIRI("urn:overflow:subject:" + i),
+							predicate,
+							literal);
+					assertThat(model.add(statement)).isTrue();
+					// This is the read side of a partial batch that alternates writes and pressure checks.
+					model.spillToDiskIfNeeded();
+				}
+				int labelReads = labelReads(literals);
+				assertThat(model).hasSize(adds);
+				assertThat(labelReads).as("label reads while checking %s appended statements", adds)
+						.isLessThanOrEqualTo(adds * 2);
+			}
+		} finally {
+			AbstractMemoryOverflowModel.BATCH_SIZE = oldBatchSize;
+			AbstractMemoryOverflowModel.MIN_AVAILABLE_MEM_BEFORE_OVERFLOWING = oldMinimum;
+		}
+	}
+
+	private void appendPathsProbe() {
+		int oldBatchSize = AbstractMemoryOverflowModel.BATCH_SIZE;
+		int oldMinimum = AbstractMemoryOverflowModel.MIN_AVAILABLE_MEM_BEFORE_OVERFLOWING;
+		try (RecordingOverflowModel model = new RecordingOverflowModel()) {
+			AbstractMemoryOverflowModel.BATCH_SIZE = 512;
+			AbstractMemoryOverflowModel.MIN_AVAILABLE_MEM_BEFORE_OVERFLOWING = minimumAboveMaxHeapMiB();
+			ValueFactory values = SimpleValueFactory.getInstance();
+			var predicate = values.createIRI("urn:append-paths:predicate");
+			List<CountingLiteral> retained = new ArrayList<>();
+			CountingLiteral initialLiteral = new CountingLiteral("initial");
+			Statement initial = values.createStatement(values.createIRI("urn:append-paths:initial"), predicate,
+					initialLiteral);
+			assertThat(model.add(initial)).isTrue();
+			retained.add(initialLiteral);
+
+			// Upgrade the delegate to its indexed form while the payload measurement is live.
+			assertThat(model.filter(null, null, null)).hasSize(1);
+			model.spillToDiskIfNeeded();
+			int reads = labelReads(retained);
+
+			CountingLiteral statementLiteral = new CountingLiteral("statement-add");
+			assertThat(model.add(values.createStatement(values.createIRI("urn:append-paths:statement"), predicate,
+					statementLiteral))).isTrue();
+			model.spillToDiskIfNeeded();
+			assertThat(labelReads(retained)).as("statement add keeps the measured payload current").isEqualTo(reads);
+			retained.add(statementLiteral);
+			reads = labelReads(retained);
+
+			CountingLiteral componentLiteral = new CountingLiteral("component-add");
+			assertThat(model.add(values.createIRI("urn:append-paths:components"), predicate, componentLiteral))
+					.isTrue();
+			model.spillToDiskIfNeeded();
+			assertThat(labelReads(retained)).as("component add keeps the measured payload current").isEqualTo(reads);
+			retained.add(componentLiteral);
+
+			CountingLiteral contextLiteral = new CountingLiteral("mixed-context-add");
+			var contextSubject = values.createIRI("urn:append-paths:contexts");
+			var existingContext = values.createIRI("urn:append-paths:context:existing");
+			var addedContext = values.createIRI("urn:append-paths:context:added");
+			assertThat(model.add(values.createStatement(contextSubject, predicate, contextLiteral, existingContext)))
+					.isTrue();
+			retained.add(contextLiteral);
+			model.spillToDiskIfNeeded();
+			reads = labelReads(retained);
+			assertThat(model.add(contextSubject, predicate, contextLiteral, existingContext, addedContext)).isTrue();
+			model.spillToDiskIfNeeded();
+			assertThat(labelReads(retained)).as("mixed duplicate contexts do not rescan retained payload")
+					.isEqualTo(reads);
+
+			CountingLiteral collectionLiteral = new CountingLiteral("collection-add");
+			Statement collectionAdd = values.createStatement(values.createIRI("urn:append-paths:collection"), predicate,
+					collectionLiteral);
+			reads = labelReads(retained);
+			assertThat(model.addAll(List.of(initial, collectionAdd))).isTrue();
+			model.spillToDiskIfNeeded();
+			assertThat(labelReads(retained)).as("mixed duplicate collection adds keep the measured payload current")
+					.isEqualTo(reads);
+			retained.add(collectionLiteral);
+
+			CountingLiteral partialLiteral = new CountingLiteral("partial-collection-add");
+			Statement partialAdd = values.createStatement(values.createIRI("urn:append-paths:partial"), predicate,
+					partialLiteral);
+			Collection<Statement> partialCollection = new AbstractCollection<>() {
+				@Override
+				public Iterator<Statement> iterator() {
+					return new Iterator<>() {
+						private boolean added;
+
+						@Override
+						public boolean hasNext() {
+							return true;
+						}
+
+						@Override
+						public Statement next() {
+							if (!added) {
+								added = true;
+								return partialAdd;
+							}
+							throw new IllegalStateException("partial collection failure");
+						}
+					};
+				}
+
+				@Override
+				public int size() {
+					return 2;
+				}
+			};
+			reads = labelReads(retained);
+			assertThatThrownBy(() -> model.addAll(partialCollection)).hasMessage("partial collection failure");
+			assertThat(model).contains(partialAdd);
+			model.spillToDiskIfNeeded();
+			int readsAfterRecovery = labelReads(retained);
+			assertThat(readsAfterRecovery)
+					.as("a partial bulk failure triggers one recovery measurement")
+					.isEqualTo(reads + retained.size());
+			assertThat(partialLiteral.labelReads).isEqualTo(1);
+			model.spillToDiskIfNeeded();
+			assertThat(labelReads(retained)).as("the recovered payload remains current")
+					.isEqualTo(readsAfterRecovery);
+
+			ThrowingLiteral throwingLiteral = new ThrowingLiteral("throwing payload");
+			Statement throwingAdd = values.createStatement(values.createIRI("urn:append-paths:throwing"), predicate,
+					throwingLiteral);
+			Collection<Statement> throwingCollection = new AbstractCollection<>() {
+				@Override
+				public Iterator<Statement> iterator() {
+					return new Iterator<>() {
+						private boolean added;
+
+						@Override
+						public boolean hasNext() {
+							return true;
+						}
+
+						@Override
+						public Statement next() {
+							if (!added) {
+								added = true;
+								return throwingAdd;
+							}
+							throw new IllegalStateException("primary collection failure");
+						}
+					};
+				}
+
+				@Override
+				public int size() {
+					return 2;
+				}
+			};
+			assertThatThrownBy(() -> model.addAll(throwingCollection)).hasMessage("primary collection failure");
+			assertThat(model).contains(throwingAdd);
+		} finally {
+			AbstractMemoryOverflowModel.BATCH_SIZE = oldBatchSize;
+			AbstractMemoryOverflowModel.MIN_AVAILABLE_MEM_BEFORE_OVERFLOWING = oldMinimum;
+		}
+	}
+
+	private void customDuplicateProbe() {
+		int oldBatchSize = AbstractMemoryOverflowModel.BATCH_SIZE;
+		int oldMinimum = AbstractMemoryOverflowModel.MIN_AVAILABLE_MEM_BEFORE_OVERFLOWING;
+		try (RecordingOverflowModel model = new RecordingOverflowModel()) {
+			AbstractMemoryOverflowModel.BATCH_SIZE = 512;
+			AbstractMemoryOverflowModel.MIN_AVAILABLE_MEM_BEFORE_OVERFLOWING = minimumAboveMaxHeapMiB();
+			ValueFactory values = SimpleValueFactory.getInstance();
+			var subject = values.createIRI("urn:custom-duplicate:subject");
+			var predicate = values.createIRI("urn:custom-duplicate:predicate");
+			CountingLiteral firstLiteral = new CountingLiteral("same lexical value");
+			var first = new RetainingStatement(subject, predicate, firstLiteral, null);
+			assertThat(model.add(first)).isTrue();
+			model.spillToDiskIfNeeded();
+
+			CountingLiteral replacementLiteral = new CountingLiteral("same lexical value");
+			var replacement = new RetainingStatement(subject, predicate, replacementLiteral, null);
+			assertThat(model.add(replacement)).isFalse();
+			assertThat(model).hasSize(1);
+			CountingLiteral afterReplacementLiteral = new CountingLiteral("after replacement");
+			assertThat(model.add(values.createStatement(values.createIRI("urn:custom-duplicate:after"), predicate,
+					afterReplacementLiteral))).isTrue();
+			assertThat(replacementLiteral.labelReads)
+					.as("a zero-growth custom replacement invalidates the next automatic pressure check")
+					.isEqualTo(1);
+
+			CountingLiteral bulkOriginalLiteral = new CountingLiteral("bulk lexical value");
+			var bulkOriginal = new RetainingStatement(values.createIRI("urn:custom-duplicate:bulk-subject"), predicate,
+					bulkOriginalLiteral, null);
+			assertThat(model.add(bulkOriginal)).isTrue();
+			model.spillToDiskIfNeeded();
+			CountingLiteral bulkReplacementLiteral = new CountingLiteral("bulk lexical value");
+			var bulkReplacement = new RetainingStatement(bulkOriginal.getSubject(), predicate, bulkReplacementLiteral,
+					null);
+			assertThat(model.addAll(List.of(bulkReplacement))).isFalse();
+			model.spillToDiskIfNeeded();
+			assertThat(bulkReplacementLiteral.labelReads)
+					.as("bulk duplicate replacement also invalidates the measured payload")
+					.isEqualTo(1);
+
+			CountingLiteral mixedOriginalLiteral = new CountingLiteral("mixed lexical value");
+			var mixedSubject = values.createIRI("urn:custom-duplicate:mixed-subject");
+			var mixedOriginal = new RetainingStatement(mixedSubject, predicate, mixedOriginalLiteral, null);
+			assertThat(model.add(mixedOriginal)).isTrue();
+			model.spillToDiskIfNeeded();
+			CountingLiteral mixedReplacementLiteral = new CountingLiteral("mixed lexical value");
+			var mixedReplacement = new RetainingStatement(mixedSubject, predicate, mixedReplacementLiteral, null);
+			CountingLiteral mixedAddedLiteral = new CountingLiteral("mixed added value");
+			Statement mixedAdded = values.createStatement(values.createIRI("urn:custom-duplicate:mixed-added"),
+					predicate, mixedAddedLiteral);
+			assertThat(model.addAll(List.of(mixedReplacement, mixedAdded))).isTrue();
+			model.spillToDiskIfNeeded();
+			assertThat(mixedReplacementLiteral.labelReads)
+					.as("a mixed bulk append cannot hide a retained term replacement")
+					.isEqualTo(1);
+			assertThat(mixedAddedLiteral.labelReads).isEqualTo(1);
+
+		} finally {
+			AbstractMemoryOverflowModel.BATCH_SIZE = oldBatchSize;
+			AbstractMemoryOverflowModel.MIN_AVAILABLE_MEM_BEFORE_OVERFLOWING = oldMinimum;
+		}
+	}
+
+	private void componentDuplicateProbe() {
+		int oldBatchSize = AbstractMemoryOverflowModel.BATCH_SIZE;
+		int oldMinimum = AbstractMemoryOverflowModel.MIN_AVAILABLE_MEM_BEFORE_OVERFLOWING;
+		try (RecordingOverflowModel model = new RecordingOverflowModel()) {
+			AbstractMemoryOverflowModel.BATCH_SIZE = 512;
+			AbstractMemoryOverflowModel.MIN_AVAILABLE_MEM_BEFORE_OVERFLOWING = minimumAboveMaxHeapMiB();
+			ValueFactory values = SimpleValueFactory.getInstance();
+			var subject = values.createIRI("urn:component-duplicate:subject");
+			var predicate = values.createIRI("urn:component-duplicate:predicate");
+			CountingLiteral retainedLiteral = new CountingLiteral("component duplicate value");
+			var original = new RetainingStatement(subject, predicate, retainedLiteral, null);
+			assertThat(model.add(original)).isTrue();
+			model.spillToDiskIfNeeded();
+			int readsBeforeReplacement = retainedLiteral.labelReads;
+
+			assertThat(model.add(subject, predicate, retainedLiteral)).isFalse();
+			CountingLiteral appendedLiteral = new CountingLiteral("after component replacement");
+			assertThat(model.add(values.createStatement(values.createIRI("urn:component-duplicate:after"), predicate,
+					appendedLiteral))).isTrue();
+			assertThat(retainedLiteral.labelReads)
+					.as("component add replacing a custom statement invalidates retained payload accounting")
+					.isEqualTo(readsBeforeReplacement + 1);
+		} finally {
+			AbstractMemoryOverflowModel.BATCH_SIZE = oldBatchSize;
+			AbstractMemoryOverflowModel.MIN_AVAILABLE_MEM_BEFORE_OVERFLOWING = oldMinimum;
+		}
+	}
+
+	private static int labelReads(List<CountingLiteral> literals) {
+		return literals.stream().mapToInt(literal -> literal.labelReads).sum();
+	}
+
+	private static final class RetainingStatement extends GenericStatement<Resource, IRI, Value> {
+		private static final long serialVersionUID = 1L;
+
+		private RetainingStatement(Resource subject, IRI predicate, Value object, Resource context) {
+			super(subject, predicate, object, context);
+		}
+	}
+
 	private void duplicatePayloadProbe(String path) {
 		var values = SimpleValueFactory.getInstance();
 		var subject = values.createIRI("urn:subject");
@@ -732,13 +1042,19 @@ public class AbstractMemoryOverflowModelTest {
 					.isGreaterThan(readsAfterRemoval);
 
 			var replacement = values.createLiteral("replacement payload");
+			int readsBeforeEqualCardinalityChange = survivor.labelReads;
 			assertThat(model.remove(second, predicate, null)).isTrue();
+			model.spillToDiskIfNeeded();
+			assertThat(survivor.labelReads)
+					.as("an external removal invalidates a partial-batch measurement")
+					.isGreaterThan(readsBeforeEqualCardinalityChange);
+			int readsAfterRemovalProbe = survivor.labelReads;
 			assertThat(model.add(first, predicate, replacement)).isTrue();
 			assertThat(model).hasSize(2);
 			int readsAfterReplacement = survivor.labelReads;
 			model.spillToDiskIfNeeded();
-			assertThat(survivor.labelReads).as("equal cardinality does not imply unchanged statements")
-					.isGreaterThan(readsAfterReplacement);
+			assertThat(survivor.labelReads).as("the revalidated payload stays current after the append")
+					.isEqualTo(readsAfterReplacement);
 
 			int readsAfterProbe = survivor.labelReads;
 			model.spillToDiskIfNeeded();
@@ -1176,6 +1492,19 @@ public class AbstractMemoryOverflowModelTest {
 		public String getLabel() {
 			labelReads++;
 			return super.getLabel();
+		}
+	}
+
+	private static final class ThrowingLiteral extends SimpleLiteral {
+		private static final long serialVersionUID = 1L;
+
+		private ThrowingLiteral(String label) {
+			super(label);
+		}
+
+		@Override
+		public String getLabel() {
+			throw new IllegalStateException("payload accessor failure");
 		}
 	}
 
