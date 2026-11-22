@@ -30,7 +30,11 @@ import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Literal;
 import org.eclipse.rdf4j.model.TripleTerm;
 import org.eclipse.rdf4j.model.Value;
+import org.eclipse.rdf4j.model.base.CoreDatatype;
+import org.eclipse.rdf4j.model.datatypes.XMLDatatypeUtil;
 import org.eclipse.rdf4j.model.impl.BooleanLiteral;
+import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
+import org.eclipse.rdf4j.model.vocabulary.FN;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.algebra.AggregateOperator;
 import org.eclipse.rdf4j.query.algebra.And;
@@ -46,6 +50,7 @@ import org.eclipse.rdf4j.query.algebra.Extension;
 import org.eclipse.rdf4j.query.algebra.ExtensionElem;
 import org.eclipse.rdf4j.query.algebra.Filter;
 import org.eclipse.rdf4j.query.algebra.Filter.ConditionBindingScope;
+import org.eclipse.rdf4j.query.algebra.FunctionCall;
 import org.eclipse.rdf4j.query.algebra.Graph;
 import org.eclipse.rdf4j.query.algebra.Group;
 import org.eclipse.rdf4j.query.algebra.GroupElem;
@@ -1328,6 +1333,32 @@ public final class QueryAlgebraBindingAnalysis {
 			if (argument.guaranteed && !argument.kinds.isEmpty()
 					&& argument.kinds.stream().allMatch(this::strAccepts)) {
 				return new ValueExprFacts(true, null, Set.of(ValueKind.LITERAL));
+			}
+		}
+		if (expression instanceof FunctionCall call) {
+			if (FN.CONCAT.toString().equals(call.getURI())) {
+				StringBuilder label = new StringBuilder();
+				for (ValueExpr argument : call.getArgs()) {
+					Value fixed = expressionFacts(argument, input).fixedValue;
+					if (!(fixed instanceof Literal literal)
+							|| literal.getCoreDatatype() != CoreDatatype.XSD.STRING) {
+						return ValueExprFacts.unknown();
+					}
+					label.append(literal.getLabel());
+				}
+				return new ValueExprFacts(true, SimpleValueFactory.getInstance().createLiteral(label.toString()),
+						Set.of(ValueKind.LITERAL));
+			}
+			if ("STRDT".equals(call.getURI()) && call.getArgs().size() == 2) {
+				Value lexical = expressionFacts(call.getArgs().get(0), input).fixedValue;
+				Value datatype = expressionFacts(call.getArgs().get(1), input).fixedValue;
+				if (lexical instanceof Literal literal && literal.getCoreDatatype() == CoreDatatype.XSD.STRING
+						&& datatype instanceof IRI iri
+						&& !CoreDatatype.RDF.LANGSTRING.getIri().equals(iri)
+						&& !CoreDatatype.RDF.DIRLANGSTRING.getIri().equals(iri)
+						&& XMLDatatypeUtil.isValidValue(literal.getLabel(), iri)) {
+					return new ValueExprFacts(true, null, Set.of(ValueKind.LITERAL));
+				}
 			}
 		}
 		if (expression instanceof AggregateOperator) {

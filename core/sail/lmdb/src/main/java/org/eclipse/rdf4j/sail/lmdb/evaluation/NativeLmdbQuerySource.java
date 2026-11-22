@@ -52,6 +52,11 @@ public interface NativeLmdbQuerySource {
 
 	long idOf(Value value) throws QueryEvaluationException;
 
+	/** Non-null only when this source preserves one statement and context relation across physical probes. */
+	default Runnable stableGraphRestrictionValidator() {
+		return null;
+	}
+
 	/** Resolves a spelling with its destination role; the mask affects cache retention, never RDF identity. */
 	default long idOf(Value value, int positionMask) throws QueryEvaluationException {
 		ValuePosition.validateMask(positionMask);

@@ -34,15 +34,19 @@ import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.QueryEvaluationException;
 import org.eclipse.rdf4j.query.QueryLanguage;
+import org.eclipse.rdf4j.query.QueryParseOptions;
+import org.eclipse.rdf4j.query.QueryParseOptions.GraphAlgebraMode;
 import org.eclipse.rdf4j.query.algebra.Join;
 import org.eclipse.rdf4j.query.algebra.Order;
 import org.eclipse.rdf4j.query.algebra.Projection;
 import org.eclipse.rdf4j.query.algebra.ProjectionElem;
 import org.eclipse.rdf4j.query.algebra.ProjectionElemList;
+import org.eclipse.rdf4j.query.algebra.Slice;
 import org.eclipse.rdf4j.query.algebra.StatementPattern;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.query.algebra.evaluation.TripleSource;
+import org.eclipse.rdf4j.query.algebra.evaluation.impl.evaluationsteps.OrderedEvaluation;
 import org.eclipse.rdf4j.query.algebra.helpers.AbstractSimpleQueryModelVisitor;
 import org.eclipse.rdf4j.query.impl.EmptyBindingSet;
 import org.eclipse.rdf4j.query.parser.QueryParserUtil;
@@ -90,6 +94,52 @@ public class LmdbOrderByOptimizerTest {
 		assertEquals(0, findStatementPatterns(tupleExpr).stream()
 				.filter(statementPattern -> statementPattern.getStatementOrder() != null)
 				.count());
+	}
+
+	@Test
+	public void testRetainsOrderHintAcrossIndependentGraphJoin() {
+		TupleExpr tupleExpr = QueryParserUtil.parseTupleQuery(QueryLanguage.SPARQL, """
+				SELECT ?a ?o WHERE {
+				  ?a <urn:p> ?o
+				  GRAPH ?g { ?s <urn:p> ?o VALUES ?v { <urn:a> <urn:a> } }
+				}
+				ORDER BY STABLE_INDEX(?a)
+				""", null, QueryParseOptions.DEFAULT.withGraphAlgebraMode(GraphAlgebraMode.GRAPH)).getTupleExpr();
+
+		optimize(tupleExpr);
+
+		assertNotNull(findOrder(tupleExpr));
+		assertTrue(findStatementPatterns(tupleExpr).stream()
+				.allMatch(statementPattern -> statementPattern.getStatementOrder() == null));
+	}
+
+	@Test
+	public void testStableOrderRequirementStopsAtEnclosingJoin() {
+		TupleExpr tupleExpr = parse("""
+				SELECT ?a ?z WHERE {
+				  ?z <urn:outer> ?y
+				  { SELECT ?a WHERE { ?a <urn:p> ?o . ?o <urn:q> ?b }
+				    ORDER BY STABLE_INDEX(?a)
+				    LIMIT 1 }
+				}
+				""");
+
+		optimize(tupleExpr);
+
+		assertNull(findOrder(tupleExpr));
+		assertFalse(OrderedEvaluation.isRequired(tupleExpr));
+		List<Slice> slices = new ArrayList<>();
+		tupleExpr.visit(new AbstractSimpleQueryModelVisitor<RuntimeException>() {
+			@Override
+			public void meet(Slice node) {
+				slices.add(node);
+				super.meet(node);
+			}
+		});
+		assertEquals(1, slices.size());
+		assertTrue(OrderedEvaluation.isRequired(slices.get(0)));
+		assertTrue(findStatementPatterns(tupleExpr).stream()
+				.noneMatch(OrderedEvaluation::isRequired));
 	}
 
 	@Test

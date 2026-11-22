@@ -20,6 +20,9 @@ import java.util.Set;
 import org.eclipse.rdf4j.model.Literal;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
+import org.eclipse.rdf4j.model.vocabulary.FN;
+import org.eclipse.rdf4j.model.vocabulary.RDF;
+import org.eclipse.rdf4j.model.vocabulary.XSD;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.QueryResults;
 import org.eclipse.rdf4j.query.algebra.AbstractQueryModelNode;
@@ -35,6 +38,7 @@ import org.eclipse.rdf4j.query.algebra.Exists;
 import org.eclipse.rdf4j.query.algebra.Extension;
 import org.eclipse.rdf4j.query.algebra.ExtensionElem;
 import org.eclipse.rdf4j.query.algebra.Filter;
+import org.eclipse.rdf4j.query.algebra.FunctionCall;
 import org.eclipse.rdf4j.query.algebra.Group;
 import org.eclipse.rdf4j.query.algebra.GroupElem;
 import org.eclipse.rdf4j.query.algebra.Join;
@@ -331,6 +335,33 @@ class OptimizerBindingAnalysisTest {
 		input.addBinding("x", VF.createLiteral(1));
 		QueryAlgebraBindingAnalysis analysis = QueryAlgebraBindingAnalysis.forBindingAssignment(extension, input);
 		assertThat(analysis.contextAt(reference).externalValues()).doesNotContainKey("x");
+	}
+
+	@Test
+	void constantStringFunctionsGuaranteeBindingsButInvalidOrUnknownFunctionsDoNot() {
+		ValueConstant first = new ValueConstant(VF.createLiteral("native"));
+		ValueConstant second = new ValueConstant(VF.createLiteral(" payload"));
+		FunctionCall concat = new FunctionCall(FN.CONCAT.toString(), first, second);
+		FunctionCall strdt = new FunctionCall("STRDT", concat,
+				new ValueConstant(VF.createIRI("urn:pattern-id:datatype")));
+		Extension extension = new Extension(new SingletonSet(),
+				new ExtensionElem(strdt, "computed"),
+				new ExtensionElem(new FunctionCall(FN.CONCAT.toString(),
+						new ValueConstant(VF.createLiteral("invalid", VF.createIRI("urn:custom")))), "invalidConcat"),
+				new ExtensionElem(new FunctionCall("STRDT", new ValueConstant(VF.createLiteral("text")),
+						Var.of("unknownDatatype")), "unknownDatatypeResult"),
+				new ExtensionElem(new FunctionCall("STRDT", new ValueConstant(VF.createLiteral("text")),
+						new ValueConstant(RDF.LANGSTRING)), "reservedDatatypeResult"),
+				new ExtensionElem(new FunctionCall("STRDT", new ValueConstant(VF.createLiteral("text")),
+						new ValueConstant(RDF.DIRLANGSTRING)), "reservedDirectionDatatypeResult"),
+				new ExtensionElem(new FunctionCall("STRDT", new ValueConstant(VF.createLiteral("text")),
+						new ValueConstant(XSD.INTEGER)), "invalidLexicalResult"),
+				new ExtensionElem(new FunctionCall("urn:custom-function"), "unknownFunction"));
+		QueryAlgebraBindingAnalysis analysis = QueryAlgebraBindingAnalysis.withGuaranteedInputNames(extension,
+				Set.of());
+		assertThat(analysis.outputFacts(extension).guaranteedOutputs()).contains("computed")
+				.doesNotContain("invalidConcat", "unknownDatatypeResult", "reservedDatatypeResult",
+						"reservedDirectionDatatypeResult", "invalidLexicalResult", "unknownFunction");
 	}
 
 	@Test

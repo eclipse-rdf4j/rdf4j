@@ -30,6 +30,8 @@ import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.QueryLanguage;
+import org.eclipse.rdf4j.query.QueryParseOptions;
+import org.eclipse.rdf4j.query.QueryParseOptions.GraphAlgebraMode;
 import org.eclipse.rdf4j.query.algebra.BindingSetAssignment;
 import org.eclipse.rdf4j.query.algebra.Graph;
 import org.eclipse.rdf4j.query.algebra.Join;
@@ -256,7 +258,8 @@ class InheritedGraphContextRenderTest {
 	}
 
 	private TupleExpr parse(String query) {
-		return QueryParserUtil.parseTupleQuery(QueryLanguage.SPARQL, query, null).getTupleExpr();
+		return QueryParserUtil.parseTupleQuery(QueryLanguage.SPARQL, query, null,
+				QueryParseOptions.DEFAULT.withGraphAlgebraMode(GraphAlgebraMode.GRAPH)).getTupleExpr();
 	}
 
 	private List<String> evaluate(TupleExpr expression) {

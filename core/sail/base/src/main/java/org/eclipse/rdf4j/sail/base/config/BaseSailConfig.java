@@ -16,10 +16,13 @@ import static org.eclipse.rdf4j.model.util.Values.literal;
 import static org.eclipse.rdf4j.sail.base.config.BaseSailSchema.DEFAULT_QUERY_EVALUATION_MODE;
 import static org.eclipse.rdf4j.sail.base.config.BaseSailSchema.EVALUATION_STRATEGY_FACTORY;
 import static org.eclipse.rdf4j.sail.base.config.BaseSailSchema.EXPERIMENTAL_QUERY_OPTIMIZATIONS;
+import static org.eclipse.rdf4j.sail.base.config.BaseSailSchema.GRAPH_JOIN_OPTIMIZATION;
+import static org.eclipse.rdf4j.sail.base.config.BaseSailSchema.GRAPH_RESTRICTION_MODE;
 import static org.eclipse.rdf4j.sail.base.config.BaseSailSchema.SLOW_QUERY_LOG_FILE;
 import static org.eclipse.rdf4j.sail.base.config.BaseSailSchema.SLOW_QUERY_LOG_FIRST_RESULT_THRESHOLD_SECONDS;
 import static org.eclipse.rdf4j.sail.base.config.BaseSailSchema.SLOW_QUERY_LOG_THRESHOLD_SECONDS;
 
+import java.util.Objects;
 import java.util.Optional;
 
 import org.eclipse.rdf4j.common.annotation.ConfigProperty;
@@ -30,6 +33,9 @@ import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.util.Configurations;
 import org.eclipse.rdf4j.model.util.ModelException;
 import org.eclipse.rdf4j.model.vocabulary.CONFIG;
+import org.eclipse.rdf4j.query.QueryExecutionPolicy;
+import org.eclipse.rdf4j.query.QueryExecutionPolicy.GraphJoinOptimization;
+import org.eclipse.rdf4j.query.QueryExecutionPolicy.GraphRestrictionMode;
 import org.eclipse.rdf4j.query.algebra.evaluation.EvaluationStrategyFactory;
 import org.eclipse.rdf4j.sail.config.AbstractSailImplConfig;
 import org.eclipse.rdf4j.sail.config.SailConfigException;
@@ -68,6 +74,15 @@ import org.eclipse.rdf4j.sail.helpers.SlowQuerySupport;
 						"\"true\"^^<http://www.w3.org/2001/XMLSchema#boolean>" }, aliases = {
 								"http://www.openrdf.org/config/sail/base#experimentalQueryOptimizations" }
 )
+@ConfigProperty(
+		predicate = "tag:rdf4j.org,2023:config/sail.graphJoinOptimization", description = "Graph join optimization for SPARQL GRAPH patterns. "
+				+ "AUTO is the default and uses existing bindings to limit lookups for eligible joins. "
+				+ "OFF disables the optimization. REQUIRE_RESTRICTED and FORCE_INDEPENDENT are diagnostic modes.", examples = {
+						"\"AUTO\"", "\"OFF\"" }, aliases = {
+								"http://www.openrdf.org/config/sail/base#graphJoinOptimization",
+								"tag:rdf4j.org,2023:config/sail.graphRestrictionMode",
+								"http://www.openrdf.org/config/sail/base#graphRestrictionMode" }
+)
 public abstract class BaseSailConfig extends AbstractSailImplConfig {
 
 	private String evalStratFactoryClassName;
@@ -77,6 +92,7 @@ public abstract class BaseSailConfig extends AbstractSailImplConfig {
 	private long slowQueryLogFirstResultThresholdSeconds;
 	private String slowQueryLogFile;
 	private boolean experimentalQueryOptimizations;
+	private GraphJoinOptimization graphJoinOptimization = GraphJoinOptimization.AUTO;
 
 	public boolean isExperimentalQueryOptimizations() {
 		return experimentalQueryOptimizations;
@@ -84,6 +100,33 @@ public abstract class BaseSailConfig extends AbstractSailImplConfig {
 
 	public void setExperimentalQueryOptimizations(boolean enabled) {
 		experimentalQueryOptimizations = enabled;
+	}
+
+	public GraphJoinOptimization getGraphJoinOptimization() {
+		return graphJoinOptimization;
+	}
+
+	public void setGraphJoinOptimization(GraphJoinOptimization graphJoinOptimization) {
+		Objects.requireNonNull(graphJoinOptimization, "graphJoinOptimization");
+		// Preserve validation in existing subclasses that override the original setter.
+		setGraphRestrictionMode(GraphRestrictionMode.valueOf(graphJoinOptimization.name()));
+	}
+
+	/** @deprecated use {@link #getGraphJoinOptimization()} instead. */
+	@Deprecated(since = "6.2.0")
+	public GraphRestrictionMode getGraphRestrictionMode() {
+		return GraphRestrictionMode.valueOf(getGraphJoinOptimization().name());
+	}
+
+	/** @deprecated use {@link #setGraphJoinOptimization(GraphJoinOptimization)} instead. */
+	@Deprecated(since = "6.2.0")
+	public void setGraphRestrictionMode(GraphRestrictionMode graphRestrictionMode) {
+		Objects.requireNonNull(graphRestrictionMode, "graphRestrictionMode");
+		this.graphJoinOptimization = GraphJoinOptimization.valueOf(graphRestrictionMode.name());
+	}
+
+	public QueryExecutionPolicy getQueryExecutionPolicy() {
+		return QueryExecutionPolicy.of(experimentalQueryOptimizations).withGraphJoinOptimization(graphJoinOptimization);
 	}
 
 	protected BaseSailConfig(String type) {
@@ -124,6 +167,9 @@ public abstract class BaseSailConfig extends AbstractSailImplConfig {
 		if (experimentalQueryOptimizations) {
 			graph.add(implNode, CONFIG.Sail.experimentalQueryOptimizations, literal(true));
 		}
+		if (graphJoinOptimization != GraphJoinOptimization.AUTO) {
+			graph.add(implNode, CONFIG.Sail.graphJoinOptimization, literal(graphJoinOptimization.name()));
+		}
 
 		if (evalStratFactoryClassName != null) {
 			graph.add(implNode, CONFIG.Sail.evaluationStrategyFactory, literal(evalStratFactoryClassName));
@@ -150,6 +196,9 @@ public abstract class BaseSailConfig extends AbstractSailImplConfig {
 		Resource implNode = super.export(graph);
 		if (experimentalQueryOptimizations) {
 			graph.add(implNode, EXPERIMENTAL_QUERY_OPTIMIZATIONS, literal(true));
+		}
+		if (graphJoinOptimization != GraphJoinOptimization.AUTO) {
+			graph.add(implNode, GRAPH_JOIN_OPTIMIZATION, literal(graphJoinOptimization.name()));
 		}
 
 		if (evalStratFactoryClassName != null) {
@@ -181,6 +230,11 @@ public abstract class BaseSailConfig extends AbstractSailImplConfig {
 			Configurations.getLiteralValue(graph, implNode, CONFIG.Sail.experimentalQueryOptimizations,
 					EXPERIMENTAL_QUERY_OPTIMIZATIONS)
 					.ifPresent(value -> setExperimentalQueryOptimizations(value.booleanValue()));
+			Configurations.getLiteralValue(graph, implNode, CONFIG.Sail.graphJoinOptimization,
+					GRAPH_JOIN_OPTIMIZATION)
+					.or(() -> Configurations.getLiteralValue(graph, implNode, CONFIG.Sail.graphRestrictionMode,
+							GRAPH_RESTRICTION_MODE))
+					.ifPresent(value -> setGraphJoinOptimization(GraphJoinOptimization.valueOf(value.stringValue())));
 			Configurations.getLiteralValue(graph, implNode, CONFIG.Sail.defaultQueryEvaluationMode,
 					DEFAULT_QUERY_EVALUATION_MODE)
 					.ifPresent(qem -> setDefaultQueryEvaluationMode(
