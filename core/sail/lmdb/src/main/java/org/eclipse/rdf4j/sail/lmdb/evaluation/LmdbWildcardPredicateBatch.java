@@ -108,8 +108,7 @@ final class LmdbWildcardPredicateBatch {
 
 	/** Each wildcard stage fills its own buffer before the next stage or continuation consumes it. */
 	private record ShapeCost(ShapeCost prefix, LmdbNativeCostVector edgeWork, double edgeRows,
-			LmdbNativeCostVector suffixWork,
-			double outputRows) {
+			LmdbNativeCostVector suffixWork, double outputRows, LmdbNativeWork.RowBounds continuationBounds) {
 		LmdbNativeCostVector vector() {
 			LmdbNativeCostVector work = prefix == null ? edgeWork : prefix.vector().plus(edgeWork);
 			return suffixWork == null ? work : work.plus(suffixWork);
@@ -159,12 +158,13 @@ final class LmdbWildcardPredicateBatch {
 				return null;
 			}
 			double edges = LmdbNativeWork.rowsOut(shape.wildcard, row, boundMask);
-			return Double.isFinite(edges) ? priceContinuation(shape, row, null,
-					LmdbNativePlanExecutionProfile.profile(shape.wildcard, row, boundMask,
-							LmdbNativePlanExecutionProfile.Mode.BATCH)
-							.plus(estimateFilterWork(shape, edges,
-									LmdbNativeCostVectors.rowBounds(shape.wildcard, row, boundMask))),
-					edges) : null;
+			if (!Double.isFinite(edges)) {
+				return null;
+			}
+			LmdbNativeWork.RowBounds edgeBounds = LmdbNativeCostVectors.rowBounds(shape.wildcard, row, boundMask);
+			return priceContinuation(shape, row, null, LmdbNativePlanExecutionProfile
+					.profile(shape.wildcard, row, boundMask, LmdbNativePlanExecutionProfile.Mode.BATCH)
+					.plus(estimateFilterWork(shape, edges, edgeBounds)), edges, edgeBounds);
 		}
 		ShapeCost batchedPrefix = shapeCost(matchPrefix(shape.prefix, row), row);
 		double prefixRows = batchedPrefix == null ? LmdbNativeWork.rowsOut(shape.prefix, row, boundMask)
@@ -224,8 +224,8 @@ final class LmdbWildcardPredicateBatch {
 					LmdbNativeCostVector.Feature.MEMBERSHIP_TEST, candidates,
 					new LmdbNativeWork.RowBounds(0D, Double.POSITIVE_INFINITY)));
 		}
-		return shape.suffix == null ? new ShapeCost(batchedPrefix, streaming, outputRows, null, outputRows)
-				: priceContinuation(shape, row, batchedPrefix, streaming, delivered);
+		return shape.suffix == null ? new ShapeCost(batchedPrefix, streaming, outputRows, null, outputRows, null)
+				: priceContinuation(shape, row, batchedPrefix, streaming, delivered, deliveredBounds);
 	}
 
 	private static OptionalDouble payloadFanOut(Shape shape, RowState row, long inputMask, boolean predicateBound) {
@@ -272,19 +272,28 @@ final class LmdbWildcardPredicateBatch {
 	}
 
 	private static ShapeCost priceContinuation(Shape shape, RowState row, ShapeCost prefix,
-			LmdbNativeCostVector edgeWork,
-			double edges) {
+			LmdbNativeCostVector edgeWork, double edges, LmdbNativeWork.RowBounds edgeBounds) {
 		if (!Double.isFinite(edges)) {
 			return null;
 		}
 		long edgeMask = row.boundMask() | shape.edgeMask();
 		double outputRows = edges * LmdbNativeWork.rowsOut(shape.suffix, row, edgeMask);
+		LmdbNativeWork.RowBounds outputBounds = LmdbNativeCostVectors.productBounds(edgeBounds,
+				LmdbNativeCostVectors.rowBounds(shape.suffix, row, edgeMask));
 		LmdbNativeCostVector probes = LmdbNativePlanExecutionProfile.profile(shape.suffix, row, edgeMask,
 				LmdbNativePlanExecutionProfile.Mode.SEQUENTIAL);
 		LmdbNativeCostVector suffixWork = LmdbNativeCostVectors.repeated(probes, edges,
 				new LmdbNativeWork.RowBounds(0D, Double.POSITIVE_INFINITY))
-				.plus(LmdbNativeCostVectors.perRow(LmdbNativeCostVector.Feature.BATCH_ROW, outputRows, row));
-		return new ShapeCost(prefix, edgeWork, edges, suffixWork, outputRows);
+				.plus(outputWork(LmdbNativeCostVector.Feature.BATCH_ROW, outputRows, outputBounds, row));
+		return new ShapeCost(prefix, edgeWork, edges, suffixWork, outputRows, outputBounds);
+	}
+
+	/** A continuation's sampled fan-out gives its expected work; even a nonempty edge batch can join to nothing. */
+	private static LmdbNativeCostVector outputWork(LmdbNativeCostVector.Feature feature, double rows,
+			LmdbNativeWork.RowBounds continuationBounds, RowState row) {
+		return continuationBounds != null && Double.isFinite(rows)
+				? LmdbNativeCostVectors.boundedRows(feature, rows, continuationBounds)
+				: LmdbNativeCostVectors.perRow(feature, rows, row);
 	}
 
 	private static LmdbNativeWork estimatePhysicalWork(Shape shape, RowState row, boolean planning, ShapeCost cost) {
@@ -602,8 +611,8 @@ final class LmdbWildcardPredicateBatch {
 		ShapeCost cost = shapeCost(weightedAggregateShape(plan, row, groupSlots, aggregates), row);
 		return cost == null ? null
 				: cost.vector()
-						.plus(LmdbNativeCostVectors.perRow(LmdbNativeCostVector.Feature.GROUP_UPDATE, cost.outputRows(),
-								row));
+						.plus(outputWork(LmdbNativeCostVector.Feature.GROUP_UPDATE, cost.outputRows(),
+								cost.continuationBounds(), row));
 	}
 
 	private static Shape weightedAggregateShape(SlotPlan plan, RowState row, int[] groupSlots,

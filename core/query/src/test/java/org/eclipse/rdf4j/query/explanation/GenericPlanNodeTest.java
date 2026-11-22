@@ -591,9 +591,23 @@ class GenericPlanNodeTest {
 		assertEquals(text.indexOf(warning), text.lastIndexOf(warning));
 		var json = JsonMapper.builder().build().readTree(explanation.toJson());
 		assertTrue(json.path("timedOut").asBoolean());
-		String dot = explanation.toDot();
-		assertTrue(dot.startsWith("digraph Explanation {" + line + "   label=\"" + warning
-				+ "\";" + line + "   labelloc=t;"), dot);
+	}
+
+	@Test
+	void dotTimeoutLabelIsNotInheritedByNestedScopes() {
+		GenericPlanNode root = new GenericPlanNode("Projection");
+		root.setNewScope(true);
+		GenericPlanNode child = new GenericPlanNode("Join");
+		child.setNewScope(true);
+		root.addPlans(child);
+		root.setTimedOut(true);
+
+		String dot = root.toDot();
+		int endOfScopes = dot.lastIndexOf('}');
+		assertTrue(endOfScopes >= 0, dot);
+		String label = "label=\"Timed out while retrieving explanation! Explanation may be incomplete!\";";
+		assertTrue(dot.indexOf(label) > endOfScopes, dot);
+		assertTrue(dot.substring(endOfScopes + 1).contains("labelloc=t;"), dot);
 	}
 
 	@Test

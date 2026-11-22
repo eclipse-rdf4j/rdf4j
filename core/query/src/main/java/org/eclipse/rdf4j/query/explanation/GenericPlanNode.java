@@ -243,9 +243,10 @@ public class GenericPlanNode {
 	}
 
 	/**
-	 * The total time in milliseconds that this node-tree (all children and so on) used while the query was executed.
+	 * The elapsed time recorded for this node, including child work done during its measurement. If this node has no
+	 * recorded time, the sum of available child totals is used when positive.
 	 *
-	 * @return time in milliseconds that was used to execute the query
+	 * @return time in milliseconds, or {@code null} if unavailable
 	 */
 	public Double getTotalTimeActual() {
 		if (totalTimeActual != null) {
@@ -595,7 +596,10 @@ public class GenericPlanNode {
 	}
 
 	/**
-	 * The time that this node used by itself (eg. totalTimeActual - sum of plans[0..n].totalTimeActual)
+	 * Estimates this node's own time by subtracting the sum of available child totals from its recorded time.
+	 *
+	 * @return estimated time in milliseconds, or {@code null} if this node has no recorded time or the child totals
+	 *         exceed it
 	 */
 	public Double getSelfTimeActual() {
 
@@ -1572,7 +1576,8 @@ public class GenericPlanNode {
 	public String toDot() {
 		String nodes = toDotInternal(getMaxResultSizeActual(this), getMaxTotalTime(this), getMaxSelfTime(this));
 		if (Boolean.TRUE.equals(timedOut)) {
-			return "   label=\"" + TIMEOUT_WARNING + "\";" + newLine + "   labelloc=t;" + newLine + nodes;
+			// DOT subgraphs inherit graph attributes at declaration; label the graph after its scope clusters.
+			return nodes + "   label=\"" + TIMEOUT_WARNING + "\";" + newLine + "   labelloc=t;" + newLine;
 		}
 		return nodes;
 	}
