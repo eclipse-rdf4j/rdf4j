@@ -21,10 +21,14 @@ import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.algebra.Union;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryEvaluationStep;
+import org.eclipse.rdf4j.query.algebra.evaluation.impl.restrictions.PreparedRestrictionPlan;
+import org.eclipse.rdf4j.query.algebra.evaluation.impl.restrictions.RestrictionCompiler;
+import org.eclipse.rdf4j.query.algebra.evaluation.impl.restrictions.RestrictionCompiler.AttachableStep;
+import org.eclipse.rdf4j.query.algebra.evaluation.impl.restrictions.RestrictionPlanProvider;
 
 /** Opt-in to rebuilding a physical operator with different arguments. Custom prepared steps stay opaque. */
 @InternalUseOnly
-public final class RebindableQueryEvaluationStep implements QueryEvaluationStep {
+public final class RebindableQueryEvaluationStep implements AttachableStep {
 	private final TupleExpr owner;
 	private final QueryEvaluationStep step;
 	private final QueryEvaluationStep left;
@@ -70,8 +74,18 @@ public final class RebindableQueryEvaluationStep implements QueryEvaluationStep 
 		return rebind.apply(argument, QueryEvaluationStep.EMPTY);
 	}
 
+	@Override
+	public QueryEvaluationStep attachRestriction(PreparedRestrictionPlan plan) {
+		return new RebindableQueryEvaluationStep(owner, RestrictionCompiler.attach(step, plan), left, right, rebind);
+	}
+
+	@Override
+	public PreparedRestrictionPlan restrictionPlan() {
+		return RestrictionPlanProvider.find(step);
+	}
+
 	QueryEvaluationStep decorate(Function<QueryEvaluationStep, QueryEvaluationStep> decorator) {
-		return new RebindableQueryEvaluationStep(owner, decorator.apply(step), left, right,
+		return new RebindableQueryEvaluationStep(owner, RestrictionCompiler.decorate(step, decorator), left, right,
 				(a, b) -> decorator.apply(rebind.apply(a, b)));
 	}
 

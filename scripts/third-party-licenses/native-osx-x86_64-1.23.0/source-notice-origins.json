@@ -1,0 +1,19 @@
+{
+  "sourceArchive": "https://repo.maven.apache.org/maven2/com/aayushatharva/brotli4j/native-osx-x86_64/1.23.0/native-osx-x86_64-1.23.0-sources.jar",
+  "archiveSha256": "8f490771ecc035734ce005211bd0416fd3e229cef8ea84f25a81f2905e65ba16",
+  "blocks": [
+    {
+      "commentSha256": "269974a7b6406e9f1aadae96666154a1288426133d9b2412441293a68bfa1429",
+      "sources": [
+        {
+          "entry": "com/aayushatharva/brotli4j/macos/x86_64/NativeLoader.java",
+          "sourceSha256": "884b3d54987e519cf7639f72ac658f405e3800e4cec6b5dfb5535546accdd292",
+          "startByte": 0,
+          "endByteExclusive": 669,
+          "startLine": 1,
+          "endLine": 16
+        }
+      ]
+    }
+  ]
+}

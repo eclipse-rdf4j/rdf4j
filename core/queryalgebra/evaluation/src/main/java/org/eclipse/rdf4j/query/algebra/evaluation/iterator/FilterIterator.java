@@ -19,9 +19,9 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.function.BiConsumer;
+import java.util.function.BiFunction;
 import java.util.function.Function;
 import java.util.function.Predicate;
-import java.util.function.UnaryOperator;
 
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.common.iteration.FilterIteration;
@@ -52,8 +52,10 @@ import org.eclipse.rdf4j.query.algebra.evaluation.impl.EvaluationStatistics;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.QueryEvaluationContext;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.evaluationsteps.AdaptiveFilterEvaluationStep;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.evaluationsteps.BatchCorrelatedJoinProvider;
+import org.eclipse.rdf4j.query.algebra.evaluation.impl.evaluationsteps.OrderedEvaluation;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.evaluationsteps.RebindableQueryEvaluationStep;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.evaluationsteps.ScopedUnionInput;
+import org.eclipse.rdf4j.query.algebra.evaluation.impl.restrictions.RestrictionCompiler;
 import org.eclipse.rdf4j.query.algebra.evaluation.util.QueryEvaluationUtil;
 import org.eclipse.rdf4j.query.algebra.evaluation.util.QueryEvaluationUtility;
 import org.eclipse.rdf4j.query.algebra.helpers.AbstractSimpleQueryModelVisitor;
@@ -86,34 +88,32 @@ public class FilterIterator extends FilterIteration<BindingSet> implements Index
 		QueryEvaluationStep arg = strategy.precompile(filter.getArg(), context);
 		AdaptiveFilterEvaluationStep.recordPrepared(context, filter.getArg(), arg);
 		ConditionBindingScope bindingScope = FilterBindingScope.resolve(filter);
-		UnaryOperator<QueryEvaluationStep> wrapper = prepareRowFilter(filter, strategy, context, evaluationStatistics,
-				bindingScope);
-		if (wrapper == null) {
-			return QueryEvaluationStep.EMPTY;
-		}
-		QueryEvaluationStep rowFilter = RebindableQueryEvaluationStep.unary(filter, arg, wrapper);
-		QueryEvaluationStep generic = AdaptiveFilterEvaluationStep.filter(context, rowFilter);
-		QueryEvaluationStep batched = supplyBatchExistsFilter(filter, strategy, context, arg, generic, bindingScope);
-		return batched != null ? batched : generic;
-	}
-
-	private static UnaryOperator<QueryEvaluationStep> prepareRowFilter(Filter filter, EvaluationStrategy strategy,
-			QueryEvaluationContext context, EvaluationStatistics evaluationStatistics,
-			ConditionBindingScope bindingScope) {
+		ValueExpr condition = filter.getCondition();
 		QueryValueEvaluationStep ves;
 		try {
-			ves = strategy.precompile(filter.getCondition(), context);
+			ves = strategy.precompile(condition, context);
 		} catch (QueryEvaluationException e) {
 			// If we have a failed compilation we always return false.
 			// Which means empty. so let's short circuit that.
-			return null;
+			return QueryEvaluationStep.EMPTY;
 		}
 		Function<BindingSet, BindingSet> retain = bindingScope.retainsAllBindings() ? Function.identity()
 				: retainBindings(bindingScope.bindingNames(), context);
-		ValueExpr condition = filter.getCondition();
-		return arg -> bs -> new FilterIterator(filter, arg.evaluate(ScopedUnionInput.argument(filter, bs)), ves,
-				strategy, ScopedUnionInput.filterInput(filter, condition, bs, retain), evaluationStatistics,
-				context.getBlankNodeAllocationScope());
+		BiFunction<BindingSet, CloseableIteration<BindingSet>, CloseableIteration<BindingSet>> filterRows = (input,
+				rows) -> new FilterIterator(filter, rows, ves, strategy,
+						ScopedUnionInput.filterInput(filter, condition, input, retain), evaluationStatistics,
+						context.getBlankNodeAllocationScope());
+		QueryEvaluationStep standard = RebindableQueryEvaluationStep.unary(filter, arg,
+				child -> input -> filterRows.apply(input, child.evaluate(ScopedUnionInput.argument(filter, input))));
+		var restriction = RestrictionCompiler.enabled(strategy, context)
+				&& RestrictionCompiler.movable(condition)
+						? RestrictionCompiler.unary("filter/original-condition-input", filter, context, arg,
+								Function.identity(), input -> ScopedUnionInput.argument(filter, input), filterRows)
+						: null;
+		QueryEvaluationStep generic = AdaptiveFilterEvaluationStep.filter(context,
+				RestrictionCompiler.attach(standard, restriction));
+		QueryEvaluationStep batched = supplyBatchExistsFilter(filter, strategy, context, arg, generic, bindingScope);
+		return batched != null ? batched : generic;
 	}
 
 	/**
@@ -128,7 +128,8 @@ public class FilterIterator extends FilterIteration<BindingSet> implements Index
 	private static QueryEvaluationStep supplyBatchExistsFilter(Filter filter, EvaluationStrategy strategy,
 			QueryEvaluationContext context, QueryEvaluationStep arg, QueryEvaluationStep generic,
 			ConditionBindingScope bindingScope) {
-		if (filter.isRuntimeTelemetryEnabled() || strategy.isTrackResultSize() || strategy.isTrackTime()
+		if (OrderedEvaluation.isRequired(filter)
+				|| filter.isRuntimeTelemetryEnabled() || strategy.isTrackResultSize() || strategy.isTrackTime()
 				|| !(strategy instanceof BatchCorrelatedJoinProvider.Host host)) {
 			return null;
 		}

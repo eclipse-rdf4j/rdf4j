@@ -67,16 +67,18 @@ class WorkbenchFrontendBuildTest {
 		Element plugin = frontendPlugin();
 		assertThat(plugin).isNotNull();
 
-		NodeList executions = plugin.getElementsByTagName("execution");
-		assertThat(executions.getLength()).isGreaterThan(0);
-		for (int index = 0; index < executions.getLength(); index++) {
-			Element execution = (Element) executions.item(index);
-			NodeList skip = execution.getElementsByTagName("skip");
-			assertThat(skip.getLength()).as("skip flag of execution " + index).isEqualTo(1);
-			assertThat(skip.item(0).getTextContent().trim()).isIn("${skipFrontend}", "${skipFrontendInstall}");
-		}
-		// The install step has its own property so -DskipFrontend=true still skips everything (it defaults to
-		// ${skipFrontend}); a warm checkout (node_modules present) runs npm install --no-save instead of npm ci.
+		Element install = execution(plugin, "npm-ci");
+		Element build = execution(plugin, "npm-build");
+		assertThat(skipFlag(install)).as("npm-ci skip flag").isEqualTo("${skipFrontendInstall}");
+		assertThat(skipFlag(build)).as("npm-build skip flag").isEqualTo("${skipFrontend}");
+
+		Element notices = execution(plugin, "generate-third-party-notices");
+		assertThat(notices.getElementsByTagName("skip").getLength())
+				.as("Java-only packaging still generates a notice inventory")
+				.isZero();
+		assertThat(childText(notices, "phase")).isEqualTo("prepare-package");
+		// The npm install step defaults to the same skip as the frontend build; a warm checkout
+		// (node_modules present) runs npm install --no-save instead of npm ci.
 		String pom = Files.readString(Path.of("pom.xml"));
 		assertThat(pom).contains("<skipFrontendInstall>${skipFrontend}</skipFrontendInstall>");
 		assertThat(pom).contains("<exists>${basedir}/node_modules</exists>");
@@ -108,12 +110,22 @@ class WorkbenchFrontendBuildTest {
 				.startsWith("ci ");
 	}
 
+	private static String skipFlag(Element execution) {
+		NodeList skip = execution.getElementsByTagName("skip");
+		assertThat(skip.getLength()).as("skip flag of " + childText(execution, "id")).isEqualTo(1);
+		return skip.item(0).getTextContent().trim();
+	}
+
 	private static String npmArguments(Element scope, String executionId) {
+		return execution(scope, executionId).getElementsByTagName("commandlineArgs").item(0).getTextContent().trim();
+	}
+
+	private static Element execution(Element scope, String executionId) {
 		NodeList executions = scope.getElementsByTagName("execution");
 		for (int index = 0; index < executions.getLength(); index++) {
 			Element execution = (Element) executions.item(index);
 			if (executionId.equals(childText(execution, "id"))) {
-				return execution.getElementsByTagName("commandlineArgs").item(0).getTextContent().trim();
+				return execution;
 			}
 		}
 		throw new AssertionError("no execution " + executionId);

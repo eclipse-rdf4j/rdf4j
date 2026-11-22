@@ -142,7 +142,11 @@ public class Rdf4jServerWorkbenchApplication {
 	}
 
 	private TomcatContextCustomizer workbenchResourcesCustomizer(WebappResourceExtractor extractor) {
-		return (Context context) -> context.setDocBase(extractor.getServerDocBase().toFile().getAbsolutePath());
+		return (Context context) -> {
+			context.setDocBase(extractor.getServerDocBase().toFile().getAbsolutePath());
+			// The embedded server does not apply Workbench's web.xml MIME mappings.
+			context.addMimeMapping("md", "text/plain");
+		};
 	}
 
 	@Bean
@@ -441,13 +445,14 @@ public class Rdf4jServerWorkbenchApplication {
 	}
 
 	/**
-	 * Mirrors web.xml: scripts and stylesheets keep their names across releases, so they are revalidated and an upgrade
-	 * never leaves a browser running the previous release's scripts (or an explorer entry whose chunks are gone).
+	 * Mirrors web.xml: scripts, stylesheets and notices keep their names across releases, so they are revalidated and
+	 * an upgrade never leaves a browser using the previous release's scripts or legal notices.
 	 */
 	@Bean
 	FilterRegistrationBean<CacheFilter> revalidatedAssetFilter() {
 		FilterRegistrationBean<CacheFilter> registration = new FilterRegistrationBean<>(new CacheFilter());
-		registration.addUrlPatterns("/rdf4j-workbench/scripts/*", "/rdf4j-workbench/styles/*");
+		registration.addUrlPatterns("/rdf4j-workbench/scripts/*", "/rdf4j-workbench/styles/*",
+				"/rdf4j-workbench/legal/*");
 		registration.setName("RevalidatedAssetFilter");
 		registration.setOrder(3);
 		registration.setAsyncSupported(true);

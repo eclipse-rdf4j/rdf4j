@@ -25,8 +25,14 @@ import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.query.Dataset;
 import org.eclipse.rdf4j.query.MutableBindingSet;
 import org.eclipse.rdf4j.query.QueryEvaluationException;
+import org.eclipse.rdf4j.query.algebra.evaluation.QueryEvaluationStep;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.QueryEvaluationContext;
+import org.eclipse.rdf4j.query.algebra.evaluation.impl.restrictions.InvocationOwner;
+import org.eclipse.rdf4j.query.algebra.evaluation.impl.restrictions.PreparedRestrictionPlan;
+import org.eclipse.rdf4j.query.algebra.evaluation.impl.restrictions.RestrictionBlueprint;
+import org.eclipse.rdf4j.query.algebra.evaluation.impl.restrictions.RestrictionLayout;
 import org.eclipse.rdf4j.query.impl.BlankNodeAllocationScope;
+import org.eclipse.rdf4j.query.impl.EmptyBindingSet;
 import org.junit.jupiter.api.Test;
 
 class LmdbNativeStructuralContextTest {
@@ -82,6 +88,22 @@ class LmdbNativeStructuralContextTest {
 				QueryEvaluationContext independent = overlapping.genericContext(first, null);
 				assertThat(independent.getNow()).isNotSameAs(a.getNow());
 				assertThat(independent.getBlankNodeAllocationScope()).isNotSameAs(a.getBlankNodeAllocationScope());
+				var layout = new RestrictionLayout(Set.of("x"), a);
+				var plan = new PreparedRestrictionPlan(
+						new RestrictionBlueprint("test/execution-owner", RestrictionBlueprint.Realization.STABLE),
+						layout, a, Set.of(),
+						(input, invocation) -> PreparedRestrictionPlan.iteratorInvocation(
+								frame -> QueryEvaluationStep.EMPTY_ITERATION));
+				try (var invocation = plan.open(EmptyBindingSet.getInstance(), InvocationOwner.forExecution(b));
+						var rows = invocation.probe(layout.unrestricted())) {
+					assertThat(rows.hasNext()).isFalse();
+				}
+				assertThat(a.getExecutionIdentity()).isSameAs(b.getExecutionIdentity())
+						.isNotSameAs(independent.getExecutionIdentity());
+				assertThatThrownBy(
+						() -> plan.open(EmptyBindingSet.getInstance(), InvocationOwner.forExecution(independent)))
+								.isInstanceOf(IllegalArgumentException.class)
+								.hasMessage("Restriction plan belongs to a different query execution");
 				AtomicInteger captures = new AtomicInteger();
 				Value original = SimpleValueFactory.getInstance().createIRI("urn:captured");
 				Function<Value, Value> capture = value -> {

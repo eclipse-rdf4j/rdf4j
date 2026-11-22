@@ -66,6 +66,19 @@ final class CompositeNativeLmdbQuerySource implements NativeLmdbQuerySource {
 	}
 
 	@Override
+	public Runnable stableGraphRestrictionValidator() {
+		List<Runnable> validators = new ArrayList<>(sources.size());
+		for (NativeLmdbQuerySource source : sources) {
+			Runnable validator = source.stableGraphRestrictionValidator();
+			if (validator == null) {
+				return null;
+			}
+			validators.add(validator);
+		}
+		return () -> validators.forEach(Runnable::run);
+	}
+
+	@Override
 	public long idOf(Value value) throws QueryEvaluationException {
 		return sources.get(0).idOf(value);
 	}

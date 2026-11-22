@@ -1,0 +1,35 @@
+{
+  "sourceArchive": "https://repo.maven.apache.org/maven2/io/opentelemetry/opentelemetry-common/1.66.0/opentelemetry-common-1.66.0-sources.jar",
+  "archiveSha256": "d4be807f84c2f7cb8acc1f5ecca04ec0312453429946d26a33e331e1c94c3b36",
+  "blocks": [
+    {
+      "commentSha256": "69e6a2d07573af06af1613cec2ac54b4ec63cf012b9d2c8a9c76be3cc9e15043",
+      "sources": [
+        {
+          "entry": "io/opentelemetry/common/ComponentLoader.java",
+          "sourceSha256": "f448eb7460a3195dae9d2587813628633bb8fc24880033bbbf4f441983917f2a",
+          "startByte": 0,
+          "endByteExclusive": 84,
+          "startLine": 1,
+          "endLine": 4
+        },
+        {
+          "entry": "io/opentelemetry/common/ServiceLoaderComponentLoader.java",
+          "sourceSha256": "518013775d3cb7850ccacde8fa1c95b3942b67b7be1383398423da15027346df",
+          "startByte": 0,
+          "endByteExclusive": 84,
+          "startLine": 1,
+          "endLine": 4
+        },
+        {
+          "entry": "io/opentelemetry/common/impl/ApiUsageLogger.java",
+          "sourceSha256": "a81e96c2dd5e543f7e8fc62b4d42753068fefedce1df8f22f20208c998a9e7de",
+          "startByte": 0,
+          "endByteExclusive": 84,
+          "startLine": 1,
+          "endLine": 4
+        }
+      ]
+    }
+  ]
+}

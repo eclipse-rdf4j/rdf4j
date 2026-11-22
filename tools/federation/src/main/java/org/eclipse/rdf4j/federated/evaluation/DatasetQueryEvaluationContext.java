@@ -53,6 +53,11 @@ final class DatasetQueryEvaluationContext implements QueryEvaluationContext {
 	}
 
 	@Override
+	public Set<String> getCorrelatedPathBindingNames() {
+		return delegate.getCorrelatedPathBindingNames();
+	}
+
+	@Override
 	public ActiveGraph getActiveGraph() {
 		return delegate.getActiveGraph();
 	}

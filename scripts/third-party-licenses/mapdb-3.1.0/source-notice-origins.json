@@ -1,0 +1,178 @@
+{
+  "sourceArchive": "https://repo.maven.apache.org/maven2/org/mapdb/mapdb/3.1.0/mapdb-3.1.0-sources.jar",
+  "archiveSha256": "51b497e1db31797680f50ec2b4b66bd771e4ac1f8ff1750a2b45625c18779c50",
+  "blocks": [
+    {
+      "commentSha256": "81315b1c4a9856fd741228b902d8b447666922a723fb429d762d22a6f1986f9b",
+      "sources": [
+        {
+          "entry": "org/mapdb/Serializer.java",
+          "sourceSha256": "1d540d91067d4e8ba09d570bc8daf370d8012e68a30428773b3ae4e927d5355a",
+          "startByte": 0,
+          "endByteExclusive": 604,
+          "startLine": 1,
+          "endLine": 15
+        },
+        {
+          "entry": "org/mapdb/volume/Volume.java",
+          "sourceSha256": "f646fccdb74ea167572d9b7c29268a104b1e02e5b39c89b341f17dba4889a8cf",
+          "startByte": 0,
+          "endByteExclusive": 604,
+          "startLine": 1,
+          "endLine": 15
+        },
+        {
+          "entry": "org/mapdb/Atomic.java",
+          "sourceSha256": "19ab4392b5397c01affef9e1cd0e708f5529e5636d8cc744b7480f022e98dc24",
+          "startByte": 0,
+          "endByteExclusive": 604,
+          "startLine": 1,
+          "endLine": 15
+        }
+      ]
+    },
+    {
+      "commentSha256": "075b2e95a9ec745466865af17a4b3035dfbd2c77537f97685d8cf17190c4a380",
+      "sources": [
+        {
+          "entry": "org/mapdb/serializer/CompressLZF.java",
+          "sourceSha256": "98115a747f91c2dafe1a3714cae2c61268c056d3da45db8d6374cb1a6488b452",
+          "startByte": 0,
+          "endByteExclusive": 758,
+          "startLine": 1,
+          "endLine": 18
+        }
+      ]
+    },
+    {
+      "commentSha256": "d28c50a42a4642e697a0629fe5dbc69bc567c36f53be7c3eb8c78ebc1e3cb34e",
+      "sources": [
+        {
+          "entry": "org/mapdb/serializer/CompressLZF.java",
+          "sourceSha256": "98115a747f91c2dafe1a3714cae2c61268c056d3da45db8d6374cb1a6488b452",
+          "startByte": 761,
+          "endByteExclusive": 3168,
+          "startLine": 21,
+          "endLine": 70
+        }
+      ]
+    },
+    {
+      "commentSha256": "5d4ee388046eaffffd60376f8970d4439b3db05bda64e7ecbb4b765ade815508",
+      "sources": [
+        {
+          "entry": "org/mapdb/HTreeMap.kt",
+          "sourceSha256": "6a9c193e6161235269c4a509f25432dd781fb9de70099c4a66c3f8bafec11496",
+          "startByte": 33095,
+          "endByteExclusive": 33133,
+          "startLine": 862,
+          "endLine": 862
+        }
+      ]
+    },
+    {
+      "commentSha256": "a1c9461b77e77bbc41b3ed844bdb9accc0794640f1add63a95dfc3f1106268f3",
+      "sources": [
+        {
+          "entry": "org/mapdb/HTreeMap.kt",
+          "sourceSha256": "6a9c193e6161235269c4a509f25432dd781fb9de70099c4a66c3f8bafec11496",
+          "startByte": 33274,
+          "endByteExclusive": 33299,
+          "startLine": 868,
+          "endLine": 868
+        }
+      ]
+    },
+    {
+      "commentSha256": "08cd331df61b596d444125212b17a645dd32419bfb5d87e35a6ff37e10cf02cc",
+      "sources": [
+        {
+          "entry": "org/mapdb/HTreeMap.kt",
+          "sourceSha256": "6a9c193e6161235269c4a509f25432dd781fb9de70099c4a66c3f8bafec11496",
+          "startByte": 33454,
+          "endByteExclusive": 33494,
+          "startLine": 873,
+          "endLine": 873
+        }
+      ]
+    },
+    {
+      "commentSha256": "1eb81087f0e63b15f617f90eff7eee2f4420f2f598427ac0f7fc97ed1c5fbb7f",
+      "sources": [
+        {
+          "entry": "org/mapdb/IndexTreeLongLongMap.kt",
+          "sourceSha256": "3a7bcccc28478d6412fd891972950a4acd1acef23d885b1d7ad0382ac1cabf94",
+          "startByte": 4224,
+          "endByteExclusive": 4262,
+          "startLine": 96,
+          "endLine": 96
+        }
+      ]
+    },
+    {
+      "commentSha256": "8afc4cf7ae0b2777c3f4993520d9071f3517d4fbc20dda38a0d49d0a3fc7089a",
+      "sources": [
+        {
+          "entry": "org/mapdb/BTreeMap.kt",
+          "sourceSha256": "80d3082831b854708c6a84207df6c63ad1eec4c6700bf2874bb4754b1899d619",
+          "startByte": 746,
+          "endByteExclusive": 3356,
+          "startLine": 20,
+          "endLine": 70
+        }
+      ]
+    },
+    {
+      "commentSha256": "6a8a9ca2b4f5eaed0bb5edacb7ce43606b08a5f290b4179477bc56ec4abb1877",
+      "sources": [
+        {
+          "entry": "org/mapdb/volume/CleanerUtil.java",
+          "sourceSha256": "8f3f76ef6b0a555b58741fe8222f8660028b41504d39ccd0a4fe84e1693dc56d",
+          "startByte": 0,
+          "endByteExclusive": 806,
+          "startLine": 1,
+          "endLine": 17
+        }
+      ]
+    },
+    {
+      "commentSha256": "933b8b75e8617ebb46161b7d750659d17f88bb281532cd908339b3e3232e1c40",
+      "sources": [
+        {
+          "entry": "org/mapdb/volume/CleanerUtil.java",
+          "sourceSha256": "8f3f76ef6b0a555b58741fe8222f8660028b41504d39ccd0a4fe84e1693dc56d",
+          "startByte": 1387,
+          "endByteExclusive": 1928,
+          "startLine": 35,
+          "endLine": 43
+        }
+      ]
+    },
+    {
+      "commentSha256": "842afe0e7ce3b5ed08e8753e054aace3fdaa5b545f5fd94f3ecee69998e7c2b7",
+      "sources": [
+        {
+          "entry": "org/mapdb/volume/Volume.java",
+          "sourceSha256": "f646fccdb74ea167572d9b7c29268a104b1e02e5b39c89b341f17dba4889a8cf",
+          "startByte": 3422,
+          "endByteExclusive": 3607,
+          "startLine": 105,
+          "endLine": 108
+        }
+      ]
+    },
+    {
+      "commentSha256": "8303994fae184f1001897de2bed1f63a2a957ab6f46d956b769f04539677e723",
+      "sources": [
+        {
+          "entry": "org/mapdb/Atomic.java",
+          "sourceSha256": "19ab4392b5397c01affef9e1cd0e708f5529e5636d8cc744b7480f022e98dc24",
+          "startByte": 606,
+          "endByteExclusive": 858,
+          "startLine": 17,
+          "endLine": 23
+        }
+      ]
+    }
+  ]
+}

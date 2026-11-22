@@ -138,6 +138,44 @@ final class PatternPlan implements SlotPlan {
 		return openRawTraced(row, probe, false, reusable);
 	}
 
+	/** Selected-graph scalar access. Physical operands are private and do not seed result slots. */
+	PatternCursor openRawRestricted(RowState row, NativeLmdbQuerySource.NativeProbe probe, PatternCursor reusable,
+			NativeRestrictionFrame restrictions) throws IOException {
+		long subj = s.lookup(row.slots);
+		long pred = p.lookup(row.slots);
+		long obj = o.lookup(row.slots);
+		long subjectKey = restrictions.idFor(s);
+		long predicateKey = restrictions.idFor(p);
+		long objectKey = restrictions.idFor(o);
+		NativeTermAuthority terms = row.termAuthority();
+		if (NativeRestrictionFrame.conflicts(subj, subjectKey, terms)
+				|| NativeRestrictionFrame.conflicts(pred, predicateKey, terms)
+				|| NativeRestrictionFrame.conflicts(obj, objectKey, terms)) {
+			return PatternCursor.empty();
+		}
+		long context = c.lookup(row.slots);
+		if (context == UNKNOWN) {
+			context = contexts.ids[0];
+		}
+		if (namedContextScope && context == NULL_CONTEXT_ID || !contexts.contains(context)) {
+			return PatternCursor.empty();
+		}
+		NativeExecutionPhaseEvent.Span phase = NativeExecutionPhaseEvent.inputStage("scan", row.cancellation);
+		try {
+			return singleCursor(reusable, openIterator(row.source, probe,
+					subjectKey == UNKNOWN ? subj : subjectKey,
+					predicateKey == UNKNOWN ? pred : predicateKey,
+					objectKey == UNKNOWN ? obj : objectKey,
+					context, adjacencyAccessObserver(row), row.encounterOrderRequired, row.directLmdbSweep))
+							.withResidualRange(range)
+							.withCancellation(row.cancellation)
+							.withExecutionPhase(phase);
+		} catch (IOException | RuntimeException | Error failure) {
+			phase.close();
+			throw failure;
+		}
+	}
+
 	/**
 	 * Opens this pattern for a boolean existence search. Fully bound patterns may use a one-shot lookup even when
 	 * several quads could match across contexts: unlike ordinary row evaluation, existence testing does not observe
@@ -855,6 +893,18 @@ final class PatternPlan implements SlotPlan {
 
 	boolean bind(long[] quad, RowState row) {
 		return bind(quad, 0, row);
+	}
+
+	boolean bindRestricted(long[] quad, RowState row) {
+		return matchesRangeAndContext(quad, 0)
+				&& bindCheckedTerm(s, quad[TripleIndex.SUBJ_IDX], row)
+				&& bindCheckedTerm(p, quad[TripleIndex.PRED_IDX], row)
+				&& bindCheckedTerm(o, quad[TripleIndex.OBJ_IDX], row)
+				&& bindCheckedTerm(c, quad[TripleIndex.CONTEXT_IDX], row);
+	}
+
+	private static boolean bindCheckedTerm(Term term, long id, RowState row) {
+		return (!term.isConstant() || term.constant == id) && (!term.hasSlot() || row.bindOrCheckTerm(term.slot, id));
 	}
 
 	/** Binds the quad found at {@code offset} in a batch buffer of four-long records. */

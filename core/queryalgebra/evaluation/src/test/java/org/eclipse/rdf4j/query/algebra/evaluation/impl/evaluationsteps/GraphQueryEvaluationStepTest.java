@@ -78,6 +78,9 @@ import org.eclipse.rdf4j.query.algebra.evaluation.TripleSource;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.DefaultEvaluationStrategy;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.GraphFrameBindings;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.QueryEvaluationContext;
+import org.eclipse.rdf4j.query.algebra.evaluation.impl.restrictions.InvocationOwner;
+import org.eclipse.rdf4j.query.algebra.evaluation.impl.restrictions.RestrictionCompiler;
+import org.eclipse.rdf4j.query.algebra.evaluation.impl.restrictions.RestrictionPlanProvider;
 import org.eclipse.rdf4j.query.algebra.evaluation.iterator.ExtensionIterator;
 import org.eclipse.rdf4j.query.impl.BlankNodeAllocationScope;
 import org.eclipse.rdf4j.query.impl.EmptyBindingSet;
@@ -93,6 +96,44 @@ public class GraphQueryEvaluationStepTest {
 	private static final ValueFactory VF = SimpleValueFactory.getInstance();
 	private static final IRI G1 = VF.createIRI("urn:g1");
 	private static final IRI G2 = VF.createIRI("urn:g2");
+
+	@Test
+	void restrictionAndInstrumentationPreserveUnionRebinding() {
+		var union = new Union(new SingletonSet(), new SingletonSet());
+		var root = new Filter(union, new ValueConstant(VF.createLiteral(true)));
+		var context = AdaptiveFilterEvaluationStep.planningContext(root, new QueryEvaluationContext.Minimal(null));
+		var first = new MapBindingSet();
+		first.addBinding("g", G1);
+		var second = new MapBindingSet();
+		second.addBinding("g", G2);
+		QueryEvaluationStep left = input -> new SingletonIteration<>(first);
+		QueryEvaluationStep right = input -> new SingletonIteration<>(second);
+		QueryEvaluationStep ordinary = RebindableQueryEvaluationStep.union(union, left, right);
+		QueryEvaluationStep adaptive = AdaptiveFilterEvaluationStep.binary(context, union, ordinary,
+				(a, b) -> RebindableQueryEvaluationStep.union(union, a, b));
+		var plan = RestrictionCompiler.rows("test/original-union", union, context, ordinary);
+		var calls = new AtomicInteger();
+		QueryEvaluationStep prepared = AdaptiveFilterEvaluationStep.decorate(RestrictionCompiler.attach(adaptive, plan),
+				step -> input -> {
+					calls.incrementAndGet();
+					return step.evaluate(input);
+				});
+
+		var certificate = RestrictionPlanProvider.find(prepared);
+		assertThat(certificate).isNotNull();
+		try (var invocation = certificate.open(EmptyBindingSet.getInstance(), InvocationOwner.forExecution(context));
+				var rows = invocation.probe(certificate.layout().unrestricted())) {
+			assertThat(QueryResults.asList(rows)).containsExactly(first, second);
+		}
+		var rebindable = RebindableQueryEvaluationStep.from(union, prepared);
+		assertThat(rebindable).isNotNull();
+		QueryEvaluationStep singleArm = rebindable.withArgument(left);
+		assertThat(RestrictionPlanProvider.find(singleArm)).isNull();
+		try (var rows = singleArm.evaluate(EmptyBindingSet.getInstance())) {
+			assertThat(QueryResults.asList(rows)).containsExactly(first);
+		}
+		assertThat(calls).hasValue(2);
+	}
 
 	@ParameterizedTest
 	@ValueSource(strings = { "extension", "filter", "projection", "union" })

@@ -1,5 +1,11 @@
 ## About this Content
 
+This historical attribution record is retained for earlier RDF4J content. The
+references below are not an inventory of every current binary distribution.
+See NOTICE.md for current project notices and the legal information bundled with
+each distribution for its third-party content. Original notices and license
+terms in individual files continue to apply.
+
 October 7, 2015
 
 ### License

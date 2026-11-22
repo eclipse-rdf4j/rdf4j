@@ -33,6 +33,7 @@ import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.impl.LinkedHashModel;
 import org.eclipse.rdf4j.model.util.ModelBuilder;
 import org.eclipse.rdf4j.model.util.Values;
+import org.eclipse.rdf4j.query.QueryExecutionPolicy.GraphJoinOptimization;
 import org.eclipse.rdf4j.sail.config.SailConfigException;
 import org.eclipse.rdf4j.sail.lmdb.LmdbStore;
 import org.junit.jupiter.api.Test;
@@ -41,6 +42,20 @@ import org.junit.jupiter.params.provider.ValueSource;
 import org.junitpioneer.jupiter.SetSystemProperty;
 
 class LmdbStoreConfigTest {
+
+	@Test
+	void graphJoinOptimizationIsAppliedByStoreConstructor() {
+		LmdbStoreConfig config = new LmdbStoreConfig();
+		assertThat(new LmdbStore(config).getQueryExecutionPolicy().graphJoinOptimization())
+				.isEqualTo(GraphJoinOptimization.AUTO);
+		config.setGraphJoinOptimization(GraphJoinOptimization.OFF);
+		for (boolean experimental : new boolean[] { false, true }) {
+			config.setExperimentalQueryOptimizations(experimental);
+			var policy = new LmdbStore(config).getQueryExecutionPolicy();
+			assertThat(policy.graphJoinOptimization()).isEqualTo(GraphJoinOptimization.OFF);
+			assertThat(policy.experimentalQueryOptimizations()).isEqualTo(experimental);
+		}
+	}
 
 	private static final IRI LEGACY_APPEND_MODE = Values.iri(LmdbStoreSchema.NAMESPACE + "appendMode");
 

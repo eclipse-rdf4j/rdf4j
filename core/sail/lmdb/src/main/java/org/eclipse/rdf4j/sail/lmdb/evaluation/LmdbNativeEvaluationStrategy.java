@@ -25,13 +25,17 @@ import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.Dataset;
 import org.eclipse.rdf4j.query.QueryEvaluationException;
+import org.eclipse.rdf4j.query.QueryExecutionPolicy.GraphJoinOptimization;
+import org.eclipse.rdf4j.query.algebra.ArbitraryLengthPath;
 import org.eclipse.rdf4j.query.algebra.Distinct;
 import org.eclipse.rdf4j.query.algebra.Exists;
+import org.eclipse.rdf4j.query.algebra.Graph;
 import org.eclipse.rdf4j.query.algebra.Group;
 import org.eclipse.rdf4j.query.algebra.GroupElem;
 import org.eclipse.rdf4j.query.algebra.Join;
 import org.eclipse.rdf4j.query.algebra.QueryModelNode;
 import org.eclipse.rdf4j.query.algebra.QueryRoot;
+import org.eclipse.rdf4j.query.algebra.Service;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryEvaluationStep;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryOptimizerPipeline;
@@ -42,7 +46,12 @@ import org.eclipse.rdf4j.query.algebra.evaluation.impl.EvaluationStatistics;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.QueryEvaluationContext;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.StrictEvaluationStrategy;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.evaluationsteps.AdaptiveFilterEvaluationStep;
+import org.eclipse.rdf4j.query.algebra.evaluation.impl.evaluationsteps.OrderedEvaluation;
+import org.eclipse.rdf4j.query.algebra.evaluation.impl.restrictions.PreparedRestrictionPlan;
+import org.eclipse.rdf4j.query.algebra.evaluation.impl.restrictions.RestrictionBlueprint;
+import org.eclipse.rdf4j.query.algebra.helpers.TupleExprs;
 import org.eclipse.rdf4j.query.impl.EmptyBindingSet;
+import org.eclipse.rdf4j.query.impl.RemoteBNode;
 import org.eclipse.rdf4j.sail.base.SailDatasetTripleTermSource;
 import org.eclipse.rdf4j.sail.helpers.SlowQueryContextHolder;
 import org.eclipse.rdf4j.sail.lmdb.LmdbDistinctOrderMarker;
@@ -435,8 +444,12 @@ public final class LmdbNativeEvaluationStrategy extends StrictEvaluationStrategy
 	protected QueryEvaluationStep prepare(Join join, QueryEvaluationContext context) {
 		NativeUniformValuesJoin.Hint hint = nativeEnabled && nativeSource != null && !forceRootGeneric
 				&& !Boolean.TRUE.equals(KERNEL_SUBPLAN.get())
-						? NativeUniformValuesJoin.prepare(join, context, this, nativeSource)
-						: null;
+				&& !OrderedEvaluation.isRequired(join)
+				&& (!AdaptiveFilterEvaluationStep.includesGraphRestrictionRegion(context)
+						|| !NativeGraphFusion.requiresSemanticRestrictionJoin(join, context.getDataset(),
+								getQueryExecutionPolicy().graphJoinOptimization(), evaluationStatistics))
+										? NativeUniformValuesJoin.prepare(join, context, this, nativeSource)
+										: null;
 		if (hint == null) {
 			return super.prepare(join, context);
 		}
@@ -455,6 +468,16 @@ public final class LmdbNativeEvaluationStrategy extends StrictEvaluationStrategy
 
 	private QueryEvaluationStep precompileWithPreparedValues(TupleExpr expr, QueryEvaluationContext context) {
 		if (nativeEnabled && nativeSource != null) {
+			if (keepsGraphRestrictionBoundary(expr, context)) {
+				if (canCompileSelectedPath(expr, context) && nativeSource.hasStatementsInSource()) {
+					QueryEvaluationStep path = LmdbNativeAggregateCompiler.tryCompileSelectedGraphPath(expr, context,
+							this, nativeSource);
+					if (path != null) {
+						return path;
+					}
+				}
+				return super.precompileTupleExpr(expr, context);
+			}
 			if (expr instanceof QueryRoot) {
 				return compileHostedPlan(expr, context);
 			}
@@ -467,6 +490,62 @@ public final class LmdbNativeEvaluationStrategy extends StrictEvaluationStrategy
 			}
 		}
 		return super.precompileTupleExpr(expr, context);
+	}
+
+	private static boolean canCompileSelectedPath(TupleExpr expression, QueryEvaluationContext context) {
+		var graph = context.getActiveGraph();
+		// LMDB's standard path step provides no restriction adapter. A native path can replace that producer
+		// after GRAPH selects its active graph. The enclosing restriction still evaluates it with its original
+		// input and checks endpoint constraints against its output.
+		return expression.getClass() == ArbitraryLengthPath.class && graph != null
+				&& context.getCorrelatedPathBindingNames().isEmpty()
+				&& !RemoteBNode.containsRemoteIdentity(graph.physicalGraph())
+				&& !TupleExprs.containsGraphBoundary(expression);
+	}
+
+	private boolean keepsGraphRestrictionBoundary(TupleExpr expr, QueryEvaluationContext context) {
+		GraphJoinOptimization mode = getQueryExecutionPolicy().graphJoinOptimization();
+		if (mode == GraphJoinOptimization.OFF
+				|| !AdaptiveFilterEvaluationStep.includesGraphRestrictionRegion(context)) {
+			return false;
+		}
+		if (expr instanceof Graph
+				|| mode != GraphJoinOptimization.FORCE_INDEPENDENT && context.getActiveGraph() != null) {
+			return true;
+		}
+		Dataset dataset = context.getDataset();
+		return NativeGraphFusion.requiresSemanticRestrictionJoin(expr, dataset, mode, evaluationStatistics)
+				|| keepsGraphRestrictionDriver(expr, dataset, mode);
+	}
+
+	private boolean keepsGraphRestrictionDriver(TupleExpr expr, Dataset dataset, GraphJoinOptimization mode) {
+		// A native driver looks opaque to the generic reversed-join proof. Retain standard preparation for the
+		// driver and its children, including VALUES, so the proof can inspect their original binding contract.
+		TupleExpr branch = expr;
+		while (branch.getParentNode() instanceof TupleExpr parent && !(parent instanceof Service)) {
+			if (parent instanceof Join join && join.getRightArg() == branch
+					&& TupleExprs.containsGraphBoundary(join.getLeftArg())
+					&& NativeGraphFusion.requiresSemanticRestrictionJoin(join, dataset, mode, evaluationStatistics)) {
+				return true;
+			}
+			branch = parent;
+		}
+		return false;
+	}
+
+	@Override
+	protected PreparedRestrictionPlan specializeGraphBodyRestriction(TupleExpr preparedBody,
+			QueryEvaluationContext selectedContext, PreparedRestrictionPlan genericPlan) {
+		GraphJoinOptimization mode = getQueryExecutionPolicy().graphJoinOptimization();
+		if (!nativeEnabled || nativeSource == null || forceRootGeneric || Boolean.TRUE.equals(KERNEL_SUBPLAN.get())
+				|| OrderedEvaluation.isRequired(preparedBody)
+				|| mode != GraphJoinOptimization.REQUIRE_RESTRICTED && mode != GraphJoinOptimization.AUTO
+				|| genericPlan.blueprint().realization() != RestrictionBlueprint.Realization.STABLE
+				|| selectedContext.getActiveGraph() == null
+				|| RemoteBNode.containsRemoteIdentity(selectedContext.getActiveGraph().physicalGraph())) {
+			return genericPlan;
+		}
+		return NativeGraphPlan.specializeSelectedBody(preparedBody, selectedContext, this, nativeSource, genericPlan);
 	}
 
 	/**
@@ -557,7 +636,8 @@ public final class LmdbNativeEvaluationStrategy extends StrictEvaluationStrategy
 	@Override
 	protected QueryValueEvaluationStep prepare(Exists node, QueryEvaluationContext context)
 			throws QueryEvaluationException {
-		if (nativeEnabled && nativeSource != null && nativeSource.hasStatementsInSource()) {
+		if (nativeEnabled && nativeSource != null && nativeSource.hasStatementsInSource()
+				&& !keepsGraphRestrictionBoundary(node.getSubQuery(), context)) {
 			QueryValueEvaluationStep existsStep = LmdbNativeAggregateCompiler.tryCompileExists(node.getSubQuery(),
 					context, this, nativeSource);
 			if (existsStep != null) {
