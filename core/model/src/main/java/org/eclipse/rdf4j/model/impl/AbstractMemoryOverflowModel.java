@@ -458,15 +458,16 @@ public abstract class AbstractMemoryOverflowModel<T extends AbstractModel> exten
 					return;
 				}
 
-				int size = memory.size();
-				if (size == 0) {
+				if (memory.size() < BATCH_SIZE) {
+					// A disk store costs more heap than a model smaller than one batch holds, so spilling it would
+					// add pressure, and under sustained pressure every short-lived model would get a store of its
+					// own. That is as true below the minimum memory reserve as under GC load: a transaction that
+					// keeps thousands of small changesets alive would exhaust the heap with their stores. Adders
+					// re-check at batch boundaries, so a large inflow still moves to disk.
 					return;
 				}
 
-				// Under GC pressure, opening a store for every small model can make pressure worse. The hard
-				// reserve still applies to any nonempty model, regardless of the disk write batch size.
-				boolean batchUnderPressure = size >= BATCH_SIZE && (overflow || highGcLoad);
-				if (batchUnderPressure || mbFree() < MIN_AVAILABLE_MEM_BEFORE_OVERFLOWING) {
+				if (overflow || highGcLoad || mbFree() < MIN_AVAILABLE_MEM_BEFORE_OVERFLOWING) {
 					logger.debug("Syncing triples to disk due to memory pressure or retry");
 					overflowToDisk();
 					if (!highGcLoad) {

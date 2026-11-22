@@ -59,12 +59,12 @@ public class AbstractMemoryOverflowModelTest {
 	}
 
 	@Test
-	void modelSmallerThanOneBatchDoesNotSpillUnderGcPressureAboveReserve() throws Exception {
+	void modelSmallerThanOneBatchDoesNotSpillUnderMemoryPressure() throws Exception {
 		runInConstrainedHeap("small-model");
 	}
 
 	@Test
-	void addOperationsSpillSmallModelsBelowMinimumMemoryReserve() throws Exception {
+	void addOperationsSpillFullBatchBelowMinimumMemoryReserve() throws Exception {
 		runInConstrainedHeap("minimum-memory-reserve-add");
 	}
 
@@ -73,8 +73,8 @@ public class AbstractMemoryOverflowModelTest {
 			throw new IllegalArgumentException("Expected one pressure probe name");
 		}
 		System.out.println("RUNTIME_MAX_MEMORY_BYTES=" + Runtime.getRuntime().maxMemory());
-		if ("pressure-hook".equals(args[0]) || "migration-retry".equals(args[0])) {
-			// These soft pressure fixtures need at least one full batch to spill.
+		if (!"small-model".equals(args[0])) {
+			// The single-statement fixtures probe spill mechanics, so each statement forms a spillable batch.
 			AbstractMemoryOverflowModel.BATCH_SIZE = 1;
 		}
 		AbstractMemoryOverflowModelTest test = new AbstractMemoryOverflowModelTest();
@@ -171,6 +171,11 @@ public class AbstractMemoryOverflowModelTest {
 		}
 	}
 
+	/**
+	 * A spill allocates a disk store whose fixed cost exceeds what a model smaller than one batch holds, so under
+	 * sustained pressure every short-lived transaction model would otherwise allocate a store of its own. That holds
+	 * for GC pressure and for the minimum memory reserve alike.
+	 */
 	private void smallModelProbe() throws Exception {
 		int oldHigh = AbstractMemoryOverflowModel.MEMORY_THRESHOLD_HIGH;
 		int oldMedium = AbstractMemoryOverflowModel.MEMORY_THRESHOLD_MEDIUM;
@@ -183,7 +188,6 @@ public class AbstractMemoryOverflowModelTest {
 
 			model.spillToDiskIfNeeded();
 			assertThat(model.spillCount).as("an empty model holds no heap to release").isZero();
-			AbstractMemoryOverflowModel.MIN_AVAILABLE_MEM_BEFORE_OVERFLOWING = -1;
 
 			ValueFactory valueFactory = SimpleValueFactory.getInstance();
 			List<Statement> statements = new ArrayList<>();
@@ -194,6 +198,10 @@ public class AbstractMemoryOverflowModelTest {
 			for (Statement statement : statements.subList(0, statements.size() - 1)) {
 				model.add(statement);
 			}
+			model.spillToDiskIfNeeded();
+			assertThat(model.spillCount).as("a partial batch stays in memory below the minimum reserve").isZero();
+			assertThat(model).hasSize(AbstractMemoryOverflowModel.BATCH_SIZE - 1);
+
 			try (GcNotifications notifications = new GcNotifications()) {
 				setPressureThresholds(-1, -1, -1, -1);
 				notifications.requestGcAndAwait();
@@ -224,7 +232,7 @@ public class AbstractMemoryOverflowModelTest {
 		try (RecordingOverflowModel statementAdd = new RecordingOverflowModel();
 				RecordingOverflowModel termAdd = new RecordingOverflowModel();
 				RecordingOverflowModel bulkAdd = new RecordingOverflowModel()) {
-			// Load a partial batch without advancing the single-statement check cadence.
+			// The probe runs with a batch size of one, so the first statement already forms a full batch.
 			for (RecordingOverflowModel model : List.of(statementAdd, termAdd, bulkAdd)) {
 				model.addAll(List.of(first));
 			}
