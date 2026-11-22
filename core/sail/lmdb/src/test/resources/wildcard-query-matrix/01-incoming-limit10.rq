@@ -1,0 +1,7 @@
+PREFIX dcat: <http://www.w3.org/ns/dcat#>
+
+SELECT ?subject ?p
+WHERE {
+  ?subject ?p dcat:Distribution .
+}
+LIMIT 10

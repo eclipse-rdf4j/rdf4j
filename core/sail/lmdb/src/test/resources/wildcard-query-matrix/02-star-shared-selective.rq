@@ -1,0 +1,7 @@
+PREFIX dataset: <http://data.gov.be/dataset/biodiv/>
+
+SELECT ?p ?left ?right
+WHERE {
+  dataset:230363a1-8221-4f53-b1fc-e8475ac247aa ?p ?left, ?right .
+  FILTER(!sameTerm(?left, ?right))
+}

@@ -1,0 +1,7 @@
+PREFIX distribution: <http://data.gov.be/dist/biodiv/>
+
+SELECT ?p ?shared
+WHERE {
+  distribution:230363a1-8221-4f53-b1fc-e8475ac247aa ?p ?shared .
+  distribution:fcb34db4-7681-4a9a-9cc0-b80147e95e81 ?p ?shared .
+}

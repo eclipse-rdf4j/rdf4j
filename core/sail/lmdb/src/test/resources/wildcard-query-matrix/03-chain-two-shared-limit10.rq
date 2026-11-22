@@ -1,0 +1,12 @@
+PREFIX dcat: <http://www.w3.org/ns/dcat#>
+
+SELECT ?dataset ?p ?shared ?peer ?q ?other
+WHERE {
+  ?dataset a dcat:Dataset ;
+    ?p ?shared .
+  ?peer a dcat:Dataset ;
+    ?p ?shared ;
+    ?q ?other .
+  FILTER(!sameTerm(?dataset, ?peer) && !sameTerm(?p, ?q) && isIRI(?other) && !sameTerm(?shared, ?other))
+}
+LIMIT 10

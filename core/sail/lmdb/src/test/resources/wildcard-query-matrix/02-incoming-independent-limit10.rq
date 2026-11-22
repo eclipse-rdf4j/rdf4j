@@ -1,0 +1,9 @@
+PREFIX filetype: <http://publications.europa.eu/resource/authority/file-type/>
+
+SELECT ?left ?p ?right ?q
+WHERE {
+  ?left ?p filetype:CSV .
+  ?right ?q filetype:CSV .
+  FILTER(!sameTerm(?left, ?right))
+}
+LIMIT 10

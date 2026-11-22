@@ -1,0 +1,11 @@
+PREFIX dcat: <http://www.w3.org/ns/dcat#>
+
+SELECT ?dataset ?p ?distribution ?q ?value
+WHERE {
+  ?dataset a dcat:Dataset ;
+    ?p ?distribution .
+  ?distribution a dcat:Distribution ;
+    ?q ?value .
+  FILTER(isIRI(?value))
+}
+LIMIT 10

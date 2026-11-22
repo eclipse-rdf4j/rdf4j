@@ -1,0 +1,9 @@
+PREFIX dataset: <http://data.gov.be/dataset/biodiv/>
+
+SELECT ?p ?shared ?q ?other
+WHERE {
+  dataset:230363a1-8221-4f53-b1fc-e8475ac247aa ?p ?shared .
+  <http://data.gov.be/catalog> ?p ?shared ;
+    ?q ?other .
+  FILTER(!sameTerm(?p, ?q) && isIRI(?other) && !sameTerm(?shared, ?other))
+}
