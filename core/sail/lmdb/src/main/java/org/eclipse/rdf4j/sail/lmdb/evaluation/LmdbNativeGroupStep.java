@@ -25,6 +25,7 @@ import java.util.Arrays;
 import java.util.HashMap;
 import java.util.IdentityHashMap;
 import java.util.Iterator;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.NoSuchElementException;
@@ -54,6 +55,7 @@ import org.eclipse.rdf4j.query.algebra.evaluation.ValueExprEvaluationException;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.QueryEvaluationContext;
 import org.eclipse.rdf4j.query.algebra.evaluation.util.MathUtil;
 import org.eclipse.rdf4j.query.algebra.evaluation.util.QueryEvaluationUtility;
+import org.eclipse.rdf4j.query.explanation.PhysicalPlan.Operator;
 import org.eclipse.rdf4j.query.explanation.QueryExplanationContext;
 import org.eclipse.rdf4j.query.impl.EmptyBindingSet;
 import org.eclipse.rdf4j.sail.lmdb.LmdbPrefixRunCursor;
@@ -434,7 +436,7 @@ final class NativeGroupStep implements NativeResultStep, LmdbNativePhysicalPlan 
 			if (variant == null) {
 				return genericFallback(bindings, evalSource, havingDescriptor, "optionalOnlyBinding");
 			}
-			LmdbNativeExplain.recordExecutionPath(originalExpr, variant.executionPath());
+			variant.recordExecutionPath(originalExpr);
 			nativeBindings = variant.filteredBase;
 		}
 		if (!NativeRowSeeder.supports(nativeBindings, layout, evalSource)) {
@@ -550,8 +552,8 @@ final class NativeGroupStep implements NativeResultStep, LmdbNativePhysicalPlan 
 		SyntheticValueSource synthetic = evalSource instanceof SyntheticValueSource existing ? existing
 				: SyntheticValueSource.forInvocation(evalSource, queryExecutionPolicy(), bindings);
 		initializeQueryBase(synthetic, bindings);
-		LmdbNativeExplain.recordExecutionPath(originalExpr,
-				LmdbNativeAttemptMetrics.PATH_GENERIC_FALLBACK + "(" + reason + ")");
+		LmdbNativeExplain.recordParameterizedPath(originalExpr, LmdbNativeAttemptMetrics.PATH_GENERIC_FALLBACK,
+				"reason", reason);
 		CloseableIteration<BindingSet> rows = NativeExecutionContextCarrier.evaluate(() -> {
 			if (strategy == null && genericStep == null) {
 				throw new IllegalStateException("unsupported native entry requires a semantic evaluation strategy");
@@ -627,6 +629,43 @@ final class NativeGroupStep implements NativeResultStep, LmdbNativePhysicalPlan 
 			});
 		}
 		return genericStep();
+	}
+
+	@Override
+	public Operator physicalOperator(boolean resolveRdfTerms) {
+		var description = new LmdbPhysicalPlanDescription(layout.slotNames(), resolveRdfTerms ? source : null);
+		Map<String, Object> args = new LinkedHashMap<>();
+		args.put("arg", description.operator(distinctPlan.arg, 0));
+		args.put("groupSlots", description.slots(groupSlots));
+		args.put("aggregates",
+				Arrays.stream(aggregates)
+						.map(a -> Map.of("name", a.name, "resultDemand", a.resultDemand.toString()))
+						.toList());
+		args.put("distinctChannelCount", distinctPlan.channels.channelCount());
+		args.put("distinctChannels", Arrays.stream(distinctPlan.channels.modes).map(Object::toString).toList());
+		args.put("groupOrderPrefix", distinctPlan.groupPrefixSlots.length);
+		if (termDomain != null) {
+			args.put("termDomain", description.operator(termDomain, 0));
+		}
+		if (prefixRunPlan != null) {
+			args.put("prefixRun",
+					Map.of("index", prefixRunPlan.indexName(), "prefixLength", prefixRunPlan.prefixLength()));
+		}
+		if (existsIntersection != null) {
+			args.put("existsIntersection", Map.of("outerIndex", existsIntersection.outerPlan.indexName(), "existsIndex",
+					existsIntersection.existsPlan.indexName()));
+		}
+		if (adjacencyAggregate != null) {
+			args.put("adjacencyAggregate", true);
+		}
+		if (typeMatrix != null) {
+			args.put("typeMatrixFallback", true);
+		}
+		args.put("alternatives",
+				alternatives.stream()
+						.map(a -> Map.of("tag", a.tag(), "step", a.step().getClass().getSimpleName()))
+						.toList());
+		return new Operator("NativeGroup", args);
 	}
 
 	@Override
@@ -1965,7 +2004,12 @@ final class NativeGroupIteration implements CloseableIteration<BindingSet>, Coop
 
 	private void recordParallelStrategy(LmdbNativeAttemptMetrics metrics) {
 		if (LmdbNativeExplain.recordsExecutionPaths(explainTarget)) {
-			metrics.deferStrategy(explainTarget, LmdbNativeParallelAggregation.consumeLastStrategyLabel());
+			var path = LmdbNativeParallelAggregation.consumeLastStrategy();
+			if (path == null) {
+				metrics.deferStrategy(explainTarget, LmdbNativeAttemptMetrics.PATH_PARALLEL_AGGREGATION);
+			} else {
+				metrics.deferStrategy(explainTarget, path.label(), path.operator());
+			}
 		}
 	}
 
@@ -2635,7 +2679,9 @@ final class NativeGroupIteration implements CloseableIteration<BindingSet>, Coop
 		String strategy = LmdbNativeExplain.recordsExecutionPaths(explainTarget) ? tail.describeEngagement() : null;
 		tail.close();
 		tail.recordEngagement();
-		tail.metrics.deferStrategy(explainTarget, strategy);
+		if (strategy != null) {
+			tail.metrics.deferStrategy(explainTarget, strategy, tail.engagement());
+		}
 		tail.metrics.commitToParent();
 		return results;
 	}

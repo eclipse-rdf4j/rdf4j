@@ -2123,6 +2123,8 @@ test('a page whose row store fails while it opens stays and says why instead of 
 test('A7: the kept Query page shown again gets the repository namespaces as they are now', async () => {
     const harness = loadKeepAliveRouter();
     const configured = [];
+    const shown = [];
+    harness.workbench.query = { refreshExplanationNamespaces: () => shown.push(configured.at(-1)) };
     harness.workbench.app.configureNamespaces = (model) => configured.push(Object.assign({},
         model.linked && model.linked.namespaces ? model.linked.namespaces.namespaceMap : model.namespaceMap));
     const requested = [];
@@ -2140,6 +2142,8 @@ test('A7: the kept Query page shown again gets the repository namespaces as they
     assert.deepEqual(requested.map((entry) => entry.paths), [['_internal/namespaces']], 'the namespaces are asked for again');
     assert.deepEqual(configured[configured.length - 1], { 'ex:': 'urn:ex#', 'new:': 'urn:new#' },
         'a namespace added meanwhile is offered by Insert prefixes and the explanation');
+    assert.deepEqual(shown, [{ 'ex:': 'urn:ex#', 'new:': 'urn:new#' }],
+        'the active explanation refreshes after the new mappings are configured');
 });
 
 test('A17: a hover prefetch whose scripts fail to load leaves no unhandled rejection', async () => {

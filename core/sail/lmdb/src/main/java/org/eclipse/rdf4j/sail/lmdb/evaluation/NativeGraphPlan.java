@@ -13,6 +13,8 @@ package org.eclipse.rdf4j.sail.lmdb.evaluation;
 
 import java.io.IOException;
 import java.util.Arrays;
+import java.util.List;
+import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.atomic.AtomicLong;
 
@@ -21,6 +23,7 @@ import org.eclipse.rdf4j.query.algebra.evaluation.QueryEvaluationStep;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.QueryEvaluationContext;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.evaluationsteps.GraphQueryEvaluationStep;
 import org.eclipse.rdf4j.query.algebra.evaluation.util.QueryEvaluationUtility;
+import org.eclipse.rdf4j.query.explanation.PhysicalPlan.Operator;
 
 /**
  * Semantic GRAPH boundary. Selection follows the shared graph evaluator; the body is compiled under the selected
@@ -89,6 +92,11 @@ final class NativeGraphPlan implements SlotPlan {
 			mask |= 1L << slot;
 		}
 		return mask;
+	}
+
+	Operator physicalOperator() {
+		return new Operator("NativeGraph",
+				Map.of("selector", graph.getGraphName().getName(), "frameInputs", List.of(frameInputNames)));
 	}
 
 	String describe() {

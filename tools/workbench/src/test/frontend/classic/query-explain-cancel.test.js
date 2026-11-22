@@ -26,7 +26,7 @@ test('the Explanation panel is busy while a plan loads so it shows the local pro
 
     harness.click('explain-trigger');
     assert.equal(harness.getAttribute('query-explanation-panel', 'aria-busy'), 'true');
-    harness.pendingExplainRequests[0].resolve({ content: '{"type":"Projection"}', format: 'json', error: '' });
+    harness.pendingExplainRequests[0].resolve({ content: { type: 'Projection' }, format: 'json', error: '' });
     assert.equal(harness.getAttribute('query-explanation-panel', 'aria-busy'), 'false');
 
     harness.click('rerun-explanation');
@@ -39,7 +39,7 @@ test('the Explanation panel is busy while a plan loads so it shows the local pro
     harness.advanceTimers(1000);
     assert.equal(harness.getAttribute('query-explanation-panel', 'aria-busy'), 'true');
     harness.pendingExplainRequests.slice(2).forEach(request => request.resolve({
-        content: '{"type":"Projection"}', format: 'json', error: ''
+        content: { type: 'Projection' }, format: 'json', error: ''
     }));
     assert.equal(harness.getAttribute('query-explanation-panel', 'aria-busy'), 'false');
 });
@@ -127,7 +127,7 @@ test('the Cancel beside Config shows while any explanation runs and cancels it',
     const harness = createQueryBrowserHarness({
         serverRequestIds: ['request-1', 'request-2', 'request-3', 'request-4', 'request-5', 'request-6']
     });
-    const plan = { content: '{"type":"Projection"}', format: 'json', error: '' };
+    const plan = { content: { type: 'Projection' }, format: 'json', error: '' };
     const cancelShown = () => harness.hasClass('explanation-cancel', 'query-explain-cancel--visible')
         && harness.getAttribute('explanation-cancel', 'aria-hidden') === 'false'
         && harness.getProperty('explanation-cancel', 'disabled') === false;

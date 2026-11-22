@@ -502,7 +502,7 @@ public final class LmdbNativeEvaluationStrategy extends StrictEvaluationStrategy
 				outcome.hostReason(), expr);
 		LmdbNativeAggregateCompiler.HOSTED_GENERIC.incrementAndGet();
 		if (LmdbNativeExplain.recordsExecutionPaths(expr)) {
-			LmdbNativeExplain.mark(expr, LmdbNativeExplain.KIND_GENERIC_HOSTED, hosted.nativePhysicalPlan());
+			LmdbNativeExplain.mark(expr, LmdbNativeExplain.KIND_GENERIC_HOSTED, hosted);
 		}
 		LmdbNativeStrategyPreview.inspect(hosted);
 		return hosted;

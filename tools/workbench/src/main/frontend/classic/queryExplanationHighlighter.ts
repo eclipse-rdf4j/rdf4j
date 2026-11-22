@@ -23,10 +23,29 @@ namespace workbench {
         export type JsonLong = number | string;
         export type JsonDouble = number | 'Infinity' | '-Infinity' | 'NaN';
 
+        type StructuredValue = string | number | boolean | StructuredFields | StructuredValue[];
+
+        interface StructuredFields {
+            [name: string]: StructuredValue;
+        }
+
+        interface PhysicalPlan {
+            engine: string;
+            state: string;
+            kind?: string;
+            plan?: StructuredFields;
+            invocations?: StructuredFields[];
+            omittedInvocations?: JsonLong;
+        }
+
         export interface QueryPlanNode {
             type?: string;
+            operator?: string;
+            arguments?: StructuredFields;
             timedOut?: boolean;
             physicalPlanPrelude?: string;
+            physicalPlans?: PhysicalPlan[];
+            plannedPhysicalPlan?: PhysicalPlan;
             strategyDecisions?: StrategyDecision[];
             executionProfile?: ExecutionProfile;
             logicalPath?: string;
@@ -49,6 +68,7 @@ namespace workbench {
             longMetricsActual?: { [name: string]: JsonLong };
             doubleMetricsActual?: { [name: string]: number };
             stringMetricsActual?: { [name: string]: string };
+            actualAttributes?: StructuredFields;
             longMetricsPlanned?: { [name: string]: JsonLong };
             doubleMetricsPlanned?: { [name: string]: number };
             stringMetricsPlanned?: { [name: string]: string };
@@ -85,6 +105,7 @@ namespace workbench {
             status?: string;
             metrics: { [name: string]: ProfileMetric };
             properties?: { [name: string]: string };
+            attributes?: StructuredFields;
         }
 
         export interface ExecutionProfile {
@@ -92,7 +113,9 @@ namespace workbench {
             status: string;
             detail?: string;
             elapsedNanos: JsonLong;
+            inputPlan?: QueryPlanNode;
             properties?: { [name: string]: string };
+            attributes?: StructuredFields;
             phases?: { name: string; elapsedNanos: JsonLong; scope: string }[];
             stages?: ProfileStage[];
             attempts?: {
@@ -124,13 +147,18 @@ namespace workbench {
             maximum: JsonLong;
         }
 
-        export interface RenderOptions {
+        export interface ExplanationNamespaces {
+            namespaces?: { [prefix: string]: string };
+            queryNamespaces?: { [prefix: string]: string };
+            fallbackNamespaces?: { [prefix: string]: string };
+        }
+
+        export interface RenderOptions extends ExplanationNamespaces {
             level: ExplainLevel;
             mode: HighlightMode;
             sharedMaximum?: JsonLong;
             lineSeparator?: string;
             hiddenProperties?: string[];
-            namespaces?: { [prefix: string]: string };
         }
 
         export interface TextToken {
@@ -142,6 +170,14 @@ namespace workbench {
             tokens: TextToken[];
             node?: QueryPlanNode;
             physicalStage?: ProfileStage;
+            physicalPrelude?: boolean;
+            strategyTable?: StrategyTable;
+            strategyIndent?: string;
+        }
+
+        interface StrategyTable {
+            label: string;
+            rows: TextToken[][];
         }
 
         export interface FormatResult {
@@ -160,12 +196,13 @@ namespace workbench {
         interface MetricEntry {
             name: string;
             value: string;
+            structuredValue?: StructuredValue;
         }
 
         interface NamespaceCandidate {
             prefix: string;
             namespace: string;
-            configured: boolean;
+            priority: number;
         }
 
         var UNKNOWN = 'UNKNOWN';
@@ -233,10 +270,7 @@ namespace workbench {
         var ACCESS_ONLY_METRICS = ['indexLookupCountActual', 'indexHitRateActual', 'sourceMatchFractionActual', 'indexName', 'indexNames'];
 
         function planType(node: QueryPlanNode): string {
-            if (typeof node.type === 'undefined' || node.type === null) {
-                return 'null';
-            }
-            return String(node.type);
+            return String(node.type ?? node.operator ?? 'null');
         }
 
         function sortablePlanType(node: QueryPlanNode): string {
@@ -251,7 +285,7 @@ namespace workbench {
         }
 
         function startsWithType(node: QueryPlanNode, prefix: string): boolean {
-            return planType(node).indexOf(prefix) === 0;
+            return (node.operator || planType(node)).indexOf(prefix) === 0;
         }
 
         function isProjectionElemList(node: QueryPlanNode): boolean {
@@ -1019,10 +1053,21 @@ namespace workbench {
             }
         }
 
-        function metrics(node: QueryPlanNode, level: ExplainLevel): MetricEntry[] {
+        function overlayStructuredMetric(entries: MetricEntry[], name: string, value: StructuredValue,
+                                         replace: boolean): void {
+            var existing = entries.find(function(entry) { return entry.name === name; });
+            if (!existing) {
+                entries.push({ name: name, value: '', structuredValue: value });
+            } else if (replace) {
+                existing.structuredValue = value;
+            }
+        }
+
+        function metrics(node: QueryPlanNode, level: ExplainLevel, structured: boolean): MetricEntry[] {
             var entries: MetricEntry[] = [];
             var seen: { [name: string]: boolean } = Object.create(null);
             var runtimeTelemetry = level === 'Telemetry';
+            var executionSummary = runtimeTelemetry || level === 'Executed' || level === 'Timed';
             addMetric(entries, seen, 'costEstimate', readableDouble(node.costEstimate));
             addMetric(entries, seen, 'resultSizeEstimate', readableDouble(node.resultSizeEstimate));
             addMetric(entries, seen, 'resultSizeActual', readableLong(node.resultSizeActual));
@@ -1058,6 +1103,17 @@ namespace workbench {
             if (runtimeTelemetry) {
                 addDerivedMetrics(node, entries, seen);
             }
+            if (node.plannedPhysicalPlan && node.plannedPhysicalPlan.plan) {
+                overlayStructuredMetric(entries, 'nativePhysicalPlan', node.plannedPhysicalPlan.plan, structured);
+            }
+            if (structured || node.type == null) {
+                Object.keys(node.actualAttributes || {}).forEach(function(name) {
+                    if ((executionSummary || contains(EXPLAIN_ANNOTATION_METRICS, name) || isOptimizerMetric(name))
+                            && applicable(node, name)) {
+                        overlayStructuredMetric(entries, name, node.actualAttributes[name], true);
+                    }
+                });
+            }
             return entries;
         }
 
@@ -1065,8 +1121,186 @@ namespace workbench {
             return { text: text, kind: kind };
         }
 
-        function textLine(text: string): FormattedLine {
-            return { tokens: [token(text)] };
+        function textLine(text: string, kind?: string): FormattedLine {
+            return { tokens: [token(text, kind)] };
+        }
+
+        function isStructuredRecord(value: StructuredValue): value is StructuredFields {
+            return !!value && typeof value === 'object' && !Array.isArray(value);
+        }
+
+        function isPhysicalOperator(value: StructuredFields): boolean {
+            return typeof value.name === 'string' && (value.kind === 'operator'
+                || (Object.prototype.hasOwnProperty.call(value, 'arguments') && isStructuredRecord(value.arguments)
+                    && Object.keys(value).every(function(key) { return key === 'name' || key === 'arguments'; })));
+        }
+
+        function isTypedTerm(value: StructuredFields): boolean {
+            return /^(?:iri|literal|bnode|triple|value)$/.test(String(value.kind));
+        }
+
+        function isSlotReference(value: StructuredFields): boolean {
+            return typeof value.slot === 'number'
+                && Object.keys(value).every(function(key) { return key === 'slot' || key === 'name'; });
+        }
+
+        function slotToken(value: StructuredFields): TextToken {
+            return token((value.name == null ? '' : '?' + value.name) + '#' + value.slot, 'variable');
+        }
+
+        function isDictionaryReference(value: StructuredFields): boolean {
+            return typeof value.id === 'string'
+                && Object.keys(value).every(function(key) { return key === 'id' || key === 'term'; });
+        }
+
+        function isPhysicalBinding(value: StructuredFields): boolean {
+            return typeof value.bound === 'boolean'
+                && Object.keys(value).every(function(key) { return key === 'bound' || key === 'id' || key === 'term'; });
+        }
+
+        function appendStructuredTerm(tokens: TextToken[], term: StructuredFields): void {
+            if (term.kind === 'triple') {
+                tokens.push(token('<<(', 'punctuation'));
+                appendStructuredValue(tokens, term.subject);
+                tokens.push(token(' ', 'text'));
+                appendStructuredValue(tokens, term.predicate);
+                tokens.push(token(' ', 'text'));
+                appendStructuredValue(tokens, term.object);
+                tokens.push(token(')>>', 'punctuation'));
+            } else if (term.kind === 'iri') {
+                tokens.push(token('<' + term.value + '>', 'value'));
+            } else if (term.kind === 'bnode') {
+                tokens.push(token('_:' + term.value, 'value'));
+            } else if (term.kind === 'literal') {
+                var lexical = JSON.stringify(String(term.value ?? ''));
+                if (term.language) {
+                    lexical += '@' + term.language + (term.direction ? '--' + term.direction : '');
+                }
+                tokens.push(token(lexical, 'literal'));
+                if (!term.language && term.datatype && term.datatype !== DEFAULT_NAMESPACES.xsd + 'string') {
+                    tokens.push(token('^^', 'punctuation'), token('<' + term.datatype + '>', 'value'));
+                }
+            } else {
+                tokens.push(token(String(term.value ?? ''), 'value'));
+            }
+        }
+
+        function appendBoundValue(tokens: TextToken[], value: StructuredFields): void {
+            if (value.term != null) {
+                appendStructuredValue(tokens, value.term);
+            }
+            if (value.id != null) {
+                if (value.term != null) {
+                    tokens.push(token(' (', 'punctuation'), token('id', 'metric-name'), token('=', 'operator'));
+                }
+                tokens.push(token(String(value.id), 'metric-value'));
+                if (value.term != null) {
+                    tokens.push(token(')', 'punctuation'));
+                }
+            }
+        }
+
+        function structuredScalarKind(value: StructuredValue, name?: string): string {
+            if (name === 'winner' || name === 'fallback') {
+                return 'strategy';
+            }
+            var fieldKind = diagnosticFieldKind(name);
+            if (fieldKind) {
+                return fieldKind;
+            }
+            if (name === 'status' || name === 'outcome') {
+                return statusKind(String(value));
+            }
+            if (name === 'reason' || name === 'detail') {
+                return 'prose';
+            }
+            if (name === 'name' || name === 'groupBindingNames' || name === 'bindingNames') {
+                return 'variable';
+            }
+            if (typeof value === 'number' || typeof value === 'boolean'
+                    || /^[+\-]?(?:\d+|0[xX][0-9a-fA-F]+)$/.test(String(value))) {
+                return 'metric-value';
+            }
+            return 'text';
+        }
+
+        function appendStructuredValue(tokens: TextToken[], value: StructuredValue, name?: string,
+                                       physical: boolean = true): void {
+            if (Array.isArray(value)) {
+                tokens.push(token('[', 'punctuation'));
+                value.forEach(function(entry, index) {
+                    if (index) {
+                        tokens.push(token(', ', 'operator'));
+                    }
+                    appendStructuredValue(tokens, entry, name, physical);
+                });
+                tokens.push(token(']', 'punctuation'));
+            } else if (isStructuredRecord(value)) {
+                if (isTypedTerm(value)) {
+                    appendStructuredTerm(tokens, value);
+                } else if (physical && value.kind === 'wildcard') {
+                    tokens.push(token('*', 'operator'));
+                } else if (physical && (value.kind === 'slot' || isSlotReference(value))) {
+                    tokens.push(slotToken(value));
+                } else if (physical && value.kind === 'constant') {
+                    if (typeof value.slot === 'number') {
+                        tokens.push(slotToken(value), token('=', 'operator'));
+                    }
+                    tokens.push(token('const', 'node-type'), token('(', 'punctuation'));
+                    appendBoundValue(tokens, value);
+                    tokens.push(token(')', 'punctuation'));
+                } else if (physical && isDictionaryReference(value)) {
+                    appendBoundValue(tokens, value);
+                } else if (physical && isPhysicalBinding(value)) {
+                    tokens.push(token(value.bound ? 'BOUND' : 'UNBOUND', bindingStateKind(value.bound ? 'bound' : 'unbound')));
+                    if (value.bound && (value.term != null || value.id != null)) {
+                        tokens.push(token('[', 'punctuation'));
+                        appendBoundValue(tokens, value);
+                        tokens.push(token(']', 'punctuation'));
+                    }
+                } else if (physical && isPhysicalOperator(value)) {
+                    tokens.push(token(String(value.name), 'node-type'), token('(', 'punctuation'));
+                    appendStructuredFields(tokens, isStructuredRecord(value.arguments) ? value.arguments : {});
+                    tokens.push(token(')', 'punctuation'));
+                } else {
+                    tokens.push(token('{', 'punctuation'));
+                    var proposalCosts = name === 'nativeStrategyProposalCosts' || name === 'nativeStrategyProposalFeatures';
+                    appendStructuredFields(tokens, value, physical, proposalCosts ? 'strategy' : 'metric-name');
+                    tokens.push(token('}', 'punctuation'));
+                }
+            } else {
+                tokens.push(token(String(value), structuredScalarKind(value, name)));
+            }
+        }
+
+        function appendStructuredFields(tokens: TextToken[], fields: StructuredFields, physical: boolean = true,
+                                        fieldKind: string = 'metric-name'): void {
+            Object.keys(fields).forEach(function(name, index) {
+                if (index) {
+                    tokens.push(token(', ', 'operator'));
+                }
+                tokens.push(token(name, fieldKind), token('=', 'operator'));
+                if (name === 'iri' && typeof fields[name] === 'string') {
+                    tokens.push(token('<' + fields[name] + '>', 'value'));
+                } else {
+                    appendStructuredValue(tokens, fields[name], name, physical);
+                }
+            });
+        }
+
+        function appendTypedSignature(tokens: TextToken[], node: QueryPlanNode): void {
+            var args = node.arguments || {};
+            tokens.push(token(node.operator, 'node-type'));
+            if (node.operator === 'ProjectionElem' && typeof args.name === 'string') {
+                tokens.push(token(' "', 'punctuation'), token(args.name, 'variable'), token('"', 'punctuation'));
+                if (typeof args.alias === 'string') {
+                    tokens.push(token(' AS "', 'punctuation'), token(args.alias, 'variable'), token('"', 'punctuation'));
+                }
+            } else if (Object.keys(args).length) {
+                tokens.push(token(' (', 'punctuation'));
+                appendStructuredFields(tokens, args, false);
+                tokens.push(token(')', 'punctuation'));
+            }
         }
 
         function isPropertyVisible(name: string, hiddenProperties?: string[]): boolean {
@@ -1170,38 +1404,58 @@ namespace workbench {
             }
         }
 
-        function appendNodeType(lineTokens: TextToken[], type: string): void {
+        function appendNodeSignature(lineTokens: TextToken[], type: string): void {
             var detailIndex = type.search(/\s/);
             if (detailIndex < 0) {
                 lineTokens.push(token(type, 'node-type'));
                 return;
             }
-            lineTokens.push(token(type.substring(0, detailIndex), 'node-type'));
-            lineTokens.push(token(type.substring(detailIndex), 'node-detail'));
+            var operator = type.substring(0, detailIndex);
+            var details = type.substring(detailIndex);
+            lineTokens.push(token(operator, 'node-type'));
+            if (operator === 'Var') {
+                appendVariableDetails(lineTokens, details);
+            } else if (operator === 'ProjectionElem' && appendProjectionBindings(lineTokens, details)) {
+                return;
+            } else {
+                lineTokens.push(token(details, 'diagnostic'));
+            }
+        }
+
+        function appendProjectionBindings(tokens: TextToken[], details: string): boolean {
+            var bindings = /^([ \t]+")([^"]*)(")(?:([ \t]+AS[ \t]+")([^"]*)("))?$/.exec(details);
+            if (!bindings) {
+                return false;
+            }
+            tokens.push(token(bindings[1], 'punctuation'), token(bindings[2], 'variable'),
+                token(bindings[3], 'punctuation'));
+            if (bindings[4]) {
+                tokens.push(token(bindings[4], 'punctuation'), token(bindings[5], 'variable'),
+                    token(bindings[6], 'punctuation'));
+            }
+            return true;
         }
 
         function metricValueKind(metric: MetricEntry): string {
             return metric.name === 'bindingState' ? bindingStateKind(metric.value) : 'metric-value';
         }
 
-        function nodeLine(node: QueryPlanNode, level: ExplainLevel,
-                          hiddenProperties?: string[]): FormattedLine {
+        function nodeLine(node: QueryPlanNode, level: ExplainLevel, hiddenProperties: string[],
+                          structured: boolean): FormattedLine {
             var lineTokens: TextToken[] = [];
-            var type = planType(node);
-            if (type.indexOf('Var') === 0) {
-                lineTokens.push(token('Var', 'node-type'));
-                appendVariableDetails(lineTokens, type.substring(3));
+            if (node.operator && (structured || node.type == null)) {
+                appendTypedSignature(lineTokens, node);
             } else {
-                appendNodeType(lineTokens, type);
+                appendNodeSignature(lineTokens, planType(node));
             }
             if (node.newScope && isPropertyVisible('newScope', hiddenProperties)) {
                 lineTokens.push(token(' (new scope)', 'annotation'));
             }
             if (typeof node.algorithm === 'string' && node.algorithm.length
                 && isPropertyVisible('algorithm', hiddenProperties)) {
-                lineTokens.push(token(' (' + node.algorithm + ')', 'algorithm'));
+                lineTokens.push(token(' (', 'punctuation'), token(node.algorithm, 'strategy'), token(')', 'punctuation'));
             }
-            var nodeMetrics = metrics(node, level).filter(function(entry: MetricEntry): boolean {
+            var nodeMetrics = metrics(node, level, structured).filter(function(entry: MetricEntry): boolean {
                 return isPropertyVisible(entry.name, hiddenProperties);
             });
             if (nodeMetrics.length) {
@@ -1212,46 +1466,77 @@ namespace workbench {
                     }
                     lineTokens.push(token(nodeMetrics[i].name, 'metric-name'));
                     lineTokens.push(token('=', 'operator'));
-                    lineTokens.push(token(nodeMetrics[i].value, metricValueKind(nodeMetrics[i])));
+                    if (nodeMetrics[i].structuredValue !== undefined) {
+                        appendStructuredValue(lineTokens, nodeMetrics[i].structuredValue, nodeMetrics[i].name);
+                    } else {
+                        lineTokens.push(token(nodeMetrics[i].value, metricValueKind(nodeMetrics[i])));
+                    }
                 }
                 lineTokens.push(token(')', 'punctuation'));
             }
             return { tokens: lineTokens, node: node };
         }
 
-        function strategyDecisionText(decision: StrategyDecision): string {
+        function statusKind(status: string): string {
+            if (/^(?:yes|would select now|eligible|complete|completed|observed|available|selected|adopted)$/i.test(status)) {
+                return 'status-positive';
+            }
+            if (/^(?:no|declined|eliminated|rejected|failed|timed_out|cancelled|canceled)$/i.test(status)) {
+                return 'status-negative';
+            }
+            return 'status-neutral';
+        }
+
+        function statusToken(status: string): TextToken {
+            return token(status, statusKind(status));
+        }
+
+        function strategyDecisionLines(decision: StrategyDecision): FormattedLine[] {
             var mode = decision.mode;
             var wouldSelect = decision.wouldSelect;
-            var decisionPoint = decision.decisionPoint === null || typeof decision.decisionPoint === 'undefined'
-                ? 'null' : decision.decisionPoint;
-            var selected = wouldSelect !== null && typeof wouldSelect !== 'undefined' ? wouldSelect
-                : mode === 'runtime dependent' ? 'Runtime dependent'
-                    : mode === 'no dispatch' ? 'No strategy required' : 'No eligible strategy';
-            var summary = 'Would select now: ' + selected + ' (' + mode + ')'
-                + (decision.fallback === null || typeof decision.fallback === 'undefined'
-                    ? '' : '; fallback: ' + decision.fallback);
-            var lines = [
-                'Strategies — ' + decisionPoint,
-                summary,
-                decision.reason === null || typeof decision.reason === 'undefined' ? 'null' : decision.reason,
-                'Priority | Strategy | Can attempt? | Decision | Reason'
+            var heading = 'Strategies — ' + (decision.decisionPoint ?? 'null');
+            var summary = [token('Would select now', 'metric-name'), token(': ', 'punctuation'),
+                wouldSelect != null ? token(wouldSelect, 'strategy')
+                    : statusToken(mode === 'runtime dependent' ? 'Runtime dependent'
+                        : mode === 'no dispatch' ? 'No strategy required' : 'No eligible strategy'),
+                token(' (', 'punctuation'), token(String(mode), 'annotation'), token(')', 'punctuation')];
+            if (decision.fallback != null) {
+                summary.push(token('; ', 'punctuation'), token('fallback', 'metric-name'),
+                    token(': ', 'punctuation'), token(decision.fallback, 'strategy'));
+            }
+            var lines: FormattedLine[] = [
+                textLine(heading, 'node-type'),
+                { tokens: summary },
+                textLine(decision.reason ?? 'null', 'prose')
             ];
+            var rows = [['Priority', 'Strategy', 'Can attempt?', 'Decision', 'Reason'].map(function(column) {
+                return token(column, 'metric-name');
+            })];
             (decision.candidates || []).forEach(function(candidate: StrategyCandidate): void {
-                var priority = candidate.priority === null || typeof candidate.priority === 'undefined'
-                    ? '—' : String(candidate.priority);
-                var eligibility = candidate.canAttempt === null || typeof candidate.canAttempt === 'undefined'
-                    ? 'Runtime dependent' : candidate.canAttempt ? 'Yes' : 'No';
-                var strategy = candidate.strategy === null || typeof candidate.strategy === 'undefined'
-                    ? 'null' : candidate.strategy;
-                var candidateDecision = candidate.decision === null || typeof candidate.decision === 'undefined'
-                    ? 'null' : candidate.decision;
-                var reason = candidate.declineReason === null || typeof candidate.declineReason === 'undefined'
-                    ? candidate.condition === null || typeof candidate.condition === 'undefined' ? '' : candidate.condition
-                    : candidate.declineReason;
-                lines.push(priority + ' | ' + strategy + ' | ' + eligibility + ' | '
-                    + candidateDecision + ' | ' + reason);
+                rows.push([
+                    candidate.priority == null ? token('—', 'annotation') : token(String(candidate.priority), 'metric-value'),
+                    candidate.strategy == null ? token('null', 'annotation') : token(candidate.strategy, 'strategy'),
+                    statusToken(candidate.canAttempt == null ? 'Runtime dependent' : candidate.canAttempt ? 'Yes' : 'No'),
+                    statusToken(candidate.decision ?? 'null'),
+                    token(candidate.declineReason ?? candidate.condition ?? '', 'prose')
+                ]);
             });
-            return lines.join('\n');
+            var table = { label: heading, rows: rows };
+            rows.forEach(function(row) {
+                var lineTokens: TextToken[] = [];
+                row.forEach(function(cell, column) {
+                    if (column) {
+                        lineTokens.push(token(' | ', 'punctuation'));
+                    }
+                    lineTokens.push(cell);
+                });
+                lines.push({ tokens: lineTokens, strategyTable: table });
+            });
+            var physicalLines: FormattedLine[] = [];
+            lines.forEach(function(line) {
+                physicalLines.push.apply(physicalLines, splitPhysicalLines(line, /\r\n|\r|\n/));
+            });
+            return physicalLines;
         }
 
         function copyLine(line: FormattedLine): FormattedLine {
@@ -1261,8 +1546,8 @@ namespace workbench {
             };
         }
 
-        function splitPhysicalLines(line: FormattedLine, lineSeparator: string): FormattedLine[] {
-            var result: FormattedLine[] = [{ tokens: [], node: line.node }];
+        function splitPhysicalLines(line: FormattedLine, lineSeparator: string | RegExp): FormattedLine[] {
+            var result: FormattedLine[] = [{ ...line, tokens: [] }];
             for (var tokenIndex = 0; tokenIndex < line.tokens.length; tokenIndex++) {
                 var sourceToken = line.tokens[tokenIndex];
                 var parts = sourceToken.text.split(lineSeparator);
@@ -1271,7 +1556,7 @@ namespace workbench {
                         result[result.length - 1].tokens.push(token(parts[partIndex], sourceToken.kind));
                     }
                     if (partIndex + 1 < parts.length) {
-                        result.push({ tokens: [], node: line.node });
+                        result.push({ ...line, tokens: [] });
                     }
                 }
             }
@@ -1283,6 +1568,9 @@ namespace workbench {
             var lines = splitPhysicalLines(line, lineSeparator);
             for (var i = 0; i < lines.length; i++) {
                 lines[i].tokens.unshift(token(prefix, kind));
+                if (lines[i].strategyTable) {
+                    lines[i].strategyIndent = prefix + (lines[i].strategyIndent || '');
+                }
             }
             return lines;
         }
@@ -1306,19 +1594,17 @@ namespace workbench {
 
         function formatLines(node: QueryPlanNode, depth: number, ordered: boolean,
                              level: ExplainLevel, lineSeparator: string,
-                             hiddenProperties?: string[]): FormattedLine[] {
+                             hiddenProperties: string[], structured: boolean): FormattedLine[] {
             var result: FormattedLine[] = [];
             if (node.timedOut) {
-                result.push(textLine('Timed out while retrieving explanation! Explanation may be incomplete!'));
+                result.push(textLine('Timed out while retrieving explanation! Explanation may be incomplete!', 'annotation'));
                 result.push(textLine('You can change the timeout by setting .setMaxExecutionTime(...) on your query.'));
                 result.push(textLine(''));
             }
-            result = result.concat(splitPhysicalLines(nodeLine(node, level, hiddenProperties), lineSeparator));
+            result = result.concat(splitPhysicalLines(nodeLine(node, level, hiddenProperties, structured), lineSeparator));
             var strategyDecisions = node.strategyDecisions || [];
             for (var decisionIndex = 0; decisionIndex < strategyDecisions.length; decisionIndex++) {
-                var decisionText = strategyDecisionText(strategyDecisions[decisionIndex])
-                    .replace(/\r\n|\r|\n/g, lineSeparator);
-                result = result.concat(splitPhysicalLines(textLine(decisionText), lineSeparator));
+                result = result.concat(strategyDecisionLines(strategyDecisions[decisionIndex]));
             }
             var children = displayPlans(node, ordered);
             var hasNestedChild = false;
@@ -1335,9 +1621,9 @@ namespace workbench {
                 var vertical = even ? '║' : '│';
                 var end = even ? '╚' : '└';
                 var leftLines = dropTrailingEmptyLines(formatLines(children[0], depth + 1, false, level,
-                    lineSeparator, hiddenProperties));
+                    lineSeparator, hiddenProperties, structured));
                 var rightLines = dropTrailingEmptyLines(formatLines(children[1], depth + 1, false, level,
-                    lineSeparator, hiddenProperties));
+                    lineSeparator, hiddenProperties, structured));
                 if (leftLines.length) {
                     var firstLeft = prefixLines(leftLines[0], start + horizontal + ' ', 'connector', lineSeparator);
                     result.push.apply(result, hasJoinSideLabels(node)
@@ -1361,7 +1647,7 @@ namespace workbench {
                     var child = children[childIndex];
                     var childLines = dropTrailingEmptyLines(formatLines(child, depth + 1,
                         isProjectionElemList(child) && !isMultiProjection(node), level, lineSeparator,
-                        hiddenProperties));
+                        hiddenProperties, structured));
                     for (var lineIndex = 0; lineIndex < childLines.length; lineIndex++) {
                         var childLine = childLines[lineIndex];
                         var childPrefixLines: FormattedLine[];
@@ -1394,36 +1680,24 @@ namespace workbench {
             return prefix.charAt(prefix.length - 1) === ':' ? prefix.substring(0, prefix.length - 1) : prefix;
         }
 
-        function namespaceCandidates(namespaces?: { [prefix: string]: string }): NamespaceCandidate[] {
+        function namespaceCandidates(options: ExplanationNamespaces): NamespaceCandidate[] {
             var candidatesByPrefix: { [prefix: string]: NamespaceCandidate } = Object.create(null);
-            var prefix: string;
-            for (prefix in DEFAULT_NAMESPACES) {
-                if (Object.prototype.hasOwnProperty.call(DEFAULT_NAMESPACES, prefix)) {
-                    candidatesByPrefix[prefix] = {
-                        prefix: prefix,
-                        namespace: DEFAULT_NAMESPACES[prefix],
-                        configured: false
-                    };
-                }
-            }
-            for (prefix in namespaces) {
-                if (Object.prototype.hasOwnProperty.call(namespaces, prefix) && typeof namespaces[prefix] === 'string'
-                    && namespaces[prefix].length > 0) {
-                    var normalized = normalizedPrefix(prefix);
-                    candidatesByPrefix[normalized] = {
-                        prefix: normalized,
-                        namespace: namespaces[prefix],
-                        configured: true
-                    };
-                }
-            }
-            var result: NamespaceCandidate[] = [];
-            for (prefix in candidatesByPrefix) {
-                if (Object.prototype.hasOwnProperty.call(candidatesByPrefix, prefix)) {
-                    result.push(candidatesByPrefix[prefix]);
-                }
-            }
-            return result;
+            [DEFAULT_NAMESPACES, options.fallbackNamespaces, options.namespaces, options.queryNamespaces]
+                .forEach(function(namespaces, priority) {
+                    Object.keys(namespaces || {}).forEach(function(prefix) {
+                        var namespace = namespaces[prefix];
+                        if (typeof namespace !== 'string') {
+                            return;
+                        }
+                        var normalized = normalizedPrefix(prefix);
+                        candidatesByPrefix[normalized] = { prefix: normalized, namespace: namespace, priority: priority };
+                    });
+                });
+            return Object.keys(candidatesByPrefix).map(function(prefix) {
+                return candidatesByPrefix[prefix];
+            }).filter(function(candidate) {
+                return candidate.namespace.length > 0;
+            });
         }
 
         function compactableLocalName(localName: string): boolean {
@@ -1432,11 +1706,11 @@ namespace workbench {
         }
 
         function preferredNamespace(current: NamespaceCandidate, candidate: NamespaceCandidate): boolean {
-            if (!current || candidate.namespace.length !== current.namespace.length) {
-                return !current || candidate.namespace.length > current.namespace.length;
+            if (!current || candidate.priority !== current.priority) {
+                return !current || candidate.priority > current.priority;
             }
-            if (candidate.configured !== current.configured) {
-                return candidate.configured;
+            if (candidate.namespace.length !== current.namespace.length) {
+                return candidate.namespace.length > current.namespace.length;
             }
             if (candidate.prefix.length !== current.prefix.length) {
                 return candidate.prefix.length < current.prefix.length;
@@ -1456,10 +1730,176 @@ namespace workbench {
             return '';
         }
 
-        function compactIri(value: string, namespaces?: { [prefix: string]: string }): string {
+        var DIAGNOSTIC_FIELD = /^([ \t]*)([\w./-]+(?:\[\d+\])?(?:[ \t]+[\w./-]+)*)(:)(?=[ \t]|$)/;
+        var DIAGNOSTIC_OPERATOR = /^([ \t│║╠═├─╚└]*(?:[spoc]:[ \t]+)?)([A-Z][\w$]*)(?=[ \t]*(?:[("]|$))/;
+        var DIAGNOSTIC_NUMBER = /[+\-]?(?:0[xX][0-9A-Fa-f]+|\d+(?:\.\d+)?(?:[Ee][+\-]?\d+)?[KMB]?)/.source;
+        var DIAGNOSTIC_UNIT = /(?:[munµμ]?s|%)(?![\w-])/.source;
+        var NUMBER_AND_UNIT = new RegExp('^(' + DIAGNOSTIC_NUMBER + ')([ \t]*)(' + DIAGNOSTIC_UNIT + ')$');
+        var DIAGNOSTIC_SYNTAX = new RegExp([
+            /["']/.source,
+            /<(?:[^<>"{}|^`\\\s]|\\u[0-9A-Fa-f]{4}|\\U[0-9A-Fa-f]{8})+>/.source,
+            /[?$][\w\u00c0-\uffff]+(?:#-?\d+)?/.source,
+            /[A-Za-z][A-Za-z0-9+.-]*:[^\s<>"'()[\]{},]+/.source,
+            DIAGNOSTIC_NUMBER + '(?:[ \t]*' + DIAGNOSTIC_UNIT + ')?',
+            /\[[A-Za-z][\w-]*(?:, [A-Za-z][\w-]*)*\]/.source,
+            /[A-Za-z_][\w.-]*|[()[\]{},=|]/.source
+        ].join('|'), 'g');
+
+        interface DiagnosticQuote { character: string; }
+
+        function appendQuotedLiteral(result: TextToken[], text: string, start: number, end: number,
+                                     quote: DiagnosticQuote, kind: string): number {
+            while (end < text.length) {
+                var character = text.charAt(end++);
+                if (character === quote.character) {
+                    quote.character = '';
+                    break;
+                }
+                if (character === '\\' && end < text.length) {
+                    end++;
+                }
+            }
+            if (end > start) {
+                result.push(token(text.substring(start, end), kind));
+            }
+            return end;
+        }
+
+        function appendNumericMetric(tokens: TextToken[], text: string): void {
+            var quantity = NUMBER_AND_UNIT.exec(text);
+            if (!quantity) {
+                tokens.push(token(text, 'metric-value'));
+                return;
+            }
+            tokens.push(token(quantity[1], 'metric-value'));
+            if (quantity[2]) {
+                tokens.push(token(quantity[2], 'text'));
+            }
+            tokens.push(token(quantity[3], 'metric-unit'));
+        }
+
+        function diagnosticFieldKind(name: string): string {
+            if (name === 'strategy') {
+                return 'strategy';
+            }
+            if (name === 'kind' || name === 'engine' || name === 'plannedExecutionKind'
+                    || name === 'plannedExecutionEngine') {
+                return 'metric-value';
+            }
+            return '';
+        }
+
+        function diagnosticTokenKind(text: string, immediateNext: string, next: string): string {
+            if (text.charAt(0) === '<') {
+                return /^<[A-Za-z][A-Za-z0-9+.-]*:/.test(text) ? 'value' : 'annotation';
+            }
+            if (/^[?$]/.test(text)) {
+                return 'variable';
+            }
+            if (/^[+\-]?\d/.test(text)) {
+                return 'metric-value';
+            }
+            if (/^[()[\]{},=|]$/.test(text)) {
+                return 'punctuation';
+            }
+            if (text.charAt(0) === '[') {
+                return 'annotation';
+            }
+            if (/^(?:BOUND|UNBOUND|bound|unbound)$/.test(text)) {
+                return bindingStateKind(text.toLowerCase());
+            }
+            // Keep bare addresses, e.g. a link in a reason, intact. Explicit IRI references have angle brackets.
+            if (text.indexOf(':') >= 0) {
+                return '';
+            }
+            if (next === '=') {
+                return 'metric-name';
+            }
+            if (immediateNext === '(') {
+                return 'node-type';
+            }
+            if (/^(true|false)$/.test(text)) {
+                return 'metric-value';
+            }
+            return /^(?:[A-Z][A-Z\d_]+|unavailable|unknown)$/.test(text) ? 'annotation' : '';
+        }
+
+        /** The server also emits free-form diagnostic lines. Recognize their syntax without interpreting literal contents. */
+        function diagnosticTokens(text: string, quote: DiagnosticQuote, kind?: string): TextToken[] {
+            var result: TextToken[] = [];
+            var cursor = 0;
+            var prose = kind === 'prose';
+            if (quote.character) {
+                cursor = appendQuotedLiteral(result, text, 0, 0, quote, prose ? 'text' : 'literal');
+            } else if (!prose) {
+                var operator = DIAGNOSTIC_OPERATOR.exec(text);
+                var field = DIAGNOSTIC_FIELD.exec(text);
+                if (operator && /[a-z]/.test(operator[2])) {
+                    if (operator[1]) {
+                        result.push(token(operator[1], 'connector'));
+                    }
+                    result.push(token(operator[2], 'node-type'));
+                    cursor = operator[0].length;
+                    if (operator[2] === 'ProjectionElem' && appendProjectionBindings(result, text.substring(cursor))) {
+                        return result;
+                    }
+                } else if (field) {
+                    if (field[1]) {
+                        result.push(token(field[1]));
+                    }
+                    result.push(token(field[2], 'metric-name'), token(field[3], 'punctuation'));
+                    cursor = field[0].length;
+                    var fieldName = field[2];
+                    var value = /^([ \t]*)(.*?)([ \t]*)$/.exec(text.substring(cursor));
+                    var fieldKind = diagnosticFieldKind(fieldName);
+                    if (value && value[2] && (fieldKind || fieldName === 'status')) {
+                        result.push(token(value[1], 'text'),
+                            fieldName === 'status' ? statusToken(value[2]) : token(value[2], fieldKind),
+                            token(value[3], 'text'));
+                        return result;
+                    }
+                    prose = fieldName === 'reason' || fieldName === 'outcome';
+                }
+            }
+            var fallbackKind = prose ? 'text' : kind === 'diagnostic' ? undefined : kind;
+            DIAGNOSTIC_SYNTAX.lastIndex = cursor;
+            var match: RegExpExecArray;
+            while ((match = DIAGNOSTIC_SYNTAX.exec(text)) !== null) {
+                var textToken = match[0];
+                var isLiteral = textToken === '"' || (textToken === "'"
+                    && (match.index === 0 || /[ \t=(,\[]/.test(text.charAt(match.index - 1))));
+                var next = DIAGNOSTIC_SYNTAX.lastIndex;
+                while (text.charAt(next) === ' ' || text.charAt(next) === '\t') {
+                    next++;
+                }
+                var matchedKind = prose ? (/^[+\-]?\d/.test(textToken) ? 'metric-value' : '')
+                    : diagnosticTokenKind(textToken, text.charAt(DIAGNOSTIC_SYNTAX.lastIndex), text.charAt(next));
+                if (!isLiteral && !matchedKind) {
+                    continue;
+                }
+                if (match.index > cursor) {
+                    result.push(token(text.substring(cursor, match.index), fallbackKind));
+                }
+                if (isLiteral) {
+                    quote.character = textToken;
+                    DIAGNOSTIC_SYNTAX.lastIndex = appendQuotedLiteral(result, text, match.index,
+                        DIAGNOSTIC_SYNTAX.lastIndex, quote, prose ? 'text' : 'literal');
+                } else if (matchedKind === 'metric-value') {
+                    appendNumericMetric(result, textToken);
+                } else {
+                    result.push(token(textToken, matchedKind));
+                }
+                cursor = DIAGNOSTIC_SYNTAX.lastIndex;
+            }
+            if (cursor < text.length) {
+                result.push(token(text.substring(cursor), fallbackKind));
+            }
+            return result;
+        }
+
+        function compactIri(value: string, candidates: NamespaceCandidate[]): string {
             var iri = value.length > 1 && value.charAt(0) === '<' && value.charAt(value.length - 1) === '>'
-                ? value.substring(1, value.length - 1) : value;
-            var candidates = namespaceCandidates(namespaces);
+                ? decodeIriReference(value.substring(1, value.length - 1)) : value;
             var selected: NamespaceCandidate = null;
             var localName = '';
             for (var i = 0; i < candidates.length; i++) {
@@ -1477,6 +1917,38 @@ namespace workbench {
                 }
             }
             return selected ? selected.prefix + ':' + localName : value;
+        }
+
+        export function decodeIriReference(value: string): string {
+            return value.replace(/\\u([0-9A-Fa-f]{4})|\\U([0-9A-Fa-f]{8})/g,
+                function(escape, shortCode: string, longCode: string) {
+                    var code = parseInt(shortCode || longCode, 16);
+                    if (code <= 0xFFFF) {
+                        return String.fromCharCode(code);
+                    }
+                    return code <= 0x10FFFF ? String.fromCharCode(0xD800 + ((code - 0x10000) >> 10),
+                        0xDC00 + ((code - 0x10000) & 0x3FF)) : escape;
+                });
+        }
+
+        function compactNativeTerms(value: string, candidates: NamespaceCandidate[]): string {
+            // Native term labels carry a dictionary ID. Scan canonical IRI references and complete quoted
+            // literals together so IRIs written inside a literal stay part of its lexical form.
+            if (value.indexOf(' (id=') < 0) {
+                return value;
+            }
+            var terms = /"(?:[^"\\\r\n]|\\[^\r\n])*(?:"|\\?(?=[\r\n]|$))|<[A-Za-z][A-Za-z0-9+.-]*:(?:[^<>"{}|^`\\\s]|\\u[0-9A-Fa-f]{4}|\\U[0-9A-Fa-f]{8})*>/g;
+            return value.replace(terms,
+                function(term) {
+                    return term.charAt(0) === '<' ? compactIri(term, candidates) : term;
+                });
+        }
+
+        export function createNativeTermCompactor(options: ExplanationNamespaces): (value: string) => string {
+            var candidates = namespaceCandidates(options);
+            return function(value) {
+                return compactNativeTerms(value, candidates);
+            };
         }
 
         function effectiveLineSeparator(lineSeparator?: string): string {
@@ -1503,32 +1975,111 @@ namespace workbench {
             return nonNegativeLong(metric.count) ? readableLong(metric.count) : readableDouble(metric.value);
         }
 
-        function profileMetricText(metric: ProfileMetric): string {
-            return profileMetricValue(metric) + ' ' + (metric.unit || 'count')
-                + ' [' + (metric.origin || 'unavailable') + ', ' + (metric.state || 'unknown')
-                + ', ' + (metric.scope || 'unknown') + ']';
+        function profileFieldLine(indent: string, name: string, values: TextToken[]): FormattedLine {
+            return { tokens: [token(indent, 'text'), token(name, 'metric-name'), token(': ', 'punctuation')]
+                .concat(values) };
+        }
+
+        function profileMetricLine(name: string, metric: ProfileMetric): FormattedLine {
+            return profileFieldLine('    ', name, [
+                token(profileMetricValue(metric), 'metric-value'), token(' ', 'text'),
+                token(metric.unit || 'count', 'metric-unit'),
+                token(' [' + (metric.origin || 'unavailable') + ', ' + (metric.state || 'unknown')
+                    + ', ' + (metric.scope || 'unknown') + ']', 'annotation')
+            ]);
         }
 
         function workloadContextName(name: string): boolean {
             return /consumption|resultMime|snapshot|revision|overlayGenerations|pendingGenerations|dataset|includeInferred|binding|repository|inputAlgebra|queryEvaluationMode/i.test(name);
         }
 
-        function truncatedWorkloadContext(value: string): boolean {
+        interface ComparisonProperty {
+            value: string;
+            typed?: boolean;
+            legacyValue?: string;
+        }
+
+        interface ComparisonProperties {
+            [name: string]: ComparisonProperty;
+        }
+
+        function comparisonValue(value: StructuredValue): string {
+            if (typeof value !== 'object' || value === null) {
+                return String(value);
+            }
+            // Map order is not workload identity. Array order still matters, especially for algebra children.
+            return JSON.stringify(value, function(key, entry) {
+                if (!isStructuredRecord(entry)) {
+                    return entry;
+                }
+                var ordered: StructuredFields = Object.create(null);
+                Object.keys(entry).sort().forEach(function(name) { ordered[name] = entry[name]; });
+                return ordered;
+            });
+        }
+
+        function comparisonProperties(properties: { [name: string]: string }, attributes?: StructuredFields): ComparisonProperties {
+            var result: ComparisonProperties = Object.create(null);
+            Object.keys(properties || {}).forEach(function(name) { result[name] = { value: properties[name] }; });
+            Object.keys(attributes || {}).forEach(function(name) {
+                result[name] = { value: comparisonValue(attributes[name]), typed: true,
+                    legacyValue: properties && properties[name] };
+            });
+            return result;
+        }
+
+        function inputPlanIdentity(plan: QueryPlanNode): StructuredFields {
+            return { operator: plan.operator || planType(plan), arguments: plan.arguments || {},
+                newScope: !!plan.newScope, plans: plans(plan).map(inputPlanIdentity) };
+        }
+
+        function rootWorkloadContext(profile: ExecutionProfile): ComparisonProperties {
+            var context = comparisonProperties(profile.properties, profile.attributes);
+            if (profile.inputPlan) {
+                context.inputAlgebra = { value: comparisonValue(inputPlanIdentity(profile.inputPlan)), typed: true,
+                    legacyValue: profile.properties && profile.properties.inputAlgebra };
+            }
+            return context;
+        }
+
+        function truncatedPropertyValue(value: string): boolean {
             return typeof value === 'string' && value.indexOf('… [truncated]') >= 0;
         }
 
-        function stagedWorkloadContext(profile: ExecutionProfile): { [key: string]: string } {
-            var context: { [key: string]: string } = Object.create(null);
+        function truncatedWorkloadContext(property: ComparisonProperty): boolean {
+            return !!property && !property.typed && truncatedPropertyValue(property.value);
+        }
+
+        function sameComparisonProperty(left: ComparisonProperty, right: ComparisonProperty): boolean {
+            if (left && right && !!left.typed !== !!right.typed) {
+                // Mixed formats can only share the legacy representation when both snapshots captured it.
+                var oldValue = left.typed ? left.legacyValue : left.value;
+                var newValue = right.typed ? right.legacyValue : right.value;
+                return typeof oldValue === 'string' && oldValue === newValue && !truncatedPropertyValue(oldValue);
+            }
+            return (left && left.value) === (right && right.value);
+        }
+
+        function comparisonPropertyText(property: ComparisonProperty): string {
+            var value = property && property.value;
+            return property && property.typed && value.length > 240 ? value.substring(0, 240) + '…'
+                : value || 'unavailable';
+        }
+
+        function stagedWorkloadContext(profile: ExecutionProfile): ComparisonProperties {
+            var context: ComparisonProperties = Object.create(null);
             (profile.stages || []).forEach(function(stage: ProfileStage): void {
-                Object.keys(stage.properties || {}).forEach(function(name: string): void {
-                    if (workloadContextName(name)) { context[stage.id + ' / ' + name] = stage.properties[name]; }
+                var properties = comparisonProperties(stage.properties, stage.attributes);
+                Object.keys(properties).forEach(function(name: string): void {
+                    if (workloadContextName(name)) { context[stage.id + ' / ' + name] = properties[name]; }
                 });
                 Object.keys(stage.metrics || {}).forEach(function(name: string): void {
                     if (!workloadContextName(name)) { return; }
                     var metric = stage.metrics[name];
                     var value = nonNegativeLong(metric.count) ? signedLongText(metric.count) : profileMetricValue(metric);
-                    context[stage.id + ' / ' + name] = value + ' ' + metric.unit
-                        + ' [' + metric.origin + ', ' + metric.state + ']';
+                    context[stage.id + ' / ' + name] = {
+                        value: value + ' ' + metric.unit + ' [' + metric.origin + ', ' + metric.state + ']'
+                    };
                 });
             });
             return context;
@@ -1549,53 +2100,121 @@ namespace workbench {
             return maximum;
         }
 
-        function profileLines(profile: ExecutionProfile): FormattedLine[] {
-            var lines = [textLine('Execution profile (' + profile.status + ')'),
-                textLine('  elapsed: ' + profileDuration(profile.elapsedNanos) + ' [wall]')];
+        function profilePropertyLine(indent: string, name: string, value: string): FormattedLine {
+            value = String(value);
+            return profileFieldLine(indent, name, [name === 'status' ? statusToken(value)
+                : token(value, diagnosticFieldKind(name) || 'diagnostic')]);
+        }
+
+        function appendStructuredLine(lines: FormattedLine[], indent: string, name: string, value: StructuredValue): void {
+            // A record collection in a profile or prelude is an outline; operator argument lists are inline.
+            if (Array.isArray(value) && value.some(isStructuredRecord)) {
+                lines.push({ tokens: [token(indent, 'text'), token(name, 'metric-name'), token(':', 'punctuation')] });
+                value.forEach(function(entry, index) {
+                    appendStructuredLine(lines, indent + '  ', String(index), entry);
+                });
+            } else if (isStructuredRecord(value) && !isPhysicalOperator(value) && !isPhysicalBinding(value)
+                    && !isSlotReference(value) && !isDictionaryReference(value) && !isTypedTerm(value)
+                    && !/^(?:wildcard|slot|constant)$/.test(String(value.kind))) {
+                lines.push({ tokens: [token(indent, 'text'), token(name, 'metric-name'), token(':', 'punctuation')] });
+                appendStructuredProperties(lines, indent + '  ', value);
+            } else {
+                var tokens: TextToken[] = [];
+                appendStructuredValue(tokens, value, name);
+                lines.push(profileFieldLine(indent, name, tokens));
+            }
+        }
+
+        function appendStructuredProperties(lines: FormattedLine[], indent: string, fields: StructuredFields): void {
+            Object.keys(fields).forEach(function(name) {
+                appendStructuredLine(lines, indent, name, fields[name]);
+            });
+        }
+
+        function appendProfileProperties(lines: FormattedLine[], indent: string, properties: { [name: string]: string },
+                                         attributes: StructuredFields, structured: boolean, omit?: string): void {
+            var fields = structured || !properties ? attributes || {} : {};
+            Object.keys(properties || {}).forEach(function(name) {
+                if (name !== omit && !Object.prototype.hasOwnProperty.call(fields, name)) {
+                    lines.push(profilePropertyLine(indent, name, properties[name]));
+                }
+            });
+            appendStructuredProperties(lines, indent, fields);
+        }
+
+        function profileLines(profile: ExecutionProfile, separator: string, structured: boolean): FormattedLine[] {
+            var lines: FormattedLine[] = [{ tokens: [token('Execution profile', 'node-type'), token(' (', 'punctuation'),
+                statusToken(String(profile.status)), token(')', 'punctuation')] },
+                profileFieldLine('  ', 'elapsed', [token(profileDuration(profile.elapsedNanos), 'metric-value'),
+                    token(' [wall]', 'annotation')])];
             if (!profileComplete(profile)) {
-                lines.push(textLine('  Partial execution: counts are observed work, not full-query cardinalities.'));
+                lines.push(textLine('  Partial execution: counts are observed work, not full-query cardinalities.', 'annotation'));
             }
             if (profile.detail) {
-                lines.push(textLine('  outcome: ' + profile.detail));
+                lines.push(profileFieldLine('  ', 'outcome', [token(profile.detail, 'prose')]));
             }
-            Object.keys(profile.properties || {}).forEach(function(name: string): void {
-                lines.push(textLine('  ' + name + ': ' + profile.properties[name]));
-            });
+            var inputPlan = profile.inputPlan && (structured || !(profile.properties && profile.properties.inputAlgebra))
+                ? profile.inputPlan : null;
+            appendProfileProperties(lines, '  ', profile.properties, profile.attributes, structured,
+                inputPlan ? 'inputAlgebra' : undefined);
+            if (inputPlan) {
+                lines.push(textLine('  inputAlgebra:', 'metric-name'));
+                formatLines(inputPlan, 0, isProjectionElemList(inputPlan), 'Unoptimized', separator, [], structured)
+                    .forEach(function(line) {
+                        // Input-algebra paths are independent of execution paths used for stage navigation.
+                        lines.push.apply(lines, prefixLines({ ...line, node: undefined }, '    ', 'connector', separator));
+                    });
+            }
             (profile.diagnostics || []).forEach(function(diagnostic): void {
-                lines.push(textLine('  ' + diagnostic.severity + ': ' + diagnostic.message
-                    + (diagnostic.stageId ? ' [' + diagnostic.stageId + ']' : '')));
+                var message = [token(String(diagnostic.message), 'prose')];
+                if (diagnostic.stageId) {
+                    message.push(token(' [' + diagnostic.stageId + ']', 'annotation'));
+                }
+                lines.push(profileFieldLine('  ', diagnostic.severity, message));
                 (diagnostic.evidence || []).forEach(function(evidence: string): void {
-                    lines.push(textLine('    evidence: ' + evidence));
+                    lines.push(profileFieldLine('    ', 'evidence', [token(String(evidence), 'prose')]));
                 });
             });
             (profile.phases || []).forEach(function(phase): void {
-                lines.push(textLine('  phase ' + phase.name + ': ' + profileDuration(phase.elapsedNanos)
-                    + ' [' + phase.scope + ']'));
+                lines.push(profileFieldLine('  ', 'phase ' + phase.name, [
+                    token(profileDuration(phase.elapsedNanos), 'metric-value'),
+                    token(' [' + phase.scope + ']', 'annotation')
+                ]));
             });
             (profile.stages || []).forEach(function(stage: ProfileStage): void {
-                var line = textLine('  stage ' + stage.id + ': ' + stage.operator
-                    + (stage.strategy ? ' (' + stage.strategy + ')' : '') + ' [' + (stage.status || 'unknown') + ']');
-                line.physicalStage = stage;
-                lines.push(line);
+                var heading = [token(String(stage.operator), 'node-type')];
+                if (stage.strategy) {
+                    heading.push(token(' (', 'punctuation'), token(stage.strategy, 'strategy'), token(')', 'punctuation'));
+                }
+                heading.push(token(' [', 'punctuation'), statusToken(stage.status || 'unknown'), token(']', 'punctuation'));
+                var stageLine = profileFieldLine('  ', 'stage ' + stage.id, heading);
+                stageLine.physicalStage = stage;
+                lines.push(stageLine);
                 Object.keys(stage.metrics || {}).forEach(function(name: string): void {
-                    lines.push(textLine('    ' + name + ': ' + profileMetricText(stage.metrics[name])));
+                    lines.push(profileMetricLine(name, stage.metrics[name]));
                 });
-                Object.keys(stage.properties || {}).forEach(function(name: string): void {
-                    lines.push(textLine('    ' + name + ': ' + stage.properties[name]));
-                });
+                appendProfileProperties(lines, '    ', stage.properties, stage.attributes, structured);
             });
             (profile.attempts || []).forEach(function(attempt): void {
                 var activeTime = (attempt.metrics || {}).activeTime;
                 var elapsedLabel = activeTime && activeTime.origin === 'sampled' ? 'sampled estimate'
                     : activeTime && activeTime.origin === 'estimated' ? 'estimate' : 'observed';
-                var observed = nonNegativeLong(attempt.elapsedNanos)
-                    ? '; ' + elapsedLabel + ' ' + profileDuration(attempt.elapsedNanos) : '';
-                var predicted = typeof attempt.estimatedMillis === 'number' && isFinite(attempt.estimatedMillis)
-                    ? '; predicted ' + readableTime(attempt.estimatedMillis) : '';
-                lines.push(textLine('  attempt ' + attempt.stageId + ' / ' + attempt.strategy + ': ' + attempt.status
-                    + (attempt.reason ? ' — ' + attempt.reason : '') + predicted + observed));
+                var info = [token('  ', 'text'), token('attempt ' + attempt.stageId, 'metric-name'),
+                    token(' / ', 'punctuation'), token(String(attempt.strategy), 'strategy'), token(': ', 'punctuation'),
+                    statusToken(String(attempt.status))];
+                if (attempt.reason) {
+                    info.push(token(' — ', 'punctuation'), token(attempt.reason, 'prose'));
+                }
+                if (typeof attempt.estimatedMillis === 'number' && isFinite(attempt.estimatedMillis)) {
+                    info.push(token('; predicted ', 'annotation'), token(readableTime(attempt.estimatedMillis), 'metric-value'));
+                }
+                if (nonNegativeLong(attempt.elapsedNanos)) {
+                    info.push(token('; ' + elapsedLabel + ' ', 'annotation'),
+                        token(profileDuration(attempt.elapsedNanos), 'metric-value'));
+                }
+                lines.push({ tokens: info });
                 Object.keys(attempt.metrics || {}).forEach(function(name: string): void {
-                    lines.push(textLine('    ' + name + ': ' + profileMetricText(attempt.metrics[name])));
+                    lines.push(profileMetricLine(name, attempt.metrics[name]));
                 });
             });
             (profile.workers || []).forEach(function(worker): void {
@@ -1605,7 +2224,7 @@ namespace workbench {
                     + ', rows=' + (nonNegativeLong(worker.rows) ? readableLong(worker.rows) : 'unavailable')
                     + (worker.complete ? ' [complete]' : ' [partial]')));
                 Object.keys(worker.metrics || {}).forEach(function(name: string): void {
-                    lines.push(textLine('    ' + name + ': ' + profileMetricText(worker.metrics[name])));
+                    lines.push(profileMetricLine(name, worker.metrics[name]));
                 });
             });
             if (positiveLong(profile.droppedEvents)) {
@@ -1629,19 +2248,21 @@ namespace workbench {
                 lines.push('Partial or incomplete execution: report observed values without speedup or work ratios.');
             }
             lines.push('Elapsed: ' + profileDuration(left.elapsedNanos) + ' → ' + profileDuration(right.elapsedNanos));
-            var propertyNames = Object.keys(left.properties || {}).concat(Object.keys(right.properties || {}));
+            var leftProperties = rootWorkloadContext(left);
+            var rightProperties = rootWorkloadContext(right);
+            var propertyNames = Object.keys(leftProperties).concat(Object.keys(rightProperties));
             var visited: { [key: string]: boolean } = Object.create(null);
             propertyNames.forEach(function(name: string): void {
                 if (visited[name]) { return; }
                 visited[name] = true;
-                var before = (left.properties || {})[name];
-                var after = (right.properties || {})[name];
+                var before = leftProperties[name];
+                var after = rightProperties[name];
                 if (workloadContextName(name) && (truncatedWorkloadContext(before) || truncatedWorkloadContext(after))) {
                     complete = false;
                     truncatedContext = true;
                 }
-                if (before !== after) {
-                    lines.push('Context ' + name + ': ' + (before || 'unavailable') + ' → ' + (after || 'unavailable'));
+                if (!sameComparisonProperty(before, after)) {
+                    lines.push('Context ' + name + ': ' + comparisonPropertyText(before) + ' → ' + comparisonPropertyText(after));
                     if (workloadContextName(name)) {
                         complete = false;
                     }
@@ -1661,11 +2282,11 @@ namespace workbench {
                     complete = false;
                     truncatedContext = true;
                 }
-                if (beforeContext[name] !== afterContext[name]) {
+                if (!sameComparisonProperty(beforeContext[name], afterContext[name])) {
                     complete = false;
                     if (contextChanges++ < 8) {
-                        lines.push('Workload context ' + name + ': ' + (beforeContext[name] || 'unavailable')
-                            + ' → ' + (afterContext[name] || 'unavailable'));
+                        lines.push('Workload context ' + name + ': ' + comparisonPropertyText(beforeContext[name])
+                            + ' → ' + comparisonPropertyText(afterContext[name]));
                     }
                 }
             });
@@ -1697,16 +2318,18 @@ namespace workbench {
                     lines.push(after.id + ': outcome ' + (before.status || 'unknown') + ' → '
                         + (after.status || 'unknown') + (stagesComplete ? '' : ' (partial or incomplete stage)'));
                 }
-                var stagePropertyNames = Object.keys(before.properties || {}).concat(Object.keys(after.properties || {}));
+                var oldProperties = comparisonProperties(before.properties, before.attributes);
+                var newProperties = comparisonProperties(after.properties, after.attributes);
+                var stagePropertyNames = Object.keys(oldProperties).concat(Object.keys(newProperties));
                 var visitedProperties: { [key: string]: boolean } = Object.create(null);
                 stagePropertyNames.forEach(function(name: string): void {
                     if (visitedProperties[name]) { return; }
                     visitedProperties[name] = true;
-                    var oldProperty = (before.properties || {})[name];
-                    var newProperty = (after.properties || {})[name];
-                    if (oldProperty !== newProperty && changed++ < 50) {
-                        lines.push(after.id + ' / ' + name + ': ' + (oldProperty || 'unavailable')
-                            + ' → ' + (newProperty || 'unavailable'));
+                    var oldProperty = oldProperties[name];
+                    var newProperty = newProperties[name];
+                    if (!sameComparisonProperty(oldProperty, newProperty) && changed++ < 50) {
+                        lines.push(after.id + ' / ' + name + ': ' + comparisonPropertyText(oldProperty)
+                            + ' → ' + comparisonPropertyText(newProperty));
                     }
                 });
                 var metricNames = Object.keys(before.metrics || {}).concat(Object.keys(after.metrics || {}));
@@ -1758,28 +2381,83 @@ namespace workbench {
 
         export function format(plan: QueryPlanNode, level?: ExplainLevel, lineSeparator?: string,
                                hiddenProperties?: string[]): FormatResult {
-            var effectiveLevel = level || 'Optimized';
             var separator = effectiveLineSeparator(lineSeparator);
-            var lines = formatLines(plan || {}, 0, isProjectionElemList(plan || {}), effectiveLevel,
-                separator, hiddenProperties);
-            if (plan && plan.executionProfile && effectiveLevel === 'Telemetry') {
-                lines = profileLines(plan.executionProfile).concat([textLine(''), textLine('Query explanation')], lines);
-            }
-            var prelude = plan && plan.physicalPlanPrelude;
-            if (typeof prelude === 'string' && prelude.length) {
-                // The physical plan prelude carries its own embedded newlines (independent of the
-                // requested lineSeparator), so normalize them before splitting and let the join below
-                // re-emit them using the caller's separator, matching GenericPlanNode#toString().
-                var normalizedPrelude = prelude.replace(/\r\n|\r/g, '\n');
-                var preludeLines = splitPhysicalLines(textLine(normalizedPrelude), '\n');
-                lines = preludeLines.concat(plan && plan.executionProfile && effectiveLevel === 'Telemetry'
-                    ? [textLine('')] : [textLine(''), textLine('Query explanation')], lines);
-            }
+            var lines = explanationLines(plan || {}, level || 'Optimized', separator, hiddenProperties, false);
             var text = '';
             for (var i = 0; i < lines.length; i++) {
                 text += lineText(lines[i]) + separator;
             }
             return { lines: lines, text: text };
+        }
+
+        function structuredPhysicalLines(plans: PhysicalPlan[]): FormattedLine[] {
+            var lines: FormattedLine[] = [];
+            plans.forEach(function(plan) {
+                if (lines.length) {
+                    lines.push(textLine(''));
+                }
+                var engine = plan.engine === 'lmdb-native' ? 'LMDB native' : plan.engine;
+                lines.push(textLine(engine + ' physical plan (' + plan.state + ')', 'node-type'));
+                if (plan.kind) {
+                    appendStructuredLine(lines, '  ', 'kind', plan.kind);
+                }
+                if (plan.plan) {
+                    lines.push(textLine('  plan:', 'metric-name'));
+                    var tokens = [token('    ', 'text')];
+                    appendStructuredValue(tokens, plan.plan);
+                    lines.push({ tokens: tokens });
+                }
+                (plan.invocations || []).forEach(function(invocation, index) {
+                    lines.push(textLine('  invocation[' + (invocation.index ?? index) + ']:', 'metric-name'));
+                    Object.keys(invocation).forEach(function(name) {
+                        if (name !== 'index') {
+                            appendStructuredLine(lines, '    ', name, invocation[name]);
+                        }
+                    });
+                });
+                if (positiveLong(plan.omittedInvocations)) {
+                    appendStructuredLine(lines, '  ', 'omittedInvocations', plan.omittedInvocations);
+                }
+            });
+            return lines;
+        }
+
+        function hasStructuredExplanation(plan: QueryPlanNode): boolean {
+            var profile = plan.executionProfile;
+            return !!(plan.operator || plan.actualAttributes || plan.plannedPhysicalPlan || (plan.physicalPlans && plan.physicalPlans.length)
+                || (profile && (profile.inputPlan || profile.attributes || (profile.stages || []).some(function(stage) {
+                    return !!stage.attributes;
+                }))) || plans(plan).some(hasStructuredExplanation));
+        }
+
+        function explanationLines(plan: QueryPlanNode, level: ExplainLevel, separator: string,
+                                  hiddenProperties: string[], structured: boolean): FormattedLine[] {
+            var lines = formatLines(plan, 0, isProjectionElemList(plan), level, separator, hiddenProperties, structured);
+            var includeProfile = plan.executionProfile && level === 'Telemetry';
+            if (includeProfile) {
+                lines = profileLines(plan.executionProfile, separator, structured)
+                    .concat([textLine(''), textLine('Query explanation', 'node-type')], lines);
+            }
+            var prelude = plan.physicalPlanPrelude;
+            var preludeLines: FormattedLine[] = [];
+            if (plan.physicalPlans && plan.physicalPlans.length && (structured || !prelude)) {
+                preludeLines = structuredPhysicalLines(plan.physicalPlans);
+            } else if (typeof prelude === 'string' && prelude.length) {
+                // The physical plan prelude carries its own embedded newlines (independent of the
+                // requested lineSeparator), so normalize them before splitting and let the join below
+                // re-emit them using the caller's separator, matching GenericPlanNode#toString().
+                var normalizedPrelude = prelude.replace(/\r\n|\r/g, '\n');
+                preludeLines = splitPhysicalLines(textLine(normalizedPrelude), '\n');
+                preludeLines.forEach(function(line) { line.physicalPrelude = true; });
+                if (preludeLines[0].tokens.length && !DIAGNOSTIC_FIELD.test(preludeLines[0].tokens[0].text)) {
+                    preludeLines[0].tokens[0].kind = 'node-type';
+                }
+            }
+            if (preludeLines.length) {
+                lines = preludeLines.concat(includeProfile
+                    ? [textLine('')] : [textLine(''), textLine('Query explanation', 'node-type')], lines);
+            }
+            return lines;
         }
 
         export function getProperties(plan: QueryPlanNode, level?: ExplainLevel): string[] {
@@ -1800,7 +2478,7 @@ namespace workbench {
                 if (typeof currentNode.algorithm === 'string' && currentNode.algorithm.length) {
                     add('algorithm');
                 }
-                var nodeMetrics = metrics(currentNode, effectiveLevel);
+                var nodeMetrics = metrics(currentNode, effectiveLevel, true);
                 for (var metricIndex = 0; metricIndex < nodeMetrics.length; metricIndex++) {
                     add(nodeMetrics[metricIndex].name);
                 }
@@ -1886,9 +2564,121 @@ namespace workbench {
             return 'rgb(' + red + ', ' + green + ', ' + blue + ')';
         }
 
+        function appendDisplayToken(element: HTMLElement, formattedToken: TextToken, namespaces: NamespaceCandidate[]): void {
+            if (formattedToken.kind === 'text') {
+                element.appendChild(document.createTextNode(formattedToken.text));
+                return;
+            }
+            var literal = formattedToken.kind === 'literal';
+            var kind = literal ? 'value' : formattedToken.kind;
+            var displayText = literal ? formattedToken.text : kind === 'value'
+                ? compactIri(formattedToken.text, namespaces) : compactNativeTerms(formattedToken.text, namespaces);
+            if (!formattedToken.kind && displayText === formattedToken.text) {
+                element.appendChild(document.createTextNode(formattedToken.text));
+                return;
+            }
+            var tokenElement = document.createElement('span');
+            tokenElement.className = 'query-explanation-token' + (kind ? ' query-explanation-token--' + kind : '');
+            if (kind === 'value') {
+                var subtype = literal ? 'literal' : valueSubtype(formattedToken.text);
+                if (subtype) {
+                    tokenElement.className += ' query-explanation-token--value-' + subtype;
+                }
+            }
+            tokenElement.textContent = displayText;
+            if (displayText !== formattedToken.text) {
+                tokenElement.setAttribute('title', formattedToken.text);
+            }
+            element.appendChild(tokenElement);
+        }
+
+        function appendSyntax(element: HTMLElement, line: TextToken[], namespaces: NamespaceCandidate[],
+                              quote: DiagnosticQuote): void {
+            line.forEach(function(source) {
+                var metric = source.kind === 'metric-value';
+                if (metric && NUMBER_AND_UNIT.test(source.text)) {
+                    var quantity: TextToken[] = [];
+                    appendNumericMetric(quantity, source.text);
+                    quantity.forEach(function(detail) { appendDisplayToken(element, detail, namespaces); });
+                    return;
+                }
+                if (source.kind && source.kind !== 'diagnostic' && source.kind !== 'prose'
+                        && (!metric || !/[=<\r\n]/.test(source.text))) {
+                    appendDisplayToken(element, source, namespaces);
+                    return;
+                }
+                // Property values may themselves have several diagnostic lines. Keep their separators exact.
+                source.text.split(/(\r\n|\r|\n)/).forEach(function(part, index) {
+                    if (index % 2) {
+                        element.appendChild(document.createTextNode(part));
+                    } else {
+                        diagnosticTokens(part, quote, source.kind).forEach(function(detail) {
+                            appendDisplayToken(element, detail, namespaces);
+                        });
+                    }
+                });
+            });
+        }
+
+        export function renderText(text: string, options: ExplanationNamespaces): DocumentFragment {
+            var fragment = document.createDocumentFragment();
+            var namespaces = namespaceCandidates(options);
+            var quote = { character: '' };
+            text.split(/(\r\n|\r|\n)/).forEach(function(part, index) {
+                if (index % 2) {
+                    fragment.appendChild(document.createTextNode(part));
+                } else if (part) {
+                    var line = document.createElement('span');
+                    line.className = 'query-explanation-line';
+                    appendSyntax(line, [token(part)], namespaces, quote);
+                    fragment.appendChild(line);
+                }
+            });
+            return fragment;
+        }
+
+        function renderStrategyTable(strategyTable: StrategyTable, indent: string,
+                                     namespaces: NamespaceCandidate[]): HTMLElement {
+            var wrapper = document.createElement('div');
+            wrapper.className = 'query-explanation-table-wrap';
+            if (indent) {
+                var connector = document.createElement('span');
+                connector.className = 'query-explanation-token--connector';
+                connector.setAttribute('aria-hidden', 'true');
+                connector.textContent = indent;
+                wrapper.appendChild(connector);
+            }
+            var table = document.createElement('table');
+            table.className = 'query-explanation-table';
+            table.setAttribute('aria-label', strategyTable.label);
+            var head = document.createElement('thead');
+            var body = document.createElement('tbody');
+            strategyTable.rows.forEach(function(cells, rowIndex) {
+                var header = rowIndex === 0;
+                var row = document.createElement('tr');
+                cells.forEach(function(value) {
+                    var cell = document.createElement(header ? 'th' : 'td');
+                    if (header) {
+                        cell.setAttribute('scope', 'col');
+                    }
+                    appendSyntax(cell, [value], namespaces, { character: '' });
+                    row.appendChild(cell);
+                });
+                (header ? head : body).appendChild(row);
+            });
+            table.appendChild(head);
+            table.appendChild(body);
+            wrapper.appendChild(table);
+            return wrapper;
+        }
+
         export function render(plan: QueryPlanNode, options: RenderOptions): RenderResult {
             var separator = effectiveLineSeparator(options.lineSeparator);
             var formatted = format(plan, options.level, separator, options.hiddenProperties);
+            var displayLines = plan && hasStructuredExplanation(plan)
+                ? explanationLines(plan, options.level || 'Optimized', separator, options.hiddenProperties, true)
+                : formatted.lines;
+            var namespaces = namespaceCandidates(options);
             var hotspot = options.mode === 'hotspot' ? getHotspot(plan, options.level) : null;
             var localMaximum: JsonLong = hotspot ? hotspot.maximum : 0;
             var sharedMaximum: JsonLong = localMaximum;
@@ -1901,6 +2691,7 @@ namespace workbench {
                 sharedMaximum = Math.max(<number>localMaximum, <number>options.sharedMaximum);
             }
             var fragment = document.createDocumentFragment();
+            var preludeQuote = { character: '' };
             var logicalElements: { [path: string]: HTMLElement } = Object.create(null);
             function showLogical(path: string): () => void {
                 return function(): void {
@@ -1911,8 +2702,16 @@ namespace workbench {
                     }
                 };
             }
-            for (var lineIndex = 0; lineIndex < formatted.lines.length; lineIndex++) {
-                var formattedLine = formatted.lines[lineIndex];
+            var displayedTable: StrategyTable;
+            for (var lineIndex = 0; lineIndex < displayLines.length; lineIndex++) {
+                var formattedLine = displayLines[lineIndex];
+                if (formattedLine.strategyTable) {
+                    if (formattedLine.strategyTable !== displayedTable) {
+                        displayedTable = formattedLine.strategyTable;
+                        fragment.appendChild(renderStrategyTable(displayedTable, formattedLine.strategyIndent, namespaces));
+                    }
+                    continue;
+                }
                 var lineElement = document.createElement('span');
                 lineElement.className = 'query-explanation-line';
                 if (formattedLine.node && formattedLine.node.logicalPath) {
@@ -1953,35 +2752,14 @@ namespace workbench {
                         lineElement.style.backgroundColor = heatColor(intensity);
                     }
                 }
-                for (var tokenIndex = 0; tokenIndex < formattedLine.tokens.length; tokenIndex++) {
-                    var formattedToken = formattedLine.tokens[tokenIndex];
-                    if (!formattedToken.kind) {
-                        lineElement.appendChild(document.createTextNode(formattedToken.text));
-                        continue;
-                    }
-                    var tokenElement = document.createElement('span');
-                    tokenElement.className = 'query-explanation-token query-explanation-token--'
-                        + formattedToken.kind;
-                    if (formattedToken.kind === 'value') {
-                        var subtype = valueSubtype(formattedToken.text);
-                        if (subtype) {
-                            tokenElement.className += ' query-explanation-token--value-' + subtype;
-                        }
-                    }
-                    var displayText = formattedToken.kind === 'value'
-                        ? compactIri(formattedToken.text, options.namespaces) : formattedToken.text;
-                    tokenElement.textContent = displayText;
-                    if (displayText !== formattedToken.text) {
-                        tokenElement.setAttribute('title', formattedToken.text);
-                    }
-                    lineElement.appendChild(tokenElement);
-                }
+                appendSyntax(lineElement, formattedLine.tokens, namespaces,
+                    formattedLine.physicalPrelude ? preludeQuote : { character: '' });
                 fragment.appendChild(lineElement);
                 fragment.appendChild(document.createTextNode(separator));
             }
             return {
                 fragment: fragment,
-                lines: formatted.lines,
+                lines: displayLines,
                 text: formatted.text,
                 metric: hotspot ? hotspot.metric : '',
                 metricLabel: hotspot ? hotspot.label : '',

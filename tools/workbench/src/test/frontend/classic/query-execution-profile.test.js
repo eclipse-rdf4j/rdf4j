@@ -52,6 +52,118 @@ test('telemetry shows physical profile work and unavailable values', () => {
     assert.doesNotMatch(formatted.text, /pageFaults.*\b0\b/);
 });
 
+test('native telemetry labels use query aliases, repository namespaces, and Workbench defaults', () => {
+    const harness = createQueryBrowserHarness({ sparqlNamespaces: {
+        'ex:': 'https://example.test/', 'stored:': 'https://repository.test/',
+        'rebound:': 'https://old.test/'
+    } });
+    const query = harness.context.workbench.query;
+    const native = 'Pattern(s=?s#0, p=const(<https://example.test/p> (id=-7)), '
+        + 'o=const(<<( <https://example.test/s> <https://repository.test/name> '
+        + '"literal <https://example.test/quoted> \\""^^<http://www.w3.org/2001/XMLSchema#string> )>> (id=9)))';
+    const plan = {
+        type: 'Group',
+        physicalPlanPrelude: '  actualOrder: ' + native + '\n'
+            + '  generatedOrder: ' + native + '\n'
+            + '  where: ' + native + '\n'
+            + '  predicate: BOUND[<https://example.test/p> (id=-7)]\n'
+            + '  requestedOrder: <default>\n'
+            + '  other: <https://unknown.test/a> (id=10) <https://old.test/b> (id=11) '
+            + '<https://example.test/unrepresentable.> (id=12) <https://new.test/thing> (id=13)',
+        executionProfile: profile(),
+        stringMetricsPlanned: { nativePhysicalPlan: native }
+    };
+    plan.executionProfile.stages[0].properties.actualOrder = native;
+
+    harness.runPageLoad();
+    query.setQueryValue("# PREFIX fake: <https://example.test/>\nVERSION '1.2'\n"
+        + 'PREFIX preferredAlias: <https://\\u0065xample.test/> PREFIX rebound: <>\nBASE <https://new.test/>\n'
+        + '# PREFIX z: <https://example.test/>\n'
+        + 'SELECT * WHERE { BIND("PREFIX z: <https://example.test/>" AS ?s) }');
+    query.runExplain('Telemetry');
+    const raw = JSON.stringify(plan);
+    harness.pendingExplainRequests[0].resolve({ content: plan, format: 'json' });
+
+    const display = harness.document.getElementById('query-explanation').textContent;
+    for (const label of ['actualOrder: ', 'generatedOrder: ', 'where: ', 'nativePhysicalPlan=']) {
+        assert.ok(display.includes(label + 'Pattern(s=?s#0, p=const(preferredAlias:p (id=-7))'), label);
+    }
+    assert.equal((display.match(/actualOrder: Pattern\(s=\?s#0, p=const\(preferredAlias:p/g) || []).length, 2);
+    assert.ok(display.includes('predicate: BOUND[preferredAlias:p (id=-7)]'));
+    assert.ok(display.includes('<<( preferredAlias:s stored:name "literal <https://example.test/quoted> \\""^^xsd:string )>>'));
+    assert.ok(display.includes('requestedOrder: <default>'));
+    assert.ok(display.includes('<https://unknown.test/a> (id=10) <https://old.test/b> (id=11) '
+        + '<https://example.test/unrepresentable.> (id=12) rebound:thing (id=13)'));
+    assert.equal(query.testing.getInternalState().queryPageState.primaryPane.explanation.rawContent, raw);
+});
+
+test('native explanations retain each comparison pane’s own prefix declarations', () => {
+    const harness = createQueryBrowserHarness();
+    const query = harness.context.workbench.query;
+    const plan = { content: { type: 'StatementPattern',
+        physicalPlanPrelude: 'predicate: BOUND[<http://example.com/p> (id=10)]' }, format: 'json' };
+    harness.runPageLoad();
+    query.setQueryValue('PREFIX original: <http://example.com/> SELECT * WHERE {}');
+    query.runExplain('Telemetry');
+    harness.pendingExplainRequests[0].resolve(plan);
+    query.toggleCompareMode();
+    harness.setValue('query-compare', 'PREFIX alternate: <http://example.com/> SELECT * WHERE {}');
+    query.runCompareExplain();
+    harness.pendingExplainRequests.slice(1).forEach(request => request.resolve(plan));
+    query.setQueryValue('PREFIX edited: <http://example.com/> SELECT * WHERE {}');
+
+    assert.match(harness.document.getElementById('query-explanation').textContent, /BOUND\[original:p \(id=10\)\]/);
+    assert.match(harness.document.getElementById('query-explanation-compare').textContent, /BOUND\[alternate:p \(id=10\)\]/);
+});
+
+test('native JSON tree labels use the deployment fallback and keep canonical JSON', async () => {
+    const harness = createQueryBrowserHarness();
+    const query = harness.context.workbench.query;
+    let receiveFallbackNamespaces;
+    harness.context.fetch = url => {
+        assert.equal(url, '/fallback-namespaces');
+        return new Promise(resolve => { receiveFallbackNamespaces = resolve; });
+    };
+    const native = 'predicate: BOUND[<https://fallback.test/p> (id=10)]';
+    const plan = { type: 'StatementPattern', physicalPlanPrelude: native };
+    const raw = JSON.stringify(plan);
+    harness.runPageLoad();
+    harness.setValue('explain-format', 'json');
+    query.runExplain('Telemetry');
+    harness.pendingExplainRequests[0].resolve({ content: plan, format: 'json' });
+    const view = harness.document.getElementById('query-explanation-json-view');
+    assert.match(view.textContent, /<https:\/\/fallback\.test\/p>/);
+
+    receiveFallbackNamespaces({ ok: true, json: async () => ({ fallback: 'https://fallback.test/' }) });
+    await new Promise(setImmediate);
+    assert.match(view.textContent, /BOUND\[fallback:p \(id=10\)\]/);
+    const explanation = query.testing.getInternalState().queryPageState.primaryPane.explanation;
+    assert.equal(query.testing.getExplanationDisplayContent(explanation), raw);
+});
+
+test('native plan text returned without JSON still abbreviates for display', () => {
+    const harness = createQueryBrowserHarness();
+    const query = harness.context.workbench.query;
+    const native = 'Projection\r\n   StatementPattern\r\n   └── Var (name=o, value="first line\r\n'
+        + '<http://example.com/literal> (id=17)\r\nlast line")\r\n'
+        + 'object: BOUND[<http://example.com/item> (id=11)]';
+    harness.runPageLoad();
+    query.setQueryValue('PREFIX mine: <http://example.com/> SELECT * WHERE {}');
+    query.runExplain('Telemetry');
+    harness.pendingExplainRequests[0].resolve({ content: native, format: 'text' });
+    const display = harness.document.getElementById('query-explanation');
+    assert.match(display.textContent, /BOUND\[mine:item \(id=11\)\]/);
+    const tokens = kind => Array.from(display.querySelectorAll('.query-explanation-token--' + kind),
+        token => token.textContent);
+    assert.deepEqual(tokens('node-type'), ['Projection', 'StatementPattern', 'Var']);
+    assert.ok(tokens('connector').some(text => text.includes('└──')));
+    assert.ok(tokens('metric-name').includes('object'));
+    assert.deepEqual(tokens('value-iri'), ['mine:item']);
+    assert.ok(tokens('value-literal').includes('<http://example.com/literal> (id=17)'));
+    assert.equal(display.textContent, native.replace('<http://example.com/item>', 'mine:item'));
+    assert.equal(query.testing.getInternalState().queryPageState.primaryPane.explanation.rawContent, native);
+});
+
 test('profile comparison aligns physical stages and reports work deltas', () => {
     const h = highlighter();
     const compared = h.compareExecutionProfiles(profile(1000), profile(10000));
@@ -88,7 +200,7 @@ test('Workbench explanation requests leave result consumption to the server', ()
 test('Telemetry explain, rerun, and compare all use the same request settings', () => {
     const harness = createQueryBrowserHarness();
     const query = harness.context.workbench.query;
-    const plan = { content: JSON.stringify({ type: 'Group', executionProfile: profile() }), format: 'json' };
+    const plan = { content: { type: 'Group', executionProfile: profile() }, format: 'json' };
     harness.runPageLoad();
     query.setQueryValue('SELECT * WHERE { ?s ?p ?o }');
     harness.setValue('explain-level', 'Telemetry');
@@ -115,7 +227,7 @@ test('JSON explanations retain the typed profile for comparison', () => {
     const explanation = testing.createStableExplanationFromResponse({
         queryHash: 'SELECT (COUNT(*) AS ?n) WHERE { ?s ?p ?o }',
         level: 'Telemetry', format: 'json'
-    }, { content: JSON.stringify(plan), format: 'json' }, 'json');
+    }, { content: plan, format: 'json' }, 'json');
     assert.equal(explanation.view, 'jsonTree');
     assert.equal(explanation.plan.executionProfile.stages[0].id, 'fragment-0/access-1');
 });
@@ -221,6 +333,64 @@ test('snapshot revisions and serialization formats stored on stages invalidate w
         assert.match(compared, /context|workload/i, context);
         assert.doesNotMatch(compared, /scanned[^\n]*2(?:\.0+)?x/, context);
     }
+});
+
+test('typed workload context controls comparison even when compatibility strings differ or are absent', () => {
+    const h = highlighter();
+    const inputPlan = limit => ({ operator: 'Slice', arguments: { limit }, plans: [{ operator: 'StatementPattern' }] });
+    const before = profile();
+    const after = profile(2000);
+    before.properties.inputAlgebra = 'legacy snapshot A';
+    after.properties.inputAlgebra = 'legacy snapshot B';
+    before.inputPlan = inputPlan(10);
+    after.inputPlan = inputPlan(10);
+    before.attributes = { dataset: { repositoryDefault: false, namedGraphs: [] }, includeInferred: false };
+    after.attributes = { dataset: { namedGraphs: [], repositoryDefault: false }, includeInferred: false };
+    before.stages[0].attributes = { adjacencySnapshotRevision: 10 };
+    after.stages[0].attributes = { adjacencySnapshotRevision: 10 };
+    assert.match(h.compareExecutionProfiles(before, after), /scanned[^\n]*2(?:\.0+)?x/);
+
+    for (const field of ['inputPlan', 'dataset', 'includeInferred', 'adjacencySnapshotRevision']) {
+        const changed = JSON.parse(JSON.stringify(after));
+        if (field === 'inputPlan') {
+            changed.inputPlan = inputPlan(11);
+            delete changed.properties.inputAlgebra;
+        } else if (field === 'adjacencySnapshotRevision') {
+            changed.stages[0].attributes[field] = 11;
+        } else {
+            changed.attributes[field] = true;
+        }
+        const diff = h.compareExecutionProfiles(before, changed);
+        assert.match(diff, new RegExp(field === 'inputPlan' ? 'inputAlgebra' : field));
+        assert.doesNotMatch(diff, /scanned[^\n]*2(?:\.0+)?x/, field);
+    }
+});
+
+test('mixed profile formats require matching complete compatibility fields to report ratios', () => {
+    const h = highlighter();
+    const old = profile();
+    const modern = profile(2000);
+    for (const candidate of [old, modern]) {
+        Object.assign(candidate.properties, { inputAlgebra: 'Slice (limit=10)', dataset: 'same dataset' });
+        candidate.stages[0].properties.adjacencySnapshotRevision = '12';
+    }
+    modern.inputPlan = { operator: 'Slice', arguments: { limit: 10 } };
+    modern.attributes = { dataset: { repositoryDefault: true } };
+    modern.stages[0].attributes = { adjacencySnapshotRevision: 12 };
+    assert.match(h.compareExecutionProfiles(old, modern), /scanned[^\n]*2(?:\.0+)?x/);
+    assert.match(h.compareExecutionProfiles(modern, old), /scanned[^\n]*0\.5x/);
+
+    for (const compatibility of [undefined, 'Slice (limit=20)', 'Slice (limit=10)… [truncated]']) {
+        const changed = JSON.parse(JSON.stringify(modern));
+        if (compatibility === undefined) {
+            delete changed.properties.inputAlgebra;
+        } else {
+            changed.properties.inputAlgebra = compatibility;
+        }
+        assert.doesNotMatch(h.compareExecutionProfiles(old, changed), /scanned[^\n]*2(?:\.0+)?x/, compatibility);
+    }
+    delete modern.stages[0].properties.adjacencySnapshotRevision;
+    assert.doesNotMatch(h.compareExecutionProfiles(old, modern), /scanned[^\n]*2(?:\.0+)?x/);
 });
 
 test('equal truncated workload context makes comparison unavailable without expanding the report', () => {

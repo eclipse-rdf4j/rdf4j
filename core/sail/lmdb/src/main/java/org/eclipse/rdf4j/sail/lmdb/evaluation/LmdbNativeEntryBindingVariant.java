@@ -15,11 +15,14 @@ import static org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbNativeAggregateCompiler
 
 import java.io.IOException;
 import java.util.Arrays;
+import java.util.Map;
 
 import org.eclipse.rdf4j.common.annotation.Experimental;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.query.BindingSet;
+import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryBindingSet;
+import org.eclipse.rdf4j.query.explanation.PhysicalPlan.Operator;
 
 /**
  * Per-evaluation native variant for a statically well-designed OPTIONAL whose right-only variable is supplied by the
@@ -94,9 +97,13 @@ final class NativeEntryBindingVariant {
 		return new EntryBindingCompatibilityPlan(arg, slots, ids, slotMask);
 	}
 
-	String executionPath() {
-		return LmdbNativeAttemptMetrics.PATH_NATIVE_ENTRY_BINDING_VARIANT + "(mask=0x"
-				+ Long.toHexString(slotMask) + ")";
+	void recordExecutionPath(TupleExpr target) {
+		if (LmdbNativeExplain.recordsExecutionPaths(target)) {
+			String mask = "0x" + Long.toHexString(slotMask);
+			String strategy = LmdbNativeAttemptMetrics.PATH_NATIVE_ENTRY_BINDING_VARIANT;
+			LmdbNativeExplain.recordExecutionPath(target, strategy + "(mask=" + mask + ")",
+					new Operator(strategy, Map.of("mask", mask)));
+		}
 	}
 
 	private static boolean contains(String[] values, String sought) {

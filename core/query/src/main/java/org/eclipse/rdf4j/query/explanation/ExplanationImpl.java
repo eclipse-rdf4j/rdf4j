@@ -12,9 +12,12 @@
 package org.eclipse.rdf4j.query.explanation;
 
 import java.util.ArrayDeque;
+import java.util.Arrays;
+import java.util.Collections;
 import java.util.Deque;
 import java.util.IdentityHashMap;
 import java.util.List;
+import java.util.Map;
 
 import org.eclipse.rdf4j.common.annotation.Experimental;
 
@@ -82,8 +85,9 @@ public class ExplanationImpl implements Explanation {
 
 	/**
 	 * Calculates the maximum number of JSON containers emitted for this plan without using the Java call stack. Each
-	 * plan edge contributes a {@code plans} array and a child object. Repeated plan nodes are memoized so a shared
-	 * subtree is counted once, while a node encountered on the active path is rejected as a cycle.
+	 * plan edge contributes a {@code plans} array and a child object. The profile may also contain an input plan.
+	 * Repeated plan nodes are memoized so a shared subtree is counted once, while a node encountered on the active path
+	 * is rejected as a cycle.
 	 */
 	private static int jsonContainerDepth(GenericPlanNode root) {
 		if (root == null) {
@@ -91,6 +95,7 @@ public class ExplanationImpl implements Explanation {
 		}
 
 		IdentityHashMap<GenericPlanNode, Integer> subtreeDepths = new IdentityHashMap<>();
+		IdentityHashMap<Object, Integer> structuredDepths = new IdentityHashMap<>();
 		IdentityHashMap<GenericPlanNode, Boolean> activePath = new IdentityHashMap<>();
 		Deque<PlanNodeVisit> pending = new ArrayDeque<>();
 		pending.push(new PlanNodeVisit(root, false));
@@ -98,8 +103,13 @@ public class ExplanationImpl implements Explanation {
 		while (!pending.isEmpty()) {
 			PlanNodeVisit visit = pending.pop();
 			GenericPlanNode node = visit.node();
+			QueryExecutionProfile profile = node.getExecutionProfile();
+			GenericPlanNode inputPlan = profile == null ? null : profile.inputPlan();
 			if (visit.exit()) {
-				int depth = metadataContainerDepth(node);
+				int depth = metadataContainerDepth(node, profile, structuredDepths);
+				if (inputPlan != null) {
+					depth = Math.max(depth, addJsonContainerDepth(subtreeDepths.get(inputPlan), 2));
+				}
 				List<GenericPlanNode> children = node.getPlans();
 				if (children != null) {
 					for (GenericPlanNode child : children) {
@@ -120,6 +130,9 @@ public class ExplanationImpl implements Explanation {
 			}
 
 			pending.push(new PlanNodeVisit(node, true));
+			if (inputPlan != null && !subtreeDepths.containsKey(inputPlan)) {
+				pending.push(new PlanNodeVisit(inputPlan, false));
+			}
 			List<GenericPlanNode> children = node.getPlans();
 			if (children != null) {
 				for (int i = children.size() - 1; i >= 0; i--) {
@@ -138,11 +151,23 @@ public class ExplanationImpl implements Explanation {
 		return Math.max(DEFAULT_JSON_NESTING_DEPTH, subtreeDepths.get(root));
 	}
 
-	private static int metadataContainerDepth(GenericPlanNode node) {
+	private static int metadataContainerDepth(GenericPlanNode node, QueryExecutionProfile profile,
+			IdentityHashMap<Object, Integer> structuredDepths) {
 		int depth = 1; // GenericPlanNode object
-		if (node.getExecutionProfile() != null) {
+		if (profile != null) {
 			depth = 8; // Profile, stage/worker lists, typed metric maps and diagnostic evidence.
+			depth = Math.max(depth, addJsonContainerDepth(structuredDepth(profile.attributes(), structuredDepths), 2));
+			for (QueryExecutionProfile.Stage stage : profile.stages()) {
+				depth = Math.max(depth,
+						addJsonContainerDepth(structuredDepth(stage.attributes(), structuredDepths), 4));
+			}
 		}
+		depth = Math.max(depth, addJsonContainerDepth(structuredDepth(node.getArguments(), structuredDepths), 1));
+		depth = Math.max(depth,
+				addJsonContainerDepth(structuredDepth(node.getActualAttributes(), structuredDepths), 1));
+		depth = Math.max(depth,
+				addJsonContainerDepth(structuredDepth(node.getPlannedPhysicalPlan(), structuredDepths), 1));
+		depth = Math.max(depth, addJsonContainerDepth(structuredDepth(node.getPhysicalPlans(), structuredDepths), 1));
 		if (node.getLongMetricsActual() != null || node.getDoubleMetricsActual() != null
 				|| node.getStringMetricsActual() != null || node.getLongMetricsPlanned() != null
 				|| node.getDoubleMetricsPlanned() != null || node.getStringMetricsPlanned() != null) {
@@ -152,8 +177,12 @@ public class ExplanationImpl implements Explanation {
 		List<StrategyDecision> decisions = node.getStrategyDecisions();
 		if (decisions != null && !decisions.isEmpty()) {
 			depth = Math.max(depth, 4); // Decisions array, decision object, and candidates array
-			if (decisions.stream().anyMatch(decision -> !decision.candidates().isEmpty())) {
-				depth = Math.max(depth, 5); // At least one candidate object
+			for (StrategyDecision decision : decisions) {
+				for (StrategyDecision.Candidate candidate : decision.candidates()) {
+					depth = Math.max(depth,
+							addJsonContainerDepth(structuredDepth(candidate.pricing(), structuredDepths),
+									5)); // Candidate is the fifth container
+				}
 			}
 		}
 		if (node.getClass() != GenericPlanNode.class) {
@@ -164,6 +193,58 @@ public class ExplanationImpl implements Explanation {
 			depth = Math.max(depth, DEFAULT_JSON_NESTING_DEPTH);
 		}
 		return depth;
+	}
+
+	private static int structuredDepth(Object root, IdentityHashMap<Object, Integer> depths) {
+		if (root == null) {
+			return 0;
+		}
+		if (depths.containsKey(root)) {
+			return depths.get(root);
+		}
+		IdentityHashMap<Object, Boolean> active = new IdentityHashMap<>();
+		Deque<StructuredVisit> pending = new ArrayDeque<>();
+		pending.push(new StructuredVisit(root, false));
+		while (!pending.isEmpty()) {
+			StructuredVisit visit = pending.pop();
+			Object value = visit.value();
+			Iterable<?> children = structuredChildren(value);
+			if (visit.exit()) {
+				int depth = 1; // JSON object or array
+				for (Object child : children) {
+					depth = Math.max(depth, addJsonContainerDepth(depths.getOrDefault(child, 0), 1));
+				}
+				depths.put(value, depth);
+				active.remove(value);
+			} else if (!depths.containsKey(value) && children != null) {
+				if (active.put(value, Boolean.TRUE) != null) {
+					throw cyclicPlanException();
+				}
+				pending.push(new StructuredVisit(value, true));
+				for (Object child : children) {
+					if (child != null && !depths.containsKey(child)) {
+						pending.push(new StructuredVisit(child, false));
+					}
+				}
+			}
+		}
+		return depths.getOrDefault(root, 0);
+	}
+
+	private static Iterable<?> structuredChildren(Object value) {
+		return switch (value) {
+		case Map<?, ?> fields -> fields.values();
+		case Iterable<?> values -> values;
+		case Object[] values -> Arrays.asList(values);
+		case PhysicalPlan plan -> Arrays.asList(plan.plan(), plan.invocations());
+		case PhysicalPlan.Operator operator -> Collections.singletonList(operator.arguments());
+		case ExplanationTerm term -> Arrays.asList(term.subject(), term.predicate(), term.object());
+		case StrategyDecision.Pricing pricing ->
+			Arrays.asList(pricing.proven(), pricing.estimated(), pricing.features());
+		case StrategyDecision.Pricing.Interval interval -> List.of();
+		case StrategyDecision.Pricing.FeatureCounts feature -> List.of();
+		default -> value.getClass().isArray() ? List.of() : null;
+		};
 	}
 
 	private static int addJsonContainerDepth(int depth, int increment) {
@@ -179,6 +260,9 @@ public class ExplanationImpl implements Explanation {
 	}
 
 	private record PlanNodeVisit(GenericPlanNode node, boolean exit) {
+	}
+
+	private record StructuredVisit(Object value, boolean exit) {
 	}
 
 	@Override

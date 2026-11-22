@@ -1080,6 +1080,10 @@ namespace workbench {
                 ['_internal/namespaces'])).then(() => {
                 if (mine === generation && currentRoute && currentRoute.model === route.model) {
                     loader.configureNamespaces(route.model);
+                    const query = (workbench as any).query;
+                    if (query && typeof query.refreshExplanationNamespaces === 'function') {
+                        query.refreshExplanationNamespaces();
+                    }
                 }
             }, (error: any) => {
                 // The namespaces known so far stay in use.

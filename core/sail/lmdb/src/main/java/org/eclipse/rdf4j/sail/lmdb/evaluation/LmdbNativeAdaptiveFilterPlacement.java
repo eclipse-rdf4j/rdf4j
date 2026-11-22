@@ -18,7 +18,9 @@ import static org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbNativeAggregateCompiler
 import java.io.IOException;
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.List;
 import java.util.Locale;
+import java.util.stream.Collectors;
 
 import org.eclipse.rdf4j.common.annotation.Experimental;
 import org.eclipse.rdf4j.model.vocabulary.XSD;
@@ -571,6 +573,12 @@ final class FilterPlacementEnvelope {
 
 @Experimental
 record PlacementState(long generation, int activeDepth) {
+	static String format(List<PlacementState> epochs) {
+		return epochs.stream()
+				.map(p -> p.generation + ":" + p.activeDepth)
+				.collect(Collectors.joining(", ", "[", "]"));
+	}
+
 }
 
 /** Delegates evaluation while leaving filter lifetime with the surrounding factorized cursor. */
@@ -639,7 +647,7 @@ final class AdaptiveFilterSession {
 	final long[] windowEvaluations;
 	final long[] windowPassed;
 	final long[] windowFiltered;
-	final ArrayList<String> placementEpochs = new ArrayList<>();
+	final ArrayList<PlacementState> placementEpochs = new ArrayList<>();
 	PlacementState placement;
 	int pendingDepth = NO_PENDING_DEPTH;
 	long completedPrefixes;
@@ -698,7 +706,7 @@ final class AdaptiveFilterSession {
 		this.windowFiltered = new long[envelope.candidateDepths.length];
 		this.placement = new PlacementState(0L, envelope.plannedDepth);
 		this.provenDepth = envelope.plannedDepth;
-		this.placementEpochs.add("0:" + envelope.plannedDepth);
+		this.placementEpochs.add(new PlacementState(0, envelope.plannedDepth));
 	}
 
 	RowCursor open(RowState row) throws IOException {
@@ -895,7 +903,7 @@ final class AdaptiveFilterSession {
 	}
 
 	private void recordPlacementEpoch() {
-		placementEpochs.add(placement.generation() + ":" + placement.activeDepth());
+		placementEpochs.add(placement);
 	}
 
 	private static long delta(long[] current, long[] previous, int index) {
@@ -1001,10 +1009,10 @@ final class AdaptiveFilterSession {
 				envelope.plannedDepth);
 		LmdbNativeExplain.setRuntimeMetric(telemetryExpr, "adaptiveFilterPlacementFinalDepth",
 				placement.activeDepth());
-		String renderedEpochs = "[" + String.join(", ", placementEpochs) + "]";
+		String renderedEpochs = PlacementState.format(placementEpochs);
 		LmdbNativeExplain.setRuntimeMetric(telemetryExpr, "adaptiveFilterPlacementEpochs", renderedEpochs);
 		if (runtimePlan != null) {
-			runtimePlan.adaptivePlacement(renderedEpochs, placement.activeDepth());
+			runtimePlan.adaptivePlacement(placementEpochs, placement.activeDepth());
 		}
 		LmdbNativeExplain.setRuntimeMetric(telemetryExpr, "adaptiveFilterPlacementGeneration",
 				placement.generation());

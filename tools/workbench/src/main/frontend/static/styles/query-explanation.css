@@ -637,12 +637,45 @@ body.workbench-body .query-explanation-settings__panel > .workbench-disclosure__
     box-shadow: inset 2px 0 var(--query-code-border);
 }
 
+.query-explanation-table-wrap {
+    display: flex;
+    align-items: flex-start;
+    margin-block: 0.2rem 0.45rem;
+}
+
+.query-explanation-table {
+    border-collapse: collapse;
+    font: inherit;
+}
+
+.query-explanation-table :is(th, td) {
+    border-block-end: 1px solid var(--query-code-border);
+    padding: 0.18rem 0.5rem;
+    text-align: start;
+    vertical-align: top;
+}
+
+.query-explanation-table th {
+    background: var(--query-code-surface-hover);
+    font-weight: 600;
+}
+
+.query-explanation-table th .query-explanation-token--metric-name {
+    font-weight: inherit;
+}
+
+.query-explanation-table tbody td:last-child {
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+}
+
 .query-explanation-token--connector {
     color: var(--query-code-connector);
     letter-spacing: -0.005rem;
 }
 
-.query-explanation-token--node-type {
+.query-explanation-token--node-type,
+.query-explanation-token--strategy {
     color: var(--query-code-node);
     font-weight: 700;
     letter-spacing: 0;
@@ -650,16 +683,6 @@ body.workbench-body .query-explanation-settings__panel > .workbench-disclosure__
 
 .query-explanation-token--annotation {
     color: var(--query-code-annotation);
-    font-weight: 400;
-}
-
-.query-explanation-token--algorithm {
-    color: var(--query-code-ink);
-    font-weight: 400;
-}
-
-.query-explanation-token--node-detail {
-    color: var(--query-code-ink);
     font-weight: 400;
 }
 
@@ -702,7 +725,9 @@ body.workbench-body .query-explanation-settings__panel > .workbench-disclosure__
     color: var(--query-code-literal);
 }
 
-.query-explanation-token--metric-name {
+.query-explanation-token--metric-name,
+.query-explanation-token--metric-unit,
+.query-explanation-token--status-neutral {
     color: var(--query-code-annotation);
     font-weight: 400;
 }
@@ -713,11 +738,13 @@ body.workbench-body .query-explanation-settings__panel > .workbench-disclosure__
     font-weight: 400;
 }
 
-.query-explanation-token--binding-bound {
+.query-explanation-token--binding-bound,
+.query-explanation-token--status-positive {
     color: var(--query-code-bound);
 }
 
-.query-explanation-token--binding-unbound {
+.query-explanation-token--binding-unbound,
+.query-explanation-token--status-negative {
     color: var(--query-code-unbound);
 }
 

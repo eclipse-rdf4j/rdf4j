@@ -135,7 +135,7 @@ test('query explain flow covers success, error, download, and legacy change noti
     harness.context.workbench.query.runExplain('Optimized', 'explain-trigger');
     const explainRequest = harness.pendingExplainRequests[0];
     explainRequest.resolve({
-        content: '{"plans":[{"selfTimeActual":2,"totalTimeActual":4}]}',
+        content: { plans: [{ selfTimeActual: 2, totalTimeActual: 4 }] },
         format: 'json',
         error: ''
     });
@@ -159,6 +159,66 @@ test('query explain flow covers success, error, download, and legacy change noti
     );
 });
 
+test('interactive JSON explanation consumes the returned object and exports exact numeric tokens', async () => {
+    const clipboardWrites = [];
+    const harness = createQueryBrowserHarness({
+        window: { navigator: { clipboard: { writeText(text) { clipboardWrites.push(text); return Promise.resolve(); } } } }
+    });
+    harness.runPageLoad();
+    harness.setValue('explain-format', 'json');
+    const query = harness.context.workbench.query;
+    query.runExplain('Telemetry', 'explain-trigger');
+
+    const request = harness.pendingExplainRequests[0];
+    const exact = '9007199254740993';
+    const content = '{"type":"Join","resultSizeActual":' + exact
+        + ',"arguments":{"lexicalId":"' + exact + '","remark":"content: { [ ] }"}'
+        + ',"executionProfile":{"elapsedNanos":' + exact
+        + ',"stages":[{"id":"scan","metrics":{"scanned":{"count":' + exact + '}}}],'
+        + '"workers":[{"rows":' + exact + '}]}}';
+    const responseText = '{ "metadata": {"content": {}}, "format": "json", "content": ' + content + ' }';
+    const converter = request.options.converters?.['text json'] || JSON.parse;
+    request.resolve(converter(responseText));
+
+    const explanation = query.testing.getInternalState().queryPageState.primaryPane.explanation;
+    assert.equal(explanation.plan.resultSizeActual, exact);
+    assert.equal(explanation.plan.executionProfile.elapsedNanos, exact);
+    assert.equal(explanation.plan.executionProfile.stages[0].metrics.scanned.count, exact);
+    assert.equal(explanation.plan.executionProfile.workers[0].rows, exact);
+    const view = harness.document.getElementById('query-explanation-json-view');
+    assert.equal(view.querySelectorAll('.query-json-node__value--number').filter(node => node.textContent === exact).length, 4);
+    assert.ok(view.querySelectorAll('.query-json-node__value--string')
+        .some(node => node.textContent === '"' + exact + '"'));
+
+    await query.copyExplanation('primary');
+    query.downloadExplanation();
+    assert.deepEqual(clipboardWrites, [content]);
+    assert.deepEqual(Array.from(harness.createdBlobs[0].parts), [content]);
+    assert.equal(harness.createdBlobs[0].options.type, 'application/json;charset=utf-8');
+
+    query.toggleCompareMode();
+    query.runCompareExplain('explain-trigger');
+    const compareRequest = harness.pendingExplainRequests[2];
+    const compareContent = '{"type":"Union","resultSizeActual":' + exact + '}';
+    const compareResponse = '{"cont\\u0065nt":' + compareContent + ',"format":"json"}';
+    compareRequest.resolve(compareRequest.options.converters['text json'](compareResponse));
+    const compare = query.testing.getInternalState().queryPageState.comparePane.explanation;
+    assert.equal(compare.plan.resultSizeActual, exact);
+    assert.equal(compare.rawContent, compareContent);
+});
+
+test('JSON from a server-rendered page hydrates the tree and retains the original plan', () => {
+    const raw = '{"type":"Join","resultSizeActual":9007199254740993}';
+    const harness = createQueryBrowserHarness({ initialExplanation: raw, initialExplanationFormat: 'json' });
+    harness.runPageLoad();
+
+    const explanation = harness.context.workbench.query.testing.getInternalState().queryPageState.primaryPane.explanation;
+    assert.equal(explanation.plan.resultSizeActual, '9007199254740993');
+    assert.equal(explanation.rawContent, raw);
+    assert.ok(harness.document.getElementById('query-explanation-json-view')
+        .querySelectorAll('.query-json-node__value--number').some(node => node.textContent === '9007199254740993'));
+});
+
 test('stale explanation status refreshes the explanation when clicked', () => {
     const harness = createQueryBrowserHarness({
         serverRequestIds: ['request-1', 'request-2']
@@ -167,7 +227,7 @@ test('stale explanation status refreshes the explanation when clicked', () => {
     harness.runPageLoad();
     harness.context.workbench.query.runExplain('Optimized', 'explain-trigger');
     harness.pendingExplainRequests[0].resolve({
-        content: JSON.stringify({ type: 'Projection' }),
+        content: { type: 'Projection' },
         format: 'json',
         error: '',
         timedOut: false
@@ -193,12 +253,12 @@ test('timed-out explanation keeps the partial plan and warns that it is incomple
     harness.runPageLoad();
     harness.context.workbench.query.runExplain('Executed', 'explain-trigger');
     harness.pendingExplainRequests[0].resolve({
-        content: JSON.stringify({
+        content: {
             type: 'Join',
             timedOut: true,
             resultSizeActual: 7710,
             plans: [{ type: 'StatementPattern', resultSizeActual: 3 }, { type: 'StatementPattern' }]
-        }),
+        },
         format: 'json',
         error: '',
         timedOut: true
@@ -238,7 +298,7 @@ test('explanation shows its running time and then the final time', () => {
     assert.equal(harness.getAttribute('query-explanation-timing', 'role'), 'timer');
 
     harness.advanceTimers(750);
-    harness.pendingExplainRequests[0].resolve({ content: JSON.stringify({ type: 'Projection' }), format: 'json', error: '' });
+    harness.pendingExplainRequests[0].resolve({ content: { type: 'Projection' }, format: 'json', error: '' });
     assert.equal(harness.getText('query-explanation-timing'), 'Explained in 2,250 ms');
     harness.advanceTimers(5000);
     assert.equal(harness.getText('query-explanation-timing'), 'Explained in 2,250 ms', 'the final time stays put');
@@ -348,7 +408,7 @@ test('interactive Text explanation requests JSON and toggles cached highlighting
     const request = harness.pendingExplainRequests[0];
     assert.equal(request.params.get('explain-format'), 'json');
     request.resolve({
-        content: JSON.stringify(plan),
+        content: plan,
         format: 'json',
         error: '',
         lineSeparator: '\r\n'
@@ -379,6 +439,38 @@ test('interactive Text explanation requests JSON and toggles cached highlighting
     assert.equal(harness.createdBlobs[0].options.type, 'text/plain;charset=utf-8');
 });
 
+test('interactive strategy tables retain canonical copy and download text', async () => {
+    const clipboardWrites = [];
+    const harness = createQueryBrowserHarness({
+        window: { navigator: { clipboard: { writeText(text) { clipboardWrites.push(text); return Promise.resolve(); } } } }
+    });
+    const query = harness.context.workbench.query;
+    const plan = { type: 'Slice (limit=100)', operator: 'Slice', arguments: { limit: 100 },
+        strategyDecisions: [{ decisionPoint: 'Decision 1', mode: 'normal', wouldSelect: 'nestedLoop',
+            reason: 'Lowest price (25 ns)', candidates: [{ priority: 1, strategy: 'nestedLoop', canAttempt: true,
+                decision: 'Would select now', condition: 'Ready' }] }] };
+    const canonical = 'Slice (limit=100)\r\n'
+        + 'Strategies — Decision 1\r\n'
+        + 'Would select now: nestedLoop (normal)\r\n'
+        + 'Lowest price (25 ns)\r\n'
+        + 'Priority | Strategy | Can attempt? | Decision | Reason\r\n'
+        + '1 | nestedLoop | Yes | Would select now | Ready\r\n';
+
+    harness.runPageLoad();
+    query.runExplain('Optimized', 'explain-trigger');
+    harness.pendingExplainRequests[0].resolve({ content: plan, format: 'json', lineSeparator: '\r\n' });
+    const surface = harness.document.getElementById('query-explanation');
+    assert.equal(surface.tagName, 'DIV');
+    assert.equal(surface.querySelectorAll('table').length, 1);
+    assert.equal(surface.querySelectorAll('th').length, 5);
+    assert.equal(surface.querySelectorAll('td').length, 5);
+    assert.doesNotMatch(surface.textContent, /Priority \| Strategy/);
+    await query.copyExplanation('primary');
+    query.downloadExplanation();
+    assert.deepEqual(clipboardWrites, [canonical]);
+    assert.deepEqual(Array.from(harness.createdBlobs[0].parts), [canonical]);
+});
+
 test('property config filters both plans and persists hidden properties', () => {
     const storedValues = new Map();
     const localStorage = {
@@ -397,12 +489,12 @@ test('property config filters both plans and persists hidden properties', () => 
     harness.runPageLoad();
     harness.context.workbench.query.runExplain('Optimized', 'explain-trigger');
     harness.pendingExplainRequests[0].resolve({
-        content: JSON.stringify({
+        content: {
             type: 'Join',
             costEstimate: 10,
             resultSizeEstimate: 4,
             stringMetricsActual: { bindingState: 'bound' }
-        }),
+        },
         format: 'json',
         error: ''
     });
@@ -432,7 +524,7 @@ test('property config filters both plans and persists hidden properties', () => 
 
     harness.context.workbench.query.toggleCompareMode();
     harness.pendingExplainRequests[1].resolve({
-        content: JSON.stringify({ type: 'StatementPattern', costEstimate: 20, resultSizeActual: 8 }),
+        content: { type: 'StatementPattern', costEstimate: 20, resultSizeActual: 8 },
         format: 'json',
         error: ''
     });
@@ -460,7 +552,7 @@ test('property config filters both plans and persists hidden properties', () => 
     reloadedHarness.runPageLoad();
     reloadedHarness.context.workbench.query.runExplain('Optimized', 'explain-trigger');
     reloadedHarness.pendingExplainRequests[0].resolve({
-        content: JSON.stringify({ type: 'Join', costEstimate: 10, resultSizeEstimate: 4 }),
+        content: { type: 'Join', costEstimate: 10, resultSizeEstimate: 4 },
         format: 'json',
         error: ''
     });
@@ -479,7 +571,7 @@ test('Config uses radio controls and closes its panel on an outside click', () =
     harness.runPageLoad();
     harness.context.workbench.query.runExplain('Optimized', 'explain-trigger');
     harness.pendingExplainRequests[0].resolve({
-        content: JSON.stringify({ type: 'StatementPattern', costEstimate: 10, resultSizeEstimate: 4 }),
+        content: { type: 'StatementPattern', costEstimate: 10, resultSizeEstimate: 4 },
         format: 'json',
         error: ''
     });
@@ -540,7 +632,7 @@ test('hotspot mode shares one scale across comparison panes', () => {
     harness.runPageLoad();
     harness.context.workbench.query.runExplain('Optimized', 'explain-trigger');
     harness.pendingExplainRequests[0].resolve({
-        content: JSON.stringify({ type: 'StatementPattern', costEstimate: 10 }),
+        content: { type: 'StatementPattern', costEstimate: 10 },
         format: 'json',
         error: ''
     });
@@ -554,7 +646,7 @@ test('hotspot mode shares one scale across comparison panes', () => {
     harness.context.workbench.query.toggleCompareMode();
     assert.equal(harness.pendingExplainRequests[1].params.get('explain-format'), 'json');
     harness.pendingExplainRequests[1].resolve({
-        content: JSON.stringify({ type: 'StatementPattern', costEstimate: 20 }),
+        content: { type: 'StatementPattern', costEstimate: 20 },
         format: 'json',
         error: ''
     });
@@ -579,14 +671,14 @@ test('hotspot mode does not mix metrics while comparison responses are staggered
     harness.runPageLoad();
     harness.context.workbench.query.runExplain('Optimized', 'explain-trigger');
     harness.pendingExplainRequests[0].resolve({
-        content: JSON.stringify({ type: 'StatementPattern', costEstimate: 10 }),
+        content: { type: 'StatementPattern', costEstimate: 10 },
         format: 'json',
         error: ''
     });
     harness.click('explanation-highlight-hotspot');
     harness.context.workbench.query.toggleCompareMode();
     harness.pendingExplainRequests[1].resolve({
-        content: JSON.stringify({ type: 'StatementPattern', costEstimate: 20 }),
+        content: { type: 'StatementPattern', costEstimate: 20 },
         format: 'json',
         error: ''
     });
@@ -594,7 +686,7 @@ test('hotspot mode does not mix metrics while comparison responses are staggered
     harness.setValue('explain-level', 'Timed');
     harness.context.workbench.query.runCompareExplain('explain-trigger');
     harness.pendingExplainRequests[2].resolve({
-        content: JSON.stringify({ type: 'StatementPattern', selfTimeActual: 5 }),
+        content: { type: 'StatementPattern', selfTimeActual: 5 },
         format: 'json',
         error: ''
     });
@@ -603,7 +695,7 @@ test('hotspot mode does not mix metrics while comparison responses are staggered
     assert.equal(hotspotLine('query-explanation-compare').getAttribute('data-heat'), '1.000');
 
     harness.pendingExplainRequests[3].resolve({
-        content: JSON.stringify({ type: 'StatementPattern', selfTimeActual: 10 }),
+        content: { type: 'StatementPattern', selfTimeActual: 10 },
         format: 'json',
         error: ''
     });

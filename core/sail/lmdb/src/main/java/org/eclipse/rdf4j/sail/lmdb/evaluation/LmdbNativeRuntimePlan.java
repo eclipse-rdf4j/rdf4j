@@ -18,11 +18,15 @@ import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.function.Supplier;
+import java.util.stream.Collectors;
 
 import org.eclipse.rdf4j.common.annotation.Experimental;
 import org.eclipse.rdf4j.common.order.StatementOrder;
 import org.eclipse.rdf4j.query.algebra.QueryRoot;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
+import org.eclipse.rdf4j.query.explanation.PhysicalPlan;
+import org.eclipse.rdf4j.query.explanation.PhysicalPlan.Operator;
 import org.eclipse.rdf4j.query.explanation.QueryExecutionProfile;
 import org.eclipse.rdf4j.query.explanation.QueryExecutionProfile.Metric;
 import org.eclipse.rdf4j.query.explanation.QueryExecutionProfile.Stage;
@@ -164,14 +168,35 @@ final class LmdbNativeRuntimePlan {
 		}
 	}
 
+	record CapturedOperator(String text, Operator operator) {
+		Object structured() {
+			return operator == null ? text : operator;
+		}
+
+		@Override
+		public String toString() {
+			return text;
+		}
+
+		static CapturedOperator capture(SlotPlan plan, String[] slots, long bound, NativeLmdbQuerySource source) {
+			return LmdbNativeExplain.captureTerms(() -> new CapturedOperator(
+					LmdbNativeExplain.describe(plan, slots, bound, source),
+					new LmdbPhysicalPlanDescription(slots, source).operator(plan, bound)));
+		}
+	}
+
 	private static final class Summary {
 		private static final int MAX_INVOCATION_SHAPES = 64;
 		private final TupleExpr target;
 		private final String path;
 		private final QueryExecutionProfile.Collector collector;
 		private final List<Invocation> invocations = new ArrayList<>();
+		private final Supplier<PhysicalPlan> structuredPlan = this::structured;
 		private final Map<InvocationShape, Invocation> byShape = new LinkedHashMap<>();
 		private long omittedInvocations;
+		private SlotPlan previousEntry;
+		private String[] previousNames;
+		private InvocationShape previousShape;
 
 		private Summary(TupleExpr target) {
 			this.target = target;
@@ -211,9 +236,19 @@ final class LmdbNativeRuntimePlan {
 				NativeLmdbQuerySource source) {
 			Invocation invocation;
 			boolean fresh;
-			String renderedShape = LmdbNativeExplain.describe(entryPlan, slotNames, initialBoundMask);
 			synchronized (this) {
-				InvocationShape shape = new InvocationShape(renderedShape, initialBoundMask);
+				InvocationShape shape;
+				if (entryPlan == previousEntry && slotNames == previousNames
+						&& initialBoundMask == previousShape.initialBoundMask) {
+					shape = previousShape;
+				} else {
+					shape = new InvocationShape(
+							new LmdbPhysicalPlanDescription(slotNames, null).operator(entryPlan, initialBoundMask),
+							initialBoundMask);
+					previousEntry = entryPlan;
+					previousNames = slotNames;
+					previousShape = shape;
+				}
 				invocation = byShape.get(shape);
 				fresh = invocation == null;
 				if (fresh) {
@@ -221,9 +256,11 @@ final class LmdbNativeRuntimePlan {
 						omittedInvocations++;
 						// A non-publishing invocation keeps callers' normal ownership/lifecycle, without retaining a
 						// new shape.
-						return new Invocation(new Summary(null), -1, entryPlan, slotNames, shape, renderedShape);
+						return new Invocation(new Summary(null), -1, entryPlan, slotNames, shape, new CapturedOperator(
+								LmdbNativeExplain.describe(entryPlan, slotNames, initialBoundMask), shape.plan()));
 					}
-					String description = LmdbNativeExplain.describe(entryPlan, slotNames, initialBoundMask, source);
+					CapturedOperator description = CapturedOperator.capture(entryPlan, slotNames, initialBoundMask,
+							source);
 					invocation = new Invocation(this, invocations.size(), entryPlan, slotNames, shape, description);
 					invocations.add(invocation);
 					byShape.put(shape, invocation);
@@ -243,10 +280,12 @@ final class LmdbNativeRuntimePlan {
 			}
 			String rendered = render();
 			target.setStringMetricActual(TelemetryMetricNames.RUNTIME_PHYSICAL_PLAN, rendered);
+			target.setQueryModelMetadata(PhysicalPlan.RUNTIME_METADATA_KEY, structuredPlan);
 			if (target instanceof QueryRoot) {
 				TupleExpr arg = ((QueryRoot) target).getArg();
 				synchronized (arg) {
 					arg.setStringMetricActual(TelemetryMetricNames.RUNTIME_PHYSICAL_PLAN, rendered);
+					arg.setQueryModelMetadata(PhysicalPlan.RUNTIME_METADATA_KEY, structuredPlan);
 				}
 			}
 		}
@@ -268,6 +307,13 @@ final class LmdbNativeRuntimePlan {
 			publish();
 		}
 
+		private synchronized PhysicalPlan structured() {
+			return new PhysicalPlan(LmdbNativeExplain.ENGINE, "executed",
+					target.getStringMetricPlanned(TelemetryMetricNames.PLANNED_EXECUTION_KIND), null,
+					invocations.stream().map(Invocation::structured).toList(),
+					omittedInvocations == 0 ? null : omittedInvocations);
+		}
+
 		private String render() {
 			StringBuilder out = new StringBuilder("LMDB native physical plan (executed)");
 			for (Invocation invocation : invocations) {
@@ -282,50 +328,34 @@ final class LmdbNativeRuntimePlan {
 
 	/**
 	 * Identity of a runtime entry. Nested lexical evaluation may compile a fresh {@link SlotPlan} object for every
-	 * outer row, so object identity is not stable enough for telemetry aggregation. The deterministic physical-plan
-	 * rendering is the semantic shape key; the entry mask remains separate because it changes binding specialization.
+	 * outer row, so object identity is not stable enough for telemetry aggregation. The source-independent operator
+	 * fields distinguish plans with identical display labels. The mask determines which entry bindings specialize the
+	 * plan.
 	 */
-	private static final class InvocationShape {
-		private final String renderedPlan;
-		private final long initialBoundMask;
-
-		private InvocationShape(String renderedPlan, long initialBoundMask) {
-			this.renderedPlan = renderedPlan;
-			this.initialBoundMask = initialBoundMask;
-		}
-
-		@Override
-		public boolean equals(Object other) {
-			if (!(other instanceof InvocationShape)) {
-				return false;
-			}
-			InvocationShape shape = (InvocationShape) other;
-			return renderedPlan.equals(shape.renderedPlan) && initialBoundMask == shape.initialBoundMask;
-		}
-
-		@Override
-		public int hashCode() {
-			return renderedPlan.hashCode() * 31 + Long.hashCode(initialBoundMask);
-		}
+	private record InvocationShape(Operator plan, long initialBoundMask) {
 	}
 
 	@Experimental
 	static final class Invocation {
+		private static final String GENERATED_SCOPE = "generated/factorized";
+		private static final String FACTORIZATION_SCOPE = "native/generated";
+
 		private final Summary owner;
 		private final int index;
 		private final SlotPlan entryPlan;
 		private final InvocationShape shape;
-		private final String entryDescription;
+		private final CapturedOperator entryDescription;
 		private final String[] slotNames;
 		private final long initialBoundMask;
 		private String strategy = "NOT_ACTIVATED";
-		private List<String> actualOrder = List.of();
+		private Object structuredStrategy = strategy;
+		private List<CapturedOperator> actualOrder = List.of();
 		private boolean janinoUsed;
 		private String janinoReason = "NOT_ATTEMPTED[no Janino activation point reached]";
 		private String janinoRoute;
-		private List<String> generatedOrder = List.of();
+		private List<CapturedOperator> generatedOrder = List.of();
 		private boolean adjacencyAccessUsed;
-		private final Map<SlotPlan, String> accessSiteLabels = new IdentityHashMap<>();
+		private final Map<SlotPlan, CapturedOperator> accessSiteLabels = new IdentityHashMap<>();
 		private final Map<AdjacencyAccessKey, AdjacencyAccess> adjacencyAccesses = new LinkedHashMap<>();
 		private final AdjacencyMeasurement adjacencyMeasurement = new AdjacencyMeasurement("IN_MEMORY_ADJACENCY");
 		private final AdjacencyMeasurement lmdbMeasurement = new AdjacencyMeasurement("LMDB");
@@ -335,12 +365,12 @@ final class LmdbNativeRuntimePlan {
 		private boolean adjacencyUsed;
 		private String adjacencyState = "NOT_CONSIDERED";
 		private String adjacencyReason = "NOT_ATTEMPTED[no adjacency SIP activation point reached]";
-		private String adjacencyWhere;
+		private CapturedOperator adjacencyWhere;
 		private long adjacencyMembershipChecks;
 		private long adjacencyRowsRejected;
 		private boolean adaptiveUsed;
 		private String adaptiveReason;
-		private String adaptiveEpochs = "[]";
+		private List<PlacementState> adaptiveEpochs = List.of();
 		private Integer adaptiveFinalDepth;
 		private LmdbFusedSipFactorizedRuntime.Telemetry fusedTelemetry = LmdbFusedSipFactorizedRuntime.Telemetry.EMPTY;
 		private LmdbFusedSipFactorizedRuntime.Telemetry adoptedFusedTelemetry = LmdbFusedSipFactorizedRuntime.Telemetry.EMPTY;
@@ -350,7 +380,7 @@ final class LmdbNativeRuntimePlan {
 		private SlotPlan[] lastRenderedOrder;
 
 		private Invocation(Summary owner, int index, SlotPlan entryPlan, String[] slotNames, InvocationShape shape,
-				String entryDescription) {
+				CapturedOperator entryDescription) {
 			this.owner = owner;
 			this.index = index;
 			this.entryPlan = entryPlan;
@@ -366,6 +396,7 @@ final class LmdbNativeRuntimePlan {
 			adoptedOpens += completed.opens;
 			opens = Math.max(opens, adoptedOpens);
 			strategy = completed.strategy;
+			structuredStrategy = completed.structuredStrategy;
 			actualOrder = completed.actualOrder;
 			lastRenderedOrder = completed.lastRenderedOrder;
 			if (completed.janinoUsed) {
@@ -477,11 +508,16 @@ final class LmdbNativeRuntimePlan {
 		}
 
 		void activate(NativeLmdbQuerySource source, String strategy, SlotPlan[] order) {
+			activate(source, strategy, strategy, order);
+		}
+
+		void activate(NativeLmdbQuerySource source, String strategy, Object structuredStrategy, SlotPlan[] order) {
 			synchronized (this) {
 				if (strategy.equals(this.strategy) && (order == null || order == lastRenderedOrder)) {
 					return;
 				}
 				this.strategy = strategy;
+				this.structuredStrategy = structuredStrategy;
 				setActualOrder(source, order);
 				if (janinoUsed && !adjacencyUsed) {
 					adjacencyState = "NOT_CONSIDERED";
@@ -497,6 +533,7 @@ final class LmdbNativeRuntimePlan {
 			String renderedReason = NativeLmdbQuerySource.LMDB_ENCOUNTER_ORDER_REASON + "[reason=" + reason + "]";
 			synchronized (this) {
 				strategy = "SEQUENTIAL_FALLBACK[reason=" + reason + "]";
+				structuredStrategy = new Operator("SEQUENTIAL_FALLBACK", Map.of("reason", reason.name()));
 				setActualOrder(source, new SlotPlan[] { entryOrder });
 				janinoUsed = false;
 				janinoReason = renderedReason;
@@ -515,7 +552,7 @@ final class LmdbNativeRuntimePlan {
 				adjacencyRowsRejected = 0L;
 				adaptiveUsed = false;
 				adaptiveReason = renderedReason;
-				adaptiveEpochs = "[]";
+				adaptiveEpochs = List.of();
 				adaptiveFinalDepth = null;
 			}
 			publishIfAllowed();
@@ -535,9 +572,9 @@ final class LmdbNativeRuntimePlan {
 			if (order == null || order == lastRenderedOrder) {
 				return false;
 			}
-			ArrayList<String> rendered = new ArrayList<>(order.length);
+			ArrayList<CapturedOperator> rendered = new ArrayList<>(order.length);
 			for (SlotPlan child : order) {
-				rendered.add(LmdbNativeExplain.describe(child, slotNames, initialBoundMask, source));
+				rendered.add(CapturedOperator.capture(child, slotNames, initialBoundMask, source));
 			}
 			actualOrder = List.copyOf(rendered);
 			lastRenderedOrder = order;
@@ -573,24 +610,28 @@ final class LmdbNativeRuntimePlan {
 			return adjacencyAccessAt(source, describeAccessSite(source, site));
 		}
 
-		String describeAccessSite(NativeLmdbQuerySource source, SlotPlan site) {
+		CapturedOperator describeAccessSite(NativeLmdbQuerySource source, SlotPlan site) {
 			synchronized (this) {
-				String rendered = accessSiteLabels.get(site);
-				if (rendered != null) {
-					return rendered;
+				CapturedOperator cached = accessSiteLabels.get(site);
+				if (cached != null) {
+					return cached;
 				}
 			}
-			String rendered = LmdbNativeExplain.describe(site, slotNames, initialBoundMask, source);
+			CapturedOperator capture = CapturedOperator.capture(site, slotNames, initialBoundMask, source);
 			synchronized (this) {
 				if (accessSiteLabels.size() < 128) {
-					accessSiteLabels.put(site, rendered);
+					accessSiteLabels.put(site, capture);
 				}
 			}
-			return rendered;
+			return capture;
+		}
+
+		NativeLmdbQuerySource.AdjacencyAccessObserver adjacencyAccessAt(NativeLmdbQuerySource source, String where) {
+			return adjacencyAccessAt(source, new CapturedOperator(where == null ? "unknown" : where, null));
 		}
 
 		NativeLmdbQuerySource.AdjacencyAccessObserver adjacencyAccessAt(NativeLmdbQuerySource termSource,
-				String where) {
+				CapturedOperator where) {
 			return new NativeLmdbQuerySource.AdjacencyAccessObserver() {
 				@Override
 				public void access(boolean used, String reason, StatementOrder requestedOrder, long subj, long pred,
@@ -655,7 +696,7 @@ final class LmdbNativeRuntimePlan {
 
 		private void recordAdjacencyMeasurement(boolean adjacency, long scannedRows, long matchedRows,
 				long filteredRows, boolean censored, boolean physicalScanCount, long activeNanos, String indexName,
-				String where) {
+				CapturedOperator where) {
 			boolean publish;
 			synchronized (this) {
 				publish = (adjacency ? adjacencyMeasurement : lmdbMeasurement)
@@ -680,7 +721,7 @@ final class LmdbNativeRuntimePlan {
 
 		private void recordAdjacencyAccess(NativeLmdbQuerySource termSource, String source, String outcome,
 				boolean used, String reason,
-				StatementOrder requestedOrder, long subj, long pred, long obj, long context, String where) {
+				StatementOrder requestedOrder, long subj, long pred, long obj, long context, CapturedOperator where) {
 			boolean publish;
 			AdjacencyAccess first = null;
 			synchronized (this) {
@@ -709,7 +750,7 @@ final class LmdbNativeRuntimePlan {
 			}
 		}
 
-		void adjacencyDecision(String state, String reason, String where) {
+		void adjacencyDecision(String state, String reason, CapturedOperator where) {
 			synchronized (this) {
 				if (adjacencyUsed || state.equals(adjacencyState) && reason.equals(adjacencyReason)
 						&& Objects.equals(where, adjacencyWhere)) {
@@ -722,7 +763,7 @@ final class LmdbNativeRuntimePlan {
 			publishIfAllowed();
 		}
 
-		synchronized void adjacencyMembershipCheck(String where, boolean rejected) {
+		synchronized void adjacencyMembershipCheck(CapturedOperator where, boolean rejected) {
 			adjacencyUsed = true;
 			adjacencyState = "ACTIVATED";
 			adjacencyReason = "MEMBERSHIP_CHECK_EXECUTED";
@@ -743,11 +784,11 @@ final class LmdbNativeRuntimePlan {
 			publishIfAllowed();
 		}
 
-		void adaptivePlacement(String epochs, int finalDepth) {
+		void adaptivePlacement(List<PlacementState> epochs, int finalDepth) {
 			synchronized (this) {
 				adaptiveUsed = true;
 				adaptiveReason = "ACTIVATED";
-				adaptiveEpochs = epochs;
+				adaptiveEpochs = List.copyOf(epochs);
 				adaptiveFinalDepth = finalDepth;
 			}
 			publishIfAllowed();
@@ -787,8 +828,11 @@ final class LmdbNativeRuntimePlan {
 							"omittedAccessDecisions", Metric.count(omittedAccessDecisions, "decisions")),
 					Map.of("initialBoundMask", "0x" + Long.toUnsignedString(initialBoundMask, 16),
 							"initialBindings", LmdbNativeExplain.describeBoundMask(initialBoundMask, slotNames),
-							"actualOrder", String.join("; ", actualOrder), "janinoReason", janinoReason,
-							"workScope", "includes observed work from discarded and replayed access paths")));
+							"actualOrder",
+							actualOrder.stream().map(CapturedOperator::text).collect(Collectors.joining("; ")),
+							"janinoReason", janinoReason,
+							"workScope", "includes observed work from discarded and replayed access paths"),
+					structuredOrder()));
 			int decisionOrdinal = 0;
 			for (AdjacencyAccess access : adjacencyAccesses.values()) {
 				stages.add(new Stage(id + "/access-choice/" + decisionOrdinal++, id, path, "Access decision",
@@ -797,7 +841,8 @@ final class LmdbNativeRuntimePlan {
 						Map.of("site", String.valueOf(access.where), "reason", String.valueOf(access.reason),
 								"requestedOrder",
 								access.requestedOrder == null ? "default" : access.requestedOrder.toString(),
-								"scope", "recorded admission decision; does not infer legal pushdown")));
+								"scope", "recorded admission decision; does not infer legal pushdown"),
+						access.structured(site(access.where))));
 			}
 			int ordinal = 0;
 			for (Map.Entry<AccessMeasurementKey, AdjacencyMeasurement> entry : accessMeasurements.entrySet()) {
@@ -829,10 +874,11 @@ final class LmdbNativeRuntimePlan {
 				metrics.put("diskReads", Metric.unknown("reads", "mmap page residency is not observed"));
 				stages.add(new Stage(id + "/access/" + ordinal++, id, path, "Statement access", "lmdb-native",
 						key.source, measurement.censored == 0L ? "COMPLETE" : "PARTIAL", Map.copyOf(metrics),
-						Map.of("site", key.where == null ? "unknown" : key.where,
+						Map.of("site", key.where == null ? "unknown" : key.where.text(),
 								"index", key.indexName.isEmpty() ? "UNKNOWN" : key.indexName,
 								"scanProvenance", provenance, "timeScope",
-								"active iterator calls; excludes consumer pauses")));
+								"active iterator calls; excludes consumer pauses"),
+						Map.of("where", site(key.where))));
 			}
 			LmdbFusedSipFactorizedRuntime.Telemetry telemetry = mergeTelemetry(fusedTelemetry, adoptedFusedTelemetry);
 			FactorizationTelemetry factor = telemetry.factorization();
@@ -860,7 +906,8 @@ final class LmdbNativeRuntimePlan {
 				stages.add(new Stage(id + "/factorization", id, path, "Factorization", "lmdb-native", strategy,
 						completed ? "COMPLETE" : "PARTIAL", Map.copyOf(metrics),
 						Map.of("modes", factor.modes().toString(), "countScope",
-								"physical storage and logical multiplicity are separate")));
+								"physical storage and logical multiplicity are separate"),
+						Map.of("modes", factor.modes())));
 			}
 			int filterOrdinal = 0;
 			for (FilterTelemetry filter : telemetry.filters()) {
@@ -896,6 +943,129 @@ final class LmdbNativeRuntimePlan {
 			}
 		}
 
+		private static Object site(CapturedOperator where) {
+			return where == null ? "unknown" : where.structured();
+		}
+
+		private Map<String, Object> structuredOrder() {
+			Map<String, Object> fields = new LinkedHashMap<>();
+			fields.put("strategy", structuredStrategy);
+			fields.put("initialBoundMask", "0x" + Long.toHexString(initialBoundMask));
+			fields.put("initialBindings",
+					new LmdbPhysicalPlanDescription(slotNames, null).boundSlots(initialBoundMask));
+			fields.put("entryPlan", entryDescription.operator());
+			fields.put("actualOrder", actualOrder.stream().map(CapturedOperator::operator).toList());
+			Map<String, Object> janino = new LinkedHashMap<>();
+			janino.put("used", janinoUsed);
+			janino.put("reason", janinoReason);
+			if (janinoRoute != null) {
+				janino.put("route", janinoRoute);
+			}
+			janino.put("generatedOrder", generatedOrder.stream().map(CapturedOperator::operator).toList());
+			fields.put("janino", janino);
+			return fields;
+		}
+
+		private synchronized Map<String, Object> structured() {
+			Map<String, Object> fields = new LinkedHashMap<>();
+			fields.put("index", index);
+			fields.put("status", completed ? "COMPLETED" : "ACTIVE_OR_PARTIAL");
+			fields.put("opens", opens);
+			fields.putAll(structuredOrder());
+			Map<String, Object> access = new LinkedHashMap<>();
+			access.put("used", adjacencyAccessUsed);
+			access.put("attempts", adjacencyAccesses.values().stream().map(a -> a.structured(site(a.where))).toList());
+			access.put("measurements", List.of(adjacencyMeasurement, lmdbMeasurement)
+					.stream()
+					.filter(m -> m.total() != 0)
+					.map(AdjacencyMeasurement::structured)
+					.toList());
+			access.put("accessSites", accessMeasurements.entrySet().stream().map(entry -> {
+				Map<String, Object> result = entry.getValue().structured();
+				result.put("where", site(entry.getKey().where));
+				result.put("scanProvenance",
+						entry.getKey().physical ? "physicalIteratorCounter" : "returnedRowFallback");
+				if (!entry.getKey().indexName.isEmpty()) {
+					result.put("actualIndex", entry.getKey().indexName);
+				}
+				return result;
+			}).toList());
+			access.put("omittedMeasurements", omittedAccessMeasurements);
+			access.put("omittedDecisions", omittedAccessDecisions);
+			fields.put("adjacencyAccess", access);
+			Map<String, Object> sip = new LinkedHashMap<>();
+			sip.put("used", adjacencyUsed);
+			sip.put("scope", "planner/interpreted");
+			sip.put("state", adjacencyState);
+			sip.put("reason", adjacencyReason);
+			if (adjacencyWhere != null) {
+				sip.put("where", site(adjacencyWhere));
+			}
+			sip.put("membershipChecks", adjacencyMembershipChecks);
+			sip.put("rowsRejected", adjacencyRowsRejected);
+			fields.put("adjacencySIP", sip);
+			Map<String, Object> adaptive = new LinkedHashMap<>();
+			adaptive.put("used", adaptiveUsed);
+			adaptive.put("scope", "planner/interpreted");
+			adaptive.put("reason", adaptiveReason);
+			adaptive.put("epochs",
+					adaptiveEpochs.stream()
+							.map(p -> Map.of("generation", p.generation(), "depth", p.activeDepth()))
+							.toList());
+			if (adaptiveFinalDepth != null) {
+				adaptive.put("finalDepth", adaptiveFinalDepth);
+			}
+			fields.put("adaptiveFilterPlacement", adaptive);
+			Telemetry telemetry = mergeTelemetry(fusedTelemetry, adoptedFusedTelemetry);
+			fields.put("kernels", telemetry.kernelBinds());
+			Map<String, Object> runtimeSip = new LinkedHashMap<>();
+			runtimeSip.put("used", telemetry.runtimeSipUsed());
+			runtimeSip.put("scope", GENERATED_SCOPE);
+			runtimeSip.put("reason", runtimeSipReason(telemetry));
+			runtimeSip.put("activeDomains", telemetry.activeDomainCount());
+			runtimeSip.put("installedDomains", telemetry.domains().size());
+			runtimeSip.put("membershipTests", telemetry.sipTests());
+			runtimeSip.put("domainDrivenRows", telemetry.sipDrivenRows());
+			runtimeSip.put("rowsRejectedBeforeProbe", telemetry.sipRejects());
+			runtimeSip.put("bypassedTests", telemetry.sipBypasses());
+			runtimeSip.put("rejectionRatio", telemetry.sipRejectionRatio());
+			runtimeSip.put("retainedBytes", telemetry.retainedBytes());
+			runtimeSip.put("memoryRefusals", telemetry.memoryRefusals());
+			runtimeSip.put("domains", telemetry.domains());
+			fields.put("runtimeSIP", runtimeSip);
+			fields.put("factorization", structuredFactorization(telemetry.factorization()));
+			boolean filterUsed = runtimeFilterUsed(telemetry);
+			Map<String, Object> filterPlacement = new LinkedHashMap<>();
+			filterPlacement.put("used", filterUsed);
+			filterPlacement.put("scope", GENERATED_SCOPE);
+			filterPlacement.put("reason", runtimeFilterReason(filterUsed));
+			filterPlacement.put("filtersRelocated", telemetry.filtersRelocated());
+			filterPlacement.put("tests", telemetry.relocatedFilterTests());
+			filterPlacement.put("filters", telemetry.filters());
+			fields.put("runtimeFilterPlacement", filterPlacement);
+			return fields;
+		}
+
+		private static Map<String, Object> structuredFactorization(FactorizationTelemetry telemetry) {
+			Map<String, Object> fields = new LinkedHashMap<>();
+			fields.put("used", telemetry.used());
+			fields.put("scope", FACTORIZATION_SCOPE);
+			fields.put("modes", telemetry.modes());
+			fields.put("rootRows", telemetry.rootRows());
+			fields.put("parentRows", telemetry.parentRows());
+			fields.put("candidateRows", telemetry.candidateRows());
+			fields.put("storedLanes", telemetry.storedLanes());
+			fields.put("rejectedBeforeMaterialization", telemetry.rejectedBeforeMaterialization());
+			fields.put("optionalNullLanes", telemetry.optionalNullLanes());
+			fields.put("flatEquivalentRows", telemetry.flatEquivalentRows());
+			fields.put("multiplicityExtra", telemetry.multiplicityExtra());
+			fields.put("materializationBoundaries", telemetry.materializationBoundaries());
+			fields.put("flattenedRows", telemetry.flattenedRows());
+			fields.put("compressionRatio", telemetry.compressionRatio());
+			fields.put("refusals", telemetry.refusals());
+			return fields;
+		}
+
 		private synchronized void render(StringBuilder out) {
 			LmdbFusedSipFactorizedRuntime.Telemetry telemetry = mergeTelemetry(fusedTelemetry, adoptedFusedTelemetry);
 			out.append("\n  invocation[")
@@ -912,7 +1082,7 @@ final class LmdbNativeRuntimePlan {
 					.append("\n    actualOrder:");
 			if (actualOrder.isEmpty()) {
 				out.append("\n      <not opened; entryPlan=")
-						.append(entryDescription)
+						.append(entryDescription.text())
 						.append('>');
 			} else {
 				appendOrder(out, actualOrder, "      ");
@@ -985,7 +1155,7 @@ final class LmdbNativeRuntimePlan {
 					.append("\n      reason: ")
 					.append(adaptiveReason)
 					.append("\n      epochs: ")
-					.append(adaptiveEpochs)
+					.append(PlacementState.format(adaptiveEpochs))
 					.append("\n      finalDepth: ")
 					.append(adaptiveFinalDepth == null ? "<not applicable>" : adaptiveFinalDepth);
 			renderKernels(out, telemetry.kernelBinds());
@@ -1008,7 +1178,7 @@ final class LmdbNativeRuntimePlan {
 			kernelBinds.forEach((key, count) -> out.append("\n      ").append(key).append(" binds=").append(count));
 		}
 
-		private static void renderRuntimeSip(StringBuilder out, LmdbFusedSipFactorizedRuntime.Telemetry telemetry) {
+		private static String runtimeSipReason(Telemetry telemetry) {
 			boolean used = telemetry.runtimeSipUsed();
 			String reason;
 			if (used) {
@@ -1022,10 +1192,17 @@ final class LmdbNativeRuntimePlan {
 			} else {
 				reason = "NOT_ATTEMPTED[no generated/runtime SIP domain installed]";
 			}
+			return reason;
+		}
+
+		private static void renderRuntimeSip(StringBuilder out, Telemetry telemetry) {
+			boolean used = telemetry.runtimeSipUsed();
+			String reason = runtimeSipReason(telemetry);
 			out.append("\n    runtimeSIP:")
 					.append("\n      used: ")
 					.append(used)
-					.append("\n      scope: generated/factorized")
+					.append("\n      scope: ")
+					.append(GENERATED_SCOPE)
 					.append("\n      reason: ")
 					.append(reason)
 					.append("\n      activeDomains: ")
@@ -1092,7 +1269,8 @@ final class LmdbNativeRuntimePlan {
 			out.append("\n    factorization:")
 					.append("\n      used: ")
 					.append(telemetry.used())
-					.append("\n      scope: native/generated")
+					.append("\n      scope: ")
+					.append(FACTORIZATION_SCOPE)
 					.append("\n      modes: ")
 					.append(telemetry.modes())
 					.append("\n      rootRows: ")
@@ -1121,15 +1299,23 @@ final class LmdbNativeRuntimePlan {
 					.append(telemetry.refusals());
 		}
 
-		private static void renderRuntimeFilters(StringBuilder out,
-				LmdbFusedSipFactorizedRuntime.Telemetry telemetry) {
-			boolean used = telemetry.filters().stream().anyMatch(LmdbFusedSipFactorizedRuntime.FilterTelemetry::used);
+		private static boolean runtimeFilterUsed(Telemetry telemetry) {
+			return telemetry.filters().stream().anyMatch(FilterTelemetry::used);
+		}
+
+		private static String runtimeFilterReason(boolean used) {
+			return used ? "ACTIVATED" : "NOT_ATTEMPTED[no generated/factorized filter placement observed]";
+		}
+
+		private static void renderRuntimeFilters(StringBuilder out, Telemetry telemetry) {
+			boolean used = runtimeFilterUsed(telemetry);
 			out.append("\n    runtimeFilterPlacement:")
 					.append("\n      used: ")
 					.append(used)
-					.append("\n      scope: generated/factorized")
+					.append("\n      scope: ")
+					.append(GENERATED_SCOPE)
 					.append("\n      reason: ")
-					.append(used ? "ACTIVATED" : "NOT_ATTEMPTED[no generated/factorized filter placement observed]")
+					.append(runtimeFilterReason(used))
 					.append("\n      filtersRelocated: ")
 					.append(telemetry.filtersRelocated())
 					.append("\n      tests: ")
@@ -1177,9 +1363,9 @@ final class LmdbNativeRuntimePlan {
 			return String.format(java.util.Locale.ROOT, "%.4f", value);
 		}
 
-		private static void appendOrder(StringBuilder out, List<String> order, String indent) {
+		private static void appendOrder(StringBuilder out, List<CapturedOperator> order, String indent) {
 			for (int i = 0; i < order.size(); i++) {
-				out.append('\n').append(indent).append(i).append(": ").append(order.get(i));
+				out.append('\n').append(indent).append(i).append(": ").append(order.get(i).text());
 			}
 		}
 
@@ -1196,12 +1382,12 @@ final class LmdbNativeRuntimePlan {
 			private final long pred;
 			private final long obj;
 			private final long context;
-			private final String where;
-			private volatile List<String> bindings;
+			private final CapturedOperator where;
+			private volatile List<LmdbNativeExplain.ResolvedTerm> bindings;
 			private long count = 1L;
 
 			private AdjacencyAccess(String source, String outcome, String reason, StatementOrder requestedOrder,
-					long subj, long pred, long obj, long context, String where) {
+					long subj, long pred, long obj, long context, CapturedOperator where) {
 				this.source = source;
 				this.outcome = outcome;
 				this.reason = reason;
@@ -1219,12 +1405,40 @@ final class LmdbNativeRuntimePlan {
 			}
 
 			private void resolveTerms(NativeLmdbQuerySource termSource) {
-				bindings = List.of(binding(subj, termSource), binding(pred, termSource), binding(obj, termSource),
-						binding(context, termSource));
+				bindings = List.of(LmdbNativeExplain.resolvedTerm(subj, termSource),
+						LmdbNativeExplain.resolvedTerm(pred, termSource),
+						LmdbNativeExplain.resolvedTerm(obj, termSource),
+						LmdbNativeExplain.resolvedTerm(context, termSource));
+			}
+
+			private static Map<String, Object> binding(long id, LmdbNativeExplain.ResolvedTerm term) {
+				if (!bound(id)) {
+					return Map.of("bound", false);
+				}
+				return term.term() == null ? Map.of("bound", true, "id", term.id())
+						: Map.of("bound", true, "id", term.id(), "term", term.term());
+			}
+
+			private Map<String, Object> structured(Object site) {
+				var terms = resolvedBindings();
+				Map<String, Object> fields = new LinkedHashMap<>();
+				fields.put("source", "ADJACENCY".equals(source) ? "IN_MEMORY_ADJACENCY" : source);
+				fields.put("outcome", outcome);
+				fields.put("reason", reason);
+				fields.put("where", site);
+				if (requestedOrder != null) {
+					fields.put("requestedOrder", requestedOrder.name());
+				}
+				fields.put("bindings",
+						Map.of("subject", binding(subj, terms.get(0)), "predicate", binding(pred, terms.get(1)),
+								"object", binding(obj, terms.get(2)), "context", binding(context, terms.get(3))));
+				fields.put("bindingValues", count == 1 ? "exact" : "representative");
+				fields.put("opens", count);
+				return fields;
 			}
 
 			private void render(StringBuilder out, int index) {
-				List<String> rendered = bindings;
+				var rendered = resolvedBindings();
 				out.append("\n        ")
 						.append(index)
 						.append(":")
@@ -1239,20 +1453,28 @@ final class LmdbNativeRuntimePlan {
 						.append("\n          requestedOrder: ")
 						.append(requestedOrder == null ? "<default>" : requestedOrder)
 						.append("\n          subject: ");
-				out.append(rendered == null ? binding(subj, null) : rendered.get(0));
+				out.append(bindingText(subj, rendered.get(0)));
 				out.append("\n          predicate: ");
-				out.append(rendered == null ? binding(pred, null) : rendered.get(1));
+				out.append(bindingText(pred, rendered.get(1)));
 				out.append("\n          object: ");
-				out.append(rendered == null ? binding(obj, null) : rendered.get(2));
+				out.append(bindingText(obj, rendered.get(2)));
 				out.append("\n          context: ");
-				out.append(rendered == null ? binding(context, null) : rendered.get(3));
+				out.append(bindingText(context, rendered.get(3)));
 				out.append("\n          bindingValues: ")
 						.append(count == 1L ? "exact" : "representative (aggregated by bound/unbound shape)");
 				out.append("\n          opens: ").append(count);
 			}
 
-			private static String binding(long id, NativeLmdbQuerySource termSource) {
-				return bound(id) ? "BOUND[" + LmdbNativeExplain.termId(id, termSource) + "]" : "UNBOUND";
+			private List<LmdbNativeExplain.ResolvedTerm> resolvedBindings() {
+				var visible = bindings;
+				return visible != null ? visible
+						: List.of(LmdbNativeExplain.resolvedTerm(subj, null),
+								LmdbNativeExplain.resolvedTerm(pred, null), LmdbNativeExplain.resolvedTerm(obj, null),
+								LmdbNativeExplain.resolvedTerm(context, null));
+			}
+
+			private static String bindingText(long id, LmdbNativeExplain.ResolvedTerm term) {
+				return bound(id) ? "BOUND[" + term.text() + "]" : "UNBOUND";
 			}
 		}
 
@@ -1339,6 +1561,25 @@ final class LmdbNativeRuntimePlan {
 				render(out, false);
 			}
 
+			private Map<String, Object> structured() {
+				Map<String, Object> fields = new LinkedHashMap<>();
+				fields.put("source", source);
+				fields.put("completed", completed);
+				fields.put("censored", censored);
+				fields.put("rowsScannedActual", scannedRows);
+				fields.put("rowsMatchedActual", matchedRows);
+				fields.put("rowsFilteredActual", filteredRows);
+				fields.put("physicalCounterMeasurements", physicalCounterMeasurements);
+				fields.put("returnedRowFallbackMeasurements", returnedRowFallbackMeasurements);
+				if (timedMeasurements != 0) {
+					fields.put("activeNanos", activeNanos);
+					fields.put("maxActiveNanosPerOpen", maxActiveNanos);
+				}
+				fields.put("maxRowsScannedPerOpen", maxScannedRows);
+				fields.put("maxRowsMatchedPerOpen", maxMatchedRows);
+				return fields;
+			}
+
 			private void render(StringBuilder out, boolean accessSite) {
 				if (total() == 0L) {
 					return;
@@ -1371,10 +1612,11 @@ final class LmdbNativeRuntimePlan {
 		}
 
 		private record AdjacencyAccessKey(String source, String outcome, String reason, StatementOrder requestedOrder,
-				boolean subjectBound, boolean predicateBound, boolean objectBound, boolean contextBound, String where) {
+				boolean subjectBound, boolean predicateBound, boolean objectBound, boolean contextBound,
+				CapturedOperator where) {
 		}
 
-		private record AccessMeasurementKey(String where, String source, String indexName, boolean physical) {
+		private record AccessMeasurementKey(CapturedOperator where, String source, String indexName, boolean physical) {
 		}
 	}
 }

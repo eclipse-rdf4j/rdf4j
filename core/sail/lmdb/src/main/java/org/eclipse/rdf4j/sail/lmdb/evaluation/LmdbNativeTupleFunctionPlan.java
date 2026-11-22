@@ -14,6 +14,7 @@ package org.eclipse.rdf4j.sail.lmdb.evaluation;
 
 import java.io.IOException;
 import java.util.List;
+import java.util.Map;
 
 import org.eclipse.rdf4j.common.annotation.Experimental;
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
@@ -23,6 +24,7 @@ import org.eclipse.rdf4j.query.QueryEvaluationException;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryValueEvaluationStep;
 import org.eclipse.rdf4j.query.algebra.evaluation.ValueExprEvaluationException;
 import org.eclipse.rdf4j.query.algebra.evaluation.function.TupleFunction;
+import org.eclipse.rdf4j.query.explanation.PhysicalPlan.Operator;
 
 /** Stateful/external-SPI tuple function execution on the semantic native row tier. */
 @Experimental
@@ -33,6 +35,11 @@ final class TupleFunctionPlan implements SlotPlan {
 	private final int[] resultSlots;
 	private final Value[] resultConstants;
 	private final long producedMask;
+
+	Operator physicalOperator(LmdbPhysicalPlanDescription description) {
+		return new Operator("TupleFunction", Map.of("function", function.getURI(), "arity", arguments.length,
+				"resultSlots", description.slots(resultSlots)));
+	}
 
 	TupleFunctionPlan(TupleFunction function, QueryValueEvaluationStep[] arguments, ValueFactory valueFactory,
 			int[] resultSlots, Value[] resultConstants) {

@@ -621,6 +621,46 @@ class GenericPlanNodeTest {
 	}
 
 	@Test
+	void structuredFieldsRoundTripAlongsideCompatibilityText() {
+		ObjectMapper mapper = JsonMapper.builder().build();
+		GenericPlanNode plan = mapper.readValue("""
+				{
+				  "type": "Slice (limit=100)",
+				  "operator": "Slice",
+				  "arguments": {"limit": 100},
+				  "actualAttributes": {"nativeDecisionOutcome": {"winner": "irKernel", "expectedNanos": 123}},
+				  "physicalPlanPrelude": "legacy plan",
+				  "plannedPhysicalPlan": {"engine": "lmdb-native", "state": "planned", "kind": "row",
+				    "plan": {"name": "NativeRows", "arguments": {"limit": 100}}},
+				  "physicalPlans": [{"engine": "lmdb-native", "state": "executed", "invocations": [
+				    {"opens": 1, "actualOrder": [{"name": "Pattern", "arguments": {"s": {"kind": "slot", "slot": 0}}}]}
+				  ]}],
+				  "executionProfile": {"schemaVersion": 1, "status": "COMPLETE", "elapsedNanos": 42,
+				    "inputPlan": {"type": "Var (name=s)", "operator": "Var", "arguments": {"name": "s"}},
+				    "stages": [{"id": "root", "operator": "Native invocation", "status": "COMPLETE",
+				      "attributes": {"used": true, "rowOrder": ["s", "p", "o"]}}]}
+				}
+				""", GenericPlanNode.class);
+		JsonNode json = mapper.readTree(new ExplanationImpl(plan, false, null).toJson());
+		assertEquals("Slice", json.path("operator").asText());
+		assertEquals(100, json.path("arguments").path("limit").asInt());
+		assertEquals(123, json.path("actualAttributes").path("nativeDecisionOutcome").path("expectedNanos").asInt());
+		assertEquals("NativeRows", json.path("plannedPhysicalPlan").path("plan").path("name").asText());
+		assertEquals("operator", json.path("plannedPhysicalPlan").path("plan").path("kind").asText());
+		assertEquals("Pattern", json.path("physicalPlans")
+				.path(0)
+				.path("invocations")
+				.path(0)
+				.path("actualOrder")
+				.path(0)
+				.path("name")
+				.asText());
+		assertEquals("Var", json.path("executionProfile").path("inputPlan").path("operator").asText());
+		assertTrue(json.path("executionProfile").path("stages").path(0).path("attributes").path("used").asBoolean());
+		assertTrue(plan.toString().startsWith("legacy plan"));
+	}
+
+	@Test
 	void toJsonRoundTripsPhysicalPlanPreludeForWorkbenchTextReconstruction() {
 		String prelude = "LMDB native physical plan (executed)" + System.lineSeparator()
 				+ "  invocation[0]:" + System.lineSeparator()
@@ -818,6 +858,46 @@ class GenericPlanNodeTest {
 		IllegalArgumentException error = assertThrows(IllegalArgumentException.class,
 				() -> new ExplanationImpl(root, false, null).toJson());
 		assertTrue(error.getMessage().toLowerCase(Locale.ROOT).contains("cycle"), error.getMessage());
+	}
+
+	@Test
+	void toJsonAccountsForDeepPhysicalAndInputPlans() {
+		GenericPlanNode root = new GenericPlanNode("root");
+		GenericPlanNode input = new GenericPlanNode("leaf");
+		PhysicalPlan.Operator physical = new PhysicalPlan.Operator("Pattern", null);
+		for (int i = 0; i < 260; i++) {
+			GenericPlanNode parent = new GenericPlanNode("input");
+			parent.addPlans(input);
+			input = parent;
+			physical = new PhysicalPlan.Operator("Filter", Map.of("arg", physical));
+		}
+		root.setPhysicalPlans(List.of(new PhysicalPlan("example", "planned", "row", physical, null)));
+		QueryExecutionProfile.Collector collector = new QueryExecutionProfile.Collector();
+		collector.inputPlan(input);
+		root.setExecutionProfile(collector.snapshot());
+
+		ObjectMapper reader = JsonMapper.builder(JsonFactory.builder()
+				.streamReadConstraints(StreamReadConstraints.builder().maxNestingDepth(600).build())
+				.build()).build();
+		JsonNode json = reader.readTree(new ExplanationImpl(root, false, null).toJson());
+		JsonNode inputNode = json.path("executionProfile").path("inputPlan");
+		JsonNode physicalNode = json.path("physicalPlans").path(0).path("plan");
+		for (int i = 0; i < 260; i++) {
+			inputNode = inputNode.path("plans").path(0);
+			physicalNode = physicalNode.path("arguments").path("arg");
+		}
+		assertEquals("leaf", inputNode.path("type").asText());
+		assertEquals("Pattern", physicalNode.path("name").asText());
+	}
+
+	@Test
+	void toJsonRejectsCyclesThroughProfileInput() {
+		GenericPlanNode root = new GenericPlanNode("root");
+		QueryExecutionProfile.Collector collector = new QueryExecutionProfile.Collector();
+		collector.inputPlan(root);
+		root.setExecutionProfile(collector.snapshot());
+
+		assertThrows(IllegalArgumentException.class, () -> new ExplanationImpl(root, false, null).toJson());
 	}
 
 	public static final class PlanWithNestedMetadata extends GenericPlanNode {

@@ -210,6 +210,7 @@ public final class LmdbNativeAttemptMetrics {
 
 	private TupleExpr strategyTarget;
 	private String strategy;
+	private Object structuredStrategy;
 
 	private LmdbNativeAttemptMetrics(LmdbNativeAttemptMetrics parent, boolean direct, TupleExpr explainTarget) {
 		this.parent = parent;
@@ -349,18 +350,23 @@ public final class LmdbNativeAttemptMetrics {
 	}
 
 	void deferStrategy(TupleExpr target, String executedStrategy) {
+		deferStrategy(target, executedStrategy, executedStrategy);
+	}
+
+	void deferStrategy(TupleExpr target, String executedStrategy, Object structured) {
 		if (target == null || executedStrategy == null || !LmdbNativeExplain.recordsExecutionPaths(target)) {
 			return;
 		}
 		if (committed) {
-			parent.deferStrategy(target, executedStrategy);
+			parent.deferStrategy(target, executedStrategy, structured);
 			return;
 		}
 		if (direct) {
-			LmdbNativeExplain.recordExecutionPath(target, executedStrategy);
+			LmdbNativeExplain.recordExecutionPath(target, executedStrategy, structured);
 		} else {
 			strategyTarget = target;
 			strategy = executedStrategy;
+			structuredStrategy = structured;
 		}
 	}
 
@@ -749,6 +755,7 @@ public final class LmdbNativeAttemptMetrics {
 		if (child.strategyTarget != null) {
 			strategyTarget = child.strategyTarget;
 			strategy = child.strategy;
+			structuredStrategy = child.structuredStrategy;
 		}
 	}
 
@@ -786,7 +793,8 @@ public final class LmdbNativeAttemptMetrics {
 		add(NativeGroupIteration.ORDERED_GROUPS, completed.orderedGroups);
 		publishExplainMetrics(completed);
 		if (completed.strategyTarget != null) {
-			LmdbNativeExplain.recordExecutionPath(completed.strategyTarget, completed.strategy);
+			LmdbNativeExplain.recordExecutionPath(completed.strategyTarget, completed.strategy,
+					completed.structuredStrategy);
 		}
 	}
 

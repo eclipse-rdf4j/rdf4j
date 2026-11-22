@@ -13,11 +13,14 @@ package org.eclipse.rdf4j.query.algebra.helpers;
 
 import java.util.ArrayList;
 import java.util.Collections;
+import java.util.IdentityHashMap;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Set;
+import java.util.function.Supplier;
 
 import org.eclipse.rdf4j.common.annotation.Experimental;
 import org.eclipse.rdf4j.common.annotation.InternalUseOnly;
@@ -32,6 +35,7 @@ import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.query.algebra.VariableScopeChange;
 import org.eclipse.rdf4j.query.explanation.Explanation;
 import org.eclipse.rdf4j.query.explanation.GenericPlanNode;
+import org.eclipse.rdf4j.query.explanation.PhysicalPlan;
 import org.eclipse.rdf4j.query.explanation.QueryExplanationContext;
 import org.eclipse.rdf4j.query.explanation.StrategyDecision;
 import org.eclipse.rdf4j.query.explanation.TelemetryMetricNames;
@@ -84,6 +88,7 @@ public class QueryModelTreeToGenericPlanNode extends AbstractQueryModelVisitor<R
 		}
 		if (top != null) {
 			applyPhysicalPlanPrelude();
+			applyStructuredPhysicalPlans();
 			top.applyExplanationLevel(level);
 			if (level.includesRuntimeTelemetry() && top.getExecutionProfile() == null
 					&& QueryExplanationContext.telemetry() != null) {
@@ -102,6 +107,38 @@ public class QueryModelTreeToGenericPlanNode extends AbstractQueryModelVisitor<R
 			physicalPlan = collectPhysicalPlans(TelemetryMetricNames.PLANNED_PHYSICAL_PLAN, false);
 		}
 		top.setPhysicalPlanPrelude(physicalPlan);
+	}
+
+	private void applyStructuredPhysicalPlans() {
+		QueryModelNode metricRoot = optimizerMetricWrapper == null ? topTupleExpr : optimizerMetricWrapper;
+		List<PhysicalPlan> reports = new ArrayList<>();
+		if (includesExecutionSummary()) {
+			collectStructuredPhysicalPlans(metricRoot, PhysicalPlan.RUNTIME_METADATA_KEY, null, reports,
+					new IdentityHashMap<>());
+		}
+		if (reports.isEmpty() && level.includesEvaluationAnnotations()) {
+			collectStructuredPhysicalPlans(metricRoot, PhysicalPlan.PLANNED_METADATA_KEY, null, reports,
+					new IdentityHashMap<>());
+		}
+		top.setPhysicalPlans(reports);
+	}
+
+	private void collectStructuredPhysicalPlans(QueryModelNode node, Object key, Object inherited,
+			List<PhysicalPlan> reports, Map<Supplier<?>, PhysicalPlan> snapshots) {
+		Object metadata = node.getQueryModelMetadata(key);
+		if (metadata != null && !Objects.equals(metadata, inherited)) {
+			PhysicalPlan report = metadata instanceof PhysicalPlan physicalPlan ? physicalPlan
+					: metadata instanceof Supplier<?> supplier
+							? snapshots.computeIfAbsent(supplier, source -> (PhysicalPlan) source.get())
+							: null;
+			if (report != null) {
+				reports.add(report);
+			}
+		}
+		Object childMetadata = metadata == null ? inherited : metadata;
+		for (QueryModelNode child : directChildren(node)) {
+			collectStructuredPhysicalPlans(child, key, childMetadata, reports, snapshots);
+		}
 	}
 
 	private String collectPhysicalPlans(String metricName, boolean actual) {
@@ -136,8 +173,25 @@ public class QueryModelTreeToGenericPlanNode extends AbstractQueryModelVisitor<R
 
 	private GenericPlanNode buildPlanNode(QueryModelNode node, String logicalPath) {
 		GenericPlanNode genericPlanNode = new GenericPlanNode(node.getSignature());
+		genericPlanNode.setOperator(node.getClass().getSimpleName());
+		genericPlanNode.setArguments(LogicalPlanArguments.fromNode(node));
 		genericPlanNode.setLogicalPath(logicalPath);
+		if (includesExecutionSummary()) {
+			Object nodeAttributes = node.getQueryModelMetadata(PhysicalPlan.ACTUAL_ATTRIBUTES_METADATA_KEY);
+			Object wrapperAttributes = node == topTupleExpr && optimizerMetricWrapper != null
+					? optimizerMetricWrapper.getQueryModelMetadata(PhysicalPlan.ACTUAL_ATTRIBUTES_METADATA_KEY)
+					: null;
+			if (nodeAttributes != null || wrapperAttributes != null) {
+				Map<String, Object> attributes = new LinkedHashMap<>();
+				addActualAttributes(attributes, wrapperAttributes);
+				addActualAttributes(attributes, nodeAttributes);
+				genericPlanNode.setActualAttributes(attributes);
+			}
+		}
 		if (level.includesEvaluationAnnotations()) {
+			if (node.getQueryModelMetadata(PhysicalPlan.PLANNED_METADATA_KEY) instanceof PhysicalPlan physicalPlan) {
+				genericPlanNode.setPlannedPhysicalPlan(physicalPlan);
+			}
 			Object report = node.getQueryModelMetadata(StrategyDecision.METADATA_KEY);
 			if (report instanceof List<?> decisions) {
 				genericPlanNode.setStrategyDecisions(decisions.stream()
@@ -368,6 +422,16 @@ public class QueryModelTreeToGenericPlanNode extends AbstractQueryModelVisitor<R
 		DirectChildCollector collector = new DirectChildCollector();
 		node.visitChildren(collector);
 		return collector.children;
+	}
+
+	private static void addActualAttributes(Map<String, Object> attributes, Object metadata) {
+		if (metadata instanceof Map<?, ?> fields) {
+			fields.forEach((key, value) -> {
+				if (key instanceof String name) {
+					attributes.put(name, value);
+				}
+			});
+		}
 	}
 
 	private static final class DirectChildCollector extends AbstractQueryModelVisitor<RuntimeException> {

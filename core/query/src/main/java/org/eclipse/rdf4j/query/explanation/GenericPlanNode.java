@@ -150,6 +150,11 @@ public class GenericPlanNode {
 	private Map<String, Long> longMetricsPlanned = new LinkedHashMap<>();
 	private Map<String, Double> doubleMetricsPlanned = new LinkedHashMap<>();
 	private Map<String, String> stringMetricsPlanned = new LinkedHashMap<>();
+	private String operator;
+	private Map<String, Object> arguments;
+	private Map<String, Object> actualAttributes;
+	private PhysicalPlan plannedPhysicalPlan;
+	private List<PhysicalPlan> physicalPlans;
 	private String physicalPlanPrelude;
 	private List<StrategyDecision> strategyDecisions;
 	private QueryExecutionProfile executionProfile;
@@ -169,6 +174,49 @@ public class GenericPlanNode {
 
 	public void setExecutionProfile(QueryExecutionProfile executionProfile) {
 		this.executionProfile = executionProfile;
+	}
+
+	public String getOperator() {
+		return operator;
+	}
+
+	public void setOperator(String operator) {
+		this.operator = operator;
+	}
+
+	public Map<String, Object> getArguments() {
+		return arguments;
+	}
+
+	public void setArguments(Map<String, Object> arguments) {
+		this.arguments = PhysicalPlan.copyFields(arguments);
+	}
+
+	public Map<String, Object> getActualAttributes() {
+		if (!executionSummaryEnabled) {
+			return null;
+		}
+		return runtimeTelemetryEnabled ? actualAttributes : visibleSummaryMetrics(actualAttributes);
+	}
+
+	public void setActualAttributes(Map<String, Object> actualAttributes) {
+		this.actualAttributes = PhysicalPlan.copyFields(actualAttributes);
+	}
+
+	public PhysicalPlan getPlannedPhysicalPlan() {
+		return plannedPhysicalPlan;
+	}
+
+	public void setPlannedPhysicalPlan(PhysicalPlan plannedPhysicalPlan) {
+		this.plannedPhysicalPlan = plannedPhysicalPlan;
+	}
+
+	public List<PhysicalPlan> getPhysicalPlans() {
+		return physicalPlans;
+	}
+
+	public void setPhysicalPlans(List<PhysicalPlan> physicalPlans) {
+		this.physicalPlans = physicalPlans == null || physicalPlans.isEmpty() ? null : List.copyOf(physicalPlans);
 	}
 
 	public List<StrategyDecision> getStrategyDecisions() {

@@ -14,7 +14,17 @@ package org.eclipse.rdf4j.sail.lmdb.evaluation;
 
 import java.io.IOException;
 import java.util.ArrayDeque;
+import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.Collections;
+import java.util.HashMap;
+import java.util.IdentityHashMap;
+import java.util.LinkedHashMap;
+import java.util.List;
+import java.util.Locale;
+import java.util.Map;
+import java.util.function.Supplier;
+import java.util.stream.Collectors;
 
 import org.eclipse.rdf4j.common.annotation.Experimental;
 import org.eclipse.rdf4j.model.Value;
@@ -22,7 +32,11 @@ import org.eclipse.rdf4j.query.QueryEvaluationException;
 import org.eclipse.rdf4j.query.algebra.QueryModelNode;
 import org.eclipse.rdf4j.query.algebra.QueryRoot;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
+import org.eclipse.rdf4j.query.algebra.evaluation.QueryEvaluationStep;
 import org.eclipse.rdf4j.query.algebra.helpers.AbstractQueryModelVisitor;
+import org.eclipse.rdf4j.query.explanation.ExplanationTerm;
+import org.eclipse.rdf4j.query.explanation.PhysicalPlan;
+import org.eclipse.rdf4j.query.explanation.PhysicalPlan.Operator;
 import org.eclipse.rdf4j.query.explanation.TelemetryMetricNames;
 import org.eclipse.rdf4j.rio.helpers.NTriplesUtil;
 import org.eclipse.rdf4j.sail.SailException;
@@ -170,89 +184,98 @@ final class LmdbNativeExplain {
 	 * cannot be part of the planned physical plan; without this, a regression that silently disqualifies a path such as
 	 * factorization is invisible in {@code explain(Executed)}.
 	 */
-	static void recordExecutionPath(TupleExpr expr, String path) {
-		expr = logicalOrigin(expr);
-		if (expr == null || path == null || !recordsExecutionPaths(expr)) {
-			return;
-		}
-		synchronized (expr) {
-			ExecutionPathSummary summary = expr.getStringMetricActual(EXECUTION_PATH) == null
-					? null
-					: (ExecutionPathSummary) expr.getQueryModelMetadata(EXECUTION_PATH_SUMMARY_KEY);
-			ExecutionPathSummary updated = summary == null ? ExecutionPathSummary.first(path) : summary.add(path);
-			if (updated == null) {
-				return;
-			}
-			expr.setQueryModelMetadata(EXECUTION_PATH_SUMMARY_KEY, updated);
-			expr.setStringMetricActual(EXECUTION_PATH, updated.rendered);
-			if (expr instanceof QueryRoot) {
-				TupleExpr arg = ((QueryRoot) expr).getArg();
-				synchronized (arg) {
-					arg.setStringMetricActual(EXECUTION_PATH, updated.rendered);
-				}
-			}
+	static void recordParameterizedPath(TupleExpr expr, String strategy, String parameter, String value) {
+		if (recordsExecutionPaths(expr)) {
+			recordExecutionPath(expr, strategy + "(" + value + ")", new Operator(strategy, Map.of(parameter, value)));
 		}
 	}
 
-	/** Whether {@code path} has already been recorded on the expression's logical origin (best effort, lock-free). */
+	static void recordExecutionPath(TupleExpr expr, String path) {
+		recordExecutionPath(expr, path, path);
+	}
+
+	static void recordExecutionPath(TupleExpr expr, String path, Object structured) {
+		expr = logicalOrigin(expr);
+		if (expr != null && path != null && recordsExecutionPaths(expr)) {
+			recordObservation(expr, EXECUTION_PATH, EXECUTION_PATH_SUMMARY_KEY, "paths", MAX_REPORTED_PATHS,
+					path, structured);
+		}
+	}
+
+	/** Whether this exact path has already been recorded on the expression's logical origin. */
 	static boolean hasExecutionPath(TupleExpr expr, String path) {
 		expr = logicalOrigin(expr);
 		if (expr == null || path == null) {
 			return false;
 		}
-		String rendered = expr.getStringMetricActual(EXECUTION_PATH);
-		return rendered != null && (" | " + rendered + " | ").contains(" | " + path + " | ");
-	}
-
-	/** Records one attempted strategy's reason for declining this query, as a deterministic distinct summary. */
-	static void recordStrategyDecline(TupleExpr expr, String strategy, String reason) {
-		expr = logicalOrigin(expr);
-		if (expr == null || strategy == null || reason == null || !recordsExecutionPaths(expr)) {
-			return;
-		}
-		String decline = strategy + ":" + reason;
-		synchronized (expr) {
-			StrategyDeclineSummary summary = expr.getStringMetricActual(STRATEGY_DECLINES) == null
-					? null
-					: (StrategyDeclineSummary) expr.getQueryModelMetadata(STRATEGY_DECLINE_SUMMARY_KEY);
-			StrategyDeclineSummary updated = summary == null
-					? StrategyDeclineSummary.first(decline)
-					: summary.add(decline);
-			if (updated == null) {
-				return;
-			}
-			expr.setQueryModelMetadata(STRATEGY_DECLINE_SUMMARY_KEY, updated);
-			expr.setStringMetricActual(STRATEGY_DECLINES, updated.rendered);
-			if (expr instanceof QueryRoot) {
-				TupleExpr arg = ((QueryRoot) expr).getArg();
-				synchronized (arg) {
-					arg.setStringMetricActual(STRATEGY_DECLINES, updated.rendered);
+		if (expr.getStringMetricActual(EXECUTION_PATH) != null
+				&& expr.getQueryModelMetadata(EXECUTION_PATH_SUMMARY_KEY) instanceof ObservationSummary summary) {
+			for (var observation : summary.observations) {
+				if (observation.label.equals(path)) {
+					return true;
 				}
 			}
 		}
+		return false;
 	}
 
-	/** Records the admissible strategy costs of a decision, rendered as {@code tag=cost} pairs separated by commas. */
-	static void recordStrategyProposalCosts(TupleExpr expr, String rendered) {
-		setRuntimeMetric(expr, STRATEGY_PROPOSAL_COSTS, rendered);
+	static void recordStrategyDecline(TupleExpr expr, String strategy, String reason) {
+		expr = logicalOrigin(expr);
+		if (expr != null && strategy != null && reason != null && expr.isRuntimeTelemetryEnabled()) {
+			recordObservation(expr, STRATEGY_DECLINES, STRATEGY_DECLINE_SUMMARY_KEY, "declines", MAX_REPORTED_DECLINES,
+					strategy + ":" + reason, Map.of("strategy", strategy, "reason", reason));
+		}
 	}
 
-	static void recordStrategyProposalFeatures(TupleExpr expr, String rendered) {
-		setRuntimeMetric(expr, STRATEGY_PROPOSAL_FEATURES, rendered);
+	private static void recordObservation(TupleExpr expr, String metric, Object key, String valuesField, int limit,
+			String label, Object value) {
+		synchronized (expr) {
+			ObservationSummary previous = expr.getStringMetricActual(metric) == null
+					? null
+					: (ObservationSummary) expr.getQueryModelMetadata(key);
+			if (previous == null) {
+				previous = new ObservationSummary(List.of(), false);
+			}
+			var next = previous.add(new Observation(label, value), limit);
+			if (next != previous) {
+				expr.setQueryModelMetadata(key, next);
+				String rendered = next.observations.stream().map(Observation::label).collect(Collectors.joining(" | "))
+						+ (next.truncated ? " | ..." : "");
+				publishStringMetric(expr, metric, rendered, Map.of(valuesField,
+						next.observations.stream().map(Observation::value).toList(), "truncated", next.truncated));
+			}
+		}
 	}
 
-	/** Records which strategy won a decision, why, and its expected price. */
-	static void recordDecisionOutcome(TupleExpr expr, String rendered) {
-		setRuntimeMetric(expr, DECISION_OUTCOME, rendered);
+	static void recordStrategyProposalCosts(TupleExpr expr, String rendered, Map<String, Object> costs) {
+		setRuntimeMetric(expr, STRATEGY_PROPOSAL_COSTS, rendered, costs);
+	}
+
+	static void recordStrategyProposalFeatures(TupleExpr expr, String rendered, Map<String, Object> features) {
+		setRuntimeMetric(expr, STRATEGY_PROPOSAL_FEATURES, rendered, features);
+	}
+
+	static void recordDecisionOutcome(TupleExpr expr, String winner, String reason, String kind, double expectedNanos) {
+		String rendered = "winner=" + winner + ";reason=" + reason + ";kind=" + kind + ";expectedNanos="
+				+ String.format(Locale.ROOT, "%.0f", expectedNanos);
+		Map<String, Object> outcome = new LinkedHashMap<>();
+		outcome.put("winner", winner);
+		outcome.put("reason", reason);
+		outcome.put("kind", kind);
+		if (Double.isFinite(expectedNanos)) {
+			outcome.put("expectedNanos", expectedNanos);
+		}
+		setRuntimeMetric(expr, DECISION_OUTCOME, rendered, Collections.unmodifiableMap(outcome));
 	}
 
 	/**
 	 * Records one rendered decision record and returns its slot. A re-ranking of the same dispatch passes the slot it
 	 * got back, so a retry replaces its first ranking instead of counting as another decision.
 	 */
-	static int recordDecision(TupleExpr expr, LmdbNativeDecisionPoint point, int slot, String rendered) {
+	static int recordDecision(TupleExpr expr, LmdbNativeDecisionPoint point, int slot,
+			LmdbNativeDecisionRecord record) {
 		expr = logicalOrigin(expr);
-		if (expr == null || rendered == null || !recordsExecutionPaths(expr)) {
+		if (expr == null || !expr.isRuntimeTelemetryEnabled()) {
 			return slot;
 		}
 		String prefix = DECISION_PREFIX + point.name() + '.';
@@ -267,13 +290,7 @@ final class LmdbNativeExplain {
 			if (taken >= MAX_DECISIONS_PER_POINT) {
 				return taken;
 			}
-			expr.setStringMetricActual(prefix + taken, rendered);
-			if (expr instanceof QueryRoot root) {
-				TupleExpr arg = root.getArg();
-				synchronized (arg) {
-					arg.setStringMetricActual(prefix + taken, rendered);
-				}
-			}
+			publishStringMetric(expr, prefix + taken, record.metric(), record.structured());
 			return taken;
 		}
 	}
@@ -302,20 +319,22 @@ final class LmdbNativeExplain {
 		if (expr == null || !expr.isRuntimeTelemetryEnabled()) {
 			return null;
 		}
-		String initialBoundMask = null;
 		synchronized (expr) {
-			if (expr.getStringMetricActual(INITIAL_BOUND_MASK) == null) {
-				initialBoundMask = describeBoundMask(boundMask, layout.slotNames());
-				expr.setStringMetricActual(INITIAL_BOUND_MASK, initialBoundMask);
-			}
-			if (expr instanceof QueryRoot) {
-				TupleExpr arg = ((QueryRoot) expr).getArg();
-				synchronized (arg) {
-					if (arg.getStringMetricActual(INITIAL_BOUND_MASK) == null) {
-						if (initialBoundMask == null) {
-							initialBoundMask = describeBoundMask(boundMask, layout.slotNames());
+			boolean first = expr.getStringMetricActual(INITIAL_BOUND_MASK) == null;
+			TupleExpr child = expr instanceof QueryRoot root ? root.getArg() : null;
+			if (first || child != null && child.getStringMetricActual(INITIAL_BOUND_MASK) == null) {
+				String[] names = layout.slotNames();
+				String rendered = describeBoundMask(boundMask, names);
+				Map<String, Object> mask = Map.of("mask", "0x" + Long.toHexString(boundMask),
+						"slots", new LmdbPhysicalPlanDescription(names, null).boundSlots(boundMask));
+				if (first) {
+					setStringRuntimeMetricNode(expr, INITIAL_BOUND_MASK, rendered, mask);
+				}
+				if (child != null) {
+					synchronized (child) {
+						if (child.getStringMetricActual(INITIAL_BOUND_MASK) == null) {
+							setStringRuntimeMetricNode(child, INITIAL_BOUND_MASK, rendered, mask);
 						}
-						arg.setStringMetricActual(INITIAL_BOUND_MASK, initialBoundMask);
 					}
 				}
 			}
@@ -389,13 +408,20 @@ final class LmdbNativeExplain {
 	}
 
 	static void setRuntimeMetric(TupleExpr expr, String metricName, String value) {
+		setRuntimeMetric(expr, metricName, value, null);
+	}
+
+	static void setRuntimeMetric(TupleExpr expr, String metricName, String value, Object structured) {
 		expr = logicalOrigin(expr);
-		if (expr == null || value == null || !expr.isRuntimeTelemetryEnabled()) {
-			return;
+		if (expr != null && value != null && expr.isRuntimeTelemetryEnabled()) {
+			publishStringMetric(expr, metricName, value, structured);
 		}
-		setStringRuntimeMetricNode(expr, metricName, value);
-		if (expr instanceof QueryRoot) {
-			setStringRuntimeMetricNode(((QueryRoot) expr).getArg(), metricName, value);
+	}
+
+	private static void publishStringMetric(TupleExpr expr, String name, String value, Object structured) {
+		setStringRuntimeMetricNode(expr, name, value, structured);
+		if (expr instanceof QueryRoot root) {
+			setStringRuntimeMetricNode(root.getArg(), name, value, structured);
 		}
 	}
 
@@ -405,9 +431,18 @@ final class LmdbNativeExplain {
 		}
 	}
 
-	private static void setStringRuntimeMetricNode(TupleExpr expr, String metricName, String value) {
+	@SuppressWarnings("unchecked")
+	private static void setStringRuntimeMetricNode(TupleExpr expr, String metricName, String value, Object structured) {
 		synchronized (expr) {
 			expr.setStringMetricActual(metricName, value);
+			if (structured != null && expr.getStringMetricActual(metricName) != null) {
+				var previous = (Map<String, Object>) expr
+						.getQueryModelMetadata(PhysicalPlan.ACTUAL_ATTRIBUTES_METADATA_KEY);
+				var attributes = previous == null ? new LinkedHashMap<String, Object>() : new LinkedHashMap<>(previous);
+				attributes.put(metricName, structured);
+				expr.setQueryModelMetadata(PhysicalPlan.ACTUAL_ATTRIBUTES_METADATA_KEY,
+						Collections.unmodifiableMap(attributes));
+			}
 		}
 	}
 
@@ -422,21 +457,29 @@ final class LmdbNativeExplain {
 		mark(expr, kind, null);
 	}
 
-	static void mark(TupleExpr expr, String kind, String physicalPlan) {
-		expr = logicalOrigin(expr);
-		markNode(expr, kind, physicalPlan);
-		if (expr instanceof QueryRoot) {
-			markNode(((QueryRoot) expr).getArg(), kind, physicalPlan);
+	static void mark(TupleExpr expr, String kind, QueryEvaluationStep step) {
+		TupleExpr origin = logicalOrigin(expr);
+		var captured = step instanceof LmdbNativePhysicalPlan physical
+				? captureTerms(() -> new CapturedPlan(physical.nativePhysicalPlan(),
+						new PhysicalPlan(ENGINE, "planned", kind, physical.physicalOperator(true), List.of())))
+				: null;
+		markNode(origin, kind, captured);
+		if (origin instanceof QueryRoot root) {
+			markNode(root.getArg(), kind, captured);
 		}
 	}
 
-	private static void markNode(TupleExpr expr, String kind, String physicalPlan) {
+	private record CapturedPlan(String text, PhysicalPlan structured) {
+	}
+
+	private static void markNode(TupleExpr expr, String kind, CapturedPlan captured) {
 		expr.setStringMetricPlanned(TelemetryMetricNames.PLANNED_EXECUTION_ENGINE, ENGINE);
 		expr.setStringMetricPlanned(TelemetryMetricNames.PLANNED_EXECUTION_KIND, kind);
-		if (physicalPlan != null && !physicalPlan.isEmpty()) {
-			expr.setStringMetricPlanned(PHYSICAL_PLAN, physicalPlan);
+		if (captured != null) {
+			expr.setStringMetricPlanned(PHYSICAL_PLAN, captured.text());
 			expr.setStringMetricPlanned(TelemetryMetricNames.PLANNED_PHYSICAL_PLAN,
-					LmdbNativeRuntimePlan.planned(kind, physicalPlan));
+					LmdbNativeRuntimePlan.planned(kind, captured.text()));
+			expr.setQueryModelMetadata(PhysicalPlan.PLANNED_METADATA_KEY, captured.structured());
 		}
 	}
 
@@ -620,18 +663,44 @@ final class LmdbNativeExplain {
 		return "*";
 	}
 
+	/** Both serializations of a term are detached while its diagnostic snapshot is available. */
+	record ResolvedTerm(String id, String text, ExplanationTerm term) {
+	}
+
+	private static final ScopedValue<Map<NativeLmdbQuerySource, Map<Long, ResolvedTerm>>> TERMS = ScopedValue
+			.newInstance();
+
+	static <T> T captureTerms(Supplier<T> capture) {
+		return ScopedValue.where(TERMS, new IdentityHashMap<>()).call(capture::get);
+	}
+
 	static String termId(long id, NativeLmdbQuerySource source) {
+		return source == null ? Long.toString(id) : resolvedTerm(id, source).text();
+	}
+
+	static ResolvedTerm resolvedTerm(long id, NativeLmdbQuerySource source) {
+		if (source != null && TERMS.isBound()) {
+			return TERMS.get()
+					.computeIfAbsent(source, ignored -> new HashMap<>())
+					.computeIfAbsent(id, key -> readTerm(key, source));
+		}
+		return readTerm(id, source);
+	}
+
+	private static ResolvedTerm readTerm(long id, NativeLmdbQuerySource source) {
 		String numeric = Long.toString(id);
-		if (source == null || id == NativeLmdbQuerySource.UNKNOWN_ID || id == 0L) {
-			return numeric;
+		if (source != null && id != NativeLmdbQuerySource.UNKNOWN_ID && id != 0L) {
+			try (var diagnostics = LmdbQueryTelemetry.diagnosticOnly()) {
+				Value value = source.diagnosticValue(id);
+				if (value != null) {
+					return new ResolvedTerm(numeric, NTriplesUtil.toNTriplesString(value) + " (id=" + numeric + ")",
+							ExplanationTerm.fromValue(value));
+				}
+			} catch (IOException | QueryEvaluationException | SailException | IllegalArgumentException unavailable) {
+				// The dictionary or its snapshot can be unavailable. The observed numeric ID remains meaningful.
+			}
 		}
-		try (var diagnostics = LmdbQueryTelemetry.diagnosticOnly()) {
-			Value value = source.diagnosticValue(id);
-			return value == null ? numeric : NTriplesUtil.toNTriplesString(value) + " (id=" + numeric + ")";
-		} catch (IOException | QueryEvaluationException | SailException | IllegalArgumentException unavailable) {
-			// The plan can outlive an unavailable dictionary entry or snapshot. Preserve the observed ID.
-			return numeric;
-		}
+		return new ResolvedTerm(numeric, numeric, null);
 	}
 
 	private static String slot(int slot, String[] slotNames) {
@@ -676,68 +745,25 @@ final class LmdbNativeExplain {
 		return "fixed(" + contexts.ids.length + ")";
 	}
 
-	private static final class ExecutionPathSummary {
-		private final String[] paths;
-		private final boolean truncated;
-		private final String rendered;
-
-		private ExecutionPathSummary(String[] paths, boolean truncated) {
-			this.paths = paths;
-			this.truncated = truncated;
-			this.rendered = String.join(" | ", paths) + (truncated ? " | ..." : "");
-		}
-
-		private static ExecutionPathSummary first(String path) {
-			return new ExecutionPathSummary(new String[] { path }, false);
-		}
-
-		private ExecutionPathSummary add(String path) {
-			int index = Arrays.binarySearch(paths, path);
-			if (index >= 0 || truncated) {
-				return null;
-			}
-			if (paths.length == MAX_REPORTED_PATHS) {
-				return new ExecutionPathSummary(paths, true);
-			}
-			int insertionPoint = -index - 1;
-			String[] expanded = new String[paths.length + 1];
-			System.arraycopy(paths, 0, expanded, 0, insertionPoint);
-			expanded[insertionPoint] = path;
-			System.arraycopy(paths, insertionPoint, expanded, insertionPoint + 1, paths.length - insertionPoint);
-			return new ExecutionPathSummary(expanded, false);
-		}
+	private record Observation(String label, Object value) {
 	}
 
-	private static final class StrategyDeclineSummary {
-		private final String[] declines;
-		private final boolean truncated;
-		private final String rendered;
-
-		private StrategyDeclineSummary(String[] declines, boolean truncated) {
-			this.declines = declines;
-			this.truncated = truncated;
-			this.rendered = String.join(" | ", declines) + (truncated ? " | ..." : "");
-		}
-
-		private static StrategyDeclineSummary first(String decline) {
-			return new StrategyDeclineSummary(new String[] { decline }, false);
-		}
-
-		private StrategyDeclineSummary add(String decline) {
-			int index = Arrays.binarySearch(declines, decline);
-			if (index >= 0 || truncated) {
-				return null;
+	/** Sorted, bounded, immutable snapshots may safely be shared between logical plan clones. */
+	private record ObservationSummary(List<Observation> observations, boolean truncated) {
+		ObservationSummary add(Observation observation, int maximum) {
+			if (truncated || observations.contains(observation)) {
+				return this;
 			}
-			if (declines.length == MAX_REPORTED_DECLINES) {
-				return new StrategyDeclineSummary(declines, true);
+			if (observations.size() == maximum) {
+				return new ObservationSummary(observations, true);
 			}
-			int insertionPoint = -index - 1;
-			String[] expanded = new String[declines.length + 1];
-			System.arraycopy(declines, 0, expanded, 0, insertionPoint);
-			expanded[insertionPoint] = decline;
-			System.arraycopy(declines, insertionPoint, expanded, insertionPoint + 1,
-					declines.length - insertionPoint);
-			return new StrategyDeclineSummary(expanded, false);
+			var next = new ArrayList<>(observations);
+			int index = 0;
+			while (index < next.size() && next.get(index).label.compareTo(observation.label) <= 0) {
+				index++;
+			}
+			next.add(index, observation);
+			return new ObservationSummary(List.copyOf(next), false);
 		}
 	}
 }
@@ -749,6 +775,8 @@ interface LmdbNativePhysicalPlan {
 	}
 
 	String nativePhysicalPlan(boolean resolveRdfTerms);
+
+	Operator physicalOperator(boolean resolveRdfTerms);
 
 	default void explainStrategies() {
 	}

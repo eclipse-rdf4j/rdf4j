@@ -19,10 +19,12 @@ import java.util.Comparator;
 import java.util.HashMap;
 import java.util.IdentityHashMap;
 import java.util.Iterator;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.ServiceLoader;
 import java.util.Set;
+import java.util.TreeMap;
 import java.util.UUID;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
@@ -70,6 +72,8 @@ import org.eclipse.rdf4j.query.explanation.ExplanationImpl;
 import org.eclipse.rdf4j.query.explanation.ExplanationOptions;
 import org.eclipse.rdf4j.query.explanation.ExplanationResultConsumerFactory;
 import org.eclipse.rdf4j.query.explanation.ExplanationResultConsumerFactory.ResultConsumer;
+import org.eclipse.rdf4j.query.explanation.ExplanationTerm;
+import org.eclipse.rdf4j.query.explanation.PhysicalPlan;
 import org.eclipse.rdf4j.query.explanation.QueryExecutionProfile.Collector;
 import org.eclipse.rdf4j.query.explanation.QueryExecutionProfile.Metric;
 import org.eclipse.rdf4j.query.explanation.QueryExecutionProfile.Stage;
@@ -473,6 +477,12 @@ public abstract class SailSourceConnection extends AbstractNotifyingSailConnecti
 				telemetry.property("bindings", bindings == null ? "[]" : bindings.toString());
 				telemetry.property("dataset", describeTelemetryDataset(dataset));
 				telemetry.property("inputAlgebra", tupleExpr.toString());
+				telemetry.inputPlan(
+						new QueryModelTreeToGenericPlanNode(tupleExpr, Collections.emptySet(),
+								Explanation.Level.Unoptimized).getGenericPlanNode());
+				telemetry.attribute("includeInferred", includeInferred);
+				telemetry.attribute("bindings", telemetryBindings(bindings));
+				telemetry.attribute("dataset", telemetryDataset(dataset));
 				telemetry.property("timingContract",
 						"Phase durations are query-thread elapsed time. Execution includes result consumption and any deferred setup; overlapping durations must not be added.");
 				String version = getClass().getPackage().getImplementationVersion();
@@ -577,6 +587,9 @@ public abstract class SailSourceConnection extends AbstractNotifyingSailConnecti
 			protected void meetNode(QueryModelNode node) {
 				node.clearMetricsActual();
 				node.setQueryModelMetadata(StrategyDecision.METADATA_KEY, null);
+				node.removeQueryModelMetadata(PhysicalPlan.RUNTIME_METADATA_KEY);
+				node.removeQueryModelMetadata(PhysicalPlan.PLANNED_METADATA_KEY);
+				node.removeQueryModelMetadata(PhysicalPlan.ACTUAL_ATTRIBUTES_METADATA_KEY);
 				super.meetNode(node);
 			}
 		});
@@ -698,6 +711,45 @@ public abstract class SailSourceConnection extends AbstractNotifyingSailConnecti
 			Thread.interrupted();
 		}
 
+	}
+
+	private static Map<String, ExplanationTerm> telemetryBindings(BindingSet bindings) {
+		if (bindings == null || bindings.isEmpty()) {
+			return Collections.emptyMap();
+		}
+		Map<String, ExplanationTerm> terms = new TreeMap<>();
+		for (var binding : bindings) {
+			if (binding.getValue() != null) {
+				terms.put(binding.getName(), ExplanationTerm.fromValue(binding.getValue()));
+			}
+		}
+		return Collections.unmodifiableMap(terms);
+	}
+
+	private static Map<String, Object> telemetryDataset(Dataset dataset) {
+		if (dataset == null) {
+			return Map.of("repositoryDefault", true);
+		}
+		Map<String, Object> attributes = new LinkedHashMap<>();
+		attributes.put("repositoryDefault", false);
+		attributes.put("explicitReadDataset", dataset.isExplicitReadDataset());
+		putGraphTerms(attributes, "defaultGraphs", dataset.getDefaultGraphResources());
+		putGraphTerms(attributes, "namedGraphs", dataset.getNamedGraphResources());
+		putGraphTerms(attributes, "defaultRemoveGraphs", dataset.getDefaultRemoveGraphResources());
+		Resource defaultInsertGraph = dataset.getDefaultInsertGraphResource();
+		if (defaultInsertGraph != null) {
+			attributes.put("defaultInsertGraph", ExplanationTerm.fromValue(defaultInsertGraph));
+		}
+		return Collections.unmodifiableMap(attributes);
+	}
+
+	private static void putGraphTerms(Map<String, Object> attributes, String name, Set<Resource> graphs) {
+		if (graphs != null) {
+			attributes.put(name, graphs.stream()
+					.sorted(Comparator.nullsFirst(Comparator.comparing(Resource::stringValue)))
+					.map(ExplanationTerm::fromValue)
+					.toList());
+		}
 	}
 
 	private static String describeTelemetryDataset(Dataset dataset) {

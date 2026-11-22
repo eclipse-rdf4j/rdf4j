@@ -42,6 +42,8 @@ import org.eclipse.rdf4j.query.MalformedQueryException;
 import org.eclipse.rdf4j.query.Query;
 import org.eclipse.rdf4j.query.TupleQuery;
 import org.eclipse.rdf4j.query.TupleQueryResult;
+import org.eclipse.rdf4j.query.algebra.QueryRoot;
+import org.eclipse.rdf4j.query.algebra.SingletonSet;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryOptimizer;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.DefaultEvaluationStrategy;
@@ -51,8 +53,10 @@ import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.StandardQueryOptimiz
 import org.eclipse.rdf4j.query.algebra.helpers.QueryModelTreeToGenericPlanNode;
 import org.eclipse.rdf4j.query.explanation.Explanation;
 import org.eclipse.rdf4j.query.explanation.GenericPlanNode;
+import org.eclipse.rdf4j.query.explanation.PhysicalPlan;
 import org.eclipse.rdf4j.query.explanation.TelemetryMetricNames;
 import org.eclipse.rdf4j.query.impl.EmptyBindingSet;
+import org.eclipse.rdf4j.query.impl.SimpleDataset;
 import org.eclipse.rdf4j.query.parser.ParsedTupleQuery;
 import org.eclipse.rdf4j.query.parser.sparql.SPARQLParser;
 import org.eclipse.rdf4j.repository.evaluation.RepositoryTripleSource;
@@ -927,6 +931,101 @@ public class QueryPlanRetrievalTest {
 		}
 		sailRepository.shutDown();
 
+	}
+
+	@Test
+	public void telemetryIncludesStructuredInputPlanBeforeOptimization() throws IOException {
+		SailRepository repository = closeAfterTest(new SailRepository(new MemoryStore()));
+		String sparql = """
+				SELECT ?s WHERE {
+					?s <urn:test:predicate> ?o .
+					FILTER(?s = <urn:test:subject>)
+				}
+				LIMIT 10 OFFSET 5
+				""";
+
+		try (SailRepositoryConnection connection = repository.getConnection()) {
+			JsonNode telemetry = OBJECT_MAPPER.readTree(
+					connection.prepareTupleQuery(sparql).explain(Explanation.Level.Telemetry).toJson());
+			JsonNode profile = telemetry.path("executionProfile");
+			JsonNode input = profile.path("inputPlan");
+			assertThat(input.isObject()).isTrue();
+			assertThat(input.path("operator").asText()).isEqualTo("Slice");
+			assertThat(input.at("/arguments/limit").asLong()).isEqualTo(10);
+			assertThat(input.at("/arguments/offset").asLong()).isEqualTo(5);
+			assertThat(findFirstPlanNode(input, node -> "Filter".equals(node.path("operator").asText())))
+					.isNotNull();
+			assertTelemetryFieldsAbsentRecursively(input);
+			assertThat(profile.path("properties").path("inputAlgebra").asText()).contains("Filter");
+
+			JsonNode unoptimized = OBJECT_MAPPER.readTree(
+					connection.prepareTupleQuery(sparql).explain(Explanation.Level.Unoptimized).toJson());
+			assertThat(input).isEqualTo(unoptimized);
+		}
+	}
+
+	@Test
+	public void telemetrySerializesBindingsAndDistinguishesDefaultFromExplicitDatasets() throws IOException {
+		SailRepository repository = closeAfterTest(new SailRepository(new MemoryStore()));
+		ValueFactory valueFactory = SimpleValueFactory.getInstance();
+
+		try (SailRepositoryConnection connection = repository.getConnection()) {
+			TupleQuery query = connection.prepareTupleQuery("SELECT ?s WHERE { ?s <urn:test:predicate> ?o }");
+			query.setIncludeInferred(false);
+			query.setBinding("o", valueFactory.createLiteral("value, (with punctuation)", "en"));
+
+			JsonNode repositoryDefault = OBJECT_MAPPER.readTree(query.explain(Explanation.Level.Telemetry).toJson())
+					.at("/executionProfile/attributes");
+			assertThat(repositoryDefault.at("/includeInferred").isBoolean()).isTrue();
+			assertThat(repositoryDefault.at("/includeInferred").asBoolean()).isFalse();
+			assertThat(repositoryDefault.at("/bindings/o/kind").asText()).isEqualTo("literal");
+			assertThat(repositoryDefault.at("/bindings/o/value").asText()).isEqualTo("value, (with punctuation)");
+			assertThat(repositoryDefault.at("/bindings/o/language").asText()).isEqualTo("en");
+			assertThat(repositoryDefault.at("/dataset/repositoryDefault").asBoolean()).isTrue();
+			assertThat(repositoryDefault.at("/dataset/defaultGraphs").isMissingNode()).isTrue();
+
+			SimpleDataset dataset = new SimpleDataset();
+			dataset.setExplicitReadDataset(true);
+			query.setDataset(dataset);
+			JsonNode explicit = OBJECT_MAPPER.readTree(query.explain(Explanation.Level.Telemetry).toJson())
+					.at("/executionProfile/attributes/dataset");
+			assertThat(explicit.path("repositoryDefault").isBoolean()).isTrue();
+			assertThat(explicit.path("repositoryDefault").asBoolean()).isFalse();
+			assertThat(explicit.path("explicitReadDataset").asBoolean()).isTrue();
+			assertThat(explicit.path("defaultGraphs").isArray()).isTrue();
+			assertThat(explicit.path("defaultGraphs").size()).isZero();
+
+			dataset.addNamedGraph(valueFactory.createIRI("urn:test:graph"));
+			JsonNode named = OBJECT_MAPPER.readTree(query.explain(Explanation.Level.Telemetry).toJson())
+					.at("/executionProfile/attributes/dataset/namedGraphs/0");
+			assertThat(named.path("kind").asText()).isEqualTo("iri");
+			assertThat(named.path("value").asText()).isEqualTo("urn:test:graph");
+		}
+	}
+
+	@Test
+	public void explainClearsPreviousStructuredPhysicalReportsFromReusedAlgebra() {
+		SailRepository repository = closeAfterTest(new SailRepository(new MemoryStore()));
+		SingletonSet arg = new SingletonSet();
+		QueryRoot expression = new QueryRoot(arg);
+		PhysicalPlan staleRuntime = new PhysicalPlan("previous-engine", "executed", "row", null, List.of());
+		PhysicalPlan stalePlanned = new PhysicalPlan("previous-engine", "planned", "row", null, List.of());
+		expression.setQueryModelMetadata(PhysicalPlan.RUNTIME_METADATA_KEY, staleRuntime);
+		arg.setQueryModelMetadata(PhysicalPlan.PLANNED_METADATA_KEY, stalePlanned);
+		arg.setQueryModelMetadata(PhysicalPlan.ACTUAL_ATTRIBUTES_METADATA_KEY,
+				Map.of(TelemetryMetricNames.NATIVE_EXECUTION_PATH, List.of("previous-engine")));
+		Object unrelatedKey = new Object();
+		arg.setQueryModelMetadata(unrelatedKey, "keep");
+
+		try (SailRepositoryConnection connection = repository.getConnection()) {
+			GenericPlanNode result = connection.getSailConnection()
+					.explain(Explanation.Level.Executed, expression, null, EmptyBindingSet.getInstance(), true, 10)
+					.toGenericPlanNode();
+			assertThat(result.getPhysicalPlans()).isNull();
+			assertThat(result.getPlannedPhysicalPlan()).isNull();
+			assertThat(result.getActualAttributes()).isNull();
+			assertThat(arg.getQueryModelMetadata(unrelatedKey)).isEqualTo("keep");
+		}
 	}
 
 	@Test

@@ -31,7 +31,8 @@ import org.eclipse.rdf4j.common.annotation.Experimental;
 @Experimental
 public record QueryExecutionProfile(int schemaVersion, String status, String detail, long elapsedNanos,
 		Map<String, String> properties, List<Phase> phases, List<Stage> stages, List<Attempt> attempts,
-		List<Worker> workers, List<Diagnostic> diagnostics, long droppedEvents) {
+		List<Worker> workers, List<Diagnostic> diagnostics, long droppedEvents, GenericPlanNode inputPlan,
+		Map<String, Object> attributes) {
 
 	public static final int SCHEMA_VERSION = 1;
 	public static final int MAX_ENTRIES = 1024;
@@ -48,6 +49,14 @@ public record QueryExecutionProfile(int schemaVersion, String status, String det
 		attempts = copyList(attempts, MAX_ENTRIES);
 		workers = copyList(workers, MAX_ENTRIES);
 		diagnostics = copyList(diagnostics, 32);
+		attributes = PhysicalPlan.copyFields(attributes);
+	}
+
+	public QueryExecutionProfile(int schemaVersion, String status, String detail, long elapsedNanos,
+			Map<String, String> properties, List<Phase> phases, List<Stage> stages, List<Attempt> attempts,
+			List<Worker> workers, List<Diagnostic> diagnostics, long droppedEvents) {
+		this(schemaVersion, status, detail, elapsedNanos, properties, phases, stages, attempts, workers, diagnostics,
+				droppedEvents, null, null);
 	}
 
 	/** Counts remain longs, preserving exact values beyond the integer precision of a JSON double. */
@@ -98,7 +107,8 @@ public record QueryExecutionProfile(int schemaVersion, String status, String det
 
 	/** IDs should be derived from the logical path and physical role, and must not contain a request UUID. */
 	public record Stage(String id, String parentId, String logicalPath, String operator, String engine, String strategy,
-			String status, Map<String, Metric> metrics, Map<String, String> properties) {
+			String status, Map<String, Metric> metrics, Map<String, String> properties,
+			Map<String, Object> attributes) {
 		public Stage {
 			id = identifier(id);
 			parentId = text(parentId);
@@ -109,6 +119,12 @@ public record QueryExecutionProfile(int schemaVersion, String status, String det
 			status = text(status);
 			metrics = copyMetrics(metrics);
 			properties = copyProperties(properties);
+			attributes = PhysicalPlan.copyFields(attributes);
+		}
+
+		public Stage(String id, String parentId, String logicalPath, String operator, String engine, String strategy,
+				String status, Map<String, Metric> metrics, Map<String, String> properties) {
+			this(id, parentId, logicalPath, operator, engine, strategy, status, metrics, properties, null);
 		}
 	}
 
@@ -182,6 +198,7 @@ public record QueryExecutionProfile(int schemaVersion, String status, String det
 	public static final class Collector {
 		private final long startedAtNanos = System.nanoTime();
 		private final Map<String, String> properties = new LinkedHashMap<>();
+		private final Map<String, Object> attributes = new LinkedHashMap<>();
 		private final Map<String, Phase> phases = new LinkedHashMap<>();
 		private final Map<String, Stage> stages = new LinkedHashMap<>();
 		private final List<Attempt> attempts = new ArrayList<>();
@@ -192,10 +209,21 @@ public record QueryExecutionProfile(int schemaVersion, String status, String det
 		private String detail;
 		private long finishedElapsedNanos = -1;
 		private long droppedEvents;
+		private GenericPlanNode inputPlan;
+
+		public synchronized void inputPlan(GenericPlanNode inputPlan) {
+			this.inputPlan = inputPlan;
+		}
 
 		public synchronized void property(String name, String value) {
 			if (value != null) {
 				put(properties, identifier(name), text(value), MAX_METRICS);
+			}
+		}
+
+		public synchronized void attribute(String name, Object value) {
+			if (value != null) {
+				put(attributes, identifier(name), value, MAX_METRICS);
 			}
 		}
 
@@ -279,6 +307,7 @@ public record QueryExecutionProfile(int schemaVersion, String status, String det
 			long elapsed;
 			synchronized (this) {
 				snapshot.properties.putAll(properties);
+				snapshot.attributes.putAll(attributes);
 				snapshot.phases.putAll(phases);
 				snapshot.stages.putAll(stages);
 				snapshot.attempts.addAll(attempts);
@@ -287,6 +316,7 @@ public record QueryExecutionProfile(int schemaVersion, String status, String det
 				snapshot.status = status;
 				snapshot.detail = detail;
 				snapshot.droppedEvents = droppedEvents;
+				snapshot.inputPlan = inputPlan;
 				elapsed = finishedElapsedNanos >= 0 ? finishedElapsedNanos
 						: Math.max(0, System.nanoTime() - startedAtNanos);
 				capturedSources = List.copyOf(sources.values());
@@ -311,7 +341,7 @@ public record QueryExecutionProfile(int schemaVersion, String status, String det
 					snapshot.properties, new ArrayList<>(snapshot.phases.values()),
 					new ArrayList<>(snapshot.stages.values()), snapshot.attempts,
 					new ArrayList<>(snapshot.workers.values()),
-					snapshot.diagnostics, snapshot.droppedEvents);
+					snapshot.diagnostics, snapshot.droppedEvents, snapshot.inputPlan, snapshot.attributes);
 		}
 
 		private void summarizeEvidence() {

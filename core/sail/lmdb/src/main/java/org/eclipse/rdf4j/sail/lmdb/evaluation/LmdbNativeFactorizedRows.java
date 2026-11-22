@@ -21,10 +21,15 @@ import java.io.IOException;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.HashMap;
+import java.util.LinkedHashMap;
+import java.util.Map;
 import java.util.concurrent.atomic.AtomicLong;
+import java.util.stream.Collectors;
 
 import org.eclipse.rdf4j.common.annotation.Experimental;
 import org.eclipse.rdf4j.query.QueryEvaluationException;
+import org.eclipse.rdf4j.query.algebra.TupleExpr;
+import org.eclipse.rdf4j.query.explanation.PhysicalPlan.Operator;
 import org.eclipse.rdf4j.sail.lmdb.TripleIndex;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.codegen.KernelRuntime;
 
@@ -729,7 +734,7 @@ final class LmdbNativeFactorizedRows {
 		return false;
 	}
 
-	String describeEngagement() {
+	void deferEngagement(TupleExpr target) {
 		int enums = 0;
 		int counts = 0;
 		int exists = 0;
@@ -742,14 +747,25 @@ final class LmdbNativeFactorizedRows {
 				exists++;
 			}
 		}
-		String branchCounts = "enumBranches=" + enums + ", countBranches=" + counts + ", existsBranches=" + exists;
-		if (LmdbNativeAttemptMetrics.PATH_CHUNK_PIPELINE.equals(prefixStrategy)) {
-			String mergeInfo = mergeStages > 0 ? ", mergeStages=" + mergeStages : "";
-			return LmdbNativeAttemptMetrics.PATH_CHUNK_PIPELINE + "(flat=" + flatCount + mergeInfo + ", "
-					+ branchCounts + ")";
+		Map<String, Object> fields = new LinkedHashMap<>();
+		boolean chunk = LmdbNativeAttemptMetrics.PATH_CHUNK_PIPELINE.equals(prefixStrategy);
+		String name = chunk ? LmdbNativeAttemptMetrics.PATH_CHUNK_PIPELINE
+				: LmdbNativeAttemptMetrics.PATH_FACTORIZED_ROWS;
+		fields.put(chunk ? "flat" : "flatPrefix", flatCount);
+		if (chunk && mergeStages > 0) {
+			fields.put("mergeStages", mergeStages);
 		}
-		return LmdbNativeAttemptMetrics.PATH_FACTORIZED_ROWS + "(flatPrefix=" + flatCount + ", prefix="
-				+ prefixStrategy + ", " + branchCounts + ")";
+		if (!chunk) {
+			fields.put("prefix", prefixStrategy);
+		}
+		fields.put("enumBranches", enums);
+		fields.put("countBranches", counts);
+		fields.put("existsBranches", exists);
+		String rendered = fields.entrySet()
+				.stream()
+				.map(entry -> entry.getKey() + "=" + entry.getValue())
+				.collect(Collectors.joining(", ", name + "(", ")"));
+		metrics.deferStrategy(target, rendered, new Operator(name, fields));
 	}
 
 	/**

@@ -182,7 +182,7 @@ namespace workbench {
          * The namespaces to fall back on for prefixes that the repository does not define: the deployment's list
          * (namespaces.fallback; the bundled list is well-known vocabularies and RDF4J namespaces); none when they cannot be loaded.
          */
-        function loadFallbackNamespaces(): Promise<{ [prefix: string]: string }> {
+        export function loadFallbackNamespaces(): Promise<{ [prefix: string]: string }> {
             if (!fallbackNamespaces) {
                 var app = typeof document !== 'undefined' && document.getElementById
                     ? document.getElementById('workbench-app') : null;

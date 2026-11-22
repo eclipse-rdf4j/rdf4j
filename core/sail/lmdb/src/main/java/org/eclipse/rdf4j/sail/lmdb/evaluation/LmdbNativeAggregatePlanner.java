@@ -24,6 +24,7 @@ import java.util.Collections;
 import java.util.HashSet;
 import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 import java.util.function.BiFunction;
 import java.util.function.Predicate;
@@ -93,6 +94,7 @@ import org.eclipse.rdf4j.query.algebra.helpers.FilterBindingScope;
 import org.eclipse.rdf4j.query.algebra.helpers.QueryAlgebraBindingAnalysis;
 import org.eclipse.rdf4j.query.algebra.helpers.TupleExprs;
 import org.eclipse.rdf4j.query.algebra.helpers.collectors.VarNameCollector;
+import org.eclipse.rdf4j.query.explanation.PhysicalPlan.Operator;
 import org.eclipse.rdf4j.query.impl.EmptyBindingSet;
 import org.eclipse.rdf4j.sail.lmdb.LmdbPrefixRunPlan;
 import org.eclipse.rdf4j.sail.lmdb.LmdbSubqueryKeyShapes;
@@ -265,6 +267,11 @@ final class LmdbNativeAggregatePlanner extends LmdbNativeAggregateFilterCompiler
 		@Override
 		public void explainStrategies() {
 			LmdbNativeStrategyPreview.inspect(arg);
+		}
+
+		@Override
+		public Operator physicalOperator(boolean resolveRdfTerms) {
+			return new Operator("NativeHaving", Map.of("arg", LmdbPhysicalPlanDescription.step(arg, resolveRdfTerms)));
 		}
 
 		@Override
@@ -2520,8 +2527,8 @@ final class LmdbNativeAggregatePlanner extends LmdbNativeAggregateFilterCompiler
 					return nativeStep;
 				}
 				// Renaming may exceed a native slot budget; prepare the exact scoped tree in the declared fallback.
-				LmdbNativeExplain.recordExecutionPath(expr,
-						LmdbNativeAttemptMetrics.PATH_GENERIC_FALLBACK + "(lateralScope)");
+				LmdbNativeExplain.recordParameterizedPath(expr, LmdbNativeAttemptMetrics.PATH_GENERIC_FALLBACK,
+						"reason", "lateralScope");
 				return GenericSubplanDescriptor.create(scoped, strategy, positions)
 						.genericPrecompile(strategy, evaluationContext);
 			});

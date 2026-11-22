@@ -27,6 +27,7 @@ import java.util.concurrent.atomic.AtomicLong;
 import org.eclipse.rdf4j.common.annotation.Experimental;
 import org.eclipse.rdf4j.common.order.StatementOrder;
 import org.eclipse.rdf4j.sail.lmdb.TripleIndex;
+import org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbNativeRuntimePlan.CapturedOperator;
 
 /**
  * Batched, run-aware execution of a factorized plan's flat prefix (Phase 2 of the unified-architecture plan). The
@@ -537,13 +538,13 @@ final class LmdbNativeChunkPipeline {
 		final long[] template;
 		final FactorizedTail.MemoBudget budget;
 		final long retainedValues;
-		final String where;
+		final CapturedOperator where;
 		long admissionChecks;
 		long admissionMisses;
 		boolean admissionResolved;
 
 		private SipMask(LmdbNativeIdDomain domain, SipTarget target, FactorizedTail.MemoBudget budget,
-				long retainedValues, String where) {
+				long retainedValues, CapturedOperator where) {
 			this.domain = domain;
 			this.quadPos = target.quadPos;
 			this.seekable = target.seekable;
@@ -559,7 +560,7 @@ final class LmdbNativeChunkPipeline {
 		}
 
 		/** Borrows an immutable id domain and associates its runtime activation location. */
-		static SipMask borrowDomain(LmdbNativeIdDomain domain, SipTarget target, String where) {
+		static SipMask borrowDomain(LmdbNativeIdDomain domain, SipTarget target, CapturedOperator where) {
 			return new SipMask(domain, target, null, 0L, where);
 		}
 
@@ -1278,9 +1279,8 @@ final class LmdbNativeChunkPipeline {
 			}
 		}
 
-		private String adjacencyWhere() {
-			return row.runtimePlan == null ? LmdbNativeExplain.describe(pattern, row.layout)
-					: row.runtimePlan.describeAccessSite(row.source, pattern);
+		private CapturedOperator adjacencyWhere() {
+			return row.runtimePlan == null ? null : row.runtimePlan.describeAccessSite(row.source, pattern);
 		}
 
 		/**

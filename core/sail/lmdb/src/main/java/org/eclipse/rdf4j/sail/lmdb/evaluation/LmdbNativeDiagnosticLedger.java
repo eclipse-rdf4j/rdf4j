@@ -13,6 +13,7 @@ package org.eclipse.rdf4j.sail.lmdb.evaluation;
 
 import java.util.ArrayDeque;
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.Comparator;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -134,16 +135,17 @@ final class LmdbNativeDiagnosticLedger {
 		// Compatibility text stays bounded and is refreshed on new shapes, important failures and exponential opens.
 		if (discardedAttempt || worst || (attempts & (attempts - 1L)) == 0L
 				|| attempt.group != null && attempt.group.opens == 1L) {
-			LmdbNativeExplain.setRuntimeMetric(target, "nativeAttemptLedger", render());
+			publishRetainedAttempts();
 		}
 	}
 
-	private String render() {
+	private void publishRetainedAttempts() {
 		StringBuilder out = new StringBuilder("totalAttempts=").append(attempts)
 				.append("; discardedAttempts=")
 				.append(discarded)
 				.append("; retained=recent+slowest; omittedGroups=")
 				.append(omittedGroups);
+		List<Map<String, Object>> entries = new ArrayList<>();
 		for (Attempt attempt : retained()) {
 			out.append("\n  attempt=")
 					.append(attempt.ordinal)
@@ -154,8 +156,22 @@ final class LmdbNativeDiagnosticLedger {
 					.append(" activeNanos=")
 					.append(attempt.activeNanos)
 					.append(attempt.sampled ? " (sampled)" : " (measured)");
+			Map<String, Object> entry = new LinkedHashMap<>();
+			entry.put("attempt", attempt.ordinal);
+			entry.put("strategy", attempt.decision.winnerId());
+			entry.put("outcome", attempt.status);
+			entry.put("activeNanos", attempt.activeNanos);
+			entry.put("timeSource", attempt.sampled ? "sampled" : "measured");
+			entries.add(Collections.unmodifiableMap(entry));
 		}
-		return out.toString();
+		Map<String, Object> attributes = new LinkedHashMap<>();
+		attributes.put("totalAttempts", attempts);
+		attributes.put("discardedAttempts", discarded);
+		attributes.put("retention", "recent+slowest");
+		attributes.put("omittedGroups", omittedGroups);
+		attributes.put("attempts", List.copyOf(entries));
+		LmdbNativeExplain.setRuntimeMetric(target, "nativeAttemptLedger", out.toString(),
+				Collections.unmodifiableMap(attributes));
 	}
 
 	private List<Attempt> retained() {
@@ -365,7 +381,8 @@ final class LmdbNativeDiagnosticLedger {
 							"timeSource",
 							"first 64 pulls measured; later pulls independently sampled at 1/16 and scaled",
 							"histogram", "base-2 bucket bounds for measured or sampled times; not confidence bounds",
-							"lastDecision", lastDecision == null ? "" : lastDecision.metric()));
+							"lastDecision", lastDecision == null ? "" : lastDecision.metric()),
+					lastDecision == null ? null : Map.of("lastDecision", lastDecision.structured()));
 		}
 
 		private void candidates(List<Stage> stages, String path) {

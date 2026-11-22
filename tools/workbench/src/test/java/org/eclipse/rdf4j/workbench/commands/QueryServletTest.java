@@ -58,6 +58,9 @@ import org.eclipse.rdf4j.query.QueryInterruptedException;
 import org.eclipse.rdf4j.query.QueryLanguage;
 import org.eclipse.rdf4j.query.TupleQuery;
 import org.eclipse.rdf4j.query.explanation.Explanation;
+import org.eclipse.rdf4j.query.explanation.ExplanationImpl;
+import org.eclipse.rdf4j.query.explanation.GenericPlanNode;
+import org.eclipse.rdf4j.query.explanation.StrategyDecision;
 import org.eclipse.rdf4j.repository.Repository;
 import org.eclipse.rdf4j.repository.RepositoryConnection;
 import org.eclipse.rdf4j.repository.RepositoryException;
@@ -78,6 +81,8 @@ import org.eclipse.rdf4j.workbench.util.WorkbenchPageProtocol;
 import org.eclipse.rdf4j.workbench.util.WorkbenchRequest;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 import org.mockito.ArgumentCaptor;
 import org.springframework.mock.web.MockHttpServletRequest;
 import org.springframework.mock.web.MockHttpServletResponse;
@@ -88,6 +93,11 @@ import jakarta.servlet.ServletOutputStream;
 import jakarta.servlet.WriteListener;
 import jakarta.servlet.http.Cookie;
 import jakarta.servlet.http.HttpServletResponse;
+import tools.jackson.core.StreamReadConstraints;
+import tools.jackson.core.json.JsonFactory;
+import tools.jackson.databind.JsonNode;
+import tools.jackson.databind.ObjectMapper;
+import tools.jackson.databind.json.JsonMapper;
 
 /**
  * @author Dale Visser
@@ -1232,6 +1242,93 @@ public class QueryServletTest {
 		assertThat(body.toString()).contains("\"content\":\"plan\"");
 		String escapedLineSeparator = System.lineSeparator().replace("\r", "\\r").replace("\n", "\\n");
 		assertThat(body.toString()).contains("\"lineSeparator\":\"" + escapedLineSeparator + "\"");
+	}
+
+	@ParameterizedTest
+	@ValueSource(booleans = { false, true })
+	void explainJsonReturnsThePlanObjectWithExactCountersAndMetadata(boolean tracked) throws Exception {
+		GenericPlanNode plan = new GenericPlanNode("Join");
+		plan.setStrategyDecisions(List.of(new StrategyDecision("join", 1, "normal", "nestedLoop", null,
+				"Lowest expected price", List.of())));
+		GenericPlanNode leaf = plan;
+		int depth = 260;
+		for (int i = 0; i < depth; i++) {
+			GenericPlanNode child = new GenericPlanNode("Plan " + i);
+			leaf.addPlans(child);
+			leaf = child;
+		}
+		leaf.setLongMetricActual("calls", Long.MAX_VALUE);
+		MockHttpServletResponse response = explainResponse(new ExplanationImpl(plan, true, null), "json", tracked);
+		ObjectMapper reader = JsonMapper.builder(JsonFactory.builder()
+				.streamReadConstraints(StreamReadConstraints.builder().maxNestingDepth(600).build())
+				.build()).build();
+		JsonNode envelope = reader.readTree(response.getContentAsString());
+
+		assertThat(response.getStatus()).isEqualTo(HttpServletResponse.SC_OK);
+		assertThat(response.getContentType()).isEqualTo("application/json");
+		assertThat(envelope.path("format").asText()).isEqualTo("json");
+		assertThat(envelope.path("lineSeparator").asText()).isEqualTo(System.lineSeparator());
+		assertThat(envelope.path("timedOut").asBoolean()).isTrue();
+		assertThat(envelope.at("/strategyDecisions/0/wouldSelect").asText()).isEqualTo("nestedLoop");
+		JsonNode serializedPlan = envelope.path("content");
+		assertThat(serializedPlan.isObject()).isTrue();
+		assertThat(serializedPlan.path("type").asText()).isEqualTo("Join");
+		for (int i = 0; i < depth; i++) {
+			serializedPlan = serializedPlan.path("plans").path(0);
+		}
+		assertThat(serializedPlan.path("type").asText()).isEqualTo("Plan " + (depth - 1));
+		assertThat(serializedPlan.at("/longMetricsActual/calls").longValue()).isEqualTo(Long.MAX_VALUE);
+	}
+
+	@Test
+	void explainDotKeepsTextualContent() throws Exception {
+		Explanation explanation = mock(Explanation.class);
+		String graph = "digraph plan {\n  join -> scan [label=\"input\"];\n}";
+		when(explanation.toDot()).thenReturn(graph);
+		MockHttpServletResponse response = explainResponse(explanation, "dot", true);
+		JsonNode envelope = new ObjectMapper().readTree(response.getContentAsString());
+
+		assertThat(response.getStatus()).isEqualTo(HttpServletResponse.SC_OK);
+		assertThat(envelope.path("format").asText()).isEqualTo("dot");
+		assertThat(envelope.path("content").asText()).isEqualTo(graph);
+	}
+
+	@ParameterizedTest
+	@ValueSource(strings = { "[]", "{\"type\":\"Join\"} {}", "{\"type\":[1,]}" })
+	void explainJsonRejectsInvalidPlanContent(String json) throws Exception {
+		Explanation explanation = mock(Explanation.class);
+		when(explanation.toJson()).thenReturn(json);
+		MockHttpServletResponse response = explainResponse(explanation, "json", true);
+		JsonNode envelope = new ObjectMapper().readTree(response.getContentAsString());
+
+		assertThat(response.getStatus()).isEqualTo(HttpServletResponse.SC_INTERNAL_SERVER_ERROR);
+		assertThat(envelope.path("error").asText()).isNotBlank();
+		assertThat(envelope.has("content")).isFalse();
+	}
+
+	private MockHttpServletResponse explainResponse(Explanation explanation, String format, boolean tracked)
+			throws Exception {
+		Repository repository = mock(Repository.class);
+		RepositoryConnection connection = mock(RepositoryConnection.class);
+		TupleQuery tupleQuery = mock(TupleQuery.class);
+		servlet.setRepository(repository);
+		when(repository.getConnection()).thenReturn(connection);
+		when(connection.prepareQuery(QueryLanguage.SPARQL, SHORT_QUERY)).thenReturn(tupleQuery);
+		when(tupleQuery.explain(Explanation.Level.Optimized)).thenReturn(explanation);
+
+		MockHttpServletRequest request = new MockHttpServletRequest("POST", "/query");
+		request.addParameter("action", "explain");
+		request.addParameter(QueryServlet.REF, "text");
+		request.addParameter(QueryServlet.QUERY, SHORT_QUERY);
+		request.addParameter("queryLn", "SPARQL");
+		request.addParameter("explain", "Optimized");
+		request.addParameter("explain-format", format);
+		if (tracked) {
+			request.addParameter("explain-request-id", "response-shape-check");
+		}
+		MockHttpServletResponse response = new MockHttpServletResponse();
+		servlet.doPost(new WorkbenchRequest(repository, request, Map.of()), response);
+		return response;
 	}
 
 	@Test

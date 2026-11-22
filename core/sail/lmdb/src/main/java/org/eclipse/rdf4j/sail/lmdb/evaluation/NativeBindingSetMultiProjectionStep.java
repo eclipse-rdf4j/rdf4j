@@ -12,6 +12,8 @@
 package org.eclipse.rdf4j.sail.lmdb.evaluation;
 
 import java.util.Arrays;
+import java.util.List;
+import java.util.Map;
 import java.util.NoSuchElementException;
 
 import org.eclipse.rdf4j.common.annotation.Experimental;
@@ -22,6 +24,7 @@ import org.eclipse.rdf4j.query.algebra.MultiProjection;
 import org.eclipse.rdf4j.query.algebra.ProjectionElem;
 import org.eclipse.rdf4j.query.algebra.ProjectionElemList;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryEvaluationStep;
+import org.eclipse.rdf4j.query.explanation.PhysicalPlan.Operator;
 
 /** Semantic native MultiProjection preserving projection-list order and per-list adjacent duplicate suppression. */
 @Experimental
@@ -48,6 +51,16 @@ final class NativeBindingSetMultiProjectionStep implements QueryEvaluationStep, 
 	@Override
 	public void explainStrategies() {
 		LmdbNativeStrategyPreview.inspect(arg);
+	}
+
+	@Override
+	public Operator physicalOperator(boolean resolveRdfTerms) {
+		return new Operator("NativeMultiProjection",
+				Map.of("arg", LmdbPhysicalPlanDescription.step(arg, resolveRdfTerms), "projections",
+						Arrays.stream(projections)
+								.map(p -> Map.of("sourceNames", List.of(p.sourceNames()), "targetNames",
+										List.of(p.targetNames())))
+								.toList()));
 	}
 
 	@Override

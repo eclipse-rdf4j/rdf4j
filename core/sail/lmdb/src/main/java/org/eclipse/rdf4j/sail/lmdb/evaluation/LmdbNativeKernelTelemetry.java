@@ -12,6 +12,7 @@
 package org.eclipse.rdf4j.sail.lmdb.evaluation;
 
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -47,42 +48,43 @@ final class LmdbNativeKernelTelemetry {
 
 	synchronized void add(KernelWorkCounters counters) {
 		total.add(counters);
-		StringBuilder legacy = new StringBuilder("Kernel producer work; physical payload units, not disk reads");
+		String scope = "Kernel producer work; physical payload units, not disk reads";
+		StringBuilder legacy = new StringBuilder(scope);
+		List<Map<String, Object>> stages = new ArrayList<>();
 		int ordinal = 0;
 		for (KernelWorkCounters.Stage stage : total.stages()) {
+			Map<String, Object> fields = new LinkedHashMap<>();
+			fields.put("shape", stage.site().shape());
+			fields.put("opens", stage.opens());
+			fields.put("partialOpens", stage.partialOpens());
+			fields.put("producerCursorReuses", stage.producerCursorReuses());
+			fields.put("newProducerCursors", stage.opens() - stage.producerCursorReuses());
+			fields.put("pagesVisited", stage.pagesVisited());
+			fields.put("pagesSkipped", stage.pagesSkipped());
+			fields.put("rootsVisited", stage.rootsVisited());
+			fields.put("fibersVisited", stage.fibersVisited());
+			fields.put("contextsVisited", stage.contextsVisited());
+			fields.put("neighborValuesCopied", stage.neighborValuesCopied());
+			fields.put("contextValuesCopied", stage.contextValuesCopied());
+			fields.put("evaluations", stage.evaluations());
+
 			legacy.append("\n  stage[")
 					.append(ordinal++)
 					.append("]: ")
-					.append(stage.site().operator())
-					.append(" shape=")
-					.append(stage.site().shape())
-					.append(" opens=")
-					.append(stage.opens())
-					.append(" partialOpens=")
-					.append(stage.partialOpens())
-					.append(" producerCursorReuses=")
-					.append(stage.producerCursorReuses())
-					.append(" newProducerCursors=")
-					.append(stage.opens() - stage.producerCursorReuses())
-					.append(" pagesVisited=")
-					.append(stage.pagesVisited())
-					.append(" pagesSkipped=")
-					.append(stage.pagesSkipped())
-					.append(" rootsVisited=")
-					.append(stage.rootsVisited())
-					.append(" fibersVisited=")
-					.append(stage.fibersVisited())
-					.append(" contextsVisited=")
-					.append(stage.contextsVisited())
-					.append(" neighborValuesCopied=")
-					.append(stage.neighborValuesCopied())
-					.append(" contextValuesCopied=")
-					.append(stage.contextValuesCopied())
-					.append(" evaluations=")
-					.append(stage.evaluations());
+					.append(stage.site().operator());
+			fields.forEach((name, value) -> legacy.append(' ').append(name).append('=').append(value));
+			Map<String, Object> attributes = new LinkedHashMap<>();
+			attributes.put("operator", stage.site().operator());
+			attributes.putAll(fields);
+			stages.add(Collections.unmodifiableMap(attributes));
 		}
 		legacy.append("\n  omittedSiteUpdates=").append(total.omittedSiteUpdates());
-		LmdbNativeExplain.setRuntimeMetric(target, "nativeKernelStages", legacy.toString());
+		Map<String, Object> attributes = new LinkedHashMap<>();
+		attributes.put("scope", scope);
+		attributes.put("stages", List.copyOf(stages));
+		attributes.put("omittedSiteUpdates", total.omittedSiteUpdates());
+		LmdbNativeExplain.setRuntimeMetric(target, "nativeKernelStages", legacy.toString(),
+				Collections.unmodifiableMap(attributes));
 	}
 
 	private synchronized QueryExecutionProfile.Contribution snapshot() {

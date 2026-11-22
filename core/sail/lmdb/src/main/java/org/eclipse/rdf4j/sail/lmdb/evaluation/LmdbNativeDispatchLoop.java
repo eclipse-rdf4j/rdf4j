@@ -14,6 +14,7 @@ package org.eclipse.rdf4j.sail.lmdb.evaluation;
 
 import java.io.IOException;
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -418,12 +419,10 @@ final class LmdbNativeDispatchLoop<C, T> {
 				LmdbNativeDecisionRecord record = admitted.record(ranking, retry ? "retry " + mode : mode);
 				rankingRound++;
 				observe(record, label);
-				if (LmdbNativeExplain.recordsExecutionPaths(explainTarget)) {
-					decisionSlot = LmdbNativeExplain.recordDecision(explainTarget, point, decisionSlot,
-							record.metric());
-					LmdbNativeExplain.recordDecisionOutcome(explainTarget, "winner=" + chosen.id() + ";reason="
-							+ ranking.reason() + ";kind=" + (retry ? "RETRY" : "NORMAL") + ";expectedNanos="
-							+ String.format(java.util.Locale.ROOT, "%.0f", ranking.expectedNanos()[ranking.winner()]));
+				if (LmdbNativeExplain.runtimeTelemetryEnabled(explainTarget)) {
+					decisionSlot = LmdbNativeExplain.recordDecision(explainTarget, point, decisionSlot, record);
+					LmdbNativeExplain.recordDecisionOutcome(explainTarget, chosen.id(), ranking.reason(),
+							retry ? "RETRY" : "NORMAL", ranking.expectedNanos()[ranking.winner()]);
 				}
 				if (NativeStrategyDecisionEvent.enabled()) {
 					NativeStrategyDecisionEvent.commit(decisionId, rankingRound, label, record, advice);
@@ -648,26 +647,33 @@ final class LmdbNativeDispatchLoop<C, T> {
 
 	/** The explain metric listing every admitted candidate with its expected price, as telemetry consumers read it. */
 	private void recordProposalCosts(Admitted admitted) {
-		if (admitted.candidates.size() < 2 || !LmdbNativeExplain.recordsExecutionPaths(explainTarget)) {
+		if (admitted.candidates.size() < 2 || !LmdbNativeExplain.runtimeTelemetryEnabled(explainTarget)) {
 			return;
 		}
 		StringBuilder rendered = new StringBuilder();
 		StringBuilder features = new StringBuilder();
+		Map<String, Object> prices = new LinkedHashMap<>();
+		Map<String, Object> vectors = new LinkedHashMap<>();
 		for (LmdbNativeCandidate<T> candidate : admitted.candidates) {
 			if (rendered.length() > 0) {
 				rendered.append(',');
 				features.append(',');
 			}
 			LmdbNativeCostVector vector = consumedQuote(candidate);
+			double price = prior.expected(vector) + LmdbNativeStaticPrior.fixedNanos(candidate.id());
+			prices.put(candidate.id(), price);
+			Map<String, Object> counts = new LinkedHashMap<>();
+			vectors.put(candidate.id(), Collections.unmodifiableMap(counts));
 			rendered.append(candidate.id())
 					.append('=')
 					.append(String.format(java.util.Locale.ROOT, "%.0f",
-							prior.expected(vector) + LmdbNativeStaticPrior.fixedNanos(candidate.id())));
+							price));
 			features.append(candidate.id()).append('=');
 			boolean first = true;
 			for (LmdbNativeCostVector.Feature feature : LmdbNativeCostVector.Feature.values()) {
 				double expected = vector.expected(feature);
 				if (expected > 0D) {
+					counts.put(feature.name(), expected);
 					features.append(first ? "" : "|")
 							.append(feature)
 							.append(':')
@@ -676,8 +682,10 @@ final class LmdbNativeDispatchLoop<C, T> {
 				}
 			}
 		}
-		LmdbNativeExplain.recordStrategyProposalCosts(explainTarget, rendered.toString());
-		LmdbNativeExplain.recordStrategyProposalFeatures(explainTarget, features.toString());
+		LmdbNativeExplain.recordStrategyProposalCosts(explainTarget, rendered.toString(),
+				Collections.unmodifiableMap(prices));
+		LmdbNativeExplain.recordStrategyProposalFeatures(explainTarget, features.toString(),
+				Collections.unmodifiableMap(vectors));
 	}
 
 	private QueryEvaluationException forcedUnavailable(String declineReason, boolean returnedNull) {

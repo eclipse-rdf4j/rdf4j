@@ -13,9 +13,15 @@
 package org.eclipse.rdf4j.sail.lmdb.evaluation;
 
 import java.util.ArrayList;
+import java.util.Collections;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 
 import org.eclipse.rdf4j.query.explanation.StrategyDecision;
+import org.eclipse.rdf4j.query.explanation.StrategyDecision.Pricing;
+import org.eclipse.rdf4j.query.explanation.StrategyDecision.Pricing.FeatureCounts;
+import org.eclipse.rdf4j.query.explanation.StrategyDecision.Pricing.Interval;
 
 /**
  * Everything the selector concluded about one dispatch: every strategy that was asked, whether it was admitted, its
@@ -63,6 +69,79 @@ record LmdbNativeDecisionRecord(LmdbNativeDecisionPoint point, String mode, List
 
 	String winnerId() {
 		return winner < 0 ? null : entries.get(winner).id();
+	}
+
+	/** Machine-readable decision shared by the logical node and its execution profile stage. */
+	Map<String, Object> structured() {
+		Map<String, Object> decision = new LinkedHashMap<>();
+		decision.put("point", point.name());
+		decision.put("mode", mode);
+		if (winner >= 0) {
+			decision.put("winner", winnerId());
+		}
+		decision.put("reason", reason);
+		decision.put("entries", entries.stream().map(LmdbNativeDecisionRecord::structuredEntry).toList());
+		return Collections.unmodifiableMap(decision);
+	}
+
+	private static Map<String, Object> structuredEntry(Entry entry) {
+		Map<String, Object> fields = new LinkedHashMap<>();
+		fields.put("strategy", entry.id());
+		fields.put("admitted", entry.admitted());
+		if (entry.declineReason() != null) {
+			fields.put("declineReason", entry.declineReason());
+		}
+		if (entry.eliminatedBy() != null) {
+			fields.put("eliminatedBy", entry.eliminatedBy());
+		}
+		if (entry.nanos() != null) {
+			fields.put("proven", interval(entry.nanos()));
+		}
+		if (entry.estimated() != null) {
+			fields.put("estimated", interval(entry.estimated()));
+		}
+		if (Double.isFinite(entry.expectedNanos())) {
+			fields.put("expectedNanos", entry.expectedNanos());
+		}
+		if (Double.isFinite(entry.quotedExpectedNanos())) {
+			fields.put("quotedExpectedNanos", entry.quotedExpectedNanos());
+		}
+		if (entry.admitted()) {
+			fields.put("provenance", entry.provenance());
+		}
+		if (entry.features() != null) {
+			fields.put("features", featureCounts(entry.features()));
+		}
+		return Collections.unmodifiableMap(fields);
+	}
+
+	private static Map<String, FeatureCounts> featureCounts(LmdbNativeCostVector vector) {
+		if (vector == null) {
+			return null;
+		}
+		Map<String, FeatureCounts> features = new LinkedHashMap<>();
+		for (var feature : LmdbNativeCostVector.Feature.values()) {
+			double high = vector.high(feature);
+			if (high > 0D) {
+				features.put(feature.name(),
+						new FeatureCounts(vector.low(feature), vector.expected(feature), finite(high)));
+			}
+		}
+		return Collections.unmodifiableMap(features);
+	}
+
+	private static Interval interval(LmdbNativeWork work) {
+		return work == null ? null : new Interval(work.low(), finite(work.high()));
+	}
+
+	private static Double finite(double value) {
+		return Double.isFinite(value) ? value : null;
+	}
+
+	private static Pricing pricing(Entry entry) {
+		return entry.nanos() == null ? null
+				: new Pricing(interval(entry.nanos()), interval(entry.estimated()), finite(entry.expectedNanos()),
+						finite(entry.quotedExpectedNanos()), entry.provenance(), featureCounts(entry.features()));
 	}
 
 	/** Every entry on one line each: the trace form written when {@code rdf4j.lmdb.nativeDecisions.trace} is set. */
@@ -118,8 +197,10 @@ record LmdbNativeDecisionRecord(LmdbNativeDecisionPoint point, String mode, List
 		List<StrategyDecision.Candidate> candidates = new ArrayList<>(entries.size());
 		int priority = 1;
 		if (winner >= 0) {
-			candidates.add(new StrategyDecision.Candidate(entries.get(winner).id(), priority++, true,
-					"Would select now", null, "Execution-time binding and admission must still succeed"));
+			Entry entry = entries.get(winner);
+			candidates.add(new StrategyDecision.Candidate(entry.id(), priority++, true,
+					"Would select now", null, "Execution-time binding and admission must still succeed",
+					pricing(entry)));
 		}
 		for (int i = 0; i < entries.size(); i++) {
 			Entry entry = entries.get(i);
@@ -129,7 +210,7 @@ record LmdbNativeDecisionRecord(LmdbNativeDecisionPoint point, String mode, List
 			boolean eliminated = entry.eliminatedBy() != null;
 			candidates.add(new StrategyDecision.Candidate(entry.id(), priority++, true,
 					eliminated ? "Eliminated" : "Eligible",
-					null, eliminated ? entry.eliminatedBy() : "Priced " + render(entry)));
+					null, eliminated ? entry.eliminatedBy() : "Priced " + render(entry), pricing(entry)));
 		}
 		for (Entry entry : entries) {
 			if (!entry.admitted()) {

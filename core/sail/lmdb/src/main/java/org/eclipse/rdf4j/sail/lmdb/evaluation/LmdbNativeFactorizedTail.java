@@ -20,10 +20,12 @@ import java.io.IOException;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.concurrent.atomic.AtomicLong;
 
 import org.eclipse.rdf4j.common.annotation.Experimental;
 import org.eclipse.rdf4j.query.QueryEvaluationException;
+import org.eclipse.rdf4j.query.explanation.PhysicalPlan.Operator;
 import org.eclipse.rdf4j.sail.lmdb.TripleIndex;
 
 @Experimental
@@ -182,6 +184,11 @@ final class FactorizedTail {
 			}
 		}
 		return rowSpecs;
+	}
+
+	Operator engagement() {
+		return new Operator(LmdbNativeAttemptMetrics.PATH_FACTORIZED_TAIL,
+				Map.of("prefix", prefixStrategy, "branches", branches.length, "groupedByTail", groupsByTail()));
 	}
 
 	String describeEngagement() {

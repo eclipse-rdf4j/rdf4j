@@ -4579,10 +4579,10 @@ namespace workbench {
                 <div id=${'query-explanation-status' + suffix} class="query-explanation-status" aria-live="polite"></div>
                 <div class="query-explanation-surface"><div id=${'query-explanation-overlay' + suffix}
                     class="query-explanation-overlay" aria-hidden="true"></div>
-                    ${compare ? h`<pre id="query-explanation-compare" data-format=${selectedFormat}
-                        ?hidden=${!queryFeatureEnabled(context, 'explain-view-text')}>${explanation}</pre>`
-                        : h`<pre id="query-explanation" data-format=${selectedFormat}
-                            ?hidden=${!queryFeatureEnabled(context, 'explain-view-text')}>${explanation}</pre>`}
+                    ${compare ? h`<div id="query-explanation-compare" data-format=${selectedFormat}
+                        ?hidden=${!queryFeatureEnabled(context, 'explain-view-text')}>${explanation}</div>`
+                        : h`<div id="query-explanation" data-format=${selectedFormat}
+                            ?hidden=${!queryFeatureEnabled(context, 'explain-view-text')}>${explanation}</div>`}
                     ${compare ? h`<div id="query-explanation-dot-view-compare"
                         ?hidden=${!queryFeatureEnabled(context, 'explain-view-dot')}></div>`
                         : h`<div id="query-explanation-dot-view"

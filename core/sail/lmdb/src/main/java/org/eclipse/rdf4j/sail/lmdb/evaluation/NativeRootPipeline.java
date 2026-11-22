@@ -46,6 +46,7 @@ import org.eclipse.rdf4j.query.algebra.evaluation.QueryEvaluationStep;
 import org.eclipse.rdf4j.query.algebra.evaluation.function.lmdb.LmdbIndexOrderFunction;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.QueryEvaluationContext;
 import org.eclipse.rdf4j.query.algebra.evaluation.util.ValueComparator;
+import org.eclipse.rdf4j.query.explanation.PhysicalPlan.Operator;
 
 /**
  * Semantic native solution-modifier pipeline for wrapper stacks that cannot be flattened into one slot-row root. Stages
@@ -207,6 +208,12 @@ final class NativeRootPipeline {
 		}
 
 		@Override
+		public Operator physicalOperator(boolean resolveRdfTerms) {
+			return new Operator("RootPipeline",
+					Map.of("plan", LmdbPhysicalPlanDescription.step(staged, resolveRdfTerms)));
+		}
+
+		@Override
 		public String nativePhysicalPlan(boolean resolveRdfTerms) {
 			String innerPlan = staged instanceof LmdbNativePhysicalPlan physical
 					? physical.nativePhysicalPlan(resolveRdfTerms)
@@ -250,6 +257,12 @@ final class NativeRootPipeline {
 			LmdbNativeStrategyPreview.direct("ORDER BY dispatch", LmdbNativeAttemptMetrics.PATH_ORDERED_TOP_K,
 					"Bounded top-K over the staged input", null);
 			LmdbNativeStrategyPreview.inspect(arg);
+		}
+
+		@Override
+		public Operator physicalOperator(boolean resolveRdfTerms) {
+			return new Operator("NativeTopK", Map.of("offset", offset, "limit", limit, "keys", keys.length, "arg",
+					LmdbPhysicalPlanDescription.step(arg, resolveRdfTerms)));
 		}
 
 		@Override
@@ -459,6 +472,12 @@ final class NativeRootPipeline {
 		}
 
 		@Override
+		public Operator physicalOperator(boolean resolveRdfTerms) {
+			return new Operator("NativeSlice", Map.of("offset", offset, "limit", limit, "arg",
+					LmdbPhysicalPlanDescription.step(arg, resolveRdfTerms)));
+		}
+
+		@Override
 		public String nativePhysicalPlan(boolean resolveRdfTerms) {
 			return "NativeSlice(offset=" + offset + ", limit=" + limit + ")";
 		}
@@ -583,6 +602,12 @@ final class NativeRootPipeline {
 		}
 
 		@Override
+		public Operator physicalOperator(boolean resolveRdfTerms) {
+			return new Operator("NativeDistinct",
+					Map.of("arg", LmdbPhysicalPlanDescription.step(arg, resolveRdfTerms)));
+		}
+
+		@Override
 		public String nativePhysicalPlan(boolean resolveRdfTerms) {
 			return "NativeDistinct";
 		}
@@ -695,6 +720,12 @@ final class NativeRootPipeline {
 			LmdbNativeStrategyPreview.direct("ORDER BY dispatch",
 					LmdbNativeAttemptMetrics.PATH_ORDERED_FULL_SORT, "Sort the complete staged input", null);
 			LmdbNativeStrategyPreview.inspect(arg);
+		}
+
+		@Override
+		public Operator physicalOperator(boolean resolveRdfTerms) {
+			return new Operator("NativeOrder",
+					Map.of("keys", keys.length, "arg", LmdbPhysicalPlanDescription.step(arg, resolveRdfTerms)));
 		}
 
 		@Override

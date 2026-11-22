@@ -15,6 +15,7 @@ package org.eclipse.rdf4j.sail.lmdb.evaluation;
 import java.io.IOException;
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.Map;
 import java.util.concurrent.ArrayBlockingQueue;
 import java.util.concurrent.ConcurrentLinkedQueue;
 import java.util.concurrent.ExecutorService;
@@ -29,6 +30,7 @@ import java.util.concurrent.atomic.AtomicReference;
 import org.eclipse.rdf4j.common.annotation.Experimental;
 import org.eclipse.rdf4j.query.QueryEvaluationException;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.QueryEvaluationContext;
+import org.eclipse.rdf4j.query.explanation.PhysicalPlan.Operator;
 import org.eclipse.rdf4j.sail.lmdb.LmdbRootScanPartition;
 import org.eclipse.rdf4j.sail.lmdb.LmdbStoreConnection.ReadOperationClosedException;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.codegen.KernelQueryCancelledException;
@@ -112,6 +114,17 @@ final class LmdbNativeParallelPipelines {
 		Integer configured = Integer.getInteger("rdf4j.lmdb.parallel.maxTasks");
 		int maxTasks = configured != null ? configured : (Runtime.getRuntime().availableProcessors() + 1);
 		return Math.max(1, Math.min(maxTasks, MAX_POOL_TASKS));
+	}
+
+	record ParallelStrategy(String name, int workers, int partitions) {
+		String label() {
+			return parallelStrategyLabel(name, workers, partitions);
+		}
+
+		Operator operator() {
+			return new Operator(name, partitions > 0 ? Map.of("workers", workers, "rangePartitioned", partitions)
+					: Map.of("workers", workers));
+		}
 	}
 
 	/** Keeps the stable execution-path name while exposing the workers actually granted by elastic admission. */
@@ -1020,8 +1033,8 @@ final class LmdbNativeParallelPipelines {
 		}
 
 		/** Explain label: reports the admitted workers and names range mode only when it actually engaged. */
-		String strategyLabel() {
-			return parallelStrategyLabel(LmdbNativeAttemptMetrics.PATH_PARALLEL_PIPELINES, workerPlans.length,
+		ParallelStrategy executionPath() {
+			return new ParallelStrategy(LmdbNativeAttemptMetrics.PATH_PARALLEL_PIPELINES, workerPlans.length,
 					partitions != null ? plannedPartitionCount : 0);
 		}
 
