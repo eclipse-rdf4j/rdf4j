@@ -577,6 +577,42 @@ class GenericPlanNodeTest {
 	}
 
 	@Test
+	void queryPullTimeRoundTripsWithoutBecomingAnOperatorTimer() {
+		String line = System.lineSeparator();
+		GenericPlanNode node = new GenericPlanNode("Projection");
+		node.addPlans(new GenericPlanNode("StatementPattern"));
+		node.setQueryPullTimeActual(12.5);
+		node.applyExplanationLevel(Explanation.Level.Timed);
+		assertTrue(node.toString().startsWith("Query pull time: 12.5ms" + line + line + "Projection"));
+
+		node.setPhysicalPlanPrelude("Physical plan");
+		Explanation explanation = new ExplanationImpl(node, false, null);
+		String text = "Physical plan" + line + line + "Query explanation" + line
+				+ "Query pull time: 12.5ms" + line + line + "Projection";
+		assertTrue(explanation.toString().startsWith(text), explanation.toString());
+		String json = explanation.toJson();
+		var mapper = JsonMapper.builder().build();
+		var jsonTree = mapper.readTree(json);
+		assertEquals(12.5, jsonTree.get("queryPullTimeActual").asDouble());
+		assertFalse(jsonTree.get("plans").get(0).has("queryPullTimeActual"));
+		assertFalse(jsonTree.has("totalTimeActual"));
+		assertFalse(jsonTree.has("selfTimeActual"));
+
+		GenericPlanNode decoded = mapper.treeToValue(jsonTree, GenericPlanNode.class);
+		assertEquals(explanation.toString(), decoded.toString());
+		String dot = new ExplanationImpl(decoded, false, null).toDot();
+		assertTrue(dot.startsWith("digraph Explanation {" + line + "   label=\"Query pull time: 12.5ms\";"));
+		assertFalse(dot.contains("Total time actual"), dot);
+		assertFalse(dot.contains("Self time actual"), dot);
+
+		decoded.applyExplanationLevel(Explanation.Level.Optimized);
+		Explanation planned = new ExplanationImpl(decoded, false, null);
+		assertFalse(planned.toJson().contains("queryPullTimeActual"));
+		assertFalse(planned.toString().contains("Query pull time:"));
+		assertFalse(planned.toDot().contains("Query pull time:"));
+	}
+
+	@Test
 	void toJsonRoundTripsPhysicalPlanPreludeForWorkbenchTextReconstruction() {
 		String prelude = "LMDB native physical plan (executed)" + System.lineSeparator()
 				+ "  invocation[0]:" + System.lineSeparator()

@@ -128,6 +128,9 @@ public class GenericPlanNode {
 	// plans[0..n].totalTimeActual)
 	private Double totalTimeActual;
 
+	private Double queryPullTimeActual;
+	private boolean queryPullTimeEnabled = true;
+
 	// Telemetry counters captured while iterating this node during telemetry-level explanations.
 	private Long hasNextCallCountActual;
 	private Long hasNextTrueCountActual;
@@ -260,6 +263,22 @@ public class GenericPlanNode {
 		if (totalTimeActual >= 0) {
 			this.totalTimeActual = totalTimeActual;
 		}
+	}
+
+	/**
+	 * Inclusive time spent pulling results through the query root, in milliseconds. This is a query-level measurement,
+	 * not a logical operator's time or end-to-end elapsed time. It excludes work outside the root's {@code hasNext()}
+	 * and {@code next()} calls.
+	 *
+	 * @return observed query pull time, or {@code null} when not measured
+	 */
+	public Double getQueryPullTimeActual() {
+		return queryPullTimeEnabled ? queryPullTimeActual : null;
+	}
+
+	public void setQueryPullTimeActual(Double queryPullTimeActual) {
+		this.queryPullTimeActual = queryPullTimeActual != null && Double.isFinite(queryPullTimeActual)
+				&& queryPullTimeActual >= 0 ? queryPullTimeActual : null;
 	}
 
 	public Long getHasNextCallCountActual() {
@@ -433,6 +452,7 @@ public class GenericPlanNode {
 			strategyDecisions = null;
 		}
 
+		queryPullTimeEnabled = level == Explanation.Level.Timed;
 		setRuntimeTelemetryEnabled(level.includesRuntimeTelemetry());
 		setExecutionSummaryEnabled(level == Explanation.Level.Executed
 				|| level == Explanation.Level.Timed
@@ -669,6 +689,9 @@ public class GenericPlanNode {
 	@Override
 	public String toString() {
 		String logical = getHumanReadable(0, isProjectionElemListNode());
+		if (getQueryPullTimeActual() != null) {
+			logical = queryPullTimeSummary() + newLine + newLine + logical;
+		}
 		if (physicalPlanPrelude == null || physicalPlanPrelude.isEmpty()) {
 			return logical;
 		}
@@ -1566,9 +1589,13 @@ public class GenericPlanNode {
 	}
 
 	public String toDot() {
+		String nodes = toDotInternal(getMaxResultSizeActual(this), getMaxTotalTime(this), getMaxSelfTime(this));
+		return getQueryPullTimeActual() == null ? nodes
+				: "   label=\"" + queryPullTimeSummary() + "\";" + newLine + nodes;
+	}
 
-		return toDotInternal(getMaxResultSizeActual(this), getMaxTotalTime(this), getMaxSelfTime(this));
-
+	private String queryPullTimeSummary() {
+		return "Query pull time: " + toHumanReadableTime(getQueryPullTimeActual());
 	}
 
 	private static double getMaxTotalTime(GenericPlanNode genericPlanNode) {

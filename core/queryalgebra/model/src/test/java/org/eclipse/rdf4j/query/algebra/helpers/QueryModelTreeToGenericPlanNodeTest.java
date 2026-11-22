@@ -40,6 +40,7 @@ import org.eclipse.rdf4j.query.algebra.ProjectionElem;
 import org.eclipse.rdf4j.query.algebra.ProjectionElemList;
 import org.eclipse.rdf4j.query.algebra.QueryModelNode;
 import org.eclipse.rdf4j.query.algebra.QueryModelVisitor;
+import org.eclipse.rdf4j.query.algebra.QueryRoot;
 import org.eclipse.rdf4j.query.algebra.Slice;
 import org.eclipse.rdf4j.query.algebra.StatementPattern;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
@@ -54,6 +55,37 @@ import org.eclipse.rdf4j.query.impl.MapBindingSet;
 import org.junit.jupiter.api.Test;
 
 public class QueryModelTreeToGenericPlanNodeTest {
+
+	@Test
+	public void timedExplanationPreservesQueryRootPullTimeSeparately() {
+		StatementPattern pattern = new StatementPattern(Var.of("s"), Var.of("p"), Var.of("o"));
+		QueryRoot root = new QueryRoot(pattern);
+		assertThat(convert(root, Explanation.Level.Timed).getQueryPullTimeActual()).isNull();
+
+		root.setTotalTimeNanosActual(0);
+		assertThat(convert(root, Explanation.Level.Timed).getQueryPullTimeActual()).isZero();
+
+		root.setTotalTimeNanosActual(3_500_000);
+		GenericPlanNode plan = convert(root, Explanation.Level.Timed);
+		assertThat(plan.getType()).startsWith("StatementPattern");
+		assertThat(plan.getQueryPullTimeActual()).isEqualTo(3.5);
+		assertThat(plan.getTotalTimeActual()).isNull();
+		assertThat(plan.getSelfTimeActual()).isNull();
+		assertThat(plan.getPlans()).allSatisfy(child -> assertThat(child.getQueryPullTimeActual()).isNull());
+
+		pattern.setTotalTimeNanosActual(1_000_000);
+		plan = convert(root, Explanation.Level.Timed);
+		assertThat(plan.getQueryPullTimeActual()).isEqualTo(3.5);
+		assertThat(plan.getTotalTimeActual()).isEqualTo(1.0);
+		assertThat(plan.getSelfTimeActual()).isEqualTo(1.0);
+		assertThat(convert(pattern, Explanation.Level.Timed).getQueryPullTimeActual()).isNull();
+
+		for (Explanation.Level level : Explanation.Level.values()) {
+			if (level != Explanation.Level.Timed) {
+				assertThat(convert(root, level).getQueryPullTimeActual()).as(level.name()).isNull();
+			}
+		}
+	}
 
 	@Test
 	public void telemetryPreservesUnavailableCountersInsteadOfReportingMeasuredZero() {

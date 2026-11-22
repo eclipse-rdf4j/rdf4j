@@ -31,6 +31,7 @@ namespace workbench {
             costEstimate?: JsonDouble;
             resultSizeEstimate?: JsonDouble;
             resultSizeActual?: JsonLong;
+            queryPullTimeActual?: number;
             totalTimeActual?: number;
             selfTimeActual?: number;
             hasNextCallCountActual?: JsonLong;
@@ -1475,6 +1476,11 @@ namespace workbench {
             var separator = effectiveLineSeparator(lineSeparator);
             var lines = formatLines(plan || {}, 0, isProjectionElemList(plan || {}), effectiveLevel,
                 separator, hiddenProperties);
+            // This measures the query root, not the first displayed logical operator.
+            if (plan && finiteNonNegative(plan.queryPullTimeActual)) {
+                lines = [textLine('Query pull time: ' + readableTime(plan.queryPullTimeActual)),
+                    textLine('')].concat(lines);
+            }
             var prelude = plan && plan.physicalPlanPrelude;
             if (typeof prelude === 'string' && prelude.length) {
                 // The physical plan prelude carries its own embedded newlines (independent of the

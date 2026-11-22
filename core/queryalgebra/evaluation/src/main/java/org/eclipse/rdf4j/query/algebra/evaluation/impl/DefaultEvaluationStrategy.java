@@ -2584,7 +2584,6 @@ public class DefaultEvaluationStrategy implements EvaluationStrategy, FederatedS
 
 		CloseableIteration<BindingSet> iterator;
 		QueryModelNode queryModelNode;
-		long elapsedNanos;
 		long openedAtNanos;
 		boolean firstRowSeen;
 
@@ -2606,7 +2605,7 @@ public class DefaultEvaluationStrategy implements EvaluationStrategy, FederatedS
 				return iterator.next();
 			} finally {
 				long elapsed = System.nanoTime() - started;
-				elapsedNanos += elapsed;
+				recordPullTime(elapsed);
 				queryModelNode.setNextCallCountActual(queryModelNode.getNextCallCountActual() + 1);
 				queryModelNode.setNextTimeNanosActual(queryModelNode.getNextTimeNanosActual() + elapsed);
 				if (!firstRowSeen && telemetryActive(queryModelNode)) {
@@ -2627,7 +2626,7 @@ public class DefaultEvaluationStrategy implements EvaluationStrategy, FederatedS
 				return hasNext;
 			} finally {
 				long elapsed = System.nanoTime() - started;
-				elapsedNanos += elapsed;
+				recordPullTime(elapsed);
 				queryModelNode.setHasNextCallCountActual(queryModelNode.getHasNextCallCountActual() + 1);
 				queryModelNode.setHasNextTimeNanosActual(queryModelNode.getHasNextTimeNanosActual() + elapsed);
 				if (hasNext) {
@@ -2636,11 +2635,15 @@ public class DefaultEvaluationStrategy implements EvaluationStrategy, FederatedS
 			}
 		}
 
+		private void recordPullTime(long elapsed) {
+			// An exhausted or interrupted pull can close this wrapper before it finishes.
+			// Publish each completed pull here rather than flushing only on close.
+			queryModelNode.setTotalTimeNanosActual(queryModelNode.getTotalTimeNanosActual() + elapsed);
+		}
+
 		@Override
 		protected void handleClose() throws QueryEvaluationException {
 			try {
-				long totalTimeNanosActual = queryModelNode.getTotalTimeNanosActual();
-				queryModelNode.setTotalTimeNanosActual(totalTimeNanosActual + elapsedNanos);
 				if (telemetryActive(queryModelNode)) {
 					incrementLongMetric(queryModelNode, TelemetryMetricNames.CLOSE_COUNT_ACTUAL);
 					queryModelNode.setLongMetricActual(TelemetryMetricNames.LAST_ROW_TIME_NANOS_ACTUAL,
