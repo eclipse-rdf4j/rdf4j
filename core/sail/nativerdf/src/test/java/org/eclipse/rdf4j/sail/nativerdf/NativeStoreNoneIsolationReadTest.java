@@ -16,10 +16,12 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.io.File;
+import java.util.Set;
 
 import org.eclipse.rdf4j.common.transaction.IsolationLevels;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
+import org.eclipse.rdf4j.query.TupleQueryResult;
 import org.eclipse.rdf4j.repository.RepositoryConnection;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
 import org.junit.jupiter.api.AfterEach;
@@ -27,15 +29,24 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.Timeout;
 import org.junit.jupiter.api.io.TempDir;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 
 @Timeout(30)
 class NativeStoreNoneIsolationReadTest {
 
 	private static final String NAMESPACE = "urn:none-read:";
 	private static final IRI SUBJECT = SimpleValueFactory.getInstance().createIRI(NAMESPACE, "subject");
+	private static final IRI SECOND_SUBJECT = SimpleValueFactory.getInstance().createIRI(NAMESPACE, "second");
 	private static final IRI PREDICATE = SimpleValueFactory.getInstance().createIRI(NAMESPACE, "predicate");
 	private static final IRI OBJECT = SimpleValueFactory.getInstance().createIRI(NAMESPACE, "object");
 	private static final IRI CONTEXT = SimpleValueFactory.getInstance().createIRI(NAMESPACE, "context");
+	private static final String GRAPH_QUERY = """
+			SELECT ?s WHERE {
+			  VALUES ?s { <urn:none-read:subject> <urn:none-read:second> }
+			  GRAPH <urn:none-read:context> { ?s <urn:none-read:predicate> ?o }
+			}
+			""";
 
 	@TempDir
 	File directory;
@@ -102,5 +113,47 @@ class NativeStoreNoneIsolationReadTest {
 			assertFalse(store.isIsolationDisabled());
 			assertEquals(1, reader.size());
 		}
+	}
+
+	@ParameterizedTest
+	@ValueSource(booleans = { false, true })
+	@Timeout(value = 5, threadMode = Timeout.ThreadMode.SAME_THREAD)
+	void noneTransactionCanBeginWithOpenAutocommitGraphResult(boolean includeInferred) {
+		try (RepositoryConnection writer = repository.getConnection();
+				RepositoryConnection reader = repository.getConnection()) {
+			writer.add(SECOND_SUBJECT, PREDICATE, OBJECT, CONTEXT);
+			try (var result = evaluateGraphQuery(reader, includeInferred)) {
+				var firstSubject = result.next().getValue("s");
+
+				writer.begin(IsolationLevels.NONE);
+				assertTrue(writer.isActive());
+				writer.rollback();
+
+				assertEquals(Set.of(SUBJECT, SECOND_SUBJECT), Set.of(firstSubject, result.next().getValue("s")));
+				assertFalse(result.hasNext());
+			}
+		}
+	}
+
+	@Test
+	void autocommitGraphReadWhileAnotherNoneTransactionIsActive() {
+		try (RepositoryConnection writer = repository.getConnection();
+				RepositoryConnection reader = repository.getConnection()) {
+			writer.add(SECOND_SUBJECT, PREDICATE, OBJECT, CONTEXT);
+			writer.begin(IsolationLevels.NONE);
+			try (var result = evaluateGraphQuery(reader, true)) {
+				var firstSubject = result.next().getValue("s");
+				assertEquals(Set.of(SUBJECT, SECOND_SUBJECT), Set.of(firstSubject, result.next().getValue("s")));
+				assertFalse(result.hasNext());
+			}
+			assertTrue(writer.isActive());
+			writer.rollback();
+		}
+	}
+
+	private TupleQueryResult evaluateGraphQuery(RepositoryConnection reader, boolean includeInferred) {
+		var query = reader.prepareTupleQuery(GRAPH_QUERY);
+		query.setIncludeInferred(includeInferred);
+		return query.evaluate();
 	}
 }

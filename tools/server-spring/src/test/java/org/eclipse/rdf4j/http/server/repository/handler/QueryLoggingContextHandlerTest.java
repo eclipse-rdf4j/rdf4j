@@ -23,6 +23,7 @@ import java.util.concurrent.atomic.AtomicReference;
 import org.eclipse.rdf4j.http.protocol.Protocol;
 import org.eclipse.rdf4j.http.server.repository.resolver.RepositoryResolver;
 import org.eclipse.rdf4j.query.QueryLanguage;
+import org.eclipse.rdf4j.query.QueryParseOptions;
 import org.eclipse.rdf4j.query.TupleQuery;
 import org.eclipse.rdf4j.query.impl.IteratingTupleQueryResult;
 import org.eclipse.rdf4j.repository.Repository;
@@ -69,6 +70,7 @@ class QueryLoggingContextHandlerTest {
 		when(resolver.getRepository(request)).thenReturn(repository);
 		when(resolver.getRepositoryID(request)).thenReturn("test-repo");
 		when(resolver.getRepositoryConnection(request, repository)).thenReturn(connection);
+		when(connection.getQueryParseOptions()).thenReturn(QueryParseOptions.DEFAULT);
 		when(connection.prepareQuery(QueryLanguage.SPARQL, queryText, null)).thenReturn(query);
 		AtomicReference<Map<String, String>> observed = new AtomicReference<>();
 		when(query.evaluate()).thenAnswer(invocation -> {

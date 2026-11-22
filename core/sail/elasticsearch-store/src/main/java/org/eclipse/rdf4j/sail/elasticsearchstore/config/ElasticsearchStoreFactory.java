@@ -60,7 +60,7 @@ public class ElasticsearchStoreFactory implements SailFactory {
 
 			ElasticsearchStore elasticsearchStore = new ElasticsearchStore(config.getHostname(), config.getPort(),
 					config.getClusterName(), config.getIndex());
-			elasticsearchStore.setExperimentalQueryOptimizations(config.isExperimentalQueryOptimizations());
+			elasticsearchStore.setQueryExecutionPolicy(config.getQueryExecutionPolicy());
 			elasticsearchStore.setSlowQueryLogThresholdSeconds(config.getSlowQueryLogThresholdSeconds());
 			elasticsearchStore.setSlowQueryLogFirstResultThresholdSeconds(
 					config.getSlowQueryLogFirstResultThresholdSeconds());
