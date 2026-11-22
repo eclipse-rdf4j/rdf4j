@@ -1,0 +1,132 @@
+Source entries: org/tukaani/xz/ARM64Options.java#L1-L3, org/tukaani/xz/ARMOptions.java#L1-L3, org/tukaani/xz/ARMThumbOptions.java#L1-L3, org/tukaani/xz/ArrayCache.java#L1-L3, org/tukaani/xz/BCJCoder.java#L1-L3, org/tukaani/xz/BCJDecoder.java#L1-L3, org/tukaani/xz/BCJEncoder.java#L1-L3, org/tukaani/xz/BCJOptions.java#L1-L3, org/tukaani/xz/BasicArrayCache.java#L1-L3, org/tukaani/xz/BlockInputStream.java#L1-L3, org/tukaani/xz/BlockOutputStream.java#L1-L3, org/tukaani/xz/CloseIgnoringInputStream.java#L1-L3, org/tukaani/xz/CorruptedInputException.java#L1-L3, org/tukaani/xz/CountingInputStream.java#L1-L3, org/tukaani/xz/CountingOutputStream.java#L1-L3, org/tukaani/xz/DeltaCoder.java#L1-L3, org/tukaani/xz/DeltaDecoder.java#L1-L3, org/tukaani/xz/DeltaEncoder.java#L1-L3, org/tukaani/xz/DeltaInputStream.java#L1-L3, org/tukaani/xz/DeltaOptions.java#L1-L3, org/tukaani/xz/DeltaOutputStream.java#L1-L3, org/tukaani/xz/FilterCoder.java#L1-L3, org/tukaani/xz/FilterDecoder.java#L1-L3, org/tukaani/xz/FilterEncoder.java#L1-L3, org/tukaani/xz/FinishableOutputStream.java#L1-L3, org/tukaani/xz/FinishableWrapperOutputStream.java#L1-L3, org/tukaani/xz/IA64Options.java#L1-L3, org/tukaani/xz/IndexIndicatorException.java#L1-L3, org/tukaani/xz/LZMA2Coder.java#L1-L3, org/tukaani/xz/LZMA2Decoder.java#L1-L3, org/tukaani/xz/LZMA2Encoder.java#L1-L3, org/tukaani/xz/LZMA2Options.java#L1-L3, org/tukaani/xz/MemoryLimitException.java#L1-L3, org/tukaani/xz/PowerPCOptions.java#L1-L3, org/tukaani/xz/RISCVOptions.java#L1-L3, org/tukaani/xz/RawCoder.java#L1-L3, org/tukaani/xz/ResettableArrayCache.java#L1-L3, org/tukaani/xz/SPARCOptions.java#L1-L3, org/tukaani/xz/SeekableFileInputStream.java#L1-L3, org/tukaani/xz/SeekableInputStream.java#L1-L3, org/tukaani/xz/SeekableXZInputStream.java#L1-L3, org/tukaani/xz/SimpleInputStream.java#L1-L3, org/tukaani/xz/SimpleOutputStream.java#L1-L3, org/tukaani/xz/SingleXZInputStream.java#L1-L3, org/tukaani/xz/UncompressedLZMA2OutputStream.java#L1-L3, org/tukaani/xz/UnsupportedOptionsException.java#L1-L3, org/tukaani/xz/X86Options.java#L1-L3, org/tukaani/xz/XZ.java#L1-L3, org/tukaani/xz/XZFormatException.java#L1-L3, org/tukaani/xz/XZIOException.java#L1-L3, org/tukaani/xz/XZInputStream.java#L1-L3, org/tukaani/xz/XZOutputStream.java#L1-L3, org/tukaani/xz/check/CRC32.java#L1-L3, org/tukaani/xz/check/Check.java#L1-L3, org/tukaani/xz/check/None.java#L1-L3, org/tukaani/xz/check/SHA256.java#L1-L3, org/tukaani/xz/common/ByteArrayView.java#L1-L3, org/tukaani/xz/common/DecoderUtil.java#L1-L3, org/tukaani/xz/common/EncoderUtil.java#L1-L3, org/tukaani/xz/common/StreamFlags.java#L1-L3, org/tukaani/xz/common/Util.java#L1-L3, org/tukaani/xz/index/BlockInfo.java#L1-L3, org/tukaani/xz/index/IndexBase.java#L1-L3, org/tukaani/xz/index/IndexDecoder.java#L1-L3, org/tukaani/xz/index/IndexEncoder.java#L1-L3, org/tukaani/xz/index/IndexHash.java#L1-L3, org/tukaani/xz/index/IndexRecord.java#L1-L3, org/tukaani/xz/lz/MatchLength.java#L1-L3, org/tukaani/xz/package-info.java#L1-L3, org/tukaani/xz/simple/RISCVDecoder.java#L1-L3, org/tukaani/xz/simple/RISCVEncoder.java#L1-L3, org/tukaani/xz/simple/SimpleFilter.java#L1-L3, META-INF/versions/9/module-info.java#L1-L3, META-INF/versions/9/org/tukaani/xz/common/ByteArrayView.java#L1-L3, META-INF/versions/9/org/tukaani/xz/lz/BasicMatchLengthFinder.java#L1-L3, META-INF/versions/9/org/tukaani/xz/lz/MatchLength.java#L1-L3, META-INF/versions/9/org/tukaani/xz/lz/MatchLengthFinder.java#L1-L3, META-INF/versions/9/org/tukaani/xz/lz/UnalignedLongLEMatchLengthFinder.java#L1-L3
+// SPDX-License-Identifier: 0BSD
+// SPDX-FileCopyrightText: The XZ for Java authors and contributors
+// SPDX-FileContributor: Lasse Collin <lasse.collin@tukaani.org>
+
+Source entries: org/tukaani/xz/FilterOptions.java#L1-L4, org/tukaani/xz/LZMA2InputStream.java#L1-L4, org/tukaani/xz/LZMA2OutputStream.java#L1-L4, org/tukaani/xz/LZMAInputStream.java#L1-L4, org/tukaani/xz/LZMAOutputStream.java#L1-L4, org/tukaani/xz/lz/BT4.java#L1-L4, org/tukaani/xz/lz/CRC32Hash.java#L1-L4, org/tukaani/xz/lz/HC4.java#L1-L4, org/tukaani/xz/lz/Hash234.java#L1-L4, org/tukaani/xz/lz/LZDecoder.java#L1-L4, org/tukaani/xz/lz/LZEncoder.java#L1-L4, org/tukaani/xz/lz/Matches.java#L1-L4, org/tukaani/xz/lzma/LZMACoder.java#L1-L4, org/tukaani/xz/lzma/LZMADecoder.java#L1-L4, org/tukaani/xz/lzma/LZMAEncoder.java#L1-L4, org/tukaani/xz/lzma/LZMAEncoderFast.java#L1-L4, org/tukaani/xz/lzma/LZMAEncoderNormal.java#L1-L4, org/tukaani/xz/lzma/Optimum.java#L1-L4, org/tukaani/xz/lzma/State.java#L1-L4, org/tukaani/xz/rangecoder/RangeCoder.java#L1-L4, org/tukaani/xz/rangecoder/RangeDecoder.java#L1-L4, org/tukaani/xz/rangecoder/RangeDecoderFromBuffer.java#L1-L4, org/tukaani/xz/rangecoder/RangeDecoderFromStream.java#L1-L4, org/tukaani/xz/rangecoder/RangeEncoder.java#L1-L4, org/tukaani/xz/rangecoder/RangeEncoderToBuffer.java#L1-L4, org/tukaani/xz/rangecoder/RangeEncoderToStream.java#L1-L4, org/tukaani/xz/simple/ARM.java#L1-L4, org/tukaani/xz/simple/ARM64.java#L1-L4, org/tukaani/xz/simple/ARMThumb.java#L1-L4, org/tukaani/xz/simple/IA64.java#L1-L4, org/tukaani/xz/simple/PowerPC.java#L1-L4, org/tukaani/xz/simple/SPARC.java#L1-L4, org/tukaani/xz/simple/X86.java#L1-L4
+// SPDX-License-Identifier: 0BSD
+// SPDX-FileCopyrightText: The XZ for Java authors and contributors
+// SPDX-FileContributor: Lasse Collin <lasse.collin@tukaani.org>
+// SPDX-FileContributor: Igor Pavlov <https://7-zip.org/>
+
+Source entries: org/tukaani/xz/ResettableArrayCache.java#L23-L25
+/**
+     * Creates a new ResettableArrayCache based on the given ArrayCache.
+     */
+
+Source entries: org/tukaani/xz/SeekableXZInputStream.java#L1000-L1007
+// This is a bit silly implementation. Here we locate the uncompressed
+        // offset of the specified Block, then when doing the actual seek in
+        // seek(), we need to find the Block number based on seekPos.
+        //
+        // NOTE: getBlockPos is a public method that can be overridden.
+        // Version 1.9 and older called getBlockPos(blockNumber) here.
+        // Since 1.10, the private method locateBlockByNumber is used
+        // directly to ensure that subclasses cannot affect the behavior.
+
+Source entries: org/tukaani/xz/check/CRC64.java#L1-L4, META-INF/versions/9/org/tukaani/xz/check/CRC64.java#L1-L4
+// SPDX-License-Identifier: 0BSD
+// SPDX-FileCopyrightText: The XZ for Java authors and contributors
+// SPDX-FileContributor: Brett Okken <brett.okken.os@gmail.com>
+// SPDX-FileContributor: Lasse Collin <lasse.collin@tukaani.org>
+
+Source entries: org/tukaani/xz/delta/DeltaCoder.java#L1-L4, org/tukaani/xz/delta/DeltaDecoder.java#L1-L4, org/tukaani/xz/delta/DeltaEncoder.java#L1-L4
+// SPDX-License-Identifier: 0BSD
+// SPDX-FileCopyrightText: The XZ for Java authors and contributors
+// SPDX-FileContributor: Lasse Collin <lasse.collin@tukaani.org>
+// SPDX-FileContributor: Brett Okken <brett.okken.os@gmail.com>
+
+Source entries: org/tukaani/xz/lz/HC4.java#L50-L52
+// Use a default depth limit if no other value was specified.
+        // The default is just something based on experimentation;
+        // it's nothing magic.
+
+Source entries: org/tukaani/xz/package-info.java#L5-L62
+/**
+ * XZ data compression support.
+ *
+ * <h2>Introduction</h2>
+ * <p>
+ * This aims to be a complete implementation of XZ data compression
+ * in pure Java. Features:
+ * <ul>
+ * <li>Full support for the .xz file format specification version 1.2.1</li>
+ * <li>Single-threaded streamed compression and decompression</li>
+ * <li>Single-threaded decompression with limited random access support</li>
+ * <li>Raw streams (no .xz headers) for advanced users, including LZMA2
+ *     with preset dictionary</li>
+ * </ul>
+ * <p>
+ * Threading is planned but it is unknown when it will be implemented.
+ * <p>
+ * For the latest source code, see the
+ * <a href="https://tukaani.org/xz/java.html">home page of XZ for Java</a>.
+ *
+ * <h2>Getting started</h2>
+ * <p>
+ * Start by reading the documentation of {@link org.tukaani.xz.XZOutputStream}
+ * and {@link org.tukaani.xz.XZInputStream}.
+ * If you use XZ inside another file format or protocol,
+ * see also {@link org.tukaani.xz.SingleXZInputStream}.
+ *
+ * <h2>Authors</h2>
+ * XZ for Java is developed and maintained by Lasse Collin.
+ * <p>
+ * Major parts of XZ for Java are based on code written by
+ * Igor Pavlov in the <a href="https://7-zip.org/sdk.html">LZMA SDK</a>.
+ * <p>
+ * Other authors:
+ * <ul>
+ * <li>Brett Okken
+ * </ul>
+ * <p>
+ * Many people have contributed improvements or reported bugs.
+ * Most of these people are mentioned in the file THANKS.md
+ * in the source package.
+ *
+ * <h2>License</h2>
+ * <p>
+ * Copyright &copy; The XZ for Java authors and contributors
+ * <p>
+ * Permission to use, copy, modify, and/or distribute this
+ * software for any purpose with or without fee is hereby granted.
+ * <p>
+ * THE SOFTWARE IS PROVIDED "AS IS" AND THE AUTHOR DISCLAIMS ALL
+ * WARRANTIES WITH REGARD TO THIS SOFTWARE INCLUDING ALL IMPLIED
+ * WARRANTIES OF MERCHANTABILITY AND FITNESS. IN NO EVENT SHALL
+ * THE AUTHOR BE LIABLE FOR ANY SPECIAL, DIRECT, INDIRECT, OR
+ * CONSEQUENTIAL DAMAGES OR ANY DAMAGES WHATSOEVER RESULTING FROM
+ * LOSS OF USE, DATA OR PROFITS, WHETHER IN AN ACTION OF CONTRACT,
+ * NEGLIGENCE OR OTHER TORTIOUS ACTION, ARISING OUT OF OR IN
+ * CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
+ */
+
+Source entries: org/tukaani/xz/simple/RISCVEncoder.java#L88-L92
+// Branch based on AUIPC's rd. The bitmask test does
+                // the same thing as this:
+                //
+                //     int auipcRd = (inst >>> 7) & 0x1F;
+                //     if (auipcRd != 0 && auipcRd != 2) {
+
+Source entries: META-INF/versions/9/org/tukaani/xz/common/ByteArrayView.java#L27-L33
+// The use of alignmentOffset is based on the example code
+        // from the documentation of byteArrayViewVarHandle in JDK 21.
+        //
+        // If the given offset is a too large power of 2, it will throw
+        // UnsupportedOperationException. Thus, try them in order from
+        // the smallest to the largest. Zero is used as a fallback to ensure
+        // that the code will still run. OpenJDK should support 2, 4, and 8.
+
+Source entries: META-INF/versions/9/org/tukaani/xz/lz/UnalignedLongLEMatchLengthFinder.java#L9-L19
+// This is for 64-bit little endian processors that support fast
+// unaligned access. This is based on XZ Utils' memcmplen.h.
+// This may read up to 7 extra bytes past the end of the specified
+// end offset (off + lenLimit) so the caller must ensure that
+// there are getExtraSize() bytes available at the end of the buffer.
+//
+// In the extreme case of compressing a sequence of zero bytes, this
+// can reduce compression time by over 30 % compared to Arrays.mismatch.
+// In normal files with mostly short matches, this method is faster
+// than Arrays.mismatch too. This was tested with OpenJDK 21, 22, or 23
+// on x86-64 and ARM64.
+

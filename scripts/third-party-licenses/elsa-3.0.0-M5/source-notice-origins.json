@@ -1,0 +1,53 @@
+{
+  "sourceArchive": "https://repo.maven.apache.org/maven2/org/mapdb/elsa/3.0.0-M5/elsa-3.0.0-M5-sources.jar",
+  "archiveSha256": "06b83f9f972d2c1e4dd12e6d165a189a63713066fefc23607df0402876f1cc23",
+  "blocks": [
+    {
+      "commentSha256": "81315b1c4a9856fd741228b902d8b447666922a723fb429d762d22a6f1986f9b",
+      "sources": [
+        {
+          "entry": "org/mapdb/elsa/ElsaSerializerBase.java",
+          "sourceSha256": "0312b6eacb781e10af7d956100b5a5dc407e0b50d265cccb21bea9c994c4f89c",
+          "startByte": 0,
+          "endByteExclusive": 604,
+          "startLine": 1,
+          "endLine": 15
+        },
+        {
+          "entry": "org/mapdb/elsa/ElsaSerializerPojo.java",
+          "sourceSha256": "99970c2b1d7db24fec7da29dac80631a93eb4e1f2ff991f90acc6275234e4797",
+          "startByte": 0,
+          "endByteExclusive": 604,
+          "startLine": 1,
+          "endLine": 15
+        }
+      ]
+    },
+    {
+      "commentSha256": "f10a88e35b1f276ac17d84b296828820c26628e5b8e84762fc37145b9dddeaf2",
+      "sources": [
+        {
+          "entry": "org/mapdb/elsa/ElsaSerializerBase.java",
+          "sourceSha256": "0312b6eacb781e10af7d956100b5a5dc407e0b50d265cccb21bea9c994c4f89c",
+          "startByte": 62326,
+          "endByteExclusive": 62586,
+          "startLine": 1647,
+          "endLine": 1653
+        }
+      ]
+    },
+    {
+      "commentSha256": "8917210b6fcbbd6f6c7267749a9987f7e9be67131eb9f15b166e46102b4e8106",
+      "sources": [
+        {
+          "entry": "org/mapdb/elsa/ElsaSerializerPojo.java",
+          "sourceSha256": "99970c2b1d7db24fec7da29dac80631a93eb4e1f2ff991f90acc6275234e4797",
+          "startByte": 21984,
+          "endByteExclusive": 22267,
+          "startLine": 600,
+          "endLine": 602
+        }
+      ]
+    }
+  ]
+}

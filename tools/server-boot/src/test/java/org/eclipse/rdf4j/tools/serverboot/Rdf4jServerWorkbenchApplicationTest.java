@@ -313,9 +313,9 @@ class Rdf4jServerWorkbenchApplicationTest {
 	}
 
 	@Test
-	void scriptsAndStylesheetsAreRevalidatedAfterTheLongCacheHeaderLikeTheWar() {
+	void scriptsStylesheetsAndLegalNoticesAreRevalidatedAfterTheLongCacheHeaderLikeTheWar() {
 		assertThat(revalidatedAssetFilter.getUrlPatterns()).containsExactlyInAnyOrder(
-				"/rdf4j-workbench/scripts/*", "/rdf4j-workbench/styles/*");
+				"/rdf4j-workbench/scripts/*", "/rdf4j-workbench/styles/*", "/rdf4j-workbench/legal/*");
 		assertThat(revalidatedAssetFilter.getInitParameters()).containsEntry("Cache-Control", "0");
 		assertThat(cacheFilter.getInitParameters()).containsEntry("Cache-Control", "600");
 		assertThat(revalidatedAssetFilter.getOrder()).as("runs after, so its header wins")

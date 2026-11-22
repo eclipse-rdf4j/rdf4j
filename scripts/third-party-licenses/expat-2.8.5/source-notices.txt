@@ -1,0 +1,1101 @@
+/*
+                            __  __            _
+                         ___\ \/ /_ __   __ _| |_
+                        / _ \\  /| '_ \ / _` | __|
+                       |  __//  \| |_) | (_| | |_
+                        \___/_/\_\ .__/ \__,_|\__|
+                                 |_| XML parser
+
+   Copyright (c) 2017-2026 Sebastian Pipping <sebastian@pipping.org>
+   Copyright (c) 2026      Matthew Fernandez <matthew.fernandez@gmail.com>
+   Licensed under the MIT license:
+
+   Permission is  hereby granted,  free of charge,  to any  person obtaining
+   a  copy  of  this  software   and  associated  documentation  files  (the
+   "Software"),  to  deal in  the  Software  without restriction,  including
+   without  limitation the  rights  to use,  copy,  modify, merge,  publish,
+   distribute, sublicense, and/or sell copies of the Software, and to permit
+   persons  to whom  the Software  is  furnished to  do so,  subject to  the
+   following conditions:
+
+   The above copyright  notice and this permission notice  shall be included
+   in all copies or substantial portions of the Software.
+
+   THE  SOFTWARE  IS  PROVIDED  "AS  IS",  WITHOUT  WARRANTY  OF  ANY  KIND,
+   EXPRESS  OR IMPLIED,  INCLUDING  BUT  NOT LIMITED  TO  THE WARRANTIES  OF
+   MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN
+   NO EVENT SHALL THE AUTHORS OR  COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM,
+   DAMAGES OR  OTHER LIABILITY, WHETHER  IN AN  ACTION OF CONTRACT,  TORT OR
+   OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE
+   USE OR OTHER DEALINGS IN THE SOFTWARE.
+
+   SPDX-License-Identifier: MIT
+*/
+
+/*
+                            __  __            _
+                         ___\ \/ /_ __   __ _| |_
+                        / _ \\  /| '_ \ / _` | __|
+                       |  __//  \| |_) | (_| | |_
+                        \___/_/\_\ .__/ \__,_|\__|
+                                 |_| XML parser
+
+   Copyright (c) 1997-2000 Thai Open Source Software Center Ltd
+   Copyright (c) 2000      Clark Cooper <coopercc@users.sourceforge.net>
+   Copyright (c) 2002      Karl Waclawek <karl@waclawek.net>
+   Copyright (c) 2002      Fred L. Drake, Jr. <fdrake@users.sourceforge.net>
+   Copyright (c) 2017-2026 Sebastian Pipping <sebastian@pipping.org>
+   Licensed under the MIT license:
+
+   Permission is  hereby granted,  free of charge,  to any  person obtaining
+   a  copy  of  this  software   and  associated  documentation  files  (the
+   "Software"),  to  deal in  the  Software  without restriction,  including
+   without  limitation the  rights  to use,  copy,  modify, merge,  publish,
+   distribute, sublicense, and/or sell copies of the Software, and to permit
+   persons  to whom  the Software  is  furnished to  do so,  subject to  the
+   following conditions:
+
+   The above copyright  notice and this permission notice  shall be included
+   in all copies or substantial portions of the Software.
+
+   THE  SOFTWARE  IS  PROVIDED  "AS  IS",  WITHOUT  WARRANTY  OF  ANY  KIND,
+   EXPRESS  OR IMPLIED,  INCLUDING  BUT  NOT LIMITED  TO  THE WARRANTIES  OF
+   MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN
+   NO EVENT SHALL THE AUTHORS OR  COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM,
+   DAMAGES OR  OTHER LIABILITY, WHETHER  IN AN  ACTION OF CONTRACT,  TORT OR
+   OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE
+   USE OR OTHER DEALINGS IN THE SOFTWARE.
+
+   SPDX-License-Identifier: MIT
+*/
+
+/* This file is included (from xmltok.c, 1-3 times depending on XML_MIN_SIZE)!
+                            __  __            _
+                         ___\ \/ /_ __   __ _| |_
+                        / _ \\  /| '_ \ / _` | __|
+                       |  __//  \| |_) | (_| | |_
+                        \___/_/\_\ .__/ \__,_|\__|
+                                 |_| XML parser
+
+   Copyright (c) 1997-2000 Thai Open Source Software Center Ltd
+   Copyright (c) 2000      Clark Cooper <coopercc@users.sourceforge.net>
+   Copyright (c) 2002      Fred L. Drake, Jr. <fdrake@users.sourceforge.net>
+   Copyright (c) 2002-2016 Karl Waclawek <karl@waclawek.net>
+   Copyright (c) 2016-2026 Sebastian Pipping <sebastian@pipping.org>
+   Copyright (c) 2017      Rhodri James <rhodri@wildebeest.org.uk>
+   Copyright (c) 2018      Benjamin Peterson <benjamin@python.org>
+   Copyright (c) 2018      Anton Maklakov <antmak.pub@gmail.com>
+   Copyright (c) 2019      David Loffredo <loffredo@steptools.com>
+   Copyright (c) 2020      Boris Kolpackov <boris@codesynthesis.com>
+   Copyright (c) 2022      Martin Ettl <ettl.martin78@googlemail.com>
+   Copyright (c) 2026      Nick Begg <nick@stunttruck.net>
+   Copyright (c) 2026      Kartik Kenchi <netliomax25@gmail.com>
+   Licensed under the MIT license:
+
+   Permission is  hereby granted,  free of charge,  to any  person obtaining
+   a  copy  of  this  software   and  associated  documentation  files  (the
+   "Software"),  to  deal in  the  Software  without restriction,  including
+   without  limitation the  rights  to use,  copy,  modify, merge,  publish,
+   distribute, sublicense, and/or sell copies of the Software, and to permit
+   persons  to whom  the Software  is  furnished to  do so,  subject to  the
+   following conditions:
+
+   The above copyright  notice and this permission notice  shall be included
+   in all copies or substantial portions of the Software.
+
+   THE  SOFTWARE  IS  PROVIDED  "AS  IS",  WITHOUT  WARRANTY  OF  ANY  KIND,
+   EXPRESS  OR IMPLIED,  INCLUDING  BUT  NOT LIMITED  TO  THE WARRANTIES  OF
+   MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN
+   NO EVENT SHALL THE AUTHORS OR  COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM,
+   DAMAGES OR  OTHER LIABILITY, WHETHER  IN AN  ACTION OF CONTRACT,  TORT OR
+   OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE
+   USE OR OTHER DEALINGS IN THE SOFTWARE.
+
+   SPDX-License-Identifier: MIT
+*/
+
+/*
+                            __  __            _
+                         ___\ \/ /_ __   __ _| |_
+                        / _ \\  /| '_ \ / _` | __|
+                       |  __//  \| |_) | (_| | |_
+                        \___/_/\_\ .__/ \__,_|\__|
+                                 |_| XML parser
+
+   Copyright (c) 1997-2000 Thai Open Source Software Center Ltd
+   Copyright (c) 2000      Clark Cooper <coopercc@users.sourceforge.net>
+   Copyright (c) 2001-2003 Fred L. Drake, Jr. <fdrake@users.sourceforge.net>
+   Copyright (c) 2002      Greg Stein <gstein@users.sourceforge.net>
+   Copyright (c) 2002-2016 Karl Waclawek <karl@waclawek.net>
+   Copyright (c) 2005-2009 Steven Solie <steven@solie.ca>
+   Copyright (c) 2016-2026 Sebastian Pipping <sebastian@pipping.org>
+   Copyright (c) 2016      Pascal Cuoq <cuoq@trust-in-soft.com>
+   Copyright (c) 2016      Don Lewis <truckman@apache.org>
+   Copyright (c) 2017      Rhodri James <rhodri@wildebeest.org.uk>
+   Copyright (c) 2017      Alexander Bluhm <alexander.bluhm@gmx.net>
+   Copyright (c) 2017      Benbuck Nason <bnason@netflix.com>
+   Copyright (c) 2017      José Gutiérrez de la Concha <jose@zeroc.com>
+   Copyright (c) 2019      David Loffredo <loffredo@steptools.com>
+   Copyright (c) 2021      Donghee Na <donghee.na@python.org>
+   Copyright (c) 2022      Martin Ettl <ettl.martin78@googlemail.com>
+   Copyright (c) 2022      Sean McBride <sean@rogue-research.com>
+   Copyright (c) 2023      Hanno Böck <hanno@gentoo.org>
+   Copyright (c) 2025      Alfonso Gregory <gfunni234@gmail.com>
+   Copyright (c) 2026      Nick Begg <nick@stunttruck.net>
+   Copyright (c) 2026      Kartik Kenchi <netliomax25@gmail.com>
+   Copyright (c) 2026      Afonso Januário <afonso-januario@hotmail.com>
+   Licensed under the MIT license:
+
+   Permission is  hereby granted,  free of charge,  to any  person obtaining
+   a  copy  of  this  software   and  associated  documentation  files  (the
+   "Software"),  to  deal in  the  Software  without restriction,  including
+   without  limitation the  rights  to use,  copy,  modify, merge,  publish,
+   distribute, sublicense, and/or sell copies of the Software, and to permit
+   persons  to whom  the Software  is  furnished to  do so,  subject to  the
+   following conditions:
+
+   The above copyright  notice and this permission notice  shall be included
+   in all copies or substantial portions of the Software.
+
+   THE  SOFTWARE  IS  PROVIDED  "AS  IS",  WITHOUT  WARRANTY  OF  ANY  KIND,
+   EXPRESS  OR IMPLIED,  INCLUDING  BUT  NOT LIMITED  TO  THE WARRANTIES  OF
+   MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN
+   NO EVENT SHALL THE AUTHORS OR  COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM,
+   DAMAGES OR  OTHER LIABILITY, WHETHER  IN AN  ACTION OF CONTRACT,  TORT OR
+   OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE
+   USE OR OTHER DEALINGS IN THE SOFTWARE.
+
+   SPDX-License-Identifier: MIT
+*/
+
+/*
+                            __  __            _
+                         ___\ \/ /_ __   __ _| |_
+                        / _ \\  /| '_ \ / _` | __|
+                       |  __//  \| |_) | (_| | |_
+                        \___/_/\_\ .__/ \__,_|\__|
+                                 |_| XML parser
+
+   Copyright (c) 2000 Clark Cooper <coopercc@users.sourceforge.net>
+   Copyright (c) 2017 Sebastian Pipping <sebastian@pipping.org>
+   Licensed under the MIT license:
+
+   Permission is  hereby granted,  free of charge,  to any  person obtaining
+   a  copy  of  this  software   and  associated  documentation  files  (the
+   "Software"),  to  deal in  the  Software  without restriction,  including
+   without  limitation the  rights  to use,  copy,  modify, merge,  publish,
+   distribute, sublicense, and/or sell copies of the Software, and to permit
+   persons  to whom  the Software  is  furnished to  do so,  subject to  the
+   following conditions:
+
+   The above copyright  notice and this permission notice  shall be included
+   in all copies or substantial portions of the Software.
+
+   THE  SOFTWARE  IS  PROVIDED  "AS  IS",  WITHOUT  WARRANTY  OF  ANY  KIND,
+   EXPRESS  OR IMPLIED,  INCLUDING  BUT  NOT LIMITED  TO  THE WARRANTIES  OF
+   MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN
+   NO EVENT SHALL THE AUTHORS OR  COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM,
+   DAMAGES OR  OTHER LIABILITY, WHETHER  IN AN  ACTION OF CONTRACT,  TORT OR
+   OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE
+   USE OR OTHER DEALINGS IN THE SOFTWARE.
+
+   SPDX-License-Identifier: MIT
+*/
+
+/*
+                            __  __            _
+                         ___\ \/ /_ __   __ _| |_
+                        / _ \\  /| '_ \ / _` | __|
+                       |  __//  \| |_) | (_| | |_
+                        \___/_/\_\ .__/ \__,_|\__|
+                                 |_| XML parser
+
+   Copyright (c) 1997-2000 Thai Open Source Software Center Ltd
+   Copyright (c) 2000      Clark Cooper <coopercc@users.sourceforge.net>
+   Copyright (c) 2002      Fred L. Drake, Jr. <fdrake@users.sourceforge.net>
+   Copyright (c) 2017      Sebastian Pipping <sebastian@pipping.org>
+   Licensed under the MIT license:
+
+   Permission is  hereby granted,  free of charge,  to any  person obtaining
+   a  copy  of  this  software   and  associated  documentation  files  (the
+   "Software"),  to  deal in  the  Software  without restriction,  including
+   without  limitation the  rights  to use,  copy,  modify, merge,  publish,
+   distribute, sublicense, and/or sell copies of the Software, and to permit
+   persons  to whom  the Software  is  furnished to  do so,  subject to  the
+   following conditions:
+
+   The above copyright  notice and this permission notice  shall be included
+   in all copies or substantial portions of the Software.
+
+   THE  SOFTWARE  IS  PROVIDED  "AS  IS",  WITHOUT  WARRANTY  OF  ANY  KIND,
+   EXPRESS  OR IMPLIED,  INCLUDING  BUT  NOT LIMITED  TO  THE WARRANTIES  OF
+   MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN
+   NO EVENT SHALL THE AUTHORS OR  COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM,
+   DAMAGES OR  OTHER LIABILITY, WHETHER  IN AN  ACTION OF CONTRACT,  TORT OR
+   OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE
+   USE OR OTHER DEALINGS IN THE SOFTWARE.
+
+   SPDX-License-Identifier: MIT
+*/
+
+/* 0864fe2d216f47b742263b698bc051c865b342e8b820e42c234717098ea507e3 (2.8.5+)
+                            __  __            _
+                         ___\ \/ /_ __   __ _| |_
+                        / _ \\  /| '_ \ / _` | __|
+                       |  __//  \| |_) | (_| | |_
+                        \___/_/\_\ .__/ \__,_|\__|
+                                 |_| XML parser
+
+   Copyright (c) 1997-2000 Thai Open Source Software Center Ltd
+   Copyright (c) 2000      Clark Cooper <coopercc@users.sourceforge.net>
+   Copyright (c) 2000-2006 Fred L. Drake, Jr. <fdrake@users.sourceforge.net>
+   Copyright (c) 2001-2002 Greg Stein <gstein@users.sourceforge.net>
+   Copyright (c) 2002-2016 Karl Waclawek <karl@waclawek.net>
+   Copyright (c) 2005-2009 Steven Solie <steven@solie.ca>
+   Copyright (c) 2016      Eric Rahm <erahm@mozilla.com>
+   Copyright (c) 2016-2026 Sebastian Pipping <sebastian@pipping.org>
+   Copyright (c) 2016      Gaurav <g.gupta@samsung.com>
+   Copyright (c) 2016      Thomas Beutlich <tc@tbeu.de>
+   Copyright (c) 2016      Gustavo Grieco <gustavo.grieco@imag.fr>
+   Copyright (c) 2016      Pascal Cuoq <cuoq@trust-in-soft.com>
+   Copyright (c) 2016      Ed Schouten <ed@nuxi.nl>
+   Copyright (c) 2017-2022 Rhodri James <rhodri@wildebeest.org.uk>
+   Copyright (c) 2017      Václav Slavík <vaclav@slavik.io>
+   Copyright (c) 2017      Viktor Szakats <commit@vsz.me>
+   Copyright (c) 2017      Chanho Park <chanho61.park@samsung.com>
+   Copyright (c) 2017      Rolf Eike Beer <eike@sf-mail.de>
+   Copyright (c) 2017      Hans Wennborg <hans@chromium.org>
+   Copyright (c) 2018      Anton Maklakov <antmak.pub@gmail.com>
+   Copyright (c) 2018      Benjamin Peterson <benjamin@python.org>
+   Copyright (c) 2018      Marco Maggi <marco.maggi-ipsu@poste.it>
+   Copyright (c) 2018      Mariusz Zaborski <oshogbo@vexillium.org>
+   Copyright (c) 2019      David Loffredo <loffredo@steptools.com>
+   Copyright (c) 2019-2020 Ben Wagner <bungeman@chromium.org>
+   Copyright (c) 2019      Vadim Zeitlin <vadim@zeitlins.org>
+   Copyright (c) 2021      Donghee Na <donghee.na@python.org>
+   Copyright (c) 2022      Samanta Navarro <ferivoz@riseup.net>
+   Copyright (c) 2022      Jeffrey Walton <noloader@gmail.com>
+   Copyright (c) 2022      Jann Horn <jannh@google.com>
+   Copyright (c) 2022      Sean McBride <sean@rogue-research.com>
+   Copyright (c) 2023      Owain Davies <owaind@bath.edu>
+   Copyright (c) 2023-2024 Sony Corporation / Snild Dolkow <snild@sony.com>
+   Copyright (c) 2024-2025 Berkay Eren Ürün <berkay.ueruen@siemens.com>
+   Copyright (c) 2024      Hanno Böck <hanno@gentoo.org>
+   Copyright (c) 2025-2026 Matthew Fernandez <matthew.fernandez@gmail.com>
+   Copyright (c) 2025      Atrem Borovik <polzovatellllk@gmail.com>
+   Copyright (c) 2025      Alfonso Gregory <gfunni234@gmail.com>
+   Copyright (c) 2026      Rosen Penev <rosenp@gmail.com>
+   Copyright (c) 2026      Francesco Bertolaccini
+   Copyright (c) 2026      Christian Ng <christianrng@berkeley.edu>
+   Copyright (c) 2026      Nick Begg <nick@stunttruck.net>
+   Copyright (c) 2026      Kartik Kenchi <netliomax25@gmail.com>
+   Copyright (c) 2026      Haris Hussain <hextheshadow0x@gmail.com>
+   Copyright (c) 2026      Evgeny Kotkov <kotkov@apache.org>
+   Copyright (c) 2026      Darren Carreras <carrerasdarren@gmail.com>
+   Copyright (c) 2026      Alberto Maschietto <albertomaschietto9@gmail.com>
+   Copyright (c) 2026      Zeyou Liu <zeyouliu@tencent.com>
+   Copyright (c) 2026      Stan Ulbrych <stan@python.org>
+   Copyright (c) 2026      Braian Plaku <braianplaku@gmail.com>
+   Licensed under the MIT license:
+
+   Permission is  hereby granted,  free of charge,  to any  person obtaining
+   a  copy  of  this  software   and  associated  documentation  files  (the
+   "Software"),  to  deal in  the  Software  without restriction,  including
+   without  limitation the  rights  to use,  copy,  modify, merge,  publish,
+   distribute, sublicense, and/or sell copies of the Software, and to permit
+   persons  to whom  the Software  is  furnished to  do so,  subject to  the
+   following conditions:
+
+   The above copyright  notice and this permission notice  shall be included
+   in all copies or substantial portions of the Software.
+
+   THE  SOFTWARE  IS  PROVIDED  "AS  IS",  WITHOUT  WARRANTY  OF  ANY  KIND,
+   EXPRESS  OR IMPLIED,  INCLUDING  BUT  NOT LIMITED  TO  THE WARRANTIES  OF
+   MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN
+   NO EVENT SHALL THE AUTHORS OR  COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM,
+   DAMAGES OR  OTHER LIABILITY, WHETHER  IN AN  ACTION OF CONTRACT,  TORT OR
+   OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE
+   USE OR OTHER DEALINGS IN THE SOFTWARE.
+
+   SPDX-License-Identifier: MIT
+*/
+
+/*
+                            __  __            _
+                         ___\ \/ /_ __   __ _| |_
+                        / _ \\  /| '_ \ / _` | __|
+                       |  __//  \| |_) | (_| | |_
+                        \___/_/\_\ .__/ \__,_|\__|
+                                 |_| XML parser
+
+   Copyright (c) 1999-2000 Thai Open Source Software Center Ltd
+   Copyright (c) 2000      Clark Cooper <coopercc@users.sourceforge.net>
+   Copyright (c) 2002      Fred L. Drake, Jr. <fdrake@users.sourceforge.net>
+   Copyright (c) 2007      Karl Waclawek <karl@waclawek.net>
+   Copyright (c) 2017      Sebastian Pipping <sebastian@pipping.org>
+   Licensed under the MIT license:
+
+   Permission is  hereby granted,  free of charge,  to any  person obtaining
+   a  copy  of  this  software   and  associated  documentation  files  (the
+   "Software"),  to  deal in  the  Software  without restriction,  including
+   without  limitation the  rights  to use,  copy,  modify, merge,  publish,
+   distribute, sublicense, and/or sell copies of the Software, and to permit
+   persons  to whom  the Software  is  furnished to  do so,  subject to  the
+   following conditions:
+
+   The above copyright  notice and this permission notice  shall be included
+   in all copies or substantial portions of the Software.
+
+   THE  SOFTWARE  IS  PROVIDED  "AS  IS",  WITHOUT  WARRANTY  OF  ANY  KIND,
+   EXPRESS  OR IMPLIED,  INCLUDING  BUT  NOT LIMITED  TO  THE WARRANTIES  OF
+   MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN
+   NO EVENT SHALL THE AUTHORS OR  COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM,
+   DAMAGES OR  OTHER LIABILITY, WHETHER  IN AN  ACTION OF CONTRACT,  TORT OR
+   OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE
+   USE OR OTHER DEALINGS IN THE SOFTWARE.
+
+   SPDX-License-Identifier: MIT
+*/
+
+/*
+                            __  __            _
+                         ___\ \/ /_ __   __ _| |_
+                        / _ \\  /| '_ \ / _` | __|
+                       |  __//  \| |_) | (_| | |_
+                        \___/_/\_\ .__/ \__,_|\__|
+                                 |_| XML parser
+
+   Copyright (c) 1997-2000 Thai Open Source Software Center Ltd
+   Copyright (c) 2000      Clark Cooper <coopercc@users.sourceforge.net>
+   Copyright (c) 2002      Fred L. Drake, Jr. <fdrake@users.sourceforge.net>
+   Copyright (c) 2002-2005 Karl Waclawek <karl@waclawek.net>
+   Copyright (c) 2016-2026 Sebastian Pipping <sebastian@pipping.org>
+   Copyright (c) 2017      Rhodri James <rhodri@wildebeest.org.uk>
+   Licensed under the MIT license:
+
+   Permission is  hereby granted,  free of charge,  to any  person obtaining
+   a  copy  of  this  software   and  associated  documentation  files  (the
+   "Software"),  to  deal in  the  Software  without restriction,  including
+   without  limitation the  rights  to use,  copy,  modify, merge,  publish,
+   distribute, sublicense, and/or sell copies of the Software, and to permit
+   persons  to whom  the Software  is  furnished to  do so,  subject to  the
+   following conditions:
+
+   The above copyright  notice and this permission notice  shall be included
+   in all copies or substantial portions of the Software.
+
+   THE  SOFTWARE  IS  PROVIDED  "AS  IS",  WITHOUT  WARRANTY  OF  ANY  KIND,
+   EXPRESS  OR IMPLIED,  INCLUDING  BUT  NOT LIMITED  TO  THE WARRANTIES  OF
+   MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN
+   NO EVENT SHALL THE AUTHORS OR  COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM,
+   DAMAGES OR  OTHER LIABILITY, WHETHER  IN AN  ACTION OF CONTRACT,  TORT OR
+   OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE
+   USE OR OTHER DEALINGS IN THE SOFTWARE.
+
+   SPDX-License-Identifier: MIT
+*/
+
+/* This file is included!
+                            __  __            _
+                         ___\ \/ /_ __   __ _| |_
+                        / _ \\  /| '_ \ / _` | __|
+                       |  __//  \| |_) | (_| | |_
+                        \___/_/\_\ .__/ \__,_|\__|
+                                 |_| XML parser
+
+   Copyright (c) 1997-2000 Thai Open Source Software Center Ltd
+   Copyright (c) 2000      Clark Cooper <coopercc@users.sourceforge.net>
+   Copyright (c) 2002      Greg Stein <gstein@users.sourceforge.net>
+   Copyright (c) 2002      Fred L. Drake, Jr. <fdrake@users.sourceforge.net>
+   Copyright (c) 2002-2006 Karl Waclawek <karl@waclawek.net>
+   Copyright (c) 2017-2026 Sebastian Pipping <sebastian@pipping.org>
+   Copyright (c) 2025      Alfonso Gregory <gfunni234@gmail.com>
+   Licensed under the MIT license:
+
+   Permission is  hereby granted,  free of charge,  to any  person obtaining
+   a  copy  of  this  software   and  associated  documentation  files  (the
+   "Software"),  to  deal in  the  Software  without restriction,  including
+   without  limitation the  rights  to use,  copy,  modify, merge,  publish,
+   distribute, sublicense, and/or sell copies of the Software, and to permit
+   persons  to whom  the Software  is  furnished to  do so,  subject to  the
+   following conditions:
+
+   The above copyright  notice and this permission notice  shall be included
+   in all copies or substantial portions of the Software.
+
+   THE  SOFTWARE  IS  PROVIDED  "AS  IS",  WITHOUT  WARRANTY  OF  ANY  KIND,
+   EXPRESS  OR IMPLIED,  INCLUDING  BUT  NOT LIMITED  TO  THE WARRANTIES  OF
+   MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN
+   NO EVENT SHALL THE AUTHORS OR  COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM,
+   DAMAGES OR  OTHER LIABILITY, WHETHER  IN AN  ACTION OF CONTRACT,  TORT OR
+   OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE
+   USE OR OTHER DEALINGS IN THE SOFTWARE.
+
+   SPDX-License-Identifier: MIT
+*/
+
+/* internal.h
+
+   Internal definitions used by Expat.  This is not needed to compile
+   client code.
+
+   The following calling convention macros are defined for frequently
+   called functions:
+
+   inline      - Used for selected internal functions for which inlining
+                 may improve performance on some platforms.
+
+   Note: Use of these macros is based on judgement, not hard rules,
+         and therefore subject to change.
+                            __  __            _
+                         ___\ \/ /_ __   __ _| |_
+                        / _ \\  /| '_ \ / _` | __|
+                       |  __//  \| |_) | (_| | |_
+                        \___/_/\_\ .__/ \__,_|\__|
+                                 |_| XML parser
+
+   Copyright (c) 2002-2003 Fred L. Drake, Jr. <fdrake@users.sourceforge.net>
+   Copyright (c) 2002-2006 Karl Waclawek <karl@waclawek.net>
+   Copyright (c) 2003      Greg Stein <gstein@users.sourceforge.net>
+   Copyright (c) 2016-2026 Sebastian Pipping <sebastian@pipping.org>
+   Copyright (c) 2018      Yury Gribov <tetra2005@gmail.com>
+   Copyright (c) 2019      David Loffredo <loffredo@steptools.com>
+   Copyright (c) 2023-2024 Sony Corporation / Snild Dolkow <snild@sony.com>
+   Copyright (c) 2024      Taichi Haradaguchi <20001722@ymail.ne.jp>
+   Copyright (c) 2026      Matthew Wozniczka <mattheww@simba.com>
+   Copyright (c) 2026      Braian Plaku <braianplaku@gmail.com>
+   Copyright (c) 2026      Florian Schmaus <florian.schmaus@codasip.com>
+   Licensed under the MIT license:
+
+   Permission is  hereby granted,  free of charge,  to any  person obtaining
+   a  copy  of  this  software   and  associated  documentation  files  (the
+   "Software"),  to  deal in  the  Software  without restriction,  including
+   without  limitation the  rights  to use,  copy,  modify, merge,  publish,
+   distribute, sublicense, and/or sell copies of the Software, and to permit
+   persons  to whom  the Software  is  furnished to  do so,  subject to  the
+   following conditions:
+
+   The above copyright  notice and this permission notice  shall be included
+   in all copies or substantial portions of the Software.
+
+   THE  SOFTWARE  IS  PROVIDED  "AS  IS",  WITHOUT  WARRANTY  OF  ANY  KIND,
+   EXPRESS  OR IMPLIED,  INCLUDING  BUT  NOT LIMITED  TO  THE WARRANTIES  OF
+   MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN
+   NO EVENT SHALL THE AUTHORS OR  COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM,
+   DAMAGES OR  OTHER LIABILITY, WHETHER  IN AN  ACTION OF CONTRACT,  TORT OR
+   OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE
+   USE OR OTHER DEALINGS IN THE SOFTWARE.
+
+   SPDX-License-Identifier: MIT
+*/
+
+/*
+                            __  __            _
+                         ___\ \/ /_ __   __ _| |_
+                        / _ \\  /| '_ \ / _` | __|
+                       |  __//  \| |_) | (_| | |_
+                        \___/_/\_\ .__/ \__,_|\__|
+                                 |_| XML parser
+
+   Copyright (c) 1997-2000 Thai Open Source Software Center Ltd
+   Copyright (c) 2000      Clark Cooper <coopercc@users.sourceforge.net>
+   Copyright (c) 2002      Greg Stein <gstein@users.sourceforge.net>
+   Copyright (c) 2002-2006 Karl Waclawek <karl@waclawek.net>
+   Copyright (c) 2002-2003 Fred L. Drake, Jr. <fdrake@users.sourceforge.net>
+   Copyright (c) 2005-2009 Steven Solie <steven@solie.ca>
+   Copyright (c) 2016-2026 Sebastian Pipping <sebastian@pipping.org>
+   Copyright (c) 2017      Rhodri James <rhodri@wildebeest.org.uk>
+   Copyright (c) 2019      David Loffredo <loffredo@steptools.com>
+   Copyright (c) 2021      Donghee Na <donghee.na@python.org>
+   Copyright (c) 2025      Alfonso Gregory <gfunni234@gmail.com>
+   Licensed under the MIT license:
+
+   Permission is  hereby granted,  free of charge,  to any  person obtaining
+   a  copy  of  this  software   and  associated  documentation  files  (the
+   "Software"),  to  deal in  the  Software  without restriction,  including
+   without  limitation the  rights  to use,  copy,  modify, merge,  publish,
+   distribute, sublicense, and/or sell copies of the Software, and to permit
+   persons  to whom  the Software  is  furnished to  do so,  subject to  the
+   following conditions:
+
+   The above copyright  notice and this permission notice  shall be included
+   in all copies or substantial portions of the Software.
+
+   THE  SOFTWARE  IS  PROVIDED  "AS  IS",  WITHOUT  WARRANTY  OF  ANY  KIND,
+   EXPRESS  OR IMPLIED,  INCLUDING  BUT  NOT LIMITED  TO  THE WARRANTIES  OF
+   MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN
+   NO EVENT SHALL THE AUTHORS OR  COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM,
+   DAMAGES OR  OTHER LIABILITY, WHETHER  IN AN  ACTION OF CONTRACT,  TORT OR
+   OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE
+   USE OR OTHER DEALINGS IN THE SOFTWARE.
+
+   SPDX-License-Identifier: MIT
+*/
+
+/* Hash table related internal API
+                            __  __            _
+                         ___\ \/ /_ __   __ _| |_
+                        / _ \\  /| '_ \ / _` | __|
+                       |  __//  \| |_) | (_| | |_
+                        \___/_/\_\ .__/ \__,_|\__|
+                                 |_| XML parser
+
+   Copyright (c) 2026 Sebastian Pipping <sebastian@pipping.org>
+   Licensed under the MIT license:
+
+   Permission is  hereby granted,  free of charge,  to any  person obtaining
+   a  copy  of  this  software   and  associated  documentation  files  (the
+   "Software"),  to  deal in  the  Software  without restriction,  including
+   without  limitation the  rights  to use,  copy,  modify, merge,  publish,
+   distribute, sublicense, and/or sell copies of the Software, and to permit
+   persons  to whom  the Software  is  furnished to  do so,  subject to  the
+   following conditions:
+
+   The above copyright  notice and this permission notice  shall be included
+   in all copies or substantial portions of the Software.
+
+   THE  SOFTWARE  IS  PROVIDED  "AS  IS",  WITHOUT  WARRANTY  OF  ANY  KIND,
+   EXPRESS  OR IMPLIED,  INCLUDING  BUT  NOT LIMITED  TO  THE WARRANTIES  OF
+   MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN
+   NO EVENT SHALL THE AUTHORS OR  COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM,
+   DAMAGES OR  OTHER LIABILITY, WHETHER  IN AN  ACTION OF CONTRACT,  TORT OR
+   OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE
+   USE OR OTHER DEALINGS IN THE SOFTWARE.
+
+   SPDX-License-Identifier: MIT
+*/
+
+/*
+                            __  __            _
+                         ___\ \/ /_ __   __ _| |_
+                        / _ \\  /| '_ \ / _` | __|
+                       |  __//  \| |_) | (_| | |_
+                        \___/_/\_\ .__/ \__,_|\__|
+                                 |_| XML parser
+
+   Copyright (c) 2026 Sebastian Pipping <sebastian@pipping.org>
+   Copyright (c) 2026 Matthew Fernandez <matthew.fernandez@gmail.com>
+   Licensed under the MIT license:
+
+   Permission is  hereby granted,  free of charge,  to any  person obtaining
+   a  copy  of  this  software   and  associated  documentation  files  (the
+   "Software"),  to  deal in  the  Software  without restriction,  including
+   without  limitation the  rights  to use,  copy,  modify, merge,  publish,
+   distribute, sublicense, and/or sell copies of the Software, and to permit
+   persons  to whom  the Software  is  furnished to  do so,  subject to  the
+   following conditions:
+
+   The above copyright  notice and this permission notice  shall be included
+   in all copies or substantial portions of the Software.
+
+   THE  SOFTWARE  IS  PROVIDED  "AS  IS",  WITHOUT  WARRANTY  OF  ANY  KIND,
+   EXPRESS  OR IMPLIED,  INCLUDING  BUT  NOT LIMITED  TO  THE WARRANTIES  OF
+   MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN
+   NO EVENT SHALL THE AUTHORS OR  COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM,
+   DAMAGES OR  OTHER LIABILITY, WHETHER  IN AN  ACTION OF CONTRACT,  TORT OR
+   OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE
+   USE OR OTHER DEALINGS IN THE SOFTWARE.
+
+   SPDX-License-Identifier: MIT
+*/
+
+/*
+                            __  __            _
+                         ___\ \/ /_ __   __ _| |_
+                        / _ \\  /| '_ \ / _` | __|
+                       |  __//  \| |_) | (_| | |_
+                        \___/_/\_\ .__/ \__,_|\__|
+                                 |_| XML parser
+
+   Copyright (c) 2019 David Loffredo <loffredo@steptools.com>
+   Copyright (c) 2026 Sebastian Pipping <sebastian@pipping.org>
+   Licensed under the MIT license:
+
+   Permission is  hereby granted,  free of charge,  to any  person obtaining
+   a  copy  of  this  software   and  associated  documentation  files  (the
+   "Software"),  to  deal in  the  Software  without restriction,  including
+   without  limitation the  rights  to use,  copy,  modify, merge,  publish,
+   distribute, sublicense, and/or sell copies of the Software, and to permit
+   persons  to whom  the Software  is  furnished to  do so,  subject to  the
+   following conditions:
+
+   The above copyright  notice and this permission notice  shall be included
+   in all copies or substantial portions of the Software.
+
+   THE  SOFTWARE  IS  PROVIDED  "AS  IS",  WITHOUT  WARRANTY  OF  ANY  KIND,
+   EXPRESS  OR IMPLIED,  INCLUDING  BUT  NOT LIMITED  TO  THE WARRANTIES  OF
+   MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN
+   NO EVENT SHALL THE AUTHORS OR  COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM,
+   DAMAGES OR  OTHER LIABILITY, WHETHER  IN AN  ACTION OF CONTRACT,  TORT OR
+   OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE
+   USE OR OTHER DEALINGS IN THE SOFTWARE.
+
+   SPDX-License-Identifier: MIT
+*/
+
+/*
+                            __  __            _
+                         ___\ \/ /_ __   __ _| |_
+                        / _ \\  /| '_ \ / _` | __|
+                       |  __//  \| |_) | (_| | |_
+                        \___/_/\_\ .__/ \__,_|\__|
+                                 |_| XML parser
+
+   Copyright (c) 1997-2000 Thai Open Source Software Center Ltd
+   Copyright (c) 2000      Clark Cooper <coopercc@users.sourceforge.net>
+   Copyright (c) 2000-2005 Fred L. Drake, Jr. <fdrake@users.sourceforge.net>
+   Copyright (c) 2001-2002 Greg Stein <gstein@users.sourceforge.net>
+   Copyright (c) 2002-2016 Karl Waclawek <karl@waclawek.net>
+   Copyright (c) 2016-2026 Sebastian Pipping <sebastian@pipping.org>
+   Copyright (c) 2016      Cristian Rodríguez <crrodriguez@opensuse.org>
+   Copyright (c) 2016      Thomas Beutlich <tc@tbeu.de>
+   Copyright (c) 2017      Rhodri James <rhodri@wildebeest.org.uk>
+   Copyright (c) 2022      Thijs Schreijer <thijs@thijsschreijer.nl>
+   Copyright (c) 2023      Hanno Böck <hanno@gentoo.org>
+   Copyright (c) 2023      Sony Corporation / Snild Dolkow <snild@sony.com>
+   Copyright (c) 2024      Taichi Haradaguchi <20001722@ymail.ne.jp>
+   Copyright (c) 2025      Matthew Fernandez <matthew.fernandez@gmail.com>
+   Copyright (c) 2026      Braian Plaku <braianplaku@gmail.com>
+   Licensed under the MIT license:
+
+   Permission is  hereby granted,  free of charge,  to any  person obtaining
+   a  copy  of  this  software   and  associated  documentation  files  (the
+   "Software"),  to  deal in  the  Software  without restriction,  including
+   without  limitation the  rights  to use,  copy,  modify, merge,  publish,
+   distribute, sublicense, and/or sell copies of the Software, and to permit
+   persons  to whom  the Software  is  furnished to  do so,  subject to  the
+   following conditions:
+
+   The above copyright  notice and this permission notice  shall be included
+   in all copies or substantial portions of the Software.
+
+   THE  SOFTWARE  IS  PROVIDED  "AS  IS",  WITHOUT  WARRANTY  OF  ANY  KIND,
+   EXPRESS  OR IMPLIED,  INCLUDING  BUT  NOT LIMITED  TO  THE WARRANTIES  OF
+   MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN
+   NO EVENT SHALL THE AUTHORS OR  COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM,
+   DAMAGES OR  OTHER LIABILITY, WHETHER  IN AN  ACTION OF CONTRACT,  TORT OR
+   OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE
+   USE OR OTHER DEALINGS IN THE SOFTWARE.
+
+   SPDX-License-Identifier: MIT
+*/
+
+/*
+                            __  __            _
+                         ___\ \/ /_ __   __ _| |_
+                        / _ \\  /| '_ \ / _` | __|
+                       |  __//  \| |_) | (_| | |_
+                        \___/_/\_\ .__/ \__,_|\__|
+                                 |_| XML parser
+
+   Copyright (c) 2026 Sebastian Pipping <sebastian@pipping.org>
+   Licensed under the MIT license:
+
+   Permission is  hereby granted,  free of charge,  to any  person obtaining
+   a  copy  of  this  software   and  associated  documentation  files  (the
+   "Software"),  to  deal in  the  Software  without restriction,  including
+   without  limitation the  rights  to use,  copy,  modify, merge,  publish,
+   distribute, sublicense, and/or sell copies of the Software, and to permit
+   persons  to whom  the Software  is  furnished to  do so,  subject to  the
+   following conditions:
+
+   The above copyright  notice and this permission notice  shall be included
+   in all copies or substantial portions of the Software.
+
+   THE  SOFTWARE  IS  PROVIDED  "AS  IS",  WITHOUT  WARRANTY  OF  ANY  KIND,
+   EXPRESS  OR IMPLIED,  INCLUDING  BUT  NOT LIMITED  TO  THE WARRANTIES  OF
+   MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN
+   NO EVENT SHALL THE AUTHORS OR  COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM,
+   DAMAGES OR  OTHER LIABILITY, WHETHER  IN AN  ACTION OF CONTRACT,  TORT OR
+   OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE
+   USE OR OTHER DEALINGS IN THE SOFTWARE.
+
+   SPDX-License-Identifier: MIT
+*/
+
+/*
+                            __  __            _
+                         ___\ \/ /_ __   __ _| |_
+                        / _ \\  /| '_ \ / _` | __|
+                       |  __//  \| |_) | (_| | |_
+                        \___/_/\_\ .__/ \__,_|\__|
+                                 |_| XML parser
+
+   Copyright (c) 1997-2000 Thai Open Source Software Center Ltd
+   Copyright (c) 2000      Clark Cooper <coopercc@users.sourceforge.net>
+   Copyright (c) 2000-2004 Fred L. Drake, Jr. <fdrake@users.sourceforge.net>
+   Copyright (c) 2001-2002 Greg Stein <gstein@users.sourceforge.net>
+   Copyright (c) 2002-2006 Karl Waclawek <karl@waclawek.net>
+   Copyright (c) 2016      Cristian Rodríguez <crrodriguez@opensuse.org>
+   Copyright (c) 2016-2025 Sebastian Pipping <sebastian@pipping.org>
+   Copyright (c) 2017      Rhodri James <rhodri@wildebeest.org.uk>
+   Copyright (c) 2018      Yury Gribov <tetra2005@gmail.com>
+   Copyright (c) 2026      Matthew Fernandez <matthew.fernandez@gmail.com>
+   Copyright (c) 2026      Braian Plaku <braianplaku@gmail.com>
+   Licensed under the MIT license:
+
+   Permission is  hereby granted,  free of charge,  to any  person obtaining
+   a  copy  of  this  software   and  associated  documentation  files  (the
+   "Software"),  to  deal in  the  Software  without restriction,  including
+   without  limitation the  rights  to use,  copy,  modify, merge,  publish,
+   distribute, sublicense, and/or sell copies of the Software, and to permit
+   persons  to whom  the Software  is  furnished to  do so,  subject to  the
+   following conditions:
+
+   The above copyright  notice and this permission notice  shall be included
+   in all copies or substantial portions of the Software.
+
+   THE  SOFTWARE  IS  PROVIDED  "AS  IS",  WITHOUT  WARRANTY  OF  ANY  KIND,
+   EXPRESS  OR IMPLIED,  INCLUDING  BUT  NOT LIMITED  TO  THE WARRANTIES  OF
+   MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN
+   NO EVENT SHALL THE AUTHORS OR  COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM,
+   DAMAGES OR  OTHER LIABILITY, WHETHER  IN AN  ACTION OF CONTRACT,  TORT OR
+   OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE
+   USE OR OTHER DEALINGS IN THE SOFTWARE.
+
+   SPDX-License-Identifier: MIT
+*/
+
+/*
+                            __  __            _
+                         ___\ \/ /_ __   __ _| |_
+                        / _ \\  /| '_ \ / _` | __|
+                       |  __//  \| |_) | (_| | |_
+                        \___/_/\_\ .__/ \__,_|\__|
+                                 |_| XML parser
+
+   Copyright (c) 1997-2000 Thai Open Source Software Center Ltd
+   Copyright (c) 2000      Clark Cooper <coopercc@users.sourceforge.net>
+   Copyright (c) 2017-2019 Sebastian Pipping <sebastian@pipping.org>
+   Licensed under the MIT license:
+
+   Permission is  hereby granted,  free of charge,  to any  person obtaining
+   a  copy  of  this  software   and  associated  documentation  files  (the
+   "Software"),  to  deal in  the  Software  without restriction,  including
+   without  limitation the  rights  to use,  copy,  modify, merge,  publish,
+   distribute, sublicense, and/or sell copies of the Software, and to permit
+   persons  to whom  the Software  is  furnished to  do so,  subject to  the
+   following conditions:
+
+   The above copyright  notice and this permission notice  shall be included
+   in all copies or substantial portions of the Software.
+
+   THE  SOFTWARE  IS  PROVIDED  "AS  IS",  WITHOUT  WARRANTY  OF  ANY  KIND,
+   EXPRESS  OR IMPLIED,  INCLUDING  BUT  NOT LIMITED  TO  THE WARRANTIES  OF
+   MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN
+   NO EVENT SHALL THE AUTHORS OR  COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM,
+   DAMAGES OR  OTHER LIABILITY, WHETHER  IN AN  ACTION OF CONTRACT,  TORT OR
+   OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE
+   USE OR OTHER DEALINGS IN THE SOFTWARE.
+
+   SPDX-License-Identifier: MIT
+*/
+
+/*
+                            __  __            _
+                         ___\ \/ /_ __   __ _| |_
+                        / _ \\  /| '_ \ / _` | __|
+                       |  __//  \| |_) | (_| | |_
+                        \___/_/\_\ .__/ \__,_|\__|
+                                 |_| XML parser
+
+   Copyright (c) 2000      Clark Cooper <coopercc@users.sourceforge.net>
+   Copyright (c) 2002      Greg Stein <gstein@users.sourceforge.net>
+   Copyright (c) 2005      Karl Waclawek <karl@waclawek.net>
+   Copyright (c) 2017-2023 Sebastian Pipping <sebastian@pipping.org>
+   Copyright (c) 2023      Orgad Shaneh <orgad.shaneh@audiocodes.com>
+   Licensed under the MIT license:
+
+   Permission is  hereby granted,  free of charge,  to any  person obtaining
+   a  copy  of  this  software   and  associated  documentation  files  (the
+   "Software"),  to  deal in  the  Software  without restriction,  including
+   without  limitation the  rights  to use,  copy,  modify, merge,  publish,
+   distribute, sublicense, and/or sell copies of the Software, and to permit
+   persons  to whom  the Software  is  furnished to  do so,  subject to  the
+   following conditions:
+
+   The above copyright  notice and this permission notice  shall be included
+   in all copies or substantial portions of the Software.
+
+   THE  SOFTWARE  IS  PROVIDED  "AS  IS",  WITHOUT  WARRANTY  OF  ANY  KIND,
+   EXPRESS  OR IMPLIED,  INCLUDING  BUT  NOT LIMITED  TO  THE WARRANTIES  OF
+   MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN
+   NO EVENT SHALL THE AUTHORS OR  COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM,
+   DAMAGES OR  OTHER LIABILITY, WHETHER  IN AN  ACTION OF CONTRACT,  TORT OR
+   OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE
+   USE OR OTHER DEALINGS IN THE SOFTWARE.
+
+   SPDX-License-Identifier: MIT
+*/
+
+/* This file is included from other .c files!
+                            __  __            _
+                         ___\ \/ /_ __   __ _| |_
+                        / _ \\  /| '_ \ / _` | __|
+                       |  __//  \| |_) | (_| | |_
+                        \___/_/\_\ .__/ \__,_|\__|
+                                 |_| XML parser
+
+   Copyright (c) 2022-2026 Sebastian Pipping <sebastian@pipping.org>
+   Licensed under the MIT license:
+
+   Permission is  hereby granted,  free of charge,  to any  person obtaining
+   a  copy  of  this  software   and  associated  documentation  files  (the
+   "Software"),  to  deal in  the  Software  without restriction,  including
+   without  limitation the  rights  to use,  copy,  modify, merge,  publish,
+   distribute, sublicense, and/or sell copies of the Software, and to permit
+   persons  to whom  the Software  is  furnished to  do so,  subject to  the
+   following conditions:
+
+   The above copyright  notice and this permission notice  shall be included
+   in all copies or substantial portions of the Software.
+
+   THE  SOFTWARE  IS  PROVIDED  "AS  IS",  WITHOUT  WARRANTY  OF  ANY  KIND,
+   EXPRESS  OR IMPLIED,  INCLUDING  BUT  NOT LIMITED  TO  THE WARRANTIES  OF
+   MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN
+   NO EVENT SHALL THE AUTHORS OR  COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM,
+   DAMAGES OR  OTHER LIABILITY, WHETHER  IN AN  ACTION OF CONTRACT,  TORT OR
+   OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE
+   USE OR OTHER DEALINGS IN THE SOFTWARE.
+
+   SPDX-License-Identifier: MIT
+*/
+
+/*
+                            __  __            _
+                         ___\ \/ /_ __   __ _| |_
+                        / _ \\  /| '_ \ / _` | __|
+                       |  __//  \| |_) | (_| | |_
+                        \___/_/\_\ .__/ \__,_|\__|
+                                 |_| XML parser
+
+   Copyright (c) 2026 Nick Begg <nick@stunttruck.net>
+   Licensed under the MIT license:
+
+   Permission is  hereby granted,  free of charge,  to any  person obtaining
+   a  copy  of  this  software   and  associated  documentation  files  (the
+   "Software"),  to  deal in  the  Software  without restriction,  including
+   without  limitation the  rights  to use,  copy,  modify, merge,  publish,
+   distribute, sublicense, and/or sell copies of the Software, and to permit
+   persons  to whom  the Software  is  furnished to  do so,  subject to  the
+   following conditions:
+
+   The above copyright  notice and this permission notice  shall be included
+   in all copies or substantial portions of the Software.
+
+   THE  SOFTWARE  IS  PROVIDED  "AS  IS",  WITHOUT  WARRANTY  OF  ANY  KIND,
+   EXPRESS  OR IMPLIED,  INCLUDING  BUT  NOT LIMITED  TO  THE WARRANTIES  OF
+   MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN
+   NO EVENT SHALL THE AUTHORS OR  COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM,
+   DAMAGES OR  OTHER LIABILITY, WHETHER  IN AN  ACTION OF CONTRACT,  TORT OR
+   OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE
+   USE OR OTHER DEALINGS IN THE SOFTWARE.
+
+   SPDX-License-Identifier: MIT
+*/
+
+/*
+                            __  __            _
+                         ___\ \/ /_ __   __ _| |_
+                        / _ \\  /| '_ \ / _` | __|
+                       |  __//  \| |_) | (_| | |_
+                        \___/_/\_\ .__/ \__,_|\__|
+                                 |_| XML parser
+
+   Copyright (c) 2017-2026 Sebastian Pipping <sebastian@pipping.org>
+   Copyright (c) 2017      Chanho Park <chanho61.park@samsung.com>
+   Copyright (c) 2022      Sean McBride <sean@rogue-research.com>
+   Copyright (c) 2026      Matthew Fernandez <matthew.fernandez@gmail.com>
+   Licensed under the MIT license:
+
+   Permission is  hereby granted,  free of charge,  to any  person obtaining
+   a  copy  of  this  software   and  associated  documentation  files  (the
+   "Software"),  to  deal in  the  Software  without restriction,  including
+   without  limitation the  rights  to use,  copy,  modify, merge,  publish,
+   distribute, sublicense, and/or sell copies of the Software, and to permit
+   persons  to whom  the Software  is  furnished to  do so,  subject to  the
+   following conditions:
+
+   The above copyright  notice and this permission notice  shall be included
+   in all copies or substantial portions of the Software.
+
+   THE  SOFTWARE  IS  PROVIDED  "AS  IS",  WITHOUT  WARRANTY  OF  ANY  KIND,
+   EXPRESS  OR IMPLIED,  INCLUDING  BUT  NOT LIMITED  TO  THE WARRANTIES  OF
+   MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN
+   NO EVENT SHALL THE AUTHORS OR  COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM,
+   DAMAGES OR  OTHER LIABILITY, WHETHER  IN AN  ACTION OF CONTRACT,  TORT OR
+   OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE
+   USE OR OTHER DEALINGS IN THE SOFTWARE.
+
+   SPDX-License-Identifier: MIT
+*/
+
+/*
+                            __  __            _
+                         ___\ \/ /_ __   __ _| |_
+                        / _ \\  /| '_ \ / _` | __|
+                       |  __//  \| |_) | (_| | |_
+                        \___/_/\_\ .__/ \__,_|\__|
+                                 |_| XML parser
+
+   Copyright (c) 2026 Matthew Fernandez <matthew.fernandez@gmail.com>
+   Licensed under the MIT license:
+
+   Permission is  hereby granted,  free of charge,  to any  person obtaining
+   a  copy  of  this  software   and  associated  documentation  files  (the
+   "Software"),  to  deal in  the  Software  without restriction,  including
+   without  limitation the  rights  to use,  copy,  modify, merge,  publish,
+   distribute, sublicense, and/or sell copies of the Software, and to permit
+   persons  to whom  the Software  is  furnished to  do so,  subject to  the
+   following conditions:
+
+   The above copyright  notice and this permission notice  shall be included
+   in all copies or substantial portions of the Software.
+
+   THE  SOFTWARE  IS  PROVIDED  "AS  IS",  WITHOUT  WARRANTY  OF  ANY  KIND,
+   EXPRESS  OR IMPLIED,  INCLUDING  BUT  NOT LIMITED  TO  THE WARRANTIES  OF
+   MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN
+   NO EVENT SHALL THE AUTHORS OR  COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM,
+   DAMAGES OR  OTHER LIABILITY, WHETHER  IN AN  ACTION OF CONTRACT,  TORT OR
+   OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE
+   USE OR OTHER DEALINGS IN THE SOFTWARE.
+
+   SPDX-License-Identifier: MIT
+*/
+
+/* ==========================================================================
+ * siphash.h - SipHash-2-4 in a single header file
+ * --------------------------------------------------------------------------
+ * Derived by William Ahern from the reference implementation[1] published[2]
+ * by Jean-Philippe Aumasson and Daniel J. Berstein.
+ * Minimal changes by Sebastian Pipping and Victor Stinner on top, see below.
+ * Licensed under the CC0 Public Domain Dedication license.
+ *
+ * 1. https://www.131002.net/siphash/siphash24.c
+ * 2. https://www.131002.net/siphash/
+ *
+ * SPDX-License-Identifier: CC0-1.0
+ * --------------------------------------------------------------------------
+ * HISTORY:
+ *
+ * 2020-10-03  (Sebastian Pipping)
+ *   - Drop support for Visual Studio 9.0/2008 and earlier
+ *
+ * 2019-08-03  (Sebastian Pipping)
+ *   - Mark part of sip24_valid as to be excluded from clang-format
+ *   - Re-format code using clang-format 9
+ *
+ * 2018-07-08  (Anton Maklakov)
+ *   - Add "fall through" markers for GCC's -Wimplicit-fallthrough
+ *
+ * 2017-11-03  (Sebastian Pipping)
+ *   - Hide sip_tobin and sip_binof unless SIPHASH_TOBIN macro is defined
+ *
+ * 2017-07-25  (Vadim Zeitlin)
+ *   - Fix use of SIPHASH_MAIN macro
+ *
+ * 2017-07-05  (Sebastian Pipping)
+ *   - Use _SIP_ULL macro to not require a C++11 compiler if compiled as C++
+ *   - Add const qualifiers at two places
+ *   - Ensure <=80 characters line length (assuming tab width 4)
+ *
+ * 2017-06-23  (Victor Stinner)
+ *   - Address Win64 compile warnings
+ *
+ * 2017-06-18  (Sebastian Pipping)
+ *   - Clarify license note in the header
+ *   - Address C89 issues:
+ *     - Stop using inline keyword (and let compiler decide)
+ *     - Replace _Bool by int
+ *     - Turn macro siphash24 into a function
+ *     - Address invalid conversion (void pointer) by explicit cast
+ *   - Address lack of stdint.h for Visual Studio 2003 to 2008
+ *   - Always expose sip24_valid (for self-tests)
+ *
+ * 2012-11-04 - Born.  (William Ahern)
+ * --------------------------------------------------------------------------
+ * USAGE:
+ *
+ * SipHash-2-4 takes as input two 64-bit words as the key, some number of
+ * message bytes, and outputs a 64-bit word as the message digest. This
+ * implementation employs two data structures: a struct sipkey for
+ * representing the key, and a struct siphash for representing the hash
+ * state.
+ *
+ * For converting a 16-byte unsigned char array to a key, use either the
+ * macro sip_keyof or the routine sip_tokey. The former instantiates a
+ * compound literal key, while the latter requires a key object as a
+ * parameter.
+ *
+ * 	unsigned char secret[16];
+ * 	arc4random_buf(secret, sizeof secret);
+ * 	struct sipkey *key = sip_keyof(secret);
+ *
+ * For hashing a message, use either the convenience macro siphash24 or the
+ * routines sip24_init, sip24_update, and sip24_final.
+ *
+ * 	struct siphash state;
+ * 	void *msg;
+ * 	size_t len;
+ * 	uint64_t hash;
+ *
+ * 	sip24_init(&state, key);
+ * 	sip24_update(&state, msg, len);
+ * 	hash = sip24_final(&state);
+ *
+ * or
+ *
+ * 	hash = siphash24(msg, len, key);
+ *
+ * To convert the 64-bit hash value to a canonical 8-byte little-endian
+ * binary representation, use either the macro sip_binof or the routine
+ * sip_tobin. The former instantiates and returns a compound literal array,
+ * while the latter requires an array object as a parameter.
+ * --------------------------------------------------------------------------
+ * NOTES:
+ *
+ * o Neither sip_keyof, sip_binof, nor siphash24 will work with compilers
+ *   lacking compound literal support. Instead, you must use the lower-level
+ *   interfaces which take as parameters the temporary state objects.
+ *
+ * o Uppercase macros may evaluate parameters more than once. Lowercase
+ *   macros should not exhibit any such side effects.
+ * ==========================================================================
+ */
+
+/*
+                            __  __            _
+                         ___\ \/ /_ __   __ _| |_
+                        / _ \\  /| '_ \ / _` | __|
+                       |  __//  \| |_) | (_| | |_
+                        \___/_/\_\ .__/ \__,_|\__|
+                                 |_| XML parser
+
+   Copyright (c) 2019      David Loffredo <loffredo@steptools.com>
+   Copyright (c) 2019-2026 Sebastian Pipping <sebastian@pipping.org>
+   Copyright (c) 2019      Ben Wagner <bungeman@chromium.org>
+   Copyright (c) 2019      Vadim Zeitlin <vadim@zeitlins.org>
+   Copyright (c) 2026      Matthew Fernandez <matthew.fernandez@gmail.com>
+   Licensed under the MIT license:
+
+   Permission is  hereby granted,  free of charge,  to any  person obtaining
+   a  copy  of  this  software   and  associated  documentation  files  (the
+   "Software"),  to  deal in  the  Software  without restriction,  including
+   without  limitation the  rights  to use,  copy,  modify, merge,  publish,
+   distribute, sublicense, and/or sell copies of the Software, and to permit
+   persons  to whom  the Software  is  furnished to  do so,  subject to  the
+   following conditions:
+
+   The above copyright  notice and this permission notice  shall be included
+   in all copies or substantial portions of the Software.
+
+   THE  SOFTWARE  IS  PROVIDED  "AS  IS",  WITHOUT  WARRANTY  OF  ANY  KIND,
+   EXPRESS  OR IMPLIED,  INCLUDING  BUT  NOT LIMITED  TO  THE WARRANTIES  OF
+   MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN
+   NO EVENT SHALL THE AUTHORS OR  COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM,
+   DAMAGES OR  OTHER LIABILITY, WHETHER  IN AN  ACTION OF CONTRACT,  TORT OR
+   OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE
+   USE OR OTHER DEALINGS IN THE SOFTWARE.
+
+   SPDX-License-Identifier: MIT
+*/

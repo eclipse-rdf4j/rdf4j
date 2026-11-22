@@ -1,0 +1,809 @@
+{
+  "sourceArchive": "https://repo.maven.apache.org/maven2/org/locationtech/spatial4j/spatial4j/0.8/spatial4j-0.8-sources.jar",
+  "archiveSha256": "a16c3b206e2843e6093f8657e232efc6c6ce7c92d15d77caade2ec348454e77e",
+  "blocks": [
+    {
+      "commentSha256": "32235a65b50f13cb98f1f60098ffa1141e8b61987165952f97300476b44d2b2e",
+      "sources": [
+        {
+          "entry": "org/locationtech/spatial4j/SpatialPredicate.java",
+          "sourceSha256": "be57d35b0344d2f781c74ec0998500801ccfe1ef2b6a4ac4542d320c83a7b507",
+          "startByte": 37,
+          "endByteExclusive": 838,
+          "startLine": 3,
+          "endLine": 18
+        },
+        {
+          "entry": "org/locationtech/spatial4j/exception/UnsupportedSpatialPredicate.java",
+          "sourceSha256": "0ecb18b04a7e9a8ba9b04077638b8421b3e1cd52e27d4eadfa37b39d710c155c",
+          "startByte": 0,
+          "endByteExclusive": 801,
+          "startLine": 1,
+          "endLine": 16
+        },
+        {
+          "entry": "org/locationtech/spatial4j/io/GeohashUtils.java",
+          "sourceSha256": "3e9148c4d311f38c1fbecb242d03d6206e5b7d92c2bc8d194a5e5dd33cf9eda5",
+          "startByte": 0,
+          "endByteExclusive": 801,
+          "startLine": 1,
+          "endLine": 16
+        }
+      ]
+    },
+    {
+      "commentSha256": "6f8233bf02a1245b0c98b6c9c1ffd6e1f96f020e6e748adfb5c3fb5e8b06c6cd",
+      "sources": [
+        {
+          "entry": "org/locationtech/spatial4j/SpatialPredicate.java",
+          "sourceSha256": "be57d35b0344d2f781c74ec0998500801ccfe1ef2b6a4ac4542d320c83a7b507",
+          "startByte": 1234,
+          "endByteExclusive": 2100,
+          "startLine": 33,
+          "endLine": 45
+        }
+      ]
+    },
+    {
+      "commentSha256": "480ac1582274552a2b72a2313b7d205ddc438c35dd2d12dd944553eb70b5ab68",
+      "sources": [
+        {
+          "entry": "org/locationtech/spatial4j/context/SpatialContext.java",
+          "sourceSha256": "a76313404056bf3cccdade3c97e1446810484120b8b1b503d4b864f21694dfd1",
+          "startByte": 0,
+          "endByteExclusive": 461,
+          "startLine": 1,
+          "endLine": 7
+        },
+        {
+          "entry": "org/locationtech/spatial4j/context/jts/JtsSpatialContext.java",
+          "sourceSha256": "be28eb4a50232fdf0dcbe528019bdffc91266c568eaf863e703dccafcef6d9d2",
+          "startByte": 0,
+          "endByteExclusive": 461,
+          "startLine": 1,
+          "endLine": 7
+        },
+        {
+          "entry": "org/locationtech/spatial4j/context/jts/JtsSpatialContextFactory.java",
+          "sourceSha256": "e055a2a726a7bcb9d95ed611d7a5e98787dae75a2bd9ee4e720734cd0cf4913f",
+          "startByte": 0,
+          "endByteExclusive": 461,
+          "startLine": 1,
+          "endLine": 7
+        },
+        {
+          "entry": "org/locationtech/spatial4j/context/package-info.java",
+          "sourceSha256": "d18a2b2441e30e9795ba8289c096447ede87186faafe784bf91b392c98c49350",
+          "startByte": 0,
+          "endByteExclusive": 461,
+          "startLine": 1,
+          "endLine": 7
+        },
+        {
+          "entry": "org/locationtech/spatial4j/distance/CartesianDistCalc.java",
+          "sourceSha256": "f92ca0f03f692c295e8786f4bcbccdf0b741db66ab1c3fba5ef186f105469758",
+          "startByte": 0,
+          "endByteExclusive": 461,
+          "startLine": 1,
+          "endLine": 7
+        },
+        {
+          "entry": "org/locationtech/spatial4j/distance/DistanceCalculator.java",
+          "sourceSha256": "e2fe32ed7e84f6f37d22a50155ee3b99b3d57a17a09d21e7bc1381486123d862",
+          "startByte": 0,
+          "endByteExclusive": 461,
+          "startLine": 1,
+          "endLine": 7
+        },
+        {
+          "entry": "org/locationtech/spatial4j/distance/GeodesicSphereDistCalc.java",
+          "sourceSha256": "ebed94aa9e1c8c37a313aec71b0eb23edfbf5b4ff0c7d93570b880afca0f9171",
+          "startByte": 0,
+          "endByteExclusive": 461,
+          "startLine": 1,
+          "endLine": 7
+        },
+        {
+          "entry": "org/locationtech/spatial4j/distance/package-info.java",
+          "sourceSha256": "3dcc827648efc8b21c373f4fa90bb14827a1d696d3cea2208aaec83387c26404",
+          "startByte": 0,
+          "endByteExclusive": 461,
+          "startLine": 1,
+          "endLine": 7
+        },
+        {
+          "entry": "org/locationtech/spatial4j/exception/InvalidShapeException.java",
+          "sourceSha256": "0d5e4672d8620fa0f04ddd42e073439006f160808740b84219733951f7a8e10d",
+          "startByte": 0,
+          "endByteExclusive": 461,
+          "startLine": 1,
+          "endLine": 7
+        },
+        {
+          "entry": "org/locationtech/spatial4j/io/LegacyShapeReader.java",
+          "sourceSha256": "b82152c3287508a790357b685f167c49959ad163a167b2fb2b91c2168b626871",
+          "startByte": 0,
+          "endByteExclusive": 461,
+          "startLine": 1,
+          "endLine": 7
+        },
+        {
+          "entry": "org/locationtech/spatial4j/io/LegacyShapeWriter.java",
+          "sourceSha256": "1c3fe4948cd88c81c70914b61c6a1323878cd2fa8bcebaa2529d2938ff4b0793",
+          "startByte": 0,
+          "endByteExclusive": 461,
+          "startLine": 1,
+          "endLine": 7
+        },
+        {
+          "entry": "org/locationtech/spatial4j/io/jts/JtsWKTReaderShapeParser.java",
+          "sourceSha256": "7b08362be7b810cdb90c143f6f1412fa3ec483f3092345c8ac03a4f972703be6",
+          "startByte": 0,
+          "endByteExclusive": 461,
+          "startLine": 1,
+          "endLine": 7
+        },
+        {
+          "entry": "org/locationtech/spatial4j/io/package-info.java",
+          "sourceSha256": "4e0b9105d165c94a01e54bf5e73ef2ff02613cb358172744a69b53fbfd60106c",
+          "startByte": 0,
+          "endByteExclusive": 461,
+          "startLine": 1,
+          "endLine": 7
+        },
+        {
+          "entry": "org/locationtech/spatial4j/package-info.java",
+          "sourceSha256": "173c2bf1dfd382d74899fd8623216bb48462f6aa63a7a124d39dea34fb34a828",
+          "startByte": 0,
+          "endByteExclusive": 461,
+          "startLine": 1,
+          "endLine": 7
+        },
+        {
+          "entry": "org/locationtech/spatial4j/shape/Circle.java",
+          "sourceSha256": "80123f8647d44930385c343c2e5c3626e6855dcae133453dc7e3c32758d12d0d",
+          "startByte": 0,
+          "endByteExclusive": 461,
+          "startLine": 1,
+          "endLine": 7
+        },
+        {
+          "entry": "org/locationtech/spatial4j/shape/Point.java",
+          "sourceSha256": "c5f46dd500db71d839552a193fbbab5ef8e2f682ea45f4d90827a6e1a0a305f8",
+          "startByte": 0,
+          "endByteExclusive": 461,
+          "startLine": 1,
+          "endLine": 7
+        },
+        {
+          "entry": "org/locationtech/spatial4j/shape/Rectangle.java",
+          "sourceSha256": "1c4644c49418dc9e8843166a62702948d3aeb5d6b4c3a6ef3c265f7d9382c732",
+          "startByte": 0,
+          "endByteExclusive": 461,
+          "startLine": 1,
+          "endLine": 7
+        },
+        {
+          "entry": "org/locationtech/spatial4j/shape/Shape.java",
+          "sourceSha256": "160496ed214e48aede571ae87fda7ddcc716063a80d84715d1521da3fe2fd1b1",
+          "startByte": 0,
+          "endByteExclusive": 461,
+          "startLine": 1,
+          "endLine": 7
+        },
+        {
+          "entry": "org/locationtech/spatial4j/shape/ShapeCollection.java",
+          "sourceSha256": "6d60381eb16ab04b3af01828e8cc41d1b16441d8c2b18034997f25a004c04391",
+          "startByte": 0,
+          "endByteExclusive": 461,
+          "startLine": 1,
+          "endLine": 7
+        },
+        {
+          "entry": "org/locationtech/spatial4j/shape/SpatialRelation.java",
+          "sourceSha256": "35aee8240a4f443a4ad12de5e49e226ba2a66c850c22a7d6f671f812194a3eac",
+          "startByte": 0,
+          "endByteExclusive": 461,
+          "startLine": 1,
+          "endLine": 7
+        },
+        {
+          "entry": "org/locationtech/spatial4j/shape/impl/CircleImpl.java",
+          "sourceSha256": "507c176a430841fc499db8ea016067e7fe2c40cf6e29afb3f2a492ad8d73a3cf",
+          "startByte": 0,
+          "endByteExclusive": 461,
+          "startLine": 1,
+          "endLine": 7
+        },
+        {
+          "entry": "org/locationtech/spatial4j/shape/impl/GeoCircle.java",
+          "sourceSha256": "0e25bc4d22e9007fa0b259eb9e0f297abe1b093aaafcaa6ee66e1c72ec91aec5",
+          "startByte": 0,
+          "endByteExclusive": 461,
+          "startLine": 1,
+          "endLine": 7
+        },
+        {
+          "entry": "org/locationtech/spatial4j/shape/impl/PointImpl.java",
+          "sourceSha256": "4e3b8b499fc8e1086d0fb0c0995597175970904c8b2d34412cdf3a9f6590ab95",
+          "startByte": 0,
+          "endByteExclusive": 461,
+          "startLine": 1,
+          "endLine": 7
+        },
+        {
+          "entry": "org/locationtech/spatial4j/shape/impl/RectangleImpl.java",
+          "sourceSha256": "fd7a69943bf7bef85ed497ac67855a34ca35abf5493c5727a9096e7479c725d4",
+          "startByte": 0,
+          "endByteExclusive": 461,
+          "startLine": 1,
+          "endLine": 7
+        },
+        {
+          "entry": "org/locationtech/spatial4j/shape/impl/ShapeFactoryImpl.java",
+          "sourceSha256": "969b10734402a6a5afb7550029c1df70915017111bbbee95d53b106bcc8ffaa2",
+          "startByte": 0,
+          "endByteExclusive": 461,
+          "startLine": 1,
+          "endLine": 7
+        },
+        {
+          "entry": "org/locationtech/spatial4j/shape/jts/JtsGeometry.java",
+          "sourceSha256": "1ed4f35dc17fefd4cfbd7ad621411962bc5def5ded61c57f4c15626130cddc6d",
+          "startByte": 0,
+          "endByteExclusive": 461,
+          "startLine": 1,
+          "endLine": 7
+        },
+        {
+          "entry": "org/locationtech/spatial4j/shape/jts/JtsPoint.java",
+          "sourceSha256": "2948eed4b29b9be9180f0c74d1e2fcd845a7829804832cd8c693c4ffa02bcb68",
+          "startByte": 0,
+          "endByteExclusive": 461,
+          "startLine": 1,
+          "endLine": 7
+        },
+        {
+          "entry": "org/locationtech/spatial4j/shape/jts/JtsShapeFactory.java",
+          "sourceSha256": "38eefd4ed24dba53bcb44c28001181a24e02451365f4525daf9f7aadc63ee2da",
+          "startByte": 0,
+          "endByteExclusive": 461,
+          "startLine": 1,
+          "endLine": 7
+        },
+        {
+          "entry": "org/locationtech/spatial4j/shape/package-info.java",
+          "sourceSha256": "83f2fa14c11127ac4971080e38b7cf1b8bed9344b0a83fc32166e83ddf8586ab",
+          "startByte": 0,
+          "endByteExclusive": 461,
+          "startLine": 1,
+          "endLine": 7
+        }
+      ]
+    },
+    {
+      "commentSha256": "44bed3c7e5cd8e6568ac449fde575c3b0e8890619ce5c694aec6b2e34891c9bc",
+      "sources": [
+        {
+          "entry": "org/locationtech/spatial4j/context/SpatialContext.java",
+          "sourceSha256": "a76313404056bf3cccdade3c97e1446810484120b8b1b503d4b864f21694dfd1",
+          "startByte": 5941,
+          "endByteExclusive": 6178,
+          "startLine": 156,
+          "endLine": 158
+        }
+      ]
+    },
+    {
+      "commentSha256": "865173d67c1ea375b189e98b7d87a1bfd31effb38db2a0df3e3911357b710a04",
+      "sources": [
+        {
+          "entry": "org/locationtech/spatial4j/context/SpatialContextFactory.java",
+          "sourceSha256": "f319bb99906b0677f7eb699e3a0f781c48d09420a25b04ff85cb29b72c4b408d",
+          "startByte": 0,
+          "endByteExclusive": 460,
+          "startLine": 1,
+          "endLine": 7
+        },
+        {
+          "entry": "org/locationtech/spatial4j/distance/AbstractDistanceCalculator.java",
+          "sourceSha256": "c9ad62eccda77f72e3d81aff1f7b7c40f2501a264ab0925575f041cb2eb91149",
+          "startByte": 0,
+          "endByteExclusive": 460,
+          "startLine": 1,
+          "endLine": 7
+        }
+      ]
+    },
+    {
+      "commentSha256": "e5bf515111dddb7f7f29abf0b951c59e8892a74a6f696b0e0d771bfd66e0c80c",
+      "sources": [
+        {
+          "entry": "org/locationtech/spatial4j/context/SpatialContextFactory.java",
+          "sourceSha256": "f319bb99906b0677f7eb699e3a0f781c48d09420a25b04ff85cb29b72c4b408d",
+          "startByte": 1034,
+          "endByteExclusive": 2478,
+          "startLine": 25,
+          "endLine": 54
+        }
+      ]
+    },
+    {
+      "commentSha256": "c22eaf114608f58cb1f6705b827111b56128f1d6877f1cec5eba39150981f657",
+      "sources": [
+        {
+          "entry": "org/locationtech/spatial4j/context/SpatialContextFactory.java",
+          "sourceSha256": "f319bb99906b0677f7eb699e3a0f781c48d09420a25b04ff85cb29b72c4b408d",
+          "startByte": 2898,
+          "endByteExclusive": 2945,
+          "startLine": 65,
+          "endLine": 65
+        },
+        {
+          "entry": "org/locationtech/spatial4j/context/SpatialContextFactory.java",
+          "sourceSha256": "f319bb99906b0677f7eb699e3a0f781c48d09420a25b04ff85cb29b72c4b408d",
+          "startByte": 2977,
+          "endByteExclusive": 3024,
+          "startLine": 66,
+          "endLine": 66
+        }
+      ]
+    },
+    {
+      "commentSha256": "b8ce19e7b524568c9fc041bc9852f0eb48dd847f00d191b9419a6e47e5e48955",
+      "sources": [
+        {
+          "entry": "org/locationtech/spatial4j/context/SpatialContextFactory.java",
+          "sourceSha256": "f319bb99906b0677f7eb699e3a0f781c48d09420a25b04ff85cb29b72c4b408d",
+          "startByte": 3473,
+          "endByteExclusive": 4025,
+          "startLine": 79,
+          "endLine": 90
+        }
+      ]
+    },
+    {
+      "commentSha256": "f7bb97c7183de68820cf1e2f231346fcb1570e61a0bfa50a3d15a748e50f444c",
+      "sources": [
+        {
+          "entry": "org/locationtech/spatial4j/context/jts/DatelineRule.java",
+          "sourceSha256": "89ae0347fa1d559a352b0225aaf1d8050ce0770d2bf0b131bcdffd5351c62ade",
+          "startByte": 0,
+          "endByteExclusive": 442,
+          "startLine": 1,
+          "endLine": 7
+        },
+        {
+          "entry": "org/locationtech/spatial4j/context/jts/ValidationRule.java",
+          "sourceSha256": "619696568919d03ba6d7603854beb7f6c35df6dc7fe74bc407f715a4cb19cfab",
+          "startByte": 0,
+          "endByteExclusive": 442,
+          "startLine": 1,
+          "endLine": 7
+        },
+        {
+          "entry": "org/locationtech/spatial4j/io/BinaryCodec.java",
+          "sourceSha256": "3bef922041ddd9515cde21372008dcaa2159c1c0f34c21e96bde22b4a49412b8",
+          "startByte": 0,
+          "endByteExclusive": 442,
+          "startLine": 1,
+          "endLine": 7
+        },
+        {
+          "entry": "org/locationtech/spatial4j/io/jts/JtsBinaryCodec.java",
+          "sourceSha256": "cd94e0a2ab15b66c468e10e3470e49f407dfc2adf44ae99c3c3658c7500a30d9",
+          "startByte": 0,
+          "endByteExclusive": 442,
+          "startLine": 1,
+          "endLine": 7
+        },
+        {
+          "entry": "org/locationtech/spatial4j/shape/impl/BufferedLine.java",
+          "sourceSha256": "80fb1032aeb59b67cf36aa25051803e4ca7aa301617062f2605d5b05b57a80b8",
+          "startByte": 0,
+          "endByteExclusive": 442,
+          "startLine": 1,
+          "endLine": 7
+        },
+        {
+          "entry": "org/locationtech/spatial4j/shape/impl/BufferedLineString.java",
+          "sourceSha256": "ede4ac3690b93bde9cadb9f43b743cd040cc797c069ac1e3bea631faeb98f783",
+          "startByte": 0,
+          "endByteExclusive": 442,
+          "startLine": 1,
+          "endLine": 7
+        },
+        {
+          "entry": "org/locationtech/spatial4j/shape/impl/InfBufLine.java",
+          "sourceSha256": "e211bff340b62a0137ce468918130d0f785be1d3e83695d21217fb32858fba63",
+          "startByte": 0,
+          "endByteExclusive": 442,
+          "startLine": 1,
+          "endLine": 7
+        },
+        {
+          "entry": "org/locationtech/spatial4j/shape/impl/Range.java",
+          "sourceSha256": "9f596fe8f12b2a76fbfadad655b948eb36ab6c1539590524399f388765da2c82",
+          "startByte": 0,
+          "endByteExclusive": 442,
+          "startLine": 1,
+          "endLine": 7
+        }
+      ]
+    },
+    {
+      "commentSha256": "4ecdd0101d3683923411f599bb24a27874344acb39322aa52ee1fa86515ee01a",
+      "sources": [
+        {
+          "entry": "org/locationtech/spatial4j/distance/CartesianDistCalc.java",
+          "sourceSha256": "f92ca0f03f692c295e8786f4bcbccdf0b741db66ab1c3fba5ef186f105469758",
+          "startByte": 714,
+          "endByteExclusive": 776,
+          "startLine": 16,
+          "endLine": 18
+        }
+      ]
+    },
+    {
+      "commentSha256": "5f950481397453d48b085a9516b5b0eb684a103d25bd39234d5547ba154a7517",
+      "sources": [
+        {
+          "entry": "org/locationtech/spatial4j/distance/DistanceCalculator.java",
+          "sourceSha256": "e2fe32ed7e84f6f37d22a50155ee3b99b3d57a17a09d21e7bc1381486123d862",
+          "startByte": 714,
+          "endByteExclusive": 943,
+          "startLine": 16,
+          "endLine": 20
+        }
+      ]
+    },
+    {
+      "commentSha256": "e02264f40ca52e020d63770955432d4c9838f10e29782b56b4f0576b34e0a719",
+      "sources": [
+        {
+          "entry": "org/locationtech/spatial4j/distance/DistanceUtils.java",
+          "sourceSha256": "8bf0e73e3f18c528c2a557a46f6e6dfb3e466fa50827c7185a879556545e0fef",
+          "startByte": 0,
+          "endByteExclusive": 800,
+          "startLine": 1,
+          "endLine": 16
+        },
+        {
+          "entry": "org/locationtech/spatial4j/io/ParseUtils.java",
+          "sourceSha256": "4c480b9950db6cea558883fd03ed79594a13d26d327da65e373e87fde30604f1",
+          "startByte": 0,
+          "endByteExclusive": 800,
+          "startLine": 1,
+          "endLine": 16
+        },
+        {
+          "entry": "org/locationtech/spatial4j/io/PolyshapeReader.java",
+          "sourceSha256": "85a52f40de721e513207ce5a852ee6ae62b9f8dfd6fc0d1c7900533fffe95ef8",
+          "startByte": 0,
+          "endByteExclusive": 800,
+          "startLine": 1,
+          "endLine": 16
+        },
+        {
+          "entry": "org/locationtech/spatial4j/io/PolyshapeWriter.java",
+          "sourceSha256": "596d0f6f79654863410f2360220faaca199451db5ae499d4e9ad40a04f5e72e7",
+          "startByte": 0,
+          "endByteExclusive": 800,
+          "startLine": 1,
+          "endLine": 16
+        },
+        {
+          "entry": "org/locationtech/spatial4j/io/jts/JtsPolyshapeWriter.java",
+          "sourceSha256": "846702e60ab4f0c67ab52c652f8b59fbdd9d310a88b867823d7dcf57960742a1",
+          "startByte": 0,
+          "endByteExclusive": 800,
+          "startLine": 1,
+          "endLine": 16
+        }
+      ]
+    },
+    {
+      "commentSha256": "633c149ae0b66b5b714c380a548ffef08929903d9ba2f71e89d4faa50de4e179",
+      "sources": [
+        {
+          "entry": "org/locationtech/spatial4j/exception/InvalidShapeException.java",
+          "sourceSha256": "0d5e4672d8620fa0f04ddd42e073439006f160808740b84219733951f7a8e10d",
+          "startByte": 510,
+          "endByteExclusive": 787,
+          "startLine": 11,
+          "endLine": 15
+        }
+      ]
+    },
+    {
+      "commentSha256": "ff3d06a3bd0d048f654f67eb96e4cfb44317928b8f6a99e1e2a35159058abdea",
+      "sources": [
+        {
+          "entry": "org/locationtech/spatial4j/io/GeoJSONReader.java",
+          "sourceSha256": "8dc21f8b74c956313fe80017913734246b3ed7810e5798289a9f17d406375b0f",
+          "startByte": 0,
+          "endByteExclusive": 461,
+          "startLine": 1,
+          "endLine": 7
+        },
+        {
+          "entry": "org/locationtech/spatial4j/io/jackson/GeometryAsGeoJSONSerializer.java",
+          "sourceSha256": "c86838b1648edf91dfb30ebfce3d08b27c0bd44401c9c824d93f6591b4f1ef8a",
+          "startByte": 0,
+          "endByteExclusive": 461,
+          "startLine": 1,
+          "endLine": 7
+        },
+        {
+          "entry": "org/locationtech/spatial4j/io/jackson/GeometryAsWKTSerializer.java",
+          "sourceSha256": "8f17e0c043b23760e5423ec9c3655629f18a643e09c7adf6d069047890ab1eb4",
+          "startByte": 0,
+          "endByteExclusive": 461,
+          "startLine": 1,
+          "endLine": 7
+        },
+        {
+          "entry": "org/locationtech/spatial4j/io/jackson/GeometryDeserializer.java",
+          "sourceSha256": "ca6275d39b06849332977881f5e90fa271ee551af06fc2a0e798908a56c0321b",
+          "startByte": 0,
+          "endByteExclusive": 461,
+          "startLine": 1,
+          "endLine": 7
+        },
+        {
+          "entry": "org/locationtech/spatial4j/io/jackson/PackageVersion.java",
+          "sourceSha256": "4728d658d9af37c09c88db79e8b21d39a614efe9df32165ca523f2127358c5ed",
+          "startByte": 0,
+          "endByteExclusive": 461,
+          "startLine": 1,
+          "endLine": 7
+        },
+        {
+          "entry": "org/locationtech/spatial4j/io/jackson/ShapeAsGeoJSONSerializer.java",
+          "sourceSha256": "dc2500e98d804f58ddcd67840adfa688d0b2528741a083523d2f3f584490c8fa",
+          "startByte": 0,
+          "endByteExclusive": 461,
+          "startLine": 1,
+          "endLine": 7
+        },
+        {
+          "entry": "org/locationtech/spatial4j/io/jackson/ShapeAsWKTSerializer.java",
+          "sourceSha256": "d50124c05b07377ee175339d004fb24ee6f1a2c137864ab58657f40e2bb4fc51",
+          "startByte": 0,
+          "endByteExclusive": 461,
+          "startLine": 1,
+          "endLine": 7
+        },
+        {
+          "entry": "org/locationtech/spatial4j/io/jackson/ShapeDeserializer.java",
+          "sourceSha256": "26938dacb7cea9689210598e4dfce3b15e0de3527d2bfbea3d2d481cc626cb73",
+          "startByte": 0,
+          "endByteExclusive": 461,
+          "startLine": 1,
+          "endLine": 7
+        },
+        {
+          "entry": "org/locationtech/spatial4j/io/jackson/ShapesAsGeoJSONModule.java",
+          "sourceSha256": "0ed647c9f38416b6c1e626d00744d5cd34e4d81576fff54c9c9287043c9a2cab",
+          "startByte": 0,
+          "endByteExclusive": 461,
+          "startLine": 1,
+          "endLine": 7
+        },
+        {
+          "entry": "org/locationtech/spatial4j/io/jackson/ShapesAsWKTModule.java",
+          "sourceSha256": "1be44f4d63e50a0fe25dad15b1730ce22a355a13a307379ca3692c3c7ae1fa7e",
+          "startByte": 0,
+          "endByteExclusive": 461,
+          "startLine": 1,
+          "endLine": 7
+        },
+        {
+          "entry": "org/locationtech/spatial4j/io/jackson/package-info.java",
+          "sourceSha256": "149890dd65a7f1566e6526380ed2e8c2a85a281134521e16c59ed1548c6e8e1f",
+          "startByte": 0,
+          "endByteExclusive": 461,
+          "startLine": 1,
+          "endLine": 7
+        }
+      ]
+    },
+    {
+      "commentSha256": "16616ac80ba7b959ff1fd3292f2524bbb844e098a463d1d968031fb7ffb8f5e7",
+      "sources": [
+        {
+          "entry": "org/locationtech/spatial4j/io/GeoJSONWriter.java",
+          "sourceSha256": "6d54af232b590f49edae72f18aac6581ef9eee5b4847e108adf33a8ad96eaa25",
+          "startByte": 0,
+          "endByteExclusive": 450,
+          "startLine": 1,
+          "endLine": 7
+        },
+        {
+          "entry": "org/locationtech/spatial4j/io/ShapeIO.java",
+          "sourceSha256": "9edd367a58e49a2f9a8b60431d7c3c466a582cb0a27073f294624d167f2f30ba",
+          "startByte": 0,
+          "endByteExclusive": 450,
+          "startLine": 1,
+          "endLine": 7
+        },
+        {
+          "entry": "org/locationtech/spatial4j/io/ShapeReader.java",
+          "sourceSha256": "20913fa44e870ec32b0421c5321a09e930dc60da9543a370873277336fd19934",
+          "startByte": 0,
+          "endByteExclusive": 450,
+          "startLine": 1,
+          "endLine": 7
+        },
+        {
+          "entry": "org/locationtech/spatial4j/io/ShapeWriter.java",
+          "sourceSha256": "5ef35f3ae277e48f021daf87615f5d0c3caf2d3ac4c6d3a0a780d726ef06e5e4",
+          "startByte": 0,
+          "endByteExclusive": 450,
+          "startLine": 1,
+          "endLine": 7
+        },
+        {
+          "entry": "org/locationtech/spatial4j/io/SupportedFormats.java",
+          "sourceSha256": "1c35c6fb24d30db8f6a4fb992b083dd0169faefadc6b0afd39c05f80e13985aa",
+          "startByte": 0,
+          "endByteExclusive": 450,
+          "startLine": 1,
+          "endLine": 7
+        },
+        {
+          "entry": "org/locationtech/spatial4j/io/WKTWriter.java",
+          "sourceSha256": "488a4705b6b1d3783e68cada64da9a8ac22e9b665cfc8f598b80127dac318fd3",
+          "startByte": 0,
+          "endByteExclusive": 450,
+          "startLine": 1,
+          "endLine": 7
+        },
+        {
+          "entry": "org/locationtech/spatial4j/io/jts/JtsGeoJSONWriter.java",
+          "sourceSha256": "cdae68313fc034be178b89d58413a733a93338e97e86b75202f9d9fb670097fc",
+          "startByte": 0,
+          "endByteExclusive": 450,
+          "startLine": 1,
+          "endLine": 7
+        },
+        {
+          "entry": "org/locationtech/spatial4j/io/jts/JtsWKTWriter.java",
+          "sourceSha256": "201ac3f5d1fd0d7374d244eb619b44863a7462f30a2cb92b8804fa51a0916c09",
+          "startByte": 0,
+          "endByteExclusive": 450,
+          "startLine": 1,
+          "endLine": 7
+        },
+        {
+          "entry": "org/locationtech/spatial4j/shape/BaseShape.java",
+          "sourceSha256": "3563890124a51e91758f9c59eead01bf4eb5f076e09ca6f2e8da751fad13c837",
+          "startByte": 0,
+          "endByteExclusive": 450,
+          "startLine": 1,
+          "endLine": 7
+        }
+      ]
+    },
+    {
+      "commentSha256": "f3495fe4c946e0b032ee3ebbe491acbb4c9ce62fa9119325a0a7cb6d79f72fac",
+      "sources": [
+        {
+          "entry": "org/locationtech/spatial4j/io/OnePointsBuilder.java",
+          "sourceSha256": "e725dc5f3f2e89be573b9bc5659a771a0af73dded279f5904bfba10fe56d658a",
+          "startByte": 0,
+          "endByteExclusive": 449,
+          "startLine": 1,
+          "endLine": 7
+        },
+        {
+          "entry": "org/locationtech/spatial4j/shape/ShapeFactory.java",
+          "sourceSha256": "cc05a773f8bece4edc48f6b7ece9f0d8a5b6f1fd0a6e18a12f2abf7d3a33ecb5",
+          "startByte": 0,
+          "endByteExclusive": 449,
+          "startLine": 1,
+          "endLine": 7
+        }
+      ]
+    },
+    {
+      "commentSha256": "5af4c5f1fe41e7fa6184fff90e3459c21a36c4c8b8bbbef032d1019420948353",
+      "sources": [
+        {
+          "entry": "org/locationtech/spatial4j/io/PolyshapeReader.java",
+          "sourceSha256": "85a52f40de721e513207ce5a852ee6ae62b9f8dfd6fc0d1c7900533fffe95ef8",
+          "startByte": 5937,
+          "endByteExclusive": 6093,
+          "startLine": 186,
+          "endLine": 189
+        }
+      ]
+    },
+    {
+      "commentSha256": "70a96ed97db1ae18d7894b37aae5bb40ef81cd2f970717bf46a048bb6f134ae0",
+      "sources": [
+        {
+          "entry": "org/locationtech/spatial4j/io/PolyshapeWriter.java",
+          "sourceSha256": "596d0f6f79654863410f2360220faaca199451db5ae499d4e9ad40a04f5e72e7",
+          "startByte": 5316,
+          "endByteExclusive": 5542,
+          "startLine": 158,
+          "endLine": 163
+        }
+      ]
+    },
+    {
+      "commentSha256": "574738c8739a02f39f121bdae8571fff0fe58c6aa2671cf79b440d772259ba30",
+      "sources": [
+        {
+          "entry": "org/locationtech/spatial4j/io/WKTReader.java",
+          "sourceSha256": "07ba5c940a0c5c589ef097559effad4c5ed4841caca53f447ce131ff38de6545",
+          "startByte": 0,
+          "endByteExclusive": 472,
+          "startLine": 1,
+          "endLine": 7
+        },
+        {
+          "entry": "org/locationtech/spatial4j/io/WktShapeParser.java",
+          "sourceSha256": "ac9264c875b40a92272b4d13d5faad97f0089e817533c8ee7d77fccef2727834",
+          "startByte": 0,
+          "endByteExclusive": 472,
+          "startLine": 1,
+          "endLine": 7
+        }
+      ]
+    },
+    {
+      "commentSha256": "14dacb1067781675812db0e81174e9e26fb8025fd44762187b3a2204d9bb0115",
+      "sources": [
+        {
+          "entry": "org/locationtech/spatial4j/shape/ShapeCollection.java",
+          "sourceSha256": "6d60381eb16ab04b3af01828e8cc41d1b16441d8c2b18034997f25a004c04391",
+          "startByte": 796,
+          "endByteExclusive": 1844,
+          "startLine": 19,
+          "endLine": 37
+        }
+      ]
+    },
+    {
+      "commentSha256": "30c9c06c07a1161c6bfbebcdf77df7d6767aa5df0d932e6485181385821f4f55",
+      "sources": [
+        {
+          "entry": "org/locationtech/spatial4j/shape/impl/BBoxCalculator.java",
+          "sourceSha256": "f40e2ab3835f53c25d202f7381d9c8af7b69d8ff38c41681eff1efb5bc5d6213",
+          "startByte": 0,
+          "endByteExclusive": 449,
+          "startLine": 1,
+          "endLine": 7
+        }
+      ]
+    },
+    {
+      "commentSha256": "e46b4e1192b96ddc4f5dd41418224de715e850e6d5ebaf8d0d2043f67de0a716",
+      "sources": [
+        {
+          "entry": "org/locationtech/spatial4j/shape/impl/CircleImpl.java",
+          "sourceSha256": "507c176a430841fc499db8ea016067e7fe2c40cf6e29afb3f2a492ad8d73a3cf",
+          "startByte": 871,
+          "endByteExclusive": 1113,
+          "startLine": 19,
+          "endLine": 24
+        }
+      ]
+    },
+    {
+      "commentSha256": "5e71a56a37e037fe6baa62ef3f561f8415866e7efcfb4209899cd88ff86eb749",
+      "sources": [
+        {
+          "entry": "org/locationtech/spatial4j/shape/jts/JtsGeometry.java",
+          "sourceSha256": "1ed4f35dc17fefd4cfbd7ad621411962bc5def5ded61c57f4c15626130cddc6d",
+          "startByte": 11848,
+          "endByteExclusive": 11933,
+          "startLine": 281,
+          "endLine": 281
+        }
+      ]
+    }
+  ]
+}
