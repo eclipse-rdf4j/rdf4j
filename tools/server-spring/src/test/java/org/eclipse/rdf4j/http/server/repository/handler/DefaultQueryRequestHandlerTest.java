@@ -47,6 +47,7 @@ import org.eclipse.rdf4j.http.server.repository.resolver.RepositoryResolver;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.query.QueryInterruptedException;
 import org.eclipse.rdf4j.query.QueryLanguage;
+import org.eclipse.rdf4j.query.QueryParseOptions;
 import org.eclipse.rdf4j.query.TupleQuery;
 import org.eclipse.rdf4j.query.TupleQueryResult;
 import org.eclipse.rdf4j.query.explanation.Explanation;
@@ -541,6 +542,7 @@ class DefaultQueryRequestHandlerTest {
 		RepositoryResolver resolver = mock(RepositoryResolver.class);
 		Repository repository = mock(Repository.class);
 		RepositoryConnection connection = mock(RepositoryConnection.class);
+		when(connection.getQueryParseOptions()).thenReturn(QueryParseOptions.DEFAULT);
 		TupleQuery query = mock(TupleQuery.class);
 		Explanation explanation = mock(Explanation.class);
 		DefaultQueryRequestHandler handler = new DefaultQueryRequestHandler(resolver);
