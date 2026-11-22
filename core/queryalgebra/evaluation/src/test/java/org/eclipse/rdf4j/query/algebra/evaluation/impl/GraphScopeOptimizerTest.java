@@ -33,6 +33,8 @@ import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.Dataset;
 import org.eclipse.rdf4j.query.QueryEvaluationException;
 import org.eclipse.rdf4j.query.QueryLanguage;
+import org.eclipse.rdf4j.query.QueryParseOptions;
+import org.eclipse.rdf4j.query.QueryParseOptions.GraphAlgebraMode;
 import org.eclipse.rdf4j.query.algebra.BindingSetAssignment;
 import org.eclipse.rdf4j.query.algebra.Graph;
 import org.eclipse.rdf4j.query.algebra.Lateral;
@@ -427,7 +429,8 @@ class GraphScopeOptimizerTest {
 	}
 
 	private static TupleExpr parse(String query) {
-		return new QueryRoot(QueryParserUtil.parseTupleQuery(QueryLanguage.SPARQL, query, null).getTupleExpr());
+		return new QueryRoot(QueryParserUtil.parseTupleQuery(QueryLanguage.SPARQL, query, null,
+				QueryParseOptions.DEFAULT.withGraphAlgebraMode(GraphAlgebraMode.GRAPH)).getTupleExpr());
 	}
 
 	private static List<BindingSet> evaluateGraphQuery(String query, BindingSet bindings, boolean lowerGraph) {

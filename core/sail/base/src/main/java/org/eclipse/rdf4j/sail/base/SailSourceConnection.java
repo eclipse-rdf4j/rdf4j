@@ -250,6 +250,11 @@ public abstract class SailSourceConnection extends AbstractNotifyingSailConnecti
 		this.federatedServiceResolver = resolver;
 	}
 
+	/** Support declared by the active factory; concrete connections must also opt in to GRAPH algebra. */
+	protected final boolean supportsGraphAlgebraEvaluation() {
+		return evalStratFactory.supportsGraphAlgebra();
+	}
+
 	protected EvaluationStrategy getEvaluationStrategy(Dataset dataset, TripleSource tripleSource) {
 		EvaluationStrategy evalStrat = evalStratFactory.createEvaluationStrategy(dataset, tripleSource,
 				store.getEvaluationStatistics(), getSailBase().getQueryExecutionPolicy());
@@ -1117,6 +1122,11 @@ public abstract class SailSourceConnection extends AbstractNotifyingSailConnecti
 	@Override
 	protected CloseableIteration<? extends Resource> getContextIDsInternal() throws SailException {
 		return readIteration(IncludeInferred.explicitOnly, SailDataset::getContextIDs);
+	}
+
+	/** Read a distinct context catalog for stores that expose separate explicit and inferred catalogs. */
+	protected final CloseableIteration<? extends Resource> getContextIDsFromBothDatasets() {
+		return readIteration(IncludeInferred.all, SailDataset::getContextIDs);
 	}
 
 	@Override

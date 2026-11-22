@@ -21,6 +21,8 @@ import java.util.stream.Stream;
 import org.eclipse.rdf4j.federated.algebra.NJoin;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.query.QueryLanguage;
+import org.eclipse.rdf4j.query.QueryParseOptions;
+import org.eclipse.rdf4j.query.QueryParseOptions.GraphAlgebraMode;
 import org.eclipse.rdf4j.query.algebra.BindingSetAssignment;
 import org.eclipse.rdf4j.query.algebra.DescribeOperator;
 import org.eclipse.rdf4j.query.algebra.Difference;
@@ -67,7 +69,8 @@ class GraphSourceDelegationTest {
 				.map(body -> DynamicTest.dynamicTest(body.isEmpty() ? "empty" : body, () -> {
 					Graph[] selected = new Graph[1];
 					QueryParserUtil.parseTupleQuery(QueryLanguage.SPARQL,
-							"SELECT * WHERE { GRAPH ?g { " + body + " } }", null)
+							"SELECT * WHERE { GRAPH ?g { " + body + " } }", null,
+							QueryParseOptions.DEFAULT.withGraphAlgebraMode(GraphAlgebraMode.GRAPH))
 							.getTupleExpr()
 							.visit(new AbstractQueryModelVisitor<RuntimeException>() {
 								@Override

@@ -27,6 +27,8 @@ import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.model.impl.TreeModel;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.QueryLanguage;
+import org.eclipse.rdf4j.query.QueryParseOptions;
+import org.eclipse.rdf4j.query.QueryParseOptions.GraphAlgebraMode;
 import org.eclipse.rdf4j.query.QueryResults;
 import org.eclipse.rdf4j.query.algebra.evaluation.TripleSource;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.DefaultEvaluationStrategy;
@@ -106,7 +108,8 @@ public class GraphRenderRoundTripTest {
 	}
 
 	private static ParsedQuery parse(String query) {
-		return QueryParserUtil.parseQuery(QueryLanguage.SPARQL, query, null);
+		return QueryParserUtil.parseQuery(QueryLanguage.SPARQL, query, null,
+				QueryParseOptions.DEFAULT.withGraphAlgebraMode(GraphAlgebraMode.GRAPH));
 	}
 
 	private static List<BindingSet> evaluate(ParsedQuery query) {

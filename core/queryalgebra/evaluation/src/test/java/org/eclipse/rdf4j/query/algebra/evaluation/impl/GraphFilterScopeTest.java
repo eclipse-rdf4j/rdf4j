@@ -29,6 +29,8 @@ import org.eclipse.rdf4j.model.vocabulary.RDF4J;
 import org.eclipse.rdf4j.model.vocabulary.SESAME;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.QueryLanguage;
+import org.eclipse.rdf4j.query.QueryParseOptions;
+import org.eclipse.rdf4j.query.QueryParseOptions.GraphAlgebraMode;
 import org.eclipse.rdf4j.query.QueryResults;
 import org.eclipse.rdf4j.query.algebra.QueryRoot;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
@@ -187,7 +189,8 @@ class GraphFilterScopeTest {
 			}
 		}, null);
 		TupleExpr expression = new QueryRoot(
-				QueryParserUtil.parseTupleQuery(QueryLanguage.SPARQL, query, null).getTupleExpr());
+				QueryParserUtil.parseTupleQuery(QueryLanguage.SPARQL, query, null,
+						QueryParseOptions.DEFAULT.withGraphAlgebraMode(GraphAlgebraMode.GRAPH)).getTupleExpr());
 		if (optimization == 1) {
 			new SameTermFilterOptimizer().optimize(expression, null, EmptyBindingSet.getInstance());
 		}

@@ -25,6 +25,27 @@ import org.eclipse.rdf4j.query.algebra.evaluation.impl.EvaluationStatistics;
 public interface EvaluationStrategyFactory {
 
 	/**
+	 * Whether strategies and optimizer pipelines created by this factory can safely consume explicit GRAPH algebra.
+	 * Unknown factories retain historical algebra unless they explicitly opt in.
+	 * <p>
+	 * This declaration resolves AUTO during preparation; it does not freeze the factory or validate an explicit GRAPH
+	 * request. A configuration that opts in must remain compatible for the lifetime of its prepared operations.
+	 * Configure custom optimizers before preparing queries, or retire affected prepared operations before an
+	 * incompatible change.
+	 *
+	 * Custom SERVICE resolvers and providers are not negotiated by this declaration. If such a provider inspects
+	 * algebra and does not support Graph, callers must explicitly select LEGACY.
+	 *
+	 * @return whether the configured optimizer pipeline and evaluation strategy support GRAPH
+	 * @deprecated This compatibility hook will be removed in the next major release, when explicit Graph algebra is
+	 *             required.
+	 */
+	@Deprecated(since = "6.2.0", forRemoval = true)
+	default boolean supportsGraphAlgebra() {
+		return false;
+	}
+
+	/**
 	 * Set the number of query solutions the {@link EvaluationStrategy} will keep in main memory before it attempts to
 	 * sync to a temporary disk cache. If set to 0, no disk caching will occur. EvaluationStrategies that provide no
 	 * disk caching functionality are free to ignore this parameter.

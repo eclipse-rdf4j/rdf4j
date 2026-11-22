@@ -1559,7 +1559,7 @@ class MemorySailStore implements SailStore {
 			// Filter more thoroughly by considering snapshot and read-mode
 			// parameters
 			try (MemStatementIterator iter = new MemStatementIterator(contextStatements, null, null,
-					null, null, snapshot, null)) {
+					null, explicit, snapshot, null)) {
 				return iter.hasNext();
 			}
 		}

@@ -32,6 +32,7 @@ import org.eclipse.rdf4j.model.vocabulary.RDF;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.Dataset;
 import org.eclipse.rdf4j.query.QueryLanguage;
+import org.eclipse.rdf4j.query.QueryParseOptions.GraphAlgebraMode;
 import org.eclipse.rdf4j.query.QueryResults;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.impl.EmptyBindingSet;
@@ -154,12 +155,16 @@ public class FedXSingleSourceGraphTest extends SPARQLBaseTest {
 	}
 
 	private TupleExpr optimize(String text, Dataset dataset) {
-		var parsed = QueryParserUtil.parseTupleQuery(QueryLanguage.SPARQL, text, null);
-		var context = federationContext();
-		var strategy = context.createStrategy(dataset);
-		var queryInfo = new QueryInfo(text, null, QueryType.SELECT, 0, false, context, strategy, dataset);
-		return strategy.optimize(parsed.getTupleExpr(), new FederationEvaluationStatistics(queryInfo, dataset),
-				EmptyBindingSet.getInstance());
+		// Plan the same evaluator-aware algebra used by the public query path, not standalone LEGACY algebra.
+		try (var connection = fedxRule.getRepository().getConnection()) {
+			var parsed = connection.prepareTupleQuery(QueryLanguage.SPARQL, text, null).getParsedQuery();
+			assertThat(parsed.getParseOptions().graphAlgebraMode()).isEqualTo(GraphAlgebraMode.GRAPH);
+			var context = federationContext();
+			var strategy = context.createStrategy(dataset);
+			var queryInfo = new QueryInfo(text, null, QueryType.SELECT, 0, false, context, strategy, dataset);
+			return strategy.optimize(parsed.getTupleExpr(), new FederationEvaluationStatistics(queryInfo, dataset),
+					EmptyBindingSet.getInstance());
+		}
 	}
 
 	private List<BindingSet> query(String text, Dataset dataset) {

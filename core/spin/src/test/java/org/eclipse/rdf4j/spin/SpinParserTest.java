@@ -69,7 +69,10 @@ import org.eclipse.rdf4j.query.algebra.UpdateExpr;
 import org.eclipse.rdf4j.query.algebra.ValueConstant;
 import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.query.algebra.evaluation.TripleSource;
+import org.eclipse.rdf4j.query.algebra.evaluation.impl.DefaultEvaluationStrategy;
 import org.eclipse.rdf4j.query.algebra.helpers.AbstractQueryModelVisitor;
+import org.eclipse.rdf4j.query.impl.EmptyBindingSet;
+import org.eclipse.rdf4j.query.impl.MapBindingSet;
 import org.eclipse.rdf4j.query.parser.ParsedOperation;
 import org.eclipse.rdf4j.query.parser.ParsedQuery;
 import org.eclipse.rdf4j.query.parser.ParsedUpdate;
@@ -83,6 +86,8 @@ import org.eclipse.rdf4j.rio.RDFParser;
 import org.eclipse.rdf4j.rio.Rio;
 import org.eclipse.rdf4j.rio.helpers.NTriplesUtil;
 import org.eclipse.rdf4j.rio.helpers.StatementCollector;
+import org.eclipse.rdf4j.sail.SailConnection;
+import org.eclipse.rdf4j.sail.memory.MemoryStore;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.Arguments;
@@ -803,6 +808,294 @@ public class SpinParserTest {
 		assertFalse(clone.containsBNodeReferenceSyntax());
 		assertTrue(clone.getAskQueryString().contains("PREFIX ex: <urn:clone:>"));
 		assertTrue(clone.getAskQueryString().contains("ex:clonePredicate"));
+	}
+
+	@Test
+	void legacyNestedSubqueriesKeepSuppliedGraphWithIndependentLocalGraph() throws Exception {
+		ValueFactory vf = SimpleValueFactory.getInstance();
+		TreeModel model = new TreeModel();
+		Resource subject = variable(vf, model, "s");
+		Resource graph = variable(vf, model, "g");
+		Resource localGraph = variable(vf, model, "localGraph");
+		IRI predicate = vf.createIRI("urn:p");
+		IRI localPredicate = vf.createIRI("urn:q");
+		Resource inherited = pattern(vf, model, subject, predicate, variable(vf, model, "o"));
+		Resource local = namedGraph(vf, model, localGraph,
+				pattern(vf, model, subject, localPredicate, variable(vf, model, "v")));
+		Resource inner = select(vf, model, List.of(subject), List.of(inherited, local));
+		Resource middle = select(vf, model, List.of(subject), List.of(subquery(vf, model, inner)));
+		Resource outer = select(vf, model, List.of(subject),
+				List.of(namedGraph(vf, model, graph, subquery(vf, model, middle))));
+		model.add(outer, SP.TEXT_PROPERTY, vf.createLiteral("""
+				SELECT ?s WHERE { GRAPH ?g {
+				  { SELECT ?s WHERE {
+				    { SELECT ?s WHERE {
+				      ?s <urn:p> ?o .
+				      GRAPH ?localGraph { ?s <urn:q> ?v }
+				    } }
+				  } }
+				} }
+				"""));
+
+		IRI firstGraph = vf.createIRI("urn:g1");
+		IRI secondGraph = vf.createIRI("urn:g2");
+		IRI lookupGraph = vf.createIRI("urn:lookup");
+		IRI firstSubject = vf.createIRI("urn:s1");
+		IRI secondSubject = vf.createIRI("urn:s2");
+		TreeModel data = new TreeModel();
+		data.add(firstSubject, predicate, vf.createLiteral(1), firstGraph);
+		data.add(secondSubject, predicate, vf.createLiteral(2), secondGraph);
+		data.add(firstSubject, localPredicate, vf.createLiteral(3), lookupGraph);
+		data.add(secondSubject, localPredicate, vf.createLiteral(4), lookupGraph);
+		MapBindingSet bindings = new MapBindingSet();
+		bindings.addBinding("g", firstGraph);
+
+		TripleSource source = new ModelTripleSource(model);
+		for (SpinParser parser : List.of(textParser, rdfParser)) {
+			ParsedQuery parsed = parser.parseSelectQuery(outer, source);
+			for (boolean optimize : List.of(false, true)) {
+				var strategy = new DefaultEvaluationStrategy(new ModelTripleSource(data), parsed.getDataset(), null);
+				var algebra = parsed.getTupleExpr().clone();
+				if (optimize) {
+					algebra = strategy.optimize(algebra, null, bindings);
+				}
+				try (var rows = strategy.precompile(algebra).evaluate(bindings)) {
+					assertEquals(List.of(firstSubject), rows.stream().map(row -> row.getValue("s")).toList());
+				}
+			}
+		}
+	}
+
+	@Test
+	void legacyTextKeepsGraphSlotsInSyntheticProjectionsAndLateralInputs() throws Exception {
+		ValueFactory vf = SimpleValueFactory.getInstance();
+		IRI firstGraph = vf.createIRI("urn:g1");
+		IRI secondGraph = vf.createIRI("urn:g2");
+		IRI firstSubject = vf.createIRI("urn:s1");
+		IRI secondSubject = vf.createIRI("urn:s2");
+		IRI predicate = vf.createIRI("urn:p");
+		IRI end = vf.createIRI("urn:end");
+		IRI tag = vf.createIRI("urn:tag");
+		IRI label = vf.createIRI("urn:local");
+		TreeModel data = new TreeModel();
+		data.add(firstSubject, predicate, end, firstGraph);
+		data.add(secondSubject, predicate, end, secondGraph);
+		data.add(firstSubject, tag, vf.createLiteral("cross-graph"), secondGraph);
+		data.add(secondSubject, tag, vf.createLiteral("same graph"), secondGraph);
+
+		TreeModel model = new TreeModel();
+		Resource path = vf.createBNode();
+		model.add(path, RDF.TYPE, SP.SELECT_CLASS);
+		model.add(path, SP.TEXT_PROPERTY, vf.createLiteral("""
+				SELECT ?s WHERE { GRAPH ?g {
+				  SELECT ?s WHERE { ?s <urn:p>? <urn:end> . ?s <urn:tag> ?tag }
+				} }
+				"""));
+		Resource lateral = vf.createBNode();
+		model.add(lateral, RDF.TYPE, SP.SELECT_CLASS);
+		model.add(lateral, SP.TEXT_PROPERTY, vf.createLiteral("""
+				SELECT ?s ?label WHERE { GRAPH ?g {
+				  SELECT ?s (?g AS ?label) WHERE {
+				    ?s <urn:p> ?o .
+				    LATERAL { BIND(<urn:local> AS ?g) }
+				  }
+				} }
+				"""));
+
+		TripleSource source = new ModelTripleSource(model);
+		for (boolean optimize : List.of(false, true)) {
+			var strategy = new DefaultEvaluationStrategy(new ModelTripleSource(data), null, null);
+			var noBindings = EmptyBindingSet.getInstance();
+			var pathAlgebra = textParser.parseSelectQuery(path, source).getTupleExpr();
+			if (optimize) {
+				pathAlgebra = strategy.optimize(pathAlgebra, null, noBindings);
+			}
+			try (var rows = strategy.precompile(pathAlgebra).evaluate(noBindings)) {
+				assertEquals(List.of(secondSubject), rows.stream().map(row -> row.getValue("s")).toList());
+			}
+
+			var lateralAlgebra = textParser.parseSelectQuery(lateral, source).getTupleExpr();
+			if (optimize) {
+				lateralAlgebra = strategy.optimize(lateralAlgebra, null, noBindings);
+			}
+			try (var rows = strategy.precompile(lateralAlgebra).evaluate(noBindings)) {
+				var results = rows.stream().toList();
+				assertEquals(2, results.size());
+				assertEquals(Set.of(firstSubject, secondSubject),
+						results.stream().map(row -> row.getValue("s")).collect(Collectors.toSet()));
+				assertTrue(results.stream().allMatch(row -> label.equals(row.getValue("label"))));
+			}
+		}
+	}
+
+	@Test
+	void legacyNamedGraphDoesNotCaptureUnprojectedSubqueryVariable() throws Exception {
+		ValueFactory valueFactory = SimpleValueFactory.getInstance();
+		TreeModel model = new TreeModel();
+		Resource subject = variable(valueFactory, model, "s");
+		Resource graph = variable(valueFactory, model, "g");
+		Resource local = valueFactory.createBNode();
+		model.add(local, SP.VAR_NAME_PROPERTY, valueFactory.createLiteral("g"));
+		Resource triple = pattern(valueFactory, model, subject, valueFactory.createIRI("urn:p"), local);
+		Resource inner = select(valueFactory, model, List.of(subject), List.of(triple));
+		Resource query = select(valueFactory, model, List.of(subject),
+				List.of(namedGraph(valueFactory, model, graph, subquery(valueFactory, model, inner))));
+
+		assertGraphSubjects(model, query, "SELECT ?s WHERE { GRAPH ?g { { SELECT ?s WHERE { ?s <urn:p> ?g } } } }",
+				List.of("urn:match", "urn:mismatch"));
+	}
+
+	@Test
+	void legacyNamedGraphStillSharesProjectedSubqueryVariable() throws Exception {
+		ValueFactory valueFactory = SimpleValueFactory.getInstance();
+		TreeModel model = new TreeModel();
+		Resource subject = variable(valueFactory, model, "s");
+		Resource graph = variable(valueFactory, model, "g");
+		Resource triple = pattern(valueFactory, model, subject, valueFactory.createIRI("urn:p"), graph);
+		Resource inner = select(valueFactory, model, List.of(subject, graph), List.of(triple));
+		Resource query = select(valueFactory, model, List.of(subject),
+				List.of(namedGraph(valueFactory, model, graph, subquery(valueFactory, model, inner))));
+
+		assertGraphSubjects(model, query,
+				"SELECT ?s WHERE { GRAPH ?g { { SELECT ?s ?g WHERE { ?s <urn:p> ?g } } } }",
+				List.of("urn:match"));
+	}
+
+	@Test
+	void legacyNamedGraphInheritsContextThroughNestedSubqueriesWithPathsAndModifiers() throws Exception {
+		ValueFactory valueFactory = SimpleValueFactory.getInstance();
+		TreeModel model = new TreeModel();
+		Resource subject = variable(valueFactory, model, "s");
+		Resource graph = variable(valueFactory, model, "g");
+		Resource orderKey = variable(valueFactory, model, "_spin_graph_0");
+		IRI predicate = valueFactory.createIRI("urn:p");
+		Resource path = valueFactory.createBNode();
+		Resource modifier = valueFactory.createBNode();
+		model.add(path, RDF.TYPE, SP.TRIPLE_PATH_CLASS);
+		model.add(path, SP.SUBJECT_PROPERTY, subject);
+		model.add(path, SP.OBJECT_PROPERTY, graph);
+		model.add(path, SP.PATH_PROPERTY, modifier);
+		model.add(modifier, RDF.TYPE, SP.MOD_PATH_CLASS);
+		model.add(modifier, SP.SUB_PATH_PROPERTY, predicate);
+		model.add(modifier, SP.MOD_MIN_PROPERTY, valueFactory.createLiteral(1));
+		model.add(modifier, SP.MOD_MAX_PROPERTY, valueFactory.createLiteral(-2));
+		Resource triple = pattern(valueFactory, model, subject, predicate, orderKey);
+		Resource inner = select(valueFactory, model, List.of(subject, orderKey), List.of(path, triple));
+		Resource middle = select(valueFactory, model, List.of(subject), List.of(subquery(valueFactory, model, inner)));
+		Resource orderBy = valueFactory.createBNode();
+		model.add(orderBy, RDF.TYPE, SP.DESC_CLASS);
+		model.add(orderBy, SP.EXPRESSION_PROPERTY, orderKey);
+		model.add(middle, SP.ORDER_BY_PROPERTY, list(valueFactory, model, List.of(orderBy)));
+		model.add(middle, SP.LIMIT_PROPERTY, valueFactory.createLiteral(1));
+		Resource query = select(valueFactory, model, List.of(subject),
+				List.of(namedGraph(valueFactory, model, graph, subquery(valueFactory, model, middle))));
+
+		assertGraphSubjects(model, query, """
+				SELECT ?s WHERE { GRAPH ?g {
+				  { SELECT ?s WHERE {
+				    { SELECT ?s ?_spin_graph_0 WHERE { ?s <urn:p>+ ?g . ?s <urn:p> ?_spin_graph_0 } }
+				  } ORDER BY DESC(?_spin_graph_0) LIMIT 1 }
+				} }
+				""", List.of("urn:mismatch"));
+	}
+
+	@Test
+	void legacyNamedGraphDoesNotExportAnUnprojectedSelectorFromNestedSubqueries() throws Exception {
+		ValueFactory valueFactory = SimpleValueFactory.getInstance();
+		TreeModel model = new TreeModel();
+		Resource subject = variable(valueFactory, model, "s");
+		Resource graph = variable(valueFactory, model, "g");
+		Resource triple = pattern(valueFactory, model, subject, valueFactory.createIRI("urn:p"), graph);
+		Resource inner = select(valueFactory, model, List.of(subject), List.of(triple));
+		Resource middle = select(valueFactory, model, List.of(subject), List.of(subquery(valueFactory, model, inner)));
+		Resource query = select(valueFactory, model, List.of(subject, graph),
+				List.of(namedGraph(valueFactory, model, graph, subquery(valueFactory, model, middle))));
+
+		assertGraphSubjects(model, query, """
+				SELECT ?s ?g WHERE { GRAPH ?g {
+				  { SELECT ?s WHERE { { SELECT ?s WHERE { ?s <urn:p> ?g } } } }
+				} }
+				""", List.of("urn:match", "urn:mismatch"));
+	}
+
+	@Test
+	void legacyNamedGraphRestoresInheritedContextAfterNestedGraph() throws Exception {
+		ValueFactory valueFactory = SimpleValueFactory.getInstance();
+		TreeModel model = new TreeModel();
+		Resource subject = variable(valueFactory, model, "s");
+		Resource graph = variable(valueFactory, model, "g");
+		Resource triple = pattern(valueFactory, model, subject, valueFactory.createIRI("urn:p"), graph);
+		Resource override = namedGraph(valueFactory, model, valueFactory.createIRI("urn:override"),
+				pattern(valueFactory, model, subject, valueFactory.createIRI("urn:q"), graph));
+		Resource inner = select(valueFactory, model, List.of(subject), List.of(override, triple));
+		Resource query = select(valueFactory, model, List.of(subject),
+				List.of(namedGraph(valueFactory, model, graph, subquery(valueFactory, model, inner))));
+
+		assertGraphSubjects(model, query, """
+				SELECT ?s WHERE { GRAPH ?g {
+				  { SELECT ?s WHERE { GRAPH <urn:override> { ?s <urn:q> ?g } . ?s <urn:p> ?g } }
+				} }
+				""", List.of("urn:mismatch"));
+	}
+
+	private void assertGraphSubjects(TreeModel model, Resource query, String text, List<String> expected)
+			throws Exception {
+		ValueFactory valueFactory = SimpleValueFactory.getInstance();
+		MemoryStore memory = new MemoryStore();
+		memory.init();
+		try (SailConnection connection = memory.getConnection()) {
+			IRI graph = valueFactory.createIRI("urn:graph");
+			IRI predicate = valueFactory.createIRI("urn:p");
+			connection.begin();
+			connection.addStatement(valueFactory.createIRI("urn:match"), predicate, graph, graph);
+			connection.addStatement(valueFactory.createIRI("urn:mismatch"), predicate,
+					valueFactory.createIRI("urn:other"), graph);
+			connection.addStatement(valueFactory.createIRI("urn:mismatch"), valueFactory.createIRI("urn:q"),
+					valueFactory.createIRI("urn:other"), valueFactory.createIRI("urn:override"));
+			connection.commit();
+
+			model.add(query, SP.TEXT_PROPERTY, valueFactory.createLiteral(text));
+			assertEquals(expected,
+					graphSubjects(connection, textParser.parseSelectQuery(query, new ModelTripleSource(model))),
+					"SPIN text");
+			model.remove(query, SP.TEXT_PROPERTY, null);
+			TripleSource source = new ModelTripleSource(model);
+			assertEquals(expected, graphSubjects(connection, rdfParser.parseSelectQuery(query, source)), "SPIN RDF");
+			assertEquals(expected, graphSubjects(connection, new SpinParser().parseSelectQuery(query, source)),
+					"SPIN default RDF fallback");
+		} finally {
+			memory.shutDown();
+		}
+	}
+
+	private static List<String> graphSubjects(SailConnection connection, ParsedQuery query) {
+		List<String> rows = new ArrayList<>();
+		try (var results = connection.evaluate(query.getTupleExpr(), query.getDataset(), EmptyBindingSet.getInstance(),
+				false)) {
+			while (results.hasNext()) {
+				BindingSet row = results.next();
+				assertEquals(Set.of("s"), row.getBindingNames());
+				rows.add(row.getValue("s").stringValue());
+			}
+		}
+		rows.sort(Comparator.naturalOrder());
+		return rows;
+	}
+
+	private static Resource subquery(ValueFactory valueFactory, TreeModel model, Resource query) {
+		Resource subquery = valueFactory.createBNode();
+		model.add(subquery, RDF.TYPE, SP.SUB_QUERY_CLASS);
+		model.add(subquery, SP.QUERY_PROPERTY, query);
+		return subquery;
+	}
+
+	private static Resource namedGraph(ValueFactory valueFactory, TreeModel model, Value selector,
+			Resource... elements) {
+		Resource graph = valueFactory.createBNode();
+		model.add(graph, RDF.TYPE, SP.NAMED_GRAPH_CLASS);
+		model.add(graph, SP.GRAPH_NAME_NODE_PROPERTY, selector);
+		model.add(graph, SP.ELEMENTS_PROPERTY, list(valueFactory, model, List.of(elements)));
+		return graph;
 	}
 
 	private static Service newService(String expression, Map<String, String> prefixes, String baseURI) {
