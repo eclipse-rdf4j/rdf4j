@@ -17,13 +17,11 @@ import java.util.ArrayList;
 import java.util.Collections;
 import java.util.Comparator;
 import java.util.HashMap;
-import java.util.IdentityHashMap;
 import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
-import java.util.concurrent.CancellationException;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.locks.LockSupport;
@@ -48,7 +46,6 @@ import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.Dataset;
 import org.eclipse.rdf4j.query.QueryEvaluationException;
-import org.eclipse.rdf4j.query.QueryInterruptedException;
 import org.eclipse.rdf4j.query.algebra.QueryModelNode;
 import org.eclipse.rdf4j.query.algebra.QueryRoot;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
@@ -67,7 +64,6 @@ import org.eclipse.rdf4j.query.explanation.ExplanationImpl;
 import org.eclipse.rdf4j.query.explanation.QueryExplanationContext;
 import org.eclipse.rdf4j.query.explanation.StrategyDecision;
 import org.eclipse.rdf4j.query.impl.EmptyBindingSet;
-import org.eclipse.rdf4j.sail.InterruptedSailException;
 import org.eclipse.rdf4j.sail.SailConflictException;
 import org.eclipse.rdf4j.sail.SailConnection;
 import org.eclipse.rdf4j.sail.SailException;
@@ -534,57 +530,6 @@ public abstract class SailSourceConnection extends AbstractNotifyingSailConnecti
 		return tupleExpr;
 	}
 
-	private enum CancellationStatus {
-		ACTIVE,
-		INVALID,
-		NOT_CANCELLATION,
-		CANCELLATION
-	}
-
-	private static boolean isCancellation(Throwable failure) {
-		return classifyCancellation(failure, new IdentityHashMap<>()) == CancellationStatus.CANCELLATION;
-	}
-
-	private static CancellationStatus classifyCancellation(Throwable failure,
-			IdentityHashMap<Throwable, CancellationStatus> classifications) {
-		CancellationStatus prior = classifications.get(failure);
-		if (prior != null) {
-			// Shared causes and suppressed signals need only be classified once. A back edge on the current
-			// path is different: the graph is malformed, so do not hide the failure.
-			return prior == CancellationStatus.ACTIVE ? CancellationStatus.INVALID : prior;
-		}
-		if (classifications.size() >= 64) {
-			return CancellationStatus.INVALID;
-		}
-
-		classifications.put(failure, CancellationStatus.ACTIVE);
-		CancellationStatus status = classifyCancellationEvidence(failure, classifications);
-		classifications.put(failure, status);
-		return status;
-	}
-
-	private static CancellationStatus classifyCancellationEvidence(Throwable failure,
-			IdentityHashMap<Throwable, CancellationStatus> classifications) {
-		// Try-with-resources can suppress a genuine close failure on cancellation thrown while reading.
-		for (Throwable suppressed : failure.getSuppressed()) {
-			if (classifyCancellation(suppressed, classifications) != CancellationStatus.CANCELLATION) {
-				return CancellationStatus.INVALID;
-			}
-		}
-
-		Throwable cause = failure.getCause();
-		CancellationStatus causeStatus = cause == null ? CancellationStatus.NOT_CANCELLATION
-				: classifyCancellation(cause, classifications);
-		if (causeStatus == CancellationStatus.INVALID || causeStatus == CancellationStatus.CANCELLATION) {
-			return causeStatus;
-		}
-
-		return failure instanceof QueryInterruptedException || failure instanceof InterruptedException
-				|| failure instanceof InterruptedSailException || failure instanceof CancellationException
-						? CancellationStatus.CANCELLATION
-						: CancellationStatus.NOT_CANCELLATION;
-	}
-
 	private boolean runQueryForExplain(TupleExpr tupleExpr, Dataset dataset, BindingSet bindings,
 			boolean includeInferred, int timeoutSeconds) {
 
@@ -620,7 +565,7 @@ public abstract class SailSourceConnection extends AbstractNotifyingSailConnecti
 				if (e instanceof InterruptedException) {
 					Thread.currentThread().interrupt();
 				}
-				if (!timedOut.get() || !isCancellation(e)) {
+				if (!timedOut.get()) {
 					throw e;
 				}
 			}

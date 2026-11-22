@@ -92,21 +92,22 @@ test('displays query pull time alongside the plan without colouring any operator
     const { highlighter } = createHighlighterHarness();
     const plan = {
         type: 'Projection',
-        queryPullTimeActual: 12.345,
+        doubleMetricsActual: { queryPullTimeActual: 12.345 },
         plans: [{ type: 'StatementPattern' }]
     };
     assert.equal(highlighter.format(plan, 'Timed').text,
         'Query pull time: 12.3ms\n\nProjection\n   StatementPattern\n');
     assert.equal(highlighter.getHotspot(plan, 'Timed'), null);
+    assert.equal(highlighter.format(plan, 'Telemetry').text, 'Projection\n   StatementPattern\n');
 
     plan.physicalPlanPrelude = 'Native plan\r\nRows';
     assert.equal(highlighter.format(plan, 'Timed', '\r\n').text,
         'Native plan\r\nRows\r\n\r\nQuery explanation\r\n'
             + 'Query pull time: 12.3ms\r\n\r\nProjection\r\n   StatementPattern\r\n');
 
-    assert.equal(highlighter.format({ type: 'Projection', queryPullTimeActual: 0 }, 'Timed').text,
+    assert.equal(highlighter.format({ type: 'Projection', doubleMetricsActual: { queryPullTimeActual: 0 } }, 'Timed').text,
         'Query pull time: 0.0ms\n\nProjection\n');
-    assert.equal(highlighter.format({ type: 'Projection', queryPullTimeActual: null }, 'Timed').text,
+    assert.equal(highlighter.format({ type: 'Projection', doubleMetricsActual: { queryPullTimeActual: null } }, 'Timed').text,
         'Projection\n');
 });
 
@@ -117,7 +118,7 @@ test('puts the timeout warning before both physical plan and query pull time', (
         timedOut: true,
         type: 'Projection',
         physicalPlanPrelude: 'Native plan',
-        queryPullTimeActual: 3.5
+        doubleMetricsActual: { queryPullTimeActual: 3.5 }
     }, 'Timed');
     assert.equal(result.text, warning + '\n'
         + 'You can change the timeout by setting .setMaxExecutionTime(...) on your query.\n\n'

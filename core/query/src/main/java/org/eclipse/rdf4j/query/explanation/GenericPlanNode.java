@@ -42,6 +42,7 @@ import com.fasterxml.jackson.annotation.JsonIgnore;
 public class GenericPlanNode {
 
 	public static final String UNKNOWN = "UNKNOWN";
+	private static final String QUERY_PULL_TIME_ACTUAL = "queryPullTimeActual";
 
 	// static UUID as prefix together with a thread safe incrementing long ensures a unique identifier.
 	private final static String uniqueIdPrefix = UUID.randomUUID().toString().replace("-", "");
@@ -128,7 +129,6 @@ public class GenericPlanNode {
 	// plans[0..n].totalTimeActual)
 	private Double totalTimeActual;
 
-	private Double queryPullTimeActual;
 	private boolean queryPullTimeEnabled = true;
 
 	// Telemetry counters captured while iterating this node during telemetry-level explanations.
@@ -263,22 +263,6 @@ public class GenericPlanNode {
 		if (totalTimeActual >= 0) {
 			this.totalTimeActual = totalTimeActual;
 		}
-	}
-
-	/**
-	 * Inclusive time spent pulling results through the query root, in milliseconds. This is a query-level measurement,
-	 * not a logical operator's time or end-to-end elapsed time. It excludes work outside the root's {@code hasNext()}
-	 * and {@code next()} calls.
-	 *
-	 * @return observed query pull time, or {@code null} when not measured
-	 */
-	public Double getQueryPullTimeActual() {
-		return queryPullTimeEnabled ? queryPullTimeActual : null;
-	}
-
-	public void setQueryPullTimeActual(Double queryPullTimeActual) {
-		this.queryPullTimeActual = queryPullTimeActual != null && Double.isFinite(queryPullTimeActual)
-				&& queryPullTimeActual >= 0 ? queryPullTimeActual : null;
 	}
 
 	public Long getHasNextCallCountActual() {
@@ -508,6 +492,9 @@ public class GenericPlanNode {
 	}
 
 	public Double getDoubleMetricActual(String metricName) {
+		if (QUERY_PULL_TIME_ACTUAL.equals(metricName)) {
+			return queryPullTimeActual();
+		}
 		if (!isActualMetricVisible(metricName)) {
 			return null;
 		}
@@ -692,7 +679,7 @@ public class GenericPlanNode {
 	@Override
 	public String toString() {
 		String logical = getHumanReadable(0, isProjectionElemListNode());
-		if (getQueryPullTimeActual() != null) {
+		if (queryPullTimeActual() != null) {
 			logical = queryPullTimeSummary() + newLine + newLine + logical;
 		}
 		if (physicalPlanPrelude != null && !physicalPlanPrelude.isEmpty()) {
@@ -1084,7 +1071,8 @@ public class GenericPlanNode {
 			for (Map.Entry<String, Double> entry : visibleDoubleMetrics.entrySet()) {
 				String metricName = entry.getKey();
 				Double metricValue = entry.getValue();
-				if (metricValue == null || metricValue <= 0 && !TelemetryMetricNames.isOptimizerMetric(metricName)) {
+				if (QUERY_PULL_TIME_ACTUAL.equals(metricName) || metricValue == null
+						|| metricValue <= 0 && !TelemetryMetricNames.isOptimizerMetric(metricName)) {
 					continue;
 				}
 				if (!isMetricApplicableToNode(metricName) || metrics.containsKey(metricName)) {
@@ -1257,10 +1245,26 @@ public class GenericPlanNode {
 		if (doubleMetricsActual.isEmpty()) {
 			return null;
 		}
+		Double pullTime = queryPullTimeActual();
 		if (runtimeTelemetryEnabled) {
-			return doubleMetricsActual;
+			if (pullTime != null || !doubleMetricsActual.containsKey(QUERY_PULL_TIME_ACTUAL)) {
+				return doubleMetricsActual;
+			}
+			Map<String, Double> visible = new LinkedHashMap<>(doubleMetricsActual);
+			visible.remove(QUERY_PULL_TIME_ACTUAL);
+			return visible;
 		}
-		return visibleSummaryMetrics(doubleMetricsActual);
+		Map<String, Double> visible = visibleSummaryMetrics(doubleMetricsActual);
+		if (pullTime != null) {
+			visible.put(QUERY_PULL_TIME_ACTUAL, pullTime);
+		}
+		return visible;
+	}
+
+	// Measured on QueryRoot in milliseconds, not on the first displayed operator.
+	private Double queryPullTimeActual() {
+		Double value = queryPullTimeEnabled ? doubleMetricsActual.get(QUERY_PULL_TIME_ACTUAL) : null;
+		return value != null && Double.isFinite(value) && value >= 0 ? value : null;
 	}
 
 	private static boolean isPreferredExplainAnnotationMetric(String metricName) {
@@ -1595,7 +1599,7 @@ public class GenericPlanNode {
 	public String toDot() {
 		String nodes = toDotInternal(getMaxResultSizeActual(this), getMaxTotalTime(this), getMaxSelfTime(this));
 		boolean timeout = Boolean.TRUE.equals(timedOut);
-		boolean hasPullTime = getQueryPullTimeActual() != null;
+		boolean hasPullTime = queryPullTimeActual() != null;
 		if (!timeout && !hasPullTime) {
 			return nodes;
 		}
@@ -1608,7 +1612,7 @@ public class GenericPlanNode {
 	}
 
 	private String queryPullTimeSummary() {
-		return "Query pull time: " + toHumanReadableTime(getQueryPullTimeActual());
+		return "Query pull time: " + toHumanReadableTime(queryPullTimeActual());
 	}
 
 	private static double getMaxTotalTime(GenericPlanNode genericPlanNode) {

@@ -57,7 +57,7 @@ class LmdbNativeTimedExplainTest {
 			assertThat(explanation.tupleExpr()).isInstanceOfSatisfying(QueryRoot.class, root -> {
 				assertThat(root.getResultSizeActual()).isEqualTo(128);
 				assertThat(root.getTotalTimeNanosActual()).isPositive();
-				assertThat(plan.getQueryPullTimeActual()).isEqualTo(root.getTotalTimeNanosActual() / 1_000_000.0);
+				assertThat(plan.getDoubleMetricActual("queryPullTimeActual")).isEqualTo(root.getTotalTimeNanosActual() / 1_000_000.0);
 			});
 			assertThat(plan.getTotalTimeActual()).isNull();
 			assertThat(plan.getSelfTimeActual()).isNull();

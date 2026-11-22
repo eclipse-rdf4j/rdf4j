@@ -31,7 +31,6 @@ namespace workbench {
             costEstimate?: JsonDouble;
             resultSizeEstimate?: JsonDouble;
             resultSizeActual?: JsonLong;
-            queryPullTimeActual?: number;
             totalTimeActual?: number;
             selfTimeActual?: number;
             hasNextCallCountActual?: JsonLong;
@@ -795,7 +794,7 @@ namespace workbench {
             }
             var doubleMetrics = node.doubleMetricsActual || {};
             for (name in doubleMetrics) {
-                if (!Object.prototype.hasOwnProperty.call(doubleMetrics, name)) {
+                if (name === 'queryPullTimeActual' || !Object.prototype.hasOwnProperty.call(doubleMetrics, name)) {
                     continue;
                 }
                 var doubleValue = doubleMetrics[name];
@@ -1481,8 +1480,9 @@ namespace workbench {
             var lines = formatLines(plan || {}, 0, isProjectionElemList(plan || {}), effectiveLevel,
                 separator, hiddenProperties);
             // This measures the query root, not the first displayed logical operator.
-            if (plan && finiteNonNegative(plan.queryPullTimeActual)) {
-                lines = [textLine('Query pull time: ' + readableTime(plan.queryPullTimeActual)),
+            var pullTime = plan && plan.doubleMetricsActual && plan.doubleMetricsActual.queryPullTimeActual;
+            if (effectiveLevel === 'Timed' && finiteNonNegative(pullTime)) {
+                lines = [textLine('Query pull time: ' + readableTime(pullTime)),
                     textLine('')].concat(lines);
             }
             var prelude = plan && plan.physicalPlanPrelude;

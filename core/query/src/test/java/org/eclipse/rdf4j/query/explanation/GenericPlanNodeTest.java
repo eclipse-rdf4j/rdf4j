@@ -581,7 +581,7 @@ class GenericPlanNodeTest {
 		String line = System.lineSeparator();
 		GenericPlanNode node = new GenericPlanNode("Projection");
 		node.addPlans(new GenericPlanNode("StatementPattern"));
-		node.setQueryPullTimeActual(12.5);
+		node.setDoubleMetricActual("queryPullTimeActual", 12.5);
 		node.applyExplanationLevel(Explanation.Level.Timed);
 		assertTrue(node.toString().startsWith("Query pull time: 12.5ms" + line + line + "Projection"));
 
@@ -593,8 +593,9 @@ class GenericPlanNodeTest {
 		String json = explanation.toJson();
 		var mapper = JsonMapper.builder().build();
 		var jsonTree = mapper.readTree(json);
-		assertEquals(12.5, jsonTree.get("queryPullTimeActual").asDouble());
-		assertFalse(jsonTree.get("plans").get(0).has("queryPullTimeActual"));
+		assertFalse(jsonTree.has("queryPullTimeActual"), json);
+		assertEquals(12.5, jsonTree.path("doubleMetricsActual").path("queryPullTimeActual").asDouble());
+		assertFalse(jsonTree.path("plans").get(0).path("doubleMetricsActual").has("queryPullTimeActual"));
 		assertFalse(jsonTree.has("totalTimeActual"));
 		assertFalse(jsonTree.has("selfTimeActual"));
 
@@ -605,11 +606,15 @@ class GenericPlanNodeTest {
 		assertFalse(dot.contains("Total time actual"), dot);
 		assertFalse(dot.contains("Self time actual"), dot);
 
-		decoded.applyExplanationLevel(Explanation.Level.Optimized);
-		Explanation planned = new ExplanationImpl(decoded, false, null);
-		assertFalse(planned.toJson().contains("queryPullTimeActual"));
-		assertFalse(planned.toString().contains("Query pull time:"));
-		assertFalse(planned.toDot().contains("Query pull time:"));
+		for (Explanation.Level level : Explanation.Level.values()) {
+			if (level != Explanation.Level.Timed) {
+				decoded.applyExplanationLevel(level);
+				Explanation other = new ExplanationImpl(decoded, false, null);
+				assertFalse(other.toJson().contains("queryPullTimeActual"), level.name());
+				assertFalse(other.toString().contains("Query pull time:"), level.name());
+				assertFalse(other.toDot().contains("Query pull time:"), level.name());
+			}
+		}
 	}
 
 	@Test
@@ -617,7 +622,7 @@ class GenericPlanNodeTest {
 		String line = System.lineSeparator();
 		GenericPlanNode node = new GenericPlanNode("Projection");
 		node.setPhysicalPlanPrelude("Physical plan");
-		node.setQueryPullTimeActual(3.5);
+		node.setDoubleMetricActual("queryPullTimeActual", 3.5);
 		Explanation explanation = new ExplanationImpl(node, true, null);
 
 		String warning = "Timed out while retrieving explanation! Explanation may be incomplete!";
@@ -628,7 +633,7 @@ class GenericPlanNodeTest {
 		assertEquals(text.indexOf(warning), text.lastIndexOf(warning));
 		var json = JsonMapper.builder().build().readTree(explanation.toJson());
 		assertTrue(json.path("timedOut").asBoolean());
-		assertEquals(3.5, json.path("queryPullTimeActual").asDouble());
+		assertEquals(3.5, json.path("doubleMetricsActual").path("queryPullTimeActual").asDouble());
 		String dot = explanation.toDot();
 		assertTrue(dot.startsWith("digraph Explanation {" + line + "   label=\"" + warning
 				+ "\\nQuery pull time: 3.5ms\";" + line + "   labelloc=t;"), dot);
