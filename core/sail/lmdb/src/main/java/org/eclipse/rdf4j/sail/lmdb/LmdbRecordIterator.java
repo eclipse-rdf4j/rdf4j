@@ -333,8 +333,12 @@ class LmdbRecordIterator implements RecordIterator, RecordIterator.Retainable<Tr
 					if (action == TripleIndex.SKIP_SEEK) {
 						// Like upstream, the run counter is reset only by a match, so a long mismatch run keeps
 						// leapfrogging after its first seek.
-						System.arraycopy(skipTarget, 0, startTuple, 0, 4);
-						result = position();
+						// A local hit queues the inclusive successor without moving the LMDB cursor.
+						// Try only in an immutable read transaction; on miss position() resets the decoder.
+						if (!txnRef.isReadOnly() || state.chunkInput.seek(skipTarget) < 0) {
+							System.arraycopy(skipTarget, 0, startTuple, 0, 4);
+							result = position();
+						}
 					}
 				}
 				continue;
