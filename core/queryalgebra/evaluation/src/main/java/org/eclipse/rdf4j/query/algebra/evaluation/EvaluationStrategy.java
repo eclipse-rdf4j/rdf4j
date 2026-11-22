@@ -24,6 +24,7 @@ import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.QueryEvaluationException;
 import org.eclipse.rdf4j.query.QueryExecutionPolicy;
+import org.eclipse.rdf4j.query.QueryExecutionPolicy.GraphJoinOptimization;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.algebra.ValueExpr;
 import org.eclipse.rdf4j.query.algebra.evaluation.federation.FederatedService;
@@ -44,11 +45,19 @@ public interface EvaluationStrategy extends FederatedServiceResolver {
 		return QueryExecutionPolicy.DEFAULT;
 	}
 
-	/** Bind before preparation; implementations without support must reject an experimental opt-in explicitly. */
+	/** Binds the policy before preparation. Strategies without policy support reject unsupported choices. */
 	default void setQueryExecutionPolicy(QueryExecutionPolicy policy) {
 		if (Objects.requireNonNull(policy).experimentalQueryOptimizations()) {
 			throw new UnsupportedOperationException(
 					"This evaluation strategy does not support experimentalQueryOptimizations");
+		}
+		GraphJoinOptimization requested = policy.graphJoinOptimization();
+		GraphJoinOptimization supported = getQueryExecutionPolicy().graphJoinOptimization();
+		// Automatic admission can fall back to a strategy that does not implement restriction probes.
+		if (requested != supported
+				&& !(requested == GraphJoinOptimization.AUTO && supported == GraphJoinOptimization.OFF)) {
+			throw new UnsupportedOperationException(
+					"This evaluation strategy does not support GRAPH join optimization " + requested);
 		}
 	}
 

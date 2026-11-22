@@ -138,6 +138,11 @@ public final class ArrayBindingBasedQueryEvaluationContext implements QueryEvalu
 	}
 
 	@Override
+	public Object getExecutionIdentity() {
+		return context.getExecutionIdentity();
+	}
+
+	@Override
 	public BlankNodeAllocationScope getBlankNodeAllocationScope() {
 		return context.getBlankNodeAllocationScope();
 	}
@@ -150,6 +155,11 @@ public final class ArrayBindingBasedQueryEvaluationContext implements QueryEvalu
 	@Override
 	public Set<String> getSubstitutionBindingNames() {
 		return context.getSubstitutionBindingNames();
+	}
+
+	@Override
+	public Set<String> getCorrelatedPathBindingNames() {
+		return context.getCorrelatedPathBindingNames();
 	}
 
 	@Override

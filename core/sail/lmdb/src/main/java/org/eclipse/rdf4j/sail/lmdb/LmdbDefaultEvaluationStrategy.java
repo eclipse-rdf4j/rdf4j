@@ -33,8 +33,6 @@ import org.eclipse.rdf4j.query.algebra.evaluation.federation.FederatedServiceRes
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.DefaultEvaluationStrategy;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.EvaluationStatistics;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.QueryEvaluationContext;
-import org.eclipse.rdf4j.query.algebra.evaluation.impl.evaluationsteps.DistinctQueryEvaluationStep;
-import org.eclipse.rdf4j.query.algebra.evaluation.impl.evaluationsteps.LeftJoinQueryEvaluationStep;
 import org.eclipse.rdf4j.query.algebra.evaluation.iterator.JoinIterator;
 import org.eclipse.rdf4j.query.algebra.evaluation.iterator.LeftJoinIterator;
 import org.eclipse.rdf4j.query.algebra.evaluation.util.QueryEvaluationUtility;
@@ -54,7 +52,7 @@ final class LmdbDefaultEvaluationStrategy extends DefaultEvaluationStrategy {
 	@Override
 	protected QueryEvaluationStep prepare(LeftJoin node, QueryEvaluationContext context) {
 		return statementSource != null && statementSource.canReplayStatementRows()
-				? LeftJoinQueryEvaluationStep.supply(this, node, context,
+				? prepare(node, context,
 						statementSource::validateStatementReplaySnapshot, statementSource.statementReplayCapturer())
 				: super.prepare(node, context);
 	}
@@ -69,11 +67,10 @@ final class LmdbDefaultEvaluationStrategy extends DefaultEvaluationStrategy {
 		QueryEvaluationStep input = precompile(projection, context);
 		String key = naturalPartitionKey(projection);
 		if (key == null) {
-			return DistinctQueryEvaluationStep.supply(input, () -> getCollectionFactory().get(), null, null);
+			return prepareDistinct(node, context, input, null, null);
 		}
 		node.setStringMetricPlanned("distinctPartitionBinding", key);
-		return DistinctQueryEvaluationStep.supply(input, () -> getCollectionFactory().get(), context.getValue(key),
-				statementSource.statementReplayCapturer());
+		return prepareDistinct(node, context, input, context.getValue(key), statementSource.statementReplayCapturer());
 	}
 
 	private String naturalPartitionKey(Projection projection) {
