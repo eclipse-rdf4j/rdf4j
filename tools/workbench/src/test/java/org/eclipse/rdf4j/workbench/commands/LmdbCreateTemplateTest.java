@@ -33,6 +33,7 @@ import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.vocabulary.RDF;
 import org.eclipse.rdf4j.model.vocabulary.RDF4J;
 import org.eclipse.rdf4j.model.vocabulary.RDFS;
+import org.eclipse.rdf4j.query.QueryExecutionPolicy.GraphRestrictionMode;
 import org.eclipse.rdf4j.query.TupleQuery;
 import org.eclipse.rdf4j.query.TupleQueryResult;
 import org.eclipse.rdf4j.repository.Repository;
@@ -109,6 +110,7 @@ class LmdbCreateTemplateTest {
 		values.put("Triple DB size", "16777216");
 		values.put("Value DB size", "33554432");
 		values.put("Query Evaluation Mode", "STRICT");
+		values.put("Graph restriction mode", "OFF");
 		values.put("Sketch estimator enabled", CreateTemplateConfig.UNSET_VALUE);
 
 		LocalRepositoryManager manager = new LocalRepositoryManager(dataDir.toFile());
@@ -122,15 +124,12 @@ class LmdbCreateTemplateTest {
 				assertThat(sailConfig).isInstanceOf(ShaclSailConfig.class);
 				assertThat(((ShaclSailConfig) sailConfig).isSerializableValidation()).isEqualTo(!type.contains("rdfs"));
 			}
-			while (sailConfig instanceof DelegatingSailImplConfig delegating) {
-				sailConfig = delegating.getDelegate();
-			}
-			assertThat(sailConfig).isInstanceOf(LmdbStoreConfig.class);
-			LmdbStoreConfig lmdb = (LmdbStoreConfig) sailConfig;
+			LmdbStoreConfig lmdb = innermostLmdbConfig(config);
 			assertThat(lmdb.getTripleIndexes()).isEqualTo("spoc,posc");
 			assertThat(lmdb.getBulkOperationSize()).isEqualTo(128);
 			assertThat(lmdb.getTripleDBSize()).isEqualTo(16777216L);
 			assertThat(lmdb.getValueDBSize()).isEqualTo(33554432L);
+			assertThat(lmdb.getGraphRestrictionMode()).isEqualTo(GraphRestrictionMode.OFF);
 			assertThat(lmdb.getDefaultQueryEvaluationMode()).contains(QueryEvaluationMode.STRICT);
 			assertThat(template.render(values)).doesNotContain("lmdb:sketchEstimatorEnabled");
 		} finally {
@@ -148,7 +147,8 @@ class LmdbCreateTemplateTest {
 		LocalRepositoryManager manager = new LocalRepositoryManager(dataDir.toFile());
 		try {
 			manager.init();
-			createConfig(manager, template, defaultValues(template));
+			RepositoryConfig config = createConfig(manager, template, defaultValues(template));
+			assertThat(innermostLmdbConfig(config).getGraphRestrictionMode()).isEqualTo(GraphRestrictionMode.AUTO);
 			Repository repository = manager.getRepository(type);
 			assertThat(repository).isNotNull();
 			try (RepositoryConnection connection = repository.getConnection()) {
@@ -327,6 +327,15 @@ class LmdbCreateTemplateTest {
 		CreateServlet servlet = new CreateServlet();
 		servlet.setRepositoryManager(manager);
 		return servlet.updateRepositoryConfig(template.render(values));
+	}
+
+	private static LmdbStoreConfig innermostLmdbConfig(RepositoryConfig config) {
+		SailImplConfig sailConfig = ((SailRepositoryConfig) config.getRepositoryImplConfig()).getSailImplConfig();
+		while (sailConfig instanceof DelegatingSailImplConfig delegating) {
+			sailConfig = delegating.getDelegate();
+		}
+		assertThat(sailConfig).isInstanceOf(LmdbStoreConfig.class);
+		return (LmdbStoreConfig) sailConfig;
 	}
 
 	private static Map<String, String> defaultValues(CreateTemplateConfig template) {

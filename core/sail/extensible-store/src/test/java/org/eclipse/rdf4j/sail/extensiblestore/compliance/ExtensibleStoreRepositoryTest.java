@@ -17,6 +17,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import org.eclipse.rdf4j.query.QueryEvaluationException;
 import org.eclipse.rdf4j.query.QueryExecutionPolicy;
 import org.eclipse.rdf4j.query.QueryExecutionPolicy.GraphRestrictionMode;
+import org.eclipse.rdf4j.query.QueryParseOptions.GraphAlgebraMode;
 import org.eclipse.rdf4j.query.QueryResults;
 import org.eclipse.rdf4j.repository.Repository;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
@@ -51,13 +52,17 @@ public class ExtensibleStoreRepositoryTest extends RepositoryTest {
 			connection.add(subject, predicate, object, graph);
 			connection.commit();
 
+			// The custom connection defaults to legacy algebra. Exercise explicit GRAPH restriction here.
+			connection.setQueryParseOptions(
+					connection.getQueryParseOptions().withGraphAlgebraMode(GraphAlgebraMode.GRAPH));
 			var query = connection.prepareTupleQuery("""
 					PREFIX : <urn:gbj:>
 					SELECT ?s ?o { VALUES ?s { :match :match :absent } GRAPH :G { ?s :p ?o } }
 					""");
 			if (mode == GraphRestrictionMode.REQUIRE_RESTRICTED) {
 				assertThatThrownBy(() -> QueryResults.asList(query.evaluate()))
-						.isInstanceOf(QueryEvaluationException.class);
+						.isInstanceOf(QueryEvaluationException.class)
+						.hasMessageContaining("Required GRAPH restriction could not be certified");
 			} else {
 				assertThat(QueryResults.asList(query.evaluate())).hasSize(2).allSatisfy(row -> {
 					assertThat(row.getBindingNames()).containsExactlyInAnyOrder("s", "o");
