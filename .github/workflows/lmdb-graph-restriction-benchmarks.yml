@@ -1,0 +1,151 @@
+name: LMDB GRAPH restriction benchmarks
+
+on:
+  pull_request:
+    paths:
+      - 'core/model*/**'
+      - 'core/query/**'
+      - 'core/queryalgebra/**'
+      - 'core/queryparser/**'
+      - 'core/sail/api/**'
+      - 'core/sail/base/**'
+      - 'core/sail/inferencer/**'
+      - 'core/sail/lmdb/**'
+      - 'core/repository/sail/**'
+      - 'core/pom.xml'
+      - 'core/sail/pom.xml'
+      - 'pom.xml'
+      - 'scripts/run-single-benchmark.sh'
+      - '.github/workflows/lmdb-graph-restriction-benchmarks.yml'
+  schedule:
+    - cron: '24 3 * * 1'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+defaults:
+  run:
+    shell: bash
+
+env:
+  JAVA_VERSION: '25'
+
+jobs:
+  package:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    outputs:
+      matrix: ${{ steps.cases.outputs.matrix }}
+    steps:
+      - uses: actions/checkout@v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-java@v6.0.1
+        with:
+          distribution: temurin
+          java-version: ${{ env.JAVA_VERSION }}
+      - name: Select covering cases
+        id: cases
+        env:
+          SMOKE_ONLY: ${{ github.event_name == 'pull_request' }}
+        run: |
+          # A single matched key on the million-row fixture selects 1 in 10^6 rows.
+          # The 0.001 parameter gives one match among 1024 distinct keys.
+          matrix=$(jq -cn --argjson smoke "$SMOKE_ONLY" '
+            {include: ([
+              {name: "native-seek", shape: "BODY_BINDS_SELECTOR", telemetry: "true",
+               strategy: "OFF,FORCE_INDEPENDENT,REQUIRE_RESTRICTED,AUTO"},
+              {name: "optional-undef", shape: "OPTIONAL", graphs: 32, mask: "PARTIAL"},
+              {name: "no-graph", shape: "NO_GRAPH", distinct: 1, strategy: "OFF,AUTO"}
+            ] + if $smoke then [] else [
+              {name: "million-single", shape: "BODY_BINDS_SELECTOR", statements: 1000000,
+               outer: 1, telemetry: "true", strategy: "REQUIRE_RESTRICTED,AUTO"},
+              {name: "million-low-hit", shape: "FIXED_GRAPH", graphs: 32, statements: 1000000,
+               outer: 1024, selectivity: "0.001", miss: "PRESENT_BUT_UNMATCHED"},
+              {name: "many-graphs", shape: "VARIABLE_GRAPH", graphs: 4096, mask: "GRAPH_SUBJECT"},
+              {name: "graph-only", shape: "VARIABLE_GRAPH", graphs: 32, mask: "GRAPH", distinct: 1},
+              {name: "object-dictionary-miss", shape: "FIXED_GRAPH", mask: "OBJECT", outer: 1,
+               selectivity: "0"},
+              {name: "repeated-two-column-key", shape: "FIXED_GRAPH", graphs: 32, mask: "BOTH",
+               outer: 1024, distinct: 1, indexes: "spoc+posc"},
+              {name: "connected-bgp", shape: "CONNECTED_BGP", graphs: 32},
+              {name: "object-filter", shape: "FILTER", graphs: 32, mask: "OBJECT"},
+              {name: "minus", shape: "MINUS", graphs: 32, mask: "BOTH"},
+              {name: "path", shape: "PATH", graphs: 32},
+              {name: "group", shape: "GROUP", graphs: 32},
+              {name: "sequence-barrier", shape: "SEQUENCE_BARRIER", graphs: 32}
+            ] end)}
+          ')
+          printf 'matrix=%s\n' "$matrix" >> "$GITHUB_OUTPUT"
+      - name: Package LMDB JMH benchmarks
+        run: mvn -B -ntp -T 1C -Dmaven.repo.local=.m2_repo -pl core/sail/lmdb -am -Pbenchmarks,quick package
+      - uses: actions/upload-artifact@v4
+        with:
+          name: graph-restriction-benchmark-jar
+          path: core/sail/lmdb/target/jmh-benchmarks.jar
+          compression-level: 0
+          if-no-files-found: error
+          retention-days: 1
+
+  benchmark:
+    needs: package
+    name: Benchmark ${{ matrix.name }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    strategy:
+      fail-fast: false
+      matrix: ${{ fromJSON(needs.package.outputs.matrix) }}
+    steps:
+      - uses: actions/checkout@v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-java@v6.0.1
+        with:
+          distribution: temurin
+          java-version: ${{ env.JAVA_VERSION }}
+      - uses: actions/download-artifact@v4
+        with:
+          name: graph-restriction-benchmark-jar
+          path: core/sail/lmdb/target
+      - name: Check result bags and record JMH measurements
+        env:
+          CASE_NAME: ${{ matrix.name }}
+          STRATEGY: ${{ matrix.strategy || 'AUTO' }}
+          GRAPH_COUNT: ${{ matrix.graphs || 1 }}
+          STATEMENT_COUNT: ${{ matrix.statements || 10000 }}
+          OUTER_OCCURRENCES: ${{ matrix.outer || 32 }}
+          DISTINCT_KEYS: ${{ matrix.distinct || matrix.outer || 32 }}
+          SELECTIVITY: ${{ matrix.selectivity || '1' }}
+          INDEXES: ${{ matrix.indexes || 'spoc+posc+ospc' }}
+          SHAPE: ${{ matrix.shape }}
+          KEY_SHAPE: ${{ matrix.mask || 'SUBJECT' }}
+          MISS_KIND: ${{ matrix.miss || 'DICTIONARY_ABSENT' }}
+          TELEMETRY: ${{ matrix.telemetry || 'false' }}
+          WARMUP_ITERATIONS: ${{ github.event_name == 'pull_request' && '0' || '1' }}
+          MEASUREMENT_ITERATIONS: ${{ github.event_name == 'pull_request' && '1' || '2' }}
+          ITERATION_TIME: ${{ github.event_name == 'pull_request' && '250ms' || '1s' }}
+          RDF4J_BENCHMARK_PLAN_GUARD: 'false'
+        run: |
+          mkdir -p jmh-results
+          # Trial setup checks each policy against the independent answer bag before timing.
+          scripts/run-single-benchmark.sh --no-build --module core/sail/lmdb \
+            --class org.eclipse.rdf4j.sail.lmdb.benchmark.GraphRestrictionJoinBenchmark --method runQuery \
+            --forks 1 --warmup-iterations "$WARMUP_ITERATIONS" --measurement-iterations "$MEASUREMENT_ITERATIONS" \
+            --jvm-arg -Xmx3g --jvm-arg -XX:ActiveProcessorCount=2 --jvm-arg --enable-native-access=ALL-UNNAMED \
+            --param "strategy=$STRATEGY" --param "graphCount=$GRAPH_COUNT" --param "statementCount=$STATEMENT_COUNT" \
+            --param "outerOccurrences=$OUTER_OCCURRENCES" --param "distinctKeys=$DISTINCT_KEYS" \
+            --param "selectivity=$SELECTIVITY" --param "indexes=$INDEXES" --param "shape=$SHAPE" \
+            --param "keyShape=$KEY_SHAPE" --param "missKind=$MISS_KIND" --param "telemetry=$TELEMETRY" \
+            -- -w "$ITERATION_TIME" -r "$ITERATION_TIME" -foe true -rf json -rff "jmh-results/$CASE_NAME.json" \
+            2>&1 | tee "jmh-results/$CASE_NAME.log"
+      - name: Upload JMH results
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: graph-restriction-jmh-${{ matrix.name }}
+          path: jmh-results/

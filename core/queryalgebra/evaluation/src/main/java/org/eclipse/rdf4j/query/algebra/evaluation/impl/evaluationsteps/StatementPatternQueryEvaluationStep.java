@@ -23,7 +23,9 @@ import java.util.function.BiConsumer;
 import java.util.function.Consumer;
 import java.util.function.Function;
 import java.util.function.Predicate;
+import java.util.function.Supplier;
 
+import org.eclipse.rdf4j.collection.factory.api.CollectionFactory;
 import org.eclipse.rdf4j.common.annotation.Experimental;
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.common.iteration.CloseableIteratorIteration;
@@ -52,6 +54,14 @@ import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryEvaluationStep;
 import org.eclipse.rdf4j.query.algebra.evaluation.TripleSource;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.QueryEvaluationContext;
+import org.eclipse.rdf4j.query.algebra.evaluation.impl.restrictions.PreparedRestrictionPlan;
+import org.eclipse.rdf4j.query.algebra.evaluation.impl.restrictions.RestrictionBlueprint;
+import org.eclipse.rdf4j.query.algebra.evaluation.impl.restrictions.RestrictionCompiler;
+import org.eclipse.rdf4j.query.algebra.evaluation.impl.restrictions.RestrictionFrame;
+import org.eclipse.rdf4j.query.algebra.evaluation.impl.restrictions.RestrictionLayout;
+import org.eclipse.rdf4j.query.algebra.evaluation.impl.restrictions.RestrictionPlanProvider;
+import org.eclipse.rdf4j.query.algebra.evaluation.impl.restrictions.StatementRestrictionSourceProvider;
+import org.eclipse.rdf4j.query.algebra.evaluation.util.ExternalValuePreparation;
 import org.eclipse.rdf4j.query.explanation.TelemetryMetricNames;
 import org.eclipse.rdf4j.query.impl.RemoteBNode;
 
@@ -59,7 +69,7 @@ import org.eclipse.rdf4j.query.impl.RemoteBNode;
  * Evaluate the StatementPattern - taking care of graph/datasets - avoiding redoing work every call of evaluate if
  * possible.
  */
-public class StatementPatternQueryEvaluationStep implements QueryEvaluationStep {
+public class StatementPatternQueryEvaluationStep implements QueryEvaluationStep, RestrictionPlanProvider {
 
 	public static final EmptyIteration<? extends Statement> EMPTY_ITERATION = new EmptyIteration<>();
 
@@ -94,11 +104,18 @@ public class StatementPatternQueryEvaluationStep implements QueryEvaluationStep 
 	private final Var normalizedContextVar;
 
 	private volatile Map<DirectLookupKey, DirectLookupCacheEntry> directLookupCache;
+	private final PreparedRestrictionPlan restrictionPlan;
 
 	// We try to do as much work as possible in the constructor.
 	// With the aim of making the evaluate method as cheap as possible.
 	public StatementPatternQueryEvaluationStep(StatementPattern statementPattern, QueryEvaluationContext context,
 			TripleSource tripleSource) {
+		this(statementPattern, context, tripleSource, null, null);
+	}
+
+	public StatementPatternQueryEvaluationStep(StatementPattern statementPattern, QueryEvaluationContext context,
+			TripleSource tripleSource, StatementRestrictionSourceProvider restrictionProvider,
+			Supplier<CollectionFactory> collections) {
 		super();
 		this.statementPatternForMetrics = statementPattern;
 		this.order = statementPattern.getStatementOrder();
@@ -218,6 +235,7 @@ public class StatementPatternQueryEvaluationStep implements QueryEvaluationStep 
 			preparedBindingAccess = accesses.toArray(PreparedBindingAccess[]::new);
 		}
 
+		this.restrictionPlan = prepareRestrictionPlan(restrictionProvider, collections);
 	}
 
 	private Var replaceValueWithNewValue(Var var, ValueFactory valueFactory) {
@@ -366,6 +384,136 @@ public class StatementPatternQueryEvaluationStep implements QueryEvaluationStep 
 	}
 
 	@Override
+	public PreparedRestrictionPlan restrictionPlan() {
+		return restrictionPlan;
+	}
+
+	private PreparedRestrictionPlan prepareRestrictionPlan(StatementRestrictionSourceProvider provider,
+			Supplier<CollectionFactory> collections) {
+		// Legacy context variables have their own output-domain rules, including the physical null context.
+		if (provider == null || statementPattern.getContextVar() != null) {
+			return null;
+		}
+		RestrictionLayout layout = new RestrictionLayout(statementPatternForMetrics.getBindingNames(), context);
+		var sourcePlan = provider.prepareStatementRestriction(statementPatternForMetrics, context, layout);
+		if (sourcePlan == null) {
+			return null;
+		}
+		int subjectSlot = lookupSlot(statementPattern.getSubjectVar(), layout);
+		int predicateSlot = lookupSlot(statementPattern.getPredicateVar(), layout);
+		int objectSlot = lookupSlot(statementPattern.getObjectVar(), layout);
+		Set<String> seekNames = new LinkedHashSet<>();
+		for (int slot : new int[] { subjectSlot, predicateSlot, objectSlot }) {
+			if (slot >= 0) {
+				seekNames.add(layout.name(slot));
+			}
+		}
+		return new PreparedRestrictionPlan(
+				new RestrictionBlueprint("statement/original-answer-seek", RestrictionBlueprint.Realization.STABLE),
+				layout, context, seekNames, (input, owner) -> {
+					var view = sourcePlan.open(owner);
+					return view != null && (view.source() == tripleSource || view.source() == provider)
+							? PreparedRestrictionPlan.iteratorInvocation(
+									frame -> evaluateRestricted(input, frame, subjectSlot, predicateSlot, objectSlot))
+							: RestrictionCompiler.replayInvocation(this, input, collections,
+									tripleSource.getValueCapturer(),
+									statementPatternForMetrics);
+				});
+	}
+
+	private static int lookupSlot(Var variable, RestrictionLayout layout) {
+		return variable == null || variable.hasValue() ? -1 : layout.slot(variable.getName());
+	}
+
+	private CloseableIteration<BindingSet> evaluateRestricted(BindingSet bindings, RestrictionFrame frame,
+			int subjectSlot, int predicateSlot, int objectSlot) {
+		if (frame.isUnrestricted()) {
+			return evaluate(bindings);
+		}
+		if (emptyGraph || unboundTest.test(bindings)
+				|| subjectSlot >= 0 && frame.unboundOnly(subjectSlot)
+				|| predicateSlot >= 0 && frame.unboundOnly(predicateSlot)
+				|| objectSlot >= 0 && frame.unboundOnly(objectSlot)) {
+			return QueryEvaluationStep.EMPTY_ITERATION;
+		}
+		BindingSet prepared = prepareBindings(bindings);
+		Value originalSubject = getSubjectVar.apply(prepared);
+		Value originalPredicate = getPredicateVar.apply(prepared);
+		Value originalObject = getObjectVar.apply(prepared);
+		Value requestedSubject = lookupValue(frame, subjectSlot);
+		Value requestedPredicate = lookupValue(frame, predicateSlot);
+		Value requestedObject = lookupValue(frame, objectSlot);
+		if (incompatible(originalSubject, requestedSubject) || incompatible(originalPredicate, requestedPredicate)
+				|| incompatible(originalObject, requestedObject)) {
+			return QueryEvaluationStep.EMPTY_ITERATION;
+		}
+		Value subject = operand(originalSubject, requestedSubject);
+		Value predicate = operand(originalPredicate, requestedPredicate);
+		Value object = operand(originalObject, requestedObject);
+		if (subject != null && !(subject instanceof Resource) || predicate != null && !(predicate instanceof IRI)) {
+			return QueryEvaluationStep.EMPTY_ITERATION;
+		}
+		if (subject == originalSubject && predicate == originalPredicate && object == originalObject) {
+			return RestrictionCompiler.residual(evaluate(bindings), frame);
+		}
+		Resource[] contexts = contextSup.apply(null);
+		if (contexts == null) {
+			return QueryEvaluationStep.EMPTY_ITERATION;
+		}
+		CloseableIteration<? extends Statement> iteration = null;
+		try {
+			iteration = openStatements((Resource) subject, (IRI) predicate, object, contexts);
+			// An original repeated-variable equality can still be required even when physical keys filled its
+			// positions. Ask the existing checks using the original operands, not the synthesized lookup values.
+			iteration = handleFilter(contexts, (Resource) originalSubject, (IRI) originalPredicate, originalObject,
+					iteration);
+			CloseableIteration<BindingSet> rows = prepared.isEmpty()
+					? new ConvertStatementToBindingSetIterator(iteration, getConvertStatementConverter(), context)
+					: new JoinStatementWithBindingSetIterator(iteration, getConverter(), prepared, context);
+			return RestrictionCompiler.residual(rows, frame);
+		} catch (RuntimeException | Error failure) {
+			ExternalValuePreparation.closeWithSuppressed(iteration, failure);
+			throw failure;
+		}
+	}
+
+	private static Value lookupValue(RestrictionFrame frame, int slot) {
+		Value requested = slot < 0 ? null : frame.value(slot);
+		// A local statement index does not certify endpoint-response blank-node identity.
+		return RemoteBNode.containsRemoteIdentity(requested) ? null : requested;
+	}
+
+	private static boolean incompatible(Value original, Value requested) {
+		return original != null && requested != null && !RestrictionFrame.sameTerm(original, requested);
+	}
+
+	private Value operand(Value original, Value requested) {
+		if (original != null || requested == null) {
+			return original;
+		}
+		return valuePreparer == null ? requested : valuePreparer.apply(requested);
+	}
+
+	private CloseableIteration<? extends Statement> openStatements(Resource subject, IRI predicate, Value object,
+			Resource[] contexts) {
+		incrementIndexLookupCount();
+		CloseableIteration<? extends Statement> statements = order == null
+				? tripleSource.getStatements(subject, predicate, object, contexts)
+				: tripleSource.getStatements(order, subject, predicate, object, contexts);
+		try {
+			if (statements instanceof IndexReportingIterator reporting) {
+				String indexName = reporting.getIndexName();
+				statementPattern.setIndexName(indexName);
+				statementPatternForMetrics.setIndexName(indexName);
+			}
+			return statements;
+		} catch (RuntimeException | Error failure) {
+			ExternalValuePreparation.closeWithSuppressed(statements, failure);
+			throw failure;
+		}
+	}
+
+	@Override
 	public CloseableIteration<BindingSet> evaluate(BindingSet bindings) {
 		if (emptyGraph) {
 			return QueryEvaluationStep.EMPTY_ITERATION;
@@ -460,19 +608,7 @@ public class StatementPatternQueryEvaluationStep implements QueryEvaluationStep 
 
 		CloseableIteration<? extends Statement> iteration = null;
 		try {
-			incrementIndexLookupCount();
-			if (order != null) {
-				iteration = tripleSource.getStatements(order, (Resource) subject, (IRI) predicate, object, contexts);
-
-			} else {
-				iteration = tripleSource.getStatements((Resource) subject, (IRI) predicate, object, contexts);
-			}
-
-			if (iteration instanceof IndexReportingIterator) {
-				String indexName = ((IndexReportingIterator) iteration).getIndexName();
-				statementPattern.setIndexName(indexName);
-				statementPatternForMetrics.setIndexName(indexName);
-			}
+			iteration = openStatements((Resource) subject, (IRI) predicate, object, contexts);
 
 			if (iteration instanceof EmptyIteration) {
 				putCachedDirectLookup(directLookupKey, DirectLookupCacheEntry.statements(List.of()));
