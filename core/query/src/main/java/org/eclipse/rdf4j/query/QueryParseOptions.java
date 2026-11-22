@@ -12,13 +12,104 @@
 package org.eclipse.rdf4j.query;
 
 import java.io.Serializable;
+import java.util.Objects;
 
-/** Immutable syntax policy, captured when a query or update is prepared. */
-public record QueryParseOptions(boolean blankNodeReferences) implements Serializable {
+/**
+ * Immutable syntax and algebra policy, captured when a query or update is prepared. A connection retains the requested
+ * policy, which may contain {@link GraphAlgebraMode#AUTO}; the parsed operation records the concrete mode selected by
+ * its local evaluator. A standalone parser resolves AUTO to {@link GraphAlgebraMode#LEGACY}.
+ * <p>
+ * Selecting an algebra mode does not negotiate that mode with a remote server receiving query text. LEGACY preserves
+ * historical GRAPH translation and its limitations, rather than emulating an entire older RDF4J release.
+ *
+ * @param blankNodeReferences whether fixed blank node references are accepted
+ * @param graphAlgebraMode    the requested local GRAPH representation
+ */
+public record QueryParseOptions(boolean blankNodeReferences, GraphAlgebraMode graphAlgebraMode)
+		implements Serializable {
+
+	private static final long serialVersionUID = 0L;
+
+	/**
+	 * The local algebra representation for a SPARQL GRAPH pattern.
+	 *
+	 * @deprecated This compatibility control will be removed in the next major release, when explicit Graph algebra is
+	 *             required.
+	 */
+	@Deprecated(since = "6.2.0", forRemoval = true)
+	public enum GraphAlgebraMode {
+		/** Let the preparing evaluator select its supported default; standalone parsing selects LEGACY. */
+		AUTO,
+		/** Use historical context-annotated patterns, including their limitations for GRAPH without triples. */
+		LEGACY,
+		/** Preserve GRAPH as an explicit algebra node; downstream algebra consumers must support it. */
+		GRAPH
+	}
+
+	/** Preserve the existing constructor and leave evaluator-specific defaults unresolved. */
+	public QueryParseOptions(boolean blankNodeReferences) {
+		this(blankNodeReferences, GraphAlgebraMode.AUTO);
+	}
+
+	/**
+	 * A missing mode in a serialized instance of the original record is interpreted as AUTO.
+	 *
+	 * @deprecated This compatibility control will be removed in the next major release, when explicit Graph algebra is
+	 *             required.
+	 */
+	@Deprecated(since = "6.2.0", forRemoval = true)
+	public QueryParseOptions {
+		if (graphAlgebraMode == null) {
+			graphAlgebraMode = GraphAlgebraMode.AUTO;
+		}
+	}
+
+	/**
+	 * Returns the requested GRAPH algebra representation.
+	 *
+	 * @deprecated This compatibility control will be removed in the next major release, when explicit Graph algebra is
+	 *             required.
+	 */
+	@Deprecated(since = "6.2.0", forRemoval = true)
+	public GraphAlgebraMode graphAlgebraMode() {
+		return graphAlgebraMode;
+	}
 
 	/** RDF4J's default syntax, including fixed blank node references. */
 	public static final QueryParseOptions DEFAULT = new QueryParseOptions(true);
 
 	/** Reject fixed blank node reference syntax without changing the selected base language. */
 	public static final QueryParseOptions STRICT = new QueryParseOptions(false);
+
+	/** Change the syntax policy without replacing an independently selected algebra mode. */
+	public QueryParseOptions withBlankNodeReferences(boolean enabled) {
+		return enabled == blankNodeReferences ? this : new QueryParseOptions(enabled, graphAlgebraMode);
+	}
+
+	/**
+	 * Select an algebra mode without changing the syntax policy.
+	 *
+	 * @deprecated This compatibility control will be removed in the next major release, when explicit Graph algebra is
+	 *             required.
+	 */
+	@Deprecated(since = "6.2.0", forRemoval = true)
+	public QueryParseOptions withGraphAlgebraMode(GraphAlgebraMode mode) {
+		Objects.requireNonNull(mode);
+		return mode == graphAlgebraMode ? this : new QueryParseOptions(blankNodeReferences, mode);
+	}
+
+	/**
+	 * Resolve AUTO exactly once at a preparation or standalone parsing boundary.
+	 *
+	 * @deprecated This compatibility control will be removed in the next major release, when explicit Graph algebra is
+	 *             required.
+	 */
+	@Deprecated(since = "6.2.0", forRemoval = true)
+	public QueryParseOptions resolveGraphAlgebraMode(GraphAlgebraMode fallback) {
+		Objects.requireNonNull(fallback);
+		if (fallback == GraphAlgebraMode.AUTO) {
+			throw new IllegalArgumentException("A concrete GRAPH algebra fallback is required");
+		}
+		return graphAlgebraMode == GraphAlgebraMode.AUTO ? withGraphAlgebraMode(fallback) : this;
+	}
 }

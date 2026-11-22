@@ -41,7 +41,7 @@ import org.eclipse.rdf4j.http.protocol.Protocol;
 import org.eclipse.rdf4j.http.protocol.error.ErrorInfo;
 import org.eclipse.rdf4j.http.protocol.error.ErrorType;
 import org.eclipse.rdf4j.http.protocol.transaction.TransactionReader;
-import org.eclipse.rdf4j.http.protocol.transaction.operations.TransactionOperation;
+import org.eclipse.rdf4j.http.protocol.transaction.operations.SPARQLUpdateOperation;
 import org.eclipse.rdf4j.http.server.ClientHTTPException;
 import org.eclipse.rdf4j.http.server.HTTPException;
 import org.eclipse.rdf4j.http.server.ProtocolUtil;
@@ -54,6 +54,7 @@ import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.query.MalformedQueryException;
 import org.eclipse.rdf4j.query.QueryInterruptedException;
 import org.eclipse.rdf4j.query.QueryLanguage;
+import org.eclipse.rdf4j.query.QueryParseOptions;
 import org.eclipse.rdf4j.query.Update;
 import org.eclipse.rdf4j.query.UpdateExecutionException;
 import org.eclipse.rdf4j.query.impl.SimpleDataset;
@@ -238,7 +239,7 @@ public class StatementsController extends AbstractController {
 		}
 
 		final int maxQueryTime = ProtocolUtil.parseTimeoutParam(request);
-		try (RepositoryConnection repositoryCon = RepositoryInterceptor.getRepositoryConnection(request)) {
+		try (RepositoryConnection repositoryCon = RepositoryInterceptor.getRepositoryConnectionForSparql(request)) {
 			Update update = repositoryCon.prepareUpdate(queryLn, sparqlUpdateString, baseURI);
 
 			update.setIncludeInferred(includeInferred);
@@ -335,13 +336,20 @@ public class StatementsController extends AbstractController {
 		try (RepositoryConnection repositoryCon = RepositoryInterceptor.getRepositoryConnection(request)) {
 			logger.debug("Processing transaction...");
 
-			TransactionReader reader = new TransactionReader();
-			Iterable<? extends TransactionOperation> txn = reader.parse(in);
-
+			var operations = new TransactionReader().parse(in);
+			QueryParseOptions preparationOptions = RepositoryInterceptor.resolveQueryParseOptions(repositoryCon,
+					RepositoryInterceptor.getQueryParseOptions(request));
 			repositoryCon.begin();
 
-			for (TransactionOperation op : txn) {
-				op.execute(repositoryCon);
+			for (var operation : operations) {
+				if (operation instanceof SPARQLUpdateOperation) {
+					RepositoryInterceptor.withQueryParseOptions(repositoryCon, preparationOptions, () -> {
+						operation.execute(repositoryCon);
+						return null;
+					});
+				} else {
+					operation.execute(repositoryCon);
+				}
 			}
 
 			repositoryCon.commit();

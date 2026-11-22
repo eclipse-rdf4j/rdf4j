@@ -32,6 +32,7 @@ import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.impl.SimpleNamespace;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.query.BindingSet;
+import org.eclipse.rdf4j.query.QueryParseOptions;
 import org.eclipse.rdf4j.query.TupleQueryResultHandlerException;
 import org.eclipse.rdf4j.query.resultio.TupleQueryResultWriter;
 import org.eclipse.rdf4j.query.resultio.sparqljson.SPARQLResultsJSONWriter;
@@ -63,6 +64,7 @@ class RepositoryMetadataStreamingTest {
 		request.setAttribute("repository", repository);
 		when(repository.getConnection()).thenReturn(connection);
 		when(connection.getParserConfig()).thenReturn(new ParserConfig());
+		when(connection.getQueryParseOptions()).thenReturn(QueryParseOptions.DEFAULT);
 		when(connection.getValueFactory()).thenReturn(SimpleValueFactory.getInstance());
 
 		@SuppressWarnings("unchecked")
@@ -98,6 +100,7 @@ class RepositoryMetadataStreamingTest {
 		request.setAttribute("repository", repository);
 		when(repository.getConnection()).thenReturn(connection);
 		when(connection.getParserConfig()).thenReturn(new ParserConfig());
+		when(connection.getQueryParseOptions()).thenReturn(QueryParseOptions.DEFAULT);
 		when(connection.getValueFactory()).thenReturn(SimpleValueFactory.getInstance());
 
 		@SuppressWarnings("unchecked")
@@ -166,6 +169,7 @@ class RepositoryMetadataStreamingTest {
 		request.setAttribute("repository", repository);
 		when(repository.getConnection()).thenReturn(connection);
 		when(connection.getParserConfig()).thenReturn(new ParserConfig());
+		when(connection.getQueryParseOptions()).thenReturn(QueryParseOptions.DEFAULT);
 		when(connection.getValueFactory()).thenReturn(SimpleValueFactory.getInstance());
 		@SuppressWarnings("unchecked")
 		RepositoryResult<Namespace> namespaces = mock(RepositoryResult.class);
@@ -192,6 +196,7 @@ class RepositoryMetadataStreamingTest {
 		request.setAttribute("repository", repository);
 		when(repository.getConnection()).thenReturn(connection);
 		when(connection.getParserConfig()).thenReturn(new ParserConfig());
+		when(connection.getQueryParseOptions()).thenReturn(QueryParseOptions.DEFAULT);
 		when(connection.getValueFactory()).thenReturn(SimpleValueFactory.getInstance());
 		@SuppressWarnings("unchecked")
 		RepositoryResult<Resource> contexts = mock(RepositoryResult.class);
@@ -218,6 +223,7 @@ class RepositoryMetadataStreamingTest {
 		request.setAttribute("repository", repository);
 		when(repository.getConnection()).thenReturn(connection);
 		when(connection.getParserConfig()).thenReturn(new ParserConfig());
+		when(connection.getQueryParseOptions()).thenReturn(QueryParseOptions.DEFAULT);
 		when(connection.getValueFactory()).thenReturn(SimpleValueFactory.getInstance());
 		@SuppressWarnings("unchecked")
 		RepositoryResult<Namespace> namespaces = mock(RepositoryResult.class);
@@ -241,6 +247,7 @@ class RepositoryMetadataStreamingTest {
 		request.setAttribute("repository", repository);
 		when(repository.getConnection()).thenReturn(connection);
 		when(connection.getParserConfig()).thenReturn(new ParserConfig());
+		when(connection.getQueryParseOptions()).thenReturn(QueryParseOptions.DEFAULT);
 		when(connection.getValueFactory()).thenReturn(SimpleValueFactory.getInstance());
 		@SuppressWarnings("unchecked")
 		RepositoryResult<Resource> contexts = mock(RepositoryResult.class);
@@ -264,6 +271,7 @@ class RepositoryMetadataStreamingTest {
 		request.setAttribute("repository", repository);
 		when(repository.getConnection()).thenReturn(connection);
 		when(connection.getParserConfig()).thenReturn(new ParserConfig());
+		when(connection.getQueryParseOptions()).thenReturn(QueryParseOptions.DEFAULT);
 		when(connection.getValueFactory()).thenReturn(SimpleValueFactory.getInstance());
 		@SuppressWarnings("unchecked")
 		RepositoryResult<Namespace> namespaces = mock(RepositoryResult.class);
@@ -287,6 +295,7 @@ class RepositoryMetadataStreamingTest {
 		request.setAttribute("repository", repository);
 		when(repository.getConnection()).thenReturn(connection);
 		when(connection.getParserConfig()).thenReturn(new ParserConfig());
+		when(connection.getQueryParseOptions()).thenReturn(QueryParseOptions.DEFAULT);
 		when(connection.getValueFactory()).thenReturn(SimpleValueFactory.getInstance());
 		@SuppressWarnings("unchecked")
 		RepositoryResult<Resource> contexts = mock(RepositoryResult.class);

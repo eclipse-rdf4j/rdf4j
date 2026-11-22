@@ -450,6 +450,11 @@ public class SPARQLConnection extends AbstractRepositoryConnection implements Ht
 	}
 
 	@Override
+	public boolean isQueryTextTransport() {
+		return true;
+	}
+
+	@Override
 	public Query prepareQuery(QueryLanguage ql, String query, String base)
 			throws RepositoryException, MalformedQueryException {
 		if (SPARQL.equals(ql)) {

@@ -35,6 +35,8 @@ import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.Dataset;
 import org.eclipse.rdf4j.query.QueryEvaluationException;
 import org.eclipse.rdf4j.query.QueryLanguage;
+import org.eclipse.rdf4j.query.QueryParseOptions;
+import org.eclipse.rdf4j.query.QueryParseOptions.GraphAlgebraMode;
 import org.eclipse.rdf4j.query.TupleQuery;
 import org.eclipse.rdf4j.query.algebra.evaluation.NativeTripleTermSource;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryBindingSet;
@@ -181,7 +183,8 @@ final class RemoteGraphSnapshot implements NativeTripleTermSource {
 	CloseableIteration<BindingSet> evaluate(String text, TupleQuery query, BindingSet nativeBindings,
 			FederatedServiceResolver resolver) {
 		checkOpen();
-		var parsed = QueryParserUtil.parseTupleQuery(QueryLanguage.SPARQL, text, null);
+		var parsed = QueryParserUtil.parseTupleQuery(QueryLanguage.SPARQL, text, null,
+				QueryParseOptions.DEFAULT.withGraphAlgebraMode(GraphAlgebraMode.GRAPH));
 		Dataset dataset = query.getDataset() == null ? parsed.getDataset() : query.getDataset();
 		QueryBindingSet bindings = new QueryBindingSet(query.getBindings());
 		for (Binding binding : nativeBindings) {

@@ -26,6 +26,8 @@ import org.eclipse.rdf4j.model.vocabulary.RDF;
 import org.eclipse.rdf4j.model.vocabulary.SP;
 import org.eclipse.rdf4j.query.Dataset;
 import org.eclipse.rdf4j.query.QueryLanguage;
+import org.eclipse.rdf4j.query.QueryParseOptions;
+import org.eclipse.rdf4j.query.QueryParseOptions.GraphAlgebraMode;
 import org.eclipse.rdf4j.query.algebra.UpdateExpr;
 import org.eclipse.rdf4j.query.impl.EmptyBindingSet;
 import org.eclipse.rdf4j.query.parser.ParsedUpdate;
@@ -39,6 +41,9 @@ import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.ValueSource;
 
 class SpinUpdateGraphExecutionTest {
+
+	private static final QueryParseOptions GRAPH = QueryParseOptions.DEFAULT
+			.withGraphAlgebraMode(GraphAlgebraMode.GRAPH);
 
 	@Test
 	void insertTemplateKeepsNamedGraphContext() throws Exception {
@@ -62,7 +67,7 @@ class SpinUpdateGraphExecutionTest {
 		model.add(update, RDF.TYPE, SP.MODIFY_CLASS);
 		model.add(update, SP.INSERT_PATTERN_PROPERTY, list(model, outer, sibling));
 		model.add(update, SP.WHERE_PROPERTY, RDF.NIL);
-		ParsedUpdate restored = new SpinParser(SpinParser.Input.RDF_ONLY).parseUpdate(update,
+		ParsedUpdate restored = new SpinParser(SpinParser.Input.RDF_ONLY, GRAPH).parseUpdate(update,
 				new ModelTripleSource(model));
 		List<Statement> actual = execute(restored.getUpdateExprs().getFirst(), null);
 		assertThat(actual).contains(
@@ -97,7 +102,7 @@ class SpinUpdateGraphExecutionTest {
 	}
 
 	private static void assertExecution(String text) throws Exception {
-		ParsedUpdate original = QueryParserUtil.parseUpdate(QueryLanguage.SPARQL, text, null);
+		ParsedUpdate original = QueryParserUtil.parseUpdate(QueryLanguage.SPARQL, text, null, GRAPH);
 		StatementCollector collector = new StatementCollector();
 		new SpinRenderer(SpinRenderer.Output.RDF_ONLY).render(original, collector);
 		TreeModel model = new TreeModel(collector.getStatements());
@@ -114,7 +119,7 @@ class SpinUpdateGraphExecutionTest {
 			// WITH is part of the SPIN input contract even when supplied independently of the renderer.
 			model.add(resource, SP.WITH_PROPERTY, iri("urn:g"));
 		}
-		ParsedUpdate restored = new SpinParser(SpinParser.Input.RDF_ONLY).parseUpdate(resource,
+		ParsedUpdate restored = new SpinParser(SpinParser.Input.RDF_ONLY, GRAPH).parseUpdate(resource,
 				new ModelTripleSource(model));
 		UpdateExpr expected = original.getUpdateExprs().getFirst();
 		Dataset dataset = original.getDatasetMapping().get(expected);

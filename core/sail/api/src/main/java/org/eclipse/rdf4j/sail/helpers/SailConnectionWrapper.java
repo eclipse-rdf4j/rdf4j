@@ -30,6 +30,7 @@ import org.eclipse.rdf4j.query.Dataset;
 import org.eclipse.rdf4j.query.Query;
 import org.eclipse.rdf4j.query.QueryLanguage;
 import org.eclipse.rdf4j.query.QueryParseOptions;
+import org.eclipse.rdf4j.query.QueryParseOptions.GraphAlgebraMode;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.algebra.evaluation.federation.FederatedServiceResolver;
 import org.eclipse.rdf4j.query.algebra.evaluation.federation.FederatedServiceResolverClient;
@@ -59,6 +60,9 @@ public class SailConnectionWrapper
 	 * The wrapped SailConnection.
 	 */
 	private final SailConnection wrappedCon;
+
+	// Carries the caller's policy while dispatching through a four-argument subclass override.
+	private final ScopedValue<QueryParseOptions> preparationOptions = ScopedValue.newInstance();
 
 	/*--------------*
 	 * Constructors *
@@ -124,9 +128,24 @@ public class SailConnectionWrapper
 		wrappedCon.close();
 	}
 
+	/**
+	 * @deprecated This compatibility hook will be removed in the next major release, when explicit Graph algebra is
+	 *             required.
+	 */
+	@Override
+	@Deprecated(since = "6.2.0", forRemoval = true)
+	public boolean supportsGraphAlgebra() {
+		// A subclass may inspect or replace algebra and must explicitly confirm its own compatibility.
+		return getClass() == SailConnectionWrapper.class && wrappedCon.supportsGraphAlgebra();
+	}
+
 	@Override
 	public Optional<TupleExpr> prepareQuery(QueryLanguage ql, Query.QueryType type, String query, String baseURI) {
-		return wrappedCon.prepareQuery(ql, type, query, baseURI, QueryParseOptions.DEFAULT);
+		QueryParseOptions options = preparationOptions.orElse(QueryParseOptions.DEFAULT);
+		if (options.graphAlgebraMode() == GraphAlgebraMode.AUTO && wrappedCon.supportsGraphAlgebra()) {
+			options = options.withGraphAlgebraMode(GraphAlgebraMode.LEGACY);
+		}
+		return wrappedCon.prepareQuery(ql, type, query, baseURI, options);
 	}
 
 	@Override
@@ -301,8 +320,14 @@ public class SailConnectionWrapper
 	public Optional<TupleExpr> prepareQuery(QueryLanguage language, Query.QueryType type,
 			String query, String baseURI, QueryParseOptions options) {
 		Objects.requireNonNull(options);
-		return options.equals(QueryParseOptions.DEFAULT)
-				? prepareQuery(language, type, query, baseURI)
-				: wrappedCon.prepareQuery(language, type, query, baseURI, options);
+		GraphAlgebraMode mode = options.graphAlgebraMode();
+		if (!options.blankNodeReferences() || mode == GraphAlgebraMode.GRAPH) {
+			return wrappedCon.prepareQuery(language, type, query, baseURI, options);
+		}
+		if (mode == GraphAlgebraMode.AUTO && !preparationOptions.isBound()) {
+			return prepareQuery(language, type, query, baseURI);
+		}
+		// Reentrant calls may request AUTO while an explicit policy is already bound.
+		return ScopedValue.where(preparationOptions, options).call(() -> prepareQuery(language, type, query, baseURI));
 	}
 }
