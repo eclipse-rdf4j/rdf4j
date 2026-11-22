@@ -34,7 +34,7 @@
     </scm>
 
     <properties>
-        <kotlin.version>1.0.1</kotlin.version>
+        <kotlin.version>1.6.0</kotlin.version>
         <java.target.version>1.6</java.target.version>
         <java.source.version>1.6</java.source.version>
 
