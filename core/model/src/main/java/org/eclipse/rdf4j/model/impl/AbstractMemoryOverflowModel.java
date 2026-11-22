@@ -63,6 +63,8 @@ public abstract class AbstractMemoryOverflowModel<T extends AbstractModel> exten
 	// Use the same per-statement and triple-term estimates as LMDB's buffered-write admission budget.
 	private static final int ESTIMATED_BYTES_PER_STATEMENT = 128;
 	private static final int ESTIMATED_BYTES_PER_TRIPLE_TERM = 64;
+	// Reading the heap takes a JVM-wide lock, so between its other triggers a partial batch samples it this rarely.
+	private static final int HEAP_SAMPLE_INTERVAL = 16;
 
 	/**
 	 * The default batch size is 1024. This is the number of statements that will be written to disk at a time.
@@ -104,6 +106,8 @@ public abstract class AbstractMemoryOverflowModel<T extends AbstractModel> exten
 	private volatile Model memory;
 	private transient int nextPartialBatchCheckSize = 1;
 	private transient int lastMemoryCheckSize;
+	private transient int lastMinimumAvailableMemory;
+	private transient int addsSinceHeapSample;
 	private transient SpillPayload spillPayload;
 
 	protected transient volatile T disk;
@@ -187,7 +191,14 @@ public abstract class AbstractMemoryOverflowModel<T extends AbstractModel> exten
 		return (double) availableHeapBytes() / BYTES_PER_MIB;
 	}
 
+	/**
+	 * Number of heap samples taken since class load. A test hook; it has no effect on overflow decisions and is updated
+	 * without synchronization.
+	 */
+	static long heapSamples;
+
 	private static long availableHeapBytes() {
+		heapSamples++;
 		return MAX_HEAP_BYTES - (RUNTIME.totalMemory() - RUNTIME.freeMemory());
 	}
 
@@ -254,9 +265,10 @@ public abstract class AbstractMemoryOverflowModel<T extends AbstractModel> exten
 	@Override
 	public synchronized boolean add(Statement st) {
 		Model delegate = getDelegate();
-		if (count++ % BATCH_SIZE == 0
-				|| (delegate instanceof DynamicModel && partialBatchCheckDue(delegate.size()))) {
-			checkMemoryOverflow(false);
+		boolean batchBoundary = count++ % BATCH_SIZE == 0;
+		boolean partialBatchDue = delegate instanceof DynamicModel && partialBatchCheckDue(delegate.size());
+		if (batchBoundary || partialBatchDue) {
+			checkMemoryOverflow(partialBatchDue);
 			delegate = getDelegate();
 		}
 		boolean add = delegate.add(st);
@@ -470,16 +482,30 @@ public abstract class AbstractMemoryOverflowModel<T extends AbstractModel> exten
 			return nextPartialBatchCheckSize != Integer.MAX_VALUE;
 		}
 		// Size is authoritative even when a live model view or iterator removed statements.
-		return size < lastMemoryCheckSize || nextPartialBatchCheckSize == Integer.MAX_VALUE
-				|| size >= nextPartialBatchCheckSize || spillPayload != null && spillPayload.atLimit()
-				|| (spillPayload != null) != underMemoryPressure();
+		if (size < lastMemoryCheckSize || nextPartialBatchCheckSize == Integer.MAX_VALUE
+				|| size >= nextPartialBatchCheckSize
+				|| MIN_AVAILABLE_MEM_BEFORE_OVERFLOWING != lastMinimumAvailableMemory) {
+			return true;
+		}
+		if (spillPayload != null ? spillPayload.atLimit() : overflow || highGcLoad) {
+			return true;
+		}
+		// The triggers above cost nothing to test. A change in heap headroom alone is looked for at a sparse interval.
+		if (++addsSinceHeapSample < HEAP_SAMPLE_INTERVAL) {
+			return false;
+		}
+		addsSinceHeapSample = 0;
+		return (spillPayload != null) != underMemoryPressure();
 	}
 
 	private static boolean underMemoryPressure() {
 		return overflow || highGcLoad || availableHeapBytes() < MIN_AVAILABLE_MEM_BEFORE_OVERFLOWING * BYTES_PER_MIB;
 	}
 
-	private synchronized void checkMemoryOverflow(boolean explicit) {
+	/**
+	 * @param due whether the caller asked for the check or already found a partial batch due for one
+	 */
+	private synchronized void checkMemoryOverflow(boolean due) {
 		try {
 			lock.lockInterruptibly();
 			try {
@@ -494,11 +520,14 @@ public abstract class AbstractMemoryOverflowModel<T extends AbstractModel> exten
 					spillPayload = null;
 					return;
 				}
-				if (!explicit && size < BATCH_SIZE && !partialBatchCheckDue(size)) {
+				if (!due && size < BATCH_SIZE && !partialBatchCheckDue(size)) {
 					return;
 				}
-				// Sample at growing checkpoints, when pressure changes, or when additions cross the payload budget.
+				// Sample at growing checkpoints, when a pressure signal changes, when additions cross the payload
+				// budget, and at a sparse interval in between.
 				lastMemoryCheckSize = size;
+				lastMinimumAvailableMemory = MIN_AVAILABLE_MEM_BEFORE_OVERFLOWING;
+				addsSinceHeapSample = 0;
 				nextPartialBatchCheckSize = size < BATCH_SIZE ? (int) Math.min(2L * size, BATCH_SIZE)
 						: Integer.MAX_VALUE;
 				if (!underMemoryPressure()) {

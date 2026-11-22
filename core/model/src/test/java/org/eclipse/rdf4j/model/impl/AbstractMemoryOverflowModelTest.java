@@ -137,6 +137,33 @@ public class AbstractMemoryOverflowModelTest {
 		runInConstrainedHeap("pressure-probes-after-budget-change");
 	}
 
+	/**
+	 * Reading the heap takes a JVM-wide lock, so a model that is still smaller than one batch must not read it for
+	 * every statement it receives: only at its growing size checkpoints and at a sparse interval in between.
+	 */
+	@ParameterizedTest
+	@ValueSource(strings = { "statement", "components" })
+	void addsBelowOneBatchDoNotSampleTheHeapForEveryStatement(String path) {
+		ValueFactory values = SimpleValueFactory.getInstance();
+		var predicate = values.createIRI("urn:overflow:predicate");
+		int adds = AbstractMemoryOverflowModel.BATCH_SIZE - 24;
+		try (RecordingOverflowModel model = new RecordingOverflowModel()) {
+			long before = AbstractMemoryOverflowModel.heapSamples;
+			for (int i = 0; i < adds; i++) {
+				var subject = values.createIRI("urn:overflow:subject:" + i);
+				if (path.equals("statement")) {
+					model.add(values.createStatement(subject, predicate, values.createLiteral(i)));
+				} else {
+					model.add(subject, predicate, values.createLiteral(i));
+				}
+			}
+			long samples = AbstractMemoryOverflowModel.heapSamples - before;
+
+			assertThat(model).hasSize(adds);
+			assertThat(samples).as("heap samples for %s adds below one batch", adds).isLessThan(adds / 8);
+		}
+	}
+
 	public static void main(String[] args) throws Exception {
 		if (args.length != 1) {
 			throw new IllegalArgumentException("Expected one pressure probe name");
@@ -409,7 +436,9 @@ public class AbstractMemoryOverflowModelTest {
 			ValueFactory values = SimpleValueFactory.getInstance();
 			var subject = values.createIRI("urn:overflow:subject");
 			var predicate = values.createIRI("urn:overflow:predicate");
-			for (int i = 0; i < 4; i++) {
+			// Past the size checkpoint at 32 the next one is at 64, so only the sparse heap sample can notice.
+			int initial = 40;
+			for (int i = 0; i < initial; i++) {
 				model.add(values.createStatement(subject, predicate, values.createLiteral(i)));
 			}
 			long bytesPerMiB = 1024L * 1024L;
@@ -422,9 +451,13 @@ public class AbstractMemoryOverflowModelTest {
 					values.createLiteral("x".repeat(12 * 1024 * 1024)));
 			assertThat(availableHeapBytes()).isLessThan(reserve * bytesPerMiB);
 			model.add(large);
-			model.add(values.createStatement(subject, predicate, values.createLiteral("next")));
+			// The heap is not read for every statement: the fall is noticed within one sampling interval.
+			int sampleInterval = 16;
+			for (int i = 0; i < sampleInterval; i++) {
+				model.add(values.createStatement(subject, predicate, values.createLiteral("next " + i)));
+			}
 			assertThat(model.spillCount).as("allocations alone can cross the reserve between checkpoints").isOne();
-			assertThat(model).hasSize(7).contains(large);
+			assertThat(model).hasSize(initial + 2 + sampleInterval).contains(large);
 		} finally {
 			AbstractMemoryOverflowModel.MIN_AVAILABLE_MEM_BEFORE_OVERFLOWING = oldMinimum;
 		}
