@@ -51,7 +51,6 @@ public final class LmdbQueryOptimizerPipeline implements QueryOptimizerPipeline 
 	}
 
 	private static final BindingAssignerOptimizer BINDING_ASSIGNER = new BindingAssignerOptimizer();
-	private static final GraphScopeOptimizer GRAPH_SCOPE_OPTIMIZER = new GraphScopeOptimizer();
 	private static final CompareOptimizer COMPARE_OPTIMIZER = new CompareOptimizer();
 	private static final ConjunctiveConstraintSplitterOptimizer CONJUNCTIVE_CONSTRAINT_SPLITTER = new ConjunctiveConstraintSplitterOptimizer();
 	private static final SameTermFilterOptimizer SAME_TERM_FILTER_OPTIMIZER = new SameTermFilterOptimizer();
@@ -99,7 +98,7 @@ public final class LmdbQueryOptimizerPipeline implements QueryOptimizerPipeline 
 		}
 		List<QueryOptimizer> optimizers = new ArrayList<>(List.of(
 				BINDING_ASSIGNER,
-				GRAPH_SCOPE_OPTIMIZER,
+				new GraphScopeOptimizer(strategy.getQueryExecutionPolicy()),
 				StandardQueryOptimizerPipeline.TUPLE_FUNCTION_MAGIC_PROPERTY_OPTIMIZER,
 				new ConstantOptimizer(strategy, EmptyBindingSet.getInstance()),
 				new RegexAsStringFunctionOptimizer(tripleSource.getValueFactory()),

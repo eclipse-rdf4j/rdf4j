@@ -19,6 +19,7 @@ import java.util.Map;
 import org.eclipse.rdf4j.common.annotation.InternalUseOnly;
 import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.model.vocabulary.RDF;
+import org.eclipse.rdf4j.query.QueryParseOptions;
 import org.eclipse.rdf4j.query.algebra.Add;
 import org.eclipse.rdf4j.query.algebra.AnnotationTripleRef;
 import org.eclipse.rdf4j.query.algebra.BNodeGenerator;
@@ -82,6 +83,10 @@ public class UpdateExprBuilder extends TupleExprBuilder {
 	 */
 	public UpdateExprBuilder(ValueFactory valueFactory) {
 		super(valueFactory);
+	}
+
+	public UpdateExprBuilder(ValueFactory valueFactory, QueryParseOptions options) {
+		super(valueFactory, options);
 	}
 
 	@Override

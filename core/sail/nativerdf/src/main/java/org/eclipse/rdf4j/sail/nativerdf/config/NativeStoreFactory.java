@@ -58,7 +58,7 @@ public class NativeStoreFactory implements SailFactory {
 			NativeStoreConfig nativeConfig = (NativeStoreConfig) config;
 
 			nativeConfig.getDefaultQueryEvaluationMode().ifPresent(nativeStore::setDefaultQueryEvaluationMode);
-			nativeStore.setExperimentalQueryOptimizations(nativeConfig.isExperimentalQueryOptimizations());
+			nativeStore.setQueryExecutionPolicy(nativeConfig.getQueryExecutionPolicy());
 			nativeStore.setSlowQueryLogThresholdSeconds(nativeConfig.getSlowQueryLogThresholdSeconds());
 			nativeStore.setSlowQueryLogFirstResultThresholdSeconds(
 					nativeConfig.getSlowQueryLogFirstResultThresholdSeconds());
