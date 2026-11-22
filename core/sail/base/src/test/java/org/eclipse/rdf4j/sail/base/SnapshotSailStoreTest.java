@@ -68,10 +68,12 @@ import org.eclipse.rdf4j.query.algebra.Exists;
 import org.eclipse.rdf4j.query.algebra.Filter;
 import org.eclipse.rdf4j.query.algebra.InsertData;
 import org.eclipse.rdf4j.query.algebra.Join;
+import org.eclipse.rdf4j.query.algebra.QueryRoot;
 import org.eclipse.rdf4j.query.algebra.StatementPattern;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.query.algebra.evaluation.EvaluationStrategy;
+import org.eclipse.rdf4j.query.algebra.evaluation.QueryEvaluationStep;
 import org.eclipse.rdf4j.query.algebra.evaluation.TripleSource;
 import org.eclipse.rdf4j.query.algebra.evaluation.federation.FederatedServiceResolver;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.EvaluationStatistics;
@@ -79,6 +81,7 @@ import org.eclipse.rdf4j.query.explanation.Explanation;
 import org.eclipse.rdf4j.query.impl.EmptyBindingSet;
 import org.eclipse.rdf4j.repository.RepositoryConnection;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
+import org.eclipse.rdf4j.sail.InterruptedSailException;
 import org.eclipse.rdf4j.sail.NotifyingSailConnection;
 import org.eclipse.rdf4j.sail.Sail;
 import org.eclipse.rdf4j.sail.SailConflictException;
@@ -1535,6 +1538,88 @@ public class SnapshotSailStoreTest {
 					() -> connection.explain(Explanation.Level.Executed, expression, null,
 							EmptyBindingSet.getInstance(), false, 1)));
 			assertThat(interruption.getSuppressed()).containsExactly(cleanupFailure);
+		} finally {
+			sail.shutDown();
+		}
+	}
+
+	@Test
+	public void testExplainTimeoutRecognizesCauseLessSailInterruption() {
+		assertExplainTimeoutPreservesPartialPlan(interrupted -> new InterruptedSailException("Sail interrupted"));
+	}
+
+	@Test
+	public void testExplainTimeoutRecognizesSharedCancellationCause() {
+		assertExplainTimeoutPreservesPartialPlan(interrupted -> {
+			var cancellation = new QueryInterruptedException("reading interrupted", interrupted);
+			cancellation.addSuppressed(new QueryInterruptedException("closing interrupted", interrupted));
+			return cancellation;
+		});
+	}
+
+	@Test
+	public void testExplainDoesNotHideInterruptionBeforeItsOwnDeadline() {
+		EvaluationStrategy strategy = mock(EvaluationStrategy.class);
+		QueryInterruptedException foreign = new QueryInterruptedException("cancelled by another owner");
+		when(strategy.precompile(any())).thenThrow(foreign);
+		Sail sail = createExplainTestSail(strategy);
+		try (SailConnection connection = sail.getConnection()) {
+			TupleExpr expression = new StatementPattern(new Var("s"), new Var("p"), new Var("o"));
+			assertSame(foreign, assertThrows(SailException.class,
+					() -> connection.explain(Explanation.Level.Executed, expression, null,
+							EmptyBindingSet.getInstance(), false, 10)).getCause());
+		} finally {
+			sail.shutDown();
+		}
+	}
+
+	private void assertExplainTimeoutPreservesPartialPlan(Function<InterruptedException, RuntimeException> interrupt) {
+		EvaluationStrategy strategy = mock(EvaluationStrategy.class);
+		AtomicInteger rows = new AtomicInteger();
+		AtomicInteger closes = new AtomicInteger();
+		when(strategy.precompile(any())).thenAnswer(call -> {
+			TupleExpr node = call.getArgument(0);
+			TupleExpr visibleNode = node instanceof QueryRoot root ? root.getArg() : node;
+			QueryEvaluationStep step = bindings -> new CloseableIteration<BindingSet>() {
+				@Override
+				public boolean hasNext() {
+					if (rows.get() == 0) {
+						return true;
+					}
+					try {
+						new CountDownLatch(1).await(10, TimeUnit.SECONDS);
+						throw new AssertionError("explanation timeout did not interrupt evaluation");
+					} catch (InterruptedException interrupted) {
+						Thread.currentThread().interrupt();
+						throw interrupt.apply(interrupted);
+					}
+				}
+
+				@Override
+				public BindingSet next() {
+					visibleNode.setResultSizeActual(rows.incrementAndGet());
+					return EmptyBindingSet.getInstance();
+				}
+
+				@Override
+				public void close() {
+					closes.incrementAndGet();
+				}
+			};
+			return step;
+		});
+		Sail sail = createExplainTestSail(strategy);
+		try (SailConnection connection = sail.getConnection()) {
+			TupleExpr expression = new StatementPattern(new Var("s"), new Var("p"), new Var("o"));
+			Explanation explanation = connection.explain(Explanation.Level.Executed, expression, null,
+					EmptyBindingSet.getInstance(), false, 1);
+			assertThat(explanation.toGenericPlanNode().getTimedOut()).isTrue();
+			assertThat(explanation.toGenericPlanNode().getType()).isEqualTo("StatementPattern");
+			assertThat(explanation.toGenericPlanNode().getResultSizeActual()).isEqualTo(1);
+			assertThat(explanation.toString()).startsWith("Timed out while retrieving explanation!");
+			assertThat(rows).hasValue(1);
+			assertThat(closes).hasValue(1);
+			assertThat(Thread.currentThread().isInterrupted()).isFalse();
 		} finally {
 			sail.shutDown();
 		}

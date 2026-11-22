@@ -613,6 +613,28 @@ class GenericPlanNodeTest {
 	}
 
 	@Test
+	void timeoutWarningComesBeforePhysicalPlanAndPullTime() {
+		String line = System.lineSeparator();
+		GenericPlanNode node = new GenericPlanNode("Projection");
+		node.setPhysicalPlanPrelude("Physical plan");
+		node.setQueryPullTimeActual(3.5);
+		Explanation explanation = new ExplanationImpl(node, true, null);
+
+		String warning = "Timed out while retrieving explanation! Explanation may be incomplete!";
+		String text = explanation.toString();
+		assertTrue(text.startsWith(warning + line), text);
+		assertTrue(text.contains("Physical plan" + line + line + "Query explanation" + line
+				+ "Query pull time: 3.5ms" + line + line + "Projection"), text);
+		assertEquals(text.indexOf(warning), text.lastIndexOf(warning));
+		var json = JsonMapper.builder().build().readTree(explanation.toJson());
+		assertTrue(json.path("timedOut").asBoolean());
+		assertEquals(3.5, json.path("queryPullTimeActual").asDouble());
+		String dot = explanation.toDot();
+		assertTrue(dot.startsWith("digraph Explanation {" + line + "   label=\"" + warning
+				+ "\\nQuery pull time: 3.5ms\";" + line + "   labelloc=t;"), dot);
+	}
+
+	@Test
 	void toJsonRoundTripsPhysicalPlanPreludeForWorkbenchTextReconstruction() {
 		String prelude = "LMDB native physical plan (executed)" + System.lineSeparator()
 				+ "  invocation[0]:" + System.lineSeparator()

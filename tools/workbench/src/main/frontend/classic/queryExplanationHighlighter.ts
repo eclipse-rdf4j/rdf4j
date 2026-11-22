@@ -1291,14 +1291,18 @@ namespace workbench {
             return result;
         }
 
+        function timeoutHeading(): FormattedLine[] {
+            return [textLine('Timed out while retrieving explanation! Explanation may be incomplete!'),
+                textLine('You can change the timeout by setting .setMaxExecutionTime(...) on your query.'),
+                textLine('')];
+        }
+
         function formatLines(node: QueryPlanNode, depth: number, ordered: boolean,
                              level: ExplainLevel, lineSeparator: string,
                              hiddenProperties?: string[]): FormattedLine[] {
             var result: FormattedLine[] = [];
-            if (node.timedOut) {
-                result.push(textLine('Timed out while retrieving explanation! Explanation may be incomplete!'));
-                result.push(textLine('You can change the timeout by setting .setMaxExecutionTime(...) on your query.'));
-                result.push(textLine(''));
+            if (depth > 0 && node.timedOut) {
+                result = timeoutHeading();
             }
             result = result.concat(splitPhysicalLines(nodeLine(node, level, hiddenProperties), lineSeparator));
             var strategyDecisions = node.strategyDecisions || [];
@@ -1489,6 +1493,9 @@ namespace workbench {
                 var normalizedPrelude = prelude.replace(/\r\n|\r/g, '\n');
                 var preludeLines = splitPhysicalLines(textLine(normalizedPrelude), '\n');
                 lines = preludeLines.concat([textLine(''), textLine('Query explanation')], lines);
+            }
+            if (plan && plan.timedOut) {
+                lines = timeoutHeading().concat(lines);
             }
             var text = '';
             for (var i = 0; i < lines.length; i++) {

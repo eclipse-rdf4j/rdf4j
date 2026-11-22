@@ -681,6 +681,9 @@ public class GenericPlanNode {
 
 	private static final int prettyBoxDrawingType = 0;
 
+	private static final String TIMEOUT_WARNING = "Timed out while retrieving explanation! Explanation may be incomplete!";
+	private static final String TIMEOUT_HELP = "You can change the timeout by setting .setMaxExecutionTime(...) on your query.";
+
 	/**
 	 * Human readable string. Do not attempt to parse this.
 	 *
@@ -692,10 +695,14 @@ public class GenericPlanNode {
 		if (getQueryPullTimeActual() != null) {
 			logical = queryPullTimeSummary() + newLine + newLine + logical;
 		}
-		if (physicalPlanPrelude == null || physicalPlanPrelude.isEmpty()) {
-			return logical;
+		if (physicalPlanPrelude != null && !physicalPlanPrelude.isEmpty()) {
+			logical = physicalPlanPrelude + newLine + newLine + "Query explanation" + newLine + logical;
 		}
-		return physicalPlanPrelude + newLine + newLine + "Query explanation" + newLine + logical;
+		return Boolean.TRUE.equals(timedOut) ? timeoutHeading() + logical : logical;
+	}
+
+	private static String timeoutHeading() {
+		return TIMEOUT_WARNING + newLine + TIMEOUT_HELP + newLine + newLine;
 	}
 
 	public String getPhysicalPlanPrelude() {
@@ -716,11 +723,8 @@ public class GenericPlanNode {
 		StringBuilder sb = new StringBuilder();
 		List<GenericPlanNode> displayPlans = ordered ? orderedPlansForDisplay() : plans;
 
-		if (timedOut != null && timedOut) {
-			sb.append("Timed out while retrieving explanation! Explanation may be incomplete!").append(newLine);
-			sb.append("You can change the timeout by setting .setMaxExecutionTime(...) on your query.")
-					.append(newLine)
-					.append(newLine);
+		if (prettyBoxDrawingType > 0 && Boolean.TRUE.equals(timedOut)) {
+			sb.append(timeoutHeading());
 		}
 
 		sb.append(type);
@@ -1590,8 +1594,17 @@ public class GenericPlanNode {
 
 	public String toDot() {
 		String nodes = toDotInternal(getMaxResultSizeActual(this), getMaxTotalTime(this), getMaxSelfTime(this));
-		return getQueryPullTimeActual() == null ? nodes
-				: "   label=\"" + queryPullTimeSummary() + "\";" + newLine + nodes;
+		boolean timeout = Boolean.TRUE.equals(timedOut);
+		boolean hasPullTime = getQueryPullTimeActual() != null;
+		if (!timeout && !hasPullTime) {
+			return nodes;
+		}
+		String label = timeout ? TIMEOUT_WARNING : "";
+		if (hasPullTime) {
+			label += (timeout ? "\\n" : "") + queryPullTimeSummary();
+		}
+		return "   label=\"" + label + "\";" + newLine
+				+ (timeout ? "   labelloc=t;" + newLine : "") + nodes;
 	}
 
 	private String queryPullTimeSummary() {
