@@ -56,6 +56,18 @@ import org.junit.jupiter.api.Test;
 public class QueryModelTreeToGenericPlanNodeTest {
 
 	@Test
+	public void telemetryPreservesUnavailableCountersInsteadOfReportingMeasuredZero() {
+		StatementPattern pattern = new StatementPattern(Var.of("s"), Var.of("p"), Var.of("o"));
+		GenericPlanNode plan = convert(pattern, Explanation.Level.Telemetry);
+		assertThat(plan.getSourceRowsScannedActual()).isNull();
+		assertThat(plan.getHasNextCallCountActual()).isNull();
+		assertThat(plan.getJoinRightIteratorsCreatedActual()).isNull();
+
+		pattern.setSourceRowsScannedActual(0);
+		assertThat(convert(pattern, Explanation.Level.Telemetry).getSourceRowsScannedActual()).isZero();
+	}
+
+	@Test
 	public void includesRuntimeTelemetryForAllPlanNodes() {
 		TupleExpr tupleExpr = new Join(
 				new StatementPattern(Var.of("s"), Var.of("p"), Var.of("o")),

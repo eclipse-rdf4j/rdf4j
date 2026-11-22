@@ -43,6 +43,7 @@ import java.util.stream.Collectors;
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.common.iteration.CloseableIteratorIteration;
 import org.eclipse.rdf4j.common.iteration.EmptyIteration;
+import org.eclipse.rdf4j.common.iteration.IterationWrapper;
 import org.eclipse.rdf4j.common.order.StatementOrder;
 import org.eclipse.rdf4j.common.transaction.DataImportMetrics;
 import org.eclipse.rdf4j.common.transaction.IsolationLevel;
@@ -62,6 +63,7 @@ import org.eclipse.rdf4j.model.vocabulary.RDFS;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.Dataset;
 import org.eclipse.rdf4j.query.QueryEvaluationException;
+import org.eclipse.rdf4j.query.QueryInterruptedException;
 import org.eclipse.rdf4j.query.algebra.Exists;
 import org.eclipse.rdf4j.query.algebra.Filter;
 import org.eclipse.rdf4j.query.algebra.InsertData;
@@ -1383,6 +1385,156 @@ public class SnapshotSailStoreTest {
 			assertSame(failure, assertThrows(IllegalStateException.class,
 					() -> connection.explain(Explanation.Level.Telemetry, tupleExpr, null,
 							EmptyBindingSet.getInstance(), false, 10)));
+		} finally {
+			sail.shutDown();
+		}
+	}
+
+	@Test
+	public void testExplainTimeoutDoesNotSwallowARealFailure() {
+		IllegalStateException failure = new IllegalStateException("real failure after timeout signal");
+		EvaluationStrategy strategy = mock(EvaluationStrategy.class);
+		when(strategy.precompile(any())).thenReturn(bindings -> new CloseableIteration<BindingSet>() {
+			@Override
+			public boolean hasNext() {
+				try {
+					new CountDownLatch(1).await(10, TimeUnit.SECONDS);
+					throw new AssertionError("explanation timeout did not interrupt evaluation");
+				} catch (InterruptedException interrupted) {
+					throw failure;
+				}
+			}
+
+			@Override
+			public BindingSet next() {
+				throw new NoSuchElementException();
+			}
+
+			@Override
+			public void close() {
+			}
+		});
+		Sail sail = createExplainTestSail(strategy);
+		try (SailConnection connection = sail.getConnection()) {
+			TupleExpr expression = new StatementPattern(new Var("s"), new Var("p"), new Var("o"));
+			assertSame(failure, assertThrows(IllegalStateException.class,
+					() -> connection.explain(Explanation.Level.Executed, expression, null,
+							EmptyBindingSet.getInstance(), false, 1)));
+		} finally {
+			sail.shutDown();
+		}
+	}
+
+	@Test
+	public void testExplainRecognizesIterationWrapperInterruptionDuringNext() {
+		for (Explanation.Level level : List.of(Explanation.Level.Executed, Explanation.Level.Timed)) {
+			AtomicInteger closes = new AtomicInteger();
+			AtomicBoolean nextEntered = new AtomicBoolean();
+			EvaluationStrategy strategy = mock(EvaluationStrategy.class);
+			when(strategy.precompile(any()))
+					.thenReturn(bindings -> interruptedNextIteration(closes, nextEntered, null));
+			Sail sail = createExplainTestSail(strategy);
+			try (SailConnection connection = sail.getConnection()) {
+				TupleExpr expression = new StatementPattern(new Var("s"), new Var("p"), new Var("o"));
+				Explanation explanation = connection.explain(level, expression, null,
+						EmptyBindingSet.getInstance(), false, 1);
+				assertThat(explanation.toGenericPlanNode().getTimedOut()).isTrue();
+				assertThat(nextEntered).isTrue();
+				assertThat(closes).hasValue(1);
+				assertThat(Thread.currentThread().isInterrupted()).isFalse();
+			} finally {
+				sail.shutDown();
+			}
+		}
+	}
+
+	@Test
+	public void testExplainTimeoutDoesNotSwallowNoSuchElementFailureWithInterruptionMessage() {
+		NoSuchElementException failure = new NoSuchElementException("The iteration has been interrupted.");
+		AtomicInteger closes = new AtomicInteger();
+		AtomicBoolean nextEntered = new AtomicBoolean();
+		EvaluationStrategy strategy = mock(EvaluationStrategy.class);
+		when(strategy.precompile(any())).thenReturn(bindings -> interruptedNextIteration(closes, nextEntered, failure));
+		Sail sail = createExplainTestSail(strategy);
+		try (SailConnection connection = sail.getConnection()) {
+			TupleExpr expression = new StatementPattern(new Var("s"), new Var("p"), new Var("o"));
+			assertThat(assertThrows(NoSuchElementException.class,
+					() -> connection.explain(Explanation.Level.Executed, expression, null,
+							EmptyBindingSet.getInstance(), false, 1))).isSameAs(failure).hasNoCause();
+			assertThat(nextEntered).isTrue();
+			assertThat(closes).hasValue(1);
+		} finally {
+			sail.shutDown();
+		}
+	}
+
+	private CloseableIteration<BindingSet> interruptedNextIteration(AtomicInteger closes, AtomicBoolean nextEntered,
+			NoSuchElementException failure) {
+		IterationWrapper<BindingSet> wrapped = new IterationWrapper<>(
+				new CloseableIteratorIteration<>(List.<BindingSet>of(EmptyBindingSet.getInstance()).iterator())) {
+		};
+		return new CloseableIteration<>() {
+			@Override
+			public boolean hasNext() {
+				return true;
+			}
+
+			@Override
+			public BindingSet next() {
+				nextEntered.set(true);
+				try {
+					new CountDownLatch(1).await(10, TimeUnit.SECONDS);
+					throw new AssertionError("explanation timeout did not interrupt next()");
+				} catch (InterruptedException interrupted) {
+					Thread.currentThread().interrupt();
+				}
+				if (failure != null) {
+					throw failure;
+				}
+				return wrapped.next();
+			}
+
+			@Override
+			public void close() {
+				closes.incrementAndGet();
+				wrapped.close();
+			}
+		};
+	}
+
+	@Test
+	public void testExplainTimeoutDoesNotSwallowSuppressedCloseFailure() {
+		QueryInterruptedException interruption = new QueryInterruptedException("interrupted evaluation");
+		IllegalStateException cleanupFailure = new IllegalStateException("real cleanup failure");
+		EvaluationStrategy strategy = mock(EvaluationStrategy.class);
+		when(strategy.precompile(any())).thenReturn(bindings -> new CloseableIteration<BindingSet>() {
+			@Override
+			public boolean hasNext() {
+				try {
+					new CountDownLatch(1).await(10, TimeUnit.SECONDS);
+					throw new AssertionError("explanation timeout did not interrupt evaluation");
+				} catch (InterruptedException interrupted) {
+					throw interruption;
+				}
+			}
+
+			@Override
+			public BindingSet next() {
+				throw new NoSuchElementException();
+			}
+
+			@Override
+			public void close() {
+				throw cleanupFailure;
+			}
+		});
+		Sail sail = createExplainTestSail(strategy);
+		try (SailConnection connection = sail.getConnection()) {
+			TupleExpr expression = new StatementPattern(new Var("s"), new Var("p"), new Var("o"));
+			assertSame(interruption, assertThrows(QueryInterruptedException.class,
+					() -> connection.explain(Explanation.Level.Executed, expression, null,
+							EmptyBindingSet.getInstance(), false, 1)));
+			assertThat(interruption.getSuppressed()).containsExactly(cleanupFailure);
 		} finally {
 			sail.shutDown();
 		}

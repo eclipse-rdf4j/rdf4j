@@ -17,6 +17,7 @@ import java.util.ArrayList;
 import java.util.Collections;
 import java.util.Comparator;
 import java.util.HashMap;
+import java.util.IdentityHashMap;
 import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
@@ -46,6 +47,7 @@ import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.Dataset;
 import org.eclipse.rdf4j.query.QueryEvaluationException;
+import org.eclipse.rdf4j.query.QueryInterruptedException;
 import org.eclipse.rdf4j.query.algebra.QueryModelNode;
 import org.eclipse.rdf4j.query.algebra.QueryRoot;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
@@ -530,6 +532,31 @@ public abstract class SailSourceConnection extends AbstractNotifyingSailConnecti
 		return tupleExpr;
 	}
 
+	private static boolean isCancellation(Throwable failure) {
+		return isCancellation(failure, Collections.newSetFromMap(new IdentityHashMap<>()));
+	}
+
+	private static boolean isCancellation(Throwable failure, Set<Throwable> visited) {
+		boolean cancellation = false;
+		for (; failure != null; failure = failure.getCause()) {
+			// Be conservative for an unexpectedly large or cyclic exception graph: never hide an unclassified failure.
+			if (visited.size() >= 64 || !visited.add(failure)) {
+				return false;
+			}
+			if (failure instanceof QueryInterruptedException || failure instanceof InterruptedException
+					|| failure instanceof java.util.concurrent.CancellationException) {
+				cancellation = true;
+			}
+			// A genuine close failure can be suppressed on the cancellation thrown while reading the iteration.
+			for (Throwable suppressed : failure.getSuppressed()) {
+				if (!isCancellation(suppressed, visited)) {
+					return false;
+				}
+			}
+		}
+		return cancellation;
+	}
+
 	private boolean runQueryForExplain(TupleExpr tupleExpr, Dataset dataset, BindingSet bindings,
 			boolean includeInferred, int timeoutSeconds) {
 
@@ -565,7 +592,7 @@ public abstract class SailSourceConnection extends AbstractNotifyingSailConnecti
 				if (e instanceof InterruptedException) {
 					Thread.currentThread().interrupt();
 				}
-				if (!timedOut.get()) {
+				if (!timedOut.get() || !isCancellation(e)) {
 					throw e;
 				}
 			}

@@ -504,7 +504,7 @@ class GenericPlanNodeTest {
 	}
 
 	@Test
-	void totalTimeActualPreservesRecordedSelfTimeWhenChildTotalsAreLarger() {
+	void totalTimeActualPreservesObservedParentWhenChildTotalsAreLarger() {
 		GenericPlanNode parent = new GenericPlanNode("Join");
 		parent.setTotalTimeActual(8.0);
 
@@ -514,10 +514,10 @@ class GenericPlanNodeTest {
 		right.setTotalTimeActual(40.0);
 		parent.addPlans(left, right);
 
-		assertEquals(72.0, parent.getTotalTimeActual());
-		assertEquals(8.0, parent.getSelfTimeActual());
+		assertEquals(8.0, parent.getTotalTimeActual());
+		assertNull(parent.getSelfTimeActual());
 		String actual = parent.toString();
-		assertTrue(actual.contains("Join (totalTimeActual=72.0ms, selfTimeActual=8.0ms)"), actual);
+		assertTrue(actual.contains("Join (totalTimeActual=8.0ms)"), actual);
 	}
 
 	@Test

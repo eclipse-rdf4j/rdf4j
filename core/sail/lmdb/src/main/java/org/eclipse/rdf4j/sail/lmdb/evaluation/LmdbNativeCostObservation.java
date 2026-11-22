@@ -36,6 +36,7 @@ final class LmdbNativeCostObservation {
 	private long pulls;
 	private long nanos;
 	private boolean completed;
+	private boolean failed;
 
 	LmdbNativeCostObservation(LmdbNativeAdvisoryLearner learner, LmdbNativeAdvisoryLearner.Key key,
 			double expectedNanos) {
@@ -83,24 +84,35 @@ final class LmdbNativeCostObservation {
 
 	/** The run reached the end of its rows. Reports once. */
 	void completed() {
-		if (!completed) {
+		if (!completed && !failed) {
 			completed = true;
 			learner.observe(key, expectedNanos, nanos);
 		}
 	}
 
-	/** {@code cursor} with its pulls timed; its end completes this observation. */
+	void failed() {
+		failed = true;
+	}
+
+	/** Times cursor pulls; only successful exhaustion and closing trains the learner. */
 	NativeResultCursor observed(NativeResultCursor cursor) {
 		return new NativeResultCursor() {
+			private boolean exhausted;
+
 			@Override
 			public NativeResultRow next() {
 				long started = beginPull();
-				NativeResultRow row = cursor.next();
-				endPull(started);
-				if (row == null) {
-					completed();
+				try {
+					NativeResultRow row = cursor.next();
+					endPull(started);
+					if (row == null) {
+						exhausted = true;
+					}
+					return row;
+				} catch (RuntimeException | Error failure) {
+					failed();
+					throw failure;
 				}
-				return row;
 			}
 
 			@Override
@@ -120,7 +132,15 @@ final class LmdbNativeCostObservation {
 
 			@Override
 			public void close() {
-				cursor.close();
+				try {
+					cursor.close();
+				} catch (RuntimeException | Error failure) {
+					failed();
+					throw failure;
+				}
+				if (exhausted) {
+					completed();
+				}
 			}
 		};
 	}

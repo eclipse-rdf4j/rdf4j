@@ -260,7 +260,7 @@ final class NativeOrderedRowsIteration extends DelayedIteration<BindingSet> impl
 		try {
 			return new CloseableIteratorIteration<>(step.evaluateAll(base, source, cancellation).iterator());
 		} catch (KernelQueryCancelledException cancelled) {
-			if (cancellation.unownedCancellation(cancelled) || cancelled.getSuppressed().length != 0) {
+			if (!cancellation.isCleanOwnedCancellation(cancelled)) {
 				KernelRuntime.rethrowCloseFailure(cancelled);
 			}
 			return new CloseableIteratorIteration<>(List.<BindingSet>of().iterator());
@@ -3101,11 +3101,9 @@ final class NativeBareRowsIteration implements CloseableIteration<BindingSet>, C
 			finish(true);
 			return false;
 		} catch (KernelQueryCancelledException cancelled) {
-			boolean unownedCancellation = cancellation.unownedCancellation(cancelled);
-			boolean hasCleanupFailure = cancelled.getSuppressed().length != 0;
-			Throwable primary = cancellationShouldFail() || unownedCancellation || hasCleanupFailure ? cancelled : null;
-			if (primary != null && cancelled != KernelQueryCancelledException.INSTANCE && !unownedCancellation
-					&& !hasCleanupFailure) {
+			boolean cleanCancellation = cancellation.isCleanOwnedCancellation(cancelled);
+			Throwable primary = cancellationShouldFail() || !cleanCancellation ? cancelled : null;
+			if (primary != null && cancelled != KernelQueryCancelledException.INSTANCE && cleanCancellation) {
 				Throwable ownerCancellation = cancellationFailure();
 				if (ownerCancellation != null) {
 					primary = ownerCancellation;
@@ -3115,10 +3113,7 @@ final class NativeBareRowsIteration implements CloseableIteration<BindingSet>, C
 				failScalarFilterAttempt(primary);
 			}
 			finish(false, primary);
-			if (unownedCancellation) {
-				KernelRuntime.rethrowCloseFailure(cancelled);
-			}
-			if (primary != null && primary.getSuppressed().length != 0) {
+			if (primary != null && !cancellation.isCleanOwnedCancellation(primary)) {
 				// finish() can retain cleanup/control evidence on a normalized owner occurrence rather than the signal
 				// thrown by the cursor. Inspect the outcome that now owns that evidence.
 				KernelRuntime.rethrowCloseFailure(primary);
@@ -3248,6 +3243,9 @@ final class NativeBareRowsIteration implements CloseableIteration<BindingSet>, C
 		closed = true;
 		Throwable failure = closeResources(completed, primary);
 		KernelRuntime.rethrowCloseFailureIfNotPrimary(failure, primary);
+		if (failure instanceof KernelQueryCancelledException && !cancellation.isCleanOwnedCancellation(failure)) {
+			KernelRuntime.rethrowCloseFailure(failure);
+		}
 	}
 
 	private Throwable closeResources(boolean completed, Throwable primary) {
@@ -3436,6 +3434,9 @@ final class NativeUnorderedInput implements AutoCloseable {
 			observing.endPull(started);
 			return advanced;
 		} catch (IOException | RuntimeException | Error failure) {
+			if (observing != null) {
+				observing.failed();
+			}
 			// This input owns the attempt even if its row later restores or replaces the mutable carrier pointer.
 			// Keep a trial-private failure local until its arbiter decides whether it escapes.
 			failScalarFilterAttempt(failure, false);
@@ -3454,6 +3455,9 @@ final class NativeUnorderedInput implements AutoCloseable {
 			observing.endPull(started);
 			return filled;
 		} catch (IOException | RuntimeException | Error failure) {
+			if (observing != null) {
+				observing.failed();
+			}
 			failScalarFilterAttempt(failure, false);
 			throw failure;
 		}
@@ -3672,11 +3676,9 @@ final class NativeRowsIteration implements CloseableIteration<BindingSet>, Coope
 			}
 			return next != null;
 		} catch (KernelQueryCancelledException cancelled) {
-			boolean unownedCancellation = cancellation.unownedCancellation(cancelled);
-			boolean hasCleanupFailure = cancelled.getSuppressed().length != 0;
-			Throwable primary = cancellationShouldFail() || unownedCancellation || hasCleanupFailure ? cancelled : null;
-			if (primary != null && cancelled != KernelQueryCancelledException.INSTANCE && !unownedCancellation
-					&& !hasCleanupFailure) {
+			boolean cleanCancellation = cancellation.isCleanOwnedCancellation(cancelled);
+			Throwable primary = cancellationShouldFail() || !cleanCancellation ? cancelled : null;
+			if (primary != null && cancelled != KernelQueryCancelledException.INSTANCE && cleanCancellation) {
 				Throwable ownerCancellation = cancellationFailure();
 				if (ownerCancellation != null) {
 					primary = ownerCancellation;
@@ -3686,8 +3688,9 @@ final class NativeRowsIteration implements CloseableIteration<BindingSet>, Coope
 				failScalarFilterAttempt(primary);
 			}
 			finish(false, primary);
-			if (cancellation.unownedCancellation(cancelled) || cancelled.getSuppressed().length != 0) {
-				KernelRuntime.rethrowCloseFailure(cancelled);
+			if (primary != null && !cancellation.isCleanOwnedCancellation(primary)) {
+				// Cleanup may attach evidence to the normalized owner signal rather than the cursor's occurrence.
+				KernelRuntime.rethrowCloseFailure(primary);
 			}
 			return false;
 		} catch (IOException e) {
@@ -3939,6 +3942,9 @@ final class NativeRowsIteration implements CloseableIteration<BindingSet>, Coope
 		closed = true;
 		Throwable failure = closeResources(completed, primary);
 		KernelRuntime.rethrowCloseFailureIfNotPrimary(failure, primary);
+		if (failure instanceof KernelQueryCancelledException && !cancellation.isCleanOwnedCancellation(failure)) {
+			KernelRuntime.rethrowCloseFailure(failure);
+		}
 	}
 
 	private Throwable closeResources(boolean completed, Throwable primary) {

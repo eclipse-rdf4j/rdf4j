@@ -85,7 +85,8 @@ public class IterationWrapper<E> extends AbstractCloseableIteration<E> implement
 			throw new NoSuchElementException("The iteration has been closed.");
 		} else if (Thread.currentThread().isInterrupted()) {
 			close();
-			throw new NoSuchElementException("The iteration has been interrupted.");
+			// Retain the Iterator contract while identifying interruption for query timeout owners.
+			throw new NoSuchElementException("The iteration has been interrupted.", new InterruptedException());
 		}
 		try {
 			return wrappedIter.next();

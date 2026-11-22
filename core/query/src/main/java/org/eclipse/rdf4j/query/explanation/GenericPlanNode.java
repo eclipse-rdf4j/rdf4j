@@ -248,20 +248,12 @@ public class GenericPlanNode {
 	 * @return time in milliseconds that was used to execute the query
 	 */
 	public Double getTotalTimeActual() {
+		if (totalTimeActual != null) {
+			// Child timers can overlap or include work outside this timer. Preserve observed elapsed time.
+			return totalTimeActual;
+		}
 		double childTime = getChildTimeActual();
-		if (totalTimeActual == null) {
-			// Not all nodes have their own totalTimeActual, but it can easily be calculated by looking that the child
-			// plans (recursively)
-			if (childTime > 0) {
-				return childTime;
-			}
-			return null;
-		}
-		if (childTime > totalTimeActual) {
-			return childTime + totalTimeActual;
-		}
-
-		return totalTimeActual;
+		return childTime > 0 ? childTime : null;
 	}
 
 	public void setTotalTimeActual(Double totalTimeActual) {
@@ -613,9 +605,9 @@ public class GenericPlanNode {
 
 		double childTime = getChildTimeActual();
 		if (childTime > totalTimeActual) {
-			return totalTimeActual;
+			return null;
 		}
-		return getTotalTimeActual() - childTime;
+		return totalTimeActual - childTime;
 
 	}
 
