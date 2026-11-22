@@ -32,6 +32,8 @@ import org.eclipse.rdf4j.query.Dataset;
 import org.eclipse.rdf4j.query.QueryEvaluationException;
 import org.eclipse.rdf4j.query.QueryExecutionPolicy;
 import org.eclipse.rdf4j.query.QueryLanguage;
+import org.eclipse.rdf4j.query.QueryParseOptions;
+import org.eclipse.rdf4j.query.QueryParseOptions.GraphAlgebraMode;
 import org.eclipse.rdf4j.query.algebra.Join;
 import org.eclipse.rdf4j.query.algebra.QueryRoot;
 import org.eclipse.rdf4j.query.algebra.StatementPattern;
@@ -177,7 +179,9 @@ class LmdbIndexAwareJoinOptimizerTest {
 	}
 
 	private TupleExpr optimize(String query, String indexes) throws IOException {
-		return optimize(QueryParserUtil.parseTupleQuery(QueryLanguage.SPARQL, query, null).getTupleExpr(), indexes);
+		// A standalone parse selects the legacy GRAPH translation; these plans are costed on the explicit Graph node.
+		return optimize(QueryParserUtil.parseTupleQuery(QueryLanguage.SPARQL, query, null,
+				QueryParseOptions.DEFAULT.withGraphAlgebraMode(GraphAlgebraMode.GRAPH)).getTupleExpr(), indexes);
 	}
 
 	private TupleExpr optimize(TupleExpr expr, String indexes) throws IOException {
