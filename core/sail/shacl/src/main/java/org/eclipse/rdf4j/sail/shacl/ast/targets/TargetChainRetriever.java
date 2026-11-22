@@ -32,6 +32,7 @@ import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.Dataset;
 import org.eclipse.rdf4j.query.MalformedQueryException;
 import org.eclipse.rdf4j.query.QueryLanguage;
+import org.eclipse.rdf4j.query.QueryParseOptions;
 import org.eclipse.rdf4j.query.algebra.BindingSetAssignment;
 import org.eclipse.rdf4j.query.algebra.QueryRoot;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.ArrayBindingBasedQueryEvaluationContext;
@@ -42,6 +43,7 @@ import org.eclipse.rdf4j.query.impl.SimpleBinding;
 import org.eclipse.rdf4j.query.parser.ParsedQuery;
 import org.eclipse.rdf4j.query.parser.QueryParserFactory;
 import org.eclipse.rdf4j.query.parser.QueryParserRegistry;
+import org.eclipse.rdf4j.query.parser.QueryParserUtil;
 import org.eclipse.rdf4j.sail.InterruptedSailException;
 import org.eclipse.rdf4j.sail.SailConnection;
 import org.eclipse.rdf4j.sail.shacl.ast.SparqlFragment;
@@ -74,6 +76,7 @@ public class TargetChainRetriever implements PlanNode {
 	private final List<StatementMatcher> removedStatementMatchers;
 	private final String queryFragment;
 	private final QueryParserFactory queryParserFactory;
+	private final QueryParseOptions parseOptions;
 	private final ConstraintComponent.Scope scope;
 	private final Resource[] dataGraph;
 	private final Dataset dataset;
@@ -123,12 +126,14 @@ public class TargetChainRetriever implements PlanNode {
 		this.queryParserFactory = QueryParserRegistry.getInstance()
 				.get(QueryLanguage.SPARQL)
 				.get();
+		this.parseOptions = QueryParserUtil.parserOptions(queryParserFactory, QueryParseOptions.DEFAULT,
+				connectionsGroup.getBaseConnection().supportsGraphAlgebra());
 
 		this.queryStr = "select * where {\n" + this.queryFragment + "\n}";
 
 		this.varNamesInQueryFragment = Set.of(ArrayBindingBasedQueryEvaluationContext
 				.findAllVariablesUsedInQuery(((QueryRoot) queryParserFactory.getParser()
-						.parseQuery(queryStr, null)
+						.parseQuery(queryStr, null, parseOptions)
 						.getTupleExpr())));
 
 		assert !varNamesInQueryFragment.isEmpty();
@@ -282,7 +287,7 @@ public class TargetChainRetriever implements PlanNode {
 									queryFragment + "\n" +
 									"}";
 
-							parsedQuery = queryParserFactory.getParser().parseQuery(query, null);
+							parsedQuery = queryParserFactory.getParser().parseQuery(query, null, parseOptions);
 						}
 
 						List<BindingSet> bulk = readStatementsInBulk(currentVarNames);
