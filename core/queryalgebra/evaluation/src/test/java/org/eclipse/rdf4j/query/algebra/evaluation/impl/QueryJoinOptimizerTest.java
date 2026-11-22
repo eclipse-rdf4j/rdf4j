@@ -68,6 +68,7 @@ import org.eclipse.rdf4j.query.algebra.GroupElem;
 import org.eclipse.rdf4j.query.algebra.Join;
 import org.eclipse.rdf4j.query.algebra.Lateral;
 import org.eclipse.rdf4j.query.algebra.LeftJoin;
+import org.eclipse.rdf4j.query.algebra.Modify;
 import org.eclipse.rdf4j.query.algebra.Order;
 import org.eclipse.rdf4j.query.algebra.OrderElem;
 import org.eclipse.rdf4j.query.algebra.Projection;
@@ -93,6 +94,7 @@ import org.eclipse.rdf4j.query.impl.EmptyBindingSet;
 import org.eclipse.rdf4j.query.impl.MapBindingSet;
 import org.eclipse.rdf4j.query.parser.ParsedQuery;
 import org.eclipse.rdf4j.query.parser.ParsedTupleQuery;
+import org.eclipse.rdf4j.query.parser.ParsedUpdate;
 import org.eclipse.rdf4j.query.parser.QueryParserUtil;
 import org.eclipse.rdf4j.query.parser.sparql.SPARQLParser;
 import org.eclipse.rdf4j.rio.helpers.NTriplesUtil;
@@ -2476,6 +2478,37 @@ public class QueryJoinOptimizerTest extends QueryOptimizerTest {
 		assertThat(Math.abs(order.indexOf("ex:pA") - order.indexOf("ex:pB")))
 				.as("A and B share ?y and must not be separated by the disconnected D, plan was %s", order)
 				.isEqualTo(1);
+	}
+
+	/**
+	 * {@code DELETE WHERE} uses its quad patterns as the WHERE clause, so their statement patterns carry the graph
+	 * variable as context variable. A named-graph scan never returns a statement of the default graph, so such a
+	 * pattern always binds {@code ?g}: two patterns that share only the graph variable are connected, and a cheaper
+	 * pattern that shares nothing with them must not be placed between them.
+	 */
+	@Test
+	public void graphVariableConnectsQuadPatternsBeforeCheaperDisconnectedPattern() {
+		String update = String.join("\n", "",
+				"prefix ex: <ex:> ",
+				"delete where {",
+				"   graph ?g { ?a ex:pA ?b . ?c ex:pB ?d }",
+				"   ?x ex:pX ?y .",
+				"}"
+		);
+
+		for (boolean supportsJoinEstimation : List.of(false, true)) {
+			ParsedUpdate parsedUpdate = QueryParserUtil.parseUpdate(QueryLanguage.SPARQL, update, null);
+			Modify modify = (Modify) parsedUpdate.getUpdateExprs().get(0);
+			QueryRoot root = new QueryRoot(modify.getWhereExpr());
+			new QueryJoinOptimizer(connectedPlanStatistics(supportsJoinEstimation), new EmptyTripleSource())
+					.optimize(root, null, null);
+			List<String> order = statementPredicates(root);
+
+			assertThat(order).hasSize(3);
+			assertThat(Math.abs(order.indexOf("ex:pA") - order.indexOf("ex:pB")))
+					.as("A and B share ?g and must not be separated by the disconnected X, plan was %s", order)
+					.isEqualTo(1);
+		}
 	}
 
 	/**

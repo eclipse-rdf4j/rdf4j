@@ -159,7 +159,8 @@ public class QueryJoinOptimizer implements QueryOptimizer {
 	@Override
 	public void optimize(TupleExpr tupleExpr, Dataset dataset, BindingSet bindings) {
 		JoinVisitor visitor = createJoinVisitor(dataset, bindings);
-		visitor.initialize(tupleExpr, bindings, QueryEvaluationUtility.querySafetySnapshot(tupleExpr, policy));
+		visitor.initialize(tupleExpr, dataset, bindings,
+				QueryEvaluationUtility.querySafetySnapshot(tupleExpr, policy));
 		tupleExpr.visit(visitor);
 	}
 
@@ -251,9 +252,11 @@ public class QueryJoinOptimizer implements QueryOptimizer {
 		 * Binds this visitor to the query it is about to optimize. Done after construction so that subclasses created
 		 * through {@link QueryJoinOptimizer#createJoinVisitor()} can use a plain constructor.
 		 */
-		private void initialize(TupleExpr root, BindingSet bindings,
+		private void initialize(TupleExpr root, Dataset dataset, BindingSet bindings,
 				QueryEvaluationUtility.QuerySafetySnapshot safetySnapshot) {
-			this.bindingAnalysis = QueryAlgebraBindingAnalysis.withBindingValues(root, bindings);
+			// The dataset decides whether a context variable can stay unbound: without it every graph variable of a
+			// quad pattern would count as nullable and stop connecting the patterns that share it.
+			this.bindingAnalysis = QueryAlgebraBindingAnalysis.withBindingValues(root, bindings, dataset);
 			this.currentContext = bindingAnalysis.rootContext();
 			this.boundVars = new PhysicalCostPrefix(currentContext.scopeIdentity(), currentContext.guaranteedNames());
 			this.safetySnapshot = safetySnapshot;
