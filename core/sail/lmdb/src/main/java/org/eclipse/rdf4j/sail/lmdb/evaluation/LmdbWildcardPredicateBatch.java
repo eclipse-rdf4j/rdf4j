@@ -14,6 +14,7 @@ package org.eclipse.rdf4j.sail.lmdb.evaluation;
 import static org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbNativeAggregateCompiler.UNKNOWN;
 
 import java.io.IOException;
+import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.OptionalDouble;
 import java.util.OptionalLong;
@@ -95,46 +96,90 @@ final class LmdbWildcardPredicateBatch {
 		if (shape == null) {
 			return null;
 		}
-		LmdbNativeWork work = estimatePhysicalWork(shape, row, false);
-		double rows = LmdbNativeWork.rowsOut(shape.prefix, row, row.boundMask());
-		String strategy = shape.demand == Demand.PAYLOAD ? STRATEGY : REDUCED_STRATEGY;
 		ShapeCost cost = shapeCost(shape, row);
+		LmdbNativeWork work = estimatePhysicalWork(shape, row, false, null);
+		String strategy = shape.demand == Demand.PAYLOAD ? STRATEGY : REDUCED_STRATEGY;
+		double rows = cost == null ? LmdbNativeWork.rowsOut(join, row, row.boundMask()) : cost.outputRows();
 		return new LmdbNativeStrategyProposal<>(() -> shape.open(row, capacity), work,
 				LmdbNativeWork.ZERO, rows, strategy, () -> {
-				}).withPlanningWork(estimatePhysicalWork(shape, row, true))
-						// the legacy interval alone, bridged as scanned rows, lost every small-store decision to the
-						// honestly priced sequential path once that path's rows stopped being the pseudo-domain
-						// (2026-11-03)
-						.withOptionalCostQuote(cost == null ? null
-								: LmdbNativeCostQuote.streaming(cost.vector(), cost.outputRows()));
+				}).withPlanningWork(estimatePhysicalWork(shape, row, true, cost))
+						.withOptionalCostQuote(cost == null ? null : cost.quote(capacity));
 	}
 
-	/** The streaming cost of a wildcard shape behind a prefix, the pairs or rows it delivers and the rows it emits. */
-	private record ShapeCost(LmdbNativeCostVector vector, double delivered, double outputRows) {
+	/** Each wildcard stage fills its own buffer before the next stage or continuation consumes it. */
+	private record ShapeCost(ShapeCost prefix, LmdbNativeCostVector edgeWork, double edgeRows,
+			LmdbNativeCostVector suffixWork,
+			double outputRows) {
+		LmdbNativeCostVector vector() {
+			LmdbNativeCostVector work = prefix == null ? edgeWork : prefix.vector().plus(edgeWork);
+			return suffixWork == null ? work : work.plus(suffixWork);
+		}
+
+		LmdbNativeCostQuote quote(int capacity) {
+			var chunks = capacity > 1 ? chunks(capacity, 0D) : null;
+			return chunks == null ? LmdbNativeCostQuote.streaming(vector(), outputRows)
+					: new LmdbNativeCostQuote(LmdbNativeCostVector.zero(), LmdbNativeCostVector.zero(), outputRows,
+							false, false, chunks);
+		}
+
+		private LmdbNativeCostQuote.ChunkedWork chunks(int capacity, double consumerRows) {
+			if (!(outputRows > 0D) || !Double.isFinite(outputRows) || !Double.isFinite(edgeRows)) {
+				return null;
+			}
+			var edgeChunk = new LmdbNativeCostQuote.ChunkedWork(edgeWork, edgeRows, capacity);
+			if (suffixWork == null && consumerRows > 0D) {
+				edgeChunk = edgeChunk.withBufferedConsumer(consumerRows, capacity);
+			} else if (suffixWork != null) {
+				var suffixChunk = new LmdbNativeCostQuote.ChunkedWork(suffixWork, outputRows, capacity);
+				if (consumerRows > 0D) {
+					suffixChunk = suffixChunk.withBufferedConsumer(consumerRows, capacity);
+				}
+				edgeChunk = edgeChunk.withBufferedConsumer(outputRows, capacity).withIndependentPhase(suffixChunk);
+			}
+			if (prefix == null) {
+				return edgeChunk;
+			}
+			var prefixChunk = prefix.chunks(capacity, edgeRows);
+			return prefixChunk == null ? null : edgeChunk.withIndependentPhase(prefixChunk);
+		}
 	}
 
 	/**
-	 * The physical cost of {@code shape} behind a prefix: the prefix in batch form, one plane probe per prefix row and
-	 * predicate plane (sorted batch lookups), the join filters per delivered unit, and a batch row per delivered unit:
-	 * a statement for the payload demand, a (node, predicate) pair for the pair demands, one per prefix row for the
-	 * node and predicate set demands; no neighbour is decoded except by the payload. Null for the single-pattern sweep
-	 * and when the shape, the predicate catalog, the prefix rows or the node statistics are unknown.
+	 * Price the prefix as it opens, including earlier wildcard stages. A lane with a bound predicate probes only its
+	 * own plane. An unconstrained lane can reach every plane. The rest of the work follows the delivered statements or
+	 * reduced pairs, including correlated probes for any continuation.
 	 */
 	private static ShapeCost shapeCost(Shape shape, RowState row) {
-		if (shape == null || shape.scanAll || row.source == null) {
+		if (shape == null || row.source == null) {
 			return null;
 		}
 		long boundMask = row.boundMask();
-		double prefixRows = LmdbNativeWork.rowsOut(shape.prefix, row, boundMask);
+		if (shape.scanAll) {
+			if (shape.suffix == null) {
+				return null;
+			}
+			double edges = LmdbNativeWork.rowsOut(shape.wildcard, row, boundMask);
+			return Double.isFinite(edges) ? priceContinuation(shape, row, null,
+					LmdbNativePlanExecutionProfile.profile(shape.wildcard, row, boundMask,
+							LmdbNativePlanExecutionProfile.Mode.BATCH)
+							.plus(estimateFilterWork(shape, edges,
+									LmdbNativeCostVectors.rowBounds(shape.wildcard, row, boundMask))),
+					edges) : null;
+		}
+		ShapeCost batchedPrefix = shapeCost(matchPrefix(shape.prefix, row), row);
+		double prefixRows = batchedPrefix == null ? LmdbNativeWork.rowsOut(shape.prefix, row, boundMask)
+				: batchedPrefix.outputRows();
 		OptionalLong predicates = row.source.predicateDomainCardinality();
 		if (!Double.isFinite(prefixRows) || prefixRows < 0D || predicates.isEmpty()) {
 			return null;
 		}
+		long inputMask = boundMask | SlotPlan.assuredMask(shape.prefix);
+		boolean predicateBound = (inputMask & (1L << shape.predicateSlot)) != 0L;
 		double perNode;
 		double outputRows;
 		switch (shape.demand) {
 		case PAYLOAD -> {
-			OptionalDouble degree = row.source.meanNodeDegree(shape.bySubject);
+			OptionalDouble degree = payloadFanOut(shape, row, inputMask, predicateBound);
 			if (degree.isEmpty()) {
 				return null;
 			}
@@ -142,7 +187,7 @@ final class LmdbWildcardPredicateBatch {
 			outputRows = prefixRows * perNode;
 		}
 		case PAIR_PRESENCE, PAIR_MULTIPLICITY -> {
-			perNode = row.source.meanNodePredicates(shape.bySubject).orElse(1D);
+			perNode = predicateBound ? 1D : row.source.meanNodePredicates(shape.bySubject).orElse(1D);
 			outputRows = prefixRows * perNode;
 		}
 		case PREDICATE_ANY -> {
@@ -156,19 +201,96 @@ final class LmdbWildcardPredicateBatch {
 		default -> throw new IllegalStateException("unknown demand " + shape.demand);
 		}
 		double delivered = prefixRows * perNode;
-		LmdbNativeCostVector streaming = LmdbNativePlanExecutionProfile
-				.profile(shape.prefix, row, boundMask, LmdbNativePlanExecutionProfile.Mode.BATCH)
-				.plus(LmdbNativeCostVectors.perRow(LmdbNativeCostVector.Feature.HASH_PROBE,
-						prefixRows * predicates.getAsLong()))
-				.plus(LmdbNativeCostVectors.perRow(LmdbNativeCostVector.Feature.BATCH_ROW, delivered));
-		if (shape.filters.length > 0) {
-			streaming = streaming.plus(LmdbNativeCostVectors.perRow(LmdbNativeCostVector.Feature.INTERPRETED_ROW,
-					delivered * shape.filters.length));
+		LmdbNativeCostVector prefixWork = batchedPrefix == null
+				? LmdbNativePlanExecutionProfile.profile(shape.prefix, row, boundMask,
+						LmdbNativePlanExecutionProfile.Mode.BATCH)
+				: LmdbNativeCostVector.zero();
+		LmdbNativeWork.RowBounds inputBounds = LmdbNativeCostVectors.rowBounds(shape.prefix, row, boundMask);
+		LmdbNativeWork.RowBounds deliveredBounds = new LmdbNativeWork.RowBounds(0D,
+				LmdbNativeCostVector.upperMultiply(inputBounds.high(),
+						LmdbNativeCostVectors.rowBounds(shape.wildcard, row, inputMask).high()));
+		double planes = predicateBound ? 1D : predicates.getAsLong();
+		// Repeated input lanes can share a lookup. Fan-out statistics set expectations, not work proofs.
+		LmdbNativeCostVector streaming = prefixWork
+				.plus(LmdbNativeCostVectors.boundedRows(LmdbNativeCostVector.Feature.HASH_PROBE, prefixRows * planes,
+						new LmdbNativeWork.RowBounds(0D,
+								LmdbNativeCostVector.upperMultiply(inputBounds.high(), planes))))
+				.plus(LmdbNativeCostVectors.boundedRows(LmdbNativeCostVector.Feature.BATCH_ROW, delivered,
+						deliveredBounds))
+				.plus(estimateFilterWork(shape, delivered, deliveredBounds));
+		if (shape.demand == Demand.PAYLOAD && shape.adaptiveDirection) {
+			double candidates = prefixRows * candidateFanOut(shape, row, predicateBound, perNode);
+			streaming = streaming.plus(LmdbNativeCostVectors.boundedRows(
+					LmdbNativeCostVector.Feature.MEMBERSHIP_TEST, candidates,
+					new LmdbNativeWork.RowBounds(0D, Double.POSITIVE_INFINITY)));
 		}
-		return new ShapeCost(streaming, delivered, outputRows);
+		return shape.suffix == null ? new ShapeCost(batchedPrefix, streaming, outputRows, null, outputRows)
+				: priceContinuation(shape, row, batchedPrefix, streaming, delivered);
 	}
 
-	private static LmdbNativeWork estimatePhysicalWork(Shape shape, RowState row, boolean planning) {
+	private static OptionalDouble payloadFanOut(Shape shape, RowState row, long inputMask, boolean predicateBound) {
+		// A rooted shape with no input slots has a constant endpoint. Its captured cardinality describes that
+		// particular root, which can carry many more edges than the average node in the snapshot.
+		if ((shape.wildcard.producedMask & inputMask) == 0L && Double.isFinite(shape.wildcard.staticEstimate)) {
+			return OptionalDouble.of(Math.max(0D, shape.wildcard.staticEstimate));
+		}
+		OptionalDouble degree = row.source.meanNodeDegree(shape.bySubject);
+		if (!predicateBound || degree.isEmpty()) {
+			return degree;
+		}
+		// These means share their denominator. The ratio is the fan-out of an occupied (node, predicate) run.
+		// Without a hit-rate estimate, use that conditional fan-out in the bound plane.
+		double predicatesPerNode = row.source.meanNodePredicates(shape.bySubject).orElse(1D);
+		return OptionalDouble.of(degree.getAsDouble() / Math.max(1D, predicatesPerNode));
+	}
+
+	/** Estimate the candidates tested against the other bound endpoint, independently of the rows emitted. */
+	private static double candidateFanOut(Shape shape, RowState row, boolean predicateBound, double fallback) {
+		PatternPlan pattern = shape.wildcard;
+		boolean fixedSubject = pattern.s.isConstant();
+		if (predicateBound || fixedSubject == pattern.o.isConstant() || !Double.isFinite(pattern.staticEstimate)) {
+			return fallback;
+		}
+		// The adaptive opener compares the fixed root's run lengths with the number of plane keys on the
+		// other side before its input values arrive. Means on that side share a common node denominator:
+		// statements × (predicates per node / statements per node) estimates its total plane keys.
+		double variableDegree = row.source.meanNodeDegree(!fixedSubject).orElse(Double.NaN);
+		double variablePredicates = row.source.meanNodePredicates(!fixedSubject).orElse(Double.NaN);
+		double variableKeys = LmdbNativeCostVectors.statementCount(row) * variablePredicates / variableDegree;
+		if (!(variableDegree > 0D) || !Double.isFinite(variableKeys)) {
+			return fallback;
+		}
+		double fixedDegree = Math.max(0D, pattern.staticEstimate);
+		return fixedDegree <= variableKeys ? fixedDegree : variableDegree;
+	}
+
+	private static LmdbNativeCostVector estimateFilterWork(Shape shape, double rows, LmdbNativeWork.RowBounds bounds) {
+		return shape.filters.length == 0 ? LmdbNativeCostVector.zero()
+				: LmdbNativeCostVectors
+						.repeated(LmdbNativeCostVector.point(LmdbNativeCostVector.Feature.INTERPRETED_ROW,
+								shape.filters.length), rows, bounds);
+	}
+
+	private static ShapeCost priceContinuation(Shape shape, RowState row, ShapeCost prefix,
+			LmdbNativeCostVector edgeWork,
+			double edges) {
+		if (!Double.isFinite(edges)) {
+			return null;
+		}
+		long edgeMask = row.boundMask() | shape.edgeMask();
+		double outputRows = edges * LmdbNativeWork.rowsOut(shape.suffix, row, edgeMask);
+		LmdbNativeCostVector probes = LmdbNativePlanExecutionProfile.profile(shape.suffix, row, edgeMask,
+				LmdbNativePlanExecutionProfile.Mode.SEQUENTIAL);
+		LmdbNativeCostVector suffixWork = LmdbNativeCostVectors.repeated(probes, edges,
+				new LmdbNativeWork.RowBounds(0D, Double.POSITIVE_INFINITY))
+				.plus(LmdbNativeCostVectors.perRow(LmdbNativeCostVector.Feature.BATCH_ROW, outputRows, row));
+		return new ShapeCost(prefix, edgeWork, edges, suffixWork, outputRows);
+	}
+
+	private static LmdbNativeWork estimatePhysicalWork(Shape shape, RowState row, boolean planning, ShapeCost cost) {
+		if (shape.suffix != null && (!planning || cost == null)) {
+			return LmdbNativeWork.UNKNOWN;
+		}
 		long boundMask = row.boundMask();
 		double rows = LmdbNativeWork.rowsOut(shape.prefix, row, boundMask);
 		LmdbNativeWork prefixWork = planning ? LmdbNativeWork.planning(shape.prefix, row, boundMask)
@@ -182,9 +304,13 @@ final class LmdbWildcardPredicateBatch {
 				? LmdbNativeWork.exact(LmdbNativeWork.SEEK + Math.max(0D, shape.wildcard.staticEstimate))
 				: planning ? LmdbNativeWork.planning(shape.wildcard, row, boundMask | shape.prefix.producedMask())
 						: shape.wildcard.estimateWork(row, boundMask | shape.prefix.producedMask());
-		return !Double.isNaN(rows) && prefixWork.known()
+		LmdbNativeWork edgeWork = !Double.isNaN(rows) && prefixWork.known()
 				? prefixWork.plus(wildcardWork.times(rows))
 				: LmdbNativeWork.UNKNOWN;
+		return shape.suffix == null ? edgeWork
+				: edgeWork.plus(
+						LmdbNativeWork.planning(shape.suffix, row, boundMask | shape.edgeMask())
+								.times(cost.edgeRows()));
 	}
 
 	static boolean handlesDistinct(BatchCursor cursor) {
@@ -277,7 +403,7 @@ final class LmdbWildcardPredicateBatch {
 		boolean bySubject = subjectAvailable || !objectAvailable;
 		Term root = bySubject ? pattern.s : pattern.o;
 		int nodeSlot = root.hasSlot() ? root.slot : -1;
-		Shape shape = new Shape(prefix, pattern, nodeSlot, pattern.p.slot, bySubject,
+		Shape shape = new Shape(prefix, pattern, null, nodeSlot, pattern.p.slot, bySubject,
 				subjectAvailable && objectAvailable, scanAll,
 				new MaskedFilter[0], Demand.PAYLOAD);
 		return shape.open(row, capacity);
@@ -318,10 +444,9 @@ final class LmdbWildcardPredicateBatch {
 		}
 		try {
 			RowCursor correlated = constraintMask == -1L
-					? WeightedWildcardPatternCursor.open(factorized, right, row, SlotPlan.assuredMask(left), liveMask,
-							outer, capacity)
-					: WeightedWildcardPatternCursor.openLexical(factorized, right, row, SlotPlan.assuredMask(left),
-							liveMask, constraintMask, preservedMask, capacity);
+					? WeightedWildcardPatternCursor.open(factorized, right, row, left, liveMask, outer, capacity)
+					: WeightedWildcardPatternCursor.openLexical(factorized, right, row, left, liveMask,
+							constraintMask, preservedMask, capacity);
 			if (correlated == null) {
 				leftRows.close();
 				return null;
@@ -460,7 +585,7 @@ final class LmdbWildcardPredicateBatch {
 	static LmdbNativeWork estimateWeightedAggregateWork(SlotPlan plan, RowState row, int[] groupSlots,
 			AggregateSpec[] aggregates) {
 		Shape shape = weightedAggregateShape(plan, row, groupSlots, aggregates);
-		return shape == null ? LmdbNativeWork.UNKNOWN : estimatePhysicalWork(shape, row, false);
+		return shape == null ? LmdbNativeWork.UNKNOWN : estimatePhysicalWork(shape, row, false, null);
 	}
 
 	/**
@@ -477,8 +602,8 @@ final class LmdbWildcardPredicateBatch {
 		ShapeCost cost = shapeCost(weightedAggregateShape(plan, row, groupSlots, aggregates), row);
 		return cost == null ? null
 				: cost.vector()
-						.plus(LmdbNativeCostVectors.perRow(LmdbNativeCostVector.Feature.GROUP_UPDATE,
-								cost.delivered()));
+						.plus(LmdbNativeCostVectors.perRow(LmdbNativeCostVector.Feature.GROUP_UPDATE, cost.outputRows(),
+								row));
 	}
 
 	private static Shape weightedAggregateShape(SlotPlan plan, RowState row, int[] groupSlots,
@@ -501,19 +626,6 @@ final class LmdbWildcardPredicateBatch {
 			return null;
 		}
 		return Shape.match(join, row, LmdbWildcardPhysicalDemand.weighted(liveMask));
-	}
-
-	/** Whether this row subtree should be owned by its round-scoped wildcard producer. */
-	static boolean ownsParallelRound(MultiJoinPlan join, RowState row, boolean distinct, int[] sourceSlots,
-			int[] orderSlots) {
-		if (join == null || !LmdbNativeParallelPipelines.enabled()
-				|| LmdbNativeParallelPipelines.configuredThreads() < 1) {
-			return false;
-		}
-		Shape shape = Shape.match(join, row,
-				LmdbWildcardPhysicalDemand.projection(distinct, sourceSlots, orderSlots));
-		return shape != null
-				&& shape.wildcard.estimate(row) >= LmdbNativeParallelPipelines.minimumWorkEstimate();
 	}
 
 	/** Whether this aggregate subtree should be owned by its round-scoped wildcard producer. */
@@ -651,11 +763,12 @@ final class LmdbWildcardPredicateBatch {
 			}
 			if (leftJoin.right instanceof PatternPlan pattern
 					&& left instanceof FactorizedRowCursor factorized) {
-				long assuredLeft = SlotPlan.assuredMask(leftJoin.left);
 				RowCursor batched = Shape.isWildcardPredicate(pattern)
-						? WeightedWildcardPatternCursor.open(factorized, pattern, row, assuredLeft, liveMask, true,
+						? WeightedWildcardPatternCursor.open(factorized, pattern, row, leftJoin.left, liveMask, true,
 								capacity)
-						: WeightedOptionalPatternCursor.open(factorized, pattern, row, assuredLeft, capacity);
+						: WeightedOptionalPatternCursor.open(factorized, pattern, row,
+								SlotPlan.assuredMask(leftJoin.left),
+								capacity);
 				if (batched != null) {
 					return refactorize(batched, row, liveMask, capacity);
 				}
@@ -711,8 +824,8 @@ final class LmdbWildcardPredicateBatch {
 			}
 			if (join.right instanceof PatternPlan pattern && Shape.isWildcardPredicate(pattern)
 					&& left instanceof FactorizedRowCursor factorized) {
-				RowCursor batched = WeightedWildcardPatternCursor.open(factorized, pattern, row,
-						SlotPlan.assuredMask(join.left), liveMask, false, capacity);
+				RowCursor batched = WeightedWildcardPatternCursor.open(factorized, pattern, row, join.left, liveMask,
+						false, capacity);
 				if (batched != null) {
 					return refactorize(batched, row, liveMask, capacity);
 				}
@@ -735,8 +848,8 @@ final class LmdbWildcardPredicateBatch {
 			long visibleInputMask = lateral.rightInputMask | entryMask;
 			if (lateral.right instanceof PatternPlan pattern && Shape.isWildcardPredicate(pattern)
 					&& left instanceof FactorizedRowCursor factorized) {
-				RowCursor batched = WeightedWildcardPatternCursor.openLexical(factorized, pattern, row,
-						SlotPlan.assuredMask(lateral.left), liveMask, visibleInputMask,
+				RowCursor batched = WeightedWildcardPatternCursor.openLexical(factorized, pattern, row, lateral.left,
+						liveMask, visibleInputMask,
 						lateral.left.producedMask() & ~visibleInputMask, capacity);
 				if (batched != null) {
 					return refactorize(batched, row, liveMask, capacity);
@@ -1558,6 +1671,7 @@ final class LmdbWildcardPredicateBatch {
 	private static final class Shape {
 		final SlotPlan prefix;
 		final PatternPlan wildcard;
+		final MultiJoinPlan suffix;
 		final int nodeSlot;
 		final int predicateSlot;
 		final boolean bySubject;
@@ -1566,10 +1680,11 @@ final class LmdbWildcardPredicateBatch {
 		final MaskedFilter[] filters;
 		final Demand demand;
 
-		private Shape(SlotPlan prefix, PatternPlan wildcard, int nodeSlot, int predicateSlot, boolean bySubject,
-				boolean adaptiveDirection, boolean scanAll, MaskedFilter[] filters, Demand demand) {
+		private Shape(SlotPlan prefix, PatternPlan wildcard, MultiJoinPlan suffix, int nodeSlot, int predicateSlot,
+				boolean bySubject, boolean adaptiveDirection, boolean scanAll, MaskedFilter[] filters, Demand demand) {
 			this.prefix = prefix;
 			this.wildcard = wildcard;
+			this.suffix = suffix;
 			this.nodeSlot = nodeSlot;
 			this.predicateSlot = predicateSlot;
 			this.bySubject = bySubject;
@@ -1583,46 +1698,52 @@ final class LmdbWildcardPredicateBatch {
 			if (!enabled() || physicalDemand.ordered() || join.children.length == 0) {
 				return null;
 			}
-			// Prefer the deepest eligible wildcard. Its prefix then contains the earlier wildcard stages whose
-			// outputs bind this stage's root, allowing openPrefix to vectorize the dependency chain recursively.
-			// Choosing the first eligible stage strands a later dependent wildcard in an unbound prefix.
-			for (int wildcardIndex = join.children.length - 1; wildcardIndex >= 0; wildcardIndex--) {
-				if (!(join.children[wildcardIndex] instanceof PatternPlan wildcard)
-						|| !batchEligible(wildcard)) {
-					continue;
+			MultiJoinPlan.OrderedPlan order = join.derivedPlan(row);
+			// Keep the deepest rooted wildcard in its join position so upstream wildcard stages can also batch.
+			// Pulling all other patterns before it can disconnect the input on either side of the edge.
+			long available = row.boundMask();
+			long wildcardInput = available;
+			int wildcardIndex = -1;
+			for (int i = 0; i < order.order.length; i++) {
+				SlotPlan child = order.order[i];
+				if (child instanceof PatternPlan pattern && batchEligible(pattern)
+						&& (available(pattern.s, available) || available(pattern.o, available))) {
+					wildcardIndex = i;
+					wildcardInput = available;
 				}
-				SlotPlan prefix = prefixWithout(join.children, wildcardIndex);
-				long available = row.boundMask() | SlotPlan.assuredMask(prefix);
-				boolean subjectAvailable = available(wildcard.s, available);
-				boolean objectAvailable = available(wildcard.o, available);
-				if (!subjectAvailable && !objectAvailable) {
-					continue;
-				}
-				boolean bySubject = subjectAvailable;
-				Term root = bySubject ? wildcard.s : wildcard.o;
-				int nodeSlot = root.hasSlot() ? root.slot : -1;
-				int predicateSlot = wildcard.p.slot;
-				Demand demand = selectDemand(join, prefix, wildcard, row, physicalDemand, predicateSlot, nodeSlot,
-						bySubject, false);
-				boolean adaptiveDirection = subjectAvailable && objectAvailable
-						&& (demand == Demand.PAIR_MULTIPLICITY || demand == Demand.PAYLOAD);
-				return new Shape(prefix, wildcard, nodeSlot, predicateSlot, bySubject, adaptiveDirection, false,
-						join.filters, demand);
+				available |= SlotPlan.assuredMask(child);
 			}
-			if (join.children.length == 1 && join.children[0] instanceof PatternPlan wildcard
-					&& batchEligible(wildcard)) {
+			boolean scanAll = wildcardIndex < 0;
+			if (scanAll) {
+				if (!(order.order[0] instanceof PatternPlan first) || !batchEligible(first)) {
+					return null;
+				}
+				wildcardIndex = 0;
+			}
+			PatternPlan wildcard = (PatternPlan) order.order[wildcardIndex];
+			boolean bySubject = available(wildcard.s, wildcardInput);
+			if (scanAll) {
 				long subjectBit = wildcard.s.hasSlot() ? 1L << wildcard.s.slot : 0L;
 				long objectBit = wildcard.o.hasSlot() ? 1L << wildcard.o.slot : 0L;
-				boolean bySubject = (physicalDemand.liveMask & objectBit) == 0L
+				bySubject = (physicalDemand.liveMask & objectBit) == 0L
 						|| (physicalDemand.liveMask & subjectBit) != 0L;
-				Term root = bySubject ? wildcard.s : wildcard.o;
-				int nodeSlot = root.hasSlot() ? root.slot : -1;
-				Demand demand = selectDemand(join, SlotPlan.singleton(), wildcard, row, physicalDemand,
-						wildcard.p.slot, nodeSlot, bySubject, true);
-				return new Shape(SlotPlan.singleton(), wildcard, nodeSlot, wildcard.p.slot, bySubject, false, true,
-						join.filters, demand);
 			}
-			return null;
+			Term root = bySubject ? wildcard.s : wildcard.o;
+			int nodeSlot = root.hasSlot() ? root.slot : -1;
+			boolean terminal = wildcardIndex + 1 == order.order.length;
+			SlotPlan prefix = prefix(join, order, wildcardIndex);
+			MultiJoinPlan suffix = terminal ? null
+					: new MultiJoinPlan(
+							Arrays.copyOfRange(order.order, wildcardIndex + 1, order.order.length),
+							filtersInRange(join, order, wildcardIndex + 1, order.order.length));
+			MaskedFilter[] filters = filtersInRange(join, order, wildcardIndex, wildcardIndex + 1);
+			// Later joins can observe the whole edge and its multiplicity, independently of the final projection.
+			Demand demand = terminal ? selectDemand(filters, prefix, wildcard, row, physicalDemand, wildcard.p.slot,
+					nodeSlot, bySubject, scanAll) : Demand.PAYLOAD;
+			boolean adaptiveDirection = !scanAll && bySubject && available(wildcard.o, wildcardInput)
+					&& (demand == Demand.PAIR_MULTIPLICITY || demand == Demand.PAYLOAD);
+			return new Shape(prefix, wildcard, suffix, nodeSlot, wildcard.p.slot, bySubject, adaptiveDirection,
+					scanAll, filters, demand);
 		}
 
 		BatchCursor open(RowState row, int capacity) throws IOException {
@@ -1646,7 +1767,36 @@ final class LmdbWildcardPredicateBatch {
 					? PredicateMajorPayloadCursor.open(physical, row, capacity)
 					: PayloadCursor.open(physical, row, capacity);
 			};
-			return cursor == null ? null : FilterBatchCursor.wrapAll(cursor, filters, row);
+			if (cursor == null) {
+				return null;
+			}
+			BatchCursor filtered = FilterBatchCursor.wrapAll(cursor, filters, row);
+			return suffix == null ? filtered : openSuffix(filtered, row, capacity);
+		}
+
+		private BatchCursor openSuffix(BatchCursor edges, RowState row, int capacity) {
+			RowCursor joined = asRows(edges, row, capacity);
+			if (joined == null) {
+				return null;
+			}
+			try {
+				long produced = edgeMask();
+				MultiJoinPlan.OrderedPlan order = suffix.derivedPlan(row.boundMask() | produced);
+				for (int i = 0; i < order.order.length; i++) {
+					SlotPlan child = order.order[i];
+					joined = new JoinCursor(joined, child, row, produced);
+					joined = suffix.applyFilters(joined, order.filterDepth, i, row);
+					produced |= child.producedMask();
+				}
+				return new RowBatchCursor(joined, row);
+			} catch (RuntimeException | Error failure) {
+				JoinCleanup.close(joined, failure);
+				throw failure;
+			}
+		}
+
+		long edgeMask() {
+			return prefix.producedMask() | wildcard.producedMask;
 		}
 
 		private Shape withDirection(boolean direction) {
@@ -1655,7 +1805,8 @@ final class LmdbWildcardPredicateBatch {
 			}
 			Term root = direction ? wildcard.s : wildcard.o;
 			int physicalNodeSlot = root.hasSlot() ? root.slot : -1;
-			return new Shape(prefix, wildcard, physicalNodeSlot, predicateSlot, direction, false, scanAll, filters,
+			return new Shape(prefix, wildcard, suffix, physicalNodeSlot, predicateSlot, direction, false, scanAll,
+					filters,
 					demand);
 		}
 
@@ -1741,7 +1892,7 @@ final class LmdbWildcardPredicateBatch {
 			return handle[0] > 0L ? Math.max(0L, adjacency.size(handle[0])) : 0L;
 		}
 
-		private static Demand selectDemand(MultiJoinPlan join, SlotPlan prefix, PatternPlan wildcard, RowState row,
+		private static Demand selectDemand(MaskedFilter[] filters, SlotPlan prefix, PatternPlan wildcard, RowState row,
 				LmdbWildcardPhysicalDemand physicalDemand, int predicateSlot, int nodeSlot, boolean bySubject,
 				boolean scanAll) {
 			if (physicalDemand.duplicatePolicy == DuplicatePolicy.EXPANDED) {
@@ -1750,7 +1901,7 @@ final class LmdbWildcardPredicateBatch {
 			long nodeBit = nodeSlot < 0 ? 0L : 1L << nodeSlot;
 			long predicateBit = 1L << predicateSlot;
 			long visibleMask = row.boundMask() | physicalDemand.liveMask;
-			if (!filtersObserveOnly(join.filters, visibleMask)) {
+			if (!filtersObserveOnly(filters, visibleMask)) {
 				return Demand.PAYLOAD;
 			}
 			long payloadMask = wildcard.producedMask & ~(nodeBit | predicateBit);
@@ -1758,8 +1909,8 @@ final class LmdbWildcardPredicateBatch {
 				return Demand.PAYLOAD;
 			}
 			if (physicalDemand.duplicatePolicy == DuplicatePolicy.WEIGHTED) {
-				Shape candidate = new Shape(prefix, wildcard, nodeSlot, predicateSlot, bySubject, false, scanAll,
-						join.filters, Demand.PAIR_MULTIPLICITY);
+				Shape candidate = new Shape(prefix, wildcard, null, nodeSlot, predicateSlot, bySubject, false, scanAll,
+						filters, Demand.PAIR_MULTIPLICITY);
 				return pairMultiplicitySafe(candidate, physicalDemand.liveMask, row)
 						? Demand.PAIR_MULTIPLICITY
 						: Demand.PAYLOAD;
@@ -1820,14 +1971,29 @@ final class LmdbWildcardPredicateBatch {
 			return mask;
 		}
 
-		private static SlotPlan prefixWithout(SlotPlan[] children, int skipped) {
-			if (children.length == 1) {
+		private static SlotPlan prefix(MultiJoinPlan join, MultiJoinPlan.OrderedPlan order, int end) {
+			if (end == 0) {
 				return SlotPlan.singleton();
 			}
-			SlotPlan[] prefix = new SlotPlan[children.length - 1];
-			System.arraycopy(children, 0, prefix, 0, skipped);
-			System.arraycopy(children, skipped + 1, prefix, skipped, children.length - skipped - 1);
-			return prefix.length == 1 ? prefix[0] : new MultiJoinPlan(prefix, new MaskedFilter[0]);
+			MaskedFilter[] filters = filtersInRange(join, order, 0, end);
+			return end == 1 && filters.length == 0 ? order.order[0]
+					: new MultiJoinPlan(Arrays.copyOf(order.order, end), filters);
+		}
+
+		private static MaskedFilter[] filtersInRange(MultiJoinPlan join, MultiJoinPlan.OrderedPlan order, int start,
+				int end) {
+			if (join.filters.length == 0) {
+				return join.filters;
+			}
+			ArrayList<MaskedFilter> filters = new ArrayList<>();
+			for (int i = 0; i < order.filterDepth.length; i++) {
+				int depth = order.filterDepth[i];
+				if (depth >= start && depth < end) {
+					MaskedFilter filter = join.filters[i];
+					filters.add(new MaskedFilter(filter.filter, filter.mask, filter.adaptive, depth - start));
+				}
+			}
+			return filters.toArray(MaskedFilter[]::new);
 		}
 
 		private static boolean available(Term term, long availableMask) {
@@ -3958,11 +4124,13 @@ final class LmdbWildcardPredicateBatch {
 					continue;
 				}
 				long predicate = adjacency.predicateAt(currentPredicateOrdinal());
-				while (lane < rootCount && output < target.capacity) {
+				int endLane = allPredicates ? rootCount : groupOffsets[predicateIndex + 1];
+				while (lane < endLane && output < target.capacity) {
 					int physicalInput = inputRows[lane];
 					long root = roots[lane];
 					long runValue = runHandles[lane++];
-					long inputPredicate = value(shape.wildcard.p, prefixBatch, physicalInput);
+					long inputPredicate = allPredicates ? value(shape.wildcard.p, prefixBatch, physicalInput)
+							: UNKNOWN;
 					if (runValue <= 0L || inputPredicate != UNKNOWN && inputPredicate != predicate) {
 						continue;
 					}
@@ -3985,7 +4153,7 @@ final class LmdbWildcardPredicateBatch {
 					output++;
 					predicateMatched = true;
 				}
-				if (lane == rootCount) {
+				if (lane == endLane) {
 					finishPlane();
 				}
 			}
@@ -4099,14 +4267,17 @@ final class LmdbWildcardPredicateBatch {
 					continue;
 				}
 				sortUnsigned(roots, inputRows, 0, count - 1);
-				uniqueRootCount = groupSortedRoots(roots, count, uniqueRoots, groupOffsets);
-				int scheduled = preparePredicateSchedule(adjacency, shape.wildcard.p, prefixBatch, inputRows, count,
-						predicateOrdinals, -1L);
+				int scheduled = prepareBoundPredicateLanes(adjacency, shape.wildcard.p, prefixBatch, roots,
+						inputRows, count, -1L, predicateOrdinals, groupOffsets, runHandles, uniqueRoots,
+						uniqueRunHandles);
 				if (scheduled == 0) {
 					continue;
 				}
 				rootCount = count;
 				allPredicates = scheduled == ALL_PREDICATES;
+				if (allPredicates) {
+					uniqueRootCount = groupSortedRoots(roots, count, uniqueRoots, groupOffsets);
+				}
 				route = allPredicates && nodePredicates != null
 						? LmdbNodePredicateRoute.tryBuild(nodePredicates, roots, count, adjacency.predicateCount(),
 								row.cancellation)
@@ -4120,7 +4291,7 @@ final class LmdbWildcardPredicateBatch {
 				parallelTileStart = -1;
 				parallelTilePredicates = 0;
 				parallelTileUsesPhysicalLanes = false;
-				unrestrictedRunSizes = unrestrictedBatch();
+				unrestrictedRunSizes = allPredicates && unrestrictedBatch();
 				BATCHES.incrementAndGet();
 				BITMAP_TILES.incrementAndGet();
 				return true;
@@ -4134,15 +4305,21 @@ final class LmdbWildcardPredicateBatch {
 			}
 			adjacency.bind(currentPredicateOrdinal());
 			PREDICATES_TESTED.incrementAndGet();
+			int firstLane = allPredicates ? 0 : groupOffsets[predicateIndex];
 			if (adjacency.keyCount() == 0L
-					|| Long.compareUnsigned(adjacency.maximumKey(), roots[0]) < 0) {
+					|| Long.compareUnsigned(adjacency.maximumKey(), roots[firstLane]) < 0) {
 				PREDICATES_EXHAUSTED.incrementAndGet();
 				predicateIndex++;
 				return false;
 			}
-			adjacency.findBatch(uniqueRoots, 0, uniqueRootCount, uniqueRunHandles, 0);
-			expandRunHandles(uniqueRunHandles, uniqueRootCount, groupOffsets, runHandles);
-			lane = 0;
+			if (allPredicates) {
+				adjacency.findBatch(uniqueRoots, 0, uniqueRootCount, uniqueRunHandles, 0);
+				expandRunHandles(uniqueRunHandles, uniqueRootCount, groupOffsets, runHandles);
+			} else {
+				findBoundPredicateRuns(adjacency, roots, firstLane, groupOffsets[predicateIndex + 1], uniqueRoots,
+						uniqueRunHandles, runHandles);
+			}
+			lane = firstLane;
 			planeReady = true;
 			planeContainsMultiplicities = false;
 			predicateMatched = false;
@@ -4720,6 +4897,8 @@ final class LmdbWildcardPredicateBatch {
 						return 0;
 					}
 					int predicateOrdinal = currentPredicateOrdinal();
+					int firstLane = allPredicates ? 0 : groupOffsets[predicateIndex];
+					int endLane = allPredicates ? rootCount : groupOffsets[predicateIndex + 1];
 					if (rootLane == 0 && runOffset == 0L) {
 						adjacency.bind(predicateOrdinal);
 						PREDICATES_TESTED.incrementAndGet();
@@ -4728,13 +4907,20 @@ final class LmdbWildcardPredicateBatch {
 							predicateIndex++;
 							continue;
 						}
-						adjacency.findBatch(uniqueRoots, 0, uniqueRootCount, uniqueRunHandles, 0);
-						expandRunHandles(uniqueRunHandles, uniqueRootCount, groupOffsets, runHandles);
+						if (allPredicates) {
+							adjacency.findBatch(uniqueRoots, 0, uniqueRootCount, uniqueRunHandles, 0);
+							expandRunHandles(uniqueRunHandles, uniqueRootCount, groupOffsets, runHandles);
+						} else {
+							findBoundPredicateRuns(adjacency, roots, firstLane, endLane, uniqueRoots,
+									uniqueRunHandles, runHandles);
+						}
+						rootLane = firstLane;
 					}
 					long predicate = adjacency.predicateAt(predicateOrdinal);
-					while (rootLane < rootCount && outputRows < target.capacity) {
+					while (rootLane < endLane && outputRows < target.capacity) {
 						int physicalInput = inputRows[rootLane];
-						long inputPredicate = value(shape.wildcard.p, prefixBatch, physicalInput);
+						long inputPredicate = allPredicates ? value(shape.wildcard.p, prefixBatch, physicalInput)
+								: UNKNOWN;
 						long handle = runHandles[rootLane];
 						if (handle <= 0L || inputPredicate != UNKNOWN && inputPredicate != predicate) {
 							rootLane++;
@@ -4784,7 +4970,7 @@ final class LmdbWildcardPredicateBatch {
 							runOffset = 0L;
 						}
 					}
-					if (rootLane == rootCount) {
+					if (rootLane == endLane) {
 						predicateIndex++;
 						rootLane = 0;
 						runOffset = 0L;
@@ -5052,14 +5238,17 @@ final class LmdbWildcardPredicateBatch {
 					continue;
 				}
 				sortUnsigned(roots, inputRows, 0, count - 1);
-				uniqueRootCount = groupSortedRoots(roots, count, uniqueRoots, groupOffsets);
-				int scheduled = preparePredicateSchedule(adjacency, shape.wildcard.p, prefixBatch, inputRows, count,
-						predicateOrdinals, -1L);
+				int scheduled = prepareBoundPredicateLanes(adjacency, shape.wildcard.p, prefixBatch, roots,
+						inputRows, count, -1L, predicateOrdinals, groupOffsets, runHandles, uniqueRoots,
+						uniqueRunHandles);
 				if (scheduled == 0) {
 					continue;
 				}
 				rootCount = count;
 				allPredicates = scheduled == ALL_PREDICATES;
+				if (allPredicates) {
+					uniqueRootCount = groupSortedRoots(roots, count, uniqueRoots, groupOffsets);
+				}
 				route = allPredicates && nodePredicates != null
 						? LmdbNodePredicateRoute.tryBuild(nodePredicates, roots, count, adjacency.predicateCount(),
 								row.cancellation)
@@ -5454,24 +5643,24 @@ final class LmdbWildcardPredicateBatch {
 		}
 
 		static WeightedWildcardPatternCursor open(FactorizedRowCursor left, PatternPlan right, RowState row,
-				long leftAssuredMask, long liveMask, boolean outer, int capacity) throws IOException {
-			return open(left, right, row, leftAssuredMask, liveMask, outer, -1L, 0L, capacity);
+				SlotPlan leftPlan, long liveMask, boolean outer, int capacity) throws IOException {
+			return open(left, right, row, leftPlan, liveMask, outer, -1L, 0L, capacity);
 		}
 
 		static WeightedWildcardPatternCursor openLexical(FactorizedRowCursor left, PatternPlan right, RowState row,
-				long leftAssuredMask, long liveMask, long constraintMask, long preservedMask, int capacity)
+				SlotPlan leftPlan, long liveMask, long constraintMask, long preservedMask, int capacity)
 				throws IOException {
-			return open(left, right, row, leftAssuredMask, liveMask, false, constraintMask, preservedMask, capacity);
+			return open(left, right, row, leftPlan, liveMask, false, constraintMask, preservedMask, capacity);
 		}
 
 		private static WeightedWildcardPatternCursor open(FactorizedRowCursor left, PatternPlan right, RowState row,
-				long leftAssuredMask, long liveMask, boolean outer, long constraintMask, long preservedMask,
+				SlotPlan leftPlan, long liveMask, boolean outer, long constraintMask, long preservedMask,
 				int capacity)
 				throws IOException {
 			if (!Shape.isWildcardPredicate(right) || right.statementOrder != null || right.range != null) {
 				return null;
 			}
-			long available = (row.boundMask() | leftAssuredMask) & constraintMask;
+			long available = (row.boundMask() | SlotPlan.assuredMask(leftPlan)) & constraintMask;
 			boolean subjectAvailable = Shape.available(right.s, available);
 			boolean objectAvailable = Shape.available(right.o, available);
 			if (!subjectAvailable && !objectAvailable) {
@@ -5483,9 +5672,11 @@ final class LmdbWildcardPredicateBatch {
 			long rootBit = root.hasSlot() ? 1L << root.slot : 0L;
 			long predicateBit = 1L << right.p.slot;
 			long payloadLive = liveMask & right.producedMask & ~preservedMask & ~(rootBit | predicateBit);
+			// A nullable left output can constrain a run even if that slot is dead for the aggregate.
+			long possibleBindings = (row.boundMask() | leftPlan.producedMask()) & constraintMask;
 			boolean multiplicityOnly = payloadLive == 0L && !right.namedContextScope && !right.contexts.isFixed()
-					&& !right.hasRepeatedSlot() && !Shape.available(opposite, available)
-					&& !Shape.available(right.c, available);
+					&& !right.hasRepeatedSlot() && !Shape.available(opposite, possibleBindings)
+					&& !Shape.available(right.c, possibleBindings);
 			NativeLmdbQuerySource.NativeProbe probe = row.source.newProbe();
 			NativeLmdbQuerySource.WildcardAdjacency adjacency = null;
 			LmdbFusedSipFactorizedRuntime.Session memory = LmdbFusedSipFactorizedRuntime.current();
@@ -5594,11 +5785,13 @@ final class LmdbWildcardPredicateBatch {
 				inputRows[physical] = physical;
 			}
 			sortUnsigned(roots, inputRows, 0, count - 1);
-			uniqueRootCount = groupSortedRoots(roots, count, uniqueRoots, groupOffsets);
-			int scheduled = preparePredicateSchedule(adjacency, right.p, leftBatch, inputRows, count,
-					predicateOrdinals, constraintMask);
+			int scheduled = prepareBoundPredicateLanes(adjacency, right.p, leftBatch, roots, inputRows, count,
+					constraintMask, predicateOrdinals, groupOffsets, runHandles, uniqueRoots, uniqueRunHandles);
 			rowCount = count;
 			allPredicates = scheduled == ALL_PREDICATES;
+			if (allPredicates) {
+				uniqueRootCount = groupSortedRoots(roots, count, uniqueRoots, groupOffsets);
+			}
 			route = allPredicates && nodePredicates != null
 					? LmdbNodePredicateRoute.tryBuild(nodePredicates, roots, count, adjacency.predicateCount(),
 							row.cancellation)
@@ -5656,6 +5849,10 @@ final class LmdbWildcardPredicateBatch {
 							}
 							int sortedInput = route.lineageAt(routedLineage++);
 							int physical = inputRows[sortedInput];
+							long inputPredicate = value(right.p, leftBatch, physical, constraintMask);
+							if (inputPredicate != UNKNOWN && inputPredicate != predicate) {
+								continue;
+							}
 							matched[physical >>> 6] |= 1L << (physical & 63);
 							markRoutedPlaneMatched();
 							emitMultiplicity(physical, predicate, runSize);
@@ -5741,16 +5938,22 @@ final class LmdbWildcardPredicateBatch {
 		private boolean preparePlane() {
 			adjacency.bind(currentPredicateOrdinal());
 			PREDICATES_TESTED.incrementAndGet();
-			if (adjacency.keyCount() == 0L || Long.compareUnsigned(adjacency.maximumKey(), roots[0]) < 0) {
+			int firstLane = allPredicates ? 0 : groupOffsets[predicateIndex];
+			if (adjacency.keyCount() == 0L || Long.compareUnsigned(adjacency.maximumKey(), roots[firstLane]) < 0) {
 				PREDICATES_EXHAUSTED.incrementAndGet();
 				predicateIndex++;
 				return false;
 			}
-			adjacency.findBatch(uniqueRoots, 0, uniqueRootCount, uniqueRunHandles, 0);
-			expandRunHandles(uniqueRunHandles, uniqueRootCount, groupOffsets, runHandles);
+			if (allPredicates) {
+				adjacency.findBatch(uniqueRoots, 0, uniqueRootCount, uniqueRunHandles, 0);
+				expandRunHandles(uniqueRunHandles, uniqueRootCount, groupOffsets, runHandles);
+			} else {
+				findBoundPredicateRuns(adjacency, roots, firstLane, groupOffsets[predicateIndex + 1], uniqueRoots,
+						uniqueRunHandles, runHandles);
+			}
 			planeReady = true;
 			planeMatched = false;
-			lane = 0;
+			lane = firstLane;
 			runOffset = 0L;
 			runSize = 0L;
 			copiedCount = 0;
@@ -5760,9 +5963,10 @@ final class LmdbWildcardPredicateBatch {
 
 		private boolean nextPlaneMatch() {
 			long predicate = adjacency.predicateAt(currentPredicateOrdinal());
-			while (lane < rowCount) {
+			int endLane = allPredicates ? rowCount : groupOffsets[predicateIndex + 1];
+			while (lane < endLane) {
 				int physical = inputRows[lane];
-				long inputPredicate = value(right.p, leftBatch, physical, constraintMask);
+				long inputPredicate = allPredicates ? value(right.p, leftBatch, physical, constraintMask) : UNKNOWN;
 				long handle = runHandles[lane];
 				if (handle <= 0L || inputPredicate != UNKNOWN && inputPredicate != predicate) {
 					advanceLane();
@@ -7509,20 +7713,31 @@ final class LmdbWildcardPredicateBatch {
 		return false;
 	}
 
-	private static BatchCursor openPrefix(Shape shape, RowState row, int capacity) throws IOException {
-		MultiJoinPlan wildcardPrefix = null;
-		if (shape.prefix instanceof MultiJoinPlan join && containsWildcard(join)) {
-			wildcardPrefix = join;
-		} else if (shape.prefix instanceof PatternPlan pattern && Shape.isWildcardPredicate(pattern)) {
-			wildcardPrefix = new MultiJoinPlan(new SlotPlan[] { pattern }, new MaskedFilter[0]);
+	private static Shape matchPrefix(SlotPlan prefix, RowState row) {
+		if (prefix instanceof MultiJoinPlan join && containsWildcard(join)) {
+			return Shape.match(join, row, LmdbWildcardPhysicalDemand.expanded(join.producedMask()));
 		}
-		if (wildcardPrefix != null) {
-			Shape nested = Shape.match(wildcardPrefix, row,
-					LmdbWildcardPhysicalDemand.expanded(wildcardPrefix.producedMask()));
-			if (nested != null) {
-				BatchCursor vectorized = nested.open(row, capacity);
-				if (vectorized != null) {
-					return vectorized;
+		if (prefix instanceof PatternPlan pattern && Shape.isWildcardPredicate(pattern)) {
+			MultiJoinPlan join = new MultiJoinPlan(new SlotPlan[] { pattern }, new MaskedFilter[0]);
+			return Shape.match(join, row, LmdbWildcardPhysicalDemand.expanded(join.producedMask()));
+		}
+		return null;
+	}
+
+	private static BatchCursor openPrefix(Shape shape, RowState row, int capacity) throws IOException {
+		Shape nested = matchPrefix(shape.prefix, row);
+		if (nested != null) {
+			BatchCursor vectorized = nested.open(row, capacity);
+			if (vectorized != null) {
+				return vectorized;
+			}
+		}
+		if (shape.prefix instanceof MultiJoinPlan join) {
+			for (int depth : join.derivedPlan(row).filterDepth) {
+				// Ordinary hash/merge batches run their filters after the join. An interior filter belongs to
+				// its planned frame, which the row chain preserves.
+				if (depth < join.children.length - 1) {
+					return new RowBatchCursor(join.open(row), row);
 				}
 			}
 		}
@@ -7568,6 +7783,22 @@ final class LmdbWildcardPredicateBatch {
 		}
 		groupOffsets[unique] = count;
 		return unique;
+	}
+
+	/** Probes one predicate's unsigned-sorted root slice and reuses each handle across its duplicate lanes. */
+	private static void findBoundPredicateRuns(NativeLmdbQuerySource.WildcardAdjacency adjacency, long[] roots,
+			int from, int to, long[] uniqueRoots, long[] uniqueRunHandles, long[] runHandles) {
+		int uniqueCount = 0;
+		for (int lane = from; lane < to; lane++) {
+			if (lane == from || roots[lane] != roots[lane - 1]) {
+				uniqueRoots[uniqueCount++] = roots[lane];
+			}
+			runHandles[lane] = uniqueCount - 1;
+		}
+		adjacency.findBatch(uniqueRoots, 0, uniqueCount, uniqueRunHandles, 0);
+		for (int lane = from; lane < to; lane++) {
+			runHandles[lane] = uniqueRunHandles[(int) runHandles[lane]];
+		}
 	}
 
 	/** Expands one run handle per unique root over the original duplicate lane groups. */
@@ -7955,6 +8186,64 @@ final class LmdbWildcardPredicateBatch {
 			}
 		}
 		return unique;
+	}
+
+	/**
+	 * Partitions the root-sorted lanes by their bound predicate ordinal, preserving unsigned root order within each
+	 * slice. The bound lanes of a predicate outside the visible domain are dropped from probing only. If any lane is
+	 * unbound, input order is left intact and the caller uses its unrestricted sweep or sparse route. Run buffers and
+	 * the unique-root array are scratch during scheduling and are reused when the cursor starts probing.
+	 */
+	private static int prepareBoundPredicateLanes(NativeLmdbQuerySource.WildcardAdjacency adjacency, Term predicate,
+			NativeBatch batch, long[] roots, int[] inputRows, int count, long allowedMask,
+			int[] predicateOrdinals, int[] predicateOffsets, long[] laneKeys, long[] rootScratch, long[] rowScratch) {
+		int scheduled = 0;
+		int ordinal = -1;
+		long previousPredicate = UNKNOWN;
+		long previousKey = -1L;
+		boolean ordered = true;
+		for (int lane = 0; lane < count; lane++) {
+			long predicateId = value(predicate, batch, inputRows[lane], allowedMask);
+			if (predicateId == UNKNOWN) {
+				return ALL_PREDICATES;
+			}
+			if (predicateId != previousPredicate) {
+				ordinal = adjacency.predicateOrdinal(predicateId);
+				previousPredicate = predicateId;
+			}
+			if (ordinal >= 0) {
+				long key = (long) ordinal << Integer.SIZE | lane;
+				laneKeys[scheduled++] = key;
+				ordered &= key > previousKey;
+				previousKey = key;
+			}
+		}
+		if (!ordered) {
+			Arrays.sort(laneKeys, 0, scheduled);
+		}
+		if (!ordered || scheduled != count) {
+			for (int lane = 0; lane < scheduled; lane++) {
+				int originalLane = (int) laneKeys[lane];
+				rootScratch[lane] = roots[originalLane];
+				rowScratch[lane] = inputRows[originalLane];
+			}
+			System.arraycopy(rootScratch, 0, roots, 0, scheduled);
+			for (int lane = 0; lane < scheduled; lane++) {
+				inputRows[lane] = (int) rowScratch[lane];
+			}
+		}
+		int predicates = 0;
+		int previousOrdinal = -1;
+		for (int lane = 0; lane < scheduled; lane++) {
+			int scheduledOrdinal = (int) (laneKeys[lane] >>> Integer.SIZE);
+			if (scheduledOrdinal != previousOrdinal) {
+				predicateOrdinals[predicates] = scheduledOrdinal;
+				predicateOffsets[predicates++] = lane;
+				previousOrdinal = scheduledOrdinal;
+			}
+		}
+		predicateOffsets[predicates] = scheduled;
+		return predicates;
 	}
 
 	private static int restrictedPredicateOrdinal(NativeLmdbQuerySource.WildcardAdjacency adjacency, Term predicate,

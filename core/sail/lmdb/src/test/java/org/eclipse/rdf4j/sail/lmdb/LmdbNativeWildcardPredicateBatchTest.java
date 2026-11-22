@@ -14,11 +14,14 @@ package org.eclipse.rdf4j.sail.lmdb;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import java.io.File;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.ValueFactory;
+import org.eclipse.rdf4j.model.vocabulary.DCAT;
+import org.eclipse.rdf4j.model.vocabulary.DCTERMS;
 import org.eclipse.rdf4j.model.vocabulary.RDF;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.QueryResults;
@@ -54,6 +57,13 @@ class LmdbNativeWildcardPredicateBatchTest {
 	private static final String PARALLEL_STARTUP_WORK_PROPERTY = "rdf4j.lmdb.parallel.startupWork";
 	private static final String PARALLEL_THREADS_PROPERTY = "rdf4j.lmdb.parallel.threads";
 	private static final String PARALLEL_MAX_TASKS_PROPERTY = "rdf4j.lmdb.parallel.maxTasks";
+	private static final String CATALOG_QUERY = """
+			PREFIX catalog: <http://www.w3.org/ns/dcat#>
+			SELECT ?dataset ?title ?distribution ?format WHERE {
+			  ?dataset a catalog:Dataset ; <http://purl.org/dc/terms/title> ?title ; ?p ?distribution .
+			  ?distribution <http://purl.org/dc/terms/format> ?format .
+			}
+			""";
 
 	private SailRepository repository;
 	private LmdbStore store;
@@ -607,6 +617,124 @@ class LmdbNativeWildcardPredicateBatchTest {
 		assertThat(LmdbNativeKernelIrTestAccess.variablePredicateLowerings())
 				.as("each wildcard access in the join should own a predicate-plane batch stage")
 				.isGreaterThanOrEqualTo(loweringsBefore + 2L);
+	}
+
+	@ParameterizedTest
+	@ValueSource(strings = { "", "LIMIT 10" })
+	void catalogWildcardBatchProbesFormatsWithBoundDistributions(String slice, @TempDir File dataDir) {
+		openCatalog(dataDir);
+		String query = CATALOG_QUERY + slice;
+		assertCatalogRows(query, slice, "wildcardPredicateBatch");
+	}
+
+	@ParameterizedTest
+	@ValueSource(strings = { "", "LIMIT 10" })
+	void catalogWildcardBatchCompetesWithOtherRowStrategies(String slice, @TempDir File dataDir) {
+		openCatalog(dataDir);
+		System.setProperty(JANINO_PROPERTY, "true");
+		System.setProperty(KERNEL_INTERPRETER_PROPERTY, "true");
+		System.setProperty(PARALLEL_PROPERTY, "true");
+		System.setProperty(PARALLEL_MIN_WORK_PROPERTY, "0");
+		System.setProperty(PARALLEL_THREADS_PROPERTY, "2");
+		String query = CATALOG_QUERY + slice;
+		assertCatalogRows(query, slice, null);
+		try (RepositoryConnection connection = repository.getConnection()) {
+			GenericPlanNode plan = connection.prepareTupleQuery(query)
+					.explain(Explanation.Level.Telemetry)
+					.toGenericPlanNode();
+			assertThat(NativeProposalFeatures.costs(plan, "wildcardPredicateBatch"))
+					.containsKeys("wildcardPredicateBatch", "nestedLoop", "irKernel");
+		}
+	}
+
+	@Test
+	void wildcardContinuationPreservesFilteredChainsAndMultiplicity(@TempDir File dataDir) {
+		openCatalog(dataDir);
+		try (RepositoryConnection connection = repository.getConnection()) {
+			ValueFactory vf = connection.getValueFactory();
+			IRI alternateDistribution = vf.createIRI(NS, "alternateDistribution");
+			connection.begin();
+			for (int i = 0; i < 16; i++) {
+				IRI distribution = vf.createIRI(NS, "distribution" + i);
+				IRI access = vf.createIRI(NS, "access" + i);
+				connection.add(distribution, DCAT.HAS_DISTRIBUTION, access);
+				connection.add(distribution, alternateDistribution, access);
+				connection.add(access, DCTERMS.FORMAT, vf.createLiteral("CSV"));
+				connection.add(access, DCTERMS.FORMAT, vf.createLiteral("JSON"));
+			}
+			connection.commit();
+		}
+		assertThat(AdjacencyEngagementTestAccess.buildNow(store)).isTrue();
+		String query = """
+				PREFIX catalog: <http://www.w3.org/ns/dcat#>
+				PREFIX dct: <http://purl.org/dc/terms/>
+				SELECT ?dataset ?title ?distribution ?format WHERE {
+				  ?dataset a catalog:Dataset ; dct:title ?title ; ?p ?distribution .
+				  ?distribution ?q ?access .
+				  ?access dct:format ?format .
+				  FILTER(?p != ?q && STRSTARTS(?title, "Dataset") && ?format != "CSV")
+				}
+				""";
+		System.setProperty(NATIVE_BATCH_ROWS_PROPERTY, "3");
+		System.setProperty(NATIVE_ENGINE_PROPERTY, "false");
+		List<String> expected = allRows(query);
+		assertThat(expected).hasSize(32);
+		System.setProperty(NATIVE_ENGINE_PROPERTY, "true");
+		long lowerings = LmdbNativeKernelIrTestAccess.variablePredicateLowerings();
+		assertThat(allRows(query)).containsExactlyElementsOf(expected);
+		assertThat(LmdbNativeKernelIrTestAccess.variablePredicateLowerings() - lowerings).isGreaterThanOrEqualTo(2);
+	}
+
+	private void openCatalog(File dataDir) {
+		open(dataDir, true);
+		try (RepositoryConnection connection = repository.getConnection()) {
+			ValueFactory vf = connection.getValueFactory();
+			IRI alternateDistribution = vf.createIRI(NS, "alternateDistribution");
+			connection.begin();
+			for (int i = 0; i < 16; i++) {
+				IRI dataset = vf.createIRI(NS, "dataset" + i);
+				IRI distribution = vf.createIRI(NS, "distribution" + i);
+				connection.add(dataset, RDF.TYPE, DCAT.DATASET);
+				connection.add(dataset, DCTERMS.TITLE, vf.createLiteral("Dataset " + i));
+				connection.add(dataset, DCTERMS.TITLE, vf.createLiteral("Title " + i));
+				connection.add(dataset, DCAT.HAS_DISTRIBUTION, distribution);
+				connection.add(dataset, alternateDistribution, distribution);
+				connection.add(dataset, DCAT.HAS_DISTRIBUTION, vf.createIRI(NS, "withoutFormat" + i));
+				connection.add(distribution, DCTERMS.FORMAT, vf.createLiteral("CSV"));
+				connection.add(distribution, DCTERMS.FORMAT, vf.createLiteral("JSON"));
+			}
+			for (int i = 0; i < 256; i++) {
+				connection.add(vf.createIRI(NS, "unrelatedDistribution" + i), DCTERMS.FORMAT, vf.createLiteral("CSV"));
+			}
+			connection.commit();
+		}
+		assertThat(AdjacencyEngagementTestAccess.buildNow(store)).isTrue();
+	}
+
+	private void assertCatalogRows(String query, String slice, String strategy) {
+		System.setProperty(NATIVE_ENGINE_PROPERTY, "false");
+		List<String> expected = allRows(CATALOG_QUERY);
+		assertThat(expected).hasSize(128);
+		System.setProperty(NATIVE_ENGINE_PROPERTY, "true");
+		try (RepositoryConnection connection = repository.getConnection()) {
+			SailTupleQuery prepared = (SailTupleQuery) connection.prepareTupleQuery(query);
+			if (strategy != null) {
+				prepared.setForcedLmdbExecutionStrategy(strategy);
+			}
+			List<String> actual = QueryResults.asList(prepared.evaluate())
+					.stream()
+					.map(LmdbNativeWildcardPredicateBatchTest::canonicalRow)
+					.toList();
+			if (slice.isEmpty()) {
+				assertThat(actual).containsExactlyInAnyOrderElementsOf(expected);
+			} else {
+				assertThat(actual).hasSize(10);
+				List<String> remaining = new ArrayList<>(expected);
+				for (String result : actual) {
+					assertThat(remaining.remove(result)).as("available solution occurrence: %s", result).isTrue();
+				}
+			}
+		}
 	}
 
 	@Test
