@@ -7206,11 +7206,14 @@ public class ValueStore extends AbstractValueFactory implements BNodeIdResolver,
 			if (cached != null && !(cached instanceof TripleTerm) && !(cached instanceof Literal)) {
 				return cached.getInternalIdentity().decodedFromDictionary() ? finishNakedLookup(cached) : cached;
 			}
-			// Unknown admission pins the selected epoch until every nested outward getter has completed.
-			return withValueReadTransaction(
-					isWriteTransactionOwner() ? valueRevision : null,
-					(stack, txn) -> finishNakedLookup(
-							getValue(id, valueRevision)));
+			ValueStoreRevision.Lazy requested = isWriteTransactionOwner() ? valueRevision : null;
+			// A cold committed lookup must decode with the epoch pinned at admission, not its earlier cache probe.
+			// Writer lookups keep their explicit ID-specific epoch; export still precedes release of the reader pin.
+			return withValueReadTransaction(requested, (stack, txn) -> {
+				ValueStoreRevision admitted = requested != null ? requested
+						: positionedRevision(currentReadRevision(id), positionMask);
+				return finishNakedLookup(getValue(id, admitted));
+			});
 		}
 		if (cached != null || ValueIds.isInlined(id)) {
 			return cached == null ? getValue(id, valueRevision) : cached;
