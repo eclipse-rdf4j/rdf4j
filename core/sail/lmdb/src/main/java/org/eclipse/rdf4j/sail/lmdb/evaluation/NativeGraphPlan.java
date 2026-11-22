@@ -17,9 +17,11 @@ import java.util.Set;
 import java.util.concurrent.atomic.AtomicLong;
 
 import org.eclipse.rdf4j.query.algebra.Graph;
+import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryEvaluationStep;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.QueryEvaluationContext;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.evaluationsteps.GraphQueryEvaluationStep;
+import org.eclipse.rdf4j.query.algebra.evaluation.impl.restrictions.PreparedRestrictionPlan;
 import org.eclipse.rdf4j.query.algebra.evaluation.util.QueryEvaluationUtility;
 
 /**
@@ -29,6 +31,12 @@ import org.eclipse.rdf4j.query.algebra.evaluation.util.QueryEvaluationUtility;
  */
 final class NativeGraphPlan implements SlotPlan {
 	static final AtomicLong WORKER_BINDINGS = new AtomicLong();
+
+	/** The restricted variant deliberately stays outside SlotPlan and worker dispatch. */
+	static PreparedRestrictionPlan specializeSelectedBody(TupleExpr body, QueryEvaluationContext activeGraph,
+			LmdbNativeEvaluationStrategy strategy, NativeLmdbQuerySource source, PreparedRestrictionPlan generic) {
+		return LmdbNativeAggregateCompiler.specializeGraphRestriction(body, activeGraph, strategy, source, generic);
+	}
 
 	private final Graph graph;
 	private final QueryEvaluationContext structural;

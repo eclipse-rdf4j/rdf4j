@@ -306,9 +306,16 @@ class CreateTemplateConfigTest {
 	}
 
 	@Test
-	void baseSailTemplatesExposeSlowQueryLoggerFields() throws Exception {
+	void baseSailTemplatesExposeGraphJoinOptimizationAndSlowQueryLoggerFields() throws Exception {
 		for (String templateType : List.of(
 				"lmdb",
+				"lmdb-rdfs",
+				"lmdb-shacl",
+				"lmdb-lucene",
+				"lmdb-rdfs-shacl",
+				"lmdb-rdfs-lucene",
+				"lmdb-shacl-lucene",
+				"lmdb-rdfs-shacl-lucene",
 				"memory",
 				"memory-customrule",
 				"memory-lucene",
@@ -328,6 +335,14 @@ class CreateTemplateConfigTest {
 			assertThat(field(template, "Slow query log threshold (seconds)")).isNotNull();
 			assertThat(field(template, "Slow query first-result threshold (seconds)")).isNotNull();
 			assertThat(field(template, "Slow query log file")).isNotNull();
+			CreateTemplateConfig.Field graphJoinOptimization = field(template, "Graph join optimization");
+			assertThat(graphJoinOptimization.getProperty()).isEqualTo("config:sail.graphJoinOptimization");
+			assertThat(graphJoinOptimization.getDefaultValue()).isEqualTo("AUTO");
+			assertThat(graphJoinOptimization.getValues()).containsExactly("AUTO", "OFF");
+			Map<String, String> values = defaultTemplateValues(template);
+			assertThat(template.render(values)).contains("config:sail.graphJoinOptimization \"AUTO\"");
+			values.put("Graph join optimization", "OFF");
+			assertThat(template.render(values)).contains("config:sail.graphJoinOptimization \"OFF\"");
 		}
 	}
 

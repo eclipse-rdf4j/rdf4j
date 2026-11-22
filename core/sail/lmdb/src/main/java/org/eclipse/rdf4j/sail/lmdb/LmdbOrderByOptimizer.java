@@ -78,7 +78,7 @@ class LmdbOrderByOptimizer implements QueryOptimizer {
 
 			stableOrderPlanner.plan(order.getArg(), requestedVar.getName())
 					.ifPresent(resolution -> {
-						resolution.apply();
+						resolution.applyForOrder(order);
 						order.replaceWith(order.getArg());
 					});
 		}

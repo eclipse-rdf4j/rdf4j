@@ -14,20 +14,200 @@ package org.eclipse.rdf4j.sail.base.config;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatExceptionOfType;
 import static org.eclipse.rdf4j.model.util.Values.bnode;
+import static org.eclipse.rdf4j.model.util.Values.iri;
 import static org.eclipse.rdf4j.model.util.Values.literal;
 import static org.junit.jupiter.api.Assertions.assertAll;
 
+import java.util.List;
 import java.util.stream.Stream;
 
 import org.eclipse.rdf4j.common.transaction.QueryEvaluationMode;
+import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.impl.LinkedHashModel;
 import org.eclipse.rdf4j.model.util.ModelBuilder;
 import org.eclipse.rdf4j.model.vocabulary.CONFIG;
+import org.eclipse.rdf4j.query.QueryExecutionPolicy.GraphJoinOptimization;
+import org.eclipse.rdf4j.query.QueryExecutionPolicy.GraphRestrictionMode;
 import org.eclipse.rdf4j.sail.config.SailConfigException;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.function.Executable;
 
 public class BaseSailConfigTest {
+
+	private static final String USE_LEGACY_CONFIG = "org.eclipse.rdf4j.model.vocabulary.useLegacyConfig";
+	private static final IRI MODERN_GRAPH_JOIN_OPTIMIZATION = iri(CONFIG.NAMESPACE, "sail.graphJoinOptimization");
+	private static final IRI LEGACY_GRAPH_JOIN_OPTIMIZATION = iri(BaseSailSchema.NAMESPACE, "graphJoinOptimization");
+
+	@Test
+	public void testHistoricGraphRestrictionPredicatesExportUsingGraphJoinOptimization() {
+		assertGraphJoinOptimizationMigration(false, MODERN_GRAPH_JOIN_OPTIMIZATION);
+		assertGraphJoinOptimizationMigration(true, LEGACY_GRAPH_JOIN_OPTIMIZATION);
+	}
+
+	private void assertGraphJoinOptimizationMigration(boolean useLegacy, IRI outputPredicate) {
+		var otherPredicate = useLegacy ? MODERN_GRAPH_JOIN_OPTIMIZATION : LEGACY_GRAPH_JOIN_OPTIMIZATION;
+		withLegacyConfig(useLegacy, () -> {
+			for (IRI historicPredicate : List.of(CONFIG.Sail.graphRestrictionMode,
+					BaseSailSchema.GRAPH_RESTRICTION_MODE)) {
+				var config = new BaseSailConfig("stub") {
+				};
+				var inputNode = bnode();
+				config.parse(new ModelBuilder().add(inputNode, historicPredicate, literal("OFF")).build(), inputNode);
+				assertThat(config.getGraphRestrictionMode()).as("parsed %s", historicPredicate)
+						.isEqualTo(GraphRestrictionMode.OFF);
+				var exported = new LinkedHashModel();
+				var exportedNode = config.export(exported);
+				assertThat(exported.contains(exportedNode, outputPredicate, literal("OFF")))
+						.as("export of %s should use %s", historicPredicate, outputPredicate)
+						.isTrue();
+				assertThat(exported.predicates()).doesNotContain(CONFIG.Sail.graphRestrictionMode,
+						BaseSailSchema.GRAPH_RESTRICTION_MODE, otherPredicate);
+			}
+		});
+	}
+
+	@Test
+	public void testCanonicalGraphJoinOptimizationTakesPrecedenceOverHistoricPredicates() {
+		assertCanonicalGraphJoinOptimizationPrecedence(false, GraphRestrictionMode.AUTO);
+		assertCanonicalGraphJoinOptimizationPrecedence(true, GraphRestrictionMode.FORCE_INDEPENDENT);
+	}
+
+	private void assertCanonicalGraphJoinOptimizationPrecedence(boolean useLegacy, GraphRestrictionMode expected) {
+		withLegacyConfig(useLegacy, () -> {
+			var config = new BaseSailConfig("stub") {
+			};
+			var inputNode = bnode();
+			var historicPredicate = useLegacy ? BaseSailSchema.GRAPH_RESTRICTION_MODE
+					: CONFIG.Sail.graphRestrictionMode;
+			var otherCanonicalPredicate = useLegacy ? MODERN_GRAPH_JOIN_OPTIMIZATION : LEGACY_GRAPH_JOIN_OPTIMIZATION;
+			var model = new ModelBuilder()
+					.add(inputNode, historicPredicate, literal("OFF"))
+					.add(inputNode, otherCanonicalPredicate, literal("REQUIRE_RESTRICTED"))
+					.build();
+			config.parse(model, inputNode);
+			assertThat(config.getGraphRestrictionMode()).isEqualTo(GraphRestrictionMode.REQUIRE_RESTRICTED);
+
+			model.remove(inputNode, otherCanonicalPredicate, null);
+			model.add(inputNode, MODERN_GRAPH_JOIN_OPTIMIZATION, literal("AUTO"));
+			model.add(inputNode, LEGACY_GRAPH_JOIN_OPTIMIZATION, literal("FORCE_INDEPENDENT"));
+			config.parse(model, inputNode);
+			assertThat(config.getGraphRestrictionMode()).isEqualTo(expected);
+
+			model.remove(inputNode, MODERN_GRAPH_JOIN_OPTIMIZATION, null);
+			model.remove(inputNode, LEGACY_GRAPH_JOIN_OPTIMIZATION, null);
+			var otherHistoricPredicate = useLegacy ? CONFIG.Sail.graphRestrictionMode
+					: BaseSailSchema.GRAPH_RESTRICTION_MODE;
+			model.add(inputNode, otherHistoricPredicate, literal("FORCE_INDEPENDENT"));
+			config.parse(model, inputNode);
+			assertThat(config.getGraphRestrictionMode()).isEqualTo(GraphRestrictionMode.OFF);
+		});
+	}
+
+	private static void withLegacyConfig(boolean useLegacy, Runnable action) {
+		String previousValue = System.setProperty(USE_LEGACY_CONFIG, Boolean.toString(useLegacy));
+		try {
+			action.run();
+		} finally {
+			if (previousValue == null) {
+				System.clearProperty(USE_LEGACY_CONFIG);
+			} else {
+				System.setProperty(USE_LEGACY_CONFIG, previousValue);
+			}
+		}
+	}
+
+	@Test
+	public void testGraphJoinOptimizationRoundTrip() {
+		var implNode = bnode();
+		var setting = CONFIG.Sail.graphJoinOptimization;
+		var config = new BaseSailConfig("stub") {
+		};
+		assertThat(config.getGraphJoinOptimization()).isEqualTo(GraphJoinOptimization.AUTO);
+		assertThat(config.getQueryExecutionPolicy().graphJoinOptimization()).isEqualTo(GraphJoinOptimization.AUTO);
+		var defaultExport = new LinkedHashModel();
+		var defaultNode = config.export(defaultExport);
+		assertThat(defaultExport.contains(defaultNode, setting, null)).isFalse();
+
+		config.parse(new ModelBuilder().add(implNode, setting, literal("OFF")).build(), implNode);
+		assertThat(config.getGraphJoinOptimization()).isEqualTo(GraphJoinOptimization.OFF);
+		var exported = new LinkedHashModel();
+		var exportedNode = config.export(exported);
+
+		assertThat(exported.contains(exportedNode, setting, literal("OFF"))).isTrue();
+		for (boolean experimental : new boolean[] { false, true }) {
+			config.setExperimentalQueryOptimizations(experimental);
+			assertThat(config.getQueryExecutionPolicy().experimentalQueryOptimizations()).isEqualTo(experimental);
+			assertThat(config.getQueryExecutionPolicy().graphJoinOptimization()).isEqualTo(GraphJoinOptimization.OFF);
+		}
+	}
+
+	@Test
+	public void testGraphJoinOptimizationDiagnosticValuesUseEitherVocabulary() {
+		var implNode = bnode();
+		for (IRI predicate : List.of(CONFIG.Sail.graphJoinOptimization, BaseSailSchema.GRAPH_JOIN_OPTIMIZATION,
+				CONFIG.Sail.graphRestrictionMode, BaseSailSchema.GRAPH_RESTRICTION_MODE)) {
+			for (GraphJoinOptimization mode : GraphJoinOptimization.values()) {
+				var config = new BaseSailConfig("stub") {
+				};
+				config.parse(new ModelBuilder().add(implNode, predicate, literal(mode.name())).build(), implNode);
+				assertThat(config.getGraphJoinOptimization()).as("parsed %s", predicate).isEqualTo(mode);
+			}
+		}
+	}
+
+	@Test
+	public void testGraphRestrictionModeAccessorsBridgeToGraphJoinOptimization() {
+		var config = new BaseSailConfig("stub") {
+		};
+		for (GraphRestrictionMode mode : GraphRestrictionMode.values()) {
+			config.setGraphRestrictionMode(mode);
+			assertThat(config.getGraphJoinOptimization().name()).isEqualTo(mode.name());
+		}
+		for (GraphJoinOptimization mode : GraphJoinOptimization.values()) {
+			config.setGraphJoinOptimization(mode);
+			assertThat(config.getGraphRestrictionMode().name()).isEqualTo(mode.name());
+		}
+		withLegacyConfig(true, () -> {
+			config.setGraphRestrictionMode(GraphRestrictionMode.OFF);
+			var model = new LinkedHashModel();
+			var node = config.export(model);
+			assertThat(model.contains(node, BaseSailSchema.GRAPH_JOIN_OPTIMIZATION, literal("OFF"))).isTrue();
+		});
+	}
+
+	@Test
+	public void testGraphJoinOptimizationPreservesHistoricSetterOverride() {
+		var config = new BaseSailConfig("stub") {
+			@Override
+			public void setGraphRestrictionMode(GraphRestrictionMode mode) {
+				if (mode == GraphRestrictionMode.OFF) {
+					throw new IllegalArgumentException("This Sail requires graph join optimization");
+				}
+				super.setGraphRestrictionMode(mode);
+			}
+		};
+		var implNode = bnode();
+		for (IRI predicate : List.of(CONFIG.Sail.graphRestrictionMode, BaseSailSchema.GRAPH_RESTRICTION_MODE,
+				CONFIG.Sail.graphJoinOptimization, BaseSailSchema.GRAPH_JOIN_OPTIMIZATION)) {
+			var model = new ModelBuilder().add(implNode, predicate, literal("OFF")).build();
+			assertThatExceptionOfType(SailConfigException.class)
+					.isThrownBy(() -> config.parse(model, implNode))
+					.withMessage("This Sail requires graph join optimization");
+		}
+		assertThatExceptionOfType(IllegalArgumentException.class)
+				.isThrownBy(() -> config.setGraphJoinOptimization(GraphJoinOptimization.OFF))
+				.withMessage("This Sail requires graph join optimization");
+		assertThat(config.getGraphJoinOptimization()).isEqualTo(GraphJoinOptimization.AUTO);
+	}
+
+	@Test
+	public void testGraphJoinOptimizationRejectsUnknownValue() {
+		var implNode = bnode();
+		var config = new BaseSailConfig("stub") {
+		};
+		var model = new ModelBuilder().add(implNode, CONFIG.Sail.graphJoinOptimization, literal("disabled")).build();
+		assertThatExceptionOfType(SailConfigException.class).isThrownBy(() -> config.parse(model, implNode));
+	}
 
 	@Test
 	public void testParseQueryEvaluationMode() {

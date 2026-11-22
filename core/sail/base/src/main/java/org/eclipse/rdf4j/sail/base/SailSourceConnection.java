@@ -285,7 +285,7 @@ public abstract class SailSourceConnection extends AbstractNotifyingSailConnecti
 		SailDataset rdfDataset = null;
 		CloseableIteration<BindingSet> iteration = null;
 		try {
-			rdfDataset = datasetForRead(IncludeInferred.fromBoolean(includeInferred));
+			rdfDataset = acquireQueryDataset(tupleExpr, includeInferred);
 			if (rdfDataset instanceof TreeOwnedDataset owned) {
 				// The interlock below closes the operator tree, and with it every cursor, before this dataset.
 				owned.cursorsCloseBeforeDataset();
@@ -1615,6 +1615,11 @@ public abstract class SailSourceConnection extends AbstractNotifyingSailConnecti
 			// create a new branch for read operation
 			return getExplicitSailSource().fork();
 		}
+	}
+
+	/** Acquires the statement and catalog view held until the prepared query's result closes. */
+	protected SailDataset acquireQueryDataset(TupleExpr expression, boolean includeInferred) {
+		return datasetForRead(IncludeInferred.fromBoolean(includeInferred));
 	}
 
 	private SailDataset datasetForRead(IncludeInferred includeInferred) {

@@ -108,6 +108,38 @@ final class GeneralPathPlan implements SlotPlan {
 		this.producedMask = mask;
 	}
 
+	/** Proves that this traversal and every nested step need edges, never a zero-length membership test. */
+	boolean usesOnlyStatementEdges() {
+		return minLength > 0 && usesOnlyStatementEdges(step);
+	}
+
+	private static boolean usesOnlyStatementEdges(SlotPlan plan) {
+		if (plan instanceof PatternPlan || plan == EmptyPlan.INSTANCE) {
+			return true;
+		}
+		if (plan instanceof GeneralPathPlan path) {
+			return path.usesOnlyStatementEdges();
+		}
+		if (plan instanceof PathPlan path) {
+			return !path.zeroLength;
+		}
+		if (plan instanceof MultiJoinPlan join) {
+			for (SlotPlan child : join.children) {
+				if (!usesOnlyStatementEdges(child)) {
+					return false;
+				}
+			}
+			return true;
+		}
+		if (plan instanceof JoinPlan join) {
+			return usesOnlyStatementEdges(join.left) && usesOnlyStatementEdges(join.right);
+		}
+		if (plan instanceof UnionPlan union) {
+			return usesOnlyStatementEdges(union.left) && usesOnlyStatementEdges(union.right);
+		}
+		return plan instanceof FilterPlan filter && usesOnlyStatementEdges(filter.arg);
+	}
+
 	@Override
 	public RowCursor open(RowState row) throws IOException {
 		ENGAGED.incrementAndGet();
