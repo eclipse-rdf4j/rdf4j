@@ -13,6 +13,7 @@
 package org.eclipse.rdf4j.sail.memory;
 
 import org.eclipse.rdf4j.common.annotation.InternalUseOnly;
+import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.common.transaction.IsolationLevels;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Resource;
@@ -58,6 +59,21 @@ public class MemoryStoreConnection extends SailSourceConnection implements Threa
 	/*---------*
 	 * Methods *
 	 *---------*/
+
+	/**
+	 * @deprecated This compatibility hook will be removed in the next major release, when explicit Graph algebra is
+	 *             required.
+	 */
+	@Override
+	@Deprecated(since = "6.2.0", forRemoval = true)
+	public boolean supportsGraphAlgebra() {
+		return getClass() == MemoryStoreConnection.class && supportsGraphAlgebraEvaluation();
+	}
+
+	@Override
+	protected CloseableIteration<? extends Resource> getContextIDsInternal() {
+		return getContextIDsFromBothDatasets();
+	}
 
 	@Override
 	protected void startTransactionInternal() throws SailException {

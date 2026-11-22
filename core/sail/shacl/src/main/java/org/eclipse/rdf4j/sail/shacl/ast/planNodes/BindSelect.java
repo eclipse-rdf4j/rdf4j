@@ -321,7 +321,7 @@ public class BindSelect implements PlanNode {
 		query = prefixes + "select * where { " + values + query + "\n}";
 
 		try {
-			return SparqlQueryParserCache.get(query);
+			return SparqlQueryParserCache.get(query, connection);
 		} catch (MalformedQueryException e) {
 			logger.error("Malformed query:\n{}", query);
 			throw e;
