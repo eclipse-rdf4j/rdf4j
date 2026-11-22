@@ -57,35 +57,21 @@ import org.junit.jupiter.api.Test;
 public class QueryModelTreeToGenericPlanNodeTest {
 
 	@Test
-	public void timedExplanationPreservesQueryRootPullTimeSeparately() {
+	public void timedExplanationDoesNotAttributeQueryRootTimeToAnOperator() {
 		StatementPattern pattern = new StatementPattern(Var.of("s"), Var.of("p"), Var.of("o"));
 		QueryRoot root = new QueryRoot(pattern);
-		assertThat(convert(root, Explanation.Level.Timed).getDoubleMetricActual("queryPullTimeActual")).isNull();
-
-		root.setTotalTimeNanosActual(0);
-		assertThat(convert(root, Explanation.Level.Timed).getDoubleMetricActual("queryPullTimeActual")).isZero();
-
 		root.setTotalTimeNanosActual(3_500_000);
+
 		GenericPlanNode plan = convert(root, Explanation.Level.Timed);
 		assertThat(plan.getType()).startsWith("StatementPattern");
-		assertThat(plan.getDoubleMetricActual("queryPullTimeActual")).isEqualTo(3.5);
+		assertThat(plan.getDoubleMetricActual("queryPullTimeActual")).isNull();
 		assertThat(plan.getTotalTimeActual()).isNull();
 		assertThat(plan.getSelfTimeActual()).isNull();
-		assertThat(plan.getPlans())
-				.allSatisfy(child -> assertThat(child.getDoubleMetricActual("queryPullTimeActual")).isNull());
 
 		pattern.setTotalTimeNanosActual(1_000_000);
 		plan = convert(root, Explanation.Level.Timed);
-		assertThat(plan.getDoubleMetricActual("queryPullTimeActual")).isEqualTo(3.5);
 		assertThat(plan.getTotalTimeActual()).isEqualTo(1.0);
 		assertThat(plan.getSelfTimeActual()).isEqualTo(1.0);
-		assertThat(convert(pattern, Explanation.Level.Timed).getDoubleMetricActual("queryPullTimeActual")).isNull();
-
-		for (Explanation.Level level : Explanation.Level.values()) {
-			if (level != Explanation.Level.Timed) {
-				assertThat(convert(root, level).getDoubleMetricActual("queryPullTimeActual")).as(level.name()).isNull();
-			}
-		}
 	}
 
 	@Test

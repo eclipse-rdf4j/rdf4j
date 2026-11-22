@@ -42,7 +42,6 @@ import com.fasterxml.jackson.annotation.JsonIgnore;
 public class GenericPlanNode {
 
 	public static final String UNKNOWN = "UNKNOWN";
-	private static final String QUERY_PULL_TIME_ACTUAL = "queryPullTimeActual";
 
 	// static UUID as prefix together with a thread safe incrementing long ensures a unique identifier.
 	private final static String uniqueIdPrefix = UUID.randomUUID().toString().replace("-", "");
@@ -128,8 +127,6 @@ public class GenericPlanNode {
 	// selfTimeActual is the amount of time that this node used by itself (eg. totalTimeActual - sum of
 	// plans[0..n].totalTimeActual)
 	private Double totalTimeActual;
-
-	private boolean queryPullTimeEnabled = true;
 
 	// Telemetry counters captured while iterating this node during telemetry-level explanations.
 	private Long hasNextCallCountActual;
@@ -436,7 +433,6 @@ public class GenericPlanNode {
 			strategyDecisions = null;
 		}
 
-		queryPullTimeEnabled = level == Explanation.Level.Timed;
 		setRuntimeTelemetryEnabled(level.includesRuntimeTelemetry());
 		setExecutionSummaryEnabled(level == Explanation.Level.Executed
 				|| level == Explanation.Level.Timed
@@ -492,9 +488,6 @@ public class GenericPlanNode {
 	}
 
 	public Double getDoubleMetricActual(String metricName) {
-		if (QUERY_PULL_TIME_ACTUAL.equals(metricName)) {
-			return queryPullTimeActual();
-		}
 		if (!isActualMetricVisible(metricName)) {
 			return null;
 		}
@@ -679,9 +672,6 @@ public class GenericPlanNode {
 	@Override
 	public String toString() {
 		String logical = getHumanReadable(0, isProjectionElemListNode());
-		if (queryPullTimeActual() != null) {
-			logical = queryPullTimeSummary() + newLine + newLine + logical;
-		}
 		if (physicalPlanPrelude != null && !physicalPlanPrelude.isEmpty()) {
 			logical = physicalPlanPrelude + newLine + newLine + "Query explanation" + newLine + logical;
 		}
@@ -1071,8 +1061,7 @@ public class GenericPlanNode {
 			for (Map.Entry<String, Double> entry : visibleDoubleMetrics.entrySet()) {
 				String metricName = entry.getKey();
 				Double metricValue = entry.getValue();
-				if (QUERY_PULL_TIME_ACTUAL.equals(metricName) || metricValue == null
-						|| metricValue <= 0 && !TelemetryMetricNames.isOptimizerMetric(metricName)) {
+				if (metricValue == null || metricValue <= 0 && !TelemetryMetricNames.isOptimizerMetric(metricName)) {
 					continue;
 				}
 				if (!isMetricApplicableToNode(metricName) || metrics.containsKey(metricName)) {
@@ -1245,26 +1234,10 @@ public class GenericPlanNode {
 		if (doubleMetricsActual.isEmpty()) {
 			return null;
 		}
-		Double pullTime = queryPullTimeActual();
 		if (runtimeTelemetryEnabled) {
-			if (pullTime != null || !doubleMetricsActual.containsKey(QUERY_PULL_TIME_ACTUAL)) {
-				return doubleMetricsActual;
-			}
-			Map<String, Double> visible = new LinkedHashMap<>(doubleMetricsActual);
-			visible.remove(QUERY_PULL_TIME_ACTUAL);
-			return visible;
+			return doubleMetricsActual;
 		}
-		Map<String, Double> visible = visibleSummaryMetrics(doubleMetricsActual);
-		if (pullTime != null) {
-			visible.put(QUERY_PULL_TIME_ACTUAL, pullTime);
-		}
-		return visible;
-	}
-
-	// Measured on QueryRoot in milliseconds, not on the first displayed operator.
-	private Double queryPullTimeActual() {
-		Double value = queryPullTimeEnabled ? doubleMetricsActual.get(QUERY_PULL_TIME_ACTUAL) : null;
-		return value != null && Double.isFinite(value) && value >= 0 ? value : null;
+		return visibleSummaryMetrics(doubleMetricsActual);
 	}
 
 	private static boolean isPreferredExplainAnnotationMetric(String metricName) {
@@ -1598,21 +1571,10 @@ public class GenericPlanNode {
 
 	public String toDot() {
 		String nodes = toDotInternal(getMaxResultSizeActual(this), getMaxTotalTime(this), getMaxSelfTime(this));
-		boolean timeout = Boolean.TRUE.equals(timedOut);
-		boolean hasPullTime = queryPullTimeActual() != null;
-		if (!timeout && !hasPullTime) {
-			return nodes;
+		if (Boolean.TRUE.equals(timedOut)) {
+			return "   label=\"" + TIMEOUT_WARNING + "\";" + newLine + "   labelloc=t;" + newLine + nodes;
 		}
-		String label = timeout ? TIMEOUT_WARNING : "";
-		if (hasPullTime) {
-			label += (timeout ? "\\n" : "") + queryPullTimeSummary();
-		}
-		return "   label=\"" + label + "\";" + newLine
-				+ (timeout ? "   labelloc=t;" + newLine : "") + nodes;
-	}
-
-	private String queryPullTimeSummary() {
-		return "Query pull time: " + toHumanReadableTime(queryPullTimeActual());
+		return nodes;
 	}
 
 	private static double getMaxTotalTime(GenericPlanNode genericPlanNode) {

@@ -577,66 +577,23 @@ class GenericPlanNodeTest {
 	}
 
 	@Test
-	void queryPullTimeRoundTripsWithoutBecomingAnOperatorTimer() {
-		String line = System.lineSeparator();
-		GenericPlanNode node = new GenericPlanNode("Projection");
-		node.addPlans(new GenericPlanNode("StatementPattern"));
-		node.setDoubleMetricActual("queryPullTimeActual", 12.5);
-		node.applyExplanationLevel(Explanation.Level.Timed);
-		assertTrue(node.toString().startsWith("Query pull time: 12.5ms" + line + line + "Projection"));
-
-		node.setPhysicalPlanPrelude("Physical plan");
-		Explanation explanation = new ExplanationImpl(node, false, null);
-		String text = "Physical plan" + line + line + "Query explanation" + line
-				+ "Query pull time: 12.5ms" + line + line + "Projection";
-		assertTrue(explanation.toString().startsWith(text), explanation.toString());
-		String json = explanation.toJson();
-		var mapper = JsonMapper.builder().build();
-		var jsonTree = mapper.readTree(json);
-		assertFalse(jsonTree.has("queryPullTimeActual"), json);
-		assertEquals(12.5, jsonTree.path("doubleMetricsActual").path("queryPullTimeActual").asDouble());
-		assertFalse(jsonTree.path("plans").get(0).path("doubleMetricsActual").has("queryPullTimeActual"));
-		assertFalse(jsonTree.has("totalTimeActual"));
-		assertFalse(jsonTree.has("selfTimeActual"));
-
-		GenericPlanNode decoded = mapper.treeToValue(jsonTree, GenericPlanNode.class);
-		assertEquals(explanation.toString(), decoded.toString());
-		String dot = new ExplanationImpl(decoded, false, null).toDot();
-		assertTrue(dot.startsWith("digraph Explanation {" + line + "   label=\"Query pull time: 12.5ms\";"));
-		assertFalse(dot.contains("Total time actual"), dot);
-		assertFalse(dot.contains("Self time actual"), dot);
-
-		for (Explanation.Level level : Explanation.Level.values()) {
-			if (level != Explanation.Level.Timed) {
-				decoded.applyExplanationLevel(level);
-				Explanation other = new ExplanationImpl(decoded, false, null);
-				assertFalse(other.toJson().contains("queryPullTimeActual"), level.name());
-				assertFalse(other.toString().contains("Query pull time:"), level.name());
-				assertFalse(other.toDot().contains("Query pull time:"), level.name());
-			}
-		}
-	}
-
-	@Test
-	void timeoutWarningComesBeforePhysicalPlanAndPullTime() {
+	void timeoutWarningComesBeforePhysicalPlan() {
 		String line = System.lineSeparator();
 		GenericPlanNode node = new GenericPlanNode("Projection");
 		node.setPhysicalPlanPrelude("Physical plan");
-		node.setDoubleMetricActual("queryPullTimeActual", 3.5);
 		Explanation explanation = new ExplanationImpl(node, true, null);
 
 		String warning = "Timed out while retrieving explanation! Explanation may be incomplete!";
 		String text = explanation.toString();
 		assertTrue(text.startsWith(warning + line), text);
 		assertTrue(text.contains("Physical plan" + line + line + "Query explanation" + line
-				+ "Query pull time: 3.5ms" + line + line + "Projection"), text);
+				+ "Projection"), text);
 		assertEquals(text.indexOf(warning), text.lastIndexOf(warning));
 		var json = JsonMapper.builder().build().readTree(explanation.toJson());
 		assertTrue(json.path("timedOut").asBoolean());
-		assertEquals(3.5, json.path("doubleMetricsActual").path("queryPullTimeActual").asDouble());
 		String dot = explanation.toDot();
 		assertTrue(dot.startsWith("digraph Explanation {" + line + "   label=\"" + warning
-				+ "\\nQuery pull time: 3.5ms\";" + line + "   labelloc=t;"), dot);
+				+ "\";" + line + "   labelloc=t;"), dot);
 	}
 
 	@Test

@@ -794,7 +794,7 @@ namespace workbench {
             }
             var doubleMetrics = node.doubleMetricsActual || {};
             for (name in doubleMetrics) {
-                if (name === 'queryPullTimeActual' || !Object.prototype.hasOwnProperty.call(doubleMetrics, name)) {
+                if (!Object.prototype.hasOwnProperty.call(doubleMetrics, name)) {
                     continue;
                 }
                 var doubleValue = doubleMetrics[name];
@@ -1479,12 +1479,6 @@ namespace workbench {
             var separator = effectiveLineSeparator(lineSeparator);
             var lines = formatLines(plan || {}, 0, isProjectionElemList(plan || {}), effectiveLevel,
                 separator, hiddenProperties);
-            // This measures the query root, not the first displayed logical operator.
-            var pullTime = plan && plan.doubleMetricsActual && plan.doubleMetricsActual.queryPullTimeActual;
-            if (effectiveLevel === 'Timed' && finiteNonNegative(pullTime)) {
-                lines = [textLine('Query pull time: ' + readableTime(pullTime)),
-                    textLine('')].concat(lines);
-            }
             var prelude = plan && plan.physicalPlanPrelude;
             if (typeof prelude === 'string' && prelude.length) {
                 // The physical plan prelude carries its own embedded newlines (independent of the

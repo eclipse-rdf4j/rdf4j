@@ -88,41 +88,17 @@ test('preserves native-plan metric ordering and strategy-decision text', () => {
     );
 });
 
-test('displays query pull time alongside the plan without colouring any operator', () => {
-    const { highlighter } = createHighlighterHarness();
-    const plan = {
-        type: 'Projection',
-        doubleMetricsActual: { queryPullTimeActual: 12.345 },
-        plans: [{ type: 'StatementPattern' }]
-    };
-    assert.equal(highlighter.format(plan, 'Timed').text,
-        'Query pull time: 12.3ms\n\nProjection\n   StatementPattern\n');
-    assert.equal(highlighter.getHotspot(plan, 'Timed'), null);
-    assert.equal(highlighter.format(plan, 'Telemetry').text, 'Projection\n   StatementPattern\n');
-
-    plan.physicalPlanPrelude = 'Native plan\r\nRows';
-    assert.equal(highlighter.format(plan, 'Timed', '\r\n').text,
-        'Native plan\r\nRows\r\n\r\nQuery explanation\r\n'
-            + 'Query pull time: 12.3ms\r\n\r\nProjection\r\n   StatementPattern\r\n');
-
-    assert.equal(highlighter.format({ type: 'Projection', doubleMetricsActual: { queryPullTimeActual: 0 } }, 'Timed').text,
-        'Query pull time: 0.0ms\n\nProjection\n');
-    assert.equal(highlighter.format({ type: 'Projection', doubleMetricsActual: { queryPullTimeActual: null } }, 'Timed').text,
-        'Projection\n');
-});
-
-test('puts the timeout warning before both physical plan and query pull time', () => {
+test('puts the timeout warning before the physical plan', () => {
     const { highlighter } = createHighlighterHarness();
     const warning = 'Timed out while retrieving explanation! Explanation may be incomplete!';
     const result = highlighter.format({
         timedOut: true,
         type: 'Projection',
-        physicalPlanPrelude: 'Native plan',
-        doubleMetricsActual: { queryPullTimeActual: 3.5 }
+        physicalPlanPrelude: 'Native plan'
     }, 'Timed');
     assert.equal(result.text, warning + '\n'
         + 'You can change the timeout by setting .setMaxExecutionTime(...) on your query.\n\n'
-        + 'Native plan\n\nQuery explanation\nQuery pull time: 3.5ms\n\nProjection\n');
+        + 'Native plan\n\nQuery explanation\nProjection\n');
 });
 
 test('discovers and filters individual plan properties without changing the tree', () => {

@@ -83,12 +83,6 @@ public class QueryModelTreeToGenericPlanNode extends AbstractQueryModelVisitor<R
 		}
 		if (top != null) {
 			applyPhysicalPlanPrelude();
-			if (level == Explanation.Level.Timed && optimizerMetricWrapper != null) {
-				long nanos = optimizerMetricWrapper.getTotalTimeNanosActual();
-				if (nanos >= 0) {
-					top.setDoubleMetricActual("queryPullTimeActual", nanos / 1_000_000.0);
-				}
-			}
 			top.applyExplanationLevel(level);
 		}
 		return top;
