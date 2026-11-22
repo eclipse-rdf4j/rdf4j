@@ -29,7 +29,7 @@
                     # @workbench.field len=48
                     config:native.tripleIndexes "{%Triple indexes|spoc,posc%}";
                     # @workbench.field len=16
-                    config:sail.graphRestrictionMode "{%Graph restriction mode|AUTO|OFF%}" ;
+                    config:sail.graphJoinOptimization "{%Graph join optimization|AUTO|OFF%}" ;
                     config:sail.defaultQueryEvaluationMode "{%Query Evaluation Mode|STRICT|STANDARD%}"
                 ]
             ]

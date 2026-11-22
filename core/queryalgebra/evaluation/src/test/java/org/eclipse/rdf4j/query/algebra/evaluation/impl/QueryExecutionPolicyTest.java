@@ -18,11 +18,13 @@ import static org.mockito.Mockito.CALLS_REAL_METHODS;
 import static org.mockito.Mockito.doReturn;
 import static org.mockito.Mockito.mock;
 
+import java.util.List;
 import java.util.concurrent.atomic.AtomicInteger;
 
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.query.Dataset;
 import org.eclipse.rdf4j.query.QueryExecutionPolicy;
+import org.eclipse.rdf4j.query.QueryExecutionPolicy.GraphJoinOptimization;
 import org.eclipse.rdf4j.query.QueryExecutionPolicy.GraphRestrictionMode;
 import org.eclipse.rdf4j.query.algebra.QueryRoot;
 import org.eclipse.rdf4j.query.algebra.SingletonSet;
@@ -35,6 +37,45 @@ import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.EnumSource;
 
 class QueryExecutionPolicyTest {
+
+	@ParameterizedTest
+	@EnumSource(GraphRestrictionMode.class)
+	void graphRestrictionModePreservesPolicyProfiles(GraphRestrictionMode mode) {
+		for (QueryExecutionPolicy profile : List.of(QueryExecutionPolicy.DEFAULT, QueryExecutionPolicy.EXPERIMENTAL)) {
+			QueryExecutionPolicy configured = profile.withGraphRestrictionMode(mode);
+			assertSame(mode, configured.graphRestrictionMode());
+			assertEquals(profile.experimentalQueryOptimizations(), configured.experimentalQueryOptimizations());
+			assertSame(configured, configured.withGraphRestrictionMode(mode));
+			assertSame(profile, configured.withGraphRestrictionMode(GraphRestrictionMode.AUTO));
+		}
+	}
+
+	@Test
+	void graphRestrictionModeRejectsNull() {
+		assertThrows(NullPointerException.class, () -> QueryExecutionPolicy.DEFAULT.withGraphRestrictionMode(null));
+	}
+
+	@ParameterizedTest
+	@EnumSource(GraphJoinOptimization.class)
+	void graphJoinOptimizationPreservesPolicyProfilesAndCompatibility(GraphJoinOptimization optimization) {
+		GraphRestrictionMode legacyMode = GraphRestrictionMode.valueOf(optimization.name());
+		for (QueryExecutionPolicy profile : List.of(QueryExecutionPolicy.DEFAULT, QueryExecutionPolicy.EXPERIMENTAL)) {
+			QueryExecutionPolicy configured = profile.withGraphJoinOptimization(optimization);
+			assertSame(optimization, configured.graphJoinOptimization());
+			assertSame(legacyMode, configured.graphRestrictionMode());
+			assertEquals(profile.experimentalQueryOptimizations(), configured.experimentalQueryOptimizations());
+
+			assertSame(configured, configured.withGraphJoinOptimization(optimization));
+			assertSame(configured, configured.withGraphRestrictionMode(legacyMode));
+			assertSame(profile, configured.withGraphJoinOptimization(GraphJoinOptimization.AUTO));
+			assertSame(optimization, profile.withGraphRestrictionMode(legacyMode).graphJoinOptimization());
+		}
+	}
+
+	@Test
+	void graphJoinOptimizationRejectsNull() {
+		assertThrows(NullPointerException.class, () -> QueryExecutionPolicy.DEFAULT.withGraphJoinOptimization(null));
+	}
 
 	@Test
 	void directScalarPreparationFreezesPolicy() {
@@ -88,7 +129,7 @@ class QueryExecutionPolicyTest {
 
 	@Test
 	void factoryAllowsAutomaticFallbackForACustomStrategyWithRestrictionsOff() {
-		QueryExecutionPolicy off = QueryExecutionPolicy.DEFAULT.withGraphRestrictionMode(GraphRestrictionMode.OFF);
+		QueryExecutionPolicy off = QueryExecutionPolicy.DEFAULT.withGraphJoinOptimization(GraphJoinOptimization.OFF);
 		EvaluationStrategy strategy = mock(EvaluationStrategy.class, CALLS_REAL_METHODS);
 		doReturn(off).when(strategy).getQueryExecutionPolicy();
 		DefaultEvaluationStrategyFactory factory = new DefaultEvaluationStrategyFactory() {
@@ -106,10 +147,10 @@ class QueryExecutionPolicyTest {
 	}
 
 	@ParameterizedTest
-	@EnumSource(value = GraphRestrictionMode.class, names = { "OFF", "REQUIRE_RESTRICTED", "FORCE_INDEPENDENT" })
-	void unsupportedCustomStrategiesRejectNonDefaultGraphModes(GraphRestrictionMode mode) {
+	@EnumSource(value = GraphJoinOptimization.class, names = { "OFF", "REQUIRE_RESTRICTED", "FORCE_INDEPENDENT" })
+	void unsupportedCustomStrategiesRejectNonDefaultGraphModes(GraphJoinOptimization mode) {
 		EvaluationStrategy strategy = mock(EvaluationStrategy.class, CALLS_REAL_METHODS);
 		assertThrows(UnsupportedOperationException.class,
-				() -> strategy.setQueryExecutionPolicy(QueryExecutionPolicy.DEFAULT.withGraphRestrictionMode(mode)));
+				() -> strategy.setQueryExecutionPolicy(QueryExecutionPolicy.DEFAULT.withGraphJoinOptimization(mode)));
 	}
 }

@@ -26,7 +26,7 @@ import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.Dataset;
 import org.eclipse.rdf4j.query.QueryEvaluationException;
-import org.eclipse.rdf4j.query.QueryExecutionPolicy.GraphRestrictionMode;
+import org.eclipse.rdf4j.query.QueryExecutionPolicy.GraphJoinOptimization;
 import org.eclipse.rdf4j.query.algebra.ArbitraryLengthPath;
 import org.eclipse.rdf4j.query.algebra.Distinct;
 import org.eclipse.rdf4j.query.algebra.Exists;
@@ -447,7 +447,7 @@ public final class LmdbNativeEvaluationStrategy extends StrictEvaluationStrategy
 				&& !Boolean.TRUE.equals(KERNEL_SUBPLAN.get())
 				&& (!AdaptiveFilterEvaluationStep.includesGraphRestrictionRegion(context)
 						|| !NativeGraphFusion.requiresSemanticRestrictionJoin(join, context.getDataset(),
-								getQueryExecutionPolicy().graphRestrictionMode(), evaluationStatistics))
+								getQueryExecutionPolicy().graphJoinOptimization(), evaluationStatistics))
 										? NativeUniformValuesJoin.prepare(join, context, this, nativeSource)
 										: null;
 		if (hint == null) {
@@ -504,12 +504,13 @@ public final class LmdbNativeEvaluationStrategy extends StrictEvaluationStrategy
 	}
 
 	private boolean keepsGraphRestrictionBoundary(TupleExpr expr, QueryEvaluationContext context) {
-		GraphRestrictionMode mode = getQueryExecutionPolicy().graphRestrictionMode();
-		if (mode == GraphRestrictionMode.OFF || !AdaptiveFilterEvaluationStep.includesGraphRestrictionRegion(context)) {
+		GraphJoinOptimization mode = getQueryExecutionPolicy().graphJoinOptimization();
+		if (mode == GraphJoinOptimization.OFF
+				|| !AdaptiveFilterEvaluationStep.includesGraphRestrictionRegion(context)) {
 			return false;
 		}
 		if (expr instanceof Graph
-				|| mode != GraphRestrictionMode.FORCE_INDEPENDENT && context.getActiveGraph() != null) {
+				|| mode != GraphJoinOptimization.FORCE_INDEPENDENT && context.getActiveGraph() != null) {
 			return true;
 		}
 		Dataset dataset = context.getDataset();
@@ -517,7 +518,7 @@ public final class LmdbNativeEvaluationStrategy extends StrictEvaluationStrategy
 				|| keepsGraphRestrictionDriver(expr, dataset, mode);
 	}
 
-	private boolean keepsGraphRestrictionDriver(TupleExpr expr, Dataset dataset, GraphRestrictionMode mode) {
+	private boolean keepsGraphRestrictionDriver(TupleExpr expr, Dataset dataset, GraphJoinOptimization mode) {
 		// A native driver looks opaque to the generic reversed-join proof. Retain standard preparation for the
 		// driver and its children, including VALUES, so the proof can inspect their original binding contract.
 		TupleExpr branch = expr;
@@ -535,9 +536,9 @@ public final class LmdbNativeEvaluationStrategy extends StrictEvaluationStrategy
 	@Override
 	protected PreparedRestrictionPlan specializeGraphBodyRestriction(TupleExpr preparedBody,
 			QueryEvaluationContext selectedContext, PreparedRestrictionPlan genericPlan) {
-		GraphRestrictionMode mode = getQueryExecutionPolicy().graphRestrictionMode();
+		GraphJoinOptimization mode = getQueryExecutionPolicy().graphJoinOptimization();
 		if (!nativeEnabled || nativeSource == null || forceRootGeneric || Boolean.TRUE.equals(KERNEL_SUBPLAN.get())
-				|| mode != GraphRestrictionMode.REQUIRE_RESTRICTED && mode != GraphRestrictionMode.AUTO
+				|| mode != GraphJoinOptimization.REQUIRE_RESTRICTED && mode != GraphJoinOptimization.AUTO
 				|| genericPlan.blueprint().realization() != RestrictionBlueprint.Realization.STABLE
 				|| selectedContext.getActiveGraph() == null
 				|| RemoteBNode.containsRemoteIdentity(selectedContext.getActiveGraph().physicalGraph())) {

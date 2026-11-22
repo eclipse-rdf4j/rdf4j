@@ -23,7 +23,7 @@ import java.util.concurrent.TimeUnit;
 import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.query.QueryExecutionPolicy;
-import org.eclipse.rdf4j.query.QueryExecutionPolicy.GraphRestrictionMode;
+import org.eclipse.rdf4j.query.QueryExecutionPolicy.GraphJoinOptimization;
 import org.eclipse.rdf4j.sail.SailConnection;
 import org.eclipse.rdf4j.sail.SailException;
 import org.junit.jupiter.api.BeforeEach;
@@ -75,17 +75,17 @@ public class AbstractSailTest {
 	}
 
 	@Test
-	void experimentalOptimizationsPreserveGraphRestrictionMode() {
-		for (GraphRestrictionMode mode : GraphRestrictionMode.values()) {
-			subject.setQueryExecutionPolicy(QueryExecutionPolicy.EXPERIMENTAL.withGraphRestrictionMode(mode));
+	void experimentalOptimizationsPreserveGraphJoinOptimization() {
+		for (GraphJoinOptimization mode : GraphJoinOptimization.values()) {
+			subject.setQueryExecutionPolicy(QueryExecutionPolicy.EXPERIMENTAL.withGraphJoinOptimization(mode));
 
 			subject.setExperimentalQueryOptimizations(false);
 			assertThat(subject.isExperimentalQueryOptimizations()).isFalse();
-			assertThat(subject.getQueryExecutionPolicy().graphRestrictionMode()).isEqualTo(mode);
+			assertThat(subject.getQueryExecutionPolicy().graphJoinOptimization()).isEqualTo(mode);
 
 			subject.setExperimentalQueryOptimizations(true);
 			assertThat(subject.isExperimentalQueryOptimizations()).isTrue();
-			assertThat(subject.getQueryExecutionPolicy().graphRestrictionMode()).isEqualTo(mode);
+			assertThat(subject.getQueryExecutionPolicy().graphJoinOptimization()).isEqualTo(mode);
 		}
 	}
 

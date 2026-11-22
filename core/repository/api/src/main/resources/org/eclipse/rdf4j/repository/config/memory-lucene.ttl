@@ -29,7 +29,7 @@
                 config:mem.persist {%Persist|true|false%} ;
                 config:mem.syncDelay {%Sync delay|0%};
                 # @workbench.field len=4
-                config:sail.graphRestrictionMode "{%Graph restriction mode|AUTO|OFF%}" ;
+                config:sail.graphJoinOptimization "{%Graph join optimization|AUTO|OFF%}" ;
                 config:sail.defaultQueryEvaluationMode "{%Query Evaluation Mode|STRICT|STANDARD%}"
             ]
         ]

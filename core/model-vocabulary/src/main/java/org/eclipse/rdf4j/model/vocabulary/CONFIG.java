@@ -236,7 +236,15 @@ public class CONFIG {
 		public final static IRI experimentalQueryOptimizations = createIRI(NAMESPACE,
 				"sail.experimentalQueryOptimizations");
 
-		/** <var>tag:rdf4j.org,2023:config/sail.graphRestrictionMode</var> */
+		/** <var>tag:rdf4j.org,2023:config/sail.graphJoinOptimization</var> */
+		public final static IRI graphJoinOptimization = createIRI(NAMESPACE, "sail.graphJoinOptimization");
+
+		/**
+		 * <var>tag:rdf4j.org,2023:config/sail.graphRestrictionMode</var>
+		 *
+		 * @deprecated use {@link #graphJoinOptimization} instead.
+		 */
+		@Deprecated(since = "6.2.0")
 		public final static IRI graphRestrictionMode = createIRI(NAMESPACE, "sail.graphRestrictionMode");
 
 		/** <var>tag:rdf4j.org,2023:config/sail.slowQueryLogThresholdSeconds</var> */

@@ -35,7 +35,7 @@ import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.Dataset;
 import org.eclipse.rdf4j.query.QueryEvaluationException;
 import org.eclipse.rdf4j.query.QueryExecutionPolicy;
-import org.eclipse.rdf4j.query.QueryExecutionPolicy.GraphRestrictionMode;
+import org.eclipse.rdf4j.query.QueryExecutionPolicy.GraphJoinOptimization;
 import org.eclipse.rdf4j.query.QueryLanguage;
 import org.eclipse.rdf4j.query.QueryParseOptions;
 import org.eclipse.rdf4j.query.QueryParseOptions.GraphAlgebraMode;
@@ -81,7 +81,7 @@ class GraphScopeOptimizerTest {
 	void positiveGraphIsLoweredBeforeJoinSelectionWhenRestrictionsAreOff() {
 		DefaultEvaluationStrategy strategy = new DefaultEvaluationStrategy(new EmptyTripleSource(), null);
 		strategy.setQueryExecutionPolicy(
-				QueryExecutionPolicy.DEFAULT.withGraphRestrictionMode(GraphRestrictionMode.OFF));
+				QueryExecutionPolicy.DEFAULT.withGraphJoinOptimization(GraphJoinOptimization.OFF));
 		TupleExpr plan = parse("SELECT * WHERE { VALUES ?s { <urn:s> } GRAPH <urn:g> { ?s <urn:p> ?o } }");
 		strategy.optimize(plan, new EvaluationStatistics(), EmptyBindingSet.getInstance());
 		assertThat(graphs(plan)).isEmpty();
@@ -111,10 +111,10 @@ class GraphScopeOptimizerTest {
 	}
 
 	@ParameterizedTest
-	@EnumSource(GraphRestrictionMode.class)
-	void preservesMagicPropertyResultsWithCollectionSyntax(GraphRestrictionMode mode) {
+	@EnumSource(GraphJoinOptimization.class)
+	void preservesMagicPropertyResultsWithCollectionSyntax(GraphJoinOptimization mode) {
 		DefaultEvaluationStrategy strategy = new DefaultEvaluationStrategy(new EmptyTripleSource(), null);
-		strategy.setQueryExecutionPolicy(QueryExecutionPolicy.DEFAULT.withGraphRestrictionMode(mode));
+		strategy.setQueryExecutionPolicy(QueryExecutionPolicy.DEFAULT.withGraphJoinOptimization(mode));
 		for (String output : List.of("(?part)", "?part")) {
 			TupleExpr plan = parse("SELECT ?part WHERE { VALUES ?part { 'a' } GRAPH <urn:absent> { "
 					+ "('a,b' ',') <http://rdf4j.org/function/string#split> " + output + " } }");
@@ -125,12 +125,12 @@ class GraphScopeOptimizerTest {
 	}
 
 	@ParameterizedTest
-	@EnumSource(value = GraphRestrictionMode.class, names = { "AUTO", "FORCE_INDEPENDENT", "REQUIRE_RESTRICTED" })
-	void retainsGraphWhenAnOrdinaryCollectionPatternCanSeek(GraphRestrictionMode mode) {
+	@EnumSource(value = GraphJoinOptimization.class, names = { "AUTO", "FORCE_INDEPENDENT", "REQUIRE_RESTRICTED" })
+	void retainsGraphWhenAnOrdinaryCollectionPatternCanSeek(GraphJoinOptimization mode) {
 		TupleExpr plan = parse("SELECT ?part WHERE { VALUES ?part { 'a' } GRAPH <urn:g> { "
 				+ "('a,b' ',') <http://rdf4j.org/function/string#split> (?part) . "
 				+ "<urn:list> <" + RDF.FIRST + "> ?part } }");
-		new GraphScopeOptimizer(QueryExecutionPolicy.DEFAULT.withGraphRestrictionMode(mode))
+		new GraphScopeOptimizer(QueryExecutionPolicy.DEFAULT.withGraphJoinOptimization(mode))
 				.optimize(plan, null, EmptyBindingSet.getInstance());
 		assertThat(graphs(plan)).hasSize(1);
 	}

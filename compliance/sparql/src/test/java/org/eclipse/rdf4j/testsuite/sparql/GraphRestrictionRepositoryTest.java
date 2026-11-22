@@ -25,7 +25,7 @@ import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.QueryExecutionPolicy;
-import org.eclipse.rdf4j.query.QueryExecutionPolicy.GraphRestrictionMode;
+import org.eclipse.rdf4j.query.QueryExecutionPolicy.GraphJoinOptimization;
 import org.eclipse.rdf4j.query.QueryResults;
 import org.eclipse.rdf4j.query.algebra.helpers.TupleExprs;
 import org.eclipse.rdf4j.query.explanation.Explanation;
@@ -178,7 +178,7 @@ class GraphRestrictionRepositoryTest {
 	@TestFactory
 	Stream<DynamicTest> independentAndRestrictedPlansAgreeThroughRepositoryApi() {
 		return Stream.of(Backend.values())
-				.flatMap(backend -> Stream.of(GraphRestrictionMode.values())
+				.flatMap(backend -> Stream.of(GraphJoinOptimization.values())
 						.map(mode -> DynamicTest.dynamicTest(backend + " " + mode, () -> verifyMode(backend, mode))));
 	}
 
@@ -192,7 +192,7 @@ class GraphRestrictionRepositoryTest {
 	private void verifySnapshot(Backend backend) {
 		AbstractSail sail = backend.newSail(dataDirectory.resolve(backend + "-snapshot"));
 		sail.setQueryExecutionPolicy(QueryExecutionPolicy.DEFAULT
-				.withGraphRestrictionMode(GraphRestrictionMode.REQUIRE_RESTRICTED));
+				.withGraphJoinOptimization(GraphJoinOptimization.REQUIRE_RESTRICTED));
 		SailRepository repository = new SailRepository(sail);
 		try (var reader = repository.getConnection(); var writer = repository.getConnection()) {
 			ValueFactory values = reader.getValueFactory();
@@ -244,7 +244,8 @@ class GraphRestrictionRepositoryTest {
 	@Timeout(30)
 	void nativeAutoUsesIndependentAutocommitReadsWithOrWithoutDirectWriter() {
 		AbstractSail sail = Backend.NATIVE.newSail(dataDirectory.resolve("direct-writer"));
-		sail.setQueryExecutionPolicy(QueryExecutionPolicy.DEFAULT.withGraphRestrictionMode(GraphRestrictionMode.AUTO));
+		sail.setQueryExecutionPolicy(
+				QueryExecutionPolicy.DEFAULT.withGraphJoinOptimization(GraphJoinOptimization.AUTO));
 		SailRepository repository = new SailRepository(sail);
 		try (var reader = repository.getConnection(); var writer = repository.getConnection()) {
 			seed(writer);
@@ -276,7 +277,7 @@ class GraphRestrictionRepositoryTest {
 		}
 	}
 
-	private void verifyMode(Backend backend, GraphRestrictionMode mode) {
+	private void verifyMode(Backend backend, GraphJoinOptimization mode) {
 		Path path = dataDirectory.resolve(backend.name() + "-" + mode);
 		if (backend == Backend.NATIVE) {
 			SailRepository seedRepository = new SailRepository(backend.newSail(path));
@@ -287,7 +288,7 @@ class GraphRestrictionRepositoryTest {
 			}
 		}
 		AbstractSail sail = backend.newSail(path);
-		sail.setQueryExecutionPolicy(QueryExecutionPolicy.DEFAULT.withGraphRestrictionMode(mode));
+		sail.setQueryExecutionPolicy(QueryExecutionPolicy.DEFAULT.withGraphJoinOptimization(mode));
 		SailRepository repository = new SailRepository(sail);
 		try (var connection = repository.getConnection()) {
 			if (backend == Backend.MEMORY) {
@@ -301,7 +302,7 @@ class GraphRestrictionRepositoryTest {
 		}
 	}
 
-	private static void verifyPreparedQuery(RepositoryConnection connection, GraphRestrictionMode mode) {
+	private static void verifyPreparedQuery(RepositoryConnection connection, GraphJoinOptimization mode) {
 		ValueFactory values = connection.getValueFactory();
 		IRI graph = values.createIRI(NAMESPACE, "graph");
 		IRI wanted = values.createIRI(NAMESPACE, "wanted");
@@ -318,9 +319,9 @@ class GraphRestrictionRepositoryTest {
 		assertThat(QueryResults.asList(query.evaluate())).as("result bag in mode %s", mode)
 				.containsExactlyInAnyOrderElementsOf(expected);
 		boolean restricted = usesRestrictionPlan(query);
-		if (mode == GraphRestrictionMode.REQUIRE_RESTRICTED) {
+		if (mode == GraphJoinOptimization.REQUIRE_RESTRICTED) {
 			assertThat(restricted).as("restricted join in mode %s", mode).isTrue();
-		} else if (mode == GraphRestrictionMode.FORCE_INDEPENDENT || mode == GraphRestrictionMode.OFF) {
+		} else if (mode == GraphJoinOptimization.FORCE_INDEPENDENT || mode == GraphJoinOptimization.OFF) {
 			assertThat(restricted).as("restricted join in mode %s", mode).isFalse();
 		} else {
 			SailTupleQuery unbound = (SailTupleQuery) connection.prepareTupleQuery("""

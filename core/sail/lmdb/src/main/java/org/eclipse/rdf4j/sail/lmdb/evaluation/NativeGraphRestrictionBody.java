@@ -27,7 +27,7 @@ import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.MutableBindingSet;
 import org.eclipse.rdf4j.query.QueryEvaluationException;
-import org.eclipse.rdf4j.query.QueryExecutionPolicy.GraphRestrictionMode;
+import org.eclipse.rdf4j.query.QueryExecutionPolicy.GraphJoinOptimization;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.QueryEvaluationContext;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.restrictions.InvocationOwner;
@@ -108,7 +108,7 @@ final class NativeGraphRestrictionBody {
 		this.generic = generic;
 		this.validateSnapshot = validateSnapshot;
 		this.requireRestricted = carrier.queryExecutionPolicy
-				.graphRestrictionMode() == GraphRestrictionMode.REQUIRE_RESTRICTED;
+				.graphJoinOptimization() == GraphJoinOptimization.REQUIRE_RESTRICTED;
 		ArrayList<BiConsumer<Value, MutableBindingSet>> setters = new ArrayList<>(slots.slotNames().length);
 		for (String name : slots.slotNames()) {
 			setters.add(context.addBinding(name));

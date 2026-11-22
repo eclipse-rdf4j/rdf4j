@@ -290,6 +290,10 @@ test('repository picker switches filtered configuration layers without replacing
             predicates: Array.from(group.querySelectorAll('[data-config-reference-option] > h3 code'))
                 .map(predicate => predicate.getAttribute('data-config-reference-iri')).sort()
         })));
+        const graphJoinOption = reference.locator(
+            '[data-config-reference-option]:has([data-config-reference-iri="tag:rdf4j.org,2023:config/sail.graphJoinOptimization"])'
+        );
+        await expect(graphJoinOption).toContainText('Graph join optimization');
         expect(groupDetails.map(group => group.title)).toEqual([
             'Repository', 'openrdf:SailRepository', 'rdf4j:SchemaCachingRDFSInferencer', 'openrdf:MemoryStore'
         ]);
@@ -320,7 +324,7 @@ test('repository picker switches filtered configuration layers without replacing
                 'tag:rdf4j.org,2023:config/sail.slowQueryLogFirstResultThresholdSeconds',
                 'tag:rdf4j.org,2023:config/sail.slowQueryLogFile',
                 'tag:rdf4j.org,2023:config/sail.experimentalQueryOptimizations',
-                'tag:rdf4j.org,2023:config/sail.graphRestrictionMode',
+                'tag:rdf4j.org,2023:config/sail.graphJoinOptimization',
                 'tag:rdf4j.org,2023:config/mem.persist',
                 'tag:rdf4j.org,2023:config/mem.syncDelay'
             ]

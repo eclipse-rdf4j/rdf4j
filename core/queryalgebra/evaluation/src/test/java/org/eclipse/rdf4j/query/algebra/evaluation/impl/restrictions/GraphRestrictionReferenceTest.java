@@ -31,7 +31,7 @@ import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.Dataset;
 import org.eclipse.rdf4j.query.QueryEvaluationException;
 import org.eclipse.rdf4j.query.QueryExecutionPolicy;
-import org.eclipse.rdf4j.query.QueryExecutionPolicy.GraphRestrictionMode;
+import org.eclipse.rdf4j.query.QueryExecutionPolicy.GraphJoinOptimization;
 import org.eclipse.rdf4j.query.QueryLanguage;
 import org.eclipse.rdf4j.query.QueryParseOptions;
 import org.eclipse.rdf4j.query.QueryParseOptions.GraphAlgebraMode;
@@ -224,7 +224,7 @@ class GraphRestrictionReferenceTest {
 
 	private static DefaultEvaluationStrategy reference(DefaultEvaluationStrategy strategy) {
 		strategy.setQueryExecutionPolicy(QueryExecutionPolicy.DEFAULT
-				.withGraphRestrictionMode(GraphRestrictionMode.FORCE_INDEPENDENT));
+				.withGraphJoinOptimization(GraphJoinOptimization.FORCE_INDEPENDENT));
 		return strategy;
 	}
 

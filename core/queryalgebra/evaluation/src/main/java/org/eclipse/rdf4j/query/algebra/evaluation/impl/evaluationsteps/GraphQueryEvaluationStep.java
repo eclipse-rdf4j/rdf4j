@@ -38,7 +38,7 @@ import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.Dataset;
 import org.eclipse.rdf4j.query.MutableBindingSet;
 import org.eclipse.rdf4j.query.QueryEvaluationException;
-import org.eclipse.rdf4j.query.QueryExecutionPolicy.GraphRestrictionMode;
+import org.eclipse.rdf4j.query.QueryExecutionPolicy.GraphJoinOptimization;
 import org.eclipse.rdf4j.query.algebra.Graph;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.algebra.Var;
@@ -212,7 +212,7 @@ public final class GraphQueryEvaluationStep implements QueryEvaluationStep, Rest
 	}
 
 	private boolean requiresRestriction() {
-		return strategy.getQueryExecutionPolicy().graphRestrictionMode() == GraphRestrictionMode.REQUIRE_RESTRICTED;
+		return strategy.getQueryExecutionPolicy().graphJoinOptimization() == GraphJoinOptimization.REQUIRE_RESTRICTED;
 	}
 
 	private enum SelectorOrigin {

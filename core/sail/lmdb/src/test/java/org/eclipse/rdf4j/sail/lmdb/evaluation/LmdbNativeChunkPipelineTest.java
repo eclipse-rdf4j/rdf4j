@@ -27,7 +27,7 @@ import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.model.util.Values;
 import org.eclipse.rdf4j.query.QueryExecutionPolicy;
-import org.eclipse.rdf4j.query.QueryExecutionPolicy.GraphRestrictionMode;
+import org.eclipse.rdf4j.query.QueryExecutionPolicy.GraphJoinOptimization;
 import org.eclipse.rdf4j.query.QueryResults;
 import org.eclipse.rdf4j.query.TupleQuery;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
@@ -130,7 +130,8 @@ public class LmdbNativeChunkPipelineTest {
 	private static LmdbStore chunkPipelineStore(File directory) {
 		LmdbStore store = new LmdbStore(directory, chunkPipelineConfig());
 		// These tests assert the chunk pipeline's physical route, so isolate it from GRAPH restriction routing.
-		store.setQueryExecutionPolicy(QueryExecutionPolicy.DEFAULT.withGraphRestrictionMode(GraphRestrictionMode.OFF));
+		store.setQueryExecutionPolicy(
+				QueryExecutionPolicy.DEFAULT.withGraphJoinOptimization(GraphJoinOptimization.OFF));
 		return store;
 	}
 

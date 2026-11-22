@@ -22,27 +22,41 @@ import org.eclipse.rdf4j.common.annotation.Experimental;
  */
 public final class QueryExecutionPolicy {
 
-	/** Strategy selection for physical compatibility probes through independent GRAPH scopes. */
+	/** Controls join optimization for independent {@code GRAPH} scopes. */
+	@Experimental
+	public enum GraphJoinOptimization {
+		/** Disables the optimization. */
+		OFF,
+		/** Lets the planner choose the optimization when applicable. */
+		AUTO,
+		/** Diagnostic mode requiring an admitted restricted candidate at a requested GRAPH join. */
+		REQUIRE_RESTRICTED,
+		/** Diagnostic reference preserving independent GRAPH evaluation. */
+		FORCE_INDEPENDENT
+	}
+
+	/**
+	 * @deprecated Use {@link GraphJoinOptimization} instead.
+	 */
+	@Deprecated(since = "6.2.0")
 	@Experimental
 	public enum GraphRestrictionMode {
 		OFF,
 		AUTO,
-		/** Test mode requiring an admitted restricted candidate at a requested GRAPH join. */
 		REQUIRE_RESTRICTED,
-		/** Test reference preserving the original independent GRAPH evaluation. */
 		FORCE_INDEPENDENT
 	}
 
-	/** Standard query optimizations with automatic GRAPH restriction probes. */
-	public static final QueryExecutionPolicy DEFAULT = new QueryExecutionPolicy(false, GraphRestrictionMode.AUTO);
-	public static final QueryExecutionPolicy EXPERIMENTAL = new QueryExecutionPolicy(true, GraphRestrictionMode.AUTO);
+	/** Standard query optimizations with automatic GRAPH join optimization. */
+	public static final QueryExecutionPolicy DEFAULT = new QueryExecutionPolicy(false, GraphJoinOptimization.AUTO);
+	public static final QueryExecutionPolicy EXPERIMENTAL = new QueryExecutionPolicy(true, GraphJoinOptimization.AUTO);
 
 	private final boolean experimentalQueryOptimizations;
-	private final GraphRestrictionMode graphRestrictionMode;
+	private final GraphJoinOptimization graphJoinOptimization;
 
-	private QueryExecutionPolicy(boolean experimentalQueryOptimizations, GraphRestrictionMode graphRestrictionMode) {
+	private QueryExecutionPolicy(boolean experimentalQueryOptimizations, GraphJoinOptimization graphJoinOptimization) {
 		this.experimentalQueryOptimizations = experimentalQueryOptimizations;
-		this.graphRestrictionMode = Objects.requireNonNull(graphRestrictionMode);
+		this.graphJoinOptimization = Objects.requireNonNull(graphJoinOptimization);
 	}
 
 	public static QueryExecutionPolicy of(boolean experimentalQueryOptimizations) {
@@ -54,17 +68,36 @@ public final class QueryExecutionPolicy {
 	}
 
 	@Experimental
-	public GraphRestrictionMode graphRestrictionMode() {
-		return graphRestrictionMode;
+	public GraphJoinOptimization graphJoinOptimization() {
+		return graphJoinOptimization;
 	}
 
 	@Experimental
-	public QueryExecutionPolicy withGraphRestrictionMode(GraphRestrictionMode mode) {
-		if (graphRestrictionMode == mode) {
+	public QueryExecutionPolicy withGraphJoinOptimization(GraphJoinOptimization optimization) {
+		if (graphJoinOptimization == optimization) {
 			return this;
 		}
 		QueryExecutionPolicy standard = of(experimentalQueryOptimizations);
-		return standard.graphRestrictionMode == mode ? standard
-				: new QueryExecutionPolicy(experimentalQueryOptimizations, mode);
+		return standard.graphJoinOptimization == optimization ? standard
+				: new QueryExecutionPolicy(experimentalQueryOptimizations, optimization);
+	}
+
+	/**
+	 * @deprecated Use {@link #graphJoinOptimization()} instead.
+	 */
+	@Deprecated(since = "6.2.0")
+	@Experimental
+	public GraphRestrictionMode graphRestrictionMode() {
+		return GraphRestrictionMode.valueOf(graphJoinOptimization.name());
+	}
+
+	/**
+	 * @deprecated Use {@link #withGraphJoinOptimization(GraphJoinOptimization)} instead.
+	 */
+	@Deprecated(since = "6.2.0")
+	@Experimental
+	public QueryExecutionPolicy withGraphRestrictionMode(GraphRestrictionMode mode) {
+		Objects.requireNonNull(mode);
+		return withGraphJoinOptimization(GraphJoinOptimization.valueOf(mode.name()));
 	}
 }

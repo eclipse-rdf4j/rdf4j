@@ -82,7 +82,7 @@
                   lmdb:nativeEvaluationEnabled {%Native query evaluation enabled|false|true%} ;
                   lmdb:directAdjacencyEnabled {%Direct adjacency index enabled|false|true%} ;
                   lmdb:valueOverlayEnabled {%Compressed value overlay enabled|false|true%} ;
-                  config:sail.graphRestrictionMode "{%Graph restriction mode|AUTO|OFF%}" ;
+                  config:sail.graphJoinOptimization "{%Graph join optimization|AUTO|OFF%}" ;
                   config:sail.defaultQueryEvaluationMode "{%Query Evaluation Mode|STANDARD|STRICT%}";
                ]
             ]

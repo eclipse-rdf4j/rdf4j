@@ -26,7 +26,7 @@ import org.eclipse.rdf4j.model.vocabulary.RDF4J;
 import org.eclipse.rdf4j.model.vocabulary.SESAME;
 import org.eclipse.rdf4j.query.Dataset;
 import org.eclipse.rdf4j.query.QueryExecutionPolicy;
-import org.eclipse.rdf4j.query.QueryExecutionPolicy.GraphRestrictionMode;
+import org.eclipse.rdf4j.query.QueryExecutionPolicy.GraphJoinOptimization;
 import org.eclipse.rdf4j.query.impl.BlankNodeAllocationScope;
 import org.eclipse.rdf4j.query.impl.RemoteBNode;
 import org.eclipse.rdf4j.query.impl.SimpleDataset;
@@ -139,9 +139,9 @@ class LmdbNativeGraphBoundaryTest {
 	}
 
 	@ParameterizedTest
-	@EnumSource(value = GraphRestrictionMode.class, names = { "AUTO", "OFF" })
-	void remoteSelectorCannotSelectALocalBlankNodeGraphWithTheSameLabel(GraphRestrictionMode mode) {
-		reopen(QueryExecutionPolicy.DEFAULT.withGraphRestrictionMode(mode));
+	@EnumSource(value = GraphJoinOptimization.class, names = { "AUTO", "OFF" })
+	void remoteSelectorCannotSelectALocalBlankNodeGraphWithTheSameLabel(GraphJoinOptimization mode) {
+		reopen(QueryExecutionPolicy.DEFAULT.withGraphJoinOptimization(mode));
 		ValueFactory vf = repository.getValueFactory();
 		BNode remote = (BNode) RemoteBNode.newResponseScope(new BlankNodeAllocationScope(), vf, new Object(), false)
 				.map(vf.createBNode("response-label"));
@@ -161,9 +161,9 @@ class LmdbNativeGraphBoundaryTest {
 	}
 
 	@ParameterizedTest
-	@EnumSource(value = GraphRestrictionMode.class, names = { "AUTO", "OFF" })
-	void correlatedGraphSelectorUsesTheSemanticAliasAtItsInvocation(GraphRestrictionMode mode) {
-		reopen(QueryExecutionPolicy.DEFAULT.withGraphRestrictionMode(mode));
+	@EnumSource(value = GraphJoinOptimization.class, names = { "AUTO", "OFF" })
+	void correlatedGraphSelectorUsesTheSemanticAliasAtItsInvocation(GraphJoinOptimization mode) {
+		reopen(QueryExecutionPolicy.DEFAULT.withGraphJoinOptimization(mode));
 		for (var alias : List.of(RDF4J.NIL, SESAME.NIL)) {
 			String driver = "VALUES ?g { <urn:g1> <" + alias + "> } ";
 			for (String body : List.of("VALUES ?s { <urn:default> } ?s <urn:p> <urn:o>",

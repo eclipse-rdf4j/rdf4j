@@ -140,7 +140,7 @@ public abstract class AbstractSail implements Sail {
 		initializationLock.writeLock().lock();
 		try {
 			setQueryExecutionPolicy(QueryExecutionPolicy.of(enabled)
-					.withGraphRestrictionMode(queryExecutionPolicy.graphRestrictionMode()));
+					.withGraphJoinOptimization(queryExecutionPolicy.graphJoinOptimization()));
 		} finally {
 			initializationLock.writeLock().unlock();
 		}

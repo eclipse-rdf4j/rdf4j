@@ -34,7 +34,7 @@ import org.eclipse.rdf4j.common.iteration.LookAheadIteration;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.QueryExecutionPolicy;
-import org.eclipse.rdf4j.query.QueryExecutionPolicy.GraphRestrictionMode;
+import org.eclipse.rdf4j.query.QueryExecutionPolicy.GraphJoinOptimization;
 import org.eclipse.rdf4j.query.algebra.BinaryTupleOperator;
 import org.eclipse.rdf4j.query.algebra.BindingSetAssignment;
 import org.eclipse.rdf4j.query.algebra.Difference;
@@ -81,8 +81,8 @@ public final class RestrictionCompiler {
 		if (policy == null) {
 			return false;
 		}
-		GraphRestrictionMode mode = policy.graphRestrictionMode();
-		return mode == GraphRestrictionMode.AUTO || mode == GraphRestrictionMode.REQUIRE_RESTRICTED;
+		GraphJoinOptimization mode = policy.graphJoinOptimization();
+		return mode == GraphJoinOptimization.AUTO || mode == GraphJoinOptimization.REQUIRE_RESTRICTED;
 	}
 
 	public static boolean enabled(EvaluationStrategy strategy, QueryEvaluationContext context) {

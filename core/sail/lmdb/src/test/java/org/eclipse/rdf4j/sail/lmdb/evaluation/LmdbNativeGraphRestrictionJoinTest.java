@@ -23,7 +23,7 @@ import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.vocabulary.RDF4J;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.QueryExecutionPolicy;
-import org.eclipse.rdf4j.query.QueryExecutionPolicy.GraphRestrictionMode;
+import org.eclipse.rdf4j.query.QueryExecutionPolicy.GraphJoinOptimization;
 import org.eclipse.rdf4j.query.TupleQuery;
 import org.eclipse.rdf4j.query.algebra.BindingSetAssignment;
 import org.eclipse.rdf4j.query.algebra.Graph;
@@ -169,8 +169,8 @@ class LmdbNativeGraphRestrictionJoinTest {
 	}
 
 	@ParameterizedTest
-	@EnumSource(value = GraphRestrictionMode.class, names = { "AUTO", "REQUIRE_RESTRICTED" })
-	void authoredValuesInGraphKeepAnAdmittedSemanticProbe(GraphRestrictionMode mode) {
+	@EnumSource(value = GraphJoinOptimization.class, names = { "AUTO", "REQUIRE_RESTRICTED" })
+	void authoredValuesInGraphKeepAnAdmittedSemanticProbe(GraphJoinOptimization mode) {
 		SailRepository repository = repository(mode, true);
 		try (var connection = repository.getConnection()) {
 			var vf = connection.getValueFactory();
@@ -218,7 +218,7 @@ class LmdbNativeGraphRestrictionJoinTest {
 
 	@Test
 	void graphJoinReadsMatchingQuadsThroughNativeRestrictions() {
-		SailRepository repository = repository(GraphRestrictionMode.REQUIRE_RESTRICTED, true);
+		SailRepository repository = repository(GraphJoinOptimization.REQUIRE_RESTRICTED, true);
 		try (var connection = repository.getConnection()) {
 			var vf = connection.getValueFactory();
 			var graph = vf.createIRI("urn:restriction:graph");
@@ -257,7 +257,7 @@ class LmdbNativeGraphRestrictionJoinTest {
 
 	@Test
 	void onlyAssuredDictionaryMissesSkipTheNativeStatementAccess() {
-		SailRepository repository = repository(GraphRestrictionMode.REQUIRE_RESTRICTED, true);
+		SailRepository repository = repository(GraphJoinOptimization.REQUIRE_RESTRICTED, true);
 		try (var connection = repository.getConnection()) {
 			var vf = connection.getValueFactory();
 			var graph = vf.createIRI("urn:g");
@@ -295,7 +295,7 @@ class LmdbNativeGraphRestrictionJoinTest {
 				  GRAPH ?g { ?s <urn:p> ?o }
 				}
 				""".formatted(RDF4J.NIL, RDF4J.NIL);
-		SailRepository repository = repository(GraphRestrictionMode.REQUIRE_RESTRICTED, true);
+		SailRepository repository = repository(GraphJoinOptimization.REQUIRE_RESTRICTED, true);
 		try (var connection = repository.getConnection()) {
 			var vf = connection.getValueFactory();
 			var p = vf.createIRI("urn:p");
@@ -326,7 +326,7 @@ class LmdbNativeGraphRestrictionJoinTest {
 				}
 				""";
 		SimpleDataset dataset = new SimpleDataset();
-		SailRepository repository = repository(GraphRestrictionMode.REQUIRE_RESTRICTED, true);
+		SailRepository repository = repository(GraphJoinOptimization.REQUIRE_RESTRICTED, true);
 		List<BindingSet> restricted;
 		try (var connection = repository.getConnection()) {
 			var vf = connection.getValueFactory();
@@ -356,7 +356,7 @@ class LmdbNativeGraphRestrictionJoinTest {
 			repository.shutDown();
 		}
 		for (boolean nativeEnabled : new boolean[] { false, true }) {
-			SailRepository independent = repository(GraphRestrictionMode.FORCE_INDEPENDENT, nativeEnabled);
+			SailRepository independent = repository(GraphJoinOptimization.FORCE_INDEPENDENT, nativeEnabled);
 			try (var connection = independent.getConnection()) {
 				var query = connection.prepareTupleQuery(sparql);
 				query.setDataset(dataset);
@@ -370,7 +370,7 @@ class LmdbNativeGraphRestrictionJoinTest {
 	@Test
 	@Timeout(30)
 	void laterProbeUsesTheOriginalSnapshotAndEmptyDatasetDoesNotOpenAScan() {
-		SailRepository repository = repository(GraphRestrictionMode.REQUIRE_RESTRICTED, true);
+		SailRepository repository = repository(GraphJoinOptimization.REQUIRE_RESTRICTED, true);
 		try (var reader = repository.getConnection(); var writer = repository.getConnection()) {
 			var vf = reader.getValueFactory();
 			var graph = vf.createIRI("urn:graph");
@@ -405,7 +405,7 @@ class LmdbNativeGraphRestrictionJoinTest {
 
 	@Test
 	void automaticPolicySelectsUnfusedPositiveRestrictionAndKeepsEligibleFusion() {
-		SailRepository repository = repository(GraphRestrictionMode.AUTO, true);
+		SailRepository repository = repository(GraphJoinOptimization.AUTO, true);
 		try (var connection = repository.getConnection()) {
 			var vf = connection.getValueFactory();
 			var g = vf.createIRI("urn:g");
@@ -435,7 +435,7 @@ class LmdbNativeGraphRestrictionJoinTest {
 
 	@Test
 	void graphRestrictedBodyRetainsPrevaluedAnonymousOutput() {
-		SailRepository repository = repository(GraphRestrictionMode.REQUIRE_RESTRICTED, true);
+		SailRepository repository = repository(GraphJoinOptimization.REQUIRE_RESTRICTED, true);
 		try (var connection = repository.getConnection()) {
 			var vf = connection.getValueFactory();
 			var s = vf.createIRI("urn:s");
@@ -460,7 +460,7 @@ class LmdbNativeGraphRestrictionJoinTest {
 
 	@Test
 	void automaticPolicyKeepsTheNativeIndependentJoinWhenBroadMasksRejectProbes() {
-		SailRepository repository = repository(GraphRestrictionMode.AUTO, true);
+		SailRepository repository = repository(GraphJoinOptimization.AUTO, true);
 		try (var connection = repository.getConnection()) {
 			var vf = connection.getValueFactory();
 			var graph = vf.createIRI("urn:g");
@@ -495,7 +495,7 @@ class LmdbNativeGraphRestrictionJoinTest {
 
 	@Test
 	void automaticPolicyStillProbesWhenTheBroadFrameFitsTheResultCache() {
-		SailRepository repository = repository(GraphRestrictionMode.AUTO, true);
+		SailRepository repository = repository(GraphJoinOptimization.AUTO, true);
 		try (var connection = repository.getConnection()) {
 			var vf = connection.getValueFactory();
 			var graph = vf.createIRI("urn:g");
@@ -525,7 +525,7 @@ class LmdbNativeGraphRestrictionJoinTest {
 
 	@Test
 	void automaticPolicyKeepsNativeExecutionWhenRankBlocksTheOnlyBoundKey() {
-		SailRepository repository = repository(GraphRestrictionMode.AUTO, true);
+		SailRepository repository = repository(GraphJoinOptimization.AUTO, true);
 		try (var connection = repository.getConnection()) {
 			var vf = connection.getValueFactory();
 			var g = vf.createIRI("urn:g");
@@ -552,8 +552,8 @@ class LmdbNativeGraphRestrictionJoinTest {
 		}
 	}
 
-	private SailRepository repository(GraphRestrictionMode mode, boolean nativeEnabled) {
-		return repository(QueryExecutionPolicy.EXPERIMENTAL.withGraphRestrictionMode(mode), nativeEnabled);
+	private SailRepository repository(GraphJoinOptimization mode, boolean nativeEnabled) {
+		return repository(QueryExecutionPolicy.EXPERIMENTAL.withGraphJoinOptimization(mode), nativeEnabled);
 	}
 
 	private SailRepository repository(QueryExecutionPolicy policy, boolean nativeEnabled) {

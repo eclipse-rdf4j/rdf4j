@@ -19,7 +19,7 @@ import java.util.concurrent.atomic.AtomicInteger;
 import java.util.stream.Stream;
 
 import org.eclipse.rdf4j.query.QueryExecutionPolicy;
-import org.eclipse.rdf4j.query.QueryExecutionPolicy.GraphRestrictionMode;
+import org.eclipse.rdf4j.query.QueryExecutionPolicy.GraphJoinOptimization;
 import org.eclipse.rdf4j.repository.Repository;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
 import org.eclipse.rdf4j.sail.lmdb.config.LmdbStoreConfig;
@@ -58,7 +58,7 @@ public class LmdbNativeGraphBindJoinScopeTest {
 
 	@TestFactory
 	Stream<DynamicTest> graphBindJoinScopeNativeRestrictionsOff() {
-		QueryExecutionPolicy policy = QueryExecutionPolicy.DEFAULT.withGraphRestrictionMode(GraphRestrictionMode.OFF);
+		QueryExecutionPolicy policy = QueryExecutionPolicy.DEFAULT.withGraphJoinOptimization(GraphJoinOptimization.OFF);
 		return new GraphBindJoinScopeTest(() -> newRepository(policy)).tests();
 	}
 }

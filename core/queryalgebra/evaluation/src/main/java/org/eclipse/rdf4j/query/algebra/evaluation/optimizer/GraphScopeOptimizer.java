@@ -24,7 +24,7 @@ import org.eclipse.rdf4j.model.vocabulary.SESAME;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.Dataset;
 import org.eclipse.rdf4j.query.QueryExecutionPolicy;
-import org.eclipse.rdf4j.query.QueryExecutionPolicy.GraphRestrictionMode;
+import org.eclipse.rdf4j.query.QueryExecutionPolicy.GraphJoinOptimization;
 import org.eclipse.rdf4j.query.algebra.BindingSetAssignment;
 import org.eclipse.rdf4j.query.algebra.Graph;
 import org.eclipse.rdf4j.query.algebra.Join;
@@ -48,14 +48,14 @@ import org.eclipse.rdf4j.query.impl.RemoteBNode;
  */
 public class GraphScopeOptimizer implements QueryOptimizer {
 
-	private final GraphRestrictionMode mode;
+	private final GraphJoinOptimization mode;
 
 	public GraphScopeOptimizer() {
 		this(QueryExecutionPolicy.DEFAULT);
 	}
 
 	public GraphScopeOptimizer(QueryExecutionPolicy policy) {
-		mode = policy.graphRestrictionMode();
+		mode = policy.graphJoinOptimization();
 	}
 
 	/** Structural routing hint. Actual restriction admission uses prepared scopes, source and operator certificates. */
@@ -153,9 +153,9 @@ public class GraphScopeOptimizer implements QueryOptimizer {
 										.stream()
 										.noneMatch(GraphScopeOptimizer::requiresSemanticSelection))
 						&& isPositiveBasicGraphPattern(graph.getArg(), graph.getGraphName())) {
-					boolean retainForRestriction = mode == GraphRestrictionMode.FORCE_INDEPENDENT
-							|| mode != GraphRestrictionMode.OFF && participatesInJoin(graph, tupleExpr,
-									mode == GraphRestrictionMode.AUTO ? this::hasPotentialSeekFrom
+					boolean retainForRestriction = mode == GraphJoinOptimization.FORCE_INDEPENDENT
+							|| mode != GraphJoinOptimization.OFF && participatesInJoin(graph, tupleExpr,
+									mode == GraphJoinOptimization.AUTO ? this::hasPotentialSeekFrom
 											: GraphScopeOptimizer::sharesBindingName);
 					// A body consisting entirely of magic call syntax has no statement to execute in a named graph.
 					// Keep its existing constant-graph lowering irrespective of the physical join policy.

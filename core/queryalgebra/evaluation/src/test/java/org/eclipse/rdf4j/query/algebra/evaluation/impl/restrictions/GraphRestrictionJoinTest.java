@@ -39,7 +39,7 @@ import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.Dataset;
 import org.eclipse.rdf4j.query.QueryEvaluationException;
 import org.eclipse.rdf4j.query.QueryExecutionPolicy;
-import org.eclipse.rdf4j.query.QueryExecutionPolicy.GraphRestrictionMode;
+import org.eclipse.rdf4j.query.QueryExecutionPolicy.GraphJoinOptimization;
 import org.eclipse.rdf4j.query.QueryLanguage;
 import org.eclipse.rdf4j.query.QueryParseOptions;
 import org.eclipse.rdf4j.query.QueryParseOptions.GraphAlgebraMode;
@@ -126,7 +126,7 @@ class GraphRestrictionJoinTest {
 		RecordingTripleSource source = new RecordingTripleSource(List.of(GRAPH), List.of(
 				VF.createStatement(subject, PREDICATE, object, GRAPH),
 				VF.createStatement(iri("unrelated"), PREDICATE, iri("other-object"), GRAPH)));
-		for (GraphRestrictionMode mode : List.of(GraphRestrictionMode.OFF, GraphRestrictionMode.FORCE_INDEPENDENT)) {
+		for (GraphJoinOptimization mode : List.of(GraphJoinOptimization.OFF, GraphJoinOptimization.FORCE_INDEPENDENT)) {
 			source.resetObservations();
 			assertThat(evaluate(source, parse("VALUES ?s { :selected } GRAPH :G { ?s :p ?o }"),
 					null, EmptyBindingSet.getInstance(), mode)).containsExactly(row(subject, object));
@@ -146,7 +146,7 @@ class GraphRestrictionJoinTest {
 		String query = "VALUES (?s ?payload) { (UNDEF 1) (UNDEF 2) } GRAPH :G { ?s :p ?o }";
 		BindingSet firstRow = row(first, object);
 		BindingSet secondRow = row(second, object);
-		assertThat(evaluate(source, parse(query), null, EmptyBindingSet.getInstance(), GraphRestrictionMode.AUTO))
+		assertThat(evaluate(source, parse(query), null, EmptyBindingSet.getInstance(), GraphJoinOptimization.AUTO))
 				.containsExactlyInAnyOrder(firstRow, firstRow, secondRow, secondRow);
 		assertThat(source.accesses).containsExactly(new Access(null, PREDICATE, null, List.of(GRAPH)));
 		assertThat(source.statementRows).isEqualTo(2L);
@@ -179,7 +179,7 @@ class GraphRestrictionJoinTest {
 			// A store can underestimate the optional branch while none of its shared keys bind.
 			graphJoins.get(0).getLeftArg().setResultSizeEstimate(estimatedOuterRows);
 
-			assertThat(evaluate(source, expression, null, EmptyBindingSet.getInstance(), GraphRestrictionMode.AUTO))
+			assertThat(evaluate(source, expression, null, EmptyBindingSet.getInstance(), GraphJoinOptimization.AUTO))
 					.as("outer estimate %s", estimatedOuterRows)
 					.hasSize(8)
 					.contains(row(first, object), row(second, object));
@@ -199,7 +199,7 @@ class GraphRestrictionJoinTest {
 				VF.createStatement(iri("unrelated"), PREDICATE, iri("other-object"), GRAPH)));
 		String query = "VALUES ?s { :selected } VALUES ?k { 1 2 } GRAPH :G { ?s :p ?o }";
 
-		assertThat(evaluate(source, parse(query), null, EmptyBindingSet.getInstance(), GraphRestrictionMode.AUTO))
+		assertThat(evaluate(source, parse(query), null, EmptyBindingSet.getInstance(), GraphJoinOptimization.AUTO))
 				.containsExactly(row(selected, object), row(selected, object));
 		assertThat(source.accesses.stream().filter(access -> PREDICATE.equals(access.predicate())).toList())
 				.containsExactly(new Access(selected, PREDICATE, null, List.of(GRAPH)),
@@ -229,7 +229,7 @@ class GraphRestrictionJoinTest {
 		assertThat(graphJoins).hasSize(1);
 		graphJoins.get(0).getLeftArg().setResultSizeEstimate(4);
 
-		assertThat(evaluate(source, expression, null, EmptyBindingSet.getInstance(), GraphRestrictionMode.AUTO))
+		assertThat(evaluate(source, expression, null, EmptyBindingSet.getInstance(), GraphJoinOptimization.AUTO))
 				.hasSize(8);
 		assertThat(source.accesses.stream().filter(access -> PREDICATE.equals(access.predicate())).toList())
 				.containsExactly(new Access(null, PREDICATE, object, List.of(GRAPH)),
@@ -260,10 +260,11 @@ class GraphRestrictionJoinTest {
 				return super.getCardinality(expression);
 			}
 		};
-		for (GraphRestrictionMode mode : List.of(GraphRestrictionMode.AUTO, GraphRestrictionMode.REQUIRE_RESTRICTED)) {
+		for (GraphJoinOptimization mode : List.of(GraphJoinOptimization.AUTO,
+				GraphJoinOptimization.REQUIRE_RESTRICTED)) {
 			source.resetObservations();
 			var strategy = new DefaultEvaluationStrategy(source, null, null, 0, statistics);
-			strategy.setQueryExecutionPolicy(QueryExecutionPolicy.DEFAULT.withGraphRestrictionMode(mode));
+			strategy.setQueryExecutionPolicy(QueryExecutionPolicy.DEFAULT.withGraphJoinOptimization(mode));
 			assertThat(evaluate(strategy, parse("?g ?s ?o", body), EmptyBindingSet.getInstance())).as("%s rows", mode)
 					.containsExactlyInAnyOrderElementsOf(expected);
 			assertThat(source.catalogOpens).as("%s catalog opens", mode).isLessThanOrEqualTo(1);
@@ -291,7 +292,7 @@ class GraphRestrictionJoinTest {
 		String first = "VALUES ?g { :G :H :I } GRAPH ?g { ?s :p ?o }";
 		var strategy = new DefaultEvaluationStrategy(source, null, null);
 		strategy.setQueryExecutionPolicy(QueryExecutionPolicy.DEFAULT
-				.withGraphRestrictionMode(GraphRestrictionMode.REQUIRE_RESTRICTED));
+				.withGraphJoinOptimization(GraphJoinOptimization.REQUIRE_RESTRICTED));
 		try (var rows = strategy.precompile(parse("?g", first, "LIMIT 1")).evaluate(EmptyBindingSet.getInstance())) {
 			assertThat(source.catalogOpens).isZero();
 			assertThat(rows.next().getValue("g")).isEqualTo(GRAPH);
@@ -351,7 +352,7 @@ class GraphRestrictionJoinTest {
 			assertThat(ground.hasNext()).isTrue();
 		}
 		source.resetObservations();
-		assertThat(evaluate(source, parse(query), null, EmptyBindingSet.getInstance(), GraphRestrictionMode.AUTO))
+		assertThat(evaluate(source, parse(query), null, EmptyBindingSet.getInstance(), GraphJoinOptimization.AUTO))
 				.isEmpty();
 		assertThat(source.accesses).containsExactly(new Access(null, RDF.TYPE, containerProperty, List.of(GRAPH)));
 
@@ -376,7 +377,7 @@ class GraphRestrictionJoinTest {
 			}
 		};
 		String query = "VALUES ?s { :first :second :first } GRAPH :G { ?s :p ?o }";
-		assertThat(evaluate(source, parse(query), null, EmptyBindingSet.getInstance(), GraphRestrictionMode.AUTO))
+		assertThat(evaluate(source, parse(query), null, EmptyBindingSet.getInstance(), GraphJoinOptimization.AUTO))
 				.containsExactlyInAnyOrder(row(first, object), row(first, object), row(second, object));
 		assertThat(source.accesses).containsExactly(new Access(null, PREDICATE, null, List.of(GRAPH)));
 		assertThat(source.statementRows).isEqualTo(3L);
@@ -486,7 +487,7 @@ class GraphRestrictionJoinTest {
 					VF.createStatement(iri("decoy"), PREDICATE, test.decoy(), GRAPH)));
 			BindingSet apiInput = row(Map.of("operand", test.requested()));
 			assertThat(evaluate(source, parse("BIND(?operand AS ?o) GRAPH :G { ?s :p ?o }"), null, apiInput,
-					GraphRestrictionMode.REQUIRE_RESTRICTED)).containsExactly(row(subject, test.stored()));
+					GraphJoinOptimization.REQUIRE_RESTRICTED)).containsExactly(row(subject, test.stored()));
 			assertThat(source.accesses)
 					.containsExactly(new Access(null, PREDICATE, test.requested(), List.of(GRAPH)));
 			assertThat(source.statementRows).isEqualTo(1L);
@@ -517,7 +518,7 @@ class GraphRestrictionJoinTest {
 		BindingSet bRow = row(b, second);
 		List<BindingSet> expected = List.of(aRow, aRow, aRow, aRow, bRow, bRow);
 		assertThat(evaluate(source, parse(query), null, EmptyBindingSet.getInstance(),
-				GraphRestrictionMode.FORCE_INDEPENDENT)).containsExactlyInAnyOrderElementsOf(expected);
+				GraphJoinOptimization.FORCE_INDEPENDENT)).containsExactlyInAnyOrderElementsOf(expected);
 
 		source.resetObservations();
 		assertThat(evaluate(source, parse(query))).containsExactlyInAnyOrderElementsOf(expected);
@@ -571,7 +572,7 @@ class GraphRestrictionJoinTest {
 					+ "?s :p ?key " + operator + " { ?s :observed ?x } }";
 			var algebra = parse("?s ?x", query);
 			assertThat(evaluate(source, algebra.clone(), null, EmptyBindingSet.getInstance(),
-					GraphRestrictionMode.FORCE_INDEPENDENT)).as(operator).isEmpty();
+					GraphJoinOptimization.FORCE_INDEPENDENT)).as(operator).isEmpty();
 			source.resetObservations();
 			assertThat(evaluate(source, algebra)).as(operator).isEmpty();
 			assertThat(source.accesses).as(operator)
@@ -696,7 +697,7 @@ class GraphRestrictionJoinTest {
 	void rejectingAnIncompatibleGraphDoesNotSuppressItsRequiredServiceFailure() {
 		RecordingTripleSource source = new RecordingTripleSource(List.of(GRAPH),
 				List.of(VF.createStatement(iri("decoy"), PREDICATE, iri("object"), GRAPH)));
-		DefaultEvaluationStrategy strategy = failingServiceStrategy(source, GraphRestrictionMode.AUTO,
+		DefaultEvaluationStrategy strategy = failingServiceStrategy(source, GraphJoinOptimization.AUTO,
 				new AtomicInteger());
 		TupleExpr query = parse("?g ?s ?o", """
 				VALUES (?g ?s) { (:missing :selected) }
@@ -718,7 +719,8 @@ class GraphRestrictionJoinTest {
 		String eager = "VALUES ?s { :selected } GRAPH :G { { ?s :p ?o } UNION { " + FAILING_SERVICE + " } }";
 		String emptyLeft = "VALUES ?s { } GRAPH :G { { ?s :p ?o } UNION { GRAPH :H { "
 				+ FAILING_SERVICE + " } } }";
-		for (GraphRestrictionMode mode : List.of(GraphRestrictionMode.FORCE_INDEPENDENT, GraphRestrictionMode.AUTO)) {
+		for (GraphJoinOptimization mode : List.of(GraphJoinOptimization.FORCE_INDEPENDENT,
+				GraphJoinOptimization.AUTO)) {
 			AtomicInteger calls = new AtomicInteger();
 			var strategy = failingServiceStrategy(source, mode, calls);
 			assertThatThrownBy(() -> evaluate(strategy, parse("?s ?o", eager, "LIMIT 1"),
@@ -744,7 +746,8 @@ class GraphRestrictionJoinTest {
 				List.of(VF.createStatement(subject, PREDICATE, object, GRAPH)));
 		String query = "VALUES ?s { :selected } GRAPH :G { { ?s :p ?o } UNION { GRAPH :H { "
 				+ FAILING_SERVICE + " } } }";
-		for (GraphRestrictionMode mode : List.of(GraphRestrictionMode.FORCE_INDEPENDENT, GraphRestrictionMode.AUTO)) {
+		for (GraphJoinOptimization mode : List.of(GraphJoinOptimization.FORCE_INDEPENDENT,
+				GraphJoinOptimization.AUTO)) {
 			AtomicInteger calls = new AtomicInteger();
 			var zero = failingServiceStrategy(source, mode, calls);
 			zero.precompile(parse(query)).evaluate(EmptyBindingSet.getInstance()).close();
@@ -770,12 +773,12 @@ class GraphRestrictionJoinTest {
 	}
 
 	private static DefaultEvaluationStrategy failingServiceStrategy(RecordingTripleSource source,
-			GraphRestrictionMode mode, AtomicInteger calls) {
+			GraphJoinOptimization mode, AtomicInteger calls) {
 		DefaultEvaluationStrategy strategy = new DefaultEvaluationStrategy(source, endpoint -> {
 			calls.incrementAndGet();
 			throw new QueryEvaluationException(CONTROLLED_SERVICE_FAILURE);
 		});
-		strategy.setQueryExecutionPolicy(QueryExecutionPolicy.DEFAULT.withGraphRestrictionMode(mode));
+		strategy.setQueryExecutionPolicy(QueryExecutionPolicy.DEFAULT.withGraphJoinOptimization(mode));
 		return strategy;
 	}
 
@@ -808,7 +811,7 @@ class GraphRestrictionJoinTest {
 				+ "GRAPH :G { { " + path + " } UNION { ?w :probe ?o } }";
 		source.resetObservations();
 		assertThat(evaluate(source, parse("?x ?y ?o", query), null, EmptyBindingSet.getInstance(),
-				GraphRestrictionMode.FORCE_INDEPENDENT)).as(path).containsExactlyInAnyOrderElementsOf(expected);
+				GraphJoinOptimization.FORCE_INDEPENDENT)).as(path).containsExactlyInAnyOrderElementsOf(expected);
 
 		source.resetObservations();
 		assertThat(evaluate(source, parse("?x ?y ?o", query))).as(path).containsExactlyInAnyOrderElementsOf(expected);
@@ -827,7 +830,7 @@ class GraphRestrictionJoinTest {
 		String query = "VALUES ?s { :a } GRAPH :G { ?s :p+ ?o }";
 		List<BindingSet> expected = List.of(row(a, b), row(a, c));
 		assertThat(evaluate(source, parse(query), null, EmptyBindingSet.getInstance(),
-				GraphRestrictionMode.FORCE_INDEPENDENT)).containsExactlyInAnyOrderElementsOf(expected);
+				GraphJoinOptimization.FORCE_INDEPENDENT)).containsExactlyInAnyOrderElementsOf(expected);
 		Access wildcard = new Access(null, PREDICATE, null, List.of(GRAPH));
 		assertThat(source.accesses).contains(wildcard);
 
@@ -853,11 +856,11 @@ class GraphRestrictionJoinTest {
 		BindingSet apiBindings = row(Map.of("x", absent));
 		String query = "VALUES ?y { :absent } GRAPH :G { ?x :p* ?y }";
 		assertThat(evaluate(source, parse("?x ?y", query), null, apiBindings,
-				GraphRestrictionMode.FORCE_INDEPENDENT)).isEmpty();
+				GraphJoinOptimization.FORCE_INDEPENDENT)).isEmpty();
 
 		source.resetObservations();
 		assertThat(evaluate(source, parse("?x ?y", query), null, apiBindings,
-				GraphRestrictionMode.REQUIRE_RESTRICTED)).isEmpty();
+				GraphJoinOptimization.REQUIRE_RESTRICTED)).isEmpty();
 	}
 
 	@Test
@@ -879,7 +882,7 @@ class GraphRestrictionJoinTest {
 		BindingSet boundGroup = row(Map.of("s", a, "member", outside, "size", VF.createLiteral("2", XSD.INTEGER)));
 		BindingSet unboundGroup = row(Map.of("s", a, "member", outside, "size", VF.createLiteral("3", XSD.INTEGER)));
 		assertThat(evaluate(source, parse("?s ?member ?size", query), null, EmptyBindingSet.getInstance(),
-				GraphRestrictionMode.FORCE_INDEPENDENT)).containsExactlyInAnyOrder(boundGroup, unboundGroup);
+				GraphJoinOptimization.FORCE_INDEPENDENT)).containsExactlyInAnyOrder(boundGroup, unboundGroup);
 
 		source.resetObservations();
 		assertThat(evaluate(source, parse("?s ?member ?size", query)))
@@ -909,7 +912,7 @@ class GraphRestrictionJoinTest {
 				""";
 		BindingSet expected = row(Map.of("s", b, "size", VF.createLiteral("0", XSD.INTEGER), "o", marker));
 		assertThat(evaluate(source, parse("?s ?size ?o", query), null, EmptyBindingSet.getInstance(),
-				GraphRestrictionMode.FORCE_INDEPENDENT)).containsExactly(expected);
+				GraphJoinOptimization.FORCE_INDEPENDENT)).containsExactly(expected);
 
 		source.resetObservations();
 		assertThat(evaluate(source, parse("?s ?size ?o", query))).containsExactly(expected);
@@ -919,11 +922,11 @@ class GraphRestrictionJoinTest {
 	private static void assertAliasRoute(RecordingTripleSource source, String query, Dataset dataset,
 			BindingSet bindings, IRI subject, IRI object, Resource physicalContext) {
 		source.resetObservations();
-		assertThat(evaluate(source, parse(query), dataset, bindings, GraphRestrictionMode.FORCE_INDEPENDENT))
+		assertThat(evaluate(source, parse(query), dataset, bindings, GraphJoinOptimization.FORCE_INDEPENDENT))
 				.containsExactly(row(subject, object));
 
 		source.resetObservations();
-		assertThat(evaluate(source, parse(query), dataset, bindings, GraphRestrictionMode.REQUIRE_RESTRICTED))
+		assertThat(evaluate(source, parse(query), dataset, bindings, GraphJoinOptimization.REQUIRE_RESTRICTED))
 				.containsExactly(row(subject, object));
 		assertThat(source.accesses)
 				.containsExactly(new Access(subject, PREDICATE, null, Arrays.asList(physicalContext)));
@@ -946,13 +949,13 @@ class GraphRestrictionJoinTest {
 
 	private static List<BindingSet> evaluate(RecordingTripleSource source, TupleExpr expression) {
 		return evaluate(source, expression, null, EmptyBindingSet.getInstance(),
-				GraphRestrictionMode.REQUIRE_RESTRICTED);
+				GraphJoinOptimization.REQUIRE_RESTRICTED);
 	}
 
 	private static List<BindingSet> evaluate(RecordingTripleSource source, TupleExpr expression, Dataset dataset,
-			BindingSet bindings, GraphRestrictionMode mode) {
+			BindingSet bindings, GraphJoinOptimization mode) {
 		DefaultEvaluationStrategy strategy = new DefaultEvaluationStrategy(source, dataset, null);
-		strategy.setQueryExecutionPolicy(QueryExecutionPolicy.DEFAULT.withGraphRestrictionMode(mode));
+		strategy.setQueryExecutionPolicy(QueryExecutionPolicy.DEFAULT.withGraphJoinOptimization(mode));
 		return evaluate(strategy, expression, bindings);
 	}
 

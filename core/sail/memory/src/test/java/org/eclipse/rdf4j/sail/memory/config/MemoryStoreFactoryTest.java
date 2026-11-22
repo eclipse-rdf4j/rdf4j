@@ -21,7 +21,7 @@ import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.query.BindingSet;
-import org.eclipse.rdf4j.query.QueryExecutionPolicy.GraphRestrictionMode;
+import org.eclipse.rdf4j.query.QueryExecutionPolicy.GraphJoinOptimization;
 import org.eclipse.rdf4j.query.algebra.BindingSetAssignment;
 import org.eclipse.rdf4j.query.algebra.Filter;
 import org.eclipse.rdf4j.query.algebra.FunctionCall;
@@ -69,15 +69,15 @@ class MemoryStoreFactoryTest {
 	}
 
 	@Test
-	void appliesGraphRestrictionModeIndependentlyOfExperimentalOptimizations() {
+	void appliesGraphJoinOptimizationIndependentlyOfExperimentalOptimizations() {
 		MemoryStoreConfig config = new MemoryStoreConfig();
 		assertThat(((MemoryStore) new MemoryStoreFactory().getSail(config)).getQueryExecutionPolicy()
-				.graphRestrictionMode()).isEqualTo(GraphRestrictionMode.AUTO);
-		config.setGraphRestrictionMode(GraphRestrictionMode.OFF);
+				.graphJoinOptimization()).isEqualTo(GraphJoinOptimization.AUTO);
+		config.setGraphJoinOptimization(GraphJoinOptimization.OFF);
 		for (boolean experimental : new boolean[] { false, true }) {
 			config.setExperimentalQueryOptimizations(experimental);
 			var policy = ((MemoryStore) new MemoryStoreFactory().getSail(config)).getQueryExecutionPolicy();
-			assertThat(policy.graphRestrictionMode()).isEqualTo(GraphRestrictionMode.OFF);
+			assertThat(policy.graphJoinOptimization()).isEqualTo(GraphJoinOptimization.OFF);
 			assertThat(policy.experimentalQueryOptimizations()).isEqualTo(experimental);
 		}
 	}

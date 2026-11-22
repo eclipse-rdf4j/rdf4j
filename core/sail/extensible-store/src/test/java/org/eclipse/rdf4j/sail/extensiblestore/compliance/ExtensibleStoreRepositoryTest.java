@@ -16,7 +16,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import org.eclipse.rdf4j.query.QueryEvaluationException;
 import org.eclipse.rdf4j.query.QueryExecutionPolicy;
-import org.eclipse.rdf4j.query.QueryExecutionPolicy.GraphRestrictionMode;
+import org.eclipse.rdf4j.query.QueryExecutionPolicy.GraphJoinOptimization;
 import org.eclipse.rdf4j.query.QueryParseOptions.GraphAlgebraMode;
 import org.eclipse.rdf4j.query.QueryResults;
 import org.eclipse.rdf4j.repository.Repository;
@@ -34,10 +34,10 @@ public class ExtensibleStoreRepositoryTest extends RepositoryTest {
 	}
 
 	@ParameterizedTest
-	@EnumSource(value = GraphRestrictionMode.class, names = { "AUTO", "REQUIRE_RESTRICTED" })
-	void customSourceWithoutAStableAnswerCertificate(GraphRestrictionMode mode) {
+	@EnumSource(value = GraphJoinOptimization.class, names = { "AUTO", "REQUIRE_RESTRICTED" })
+	void customSourceWithoutAStableAnswerCertificate(GraphJoinOptimization mode) {
 		ExtensibleStoreImplForTests store = new ExtensibleStoreImplForTests();
-		store.setQueryExecutionPolicy(QueryExecutionPolicy.DEFAULT.withGraphRestrictionMode(mode));
+		store.setQueryExecutionPolicy(QueryExecutionPolicy.DEFAULT.withGraphJoinOptimization(mode));
 		SailRepository repository = new SailRepository(store);
 		try (var connection = repository.getConnection()) {
 			var values = connection.getValueFactory();
@@ -59,7 +59,7 @@ public class ExtensibleStoreRepositoryTest extends RepositoryTest {
 					PREFIX : <urn:gbj:>
 					SELECT ?s ?o { VALUES ?s { :match :match :absent } GRAPH :G { ?s :p ?o } }
 					""");
-			if (mode == GraphRestrictionMode.REQUIRE_RESTRICTED) {
+			if (mode == GraphJoinOptimization.REQUIRE_RESTRICTED) {
 				assertThatThrownBy(() -> QueryResults.asList(query.evaluate()))
 						.isInstanceOf(QueryEvaluationException.class)
 						.hasMessageContaining("Required GRAPH restriction could not be certified");

@@ -33,7 +33,7 @@ import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.impl.LinkedHashModel;
 import org.eclipse.rdf4j.model.util.ModelBuilder;
 import org.eclipse.rdf4j.model.util.Values;
-import org.eclipse.rdf4j.query.QueryExecutionPolicy.GraphRestrictionMode;
+import org.eclipse.rdf4j.query.QueryExecutionPolicy.GraphJoinOptimization;
 import org.eclipse.rdf4j.sail.config.SailConfigException;
 import org.eclipse.rdf4j.sail.lmdb.LmdbStore;
 import org.junit.jupiter.api.Test;
@@ -44,15 +44,15 @@ import org.junitpioneer.jupiter.SetSystemProperty;
 class LmdbStoreConfigTest {
 
 	@Test
-	void graphRestrictionModeIsAppliedByStoreConstructor() {
+	void graphJoinOptimizationIsAppliedByStoreConstructor() {
 		LmdbStoreConfig config = new LmdbStoreConfig();
-		assertThat(new LmdbStore(config).getQueryExecutionPolicy().graphRestrictionMode())
-				.isEqualTo(GraphRestrictionMode.AUTO);
-		config.setGraphRestrictionMode(GraphRestrictionMode.OFF);
+		assertThat(new LmdbStore(config).getQueryExecutionPolicy().graphJoinOptimization())
+				.isEqualTo(GraphJoinOptimization.AUTO);
+		config.setGraphJoinOptimization(GraphJoinOptimization.OFF);
 		for (boolean experimental : new boolean[] { false, true }) {
 			config.setExperimentalQueryOptimizations(experimental);
 			var policy = new LmdbStore(config).getQueryExecutionPolicy();
-			assertThat(policy.graphRestrictionMode()).isEqualTo(GraphRestrictionMode.OFF);
+			assertThat(policy.graphJoinOptimization()).isEqualTo(GraphJoinOptimization.OFF);
 			assertThat(policy.experimentalQueryOptimizations()).isEqualTo(experimental);
 		}
 	}

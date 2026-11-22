@@ -27,7 +27,7 @@ import org.eclipse.rdf4j.common.iteration.LookAheadIteration;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.QueryEvaluationException;
-import org.eclipse.rdf4j.query.QueryExecutionPolicy.GraphRestrictionMode;
+import org.eclipse.rdf4j.query.QueryExecutionPolicy.GraphJoinOptimization;
 import org.eclipse.rdf4j.query.algebra.Difference;
 import org.eclipse.rdf4j.query.algebra.EmptySet;
 import org.eclipse.rdf4j.query.algebra.Graph;
@@ -120,7 +120,7 @@ public class JoinQueryEvaluationStep implements QueryEvaluationStep, Restriction
 				|| subqueryObservesInjectedBindings(join.getRightArg(), join.getLeftArg().getBindingNames());
 		boolean restrictionEnabled = RestrictionCompiler.enabled(strategy, context);
 		boolean requireRestriction = strategy.getQueryExecutionPolicy()
-				.graphRestrictionMode() == GraphRestrictionMode.REQUIRE_RESTRICTED;
+				.graphJoinOptimization() == GraphJoinOptimization.REQUIRE_RESTRICTED;
 		Set<String> leftOutputNames = join.getLeftArg().getBindingNames();
 		GraphProbe candidate = null;
 		if (restrictionEnabled && rightFrames.length == 0 && leftFrames.length == 0

@@ -44,7 +44,7 @@ import org.eclipse.rdf4j.model.base.CoreDatatype;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.QueryExecutionPolicy;
-import org.eclipse.rdf4j.query.QueryExecutionPolicy.GraphRestrictionMode;
+import org.eclipse.rdf4j.query.QueryExecutionPolicy.GraphJoinOptimization;
 import org.eclipse.rdf4j.query.TupleQuery;
 import org.eclipse.rdf4j.query.TupleQueryResult;
 import org.eclipse.rdf4j.query.impl.SimpleDataset;
@@ -181,7 +181,7 @@ class LmdbStatementPatternIdNormalizationTest {
 
 	@Test
 	void computedSiblingValueStaysOutsideGraphUnionInputs(@TempDir File directory) {
-		try (Fixture fixture = new Fixture(directory, LiteralShape.CUSTOM.value(), GraphRestrictionMode.OFF)) {
+		try (Fixture fixture = new Fixture(directory, LiteralShape.CUSTOM.value(), GraphJoinOptimization.OFF)) {
 			assertUnionRows(fixture.evaluateBindings(computedSiblingUnionQuery(), null, null));
 			fixture.assertBoundNativeInputs();
 			fixture.assertObjectInputs(null);
@@ -273,13 +273,13 @@ class LmdbStatementPatternIdNormalizationTest {
 		private final List<PatternInputs> statementInputs = new ArrayList<>();
 
 		private Fixture(File directory, Value object) {
-			this(directory, object, GraphRestrictionMode.AUTO);
+			this(directory, object, GraphJoinOptimization.AUTO);
 		}
 
-		private Fixture(File directory, Value object, GraphRestrictionMode graphRestrictionMode) {
+		private Fixture(File directory, Value object, GraphJoinOptimization graphJoinOptimization) {
 			store = new ProbeStore(directory, inputs, statementInputs);
 			store.setQueryExecutionPolicy(
-					QueryExecutionPolicy.DEFAULT.withGraphRestrictionMode(graphRestrictionMode));
+					QueryExecutionPolicy.DEFAULT.withGraphJoinOptimization(graphJoinOptimization));
 			repository = new SailRepository(store);
 			RepositoryConnection openedConnection = null;
 			try {

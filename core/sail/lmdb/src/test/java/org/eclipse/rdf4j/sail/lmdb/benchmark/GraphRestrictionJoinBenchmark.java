@@ -23,7 +23,7 @@ import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.QueryExecutionPolicy;
-import org.eclipse.rdf4j.query.QueryExecutionPolicy.GraphRestrictionMode;
+import org.eclipse.rdf4j.query.QueryExecutionPolicy.GraphJoinOptimization;
 import org.eclipse.rdf4j.query.TupleQuery;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryBindingSet;
 import org.eclipse.rdf4j.query.explanation.Explanation;
@@ -65,7 +65,7 @@ public class GraphRestrictionJoinBenchmark {
 	private static final String MAIN_PATTERN = "?s <" + NS + "p> ?o";
 
 	@Param({ "OFF", "FORCE_INDEPENDENT", "REQUIRE_RESTRICTED", "AUTO" })
-	public GraphRestrictionMode strategy;
+	public GraphJoinOptimization strategy;
 
 	/** Holds the surrounding optimization profile fixed while comparing GRAPH modes. */
 	@Param({ "true" })
@@ -144,7 +144,7 @@ public class GraphRestrictionJoinBenchmark {
 		directory = Files.createTempDirectory("rdf4j-lmdb-graph-restriction-");
 		sparql = queryText();
 		try {
-			repository = open(GraphRestrictionMode.FORCE_INDEPENDENT);
+			repository = open(GraphJoinOptimization.FORCE_INDEPENDENT);
 			Map<BindingSet, Integer> expected;
 			try (var reference = repository.getConnection()) {
 				load(reference);
@@ -223,12 +223,12 @@ public class GraphRestrictionJoinBenchmark {
 		}
 	}
 
-	private SailRepository open(GraphRestrictionMode mode) {
+	private SailRepository open(GraphJoinOptimization mode) {
 		LmdbStoreConfig config = new LmdbStoreConfig(indexes.replace('+', ',')).setNativeEvaluationEnabled(true);
 		LmdbStore store = new LmdbStore(directory.toFile(), config);
 		// Hold the unrelated experimental options fixed across policies.
 		store.setQueryExecutionPolicy(
-				QueryExecutionPolicy.of(experimentalOptimizations).withGraphRestrictionMode(mode));
+				QueryExecutionPolicy.of(experimentalOptimizations).withGraphJoinOptimization(mode));
 		return new SailRepository(store);
 	}
 
@@ -348,7 +348,7 @@ public class GraphRestrictionJoinBenchmark {
 	}
 
 	private void checkSelectiveAccess(GenericPlanNode plan) {
-		if (strategy == GraphRestrictionMode.REQUIRE_RESTRICTED && shape == QueryShape.BODY_BINDS_SELECTOR
+		if (strategy == GraphJoinOptimization.REQUIRE_RESTRICTED && shape == QueryShape.BODY_BINDS_SELECTOR
 				&& keyShape == KeyShape.SUBJECT && graphCount == 1 && distinctKeys == outerOccurrences
 				&& selectivity == 1D) {
 			long actualRows = metric(plan, "graphRestrictionNativeStatementRows");
