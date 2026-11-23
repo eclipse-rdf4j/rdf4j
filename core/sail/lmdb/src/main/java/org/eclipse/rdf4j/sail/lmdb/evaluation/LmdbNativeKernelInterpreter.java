@@ -73,6 +73,7 @@ import org.eclipse.rdf4j.sail.lmdb.evaluation.codegen.KernelFactorCursor;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.codegen.KernelFactorPredicate;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.codegen.KernelHooks;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.codegen.KernelIdMasks;
+import org.eclipse.rdf4j.sail.lmdb.evaluation.codegen.KernelOptionalReplay;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.codegen.KernelPlan;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.codegen.KernelProjectionCursor;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.codegen.KernelQuadCursor;
@@ -295,7 +296,7 @@ final class LmdbNativeKernelInterpreter implements JaninoKernel {
 	private double[][] agM;
 	private boolean[] agO;
 	private KernelRuntime.AggregateMemory aggregateMemory;
-	private LmdbNativeOptionalReplay.Budget optionalReplayBudget;
+	private KernelOptionalReplay.Budget optionalReplayBudget;
 	private boolean chargeAggregateOutput;
 	/** Bytes retained by primitive aggregate arrays (map/set state owns its own reservation). */
 	private long aggregateArrayBytes;
@@ -445,11 +446,8 @@ final class LmdbNativeKernelInterpreter implements JaninoKernel {
 
 		// Build the op chain. Site lists and cursors are collected as a side effect, in the same DFS order the
 		// emitter numbers its methods and sites.
+		optionalReplayBudget = KernelOptionalReplay.budgetFor(context, aggregateMemory);
 		if (demandDriven) {
-			if (context.groupMemoryLedger() != null && Boolean.parseBoolean(
-					System.getProperty(LmdbNativeOptionalReplay.ENABLED_PROPERTY, "true"))) {
-				optionalReplayBudget = new LmdbNativeOptionalReplay.Budget(aggregateMemory);
-			}
 			this.pullRows = pullPipeline(kernel.pipeline);
 			if (!emit.distinct) {
 				contiguousDistinctColumn = pullRows.contiguousDistinctColumn();
@@ -1952,6 +1950,9 @@ final class LmdbNativeKernelInterpreter implements JaninoKernel {
 
 				@Override
 				void reset() {
+					if (telemetry) {
+						workCounters.recordScanOpen();
+					}
 					cursor = context.scanner.open(scan.scan,
 							scan.terms[0] == null ? -1L : read(scan.terms[0]),
 							scan.terms[1] == null ? -1L : read(scan.terms[1]),
@@ -2026,10 +2027,10 @@ final class LmdbNativeKernelInterpreter implements JaninoKernel {
 			PullPipeline arm = pullPipeline(left.arm);
 			boolean canProveExhaustion = arm.canProveExhaustion();
 			int[] resetColumns = left.resetColumns();
-			LmdbNativeOptionalReplay memo = LmdbNativeOptionalReplay.create(left, kernel, optionalReplayBudget);
+			KernelOptionalReplay memo = LmdbNativeOptionalReplay.create(left, kernel, optionalReplayBudget);
 			return new PullStage(node, List.of(arm), PullReset.PRESERVES_ROW, resetColumns) {
 				boolean matched;
-				LmdbNativeOptionalReplay.Rows replay;
+				KernelOptionalReplay.Rows replay;
 				int replayOffset;
 
 				@Override
@@ -2041,6 +2042,9 @@ final class LmdbNativeKernelInterpreter implements JaninoKernel {
 						arm.reset();
 						if (telemetry) {
 							workCounters.recordOptionalArmOpen();
+							if (memo != null && memo.lastOpenBypassed()) {
+								workCounters.recordOptionalCacheBypass();
+							}
 						}
 					} else if (telemetry) {
 						workCounters.recordOptionalArmReplay();
@@ -4656,10 +4660,14 @@ final class LmdbNativeKernelInterpreter implements JaninoKernel {
 		int[] resetColumns = group.resetColumns();
 		int[] restoreColumns = group.restoreColumns();
 		long[] saved = new long[restoreColumns.length];
+		KernelOptionalReplay memo = LmdbNativeOptionalReplay.create(group, kernel, optionalReplayBudget);
 		// The arm's terminal sets the flag BEFORE running the shared continuation: a right match suppresses the
 		// null arm even when the continuation later rejects every matching row.
 		Op arm = build(group.arm, 0, () -> {
 			leftGroupFlags[flagId] = true;
+			if (memo != null) {
+				memo.record(v);
+			}
 			return next.run();
 		}, booleanMode);
 		return () -> {
@@ -4667,8 +4675,34 @@ final class LmdbNativeKernelInterpreter implements JaninoKernel {
 				saved[i] = v[restoreColumns[i]];
 			}
 			leftGroupFlags[flagId] = false;
-			if (arm.run()) {
-				return true;
+			KernelOptionalReplay.Rows replay = memo == null ? null : memo.open(v);
+			if (replay != null) {
+				if (telemetry) {
+					workCounters.recordOptionalArmReplay();
+				}
+				for (int offset = 0; offset < replay.length();) {
+					offset = memo.replay(replay, offset, v);
+					leftGroupFlags[flagId] = true;
+					if (next.run()) {
+						return true;
+					}
+				}
+			} else {
+				if (telemetry) {
+					workCounters.recordOptionalArmOpen();
+					if (memo != null && memo.lastOpenBypassed()) {
+						workCounters.recordOptionalCacheBypass();
+					}
+				}
+				if (arm.run()) {
+					if (memo != null) {
+						memo.abandon();
+					}
+					return true;
+				}
+				if (memo != null) {
+					memo.complete();
+				}
 			}
 			if (!leftGroupFlags[flagId]) {
 				for (int i = 0; i < restoreColumns.length; i++) {

@@ -102,6 +102,9 @@ final class LmdbNativeKernelExecution {
 				counters.valueFilterEvaluations());
 		LmdbNativeExplain.addRuntimeMetric(target, "nativeIrOptionalArmOpensActual", counters.optionalArmOpens());
 		LmdbNativeExplain.addRuntimeMetric(target, "nativeIrOptionalArmReplaysActual", counters.optionalArmReplays());
+		LmdbNativeExplain.addRuntimeMetric(target, "nativeIrOptionalCacheBypassesActual",
+				counters.optionalCacheBypasses());
+		LmdbNativeExplain.addRuntimeMetric(target, "nativeIrScanOpensActual", counters.scanOpens());
 	}
 
 	static void resetMetrics() {
