@@ -249,6 +249,8 @@ public class DefaultEvaluationStrategy implements EvaluationStrategy, FederatedS
 	// track the exeution time of each node in the plan
 	private boolean trackTime;
 
+	private boolean trackStatementIndexNames;
+
 	private QueryOptimizerPipeline pipeline;
 
 	private final TupleFunctionRegistry tupleFuncRegistry;
@@ -984,7 +986,8 @@ public class DefaultEvaluationStrategy implements EvaluationStrategy, FederatedS
 		var restrictionProvider = RestrictionCompiler.enabled(this, context)
 				&& tripleSource instanceof StatementRestrictionSourceProvider provider ? provider : null;
 		return new StatementPatternQueryEvaluationStep(node, context,
-				AdaptiveFilterEvaluationStep.workSource(tripleSource, context), restrictionProvider,
+				AdaptiveFilterEvaluationStep.workSource(tripleSource, context), trackStatementIndexNames,
+				restrictionProvider,
 				restrictionProvider == null ? null : getCollectionFactory());
 	}
 
@@ -2724,6 +2727,15 @@ public class DefaultEvaluationStrategy implements EvaluationStrategy, FederatedS
 	@Override
 	public boolean isTrackTime() {
 		return trackTime;
+	}
+
+	@Override
+	public void setTrackStatementIndexNames(boolean trackStatementIndexNames) {
+		this.trackStatementIndexNames = trackStatementIndexNames;
+	}
+
+	protected final boolean isTrackStatementIndexNames() {
+		return trackStatementIndexNames;
 	}
 
 	/**
