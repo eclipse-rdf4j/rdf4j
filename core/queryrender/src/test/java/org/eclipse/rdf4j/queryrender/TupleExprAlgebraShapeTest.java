@@ -24,6 +24,8 @@ import java.util.function.Predicate;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.query.MalformedQueryException;
 import org.eclipse.rdf4j.query.QueryLanguage;
+import org.eclipse.rdf4j.query.QueryParseOptions;
+import org.eclipse.rdf4j.query.QueryParseOptions.GraphAlgebraMode;
 import org.eclipse.rdf4j.query.algebra.ArbitraryLengthPath;
 import org.eclipse.rdf4j.query.algebra.BindingSetAssignment;
 import org.eclipse.rdf4j.query.algebra.Difference;
@@ -57,7 +59,8 @@ public class TupleExprAlgebraShapeTest {
 
 	private static TupleExpr parse(String sparql) {
 		try {
-			ParsedQuery pq = QueryParserUtil.parseQuery(QueryLanguage.SPARQL, PFX + sparql, null);
+			ParsedQuery pq = QueryParserUtil.parseQuery(QueryLanguage.SPARQL, PFX + sparql, null,
+					QueryParseOptions.DEFAULT.withGraphAlgebraMode(GraphAlgebraMode.GRAPH));
 			return pq.getTupleExpr();
 		} catch (MalformedQueryException e) {
 			String msg = "Failed to parse SPARQL query.\n###### QUERY ######\n" + PFX + sparql

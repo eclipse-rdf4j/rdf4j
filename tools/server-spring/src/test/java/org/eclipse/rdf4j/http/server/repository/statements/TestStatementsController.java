@@ -25,6 +25,7 @@ import org.eclipse.rdf4j.http.protocol.Protocol;
 import org.eclipse.rdf4j.http.server.ClientHTTPException;
 import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.query.QueryLanguage;
+import org.eclipse.rdf4j.query.QueryParseOptions;
 import org.eclipse.rdf4j.query.Update;
 import org.eclipse.rdf4j.rio.RDFFormat;
 import org.eclipse.rdf4j.rio.RDFParseException;
@@ -50,6 +51,7 @@ public class TestStatementsController extends TestStatementsCommon {
 		request.setMethod(HttpMethod.POST.name());
 
 		super.initMocks();
+		Mockito.when(connectionMock.getQueryParseOptions()).thenReturn(QueryParseOptions.DEFAULT);
 	}
 
 	@Test
