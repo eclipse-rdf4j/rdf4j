@@ -85,13 +85,6 @@ public final class LeftJoinQueryEvaluationStep implements QueryEvaluationStep {
 		return supply(strategy, leftJoin, context, capturer, null, null);
 	}
 
-	/** The backend may supply a read-snapshot check when this arm's statement results can be replayed. */
-	@InternalUseOnly
-	public static QueryEvaluationStep supply(EvaluationStrategy strategy, LeftJoin leftJoin,
-			QueryEvaluationContext context, Runnable checkReplaySnapshot, Function<Value, Value> captureReplayValue) {
-		return supply(strategy, leftJoin, context, null, checkReplaySnapshot, captureReplayValue);
-	}
-
 	/** Uses the query value capturer for restriction probes and the replay capturer for memoized results. */
 	@InternalUseOnly
 	public static QueryEvaluationStep supply(EvaluationStrategy strategy, LeftJoin leftJoin,

@@ -36,8 +36,6 @@ import org.eclipse.rdf4j.sail.lmdb.evaluation.codegen.KernelOptionalReplay;
  */
 final class LmdbNativeOptionalReplay {
 
-	static final String ENABLED_PROPERTY = KernelOptionalReplay.ENABLED_PROPERTY;
-
 	/**
 	 * A provable site: the columns the arm reads, the columns it writes, and whether any node reads through a direct
 	 * quad scan (such sites get the bounded, self-disabling cache; adjacency-only sites keep the original behaviour).

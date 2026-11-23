@@ -14,26 +14,33 @@ package org.eclipse.rdf4j.sail.lmdb;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertInstanceOf;
+import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.nio.file.Path;
+import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
 
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.common.iteration.CooperativeCancellation;
 import org.eclipse.rdf4j.common.iteration.IterationWrapper;
+import org.eclipse.rdf4j.common.order.StatementOrder;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.Statement;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
+import org.eclipse.rdf4j.query.QueryEvaluationException;
 import org.eclipse.rdf4j.query.QueryInterruptedException;
 import org.eclipse.rdf4j.sail.NotifyingSailConnection;
 import org.eclipse.rdf4j.sail.SailConnection;
 import org.eclipse.rdf4j.sail.SailException;
+import org.eclipse.rdf4j.sail.base.SailDatasetTripleTermSource;
 import org.eclipse.rdf4j.sail.lmdb.config.LmdbStoreConfig;
+import org.eclipse.rdf4j.sail.lmdb.evaluation.NativeCancellationTestAccess;
+import org.eclipse.rdf4j.sail.lmdb.evaluation.codegen.KernelQueryCancelledException;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 import org.junit.jupiter.params.ParameterizedTest;
@@ -74,6 +81,76 @@ class LmdbCooperativeCancellationPropagationTest {
 		} finally {
 			store.shutDown();
 		}
+	}
+
+	@ParameterizedTest
+	@CsvSource({ "false,0", "false,1", "false,2", "true,0", "true,1", "true,2" })
+	void genericStatementScansRetainNativeCancellationAndProbeDeadline(boolean ordered, int contextCount,
+			@TempDir Path dataDir) throws Exception {
+		var store = new LmdbStore(dataDir.toFile(), new LmdbStoreConfig("spoc").setDirectAdjacencyEnabled(false));
+		store.init();
+		try {
+			var values = store.getValueFactory();
+			var firstGraph = values.createIRI("urn:cancel:firstGraph");
+			var secondGraph = values.createIRI("urn:cancel:secondGraph");
+			try (SailConnection seed = store.getConnection()) {
+				seed.begin();
+				seed.addStatement(values.createIRI("urn:cancel:firstSubject"), values.createIRI("urn:cancel:p"),
+						values.createLiteral("first"), firstGraph);
+				seed.addStatement(values.createIRI("urn:cancel:secondSubject"), values.createIRI("urn:cancel:p"),
+						values.createLiteral("second"), secondGraph);
+				seed.commit();
+			}
+			Resource[] contexts = switch (contextCount) {
+			case 0 -> new Resource[0];
+			case 1 -> new Resource[] { firstGraph };
+			case 2 -> new Resource[] { firstGraph, secondGraph };
+			default -> throw new IllegalArgumentException("Unexpected context count " + contextCount);
+			};
+			try (var dataset = NativeQuerySourceAccess.openExplicitDataset(store)) {
+				var source = new SailDatasetTripleTermSource(values, dataset);
+				AtomicReference<Object> owner = new AtomicReference<>();
+				CountDownLatch scanOpened = new CountDownLatch(1);
+				try (var rows = NativeCancellationTestAccess.cancelAfter(scanOpened, new CountDownLatch(1), owner::set,
+						() -> {
+							try {
+								return genericStatements(source, ordered, contexts);
+							} finally {
+								scanOpened.countDown();
+							}
+						})) {
+					var failure = assertThrows(QueryEvaluationException.class, rows::hasNext);
+					var cancellation = assertInstanceOf(KernelQueryCancelledException.class, failure.getCause());
+					assertSame(owner.get(), cancellation.origin());
+					assertTrue(cancellation.observedBy(owner.get()));
+				}
+
+				AtomicReference<Runnable> tripDeadline = new AtomicReference<>();
+				try (var rows = NativeCancellationTestAccess.withTrippableProbeDeadline(tripDeadline::set,
+						() -> genericStatements(source, ordered, contexts))) {
+					// The statement cursor must retain its opening attempt after the caller leaves that scope.
+					tripDeadline.get().run();
+					var failure = assertThrows(QueryEvaluationException.class, rows::hasNext);
+					assertSame(NativeCancellationTestAccess.probeDeadlineSignal(), failure.getCause());
+				}
+				try (var rows = genericStatements(source, ordered, contexts)) {
+					int count = 0;
+					while (rows.hasNext()) {
+						rows.next();
+						count++;
+					}
+					assertEquals(contextCount == 1 ? 1 : 2, count);
+				}
+			}
+		} finally {
+			store.shutDown();
+		}
+	}
+
+	private static CloseableIteration<? extends Statement> genericStatements(SailDatasetTripleTermSource source,
+			boolean ordered, Resource... contexts) {
+		return ordered ? source.getStatements(StatementOrder.S, null, null, null, contexts)
+				: source.getStatements(null, null, null, contexts);
 	}
 
 	@ParameterizedTest

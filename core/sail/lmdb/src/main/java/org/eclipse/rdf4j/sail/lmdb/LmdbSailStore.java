@@ -9549,11 +9549,13 @@ class LmdbSailStore implements SailStore {
 			}
 		}
 
+		CursorCancellation cancellation = NativeLmdbQuerySource.captureCursorCancellation();
 		if (contexts.length == 0) {
 			RecordIterator records = source.statements(subjID, predID, objID, LmdbValue.UNKNOWN_ID,
-					nativeSourceObservationForTest, null);
+					nativeSourceObservationForTest, cancellation);
 			return semanticStatements(source,
-					new LmdbStatementIterator(records, valueStore, source.readView.valueSnapshot()), subj, pred, obj);
+					new LmdbStatementIterator(records, valueStore, source.readView.valueSnapshot()), subj, pred, obj,
+					cancellation);
 		}
 
 		ArrayList<LmdbStatementIterator> perContextIterList = new ArrayList<>(contexts.length);
@@ -9573,7 +9575,7 @@ class LmdbSailStore implements SailStore {
 				}
 
 				RecordIterator records = source.statements(subjID, predID, objID, contextID,
-						nativeSourceObservationForTest, null);
+						nativeSourceObservationForTest, cancellation);
 				perContextIterList.add(new LmdbStatementIterator(records, valueStore, source.readView.valueSnapshot()));
 			}
 
@@ -9581,9 +9583,9 @@ class LmdbSailStore implements SailStore {
 				return IterationConstants.EMPTY_STATEMENT_ITERATION;
 			}
 			if (perContextIterList.size() == 1) {
-				return semanticStatements(source, perContextIterList.getFirst(), subj, pred, obj);
+				return semanticStatements(source, perContextIterList.getFirst(), subj, pred, obj, cancellation);
 			}
-			return semanticStatements(source, new UnionIteration<>(perContextIterList), subj, pred, obj);
+			return semanticStatements(source, new UnionIteration<>(perContextIterList), subj, pred, obj, cancellation);
 		} catch (IOException | RuntimeException | Error failure) {
 			closeStatementIterations(perContextIterList, failure);
 			throw failure;
@@ -9591,17 +9593,19 @@ class LmdbSailStore implements SailStore {
 	}
 
 	private CloseableIteration<? extends Statement> semanticStatements(LmdbSailDataset source,
-			CloseableIteration<? extends Statement> statements, Resource subj, IRI pred, Value obj) {
+			CloseableIteration<? extends Statement> statements, Resource subj, IRI pred, Value obj,
+			CursorCancellation cancellation) {
 		return valueStore.getFormat().isLegacy()
 				? source.semanticScopes.own(new LegacySemanticScope<Statement>(statements,
 						candidate -> LegacySemanticScope.matches(candidate, subj, pred, obj)
-								&& !hasExplicitLegacyAlias(source, candidate),
+								&& !hasExplicitLegacyAlias(source, candidate, cancellation),
 						LegacySemanticScope::containsLanguage, LegacySemanticScope::detached))
 				: statements;
 	}
 
 	/** Preserve the disjoint explicit/inferred storage contract using the candidate's own snapshot and IDs. */
-	private boolean hasExplicitLegacyAlias(LmdbSailDataset source, Statement candidate) {
+	private boolean hasExplicitLegacyAlias(LmdbSailDataset source, Statement candidate,
+			CursorCancellation cancellation) {
 		if (source.explicit || !LegacySemanticScope.containsLanguage(candidate.getObject())) {
 			return false;
 		}
@@ -9610,7 +9614,7 @@ class LmdbSailStore implements SailStore {
 		long context = candidate.getContext() == null ? 0L
 				: ((LmdbValue) candidate.getContext()).getInternalID();
 		try (RecordIterator aliases = tripleStore.getTriples(source.txn, subject, predicate, LmdbValue.UNKNOWN_ID,
-				context, true)) {
+				context, true, cancellation)) {
 			long[] quad;
 			while ((quad = aliases.next()) != null) {
 				if (candidate.getObject().equals(valueStore.getValue(source.readView.valueSnapshot(), quad[2]))) {
@@ -9646,6 +9650,7 @@ class LmdbSailStore implements SailStore {
 			return IterationConstants.EMPTY_STATEMENT_ITERATION;
 		}
 
+		CursorCancellation cancellation = NativeLmdbQuerySource.captureCursorCancellation();
 		if (contexts.length <= 1) {
 			long contextID = orderedContextId(contexts);
 			if (contexts.length == 1 && contexts[0] != null) {
@@ -9659,7 +9664,7 @@ class LmdbSailStore implements SailStore {
 				}
 			}
 			return new LmdbStatementIterator(
-					source.statements(statementOrder, subjID, predID, objID, contextID, null),
+					source.statements(statementOrder, subjID, predID, objID, contextID, null, cancellation),
 					valueStore, source.readView.valueSnapshot(), statementOrder, subjID, predID, objID, contextID);
 		}
 
@@ -9680,7 +9685,7 @@ class LmdbSailStore implements SailStore {
 					continue;
 				}
 				CloseableIteration<? extends Statement> contextIterator = new LmdbStatementIterator(
-						source.statements(statementOrder, subjID, predID, objID, contextID, null),
+						source.statements(statementOrder, subjID, predID, objID, contextID, null, cancellation),
 						valueStore, source.readView.valueSnapshot(), statementOrder, subjID, predID, objID, contextID);
 				try {
 					iterator = DualUnionIteration.getWildcardInstance(statementComparator, iterator, contextIterator);

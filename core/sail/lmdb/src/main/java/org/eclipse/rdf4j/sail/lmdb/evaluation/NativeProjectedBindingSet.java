@@ -298,11 +298,6 @@ public final class NativeProjectedBindingSet extends AbstractBindingSet {
 		collectMaterializationValues(consumer, null, false, null);
 	}
 
-	/** Captures lazy values under the supplied read owner before the native source is detached. */
-	public void collectMaterializationValues(Consumer<? super Value> consumer, ValueResolutionScope valueScope) {
-		collectMaterializationValues(consumer, valueScope, true, null);
-	}
-
 	/** Captures the row under its live read owner and then drops the source. */
 	public void captureAndDetach(ValueResolutionScope valueScope, CaptureScratch scratch) {
 		if (source == null && scratch != null) {

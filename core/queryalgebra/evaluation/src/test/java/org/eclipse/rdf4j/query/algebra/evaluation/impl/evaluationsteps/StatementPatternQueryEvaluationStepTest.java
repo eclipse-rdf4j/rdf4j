@@ -628,7 +628,7 @@ class StatementPatternQueryEvaluationStepTest {
 		var pattern = new StatementPattern(StatementPattern.Scope.NAMED_CONTEXTS, Var.of("s"), Var.of("p"),
 				Var.of("o"), Var.of("g"));
 		var step = new StatementPatternQueryEvaluationStep(pattern, new InstrumentedQueryEvaluationContext(),
-				tripleSource, trackIndexName);
+				tripleSource, trackIndexName, null, null);
 		var bindings = new MapBindingSet();
 		bindings.addBinding("s", subject);
 		bindings.addBinding("p", predicate);
@@ -685,7 +685,7 @@ class StatementPatternQueryEvaluationStepTest {
 		var pattern = new StatementPattern(StatementPattern.Scope.NAMED_CONTEXTS, Var.of("s"), Var.of("p"),
 				Var.of("o"), Var.of("g"));
 		var step = new StatementPatternQueryEvaluationStep(pattern, new InstrumentedQueryEvaluationContext(),
-				tripleSource, true);
+				tripleSource, true, null, null);
 		var bindings = new MapBindingSet();
 		bindings.addBinding("s", subject);
 		bindings.addBinding("p", predicate);

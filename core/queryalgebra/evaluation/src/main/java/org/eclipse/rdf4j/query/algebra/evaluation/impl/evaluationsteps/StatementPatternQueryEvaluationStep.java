@@ -115,11 +115,6 @@ public class StatementPatternQueryEvaluationStep implements QueryEvaluationStep,
 	}
 
 	public StatementPatternQueryEvaluationStep(StatementPattern statementPattern, QueryEvaluationContext context,
-			TripleSource tripleSource, boolean trackIndexName) {
-		this(statementPattern, context, tripleSource, trackIndexName, null, null);
-	}
-
-	public StatementPatternQueryEvaluationStep(StatementPattern statementPattern, QueryEvaluationContext context,
 			TripleSource tripleSource, StatementRestrictionSourceProvider restrictionProvider,
 			Supplier<CollectionFactory> collections) {
 		this(statementPattern, context, tripleSource, false, restrictionProvider, collections);

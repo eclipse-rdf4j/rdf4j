@@ -4790,11 +4790,6 @@ class TripleStore implements Closeable {
 	 */
 	RecordIterator getTriplesRange(Txn txn, long subj, long pred, long obj, long context, boolean explicit,
 			LmdbKeyRange range) throws IOException {
-		return getTriplesRange(txn, subj, pred, obj, context, explicit, range, null);
-	}
-
-	RecordIterator getTriplesRange(Txn txn, long subj, long pred, long obj, long context, boolean explicit,
-			LmdbKeyRange range, CursorCancellation cancellation) throws IOException {
 		return withGeneration(txn, selectedGeneration -> {
 			int mask = boundMask(subj, pred, obj, context);
 			TripleIndex index = selectedGeneration.best[mask];
@@ -4803,8 +4798,7 @@ class TripleStore implements Closeable {
 						+ " but the pattern resolves to index " + index);
 			}
 			return new LmdbRecordIterator(index, selectedGeneration.range[mask], subj, pred, obj, context, explicit,
-					txn,
-					cursorPool, false, range, null, cancellation);
+					txn, cursorPool, false, range, null, null);
 
 		});
 	}

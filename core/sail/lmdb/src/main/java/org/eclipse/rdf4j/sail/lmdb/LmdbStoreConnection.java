@@ -2318,6 +2318,12 @@ public class LmdbStoreConnection extends SailSourceConnection implements SailRes
 		}
 	}
 
+	private static void checkLifecycleCancellation(CancellationSignal signal) {
+		if (signal.isCancelled()) {
+			throw new SailException("The LMDB read operation was cancelled");
+		}
+	}
+
 	private boolean isDetachedAttemptResult(ReplayableIteration<?> iteration) {
 		synchronized (readAttemptLock) {
 			return isDetachedAttemptResultLocked(iteration);
@@ -2958,9 +2964,7 @@ public class LmdbStoreConnection extends SailSourceConnection implements SailRes
 				}
 				T result = operation.execute();
 				throwIfCancelled(owner);
-				if (lifecycleCancellation.isCancelled()) {
-					throw new SailException("The LMDB read operation was cancelled");
-				}
+				checkLifecycleCancellation(lifecycleCancellation);
 				for (LmdbSailStore.ReadViewLease readView : owner.readViews) {
 					readView.ensureNativeSnapshotsValid();
 				}
@@ -3480,15 +3484,9 @@ public class LmdbStoreConnection extends SailSourceConnection implements SailRes
 		}
 
 		private void ensureNativeSnapshotsValid() throws SailException {
-			checkLifecycleCancellation();
+			checkLifecycleCancellation(lifecycleCancellation);
 			for (LmdbSailStore.ReadViewLease readView : readViews) {
 				readView.ensureNativeSnapshotsValid();
-			}
-		}
-
-		private void checkLifecycleCancellation() {
-			if (lifecycleCancellation.isCancelled()) {
-				throw new SailException("The LMDB read operation was cancelled");
 			}
 		}
 
@@ -3916,16 +3914,15 @@ public class LmdbStoreConnection extends SailSourceConnection implements SailRes
 		/**
 		 * Whether a row captured by an earlier availability check can be handed over without a new read activation.
 		 * That row was already read under a validated activation, so handing it over touches neither LMDB nor value
-		 * resolution and installs no thread state. Everything a new activation would still reject (cancellation, a
-		 * closed connection, an invalidated read view) is checked here; if any of it applies the full activation runs
-		 * instead and surfaces the failure exactly as before. A result whose standalone attempt is not sealed keeps the
-		 * transaction-finished admission check of the full activation.
+		 * resolution. A result whose standalone attempt is not sealed keeps the full activation's admission checks.
+		 * A direct handover still checks this call's lifecycle and the validity of the read views before delivery.
 		 */
 		private boolean canHandOverPrefetchedRow() throws SailException {
 			if (cancellationRequested || replayFailure != null || operationAttempt == null
 					|| !operationAttempt.sealed || !LmdbStoreConnection.this.isOpen()) {
 				return false;
 			}
+			checkLifecycleCancellation(CancellationSignal.current());
 			for (LmdbSailStore.ReadViewLease readView : readViews) {
 				readView.ensureNativeSnapshotsValid();
 			}

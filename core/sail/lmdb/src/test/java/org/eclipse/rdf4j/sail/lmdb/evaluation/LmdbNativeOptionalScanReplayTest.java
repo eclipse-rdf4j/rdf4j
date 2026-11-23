@@ -44,6 +44,7 @@ import org.eclipse.rdf4j.sail.lmdb.evaluation.codegen.KernelCancellation;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.codegen.KernelCancelledException;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.codegen.KernelContext;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.codegen.KernelHooks;
+import org.eclipse.rdf4j.sail.lmdb.evaluation.codegen.KernelOptionalReplay;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.codegen.KernelQuadCursor;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.codegen.KernelQueryCancelledException;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.codegen.KernelScanner;
@@ -66,7 +67,7 @@ class LmdbNativeOptionalScanReplayTest {
 
 	@AfterEach
 	void restoreProperty() {
-		System.clearProperty(LmdbNativeOptionalReplay.ENABLED_PROPERTY);
+		System.clearProperty(KernelOptionalReplay.ENABLED_PROPERTY);
 	}
 
 	/** roots -> OPTIONAL { root P ?b OPTIONAL { ?b Q ?c } }, both arms read through quad scans. */
@@ -115,7 +116,7 @@ class LmdbNativeOptionalScanReplayTest {
 			"true,false,false", "true,false,true", "true,true,false", "true,true,true" })
 	void replayPollsForCancellationEvenWhenEveryOutputIsRejected(boolean compiled, boolean aggregate, boolean probe)
 			throws Exception {
-		System.setProperty(LmdbNativeOptionalReplay.ENABLED_PROPERTY, "true");
+		System.setProperty(KernelOptionalReplay.ENABLED_PROPERTY, "true");
 		int pollInterval = NativeCancellationToken.POLL_INTERVAL;
 		int fanOut = 2 * pollInterval;
 		long[][] quads = new long[fanOut][];
@@ -256,7 +257,7 @@ class LmdbNativeOptionalScanReplayTest {
 	}
 
 	private static AdjacencyRun runAdjacency(Kernel ir, long[] roots, CountingView view, long ledgerBytes) {
-		System.setProperty(LmdbNativeOptionalReplay.ENABLED_PROPERTY, "true");
+		System.setProperty(KernelOptionalReplay.ENABLED_PROPERTY, "true");
 		var manager = LmdbQueryMemoryManager.createForTesting(ledgerBytes, ledgerBytes);
 		LmdbNativeKernelInterpreter execution = LmdbNativeKernelInterpreter.forRows(ir, PullRestoreTestMode.VERIFY);
 		assertNotNull(execution);
@@ -314,7 +315,7 @@ class LmdbNativeOptionalScanReplayTest {
 	}
 
 	private static Run run(Kernel ir, long[] roots, long[][] quads, boolean replayEnabled, long ledgerBytes) {
-		System.setProperty(LmdbNativeOptionalReplay.ENABLED_PROPERTY, Boolean.toString(replayEnabled));
+		System.setProperty(KernelOptionalReplay.ENABLED_PROPERTY, Boolean.toString(replayEnabled));
 		QuadScanner scanner = new QuadScanner(quads);
 		var manager = LmdbQueryMemoryManager.createForTesting(ledgerBytes, ledgerBytes);
 		LmdbNativeKernelInterpreter execution = LmdbNativeKernelInterpreter.forRows(ir, PullRestoreTestMode.VERIFY);

@@ -231,7 +231,7 @@ class IndexedOptionalReplayTest {
 				}
 			};
 			QueryEvaluationStep optional = LeftJoinQueryEvaluationStep.supply(strategy, new LeftJoin(left, right),
-					context, admitReplay, memoCapturer);
+					context, null, admitReplay, memoCapturer);
 			return optional.evaluate(EmptyBindingSet.getInstance());
 		}
 
