@@ -2069,16 +2069,17 @@ class LmdbPhysicalWorkPricingRegressionTest {
 
 		@Override
 		public boolean has(long subject, long predicate, long object, long context,
-				AdjacencyAccessObserver observer) throws IOException {
+				AdjacencyAccessObserver observer, CursorCancellation cancellation) throws IOException {
 			hasCalls++;
-			return super.has(subject, predicate, object, context, observer);
+			return super.has(subject, predicate, object, context, observer, cancellation);
 		}
 
 		@Override
 		public RecordIterator statements(long subject, long predicate, long object, long context,
-				AdjacencyAccessObserver observer) throws IOException {
+				AdjacencyAccessObserver observer, CursorCancellation cancellation) throws IOException {
 			statementOpens++;
-			RecordIterator delegateCursor = super.statements(subject, predicate, object, context, observer);
+			RecordIterator delegateCursor = super.statements(subject, predicate, object, context, observer,
+					cancellation);
 			return new RecordIterator() {
 				@Override
 				public long[] next() {
