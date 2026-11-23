@@ -2943,8 +2943,8 @@ public class LmdbStoreConnection extends SailSourceConnection implements SailRes
 				externalValueBinding = QueryExecutionContext
 						.activateExternalValueInitializer(LmdbStoreConnection::protectValueTree);
 				readResourceBinding = lmdbStore.getBackingStore()
-						.enterReadResourceContext(() -> owner.readViews);
-				workerAdmission = QueryExecutionContext.activateWorkerAdmission(() -> observedWorkerScope(owner));
+						.enterReadResourceContext(owner.currentReadViews);
+				workerAdmission = QueryExecutionContext.activateWorkerAdmission(owner.captureObservedWorkerScope);
 				internalReadScopeDepth.set(oldDepth + 1);
 				owner.openObservedReads++;
 				counted = true;
@@ -3774,6 +3774,10 @@ public class LmdbStoreConnection extends SailSourceConnection implements SailRes
 		private volatile boolean observed;
 		// An immutable list, replaced under readAttemptLock; observed-result calls read it without the lock.
 		private volatile List<LmdbSailStore.ReadViewLease> readViews;
+		// The same lazy reads of the current state are needed for every activation, not new callbacks per row.
+		private final Supplier<List<LmdbSailStore.ReadViewLease>> currentReadViews = () -> readViews;
+		private final Supplier<QueryExecutionContext.WorkerScope> captureObservedWorkerScope = () -> observedWorkerScope(
+				this);
 		private final OperationReadAttempt operationAttempt;
 		private volatile LmdbSailStore.ReadAttemptLease admissionAttempt;
 		private LmdbSailStore.MapGrowthToken growthToken;

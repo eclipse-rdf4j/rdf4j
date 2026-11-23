@@ -135,25 +135,14 @@ public final class ValueResolutionScope implements SailClosable {
 
 	/** A query task installs its scope once and releases its worker reader when its outermost activation ends. */
 	SailClosable activate() {
-		return activate(true);
-	}
-
-	/** Foreground result calls share their parked reader until the transaction or standalone iteration ends. */
-	SailClosable activateForeground() {
-		return activate(false);
-	}
-
-	private SailClosable activate(boolean releaseTaskReader) {
 		ValueResolutionScope previous = ACTIVE.get();
 		Thread thread = Thread.currentThread();
-		// Only a task activation releases a reader lease it did not find here, so the foreground path need not look
-		// one up on every call.
-		ReaderLease foreground = releaseTaskReader ? readers.get(thread) : null;
+		ReaderLease foreground = readers.get(thread);
 		long activeGeneration = generation;
 		ACTIVE.set(this);
 		return () -> {
 			ACTIVE.set(previous);
-			if (releaseTaskReader && previous != this) {
+			if (previous != this) {
 				ReaderLease lease = readers.get(thread);
 				if (lease != null && lease != foreground && lease.admittedGeneration == activeGeneration
 						&& readers.remove(thread, lease)) {
@@ -161,6 +150,13 @@ public final class ValueResolutionScope implements SailClosable {
 				}
 			}
 		};
+	}
+
+	/** Foreground result calls share their parked reader until the transaction or standalone iteration ends. */
+	SailClosable activateForeground() {
+		ValueResolutionScope previous = ACTIVE.get();
+		ACTIVE.set(this);
+		return () -> ACTIVE.set(previous);
 	}
 
 	Boolean resolve(long id, LmdbValue value, ValueStoreRevision.Lazy revision) throws IOException {

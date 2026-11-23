@@ -51,6 +51,7 @@ import org.eclipse.rdf4j.sail.lmdb.model.LmdbValue;
 final class RepositoryValueIteration<T> implements CloseableIteration<T>, CooperativeCancellation {
 
 	private static final int WAVE_VALUES = 1024;
+	private static final int MAX_RETAINED_SCRATCH_VALUES = 64;
 	private static final ThreadLocal<SourcePull> SOURCE_PULL = new ThreadLocal<>();
 
 	private record PendingValue(LmdbValue value, LmdbValue.InternalIdentity identity) {
@@ -75,6 +76,7 @@ final class RepositoryValueIteration<T> implements CloseableIteration<T>, Cooper
 	private boolean interruptDelivered;
 	private boolean drainClaimed;
 	private ResultSnapshotLayout arraySnapshotLayout;
+	private ResolutionScratch resolutionScratch;
 	private T row;
 	private boolean rowReady;
 
@@ -113,7 +115,7 @@ final class RepositoryValueIteration<T> implements CloseableIteration<T>, Cooper
 		}
 		Throwable failure = null;
 		try {
-			if (!prepareNext()) {
+			if (!rowReady && !prepareNext()) {
 				throw new NoSuchElementException();
 			}
 			checkActive();
@@ -288,11 +290,8 @@ final class RepositoryValueIteration<T> implements CloseableIteration<T>, Cooper
 
 		@Override
 		public void close() {
-			if (previous == null) {
-				SOURCE_PULL.remove();
-			} else {
-				SOURCE_PULL.set(previous);
-			}
+			// A null marker is equivalent to no source pull; keep the ThreadLocal entry for the next row.
+			SOURCE_PULL.set(previous);
 			previous = null;
 			LmdbStoreConnection.ObservedRead read = takeRead();
 			try {
@@ -378,15 +377,39 @@ final class RepositoryValueIteration<T> implements CloseableIteration<T>, Cooper
 		return !(value instanceof Literal literal) || isPrepared(literal.getDatatype());
 	}
 
+	/** Reuse only small, cleared containers that are not handed to callbacks. */
+	private static final class ResolutionScratch {
+		final IdentityHashMap<Value, Boolean> visited = new IdentityHashMap<>(8);
+		final List<LmdbValue> wave = new ArrayList<>();
+	}
+
 	private void resolveWaves(List<Value> roots) {
-		IdentityHashMap<Value, Boolean> visited = new IdentityHashMap<>();
+		ResolutionScratch scratch = resolutionScratch;
+		// A callback can reenter the iteration, so do not leave the active containers available for borrowing.
+		resolutionScratch = null;
+		if (scratch == null) {
+			scratch = new ResolutionScratch();
+		}
+		try {
+			resolveWaves(roots, scratch);
+		} finally {
+			if (resolutionScratch == null && scratch.visited.size() <= MAX_RETAINED_SCRATCH_VALUES) {
+				scratch.visited.clear();
+				scratch.wave.clear();
+				resolutionScratch = scratch;
+			}
+		}
+	}
+
+	private void resolveWaves(List<Value> roots, ResolutionScratch scratch) {
+		IdentityHashMap<Value, Boolean> visited = scratch.visited;
+		List<LmdbValue> wave = scratch.wave;
 		ArrayDeque<Value> descendants = new ArrayDeque<>();
 		Consumer<Value> descend = child -> {
 			if (child != null) {
 				descendants.addLast(child);
 			}
 		};
-		List<LmdbValue> wave = new ArrayList<>();
 		while (!roots.isEmpty()) {
 			// Reserve every visible foreign epoch before decoding. Visit the loaded graph depth first so an
 			// application getter on a later root cannot release an earlier root's foreign epoch before admission.
