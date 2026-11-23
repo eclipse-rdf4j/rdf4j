@@ -13,7 +13,6 @@
 package org.eclipse.rdf4j.sail.lmdb.evaluation;
 
 import java.util.Arrays;
-import java.util.HashMap;
 
 import org.eclipse.rdf4j.common.annotation.Experimental;
 import org.eclipse.rdf4j.common.annotation.InternalUseOnly;
@@ -39,7 +38,7 @@ import org.eclipse.rdf4j.sail.lmdb.evaluation.codegen.KernelRuntime;
  */
 @Experimental
 @InternalUseOnly
-public final class KernelOptionalReplay {
+public final class KernelOptionalReplay extends NativeOptionalReplayCache<KernelOptionalReplay.Rows> {
 
 	public static final String ENABLED_PROPERTY = "rdf4j.lmdb.irKernel.optionalReplay.enabled";
 
@@ -105,12 +104,9 @@ public final class KernelOptionalReplay {
 	}
 
 	private final Budget budget;
-	private final int[] inputs;
 	private final int[] outputs;
 	private final boolean bounded;
-	private final GroupKey lookupKey;
 	private final long entryBytes;
-	private final HashMap<GroupKey, Rows> cache = new HashMap<>();
 	private GroupKey recordingKey;
 	private long[] recording;
 	private int length;
@@ -123,11 +119,10 @@ public final class KernelOptionalReplay {
 	private boolean bypassed;
 
 	public KernelOptionalReplay(Budget budget, int[] inputs, int[] outputs, boolean bounded) {
+		super(inputs.clone(), TOO_LARGE);
 		this.budget = budget;
-		this.inputs = inputs.clone();
 		this.outputs = outputs.clone();
 		this.bounded = bounded;
-		this.lookupKey = new GroupKey(new long[inputs.length]);
 		// Allow for the map link and bucket, the key object and array header, and the replay descriptor.
 		this.entryBytes = 128L + (long) inputs.length * Long.BYTES;
 	}
@@ -147,10 +142,10 @@ public final class KernelOptionalReplay {
 			// an earlier run was cut short (failure or early stop); never mix it with this key
 			abandon();
 		}
-		lookupKey.refill(row, inputs);
-		Rows cached = cache.get(lookupKey);
+		Rows cached = lookupRows(row);
+		boolean hit = cached != null && !isRejected(cached);
 		if (bounded) {
-			if (cached != null && cached != TOO_LARGE) {
+			if (hit) {
 				windowHits++;
 			}
 			if (++windowLookups >= WINDOW) {
@@ -158,11 +153,11 @@ public final class KernelOptionalReplay {
 			}
 		}
 		if (cached != null) {
-			return cached == TOO_LARGE ? null : cached;
+			return hit ? cached : null;
 		}
 		if (!noMoreAdmissions) {
 			if (reserve(entryBytes)) {
-				recordingKey = lookupKey.storedCopy();
+				recordingKey = copyLookupKey();
 				recording = EMPTY.values;
 			} else {
 				noMoreAdmissions = true;
@@ -205,7 +200,7 @@ public final class KernelOptionalReplay {
 		}
 		if (length == 0) {
 			release(arrayBytes(recording.length));
-			cache.put(recordingKey, EMPTY);
+			publish(recordingKey, EMPTY);
 		} else {
 			if (bounded && recording.length > length) {
 				// keep the entry compact: doubling growth must not stay charged as slack
@@ -213,7 +208,7 @@ public final class KernelOptionalReplay {
 				recording = Arrays.copyOf(recording, length);
 				release(slack);
 			}
-			cache.put(recordingKey, new Rows(recording, length));
+			publish(recordingKey, new Rows(recording, length));
 		}
 		clearRecording();
 	}
@@ -229,7 +224,7 @@ public final class KernelOptionalReplay {
 	private boolean grow(int required) {
 		int maxCells = outputs.length * (bounded ? MAX_BOUNDED_ENTRY_ROWS : MAX_ENTRY_ROWS);
 		if (required > maxCells) {
-			cache.put(recordingKey, TOO_LARGE);
+			reject(recordingKey);
 			release(arrayBytes(recording.length));
 			clearRecording();
 			return false;
@@ -254,7 +249,7 @@ public final class KernelOptionalReplay {
 			backoff = Math.min(MAX_BACKOFF, backoff * 2);
 			// the entries of a window that did not pay for itself are dead weight; give the budget back
 			abandon();
-			cache.clear();
+			clearEntries();
 			release(siteBytes);
 			noMoreAdmissions = false;
 		}

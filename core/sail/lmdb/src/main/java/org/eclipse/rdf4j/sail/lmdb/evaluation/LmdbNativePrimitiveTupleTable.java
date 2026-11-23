@@ -21,6 +21,7 @@ import java.util.function.IntUnaryOperator;
 import java.util.function.LongUnaryOperator;
 
 import org.eclipse.rdf4j.common.annotation.Experimental;
+import org.eclipse.rdf4j.sail.lmdb.evaluation.codegen.KernelRuntime.PackedRowBlocks;
 
 /**
  * Open-addressed native-id tuple table. Buckets contain dense insertion-order indexes plus one, so every long value
@@ -626,7 +627,6 @@ final class NativeDistinctTracker {
  */
 final class WideDistinctTupleSet {
 
-	private static final int BLOCK_LONGS = 1 << 15;
 	private static final int INITIAL_BUCKETS = 16;
 	private static final int MAX_BUCKETS = 1 << 30;
 	private static final long PRIME_1 = 0x9e3779b185ebca87L;
@@ -635,12 +635,9 @@ final class WideDistinctTupleSet {
 	private static final long PRIME_4 = 0x85ebca77c2b2ae63L;
 
 	private final int width;
-	private final int blockShift;
-	private final int blockMask;
-	private final int blockLength;
 	private final int maxBuckets;
+	private final PackedRowBlocks keys;
 	private long[] buckets = new long[INITIAL_BUCKETS];
-	private long[][] keys = new long[1][];
 	private int threshold = INITIAL_BUCKETS * 3 / 4;
 	private int size;
 	private WideDistinctTupleSet overflow;
@@ -654,10 +651,7 @@ final class WideDistinctTupleSet {
 		assert maxBuckets >= INITIAL_BUCKETS && maxBuckets <= MAX_BUCKETS && Integer.bitCount(maxBuckets) == 1;
 		this.width = width;
 		this.maxBuckets = maxBuckets;
-		int blockRows = Integer.highestOneBit(Math.max(1, BLOCK_LONGS / width));
-		blockShift = Integer.numberOfTrailingZeros(blockRows);
-		blockMask = blockRows - 1;
-		blockLength = blockRows * width;
+		this.keys = new PackedRowBlocks(width);
 	}
 
 	boolean add(long[] key) {
@@ -670,7 +664,7 @@ final class WideDistinctTupleSet {
 		int bucket = hash & mask;
 		long entry;
 		while ((entry = buckets[bucket]) != 0L) {
-			if ((int) (entry >>> Integer.SIZE) == hash && matches((int) entry - 1, key)) {
+			if ((int) (entry >>> Integer.SIZE) == hash && keys.matches((int) entry - 1, key)) {
 				return false;
 			}
 			bucket = (bucket + 1) & mask;
@@ -687,7 +681,7 @@ final class WideDistinctTupleSet {
 			grow();
 			bucket = vacantBucket(buckets, hash);
 		}
-		append(key);
+		keys.append(size, key, 0);
 		buckets[bucket] = (long) hash << Integer.SIZE | (size + 1L);
 		size++;
 		return true;
@@ -696,9 +690,7 @@ final class WideDistinctTupleSet {
 	/** Resets the index and returns the number of bucket slots initialized. */
 	int clear() {
 		if (size == 0) {
-			if (keys.length > 1) {
-				keys[1] = null;
-			}
+			keys.releasePartitionBlocks(0);
 			return 0;
 		}
 		if (buckets.length > INITIAL_BUCKETS && size < (buckets.length >>> 2)) {
@@ -711,15 +703,7 @@ final class WideDistinctTupleSet {
 		} else {
 			Arrays.fill(buckets, 0L);
 		}
-		int usedBlocks = ((size - 1) >>> blockShift) + 1;
-		// Adjacent partitions that exceed the first block can reuse a spare within the block size limit.
-		// Release the spare when the partition fits in the first block, and always release later blocks.
-		if (usedBlocks > 1) {
-			int firstReleasedBlock = blockLength <= BLOCK_LONGS ? 2 : 1;
-			Arrays.fill(keys, firstReleasedBlock, usedBlocks, null);
-		} else if (keys.length > 1) {
-			keys[1] = null;
-		}
+		keys.releasePartitionBlocks(size);
 		size = 0;
 		overflow = null;
 		return buckets.length;
@@ -731,28 +715,6 @@ final class WideDistinctTupleSet {
 			total += next.size;
 		}
 		return total;
-	}
-
-	private void append(long[] key) {
-		int blockIndex = size >>> blockShift;
-		int offset = (size & blockMask) * width;
-		if (blockIndex == keys.length) {
-			keys = Arrays.copyOf(keys, keys.length << 1);
-		}
-		long[] block = keys[blockIndex];
-		if (block == null) {
-			int length = blockIndex == 0 ? (int) Math.min(4L * width, blockLength) : blockLength;
-			block = keys[blockIndex] = new long[length];
-		} else if (offset == block.length) {
-			// Only the first block starts small. COUNT(DISTINCT *) may need a wide set per group.
-			block = keys[blockIndex] = Arrays.copyOf(block, (int) Math.min(blockLength, 2L * block.length));
-		}
-		System.arraycopy(key, 0, block, offset, width);
-	}
-
-	private boolean matches(int index, long[] key) {
-		int offset = (index & blockMask) * width;
-		return Arrays.equals(keys[index >>> blockShift], offset, offset + width, key, 0, width);
 	}
 
 	private void grow() {

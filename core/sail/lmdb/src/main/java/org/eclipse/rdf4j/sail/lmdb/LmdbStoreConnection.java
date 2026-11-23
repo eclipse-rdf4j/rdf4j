@@ -3914,8 +3914,8 @@ public class LmdbStoreConnection extends SailSourceConnection implements SailRes
 		/**
 		 * Whether a row captured by an earlier availability check can be handed over without a new read activation.
 		 * That row was already read under a validated activation, so handing it over touches neither LMDB nor value
-		 * resolution. A result whose standalone attempt is not sealed keeps the full activation's admission checks.
-		 * A direct handover still checks this call's lifecycle and the validity of the read views before delivery.
+		 * resolution. A result whose standalone attempt is not sealed keeps the full activation's admission checks. A
+		 * direct handover still checks this call's lifecycle and the validity of the read views before delivery.
 		 */
 		private boolean canHandOverPrefetchedRow() throws SailException {
 			if (cancellationRequested || replayFailure != null || operationAttempt == null

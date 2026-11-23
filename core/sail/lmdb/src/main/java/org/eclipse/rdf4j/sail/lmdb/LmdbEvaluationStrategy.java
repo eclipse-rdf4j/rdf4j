@@ -13,21 +13,16 @@
 package org.eclipse.rdf4j.sail.lmdb;
 
 import java.util.Optional;
-import java.util.Set;
 
 import org.eclipse.rdf4j.common.annotation.Experimental;
 import org.eclipse.rdf4j.common.annotation.InternalUseOnly;
 import org.eclipse.rdf4j.common.order.StatementOrder;
 import org.eclipse.rdf4j.query.Dataset;
-import org.eclipse.rdf4j.query.algebra.BinaryTupleOperator;
 import org.eclipse.rdf4j.query.algebra.Distinct;
-import org.eclipse.rdf4j.query.algebra.Filter;
 import org.eclipse.rdf4j.query.algebra.Group;
-import org.eclipse.rdf4j.query.algebra.Join;
 import org.eclipse.rdf4j.query.algebra.LeftJoin;
 import org.eclipse.rdf4j.query.algebra.Projection;
 import org.eclipse.rdf4j.query.algebra.ProjectionElem;
-import org.eclipse.rdf4j.query.algebra.QueryModelNode;
 import org.eclipse.rdf4j.query.algebra.QueryRoot;
 import org.eclipse.rdf4j.query.algebra.StatementPattern;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
@@ -38,9 +33,6 @@ import org.eclipse.rdf4j.query.algebra.evaluation.federation.FederatedServiceRes
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.DefaultEvaluationStrategy;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.EvaluationStatistics;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.QueryEvaluationContext;
-import org.eclipse.rdf4j.query.algebra.evaluation.iterator.JoinIterator;
-import org.eclipse.rdf4j.query.algebra.evaluation.iterator.LeftJoinIterator;
-import org.eclipse.rdf4j.query.algebra.evaluation.util.QueryEvaluationUtility;
 import org.eclipse.rdf4j.sail.base.SailDatasetTripleTermSource;
 import org.eclipse.rdf4j.sail.lmdb.LmdbSailStore.LmdbSailDataset;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbIndexedDistinct;
@@ -126,7 +118,8 @@ final class LmdbEvaluationStrategy extends DefaultEvaluationStrategy {
 		if (statementSource == null) {
 			return null;
 		}
-		StatementPattern anchor = leftAnchor(projection.getArg());
+		LmdbPlannedOrder drivingOrder = LmdbPlannedOrder.forNaturalOrder(projection.getArg());
+		StatementPattern anchor = drivingOrder.leadingStatementPattern();
 		if (anchor == null || anchor.getScope() != StatementPattern.Scope.DEFAULT_CONTEXTS
 				|| anchor.getContextVar() != null) {
 			return null;
@@ -144,7 +137,7 @@ final class LmdbEvaluationStrategy extends DefaultEvaluationStrategy {
 		case O -> anchor.getObjectVar();
 		case C -> throw new IllegalStateException("A variable-free context cannot partition projected results");
 		};
-		if (!preservesPartitionKey(anchor, projection, ordered.getName())) {
+		if (!ordered.getName().equals(drivingOrder.sourceNameAt(ordered.getName()))) {
 			return null;
 		}
 		var elements = projection.getProjectionElemList();
@@ -160,36 +153,6 @@ final class LmdbEvaluationStrategy extends DefaultEvaluationStrategy {
 			}
 		}
 		return null;
-	}
-
-	/** These physical operations emit every left mapping's outputs before advancing the left stream. */
-	private static StatementPattern leftAnchor(TupleExpr expr) {
-		while (true) {
-			if (expr instanceof StatementPattern anchor) {
-				return anchor;
-			}
-			if (expr instanceof Join join && JoinIterator.class.getSimpleName().equals(join.getAlgorithmName())) {
-				expr = join.getLeftArg();
-			} else if (expr instanceof LeftJoin join
-					&& LeftJoinIterator.class.getSimpleName().equals(join.getAlgorithmName())) {
-				expr = join.getLeftArg();
-			} else if (expr instanceof Filter filter && QueryEvaluationUtility.isRepeatable(filter.getCondition())) {
-				expr = filter.getArg();
-			} else {
-				return null;
-			}
-		}
-	}
-
-	private static boolean preservesPartitionKey(StatementPattern anchor, Projection projection, String name) {
-		Set<String> partition = Set.of(name);
-		for (QueryModelNode parent = anchor.getParentNode(); parent != projection; parent = parent.getParentNode()) {
-			if (parent instanceof BinaryTupleOperator join
-					&& !QueryEvaluationUtility.permitsBindingInjection(join.getRightArg(), partition)) {
-				return false;
-			}
-		}
-		return true;
 	}
 
 	private static LmdbSailDataset singleStatementSource(TripleSource tripleSource) {

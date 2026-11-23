@@ -13,6 +13,9 @@
 package org.eclipse.rdf4j.sail.lmdb;
 
 import static org.eclipse.rdf4j.sail.lmdb.LmdbUtil.E;
+import static org.eclipse.rdf4j.sail.lmdb.RecordCursorCancellation.ACTIVE;
+import static org.eclipse.rdf4j.sail.lmdb.RecordCursorCancellation.CANCELLED;
+import static org.eclipse.rdf4j.sail.lmdb.RecordCursorCancellation.STATE_MASK;
 import static org.lwjgl.util.lmdb.LMDB.MDB_FIRST;
 import static org.lwjgl.util.lmdb.LMDB.MDB_NEXT;
 import static org.lwjgl.util.lmdb.LMDB.MDB_NOTFOUND;
@@ -49,9 +52,6 @@ import org.slf4j.LoggerFactory;
  */
 class LmdbRecordIterator implements RecordIterator {
 	private static final Logger log = LoggerFactory.getLogger(LmdbRecordIterator.class);
-	private static final long ACTIVE = 1L;
-	private static final long CANCELLED = 2L;
-	private static final long STATE_MASK = 3L;
 	private static final VarHandle CANCELLATION_STATE;
 
 	/**
@@ -919,16 +919,7 @@ class LmdbRecordIterator implements RecordIterator {
 
 	@Override
 	public boolean requestCancellation(long generation) {
-		long state = cancellationState;
-		if ((state & ~STATE_MASK) != generation) {
-			return false;
-		}
-		return switch ((int) (state & STATE_MASK)) {
-		case (int) ACTIVE -> CANCELLATION_STATE.compareAndSet(this, state, generation | CANCELLED)
-				|| cancellationState == (generation | CANCELLED);
-		case (int) CANCELLED -> true;
-		default -> false;
-		};
+		return RecordCursorCancellation.request(this, CANCELLATION_STATE, cancellationState, generation);
 	}
 
 	private void pollCancellationAtEntry() {

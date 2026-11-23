@@ -11155,24 +11155,17 @@ public class ValueStore extends AbstractValueFactory implements BNodeIdResolver,
 				}
 				identity = capturedIdentity;
 				if (literalPayload != null) {
-					label = literalPayload.label();
-					if (literalPayload.language() != null) {
-						payload = createLiteral(label, literalPayload.language(), literalPayload.baseDirection());
-					} else {
-						captureDatatype(literalPayload.datatype());
-					}
+					captureLiteral(literalPayload.label(), literalPayload.language(), literalPayload.baseDirection(),
+							literalPayload.datatype());
 				} else if (source instanceof IRI iri) {
 					payload = createIRI(iri.stringValue());
 				} else if (source instanceof BNode bnode) {
 					payload = createBNode(bnode.getID());
 				} else if (source instanceof Literal literal) {
-					label = literal.getLabel();
-					Optional<String> language = literal.getLanguage();
-					if (language.isPresent()) {
-						payload = createLiteral(label, language.get(), literal.getBaseDirection());
-					} else {
-						captureDatatype(literal.getDatatype());
-					}
+					String literalLabel = literal.getLabel();
+					String language = literal.getLanguage().orElse(null);
+					captureLiteral(literalLabel, language, language != null ? literal.getBaseDirection() : null,
+							language == null ? literal.getDatatype() : null);
 				} else if (source instanceof TripleTerm triple) {
 					children = new Value[] { triple.getSubject(), triple.getPredicate(), triple.getObject() };
 				}
@@ -11181,8 +11174,11 @@ public class ValueStore extends AbstractValueFactory implements BNodeIdResolver,
 				}
 			}
 
-			private void captureDatatype(IRI datatype) {
-				if (datatype == null) {
+			private void captureLiteral(String label, String language, Literal.BaseDirection direction, IRI datatype) {
+				this.label = label;
+				if (language != null) {
+					payload = createLiteral(label, language, direction);
+				} else if (datatype == null) {
 					payload = createLiteral(label, CoreDatatype.XSD.STRING);
 				} else if (isCanonicalCoreDatatype(datatype)) {
 					payload = createLiteral(label, datatype);

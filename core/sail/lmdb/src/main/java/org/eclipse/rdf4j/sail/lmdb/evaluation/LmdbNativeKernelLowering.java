@@ -19,6 +19,7 @@ import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.BitSet;
 import java.util.HashMap;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.atomic.AtomicLong;
@@ -57,6 +58,52 @@ import org.eclipse.rdf4j.sail.lmdb.evaluation.codegen.KernelTermKindProof;
  */
 @Experimental
 final class LmdbNativeKernelLowering {
+
+	/** Groups DISTINCT witness candidates by shared slots outside the supplied anchor mask. */
+	static WitnessComponents witnessComponents(long[] slotsByChild, long anchored) {
+		int[] roots = new int[slotsByChild.length];
+		int[] firstProducerBySlot = new int[Long.SIZE];
+		Arrays.fill(firstProducerBySlot, -1);
+		for (int child = 0; child < roots.length; child++) {
+			roots[child] = child;
+			long privateSlots = slotsByChild[child] & ~anchored;
+			for (long slots = privateSlots; slots != 0L; slots &= slots - 1) {
+				int slot = Long.numberOfTrailingZeros(slots);
+				int first = firstProducerBySlot[slot];
+				if (first < 0) {
+					firstProducerBySlot[slot] = child;
+				} else {
+					roots[findWitnessRoot(roots, first)] = findWitnessRoot(roots, child);
+				}
+			}
+		}
+		long[] slotsByRoot = new long[roots.length];
+		for (int child = 0; child < roots.length; child++) {
+			if ((slotsByChild[child] & ~anchored) == 0L) {
+				roots[child] = -1;
+			} else {
+				int root = findWitnessRoot(roots, child);
+				roots[child] = root;
+				slotsByRoot[root] |= slotsByChild[child];
+			}
+		}
+		return new WitnessComponents(roots, slotsByRoot);
+	}
+
+	private static int findWitnessRoot(int[] roots, int child) {
+		while (roots[child] != child) {
+			roots[child] = roots[roots[child]];
+			child = roots[child];
+		}
+		return child;
+	}
+
+	/** Each child maps to its component's root index, or -1 when it has no slots outside the anchor mask. */
+	record WitnessComponents(int[] roots, long[] slotsByRoot) {
+		boolean hasUnprovidedSlots(int root, long retained, long provided) {
+			return (slotsByRoot[root] & retained & ~provided) != 0L;
+		}
+	}
 
 	/** The statement witness tier's context and predicate guards; operand binding is checked later. */
 	static boolean statementWitnessEligible(StatementPatternExistsFilter exists) {
@@ -4915,7 +4962,6 @@ final class LmdbNativeKernelLowering {
 			}
 			int n = order.length;
 			long[] varMask = new long[n];
-			long[] scratch = new long[n];
 			boolean[] pattern = new boolean[n];
 			for (int i = 0; i < n; i++) {
 				if (order[i] instanceof PatternPlan) {
@@ -4930,34 +4976,22 @@ final class LmdbNativeKernelLowering {
 				} else {
 					varMask[i] = order[i].producedMask();
 				}
-				scratch[i] = varMask[i] & ~anchored;
 			}
-			// Union scratch-sharing children into components using index-labelled union-find.
-			int[] root = new int[n];
+			WitnessComponents groups = witnessComponents(varMask, anchored);
+			int[] roots = groups.roots();
+			Map<Integer, List<Integer>> components = new LinkedHashMap<>();
 			for (int i = 0; i < n; i++) {
-				root[i] = i;
-			}
-			for (int i = 0; i < n; i++) {
-				for (int j = i + 1; j < n; j++) {
-					if ((scratch[i] & scratch[j]) != 0L) {
-						root[find(root, i)] = find(root, j);
-					}
-				}
-			}
-			java.util.Map<Integer, List<Integer>> components = new java.util.LinkedHashMap<>();
-			for (int i = 0; i < n; i++) {
-				if (scratch[i] != 0L) {
-					components.computeIfAbsent(find(root, i), key -> new ArrayList<>()).add(i);
+				if (roots[i] >= 0) {
+					components.computeIfAbsent(roots[i], key -> new ArrayList<>()).add(i);
 				}
 			}
 			List<List<Integer>> eligible = new ArrayList<>();
 			for (List<Integer> member : components.values()) {
-				long componentScratch = 0L;
 				boolean allPatterns = true;
 				for (int index : member) {
-					componentScratch |= scratch[index];
 					allPatterns &= pattern[index];
 				}
+				long componentScratch = groups.slotsByRoot()[roots[member.getFirst()]] & ~anchored;
 				if (allPatterns && (componentScratch & filterMask) == 0L) {
 					eligible.add(member);
 				}
@@ -4983,11 +5017,8 @@ final class LmdbNativeKernelLowering {
 				}
 				for (java.util.Iterator<List<Integer>> iterator = eligible.iterator(); iterator.hasNext();) {
 					List<Integer> member = iterator.next();
-					long touchedRetained = 0L;
-					for (int index : member) {
-						touchedRetained |= varMask[index] & distinctRetainedMask;
-					}
-					if (spineEmpty || (touchedRetained & ~spineVars) != 0L) {
+					int root = roots[member.getFirst()];
+					if (spineEmpty || groups.hasUnprovidedSlots(root, distinctRetainedMask, spineVars)) {
 						iterator.remove();
 						changed = true;
 						break;
@@ -5003,15 +5034,6 @@ final class LmdbNativeKernelLowering {
 				result.add(patterns);
 			}
 			return result;
-		}
-
-		private static int find(int[] root, int index) {
-			int at = index;
-			while (root[at] != at) {
-				at = root[at];
-			}
-			root[index] = at;
-			return at;
 		}
 
 		/**

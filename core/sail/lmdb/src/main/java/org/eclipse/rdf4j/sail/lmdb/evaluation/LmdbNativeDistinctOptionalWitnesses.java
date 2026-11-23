@@ -12,10 +12,11 @@
 package org.eclipse.rdf4j.sail.lmdb.evaluation;
 
 import java.util.ArrayList;
-import java.util.Arrays;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+
+import org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbNativeKernelLowering.WitnessComponents;
 
 /** Removes unobserved mandatory multiplicity from the ordinary OPTIONAL row route under a projected DISTINCT. */
 final class LmdbNativeDistinctOptionalWitnesses {
@@ -101,53 +102,38 @@ final class LmdbNativeDistinctOptionalWitnesses {
 			}
 			retained |= reads;
 		}
+		int size = join.children.length;
+		long[] slotsByChild = new long[size];
 		long used = 0L, shared = 0L;
-		for (SlotPlan child : join.children) {
+		for (int i = 0; i < size; i++) {
+			SlotPlan child = join.children[i];
 			if (!(child instanceof PatternPlan)) {
 				return join;
 			}
-			shared |= used & child.producedMask();
-			used |= child.producedMask();
+			long slots = child.producedMask();
+			slotsByChild[i] = slots;
+			shared |= used & slots;
+			used |= slots;
 		}
 		// A sole producer of an observed slot must stay. Its remaining slots are assured inputs to any witness.
 		long requiredProducers = retained & used & ~shared;
 		long spine = 0L;
-		for (SlotPlan child : join.children) {
-			if ((child.producedMask() & requiredProducers) != 0L) {
-				spine |= child.producedMask();
+		for (long slots : slotsByChild) {
+			if ((slots & requiredProducers) != 0L) {
+				spine |= slots;
 			}
 		}
 
-		int size = join.children.length;
-		int[] parent = new int[size];
-		int[] firstProducerBySlot = new int[Long.SIZE];
-		Arrays.fill(firstProducerBySlot, -1);
-		long[] scratch = new long[size];
-		long[] componentSlots = new long[size];
-		for (int i = 0; i < size; i++) {
-			parent[i] = i;
-			scratch[i] = join.children[i].producedMask() & ~(retained | spine);
-		}
-		for (int i = 0; i < size; i++) {
-			if (scratch[i] == 0L) {
-				spine |= join.children[i].producedMask();
-			}
-			for (long slots = scratch[i]; slots != 0L; slots &= slots - 1) {
-				int slot = Long.numberOfTrailingZeros(slots);
-				int previous = firstProducerBySlot[slot];
-				if (previous < 0) {
-					firstProducerBySlot[slot] = i;
-				} else {
-					parent[root(parent, previous)] = root(parent, i);
-				}
-			}
-		}
+		WitnessComponents components = LmdbNativeKernelLowering.witnessComponents(slotsByChild, retained | spine);
+		int[] roots = components.roots();
+		long[] componentSlots = components.slotsByRoot();
 		boolean[] keep = new boolean[size];
 		for (int i = 0; i < size; i++) {
-			if (scratch[i] != 0L) {
-				int component = root(parent, i);
+			int component = roots[i];
+			if (component < 0) {
+				spine |= slotsByChild[i];
+			} else {
 				PatternPlan pattern = (PatternPlan) join.children[i];
-				componentSlots[component] |= pattern.producedMask();
 				// The EXISTS shortcuts can probe using a constant without checking its variable's current binding.
 				keep[component] |= pattern.s.bindConstant || pattern.p.bindConstant || pattern.o.bindConstant
 						|| pattern.c.bindConstant;
@@ -156,9 +142,9 @@ final class LmdbNativeDistinctOptionalWitnesses {
 
 		// Every observed slot a removed component can bind must be supplied by retained patterns. Components are
 		// disjoint in their private slots, so only these observed slots can join multiple components.
-		long unprovided = retained & ~spine;
+		long initialSpine = spine;
 		for (int i = 0; i < size; i++) {
-			if (keep[i] || (componentSlots[i] & unprovided) != 0L) {
+			if (keep[i] || components.hasUnprovidedSlots(i, retained, initialSpine)) {
 				keep[i] = true;
 				spine |= componentSlots[i];
 			}
@@ -167,9 +153,9 @@ final class LmdbNativeDistinctOptionalWitnesses {
 		Map<Integer, List<SlotPlan>> witnesses = new LinkedHashMap<>();
 		int[] removedAt = new int[size];
 		for (int i = 0; i < size; i++) {
-			int component = root(parent, i);
+			int component = roots[i];
 			// Uncorrelated components would need a separate one-time evaluation strategy. Keep their normal producer.
-			if (scratch[i] == 0L || keep[component] || (componentSlots[component] & spine) == 0L) {
+			if (component < 0 || keep[component] || (componentSlots[component] & spine) == 0L) {
 				producers.add(join.children[i]);
 			} else {
 				witnesses.computeIfAbsent(component, key -> new ArrayList<>()).add(join.children[i]);
@@ -192,13 +178,5 @@ final class LmdbNativeDistinctOptionalWitnesses {
 					producers.size() - 1));
 		}
 		return new MultiJoinPlan(producers.toArray(SlotPlan[]::new), filters.toArray(MaskedFilter[]::new));
-	}
-
-	private static int root(int[] parent, int index) {
-		while (parent[index] != index) {
-			parent[index] = parent[parent[index]];
-			index = parent[index];
-		}
-		return index;
 	}
 }

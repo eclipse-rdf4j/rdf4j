@@ -21,9 +21,9 @@ import org.eclipse.rdf4j.sail.lmdb.evaluation.NativeLmdbQuerySource.CursorCancel
 /** Cancellation state for a record cursor that can select a different scan after close. */
 @InternalUseOnly
 public final class RecordCursorCancellation {
-	private static final long ACTIVE = 1L;
-	private static final long CANCELLED = 2L;
-	private static final long STATE_MASK = 3L;
+	static final long ACTIVE = 1L;
+	static final long CANCELLED = 2L;
+	static final long STATE_MASK = 3L;
 	private static final VarHandle STATE;
 
 	static {
@@ -81,13 +81,17 @@ public final class RecordCursorCancellation {
 	}
 
 	public boolean request(long generation) {
-		long observed = state;
+		return request(this, STATE, state, generation);
+	}
+
+	/** Also serves cursors that store the same state word directly to avoid a separate holder. */
+	static boolean request(Object owner, VarHandle stateHandle, long observed, long generation) {
 		if ((observed & ~STATE_MASK) != generation) {
 			return false;
 		}
 		return switch ((int) (observed & STATE_MASK)) {
-		case (int) ACTIVE -> STATE.compareAndSet(this, observed, generation | CANCELLED)
-				|| state == (generation | CANCELLED);
+		case (int) ACTIVE -> stateHandle.compareAndSet(owner, observed, generation | CANCELLED)
+				|| (long) stateHandle.getVolatile(owner) == (generation | CANCELLED);
 		case (int) CANCELLED -> true;
 		default -> false;
 		};
