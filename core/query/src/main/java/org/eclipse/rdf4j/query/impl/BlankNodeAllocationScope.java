@@ -380,11 +380,12 @@ public final class BlankNodeAllocationScope {
 		Object identity = mapping == null ? NULL_BINDINGS : mapping;
 		OwnerReference key = new OwnerReference(identity, solutionQueue);
 		SolutionOccurrence occurrence = solutions.get(key);
-		if (occurrence == null || occurrence.visited.containsKey(boundary)) {
+		Objects.requireNonNull(boundary);
+		if (occurrence == null || !occurrence.visit(boundary)) {
 			occurrence = new SolutionOccurrence();
+			occurrence.firstBoundary = boundary;
 			solutions.put(key, occurrence);
 		}
-		occurrence.visited.put(Objects.requireNonNull(boundary), Boolean.TRUE);
 		SolutionOccurrence previous = currentSolution.get();
 		currentSolution.set(occurrence);
 		return new SolutionActivation(previous);
@@ -432,12 +433,36 @@ public final class BlankNodeAllocationScope {
 			occurrence = solutions.computeIfAbsent(new OwnerReference(identity, solutionQueue),
 					ignored -> new SolutionOccurrence());
 		}
-		return occurrence.labels.computeIfAbsent(Objects.requireNonNull(label), ignored -> createBNode(factory, label));
+		return occurrence.mutableLabels()
+				.computeIfAbsent(Objects.requireNonNull(label), ignored -> createBNode(factory, label));
 	}
 
 	private static final class SolutionOccurrence {
-		private final Map<String, BNode> labels = new HashMap<>();
-		private final Map<Object, Boolean> visited = new IdentityHashMap<>();
+		// Most rows pass only one of these boundaries and never evaluate a labelled BNODE.
+		private Object firstBoundary;
+		private IdentityHashMap<Object, Boolean> otherBoundaries;
+		private Map<String, BNode> labels;
+
+		boolean visit(Object boundary) {
+			if (firstBoundary == null) {
+				firstBoundary = boundary;
+				return true;
+			}
+			if (boundary == firstBoundary) {
+				return false;
+			}
+			if (otherBoundaries == null) {
+				otherBoundaries = new IdentityHashMap<>(2);
+			}
+			return otherBoundaries.put(boundary, Boolean.TRUE) == null;
+		}
+
+		Map<String, BNode> mutableLabels() {
+			if (labels == null) {
+				labels = new HashMap<>();
+			}
+			return labels;
+		}
 	}
 
 	/** Label state travelling with an unchanged mapping through a materializing or spilling operator. */
@@ -449,13 +474,15 @@ public final class BlankNodeAllocationScope {
 
 	public synchronized SolutionSnapshot snapshotCurrentSolution() {
 		SolutionOccurrence occurrence = currentSolution.get();
-		return new SolutionSnapshot(occurrence == null ? Map.of() : occurrence.labels);
+		return new SolutionSnapshot(occurrence == null || occurrence.labels == null ? Map.of() : occurrence.labels);
 	}
 
 	public synchronized void restoreSolution(BindingSet mapping, SolutionSnapshot snapshot) {
 		collectFinishedSolutions();
 		SolutionOccurrence occurrence = new SolutionOccurrence();
-		occurrence.labels.putAll(snapshot.labels());
+		if (!snapshot.labels().isEmpty()) {
+			occurrence.labels = new HashMap<>(snapshot.labels());
+		}
 		solutions.put(new OwnerReference(mapping, solutionQueue), occurrence);
 	}
 
