@@ -17,7 +17,9 @@ import java.io.ObjectInputStream;
 import java.io.ObjectOutputStream;
 import java.lang.management.GarbageCollectorMXBean;
 import java.lang.management.ManagementFactory;
+import java.util.ArrayDeque;
 import java.util.Collection;
+import java.util.Collections;
 import java.util.HashSet;
 import java.util.Iterator;
 import java.util.List;
@@ -26,21 +28,26 @@ import java.util.Queue;
 import java.util.Set;
 import java.util.concurrent.ConcurrentLinkedQueue;
 import java.util.concurrent.locks.ReentrantLock;
+import java.util.function.BooleanSupplier;
 
 import javax.management.NotificationEmitter;
 import javax.management.openmbean.CompositeData;
 
 import org.eclipse.rdf4j.common.annotation.InternalUseOnly;
+import org.eclipse.rdf4j.model.BNode;
 import org.eclipse.rdf4j.model.IRI;
+import org.eclipse.rdf4j.model.Literal;
 import org.eclipse.rdf4j.model.Model;
 import org.eclipse.rdf4j.model.Namespace;
 import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.Statement;
+import org.eclipse.rdf4j.model.TripleTerm;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.util.ModelException;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import com.google.common.collect.MapMaker;
 import com.sun.management.GarbageCollectionNotificationInfo;
 import com.sun.management.GcInfo;
 
@@ -51,6 +58,13 @@ public abstract class AbstractMemoryOverflowModel<T extends AbstractModel> exten
 	private static final long serialVersionUID = 4119844228099208169L;
 
 	private static final Runtime RUNTIME = Runtime.getRuntime();
+	private static final long MAX_HEAP_BYTES = RUNTIME.maxMemory();
+	private static final long BYTES_PER_MIB = 1024L * 1024L;
+	// Use the same per-statement and triple-term estimates as LMDB's buffered-write admission budget.
+	private static final int ESTIMATED_BYTES_PER_STATEMENT = 128;
+	private static final int ESTIMATED_BYTES_PER_TRIPLE_TERM = 64;
+	// Reading the heap takes a JVM-wide lock, so between its other triggers a partial batch samples it this rarely.
+	private static final int HEAP_SAMPLE_INTERVAL = 16;
 
 	/**
 	 * The default batch size is 1024. This is the number of statements that will be written to disk at a time.
@@ -85,11 +99,16 @@ public abstract class AbstractMemoryOverflowModel<T extends AbstractModel> exten
 	 * 128 MB for heaps larger than 1 GB.
 	 */
 	@SuppressWarnings("StaticNonFinalField")
-	public static int MIN_AVAILABLE_MEM_BEFORE_OVERFLOWING = RUNTIME.maxMemory() >= 1024 * 1024 * 1024 ? 128 : 32;
+	public static int MIN_AVAILABLE_MEM_BEFORE_OVERFLOWING = MAX_HEAP_BYTES >= 1024 * BYTES_PER_MIB ? 128 : 32;
 
 	static final Logger logger = LoggerFactory.getLogger(AbstractMemoryOverflowModel.class);
 
 	private volatile Model memory;
+	private transient int nextPartialBatchCheckSize = 1;
+	private transient int lastMemoryCheckSize;
+	private transient int lastMinimumAvailableMemory;
+	private transient int addsSinceHeapSample;
+	private transient SpillPayload spillPayload;
 
 	protected transient volatile T disk;
 
@@ -169,23 +188,18 @@ public abstract class AbstractMemoryOverflowModel<T extends AbstractModel> exten
 	}
 
 	private static double mbFree() {
-		// maximum heap size the JVM can allocate
-		long maxMemory = RUNTIME.maxMemory();
+		return (double) availableHeapBytes() / BYTES_PER_MIB;
+	}
 
-		// total currently allocated JVM memory
-		long totalMemory = RUNTIME.totalMemory();
+	/**
+	 * Number of heap samples taken since class load. A test hook; it has no effect on overflow decisions and is updated
+	 * without synchronization.
+	 */
+	static long heapSamples;
 
-		// amount of memory free in the currently allocated JVM memory
-		long freeMemory = RUNTIME.freeMemory();
-
-		// estimated memory used
-		long used = totalMemory - freeMemory;
-
-		// amount of memory the JVM can still allocate from the OS (upper boundary is the max heap)
-		long freeToAllocateMemory = maxMemory - used;
-
-		return (freeToAllocateMemory / 1024.0 / 1024.0);
-
+	private static long availableHeapBytes() {
+		heapSamples++;
+		return MAX_HEAP_BYTES - (RUNTIME.totalMemory() - RUNTIME.freeMemory());
 	}
 
 	private volatile boolean closed;
@@ -236,46 +250,54 @@ public abstract class AbstractMemoryOverflowModel<T extends AbstractModel> exten
 
 	@Override
 	public synchronized boolean add(Resource subj, IRI pred, Value obj, Resource... contexts) {
-		checkMemoryOverflow();
-		boolean add = getDelegate().add(subj, pred, obj, contexts);
-		if (add && memory instanceof DynamicModel) {
-			((DynamicModel) memory).maybeRegisterLargeStatementSetForReuse((DynamicModel) memory);
+		checkMemoryOverflow(false);
+		Model delegate = getDelegate();
+		boolean added = spillPayload == null ? delegate.add(subj, pred, obj, contexts)
+				: spillPayload.trackGrowth(delegate, () -> delegate.add(subj, pred, obj, contexts));
+		if (added && delegate instanceof DynamicModel dynamicModel) {
+			dynamicModel.maybeRegisterLargeStatementSetForReuse(dynamicModel);
 		}
-		return add;
+		return added;
 	}
 
 	long count = 0;
 
 	@Override
 	public synchronized boolean add(Statement st) {
-		if (count++ % BATCH_SIZE == 0) {
-			checkMemoryOverflow();
+		Model delegate = getDelegate();
+		boolean batchBoundary = count++ % BATCH_SIZE == 0;
+		boolean partialBatchDue = delegate instanceof DynamicModel && partialBatchCheckDue(delegate.size());
+		if (batchBoundary || partialBatchDue) {
+			checkMemoryOverflow(partialBatchDue);
+			delegate = getDelegate();
 		}
-		boolean add = getDelegate().add(st);
-		if (add && memory instanceof DynamicModel) {
-			((DynamicModel) memory).maybeRegisterLargeStatementSetForReuse((DynamicModel) memory);
+		Model appendTarget = delegate;
+		boolean add = spillPayload == null ? appendTarget.add(st)
+				: spillPayload.trackGrowth(appendTarget, () -> appendTarget.add(st));
+		if (add && delegate instanceof DynamicModel dynamicModel) {
+			dynamicModel.maybeRegisterLargeStatementSetForReuse(dynamicModel);
 		}
 		return add;
 	}
 
 	@Override
 	public synchronized boolean addAll(Collection<? extends Statement> c) {
-		checkMemoryOverflow();
+		checkMemoryOverflow(false);
 		if (disk != null || c.size() <= BATCH_SIZE) {
-			return getDelegate().addAll(c);
+			return addBatch(c);
 		} else {
 			boolean ret = false;
 			HashSet<Statement> buffer = new HashSet<>();
 			for (Statement st : c) {
 				buffer.add(st);
 				if (buffer.size() >= BATCH_SIZE) {
-					ret |= getDelegate().addAll(buffer);
+					ret |= addBatch(buffer);
 					buffer.clear();
-					checkMemoryOverflow();
+					checkMemoryOverflow(false);
 				}
 			}
 			if (!buffer.isEmpty()) {
-				ret |= getDelegate().addAll(buffer);
+				ret |= addBatch(buffer);
 				buffer.clear();
 			}
 
@@ -287,6 +309,12 @@ public abstract class AbstractMemoryOverflowModel<T extends AbstractModel> exten
 
 		}
 
+	}
+
+	private boolean addBatch(Collection<? extends Statement> statements) {
+		Model delegate = getDelegate();
+		return spillPayload == null ? delegate.addAll(statements)
+				: spillPayload.trackGrowth(delegate, () -> delegate.addAll(statements));
 	}
 
 	@Override
@@ -448,31 +476,89 @@ public abstract class AbstractMemoryOverflowModel<T extends AbstractModel> exten
 		}
 	}
 
-	private synchronized void checkMemoryOverflow() {
+	private boolean partialBatchCheckDue(int size) {
+		if (size >= BATCH_SIZE) {
+			return nextPartialBatchCheckSize != Integer.MAX_VALUE;
+		}
+		// Size is authoritative even when a live model view or iterator removed statements.
+		if (size < lastMemoryCheckSize || nextPartialBatchCheckSize == Integer.MAX_VALUE
+				|| size >= nextPartialBatchCheckSize
+				|| MIN_AVAILABLE_MEM_BEFORE_OVERFLOWING != lastMinimumAvailableMemory) {
+			return true;
+		}
+		if (spillPayload != null ? spillPayload.atLimit() : overflow || highGcLoad) {
+			return true;
+		}
+		// The triggers above cost nothing to test. A change in heap headroom alone is looked for at a sparse interval.
+		if (++addsSinceHeapSample < HEAP_SAMPLE_INTERVAL) {
+			return false;
+		}
+		addsSinceHeapSample = 0;
+		return (spillPayload != null) != underMemoryPressure();
+	}
+
+	private static boolean underMemoryPressure() {
+		return overflow || highGcLoad || availableHeapBytes() < MIN_AVAILABLE_MEM_BEFORE_OVERFLOWING * BYTES_PER_MIB;
+	}
+
+	/**
+	 * @param due whether the caller asked for the check or already found a partial batch due for one
+	 */
+	private synchronized void checkMemoryOverflow(boolean due) {
 		try {
 			lock.lockInterruptibly();
 			try {
-
-				Model memory = getDelegate();
-				if (disk == memory) {
+				Model candidate = getDelegate();
+				if (disk == candidate) {
 					return;
 				}
-
-				if (memory.size() < BATCH_SIZE) {
-					// A disk store costs more heap than a model smaller than one batch holds, so spilling it would
-					// add pressure, and under sustained pressure every short-lived model would get a store of its
-					// own. That is as true below the minimum memory reserve as under GC load: a transaction that
-					// keeps thousands of small changesets alive would exhaust the heap with their stores. Adders
-					// re-check at batch boundaries, so a large inflow still moves to disk.
+				int size = candidate.size();
+				if (size == 0) {
+					nextPartialBatchCheckSize = 1;
+					lastMemoryCheckSize = 0;
+					spillPayload = null;
 					return;
 				}
-
-				if (overflow || highGcLoad || mbFree() < MIN_AVAILABLE_MEM_BEFORE_OVERFLOWING) {
-					logger.debug("Syncing triples to disk due to memory pressure or retry");
-					overflowToDisk();
-					if (!highGcLoad) {
-						overflow = false;
+				if (!due && size < BATCH_SIZE && !partialBatchCheckDue(size)) {
+					return;
+				}
+				// Sample at growing checkpoints, when a pressure signal changes, when additions cross the payload
+				// budget, and at a sparse interval in between.
+				lastMemoryCheckSize = size;
+				lastMinimumAvailableMemory = MIN_AVAILABLE_MEM_BEFORE_OVERFLOWING;
+				addsSinceHeapSample = 0;
+				nextPartialBatchCheckSize = size < BATCH_SIZE ? (int) Math.min(2L * size, BATCH_SIZE)
+						: Integer.MAX_VALUE;
+				if (!underMemoryPressure()) {
+					spillPayload = null;
+					return;
+				}
+				// Starting a disk store consumes heap. Retain an ordinary partial batch in memory, but also let a
+				// partial batch spill if its payload alone is as large as a typical full batch of statements.
+				if (size < BATCH_SIZE) {
+					if (spillPayload != null && spillPayload.isCurrent(candidate, size)) {
+						return;
 					}
+					SpillPayload payload = new SpillPayload(candidate, size);
+					for (Statement statement : candidate) {
+						payload.accountFor(statement);
+						if (payload.atLimit()) {
+							break;
+						}
+					}
+					if (!payload.atLimit()) {
+						spillPayload = payload;
+						return;
+					}
+				}
+
+				// Do not delay a retry if a migration fails while the original model is still owned here.
+				spillPayload = null;
+				nextPartialBatchCheckSize = 0;
+				logger.debug("Syncing triples to disk due to memory pressure or retry");
+				overflowToDisk();
+				if (!highGcLoad) {
+					overflow = false;
 				}
 			} finally {
 				lock.unlock();
@@ -485,9 +571,156 @@ public abstract class AbstractMemoryOverflowModel<T extends AbstractModel> exten
 
 	}
 
+	/** During pressure, remember observed payload without keeping terms alive after their statements are removed. */
+	private static final class SpillPayload {
+		private final Set<Object> counted = Collections
+				.newSetFromMap(new MapMaker().weakKeys().concurrencyLevel(1).makeMap());
+		private final ArrayDeque<Value> pending = new ArrayDeque<>();
+		private final int batchSize = BATCH_SIZE;
+		private int statementCount;
+		private long statementVersion;
+		private long retainedTermVersion;
+		private long remaining = (long) batchSize * ESTIMATED_BYTES_PER_STATEMENT;
+
+		SpillPayload(Model model, int size) {
+			statementCount = size;
+			if (model instanceof DynamicModel dynamic) {
+				statementVersion = dynamic.statementVersion();
+				retainedTermVersion = dynamic.retainedTermVersion();
+			}
+		}
+
+		boolean isCurrent(Model model, int size) {
+			// Filtered iterators can remove directly from the indexed delegate. Compare the size as well as the
+			// revision so those removals invalidate the measurement.
+			return !atLimit() && batchSize == BATCH_SIZE && statementCount == size
+					&& model instanceof DynamicModel dynamic && statementVersion == dynamic.statementVersion()
+					&& retainedTermVersion == dynamic.retainedTermVersion();
+		}
+
+		boolean atLimit() {
+			return remaining <= 0;
+		}
+
+		boolean trackGrowth(Model model, BooleanSupplier add) {
+			int beforeSize = model.size();
+			long beforeVersion = model instanceof DynamicModel dynamic ? dynamic.statementVersion() : 0;
+			long beforeRetainedTermVersion = model instanceof DynamicModel dynamic ? dynamic.retainedTermVersion() : 0;
+			boolean currentBefore = isCurrent(model, beforeSize);
+			boolean result;
+			try {
+				result = add.getAsBoolean();
+			} catch (RuntimeException | Error failure) {
+				// A collection can fail partway through insertion. Re-measure once on the next check, and keep the
+				// insertion failure as the primary exception even if payload inspection would also fail.
+				remaining = 0;
+				throw failure;
+			}
+			accountForAddedStatements(model, beforeSize, beforeVersion, beforeRetainedTermVersion, currentBefore,
+					model.size() - beforeSize);
+			return result;
+		}
+
+		private void accountForAddedStatements(Model model, int beforeSize, long beforeVersion,
+				long beforeRetainedTermVersion, boolean currentBefore, int added) {
+			if (atLimit()) {
+				return;
+			}
+			if (!currentBefore || !(model instanceof DynamicModel dynamic)
+					|| added < 0 || dynamic.statementVersion() != beforeVersion + (added > 0 ? 1 : 0)
+					|| dynamic.retainedTermVersion() != beforeRetainedTermVersion) {
+				// The measured baseline changed outside this append, or the delegate cannot prove that only this
+				// operation changed it. This includes an equal-size retained-term replacement. Force a new measurement
+				// before reusing the partial-batch budget.
+				remaining = 0;
+				return;
+			}
+			if (added == 0) {
+				return;
+			}
+			// Count the canonical terms retained by the delegate. New statements occupy the tail in
+			// insertion order even when a bulk call mixes duplicates and successful insertions.
+			var statements = dynamic.statementsInInsertionOrder();
+			if (statements == null) {
+				// A delegate without insertion order requires a fresh measurement at the next check.
+				remaining = 0;
+			} else if (added == 1) {
+				accountFor(statements.getLast());
+			} else {
+				var newest = statements.reversed().iterator();
+				for (int i = 0; i < added && !atLimit(); i++) {
+					accountFor(newest.next());
+				}
+			}
+			if (!atLimit()) {
+				statementCount = beforeSize + added;
+				statementVersion = dynamic.statementVersion();
+				retainedTermVersion = dynamic.retainedTermVersion();
+			}
+		}
+
+		void accountFor(Statement statement) {
+			// Namespace strings remain resident in the disk stores, so they do not help a spill reclaim heap.
+			// Indexed statements expose canonical terms but retain their supplied statements as well.
+			while (statement != null && !atLimit()) {
+				accountFor(statement.getSubject());
+				accountFor(statement.getPredicate());
+				accountFor(statement.getObject());
+				accountFor(statement.getContext());
+				if (statement instanceof LinkedHashModel.ModelStatement modelStatement) {
+					statement = modelStatement.getStatement();
+				} else {
+					statement = null;
+				}
+			}
+		}
+
+		void accountFor(Value initial) {
+			if (initial == null || atLimit()) {
+				return;
+			}
+			pending.push(initial);
+			try {
+				while (!pending.isEmpty() && !atLimit()) {
+					Value value = pending.pop();
+					// Some values compute their lexical form on demand, so that form need not have a stable identity.
+					if (!counted.add(value)) {
+						continue;
+					}
+					if (value instanceof TripleTerm triple) {
+						remaining -= ESTIMATED_BYTES_PER_TRIPLE_TERM;
+						pending.push(triple.getObject());
+						pending.push(triple.getSubject());
+						pending.push(triple.getPredicate());
+					} else if (value instanceof Literal literal) {
+						accountForText(literal.getLabel());
+						accountForText(literal.getLanguage().orElse(null));
+						IRI datatype = literal.getDatatype();
+						if (datatype != null) {
+							pending.push(datatype);
+						}
+					} else if (value instanceof BNode bnode) {
+						accountForText(bnode.getID());
+					} else {
+						accountForText(value.stringValue());
+					}
+				}
+			} finally {
+				pending.clear();
+			}
+		}
+
+		private void accountForText(String text) {
+			// A code unit occupies at least one byte even with compact Latin-1 strings.
+			if (text != null && !text.isEmpty() && counted.add(text)) {
+				remaining -= text.length();
+			}
+		}
+	}
+
 	@InternalUseOnly
 	public final void spillToDiskIfNeeded() {
-		checkMemoryOverflow();
+		checkMemoryOverflow(true);
 	}
 
 	private synchronized void overflowToDisk() {
@@ -540,6 +773,7 @@ public abstract class AbstractMemoryOverflowModel<T extends AbstractModel> exten
 					diskModel = disk;
 					memory = null;
 					disk = null;
+					spillPayload = null;
 				} finally {
 					lock.unlock();
 				}

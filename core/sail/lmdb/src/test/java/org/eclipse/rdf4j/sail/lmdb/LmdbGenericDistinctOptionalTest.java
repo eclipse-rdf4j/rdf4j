@@ -19,6 +19,7 @@ import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.query.QueryResults;
 import org.eclipse.rdf4j.query.algebra.Distinct;
+import org.eclipse.rdf4j.query.algebra.Filter;
 import org.eclipse.rdf4j.query.algebra.Join;
 import org.eclipse.rdf4j.query.algebra.Projection;
 import org.eclipse.rdf4j.query.algebra.ProjectionElem;
@@ -31,6 +32,8 @@ import org.eclipse.rdf4j.repository.sail.SailRepository;
 import org.eclipse.rdf4j.sail.lmdb.config.LmdbStoreConfig;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 
 class LmdbGenericDistinctOptionalTest {
 
@@ -50,6 +53,28 @@ class LmdbGenericDistinctOptionalTest {
 		new LmdbDistinctWitnessOptimizer().optimize(new Distinct(projection), null, EmptyBindingSet.getInstance());
 
 		assertThat(projection.getArg()).isSameAs(original);
+	}
+
+	@ParameterizedTest
+	@ValueSource(booleans = { false, true })
+	void witnessCanReadHiddenContextButCannotInjectSharedGraphSelector(boolean sharesContext) {
+		ValueFactory vf = SimpleValueFactory.getInstance();
+		var producer = new StatementPattern(Var.of("resource"),
+				Var.of("producerPredicate", vf.createIRI("urn:producer"), true, true), Var.of("result"));
+		var witness = new StatementPattern(StatementPattern.Scope.NAMED_CONTEXTS, Var.of("resource"),
+				Var.of("witnessPredicate", vf.createIRI("urn:witness"), true, true),
+				Var.of("private"), Var.of(sharesContext ? "resource" : "graph"));
+		var original = new Join(producer, witness);
+		var projection = new Projection(original,
+				new ProjectionElemList(new ProjectionElem("resource"), new ProjectionElem("result")));
+
+		new LmdbDistinctWitnessOptimizer().optimize(new Distinct(projection), null, EmptyBindingSet.getInstance());
+
+		if (sharesContext) {
+			assertThat(projection.getArg()).isSameAs(original);
+		} else {
+			assertThat(projection.getArg()).isInstanceOf(Filter.class);
+		}
 	}
 
 	@Test

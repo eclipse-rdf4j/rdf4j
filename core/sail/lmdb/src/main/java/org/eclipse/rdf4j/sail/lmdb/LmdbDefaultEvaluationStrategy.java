@@ -39,7 +39,7 @@ import org.eclipse.rdf4j.query.algebra.evaluation.util.QueryEvaluationUtility;
 import org.eclipse.rdf4j.sail.base.SailDatasetTripleTermSource;
 import org.eclipse.rdf4j.sail.lmdb.LmdbSailStore.LmdbSailDataset;
 
-final class LmdbDefaultEvaluationStrategy extends DefaultEvaluationStrategy {
+abstract class LmdbDefaultEvaluationStrategy extends DefaultEvaluationStrategy {
 
 	private final LmdbSailDataset statementSource;
 
@@ -57,34 +57,35 @@ final class LmdbDefaultEvaluationStrategy extends DefaultEvaluationStrategy {
 				: super.prepare(node, context);
 	}
 
-	@Override
-	protected QueryEvaluationStep prepare(Distinct node, QueryEvaluationContext context) {
+	protected final QueryEvaluationStep prepareNaturalPartitionedDistinct(Distinct node, QueryEvaluationContext context,
+			QueryEvaluationStep input, String plannedPartitionBinding) {
 		if (!(node.getParentNode() instanceof QueryRoot) || !(node.getArg() instanceof Projection projection)
 				|| projection.getInheritedGraphParameter() != null || context.getDataset() != null
 				|| context.getActiveGraph() != null) {
-			return super.prepare(node, context);
+			return null;
 		}
-		QueryEvaluationStep input = precompile(projection, context);
-		String key = naturalPartitionKey(projection);
+		String key = naturalPartitionKey(projection, plannedPartitionBinding);
 		if (key == null) {
-			return prepareDistinct(node, context, input, null, null);
+			return null;
 		}
 		node.setStringMetricPlanned("distinctPartitionBinding", key);
 		return prepareDistinct(node, context, input, context.getValue(key), statementSource.statementReplayCapturer());
 	}
 
-	private String naturalPartitionKey(Projection projection) {
-		StatementPattern anchor = leftAnchor(projection.getArg());
-		if (anchor == null || anchor.getScope() != StatementPattern.Scope.DEFAULT_CONTEXTS
-				|| anchor.getContextVar() != null || anchor.getStatementOrder() != null) {
+	private String naturalPartitionKey(Projection projection, String plannedPartitionBinding) {
+		if (statementSource == null) {
 			return null;
 		}
-		if (statementSource == null) {
+		StatementPattern anchor = leftAnchor(projection.getArg());
+		if (anchor == null || anchor.getScope() != StatementPattern.Scope.DEFAULT_CONTEXTS
+				|| anchor.getContextVar() != null) {
 			return null;
 		}
 		StatementOrder order = statementSource.getNaturalStatementOrder(anchor.getSubjectVar().hasValue(),
 				anchor.getPredicateVar().hasValue(), anchor.getObjectVar().hasValue());
-		if (order == null || order == StatementOrder.C) {
+		// An explicit order must agree with the statement's natural order and survive the planned driving path.
+		if (order == null || order == StatementOrder.C
+				|| anchor.getStatementOrder() != (plannedPartitionBinding == null ? null : order)) {
 			return null;
 		}
 		Var ordered = switch (order) {
@@ -101,7 +102,8 @@ final class LmdbDefaultEvaluationStrategy extends DefaultEvaluationStrategy {
 				continue;
 			}
 			String key = element.getProjectionAlias().orElse(element.getName());
-			if (projection.getAssuredBindingNames().contains(key)
+			if ((plannedPartitionBinding == null || plannedPartitionBinding.equals(key))
+					&& projection.getAssuredBindingNames().contains(key)
 					&& projection.getProjectionElemList()
 							.getElements()
 							.stream()
@@ -114,7 +116,7 @@ final class LmdbDefaultEvaluationStrategy extends DefaultEvaluationStrategy {
 	}
 
 	/** These physical operations emit every left mapping's outputs before advancing the left stream. */
-	private StatementPattern leftAnchor(TupleExpr expr) {
+	private static StatementPattern leftAnchor(TupleExpr expr) {
 		while (true) {
 			if (expr instanceof StatementPattern anchor) {
 				return anchor;

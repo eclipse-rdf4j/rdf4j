@@ -33,7 +33,9 @@ import org.eclipse.rdf4j.query.algebra.QueryModelNode;
 import org.eclipse.rdf4j.query.algebra.evaluation.ArrayBindingSet;
 import org.eclipse.rdf4j.query.algebra.evaluation.ArrayBindingSet.IndexedLayout;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryBindingSet;
+import org.eclipse.rdf4j.query.algebra.evaluation.impl.GraphFrameBindings;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.QueryEvaluationContext;
+import org.eclipse.rdf4j.query.algebra.evaluation.impl.evaluationsteps.ScopedUnionInput;
 import org.eclipse.rdf4j.query.impl.EmptyBindingSet;
 
 public class ProjectionIterator extends ConvertingIteration<BindingSet, BindingSet> {
@@ -44,6 +46,7 @@ public class ProjectionIterator extends ConvertingIteration<BindingSet, BindingS
 
 	private final BiConsumer<MutableBindingSet, BindingSet> projector;
 	private final Function<BindingSet, ArrayBindingSet> indexedProjector;
+	private final boolean trackClearedSiblingInputs;
 
 	private final Supplier<MutableBindingSet> maker;
 
@@ -73,12 +76,15 @@ public class ProjectionIterator extends ConvertingIteration<BindingSet, BindingS
 	public ProjectionIterator(Projection projection, CloseableIteration<BindingSet> iter,
 			BindingSet parentBindings, QueryEvaluationContext context) throws QueryEvaluationException {
 		super(iter);
+		trackClearedSiblingInputs = ScopedUnionInput.tracksClearedSiblingInputs();
 		ProjectionElemList projectionElemList = projection.getProjectionElemList();
 		boolean isOuterProjection = !hasEnclosingProjection(projection, context);
 		boolean includeAllParentBindings = !isOuterProjection;
 		this.indexedProjector = isOuterProjection && parentBindings == EmptyBindingSet.getInstance()
 				&& projection.getInheritedGraphParameter() == null ? indexedProjector(projectionElemList, context)
 						: null;
+		BindingSet accessorParent = trackClearedSiblingInputs ? GraphFrameBindings.contextRow(parentBindings)
+				: parentBindings;
 
 		BindingSetMapper[] array = projectionElemList.getElements()
 				.stream()
@@ -104,7 +110,7 @@ public class ProjectionIterator extends ConvertingIteration<BindingSet, BindingS
 				for (BindingSetMapper bindingSetMapper : array) {
 					Value targetValue = bindingSetMapper.valueWithSourceName.apply(sourceBindings);
 					if (targetValue == null) {
-						targetValue = bindingSetMapper.valueWithSourceName.apply(parentBindings);
+						targetValue = bindingSetMapper.valueWithSourceName.apply(accessorParent);
 					}
 					if (targetValue != null) {
 						bindingSetMapper.setTarget.accept(targetValue, resultBindings);
@@ -174,12 +180,17 @@ public class ProjectionIterator extends ConvertingIteration<BindingSet, BindingS
 	@Override
 	protected BindingSet convert(BindingSet sourceBindings) throws QueryEvaluationException {
 		if (indexedProjector != null) {
+			// The indexed layout rejects rows carrying scope metadata, which the general path preserves below.
 			ArrayBindingSet projected = indexedProjector.apply(sourceBindings);
 			if (projected != null) {
 				return projected;
 			}
 		}
 		MutableBindingSet qbs = maker.get();
+		if (trackClearedSiblingInputs) {
+			projector.accept(qbs, GraphFrameBindings.contextRow(sourceBindings));
+			return GraphFrameBindings.preserveClearedSiblingInputs(sourceBindings, qbs);
+		}
 		projector.accept(qbs, sourceBindings);
 		return qbs;
 	}

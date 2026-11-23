@@ -13,31 +13,11 @@
 package org.eclipse.rdf4j.sail.lmdb;
 
 import java.util.ArrayList;
-import java.util.HashMap;
-import java.util.HashSet;
 import java.util.List;
-import java.util.Map;
-import java.util.Set;
 
 import org.eclipse.rdf4j.common.annotation.Experimental;
 import org.eclipse.rdf4j.common.annotation.InternalUseOnly;
-import org.eclipse.rdf4j.common.iteration.CloseableIteration;
-import org.eclipse.rdf4j.common.order.StatementOrder;
-import org.eclipse.rdf4j.model.IRI;
-import org.eclipse.rdf4j.model.Resource;
-import org.eclipse.rdf4j.model.Statement;
-import org.eclipse.rdf4j.model.Value;
-import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.query.BindingSet;
-import org.eclipse.rdf4j.query.Dataset;
-import org.eclipse.rdf4j.query.QueryEvaluationException;
-import org.eclipse.rdf4j.query.algebra.BindingSetAssignment;
-import org.eclipse.rdf4j.query.algebra.Join;
-import org.eclipse.rdf4j.query.algebra.LeftJoin;
-import org.eclipse.rdf4j.query.algebra.Projection;
-import org.eclipse.rdf4j.query.algebra.StatementPattern;
-import org.eclipse.rdf4j.query.algebra.TupleExpr;
-import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.query.algebra.evaluation.EvaluationStrategy;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryOptimizer;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryOptimizerPipeline;
@@ -48,8 +28,6 @@ import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.OrderLimitOptimizer;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.ParentReferenceChecker;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.QueryJoinOptimizer;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.StandardQueryOptimizerPipeline;
-import org.eclipse.rdf4j.query.algebra.helpers.AbstractSimpleQueryModelVisitor;
-import org.eclipse.rdf4j.query.algebra.helpers.TupleExprs;
 
 @Experimental
 @InternalUseOnly
@@ -60,6 +38,7 @@ public final class LmdbStandardQueryOptimizerPipeline implements QueryOptimizerP
 	private final EvaluationStatistics evaluationStatistics;
 	private final EvaluationStrategy strategy;
 	private final boolean nativeEngine;
+	private final boolean stableOrderDistinct;
 
 	@InternalUseOnly
 	public LmdbStandardQueryOptimizerPipeline(EvaluationStrategy strategy, TripleSource tripleSource,
@@ -74,8 +53,28 @@ public final class LmdbStandardQueryOptimizerPipeline implements QueryOptimizerP
 	@InternalUseOnly
 	public LmdbStandardQueryOptimizerPipeline(EvaluationStrategy strategy, TripleSource tripleSource,
 			EvaluationStatistics evaluationStatistics, boolean nativeEngine) {
+		this(strategy, tripleSource, evaluationStatistics, nativeEngine, false);
+	}
+
+	/**
+	 * @param nativeEngine        when {@code true}, the pipeline is built for the native query engine and adds
+	 *                            {@link LmdbSubqueryGroupPushdownOptimizer} after the first {@link FilterOptimizer}.
+	 * @param stableOrderDistinct when {@code true}, mark the leading pattern when it can supply order for partitioned
+	 *                            {@code DISTINCT}. The experimental policy can also steer join selection towards an
+	 *                            ordered leading pattern. Only for strategies that evaluate through the generic engine,
+	 *                            so it cannot be combined with {@code nativeEngine}: the native engine keeps its own
+	 *                            planner.
+	 */
+	@InternalUseOnly
+	LmdbStandardQueryOptimizerPipeline(EvaluationStrategy strategy, TripleSource tripleSource,
+			EvaluationStatistics evaluationStatistics, boolean nativeEngine, boolean stableOrderDistinct) {
+		if (nativeEngine && stableOrderDistinct) {
+			throw new IllegalArgumentException("The native engine keeps its own planner; stableOrderDistinct is only "
+					+ "for the generic engine");
+		}
 		this.nativeEngine = nativeEngine;
-		this.delegate = new StandardQueryOptimizerPipeline(strategy, new OrderBlindTripleSource(tripleSource),
+		this.stableOrderDistinct = stableOrderDistinct;
+		this.delegate = new StandardQueryOptimizerPipeline(strategy, new LmdbOrderBlindTripleSource(tripleSource),
 				evaluationStatistics);
 		this.tripleSource = tripleSource;
 		this.evaluationStatistics = evaluationStatistics;
@@ -100,10 +99,16 @@ public final class LmdbStandardQueryOptimizerPipeline implements QueryOptimizerP
 			if (!nativeEngine && optimizer instanceof QueryJoinOptimizer) {
 				optimizers.add(new LmdbDistinctWitnessOptimizer());
 			}
-			optimizers.add(optimizer);
-			if (experimental && optimizer instanceof QueryJoinOptimizer
+			if (experimental && optimizer instanceof QueryJoinOptimizer && stableOrderDistinct) {
+				optimizers.add(new LmdbDistinctAnchorJoinOptimizer(evaluationStatistics, strategy.isTrackResultSize(),
+						tripleSource, strategy.getQueryExecutionPolicy()));
+				optimizers.add(new LmdbDistinctOrderMarkingOptimizer(tripleSource));
+			} else if (experimental && optimizer instanceof QueryJoinOptimizer
 					&& !evaluationStatistics.supportsJoinEstimation()) {
-				optimizers.add(new LmdbPhysicalJoinOrderOptimizer());
+				optimizers.add(new LmdbIndexAwareJoinOptimizer(evaluationStatistics, strategy.isTrackResultSize(),
+						new LmdbOrderBlindTripleSource(tripleSource), strategy.getQueryExecutionPolicy()));
+			} else {
+				optimizers.add(optimizer);
 			}
 			if (experimental && optimizer instanceof OrderLimitOptimizer) {
 				optimizers.add(new LmdbOrderByOptimizer(tripleSource));
@@ -117,6 +122,8 @@ public final class LmdbStandardQueryOptimizerPipeline implements QueryOptimizerP
 
 		if (nativeEngine) {
 			insertGroupPushdown(optimizers);
+		} else if (stableOrderDistinct && !experimental) {
+			optimizers.add(new LmdbDistinctOrderMarkingOptimizer(tripleSource));
 		}
 		return optimizers;
 	}
@@ -136,324 +143,6 @@ public final class LmdbStandardQueryOptimizerPipeline implements QueryOptimizerP
 				optimizers.add(position, new LmdbSubqueryGroupPushdownOptimizer());
 				return;
 			}
-		}
-	}
-
-	private final class LmdbPhysicalJoinOrderOptimizer implements QueryOptimizer {
-
-		@Override
-		public void optimize(TupleExpr tupleExpr, Dataset dataset, BindingSet bindings) {
-			// Keep QueryJoinOptimizer's finite-assignment anchor ordering.
-			if (containsFiniteBindingAssignment(tupleExpr)) {
-				return;
-			}
-			tupleExpr.visit(new BoundVarsAwareVisitor(bindings.getBindingNames()));
-		}
-
-		/**
-		 * Visits the query tree while tracking the variables that are already bound when the visited node is evaluated,
-		 * so that join trees nested in the right side of an OPTIONAL are ordered with the bindings of the OPTIONAL's
-		 * left side in mind. Each maximal join tree is flattened and reordered as a unit.
-		 */
-		private final class BoundVarsAwareVisitor extends AbstractSimpleQueryModelVisitor<RuntimeException> {
-
-			/** Externally supplied bindings; bound in every scope, including sub-selects. */
-			private final Set<String> externalBindings;
-
-			private Set<String> boundVars;
-
-			BoundVarsAwareVisitor(Set<String> externalBindings) {
-				this.externalBindings = Set.copyOf(externalBindings);
-				this.boundVars = new HashSet<>(this.externalBindings);
-			}
-
-			@Override
-			public void meet(LeftJoin leftJoin) {
-				Set<String> entry = boundVars;
-				try {
-					leftJoin.getLeftArg().visit(this);
-					Set<String> rightEntry = new HashSet<>(entry);
-					rightEntry.addAll(leftJoin.getLeftArg().getAssuredBindingNames());
-					boundVars = rightEntry;
-					leftJoin.getRightArg().visit(this);
-					if (leftJoin.getCondition() != null) {
-						leftJoin.getCondition().visit(this);
-					}
-				} finally {
-					boundVars = entry;
-				}
-			}
-
-			@Override
-			public void meet(Projection projection) {
-				Set<String> entry = boundVars;
-				try {
-					boundVars = new HashSet<>(externalBindings);
-					super.meet(projection);
-				} finally {
-					boundVars = entry;
-				}
-			}
-
-			@Override
-			public void meet(Join join) {
-				Set<String> entryBoundVars = boundVars;
-				List<TupleExpr> joinArgs = new ArrayList<>();
-				collectJoinArgs(join.getLeftArg(), joinArgs);
-				collectJoinArgs(join.getRightArg(), joinArgs);
-
-				// Reorder every maximal run of consecutive statement patterns; other args act as barriers.
-				List<TupleExpr> orderedArgs = new ArrayList<>(joinArgs.size());
-				Set<String> argEntry = new HashSet<>(entryBoundVars);
-				boolean changed = false;
-				int i = 0;
-				while (i < joinArgs.size()) {
-					int end = i;
-					while (end < joinArgs.size() && joinArgs.get(end) instanceof StatementPattern) {
-						end++;
-					}
-					if (end == i) {
-						TupleExpr arg = joinArgs.get(i);
-						orderedArgs.add(arg);
-						argEntry.addAll(arg.getAssuredBindingNames());
-						i++;
-						continue;
-					}
-					List<TupleExpr> run = joinArgs.subList(i, end);
-					List<TupleExpr> reorderedRun = run;
-					if (run.size() >= 2) {
-						reorderedRun = reorderRun(run, argEntry);
-						if (!reorderedRun.equals(run)) {
-							refreshStandardCostEstimates(reorderedRun, joinArgs, argEntry);
-							changed = true;
-						}
-					}
-					orderedArgs.addAll(reorderedRun);
-					for (TupleExpr pattern : run) {
-						argEntry.addAll(pattern.getAssuredBindingNames());
-					}
-					i = end;
-				}
-				if (changed) {
-					Join replacement = buildJoin(orderedArgs);
-					replacement.setVariableScopeChange(join.isVariableScopeChange());
-					join.replaceWith(replacement);
-				}
-
-				argEntry = new HashSet<>(entryBoundVars);
-				try {
-					for (TupleExpr arg : orderedArgs) {
-						if (!(arg instanceof StatementPattern)) {
-							boundVars = new HashSet<>(argEntry);
-							arg.visit(this);
-						}
-						argEntry.addAll(arg.getAssuredBindingNames());
-					}
-				} finally {
-					boundVars = entryBoundVars;
-				}
-			}
-		}
-
-		private boolean containsFiniteBindingAssignment(TupleExpr tupleExpr) {
-			boolean[] found = { false };
-			tupleExpr.visit(new AbstractSimpleQueryModelVisitor<RuntimeException>() {
-				@Override
-				public void meet(BindingSetAssignment assignment) {
-					found[0] = true;
-				}
-			});
-			return found[0];
-		}
-
-		private void collectJoinArgs(TupleExpr tupleExpr, List<TupleExpr> joinArgs) {
-			if (tupleExpr instanceof Join join && !TupleExprs.isVariableScopeChange(join)) {
-				collectJoinArgs(join.getLeftArg(), joinArgs);
-				collectJoinArgs(join.getRightArg(), joinArgs);
-			} else {
-				joinArgs.add(tupleExpr);
-			}
-		}
-
-		private List<TupleExpr> reorderRun(List<TupleExpr> run, Set<String> entryBoundVars) {
-			List<TupleExpr> remaining = new ArrayList<>(run);
-			List<TupleExpr> reordered = new ArrayList<>(run.size());
-			Set<String> boundVars = new HashSet<>(entryBoundVars);
-			while (!remaining.isEmpty()) {
-				TupleExpr selected = remaining.getFirst();
-				for (int i = 1; i < remaining.size(); i++) {
-					TupleExpr candidate = remaining.get(i);
-					if (isBetterCandidate((StatementPattern) candidate, (StatementPattern) selected, boundVars)) {
-						selected = candidate;
-					}
-				}
-				remaining.remove(selected);
-				reordered.add(selected);
-				addPatternBindings((StatementPattern) selected, boundVars);
-			}
-			return reordered;
-		}
-
-		/**
-		 * QueryJoinOptimizer annotates statement patterns while it builds its original order. Reordering those patterns
-		 * afterwards must refresh the annotations for the new binding sequence; otherwise the native planner receives
-		 * the right order with the wrong per-step costs and can choose a more expensive physical pipeline.
-		 */
-		private void refreshStandardCostEstimates(List<TupleExpr> orderedRun, List<TupleExpr> allJoinArgs,
-				Set<String> entryBoundVars) {
-			Map<String, Integer> variableFrequencies = variableFrequencies(allJoinArgs);
-			Set<String> boundVars = new HashSet<>(entryBoundVars);
-			double currentHighestCost = 1.0d;
-			for (TupleExpr tupleExpr : orderedRun) {
-				StatementPattern pattern = (StatementPattern) tupleExpr;
-				double cost = standardCost(pattern, boundVars, variableFrequencies, currentHighestCost);
-				pattern.setCostEstimate(cost);
-				currentHighestCost = Math.max(currentHighestCost, cost);
-				addPatternBindings(pattern, boundVars);
-			}
-		}
-
-		private Map<String, Integer> variableFrequencies(List<TupleExpr> tupleExprs) {
-			Map<String, Integer> frequencies = new HashMap<>();
-			for (TupleExpr tupleExpr : tupleExprs) {
-				tupleExpr.visit(new AbstractSimpleQueryModelVisitor<RuntimeException>() {
-					@Override
-					public void meet(StatementPattern pattern) {
-						for (Var var : pattern.getVarList()) {
-							if (var != null && var.getName() != null) {
-								frequencies.merge(var.getName(), 1, Integer::sum);
-							}
-						}
-					}
-				});
-			}
-			return frequencies;
-		}
-
-		private double standardCost(StatementPattern pattern, Set<String> boundVars,
-				Map<String, Integer> variableFrequencies, double currentHighestCost) {
-			List<Var> vars = pattern.getVarList();
-			int constantVars = 0;
-			Set<String> unboundVars = new HashSet<>();
-			for (Var var : vars) {
-				if (var == null) {
-					continue;
-				}
-				if (var.hasValue()) {
-					constantVars++;
-				} else if (var.getName() != null && !boundVars.contains(var.getName())) {
-					unboundVars.add(var.getName());
-				}
-			}
-
-			double cost = evaluationStatistics.getCardinality(pattern) + 5.0d;
-			int nonConstantVarCount = vars.size() - constantVars;
-			if (nonConstantVarCount > 0) {
-				int boundVarCount = nonConstantVarCount - unboundVars.size();
-				if (boundVarCount == 0) {
-					cost *= currentHighestCost;
-				} else {
-					cost = Math.pow(cost, (double) unboundVars.size() / nonConstantVarCount);
-				}
-			}
-
-			if (unboundVars.isEmpty()) {
-				if (nonConstantVarCount > 0) {
-					cost /= nonConstantVarCount;
-				}
-			} else {
-				int foreignVarFrequency = 0;
-				for (String varName : unboundVars) {
-					foreignVarFrequency += variableFrequencies.getOrDefault(varName, 1) - 1;
-				}
-				if (foreignVarFrequency > 0) {
-					cost /= 1.0d + foreignVarFrequency;
-				}
-			}
-			return cost;
-		}
-
-		private boolean isBetterCandidate(StatementPattern candidate, StatementPattern incumbent,
-				Set<String> boundVars) {
-			boolean candidateUsesBoundVar = usesBoundVar(candidate, boundVars);
-			boolean incumbentUsesBoundVar = usesBoundVar(incumbent, boundVars);
-			if (candidateUsesBoundVar != incumbentUsesBoundVar) {
-				return candidateUsesBoundVar;
-			}
-			int candidatePrefixLength = accessPrefixLength(candidate, boundVars);
-			int incumbentPrefixLength = accessPrefixLength(incumbent, boundVars);
-			if (candidatePrefixLength != incumbentPrefixLength) {
-				return candidatePrefixLength > incumbentPrefixLength;
-			}
-			return normalizedCardinality(candidate) < normalizedCardinality(incumbent);
-		}
-
-		private boolean usesBoundVar(StatementPattern pattern, Set<String> boundVars) {
-			for (Var var : pattern.getVarList()) {
-				if (var != null && !var.isConstant() && boundVars.contains(var.getName())) {
-					return true;
-				}
-			}
-			return false;
-		}
-
-		private void addPatternBindings(StatementPattern pattern, Set<String> boundVars) {
-			for (Var var : pattern.getVarList()) {
-				if (var != null && !var.isConstant() && var.getName() != null) {
-					boundVars.add(var.getName());
-				}
-			}
-		}
-
-		private int accessPrefixLength(StatementPattern pattern, Set<String> boundVars) {
-			if (evaluationStatistics instanceof LmdbEvaluationStatistics lmdbStatistics) {
-				return lmdbStatistics.fallbackAccessPrefixLength(pattern, boundVars);
-			}
-			int count = 0;
-			for (Var var : pattern.getVarList()) {
-				if (var != null && (var.hasValue()
-						|| (var.getName() != null && boundVars.contains(var.getName())))) {
-					count++;
-				}
-			}
-			return count;
-		}
-
-		private double normalizedCardinality(TupleExpr tupleExpr) {
-			double cardinality = evaluationStatistics.getCardinality(tupleExpr);
-			return Double.isFinite(cardinality) && cardinality >= 0.0d ? cardinality : Double.POSITIVE_INFINITY;
-		}
-
-		private Join buildJoin(List<TupleExpr> orderedArgs) {
-			TupleExpr result = orderedArgs.getLast();
-			for (int i = orderedArgs.size() - 2; i > 0; i--) {
-				result = new Join(orderedArgs.get(i), result);
-			}
-			return new Join(orderedArgs.getFirst(), result);
-		}
-	}
-
-	private static final class OrderBlindTripleSource implements TripleSource {
-		private final TripleSource delegate;
-
-		private OrderBlindTripleSource(TripleSource delegate) {
-			this.delegate = delegate;
-		}
-
-		@Override
-		public CloseableIteration<? extends Statement> getStatements(Resource subj, IRI pred, Value obj,
-				Resource... contexts) throws QueryEvaluationException {
-			return delegate.getStatements(subj, pred, obj, contexts);
-		}
-
-		@Override
-		public Set<StatementOrder> getSupportedOrders(Resource subj, IRI pred, Value obj, Resource... contexts) {
-			return Set.of();
-		}
-
-		@Override
-		public ValueFactory getValueFactory() {
-			return delegate.getValueFactory();
 		}
 	}
 }

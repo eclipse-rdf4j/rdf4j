@@ -20,6 +20,7 @@ import java.util.List;
 import java.util.OptionalDouble;
 import java.util.OptionalLong;
 import java.util.function.Predicate;
+import java.util.stream.Collectors;
 
 import org.eclipse.rdf4j.common.annotation.Experimental;
 import org.eclipse.rdf4j.common.order.StatementOrder;
@@ -919,10 +920,9 @@ final class CompositeNativeLmdbQuerySource implements NativeLmdbQuerySource {
 	private static final class CompositePrefixRunCursor implements LmdbPrefixRunCursor {
 
 		private final List<LmdbPrefixRunCursor> cursors;
-		private final Thread owner = Thread.currentThread();
+		private final Thread owner;
 		private final int[] orderedPrefixFields;
 		private final boolean countRunRows;
-		private final String indexName;
 		private final long[][] heads;
 		private final boolean[] headReady;
 		private final long[] emittedPrefix;
@@ -939,18 +939,19 @@ final class CompositeNativeLmdbQuerySource implements NativeLmdbQuerySource {
 			this.cursors = List.copyOf(cursors);
 			this.orderedPrefixFields = orderedPrefixFields(plan);
 			this.countRunRows = countRunRows;
-			this.indexName = plan.indexName();
+			// A run-count member may hold a thread-owned estimator scope.
+			this.owner = countRunRows ? Thread.currentThread() : null;
 			this.heads = new long[cursors.size()][orderedPrefixFields.length];
 			this.headReady = new boolean[cursors.size()];
 			this.emittedPrefix = new long[orderedPrefixFields.length];
 		}
 
 		@Override
-		public boolean next() throws IOException {
-			checkOwner();
+		public synchronized boolean next() throws IOException {
 			if (closed) {
 				return false;
 			}
+			checkOwner();
 			advanceEmittedHeads();
 			for (int i = 0; i < cursors.size(); i++) {
 				if (!headReady[i] && cursors.get(i).next()) {
@@ -1059,11 +1060,11 @@ final class CompositeNativeLmdbQuerySource implements NativeLmdbQuerySource {
 		}
 
 		@Override
-		public boolean seekTo(long value) throws IOException {
-			checkOwner();
+		public synchronized boolean seekTo(long value) throws IOException {
 			if (closed) {
 				return false;
 			}
+			checkOwner();
 			advanceEmittedHeads();
 			int streamedPosition = orderedPrefixFields.length - 1;
 			boolean any = false;
@@ -1080,11 +1081,11 @@ final class CompositeNativeLmdbQuerySource implements NativeLmdbQuerySource {
 		}
 
 		@Override
-		public boolean seekTo(long[] prefixValues) throws IOException {
-			checkOwner();
+		public synchronized boolean seekTo(long[] prefixValues) throws IOException {
 			if (closed) {
 				return false;
 			}
+			checkOwner();
 			advanceEmittedHeads();
 			boolean any = false;
 			for (int i = 0; i < cursors.size(); i++) {
@@ -1100,11 +1101,11 @@ final class CompositeNativeLmdbQuerySource implements NativeLmdbQuerySource {
 		}
 
 		@Override
-		public void stopBefore(long[] prefixValues) {
-			checkOwner();
+		public synchronized void stopBefore(long[] prefixValues) {
 			if (closed) {
 				return;
 			}
+			checkOwner();
 			stopPrefix = prefixValues == null ? null : Arrays.copyOf(prefixValues, prefixValues.length);
 			for (LmdbPrefixRunCursor cursor : cursors) {
 				cursor.stopBefore(prefixValues);
@@ -1112,7 +1113,7 @@ final class CompositeNativeLmdbQuerySource implements NativeLmdbQuerySource {
 		}
 
 		@Override
-		public long[] quad() {
+		public synchronized long[] quad() {
 			checkOwner();
 			if (!quadReady && representative != null) {
 				System.arraycopy(representative.quad(), 0, quad, 0, quad.length);
@@ -1166,23 +1167,27 @@ final class CompositeNativeLmdbQuerySource implements NativeLmdbQuerySource {
 
 		@Override
 		public String getIndexName() {
-			return indexName;
+			return cursors.stream()
+					.filter(cursor -> cursor != LmdbPrefixRunCursor.EMPTY)
+					.map(LmdbPrefixRunCursor::getIndexName)
+					.distinct()
+					.collect(Collectors.joining(", "));
 		}
 
 		@Override
-		public void close() {
-			checkOwner();
+		public synchronized void close() {
 			if (closed) {
 				return;
 			}
+			checkOwner();
 			closed = true;
 			closePrefixRunCursors(cursors, null);
 		}
 
 		private void checkOwner() {
-			if (Thread.currentThread() != owner) {
+			if (owner != null && Thread.currentThread() != owner) {
 				throw new IllegalStateException(
-						"Composite prefix cursor must be used and closed by its creating thread");
+						"Composite run-count cursor must be used and closed by its creating thread");
 			}
 		}
 

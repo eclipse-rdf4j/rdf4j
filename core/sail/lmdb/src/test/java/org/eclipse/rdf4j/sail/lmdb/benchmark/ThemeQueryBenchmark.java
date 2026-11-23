@@ -216,15 +216,17 @@ public class ThemeQueryBenchmark {
 	private final Map<String, String> previousIrProperties = new LinkedHashMap<>();
 	private File benchmarkStoreDirectory = new File(STORE_DIRECTORY, "complete");
 	private DatasetLoader datasetLoader = ThemeQueryBenchmark::loadAllThemeDatasets;
+	private boolean forceGcAfterLoad = true;
 
 	/**
 	 * A benchmark over a fixture store. This is a factory rather than a second constructor because JUnit refuses to
-	 * discover a test class that declares more than one.
+	 * discover a test class that declares more than one. Small fixture rebuilds do not need to force a full collection.
 	 */
 	static ThemeQueryBenchmark forStore(File benchmarkStoreDirectory, DatasetLoader datasetLoader) {
 		ThemeQueryBenchmark benchmark = new ThemeQueryBenchmark();
 		benchmark.benchmarkStoreDirectory = benchmarkStoreDirectory;
 		benchmark.datasetLoader = datasetLoader;
+		benchmark.forceGcAfterLoad = false;
 		return benchmark;
 	}
 
@@ -560,7 +562,9 @@ public class ThemeQueryBenchmark {
 		repository = null;
 		store = null;
 
-		System.gc();
+		if (forceGcAfterLoad) {
+			System.gc();
+		}
 
 		store = new LmdbStore(storeDirectory, storeConfig);
 		store.setExperimentalQueryOptimizations(waitForSketchesEnabled());

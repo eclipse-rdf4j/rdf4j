@@ -3631,6 +3631,31 @@ class TripleStore implements Closeable {
 		return selectGeneration(txn, generation -> supportedOrders(generation, subj, pred, obj, context));
 	}
 
+	/** Checks each possible binding shape against the unordered seek in this read snapshot. */
+	Set<StatementOrder> getPrefixPreservingOrders(Txn txn, int fixedMask, int possiblyBoundMask) {
+		return selectGeneration(txn, generation -> {
+			EnumSet<StatementOrder> orders = EnumSet.allOf(StatementOrder.class);
+			int optional = possiblyBoundMask & ~fixedMask;
+			for (int subset = optional; !orders.isEmpty(); subset = (subset - 1) & optional) {
+				int mask = fixedMask | subset;
+				int required = generation.best[mask].boundPrefixMask(mask);
+				orders.removeIf(order -> !preservesPrefix(generation, order, mask, required));
+				if (subset == 0) {
+					break;
+				}
+			}
+			return orders;
+		});
+	}
+
+	private static boolean preservesPrefix(IndexGeneration generation, StatementOrder order, int mask, int required) {
+		TripleIndex ordered = TripleIndex.getBestCompatibleOrderedIndex(generation.indexes, order,
+				boundMask(mask, Component.S), boundMask(mask, Component.P), boundMask(mask, Component.O),
+				boundMask(mask, Component.C));
+		// Equal-length prefixes can bind different components with very different selectivity.
+		return ordered != null && (ordered.boundPrefixMask(mask) & required) == required;
+	}
+
 	private static Set<StatementOrder> supportedOrders(IndexGeneration generation, long subj, long pred,
 			long obj, long context) {
 		EnumSet<StatementOrder> supported = EnumSet.noneOf(StatementOrder.class);
@@ -3645,6 +3670,10 @@ class TripleStore implements Closeable {
 
 	String getIndexName(long subj, long pred, long obj, long context) {
 		return queryGeneration.best[boundMask(subj, pred, obj, context)].toString();
+	}
+
+	int bestIndexPrefixMask(int boundComponentMask) {
+		return queryGeneration.best[boundComponentMask].boundPrefixMask(boundComponentMask);
 	}
 
 	String getIndexName(Txn txn, long subj, long pred, long obj, long context) {
@@ -5935,13 +5964,8 @@ class TripleStore implements Closeable {
 		List<IndexAccessPath> accessPaths = new ArrayList<>(indexes.size());
 		for (TripleIndex index : indexes) {
 			int prefixScore = index.getPatternScore(subj, pred, obj, context);
-			int prefixComponentMask = 0;
-			char[] fieldSequence = index.getFieldSeq();
-			for (int i = 0; i < prefixScore; i++) {
-				Component component = toEstimatorComponent(fieldSequence[i]);
-				prefixComponentMask |= 1 << component.ordinal();
-			}
-			accessPaths.add(new IndexAccessPath(new String(fieldSequence), prefixScore, prefixComponentMask));
+			int prefixComponentMask = index.boundPrefixMask(boundComponentMask);
+			accessPaths.add(new IndexAccessPath(new String(index.getFieldSeq()), prefixScore, prefixComponentMask));
 		}
 		return List.copyOf(accessPaths);
 	}
@@ -5970,7 +5994,7 @@ class TripleStore implements Closeable {
 		}
 	}
 
-	private long boundMask(int boundComponentMask, Component component) {
+	private static long boundMask(int boundComponentMask, Component component) {
 		return (boundComponentMask & (1 << component.ordinal())) != 0 ? 1L : -1L;
 	}
 

@@ -119,7 +119,11 @@ final class LmdbDistinctWitnessOptimizer implements QueryOptimizer {
 			Set<String> names = variableNames(pattern);
 			Set<String> shared = new HashSet<>(names);
 			shared.removeIf(name -> uses.get(name) == 1 && !retained.contains(name));
-			if (shared.size() < names.size() && !shared.isEmpty()
+			Var context = pattern.getContextVar();
+			// Injecting a shared graph name into EXISTS changes the lookup's graph selector. A missing context
+			// can join with a bound sibling, and a bound alias can select the default graph instead of matching a term.
+			boolean probesContext = context != null && shared.contains(context.getName());
+			if (shared.size() < names.size() && !shared.isEmpty() && !probesContext
 					&& pattern.getVarList().stream().noneMatch(var -> !var.isConstant() && var.hasValue())) {
 				candidates.add(new Witness(pattern, shared));
 			} else {

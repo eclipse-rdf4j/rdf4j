@@ -12,6 +12,7 @@
 package org.eclipse.rdf4j.sail.lmdb;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.junit.jupiter.api.Assertions.assertAll;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertInstanceOf;
@@ -22,6 +23,7 @@ import static org.junit.jupiter.api.Assertions.fail;
 import java.io.File;
 import java.io.IOException;
 import java.lang.reflect.Field;
+import java.lang.reflect.Modifier;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -137,6 +139,28 @@ class LmdbOptimizerPipelineTest {
 	}
 
 	@Test
+	void stableDistinctPipelineDetailsArePackagePrivate() throws NoSuchMethodException {
+		Class<?>[] constructorParameters = { EvaluationStrategy.class, TripleSource.class, EvaluationStatistics.class,
+				boolean.class, boolean.class };
+		int accessModifiers = Modifier.PUBLIC | Modifier.PROTECTED | Modifier.PRIVATE;
+		int experimentalConstructor = LmdbQueryOptimizerPipeline.class.getDeclaredConstructor(constructorParameters)
+				.getModifiers();
+		int standardConstructor = LmdbStandardQueryOptimizerPipeline.class.getDeclaredConstructor(constructorParameters)
+				.getModifiers();
+
+		assertAll(
+				() -> assertThat(LmdbPartitionedDistinctIteration.class.getModifiers() & accessModifiers)
+						.as("partitioned DISTINCT iteration access")
+						.isZero(),
+				() -> assertThat(experimentalConstructor & accessModifiers)
+						.as("experimental pipeline's stable DISTINCT constructor access")
+						.isZero(),
+				() -> assertThat(standardConstructor & accessModifiers)
+						.as("standard pipeline's stable DISTINCT constructor access")
+						.isZero());
+	}
+
+	@Test
 	void defaultEvaluationStrategyFactoryUsesOptedInLmdbFallbackPipeline() throws Exception {
 		LmdbStoreConfig config = new LmdbStoreConfig();
 		config.setExperimentalQueryOptimizations(true);
@@ -160,7 +184,11 @@ class LmdbOptimizerPipelineTest {
 		EvaluationStatistics statistics = new EvaluationStatistics();
 		List<QueryOptimizer> optimizers = optimizers(
 				new LmdbStandardQueryOptimizerPipeline(strategy, tripleSource, statistics).getOptimizers());
-		QueryOptimizer physicalOptimizer = optimizers.get(indexOf(optimizers, QueryJoinOptimizer.class) + 1);
+		List<QueryOptimizer> physicalOptimizers = optimizers.stream()
+				.filter(LmdbIndexAwareJoinOptimizer.class::isInstance)
+				.toList();
+		assertThat(physicalOptimizers).hasSize(1);
+		QueryOptimizer physicalOptimizer = physicalOptimizers.getFirst();
 
 		ValueFactory vf = SimpleValueFactory.getInstance();
 		StatementPattern anchor = new StatementPattern(Var.of("key"),
