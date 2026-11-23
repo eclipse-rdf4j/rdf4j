@@ -18,6 +18,7 @@ import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
+import java.util.List;
 import java.util.concurrent.Callable;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.atomic.AtomicBoolean;
@@ -107,13 +108,10 @@ class AdjacencyApplierIdleTest {
 	}
 
 	@Test
-	@SuppressWarnings("unchecked")
 	void idleIsNeverObservedWhileARequestedRebuildStarts() throws Exception {
 		HeldWorkerPool workers = new HeldWorkerPool();
 		SteppingApplierScheduler scheduler = new SteppingApplierScheduler();
-		AdjacencyIndexOps<Object, Object, Object> ops = mock(AdjacencyIndexOps.class);
-		when(ops.build(any())).thenAnswer(call -> new AdjacencyIndexOps.Candidate<>(new Object(), null, 0, 0));
-		when(ops.secondBaseFits(any())).thenReturn(true);
+		AdjacencyIndexOps<Object, Object, Object> ops = new RebuildIndexOps();
 		AdjacencyApplier<Object, Object, Object> applier = new AdjacencyApplier<>(new AdjacencyCommitLog(0), ops,
 				(base, overlays, index) -> null, workers, scheduler, Long.MAX_VALUE, 1000);
 		applier.start();
@@ -169,6 +167,104 @@ class AdjacencyApplierIdleTest {
 		long target = probes.get() + count;
 		while (probes.get() < target) {
 			Thread.onSpinWait();
+		}
+	}
+
+	/** Preserves the mock's answers without recording millions of calls during the full rebuild stress loop. */
+	private static final class RebuildIndexOps implements AdjacencyIndexOps<Object, Object, Object> {
+		@Override
+		public Candidate<Object, Object> build(AdjacencyRetentionHold hold) {
+			return new Candidate<>(new Object(), null, 0, 0);
+		}
+
+		@Override
+		public Object prepare(AdjacencyCommitLog.Record record, Object base, Object overlays) {
+			return null;
+		}
+
+		@Override
+		public long coalesceMaxBytes() {
+			return 0;
+		}
+
+		@Override
+		public Object prepare(List<AdjacencyCommitLog.Record> records, Object base, Object overlays) {
+			return null;
+		}
+
+		@Override
+		public Object emptyOverlays(Object base) {
+			return null;
+		}
+
+		@Override
+		public Object append(Object overlays, Object generation) {
+			return null;
+		}
+
+		@Override
+		public int generationCount(Object overlays) {
+			return 0;
+		}
+
+		@Override
+		public Object generationIdentity(Object overlays, int index) {
+			return null;
+		}
+
+		@Override
+		public boolean prefixIdentical(Object premise, Object current, int count) {
+			return false;
+		}
+
+		@Override
+		public long generationRevisionAt(Object overlays, int index) {
+			return 0;
+		}
+
+		@Override
+		public Object merge(Object base, Object overlays, int from, int toInclusive) {
+			return null;
+		}
+
+		@Override
+		public Object replaceRange(Object overlays, int from, int toInclusive, Object merged) {
+			return null;
+		}
+
+		@Override
+		public Fold<Object> fold(Object base, Object overlays, int prefixCount) {
+			return null;
+		}
+
+		@Override
+		public Object removePrefix(Object overlays, int count) {
+			return null;
+		}
+
+		@Override
+		public boolean secondBaseFits(Object currentBase) {
+			return true;
+		}
+
+		@Override
+		public void retainBase(Object base) {
+		}
+
+		@Override
+		public void releaseBase(Object base) {
+		}
+
+		@Override
+		public void retainOverlays(Object overlays) {
+		}
+
+		@Override
+		public void releaseOverlays(Object overlays) {
+		}
+
+		@Override
+		public void releaseGeneration(Object generation) {
 		}
 	}
 
