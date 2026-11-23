@@ -137,20 +137,23 @@ test('a repository a user no longer sees is forgotten for that user only', () =>
     assert.deepEqual([...local.values.keys()].sort(), [tabs('ada', 'a'), tabs('ada', 'c'), tabs('bob', 'b')].sort());
 });
 
-test('a deletion started here is forgotten once the Repositories list shows, and not when it failed', () => {
+test('a deletion started here is forgotten once the Repositories list confirms it', async () => {
     const { workspace: shared } = sandboxed();
     const tabs = shared.QUERY_TABS_PREFIX + JSON.stringify([SERVER, '', 'gone']);
     const local = mapStorage({ [tabs]: '{}' });
     const session = mapStorage();
-    shared.deletionStarted(SERVER + ':s', 'gone', session);
-    assert.equal(shared.deletionDone('delete', false, session, local), '', 'the deletion page again: it failed');
+    const list = { viewId: 'repositories', vars: ['id'], rowCount: 0, rowStore: { read: async () => [] },
+        metadata: { 'server-identity': SERVER + ':s', 'server-user': '' } };
+    shared.deletionStarted(SERVER + ':s', 'gone', '', session);
+    assert.equal(await shared.deletionDone({ ...list, viewId: 'delete' }, session, local), '', 'the deletion page again');
     assert.ok(local.values.has(tabs));
-    shared.deletionStarted(SERVER + ':s', 'gone', session);
-    assert.equal(shared.deletionDone('repositories', true, session, local), '', 'a page that failed to load');
-    shared.deletionStarted(SERVER + ':s', 'gone', session);
-    assert.equal(shared.deletionDone('repositories', false, session, local), 'gone');
+    shared.deletionStarted(SERVER + ':s', 'gone', '', session);
+    assert.equal(await shared.deletionDone({ ...list, error: { message: 'Unauthorized' } }, session, local), '',
+        'a page that failed to load');
+    shared.deletionStarted(SERVER + ':s', 'gone', '', session);
+    assert.equal(await shared.deletionDone(list, session, local), 'gone');
     assert.ok(!local.values.has(tabs));
-    assert.equal(shared.deletionDone('repositories', false, session, local), '', 'once only');
+    assert.equal(await shared.deletionDone(list, session, local), '', 'once only');
 });
 
 test('a page of a repository is remembered with what was typed, short values only, and read back', () => {

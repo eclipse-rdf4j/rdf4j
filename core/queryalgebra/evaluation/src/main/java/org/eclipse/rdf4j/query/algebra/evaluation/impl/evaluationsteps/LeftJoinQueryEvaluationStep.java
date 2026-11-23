@@ -21,6 +21,7 @@ import java.util.function.Predicate;
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.impl.BooleanLiteral;
+import org.eclipse.rdf4j.query.Binding;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.QueryEvaluationException;
 import org.eclipse.rdf4j.query.algebra.Difference;
@@ -48,12 +49,10 @@ import org.eclipse.rdf4j.query.algebra.helpers.collectors.VarNameCollector;
 import org.eclipse.rdf4j.query.impl.EmptyBindingSet;
 
 public final class LeftJoinQueryEvaluationStep implements QueryEvaluationStep {
-	private final QueryEvaluationStep right;
-	private final QueryValueEvaluationStep condition;
 	private final QueryEvaluationStep left;
 	private final LeftJoin leftJoin;
 	private final Set<String> optionalVars;
-	private final QueryEvaluationStep wellDesignedRightEvaluationStep;
+	private final QueryEvaluationStep rightWithCondition;
 
 	public static QueryEvaluationStep supply(EvaluationStrategy strategy, LeftJoin leftJoin,
 			QueryEvaluationContext context) {
@@ -69,24 +68,36 @@ public final class LeftJoinQueryEvaluationStep implements QueryEvaluationStep {
 				tracking);
 		QueryEvaluationStep right = JoinMetricsTracking.wrapRightInput(rightRaw, leftJoin, leftJoin.getRightArg(),
 				tracking);
-		QueryEvaluationStep standard = supplyStandard(strategy, leftJoin, context, left, right, rightRaw);
+		TupleExpr rightArg = leftJoin.getRightArg();
+		Set<String> leftNames = leftJoin.getLeftArg().getBindingNames();
+		var defaultContextScan = JoinQueryEvaluationStep.defaultContextScan(context);
+		boolean nullableGraphBinding = JoinQueryEvaluationStep.observesNullableGraphBinding(rightArg, leftNames,
+				defaultContextScan);
+		NullableGraphJoinInputs graphInputs = nullableGraphBinding
+				? NullableGraphJoinInputs.analyze(rightArg, leftNames, defaultContextScan, rightRaw)
+				: null;
+		QueryAlgebraBindingAnalysis analysis = QueryAlgebraBindingAnalysis.withBindingValues(leftJoin,
+				EmptyBindingSet.getInstance());
+		boolean independent = TupleExprs.requiresIndependentEvaluation(rightArg)
+				|| TupleExprs.containsResultSetModifier(rightArg, analysis)
+				|| JoinQueryEvaluationStep.subqueryObservesInjectedBindings(rightArg, leftNames)
+				|| graphInputs != null && graphInputs.parameters().isEmpty();
+		boolean replay = !independent && graphInputs == null
+				&& !QueryEvaluationUtility.usesMappingParameterizedEvaluation(rightArg)
+				&& (!QueryEvaluationUtility.isRepeatable(rightArg)
+						|| minusObservesInjectedBindings(rightArg, leftNames));
+		QueryEvaluationStep standard = supplyStandard(strategy, leftJoin, context, left, right, rightRaw,
+				graphInputs, independent, replay);
 		if (!RestrictionCompiler.enabled(strategy, context)
 				|| !QueryEvaluationUtility.canDiscardWithoutEvaluation(leftJoin)
 				|| leftJoin.hasCondition() && !RestrictionCompiler.movable(leftJoin.getCondition())
 				|| GraphFrameMapping.forSubqueries(leftJoin.getRightArg(), leftJoin.getLeftArg()).length > 0) {
 			return standard;
 		}
-		TupleExpr rightArg = leftJoin.getRightArg();
-		Set<String> leftNames = leftJoin.getLeftArg().getBindingNames();
-		QueryAlgebraBindingAnalysis analysis = QueryAlgebraBindingAnalysis.withBindingValues(leftJoin,
-				EmptyBindingSet.getInstance());
-		boolean originallyIndependent = TupleExprs.requiresIndependentEvaluation(rightArg)
-				|| TupleExprs.containsResultSetModifier(rightArg, analysis)
-				|| JoinQueryEvaluationStep.subqueryObservesInjectedBindings(rightArg, leftNames)
-				|| !QueryEvaluationUtility.usesMappingParameterizedEvaluation(rightArg)
-						&& (!QueryEvaluationUtility.isRepeatable(rightArg)
-								|| minusObservesInjectedBindings(rightArg, leftNames));
-		if (!originallyIndependent && !QueryEvaluationUtility.permitsBindingInjection(rightArg, leftNames)) {
+		boolean originallyIndependent = independent || replay;
+		// A nullable graph slot may be absent from the right row while a scalar still reads it from the sibling.
+		if (!originallyIndependent && (nullableGraphBinding
+				|| !QueryEvaluationUtility.permitsBindingInjection(rightArg, leftNames))) {
 			return standard;
 		}
 		QueryValueEvaluationStep condition = leftJoin.hasCondition()
@@ -116,13 +127,8 @@ public final class LeftJoinQueryEvaluationStep implements QueryEvaluationStep {
 
 	private static QueryEvaluationStep supplyStandard(EvaluationStrategy strategy, LeftJoin leftJoin,
 			QueryEvaluationContext context, QueryEvaluationStep left, QueryEvaluationStep right,
-			QueryEvaluationStep rightRaw) {
-		QueryAlgebraBindingAnalysis bindingAnalysis = QueryAlgebraBindingAnalysis.withBindingValues(leftJoin,
-				EmptyBindingSet.getInstance());
-		if (TupleExprs.requiresIndependentEvaluation(leftJoin.getRightArg())
-				|| TupleExprs.containsResultSetModifier(leftJoin.getRightArg(), bindingAnalysis)
-				|| JoinQueryEvaluationStep.subqueryObservesInjectedBindings(leftJoin.getRightArg(),
-						leftJoin.getLeftArg().getBindingNames())) {
+			QueryEvaluationStep rightRaw, NullableGraphJoinInputs graphInputs, boolean independent, boolean replay) {
+		if (independent) {
 			// The right side is evaluated once with the query input (once per active GRAPH frame the left side
 			// binds for its sub-selects) and hashed on the names both sides may share.
 			String[] joinAttributes = HashJoinIteration.hashJoinAttributeNames(leftJoin);
@@ -142,6 +148,14 @@ public final class LeftJoinQueryEvaluationStep implements QueryEvaluationStep {
 					trackedRight -> ScopedLeftJoinIterator.withGraphFrames(left, trackedRight, isolatedCondition, bs,
 							context, joinAttributes, graphFrames));
 		}
+		if (graphInputs != null) {
+			QueryValueEvaluationStep condition = leftJoin.hasCondition()
+					? precompileScopedCondition(strategy, leftJoin, context)
+					: null;
+			leftJoin.setAlgorithm(ScopedLeftJoinIterator.class.getSimpleName());
+			return JoinQueryEvaluationStep.parameterizedGraphJoin(strategy, leftJoin, context, left, rightRaw,
+					graphInputs, condition, HashJoinIteration.hashJoinAttributeNames(leftJoin), true);
+		}
 
 		// The usual evaluation below re-evaluates the right operand once per left solution with the left
 		// solution's bindings pushed in (a bind join). That is only an as-if optimization when re-evaluation
@@ -152,11 +166,7 @@ public final class LeftJoinQueryEvaluationStep implements QueryEvaluationStep {
 		// per-input evaluation is their defined semantics (GH-3053), so they always keep the bind-join path.
 		// A MINUS inside the right operand is evaluated bottom-up: its right side must not be narrowed by a left
 		// row's binding of a name its own left side does not assure, so such operands are replayed as well.
-		TupleExpr rightArg = leftJoin.getRightArg();
-		boolean safeForBoundEvaluation = QueryEvaluationUtility.usesMappingParameterizedEvaluation(rightArg)
-				|| QueryEvaluationUtility.isRepeatable(rightArg)
-						&& !minusObservesInjectedBindings(rightArg, leftJoin.getLeftArg().getBindingNames());
-		if (!safeForBoundEvaluation) {
+		if (replay) {
 			QueryValueEvaluationStep scopedCondition = leftJoin.hasCondition()
 					? new ScopedQueryValueEvaluationStep(leftJoin.getBindingNames(),
 							strategy.precompile(leftJoin.getCondition(), context))
@@ -277,8 +287,6 @@ public final class LeftJoinQueryEvaluationStep implements QueryEvaluationStep {
 
 	public LeftJoinQueryEvaluationStep(QueryEvaluationStep right, QueryValueEvaluationStep condition,
 			QueryEvaluationStep left, LeftJoin leftJoin, Set<String> optionalVars) {
-		this.right = right;
-		this.condition = condition;
 		this.left = left;
 		this.leftJoin = leftJoin;
 		// This is used to determine if the left join is well designed.
@@ -300,7 +308,7 @@ public final class LeftJoinQueryEvaluationStep implements QueryEvaluationStep {
 		}
 
 		this.optionalVars = optionalVars;
-		this.wellDesignedRightEvaluationStep = determineRightEvaluationStep(
+		this.rightWithCondition = determineRightEvaluationStep(
 				leftJoin,
 				right,
 				condition,
@@ -309,28 +317,79 @@ public final class LeftJoinQueryEvaluationStep implements QueryEvaluationStep {
 
 	@Override
 	public CloseableIteration<BindingSet> evaluate(BindingSet bindings) {
+		Set<String> problemVars = findProblemVars(bindings);
+		if (problemVars == null) {
+			leftJoin.setAlgorithm(LeftJoinIterator.class.getSimpleName());
+			return LeftJoinIterator.getInstance(left, bindings, rightWithCondition);
+		}
+		// Filter inherited problem variables from the operands while keeping their own output names visible to the
+		// condition.
+		leftJoin.setAlgorithm(BadlyDesignedLeftJoinIterator.class.getSimpleName());
+		return new BadlyDesignedLeftJoinIterator(left, bindings, problemVars, rightWithCondition);
+	}
 
-		boolean containsNone = true;
-		Set<String> bindingNames = bindings.getBindingNames();
-		for (String optionalVar : optionalVars) {
-			if (bindingNames.contains(optionalVar)) {
-				containsNone = false;
-				break;
+	private Set<String> findProblemVars(BindingSet bindings) {
+		if (optionalVars.isEmpty()) {
+			return null;
+		}
+		if (optionalVars.size() == 1) {
+			String name = optionalVars.iterator().next();
+			return bindings.hasBinding(name) ? Set.of(name) : null;
+		}
+
+		int bindingCount = bindings.size();
+		if (bindingCount == 0) {
+			return null;
+		}
+		Set<String> possibleNames = bindings.getBindingNames();
+		if (possibleNames.size() == bindingCount) {
+			// The names already give the exact domain. Match without reading any of the values.
+			return intersect(possibleNames, optionalVars);
+		}
+
+		// Possible columns such as SERVICE UNDEF need not belong to the row's binding domain.
+		// Walk the row once to avoid scanning the same list or array for each optional variable.
+		Set<String> problemVars = null;
+		int visited = 0;
+		for (Binding binding : bindings) {
+			String name = binding.getName();
+			if (optionalVars.contains(name)) {
+				problemVars = addProblemVar(problemVars, name);
+			}
+			visited++;
+		}
+		if (visited < bindingCount) {
+			// Some rows have explicit-null bindings that the iterator omits.
+			for (String name : optionalVars) {
+				if ((problemVars == null || !problemVars.contains(name)) && bindings.hasBinding(name)) {
+					problemVars = addProblemVar(problemVars, name);
+				}
 			}
 		}
+		return problemVars;
+	}
 
-		if (containsNone) {
-			// left join is "well designed"
-			leftJoin.setAlgorithm(LeftJoinIterator.class.getSimpleName());
-			return LeftJoinIterator.getInstance(left, bindings, wellDesignedRightEvaluationStep);
-		} else {
-			Set<String> problemVars = new HashSet<>(optionalVars);
-			problemVars.retainAll(bindings.getBindingNames());
-
-			leftJoin.setAlgorithm(BadlyDesignedLeftJoinIterator.class.getSimpleName());
-			var rightEvaluationStep = determineRightEvaluationStep(leftJoin, right, condition, problemVars);
-			return new BadlyDesignedLeftJoinIterator(left, bindings, problemVars, rightEvaluationStep);
+	private static Set<String> intersect(Set<String> first, Set<String> second) {
+		if (first.size() > second.size()) {
+			Set<String> swap = first;
+			first = second;
+			second = swap;
 		}
+		Set<String> problemVars = null;
+		for (String name : first) {
+			if (second.contains(name)) {
+				problemVars = addProblemVar(problemVars, name);
+			}
+		}
+		return problemVars;
+	}
+
+	private static Set<String> addProblemVar(Set<String> problemVars, String name) {
+		if (problemVars == null) {
+			problemVars = new HashSet<>();
+		}
+		problemVars.add(name);
+		return problemVars;
 	}
 
 	/**
