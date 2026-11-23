@@ -14,6 +14,7 @@ package org.eclipse.rdf4j.sail.lmdb.evaluation;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbNativeAggregateCompiler.NULL_CONTEXT_ID;
 
 import java.io.IOException;
 import java.util.ArrayList;
@@ -25,6 +26,7 @@ import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.stream.IntStream;
 
 import org.eclipse.rdf4j.model.Literal;
 import org.eclipse.rdf4j.model.Value;
@@ -219,7 +221,130 @@ public class LmdbNativeIdAuthorityTest {
 				.as("classification, hashing, and equality share one evaluation-local term reference per id")
 				.isEqualTo(3);
 		assertThat(tracker.primitiveRows).isEqualTo(102);
-		assertThat(tracker.objectRows).isZero();
+	}
+
+	@Test
+	public void wideDistinctPreservesTermIdentityAcrossScalarAndBatchInputs() {
+		ExactSpellingSource store = new ExactSpellingSource();
+		long person = store.add(VF.createIRI("urn:person"));
+		long lower = store.add(VF.createLiteral("Oslo", "en"));
+		long upper = store.add(VF.createLiteral("Oslo", "EN"));
+		long other = store.add(VF.createLiteral("Oslo", "no"));
+		NativeDistinctTracker tracker = new NativeDistinctTracker(new int[] { 4, 1, 0, 3, 2 },
+				authority(store, PlanValueCatalog.EMPTY));
+
+		assertThat(tracker.add(new long[] { person, lower, UNKNOWN, person, person })).isTrue();
+		NativeBatch batch = new NativeBatch(5, 3);
+		batch.copyFromRow(new long[] { person, other, UNKNOWN, person, person }, 0);
+		batch.copyFromRow(new long[] { person, upper, NULL_CONTEXT_ID, person, person }, 1);
+		batch.copyFromRow(new long[] { person, lower, person, person, person }, 2);
+		int[] selection = { 1, 2, 0 };
+		int accepted = tracker.selectBatch(batch, selection, selection.length);
+		assertThat(accepted).isEqualTo(2);
+		assertThat(selection).startsWith(2, 0);
+		assertThat(tracker.add(new long[] { person, upper, person, person, person })).isFalse();
+	}
+
+	@Test
+	public void widePartitionedDistinctChecksWholeKeysAcrossGrowthAndClear() {
+		int width = 20;
+		int[] keySlots = IntStream.rangeClosed(0, width).toArray();
+		int[] residualSlots = IntStream.range(0, width).map(i -> width - i - 1).toArray();
+		NativeOrderedDistinctTracker tracker = new NativeOrderedDistinctTracker(
+				new NativeTupleDistinctPlan(null, NativeDistinctStrategy.PARTITIONED_HASH, keySlots,
+						new int[] { width }, residualSlots));
+		int keyCount = 4097;
+		long[] row = new long[width + 1];
+		row[width] = 1;
+		NativeBatch batch = new NativeBatch(row.length, keyCount + 2);
+		for (int i = 0; i < keyCount; i++) {
+			// These distinct 64-bit values all have the same Long.hashCode. Only the final projected slot varies.
+			row[0] = ((long) i << Integer.SIZE) | i;
+			assertThat(tracker.add(row)).isTrue();
+			batch.copyFromRow(row, i);
+		}
+		row[0] = UNKNOWN;
+		assertThat(tracker.add(row)).isFalse();
+		row[0] = Long.MIN_VALUE;
+		assertThat(tracker.add(row)).isTrue();
+		row[0] = Long.MAX_VALUE;
+		assertThat(tracker.add(row)).isTrue();
+		batch.copyFromRow(row, keyCount);
+		row[width] = 2;
+		batch.copyFromRow(row, keyCount + 1);
+		batch.finishRows(keyCount + 2);
+
+		assertThat(tracker.selectBatch(batch, batch.selection, batch.selectedCount)).isEqualTo(1);
+		assertThat(batch.selection[0]).isEqualTo(keyCount + 1);
+		assertThat(tracker.add(row)).isFalse();
+		row[0] = Long.MIN_VALUE;
+		assertThat(tracker.add(row)).isTrue();
+	}
+
+	@Test
+	public void wideDistinctChecksAllKeysAfterRollingOverItsIndex() {
+		WideDistinctTupleSet table = new WideDistinctTupleSet(5, 32);
+		long[] key = { 11L, 22L, 33L, 44L, 0L };
+		for (int i = 0; i < 73; i++) {
+			key[4] = i;
+			assertThat(table.add(key)).isTrue();
+		}
+		for (int i = 72; i >= 0; i--) {
+			key[4] = i;
+			assertThat(table.add(key)).isFalse();
+		}
+		table.clear();
+		for (int i = 72; i >= 0; i--) {
+			key[4] = i;
+			assertThat(table.add(key)).isTrue();
+			assertThat(table.add(key)).isFalse();
+		}
+	}
+
+	@Test
+	public void wideDistinctClearWorkFollowsPartitionSize() {
+		WideDistinctTupleSet table = new WideDistinctTupleSet(5);
+		long[] key = { 11L, 22L, 33L, 44L, 0L };
+		int largePartitionSize = 4097;
+		for (int i = 0; i < largePartitionSize; i++) {
+			key[4] = i;
+			assertThat(table.add(key)).isTrue();
+		}
+		assertThat(table.clear()).isLessThanOrEqualTo(4 * largePartitionSize);
+
+		for (int partitionSize : new int[] { 9, 1, 65, 4, 1 }) {
+			for (int i = 0; i < partitionSize; i++) {
+				key[4] = i;
+				assertThat(table.add(key)).isTrue();
+				assertThat(table.add(key)).isFalse();
+			}
+			assertThat(table.size()).isEqualTo(partitionSize);
+			assertThat(table.clear())
+					.as("bucket slots reset for a partition with %s live keys", partitionSize)
+					.isLessThanOrEqualTo(Math.max(16, 4 * partitionSize));
+			assertThat(table.size()).isZero();
+		}
+		assertThat(table.clear()).isZero();
+	}
+
+	@Test
+	public void wideDistinctRetainsBothTuplesWithTheSameFullHash() {
+		NativeDistinctTracker tracker = new NativeDistinctTracker(new int[] { 0, 1, 2, 3, 4 });
+		// Both tuples produce the same 32-bit DISTINCT hash (0x6df65900).
+		long[] first = { 11L, 22L, 33L, 44L, 78507L };
+		long[] second = { 11L, 22L, 33L, 44L, 89261L };
+		assertThat(tracker.add(first)).isTrue();
+		assertThat(tracker.add(second)).isTrue();
+		assertThat(tracker.add(first)).isFalse();
+		assertThat(tracker.add(second)).isFalse();
+
+		long[] other = { 11L, 22L, 33L, 44L, 0L };
+		for (int i = 1; i <= 128; i++) {
+			other[4] = i;
+			assertThat(tracker.add(other)).isTrue();
+		}
+		assertThat(tracker.add(first)).isFalse();
+		assertThat(tracker.add(second)).isFalse();
 	}
 
 	@Test

@@ -1158,7 +1158,7 @@ final class LmdbNativeChunkPipeline {
 					replayMemoKey = publishedMarker;
 				}
 				if (probe == null) {
-					probe = row.source.newProbe();
+					probe = row.source.newProbe(row.cursorCancellation());
 				}
 				// the probe captures the scratch row's key bindings at open time; the shared RowState is
 				// re-populated by the emitting cursor before any consumer observes it
@@ -1333,7 +1333,7 @@ final class LmdbNativeChunkPipeline {
 
 		private void openClassicProbe() throws IOException {
 			if (probe == null) {
-				probe = row.source.newProbe();
+				probe = row.source.newProbe(row.cursorCancellation());
 			}
 			System.arraycopy(scratch, 0, row.slots, 0, scratch.length);
 			open = pattern.openRaw(row, probe);
@@ -1539,7 +1539,7 @@ final class LmdbNativeChunkPipeline {
 			boolean published = false;
 			SipMask[] masks = null;
 			if (probe == null) {
-				probe = row.source.newProbe();
+				probe = row.source.newProbe(row.cursorCancellation());
 			}
 			// fresh slots are UNKNOWN in the input row, so only constants stay bound in the sweep
 			System.arraycopy(scratch, 0, row.slots, 0, scratch.length);

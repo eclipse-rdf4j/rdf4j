@@ -935,8 +935,14 @@ public class DefaultEvaluationStrategy implements EvaluationStrategy, FederatedS
 
 	protected QueryEvaluationStep prepare(LeftJoin node, QueryEvaluationContext context)
 			throws QueryEvaluationException {
+		return prepare(node, context, null, null);
+	}
+
+	protected final QueryEvaluationStep prepare(LeftJoin node, QueryEvaluationContext context,
+			Runnable checkReplaySnapshot, Function<Value, Value> captureReplayValue) {
 		return LeftJoinQueryEvaluationStep.supply(this, node, context,
-				RestrictionCompiler.enabled(this, context) ? valueCapturer() : null);
+				RestrictionCompiler.enabled(this, context) ? valueCapturer() : null, checkReplaySnapshot,
+				captureReplayValue);
 	}
 
 	protected QueryEvaluationStep prepare(MultiProjection node, QueryEvaluationContext context)
@@ -1305,8 +1311,16 @@ public class DefaultEvaluationStrategy implements EvaluationStrategy, FederatedS
 
 	protected QueryEvaluationStep prepare(Distinct node, QueryEvaluationContext context)
 			throws QueryEvaluationException {
-		QueryEvaluationStep child = precompile(node.getArg(), context);
-		QueryEvaluationStep standard = bindings -> distinct(() -> child.evaluate(bindings));
+		return prepareDistinct(node, context, precompile(node.getArg(), context), null);
+	}
+
+	/** A partitioned step must have a grouping proof for ordinary evaluation with no incoming bindings. */
+	protected final QueryEvaluationStep prepareDistinct(Distinct node, QueryEvaluationContext context,
+			QueryEvaluationStep child, QueryEvaluationStep partitioned) {
+		QueryEvaluationStep global = bindings -> distinct(() -> child.evaluate(bindings));
+		QueryEvaluationStep standard = partitioned == null ? global
+				: bindings -> (bindings.isEmpty() ? partitioned : global).evaluate(bindings);
+		// A restriction probe may visit the same rows in a different order.
 		return RestrictionCompiler.enabled(this, context)
 				? RestrictionCompiler.attach(standard,
 						RestrictionCompiler.unary("distinct/original-domains", node, context, child,

@@ -108,6 +108,9 @@ public final class LmdbQueryOptimizerPipeline implements QueryOptimizerPipeline 
 
 	@Override
 	public BindingSet getOptimizerInputBindings(QueryOptimizer optimizer, BindingSet initialBindings) {
+		if (optimizer instanceof LmdbDistinctWitnessOptimizer) {
+			return initialBindings;
+		}
 		return StandardQueryOptimizerPipeline.preparedPlanInputBindings(optimizer, initialBindings);
 	}
 
@@ -149,6 +152,9 @@ public final class LmdbQueryOptimizerPipeline implements QueryOptimizerPipeline 
 			// after FilterOptimizer has pushed filters onto their patterns, before the join optimizers
 			optimizers.add(optimizers.indexOf(ITERATIVE_EVALUATION_OPTIMIZER) + 1,
 					new LmdbSubqueryGroupPushdownOptimizer());
+		} else {
+			// Witnesses must see which ordered producer the join planner actually selected.
+			optimizers.add(new LmdbDistinctWitnessOptimizer());
 		}
 
 		if (assertsEnabled) {

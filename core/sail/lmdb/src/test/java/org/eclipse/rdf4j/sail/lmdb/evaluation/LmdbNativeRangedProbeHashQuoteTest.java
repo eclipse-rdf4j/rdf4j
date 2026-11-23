@@ -12,6 +12,7 @@
 package org.eclipse.rdf4j.sail.lmdb.evaluation;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.eclipse.rdf4j.sail.lmdb.evaluation.NativeCancellationTestAccess.mockScanSource;
 import static org.junit.jupiter.api.Assertions.assertAll;
 import static org.mockito.AdditionalAnswers.delegatesTo;
 import static org.mockito.ArgumentMatchers.any;
@@ -367,7 +368,7 @@ class LmdbNativeRangedProbeHashQuoteTest {
 		CountedSource(NativeLmdbQuerySource actual, long buildPredicate, long probePredicate) throws IOException {
 			this.buildPredicate = buildPredicate;
 			this.probePredicate = probePredicate;
-			source = mock(NativeLmdbQuerySource.class, delegatesTo(actual));
+			source = mockScanSource(NativeLmdbQuerySource.class, delegatesTo(actual));
 			doAnswer(open -> {
 				NativeProbe realProbe = actual.newProbe();
 				NativeProbe probe = mock(NativeProbe.class, delegatesTo(realProbe));

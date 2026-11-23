@@ -475,7 +475,7 @@ final class LmdbNativeParallelAggregation {
 				boolean matches;
 				NativeLmdbQuerySource.NativeProbe probe = probes[i];
 				if (probe == null) {
-					probe = new DeferredNativeProbe(source);
+					probe = new DeferredNativeProbe(source, sample.cursorCancellation());
 					probes[i] = probe;
 				}
 				try (RowCursor cursor = branch.open(sample, probe)) {
@@ -532,11 +532,14 @@ final class LmdbNativeParallelAggregation {
 	/** Allocates the retained LMDB/composite handle only if PatternPlan actually takes its probe-backed scan path. */
 	private static final class DeferredNativeProbe implements NativeLmdbQuerySource.NativeProbe {
 		private final NativeLmdbQuerySource source;
+		private final NativeLmdbQuerySource.CursorCancellation cancellation;
 		private NativeLmdbQuerySource.NativeProbe delegate;
 		private boolean closed;
 
-		private DeferredNativeProbe(NativeLmdbQuerySource source) {
+		private DeferredNativeProbe(NativeLmdbQuerySource source,
+				NativeLmdbQuerySource.CursorCancellation cancellation) {
 			this.source = source;
+			this.cancellation = cancellation;
 		}
 
 		@Override
@@ -545,7 +548,7 @@ final class LmdbNativeParallelAggregation {
 				throw new IllegalStateException("retained preflight probe is closed");
 			}
 			if (delegate == null) {
-				delegate = source.newProbe();
+				delegate = source.newProbe(cancellation);
 				if (delegate == null) {
 					throw new IllegalStateException("native query source returned a null retained probe");
 				}

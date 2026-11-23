@@ -73,6 +73,11 @@ public class AbstractMemoryOverflowModelTest {
 	}
 
 	@Test
+	void addOperationsSpillFullBatchBelowMinimumMemoryReserve() throws Exception {
+		runInConstrainedHeap("minimum-memory-reserve-add");
+	}
+
+	@Test
 	void modelWithOneLargeLiteralSpillsUnderMemoryPressure() throws Exception {
 		runInConstrainedHeap("large-literal");
 	}
@@ -200,7 +205,8 @@ public class AbstractMemoryOverflowModelTest {
 			throw new IllegalArgumentException("Expected one pressure probe name");
 		}
 		System.out.println("RUNTIME_MAX_MEMORY_BYTES=" + Runtime.getRuntime().maxMemory());
-		if (List.of("pressure-hook", "minimum-memory-reserve", "minimum-memory-reserve-retry", "migration-retry")
+		if (List.of("pressure-hook", "minimum-memory-reserve", "minimum-memory-reserve-retry",
+				"minimum-memory-reserve-add", "migration-retry")
 				.contains(args[0])) {
 			// The single-statement fixtures probe spill mechanics, so each statement forms a spillable batch.
 			AbstractMemoryOverflowModel.BATCH_SIZE = 1;
@@ -228,6 +234,9 @@ public class AbstractMemoryOverflowModelTest {
 			break;
 		case "minimum-memory-reserve-retry":
 			test.minimumMemoryReserveRetryProbe();
+			break;
+		case "minimum-memory-reserve-add":
+			test.minimumMemoryReserveAddProbe();
 			break;
 		case "migration-retry":
 			test.migrationRetryProbe();
@@ -356,7 +365,8 @@ public class AbstractMemoryOverflowModelTest {
 
 	/**
 	 * A spill allocates a disk store whose fixed cost exceeds what a model smaller than one batch holds, so under
-	 * sustained pressure every short-lived transaction model would otherwise allocate a store of its own.
+	 * sustained pressure every short-lived transaction model would otherwise allocate a store of its own. That holds
+	 * for GC pressure and for the minimum memory reserve alike.
 	 */
 	private void smallModelProbe() throws Exception {
 		int oldHigh = AbstractMemoryOverflowModel.MEMORY_THRESHOLD_HIGH;
@@ -381,17 +391,54 @@ public class AbstractMemoryOverflowModelTest {
 				model.add(statement);
 			}
 			model.spillToDiskIfNeeded();
-			assertThat(model.spillCount).as("a model smaller than one batch stays in memory").isZero();
+			assertThat(model.spillCount).as("a partial batch stays in memory below the minimum reserve").isZero();
 			assertThat(model).hasSize(AbstractMemoryOverflowModel.BATCH_SIZE - 1);
 
-			model.add(statements.get(statements.size() - 1));
-			model.spillToDiskIfNeeded();
-			assertThat(model.spillCount).as("a full batch spills").isEqualTo(1);
-			assertThat(model.spilledStatements).containsExactlyInAnyOrderElementsOf(statements);
+			try (GcNotifications notifications = new GcNotifications()) {
+				setPressureThresholds(-1, -1, -1, -1);
+				notifications.requestGcAndAwait();
+				model.spillToDiskIfNeeded();
+				assertThat(model.spillCount).as("soft GC pressure keeps a partial batch in memory").isZero();
+				assertThat(model).hasSize(AbstractMemoryOverflowModel.BATCH_SIZE - 1);
+
+				model.add(statements.getLast());
+				model.spillToDiskIfNeeded();
+				assertThat(model.spillCount).as("soft GC pressure spills a full batch").isEqualTo(1);
+				assertThat(model.spilledStatements).containsExactlyInAnyOrderElementsOf(statements);
+			}
 		} finally {
 			setPressureThresholds(oldHigh, oldMedium, oldLow, oldMinimum);
 			if (model != null) {
 				model.close();
+			}
+		}
+	}
+
+	private void minimumMemoryReserveAddProbe() {
+		setPressureThresholds(Integer.MAX_VALUE, Integer.MAX_VALUE, -1, -1);
+		ValueFactory valueFactory = SimpleValueFactory.getInstance();
+		var subject = valueFactory.createIRI("urn:overflow:subject");
+		var predicate = valueFactory.createIRI("urn:overflow:predicate");
+		Statement first = valueFactory.createStatement(subject, predicate, valueFactory.createLiteral("first"));
+		Statement second = valueFactory.createStatement(subject, predicate, valueFactory.createLiteral("second"));
+		try (RecordingOverflowModel statementAdd = new RecordingOverflowModel();
+				RecordingOverflowModel termAdd = new RecordingOverflowModel();
+				RecordingOverflowModel bulkAdd = new RecordingOverflowModel()) {
+			// The probe runs with a batch size of one, so the first statement already forms a full batch.
+			for (RecordingOverflowModel model : List.of(statementAdd, termAdd, bulkAdd)) {
+				model.addAll(List.of(first));
+			}
+			AbstractMemoryOverflowModel.MIN_AVAILABLE_MEM_BEFORE_OVERFLOWING = minimumAboveMaxHeapMiB();
+
+			statementAdd.add(second);
+			termAdd.add(subject, predicate, second.getObject());
+			bulkAdd.addAll(List.of(second));
+
+			assertThat(statementAdd.spillCount).as("add(Statement) on a scheduled check").isEqualTo(1);
+			assertThat(termAdd.spillCount).as("add(Resource, IRI, Value)").isEqualTo(1);
+			assertThat(bulkAdd.spillCount).as("addAll(Collection)").isEqualTo(1);
+			for (RecordingOverflowModel model : List.of(statementAdd, termAdd, bulkAdd)) {
+				assertThat(model).containsExactlyInAnyOrder(first, second);
 			}
 		}
 	}

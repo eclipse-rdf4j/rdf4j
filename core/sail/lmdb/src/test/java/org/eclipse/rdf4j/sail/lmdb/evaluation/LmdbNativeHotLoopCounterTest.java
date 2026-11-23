@@ -24,7 +24,6 @@ public class LmdbNativeHotLoopCounterTest {
 		PrimitiveTupleTable.PROBES.set(0L);
 		PrimitiveTupleTable.INSERTIONS.set(0L);
 		NativeDistinctTracker.PRIMITIVE_ROWS.set(0L);
-		NativeDistinctTracker.OBJECT_ROWS.set(0L);
 	}
 
 	@Test
@@ -48,7 +47,6 @@ public class LmdbNativeHotLoopCounterTest {
 		assertThat(tracker.add(new long[] { 11L, 22L })).isFalse();
 
 		assertThat(NativeDistinctTracker.PRIMITIVE_ROWS).hasValue(0L);
-		assertThat(NativeDistinctTracker.OBJECT_ROWS).hasValue(0L);
 	}
 
 	@Test
@@ -71,21 +69,19 @@ public class LmdbNativeHotLoopCounterTest {
 	@Test
 	public void distinctCountersPublishExactlyOnce() {
 		NativeDistinctTracker primitive = new NativeDistinctTracker(new int[] { 0, 1 });
-		NativeDistinctTracker object = new NativeDistinctTracker(new int[] { 0, 1, 2, 3, 4 });
+		NativeDistinctTracker wide = new NativeDistinctTracker(new int[] { 0, 1, 2, 3, 4 });
 		long[] row = { 11L, 22L, 33L, 44L, 55L };
 		primitive.add(row);
 		primitive.add(row);
-		object.add(row);
-		object.add(row);
+		wide.add(row);
+		wide.add(row);
 
 		assertThat(NativeDistinctTracker.PRIMITIVE_ROWS).hasValue(0L);
-		assertThat(NativeDistinctTracker.OBJECT_ROWS).hasValue(0L);
 		primitive.commitMetrics();
 		primitive.commitMetrics();
-		object.commitMetrics();
-		object.commitMetrics();
+		wide.commitMetrics();
+		wide.commitMetrics();
 
-		assertThat(NativeDistinctTracker.PRIMITIVE_ROWS).hasValue(2L);
-		assertThat(NativeDistinctTracker.OBJECT_ROWS).hasValue(2L);
+		assertThat(NativeDistinctTracker.PRIMITIVE_ROWS).hasValue(4L);
 	}
 }
