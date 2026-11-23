@@ -142,8 +142,8 @@ class ThreeTierEngagementCensusTest {
 	 * The acceptance for those cells is deliberately not "every new cell is red". That would be wrong: a bound-node
 	 * cell engages the interpreted row path as soon as construction is switched on, while a generated kernel remains a
 	 * costed alternative. Each cell therefore records the adjacency-tier route with the switches off and on, together
-	 * with whether the projection declined. Dedicated kernel tests own compiler-lowering coverage; this census does not
-	 * override the common physical-strategy arbiter.
+	 * with whether the projection declined. The payload fallback checks explicitly exercise wildcard batching when the
+	 * projection is off, while their warm-up still exercises automatic selection.
 	 *
 	 * <p>
 	 * A cell listed here is exempt from {@link #ADJACENCY_SERVED}, because this ledger is strictly stronger: it asserts
@@ -285,7 +285,7 @@ class ThreeTierEngagementCensusTest {
 			// Ladder order matters: the LMDB pass must run before any kernel has ever been compiled in this JVM, and
 			// the Janino pass last, so a compiled kernel cannot leak backwards into a lower regime's observations.
 			for (ThreeTierRegime regime : ThreeTierRegime.values()) {
-				observations.put(regime, observe(regime, datasets, cells));
+				observations.put(regime, observe(regime, datasets, cells, projectionOn));
 			}
 		} finally {
 			ThreeTierRegime.restore(previous);
@@ -300,7 +300,7 @@ class ThreeTierEngagementCensusTest {
 
 	/** Runs every cell once under one regime and records the engagement deltas around each execution. */
 	private Map<ThreeTierParityCorpus, Observation> observe(ThreeTierRegime regime, List<Dataset> datasets,
-			List<ThreeTierParityCorpus> cells) {
+			List<ThreeTierParityCorpus> cells, boolean projectionOn) {
 		Map<Dataset, Fixture> fixtures = new EnumMap<>(Dataset.class);
 		Map<ThreeTierParityCorpus, Observation> observed = new EnumMap<>(ThreeTierParityCorpus.class);
 		try {
@@ -310,7 +310,7 @@ class ThreeTierEngagementCensusTest {
 				LmdbStore store = fixture.store();
 				// Warm first (and, in the Janino regime, wait for compilation) so the counted execution reflects the
 				// steady state of the regime rather than one-time planning and compilation work.
-				fixture.prepare(cell);
+				long warmRows = fixture.prepare(cell);
 
 				long adjacencyBefore = adjacency(store);
 				long kernelViewsBefore = AdjacencyEngagementTestAccess.kernelViewsServed();
@@ -318,7 +318,14 @@ class ThreeTierEngagementCensusTest {
 				long enumerationDeclinesBefore = AdjacencyEngagementTestAccess.predicateEnumerationFallbacks(store);
 				long variablePredicateBefore = LmdbNativeKernelIrTestAccess.variablePredicateLowerings();
 
-				long rows = fixture.execute(cell);
+				boolean verifyProjectionFallback = !projectionOn && regime == ThreeTierRegime.ADJACENCY
+						&& (cell == ThreeTierParityCorpus.REPEATED_NODE_DUMP
+								|| cell == ThreeTierParityCorpus.VARIABLE_PREDICATE_JOIN);
+				long rows = verifyProjectionFallback ? fixture.execute(cell, "wildcardPredicateBatch")
+						: fixture.execute(cell);
+				if (verifyProjectionFallback) {
+					assertEquals(warmRows, rows, cell.benchmarkMethodName() + " differed from automatic selection");
+				}
 
 				observed.put(cell, new Observation(rows,
 						adjacency(store) - adjacencyBefore,

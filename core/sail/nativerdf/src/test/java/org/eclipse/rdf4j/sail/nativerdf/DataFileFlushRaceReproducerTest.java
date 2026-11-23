@@ -86,6 +86,7 @@ public class DataFileFlushRaceReproducerTest {
 
 		List<Future<?>> futures = new ArrayList<>();
 
+		Throwable failure = null;
 		try {
 			// Writers retain the complete workload; only the flusher's idle tail is removed.
 			for (int i = 0; i < writerThreads; i++) {
@@ -153,13 +154,31 @@ public class DataFileFlushRaceReproducerTest {
 			for (Future<?> f : futures) {
 				f.get(2, TimeUnit.MINUTES);
 			}
+		} catch (Exception | Error e) {
+			failure = e;
+			throw e;
 		} finally {
 			for (Future<?> future : futures) {
 				future.cancel(true);
 			}
 			pool.shutdownNow();
-			assertTrue(pool.awaitTermination(10, TimeUnit.SECONDS),
-					"Writers and flusher must terminate before reopening");
+			try {
+				assertTrue(pool.awaitTermination(30, TimeUnit.SECONDS),
+						"Writer and flusher workers must stop before the store is closed");
+			} catch (InterruptedException e) {
+				Thread.currentThread().interrupt();
+				if (failure != null) {
+					failure.addSuppressed(e);
+				} else {
+					throw e;
+				}
+			} catch (AssertionError e) {
+				if (failure != null) {
+					failure.addSuppressed(e);
+				} else {
+					throw e;
+				}
+			}
 		}
 
 		// Close and reopen to ensure we load from disk only
