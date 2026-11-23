@@ -674,7 +674,8 @@ public class QueryJoinOptimizerTest extends QueryOptimizerTest {
 					.containsExactlyInAnyOrder(VF.createIRI("urn:o1"), VF.createIRI("urn:o2"));
 			assertThat(source.unboundObjectCalls).as("VALUES must bind ?o before each statement lookup").isZero();
 			assertThat(source.statementsYielded).isLessThanOrEqualTo(2);
-			assertThat(source.objectBoundCountCalls + source.objectBoundStatementCalls).isGreaterThan(0);
+			assertThat(source.objectBoundStatementCalls).isPositive();
+			assertThat(source.statementCountCalls).isZero();
 		}
 	}
 
@@ -867,13 +868,12 @@ public class QueryJoinOptimizerTest extends QueryOptimizerTest {
 			}
 		}
 		assertThat(optimizedResults).containsExactlyInAnyOrderElementsOf(rawResults);
-		// A fully bound pattern may be answered by a statement count instead of a statement scan.
-		assertThat(rawSource.objectBoundStatementCalls + rawSource.objectBoundCountCalls).isEqualTo(2);
-		assertThat(rawSource.statementsYielded + rawSource.statementsCounted).isEqualTo(2);
-		assertThat(optimizedSource.objectBoundStatementCalls + optimizedSource.objectBoundCountCalls)
-				.isEqualTo(rawSource.objectBoundStatementCalls + rawSource.objectBoundCountCalls);
-		assertThat(optimizedSource.statementsYielded + optimizedSource.statementsCounted)
-				.isEqualTo(rawSource.statementsYielded + rawSource.statementsCounted);
+		assertThat(rawSource.objectBoundStatementCalls).isEqualTo(2);
+		assertThat(rawSource.statementsYielded).isEqualTo(2);
+		assertThat(optimizedSource.objectBoundStatementCalls).isEqualTo(rawSource.objectBoundStatementCalls);
+		assertThat(optimizedSource.statementsYielded).isEqualTo(rawSource.statementsYielded);
+		assertThat(rawSource.statementCountCalls).isZero();
+		assertThat(optimizedSource.statementCountCalls).isZero();
 
 		OptionalFinder optionalFinder = new OptionalFinder();
 		optimizedExpr.visit(optionalFinder);
@@ -3851,9 +3851,8 @@ public class QueryJoinOptimizerTest extends QueryOptimizerTest {
 		private final List<Statement> statements = new ArrayList<>(10_000);
 		private int objectBoundStatementCalls;
 		private int unboundObjectCalls;
-		private int objectBoundCountCalls;
+		private int statementCountCalls;
 		private long statementsYielded;
-		private long statementsCounted;
 
 		private CountingTripleSource() {
 			IRI subject = VF.createIRI("urn:s");
@@ -3902,14 +3901,8 @@ public class QueryJoinOptimizerTest extends QueryOptimizerTest {
 
 		@Override
 		public long getStatementCount(Resource subj, IRI pred, Value obj, Resource... contexts) {
-			if (obj == null) {
-				unboundObjectCalls++;
-			} else {
-				objectBoundCountCalls++;
-			}
-			long count = matching(subj, pred, obj).size();
-			statementsCounted += count;
-			return count;
+			statementCountCalls++;
+			return matching(subj, pred, obj).size();
 		}
 
 		@Override
