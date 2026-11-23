@@ -27,6 +27,8 @@ import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.query.algebra.BindingSetAssignment;
 import org.eclipse.rdf4j.query.algebra.Count;
+import org.eclipse.rdf4j.query.algebra.Extension;
+import org.eclipse.rdf4j.query.algebra.ExtensionElem;
 import org.eclipse.rdf4j.query.algebra.Filter;
 import org.eclipse.rdf4j.query.algebra.Graph;
 import org.eclipse.rdf4j.query.algebra.Group;
@@ -50,11 +52,14 @@ import org.eclipse.rdf4j.query.algebra.ZeroLengthPath;
 import org.eclipse.rdf4j.query.algebra.evaluation.TripleSource;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.EvaluationStatistics;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.QueryEvaluationContext;
+import org.eclipse.rdf4j.query.algebra.evaluation.impl.evaluationsteps.OrderedEvaluation;
 import org.eclipse.rdf4j.query.algebra.helpers.AbstractQueryModelVisitor;
+import org.eclipse.rdf4j.query.impl.EmptyBindingSet;
 import org.eclipse.rdf4j.query.impl.MapBindingSet;
 import org.eclipse.rdf4j.query.parser.sparql.SPARQLParser;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.CsvSource;
 import org.junit.jupiter.params.provider.ValueSource;
 
 class NativeValuePositionAnalysisTest {
@@ -250,6 +255,82 @@ class NativeValuePositionAnalysisTest {
 		Graph graph = new Graph(new Var("g"), includeValues ? new Join(values, pattern) : pattern);
 		TupleExpr wholeQuery = new Join(graph,
 				new StatementPattern(new Var("x"), new Var("p2"), new Var("g")));
+		NativeGraphFusion.Prepared physical = preparePhysicalGraph(graph, wholeQuery);
+		assertThat(physical.expression()).isInstanceOf(includeValues ? Join.class : StatementPattern.class);
+		assertThat(physical.guardedSelectors()).containsExactly("g");
+		assertThat(physical.positions().masksFor(physical.expression()).get("g")).isEqualTo(12);
+		assertThat(physical.positions().masksFor(physical.expression()).get("x")).isEqualTo(5);
+		if (includeValues) {
+			TupleExpr physicalValues = ((Join) physical.expression()).getLeftArg();
+			assertThat(physicalValues).isInstanceOf(BindingSetAssignment.class).isNotSameAs(values);
+			assertThat(physical.positions().masksFor(physicalValues).get("x")).isEqualTo(5);
+		}
+	}
+
+	@ParameterizedTest
+	@CsvSource({ "false, false", "true, false", "false, true" })
+	void valuesCanDriveALoweredGraphWithoutBecomingItsSelector(boolean bindsSelector, boolean orderedBody) {
+		ValueFactory vf = SimpleValueFactory.getInstance();
+		Graph graph = new Graph(Var.of("g"), new StatementPattern(Var.of("s"), Var.of("p"), Var.of("x")));
+		if (orderedBody) {
+			OrderedEvaluation.require(graph.getArg());
+		}
+		BindingSetAssignment values = new BindingSetAssignment();
+		values.setDeclaredBindingNames(Set.of("x", "g"));
+		MapBindingSet row = new MapBindingSet();
+		row.addBinding("x", vf.createIRI("urn:x"));
+		if (bindsSelector) {
+			row.addBinding("g", vf.createIRI("urn:g"));
+		}
+		values.setBindingSets(List.of(row, row, EmptyBindingSet.getInstance()));
+		StatementPattern independent = new StatementPattern(Var.of("t"), Var.of("q"), Var.of("u"));
+		Join fragment = new Join(graph, new Join(independent, values));
+		Join wholeQuery = new Join(fragment, new StatementPattern(Var.of("x"), Var.of("r"), Var.of("g")));
+
+		NativeGraphFusion.Prepared prepared = preparePhysicalGraph(fragment, wholeQuery);
+		Join physical = (Join) prepared.expression();
+		TupleExpr first = physical.getLeftArg();
+		TupleExpr second = ((Join) physical.getRightArg()).getLeftArg();
+		TupleExpr third = ((Join) physical.getRightArg()).getRightArg();
+		boolean preserveOrder = bindsSelector || orderedBody;
+		TupleExpr physicalValues = preserveOrder ? third : first;
+		TupleExpr loweredGraph = preserveOrder ? first : second;
+		assertThat(physicalValues).isInstanceOf(BindingSetAssignment.class).isNotSameAs(values);
+		assertThat(loweredGraph).isInstanceOf(StatementPattern.class);
+		assertThat(((StatementPattern) loweredGraph).getContextVar().getName()).isEqualTo("g");
+		assertThat(prepared.guardedSelectors()).containsExactly("g");
+		assertThat(prepared.positions().masksFor(physicalValues).get("x")).isEqualTo(5);
+		assertThat(prepared.positions().masksFor(loweredGraph).get("g")).isEqualTo(12);
+		assertThat(fragment.getLeftArg()).isSameAs(graph);
+		assertThat(((Join) fragment.getRightArg()).getRightArg()).isSameAs(values);
+	}
+
+	@Test
+	void valuesStayWithTheirInvocationBindingsInCompoundJoinOperands() {
+		ValueFactory vf = SimpleValueFactory.getInstance();
+		Graph graph = new Graph(Var.of("g"), new StatementPattern(Var.of("s"), Var.of("p"), Var.of("o")));
+		BindingSetAssignment values = new BindingSetAssignment();
+		MapBindingSet row = new MapBindingSet();
+		row.addBinding("s", vf.createIRI("urn:s"));
+		row.addBinding("x", vf.createIRI("urn:x"));
+		row.addBinding("y", vf.createIRI("urn:y"));
+		values.setBindingSets(List.of(row, row));
+		Extension dependent = new Extension(new SingletonSet(), new ExtensionElem(Var.of("y"), "seen"));
+		Projection subquery = new Projection(new StatementPattern(Var.of("x"), Var.of("q"), Var.of("z")),
+				new ProjectionElemList(new ProjectionElem("z")));
+		subquery.setSubquery(true);
+		Join fragment = new Join(graph, new Join(new Join(values, dependent), subquery));
+
+		Join physical = (Join) preparePhysicalGraph(fragment, fragment).expression();
+		assertThat(physical.getLeftArg()).isInstanceOf(StatementPattern.class);
+		Join right = (Join) physical.getRightArg();
+		assertThat(right.getRightArg()).isInstanceOf(Projection.class);
+		Join bindInput = (Join) right.getLeftArg();
+		assertThat(bindInput.getLeftArg()).isInstanceOf(BindingSetAssignment.class);
+		assertThat(bindInput.getRightArg()).isInstanceOf(Extension.class);
+	}
+
+	private static NativeGraphFusion.Prepared preparePhysicalGraph(TupleExpr fragment, TupleExpr wholeQuery) {
 		NativeValuePositionAnalysis analysis = NativeValuePositionAnalysis.analyze(wholeQuery);
 		TripleSource source = new TripleSource() {
 			@Override
@@ -265,17 +346,8 @@ class NativeValuePositionAnalysisTest {
 		};
 		LmdbNativeEvaluationStrategy strategy = new LmdbNativeEvaluationStrategy(source, null, null, 0,
 				new EvaluationStatistics(), false);
-		NativeGraphFusion.Prepared physical = strategy.withValuePositions(analysis,
-				() -> NativeGraphFusion.prepare(graph, new QueryEvaluationContext.Minimal(null), strategy));
-		assertThat(physical.expression()).isInstanceOf(includeValues ? Join.class : StatementPattern.class);
-		assertThat(physical.guardedSelectors()).containsExactly("g");
-		assertThat(physical.positions().masksFor(physical.expression()).get("g")).isEqualTo(12);
-		assertThat(physical.positions().masksFor(physical.expression()).get("x")).isEqualTo(5);
-		if (includeValues) {
-			TupleExpr physicalValues = ((Join) physical.expression()).getLeftArg();
-			assertThat(physicalValues).isInstanceOf(BindingSetAssignment.class).isNotSameAs(values);
-			assertThat(physical.positions().masksFor(physicalValues).get("x")).isEqualTo(5);
-		}
+		return strategy.withValuePositions(analysis,
+				() -> NativeGraphFusion.prepare(fragment, new QueryEvaluationContext.Minimal(null), strategy));
 	}
 
 	@Test
