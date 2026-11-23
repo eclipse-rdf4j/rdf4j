@@ -19,6 +19,7 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.Optional;
 import java.util.Set;
 import java.util.function.BiConsumer;
 import java.util.function.BiFunction;
@@ -79,6 +80,7 @@ public final class GraphQueryEvaluationStep implements QueryEvaluationStep, Rest
 	private final BodyRestrictionSpecializer specializer;
 	private final PreparedRestrictionPlan restrictionPlan;
 	private final Runnable fixedBodyValidator;
+	private volatile Optional<Resource> cachedFixedSelection;
 	private volatile QueryEvaluationStep fixedBody;
 
 	@FunctionalInterface
@@ -161,7 +163,9 @@ public final class GraphQueryEvaluationStep implements QueryEvaluationStep, Rest
 		if (fixedBodyValidator == null || origin != SelectorOrigin.CONSTANT) {
 			return prepareBody(selection(selected, origin != SelectorOrigin.ENUMERATED));
 		}
-		fixedBodyValidator.run();
+		if (namedGraphs != null) {
+			fixedBodyValidator.run();
+		}
 		QueryEvaluationStep prepared = fixedBody;
 		return prepared != null ? prepared : prepareFixedBody(selected);
 	}
@@ -176,6 +180,20 @@ public final class GraphQueryEvaluationStep implements QueryEvaluationStep, Rest
 
 	private QueryEvaluationStep prepareBody(ActiveGraph active) {
 		return childPreparer.apply(graph.getArg(), new ActiveGraphQueryEvaluationContext(context, active));
+	}
+
+	private Resource selectFixedCatalog(Resource resource) {
+		// Validate even when this snapshot previously denied the selection.
+		fixedBodyValidator.run();
+		Optional<Resource> selected = cachedFixedSelection;
+		return (selected != null ? selected : prepareFixedCatalogSelection(resource)).orElse(null);
+	}
+
+	private synchronized Optional<Resource> prepareFixedCatalogSelection(Resource resource) {
+		if (cachedFixedSelection == null) {
+			cachedFixedSelection = isMember(resource) ? Optional.of(capture(resource)) : Optional.empty();
+		}
+		return cachedFixedSelection;
 	}
 
 	private Resource capture(Resource resource) {
@@ -572,14 +590,25 @@ public final class GraphQueryEvaluationStep implements QueryEvaluationStep, Rest
 						Value fixed = supplied != null && !graphName.isConstant() ? supplied
 								: graphName.hasValue() ? graphName.getValue() : supplied;
 						if (fixed != null) {
-							if (!(fixed instanceof Resource resource)
-									|| restricted != null && !restricted.selects(resource, frame)
-									|| !(restricted == null ? isMember(resource) : restricted.fixedMember(resource))) {
+							if (!(fixed instanceof Resource resource)) {
 								return null;
 							}
-							selected = capture(resource);
 							SelectorOrigin origin = graphName.isConstant() ? SelectorOrigin.CONSTANT
 									: supplied != null ? SelectorOrigin.SEMANTIC_INPUT : SelectorOrigin.PREPARED;
+							if (restricted == null && namedGraphs == null && fixedBodyValidator != null
+									&& origin == SelectorOrigin.CONSTANT) {
+								selected = selectFixedCatalog(resource);
+								if (selected == null) {
+									return null;
+								}
+							} else {
+								if (restricted != null && !restricted.selects(resource, frame)
+										|| !(restricted == null ? isMember(resource)
+												: restricted.fixedMember(resource))) {
+									return null;
+								}
+								selected = capture(resource);
+							}
 							openChild(origin);
 						} else if (bindings.hasBinding(graphName.getName())) {
 							return null;
