@@ -215,7 +215,7 @@ public abstract class RepositoryTest {
 	private void assertStatementCount(RepositoryConnection conn, IRI predicate, int expected, int iteration) {
 		try (RepositoryResult<Statement> statements = conn.getStatements(null, predicate, null)) {
 			List<Statement> collect = statements.stream().collect(Collectors.toList());
-			assertEquals(expected, collect.size(), "Iteration " + iteration + " failed with data:\n"
+			assertEquals(expected, collect.size(), () -> "Iteration " + iteration + " failed with data:\n"
 					+ collect.stream().map(Objects::toString).reduce((a, b) -> a + "\n" + b).orElse(""));
 		}
 	}
@@ -223,7 +223,7 @@ public abstract class RepositoryTest {
 	private void assertStatementCount(RepositoryConnection conn, IRI predicate, int expected) {
 		try (RepositoryResult<Statement> statements = conn.getStatements(null, predicate, null)) {
 			List<Statement> collect = statements.stream().collect(Collectors.toList());
-			assertEquals(expected, collect.size(), "Unexpected statements for predicate " + predicate + ":\n"
+			assertEquals(expected, collect.size(), () -> "Unexpected statements for predicate " + predicate + ":\n"
 					+ collect.stream().map(Objects::toString).reduce((a, b) -> a + "\n" + b).orElse(""));
 		}
 	}

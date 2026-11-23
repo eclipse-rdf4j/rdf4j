@@ -27,7 +27,9 @@ import java.util.Map;
 
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Literal;
+import org.eclipse.rdf4j.model.Statement;
 import org.eclipse.rdf4j.model.ValueFactory;
+import org.eclipse.rdf4j.model.util.Statements;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.QueryEvaluationException;
 import org.eclipse.rdf4j.query.explanation.Explanation;
@@ -212,37 +214,41 @@ class LmdbNativeIrAggregateParallelTest {
 			// delta generations, degrading it into a revision gap whose quiescent rebuild never runs under the test's
 			// continuous query traffic — and then no EA-rooted kernel can ever bind (see the M10B plan Surprises).
 			conn.begin();
+			// A list retains ordinary changeset buffering; a Set would select compact bulk approval.
+			List<Statement> statements = new ArrayList<>(9_000);
 			for (int i = 0; i < 600; i++) {
 				IRI s = vf.createIRI(EX, "s" + i);
-				conn.add(s, t, x);
+				statements.add(Statements.statement(s, t, x, null));
 				for (int j = 0; j < 2; j++) {
 					IRI m = vf.createIRI(EX, "m" + i + "_" + j);
-					conn.add(s, p, m);
-					conn.add(m, q, vf.createLiteral(i * 7 + j));
+					statements.add(Statements.statement(s, p, m, null));
+					statements.add(Statements.statement(m, q, vf.createLiteral(i * 7 + j), null));
 					// q2 equals q for j==0 and differs for j==1, so FILTER(?v != ?v2) keeps exactly the j==1 rows
-					conn.add(m, q2, vf.createLiteral(i * 7 + 2 * j));
-					conn.add(m, q2, vf.createLiteral(i * 7 + 2 * j), vf.createIRI(EX, "graph"));
+					statements.add(Statements.statement(m, q2, vf.createLiteral(i * 7 + 2 * j), null));
+					statements.add(Statements.statement(m, q2, vf.createLiteral(i * 7 + 2 * j),
+							vf.createIRI(EX, "graph")));
 					// q3: the global minimum is a tie between two distinct terms on the first and last root keys
 					if (i == 0 && j == 0) {
-						conn.add(m, q3, vf.createLiteral(new BigDecimal("1")));
+						statements.add(Statements.statement(m, q3, vf.createLiteral(new BigDecimal("1")), null));
 					} else if (i == 599 && j == 1) {
-						conn.add(m, q3, vf.createLiteral(BigInteger.ONE));
+						statements.add(Statements.statement(m, q3, vf.createLiteral(BigInteger.ONE), null));
 					} else {
-						conn.add(m, q3, vf.createLiteral(i * 3 + j + 10));
+						statements.add(Statements.statement(m, q3, vf.createLiteral(i * 3 + j + 10), null));
 					}
 					// q4: the global minimum is represented by two physical ids whose language tags differ only in
 					// case.
 					if (i == 0 && j == 0) {
-						conn.add(m, q4, vf.createLiteral("same", "en"));
+						statements.add(Statements.statement(m, q4, vf.createLiteral("same", "en"), null));
 					} else if (i == 599 && j == 1) {
-						conn.add(m, q4, vf.createLiteral("same", "EN"));
+						statements.add(Statements.statement(m, q4, vf.createLiteral("same", "EN"), null));
 					} else {
-						conn.add(m, q4, vf.createLiteral("zz" + i + j, "en"));
+						statements.add(Statements.statement(m, q4, vf.createLiteral("zz" + i + j, "en"), null));
 					}
 					// f: xsd:double values, order-sensitive under SUM
-					conn.add(m, f, vf.createLiteral(0.5d + i * 2 + j));
+					statements.add(Statements.statement(m, f, vf.createLiteral(0.5d + i * 2 + j), null));
 				}
 			}
+			conn.add(statements);
 			conn.commit();
 		}
 		System.setProperty("rdf4j.lmdb.nativeQueryEngine.enabled", "true");
