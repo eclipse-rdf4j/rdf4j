@@ -27,6 +27,7 @@ import org.eclipse.rdf4j.common.annotation.InternalUseOnly;
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.common.iteration.CooperativeCancellation;
 import org.eclipse.rdf4j.common.iteration.LookAheadIteration;
+import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.query.Binding;
 import org.eclipse.rdf4j.query.BindingSet;
@@ -35,6 +36,7 @@ import org.eclipse.rdf4j.query.QueryEvaluationException;
 import org.eclipse.rdf4j.query.algebra.ArbitraryLengthPath;
 import org.eclipse.rdf4j.query.algebra.ProjectionElem;
 import org.eclipse.rdf4j.query.algebra.QueryModelNode;
+import org.eclipse.rdf4j.query.algebra.StatementPattern;
 import org.eclipse.rdf4j.query.algebra.StatementPattern.Scope;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.algebra.Var;
@@ -98,6 +100,8 @@ public class PathIteration extends LookAheadIteration<BindingSet> {
 	private final CollectionFactory collectionFactory;
 	private final String variablePrefix;
 	private final String endVarName;
+	private final String frontierParameter;
+	private QueryEvaluationStep simpleFrontier;
 
 	public PathIteration(EvaluationStrategy strategy, Scope scope, Var startVar,
 			TupleExpr pathExpression, Var endVar, Var contextVar, long minLength, BindingSet bindings)
@@ -116,13 +120,21 @@ public class PathIteration extends LookAheadIteration<BindingSet> {
 	public PathIteration(EvaluationStrategy strategy, Scope scope, Var startVar, TupleExpr pathExpression, Var endVar,
 			Var contextVar, long minLength, BindingSet bindings, QueryEvaluationContext context,
 			PathVariableScope names) {
-		this(strategy, scope, startVar, pathExpression, endVar, contextVar, minLength, bindings, context, names, true);
+		this(strategy, scope, startVar, pathExpression, endVar, contextVar, minLength, bindings, context, names, true,
+				false);
 	}
 
 	/** Compile a SPARQL path, whose solution mappings bind only variable endpoints. */
 	@InternalUseOnly
 	public static QueryEvaluationStep prepare(EvaluationStrategy strategy, ArbitraryLengthPath path,
 			QueryEvaluationContext context) {
+		return prepare(strategy, path, context, false);
+	}
+
+	/** Compile a path using the built-in statement evaluator's parameter binding contract when certified. */
+	@InternalUseOnly
+	public static QueryEvaluationStep prepare(EvaluationStrategy strategy, ArbitraryLengthPath path,
+			QueryEvaluationContext context, boolean reuseSimpleFrontier) {
 		Scope scope = path.getScope();
 		Var start = path.getSubjectVar();
 		Var end = path.getObjectVar();
@@ -131,12 +143,12 @@ public class PathIteration extends LookAheadIteration<BindingSet> {
 		long minLength = path.getMinLength();
 		PathVariableScope names = AdaptiveFilterEvaluationStep.pathVariableScope(path, context);
 		return bindings -> new PathIteration(strategy, scope, start, expression, end, graph, minLength, bindings,
-				context, names, false);
+				context, names, false, reuseSimpleFrontier);
 	}
 
 	private PathIteration(EvaluationStrategy strategy, Scope scope, Var startVar, TupleExpr pathExpression, Var endVar,
 			Var contextVar, long minLength, BindingSet bindings, QueryEvaluationContext context,
-			PathVariableScope names, boolean includeConstantEndpoints) {
+			PathVariableScope names, boolean includeConstantEndpoints, boolean reuseSimpleFrontier) {
 		variablePrefix = names.freshPrefix(bindings);
 		endVarName = variablePrefix + "end";
 		this.strategy = strategy;
@@ -155,6 +167,8 @@ public class PathIteration extends LookAheadIteration<BindingSet> {
 
 		this.pathExpression = pathExpression;
 		this.contextVar = contextVar;
+		frontierParameter = reuseSimpleFrontier && context != null && !(startVarFixed && endVarFixed)
+				&& isSimpleFrontier(pathExpression, startVar, endVar, contextVar) ? variablePrefix + "frontier" : null;
 
 		this.currentLength = minLength;
 		this.bindings = bindings;
@@ -466,6 +480,11 @@ public class PathIteration extends LookAheadIteration<BindingSet> {
 			currentVp = (ValuePair) valueQueue.poll();
 
 			if (currentVp != null) {
+				if (frontierParameter != null && frontierValue() instanceof IRI iri) {
+					currentIter = evaluateSimpleFrontier(iri);
+					currentLength++;
+					return;
+				}
 
 				TupleExpr pathExprClone = pathExpression.clone();
 
@@ -498,20 +517,68 @@ public class PathIteration extends LookAheadIteration<BindingSet> {
 					pathExprClone.visit(replacer);
 				}
 
-				BindingSet stepBindings = bindings;
-				if (contextVar != null && currentVp.contextValue != null) {
-					// Continue in the graph that produced this frontier entry.
-					QueryBindingSet scopedBindings = new QueryBindingSet(bindings);
-					scopedBindings.setBinding(contextVar.getName(), currentVp.contextValue);
-					stepBindings = scopedBindings;
-				}
-				currentIter = evaluatePath(pathExprClone, stepBindings);
+				currentIter = evaluatePath(pathExprClone, frontierBindings());
 			} else {
 				currentIter = null;
 			}
 			currentLength++;
 
 		}
+	}
+
+	private Value frontierValue() {
+		return endVarFixed ? currentVp.getStartValue() : currentVp.getEndValue();
+	}
+
+	private BindingSet frontierBindings() {
+		if (contextVar == null || currentVp.contextValue == null) {
+			return bindings;
+		}
+		// Continue in the graph that produced this frontier entry.
+		QueryBindingSet scoped = new QueryBindingSet(bindings);
+		scoped.setBinding(contextVar.getName(), currentVp.contextValue);
+		return scoped;
+	}
+
+	private static boolean isSimpleFrontier(TupleExpr expression, Var start, Var end, Var graph) {
+		if (expression.getClass() != StatementPattern.class || start.getName().equals(end.getName())) {
+			return false;
+		}
+		StatementPattern edge = (StatementPattern) expression;
+		Var predicate = edge.getPredicateVar();
+		Var context = edge.getContextVar();
+		if (!(predicate.getValue() instanceof IRI)
+				|| sameSlotOrAnonymousConstant(start, predicate) || sameSlotOrAnonymousConstant(end, predicate)
+				|| context != null && (sameSlotOrAnonymousConstant(start, context)
+						|| sameSlotOrAnonymousConstant(end, context) || !context.equals(graph))) {
+			return false;
+		}
+		return edge.getSubjectVar().equals(start) && edge.getObjectVar().equals(end)
+				|| edge.getSubjectVar().equals(end) && edge.getObjectVar().equals(start);
+	}
+
+	private static boolean sameSlotOrAnonymousConstant(Var endpoint, Var other) {
+		return endpoint.getName().equals(other.getName())
+				|| endpoint.isAnonymous() && other.isAnonymous() && endpoint.hasValue()
+						&& endpoint.getValue().equals(other.getValue());
+	}
+
+	private CloseableIteration<BindingSet> evaluateSimpleFrontier(IRI frontier) {
+		if (simpleFrontier == null) {
+			StatementPattern edge = (StatementPattern) pathExpression.clone();
+			Var from = endVarFixed ? endVar : startVar;
+			Var slot = edge.getSubjectVar().equals(from) ? edge.getSubjectVar() : edge.getObjectVar();
+			edge.replaceChildNode(slot, createAnonVar(frontierParameter, null, true));
+			// The step is owned by this iterator's execution and graph selection, never shared between queries.
+			// Retain the regular preparation and normal lookup for the new shape; only the IRI varies per hop.
+			simpleFrontier = strategy.precompile(edge, context);
+		}
+		QueryBindingSet args = new QueryBindingSet(bindings);
+		if (contextVar != null && currentVp.contextValue != null) {
+			args.setBinding(contextVar.getName(), currentVp.contextValue);
+		}
+		args.setBinding(frontierParameter, frontier);
+		return simpleFrontier.evaluate(args);
 	}
 
 	private String varNameAtPathLengthOf(long atLength) {

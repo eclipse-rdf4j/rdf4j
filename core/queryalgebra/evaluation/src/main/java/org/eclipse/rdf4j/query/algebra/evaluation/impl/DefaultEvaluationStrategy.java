@@ -886,7 +886,7 @@ public class DefaultEvaluationStrategy implements EvaluationStrategy, FederatedS
 
 	protected QueryEvaluationStep prepare(ArbitraryLengthPath alp, QueryEvaluationContext context)
 			throws QueryEvaluationException {
-		return PathIteration.prepare(this, alp, context);
+		return PathIteration.prepare(this, alp, context, usesStandardPathPreparation());
 	}
 
 	protected QueryEvaluationStep prepare(ZeroLengthPath zlp, QueryEvaluationContext context)

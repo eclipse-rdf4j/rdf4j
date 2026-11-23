@@ -12,12 +12,14 @@
 package org.eclipse.rdf4j.query.algebra.evaluation.iterator;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.tuple;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.doAnswer;
 import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.spy;
@@ -80,6 +82,7 @@ public class PathIterationTest {
 
 	private DefaultEvaluationStrategy evaluator;
 	private Model model;
+	private TripleSource tripleSource;
 	private static final ValueFactory vf = SimpleValueFactory.getInstance();
 	private static final Resource one = vf.createIRI("https://example.org/", "one");
 	private static final Resource two = vf.createIRI("https://example.org/", "two");
@@ -92,7 +95,7 @@ public class PathIterationTest {
 		m.add(one, RDFS.SUBCLASSOF, two);
 		m.add(two, RDFS.SUBCLASSOF, three);
 
-		TripleSource ts = new TripleSource() {
+		tripleSource = new TripleSource() {
 
 			@Override
 			public CloseableIteration<? extends Statement> getStatements(Resource subj,
@@ -105,7 +108,7 @@ public class PathIterationTest {
 				return vf;
 			}
 		};
-		evaluator = new DefaultEvaluationStrategy(ts, null);
+		evaluator = new DefaultEvaluationStrategy(tripleSource, null);
 	}
 
 	@TestFactory
@@ -129,6 +132,88 @@ public class PathIterationTest {
 							new QueryEvaluationContext.Minimal(null),
 							ArrayBindingBasedQueryEvaluationContext.findAllVariablesUsedInQuery(array), null);
 					try (var rows = evaluator.precompile(array, context).evaluate(EmptyBindingSet.getInstance())) {
+						assertThat(QueryResults.asList(rows)).containsExactlyInAnyOrderElementsOf(expected);
+					}
+				}));
+	}
+
+	@Test
+	void repeatedSimpleFrontierLookupsReuseOneCompiledStep() {
+		for (int i = 0; i < 32; i++) {
+			var from = vf.createIRI("urn:node:" + i);
+			var to = vf.createIRI("urn:node:" + (i + 1));
+			model.add(from, RDFS.SUBCLASSOF, to);
+		}
+		AtomicInteger statementPreparations = new AtomicInteger();
+		var counting = spy(evaluator);
+		doAnswer(call -> {
+			if (call.getArgument(0) instanceof StatementPattern) {
+				statementPreparations.incrementAndGet();
+			}
+			return call.callRealMethod();
+		}).when(counting).precompile(any(TupleExpr.class), any(QueryEvaluationContext.class));
+		var root = new QueryRoot(QueryParserUtil.parseTupleQuery(QueryLanguage.SPARQL,
+				"SELECT ?o WHERE { <urn:node:0> <" + RDFS.SUBCLASSOF + ">* ?o }", null).getTupleExpr());
+		var step = counting.precompile(root);
+		try (var rows = step.evaluate(EmptyBindingSet.getInstance())) {
+			assertThat(QueryResults.asList(rows)).hasSize(33);
+		}
+		assertThat(statementPreparations.get()).as("statement preparation must not scale with frontier size")
+				.isLessThanOrEqualTo(3);
+	}
+
+	@Test
+	void reusedFrontierBindsItsPrivateSlotInAnArrayQuery() {
+		model.clear();
+		var a = vf.createIRI("urn:a");
+		var b = vf.createIRI("urn:b");
+		var c = vf.createIRI("urn:c");
+		var d = vf.createIRI("urn:d");
+		model.add(a, RDFS.SUBCLASSOF, b);
+		model.add(c, RDFS.SUBCLASSOF, d);
+		var root = new QueryRoot(QueryParserUtil.parseTupleQuery(QueryLanguage.SPARQL,
+				"SELECT ?s ?o WHERE { ?s <" + RDFS.SUBCLASSOF + ">+ ?o }", null).getTupleExpr());
+		var step = evaluator.precompile(root);
+		try (var rows = step.evaluate(EmptyBindingSet.getInstance())) {
+			assertThat(QueryResults.asList(rows))
+					.extracting(row -> row.getValue("s"), row -> row.getValue("o"))
+					.containsExactlyInAnyOrder(tuple(a, b), tuple(c, d));
+		}
+	}
+
+	@TestFactory
+	Stream<DynamicTest> reusedFrontierPreservesRowsAndDoesNotShareExecutionState() {
+		String p = "<" + RDFS.SUBCLASSOF + ">";
+		String a = "<" + one + ">";
+		String b = "<" + two + ">";
+		String c = "<" + three + ">";
+		return List.of(a + " " + p + "* ?o", "?s " + p + "+ " + c, "?s ^" + p + "* " + a,
+				a + " " + p + "+ " + c, "?s " + p + "* ?o", "?s " + p + "+ ?s",
+				"VALUES ?s { " + a + " " + b + " } ?s " + p + "+ ?o",
+				"?s (" + p + "|" + p + ")+ ?o", "?s (" + p + "/" + p + ")* ?o")
+				.stream()
+				.map(pattern -> DynamicTest.dynamicTest(pattern, () -> {
+					var blank = vf.createBNode();
+					model.add(three, RDFS.SUBCLASSOF, blank);
+					model.add(blank, RDFS.SUBCLASSOF, one);
+					model.add(three, RDFS.SUBCLASSOF, vf.createLiteral("non-IRI frontier"));
+					var fallback = new DefaultEvaluationStrategy(tripleSource, null) {
+					};
+					var parsed = QueryParserUtil.parseTupleQuery(QueryLanguage.SPARQL,
+							"SELECT * WHERE { " + pattern + " }", null).getTupleExpr();
+					var baseline = fallback.precompile(new QueryRoot(parsed.clone()));
+					var optimized = evaluator.precompile(new QueryRoot(parsed.clone()));
+					var bindings = EmptyBindingSet.getInstance();
+					List<BindingSet> expected;
+					try (var rows = baseline.evaluate(bindings)) {
+						expected = QueryResults.asList(rows);
+					}
+					try (var rows = optimized.evaluate(bindings)) {
+						if (rows.hasNext()) {
+							rows.next();
+						}
+					}
+					try (var rows = optimized.evaluate(bindings)) {
 						assertThat(QueryResults.asList(rows)).containsExactlyInAnyOrderElementsOf(expected);
 					}
 				}));
