@@ -15,7 +15,12 @@ mvn -Dmaven.repo.local=.m2_repo -Pquick clean install
 ```
 
 Developer builds explicitly allow incomplete evidence, but the resulting report
-visibly lists everything still requiring review. For strict notice verification
+visibly lists everything still requiring review. The supplemental license
+evidence under `scripts/third-party-licenses/` is generated, not committed: until
+`python3 scripts/build-third-party-licenses.py` has been run, each of its
+documents is reported as a missing manual evidence file and its text is absent
+from the report (see "Supplemental license evidence" below). Release builds must
+run that script first; `scripts/release.sh` and `scripts/milestone-release.sh` do. For strict notice verification
 before publication or release, run:
 
 ```sh
@@ -107,6 +112,117 @@ developer build; it never removes warnings from the delivered report. Release
 builds must not use that option. Text presence is evidence, not automated proof
 that an upstream text is complete or applies to every embedded component.
 
+## Supplemental license evidence
+
+Many shipped components omit complete license texts or attribution from their
+artifacts. `scripts/third-party-licenses/` holds the documents that fill those
+gaps. The directory is **generated and git-ignored**; the committed inputs are:
+
+- `scripts/third-party-license-sources.json`: every document's primary source
+  URL, the recipe that derives it, and its SHA-256, plus the SHA-256 of every
+  source archive.
+- `scripts/build-third-party-licenses.py`: downloads the sources and builds the
+  directory. Python 3.10+ and its standard library are sufficient.
+- `scripts/third-party-notices.manual.json`: maps each document to an exact
+  component version and repeats its SHA-256 for the collector.
+
+```sh
+python3 scripts/build-third-party-licenses.py           # download, verify, build
+python3 scripts/build-third-party-licenses.py --check   # offline: verify what is on disk
+```
+
+The build needs network access to Maven Central, GitHub and GitLab. It verifies
+every source archive and every produced document against the manifest and
+writes nothing unless all of them match, then removes files the manifest no
+longer lists. `--cache-dir DIR` keeps the downloads (about 35 MB) between runs.
+Set `GITHUB_TOKEN` if the two unauthenticated GitHub API requests are
+rate-limited. A mismatch means upstream content changed under a pinned URL:
+investigate it rather than accepting the new hash.
+
+### Updating the evidence
+
+When a dependency version changes, edit the affected `archives` and `documents`
+entries in the manifest (URLs, paths, pinned commits), update the component
+identities and paths in the manual inventory, then run:
+
+```sh
+python3 scripts/build-third-party-licenses.py --update-hashes
+```
+
+This rebuilds the directory and records the new hashes in the manifest and in
+the manual inventory entries with the same path. Review the resulting diff and
+the rebuilt documents before committing; entries with a `startLine`/`endLine`
+range are reported so the range can be rechecked. Do not hand-edit generated
+documents: `--check` and the collector both reject them. The formatter exclusion
+for `scripts/third-party-licenses/**/*.xml` in the root `pom.xml` exists for the
+same reason.
+
+### Recipes
+
+A document without a `recipe` is the source bytes verbatim, either the URL
+itself or one archive entry (`URL!/entry`). The other recipes are:
+
+- `leading-comment`: the source from its first byte through its first comment,
+  optionally followed by a newline (`trailingNewline`).
+- `source-notices` and `source-notice-origins`: distinct comment blocks of a
+  source archive that match the profile's pattern, byte-for-byte, and the entry
+  names, source-file hashes, byte offsets and line ranges of every occurrence.
+  Quoted string and character literals are skipped. The `jvm-sources` profile
+  collects block and line comments throughout a source JAR, including comments
+  after package declarations and secondary/Javadoc notices, and precedes each
+  block with its entry names and line ranges. The `c-library-sources` profile
+  collects license-bearing block comments from the upstream `lib/` directories
+  and selected Graphviz plugin sources.
+- `normalized-json`: a JSON API response re-serialized deterministically.
+- `git-blob-comparison`: the Git blob SHA-1 of every source-JAR entry compared
+  with an upstream tree listing.
+- `inline-json`: reviewed facts recorded directly in the manifest.
+
+### What the evidence does and does not establish
+
+These documents supplement artifacts that omit complete license texts. They are
+not legal approvals. Components are included only when that exact component is
+discovered in the shipped inputs. Exact Maven Central POMs preserve the release
+declarations. The collected source notices supplement, and do not replace,
+complete license texts. The source archives themselves are not redistributed.
+
+The Apache license is the full canonical Apache text, applied only to releases
+whose collected declarations identify Apache 2.0. Version-tagged upstream texts
+supply the other missing licenses. Logback retains both EPL 2.0 and LGPL 2.1 and
+its original choice statement; no license choice is made. The LGPL text is the
+unaltered FSF license distributed by the GNU GCC project. JTS likewise retains
+both release license texts and all captured source notices.
+
+Graphviz and Expat source release archive SHA-256 values were checked against
+Viz.js 3.31.0's installed build provenance before copying their documents.
+Graphviz's broader attribution and embedded rbtree material are also retained.
+LWJGL's native dependency notices are retained from its exact release, without
+claiming every native classifier's dependency coverage has been reviewed.
+
+Additional native evidence pins Brotli4j 1.23.0 to its release source commit,
+including Brotli 1.2.0's MIT text, the version header, CMake source list and all
+ten classifier build scripts. LWJGL 3.4.2 native headers identify LMDB 0.9.35,
+libffi 3.7.0, and the bundled liburing API version.
+
+Although zstd-jni 1.5.7-25 has no upstream release tag, commit
+`b3ef8f51f372053611f65de55952fd563c7aa780` declares that exact version and all
+40 Java source entries in the Central source JAR match its Git blob hashes
+byte-for-byte. The comparison and exact source artifact SHA-256 are retained in
+`native/zstd-source-comparison.json`. That pinned commit supplies the full
+wrapper BSD-2-Clause and bundled Zstandard BSD-3-Clause and GPL-2.0 alternative
+texts. No choice between the native alternatives is asserted. This does not
+claim that native binaries have been reproducibly rebuilt or that every native
+source obligation is resolved.
+
+LZ4 Java 1.11.4 native evidence pins the release source tree and its LZ4
+submodule commit, retaining the native LZ4 1.10.0 and xxHash 0.6.5 BSD-2-Clause
+texts, original source-header notices, version headers and native build inputs.
+The native binary/source coverage review remains explicit.
+
+Remaining review gaps stay explicit in the manual inventory and generated
+report. No completed IP or source-offer review has been manufactured, and adding
+a text does not resolve those review gates or select among license alternatives.
+
 ## Manual evidence template
 
 The default `scripts/third-party-notices.manual.json` is prefilled with two
@@ -153,7 +269,8 @@ any submission/publication remain manual.
 ## Focused offline tests
 
 ```sh
-python3 -m unittest scripts/test_third_party_notices.py
+python3 -m unittest scripts/test_third_party_notices.py scripts/test_build_third_party_licenses.py \
+  scripts/test_legal_metadata.py
 node --test tools/workbench/scripts/license-bundle-inventory.test.mjs
 ```
 
