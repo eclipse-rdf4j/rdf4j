@@ -30,6 +30,7 @@ import java.util.function.UnaryOperator;
 
 import org.eclipse.rdf4j.collection.factory.api.CollectionFactory;
 import org.eclipse.rdf4j.collection.factory.impl.DefaultCollectionFactory;
+import org.eclipse.rdf4j.common.annotation.InternalUseOnly;
 import org.eclipse.rdf4j.common.iteration.AbstractCloseableIteration;
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.common.iteration.ConvertingIteration;
@@ -740,7 +741,7 @@ public class DefaultEvaluationStrategy implements EvaluationStrategy, FederatedS
 			prepared = precompileStandard(expr, context);
 		}
 		if (RestrictionCompiler.enabled(this, context) && context.getActiveGraph() != null
-				&& (getClass() == DefaultEvaluationStrategy.class || getClass() == StrictEvaluationStrategy.class)) {
+				&& usesStandardPathPreparation()) {
 			OriginalPathDescriptor path = OriginalPathDescriptor.forRegion(expr);
 			if (path != null) {
 				prepared = RestrictionPathPlan.attach(expr, path, prepared, context, tripleSource, this::precompile,
@@ -872,6 +873,15 @@ public class DefaultEvaluationStrategy implements EvaluationStrategy, FederatedS
 
 	private static boolean telemetryActive(QueryModelNode node) {
 		return node != null && node.isRuntimeTelemetryEnabled();
+	}
+
+	/**
+	 * Opt in only when statement and path preparation preserve the built-in parameter binding contract. Unknown
+	 * strategy subclasses retain their existing per-step preparation behavior.
+	 */
+	@InternalUseOnly
+	protected boolean usesStandardPathPreparation() {
+		return getClass() == DefaultEvaluationStrategy.class || getClass() == StrictEvaluationStrategy.class;
 	}
 
 	protected QueryEvaluationStep prepare(ArbitraryLengthPath alp, QueryEvaluationContext context)
