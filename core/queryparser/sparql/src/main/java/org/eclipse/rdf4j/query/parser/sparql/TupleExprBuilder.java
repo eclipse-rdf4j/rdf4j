@@ -1607,6 +1607,12 @@ public class TupleExprBuilder extends AbstractASTVisitor {
 				tupleExpr = processHavingClause(node.getHavingClause(), tupleExpr, group);
 			}
 
+			// process bindings clause
+			ASTBindingsClause bindingsClause = node.getBindingsClause();
+			if (bindingsClause != null) {
+				tupleExpr = new Join((BindingSetAssignment) bindingsClause.jjtAccept(this, null), tupleExpr);
+			}
+
 			if (node.getOrderClause() != null) {
 				if (group == null) {
 					// create implicit group

@@ -51,6 +51,7 @@ import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.MalformedQueryException;
 import org.eclipse.rdf4j.query.algebra.AggregateFunctionCall;
 import org.eclipse.rdf4j.query.algebra.ArbitraryLengthPath;
+import org.eclipse.rdf4j.query.algebra.BindingSetAssignment;
 import org.eclipse.rdf4j.query.algebra.DeleteData;
 import org.eclipse.rdf4j.query.algebra.Extension;
 import org.eclipse.rdf4j.query.algebra.Filter;
@@ -166,6 +167,23 @@ public class SPARQLParserTest {
 				}
 			});
 		}
+	}
+
+	@Test
+	public void describeJoinsTrailingValuesClause() {
+		TupleExpr tupleExpr = parser
+				.parseQuery("DESCRIBE ?s WHERE { ?s a <urn:T> } VALUES ?s { <urn:a> }", null)
+				.getTupleExpr();
+
+		List<BindingSetAssignment> values = new ArrayList<>();
+		tupleExpr.visit(new AbstractQueryModelVisitor<RuntimeException>() {
+			@Override
+			public void meet(BindingSetAssignment node) {
+				values.add(node);
+			}
+		});
+
+		assertThat(values).hasSize(1);
 	}
 
 	/**
