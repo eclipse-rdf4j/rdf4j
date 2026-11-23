@@ -30,6 +30,7 @@ import org.eclipse.rdf4j.common.order.StatementOrder;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.Statement;
+import org.eclipse.rdf4j.model.TripleTerm;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.query.QueryEvaluationException;
@@ -151,6 +152,69 @@ class LmdbCooperativeCancellationPropagationTest {
 			boolean ordered, Resource... contexts) {
 		return ordered ? source.getStatements(StatementOrder.S, null, null, null, contexts)
 				: source.getStatements(null, null, null, contexts);
+	}
+
+	@Test
+	void genericTripleTermScansRetainNativeCancellationAndProbeDeadline(@TempDir Path dataDir) throws Exception {
+		var store = new LmdbStore(dataDir.toFile(), new LmdbStoreConfig("spoc").setDirectAdjacencyEnabled(false));
+		store.init();
+		try {
+			var values = store.getValueFactory();
+			var predicate = values.createIRI("urn:cancel:p");
+			var firstTerm = values.createTripleTerm(values.createIRI("urn:cancel:firstSubject"), predicate,
+					values.createLiteral("first"));
+			var secondTerm = values.createTripleTerm(values.createIRI("urn:cancel:secondSubject"), predicate,
+					values.createLiteral("second"));
+			try (SailConnection seed = store.getConnection()) {
+				seed.begin();
+				seed.addStatement(values.createIRI("urn:cancel:owner"), predicate, firstTerm);
+				seed.addStatement(values.createIRI("urn:cancel:owner"), predicate, secondTerm);
+				seed.commit();
+			}
+
+			try (var dataset = NativeQuerySourceAccess.openExplicitDataset(store)) {
+				var source = new SailDatasetTripleTermSource(values, dataset);
+				AtomicReference<Object> owner = new AtomicReference<>();
+				CountDownLatch scanOpened = new CountDownLatch(1);
+				try (var rows = NativeCancellationTestAccess.cancelAfter(scanOpened, new CountDownLatch(1), owner::set,
+						() -> {
+							try {
+								return genericTripleTerms(source);
+							} finally {
+								scanOpened.countDown();
+							}
+						})) {
+					var failure = assertThrows(QueryEvaluationException.class, rows::hasNext);
+					var cancellation = assertInstanceOf(KernelQueryCancelledException.class, failure.getCause());
+					assertSame(owner.get(), cancellation.origin());
+					assertTrue(cancellation.observedBy(owner.get()));
+				}
+
+				AtomicReference<Runnable> tripDeadline = new AtomicReference<>();
+				try (var rows = NativeCancellationTestAccess.withTrippableProbeDeadline(tripDeadline::set,
+						() -> genericTripleTerms(source))) {
+					// The triple-term cursor must retain the attempt that opened it after its scope exits.
+					tripDeadline.get().run();
+					var failure = assertThrows(QueryEvaluationException.class, rows::hasNext);
+					assertSame(NativeCancellationTestAccess.probeDeadlineSignal(), failure.getCause());
+				}
+
+				try (var rows = genericTripleTerms(source)) {
+					int count = 0;
+					while (rows.hasNext()) {
+						rows.next();
+						count++;
+					}
+					assertEquals(2, count);
+				}
+			}
+		} finally {
+			store.shutDown();
+		}
+	}
+
+	private static CloseableIteration<? extends TripleTerm> genericTripleTerms(SailDatasetTripleTermSource source) {
+		return source.getTripleTerms(null, null, null);
 	}
 
 	@ParameterizedTest

@@ -165,7 +165,10 @@ class CompositeNativeLmdbCancellationHandoffTest {
 			last.beforeClose = () -> checkingExhaustion.set(true);
 			doAnswer(call -> {
 				if (checkingExhaustion.getAndSet(false)) {
-					accepted.set(requester.submit(cursor::requestCancellation).get(10, TimeUnit.SECONDS));
+					var request = requester.submit(() -> {
+						return cursor.requestCancellation();
+					});
+					accepted.set(request.get(10, TimeUnit.SECONDS));
 				}
 				return false;
 			}).when(deadline).expired();

@@ -9981,7 +9981,8 @@ class LmdbSailStore implements SailStore {
 			}
 		}
 
-		RecordIterator terms = valueStore.getTripleTerms(valueSnapshot, subjID, predID, objID);
+		CursorCancellation cancellation = NativeLmdbQuerySource.captureCursorCancellation();
+		RecordIterator terms = valueStore.getTripleTerms(valueSnapshot, subjID, predID, objID, cancellation);
 		return new LmdbTripleTermIterator(terms, valueStore, valueSnapshot);
 	}
 
