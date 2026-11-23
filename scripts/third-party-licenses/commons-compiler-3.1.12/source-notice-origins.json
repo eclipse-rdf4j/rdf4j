@@ -1,0 +1,856 @@
+{
+  "sourceArchive": "https://repo.maven.apache.org/maven2/org/codehaus/janino/commons-compiler/3.1.12/commons-compiler-3.1.12-sources.jar",
+  "archiveSha256": "894638a7d9d056dc07abf1390169fb8f515dbb74fda66447424c4a921d21eb11",
+  "blocks": [
+    {
+      "commentSha256": "247ea99a46d80095b7a28d226b270c0e17123d4303b892666d4bc439b76dc758",
+      "sources": [
+        {
+          "entry": "org/codehaus/commons/compiler/AbstractCompiler.java",
+          "sourceSha256": "9fdb655af0abb98cd7dfc6abe522ea8d3e13e26506e50f343bf1a109cd898d23",
+          "startByte": 2,
+          "endByteExclusive": 1636,
+          "startLine": 2,
+          "endLine": 24
+        },
+        {
+          "entry": "org/codehaus/commons/compiler/ICompiler.java",
+          "sourceSha256": "a179f0f6445f75aa3d2754b50427affe5429c2325662eb148e0434498be98bb6",
+          "startByte": 2,
+          "endByteExclusive": 1636,
+          "startLine": 2,
+          "endLine": 24
+        },
+        {
+          "entry": "org/codehaus/commons/compiler/IMultiCookable.java",
+          "sourceSha256": "f40b9068becc516e313eaf69f7b29a77ed6fb80fa060d92ec5eb33735ffe55b3",
+          "startByte": 2,
+          "endByteExclusive": 1636,
+          "startLine": 2,
+          "endLine": 24
+        },
+        {
+          "entry": "org/codehaus/commons/compiler/io/InputStreams.java",
+          "sourceSha256": "812b6f3b582ddfd40a0bbab5d21db2267a524d1e432c5c154c1ce6bc4f675065",
+          "startByte": 2,
+          "endByteExclusive": 1636,
+          "startLine": 2,
+          "endLine": 24
+        },
+        {
+          "entry": "org/codehaus/commons/compiler/io/package-info.java",
+          "sourceSha256": "6dd8e0525582dbea35a4b109df413b15a345a984620bec56454d9263069fa884",
+          "startByte": 2,
+          "endByteExclusive": 1636,
+          "startLine": 2,
+          "endLine": 24
+        },
+        {
+          "entry": "org/codehaus/commons/compiler/java8/java/util/function/Consumers.java",
+          "sourceSha256": "e212734b3d44c3f10c1b42efeda63d48e6dcc40b846e0a19137d23413c4a9caf",
+          "startByte": 2,
+          "endByteExclusive": 1636,
+          "startLine": 2,
+          "endLine": 24
+        },
+        {
+          "entry": "org/codehaus/commons/compiler/java8/java/util/function/package-info.java",
+          "sourceSha256": "d01237b184ccd0fffbb5d16fc1cf76322ffba47e02a89bc05944af20957ca3fe",
+          "startByte": 2,
+          "endByteExclusive": 1636,
+          "startLine": 2,
+          "endLine": 24
+        },
+        {
+          "entry": "org/codehaus/commons/compiler/java8/java/util/package-info.java",
+          "sourceSha256": "ea13163ff839b348d381a17eefe4dac8f4cccc9a40701c8069d1082ce301a04c",
+          "startByte": 2,
+          "endByteExclusive": 1636,
+          "startLine": 2,
+          "endLine": 24
+        },
+        {
+          "entry": "org/codehaus/commons/compiler/java8/java/util/stream/package-info.java",
+          "sourceSha256": "efdc883001f87a0b9ffd3d2a055f6089c7eba23b9f8e2934f3103727e312804c",
+          "startByte": 2,
+          "endByteExclusive": 1636,
+          "startLine": 2,
+          "endLine": 24
+        },
+        {
+          "entry": "org/codehaus/commons/compiler/lang/ClassLoaders.java",
+          "sourceSha256": "629492c55d2b6926c32b8c923a433c785e42b30ae07204073e2576cbc5ab278d",
+          "startByte": 2,
+          "endByteExclusive": 1636,
+          "startLine": 2,
+          "endLine": 24
+        },
+        {
+          "entry": "org/codehaus/commons/compiler/lang/package-info.java",
+          "sourceSha256": "d058ece968074cef0b3b393776b14562ebb804d9a540bd97afc95f965766d9e7",
+          "startByte": 2,
+          "endByteExclusive": 1636,
+          "startLine": 2,
+          "endLine": 24
+        },
+        {
+          "entry": "org/codehaus/commons/compiler/MultiCookable.java",
+          "sourceSha256": "23639d6536f76dd336cbf15b43dc159cacf9321238cc134445767dd446776b53",
+          "startByte": 2,
+          "endByteExclusive": 1636,
+          "startLine": 2,
+          "endLine": 24
+        },
+        {
+          "entry": "org/codehaus/commons/compiler/samples/CompilerDemo.java",
+          "sourceSha256": "3ac3b9ac5c8157c992a6a17aa7b6dbaf9a13ca6d2d7d8a26f68b93487c429e3b",
+          "startByte": 2,
+          "endByteExclusive": 1636,
+          "startLine": 2,
+          "endLine": 24
+        },
+        {
+          "entry": "org/codehaus/commons/compiler/util/iterator/Iterables.java",
+          "sourceSha256": "b3afc222242ef9243a1ac3fc3a340b92dd5461c0df7b8600f983669e54d4e782",
+          "startByte": 2,
+          "endByteExclusive": 1636,
+          "startLine": 2,
+          "endLine": 24
+        },
+        {
+          "entry": "org/codehaus/commons/compiler/util/iterator/package-info.java",
+          "sourceSha256": "c2777e40030eb41ef56016b547a0217df24e7d2951d15a6ab7f8934ffe9b4848",
+          "startByte": 2,
+          "endByteExclusive": 1636,
+          "startLine": 2,
+          "endLine": 24
+        },
+        {
+          "entry": "org/codehaus/commons/compiler/util/Numbers.java",
+          "sourceSha256": "9ca47a2393c87791200a88d527d6c1d1d5f6dfe14dd50445904931e1fa7d44f4",
+          "startByte": 2,
+          "endByteExclusive": 1636,
+          "startLine": 2,
+          "endLine": 24
+        },
+        {
+          "entry": "org/codehaus/commons/compiler/util/Predicate.java",
+          "sourceSha256": "7dd73fa343257ac148e63ca6ec1eae43ea573731c011334bf2e68a56f9aa45c8",
+          "startByte": 2,
+          "endByteExclusive": 1636,
+          "startLine": 2,
+          "endLine": 24
+        },
+        {
+          "entry": "org/codehaus/commons/compiler/util/reflect/ApiLog.java",
+          "sourceSha256": "4b6deb41d4ec04bc219f03cdc4706c4480faa9206c0b8f0c21bf12fe8d06845e",
+          "startByte": 2,
+          "endByteExclusive": 1636,
+          "startLine": 2,
+          "endLine": 24
+        },
+        {
+          "entry": "org/codehaus/commons/compiler/util/reflect/Classes.java",
+          "sourceSha256": "a230aaf698fdd78e3ee304529c4233ce9a8d439328dc7a19fe9a045b30c74c63",
+          "startByte": 2,
+          "endByteExclusive": 1636,
+          "startLine": 2,
+          "endLine": 24
+        },
+        {
+          "entry": "org/codehaus/commons/compiler/util/reflect/Methods.java",
+          "sourceSha256": "91912accebd8101cffc94e622becbef7d9d3454b1bdf52d0ded8ab01083ee1c3",
+          "startByte": 2,
+          "endByteExclusive": 1636,
+          "startLine": 2,
+          "endLine": 24
+        },
+        {
+          "entry": "org/codehaus/commons/compiler/util/reflect/NoException.java",
+          "sourceSha256": "10f57702d877624fd95f3b030b91368003ed4bf17db5e4bf52812786ff7da653",
+          "startByte": 2,
+          "endByteExclusive": 1636,
+          "startLine": 2,
+          "endLine": 24
+        },
+        {
+          "entry": "org/codehaus/commons/compiler/util/reflect/package-info.java",
+          "sourceSha256": "0c42f36d1349b05d0bd1aef4ac4818920f49e633b777f4f945ee6b49869a0ba5",
+          "startByte": 2,
+          "endByteExclusive": 1636,
+          "startLine": 2,
+          "endLine": 24
+        },
+        {
+          "entry": "org/codehaus/commons/compiler/util/reflect/Proxies.java",
+          "sourceSha256": "042c1acd9c1facabaa5e34a0cb98f60e9ad59e129a2ef529dafcefb98d96c12d",
+          "startByte": 2,
+          "endByteExclusive": 1636,
+          "startLine": 2,
+          "endLine": 24
+        },
+        {
+          "entry": "org/codehaus/commons/compiler/util/resource/ListableResourceFinder.java",
+          "sourceSha256": "5c32f0abb2f24ba32a72dc983e25cf1b458378239a20b956571708e592308c20",
+          "startByte": 2,
+          "endByteExclusive": 1636,
+          "startLine": 2,
+          "endLine": 24
+        },
+        {
+          "entry": "org/codehaus/commons/compiler/util/resource/LocatableResource.java",
+          "sourceSha256": "1b771ca59df5e1b7106f27769c33c673aa76dbb33c050908e47035b8ebc08aa6",
+          "startByte": 2,
+          "endByteExclusive": 1636,
+          "startLine": 2,
+          "endLine": 24
+        },
+        {
+          "entry": "org/codehaus/commons/compiler/util/resource/package-info.java",
+          "sourceSha256": "2445035d84d5786980f533e0eb867ec2d4770f4100bb217ede7da2ef2e73b6ff",
+          "startByte": 2,
+          "endByteExclusive": 1636,
+          "startLine": 2,
+          "endLine": 24
+        },
+        {
+          "entry": "org/codehaus/commons/compiler/util/resource/ResourceFinders.java",
+          "sourceSha256": "293209f60f45adf5e2a01a659d268857f7e6f8b28a05c5ac12e1eb5c59e8a88b",
+          "startByte": 2,
+          "endByteExclusive": 1636,
+          "startLine": 2,
+          "endLine": 24
+        },
+        {
+          "entry": "org/codehaus/commons/compiler/util/StringUtil.java",
+          "sourceSha256": "19d26a39abd477f4054bf772e8444f51d7c33c7cd833d946a7d82c65f2c430fb",
+          "startByte": 2,
+          "endByteExclusive": 1636,
+          "startLine": 2,
+          "endLine": 24
+        }
+      ]
+    },
+    {
+      "commentSha256": "eb043231fdf24763a405a63fc453be71a84edebd2c44654a1571c94bbdd57094",
+      "sources": [
+        {
+          "entry": "org/codehaus/commons/compiler/AbstractCompilerFactory.java",
+          "sourceSha256": "922818e0b014e999b426445d5111c5121752f199a6ccb22b56b6c413062007b6",
+          "startByte": 2,
+          "endByteExclusive": 1636,
+          "startLine": 2,
+          "endLine": 24
+        }
+      ]
+    },
+    {
+      "commentSha256": "a542b3ff9439891b490c9b38a908566f6bb83cd35914371d84bdfa18907aac93",
+      "sources": [
+        {
+          "entry": "org/codehaus/commons/compiler/AbstractJavaSourceClassLoader.java",
+          "sourceSha256": "c52695a33d77cf5d0cc840521b288c07b105b1e5005cf169c9a17ee273416be8",
+          "startByte": 2,
+          "endByteExclusive": 1641,
+          "startLine": 2,
+          "endLine": 24
+        },
+        {
+          "entry": "org/codehaus/commons/compiler/CompileException.java",
+          "sourceSha256": "1ca3db3945a8d76181eeb14598e76bac01a1bb352b353efb1b1dc035d406eafb",
+          "startByte": 2,
+          "endByteExclusive": 1641,
+          "startLine": 2,
+          "endLine": 24
+        },
+        {
+          "entry": "org/codehaus/commons/compiler/CompilerFactoryFactory.java",
+          "sourceSha256": "9419747e8be878e7764de4c0f78fbb76aae865dbac8533817627db542a180daf",
+          "startByte": 2,
+          "endByteExclusive": 1641,
+          "startLine": 2,
+          "endLine": 24
+        },
+        {
+          "entry": "org/codehaus/commons/compiler/Cookable.java",
+          "sourceSha256": "c468739dea5157116a2f21255ae2fabd6556137da9dd04b15c26386515080d1b",
+          "startByte": 2,
+          "endByteExclusive": 1641,
+          "startLine": 2,
+          "endLine": 24
+        },
+        {
+          "entry": "org/codehaus/commons/compiler/ErrorHandler.java",
+          "sourceSha256": "29727b2d4ca03306cf9e5eca73e4f951a1cd77cbfab4ab93f3c6404d577e75fc",
+          "startByte": 2,
+          "endByteExclusive": 1641,
+          "startLine": 2,
+          "endLine": 24
+        },
+        {
+          "entry": "org/codehaus/commons/compiler/IClassBodyEvaluator.java",
+          "sourceSha256": "331f0d0f11429967aa43f58cc908e150155fd148c1b6d0a673139f087f2a068f",
+          "startByte": 2,
+          "endByteExclusive": 1641,
+          "startLine": 2,
+          "endLine": 24
+        },
+        {
+          "entry": "org/codehaus/commons/compiler/ICompilerFactory.java",
+          "sourceSha256": "feae07c242f79ff383a64f5a8c15bdcc9213f8c443d584195ed78c64168c901f",
+          "startByte": 2,
+          "endByteExclusive": 1641,
+          "startLine": 2,
+          "endLine": 24
+        },
+        {
+          "entry": "org/codehaus/commons/compiler/ICookable.java",
+          "sourceSha256": "a6a1e3ba3997957ca813b02ee88ad2121912c1aebcb95edeecfe0aaeb0937e52",
+          "startByte": 2,
+          "endByteExclusive": 1641,
+          "startLine": 2,
+          "endLine": 24
+        },
+        {
+          "entry": "org/codehaus/commons/compiler/IExpressionEvaluator.java",
+          "sourceSha256": "606e7019447df321c757d7c3d2cafefd74ea030ef0d2173f233ad1f00d40871e",
+          "startByte": 2,
+          "endByteExclusive": 1641,
+          "startLine": 2,
+          "endLine": 24
+        },
+        {
+          "entry": "org/codehaus/commons/compiler/InternalCompilerException.java",
+          "sourceSha256": "11866bef643046defe0754d255cf62adae93f66671d4207de7c47b6e1a82930b",
+          "startByte": 2,
+          "endByteExclusive": 1641,
+          "startLine": 2,
+          "endLine": 24
+        },
+        {
+          "entry": "org/codehaus/commons/compiler/IScriptEvaluator.java",
+          "sourceSha256": "0409c8fb69dc77388c06583c2595dd894094c034463ce0eb453b6b43eeb71feb",
+          "startByte": 2,
+          "endByteExclusive": 1641,
+          "startLine": 2,
+          "endLine": 24
+        },
+        {
+          "entry": "org/codehaus/commons/compiler/ISimpleCompiler.java",
+          "sourceSha256": "f4c8987e24822121dba8de086f4d89b41925856c871454c4d5d02a1aecc15c06",
+          "startByte": 2,
+          "endByteExclusive": 1641,
+          "startLine": 2,
+          "endLine": 24
+        },
+        {
+          "entry": "org/codehaus/commons/compiler/LocatedException.java",
+          "sourceSha256": "78a7dcddf5f84d36c39361a5b70f24eafc79be7b9a9f3c39d0e17358e637316d",
+          "startByte": 2,
+          "endByteExclusive": 1641,
+          "startLine": 2,
+          "endLine": 24
+        },
+        {
+          "entry": "org/codehaus/commons/compiler/Location.java",
+          "sourceSha256": "79bbad576ed6461dd5827036a97d3a034b75cebfebc31b5c7203de1f927251ee",
+          "startByte": 2,
+          "endByteExclusive": 1641,
+          "startLine": 2,
+          "endLine": 24
+        },
+        {
+          "entry": "org/codehaus/commons/compiler/package-info.java",
+          "sourceSha256": "2566973f83a605a48d3d4954edcd8962b36f0d87e2729ceb506c96d4fba8a95c",
+          "startByte": 2,
+          "endByteExclusive": 1641,
+          "startLine": 2,
+          "endLine": 24
+        },
+        {
+          "entry": "org/codehaus/commons/compiler/samples/ClassBodyDemo.java",
+          "sourceSha256": "724edff810030b93dc443a37d68cf1d6fddd83678bbc70e624ba28b23fc46c2b",
+          "startByte": 2,
+          "endByteExclusive": 1641,
+          "startLine": 2,
+          "endLine": 24
+        },
+        {
+          "entry": "org/codehaus/commons/compiler/samples/DemoBase.java",
+          "sourceSha256": "0ae2b3cedc8a83067ed2dd0ded1abaadbeefd0bf1e1057900d498543423e715a",
+          "startByte": 2,
+          "endByteExclusive": 1641,
+          "startLine": 2,
+          "endLine": 24
+        },
+        {
+          "entry": "org/codehaus/commons/compiler/samples/ExpressionDemo.java",
+          "sourceSha256": "c26ad363e1576886c8516b1c76467ac09282673db8f3b0639a66706c71ac07a9",
+          "startByte": 2,
+          "endByteExclusive": 1641,
+          "startLine": 2,
+          "endLine": 24
+        },
+        {
+          "entry": "org/codehaus/commons/compiler/samples/ScriptDemo.java",
+          "sourceSha256": "b944b30ecb1f4cccd20251b109f1ff28c5060e3e193db1892b7960d7f70112ce",
+          "startByte": 2,
+          "endByteExclusive": 1641,
+          "startLine": 2,
+          "endLine": 24
+        },
+        {
+          "entry": "org/codehaus/commons/compiler/samples/ShippingCost.java",
+          "sourceSha256": "12e03745daa20cdcda21a9dabe8c4d77972599233c1579dc9fead916a9bd0635",
+          "startByte": 2,
+          "endByteExclusive": 1641,
+          "startLine": 2,
+          "endLine": 24
+        },
+        {
+          "entry": "org/codehaus/commons/compiler/util/Benchmark.java",
+          "sourceSha256": "9c31eabe10a5f07cc744df531a6b8f9eafc29f0f3df577f0e31a301b9e33f9ae",
+          "startByte": 2,
+          "endByteExclusive": 1641,
+          "startLine": 2,
+          "endLine": 24
+        },
+        {
+          "entry": "org/codehaus/commons/compiler/util/iterator/DirectoryIterator.java",
+          "sourceSha256": "bdf0b1a8fcf4e5a9ffb7f1ba0ada8727033d6f36f49f9037a176cf76ce532a4c",
+          "startByte": 2,
+          "endByteExclusive": 1641,
+          "startLine": 2,
+          "endLine": 24
+        },
+        {
+          "entry": "org/codehaus/commons/compiler/util/iterator/EnumerationIterator.java",
+          "sourceSha256": "9528db6d8554ffbd09fbd1bc02aa7f064659a8649bc3bcc709ef59e6a2c907a7",
+          "startByte": 2,
+          "endByteExclusive": 1641,
+          "startLine": 2,
+          "endLine": 24
+        },
+        {
+          "entry": "org/codehaus/commons/compiler/util/iterator/FilterListIterator.java",
+          "sourceSha256": "e4b357daa38423f9842a961994d7b368effb269422345f5b0722007e39efe72d",
+          "startByte": 2,
+          "endByteExclusive": 1641,
+          "startLine": 2,
+          "endLine": 24
+        },
+        {
+          "entry": "org/codehaus/commons/compiler/util/iterator/IteratorCollection.java",
+          "sourceSha256": "6ccb3b111ec9a94b20153b4eccdaae96b801963ce29d4aea2905dcd26ce5f1a1",
+          "startByte": 2,
+          "endByteExclusive": 1641,
+          "startLine": 2,
+          "endLine": 24
+        },
+        {
+          "entry": "org/codehaus/commons/compiler/util/iterator/MultiDimensionalIterator.java",
+          "sourceSha256": "f1e7aac241fb0157392172769bcaeb6c825baedf359f1c9a8fd6563b41d4e920",
+          "startByte": 2,
+          "endByteExclusive": 1641,
+          "startLine": 2,
+          "endLine": 24
+        },
+        {
+          "entry": "org/codehaus/commons/compiler/util/iterator/MultiIterator.java",
+          "sourceSha256": "42a92868b7867510b0bf185cfb0c169c4b25e72f36d8871086697a96cc13d5bf",
+          "startByte": 2,
+          "endByteExclusive": 1641,
+          "startLine": 2,
+          "endLine": 24
+        },
+        {
+          "entry": "org/codehaus/commons/compiler/util/iterator/ProducerIterator.java",
+          "sourceSha256": "3f94b8290e1a9b9438ea410511b0d6d939a949ca456c0297125308e70cde95e9",
+          "startByte": 2,
+          "endByteExclusive": 1641,
+          "startLine": 2,
+          "endLine": 24
+        },
+        {
+          "entry": "org/codehaus/commons/compiler/util/iterator/ReverseListIterator.java",
+          "sourceSha256": "7ff1f7d51c473b4999f60809e468aa5c3a5c652049195142e663c79c5cf1d730",
+          "startByte": 2,
+          "endByteExclusive": 1641,
+          "startLine": 2,
+          "endLine": 24
+        },
+        {
+          "entry": "org/codehaus/commons/compiler/util/iterator/TransformingIterator.java",
+          "sourceSha256": "fe5800be36ee2ef297010f82baf76ddf7cccafd7531a881f849d74b3de1add95",
+          "startByte": 2,
+          "endByteExclusive": 1641,
+          "startLine": 2,
+          "endLine": 24
+        },
+        {
+          "entry": "org/codehaus/commons/compiler/util/iterator/TraversingIterator.java",
+          "sourceSha256": "18e75683985f00674e90fa126646b9fe9c9ea9b83ba83f8922462ee066293d78",
+          "startByte": 2,
+          "endByteExclusive": 1641,
+          "startLine": 2,
+          "endLine": 24
+        },
+        {
+          "entry": "org/codehaus/commons/compiler/util/iterator/UniterableElementException.java",
+          "sourceSha256": "d51d6b9915aefbd96a6723f169b27ad97d84000b4003b7ce697b5893d143b171",
+          "startByte": 2,
+          "endByteExclusive": 1641,
+          "startLine": 2,
+          "endLine": 24
+        },
+        {
+          "entry": "org/codehaus/commons/compiler/util/Producer.java",
+          "sourceSha256": "3f25423ca5149f6a173d373296f407735fcf901e90f924fe98e55c60a5e2ba66",
+          "startByte": 2,
+          "endByteExclusive": 1641,
+          "startLine": 2,
+          "endLine": 24
+        },
+        {
+          "entry": "org/codehaus/commons/compiler/util/reflect/ByteArrayClassLoader.java",
+          "sourceSha256": "b6164faa586a841caa420c8d1a0cffe89d94e461b1c768c0c1da17ebcae65a25",
+          "startByte": 2,
+          "endByteExclusive": 1641,
+          "startLine": 2,
+          "endLine": 24
+        },
+        {
+          "entry": "org/codehaus/commons/compiler/util/resource/DirectoryResourceCreator.java",
+          "sourceSha256": "4148ff4c86afb1691bc05fd983596b398e0f6f3c7b69da73102600f6d37ddefa",
+          "startByte": 2,
+          "endByteExclusive": 1641,
+          "startLine": 2,
+          "endLine": 24
+        },
+        {
+          "entry": "org/codehaus/commons/compiler/util/resource/DirectoryResourceFinder.java",
+          "sourceSha256": "3f38f2879ee0be39e10db9eb1b2013ee11a80108248e6ccf257e29a4de6bf07e",
+          "startByte": 2,
+          "endByteExclusive": 1641,
+          "startLine": 2,
+          "endLine": 24
+        },
+        {
+          "entry": "org/codehaus/commons/compiler/util/resource/FileResource.java",
+          "sourceSha256": "a087b8aecae85d687bded510adc64a68cd6c7ee11a9e8c9cb8eacdc6bad0218a",
+          "startByte": 2,
+          "endByteExclusive": 1641,
+          "startLine": 2,
+          "endLine": 24
+        },
+        {
+          "entry": "org/codehaus/commons/compiler/util/resource/FileResourceCreator.java",
+          "sourceSha256": "7c697c7149276db74aef9fc8a50df59c5f9fe19d17522b8fd7f8f3cdafd28446",
+          "startByte": 2,
+          "endByteExclusive": 1641,
+          "startLine": 2,
+          "endLine": 24
+        },
+        {
+          "entry": "org/codehaus/commons/compiler/util/resource/FileResourceFinder.java",
+          "sourceSha256": "267a7421988e7c62c1c9eddf6592dc417315d84cbd2924dfcac3025da0d9d6d3",
+          "startByte": 2,
+          "endByteExclusive": 1641,
+          "startLine": 2,
+          "endLine": 24
+        },
+        {
+          "entry": "org/codehaus/commons/compiler/util/resource/JarDirectoriesResourceFinder.java",
+          "sourceSha256": "63ebc1ec33be05ada1356646351e93390dd7405a5cc38069dccd5988543ca3a3",
+          "startByte": 2,
+          "endByteExclusive": 1641,
+          "startLine": 2,
+          "endLine": 24
+        },
+        {
+          "entry": "org/codehaus/commons/compiler/util/resource/LazyMultiResourceFinder.java",
+          "sourceSha256": "8588c29240f7ab75cfc8935080833654caa214041acbc0614f26b2a8e390f391",
+          "startByte": 2,
+          "endByteExclusive": 1641,
+          "startLine": 2,
+          "endLine": 24
+        },
+        {
+          "entry": "org/codehaus/commons/compiler/util/resource/MapResourceCreator.java",
+          "sourceSha256": "66e3af30a2f8d13b575e7166a1116407928bfe6cfdedcc63b0a9db782a8b1967",
+          "startByte": 2,
+          "endByteExclusive": 1641,
+          "startLine": 2,
+          "endLine": 24
+        },
+        {
+          "entry": "org/codehaus/commons/compiler/util/resource/MapResourceFinder.java",
+          "sourceSha256": "0847f66c3f3d52fee20d888123cc91ef2488c8e5f9c557b355c75f7bcb2593f5",
+          "startByte": 2,
+          "endByteExclusive": 1641,
+          "startLine": 2,
+          "endLine": 24
+        },
+        {
+          "entry": "org/codehaus/commons/compiler/util/resource/MultiResourceFinder.java",
+          "sourceSha256": "c39dab72b49e8395d5fe9fb824cb56f7334443efd0c9ef28d417bc032826681d",
+          "startByte": 2,
+          "endByteExclusive": 1641,
+          "startLine": 2,
+          "endLine": 24
+        },
+        {
+          "entry": "org/codehaus/commons/compiler/util/resource/PathResourceFinder.java",
+          "sourceSha256": "b4dbcc767ce4e0cf0ec8c0480d797e89ab7f0ca99a41d71ddf940e35b7ed33ad",
+          "startByte": 2,
+          "endByteExclusive": 1641,
+          "startLine": 2,
+          "endLine": 24
+        },
+        {
+          "entry": "org/codehaus/commons/compiler/util/resource/Resource.java",
+          "sourceSha256": "61e2f87bcc5cf0b747bd4dc97aad6e8488ee0f003bb6e5db8292fda6e692c75b",
+          "startByte": 2,
+          "endByteExclusive": 1641,
+          "startLine": 2,
+          "endLine": 24
+        },
+        {
+          "entry": "org/codehaus/commons/compiler/util/resource/ResourceCreator.java",
+          "sourceSha256": "6270500c58e4b2d10437018703121e0d7502fb9d4df4944befecb6be782f66ef",
+          "startByte": 2,
+          "endByteExclusive": 1641,
+          "startLine": 2,
+          "endLine": 24
+        },
+        {
+          "entry": "org/codehaus/commons/compiler/util/resource/ResourceFinder.java",
+          "sourceSha256": "c8f079c5c958c6649cdf19c264cba9e797e872ffd2b06b24ee468093be2d50d8",
+          "startByte": 2,
+          "endByteExclusive": 1641,
+          "startLine": 2,
+          "endLine": 24
+        },
+        {
+          "entry": "org/codehaus/commons/compiler/util/resource/ZipFileResourceFinder.java",
+          "sourceSha256": "97e64bf4cb26aca64deb22c228932d7ae8ee16a862ceb549f039721d3a032add",
+          "startByte": 2,
+          "endByteExclusive": 1641,
+          "startLine": 2,
+          "endLine": 24
+        },
+        {
+          "entry": "org/codehaus/commons/compiler/util/ResourceFinderClassLoader.java",
+          "sourceSha256": "33ea74b878eac11a12b1ac697d59a884118d4633a8684b3567b1600192f7855a",
+          "startByte": 2,
+          "endByteExclusive": 1641,
+          "startLine": 2,
+          "endLine": 24
+        },
+        {
+          "entry": "org/codehaus/commons/compiler/util/StringPattern.java",
+          "sourceSha256": "c22fbd21445bfd27cb69775a882d8e5e7e04299fce339c983f9089831af21861",
+          "startByte": 2,
+          "endByteExclusive": 1641,
+          "startLine": 2,
+          "endLine": 24
+        },
+        {
+          "entry": "org/codehaus/commons/compiler/WarningHandler.java",
+          "sourceSha256": "a0526b31a63de42b2facff29811e7524d88e570790022425755ea8ad74149514",
+          "startByte": 2,
+          "endByteExclusive": 1641,
+          "startLine": 2,
+          "endLine": 24
+        }
+      ]
+    },
+    {
+      "commentSha256": "35ffd41f1f8f5a2f9b621f5db8a29ee1fd6baca2cdbfc4c640a7a1454cc437b4",
+      "sources": [
+        {
+          "entry": "org/codehaus/commons/compiler/io/Readers.java",
+          "sourceSha256": "c66a9295e65b590079270ace3250443f085962090c73f6bbbd2615b4b5dd4084",
+          "startByte": 2,
+          "endByteExclusive": 1642,
+          "startLine": 2,
+          "endLine": 24
+        }
+      ]
+    },
+    {
+      "commentSha256": "fb9c93e2d252ee1e8e1b897bcb89bf6989c55872f19c21a7e8ceb90e6ef4a950",
+      "sources": [
+        {
+          "entry": "org/codehaus/commons/compiler/java8/java/util/function/Consumer.java",
+          "sourceSha256": "aab02a06fbd7b74604ae793d28dc0fa72933765bcab5961b2cea4f2442280033",
+          "startByte": 2,
+          "endByteExclusive": 1636,
+          "startLine": 2,
+          "endLine": 24
+        },
+        {
+          "entry": "org/codehaus/commons/compiler/java8/java/util/Optional.java",
+          "sourceSha256": "8dcc1a6c1060fe79764888dc62f14bce9a377b3f32016faf0a183e01e7b32151",
+          "startByte": 2,
+          "endByteExclusive": 1636,
+          "startLine": 2,
+          "endLine": 24
+        },
+        {
+          "entry": "org/codehaus/commons/compiler/java8/java/util/stream/Stream.java",
+          "sourceSha256": "c3b4288fe63d65fd804880d4ad092f9173878cad8e842378f16316ae8e8fab06",
+          "startByte": 2,
+          "endByteExclusive": 1636,
+          "startLine": 2,
+          "endLine": 24
+        },
+        {
+          "entry": "org/codehaus/commons/compiler/java9/java/lang/module/ModuleFinder.java",
+          "sourceSha256": "657c00b06532143c263a7909ada05967eb8150ed32bfaa7fccf882e381f66b64",
+          "startByte": 2,
+          "endByteExclusive": 1636,
+          "startLine": 2,
+          "endLine": 24
+        },
+        {
+          "entry": "org/codehaus/commons/compiler/java9/java/lang/module/ModuleReader.java",
+          "sourceSha256": "aeb1e4fb22ec3786cabeb151d0a6480a95fa00e2aa8bf154828e9df4e80c0447",
+          "startByte": 2,
+          "endByteExclusive": 1636,
+          "startLine": 2,
+          "endLine": 24
+        },
+        {
+          "entry": "org/codehaus/commons/compiler/java9/java/lang/module/ModuleReference.java",
+          "sourceSha256": "a198c43ece2bb77410ced2ef9d359e08bf75d42d530a0daca6211a6e7bf5e6ec",
+          "startByte": 2,
+          "endByteExclusive": 1636,
+          "startLine": 2,
+          "endLine": 24
+        },
+        {
+          "entry": "org/codehaus/commons/compiler/util/Disassembler.java",
+          "sourceSha256": "c1f946652c482cbae5736402b4324693eed307018c1b0f7e3c09eecabc8e22d5",
+          "startByte": 2,
+          "endByteExclusive": 1636,
+          "startLine": 2,
+          "endLine": 24
+        },
+        {
+          "entry": "org/codehaus/commons/compiler/util/package-info.java",
+          "sourceSha256": "b66868c66a2ab30165768dd65394cada663fd6f97209600e6ff8cbd67173ffc6",
+          "startByte": 2,
+          "endByteExclusive": 1636,
+          "startLine": 2,
+          "endLine": 24
+        }
+      ]
+    },
+    {
+      "commentSha256": "ea178975e9f49547eb62770b765b77b069e83ab09ada21d567d4073e02bfbd05",
+      "sources": [
+        {
+          "entry": "org/codehaus/commons/compiler/java9/java/lang/module/package-info.java",
+          "sourceSha256": "0dd7c86279599c1a3999fa0fc4e4e50364c76bc1fc7ce6815844c378d60ccaab",
+          "startByte": 2,
+          "endByteExclusive": 1636,
+          "startLine": 2,
+          "endLine": 24
+        },
+        {
+          "entry": "org/codehaus/commons/compiler/samples/package-info.java",
+          "sourceSha256": "c21ae6f770d2f232018d8d411feec9d8dbfddc19a087f980ed4d4f4b98bae39f",
+          "startByte": 2,
+          "endByteExclusive": 1636,
+          "startLine": 2,
+          "endLine": 24
+        }
+      ]
+    },
+    {
+      "commentSha256": "d684e82e02df69f6aa1436d9d76c2dd7e3374dee2caee577300e747e1380acb1",
+      "sources": [
+        {
+          "entry": "org/codehaus/commons/compiler/Sandbox.java",
+          "sourceSha256": "2861606e7cefa7e76c158919fbb9f57d427872be07e55a6da27a8a7ccd420e17",
+          "startByte": 2,
+          "endByteExclusive": 1641,
+          "startLine": 2,
+          "endLine": 24
+        }
+      ]
+    },
+    {
+      "commentSha256": "60650d4caed23c2f6b01f5cf09dce1c7ceadf5d876151bdbf5409cd0f13c4361",
+      "sources": [
+        {
+          "entry": "org/codehaus/commons/compiler/util/LineAndColumnTracker.java",
+          "sourceSha256": "e62dd757c9ad39a5595bada7e5aa70963719a9ad2d47e94780bbfa13c7602439",
+          "startByte": 2,
+          "endByteExclusive": 1641,
+          "startLine": 2,
+          "endLine": 24
+        },
+        {
+          "entry": "org/codehaus/commons/compiler/util/resource/StringResource.java",
+          "sourceSha256": "f38d1ec92d0def44ee9ecf7729859e77bd66a19d73a2bd381e37b1b82cb26783",
+          "startByte": 2,
+          "endByteExclusive": 1641,
+          "startLine": 2,
+          "endLine": 24
+        }
+      ]
+    },
+    {
+      "commentSha256": "51d93addde54c614be8f3af353cccb0f4a7dc5b4823385e901a429f56fb11ae4",
+      "sources": [
+        {
+          "entry": "org/codehaus/commons/compiler/util/SystemProperties.java",
+          "sourceSha256": "3bf165e8f172a632912ec184ccc4e42151ec662e088ecf5636352cbfd7b277ca",
+          "startByte": 2,
+          "endByteExclusive": 1636,
+          "startLine": 2,
+          "endLine": 24
+        }
+      ]
+    },
+    {
+      "commentSha256": "ea55c8006385444dbad2cf5a6cd6bae3436b4a7992c1817f016e14e4963bf576",
+      "sources": [
+        {
+          "entry": "org/codehaus/commons/nullanalysis/NotNull.java",
+          "sourceSha256": "588f4a4130da908bb382e9e4170e019b3d8fc0a4f2520aca36577dec4820fd71",
+          "startByte": 2,
+          "endByteExclusive": 1636,
+          "startLine": 2,
+          "endLine": 24
+        },
+        {
+          "entry": "org/codehaus/commons/nullanalysis/NotNullByDefault.java",
+          "sourceSha256": "4d1e870f5530d31ac1b091d096f0aead3a60805394c033b017dfb6fff5e7cb7b",
+          "startByte": 2,
+          "endByteExclusive": 1636,
+          "startLine": 2,
+          "endLine": 24
+        },
+        {
+          "entry": "org/codehaus/commons/nullanalysis/Nullable.java",
+          "sourceSha256": "897a291360e8ebbb5041b70ac97421016ad57662736455defaf6670d2c45c78e",
+          "startByte": 2,
+          "endByteExclusive": 1636,
+          "startLine": 2,
+          "endLine": 24
+        },
+        {
+          "entry": "org/codehaus/commons/nullanalysis/package-info.java",
+          "sourceSha256": "7e7baa0e8dc8e80f0499008edff3306636e46201d2809ab43caedc96902a95c1",
+          "startByte": 2,
+          "endByteExclusive": 1636,
+          "startLine": 2,
+          "endLine": 24
+        }
+      ]
+    }
+  ]
+}

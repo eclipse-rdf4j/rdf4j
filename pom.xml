@@ -570,6 +570,8 @@
 										<exclude>/work/**</exclude>
 										<exclude>**/site/themes/**</exclude>
 										<exclude>**/.*/**</exclude>
+										<!-- Preserve byte-for-byte upstream notice evidence referenced by SHA-256. -->
+										<exclude>scripts/third-party-licenses/**/*.xml</exclude>
 										<exclude>**/dependency-reduced-pom.xml</exclude>
 										<exclude>**/dependency-reduced-pom-*.xml</exclude>
 									</excludes>
@@ -1256,6 +1258,20 @@
 		</dependencies>
 	</dependencyManagement>
 	<build>
+		<resources>
+			<resource>
+				<directory>${project.basedir}/src/main/resources</directory>
+			</resource>
+			<resource>
+				<directory>${maven.multiModuleProjectDirectory}</directory>
+				<targetPath>META-INF</targetPath>
+				<filtering>false</filtering>
+				<includes>
+					<include>LICENSE</include>
+					<include>NOTICE.md</include>
+				</includes>
+			</resource>
+		</resources>
 		<pluginManagement>
 			<plugins>
 				<plugin>
@@ -1448,6 +1464,17 @@
 					<version>3.5.1</version>
 					<configuration>
 						<failOnMissingWebXml>false</failOnMissingWebXml>
+						<webResources>
+							<resource>
+								<directory>${maven.multiModuleProjectDirectory}</directory>
+								<targetPath>META-INF</targetPath>
+								<filtering>false</filtering>
+								<includes>
+									<include>LICENSE</include>
+									<include>NOTICE.md</include>
+								</includes>
+							</resource>
+						</webResources>
 						<archive>
 							<manifestEntries>
 								<Implementation-Title>${project.name}</Implementation-Title>

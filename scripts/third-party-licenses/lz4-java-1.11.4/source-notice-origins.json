@@ -1,0 +1,404 @@
+{
+  "sourceArchive": "https://repo.maven.apache.org/maven2/at/yawk/lz4/lz4-java/1.11.4/lz4-java-1.11.4-sources.jar",
+  "archiveSha256": "e32b2809f070317520b6ebdbca730b8bf2c24b900265c702cd18f3f0bdd532b7",
+  "blocks": [
+    {
+      "commentSha256": "2bec14ff5b5c623f9cbb8338390f9492fb4024d400593c4c7aec1bc3d0e7329c",
+      "sources": [
+        {
+          "entry": "net/jpountz/lz4/AbstractLZ4JNIFastResetCompressor.java",
+          "sourceSha256": "88bdb88ae42e2ef1931bd755cb8bef4e0775d701e51b357deec1a375f5514c61",
+          "startByte": 26,
+          "endByteExclusive": 652,
+          "startLine": 3,
+          "endLine": 17
+        },
+        {
+          "entry": "net/jpountz/lz4/LZ4BlockInputStream.java",
+          "sourceSha256": "0a2ea524238a6b00818f4e7e8ddefc12c17e0ed1a74dd16067fd3bf487b0a16c",
+          "startByte": 26,
+          "endByteExclusive": 652,
+          "startLine": 3,
+          "endLine": 17
+        },
+        {
+          "entry": "net/jpountz/lz4/LZ4BlockOutputStream.java",
+          "sourceSha256": "386b6d519980f94cff942eda667737d4312d8bbf47018ea4eaa6793630dce7d2",
+          "startByte": 26,
+          "endByteExclusive": 652,
+          "startLine": 3,
+          "endLine": 17
+        },
+        {
+          "entry": "net/jpountz/lz4/LZ4ByteBufferUtils.java",
+          "sourceSha256": "e3826c5d9d2ee8aa4373a2ff947102c34593716b2c1550e213321aa1ec13ac8e",
+          "startByte": 26,
+          "endByteExclusive": 652,
+          "startLine": 3,
+          "endLine": 17
+        },
+        {
+          "entry": "net/jpountz/lz4/LZ4Compressor.java",
+          "sourceSha256": "f361ab11debc8e035e644d27a86655a6dd37b08c90630c5c1db478a6559feafd",
+          "startByte": 26,
+          "endByteExclusive": 652,
+          "startLine": 3,
+          "endLine": 17
+        },
+        {
+          "entry": "net/jpountz/lz4/LZ4Constants.java",
+          "sourceSha256": "9e6bac8bddc8ed3c3b543109efc04e4ef3d2a1ba8185bcdbfdea6392a9ed1446",
+          "startByte": 26,
+          "endByteExclusive": 652,
+          "startLine": 3,
+          "endLine": 17
+        },
+        {
+          "entry": "net/jpountz/lz4/LZ4Decompressor.java",
+          "sourceSha256": "f8144c2d04d85c4bcb66c5f4b3ba74611772b02ff8ed002f9da013a54a53863b",
+          "startByte": 26,
+          "endByteExclusive": 652,
+          "startLine": 3,
+          "endLine": 17
+        },
+        {
+          "entry": "net/jpountz/lz4/LZ4Exception.java",
+          "sourceSha256": "1b42c0a27576f773aadf9ffb3b2b10f64684bd0375de0543989a8545ccd82cfb",
+          "startByte": 26,
+          "endByteExclusive": 652,
+          "startLine": 3,
+          "endLine": 17
+        },
+        {
+          "entry": "net/jpountz/lz4/LZ4Factory.java",
+          "sourceSha256": "d993baab662eb99999f2a2be4ecc820dc8a0f9d2fdbda1525b05e7ddf835853e",
+          "startByte": 26,
+          "endByteExclusive": 652,
+          "startLine": 3,
+          "endLine": 17
+        },
+        {
+          "entry": "net/jpountz/lz4/LZ4FastDecompressor.java",
+          "sourceSha256": "f1d323f940afd4f29192ba92bca6c7799b0739b1e9b38001801a513a3f2a7b01",
+          "startByte": 55,
+          "endByteExclusive": 681,
+          "startLine": 5,
+          "endLine": 19
+        },
+        {
+          "entry": "net/jpountz/lz4/LZ4HCJNICompressor.java",
+          "sourceSha256": "95470edf92bfe8588a19aafc263ade5d4e4ea0893ffcbd319cef55e5913d4f50",
+          "startByte": 26,
+          "endByteExclusive": 652,
+          "startLine": 3,
+          "endLine": 17
+        },
+        {
+          "entry": "net/jpountz/lz4/LZ4JNI.java",
+          "sourceSha256": "f8760fd7550fa8f9f2f678e6a06aa4db19fe02f4d3183341997c9043961e2fe8",
+          "startByte": 26,
+          "endByteExclusive": 652,
+          "startLine": 3,
+          "endLine": 17
+        },
+        {
+          "entry": "net/jpountz/lz4/LZ4JNICompressor.java",
+          "sourceSha256": "858ecdd9f721222330f9073dac317dd762b412d38f7af86711737d98f1296f2c",
+          "startByte": 26,
+          "endByteExclusive": 652,
+          "startLine": 3,
+          "endLine": 17
+        },
+        {
+          "entry": "net/jpountz/lz4/LZ4JNIFastDecompressor.java",
+          "sourceSha256": "0c80a179751576abb82ca451e0d499922e9acce15c57d1c0a39306ab7c6406b2",
+          "startByte": 26,
+          "endByteExclusive": 652,
+          "startLine": 3,
+          "endLine": 17
+        },
+        {
+          "entry": "net/jpountz/lz4/LZ4JNIFastResetCompressor.java",
+          "sourceSha256": "2cf69512bc27a078b7cf76036175138c5ac8068159d86ca8e37d85adef0f01ea",
+          "startByte": 26,
+          "endByteExclusive": 652,
+          "startLine": 3,
+          "endLine": 17
+        },
+        {
+          "entry": "net/jpountz/lz4/LZ4JNIHCFastResetCompressor.java",
+          "sourceSha256": "78f844d5be907ecda7f48c7505bdfd612a68ca755081e0a5f7791c357a955a6c",
+          "startByte": 26,
+          "endByteExclusive": 652,
+          "startLine": 3,
+          "endLine": 17
+        },
+        {
+          "entry": "net/jpountz/lz4/LZ4JNISafeDecompressor.java",
+          "sourceSha256": "360829e7e8e4c8b05658d84b06f3a0e4353cf764c6095b8212657a7d5f2c7176",
+          "startByte": 26,
+          "endByteExclusive": 652,
+          "startLine": 3,
+          "endLine": 17
+        },
+        {
+          "entry": "net/jpountz/lz4/LZ4SafeDecompressor.java",
+          "sourceSha256": "62114e6518e227b19f0dd37ce8c7a872fdc8180601904a9a01d69db273134dff",
+          "startByte": 26,
+          "endByteExclusive": 652,
+          "startLine": 3,
+          "endLine": 17
+        },
+        {
+          "entry": "net/jpountz/lz4/LZ4SafeUtils.java",
+          "sourceSha256": "901593879c9229b16244cccc2a0f49a607c3081ab32ffab2573853b0d5855f3a",
+          "startByte": 26,
+          "endByteExclusive": 652,
+          "startLine": 3,
+          "endLine": 17
+        },
+        {
+          "entry": "net/jpountz/lz4/LZ4UnknownSizeDecompressor.java",
+          "sourceSha256": "559537824ec07db95d47105ada2237b080db3dd776fe8b701fb5a92bf121d78d",
+          "startByte": 26,
+          "endByteExclusive": 652,
+          "startLine": 3,
+          "endLine": 17
+        },
+        {
+          "entry": "net/jpountz/lz4/LZ4Utils.java",
+          "sourceSha256": "6b8ee1868dd40a24218e6de509e175217f9ad176b4722659bb6321f6483f334d",
+          "startByte": 26,
+          "endByteExclusive": 652,
+          "startLine": 3,
+          "endLine": 17
+        },
+        {
+          "entry": "net/jpountz/util/ByteBufferUtils.java",
+          "sourceSha256": "833d51f89b3143b6cf1530e68f4ed0eb487826edf46be8aafb33f87a96b7a438",
+          "startByte": 27,
+          "endByteExclusive": 653,
+          "startLine": 3,
+          "endLine": 17
+        },
+        {
+          "entry": "net/jpountz/util/Native.java",
+          "sourceSha256": "45ea81b803a2d2cf025da0f66452c4da2537c7286b8f44e3045e0072f7dc3f04",
+          "startByte": 27,
+          "endByteExclusive": 653,
+          "startLine": 3,
+          "endLine": 17
+        },
+        {
+          "entry": "net/jpountz/util/SafeUtils.java",
+          "sourceSha256": "d74b411944a01a9e8b7ee920be2fe8ad8e592bffdcec4e615bafac2d908a10a4",
+          "startByte": 27,
+          "endByteExclusive": 653,
+          "startLine": 3,
+          "endLine": 17
+        },
+        {
+          "entry": "net/jpountz/util/Utils.java",
+          "sourceSha256": "5bb788577f2c9e5545a00a322632b77c0a306bcda3bc4a70ad11c90cc98f75d7",
+          "startByte": 27,
+          "endByteExclusive": 653,
+          "startLine": 3,
+          "endLine": 17
+        },
+        {
+          "entry": "net/jpountz/xxhash/AbstractStreamingXXHash32Java.java",
+          "sourceSha256": "f6488caf484cc1cb8d7ea4824042c5169621c45ed938aa751d51c91e99b763cd",
+          "startByte": 29,
+          "endByteExclusive": 655,
+          "startLine": 3,
+          "endLine": 17
+        },
+        {
+          "entry": "net/jpountz/xxhash/StreamingXXHash32.java",
+          "sourceSha256": "c661bdd0e24d4cc4a19dc95466fdf0ef287ecbc3b16bbb292cbbe85e7144e3d6",
+          "startByte": 87,
+          "endByteExclusive": 713,
+          "startLine": 6,
+          "endLine": 20
+        },
+        {
+          "entry": "net/jpountz/xxhash/StreamingXXHash32JNI.java",
+          "sourceSha256": "8780e2737c78eb4c78834324ebeef94a3921cd7c8f86f42c8dcbaa36900f44a6",
+          "startByte": 83,
+          "endByteExclusive": 709,
+          "startLine": 5,
+          "endLine": 19
+        },
+        {
+          "entry": "net/jpountz/xxhash/XXHash32.java",
+          "sourceSha256": "fc03dfb3c6a77c9ad3ac70267a631b8b22e2a8e5243da90b61d3b2c833680b9c",
+          "startByte": 58,
+          "endByteExclusive": 684,
+          "startLine": 5,
+          "endLine": 19
+        },
+        {
+          "entry": "net/jpountz/xxhash/XXHash32JNI.java",
+          "sourceSha256": "79401d792c10c3be74f6b901243b11b91cbe76041f049dae6a0f9fcdea6a968e",
+          "startByte": 29,
+          "endByteExclusive": 655,
+          "startLine": 3,
+          "endLine": 17
+        },
+        {
+          "entry": "net/jpountz/xxhash/XXHashConstants.java",
+          "sourceSha256": "b6f1b52c6ee68d537abec5e6a1f7ef981524be7f958d5a597fb0cf4c903ad75d",
+          "startByte": 29,
+          "endByteExclusive": 655,
+          "startLine": 3,
+          "endLine": 17
+        },
+        {
+          "entry": "net/jpountz/xxhash/XXHashFactory.java",
+          "sourceSha256": "d3382d9e943472ad5b36d5d323c67fd3b041e9fffac705036f5d93163afbfe00",
+          "startByte": 29,
+          "endByteExclusive": 655,
+          "startLine": 3,
+          "endLine": 17
+        },
+        {
+          "entry": "net/jpountz/xxhash/XXHashJNI.java",
+          "sourceSha256": "edd967d17918c76a1dc9d6885ef2bbd4770f25e5e52135754c5f6ff06a0ed526",
+          "startByte": 29,
+          "endByteExclusive": 655,
+          "startLine": 3,
+          "endLine": 17
+        },
+        {
+          "entry": "net/jpountz/lz4/LZ4UnsafeUtils.java",
+          "sourceSha256": "a2446060172c2d02c3d65057516da27c840502a505d4031635cab41b80ffbeb8",
+          "startByte": 26,
+          "endByteExclusive": 652,
+          "startLine": 3,
+          "endLine": 17
+        },
+        {
+          "entry": "net/jpountz/util/UnsafeUtils.java",
+          "sourceSha256": "0c8a2d58a0ea998b574438dd4d962432e295e5c9ea1a07c3b8052501abf5a601",
+          "startByte": 27,
+          "endByteExclusive": 653,
+          "startLine": 3,
+          "endLine": 17
+        }
+      ]
+    },
+    {
+      "commentSha256": "ea76444bb4f016089e52fb48ad4b246a9866e9dcd18537bdd99fe39112bda7ba",
+      "sources": [
+        {
+          "entry": "net/jpountz/lz4/LZ4CompressorWithLength.java",
+          "sourceSha256": "931cc0e5984596fef356408ec7450a80e814c0de2e8195f070302d7ed39fd722",
+          "startByte": 26,
+          "endByteExclusive": 650,
+          "startLine": 3,
+          "endLine": 17
+        },
+        {
+          "entry": "net/jpountz/lz4/LZ4DecompressorWithLength.java",
+          "sourceSha256": "c790b50084c1ba776880fb497beac931deb35a10905a53b1701446ed3f282489",
+          "startByte": 26,
+          "endByteExclusive": 650,
+          "startLine": 3,
+          "endLine": 17
+        }
+      ]
+    },
+    {
+      "commentSha256": "c4e7d72a3b5b39ced8cfc7c07e014b6c62c9178bbe2896f56f6c388f356b66c8",
+      "sources": [
+        {
+          "entry": "net/jpountz/lz4/LZ4FrameInputStream.java",
+          "sourceSha256": "1d7170a8067b3fe0270292a576eb40fe48821771b756b49e0e884d8a2578ab78",
+          "startByte": 26,
+          "endByteExclusive": 670,
+          "startLine": 3,
+          "endLine": 17
+        },
+        {
+          "entry": "net/jpountz/lz4/LZ4FrameOutputStream.java",
+          "sourceSha256": "687d1506c81f648fea758f65f717c9c3cc0d73cb5a7c970664a742fc1d7fb9e8",
+          "startByte": 26,
+          "endByteExclusive": 670,
+          "startLine": 3,
+          "endLine": 17
+        }
+      ]
+    },
+    {
+      "commentSha256": "312b603068fd3cbff9e903789b996e1659c8115d07ec13cfd5824a7afdf4da42",
+      "sources": [
+        {
+          "entry": "net/jpountz/lz4/LZ4FrameInputStream.java",
+          "sourceSha256": "1d7170a8067b3fe0270292a576eb40fe48821771b756b49e0e884d8a2578ab78",
+          "startByte": 1022,
+          "endByteExclusive": 1383,
+          "startLine": 32,
+          "endLine": 43
+        }
+      ]
+    },
+    {
+      "commentSha256": "74b076cdc65c4bea156b57cf9ee928a12d5c11b20a4ef789d080b94be1bba392",
+      "sources": [
+        {
+          "entry": "net/jpountz/lz4/LZ4FrameOutputStream.java",
+          "sourceSha256": "687d1506c81f648fea758f65f717c9c3cc0d73cb5a7c970664a742fc1d7fb9e8",
+          "startByte": 1074,
+          "endByteExclusive": 1504,
+          "startLine": 34,
+          "endLine": 46
+        }
+      ]
+    },
+    {
+      "commentSha256": "b1b88aa291c5898f7cd0814fc00573c9121ac2536e7f90a69df4a2e24cb9f5b4",
+      "sources": [
+        {
+          "entry": "net/jpountz/xxhash/AbstractStreamingXXHash64Java.java",
+          "sourceSha256": "98ba7c820b7342d78ba63cb6b253149d6f7f30c89e8a764bb3114c940f499576",
+          "startByte": 29,
+          "endByteExclusive": 660,
+          "startLine": 3,
+          "endLine": 17
+        },
+        {
+          "entry": "net/jpountz/xxhash/StreamingXXHash64.java",
+          "sourceSha256": "68ddf60de2bb0d3eb74e4886f03e328e2d58b42347258c7f4f4e94c2a37e4452",
+          "startByte": 87,
+          "endByteExclusive": 718,
+          "startLine": 6,
+          "endLine": 20
+        },
+        {
+          "entry": "net/jpountz/xxhash/StreamingXXHash64JNI.java",
+          "sourceSha256": "c23a5377b7574e7572927132ed977c3eed538a03c40b12dd9ef78c51f278c8bf",
+          "startByte": 83,
+          "endByteExclusive": 714,
+          "startLine": 5,
+          "endLine": 19
+        },
+        {
+          "entry": "net/jpountz/xxhash/XXHash64.java",
+          "sourceSha256": "0a19ecfe63c4eb5943c947136636abce1b33642f9d12aca54f0e2a3dd012ec62",
+          "startByte": 58,
+          "endByteExclusive": 689,
+          "startLine": 5,
+          "endLine": 19
+        },
+        {
+          "entry": "net/jpountz/xxhash/XXHash64JNI.java",
+          "sourceSha256": "f346083e30d665279c47e05f9dc72fe624af7eecb1cdf7f03d527c9da458063a",
+          "startByte": 29,
+          "endByteExclusive": 660,
+          "startLine": 3,
+          "endLine": 17
+        }
+      ]
+    }
+  ]
+}

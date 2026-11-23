@@ -1,0 +1,3706 @@
+{
+  "sourceArchive": "https://repo.maven.apache.org/maven2/ch/qos/logback/logback-core/1.6.6/logback-core-1.6.6-sources.jar",
+  "archiveSha256": "2da2e76aa79f98770ffba58311b495e0e710b8bc6f46504249d039262668fe96",
+  "blocks": [
+    {
+      "commentSha256": "74c60577512e8e081926c3a2bdc83bdb2f5babc2695517652fe84a6a4af60dac",
+      "sources": [
+        {
+          "entry": "ch/qos/logback/core/Appender.java",
+          "sourceSha256": "c39acdefbb228a4ebb730eb5c66d38b5e5b3b4d816c8453d53479aaa1eabbd5b",
+          "startByte": 0,
+          "endByteExclusive": 483,
+          "startLine": 1,
+          "endLine": 13
+        },
+        {
+          "entry": "ch/qos/logback/core/AppenderBase.java",
+          "sourceSha256": "1e09a7039790ad78741f37ca94f7c4e5ad07ac440108085cb91f1a3d9be602c8",
+          "startByte": 0,
+          "endByteExclusive": 483,
+          "startLine": 1,
+          "endLine": 13
+        },
+        {
+          "entry": "ch/qos/logback/core/AsyncAppenderBase.java",
+          "sourceSha256": "3415c176931f305e6b541653e86b1e222021c0824b1fae5d79537ca35de19385",
+          "startByte": 0,
+          "endByteExclusive": 483,
+          "startLine": 1,
+          "endLine": 13
+        },
+        {
+          "entry": "ch/qos/logback/core/BasicStatusManager.java",
+          "sourceSha256": "9d54ba1eb0dfac9aeb70afa4e3477e5d7331f572ed4bac9753e57456b13b834d",
+          "startByte": 0,
+          "endByteExclusive": 483,
+          "startLine": 1,
+          "endLine": 13
+        },
+        {
+          "entry": "ch/qos/logback/core/ConsoleAppender.java",
+          "sourceSha256": "4d5910c9f92bc0681ce0a620c8d3592fec6b5a191f2ff85e7acaec2cfb70a099",
+          "startByte": 0,
+          "endByteExclusive": 483,
+          "startLine": 1,
+          "endLine": 13
+        },
+        {
+          "entry": "ch/qos/logback/core/Context.java",
+          "sourceSha256": "6d01f7ae24fb453609324732c724fe3053ecc0e53a723ab4883f226a48b7e55d",
+          "startByte": 0,
+          "endByteExclusive": 483,
+          "startLine": 1,
+          "endLine": 13
+        },
+        {
+          "entry": "ch/qos/logback/core/ContextBase.java",
+          "sourceSha256": "ac9805d0763888014d733bf276126e795e975f300edcdee8565c74aea7153dd3",
+          "startByte": 0,
+          "endByteExclusive": 483,
+          "startLine": 1,
+          "endLine": 13
+        },
+        {
+          "entry": "ch/qos/logback/core/CoreConstants.java",
+          "sourceSha256": "ad994338c785221999c35027f640693c36844ea9e72df8afcdc4d8de4918def7",
+          "startByte": 0,
+          "endByteExclusive": 483,
+          "startLine": 1,
+          "endLine": 13
+        },
+        {
+          "entry": "ch/qos/logback/core/FileAppender.java",
+          "sourceSha256": "88674da5102eda22f5d6ddb0f0333946cc2cf205afe7a5e04671162739491d43",
+          "startByte": 0,
+          "endByteExclusive": 483,
+          "startLine": 1,
+          "endLine": 13
+        },
+        {
+          "entry": "ch/qos/logback/core/JansiConsoleAppender.java",
+          "sourceSha256": "ed2a84b396399d1b7d76f93a3e784bc7f286eea9cea8565158c7e83e9f337f37",
+          "startByte": 0,
+          "endByteExclusive": 483,
+          "startLine": 1,
+          "endLine": 13
+        },
+        {
+          "entry": "ch/qos/logback/core/Layout.java",
+          "sourceSha256": "c82141bebeda9b8e2c70d4f1311d8146487144dc633e1b81547676f9a52b7cbf",
+          "startByte": 0,
+          "endByteExclusive": 483,
+          "startLine": 1,
+          "endLine": 13
+        },
+        {
+          "entry": "ch/qos/logback/core/LayoutBase.java",
+          "sourceSha256": "da1ba5c4cdc8518dce182cd8c0a975a561f9c48e9dbb88e2d0730179832fdbea",
+          "startByte": 0,
+          "endByteExclusive": 483,
+          "startLine": 1,
+          "endLine": 13
+        },
+        {
+          "entry": "ch/qos/logback/core/LifeCycleManager.java",
+          "sourceSha256": "bbb7b3e52df7768e2b9ee27b4846c785117593927f58190ad1e91de8f70cd56f",
+          "startByte": 0,
+          "endByteExclusive": 483,
+          "startLine": 1,
+          "endLine": 13
+        },
+        {
+          "entry": "ch/qos/logback/core/LogbackException.java",
+          "sourceSha256": "e2e2fba770334ae1daa6b824d2a4feac4e87d5b94d1fbc31d14e9f32e1fdda3d",
+          "startByte": 0,
+          "endByteExclusive": 483,
+          "startLine": 1,
+          "endLine": 13
+        },
+        {
+          "entry": "ch/qos/logback/core/OutputStreamAppender.java",
+          "sourceSha256": "53be3bdefc3f902bf7ab33d7d4ab5479b2a3329f058b8ec9c93830410ff459c6",
+          "startByte": 0,
+          "endByteExclusive": 483,
+          "startLine": 1,
+          "endLine": 13
+        },
+        {
+          "entry": "ch/qos/logback/core/PropertyDefinerBase.java",
+          "sourceSha256": "4acb92694ae7585248c7a1e36246fec5a9a0436c4f94aefcf8779ff831425def",
+          "startByte": 0,
+          "endByteExclusive": 483,
+          "startLine": 1,
+          "endLine": 13
+        },
+        {
+          "entry": "ch/qos/logback/core/UnsynchronizedAppenderBase.java",
+          "sourceSha256": "0670cd29e10a5439f4360227a131bf4a725286ba432624085511e8e2123113d6",
+          "startByte": 0,
+          "endByteExclusive": 483,
+          "startLine": 1,
+          "endLine": 13
+        },
+        {
+          "entry": "ch/qos/logback/core/boolex/EvaluationException.java",
+          "sourceSha256": "e101ed5851f4cea0aeda5566f5ba530ba6566a006ff913525335ee50e7b9676d",
+          "startByte": 0,
+          "endByteExclusive": 483,
+          "startLine": 1,
+          "endLine": 13
+        },
+        {
+          "entry": "ch/qos/logback/core/boolex/EventEvaluator.java",
+          "sourceSha256": "0c5740924c6c61f5f5ea96210c8ed15cb2d4464b2020b7e69bb2ed76d4d78739",
+          "startByte": 0,
+          "endByteExclusive": 483,
+          "startLine": 1,
+          "endLine": 13
+        },
+        {
+          "entry": "ch/qos/logback/core/boolex/EventEvaluatorBase.java",
+          "sourceSha256": "9b0aeeaa6de3e1f38fe2f8e667457c0426de314a43564db5e69d753c25cc222f",
+          "startByte": 0,
+          "endByteExclusive": 483,
+          "startLine": 1,
+          "endLine": 13
+        },
+        {
+          "entry": "ch/qos/logback/core/boolex/ExpressionPropertyCondition.java",
+          "sourceSha256": "bb094600e03a0c6d32205e147fb8f1e66a4bd91a8fb8343d73b056f197741b1f",
+          "startByte": 0,
+          "endByteExclusive": 483,
+          "startLine": 1,
+          "endLine": 13
+        },
+        {
+          "entry": "ch/qos/logback/core/boolex/IsPropertyDefinedCondition.java",
+          "sourceSha256": "24530a06abe2e8731128307e9c2624a06c4c800f17bdd45a3865737649c36721",
+          "startByte": 0,
+          "endByteExclusive": 483,
+          "startLine": 1,
+          "endLine": 13
+        },
+        {
+          "entry": "ch/qos/logback/core/boolex/IsPropertyNullCondition.java",
+          "sourceSha256": "840c3df020be4145632f57afea0162c97f6475dea9629b485c6fb957370d0ede",
+          "startByte": 0,
+          "endByteExclusive": 483,
+          "startLine": 1,
+          "endLine": 13
+        },
+        {
+          "entry": "ch/qos/logback/core/boolex/Matcher.java",
+          "sourceSha256": "323f471bde0c37c5a8a85f9e45a507eff46bd31f3578f3ac404801acaa992993",
+          "startByte": 0,
+          "endByteExclusive": 483,
+          "startLine": 1,
+          "endLine": 13
+        },
+        {
+          "entry": "ch/qos/logback/core/boolex/PropertyCondition.java",
+          "sourceSha256": "25f9940a1b40903a04498dc63cb273f0b6f2715303fbd6ddc159a3ddc24a8ba4",
+          "startByte": 0,
+          "endByteExclusive": 483,
+          "startLine": 1,
+          "endLine": 13
+        },
+        {
+          "entry": "ch/qos/logback/core/boolex/PropertyConditionBase.java",
+          "sourceSha256": "e35b6f3c8d9ea2e8c8495c3a39f9c971de3d1e8d08e078ff43d7e8194cddc795",
+          "startByte": 0,
+          "endByteExclusive": 483,
+          "startLine": 1,
+          "endLine": 13
+        },
+        {
+          "entry": "ch/qos/logback/core/boolex/PropertyEqualityCondition.java",
+          "sourceSha256": "7639e3aeae5c43181fd9ed1f25767ae1f8db82d4c22b8e92d919f974aabb9912",
+          "startByte": 0,
+          "endByteExclusive": 483,
+          "startLine": 1,
+          "endLine": 13
+        },
+        {
+          "entry": "ch/qos/logback/core/encoder/ByteArrayUtil.java",
+          "sourceSha256": "55ae76e854c28c693f49a88d2f9146bab649a9f048ce9ad6a2ac108d78559f51",
+          "startByte": 0,
+          "endByteExclusive": 483,
+          "startLine": 1,
+          "endLine": 13
+        },
+        {
+          "entry": "ch/qos/logback/core/encoder/EchoEncoder.java",
+          "sourceSha256": "b30fd1f4191b1c0bc53b33f2e54266ea089d9a1a7d6228bde3b580a4976ead6b",
+          "startByte": 0,
+          "endByteExclusive": 483,
+          "startLine": 1,
+          "endLine": 13
+        },
+        {
+          "entry": "ch/qos/logback/core/encoder/Encoder.java",
+          "sourceSha256": "1a83659baffecf9e874639cab0aa3b5322c7b28bb19d74d56874839f085a9c6c",
+          "startByte": 0,
+          "endByteExclusive": 483,
+          "startLine": 1,
+          "endLine": 13
+        },
+        {
+          "entry": "ch/qos/logback/core/encoder/EncoderBase.java",
+          "sourceSha256": "686d2cb2e9a70151482c38f40f36c6584891b573a410ceae0245ac9f2e158e67",
+          "startByte": 0,
+          "endByteExclusive": 483,
+          "startLine": 1,
+          "endLine": 13
+        },
+        {
+          "entry": "ch/qos/logback/core/encoder/JsonEscapeUtil.java",
+          "sourceSha256": "bfabc4a826fedaaf51832ec452d733ceb00988df21fdd42f378b85eac460b27b",
+          "startByte": 0,
+          "endByteExclusive": 483,
+          "startLine": 1,
+          "endLine": 13
+        },
+        {
+          "entry": "ch/qos/logback/core/encoder/LayoutWrappingEncoder.java",
+          "sourceSha256": "fa9c1d48a81a24e523d2de9fdc950835d9cd39bb0b8e15fc4d09bf67377126dc",
+          "startByte": 0,
+          "endByteExclusive": 483,
+          "startLine": 1,
+          "endLine": 13
+        },
+        {
+          "entry": "ch/qos/logback/core/encoder/NonClosableInputStream.java",
+          "sourceSha256": "331a9c1198d36368271078a90ee6d02c62e5039addd96dc0019db5f308c43125",
+          "startByte": 0,
+          "endByteExclusive": 483,
+          "startLine": 1,
+          "endLine": 13
+        },
+        {
+          "entry": "ch/qos/logback/core/filter/AbstractMatcherFilter.java",
+          "sourceSha256": "cd3f146b6998f2039eba8df7d60ad864e304896b3a7edd125ea56cc83c0e043d",
+          "startByte": 0,
+          "endByteExclusive": 483,
+          "startLine": 1,
+          "endLine": 13
+        },
+        {
+          "entry": "ch/qos/logback/core/filter/EvaluatorFilter.java",
+          "sourceSha256": "155d750ca5b0b7d51951162e5592a16ee96c591978c6a8005aaa448e272d7ea5",
+          "startByte": 0,
+          "endByteExclusive": 483,
+          "startLine": 1,
+          "endLine": 13
+        },
+        {
+          "entry": "ch/qos/logback/core/filter/Filter.java",
+          "sourceSha256": "5c8b2251aca52b5fe0ba3fdd2c2dc3a99bc4d17afe37b782ba2e474908c70bfb",
+          "startByte": 0,
+          "endByteExclusive": 483,
+          "startLine": 1,
+          "endLine": 13
+        },
+        {
+          "entry": "ch/qos/logback/core/helpers/CyclicBuffer.java",
+          "sourceSha256": "6b8d28a3e61646b1604406f2cee68c3ac9e133488179e1e7ec1f23fa83411b08",
+          "startByte": 0,
+          "endByteExclusive": 483,
+          "startLine": 1,
+          "endLine": 13
+        },
+        {
+          "entry": "ch/qos/logback/core/helpers/NOPAppender.java",
+          "sourceSha256": "eea4ab5e7da01d24c7055fe2029921bf6651fa5aa7cc66d4acfb0dfd00a94dfd",
+          "startByte": 0,
+          "endByteExclusive": 483,
+          "startLine": 1,
+          "endLine": 13
+        },
+        {
+          "entry": "ch/qos/logback/core/helpers/ThrowableToStringArray.java",
+          "sourceSha256": "4eebfa0722de3b8d7feb4302ad5d73bfa1ca0dfd1f11348f03d57ef8dbb2243b",
+          "startByte": 0,
+          "endByteExclusive": 483,
+          "startLine": 1,
+          "endLine": 13
+        },
+        {
+          "entry": "ch/qos/logback/core/helpers/Transform.java",
+          "sourceSha256": "a5425c0ede49609ba686824f1eb762cdf1ebbda2d2a4c266febdd9f341b49bc0",
+          "startByte": 0,
+          "endByteExclusive": 483,
+          "startLine": 1,
+          "endLine": 13
+        },
+        {
+          "entry": "ch/qos/logback/core/hook/DefaultShutdownHook.java",
+          "sourceSha256": "0a26a5dddfc9ee10d065eff173a9554ff1b085e0a9cebd7493973c21dea69cd1",
+          "startByte": 0,
+          "endByteExclusive": 483,
+          "startLine": 1,
+          "endLine": 13
+        },
+        {
+          "entry": "ch/qos/logback/core/hook/ShutdownHook.java",
+          "sourceSha256": "e4bf343e263b8f6f68b00357bb6760d96ecd341eba1147e85fff2a6906fd40ac",
+          "startByte": 0,
+          "endByteExclusive": 483,
+          "startLine": 1,
+          "endLine": 13
+        },
+        {
+          "entry": "ch/qos/logback/core/hook/ShutdownHookBase.java",
+          "sourceSha256": "84122179611fcb6fc33ba1709cac7d6f9a570a31a2e5b92906d6cd396395958c",
+          "startByte": 0,
+          "endByteExclusive": 483,
+          "startLine": 1,
+          "endLine": 13
+        },
+        {
+          "entry": "ch/qos/logback/core/html/CssBuilder.java",
+          "sourceSha256": "9b2fa9e3de08071175e815c5f6b6aa4576cb977db7b42f167bf78c9510756d86",
+          "startByte": 0,
+          "endByteExclusive": 483,
+          "startLine": 1,
+          "endLine": 13
+        },
+        {
+          "entry": "ch/qos/logback/core/html/HTMLLayoutBase.java",
+          "sourceSha256": "f1195fa589299c6b88298bbcf8cadb0859357911d8dab45322d1f2280ae6d124",
+          "startByte": 0,
+          "endByteExclusive": 483,
+          "startLine": 1,
+          "endLine": 13
+        },
+        {
+          "entry": "ch/qos/logback/core/html/IThrowableRenderer.java",
+          "sourceSha256": "7839ea7d5206c81a20d6c346f874eeecf17554190872d5b1a146dad009838bfc",
+          "startByte": 0,
+          "endByteExclusive": 483,
+          "startLine": 1,
+          "endLine": 13
+        },
+        {
+          "entry": "ch/qos/logback/core/html/NOPThrowableRenderer.java",
+          "sourceSha256": "b30765c9044807a2da4029645b7c73b56eaa38e6ae7c69d44ce8c79483623639",
+          "startByte": 0,
+          "endByteExclusive": 483,
+          "startLine": 1,
+          "endLine": 13
+        },
+        {
+          "entry": "ch/qos/logback/core/joran/JoranConfiguratorBase.java",
+          "sourceSha256": "aaecbbd5aa3822ea6b8fe31d6d0bcd0042e58b446bac3afef938c1c04dc3be19",
+          "startByte": 0,
+          "endByteExclusive": 483,
+          "startLine": 1,
+          "endLine": 13
+        },
+        {
+          "entry": "ch/qos/logback/core/joran/JoranConstants.java",
+          "sourceSha256": "02996fe234fc88da57754ac602ea9970f06efa49a8c4585dbeabcd2b2b3529f7",
+          "startByte": 0,
+          "endByteExclusive": 483,
+          "startLine": 1,
+          "endLine": 13
+        },
+        {
+          "entry": "ch/qos/logback/core/joran/ModelClassToModelHandlerLinkerBase.java",
+          "sourceSha256": "b8a231dc76b1e3deb8a8e98d354d08fa85d670804ddaa2babb952fa0076fa47a",
+          "startByte": 0,
+          "endByteExclusive": 483,
+          "startLine": 1,
+          "endLine": 13
+        },
+        {
+          "entry": "ch/qos/logback/core/joran/ParamModelHandler.java",
+          "sourceSha256": "f5022e171fea7d2086cf5eb7c0570c8e39617dfafae8377a8050606b4b8152d5",
+          "startByte": 0,
+          "endByteExclusive": 483,
+          "startLine": 1,
+          "endLine": 13
+        },
+        {
+          "entry": "ch/qos/logback/core/joran/action/Action.java",
+          "sourceSha256": "8569a86ded252f89175f9cb5a9cd6c49ea8b90d91cfec373c972466961a78d5e",
+          "startByte": 0,
+          "endByteExclusive": 483,
+          "startLine": 1,
+          "endLine": 13
+        },
+        {
+          "entry": "ch/qos/logback/core/joran/action/ActionUtil.java",
+          "sourceSha256": "0f211f37e14b5b188b6c3248e6617d7908b49718330c012dfffdb591481d6f47",
+          "startByte": 0,
+          "endByteExclusive": 483,
+          "startLine": 1,
+          "endLine": 13
+        },
+        {
+          "entry": "ch/qos/logback/core/joran/action/AppenderAction.java",
+          "sourceSha256": "659c78d6177898624cac4c45f0a0a47202cfa61fbe075475bfce3e0c094f3bad",
+          "startByte": 0,
+          "endByteExclusive": 483,
+          "startLine": 1,
+          "endLine": 13
+        },
+        {
+          "entry": "ch/qos/logback/core/joran/action/AppenderRefAction.java",
+          "sourceSha256": "962bee5c1043b01229c9b94420fcc2c09e3773777baefa35753d882a337147ac",
+          "startByte": 0,
+          "endByteExclusive": 483,
+          "startLine": 1,
+          "endLine": 13
+        },
+        {
+          "entry": "ch/qos/logback/core/joran/action/BaseModelAction.java",
+          "sourceSha256": "21651f5dffce88c9ce12585797609108f8bb62b9c876c411f482db6850653f26",
+          "startByte": 0,
+          "endByteExclusive": 483,
+          "startLine": 1,
+          "endLine": 13
+        },
+        {
+          "entry": "ch/qos/logback/core/joran/action/ContextPropertyAction.java",
+          "sourceSha256": "8ef72a31d8e51f71196aedb50418eb75457018c4e73581bc93343a98e7f72679",
+          "startByte": 0,
+          "endByteExclusive": 483,
+          "startLine": 1,
+          "endLine": 13
+        },
+        {
+          "entry": "ch/qos/logback/core/joran/action/ConversionRuleAction.java",
+          "sourceSha256": "01977ab8e74a12205fff7157ad87c73745a1eabbeec814a811171cd00ec968ec",
+          "startByte": 0,
+          "endByteExclusive": 483,
+          "startLine": 1,
+          "endLine": 13
+        },
+        {
+          "entry": "ch/qos/logback/core/joran/action/DefinePropertyAction.java",
+          "sourceSha256": "2cbafc88b806e9ed426a66c07862bb349ed94f42097a34276b34e40b2c183d4c",
+          "startByte": 0,
+          "endByteExclusive": 483,
+          "startLine": 1,
+          "endLine": 13
+        },
+        {
+          "entry": "ch/qos/logback/core/joran/action/EventEvaluatorAction.java",
+          "sourceSha256": "3edbacf7b926de9e4f2c60f90d8686bc39b093d4299f0561cf5859376a51a7ab",
+          "startByte": 0,
+          "endByteExclusive": 483,
+          "startLine": 1,
+          "endLine": 13
+        },
+        {
+          "entry": "ch/qos/logback/core/joran/action/ImcplicitActionDataForBasicProperty.java",
+          "sourceSha256": "847709a7371b90ca51e23d6a90ccca70e3d825363f2234c2b0ee7e4be5e1d8fe",
+          "startByte": 0,
+          "endByteExclusive": 483,
+          "startLine": 1,
+          "endLine": 13
+        },
+        {
+          "entry": "ch/qos/logback/core/joran/action/ImplicitModelAction.java",
+          "sourceSha256": "a616d936fd54475a30d6b9a3e04aa422be3154caaa957563d8a0f05946543f75",
+          "startByte": 0,
+          "endByteExclusive": 483,
+          "startLine": 1,
+          "endLine": 13
+        },
+        {
+          "entry": "ch/qos/logback/core/joran/action/ImplicitModelData.java",
+          "sourceSha256": "39cb3b2395645d87501cbdf8fc8772b952af1ecbff69c4770649bd355a45c67b",
+          "startByte": 0,
+          "endByteExclusive": 483,
+          "startLine": 1,
+          "endLine": 13
+        },
+        {
+          "entry": "ch/qos/logback/core/joran/action/ImportAction.java",
+          "sourceSha256": "873c4bf6f45058aadee0c8c2824bd73df53709d2f91e616227a101612abf697d",
+          "startByte": 0,
+          "endByteExclusive": 483,
+          "startLine": 1,
+          "endLine": 13
+        },
+        {
+          "entry": "ch/qos/logback/core/joran/action/IncludeAction.java",
+          "sourceSha256": "e023e618dbb15895b5c21cf4de2af15a98cfe553bd7f3d6502afa89b613835d3",
+          "startByte": 0,
+          "endByteExclusive": 483,
+          "startLine": 1,
+          "endLine": 13
+        },
+        {
+          "entry": "ch/qos/logback/core/joran/action/NOPAction.java",
+          "sourceSha256": "6e714599f12ec7a985327948033030e92fa46af30ff60dddfbbff91d6b518771",
+          "startByte": 0,
+          "endByteExclusive": 483,
+          "startLine": 1,
+          "endLine": 13
+        },
+        {
+          "entry": "ch/qos/logback/core/joran/action/NewRuleAction.java",
+          "sourceSha256": "4aa6528dec668d0e0bafa792494373d112630f3103910c3eb923c57872e2deea",
+          "startByte": 0,
+          "endByteExclusive": 483,
+          "startLine": 1,
+          "endLine": 13
+        },
+        {
+          "entry": "ch/qos/logback/core/joran/action/ParamAction.java",
+          "sourceSha256": "b348446604f2e5c63a85c8617aa14dfd2f592fae36297bd468d2e1ea3409bc5d",
+          "startByte": 0,
+          "endByteExclusive": 483,
+          "startLine": 1,
+          "endLine": 13
+        },
+        {
+          "entry": "ch/qos/logback/core/joran/action/PreconditionValidator.java",
+          "sourceSha256": "864d1b0e527402a8de9645ba89477e71f622b57d612e36bd8ac665caffa7ac72",
+          "startByte": 0,
+          "endByteExclusive": 483,
+          "startLine": 1,
+          "endLine": 13
+        },
+        {
+          "entry": "ch/qos/logback/core/joran/action/PropertyAction.java",
+          "sourceSha256": "6c5f214426365be74f3a894e353ebc742d6975fa3c3a86d39387ec0b449e6467",
+          "startByte": 0,
+          "endByteExclusive": 483,
+          "startLine": 1,
+          "endLine": 13
+        },
+        {
+          "entry": "ch/qos/logback/core/joran/action/ResourceAction.java",
+          "sourceSha256": "4b1728510e337bdac02c5b56bc8f8cbdfdad1760288c5fecaf1854081878cf0e",
+          "startByte": 0,
+          "endByteExclusive": 483,
+          "startLine": 1,
+          "endLine": 13
+        },
+        {
+          "entry": "ch/qos/logback/core/joran/action/SequenceNumberGeneratorAction.java",
+          "sourceSha256": "9670d0dfc4c09059db4d117635a174b0a942b821bc3f4fa41ef9e1986edecb01",
+          "startByte": 0,
+          "endByteExclusive": 483,
+          "startLine": 1,
+          "endLine": 13
+        },
+        {
+          "entry": "ch/qos/logback/core/joran/action/SerializeModelAction.java",
+          "sourceSha256": "58775b3c740b987e665dd4427e2befd2e2cd555f347662fc7ff79565a08f0c03",
+          "startByte": 0,
+          "endByteExclusive": 483,
+          "startLine": 1,
+          "endLine": 13
+        },
+        {
+          "entry": "ch/qos/logback/core/joran/action/ShutdownHookAction.java",
+          "sourceSha256": "5ef1b8cd62403f070a55bc95b6522469cace03703a5403266df50b5883d99fe7",
+          "startByte": 0,
+          "endByteExclusive": 483,
+          "startLine": 1,
+          "endLine": 13
+        },
+        {
+          "entry": "ch/qos/logback/core/joran/action/SiftAction.java",
+          "sourceSha256": "444c928a5c64a24a6e97b737462fb4cccf388696a16480a1725a467fe8a9dd14",
+          "startByte": 0,
+          "endByteExclusive": 483,
+          "startLine": 1,
+          "endLine": 13
+        },
+        {
+          "entry": "ch/qos/logback/core/joran/action/StatusListenerAction.java",
+          "sourceSha256": "aec9c8a5744e6c7f647aaf8946b2b80ad1080918330a959399e77d88cd30ec36",
+          "startByte": 0,
+          "endByteExclusive": 483,
+          "startLine": 1,
+          "endLine": 13
+        },
+        {
+          "entry": "ch/qos/logback/core/joran/action/TimestampAction.java",
+          "sourceSha256": "ee814daafae39cfbeb16e49231631b20bc677541e5021252d30a3d5ce19df5d7",
+          "startByte": 0,
+          "endByteExclusive": 483,
+          "startLine": 1,
+          "endLine": 13
+        },
+        {
+          "entry": "ch/qos/logback/core/joran/conditional/ByPropertiesConditionAction.java",
+          "sourceSha256": "8e70d230914ef38eaec1311bb06728fb14c1210d503e439999917cc2c58f8c3b",
+          "startByte": 0,
+          "endByteExclusive": 483,
+          "startLine": 1,
+          "endLine": 13
+        },
+        {
+          "entry": "ch/qos/logback/core/joran/conditional/Condition.java",
+          "sourceSha256": "87b70883b80f206151531c72cdfe5d54309556098f71d6cd4943e0631596d2e9",
+          "startByte": 0,
+          "endByteExclusive": 483,
+          "startLine": 1,
+          "endLine": 13
+        },
+        {
+          "entry": "ch/qos/logback/core/joran/conditional/ElseAction.java",
+          "sourceSha256": "fe0881348755c2c5d91eff4c8c302e8dd1ee8b8713e1c19f11ce17b3c73c5d2e",
+          "startByte": 0,
+          "endByteExclusive": 483,
+          "startLine": 1,
+          "endLine": 13
+        },
+        {
+          "entry": "ch/qos/logback/core/joran/conditional/IfAction.java",
+          "sourceSha256": "07d4a078440c6e2bdcbc89d5802b78b276a618ec9d00c81516af32b3bc93bb1f",
+          "startByte": 0,
+          "endByteExclusive": 483,
+          "startLine": 1,
+          "endLine": 13
+        },
+        {
+          "entry": "ch/qos/logback/core/joran/conditional/PropertyWrapperForScripts.java",
+          "sourceSha256": "fb4785c4b37e8aca4ae07511c8c2e64a6a7c7bbc1dccff2645b5dedcba1a774f",
+          "startByte": 0,
+          "endByteExclusive": 483,
+          "startLine": 1,
+          "endLine": 13
+        },
+        {
+          "entry": "ch/qos/logback/core/joran/conditional/ThenAction.java",
+          "sourceSha256": "f96823bafb636bc90384e9210acd3dbb966342241f3e563193e4f7249ff067e0",
+          "startByte": 0,
+          "endByteExclusive": 483,
+          "startLine": 1,
+          "endLine": 13
+        },
+        {
+          "entry": "ch/qos/logback/core/joran/event/BodyEvent.java",
+          "sourceSha256": "0c677319e3d7d55b772d769224ed9898e826e864d9dd2a369ed2ad4eeb035926",
+          "startByte": 0,
+          "endByteExclusive": 483,
+          "startLine": 1,
+          "endLine": 13
+        },
+        {
+          "entry": "ch/qos/logback/core/joran/event/EndEvent.java",
+          "sourceSha256": "add24555bc5d7bafdb776e6e801b72ea89775e5a4ec620c025078fcd3c8d180a",
+          "startByte": 0,
+          "endByteExclusive": 483,
+          "startLine": 1,
+          "endLine": 13
+        },
+        {
+          "entry": "ch/qos/logback/core/joran/event/SaxEvent.java",
+          "sourceSha256": "74fb247aa3fe9501f46f74f171244ee81c1df62b0024835db39a17ce5c6ddee1",
+          "startByte": 0,
+          "endByteExclusive": 483,
+          "startLine": 1,
+          "endLine": 13
+        },
+        {
+          "entry": "ch/qos/logback/core/joran/event/SaxEventRecorder.java",
+          "sourceSha256": "d67dd155502422d77ea0b7b44d5f75c8733cd3a203852b58c9f76b6d908b56ab",
+          "startByte": 0,
+          "endByteExclusive": 483,
+          "startLine": 1,
+          "endLine": 13
+        },
+        {
+          "entry": "ch/qos/logback/core/joran/event/StartEvent.java",
+          "sourceSha256": "d5734cdbc6191674ff9d857bc354ae83e58883d62f3e685fc4baa2672640d31a",
+          "startByte": 0,
+          "endByteExclusive": 483,
+          "startLine": 1,
+          "endLine": 13
+        },
+        {
+          "entry": "ch/qos/logback/core/joran/sanity/AppenderWithinAppenderSanityChecker.java",
+          "sourceSha256": "53c0c75811a1526d4a97837bd9796791e6a34116940b1dbb805d292770555a95",
+          "startByte": 0,
+          "endByteExclusive": 483,
+          "startLine": 1,
+          "endLine": 13
+        },
+        {
+          "entry": "ch/qos/logback/core/joran/sanity/Pair.java",
+          "sourceSha256": "317648b663ca5812e451b11018355a8bdc90918d8dbbde5f95bbb9d8e572bbf6",
+          "startByte": 0,
+          "endByteExclusive": 483,
+          "startLine": 1,
+          "endLine": 13
+        },
+        {
+          "entry": "ch/qos/logback/core/joran/sanity/SanityChecker.java",
+          "sourceSha256": "2d46b469e7ca2130f5c1dc20f257d997e25ac5716d68fd2cc74056e62aee0840",
+          "startByte": 0,
+          "endByteExclusive": 483,
+          "startLine": 1,
+          "endLine": 13
+        },
+        {
+          "entry": "ch/qos/logback/core/joran/spi/ActionException.java",
+          "sourceSha256": "086e58a896cff846dee1ee0ea08add950f63d1a9ddba6a70212d0d8ca928fefc",
+          "startByte": 0,
+          "endByteExclusive": 483,
+          "startLine": 1,
+          "endLine": 13
+        },
+        {
+          "entry": "ch/qos/logback/core/joran/spi/ConfigurationWatchList.java",
+          "sourceSha256": "47aef1edf99d8c5bbe79b507e8ad8df25f8cd874e3ad60c105d00041b9fa007a",
+          "startByte": 0,
+          "endByteExclusive": 483,
+          "startLine": 1,
+          "endLine": 13
+        },
+        {
+          "entry": "ch/qos/logback/core/joran/spi/ConsoleTarget.java",
+          "sourceSha256": "37252275d293e972de572c1fd1811e8e86c945f1add070c488438df0f129658e",
+          "startByte": 0,
+          "endByteExclusive": 483,
+          "startLine": 1,
+          "endLine": 13
+        },
+        {
+          "entry": "ch/qos/logback/core/joran/spi/DefaultClass.java",
+          "sourceSha256": "def995b30ca8eeabf42024ba55d8d0d2d15f648ad5143c70721c08f2f6b2da91",
+          "startByte": 0,
+          "endByteExclusive": 483,
+          "startLine": 1,
+          "endLine": 13
+        },
+        {
+          "entry": "ch/qos/logback/core/joran/spi/DefaultNestedComponentRegistry.java",
+          "sourceSha256": "7a27a9a11de279d47dbee20000516caf9a25ad2ee10ddc1e1272831d91e0e508",
+          "startByte": 0,
+          "endByteExclusive": 483,
+          "startLine": 1,
+          "endLine": 13
+        },
+        {
+          "entry": "ch/qos/logback/core/joran/spi/ElementPath.java",
+          "sourceSha256": "f61c11b7bc75020b535d011278eff9e1314e3adfed706b4e84de53f8a4378e9a",
+          "startByte": 0,
+          "endByteExclusive": 483,
+          "startLine": 1,
+          "endLine": 13
+        },
+        {
+          "entry": "ch/qos/logback/core/joran/spi/ElementSelector.java",
+          "sourceSha256": "62703b853ad35f2c227bee33be1cdf4d4d77702c7b713107c69ff6c9b6396ca4",
+          "startByte": 0,
+          "endByteExclusive": 483,
+          "startLine": 1,
+          "endLine": 13
+        },
+        {
+          "entry": "ch/qos/logback/core/joran/spi/EventPlayer.java",
+          "sourceSha256": "c5135f35a36c780fffee9d10d2b6cd93658584d23ff067241dfaf9f7bf5f460d",
+          "startByte": 0,
+          "endByteExclusive": 483,
+          "startLine": 1,
+          "endLine": 13
+        },
+        {
+          "entry": "ch/qos/logback/core/joran/spi/HostClassAndPropertyDouble.java",
+          "sourceSha256": "a0307047eaed313a43e36a8ce80074d72a9a8fd3fd5bee992713d09bcd041a38",
+          "startByte": 0,
+          "endByteExclusive": 483,
+          "startLine": 1,
+          "endLine": 13
+        },
+        {
+          "entry": "ch/qos/logback/core/joran/spi/HttpUtil.java",
+          "sourceSha256": "1d7a40715f41bfec14f9ada6ea09af7557471d59ea25986c80f9bd5027a11010",
+          "startByte": 0,
+          "endByteExclusive": 483,
+          "startLine": 1,
+          "endLine": 13
+        },
+        {
+          "entry": "ch/qos/logback/core/joran/spi/JoranException.java",
+          "sourceSha256": "ed1551add59464d18e8a408242349b6a9740697f725db2efa82a6b92ae52ce0c",
+          "startByte": 0,
+          "endByteExclusive": 483,
+          "startLine": 1,
+          "endLine": 13
+        },
+        {
+          "entry": "ch/qos/logback/core/joran/spi/NewRuleProvider.java",
+          "sourceSha256": "4f574233c3c9124834555d77086d54c4a1adc1ac7213dcf253c55a7a62849738",
+          "startByte": 0,
+          "endByteExclusive": 483,
+          "startLine": 1,
+          "endLine": 13
+        },
+        {
+          "entry": "ch/qos/logback/core/joran/spi/NoAutoStart.java",
+          "sourceSha256": "0e14959abe9a837465ce1097c5790a40d461d9743cecbcdd7d10cc98f8da9b58",
+          "startByte": 0,
+          "endByteExclusive": 483,
+          "startLine": 1,
+          "endLine": 13
+        },
+        {
+          "entry": "ch/qos/logback/core/joran/spi/NoAutoStartUtil.java",
+          "sourceSha256": "0019b038b26963fb14b86903247a69061537d7bf2fe93092362849f34846b56b",
+          "startByte": 0,
+          "endByteExclusive": 483,
+          "startLine": 1,
+          "endLine": 13
+        },
+        {
+          "entry": "ch/qos/logback/core/joran/spi/RuleStore.java",
+          "sourceSha256": "bb776ed31275a89eb8f19901a6c64066a12ca22408e3a31a3e822e0491fbcff7",
+          "startByte": 0,
+          "endByteExclusive": 483,
+          "startLine": 1,
+          "endLine": 13
+        },
+        {
+          "entry": "ch/qos/logback/core/joran/spi/SaxEventInterpretationContext.java",
+          "sourceSha256": "1deaffd4feba1eae65a16ba40685235c6fd009d6812f70afca31135ae212993f",
+          "startByte": 0,
+          "endByteExclusive": 483,
+          "startLine": 1,
+          "endLine": 13
+        },
+        {
+          "entry": "ch/qos/logback/core/joran/spi/SaxEventInterpreter.java",
+          "sourceSha256": "8d77eb19b579d1791615756f9b7d25adc9f2a58b125365aa64f5b8f95193df48",
+          "startByte": 0,
+          "endByteExclusive": 483,
+          "startLine": 1,
+          "endLine": 13
+        },
+        {
+          "entry": "ch/qos/logback/core/joran/spi/SimpleRuleStore.java",
+          "sourceSha256": "6355e8a4c76a11666a899bb110115377d66acc711a8f9f3193bdd25cad49b093",
+          "startByte": 0,
+          "endByteExclusive": 483,
+          "startLine": 1,
+          "endLine": 13
+        },
+        {
+          "entry": "ch/qos/logback/core/joran/spi/XMLUtil.java",
+          "sourceSha256": "39e2d3b9df7f3fb7faf9e957143d00fcaef1ca167a786a177a9e427e17b6c136",
+          "startByte": 0,
+          "endByteExclusive": 483,
+          "startLine": 1,
+          "endLine": 13
+        },
+        {
+          "entry": "ch/qos/logback/core/joran/util/AggregationAssessor.java",
+          "sourceSha256": "382c237215e93bf9d50c4ae5aa14c23ddd2b4b98340a3b4c348beb1442482a75",
+          "startByte": 0,
+          "endByteExclusive": 483,
+          "startLine": 1,
+          "endLine": 13
+        },
+        {
+          "entry": "ch/qos/logback/core/joran/util/ConfigurationWatchListUtil.java",
+          "sourceSha256": "873744fa9b885bce3da4a20195a7ff729e5547cc1cd71bc742e676758795c97c",
+          "startByte": 0,
+          "endByteExclusive": 483,
+          "startLine": 1,
+          "endLine": 13
+        },
+        {
+          "entry": "ch/qos/logback/core/joran/util/ParentTag_Tag_Class_Tuple.java",
+          "sourceSha256": "25bc22b397abbfd90b78e211b2fe5a4e38eb89b7996b34e9f70e8abe2a0f45b3",
+          "startByte": 0,
+          "endByteExclusive": 483,
+          "startLine": 1,
+          "endLine": 13
+        },
+        {
+          "entry": "ch/qos/logback/core/joran/util/PropertySetter.java",
+          "sourceSha256": "de5e5d1d5a5fe1eb8f472c1909e314c130d3ea885ad856f8874266fffeb070d1",
+          "startByte": 0,
+          "endByteExclusive": 483,
+          "startLine": 1,
+          "endLine": 13
+        },
+        {
+          "entry": "ch/qos/logback/core/joran/util/StringToObjectConverter.java",
+          "sourceSha256": "bec6b36507d155bba35b46af89c7b6cb0a53bd2172596263c5be8ca95e76463e",
+          "startByte": 0,
+          "endByteExclusive": 483,
+          "startLine": 1,
+          "endLine": 13
+        },
+        {
+          "entry": "ch/qos/logback/core/joran/util/beans/BeanDescription.java",
+          "sourceSha256": "3c468c154169e42737ca43ca12ccc698d031cb2a31d6e06800e07a988ff0d9b8",
+          "startByte": 0,
+          "endByteExclusive": 483,
+          "startLine": 1,
+          "endLine": 13
+        },
+        {
+          "entry": "ch/qos/logback/core/joran/util/beans/BeanDescriptionCache.java",
+          "sourceSha256": "80d6134e0583eb681169ecd47998f26bed1a1ea65b1fe6ad161c5f7bfe3e376c",
+          "startByte": 0,
+          "endByteExclusive": 483,
+          "startLine": 1,
+          "endLine": 13
+        },
+        {
+          "entry": "ch/qos/logback/core/joran/util/beans/BeanDescriptionFactory.java",
+          "sourceSha256": "4a55047d2467063626d63d1d969a7aba95c4713ab62494cdd370daa392f71dec",
+          "startByte": 0,
+          "endByteExclusive": 483,
+          "startLine": 1,
+          "endLine": 13
+        },
+        {
+          "entry": "ch/qos/logback/core/joran/util/beans/BeanUtil.java",
+          "sourceSha256": "5ee39e4a6959f002ade14d8dc07904747cd28e221832c31010d1b58a3896abab",
+          "startByte": 0,
+          "endByteExclusive": 483,
+          "startLine": 1,
+          "endLine": 13
+        },
+        {
+          "entry": "ch/qos/logback/core/layout/EchoLayout.java",
+          "sourceSha256": "52710add30ea6ea127640d95dc70bd67a008a6fefd66a58e614dbab04be2203b",
+          "startByte": 0,
+          "endByteExclusive": 483,
+          "startLine": 1,
+          "endLine": 13
+        },
+        {
+          "entry": "ch/qos/logback/core/model/AppenderModel.java",
+          "sourceSha256": "501b1d379f704865f646e43fbbc5b1e3b8ef6751c4be50ac2406174db65fee49",
+          "startByte": 0,
+          "endByteExclusive": 483,
+          "startLine": 1,
+          "endLine": 13
+        },
+        {
+          "entry": "ch/qos/logback/core/model/AppenderRefModel.java",
+          "sourceSha256": "ff81736e74b6f5ebb0ab2c9ca33fd3bdb382bbb25dedcb6ab969699fced47dfe",
+          "startByte": 0,
+          "endByteExclusive": 483,
+          "startLine": 1,
+          "endLine": 13
+        },
+        {
+          "entry": "ch/qos/logback/core/model/ComponentModel.java",
+          "sourceSha256": "9973ecd1be7d009249111015267cdd56a87a839c78a7a0f7d261e6956a7c453e",
+          "startByte": 0,
+          "endByteExclusive": 483,
+          "startLine": 1,
+          "endLine": 13
+        },
+        {
+          "entry": "ch/qos/logback/core/model/ConversionRuleModel.java",
+          "sourceSha256": "fc2ea8307b204a0f7e11a7d273b863e0297ed1363ea689778c6dc7d39faa3062",
+          "startByte": 0,
+          "endByteExclusive": 483,
+          "startLine": 1,
+          "endLine": 13
+        },
+        {
+          "entry": "ch/qos/logback/core/model/DefineModel.java",
+          "sourceSha256": "c2b05453bc88f3819ebf23f95838fc2bd557c31b72fdfc0aca4e87db8ea20369",
+          "startByte": 0,
+          "endByteExclusive": 483,
+          "startLine": 1,
+          "endLine": 13
+        },
+        {
+          "entry": "ch/qos/logback/core/model/EventEvaluatorModel.java",
+          "sourceSha256": "8fb7ed1c91fd56e81f50ae10f9aa131799e0c3e3b07912043f5a70ba05d1519a",
+          "startByte": 0,
+          "endByteExclusive": 483,
+          "startLine": 1,
+          "endLine": 13
+        },
+        {
+          "entry": "ch/qos/logback/core/model/INamedModel.java",
+          "sourceSha256": "fbc4e02ec239f28a91edcfc27bf6e5e460c3807b537169fc61c812e0959547c4",
+          "startByte": 0,
+          "endByteExclusive": 483,
+          "startLine": 1,
+          "endLine": 13
+        },
+        {
+          "entry": "ch/qos/logback/core/model/ImplicitModel.java",
+          "sourceSha256": "7ac3af3a0f29c2aa64d014fe77ba862d3ac212508fb7d9107686b40145aa296f",
+          "startByte": 0,
+          "endByteExclusive": 483,
+          "startLine": 1,
+          "endLine": 13
+        },
+        {
+          "entry": "ch/qos/logback/core/model/ImportModel.java",
+          "sourceSha256": "3141eb2932c1ae485466265f81b97453d4a19995aa416e489730a17bcfc48d69",
+          "startByte": 0,
+          "endByteExclusive": 483,
+          "startLine": 1,
+          "endLine": 13
+        },
+        {
+          "entry": "ch/qos/logback/core/model/IncludeModel.java",
+          "sourceSha256": "eee96e3bed461a30c1084ea75d73b6eeaad949eda8df625ec6bbc6637334219e",
+          "startByte": 0,
+          "endByteExclusive": 483,
+          "startLine": 1,
+          "endLine": 13
+        },
+        {
+          "entry": "ch/qos/logback/core/model/InsertFromJNDIModel.java",
+          "sourceSha256": "4e5019a44027a430928c0dd66aa82d5fc3ddd01049a233f6bba788b4606c9fea",
+          "startByte": 0,
+          "endByteExclusive": 483,
+          "startLine": 1,
+          "endLine": 13
+        },
+        {
+          "entry": "ch/qos/logback/core/model/Model.java",
+          "sourceSha256": "f24b4c04bf7bb2d2414479d3431cddd2571e07f0d411693145bf776e778f166c",
+          "startByte": 0,
+          "endByteExclusive": 483,
+          "startLine": 1,
+          "endLine": 13
+        },
+        {
+          "entry": "ch/qos/logback/core/model/ModelConstants.java",
+          "sourceSha256": "2cb30116c5e3fe5e6915afbc56fcbf3c9da285806a7621edba0ab3e60cc320e7",
+          "startByte": 0,
+          "endByteExclusive": 483,
+          "startLine": 1,
+          "endLine": 13
+        },
+        {
+          "entry": "ch/qos/logback/core/model/ModelHandlerFactoryMethod.java",
+          "sourceSha256": "be32b05255618e696d4a429ec43d13c65e82dde5711650214329f85f78d7630c",
+          "startByte": 0,
+          "endByteExclusive": 483,
+          "startLine": 1,
+          "endLine": 13
+        },
+        {
+          "entry": "ch/qos/logback/core/model/ModelUtil.java",
+          "sourceSha256": "992418a9d721d7787c7ff3e3f5cff8401be447cba867a7da254ac1a633972e19",
+          "startByte": 0,
+          "endByteExclusive": 483,
+          "startLine": 1,
+          "endLine": 13
+        },
+        {
+          "entry": "ch/qos/logback/core/model/NamedComponentModel.java",
+          "sourceSha256": "6fd13d303d265becff7be3499c9ba48d9aaffcf9d801eed947016ecaf023bd9a",
+          "startByte": 0,
+          "endByteExclusive": 483,
+          "startLine": 1,
+          "endLine": 13
+        },
+        {
+          "entry": "ch/qos/logback/core/model/NamedModel.java",
+          "sourceSha256": "4a1c1dbe13ad52bffb9f3fe8458a81a61965dce85bdf84872e1787c14aac132e",
+          "startByte": 0,
+          "endByteExclusive": 483,
+          "startLine": 1,
+          "endLine": 13
+        },
+        {
+          "entry": "ch/qos/logback/core/model/ParamModel.java",
+          "sourceSha256": "db26f5038b67f26f23e439cfc555b8286ab87a33f07de6f4470945b5ad1cee15",
+          "startByte": 0,
+          "endByteExclusive": 483,
+          "startLine": 1,
+          "endLine": 13
+        },
+        {
+          "entry": "ch/qos/logback/core/model/PropertyModel.java",
+          "sourceSha256": "3f7ec5860a4574a8123595c7c91b316a17aec988126bff6b45493e6132aa02ab",
+          "startByte": 0,
+          "endByteExclusive": 483,
+          "startLine": 1,
+          "endLine": 13
+        },
+        {
+          "entry": "ch/qos/logback/core/model/ResourceModel.java",
+          "sourceSha256": "3532fcf8df91747946682a96a76427a688bcafd9f1faa7f8050dc47a286a5d2a",
+          "startByte": 0,
+          "endByteExclusive": 483,
+          "startLine": 1,
+          "endLine": 13
+        },
+        {
+          "entry": "ch/qos/logback/core/model/SequenceNumberGeneratorModel.java",
+          "sourceSha256": "05a9804d96675f7e81af606c2c834cd23d6184daa8bf34285cd9cb7b738a872b",
+          "startByte": 0,
+          "endByteExclusive": 483,
+          "startLine": 1,
+          "endLine": 13
+        },
+        {
+          "entry": "ch/qos/logback/core/model/SerializeModelModel.java",
+          "sourceSha256": "9840410ccba1a561671da4766f953d015a7fadca52c675f92ec6cabc94b57a6a",
+          "startByte": 0,
+          "endByteExclusive": 483,
+          "startLine": 1,
+          "endLine": 13
+        },
+        {
+          "entry": "ch/qos/logback/core/model/ShutdownHookModel.java",
+          "sourceSha256": "b2ad97836b29d64277e2050b0b704b8e693117ef7d68ac2e8bc11ea43f1eb418",
+          "startByte": 0,
+          "endByteExclusive": 483,
+          "startLine": 1,
+          "endLine": 13
+        },
+        {
+          "entry": "ch/qos/logback/core/model/SiftModel.java",
+          "sourceSha256": "3c342da9eeba11c99d58901e75fee58f597e6634f3a0716d0ea40b7b3350be1d",
+          "startByte": 0,
+          "endByteExclusive": 483,
+          "startLine": 1,
+          "endLine": 13
+        },
+        {
+          "entry": "ch/qos/logback/core/model/StatusListenerModel.java",
+          "sourceSha256": "e6a5732315ceb93acd4f6f9feabb359eacf15d0e33af58acc917131417ad5245",
+          "startByte": 0,
+          "endByteExclusive": 483,
+          "startLine": 1,
+          "endLine": 13
+        },
+        {
+          "entry": "ch/qos/logback/core/model/TimestampModel.java",
+          "sourceSha256": "6106eac17797f069b8bd9bdbe3ad2be5f6121845f5e45fdce7376f77f1d06551",
+          "startByte": 0,
+          "endByteExclusive": 483,
+          "startLine": 1,
+          "endLine": 13
+        },
+        {
+          "entry": "ch/qos/logback/core/model/conditional/ByPropertiesConditionModel.java",
+          "sourceSha256": "5932b3a799772db14ac0ae4225dbc6d99ba0cae00281b4963d95545e93d7c65c",
+          "startByte": 0,
+          "endByteExclusive": 483,
+          "startLine": 1,
+          "endLine": 13
+        },
+        {
+          "entry": "ch/qos/logback/core/model/conditional/ElseModel.java",
+          "sourceSha256": "362a6fe39e497934647a8cec5e3ed3fe3f4564ab06ffe7b0679e0db85ef2f68f",
+          "startByte": 0,
+          "endByteExclusive": 483,
+          "startLine": 1,
+          "endLine": 13
+        },
+        {
+          "entry": "ch/qos/logback/core/model/conditional/IfModel.java",
+          "sourceSha256": "8425e758d2da96f76d5d05113e6e5d25f42dab4c40c8e3339b84a9a0c4176e9d",
+          "startByte": 0,
+          "endByteExclusive": 483,
+          "startLine": 1,
+          "endLine": 13
+        },
+        {
+          "entry": "ch/qos/logback/core/model/conditional/ThenModel.java",
+          "sourceSha256": "caa86d73879039ffa9b78611624b6a05828225d9f695105c75f89fcbe307e3ce",
+          "startByte": 0,
+          "endByteExclusive": 483,
+          "startLine": 1,
+          "endLine": 13
+        },
+        {
+          "entry": "ch/qos/logback/core/model/processor/AllowAllModelFilter.java",
+          "sourceSha256": "8d8da5f5b8fcad03b5803df565bf4d1e6b49ecb2dcda8a134554799c4ec10b1e",
+          "startByte": 0,
+          "endByteExclusive": 483,
+          "startLine": 1,
+          "endLine": 13
+        },
+        {
+          "entry": "ch/qos/logback/core/model/processor/AllowModelFilter.java",
+          "sourceSha256": "eabff7af088d3e98c742cf84014ff33bb37f130fb32c3adf26f327078464f89b",
+          "startByte": 0,
+          "endByteExclusive": 483,
+          "startLine": 1,
+          "endLine": 13
+        },
+        {
+          "entry": "ch/qos/logback/core/model/processor/AppenderDeclarationAnalyser.java",
+          "sourceSha256": "327f56513b3331dc4509c38853e0cf8164741a36868cd4624b188c4e6ba810ef",
+          "startByte": 0,
+          "endByteExclusive": 483,
+          "startLine": 1,
+          "endLine": 13
+        },
+        {
+          "entry": "ch/qos/logback/core/model/processor/AppenderModelHandler.java",
+          "sourceSha256": "d2e1761e2adbf99cf18054b6c0d1381764209b80f94bad8f6f160739ac0ed9d7",
+          "startByte": 0,
+          "endByteExclusive": 483,
+          "startLine": 1,
+          "endLine": 13
+        },
+        {
+          "entry": "ch/qos/logback/core/model/processor/AppenderRefDependencyAnalyser.java",
+          "sourceSha256": "49ef71985156cb1df5c3fabe92d52e2b9b3213210b4be7c81b6b82762dd93a66",
+          "startByte": 0,
+          "endByteExclusive": 483,
+          "startLine": 1,
+          "endLine": 13
+        },
+        {
+          "entry": "ch/qos/logback/core/model/processor/AppenderRefModelHandler.java",
+          "sourceSha256": "3df6dd07cf9b179b118ec8a761c11bf7aa2574fa43d9b5bf9e0d5c88a2d298b7",
+          "startByte": 0,
+          "endByteExclusive": 483,
+          "startLine": 1,
+          "endLine": 13
+        },
+        {
+          "entry": "ch/qos/logback/core/model/processor/ChainedModelFilter.java",
+          "sourceSha256": "093347a959258d61425bba77af05499d30f9cf766ad0654b9f2d9e7366bb880e",
+          "startByte": 0,
+          "endByteExclusive": 483,
+          "startLine": 1,
+          "endLine": 13
+        },
+        {
+          "entry": "ch/qos/logback/core/model/processor/ConversionRuleModelHandler.java",
+          "sourceSha256": "37fb6b2b18856c72b5dfe3135048e585c2e88fc2d7b384f58f1528ba98477d8e",
+          "startByte": 0,
+          "endByteExclusive": 483,
+          "startLine": 1,
+          "endLine": 13
+        },
+        {
+          "entry": "ch/qos/logback/core/model/processor/DefaultProcessor.java",
+          "sourceSha256": "4c6dc54870dc1577dc3df95ce4099e4106d01b7f1e89b890655c1bdd24f90da1",
+          "startByte": 0,
+          "endByteExclusive": 483,
+          "startLine": 1,
+          "endLine": 13
+        },
+        {
+          "entry": "ch/qos/logback/core/model/processor/DefineModelHandler.java",
+          "sourceSha256": "6d5d7cea06891ced2726eb9ce1e49ffbee649dbd257395d7687020518f6a3746",
+          "startByte": 0,
+          "endByteExclusive": 483,
+          "startLine": 1,
+          "endLine": 13
+        },
+        {
+          "entry": "ch/qos/logback/core/model/processor/DenyAllModelFilter.java",
+          "sourceSha256": "5b8b18850e74d467a477d4cfc7b9daae5780cd9ad2122744b157f5434b492c6b",
+          "startByte": 0,
+          "endByteExclusive": 483,
+          "startLine": 1,
+          "endLine": 13
+        },
+        {
+          "entry": "ch/qos/logback/core/model/processor/DenyModelFilter.java",
+          "sourceSha256": "87621947c2feb0405689508b4ec877a68f716b480ea651eb8d1bc327536186fe",
+          "startByte": 0,
+          "endByteExclusive": 483,
+          "startLine": 1,
+          "endLine": 13
+        },
+        {
+          "entry": "ch/qos/logback/core/model/processor/DependencyDefinition.java",
+          "sourceSha256": "00c3aae092b3f2f0206e3f01319c9ea2c2eed557869329cfc3a0acafd0faef0f",
+          "startByte": 0,
+          "endByteExclusive": 483,
+          "startLine": 1,
+          "endLine": 13
+        },
+        {
+          "entry": "ch/qos/logback/core/model/processor/EventEvaluatorModelHandler.java",
+          "sourceSha256": "68c76859ccfe040d0b07264ced276f5ee530b01f478ec2df67cb655d15b475df",
+          "startByte": 0,
+          "endByteExclusive": 483,
+          "startLine": 1,
+          "endLine": 13
+        },
+        {
+          "entry": "ch/qos/logback/core/model/processor/FileCollisionAnalyser.java",
+          "sourceSha256": "cff626874af862e62217e65603789b74da8f48f397c7ae9026343cc1e55ca900",
+          "startByte": 0,
+          "endByteExclusive": 483,
+          "startLine": 1,
+          "endLine": 13
+        },
+        {
+          "entry": "ch/qos/logback/core/model/processor/ImplicitModelHandler.java",
+          "sourceSha256": "62436bbe41194ede9e7301ad25aa1680851e69c4e33e7661282fef887f440e3f",
+          "startByte": 0,
+          "endByteExclusive": 483,
+          "startLine": 1,
+          "endLine": 13
+        },
+        {
+          "entry": "ch/qos/logback/core/model/processor/ImportModelHandler.java",
+          "sourceSha256": "f36fb21f7f9a6419306e6589c8f2b282ea4cb3f49eb10322c3cfbaa53947663f",
+          "startByte": 0,
+          "endByteExclusive": 483,
+          "startLine": 1,
+          "endLine": 13
+        },
+        {
+          "entry": "ch/qos/logback/core/model/processor/IncludeModelHandler.java",
+          "sourceSha256": "27bca7df6200296dfbf113efc6ee615cf2d8f3753160da112d1b0d124d7cb4f3",
+          "startByte": 0,
+          "endByteExclusive": 483,
+          "startLine": 1,
+          "endLine": 13
+        },
+        {
+          "entry": "ch/qos/logback/core/model/processor/InsertFromJNDIModelHandler.java",
+          "sourceSha256": "15086f763b0685a0e74f8d4f7baafd34a71ea08b9de16b5000a265a5a4756952",
+          "startByte": 0,
+          "endByteExclusive": 483,
+          "startLine": 1,
+          "endLine": 13
+        },
+        {
+          "entry": "ch/qos/logback/core/model/processor/ModelFilter.java",
+          "sourceSha256": "6a9f170d7bb7db4e9457e2885baff7f59c29fb3b516c42e96301cb3c514ffba5",
+          "startByte": 0,
+          "endByteExclusive": 483,
+          "startLine": 1,
+          "endLine": 13
+        },
+        {
+          "entry": "ch/qos/logback/core/model/processor/ModelHandlerBase.java",
+          "sourceSha256": "276eddd3d8ef55f00460426d4694bb6c66944881ea14e5983448bf40d91dbffa",
+          "startByte": 0,
+          "endByteExclusive": 483,
+          "startLine": 1,
+          "endLine": 13
+        },
+        {
+          "entry": "ch/qos/logback/core/model/processor/ModelHandlerException.java",
+          "sourceSha256": "dcae185e709f6bec2249cd28df45c04778c436a4594048ae360ea93d969e0ff6",
+          "startByte": 0,
+          "endByteExclusive": 483,
+          "startLine": 1,
+          "endLine": 13
+        },
+        {
+          "entry": "ch/qos/logback/core/model/processor/ModelInterpretationContext.java",
+          "sourceSha256": "1974af6d179b5ca5101d7ae75c2fdb02ac2831b266509b54d55f6adc137608ff",
+          "startByte": 0,
+          "endByteExclusive": 483,
+          "startLine": 1,
+          "endLine": 13
+        },
+        {
+          "entry": "ch/qos/logback/core/model/processor/NOPModelHandler.java",
+          "sourceSha256": "e6d7f017c9aeef02b569ce9be7a6243ac9bc0cb50fee753242558b66b3f26dd8",
+          "startByte": 0,
+          "endByteExclusive": 483,
+          "startLine": 1,
+          "endLine": 13
+        },
+        {
+          "entry": "ch/qos/logback/core/model/processor/PhaseIndicator.java",
+          "sourceSha256": "88eca12f1cfaefad48fba8a9f269fdd259dcd9bf81fa2173d7eb2c3c20049014",
+          "startByte": 0,
+          "endByteExclusive": 483,
+          "startLine": 1,
+          "endLine": 13
+        },
+        {
+          "entry": "ch/qos/logback/core/model/processor/ProcessingPhase.java",
+          "sourceSha256": "db8692612354d8c4fb898a822cbfee3f96144d17b4493532fa05172a258fc6fc",
+          "startByte": 0,
+          "endByteExclusive": 483,
+          "startLine": 1,
+          "endLine": 13
+        },
+        {
+          "entry": "ch/qos/logback/core/model/processor/ProcessorException.java",
+          "sourceSha256": "9bb1508dec37ed0b5cefdc959d86a64a1b79d706ab58ad7e8323aa14dc6c18fb",
+          "startByte": 0,
+          "endByteExclusive": 483,
+          "startLine": 1,
+          "endLine": 13
+        },
+        {
+          "entry": "ch/qos/logback/core/model/processor/PropertyModelHandler.java",
+          "sourceSha256": "b9e9ca5095cf3a6d4ac0c8ece7509e58a736cf2996d9d561eb2242afb313df59",
+          "startByte": 0,
+          "endByteExclusive": 483,
+          "startLine": 1,
+          "endLine": 13
+        },
+        {
+          "entry": "ch/qos/logback/core/model/processor/RefContainerDependencyAnalyser.java",
+          "sourceSha256": "edc5fb0b1d68b412db56c55c287f0be2ea4ebdd117462afc34a0091c9a7d2b69",
+          "startByte": 0,
+          "endByteExclusive": 483,
+          "startLine": 1,
+          "endLine": 13
+        },
+        {
+          "entry": "ch/qos/logback/core/model/processor/ResourceHandlerBase.java",
+          "sourceSha256": "35af3ca105ecc2776a8d7fa0d4136f33e0a797d27261826686796282839200fb",
+          "startByte": 0,
+          "endByteExclusive": 483,
+          "startLine": 1,
+          "endLine": 13
+        },
+        {
+          "entry": "ch/qos/logback/core/model/processor/SequenceNumberGeneratorModelHandler.java",
+          "sourceSha256": "f32eff423990bb824aa6359f47d672af23a51a2acd1a736a81a6f119ec77522f",
+          "startByte": 0,
+          "endByteExclusive": 483,
+          "startLine": 1,
+          "endLine": 13
+        },
+        {
+          "entry": "ch/qos/logback/core/model/processor/SerializeModelModelHandler.java",
+          "sourceSha256": "c8e03dc4bc83fa19270d3617d113f24db6b08a886cc6a9e7e9e865c15a431b7c",
+          "startByte": 0,
+          "endByteExclusive": 483,
+          "startLine": 1,
+          "endLine": 13
+        },
+        {
+          "entry": "ch/qos/logback/core/model/processor/ShutdownHookModelHandler.java",
+          "sourceSha256": "f3a5e849f6452060235db522f5d0bd85b99e6d8614120b82ec9f6f1a98248eef",
+          "startByte": 0,
+          "endByteExclusive": 483,
+          "startLine": 1,
+          "endLine": 13
+        },
+        {
+          "entry": "ch/qos/logback/core/model/processor/StatusListenerModelHandler.java",
+          "sourceSha256": "7195707694f6b9ad698569e158e05e63262b71331f81ae11eb7639c776850ccc",
+          "startByte": 0,
+          "endByteExclusive": 483,
+          "startLine": 1,
+          "endLine": 13
+        },
+        {
+          "entry": "ch/qos/logback/core/model/processor/TimestampModelHandler.java",
+          "sourceSha256": "dc0dc6b271ed59ea0a469e490083ed683bd39b20803e535e435a1dae841b16da",
+          "startByte": 0,
+          "endByteExclusive": 483,
+          "startLine": 1,
+          "endLine": 13
+        },
+        {
+          "entry": "ch/qos/logback/core/model/processor/conditional/ByPropertiesConditionModelHandler.java",
+          "sourceSha256": "dbf16dc6ad5c602b0192b2d228a046d64b66219fe00d572c5897ee2df26ed887",
+          "startByte": 0,
+          "endByteExclusive": 483,
+          "startLine": 1,
+          "endLine": 13
+        },
+        {
+          "entry": "ch/qos/logback/core/model/processor/conditional/ElseModelHandler.java",
+          "sourceSha256": "041645b050d5dd95262c627528b8363ed07fe6ad8e9b21a0ef40356c968448b5",
+          "startByte": 0,
+          "endByteExclusive": 483,
+          "startLine": 1,
+          "endLine": 13
+        },
+        {
+          "entry": "ch/qos/logback/core/model/processor/conditional/IfModelHandler.java",
+          "sourceSha256": "f8098f0aba626aa1da7eafa2df3e93a48d5b69a70fec14ff391147cad7dd4223",
+          "startByte": 0,
+          "endByteExclusive": 483,
+          "startLine": 1,
+          "endLine": 13
+        },
+        {
+          "entry": "ch/qos/logback/core/model/processor/conditional/ThenModelHandler.java",
+          "sourceSha256": "f8758ff8fa252431fed2eea210f5697ee42aa425d82a6a0740812af69382dbe6",
+          "startByte": 0,
+          "endByteExclusive": 483,
+          "startLine": 1,
+          "endLine": 13
+        },
+        {
+          "entry": "ch/qos/logback/core/model/util/PropertyModelHandlerHelper.java",
+          "sourceSha256": "db069cc24bed65bef304371841afec9dd67d662f3f2174fa0d50728a42e1c816",
+          "startByte": 0,
+          "endByteExclusive": 483,
+          "startLine": 1,
+          "endLine": 13
+        },
+        {
+          "entry": "ch/qos/logback/core/model/util/TagUtil.java",
+          "sourceSha256": "2011390443dd43e3ef550b3c8002c88e7340d200c1f30143a86deeb0ea4db1ee",
+          "startByte": 0,
+          "endByteExclusive": 483,
+          "startLine": 1,
+          "endLine": 13
+        },
+        {
+          "entry": "ch/qos/logback/core/model/util/VariableSubstitutionsHelper.java",
+          "sourceSha256": "8ddef2fc116b32dff72025d67e542be22a12050793f4d326f2c03eae73e0d30c",
+          "startByte": 0,
+          "endByteExclusive": 483,
+          "startLine": 1,
+          "endLine": 13
+        },
+        {
+          "entry": "ch/qos/logback/core/net/AbstractSSLSocketAppender.java",
+          "sourceSha256": "795a95125cadbb9843c6b6662fc4fe049d27ed90f0c24e63ef2caba23e46e832",
+          "startByte": 0,
+          "endByteExclusive": 483,
+          "startLine": 1,
+          "endLine": 13
+        },
+        {
+          "entry": "ch/qos/logback/core/net/AbstractSocketAppender.java",
+          "sourceSha256": "46fc922dc99dcf829e4e1483ef8cabd0570c6c9c8c882c73fcfc7a2ca6c4aa56",
+          "startByte": 0,
+          "endByteExclusive": 483,
+          "startLine": 1,
+          "endLine": 13
+        },
+        {
+          "entry": "ch/qos/logback/core/net/AutoFlushingObjectWriter.java",
+          "sourceSha256": "5bf4b4418d33ebcee514582adb8a56a0680c625d32ab0d7f16b2231abeae568f",
+          "startByte": 0,
+          "endByteExclusive": 483,
+          "startLine": 1,
+          "endLine": 13
+        },
+        {
+          "entry": "ch/qos/logback/core/net/DefaultSocketConnector.java",
+          "sourceSha256": "7205f298fa3818baad00cfd7c999a7b25160d61eabaa50fce26e0e7d1ef5ffc6",
+          "startByte": 0,
+          "endByteExclusive": 483,
+          "startLine": 1,
+          "endLine": 13
+        },
+        {
+          "entry": "ch/qos/logback/core/net/HardenedObjectInputStream.java",
+          "sourceSha256": "e0cc87b110e23a5e3267b5fb84a8c9ea7daa8e8e86c97bb00398754ccb8c4b92",
+          "startByte": 0,
+          "endByteExclusive": 483,
+          "startLine": 1,
+          "endLine": 13
+        },
+        {
+          "entry": "ch/qos/logback/core/net/LoginAuthenticator.java",
+          "sourceSha256": "88231bd9e0ab4c4bbfd192e2cf9627c39d1b0064a2c30c99752eb0ad6c875346",
+          "startByte": 0,
+          "endByteExclusive": 483,
+          "startLine": 1,
+          "endLine": 13
+        },
+        {
+          "entry": "ch/qos/logback/core/net/ObjectWriter.java",
+          "sourceSha256": "5c5e567e8841b12d388504d4b7e590abb3c75060d0f1fe1946faf327307803d4",
+          "startByte": 0,
+          "endByteExclusive": 483,
+          "startLine": 1,
+          "endLine": 13
+        },
+        {
+          "entry": "ch/qos/logback/core/net/ObjectWriterFactory.java",
+          "sourceSha256": "e6c548a3fbd9c1b5a14cd7e2feda49a5b4648579efea39e9dc7d958315b13e34",
+          "startByte": 0,
+          "endByteExclusive": 483,
+          "startLine": 1,
+          "endLine": 13
+        },
+        {
+          "entry": "ch/qos/logback/core/net/QueueFactory.java",
+          "sourceSha256": "9d2f1ae26f5e8f7d2b5c863890fb2e9939c3ae7a02f8fb3909983e3e8d9031f4",
+          "startByte": 0,
+          "endByteExclusive": 483,
+          "startLine": 1,
+          "endLine": 13
+        },
+        {
+          "entry": "ch/qos/logback/core/net/SMTPAppenderBase.java",
+          "sourceSha256": "4e01e7bae1875662c1672b5ddf3429890119140b1ecf9f967409d86dcd620bc1",
+          "startByte": 0,
+          "endByteExclusive": 483,
+          "startLine": 1,
+          "endLine": 13
+        },
+        {
+          "entry": "ch/qos/logback/core/net/SocketConnector.java",
+          "sourceSha256": "8a37b6694050a2550ac55a9147adc77d27e4c2a6855b2692f411c174c5e7b14c",
+          "startByte": 0,
+          "endByteExclusive": 483,
+          "startLine": 1,
+          "endLine": 13
+        },
+        {
+          "entry": "ch/qos/logback/core/net/SyslogAppenderBase.java",
+          "sourceSha256": "c2fc8f6317860706f262f2899ef7a4ddf923ef67f13aa098daee5b3352f13018",
+          "startByte": 0,
+          "endByteExclusive": 483,
+          "startLine": 1,
+          "endLine": 13
+        },
+        {
+          "entry": "ch/qos/logback/core/net/SyslogConstants.java",
+          "sourceSha256": "a71b117573e0cc5845a53189c31036e7eb9b337ff7a132c6b8dfa449fd2ce933",
+          "startByte": 0,
+          "endByteExclusive": 483,
+          "startLine": 1,
+          "endLine": 13
+        },
+        {
+          "entry": "ch/qos/logback/core/net/SyslogOutputStream.java",
+          "sourceSha256": "0729ae660b5223726fd8603056f9dfac0c36a3b81f86c85306fba355d3da3468",
+          "startByte": 0,
+          "endByteExclusive": 483,
+          "startLine": 1,
+          "endLine": 13
+        },
+        {
+          "entry": "ch/qos/logback/core/net/ssl/ConfigurableSSLServerSocketFactory.java",
+          "sourceSha256": "29209b4749b9c7032cfcc32b61643b6beb81f41c5281568427b279a4db1f8245",
+          "startByte": 0,
+          "endByteExclusive": 483,
+          "startLine": 1,
+          "endLine": 13
+        },
+        {
+          "entry": "ch/qos/logback/core/net/ssl/ConfigurableSSLSocketFactory.java",
+          "sourceSha256": "438da8496753b149d5e8aaf3093051c8265ff368de5b5e0dbd3ba41f6c767453",
+          "startByte": 0,
+          "endByteExclusive": 483,
+          "startLine": 1,
+          "endLine": 13
+        },
+        {
+          "entry": "ch/qos/logback/core/net/ssl/KeyManagerFactoryFactoryBean.java",
+          "sourceSha256": "cfe3697fa06fd3343b50c3907e5127ad8afd479e22cafb107c8a34716417d5e0",
+          "startByte": 0,
+          "endByteExclusive": 483,
+          "startLine": 1,
+          "endLine": 13
+        },
+        {
+          "entry": "ch/qos/logback/core/net/ssl/KeyStoreFactoryBean.java",
+          "sourceSha256": "56ff0e726551b66ffd17009c0600ebf807aa0d65b9e64afccfc487502064f093",
+          "startByte": 0,
+          "endByteExclusive": 483,
+          "startLine": 1,
+          "endLine": 13
+        },
+        {
+          "entry": "ch/qos/logback/core/net/ssl/SSL.java",
+          "sourceSha256": "16a6913ba68c6aa3f9d91a83669113cee17499518d6e37476ced032bee60ad60",
+          "startByte": 0,
+          "endByteExclusive": 483,
+          "startLine": 1,
+          "endLine": 13
+        },
+        {
+          "entry": "ch/qos/logback/core/net/ssl/SSLComponent.java",
+          "sourceSha256": "3f77c68d4063d38224678e789db62a81ccf654e71c7975f2dc19bab0c6ce5494",
+          "startByte": 0,
+          "endByteExclusive": 483,
+          "startLine": 1,
+          "endLine": 13
+        },
+        {
+          "entry": "ch/qos/logback/core/net/ssl/SSLConfigurable.java",
+          "sourceSha256": "5c327b3c28e4490016292e36d9e914e0ebd120fc195777eb694e85016794546c",
+          "startByte": 0,
+          "endByteExclusive": 483,
+          "startLine": 1,
+          "endLine": 13
+        },
+        {
+          "entry": "ch/qos/logback/core/net/ssl/SSLConfigurableServerSocket.java",
+          "sourceSha256": "ce54ee5370888c72d2b4df82f4b408ca05f11eba7960efdeee5bbe3b079af048",
+          "startByte": 0,
+          "endByteExclusive": 483,
+          "startLine": 1,
+          "endLine": 13
+        },
+        {
+          "entry": "ch/qos/logback/core/net/ssl/SSLConfigurableSocket.java",
+          "sourceSha256": "f8a188a70aba07353a40851076d6dc09987df8f421f3a1ad03c98ffbe90fa6b1",
+          "startByte": 0,
+          "endByteExclusive": 483,
+          "startLine": 1,
+          "endLine": 13
+        },
+        {
+          "entry": "ch/qos/logback/core/net/ssl/SSLConfiguration.java",
+          "sourceSha256": "f303180f3c622760bef46a5c348b10d8bc7b88bec8f72bd5f6327a6e82d43c4a",
+          "startByte": 0,
+          "endByteExclusive": 483,
+          "startLine": 1,
+          "endLine": 13
+        },
+        {
+          "entry": "ch/qos/logback/core/net/ssl/SSLContextFactoryBean.java",
+          "sourceSha256": "b7eb2770450d7972f62b9f4f9f327def2b908192f749c3f71d06a260cbc97c8b",
+          "startByte": 0,
+          "endByteExclusive": 483,
+          "startLine": 1,
+          "endLine": 13
+        },
+        {
+          "entry": "ch/qos/logback/core/net/ssl/SSLNestedComponentRegistryRules.java",
+          "sourceSha256": "a019d7077d13d0e812bc91aa673ea146c0cad3068b3c13a821b1a3db7e25c108",
+          "startByte": 0,
+          "endByteExclusive": 483,
+          "startLine": 1,
+          "endLine": 13
+        },
+        {
+          "entry": "ch/qos/logback/core/net/ssl/SSLParametersConfiguration.java",
+          "sourceSha256": "c3da34e845a54ba46b160c9a5477d8a6de2851041796261cfa2e35941d4bce29",
+          "startByte": 0,
+          "endByteExclusive": 483,
+          "startLine": 1,
+          "endLine": 13
+        },
+        {
+          "entry": "ch/qos/logback/core/net/ssl/SecureRandomFactoryBean.java",
+          "sourceSha256": "9e53828ab2b1a01c92e4edd0a880b0f5c63bec2b06f42c38b63727d8fa237a12",
+          "startByte": 0,
+          "endByteExclusive": 483,
+          "startLine": 1,
+          "endLine": 13
+        },
+        {
+          "entry": "ch/qos/logback/core/net/ssl/TrustManagerFactoryFactoryBean.java",
+          "sourceSha256": "524ed358a1c917581b26b75f9534ce25dd3a95314888c03fe57c0529ca5c384d",
+          "startByte": 0,
+          "endByteExclusive": 483,
+          "startLine": 1,
+          "endLine": 13
+        },
+        {
+          "entry": "ch/qos/logback/core/pattern/CompositeConverter.java",
+          "sourceSha256": "7d2cf2b9b68bdcdaaefda1109161483526d7e60e5f5a279b3bc4d88903ecd462",
+          "startByte": 0,
+          "endByteExclusive": 483,
+          "startLine": 1,
+          "endLine": 13
+        },
+        {
+          "entry": "ch/qos/logback/core/pattern/Converter.java",
+          "sourceSha256": "fd0dc4cbd1ac859ed7d921a6d72cf0e65afb2785d33f177711375630c11a9f25",
+          "startByte": 0,
+          "endByteExclusive": 483,
+          "startLine": 1,
+          "endLine": 13
+        },
+        {
+          "entry": "ch/qos/logback/core/pattern/ConverterUtil.java",
+          "sourceSha256": "92f9e1936f22447b4f75de124d4ab0e731448f7ce10c5075cbdf6c15efb96a47",
+          "startByte": 0,
+          "endByteExclusive": 483,
+          "startLine": 1,
+          "endLine": 13
+        },
+        {
+          "entry": "ch/qos/logback/core/pattern/DynamicConverter.java",
+          "sourceSha256": "ec51f3e8fbbbde9c74cd45c242a812736458f2f28308e247ef4f81e9ce780966",
+          "startByte": 0,
+          "endByteExclusive": 483,
+          "startLine": 1,
+          "endLine": 13
+        },
+        {
+          "entry": "ch/qos/logback/core/pattern/FormatInfo.java",
+          "sourceSha256": "7c0cb991ecaff4170a61f5f8d1d1d32a4447f45d4063de4aa91b0593574333cb",
+          "startByte": 0,
+          "endByteExclusive": 483,
+          "startLine": 1,
+          "endLine": 13
+        },
+        {
+          "entry": "ch/qos/logback/core/pattern/FormattingConverter.java",
+          "sourceSha256": "f52c00ca0da518087d593280f595dbeb633d72cd20aefea043851f3a6a8cf43f",
+          "startByte": 0,
+          "endByteExclusive": 483,
+          "startLine": 1,
+          "endLine": 13
+        },
+        {
+          "entry": "ch/qos/logback/core/pattern/IdentityCompositeConverter.java",
+          "sourceSha256": "31effeddbad66be7271fb5d53bd9b1038cd64d58fc3713cdc66f9e2ea6907649",
+          "startByte": 0,
+          "endByteExclusive": 483,
+          "startLine": 1,
+          "endLine": 13
+        },
+        {
+          "entry": "ch/qos/logback/core/pattern/LiteralConverter.java",
+          "sourceSha256": "5d9918794d5b0740801b416100173b6d68a941829b3c97c80413f1da747789f7",
+          "startByte": 0,
+          "endByteExclusive": 483,
+          "startLine": 1,
+          "endLine": 13
+        },
+        {
+          "entry": "ch/qos/logback/core/pattern/PatternLayoutBase.java",
+          "sourceSha256": "f13120a10f599b293522afe39804c39da662c42b23affab6768f7be32affb8f2",
+          "startByte": 0,
+          "endByteExclusive": 483,
+          "startLine": 1,
+          "endLine": 13
+        },
+        {
+          "entry": "ch/qos/logback/core/pattern/PatternLayoutEncoderBase.java",
+          "sourceSha256": "f37f8f935a422c7548f28d8c948c5e640ecb5eb1263f0bf9849913eca0d8e3e8",
+          "startByte": 0,
+          "endByteExclusive": 483,
+          "startLine": 1,
+          "endLine": 13
+        },
+        {
+          "entry": "ch/qos/logback/core/pattern/PostCompileProcessor.java",
+          "sourceSha256": "b7841c53032c704f639d9126a7cc15db840b2e9faf23964091411c738cdc67c4",
+          "startByte": 0,
+          "endByteExclusive": 483,
+          "startLine": 1,
+          "endLine": 13
+        },
+        {
+          "entry": "ch/qos/logback/core/pattern/ReplacingCompositeConverter.java",
+          "sourceSha256": "603a4eed53274c83cb94a98da9b4ac9b8af778d3681d9c6eac905e70c2d9cf39",
+          "startByte": 0,
+          "endByteExclusive": 483,
+          "startLine": 1,
+          "endLine": 13
+        },
+        {
+          "entry": "ch/qos/logback/core/pattern/SpacePadder.java",
+          "sourceSha256": "3a08fead829d40bbffac2b81c6a45213d5e210e8d6f0859be7842b099ebd7a5c",
+          "startByte": 0,
+          "endByteExclusive": 483,
+          "startLine": 1,
+          "endLine": 13
+        },
+        {
+          "entry": "ch/qos/logback/core/pattern/color/ANSIConstants.java",
+          "sourceSha256": "bd5700f0c4fc8a13fbe19b954f2267712939c15af175ef7e66691ed8165040da",
+          "startByte": 0,
+          "endByteExclusive": 483,
+          "startLine": 1,
+          "endLine": 13
+        },
+        {
+          "entry": "ch/qos/logback/core/pattern/color/BlackCompositeConverter.java",
+          "sourceSha256": "bf815642081df11bac7d37ff2837c9150f285bde7fd67589e1bce12a7c7afdff",
+          "startByte": 0,
+          "endByteExclusive": 483,
+          "startLine": 1,
+          "endLine": 13
+        },
+        {
+          "entry": "ch/qos/logback/core/pattern/color/BlueCompositeConverter.java",
+          "sourceSha256": "e7718f07a0918658bf1c1b6cd1884dde56cb74272cb1a7e210406b0920b6d863",
+          "startByte": 0,
+          "endByteExclusive": 483,
+          "startLine": 1,
+          "endLine": 13
+        },
+        {
+          "entry": "ch/qos/logback/core/pattern/color/BoldBlueCompositeConverter.java",
+          "sourceSha256": "ba6d3c778ace3166a79123582ddf19ba56b119b3694f0638866ba42eba731bfd",
+          "startByte": 0,
+          "endByteExclusive": 483,
+          "startLine": 1,
+          "endLine": 13
+        },
+        {
+          "entry": "ch/qos/logback/core/pattern/color/BoldCyanCompositeConverter.java",
+          "sourceSha256": "de6c8d5f18cd488061171b97599a798a717e8dbdc68ef56ed66cd5d1dd52a2ef",
+          "startByte": 0,
+          "endByteExclusive": 483,
+          "startLine": 1,
+          "endLine": 13
+        },
+        {
+          "entry": "ch/qos/logback/core/pattern/color/BoldGreenCompositeConverter.java",
+          "sourceSha256": "114b74ccfc6e442cb401b53240cc54ceb8a95c04620cf72cab6169e30f6864dd",
+          "startByte": 0,
+          "endByteExclusive": 483,
+          "startLine": 1,
+          "endLine": 13
+        },
+        {
+          "entry": "ch/qos/logback/core/pattern/color/BoldMagentaCompositeConverter.java",
+          "sourceSha256": "614d316950810e29f5a802b89fdd605e406e9352eaa66b861abed5c71ba73d50",
+          "startByte": 0,
+          "endByteExclusive": 483,
+          "startLine": 1,
+          "endLine": 13
+        },
+        {
+          "entry": "ch/qos/logback/core/pattern/color/BoldRedCompositeConverter.java",
+          "sourceSha256": "959e50260a1a2e019c4d8a23ab1bd3056af65338b781d879429385e95ceb66cd",
+          "startByte": 0,
+          "endByteExclusive": 483,
+          "startLine": 1,
+          "endLine": 13
+        },
+        {
+          "entry": "ch/qos/logback/core/pattern/color/BoldWhiteCompositeConverter.java",
+          "sourceSha256": "cdb7c11f0e5dfef05009079e7246d273a84aa8762c921cf6ec8f4aa2c148ca3e",
+          "startByte": 0,
+          "endByteExclusive": 483,
+          "startLine": 1,
+          "endLine": 13
+        },
+        {
+          "entry": "ch/qos/logback/core/pattern/color/BoldYellowCompositeConverter.java",
+          "sourceSha256": "153f5bcda66bbdf26d0ad9d8839f85a2f105365b365ab11682b72ae7c62cf658",
+          "startByte": 0,
+          "endByteExclusive": 483,
+          "startLine": 1,
+          "endLine": 13
+        },
+        {
+          "entry": "ch/qos/logback/core/pattern/color/ConverterSupplierByClassName.java",
+          "sourceSha256": "14bd4b0b80b6697b75f756f9c879ddaf7b8f230b8f52816ea39cb0a4a8db3474",
+          "startByte": 0,
+          "endByteExclusive": 483,
+          "startLine": 1,
+          "endLine": 13
+        },
+        {
+          "entry": "ch/qos/logback/core/pattern/color/CyanCompositeConverter.java",
+          "sourceSha256": "760a64c636fafa3fd9c74daa11b46795e1034f57175b29b0dff9bdf052ebe8fc",
+          "startByte": 0,
+          "endByteExclusive": 483,
+          "startLine": 1,
+          "endLine": 13
+        },
+        {
+          "entry": "ch/qos/logback/core/pattern/color/ForegroundCompositeConverterBase.java",
+          "sourceSha256": "fad8b06b20850182de649225f17f83c3d6fe741e7c26ce48f84acbce4c0cff0f",
+          "startByte": 0,
+          "endByteExclusive": 483,
+          "startLine": 1,
+          "endLine": 13
+        },
+        {
+          "entry": "ch/qos/logback/core/pattern/color/GrayCompositeConverter.java",
+          "sourceSha256": "c80210fbf954b0a4e70cd22b4f2acaf1c71cb717a3a1d5c64e8e942bd16ecfa2",
+          "startByte": 0,
+          "endByteExclusive": 483,
+          "startLine": 1,
+          "endLine": 13
+        },
+        {
+          "entry": "ch/qos/logback/core/pattern/color/GreenCompositeConverter.java",
+          "sourceSha256": "f3e66580e68c84dd992974385d0c7ae40e262b314ad31a7babbd599bd585dc57",
+          "startByte": 0,
+          "endByteExclusive": 483,
+          "startLine": 1,
+          "endLine": 13
+        },
+        {
+          "entry": "ch/qos/logback/core/pattern/color/MagentaCompositeConverter.java",
+          "sourceSha256": "db5fc3f8a4c998dfddcf7166e9b734609eda513b0d808876c257c504285a86bf",
+          "startByte": 0,
+          "endByteExclusive": 483,
+          "startLine": 1,
+          "endLine": 13
+        },
+        {
+          "entry": "ch/qos/logback/core/pattern/color/RedCompositeConverter.java",
+          "sourceSha256": "a9829127f39729878125d9d3c7f856a91662ee0f2cf8b163ff1d4d06c64f4830",
+          "startByte": 0,
+          "endByteExclusive": 483,
+          "startLine": 1,
+          "endLine": 13
+        },
+        {
+          "entry": "ch/qos/logback/core/pattern/color/WhiteCompositeConverter.java",
+          "sourceSha256": "88b88ec36c9e9e4abb1be7d6bbc0559c0ad4bc55537d53c44bd0ee7edd6d44ce",
+          "startByte": 0,
+          "endByteExclusive": 483,
+          "startLine": 1,
+          "endLine": 13
+        },
+        {
+          "entry": "ch/qos/logback/core/pattern/color/YellowCompositeConverter.java",
+          "sourceSha256": "0c7aa31d6289428cf4e9950ad5bdbd46ee017938bfd12896ee89dddea9187f4a",
+          "startByte": 0,
+          "endByteExclusive": 483,
+          "startLine": 1,
+          "endLine": 13
+        },
+        {
+          "entry": "ch/qos/logback/core/pattern/parser/Compiler.java",
+          "sourceSha256": "450c7d5d791b1c00420242d7ff4f2d08a94e5e51b73d6aef7589e60cf911e897",
+          "startByte": 0,
+          "endByteExclusive": 483,
+          "startLine": 1,
+          "endLine": 13
+        },
+        {
+          "entry": "ch/qos/logback/core/pattern/parser/CompositeNode.java",
+          "sourceSha256": "4f79ff69e7604833c5e92b38fb41588afc17fa66a2d7e7d543d3bfdf7df7cab1",
+          "startByte": 0,
+          "endByteExclusive": 483,
+          "startLine": 1,
+          "endLine": 13
+        },
+        {
+          "entry": "ch/qos/logback/core/pattern/parser/FormattingNode.java",
+          "sourceSha256": "1ea313ff816711bc7174ccaedde6a445d73827af946acde35ea4601ab7470fe6",
+          "startByte": 0,
+          "endByteExclusive": 483,
+          "startLine": 1,
+          "endLine": 13
+        },
+        {
+          "entry": "ch/qos/logback/core/pattern/parser/Node.java",
+          "sourceSha256": "55b77b138dadc8474ebcb5830d602afc963d6c2ef710281b020a3c46ea41db6c",
+          "startByte": 0,
+          "endByteExclusive": 483,
+          "startLine": 1,
+          "endLine": 13
+        },
+        {
+          "entry": "ch/qos/logback/core/pattern/parser/OptionTokenizer.java",
+          "sourceSha256": "9346dbb1d50f3c5e04ee18e10daeddd8975618e8fb42d0d9bb0be8b5ae094b0d",
+          "startByte": 0,
+          "endByteExclusive": 483,
+          "startLine": 1,
+          "endLine": 13
+        },
+        {
+          "entry": "ch/qos/logback/core/pattern/parser/Parser.java",
+          "sourceSha256": "d6f87eacd5b51d7c5031614318219b7e25ac426c18a557cdf6d02865fa647c1b",
+          "startByte": 0,
+          "endByteExclusive": 483,
+          "startLine": 1,
+          "endLine": 13
+        },
+        {
+          "entry": "ch/qos/logback/core/pattern/parser/SimpleKeywordNode.java",
+          "sourceSha256": "0698f32ba3520cec651bbc96c7df2bfe35a88d3076aa9f544feb5e396fb29769",
+          "startByte": 0,
+          "endByteExclusive": 483,
+          "startLine": 1,
+          "endLine": 13
+        },
+        {
+          "entry": "ch/qos/logback/core/pattern/parser/Token.java",
+          "sourceSha256": "d47b606c372eca96e92e828a276e385ce17ccdc3c1640ea3eb932e0ae09d7bbd",
+          "startByte": 0,
+          "endByteExclusive": 483,
+          "startLine": 1,
+          "endLine": 13
+        },
+        {
+          "entry": "ch/qos/logback/core/pattern/parser/TokenStream.java",
+          "sourceSha256": "07bde3e4584ab1c58661bfacf555dbce7d4f113e6dc939d4ae69d9012fdd6663",
+          "startByte": 0,
+          "endByteExclusive": 483,
+          "startLine": 1,
+          "endLine": 13
+        },
+        {
+          "entry": "ch/qos/logback/core/pattern/util/AlmostAsIsEscapeUtil.java",
+          "sourceSha256": "634fc91eade73b014e7aac82d553d807bae13f4c713a5c8b4f977e4a99e1be58",
+          "startByte": 0,
+          "endByteExclusive": 483,
+          "startLine": 1,
+          "endLine": 13
+        },
+        {
+          "entry": "ch/qos/logback/core/pattern/util/AsIsEscapeUtil.java",
+          "sourceSha256": "fd4ec279e4a76a13e91e97ca5cad49869841c6d18b0852d99b0221d3d5bf1bc2",
+          "startByte": 0,
+          "endByteExclusive": 483,
+          "startLine": 1,
+          "endLine": 13
+        },
+        {
+          "entry": "ch/qos/logback/core/pattern/util/IEscapeUtil.java",
+          "sourceSha256": "fbec152c484c65281cc33676aa724bfdfec262183f30d57ad466cf002aa7701c",
+          "startByte": 0,
+          "endByteExclusive": 483,
+          "startLine": 1,
+          "endLine": 13
+        },
+        {
+          "entry": "ch/qos/logback/core/pattern/util/RegularEscapeUtil.java",
+          "sourceSha256": "6f3904bc63b2ffc3d2b008d21eabfd2fcdc0be218cff1f166129148dbf1ec587",
+          "startByte": 0,
+          "endByteExclusive": 483,
+          "startLine": 1,
+          "endLine": 13
+        },
+        {
+          "entry": "ch/qos/logback/core/pattern/util/RestrictedEscapeUtil.java",
+          "sourceSha256": "badc946397f0cb5e27140da938bf3a121f88a6ccd2a3d798738269ae73385c7f",
+          "startByte": 0,
+          "endByteExclusive": 483,
+          "startLine": 1,
+          "endLine": 13
+        },
+        {
+          "entry": "ch/qos/logback/core/property/CanonicalHostNamePropertyDefiner.java",
+          "sourceSha256": "6fc939c1eec5f5c3bddf1c69844a876ff6f4b6fd22cce902b01dda584b55db3b",
+          "startByte": 0,
+          "endByteExclusive": 483,
+          "startLine": 1,
+          "endLine": 13
+        },
+        {
+          "entry": "ch/qos/logback/core/property/FileExistsPropertyDefiner.java",
+          "sourceSha256": "ec55ba900c3a012c2fe187fb2d83be420cd62cc68362c5b8646a5b3aab571991",
+          "startByte": 0,
+          "endByteExclusive": 483,
+          "startLine": 1,
+          "endLine": 13
+        },
+        {
+          "entry": "ch/qos/logback/core/property/ResourceExistsPropertyDefiner.java",
+          "sourceSha256": "680a3d6ceec3dbb2e43d797f8706ac0dce6b3aedecaaaaa49b1e4e944d2a6d52",
+          "startByte": 0,
+          "endByteExclusive": 483,
+          "startLine": 1,
+          "endLine": 13
+        },
+        {
+          "entry": "ch/qos/logback/core/read/CyclicBufferAppender.java",
+          "sourceSha256": "c4135baab2bbf05202810f572f904a4a22a11a87669c7f66e8a013cf6715e75c",
+          "startByte": 0,
+          "endByteExclusive": 483,
+          "startLine": 1,
+          "endLine": 13
+        },
+        {
+          "entry": "ch/qos/logback/core/read/ListAppender.java",
+          "sourceSha256": "7bc36b1d98bae7203da99ddd526c0b6fd5841ec8c19c55da1c55f653adea3d41",
+          "startByte": 0,
+          "endByteExclusive": 483,
+          "startLine": 1,
+          "endLine": 13
+        },
+        {
+          "entry": "ch/qos/logback/core/recovery/RecoveryCoordinator.java",
+          "sourceSha256": "28960a6224d268a9d5f1732d229956e86d4f70ef653e6f59f16b368ceca20c56",
+          "startByte": 0,
+          "endByteExclusive": 483,
+          "startLine": 1,
+          "endLine": 13
+        },
+        {
+          "entry": "ch/qos/logback/core/recovery/RecoveryListener.java",
+          "sourceSha256": "befab1d7e46b34dd61cbff4ffd853fecc867ca705e5417fb3101461b64705038",
+          "startByte": 0,
+          "endByteExclusive": 483,
+          "startLine": 1,
+          "endLine": 13
+        },
+        {
+          "entry": "ch/qos/logback/core/recovery/ResilientFileOutputStream.java",
+          "sourceSha256": "c7b97f12685198d0f826c419aa3dd30e47ede44ed587f9b21f24f32c6075bfdb",
+          "startByte": 0,
+          "endByteExclusive": 483,
+          "startLine": 1,
+          "endLine": 13
+        },
+        {
+          "entry": "ch/qos/logback/core/recovery/ResilientOutputStreamBase.java",
+          "sourceSha256": "de41574afe913fb64b221392ded118bf10b852c664dd1dd2872aea7ca166c496",
+          "startByte": 0,
+          "endByteExclusive": 483,
+          "startLine": 1,
+          "endLine": 13
+        },
+        {
+          "entry": "ch/qos/logback/core/recovery/ResilientSyslogOutputStream.java",
+          "sourceSha256": "38e2d54278800e1c36ab29b20e824de01ef7264860138bf02c6b75c9cc677ed8",
+          "startByte": 0,
+          "endByteExclusive": 483,
+          "startLine": 1,
+          "endLine": 13
+        },
+        {
+          "entry": "ch/qos/logback/core/rolling/FixedWindowRollingPolicy.java",
+          "sourceSha256": "10b60a3faafb39b1c10307c01a1a95452e0117ef0a8f1cdd8b113c1481dc7906",
+          "startByte": 0,
+          "endByteExclusive": 483,
+          "startLine": 1,
+          "endLine": 13
+        },
+        {
+          "entry": "ch/qos/logback/core/rolling/LengthCounter.java",
+          "sourceSha256": "c70ed1a3543baa285d9a4b5e8138b56566bed048090db7b36da63191e772c175",
+          "startByte": 0,
+          "endByteExclusive": 483,
+          "startLine": 1,
+          "endLine": 13
+        },
+        {
+          "entry": "ch/qos/logback/core/rolling/LengthCounterBase.java",
+          "sourceSha256": "61fb6ef1de6d167a41d2da15dec87ee74ecd683c2e2851e1bcda6a4cebcba5da",
+          "startByte": 0,
+          "endByteExclusive": 483,
+          "startLine": 1,
+          "endLine": 13
+        },
+        {
+          "entry": "ch/qos/logback/core/rolling/RollingPolicy.java",
+          "sourceSha256": "23c958b018152303dbc5047f8efe2fec25a912e439551aa012967e58935208f2",
+          "startByte": 0,
+          "endByteExclusive": 483,
+          "startLine": 1,
+          "endLine": 13
+        },
+        {
+          "entry": "ch/qos/logback/core/rolling/RollingPolicyBase.java",
+          "sourceSha256": "8a0247be31b5e8d2e3929da9a1bffed0b62ff3ce1d6499e9db9c7f9478be906b",
+          "startByte": 0,
+          "endByteExclusive": 483,
+          "startLine": 1,
+          "endLine": 13
+        },
+        {
+          "entry": "ch/qos/logback/core/rolling/RolloverFailure.java",
+          "sourceSha256": "f52f6955478a7a940728c8c5cfa90e9673bfa87cae1396835864959b69a4d9b6",
+          "startByte": 0,
+          "endByteExclusive": 483,
+          "startLine": 1,
+          "endLine": 13
+        },
+        {
+          "entry": "ch/qos/logback/core/rolling/SizeAndTimeBasedFNATP.java",
+          "sourceSha256": "0fcb120e84506762a1c64e45a47e8704f810945a370d7e3da7f711d27e7fdb73",
+          "startByte": 0,
+          "endByteExclusive": 483,
+          "startLine": 1,
+          "endLine": 13
+        },
+        {
+          "entry": "ch/qos/logback/core/rolling/SizeAndTimeBasedRollingPolicy.java",
+          "sourceSha256": "84ecdf55223580e208a954f0236cdb9cf27321c8adef1b7b957ea6eef78cf356",
+          "startByte": 0,
+          "endByteExclusive": 483,
+          "startLine": 1,
+          "endLine": 13
+        },
+        {
+          "entry": "ch/qos/logback/core/rolling/SizeBasedTriggeringPolicy.java",
+          "sourceSha256": "7887ab08c915a7edb40b7c0c7c46b76a082c0e56e4fda6f191968475fda0eac7",
+          "startByte": 0,
+          "endByteExclusive": 483,
+          "startLine": 1,
+          "endLine": 13
+        },
+        {
+          "entry": "ch/qos/logback/core/rolling/TimeBasedFileNamingAndTriggeringPolicy.java",
+          "sourceSha256": "54838eea73bbb814f70e01ba9fc8355509e0134ea13c27d11b1bcb1846fd2560",
+          "startByte": 0,
+          "endByteExclusive": 483,
+          "startLine": 1,
+          "endLine": 13
+        },
+        {
+          "entry": "ch/qos/logback/core/rolling/TimeBasedFileNamingAndTriggeringPolicyBase.java",
+          "sourceSha256": "1e15364e45f66d49c83fc343d65ae23aa66938ec9244eed223e69a42101ffa37",
+          "startByte": 0,
+          "endByteExclusive": 483,
+          "startLine": 1,
+          "endLine": 13
+        },
+        {
+          "entry": "ch/qos/logback/core/rolling/TimeBasedRollingPolicy.java",
+          "sourceSha256": "31b049439b6218204f2a0f36ab0f25ac182b1d1855444014312ae0c6fcaff611",
+          "startByte": 0,
+          "endByteExclusive": 483,
+          "startLine": 1,
+          "endLine": 13
+        },
+        {
+          "entry": "ch/qos/logback/core/rolling/TriggeringPolicy.java",
+          "sourceSha256": "420dc47542f9fcf4200622a84429ea7022c522113add03b08daefff496910462",
+          "startByte": 0,
+          "endByteExclusive": 483,
+          "startLine": 1,
+          "endLine": 13
+        },
+        {
+          "entry": "ch/qos/logback/core/rolling/TriggeringPolicyBase.java",
+          "sourceSha256": "a70d72c95e709b7a38cf128afa08876419ed5cc9ec6bc8fd24377216cd4623d9",
+          "startByte": 0,
+          "endByteExclusive": 483,
+          "startLine": 1,
+          "endLine": 13
+        },
+        {
+          "entry": "ch/qos/logback/core/rolling/helper/ArchiveRemover.java",
+          "sourceSha256": "02cfbea86646c957e3d5a47239104da64757fd3ff1b89a181fc890718d642be7",
+          "startByte": 0,
+          "endByteExclusive": 483,
+          "startLine": 1,
+          "endLine": 13
+        },
+        {
+          "entry": "ch/qos/logback/core/rolling/helper/CompressionMode.java",
+          "sourceSha256": "ae416f8a3681a66a5cf79b6fb0cf561cf871f63bd024701f84e8e47cc66f01da",
+          "startByte": 0,
+          "endByteExclusive": 483,
+          "startLine": 1,
+          "endLine": 13
+        },
+        {
+          "entry": "ch/qos/logback/core/rolling/helper/CompressionStrategy.java",
+          "sourceSha256": "fdb37db7bb76382b7be373277f5806f862af792cd91ee07d55b278db65b25898",
+          "startByte": 0,
+          "endByteExclusive": 483,
+          "startLine": 1,
+          "endLine": 13
+        },
+        {
+          "entry": "ch/qos/logback/core/rolling/helper/CompressionStrategyBase.java",
+          "sourceSha256": "d9ec6da06892cd45e859a04b666ad9c53341d05f69dd549398d60924a80c8e19",
+          "startByte": 0,
+          "endByteExclusive": 483,
+          "startLine": 1,
+          "endLine": 13
+        },
+        {
+          "entry": "ch/qos/logback/core/rolling/helper/Compressor.java",
+          "sourceSha256": "767c2f016a53d8a3ee74ba098acc7ca346320ce9231cba34b5163486a839b390",
+          "startByte": 0,
+          "endByteExclusive": 483,
+          "startLine": 1,
+          "endLine": 13
+        },
+        {
+          "entry": "ch/qos/logback/core/rolling/helper/DateTokenConverter.java",
+          "sourceSha256": "e00581f7366da2554559c8f685555f714caa7a369ad14ed4ac5e422add7eda63",
+          "startByte": 0,
+          "endByteExclusive": 483,
+          "startLine": 1,
+          "endLine": 13
+        },
+        {
+          "entry": "ch/qos/logback/core/rolling/helper/FileFilterUtil.java",
+          "sourceSha256": "7eaf50f0f0c35311bcd6df5269ef9f3035a257ba86bd930dec3acece4f4688c3",
+          "startByte": 0,
+          "endByteExclusive": 483,
+          "startLine": 1,
+          "endLine": 13
+        },
+        {
+          "entry": "ch/qos/logback/core/rolling/helper/FileNamePattern.java",
+          "sourceSha256": "fe565931a4a2819ee06410e84b14e762fca27feefb4d452e23e174b152f15b8a",
+          "startByte": 0,
+          "endByteExclusive": 483,
+          "startLine": 1,
+          "endLine": 13
+        },
+        {
+          "entry": "ch/qos/logback/core/rolling/helper/FileStoreUtil.java",
+          "sourceSha256": "2aebb760fc936eb9c955b118d72418b934d9f2bf745d975f784d222b084d6c9b",
+          "startByte": 0,
+          "endByteExclusive": 483,
+          "startLine": 1,
+          "endLine": 13
+        },
+        {
+          "entry": "ch/qos/logback/core/rolling/helper/GZCompressionStrategy.java",
+          "sourceSha256": "bfc10bcdc8f4ce7c035ad5e6145fe022da862a699d5ccf338b2e55fe11cde5ed",
+          "startByte": 0,
+          "endByteExclusive": 483,
+          "startLine": 1,
+          "endLine": 13
+        },
+        {
+          "entry": "ch/qos/logback/core/rolling/helper/IntegerTokenConverter.java",
+          "sourceSha256": "3bb638c40b0b175b90ec4354b747eca04b545f148982827b1c569af836d8c0d0",
+          "startByte": 0,
+          "endByteExclusive": 483,
+          "startLine": 1,
+          "endLine": 13
+        },
+        {
+          "entry": "ch/qos/logback/core/rolling/helper/MonoTypedConverter.java",
+          "sourceSha256": "98bb60e8564a2ed2718910d7db3d1a408543f2797f216d5870a94d03866c1bcd",
+          "startByte": 0,
+          "endByteExclusive": 483,
+          "startLine": 1,
+          "endLine": 13
+        },
+        {
+          "entry": "ch/qos/logback/core/rolling/helper/PeriodicityType.java",
+          "sourceSha256": "00208f65fc2b3e6430ffb81ac853174c30e68048f39397a16f27bca6ffdcada6",
+          "startByte": 0,
+          "endByteExclusive": 483,
+          "startLine": 1,
+          "endLine": 13
+        },
+        {
+          "entry": "ch/qos/logback/core/rolling/helper/RenameUtil.java",
+          "sourceSha256": "98e04dcde13c1c7905dfe963960802dd8e376c132d3f42cc2d07cdc6f49b721f",
+          "startByte": 0,
+          "endByteExclusive": 483,
+          "startLine": 1,
+          "endLine": 13
+        },
+        {
+          "entry": "ch/qos/logback/core/rolling/helper/SizeAndTimeBasedArchiveRemover.java",
+          "sourceSha256": "eb208181354a5392616cb338031e5eb0b11ac6ef7d8c1ace266b3968976cd031",
+          "startByte": 0,
+          "endByteExclusive": 483,
+          "startLine": 1,
+          "endLine": 13
+        },
+        {
+          "entry": "ch/qos/logback/core/rolling/helper/TokenConverter.java",
+          "sourceSha256": "416fb83d24d19d9f892fba47b7812cb4607b58ae94d2602669a9d5578e0dbec7",
+          "startByte": 0,
+          "endByteExclusive": 483,
+          "startLine": 1,
+          "endLine": 13
+        },
+        {
+          "entry": "ch/qos/logback/core/rolling/helper/XZCompressionStrategy.java",
+          "sourceSha256": "63e2256b0afb80401df97598a43048cbcc3714be5d7184a911fe163c24520440",
+          "startByte": 0,
+          "endByteExclusive": 483,
+          "startLine": 1,
+          "endLine": 13
+        },
+        {
+          "entry": "ch/qos/logback/core/rolling/helper/ZipCompressionStrategy.java",
+          "sourceSha256": "bfc099429387bc7729bc6d5766a4969776571f3bfd93c4eb91380357931cd95d",
+          "startByte": 0,
+          "endByteExclusive": 483,
+          "startLine": 1,
+          "endLine": 13
+        },
+        {
+          "entry": "ch/qos/logback/core/sift/AbstractDiscriminator.java",
+          "sourceSha256": "b7455cad5a6f93c5b38ed5f750c48a4a3e7902c482c003702c85ad05eef8654c",
+          "startByte": 0,
+          "endByteExclusive": 483,
+          "startLine": 1,
+          "endLine": 13
+        },
+        {
+          "entry": "ch/qos/logback/core/sift/AppenderFactory.java",
+          "sourceSha256": "d33b320ff8d4d050465b6afd3e55254b64d346c4eb776ba9948b17fe85f5ae0e",
+          "startByte": 0,
+          "endByteExclusive": 483,
+          "startLine": 1,
+          "endLine": 13
+        },
+        {
+          "entry": "ch/qos/logback/core/sift/AppenderFactoryUsingSiftModel.java",
+          "sourceSha256": "7464bc3c86e980661db48b583c13617f8f929c9a27054cfc372511d0b979a08a",
+          "startByte": 0,
+          "endByteExclusive": 483,
+          "startLine": 1,
+          "endLine": 13
+        },
+        {
+          "entry": "ch/qos/logback/core/sift/AppenderTracker.java",
+          "sourceSha256": "7c7f4c7ad94bde3fe2e38ba8783a3214ed4057763abfdcb4d20f0068df139525",
+          "startByte": 0,
+          "endByteExclusive": 483,
+          "startLine": 1,
+          "endLine": 13
+        },
+        {
+          "entry": "ch/qos/logback/core/sift/DefaultDiscriminator.java",
+          "sourceSha256": "7d3e5605ba6c4df95723d2dd0350a86e75b56642445960ae87bbaf7e2d1d4e45",
+          "startByte": 0,
+          "endByteExclusive": 483,
+          "startLine": 1,
+          "endLine": 13
+        },
+        {
+          "entry": "ch/qos/logback/core/sift/Discriminator.java",
+          "sourceSha256": "2e6480205339564543b3dd18e370e30393697f395e1434e946dc2591d4cbecd2",
+          "startByte": 0,
+          "endByteExclusive": 483,
+          "startLine": 1,
+          "endLine": 13
+        },
+        {
+          "entry": "ch/qos/logback/core/sift/NOPSiftModelHandler.java",
+          "sourceSha256": "d7d71740bbe99ffda39df4560b62b3ff0af9d235f9ee9d58116005a4333a5318",
+          "startByte": 0,
+          "endByteExclusive": 483,
+          "startLine": 1,
+          "endLine": 13
+        },
+        {
+          "entry": "ch/qos/logback/core/sift/SiftModelHandler.java",
+          "sourceSha256": "9c983ffe3e1fd43f2362c10581f458d756a49c8f20b9b04734e9542d3e1c1807",
+          "startByte": 0,
+          "endByteExclusive": 483,
+          "startLine": 1,
+          "endLine": 13
+        },
+        {
+          "entry": "ch/qos/logback/core/sift/SiftProcessor.java",
+          "sourceSha256": "922fad2954acc89e9332009d7d5b4a43c9d76e1215da3d55d35f42277aae1b91",
+          "startByte": 0,
+          "endByteExclusive": 483,
+          "startLine": 1,
+          "endLine": 13
+        },
+        {
+          "entry": "ch/qos/logback/core/sift/SiftingAppenderBase.java",
+          "sourceSha256": "f75913290c7adcae638a8442333abd3fef5f4fe5722502584bf090cdf31ba0a8",
+          "startByte": 0,
+          "endByteExclusive": 483,
+          "startLine": 1,
+          "endLine": 13
+        },
+        {
+          "entry": "ch/qos/logback/core/spi/AbstractComponentTracker.java",
+          "sourceSha256": "3c40c3f3137584bb87bba0fb5adf3cec468ecb0a930385bf14b87d73b7884be2",
+          "startByte": 0,
+          "endByteExclusive": 483,
+          "startLine": 1,
+          "endLine": 13
+        },
+        {
+          "entry": "ch/qos/logback/core/spi/AppenderAttachable.java",
+          "sourceSha256": "c90ef3c071c82c8a766757751ee80d534ea9a50d24fd40463222de74ecaef3e8",
+          "startByte": 0,
+          "endByteExclusive": 483,
+          "startLine": 1,
+          "endLine": 13
+        },
+        {
+          "entry": "ch/qos/logback/core/spi/AppenderAttachableImpl.java",
+          "sourceSha256": "0bc9080ced0ccfb93d1e7e80c742a2ecd5c4c2c485360f500a2e81d3e47b93da",
+          "startByte": 0,
+          "endByteExclusive": 483,
+          "startLine": 1,
+          "endLine": 13
+        },
+        {
+          "entry": "ch/qos/logback/core/spi/BasicSequenceNumberGenerator.java",
+          "sourceSha256": "d286ff0b23e35eb12c5000a363c360fd39d122c888f89e38e637df9f98ffee25",
+          "startByte": 0,
+          "endByteExclusive": 483,
+          "startLine": 1,
+          "endLine": 13
+        },
+        {
+          "entry": "ch/qos/logback/core/spi/ComponentTracker.java",
+          "sourceSha256": "515b9372ac593ed8ee851d79283677e9f5bc3ef04251838b447c13881a4aed14",
+          "startByte": 0,
+          "endByteExclusive": 483,
+          "startLine": 1,
+          "endLine": 13
+        },
+        {
+          "entry": "ch/qos/logback/core/spi/ConfigurationEvent.java",
+          "sourceSha256": "357bebe544fa46429abb64a937518ec6f4581a91ebdc25fd1022d342489870fe",
+          "startByte": 0,
+          "endByteExclusive": 483,
+          "startLine": 1,
+          "endLine": 13
+        },
+        {
+          "entry": "ch/qos/logback/core/spi/ConfigurationEventListener.java",
+          "sourceSha256": "f90ad557e65ed5796037cc4d884e2db95d2991fc2dae2d4dd936ef41abe86888",
+          "startByte": 0,
+          "endByteExclusive": 483,
+          "startLine": 1,
+          "endLine": 13
+        },
+        {
+          "entry": "ch/qos/logback/core/spi/ContextAware.java",
+          "sourceSha256": "778853e2cbeb86cc5dba1c28c7601d9d0d55149fe33613915a3dfe22cb97f229",
+          "startByte": 0,
+          "endByteExclusive": 483,
+          "startLine": 1,
+          "endLine": 13
+        },
+        {
+          "entry": "ch/qos/logback/core/spi/ContextAwareBase.java",
+          "sourceSha256": "3ade38a886fba4abb6e6eeba5904d85e1f2b5bb00d279e52f6d4becaa1ff3c8a",
+          "startByte": 0,
+          "endByteExclusive": 483,
+          "startLine": 1,
+          "endLine": 13
+        },
+        {
+          "entry": "ch/qos/logback/core/spi/ContextAwareImpl.java",
+          "sourceSha256": "28d445932193d6d58c34ccac53c263584fb7d2039ecaea13a1517d12c465d8e7",
+          "startByte": 0,
+          "endByteExclusive": 483,
+          "startLine": 1,
+          "endLine": 13
+        },
+        {
+          "entry": "ch/qos/logback/core/spi/ContextAwarePropertyContainer.java",
+          "sourceSha256": "f7f3772e63ae2398d5200c686bc235dd36a1560e57feea3c9a78b6834f9e11f7",
+          "startByte": 0,
+          "endByteExclusive": 483,
+          "startLine": 1,
+          "endLine": 13
+        },
+        {
+          "entry": "ch/qos/logback/core/spi/CyclicBufferTracker.java",
+          "sourceSha256": "d17b39c777ba974ab015e67202541bf44c4a7df1dc4f69f56cde4df9e840a67a",
+          "startByte": 0,
+          "endByteExclusive": 483,
+          "startLine": 1,
+          "endLine": 13
+        },
+        {
+          "entry": "ch/qos/logback/core/spi/DeferredProcessingAware.java",
+          "sourceSha256": "9f45896a07e2da25d8c750656db04f2a74d755eefa1624ffc6ff717ac56dce6f",
+          "startByte": 0,
+          "endByteExclusive": 483,
+          "startLine": 1,
+          "endLine": 13
+        },
+        {
+          "entry": "ch/qos/logback/core/spi/ErrorCodes.java",
+          "sourceSha256": "dbc506ae216e5a2aaf0f14a3c57feec4416707132c629c1414dd9cd73198855b",
+          "startByte": 0,
+          "endByteExclusive": 483,
+          "startLine": 1,
+          "endLine": 13
+        },
+        {
+          "entry": "ch/qos/logback/core/spi/FilterAttachable.java",
+          "sourceSha256": "e96ee189c86e1ee5e042e5d9d3256936b8b6923649606a0bc7af57f4f0a267a4",
+          "startByte": 0,
+          "endByteExclusive": 483,
+          "startLine": 1,
+          "endLine": 13
+        },
+        {
+          "entry": "ch/qos/logback/core/spi/FilterAttachableImpl.java",
+          "sourceSha256": "886606fbb1ba4bb368b27aab1666548f7de39148578ec40e7f3728a9d7fa99bd",
+          "startByte": 0,
+          "endByteExclusive": 483,
+          "startLine": 1,
+          "endLine": 13
+        },
+        {
+          "entry": "ch/qos/logback/core/spi/FilterReply.java",
+          "sourceSha256": "7c437113280a0a2bf624c7ee0f537ef0a75c893534091233f0b98d994f0f3d66",
+          "startByte": 0,
+          "endByteExclusive": 483,
+          "startLine": 1,
+          "endLine": 13
+        },
+        {
+          "entry": "ch/qos/logback/core/spi/LifeCycle.java",
+          "sourceSha256": "9162b939a195237aebe11fa05923631992085e43e06b9f036f26946934daf9fd",
+          "startByte": 0,
+          "endByteExclusive": 483,
+          "startLine": 1,
+          "endLine": 13
+        },
+        {
+          "entry": "ch/qos/logback/core/spi/LogbackLock.java",
+          "sourceSha256": "e8c3fbcdd3c06b95239869691c549f08708620f145c5a181dbef251368bc291b",
+          "startByte": 0,
+          "endByteExclusive": 483,
+          "startLine": 1,
+          "endLine": 13
+        },
+        {
+          "entry": "ch/qos/logback/core/spi/PreSerializationTransformer.java",
+          "sourceSha256": "5c01bdfa2d46f639a81f66d4a68be4f374087a28f696cb034e3bfdce2422899e",
+          "startByte": 0,
+          "endByteExclusive": 483,
+          "startLine": 1,
+          "endLine": 13
+        },
+        {
+          "entry": "ch/qos/logback/core/spi/PropertyContainer.java",
+          "sourceSha256": "898d15e5c46ab15f7da46b41b68dbd035cfbac952fbdc8ef5af24b09e293edc5",
+          "startByte": 0,
+          "endByteExclusive": 483,
+          "startLine": 1,
+          "endLine": 13
+        },
+        {
+          "entry": "ch/qos/logback/core/spi/PropertyDefiner.java",
+          "sourceSha256": "1a9fa1b04933a384b57b71c95cb27071f8e5fa8304f74e621026f5e0c786b565",
+          "startByte": 0,
+          "endByteExclusive": 483,
+          "startLine": 1,
+          "endLine": 13
+        },
+        {
+          "entry": "ch/qos/logback/core/spi/ScanException.java",
+          "sourceSha256": "f06a853d8cca0ce39683479383740b843ff45ec533db2a425c4c15f9f3a32df8",
+          "startByte": 0,
+          "endByteExclusive": 483,
+          "startLine": 1,
+          "endLine": 13
+        },
+        {
+          "entry": "ch/qos/logback/core/spi/SequenceNumberGenerator.java",
+          "sourceSha256": "0722ff04952cfe21c7f921be7d9210facc9d5c018290160a5ee96d117c39e4cf",
+          "startByte": 0,
+          "endByteExclusive": 483,
+          "startLine": 1,
+          "endLine": 13
+        },
+        {
+          "entry": "ch/qos/logback/core/status/ErrorStatus.java",
+          "sourceSha256": "f3d832cbf06129ab2ab54c53725064dc186db79c3cd0e2f7d3fa1016c8df1257",
+          "startByte": 0,
+          "endByteExclusive": 483,
+          "startLine": 1,
+          "endLine": 13
+        },
+        {
+          "entry": "ch/qos/logback/core/status/InfoStatus.java",
+          "sourceSha256": "96523ea5b3a3c748b7c4e86521d38eff17dd705895879dacf7c3d00c1d940165",
+          "startByte": 0,
+          "endByteExclusive": 483,
+          "startLine": 1,
+          "endLine": 13
+        },
+        {
+          "entry": "ch/qos/logback/core/status/NopStatusListener.java",
+          "sourceSha256": "d2e715a33c428128a8a777f3855e81266e878c149042e1fc7ef43ea468b1451d",
+          "startByte": 0,
+          "endByteExclusive": 483,
+          "startLine": 1,
+          "endLine": 13
+        },
+        {
+          "entry": "ch/qos/logback/core/status/OnConsoleStatusListener.java",
+          "sourceSha256": "ca4d879e916e2b51eb68f472c128c5683a1d993d7478aec021e513603e4c7029",
+          "startByte": 0,
+          "endByteExclusive": 483,
+          "startLine": 1,
+          "endLine": 13
+        },
+        {
+          "entry": "ch/qos/logback/core/status/OnErrorConsoleStatusListener.java",
+          "sourceSha256": "027b6710a2c2c977fd7fd3afc828d3087c349e2f5f1040d999313c671d4d4afb",
+          "startByte": 0,
+          "endByteExclusive": 483,
+          "startLine": 1,
+          "endLine": 13
+        },
+        {
+          "entry": "ch/qos/logback/core/status/OnFileStatusListener.java",
+          "sourceSha256": "f804c3aff28b17b7e81368788463df9f46a9c553b3580b7559aa1a48d7deca4c",
+          "startByte": 0,
+          "endByteExclusive": 483,
+          "startLine": 1,
+          "endLine": 13
+        },
+        {
+          "entry": "ch/qos/logback/core/status/OnPrintStreamStatusListenerBase.java",
+          "sourceSha256": "00f425f66a4e9dea62604c3db747455278ae28e28a7962f405c6c73f10a05928",
+          "startByte": 0,
+          "endByteExclusive": 483,
+          "startLine": 1,
+          "endLine": 13
+        },
+        {
+          "entry": "ch/qos/logback/core/status/Status.java",
+          "sourceSha256": "6e8ab4e84ca5eb0112fdc3600ec0fdfe07a74925959679a33c4b3077373ddc0e",
+          "startByte": 0,
+          "endByteExclusive": 483,
+          "startLine": 1,
+          "endLine": 13
+        },
+        {
+          "entry": "ch/qos/logback/core/status/StatusBase.java",
+          "sourceSha256": "85ab63f26828df2dc7513d5ab2216f17be2676b6ae70193000a7e3e4217de82c",
+          "startByte": 0,
+          "endByteExclusive": 483,
+          "startLine": 1,
+          "endLine": 13
+        },
+        {
+          "entry": "ch/qos/logback/core/status/StatusListener.java",
+          "sourceSha256": "89e10c4988f4e8ef0b8c65eb6f6fa999eb84c412399132125e3a1c928f5ed0f4",
+          "startByte": 0,
+          "endByteExclusive": 483,
+          "startLine": 1,
+          "endLine": 13
+        },
+        {
+          "entry": "ch/qos/logback/core/status/StatusListenerAsList.java",
+          "sourceSha256": "4dd000c29de02b4580d5dbe0a642357daed92b9343e42efda280ab1bce7cf2ec",
+          "startByte": 0,
+          "endByteExclusive": 483,
+          "startLine": 1,
+          "endLine": 13
+        },
+        {
+          "entry": "ch/qos/logback/core/status/StatusManager.java",
+          "sourceSha256": "12a9a96f9ba0cb259bb2004e6d72ce8690df0394af9694fb776d1f60e9f160f8",
+          "startByte": 0,
+          "endByteExclusive": 483,
+          "startLine": 1,
+          "endLine": 13
+        },
+        {
+          "entry": "ch/qos/logback/core/status/StatusUtil.java",
+          "sourceSha256": "b0eee1014fc7da00f8c5c9a820dc5cef58119318056557da079af0d3863588bd",
+          "startByte": 0,
+          "endByteExclusive": 483,
+          "startLine": 1,
+          "endLine": 13
+        },
+        {
+          "entry": "ch/qos/logback/core/status/ViewStatusMessagesServletBase.java",
+          "sourceSha256": "421e4c7c7bf5c18400f134caf0a5f2a8f564c3682d7c7cca0ef7d72d30e281e3",
+          "startByte": 0,
+          "endByteExclusive": 483,
+          "startLine": 1,
+          "endLine": 13
+        },
+        {
+          "entry": "ch/qos/logback/core/status/WarnStatus.java",
+          "sourceSha256": "e177f838a972bf2e555c7027f7e261a4a753d938033c5cdcda4aaffd9d8f1281",
+          "startByte": 0,
+          "endByteExclusive": 483,
+          "startLine": 1,
+          "endLine": 13
+        },
+        {
+          "entry": "ch/qos/logback/core/subst/Node.java",
+          "sourceSha256": "5909f65fda162c24f541dd81ca6d9155c9f4cb48c9a6a35259b17431de23324e",
+          "startByte": 0,
+          "endByteExclusive": 483,
+          "startLine": 1,
+          "endLine": 13
+        },
+        {
+          "entry": "ch/qos/logback/core/subst/NodeToStringTransformer.java",
+          "sourceSha256": "1b9f19c36a7b4cd4ea4398fede8c03760be2370aa0dfd7cc5ad0aa9fc1fb330d",
+          "startByte": 0,
+          "endByteExclusive": 483,
+          "startLine": 1,
+          "endLine": 13
+        },
+        {
+          "entry": "ch/qos/logback/core/subst/Parser.java",
+          "sourceSha256": "1265b4d12002c6cf26647917ff73b6a50f136700ece2e302ba9646e46c1dbd9b",
+          "startByte": 0,
+          "endByteExclusive": 483,
+          "startLine": 1,
+          "endLine": 13
+        },
+        {
+          "entry": "ch/qos/logback/core/subst/Token.java",
+          "sourceSha256": "8f3fe1723cf3069246c415b832351733195120ba45093f62829fcb5f840a3775",
+          "startByte": 0,
+          "endByteExclusive": 483,
+          "startLine": 1,
+          "endLine": 13
+        },
+        {
+          "entry": "ch/qos/logback/core/subst/Tokenizer.java",
+          "sourceSha256": "ca07cdf920c2e79b1f6ce87e4743da49846163f68ffa6e074e43f21370bbb894",
+          "startByte": 0,
+          "endByteExclusive": 483,
+          "startLine": 1,
+          "endLine": 13
+        },
+        {
+          "entry": "ch/qos/logback/core/testUtil/AbstractMultiThreadedHarness.java",
+          "sourceSha256": "b92dd3350231a21cc14a99071cfac4dec5cb3269911b61935ba79cedd488aec4",
+          "startByte": 0,
+          "endByteExclusive": 483,
+          "startLine": 1,
+          "endLine": 13
+        },
+        {
+          "entry": "ch/qos/logback/core/testUtil/CoreTestConstants.java",
+          "sourceSha256": "40a458b3ba3b49bef8488d285ccdb9767cb68a0e3b68f882feee27480ea0b719",
+          "startByte": 0,
+          "endByteExclusive": 483,
+          "startLine": 1,
+          "endLine": 13
+        },
+        {
+          "entry": "ch/qos/logback/core/testUtil/DelayingListAppender.java",
+          "sourceSha256": "3ec847bef9441a4646797326baf22abe9027fd984bde2c4c84055304b4575b5b",
+          "startByte": 0,
+          "endByteExclusive": 483,
+          "startLine": 1,
+          "endLine": 13
+        },
+        {
+          "entry": "ch/qos/logback/core/testUtil/DummyEncoder.java",
+          "sourceSha256": "cdf65fb34b82fc88b2c04a9efe85ed81d490abb536483e09f0f6ff508dcffb78",
+          "startByte": 0,
+          "endByteExclusive": 483,
+          "startLine": 1,
+          "endLine": 13
+        },
+        {
+          "entry": "ch/qos/logback/core/testUtil/EnvUtilForTests.java",
+          "sourceSha256": "7169679a0c94d89422bf7a708724926c80fa81fc09e2f82ebbab21878f00fe49",
+          "startByte": 0,
+          "endByteExclusive": 483,
+          "startLine": 1,
+          "endLine": 13
+        },
+        {
+          "entry": "ch/qos/logback/core/testUtil/FileTestUtil.java",
+          "sourceSha256": "0250d10bfbe4a90ab6d8b62a4573e276f7e8d9256f8fb713db702baf9aecc277",
+          "startByte": 0,
+          "endByteExclusive": 483,
+          "startLine": 1,
+          "endLine": 13
+        },
+        {
+          "entry": "ch/qos/logback/core/testUtil/FileToBufferUtil.java",
+          "sourceSha256": "253377a471912b3af68dbee8ac7516125493e74226584db509946c4bedb3f5f8",
+          "startByte": 0,
+          "endByteExclusive": 483,
+          "startLine": 1,
+          "endLine": 13
+        },
+        {
+          "entry": "ch/qos/logback/core/testUtil/MockInitialContext.java",
+          "sourceSha256": "2a7677b173dfadd4903d9fb1f229d02aac86b820ecd62f0842751d29b40c2510",
+          "startByte": 0,
+          "endByteExclusive": 483,
+          "startLine": 1,
+          "endLine": 13
+        },
+        {
+          "entry": "ch/qos/logback/core/testUtil/MockInitialContextFactory.java",
+          "sourceSha256": "e7418918513ed5db9fc96ee5fad6b7e9c59d437472dfe89b78d5ff2d836b711b",
+          "startByte": 0,
+          "endByteExclusive": 483,
+          "startLine": 1,
+          "endLine": 13
+        },
+        {
+          "entry": "ch/qos/logback/core/testUtil/NPEAppender.java",
+          "sourceSha256": "341347c761585f2d19818b3f3a79b50ec65ade30969a528be003f3f46612dec9",
+          "startByte": 0,
+          "endByteExclusive": 483,
+          "startLine": 1,
+          "endLine": 13
+        },
+        {
+          "entry": "ch/qos/logback/core/testUtil/RandomUtil.java",
+          "sourceSha256": "7dc0bb28fd1a792c63033da8a5bd8fa7ee4d2dc02ce37c1c4f85270ce3f308e2",
+          "startByte": 0,
+          "endByteExclusive": 483,
+          "startLine": 1,
+          "endLine": 13
+        },
+        {
+          "entry": "ch/qos/logback/core/testUtil/RunnableWithCounterAndDone.java",
+          "sourceSha256": "b309a168df63de4ed900a0aeceb9eb233360cbd30ba62bd9758328e623f5fb35",
+          "startByte": 0,
+          "endByteExclusive": 483,
+          "startLine": 1,
+          "endLine": 13
+        },
+        {
+          "entry": "ch/qos/logback/core/testUtil/StringListAppender.java",
+          "sourceSha256": "fa44733cd8cb288835a726d0e2a78318aba6948d0d461c9381c01091c078e5f5",
+          "startByte": 0,
+          "endByteExclusive": 483,
+          "startLine": 1,
+          "endLine": 13
+        },
+        {
+          "entry": "ch/qos/logback/core/testUtil/TeeOutputStream.java",
+          "sourceSha256": "2fffee25e93d374a9692d9d30a139896a4f026e834912647775892eff82e3ae8",
+          "startByte": 0,
+          "endByteExclusive": 483,
+          "startLine": 1,
+          "endLine": 13
+        },
+        {
+          "entry": "ch/qos/logback/core/testUtil/TrivialStatusListener.java",
+          "sourceSha256": "e6f38479a62b1f23853922fe65fdfde52d34f61277c2b736cc7d3b3a5f75f7a7",
+          "startByte": 0,
+          "endByteExclusive": 483,
+          "startLine": 1,
+          "endLine": 13
+        },
+        {
+          "entry": "ch/qos/logback/core/testUtil/XTeeOutputStream.java",
+          "sourceSha256": "d767488a69391c41a610a0817cbadc2f9293ea06ae907b0b9ce3646a5d0ba5ae",
+          "startByte": 0,
+          "endByteExclusive": 483,
+          "startLine": 1,
+          "endLine": 13
+        },
+        {
+          "entry": "ch/qos/logback/core/util/AggregationType.java",
+          "sourceSha256": "ebde30687ed9857da91565d9d370531ea558301f4c133e3b31baddce13b6e518",
+          "startByte": 0,
+          "endByteExclusive": 483,
+          "startLine": 1,
+          "endLine": 13
+        },
+        {
+          "entry": "ch/qos/logback/core/util/BatchedFixedIntervalInvocationGate.java",
+          "sourceSha256": "10b5000803527a98d748ddea7f5da2ae5f0a9ef945f46ba4f3bafad1c7d8a20f",
+          "startByte": 0,
+          "endByteExclusive": 483,
+          "startLine": 1,
+          "endLine": 13
+        },
+        {
+          "entry": "ch/qos/logback/core/util/COWArrayList.java",
+          "sourceSha256": "9600f0e283e229478b00ed146844fe540c9643bc8e69674a78e90b934cbbd93a",
+          "startByte": 0,
+          "endByteExclusive": 483,
+          "startLine": 1,
+          "endLine": 13
+        },
+        {
+          "entry": "ch/qos/logback/core/util/CachingDateFormatter.java",
+          "sourceSha256": "aaf119e753138e393758ef8f58ebfc1edb7b31621f8b7140bc8cf6ab0136179f",
+          "startByte": 0,
+          "endByteExclusive": 483,
+          "startLine": 1,
+          "endLine": 13
+        },
+        {
+          "entry": "ch/qos/logback/core/util/CharSequenceState.java",
+          "sourceSha256": "2435144f7e4a000d5dbe1b9e326375366610a259dd36e9ff786ff6cc10fd54eb",
+          "startByte": 0,
+          "endByteExclusive": 483,
+          "startLine": 1,
+          "endLine": 13
+        },
+        {
+          "entry": "ch/qos/logback/core/util/CharSequenceToRegexMapper.java",
+          "sourceSha256": "398436eec145373a052f8e52d20812ead3fa25ecc0056e3789a9dafbb3a4342c",
+          "startByte": 0,
+          "endByteExclusive": 483,
+          "startLine": 1,
+          "endLine": 13
+        },
+        {
+          "entry": "ch/qos/logback/core/util/CloseUtil.java",
+          "sourceSha256": "93a8bf3e13096d83051f06eb4253b0968985c39fdfb9a3385f09e30b2139fbd1",
+          "startByte": 0,
+          "endByteExclusive": 483,
+          "startLine": 1,
+          "endLine": 13
+        },
+        {
+          "entry": "ch/qos/logback/core/util/ContentTypeUtil.java",
+          "sourceSha256": "1378b30a54386f09f8d95f430b424d7bc1e0993c8902f90e1fd25a797ceaa60a",
+          "startByte": 0,
+          "endByteExclusive": 483,
+          "startLine": 1,
+          "endLine": 13
+        },
+        {
+          "entry": "ch/qos/logback/core/util/ContextUtil.java",
+          "sourceSha256": "ca26d735729c9e802e03cd29415becd38ad3bc4f52d145f3df14cfe141569766",
+          "startByte": 0,
+          "endByteExclusive": 483,
+          "startLine": 1,
+          "endLine": 13
+        },
+        {
+          "entry": "ch/qos/logback/core/util/CoreVersionUtil.java",
+          "sourceSha256": "7687c446b4c0a60ea3369e1d93120c872808a179a59c3b83bdef4da15449696d",
+          "startByte": 0,
+          "endByteExclusive": 483,
+          "startLine": 1,
+          "endLine": 13
+        },
+        {
+          "entry": "ch/qos/logback/core/util/DatePatternToRegexUtil.java",
+          "sourceSha256": "9ebf89dfc5d6137eac5f5169cb6c2a27952e64e306c20c63bc58f84b7f2e94fd",
+          "startByte": 0,
+          "endByteExclusive": 483,
+          "startLine": 1,
+          "endLine": 13
+        },
+        {
+          "entry": "ch/qos/logback/core/util/DefaultInvocationGate.java",
+          "sourceSha256": "36fe5063561a7832352f925df4175e06b8c3cc60c98ead5eb2d7dd74876d4c11",
+          "startByte": 0,
+          "endByteExclusive": 483,
+          "startLine": 1,
+          "endLine": 13
+        },
+        {
+          "entry": "ch/qos/logback/core/util/DelayStrategy.java",
+          "sourceSha256": "0ed568536dd7accec1017a50ee90671725011801b93bebbd6408c296efceb5a5",
+          "startByte": 0,
+          "endByteExclusive": 483,
+          "startLine": 1,
+          "endLine": 13
+        },
+        {
+          "entry": "ch/qos/logback/core/util/DirectJson.java",
+          "sourceSha256": "4b6ea0b2fc0ee14b95717b90babe841cee9454dd1001f05cbe3a626d7d3f78ef",
+          "startByte": 0,
+          "endByteExclusive": 483,
+          "startLine": 1,
+          "endLine": 13
+        },
+        {
+          "entry": "ch/qos/logback/core/util/Duration.java",
+          "sourceSha256": "007cfba8b7eac558dee46166d681607649c9df89658e8336449e1f436f34c420",
+          "startByte": 0,
+          "endByteExclusive": 483,
+          "startLine": 1,
+          "endLine": 13
+        },
+        {
+          "entry": "ch/qos/logback/core/util/DynamicClassLoadingException.java",
+          "sourceSha256": "de4aebbfe92af80615c36b5f5545ce8cfb725ddba196de058b688e64ab852301",
+          "startByte": 0,
+          "endByteExclusive": 483,
+          "startLine": 1,
+          "endLine": 13
+        },
+        {
+          "entry": "ch/qos/logback/core/util/EnvUtil.java",
+          "sourceSha256": "8f0b08b8b0fe345bc95f56148943ffc81a856c62f6356aee116f5e515f0265a7",
+          "startByte": 0,
+          "endByteExclusive": 483,
+          "startLine": 1,
+          "endLine": 13
+        },
+        {
+          "entry": "ch/qos/logback/core/util/FileSize.java",
+          "sourceSha256": "9b31716738de13c1b5db58c88acba83178056983d7bc0830fe3d36c62e151f89",
+          "startByte": 0,
+          "endByteExclusive": 483,
+          "startLine": 1,
+          "endLine": 13
+        },
+        {
+          "entry": "ch/qos/logback/core/util/FileUtil.java",
+          "sourceSha256": "635d71ae716c4e2cb84b9a8a0c273823d0d2d16dbdb668d7c77e38f225eb677c",
+          "startByte": 0,
+          "endByteExclusive": 483,
+          "startLine": 1,
+          "endLine": 13
+        },
+        {
+          "entry": "ch/qos/logback/core/util/FixedDelay.java",
+          "sourceSha256": "27652e7b521f02724efd40741d32fcad92fec44ea5fc13019aa538708181593c",
+          "startByte": 0,
+          "endByteExclusive": 483,
+          "startLine": 1,
+          "endLine": 13
+        },
+        {
+          "entry": "ch/qos/logback/core/util/FixedIntervalInvocationGate.java",
+          "sourceSha256": "d2027ab7197c0695c80d434fbe03c381990913c7cfacc68523e7d4458f3a2f4f",
+          "startByte": 0,
+          "endByteExclusive": 483,
+          "startLine": 1,
+          "endLine": 13
+        },
+        {
+          "entry": "ch/qos/logback/core/util/IncompatibleClassException.java",
+          "sourceSha256": "709511c39eda46f509cb152ee2d52eacc04b1757885cace1392265e20fe3083d",
+          "startByte": 0,
+          "endByteExclusive": 483,
+          "startLine": 1,
+          "endLine": 13
+        },
+        {
+          "entry": "ch/qos/logback/core/util/IntHolder.java",
+          "sourceSha256": "50fdcb59478968bed40201b821ec332cccfceb164c2043277b854da1be8deb36",
+          "startByte": 0,
+          "endByteExclusive": 483,
+          "startLine": 1,
+          "endLine": 13
+        },
+        {
+          "entry": "ch/qos/logback/core/util/InterruptUtil.java",
+          "sourceSha256": "1b4c5e73fc5b6f9881f7d3147d1d7416fe4112f1c4c62edf03a8d98e31d315f9",
+          "startByte": 0,
+          "endByteExclusive": 483,
+          "startLine": 1,
+          "endLine": 13
+        },
+        {
+          "entry": "ch/qos/logback/core/util/InvocationGate.java",
+          "sourceSha256": "6bf38fe4588ff4daabad6826069b5261ab140b4a6f502fea8ad4cab22b0d158e",
+          "startByte": 0,
+          "endByteExclusive": 483,
+          "startLine": 1,
+          "endLine": 13
+        },
+        {
+          "entry": "ch/qos/logback/core/util/IpAddressMatcher.java",
+          "sourceSha256": "b06c76deb9e8ed431bcd1a596fe8aa403051a97121b1b1abfe74cf7b407302ac",
+          "startByte": 0,
+          "endByteExclusive": 483,
+          "startLine": 1,
+          "endLine": 13
+        },
+        {
+          "entry": "ch/qos/logback/core/util/JNDIUtil.java",
+          "sourceSha256": "3ad64a78b9c13fe05d57833389e959870efbc3c6270a84bb946efc4fff55b115",
+          "startByte": 0,
+          "endByteExclusive": 483,
+          "startLine": 1,
+          "endLine": 13
+        },
+        {
+          "entry": "ch/qos/logback/core/util/Loader.java",
+          "sourceSha256": "46273f0ccc04195fb17dcd7c2dddd1d873dfd5023d428d43e9d6a36817152209",
+          "startByte": 0,
+          "endByteExclusive": 483,
+          "startLine": 1,
+          "endLine": 13
+        },
+        {
+          "entry": "ch/qos/logback/core/util/LocationUtil.java",
+          "sourceSha256": "53496dd597f40e3a8738dd889eb4fea76649e611415944a2a1f0a698b1cf5f22",
+          "startByte": 0,
+          "endByteExclusive": 483,
+          "startLine": 1,
+          "endLine": 13
+        },
+        {
+          "entry": "ch/qos/logback/core/util/MD5Util.java",
+          "sourceSha256": "18f9664b9c577499883ba156d27424f285cf923c5f12f3eb67d15d48d2e4b624",
+          "startByte": 0,
+          "endByteExclusive": 483,
+          "startLine": 1,
+          "endLine": 13
+        },
+        {
+          "entry": "ch/qos/logback/core/util/NetworkAddressUtil.java",
+          "sourceSha256": "8695d15b4a0c96f7687202ee1a08d06b53644311de36d0f519df4a3aba605717",
+          "startByte": 0,
+          "endByteExclusive": 483,
+          "startLine": 1,
+          "endLine": 13
+        },
+        {
+          "entry": "ch/qos/logback/core/util/OptionHelper.java",
+          "sourceSha256": "afff5a9dd1a23b15b29e6ad8530bfeaa3cadc7fc456337508ef78f7fe24ada3a",
+          "startByte": 0,
+          "endByteExclusive": 483,
+          "startLine": 1,
+          "endLine": 13
+        },
+        {
+          "entry": "ch/qos/logback/core/util/PropertySetterException.java",
+          "sourceSha256": "0a29c89a5a70f056f428f5f8c62d1a6f25494457f42a84ffceeb3832c390bcb1",
+          "startByte": 0,
+          "endByteExclusive": 483,
+          "startLine": 1,
+          "endLine": 13
+        },
+        {
+          "entry": "ch/qos/logback/core/util/ReentryGuard.java",
+          "sourceSha256": "8343a890d2ed4960c17100214d7bc69d5a49088b75f3344d7863cc106bae3ad8",
+          "startByte": 0,
+          "endByteExclusive": 483,
+          "startLine": 1,
+          "endLine": 13
+        },
+        {
+          "entry": "ch/qos/logback/core/util/ReentryGuardFactory.java",
+          "sourceSha256": "c7ce7ef7442a328e391d5de5cc64189d6db82a5677cd1d04d64a21624330111f",
+          "startByte": 0,
+          "endByteExclusive": 483,
+          "startLine": 1,
+          "endLine": 13
+        },
+        {
+          "entry": "ch/qos/logback/core/util/SimpleInvocationGate.java",
+          "sourceSha256": "bdc08b2f8d4aa486526e46961e02aa47dc871cbcc9a93bcd2d93f8c1177af84b",
+          "startByte": 0,
+          "endByteExclusive": 483,
+          "startLine": 1,
+          "endLine": 13
+        },
+        {
+          "entry": "ch/qos/logback/core/util/SimpleTimeBasedGuard.java",
+          "sourceSha256": "297afee966e0c51284c89e84044fd23ed5db72e3e8406e9b4faca240959933f7",
+          "startByte": 0,
+          "endByteExclusive": 483,
+          "startLine": 1,
+          "endLine": 13
+        },
+        {
+          "entry": "ch/qos/logback/core/util/StatusListenerConfigHelper.java",
+          "sourceSha256": "885528d9de5691e32ecc5245d3d52acf08243386db2410037da1e257350159ab",
+          "startByte": 0,
+          "endByteExclusive": 483,
+          "startLine": 1,
+          "endLine": 13
+        },
+        {
+          "entry": "ch/qos/logback/core/util/StatusPrinter.java",
+          "sourceSha256": "31fb001aaeead9f88675261aa6dbb71a8e57640acb5cc196ff734197e599e849",
+          "startByte": 0,
+          "endByteExclusive": 483,
+          "startLine": 1,
+          "endLine": 13
+        },
+        {
+          "entry": "ch/qos/logback/core/util/StatusPrinter2.java",
+          "sourceSha256": "4bf9d351699f34afaf7c0f6dc09e3c2500be91159e2ec81442e9abeb8c23c1af",
+          "startByte": 0,
+          "endByteExclusive": 483,
+          "startLine": 1,
+          "endLine": 13
+        },
+        {
+          "entry": "ch/qos/logback/core/util/StringCollectionUtil.java",
+          "sourceSha256": "b7cb9a81c3d5aa9ff47dc41d9473c534bbe152255475f5ace704e1845767e505",
+          "startByte": 0,
+          "endByteExclusive": 483,
+          "startLine": 1,
+          "endLine": 13
+        },
+        {
+          "entry": "ch/qos/logback/core/util/StringUtil.java",
+          "sourceSha256": "492f276c70a4b272ec5629d7b514aef0c6e2df9b4d18cfad4c72169fe8c61bd7",
+          "startByte": 0,
+          "endByteExclusive": 483,
+          "startLine": 1,
+          "endLine": 13
+        },
+        {
+          "entry": "ch/qos/logback/core/util/SystemInfo.java",
+          "sourceSha256": "91c23e121555bb9e55f9a2fdff11a83dcfb9f46049c9c8efa15080cb373af1e6",
+          "startByte": 0,
+          "endByteExclusive": 483,
+          "startLine": 1,
+          "endLine": 13
+        },
+        {
+          "entry": "ch/qos/logback/core/util/TimeUtil.java",
+          "sourceSha256": "da163ff10fa17c7b33b2e0b78df353a6ba3bace872f953db751b0c124d4b2567",
+          "startByte": 0,
+          "endByteExclusive": 483,
+          "startLine": 1,
+          "endLine": 13
+        },
+        {
+          "entry": "ch/qos/logback/core/util/VersionUtil.java",
+          "sourceSha256": "e0155e226d47571984d99c9ffdd2adc6948c432a7605cf2ed86af72429e34177",
+          "startByte": 0,
+          "endByteExclusive": 483,
+          "startLine": 1,
+          "endLine": 13
+        }
+      ]
+    },
+    {
+      "commentSha256": "ae34150352ad759bc63c5b6bd7632ba9c7aec1c8dab844c5bb4c4b42c1134e72",
+      "sources": [
+        {
+          "entry": "ch/qos/logback/core/boolex/ExpressionPropertyCondition.java",
+          "sourceSha256": "bb094600e03a0c6d32205e147fb8f1e66a4bd91a8fb8343d73b056f197741b1f",
+          "startByte": 778,
+          "endByteExclusive": 1384,
+          "startLine": 27,
+          "endLine": 40
+        }
+      ]
+    },
+    {
+      "commentSha256": "8ffcfcb4713ae672be1b8ec918d75794494561d4a04f836e2d27c4d01b3727fa",
+      "sources": [
+        {
+          "entry": "ch/qos/logback/core/boolex/PropertyCondition.java",
+          "sourceSha256": "25f9940a1b40903a04498dc63cb273f0b6f2715303fbd6ddc159a3ddc24a8ba4",
+          "startByte": 762,
+          "endByteExclusive": 1539,
+          "startLine": 23,
+          "endLine": 40
+        }
+      ]
+    },
+    {
+      "commentSha256": "c79277d19c458c37eee2b597b4f03d9012398e1c0f186c3de0990ff60b87a3a8",
+      "sources": [
+        {
+          "entry": "ch/qos/logback/core/joran/GenericXMLConfigurator.java",
+          "sourceSha256": "b2c1a3eb94a19f6ea939f20df7dd9a267f436653f9c3215f96981af13a06d90b",
+          "startByte": 0,
+          "endByteExclusive": 474,
+          "startLine": 1,
+          "endLine": 11
+        },
+        {
+          "entry": "ch/qos/logback/core/joran/action/ImplicitModelDataForComplexProperty.java",
+          "sourceSha256": "297ce33c795fbcf424a224d18056d7dceaefecbaee55974a04f486cbd8b123a0",
+          "startByte": 0,
+          "endByteExclusive": 474,
+          "startLine": 1,
+          "endLine": 11
+        },
+        {
+          "entry": "ch/qos/logback/core/rolling/DefaultTimeBasedFileNamingAndTriggeringPolicy.java",
+          "sourceSha256": "111c575e1d55a47dce07c2c9cb9285c5a54bbe0a63b070d88cd3b2607e0bba35",
+          "startByte": 0,
+          "endByteExclusive": 474,
+          "startLine": 1,
+          "endLine": 11
+        },
+        {
+          "entry": "ch/qos/logback/core/rolling/RollingFileAppender.java",
+          "sourceSha256": "1671770658aa4761d5617b7d1f181ae83b21ebc4af0b7a3cebf4fdca31a70e9b",
+          "startByte": 0,
+          "endByteExclusive": 474,
+          "startLine": 1,
+          "endLine": 11
+        },
+        {
+          "entry": "ch/qos/logback/core/rolling/SizeAndTimeBasedFileNamingAndTriggeringPolicy.java",
+          "sourceSha256": "83976c623efa25ad6b2d66987a1e15884cf382780cec1ab48611b752771a890d",
+          "startByte": 0,
+          "endByteExclusive": 474,
+          "startLine": 1,
+          "endLine": 11
+        },
+        {
+          "entry": "ch/qos/logback/core/rolling/helper/TimeBasedArchiveRemover.java",
+          "sourceSha256": "38e3ca3ea528d990058802589a40815615d48a044e7b5cfcc04500e41b8eb571",
+          "startByte": 0,
+          "endByteExclusive": 474,
+          "startLine": 1,
+          "endLine": 11
+        },
+        {
+          "entry": "ch/qos/logback/core/util/ExecutorServiceUtil.java",
+          "sourceSha256": "97a46393a743f01335fb0ebc73c4c9c2ba5795318508b05503ddcbb73381d9ae",
+          "startByte": 0,
+          "endByteExclusive": 474,
+          "startLine": 1,
+          "endLine": 11
+        }
+      ]
+    },
+    {
+      "commentSha256": "b93710f16ab298c207cb4ea7f0f69aa9b28934ec9ebcb6a29c01e02818be1a0e",
+      "sources": [
+        {
+          "entry": "ch/qos/logback/core/joran/JoranConfiguratorBase.java",
+          "sourceSha256": "aaecbbd5aa3822ea6b8fe31d6d0bcd0042e58b446bac3afef938c1c04dc3be19",
+          "startByte": 1114,
+          "endByteExclusive": 1226,
+          "startLine": 28,
+          "endLine": 29
+        }
+      ]
+    },
+    {
+      "commentSha256": "da91f2d8f14b98b3816221939d1835ed3f61beac483614d52e62be6b9cb86b0f",
+      "sources": [
+        {
+          "entry": "ch/qos/logback/core/joran/action/ImportAction.java",
+          "sourceSha256": "873c4bf6f45058aadee0c8c2824bd73df53709d2f91e616227a101612abf697d",
+          "startByte": 723,
+          "endByteExclusive": 840,
+          "startLine": 22,
+          "endLine": 27
+        }
+      ]
+    },
+    {
+      "commentSha256": "02e50daba9a3b1833db737306572beda6f7a58d1ee9ebe9a56a3934d107a3d48",
+      "sources": [
+        {
+          "entry": "ch/qos/logback/core/joran/action/ShutdownHookAction.java",
+          "sourceSha256": "5ef1b8cd62403f070a55bc95b6522469cace03703a5403266df50b5883d99fe7",
+          "startByte": 729,
+          "endByteExclusive": 924,
+          "startLine": 22,
+          "endLine": 28
+        }
+      ]
+    },
+    {
+      "commentSha256": "fff85447d10b5c6cefd86be7d2f502695de6be80b42c309781f98466d74f6cb4",
+      "sources": [
+        {
+          "entry": "ch/qos/logback/core/net/ssl/SSLParametersConfiguration.java",
+          "sourceSha256": "c3da34e845a54ba46b160c9a5477d8a6de2851041796261cfa2e35941d4bce29",
+          "startByte": 2427,
+          "endByteExclusive": 2702,
+          "startLine": 72,
+          "endLine": 78
+        }
+      ]
+    },
+    {
+      "commentSha256": "ff9344910c54bad1ebdbb591e3722fec1dd657dbd0ce943877e5fa602b61b653",
+      "sources": [
+        {
+          "entry": "ch/qos/logback/core/net/ssl/SSLParametersConfiguration.java",
+          "sourceSha256": "c3da34e845a54ba46b160c9a5477d8a6de2851041796261cfa2e35941d4bce29",
+          "startByte": 3607,
+          "endByteExclusive": 3904,
+          "startLine": 96,
+          "endLine": 102
+        }
+      ]
+    },
+    {
+      "commentSha256": "2ef482b3d1769d7a7302aa4b22adcc28910e884d79743860aa45edecf4906910",
+      "sources": [
+        {
+          "entry": "ch/qos/logback/core/pattern/DynamicConverter.java",
+          "sourceSha256": "ec51f3e8fbbbde9c74cd45c242a812736458f2f28308e247ef4f81e9ce780966",
+          "startByte": 772,
+          "endByteExclusive": 1004,
+          "startLine": 24,
+          "endLine": 30
+        }
+      ]
+    },
+    {
+      "commentSha256": "865ddceebafc24a2f84d41cad5b4a0dcbd6ec44405aaedb5efc8c5a08a73502f",
+      "sources": [
+        {
+          "entry": "ch/qos/logback/core/rolling/SizeAndTimeBasedFileNamingAndTriggeringPolicy.java",
+          "sourceSha256": "83976c623efa25ad6b2d66987a1e15884cf382780cec1ab48611b752771a890d",
+          "startByte": 5938,
+          "endByteExclusive": 5980,
+          "startLine": 162,
+          "endLine": 162
+        }
+      ]
+    },
+    {
+      "commentSha256": "23fed59059eec76b13d191cde8df74277c00cec72bbca6c55b6df655acf27e42",
+      "sources": [
+        {
+          "entry": "ch/qos/logback/core/rolling/SizeAndTimeBasedFileNamingAndTriggeringPolicy.java",
+          "sourceSha256": "83976c623efa25ad6b2d66987a1e15884cf382780cec1ab48611b752771a890d",
+          "startByte": 6815,
+          "endByteExclusive": 6954,
+          "startLine": 182,
+          "endLine": 185
+        }
+      ]
+    },
+    {
+      "commentSha256": "eb34a412f7e7b2bd4026dd07fd02fa890c7a2b08b1328e447818a350e4c5f75c",
+      "sources": [
+        {
+          "entry": "ch/qos/logback/core/rolling/TimeBasedRollingPolicy.java",
+          "sourceSha256": "31b049439b6218204f2a0f36ab0f25ac182b1d1855444014312ae0c6fcaff611",
+          "startByte": 1280,
+          "endByteExclusive": 1770,
+          "startLine": 34,
+          "endLine": 44
+        }
+      ]
+    },
+    {
+      "commentSha256": "4a57628961cb99c183195027fbd369a1ad9c100f5ce97436e4a4635688d2b7c8",
+      "sources": [
+        {
+          "entry": "ch/qos/logback/core/rolling/helper/RollingCalendar.java",
+          "sourceSha256": "69b7dc77c366d48bad32c7d1d78bf4ee2b731f2cb18248638acd87be49dc606f",
+          "startByte": 0,
+          "endByteExclusive": 483,
+          "startLine": 1,
+          "endLine": 13
+        }
+      ]
+    },
+    {
+      "commentSha256": "b30e82bb6de5be349e87415023fddd1cc140885012f1cbbb43f2e204eb3822af",
+      "sources": [
+        {
+          "entry": "ch/qos/logback/core/rolling/helper/RollingCalendar.java",
+          "sourceSha256": "69b7dc77c366d48bad32c7d1d78bf4ee2b731f2cb18248638acd87be49dc606f",
+          "startByte": 2388,
+          "endByteExclusive": 2895,
+          "startLine": 68,
+          "endLine": 75
+        }
+      ]
+    },
+    {
+      "commentSha256": "66857c83003e39aa4e687245256d4ba3bb8830074b90d63dcc12c9b22f3b1bc5",
+      "sources": [
+        {
+          "entry": "ch/qos/logback/core/rolling/helper/ZipCompressionStrategy.java",
+          "sourceSha256": "bfc099429387bc7729bc6d5766a4969776571f3bfd93c4eb91380357931cd95d",
+          "startByte": 3417,
+          "endByteExclusive": 4299,
+          "startLine": 95,
+          "endLine": 112
+        }
+      ]
+    },
+    {
+      "commentSha256": "457a4c1f68e43e8468e25c838473cf39b4058c6e69f2b31613a2cc0179f0f04c",
+      "sources": [
+        {
+          "entry": "ch/qos/logback/core/spi/AbstractComponentTracker.java",
+          "sourceSha256": "3c40c3f3137584bb87bba0fb5adf3cec468ecb0a930385bf14b87d73b7884be2",
+          "startByte": 2239,
+          "endByteExclusive": 2338,
+          "startLine": 63,
+          "endLine": 68
+        }
+      ]
+    },
+    {
+      "commentSha256": "60e46dc2d4c6fbfa18859093d5bf8e31b8ebadacfdc8438b51b9ef5399fa1fce",
+      "sources": [
+        {
+          "entry": "ch/qos/logback/core/spi/BasicSequenceNumberGenerator.java",
+          "sourceSha256": "d286ff0b23e35eb12c5000a363c360fd39d122c888f89e38e637df9f98ffee25",
+          "startByte": 573,
+          "endByteExclusive": 736,
+          "startLine": 19,
+          "endLine": 26
+        }
+      ]
+    },
+    {
+      "commentSha256": "4d093662d86fc34b8cd0749e7e939e2b822ace09292eb9bab9301d12df2e0fea",
+      "sources": [
+        {
+          "entry": "ch/qos/logback/core/spi/FilterReply.java",
+          "sourceSha256": "7c437113280a0a2bf624c7ee0f537ef0a75c893534091233f0b98d994f0f3d66",
+          "startByte": 521,
+          "endByteExclusive": 982,
+          "startLine": 16,
+          "endLine": 27
+        }
+      ]
+    },
+    {
+      "commentSha256": "84b6fc8069f97e13172aa9768a1f0dfa76b8558c6d813fad8de424525bc21e08",
+      "sources": [
+        {
+          "entry": "ch/qos/logback/core/util/SimpleTimeBasedGuard.java",
+          "sourceSha256": "297afee966e0c51284c89e84044fd23ed5db72e3e8406e9b4faca240959933f7",
+          "startByte": 2286,
+          "endByteExclusive": 2598,
+          "startLine": 70,
+          "endLine": 76
+        }
+      ]
+    }
+  ]
+}

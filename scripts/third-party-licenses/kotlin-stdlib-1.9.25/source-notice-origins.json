@@ -1,0 +1,3297 @@
+{
+  "sourceArchive": "https://repo.maven.apache.org/maven2/org/jetbrains/kotlin/kotlin-stdlib/1.9.25/kotlin-stdlib-1.9.25-sources.jar",
+  "archiveSha256": "1745faecebad150a45b5ddf63b29577693a27133bb3ef2126704230af8e5ea6a",
+  "blocks": [
+    {
+      "commentSha256": "f50ca6aa79045374440f42aa6233e36d1215bceb0fcf93b09f34e2561563365f",
+      "sources": [
+        {
+          "entry": "jvmMain/kotlin/Annotation.kt",
+          "sourceSha256": "2be01748cc0b2e22850c488c3dd0154fe8e82694089fdc4ba2460cf1f2f7b53c",
+          "startByte": 0,
+          "endByteExclusive": 208,
+          "startLine": 1,
+          "endLine": 4
+        },
+        {
+          "entry": "jvmMain/kotlin/Coroutines.kt",
+          "sourceSha256": "37763d0b07be88f195a206e09a9d24823319d2a4668eeb23107250ffbece1fd5",
+          "startByte": 0,
+          "endByteExclusive": 208,
+          "startLine": 1,
+          "endLine": 4
+        },
+        {
+          "entry": "jvmMain/jdk8/kotlin/random/jdk8/PlatformThreadLocalRandom.kt",
+          "sourceSha256": "ad6a0813a8924b043c5767194ae43df777218f4f45642ec3aaf2211c25ed2cdb",
+          "startByte": 0,
+          "endByteExclusive": 208,
+          "startLine": 1,
+          "endLine": 4
+        },
+        {
+          "entry": "jvmMain/kotlin/collections/ArraysJVM.kt",
+          "sourceSha256": "75df911bf64a0a372354462a4ef6822e24a9e7588bd7a4ba8ac4eb55a0270957",
+          "startByte": 0,
+          "endByteExclusive": 208,
+          "startLine": 1,
+          "endLine": 4
+        },
+        {
+          "entry": "jvmMain/kotlin/collections/ArraysUtilJVM.java",
+          "sourceSha256": "94b06874e3859a8f096d1f6aa2fe29bd54aef2ad2ec39e811f5c15f1d568641e",
+          "startByte": 0,
+          "endByteExclusive": 208,
+          "startLine": 1,
+          "endLine": 4
+        },
+        {
+          "entry": "jvmMain/kotlin/collections/GroupingJVM.kt",
+          "sourceSha256": "f143af3e96ab6697b7336f16f2d2a402e3ca4227b71dd5da2838c2c77a3d67b9",
+          "startByte": 0,
+          "endByteExclusive": 208,
+          "startLine": 1,
+          "endLine": 4
+        },
+        {
+          "entry": "jvmMain/kotlin/collections/IteratorsJVM.kt",
+          "sourceSha256": "e58c5a522f8d03a291fa6b3ac04932ac59f125b6e9c817c79d038638e45c4ee8",
+          "startByte": 0,
+          "endByteExclusive": 208,
+          "startLine": 1,
+          "endLine": 4
+        },
+        {
+          "entry": "jvmMain/kotlin/collections/SequencesJVM.kt",
+          "sourceSha256": "b1f803c1fc2412944d9398a2ab603b903c0acb5fb947274573e45fbd507fb86b",
+          "startByte": 0,
+          "endByteExclusive": 208,
+          "startLine": 1,
+          "endLine": 4
+        },
+        {
+          "entry": "jvmMain/kotlin/collections/TypeAliases.kt",
+          "sourceSha256": "2db4444c250fb8f1811c8fc96d15668463be3c55e137543ac1b002d1abe974c3",
+          "startByte": 0,
+          "endByteExclusive": 208,
+          "startLine": 1,
+          "endLine": 4
+        },
+        {
+          "entry": "jvmMain/kotlin/concurrent/Thread.kt",
+          "sourceSha256": "b8e4c3e39fc361d5bfe7e4553e667dd7c541d155fa5b1618a2984fbe5a6981a9",
+          "startByte": 0,
+          "endByteExclusive": 208,
+          "startLine": 1,
+          "endLine": 4
+        },
+        {
+          "entry": "jvmMain/kotlin/concurrent/Timer.kt",
+          "sourceSha256": "eeade0d5e01b6256f36d3ab9db7f522b895cf8f727de60b86b8674293ee787f6",
+          "startByte": 0,
+          "endByteExclusive": 208,
+          "startLine": 1,
+          "endLine": 4
+        },
+        {
+          "entry": "jvmMain/kotlin/coroutines/SafeContinuationJvm.kt",
+          "sourceSha256": "409ffa28ea6c12bb7d411b2d93c4ce104a5ce1dfc4e5a9cbbfbf41575bc18359",
+          "startByte": 0,
+          "endByteExclusive": 208,
+          "startLine": 1,
+          "endLine": 4
+        },
+        {
+          "entry": "jvmMain/kotlin/coroutines/intrinsics/IntrinsicsJvm.kt",
+          "sourceSha256": "b199aec1013c59452a1a106f2afa5b30112e7db126a69783ff9c9eab4277d1cf",
+          "startByte": 0,
+          "endByteExclusive": 208,
+          "startLine": 1,
+          "endLine": 4
+        },
+        {
+          "entry": "jvmMain/kotlin/coroutines/jvm/internal/ContinuationImpl.kt",
+          "sourceSha256": "81ed16f672c68bb6e96b85212d0862d5dabeefca35a6336351c3a22cd1221236",
+          "startByte": 0,
+          "endByteExclusive": 208,
+          "startLine": 1,
+          "endLine": 4
+        },
+        {
+          "entry": "jvmMain/kotlin/coroutines/jvm/internal/CoroutineStackFrame.kt",
+          "sourceSha256": "3182b53cb2c6003e03e4c5dda14eb6f74ab73857e13076027c2552a04b700f63",
+          "startByte": 0,
+          "endByteExclusive": 208,
+          "startLine": 1,
+          "endLine": 4
+        },
+        {
+          "entry": "jvmMain/kotlin/coroutines/jvm/internal/DebugMetadata.kt",
+          "sourceSha256": "d601e8e2990a92f0bfe0dab854b9763816da7c77d9fae1541f213f8c0e8b7ac5",
+          "startByte": 0,
+          "endByteExclusive": 208,
+          "startLine": 1,
+          "endLine": 4
+        },
+        {
+          "entry": "jvmMain/kotlin/coroutines/jvm/internal/DebugProbes.kt",
+          "sourceSha256": "d814dbedbc7bb05eca1c7d1d1262755cc3fcc068eb4af331f52abd5f0ca09458",
+          "startByte": 0,
+          "endByteExclusive": 208,
+          "startLine": 1,
+          "endLine": 4
+        },
+        {
+          "entry": "jvmMain/kotlin/coroutines/jvm/internal/RunSuspend.kt",
+          "sourceSha256": "69b8d3f25cd3adb58a22f6a0c9813843c89a483d3c5c9fdf804b7f0784c5b374",
+          "startByte": 0,
+          "endByteExclusive": 208,
+          "startLine": 1,
+          "endLine": 4
+        },
+        {
+          "entry": "jvmMain/kotlin/coroutines/jvm/internal/boxing.kt",
+          "sourceSha256": "2a9315306f718ca0786c9fdd3b722a087db68bc1e14b19c6ae6a3f0c0c8907c9",
+          "startByte": 0,
+          "endByteExclusive": 208,
+          "startLine": 1,
+          "endLine": 4
+        },
+        {
+          "entry": "jvmMain/kotlin/io/Closeable.kt",
+          "sourceSha256": "d555ac895bfa757e93231d08df4c488addcfb3456ab2c377e7e20f9114e11775",
+          "startByte": 0,
+          "endByteExclusive": 208,
+          "startLine": 1,
+          "endLine": 4
+        },
+        {
+          "entry": "jvmMain/kotlin/io/Console.kt",
+          "sourceSha256": "9ec80db4a4f03bfac6bdc110223f0aa8c609d091e83902ba19eac89bb407965f",
+          "startByte": 0,
+          "endByteExclusive": 208,
+          "startLine": 1,
+          "endLine": 4
+        },
+        {
+          "entry": "jvmMain/kotlin/io/Constants.kt",
+          "sourceSha256": "34e30b9098062acef17e9615539ea9c9635bd53753306c1b4f49583e37d3c380",
+          "startByte": 0,
+          "endByteExclusive": 208,
+          "startLine": 1,
+          "endLine": 4
+        },
+        {
+          "entry": "jvmMain/kotlin/io/Exceptions.kt",
+          "sourceSha256": "6743fdd34df55c973f07cd83ecb3f3d6945e59068320e0caea42cb4343924add",
+          "startByte": 0,
+          "endByteExclusive": 208,
+          "startLine": 1,
+          "endLine": 4
+        },
+        {
+          "entry": "jvmMain/kotlin/io/FileReadWrite.kt",
+          "sourceSha256": "063900b259452660a31ba6a92efffb1ad6bd56f68ad179aae27c46cc0cb71d31",
+          "startByte": 0,
+          "endByteExclusive": 208,
+          "startLine": 1,
+          "endLine": 4
+        },
+        {
+          "entry": "jvmMain/kotlin/io/IOStreams.kt",
+          "sourceSha256": "17e361def9b13accd72773e1c7dd0eb4b7941b1e9ab10e5295e5ba633834d042",
+          "startByte": 0,
+          "endByteExclusive": 208,
+          "startLine": 1,
+          "endLine": 4
+        },
+        {
+          "entry": "jvmMain/kotlin/io/ReadWrite.kt",
+          "sourceSha256": "a61a95a2e8432cf9623ebc6cc17ce356f15bc570252411afc8cbaa98981e7515",
+          "startByte": 0,
+          "endByteExclusive": 208,
+          "startLine": 1,
+          "endLine": 4
+        },
+        {
+          "entry": "jvmMain/kotlin/io/Serializable.kt",
+          "sourceSha256": "13b3211b8371747e5052145902d47c62aa498297531b2871f03694a041e7d902",
+          "startByte": 0,
+          "endByteExclusive": 208,
+          "startLine": 1,
+          "endLine": 4
+        },
+        {
+          "entry": "jvmMain/kotlin/io/files/FilePathComponents.kt",
+          "sourceSha256": "9b7e36fd7b6a407ec3170f65e50b12b11e6416e3e2ae0b777ba180104cac030f",
+          "startByte": 0,
+          "endByteExclusive": 208,
+          "startLine": 1,
+          "endLine": 4
+        },
+        {
+          "entry": "jvmMain/kotlin/io/files/FileTreeWalk.kt",
+          "sourceSha256": "028c96715c860af940eb23845afbe752cbd94dc6d91e81980b46de6ef0698e3d",
+          "startByte": 0,
+          "endByteExclusive": 208,
+          "startLine": 1,
+          "endLine": 4
+        },
+        {
+          "entry": "jvmMain/kotlin/jvm/JvmDefault.kt",
+          "sourceSha256": "819460311bd389c045cb2b95b16b5f9a73deafde877739f93f5b9059921b6c38",
+          "startByte": 0,
+          "endByteExclusive": 208,
+          "startLine": 1,
+          "endLine": 4
+        },
+        {
+          "entry": "jvmMain/kotlin/jvm/internal/unsafe/monitor.kt",
+          "sourceSha256": "99716201b3d7c01745eb25baab1249f8ca9c6166eb8098f8626b22795bdeab85",
+          "startByte": 0,
+          "endByteExclusive": 208,
+          "startLine": 1,
+          "endLine": 4
+        },
+        {
+          "entry": "jvmMain/kotlin/random/PlatformRandom.kt",
+          "sourceSha256": "fe1c380aa64178af2d6e09e14c851320c6eb7607cf2f17ade3663a75223db711",
+          "startByte": 0,
+          "endByteExclusive": 208,
+          "startLine": 1,
+          "endLine": 4
+        },
+        {
+          "entry": "jvmMain/kotlin/reflect/KCallable.kt",
+          "sourceSha256": "918bcfe41d96bbb912ad0ce6bbe62d37ff9985bda84520e8e3a5e3d1bee893f2",
+          "startByte": 0,
+          "endByteExclusive": 208,
+          "startLine": 1,
+          "endLine": 4
+        },
+        {
+          "entry": "jvmMain/kotlin/reflect/KFunction.kt",
+          "sourceSha256": "453be60de31cec68b2d2f6be2841f03218cdd41d1e681399b32791980fe4db56",
+          "startByte": 0,
+          "endByteExclusive": 208,
+          "startLine": 1,
+          "endLine": 4
+        },
+        {
+          "entry": "jvmMain/kotlin/system/Process.kt",
+          "sourceSha256": "8a0575dcc798dac63e19f6d2c64bf7edbfeabf69ac5dee924d794608631ba9d8",
+          "startByte": 0,
+          "endByteExclusive": 208,
+          "startLine": 1,
+          "endLine": 4
+        },
+        {
+          "entry": "jvmMain/kotlin/text/Charsets.kt",
+          "sourceSha256": "8fe5f0e82eef47f3fbc6441f0a66037d676e072c5d477dc83a581ff0142646df",
+          "startByte": 0,
+          "endByteExclusive": 208,
+          "startLine": 1,
+          "endLine": 4
+        },
+        {
+          "entry": "jvmMain/kotlin/text/StringBuilderJVM.kt",
+          "sourceSha256": "b27e6eb4b60a6d714fd4fea090eb10755eecac41ea7463dc3da7a44c7228446e",
+          "startByte": 0,
+          "endByteExclusive": 208,
+          "startLine": 1,
+          "endLine": 4
+        },
+        {
+          "entry": "jvmMain/kotlin/text/StringNumberConversionsJVM.kt",
+          "sourceSha256": "3b8384cf4f2fe76295977f95366d9a7b5f47b7dffcf0e34ebabcab94922342b4",
+          "startByte": 0,
+          "endByteExclusive": 208,
+          "startLine": 1,
+          "endLine": 4
+        },
+        {
+          "entry": "jvmMain/kotlin/text/regex/RegexExtensionsJVM.kt",
+          "sourceSha256": "1adc65284527733b4388650bfea94df6d73e0fa19d86f36d2783e57d2bdd8b7d",
+          "startByte": 0,
+          "endByteExclusive": 208,
+          "startLine": 1,
+          "endLine": 4
+        },
+        {
+          "entry": "jvmMain/kotlin/util/AssertionsJVM.kt",
+          "sourceSha256": "6946eab86694e0f44f1084207a343bb73b5bc0924c4f582431c995b7b589d254",
+          "startByte": 0,
+          "endByteExclusive": 208,
+          "startLine": 1,
+          "endLine": 4
+        },
+        {
+          "entry": "jvmMain/kotlin/util/BigIntegers.kt",
+          "sourceSha256": "4edc93cfd2b8008f315381db14989be4b7124e7b5f3eefc2a3e231fa1b391656",
+          "startByte": 0,
+          "endByteExclusive": 208,
+          "startLine": 1,
+          "endLine": 4
+        },
+        {
+          "entry": "jvmMain/kotlin/util/LazyJVM.kt",
+          "sourceSha256": "7fe09e9dc5183e12fe31bb89aa60694bc040aa04b0a420a971cc029b2ecc4fec",
+          "startByte": 0,
+          "endByteExclusive": 208,
+          "startLine": 1,
+          "endLine": 4
+        },
+        {
+          "entry": "jvmMain/kotlin/util/NumbersJVM.kt",
+          "sourceSha256": "dc740b973deef70d270f757f06f552286eac39d82c45d2549744453fa7bb88d4",
+          "startByte": 0,
+          "endByteExclusive": 208,
+          "startLine": 1,
+          "endLine": 4
+        },
+        {
+          "entry": "jvmMain/kotlin/util/Synchronized.kt",
+          "sourceSha256": "2be836da1ad6e7deb1821746c49223145697fdb33726cb8cd034225652f614e5",
+          "startByte": 0,
+          "endByteExclusive": 208,
+          "startLine": 1,
+          "endLine": 4
+        },
+        {
+          "entry": "jvmMain/kotlin/KotlinNullPointerException.kt",
+          "sourceSha256": "87440cb5977276b5b4c1eadba77fda2400f85ad522fa411fd1402a615c2e2e6b",
+          "startByte": 0,
+          "endByteExclusive": 208,
+          "startLine": 1,
+          "endLine": 4
+        },
+        {
+          "entry": "jvmMain/kotlin/Metadata.kt",
+          "sourceSha256": "3f89ea63673bc24874ef4058c9c837800ecdcb794fa01a7e40f427e59e996a2e",
+          "startByte": 0,
+          "endByteExclusive": 208,
+          "startLine": 1,
+          "endLine": 4
+        },
+        {
+          "entry": "jvmMain/kotlin/NoWhenBranchMatchedException.kt",
+          "sourceSha256": "e63471525817163eb56bacf6fb2da58efbe5c04192ad3a66f798e8b83455625d",
+          "startByte": 0,
+          "endByteExclusive": 208,
+          "startLine": 1,
+          "endLine": 4
+        },
+        {
+          "entry": "jvmMain/kotlin/TypeAliases.kt",
+          "sourceSha256": "9221dc049556fed6b3ff82034d1cbe86b3c4ca91d083cd157b9b1e55ace3ebba",
+          "startByte": 0,
+          "endByteExclusive": 208,
+          "startLine": 1,
+          "endLine": 4
+        },
+        {
+          "entry": "jvmMain/kotlin/TypeCastException.kt",
+          "sourceSha256": "15dab1655b2971856e47ec63ba8463a96c99c7c66d47a1554dcdebff29c5b15e",
+          "startByte": 0,
+          "endByteExclusive": 208,
+          "startLine": 1,
+          "endLine": 4
+        },
+        {
+          "entry": "jvmMain/kotlin/UninitializedPropertyAccessException.kt",
+          "sourceSha256": "c8de0edaaee217ca60dba5ae87e01c79f46a0457b2aeaa0e1266f4daf4cfed4a",
+          "startByte": 0,
+          "endByteExclusive": 208,
+          "startLine": 1,
+          "endLine": 4
+        },
+        {
+          "entry": "jvmMain/kotlin/jvm/KotlinReflectionNotSupportedError.kt",
+          "sourceSha256": "2a7a27d1ab5dd5bf8e6205fe5d858e0fd6266d209d88be2a07c564abecf92f76",
+          "startByte": 0,
+          "endByteExclusive": 208,
+          "startLine": 1,
+          "endLine": 4
+        },
+        {
+          "entry": "jvmMain/kotlin/jvm/PurelyImplements.kt",
+          "sourceSha256": "03dac3a03f456237ca02c5cf8e88f7c79b9dfeebc97fbe6dd48d90037ee8e965",
+          "startByte": 0,
+          "endByteExclusive": 208,
+          "startLine": 1,
+          "endLine": 4
+        },
+        {
+          "entry": "jvmMain/kotlin/jvm/annotations/JvmFlagAnnotations.kt",
+          "sourceSha256": "ebd5832fa90f874e968ec5d5c8d6803d31c7dffb32a0fe6cc81ba17419bc3640",
+          "startByte": 0,
+          "endByteExclusive": 208,
+          "startLine": 1,
+          "endLine": 4
+        },
+        {
+          "entry": "jvmMain/kotlin/jvm/annotations/JvmPlatformAnnotations.kt",
+          "sourceSha256": "979387b70a716f082bbc599ea40ad4617fb4dbc67e5bd47eacd46260d751fc6f",
+          "startByte": 0,
+          "endByteExclusive": 208,
+          "startLine": 1,
+          "endLine": 4
+        },
+        {
+          "entry": "jvmMain/kotlin/jvm/functions/FunctionN.kt",
+          "sourceSha256": "eef3d1008f7eaaeb99b1008beed81437f96d0b8886b6f9ac944247a227c329aa",
+          "startByte": 0,
+          "endByteExclusive": 208,
+          "startLine": 1,
+          "endLine": 4
+        },
+        {
+          "entry": "jvmMain/kotlin/jvm/internal/ArrayIterator.kt",
+          "sourceSha256": "1896924ffce7fb7d296f2110fd29e730ada039d75debefa5abb12a113e59ab62",
+          "startByte": 0,
+          "endByteExclusive": 208,
+          "startLine": 1,
+          "endLine": 4
+        },
+        {
+          "entry": "jvmMain/kotlin/jvm/internal/CallableReference.java",
+          "sourceSha256": "dd60638e243d70db71dc88dda28c17fc01a6ac1b1f3cc20b22da76abf4bd73c6",
+          "startByte": 0,
+          "endByteExclusive": 208,
+          "startLine": 1,
+          "endLine": 4
+        },
+        {
+          "entry": "jvmMain/kotlin/jvm/internal/ClassBasedDeclarationContainer.kt",
+          "sourceSha256": "a7346ec8557209d510f1afeba70295a5a56ff7cfa129e80b3f9bde109acacfd3",
+          "startByte": 0,
+          "endByteExclusive": 208,
+          "startLine": 1,
+          "endLine": 4
+        },
+        {
+          "entry": "jvmMain/kotlin/jvm/internal/ClassReference.kt",
+          "sourceSha256": "6cf0dbc810ac7243c9e4c882034c7d83f12182bd42cea582474194e9483a0e3b",
+          "startByte": 0,
+          "endByteExclusive": 208,
+          "startLine": 1,
+          "endLine": 4
+        },
+        {
+          "entry": "jvmMain/kotlin/jvm/internal/CollectionToArray.kt",
+          "sourceSha256": "52e0bca7a391fc6e6fa546835f889b02c74e15e41ce2ae46eb8294d23e937d1d",
+          "startByte": 0,
+          "endByteExclusive": 208,
+          "startLine": 1,
+          "endLine": 4
+        },
+        {
+          "entry": "jvmMain/kotlin/jvm/internal/DefaultConstructorMarker.java",
+          "sourceSha256": "6d831baa953837240872d674f02d25fcfe640e6bad3f40a30ef3af6da8d7e852",
+          "startByte": 0,
+          "endByteExclusive": 208,
+          "startLine": 1,
+          "endLine": 4
+        },
+        {
+          "entry": "jvmMain/kotlin/jvm/internal/FunctionBase.kt",
+          "sourceSha256": "9644da741a60684061f6b086d1cc0213446406d6359e24935deaba2a3f284064",
+          "startByte": 0,
+          "endByteExclusive": 208,
+          "startLine": 1,
+          "endLine": 4
+        },
+        {
+          "entry": "jvmMain/kotlin/jvm/internal/FunctionImpl.java",
+          "sourceSha256": "1ea02d5ce052e9b66682b41300fd5b39bd598fa4895475f99d181002568f4a66",
+          "startByte": 0,
+          "endByteExclusive": 208,
+          "startLine": 1,
+          "endLine": 4
+        },
+        {
+          "entry": "jvmMain/kotlin/jvm/internal/FunctionReference.java",
+          "sourceSha256": "cd7894fe399c5b7d8f6f5dccc2234b29fb619a44fbd05c32b991f37b6b50c70e",
+          "startByte": 0,
+          "endByteExclusive": 208,
+          "startLine": 1,
+          "endLine": 4
+        },
+        {
+          "entry": "jvmMain/kotlin/jvm/internal/FunctionReferenceImpl.java",
+          "sourceSha256": "066de16851c7171312205d6cae6d002cb2ffc716548e4bc20ff2544acda20972",
+          "startByte": 0,
+          "endByteExclusive": 208,
+          "startLine": 1,
+          "endLine": 4
+        },
+        {
+          "entry": "jvmMain/kotlin/jvm/internal/InlineMarker.java",
+          "sourceSha256": "e0a3e001be1f0e162710c0e9cecffee73ddc7a7f62f8c4d2a22127605dee1663",
+          "startByte": 0,
+          "endByteExclusive": 208,
+          "startLine": 1,
+          "endLine": 4
+        },
+        {
+          "entry": "jvmMain/kotlin/jvm/internal/Intrinsics.java",
+          "sourceSha256": "ad2f01253d40030238dd1a0ce5160e9628a09556fadde2bb8bb1bf7b1a68021e",
+          "startByte": 0,
+          "endByteExclusive": 208,
+          "startLine": 1,
+          "endLine": 4
+        },
+        {
+          "entry": "jvmMain/kotlin/jvm/internal/Lambda.kt",
+          "sourceSha256": "d324f2570109453300bfffeacea9622a8d77c0e9b4c49b2d465e1e92821b7745",
+          "startByte": 0,
+          "endByteExclusive": 208,
+          "startLine": 1,
+          "endLine": 4
+        },
+        {
+          "entry": "jvmMain/kotlin/jvm/internal/MagicApiIntrinsics.java",
+          "sourceSha256": "5d44bbcd5545fe5f173e10ab611fae1ef2b63e470963d9cbca74836dc0398544",
+          "startByte": 0,
+          "endByteExclusive": 208,
+          "startLine": 1,
+          "endLine": 4
+        },
+        {
+          "entry": "jvmMain/kotlin/jvm/internal/MutablePropertyReference.java",
+          "sourceSha256": "4914cf9f1085a1f2fc7ac0135c14e19d3c57af1783305f71dda2c7e60ceff064",
+          "startByte": 0,
+          "endByteExclusive": 208,
+          "startLine": 1,
+          "endLine": 4
+        },
+        {
+          "entry": "jvmMain/kotlin/jvm/internal/MutablePropertyReference0.java",
+          "sourceSha256": "5231c457f421a7cbd7107f5dd2d9ed7a50cac942d686c17e177651b2ec3d8b7f",
+          "startByte": 0,
+          "endByteExclusive": 208,
+          "startLine": 1,
+          "endLine": 4
+        },
+        {
+          "entry": "jvmMain/kotlin/jvm/internal/MutablePropertyReference0Impl.java",
+          "sourceSha256": "d78ca2f6a5d17e24b0f2c3a32a721256d03c7e6314bab937b1d7b3b95fdd68de",
+          "startByte": 1,
+          "endByteExclusive": 209,
+          "startLine": 1,
+          "endLine": 4
+        },
+        {
+          "entry": "jvmMain/kotlin/jvm/internal/MutablePropertyReference1.java",
+          "sourceSha256": "8bc3b3baa753bc6cb9749b477e850bf7b945c9454617010f86a8a43561a78821",
+          "startByte": 0,
+          "endByteExclusive": 208,
+          "startLine": 1,
+          "endLine": 4
+        },
+        {
+          "entry": "jvmMain/kotlin/jvm/internal/MutablePropertyReference1Impl.java",
+          "sourceSha256": "bad66dab09264a94aec9517de2665e3237c6455890cf371873d829059a8dce56",
+          "startByte": 0,
+          "endByteExclusive": 208,
+          "startLine": 1,
+          "endLine": 4
+        },
+        {
+          "entry": "jvmMain/kotlin/jvm/internal/MutablePropertyReference2.java",
+          "sourceSha256": "f0ae62ed8b380a859851ae9327a915c958ddbc09da116be7e9ee35717d1a6f2d",
+          "startByte": 0,
+          "endByteExclusive": 208,
+          "startLine": 1,
+          "endLine": 4
+        },
+        {
+          "entry": "jvmMain/kotlin/jvm/internal/MutablePropertyReference2Impl.java",
+          "sourceSha256": "ba2428c01c0d70855ef4c5ff0d4a8b0ebaf42f6df640446970f6bd5a1978f0dd",
+          "startByte": 0,
+          "endByteExclusive": 208,
+          "startLine": 1,
+          "endLine": 4
+        },
+        {
+          "entry": "jvmMain/kotlin/jvm/internal/PackageReference.kt",
+          "sourceSha256": "179e4ecf946a139d1d7c10823a1f4df3b9b1e07aa13180b11eb23816131cc26c",
+          "startByte": 0,
+          "endByteExclusive": 208,
+          "startLine": 1,
+          "endLine": 4
+        },
+        {
+          "entry": "jvmMain/kotlin/jvm/internal/PrimitiveCompanionObjects.kt",
+          "sourceSha256": "5dc037b3d441ffa4ffbf6415f913e12fcad443d2eacb65f529152d013c252bd6",
+          "startByte": 0,
+          "endByteExclusive": 208,
+          "startLine": 1,
+          "endLine": 4
+        },
+        {
+          "entry": "jvmMain/kotlin/jvm/internal/PrimitiveSpreadBuilders.kt",
+          "sourceSha256": "5e4a491215bd994092aaca8440284944cb62bbb47c49345426d4a9ba63f66d22",
+          "startByte": 0,
+          "endByteExclusive": 208,
+          "startLine": 1,
+          "endLine": 4
+        },
+        {
+          "entry": "jvmMain/kotlin/jvm/internal/PropertyReference.java",
+          "sourceSha256": "0b308f46f52c9e214a1082094fbb60b5445770f93aa99c3a2fd6b72e4f8d0b34",
+          "startByte": 0,
+          "endByteExclusive": 208,
+          "startLine": 1,
+          "endLine": 4
+        },
+        {
+          "entry": "jvmMain/kotlin/jvm/internal/PropertyReference0.java",
+          "sourceSha256": "60763961589f791faf4f0e742776af9e67717a9bd8b4f4cc92b4b43a579ecdca",
+          "startByte": 0,
+          "endByteExclusive": 208,
+          "startLine": 1,
+          "endLine": 4
+        },
+        {
+          "entry": "jvmMain/kotlin/jvm/internal/PropertyReference0Impl.java",
+          "sourceSha256": "89be58e91984cc29ecd7b42e4cd784e620f4123b01d41ee8259110254f691133",
+          "startByte": 0,
+          "endByteExclusive": 208,
+          "startLine": 1,
+          "endLine": 4
+        },
+        {
+          "entry": "jvmMain/kotlin/jvm/internal/PropertyReference1.java",
+          "sourceSha256": "70b39b0469f351d83456cd5973522c8655c62734b3ded85eb89790f5e855435f",
+          "startByte": 0,
+          "endByteExclusive": 208,
+          "startLine": 1,
+          "endLine": 4
+        },
+        {
+          "entry": "jvmMain/kotlin/jvm/internal/PropertyReference1Impl.java",
+          "sourceSha256": "bdcaaf146340e51faec9f978c037aca74a7a52b4bcef3db160d21f5e056feaea",
+          "startByte": 0,
+          "endByteExclusive": 208,
+          "startLine": 1,
+          "endLine": 4
+        },
+        {
+          "entry": "jvmMain/kotlin/jvm/internal/PropertyReference2.java",
+          "sourceSha256": "e7732adcef9ee14fc366e31343a412b64100a89b4e6d31a4aa3f7d806b2aa4bf",
+          "startByte": 0,
+          "endByteExclusive": 208,
+          "startLine": 1,
+          "endLine": 4
+        },
+        {
+          "entry": "jvmMain/kotlin/jvm/internal/PropertyReference2Impl.java",
+          "sourceSha256": "9cc1caa4ef6e421b4f74d51fff2a54da2b1d2be6303b0bbca6c5ad2278667d06",
+          "startByte": 0,
+          "endByteExclusive": 208,
+          "startLine": 1,
+          "endLine": 4
+        },
+        {
+          "entry": "jvmMain/kotlin/jvm/internal/Ref.java",
+          "sourceSha256": "6673a68b07763163a50e7fce64088fda3d6ef816ad2bd8461a6092151718d424",
+          "startByte": 0,
+          "endByteExclusive": 208,
+          "startLine": 1,
+          "endLine": 4
+        },
+        {
+          "entry": "jvmMain/kotlin/jvm/internal/Reflection.java",
+          "sourceSha256": "eb3a31a029952a1368086e6d1fe5831db337aaf88e27ce448a6e8e3179d0cb9f",
+          "startByte": 0,
+          "endByteExclusive": 208,
+          "startLine": 1,
+          "endLine": 4
+        },
+        {
+          "entry": "jvmMain/kotlin/jvm/internal/ReflectionFactory.java",
+          "sourceSha256": "3d16797b6d75a6a117a4fe5f7afeca49104a06aa18bbfcc85550329929f8bbf3",
+          "startByte": 0,
+          "endByteExclusive": 208,
+          "startLine": 1,
+          "endLine": 4
+        },
+        {
+          "entry": "jvmMain/kotlin/jvm/internal/SpreadBuilder.java",
+          "sourceSha256": "5f01afc078b23ea6bb67db391a5c051fb8e1aeb91de8e1c7972b1f43293dc6a3",
+          "startByte": 0,
+          "endByteExclusive": 208,
+          "startLine": 1,
+          "endLine": 4
+        },
+        {
+          "entry": "jvmMain/kotlin/jvm/internal/TypeIntrinsics.java",
+          "sourceSha256": "f63fa1f16b956fc5de631373124e656720e7dc0a4eae1a3a89fec5b9a24085b6",
+          "startByte": 0,
+          "endByteExclusive": 208,
+          "startLine": 1,
+          "endLine": 4
+        },
+        {
+          "entry": "jvmMain/kotlin/jvm/internal/localVariableReferences.kt",
+          "sourceSha256": "8ef59028eb56083d47decd01961b157e8fd747b6b11957c29c26434cd541079f",
+          "startByte": 0,
+          "endByteExclusive": 208,
+          "startLine": 1,
+          "endLine": 4
+        },
+        {
+          "entry": "jvmMain/kotlin/jvm/internal/markers/KMarkers.kt",
+          "sourceSha256": "35afa11488b74ba8252acf64f1ae7e79871cad199f34e47c1463413f40816de4",
+          "startByte": 0,
+          "endByteExclusive": 208,
+          "startLine": 1,
+          "endLine": 4
+        },
+        {
+          "entry": "jvmMain/kotlin/text/TypeAliases.kt",
+          "sourceSha256": "81c78b0e424bc4e984f5947471429fc3d6f040f8eb272ab9beb9676e3ab5927b",
+          "startByte": 0,
+          "endByteExclusive": 208,
+          "startLine": 1,
+          "endLine": 4
+        },
+        {
+          "entry": "commonMain/kotlin/JsAnnotationsH.kt",
+          "sourceSha256": "0623f0a57138df931324ef18740f0c586a8a20d52226a4f6fe2e9ac2d7636999",
+          "startByte": 0,
+          "endByteExclusive": 208,
+          "startLine": 1,
+          "endLine": 4
+        },
+        {
+          "entry": "commonMain/kotlin/SequencesH.kt",
+          "sourceSha256": "0823961734139742e3dd36787412b9984bddb0b8672b5f132aafd417d17b1b86",
+          "startByte": 0,
+          "endByteExclusive": 208,
+          "startLine": 1,
+          "endLine": 4
+        },
+        {
+          "entry": "commonMain/kotlin/ioH.kt",
+          "sourceSha256": "447f12c12b2bc5cdf6f96337ef8fbf61906420e0cd4aeaf76f7caf637b3122ca",
+          "startByte": 0,
+          "endByteExclusive": 208,
+          "startLine": 1,
+          "endLine": 4
+        },
+        {
+          "entry": "commonMain/kotlin/collections/ArrayList.kt",
+          "sourceSha256": "66c3ffd9e0b5f11c66ae6cad993ac3e3b8aa4bca0cee152940d0e76773718a51",
+          "startByte": 0,
+          "endByteExclusive": 208,
+          "startLine": 1,
+          "endLine": 4
+        },
+        {
+          "entry": "commonMain/kotlin/collections/CollectionsH.kt",
+          "sourceSha256": "7639ed28346929cf1418b3cc2643ec4ea39e382e5c5b649aae7b50c4a5952869",
+          "startByte": 0,
+          "endByteExclusive": 208,
+          "startLine": 1,
+          "endLine": 4
+        },
+        {
+          "entry": "commonMain/kotlin/collections/HashMap.kt",
+          "sourceSha256": "f0ff75a61de27193a2b9cb022e73ffd9f79d3a0ed98e609a0d57a17a2d9995ec",
+          "startByte": 0,
+          "endByteExclusive": 208,
+          "startLine": 1,
+          "endLine": 4
+        },
+        {
+          "entry": "commonMain/kotlin/collections/HashSet.kt",
+          "sourceSha256": "9fd01baa4005c6757427aaaeb8a67ef98ab444eb5602cf7c94e4d9088a73d5cd",
+          "startByte": 0,
+          "endByteExclusive": 208,
+          "startLine": 1,
+          "endLine": 4
+        },
+        {
+          "entry": "commonMain/kotlin/collections/LinkedHashMap.kt",
+          "sourceSha256": "f62dcb17c6eb9c63c1a19280a4993a20dbd78e1a92dd36b14e720c15d1dabee1",
+          "startByte": 0,
+          "endByteExclusive": 208,
+          "startLine": 1,
+          "endLine": 4
+        },
+        {
+          "entry": "commonMain/kotlin/collections/LinkedHashSet.kt",
+          "sourceSha256": "ee015ed408e35df0e4f3c73cd09f50c707477a5a11180126f4f217412648211e",
+          "startByte": 0,
+          "endByteExclusive": 208,
+          "startLine": 1,
+          "endLine": 4
+        },
+        {
+          "entry": "commonMain/kotlin/annotations/Multiplatform.kt",
+          "sourceSha256": "4211c0f9a507478d50641dcd62b7489c8404f9de2e49d07a337f5fdf117429bf",
+          "startByte": 0,
+          "endByteExclusive": 208,
+          "startLine": 1,
+          "endLine": 4
+        },
+        {
+          "entry": "commonMain/kotlin/annotations/WasExperimental.kt",
+          "sourceSha256": "180ed004fd01dd8412dd3033642e4ee8ce7c88e315940929477c1ec1ce58f54c",
+          "startByte": 0,
+          "endByteExclusive": 208,
+          "startLine": 1,
+          "endLine": 4
+        },
+        {
+          "entry": "commonMain/kotlin/collections/AbstractIterator.kt",
+          "sourceSha256": "075f2cf600de372b819578bf9e39c1de803b0af4026a52affb66d521e68c3f4f",
+          "startByte": 0,
+          "endByteExclusive": 208,
+          "startLine": 1,
+          "endLine": 4
+        },
+        {
+          "entry": "commonMain/kotlin/collections/Arrays.kt",
+          "sourceSha256": "9e0d32f4cc9ecc01c292fafc443785893b16133d3396e97eab63a91ad9b143c1",
+          "startByte": 0,
+          "endByteExclusive": 208,
+          "startLine": 1,
+          "endLine": 4
+        },
+        {
+          "entry": "commonMain/kotlin/collections/Grouping.kt",
+          "sourceSha256": "c7c3e97f6dc065a5576bc410d01730943ed0c866d4d924c3faecdf780c596de0",
+          "startByte": 0,
+          "endByteExclusive": 208,
+          "startLine": 1,
+          "endLine": 4
+        },
+        {
+          "entry": "commonMain/kotlin/collections/IndexedValue.kt",
+          "sourceSha256": "6be0f65def20548452fe8fede783159db72def41e4784958b29ceced0345ee34",
+          "startByte": 0,
+          "endByteExclusive": 208,
+          "startLine": 1,
+          "endLine": 4
+        },
+        {
+          "entry": "commonMain/kotlin/collections/Iterables.kt",
+          "sourceSha256": "db36d783a35dc062366af184d7e54cbc70f57e3cf570329696931c7008c1e244",
+          "startByte": 0,
+          "endByteExclusive": 208,
+          "startLine": 1,
+          "endLine": 4
+        },
+        {
+          "entry": "commonMain/kotlin/collections/Iterators.kt",
+          "sourceSha256": "04902b5056696394cfeb2fc500ce4d5a9dcf01307d72f8841a1b49a13e44ef14",
+          "startByte": 0,
+          "endByteExclusive": 208,
+          "startLine": 1,
+          "endLine": 4
+        },
+        {
+          "entry": "commonMain/kotlin/collections/MapWithDefault.kt",
+          "sourceSha256": "2871fda3d7897ade3de94abc569e5c539e33d2ab4da1db0e8d74a16a1da9f297",
+          "startByte": 0,
+          "endByteExclusive": 208,
+          "startLine": 1,
+          "endLine": 4
+        },
+        {
+          "entry": "commonMain/kotlin/collections/Sequence.kt",
+          "sourceSha256": "9fa1907ce02ad0c4c0d70415c8e80ba915fe1bfa42361ca1cbc022c08d96c5e8",
+          "startByte": 0,
+          "endByteExclusive": 208,
+          "startLine": 1,
+          "endLine": 4
+        },
+        {
+          "entry": "commonMain/kotlin/collections/SequenceBuilder.kt",
+          "sourceSha256": "561b608a756880000f678c23ff295eae1c77813e92cf696bbd5b2b755d7ffbdb",
+          "startByte": 0,
+          "endByteExclusive": 208,
+          "startLine": 1,
+          "endLine": 4
+        },
+        {
+          "entry": "commonMain/kotlin/collections/SlidingWindow.kt",
+          "sourceSha256": "04d6bbececece2b07672446fd5145c55d5cff5bf2db62419d53d278d417aed60",
+          "startByte": 0,
+          "endByteExclusive": 208,
+          "startLine": 1,
+          "endLine": 4
+        },
+        {
+          "entry": "commonMain/kotlin/contracts/ContractBuilder.kt",
+          "sourceSha256": "33f4d78133e390d3c593494517d9ddd576e6ca0b9ad16fd7c474c4bf42ce2406",
+          "startByte": 0,
+          "endByteExclusive": 208,
+          "startLine": 1,
+          "endLine": 4
+        },
+        {
+          "entry": "commonMain/kotlin/contracts/Effect.kt",
+          "sourceSha256": "8c6cf2fe3a01b17f9f109ea790f7932a2a6f0e11bf8259f6f44be0d971f951bb",
+          "startByte": 0,
+          "endByteExclusive": 208,
+          "startLine": 1,
+          "endLine": 4
+        },
+        {
+          "entry": "commonMain/kotlin/coroutines/ContinuationInterceptor.kt",
+          "sourceSha256": "cc870e6596d5eca531330b286ed53ede43186d32f5a574c4b01e24dfef7cb351",
+          "startByte": 0,
+          "endByteExclusive": 208,
+          "startLine": 1,
+          "endLine": 4
+        },
+        {
+          "entry": "commonMain/kotlin/coroutines/CoroutineContext.kt",
+          "sourceSha256": "11925f7743820f3adfc0d76fc7cd2ebe94bdb6d854113e67a5f31d8dd9bfc6ef",
+          "startByte": 0,
+          "endByteExclusive": 208,
+          "startLine": 1,
+          "endLine": 4
+        },
+        {
+          "entry": "commonMain/kotlin/coroutines/CoroutinesH.kt",
+          "sourceSha256": "7c388b055ff858ff23adf3879406d6de9b2821c6590d14d3c59b44f55c8113f3",
+          "startByte": 0,
+          "endByteExclusive": 208,
+          "startLine": 1,
+          "endLine": 4
+        },
+        {
+          "entry": "commonMain/kotlin/coroutines/CoroutinesIntrinsicsH.kt",
+          "sourceSha256": "bf9d21e7a062bb86d8838c4c9cbc597e3361f12beb7b63c1f4a38c5eed6a14e9",
+          "startByte": 0,
+          "endByteExclusive": 208,
+          "startLine": 1,
+          "endLine": 4
+        },
+        {
+          "entry": "commonMain/kotlin/experimental/bitwiseOperations.kt",
+          "sourceSha256": "886858b67f551c7d00b2671568d27347d09d0df655910b098b27314b851e823d",
+          "startByte": 0,
+          "endByteExclusive": 208,
+          "startLine": 1,
+          "endLine": 4
+        },
+        {
+          "entry": "commonMain/kotlin/experimental/inferenceMarker.kt",
+          "sourceSha256": "1c5bcc0c779b54865ae5254f7d8a9e9f58667e94da40398716723932a4502f04",
+          "startByte": 0,
+          "endByteExclusive": 208,
+          "startLine": 1,
+          "endLine": 4
+        },
+        {
+          "entry": "commonMain/kotlin/internal/Annotations.kt",
+          "sourceSha256": "3c121e34d07f1495005ec58551206a48983efaa2bea56fdd5b022bdfb910f578",
+          "startByte": 0,
+          "endByteExclusive": 208,
+          "startLine": 1,
+          "endLine": 4
+        },
+        {
+          "entry": "commonMain/kotlin/internal/progressionUtil.kt",
+          "sourceSha256": "eb165869ce4547ca1714751e44f69cd5646a4b74448dee27c7a36f8c54e042e1",
+          "startByte": 0,
+          "endByteExclusive": 208,
+          "startLine": 1,
+          "endLine": 4
+        },
+        {
+          "entry": "commonMain/kotlin/properties/Delegates.kt",
+          "sourceSha256": "bf949cdd6726f9a37ba087b5ad1baebb461e33a65ab761f5f261e5d9acf7c2ef",
+          "startByte": 0,
+          "endByteExclusive": 208,
+          "startLine": 1,
+          "endLine": 4
+        },
+        {
+          "entry": "commonMain/kotlin/properties/ObservableProperty.kt",
+          "sourceSha256": "07de7a3c8a01aced99928e2c55841a2f93bec0c0dcf562dd6adbbbbeb6296cb3",
+          "startByte": 0,
+          "endByteExclusive": 208,
+          "startLine": 1,
+          "endLine": 4
+        },
+        {
+          "entry": "commonMain/kotlin/random/XorWowRandom.kt",
+          "sourceSha256": "74980524237cf7300b570abe5775eaffc7e86dd1b5032794a6249d7c7d8ff6ad",
+          "startByte": 0,
+          "endByteExclusive": 208,
+          "startLine": 1,
+          "endLine": 4
+        },
+        {
+          "entry": "commonMain/kotlin/ranges/Ranges.kt",
+          "sourceSha256": "856a2cf6cab19503fb2338fd4e6d086e27eaff86077afdc1a92b66307be48287",
+          "startByte": 0,
+          "endByteExclusive": 208,
+          "startLine": 1,
+          "endLine": 4
+        },
+        {
+          "entry": "commonMain/kotlin/reflect/KCallable.kt",
+          "sourceSha256": "0e1a6dc8c5b9ab1a535663bdf10630e6d43dffb5f70d40293490df112a14ee89",
+          "startByte": 0,
+          "endByteExclusive": 208,
+          "startLine": 1,
+          "endLine": 4
+        },
+        {
+          "entry": "commonMain/kotlin/reflect/KFunction.kt",
+          "sourceSha256": "f510638f50c946b0f97b748acbc8efaf54280a836c7693be81f3fe9fd1b768f8",
+          "startByte": 0,
+          "endByteExclusive": 208,
+          "startLine": 1,
+          "endLine": 4
+        },
+        {
+          "entry": "commonMain/kotlin/reflect/KProperty.kt",
+          "sourceSha256": "febfc6ef3a80caceba41e33836e38039c3587f01b37bf15331e895a9a0b3a957",
+          "startByte": 0,
+          "endByteExclusive": 208,
+          "startLine": 1,
+          "endLine": 4
+        },
+        {
+          "entry": "commonMain/kotlin/text/Indent.kt",
+          "sourceSha256": "46b49ab6a57b4e526c8b2ae635cc20531df1a987cd77373ebcb490d918f32616",
+          "startByte": 0,
+          "endByteExclusive": 208,
+          "startLine": 1,
+          "endLine": 4
+        },
+        {
+          "entry": "commonMain/kotlin/text/StringNumberConversions.kt",
+          "sourceSha256": "b2118ab073fe2b292e89e16a7529f8b98f67deb52a40468fdb4fbea33bc1632f",
+          "startByte": 0,
+          "endByteExclusive": 208,
+          "startLine": 1,
+          "endLine": 4
+        },
+        {
+          "entry": "commonMain/kotlin/text/Typography.kt",
+          "sourceSha256": "5b955067eaff984aeb6ff6963c50b6a0acacf60c10bdf95d3beea1533aa0801c",
+          "startByte": 0,
+          "endByteExclusive": 208,
+          "startLine": 1,
+          "endLine": 4
+        },
+        {
+          "entry": "commonMain/kotlin/text/regex/MatchResult.kt",
+          "sourceSha256": "d544b79962fa7de28a64295dd714c0818aab7a7a134ca6ae5f04a2225abd37e6",
+          "startByte": 0,
+          "endByteExclusive": 208,
+          "startLine": 1,
+          "endLine": 4
+        },
+        {
+          "entry": "commonMain/kotlin/text/regex/RegexExtensions.kt",
+          "sourceSha256": "189672e4986db474c72507abed5e6f1326f325dc8a080c7a3edb9d249fb5470a",
+          "startByte": 0,
+          "endByteExclusive": 208,
+          "startLine": 1,
+          "endLine": 4
+        },
+        {
+          "entry": "commonMain/kotlin/util/HashCode.kt",
+          "sourceSha256": "ae5782989e25d6037cf270cfe581958cfcdc348db2693c59b9bf9836c63b1b33",
+          "startByte": 0,
+          "endByteExclusive": 208,
+          "startLine": 1,
+          "endLine": 4
+        },
+        {
+          "entry": "commonMain/kotlin/util/Lateinit.kt",
+          "sourceSha256": "09f604c31ca61fd072b48d7c38f6badbe1c0c4fe7d5e704a7f9ff745d19fa176",
+          "startByte": 0,
+          "endByteExclusive": 208,
+          "startLine": 1,
+          "endLine": 4
+        },
+        {
+          "entry": "commonMain/kotlin/util/Lazy.kt",
+          "sourceSha256": "edbadef8d710c4153aa7f380be7d40d2199b2a3a10cc044408d2d9f48693a782",
+          "startByte": 0,
+          "endByteExclusive": 208,
+          "startLine": 1,
+          "endLine": 4
+        },
+        {
+          "entry": "commonMain/kotlin/util/Preconditions.kt",
+          "sourceSha256": "442aa2f34afdbac0410263fdc02957a822f06f5e09d2aef70d2070e467c735d0",
+          "startByte": 0,
+          "endByteExclusive": 208,
+          "startLine": 1,
+          "endLine": 4
+        },
+        {
+          "entry": "commonMain/kotlin/util/Result.kt",
+          "sourceSha256": "424bc0233f2fe4177d0a31716d8de0a703d1b4e9822e3478cdf9c23b510d4ec0",
+          "startByte": 0,
+          "endByteExclusive": 208,
+          "startLine": 1,
+          "endLine": 4
+        },
+        {
+          "entry": "commonMain/kotlin/util/Standard.kt",
+          "sourceSha256": "5eab97b3ae26182c06fb84ca1410a7b7532291d584f804a521a7554f4d9f0107",
+          "startByte": 0,
+          "endByteExclusive": 208,
+          "startLine": 1,
+          "endLine": 4
+        },
+        {
+          "entry": "commonMain/kotlin/util/Suspend.kt",
+          "sourceSha256": "e03786c96a126dd4f8b4dbb1d84ef1eb3cbf2bfb0d5f43ba37bed04a699aa8bb",
+          "startByte": 0,
+          "endByteExclusive": 208,
+          "startLine": 1,
+          "endLine": 4
+        },
+        {
+          "entry": "commonMain/kotlin/util/Tuples.kt",
+          "sourceSha256": "8866ba9ab69d2ea1d73cf9c11d1eea47523c89ad1211639743bbd1073af5ef42",
+          "startByte": 0,
+          "endByteExclusive": 208,
+          "startLine": 1,
+          "endLine": 4
+        },
+        {
+          "entry": "commonMain/kotlin/annotations/Unsigned.kt",
+          "sourceSha256": "37137f1ceadbaba3bb65ceaa2256dee700f50cb2173988abdfbe40061f3abad7",
+          "startByte": 0,
+          "endByteExclusive": 208,
+          "startLine": 1,
+          "endLine": 4
+        }
+      ]
+    },
+    {
+      "commentSha256": "3af858fc83088f11647ba3e0aa03e03edd30b3d6f3c4e7342764a5b739dceefe",
+      "sources": [
+        {
+          "entry": "jvmMain/kotlin/Any.kt",
+          "sourceSha256": "85454250ac4e6a765f4eb6d02bf87e3a01ba310a6a88271928c3453e95ee5fcd",
+          "startByte": 0,
+          "endByteExclusive": 600,
+          "startLine": 1,
+          "endLine": 15
+        },
+        {
+          "entry": "jvmMain/kotlin/Boolean.kt",
+          "sourceSha256": "bdbc1d16cefb3e173588c72558fd8885c926e5e981dca516070ddd2982c66437",
+          "startByte": 0,
+          "endByteExclusive": 600,
+          "startLine": 1,
+          "endLine": 15
+        },
+        {
+          "entry": "jvmMain/kotlin/CharSequence.kt",
+          "sourceSha256": "d453b034232c845c98da3addc5471fbec70001a8103e11e46cf982c4c0939b65",
+          "startByte": 0,
+          "endByteExclusive": 600,
+          "startLine": 1,
+          "endLine": 15
+        },
+        {
+          "entry": "jvmMain/kotlin/Comparable.kt",
+          "sourceSha256": "392b3b43fae1860e892097b3575fda848f425280c2b9b818807a432f2ab88f60",
+          "startByte": 0,
+          "endByteExclusive": 600,
+          "startLine": 1,
+          "endLine": 15
+        },
+        {
+          "entry": "jvmMain/kotlin/Iterator.kt",
+          "sourceSha256": "3415495e64c7f85e82a4e9912b52980380d6f7e66a59dd658da74c96633d8175",
+          "startByte": 0,
+          "endByteExclusive": 600,
+          "startLine": 1,
+          "endLine": 15
+        },
+        {
+          "entry": "jvmMain/kotlin/Nothing.kt",
+          "sourceSha256": "21b2783c0cc58ac9a8eb71081adc6ff9c5cf890ae8ebacdb2914267ff5c5af80",
+          "startByte": 0,
+          "endByteExclusive": 600,
+          "startLine": 1,
+          "endLine": 15
+        },
+        {
+          "entry": "jvmMain/kotlin/Number.kt",
+          "sourceSha256": "07853acc1128c31052863e0699747f555339cc263317c60ef29992c088c0774d",
+          "startByte": 0,
+          "endByteExclusive": 600,
+          "startLine": 1,
+          "endLine": 15
+        },
+        {
+          "entry": "jvmMain/kotlin/Throwable.kt",
+          "sourceSha256": "2bdb8d38bf67bb82b4299d0dcb3202a4825ba2dd4e56ca5633617f24c169e38e",
+          "startByte": 0,
+          "endByteExclusive": 600,
+          "startLine": 1,
+          "endLine": 15
+        },
+        {
+          "entry": "jvmMain/kotlin/reflect/KDeclarationContainer.kt",
+          "sourceSha256": "42e507d2d26e8d0d61e2f664407ab7cdc6c7d52ac834b6bf97ef2e65628ad83e",
+          "startByte": 0,
+          "endByteExclusive": 600,
+          "startLine": 1,
+          "endLine": 15
+        },
+        {
+          "entry": "jvmMain/kotlin/reflect/KParameter.kt",
+          "sourceSha256": "56caea6891aa7bbc2a56615230bde3510718dcfcca8de0b25a2aee150dd56d4a",
+          "startByte": 0,
+          "endByteExclusive": 600,
+          "startLine": 1,
+          "endLine": 15
+        },
+        {
+          "entry": "jvmMain/kotlin/Function.kt",
+          "sourceSha256": "f1b847a3e0bb7641276341525fcc41c9b8ba73ed972f7b4c2f09eb00feb5ffb7",
+          "startByte": 0,
+          "endByteExclusive": 600,
+          "startLine": 1,
+          "endLine": 15
+        },
+        {
+          "entry": "jvmMain/kotlin/Unit.kt",
+          "sourceSha256": "cf37835529d28429f0b5c831d43e44e79d98a4bd296323d7b3eff6d8d4b09bcf",
+          "startByte": 0,
+          "endByteExclusive": 600,
+          "startLine": 1,
+          "endLine": 15
+        },
+        {
+          "entry": "jvmMain/kotlin/annotation/Annotations.kt",
+          "sourceSha256": "a385ca0535e0d93df2f07216567b18a1e66e0386db6a84488ea3a4f50df6d8c7",
+          "startByte": 0,
+          "endByteExclusive": 600,
+          "startLine": 1,
+          "endLine": 15
+        }
+      ]
+    },
+    {
+      "commentSha256": "417bd21c84f6b6cf6fe0845135eab4f26e5db4be62bc9dcaf346e8e6f957f3df",
+      "sources": [
+        {
+          "entry": "jvmMain/kotlin/Array.kt",
+          "sourceSha256": "6c71d0642170856eb2d0edda8679635a66318b18300b7a6e6075d425b6901132",
+          "startByte": 0,
+          "endByteExclusive": 208,
+          "startLine": 1,
+          "endLine": 4
+        },
+        {
+          "entry": "jvmMain/kotlin/Enum.kt",
+          "sourceSha256": "19ed9904483a105ea716af87a158c4f1e57c67109460bfdb254f4ee602f2e9a9",
+          "startByte": 0,
+          "endByteExclusive": 208,
+          "startLine": 1,
+          "endLine": 4
+        },
+        {
+          "entry": "jvmMain/kotlin/reflect/KAnnotatedElement.kt",
+          "sourceSha256": "4fbbb381a21801261c7a30c3f394971f8555f6a3d058f55c3662753bccb5b277",
+          "startByte": 0,
+          "endByteExclusive": 208,
+          "startLine": 1,
+          "endLine": 4
+        },
+        {
+          "entry": "jvmMain/kotlin/reflect/KClass.kt",
+          "sourceSha256": "fc4b0bba48db8438c228b3715fd3930abfbee452c4a308f839db98a8cef46629",
+          "startByte": 0,
+          "endByteExclusive": 208,
+          "startLine": 1,
+          "endLine": 4
+        },
+        {
+          "entry": "jvmMain/kotlin/reflect/KClassesImpl.kt",
+          "sourceSha256": "81cf969c3e01f5d714afc80579175c2fde84ce74cbdef6e75eb08ad78d21937d",
+          "startByte": 0,
+          "endByteExclusive": 208,
+          "startLine": 1,
+          "endLine": 4
+        },
+        {
+          "entry": "jvmMain/kotlin/reflect/KProperty.kt",
+          "sourceSha256": "86755ac92b31a98828a09e9dba3bbfb0a3841a7f7359c03c6859b2e12eae99e8",
+          "startByte": 0,
+          "endByteExclusive": 208,
+          "startLine": 1,
+          "endLine": 4
+        },
+        {
+          "entry": "jvmMain/kotlin/reflect/KType.kt",
+          "sourceSha256": "90f8044dd91f297c7b47c06efcde9de9ec7f1cb081a29528b2cf0758273f64b1",
+          "startByte": 0,
+          "endByteExclusive": 208,
+          "startLine": 1,
+          "endLine": 4
+        },
+        {
+          "entry": "jvmMain/kotlin/reflect/TypesJVM.kt",
+          "sourceSha256": "553f588e70795d6ac15a0fbf3aeef9b543cca9f7cb972ed797507fe92bcfffa1",
+          "startByte": 0,
+          "endByteExclusive": 208,
+          "startLine": 1,
+          "endLine": 4
+        },
+        {
+          "entry": "jvmMain/kotlin/jvm/internal/KTypeBase.kt",
+          "sourceSha256": "be81f80e36b9a9703760daf79e453012a7ed443a86083a21b184245bcf1815d8",
+          "startByte": 0,
+          "endByteExclusive": 208,
+          "startLine": 1,
+          "endLine": 4
+        },
+        {
+          "entry": "jvmMain/kotlin/jvm/internal/TypeReference.kt",
+          "sourceSha256": "dee4f190835e25f89b6d6b9865eff4b876209437b86cde9c9d8abe2dfc35c3c5",
+          "startByte": 0,
+          "endByteExclusive": 208,
+          "startLine": 1,
+          "endLine": 4
+        },
+        {
+          "entry": "jvmMain/kotlin/Annotations.kt",
+          "sourceSha256": "6888d49674800b91b0cc4d3b7c5c807765a2e72f4d7a0577e5fd5a3086b058e1",
+          "startByte": 0,
+          "endByteExclusive": 208,
+          "startLine": 1,
+          "endLine": 4
+        },
+        {
+          "entry": "commonMain/kotlin/collections/ArrayDeque.kt",
+          "sourceSha256": "66ef6035ee1f0ebcf29d8c1d5061ad5362fd3427fa98695655a4b3a177c72f59",
+          "startByte": 0,
+          "endByteExclusive": 208,
+          "startLine": 1,
+          "endLine": 4
+        },
+        {
+          "entry": "commonMain/kotlin/collections/UArraySorting.kt",
+          "sourceSha256": "87f743f0489466d18c5fc2fce52bae9aecb6862d0bae86a73052ba1d2c16289b",
+          "startByte": 0,
+          "endByteExclusive": 208,
+          "startLine": 1,
+          "endLine": 4
+        },
+        {
+          "entry": "commonMain/kotlin/ranges/Range.kt",
+          "sourceSha256": "2f7ee4ccc0d6789b50393c9f6f307a67fc4342e49240f2781446db8c58956f14",
+          "startByte": 0,
+          "endByteExclusive": 208,
+          "startLine": 1,
+          "endLine": 4
+        },
+        {
+          "entry": "commonMain/kotlin/reflect/KClasses.kt",
+          "sourceSha256": "a8a7dbc9d0b3e68340cffc5b6156e0be57a5b180a8ebc7c345a9785bc4e3392c",
+          "startByte": 0,
+          "endByteExclusive": 208,
+          "startLine": 1,
+          "endLine": 4
+        },
+        {
+          "entry": "commonMain/kotlin/reflect/KClassifier.kt",
+          "sourceSha256": "e8bd766dbf9590383ee125f11492dd00b11e32b37ef17e18929d2aaabb882eff",
+          "startByte": 0,
+          "endByteExclusive": 208,
+          "startLine": 1,
+          "endLine": 4
+        },
+        {
+          "entry": "commonMain/kotlin/reflect/KTypeParameter.kt",
+          "sourceSha256": "2d670765bab66aaf56c454dddce68126955ca31db41c963a18403c7c4719a6ca",
+          "startByte": 0,
+          "endByteExclusive": 208,
+          "startLine": 1,
+          "endLine": 4
+        },
+        {
+          "entry": "commonMain/kotlin/reflect/KVariance.kt",
+          "sourceSha256": "097166fc5b6372b9633b463356b2929b09adb072be8c408d86e818b5bca3b691",
+          "startByte": 0,
+          "endByteExclusive": 208,
+          "startLine": 1,
+          "endLine": 4
+        },
+        {
+          "entry": "commonMain/kotlin/reflect/typeOf.kt",
+          "sourceSha256": "6c76f5f50e68eccacf3292885f028287af0072a4a4ea954ad61af803de2f8d46",
+          "startByte": 0,
+          "endByteExclusive": 208,
+          "startLine": 1,
+          "endLine": 4
+        },
+        {
+          "entry": "commonMain/kotlin/text/Appendable.kt",
+          "sourceSha256": "ff1ffb90c5cbf5d6cfdd8078e634b68390dc87df80660cfd500862675bcbb788",
+          "startByte": 0,
+          "endByteExclusive": 208,
+          "startLine": 1,
+          "endLine": 4
+        },
+        {
+          "entry": "commonMain/kotlin/text/CharacterCodingException.kt",
+          "sourceSha256": "dc56c432f8f0386d4d04d5943f4f432f5d2090bb5dd4df77fdeaa7905fceaacc",
+          "startByte": 0,
+          "endByteExclusive": 208,
+          "startLine": 1,
+          "endLine": 4
+        },
+        {
+          "entry": "commonMain/kotlin/time/ExperimentalTime.kt",
+          "sourceSha256": "e7a07236989e90f61b965b215e006da1ca80d582a61280d34bde475d4a01c51f",
+          "startByte": 0,
+          "endByteExclusive": 208,
+          "startLine": 1,
+          "endLine": 4
+        },
+        {
+          "entry": "commonMain/kotlin/util/Numbers.kt",
+          "sourceSha256": "ddab4e5642ca9f414e5ddee2cc66ca9d459e6a38bc63061ff0503cef44e55163",
+          "startByte": 0,
+          "endByteExclusive": 208,
+          "startLine": 1,
+          "endLine": 4
+        }
+      ]
+    },
+    {
+      "commentSha256": "97dce00ca628c83039b628553ae8f8b4ee886f13b2c2fbbd6e223ff80b2f64a5",
+      "sources": [
+        {
+          "entry": "jvmMain/kotlin/Arrays.kt",
+          "sourceSha256": "dafa6b343b0c3ec78e9a81cc651e17e5c5208d930f841f97f98f5c6ac47cf92c",
+          "startByte": 0,
+          "endByteExclusive": 208,
+          "startLine": 1,
+          "endLine": 4
+        },
+        {
+          "entry": "jvmMain/kotlin/Primitives.kt",
+          "sourceSha256": "52645586efe9a8e2cf05afae39ace677f0eb92f29e05f93a5a045c78f6ce8de8",
+          "startByte": 0,
+          "endByteExclusive": 208,
+          "startLine": 1,
+          "endLine": 4
+        },
+        {
+          "entry": "jvmMain/generated/_ArraysJvm.kt",
+          "sourceSha256": "79cd2d47cb2ffce80bc95c7aebbd38c57e1910f8dd92a8bc500d3f87f738d7fd",
+          "startByte": 0,
+          "endByteExclusive": 208,
+          "startLine": 1,
+          "endLine": 4
+        },
+        {
+          "entry": "jvmMain/generated/_CollectionsJvm.kt",
+          "sourceSha256": "359f77dc72ef109d9b1b36ffe7fdc2e4538028eacd94e9b55df2ae00e5d55310",
+          "startByte": 0,
+          "endByteExclusive": 208,
+          "startLine": 1,
+          "endLine": 4
+        },
+        {
+          "entry": "jvmMain/generated/_ComparisonsJvm.kt",
+          "sourceSha256": "87eb20263e47e3f74e8087fbb7a1e13a88c5f6b99216473858b79b181eb2eeb2",
+          "startByte": 0,
+          "endByteExclusive": 208,
+          "startLine": 1,
+          "endLine": 4
+        },
+        {
+          "entry": "jvmMain/generated/_MapsJvm.kt",
+          "sourceSha256": "fda0fa437d91cf6a35013a7449c7c5e5103ea7ee59be6f0f3e36ce581e258b0c",
+          "startByte": 0,
+          "endByteExclusive": 208,
+          "startLine": 1,
+          "endLine": 4
+        },
+        {
+          "entry": "jvmMain/generated/_SequencesJvm.kt",
+          "sourceSha256": "3fba8099835dde3e94203ac11f8447df273e508aedcc8251fc84b8dbf6e3b687",
+          "startByte": 0,
+          "endByteExclusive": 208,
+          "startLine": 1,
+          "endLine": 4
+        },
+        {
+          "entry": "jvmMain/generated/_StringsJvm.kt",
+          "sourceSha256": "c12477058030ae9ac6521b39c88de1d844a6d333a861023a0e253ae4be8d37f6",
+          "startByte": 0,
+          "endByteExclusive": 208,
+          "startLine": 1,
+          "endLine": 4
+        },
+        {
+          "entry": "jvmMain/generated/_UArraysJvm.kt",
+          "sourceSha256": "29a05d4d6c3a8fa09b0c5104bc07ecdfc7312abebc6a7785bd1bada756abdc5c",
+          "startByte": 0,
+          "endByteExclusive": 208,
+          "startLine": 1,
+          "endLine": 4
+        },
+        {
+          "entry": "jvmMain/kotlin/collections/CollectionsJVM.kt",
+          "sourceSha256": "337dfb9b1ccb026ed4a6c1ee4555c1cc77d5bc74a1a88394ea529a4abfd8306d",
+          "startByte": 0,
+          "endByteExclusive": 208,
+          "startLine": 1,
+          "endLine": 4
+        },
+        {
+          "entry": "jvmMain/kotlin/collections/MapsJVM.kt",
+          "sourceSha256": "27253b4fc002268413750e06ca5c026496d2c4face80ac0b952e2621d536ec54",
+          "startByte": 0,
+          "endByteExclusive": 208,
+          "startLine": 1,
+          "endLine": 4
+        },
+        {
+          "entry": "jvmMain/kotlin/collections/SetsJVM.kt",
+          "sourceSha256": "d3f30c4be665c3ab1a5482b9b7b901460da38bc04722f4f7c0398beaeb03a7ae",
+          "startByte": 0,
+          "endByteExclusive": 208,
+          "startLine": 1,
+          "endLine": 4
+        },
+        {
+          "entry": "jvmMain/kotlin/enums/EnumEntriesJVM.kt",
+          "sourceSha256": "cdc5b36ac05087a5852a38ef1ed0647a2df3d2af6b531e8d578c8fb55d783437",
+          "startByte": 0,
+          "endByteExclusive": 208,
+          "startLine": 1,
+          "endLine": 4
+        },
+        {
+          "entry": "jvmMain/kotlin/internal/PlatformImplementations.kt",
+          "sourceSha256": "ef4cb63eb0d6edaac14123ebe638eb0a3add7e3a19931c2d84a1a85bdfb19366",
+          "startByte": 0,
+          "endByteExclusive": 208,
+          "startLine": 1,
+          "endLine": 4
+        },
+        {
+          "entry": "jvmMain/kotlin/io/encoding/Base64JVM.kt",
+          "sourceSha256": "0942ea8a28c86c926fecc0643dd5af9423a4c7764fe43c8025c8f1283a8c4b91",
+          "startByte": 0,
+          "endByteExclusive": 208,
+          "startLine": 1,
+          "endLine": 4
+        },
+        {
+          "entry": "jvmMain/kotlin/text/CharCategoryJVM.kt",
+          "sourceSha256": "10a79ce4c330ec90fa512a7affc4652e8424ef93835bacfa49f04d54cff1c106",
+          "startByte": 0,
+          "endByteExclusive": 208,
+          "startLine": 1,
+          "endLine": 4
+        },
+        {
+          "entry": "jvmMain/kotlin/text/CharDirectionality.kt",
+          "sourceSha256": "909ec4ea60e0e0f485d2400c81de0e43420837bef9db4e81c681170d9cabeb1d",
+          "startByte": 0,
+          "endByteExclusive": 208,
+          "startLine": 1,
+          "endLine": 4
+        },
+        {
+          "entry": "jvmMain/kotlin/jvm/functions/Functions.kt",
+          "sourceSha256": "dfc22214c2e44007aa5e1a211f6a9f026f9192f7cebbe24e6af5074ce431746a",
+          "startByte": 0,
+          "endByteExclusive": 208,
+          "startLine": 1,
+          "endLine": 4
+        },
+        {
+          "entry": "jvmMain/kotlin/jvm/internal/ArrayIterators.kt",
+          "sourceSha256": "e9c4c1596a521e1e31a4799de9dea8df5e95a42a95536b24d6c0a9b0d97b7022",
+          "startByte": 0,
+          "endByteExclusive": 208,
+          "startLine": 1,
+          "endLine": 4
+        },
+        {
+          "entry": "commonMain/generated/_Arrays.kt",
+          "sourceSha256": "37d887dac91b15bc141e5f1deb3146d262e9e0b37938e4d3f6f5e7307eaf7694",
+          "startByte": 0,
+          "endByteExclusive": 208,
+          "startLine": 1,
+          "endLine": 4
+        },
+        {
+          "entry": "commonMain/generated/_Collections.kt",
+          "sourceSha256": "15cfe680243c392ef155bccbcaa76f3ba4eefb87520027f325b501b0a72e4d6e",
+          "startByte": 0,
+          "endByteExclusive": 208,
+          "startLine": 1,
+          "endLine": 4
+        },
+        {
+          "entry": "commonMain/generated/_Comparisons.kt",
+          "sourceSha256": "cdf125e931303cf6d52a2773dba7b4065e071e68f5b11e8c1763b66868f3d65c",
+          "startByte": 0,
+          "endByteExclusive": 208,
+          "startLine": 1,
+          "endLine": 4
+        },
+        {
+          "entry": "commonMain/generated/_Maps.kt",
+          "sourceSha256": "8cd95380dc0c4026a5f76dc98a0b63e540a9e65155b6eb3e05a48ba971738c64",
+          "startByte": 0,
+          "endByteExclusive": 208,
+          "startLine": 1,
+          "endLine": 4
+        },
+        {
+          "entry": "commonMain/generated/_OneToManyTitlecaseMappings.kt",
+          "sourceSha256": "269a66c13be45acd5ec12a1e5d095cf244d5427c7cd7175fca0b7e6535d60897",
+          "startByte": 0,
+          "endByteExclusive": 208,
+          "startLine": 1,
+          "endLine": 4
+        },
+        {
+          "entry": "commonMain/generated/_Ranges.kt",
+          "sourceSha256": "9c8eeb67b3b21d087bd9523a3411116003fcc81ed9c319c20a3c6f0e64f52c06",
+          "startByte": 0,
+          "endByteExclusive": 208,
+          "startLine": 1,
+          "endLine": 4
+        },
+        {
+          "entry": "commonMain/generated/_Sequences.kt",
+          "sourceSha256": "d08b8af8eaf332880cac6ae449eb7d02d26ab9434659c9c07015f0e570982906",
+          "startByte": 0,
+          "endByteExclusive": 208,
+          "startLine": 1,
+          "endLine": 4
+        },
+        {
+          "entry": "commonMain/generated/_Sets.kt",
+          "sourceSha256": "a7dce4dbaaec7f52fafaade5a67296992da9cd5ae4f8bac85868f6fe48806013",
+          "startByte": 0,
+          "endByteExclusive": 208,
+          "startLine": 1,
+          "endLine": 4
+        },
+        {
+          "entry": "commonMain/generated/_Strings.kt",
+          "sourceSha256": "4b915ca08457c87cbc60b10edf780bd588625c39bac062603bf97fa72df3e5f7",
+          "startByte": 0,
+          "endByteExclusive": 208,
+          "startLine": 1,
+          "endLine": 4
+        },
+        {
+          "entry": "commonMain/generated/_UArrays.kt",
+          "sourceSha256": "30114835e27974cfe112c05ebc986c94d234cc9b92330e276388cc9c61648b6e",
+          "startByte": 0,
+          "endByteExclusive": 208,
+          "startLine": 1,
+          "endLine": 4
+        },
+        {
+          "entry": "commonMain/generated/_UCollections.kt",
+          "sourceSha256": "f529e2afd44609bd270955b2691f5483048622e3e19340703570cf6bb207d19d",
+          "startByte": 0,
+          "endByteExclusive": 208,
+          "startLine": 1,
+          "endLine": 4
+        },
+        {
+          "entry": "commonMain/generated/_UComparisons.kt",
+          "sourceSha256": "f391ea115a61fb41137280ad8b30171411b2e748dae59b809eb5f5378bfd5b62",
+          "startByte": 0,
+          "endByteExclusive": 208,
+          "startLine": 1,
+          "endLine": 4
+        },
+        {
+          "entry": "commonMain/generated/_URanges.kt",
+          "sourceSha256": "0b67d81eb79e018c31c9adcbb25c64a1af8463eb1210f66af5e3b3323d92567b",
+          "startByte": 0,
+          "endByteExclusive": 208,
+          "startLine": 1,
+          "endLine": 4
+        },
+        {
+          "entry": "commonMain/generated/_USequences.kt",
+          "sourceSha256": "167098e5de2f3fa4a1068d91a8a9d50659903afa2bb233195f43664a24f1fb44",
+          "startByte": 0,
+          "endByteExclusive": 208,
+          "startLine": 1,
+          "endLine": 4
+        },
+        {
+          "entry": "commonMain/kotlin/collections/Collections.kt",
+          "sourceSha256": "996764b777c5cc3a5da2dfb41344d838e102b29cf356c65aa7b672f296c3763a",
+          "startByte": 0,
+          "endByteExclusive": 208,
+          "startLine": 1,
+          "endLine": 4
+        },
+        {
+          "entry": "commonMain/kotlin/collections/Maps.kt",
+          "sourceSha256": "affe429970b68b2a4b8466be7789b8392d185e67c79d089b5f1152a761fe3dca",
+          "startByte": 0,
+          "endByteExclusive": 208,
+          "startLine": 1,
+          "endLine": 4
+        },
+        {
+          "entry": "commonMain/kotlin/collections/PrimitiveIterators.kt",
+          "sourceSha256": "74bad1a42b0ede328e9368e6b8cbd26f4885d3b9cbb1823e578431ea039f76a9",
+          "startByte": 0,
+          "endByteExclusive": 208,
+          "startLine": 1,
+          "endLine": 4
+        },
+        {
+          "entry": "commonMain/kotlin/collections/ReversedViews.kt",
+          "sourceSha256": "8cef7c290008f44bc6c1ae0b794d6d114738fa268440bc979fdb1b7797c5e89d",
+          "startByte": 0,
+          "endByteExclusive": 208,
+          "startLine": 1,
+          "endLine": 4
+        },
+        {
+          "entry": "commonMain/kotlin/collections/Sets.kt",
+          "sourceSha256": "2d2977c211be0b03fb1876e217f99d0805d4cc9a61fda9aae4c9d90063f6f9e8",
+          "startByte": 0,
+          "endByteExclusive": 208,
+          "startLine": 1,
+          "endLine": 4
+        },
+        {
+          "entry": "commonMain/kotlin/enums/EnumEntries.kt",
+          "sourceSha256": "229bf5d0e3e97deacddbf8a32b2d314801ee39d169dde0ea055f11ab73dcd27e",
+          "startByte": 0,
+          "endByteExclusive": 208,
+          "startLine": 1,
+          "endLine": 4
+        },
+        {
+          "entry": "commonMain/kotlin/io/encoding/ExperimentalEncodingApi.kt",
+          "sourceSha256": "cc0acf938228cee1acbc80f4b9ad548c5e36e08f71067724dc442a110e83596f",
+          "startByte": 0,
+          "endByteExclusive": 208,
+          "startLine": 1,
+          "endLine": 4
+        },
+        {
+          "entry": "commonMain/kotlin/ranges/PrimitiveRanges.kt",
+          "sourceSha256": "9f4fb1869b592372e65d813169f03b47668db2113935d2cb6e380bff892d6b04",
+          "startByte": 0,
+          "endByteExclusive": 208,
+          "startLine": 1,
+          "endLine": 4
+        },
+        {
+          "entry": "commonMain/kotlin/ranges/ProgressionIterators.kt",
+          "sourceSha256": "4d1b0d6a1ffce3bfa8bcab24e6259cc8b8f53ed6f47ebdff260ec671d2cabd6b",
+          "startByte": 0,
+          "endByteExclusive": 208,
+          "startLine": 1,
+          "endLine": 4
+        },
+        {
+          "entry": "commonMain/kotlin/ranges/Progressions.kt",
+          "sourceSha256": "f69a5d120acdadefc001a1fb3fb87181a32a664c82a85b32fb06a9adf9030805",
+          "startByte": 0,
+          "endByteExclusive": 208,
+          "startLine": 1,
+          "endLine": 4
+        },
+        {
+          "entry": "commonMain/kotlin/text/HexExtensions.kt",
+          "sourceSha256": "abbd415fe12256d9e2c0e7c1d1b6b83bbbd149f5b5bb62112c11851ae6ab81ac",
+          "startByte": 0,
+          "endByteExclusive": 208,
+          "startLine": 1,
+          "endLine": 4
+        },
+        {
+          "entry": "commonMain/kotlin/text/HexFormat.kt",
+          "sourceSha256": "37b63d02753959d612fa5ae87d23c7e3f3dc72b1547d1b5916a5a77c2731dae9",
+          "startByte": 0,
+          "endByteExclusive": 208,
+          "startLine": 1,
+          "endLine": 4
+        },
+        {
+          "entry": "commonMain/kotlin/text/UHexExtensions.kt",
+          "sourceSha256": "edc68d08995365f21ff2c6b9cdbf17f7103c3eb2739dbe649f364662ca64d3e4",
+          "startByte": 0,
+          "endByteExclusive": 208,
+          "startLine": 1,
+          "endLine": 4
+        },
+        {
+          "entry": "commonMain/kotlin/util/FloorDivMod.kt",
+          "sourceSha256": "c9221863c8e349a56569f9fc235d7dc3c83f0bfcc63f46181065efc1a9f136e2",
+          "startByte": 0,
+          "endByteExclusive": 208,
+          "startLine": 1,
+          "endLine": 4
+        },
+        {
+          "entry": "commonMain/kotlin/UByte.kt",
+          "sourceSha256": "eeef3fd208329d8ba34ae041f5bb3b1eec88d90b046bf45c02a24299862f1b5f",
+          "startByte": 0,
+          "endByteExclusive": 208,
+          "startLine": 1,
+          "endLine": 4
+        },
+        {
+          "entry": "commonMain/kotlin/UByteArray.kt",
+          "sourceSha256": "bcd8f05c7a13425970213fbd600d85889fa0f605e7534763a185f3e9663007e2",
+          "startByte": 0,
+          "endByteExclusive": 208,
+          "startLine": 1,
+          "endLine": 4
+        },
+        {
+          "entry": "commonMain/kotlin/UInt.kt",
+          "sourceSha256": "c6c5998ec1dfcce5c28a108e32dfbc47c508972254ebf33162c541583fd5f7d7",
+          "startByte": 0,
+          "endByteExclusive": 208,
+          "startLine": 1,
+          "endLine": 4
+        },
+        {
+          "entry": "commonMain/kotlin/UIntArray.kt",
+          "sourceSha256": "a20d1d498327e4b5649f1e0059b90c3a791eb54221e110de0e67e9453c9ea95c",
+          "startByte": 0,
+          "endByteExclusive": 208,
+          "startLine": 1,
+          "endLine": 4
+        },
+        {
+          "entry": "commonMain/kotlin/UIntRange.kt",
+          "sourceSha256": "29fd921b49d7462d3933cdd22b670a985872e5850dfefaad07e937bb4b6d0912",
+          "startByte": 0,
+          "endByteExclusive": 208,
+          "startLine": 1,
+          "endLine": 4
+        },
+        {
+          "entry": "commonMain/kotlin/ULong.kt",
+          "sourceSha256": "978a59c44226f446e97f32f3d0b5350436c6a6439b4e350ce714934a25744dff",
+          "startByte": 0,
+          "endByteExclusive": 208,
+          "startLine": 1,
+          "endLine": 4
+        },
+        {
+          "entry": "commonMain/kotlin/ULongArray.kt",
+          "sourceSha256": "3d82ac847b3040029b4667c51da54e4cb41966076d245b594faafcf6be97e8ed",
+          "startByte": 0,
+          "endByteExclusive": 208,
+          "startLine": 1,
+          "endLine": 4
+        },
+        {
+          "entry": "commonMain/kotlin/ULongRange.kt",
+          "sourceSha256": "8a9978efee978886a2b1c6e4380da92052dc8c2a7d71d9beac6280ed64a37bd7",
+          "startByte": 0,
+          "endByteExclusive": 208,
+          "startLine": 1,
+          "endLine": 4
+        },
+        {
+          "entry": "commonMain/kotlin/UShort.kt",
+          "sourceSha256": "d774b28076f69f00a05874108b3f23eeadd17a709589e15cb796a76c5132df37",
+          "startByte": 0,
+          "endByteExclusive": 208,
+          "startLine": 1,
+          "endLine": 4
+        },
+        {
+          "entry": "commonMain/kotlin/UShortArray.kt",
+          "sourceSha256": "61818f05f2fc55724fef7c9e4dcc11d8365f94a33f14b4b004641683aef42bb4",
+          "startByte": 0,
+          "endByteExclusive": 208,
+          "startLine": 1,
+          "endLine": 4
+        }
+      ]
+    },
+    {
+      "commentSha256": "d29b406a88c0419f5816e7aef86703075ff16587d06678f732f61e02b2465dd5",
+      "sources": [
+        {
+          "entry": "jvmMain/kotlin/Char.kt",
+          "sourceSha256": "47ed325c5e2b9bc6cf12f2cf1e0383fc5206a2bea751d7f7d0d30dc5c3a31f2b",
+          "startByte": 0,
+          "endByteExclusive": 208,
+          "startLine": 1,
+          "endLine": 4
+        },
+        {
+          "entry": "jvmMain/jdk7/kotlin/AutoCloseableJVM.kt",
+          "sourceSha256": "fb971e4a7cfc1bde90f322c371e78edcb7a763079d711f12a08de7933a59d60c",
+          "startByte": 0,
+          "endByteExclusive": 208,
+          "startLine": 1,
+          "endLine": 4
+        },
+        {
+          "entry": "jvmMain/jdk7/kotlin/io/path/CopyActionContext.kt",
+          "sourceSha256": "d002f22fd9d5136a592ce1411ab165d6e5741e127e6d559e8e8d47d82e2ef815",
+          "startByte": 0,
+          "endByteExclusive": 208,
+          "startLine": 1,
+          "endLine": 4
+        },
+        {
+          "entry": "jvmMain/jdk7/kotlin/io/path/CopyActionResult.kt",
+          "sourceSha256": "8289cb8173ba7677f8f1e677bdaee987aa927bc6bf4aa14e330002f08fd4ef05",
+          "startByte": 0,
+          "endByteExclusive": 208,
+          "startLine": 1,
+          "endLine": 4
+        },
+        {
+          "entry": "jvmMain/jdk7/kotlin/io/path/FileVisitorBuilder.kt",
+          "sourceSha256": "9ef69caa952a059b95ddc40105fc633ee510462487a90e7bdc3e466a9983a4a4",
+          "startByte": 0,
+          "endByteExclusive": 208,
+          "startLine": 1,
+          "endLine": 4
+        },
+        {
+          "entry": "jvmMain/jdk7/kotlin/io/path/OnErrorResult.kt",
+          "sourceSha256": "39a838d6f49fca727fa7305caeb2b91ecc3866bce62ae2e95d6248595b653de8",
+          "startByte": 0,
+          "endByteExclusive": 208,
+          "startLine": 1,
+          "endLine": 4
+        },
+        {
+          "entry": "jvmMain/jdk7/kotlin/io/path/PathRecursiveFunctions.kt",
+          "sourceSha256": "99d1217aa5e4e5924cd61f0f721b961f4cba11f46c0d22c834678a91a968360b",
+          "startByte": 0,
+          "endByteExclusive": 208,
+          "startLine": 1,
+          "endLine": 4
+        },
+        {
+          "entry": "jvmMain/jdk7/kotlin/io/path/PathWalkOption.kt",
+          "sourceSha256": "42be6673076bbe4acb571a2527a4abf979eb17c07dcec85446bb8807486d7db8",
+          "startByte": 0,
+          "endByteExclusive": 208,
+          "startLine": 1,
+          "endLine": 4
+        },
+        {
+          "entry": "jvmMain/jdk8/kotlin/jvm/optionals/Optionals.kt",
+          "sourceSha256": "16961e77e9d57db3c2611955ece25284cd503d2bb5c826f469116ce0116614ec",
+          "startByte": 0,
+          "endByteExclusive": 208,
+          "startLine": 1,
+          "endLine": 4
+        },
+        {
+          "entry": "jvmMain/kotlin/concurrent/Volatile.kt",
+          "sourceSha256": "1dcf63e85160c51c62a0ea9b44a23f5c33ccb3d6c8e4d933ff7625265c843b49",
+          "startByte": 0,
+          "endByteExclusive": 208,
+          "startLine": 1,
+          "endLine": 4
+        },
+        {
+          "entry": "jvmMain/kotlin/enums/EnumEntriesSerializationProxy.kt",
+          "sourceSha256": "32f281b26b646e32a1fe13d2c070bd2b1b206e6287c9c84a29698ae09f9301ce",
+          "startByte": 0,
+          "endByteExclusive": 208,
+          "startLine": 1,
+          "endLine": 4
+        },
+        {
+          "entry": "jvmMain/kotlin/io/encoding/Base64IOStream.kt",
+          "sourceSha256": "208ce1f149b7fc0293fa12d95a686888d77914107fa4ac97330af77b1e4ef805",
+          "startByte": 0,
+          "endByteExclusive": 208,
+          "startLine": 1,
+          "endLine": 4
+        },
+        {
+          "entry": "jvmMain/kotlin/text/regex/RegexExtensions.kt",
+          "sourceSha256": "3626a9845d560802e740b53a9cf37706d8d308fe40511c49bb53b25c565cbb46",
+          "startByte": 0,
+          "endByteExclusive": 208,
+          "startLine": 1,
+          "endLine": 4
+        },
+        {
+          "entry": "jvmMain/kotlin/time/MonoTimeSource.kt",
+          "sourceSha256": "bd9d66003345107344a7ea8516c861325de893ad6c2a588fe3ed5b8b7eb694d0",
+          "startByte": 0,
+          "endByteExclusive": 208,
+          "startLine": 1,
+          "endLine": 4
+        },
+        {
+          "entry": "jvmMain/kotlin/util/MathJVM.kt",
+          "sourceSha256": "168ba0bcd84d1c1526d14cc6e62dbed4cbe2a5aa096c2a110cf0f0f6096cb4cd",
+          "startByte": 0,
+          "endByteExclusive": 208,
+          "startLine": 1,
+          "endLine": 4
+        },
+        {
+          "entry": "jvmMain/kotlin/jvm/JvmClassMapping.kt",
+          "sourceSha256": "5642cef30ff8cea99d38331a2da2be13200553fe4edb5e249978a137922fcf46",
+          "startByte": 0,
+          "endByteExclusive": 208,
+          "startLine": 1,
+          "endLine": 4
+        },
+        {
+          "entry": "jvmMain/kotlin/jvm/internal/SourceDebugExtension.kt",
+          "sourceSha256": "5105dc21bda25b321d86d7fd8ee9e78fdbdf5e55fd7af608a3cd86db5ac0ce1c",
+          "startByte": 0,
+          "endByteExclusive": 208,
+          "startLine": 1,
+          "endLine": 4
+        },
+        {
+          "entry": "commonMain/kotlin/MathH.kt",
+          "sourceSha256": "8f7a09a280cc0ac50d99615c0e7b95112ff43d36f19fa7d03cf64b80eba9bd96",
+          "startByte": 0,
+          "endByteExclusive": 208,
+          "startLine": 1,
+          "endLine": 4
+        },
+        {
+          "entry": "commonMain/kotlin/AutoCloseable.kt",
+          "sourceSha256": "75a9a807b16d82f8cc99cec9a21249f35e9477193760db20280515fdc10fdad6",
+          "startByte": 0,
+          "endByteExclusive": 208,
+          "startLine": 1,
+          "endLine": 4
+        },
+        {
+          "entry": "commonMain/kotlin/annotations/NativeConcurrentAnnotations.kt",
+          "sourceSha256": "1c0f0840e335b3caf369b4ca3074dc8071ff928a7ac545e832caa4f5d07742a7",
+          "startByte": 0,
+          "endByteExclusive": 208,
+          "startLine": 1,
+          "endLine": 4
+        },
+        {
+          "entry": "commonMain/kotlin/annotations/OptIn.kt",
+          "sourceSha256": "3b77188545b5949b43abd1ba82677694f504da11b1ad68597cae04fbea6adcdf",
+          "startByte": 0,
+          "endByteExclusive": 208,
+          "startLine": 1,
+          "endLine": 4
+        },
+        {
+          "entry": "commonMain/kotlin/comparisons/Comparisons.kt",
+          "sourceSha256": "a4d437cb59c2a9ee1277211ad895545ec65842f307790358900ac4d22fde67a3",
+          "startByte": 0,
+          "endByteExclusive": 208,
+          "startLine": 1,
+          "endLine": 4
+        },
+        {
+          "entry": "commonMain/kotlin/concurrent/Volatile.kt",
+          "sourceSha256": "26d47ebaf4399b154fadc8400f2ad313c852e66db5218cb259a3550a5b7bf3ad",
+          "startByte": 0,
+          "endByteExclusive": 208,
+          "startLine": 1,
+          "endLine": 4
+        },
+        {
+          "entry": "commonMain/kotlin/experimental/ExperimentalObjCName.kt",
+          "sourceSha256": "a5fccf7bedff88972dc4d86a8591f0f9184d7f9704e7020bd797964ed5044f6b",
+          "startByte": 0,
+          "endByteExclusive": 208,
+          "startLine": 1,
+          "endLine": 4
+        },
+        {
+          "entry": "commonMain/kotlin/experimental/ExperimentalObjCRefinement.kt",
+          "sourceSha256": "b822d6e3d28b4cf0a3f4b65c72f1b55e9ae7584e3cc963dfc230e2a0e865aca6",
+          "startByte": 0,
+          "endByteExclusive": 208,
+          "startLine": 1,
+          "endLine": 4
+        },
+        {
+          "entry": "commonMain/kotlin/io/encoding/Base64.kt",
+          "sourceSha256": "fdb6fa35462f6b8a1e7cfb9a3426e82dc61cc7974ed6e5ec94e81aaefb346c2d",
+          "startByte": 0,
+          "endByteExclusive": 208,
+          "startLine": 1,
+          "endLine": 4
+        },
+        {
+          "entry": "commonMain/kotlin/time/TimeSource.kt",
+          "sourceSha256": "8dbf479e58598ab44599c88122b9ef5684450e6a340e62994ff75a2fac3f6b5a",
+          "startByte": 0,
+          "endByteExclusive": 208,
+          "startLine": 1,
+          "endLine": 4
+        },
+        {
+          "entry": "commonMain/kotlin/time/TimeSources.kt",
+          "sourceSha256": "17621e82f1d28a3119e1bd53db3c99079add611684f864c32a917de8328a1a42",
+          "startByte": 0,
+          "endByteExclusive": 208,
+          "startLine": 1,
+          "endLine": 4
+        },
+        {
+          "entry": "commonMain/kotlin/time/longSaturatedMath.kt",
+          "sourceSha256": "a2b55c20ad835ceac34551e26bbc925a32b9d4883d0555f6c42339dbefdd9550",
+          "startByte": 0,
+          "endByteExclusive": 208,
+          "startLine": 1,
+          "endLine": 4
+        },
+        {
+          "entry": "commonMain/kotlin/time/measureTime.kt",
+          "sourceSha256": "0754acc81afa22ffee1da92f4ee8a910dd163afb69d6ea307577686762b1b8d8",
+          "startByte": 0,
+          "endByteExclusive": 208,
+          "startLine": 1,
+          "endLine": 4
+        }
+      ]
+    },
+    {
+      "commentSha256": "b435f6f0d1197e2dbfdc63891b518b09b5149047df84ffa9439831f5638e88de",
+      "sources": [
+        {
+          "entry": "jvmMain/kotlin/Collections.kt",
+          "sourceSha256": "09c70af896f9967cebb9d4e3e9829aae1597ecf9fbf2ee14527d6dc9824a028a",
+          "startByte": 0,
+          "endByteExclusive": 208,
+          "startLine": 1,
+          "endLine": 4
+        },
+        {
+          "entry": "jvmMain/jdk7/kotlin/internal/jdk7/JDK7PlatformImplementations.kt",
+          "sourceSha256": "2878598086bc70fcf6291173d8bc3a8775a0e8a2063a710d6e85bae0a18af52f",
+          "startByte": 0,
+          "endByteExclusive": 208,
+          "startLine": 1,
+          "endLine": 4
+        },
+        {
+          "entry": "jvmMain/jdk7/kotlin/io/path/ExperimentalPathApi.kt",
+          "sourceSha256": "3ef414e1d014619a87af34714aa78cbdc991a39ac1d1387042f8b67bf8854727",
+          "startByte": 0,
+          "endByteExclusive": 208,
+          "startLine": 1,
+          "endLine": 4
+        },
+        {
+          "entry": "jvmMain/kotlin/collections/AbstractMutableCollection.kt",
+          "sourceSha256": "2d0cea98289e2a6f811bad5ec19fc00f0963dd72f3472afacd2c9f71d26a4dbc",
+          "startByte": 0,
+          "endByteExclusive": 208,
+          "startLine": 1,
+          "endLine": 4
+        },
+        {
+          "entry": "jvmMain/kotlin/collections/AbstractMutableList.kt",
+          "sourceSha256": "90b4a05293bf5098d92890c9716cbf0d2b55db7741d9b9d1f8ffa95cbfaa3d06",
+          "startByte": 0,
+          "endByteExclusive": 208,
+          "startLine": 1,
+          "endLine": 4
+        },
+        {
+          "entry": "jvmMain/kotlin/collections/AbstractMutableMap.kt",
+          "sourceSha256": "2b90fc04976ef2680936c6f7d18fd2c047510e0f74260c860b46a1818de89717",
+          "startByte": 0,
+          "endByteExclusive": 208,
+          "startLine": 1,
+          "endLine": 4
+        },
+        {
+          "entry": "jvmMain/kotlin/collections/AbstractMutableSet.kt",
+          "sourceSha256": "e4765a107f63b7549f4b89bbd9e96c86766a2698b1085d7f365e535768fff1b5",
+          "startByte": 0,
+          "endByteExclusive": 208,
+          "startLine": 1,
+          "endLine": 4
+        },
+        {
+          "entry": "jvmMain/kotlin/collections/MutableCollectionsJVM.kt",
+          "sourceSha256": "31cdda1ac47db969471ce55cd1639e263d964cf56ff4ff1df86bb76a68110fd4",
+          "startByte": 0,
+          "endByteExclusive": 208,
+          "startLine": 1,
+          "endLine": 4
+        },
+        {
+          "entry": "jvmMain/kotlin/concurrent/Locks.kt",
+          "sourceSha256": "ad8d9e5bf3adc1e89b7995cb2fa973df9b45e19a72c29c967d95c83acf0d1c99",
+          "startByte": 0,
+          "endByteExclusive": 208,
+          "startLine": 1,
+          "endLine": 4
+        },
+        {
+          "entry": "jvmMain/kotlin/coroutines/cancellation/CancellationException.kt",
+          "sourceSha256": "e701529e883d393f37e575cb927d29b6c1f6dc7bd358fcdb5ee33502100540af",
+          "startByte": 0,
+          "endByteExclusive": 208,
+          "startLine": 1,
+          "endLine": 4
+        },
+        {
+          "entry": "jvmMain/kotlin/io/files/Utils.kt",
+          "sourceSha256": "0fd4f2c04e29accbeb004a4a8dbd123ad060b01c6771363d159277582b8dbefa",
+          "startByte": 0,
+          "endByteExclusive": 208,
+          "startLine": 1,
+          "endLine": 4
+        },
+        {
+          "entry": "jvmMain/kotlin/system/Timing.kt",
+          "sourceSha256": "c399241bf5d09f81b2e06565356a73ff025c6262d74ef2109791f5999d57c5fe",
+          "startByte": 0,
+          "endByteExclusive": 208,
+          "startLine": 1,
+          "endLine": 4
+        },
+        {
+          "entry": "jvmMain/kotlin/util/BigDecimals.kt",
+          "sourceSha256": "4c624304e5b793f18d8e87a2d8dcac68e10bcc44757884bc2542d5d86c6a93cb",
+          "startByte": 0,
+          "endByteExclusive": 208,
+          "startLine": 1,
+          "endLine": 4
+        },
+        {
+          "entry": "jvmMain/kotlin/util/Exceptions.kt",
+          "sourceSha256": "853e5c00b3c4b7c330cc648f118657f0061f2b313738e196766b874f8c9c6936",
+          "startByte": 0,
+          "endByteExclusive": 208,
+          "startLine": 1,
+          "endLine": 4
+        },
+        {
+          "entry": "jvmMain/kotlin/Throws.kt",
+          "sourceSha256": "a782763f16597fe0dfac883e655380c1a4eb3bdfdf1264311678d56f04bd3d0e",
+          "startByte": 0,
+          "endByteExclusive": 208,
+          "startLine": 1,
+          "endLine": 4
+        },
+        {
+          "entry": "jvmMain/kotlin/jvm/internal/AdaptedFunctionReference.java",
+          "sourceSha256": "dfba493c5ee3fb96792a482ccc2e4295e35ece0a71c4a02395f65485acb7d6a2",
+          "startByte": 0,
+          "endByteExclusive": 208,
+          "startLine": 1,
+          "endLine": 4
+        },
+        {
+          "entry": "jvmMain/kotlin/jvm/internal/FunInterfaceConstructorReference.java",
+          "sourceSha256": "9667a2f5453259f89290bf88497c33b99f8bbcdbe166ec5731851eca835150c7",
+          "startByte": 0,
+          "endByteExclusive": 208,
+          "startLine": 1,
+          "endLine": 4
+        },
+        {
+          "entry": "jvmMain/kotlin/jvm/internal/FunctionAdapter.java",
+          "sourceSha256": "e4dd69eff73320102e853d1275c55f7de1cd1ed173a96537f3191f99b349f431",
+          "startByte": 0,
+          "endByteExclusive": 208,
+          "startLine": 1,
+          "endLine": 4
+        },
+        {
+          "entry": "jvmMain/kotlin/jvm/internal/TypeParameterReference.kt",
+          "sourceSha256": "1b0cb5ff9cff8ec2281d2ebab7f238eb06d469f1c97b1353b0f54b469a2f40cb",
+          "startByte": 0,
+          "endByteExclusive": 208,
+          "startLine": 1,
+          "endLine": 4
+        },
+        {
+          "entry": "commonMain/kotlin/Comparator.kt",
+          "sourceSha256": "d1d9bacefcc0373926b54aceb27447629c0e85af7028ca862913c31538a74309",
+          "startByte": 0,
+          "endByteExclusive": 208,
+          "startLine": 1,
+          "endLine": 4
+        },
+        {
+          "entry": "commonMain/kotlin/ExceptionsH.kt",
+          "sourceSha256": "f09866b01b6890faf506f7e2c6a152033118fba96b4771f28e84232aa0d539be",
+          "startByte": 0,
+          "endByteExclusive": 208,
+          "startLine": 1,
+          "endLine": 4
+        },
+        {
+          "entry": "commonMain/kotlin/KotlinH.kt",
+          "sourceSha256": "01851178a36ac1b1084ebca80435f43307961eefcca65a001e0d1964f98321de",
+          "startByte": 0,
+          "endByteExclusive": 208,
+          "startLine": 1,
+          "endLine": 4
+        },
+        {
+          "entry": "commonMain/kotlin/collections/AbstractMutableCollection.kt",
+          "sourceSha256": "a3f36f26add5a2ff449ef6dab3339aece91ceeaf2fc214596c881d353a132a8b",
+          "startByte": 0,
+          "endByteExclusive": 208,
+          "startLine": 1,
+          "endLine": 4
+        },
+        {
+          "entry": "commonMain/kotlin/collections/AbstractMutableList.kt",
+          "sourceSha256": "f27698e598c045fb6098e70a1829b3b0da1329bf983587c6da4b40e677c6e605",
+          "startByte": 0,
+          "endByteExclusive": 208,
+          "startLine": 1,
+          "endLine": 4
+        },
+        {
+          "entry": "commonMain/kotlin/collections/AbstractMutableMap.kt",
+          "sourceSha256": "edfa9a5e8e53d53152c0b14a2f19c9fb6f9af76727491606e45f277c7297c9de",
+          "startByte": 0,
+          "endByteExclusive": 208,
+          "startLine": 1,
+          "endLine": 4
+        },
+        {
+          "entry": "commonMain/kotlin/collections/AbstractMutableSet.kt",
+          "sourceSha256": "e6c2c92f019fb0ffb9abd31e688fd5481d708d4667b054b482a5126a998ffc57",
+          "startByte": 0,
+          "endByteExclusive": 208,
+          "startLine": 1,
+          "endLine": 4
+        },
+        {
+          "entry": "commonMain/kotlin/annotations/Inference.kt",
+          "sourceSha256": "c9ab56e29c5d28706233851fcf290e95248287192020599d93f26851c02e04f9",
+          "startByte": 0,
+          "endByteExclusive": 208,
+          "startLine": 1,
+          "endLine": 4
+        },
+        {
+          "entry": "commonMain/kotlin/annotations/Throws.kt",
+          "sourceSha256": "6168229dd2574c33527d1d6469ba46c9bfdc570fcf0f0bf5d95e3ccbcd047784",
+          "startByte": 0,
+          "endByteExclusive": 208,
+          "startLine": 1,
+          "endLine": 4
+        },
+        {
+          "entry": "commonMain/kotlin/collections/AbstractCollection.kt",
+          "sourceSha256": "6cf944e7a688966a5db7a6c362cd297ab9e6ebc62c9c42f4a76ac42afff119c0",
+          "startByte": 0,
+          "endByteExclusive": 208,
+          "startLine": 1,
+          "endLine": 4
+        },
+        {
+          "entry": "commonMain/kotlin/collections/AbstractList.kt",
+          "sourceSha256": "58371cff9bfe9b6a363794140219d56828bc581120736a046ad277ed79adfc75",
+          "startByte": 0,
+          "endByteExclusive": 208,
+          "startLine": 1,
+          "endLine": 4
+        },
+        {
+          "entry": "commonMain/kotlin/collections/AbstractMap.kt",
+          "sourceSha256": "21309988b541e460b4de3c7c7b2b752cce1c29e33f1b33eefe9581ea5cb4fb6e",
+          "startByte": 0,
+          "endByteExclusive": 208,
+          "startLine": 1,
+          "endLine": 4
+        },
+        {
+          "entry": "commonMain/kotlin/collections/AbstractSet.kt",
+          "sourceSha256": "51ef8ac320c294a512bebaa60a3a590da5e8414adc58653531cf2982fd6849e5",
+          "startByte": 0,
+          "endByteExclusive": 208,
+          "startLine": 1,
+          "endLine": 4
+        },
+        {
+          "entry": "commonMain/kotlin/collections/MapAccessors.kt",
+          "sourceSha256": "6e84d50e79295b2975c56631f869f5bf9d2e6a52bcc1a4cb9ca639c6f9109ffd",
+          "startByte": 0,
+          "endByteExclusive": 208,
+          "startLine": 1,
+          "endLine": 4
+        },
+        {
+          "entry": "commonMain/kotlin/collections/MutableCollections.kt",
+          "sourceSha256": "23ce5c775e8682fc0d084de13e58da43f6fe87c7eec1497ca82ee502bb8fae9d",
+          "startByte": 0,
+          "endByteExclusive": 208,
+          "startLine": 1,
+          "endLine": 4
+        },
+        {
+          "entry": "commonMain/kotlin/collections/Sequences.kt",
+          "sourceSha256": "65e5b49b3267142add50999d64a2be22012e02dc95564450ed4062177ae5a638",
+          "startByte": 0,
+          "endByteExclusive": 208,
+          "startLine": 1,
+          "endLine": 4
+        },
+        {
+          "entry": "commonMain/kotlin/coroutines/Continuation.kt",
+          "sourceSha256": "7bbf6ee19310a904b0fe55e3b4476472a3556add516ac13b926c8ad2bea7d317",
+          "startByte": 0,
+          "endByteExclusive": 208,
+          "startLine": 1,
+          "endLine": 4
+        },
+        {
+          "entry": "commonMain/kotlin/coroutines/CoroutineContextImpl.kt",
+          "sourceSha256": "ca5dbeea5e8265db04890cf5040e4e207bea1f4375044fa117d63686150e073f",
+          "startByte": 0,
+          "endByteExclusive": 208,
+          "startLine": 1,
+          "endLine": 4
+        },
+        {
+          "entry": "commonMain/kotlin/coroutines/cancellation/CancellationExceptionH.kt",
+          "sourceSha256": "780a93c7196d9b6245d4400c61fff8cbd69f084d8eed73d463aed1f8f57ae501",
+          "startByte": 0,
+          "endByteExclusive": 208,
+          "startLine": 1,
+          "endLine": 4
+        },
+        {
+          "entry": "commonMain/kotlin/coroutines/intrinsics/Intrinsics.kt",
+          "sourceSha256": "e570baee51fde59b518e772ed446c4493e140e058e44fc5013945c6a900fd013",
+          "startByte": 0,
+          "endByteExclusive": 208,
+          "startLine": 1,
+          "endLine": 4
+        },
+        {
+          "entry": "commonMain/kotlin/properties/Interfaces.kt",
+          "sourceSha256": "c876f12398fa7b14d2b684857d3ff400178525f9f327e51c2d752e5af077f5e1",
+          "startByte": 0,
+          "endByteExclusive": 208,
+          "startLine": 1,
+          "endLine": 4
+        },
+        {
+          "entry": "commonMain/kotlin/properties/PropertyReferenceDelegates.kt",
+          "sourceSha256": "e69ba931465d71c544e3bcca4afa7c31450f7aa34807c013e0688fa95f418bbe",
+          "startByte": 0,
+          "endByteExclusive": 208,
+          "startLine": 1,
+          "endLine": 4
+        },
+        {
+          "entry": "commonMain/kotlin/reflect/KClass.kt",
+          "sourceSha256": "05fb5bcc9ecc5c35bec54b7cfb858d2d73adc9a668024818105bc63eabe51194",
+          "startByte": 0,
+          "endByteExclusive": 208,
+          "startLine": 1,
+          "endLine": 4
+        },
+        {
+          "entry": "commonMain/kotlin/reflect/KType.kt",
+          "sourceSha256": "e77ac127b8af63e3f6ebe4244ec6a9f7aa98474a469ca2b47f2f26fad9e3b850",
+          "startByte": 0,
+          "endByteExclusive": 208,
+          "startLine": 1,
+          "endLine": 4
+        },
+        {
+          "entry": "commonMain/kotlin/reflect/KTypeProjection.kt",
+          "sourceSha256": "4dd7b1f84cc39778e18bf8ff987a9c54dae8bac5b096826f19921d2f6ff0e33d",
+          "startByte": 0,
+          "endByteExclusive": 208,
+          "startLine": 1,
+          "endLine": 4
+        },
+        {
+          "entry": "commonMain/kotlin/text/CharCategory.kt",
+          "sourceSha256": "30e37a1e9b5caad4e81a7d4dfb6c61d75f4655f4d351ed30b6737f6549bedccb",
+          "startByte": 0,
+          "endByteExclusive": 208,
+          "startLine": 1,
+          "endLine": 4
+        },
+        {
+          "entry": "commonMain/kotlin/text/StringBuilder.kt",
+          "sourceSha256": "4cf90bdcc54c4dbaed570fb7c1048b83162816a02d540910cb5f981ec127988d",
+          "startByte": 0,
+          "endByteExclusive": 208,
+          "startLine": 1,
+          "endLine": 4
+        },
+        {
+          "entry": "commonMain/kotlin/util/DeepRecursive.kt",
+          "sourceSha256": "c7fc2924aa78d0576588ef46f105ebd2625534378ae2eb2704d403b75e7756dc",
+          "startByte": 0,
+          "endByteExclusive": 208,
+          "startLine": 1,
+          "endLine": 4
+        },
+        {
+          "entry": "commonMain/kotlin/util/KotlinVersion.kt",
+          "sourceSha256": "723bdf358b818567b275d7a939578e30911da2d24423cc84a6d8b5772af38824",
+          "startByte": 0,
+          "endByteExclusive": 208,
+          "startLine": 1,
+          "endLine": 4
+        }
+      ]
+    },
+    {
+      "commentSha256": "92fe2dd0e41b0844d2f9b5050342ed5188ca445a95dd8166650278a2d10ecf67",
+      "sources": [
+        {
+          "entry": "jvmMain/kotlin/Library.kt",
+          "sourceSha256": "8949400e6d196b375c3c3516ffdecc80a3e0b0207c3950ac30c429a6e9dd12fa",
+          "startByte": 0,
+          "endByteExclusive": 600,
+          "startLine": 1,
+          "endLine": 15
+        },
+        {
+          "entry": "jvmMain/kotlin/String.kt",
+          "sourceSha256": "1f4c6eca49a090da264759e342ec3405babe247eab0c0b5d09b452c97774ab98",
+          "startByte": 0,
+          "endByteExclusive": 600,
+          "startLine": 1,
+          "endLine": 15
+        },
+        {
+          "entry": "jvmMain/kotlin/reflect/KVisibility.kt",
+          "sourceSha256": "4699594994ae10fb6ec4a98179baee6640f6abcd8877a9ed3a01807e48cbf438",
+          "startByte": 0,
+          "endByteExclusive": 600,
+          "startLine": 1,
+          "endLine": 15
+        },
+        {
+          "entry": "jvmMain/kotlin/ArrayIntrinsics.kt",
+          "sourceSha256": "fafab3107f478f677fcce8492b14996a1a8b3735079bf06170e8476c4c3c1431",
+          "startByte": 0,
+          "endByteExclusive": 600,
+          "startLine": 1,
+          "endLine": 15
+        },
+        {
+          "entry": "jvmMain/kotlin/internal/InternalAnnotations.kt",
+          "sourceSha256": "61744b7a914a731c62df6a702ef289b478afc25c49646cfff1f5ef7f8ec9562e",
+          "startByte": 0,
+          "endByteExclusive": 600,
+          "startLine": 1,
+          "endLine": 15
+        },
+        {
+          "entry": "commonMain/InternalAnnotations.kt",
+          "sourceSha256": "61744b7a914a731c62df6a702ef289b478afc25c49646cfff1f5ef7f8ec9562e",
+          "startByte": 0,
+          "endByteExclusive": 600,
+          "startLine": 1,
+          "endLine": 15
+        }
+      ]
+    },
+    {
+      "commentSha256": "b78b570c391fe81f8eb5d8c9097adbc76ed6260accdde523e6b4a5572afde0b2",
+      "sources": [
+        {
+          "entry": "jvmMain/jdk7/kotlin/io/path/PathReadWrite.kt",
+          "sourceSha256": "fd85a420829a57f7d29d00d7f2a8ca561f5a23657f256eeb87eba782ff04bd57",
+          "startByte": 0,
+          "endByteExclusive": 208,
+          "startLine": 1,
+          "endLine": 4
+        },
+        {
+          "entry": "jvmMain/jdk7/kotlin/io/path/PathTreeWalk.kt",
+          "sourceSha256": "be062062984dcc64557611dc1842b3a881faad1a07c2c0c92a9a114855594177",
+          "startByte": 0,
+          "endByteExclusive": 208,
+          "startLine": 1,
+          "endLine": 4
+        },
+        {
+          "entry": "jvmMain/jdk7/kotlin/io/path/PathUtils.kt",
+          "sourceSha256": "c4e1b9bab53d98438348b4f56b8a513b7a1f4d126d93a8745e164a771849eba6",
+          "startByte": 0,
+          "endByteExclusive": 208,
+          "startLine": 1,
+          "endLine": 4
+        },
+        {
+          "entry": "jvmMain/jdk8/kotlin/annotations/JvmRepeatable.kt",
+          "sourceSha256": "23a7170cffba8251011e4105f863f0cb731651328d105c926abab9dfe483f026",
+          "startByte": 0,
+          "endByteExclusive": 208,
+          "startLine": 1,
+          "endLine": 4
+        },
+        {
+          "entry": "jvmMain/jdk8/kotlin/time/DurationConversions.kt",
+          "sourceSha256": "b777593c0649bd857ac291a10027270d2f580db95c0d473c748698a1e41c3114",
+          "startByte": 0,
+          "endByteExclusive": 208,
+          "startLine": 1,
+          "endLine": 4
+        },
+        {
+          "entry": "jvmMain/kotlin/CharCodeJVM.kt",
+          "sourceSha256": "c7be776f623837d00d7dd55c4d1f70a2cda4c7ac594e6a954df5ec721c634d01",
+          "startByte": 0,
+          "endByteExclusive": 208,
+          "startLine": 1,
+          "endLine": 4
+        },
+        {
+          "entry": "jvmMain/kotlin/collections/builders/ListBuilder.kt",
+          "sourceSha256": "9634666493f3b082e71f515441b05eae4b9c8b199260a38ce5de43f94957bdaf",
+          "startByte": 0,
+          "endByteExclusive": 208,
+          "startLine": 1,
+          "endLine": 4
+        },
+        {
+          "entry": "jvmMain/kotlin/collections/builders/MapBuilder.kt",
+          "sourceSha256": "d5bfeace317c85a00713f673d5931a6ae6332c37975f697aa04cf9eaf56d399b",
+          "startByte": 0,
+          "endByteExclusive": 208,
+          "startLine": 1,
+          "endLine": 4
+        },
+        {
+          "entry": "jvmMain/kotlin/collections/builders/SetBuilder.kt",
+          "sourceSha256": "9103d939f76e0972d86c6f3cf52eeb76f90d9aa8f76d224daf846454b2c0b314",
+          "startByte": 0,
+          "endByteExclusive": 208,
+          "startLine": 1,
+          "endLine": 4
+        },
+        {
+          "entry": "jvmMain/kotlin/text/CharJVM.kt",
+          "sourceSha256": "2492bab3a300b32782fbf2da9691fbe827b1dea6d06cc5e03102ba278e82c123",
+          "startByte": 0,
+          "endByteExclusive": 208,
+          "startLine": 1,
+          "endLine": 4
+        },
+        {
+          "entry": "jvmMain/kotlin/text/StringsJVM.kt",
+          "sourceSha256": "97ebe7a5496c53057343b6e3c8424baa61288527ea092f0c37e73ae2803d7d8c",
+          "startByte": 0,
+          "endByteExclusive": 208,
+          "startLine": 1,
+          "endLine": 4
+        },
+        {
+          "entry": "jvmMain/kotlin/text/regex/Regex.kt",
+          "sourceSha256": "600e61297befad43b7832c03e3be0a07d9e7c681d2828381bb88e8f5b374b029",
+          "startByte": 0,
+          "endByteExclusive": 208,
+          "startLine": 1,
+          "endLine": 4
+        },
+        {
+          "entry": "jvmMain/kotlin/time/DurationJvm.kt",
+          "sourceSha256": "72b6f3eb9b2ee91737b36c43a99125f1c214eebdd1e5f174e071a5f450c047fa",
+          "startByte": 0,
+          "endByteExclusive": 208,
+          "startLine": 1,
+          "endLine": 4
+        },
+        {
+          "entry": "jvmMain/kotlin/time/DurationUnitJvm.kt",
+          "sourceSha256": "b4980cfef787a5383bda2ef28422031fb3193a1dadbbbfafa5944fe4bc607850",
+          "startByte": 0,
+          "endByteExclusive": 208,
+          "startLine": 1,
+          "endLine": 4
+        },
+        {
+          "entry": "jvmMain/kotlin/jvm/internal/RepeatableContainer.java",
+          "sourceSha256": "103d35a087b8862459c198e4dbb1dea24c3a136a1e2e8f04d259b71342bf199c",
+          "startByte": 0,
+          "endByteExclusive": 208,
+          "startLine": 1,
+          "endLine": 4
+        },
+        {
+          "entry": "jvmMain/kotlin/jvm/internal/SerializedIr.kt",
+          "sourceSha256": "0cd11596dbc5a68750dd93a3ff637cd4daade063222908afbd6a4a8bc2910343",
+          "startByte": 0,
+          "endByteExclusive": 208,
+          "startLine": 1,
+          "endLine": 4
+        },
+        {
+          "entry": "commonMain/kotlin/JvmAnnotationsH.kt",
+          "sourceSha256": "15683a4cbc3131e1cd2c6dab727ecaa0a9ac5c74a00a30ed42bf520ecc1b94db",
+          "startByte": 0,
+          "endByteExclusive": 208,
+          "startLine": 1,
+          "endLine": 4
+        },
+        {
+          "entry": "commonMain/kotlin/TextH.kt",
+          "sourceSha256": "ce7c19a43ec3ab5bc25705e051ef1f28de1cd11c00bbf6652d53de28fad08d53",
+          "startByte": 0,
+          "endByteExclusive": 208,
+          "startLine": 1,
+          "endLine": 4
+        },
+        {
+          "entry": "commonMain/kotlin/CharCode.kt",
+          "sourceSha256": "557b06a94fabb61c646f86968da731122329a62fb7897b91f5f7b87762003b8d",
+          "startByte": 0,
+          "endByteExclusive": 208,
+          "startLine": 1,
+          "endLine": 4
+        },
+        {
+          "entry": "commonMain/kotlin/annotations/NativeAnnotations.kt",
+          "sourceSha256": "00c9e78d3f1cd7eb213e9e23f5f20f47d7a549fc92ca2bbc110bc28b0cae4f3c",
+          "startByte": 0,
+          "endByteExclusive": 208,
+          "startLine": 1,
+          "endLine": 4
+        },
+        {
+          "entry": "commonMain/kotlin/comparisons/compareTo.kt",
+          "sourceSha256": "b421958d442821df51bcc2552f6d6718146d1ca4c6d3dd2c0e0adfa0744eb34f",
+          "startByte": 0,
+          "endByteExclusive": 208,
+          "startLine": 1,
+          "endLine": 4
+        },
+        {
+          "entry": "commonMain/kotlin/random/Random.kt",
+          "sourceSha256": "2a99d322abeb159af8a4d8dafee586fab05f63f78f4b12f81f611cc372cca916",
+          "startByte": 0,
+          "endByteExclusive": 208,
+          "startLine": 1,
+          "endLine": 4
+        },
+        {
+          "entry": "commonMain/kotlin/random/URandom.kt",
+          "sourceSha256": "99b82e6fe126b29cd8a2266cb7fac54b439bc7b8d30c0aea96484b4138f9afe5",
+          "startByte": 0,
+          "endByteExclusive": 208,
+          "startLine": 1,
+          "endLine": 4
+        },
+        {
+          "entry": "commonMain/kotlin/text/Char.kt",
+          "sourceSha256": "2f1129178f7e2ac0dd53b6a7c0ee005328488a0cbaead1b80b329203dcc265f2",
+          "startByte": 0,
+          "endByteExclusive": 208,
+          "startLine": 1,
+          "endLine": 4
+        },
+        {
+          "entry": "commonMain/kotlin/text/Strings.kt",
+          "sourceSha256": "fe499e998ec9f8b2bdd4d711b1038dc117e52f4ab6f9f68a60463843ad732dbd",
+          "startByte": 0,
+          "endByteExclusive": 208,
+          "startLine": 1,
+          "endLine": 4
+        },
+        {
+          "entry": "commonMain/kotlin/time/Duration.kt",
+          "sourceSha256": "1eadff15711a823ec9a9b15c0adbbb5c8d64b821505d368ba07ea8682da24bd5",
+          "startByte": 0,
+          "endByteExclusive": 208,
+          "startLine": 1,
+          "endLine": 4
+        },
+        {
+          "entry": "commonMain/kotlin/time/DurationUnit.kt",
+          "sourceSha256": "01e354a51fbf77e5e5c2351bdf29e4df9628aacf5fedbef8aa698098132a2133",
+          "startByte": 0,
+          "endByteExclusive": 208,
+          "startLine": 1,
+          "endLine": 4
+        },
+        {
+          "entry": "commonMain/kotlin/UMath.kt",
+          "sourceSha256": "90aff3f0f6abff132f796dcd0ef852518591e6c911d45219b3985011e77745a0",
+          "startByte": 0,
+          "endByteExclusive": 208,
+          "startLine": 1,
+          "endLine": 4
+        },
+        {
+          "entry": "commonMain/kotlin/UNumbers.kt",
+          "sourceSha256": "67c5297a324f32b890e97109a916f73daa192181cec0ebf3710532758c0cd9be",
+          "startByte": 0,
+          "endByteExclusive": 208,
+          "startLine": 1,
+          "endLine": 4
+        },
+        {
+          "entry": "commonMain/kotlin/UProgressionUtil.kt",
+          "sourceSha256": "678f73ae465627dc4f62fd2faab482a7bdc67d1cbaa5976d7d3b70b949689c46",
+          "startByte": 0,
+          "endByteExclusive": 208,
+          "startLine": 1,
+          "endLine": 4
+        },
+        {
+          "entry": "commonMain/kotlin/UStrings.kt",
+          "sourceSha256": "897be27188d30c84b36d62b8cf413ab4a222403d9fe3dcd1966a9a661da2f05e",
+          "startByte": 0,
+          "endByteExclusive": 208,
+          "startLine": 1,
+          "endLine": 4
+        },
+        {
+          "entry": "commonMain/kotlin/UnsignedUtils.kt",
+          "sourceSha256": "a6b8b39e425c06869f4148ac38e7dc2dafbe303419eb5a11437283e6e33331e2",
+          "startByte": 0,
+          "endByteExclusive": 208,
+          "startLine": 1,
+          "endLine": 4
+        }
+      ]
+    },
+    {
+      "commentSha256": "bf07db813d204a4f09e1738e9d2c4755ca6c6e00dcf8fe6df35166d6d12e02da",
+      "sources": [
+        {
+          "entry": "jvmMain/jdk8/kotlin/collections/Collections.kt",
+          "sourceSha256": "6be4abffe707d9fbf2218b1fc29173c90eaf4a216d920fcd1d3ff741a86b2e1d",
+          "startByte": 0,
+          "endByteExclusive": 600,
+          "startLine": 1,
+          "endLine": 15
+        },
+        {
+          "entry": "jvmMain/jdk8/kotlin/internal/jdk8/JDK8PlatformImplementations.kt",
+          "sourceSha256": "708ca2a7df062985614097aa72d1914a69f8706895e10771a4ebae54df721da6",
+          "startByte": 0,
+          "endByteExclusive": 600,
+          "startLine": 1,
+          "endLine": 15
+        },
+        {
+          "entry": "jvmMain/jdk8/kotlin/streams/Streams.kt",
+          "sourceSha256": "7a7ce7dff293e193b4b1399c8bef0c324a63427eda1b78a7bcf37be207e15d5f",
+          "startByte": 0,
+          "endByteExclusive": 600,
+          "startLine": 1,
+          "endLine": 15
+        }
+      ]
+    },
+    {
+      "commentSha256": "4652bb1f34f7054c058dfb17342d638d081293b772f9bfacd2e03fd270f3b670",
+      "sources": [
+        {
+          "entry": "jvmMain/generated/_ArraysJvm.kt",
+          "sourceSha256": "79cd2d47cb2ffce80bc95c7aebbd38c57e1910f8dd92a8bc500d3f87f738d7fd",
+          "startByte": 22768,
+          "endByteExclusive": 22985,
+          "startLine": 487,
+          "endLine": 492
+        },
+        {
+          "entry": "jvmMain/generated/_ArraysJvm.kt",
+          "sourceSha256": "79cd2d47cb2ffce80bc95c7aebbd38c57e1910f8dd92a8bc500d3f87f738d7fd",
+          "startByte": 23233,
+          "endByteExclusive": 23450,
+          "startLine": 501,
+          "endLine": 506
+        },
+        {
+          "entry": "commonMain/generated/_Arrays.kt",
+          "sourceSha256": "37d887dac91b15bc141e5f1deb3146d262e9e0b37938e4d3f6f5e7307eaf7694",
+          "startByte": 208690,
+          "endByteExclusive": 208907,
+          "startLine": 6779,
+          "endLine": 6784
+        },
+        {
+          "entry": "commonMain/generated/_Arrays.kt",
+          "sourceSha256": "37d887dac91b15bc141e5f1deb3146d262e9e0b37938e4d3f6f5e7307eaf7694",
+          "startByte": 209040,
+          "endByteExclusive": 209257,
+          "startLine": 6789,
+          "endLine": 6794
+        }
+      ]
+    },
+    {
+      "commentSha256": "235e2cd86b9ca2432e27dfaee2e8d25976fa71880cef9521537e77f75058664a",
+      "sources": [
+        {
+          "entry": "jvmMain/generated/_ArraysJvm.kt",
+          "sourceSha256": "79cd2d47cb2ffce80bc95c7aebbd38c57e1910f8dd92a8bc500d3f87f738d7fd",
+          "startByte": 29919,
+          "endByteExclusive": 30005,
+          "startLine": 670,
+          "endLine": 672
+        },
+        {
+          "entry": "jvmMain/generated/_ArraysJvm.kt",
+          "sourceSha256": "79cd2d47cb2ffce80bc95c7aebbd38c57e1910f8dd92a8bc500d3f87f738d7fd",
+          "startByte": 30168,
+          "endByteExclusive": 30254,
+          "startLine": 679,
+          "endLine": 681
+        },
+        {
+          "entry": "jvmMain/generated/_ArraysJvm.kt",
+          "sourceSha256": "79cd2d47cb2ffce80bc95c7aebbd38c57e1910f8dd92a8bc500d3f87f738d7fd",
+          "startByte": 30410,
+          "endByteExclusive": 30496,
+          "startLine": 688,
+          "endLine": 690
+        },
+        {
+          "entry": "jvmMain/generated/_ArraysJvm.kt",
+          "sourceSha256": "79cd2d47cb2ffce80bc95c7aebbd38c57e1910f8dd92a8bc500d3f87f738d7fd",
+          "startByte": 30653,
+          "endByteExclusive": 30739,
+          "startLine": 697,
+          "endLine": 699
+        },
+        {
+          "entry": "jvmMain/generated/_ArraysJvm.kt",
+          "sourceSha256": "79cd2d47cb2ffce80bc95c7aebbd38c57e1910f8dd92a8bc500d3f87f738d7fd",
+          "startByte": 30894,
+          "endByteExclusive": 30980,
+          "startLine": 706,
+          "endLine": 708
+        },
+        {
+          "entry": "jvmMain/generated/_ArraysJvm.kt",
+          "sourceSha256": "79cd2d47cb2ffce80bc95c7aebbd38c57e1910f8dd92a8bc500d3f87f738d7fd",
+          "startByte": 31136,
+          "endByteExclusive": 31222,
+          "startLine": 715,
+          "endLine": 717
+        },
+        {
+          "entry": "jvmMain/generated/_ArraysJvm.kt",
+          "sourceSha256": "79cd2d47cb2ffce80bc95c7aebbd38c57e1910f8dd92a8bc500d3f87f738d7fd",
+          "startByte": 31379,
+          "endByteExclusive": 31465,
+          "startLine": 724,
+          "endLine": 726
+        },
+        {
+          "entry": "jvmMain/generated/_ArraysJvm.kt",
+          "sourceSha256": "79cd2d47cb2ffce80bc95c7aebbd38c57e1910f8dd92a8bc500d3f87f738d7fd",
+          "startByte": 31623,
+          "endByteExclusive": 31709,
+          "startLine": 733,
+          "endLine": 735
+        },
+        {
+          "entry": "jvmMain/generated/_ArraysJvm.kt",
+          "sourceSha256": "79cd2d47cb2ffce80bc95c7aebbd38c57e1910f8dd92a8bc500d3f87f738d7fd",
+          "startByte": 31868,
+          "endByteExclusive": 31954,
+          "startLine": 742,
+          "endLine": 744
+        },
+        {
+          "entry": "commonMain/generated/_Arrays.kt",
+          "sourceSha256": "37d887dac91b15bc141e5f1deb3146d262e9e0b37938e4d3f6f5e7307eaf7694",
+          "startByte": 214360,
+          "endByteExclusive": 214446,
+          "startLine": 6913,
+          "endLine": 6915
+        },
+        {
+          "entry": "commonMain/generated/_Arrays.kt",
+          "sourceSha256": "37d887dac91b15bc141e5f1deb3146d262e9e0b37938e4d3f6f5e7307eaf7694",
+          "startByte": 214527,
+          "endByteExclusive": 214613,
+          "startLine": 6919,
+          "endLine": 6921
+        },
+        {
+          "entry": "commonMain/generated/_Arrays.kt",
+          "sourceSha256": "37d887dac91b15bc141e5f1deb3146d262e9e0b37938e4d3f6f5e7307eaf7694",
+          "startByte": 214687,
+          "endByteExclusive": 214773,
+          "startLine": 6925,
+          "endLine": 6927
+        },
+        {
+          "entry": "commonMain/generated/_Arrays.kt",
+          "sourceSha256": "37d887dac91b15bc141e5f1deb3146d262e9e0b37938e4d3f6f5e7307eaf7694",
+          "startByte": 214848,
+          "endByteExclusive": 214934,
+          "startLine": 6931,
+          "endLine": 6933
+        },
+        {
+          "entry": "commonMain/generated/_Arrays.kt",
+          "sourceSha256": "37d887dac91b15bc141e5f1deb3146d262e9e0b37938e4d3f6f5e7307eaf7694",
+          "startByte": 215007,
+          "endByteExclusive": 215093,
+          "startLine": 6937,
+          "endLine": 6939
+        },
+        {
+          "entry": "commonMain/generated/_Arrays.kt",
+          "sourceSha256": "37d887dac91b15bc141e5f1deb3146d262e9e0b37938e4d3f6f5e7307eaf7694",
+          "startByte": 215167,
+          "endByteExclusive": 215253,
+          "startLine": 6943,
+          "endLine": 6945
+        },
+        {
+          "entry": "commonMain/generated/_Arrays.kt",
+          "sourceSha256": "37d887dac91b15bc141e5f1deb3146d262e9e0b37938e4d3f6f5e7307eaf7694",
+          "startByte": 215328,
+          "endByteExclusive": 215414,
+          "startLine": 6949,
+          "endLine": 6951
+        },
+        {
+          "entry": "commonMain/generated/_Arrays.kt",
+          "sourceSha256": "37d887dac91b15bc141e5f1deb3146d262e9e0b37938e4d3f6f5e7307eaf7694",
+          "startByte": 215490,
+          "endByteExclusive": 215576,
+          "startLine": 6955,
+          "endLine": 6957
+        },
+        {
+          "entry": "commonMain/generated/_Arrays.kt",
+          "sourceSha256": "37d887dac91b15bc141e5f1deb3146d262e9e0b37938e4d3f6f5e7307eaf7694",
+          "startByte": 215653,
+          "endByteExclusive": 215739,
+          "startLine": 6961,
+          "endLine": 6963
+        },
+        {
+          "entry": "commonMain/generated/_UArrays.kt",
+          "sourceSha256": "30114835e27974cfe112c05ebc986c94d234cc9b92330e276388cc9c61648b6e",
+          "startByte": 98346,
+          "endByteExclusive": 98432,
+          "startLine": 3333,
+          "endLine": 3335
+        },
+        {
+          "entry": "commonMain/generated/_UArrays.kt",
+          "sourceSha256": "30114835e27974cfe112c05ebc986c94d234cc9b92330e276388cc9c61648b6e",
+          "startByte": 98573,
+          "endByteExclusive": 98659,
+          "startLine": 3342,
+          "endLine": 3344
+        },
+        {
+          "entry": "commonMain/generated/_UArrays.kt",
+          "sourceSha256": "30114835e27974cfe112c05ebc986c94d234cc9b92330e276388cc9c61648b6e",
+          "startByte": 98801,
+          "endByteExclusive": 98887,
+          "startLine": 3351,
+          "endLine": 3353
+        },
+        {
+          "entry": "commonMain/generated/_UArrays.kt",
+          "sourceSha256": "30114835e27974cfe112c05ebc986c94d234cc9b92330e276388cc9c61648b6e",
+          "startByte": 99029,
+          "endByteExclusive": 99115,
+          "startLine": 3360,
+          "endLine": 3362
+        }
+      ]
+    },
+    {
+      "commentSha256": "b6a25c9fc9ab8a1d6b2dd7f0d5e5037fe62cead0e2fa91bc08aef3ddc8dfc0b4",
+      "sources": [
+        {
+          "entry": "jvmMain/kotlin/collections/ArraysJVM.kt",
+          "sourceSha256": "75df911bf64a0a372354462a4ef6822e24a9e7588bd7a4ba8ac4eb55a0270957",
+          "startByte": 1451,
+          "endByteExclusive": 1525,
+          "startLine": 41,
+          "endLine": 41
+        }
+      ]
+    },
+    {
+      "commentSha256": "e5ae07d6e328109b13f1526c3de8931f235984a55c504268a72669327982817b",
+      "sources": [
+        {
+          "entry": "jvmMain/kotlin/collections/MapsJVM.kt",
+          "sourceSha256": "27253b4fc002268413750e06ca5c026496d2c4face80ac0b952e2621d536ec54",
+          "startByte": 5449,
+          "endByteExclusive": 5670,
+          "startLine": 141,
+          "endLine": 145
+        }
+      ]
+    },
+    {
+      "commentSha256": "e298b02e510730dff11272d1f810215fff838ffa472920738b10b4c4ac3bff38",
+      "sources": [
+        {
+          "entry": "jvmMain/kotlin/reflect/KType.kt",
+          "sourceSha256": "90f8044dd91f297c7b47c06efcde9de9ec7f1cb081a29528b2cf0758273f64b1",
+          "startByte": 1037,
+          "endByteExclusive": 1501,
+          "startLine": 23,
+          "endLine": 30
+        },
+        {
+          "entry": "commonMain/kotlin/reflect/KType.kt",
+          "sourceSha256": "e77ac127b8af63e3f6ebe4244ec6a9f7aa98474a469ca2b47f2f26fad9e3b850",
+          "startByte": 782,
+          "endByteExclusive": 1246,
+          "startLine": 22,
+          "endLine": 29
+        }
+      ]
+    },
+    {
+      "commentSha256": "1f4a1e2fda7c82e64a1348c4d0a6982e6bc64293a1f8d69e897b06b437ffcefe",
+      "sources": [
+        {
+          "entry": "jvmMain/kotlin/util/MathJVM.kt",
+          "sourceSha256": "168ba0bcd84d1c1526d14cc6e62dbed4cbe2a5aa096c2a110cf0f0f6096cb4cd",
+          "startByte": 4511,
+          "endByteExclusive": 4644,
+          "startLine": 157,
+          "endLine": 158
+        }
+      ]
+    },
+    {
+      "commentSha256": "0a41d7cd8d49ba2c478ada17054ce2a4a3e94a82e0bad1ba2e3f7ea5e541e5a3",
+      "sources": [
+        {
+          "entry": "jvmMain/kotlin/jvm/internal/TypeReference.kt",
+          "sourceSha256": "dee4f190835e25f89b6d6b9865eff4b876209437b86cde9c9d8abe2dfc35c3c5",
+          "startByte": 3439,
+          "endByteExclusive": 3588,
+          "startLine": 85,
+          "endLine": 86
+        }
+      ]
+    },
+    {
+      "commentSha256": "ad2889dc3edc9c673c58e27c616921cd9a86afd44fbe3418a690f20ecdf4c8dc",
+      "sources": [
+        {
+          "entry": "commonMain/kotlin/annotations/Inference.kt",
+          "sourceSha256": "c9ab56e29c5d28706233851fcf290e95248287192020599d93f26851c02e04f9",
+          "startByte": 1550,
+          "endByteExclusive": 2639,
+          "startLine": 40,
+          "endLine": 64
+        }
+      ]
+    },
+    {
+      "commentSha256": "87ddd2a79cfcbc090d214e16fc95a47d0eb04e279fd0d5a7a1bd687966de5fb1",
+      "sources": [
+        {
+          "entry": "commonMain/kotlin/collections/AbstractList.kt",
+          "sourceSha256": "58371cff9bfe9b6a363794140219d56828bc581120736a046ad277ed79adfc75",
+          "startByte": 210,
+          "endByteExclusive": 274,
+          "startLine": 6,
+          "endLine": 9
+        }
+      ]
+    },
+    {
+      "commentSha256": "cd759ab92e3254b7062e7c9e02a64ed007d5256cfb2eb739f9270e19abb6cd76",
+      "sources": [
+        {
+          "entry": "commonMain/kotlin/collections/AbstractMap.kt",
+          "sourceSha256": "21309988b541e460b4de3c7c7b2b752cce1c29e33f1b33eefe9581ea5cb4fb6e",
+          "startByte": 210,
+          "endByteExclusive": 274,
+          "startLine": 6,
+          "endLine": 9
+        }
+      ]
+    },
+    {
+      "commentSha256": "ceceacad421a5fd3640830491f6cfbf2040cbce5dbf64b97018ed4ab05e58a6c",
+      "sources": [
+        {
+          "entry": "commonMain/kotlin/collections/Sequences.kt",
+          "sourceSha256": "65e5b49b3267142add50999d64a2be22012e02dc95564450ed4062177ae5a638",
+          "startByte": 21027,
+          "endByteExclusive": 21547,
+          "startLine": 644,
+          "endLine": 656
+        }
+      ]
+    },
+    {
+      "commentSha256": "748e815c65c68e6b7b383cd45cbf9e70fc1abbe4dd74338f0ca81a77ad184333",
+      "sources": [
+        {
+          "entry": "commonMain/kotlin/collections/Sequences.kt",
+          "sourceSha256": "65e5b49b3267142add50999d64a2be22012e02dc95564450ed4062177ae5a638",
+          "startByte": 21789,
+          "endByteExclusive": 22336,
+          "startLine": 664,
+          "endLine": 676
+        }
+      ]
+    },
+    {
+      "commentSha256": "cd3cfb7e2ada97740fb20d20c0b251754e8cd763b5ef103860ec1e814cfafeea",
+      "sources": [
+        {
+          "entry": "commonMain/kotlin/experimental/ExperimentalNativeApi.kt",
+          "sourceSha256": "c6f1d4d3e4aa28ee75b5664ceee65704429f6378a7dac6fe8e89f32b3797caf9",
+          "startByte": 0,
+          "endByteExclusive": 150,
+          "startLine": 1,
+          "endLine": 4
+        }
+      ]
+    },
+    {
+      "commentSha256": "aff485ca9f2e8af7fcf09e152bbeddb66768db82656bbaf111980e23c538c0a5",
+      "sources": [
+        {
+          "entry": "commonMain/kotlin/UnsignedUtils.kt",
+          "sourceSha256": "a6b8b39e425c06869f4148ac38e7dc2dafbe303419eb5a11437283e6e33331e2",
+          "startByte": 718,
+          "endByteExclusive": 829,
+          "startLine": 18,
+          "endLine": 19
+        }
+      ]
+    }
+  ]
+}
