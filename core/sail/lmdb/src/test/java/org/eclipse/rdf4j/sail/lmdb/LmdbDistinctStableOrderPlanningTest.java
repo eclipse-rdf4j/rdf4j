@@ -110,15 +110,13 @@ class LmdbDistinctStableOrderPlanningTest {
 			var explanation = connection.explain(Explanation.Level.Telemetry, distinct, null,
 					EmptyBindingSet.getInstance(), false, 4);
 			var plan = explanation.toGenericPlanNode();
-			var join = plan.getPlans()
-					.getFirst()
-					.getPlans()
-					.stream()
-					.filter(node -> node.getType().startsWith("Join"))
-					.findFirst()
-					.orElseThrow();
+			// With the anchor leading, the trailing pattern only adds a hidden variable and runs as a first-match
+			// probe over it instead of as a join.
+			var body = plan.getPlans().getFirst().getPlans().getLast();
+			assertThat(body.getType()).startsWith(prefixCompatible ? "Filter" : "Join");
+			var leading = prefixCompatible ? body.getPlans().getLast() : body.getPlans().getFirst();
 			assertThat(plan.getResultSizeActual()).isEqualTo(100);
-			assertThat(join.getPlans().getFirst().getResultSizeActual())
+			assertThat(leading.getResultSizeActual())
 					.as("the input rows from the selected leading pattern")
 					.isEqualTo(prefixCompatible ? 200 : 100);
 			assertThat(explanation.toString().contains("statementOrder")).isEqualTo(prefixCompatible);

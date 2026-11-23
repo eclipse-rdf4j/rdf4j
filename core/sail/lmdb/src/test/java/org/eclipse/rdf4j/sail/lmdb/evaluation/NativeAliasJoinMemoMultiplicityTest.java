@@ -209,22 +209,12 @@ class NativeAliasJoinMemoMultiplicityTest {
 		long[] originalSlots = row.slots.clone();
 		LmdbNativeProbeDeadline deadline = deadlineSignal ? LmdbNativeProbeDeadline.trippableOnly() : null;
 		source.onFirstOrdinaryRawQuad = deadlineSignal ? deadline::trip : row.cancellation::requestCancellation;
-		RowCursor cursor = rejectingAliasPattern(namedContextScope, physicalRows).open(row);
 		Throwable failure;
-		try {
-			if (deadlineSignal) {
-				try (LmdbNativeProbeDeadline.Scope ignored = LmdbNativeProbeDeadline.enter(deadline)) {
-					failure = nextFailureOnce(cursor);
-				}
-			} else {
-				failure = nextFailureOnce(cursor);
-			}
+		try (LmdbNativeProbeDeadline.Scope scope = deadline == null ? null : LmdbNativeProbeDeadline.enter(deadline);
+				RowCursor cursor = rejectingAliasPattern(namedContextScope, physicalRows).open(row)) {
+			failure = nextFailureOnce(cursor);
 		} finally {
-			try {
-				cursor.close();
-			} finally {
-				row.memoryScope.close();
-			}
+			row.memoryScope.close();
 		}
 
 		assertAll("polling while PatternRowCursor rejects raw quads",
@@ -284,23 +274,13 @@ class NativeAliasJoinMemoMultiplicityTest {
 		PatternPlan pattern = new PatternPlan(Term.slot(KEY_SLOT), Term.constant(91L), Term.unbound(),
 				Term.unbound(), new ContextConstraint(new long[] { 1L, 2L }), false, null, "spoc", range,
 				physicalRows);
-		PatternCursor cursor = pattern.openRaw(row, null);
 		long[] buffer = new long[physicalRows * 4];
 		Throwable failure;
-		try {
-			if (deadlineSignal) {
-				try (LmdbNativeProbeDeadline.Scope ignored = LmdbNativeProbeDeadline.enter(deadline)) {
-					failure = fillFailureOnce(cursor, buffer, physicalRows);
-				}
-			} else {
-				failure = fillFailureOnce(cursor, buffer, physicalRows);
-			}
+		try (LmdbNativeProbeDeadline.Scope scope = deadline == null ? null : LmdbNativeProbeDeadline.enter(deadline);
+				PatternCursor cursor = pattern.openRaw(row, null)) {
+			failure = fillFailureOnce(cursor, buffer, physicalRows);
 		} finally {
-			try {
-				cursor.close();
-			} finally {
-				row.memoryScope.close();
-			}
+			row.memoryScope.close();
 		}
 
 		assertAll("cancellation while PatternCursor.fill filters a residual range",
@@ -325,23 +305,13 @@ class NativeAliasJoinMemoMultiplicityTest {
 		source.onFirstOrdinaryRawQuad = deadlineSignal ? deadline::trip : row.cancellation::requestCancellation;
 		PatternPlan pattern = new PatternPlan(Term.slot(KEY_SLOT), Term.constant(91L), Term.unbound(), Term.unbound(),
 				new ContextConstraint(new long[] { 1L, 2L }), false, null, "spoc", null, physicalRows);
-		PatternCursor cursor = pattern.openRaw(row, null);
 		long[] buffer = new long[physicalRows * 4];
 		Throwable failure;
-		try {
-			if (deadlineSignal) {
-				try (LmdbNativeProbeDeadline.Scope ignored = LmdbNativeProbeDeadline.enter(deadline)) {
-					failure = fillFailureOnce(cursor, buffer, physicalRows);
-				}
-			} else {
-				failure = fillFailureOnce(cursor, buffer, physicalRows);
-			}
+		try (LmdbNativeProbeDeadline.Scope scope = deadline == null ? null : LmdbNativeProbeDeadline.enter(deadline);
+				PatternCursor cursor = pattern.openRaw(row, null)) {
+			failure = fillFailureOnce(cursor, buffer, physicalRows);
 		} finally {
-			try {
-				cursor.close();
-			} finally {
-				row.memoryScope.close();
-			}
+			row.memoryScope.close();
 		}
 
 		assertAll("cancellation while PatternCursor.fill spans no-range fixed contexts",
@@ -454,29 +424,17 @@ class NativeAliasJoinMemoMultiplicityTest {
 		source.onFirstOrdinaryRawQuad = deadlineSignal
 				? deadline::trip
 				: row.cancellation::requestCancellation;
-		RowCursor cursor = sweepPattern().open(row);
-		Throwable failure = null;
-		try {
-			if (deadlineSignal) {
-				try (LmdbNativeProbeDeadline.Scope ignored = LmdbNativeProbeDeadline.enter(deadline)) {
-					assertTrue(cursor.next(), "the first successful row precedes the signal");
-					failure = nextFailure(cursor);
-				}
-			} else {
-				assertTrue(cursor.next(), "the first successful row precedes the signal");
-				failure = nextFailure(cursor);
-			}
+		Throwable failure;
+		try (LmdbNativeProbeDeadline.Scope scope = deadline == null ? null : LmdbNativeProbeDeadline.enter(deadline);
+				RowCursor cursor = sweepPattern().open(row)) {
+			assertTrue(cursor.next(), "the first successful row precedes the signal");
+			failure = nextFailure(cursor);
 		} finally {
-			try {
-				cursor.close();
-			} finally {
-				row.memoryScope.close();
-			}
+			row.memoryScope.close();
 		}
 
-		Throwable actualFailure = failure;
 		assertAll("successful row streaming must poll within 1024 pulls",
-				() -> assertCancellationOutcome(actualFailure, deadlineSignal, row.cancellation),
+				() -> assertCancellationOutcome(failure, deadlineSignal, row.cancellation),
 				() -> assertEquals(1, source.ordinarySignalAtPull, "the signal trips on the first raw quad"),
 				() -> assertTrue(source.ordinaryRawRows - 1 <= 1_024,
 						() -> "successful streaming must stop within 1024 additional pulls; rawRows="

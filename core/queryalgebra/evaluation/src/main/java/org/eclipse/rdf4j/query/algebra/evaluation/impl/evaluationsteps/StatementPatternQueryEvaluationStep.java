@@ -508,7 +508,7 @@ public class StatementPatternQueryEvaluationStep implements QueryEvaluationStep,
 				statementPatternForMetrics.setIndexName(indexName);
 			}
 			return statements;
-		} catch (RuntimeException | Error failure) {
+		} catch (Throwable failure) {
 			ExternalValuePreparation.closeWithSuppressed(statements, failure);
 			throw failure;
 		}
@@ -767,17 +767,7 @@ public class StatementPatternQueryEvaluationStep implements QueryEvaluationStep,
 
 		CloseableIteration<? extends Statement> iteration = null;
 		try {
-			incrementIndexLookupCount();
-			if (order != null) {
-				iteration = tripleSource.getStatements(order, (Resource) subject, (IRI) predicate, object, contexts);
-			} else {
-				iteration = tripleSource.getStatements((Resource) subject, (IRI) predicate, object, contexts);
-			}
-			if (iteration instanceof IndexReportingIterator) {
-				String indexName = ((IndexReportingIterator) iteration).getIndexName();
-				statementPattern.setIndexName(indexName);
-				statementPatternForMetrics.setIndexName(indexName);
-			}
+			iteration = openStatements((Resource) subject, (IRI) predicate, object, contexts);
 
 			if (iteration instanceof EmptyIteration) {
 				return null;
@@ -787,9 +777,7 @@ public class StatementPatternQueryEvaluationStep implements QueryEvaluationStep,
 			// Return an iterator that converts the statements to var bindings
 			return new ConvertStatementToBindingSetIterator(iteration, getConvertStatementConverter(), context);
 		} catch (Throwable t) {
-			if (iteration != null) {
-				iteration.close();
-			}
+			ExternalValuePreparation.closeWithSuppressed(iteration, t);
 			if (t instanceof InterruptedException) {
 				Thread.currentThread().interrupt();
 			}

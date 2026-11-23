@@ -315,6 +315,7 @@ final class NativeDescribeStep implements QueryEvaluationStep, LmdbNativePhysica
 		private final long object;
 		private final long[] contextIds;
 		private int contextIndex;
+		private NativeLmdbQuerySource.CursorCancellation cursorCancellation;
 		private int pollTick;
 		private RecordIterator current;
 		private boolean closed;
@@ -341,17 +342,21 @@ final class NativeDescribeStep implements QueryEvaluationStep, LmdbNativePhysica
 
 		long[] next(NativeCancellationToken cancellation) throws IOException {
 			while (!closed && !cancellation.isCancellationRequested()) {
+				if (cursorCancellation == null) {
+					cursorCancellation = NativeLmdbQuerySource.captureCursorCancellation(cancellation);
+				}
 				if (current == null) {
 					if (contextIds == null) {
 						if (contextIndex++ != 0) {
 							return null;
 						}
-						current = source.statements(subject, UNKNOWN, object, UNKNOWN);
+						current = source.statements(subject, UNKNOWN, object, UNKNOWN, null, cursorCancellation);
 					} else {
 						if (contextIndex >= contextIds.length) {
 							return null;
 						}
-						current = source.statements(subject, UNKNOWN, object, contextIds[contextIndex++]);
+						current = source.statements(subject, UNKNOWN, object, contextIds[contextIndex++], null,
+								cursorCancellation);
 					}
 				}
 				long[] record = current.next();

@@ -113,8 +113,13 @@ public class LmdbTripleTerm extends AbstractTripleTerm implements LmdbValue {
 
 	@Override
 	public void setInternalID(long id, ValueStoreRevision revision) {
+		setInternalIdentity(new InternalIdentity(id, revision));
+	}
+
+	@Override
+	public void setInternalIdentity(InternalIdentity identity) {
 		captureChildVersions();
-		identity = new InternalIdentity(id, revision);
+		this.identity = identity;
 	}
 
 	@Override

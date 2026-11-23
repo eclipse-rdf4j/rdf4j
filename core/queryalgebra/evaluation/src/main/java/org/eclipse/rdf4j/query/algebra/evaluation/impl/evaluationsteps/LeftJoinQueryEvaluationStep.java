@@ -18,6 +18,7 @@ import java.util.Set;
 import java.util.function.Function;
 import java.util.function.Predicate;
 
+import org.eclipse.rdf4j.common.annotation.InternalUseOnly;
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.impl.BooleanLiteral;
@@ -53,6 +54,26 @@ public final class LeftJoinQueryEvaluationStep implements QueryEvaluationStep {
 	private final LeftJoin leftJoin;
 	private final Set<String> optionalVars;
 	private final QueryEvaluationStep rightWithCondition;
+	private final OptionalRightMemo memo;
+
+	/** Backend replay capture with an optional, callback-free term identity in the validated read snapshot. */
+	@InternalUseOnly
+	public interface ReplayValueCapturer extends Function<Value, Value> {
+		long UNKNOWN_ID = -1L;
+
+		long canonicalId(Value value);
+
+		/**
+		 * Identity of the active owner that receives every value captured by this provider, or null when no ownership
+		 * proof can be shared. Every non-null result captured while this token stays active must retain this owner for
+		 * the lifetime of the token. A retired token must not be published again. The token is metadata only and must
+		 * not retain the reader or store. Reading it must not invoke application code. It provides no dictionary
+		 * identity guarantees.
+		 */
+		default Object replayOwnershipToken() {
+			return null;
+		}
+	}
 
 	public static QueryEvaluationStep supply(EvaluationStrategy strategy, LeftJoin leftJoin,
 			QueryEvaluationContext context) {
@@ -61,6 +82,14 @@ public final class LeftJoinQueryEvaluationStep implements QueryEvaluationStep {
 
 	public static QueryEvaluationStep supply(EvaluationStrategy strategy, LeftJoin leftJoin,
 			QueryEvaluationContext context, Function<Value, Value> capturer) {
+		return supply(strategy, leftJoin, context, capturer, null, null);
+	}
+
+	/** Uses the query value capturer for restriction probes and the replay capturer for memoized results. */
+	@InternalUseOnly
+	public static QueryEvaluationStep supply(EvaluationStrategy strategy, LeftJoin leftJoin,
+			QueryEvaluationContext context, Function<Value, Value> restrictionCapturer, Runnable checkReplaySnapshot,
+			Function<Value, Value> captureReplayValue) {
 		boolean tracking = strategy.isTrackResultSize() || strategy.isTrackTime();
 		QueryEvaluationStep leftRaw = strategy.precompile(leftJoin.getLeftArg(), context);
 		QueryEvaluationStep rightRaw = strategy.precompile(leftJoin.getRightArg(), context);
@@ -87,7 +116,7 @@ public final class LeftJoinQueryEvaluationStep implements QueryEvaluationStep {
 				&& (!QueryEvaluationUtility.isRepeatable(rightArg)
 						|| minusObservesInjectedBindings(rightArg, leftNames));
 		QueryEvaluationStep standard = supplyStandard(strategy, leftJoin, context, left, right, rightRaw,
-				graphInputs, independent, replay);
+				graphInputs, independent, replay, checkReplaySnapshot, captureReplayValue);
 		if (!RestrictionCompiler.enabled(strategy, context)
 				|| !QueryEvaluationUtility.canDiscardWithoutEvaluation(leftJoin)
 				|| leftJoin.hasCondition() && !RestrictionCompiler.movable(leftJoin.getCondition())
@@ -104,8 +133,8 @@ public final class LeftJoinQueryEvaluationStep implements QueryEvaluationStep {
 				? precompileScopedCondition(strategy, leftJoin, context)
 				: null;
 		PreparedRestrictionPlan plan = RestrictionCompiler.join(leftJoin, context, leftRaw, rightRaw,
-				strategy.getCollectionFactory(), capturer, RestrictionBindJoinIteration.Mode.OPTIONAL, condition,
-				leftJoin.getLeftArg(), rightArg);
+				strategy.getCollectionFactory(), restrictionCapturer, RestrictionBindJoinIteration.Mode.OPTIONAL,
+				condition, leftJoin.getLeftArg(), rightArg);
 		if (plan != null && !originallyIndependent) {
 			VarNameCollector optionalVars = new VarNameCollector();
 			rightArg.visit(optionalVars);
@@ -118,7 +147,7 @@ public final class LeftJoinQueryEvaluationStep implements QueryEvaluationStep {
 				PreparedRestrictionPlan independentPlan = plan;
 				plan = plan.withOpener((input, owner) -> problemNames.stream().anyMatch(input::hasBinding)
 						? RestrictionCompiler.replayInvocation(standard, input, strategy.getCollectionFactory(),
-								capturer, leftJoin)
+								restrictionCapturer, leftJoin)
 						: independentPlan.open(input, owner));
 			}
 		}
@@ -127,7 +156,8 @@ public final class LeftJoinQueryEvaluationStep implements QueryEvaluationStep {
 
 	private static QueryEvaluationStep supplyStandard(EvaluationStrategy strategy, LeftJoin leftJoin,
 			QueryEvaluationContext context, QueryEvaluationStep left, QueryEvaluationStep right,
-			QueryEvaluationStep rightRaw, NullableGraphJoinInputs graphInputs, boolean independent, boolean replay) {
+			QueryEvaluationStep rightRaw, NullableGraphJoinInputs graphInputs, boolean independent, boolean replay,
+			Runnable checkReplaySnapshot, Function<Value, Value> captureReplayValue) {
 		if (independent) {
 			// The right side is evaluated once with the query input (once per active GRAPH frame the left side
 			// binds for its sub-selects) and hashed on the names both sides may share.
@@ -189,7 +219,8 @@ public final class LeftJoinQueryEvaluationStep implements QueryEvaluationStep {
 			condition = null;
 		}
 		LeftJoinQueryEvaluationStep defaultStep = new LeftJoinQueryEvaluationStep(right, condition, left, leftJoin,
-				optionalVarCollector.getVarNames());
+				optionalVarCollector.getVarNames(),
+				OptionalRightMemo.prepare(leftJoin, context, checkReplaySnapshot, captureReplayValue));
 		// Batch-correlated seam (accumulate–semijoin–probe): only reachable on this well-designed,
 		// replay-stable, binding-injection-safe path, where independent right-operand evaluation is the
 		// algebraic definition. A join condition is handed to the provider as a merged-row predicate with the
@@ -287,8 +318,14 @@ public final class LeftJoinQueryEvaluationStep implements QueryEvaluationStep {
 
 	public LeftJoinQueryEvaluationStep(QueryEvaluationStep right, QueryValueEvaluationStep condition,
 			QueryEvaluationStep left, LeftJoin leftJoin, Set<String> optionalVars) {
+		this(right, condition, left, leftJoin, optionalVars, null);
+	}
+
+	private LeftJoinQueryEvaluationStep(QueryEvaluationStep right, QueryValueEvaluationStep condition,
+			QueryEvaluationStep left, LeftJoin leftJoin, Set<String> optionalVars, OptionalRightMemo memo) {
 		this.left = left;
 		this.leftJoin = leftJoin;
+		this.memo = memo;
 		// This is used to determine if the left join is well designed.
 
 		Set<String> leftBindingNames = leftJoin.getLeftArg().getBindingNames();
@@ -320,6 +357,9 @@ public final class LeftJoinQueryEvaluationStep implements QueryEvaluationStep {
 		Set<String> problemVars = findProblemVars(bindings);
 		if (problemVars == null) {
 			leftJoin.setAlgorithm(LeftJoinIterator.class.getSimpleName());
+			if (memo != null) {
+				return memo.open(left, bindings, rightWithCondition);
+			}
 			return LeftJoinIterator.getInstance(left, bindings, rightWithCondition);
 		}
 		// Filter inherited problem variables from the operands while keeping their own output names visible to the

@@ -69,7 +69,7 @@ record NativeAggregateKernelInput(SlotPlan input, LmdbNativeKernelLowering.Lower
 		if (!(producer instanceof EnumerateWildcard wildcard) || wildcard.ctxActive()) {
 			return null;
 		}
-		try (NativeLmdbQuerySource.NativeProbe probe = row.source.newProbe();
+		try (NativeLmdbQuerySource.NativeProbe probe = row.source.newProbe(row.cursorCancellation());
 				NativeLmdbQuerySource.WildcardAdjacency view = probe.wildcardAdjacency(wildcard.bySubject)) {
 			if (view == null) {
 				return null;
@@ -142,7 +142,7 @@ record NativeAggregateKernelInput(SlotPlan input, LmdbNativeKernelLowering.Lower
 	private NativeAggregatePhysicalPlan.Work fixed(RowState row, EnumerateAdjKeys keys,
 			LmdbNativeProducerSchedule schedule) {
 		LmdbNativeKernelBindings.AdjacencyRequest request = lowered.bindings.adjacencies[keys.adjacency];
-		try (NativeLmdbQuerySource.NativeProbe probe = row.source.newProbe()) {
+		try (NativeLmdbQuerySource.NativeProbe probe = row.source.newProbe(row.cursorCancellation())) {
 			NativeLmdbQuerySource.NativeAdjacency view = probe.adjacency(request.predicate, request.bySubject);
 			if (view == null) {
 				return null;

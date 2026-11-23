@@ -104,7 +104,7 @@ final class Branch {
 
 	NativeLmdbQuerySource.NativeProbe probe(RowState row) {
 		if (probe == null) {
-			probe = row.source.newProbe();
+			probe = row.source.newProbe(row.cursorCancellation());
 		}
 		return probe;
 	}

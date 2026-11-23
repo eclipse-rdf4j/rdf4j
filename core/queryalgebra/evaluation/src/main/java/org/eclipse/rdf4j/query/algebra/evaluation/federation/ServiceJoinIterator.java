@@ -74,7 +74,12 @@ public class ServiceJoinIterator extends JoinExecutorBase<BindingSet> {
 		this.strategy = strategy;
 		this.scalarRight = scalarRight;
 		this.allocation = allocation;
-		run();
+		try {
+			run();
+		} catch (RuntimeException | Error failure) {
+			ExternalValuePreparation.closeWithSuppressed(this, failure);
+			throw failure;
+		}
 	}
 
 	@Override
@@ -126,28 +131,33 @@ public class ServiceJoinIterator extends JoinExecutorBase<BindingSet> {
 						estimateUtf8Bytes(service.getServiceExpressionString()));
 			}
 			long started = runtimeTelemetryEnabled ? System.nanoTime() : 0L;
+			CloseableIteration<BindingSet> result = null;
 			try {
-				CloseableIteration<BindingSet> result;
-				ExternalValuePreparation.initializeQueryModel(service);
-				CloseableIteration<BindingSet> checkedInputs = new ConvertingIteration<>(leftIter) {
-					@Override
-					protected BindingSet convert(BindingSet input) {
-						return ServiceQueryEvaluationStep.prepareOutgoingBindings(service, input, receivingScope,
-								referenceSupport, canonicalIDs);
+				try {
+					ExternalValuePreparation.initializeQueryModel(service);
+					CloseableIteration<BindingSet> checkedInputs = new ConvertingIteration<>(leftIter) {
+						@Override
+						protected BindingSet convert(BindingSet input) {
+							return ServiceQueryEvaluationStep.prepareOutgoingBindings(service, input, receivingScope,
+									referenceSupport, canonicalIDs);
+						}
+					};
+					CloseableIteration<BindingSet> externalBindings = ExternalValuePreparation
+							.initializeBindings(checkedInputs);
+					try (var active = allocation.activate();
+							QueryExecutionContext.Activation ignored = QueryExecutionContext.deferReplaySafepoints()) {
+						result = fs.evaluate(service, externalBindings, service.getBaseURI());
 					}
-				};
-				CloseableIteration<BindingSet> externalBindings = ExternalValuePreparation
-						.initializeBindings(checkedInputs);
-				try (var active = allocation.activate();
-						QueryExecutionContext.Activation ignored = QueryExecutionContext.deferReplaySafepoints()) {
-					result = fs.evaluate(service, externalBindings, service.getBaseURI());
+				} finally {
+					if (runtimeTelemetryEnabled) {
+						recordRequestLatency(service, started);
+					}
 				}
-				addResultAfterReplaySafepoint(result, runtimeTelemetryEnabled);
-			} finally {
-				if (runtimeTelemetryEnabled) {
-					recordRequestLatency(service, started);
-				}
+			} catch (RuntimeException | Error failure) {
+				ExternalValuePreparation.closeWithSuppressed(result, failure);
+				throw failure;
 			}
+			addResultAfterReplaySafepoint(result, runtimeTelemetryEnabled);
 		} catch (Exception e) {
 			if (runtimeTelemetryEnabled && !fallbackEvaluation) {
 				incrementLongMetric(service, TelemetryMetricNames.REMOTE_ERROR_COUNT_ACTUAL);

@@ -119,13 +119,15 @@ final class LmdbNativeDistinctRootCount {
 					throw new IllegalStateException("wrong distinct-root sibling count");
 				}
 				long[] boundaries = boundaries(views, workers, coordinator);
+				var cursorOwner = NativeLmdbQuerySource.captureCursorCancellation(cancellation);
 				for (int w = 0; w < workers; w++) {
 					ParallelSource sibling = sources[w];
 					Long low = w == 0 ? null : boundaries[w - 1];
 					Long high = w == workers - 1 ? null : boundaries[w];
 					var replayContext = NativeExecutionContext.captureWorkerContext();
 					tasks.add(LmdbNativeParallelPipelines.pool().submit(() -> {
-						try (var replayScope = replayContext.activate(); var probe = sibling.newProbe()) {
+						try (var replayScope = replayContext.activate();
+								var probe = sibling.newProbe(cursorOwner.forWorker())) {
 							NativeAdjacency[] workerViews = new NativeAdjacency[predicates.length];
 							for (int p = 0; p < predicates.length; p++) {
 								check(cancellation, abort);

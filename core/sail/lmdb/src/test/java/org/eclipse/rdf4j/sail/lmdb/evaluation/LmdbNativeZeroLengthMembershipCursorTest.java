@@ -14,6 +14,7 @@ package org.eclipse.rdf4j.sail.lmdb.evaluation;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbNativeAggregateCompiler.UNKNOWN;
+import static org.eclipse.rdf4j.sail.lmdb.evaluation.NativeCancellationTestAccess.mockScanSource;
 import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.eq;
@@ -73,7 +74,7 @@ class LmdbNativeZeroLengthMembershipCursorTest {
 		final long identity = ValueIds.createId(ValueIds.T_LITERAL, 1L);
 		final long alias = ValueIds.createId(ValueIds.T_LITERAL, 2L);
 		final long subject = ValueIds.createId(ValueIds.T_URI, 3L);
-		final NativeLmdbQuerySource source = mock(NativeLmdbQuerySource.class);
+		final NativeLmdbQuerySource source = mockScanSource(NativeLmdbQuerySource.class);
 		final NativeLmdbQuerySource.NativeProbe probe = mock(NativeLmdbQuerySource.NativeProbe.class);
 		final RecordIterator records = mock(RecordIterator.class);
 		final ZeroLengthPathPlan plan = new ZeroLengthPathPlan(0, UNKNOWN, 1, UNKNOWN, null);

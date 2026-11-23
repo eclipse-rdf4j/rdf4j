@@ -2119,6 +2119,168 @@ namespace workbench {
         return target.origin === document.location.origin ? { 'X-RDF4J-CSRF-Token': token } : {};
     }
 
+    function normalizeCookiePath(value: string): string {
+        var path = String(value || '').trim();
+        if (!path) {
+            return '/';
+        }
+        if (path.charAt(0) !== '/' || /[;\s?#]/.test(path)) {
+            return '';
+        }
+        path = path.replace(/\/+$/, '');
+        return path || '/';
+    }
+
+    function cookiePathContains(path: string, parentPath: string): boolean {
+        return parentPath === '/' ? path !== '/' : path.indexOf(parentPath + '/') === 0;
+    }
+
+    function cookiePathMatchesRequest(path: string, requestPath: string): boolean {
+        return path === '/' || requestPath === path || requestPath.indexOf(path + '/') === 0;
+    }
+
+    function genericForbiddenDetail(detail: string): boolean {
+        return /^(?:http\s+)?403\s+forbidden\.?$|^forbidden\.?$/i.test(String(detail || '').trim());
+    }
+
+    function structuredForbiddenResponseDetail(value: any, depth: number = 0): string {
+        if (!value || typeof value !== 'object') {
+            return '';
+        }
+        if (depth > 2) {
+            return '';
+        }
+        var fields = [value.error, value.message, value.detail];
+        for (var index = 0; index < fields.length; index++) {
+            var field = fields[index];
+            if (typeof field === 'string' && field.trim() && !genericForbiddenDetail(field)) {
+                return field;
+            }
+            if (field && typeof field === 'object' && field !== value) {
+                var nestedDetail = structuredForbiddenResponseDetail(field, depth + 1);
+                if (nestedDetail) {
+                    return nestedDetail;
+                }
+            }
+        }
+        return '';
+    }
+
+    function parsedForbiddenResponseDetail(body: string): { parsed: boolean; detail: string } {
+        var parsed = false;
+        try {
+            var wholeBody = JSON.parse(body);
+            if (wholeBody && typeof wholeBody === 'object') {
+                parsed = true;
+                var wholeBodyDetail = structuredForbiddenResponseDetail(wholeBody);
+                if (wholeBodyDetail) {
+                    return { parsed: true, detail: wholeBodyDetail };
+                }
+            }
+        } catch (error) {
+            // A non-JSON response may contain newline-delimited JSON records.
+        }
+        var lineStart = 0;
+        for (var index = 0; index <= body.length; index++) {
+            if (index === body.length || body.charAt(index) === '\n') {
+                var line = body.substring(lineStart, index).replace(/\r$/, '').trim();
+                lineStart = index + 1;
+                if (line) {
+                    try {
+                        var parsedLine = JSON.parse(line);
+                        parsed = parsed || !!parsedLine && typeof parsedLine === 'object';
+                        var lineDetail = structuredForbiddenResponseDetail(parsedLine);
+                        if (lineDetail) {
+                            return { parsed: true, detail: lineDetail };
+                        }
+                    } catch (error) {
+                        // Continue through the body once; a plain-text line is not a structured error.
+                    }
+                }
+            }
+        }
+        return { parsed: parsed, detail: '' };
+    }
+
+    export function responseSummary(text: string, contentType: string): string {
+        var summary = String(text || '');
+        if (/html/i.test(contentType)) {
+            summary = summary.replace(/<(script|style|head)\b[\s\S]*?<\/\1\s*>/gi, ' ').replace(/<[^>]*>/g, ' ')
+                .replace(/&#(\d+);/g, (entity: string, code: string) => String.fromCharCode(Number(code)))
+                .replace(/&(lt|gt|quot|apos|nbsp|ndash|mdash|amp);/g, (entity: string, name: string) =>
+                    (<any>{ lt: '<', gt: '>', quot: '"', apos: '\'', nbsp: ' ', ndash: '–', mdash: '—', amp: '&' })[name]);
+        }
+        summary = summary.replace(/\s+/g, ' ').trim();
+        return summary.length > 300 ? summary.substring(0, 300) + '…' : summary;
+    }
+
+    function summarizeForbiddenResponse(response: any, contentType?: string): string {
+        var detail = response && typeof response === 'object'
+            ? structuredForbiddenResponseDetail(response) : '';
+        if (!detail && typeof response === 'string') {
+            var parsed = parsedForbiddenResponseDetail(response);
+            if (parsed.detail) {
+                detail = parsed.detail;
+            } else if (!parsed.parsed) {
+                detail = response;
+            }
+        }
+        if (genericForbiddenDetail(detail)) {
+            detail = '';
+        }
+        var summaryContentType = contentType || '';
+        if (!/html/i.test(summaryContentType) && /^\s*(?:<!doctype\s+html|<(?:html|head|body)\b)/i.test(detail)) {
+            summaryContentType = 'text/html';
+        }
+        return responseSummary(detail, summaryContentType);
+    }
+
+    export function forbiddenResponseMessage(action: string, response?: any, contentType?: string): string {
+        var message = 'Workbench could not ' + action + ' (HTTP 403 Forbidden). '
+            + 'Refresh this page and try again. If the error persists, clear the cookies for this Workbench site '
+            + 'in your browser settings, then refresh the page and try again.';
+        var summary = summarizeForbiddenResponse(response, contentType);
+        return summary ? message + '\n' + summary : message;
+    }
+
+    /** Expire only the more-specific CSRF cookie that can shadow this Workbench context's token after an upgrade. */
+    export function clearStaleCsrfCookieForRequest(url: string): void {
+        var mount = document.getElementById('workbench-app');
+        if (!mount) {
+            return;
+        }
+        var contextPathValue = mount.getAttribute('data-workbench-context-path');
+        var basePathValue = mount.getAttribute('data-workbench-base-path');
+        if (contextPathValue == null || basePathValue == null) {
+            return;
+        }
+        var contextPath = normalizeCookiePath(contextPathValue);
+        var basePath = normalizeCookiePath(basePathValue);
+        if (!contextPath || !basePath || !cookiePathContains(basePath, contextPath)) {
+            return;
+        }
+
+        var target: URL;
+        try {
+            target = new URL(url || document.location.href, document.location.href);
+        } catch (error) {
+            return;
+        }
+        if (target.origin !== document.location.origin || !cookiePathMatchesRequest(basePath, target.pathname)) {
+            return;
+        }
+
+        var cookie = 'rdf4j-workbench-csrf=; Path=' + basePath + '; Max-Age=0; SameSite=Strict';
+        if (document.location.protocol === 'https:') {
+            cookie += '; Secure';
+        }
+        try {
+            document.cookie = cookie;
+        } catch (error) {
+            // A sandboxed document may reject cookie access; preserve the original request error either way.
+        }
+    }
+
     /** Runs before native form submission and before router FormData captures dynamically rendered forms. */
     export function protectSubmittedForm(form: HTMLFormElement, methodOverride?: string, actionOverride?: string): void {
         if (!form) {

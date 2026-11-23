@@ -225,21 +225,25 @@ final class LmdbNativeIndexedCount {
 		}
 		if (contexts != null) {
 			if (context != UNKNOWN) {
-				return pattern.contexts.contains(context) ? row.source.count(subject, predicate, object, context) : 0L;
+				return pattern.contexts.contains(context)
+						? row.source.count(subject, predicate, object, context, row.cursorCancellation())
+						: 0L;
 			}
 			long count = 0L;
 			row.cancellation.check();
 			LmdbNativeProbeDeadline.poll(0);
 			for (int index = 0; index < contexts.length; index++) {
-				count = Math.addExact(count, row.source.count(subject, predicate, object, contexts[index]));
+				count = Math.addExact(count,
+						row.source.count(subject, predicate, object, contexts[index], row.cursorCancellation()));
 				row.cancellation.poll(index + 1);
 				LmdbNativeProbeDeadline.poll(index + 1);
 			}
 			return count;
 		}
-		long count = row.source.count(subject, predicate, object, context);
+		long count = row.source.count(subject, predicate, object, context, row.cursorCancellation());
 		return pattern.namedContextScope && context == UNKNOWN
-				? Math.subtractExact(count, row.source.count(subject, predicate, object, NULL_CONTEXT_ID))
+				? Math.subtractExact(count,
+						row.source.count(subject, predicate, object, NULL_CONTEXT_ID, row.cursorCancellation()))
 				: count;
 	}
 

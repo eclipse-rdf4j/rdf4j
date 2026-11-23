@@ -946,8 +946,12 @@ public class TupleExprBuilder extends AbstractASTVisitor {
 							binding.setAnonymousTarget(anonVar.isAnonymous());
 							anonymousExtension.addElement(binding);
 
-							anonymousExtension.setArg(result);
-							result = anonymousExtension;
+							// An implicit group replaces result below, so the extension would be discarded and
+							// must not take over the parent reference of result.
+							if (isExistingGroup) {
+								anonymousExtension.setArg(result);
+								result = anonymousExtension;
+							}
 							GroupElem aggregate = new GroupElem(anonVar.getName(), operator);
 							aggregate.setAnonymousTarget(anonVar.isAnonymous());
 							group.addGroupElement(aggregate);
@@ -1605,6 +1609,12 @@ public class TupleExprBuilder extends AbstractASTVisitor {
 				}
 				// Apply HAVING group filter condition
 				tupleExpr = processHavingClause(node.getHavingClause(), tupleExpr, group);
+			}
+
+			// process bindings clause
+			ASTBindingsClause bindingsClause = node.getBindingsClause();
+			if (bindingsClause != null) {
+				tupleExpr = new Join((BindingSetAssignment) bindingsClause.jjtAccept(this, null), tupleExpr);
 			}
 
 			if (node.getOrderClause() != null) {

@@ -902,6 +902,10 @@ final class NativeExecutionContext implements AutoCloseable {
 				&& queryScopeOwner.queryScopedStoreValuesById.containsKey(id));
 	}
 
+	boolean mayShadowProjectedStoreValues() {
+		return termOwner.runtimeValues != null || queryScopeOwner.hasQueryScopedStoreValues;
+	}
+
 	/** Metadata-only diagnostics; no scan or materialization of retained terms. */
 	long runtimeValueAccountedBytes() {
 		if (termOwner != this) {
