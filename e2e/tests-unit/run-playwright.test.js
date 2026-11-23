@@ -78,14 +78,22 @@ test('two shards overlap, isolate output and displays, and merge after both fini
         assert.ok(args.includes('--project=webkit'));
         assert.ok(args.includes('selected.spec.js'));
         assert.ok(args.includes('--reporter=line,blob'));
-        assert.ok(args.includes('--grep-invert=@performance'));
+        assert.ok(args.some(arg => arg.startsWith('--grep-invert=')));
     }
     assert.equal(new Set(starts.map(event => event.args.find(arg => arg.startsWith('--output=')))).size, 2);
-    const performance = events[4];
-    assert.ok(performance.args.includes('--grep=@performance'));
-    assert.ok(performance.args.includes('--workers=1'));
-    assert.ok(performance.args.includes('--output=test-results/performance'));
-    assert.ok(starts.every(event => event.blob !== performance.blob));
+    const isolated = events[4];
+    const selection = isolated.args.find(arg => arg.startsWith('--grep=')).slice('--grep='.length);
+    assert.ok(starts.every(event => event.args.includes(`--grep-invert=${selection}`)));
+    const matches = new RegExp(selection);
+    for (const file of ['workbench-round3-server', 'workbench-destructive-actions',
+        'workbench-live-route-parity', 'workbench-visual-refinement-operation-states']) {
+        assert.ok(matches.test(`webkit tests/${file}.spec.js safety check`), file);
+    }
+    assert.ok(matches.test('webkit graph timing @performance'));
+    assert.equal(matches.test('webkit tests/workbench-spacing-audit.spec.js picker pagination'), false);
+    assert.ok(isolated.args.includes('--workers=1'));
+    assert.ok(isolated.args.includes('--output=test-results/isolated'));
+    assert.ok(starts.every(event => event.blob !== isolated.blob));
     assert.ok(events.at(-1).args.includes('--reporter=html,json'));
 });
 

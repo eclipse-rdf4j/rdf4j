@@ -13,6 +13,12 @@ const fs = require('node:fs');
 const path = require('node:path');
 const { spawn } = require('node:child_process');
 
+// Delete-safety checks scan every repository configuration. Keep their whole specs away from other
+// files' repository teardown, just as timing gates need exclusive use of the runner's CPU.
+const isolatedSpecs = ['workbench-round3-server', 'workbench-destructive-actions',
+    'workbench-live-route-parity', 'workbench-visual-refinement-operation-states'];
+const isolatedTests = `@performance|(?:${isolatedSpecs.join('|')})\\.spec\\.js`;
+
 const children = new Set();
 let interrupted = 0;
 for (const [signal, status] of [['SIGINT', 130], ['SIGTERM', 143]]) {
@@ -69,17 +75,17 @@ async function main() {
     const reports = fs.mkdtempSync(path.resolve('blob-report', 'shards-'));
     const outcomes = await Promise.all(Array.from({ length: shardCount }, (_, index) => {
         const shard = index + 1;
-        return run([...args, `--shard=${shard}/${shardCount}`, '--grep-invert=@performance',
+        return run([...args, `--shard=${shard}/${shardCount}`, `--grep-invert=${isolatedTests}`,
             '--pass-with-no-tests', '--workers=1', '--reporter=line,blob',
             `--output=test-results/shard-${shard}`],
         { ...process.env, PLAYWRIGHT_BLOB_OUTPUT_FILE: path.join(reports, `report-${shard}.zip`) }, display);
     }));
     if (interrupted) return interrupted;
-    // Wall-clock performance gates need the runner's CPU to themselves. Keep their existing budgets and
-    // execute them after both functional shards, with their results included in the same combined report.
-    outcomes.push(await run([...args, '--grep=@performance', '--pass-with-no-tests', '--workers=1',
-        '--reporter=line,blob', '--output=test-results/performance'],
-    { ...process.env, PLAYWRIGHT_BLOB_OUTPUT_FILE: path.join(reports, 'report-performance.zip') }, display));
+    // Both functional shards and their teardown must finish before global safety scans and timing gates.
+    // Keep these specs and their existing assertions/budgets together in the same combined report.
+    outcomes.push(await run([...args, `--grep=${isolatedTests}`, '--pass-with-no-tests', '--workers=1',
+        '--reporter=line,blob', '--output=test-results/isolated'],
+    { ...process.env, PLAYWRIGHT_BLOB_OUTPUT_FILE: path.join(reports, 'report-isolated.zip') }, display));
     if (interrupted) return interrupted;
     // Keep the other shard running after a failure and merge its diagnostics as well. A failed test or
     // failed merge must still fail CI; the HTML report and raw blobs remain available for inspection.
