@@ -27,6 +27,7 @@ import org.eclipse.rdf4j.query.QueryEvaluationException;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryBindingSet;
 import org.eclipse.rdf4j.sail.lmdb.LmdbPrefixRunCursor;
 import org.eclipse.rdf4j.sail.lmdb.LmdbPrefixRunPlan;
+import org.eclipse.rdf4j.sail.lmdb.TripleIndex;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.NativeLmdbQuerySource.CursorCancellation;
 
 /**
@@ -446,7 +447,7 @@ final class LmdbNativeExistsIntersection {
 
 	private static LmdbAdjacencyRootDomainCursor openDomain(NativeLmdbQuerySource source, int field, long lo, long hi,
 			NativeCancellationToken cancellation, CursorCancellation cursorCancellation) throws IOException {
-		return LmdbAdjacencyRootDomainCursor.open(source, field == org.eclipse.rdf4j.sail.lmdb.TripleIndex.SUBJ_IDX,
+		return LmdbAdjacencyRootDomainCursor.open(source, field == TripleIndex.SUBJ_IDX,
 				lo != 0L, lo, hi != Long.MAX_VALUE, hi, cancellation, cursorCancellation);
 	}
 

@@ -13,8 +13,13 @@ package org.eclipse.rdf4j.sail.lmdb;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
 import java.util.Set;
 
+import org.eclipse.rdf4j.query.BindingSet;
+import org.eclipse.rdf4j.query.QueryResults;
 import org.eclipse.rdf4j.query.explanation.Explanation;
 import org.eclipse.rdf4j.query.explanation.GenericPlanNode;
 import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
@@ -34,7 +39,7 @@ public class LmdbNativeOptionalScanReplayCompiledTest extends LmdbNativeOptional
 
 	private static final String[] COMPILED_PROPERTIES = { "rdf4j.lmdb.janinoCodegen.synchronous",
 			"rdf4j.lmdb.janinoCodegen.thresholdRows" };
-	private final java.util.Map<String, String> savedCompiled = new java.util.HashMap<>();
+	private final Map<String, String> savedCompiled = new HashMap<>();
 
 	@Override
 	protected void configureTier() {
@@ -73,7 +78,7 @@ public class LmdbNativeOptionalScanReplayCompiledTest extends LmdbNativeOptional
 			"rdf4j.lmdb.janinoCodegen.resumable", "rdf4j.lmdb.janinoCodegen.synchronous",
 			"rdf4j.lmdb.janinoCodegen.thresholdRows", "rdf4j.lmdb.kernelInterpreter.enabled",
 			"rdf4j.lmdb.parallel.enabled" };
-	private static final java.util.Map<String, String> BEFORE_CLASS = new java.util.HashMap<>();
+	private static final Map<String, String> BEFORE_CLASS = new HashMap<>();
 
 	@BeforeAll
 	public static void snapshotSystemProperties() {
@@ -109,10 +114,10 @@ public class LmdbNativeOptionalScanReplayCompiledTest extends LmdbNativeOptional
 				+ "SELECT ?l (COUNT(*) AS ?n) WHERE { ?a a ex:A . ?a ex:link ?l\n"
 				+ "  OPTIONAL { ?l ex:member ?m . ?m ex:id ?mid OPTIONAL { ?m ex:stage ?s . ?s ex:id ?sid } } }\n"
 				+ "GROUP BY ?l";
-		java.util.List<org.eclipse.rdf4j.query.BindingSet> reference;
+		List<BindingSet> reference;
 		System.setProperty("rdf4j.lmdb.nativeQueryEngine.enabled", "false");
 		try (SailRepositoryConnection connection = repository.getConnection()) {
-			reference = org.eclipse.rdf4j.query.QueryResults.asList(connection.prepareTupleQuery(query).evaluate());
+			reference = QueryResults.asList(connection.prepareTupleQuery(query).evaluate());
 		} finally {
 			System.setProperty("rdf4j.lmdb.nativeQueryEngine.enabled", "true");
 		}
@@ -122,7 +127,7 @@ public class LmdbNativeOptionalScanReplayCompiledTest extends LmdbNativeOptional
 			try (SailRepositoryConnection connection = repository.getConnection()) {
 				SailTupleQuery prepared = (SailTupleQuery) connection.prepareTupleQuery(query);
 				prepared.setForcedLmdbExecutionStrategy("irAggregate");
-				assertThat(org.eclipse.rdf4j.query.QueryResults.asList(prepared.evaluate()))
+				assertThat(QueryResults.asList(prepared.evaluate()))
 						.containsExactlyInAnyOrderElementsOf(reference);
 			}
 		}

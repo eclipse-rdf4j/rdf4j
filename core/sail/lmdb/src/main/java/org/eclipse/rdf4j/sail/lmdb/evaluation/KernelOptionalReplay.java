@@ -132,16 +132,17 @@ public final class KernelOptionalReplay extends NativeOptionalReplayCache<Kernel
 	 * includes the bypass state; {@link #lastOpenBypassed()} tells the two apart for telemetry.
 	 */
 	public Rows open(long[] row) {
+		if (recordingKey != null) {
+			// an earlier run was cut short (failure or early stop); never mix it with this key. This comes before the
+			// bypass: the open that closes a poor window arms a recording too, and a bypassed arm still records.
+			abandon();
+		}
 		if (bypassRemaining > 0) {
 			bypassRemaining--;
 			bypassed = true;
 			return null;
 		}
 		bypassed = false;
-		if (recordingKey != null) {
-			// an earlier run was cut short (failure or early stop); never mix it with this key
-			abandon();
-		}
 		Rows cached = lookupRows(row);
 		boolean hit = cached != null && !isRejected(cached);
 		if (bounded) {

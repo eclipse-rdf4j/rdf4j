@@ -16,6 +16,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Set;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.function.IntFunction;
@@ -35,6 +36,8 @@ import org.eclipse.rdf4j.query.algebra.evaluation.QueryBindingSet;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryEvaluationStep;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.QueryEvaluationContext;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.evaluationsteps.LeftJoinQueryEvaluationStep.ReplayValueCapturer;
+import org.eclipse.rdf4j.query.algebra.helpers.QueryModelTreeToGenericPlanNode;
+import org.eclipse.rdf4j.query.explanation.Explanation;
 import org.eclipse.rdf4j.query.impl.EmptyBindingSet;
 import org.junit.jupiter.api.Test;
 
@@ -223,6 +226,36 @@ class OptionalRightMemoSharingTest {
 		assertThat(run(memo, List.of("a"), right)).hasSize(3);
 
 		assertThat(rightEvaluations).as("partial run must not be replayed").hasValue(2);
+	}
+
+	@Test
+	void memoHitsAreCountedAsRightProbesInJoinTelemetry() {
+		LeftJoin join = join();
+		join.setRuntimeTelemetryEnabled(true);
+		OptionalRightMemo memo = OptionalRightMemo.prepare(join, new QueryEvaluationContext.Minimal(null), () -> {
+		}, CAPTURER);
+		int shared = (NS + "shared").hashCode();
+		List<String> keys = List.of("shared", "shared", "absent", "shared", "absent");
+		QueryEvaluationStep left = JoinMetricsTracking.wrapLeftInput(left(keys), join, join.getLeftArg(), true);
+		QueryEvaluationStep right = JoinMetricsTracking.wrapRightInput(right(h -> h == shared ? 2 : 0), join,
+				join.getRightArg(), true);
+
+		List<BindingSet> rows;
+		try (CloseableIteration<BindingSet> iteration = memo.open(left, EmptyBindingSet.getInstance(), right)) {
+			rows = QueryResults.asList(iteration);
+		}
+
+		// three matched left rows with two right rows each, plus two null-extended left rows
+		assertThat(rows).hasSize(8);
+		assertThat(rightEvaluations).as("one evaluation per distinct key").hasValue(2);
+		String plan = new QueryModelTreeToGenericPlanNode(join, Set.of(), Explanation.Level.Telemetry)
+				.getGenericPlanNode()
+				.toString();
+		assertThat(plan).contains("optionalRightMemoHitsActual=3")
+				.contains("leftRowsWithMatchActual=3")
+				.contains("emptyRightProbeCountActual=2")
+				.contains("leftJoinNullExtendedRowsActual=2")
+				.contains("joinMatchRateActual=0.60");
 	}
 
 	@Test

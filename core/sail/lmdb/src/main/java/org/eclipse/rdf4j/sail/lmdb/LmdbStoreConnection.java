@@ -3948,6 +3948,12 @@ public class LmdbStoreConnection extends SailSourceConnection implements SailRes
 			if (isClosed()) {
 				throw new IllegalStateException("The iteration has been closed.");
 			}
+			if (rowPrefetched) {
+				// The delegate has advanced to the prefetched row, so it would remove that row and not the last one
+				// handed out.
+				throw new UnsupportedOperationException(
+						"A row cannot be removed after hasNext() has read the row that follows it");
+			}
 			try {
 				trackedCall(() -> {
 					currentDelegate().remove();

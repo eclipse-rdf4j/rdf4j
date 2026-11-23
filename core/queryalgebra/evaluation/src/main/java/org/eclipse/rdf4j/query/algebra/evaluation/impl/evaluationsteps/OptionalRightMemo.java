@@ -44,6 +44,7 @@ import org.eclipse.rdf4j.query.algebra.evaluation.impl.evaluationsteps.LeftJoinQ
 import org.eclipse.rdf4j.query.algebra.evaluation.iterator.LeftJoinIterator;
 import org.eclipse.rdf4j.query.algebra.evaluation.util.ExternalValuePreparation;
 import org.eclipse.rdf4j.query.algebra.helpers.TupleExprs;
+import org.eclipse.rdf4j.query.explanation.TelemetryMetricNames;
 
 /**
  * Replays completed runs of a pure, mapping-parameterized OPTIONAL operand. Completed runs are shared by every
@@ -296,6 +297,17 @@ final class OptionalRightMemo {
 		}
 	}
 
+	/**
+	 * A hit never reaches the right-input telemetry wrapper, so it is counted here as one right probe of the join. The
+	 * plan derives the match rate and the null-extended rows from one right iterator per probed left row.
+	 */
+	private void recordHitTelemetry(boolean emptyRun) {
+		join.incrementLongMetricActual(HIT_METRIC);
+		join.setJoinRightIteratorsCreatedActual(Math.max(0L, join.getJoinRightIteratorsCreatedActual()) + 1);
+		join.incrementLongMetricActual(emptyRun ? TelemetryMetricNames.EMPTY_RIGHT_PROBE_COUNT_ACTUAL
+				: TelemetryMetricNames.LEFT_ROWS_WITH_MATCH_ACTUAL);
+	}
+
 	/** An access-ordered, cell-budgeted set of completed runs. Guarded by {@link #lock}. */
 	private static final class Pool {
 		private final LinkedHashMap<Key, Entry> entries = new LinkedHashMap<>(16, 0.75f, true);
@@ -349,7 +361,7 @@ final class OptionalRightMemo {
 				}
 				hits.increment();
 				if (join.isRuntimeTelemetryEnabled()) {
-					join.incrementLongMetricActual(HIT_METRIC);
+					recordHitTelemetry(current.rows().isEmpty());
 				}
 				if (current.rows().isEmpty()) {
 					return QueryEvaluationStep.EMPTY_ITERATION;

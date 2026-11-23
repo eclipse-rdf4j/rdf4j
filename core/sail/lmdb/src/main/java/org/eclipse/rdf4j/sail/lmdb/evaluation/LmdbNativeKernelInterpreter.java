@@ -19,6 +19,7 @@ import java.util.IdentityHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.function.IntUnaryOperator;
+import java.util.function.Supplier;
 
 import org.eclipse.rdf4j.common.annotation.Experimental;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbNativeKernelIr.Aggregate;
@@ -2893,7 +2894,7 @@ final class LmdbNativeKernelInterpreter implements JaninoKernel {
 		};
 	}
 
-	private PullStage expansionStage(Node node, java.util.function.Supplier<KernelExpansionCursors.Values> factory,
+	private PullStage expansionStage(Node node, Supplier<KernelExpansionCursors.Values> factory,
 			int column) {
 		return new PullStage(node, PullReset.PRESERVES_ROW) {
 			KernelExpansionCursors.Values cursor;
