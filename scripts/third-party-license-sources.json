@@ -1,6 +1,244 @@
 {
   "schemaVersion": 1,
-  "description": "Primary source URLs and hashes for copied evidence. Source archives are not redistributed. No legal review approval is asserted.",
+  "description": "Recipes and pinned hashes for the generated supplemental license evidence. Run scripts/build-third-party-licenses.py to build outputDirectory, which is not committed. Source archives are not redistributed. No legal review approval is asserted.",
+  "outputDirectory": "scripts/third-party-licenses",
+  "profiles": {
+    "jvm-sources": {
+      "description": "All copyright/license/attribution-bearing comment blocks throughout source entries, verbatim. Quoted string and character literals skipped. Origin entry and source line ranges precede each distinct block.",
+      "extensions": [
+        ".java",
+        ".kt",
+        ".c",
+        ".h",
+        ".cpp"
+      ],
+      "comments": [
+        "block",
+        "line"
+      ],
+      "pattern": "copyright|licen[cs]e|public domain|attribution|based on|original author",
+      "order": "archive",
+      "entryHeaders": true
+    },
+    "c-library-sources": {
+      "scope": "License-bearing C/C++ block comments from upstream lib/ source directories and selected Graphviz plugin sources. This is source evidence, not a claim that every source file was linked into the binary.",
+      "extensions": [
+        ".c",
+        ".h",
+        ".cpp"
+      ],
+      "pathPrefixes": [
+        "lib/",
+        "plugin/core/",
+        "plugin/dot_layout/",
+        "plugin/neato_layout/"
+      ],
+      "stripComponents": 1,
+      "comments": [
+        "block"
+      ],
+      "pattern": "copyright|public domain|special exception",
+      "order": "sha256",
+      "entryHeaders": false
+    }
+  },
+  "archives": [
+    {
+      "id": "maven:at.yawk.lz4:lz4-java:1.11.4",
+      "url": "https://repo.maven.apache.org/maven2/at/yawk/lz4/lz4-java/1.11.4/lz4-java-1.11.4-sources.jar",
+      "sha256": "e32b2809f070317520b6ebdbca730b8bf2c24b900265c702cd18f3f0bdd532b7"
+    },
+    {
+      "id": "maven:ch.qos.logback:logback-classic:1.6.6",
+      "url": "https://repo.maven.apache.org/maven2/ch/qos/logback/logback-classic/1.6.6/logback-classic-1.6.6-sources.jar",
+      "sha256": "e3a8a1a00701c54f0b23c2c1427c307e9481da6c0696a7abf3a38a77322288d0"
+    },
+    {
+      "id": "maven:ch.qos.logback:logback-core:1.6.6",
+      "url": "https://repo.maven.apache.org/maven2/ch/qos/logback/logback-core/1.6.6/logback-core-1.6.6-sources.jar",
+      "sha256": "2da2e76aa79f98770ffba58311b495e0e710b8bc6f46504249d039262668fe96"
+    },
+    {
+      "id": "maven:com.aayushatharva.brotli4j:brotli4j:1.23.0",
+      "url": "https://repo.maven.apache.org/maven2/com/aayushatharva/brotli4j/brotli4j/1.23.0/brotli4j-1.23.0-sources.jar",
+      "sha256": "3da6a63af5d5bf06ef24576cc5728b60892d8b551f2490eb1f219a441b3655a0"
+    },
+    {
+      "id": "maven:com.aayushatharva.brotli4j:native-linux-aarch64:1.23.0",
+      "url": "https://repo.maven.apache.org/maven2/com/aayushatharva/brotli4j/native-linux-aarch64/1.23.0/native-linux-aarch64-1.23.0-sources.jar",
+      "sha256": "62757ab416e46147f3c0847278b1c3507ab771e60a51e4984a1bf959931b1d92"
+    },
+    {
+      "id": "maven:com.aayushatharva.brotli4j:native-linux-armv7:1.23.0",
+      "url": "https://repo.maven.apache.org/maven2/com/aayushatharva/brotli4j/native-linux-armv7/1.23.0/native-linux-armv7-1.23.0-sources.jar",
+      "sha256": "f3889105be351907e2c0eb8257adc6d167ffcc28d2d385483baa6f4207664100"
+    },
+    {
+      "id": "maven:com.aayushatharva.brotli4j:native-linux-ppc64le:1.23.0",
+      "url": "https://repo.maven.apache.org/maven2/com/aayushatharva/brotli4j/native-linux-ppc64le/1.23.0/native-linux-ppc64le-1.23.0-sources.jar",
+      "sha256": "34a0c42f2b8dd357ea36822efd530673816e0f851a552e5548ee0729dea0d8ab"
+    },
+    {
+      "id": "maven:com.aayushatharva.brotli4j:native-linux-riscv64:1.23.0",
+      "url": "https://repo.maven.apache.org/maven2/com/aayushatharva/brotli4j/native-linux-riscv64/1.23.0/native-linux-riscv64-1.23.0-sources.jar",
+      "sha256": "acd056ef612661c05817960d326559ea4aaad5fc9b8961b56f468016a4dd2088"
+    },
+    {
+      "id": "maven:com.aayushatharva.brotli4j:native-linux-s390x:1.23.0",
+      "url": "https://repo.maven.apache.org/maven2/com/aayushatharva/brotli4j/native-linux-s390x/1.23.0/native-linux-s390x-1.23.0-sources.jar",
+      "sha256": "7e2370b6af8574c711b5a45da0649c16bb3d65c04ab403fb86d1a5c045f0cb18"
+    },
+    {
+      "id": "maven:com.aayushatharva.brotli4j:native-linux-x86_64:1.23.0",
+      "url": "https://repo.maven.apache.org/maven2/com/aayushatharva/brotli4j/native-linux-x86_64/1.23.0/native-linux-x86_64-1.23.0-sources.jar",
+      "sha256": "7d1a630d2ed5310754d42d37094392859aed6441dba58f293f72e646a8199f55"
+    },
+    {
+      "id": "maven:com.aayushatharva.brotli4j:native-osx-aarch64:1.23.0",
+      "url": "https://repo.maven.apache.org/maven2/com/aayushatharva/brotli4j/native-osx-aarch64/1.23.0/native-osx-aarch64-1.23.0-sources.jar",
+      "sha256": "99cbe6d218b60f21cf6f46e7c0bc29281a1563d7171128209025ce5cca4d2630"
+    },
+    {
+      "id": "maven:com.aayushatharva.brotli4j:native-osx-x86_64:1.23.0",
+      "url": "https://repo.maven.apache.org/maven2/com/aayushatharva/brotli4j/native-osx-x86_64/1.23.0/native-osx-x86_64-1.23.0-sources.jar",
+      "sha256": "8f490771ecc035734ce005211bd0416fd3e229cef8ea84f25a81f2905e65ba16"
+    },
+    {
+      "id": "maven:com.aayushatharva.brotli4j:native-windows-aarch64:1.23.0",
+      "url": "https://repo.maven.apache.org/maven2/com/aayushatharva/brotli4j/native-windows-aarch64/1.23.0/native-windows-aarch64-1.23.0-sources.jar",
+      "sha256": "83ec0971275985cf09dbfef7f6a772f91760cec839783f5a7b8892a433a77bfe"
+    },
+    {
+      "id": "maven:com.aayushatharva.brotli4j:native-windows-x86_64:1.23.0",
+      "url": "https://repo.maven.apache.org/maven2/com/aayushatharva/brotli4j/native-windows-x86_64/1.23.0/native-windows-x86_64-1.23.0-sources.jar",
+      "sha256": "996ac7378f6b467c6e336488cd3dd23ba0b203faf78505fb8f060afb9f43c1e2"
+    },
+    {
+      "id": "maven:com.aayushatharva.brotli4j:service:1.23.0",
+      "url": "https://repo.maven.apache.org/maven2/com/aayushatharva/brotli4j/service/1.23.0/service-1.23.0-sources.jar",
+      "sha256": "096da8d29f679e65b5d732089a71d7af758f55e4aec2a4735605702f0b85e9f9"
+    },
+    {
+      "id": "maven:com.github.luben:zstd-jni:1.5.7-25",
+      "url": "https://repo.maven.apache.org/maven2/com/github/luben/zstd-jni/1.5.7-25/zstd-jni-1.5.7-25-sources.jar",
+      "sha256": "8edcb741c3eac427ff47ad80b170f0e87559797463151aedd0594a532178a307"
+    },
+    {
+      "id": "maven:com.google.code.findbugs:jsr305:3.0.2",
+      "url": "https://repo.maven.apache.org/maven2/com/google/code/findbugs/jsr305/3.0.2/jsr305-3.0.2-sources.jar",
+      "sha256": "1c9e85e272d0708c6a591dc74828c71603053b48cc75ae83cce56912a2aa063b"
+    },
+    {
+      "id": "maven:com.google.code.gson:gson:2.14.0",
+      "url": "https://repo.maven.apache.org/maven2/com/google/code/gson/gson/2.14.0/gson-2.14.0-sources.jar",
+      "sha256": "a4873f0ef88981cab520c3d7449cd89a68e605f15e9fe46e1aa2c77d5f87eb6f"
+    },
+    {
+      "id": "maven:com.google.errorprone:error_prone_annotations:2.48.0",
+      "url": "https://repo.maven.apache.org/maven2/com/google/errorprone/error_prone_annotations/2.48.0/error_prone_annotations-2.48.0-sources.jar",
+      "sha256": "5c1c7b797aa1effa050a06d2d98534a28750f5fa8bcca56d8f49a866ca8bd03f"
+    },
+    {
+      "id": "maven:com.opencsv:opencsv:5.12.0",
+      "url": "https://repo.maven.apache.org/maven2/com/opencsv/opencsv/5.12.0/opencsv-5.12.0-sources.jar",
+      "sha256": "590bac981c873443361a8e063b46aa5ae9a7975f5709e464f3a3a9eb341934bc"
+    },
+    {
+      "id": "maven:io.opentelemetry.semconv:opentelemetry-semconv:1.41.1",
+      "url": "https://repo.maven.apache.org/maven2/io/opentelemetry/semconv/opentelemetry-semconv/1.41.1/opentelemetry-semconv-1.41.1-sources.jar",
+      "sha256": "45f2c6a3c7ea4f21ea205b701a8b794e66e219fe3ecb04499fe64c341d4cfa9c"
+    },
+    {
+      "id": "maven:io.opentelemetry:opentelemetry-api:1.66.0",
+      "url": "https://repo.maven.apache.org/maven2/io/opentelemetry/opentelemetry-api/1.66.0/opentelemetry-api-1.66.0-sources.jar",
+      "sha256": "8309e5950e8f06ca699b58e82bfa42df77bd8553bd9da9c778cba54057316b29"
+    },
+    {
+      "id": "maven:io.opentelemetry:opentelemetry-common:1.66.0",
+      "url": "https://repo.maven.apache.org/maven2/io/opentelemetry/opentelemetry-common/1.66.0/opentelemetry-common-1.66.0-sources.jar",
+      "sha256": "d4be807f84c2f7cb8acc1f5ecca04ec0312453429946d26a33e331e1c94c3b36"
+    },
+    {
+      "id": "maven:io.opentelemetry:opentelemetry-context:1.66.0",
+      "url": "https://repo.maven.apache.org/maven2/io/opentelemetry/opentelemetry-context/1.66.0/opentelemetry-context-1.66.0-sources.jar",
+      "sha256": "6d78432825359de3aa253e524fee3059dbbe70adf219c6abffa756924113c693"
+    },
+    {
+      "id": "maven:io.sgr:s2-geometry-library-java:1.0.0",
+      "url": "https://repo.maven.apache.org/maven2/io/sgr/s2-geometry-library-java/1.0.0/s2-geometry-library-java-1.0.0-sources.jar",
+      "sha256": "6b557ea46083ee9caa25b6e87880acc01505c6a7b81b6c16ae06ee854f9b8932"
+    },
+    {
+      "id": "maven:org.codehaus.janino:commons-compiler:3.1.12",
+      "url": "https://repo.maven.apache.org/maven2/org/codehaus/janino/commons-compiler/3.1.12/commons-compiler-3.1.12-sources.jar",
+      "sha256": "894638a7d9d056dc07abf1390169fb8f515dbb74fda66447424c4a921d21eb11"
+    },
+    {
+      "id": "maven:org.codehaus.janino:janino:3.1.12",
+      "url": "https://repo.maven.apache.org/maven2/org/codehaus/janino/janino/3.1.12/janino-3.1.12-sources.jar",
+      "sha256": "4f4f79b38f4ebe206ba213ce6a1de248ca6fa9b8abfb0fc79de48ac0e714bf6a"
+    },
+    {
+      "id": "maven:org.jetbrains.kotlin:kotlin-stdlib:1.9.25",
+      "url": "https://repo.maven.apache.org/maven2/org/jetbrains/kotlin/kotlin-stdlib/1.9.25/kotlin-stdlib-1.9.25-sources.jar",
+      "sha256": "1745faecebad150a45b5ddf63b29577693a27133bb3ef2126704230af8e5ea6a"
+    },
+    {
+      "id": "maven:org.jetbrains:annotations:26.1.0",
+      "url": "https://repo.maven.apache.org/maven2/org/jetbrains/annotations/26.1.0/annotations-26.1.0-sources.jar",
+      "sha256": "736d7e0e4bd95570ec8856cacffa3c34eb78ad8e45ca78c5df610d7347963b53"
+    },
+    {
+      "id": "maven:org.jspecify:jspecify:1.0.0",
+      "url": "https://repo.maven.apache.org/maven2/org/jspecify/jspecify/1.0.0/jspecify-1.0.0-sources.jar",
+      "sha256": "adf0898191d55937fb3192ba971826f4f294292c4a960740f3c27310e7b70296"
+    },
+    {
+      "id": "maven:org.locationtech.jts:jts-core:1.20.0",
+      "url": "https://repo.maven.apache.org/maven2/org/locationtech/jts/jts-core/1.20.0/jts-core-1.20.0-sources.jar",
+      "sha256": "55f040f7eba9f0c3312a26edbe5ae85debe01865a274fdd49c11df1b02a91f7f"
+    },
+    {
+      "id": "maven:org.locationtech.spatial4j:spatial4j:0.8",
+      "url": "https://repo.maven.apache.org/maven2/org/locationtech/spatial4j/spatial4j/0.8/spatial4j-0.8-sources.jar",
+      "sha256": "a16c3b206e2843e6093f8657e232efc6c6ce7c92d15d77caade2ec348454e77e"
+    },
+    {
+      "id": "maven:org.lwjgl:lwjgl-lmdb:3.4.2",
+      "url": "https://repo.maven.apache.org/maven2/org/lwjgl/lwjgl-lmdb/3.4.2/lwjgl-lmdb-3.4.2-sources.jar",
+      "sha256": "7a1c16a9dbf447d7e7c9cf5be94a7b5aecde4bf46beed612068f9e978e974a3f"
+    },
+    {
+      "id": "maven:org.lwjgl:lwjgl:3.4.2",
+      "url": "https://repo.maven.apache.org/maven2/org/lwjgl/lwjgl/3.4.2/lwjgl-3.4.2-sources.jar",
+      "sha256": "cd8fe9c56b14a88ce35bf8a45373f4a8925caee36a46bf68a968e36c04379968"
+    },
+    {
+      "id": "maven:org.mapdb:elsa:3.0.0-M5",
+      "url": "https://repo.maven.apache.org/maven2/org/mapdb/elsa/3.0.0-M5/elsa-3.0.0-M5-sources.jar",
+      "sha256": "06b83f9f972d2c1e4dd12e6d165a189a63713066fefc23607df0402876f1cc23"
+    },
+    {
+      "id": "maven:org.mapdb:mapdb:3.1.0",
+      "url": "https://repo.maven.apache.org/maven2/org/mapdb/mapdb/3.1.0/mapdb-3.1.0-sources.jar",
+      "sha256": "51b497e1db31797680f50ec2b4b66bd771e4ac1f8ff1750a2b45625c18779c50"
+    },
+    {
+      "id": "maven:org.tukaani:xz:1.12",
+      "url": "https://repo.maven.apache.org/maven2/org/tukaani/xz/1.12/xz-1.12-sources.jar",
+      "sha256": "c35c682fa8b617c1f6f21270df14bad4e11df2fe46962dfe45e765b7aec0181b"
+    },
+    {
+      "id": "expat",
+      "url": "https://github.com/libexpat/libexpat/releases/download/R_2_8_5/expat-2.8.5.tar.gz",
+      "sha256": "920dde485e15eda0cce8d2310b41d492c534e5e3d89ad407a0b4176dd2ff88fe"
+    },
+    {
+      "id": "graphviz",
+      "url": "https://gitlab.com/api/v4/projects/4207231/packages/generic/graphviz-releases/16.1.0/graphviz-16.1.0.tar.gz",
+      "sha256": "beea483ab130f456c1c3905f4f2e40778a9c493c3d73ae8012367d552d71ca84"
+    }
+  ],
   "documents": [
     {
       "path": "scripts/third-party-licenses/apache.txt",
@@ -76,8 +314,8 @@
       "path": "scripts/third-party-licenses/logback-classic-1.6.6/source-notices.txt",
       "sha256": "9dee714ffe59e69c9ae0507eb9db8aa893a5ccad44d05fd96705dbe62c9335df",
       "source": "https://repo.maven.apache.org/maven2/ch/qos/logback/logback-classic/1.6.6/logback-classic-1.6.6-sources.jar",
-      "archiveSha256": "e3a8a1a00701c54f0b23c2c1427c307e9481da6c0696a7abf3a38a77322288d0",
-      "extraction": "All copyright/license/attribution-bearing comment blocks throughout source entries, verbatim. Quoted string and character literals skipped. Origin entry and source line ranges precede each distinct block."
+      "recipe": "source-notices",
+      "profile": "jvm-sources"
     },
     {
       "path": "scripts/third-party-licenses/logback-core-1.6.6/pom.xml",
@@ -88,8 +326,8 @@
       "path": "scripts/third-party-licenses/logback-core-1.6.6/source-notices.txt",
       "sha256": "9758983f31942b7c2d810e6a3acce192f533bd49e7f57c6023cb6d296ed47021",
       "source": "https://repo.maven.apache.org/maven2/ch/qos/logback/logback-core/1.6.6/logback-core-1.6.6-sources.jar",
-      "archiveSha256": "2da2e76aa79f98770ffba58311b495e0e710b8bc6f46504249d039262668fe96",
-      "extraction": "All copyright/license/attribution-bearing comment blocks throughout source entries, verbatim. Quoted string and character literals skipped. Origin entry and source line ranges precede each distinct block."
+      "recipe": "source-notices",
+      "profile": "jvm-sources"
     },
     {
       "path": "scripts/third-party-licenses/brotli4j-1.23.0/pom.xml",
@@ -100,8 +338,8 @@
       "path": "scripts/third-party-licenses/brotli4j-1.23.0/source-notices.txt",
       "sha256": "ff5956e40bf0259a0eec3b98e4396dbd06eb79551d9f7176080198be97e4bf2d",
       "source": "https://repo.maven.apache.org/maven2/com/aayushatharva/brotli4j/brotli4j/1.23.0/brotli4j-1.23.0-sources.jar",
-      "archiveSha256": "3da6a63af5d5bf06ef24576cc5728b60892d8b551f2490eb1f219a441b3655a0",
-      "extraction": "All copyright/license/attribution-bearing comment blocks throughout source entries, verbatim. Quoted string and character literals skipped. Origin entry and source line ranges precede each distinct block."
+      "recipe": "source-notices",
+      "profile": "jvm-sources"
     },
     {
       "path": "scripts/third-party-licenses/native-linux-aarch64-1.23.0/pom.xml",
@@ -112,8 +350,8 @@
       "path": "scripts/third-party-licenses/native-linux-aarch64-1.23.0/source-notices.txt",
       "sha256": "c65eda2afebd7befbe1b33ae24fc26e0b3929577afaec2e28a844dfaccbb5cc9",
       "source": "https://repo.maven.apache.org/maven2/com/aayushatharva/brotli4j/native-linux-aarch64/1.23.0/native-linux-aarch64-1.23.0-sources.jar",
-      "archiveSha256": "62757ab416e46147f3c0847278b1c3507ab771e60a51e4984a1bf959931b1d92",
-      "extraction": "All copyright/license/attribution-bearing comment blocks throughout source entries, verbatim. Quoted string and character literals skipped. Origin entry and source line ranges precede each distinct block."
+      "recipe": "source-notices",
+      "profile": "jvm-sources"
     },
     {
       "path": "scripts/third-party-licenses/native-linux-armv7-1.23.0/pom.xml",
@@ -124,8 +362,8 @@
       "path": "scripts/third-party-licenses/native-linux-armv7-1.23.0/source-notices.txt",
       "sha256": "41ddc515236702359b8e2c9f8db1c49a4d2ba777836265ab5d91337bd87f8a7c",
       "source": "https://repo.maven.apache.org/maven2/com/aayushatharva/brotli4j/native-linux-armv7/1.23.0/native-linux-armv7-1.23.0-sources.jar",
-      "archiveSha256": "f3889105be351907e2c0eb8257adc6d167ffcc28d2d385483baa6f4207664100",
-      "extraction": "All copyright/license/attribution-bearing comment blocks throughout source entries, verbatim. Quoted string and character literals skipped. Origin entry and source line ranges precede each distinct block."
+      "recipe": "source-notices",
+      "profile": "jvm-sources"
     },
     {
       "path": "scripts/third-party-licenses/native-linux-ppc64le-1.23.0/pom.xml",
@@ -136,8 +374,8 @@
       "path": "scripts/third-party-licenses/native-linux-ppc64le-1.23.0/source-notices.txt",
       "sha256": "a07e3606106483307b92864008cd77b2c2c154945c9cd1d595e84d1157ccdc88",
       "source": "https://repo.maven.apache.org/maven2/com/aayushatharva/brotli4j/native-linux-ppc64le/1.23.0/native-linux-ppc64le-1.23.0-sources.jar",
-      "archiveSha256": "34a0c42f2b8dd357ea36822efd530673816e0f851a552e5548ee0729dea0d8ab",
-      "extraction": "All copyright/license/attribution-bearing comment blocks throughout source entries, verbatim. Quoted string and character literals skipped. Origin entry and source line ranges precede each distinct block."
+      "recipe": "source-notices",
+      "profile": "jvm-sources"
     },
     {
       "path": "scripts/third-party-licenses/native-linux-riscv64-1.23.0/pom.xml",
@@ -148,8 +386,8 @@
       "path": "scripts/third-party-licenses/native-linux-riscv64-1.23.0/source-notices.txt",
       "sha256": "75fc2ea78e37a747deba3c0869046e4fe0679fcc29032197c9b877f0c6c90b60",
       "source": "https://repo.maven.apache.org/maven2/com/aayushatharva/brotli4j/native-linux-riscv64/1.23.0/native-linux-riscv64-1.23.0-sources.jar",
-      "archiveSha256": "acd056ef612661c05817960d326559ea4aaad5fc9b8961b56f468016a4dd2088",
-      "extraction": "All copyright/license/attribution-bearing comment blocks throughout source entries, verbatim. Quoted string and character literals skipped. Origin entry and source line ranges precede each distinct block."
+      "recipe": "source-notices",
+      "profile": "jvm-sources"
     },
     {
       "path": "scripts/third-party-licenses/native-linux-s390x-1.23.0/pom.xml",
@@ -160,8 +398,8 @@
       "path": "scripts/third-party-licenses/native-linux-s390x-1.23.0/source-notices.txt",
       "sha256": "fb21fcb3e125fa50715293aa01f19365111dfc025a871e28ffba6cb5ff4a62d0",
       "source": "https://repo.maven.apache.org/maven2/com/aayushatharva/brotli4j/native-linux-s390x/1.23.0/native-linux-s390x-1.23.0-sources.jar",
-      "archiveSha256": "7e2370b6af8574c711b5a45da0649c16bb3d65c04ab403fb86d1a5c045f0cb18",
-      "extraction": "All copyright/license/attribution-bearing comment blocks throughout source entries, verbatim. Quoted string and character literals skipped. Origin entry and source line ranges precede each distinct block."
+      "recipe": "source-notices",
+      "profile": "jvm-sources"
     },
     {
       "path": "scripts/third-party-licenses/native-linux-x86_64-1.23.0/pom.xml",
@@ -172,8 +410,8 @@
       "path": "scripts/third-party-licenses/native-linux-x86_64-1.23.0/source-notices.txt",
       "sha256": "149d1ab7a45bebf250de958257f1d35503b2e5595b88e147c2af8f04db739563",
       "source": "https://repo.maven.apache.org/maven2/com/aayushatharva/brotli4j/native-linux-x86_64/1.23.0/native-linux-x86_64-1.23.0-sources.jar",
-      "archiveSha256": "7d1a630d2ed5310754d42d37094392859aed6441dba58f293f72e646a8199f55",
-      "extraction": "All copyright/license/attribution-bearing comment blocks throughout source entries, verbatim. Quoted string and character literals skipped. Origin entry and source line ranges precede each distinct block."
+      "recipe": "source-notices",
+      "profile": "jvm-sources"
     },
     {
       "path": "scripts/third-party-licenses/native-osx-aarch64-1.23.0/pom.xml",
@@ -184,8 +422,8 @@
       "path": "scripts/third-party-licenses/native-osx-aarch64-1.23.0/source-notices.txt",
       "sha256": "50ebc8901dabcabeda89e4b43ceb39bd684595bcaef808448db8f5ce6ec6a41b",
       "source": "https://repo.maven.apache.org/maven2/com/aayushatharva/brotli4j/native-osx-aarch64/1.23.0/native-osx-aarch64-1.23.0-sources.jar",
-      "archiveSha256": "99cbe6d218b60f21cf6f46e7c0bc29281a1563d7171128209025ce5cca4d2630",
-      "extraction": "All copyright/license/attribution-bearing comment blocks throughout source entries, verbatim. Quoted string and character literals skipped. Origin entry and source line ranges precede each distinct block."
+      "recipe": "source-notices",
+      "profile": "jvm-sources"
     },
     {
       "path": "scripts/third-party-licenses/native-osx-x86_64-1.23.0/pom.xml",
@@ -196,8 +434,8 @@
       "path": "scripts/third-party-licenses/native-osx-x86_64-1.23.0/source-notices.txt",
       "sha256": "8dbee2c30a226ebb5ac8390136345f7efdbdc06afbee63980c8752368a757744",
       "source": "https://repo.maven.apache.org/maven2/com/aayushatharva/brotli4j/native-osx-x86_64/1.23.0/native-osx-x86_64-1.23.0-sources.jar",
-      "archiveSha256": "8f490771ecc035734ce005211bd0416fd3e229cef8ea84f25a81f2905e65ba16",
-      "extraction": "All copyright/license/attribution-bearing comment blocks throughout source entries, verbatim. Quoted string and character literals skipped. Origin entry and source line ranges precede each distinct block."
+      "recipe": "source-notices",
+      "profile": "jvm-sources"
     },
     {
       "path": "scripts/third-party-licenses/native-windows-aarch64-1.23.0/pom.xml",
@@ -208,8 +446,8 @@
       "path": "scripts/third-party-licenses/native-windows-aarch64-1.23.0/source-notices.txt",
       "sha256": "f00c8ea57006f59750f01cda395fe04a58ff44a52a651e02a511c622a5cf8c50",
       "source": "https://repo.maven.apache.org/maven2/com/aayushatharva/brotli4j/native-windows-aarch64/1.23.0/native-windows-aarch64-1.23.0-sources.jar",
-      "archiveSha256": "83ec0971275985cf09dbfef7f6a772f91760cec839783f5a7b8892a433a77bfe",
-      "extraction": "All copyright/license/attribution-bearing comment blocks throughout source entries, verbatim. Quoted string and character literals skipped. Origin entry and source line ranges precede each distinct block."
+      "recipe": "source-notices",
+      "profile": "jvm-sources"
     },
     {
       "path": "scripts/third-party-licenses/native-windows-x86_64-1.23.0/pom.xml",
@@ -220,8 +458,8 @@
       "path": "scripts/third-party-licenses/native-windows-x86_64-1.23.0/source-notices.txt",
       "sha256": "f979c81a67334013a288316a2c4060808fd618b40eb17e50073ed5083f0284b8",
       "source": "https://repo.maven.apache.org/maven2/com/aayushatharva/brotli4j/native-windows-x86_64/1.23.0/native-windows-x86_64-1.23.0-sources.jar",
-      "archiveSha256": "996ac7378f6b467c6e336488cd3dd23ba0b203faf78505fb8f060afb9f43c1e2",
-      "extraction": "All copyright/license/attribution-bearing comment blocks throughout source entries, verbatim. Quoted string and character literals skipped. Origin entry and source line ranges precede each distinct block."
+      "recipe": "source-notices",
+      "profile": "jvm-sources"
     },
     {
       "path": "scripts/third-party-licenses/service-1.23.0/pom.xml",
@@ -232,8 +470,8 @@
       "path": "scripts/third-party-licenses/service-1.23.0/source-notices.txt",
       "sha256": "8ae150df51c3591b7812c7df31686751628fe70d085ecc94be6069f841184e33",
       "source": "https://repo.maven.apache.org/maven2/com/aayushatharva/brotli4j/service/1.23.0/service-1.23.0-sources.jar",
-      "archiveSha256": "096da8d29f679e65b5d732089a71d7af758f55e4aec2a4735605702f0b85e9f9",
-      "extraction": "All copyright/license/attribution-bearing comment blocks throughout source entries, verbatim. Quoted string and character literals skipped. Origin entry and source line ranges precede each distinct block."
+      "recipe": "source-notices",
+      "profile": "jvm-sources"
     },
     {
       "path": "scripts/third-party-licenses/zstd-jni-1.5.7-25/pom.xml",
@@ -249,8 +487,8 @@
       "path": "scripts/third-party-licenses/jsr305-3.0.2/source-notices.txt",
       "sha256": "9ba9295128beaf957fcab102fd7387d930ee5bcb9db5e170507fea4e91063885",
       "source": "https://repo.maven.apache.org/maven2/com/google/code/findbugs/jsr305/3.0.2/jsr305-3.0.2-sources.jar",
-      "archiveSha256": "1c9e85e272d0708c6a591dc74828c71603053b48cc75ae83cce56912a2aa063b",
-      "extraction": "All copyright/license/attribution-bearing comment blocks throughout source entries, verbatim. Quoted string and character literals skipped. Origin entry and source line ranges precede each distinct block."
+      "recipe": "source-notices",
+      "profile": "jvm-sources"
     },
     {
       "path": "scripts/third-party-licenses/gson-2.14.0/pom.xml",
@@ -261,8 +499,8 @@
       "path": "scripts/third-party-licenses/gson-2.14.0/source-notices.txt",
       "sha256": "336babb54617d45cb6a246c29fd023bf20b1c7089d98ded151cde9bbf07ddf46",
       "source": "https://repo.maven.apache.org/maven2/com/google/code/gson/gson/2.14.0/gson-2.14.0-sources.jar",
-      "archiveSha256": "a4873f0ef88981cab520c3d7449cd89a68e605f15e9fe46e1aa2c77d5f87eb6f",
-      "extraction": "All copyright/license/attribution-bearing comment blocks throughout source entries, verbatim. Quoted string and character literals skipped. Origin entry and source line ranges precede each distinct block."
+      "recipe": "source-notices",
+      "profile": "jvm-sources"
     },
     {
       "path": "scripts/third-party-licenses/error_prone_annotations-2.48.0/pom.xml",
@@ -273,8 +511,8 @@
       "path": "scripts/third-party-licenses/error_prone_annotations-2.48.0/source-notices.txt",
       "sha256": "c9df280941700fe56511be36e5e518d495304c0ae7c7e0a75b091effe3d99fd0",
       "source": "https://repo.maven.apache.org/maven2/com/google/errorprone/error_prone_annotations/2.48.0/error_prone_annotations-2.48.0-sources.jar",
-      "archiveSha256": "5c1c7b797aa1effa050a06d2d98534a28750f5fa8bcca56d8f49a866ca8bd03f",
-      "extraction": "All copyright/license/attribution-bearing comment blocks throughout source entries, verbatim. Quoted string and character literals skipped. Origin entry and source line ranges precede each distinct block."
+      "recipe": "source-notices",
+      "profile": "jvm-sources"
     },
     {
       "path": "scripts/third-party-licenses/listenablefuture-9999.0-empty-to-avoid-conflict-with-guava/pom.xml",
@@ -290,8 +528,8 @@
       "path": "scripts/third-party-licenses/opencsv-5.12.0/source-notices.txt",
       "sha256": "852288ed7ee47aef41287f5e97effa1bac710a8ba60d59353b55b54440769999",
       "source": "https://repo.maven.apache.org/maven2/com/opencsv/opencsv/5.12.0/opencsv-5.12.0-sources.jar",
-      "archiveSha256": "590bac981c873443361a8e063b46aa5ae9a7975f5709e464f3a3a9eb341934bc",
-      "extraction": "All copyright/license/attribution-bearing comment blocks throughout source entries, verbatim. Quoted string and character literals skipped. Origin entry and source line ranges precede each distinct block."
+      "recipe": "source-notices",
+      "profile": "jvm-sources"
     },
     {
       "path": "scripts/third-party-licenses/opentelemetry-semconv-1.41.1/pom.xml",
@@ -302,8 +540,8 @@
       "path": "scripts/third-party-licenses/opentelemetry-semconv-1.41.1/source-notices.txt",
       "sha256": "59e23f1a016d891598428ffc85144a81601067a5295df90f44ef628f3ffedd90",
       "source": "https://repo.maven.apache.org/maven2/io/opentelemetry/semconv/opentelemetry-semconv/1.41.1/opentelemetry-semconv-1.41.1-sources.jar",
-      "archiveSha256": "45f2c6a3c7ea4f21ea205b701a8b794e66e219fe3ecb04499fe64c341d4cfa9c",
-      "extraction": "All copyright/license/attribution-bearing comment blocks throughout source entries, verbatim. Quoted string and character literals skipped. Origin entry and source line ranges precede each distinct block."
+      "recipe": "source-notices",
+      "profile": "jvm-sources"
     },
     {
       "path": "scripts/third-party-licenses/opentelemetry-api-1.66.0/pom.xml",
@@ -314,8 +552,8 @@
       "path": "scripts/third-party-licenses/opentelemetry-api-1.66.0/source-notices.txt",
       "sha256": "36ad6e93616a325fae8c2555ebad4631d5c74c4a23190f98ad42db47012fccab",
       "source": "https://repo.maven.apache.org/maven2/io/opentelemetry/opentelemetry-api/1.66.0/opentelemetry-api-1.66.0-sources.jar",
-      "archiveSha256": "8309e5950e8f06ca699b58e82bfa42df77bd8553bd9da9c778cba54057316b29",
-      "extraction": "All copyright/license/attribution-bearing comment blocks throughout source entries, verbatim. Quoted string and character literals skipped. Origin entry and source line ranges precede each distinct block."
+      "recipe": "source-notices",
+      "profile": "jvm-sources"
     },
     {
       "path": "scripts/third-party-licenses/opentelemetry-common-1.66.0/pom.xml",
@@ -326,8 +564,8 @@
       "path": "scripts/third-party-licenses/opentelemetry-common-1.66.0/source-notices.txt",
       "sha256": "7a81c5df9f482d895861646916a36f38640c200bdf4064e9387a2e81c98d3af1",
       "source": "https://repo.maven.apache.org/maven2/io/opentelemetry/opentelemetry-common/1.66.0/opentelemetry-common-1.66.0-sources.jar",
-      "archiveSha256": "d4be807f84c2f7cb8acc1f5ecca04ec0312453429946d26a33e331e1c94c3b36",
-      "extraction": "All copyright/license/attribution-bearing comment blocks throughout source entries, verbatim. Quoted string and character literals skipped. Origin entry and source line ranges precede each distinct block."
+      "recipe": "source-notices",
+      "profile": "jvm-sources"
     },
     {
       "path": "scripts/third-party-licenses/opentelemetry-context-1.66.0/pom.xml",
@@ -338,8 +576,8 @@
       "path": "scripts/third-party-licenses/opentelemetry-context-1.66.0/source-notices.txt",
       "sha256": "2420e47754dab13870302f2ee654c9c17d44e272a0a6ae2b87b7a4e3cfe455d2",
       "source": "https://repo.maven.apache.org/maven2/io/opentelemetry/opentelemetry-context/1.66.0/opentelemetry-context-1.66.0-sources.jar",
-      "archiveSha256": "6d78432825359de3aa253e524fee3059dbbe70adf219c6abffa756924113c693",
-      "extraction": "All copyright/license/attribution-bearing comment blocks throughout source entries, verbatim. Quoted string and character literals skipped. Origin entry and source line ranges precede each distinct block."
+      "recipe": "source-notices",
+      "profile": "jvm-sources"
     },
     {
       "path": "scripts/third-party-licenses/s2-geometry-library-java-1.0.0/pom.xml",
@@ -350,8 +588,8 @@
       "path": "scripts/third-party-licenses/s2-geometry-library-java-1.0.0/source-notices.txt",
       "sha256": "1340a6ae6856f0093627e066729e42266e261b56bc405f860d8b5b69cfd67fbb",
       "source": "https://repo.maven.apache.org/maven2/io/sgr/s2-geometry-library-java/1.0.0/s2-geometry-library-java-1.0.0-sources.jar",
-      "archiveSha256": "6b557ea46083ee9caa25b6e87880acc01505c6a7b81b6c16ae06ee854f9b8932",
-      "extraction": "All copyright/license/attribution-bearing comment blocks throughout source entries, verbatim. Quoted string and character literals skipped. Origin entry and source line ranges precede each distinct block."
+      "recipe": "source-notices",
+      "profile": "jvm-sources"
     },
     {
       "path": "scripts/third-party-licenses/commons-compiler-3.1.12/pom.xml",
@@ -362,14 +600,14 @@
       "path": "scripts/third-party-licenses/commons-compiler-3.1.12/source-notices.txt",
       "sha256": "66858f51f9203a00f576a1a11e6ab087db4441933ee0202b4573a9527e8ecca0",
       "source": "https://repo.maven.apache.org/maven2/org/codehaus/janino/commons-compiler/3.1.12/commons-compiler-3.1.12-sources.jar",
-      "archiveSha256": "894638a7d9d056dc07abf1390169fb8f515dbb74fda66447424c4a921d21eb11",
-      "extraction": "All copyright/license/attribution-bearing comment blocks throughout source entries, verbatim. Quoted string and character literals skipped. Origin entry and source line ranges precede each distinct block."
+      "recipe": "source-notices",
+      "profile": "jvm-sources"
     },
     {
       "path": "scripts/third-party-licenses/commons-compiler-3.1.12/BSD-3-Clause.txt",
       "sha256": "4c06b5bce0167bce5d6f68917910daa552f5e8856ae4463cafbf77a6f4ddb562",
       "source": "https://repo.maven.apache.org/maven2/org/codehaus/janino/commons-compiler/3.1.12/commons-compiler-3.1.12-sources.jar!/org/codehaus/commons/compiler/AbstractCompiler.java",
-      "archiveSha256": "894638a7d9d056dc07abf1390169fb8f515dbb74fda66447424c4a921d21eb11"
+      "recipe": "leading-comment"
     },
     {
       "path": "scripts/third-party-licenses/janino-3.1.12/pom.xml",
@@ -380,14 +618,14 @@
       "path": "scripts/third-party-licenses/janino-3.1.12/source-notices.txt",
       "sha256": "81c6feeca558d58df11f174b4155143aa473b6a63f670b03cceb8f813172cda9",
       "source": "https://repo.maven.apache.org/maven2/org/codehaus/janino/janino/3.1.12/janino-3.1.12-sources.jar",
-      "archiveSha256": "4f4f79b38f4ebe206ba213ce6a1de248ca6fa9b8abfb0fc79de48ac0e714bf6a",
-      "extraction": "All copyright/license/attribution-bearing comment blocks throughout source entries, verbatim. Quoted string and character literals skipped. Origin entry and source line ranges precede each distinct block."
+      "recipe": "source-notices",
+      "profile": "jvm-sources"
     },
     {
       "path": "scripts/third-party-licenses/janino-3.1.12/BSD-3-Clause.txt",
       "sha256": "86700aa17df2bd60aca40ef229ab38b82bcf5a7bc1453c657250433a2cd5399d",
       "source": "https://repo.maven.apache.org/maven2/org/codehaus/janino/janino/3.1.12/janino-3.1.12-sources.jar!/org/codehaus/janino/Access.java",
-      "archiveSha256": "4f4f79b38f4ebe206ba213ce6a1de248ca6fa9b8abfb0fc79de48ac0e714bf6a"
+      "recipe": "leading-comment"
     },
     {
       "path": "scripts/third-party-licenses/kotlin-stdlib-1.9.25/pom.xml",
@@ -398,8 +636,8 @@
       "path": "scripts/third-party-licenses/kotlin-stdlib-1.9.25/source-notices.txt",
       "sha256": "ed612fda288ce2e331604ea27c952e081edcb86a7e8474ee92da96e4dc7fbb30",
       "source": "https://repo.maven.apache.org/maven2/org/jetbrains/kotlin/kotlin-stdlib/1.9.25/kotlin-stdlib-1.9.25-sources.jar",
-      "archiveSha256": "1745faecebad150a45b5ddf63b29577693a27133bb3ef2126704230af8e5ea6a",
-      "extraction": "All copyright/license/attribution-bearing comment blocks throughout source entries, verbatim. Quoted string and character literals skipped. Origin entry and source line ranges precede each distinct block."
+      "recipe": "source-notices",
+      "profile": "jvm-sources"
     },
     {
       "path": "scripts/third-party-licenses/annotations-26.1.0/pom.xml",
@@ -410,8 +648,8 @@
       "path": "scripts/third-party-licenses/annotations-26.1.0/source-notices.txt",
       "sha256": "8938a43d47c0d96ac582387f0af4b9255be848cdf629554edc509e79ffd2dd12",
       "source": "https://repo.maven.apache.org/maven2/org/jetbrains/annotations/26.1.0/annotations-26.1.0-sources.jar",
-      "archiveSha256": "736d7e0e4bd95570ec8856cacffa3c34eb78ad8e45ca78c5df610d7347963b53",
-      "extraction": "All copyright/license/attribution-bearing comment blocks throughout source entries, verbatim. Quoted string and character literals skipped. Origin entry and source line ranges precede each distinct block."
+      "recipe": "source-notices",
+      "profile": "jvm-sources"
     },
     {
       "path": "scripts/third-party-licenses/jspecify-1.0.0/pom.xml",
@@ -422,8 +660,8 @@
       "path": "scripts/third-party-licenses/jspecify-1.0.0/source-notices.txt",
       "sha256": "f6134486336a9a782b90a3b53fe00413a4c87e2e8b0477fd98659c04bc45b6e2",
       "source": "https://repo.maven.apache.org/maven2/org/jspecify/jspecify/1.0.0/jspecify-1.0.0-sources.jar",
-      "archiveSha256": "adf0898191d55937fb3192ba971826f4f294292c4a960740f3c27310e7b70296",
-      "extraction": "All copyright/license/attribution-bearing comment blocks throughout source entries, verbatim. Quoted string and character literals skipped. Origin entry and source line ranges precede each distinct block."
+      "recipe": "source-notices",
+      "profile": "jvm-sources"
     },
     {
       "path": "scripts/third-party-licenses/jts-core-1.20.0/pom.xml",
@@ -434,8 +672,8 @@
       "path": "scripts/third-party-licenses/jts-core-1.20.0/source-notices.txt",
       "sha256": "6f1a754180e5e529da9780df75a3a376f741771975f954d0f8638be6009b25ed",
       "source": "https://repo.maven.apache.org/maven2/org/locationtech/jts/jts-core/1.20.0/jts-core-1.20.0-sources.jar",
-      "archiveSha256": "55f040f7eba9f0c3312a26edbe5ae85debe01865a274fdd49c11df1b02a91f7f",
-      "extraction": "All copyright/license/attribution-bearing comment blocks throughout source entries, verbatim. Quoted string and character literals skipped. Origin entry and source line ranges precede each distinct block."
+      "recipe": "source-notices",
+      "profile": "jvm-sources"
     },
     {
       "path": "scripts/third-party-licenses/spatial4j-0.8/pom.xml",
@@ -446,8 +684,8 @@
       "path": "scripts/third-party-licenses/spatial4j-0.8/source-notices.txt",
       "sha256": "407aad94366e0048e65ed3d9289f2f3dfcf6bee1e38abffa3ddf93f70f20a794",
       "source": "https://repo.maven.apache.org/maven2/org/locationtech/spatial4j/spatial4j/0.8/spatial4j-0.8-sources.jar",
-      "archiveSha256": "a16c3b206e2843e6093f8657e232efc6c6ce7c92d15d77caade2ec348454e77e",
-      "extraction": "All copyright/license/attribution-bearing comment blocks throughout source entries, verbatim. Quoted string and character literals skipped. Origin entry and source line ranges precede each distinct block."
+      "recipe": "source-notices",
+      "profile": "jvm-sources"
     },
     {
       "path": "scripts/third-party-licenses/lwjgl-lmdb-3.4.2/pom.xml",
@@ -458,8 +696,8 @@
       "path": "scripts/third-party-licenses/lwjgl-lmdb-3.4.2/source-notices.txt",
       "sha256": "260807c6359765003c61ccb568e24dc835a918e54b3015288a3704c8c2de94f6",
       "source": "https://repo.maven.apache.org/maven2/org/lwjgl/lwjgl-lmdb/3.4.2/lwjgl-lmdb-3.4.2-sources.jar",
-      "archiveSha256": "7a1c16a9dbf447d7e7c9cf5be94a7b5aecde4bf46beed612068f9e978e974a3f",
-      "extraction": "All copyright/license/attribution-bearing comment blocks throughout source entries, verbatim. Quoted string and character literals skipped. Origin entry and source line ranges precede each distinct block."
+      "recipe": "source-notices",
+      "profile": "jvm-sources"
     },
     {
       "path": "scripts/third-party-licenses/lwjgl-3.4.2/pom.xml",
@@ -470,8 +708,8 @@
       "path": "scripts/third-party-licenses/lwjgl-3.4.2/source-notices.txt",
       "sha256": "945cc0fc731299a917844851d24c2309bbdf469006c163297ee9167fa797515c",
       "source": "https://repo.maven.apache.org/maven2/org/lwjgl/lwjgl/3.4.2/lwjgl-3.4.2-sources.jar",
-      "archiveSha256": "cd8fe9c56b14a88ce35bf8a45373f4a8925caee36a46bf68a968e36c04379968",
-      "extraction": "All copyright/license/attribution-bearing comment blocks throughout source entries, verbatim. Quoted string and character literals skipped. Origin entry and source line ranges precede each distinct block."
+      "recipe": "source-notices",
+      "profile": "jvm-sources"
     },
     {
       "path": "scripts/third-party-licenses/elsa-3.0.0-M5/pom.xml",
@@ -482,8 +720,8 @@
       "path": "scripts/third-party-licenses/elsa-3.0.0-M5/source-notices.txt",
       "sha256": "06dac8fd7e7c34f7089c636be23426b172ce8832bae9cff11b26dd4d971ce5f8",
       "source": "https://repo.maven.apache.org/maven2/org/mapdb/elsa/3.0.0-M5/elsa-3.0.0-M5-sources.jar",
-      "archiveSha256": "06b83f9f972d2c1e4dd12e6d165a189a63713066fefc23607df0402876f1cc23",
-      "extraction": "All copyright/license/attribution-bearing comment blocks throughout source entries, verbatim. Quoted string and character literals skipped. Origin entry and source line ranges precede each distinct block."
+      "recipe": "source-notices",
+      "profile": "jvm-sources"
     },
     {
       "path": "scripts/third-party-licenses/mapdb-3.1.0/pom.xml",
@@ -494,8 +732,8 @@
       "path": "scripts/third-party-licenses/mapdb-3.1.0/source-notices.txt",
       "sha256": "57bb06800ec5c066b4cd4e29d824328e2fa8c68d2ed3b1531408f40e4e2df872",
       "source": "https://repo.maven.apache.org/maven2/org/mapdb/mapdb/3.1.0/mapdb-3.1.0-sources.jar",
-      "archiveSha256": "51b497e1db31797680f50ec2b4b66bd771e4ac1f8ff1750a2b45625c18779c50",
-      "extraction": "All copyright/license/attribution-bearing comment blocks throughout source entries, verbatim. Quoted string and character literals skipped. Origin entry and source line ranges precede each distinct block."
+      "recipe": "source-notices",
+      "profile": "jvm-sources"
     },
     {
       "path": "scripts/third-party-licenses/xz-1.12/pom.xml",
@@ -506,44 +744,38 @@
       "path": "scripts/third-party-licenses/xz-1.12/source-notices.txt",
       "sha256": "dd2a6f7397bd4507b8b7f3b1cffce855daad2baffb00b9e278fd949e227426c2",
       "source": "https://repo.maven.apache.org/maven2/org/tukaani/xz/1.12/xz-1.12-sources.jar",
-      "archiveSha256": "c35c682fa8b617c1f6f21270df14bad4e11df2fe46962dfe45e765b7aec0181b",
-      "extraction": "All copyright/license/attribution-bearing comment blocks throughout source entries, verbatim. Quoted string and character literals skipped. Origin entry and source line ranges precede each distinct block."
+      "recipe": "source-notices",
+      "profile": "jvm-sources"
     },
     {
       "path": "scripts/third-party-licenses/expat-2.8.5/COPYING.txt",
       "sha256": "31b15de82aa19a845156169a17a5488bf597e561b2c318d159ed583139b25e87",
-      "source": "https://github.com/libexpat/libexpat/releases/download/R_2_8_5/expat-2.8.5.tar.gz!/expat-2.8.5/COPYING",
-      "archiveSha256": "920dde485e15eda0cce8d2310b41d492c534e5e3d89ad407a0b4176dd2ff88fe"
+      "source": "https://github.com/libexpat/libexpat/releases/download/R_2_8_5/expat-2.8.5.tar.gz!/expat-2.8.5/COPYING"
     },
     {
       "path": "scripts/third-party-licenses/graphviz-16.1.0/COPYING.txt",
       "sha256": "0becf16567beb77fa252b7664631dd177c8f9a1889e48995b45379c7130e5303",
-      "source": "https://gitlab.com/api/v4/projects/4207231/packages/generic/graphviz-releases/16.1.0/graphviz-16.1.0.tar.gz!/graphviz-16.1.0/COPYING",
-      "archiveSha256": "beea483ab130f456c1c3905f4f2e40778a9c493c3d73ae8012367d552d71ca84"
+      "source": "https://gitlab.com/api/v4/projects/4207231/packages/generic/graphviz-releases/16.1.0/graphviz-16.1.0.tar.gz!/graphviz-16.1.0/COPYING"
     },
     {
       "path": "scripts/third-party-licenses/graphviz-16.1.0/AUTHORS.txt",
       "sha256": "182eaf397edc803d0e44a25708ba70ecafc143c0f610ea7048c6b9687a939ff0",
-      "source": "https://gitlab.com/api/v4/projects/4207231/packages/generic/graphviz-releases/16.1.0/graphviz-16.1.0.tar.gz!/graphviz-16.1.0/AUTHORS",
-      "archiveSha256": "beea483ab130f456c1c3905f4f2e40778a9c493c3d73ae8012367d552d71ca84"
+      "source": "https://gitlab.com/api/v4/projects/4207231/packages/generic/graphviz-releases/16.1.0/graphviz-16.1.0.tar.gz!/graphviz-16.1.0/AUTHORS"
     },
     {
       "path": "scripts/third-party-licenses/graphviz-16.1.0/lib__rbtree__LICENSE.txt",
       "sha256": "fcb423209a3a3909f41e629a4973eab3995ceb93136dd72485fb12ad3de29dfc",
-      "source": "https://gitlab.com/api/v4/projects/4207231/packages/generic/graphviz-releases/16.1.0/graphviz-16.1.0.tar.gz!/graphviz-16.1.0/lib/rbtree/LICENSE",
-      "archiveSha256": "beea483ab130f456c1c3905f4f2e40778a9c493c3d73ae8012367d552d71ca84"
+      "source": "https://gitlab.com/api/v4/projects/4207231/packages/generic/graphviz-releases/16.1.0/graphviz-16.1.0.tar.gz!/graphviz-16.1.0/lib/rbtree/LICENSE"
     },
     {
       "path": "scripts/third-party-licenses/graphviz-16.1.0/lib__neatogen__legal.c.txt",
       "sha256": "f0bfebca18c292e4129dc3da8e3361217fefe5cece13c9928d77fce6ef87323c",
-      "source": "https://gitlab.com/api/v4/projects/4207231/packages/generic/graphviz-releases/16.1.0/graphviz-16.1.0.tar.gz!/graphviz-16.1.0/lib/neatogen/legal.c",
-      "archiveSha256": "beea483ab130f456c1c3905f4f2e40778a9c493c3d73ae8012367d552d71ca84"
+      "source": "https://gitlab.com/api/v4/projects/4207231/packages/generic/graphviz-releases/16.1.0/graphviz-16.1.0.tar.gz!/graphviz-16.1.0/lib/neatogen/legal.c"
     },
     {
       "path": "scripts/third-party-licenses/graphviz-16.1.0/debian__copyright.txt",
       "sha256": "6a182af6b36ab5b2b5705eb750446aabb8e3df0ed5a687c9a999cf9034c36ef2",
-      "source": "https://gitlab.com/api/v4/projects/4207231/packages/generic/graphviz-releases/16.1.0/graphviz-16.1.0.tar.gz!/graphviz-16.1.0/debian/copyright",
-      "archiveSha256": "beea483ab130f456c1c3905f4f2e40778a9c493c3d73ae8012367d552d71ca84"
+      "source": "https://gitlab.com/api/v4/projects/4207231/packages/generic/graphviz-releases/16.1.0/graphviz-16.1.0.tar.gz!/graphviz-16.1.0/debian/copyright"
     },
     {
       "path": "scripts/third-party-licenses/native/brotli--LICENSES__LICENSE.googlebrotli.txt",
@@ -669,7 +901,21 @@
       "path": "scripts/third-party-licenses/native/zstd-source-comparison.json",
       "sha256": "c22e107a0aa76101ea5255d86d9e5c8c8fbb6e21fb7daf8dae470c5d1e1b4d08",
       "source": "https://api.github.com/repos/luben/zstd-jni/git/trees/b3ef8f51f372053611f65de55952fd563c7aa780?recursive=1",
-      "sourceArchiveSha256": "8edcb741c3eac427ff47ad80b170f0e87559797463151aedd0594a532178a307"
+      "recipe": "git-blob-comparison",
+      "commit": "b3ef8f51f372053611f65de55952fd563c7aa780",
+      "sourceArchive": "https://repo.maven.apache.org/maven2/com/github/luben/zstd-jni/1.5.7-25/zstd-jni-1.5.7-25-sources.jar",
+      "entrySuffix": ".java",
+      "pathMap": [
+        [
+          "^META-INF/versions/(\\d+)/",
+          "src/main/java\\1/"
+        ],
+        [
+          "^",
+          "src/main/java/"
+        ]
+      ],
+      "method": "Git object SHA-1 of blob header plus unmodified source bytes, compared for every Java source entry in the Maven Central sources JAR against the upstream recursive tree."
     },
     {
       "path": "scripts/third-party-licenses/native/zstd--src__main__native__COPYING",
@@ -680,244 +926,282 @@
       "path": "scripts/third-party-licenses/native/zstd-native-license-choice.txt",
       "sha256": "0f6cddb375cbbdbc0b79d7417db729a456340f38d069f4589382df384deaaf28",
       "source": "https://raw.githubusercontent.com/luben/zstd-jni/b3ef8f51f372053611f65de55952fd563c7aa780/src/main/native/zstd.h",
-      "sourceFileSha256": "9b4bc8245565c98ccfc61c07749928b57e7c0f6fddb0530c4f6aa1971893d88b",
-      "extraction": "Complete opening copyright and dual-license comment, verbatim."
+      "recipe": "leading-comment",
+      "trailingNewline": true,
+      "sourceFileSha256": "9b4bc8245565c98ccfc61c07749928b57e7c0f6fddb0530c4f6aa1971893d88b"
     },
     {
       "path": "scripts/third-party-licenses/lz4-java-1.11.4/source-notices.txt",
       "sha256": "a3f9ee599db0c67b63f18cf265523c1ac75558beb777f2464f7105856acac5ba",
       "source": "https://repo.maven.apache.org/maven2/at/yawk/lz4/lz4-java/1.11.4/lz4-java-1.11.4-sources.jar",
-      "archiveSha256": "e32b2809f070317520b6ebdbca730b8bf2c24b900265c702cd18f3f0bdd532b7",
-      "extraction": "All copyright/license/attribution-bearing comment blocks throughout source entries, verbatim. Quoted string and character literals skipped. Origin entry and source line ranges precede each distinct block."
+      "recipe": "source-notices",
+      "profile": "jvm-sources"
     },
     {
       "path": "scripts/third-party-licenses/lz4-java-1.11.4/source-notice-origins.json",
       "sha256": "1ed932dabcea970450377f725cf4055c0c95a2fd89ca75566cc2abb4645325cd",
       "source": "https://repo.maven.apache.org/maven2/at/yawk/lz4/lz4-java/1.11.4/lz4-java-1.11.4-sources.jar",
-      "archiveSha256": "e32b2809f070317520b6ebdbca730b8bf2c24b900265c702cd18f3f0bdd532b7"
+      "recipe": "source-notice-origins",
+      "profile": "jvm-sources"
     },
     {
       "path": "scripts/third-party-licenses/logback-classic-1.6.6/source-notice-origins.json",
       "sha256": "69640b62c7117f63718a84d03a8d8462325740bfca036f7dfaea1966a44c6de4",
       "source": "https://repo.maven.apache.org/maven2/ch/qos/logback/logback-classic/1.6.6/logback-classic-1.6.6-sources.jar",
-      "archiveSha256": "e3a8a1a00701c54f0b23c2c1427c307e9481da6c0696a7abf3a38a77322288d0"
+      "recipe": "source-notice-origins",
+      "profile": "jvm-sources"
     },
     {
       "path": "scripts/third-party-licenses/logback-core-1.6.6/source-notice-origins.json",
       "sha256": "f5f412f628b4318a8b33c12d11b95b8ca08e8b1b37d18fd6631535ff216df4bd",
       "source": "https://repo.maven.apache.org/maven2/ch/qos/logback/logback-core/1.6.6/logback-core-1.6.6-sources.jar",
-      "archiveSha256": "2da2e76aa79f98770ffba58311b495e0e710b8bc6f46504249d039262668fe96"
+      "recipe": "source-notice-origins",
+      "profile": "jvm-sources"
     },
     {
       "path": "scripts/third-party-licenses/brotli4j-1.23.0/source-notice-origins.json",
       "sha256": "85259ba46ae91f14360d84b5014cd8b6d866e6c641a16476ca2da83b1454fc60",
       "source": "https://repo.maven.apache.org/maven2/com/aayushatharva/brotli4j/brotli4j/1.23.0/brotli4j-1.23.0-sources.jar",
-      "archiveSha256": "3da6a63af5d5bf06ef24576cc5728b60892d8b551f2490eb1f219a441b3655a0"
+      "recipe": "source-notice-origins",
+      "profile": "jvm-sources"
     },
     {
       "path": "scripts/third-party-licenses/native-linux-aarch64-1.23.0/source-notice-origins.json",
       "sha256": "4406dd6fe47730019698f77bcb512dd828fbf48361e9dfaa79a04df2fe050c50",
       "source": "https://repo.maven.apache.org/maven2/com/aayushatharva/brotli4j/native-linux-aarch64/1.23.0/native-linux-aarch64-1.23.0-sources.jar",
-      "archiveSha256": "62757ab416e46147f3c0847278b1c3507ab771e60a51e4984a1bf959931b1d92"
+      "recipe": "source-notice-origins",
+      "profile": "jvm-sources"
     },
     {
       "path": "scripts/third-party-licenses/native-linux-armv7-1.23.0/source-notice-origins.json",
       "sha256": "e92dcdf86e61a8d6e23103f0d69d1802c0111d69a71f0ffaf339345376afef0f",
       "source": "https://repo.maven.apache.org/maven2/com/aayushatharva/brotli4j/native-linux-armv7/1.23.0/native-linux-armv7-1.23.0-sources.jar",
-      "archiveSha256": "f3889105be351907e2c0eb8257adc6d167ffcc28d2d385483baa6f4207664100"
+      "recipe": "source-notice-origins",
+      "profile": "jvm-sources"
     },
     {
       "path": "scripts/third-party-licenses/native-linux-ppc64le-1.23.0/source-notice-origins.json",
       "sha256": "094b4971accc154d941e5228545cda58abbb6113e3b80cf2998adfaa60908f09",
       "source": "https://repo.maven.apache.org/maven2/com/aayushatharva/brotli4j/native-linux-ppc64le/1.23.0/native-linux-ppc64le-1.23.0-sources.jar",
-      "archiveSha256": "34a0c42f2b8dd357ea36822efd530673816e0f851a552e5548ee0729dea0d8ab"
+      "recipe": "source-notice-origins",
+      "profile": "jvm-sources"
     },
     {
       "path": "scripts/third-party-licenses/native-linux-riscv64-1.23.0/source-notice-origins.json",
       "sha256": "5e090c26be872925ee0b65ec6b4d0f7413df3666779a75c58f54705d398b8a4f",
       "source": "https://repo.maven.apache.org/maven2/com/aayushatharva/brotli4j/native-linux-riscv64/1.23.0/native-linux-riscv64-1.23.0-sources.jar",
-      "archiveSha256": "acd056ef612661c05817960d326559ea4aaad5fc9b8961b56f468016a4dd2088"
+      "recipe": "source-notice-origins",
+      "profile": "jvm-sources"
     },
     {
       "path": "scripts/third-party-licenses/native-linux-s390x-1.23.0/source-notice-origins.json",
       "sha256": "7baccaf2261ee6b6acd45dee7efdc3281c77d0e6fa95feebab190e9c21b015e7",
       "source": "https://repo.maven.apache.org/maven2/com/aayushatharva/brotli4j/native-linux-s390x/1.23.0/native-linux-s390x-1.23.0-sources.jar",
-      "archiveSha256": "7e2370b6af8574c711b5a45da0649c16bb3d65c04ab403fb86d1a5c045f0cb18"
+      "recipe": "source-notice-origins",
+      "profile": "jvm-sources"
     },
     {
       "path": "scripts/third-party-licenses/native-linux-x86_64-1.23.0/source-notice-origins.json",
       "sha256": "581c9770d3f0b6243aa8351d41256592c5fe77b2c8321508fd4f591aff3fb823",
       "source": "https://repo.maven.apache.org/maven2/com/aayushatharva/brotli4j/native-linux-x86_64/1.23.0/native-linux-x86_64-1.23.0-sources.jar",
-      "archiveSha256": "7d1a630d2ed5310754d42d37094392859aed6441dba58f293f72e646a8199f55"
+      "recipe": "source-notice-origins",
+      "profile": "jvm-sources"
     },
     {
       "path": "scripts/third-party-licenses/native-osx-aarch64-1.23.0/source-notice-origins.json",
       "sha256": "e34dfd745f6eb83ce34318f0734f16a5f73b5b3a1e44e568e95b805d39282b5f",
       "source": "https://repo.maven.apache.org/maven2/com/aayushatharva/brotli4j/native-osx-aarch64/1.23.0/native-osx-aarch64-1.23.0-sources.jar",
-      "archiveSha256": "99cbe6d218b60f21cf6f46e7c0bc29281a1563d7171128209025ce5cca4d2630"
+      "recipe": "source-notice-origins",
+      "profile": "jvm-sources"
     },
     {
       "path": "scripts/third-party-licenses/native-osx-x86_64-1.23.0/source-notice-origins.json",
       "sha256": "bd455d00e68fc3164aba45a90a4723d8cac286825667d4719454ab2a1578df3a",
       "source": "https://repo.maven.apache.org/maven2/com/aayushatharva/brotli4j/native-osx-x86_64/1.23.0/native-osx-x86_64-1.23.0-sources.jar",
-      "archiveSha256": "8f490771ecc035734ce005211bd0416fd3e229cef8ea84f25a81f2905e65ba16"
+      "recipe": "source-notice-origins",
+      "profile": "jvm-sources"
     },
     {
       "path": "scripts/third-party-licenses/native-windows-aarch64-1.23.0/source-notice-origins.json",
       "sha256": "ee536db3a48743673f6f9dde8baee9c2de8053b69275aea62b385f70dce45475",
       "source": "https://repo.maven.apache.org/maven2/com/aayushatharva/brotli4j/native-windows-aarch64/1.23.0/native-windows-aarch64-1.23.0-sources.jar",
-      "archiveSha256": "83ec0971275985cf09dbfef7f6a772f91760cec839783f5a7b8892a433a77bfe"
+      "recipe": "source-notice-origins",
+      "profile": "jvm-sources"
     },
     {
       "path": "scripts/third-party-licenses/native-windows-x86_64-1.23.0/source-notice-origins.json",
       "sha256": "8da16fd1ccbb526347c8e67918341d3f9af825b7d2648651e4e096786a06aa97",
       "source": "https://repo.maven.apache.org/maven2/com/aayushatharva/brotli4j/native-windows-x86_64/1.23.0/native-windows-x86_64-1.23.0-sources.jar",
-      "archiveSha256": "996ac7378f6b467c6e336488cd3dd23ba0b203faf78505fb8f060afb9f43c1e2"
+      "recipe": "source-notice-origins",
+      "profile": "jvm-sources"
     },
     {
       "path": "scripts/third-party-licenses/service-1.23.0/source-notice-origins.json",
       "sha256": "260c00fcce27a48158d68d5930645b120b11a27bd4c6d9153247cca966ac824c",
       "source": "https://repo.maven.apache.org/maven2/com/aayushatharva/brotli4j/service/1.23.0/service-1.23.0-sources.jar",
-      "archiveSha256": "096da8d29f679e65b5d732089a71d7af758f55e4aec2a4735605702f0b85e9f9"
+      "recipe": "source-notice-origins",
+      "profile": "jvm-sources"
     },
     {
       "path": "scripts/third-party-licenses/zstd-jni-1.5.7-25/source-notices.txt",
       "sha256": "0f7b901e3687bc323df010c1e8f55ab1137da81054487d63e82f660e94830245",
       "source": "https://repo.maven.apache.org/maven2/com/github/luben/zstd-jni/1.5.7-25/zstd-jni-1.5.7-25-sources.jar",
-      "archiveSha256": "8edcb741c3eac427ff47ad80b170f0e87559797463151aedd0594a532178a307",
-      "extraction": "All copyright/license/attribution-bearing comment blocks throughout source entries, verbatim. Quoted string and character literals skipped. Origin entry and source line ranges precede each distinct block."
+      "recipe": "source-notices",
+      "profile": "jvm-sources"
     },
     {
       "path": "scripts/third-party-licenses/zstd-jni-1.5.7-25/source-notice-origins.json",
       "sha256": "4a14f5267f4554baed9deed8d998fa6ce8e6e418e68e86ab71f5820a302d8cb3",
       "source": "https://repo.maven.apache.org/maven2/com/github/luben/zstd-jni/1.5.7-25/zstd-jni-1.5.7-25-sources.jar",
-      "archiveSha256": "8edcb741c3eac427ff47ad80b170f0e87559797463151aedd0594a532178a307"
+      "recipe": "source-notice-origins",
+      "profile": "jvm-sources"
     },
     {
       "path": "scripts/third-party-licenses/jsr305-3.0.2/source-notice-origins.json",
       "sha256": "f234adba476fea772b9ff3ba617b9507525ce5bb1251131a11beec769aae77db",
       "source": "https://repo.maven.apache.org/maven2/com/google/code/findbugs/jsr305/3.0.2/jsr305-3.0.2-sources.jar",
-      "archiveSha256": "1c9e85e272d0708c6a591dc74828c71603053b48cc75ae83cce56912a2aa063b"
+      "recipe": "source-notice-origins",
+      "profile": "jvm-sources"
     },
     {
       "path": "scripts/third-party-licenses/gson-2.14.0/source-notice-origins.json",
       "sha256": "b3341e4314010f795bfc5f725ae163db89d0f7e630f1eb7c9fbe3fd1edf3760e",
       "source": "https://repo.maven.apache.org/maven2/com/google/code/gson/gson/2.14.0/gson-2.14.0-sources.jar",
-      "archiveSha256": "a4873f0ef88981cab520c3d7449cd89a68e605f15e9fe46e1aa2c77d5f87eb6f"
+      "recipe": "source-notice-origins",
+      "profile": "jvm-sources"
     },
     {
       "path": "scripts/third-party-licenses/error_prone_annotations-2.48.0/source-notice-origins.json",
       "sha256": "379fc022266a6246adc2a3630495cecff0b0169a85e3db3f44884f4afa51724c",
       "source": "https://repo.maven.apache.org/maven2/com/google/errorprone/error_prone_annotations/2.48.0/error_prone_annotations-2.48.0-sources.jar",
-      "archiveSha256": "5c1c7b797aa1effa050a06d2d98534a28750f5fa8bcca56d8f49a866ca8bd03f"
+      "recipe": "source-notice-origins",
+      "profile": "jvm-sources"
     },
     {
       "path": "scripts/third-party-licenses/opencsv-5.12.0/source-notice-origins.json",
       "sha256": "6d928fefcb112624a549e9f1bb2db59c5c5941ee4a08068a7bd4a4eceaa8020a",
       "source": "https://repo.maven.apache.org/maven2/com/opencsv/opencsv/5.12.0/opencsv-5.12.0-sources.jar",
-      "archiveSha256": "590bac981c873443361a8e063b46aa5ae9a7975f5709e464f3a3a9eb341934bc"
+      "recipe": "source-notice-origins",
+      "profile": "jvm-sources"
     },
     {
       "path": "scripts/third-party-licenses/opentelemetry-semconv-1.41.1/source-notice-origins.json",
       "sha256": "64fc38c127e22bdaaad6cfb7ebedb16ff782e263f71159bc8ababc4fcbda4d90",
       "source": "https://repo.maven.apache.org/maven2/io/opentelemetry/semconv/opentelemetry-semconv/1.41.1/opentelemetry-semconv-1.41.1-sources.jar",
-      "archiveSha256": "45f2c6a3c7ea4f21ea205b701a8b794e66e219fe3ecb04499fe64c341d4cfa9c"
+      "recipe": "source-notice-origins",
+      "profile": "jvm-sources"
     },
     {
       "path": "scripts/third-party-licenses/opentelemetry-api-1.66.0/source-notice-origins.json",
       "sha256": "9edd7e1ba59feb2be5074130ad83236f414a60a80ed0f51314fdf4cec9ccff33",
       "source": "https://repo.maven.apache.org/maven2/io/opentelemetry/opentelemetry-api/1.66.0/opentelemetry-api-1.66.0-sources.jar",
-      "archiveSha256": "8309e5950e8f06ca699b58e82bfa42df77bd8553bd9da9c778cba54057316b29"
+      "recipe": "source-notice-origins",
+      "profile": "jvm-sources"
     },
     {
       "path": "scripts/third-party-licenses/opentelemetry-common-1.66.0/source-notice-origins.json",
       "sha256": "50e62369fc5836e28ae7aa6b20963a4735e710e34c7166a490704061fbb6a7e5",
       "source": "https://repo.maven.apache.org/maven2/io/opentelemetry/opentelemetry-common/1.66.0/opentelemetry-common-1.66.0-sources.jar",
-      "archiveSha256": "d4be807f84c2f7cb8acc1f5ecca04ec0312453429946d26a33e331e1c94c3b36"
+      "recipe": "source-notice-origins",
+      "profile": "jvm-sources"
     },
     {
       "path": "scripts/third-party-licenses/opentelemetry-context-1.66.0/source-notice-origins.json",
       "sha256": "f39c9a929def15adb9a860b11e3b1bbd672d48f0cc795c9f4771c688a6238625",
       "source": "https://repo.maven.apache.org/maven2/io/opentelemetry/opentelemetry-context/1.66.0/opentelemetry-context-1.66.0-sources.jar",
-      "archiveSha256": "6d78432825359de3aa253e524fee3059dbbe70adf219c6abffa756924113c693"
+      "recipe": "source-notice-origins",
+      "profile": "jvm-sources"
     },
     {
       "path": "scripts/third-party-licenses/s2-geometry-library-java-1.0.0/source-notice-origins.json",
       "sha256": "1f69b51298b59c93c8ebb458485b8344f933be09a153f6e9bafbe52628311230",
       "source": "https://repo.maven.apache.org/maven2/io/sgr/s2-geometry-library-java/1.0.0/s2-geometry-library-java-1.0.0-sources.jar",
-      "archiveSha256": "6b557ea46083ee9caa25b6e87880acc01505c6a7b81b6c16ae06ee854f9b8932"
+      "recipe": "source-notice-origins",
+      "profile": "jvm-sources"
     },
     {
       "path": "scripts/third-party-licenses/commons-compiler-3.1.12/source-notice-origins.json",
       "sha256": "6afa1777ee8865e768f3290449add9c8b9abc7816c95464b0add730545a6d207",
       "source": "https://repo.maven.apache.org/maven2/org/codehaus/janino/commons-compiler/3.1.12/commons-compiler-3.1.12-sources.jar",
-      "archiveSha256": "894638a7d9d056dc07abf1390169fb8f515dbb74fda66447424c4a921d21eb11"
+      "recipe": "source-notice-origins",
+      "profile": "jvm-sources"
     },
     {
       "path": "scripts/third-party-licenses/janino-3.1.12/source-notice-origins.json",
       "sha256": "d29ea2da1455c91cc54844c140a247573088871ef711293a9f18d3bddb77e4da",
       "source": "https://repo.maven.apache.org/maven2/org/codehaus/janino/janino/3.1.12/janino-3.1.12-sources.jar",
-      "archiveSha256": "4f4f79b38f4ebe206ba213ce6a1de248ca6fa9b8abfb0fc79de48ac0e714bf6a"
+      "recipe": "source-notice-origins",
+      "profile": "jvm-sources"
     },
     {
       "path": "scripts/third-party-licenses/kotlin-stdlib-1.9.25/source-notice-origins.json",
       "sha256": "5c00182f065729244b7df212a4364c4018e0a06724286acdaf78d5b57a414097",
       "source": "https://repo.maven.apache.org/maven2/org/jetbrains/kotlin/kotlin-stdlib/1.9.25/kotlin-stdlib-1.9.25-sources.jar",
-      "archiveSha256": "1745faecebad150a45b5ddf63b29577693a27133bb3ef2126704230af8e5ea6a"
+      "recipe": "source-notice-origins",
+      "profile": "jvm-sources"
     },
     {
       "path": "scripts/third-party-licenses/annotations-26.1.0/source-notice-origins.json",
       "sha256": "91246a9d6698fc86121298187e2bc8a4920b31c6102efe1366742b7d1978e1f9",
       "source": "https://repo.maven.apache.org/maven2/org/jetbrains/annotations/26.1.0/annotations-26.1.0-sources.jar",
-      "archiveSha256": "736d7e0e4bd95570ec8856cacffa3c34eb78ad8e45ca78c5df610d7347963b53"
+      "recipe": "source-notice-origins",
+      "profile": "jvm-sources"
     },
     {
       "path": "scripts/third-party-licenses/jspecify-1.0.0/source-notice-origins.json",
       "sha256": "d03f2bb149416632f096806a913be0eb7c8037fcdd7740c16346093b99843bb2",
       "source": "https://repo.maven.apache.org/maven2/org/jspecify/jspecify/1.0.0/jspecify-1.0.0-sources.jar",
-      "archiveSha256": "adf0898191d55937fb3192ba971826f4f294292c4a960740f3c27310e7b70296"
+      "recipe": "source-notice-origins",
+      "profile": "jvm-sources"
     },
     {
       "path": "scripts/third-party-licenses/jts-core-1.20.0/source-notice-origins.json",
       "sha256": "8c74e40201fe11cd508f74be1f6f1689881a275e0e7ccc68069a643ab6d5c17b",
       "source": "https://repo.maven.apache.org/maven2/org/locationtech/jts/jts-core/1.20.0/jts-core-1.20.0-sources.jar",
-      "archiveSha256": "55f040f7eba9f0c3312a26edbe5ae85debe01865a274fdd49c11df1b02a91f7f"
+      "recipe": "source-notice-origins",
+      "profile": "jvm-sources"
     },
     {
       "path": "scripts/third-party-licenses/spatial4j-0.8/source-notice-origins.json",
       "sha256": "5c7f483c422b3ac9099030910180e03b5b8f0dbe0e07f7215dc2064fcf183218",
       "source": "https://repo.maven.apache.org/maven2/org/locationtech/spatial4j/spatial4j/0.8/spatial4j-0.8-sources.jar",
-      "archiveSha256": "a16c3b206e2843e6093f8657e232efc6c6ce7c92d15d77caade2ec348454e77e"
+      "recipe": "source-notice-origins",
+      "profile": "jvm-sources"
     },
     {
       "path": "scripts/third-party-licenses/lwjgl-lmdb-3.4.2/source-notice-origins.json",
       "sha256": "d8a05ef99275143ee86b32c29c7abbcdf20dee48fc23346c4a1d66330d2e7b17",
       "source": "https://repo.maven.apache.org/maven2/org/lwjgl/lwjgl-lmdb/3.4.2/lwjgl-lmdb-3.4.2-sources.jar",
-      "archiveSha256": "7a1c16a9dbf447d7e7c9cf5be94a7b5aecde4bf46beed612068f9e978e974a3f"
+      "recipe": "source-notice-origins",
+      "profile": "jvm-sources"
     },
     {
       "path": "scripts/third-party-licenses/lwjgl-3.4.2/source-notice-origins.json",
       "sha256": "91b62d400c0b6cf632c20de2b40b085a9e1da3478c2bab5d19c11f8cfb1277b8",
       "source": "https://repo.maven.apache.org/maven2/org/lwjgl/lwjgl/3.4.2/lwjgl-3.4.2-sources.jar",
-      "archiveSha256": "cd8fe9c56b14a88ce35bf8a45373f4a8925caee36a46bf68a968e36c04379968"
+      "recipe": "source-notice-origins",
+      "profile": "jvm-sources"
     },
     {
       "path": "scripts/third-party-licenses/elsa-3.0.0-M5/source-notice-origins.json",
       "sha256": "df1877e7f4ad5bc179a9347f828c7fa8782ebd1d3c9c4c48d2cc7935762254c4",
       "source": "https://repo.maven.apache.org/maven2/org/mapdb/elsa/3.0.0-M5/elsa-3.0.0-M5-sources.jar",
-      "archiveSha256": "06b83f9f972d2c1e4dd12e6d165a189a63713066fefc23607df0402876f1cc23"
+      "recipe": "source-notice-origins",
+      "profile": "jvm-sources"
     },
     {
       "path": "scripts/third-party-licenses/mapdb-3.1.0/source-notice-origins.json",
       "sha256": "d503240c1e3aafde52766e28d8d321f9259610b86242dc29345b2137a4760c50",
       "source": "https://repo.maven.apache.org/maven2/org/mapdb/mapdb/3.1.0/mapdb-3.1.0-sources.jar",
-      "archiveSha256": "51b497e1db31797680f50ec2b4b66bd771e4ac1f8ff1750a2b45625c18779c50"
+      "recipe": "source-notice-origins",
+      "profile": "jvm-sources"
     },
     {
       "path": "scripts/third-party-licenses/xz-1.12/source-notice-origins.json",
       "sha256": "7e59b7c79d1254329fe098fde97ab7467cdecf56f930146c2b0c40de21b40f42",
       "source": "https://repo.maven.apache.org/maven2/org/tukaani/xz/1.12/xz-1.12-sources.jar",
-      "archiveSha256": "c35c682fa8b617c1f6f21270df14bad4e11df2fe46962dfe45e765b7aec0181b"
+      "recipe": "source-notice-origins",
+      "profile": "jvm-sources"
     },
     {
       "path": "scripts/third-party-licenses/native/lz4-wrapper--.gitmodules",
@@ -948,8 +1232,9 @@
       "path": "scripts/third-party-licenses/native/lz4-native--lib__lz4.h-license.txt",
       "sha256": "4af8f46e6ad8dd7302e81bae55f9f5483c862c972d3544c1811984d9dc5747b0",
       "source": "https://raw.githubusercontent.com/lz4/lz4/ebb370ca83af193212df4dcbadcc5d87bc0de2f0/lib/lz4.h",
-      "sourceFileSha256": "26b82efc53d1570f3b54eef02e9c4764c1ad374ff03cac04e2ced5ea4d4c552f",
-      "extraction": "Complete opening copyright and license comment, verbatim."
+      "recipe": "leading-comment",
+      "trailingNewline": true,
+      "sourceFileSha256": "26b82efc53d1570f3b54eef02e9c4764c1ad374ff03cac04e2ced5ea4d4c552f"
     },
     {
       "path": "scripts/third-party-licenses/native/lz4-native--lib__xxhash.h",
@@ -960,8 +1245,9 @@
       "path": "scripts/third-party-licenses/native/lz4-native--lib__xxhash.h-license.txt",
       "sha256": "07ab483e553e0d2e5e03480127bce6d80db2d94a8411171785c875affc5cdfa9",
       "source": "https://raw.githubusercontent.com/lz4/lz4/ebb370ca83af193212df4dcbadcc5d87bc0de2f0/lib/xxhash.h",
-      "sourceFileSha256": "aefdd236f35130495c18764cabed3f7b216906855fc5e6a9025cd2040bc84444",
-      "extraction": "Complete opening copyright and license comment, verbatim."
+      "recipe": "leading-comment",
+      "trailingNewline": true,
+      "sourceFileSha256": "aefdd236f35130495c18764cabed3f7b216906855fc5e6a9025cd2040bc84444"
     },
     {
       "path": "scripts/third-party-licenses/native/lz4-native--lib__xxhash.c",
@@ -972,13 +1258,15 @@
       "path": "scripts/third-party-licenses/native/lz4-native--lib__xxhash.c-license.txt",
       "sha256": "df5443d0097b2fa47b0e6f2f0b3f42271b40705f5a6f2d14bf3d1c7bcb325c9b",
       "source": "https://raw.githubusercontent.com/lz4/lz4/ebb370ca83af193212df4dcbadcc5d87bc0de2f0/lib/xxhash.c",
-      "sourceFileSha256": "b667033dc735fb5ea5648e0a61a2e065e5ef5bbda53669730063bd856c643c48",
-      "extraction": "Complete opening copyright and license comment, verbatim."
+      "recipe": "leading-comment",
+      "trailingNewline": true,
+      "sourceFileSha256": "b667033dc735fb5ea5648e0a61a2e065e5ef5bbda53669730063bd856c643c48"
     },
     {
       "path": "scripts/third-party-licenses/native/lz4-release-tree.json",
       "sha256": "9d7998bc7def62ee284b8eb70e73dad31be4df365d7e6e4e9800d32337dc1d09",
-      "source": "https://api.github.com/repos/yawkat/lz4-java/git/trees/v1.11.4?recursive=1"
+      "source": "https://api.github.com/repos/yawkat/lz4-java/git/trees/v1.11.4?recursive=1",
+      "recipe": "normalized-json"
     },
     {
       "path": "scripts/third-party-licenses/emscripten-6.0.10/LICENSE",
@@ -1049,263 +1337,64 @@
     {
       "path": "scripts/third-party-licenses/graphviz-16.1.0/source-notices.txt",
       "sha256": "03c530b8af43d4a7c44e5c6d244b5221a3dfb046eb6e59a2b04f50c9c0acc8a7",
-      "source": "https://gitlab.com/api/v4/projects/4207231/packages/generic/graphviz-releases/16.1.0/graphviz-16.1.0.tar.gz"
+      "source": "https://gitlab.com/api/v4/projects/4207231/packages/generic/graphviz-releases/16.1.0/graphviz-16.1.0.tar.gz",
+      "recipe": "source-notices",
+      "profile": "c-library-sources"
     },
     {
       "path": "scripts/third-party-licenses/graphviz-16.1.0/source-notice-origins.json",
       "sha256": "db7bb212bbcddab20b4a8366ac679a38fe038b6af04796dabe69c68f4d38bcc4",
-      "source": "https://gitlab.com/api/v4/projects/4207231/packages/generic/graphviz-releases/16.1.0/graphviz-16.1.0.tar.gz"
+      "source": "https://gitlab.com/api/v4/projects/4207231/packages/generic/graphviz-releases/16.1.0/graphviz-16.1.0.tar.gz",
+      "recipe": "source-notice-origins",
+      "profile": "c-library-sources"
     },
     {
       "path": "scripts/third-party-licenses/expat-2.8.5/source-notices.txt",
       "sha256": "12f0b27a29db5acbf762cf2e2b4ad531d28d844698a031081d2db3209798a20e",
-      "source": "https://github.com/libexpat/libexpat/releases/download/R_2_8_5/expat-2.8.5.tar.gz"
+      "source": "https://github.com/libexpat/libexpat/releases/download/R_2_8_5/expat-2.8.5.tar.gz",
+      "recipe": "source-notices",
+      "profile": "c-library-sources"
     },
     {
       "path": "scripts/third-party-licenses/expat-2.8.5/source-notice-origins.json",
       "sha256": "255ee49642948e23ed8774ca6e267d3263e0b22c7dba4f2282c2a1dedf91a495",
-      "source": "https://github.com/libexpat/libexpat/releases/download/R_2_8_5/expat-2.8.5.tar.gz"
+      "source": "https://github.com/libexpat/libexpat/releases/download/R_2_8_5/expat-2.8.5.tar.gz",
+      "recipe": "source-notice-origins",
+      "profile": "c-library-sources"
     },
     {
       "path": "scripts/third-party-licenses/emscripten-6.0.10/runtime-evidence.json",
       "sha256": "233af8cc50c5815f4b5f685439840813b125f4531d66e2db83ec53e10adaa569",
-      "source": "https://raw.githubusercontent.com/mdaines/viz-js/c8ce050d28eb0dc1ed1629ea32ab7f3dc117db0f/packages/viz/backend/Dockerfile"
-    }
-  ],
-  "sourceArtifacts": [
-    {
-      "id": "maven:at.yawk.lz4:lz4-java:1.11.4",
-      "url": "https://repo.maven.apache.org/maven2/at/yawk/lz4/lz4-java/1.11.4/lz4-java-1.11.4-sources.jar",
-      "sha256": "e32b2809f070317520b6ebdbca730b8bf2c24b900265c702cd18f3f0bdd532b7",
-      "files": []
-    },
-    {
-      "id": "maven:ch.qos.logback:logback-classic:1.6.6",
-      "url": "https://repo.maven.apache.org/maven2/ch/qos/logback/logback-classic/1.6.6/logback-classic-1.6.6-sources.jar",
-      "sha256": "e3a8a1a00701c54f0b23c2c1427c307e9481da6c0696a7abf3a38a77322288d0",
-      "files": []
-    },
-    {
-      "id": "maven:ch.qos.logback:logback-core:1.6.6",
-      "url": "https://repo.maven.apache.org/maven2/ch/qos/logback/logback-core/1.6.6/logback-core-1.6.6-sources.jar",
-      "sha256": "2da2e76aa79f98770ffba58311b495e0e710b8bc6f46504249d039262668fe96",
-      "files": []
-    },
-    {
-      "id": "maven:com.aayushatharva.brotli4j:brotli4j:1.23.0",
-      "url": "https://repo.maven.apache.org/maven2/com/aayushatharva/brotli4j/brotli4j/1.23.0/brotli4j-1.23.0-sources.jar",
-      "sha256": "3da6a63af5d5bf06ef24576cc5728b60892d8b551f2490eb1f219a441b3655a0",
-      "files": []
-    },
-    {
-      "id": "maven:com.aayushatharva.brotli4j:native-linux-aarch64:1.23.0",
-      "url": "https://repo.maven.apache.org/maven2/com/aayushatharva/brotli4j/native-linux-aarch64/1.23.0/native-linux-aarch64-1.23.0-sources.jar",
-      "sha256": "62757ab416e46147f3c0847278b1c3507ab771e60a51e4984a1bf959931b1d92",
-      "files": []
-    },
-    {
-      "id": "maven:com.aayushatharva.brotli4j:native-linux-armv7:1.23.0",
-      "url": "https://repo.maven.apache.org/maven2/com/aayushatharva/brotli4j/native-linux-armv7/1.23.0/native-linux-armv7-1.23.0-sources.jar",
-      "sha256": "f3889105be351907e2c0eb8257adc6d167ffcc28d2d385483baa6f4207664100",
-      "files": []
-    },
-    {
-      "id": "maven:com.aayushatharva.brotli4j:native-linux-ppc64le:1.23.0",
-      "url": "https://repo.maven.apache.org/maven2/com/aayushatharva/brotli4j/native-linux-ppc64le/1.23.0/native-linux-ppc64le-1.23.0-sources.jar",
-      "sha256": "34a0c42f2b8dd357ea36822efd530673816e0f851a552e5548ee0729dea0d8ab",
-      "files": []
-    },
-    {
-      "id": "maven:com.aayushatharva.brotli4j:native-linux-riscv64:1.23.0",
-      "url": "https://repo.maven.apache.org/maven2/com/aayushatharva/brotli4j/native-linux-riscv64/1.23.0/native-linux-riscv64-1.23.0-sources.jar",
-      "sha256": "acd056ef612661c05817960d326559ea4aaad5fc9b8961b56f468016a4dd2088",
-      "files": []
-    },
-    {
-      "id": "maven:com.aayushatharva.brotli4j:native-linux-s390x:1.23.0",
-      "url": "https://repo.maven.apache.org/maven2/com/aayushatharva/brotli4j/native-linux-s390x/1.23.0/native-linux-s390x-1.23.0-sources.jar",
-      "sha256": "7e2370b6af8574c711b5a45da0649c16bb3d65c04ab403fb86d1a5c045f0cb18",
-      "files": []
-    },
-    {
-      "id": "maven:com.aayushatharva.brotli4j:native-linux-x86_64:1.23.0",
-      "url": "https://repo.maven.apache.org/maven2/com/aayushatharva/brotli4j/native-linux-x86_64/1.23.0/native-linux-x86_64-1.23.0-sources.jar",
-      "sha256": "7d1a630d2ed5310754d42d37094392859aed6441dba58f293f72e646a8199f55",
-      "files": []
-    },
-    {
-      "id": "maven:com.aayushatharva.brotli4j:native-osx-aarch64:1.23.0",
-      "url": "https://repo.maven.apache.org/maven2/com/aayushatharva/brotli4j/native-osx-aarch64/1.23.0/native-osx-aarch64-1.23.0-sources.jar",
-      "sha256": "99cbe6d218b60f21cf6f46e7c0bc29281a1563d7171128209025ce5cca4d2630",
-      "files": []
-    },
-    {
-      "id": "maven:com.aayushatharva.brotli4j:native-osx-x86_64:1.23.0",
-      "url": "https://repo.maven.apache.org/maven2/com/aayushatharva/brotli4j/native-osx-x86_64/1.23.0/native-osx-x86_64-1.23.0-sources.jar",
-      "sha256": "8f490771ecc035734ce005211bd0416fd3e229cef8ea84f25a81f2905e65ba16",
-      "files": []
-    },
-    {
-      "id": "maven:com.aayushatharva.brotli4j:native-windows-aarch64:1.23.0",
-      "url": "https://repo.maven.apache.org/maven2/com/aayushatharva/brotli4j/native-windows-aarch64/1.23.0/native-windows-aarch64-1.23.0-sources.jar",
-      "sha256": "83ec0971275985cf09dbfef7f6a772f91760cec839783f5a7b8892a433a77bfe",
-      "files": []
-    },
-    {
-      "id": "maven:com.aayushatharva.brotli4j:native-windows-x86_64:1.23.0",
-      "url": "https://repo.maven.apache.org/maven2/com/aayushatharva/brotli4j/native-windows-x86_64/1.23.0/native-windows-x86_64-1.23.0-sources.jar",
-      "sha256": "996ac7378f6b467c6e336488cd3dd23ba0b203faf78505fb8f060afb9f43c1e2",
-      "files": []
-    },
-    {
-      "id": "maven:com.aayushatharva.brotli4j:service:1.23.0",
-      "url": "https://repo.maven.apache.org/maven2/com/aayushatharva/brotli4j/service/1.23.0/service-1.23.0-sources.jar",
-      "sha256": "096da8d29f679e65b5d732089a71d7af758f55e4aec2a4735605702f0b85e9f9",
-      "files": []
-    },
-    {
-      "id": "maven:com.github.luben:zstd-jni:1.5.7-25",
-      "url": "https://repo.maven.apache.org/maven2/com/github/luben/zstd-jni/1.5.7-25/zstd-jni-1.5.7-25-sources.jar",
-      "sha256": "8edcb741c3eac427ff47ad80b170f0e87559797463151aedd0594a532178a307",
-      "files": []
-    },
-    {
-      "id": "maven:com.google.code.findbugs:jsr305:3.0.2",
-      "url": "https://repo.maven.apache.org/maven2/com/google/code/findbugs/jsr305/3.0.2/jsr305-3.0.2-sources.jar",
-      "sha256": "1c9e85e272d0708c6a591dc74828c71603053b48cc75ae83cce56912a2aa063b",
-      "files": []
-    },
-    {
-      "id": "maven:com.google.code.gson:gson:2.14.0",
-      "url": "https://repo.maven.apache.org/maven2/com/google/code/gson/gson/2.14.0/gson-2.14.0-sources.jar",
-      "sha256": "a4873f0ef88981cab520c3d7449cd89a68e605f15e9fe46e1aa2c77d5f87eb6f",
-      "files": []
-    },
-    {
-      "id": "maven:com.google.errorprone:error_prone_annotations:2.48.0",
-      "url": "https://repo.maven.apache.org/maven2/com/google/errorprone/error_prone_annotations/2.48.0/error_prone_annotations-2.48.0-sources.jar",
-      "sha256": "5c1c7b797aa1effa050a06d2d98534a28750f5fa8bcca56d8f49a866ca8bd03f",
-      "files": []
-    },
-    {
-      "id": "maven:com.opencsv:opencsv:5.12.0",
-      "url": "https://repo.maven.apache.org/maven2/com/opencsv/opencsv/5.12.0/opencsv-5.12.0-sources.jar",
-      "sha256": "590bac981c873443361a8e063b46aa5ae9a7975f5709e464f3a3a9eb341934bc",
-      "files": []
-    },
-    {
-      "id": "maven:io.opentelemetry.semconv:opentelemetry-semconv:1.41.1",
-      "url": "https://repo.maven.apache.org/maven2/io/opentelemetry/semconv/opentelemetry-semconv/1.41.1/opentelemetry-semconv-1.41.1-sources.jar",
-      "sha256": "45f2c6a3c7ea4f21ea205b701a8b794e66e219fe3ecb04499fe64c341d4cfa9c",
-      "files": []
-    },
-    {
-      "id": "maven:io.opentelemetry:opentelemetry-api:1.66.0",
-      "url": "https://repo.maven.apache.org/maven2/io/opentelemetry/opentelemetry-api/1.66.0/opentelemetry-api-1.66.0-sources.jar",
-      "sha256": "8309e5950e8f06ca699b58e82bfa42df77bd8553bd9da9c778cba54057316b29",
-      "files": []
-    },
-    {
-      "id": "maven:io.opentelemetry:opentelemetry-common:1.66.0",
-      "url": "https://repo.maven.apache.org/maven2/io/opentelemetry/opentelemetry-common/1.66.0/opentelemetry-common-1.66.0-sources.jar",
-      "sha256": "d4be807f84c2f7cb8acc1f5ecca04ec0312453429946d26a33e331e1c94c3b36",
-      "files": []
-    },
-    {
-      "id": "maven:io.opentelemetry:opentelemetry-context:1.66.0",
-      "url": "https://repo.maven.apache.org/maven2/io/opentelemetry/opentelemetry-context/1.66.0/opentelemetry-context-1.66.0-sources.jar",
-      "sha256": "6d78432825359de3aa253e524fee3059dbbe70adf219c6abffa756924113c693",
-      "files": []
-    },
-    {
-      "id": "maven:io.sgr:s2-geometry-library-java:1.0.0",
-      "url": "https://repo.maven.apache.org/maven2/io/sgr/s2-geometry-library-java/1.0.0/s2-geometry-library-java-1.0.0-sources.jar",
-      "sha256": "6b557ea46083ee9caa25b6e87880acc01505c6a7b81b6c16ae06ee854f9b8932",
-      "files": []
-    },
-    {
-      "id": "maven:org.codehaus.janino:commons-compiler:3.1.12",
-      "url": "https://repo.maven.apache.org/maven2/org/codehaus/janino/commons-compiler/3.1.12/commons-compiler-3.1.12-sources.jar",
-      "sha256": "894638a7d9d056dc07abf1390169fb8f515dbb74fda66447424c4a921d21eb11",
-      "files": []
-    },
-    {
-      "id": "maven:org.codehaus.janino:janino:3.1.12",
-      "url": "https://repo.maven.apache.org/maven2/org/codehaus/janino/janino/3.1.12/janino-3.1.12-sources.jar",
-      "sha256": "4f4f79b38f4ebe206ba213ce6a1de248ca6fa9b8abfb0fc79de48ac0e714bf6a",
-      "files": []
-    },
-    {
-      "id": "maven:org.jetbrains.kotlin:kotlin-stdlib:1.9.25",
-      "url": "https://repo.maven.apache.org/maven2/org/jetbrains/kotlin/kotlin-stdlib/1.9.25/kotlin-stdlib-1.9.25-sources.jar",
-      "sha256": "1745faecebad150a45b5ddf63b29577693a27133bb3ef2126704230af8e5ea6a",
-      "files": []
-    },
-    {
-      "id": "maven:org.jetbrains:annotations:26.1.0",
-      "url": "https://repo.maven.apache.org/maven2/org/jetbrains/annotations/26.1.0/annotations-26.1.0-sources.jar",
-      "sha256": "736d7e0e4bd95570ec8856cacffa3c34eb78ad8e45ca78c5df610d7347963b53",
-      "files": []
-    },
-    {
-      "id": "maven:org.jspecify:jspecify:1.0.0",
-      "url": "https://repo.maven.apache.org/maven2/org/jspecify/jspecify/1.0.0/jspecify-1.0.0-sources.jar",
-      "sha256": "adf0898191d55937fb3192ba971826f4f294292c4a960740f3c27310e7b70296",
-      "files": []
-    },
-    {
-      "id": "maven:org.locationtech.jts:jts-core:1.20.0",
-      "url": "https://repo.maven.apache.org/maven2/org/locationtech/jts/jts-core/1.20.0/jts-core-1.20.0-sources.jar",
-      "sha256": "55f040f7eba9f0c3312a26edbe5ae85debe01865a274fdd49c11df1b02a91f7f",
-      "files": []
-    },
-    {
-      "id": "maven:org.locationtech.spatial4j:spatial4j:0.8",
-      "url": "https://repo.maven.apache.org/maven2/org/locationtech/spatial4j/spatial4j/0.8/spatial4j-0.8-sources.jar",
-      "sha256": "a16c3b206e2843e6093f8657e232efc6c6ce7c92d15d77caade2ec348454e77e",
-      "files": []
-    },
-    {
-      "id": "maven:org.lwjgl:lwjgl-lmdb:3.4.2",
-      "url": "https://repo.maven.apache.org/maven2/org/lwjgl/lwjgl-lmdb/3.4.2/lwjgl-lmdb-3.4.2-sources.jar",
-      "sha256": "7a1c16a9dbf447d7e7c9cf5be94a7b5aecde4bf46beed612068f9e978e974a3f",
-      "files": []
-    },
-    {
-      "id": "maven:org.lwjgl:lwjgl:3.4.2",
-      "url": "https://repo.maven.apache.org/maven2/org/lwjgl/lwjgl/3.4.2/lwjgl-3.4.2-sources.jar",
-      "sha256": "cd8fe9c56b14a88ce35bf8a45373f4a8925caee36a46bf68a968e36c04379968",
-      "files": []
-    },
-    {
-      "id": "maven:org.mapdb:elsa:3.0.0-M5",
-      "url": "https://repo.maven.apache.org/maven2/org/mapdb/elsa/3.0.0-M5/elsa-3.0.0-M5-sources.jar",
-      "sha256": "06b83f9f972d2c1e4dd12e6d165a189a63713066fefc23607df0402876f1cc23",
-      "files": []
-    },
-    {
-      "id": "maven:org.mapdb:mapdb:3.1.0",
-      "url": "https://repo.maven.apache.org/maven2/org/mapdb/mapdb/3.1.0/mapdb-3.1.0-sources.jar",
-      "sha256": "51b497e1db31797680f50ec2b4b66bd771e4ac1f8ff1750a2b45625c18779c50",
-      "files": []
-    },
-    {
-      "id": "maven:org.tukaani:xz:1.12",
-      "url": "https://repo.maven.apache.org/maven2/org/tukaani/xz/1.12/xz-1.12-sources.jar",
-      "sha256": "c35c682fa8b617c1f6f21270df14bad4e11df2fe46962dfe45e765b7aec0181b",
-      "files": []
-    },
-    {
-      "key": "expat",
-      "url": "https://github.com/libexpat/libexpat/releases/download/R_2_8_5/expat-2.8.5.tar.gz",
-      "sha256": "920dde485e15eda0cce8d2310b41d492c534e5e3d89ad407a0b4176dd2ff88fe",
-      "size": 838183
-    },
-    {
-      "key": "graphviz",
-      "url": "https://gitlab.com/api/v4/projects/4207231/packages/generic/graphviz-releases/16.1.0/graphviz-16.1.0.tar.gz",
-      "sha256": "beea483ab130f456c1c3905f4f2e40778a9c493c3d73ae8012367d552d71ca84",
-      "size": 26846071
+      "source": "https://raw.githubusercontent.com/mdaines/viz-js/c8ce050d28eb0dc1ed1629ea32ab7f3dc117db0f/packages/viz/backend/Dockerfile",
+      "recipe": "inline-json",
+      "content": {
+        "scope": "Observed Emscripten JS support and libc++abi in the shipped Viz backend. The exact per-object C/C++ runtime link map is unavailable. Additional runtime license texts are reference evidence, not an assertion that every listed runtime library was linked.",
+        "containingPackage": "@viz-js/viz@3.31.0",
+        "backendSha256": "881b3c3dc511a38c90f1df16983776d7cdfd9f6900544b3a184289ff062aaafe",
+        "provenanceSha256": "1460f3745ba300377ba738fee8c3f7faf547455190e509490d110c4f69ee7379",
+        "packageProvenanceSubjectMatches": true,
+        "buildRecipe": "https://raw.githubusercontent.com/mdaines/viz-js/c8ce050d28eb0dc1ed1629ea32ab7f3dc117db0f/packages/viz/backend/Dockerfile",
+        "declaredToolchain": "emscripten/emsdk:6.0.10",
+        "declaredToolchainImageDigest": "sha256:e077d54e2b8970575ebc4f185ac1de0b95c05f2b266134d4ba27449af7aebf65",
+        "observedEmbeddedSourcePath": "/emsdk/emscripten/system/lib/libcxxabi/src/private_typeinfo.cpp",
+        "observedEmbeddedSourcePathPresent": true,
+        "referenceRuntimeLibraries": [
+          "musl libc",
+          "libc++",
+          "libc++abi",
+          "compiler-rt",
+          "libunwind"
+        ],
+        "sourceArchiveMatches": {
+          "graphviz": {
+            "sha256": "beea483ab130f456c1c3905f4f2e40778a9c493c3d73ae8012367d552d71ca84"
+          },
+          "expat": {
+            "sha256": "920dde485e15eda0cce8d2310b41d492c534e5e3d89ad407a0b4176dd2ff88fe"
+          }
+        },
+        "confidence": "Publisher-supplied provenance matches the delivered bytes and source archives. This is not independent signature authentication or a reproduced build."
+      }
     }
   ]
 }
