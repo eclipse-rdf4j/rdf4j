@@ -30,9 +30,11 @@ import java.util.function.UnaryOperator;
 
 import org.eclipse.rdf4j.collection.factory.api.CollectionFactory;
 import org.eclipse.rdf4j.collection.factory.impl.DefaultCollectionFactory;
+import org.eclipse.rdf4j.common.iteration.AbstractCloseableIteration;
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.common.iteration.ConvertingIteration;
 import org.eclipse.rdf4j.common.iteration.CooperativeCancellation;
+import org.eclipse.rdf4j.common.iteration.DistinctIteration;
 import org.eclipse.rdf4j.common.iteration.IndexReportingIterator;
 import org.eclipse.rdf4j.common.iteration.IterationWrapper;
 import org.eclipse.rdf4j.common.iteration.LookAheadIteration;
@@ -151,7 +153,6 @@ import org.eclipse.rdf4j.query.algebra.evaluation.function.TupleFunctionRegistry
 import org.eclipse.rdf4j.query.algebra.evaluation.function.datetime.Now;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.evaluationsteps.AdaptiveFilterEvaluationStep;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.evaluationsteps.BindingSetAssignmentQueryEvaluationStep;
-import org.eclipse.rdf4j.query.algebra.evaluation.impl.evaluationsteps.DistinctQueryEvaluationStep;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.evaluationsteps.EncodedTripleTermQueryEvaluationStep;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.evaluationsteps.GraphQueryEvaluationStep;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.evaluationsteps.IntersectionQueryEvaluationStep;
@@ -1313,24 +1314,135 @@ public class DefaultEvaluationStrategy implements EvaluationStrategy, FederatedS
 
 	protected QueryEvaluationStep prepare(Distinct node, QueryEvaluationContext context)
 			throws QueryEvaluationException {
-		return prepareDistinct(node, context, precompile(node.getArg(), context), null, null);
+		return prepareDistinct(node, context, precompile(node.getArg(), context), null);
 	}
 
+	/** A partitioned step must have a grouping proof for ordinary evaluation with no incoming bindings. */
 	protected final QueryEvaluationStep prepareDistinct(Distinct node, QueryEvaluationContext context,
-			QueryEvaluationStep child, Function<BindingSet, Value> partition,
-			Function<Value, Value> snapshotPartition) {
-		Supplier<CollectionFactory> collections = () -> getCollectionFactory().get();
-		QueryEvaluationStep standard = DistinctQueryEvaluationStep.supply(child, collections, partition,
-				snapshotPartition);
-		// Only the ordinary input has a partition-order proof. A restriction probe can expose rows in another order.
+			QueryEvaluationStep child, QueryEvaluationStep partitioned) {
+		QueryEvaluationStep global = bindings -> distinct(() -> child.evaluate(bindings));
+		QueryEvaluationStep standard = partitioned == null ? global
+				: bindings -> (bindings.isEmpty() ? partitioned : global).evaluate(bindings);
+		// A restriction probe may visit the same rows in a different order.
 		return RestrictionCompiler.enabled(this, context)
 				? RestrictionCompiler.attach(standard,
 						RestrictionCompiler.unary("distinct/original-domains", node, context, child,
-								Function.identity(),
-								(input, cursor) -> DistinctQueryEvaluationStep
-										.supply(ignored -> cursor, collections, null, null)
-										.evaluate(input)))
+								Function.identity(), (input, cursor) -> distinct(() -> cursor)))
 				: standard;
+	}
+
+	private CloseableIteration<BindingSet> distinct(Supplier<CloseableIteration<BindingSet>> input) {
+		final CollectionFactory cf = this.getCollectionFactory().get();
+		CloseableIteration<BindingSet> evaluate = null;
+		try {
+			evaluate = input.get();
+			ConvertingIteration<BindingSet, DistinctBindingSetKey> keys = new ConvertingIteration<>(evaluate) {
+				@Override
+				protected DistinctBindingSetKey convert(BindingSet sourceObject) {
+					return new DistinctBindingSetKey(sourceObject);
+				}
+			};
+			DistinctIteration<DistinctBindingSetKey> distinct = new DistinctIteration<>(keys, cf.createSet());
+			final class DistinctResult extends AbstractCloseableIteration<BindingSet>
+					implements CooperativeCancellation {
+				@Override
+				public boolean hasNext() {
+					if (isClosed()) {
+						return false;
+					}
+					try {
+						boolean hasNext = distinct.hasNext();
+						if (!hasNext) {
+							close();
+						}
+						return hasNext;
+					} catch (RuntimeException | Error failure) {
+						closeOnFailure(failure);
+						throw failure;
+					}
+				}
+
+				@Override
+				public BindingSet next() {
+					try {
+						return distinct.next().bindings();
+					} catch (RuntimeException | Error failure) {
+						closeOnFailure(failure);
+						throw failure;
+					}
+				}
+
+				@Override
+				public void remove() {
+					try {
+						distinct.remove();
+					} catch (RuntimeException | Error failure) {
+						closeOnFailure(failure);
+						throw failure;
+					}
+				}
+
+				@Override
+				protected void handleClose() {
+					Throwable failure = null;
+					try {
+						distinct.close();
+					} catch (RuntimeException | Error closeFailure) {
+						failure = closeFailure;
+					}
+					try {
+						cf.close();
+					} catch (RuntimeException | Error closeFailure) {
+						if (failure == null) {
+							failure = closeFailure;
+						} else if (failure != closeFailure) {
+							failure.addSuppressed(closeFailure);
+						}
+					}
+					if (failure instanceof RuntimeException runtimeFailure) {
+						throw runtimeFailure;
+					}
+					if (failure instanceof Error errorFailure) {
+						throw errorFailure;
+					}
+				}
+
+				private void closeOnFailure(Throwable failure) {
+					try {
+						close();
+					} catch (RuntimeException | Error closeFailure) {
+						if (failure != closeFailure) {
+							failure.addSuppressed(closeFailure);
+						}
+					}
+				}
+
+				@Override
+				public boolean requestCancellation() {
+					return !isClosed() && CooperativeCancellation.forward(distinct);
+				}
+			}
+			return new DistinctResult();
+
+		} catch (RuntimeException | Error failure) {
+			if (evaluate != null) {
+				try {
+					evaluate.close();
+				} catch (RuntimeException | Error closeFailure) {
+					if (failure != closeFailure) {
+						failure.addSuppressed(closeFailure);
+					}
+				}
+			}
+			try {
+				cf.close();
+			} catch (RuntimeException | Error closeFailure) {
+				if (failure != closeFailure) {
+					failure.addSuppressed(closeFailure);
+				}
+			}
+			throw failure;
+		}
 	}
 
 	protected QueryEvaluationStep prepare(Reduced node, QueryEvaluationContext context)

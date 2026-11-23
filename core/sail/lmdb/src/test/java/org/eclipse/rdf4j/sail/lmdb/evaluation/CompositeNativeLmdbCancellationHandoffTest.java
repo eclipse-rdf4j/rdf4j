@@ -20,8 +20,10 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.AdditionalAnswers.delegatesTo;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyLong;
+import static org.mockito.Mockito.doAnswer;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.mockConstruction;
+import static org.mockito.Mockito.spy;
 import static org.mockito.Mockito.when;
 import static org.mockito.Mockito.withSettings;
 
@@ -30,6 +32,8 @@ import java.util.List;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicReference;
 
 import org.eclipse.rdf4j.query.QueryInterruptedException;
 import org.eclipse.rdf4j.sail.lmdb.RecordCursorCancellation;
@@ -142,6 +146,41 @@ class CompositeNativeLmdbCancellationHandoffTest {
 		}
 	}
 
+	@ParameterizedTest
+	@ValueSource(booleans = { false, true })
+	void cancellationRacingWithExhaustionCannotBeLost(boolean retained) throws Exception {
+		var last = new Child(2);
+		var source = combine(new Child(1), last);
+		var deadline = spy(LmdbNativeProbeDeadline.trippableOnly());
+		try (var deadlineScope = LmdbNativeProbeDeadline.enter(deadline);
+				var probe = retained ? source.newProbe() : null;
+				var cursor = retained ? probe.open(-1, -1, -1, -1)
+						: source.statements(-1, -1, -1, -1, null,
+								NativeLmdbQuerySource.captureCursorCancellation());
+				var requester = Executors.newSingleThreadExecutor()) {
+			assertEquals(1L, cursor.next()[0]);
+			assertEquals(2L, cursor.next()[0]);
+			var checkingExhaustion = new AtomicBoolean();
+			var accepted = new AtomicReference<Boolean>();
+			last.beforeClose = () -> checkingExhaustion.set(true);
+			doAnswer(call -> {
+				if (checkingExhaustion.getAndSet(false)) {
+					accepted.set(requester.submit(cursor::requestCancellation).get(10, TimeUnit.SECONDS));
+				}
+				return false;
+			}).when(deadline).expired();
+
+			boolean interrupted = false;
+			try {
+				assertNull(cursor.next());
+			} catch (QueryInterruptedException expected) {
+				interrupted = true;
+			}
+			assertEquals(Boolean.valueOf(interrupted), accepted.get());
+			assertNull(cursor.next());
+		}
+	}
+
 	private static NativeLmdbQuerySource combine(Child first, Child second) throws IOException {
 		Object idSpace = new Object();
 		return CompositeNativeLmdbQuerySource.combine(List.of(member(idSpace, first), member(idSpace, second)));
@@ -183,6 +222,8 @@ class CompositeNativeLmdbCancellationHandoffTest {
 		private Runnable beforeFirstRow = () -> {
 		};
 		private Runnable beforeRequest = () -> {
+		};
+		private Runnable beforeClose = () -> {
 		};
 		private int rowsProduced;
 		private int acceptedRequests;
@@ -227,6 +268,7 @@ class CompositeNativeLmdbCancellationHandoffTest {
 
 		@Override
 		public void close() {
+			beforeClose.run();
 			cancellation.close();
 		}
 	}

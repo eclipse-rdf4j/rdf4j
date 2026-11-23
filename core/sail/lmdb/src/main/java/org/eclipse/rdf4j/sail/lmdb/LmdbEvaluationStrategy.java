@@ -65,7 +65,7 @@ final class LmdbEvaluationStrategy extends LmdbDefaultEvaluationStrategy {
 		if (natural != null) {
 			return natural;
 		}
-		return partitionBinding == null ? prepareDistinct(node, context, child, null, null)
+		return partitionBinding == null ? prepareDistinct(node, context, child, null)
 				: LmdbPartitionedDistinctSteps.partitioned(child, partitionBinding, getCollectionFactory());
 	}
 

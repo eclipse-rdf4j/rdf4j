@@ -13,7 +13,6 @@ package org.eclipse.rdf4j.sail.lmdb;
 
 import org.eclipse.rdf4j.common.iteration.CooperativeCancellation;
 import org.eclipse.rdf4j.common.order.StatementOrder;
-import org.eclipse.rdf4j.sail.lmdb.evaluation.NativeLmdbQuerySource;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.NativeLmdbQuerySource.CursorCancellation;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.codegen.KernelRuntime;
 
@@ -32,7 +31,7 @@ final class LmdbDirectAdjacencyOrderedMergeIterator implements RecordIterator {
 	private int pending = -1;
 	private volatile boolean closed;
 	private CursorCancellation cancellation;
-	private volatile boolean cancellationRequested;
+	private final RecordCursorCancellation request = RecordCursorCancellation.active();
 
 	LmdbDirectAdjacencyOrderedMergeIterator(LmdbDirectAdjacencyStore store, LmdbAdjacencyReadView view, long subject,
 			long object, long context, boolean explicit, StatementOrder order, CursorCancellation cancellation) {
@@ -76,10 +75,9 @@ final class LmdbDirectAdjacencyOrderedMergeIterator implements RecordIterator {
 
 	@Override
 	public boolean requestCancellation() {
-		if (closed) {
+		if (!request.request()) {
 			return false;
 		}
-		cancellationRequested = true;
 		for (RecordIterator iterator : iterators) {
 			CooperativeCancellation.forward(iterator);
 		}
@@ -95,6 +93,8 @@ final class LmdbDirectAdjacencyOrderedMergeIterator implements RecordIterator {
 			enterCancellation();
 			advancePending();
 			if (heapSize == 0) {
+				request.sealExhaustion();
+				checkpointCancellation();
 				close();
 				return null;
 			}
@@ -130,12 +130,7 @@ final class LmdbDirectAdjacencyOrderedMergeIterator implements RecordIterator {
 	}
 
 	private void checkpointCancellation() {
-		if (cancellationRequested) {
-			NativeLmdbQuerySource.checkpointRecordCancellation(cancellation);
-		}
-		if (cancellation != null) {
-			cancellation.checkpoint();
-		}
+		request.checkpoint(cancellation);
 	}
 
 	private void advancePending() {
@@ -249,6 +244,7 @@ final class LmdbDirectAdjacencyOrderedMergeIterator implements RecordIterator {
 		if (closed) {
 			return primary;
 		}
+		request.close();
 		closed = true;
 		Throwable failure = primary;
 		for (int ordinal = 0; ordinal < iterators.length; ordinal++) {

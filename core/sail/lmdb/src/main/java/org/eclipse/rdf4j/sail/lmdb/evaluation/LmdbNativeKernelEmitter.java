@@ -562,9 +562,10 @@ final class LmdbNativeKernelEmitter {
 			body.append('\n');
 		}
 
-		/** Copies the next cached row of the site into the output columns, advancing {@code lgrpN}. */
+		/** Polls cancellation and copies the next cached row of the site into the output columns. */
 		private void emitReplayRow(StringBuilder body, String indent, int groupId) {
 			LmdbNativeOptionalReplay.Plan plan = leftGroupReplayPlans.get(groupId);
+			body.append(indent).append("if ((++pollTick & 1023) == 0) { KernelRuntime.checkCancelled(cancel); }\n");
 			body.append(indent).append("long[] lgv = lgrr").append(groupId).append(".values();\n");
 			for (int i = 0; i < plan.outputs().length; i++) {
 				body.append(indent)

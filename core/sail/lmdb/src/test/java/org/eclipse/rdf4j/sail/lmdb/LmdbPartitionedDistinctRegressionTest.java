@@ -105,8 +105,8 @@ import org.junit.jupiter.params.provider.ValueSource;
 class LmdbPartitionedDistinctRegressionTest {
 
 	private static final String NATIVE_ENGINE = "rdf4j.lmdb.nativeQueryEngine.enabled";
-	private static final String INPUT = "SELECT ?s ?o WHERE { ?s <urn:p> ?o }";
-	private static final String DISTINCT = "SELECT DISTINCT ?s ?o WHERE { ?s <urn:p> ?o }";
+	private static final String INPUT = "SELECT ?s ?o WHERE { ?s <urn:p> ?o FILTER(isIRI(?o)) }";
+	private static final String DISTINCT = "SELECT DISTINCT ?s ?o WHERE { ?s <urn:p> ?o FILTER(isIRI(?o)) }";
 	private static final SimpleValueFactory VF = SimpleValueFactory.getInstance();
 
 	@TempDir
@@ -846,36 +846,24 @@ class LmdbPartitionedDistinctRegressionTest {
 	}
 
 	@Test
-	void sustainedSkewRetiresTheTableAndAlternatingPartitionsReuseIt() {
-		var tables = new ArrayList<Set<Integer>>();
-		var seen = new LmdbStore.PartitionedHashSet<Integer>(() -> {
-			var table = new HashSet<Integer>();
-			tables.add(table);
-			return table;
-		});
-		for (int size : new int[] { 128, 1, 128, 1, 128, 1 }) {
-			addPartition(seen, size);
-			assertThat(tables).hasSize(1);
+	void partitionKeyIsCapturedOncePerPartition() {
+		List<BindingSet> rows = aliasedRows(VF.createIRI("urn:large"), 32);
+		rows.addAll(aliasedRows(VF.createIRI("urn:small"), 1));
+		var captured = new ArrayList<Value>();
+		var step = LmdbPartitionedDistinctSteps.partitioned(
+				ignored -> new CloseableIteratorIteration<>(rows.iterator()), "s",
+				DefaultCollectionFactory::new, key -> {
+					captured.add(key);
+					return key;
+				});
+		try (var result = step.evaluate(EmptyBindingSet.getInstance())) {
+			assertThat(Iterations.asList(result)).hasSize(33);
 		}
-		addPartition(seen, 1);
-		assertThat(tables).hasSize(2);
-		for (int i = 0; i < 100; i++) {
-			addPartition(seen, 1);
-		}
-		assertThat(tables).hasSize(2);
-	}
-
-	private static void addPartition(Set<Integer> seen, int size) {
-		for (int value = 0; value < size; value++) {
-			assertThat(seen.add(value)).isTrue();
-			assertThat(seen.add(value)).isFalse();
-		}
-		seen.clear();
-		assertThat(seen).isEmpty();
+		assertThat(captured).containsExactly(VF.createIRI("urn:large"), VF.createIRI("urn:small"));
 	}
 
 	@Test
-	void customFactoryOwnsOneSetThroughAllPartitionBoundaries(@TempDir File directory) {
+	void naturalOrderReleasesAnOversizedCustomSet(@TempDir File directory) {
 		var factories = new ArrayList<TrackingFactory>();
 		var store = new LmdbStore(directory, config()) {
 			@Override
@@ -889,16 +877,19 @@ class LmdbPartitionedDistinctRegressionTest {
 		};
 		checkQuery(store, new int[] { 48, 1, 1 });
 
-		assertThat(factories.stream().filter(factory -> factory.sets != 0)).singleElement().satisfies(factory -> {
-			assertThat(factory.sets).isEqualTo(1);
-			assertThat(factory.clears).isEqualTo(3);
+		var membership = factories.stream().filter(factory -> factory.sets != 0).toList();
+		assertThat(membership).hasSize(2);
+		assertThat(membership).allSatisfy(factory -> {
+			assertThat(factory.sets).isOne();
 			assertThat(factory.removes).isZero();
-			assertThat(factory.closes).isEqualTo(1);
+			assertThat(factory.closes).isOne();
 		});
+		assertThat(membership.getFirst().clears).isOne();
+		assertThat(membership.getLast().clears).isZero();
 	}
 
 	@Test
-	void spillingFactoryRetainsItsStoreAcrossPartitionBoundaries(@TempDir File directory) {
+	void naturalOrderReleasesSpillStorageBeforeLaterSmallPartitions(@TempDir File directory) {
 		var factories = new ArrayList<TrackingDiskFactory>();
 		var store = new LmdbStore(directory, config()) {
 			@Override
@@ -910,14 +901,16 @@ class LmdbPartitionedDistinctRegressionTest {
 				};
 			}
 		};
-		checkQuery(store, new int[] { 48, 1, 3 });
+		checkQuery(store, new int[] { 48, 1, 1 });
 
-		assertThat(factories.stream().filter(factory -> factory.sets != 0)).singleElement().satisfies(factory -> {
-			assertThat(factory.sets).isEqualTo(1);
-			assertThat(factory.opens).isEqualTo(1);
-			assertThat(factory.closes).isEqualTo(1);
-			assertThat(factory.closedDatabase).isTrue();
+		var membership = factories.stream().filter(factory -> factory.sets != 0).toList();
+		assertThat(membership).hasSize(2).allSatisfy(factory -> {
+			assertThat(factory.sets).isOne();
+			assertThat(factory.closes).isOne();
 		});
+		assertThat(membership.getFirst().opens).isOne();
+		assertThat(membership.getFirst().closedDatabase).isTrue();
+		assertThat(membership.getLast().opens).isZero();
 	}
 
 	private static LmdbStoreConfig config() {
@@ -927,6 +920,10 @@ class LmdbPartitionedDistinctRegressionTest {
 	}
 
 	private static void checkQuery(LmdbStore store, int[] partitionSizes) {
+		// Leave the scan unmarked so only the natural-order proof can reach the partitioned executor.
+		var factory = new LmdbDefaultEvaluationStrategyFactory(null);
+		factory.setOptimizerPipeline(List::of);
+		store.setEvaluationStrategyFactory(factory);
 		var repository = new SailRepository(store);
 		try (RepositoryConnection connection = repository.getConnection()) {
 			IRI predicate = VF.createIRI("urn:p");

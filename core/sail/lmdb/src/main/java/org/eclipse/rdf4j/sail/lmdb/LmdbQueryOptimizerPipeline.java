@@ -153,7 +153,8 @@ public final class LmdbQueryOptimizerPipeline implements QueryOptimizerPipeline 
 			optimizers.add(optimizers.indexOf(ITERATIVE_EVALUATION_OPTIMIZER) + 1,
 					new LmdbSubqueryGroupPushdownOptimizer());
 		} else {
-			optimizers.add(optimizers.indexOf(PROJECTION_REMOVAL_OPTIMIZER) + 1, new LmdbDistinctWitnessOptimizer());
+			// Witnesses must see which ordered producer the join planner actually selected.
+			optimizers.add(new LmdbDistinctWitnessOptimizer());
 		}
 
 		if (assertsEnabled) {

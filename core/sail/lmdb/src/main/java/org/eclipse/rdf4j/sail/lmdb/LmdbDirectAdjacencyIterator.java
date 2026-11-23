@@ -276,6 +276,7 @@ final class LmdbDirectAdjacencyIterator implements RecordIterator {
 				quad[TripleIndex.CONTEXT_IDX] = context;
 				return quad;
 			}
+			request.sealExhaustion();
 			checkpointCancellation();
 			return null;
 		} catch (RuntimeException | Error failure) {
@@ -308,6 +309,9 @@ final class LmdbDirectAdjacencyIterator implements RecordIterator {
 				buffer[base + TripleIndex.OBJ_IDX] = bySubject ? neighbor : key;
 				buffer[base + TripleIndex.CONTEXT_IDX] = context;
 				rows++;
+			}
+			if (rows < maxRows) {
+				request.sealExhaustion();
 			}
 			checkpointCancellation();
 			return rows;

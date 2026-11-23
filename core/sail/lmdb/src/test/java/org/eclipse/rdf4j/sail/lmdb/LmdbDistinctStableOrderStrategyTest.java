@@ -14,9 +14,11 @@ package org.eclipse.rdf4j.sail.lmdb;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertInstanceOf;
 import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.io.File;
@@ -48,6 +50,7 @@ import org.eclipse.rdf4j.query.QueryLanguage;
 import org.eclipse.rdf4j.query.algebra.Compare;
 import org.eclipse.rdf4j.query.algebra.Compare.CompareOp;
 import org.eclipse.rdf4j.query.algebra.Distinct;
+import org.eclipse.rdf4j.query.algebra.Exists;
 import org.eclipse.rdf4j.query.algebra.Filter;
 import org.eclipse.rdf4j.query.algebra.Join;
 import org.eclipse.rdf4j.query.algebra.LeftJoin;
@@ -78,6 +81,8 @@ import org.eclipse.rdf4j.sail.lmdb.config.DirectAdjacencyMode;
 import org.eclipse.rdf4j.sail.lmdb.config.LmdbStoreConfig;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 import org.junitpioneer.jupiter.SetSystemProperty;
 
 /**
@@ -443,6 +448,52 @@ class LmdbDistinctStableOrderStrategyTest {
 		}
 	}
 
+	@ParameterizedTest
+	@ValueSource(booleans = { false, true })
+	void distinctWitnessKeepsTheSelectedOrderedDriver(boolean experimental) {
+		var producer = new StatementPattern(new Var("source"), constVar("urn:p"), new Var("key"));
+		var ordered = new StatementPattern(new Var("key"), constVar("urn:name"), new Var("private"));
+		var witness = new StatementPattern(new Var("key"), constVar("urn:witness"), new Var("extra"));
+		producer.setCardinality(250);
+		ordered.setCardinality(100);
+		witness.setCardinality(500);
+		var projection = new Projection(new Join(producer, new Join(ordered, witness)),
+				new ProjectionElemList(new ProjectionElem("key"), new ProjectionElem("source")));
+		var distinct = new Distinct(projection);
+		var source = new NameAnchorTripleSource() {
+			@Override
+			public Set<StatementOrder> getSupportedOrders(Resource subj, IRI pred, Value obj, Resource... contexts) {
+				return EnumSet.of(StatementOrder.S);
+			}
+		};
+		var policy = experimental ? QueryExecutionPolicy.EXPERIMENTAL : QueryExecutionPolicy.DEFAULT;
+		EvaluationStrategy strategy = createStrategy(source, policy);
+
+		strategy.optimize(distinct, new EvaluationStatistics(), EmptyBindingSet.getInstance());
+
+		assertEquals("key", new LmdbPlannedOrder(projection, null).partitionBindingName().orElseThrow());
+		assertEquals(List.of("urn:name", "urn:p"), evaluationOrderPredicates(distinct));
+		var filter = assertInstanceOf(Filter.class, projection.getArg());
+		var exists = assertInstanceOf(Exists.class, filter.getCondition());
+		assertEquals("urn:witness", leadingPredicate(exists.getSubQuery()));
+	}
+
+	@Test
+	void distinctWitnessPreservesAMergeJoin() {
+		var producer = new StatementPattern(new Var("source"), constVar("urn:p"), new Var("key"));
+		var witness = new StatementPattern(new Var("key"), constVar("urn:witness"), new Var("private"));
+		var join = new Join(producer, witness);
+		join.setMergeJoin(true);
+		join.setOrder(producer.getObjectVar());
+		var projection = new Projection(join,
+				new ProjectionElemList(new ProjectionElem("key"), new ProjectionElem("source")));
+
+		new LmdbDistinctWitnessOptimizer().optimize(new Distinct(projection), null, EmptyBindingSet.getInstance());
+
+		assertSame(join, projection.getArg());
+		assertSame(witness, join.getRightArg());
+	}
+
 	/**
 	 * The join optimizer's cost verdict is final. Its anchor cost discount is a bounded, single-digit factor, so it
 	 * correctly refuses to schedule the DISTINCT anchor {@code ?y urn:name ?name} first when that pattern is
@@ -609,8 +660,7 @@ class LmdbDistinctStableOrderStrategyTest {
 	void testAnchorDiscountNotAppliedAfterAnotherPatternWonFirstPick() {
 		Distinct distinct = spentDiscountFixture(namePattern -> namePattern);
 
-		EvaluationStrategy strategy = createStrategy(new NameAnchorTripleSource());
-		strategy.optimize(distinct, new EvaluationStatistics(), EmptyBindingSet.getInstance());
+		optimizeAnchorFixture(distinct);
 
 		assertEquals("urn:type", leadingPredicate(distinct),
 				"precondition: a cheaper non-anchor pattern must win the first pick, spending the discount");
@@ -634,8 +684,7 @@ class LmdbDistinctStableOrderStrategyTest {
 	void testAnchorDiscountNotAppliedAfterAnotherPatternWonFirstPickWithFilterWrappedAnchor() {
 		Distinct distinct = spentDiscountFixture(this::filterOnName);
 
-		EvaluationStrategy strategy = createStrategy(new NameAnchorTripleSource());
-		strategy.optimize(distinct, new EvaluationStatistics(), EmptyBindingSet.getInstance());
+		optimizeAnchorFixture(distinct);
 
 		assertEquals("urn:type", leadingPredicate(distinct),
 				"precondition: a cheaper non-anchor pattern must win the first pick, spending the discount");
@@ -672,11 +721,17 @@ class LmdbDistinctStableOrderStrategyTest {
 				"a FILTER-wrapped anchor must still be recognised as the anchor and receive the first-pick discount");
 	}
 
+	private void optimizeAnchorFixture(Distinct distinct) {
+		new LmdbDistinctAnchorJoinOptimizer(new EvaluationStatistics(), false, new NameAnchorTripleSource(),
+				QueryExecutionPolicy.EXPERIMENTAL).optimize(distinct, null, EmptyBindingSet.getInstance());
+	}
+
 	/**
-	 * A three-pattern star under {@code DISTINCT ?name ?z}. Projecting both objects keeps each pattern in the join and
-	 * {@code ?name} wins the anchor tie alphabetically. Its pattern cannot win the first pick even when discounted, so
-	 * the fixture checks the later picks. {@code wrapAnchor} can wrap the anchor in an order-preserving operator
-	 * without changing its cost, which the optimizer estimates from the contained statement pattern.
+	 * A three-pattern star under a {@code DISTINCT ?name} in which the anchor {@code ?x urn:name ?name} cannot win the
+	 * first pick even when discounted, so the question the fixture asks is purely what happens at the picks after that.
+	 * {@code wrapAnchor} applies whatever transparent wrapper the caller wants around the anchor pattern; the costs are
+	 * unaffected by it, because the join optimizer derives an opaque argument's cardinality and variables from the
+	 * statement patterns inside it.
 	 */
 	private Distinct spentDiscountFixture(UnaryOperator<TupleExpr> wrapAnchor) {
 		StatementPattern typePattern = new StatementPattern(new Var("x"), constVar("urn:type"), constVar("urn:T"));
@@ -687,8 +742,7 @@ class LmdbDistinctStableOrderStrategyTest {
 		linkPattern.setCardinality(100);
 
 		Join join = new Join(typePattern, new Join(wrapAnchor.apply(namePattern), linkPattern));
-		Projection projection = new Projection(join,
-				new ProjectionElemList(new ProjectionElem("name"), new ProjectionElem("z")));
+		Projection projection = new Projection(join, new ProjectionElemList(new ProjectionElem("name")));
 		return new Distinct(projection);
 	}
 

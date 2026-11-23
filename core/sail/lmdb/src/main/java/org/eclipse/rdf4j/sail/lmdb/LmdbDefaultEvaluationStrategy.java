@@ -69,7 +69,9 @@ abstract class LmdbDefaultEvaluationStrategy extends DefaultEvaluationStrategy {
 			return null;
 		}
 		node.setStringMetricPlanned("distinctPartitionBinding", key);
-		return prepareDistinct(node, context, input, context.getValue(key), statementSource.statementReplayCapturer());
+		QueryEvaluationStep partitioned = LmdbPartitionedDistinctSteps.partitioned(input, key, getCollectionFactory(),
+				statementSource.statementReplayCapturer());
+		return prepareDistinct(node, context, input, partitioned);
 	}
 
 	private String naturalPartitionKey(Projection projection, String plannedPartitionBinding) {

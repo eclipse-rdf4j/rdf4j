@@ -2185,10 +2185,12 @@ final class CompositeNativeLmdbQuerySource implements NativeLmdbQuerySource {
 					RecordIterator exhausted = current;
 					current = null;
 					exhausted.close();
-					index++;
-					checkpointCancellation();
+					if (++index < probes.length) {
+						checkpointCancellation();
+					}
 				}
-				close();
+				request.sealExhaustion();
+				checkpointCancellation();
 				return null;
 			} catch (IOException e) {
 				owner.fail(this, e);
@@ -2271,8 +2273,7 @@ final class CompositeNativeLmdbQuerySource implements NativeLmdbQuerySource {
 		private int index;
 		private volatile RecordIterator current;
 		private long childGeneration;
-		private volatile boolean closed;
-		private volatile boolean cancellationRequested;
+		private final RecordCursorCancellation request = RecordCursorCancellation.active();
 
 		private ConcatenatingRecordIterator(List<NativeLmdbQuerySource> sources, long subj, long pred, long obj,
 				long context, LmdbKeyRange range, AdjacencyAccessObserver observer, AccessMode accessMode,
@@ -2290,10 +2291,9 @@ final class CompositeNativeLmdbQuerySource implements NativeLmdbQuerySource {
 
 		@Override
 		public boolean requestCancellation() {
-			if (closed) {
+			if (!request.request()) {
 				return false;
 			}
-			cancellationRequested = true;
 			RecordIterator child = current;
 			if (child != null) {
 				long childSelection = (long) CHILD_GENERATION.getAcquire(this);
@@ -2306,7 +2306,7 @@ final class CompositeNativeLmdbQuerySource implements NativeLmdbQuerySource {
 
 		@Override
 		public long[] next() {
-			if (closed) {
+			if (request.isClosed()) {
 				return null;
 			}
 			try {
@@ -2339,10 +2339,12 @@ final class CompositeNativeLmdbQuerySource implements NativeLmdbQuerySource {
 					RecordIterator exhausted = current;
 					current = null;
 					exhausted.close();
-					index++;
-					checkpointCancellation();
+					if (++index < sources.size()) {
+						checkpointCancellation();
+					}
 				}
-				close();
+				request.sealExhaustion();
+				checkpointCancellation();
 				return null;
 			} catch (IOException e) {
 				QueryEvaluationException failure = new QueryEvaluationException(e);
@@ -2361,7 +2363,7 @@ final class CompositeNativeLmdbQuerySource implements NativeLmdbQuerySource {
 		 */
 		@Override
 		public boolean seekForward(long subj, long pred, long obj, long context) {
-			if (closed) {
+			if (request.isClosed()) {
 				return false;
 			}
 			try {
@@ -2383,18 +2385,13 @@ final class CompositeNativeLmdbQuerySource implements NativeLmdbQuerySource {
 		}
 
 		private void checkpointCancellation() {
-			if (cancellationRequested) {
-				NativeLmdbQuerySource.checkpointRecordCancellation(cancellation);
-			}
-			if (cancellation != null) {
-				cancellation.checkpoint();
-			}
+			request.checkpoint(cancellation);
 		}
 
 		@Override
 		public void close() {
-			if (!closed) {
-				closed = true;
+			if (!request.isClosed()) {
+				request.close();
 				RecordIterator owned = current;
 				current = null;
 				if (owned != null) {

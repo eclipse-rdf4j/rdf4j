@@ -36,6 +36,13 @@ public final class RecordCursorCancellation {
 
 	private volatile long state;
 
+	/** Starts an active selection for a cursor that is opened only once. */
+	public static RecordCursorCancellation active() {
+		RecordCursorCancellation request = new RecordCursorCancellation();
+		request.state = ACTIVE;
+		return request;
+	}
+
 	/** Starts a new selection. Only the consuming thread may open or close a selection. */
 	public void open() {
 		state = ((state & ~STATE_MASK) + STATE_MASK + 1L) | ACTIVE;
@@ -43,6 +50,14 @@ public final class RecordCursorCancellation {
 
 	public void close() {
 		state &= ~STATE_MASK;
+	}
+
+	/** Rejects future requests at EOF and retains a request that won the race for the terminal checkpoint. */
+	public void sealExhaustion() {
+		long observed = state;
+		if ((observed & STATE_MASK) == ACTIVE) {
+			STATE.compareAndSet(this, observed, observed & ~STATE_MASK);
+		}
 	}
 
 	public boolean isClosed() {
@@ -59,6 +74,10 @@ public final class RecordCursorCancellation {
 
 	boolean isActive(long generation) {
 		return state == (generation | ACTIVE);
+	}
+
+	public boolean request() {
+		return request(generation());
 	}
 
 	public boolean request(long generation) {

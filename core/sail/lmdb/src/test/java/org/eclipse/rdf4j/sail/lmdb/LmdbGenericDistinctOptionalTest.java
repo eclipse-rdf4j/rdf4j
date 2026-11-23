@@ -99,6 +99,8 @@ class LmdbGenericDistinctOptionalTest {
 			connection.add(missing, category, vf.createLiteral("excluded"));
 			connection.add(root, witness, vf.createIRI("urn:witness1"));
 			connection.add(root, witness, vf.createIRI("urn:witness2"));
+			// Keep the category side cheaper for ordering without adding any qualifying solutions.
+			connection.add(vf.createIRI("urn:no-category"), witness, vf.createIRI("urn:witness3"));
 			connection.add(root, detail, child);
 			connection.add(child, category2, value);
 

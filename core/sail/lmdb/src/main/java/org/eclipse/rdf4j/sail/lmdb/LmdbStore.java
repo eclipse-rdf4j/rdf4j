@@ -21,15 +21,12 @@ import java.nio.file.FileAlreadyExistsException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.StandardOpenOption;
-import java.util.AbstractSet;
 import java.util.Collections;
 import java.util.Comparator;
-import java.util.Iterator;
 import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
-import java.util.Set;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.locks.ReentrantLock;
 import java.util.function.Supplier;
@@ -53,7 +50,6 @@ import org.eclipse.rdf4j.query.algebra.evaluation.federation.FederatedServiceRes
 import org.eclipse.rdf4j.query.algebra.evaluation.federation.FederatedServiceResolverClient;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.DefaultEvaluationStrategyFactory;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.EvaluationStatistics;
-import org.eclipse.rdf4j.query.algebra.evaluation.impl.evaluationsteps.DistinctQueryEvaluationStep.PartitionedSetFactory;
 import org.eclipse.rdf4j.query.algebra.evaluation.sketch.SketchBasedJoinEstimator;
 import org.eclipse.rdf4j.query.algebra.evaluation.util.ExternalValueTripleSource;
 import org.eclipse.rdf4j.repository.sparql.federation.SPARQLServiceResolver;
@@ -1238,71 +1234,7 @@ public class LmdbStore extends AbstractNotifyingSail
 
 	@Override
 	public Supplier<CollectionFactory> getCollectionFactory() {
-		return () -> {
-			long threshold = getIterationCacheSyncThreshold();
-			return threshold > 0 ? new MapDb3CollectionFactory(threshold)
-					: new InMemoryPartitionCollectionFactory(threshold);
-		};
+		return () -> new MapDb3CollectionFactory(getIterationCacheSyncThreshold());
 	}
 
-	private static final class InMemoryPartitionCollectionFactory extends MapDb3CollectionFactory
-			implements PartitionedSetFactory {
-
-		private InMemoryPartitionCollectionFactory(long threshold) {
-			super(threshold);
-		}
-
-		@Override
-		public <T> Set<T> createPartitionedSet() {
-			return new PartitionedHashSet<>(this::createSet);
-		}
-	}
-
-	static final class PartitionedHashSet<T> extends AbstractSet<T> {
-
-		// DefaultCollectionFactory creates a HashSet with 16 initial buckets and a 0.75 load factor.
-		private static final int INITIAL_KEY_CAPACITY = 12;
-
-		private final Supplier<Set<T>> factory;
-		private Set<T> members;
-		private int peakSize;
-		private boolean previousPartitionUnderfilled;
-
-		PartitionedHashSet(Supplier<Set<T>> factory) {
-			this.factory = factory;
-			members = factory.get();
-		}
-
-		@Override
-		public boolean add(T value) {
-			return members.add(value);
-		}
-
-		@Override
-		public Iterator<T> iterator() {
-			return members.iterator();
-		}
-
-		@Override
-		public int size() {
-			return members.size();
-		}
-
-		@Override
-		public void clear() {
-			int size = members.size();
-			boolean underfilled = peakSize > INITIAL_KEY_CAPACITY && size < (peakSize >>> 1);
-			if (underfilled && previousPartitionUnderfilled) {
-				// A clear scans the retained bucket table. Retire it after consecutive small partitions and
-				// keep it when large and small partitions alternate.
-				members = factory.get();
-				peakSize = 0;
-				previousPartitionUnderfilled = false;
-			} else {
-				members.clear();
-				peakSize = Math.max(peakSize, size);
-				previousPartitionUnderfilled = underfilled;
-			}
-		}
-	}
 }

@@ -146,6 +146,25 @@ class LmdbDirectAdjacencyIteratorTest {
 	}
 
 	@Test
+	void exhaustedSelectionRejectsCancellationBeforeAndAfterReuse() {
+		try (var iterator = new LmdbDirectAdjacencyIterator()) {
+			iterator.init(null, catalog, contexts, handle, KEY, PRED, G1, LmdbDirectAdjacencyIterator.BY_SUBJECT,
+					"direct");
+			long exhausted = iterator.cancellationGeneration();
+			assertThat(iterator.fill(new long[12], 3)).isEqualTo(2);
+			assertThat(iterator.requestCancellation(exhausted)).isFalse();
+			assertThat(iterator.next()).isNull();
+
+			iterator.init(null, catalog, contexts, handle, KEY, PRED, G2, LmdbDirectAdjacencyIterator.BY_SUBJECT,
+					"direct");
+			assertThat(iterator.requestCancellation(exhausted)).isFalse();
+			assertThat(iterator.next()[TripleIndex.CONTEXT_IDX]).isEqualTo(G2);
+			assertThat(iterator.next()).isNull();
+			assertThat(iterator.requestCancellation()).isFalse();
+		}
+	}
+
+	@Test
 	void negativeHandleInitializesEmpty() {
 		LmdbDirectAdjacencyIterator iterator = new LmdbDirectAdjacencyIterator();
 		iterator.init(null, catalog, contexts, LmdbInMemoryAdjacencyIndex.NOT_FOUND, KEY, PRED, -1,

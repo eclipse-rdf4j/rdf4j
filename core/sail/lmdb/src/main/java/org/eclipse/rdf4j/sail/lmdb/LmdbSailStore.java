@@ -17483,7 +17483,7 @@ class LmdbSailStore implements SailStore {
 			private final LmdbRecordIterator nativeDelegate;
 			private CursorCancellation bufferedCancellation;
 			private volatile boolean closed;
-			private volatile boolean cancellationRequested;
+			private final RecordCursorCancellation request = RecordCursorCancellation.active();
 			/** Remaining delegate work before the next full check; plain, owner-thread only apart from a racy reset. */
 			private int checkBudget = CHECK_STRIDE;
 			private boolean seekForwardMode;
@@ -17509,10 +17509,9 @@ class LmdbSailStore implements SailStore {
 
 			@Override
 			public boolean requestCancellation() {
-				if (closed) {
+				if (!request.request()) {
 					return false;
 				}
-				cancellationRequested = true;
 				// force the next pull to run the full check; a lost racy write only delays it by one stride
 				checkBudget = 0;
 				RecordIterator.forwardCancellation(delegate, delegateGeneration);
@@ -17520,7 +17519,7 @@ class LmdbSailStore implements SailStore {
 			}
 
 			private void checkLocalCancellation() {
-				if (cancellationRequested) {
+				if (request.isCancelled()) {
 					NativeLmdbQuerySource.checkpointRecordCancellation(cancellation);
 				}
 			}
@@ -17566,13 +17565,23 @@ class LmdbSailStore implements SailStore {
 
 			@Override
 			public boolean mayContinueDuringRead() {
-				if (cancellationRequested || (cancellation != null && cancellation.checkpointSignalled())
+				if (request.isCancelled() || (cancellation != null && cancellation.checkpointSignalled())
 						|| LmdbSailDataset.this.closed.get()) {
 					// Let the wrapper deliver the published signal after the raw transaction lease is released.
 					return false;
 				}
 				readView.ensureNativeSnapshotsValid();
 				return true;
+			}
+
+			private void finish(boolean oneRow) {
+				request.sealExhaustion();
+				if (oneRow) {
+					checkOneRowFill();
+				} else {
+					fullCheck();
+				}
+				close();
 			}
 
 			/** Runs the full check when the work budget is spent, before more rows are pulled from the delegate. */
@@ -17599,8 +17608,7 @@ class LmdbSailStore implements SailStore {
 						singlePulls++;
 						long[] record = delegate.next();
 						if (record == null) {
-							fullCheck();
-							close();
+							finish(false);
 						}
 						return record;
 					}
@@ -17616,8 +17624,7 @@ class LmdbSailStore implements SailStore {
 			private long[] nextFromBatch() {
 				if (batchPos >= batchCount) {
 					if (exhausted) {
-						fullCheck();
-						close();
+						finish(false);
 						return null;
 					}
 					// a refill pulls up to BATCH_ROWS rows, so it always runs the full check first
@@ -17628,8 +17635,7 @@ class LmdbSailStore implements SailStore {
 						exhausted = true;
 					}
 					if (batchCount == 0) {
-						fullCheck();
-						close();
+						finish(false);
 						return null;
 					}
 				} else {
@@ -17667,12 +17673,7 @@ class LmdbSailStore implements SailStore {
 						int rows = delegate.fill(buffer, maxRows);
 						checkBudget -= rows;
 						if (rows < maxRows) {
-							if (oneRow) {
-								checkOneRowFill();
-							} else {
-								fullCheck();
-							}
-							close();
+							finish(oneRow);
 						}
 						return rows;
 					}
@@ -17698,8 +17699,7 @@ class LmdbSailStore implements SailStore {
 							continue;
 						}
 						if (exhausted) {
-							fullCheck();
-							close();
+							finish(false);
 							break;
 						}
 						checkpointIfBudgetSpent();
@@ -17726,8 +17726,7 @@ class LmdbSailStore implements SailStore {
 					int remainder = count % CHECK_STRIDE;
 					checkBudget = remainder == 0 ? 0 : CHECK_STRIDE - remainder;
 					if (count < maxRows) {
-						fullCheck();
-						close();
+						finish(false);
 					}
 					return count;
 				}
@@ -17751,8 +17750,7 @@ class LmdbSailStore implements SailStore {
 					rows += count;
 					checkBudget -= count;
 					if (count < requested) {
-						fullCheck();
-						close();
+						finish(false);
 						break;
 					}
 				}
@@ -17807,6 +17805,7 @@ class LmdbSailStore implements SailStore {
 			@Override
 			public void close() {
 				if (!closed) {
+					request.close();
 					try {
 						delegate.close();
 					} finally {

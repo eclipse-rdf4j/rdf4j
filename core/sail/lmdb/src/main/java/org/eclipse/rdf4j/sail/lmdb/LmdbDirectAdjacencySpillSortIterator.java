@@ -25,7 +25,6 @@ import java.util.List;
 
 import org.eclipse.rdf4j.common.iteration.CooperativeCancellation;
 import org.eclipse.rdf4j.common.order.StatementOrder;
-import org.eclipse.rdf4j.sail.lmdb.evaluation.NativeLmdbQuerySource;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.NativeLmdbQuerySource.CursorCancellation;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.codegen.KernelRuntime;
 
@@ -53,7 +52,7 @@ final class LmdbDirectAdjacencySpillSortIterator implements RecordIterator {
 	private int cancellationTick;
 	private volatile boolean closed;
 	private CursorCancellation cancellation;
-	private volatile boolean cancellationRequested;
+	private final RecordCursorCancellation request = RecordCursorCancellation.active();
 
 	LmdbDirectAdjacencySpillSortIterator(RecordIterator input, StatementOrder order) {
 		this(input, order, null);
@@ -83,10 +82,9 @@ final class LmdbDirectAdjacencySpillSortIterator implements RecordIterator {
 
 	@Override
 	public boolean requestCancellation() {
-		if (closed) {
+		if (!request.request()) {
 			return false;
 		}
-		cancellationRequested = true;
 		CooperativeCancellation.forward(input);
 		return true;
 	}
@@ -102,16 +100,16 @@ final class LmdbDirectAdjacencySpillSortIterator implements RecordIterator {
 			checkpointCancellation();
 			if (merger != null) {
 				long[] row = merger.next();
-				checkpointCancellation();
 				if (row == null) {
-					close();
+					finish();
 					return null;
 				}
+				checkpointCancellation();
 				System.arraycopy(row, 0, output, 0, 4);
 				return output;
 			}
 			if (cursor >= rows) {
-				close();
+				finish();
 				return null;
 			}
 			System.arraycopy(buffer, cursor++ * 4, output, 0, 4);
@@ -382,12 +380,13 @@ final class LmdbDirectAdjacencySpillSortIterator implements RecordIterator {
 	}
 
 	private void checkpointCancellation() {
-		if (cancellationRequested) {
-			NativeLmdbQuerySource.checkpointRecordCancellation(cancellation);
-		}
-		if (cancellation != null) {
-			cancellation.checkpoint();
-		}
+		request.checkpoint(cancellation);
+	}
+
+	private void finish() {
+		request.sealExhaustion();
+		checkpointCancellation();
+		close();
 	}
 
 	private void pollCancellation() {
@@ -431,6 +430,7 @@ final class LmdbDirectAdjacencySpillSortIterator implements RecordIterator {
 		if (closed) {
 			return primary;
 		}
+		request.close();
 		closed = true;
 		Throwable failure = primary;
 		RecordIterator owned = input;

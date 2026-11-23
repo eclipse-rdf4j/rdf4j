@@ -13,7 +13,6 @@ package org.eclipse.rdf4j.sail.lmdb;
 
 import org.eclipse.rdf4j.common.iteration.CooperativeCancellation;
 import org.eclipse.rdf4j.common.order.StatementOrder;
-import org.eclipse.rdf4j.sail.lmdb.evaluation.NativeLmdbQuerySource;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.NativeLmdbQuerySource.CursorCancellation;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.codegen.KernelRuntime;
 
@@ -37,7 +36,7 @@ final class LmdbDirectAdjacencyPredicateSweepIterator implements RecordIterator 
 	private int predicateOrdinal;
 	private volatile RecordIterator current;
 	private CursorCancellation cancellation;
-	private volatile boolean cancellationRequested;
+	private final RecordCursorCancellation request = RecordCursorCancellation.active();
 
 	LmdbDirectAdjacencyPredicateSweepIterator(LmdbDirectAdjacencyStore store, LmdbAdjacencyReadView view,
 			long subject, long object, long context, boolean explicit, StatementOrder order,
@@ -61,10 +60,9 @@ final class LmdbDirectAdjacencyPredicateSweepIterator implements RecordIterator 
 
 	@Override
 	public boolean requestCancellation() {
-		if (view == null) {
+		if (!request.request()) {
 			return false;
 		}
-		cancellationRequested = true;
 		CooperativeCancellation.forward(current);
 		return true;
 	}
@@ -88,6 +86,8 @@ final class LmdbDirectAdjacencyPredicateSweepIterator implements RecordIterator 
 					exhausted.close();
 				}
 				if (predicateOrdinal >= predicates.size()) {
+					request.sealExhaustion();
+					checkpointCancellation();
 					close();
 					return null;
 				}
@@ -124,16 +124,12 @@ final class LmdbDirectAdjacencyPredicateSweepIterator implements RecordIterator 
 	}
 
 	private void checkpointCancellation() {
-		if (cancellationRequested) {
-			NativeLmdbQuerySource.checkpointRecordCancellation(cancellation);
-		}
-		if (cancellation != null) {
-			cancellation.checkpoint();
-		}
+		request.checkpoint(cancellation);
 	}
 
 	@Override
 	public void close() {
+		request.close();
 		Throwable failure = null;
 		RecordIterator ownedCurrent = current;
 		current = null;

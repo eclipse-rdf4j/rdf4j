@@ -18,6 +18,7 @@ import java.util.PriorityQueue;
 import org.eclipse.rdf4j.common.iteration.CooperativeCancellation;
 import org.eclipse.rdf4j.common.order.StatementOrder;
 import org.eclipse.rdf4j.sail.lmdb.EmptyRecordIterator;
+import org.eclipse.rdf4j.sail.lmdb.RecordCursorCancellation;
 import org.eclipse.rdf4j.sail.lmdb.RecordIterator;
 import org.eclipse.rdf4j.sail.lmdb.TripleIndex;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.NativeLmdbQuerySource.CursorCancellation;
@@ -33,7 +34,7 @@ final class OrderedRecordIterator implements RecordIterator {
 	private CursorCancellation cancellation;
 	private Head pendingAdvance;
 	private volatile boolean closed;
-	private volatile boolean cancellationRequested;
+	private final RecordCursorCancellation request = RecordCursorCancellation.active();
 
 	private OrderedRecordIterator(List<RecordIterator> iterators, MergeOrder order,
 			CursorCancellation cancellation) {
@@ -152,10 +153,9 @@ final class OrderedRecordIterator implements RecordIterator {
 
 	@Override
 	public boolean requestCancellation() {
-		if (closed) {
+		if (!request.request()) {
 			return false;
 		}
-		cancellationRequested = true;
 		for (RecordIterator iterator : iterators) {
 			CooperativeCancellation.forward(iterator);
 		}
@@ -176,11 +176,13 @@ final class OrderedRecordIterator implements RecordIterator {
 				}
 				pendingAdvance = null;
 			}
-			checkpointCancellation();
 			if (heads.isEmpty()) {
+				request.sealExhaustion();
+				checkpointCancellation();
 				close();
 				return null;
 			}
+			checkpointCancellation();
 			Head head = heads.remove();
 			pendingAdvance = head;
 			return head.row;
@@ -216,11 +218,13 @@ final class OrderedRecordIterator implements RecordIterator {
 				Head stale = heads.remove();
 				seekAndRefill(stale, subj, pred, obj, context);
 			}
-			checkpointCancellation();
 			if (heads.isEmpty()) {
+				request.sealExhaustion();
+				checkpointCancellation();
 				close();
 				return false;
 			}
+			checkpointCancellation();
 			return true;
 		} catch (RuntimeException | Error e) {
 			closePreserving(e);
@@ -256,12 +260,7 @@ final class OrderedRecordIterator implements RecordIterator {
 	}
 
 	private void checkpointCancellation() {
-		if (cancellationRequested) {
-			NativeLmdbQuerySource.checkpointRecordCancellation(cancellation);
-		}
-		if (cancellation != null) {
-			cancellation.checkpoint();
-		}
+		request.checkpoint(cancellation);
 	}
 
 	private int compare(long[] row, long subj, long pred, long obj, long context) {
@@ -300,6 +299,7 @@ final class OrderedRecordIterator implements RecordIterator {
 		if (closed) {
 			return primary;
 		}
+		request.close();
 		closed = true;
 		Throwable failure = closeIterators(iterators, primary);
 		pendingAdvance = null;

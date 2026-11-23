@@ -4681,6 +4681,7 @@ final class LmdbNativeKernelInterpreter implements JaninoKernel {
 					workCounters.recordOptionalArmReplay();
 				}
 				for (int offset = 0; offset < replay.length();) {
+					poll();
 					offset = memo.replay(replay, offset, v);
 					leftGroupFlags[flagId] = true;
 					if (next.run()) {

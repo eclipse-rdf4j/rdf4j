@@ -96,9 +96,6 @@ public final class LmdbStandardQueryOptimizerPipeline implements QueryOptimizerP
 		boolean inserted = false;
 
 		for (QueryOptimizer optimizer : delegate.getOptimizers()) {
-			if (!nativeEngine && optimizer instanceof QueryJoinOptimizer) {
-				optimizers.add(new LmdbDistinctWitnessOptimizer());
-			}
 			if (experimental && optimizer instanceof QueryJoinOptimizer && stableOrderDistinct) {
 				optimizers.add(new LmdbDistinctAnchorJoinOptimizer(evaluationStatistics, strategy.isTrackResultSize(),
 						tripleSource, strategy.getQueryExecutionPolicy()));
@@ -122,8 +119,12 @@ public final class LmdbStandardQueryOptimizerPipeline implements QueryOptimizerP
 
 		if (nativeEngine) {
 			insertGroupPushdown(optimizers);
-		} else if (stableOrderDistinct && !experimental) {
-			optimizers.add(new LmdbDistinctOrderMarkingOptimizer(tripleSource));
+		} else {
+			if (stableOrderDistinct && !experimental) {
+				optimizers.add(new LmdbDistinctOrderMarkingOptimizer(tripleSource));
+			}
+			// Witnesses must see which ordered producer the join planner actually selected.
+			optimizers.add(new LmdbDistinctWitnessOptimizer());
 		}
 		return optimizers;
 	}

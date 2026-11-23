@@ -41,7 +41,7 @@ public final class DistinctBindingSetKey implements Serializable {
 		this.bindings = bindings;
 	}
 
-	public BindingSet bindings() {
+	BindingSet bindings() {
 		return bindings;
 	}
 

@@ -12,8 +12,10 @@
 package org.eclipse.rdf4j.sail.lmdb;
 
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.HashMap;
 import java.util.HashSet;
+import java.util.IdentityHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -47,18 +49,32 @@ final class LmdbDistinctWitnessOptimizer implements QueryOptimizer {
 			return;
 		}
 		Map<String, Integer> uses = new HashMap<>();
-		TupleExpr body = projection.getArg();
-		if (!collectUses(body, uses)) {
+		if (!collectUses(projection.getArg(), uses)) {
 			return;
 		}
 		Set<String> retained = new HashSet<>(bindings.getBindingNames());
 		for (ProjectionElem element : projection.getProjectionElemList().getElements()) {
 			retained.add(element.getName());
 		}
-		TupleExpr rewritten = rewrite(body, uses, retained);
-		if (rewritten != body) {
-			projection.setArg(rewritten);
+		var plannedOrder = new LmdbPlannedOrder(projection, dataset).partitionBindingName();
+		if (plannedOrder.isPresent()) {
+			// Recheck the complete path because replacing a producer can change the join's binding domain.
+			Projection trial = projection.clone();
+			if (!rewriteProjection(trial, uses, retained)
+					|| !plannedOrder.equals(new LmdbPlannedOrder(trial, dataset).partitionBindingName())) {
+				return;
+			}
 		}
+		rewriteProjection(projection, uses, retained);
+	}
+
+	private static boolean rewriteProjection(Projection projection, Map<String, Integer> uses, Set<String> retained) {
+		TupleExpr rewritten = rewrite(projection.getArg(), uses, retained);
+		if (rewritten == null) {
+			return false;
+		}
+		projection.setArg(rewritten);
+		return true;
 	}
 
 	private static boolean collectUses(TupleExpr expression, Map<String, Integer> uses) {
@@ -77,11 +93,17 @@ final class LmdbDistinctWitnessOptimizer implements QueryOptimizer {
 		return false;
 	}
 
+	/** Returns null when the subtree has no witnesses to introduce. */
 	private static TupleExpr rewrite(TupleExpr expression, Map<String, Integer> uses, Set<String> retained) {
-		if (expression instanceof Join join && !TupleExprs.isVariableScopeChange(join)) {
-			List<StatementPattern> patterns = new ArrayList<>();
-			if (collectPatterns(join, patterns)) {
-				return rewritePatterns(join, patterns, uses, retained);
+		if (expression instanceof Join join) {
+			if (join.isMergeJoin()) {
+				return null;
+			}
+			if (!TupleExprs.isVariableScopeChange(join)) {
+				List<StatementPattern> patterns = new ArrayList<>();
+				if (collectPatterns(join, patterns)) {
+					return rewritePatterns(join, patterns, uses, retained);
+				}
 			}
 		}
 		if (expression instanceof BinaryTupleOperator binary) {
@@ -89,14 +111,17 @@ final class LmdbDistinctWitnessOptimizer implements QueryOptimizer {
 			TupleExpr right = binary.getRightArg();
 			TupleExpr rewrittenLeft = rewrite(left, uses, retained);
 			TupleExpr rewrittenRight = rewrite(right, uses, retained);
-			if (rewrittenLeft != left) {
+			if (rewrittenLeft != null) {
 				binary.setLeftArg(rewrittenLeft);
 			}
-			if (rewrittenRight != right) {
+			if (rewrittenRight != null) {
 				binary.setRightArg(rewrittenRight);
 			}
+			if (rewrittenLeft != null || rewrittenRight != null) {
+				return expression;
+			}
 		}
-		return expression;
+		return null;
 	}
 
 	private static boolean collectPatterns(TupleExpr expression, List<StatementPattern> patterns) {
@@ -107,7 +132,7 @@ final class LmdbDistinctWitnessOptimizer implements QueryOptimizer {
 			patterns.add(pattern);
 			return true;
 		}
-		return expression instanceof Join join && collectPatterns(join.getLeftArg(), patterns)
+		return expression instanceof Join join && !join.isMergeJoin() && collectPatterns(join.getLeftArg(), patterns)
 				&& collectPatterns(join.getRightArg(), patterns);
 	}
 
@@ -120,17 +145,17 @@ final class LmdbDistinctWitnessOptimizer implements QueryOptimizer {
 			Set<String> shared = new HashSet<>(names);
 			shared.removeIf(name -> uses.get(name) == 1 && !retained.contains(name));
 			Var context = pattern.getContextVar();
-			// Injecting a shared graph name into EXISTS changes the lookup's graph selector. A missing context
-			// can join with a bound sibling, and a bound alias can select the default graph instead of matching a term.
+			// Keep ordered statements in the producing join. A shared context variable cannot be injected into EXISTS:
+			// a missing context can join with a bound sibling, and a bound alias can select the default graph.
 			boolean probesContext = context != null && shared.contains(context.getName());
-			if (shared.size() < names.size() && !shared.isEmpty() && !probesContext
+			if (pattern.getOrder() == null && shared.size() < names.size() && !shared.isEmpty() && !probesContext
 					&& pattern.getVarList().stream().noneMatch(var -> !var.isConstant() && var.hasValue())) {
 				candidates.add(new Witness(pattern, shared));
 			} else {
 				addAssuredNames(pattern, produced);
 			}
 		}
-		Set<StatementPattern> witnesses = new HashSet<>(candidates.size());
+		Set<StatementPattern> witnesses = Collections.newSetFromMap(new IdentityHashMap<>(candidates.size()));
 		for (Witness candidate : candidates) {
 			// Every observable variable of a discarded pattern must be supplied by a mandatory producer in this
 			// group. In particular, a variable produced only by a sibling OPTIONAL could be absent on this row.
@@ -141,14 +166,9 @@ final class LmdbDistinctWitnessOptimizer implements QueryOptimizer {
 			}
 		}
 		if (witnesses.isEmpty()) {
-			return original;
+			return null;
 		}
-		TupleExpr result = null;
-		for (StatementPattern pattern : patterns) {
-			if (!witnesses.contains(pattern)) {
-				result = result == null ? pattern : new Join(result, pattern);
-			}
-		}
+		TupleExpr result = removeWitnesses(original, witnesses);
 		for (StatementPattern pattern : patterns) {
 			if (witnesses.contains(pattern)) {
 				Filter filter = new Filter(result, new Exists(pattern));
@@ -157,6 +177,23 @@ final class LmdbDistinctWitnessOptimizer implements QueryOptimizer {
 			}
 		}
 		return result;
+	}
+
+	private static TupleExpr removeWitnesses(TupleExpr expression, Set<StatementPattern> witnesses) {
+		if (!(expression instanceof Join join)) {
+			return witnesses.contains(expression) ? null : expression;
+		}
+		TupleExpr left = removeWitnesses(join.getLeftArg(), witnesses);
+		TupleExpr right = removeWitnesses(join.getRightArg(), witnesses);
+		if (left == null) {
+			return right;
+		}
+		if (right == null) {
+			return left;
+		}
+		join.setLeftArg(left);
+		join.setRightArg(right);
+		return join;
 	}
 
 	private static void addAssuredNames(StatementPattern pattern, Set<String> produced) {
