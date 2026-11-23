@@ -4903,11 +4903,8 @@ class LmdbSailStore implements SailStore {
 				throw new IllegalStateException("LMDB read-resource contexts must close in nesting order");
 			}
 			closed = true;
-			if (previous == null) {
-				activeReadResourceContext.remove();
-			} else {
-				activeReadResourceContext.set(previous);
-			}
+			// A null value retains neither the store nor its views. Reuse the thread's empty entry on the next row.
+			activeReadResourceContext.set(previous);
 		}
 	}
 

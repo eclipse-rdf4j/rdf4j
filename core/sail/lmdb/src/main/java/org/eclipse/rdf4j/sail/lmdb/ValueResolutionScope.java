@@ -31,6 +31,7 @@ public final class ValueResolutionScope implements SailClosable {
 
 	/** Restored with set(null), not remove(), so a transaction does not allocate a new thread-local entry. */
 	private static final ThreadLocal<ValueResolutionScope> ACTIVE = new ThreadLocal<>();
+	private static final SailClosable CLEAR_FOREGROUND = () -> ACTIVE.set(null);
 	private static final VarHandle REVISION_ELEMENT = MethodHandles
 			.arrayElementVarHandle(ValueStoreRevision.Lazy[].class);
 	private final ValueStore store;
@@ -156,7 +157,7 @@ public final class ValueResolutionScope implements SailClosable {
 	SailClosable activateForeground() {
 		ValueResolutionScope previous = ACTIVE.get();
 		ACTIVE.set(this);
-		return () -> ACTIVE.set(previous);
+		return previous == null ? CLEAR_FOREGROUND : () -> ACTIVE.set(previous);
 	}
 
 	Boolean resolve(long id, LmdbValue value, ValueStoreRevision.Lazy revision) throws IOException {

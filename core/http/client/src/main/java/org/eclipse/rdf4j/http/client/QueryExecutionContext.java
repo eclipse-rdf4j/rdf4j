@@ -569,11 +569,8 @@ public final class QueryExecutionContext {
 	}
 
 	private static void setExternalValueInitializer(Consumer<Value> initializer) {
-		if (initializer == null) {
-			EXTERNAL_VALUE_INITIALIZER.remove();
-		} else {
-			EXTERNAL_VALUE_INITIALIZER.set(initializer);
-		}
+		// A null entry retains no initializer; subsequent foreground calls can reuse the same thread-local slot.
+		EXTERNAL_VALUE_INITIALIZER.set(initializer);
 	}
 
 	private static void setReplayContext(ReplaySafepoint safepoint, boolean deferral) {
