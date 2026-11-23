@@ -25,11 +25,6 @@ public final class EmptyRecordIterator implements RecordIterator {
 	}
 
 	@Override
-	public boolean requestCancellation() {
-		return false;
-	}
-
-	@Override
 	public long[] next() {
 		return null;
 	}

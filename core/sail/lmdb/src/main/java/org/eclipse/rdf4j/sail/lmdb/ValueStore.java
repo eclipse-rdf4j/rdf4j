@@ -15999,14 +15999,6 @@ public class ValueStore extends AbstractValueFactory implements BNodeIdResolver,
 		return value;
 	}
 
-	/**
-	 * Core datatype of a literal whose id carries no core-datatype tag, derived from its resolved dictionary datatype.
-	 * Single resolution point for both {@code data2literal} variants.
-	 */
-	private CoreDatatype resolveLiteralCoreDatatype(long literalId, IRI datatype) {
-		return CoreDatatype.from(datatype);
-	}
-
 	private LmdbLiteral data2literal(ReadSnapshot snapshot, long txn, long id, byte[] data, LmdbLiteral value)
 			throws IOException {
 		ByteBuffer bb = ByteBuffer.wrap(data);
@@ -16019,7 +16011,8 @@ public class ValueStore extends AbstractValueFactory implements BNodeIdResolver,
 			if (datatype == null) {
 				return null;
 			}
-			coreDatatype = resolveLiteralCoreDatatype(id, datatype);
+			// The id carries no core-datatype tag, so derive it from the resolved dictionary datatype.
+			coreDatatype = CoreDatatype.from(datatype);
 		} else {
 			assert coreDatatype == CoreDatatype.NONE || datatypeID <= 0
 					|| coreDatatype.getIri().equals(getValue(snapshot, txn, datatypeID))
@@ -16110,7 +16103,8 @@ public class ValueStore extends AbstractValueFactory implements BNodeIdResolver,
 		// literal without a datatype
 		if (coreDatatype == CoreDatatype.NONE && datatypeID > 0) {
 			datatype = (IRI) getValue(datatypeID, valueRevision);
-			coreDatatype = resolveLiteralCoreDatatype(id, datatype);
+			// The id carries no core-datatype tag, so derive it from the resolved dictionary datatype.
+			coreDatatype = CoreDatatype.from(datatype);
 		} else {
 			assert coreDatatype == CoreDatatype.NONE || datatypeID <= 0
 					|| coreDatatype.getIri().equals(getValue(datatypeID, valueRevision))

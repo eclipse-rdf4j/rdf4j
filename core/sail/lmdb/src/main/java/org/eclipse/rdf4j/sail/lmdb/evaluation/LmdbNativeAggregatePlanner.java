@@ -670,10 +670,7 @@ final class LmdbNativeAggregatePlanner extends LmdbNativeAggregateFilterCompiler
 		if (distinct && !reduced && projection != null && orderSlots.length == 0
 				&& SlotPlan.encounterOrderReplaySafe(arg) && QueryEvaluationUtility.isRepeatableWithinPreparation(node)
 				&& canDiscardWithoutEvaluation(node)) {
-			long retained = 0L;
-			for (int output : sourceSlots) {
-				retained |= 1L << output;
-			}
+			long retained = NativeSlotOrder.mask(sourceSlots);
 			// Prepared bindings for OPTIONAL-only slots are applied by an entry compatibility check after evaluation.
 			for (String name : optionalOnlyNames) {
 				Integer optional = slots.get(name);

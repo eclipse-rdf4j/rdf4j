@@ -42,6 +42,7 @@ import org.eclipse.rdf4j.query.algebra.evaluation.impl.GraphFrameBindings;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.QueryEvaluationContext;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.evaluationsteps.LeftJoinQueryEvaluationStep.ReplayValueCapturer;
 import org.eclipse.rdf4j.query.algebra.evaluation.iterator.LeftJoinIterator;
+import org.eclipse.rdf4j.query.algebra.evaluation.util.ExternalValuePreparation;
 import org.eclipse.rdf4j.query.algebra.helpers.TupleExprs;
 
 /**
@@ -414,13 +415,7 @@ final class OptionalRightMemo {
 				}
 				return row;
 			} catch (RuntimeException | Error failure) {
-				try {
-					close();
-				} catch (RuntimeException | Error cleanup) {
-					if (failure != cleanup) {
-						failure.addSuppressed(cleanup);
-					}
-				}
+				ExternalValuePreparation.closeWithSuppressed(this, failure);
 				throw failure;
 			}
 		}

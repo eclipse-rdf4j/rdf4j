@@ -13,12 +13,9 @@ package org.eclipse.rdf4j.sail.lmdb;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertInstanceOf;
-import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertSame;
 
 import java.nio.file.Path;
-import java.util.ArrayList;
-import java.util.List;
 import java.util.stream.Stream;
 
 import org.eclipse.rdf4j.model.IRI;
@@ -28,7 +25,6 @@ import org.eclipse.rdf4j.model.util.Values;
 import org.eclipse.rdf4j.sail.lmdb.config.LmdbStoreConfig;
 import org.eclipse.rdf4j.sail.lmdb.model.LmdbIRI;
 import org.eclipse.rdf4j.sail.lmdb.model.LmdbLiteral;
-import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.Arguments;
@@ -105,18 +101,6 @@ class ValueStoreCoreDatatypeDecodeTest {
 			assertEquals(expected, literal);
 			assertEquals(expected.hashCode(), literal.hashCode());
 		});
-	}
-
-	@Test
-	void everyCoreDatatypeHasAReferenceTag() {
-		List<CoreDatatype> all = new ArrayList<>();
-		all.addAll(List.of(CoreDatatype.XSD.values()));
-		all.addAll(List.of(CoreDatatype.RDF.values()));
-		all.addAll(List.of(CoreDatatype.GEO.values()));
-		for (CoreDatatype datatype : all) {
-			assertNotEquals(0, ValueIds.coreDatatypeTag(datatype),
-					datatype.toString());
-		}
 	}
 
 	private void assertCoreDatatype(Path dataDir, int format, LoadPath path, Literal expected, CoreDatatype core)

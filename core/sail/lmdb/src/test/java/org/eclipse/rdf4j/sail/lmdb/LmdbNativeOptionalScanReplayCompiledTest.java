@@ -13,13 +13,13 @@ package org.eclipse.rdf4j.sail.lmdb;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
-import java.util.LinkedHashSet;
 import java.util.Set;
 
 import org.eclipse.rdf4j.query.explanation.Explanation;
 import org.eclipse.rdf4j.query.explanation.GenericPlanNode;
 import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
 import org.eclipse.rdf4j.repository.sail.SailTupleQuery;
+import org.eclipse.rdf4j.sail.lmdb.evaluation.select.ExplainPath;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeAll;
@@ -98,8 +98,7 @@ public class LmdbNativeOptionalScanReplayCompiledTest extends LmdbNativeOptional
 			SailTupleQuery query = (SailTupleQuery) connection.prepareTupleQuery(chainQuery());
 			query.setForcedLmdbExecutionStrategy(forcedStrategy());
 			GenericPlanNode plan = query.explain(Explanation.Level.Telemetry).toGenericPlanNode();
-			Set<String> paths = new LinkedHashSet<>();
-			collect(plan, paths);
+			Set<String> paths = ExplainPath.executionPaths(plan);
 			assertThat(paths).as("executed paths: %s", plan).contains("irKernel").doesNotContain("irKernelInterpreted");
 		}
 	}
@@ -131,20 +130,5 @@ public class LmdbNativeOptionalScanReplayCompiledTest extends LmdbNativeOptional
 		long cached = metric(query, true, "nativeIrScanOpensActual", "irAggregate");
 		assertThat(uncached).isGreaterThan(3_000L);
 		assertThat(cached).as("aggregate OPTIONAL arms must replay repeated keys").isLessThan(uncached / 2);
-	}
-
-	private static void collect(GenericPlanNode node, Set<String> paths) {
-		if (node == null) {
-			return;
-		}
-		String path = node.getStringMetricActual("nativeExecutionPath");
-		if (path != null) {
-			for (String tag : path.split("\\|")) {
-				paths.add(tag.trim());
-			}
-		}
-		if (node.getPlans() != null) {
-			node.getPlans().forEach(child -> collect(child, paths));
-		}
 	}
 }

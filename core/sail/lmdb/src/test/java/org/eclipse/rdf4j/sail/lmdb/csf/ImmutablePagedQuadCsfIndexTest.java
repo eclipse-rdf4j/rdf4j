@@ -1015,7 +1015,7 @@ class ImmutablePagedQuadCsfIndexTest {
 		Arrays.fill(firstFragmentPages, 1);
 		long row = id(1, 1);
 		TrackingBudget mergeBudget = new TrackingBudget();
-		try (ImmutablePagedQuadCsfIndex index = buildFragments(1026,
+		try (ImmutablePagedQuadCsfIndex index = CsfFragmentTestSupport.buildFragments(1026,
 				List.of(builder -> feedPageShardLayout(builder, firstFragmentPages), builder -> {
 					builder.beginContinuationRow(1023, 0, row);
 					builder.pair(id(1, 1025), 0);
@@ -1507,37 +1507,8 @@ class ImmutablePagedQuadCsfIndexTest {
 			boolean continuation = continuations[fragment];
 			feeders.add(builder -> feedFragment(builder, predicate, plane, rows, continuation));
 		}
-		return buildFragments(predicate + 1, feeders, (nativeBytes, javaBytes) -> () -> {
+		return CsfFragmentTestSupport.buildFragments(predicate + 1, feeders, (nativeBytes, javaBytes) -> () -> {
 		});
-	}
-
-	private static ImmutablePagedQuadCsfIndex buildFragments(int predicateCount,
-			List<Consumer<ImmutablePagedQuadCsfIndex.Builder>> fragments,
-			ImmutablePagedQuadCsfIndex.MemoryBudget budget) {
-		ImmutablePagedQuadCsfIndex.BuildPlan[] plans = new ImmutablePagedQuadCsfIndex.BuildPlan[fragments.size()];
-		ImmutablePagedQuadCsfIndex[] indexes = new ImmutablePagedQuadCsfIndex[fragments.size()];
-		try {
-			for (int fragment = 0; fragment < fragments.size(); fragment++) {
-				try (ImmutablePagedQuadCsfIndex.Builder sizing = ImmutablePagedQuadCsfIndex
-						.sizingBuilder(predicateCount)) {
-					fragments.get(fragment).accept(sizing);
-					plans[fragment] = sizing.finishPlan();
-				}
-				try (ImmutablePagedQuadCsfIndex.Builder materializing = ImmutablePagedQuadCsfIndex
-						.materializingBuilder(plans[fragment])) {
-					fragments.get(fragment).accept(materializing);
-					indexes[fragment] = materializing.finishIndex();
-				}
-			}
-			return ImmutablePagedQuadCsfIndex.mergeMaterializedFragments(
-					ImmutablePagedQuadCsfIndex.mergeBuildPlans(plans), indexes, budget);
-		} finally {
-			for (ImmutablePagedQuadCsfIndex index : indexes) {
-				if (index != null) {
-					index.close();
-				}
-			}
-		}
 	}
 
 	private static void feedFragment(ImmutablePagedQuadCsfIndex.Builder builder, long predicate, int plane,

@@ -36,12 +36,15 @@ import static org.mockito.Mockito.when;
 
 import java.io.File;
 import java.io.IOException;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
+import java.util.function.Consumer;
 import java.util.function.IntConsumer;
 import java.util.stream.Stream;
 
@@ -52,6 +55,7 @@ import org.eclipse.rdf4j.sail.lmdb.LmdbDirectAdjacencyCommitDelta.PendingTable;
 import org.eclipse.rdf4j.sail.lmdb.config.DirectAdjacencyCoverage;
 import org.eclipse.rdf4j.sail.lmdb.config.DirectAdjacencyMode;
 import org.eclipse.rdf4j.sail.lmdb.config.LmdbStoreConfig;
+import org.eclipse.rdf4j.sail.lmdb.csf.CsfFragmentTestSupport;
 import org.eclipse.rdf4j.sail.lmdb.csf.CsfPageTestAccess;
 import org.eclipse.rdf4j.sail.lmdb.csf.ImmutablePagedQuadCsfIndex;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.NativeCancellationTestAccess;
@@ -540,29 +544,13 @@ class LmdbDirectGraphOpenCancellationTest {
 	}
 
 	private static ImmutablePagedQuadCsfIndex buildIndex() {
-		var plans = new ImmutablePagedQuadCsfIndex.BuildPlan[FRAGMENTS];
-		var fragments = new ImmutablePagedQuadCsfIndex[FRAGMENTS];
-		try {
-			for (int i = 0; i < FRAGMENTS; i++) {
-				try (var builder = ImmutablePagedQuadCsfIndex.sizingBuilder(1)) {
-					feed(builder, i);
-					plans[i] = builder.finishPlan();
-				}
-				try (var builder = ImmutablePagedQuadCsfIndex.materializingBuilder(plans[i])) {
-					feed(builder, i);
-					fragments[i] = builder.finishIndex();
-				}
-			}
-			return ImmutablePagedQuadCsfIndex.mergeMaterializedFragments(
-					ImmutablePagedQuadCsfIndex.mergeBuildPlans(plans), fragments, (nativeBytes, javaBytes) -> () -> {
-					});
-		} finally {
-			for (var fragment : fragments) {
-				if (fragment != null) {
-					fragment.close();
-				}
-			}
+		List<Consumer<ImmutablePagedQuadCsfIndex.Builder>> feeders = new ArrayList<>(FRAGMENTS);
+		for (int i = 0; i < FRAGMENTS; i++) {
+			int fragment = i;
+			feeders.add(builder -> feed(builder, fragment));
 		}
+		return CsfFragmentTestSupport.buildFragments(1, feeders, (nativeBytes, javaBytes) -> () -> {
+		});
 	}
 
 	private static void feed(ImmutablePagedQuadCsfIndex.Builder builder, int fragment) {
