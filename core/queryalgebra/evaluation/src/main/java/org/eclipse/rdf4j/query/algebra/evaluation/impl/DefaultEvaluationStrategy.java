@@ -1310,8 +1310,8 @@ public class DefaultEvaluationStrategy implements EvaluationStrategy, FederatedS
 	}
 
 	/**
-	 * Allows reuse of ordinary fixed GRAPH bodies compiled for a stable statement snapshot. An implementation must
-	 * use the standard statement and UNION preparation and supply a validator for every evaluation of the reused step.
+	 * Allows reuse of ordinary fixed GRAPH bodies compiled for a stable statement snapshot. An implementation must use
+	 * the standard statement and UNION preparation and supply a validator for every evaluation of the reused step.
 	 */
 	@InternalUseOnly
 	protected Runnable fixedGraphBodyReuseValidator() {

@@ -1049,7 +1049,8 @@ public class GraphQueryEvaluationStepTest {
 		second.addBinding("s", G2);
 		try (var firstRows = step.evaluate(first); var secondRows = step.evaluate(second)) {
 			assertThat(firstRows.hasNext()).isTrue();
-			assertThat(QueryResults.asList(secondRows)).extracting(row -> row.getValue("o")).containsExactly(secondValue);
+			assertThat(QueryResults.asList(secondRows)).extracting(row -> row.getValue("o"))
+					.containsExactly(secondValue);
 			assertThat(QueryResults.asList(firstRows)).extracting(row -> row.getValue("o")).containsExactly(firstValue);
 		}
 		assertThat(strategy.preparations).hasValue(1);
@@ -1074,7 +1075,8 @@ public class GraphQueryEvaluationStepTest {
 		assertThat(strategy.validations).hasValue(2);
 		strategy.validationFailure = new QueryEvaluationException("Snapshot invalidated");
 		try (var rows = step.evaluate(input)) {
-			assertThat(assertThrows(QueryEvaluationException.class, rows::hasNext)).isSameAs(strategy.validationFailure);
+			assertThat(assertThrows(QueryEvaluationException.class, rows::hasNext))
+					.isSameAs(strategy.validationFailure);
 		}
 		assertThat(strategy.preparations).hasValue(3);
 		assertThat(strategy.validations).hasValue(3);
@@ -1086,7 +1088,8 @@ public class GraphQueryEvaluationStepTest {
 		FixedGraphStrategy strategy = new FixedGraphStrategy(fixture);
 		strategy.setTrackResultSize(true);
 		StatementPattern pattern = fixture.pattern();
-		QueryEvaluationStep step = strategy.precompile(new Graph(Var.of("g", G1, true, true), pattern), fixture.context);
+		QueryEvaluationStep step = strategy.precompile(new Graph(Var.of("g", G1, true, true), pattern),
+				fixture.context);
 		for (int i = 0; i < 2; i++) {
 			try (var rows = step.evaluate(EmptyBindingSet.getInstance())) {
 				assertThat(QueryResults.asList(rows)).hasSize(1);
