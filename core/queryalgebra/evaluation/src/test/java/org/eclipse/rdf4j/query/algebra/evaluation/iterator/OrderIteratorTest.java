@@ -355,6 +355,37 @@ public class OrderIteratorTest {
 	}
 
 	@Test
+	public void distinctUsesBindingSetEqualityForGenericComparatorsAcrossSpillRuns() {
+		MapBindingSet first = new MapBindingSet();
+		first.addBinding("value", SimpleValueFactory.getInstance().createLiteral("first"));
+
+		MapBindingSet second = new MapBindingSet();
+		second.addBinding("value", SimpleValueFactory.getInstance().createLiteral("second"));
+
+		List<BindingSet> input = List.of(first, first, second, second);
+
+		for (long spillThreshold : new long[] { 0, 2 }) {
+			try (OrderIterator sorting = new OrderIterator(
+					new IterationStub(input.iterator()),
+					cmp,
+					Long.MAX_VALUE,
+					true,
+					spillThreshold)) {
+
+				List<BindingSet> actual = new ArrayList<>();
+
+				while (sorting.hasNext()) {
+					actual.add(sorting.next());
+				}
+
+				assertEquals(List.of(first, second), actual,
+						"distinct must use BindingSet equality with a generic comparator, spill="
+								+ spillThreshold);
+			}
+		}
+	}
+
+	@Test
 	@Timeout(value = 30, unit = TimeUnit.SECONDS)
 	public void sortFailureWaitsForInFlightReplayAwareComparator() throws Exception {
 		int workerCount = Math.min(8, ForkJoinPool.getCommonPoolParallelism());
