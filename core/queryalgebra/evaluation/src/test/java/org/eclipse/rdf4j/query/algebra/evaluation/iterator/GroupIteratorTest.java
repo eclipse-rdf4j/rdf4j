@@ -24,6 +24,7 @@ import java.time.Instant;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.Date;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -182,6 +183,39 @@ public class GroupIteratorTest {
 			assertTrue(gi.requestCancellation(), "the group operator polls cancellation itself");
 			assertThatExceptionOfType(QueryInterruptedException.class).isThrownBy(gi::hasNext);
 		}
+	}
+
+	@Test
+	void oneGroupKeyAndItsSampleDoNotCompareEveryPairOfFinalSolutions() {
+		AtomicInteger comparisons = new AtomicInteger();
+		List<BindingSet> members = new ArrayList<>();
+		for (int i = 0; i < 256; i++) {
+			IRI value = new SimpleIRI("urn:aggregate:" + i) {
+				@Override
+				public boolean equals(Object other) {
+					comparisons.incrementAndGet();
+					return super.equals(other);
+				}
+			};
+			QueryBindingSet row = new QueryBindingSet();
+			row.addBinding("k", value);
+			row.addBinding("copy", value);
+			members.add(row);
+			members.add(new QueryBindingSet(row));
+		}
+		Group group = new Group(new SingletonSet(), List.of("k"));
+		group.addGroupElement(new GroupElem("sample", new Sample(Var.of("k"))));
+		Set<String> results = new HashSet<>();
+		try (var it = GroupIterator.withMembers(EVALUATOR, group, EmptyBindingSet.getInstance(), CONTEXT,
+				new CloseableIteratorIteration<>(members.iterator()))) {
+			while (it.hasNext()) {
+				BindingSet row = it.next();
+				assertThat(row.getValue("sample")).isSameAs(row.getValue("k"));
+				assertThat(results.add(row.getValue("k").stringValue())).isTrue();
+			}
+		}
+		assertThat(results).hasSize(256);
+		assertThat(comparisons.get()).isLessThan(4096);
 	}
 
 	@Test

@@ -215,10 +215,11 @@ public class GroupIterator extends AbstractCloseableIteratorIteration<BindingSet
 		Collection<Entry> entries = buildEntries(aggregates);
 		Collection<BindingSet> bindingSets;
 		Consumer<BindingSet> add;
-		if (cf.getClass() == DefaultCollectionFactory.class && getValues.size() >= 2) {
+		if (cf.getClass() == DefaultCollectionFactory.class && !getValues.isEmpty()
+				&& (getValues.size() >= 2 || !aggregates.isEmpty())) {
 			// BindingSet's public XOR hash cancels repeated values. For example, GROUP BY ?from ?to over
-			// self-edges with equal counts would compare every pair of final mappings. Use DISTINCT's private
-			// hash but still deduplicate by the actual output, including inherited and aggregate bindings.
+			// self-edges with equal counts or SAMPLE(?key) grouped by ?key would compare every pair of final
+			// mappings. Use DISTINCT's private hash, still deduplicating by the entire actual output.
 			Map<DistinctBindingSetKey, BindingSet> results = new HashMap<>();
 			bindingSets = results.values();
 			add = row -> results.putIfAbsent(new DistinctBindingSetKey(row), row);
