@@ -41,6 +41,7 @@ final class RowState implements LmdbNativeSlotReader {
 
 	private static final AtomicLong FALLBACK_SOLUTION_IDENTITIES = new AtomicLong(1L);
 	final NativeLmdbQuerySource source;
+	private NativeLmdbQuerySource.CursorCancellation cursorCancellation;
 	final NativeSlotLayout layout;
 	final BindingSet base;
 	final TupleExpr telemetryTarget;
@@ -69,6 +70,8 @@ final class RowState implements LmdbNativeSlotReader {
 	PathResultMemo pathEstimateMemos;
 	/** Replay the ordinary generic source order without mandating adjacency or LMDB. */
 	boolean encounterOrderRequired;
+	/** The root result consumer reads this carrier without binding or nesting other operators on it. */
+	boolean terminalKernelOutput;
 	int trailSize;
 	long boundMask;
 	/**
@@ -152,6 +155,16 @@ final class RowState implements LmdbNativeSlotReader {
 		this.cancellation = cancellation;
 		this.trailSlots = new int[Math.max(8, slots.length * 4)];
 		this.trailOldValues = new long[this.trailSlots.length];
+	}
+
+	NativeLmdbQuerySource.CursorCancellation cursorCancellation() {
+		if (cursorCancellation == null) {
+			// RowState is operator- and worker-confined. Capture after the attempt scope has been installed.
+			cursorCancellation = NativeLmdbQuerySource.captureCursorCancellation(cancellation);
+		} else {
+			cursorCancellation = cursorCancellation.forWorker();
+		}
+		return cursorCancellation;
 	}
 
 	@Override

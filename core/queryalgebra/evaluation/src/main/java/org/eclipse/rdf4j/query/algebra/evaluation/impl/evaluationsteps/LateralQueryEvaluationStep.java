@@ -50,6 +50,7 @@ import org.eclipse.rdf4j.query.algebra.evaluation.impl.BindingSetQueryEvaluation
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.GraphFrameBindings;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.QueryEvaluationContext;
 import org.eclipse.rdf4j.query.algebra.evaluation.iterator.LateralIterator;
+import org.eclipse.rdf4j.query.algebra.evaluation.util.ExternalValuePreparation;
 import org.eclipse.rdf4j.query.algebra.helpers.AbstractSimpleQueryModelVisitor;
 import org.eclipse.rdf4j.query.algebra.helpers.TupleExprs;
 import org.eclipse.rdf4j.query.impl.EmptyBindingSet;
@@ -89,16 +90,19 @@ public final class LateralQueryEvaluationStep implements QueryEvaluationStep {
 
 	@Override
 	public CloseableIteration<BindingSet> evaluate(BindingSet bindings) {
-		// Evaluate left side
 		CloseableIteration<BindingSet> leftResults = left.evaluate(bindings);
+		try {
+			if (strategy == null || rightInputBindingNames.isEmpty()) {
+				return LateralIterator.getInstance(leftResults, right, rightInputBindingNames, bindings);
+			}
 
-		if (strategy == null || rightInputBindingNames.isEmpty()) {
-			return LateralIterator.getInstance(leftResults, right, rightInputBindingNames, bindings);
+			QueryEvaluationStep rightForBindings = prepareRight(bindings);
+			return LateralIterator.getInstance(leftResults,
+					leftBindings -> rightForBindings.evaluate(filterRightInput(bindings, leftBindings)));
+		} catch (RuntimeException | Error failure) {
+			ExternalValuePreparation.closeWithSuppressed(leftResults, failure);
+			throw failure;
 		}
-
-		QueryEvaluationStep rightForBindings = prepareRight(bindings);
-		return LateralIterator.getInstance(leftResults,
-				leftBindings -> rightForBindings.evaluate(filterRightInput(bindings, leftBindings)));
 	}
 
 	private QueryEvaluationStep prepareRight(BindingSet originalBindings) {

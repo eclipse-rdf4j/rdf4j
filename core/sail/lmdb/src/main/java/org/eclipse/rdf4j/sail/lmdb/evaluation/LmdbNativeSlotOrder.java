@@ -223,6 +223,18 @@ final class NativeTupleDistinctPlan {
 	static NativeTupleDistinctPlan global(SlotPlan arg, int[] keySlots) {
 		return new NativeTupleDistinctPlan(arg, NativeDistinctStrategy.GLOBAL_HASH, keySlots, new int[0], keySlots);
 	}
+
+	/** Build a tracker plan for an already-opened producer's certified contiguous key. */
+	static NativeTupleDistinctPlan forContiguousSlot(SlotPlan arg, int[] keySlots, int slot) {
+		if (slot < 0 || Arrays.stream(keySlots).noneMatch(keySlot -> keySlot == slot)) {
+			return global(arg, keySlots);
+		}
+		int[] residual = Arrays.stream(keySlots).filter(keySlot -> keySlot != slot).toArray();
+		NativeDistinctStrategy strategy = residual.length == 0
+				? NativeDistinctStrategy.ADJACENT
+				: NativeDistinctStrategy.PARTITIONED_HASH;
+		return new NativeTupleDistinctPlan(arg, strategy, keySlots, new int[] { slot }, residual);
+	}
 }
 
 /** Immutable mapping from aggregate specifications to one shared DISTINCT membership channel per argument. */

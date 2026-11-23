@@ -16,6 +16,8 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.junit.jupiter.api.Assertions.assertAll;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 import java.io.IOException;
@@ -26,7 +28,10 @@ import java.util.IdentityHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.OptionalLong;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.Executors;
 import java.util.concurrent.Phaser;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
@@ -36,6 +41,7 @@ import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.QueryEvaluationException;
+import org.eclipse.rdf4j.query.QueryInterruptedException;
 import org.eclipse.rdf4j.query.impl.EmptyBindingSet;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
 import org.eclipse.rdf4j.sail.inferencer.InferencerConnection;
@@ -439,6 +445,33 @@ class CompositeNativeLmdbQuerySourceOrderTest {
 	}
 
 	@Test
+	void cancellingOrderedMergeDropsPrefetchedHeadsAndForwardsEveryRequest() {
+		RecordIterator left = mock(RecordIterator.class);
+		RecordIterator right = mock(RecordIterator.class);
+		when(left.getIndexName()).thenReturn("ospc");
+		when(right.getIndexName()).thenReturn("ospc");
+		when(left.next()).thenReturn(new long[] { 1, 7, 10, 0 });
+		when(right.next()).thenReturn(new long[] { 2, 7, 20, 0 });
+		when(left.requestCancellation()).thenReturn(true);
+
+		try (RecordIterator merged = OrderedRecordIterator.merge(List.of(left, right), StatementOrder.O)) {
+			assertThat(merged.requestCancellation()).isTrue();
+			verify(left).requestCancellation();
+			verify(right).requestCancellation();
+			verify(left, never()).close();
+			verify(right, never()).close();
+
+			long[] buffer = new long[8];
+			assertThatThrownBy(() -> merged.fill(buffer, 2)).isInstanceOf(QueryInterruptedException.class);
+			assertThat(buffer).containsOnly(0);
+		}
+		verify(left).next();
+		verify(right).next();
+		verify(left).close();
+		verify(right).close();
+	}
+
+	@Test
 	void mismatchedSourceSignaturesClaimOnlyTheRequestedLogicalOrder() {
 		Object idSpace = new Object();
 		NativeLmdbQuerySource source = CompositeNativeLmdbQuerySource.combine(List.of(
@@ -740,6 +773,104 @@ class CompositeNativeLmdbQuerySourceOrderTest {
 		assertThat(active.probeCloses).isOne();
 		assertThat(active.statementOpens).isZero();
 		assertThat(inactive.parallelOpenCalls).isZero();
+	}
+
+	@Test
+	void cancellingCompositeScanLeavesUnopenedBranchesUntouched() throws IOException {
+		Object idSpace = new Object();
+		ProbeSource left = new ProbeSource(idSpace, 10, false);
+		ProbeSource right = new ProbeSource(idSpace, 20, false);
+		NativeLmdbQuerySource source = CompositeNativeLmdbQuerySource.combine(List.of(left, right));
+
+		try (RecordIterator unopened = source.statements(1, 2, 3, 4)) {
+			assertThat(unopened.requestCancellation()).isTrue();
+			assertThatThrownBy(unopened::next).isInstanceOf(QueryInterruptedException.class);
+			assertThat(left.statementOpens + right.statementOpens).isZero();
+		}
+		try (RecordIterator active = source.statements(1, 2, 3, 4)) {
+			assertThat(active.next()).containsExactly(1, 10, 3, 4);
+			assertThat(active.requestCancellation()).isTrue();
+			assertThat(left.iteratorCancellations).isOne();
+			assertThat(left.iteratorCloses).isZero();
+			assertThatThrownBy(active::next).isInstanceOf(QueryInterruptedException.class);
+		}
+
+		assertThat(left.statementOpens).isOne();
+		assertThat(left.iteratorCloses).isOne();
+		assertThat(right.statementOpens).isZero();
+	}
+
+	@Test
+	void cancellingCompositeScanWhileOpeningClosesTheLateCursorWithoutPulling() throws Exception {
+		Object idSpace = new Object();
+		CountDownLatch opening = new CountDownLatch(1);
+		CountDownLatch finishOpening = new CountDownLatch(1);
+		RecordIterator child = mock(RecordIterator.class);
+		NativeLmdbQuerySource left = new StubSource(idSpace) {
+			@Override
+			public RecordIterator statements(long subj, long pred, long obj, long context) {
+				opening.countDown();
+				try {
+					assertThat(finishOpening.await(10, TimeUnit.SECONDS)).isTrue();
+				} catch (InterruptedException failure) {
+					Thread.currentThread().interrupt();
+					throw new AssertionError(failure);
+				}
+				return child;
+			}
+		};
+		ProbeSource right = new ProbeSource(idSpace, 20, false);
+		NativeLmdbQuerySource source = CompositeNativeLmdbQuerySource.combine(List.of(left, right));
+
+		try (RecordIterator scan = source.statements(1, 2, 3, 4);
+				var tasks = Executors.newFixedThreadPool(2)) {
+			var pull = tasks.submit(() -> assertThatThrownBy(scan::next).isInstanceOf(QueryInterruptedException.class));
+			try {
+				assertThat(opening.await(10, TimeUnit.SECONDS)).isTrue();
+				var stop = tasks.submit(() -> scan.requestCancellation());
+				assertThat(stop.get(10, TimeUnit.SECONDS)).isTrue();
+				verify(child, never()).close();
+			} finally {
+				finishOpening.countDown();
+			}
+			pull.get(10, TimeUnit.SECONDS);
+		}
+
+		verify(child, never()).next();
+		verify(child).close();
+		assertThat(right.statementOpens).isZero();
+	}
+
+	@Test
+	void cancellingRetainedCompositeProbeLeavesUnopenedBranchesUntouched() throws IOException {
+		Object idSpace = new Object();
+		ProbeSource left = new ProbeSource(idSpace, 10, false);
+		ProbeSource right = new ProbeSource(idSpace, 20, false);
+		NativeLmdbQuerySource source = CompositeNativeLmdbQuerySource.combine(List.of(left, right));
+
+		try (NativeLmdbQuerySource.NativeProbe probe = source.newProbe()) {
+			RecordIterator retained;
+			try (RecordIterator active = probe.open(1, 2, 3, 4)) {
+				retained = active;
+				assertThat(active.next()).containsExactly(1, 10, 3, 4);
+				assertThat(active.requestCancellation()).isTrue();
+				assertThat(left.iteratorCancellations).isOne();
+				assertThat(left.iteratorCloses).isZero();
+				assertThatThrownBy(active::next).isInstanceOf(QueryInterruptedException.class);
+				assertThat(right.probeOpens).isZero();
+			}
+			try (RecordIterator reopened = probe.open(5, 6, 7, 8)) {
+				assertThat(reopened).isSameAs(retained);
+				assertThat(reopened.next()).containsExactly(5, 10, 7, 8);
+				assertThat(reopened.next()).containsExactly(5, 20, 7, 8);
+				assertThat(reopened.next()).isNull();
+			}
+		}
+
+		assertThat(left.probeOpens).isEqualTo(2);
+		assertThat(left.iteratorCloses).isEqualTo(2);
+		assertThat(right.probeOpens).isOne();
+		assertThat(right.iteratorCloses).isOne();
 	}
 
 	@Test
@@ -2494,6 +2625,7 @@ class CompositeNativeLmdbQuerySourceOrderTest {
 		int probeOpens;
 		int probeCloseCalls;
 		int probeCloses;
+		int iteratorCancellations;
 		int iteratorCloses;
 		RecordIterator lastStatementIterator;
 		NativeProbe lastProbe;
@@ -2571,6 +2703,12 @@ class CompositeNativeLmdbQuerySourceOrderTest {
 			return new RecordIterator() {
 				boolean emitted;
 				boolean closed;
+
+				@Override
+				public boolean requestCancellation() {
+					iteratorCancellations++;
+					return false;
+				}
 
 				@Override
 				public long[] next() {

@@ -162,12 +162,13 @@ final class PatternPlan implements SlotPlan {
 		}
 		NativeExecutionPhaseEvent.Span phase = NativeExecutionPhaseEvent.inputStage("scan", row.cancellation);
 		try {
-			return singleCursor(reusable, openIterator(row.source, probe,
+			return singleCursor(reusable, openIterator(row, probe,
 					subjectKey == UNKNOWN ? subj : subjectKey,
 					predicateKey == UNKNOWN ? pred : predicateKey,
 					objectKey == UNKNOWN ? obj : objectKey,
 					context, adjacencyAccessObserver(row), row.encounterOrderRequired, row.directLmdbSweep))
 							.withResidualRange(range)
+							.withCursorCancellation(row.cursorCancellation())
 							.withCancellation(row.cancellation)
 							.withExecutionPhase(phase);
 		} catch (IOException | RuntimeException | Error failure) {
@@ -191,6 +192,7 @@ final class PatternPlan implements SlotPlan {
 		try {
 			return openRaw(row, probe, existenceOnly, reusable)
 					.withResidualRange(range)
+					.withCursorCancellation(row.cursorCancellation())
 					.withCancellation(row.cancellation)
 					.withExecutionPhase(phase);
 		} catch (IOException | RuntimeException | Error failure) {
@@ -213,7 +215,7 @@ final class PatternPlan implements SlotPlan {
 			return PatternCursor.empty();
 		}
 		if (doesNotProduceBindings(row.slots) && (existenceOnly || atMostOneQuadCanMatch(context))) {
-			return openAsExistenceCheck(row.source, subj, pred, obj, context, accessObserver, reusable);
+			return openAsExistenceCheck(row, subj, pred, obj, context, accessObserver, reusable);
 		}
 		if (contexts.isFixed()) {
 			if (context != UNKNOWN) {
@@ -221,14 +223,14 @@ final class PatternPlan implements SlotPlan {
 					return PatternCursor.empty();
 				}
 				return singleCursor(reusable,
-						openIterator(row.source, probe, subj, pred, obj, context, accessObserver,
+						openIterator(row, probe, subj, pred, obj, context, accessObserver,
 								row.encounterOrderRequired, row.directLmdbSweep));
 			}
-			return openContexts(row.source, probe, subj, pred, obj, contexts.ids, accessObserver,
+			return openContexts(row, probe, subj, pred, obj, contexts.ids, accessObserver,
 					row.encounterOrderRequired, reusable).withDirectLmdbSweep(row.directLmdbSweep);
 		}
 		return singleCursor(reusable,
-				openIterator(row.source, probe, subj, pred, obj, context, accessObserver,
+				openIterator(row, probe, subj, pred, obj, context, accessObserver,
 						row.encounterOrderRequired, row.directLmdbSweep));
 	}
 
@@ -276,6 +278,7 @@ final class PatternPlan implements SlotPlan {
 		try {
 			return openRawUnbindingInternal(row, unboundMask, probe)
 					.withResidualRange(range)
+					.withCursorCancellation(row.cursorCancellation())
 					.withCancellation(row.cancellation)
 					.withExecutionPhase(phase);
 		} catch (IOException | RuntimeException | Error failure) {
@@ -303,14 +306,14 @@ final class PatternPlan implements SlotPlan {
 					return PatternCursor.empty();
 				}
 				return PatternCursor.single(
-						openIterator(row.source, probe, subj, pred, obj, context, accessObserver,
+						openIterator(row, probe, subj, pred, obj, context, accessObserver,
 								row.encounterOrderRequired, false));
 			}
-			return openContexts(row.source, probe, subj, pred, obj, contexts.ids, accessObserver,
+			return openContexts(row, probe, subj, pred, obj, contexts.ids, accessObserver,
 					row.encounterOrderRequired, null);
 		}
 		return PatternCursor.single(
-				openIterator(row.source, probe, subj, pred, obj, context, accessObserver,
+				openIterator(row, probe, subj, pred, obj, context, accessObserver,
 						row.encounterOrderRequired, false));
 	}
 
@@ -327,31 +330,35 @@ final class PatternPlan implements SlotPlan {
 				: reusable.resetExists(subj, pred, obj, context);
 	}
 
-	private RecordIterator openIterator(NativeLmdbQuerySource source, NativeLmdbQuerySource.NativeProbe probe,
+	private RecordIterator openIterator(RowState row, NativeLmdbQuerySource.NativeProbe probe,
 			long subj, long pred, long obj, long context,
 			NativeLmdbQuerySource.AdjacencyAccessObserver accessObserver, boolean encounterOrderRequired,
 			boolean directLmdbSweep)
 			throws IOException {
+		NativeLmdbQuerySource source = row.source;
+		NativeLmdbQuerySource.CursorCancellation cancellation = row.cursorCancellation();
 		if (directLmdbSweep) {
-			return source.lmdbStatements(subj, pred, obj, context, accessObserver);
+			return source.lmdbStatements(subj, pred, obj, context, accessObserver, cancellation);
 		}
 		if (statementOrder != null) {
-			return source.statements(statementOrder, subj, pred, obj, context, accessObserver);
+			return source.statements(statementOrder, subj, pred, obj, context, accessObserver, cancellation);
 		}
 		if (range != null) {
-			return source.statements(subj, pred, obj, context, range, accessObserver);
+			return source.statements(subj, pred, obj, context, range, accessObserver, cancellation);
 		}
 		if (encounterOrderRequired) {
-			return source.statementsInEncounterOrder(subj, pred, obj, context, accessObserver);
+			return source.statementsInEncounterOrder(subj, pred, obj, context, accessObserver, cancellation);
 		}
 		return probe != null ? probe.open(subj, pred, obj, context, accessObserver)
-				: source.statements(subj, pred, obj, context, accessObserver);
+				: source.statements(subj, pred, obj, context, accessObserver, cancellation);
 	}
 
-	private PatternCursor openContexts(NativeLmdbQuerySource source, NativeLmdbQuerySource.NativeProbe probe,
+	private PatternCursor openContexts(RowState row, NativeLmdbQuerySource.NativeProbe probe,
 			long subj, long pred, long obj, long[] contextIds,
 			NativeLmdbQuerySource.AdjacencyAccessObserver accessObserver, boolean encounterOrderRequired,
 			PatternCursor reusable) throws IOException {
+		NativeLmdbQuerySource source = row.source;
+		NativeLmdbQuerySource.CursorCancellation cancellation = row.cursorCancellation();
 		if (statementOrder == null) {
 			return reusable == null
 					? PatternCursor.contexts(source, probe, subj, pred, obj, contextIds, range, accessObserver,
@@ -362,9 +369,10 @@ final class PatternPlan implements SlotPlan {
 		List<RecordIterator> iterators = new ArrayList<>(contextIds.length);
 		try {
 			for (long contextId : contextIds) {
-				iterators.add(source.statements(statementOrder, subj, pred, obj, contextId, accessObserver));
+				iterators.add(
+						source.statements(statementOrder, subj, pred, obj, contextId, accessObserver, cancellation));
 			}
-			return singleCursor(reusable, OrderedRecordIterator.merge(iterators, statementOrder));
+			return singleCursor(reusable, OrderedRecordIterator.merge(iterators, statementOrder, cancellation));
 		} catch (IOException | RuntimeException | Error e) {
 			for (RecordIterator iterator : iterators) {
 				iterator.close();
@@ -850,27 +858,31 @@ final class PatternPlan implements SlotPlan {
 		};
 	}
 
-	PatternCursor openAsExistenceCheck(NativeLmdbQuerySource source, long subj, long pred, long obj,
+	private PatternCursor openAsExistenceCheck(RowState row, long subj, long pred, long obj,
 			long context, NativeLmdbQuerySource.AdjacencyAccessObserver accessObserver, PatternCursor reusable)
 			throws IOException {
+		NativeLmdbQuerySource source = row.source;
+		NativeLmdbQuerySource.CursorCancellation cancellation = row.cursorCancellation();
 		if (contexts.isFixed()) {
 			if (context != UNKNOWN) {
 				return existsCursor(reusable,
-						contexts.contains(context) && source.has(subj, pred, obj, context, accessObserver),
+						contexts.contains(context)
+								&& source.has(subj, pred, obj, context, accessObserver, cancellation),
 						subj,
 						pred, obj, context);
 			}
 			for (long contextId : contexts.ids) {
-				if (source.has(subj, pred, obj, contextId, accessObserver)) {
+				if (source.has(subj, pred, obj, contextId, accessObserver, cancellation)) {
 					return existsCursor(reusable, true, subj, pred, obj, contextId);
 				}
 			}
 			return PatternCursor.empty();
 		}
 		if (namedContextScope && context == UNKNOWN) {
-			return singleCursor(reusable, source.statements(subj, pred, obj, context, accessObserver));
+			return singleCursor(reusable, source.statements(subj, pred, obj, context, accessObserver, cancellation));
 		}
-		return existsCursor(reusable, source.has(subj, pred, obj, context, accessObserver), subj, pred, obj, context);
+		return existsCursor(reusable, source.has(subj, pred, obj, context, accessObserver, cancellation), subj, pred,
+				obj, context);
 	}
 
 	boolean doesNotProduceBindings(long[] slots) {
@@ -941,6 +953,7 @@ final class PatternRowCursor implements RowCursor {
 	final PatternPlan pattern;
 	final RowState row;
 	final PatternCursor cursor;
+	private NativeLmdbQuerySource.CursorCancellation cancellation;
 	int activeMark = -1;
 	int cancellationPollTick;
 
@@ -948,23 +961,23 @@ final class PatternRowCursor implements RowCursor {
 		this.pattern = pattern;
 		this.row = row;
 		this.cursor = cursor;
+		this.cancellation = row.cursorCancellation();
 	}
 
 	@Override
 	public boolean next() throws IOException {
 		release();
 		if (cancellationPollTick == 0) {
-			LmdbNativeProbeDeadline.poll(0);
-			row.cancellation.check();
+			checkpointCancellation();
 		}
 		while (true) {
-			int tick = ++this.cancellationPollTick;
-			LmdbNativeProbeDeadline.poll(tick);
-			row.cancellation.poll(tick);
+			if ((++cancellationPollTick & (NativeCancellationToken.POLL_INTERVAL - 1)) == 0) {
+				row.cancellation.check();
+				cancellation.checkpointProbeDeadline();
+			}
 			long[] quad = cursor.next();
 			if (quad == null) {
-				LmdbNativeProbeDeadline.poll(0);
-				row.cancellation.check();
+				checkpointCancellation();
 				return false;
 			}
 			int mark = row.mark();
@@ -974,6 +987,11 @@ final class PatternRowCursor implements RowCursor {
 			}
 			row.rollback(mark);
 		}
+	}
+
+	private void checkpointCancellation() {
+		cancellation = cancellation.forWorker();
+		cancellation.checkpoint();
 	}
 
 	@Override

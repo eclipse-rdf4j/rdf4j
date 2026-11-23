@@ -16,6 +16,7 @@ import java.lang.invoke.VarHandle;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collections;
+import java.util.HashSet;
 import java.util.Iterator;
 import java.util.LinkedHashSet;
 import java.util.List;
@@ -24,6 +25,8 @@ import java.util.Objects;
 import java.util.Set;
 import java.util.function.BiConsumer;
 import java.util.function.Function;
+import java.util.function.Supplier;
+import java.util.function.UnaryOperator;
 
 import org.eclipse.rdf4j.common.annotation.InternalUseOnly;
 import org.eclipse.rdf4j.model.Value;
@@ -34,6 +37,7 @@ import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.MutableBindingSet;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.GraphFrameBindings;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.GraphFrameBindings.MutableCarrier;
+import org.eclipse.rdf4j.query.impl.MapBindingSet;
 import org.eclipse.rdf4j.query.impl.SimpleBinding;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -78,6 +82,9 @@ public class ArrayBindingSet extends AbstractBindingSet implements MutableBindin
 	// Evaluation-context state: not part of the serialized form when rows are spilled to disk.
 	private final transient SortedBindingNamesCache sharedSortedBindingNamesCache;
 	private long activeBindingMask;
+	// Only certified OPTIONAL replay additions carry ownership. Ordinary writes invalidate the affected slots.
+	private transient Object replayOwner;
+	private transient long replayOwnedSlots;
 	private int cachedSize = -1;
 	private int cachedHashCode;
 	private GraphFrameBindings graphFrames;
@@ -112,8 +119,12 @@ public class ArrayBindingSet extends AbstractBindingSet implements MutableBindin
 	}
 
 	public ArrayBindingSet(String[] names, SortedBindingNamesCache sharedSortedBindingNamesCache) {
+		this(names, sharedSortedBindingNamesCache, new Value[names.length]);
+	}
+
+	private ArrayBindingSet(String[] names, SortedBindingNamesCache sharedSortedBindingNamesCache, Value[] values) {
 		this.bindingNames = names;
-		this.values = new Value[names.length];
+		this.values = values;
 		this.sharedSortedBindingNamesCache = sharedSortedBindingNamesCache;
 		this.empty = true;
 		this.cachedSize = 0;
@@ -172,6 +183,10 @@ public class ArrayBindingSet extends AbstractBindingSet implements MutableBindin
 			this.bindingNamesSetCache = toCopy.bindingNamesSetCache;
 			this.sortedBindingNames = toCopy.sortedBindingNames;
 			this.cachedHashCode = toCopy.cachedHashCode;
+			if (toCopy.getClass() == ArrayBindingSet.class) {
+				this.replayOwner = toCopy.replayOwner;
+				this.replayOwnedSlots = toCopy.replayOwnedSlots;
+			}
 		}
 		if (sharedSortedBindingNamesCache != null) {
 			this.activeBindingMask = toCopy.bindingNames == names ? toCopy.activeBindingMask
@@ -197,6 +212,7 @@ public class ArrayBindingSet extends AbstractBindingSet implements MutableBindin
 		}
 		return (v, a) -> {
 			a.forgetGraphFrame(bindingName);
+			a.clearReplayOwnership(index);
 			a.values[index] = v == null ? NULL_VALUE : v;
 			a.empty = v == null ? a.calculateEmpty() : false;
 			a.updateActiveBindingMask(index, v != null);
@@ -214,6 +230,7 @@ public class ArrayBindingSet extends AbstractBindingSet implements MutableBindin
 		return (v, a) -> {
 			assert a.values[index] == null || a.values[index] == NULL_VALUE;
 			a.forgetGraphFrame(bindingName);
+			a.clearReplayOwnership(index);
 			a.values[index] = v == null ? NULL_VALUE : v;
 			a.empty = v == null ? a.calculateEmpty() : false;
 			a.updateActiveBindingMask(index, v != null);
@@ -362,6 +379,164 @@ public class ArrayBindingSet extends AbstractBindingSet implements MutableBindin
 		return new ArrayBindingSetIterator();
 	}
 
+	/** Bulk row construction using the exact layout and write policy of an evaluation context. */
+	@InternalUseOnly
+	public static final class IndexedLayout {
+		private final ArrayBindingSet template;
+		private final UnaryOperator<Value> capture;
+		private final Supplier<Object> replayOwnership;
+
+		public IndexedLayout(ArrayBindingSet template) {
+			this(template, null, null);
+		}
+
+		private IndexedLayout(ArrayBindingSet template, UnaryOperator<Value> capture,
+				Supplier<Object> replayOwnership) {
+			this.template = template;
+			this.capture = capture;
+			this.replayOwnership = replayOwnership;
+		}
+
+		/** A second capture layer must use the normal context setters to retain their composition. */
+		public IndexedLayout withCapture(UnaryOperator<Value> capture, Supplier<Object> replayOwnership) {
+			return this.capture == null ? new IndexedLayout(template, capture, replayOwnership) : null;
+		}
+
+		private boolean recognizesReplayOwner(Object owner) {
+			return owner != null && replayOwnership != null && replayOwnership.get() == owner;
+		}
+
+		public int slot(String name) {
+			return template.getIndex(name);
+		}
+
+		private boolean matches(BindingSet row) {
+			if (row == null || row.getClass() != ArrayBindingSet.class) {
+				return false;
+			}
+			ArrayBindingSet source = (ArrayBindingSet) row;
+			return source.bindingNames == template.bindingNames && source.values.length == template.values.length
+					&& source.sharedSortedBindingNamesCache == template.sharedSortedBindingNamesCache
+					&& source.graphFrames == null;
+		}
+
+		/** Maps slots in projection order to distinct target slots, or returns null for an incompatible input row. */
+		public ArrayBindingSet project(BindingSet row, int[] sources, int[] targets) {
+			if (!matches(row)) {
+				return null;
+			}
+			ArrayBindingSet source = (ArrayBindingSet) row;
+			ArrayBindingSet result = new ArrayBindingSet(template.bindingNames, template.sharedSortedBindingNamesCache);
+			int size = 0;
+			long mask = 0;
+			for (int i = 0; i < sources.length; i++) {
+				int sourceSlot = sources[i];
+				Value value = source.values[sourceSlot];
+				if (isBoundValue(value)) {
+					// An earlier capture can call application code. Check the current slot and owner when used.
+					if (capture != null && ((source.replayOwnedSlots & (1L << sourceSlot)) == 0
+							|| !recognizesReplayOwner(source.replayOwner))) {
+						value = capture.apply(value);
+					}
+					int target = targets[i];
+					result.values[target] = value == null ? NULL_VALUE : value;
+					if (isBoundValue(value)) {
+						size++;
+						mask |= 1L << target;
+					}
+				}
+			}
+			result.cachedSize = size;
+			result.empty = size == 0;
+			if (result.sharedSortedBindingNamesCache != null) {
+				result.activeBindingMask = mask;
+			}
+			return result;
+		}
+
+		/** Overlays additions captured by the given live owner on an independent copy of the left row. */
+		public ArrayBindingSet replay(BindingSet row, int[] targets, Value[] additions, Object owner) {
+			if (!matches(row) || !recognizesReplayOwner(owner)) {
+				return null;
+			}
+			ArrayBindingSet source = (ArrayBindingSet) row;
+			ArrayBindingSet result = new ArrayBindingSet(template.bindingNames, template.sharedSortedBindingNamesCache,
+					source.values.clone());
+			boolean trackOwnership = result.values.length <= Long.SIZE;
+			long addedSlots = 0;
+			for (int i = 0; i < additions.length; i++) {
+				Value value = additions[i];
+				if (value != null) {
+					int target = targets[i];
+					if (trackOwnership) {
+						addedSlots |= 1L << target;
+					} else {
+						value = capture.apply(value);
+					}
+					result.values[target] = value == null ? NULL_VALUE : value;
+				}
+			}
+			int size;
+			if (result.sharedSortedBindingNamesCache != null && trackOwnership) {
+				result.activeBindingMask = source.activeBindingMask | addedSlots;
+				size = Long.bitCount(result.activeBindingMask);
+			} else {
+				size = 0;
+				for (Value value : result.values) {
+					if (isBoundValue(value)) {
+						size++;
+					}
+				}
+			}
+			result.cachedSize = size;
+			result.empty = size == 0;
+			if (trackOwnership) {
+				result.replayOwnedSlots = addedSlots | (source.replayOwner == owner ? source.replayOwnedSlots : 0);
+				result.replayOwner = result.replayOwnedSlots == 0 ? null : owner;
+			}
+			return result;
+		}
+	}
+
+	/** A reusable conversion from this evaluation layout to detached, mutable repository rows. */
+	@InternalUseOnly
+	public static final class ResultSnapshotLayout {
+		private final String[] names;
+		private final MapBindingSet.CompactLayout layout;
+
+		public ResultSnapshotLayout(ArrayBindingSet row) {
+			names = row.bindingNames;
+			Set<String> unique = HashSet.newHashSet(names.length);
+			for (String name : names) {
+				if (name == null || !unique.add(name)) {
+					layout = null;
+					return;
+				}
+			}
+			layout = new MapBindingSet.CompactLayout(names);
+		}
+
+		public boolean matches(ArrayBindingSet row) {
+			return names == row.bindingNames;
+		}
+
+		public MapBindingSet snapshot(ArrayBindingSet row) {
+			if (layout == null || !matches(row) || row.getClass() != ArrayBindingSet.class) {
+				return null;
+			}
+			Value[] copy = new Value[names.length];
+			int count = 0;
+			for (int slot = 0; slot < copy.length; slot++) {
+				Value value = row.values[slot];
+				if (isBoundValue(value)) {
+					copy[slot] = value;
+					count++;
+				}
+			}
+			return layout.snapshot(copy, count);
+		}
+	}
+
 	@Override
 	public int size() {
 		if (isEmpty()) {
@@ -486,6 +661,7 @@ public class ArrayBindingSet extends AbstractBindingSet implements MutableBindin
 
 		assert this.values[index] == null || this.values[index] == NULL_VALUE;
 		forgetGraphFrame(binding.getName());
+		clearReplayOwnership(index);
 		this.values[index] = value == null ? NULL_VALUE : value;
 		empty = value == null ? calculateEmpty() : false;
 		updateActiveBindingMask(index, value != null);
@@ -500,6 +676,7 @@ public class ArrayBindingSet extends AbstractBindingSet implements MutableBindin
 		}
 		Value value = binding.getValue();
 		forgetGraphFrame(binding.getName());
+		clearReplayOwnership(index);
 		this.values[index] = value == null ? NULL_VALUE : value;
 		empty = value == null ? calculateEmpty() : false;
 		updateActiveBindingMask(index, value != null);
@@ -514,6 +691,7 @@ public class ArrayBindingSet extends AbstractBindingSet implements MutableBindin
 		}
 
 		forgetGraphFrame(name);
+		clearReplayOwnership(index);
 		this.values[index] = value;
 		updateActiveBindingMask(index, isBoundValue(value));
 		this.empty = value == null ? calculateEmpty() : false;
@@ -538,6 +716,8 @@ public class ArrayBindingSet extends AbstractBindingSet implements MutableBindin
 	}
 
 	public void addAll(ArrayBindingSet other) {
+		replayOwnedSlots = 0;
+		replayOwner = null;
 		GraphFrameBindings supplied = GraphFrameBindings.from(other);
 		if (graphFrames != null) {
 			other.getBindingNames().forEach(this::forgetGraphFrame);
@@ -565,6 +745,15 @@ public class ArrayBindingSet extends AbstractBindingSet implements MutableBindin
 			activeBindingMask = calculateActiveBindingMask();
 		}
 
+	}
+
+	private void clearReplayOwnership(int index) {
+		if (replayOwnedSlots != 0) {
+			replayOwnedSlots &= ~(1L << index);
+			if (replayOwnedSlots == 0) {
+				replayOwner = null;
+			}
+		}
 	}
 
 	private void updateActiveBindingMask(int index, boolean hasValue) {

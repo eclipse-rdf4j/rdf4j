@@ -2940,7 +2940,7 @@ final class LmdbNativePackedFtree {
 				borrowedInput = false;
 				if (remaining == NativeLmdbQuerySource.NativeAdjacency.NOT_COVERED) {
 					if (storeProbe == null)
-						storeProbe = runtime.row.source.newProbe();
+						storeProbe = runtime.row.source.newProbe(runtime.row.cursorCancellation());
 					storeCursor = edge.openStore(runtime, rootId, UNKNOWN, storeProbe);
 					return true;
 				}
@@ -3407,7 +3407,7 @@ final class LmdbNativePackedFtree {
 					remaining = edge.bind(parent);
 					if (remaining == NativeLmdbQuerySource.NativeAdjacency.NOT_COVERED) {
 						if (probe == null)
-							probe = runtime.row.source.newProbe();
+							probe = runtime.row.source.newProbe(runtime.row.cursorCancellation());
 						store = edge.openStore(runtime, parent, UNKNOWN, probe);
 						return;
 					}
@@ -3611,7 +3611,7 @@ final class LmdbNativePackedFtree {
 		}
 
 		private static Runtime open(Plan plan, RowState row, boolean openRoots) throws IOException {
-			NativeLmdbQuerySource.NativeProbe probe = row.source.newProbe();
+			NativeLmdbQuerySource.NativeProbe probe = row.source.newProbe(row.cursorCancellation());
 			Runtime runtime = new Runtime(plan, row, probe, null, new PatternRuntime[plan.constants.length]);
 			try {
 				runtime.roots = openRoots ? runtime.openRootProducer() : EmptyRootProducer.INSTANCE;
@@ -3841,7 +3841,7 @@ final class LmdbNativePackedFtree {
 		NativeLmdbQuerySource.NativeProbe lookupProbe() {
 			NativeLmdbQuerySource.NativeProbe result = lookupProbe;
 			if (result == null) {
-				result = row.source.newProbe();
+				result = row.source.newProbe(row.cursorCancellation());
 				lookupProbe = result;
 			}
 			return result;
@@ -5157,17 +5157,17 @@ final class LmdbNativePackedFtree {
 	static final class WitnessRuntime {
 		final WitnessPlan plan;
 		final NativeLmdbQuerySource.NativeAdjacency adjacency;
-		final NativeLmdbQuerySource source;
+		final RowState row;
 
 		private WitnessRuntime(WitnessPlan plan, NativeLmdbQuerySource.NativeAdjacency adjacency,
-				NativeLmdbQuerySource source) {
+				RowState row) {
 			this.plan = plan;
 			this.adjacency = adjacency;
-			this.source = source;
+			this.row = row;
 		}
 
 		static WitnessRuntime open(Runtime runtime, WitnessPlan plan) throws IOException {
-			return new WitnessRuntime(plan, runtime.adjacency(plan.predicate, plan.keyIsSubject), runtime.row.source);
+			return new WitnessRuntime(plan, runtime.adjacency(plan.predicate, plan.keyIsSubject), runtime.row);
 		}
 
 		boolean accept(long key) {
@@ -5182,7 +5182,7 @@ final class LmdbNativePackedFtree {
 			}
 			long subj = plan.keyIsSubject ? key : plan.otherConstant;
 			long obj = plan.keyIsSubject ? plan.otherConstant : key;
-			boolean exists = plan.fallback.evaluate(source, subj, plan.predicate, obj, UNKNOWN);
+			boolean exists = plan.fallback.evaluate(row, subj, plan.predicate, obj, UNKNOWN);
 			return exists != plan.negated;
 		}
 

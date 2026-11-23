@@ -83,50 +83,48 @@ public final class LmdbStandardQueryOptimizerPipeline implements QueryOptimizerP
 
 	@Override
 	public BindingSet getOptimizerInputBindings(QueryOptimizer optimizer, BindingSet initialBindings) {
+		if (optimizer instanceof LmdbDistinctWitnessOptimizer) {
+			return initialBindings;
+		}
 		return delegate.getOptimizerInputBindings(optimizer, initialBindings);
 	}
 
 	@Override
 	public Iterable<QueryOptimizer> getOptimizers() {
-		if (!strategy.getQueryExecutionPolicy().experimentalQueryOptimizations()) {
-			if (!nativeEngine && !stableOrderDistinct) {
-				return delegate.getOptimizers();
-			}
-			List<QueryOptimizer> plain = new ArrayList<>();
-			delegate.getOptimizers().forEach(plain::add);
-			if (nativeEngine) {
-				insertGroupPushdown(plain);
-			} else {
-				plain.add(new LmdbDistinctOrderMarkingOptimizer(tripleSource));
-			}
-			return plain;
-		}
+		boolean experimental = strategy.getQueryExecutionPolicy().experimentalQueryOptimizations();
 		List<QueryOptimizer> optimizers = new ArrayList<>();
 		boolean inserted = false;
 
 		for (QueryOptimizer optimizer : delegate.getOptimizers()) {
-			if (optimizer instanceof QueryJoinOptimizer && stableOrderDistinct) {
+			if (experimental && optimizer instanceof QueryJoinOptimizer && stableOrderDistinct) {
 				optimizers.add(new LmdbDistinctAnchorJoinOptimizer(evaluationStatistics, strategy.isTrackResultSize(),
 						tripleSource, strategy.getQueryExecutionPolicy()));
 				optimizers.add(new LmdbDistinctOrderMarkingOptimizer(tripleSource));
-			} else if (optimizer instanceof QueryJoinOptimizer && !evaluationStatistics.supportsJoinEstimation()) {
+			} else if (experimental && optimizer instanceof QueryJoinOptimizer
+					&& !evaluationStatistics.supportsJoinEstimation()) {
 				optimizers.add(new LmdbIndexAwareJoinOptimizer(evaluationStatistics, strategy.isTrackResultSize(),
 						new LmdbOrderBlindTripleSource(tripleSource), strategy.getQueryExecutionPolicy()));
 			} else {
 				optimizers.add(optimizer);
 			}
-			if (optimizer instanceof OrderLimitOptimizer) {
+			if (experimental && optimizer instanceof OrderLimitOptimizer) {
 				optimizers.add(new LmdbOrderByOptimizer(tripleSource));
 				inserted = true;
 			}
 		}
 
-		if (!inserted) {
+		if (experimental && !inserted) {
 			optimizers.add(new LmdbOrderByOptimizer(tripleSource));
 		}
 
 		if (nativeEngine) {
 			insertGroupPushdown(optimizers);
+		} else {
+			if (stableOrderDistinct && !experimental) {
+				optimizers.add(new LmdbDistinctOrderMarkingOptimizer(tripleSource));
+			}
+			// Witnesses must see which ordered producer the join planner actually selected.
+			optimizers.add(new LmdbDistinctWitnessOptimizer());
 		}
 		return optimizers;
 	}

@@ -126,7 +126,7 @@ final class LmdbNativeJaninoAggregate {
 	private static List<BindingSet> evaluate(Recognized shape, RowState row, NativeGroupIteration emitter) {
 		NativeLmdbQuerySource.NativeProbe probe = null;
 		try {
-			probe = row.source.newProbe();
+			probe = row.source.newProbe(row.cursorCancellation());
 			NativeLmdbQuerySource.NativeAdjacency producer = probe.adjacency(shape.producerPredicate,
 					shape.producerBySubject);
 			if (producer == null || !producer.runsNeighborOrdered()) {
