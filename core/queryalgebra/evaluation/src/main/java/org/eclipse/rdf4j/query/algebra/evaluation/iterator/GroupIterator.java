@@ -35,6 +35,7 @@ import org.eclipse.rdf4j.collection.factory.api.BindingSetKey;
 import org.eclipse.rdf4j.collection.factory.api.CollectionFactory;
 import org.eclipse.rdf4j.collection.factory.impl.DefaultCollectionFactory;
 import org.eclipse.rdf4j.common.annotation.Experimental;
+import org.eclipse.rdf4j.common.annotation.InternalUseOnly;
 import org.eclipse.rdf4j.common.iteration.AbstractCloseableIteratorIteration;
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.common.iteration.CooperativeCancellation;
@@ -64,6 +65,7 @@ import org.eclipse.rdf4j.query.algebra.Sample;
 import org.eclipse.rdf4j.query.algebra.Sum;
 import org.eclipse.rdf4j.query.algebra.UnaryValueOperator;
 import org.eclipse.rdf4j.query.algebra.ValueExpr;
+import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.query.algebra.evaluation.EvaluationStrategy;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryEvaluationStep;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryValueEvaluationStep;
@@ -109,6 +111,9 @@ public class GroupIterator extends AbstractCloseableIteratorIteration<BindingSet
 
 	private final QueryEvaluationStep arguments;
 
+	/** Prepared scalar steps shared only by iterators created from the same prepared Group step. */
+	private final Map<ValueExpr, Function<BindingSet, Value>> reusableAggregateArguments;
+
 	// The iteration of the arguments, stored while building entries for allowing premature closing
 	private volatile CloseableIteration<BindingSet> argumentsIter;
 
@@ -138,7 +143,7 @@ public class GroupIterator extends AbstractCloseableIteratorIteration<BindingSet
 			long iterationCacheSyncThreshold, QueryEvaluationContext context, ValueFactory vf, CollectionFactory cf)
 			throws QueryEvaluationException {
 		this(strategy, group, parentBindings, iterationCacheSyncThreshold, context, vf, cf,
-				strategy.precompile(group.getArg(), context));
+				strategy.precompile(group.getArg(), context), null);
 	}
 
 	@Experimental
@@ -146,7 +151,16 @@ public class GroupIterator extends AbstractCloseableIteratorIteration<BindingSet
 			QueryEvaluationContext context, QueryEvaluationStep arguments) throws QueryEvaluationException {
 		this(strategy, group, parentBindings, 0, context, SimpleValueFactory.getInstance(),
 				new DefaultCollectionFactory(),
-				arguments);
+				arguments, null);
+	}
+
+	/** Internal constructor used by a prepared Group step to reuse safe scalar argument steps. */
+	@InternalUseOnly
+	public GroupIterator(EvaluationStrategy strategy, Group group, BindingSet parentBindings,
+			QueryEvaluationContext context, QueryEvaluationStep arguments,
+			Map<ValueExpr, Function<BindingSet, Value>> reusableAggregateArguments) throws QueryEvaluationException {
+		this(strategy, group, parentBindings, 0, context, SimpleValueFactory.getInstance(),
+				new DefaultCollectionFactory(), arguments, reusableAggregateArguments);
 	}
 
 	/**
@@ -155,14 +169,25 @@ public class GroupIterator extends AbstractCloseableIteratorIteration<BindingSet
 	@Experimental
 	public static GroupIterator withMembers(EvaluationStrategy strategy, Group group, BindingSet parentBindings,
 			QueryEvaluationContext context, CloseableIteration<BindingSet> members) {
-		GroupIterator groups = new GroupIterator(strategy, group, parentBindings, context, ignored -> members);
+		return withMembers(strategy, group, parentBindings, context, members, null);
+	}
+
+	/** Internal variant that reuses scalar steps while retaining this invocation's member cursor ownership. */
+	@InternalUseOnly
+	public static GroupIterator withMembers(EvaluationStrategy strategy, Group group, BindingSet parentBindings,
+			QueryEvaluationContext context, CloseableIteration<BindingSet> members,
+			Map<ValueExpr, Function<BindingSet, Value>> reusableAggregateArguments) {
+		GroupIterator groups = new GroupIterator(strategy, group, parentBindings, context, ignored -> members,
+				reusableAggregateArguments);
 		groups.argumentsIter = members;
 		return groups;
 	}
 
 	private GroupIterator(EvaluationStrategy strategy, Group group, BindingSet parentBindings,
 			long iterationCacheSyncThreshold, QueryEvaluationContext context, ValueFactory vf, CollectionFactory cf,
-			QueryEvaluationStep arguments) throws QueryEvaluationException {
+			QueryEvaluationStep arguments,
+			Map<ValueExpr, Function<BindingSet, Value>> reusableAggregateArguments)
+			throws QueryEvaluationException {
 		this.strategy = strategy;
 		this.group = group;
 		this.parentBindings = parentBindings;
@@ -172,6 +197,7 @@ public class GroupIterator extends AbstractCloseableIteratorIteration<BindingSet
 		this.vf = vf;
 		this.cf = cf;
 		this.arguments = arguments;
+		this.reusableAggregateArguments = reusableAggregateArguments;
 	}
 
 	/*---------*
@@ -504,7 +530,7 @@ public class GroupIterator extends AbstractCloseableIteratorIteration<BindingSet
 				return new AggregatePredicateCollectorSupplier<>(wildCardCountAggregate, potentialDistinctTest,
 						() -> new CountCollector(vf), ge.getName());
 			} else {
-				QueryStepEvaluator f = precompileUnaryArg(operator);
+				Function<BindingSet, Value> f = precompileUnaryArg(operator);
 				CountAggregate agg = new CountAggregate(f);
 				Supplier<Predicate<Value>> predicate = createDistinctSingleValueTest(operator);
 				return new AggregatePredicateCollectorSupplier<>(agg, predicate, () -> new CountCollector(vf),
@@ -642,9 +668,32 @@ public class GroupIterator extends AbstractCloseableIteratorIteration<BindingSet
 		}
 	}
 
-	private QueryStepEvaluator precompileUnaryArg(AggregateOperator operator) {
+	private Function<BindingSet, Value> precompileUnaryArg(AggregateOperator operator) {
 		ValueExpr ve = ((UnaryValueOperator) operator).getArg();
+		if (reusableAggregateArguments != null && canReuseAggregateArgument(operator, ve)) {
+			Function<BindingSet, Value> prepared;
+			synchronized (reusableAggregateArguments) {
+				prepared = reusableAggregateArguments.get(ve);
+				if (prepared == null) {
+					prepared = new QueryStepEvaluator(strategy.precompile(ve, context));
+					reusableAggregateArguments.put(ve, prepared);
+				}
+			}
+			return prepared;
+		}
 		return new QueryStepEvaluator(strategy.precompile(ve, context));
+	}
+
+	private static boolean canReuseAggregateArgument(AggregateOperator operator, ValueExpr argument) {
+		if (argument == null || argument.getClass() != Var.class || ((Var) argument).hasValue()
+				|| argument.isRuntimeTelemetryEnabled()
+				|| operator.isRuntimeTelemetryEnabled()) {
+			return false;
+		}
+		Class<?> operatorClass = operator.getClass();
+		return operatorClass == Count.class || operatorClass == Min.class || operatorClass == Max.class
+				|| operatorClass == Sum.class || operatorClass == Avg.class || operatorClass == Sample.class
+				|| operatorClass == GroupConcat.class;
 	}
 
 	private NAryQueryStepEvaluator precompileNAryArg(AggregateOperator operator) {

@@ -72,6 +72,7 @@ import org.eclipse.rdf4j.query.algebra.Count;
 import org.eclipse.rdf4j.query.algebra.EmptySet;
 import org.eclipse.rdf4j.query.algebra.Extension;
 import org.eclipse.rdf4j.query.algebra.ExtensionElem;
+import org.eclipse.rdf4j.query.algebra.FunctionCall;
 import org.eclipse.rdf4j.query.algebra.Group;
 import org.eclipse.rdf4j.query.algebra.GroupConcat;
 import org.eclipse.rdf4j.query.algebra.GroupElem;
@@ -86,11 +87,14 @@ import org.eclipse.rdf4j.query.algebra.SingletonSet;
 import org.eclipse.rdf4j.query.algebra.StatementPattern;
 import org.eclipse.rdf4j.query.algebra.Sum;
 import org.eclipse.rdf4j.query.algebra.ValueConstant;
+import org.eclipse.rdf4j.query.algebra.ValueExpr;
 import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.query.algebra.evaluation.EvaluationStrategy;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryBindingSet;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryEvaluationStep;
+import org.eclipse.rdf4j.query.algebra.evaluation.QueryValueEvaluationStep;
 import org.eclipse.rdf4j.query.algebra.evaluation.ValueExprEvaluationException;
+import org.eclipse.rdf4j.query.algebra.evaluation.function.FunctionRegistry;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.DefaultEvaluationStrategy;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.EmptyTripleSource;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.GraphFrameBindings;
@@ -609,6 +613,135 @@ public class GroupIteratorTest {
 		assertThat(outerJoin.getAlgorithmName()).isNotBlank();
 		assertThat(nestedJoin.getAlgorithmName()).isNotBlank();
 		assertThat(sourceCalls.get()).isZero();
+	}
+
+	@Test
+	public void lazilyPreparesBuiltinAggregateVarOnceAcrossGroupEvaluations() throws QueryEvaluationException {
+		AtomicInteger valueArgumentPreparations = new AtomicInteger();
+		EvaluationStrategy strategy = new DefaultEvaluationStrategy(null, null) {
+			@Override
+			public QueryValueEvaluationStep precompile(ValueExpr expression, QueryEvaluationContext context)
+					throws QueryEvaluationException {
+				if (expression instanceof Var variable && "v".equals(variable.getName())) {
+					valueArgumentPreparations.incrementAndGet();
+				}
+				return super.precompile(expression, context);
+			}
+
+			@Override
+			protected boolean usesStandardRuntimePreparation() {
+				return true;
+			}
+		};
+		Group group = new Group(new SingletonSet());
+		group.addGroupElement(new GroupElem("sum", new Sum(Var.of("v"))));
+		QueryEvaluationStep step = strategy.precompile(group, CONTEXT);
+
+		assertThat(valueArgumentPreparations).hasValue(0);
+		try (CloseableIteration<BindingSet> unopened = step.evaluate(EmptyBindingSet.getInstance())) {
+			// Closing without consuming the Group must not prepare its aggregate argument.
+		}
+		assertThat(valueArgumentPreparations).hasValue(0);
+
+		QueryBindingSet firstBindings = new QueryBindingSet();
+		firstBindings.addBinding("v", VF.createLiteral(1));
+		try (CloseableIteration<BindingSet> results = step.evaluate(firstBindings)) {
+			assertThat(results.hasNext()).isTrue();
+			assertThat(results.next().getValue("sum")).isEqualTo(VF.createLiteral("1", XSD.INTEGER));
+			assertThat(results.hasNext()).isFalse();
+		}
+		assertThat(valueArgumentPreparations).hasValue(1);
+
+		QueryBindingSet secondBindings = new QueryBindingSet();
+		secondBindings.addBinding("v", VF.createLiteral(2));
+		try (CloseableIteration<BindingSet> results = step.evaluate(secondBindings)) {
+			assertThat(results.hasNext()).isTrue();
+			assertThat(results.next().getValue("sum")).isEqualTo(VF.createLiteral("2", XSD.INTEGER));
+			assertThat(results.hasNext()).isFalse();
+		}
+		assertThat(valueArgumentPreparations).hasValue(1);
+	}
+
+	@Test
+	public void doesNotReuseAggregateVarForCustomEvaluationStrategy() throws QueryEvaluationException {
+		AtomicInteger valueArgumentPreparations = new AtomicInteger();
+		EvaluationStrategy strategy = new DefaultEvaluationStrategy(null, null) {
+			@Override
+			public QueryValueEvaluationStep precompile(ValueExpr expression, QueryEvaluationContext context)
+					throws QueryEvaluationException {
+				if (expression instanceof Var variable && "v".equals(variable.getName())) {
+					valueArgumentPreparations.incrementAndGet();
+				}
+				return super.precompile(expression, context);
+			}
+		};
+		Group group = new Group(new SingletonSet());
+		group.addGroupElement(new GroupElem("sum", new Sum(Var.of("v"))));
+		QueryEvaluationStep step = strategy.precompile(group, CONTEXT);
+
+		for (int value : List.of(1, 2)) {
+			QueryBindingSet bindings = new QueryBindingSet();
+			bindings.addBinding("v", VF.createLiteral(value));
+			try (CloseableIteration<BindingSet> results = step.evaluate(bindings)) {
+				assertThat(results.hasNext()).isTrue();
+				assertThat(results.next().getValue("sum"))
+						.isEqualTo(VF.createLiteral(Integer.toString(value), XSD.INTEGER));
+			}
+		}
+
+		assertThat(valueArgumentPreparations).hasValue(2);
+	}
+
+	@Test
+	public void customAggregateArgumentObservesFunctionRegistryReplacement() throws QueryEvaluationException {
+		String uri = "urn:rdf4j:test:group-aggregate-argument";
+		org.eclipse.rdf4j.query.algebra.evaluation.function.Function initial = aggregateArgumentFunction(uri, 5);
+		org.eclipse.rdf4j.query.algebra.evaluation.function.Function replacement = aggregateArgumentFunction(uri, 7);
+		FunctionRegistry registry = FunctionRegistry.getInstance();
+		org.eclipse.rdf4j.query.algebra.evaluation.function.Function previous = registry.add(initial).orElse(null);
+		try {
+			Group group = new Group(new SingletonSet());
+			group.addGroupElement(new GroupElem("sum",
+					new Sum(new FunctionCall(uri, Var.of("v")))));
+			QueryEvaluationStep step = new DefaultEvaluationStrategy(new EmptyTripleSource(), null)
+					.precompile(group, CONTEXT);
+			QueryBindingSet bindings = new QueryBindingSet();
+			bindings.addBinding("v", VF.createLiteral(1));
+
+			assertAggregateValue(step, bindings, 5);
+			registry.add(replacement);
+			assertAggregateValue(step, bindings, 7);
+		} finally {
+			registry.remove(initial);
+			if (previous != null) {
+				registry.add(previous);
+			}
+		}
+	}
+
+	private static org.eclipse.rdf4j.query.algebra.evaluation.function.Function aggregateArgumentFunction(String uri,
+			int result) {
+		return new org.eclipse.rdf4j.query.algebra.evaluation.function.Function() {
+			@Override
+			public String getURI() {
+				return uri;
+			}
+
+			@Override
+			public Value evaluate(ValueFactory valueFactory, Value... args) {
+				return valueFactory.createLiteral(result);
+			}
+		};
+	}
+
+	private static void assertAggregateValue(QueryEvaluationStep step, BindingSet bindings, int expected)
+			throws QueryEvaluationException {
+		try (CloseableIteration<BindingSet> results = step.evaluate(bindings)) {
+			assertThat(results.hasNext()).isTrue();
+			assertThat(results.next().getValue("sum"))
+					.isEqualTo(VF.createLiteral(Integer.toString(expected), XSD.INTEGER));
+			assertThat(results.hasNext()).isFalse();
+		}
 	}
 
 	@Test

@@ -17,7 +17,9 @@ package org.eclipse.rdf4j.query.algebra.evaluation.impl;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.HashSet;
+import java.util.IdentityHashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
@@ -81,6 +83,7 @@ import org.eclipse.rdf4j.query.algebra.Filter;
 import org.eclipse.rdf4j.query.algebra.FunctionCall;
 import org.eclipse.rdf4j.query.algebra.Graph;
 import org.eclipse.rdf4j.query.algebra.Group;
+import org.eclipse.rdf4j.query.algebra.GroupElem;
 import org.eclipse.rdf4j.query.algebra.HasLang;
 import org.eclipse.rdf4j.query.algebra.HasLangDir;
 import org.eclipse.rdf4j.query.algebra.IRIFunction;
@@ -916,14 +919,36 @@ public class DefaultEvaluationStrategy implements EvaluationStrategy, FederatedS
 
 	protected QueryEvaluationStep prepare(Group node, QueryEvaluationContext context) throws QueryEvaluationException {
 		QueryEvaluationStep arguments = precompile(node.getArg(), context);
-		QueryEvaluationStep standard = bindings -> new GroupIterator(this, node, bindings, context, arguments);
+		Map<ValueExpr, Function<BindingSet, Value>> aggregateArguments = reusableAggregateArguments(node);
+		QueryEvaluationStep standard = bindings -> new GroupIterator(this, node, bindings, context, arguments,
+				aggregateArguments);
 		if (!RestrictionCompiler.enabled(this, context) || !RestrictionModifierRules.wholeGroups(node)) {
 			return standard;
 		}
 		Set<String> keys = node.getGroupBindingNames();
 		return RestrictionCompiler.attach(standard, RestrictionCompiler.unary("group/whole-members", node, context,
 				arguments, name -> keys.contains(name) ? name : null,
-				(input, members) -> GroupIterator.withMembers(this, node, input, context, members)));
+				(input, members) -> GroupIterator.withMembers(this, node, input, context, members,
+						aggregateArguments)));
+	}
+
+	private Map<ValueExpr, Function<BindingSet, Value>> reusableAggregateArguments(Group node) {
+		if (!usesStandardRuntimePreparation() || trackTime || trackResultSize || node.isRuntimeTelemetryEnabled()
+				|| node.getClass() != Group.class) {
+			return null;
+		}
+
+		List<GroupElem> groupElements = node.getGroupElements();
+		if (groupElements.isEmpty()) {
+			return null;
+		}
+		for (GroupElem groupElement : groupElements) {
+			if (groupElement.getClass() != GroupElem.class || groupElement.isRuntimeTelemetryEnabled()
+					|| groupElement.getOperator().isRuntimeTelemetryEnabled()) {
+				return null;
+			}
+		}
+		return new IdentityHashMap<>(groupElements.size());
 	}
 
 	protected QueryEvaluationStep prepare(Intersection node, QueryEvaluationContext context)
