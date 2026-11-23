@@ -2462,6 +2462,64 @@ function loadRouterWithWorkspaces(harness = loadRouter()) {
 const repo = (id, rest) => 'https://example.test/workbench/repositories/' + id + '/' + rest;
 const switchLink = (id, view) => link(repo(id, view), { 'data-workbench-repository-switch': 'true' });
 
+test('a repository switch completes the page using the verified destination Info', async () => {
+    const harness = loadRouterWithWorkspaces();
+    const app = harness.workbench.app;
+    const stub = { ...app };
+    vm.runInContext(fs.readFileSync(path.join(scripts, 'workbenchApp.js'), 'utf8'), harness.context);
+    const completeModel = app.completeModel;
+    Object.assign(app, stub, { completeModel });
+    const info = harness.info();
+    info.metadata = { ...info.metadata, workbench: { title: 'Destination' } };
+    const summary = harness.model('summary', { links: ['info'], linked: {}, rowCount: 0 });
+    const requests = [];
+    app.loadModel = async (fetcher, url) => {
+        requests.push(url);
+        return url.endsWith('/info') ? info : summary;
+    };
+    harness.session.fetcher = async (url) => {
+        requests.push(url);
+        throw new Error('Unexpected linked model request');
+    };
+    harness.start();
+    const outcome = await harness.router.navigate(repo('repo-2', 'summary'), { repositorySwitch: true });
+    assert.deepEqual(requests, [repo('repo-2', 'info'), repo('repo-2', 'summary')]);
+    assert.equal(outcome, 'committed');
+    assert.equal(summary.linked.info.workbench.title, 'Destination');
+    assert.deepEqual(harness.disposed, ['info']);
+});
+
+for (const change of ['repository', 'server', 'user', 'query preference']) {
+    test(`repository switch discards verified Info after a change of ${change}`, async () => {
+        const harness = loadRouterWithWorkspaces();
+        const info = harness.info();
+        const summary = harness.model('summary', { metadata: { ...info.metadata } });
+        if (change === 'repository') {
+            summary.finalUrl = repo('repo-3', 'summary');
+        } else if (change === 'server') {
+            summary.metadata['server-identity'] = 'sha256:abc:session-2';
+        } else if (change === 'user') {
+            summary.metadata['server-user'] = 'another-user';
+        }
+        const app = harness.workbench.app;
+        app.loadModel = async (fetcher, url) => url.endsWith('/info') ? info : summary;
+        let receivedInfo = info;
+        app.completeModel = async (fetcher, url, model, basePath, signal, verifiedInfo) => {
+            receivedInfo = verifiedInfo;
+            return model;
+        };
+        const page = change === 'query preference' ? 'query?infer=true' : 'summary';
+        if (change === 'query preference') {
+            harness.register('query');
+            summary.viewId = 'query';
+        }
+        harness.start();
+        assert.equal(await harness.router.navigate(repo('repo-2', page), { repositorySwitch: true }), 'committed');
+        assert.equal(receivedInfo, undefined);
+        assert.deepEqual(harness.disposed, ['info']);
+    });
+}
+
 for (const view of ['types', 'contexts']) {
     test(`switching from ${view} restores the saved Query without loading the destination listing`, async () => {
         const harness = loadRouterWithWorkspaces(loadRouter({ href: repo('repo-1', view) }));

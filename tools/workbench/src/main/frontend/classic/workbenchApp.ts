@@ -586,9 +586,11 @@ namespace workbench {
 
         /** Load the linked models named by the model (or the given paths) relative to currentUrl. */
         export function linkedModels(fetcher: (url: string, options: any) => Promise<any>, currentUrl: string,
-                                     model: PageModel, explicitPaths?: string[], signal?: AbortSignal): Promise<void> {
+                                     model: PageModel, explicitPaths?: string[], signal?: AbortSignal,
+                                     verifiedInfo?: PageModel): Promise<void> {
             const paths = explicitPaths || requestedLinkedModels(model);
-            return Promise.all(paths.map((path) => loadModel(fetcher, linkedUrl(currentUrl, path), signal)
+            return Promise.all(paths.map((path) => (path === 'info' && verifiedInfo ? Promise.resolve(verifiedInfo)
+                : loadModel(fetcher, linkedUrl(currentUrl, path), signal))
                 .then((linked) => {
                     if (linked.error) {
                         return linked.rowStore.dispose().then(() => { throw new Error(linked.error.message); });
@@ -603,7 +605,9 @@ namespace workbench {
                                 ? workbench.views.linkedInfoMetadata(linked) : {});
                         model.workbench = workbenchInfo;
                         model.linked.info = { metadata: linked.metadata, workbench: workbenchInfo };
-                        return linked.rowStore.dispose();
+                        if (linked !== verifiedInfo) {
+                            return linked.rowStore.dispose();
+                        }
                     });
                 }))).then(() => {
                 const info = model.linked.info;
@@ -619,7 +623,8 @@ namespace workbench {
          * is returned as it is.
          */
         export function completeModel(fetcher: (url: string, options: any) => Promise<any>, url: string,
-                                      model: PageModel, basePath: string, signal?: AbortSignal): Promise<PageModel> {
+                                      model: PageModel, basePath: string, signal?: AbortSignal,
+                                      verifiedInfo?: PageModel): Promise<PageModel> {
             if (model.error) {
                 if (model.error.code === 'repository-not-found') {
                     return linkedModels(fetcher, notFoundInfoUrl(basePath, url), model, ['info'], signal).then(() => model);
@@ -628,7 +633,7 @@ namespace workbench {
                 // it the error is shown all the same.
                 return linkedModels(fetcher, url, model, ['info'], signal).then(() => model, () => model);
             }
-            const linked = linkedModels(fetcher, url, model, undefined, signal);
+            const linked = linkedModels(fetcher, url, model, undefined, signal, verifiedInfo);
             // Connection needs no Info answer: a user whose server fails it goes there to sign in or change server.
             return (model.viewId === 'server' ? linked.then(null, (error: any) => {
                 if (isAbortError(error)) {

@@ -109,6 +109,12 @@ public class AbstractMemoryOverflowModelTest {
 		runInConstrainedHeap("shared-allocating-iri");
 	}
 
+	@ParameterizedTest
+	@ValueSource(strings = { "canonical", "indexed", "nested" })
+	void separatelyAllocatedEqualLiteralsCountAccordingToRetainedStatements(String source) throws Exception {
+		runInConstrainedHeap("retained-source-statement-payload-" + source);
+	}
+
 	@Test
 	void subBatchSpillCountsSharedTermsOnceAndRetriesLargeNestedPayload() throws Exception {
 		runInConstrainedHeap("sub-batch-payload");
@@ -206,6 +212,11 @@ public class AbstractMemoryOverflowModelTest {
 		}
 		if (args[0].startsWith("shrink-")) {
 			test.shrinkProbe(args[0].substring("shrink-".length()));
+			return;
+		}
+		if (args[0].startsWith("retained-source-statement-payload-")) {
+			test.retainedSourceStatementPayloadProbe(
+					args[0].substring("retained-source-statement-payload-".length()));
 			return;
 		}
 		switch (args[0]) {
@@ -638,6 +649,57 @@ public class AbstractMemoryOverflowModelTest {
 		}
 	}
 
+	private void retainedSourceStatementPayloadProbe(String source) {
+		int oldBatchSize = AbstractMemoryOverflowModel.BATCH_SIZE;
+		int oldMinimum = AbstractMemoryOverflowModel.MIN_AVAILABLE_MEM_BEFORE_OVERFLOWING;
+		try (RecordingOverflowModel model = new RecordingOverflowModel()) {
+			AbstractMemoryOverflowModel.BATCH_SIZE = 1024;
+			AbstractMemoryOverflowModel.MIN_AVAILABLE_MEM_BEFORE_OVERFLOWING = minimumAboveMaxHeapMiB();
+			if (!List.of("canonical", "indexed", "nested").contains(source)) {
+				throw new IllegalArgumentException("Unknown source statement probe: " + source);
+			}
+			ValueFactory values = SimpleValueFactory.getInstance();
+			IRI predicate = values.createIRI("urn:retained-source:predicate");
+			String label = "x".repeat(70 * 1024);
+			List<Statement> statements = new ArrayList<>();
+			for (int i = 0; i < 2; i++) {
+				String separatelyAllocatedLabel = new String(label.toCharArray());
+				Statement statement = values.createStatement(
+						values.createIRI("urn:retained-source:subject:" + i), predicate,
+						values.createLiteral(separatelyAllocatedLabel));
+				statements.add(statement);
+			}
+			LinkedHashModel sourceModel = null;
+			if (source.equals("nested")) {
+				sourceModel = new LinkedHashModel();
+				sourceModel.addAll(statements);
+			}
+			if (!source.equals("canonical")) {
+				// A wildcard filter upgrades the delegate before its first statement is added.
+				assertThat(model.filter(null, null, null).size()).isZero();
+			}
+			if (source.equals("nested")) {
+				sourceModel.forEach(model::add);
+			} else {
+				statements.forEach(model::add);
+			}
+
+			model.spillToDiskIfNeeded();
+
+			assertThat(model.spillCount)
+					.as("indexed statements retain distinct original literal labels; the canonical map does not")
+					.isEqualTo(source.equals("canonical") ? 0 : 1);
+			if (!source.equals("canonical")) {
+				assertThat(model.spilledStatements).containsExactlyElementsOf(statements);
+			} else {
+				assertThat(model).containsExactlyElementsOf(statements);
+			}
+		} finally {
+			AbstractMemoryOverflowModel.BATCH_SIZE = oldBatchSize;
+			AbstractMemoryOverflowModel.MIN_AVAILABLE_MEM_BEFORE_OVERFLOWING = oldMinimum;
+		}
+	}
+
 	private void subBatchPayloadProbe() {
 		int oldMinimum = AbstractMemoryOverflowModel.MIN_AVAILABLE_MEM_BEFORE_OVERFLOWING;
 		try (RecordingOverflowModel shared = new RecordingOverflowModel();
@@ -988,7 +1050,7 @@ public class AbstractMemoryOverflowModelTest {
 			model.spillToDiskIfNeeded();
 			int reads = marker.labelReads;
 			for (int i = 0; i < 3; i++) {
-				var duplicate = values.createLiteral(new String(lexical));
+				var duplicate = values.createLiteral(lexical);
 				var next = values.createIRI("urn:added:" + i);
 				switch (path) {
 				case "statement" ->

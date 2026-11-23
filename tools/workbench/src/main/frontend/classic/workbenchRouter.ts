@@ -57,6 +57,8 @@ namespace workbench {
         /** A saved address can replace the switcher's original address only while this scope is confirmed. */
         interface WorkspaceNavigation {
             originalUrl: string;
+            info?: PageModel;
+            infoUrl?: string;
             scope?: workbench.workspace.Scope;
         }
 
@@ -1269,27 +1271,31 @@ namespace workbench {
                 // Resolve the destination's owner without running the view's listing or query. The metadata-only
                 // Info endpoint establishes the scope before we read any saved address for this repository.
                 const infoUrl = new URL('info', target).href;
-                return app().loadModel(fetcher, infoUrl, signal).then((info: PageModel): Outcome | Promise<Outcome> => {
-                    info.rowStore.dispose();
-                    if (stale()) {
-                        return 'abandoned';
+                return app().loadModel(fetcher, infoUrl, signal).then(async (info: PageModel): Promise<Outcome> => {
+                    try {
+                        if (stale()) {
+                            return 'abandoned';
+                        }
+                        const scope = info.viewId === 'info' && info.vars.indexOf('id') >= 0
+                            && (info.finalUrl || infoUrl) === infoUrl ? scopeOfResponse(info, target) : null;
+                        if (!scope) {
+                            return openRequestedRepository();
+                        }
+                        const restore = workspaceRestoreFor(target, scope);
+                        const selected = new URL(restore ? restore.page.url : target.href);
+                        const identity = info.metadata['server-identity'];
+                        const user = info.metadata['server-user'];
+                        if (!restore && sameWorkspaceOwner(scopeOfRoute(currentRoute), scope)
+                                && sameConnection(currentRoute.context, { serverIdentity: identity, serverUser: user })) {
+                            exploreAgain(selected, identity);
+                        }
+                        return await openRoute(selected.href, Object.assign({}, options, { workspaceRestore: restore }), {
+                            originalUrl: target.href, info, infoUrl,
+                            scope: restore || selected.href !== target.href ? scope : undefined
+                        });
+                    } finally {
+                        info.rowStore.dispose();
                     }
-                    const scope = info.viewId === 'info' && info.vars.indexOf('id') >= 0
-                        && (info.finalUrl || infoUrl) === infoUrl ? scopeOfResponse(info, target) : null;
-                    if (!scope) {
-                        return openRequestedRepository();
-                    }
-                    const restore = workspaceRestoreFor(target, scope);
-                    const selected = new URL(restore ? restore.page.url : target.href);
-                    const identity = info.metadata['server-identity'];
-                    const user = info.metadata['server-user'];
-                    if (!restore && sameWorkspaceOwner(scopeOfRoute(currentRoute), scope)
-                            && sameConnection(currentRoute.context, { serverIdentity: identity, serverUser: user })) {
-                        exploreAgain(selected, identity);
-                    }
-                    return openRoute(selected.href, Object.assign({}, options, { workspaceRestore: restore }), {
-                        originalUrl: target.href, scope: restore || selected.href !== target.href ? scope : undefined
-                    });
                 }, (): Outcome | Promise<Outcome> => stale() ? 'abandoned' : openRequestedRepository());
             }
             let answer: Promise<any>;
@@ -1333,7 +1339,17 @@ namespace workbench {
                         throw new Error('The answer is a page the router does not show: ' + model.viewId);
                     }
                 }
-                return app().completeModel(fetcher, model.finalUrl || request, model, session.basePath, signal)
+                const finalUrl = model.finalUrl || request;
+                const info = workspaceNavigation?.info;
+                const responseUrl = new URL(finalUrl);
+                // Explicit preferences can update the cookies read by InfoServlet when the page is served.
+                const verifiedInfo = info && !model.error && finalUrl === request
+                    && !['limit', 'queryLn', 'infer', 'query-timeout', 'Accept', 'Content-Type']
+                        .some(name => responseUrl.searchParams.has(name))
+                    && new URL('info', responseUrl).href === workspaceNavigation.infoUrl
+                    && model.metadata?.['server-identity'] === info.metadata['server-identity']
+                    && model.metadata?.['server-user'] === info.metadata['server-user'] ? info : undefined;
+                return app().completeModel(fetcher, finalUrl, model, session.basePath, signal, verifiedInfo)
                     .then(() => {
                         if (stale()) {
                             throw abandoned();

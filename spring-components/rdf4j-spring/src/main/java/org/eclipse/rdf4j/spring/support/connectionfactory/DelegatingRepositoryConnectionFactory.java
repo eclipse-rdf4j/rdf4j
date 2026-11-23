@@ -12,6 +12,7 @@
 
 package org.eclipse.rdf4j.spring.support.connectionfactory;
 
+import java.lang.ref.WeakReference;
 import java.util.Collections;
 import java.util.Map;
 import java.util.Set;
@@ -23,6 +24,11 @@ import org.springframework.beans.factory.DisposableBean;
 import org.springframework.beans.factory.HierarchicalBeanFactory;
 import org.springframework.beans.factory.config.SingletonBeanRegistry;
 import org.springframework.beans.factory.support.DefaultSingletonBeanRegistry;
+import org.springframework.context.ApplicationContext;
+import org.springframework.context.ApplicationContextAware;
+import org.springframework.context.ApplicationListener;
+import org.springframework.context.ConfigurableApplicationContext;
+import org.springframework.context.event.ContextClosedEvent;
 
 import com.google.common.collect.MapMaker;
 
@@ -37,7 +43,7 @@ import com.google.common.collect.MapMaker;
  * @since 4.0.0
  */
 public abstract class DelegatingRepositoryConnectionFactory
-		implements IdempotentlyDisposableConnectionFactory, BeanFactoryAware {
+		implements IdempotentlyDisposableConnectionFactory, BeanFactoryAware, ApplicationContextAware {
 	private static final String SHUTDOWN_CALLBACK_NAME = DelegatingRepositoryConnectionFactory.class.getName()
 			+ ".singletonShutdown";
 	private static final Map<DefaultSingletonBeanRegistry, Set<IdempotentlyDisposableConnectionFactory>> SHUTDOWN_FALLBACKS = new MapMaker()
@@ -46,7 +52,7 @@ public abstract class DelegatingRepositoryConnectionFactory
 
 	private final RepositoryConnectionFactory delegate;
 	private BeanFactory containingBeanFactory;
-	private boolean separatelyManagedDelegate;
+	private SingletonRegistration initialDelegateRegistration;
 	private boolean destroyed;
 
 	public DelegatingRepositoryConnectionFactory(RepositoryConnectionFactory delegate) {
@@ -63,16 +69,28 @@ public abstract class DelegatingRepositoryConnectionFactory
 		setContainingBeanFactory(beanFactory);
 	}
 
+	@Override
+	public void setApplicationContext(ApplicationContext applicationContext) {
+		for (ApplicationContext current = applicationContext; current != null; current = current.getParent()) {
+			if (current instanceof ConfigurableApplicationContext context
+					&& context.getBeanFactory() instanceof DefaultSingletonBeanRegistry registry
+					&& SHUTDOWN_FALLBACKS.containsKey(registry)) {
+				context.addApplicationListener(new ShutdownOrderingListener(context, registry));
+			}
+		}
+	}
+
 	private void setContainingBeanFactory(BeanFactory beanFactory) {
 		if (containingBeanFactory == beanFactory) {
 			return;
 		}
 		containingBeanFactory = beanFactory;
-		SingletonRegistration registration = delegate instanceof DisposableBean
+		initialDelegateRegistration = delegate instanceof DisposableBean
 				? findRegistration(delegate, beanFactory)
 				: null;
-		separatelyManagedDelegate = registration != null;
-		BeanFactory delegateBeanFactory = registration != null ? registration.factory() : beanFactory;
+		BeanFactory delegateBeanFactory = initialDelegateRegistration != null
+				? initialDelegateRegistration.factory()
+				: beanFactory;
 		if (delegate instanceof DelegatingRepositoryConnectionFactory nested) {
 			// Share the registry with nested decorators so inline and manually registered instances can look up
 			// their delegates even though they did not receive BeanFactoryAware initialization.
@@ -89,9 +107,17 @@ public abstract class DelegatingRepositoryConnectionFactory
 
 	@Override
 	public synchronized void destroy() throws Exception {
-		if (!destroyed && delegate instanceof DisposableBean disposable && !separatelyManagedDelegate
-				&& findRegistration(delegate, containingBeanFactory) == null) {
-			destroyIfNeeded(disposable);
+		if (!destroyed && delegate instanceof DisposableBean disposable) {
+			SingletonRegistration registration = findRegistration(delegate, containingBeanFactory);
+			if (registration == null && initialDelegateRegistration == null) {
+				destroyIfNeeded(disposable);
+			} else if (registration != null && !registration.equals(initialDelegateRegistration)
+					&& registration.factory() instanceof DefaultSingletonBeanRegistry registry
+					&& disposable instanceof IdempotentlyDisposableConnectionFactory candidate
+					&& !candidate.isDestroyed()) {
+				// A standalone registry can discover a late singleton while visiting its dependent decorators.
+				registerOrderedShutdown(registry, registration, candidate);
+			}
 		}
 		destroyed = true;
 	}
@@ -117,6 +143,30 @@ public abstract class DelegatingRepositoryConnectionFactory
 				return Collections.newSetFromMap(new MapMaker().weakKeys().makeMap());
 			}).add(delegate);
 		}
+		registerOrderedShutdown(registry, factory, delegate);
+	}
+
+	private static void registerOrderedShutdown(DefaultSingletonBeanRegistry registry, BeanFactory factory,
+			IdempotentlyDisposableConnectionFactory delegate) {
+		SingletonRegistration registration = findRegistration(delegate, factory);
+		if (registration != null && registration.factory() == factory) {
+			registerOrderedShutdown(registry, registration, delegate);
+		}
+	}
+
+	private static void registerOrderedShutdown(DefaultSingletonBeanRegistry registry,
+			SingletonRegistration registration,
+			IdempotentlyDisposableConnectionFactory delegate) {
+		String callbackName = SHUTDOWN_CALLBACK_NAME + "." + registration.name();
+		var reference = new WeakReference<>(delegate);
+		// A contained callback runs after this singleton's own callback and before any dependency shuts down.
+		registry.registerDisposableBean(callbackName, () -> {
+			IdempotentlyDisposableConnectionFactory candidate = reference.get();
+			if (candidate != null && registration.equals(findRegistration(candidate, registration.factory()))) {
+				destroyIfNeeded(candidate);
+			}
+		});
+		registry.registerContainedBean(callbackName, registration.name());
 	}
 
 	private static void destroyRegisteredSingletons(DefaultSingletonBeanRegistry registry, BeanFactory factory)
@@ -169,6 +219,29 @@ public abstract class DelegatingRepositoryConnectionFactory
 	}
 
 	private record SingletonRegistration(BeanFactory factory, String name) {
+	}
+
+	private record ShutdownOrderingListener(ConfigurableApplicationContext context,
+			DefaultSingletonBeanRegistry registry)
+			implements ApplicationListener<ContextClosedEvent> {
+		@Override
+		public boolean supportsAsyncExecution() {
+			return false;
+		}
+
+		@Override
+		public void onApplicationEvent(ContextClosedEvent event) {
+			if (event.getApplicationContext() == context) {
+				Set<IdempotentlyDisposableConnectionFactory> candidates = SHUTDOWN_FALLBACKS.get(registry);
+				if (candidates != null) {
+					BeanFactory factory = context.getBeanFactory();
+					// Resolve raw singleton names registered after initialization of their decorators.
+					for (IdempotentlyDisposableConnectionFactory candidate : candidates) {
+						registerOrderedShutdown(registry, factory, candidate);
+					}
+				}
+			}
+		}
 	}
 
 	protected RepositoryConnectionFactory getDelegate() {

@@ -12,29 +12,71 @@
 package org.eclipse.rdf4j.sail.lmdb;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.tuple;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyLong;
+import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.when;
+import static org.mockito.Mockito.withSettings;
 
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.NoSuchElementException;
 import java.util.concurrent.Callable;
+import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.FutureTask;
 import java.util.concurrent.TimeUnit;
 import java.util.stream.Stream;
 
+import org.eclipse.rdf4j.common.iteration.CloseableIteration;
+import org.eclipse.rdf4j.common.iteration.FilterIteration;
+import org.eclipse.rdf4j.common.order.StatementOrder;
+import org.eclipse.rdf4j.model.IRI;
+import org.eclipse.rdf4j.model.Resource;
+import org.eclipse.rdf4j.model.Statement;
+import org.eclipse.rdf4j.model.Value;
+import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
+import org.eclipse.rdf4j.model.vocabulary.XSD;
 import org.eclipse.rdf4j.query.BindingSet;
+import org.eclipse.rdf4j.query.Dataset;
 import org.eclipse.rdf4j.query.QueryResults;
+import org.eclipse.rdf4j.query.algebra.Count;
+import org.eclipse.rdf4j.query.algebra.Distinct;
+import org.eclipse.rdf4j.query.algebra.Group;
+import org.eclipse.rdf4j.query.algebra.GroupElem;
+import org.eclipse.rdf4j.query.algebra.Projection;
+import org.eclipse.rdf4j.query.algebra.ProjectionElem;
+import org.eclipse.rdf4j.query.algebra.ProjectionElemList;
+import org.eclipse.rdf4j.query.algebra.StatementPattern;
+import org.eclipse.rdf4j.query.algebra.Var;
+import org.eclipse.rdf4j.query.algebra.evaluation.EvaluationStrategy;
+import org.eclipse.rdf4j.query.algebra.evaluation.QueryEvaluationStep;
+import org.eclipse.rdf4j.query.algebra.evaluation.TripleSource;
+import org.eclipse.rdf4j.query.algebra.evaluation.impl.QueryEvaluationContext;
 import org.eclipse.rdf4j.query.explanation.Explanation;
 import org.eclipse.rdf4j.query.explanation.GenericPlanNode;
 import org.eclipse.rdf4j.query.explanation.TelemetryMetricNames;
+import org.eclipse.rdf4j.query.impl.EmptyBindingSet;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
 import org.eclipse.rdf4j.repository.sail.SailTupleQuery;
+import org.eclipse.rdf4j.sail.NotifyingSailConnection;
+import org.eclipse.rdf4j.sail.base.SailDataset;
+import org.eclipse.rdf4j.sail.base.SailDatasetTripleTermSource;
 import org.eclipse.rdf4j.sail.inferencer.InferencerConnection;
 import org.eclipse.rdf4j.sail.lmdb.config.LmdbStoreConfig;
+import org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbIndexedDistinct;
+import org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbIndexedDistinctCount;
+import org.eclipse.rdf4j.sail.lmdb.evaluation.NativeLmdbQuerySource;
 import org.junit.jupiter.api.io.TempDir;
 import org.junit.jupiter.api.parallel.Isolated;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.Arguments;
 import org.junit.jupiter.params.provider.MethodSource;
+import org.junit.jupiter.params.provider.ValueSource;
 
 @Isolated("Uses process-wide LMDB prefix cursor counters")
 class LmdbIndexedQueryLifecycleTest {
@@ -90,6 +132,112 @@ class LmdbIndexedQueryLifecycleTest {
 			}
 			return null;
 		}).get(5, TimeUnit.SECONDS);
+	}
+
+	static Stream<Arguments> firstPulls() {
+		return Stream.of(false, true)
+				.flatMap(grouped -> Stream.of(false, true).map(viaNext -> Arguments.of(grouped, viaNext)));
+	}
+
+	@ParameterizedTest(name = "grouped={0}, next={1}")
+	@MethodSource("firstPulls")
+	void closeDuringFirstPullClosesTheLateCursor(boolean grouped, boolean viaNext) throws Exception {
+		var opening = new CountDownLatch(1);
+		var finishOpening = new CountDownLatch(1);
+		var vf = SimpleValueFactory.getInstance();
+		var cursor = mock(LmdbPrefixRunCursor.class);
+		when(cursor.next()).thenReturn(true, false);
+		when(cursor.prefixValue(TripleIndex.SUBJ_IDX)).thenReturn(2L);
+		var dataset = mock(SailDataset.class, withSettings().extraInterfaces(NativeLmdbQuerySource.class));
+		var nativeSource = (NativeLmdbQuerySource) dataset;
+		when(nativeSource.idSpace()).thenReturn(nativeSource);
+		when(nativeSource.hasCanonicalIds()).thenReturn(true);
+		when(nativeSource.lazyValue(2L)).thenReturn(vf.createIRI("urn:subject"));
+		when(nativeSource.prefixRunPlan(any(int[].class), anyLong(), anyLong(), anyLong(), anyLong()))
+				.thenAnswer(call -> LmdbPrefixRunPlan.adjacencyOutgoing(call.getArgument(0)));
+		when(nativeSource.prefixRuns(any(LmdbPrefixRunPlan.class), anyLong(), anyLong(), anyLong(), anyLong(),
+				eq(false)))
+						.thenAnswer(call -> {
+							opening.countDown();
+							assertThat(finishOpening.await(5, TimeUnit.SECONDS)).as("cursor creation released")
+									.isTrue();
+							return cursor;
+						});
+		var source = new SailDatasetTripleTermSource(vf, dataset);
+		var context = new QueryEvaluationContext.Minimal(null);
+		var pattern = new StatementPattern(new Var("s"), new Var("p"), new Var("o"));
+		QueryEvaluationStep step = grouped
+				? LmdbIndexedDistinctCount.prepare(
+						new Group(pattern, List.of("s"),
+								List.of(new GroupElem("count", new Count(new Var("o"), true)))),
+						context, source, () -> QueryEvaluationStep.EMPTY)
+				: LmdbIndexedDistinct.prepare(
+						new Distinct(new Projection(pattern, new ProjectionElemList(new ProjectionElem("s")))),
+						context, source, () -> QueryEvaluationStep.EMPTY);
+		assertThat(step).isNotNull();
+		try (var rows = step.evaluate(EmptyBindingSet.getInstance())) {
+			var firstPull = startDaemon(() -> {
+				if (!viaNext) {
+					return rows.hasNext();
+				}
+				try {
+					rows.next();
+					return true;
+				} catch (NoSuchElementException expected) {
+					return false;
+				}
+			});
+			try {
+				assertThat(opening.await(5, TimeUnit.SECONDS)).as("indexed cursor creation started").isTrue();
+				rows.close();
+			} finally {
+				finishOpening.countDown();
+			}
+			boolean emitted = firstPull.get(5, TimeUnit.SECONDS);
+			verify(cursor).close();
+			verify(cursor, never()).next();
+			assertThat(emitted).isFalse();
+		}
+	}
+
+	@ParameterizedTest
+	@ValueSource(strings = { DISTINCT, GROUP })
+	void indexedQueriesRespectCustomizedStatementReads(String sparql) {
+		var config = new LmdbStoreConfig("spoc,posc")
+				.setNativeEvaluationEnabled(false)
+				.setDirectAdjacencyEnabled(false);
+		var vf = SimpleValueFactory.getInstance();
+		var visible = vf.createIRI("urn:visible");
+		var hidden = vf.createIRI("urn:hidden");
+		var shared = vf.createIRI("urn:shared");
+		var privatePredicate = vf.createIRI("urn:hidden-predicate");
+		var store = new LmdbStore(dataDir.toFile(), config) {
+			@Override
+			protected NotifyingSailConnection getConnectionInternal() {
+				return new LmdbStoreConnection(this) {
+					@Override
+					protected EvaluationStrategy getEvaluationStrategy(Dataset dataset, TripleSource tripleSource) {
+						var source = (SailDatasetTripleTermSource) tripleSource;
+						return super.getEvaluationStrategy(dataset, new SubjectFilteringSource(source, hidden));
+					}
+				};
+			}
+		};
+		var repository = new SailRepository(store);
+		repository.init();
+		try (var connection = repository.getConnection()) {
+			connection.add(visible, shared, vf.createIRI("urn:visible-object"));
+			connection.add(hidden, shared, vf.createIRI("urn:hidden-object"));
+			connection.add(hidden, privatePredicate, vf.createIRI("urn:hidden-object"));
+			var query = connection.prepareTupleQuery(sparql);
+			query.setIncludeInferred(false);
+			Value expectedCount = sparql.equals(GROUP) ? vf.createLiteral("1", XSD.INTEGER) : null;
+			assertThat(QueryResults.asList(query.evaluate()))
+					.extracting(row -> row.getValue("p"), row -> row.getValue("count"))
+					.containsExactly(tuple(shared, expectedCount));
+		} finally {
+			repository.shutDown();
+		}
 	}
 
 	static Stream<Arguments> explanations() {
@@ -178,5 +326,40 @@ class LmdbIndexedQueryLifecycleTest {
 		FutureTask<T> task = new FutureTask<>(action);
 		Thread.ofPlatform().daemon().start(task);
 		return task;
+	}
+
+	private static final class SubjectFilteringSource extends SailDatasetTripleTermSource {
+		private final Resource hidden;
+
+		private SubjectFilteringSource(SailDatasetTripleTermSource source, Resource hidden) {
+			super(source.getValueFactory(), source.getDataset());
+			this.hidden = hidden;
+		}
+
+		@Override
+		public CloseableIteration<? extends Statement> getStatements(Resource subject, IRI predicate, Value object,
+				Resource... contexts) {
+			return filter(super.getStatements(subject, predicate, object, contexts));
+		}
+
+		@Override
+		public CloseableIteration<? extends Statement> getStatements(StatementOrder order, Resource subject,
+				IRI predicate,
+				Value object, Resource... contexts) {
+			return filter(super.getStatements(order, subject, predicate, object, contexts));
+		}
+
+		private CloseableIteration<Statement> filter(CloseableIteration<? extends Statement> statements) {
+			return new FilterIteration<>(statements) {
+				@Override
+				protected boolean accept(Statement statement) {
+					return !hidden.equals(statement.getSubject());
+				}
+
+				@Override
+				protected void handleClose() {
+				}
+			};
+		}
 	}
 }

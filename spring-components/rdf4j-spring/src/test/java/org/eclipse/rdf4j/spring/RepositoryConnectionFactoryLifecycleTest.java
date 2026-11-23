@@ -17,6 +17,7 @@ import static org.mockito.Mockito.inOrder;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.spy;
+import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
@@ -45,6 +46,8 @@ import org.junit.jupiter.params.provider.MethodSource;
 import org.junit.jupiter.params.provider.ValueSource;
 import org.mockito.InOrder;
 import org.springframework.beans.factory.DisposableBean;
+import org.springframework.beans.factory.support.DefaultListableBeanFactory;
+import org.springframework.beans.factory.support.RootBeanDefinition;
 import org.springframework.context.annotation.AnnotationConfigApplicationContext;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
@@ -211,6 +214,7 @@ class RepositoryConnectionFactoryLifecycleTest {
 			throws Exception {
 		RepositoryConnection connection = mock(RepositoryConnection.class);
 		PooledRepositoryConnectionFactory pool = spy(newPool(connection));
+		Repository repository = connection.getRepository();
 		try {
 			try (AnnotationConfigApplicationContext parent = new AnnotationConfigApplicationContext()) {
 				if (!registerAfterRefresh) {
@@ -225,6 +229,10 @@ class RepositoryConnectionFactoryLifecycleTest {
 					if (registerAfterRefresh) {
 						parent.getBeanFactory().registerSingleton("pool", pool);
 					}
+					parent.registerBean("repository", Repository.class, () -> repository,
+							definition -> definition.setDestroyMethodName("shutDown"));
+					parent.getBean("repository", Repository.class);
+					parent.getDefaultListableBeanFactory().registerDependentBean("repository", "pool");
 					verify(connection, never()).close();
 					if (closeParentFirst) {
 						parent.close();
@@ -236,7 +244,9 @@ class RepositoryConnectionFactoryLifecycleTest {
 				}
 			}
 			verify(pool).destroy();
-			verify(connection).close();
+			InOrder shutdown = inOrder(connection, repository);
+			shutdown.verify(connection).close();
+			shutdown.verify(repository).shutDown();
 		} finally {
 			pool.destroy();
 		}
@@ -343,6 +353,90 @@ class RepositoryConnectionFactoryLifecycleTest {
 			shutdown.verify(pool).destroy();
 			shutdown.verify(configuration.connection).close();
 			shutdown.verify(configuration.repository).shutDown();
+		}
+	}
+
+	@ParameterizedTest
+	@CsvSource({ "false,false", "false,true", "true,false", "true,true" })
+	void springPreservesDisposalOrderForAManuallyRegisteredPool(boolean registerAfterRefresh, boolean explicitCallback)
+			throws Exception {
+		RepositoryConnection connection = mock(RepositoryConnection.class);
+		PooledRepositoryConnectionFactory pool = spy(newPool(connection));
+		Repository repository = connection.getRepository();
+		DisposableBean destroyCallback = mock(DisposableBean.class);
+		try (AnnotationConfigApplicationContext context = new AnnotationConfigApplicationContext()) {
+			var registry = context.getDefaultListableBeanFactory();
+			if (!registerAfterRefresh) {
+				registry.registerSingleton("pool", pool);
+			}
+			context.registerBean("wrapper", RepositoryConnectionFactory.class, () -> decorate(pool));
+			// The repository's callback is registered after the wrapper's fallback shutdown callback.
+			context.registerBean("repository", Repository.class, () -> repository,
+					definition -> definition.setDestroyMethodName("shutDown"));
+			context.refresh();
+			if (registerAfterRefresh) {
+				registry.registerSingleton("pool", pool);
+			}
+			if (explicitCallback) {
+				registry.registerDisposableBean("pool", destroyCallback);
+			}
+			registry.registerDependentBean("repository", "pool");
+			registry.registerDependentBean("pool", "wrapper");
+			context.getBean("wrapper", RepositoryConnectionFactory.class).getConnection().close();
+			verify(connection, never()).close();
+
+			context.close();
+
+			InOrder shutdown = inOrder(destroyCallback, pool, connection, repository);
+			if (explicitCallback) {
+				shutdown.verify(destroyCallback).destroy();
+			}
+			shutdown.verify(pool).destroy();
+			shutdown.verify(connection).close();
+			shutdown.verify(repository).shutDown();
+			verify(pool).destroy();
+			verify(destroyCallback, times(explicitCallback ? 1 : 0)).destroy();
+		} finally {
+			pool.destroy();
+		}
+	}
+
+	@ParameterizedTest
+	@ValueSource(booleans = { false, true })
+	void standaloneRegistryPreservesDisposalOrderForLatePoolRegistration(boolean explicitCallback) throws Exception {
+		RepositoryConnection connection = mock(RepositoryConnection.class);
+		PooledRepositoryConnectionFactory pool = newPool(connection);
+		Repository repository = connection.getRepository();
+		DisposableBean destroyCallback = mock(DisposableBean.class);
+		var registry = new DefaultListableBeanFactory();
+		try {
+			registry.registerBeanDefinition("wrapper",
+					new RootBeanDefinition(RepositoryConnectionFactory.class, () -> decorate(pool)));
+			RepositoryConnectionFactory wrapper = registry.getBean("wrapper", RepositoryConnectionFactory.class);
+			registry.registerSingleton("pool", pool);
+			if (explicitCallback) {
+				registry.registerDisposableBean("pool", destroyCallback);
+			}
+			var repositoryDefinition = new RootBeanDefinition(Repository.class, () -> repository);
+			repositoryDefinition.setDestroyMethodName("shutDown");
+			registry.registerBeanDefinition("repository", repositoryDefinition);
+			registry.getBean("repository", Repository.class);
+			registry.registerDependentBean("repository", "pool");
+			registry.registerDependentBean("pool", "wrapper");
+			wrapper.getConnection().close();
+			verify(connection, never()).close();
+
+			registry.destroySingletons();
+
+			InOrder shutdown = inOrder(destroyCallback, connection, repository);
+			if (explicitCallback) {
+				shutdown.verify(destroyCallback).destroy();
+			}
+			shutdown.verify(connection).close();
+			shutdown.verify(repository).shutDown();
+			verify(destroyCallback, times(explicitCallback ? 1 : 0)).destroy();
+		} finally {
+			pool.destroy();
 		}
 	}
 

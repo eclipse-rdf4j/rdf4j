@@ -54,10 +54,12 @@ final class LmdbSinglePatternPrefix {
 
 	static LmdbSinglePatternPrefix prepare(StatementPattern pattern, QueryEvaluationContext context,
 			TripleSource tripleSource) {
+		// A direct prefix scan bypasses the triple source's statement methods, which subclasses may customize.
 		if (pattern.getClass() != StatementPattern.class
 				|| pattern.getScope() != StatementPattern.Scope.DEFAULT_CONTEXTS
 				|| pattern.getContextVar() != null || !unrestrictedDataset(context.getDataset())
 				|| context.getActiveGraph() != null || !(tripleSource instanceof SailDatasetTripleTermSource sailSource)
+				|| sailSource.getClass() != SailDatasetTripleTermSource.class
 				|| sailSource.hasPendingStatementChanges()) {
 			return null;
 		}

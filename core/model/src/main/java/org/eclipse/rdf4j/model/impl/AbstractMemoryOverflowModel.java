@@ -661,10 +661,18 @@ public abstract class AbstractMemoryOverflowModel<T extends AbstractModel> exten
 
 		void accountFor(Statement statement) {
 			// Namespace strings remain resident in the disk stores, so they do not help a spill reclaim heap.
-			accountFor(statement.getSubject());
-			accountFor(statement.getPredicate());
-			accountFor(statement.getObject());
-			accountFor(statement.getContext());
+			// Indexed statements expose canonical terms but retain their supplied statements as well.
+			while (statement != null && !atLimit()) {
+				accountFor(statement.getSubject());
+				accountFor(statement.getPredicate());
+				accountFor(statement.getObject());
+				accountFor(statement.getContext());
+				if (statement instanceof LinkedHashModel.ModelStatement modelStatement) {
+					statement = modelStatement.getStatement();
+				} else {
+					statement = null;
+				}
+			}
 		}
 
 		void accountFor(Value initial) {
