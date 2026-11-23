@@ -1309,6 +1309,15 @@ public class DefaultEvaluationStrategy implements EvaluationStrategy, FederatedS
 		return getClass() == DefaultEvaluationStrategy.class || getClass() == StrictEvaluationStrategy.class;
 	}
 
+	/**
+	 * Allows reuse of ordinary fixed GRAPH bodies compiled for a stable statement snapshot. An implementation must
+	 * use the standard statement and UNION preparation and supply a validator for every evaluation of the reused step.
+	 */
+	@InternalUseOnly
+	protected Runnable fixedGraphBodyReuseValidator() {
+		return null;
+	}
+
 	protected QueryEvaluationStep prepare(DescribeOperator node, QueryEvaluationContext context)
 			throws QueryEvaluationException {
 		QueryEvaluationStep child = precompile(node.getArg(), context);
@@ -1504,7 +1513,7 @@ public class DefaultEvaluationStrategy implements EvaluationStrategy, FederatedS
 			throws QueryEvaluationException {
 		if (expr instanceof Graph graph) {
 			return GraphQueryEvaluationStep.supply(graph, this, tripleSource, context,
-					this::specializeGraphBodyRestriction);
+					this::specializeGraphBodyRestriction, fixedGraphBodyReuseValidator());
 		} else if (expr instanceof Projection) {
 			return prepare((Projection) expr, context);
 		} else if (expr instanceof MultiProjection) {

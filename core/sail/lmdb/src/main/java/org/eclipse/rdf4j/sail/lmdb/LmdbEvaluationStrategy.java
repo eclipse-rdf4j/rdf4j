@@ -68,6 +68,14 @@ final class LmdbEvaluationStrategy extends DefaultEvaluationStrategy {
 	}
 
 	@Override
+	protected Runnable fixedGraphBodyReuseValidator() {
+		return statementSource != null && statementSource.canReplayStatementRows()
+				&& tripleSource instanceof SailDatasetTripleTermSource source && source.hasStableStatementRelation()
+						? statementSource.stableGraphRestrictionValidator()
+						: null;
+	}
+
+	@Override
 	protected QueryEvaluationStep prepare(LeftJoin node, QueryEvaluationContext context) {
 		return statementSource != null && statementSource.canReplayStatementRows()
 				? prepare(node, context,

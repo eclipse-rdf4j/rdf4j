@@ -24,12 +24,14 @@ import java.util.function.BiConsumer;
 import java.util.function.BiFunction;
 import java.util.function.Function;
 
+import org.eclipse.rdf4j.common.annotation.InternalUseOnly;
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.common.iteration.CloseableIteratorIteration;
 import org.eclipse.rdf4j.common.iteration.CooperativeCancellation;
 import org.eclipse.rdf4j.common.iteration.EmptyIteration;
 import org.eclipse.rdf4j.common.iteration.LookAheadIteration;
 import org.eclipse.rdf4j.common.iteration.SingletonIteration;
+import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.vocabulary.RDF4J;
@@ -40,7 +42,9 @@ import org.eclipse.rdf4j.query.MutableBindingSet;
 import org.eclipse.rdf4j.query.QueryEvaluationException;
 import org.eclipse.rdf4j.query.QueryExecutionPolicy.GraphJoinOptimization;
 import org.eclipse.rdf4j.query.algebra.Graph;
+import org.eclipse.rdf4j.query.algebra.StatementPattern;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
+import org.eclipse.rdf4j.query.algebra.Union;
 import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.query.algebra.evaluation.EvaluationStrategy;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryEvaluationStep;
@@ -74,6 +78,8 @@ public final class GraphQueryEvaluationStep implements QueryEvaluationStep, Rest
 	private final EvaluationStrategy strategy;
 	private final BodyRestrictionSpecializer specializer;
 	private final PreparedRestrictionPlan restrictionPlan;
+	private final Runnable fixedBodyValidator;
+	private volatile QueryEvaluationStep fixedBody;
 
 	@FunctionalInterface
 	public interface BodyRestrictionSpecializer {
@@ -88,18 +94,25 @@ public final class GraphQueryEvaluationStep implements QueryEvaluationStep, Rest
 
 	public static QueryEvaluationStep supply(Graph graph, TripleSource source, QueryEvaluationContext context,
 			BiFunction<TupleExpr, QueryEvaluationContext, QueryEvaluationStep> childPreparer) {
-		return new GraphQueryEvaluationStep(graph, source, context, childPreparer, null, null);
+		return new GraphQueryEvaluationStep(graph, source, context, childPreparer, null, null, null);
 	}
 
 	public static QueryEvaluationStep supply(Graph graph, EvaluationStrategy strategy, TripleSource source,
 			QueryEvaluationContext context, BodyRestrictionSpecializer specializer) {
-		return new GraphQueryEvaluationStep(graph, source, context, strategy::precompile, strategy, specializer);
+		return supply(graph, strategy, source, context, specializer, null);
+	}
+
+	@InternalUseOnly
+	public static QueryEvaluationStep supply(Graph graph, EvaluationStrategy strategy, TripleSource source,
+			QueryEvaluationContext context, BodyRestrictionSpecializer specializer, Runnable fixedBodyValidator) {
+		return new GraphQueryEvaluationStep(graph, source, context, strategy::precompile, strategy, specializer,
+				fixedBodyValidator);
 	}
 
 	private GraphQueryEvaluationStep(Graph graph, TripleSource source, QueryEvaluationContext context,
 			BiFunction<TupleExpr, QueryEvaluationContext, QueryEvaluationStep> childPreparer,
 			EvaluationStrategy strategy,
-			BodyRestrictionSpecializer specializer) {
+			BodyRestrictionSpecializer specializer, Runnable fixedBodyValidator) {
 		this.graph = graph;
 		this.childPreparer = childPreparer;
 		this.source = source;
@@ -119,7 +132,50 @@ public final class GraphQueryEvaluationStep implements QueryEvaluationStep, Rest
 		this.capturer = source.getValueCapturer();
 		this.strategy = strategy;
 		this.specializer = specializer;
+		this.fixedBodyValidator = fixedBodyValidator != null && graph.getClass() == Graph.class
+				&& graph.getGraphName().getClass() == Var.class && graph.getGraphName().isConstant()
+				&& graph.getGraphName().getValue() instanceof IRI && !graph.getGraphName().hasApiInputOrigin()
+				&& !graph.isRuntimeTelemetryEnabled() && !strategy.isTrackTime() && !strategy.isTrackResultSize()
+				&& isReusableFixedBody(graph.getArg()) ? fixedBodyValidator : null;
 		this.restrictionPlan = prepareRestrictionPlan();
+	}
+
+	private static boolean isReusableFixedBody(TupleExpr body) {
+		if (body.isRuntimeTelemetryEnabled()) {
+			return false;
+		}
+		if (body.getClass() == Union.class) {
+			Union union = (Union) body;
+			return isReusableFixedBody(union.getLeftArg()) && isReusableFixedBody(union.getRightArg());
+		}
+		if (body.getClass() != StatementPattern.class) {
+			return false;
+		}
+		StatementPattern pattern = (StatementPattern) body;
+		return pattern.getScope() == StatementPattern.Scope.DEFAULT_CONTEXTS && pattern.getContextVar() == null
+				&& pattern.getSubjectVar().getClass() == Var.class && pattern.getPredicateVar().getClass() == Var.class
+				&& pattern.getObjectVar().getClass() == Var.class;
+	}
+
+	private QueryEvaluationStep ordinaryBody(Resource selected, SelectorOrigin origin) {
+		if (fixedBodyValidator == null || origin != SelectorOrigin.CONSTANT) {
+			return prepareBody(selection(selected, origin != SelectorOrigin.ENUMERATED));
+		}
+		fixedBodyValidator.run();
+		QueryEvaluationStep prepared = fixedBody;
+		return prepared != null ? prepared : prepareFixedBody(selected);
+	}
+
+	private synchronized QueryEvaluationStep prepareFixedBody(Resource selected) {
+		if (fixedBody == null) {
+			// A lexical selector fixes both logical and physical graph in this prepared occurrence.
+			fixedBody = prepareBody(selection(selected, true));
+		}
+		return fixedBody;
+	}
+
+	private QueryEvaluationStep prepareBody(ActiveGraph active) {
+		return childPreparer.apply(graph.getArg(), new ActiveGraphQueryEvaluationContext(context, active));
 	}
 
 	private Resource capture(Resource resource) {
@@ -584,15 +640,14 @@ public final class GraphQueryEvaluationStep implements QueryEvaluationStep, Rest
 				if (isCancellationRequested()) {
 					return;
 				}
-				ActiveGraph active = selection(selected, origin != SelectorOrigin.ENUMERATED);
-				if (restricted != null) {
+				if (restricted == null) {
+					child = ordinaryBody(selected, origin).evaluate(bindings);
+				} else {
 					graph.setStringMetricActual("graphRestrictionSelectorOrigin", origin.name());
 					graph.incrementLongMetricActual("graphRestrictionSelections");
+					ActiveGraph active = selection(selected, origin != SelectorOrigin.ENUMERATED);
+					child = restricted.openBody(new GraphSelection(origin, active), frame);
 				}
-				child = restricted == null
-						? childPreparer.apply(graph.getArg(), new ActiveGraphQueryEvaluationContext(context, active))
-								.evaluate(bindings)
-						: restricted.openBody(new GraphSelection(origin, active), frame);
 				childOwnsBindings = StatementPatternQueryEvaluationStep.ownsBindingSets(child);
 			}
 

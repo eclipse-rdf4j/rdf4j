@@ -88,9 +88,15 @@ public class SailDatasetTripleTermSource implements NativeTripleTermSource, Stat
 		return stableReadPlan();
 	}
 
-	private StatementRestrictionSourcePlan stableReadPlan() {
+	/** Whether this adapter certifies a stable statement relation and graph catalog for its whole dataset. */
+	@InternalUseOnly
+	public final boolean hasStableStatementRelation() {
 		// Subclasses may override either statement lookup or graph enumeration.
-		if (getClass() != SailDatasetTripleTermSource.class || !hasStableRelation(dataset)) {
+		return getClass() == SailDatasetTripleTermSource.class && hasStableRelation(dataset);
+	}
+
+	private StatementRestrictionSourcePlan stableReadPlan() {
+		if (!hasStableStatementRelation()) {
 			return null;
 		}
 		var view = new StatementRestrictionSourceView(this, dataset);
