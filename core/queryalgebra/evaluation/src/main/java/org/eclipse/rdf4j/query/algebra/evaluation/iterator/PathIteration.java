@@ -101,6 +101,7 @@ public class PathIteration extends LookAheadIteration<BindingSet> {
 	private final String variablePrefix;
 	private final String endVarName;
 	private final String frontierParameter;
+	private final boolean firstWitnessEligible;
 	private QueryEvaluationStep simpleFrontier;
 	private boolean fixedPathMatch;
 
@@ -168,10 +169,18 @@ public class PathIteration extends LookAheadIteration<BindingSet> {
 
 		this.pathExpression = pathExpression;
 		this.contextVar = contextVar;
-		frontierParameter = reuseSimpleFrontier && context != null
-				&& (!(startVarFixed && endVarFixed)
-						|| canReuseFixedEndpoints(startVar, endVar, contextVar, scope, this.context))
-				&& isSimpleFrontier(pathExpression, startVar, endVar, contextVar) ? variablePrefix + "frontier" : null;
+		boolean simplePath = reuseSimpleFrontier && this.context != null
+				&& isSimpleFrontier(pathExpression, startVar, endVar, contextVar);
+		boolean bothEndpointsFixed = startVarFixed && endVarFixed;
+		frontierParameter = simplePath
+				&& (!bothEndpointsFixed || canReuseFixedEndpoints(startVar, endVar, contextVar, scope, this.context))
+						? variablePrefix + "frontier"
+						: null;
+		// A fixed, simple default-graph path has one observable endpoint mapping, however many walks witness it.
+		// This certificate does not depend on the reusable frontier optimization: it also covers endpoints that are
+		// fixed by input bindings, while leaving graph-producing and selected-graph paths on the regular traversal.
+		firstWitnessEligible = simplePath && scope == Scope.DEFAULT_CONTEXTS && contextVar == null
+				&& bothEndpointsFixed && this.context.getActiveGraph() == null;
 
 		this.currentLength = minLength;
 		this.bindings = bindings;
@@ -321,8 +330,8 @@ public class PathIteration extends LookAheadIteration<BindingSet> {
 					if (startVarFixed && endVarFixed) {
 						Value endValue = getVarValue(endVar, endVarFixed, nextElement);
 						if (endValue.equals(vp.endValue)) {
-							if (frontierParameter != null) {
-								// This simple ordinary path has two fixed terms and no graph output.
+							if (firstWitnessEligible) {
+								// A second simple path with the same fixed endpoints cannot add a result mapping.
 								fixedPathMatch = true;
 							} else {
 								add(reportedValues, vp);

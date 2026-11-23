@@ -28,6 +28,7 @@ import static org.mockito.Mockito.when;
 
 import java.util.Comparator;
 import java.util.HashSet;
+import java.util.Iterator;
 import java.util.List;
 import java.util.Set;
 import java.util.concurrent.atomic.AtomicInteger;
@@ -195,6 +196,154 @@ public class PathIterationTest {
 				assertThat(QueryResults.asList(results)).as(pattern).hasSize(i == 3 ? 0 : 1);
 			}
 			assertThat(statementPreparations.get()).as(pattern).isLessThanOrEqualTo(3);
+		}
+	}
+
+	@Test
+	void boundSimplePathStopsAfterFirstWitnessWhenResultIsFullyDrained() {
+		Resource sibling = vf.createIRI("urn:sibling");
+		model.clear();
+		model.add(one, RDFS.SUBCLASSOF, two);
+		model.add(one, RDFS.SUBCLASSOF, sibling);
+		AtomicInteger statementsRead = new AtomicInteger();
+		AtomicInteger statementIterationsClosed = new AtomicInteger();
+		TripleSource counting = new TripleSource() {
+			@Override
+			public CloseableIteration<? extends Statement> getStatements(Resource subj, IRI pred, Value obj,
+					Resource... contexts) throws QueryEvaluationException {
+				Iterator<? extends Statement> delegate = model.getStatements(subj, pred, obj, contexts).iterator();
+				return new CloseableIteratorIteration<Statement>(new Iterator<Statement>() {
+					@Override
+					public boolean hasNext() {
+						return delegate.hasNext();
+					}
+
+					@Override
+					public Statement next() {
+						statementsRead.incrementAndGet();
+						return delegate.next();
+					}
+				}) {
+					@Override
+					protected void handleClose() {
+						statementIterationsClosed.incrementAndGet();
+					}
+				};
+			}
+
+			@Override
+			public ValueFactory getValueFactory() {
+				return vf;
+			}
+		};
+		DefaultEvaluationStrategy countingEvaluator = new DefaultEvaluationStrategy(counting, null);
+
+		for (long minimumLength : new long[] { 0, 1 }) {
+			statementsRead.set(0);
+			statementIterationsClosed.set(0);
+			Var start = Var.of("start");
+			Var end = Var.of("end");
+			Var predicate = Var.of("predicate", RDFS.SUBCLASSOF);
+			ArbitraryLengthPath path = new ArbitraryLengthPath(Scope.DEFAULT_CONTEXTS, start,
+					new StatementPattern(start.clone(), predicate, end.clone()), end, minimumLength);
+			QueryBindingSet bindings = new QueryBindingSet();
+			bindings.addBinding("start", one);
+			bindings.addBinding("end", two);
+			QueryEvaluationStep prepared = PathIteration.prepare(countingEvaluator, path,
+					new QueryEvaluationContext.Minimal(null), true);
+
+			try (var rows = prepared.evaluate(bindings)) {
+				assertThat(QueryResults.asList(rows))
+						.extracting(row -> row.getValue("start"), row -> row.getValue("end"))
+						.containsExactly(tuple(one, two));
+			}
+			assertThat(statementsRead).as("minimum length " + minimumLength)
+					.hasValue(1);
+			assertThat(statementIterationsClosed).as("minimum length " + minimumLength)
+					.hasValue(1);
+		}
+
+		statementsRead.set(0);
+		statementIterationsClosed.set(0);
+		Var start = Var.of("start");
+		Var end = Var.of("end");
+		Var predicate = Var.of("predicate", RDFS.SUBCLASSOF);
+		ArbitraryLengthPath missingPath = new ArbitraryLengthPath(Scope.DEFAULT_CONTEXTS, start,
+				new StatementPattern(start.clone(), predicate, end.clone()), end, 1);
+		QueryBindingSet missingBindings = new QueryBindingSet();
+		missingBindings.addBinding("start", one);
+		missingBindings.addBinding("end", vf.createIRI("urn:missing"));
+		try (var rows = PathIteration.prepare(countingEvaluator, missingPath,
+				new QueryEvaluationContext.Minimal(null), true).evaluate(missingBindings)) {
+			assertThat(QueryResults.asList(rows)).isEmpty();
+		}
+		assertThat(statementsRead).as("a fixed endpoint miss must exhaust its candidates")
+				.hasValue(2);
+		assertThat(statementIterationsClosed.get()).as("all path scans must close after exhaustion")
+				.isGreaterThan(0);
+	}
+
+	@Test
+	void firstWitnessCertificateHandlesInverseAndCyclePaths() {
+		model.clear();
+		model.add(one, RDFS.SUBCLASSOF, two);
+		model.add(two, RDFS.SUBCLASSOF, one);
+
+		for (long minimumLength : new long[] { 0, 1 }) {
+			Var start = Var.of("start");
+			Var end = Var.of("end");
+			Var predicate = Var.of("predicate", RDFS.SUBCLASSOF);
+			ArbitraryLengthPath cycle = new ArbitraryLengthPath(Scope.DEFAULT_CONTEXTS, start,
+					new StatementPattern(start.clone(), predicate, end.clone()), end, minimumLength);
+			QueryBindingSet cycleBindings = new QueryBindingSet();
+			cycleBindings.addBinding("start", one);
+			cycleBindings.addBinding("end", one);
+			try (var rows = PathIteration.prepare(evaluator, cycle, new QueryEvaluationContext.Minimal(null), true)
+					.evaluate(cycleBindings)) {
+				assertThat(QueryResults.asList(rows))
+						.extracting(row -> row.getValue("start"), row -> row.getValue("end"))
+						.containsExactly(tuple(one, one));
+			}
+		}
+
+		Var start = Var.of("start");
+		Var end = Var.of("end");
+		Var predicate = Var.of("predicate", RDFS.SUBCLASSOF);
+		ArbitraryLengthPath inverse = new ArbitraryLengthPath(Scope.DEFAULT_CONTEXTS, start,
+				new StatementPattern(end.clone(), predicate, start.clone()), end, 1);
+		QueryBindingSet inverseBindings = new QueryBindingSet();
+		inverseBindings.addBinding("start", two);
+		inverseBindings.addBinding("end", one);
+		try (var rows = PathIteration.prepare(evaluator, inverse, new QueryEvaluationContext.Minimal(null), true)
+				.evaluate(inverseBindings)) {
+			assertThat(QueryResults.asList(rows))
+					.extracting(row -> row.getValue("start"), row -> row.getValue("end"))
+					.containsExactly(tuple(two, one));
+		}
+	}
+
+	@Test
+	void fixedNamedGraphPathKeepsEachGraphInItsResult() {
+		Resource firstGraph = vf.createIRI("urn:graph:first");
+		Resource secondGraph = vf.createIRI("urn:graph:second");
+		model.clear();
+		model.add(one, RDFS.SUBCLASSOF, two, firstGraph);
+		model.add(one, RDFS.SUBCLASSOF, two, secondGraph);
+		Var start = Var.of("start");
+		Var end = Var.of("end");
+		Var graph = Var.of("graph");
+		Var predicate = Var.of("predicate", RDFS.SUBCLASSOF);
+		StatementPattern edge = new StatementPattern(Scope.NAMED_CONTEXTS, start.clone(), predicate, end.clone(),
+				graph);
+		ArbitraryLengthPath path = new ArbitraryLengthPath(Scope.NAMED_CONTEXTS, start, edge, end, graph.clone(), 1);
+		QueryBindingSet bindings = new QueryBindingSet();
+		bindings.addBinding("start", one);
+		bindings.addBinding("end", two);
+		try (var rows = PathIteration.prepare(evaluator, path, new QueryEvaluationContext.Minimal(null), true)
+				.evaluate(bindings)) {
+			assertThat(QueryResults.asList(rows))
+					.extracting(row -> row.getValue("graph"))
+					.containsExactlyInAnyOrder(firstGraph, secondGraph);
 		}
 	}
 

@@ -22,6 +22,7 @@ import static org.mockito.Mockito.when;
 
 import java.util.ArrayList;
 import java.util.HashSet;
+import java.util.Iterator;
 import java.util.List;
 import java.util.Set;
 import java.util.concurrent.atomic.AtomicInteger;
@@ -40,6 +41,7 @@ import org.eclipse.rdf4j.model.impl.LinkedHashModel;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.model.vocabulary.RDF;
 import org.eclipse.rdf4j.model.vocabulary.RDFS;
+import org.eclipse.rdf4j.query.Binding;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.QueryEvaluationException;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
@@ -184,6 +186,40 @@ public class ZeroLengthPathIterationTest {
 	}
 
 	@Test
+	void unboundScanUsesNamedLookupsWithoutCopyingRows() {
+		EvaluationStrategy strategy = mock(EvaluationStrategy.class);
+		when(strategy.getCollectionFactory()).thenReturn(evaluator.getCollectionFactory());
+		Value firstSubject = vf.createIRI("urn:scan-first-subject");
+		Value firstObject = vf.createIRI("urn:scan-first-object");
+		Value secondSubject = vf.createIRI("urn:scan-second-subject");
+		Value secondObject = vf.createIRI("urn:scan-second-object");
+		AtomicInteger rowEnumerations = new AtomicInteger();
+		when(strategy.precompile(any(TupleExpr.class), any(QueryEvaluationContext.class))).thenReturn(
+				bindings -> new CloseableIteratorIteration<>(List.of(
+						new CountingBindingSet(firstSubject, firstObject, rowEnumerations),
+						new CountingBindingSet(secondSubject, secondObject, rowEnumerations)).iterator()));
+
+		List<BindingSet> results = new ArrayList<>();
+		try (ZeroLengthPathIteration iteration = new ZeroLengthPathIteration(strategy, Var.of("x"), Var.of("y"),
+				null, null, null, EmptyBindingSet.getInstance(), new QueryEvaluationContext.Minimal(null))) {
+			while (iteration.hasNext()) {
+				results.add(iteration.next());
+			}
+		}
+
+		assertEquals(4, results.size());
+		assertSame(firstSubject, results.get(0).getValue("x"));
+		assertSame(firstSubject, results.get(0).getValue("y"));
+		assertSame(firstObject, results.get(1).getValue("x"));
+		assertSame(firstObject, results.get(1).getValue("y"));
+		assertSame(secondSubject, results.get(2).getValue("x"));
+		assertSame(secondSubject, results.get(2).getValue("y"));
+		assertSame(secondObject, results.get(3).getValue("x"));
+		assertSame(secondObject, results.get(3).getValue("y"));
+		assertEquals(0, rowEnumerations.get());
+	}
+
+	@Test
 	void unboundEnumerationIgnoresInternalNameBindings() {
 		MapBindingSet bindings = new MapBindingSet();
 		bindings.addBinding(ZeroLengthPathIteration.ANON_PREDICATE_VAR, RDF.VALUE);
@@ -191,6 +227,23 @@ public class ZeroLengthPathIterationTest {
 				null, null, null, bindings, new QueryEvaluationContext.Minimal(null))) {
 			assertTrue(iteration.hasNext());
 			assertEquals(RDF.VALUE, iteration.next().getValue(ZeroLengthPathIteration.ANON_PREDICATE_VAR));
+		}
+	}
+
+	private static final class CountingBindingSet extends MapBindingSet {
+
+		private final AtomicInteger enumerations;
+
+		private CountingBindingSet(Value subject, Value object, AtomicInteger enumerations) {
+			this.enumerations = enumerations;
+			addBinding(ZeroLengthPathIteration.ANON_SUBJECT_VAR, subject);
+			addBinding(ZeroLengthPathIteration.ANON_OBJECT_VAR, object);
+		}
+
+		@Override
+		public Iterator<Binding> iterator() {
+			enumerations.incrementAndGet();
+			return super.iterator();
 		}
 	}
 
