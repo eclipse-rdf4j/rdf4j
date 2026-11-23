@@ -152,13 +152,13 @@ final class ZeroLengthPathPlan implements SlotPlan {
 				return false;
 			}
 			if (ctxIds == null) {
-				return hasNode(row.source, storedId, UNKNOWN);
+				return hasNode(row, storedId, UNKNOWN);
 			}
 			int tick = 0;
 			for (long ctx : ctxIds) {
 				LmdbNativeProbeDeadline.poll(++tick);
 				row.cancellation.poll(tick);
-				if (hasNode(row.source, storedId, ctx)) {
+				if (hasNode(row, storedId, ctx)) {
 					return true;
 				}
 			}
@@ -169,7 +169,7 @@ final class ZeroLengthPathPlan implements SlotPlan {
 		if (term == null) {
 			return false;
 		}
-		try (NativeLmdbQuerySource.NativeProbe probe = row.source.newProbe()) {
+		try (NativeLmdbQuerySource.NativeProbe probe = row.source.newProbe(row.cursorCancellation())) {
 			int contexts = ctxIds == null ? 1 : ctxIds.length;
 			int tick = 0;
 			for (int context = 0; context < contexts; context++) {
@@ -192,8 +192,10 @@ final class ZeroLengthPathPlan implements SlotPlan {
 		return false;
 	}
 
-	private static boolean hasNode(NativeLmdbQuerySource source, long id, long context) throws IOException {
-		return source.has(id, UNKNOWN, UNKNOWN, context) || source.has(UNKNOWN, UNKNOWN, id, context);
+	private static boolean hasNode(RowState row, long id, long context) throws IOException {
+		var cancellation = row.cursorCancellation();
+		return row.source.has(id, UNKNOWN, UNKNOWN, context, null, cancellation)
+				|| row.source.has(UNKNOWN, UNKNOWN, id, context, null, cancellation);
 	}
 
 	private static boolean canonicalStoredNodes(NativeLmdbQuerySource source) {
@@ -366,7 +368,7 @@ final class ZeroLengthNodeCursor implements RowCursor {
 					return UNKNOWN;
 				}
 				if (probe == null) {
-					probe = row.source.newProbe();
+					probe = row.source.newProbe(row.cursorCancellation());
 				}
 				statements = probe.open(UNKNOWN, UNKNOWN, UNKNOWN,
 						plan.ctxIds == null ? UNKNOWN : plan.ctxIds[contextIndex]);
@@ -444,7 +446,7 @@ final class ZeroLengthNodeDomainCursor implements RowCursor {
 
 	static RowCursor tryOpen(RowState row, ZeroLengthPathPlan plan) throws IOException {
 		row.cancellation.check();
-		NativeLmdbQuerySource.NativeProbe probe = row.source.newProbe();
+		NativeLmdbQuerySource.NativeProbe probe = row.source.newProbe(row.cursorCancellation());
 		boolean transferred = false;
 		try {
 			NativeLmdbQuerySource.NodeDomainIntersection subjects = probe.nodeDomainIntersection(true, true);

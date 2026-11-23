@@ -14,6 +14,7 @@ package org.eclipse.rdf4j.sail.lmdb.evaluation;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbNativeFactorizedQuoteTest.edge;
 import static org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbNativeFactorizedQuoteTest.row;
+import static org.eclipse.rdf4j.sail.lmdb.evaluation.NativeCancellationTestAccess.mockScanSource;
 import static org.mockito.AdditionalAnswers.delegatesTo;
 import static org.mockito.Mockito.doAnswer;
 import static org.mockito.Mockito.doReturn;
@@ -266,7 +267,7 @@ class LmdbNativeParallelCapacityQuoteTest {
 					.predicate(2L, 3D, 30_000L)
 					.adjacencyServed(true);
 			source = executableSource != null ? executableSource
-					: mock(NativeLmdbQuerySource.class, delegatesTo(statistics));
+					: mockScanSource(NativeLmdbQuerySource.class, delegatesTo(statistics));
 			if (executableSource == null) {
 				doAnswer(invocation -> {
 					probes.incrementAndGet();

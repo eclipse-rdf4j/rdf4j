@@ -72,7 +72,7 @@ public class ExternalFilterByQuery extends FilterPlanNode {
 									List.of());
 		}
 		try {
-			this.query = SparqlQueryParserCache.get(queryString);
+			this.query = SparqlQueryParserCache.get(queryString, connection);
 		} catch (MalformedQueryException e) {
 			logger.error("Malformed query:\n{}", queryString);
 			throw e;

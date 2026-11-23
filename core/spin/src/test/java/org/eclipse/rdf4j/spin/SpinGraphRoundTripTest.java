@@ -26,6 +26,8 @@ import org.eclipse.rdf4j.model.impl.TreeModel;
 import org.eclipse.rdf4j.model.vocabulary.RDF;
 import org.eclipse.rdf4j.model.vocabulary.SP;
 import org.eclipse.rdf4j.query.QueryLanguage;
+import org.eclipse.rdf4j.query.QueryParseOptions;
+import org.eclipse.rdf4j.query.QueryParseOptions.GraphAlgebraMode;
 import org.eclipse.rdf4j.query.algebra.DeleteData;
 import org.eclipse.rdf4j.query.algebra.Graph;
 import org.eclipse.rdf4j.query.algebra.InsertData;
@@ -49,6 +51,10 @@ import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.ValueSource;
 
 public class SpinGraphRoundTripTest {
+
+	private static final QueryParseOptions GRAPH = QueryParseOptions.DEFAULT
+			.withGraphAlgebraMode(GraphAlgebraMode.GRAPH);
+
 	@ParameterizedTest
 	@ValueSource(booleans = { false, true })
 	public void emptyRemoteServiceBodyUsesCanonicalEmptyList(boolean silent) throws Exception {
@@ -63,7 +69,7 @@ public class SpinGraphRoundTripTest {
 		Resource serviceResource = model.filter(null, RDF.TYPE, SP.SERVICE_CLASS).subjects().iterator().next();
 		assertThat(model.contains(serviceResource, SP.ELEMENTS_PROPERTY, RDF.NIL)).isTrue();
 		Resource queryResource = model.filter(null, RDF.TYPE, SP.SELECT_CLASS).subjects().iterator().next();
-		ParsedQuery restored = new SpinParser(SpinParser.Input.RDF_ONLY).parseQuery(queryResource,
+		ParsedQuery restored = new SpinParser(SpinParser.Input.RDF_ONLY, GRAPH).parseQuery(queryResource,
 				new ModelTripleSource(model));
 		List<Service> services = new ArrayList<>();
 		restored.getTupleExpr().visit(new AbstractQueryModelVisitor<RuntimeException>() {
@@ -83,7 +89,7 @@ public class SpinGraphRoundTripTest {
 	public void updateDataRoundTripPreservesSiblingDefaultAndNamedGraphs(String operation) throws Exception {
 		ParsedUpdate original = QueryParserUtil.parseUpdate(QueryLanguage.SPARQL, operation
 				+ " { <urn:default> <urn:p> <urn:o> . GRAPH <urn:g1> { <urn:first> <urn:p> <urn:o> } "
-				+ "GRAPH <urn:g2> { <urn:second> <urn:p> <urn:o> } }", null);
+				+ "GRAPH <urn:g2> { <urn:second> <urn:p> <urn:o> } }", null, GRAPH);
 		StatementCollector statements = new StatementCollector();
 		new SpinRenderer().render(original, statements);
 		TreeModel model = new TreeModel(statements.getStatements());
@@ -92,7 +98,7 @@ public class SpinGraphRoundTripTest {
 				.subjects()
 				.iterator()
 				.next();
-		ParsedUpdate restored = new SpinParser(SpinParser.Input.RDF_ONLY).parseUpdate(updateResource,
+		ParsedUpdate restored = new SpinParser(SpinParser.Input.RDF_ONLY, GRAPH).parseUpdate(updateResource,
 				new ModelTripleSource(model));
 		assertThat(restored.getUpdateExprs()).hasSize(1);
 		assertThat(restored.getUpdateExprs().getFirst()).isInstanceOf(original.getUpdateExprs().getFirst().getClass());
@@ -125,12 +131,12 @@ public class SpinGraphRoundTripTest {
 			"SELECT ?g WHERE { GRAPH ?g { SERVICE SILENT <urn:service> { VALUES ?v { 1 } } } }"
 	})
 	public void rdfRoundTripPreservesGraphBoundaries(String query) throws Exception {
-		ParsedQuery original = QueryParserUtil.parseQuery(QueryLanguage.SPARQL, query, null);
+		ParsedQuery original = QueryParserUtil.parseQuery(QueryLanguage.SPARQL, query, null, GRAPH);
 		StatementCollector statements = new StatementCollector();
 		new SpinRenderer().render(original, statements);
 		TreeModel model = new TreeModel(statements.getStatements());
 		Resource queryResource = model.filter(null, RDF.TYPE, SP.SELECT_CLASS).subjects().iterator().next();
-		ParsedQuery restored = new SpinParser(SpinParser.Input.RDF_ONLY).parseQuery(queryResource,
+		ParsedQuery restored = new SpinParser(SpinParser.Input.RDF_ONLY, GRAPH).parseQuery(queryResource,
 				new ModelTripleSource(model));
 		assertThat(restored.getTupleExpr()).as(query).isEqualTo(original.getTupleExpr());
 		List<Boolean> originalSilent = new ArrayList<>();

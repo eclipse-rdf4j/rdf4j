@@ -837,7 +837,7 @@ final class MergeJoinBatchCursor implements BatchCursor {
 
 	private void openRescan() throws IOException {
 		if (probe == null) {
-			probe = row.source.newProbe();
+			probe = row.source.newProbe(row.cursorCancellation());
 			savedSlots = new long[seed.length];
 		}
 		// the consumer surfaces emitted rows back into the shared RowState between fill calls, so the probe

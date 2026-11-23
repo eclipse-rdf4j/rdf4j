@@ -27,11 +27,13 @@ import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.QueryInterruptedException;
 import org.eclipse.rdf4j.query.QueryLanguage;
 import org.eclipse.rdf4j.query.QueryParseOptions;
+import org.eclipse.rdf4j.query.QueryParseOptions.GraphAlgebraMode;
 import org.eclipse.rdf4j.query.algebra.BNodeGenerator;
 import org.eclipse.rdf4j.query.algebra.BindingSetAssignment;
 import org.eclipse.rdf4j.query.algebra.DescribeOperator;
 import org.eclipse.rdf4j.query.algebra.Extension;
 import org.eclipse.rdf4j.query.algebra.ExtensionElem;
+import org.eclipse.rdf4j.query.algebra.Graph;
 import org.eclipse.rdf4j.query.algebra.MultiProjection;
 import org.eclipse.rdf4j.query.algebra.Projection;
 import org.eclipse.rdf4j.query.algebra.ProjectionElem;
@@ -504,7 +506,8 @@ public class TupleExprIRRenderer {
 		}
 
 		try {
-			ParsedQuery parsed = QueryParserUtil.parseQuery(QueryLanguage.SPARQL, rendered, null, cfg.parseOptions);
+			ParsedQuery parsed = QueryParserUtil.parseQuery(QueryLanguage.SPARQL, rendered, null,
+					roundTripParseOptions(original));
 			String expected = VarNameNormalizer.normalizeModelVariables(original);
 			String actual = VarNameNormalizer.normalizeModelVariables(parsed.getTupleExpr());
 			if (!expected.equals(actual)) {
@@ -522,6 +525,34 @@ public class TupleExprIRRenderer {
 					original, rendered, e);
 			throw new IllegalStateException("Failed to verify rendered SPARQL against the original TupleExpr", e);
 		}
+	}
+
+	private QueryParseOptions roundTripParseOptions(final TupleExpr original) {
+		QueryParseOptions options = cfg.parseOptions;
+		if (options.graphAlgebraMode() != GraphAlgebraMode.AUTO) {
+			return options;
+		}
+
+		// Standalone AUTO parsing lowers GRAPH patterns. Preserve explicit nodes from the input,
+		// including those inside expressions and SERVICE bodies.
+		var finder = new AbstractQueryModelVisitor<RuntimeException>() {
+			boolean found;
+
+			@Override
+			public void meet(Graph node) {
+				found = true;
+			}
+
+			@Override
+			protected void meetNode(QueryModelNode node) {
+				if (!found) {
+					IrNode.checkInterrupted();
+					super.meetNode(node);
+				}
+			}
+		};
+		original.visit(finder);
+		return finder.found ? options.withGraphAlgebraMode(GraphAlgebraMode.GRAPH) : options;
 	}
 
 	// diff the two strings to help debugging
@@ -805,6 +836,10 @@ public class TupleExprIRRenderer {
 	}
 
 	public static final class Config {
+		/**
+		 * SPARQL syntax options and the mode for round-trip verification. AUTO verifies input containing explicit
+		 * {@link Graph} nodes in GRAPH mode.
+		 */
 		public QueryParseOptions parseOptions = QueryParseOptions.DEFAULT;
 		public final String indent = "  ";
 		public final boolean printPrefixes = true;

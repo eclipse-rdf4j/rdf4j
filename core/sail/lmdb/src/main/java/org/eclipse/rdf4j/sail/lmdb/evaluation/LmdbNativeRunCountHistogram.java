@@ -31,6 +31,7 @@ import org.eclipse.rdf4j.query.algebra.evaluation.impl.QueryEvaluationContext;
 import org.eclipse.rdf4j.sail.lmdb.LmdbPrefixRunCursor;
 import org.eclipse.rdf4j.sail.lmdb.LmdbPrefixRunPlan;
 import org.eclipse.rdf4j.sail.lmdb.ValueIds;
+import org.eclipse.rdf4j.sail.lmdb.evaluation.NativeLmdbQuerySource.CursorCancellation;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.codegen.KernelRuntime;
 
 /**
@@ -204,7 +205,8 @@ final class LmdbNativeRunCountHistogram implements NativeAggregateAlternative {
 		}
 		LongHistogram histogram = null;
 		try (LmdbPrefixRunCursor cursor = source.prefixRuns(plan, subj, pred, obj,
-				LmdbNativeAggregateCompiler.UNKNOWN, true)) {
+				LmdbNativeAggregateCompiler.UNKNOWN, true, null,
+				NativeLmdbQuerySource.captureCursorCancellation(cancellation))) {
 			if (cursor == null) {
 				return null;
 			}
@@ -342,6 +344,7 @@ final class LmdbNativeRunCountHistogram implements NativeAggregateAlternative {
 				}
 				List<Future<HistogramResult>> futures = new ArrayList<>(workers);
 				NativeCancellationToken workerCancellation = new NativeCancellationToken(cancellation);
+				CursorCancellation cursorOwner = NativeLmdbQuerySource.captureCursorCancellation(workerCancellation);
 				LongHistogram[] locals = new LongHistogram[workers];
 				LongHistogram merged = null;
 				Throwable workerFailure = null;
@@ -383,9 +386,10 @@ final class LmdbNativeRunCountHistogram implements NativeAggregateAlternative {
 									NativeExecutionPhaseEvent.Span scan = NativeExecutionPhaseEvent.startDetached(
 											"scan",
 											phaseIdentity)) {
+								CursorCancellation cursorCancellation = cursorOwner.forWorker();
 								try (DenseAdjacencyRangeCollector dense = adjacencyWorker
 										? DenseAdjacencyRangeCollector.open(workerSource, workerPredicates,
-												workerCancellation, local.counts)
+												workerCancellation, local.counts, cursorCancellation)
 										: null) {
 									RangeWork work;
 									while ((work = queue.poll()) != null) {
@@ -412,7 +416,8 @@ final class LmdbNativeRunCountHistogram implements NativeAggregateAlternative {
 												for (int range = work.firstRange; range < work.endRange; range++) {
 													long[] lo = range == 0 ? null : splits[range - 1];
 													long[] hi = range == splits.length ? null : splits[range];
-													roots += collectAdjacencyRange(workerSource, lo, hi, local);
+													roots += collectAdjacencyRange(workerSource, lo, hi, local,
+															cursorCancellation);
 													fallbackRanges++;
 												}
 											}
@@ -420,7 +425,7 @@ final class LmdbNativeRunCountHistogram implements NativeAggregateAlternative {
 											int range = work.firstRange;
 											long[] lo = range == 0 ? null : splits[range - 1];
 											long[] hi = range == splits.length ? null : splits[range];
-											collectRange(workerSource, lo, hi, local);
+											collectRange(workerSource, lo, hi, local, cursorCancellation);
 										}
 									}
 								}
@@ -493,9 +498,10 @@ final class LmdbNativeRunCountHistogram implements NativeAggregateAlternative {
 	}
 
 	private long collectAdjacencyRange(NativeLmdbQuerySource workerSource, long[] lo, long[] hi,
-			LongHistogram histogram) throws IOException {
+			LongHistogram histogram, CursorCancellation cursorCancellation) throws IOException {
 		try (LmdbAdjacencyRootDomainCursor cursor = LmdbAdjacencyRootDomainCursor.open(workerSource, true, lo != null,
-				lo == null ? 0L : lo[0], hi != null, hi == null ? 0L : hi[0], histogram.cancellation)) {
+				lo == null ? 0L : lo[0], hi != null, hi == null ? 0L : hi[0], histogram.cancellation,
+				cursorCancellation)) {
 			if (cursor == null) {
 				throw new QueryEvaluationException(
 						"parallel run-count histogram worker could not open its adjacency root domain");
@@ -504,10 +510,11 @@ final class LmdbNativeRunCountHistogram implements NativeAggregateAlternative {
 		}
 	}
 
-	private void collectRange(NativeLmdbQuerySource workerSource, long[] lo, long[] hi, LongHistogram histogram)
+	private void collectRange(NativeLmdbQuerySource workerSource, long[] lo, long[] hi, LongHistogram histogram,
+			CursorCancellation cursorCancellation)
 			throws IOException {
 		try (LmdbPrefixRunCursor cursor = workerSource.prefixRuns(plan, subj, pred, obj,
-				LmdbNativeAggregateCompiler.UNKNOWN, true)) {
+				LmdbNativeAggregateCompiler.UNKNOWN, true, null, cursorCancellation)) {
 			if (cursor == null) {
 				throw new QueryEvaluationException("parallel run-count histogram worker could not open its cursor");
 			}
@@ -588,7 +595,9 @@ final class LmdbNativeRunCountHistogram implements NativeAggregateAlternative {
 		}
 
 		static DenseAdjacencyRangeCollector open(NativeLmdbQuerySource source, long[] predicates,
-				NativeCancellationToken cancellation, NativeStructuralCounts counts) throws IOException {
+				NativeCancellationToken cancellation, NativeStructuralCounts counts,
+				CursorCancellation cursorCancellation)
+				throws IOException {
 			cancellation.check();
 			if (predicates == null) {
 				return null;
@@ -596,7 +605,7 @@ final class LmdbNativeRunCountHistogram implements NativeAggregateAlternative {
 			counts.reserveWorkspace(1024L + (long) DENSE_ROOT_CAPACITY * Long.BYTES
 					+ Math.multiplyExact((long) predicates.length,
 							128L + 2L * STRIPE_PLANE_WINDOW_SIZE * Long.BYTES));
-			NativeLmdbQuerySource.NativeProbe probe = source.newProbe();
+			NativeLmdbQuerySource.NativeProbe probe = source.newProbe(cursorCancellation);
 			NativeLmdbQuerySource.NativeAdjacency[] planes = new NativeLmdbQuerySource.NativeAdjacency[predicates.length];
 			int opened = 0;
 			try {

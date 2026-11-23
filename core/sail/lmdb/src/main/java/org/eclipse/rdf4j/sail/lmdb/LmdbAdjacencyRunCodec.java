@@ -1089,7 +1089,8 @@ final class LmdbAdjacencyRunCodec {
 	static final class RunCursor {
 
 		private final LmdbAdjacencyArena.ReadCursor memory = new LmdbAdjacencyArena.ReadCursor();
-		private final ImmutablePagedQuadCsfIndex.RowCursor csf = new ImmutablePagedQuadCsfIndex.RowCursor();
+		private final ImmutablePagedQuadCsfIndex.RowCursor csf;
+		private final Runnable cancellationPoll;
 
 		private LmdbAdjacencyArenaCatalog catalog;
 		private long runHandle = Long.MIN_VALUE;
@@ -1113,6 +1114,21 @@ final class LmdbAdjacencyRunCodec {
 		private int compositeVersion;
 		private int persistentLevel;
 		private RunCursor child;
+
+		RunCursor() {
+			this(null);
+		}
+
+		RunCursor(Runnable cancellationPoll) {
+			this.cancellationPoll = cancellationPoll;
+			this.csf = new ImmutablePagedQuadCsfIndex.RowCursor(cancellationPoll);
+		}
+
+		private void pollCancellation() {
+			if (cancellationPoll != null) {
+				cancellationPoll.run();
+			}
+		}
 
 		long edgeCount() {
 			return edgeCount;
@@ -1159,7 +1175,7 @@ final class LmdbAdjacencyRunCodec {
 
 		private RunCursor child() {
 			if (child == null) {
-				child = new RunCursor();
+				child = new RunCursor(cancellationPoll);
 			}
 			return child;
 		}
@@ -1291,6 +1307,7 @@ final class LmdbAdjacencyRunCodec {
 				&& target.sourceOrdinals == sourceOrdinals) {
 			return;
 		}
+		target.runHandle = Long.MIN_VALUE;
 		target.boundContext = rawContext;
 		target.sourceOrdinals = sourceOrdinals;
 		int slot = catalog.unpackSlot(runHandle);
@@ -1693,6 +1710,7 @@ final class LmdbAdjacencyRunCodec {
 		}
 		long ordinal = fromOrdinal;
 		while (ordinal < cursor.edgeCount) {
+			cursor.pollCancellation();
 			long start;
 			long count;
 			long source;
@@ -1772,6 +1790,7 @@ final class LmdbAdjacencyRunCodec {
 		long count = 0L;
 		long[] graphIds = null;
 		for (long from = 0L; from < cursor.edgeCount; from = span.end()) {
+			cursor.pollCancellation();
 			contextSpan(cursor, from, span);
 			if (span.hasCommonContext()) {
 				if (span.commonContext() == rawContext) {
@@ -1782,6 +1801,7 @@ final class LmdbAdjacencyRunCodec {
 					graphIds = new long[256];
 				}
 				for (long at = from; at < span.end();) {
+					cursor.pollCancellation();
 					int length = (int) Math.min(graphIds.length, span.end() - at);
 					int got = copy(contexts, cursor, at, length, null, 0, graphIds, 0);
 					if (got != length) {
@@ -1809,6 +1829,7 @@ final class LmdbAdjacencyRunCodec {
 			long neighbor, long rawContext) {
 		long from = fromOrdinal;
 		while ((from = nextContextCandidate(cursor, from)) < cursor.edgeCount) {
+			cursor.pollCancellation();
 			long end = cursor.contextCandidateEnd;
 			long low = from;
 			long high = end;
@@ -1855,6 +1876,7 @@ final class LmdbAdjacencyRunCodec {
 		}
 		int fromLeaf = Math.toIntExact(findCompositeLeaf(cursor, fromOrdinal));
 		for (int leaf = Math.max(fromLeaf, fenceLeaf); leaf < leafCount; leaf++) {
+			cursor.pollCancellation();
 			long at = cursor.baseOffset + COMPOSITE_HEADER_BYTES + (long) COMPOSITE_ENTRY_BYTES * leaf;
 			long edgeStart = cursor.segment.get(LmdbAdjacencyArena.U64_LE, at + 16);
 			long edgeCount = cursor.segment.get(LmdbAdjacencyArena.U64_LE, at + 24);

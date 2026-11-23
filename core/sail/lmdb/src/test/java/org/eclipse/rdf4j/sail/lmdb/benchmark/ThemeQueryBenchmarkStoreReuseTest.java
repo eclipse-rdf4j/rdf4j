@@ -276,7 +276,7 @@ class ThemeQueryBenchmarkStoreReuseTest {
 
 	@Test
 	void failedLoadCannotPublishCompletedDataset(@TempDir Path directory) throws Exception {
-		ThemeQueryBenchmark benchmark = new ThemeQueryBenchmark(directory.toFile(), repository -> {
+		ThemeQueryBenchmark benchmark = ThemeQueryBenchmark.forStore(directory.toFile(), repository -> {
 			try (var connection = repository.getConnection()) {
 				connection.add(Values.iri("urn:partial"), Values.iri("urn:predicate"), Values.literal("partial"));
 			}
@@ -322,7 +322,7 @@ class ThemeQueryBenchmarkStoreReuseTest {
 	}
 
 	private static ThemeQueryBenchmark fixtureBenchmark(Path directory, int[] loads) {
-		ThemeQueryBenchmark benchmark = new ThemeQueryBenchmark(directory.toFile(), repository -> {
+		ThemeQueryBenchmark benchmark = ThemeQueryBenchmark.forStore(directory.toFile(), repository -> {
 			loads[0]++;
 			try (var connection = repository.getConnection()) {
 				connection.begin();

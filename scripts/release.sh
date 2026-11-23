@@ -351,6 +351,7 @@ step_verify_prereqs() {
   require_command mvn "mvn command not found. See https://maven.apache.org/"
   require_command gh "gh command not found. See https://github.com/cli/cli"
   require_command xmllint "xmllint command not found. See http://xmlsoft.org/xmllint.html"
+  require_command python3 "python3 command not found. It builds the third-party license notices."
   [[ -f pom.xml ]] || die "pom.xml not found in ${REPO_ROOT}"
   run_cmd "Check GitHub CLI authentication" gh auth status
 }
@@ -557,6 +558,7 @@ step_checkout_release_tag() {
 step_build_release_artifacts() {
   require_release_context
   run_cmd "mvn clean" mvn clean
+  run_cmd "Build third-party license evidence" python3 "${REPO_SCRIPT_DIR}/build-third-party-licenses.py"
   run_cmd "mvn install -DskipTests -DskipITs -Djapicmp.skip" mvn install -DskipTests -DskipITs -Djapicmp.skip
   run_cmd "mvn package -Passembly -DskipTests -Djapicmp.skip" mvn package -Passembly -DskipTests -Djapicmp.skip
 }

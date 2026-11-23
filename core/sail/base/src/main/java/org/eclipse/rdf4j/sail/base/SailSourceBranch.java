@@ -989,7 +989,7 @@ class SailSourceBranch implements SailSource, FrozenFlush {
 			throws SailException {
 		// The caller owns the base until the entire reader graph has been constructed successfully.
 		AtomicBoolean adoptedBase = new AtomicBoolean();
-		SailDataset derivedFrom = new DelegatingSailDataset(base) {
+		SailDataset derivedFrom = new StatementPreservingSailDataset(base) {
 			@Override
 			public void close() {
 				if (adoptedBase.get() && lease == null) {
@@ -1004,7 +1004,7 @@ class SailSourceBranch implements SailSource, FrozenFlush {
 				}
 			}
 		};
-		class SnapshotObserver extends DelegatingSailDataset {
+		class SnapshotObserver extends StatementPreservingSailDataset {
 			private boolean borrowed;
 
 			SnapshotObserver(SailDataset derivedFrom) {

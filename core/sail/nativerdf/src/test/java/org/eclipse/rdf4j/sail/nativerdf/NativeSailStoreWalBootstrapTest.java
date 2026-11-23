@@ -15,6 +15,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.nio.file.StandardCopyOption;
 import java.util.List;
 import java.util.stream.Collectors;
 
@@ -56,5 +57,36 @@ class NativeSailStoreWalBootstrapTest {
 			assertThat(segments).isNotEmpty();
 			assertThat(segments).allMatch(name -> name.matches("wal-[1-9]\\d*\\.v1(?:\\.gz)?"));
 		}
+	}
+
+	@Test
+	void opensAfterInterruptedDictionaryInstallBeforeCreatingWal() throws Exception {
+		var vf = SimpleValueFactory.getInstance();
+		try (ValueStore live = new ValueStore(tempDir.toFile())) {
+			live.storeValue(vf.createBNode("old-generation"));
+		}
+		Path staging = Files.createDirectory(tempDir.resolve("values-recovery"));
+		int restoredId;
+		try (ValueStore staged = new ValueStore(staging.toFile())) {
+			staged.storeValue(vf.createBNode("first-in-replacement"));
+			restoredId = staged.storeValue(vf.createBNode("second-in-replacement"));
+		}
+		Files.createFile(staging.resolve("ready"));
+		Files.copy(staging.resolve("values.dat"), tempDir.resolve("values.dat"),
+				StandardCopyOption.REPLACE_EXISTING);
+		Path walDir = tempDir.resolve(ValueStoreWalConfig.DEFAULT_DIRECTORY_NAME);
+		assertThat(walDir).doesNotExist();
+
+		NativeStore store = new NativeStore(tempDir.toFile());
+		store.setWalSyncBootstrapOnOpen(true);
+		try {
+			store.init();
+			ValueStore dictionary = (ValueStore) store.getValueFactory();
+			assertThat(dictionary.getValue(restoredId)).isEqualTo(vf.createBNode("second-in-replacement"));
+			assertThat(staging).doesNotExist();
+		} finally {
+			store.shutDown();
+		}
+		assertThat(walDir).isDirectory();
 	}
 }

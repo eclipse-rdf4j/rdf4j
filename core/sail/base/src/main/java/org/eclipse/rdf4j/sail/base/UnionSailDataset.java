@@ -15,6 +15,7 @@ package org.eclipse.rdf4j.sail.base;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.EnumSet;
+import java.util.HashSet;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Set;
@@ -23,6 +24,7 @@ import java.util.function.ToLongFunction;
 
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.common.iteration.DualUnionIteration;
+import org.eclipse.rdf4j.common.iteration.FilterIteration;
 import org.eclipse.rdf4j.common.iteration.IndexReportingIterator;
 import org.eclipse.rdf4j.common.order.StatementOrder;
 import org.eclipse.rdf4j.model.IRI;
@@ -166,7 +168,24 @@ class UnionSailDataset implements SailDataset, TreeOwnedDataset {
 		try {
 			iteration1 = dataset1.getContextIDs();
 			iteration2 = dataset2.getContextIDs();
-			return DualUnionIteration.getWildcardInstance(iteration1, iteration2);
+			CloseableIteration<? extends Resource> union = DualUnionIteration.getWildcardInstance(iteration1,
+					iteration2);
+			if (union == iteration1 || union == iteration2) {
+				return union;
+			}
+			return new FilterIteration<Resource>(union) {
+				private final Set<Resource> seen = new HashSet<>();
+
+				@Override
+				protected boolean accept(Resource name) {
+					return name != null && seen.add(name);
+				}
+
+				@Override
+				protected void handleClose() {
+					seen.clear();
+				}
+			};
 		} catch (Throwable t) {
 			try {
 				if (iteration1 != null) {

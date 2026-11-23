@@ -26,6 +26,8 @@ import org.eclipse.rdf4j.common.transaction.IsolationLevels;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.model.util.Values;
+import org.eclipse.rdf4j.query.QueryExecutionPolicy;
+import org.eclipse.rdf4j.query.QueryExecutionPolicy.GraphJoinOptimization;
 import org.eclipse.rdf4j.query.QueryResults;
 import org.eclipse.rdf4j.query.TupleQuery;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
@@ -84,7 +86,7 @@ public class LmdbNativeChunkPipelineTest {
 
 	@BeforeEach
 	public void setUp() {
-		repository = new SailRepository(new LmdbStore(dataDir, chunkPipelineConfig()));
+		repository = new SailRepository(chunkPipelineStore(dataDir));
 		try (SailRepositoryConnection conn = repository.getConnection()) {
 			ValueFactory vf = conn.getValueFactory();
 			IRI p1 = vf.createIRI(EX, "p1");
@@ -123,6 +125,14 @@ public class LmdbNativeChunkPipelineTest {
 	private static LmdbStoreConfig chunkPipelineConfig() {
 		return new LmdbStoreConfig("spoc,posc,ospc").setNativeEvaluationEnabled(true)
 				.setDirectAdjacencyMode(DirectAdjacencyMode.DISABLED);
+	}
+
+	private static LmdbStore chunkPipelineStore(File directory) {
+		LmdbStore store = new LmdbStore(directory, chunkPipelineConfig());
+		// These tests assert the chunk pipeline's physical route, so isolate it from GRAPH restriction routing.
+		store.setQueryExecutionPolicy(
+				QueryExecutionPolicy.DEFAULT.withGraphJoinOptimization(GraphJoinOptimization.OFF));
+		return store;
 	}
 
 	@Test
@@ -217,7 +227,7 @@ public class LmdbNativeChunkPipelineTest {
 		// every live probe key is separated by a run of dead keys longer than the sequential threshold:
 		// the walk must seek (MDB_SET_RANGE) across the dead runs instead of scanning them
 		File seekDir = new File(dataDir, "merge-seek");
-		SailRepository sparse = new SailRepository(new LmdbStore(seekDir, chunkPipelineConfig()));
+		SailRepository sparse = new SailRepository(chunkPipelineStore(seekDir));
 		try {
 			try (SailRepositoryConnection conn = sparse.getConnection()) {
 				ValueFactory vf = conn.getValueFactory();
@@ -280,7 +290,7 @@ public class LmdbNativeChunkPipelineTest {
 		String previousParallel = System.getProperty("rdf4j.lmdb.parallel.enabled");
 		System.setProperty("rdf4j.lmdb.parallel.enabled", "false");
 		File sipDir = new File(dataDir, "sip-filter");
-		SailRepository star = new SailRepository(new LmdbStore(sipDir, chunkPipelineConfig()));
+		SailRepository star = new SailRepository(chunkPipelineStore(sipDir));
 		try {
 			try (SailRepositoryConnection conn = star.getConnection()) {
 				ValueFactory vf = conn.getValueFactory();
@@ -357,7 +367,7 @@ public class LmdbNativeChunkPipelineTest {
 		String previousParallel = System.getProperty("rdf4j.lmdb.parallel.enabled");
 		System.setProperty("rdf4j.lmdb.parallel.enabled", "false");
 		File multiDir = new File(dataDir, "sip-multikey");
-		SailRepository multi = new SailRepository(new LmdbStore(multiDir, chunkPipelineConfig()));
+		SailRepository multi = new SailRepository(chunkPipelineStore(multiDir));
 		try {
 			try (SailRepositoryConnection conn = multi.getConnection()) {
 				ValueFactory vf = conn.getValueFactory();
@@ -434,7 +444,7 @@ public class LmdbNativeChunkPipelineTest {
 		String previousParallel = System.getProperty("rdf4j.lmdb.parallel.enabled");
 		System.setProperty("rdf4j.lmdb.parallel.enabled", "false");
 		File sipDir = new File(dataDir, "sip-seek");
-		SailRepository sparse = new SailRepository(new LmdbStore(sipDir, chunkPipelineConfig()));
+		SailRepository sparse = new SailRepository(chunkPipelineStore(sipDir));
 		try {
 			try (SailRepositoryConnection conn = sparse.getConnection()) {
 				ValueFactory vf = conn.getValueFactory();
@@ -512,7 +522,7 @@ public class LmdbNativeChunkPipelineTest {
 		String previousParallel = System.getProperty("rdf4j.lmdb.parallel.enabled");
 		System.setProperty("rdf4j.lmdb.parallel.enabled", "false");
 		File hashDir = new File(dataDir, "hash-build");
-		SailRepository flood = new SailRepository(new LmdbStore(hashDir, chunkPipelineConfig()));
+		SailRepository flood = new SailRepository(chunkPipelineStore(hashDir));
 		try {
 			try (SailRepositoryConnection conn = flood.getConnection()) {
 				ValueFactory vf = conn.getValueFactory();

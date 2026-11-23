@@ -22,8 +22,10 @@ import java.io.File;
 import java.io.IOException;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.function.Predicate;
 
 import org.eclipse.rdf4j.model.IRI;
+import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.model.vocabulary.RDF;
 import org.eclipse.rdf4j.query.BindingSet;
@@ -33,6 +35,7 @@ import org.eclipse.rdf4j.query.impl.EmptyBindingSet;
 import org.eclipse.rdf4j.query.parser.QueryParserUtil;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
 import org.eclipse.rdf4j.sail.lmdb.config.LmdbStoreConfig;
+import org.eclipse.rdf4j.sail.lmdb.evaluation.NativeLmdbQuerySource.ProjectedValueAccess;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.NativeProjectedBindingSet;
 import org.eclipse.rdf4j.sail.lmdb.model.LmdbValue;
 import org.junit.jupiter.api.Test;
@@ -121,10 +124,46 @@ class LmdbPositionRoutingIntegrationTest {
 							valueConfig) {
 						@Override
 						LmdbValue getLazyValue(ReadSnapshot snapshot, long id, int mask) throws IOException {
+							recordMask(id, mask);
+							return super.getLazyValue(snapshot, id, mask);
+						}
+
+						@Override
+						LmdbValue getLazyValue(ReadSnapshot snapshot, long id, int mask,
+								ValueResolutionScope valueScope)
+								throws IOException {
+							recordMask(id, mask);
+							return super.getLazyValue(snapshot, id, mask, valueScope);
+						}
+
+						@Override
+						boolean withProjectedValueAccess(ReadSnapshot snapshot, ValueResolutionScope scope,
+								Predicate<ProjectedValueAccess> capture) throws IOException {
+							return super.withProjectedValueAccess(snapshot, scope,
+									access -> capture.test(new ProjectedValueAccess() {
+										@Override
+										public Object snapshot() {
+											return access.snapshot();
+										}
+
+										@Override
+										public Value lookup(long id, int mask, ValueResolutionScope valueScope) {
+											recordMask(id, mask);
+											return access.lookup(id, mask, valueScope);
+										}
+
+										@Override
+										public Value reuse(long id, int mask, ValueResolutionScope valueScope,
+												Value supplied, long semanticVersion) {
+											return access.reuse(id, mask, valueScope, supplied, semanticVersion);
+										}
+									}));
+						}
+
+						private void recordMask(long id, int mask) {
 							if (id == observedId) {
 								masks.add(mask);
 							}
-							return super.getLazyValue(snapshot, id, mask);
 						}
 					}, TripleStore::new);
 		}

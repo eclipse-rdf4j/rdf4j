@@ -674,6 +674,10 @@ keywordQuery.setBinding("keyword", literal(keyword));
 TupleQueryResult keywordQueryResult = keywordQuery.evaluate();
 ```
 
+#### Selecting GRAPH algebra for extension compatibility
+
+`QueryParseOptions` can select `AUTO`, `LEGACY`, or `GRAPH` algebra for subsequent query and update preparations. AUTO is resolved by the local evaluation path; standalone parsing retains legacy algebra. Use an explicit LEGACY setting when an extension cannot consume the new `Graph` node. See [GRAPH algebra compatibility](../graph-algebra-compatibility/) for policy precedence, historical limitations, and remote repository boundaries.
+
 #### Addressing a blank node by its repository ID
 
 RDF4J enables fixed blank node references in SPARQL by default. This deliberately revises the BNR-1 proposal's opt-in
@@ -848,10 +852,11 @@ There are 5 explanation levels to choose between:
 | Timed       | ✓      | ✓         | ✓                  | ✓               | ✓                 |                   | ✓                  |
 
 
-Use the `Telemetry` level to inspect runtime telemetry metrics per plan node. Use `Timed` when you need
-time-per-node diagnostics. `Timed`, `Telemetry`, and `Executed` all fully evaluate the query and iterate
-over all the result sets. Seeing as how this can be very time-consuming there is a default best-effort
-timeout of 60 seconds. A different timeout can be set by changing the timeout for the query.
+Use the `Telemetry` level to inspect runtime telemetry metrics per plan node. If a counter is missing
+from the JSON explanation, its value is unknown, not zero. Use `Timed` when you need time-per-node
+diagnostics. `Timed`, `Telemetry`, and `Executed` all fully evaluate the query and iterate over all the
+result sets. Seeing as how this can be very time-consuming there is a default best-effort timeout of
+60 seconds. A different timeout can be set by changing the timeout for the query.
 
 The lower levels `Unoptimized` and `Optimized` are useful for understanding how RDF4J reorders queries in
 order to optimize them.
@@ -940,8 +945,10 @@ are cost-estimates and actual measured output and timing. You may encounter:
  - **costEstimate**: an internal value that represents the cost for executing this node and is used for ordering the nodes
  - **resultSizeEstimate**: the cardinality estimate of a node, essentially how many results this node would return if it were executed alone
  - **resultSizeActual**: the actual number of results that this node produced
- - **totalTimeActual**: the total time this node took to return all its results, including the time for its children
- - **selfTimeActual**: the time this node took all on its own to produce its results
+ - **totalTimeActual**: the elapsed time recorded for this node, including child work done within that measurement.
+   If the node was not timed, a positive sum of available child totals is shown instead. This is not end-to-end query time.
+ - **selfTimeActual**: an estimate of time spent in this node alone, calculated by subtracting available child totals
+   from its recorded time. It is omitted if the node was not timed or the child totals exceed its recorded time.
 
  In the plan above we can see that `ArbitraryLengthPath` took most of our time by using 0.189ms (~75% of the overall time).
  This node represents the `(foaf:knows | ^foaf:knows)* ?friend` part of our query.

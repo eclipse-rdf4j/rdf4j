@@ -144,6 +144,7 @@ class GraphExplorerNativeVariantsTest {
 	private final Map<String, NativeQueryExpectedResults.Expected> expectedResults = new LinkedHashMap<>();
 	private final Map<String, NativeQueryExpectedResults.Identity> fixtureIdentities = new LinkedHashMap<>();
 	private final Map<String, String> fixtureOrigins = new TreeMap<>();
+	private final Map<BlankQueryRequest, JsonNode> blankQueryCache = new LinkedHashMap<>();
 	private static final Path EXPECTED_RESULTS = Path
 			.of("src/test/resources/org/eclipse/rdf4j/workbench/commands/graph-explorer-native-results");
 
@@ -2138,6 +2139,7 @@ class GraphExplorerNativeVariantsTest {
 		if (fixedCases != null) {
 			return arguments(fixedCases);
 		}
+		cacheFixedBlankQueries();
 		List<Case> cases = new ArrayList<>();
 		for (int rawIndex = 0; rawIndex < BLANK_IDS.size(); rawIndex++) {
 			for (String scope : SCOPES) {
@@ -2463,9 +2465,66 @@ class GraphExplorerNativeVariantsTest {
 		return queries;
 	}
 
+	private void cacheFixedBlankQueries() throws Exception {
+		List<String> rawIds = new ArrayList<>(BLANK_IDS);
+		rawIds.addAll(List.of("only-incoming", "only-outgoing", "self-loop", "unknown", "page"));
+		List<BlankQueryRequest> initial = new ArrayList<>();
+		for (String scope : SCOPES) {
+			for (String raw : rawIds) {
+				initial.add(new BlankQueryRequest(raw, scope, List.of()));
+			}
+			List<Map<String, String>> documentEdges = List.of(Map.of("source", "urn:anchor", "predicate", "urn:p",
+					"target", "__rdf_scoped_bnode__:" + JSON.writeValueAsString(List.of("document-1", "out-1"))));
+			initial.add(new BlankQueryRequest("iri:urn:anchor", scope, documentEdges));
+		}
+		cacheBlankQueries(initial);
+
+		// Each pagination stage depends on the checked rows from the previous query; scopes are independent.
+		Map<String, List<BindingSet>> loaded = new LinkedHashMap<>();
+		SCOPES.forEach(scope -> loaded.put(scope, new ArrayList<>()));
+		for (String stage : List.of("first", "next")) {
+			List<BlankQueryRequest> next = new ArrayList<>();
+			for (String scope : SCOPES) {
+				List<BindingSet> rows = loaded.get(scope);
+				String query = blankQueries("page", scope, loadedEdges(rows)).path("expand").asText();
+				rows.addAll(expectedResults(new Case("expand-page-" + stage + "-" + scopeId(scope), query, null))
+						.rows());
+				next.add(new BlankQueryRequest("page", scope, loadedEdges(rows)));
+			}
+			cacheBlankQueries(next);
+		}
+	}
+
 	private JsonNode blankQueries(String raw, String scope, List<Map<String, String>> loaded) throws Exception {
-		return JSON.readTree(generate("src/test/frontend/graph-explorer/fixed-blank-node-query-fixture.mjs",
-				List.of(raw, scope, JSON.writeValueAsString(Map.of("nodes", List.of(), "edges", loaded)))));
+		BlankQueryRequest request = new BlankQueryRequest(raw, scope, loaded);
+		JsonNode queries = blankQueryCache.get(request);
+		if (queries == null) {
+			cacheBlankQueries(List.of(request));
+			queries = blankQueryCache.get(request);
+		}
+		return queries;
+	}
+
+	private void cacheBlankQueries(List<BlankQueryRequest> requests) throws Exception {
+		List<BlankQueryRequest> missing = requests.stream()
+				.distinct()
+				.filter(request -> !blankQueryCache.containsKey(request))
+				.toList();
+		if (missing.isEmpty()) {
+			return;
+		}
+		Path input = Files.createTempFile(temporary, "blank-requests-", ".json");
+		Files.writeString(input, JSON.writeValueAsString(missing.stream()
+				.map(request -> Map.of("raw", request.raw, "scope", request.scope,
+						"graph", Map.of("nodes", List.of(), "edges", request.loaded)))
+				.toList()));
+		JsonNode results = JSON.readTree(generate("src/test/frontend/graph-explorer/fixed-blank-node-query-fixture.mjs",
+				List.of("--request-file", input.toString())));
+		assertThat(results.isArray()).as("one query object per blank-node request").isTrue();
+		assertThat(results.size()).isEqualTo(missing.size());
+		for (int index = 0; index < missing.size(); index++) {
+			blankQueryCache.put(missing.get(index), results.get(index));
+		}
 	}
 
 	private String generate(String script, List<String> arguments) throws Exception {
@@ -2661,6 +2720,9 @@ class GraphExplorerNativeVariantsTest {
 		}
 		assertThat(path).isNotNull();
 		return path;
+	}
+
+	private record BlankQueryRequest(String raw, String scope, List<Map<String, String>> loaded) {
 	}
 
 	private record Backend(SailRepository repository, LmdbStore store, boolean adjacency) implements AutoCloseable {

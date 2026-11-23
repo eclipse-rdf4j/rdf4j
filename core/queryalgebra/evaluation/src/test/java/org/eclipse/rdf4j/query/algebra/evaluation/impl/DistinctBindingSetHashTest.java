@@ -12,9 +12,16 @@
 package org.eclipse.rdf4j.query.algebra.evaluation.impl;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import java.io.ByteArrayInputStream;
+import java.io.ByteArrayOutputStream;
+import java.io.IOException;
+import java.io.ObjectInputStream;
+import java.io.ObjectOutputStream;
+import java.util.AbstractList;
 import java.util.ArrayList;
 import java.util.List;
 
@@ -30,6 +37,7 @@ import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.algebra.evaluation.ArrayBindingSet;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryBindingSet;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryEvaluationStep;
+import org.eclipse.rdf4j.query.impl.BindingSetSnapshots;
 import org.eclipse.rdf4j.query.impl.EmptyBindingSet;
 import org.eclipse.rdf4j.query.impl.ListBindingSet;
 import org.eclipse.rdf4j.query.impl.MapBindingSet;
@@ -86,6 +94,105 @@ class DistinctBindingSetHashTest {
 				o, both, extra, empty, new MapBindingSet(),
 				new ListBindingSet(List.of("s", "o"), null, null));
 		assertEquals(List.of(s, o, both, extra, empty), distinct(input));
+	}
+
+	@Test
+	void serializingWideRowsVisitsListNamesLinearly() throws IOException, ClassNotFoundException {
+		int width = 128;
+		List<String> names = new ArrayList<>();
+		Value[] values = new Value[width];
+		for (int i = 0; i < width; i++) {
+			names.add("column" + i);
+			if (i % 2 == 0) {
+				values[i] = VF.createLiteral(i);
+			}
+		}
+		class CountingNames extends AbstractList<String> {
+			int reads;
+
+			@Override
+			public String get(int index) {
+				reads++;
+				return names.get(index);
+			}
+
+			@Override
+			public int size() {
+				return names.size();
+			}
+		}
+		CountingNames countingNames = new CountingNames();
+		DistinctBindingSetKey key = new DistinctBindingSetKey(new ListBindingSet(countingNames, values));
+		DistinctBindingSetKey restored = roundTrip(key);
+		assertTrue(countingNames.reads <= 2 * width, "Serialization read " + countingNames.reads + " list names");
+		assertEquals(key, restored);
+		assertEquals(key.hashCode(), restored.hashCode());
+		assertFalse(restored.bindings().hasBinding("column1"));
+	}
+
+	@Test
+	void serializingWideArrayRowsDoesNotLookUpEachColumnByName() throws IOException, ClassNotFoundException {
+		String[] names = new String[128];
+		for (int i = 0; i < names.length; i++) {
+			names[i] = "column" + i;
+		}
+		class CountingArrayBindingSet extends ArrayBindingSet {
+			int lookups;
+
+			CountingArrayBindingSet() {
+				super(names);
+			}
+
+			@Override
+			public boolean hasBinding(String name) {
+				lookups++;
+				return super.hasBinding(name);
+			}
+
+			@Override
+			public Value getValue(String name) {
+				lookups++;
+				return super.getValue(name);
+			}
+		}
+		CountingArrayBindingSet row = new CountingArrayBindingSet();
+		for (int i = 0; i < names.length; i += 2) {
+			row.setBinding(names[i], VF.createLiteral(i));
+		}
+		row.setBinding(names[1], (Value) null);
+		DistinctBindingSetKey key = new DistinctBindingSetKey(row);
+		DistinctBindingSetKey restored = roundTrip(key);
+		assertEquals(0, row.lookups, "Serialization looked up columns by name");
+		assertEquals(key, restored);
+		assertEquals(key.hashCode(), restored.hashCode());
+		assertFalse(restored.bindings().hasBinding(names[1]));
+		assertFalse(restored.bindings().hasBinding(names[3]));
+	}
+
+	@Test
+	void serializedServiceSnapshotPreservesExplicitNullAndOmitsUndef() throws IOException, ClassNotFoundException {
+		QueryBindingSet supplied = new QueryBindingSet();
+		supplied.addBinding("explicitNull", null);
+		BindingSet remote = new ListBindingSet(List.of("bound", "undef"), VF.createLiteral(42), null);
+		BindingSet input = BindingSetSnapshots.mergeWithPrecedence(supplied, remote);
+		DistinctBindingSetKey key = new DistinctBindingSetKey(input);
+		DistinctBindingSetKey restored = roundTrip(key);
+		assertEquals(key, restored);
+		assertEquals(restored, key);
+		assertEquals(key.hashCode(), restored.hashCode());
+		assertTrue(restored.bindings().hasBinding("explicitNull"));
+		assertFalse(restored.bindings().hasBinding("undef"));
+	}
+
+	private static DistinctBindingSetKey roundTrip(DistinctBindingSetKey key)
+			throws IOException, ClassNotFoundException {
+		ByteArrayOutputStream bytes = new ByteArrayOutputStream();
+		try (var stream = new ObjectOutputStream(bytes)) {
+			stream.writeObject(key);
+		}
+		try (var stream = new ObjectInputStream(new ByteArrayInputStream(bytes.toByteArray()))) {
+			return (DistinctBindingSetKey) stream.readObject();
+		}
 	}
 
 	private static List<BindingSet> distinct(List<BindingSet> rows) {
