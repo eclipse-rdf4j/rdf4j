@@ -20,6 +20,9 @@ import org.eclipse.rdf4j.query.explanation.Explanation;
 import org.eclipse.rdf4j.query.explanation.GenericPlanNode;
 import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
 import org.eclipse.rdf4j.repository.sail.SailTupleQuery;
+import org.junit.jupiter.api.AfterAll;
+import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
 
 /**
@@ -48,9 +51,13 @@ public class LmdbNativeOptionalScanReplayCompiledTest extends LmdbNativeOptional
 		return "irKernel";
 	}
 
-	@Override
-	public void tearDown() {
-		super.tearDown();
+	/**
+	 * Runs before the inherited {@code tearDown}. It must not override that method: a JUnit 5 lifecycle method that is
+	 * overridden without its own annotation is silently skipped, which would leak every system property and the open
+	 * repository into later test classes of the same JVM.
+	 */
+	@AfterEach
+	public void restoreCompiledTier() {
 		savedCompiled.forEach((key, value) -> {
 			if (value == null) {
 				System.clearProperty(key);
@@ -58,6 +65,31 @@ public class LmdbNativeOptionalScanReplayCompiledTest extends LmdbNativeOptional
 				System.setProperty(key, value);
 			}
 		});
+		savedCompiled.clear();
+	}
+
+	private static final String[] GUARDED = { "rdf4j.lmdb.nativeQueryEngine.enabled",
+			"rdf4j.lmdb.irKernel.optionalReplay.enabled", "rdf4j.lmdb.janinoCodegen.enabled",
+			"rdf4j.lmdb.janinoCodegen.resumable", "rdf4j.lmdb.janinoCodegen.synchronous",
+			"rdf4j.lmdb.janinoCodegen.thresholdRows", "rdf4j.lmdb.kernelInterpreter.enabled",
+			"rdf4j.lmdb.parallel.enabled" };
+	private static final java.util.Map<String, String> BEFORE_CLASS = new java.util.HashMap<>();
+
+	@BeforeAll
+	public static void snapshotSystemProperties() {
+		BEFORE_CLASS.clear();
+		for (String property : GUARDED) {
+			BEFORE_CLASS.put(property, System.getProperty(property));
+		}
+	}
+
+	/** The whole class must leave the JVM-wide settings exactly as it found them. */
+	@AfterAll
+	public static void assertSystemPropertiesRestored() {
+		for (String property : GUARDED) {
+			assertThat(System.getProperty(property)).as("leaked system property %s", property)
+					.isEqualTo(BEFORE_CLASS.get(property));
+		}
 	}
 
 	@Test
