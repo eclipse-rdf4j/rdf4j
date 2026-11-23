@@ -596,60 +596,6 @@ class StatementPatternQueryEvaluationStepTest {
 		assertThat(context.bindingChecks.get()).isZero();
 	}
 
-	@Test
-	void ordinaryEvaluationDoesNotReadIndexName() {
-		var tripleSource = new UnionIndexReportingTripleSource();
-		var pattern = new StatementPattern(Var.of("s"), Var.of("p"), Var.of("o"));
-		var strategy = new DefaultEvaluationStrategy(tripleSource, null);
-		var step = strategy.precompile(pattern);
-
-		try (var rows = step.evaluate(EmptyBindingSet.getInstance())) {
-			assertThat(rows.hasNext()).isTrue();
-		}
-
-		assertThat(pattern.getIndexName()).isNull();
-	}
-
-	@ParameterizedTest
-	@ValueSource(booleans = { false, true })
-	void boundLookupScansReportIndexOnlyWhenEnabled(boolean trackIndexName) {
-		var vf = SimpleValueFactory.getInstance();
-		var subject = vf.createIRI("urn:subject");
-		var predicate = vf.createIRI("urn:predicate");
-		var object = vf.createLiteral("object");
-		List<Statement> statements = new ArrayList<>();
-		for (int i = 0; i < 20; i++) {
-			statements.add(vf.createStatement(subject, predicate, object, vf.createIRI("urn:graph:" + i)));
-		}
-		var firstScan = new TestIndexReportingStatementIteration(statements, "spoc", 20, 20, 0);
-		var secondScan = new TestIndexReportingStatementIteration(statements, "posc", 20, 20, 0);
-		var tripleSource = mock(TripleSource.class);
-		doReturn(firstScan, secondScan).when(tripleSource).getStatements(subject, predicate, object);
-		var pattern = new StatementPattern(StatementPattern.Scope.NAMED_CONTEXTS, Var.of("s"), Var.of("p"),
-				Var.of("o"), Var.of("g"));
-		var step = new StatementPatternQueryEvaluationStep(pattern, new InstrumentedQueryEvaluationContext(),
-				tripleSource, trackIndexName, null, null);
-		var bindings = new MapBindingSet();
-		bindings.addBinding("s", subject);
-		bindings.addBinding("p", predicate);
-		bindings.addBinding("o", object);
-
-		try (var rows = step.evaluate(bindings)) {
-			assertThat(rows.next().getValue("g")).isEqualTo(statements.getFirst().getContext());
-		}
-		assertThat(firstScan.isClosed()).isTrue();
-		assertThat(secondScan.indexNameReads).isZero();
-		assertThat(pattern.getIndexName()).isEqualTo(trackIndexName ? "spoc" : null);
-
-		try (var rows = step.evaluate(bindings)) {
-			assertThat(rows.next().getValue("g")).isEqualTo(statements.getFirst().getContext());
-		}
-		assertThat(secondScan.isClosed()).isTrue();
-		assertThat(firstScan.indexNameReads).isEqualTo(trackIndexName ? 1 : 0);
-		assertThat(secondScan.indexNameReads).isEqualTo(trackIndexName ? 1 : 0);
-		assertThat(pattern.getIndexName()).isEqualTo(trackIndexName ? "posc" : null);
-	}
-
 	@ParameterizedTest
 	@ValueSource(booleans = { false, true })
 	void failedBoundLookupClosesCursorAndPreservesFailure(boolean failOnIndexName) {
@@ -684,7 +630,7 @@ class StatementPatternQueryEvaluationStepTest {
 		var pattern = new StatementPattern(StatementPattern.Scope.NAMED_CONTEXTS, Var.of("s"), Var.of("p"),
 				Var.of("o"), Var.of("g"));
 		var step = new StatementPatternQueryEvaluationStep(pattern, new InstrumentedQueryEvaluationContext(),
-				tripleSource, true, null, null);
+				tripleSource);
 		var bindings = new MapBindingSet();
 		bindings.addBinding("s", subject);
 		bindings.addBinding("p", predicate);
@@ -1176,7 +1122,6 @@ class StatementPatternQueryEvaluationStepTest {
 		private final long sourceRowsScannedActual;
 		private final long sourceRowsMatchedActual;
 		private final long sourceRowsFilteredActual;
-		private int indexNameReads;
 
 		private TestIndexReportingStatementIteration(List<Statement> statements, String indexName,
 				long sourceRowsScannedActual, long sourceRowsMatchedActual, long sourceRowsFilteredActual) {
@@ -1189,7 +1134,6 @@ class StatementPatternQueryEvaluationStepTest {
 
 		@Override
 		public String getIndexName() {
-			indexNameReads++;
 			return indexName;
 		}
 

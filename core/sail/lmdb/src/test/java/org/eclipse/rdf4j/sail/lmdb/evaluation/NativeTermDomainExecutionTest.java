@@ -13,7 +13,6 @@ package org.eclipse.rdf4j.sail.lmdb.evaluation;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
-import static org.eclipse.rdf4j.sail.lmdb.evaluation.NativeCancellationTestAccess.mockScanSource;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyBoolean;
@@ -517,7 +516,7 @@ class NativeTermDomainExecutionTest {
 			}
 			layout = new NativeSlotLayout(slots, null);
 			layout.freeze(List.of(names));
-			delegate = mockScanSource(NativeLmdbQuerySource.class, CALLS_REAL_METHODS);
+			delegate = mock(NativeLmdbQuerySource.class, CALLS_REAL_METHODS);
 			codec = mock(LmdbNativeValueCodec.class);
 			when(delegate.idSpace()).thenReturn(delegate);
 			when(delegate.idOf(any(Value.class))).thenAnswer(call -> ids.getOrDefault(call.getArgument(0), -1L));

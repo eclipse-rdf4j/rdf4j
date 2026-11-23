@@ -38,8 +38,6 @@ import org.eclipse.rdf4j.query.algebra.evaluation.TripleSource;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.QueryEvaluationContext;
 import org.eclipse.rdf4j.query.impl.SimpleDataset;
 import org.junit.jupiter.api.Test;
-import org.junit.jupiter.params.ParameterizedTest;
-import org.junit.jupiter.params.provider.ValueSource;
 
 class StatementPatternQueryEvaluationStepDirectLookupCacheTest {
 
@@ -117,16 +115,15 @@ class StatementPatternQueryEvaluationStepDirectLookupCacheTest {
 		assertThat(lookup.tripleSource.statementLookups).isEqualTo(2);
 	}
 
-	@ParameterizedTest
-	@ValueSource(booleans = { false, true })
-	void fullyBoundLookupReportsLiveIndexMetrics(boolean trackIndexName) {
-		NamedGraphLookup lookup = new NamedGraphLookup(3, trackIndexName);
+	@Test
+	void fullyBoundLookupReportsLiveIndexMetrics() {
+		NamedGraphLookup lookup = new NamedGraphLookup(3);
 
 		try (CloseableIteration<BindingSet> iteration = lookup.evaluate()) {
 			assertThat(iteration).isInstanceOf(IndexReportingIterator.class);
 			IndexReportingIterator metrics = (IndexReportingIterator) iteration;
 			assertThat(metrics.getIndexName()).isEqualTo("spoc");
-			assertThat(lookup.statementPattern.getIndexName()).isEqualTo(trackIndexName ? "spoc" : null);
+			assertThat(lookup.statementPattern.getIndexName()).isEqualTo("spoc");
 			assertThat(metrics.getSourceRowsScannedActual()).isZero();
 
 			assertThat(iteration.next()).isSameAs(lookup.bindings);
@@ -196,18 +193,13 @@ class StatementPatternQueryEvaluationStepDirectLookupCacheTest {
 		private final MutableBindingSet bindings;
 
 		private NamedGraphLookup(int graphCount) {
-			this(graphCount, false);
-		}
-
-		private NamedGraphLookup(int graphCount, boolean trackIndexName) {
 			ValueFactory valueFactory = SimpleValueFactory.getInstance();
 			for (int i = 0; i < graphCount; i++) {
 				dataset.addNamedGraph(valueFactory.createIRI("urn:graph:" + i));
 			}
 			QueryEvaluationContext context = new QueryEvaluationContext.Minimal(dataset);
 			tripleSource = new TrackingFullyBoundTripleSource(dataset.getNamedGraphs());
-			evaluationStep = new StatementPatternQueryEvaluationStep(statementPattern, context, tripleSource,
-					trackIndexName, null, null);
+			evaluationStep = new StatementPatternQueryEvaluationStep(statementPattern, context, tripleSource);
 			bindings = context.createBindingSet();
 			bindings.addBinding("s", tripleSource.statement.getSubject());
 			bindings.addBinding("p", tripleSource.statement.getPredicate());

@@ -20,8 +20,6 @@ import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.Mockito.CALLS_REAL_METHODS;
-import static org.mockito.Mockito.doAnswer;
 import static org.mockito.Mockito.doCallRealMethod;
 import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.mock;
@@ -45,7 +43,6 @@ import java.util.stream.Collectors;
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.common.iteration.CloseableIteratorIteration;
 import org.eclipse.rdf4j.common.iteration.EmptyIteration;
-import org.eclipse.rdf4j.common.iteration.IndexReportingIterator;
 import org.eclipse.rdf4j.common.iteration.IterationWrapper;
 import org.eclipse.rdf4j.common.order.StatementOrder;
 import org.eclipse.rdf4j.common.transaction.DataImportMetrics;
@@ -65,7 +62,6 @@ import org.eclipse.rdf4j.model.vocabulary.RDF;
 import org.eclipse.rdf4j.model.vocabulary.RDFS;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.Dataset;
-import org.eclipse.rdf4j.query.Query;
 import org.eclipse.rdf4j.query.QueryEvaluationException;
 import org.eclipse.rdf4j.query.QueryInterruptedException;
 import org.eclipse.rdf4j.query.algebra.Exists;
@@ -94,7 +90,6 @@ import org.eclipse.rdf4j.sail.SailException;
 import org.eclipse.rdf4j.sail.UpdateContext;
 import org.eclipse.rdf4j.sail.helpers.AbstractNotifyingSail;
 import org.eclipse.rdf4j.sail.helpers.AbstractSailConnection;
-import org.eclipse.rdf4j.sail.helpers.SlowQueryContextHolder;
 import org.junit.jupiter.api.DynamicTest;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.TestFactory;
@@ -110,66 +105,6 @@ import ch.qos.logback.core.read.ListAppender;
  * Minimal tests for the functionality of {@link SnapshotSailStore}
  */
 public class SnapshotSailStoreTest {
-
-	@Test
-	void statementIndexNamesAreCollectedForExecutingExplanationsAndSlowQueryLogging() {
-		AtomicInteger indexNameReads = new AtomicInteger();
-		var vf = SimpleValueFactory.getInstance();
-		var statement = vf.createStatement(vf.createIRI("urn:s"), vf.createIRI("urn:p"), vf.createIRI("urn:o"));
-		var store = createSnapshotSailStore(level -> new TestSailSink(), LinkedHashModel::new, level -> {
-			var dataset = mock(SailDataset.class, CALLS_REAL_METHODS);
-			doAnswer(invocation -> new IndexReportingTestIteration(statement, indexNameReads))
-					.when(dataset)
-					.getStatements(any(), any(), any(), any(Resource[].class));
-			return dataset;
-		});
-		var sail = (AbstractNotifyingSail) createSail(store);
-		var bindings = EmptyBindingSet.getInstance();
-		try (var connection = sail.getConnection()) {
-			for (var level : List.of(Explanation.Level.Executed, Explanation.Level.Timed,
-					Explanation.Level.Telemetry)) {
-				var pattern = new StatementPattern(Var.of("s"), Var.of("p"), Var.of("o"));
-				var explanation = connection.explain(level, pattern, null, bindings, false, 10);
-				assertThat(explanation.toJson()).as("%s explanation", level).contains("test-index");
-			}
-			assertEquals(3, indexNameReads.get());
-
-			var pattern = new StatementPattern(Var.of("s"), Var.of("p"), Var.of("o"));
-			assertThat(connection.explain(Explanation.Level.Optimized, pattern, null, bindings, false, 10).toJson())
-					.doesNotContain("test-index");
-			try (var rows = connection.evaluate(pattern, null, bindings, false)) {
-				assertTrue(rows.hasNext());
-			}
-			assertEquals(3, indexNameReads.get());
-
-			sail.setSlowQueryLogFirstResultThresholdSeconds(60);
-			var previous = SlowQueryContextHolder.set("SELECT * WHERE { ?s ?p ?o }", Query.QueryType.TUPLE);
-			try (var rows = connection.evaluate(pattern, null, bindings, false)) {
-				assertTrue(rows.hasNext());
-			} finally {
-				SlowQueryContextHolder.restore(previous);
-			}
-			assertEquals(4, indexNameReads.get());
-		} finally {
-			sail.shutDown();
-		}
-	}
-
-	private static final class IndexReportingTestIteration extends CloseableIteratorIteration<Statement>
-			implements IndexReportingIterator {
-		private final AtomicInteger indexNameReads;
-
-		private IndexReportingTestIteration(Statement statement, AtomicInteger indexNameReads) {
-			super(List.of(statement).iterator());
-			this.indexNameReads = indexNameReads;
-		}
-
-		@Override
-		public String getIndexName() {
-			indexNameReads.incrementAndGet();
-			return isClosed() ? null : "test-index";
-		}
-	}
 
 	@Test
 	public void sizeUsesDatasetCountWithoutRequestingStatements() {

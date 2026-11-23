@@ -30,7 +30,6 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 import java.util.ArrayList;
-import java.util.Collections;
 import java.util.HashMap;
 import java.util.Iterator;
 import java.util.List;
@@ -57,7 +56,6 @@ import org.eclipse.rdf4j.query.algebra.Projection;
 import org.eclipse.rdf4j.query.algebra.ProjectionElem;
 import org.eclipse.rdf4j.query.algebra.ProjectionElemList;
 import org.eclipse.rdf4j.query.algebra.Service;
-import org.eclipse.rdf4j.query.algebra.SingletonSet;
 import org.eclipse.rdf4j.query.algebra.StatementPattern;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.algebra.Var;
@@ -82,75 +80,6 @@ class RepositoryFederatedServiceRegressionTest {
 		SERIALIZED_CROSS_PRODUCT,
 		SERIALIZED_ROW_INDEX,
 		LOCAL_JOIN
-	}
-
-	@Test
-	void crossProductDoesNotRequestOrExposeCorrelationColumn() throws Exception {
-		assertAll(
-				() -> assertCrossProductProjection(service(statement("s", "o"), "?s <urn:test:p> ?o", false),
-						List.of("s", "o"), List.of(VF.createIRI("urn:test:subject"), VF.createLiteral("remote"))),
-				() -> assertCrossProductProjection(service(new SingletonSet(), "", false), List.of(), List.of()));
-	}
-
-	private static void assertCrossProductProjection(Service service, List<String> names, List<Value> values)
-			throws Exception {
-		Harness harness = new Harness();
-		when(harness.connection.prepareTupleQuery(any(QueryLanguage.class), anyString(), nullable(String.class)))
-				.thenAnswer(invocation -> {
-					String query = invocation.getArgument(1);
-					List<String> responseNames = new ArrayList<>(names);
-					List<Value> responseValues = new ArrayList<>(values);
-					if (query.contains("?__rowIdx_1")) {
-						// TSV-style results carry projected-but-unbound columns in the row's declared names.
-						responseNames.add("__rowIdx_1");
-						responseValues.add(null);
-					}
-					TupleQueryResult result = tupleResult(List.of(new ListBindingSet(responseNames, responseValues)));
-					when(harness.query.evaluate()).thenReturn(result);
-					return harness.query;
-				});
-		List<BindingSet> inputs = List.of(binding("__rowIdx", VF.createLiteral("caller 1")),
-				binding("__rowIdx", VF.createLiteral("caller 2")));
-
-		List<BindingSet> rows = evaluate(harness.service, service, inputs);
-
-		ArgumentCaptor<String> query = ArgumentCaptor.forClass(String.class);
-		verify(harness.connection).prepareTupleQuery(any(QueryLanguage.class), query.capture(), nullable(String.class));
-		assertEquals(2, rows.size());
-		assertAll(
-				() -> assertFalse(query.getValue().contains("?__rowIdx"), query.getValue()),
-				() -> assertTrue(!names.isEmpty() || query.getValue().startsWith("SELECT *"), query.getValue()),
-				() -> assertTrue(rows.stream().noneMatch(row -> row.getBindingNames().contains("__rowIdx_1"))),
-				() -> assertEquals(inputs.getFirst().getValue("__rowIdx"), rows.getFirst().getValue("__rowIdx")),
-				() -> assertEquals(inputs.getLast().getValue("__rowIdx"), rows.getLast().getValue("__rowIdx")));
-	}
-
-	@Test
-	void wideCallerRowsAreSnapshottedWithOneBindingPass() throws Exception {
-		Harness harness = new Harness();
-		List<String> names = new ArrayList<>();
-		for (int i = 0; i < 128; i++) {
-			names.add("column" + i);
-		}
-		Value value = VF.createLiteral("caller");
-		AtomicInteger pointLookups = new AtomicInteger();
-		BindingSet caller = new ListBindingSet(names, Collections.nCopies(names.size(), value)) {
-			@Override
-			public Value getValue(String name) {
-				pointLookups.incrementAndGet();
-				return super.getValue(name);
-			}
-		};
-		TupleQueryResult result = tupleResult(List.of(binding("s", value, "o", value)));
-		when(harness.query.evaluate()).thenReturn(result);
-
-		List<BindingSet> rows = evaluate(harness.service, service(statement("s", "o"), "?s <urn:test:p> ?o", false),
-				List.of(caller, caller));
-
-		assertEquals(2, rows.size());
-		assertEquals(names.size() + 2, rows.getFirst().size());
-		assertEquals(value, rows.getFirst().getValue("column127"));
-		assertEquals(0, pointLookups.get(), "fully bound rows should be copied by iterating their bindings");
 	}
 
 	@Test

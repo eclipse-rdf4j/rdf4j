@@ -267,19 +267,6 @@ public class LmdbNativeGenericRootHostTest {
 	}
 
 	@Test
-	public void forceRootGenericReportsStatementIndexInExecutedExplanation() {
-		loadData();
-		String query = "SELECT ?s WHERE { ?s <" + EX + "p> ?o }";
-		withProperty(NATIVE_FLAG, "true", () -> withProperty(FORCE_FLAG, "true", () -> {
-			try (SailRepositoryConnection conn = repository.getConnection()) {
-				var explanation = conn.prepareTupleQuery(query).explain(Explanation.Level.Executed);
-				assertThat(explanation.toString()).contains(LmdbNativeExplain.KIND_GENERIC_HOSTED);
-				assertThat(explanation.toJson()).contains("\"indexName\"");
-			}
-		}));
-	}
-
-	@Test
 	public void genericOnlyViewCopiesAndTracksQueryEvaluationMode() {
 		LmdbNativeEvaluationStrategy configuredBeforeView = strategy();
 		configuredBeforeView.setQueryEvaluationMode(QueryEvaluationMode.STANDARD);

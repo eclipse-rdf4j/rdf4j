@@ -15,9 +15,8 @@ package org.eclipse.rdf4j.query.impl;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.HashMap;
-import java.util.HashSet;
-import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
+import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
@@ -25,7 +24,6 @@ import java.util.function.BiFunction;
 
 import org.eclipse.rdf4j.common.annotation.InternalUseOnly;
 import org.eclipse.rdf4j.model.Value;
-import org.eclipse.rdf4j.query.Binding;
 import org.eclipse.rdf4j.query.BindingSet;
 
 /** Immutable copies and compositions of binding domains. */
@@ -49,9 +47,8 @@ public final class BindingSetSnapshots {
 	/** Replaces present RDF values without changing which names are possible or bound. */
 	public static BindingSet mapValues(BindingSet bindings, BiFunction<String, Value, Value> mapper) {
 		Map<String, Value> replacements = null;
-		for (Binding binding : bindings) {
-			String name = binding.getName();
-			Value value = binding.getValue();
+		for (String name : bindings.getBindingNames()) {
+			Value value = bindings.getValue(name);
 			if (value != null) {
 				Value replacement = Objects.requireNonNull(mapper.apply(name, value));
 				if (replacement != value) {
@@ -71,11 +68,24 @@ public final class BindingSetSnapshots {
 	}
 
 	private static BindingSet copyValues(BindingSet bindings, Map<String, Value> replacements, Set<String> excluded) {
-		Map<String, Value> values = LinkedHashMap.newLinkedHashMap(bindings.getBindingNames().size());
-		Set<String> explicitNulls = new HashSet<>();
-		append(bindings, excluded, values, explicitNulls);
-		values.putAll(replacements);
-		return new ValueSnapshot(values, explicitNulls);
+		List<String> names = new ArrayList<>(bindings.getBindingNames());
+		if (!excluded.isEmpty()) {
+			names.removeIf(excluded::contains);
+		}
+		List<Value> values = new ArrayList<>(names.size());
+		Set<String> boundNames = null;
+		for (String name : names) {
+			values.add(replacements.getOrDefault(name, bindings.getValue(name)));
+			// A possible name can be UNDEF, while an explicit-null binding still belongs to the source domain.
+			if (!bindings.hasBinding(name)) {
+				if (boundNames == null) {
+					boundNames = new LinkedHashSet<>(names);
+				}
+				boundNames.remove(name);
+			}
+		}
+		int size = excluded.isEmpty() ? bindings.size() : boundNames == null ? names.size() : boundNames.size();
+		return new ValueSnapshot(names, values, boundNames, size);
 	}
 
 	/** Composes compatible rows. A bound name in the primary row takes precedence, including an explicit null. */
@@ -85,41 +95,29 @@ public final class BindingSetSnapshots {
 
 	/** Composes compatible rows while omitting an optional control column from the secondary row. */
 	public static BindingSet mergeWithPrecedence(BindingSet primary, BindingSet secondary, String secondaryControl) {
-		Map<String, Value> values = LinkedHashMap.newLinkedHashMap(
-				primary.getBindingNames().size() + secondary.getBindingNames().size());
-		Set<String> explicitNulls = new HashSet<>();
-		append(primary, Set.of(), values, explicitNulls);
-		append(secondary, secondaryControl == null ? Set.of() : Set.of(secondaryControl), values, explicitNulls);
-		return new ValueSnapshot(values, explicitNulls);
-	}
-
-	private static void append(BindingSet source, Set<String> excluded, Map<String, Value> values,
-			Set<String> explicitNulls) {
-		Set<String> names = source.getBindingNames();
+		Set<String> names = new LinkedHashSet<>(primary.getBindingNames());
+		for (String name : secondary.getBindingNames()) {
+			if (!name.equals(secondaryControl)) {
+				names.add(name);
+			}
+		}
+		List<Value> values = new ArrayList<>(names.size());
+		Set<String> boundNames = null;
 		for (String name : names) {
-			if (!excluded.contains(name)) {
-				values.putIfAbsent(name, null);
-			}
-		}
-		int valueCount = 0;
-		for (Binding binding : source) {
-			Value value = binding.getValue();
-			if (value != null) {
-				valueCount++;
-				String name = binding.getName();
-				if (!excluded.contains(name) && !explicitNulls.contains(name)) {
-					values.putIfAbsent(name, value);
+			if (primary.hasBinding(name)) {
+				values.add(primary.getValue(name));
+			} else if (!name.equals(secondaryControl) && secondary.hasBinding(name)) {
+				values.add(secondary.getValue(name));
+			} else {
+				values.add(null);
+				if (boundNames == null) {
+					boundNames = new LinkedHashSet<>(names);
 				}
+				boundNames.remove(name);
 			}
 		}
-		// Iteration visits RDF values only. A source may also reserve a name with an explicit null.
-		if (valueCount < source.size()) {
-			for (String name : names) {
-				if (!excluded.contains(name) && values.get(name) == null && source.hasBinding(name)) {
-					explicitNulls.add(name);
-				}
-			}
-		}
+		int size = boundNames == null ? names.size() : boundNames.size();
+		return new ValueSnapshot(new ArrayList<>(names), values, boundNames, size);
 	}
 
 	private static final class ValueSnapshot extends ListBindingSet implements Snapshot {
@@ -127,39 +125,12 @@ public final class BindingSetSnapshots {
 		private final Set<String> names;
 		private final Set<String> boundNames;
 		private final int size;
-		private transient volatile Map<String, Value> valueIndex;
 
-		private ValueSnapshot(Map<String, Value> values, Set<String> explicitNulls) {
-			super(Collections.unmodifiableList(new ArrayList<>(values.keySet())),
-					Collections.unmodifiableList(new ArrayList<>(values.values())));
-			this.names = Collections.unmodifiableSet(new LinkedHashSet<>(values.keySet()));
-			Set<String> bound = null;
-			for (Map.Entry<String, Value> binding : values.entrySet()) {
-				String name = binding.getKey();
-				if (binding.getValue() == null && !explicitNulls.contains(name)) {
-					if (bound == null) {
-						bound = new LinkedHashSet<>(names);
-					}
-					bound.remove(name);
-				}
-			}
-			this.boundNames = bound == null ? this.names : Collections.unmodifiableSet(bound);
-			this.size = this.boundNames.size();
-			this.valueIndex = values;
-		}
-
-		@Override
-		public Value getValue(String bindingName) {
-			Map<String, Value> index = valueIndex;
-			if (index == null) {
-				// The lists and binding domain remain the serialized form. Build the index on demand after reading.
-				index = HashMap.newHashMap(size);
-				for (Binding binding : this) {
-					index.put(binding.getName(), binding.getValue());
-				}
-				valueIndex = index;
-			}
-			return index.get(bindingName);
+		private ValueSnapshot(List<String> names, List<Value> values, Set<String> boundNames, int size) {
+			super(Collections.unmodifiableList(names), Collections.unmodifiableList(values));
+			this.names = Collections.unmodifiableSet(new LinkedHashSet<>(names));
+			this.boundNames = boundNames == null ? this.names : Collections.unmodifiableSet(boundNames);
+			this.size = size;
 		}
 
 		@Override
