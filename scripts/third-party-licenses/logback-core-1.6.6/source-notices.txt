@@ -1,0 +1,220 @@
+Source entries: ch/qos/logback/core/Appender.java#L1-L13, ch/qos/logback/core/AppenderBase.java#L1-L13, ch/qos/logback/core/AsyncAppenderBase.java#L1-L13, ch/qos/logback/core/BasicStatusManager.java#L1-L13, ch/qos/logback/core/ConsoleAppender.java#L1-L13, ch/qos/logback/core/Context.java#L1-L13, ch/qos/logback/core/ContextBase.java#L1-L13, ch/qos/logback/core/CoreConstants.java#L1-L13, ch/qos/logback/core/FileAppender.java#L1-L13, ch/qos/logback/core/JansiConsoleAppender.java#L1-L13, ch/qos/logback/core/Layout.java#L1-L13, ch/qos/logback/core/LayoutBase.java#L1-L13, ch/qos/logback/core/LifeCycleManager.java#L1-L13, ch/qos/logback/core/LogbackException.java#L1-L13, ch/qos/logback/core/OutputStreamAppender.java#L1-L13, ch/qos/logback/core/PropertyDefinerBase.java#L1-L13, ch/qos/logback/core/UnsynchronizedAppenderBase.java#L1-L13, ch/qos/logback/core/boolex/EvaluationException.java#L1-L13, ch/qos/logback/core/boolex/EventEvaluator.java#L1-L13, ch/qos/logback/core/boolex/EventEvaluatorBase.java#L1-L13, ch/qos/logback/core/boolex/ExpressionPropertyCondition.java#L1-L13, ch/qos/logback/core/boolex/IsPropertyDefinedCondition.java#L1-L13, ch/qos/logback/core/boolex/IsPropertyNullCondition.java#L1-L13, ch/qos/logback/core/boolex/Matcher.java#L1-L13, ch/qos/logback/core/boolex/PropertyCondition.java#L1-L13, ch/qos/logback/core/boolex/PropertyConditionBase.java#L1-L13, ch/qos/logback/core/boolex/PropertyEqualityCondition.java#L1-L13, ch/qos/logback/core/encoder/ByteArrayUtil.java#L1-L13, ch/qos/logback/core/encoder/EchoEncoder.java#L1-L13, ch/qos/logback/core/encoder/Encoder.java#L1-L13, ch/qos/logback/core/encoder/EncoderBase.java#L1-L13, ch/qos/logback/core/encoder/JsonEscapeUtil.java#L1-L13, ch/qos/logback/core/encoder/LayoutWrappingEncoder.java#L1-L13, ch/qos/logback/core/encoder/NonClosableInputStream.java#L1-L13, ch/qos/logback/core/filter/AbstractMatcherFilter.java#L1-L13, ch/qos/logback/core/filter/EvaluatorFilter.java#L1-L13, ch/qos/logback/core/filter/Filter.java#L1-L13, ch/qos/logback/core/helpers/CyclicBuffer.java#L1-L13, ch/qos/logback/core/helpers/NOPAppender.java#L1-L13, ch/qos/logback/core/helpers/ThrowableToStringArray.java#L1-L13, ch/qos/logback/core/helpers/Transform.java#L1-L13, ch/qos/logback/core/hook/DefaultShutdownHook.java#L1-L13, ch/qos/logback/core/hook/ShutdownHook.java#L1-L13, ch/qos/logback/core/hook/ShutdownHookBase.java#L1-L13, ch/qos/logback/core/html/CssBuilder.java#L1-L13, ch/qos/logback/core/html/HTMLLayoutBase.java#L1-L13, ch/qos/logback/core/html/IThrowableRenderer.java#L1-L13, ch/qos/logback/core/html/NOPThrowableRenderer.java#L1-L13, ch/qos/logback/core/joran/JoranConfiguratorBase.java#L1-L13, ch/qos/logback/core/joran/JoranConstants.java#L1-L13, ch/qos/logback/core/joran/ModelClassToModelHandlerLinkerBase.java#L1-L13, ch/qos/logback/core/joran/ParamModelHandler.java#L1-L13, ch/qos/logback/core/joran/action/Action.java#L1-L13, ch/qos/logback/core/joran/action/ActionUtil.java#L1-L13, ch/qos/logback/core/joran/action/AppenderAction.java#L1-L13, ch/qos/logback/core/joran/action/AppenderRefAction.java#L1-L13, ch/qos/logback/core/joran/action/BaseModelAction.java#L1-L13, ch/qos/logback/core/joran/action/ContextPropertyAction.java#L1-L13, ch/qos/logback/core/joran/action/ConversionRuleAction.java#L1-L13, ch/qos/logback/core/joran/action/DefinePropertyAction.java#L1-L13, ch/qos/logback/core/joran/action/EventEvaluatorAction.java#L1-L13, ch/qos/logback/core/joran/action/ImcplicitActionDataForBasicProperty.java#L1-L13, ch/qos/logback/core/joran/action/ImplicitModelAction.java#L1-L13, ch/qos/logback/core/joran/action/ImplicitModelData.java#L1-L13, ch/qos/logback/core/joran/action/ImportAction.java#L1-L13, ch/qos/logback/core/joran/action/IncludeAction.java#L1-L13, ch/qos/logback/core/joran/action/NOPAction.java#L1-L13, ch/qos/logback/core/joran/action/NewRuleAction.java#L1-L13, ch/qos/logback/core/joran/action/ParamAction.java#L1-L13, ch/qos/logback/core/joran/action/PreconditionValidator.java#L1-L13, ch/qos/logback/core/joran/action/PropertyAction.java#L1-L13, ch/qos/logback/core/joran/action/ResourceAction.java#L1-L13, ch/qos/logback/core/joran/action/SequenceNumberGeneratorAction.java#L1-L13, ch/qos/logback/core/joran/action/SerializeModelAction.java#L1-L13, ch/qos/logback/core/joran/action/ShutdownHookAction.java#L1-L13, ch/qos/logback/core/joran/action/SiftAction.java#L1-L13, ch/qos/logback/core/joran/action/StatusListenerAction.java#L1-L13, ch/qos/logback/core/joran/action/TimestampAction.java#L1-L13, ch/qos/logback/core/joran/conditional/ByPropertiesConditionAction.java#L1-L13, ch/qos/logback/core/joran/conditional/Condition.java#L1-L13, ch/qos/logback/core/joran/conditional/ElseAction.java#L1-L13, ch/qos/logback/core/joran/conditional/IfAction.java#L1-L13, ch/qos/logback/core/joran/conditional/PropertyWrapperForScripts.java#L1-L13, ch/qos/logback/core/joran/conditional/ThenAction.java#L1-L13, ch/qos/logback/core/joran/event/BodyEvent.java#L1-L13, ch/qos/logback/core/joran/event/EndEvent.java#L1-L13, ch/qos/logback/core/joran/event/SaxEvent.java#L1-L13, ch/qos/logback/core/joran/event/SaxEventRecorder.java#L1-L13, ch/qos/logback/core/joran/event/StartEvent.java#L1-L13, ch/qos/logback/core/joran/sanity/AppenderWithinAppenderSanityChecker.java#L1-L13, ch/qos/logback/core/joran/sanity/Pair.java#L1-L13, ch/qos/logback/core/joran/sanity/SanityChecker.java#L1-L13, ch/qos/logback/core/joran/spi/ActionException.java#L1-L13, ch/qos/logback/core/joran/spi/ConfigurationWatchList.java#L1-L13, ch/qos/logback/core/joran/spi/ConsoleTarget.java#L1-L13, ch/qos/logback/core/joran/spi/DefaultClass.java#L1-L13, ch/qos/logback/core/joran/spi/DefaultNestedComponentRegistry.java#L1-L13, ch/qos/logback/core/joran/spi/ElementPath.java#L1-L13, ch/qos/logback/core/joran/spi/ElementSelector.java#L1-L13, ch/qos/logback/core/joran/spi/EventPlayer.java#L1-L13, ch/qos/logback/core/joran/spi/HostClassAndPropertyDouble.java#L1-L13, ch/qos/logback/core/joran/spi/HttpUtil.java#L1-L13, ch/qos/logback/core/joran/spi/JoranException.java#L1-L13, ch/qos/logback/core/joran/spi/NewRuleProvider.java#L1-L13, ch/qos/logback/core/joran/spi/NoAutoStart.java#L1-L13, ch/qos/logback/core/joran/spi/NoAutoStartUtil.java#L1-L13, ch/qos/logback/core/joran/spi/RuleStore.java#L1-L13, ch/qos/logback/core/joran/spi/SaxEventInterpretationContext.java#L1-L13, ch/qos/logback/core/joran/spi/SaxEventInterpreter.java#L1-L13, ch/qos/logback/core/joran/spi/SimpleRuleStore.java#L1-L13, ch/qos/logback/core/joran/spi/XMLUtil.java#L1-L13, ch/qos/logback/core/joran/util/AggregationAssessor.java#L1-L13, ch/qos/logback/core/joran/util/ConfigurationWatchListUtil.java#L1-L13, ch/qos/logback/core/joran/util/ParentTag_Tag_Class_Tuple.java#L1-L13, ch/qos/logback/core/joran/util/PropertySetter.java#L1-L13, ch/qos/logback/core/joran/util/StringToObjectConverter.java#L1-L13, ch/qos/logback/core/joran/util/beans/BeanDescription.java#L1-L13, ch/qos/logback/core/joran/util/beans/BeanDescriptionCache.java#L1-L13, ch/qos/logback/core/joran/util/beans/BeanDescriptionFactory.java#L1-L13, ch/qos/logback/core/joran/util/beans/BeanUtil.java#L1-L13, ch/qos/logback/core/layout/EchoLayout.java#L1-L13, ch/qos/logback/core/model/AppenderModel.java#L1-L13, ch/qos/logback/core/model/AppenderRefModel.java#L1-L13, ch/qos/logback/core/model/ComponentModel.java#L1-L13, ch/qos/logback/core/model/ConversionRuleModel.java#L1-L13, ch/qos/logback/core/model/DefineModel.java#L1-L13, ch/qos/logback/core/model/EventEvaluatorModel.java#L1-L13, ch/qos/logback/core/model/INamedModel.java#L1-L13, ch/qos/logback/core/model/ImplicitModel.java#L1-L13, ch/qos/logback/core/model/ImportModel.java#L1-L13, ch/qos/logback/core/model/IncludeModel.java#L1-L13, ch/qos/logback/core/model/InsertFromJNDIModel.java#L1-L13, ch/qos/logback/core/model/Model.java#L1-L13, ch/qos/logback/core/model/ModelConstants.java#L1-L13, ch/qos/logback/core/model/ModelHandlerFactoryMethod.java#L1-L13, ch/qos/logback/core/model/ModelUtil.java#L1-L13, ch/qos/logback/core/model/NamedComponentModel.java#L1-L13, ch/qos/logback/core/model/NamedModel.java#L1-L13, ch/qos/logback/core/model/ParamModel.java#L1-L13, ch/qos/logback/core/model/PropertyModel.java#L1-L13, ch/qos/logback/core/model/ResourceModel.java#L1-L13, ch/qos/logback/core/model/SequenceNumberGeneratorModel.java#L1-L13, ch/qos/logback/core/model/SerializeModelModel.java#L1-L13, ch/qos/logback/core/model/ShutdownHookModel.java#L1-L13, ch/qos/logback/core/model/SiftModel.java#L1-L13, ch/qos/logback/core/model/StatusListenerModel.java#L1-L13, ch/qos/logback/core/model/TimestampModel.java#L1-L13, ch/qos/logback/core/model/conditional/ByPropertiesConditionModel.java#L1-L13, ch/qos/logback/core/model/conditional/ElseModel.java#L1-L13, ch/qos/logback/core/model/conditional/IfModel.java#L1-L13, ch/qos/logback/core/model/conditional/ThenModel.java#L1-L13, ch/qos/logback/core/model/processor/AllowAllModelFilter.java#L1-L13, ch/qos/logback/core/model/processor/AllowModelFilter.java#L1-L13, ch/qos/logback/core/model/processor/AppenderDeclarationAnalyser.java#L1-L13, ch/qos/logback/core/model/processor/AppenderModelHandler.java#L1-L13, ch/qos/logback/core/model/processor/AppenderRefDependencyAnalyser.java#L1-L13, ch/qos/logback/core/model/processor/AppenderRefModelHandler.java#L1-L13, ch/qos/logback/core/model/processor/ChainedModelFilter.java#L1-L13, ch/qos/logback/core/model/processor/ConversionRuleModelHandler.java#L1-L13, ch/qos/logback/core/model/processor/DefaultProcessor.java#L1-L13, ch/qos/logback/core/model/processor/DefineModelHandler.java#L1-L13, ch/qos/logback/core/model/processor/DenyAllModelFilter.java#L1-L13, ch/qos/logback/core/model/processor/DenyModelFilter.java#L1-L13, ch/qos/logback/core/model/processor/DependencyDefinition.java#L1-L13, ch/qos/logback/core/model/processor/EventEvaluatorModelHandler.java#L1-L13, ch/qos/logback/core/model/processor/FileCollisionAnalyser.java#L1-L13, ch/qos/logback/core/model/processor/ImplicitModelHandler.java#L1-L13, ch/qos/logback/core/model/processor/ImportModelHandler.java#L1-L13, ch/qos/logback/core/model/processor/IncludeModelHandler.java#L1-L13, ch/qos/logback/core/model/processor/InsertFromJNDIModelHandler.java#L1-L13, ch/qos/logback/core/model/processor/ModelFilter.java#L1-L13, ch/qos/logback/core/model/processor/ModelHandlerBase.java#L1-L13, ch/qos/logback/core/model/processor/ModelHandlerException.java#L1-L13, ch/qos/logback/core/model/processor/ModelInterpretationContext.java#L1-L13, ch/qos/logback/core/model/processor/NOPModelHandler.java#L1-L13, ch/qos/logback/core/model/processor/PhaseIndicator.java#L1-L13, ch/qos/logback/core/model/processor/ProcessingPhase.java#L1-L13, ch/qos/logback/core/model/processor/ProcessorException.java#L1-L13, ch/qos/logback/core/model/processor/PropertyModelHandler.java#L1-L13, ch/qos/logback/core/model/processor/RefContainerDependencyAnalyser.java#L1-L13, ch/qos/logback/core/model/processor/ResourceHandlerBase.java#L1-L13, ch/qos/logback/core/model/processor/SequenceNumberGeneratorModelHandler.java#L1-L13, ch/qos/logback/core/model/processor/SerializeModelModelHandler.java#L1-L13, ch/qos/logback/core/model/processor/ShutdownHookModelHandler.java#L1-L13, ch/qos/logback/core/model/processor/StatusListenerModelHandler.java#L1-L13, ch/qos/logback/core/model/processor/TimestampModelHandler.java#L1-L13, ch/qos/logback/core/model/processor/conditional/ByPropertiesConditionModelHandler.java#L1-L13, ch/qos/logback/core/model/processor/conditional/ElseModelHandler.java#L1-L13, ch/qos/logback/core/model/processor/conditional/IfModelHandler.java#L1-L13, ch/qos/logback/core/model/processor/conditional/ThenModelHandler.java#L1-L13, ch/qos/logback/core/model/util/PropertyModelHandlerHelper.java#L1-L13, ch/qos/logback/core/model/util/TagUtil.java#L1-L13, ch/qos/logback/core/model/util/VariableSubstitutionsHelper.java#L1-L13, ch/qos/logback/core/net/AbstractSSLSocketAppender.java#L1-L13, ch/qos/logback/core/net/AbstractSocketAppender.java#L1-L13, ch/qos/logback/core/net/AutoFlushingObjectWriter.java#L1-L13, ch/qos/logback/core/net/DefaultSocketConnector.java#L1-L13, ch/qos/logback/core/net/HardenedObjectInputStream.java#L1-L13, ch/qos/logback/core/net/LoginAuthenticator.java#L1-L13, ch/qos/logback/core/net/ObjectWriter.java#L1-L13, ch/qos/logback/core/net/ObjectWriterFactory.java#L1-L13, ch/qos/logback/core/net/QueueFactory.java#L1-L13, ch/qos/logback/core/net/SMTPAppenderBase.java#L1-L13, ch/qos/logback/core/net/SocketConnector.java#L1-L13, ch/qos/logback/core/net/SyslogAppenderBase.java#L1-L13, ch/qos/logback/core/net/SyslogConstants.java#L1-L13, ch/qos/logback/core/net/SyslogOutputStream.java#L1-L13, ch/qos/logback/core/net/ssl/ConfigurableSSLServerSocketFactory.java#L1-L13, ch/qos/logback/core/net/ssl/ConfigurableSSLSocketFactory.java#L1-L13, ch/qos/logback/core/net/ssl/KeyManagerFactoryFactoryBean.java#L1-L13, ch/qos/logback/core/net/ssl/KeyStoreFactoryBean.java#L1-L13, ch/qos/logback/core/net/ssl/SSL.java#L1-L13, ch/qos/logback/core/net/ssl/SSLComponent.java#L1-L13, ch/qos/logback/core/net/ssl/SSLConfigurable.java#L1-L13, ch/qos/logback/core/net/ssl/SSLConfigurableServerSocket.java#L1-L13, ch/qos/logback/core/net/ssl/SSLConfigurableSocket.java#L1-L13, ch/qos/logback/core/net/ssl/SSLConfiguration.java#L1-L13, ch/qos/logback/core/net/ssl/SSLContextFactoryBean.java#L1-L13, ch/qos/logback/core/net/ssl/SSLNestedComponentRegistryRules.java#L1-L13, ch/qos/logback/core/net/ssl/SSLParametersConfiguration.java#L1-L13, ch/qos/logback/core/net/ssl/SecureRandomFactoryBean.java#L1-L13, ch/qos/logback/core/net/ssl/TrustManagerFactoryFactoryBean.java#L1-L13, ch/qos/logback/core/pattern/CompositeConverter.java#L1-L13, ch/qos/logback/core/pattern/Converter.java#L1-L13, ch/qos/logback/core/pattern/ConverterUtil.java#L1-L13, ch/qos/logback/core/pattern/DynamicConverter.java#L1-L13, ch/qos/logback/core/pattern/FormatInfo.java#L1-L13, ch/qos/logback/core/pattern/FormattingConverter.java#L1-L13, ch/qos/logback/core/pattern/IdentityCompositeConverter.java#L1-L13, ch/qos/logback/core/pattern/LiteralConverter.java#L1-L13, ch/qos/logback/core/pattern/PatternLayoutBase.java#L1-L13, ch/qos/logback/core/pattern/PatternLayoutEncoderBase.java#L1-L13, ch/qos/logback/core/pattern/PostCompileProcessor.java#L1-L13, ch/qos/logback/core/pattern/ReplacingCompositeConverter.java#L1-L13, ch/qos/logback/core/pattern/SpacePadder.java#L1-L13, ch/qos/logback/core/pattern/color/ANSIConstants.java#L1-L13, ch/qos/logback/core/pattern/color/BlackCompositeConverter.java#L1-L13, ch/qos/logback/core/pattern/color/BlueCompositeConverter.java#L1-L13, ch/qos/logback/core/pattern/color/BoldBlueCompositeConverter.java#L1-L13, ch/qos/logback/core/pattern/color/BoldCyanCompositeConverter.java#L1-L13, ch/qos/logback/core/pattern/color/BoldGreenCompositeConverter.java#L1-L13, ch/qos/logback/core/pattern/color/BoldMagentaCompositeConverter.java#L1-L13, ch/qos/logback/core/pattern/color/BoldRedCompositeConverter.java#L1-L13, ch/qos/logback/core/pattern/color/BoldWhiteCompositeConverter.java#L1-L13, ch/qos/logback/core/pattern/color/BoldYellowCompositeConverter.java#L1-L13, ch/qos/logback/core/pattern/color/ConverterSupplierByClassName.java#L1-L13, ch/qos/logback/core/pattern/color/CyanCompositeConverter.java#L1-L13, ch/qos/logback/core/pattern/color/ForegroundCompositeConverterBase.java#L1-L13, ch/qos/logback/core/pattern/color/GrayCompositeConverter.java#L1-L13, ch/qos/logback/core/pattern/color/GreenCompositeConverter.java#L1-L13, ch/qos/logback/core/pattern/color/MagentaCompositeConverter.java#L1-L13, ch/qos/logback/core/pattern/color/RedCompositeConverter.java#L1-L13, ch/qos/logback/core/pattern/color/WhiteCompositeConverter.java#L1-L13, ch/qos/logback/core/pattern/color/YellowCompositeConverter.java#L1-L13, ch/qos/logback/core/pattern/parser/Compiler.java#L1-L13, ch/qos/logback/core/pattern/parser/CompositeNode.java#L1-L13, ch/qos/logback/core/pattern/parser/FormattingNode.java#L1-L13, ch/qos/logback/core/pattern/parser/Node.java#L1-L13, ch/qos/logback/core/pattern/parser/OptionTokenizer.java#L1-L13, ch/qos/logback/core/pattern/parser/Parser.java#L1-L13, ch/qos/logback/core/pattern/parser/SimpleKeywordNode.java#L1-L13, ch/qos/logback/core/pattern/parser/Token.java#L1-L13, ch/qos/logback/core/pattern/parser/TokenStream.java#L1-L13, ch/qos/logback/core/pattern/util/AlmostAsIsEscapeUtil.java#L1-L13, ch/qos/logback/core/pattern/util/AsIsEscapeUtil.java#L1-L13, ch/qos/logback/core/pattern/util/IEscapeUtil.java#L1-L13, ch/qos/logback/core/pattern/util/RegularEscapeUtil.java#L1-L13, ch/qos/logback/core/pattern/util/RestrictedEscapeUtil.java#L1-L13, ch/qos/logback/core/property/CanonicalHostNamePropertyDefiner.java#L1-L13, ch/qos/logback/core/property/FileExistsPropertyDefiner.java#L1-L13, ch/qos/logback/core/property/ResourceExistsPropertyDefiner.java#L1-L13, ch/qos/logback/core/read/CyclicBufferAppender.java#L1-L13, ch/qos/logback/core/read/ListAppender.java#L1-L13, ch/qos/logback/core/recovery/RecoveryCoordinator.java#L1-L13, ch/qos/logback/core/recovery/RecoveryListener.java#L1-L13, ch/qos/logback/core/recovery/ResilientFileOutputStream.java#L1-L13, ch/qos/logback/core/recovery/ResilientOutputStreamBase.java#L1-L13, ch/qos/logback/core/recovery/ResilientSyslogOutputStream.java#L1-L13, ch/qos/logback/core/rolling/FixedWindowRollingPolicy.java#L1-L13, ch/qos/logback/core/rolling/LengthCounter.java#L1-L13, ch/qos/logback/core/rolling/LengthCounterBase.java#L1-L13, ch/qos/logback/core/rolling/RollingPolicy.java#L1-L13, ch/qos/logback/core/rolling/RollingPolicyBase.java#L1-L13, ch/qos/logback/core/rolling/RolloverFailure.java#L1-L13, ch/qos/logback/core/rolling/SizeAndTimeBasedFNATP.java#L1-L13, ch/qos/logback/core/rolling/SizeAndTimeBasedRollingPolicy.java#L1-L13, ch/qos/logback/core/rolling/SizeBasedTriggeringPolicy.java#L1-L13, ch/qos/logback/core/rolling/TimeBasedFileNamingAndTriggeringPolicy.java#L1-L13, ch/qos/logback/core/rolling/TimeBasedFileNamingAndTriggeringPolicyBase.java#L1-L13, ch/qos/logback/core/rolling/TimeBasedRollingPolicy.java#L1-L13, ch/qos/logback/core/rolling/TriggeringPolicy.java#L1-L13, ch/qos/logback/core/rolling/TriggeringPolicyBase.java#L1-L13, ch/qos/logback/core/rolling/helper/ArchiveRemover.java#L1-L13, ch/qos/logback/core/rolling/helper/CompressionMode.java#L1-L13, ch/qos/logback/core/rolling/helper/CompressionStrategy.java#L1-L13, ch/qos/logback/core/rolling/helper/CompressionStrategyBase.java#L1-L13, ch/qos/logback/core/rolling/helper/Compressor.java#L1-L13, ch/qos/logback/core/rolling/helper/DateTokenConverter.java#L1-L13, ch/qos/logback/core/rolling/helper/FileFilterUtil.java#L1-L13, ch/qos/logback/core/rolling/helper/FileNamePattern.java#L1-L13, ch/qos/logback/core/rolling/helper/FileStoreUtil.java#L1-L13, ch/qos/logback/core/rolling/helper/GZCompressionStrategy.java#L1-L13, ch/qos/logback/core/rolling/helper/IntegerTokenConverter.java#L1-L13, ch/qos/logback/core/rolling/helper/MonoTypedConverter.java#L1-L13, ch/qos/logback/core/rolling/helper/PeriodicityType.java#L1-L13, ch/qos/logback/core/rolling/helper/RenameUtil.java#L1-L13, ch/qos/logback/core/rolling/helper/SizeAndTimeBasedArchiveRemover.java#L1-L13, ch/qos/logback/core/rolling/helper/TokenConverter.java#L1-L13, ch/qos/logback/core/rolling/helper/XZCompressionStrategy.java#L1-L13, ch/qos/logback/core/rolling/helper/ZipCompressionStrategy.java#L1-L13, ch/qos/logback/core/sift/AbstractDiscriminator.java#L1-L13, ch/qos/logback/core/sift/AppenderFactory.java#L1-L13, ch/qos/logback/core/sift/AppenderFactoryUsingSiftModel.java#L1-L13, ch/qos/logback/core/sift/AppenderTracker.java#L1-L13, ch/qos/logback/core/sift/DefaultDiscriminator.java#L1-L13, ch/qos/logback/core/sift/Discriminator.java#L1-L13, ch/qos/logback/core/sift/NOPSiftModelHandler.java#L1-L13, ch/qos/logback/core/sift/SiftModelHandler.java#L1-L13, ch/qos/logback/core/sift/SiftProcessor.java#L1-L13, ch/qos/logback/core/sift/SiftingAppenderBase.java#L1-L13, ch/qos/logback/core/spi/AbstractComponentTracker.java#L1-L13, ch/qos/logback/core/spi/AppenderAttachable.java#L1-L13, ch/qos/logback/core/spi/AppenderAttachableImpl.java#L1-L13, ch/qos/logback/core/spi/BasicSequenceNumberGenerator.java#L1-L13, ch/qos/logback/core/spi/ComponentTracker.java#L1-L13, ch/qos/logback/core/spi/ConfigurationEvent.java#L1-L13, ch/qos/logback/core/spi/ConfigurationEventListener.java#L1-L13, ch/qos/logback/core/spi/ContextAware.java#L1-L13, ch/qos/logback/core/spi/ContextAwareBase.java#L1-L13, ch/qos/logback/core/spi/ContextAwareImpl.java#L1-L13, ch/qos/logback/core/spi/ContextAwarePropertyContainer.java#L1-L13, ch/qos/logback/core/spi/CyclicBufferTracker.java#L1-L13, ch/qos/logback/core/spi/DeferredProcessingAware.java#L1-L13, ch/qos/logback/core/spi/ErrorCodes.java#L1-L13, ch/qos/logback/core/spi/FilterAttachable.java#L1-L13, ch/qos/logback/core/spi/FilterAttachableImpl.java#L1-L13, ch/qos/logback/core/spi/FilterReply.java#L1-L13, ch/qos/logback/core/spi/LifeCycle.java#L1-L13, ch/qos/logback/core/spi/LogbackLock.java#L1-L13, ch/qos/logback/core/spi/PreSerializationTransformer.java#L1-L13, ch/qos/logback/core/spi/PropertyContainer.java#L1-L13, ch/qos/logback/core/spi/PropertyDefiner.java#L1-L13, ch/qos/logback/core/spi/ScanException.java#L1-L13, ch/qos/logback/core/spi/SequenceNumberGenerator.java#L1-L13, ch/qos/logback/core/status/ErrorStatus.java#L1-L13, ch/qos/logback/core/status/InfoStatus.java#L1-L13, ch/qos/logback/core/status/NopStatusListener.java#L1-L13, ch/qos/logback/core/status/OnConsoleStatusListener.java#L1-L13, ch/qos/logback/core/status/OnErrorConsoleStatusListener.java#L1-L13, ch/qos/logback/core/status/OnFileStatusListener.java#L1-L13, ch/qos/logback/core/status/OnPrintStreamStatusListenerBase.java#L1-L13, ch/qos/logback/core/status/Status.java#L1-L13, ch/qos/logback/core/status/StatusBase.java#L1-L13, ch/qos/logback/core/status/StatusListener.java#L1-L13, ch/qos/logback/core/status/StatusListenerAsList.java#L1-L13, ch/qos/logback/core/status/StatusManager.java#L1-L13, ch/qos/logback/core/status/StatusUtil.java#L1-L13, ch/qos/logback/core/status/ViewStatusMessagesServletBase.java#L1-L13, ch/qos/logback/core/status/WarnStatus.java#L1-L13, ch/qos/logback/core/subst/Node.java#L1-L13, ch/qos/logback/core/subst/NodeToStringTransformer.java#L1-L13, ch/qos/logback/core/subst/Parser.java#L1-L13, ch/qos/logback/core/subst/Token.java#L1-L13, ch/qos/logback/core/subst/Tokenizer.java#L1-L13, ch/qos/logback/core/testUtil/AbstractMultiThreadedHarness.java#L1-L13, ch/qos/logback/core/testUtil/CoreTestConstants.java#L1-L13, ch/qos/logback/core/testUtil/DelayingListAppender.java#L1-L13, ch/qos/logback/core/testUtil/DummyEncoder.java#L1-L13, ch/qos/logback/core/testUtil/EnvUtilForTests.java#L1-L13, ch/qos/logback/core/testUtil/FileTestUtil.java#L1-L13, ch/qos/logback/core/testUtil/FileToBufferUtil.java#L1-L13, ch/qos/logback/core/testUtil/MockInitialContext.java#L1-L13, ch/qos/logback/core/testUtil/MockInitialContextFactory.java#L1-L13, ch/qos/logback/core/testUtil/NPEAppender.java#L1-L13, ch/qos/logback/core/testUtil/RandomUtil.java#L1-L13, ch/qos/logback/core/testUtil/RunnableWithCounterAndDone.java#L1-L13, ch/qos/logback/core/testUtil/StringListAppender.java#L1-L13, ch/qos/logback/core/testUtil/TeeOutputStream.java#L1-L13, ch/qos/logback/core/testUtil/TrivialStatusListener.java#L1-L13, ch/qos/logback/core/testUtil/XTeeOutputStream.java#L1-L13, ch/qos/logback/core/util/AggregationType.java#L1-L13, ch/qos/logback/core/util/BatchedFixedIntervalInvocationGate.java#L1-L13, ch/qos/logback/core/util/COWArrayList.java#L1-L13, ch/qos/logback/core/util/CachingDateFormatter.java#L1-L13, ch/qos/logback/core/util/CharSequenceState.java#L1-L13, ch/qos/logback/core/util/CharSequenceToRegexMapper.java#L1-L13, ch/qos/logback/core/util/CloseUtil.java#L1-L13, ch/qos/logback/core/util/ContentTypeUtil.java#L1-L13, ch/qos/logback/core/util/ContextUtil.java#L1-L13, ch/qos/logback/core/util/CoreVersionUtil.java#L1-L13, ch/qos/logback/core/util/DatePatternToRegexUtil.java#L1-L13, ch/qos/logback/core/util/DefaultInvocationGate.java#L1-L13, ch/qos/logback/core/util/DelayStrategy.java#L1-L13, ch/qos/logback/core/util/DirectJson.java#L1-L13, ch/qos/logback/core/util/Duration.java#L1-L13, ch/qos/logback/core/util/DynamicClassLoadingException.java#L1-L13, ch/qos/logback/core/util/EnvUtil.java#L1-L13, ch/qos/logback/core/util/FileSize.java#L1-L13, ch/qos/logback/core/util/FileUtil.java#L1-L13, ch/qos/logback/core/util/FixedDelay.java#L1-L13, ch/qos/logback/core/util/FixedIntervalInvocationGate.java#L1-L13, ch/qos/logback/core/util/IncompatibleClassException.java#L1-L13, ch/qos/logback/core/util/IntHolder.java#L1-L13, ch/qos/logback/core/util/InterruptUtil.java#L1-L13, ch/qos/logback/core/util/InvocationGate.java#L1-L13, ch/qos/logback/core/util/IpAddressMatcher.java#L1-L13, ch/qos/logback/core/util/JNDIUtil.java#L1-L13, ch/qos/logback/core/util/Loader.java#L1-L13, ch/qos/logback/core/util/LocationUtil.java#L1-L13, ch/qos/logback/core/util/MD5Util.java#L1-L13, ch/qos/logback/core/util/NetworkAddressUtil.java#L1-L13, ch/qos/logback/core/util/OptionHelper.java#L1-L13, ch/qos/logback/core/util/PropertySetterException.java#L1-L13, ch/qos/logback/core/util/ReentryGuard.java#L1-L13, ch/qos/logback/core/util/ReentryGuardFactory.java#L1-L13, ch/qos/logback/core/util/SimpleInvocationGate.java#L1-L13, ch/qos/logback/core/util/SimpleTimeBasedGuard.java#L1-L13, ch/qos/logback/core/util/StatusListenerConfigHelper.java#L1-L13, ch/qos/logback/core/util/StatusPrinter.java#L1-L13, ch/qos/logback/core/util/StatusPrinter2.java#L1-L13, ch/qos/logback/core/util/StringCollectionUtil.java#L1-L13, ch/qos/logback/core/util/StringUtil.java#L1-L13, ch/qos/logback/core/util/SystemInfo.java#L1-L13, ch/qos/logback/core/util/TimeUtil.java#L1-L13, ch/qos/logback/core/util/VersionUtil.java#L1-L13
+/*
+ * Logback: the reliable, generic, fast and flexible logging framework.
+ * Copyright (C) 1999-2026, QOS.ch. All rights reserved.
+ *
+ * This program and the accompanying materials are dual-licensed under
+ * either the terms of the Eclipse Public License v2.0 as published by
+ * the Eclipse Foundation
+ *
+ *   or (per the licensee's choosing)
+ *
+ * under the terms of the GNU Lesser General Public License version 2.1
+ * as published by the Free Software Foundation.
+ */
+
+Source entries: ch/qos/logback/core/boolex/ExpressionPropertyCondition.java#L27-L40
+/**
+ * This class evaluates boolean expressions based on property lookups.
+ * <p>It supports logical operators (NOT, AND, OR), boolean literals ({@code true} and
+ * {@code false}), and functions like isNull, isDefined, propertyEquals, and propertyContains.
+ * Expressions are parsed using the Shunting-Yard algorithm into Reverse Polish Notation (RPN)
+ * for evaluation.
+ * </p>
+ *
+ * <p>Example expression: {@code true && isDefined("key1") && propertyEquals("key2", "value")}</p>
+ *
+ * <p>Properties are resolved via {@link PropertyConditionBase#property(String)}.</p>
+ *
+ * @since 1.5.24
+ */
+
+Source entries: ch/qos/logback/core/boolex/PropertyCondition.java#L23-L40
+/**
+ * Interface for evaluating conditions based on properties during the conditional processing
+ * of Logback configuration files. This interface is intended to provide an
+ * alternative to legacy Janino-based evaluation.
+ * <p>
+ * Implementations of this interface can access both global properties from the {@link Context}
+ * and local properties specific to the embedding configurator instance. This allows for fine-grained
+ * and context-aware evaluation of configuration conditions.
+ * </p>
+ *
+ * <p>
+ * Typical usage involves implementing this interface to provide custom logic for evaluating
+ * whether certain configuration blocks should be included or excluded based on property values.
+ * </p>
+ *
+ * @since 1.5.20
+ * @author Ceki G&uuml;lc&uuml;
+ */
+
+Source entries: ch/qos/logback/core/joran/GenericXMLConfigurator.java#L1-L11, ch/qos/logback/core/joran/action/ImplicitModelDataForComplexProperty.java#L1-L11, ch/qos/logback/core/rolling/DefaultTimeBasedFileNamingAndTriggeringPolicy.java#L1-L11, ch/qos/logback/core/rolling/RollingFileAppender.java#L1-L11, ch/qos/logback/core/rolling/SizeAndTimeBasedFileNamingAndTriggeringPolicy.java#L1-L11, ch/qos/logback/core/rolling/helper/TimeBasedArchiveRemover.java#L1-L11, ch/qos/logback/core/util/ExecutorServiceUtil.java#L1-L11
+/**
+ * Logback: the reliable, generic, fast and flexible logging framework. Copyright (C) 1999-2015, QOS.ch. All rights
+ * reserved.
+ *
+ * This program and the accompanying materials are dual-licensed under either the terms of the Eclipse Public License
+ * v1.0 as published by the Eclipse Foundation
+ *
+ * or (per the licensee's choosing)
+ *
+ * under the terms of the GNU Lesser General Public License version 2.1 as published by the Free Software Foundation.
+ */
+
+Source entries: ch/qos/logback/core/joran/JoranConfiguratorBase.java#L28-L29
+// Based on 310985 revision 310985 as attested by http://tinyurl.com/8njps
+// see also http://tinyurl.com/c2rp5
+
+Source entries: ch/qos/logback/core/joran/action/ImportAction.java#L22-L27
+/**
+ * Populates {@link ImportModel} based on XML input.
+ * 
+ * @author Ceki G&uuml;lc&uuml;
+ * @since 1.3.0
+ */
+
+Source entries: ch/qos/logback/core/joran/action/ShutdownHookAction.java#L22-L28
+/**
+ * Action which builds {@link ShutdownHookModel} based on &lt;shutdownHook&gt;
+ * elements found in configuration files.
+ * 
+ * @author Mike Reinhold
+ * @author Ceki G&uuml;lc&uuml;
+ */
+
+Source entries: ch/qos/logback/core/net/ssl/SSLParametersConfiguration.java#L72-L78
+/**
+     * Gets the set of enabled protocols based on the configuration.
+     * 
+     * @param supportedProtocols protocols supported by the SSL engine
+     * @param defaultProtocols   default protocols enabled by the SSL engine
+     * @return enabled protocols
+     */
+
+Source entries: ch/qos/logback/core/net/ssl/SSLParametersConfiguration.java#L96-L102
+/**
+     * Gets the set of enabled cipher suites based on the configuration.
+     * 
+     * @param supportedCipherSuites cipher suites supported by the SSL engine
+     * @param defaultCipherSuites   default cipher suites enabled by the SSL engine
+     * @return enabled cipher suites
+     */
+
+Source entries: ch/qos/logback/core/pattern/DynamicConverter.java#L24-L30
+/**
+ * As the name suggests, a DynamicConverter performs a conversion based on the parameter E
+ * given to the {@link #convert} method. Almost all converters are derived from the
+ * DynamicConverter class.
+ *
+ * @param <E>
+ */
+
+Source entries: ch/qos/logback/core/rolling/SizeAndTimeBasedFileNamingAndTriggeringPolicy.java#L162-L162
+// first check for roll-over based on time
+
+Source entries: ch/qos/logback/core/rolling/SizeAndTimeBasedFileNamingAndTriggeringPolicy.java#L182-L185
+// next check for roll-over based on size
+        //if (invocationGate.isTooSoon(currentTime)) {
+        //    return false;
+        //}
+
+Source entries: ch/qos/logback/core/rolling/TimeBasedRollingPolicy.java#L34-L44
+/**
+ * <code>TimeBasedRollingPolicy</code> is both easy to configure and quite
+ * powerful. It allows the rollover to be made based on time. It is possible to
+ * specify that the rollover occur once per day, per week or per month.
+ *
+ * <p>
+ * For more information, please refer to the online manual at
+ * <a href="https://logback.qos.ch/manual/appenders-rolling.html#TimeBasedRollingPolicy">appenders-rolling.html#TimeBasedRollingPolicy</a>
+ *
+ * @author Ceki G&uuml;lc&uuml;
+ */
+
+Source entries: ch/qos/logback/core/rolling/helper/RollingCalendar.java#L1-L13
+/*
+ * Logback: the reliable, generic, fast and flexible logging framework.
+ * Copyright (C) 1999-2026, QOS.ch. All rights reserved.
+ *
+ * This program and the accompanying materials are dual-licensed under
+ * either the terms of the Eclipse Public License v2.0 as published by
+ * the Eclipse Foundation
+ *
+ *   or (per the licensee's choosing)
+ *
+ * under the terms of the GNU Lesser General Public License version 2.1 as published by
+ * the Free Software Foundation.
+ */
+
+Source entries: ch/qos/logback/core/rolling/helper/RollingCalendar.java#L68-L75
+// This method computes the roll-over period by looping over the
+    // periods, starting with the shortest, and stopping when the r0 is
+    // different from r1, where r0 is the epoch formatted according
+    // the datePattern (supplied by the user) and r1 is the
+    // epoch+nextMillis(i) formatted according to datePattern. All date
+    // formatting is done in GMT and not local format because the test
+    // logic is based on comparisons relative to 1970-01-01 00:00:00
+    // GMT (the epoch).
+
+Source entries: ch/qos/logback/core/rolling/helper/ZipCompressionStrategy.java#L95-L112
+// http://jira.qos.ch/browse/LBCORE-98
+    // The name of the compressed file as nested within the zip archive
+    //
+    // Case 1: RawFile = null, Pattern = foo-%d.zip
+    // nestedFilename = foo-${current-date}
+    //
+    // Case 2: RawFile = hello.txt, Pattern = = foo-%d.zip
+    // nestedFilename = foo-${current-date}
+    //
+    // in both cases, the strategy consisting of removing the compression
+    // suffix of zip file works reasonably well. The alternative strategy
+    // whereby the nested file name was based on the value of the raw file name
+    // (applicable to case 2 only) has the disadvantage of the nested files
+    // all having the same name, which could make it harder for the user
+    // to unzip the file without collisions
+    //ZipEntry computeZipEntry(File zippedFile) {
+    //    return computeZipEntry(zippedFile.getName());
+    //}
+
+Source entries: ch/qos/logback/core/spi/AbstractComponentTracker.java#L63-L68
+/**
+     * Build a component based on the key.
+     *
+     * @param key
+     * @return
+     */
+
+Source entries: ch/qos/logback/core/spi/BasicSequenceNumberGenerator.java#L19-L26
+/**
+ * 
+ * A very simple {@link SequenceNumberGenerator} based on an {@link AtomicLong}
+ * variable.
+ * 
+ * @author Ceki G&uuml;lc&uuml;
+ * @since 1.3.0
+ */
+
+Source entries: ch/qos/logback/core/spi/FilterReply.java#L16-L27
+/**
+ *
+ * This enum represents the possible replies that a filtering component in
+ * logback can return. It is used by implementations of both
+ * {@link ch.qos.logback.core.filter.Filter Filter} and
+ * ch.qos.logback.classic.turbo.TurboFilter abstract classes.
+ * 
+ * Based on the order that the FilterReply values are declared,
+ * FilterReply.ACCEPT.compareTo(FilterReply.DENY) will return a positive value.
+ *
+ * @author S&eacute;bastien Pennec
+ */
+
+Source entries: ch/qos/logback/core/util/SimpleTimeBasedGuard.java#L70-L76
+/**
+     * Checks if an operation is allowed based on the current time window.
+     * If allowed, increments the usage count for the current window.
+     * If the window has expired, resets the window and allows the operation.
+     *
+     * @return true if the operation is allowed, false otherwise
+     */
+

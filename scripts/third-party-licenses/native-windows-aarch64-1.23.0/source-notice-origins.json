@@ -1,0 +1,19 @@
+{
+  "sourceArchive": "https://repo.maven.apache.org/maven2/com/aayushatharva/brotli4j/native-windows-aarch64/1.23.0/native-windows-aarch64-1.23.0-sources.jar",
+  "archiveSha256": "83ec0971275985cf09dbfef7f6a772f91760cec839783f5a7b8892a433a77bfe",
+  "blocks": [
+    {
+      "commentSha256": "269974a7b6406e9f1aadae96666154a1288426133d9b2412441293a68bfa1429",
+      "sources": [
+        {
+          "entry": "com/aayushatharva/brotli4j/windows/aarch64/NativeLoader.java",
+          "sourceSha256": "93a16310a84569ef9f080d3a69f12ba2ae2cc2e6178265eea76048ab433c34d0",
+          "startByte": 0,
+          "endByteExclusive": 669,
+          "startLine": 1,
+          "endLine": 16
+        }
+      ]
+    }
+  ]
+}

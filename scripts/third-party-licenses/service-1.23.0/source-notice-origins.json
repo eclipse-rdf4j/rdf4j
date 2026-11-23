@@ -1,0 +1,19 @@
+{
+  "sourceArchive": "https://repo.maven.apache.org/maven2/com/aayushatharva/brotli4j/service/1.23.0/service-1.23.0-sources.jar",
+  "archiveSha256": "096da8d29f679e65b5d732089a71d7af758f55e4aec2a4735605702f0b85e9f9",
+  "blocks": [
+    {
+      "commentSha256": "269974a7b6406e9f1aadae96666154a1288426133d9b2412441293a68bfa1429",
+      "sources": [
+        {
+          "entry": "com/aayushatharva/brotli4j/service/BrotliNativeProvider.java",
+          "sourceSha256": "23486e6cdc7ccd668ec5004e88873c0250daf3efed1e6d484148b13f169bf9d9",
+          "startByte": 0,
+          "endByteExclusive": 669,
+          "startLine": 1,
+          "endLine": 16
+        }
+      ]
+    }
+  ]
+}

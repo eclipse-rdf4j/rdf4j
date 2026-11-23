@@ -346,6 +346,50 @@ class ValueStoreAsyncCleanupTest {
 	}
 
 	@Test
+	void eagerTripleTermLookupUsesTheEpochAdmittedAfterCleanup(@TempDir Path directory) throws Exception {
+		try (ClosingValueStore values = new ClosingValueStore(directory, config(true));
+				var executor = Executors.newSingleThreadExecutor()) {
+			Value term = VF.createTripleTerm(VF.createBNode("retained-root"), VF.createIRI("urn:retained:p"),
+					VF.createLiteral("retained object"));
+			long id = store(values, term);
+			long retired = store(values, VF.createBNode("independently-retired"));
+			TxnManager manager = values.getTxnManager();
+			CountDownLatch awaitingAdmission = new CountDownLatch(1);
+			CountDownLatch releaseAdmission = new CountDownLatch(1);
+
+			// Exhaust ordinary capacity without pinning a dictionary epoch or holding native readers.
+			try (TxnManager.ReaderReservation capacity = manager.reserveReadTxnPinnedFamily(TxnManager.POOL_SIZE - 1)) {
+				manager.beforeBlockingReaderAdmissionForTest = () -> {
+					awaitingAdmission.countDown();
+					try {
+						assertTrue(releaseAdmission.await(10, TimeUnit.SECONDS), "the cleanup must release admission");
+					} catch (InterruptedException interrupted) {
+						Thread.currentThread().interrupt();
+						throw new AssertionError("the waiting reader was interrupted", interrupted);
+					}
+				};
+				Future<LmdbValue> lookup = executor.submit(() -> values.getValue(id));
+				assertTrue(awaitingAdmission.await(10, TimeUnit.SECONDS),
+						"the lookup must wait before snapshot admission");
+				capacity.close();
+
+				ValueStoreRevision previousRevision = values.getRevision();
+				values.startTransaction(true);
+				values.gcIds(Set.of(retired), new HashSet<>());
+				values.commit();
+				assertNotEquals(previousRevision, values.getRevision(),
+						"cleanup must publish a different dictionary epoch");
+
+				releaseAdmission.countDown();
+				assertEquals(term, lookup.get(10, TimeUnit.SECONDS));
+			} finally {
+				manager.beforeBlockingReaderAdmissionForTest = null;
+				releaseAdmission.countDown();
+			}
+		}
+	}
+
+	@Test
 	void boundedCleanupRetiresOptionalOverlayWithoutCopyingLargePayloads(@TempDir Path directory) throws Exception {
 		Assumptions.assumeTrue(ManagementFactory.getThreadMXBean() instanceof com.sun.management.ThreadMXBean);
 		com.sun.management.ThreadMXBean allocations = (com.sun.management.ThreadMXBean) ManagementFactory
