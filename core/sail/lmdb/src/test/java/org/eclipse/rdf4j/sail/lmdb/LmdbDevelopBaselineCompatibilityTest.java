@@ -315,8 +315,14 @@ class LmdbDevelopBaselineCompatibilityTest {
 				.setTripleTermIndexes(TRIPLE_TERM_INDEXES)
 				.setInlineLiterals(inlineLiterals);
 		SailRepository repository = new SailRepository(new LmdbStore(directory.toFile(), config));
-		repository.init();
-		return repository;
+		try {
+			repository.init();
+			return repository;
+		} catch (RuntimeException | Error failure) {
+			try (var cleanup = LmdbTestUtil.onClose(repository::shutDown)) {
+				throw failure;
+			}
+		}
 	}
 
 	private static Map<String, String> snapshotStoreBytes(Path storeDirectory) throws Exception {

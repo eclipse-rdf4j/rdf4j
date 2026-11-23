@@ -394,7 +394,7 @@ class LmdbNativeCensusAggregateTest {
 			LmdbNativeEvaluationStrategy strategy = new LmdbNativeEvaluationStrategy(triples, null, null, 0L,
 					new EvaluationStatistics(), false);
 			QueryEvaluationContext context = new QueryEvaluationContext.Minimal((Dataset) null);
-			NativeGraphFusion.Prepared physical = NativeGraphFusion.prepare(group, context.getDataset(), strategy);
+			NativeGraphFusion.Prepared physical = NativeGraphFusion.prepare(group, context, strategy);
 			Group physicalGroup = group(physical.expression());
 			QueryEvaluationStep canonical = strategy.withValuePositions(physical.positions(),
 					() -> LmdbNativeCensusAggregate.tryCreate(physicalGroup, scopedActual, strategy, context,
@@ -512,8 +512,7 @@ class LmdbNativeCensusAggregateTest {
 			QueryEvaluationContext context = new QueryEvaluationContext.Minimal((Dataset) null);
 			LmdbNativeEvaluationStrategy strategy = new LmdbNativeEvaluationStrategy(triples, null, null, 0L,
 					new EvaluationStatistics(), false);
-			NativeGraphFusion.Prepared physical = NativeGraphFusion.prepare(parsedGroup, context.getDataset(),
-					strategy);
+			NativeGraphFusion.Prepared physical = NativeGraphFusion.prepare(parsedGroup, context, strategy);
 			Group physicalGroup = group(physical.expression());
 			QueryEvaluationStep candidate = strategy.withValuePositions(physical.positions(),
 					() -> LmdbNativeCensusAggregate.tryCreate(physicalGroup, scopedUnreceipted, strategy, context,
@@ -1499,7 +1498,7 @@ class LmdbNativeCensusAggregateTest {
 		LmdbNativeEvaluationStrategy strategy = new LmdbNativeEvaluationStrategy(triples, null, null, 0L,
 				new EvaluationStatistics(), false);
 		QueryEvaluationContext context = new QueryEvaluationContext.Minimal((Dataset) null);
-		NativeGraphFusion.Prepared physical = NativeGraphFusion.prepare(group, context.getDataset(), strategy);
+		NativeGraphFusion.Prepared physical = NativeGraphFusion.prepare(group, context, strategy);
 		Group physicalGroup = group(physical.expression());
 		QueryEvaluationStep step = strategy.withValuePositions(physical.positions(),
 				() -> LmdbNativeCensusAggregate.tryCreate(physicalGroup, source, strategy, context,
@@ -1948,7 +1947,7 @@ class LmdbNativeCensusAggregateTest {
 			LmdbNativeEvaluationStrategy strategy = new LmdbNativeEvaluationStrategy(triples, null, null, 0L,
 					new EvaluationStatistics(), false);
 			QueryEvaluationContext context = new QueryEvaluationContext.Minimal((Dataset) null);
-			NativeGraphFusion.Prepared physical = NativeGraphFusion.prepare(group, context.getDataset(), strategy);
+			NativeGraphFusion.Prepared physical = NativeGraphFusion.prepare(group, context, strategy);
 			Group physicalGroup = group(physical.expression());
 			QueryEvaluationStep candidate = strategy.withValuePositions(physical.positions(),
 					() -> LmdbNativeCensusAggregate.tryCreate(physicalGroup, source, strategy, context,
@@ -2041,7 +2040,7 @@ class LmdbNativeCensusAggregateTest {
 			LmdbNativeEvaluationStrategy strategy = new LmdbNativeEvaluationStrategy(triples, null, null, 0L,
 					new EvaluationStatistics(), false);
 			QueryEvaluationContext context = new QueryEvaluationContext.Minimal((Dataset) null);
-			NativeGraphFusion.Prepared physical = NativeGraphFusion.prepare(group, context.getDataset(), strategy);
+			NativeGraphFusion.Prepared physical = NativeGraphFusion.prepare(group, context, strategy);
 			Group physicalGroup = group(physical.expression());
 			QueryEvaluationStep candidate = strategy.withValuePositions(physical.positions(),
 					() -> LmdbNativeCensusAggregate.tryCreate(physicalGroup, scopedSource, strategy, context,
@@ -2163,7 +2162,7 @@ class LmdbNativeCensusAggregateTest {
 			LmdbNativeEvaluationStrategy strategy = new LmdbNativeEvaluationStrategy(triples, null, null, 0L,
 					new EvaluationStatistics(), false);
 			QueryEvaluationContext context = new QueryEvaluationContext.Minimal((Dataset) null);
-			NativeGraphFusion.Prepared physical = NativeGraphFusion.prepare(group, context.getDataset(), strategy);
+			NativeGraphFusion.Prepared physical = NativeGraphFusion.prepare(group, context, strategy);
 			Group physicalGroup = group(physical.expression());
 			QueryEvaluationStep candidate = strategy.withValuePositions(physical.positions(),
 					() -> LmdbNativeCensusAggregate.tryCreate(physicalGroup, attachedSource, strategy, context,
@@ -2273,7 +2272,7 @@ class LmdbNativeCensusAggregateTest {
 					.as("the raw group compiler must preserve the generic result bag: " + query)
 					.containsExactlyInAnyOrderElementsOf(expected);
 
-			NativeGraphFusion.Prepared physical = NativeGraphFusion.prepare(group, context.getDataset(), strategy);
+			NativeGraphFusion.Prepared physical = NativeGraphFusion.prepare(group, context, strategy);
 			Group physicalGroup = group(physical.expression());
 			QueryEvaluationStep census = strategy.withValuePositions(physical.positions(),
 					() -> LmdbNativeCensusAggregate.tryCreate(physicalGroup, (NativeLmdbQuerySource) dataset, strategy,

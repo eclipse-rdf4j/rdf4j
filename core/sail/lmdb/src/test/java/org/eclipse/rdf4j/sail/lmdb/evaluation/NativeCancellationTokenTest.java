@@ -43,7 +43,8 @@ class NativeCancellationTokenTest {
 			bytecode = stream.readAllBytes();
 		}
 		var classModel = ClassFile.of().parse(bytecode);
-		var cancellationRequested = classModel.fields().stream()
+		var cancellationRequested = classModel.fields()
+				.stream()
 				.filter(field -> field.fieldName().equalsString("cancellationRequested"))
 				.findFirst()
 				.orElseThrow(() -> new AssertionError("cancellationRequested field must exist"));
@@ -109,7 +110,8 @@ class NativeCancellationTokenTest {
 				}));
 			}
 
-			assertTrue(ready.await(FUTURE_TIMEOUT_SECONDS, TimeUnit.SECONDS), "all workers should reach the start gate");
+			assertTrue(ready.await(FUTURE_TIMEOUT_SECONDS, TimeUnit.SECONDS),
+					"all workers should reach the start gate");
 			start.countDown();
 			KernelQueryCancelledException signal = observer.get(FUTURE_TIMEOUT_SECONDS, TimeUnit.SECONDS);
 			for (Future<?> publisher : publishers) {

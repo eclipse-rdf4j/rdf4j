@@ -66,12 +66,7 @@ class LmdbDirectAdjacencySupernodeKernelTest {
 
 	@AfterEach
 	void tearDown() throws Exception {
-		if (store != null) {
-			store.close();
-		}
-		if (tripleStore != null) {
-			tripleStore.close();
-		}
+		LmdbTestUtil.cleanup(null, store, tripleStore);
 	}
 
 	private void commit(Runnable mutations) throws IOException {

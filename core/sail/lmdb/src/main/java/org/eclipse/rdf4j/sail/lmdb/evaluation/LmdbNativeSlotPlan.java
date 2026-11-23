@@ -226,6 +226,9 @@ interface SlotPlan {
 		if (plan instanceof FilterPlan) {
 			return assuredMask(((FilterPlan) plan).arg);
 		}
+		if (plan instanceof DrainGuardPlan guard) {
+			return assuredMask(guard.delegate);
+		}
 		if (plan instanceof ExtensionPlan extension) {
 			// A BIND may fail to supply its target, but it preserves the argument's bindings on every emitted row.
 			return assuredMask(extension.arg);
@@ -346,7 +349,8 @@ interface SlotPlan {
 			return encounterOrderReplaySafe(distinct.arg);
 		}
 		if (plan instanceof DrainGuardPlan guard) {
-			return encounterOrderReplaySafe(guard.delegate) && encounterOrderReplaySafe(guard.drained);
+			return guard.trigger != DrainGuardPlan.Trigger.ON_EMPTY && encounterOrderReplaySafe(guard.delegate)
+					&& encounterOrderReplaySafe(guard.drained);
 		}
 		return false;
 	}

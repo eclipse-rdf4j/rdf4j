@@ -120,7 +120,7 @@ final class NativeFilterLease {
 			return new RowDistinctPlan(borrow(distinct.arg), distinct.slots);
 		}
 		if (plan instanceof DrainGuardPlan guard) {
-			return new DrainGuardPlan(borrow(guard.delegate), borrow(guard.drained), guard.drainBeforeDelegate);
+			return new DrainGuardPlan(borrow(guard.delegate), borrow(guard.drained), guard.trigger);
 		}
 		if (plan instanceof MinusPlan minus) {
 			return new MinusPlan(borrow(minus.left), borrow(minus.right), minus.sharedMask);

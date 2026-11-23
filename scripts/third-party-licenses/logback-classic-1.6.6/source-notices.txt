@@ -1,0 +1,263 @@
+Source entries: ch/qos/logback/classic/AsyncAppender.java#L1-L13, ch/qos/logback/classic/BasicConfigurator.java#L1-L13, ch/qos/logback/classic/ClassicConstants.java#L1-L13, ch/qos/logback/classic/Level.java#L1-L13, ch/qos/logback/classic/Logger.java#L1-L13, ch/qos/logback/classic/LoggerContext.java#L1-L13, ch/qos/logback/classic/PatternLayout.java#L1-L13, ch/qos/logback/classic/ViewStatusMessagesServlet.java#L1-L13, ch/qos/logback/classic/boolex/ExceptionMatchEvaluator.java#L1-L13, ch/qos/logback/classic/boolex/IEvaluator.java#L1-L13, ch/qos/logback/classic/boolex/MarkerList.java#L1-L13, ch/qos/logback/classic/boolex/OnErrorEvaluator.java#L1-L13, ch/qos/logback/classic/boolex/OnMarkerEvaluator.java#L1-L13, ch/qos/logback/classic/boolex/StubEventEvaluator.java#L1-L13, ch/qos/logback/classic/encoder/JsonEncoder.java#L1-L13, ch/qos/logback/classic/encoder/PatternLayoutEncoder.java#L1-L13, ch/qos/logback/classic/filter/LevelFilter.java#L1-L13, ch/qos/logback/classic/filter/ThresholdFilter.java#L1-L13, ch/qos/logback/classic/helpers/MDCInsertingServletFilter.java#L1-L13, ch/qos/logback/classic/helpers/WithLayoutListAppender.java#L1-L13, ch/qos/logback/classic/html/DefaultCssBuilder.java#L1-L13, ch/qos/logback/classic/html/DefaultThrowableRenderer.java#L1-L13, ch/qos/logback/classic/html/HTMLLayout.java#L1-L13, ch/qos/logback/classic/html/UrlCssBuilder.java#L1-L13, ch/qos/logback/classic/joran/JoranConfigurator.java#L1-L13, ch/qos/logback/classic/joran/ModelClassToModelHandlerLinker.java#L1-L13, ch/qos/logback/classic/joran/PropertiesConfigurator.java#L1-L13, ch/qos/logback/classic/joran/ReconfigureOnChangeTask.java#L1-L13, ch/qos/logback/classic/joran/ReconfigureOnChangeTaskListener.java#L1-L13, ch/qos/logback/classic/joran/SerializedModelConfigurator.java#L1-L13, ch/qos/logback/classic/joran/action/ConfigurationAction.java#L1-L13, ch/qos/logback/classic/joran/action/ConsolePluginAction.java#L1-L13, ch/qos/logback/classic/joran/action/ContextNameAction.java#L1-L13, ch/qos/logback/classic/joran/action/InsertFromJNDIAction.java#L1-L13, ch/qos/logback/classic/joran/action/LevelAction.java#L1-L13, ch/qos/logback/classic/joran/action/LoggerAction.java#L1-L13, ch/qos/logback/classic/joran/action/LoggerContextListenerAction.java#L1-L13, ch/qos/logback/classic/joran/action/PropertiesConfiguratorAction.java#L1-L13, ch/qos/logback/classic/joran/action/RootLoggerAction.java#L1-L13, ch/qos/logback/classic/joran/sanity/IfNestedWithinSecondPhaseElementSC.java#L1-L13, ch/qos/logback/classic/joran/serializedModel/HardenedModelInputStream.java#L1-L13, ch/qos/logback/classic/jul/JULHelper.java#L1-L13, ch/qos/logback/classic/jul/LevelChangePropagator.java#L1-L13, ch/qos/logback/classic/layout/TTLLLayout.java#L1-L13, ch/qos/logback/classic/log4j/XMLLayout.java#L1-L13, ch/qos/logback/classic/model/ConfigurationModel.java#L1-L13, ch/qos/logback/classic/model/ContextNameModel.java#L1-L13, ch/qos/logback/classic/model/LevelModel.java#L1-L13, ch/qos/logback/classic/model/LoggerContextListenerModel.java#L1-L13, ch/qos/logback/classic/model/LoggerModel.java#L1-L13, ch/qos/logback/classic/model/PropertiesConfiguratorModel.java#L1-L13, ch/qos/logback/classic/model/ReceiverModel.java#L1-L13, ch/qos/logback/classic/model/RootLoggerModel.java#L1-L13, ch/qos/logback/classic/model/processor/CallerContradictionAnalyser.java#L1-L13, ch/qos/logback/classic/model/processor/CallerContradictionWarnAnalyser.java#L1-L13, ch/qos/logback/classic/model/processor/CallerInstructionLogic.java#L1-L13, ch/qos/logback/classic/model/processor/ConfigurationModelHandler.java#L1-L13, ch/qos/logback/classic/model/processor/ConfigurationModelHandlerFull.java#L1-L13, ch/qos/logback/classic/model/processor/ContextNameModelHandler.java#L1-L13, ch/qos/logback/classic/model/processor/LevelModelHandler.java#L1-L13, ch/qos/logback/classic/model/processor/LogbackClassicDefaultNestedComponentRules.java#L1-L13, ch/qos/logback/classic/model/processor/LoggerContextListenerModelHandler.java#L1-L13, ch/qos/logback/classic/model/processor/LoggerModelHandler.java#L1-L13, ch/qos/logback/classic/model/processor/PropertiesConfiguratorModelHandler.java#L1-L13, ch/qos/logback/classic/model/processor/RootLoggerModelHandler.java#L1-L13, ch/qos/logback/classic/model/util/DefaultClassNameHelper.java#L1-L13, ch/qos/logback/classic/net/LoggingEventPreSerializationTransformer.java#L1-L13, ch/qos/logback/classic/net/SMTPAppender.java#L1-L13, ch/qos/logback/classic/net/SSLSocketAppender.java#L1-L13, ch/qos/logback/classic/net/SimpleSSLSocketServer.java#L1-L13, ch/qos/logback/classic/net/SimpleSocketServer.java#L1-L13, ch/qos/logback/classic/net/SocketAcceptor.java#L1-L13, ch/qos/logback/classic/net/SocketAppender.java#L1-L13, ch/qos/logback/classic/net/SocketNode.java#L1-L13, ch/qos/logback/classic/net/SyslogAppender.java#L1-L13, ch/qos/logback/classic/net/server/HardenedLoggingEventInputStream.java#L1-L13, ch/qos/logback/classic/pattern/Abbreviator.java#L1-L13, ch/qos/logback/classic/pattern/CallerDataConverter.java#L1-L13, ch/qos/logback/classic/pattern/ClassNameOnlyAbbreviator.java#L1-L13, ch/qos/logback/classic/pattern/ClassOfCallerConverter.java#L1-L13, ch/qos/logback/classic/pattern/ClassicConverter.java#L1-L13, ch/qos/logback/classic/pattern/ContextNameConverter.java#L1-L13, ch/qos/logback/classic/pattern/DateConverter.java#L1-L13, ch/qos/logback/classic/pattern/EnsureExceptionHandling.java#L1-L13, ch/qos/logback/classic/pattern/EpochConverter.java#L1-L13, ch/qos/logback/classic/pattern/ExtendedThrowableProxyConverter.java#L1-L13, ch/qos/logback/classic/pattern/FileOfCallerConverter.java#L1-L13, ch/qos/logback/classic/pattern/KeyValuePairConverter.java#L1-L13, ch/qos/logback/classic/pattern/LevelConverter.java#L1-L13, ch/qos/logback/classic/pattern/LineOfCallerConverter.java#L1-L13, ch/qos/logback/classic/pattern/LineSeparatorConverter.java#L1-L13, ch/qos/logback/classic/pattern/LocalSequenceNumberConverter.java#L1-L13, ch/qos/logback/classic/pattern/LoggerConverter.java#L1-L13, ch/qos/logback/classic/pattern/MDCConverter.java#L1-L13, ch/qos/logback/classic/pattern/MarkerConverter.java#L1-L13, ch/qos/logback/classic/pattern/MaskedKeyValuePairConverter.java#L1-L13, ch/qos/logback/classic/pattern/MessageConverter.java#L1-L13, ch/qos/logback/classic/pattern/MethodOfCallerConverter.java#L1-L13, ch/qos/logback/classic/pattern/MicrosecondConverter.java#L1-L13, ch/qos/logback/classic/pattern/NamedConverter.java#L1-L13, ch/qos/logback/classic/pattern/NopThrowableInformationConverter.java#L1-L13, ch/qos/logback/classic/pattern/PrefixCompositeConverter.java#L1-L13, ch/qos/logback/classic/pattern/PropertyConverter.java#L1-L13, ch/qos/logback/classic/pattern/RelativeTimeConverter.java#L1-L13, ch/qos/logback/classic/pattern/RootCauseFirstThrowableProxyConverter.java#L1-L13, ch/qos/logback/classic/pattern/SequenceNumberConverter.java#L1-L13, ch/qos/logback/classic/pattern/SyslogStartConverter.java#L1-L13, ch/qos/logback/classic/pattern/TargetLengthBasedClassNameAbbreviator.java#L1-L13, ch/qos/logback/classic/pattern/TargetLengthBasedClassNameAbbreviator2.java#L1-L13, ch/qos/logback/classic/pattern/ThreadConverter.java#L1-L13, ch/qos/logback/classic/pattern/ThrowableHandlingConverter.java#L1-L13, ch/qos/logback/classic/pattern/ThrowableProxyConverter.java#L1-L13, ch/qos/logback/classic/pattern/Util.java#L1-L13, ch/qos/logback/classic/pattern/color/HighlightingCompositeConverter.java#L1-L13, ch/qos/logback/classic/selector/ContextJNDISelector.java#L1-L13, ch/qos/logback/classic/selector/ContextSelector.java#L1-L13, ch/qos/logback/classic/selector/DefaultContextSelector.java#L1-L13, ch/qos/logback/classic/selector/servlet/ContextDetachingSCL.java#L1-L13, ch/qos/logback/classic/selector/servlet/LoggerContextFilter.java#L1-L13, ch/qos/logback/classic/servlet/LogbackServletContainerInitializer.java#L1-L13, ch/qos/logback/classic/servlet/LogbackServletContextListener.java#L1-L13, ch/qos/logback/classic/sift/ContextBasedDiscriminator.java#L1-L13, ch/qos/logback/classic/sift/JNDIBasedContextDiscriminator.java#L1-L13, ch/qos/logback/classic/sift/MDCBasedDiscriminator.java#L1-L13, ch/qos/logback/classic/sift/SiftingAppender.java#L1-L13, ch/qos/logback/classic/spi/CallerData.java#L1-L13, ch/qos/logback/classic/spi/ClassPackagingData.java#L1-L13, ch/qos/logback/classic/spi/Configurator.java#L1-L13, ch/qos/logback/classic/spi/ConfiguratorRank.java#L1-L13, ch/qos/logback/classic/spi/EventArgUtil.java#L1-L13, ch/qos/logback/classic/spi/ILoggingEvent.java#L1-L13, ch/qos/logback/classic/spi/IThrowableProxy.java#L1-L13, ch/qos/logback/classic/spi/LogbackServiceProvider.java#L1-L13, ch/qos/logback/classic/spi/LoggerComparator.java#L1-L13, ch/qos/logback/classic/spi/LoggerContextAware.java#L1-L13, ch/qos/logback/classic/spi/LoggerContextAwareBase.java#L1-L13, ch/qos/logback/classic/spi/LoggerContextListener.java#L1-L13, ch/qos/logback/classic/spi/LoggerContextVO.java#L1-L13, ch/qos/logback/classic/spi/LoggerRemoteView.java#L1-L13, ch/qos/logback/classic/spi/LoggingEventVO.java#L1-L13, ch/qos/logback/classic/spi/PackagingDataCalculator.java#L1-L13, ch/qos/logback/classic/spi/PlatformInfo.java#L1-L13, ch/qos/logback/classic/spi/STEUtil.java#L1-L13, ch/qos/logback/classic/spi/StackTraceElementProxy.java#L1-L13, ch/qos/logback/classic/spi/ThrowableProxy.java#L1-L13, ch/qos/logback/classic/spi/ThrowableProxyUtil.java#L1-L13, ch/qos/logback/classic/spi/ThrowableProxyVO.java#L1-L13, ch/qos/logback/classic/spi/ThrowableProxyVOBuilder.java#L1-L13, ch/qos/logback/classic/spi/TurboFilterList.java#L1-L13, ch/qos/logback/classic/turbo/DuplicateMessageFilter.java#L1-L13, ch/qos/logback/classic/turbo/DynamicThresholdFilter.java#L1-L13, ch/qos/logback/classic/turbo/LRUMessageCache.java#L1-L13, ch/qos/logback/classic/turbo/MDCFilter.java#L1-L13, ch/qos/logback/classic/turbo/MDCValueLevelPair.java#L1-L13, ch/qos/logback/classic/turbo/MarkerFilter.java#L1-L13, ch/qos/logback/classic/turbo/MatchingFilter.java#L1-L13, ch/qos/logback/classic/turbo/TurboFilter.java#L1-L13, ch/qos/logback/classic/tyler/TylerConfiguratorBase.java#L1-L13, ch/qos/logback/classic/tyler/VariableModelHelper.java#L1-L13, ch/qos/logback/classic/util/ClassicEnvUtil.java#L1-L13, ch/qos/logback/classic/util/ClassicVersionUtil.java#L1-L13, ch/qos/logback/classic/util/ContextInitializer.java#L1-L13, ch/qos/logback/classic/util/ContextSelectorStaticBinder.java#L1-L13, ch/qos/logback/classic/util/CopyOnInheritThreadLocal.java#L1-L13, ch/qos/logback/classic/util/DefaultJoranConfigurator.java#L1-L13, ch/qos/logback/classic/util/LevelToSyslogSeverity.java#L1-L13, ch/qos/logback/classic/util/LevelUtil.java#L1-L13, ch/qos/logback/classic/util/LogbackMDCAdapter.java#L1-L13, ch/qos/logback/classic/util/LoggerNameUtil.java#L1-L13, ch/qos/logback/classic/util/StatusViaSLF4JLoggerFactory.java#L1-L13
+/*
+ * Logback: the reliable, generic, fast and flexible logging framework.
+ * Copyright (C) 1999-2026, QOS.ch. All rights reserved.
+ *
+ * This program and the accompanying materials are dual-licensed under
+ * either the terms of the Eclipse Public License v2.0 as published by
+ * the Eclipse Foundation
+ *
+ *   or (per the licensee's choosing)
+ *
+ * under the terms of the GNU Lesser General Public License version 2.1
+ * as published by the Free Software Foundation.
+ */
+
+Source entries: ch/qos/logback/classic/Logger.java#L749-L761
+/**
+     * Method that calls the attached TurboFilter objects based on the logger and
+     * the level.
+     * 
+     * <p>It is used by isXYZEnabled() methods such as {@link #isDebugEnabled()},
+     * {@link #isInfoEnabled()} etc.
+     * </p>
+     *
+     * <p>It returns the typical FilterReply values: ACCEPT, NEUTRAL or DENY.
+     * </p>
+     * @param level
+     * @return the reply given by the TurboFilters
+     */
+
+Source entries: ch/qos/logback/classic/Logger.java#L766-L778
+/**
+     * Method that calls the attached TurboFilter objects based on this logger and
+     * {@link org.slf4j.event.LoggingEvent  LoggingEvent}.
+     *
+     * <p>This method is typically called by
+     * {@link #log(org.slf4j.event.LoggingEvent) log(LoggingEvent)} method.</p>
+     *
+     * <p>It returns {@link FilterReply} values: ACCEPT, NEUTRAL or DENY.
+     * </p>
+     *
+     * @param slf4jEvent the SLF4J LoggingEvent
+     * @return the reply given by the TurboFilters
+     */
+
+Source entries: ch/qos/logback/classic/log4j/XMLLayout.java#L28-L30
+// Code is based on revision 309623 of org.apache.log4j.xml.XMLLayout dated "Wed
+// Jul 31 09:25:14 2002 UTC" as authored by Ceki Gulcu.
+// See also http://tinyurl.com/dch9mr
+
+Source entries: ch/qos/logback/classic/model/processor/ConfigurationModelHandlerFull.java#L110-L118
+/**
+     * Schedules a task to monitor configuration changes and reconfigure the application when changes are detected.
+     * The task periodically scans for changes based on the given scan period and reconfigures the system if needed.
+     * This method ensures a valid configuration watch is in place before scheduling the task.
+     *
+     * @param scanPeriodStr the string value representing the scanning period, which will determine how often
+     *                      the task checks for configuration changes. The value is expected to have undergone
+     *                      necessary variable substitution for the current environment.
+     */
+
+Source entries: ch/qos/logback/classic/pattern/LocalSequenceNumberConverter.java#L19-L28
+/**
+ * A converters based on a locally incremented sequence number. The sequence
+ * number is initialized to the number of milliseconds elapsed since 1970-01-01
+ * until this instance is initialized.
+ *
+ * <p>
+ * <b>EXPERIMENTAL</b> This class is experimental and may be removed in the
+ * future.
+ *
+ */
+
+Source entries: ch/qos/logback/classic/spi/CallerData.java#L48-L51
+/**
+     * Extract caller data information as an array based on a Throwable passed as
+     * parameter
+     */
+
+Source entries: ch/qos/logback/classic/spi/LoggingEvent.java#L1-L11
+/**
+ * Logback: the reliable, generic, fast and flexible logging framework. Copyright (C) 1999-2015, QOS.ch. All rights
+ * reserved.
+ *
+ * This program and the accompanying materials are dual-licensed under either the terms of the Eclipse Public License
+ * v1.0 as published by the Eclipse Foundation
+ *
+ * or (per the licensee's choosing)
+ *
+ * under the terms of the GNU Lesser General Public License version 2.1 as published by the Free Software Foundation.
+ */
+
+Source entries: ch/qos/logback/classic/turbo/DynamicThresholdFilter.java#L25-L129
+/**
+ * This filter allows for efficient course grained filtering based on criteria
+ * such as product name or company name that would be associated with requests
+ * as they are processed.
+ * 
+ * <p>
+ * This filter will allow you to associate threshold levels to a key put in the
+ * MDC. This key can be any value specified by the user. Furthermore, you can
+ * pass MDC value and level threshold associations, which are then looked up to
+ * find the level threshold to apply to the current logging request. If no level
+ * threshold could be found, then a 'default' value specified by the user is
+ * applied. We call this value 'levelAssociatedWithMDCValue'.
+ * 
+ * <p>
+ * If 'levelAssociatedWithMDCValue' is higher or equal to the level of the
+ * current logger request, the
+ * {@link #decide(Marker, Logger, Level, String, Object[], Throwable) decide()}
+ * method returns the value of {@link #getOnHigherOrEqual() onHigherOrEqual}, if
+ * it is lower than the value of {@link #getOnLower() onLower} is returned. Both
+ * 'onHigherOrEqual' and 'onLower' can be set by the user. By default,
+ * 'onHigherOrEqual' is set to NEUTRAL and 'onLower' is set to DENY. Thus, if
+ * the current logger request's level is lower than
+ * 'levelAssociatedWithMDCValue', then the request is denied, and if it is
+ * higher or equal, then this filter decides NEUTRAL letting subsequent filters
+ * to make the decision on the fate of the logging request.
+ * 
+ * <p>
+ * The example below illustrates how logging could be enabled for only
+ * individual users. In this example all events for logger names matching
+ * "com.mycompany" will be logged if they are for 'user1' and at a level higher
+ * than equals to DEBUG, and for 'user2' if they are at a level higher than or
+ * equal to TRACE, and for other users only if they are at level ERROR or
+ * higher. Events issued by loggers other than "com.mycompany" will only be
+ * logged if they are at level ERROR or higher since that is all the root logger
+ * allows.
+ * 
+ * <pre>
+ * &lt;configuration&gt;
+ *   &lt;appender name="STDOUT"
+ *             class="ch.qos.logback.core.ConsoleAppender"&gt;
+ *     &lt;layout class="ch.qos.logback.classic.PatternLayout"&gt;
+ *       &lt;Pattern>TEST %d{HH:mm:ss.SSS} [%thread] %-5level %logger{36} - %msg%n&lt;/Pattern>
+ *     &lt;/layout&gt;
+ *   &lt;/appender&gt;
+ *   
+ *   &lt;turboFilter class=&quot;ch.qos.logback.classic.turbo.DynamicThresholdFilter&quot;&gt;
+ *     &lt;Key&gt;userId&lt;/Key&gt;
+ *     &lt;DefaultThreshold&gt;ERROR&lt;/DefaultThreshold&gt;
+ *     &lt;MDCValueLevelPair&gt;
+ *       &lt;value&gt;user1&lt;/value&gt;
+ *       &lt;level&gt;DEBUG&lt;/level&gt;
+ *     &lt;/MDCValueLevelPair&gt;
+ *     &lt;MDCValueLevelPair&gt;
+ *       &lt;value&gt;user2&lt;/value&gt;
+ *       &lt;level&gt;TRACE&lt;/level&gt;
+ *     &lt;/MDCValueLevelPair&gt;
+ *   &lt;/turboFilter&gt;
+ *   
+ *   &lt;logger name="com.mycompany" level="TRACE"/&gt;
+ *   
+ *   &lt;root level="ERROR" &gt;
+ *     &lt;appender-ref ref="STDOUT" /&gt;
+ *   &lt;/root&gt;
+ * &lt;/configuration&gt;
+ * </pre>
+ * 
+ * In the next configuration events from user1 and user2 will be logged
+ * regardless of the logger levels. Events for other users and records without a
+ * userid in the MDC will be logged if they are ERROR level messages. With this
+ * configuration, the root level is never checked since DynamicThresholdFilter
+ * will either accept or deny all records.
+ * 
+ * <pre>
+ * &lt;configuration&gt;
+ *   &lt;appender name="STDOUT"
+ *             class="ch.qos.logback.core.ConsoleAppender"&gt;
+ *     &lt;layout class="ch.qos.logback.classic.PatternLayout"&gt;
+ *        &lt;Pattern>TEST %d{HH:mm:ss.SSS} [%thread] %-5level %logger{36} - %msg%n&lt;/Pattern>
+ *     &lt;/layout&gt;
+ *   &lt;/appender&gt;
+ *   
+ *   &lt;turboFilter class=&quot;ch.qos.logback.classic.turbo.DynamicThresholdFilter&quot;&gt;
+ *     &lt;Key&gt;userId&lt;/Key&gt;
+ *     &lt;DefaultThreshold&gt;ERROR&lt;/DefaultThreshold&gt;
+ *     &lt;OnHigherOrEqual&gt;ACCEPT&lt;/OnHigherOrEqual&gt;
+ *     &lt;OnLower&gt;DENY&lt;/OnLower&gt;
+ *     &lt;MDCValueLevelPair&gt;
+ *       &lt;value&gt;user1&lt;/value&gt;
+ *       &lt;level&gt;TRACE&lt;/level&gt;
+ *     &lt;/MDCValueLevelPair&gt;
+ *     &lt;MDCValueLevelPair&gt;
+ *       &lt;value&gt;user2&lt;/value&gt;
+ *       &lt;level&gt;TRACE&lt;/level&gt;
+ *     &lt;/MDCValueLevelPair&gt;
+ *   &lt;/turboFilter&gt;
+ *   
+ *   &lt;root level="DEBUG" &gt;
+ *     &lt;appender-ref ref="STDOUT" /&gt;
+ *   &lt;/root&gt;
+ * &lt;/configuration&gt;
+ * </pre>
+ * 
+ * @author Ralph Goers
+ * @author Ceki G&uuml;lc&uuml;
+ */
+
+Source entries: ch/qos/logback/classic/turbo/MDCFilter.java#L23-L42
+/**
+ * This class allows output for a given MDC value.
+ * 
+ * <p>
+ * When the given value is identified by this TurboFilter, the reply is based on
+ * the OnMatch option. The information is taken from the MDC. For this
+ * TurboFilter to work, one must set the key that will be used to access the
+ * information in the MDC.
+ * 
+ * <p>
+ * To allow output for the value, set the OnMatch option to ACCEPT. To disable
+ * output for the given value, set the OnMatch option to DENY.
+ * 
+ * <p>
+ * By default, values of the OnMatch and OnMisMatch options are set to NEUTRAL.
+ * 
+ *
+ * @author Ceki G&uuml;lc&uuml;
+ * @author S&eacute;bastien Pennec
+ */
+
+Source entries: ch/qos/logback/classic/turbo/TurboFilter.java#L43-L56
+/**
+     * Make a decision based on the multiple parameters passed as arguments. The
+     * returned value should be one of <code>{@link FilterReply#DENY}</code>,
+     * <code>{@link FilterReply#NEUTRAL}</code>, or
+     * <code>{@link FilterReply#ACCEPT}</code>.
+     * 
+     * @param marker
+     * @param logger
+     * @param level
+     * @param format
+     * @param params
+     * @param t
+     * @return
+     */
+
+Source entries: ch/qos/logback/classic/util/ClassicVersionUtil.java#L23-L30
+/**
+ * Utility class for retrieving version information for the "logback-classic" module.
+ * This class provides functionality to read and parse self-declared properties files
+ * containing version metadata specific to the logback-classic module.
+ *
+ * It includes methods to locate the version properties file, extract the version string
+ * based on specified conventions, and return the retrieved information.
+ */
+
+Source entries: ch/qos/logback/classic/util/ClassicVersionUtil.java#L64-L77
+/**
+     * Retrieves the version information for the "logback-classic" module based on its self-declared properties.
+     * The method looks for a properties file named "logback-classic-version.properties" within the classpath,
+     * reads its contents, and fetches the value associated with the "logback-classic-version" key.
+     *
+     * <p>Note that the Class.getResourceAsStream() method checks that the resource is open to the
+     * caller. This entails that the caller must be in the same module as the properties file.
+     * </p>
+     *
+     * @return the version string of the "logback-classic" module if found, or null if the properties file or version
+     *         key is not present or an error occurs while reading the properties file.
+     *
+     * @since 1.5.26
+     */
+

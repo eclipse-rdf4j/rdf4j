@@ -547,6 +547,11 @@ namespace workbench {
             add: 'Add RDF', remove: 'Remove', clear: 'Clear', update: 'SPARQL Update', server: 'Connection'
         };
 
+        /** The short name of a page ("Query", "Saved queries"), or '' for a page without one. */
+        export function pageName(viewId: string): string {
+            return shortTitles[viewId] || '';
+        }
+
         /** "Page · repository — RDF4J Workbench", matching the title the server writes into the shell. */
         export function documentTitle(viewId: string, repositoryId: string): string {
             const page = shortTitles[viewId];
@@ -910,11 +915,16 @@ namespace workbench {
          * The repository whose Graph page "Add to graph" feeds (workbench.graphAdditions), or undefined when this
          * page has no repository or the Graph page is hidden by the Workbench policy.
          */
-        export function graphContext(context: ViewContext): { basePath: string; repositoryId: string; serverIdentity: string } {
+        export function graphContext(context: ViewContext): { basePath: string; repositoryId: string; serverIdentity: string; serverUser: string } {
             if (!context || !context.repositoryId || !context.serverIdentity || !(workbench as any).graphAdditions || !pageEnabled(context, 'graph')) {
                 return undefined;
             }
-            return { basePath: context.basePath || '', repositoryId: context.repositoryId, serverIdentity: context.serverIdentity };
+            return {
+                basePath: context.basePath || '',
+                repositoryId: context.repositoryId,
+                serverIdentity: context.serverIdentity,
+                serverUser: serverUser(context)
+            };
         }
 
         /**
@@ -1273,7 +1283,14 @@ namespace workbench {
             <main id="content" class="workbench-main">${outlet}</main>
             <p id="workbench-route-status" class="workbench-visually-hidden" role="status" aria-live="polite"></p>
             <div id="workbench-kept-alive" hidden inert></div>
-            <div id="footer" class="workbench-footer"><div>Copyright © Eclipse RDF4J contributors</div></div>`;
+            <div id="footer" class="workbench-footer"><div>
+                <span>Copyright © Eclipse RDF4J contributors</span>
+                <nav aria-label="Legal information" class="workbench-footer__legal">
+                    <a href=${context.basePath + '/legal/NOTICE.md'}>Project notice</a>
+                    <a href=${context.basePath + '/legal/edl-v1.0.txt'}>License</a>
+                    <a href=${context.basePath + '/legal/third-party-notices.html'}>Third-party notices</a>
+                </nav>
+            </div></div>`;
         }
 
         /**
@@ -2001,6 +2018,10 @@ namespace workbench {
             'rdfs-dt': 'Adds RDF Schema and direct type inference.',
             lucene: 'Adds Lucene full-text search.',
             'rdfs-lucene': 'Adds RDF Schema inference and Lucene full-text search.',
+            'rdfs-shacl': 'Adds RDF Schema inference and validates every change against SHACL shapes.',
+            'shacl-lucene': 'Adds Lucene full-text search and validates every change against SHACL shapes.',
+            'rdfs-shacl-lucene': 'Adds RDF Schema inference and Lucene full-text search, '
+                + 'and validates every change against SHACL shapes.',
             customrule: 'Adds inference from a rule written as a graph query.',
             shacl: 'Validates every change against SHACL shapes.'
         };
@@ -4855,7 +4876,9 @@ namespace workbench {
                     data-editor-namespaces-enabled=${queryFeatureEnabled(context, 'editor-namespaces') ? 'true' : 'false'}
                     ?hidden=${!queryFeatureEnabled(context, 'editor-namespaces')}
                     @click=${() => invoke('workbench.query.insertPrefixes')}>Insert prefixes</button></div>`);
-            return h`<div id="query-page" class="query-page"
+            // Query tabs (G2): the tab row is the island's top part and the editor sits flush under it.
+            const tabsEnabled = queryFeatureEnabled(context, 'query-tabs');
+            return h`<div id="query-page" class=${tabsEnabled ? 'query-page query-page--tabs' : 'query-page'}
                     data-query-server-url=${text(info.server)} data-query-repository-id=${context.repositoryId}
                     data-editor-fullscreen-enabled=${queryFeatureEnabled(context, 'editor-fullscreen') ? 'true' : 'false'}>
                 <form id="query-form" action="query" method="post"
@@ -4866,6 +4889,7 @@ namespace workbench {
                     <input type="hidden" name="include-query-text" id="include-query-text" value="false" />
                     <input type="hidden" name="query-request-id" id="query-request-id" value="" />
                     <div class="query-form">
+                        ${tabsEnabled ? h`<div id="query-tabs" class="query-tabs"></div>` : ''}
                         <div id="query-language-row" class="query-form__row"
                             ?hidden=${hideQueryLanguageRow || !languageEnabled}>
                             <label class="query-form__label" for="queryLn">Query language</label>
@@ -5030,11 +5054,32 @@ namespace workbench {
             'saved-queries': true, export: true, update: true, add: true, remove: true, clear: true, config: true
         };
 
+        /** A page of one repository: switching repositories restores the page left there (workbench.workspace). */
+        export function isRepositoryScoped(viewId: string): boolean {
+            return repositoryScopedViews[viewId] === true;
+        }
+
         /** Where choosing a repository in the switcher leads: the same view when it is repository-scoped. */
         export function repositorySwitchTarget(basePath: string, activeView: string, repositoryId: string,
                                                fallback?: string): string {
             const view = repositoryScopedViews[activeView] ? activeView : fallback || 'summary';
             return (basePath || '').replace(/\/+$/, '') + '/repositories/' + encodeURIComponent(repositoryId) + '/' + view;
+        }
+
+        /** What this browser keeps for repositories this user no longer sees on the server goes (workbench.workspace). */
+        function forgetMissingRepositories(document: any, repositories: any[]): void {
+            const shared: any = (workbench as any).workspace;
+            const app = document && document.getElementById ? document.getElementById('workbench-app') : null;
+            const identity = app ? app.getAttribute('data-workbench-server-identity') : '';
+            if (!shared || typeof shared.forgetMissingRepositories !== 'function' || !identity) {
+                return;
+            }
+            try {
+                shared.forgetMissingRepositories(shared.serverDigest(identity),
+                    app.getAttribute('data-workbench-server-user') || '', repositories.map((repository: any) => repository.id));
+            } catch (error) {
+                // What the browser keeps for them stays.
+            }
         }
 
         function repositoryOptions(panel: any): any[] {
@@ -5066,6 +5111,8 @@ namespace workbench {
                 link.setAttribute('href', repositorySwitchTarget(basePath, activeView, repository.id,
                     panel.getAttribute('data-workbench-switch-fallback') || 'summary'));
                 link.setAttribute('data-repository-id', repository.id);
+                // The router opens the repository as it was left in this browser (workbench.workspace).
+                link.setAttribute('data-workbench-repository-switch', 'true');
                 link.setAttribute('data-repository-search', (repository.id + ' ' + repository.title).toLowerCase());
                 if (repository.id === currentId) {
                     link.setAttribute('aria-current', 'true');
@@ -5129,6 +5176,11 @@ namespace workbench {
             if (status && !panel.__rdf4jRepositories) { status.textContent = 'Loading repositories…'; }
             const url = new URL(panel.getAttribute('data-workbench-repositories-url'), window.location.href).toString();
             const loading = app.loadModel(window.fetch.bind(window), url).then((model: any) => {
+                if (model.error) {
+                    // An error page (the server unreachable, say) is not an empty list: nothing is forgotten for it.
+                    model.rowStore.dispose();
+                    throw model.error;
+                }
                 return model.rowStore.read(0, model.rowCount).then((rows: any[][]) => {
                     model.rowStore.dispose();
                     return recordsFromRows(model, rows).map((record: any) => ({
@@ -5141,6 +5193,7 @@ namespace workbench {
             }).then((repositories: any[]) => {
                 panel.__rdf4jRepositoriesLoading = null;
                 panel.__rdf4jRepositoriesLoaded = true;
+                forgetMissingRepositories(panel.ownerDocument, repositories);
                 const shown = panel.__rdf4jRepositories;
                 panel.__rdf4jRepositories = repositories;
                 // An unchanged list is left alone, so keyboard focus in it stays where it is.
@@ -5432,6 +5485,18 @@ namespace workbench {
             return mount;
         }
 
+        /** Lists of rows shorter than this are far below any browser's scroll capacity and are not measured against it. */
+        const LIST_CAPACITY_CHECK_HEIGHT = 1000000;
+
+        /** Room kept below compressed list rows for what follows them on the page (a trailing row, the footer). */
+        const LIST_PAGE_RESERVE = 8192;
+
+        /** What an arrow key or a wheel line scrolls a compressed list by, as browsers scroll a page. */
+        const LIST_LINE_STEP = 40;
+
+        /** How long the page must stop scrolling after a lifted finger before a touch swipe counts as over. */
+        const LIST_TOUCH_SETTLE_MS = 300;
+
         /** Keep streamed route rows in the worker store and render only viewport windows. */
         export function bindRowWindows(mount: any, model: PageModel, context: ViewContext,
                                        runtime: LitRuntime): Promise<() => void> {
@@ -5629,12 +5694,144 @@ namespace workbench {
                 const targets = elements('[data-workbench-row-table="true"], [data-workbench-row-list="true"]');
                 return targets.length ? targets[0] : null;
             };
-            /** How far the rows' top has scrolled past the top of the window. */
-            const rowScrollTop = (target: any): number => {
-                const rectangle = target.getBoundingClientRect ? target.getBoundingClientRect() : { top: 0 };
-                return Math.max(0, -Number(rectangle.top || 0));
+            /** The box of the rows themselves: a table's body (below its header), or the list. */
+            const rowsBox = (target: any): any => {
+                const body = target.tagName === 'TABLE' && typeof target.querySelector === 'function'
+                    ? target.querySelector('tbody') : null;
+                return body || target;
             };
+            /** How far the rows' top is above the top of the window (negative while they start lower down). */
+            const rowsOffset = (target: any): number => {
+                const box = rowsBox(target);
+                const rectangle = box.getBoundingClientRect ? box.getBoundingClientRect() : { top: 0 };
+                return -Number(rectangle.top || 0);
+            };
+            /** How far the rows' top has scrolled past the top of the window. */
+            const rowScrollTop = (target: any): number => Math.max(0, rowsOffset(target));
             let windowScrollTop = 0;
+
+            /*
+             * A list taller than the browser can lay out (a million named graphs is about 45 million px of rows; browsers
+             * stop at 16 to 33 million) scrolls with the page in compressed coordinates, as the Query page's results do in
+             * their own box: the rows take what is left of the browser's scroll capacity, and the page's scroll position
+             * maps onto the rows' logical offset, one to one near both ends (queryStream.ResultScrollCoordinates). The
+             * wheel, the scroll keys and touch swipes move the rows by the distance they scroll, not by the compressed
+             * scroll bar's scale.
+             */
+            const ScrollCoordinates = stream && stream.ResultScrollCoordinates;
+            let scrollCapacity = 0;
+            let coordinates: any = null;
+            /** The logical offset shown, and the offset into the rows (in page pixels) it was shown at. */
+            const position = { logical: 0, committed: NaN };
+            let touchScrolling = false;
+            let fingerDown = false;
+            let touchSettleTimer: any = null;
+            /** Set by End (and Ctrl or Cmd+Down): keep going to the bottom until the last row is on screen. */
+            let endIntent = false;
+
+            const pageDocument = (): any => targetWindow.document || (mount && mount.ownerDocument) || null;
+
+            /** Turns compressed coordinates on or off for rows logicalHeight tall that start at the page offset above. */
+            const updateCompression = (target: any, above: number, logicalHeight: number, viewportHeight: number) => {
+                const document = pageDocument();
+                if (!coordinates && (logicalHeight < LIST_CAPACITY_CHECK_HEIGHT || typeof ScrollCoordinates !== 'function'
+                        || !document || typeof stream.measureScrollCapacity !== 'function')) {
+                    return;
+                }
+                if (!scrollCapacity) {
+                    scrollCapacity = stream.measureScrollCapacity(document, target.tagName === 'TABLE');
+                }
+                const rowsCapacity = scrollCapacity - Math.max(0, above) - LIST_PAGE_RESERVE;
+                if (logicalHeight <= rowsCapacity) {
+                    if (coordinates) {
+                        coordinates = null;
+                        position.committed = NaN;
+                    }
+                    return;
+                }
+                if (!coordinates) {
+                    coordinates = new ScrollCoordinates(Math.max(1, rowsCapacity));
+                    position.committed = NaN;
+                } else {
+                    coordinates.setCapacity(Math.max(1, rowsCapacity));
+                }
+                coordinates.update(logicalHeight, viewportHeight);
+            };
+
+            /** The logical offset for the rows scrolled offset px into the page (see position). */
+            const logicalPosition = (offset: number): number => {
+                if (Math.abs(offset - position.committed) < 1) {
+                    return position.logical;
+                }
+                if (touchScrolling) {
+                    // A swipe moves the rows as far as the finger moved, not by the compressed scroll bar's scale.
+                    return Math.max(0, Math.min(coordinates.maximumOffset, position.logical + offset - position.committed));
+                }
+                return coordinates.logicalOffset(offset);
+            };
+
+            /** The rows to read for the page's scroll position, and where they are placed. */
+            const planWindow = (target: any, viewportHeight: number): any => {
+                const offset = rowScrollTop(target);
+                const box = rowsBox(target);
+                const top = box.getBoundingClientRect ? Number(box.getBoundingClientRect().top || 0) : 0;
+                updateCompression(target, (Number(targetWindow.scrollY) || 0) + top, heights.offsetOf(model.rowCount),
+                    viewportHeight);
+                if (!coordinates) {
+                    return { offset, logical: offset, compressed: false,
+                        range: heights.range(offset, viewportHeight, 4, 80) };
+                }
+                const physicalRange = Math.max(0, coordinates.physicalHeight - viewportHeight);
+                const physical = Math.min(physicalRange, offset);
+                const logical = logicalPosition(physical);
+                position.logical = logical;
+                position.committed = physical;
+                const anchor = heights.range(logical, 0, 0, 1).start;
+                return { offset: physical, logical, compressed: true, anchor, within: logical - heights.offsetOf(anchor),
+                    atEnd: coordinates.maximumOffset > 0 && logical >= coordinates.maximumOffset - 0.5,
+                    range: heights.range(logical, viewportHeight, 4, 80) };
+            };
+
+            /** The spacers above and below a window of rows from start to end. */
+            const spacersFor = (plan: any, start: number, end: number): { top: number; bottom: number } => {
+                if (!plan.compressed) {
+                    return { top: heights.offsetOf(start), bottom: heights.offsetOf(model.rowCount) - heights.offsetOf(end) };
+                }
+                return coordinates.spacers(heights.offsetOf(start), heights.offsetOf(end) - heights.offsetOf(start),
+                    plan.offset, plan.logical);
+            };
+
+            /** Places the planned rows again after their measured heights changed the list's geometry. */
+            const replan = (plan: any, viewportHeight: number): any => {
+                if (!plan.compressed) {
+                    return { ...plan, range: heights.range(plan.offset, viewportHeight, 4, 80) };
+                }
+                coordinates.update(heights.offsetOf(model.rowCount), viewportHeight);
+                const logical = plan.atEnd ? coordinates.maximumOffset : Math.max(0,
+                    Math.min(coordinates.maximumOffset, heights.offsetOf(plan.anchor) + plan.within));
+                position.logical = logical;
+                position.committed = plan.offset;
+                return { ...plan, logical, range: heights.range(logical, viewportHeight, 4, 80) };
+            };
+
+            /**
+             * Row heights are estimates until rows are rendered, so measuring the last rows makes the list taller after
+             * End scrolled the page to what was its bottom. Until the last row is on screen, keep going to the new bottom.
+             */
+            const followListEnd = (renderedEnd: number) => {
+                const document = pageDocument();
+                const documentElement = document && document.documentElement;
+                if (!endIntent || !documentElement || typeof targetWindow.scrollTo !== 'function') {
+                    return;
+                }
+                const atBottom = (Number(targetWindow.scrollY) || 0) + (Number(targetWindow.innerHeight) || 0)
+                    >= documentElement.scrollHeight - 2;
+                if (renderedEnd >= model.rowCount && atBottom) {
+                    endIntent = false;
+                    return;
+                }
+                targetWindow.scrollTo(Number(targetWindow.scrollX) || 0, documentElement.scrollHeight);
+            };
 
             const refreshRows = (paint: boolean = true): Promise<void> => {
                 if (!hasRows || disposed) { return Promise.resolve(); }
@@ -5642,37 +5839,209 @@ namespace workbench {
                 heights.resize(model.rowCount);
                 const target = rowTarget();
                 if (!target) { return Promise.resolve(); }
-                const scrollTop = rowScrollTop(target);
-                windowScrollTop = scrollTop;
+                windowScrollTop = rowScrollTop(target);
                 const viewportHeight = Math.max(1, Number(targetWindow.innerHeight) || 600);
-                const range = heights.range(scrollTop, viewportHeight, 4, 80);
+                const plan = planWindow(target, viewportHeight);
+                const range = plan.range;
+                if (target.style) {
+                    // The rows are placed for the scroll position, which anchoring must not move.
+                    target.style.overflowAnchor = plan.compressed ? 'none' : '';
+                }
                 const rowWindow = repositorySortedRows
                     ? Promise.resolve(repositorySortedRows.slice(range.start, range.end))
                     : model.rowStore.read(range.start, range.end - range.start);
                 return rowWindow.then((rows: any[][]) => {
                     if (disposed || activeGeneration !== generation) { return; }
+                    const spacers = spacersFor(plan, range.start, range.end);
                     model.rows = rows;
                     model.rowStart = range.start;
-                    model.rowTopSpacer = range.topSpacer;
-                    model.rowBottomSpacer = range.bottomSpacer;
+                    model.rowTopSpacer = spacers.top;
+                    model.rowBottomSpacer = spacers.bottom;
                     if (paint) { renderCurrentRows(); }
                     measureRows(range.start, range.end);
-                    const measuredRange = heights.range(scrollTop, viewportHeight, 4, 80);
-                    const topSpacer = heights.offsetOf(measuredRange.start);
-                    const bottomSpacer = heights.offsetOf(model.rowCount) - heights.offsetOf(measuredRange.end);
+                    const measured = replan(plan, viewportHeight);
+                    const measuredRange = measured.range;
+                    const measuredSpacers = spacersFor(measured, range.start, range.end);
                     const moved = measuredRange.start !== range.start || measuredRange.end !== range.end;
-                    const spacerChanged = Math.abs(topSpacer - model.rowTopSpacer) > 0.5
-                        || Math.abs(bottomSpacer - model.rowBottomSpacer) > 0.5;
+                    const spacerChanged = Math.abs(measuredSpacers.top - model.rowTopSpacer) > 0.5
+                        || Math.abs(measuredSpacers.bottom - model.rowBottomSpacer) > 0.5;
                     if (moved) {
                         return refreshRows(paint);
                     }
                     if (spacerChanged && !disposed) {
-                        model.rowTopSpacer = topSpacer;
-                        model.rowBottomSpacer = bottomSpacer;
+                        model.rowTopSpacer = measuredSpacers.top;
+                        model.rowBottomSpacer = measuredSpacers.bottom;
                         if (paint) { renderCurrentRows(); }
                     }
+                    if (paint) { followListEnd(range.end); }
                 });
             };
+
+            /** The height of the sticky context bar, read from --workbench-contextbar-height. */
+            const stickyOffset = (): number => {
+                const document = pageDocument();
+                if (!document || !document.documentElement || typeof targetWindow.getComputedStyle !== 'function') {
+                    return 0;
+                }
+                const value = parseFloat(targetWindow.getComputedStyle(document.documentElement)
+                    .getPropertyValue('--workbench-contextbar-height'));
+                return isFinite(value) && value > 0 ? value : 0;
+            };
+
+            /** What PageDown scrolls: most of the window below the context bar, as browsers do. */
+            const pageStep = (): number => Math.max(LIST_LINE_STEP,
+                ((Number(targetWindow.innerHeight) || 600) - stickyOffset()) * 0.875);
+
+            /**
+             * Scrolls compressed rows delta logical px (a wheel step, a scroll key) and moves the page to the matching
+             * compressed position. False where the page itself should scroll: while it shows what is above or below the
+             * rows, or when the step would leave them.
+             */
+            const scrollRowsBy = (delta: number): boolean => {
+                const target = coordinates && coordinates.compressed ? rowTarget() : null;
+                if (!target || typeof targetWindow.scrollTo !== 'function') {
+                    return false;
+                }
+                const viewportHeight = Math.max(1, Number(targetWindow.innerHeight) || 600);
+                coordinates.update(heights.offsetOf(model.rowCount), viewportHeight);
+                const offset = rowsOffset(target);
+                if (offset < 0 || offset > Math.max(0, coordinates.physicalHeight - viewportHeight)) {
+                    return false;
+                }
+                const next = logicalPosition(offset) + delta;
+                if (next < 0 || next > coordinates.maximumOffset) {
+                    return false;
+                }
+                endIntent = false;
+                position.logical = next;
+                targetWindow.scrollTo(Number(targetWindow.scrollX) || 0,
+                    (Number(targetWindow.scrollY) || 0) + coordinates.physicalOffset(next) - offset);
+                // The browser can round the scroll position: remember where it is, for the logical offset above.
+                position.committed = rowsOffset(target);
+                refresh();
+                return true;
+            };
+
+            /** True when a wheel or key at target scrolls a box of its own (a panel) rather than the page. */
+            const scrollsOwnBox = (target: any, delta: number): boolean => {
+                const document = pageDocument();
+                for (let element = target; element && element !== document.body && element !== document.documentElement;
+                    element = element.parentElement) {
+                    if (element.scrollHeight > element.clientHeight + 1 && typeof targetWindow.getComputedStyle === 'function'
+                            && /^(?:auto|scroll|overlay)$/.test(targetWindow.getComputedStyle(element).overflowY)
+                            && (delta > 0 ? element.scrollTop + element.clientHeight < element.scrollHeight - 1
+                                : element.scrollTop > 0)) {
+                        return true;
+                    }
+                }
+                return false;
+            };
+
+            const onWheel = (event: any) => {
+                if (event.deltaY < 0) { endIntent = false; }
+                if (!coordinates || !coordinates.compressed || event.defaultPrevented || event.ctrlKey || event.shiftKey
+                        || !event.deltaY) {
+                    return;
+                }
+                const delta = event.deltaY * (event.deltaMode === 1 ? LIST_LINE_STEP
+                    : event.deltaMode === 2 ? pageStep() : 1);
+                if (!scrollsOwnBox(event.target, delta) && scrollRowsBy(delta)) {
+                    event.preventDefault();
+                }
+            };
+
+            const onKeyDown = (event: any) => {
+                const target = event.target;
+                const tag = String(target && target.tagName || '').toUpperCase();
+                const field = !!target && (target.isContentEditable || /^(?:INPUT|TEXTAREA|SELECT)$/.test(tag));
+                endIntent = !field && !event.defaultPrevented && (event.key === 'End'
+                    || (event.key === 'ArrowDown' && (event.metaKey || event.ctrlKey)));
+                if (!coordinates || !coordinates.compressed || field || event.defaultPrevented || event.altKey
+                        || event.ctrlKey || event.metaKey) {
+                    return;
+                }
+                const page = pageStep();
+                const delta = event.key === 'ArrowDown' ? LIST_LINE_STEP : event.key === 'ArrowUp' ? -LIST_LINE_STEP
+                    : event.key === 'PageDown' ? page : event.key === 'PageUp' ? -page
+                        // The browser would scroll the compressed scroll bar a view, many views of rows.
+                        : event.key === ' ' ? (event.shiftKey ? -page : page) : null;
+                if (delta === null) {
+                    return;
+                }
+                // Space still presses a focused button; a focused link passes the scroll keys on to the page.
+                const button = tag === 'BUTTON' || tag === 'SUMMARY'
+                    || (!!target && typeof target.getAttribute === 'function' && target.getAttribute('role') === 'button');
+                const document = pageDocument();
+                const onPage = !target || target === document.body || target === document.documentElement
+                    || (typeof mount.contains === 'function' && mount.contains(target) && !scrollsOwnBox(target, delta));
+                if (onPage && !(event.key === ' ' && button) && scrollRowsBy(delta)) {
+                    event.preventDefault();
+                }
+            };
+
+            /**
+             * A touch swipe scrolls the page natively, momentum included. From touchstart until the page comes to rest
+             * after the finger is lifted (scrollend, or LIST_TOUCH_SETTLE_MS without scrolling), compressed rows move
+             * as far as the swipe scrolled; once it settles, the page is put at the compressed position of the rows.
+             */
+            const stopTouchSettle = () => {
+                if (touchSettleTimer !== null && typeof targetWindow.clearTimeout === 'function') {
+                    targetWindow.clearTimeout(touchSettleTimer);
+                }
+                touchSettleTimer = null;
+            };
+            const endTouchScrolling = () => {
+                stopTouchSettle();
+                if (!touchScrolling) { return; }
+                const target = rowTarget();
+                if (!disposed && target && coordinates && coordinates.compressed
+                        && typeof targetWindow.scrollTo === 'function') {
+                    const viewportHeight = Math.max(1, Number(targetWindow.innerHeight) || 600);
+                    coordinates.update(heights.offsetOf(model.rowCount), viewportHeight);
+                    const offset = rowsOffset(target);
+                    if (offset >= 0 && offset <= Math.max(0, coordinates.physicalHeight - viewportHeight)) {
+                        // Where the swipe took the rows (still one to one), then the page to their compressed position.
+                        const logical = logicalPosition(offset);
+                        position.logical = logical;
+                        targetWindow.scrollTo(Number(targetWindow.scrollX) || 0,
+                            (Number(targetWindow.scrollY) || 0) + coordinates.physicalOffset(logical) - offset);
+                        position.committed = rowsOffset(target);
+                    }
+                }
+                touchScrolling = false;
+                fingerDown = false;
+                if (!disposed) { refresh(); }
+            };
+            const awaitTouchSettle = () => {
+                stopTouchSettle();
+                if (typeof targetWindow.setTimeout === 'function') {
+                    touchSettleTimer = targetWindow.setTimeout(endTouchScrolling, LIST_TOUCH_SETTLE_MS);
+                }
+            };
+            const onTouchStart = (event: any) => {
+                endIntent = false;
+                if (!coordinates || !coordinates.compressed) { return; }
+                touchScrolling = true;
+                fingerDown = true;
+                stopTouchSettle();
+                // The row under the finger can be rendered away during the swipe; touchend still goes to it.
+                const target = event && event.target;
+                if (target && typeof target.addEventListener === 'function') {
+                    const lifted = () => {
+                        target.removeEventListener('touchend', lifted, false);
+                        target.removeEventListener('touchcancel', lifted, false);
+                        fingerDown = false;
+                        awaitTouchSettle();
+                    };
+                    target.addEventListener('touchend', lifted, false);
+                    target.addEventListener('touchcancel', lifted, false);
+                }
+            };
+            const onScrollEnd = () => {
+                if (touchScrolling && !fingerDown) { endTouchScrolling(); }
+            };
+            /** Pressing the scroll bar or the page cancels following End. */
+            const onMouseDown = () => { endIntent = false; };
 
             const refresh = () => {
                 if (!hasRows) { return Promise.resolve(); }
@@ -5724,7 +6093,12 @@ namespace workbench {
                 });
             };
 
-            const onScroll = () => refresh();
+            const onScroll = () => {
+                if (touchScrolling && !fingerDown) {
+                    awaitTouchSettle();
+                }
+                refresh();
+            };
             const onResize = () => refresh();
             const initialPicker = hasPicker && model.rowCount > 0
                 ? model.rowStore.read(0, windowSize).then((rows: any[][]) => {
@@ -5759,6 +6133,11 @@ namespace workbench {
                 if (hasRows && targetWindow.addEventListener) {
                     targetWindow.addEventListener('scroll', onScroll, { passive: true });
                     targetWindow.addEventListener('resize', onResize);
+                    targetWindow.addEventListener('wheel', onWheel, { passive: false });
+                    targetWindow.addEventListener('keydown', onKeyDown, false);
+                    targetWindow.addEventListener('touchstart', onTouchStart, { passive: true });
+                    targetWindow.addEventListener('scrollend', onScrollEnd, false);
+                    targetWindow.addEventListener('mousedown', onMouseDown, false);
                     // A scroll made while the rows were being bound reached no listener: catch up with it.
                     const target = rowTarget();
                     if (target && rowScrollTop(target) !== windowScrollTop) {
@@ -5781,9 +6160,15 @@ namespace workbench {
                     }
                     const regions = rowRegionsByMount.get(regionKey);
                     if (regions && regions.model === model) { rowRegionsByMount.delete(regionKey); }
+                    stopTouchSettle();
                     if (hasRows && targetWindow.removeEventListener) {
                         targetWindow.removeEventListener('scroll', onScroll);
                         targetWindow.removeEventListener('resize', onResize);
+                        targetWindow.removeEventListener('wheel', onWheel);
+                        targetWindow.removeEventListener('keydown', onKeyDown, false);
+                        targetWindow.removeEventListener('touchstart', onTouchStart);
+                        targetWindow.removeEventListener('scrollend', onScrollEnd, false);
+                        targetWindow.removeEventListener('mousedown', onMouseDown, false);
                     }
                 };
             });

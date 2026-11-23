@@ -53,21 +53,30 @@ public class TransactionBenchmark {
 
 	@Setup(Level.Trial)
 	public void beforeClass() throws IOException {
-		// JMH does not correctly set JAVA_HOME. Change the JAVA_HOME below if you the following error:
-		// [EmbeddedElsHandler] INFO p.a.t.e.ElasticServer - could not find java; set JAVA_HOME or ensure java is in
-		// PATH
-		TestHelpers.openClient();
+		boolean initialized = false;
+		try {
+			// JMH does not correctly set JAVA_HOME. Change the JAVA_HOME below if you the following error:
+			// [EmbeddedElsHandler] INFO p.a.t.e.ElasticServer - could not find java; set JAVA_HOME or ensure java is in
+			// PATH
+			TestHelpers.openClient();
 
-		repository = new SailRepository(
-				new ElasticsearchStore(TestHelpers.HOST, TestHelpers.PORT, TestHelpers.CLUSTER, "testindex",
-						ExtensibleStore.Cache.NONE));
-		try (SailRepositoryConnection connection = repository.getConnection()) {
-			connection.begin(IsolationLevels.NONE);
-			connection.add(getResourceAsStream("benchmarkFiles/datagovbe-valid.ttl.gz"), "", RDFFormat.TURTLE);
-			connection.commit();
+			repository = new SailRepository(
+					new ElasticsearchStore(TestHelpers.HOST, TestHelpers.PORT, TestHelpers.CLUSTER, "testindex",
+							ExtensibleStore.Cache.NONE));
+			try (SailRepositoryConnection connection = repository.getConnection();
+					InputStream input = getResourceAsStream("benchmarkFiles/datagovbe-valid.ttl.gz")) {
+				connection.begin(IsolationLevels.NONE);
+				connection.add(input, "", RDFFormat.TURTLE);
+				connection.commit();
+			}
+
+			System.gc();
+			initialized = true;
+		} finally {
+			if (!initialized) {
+				afterClass();
+			}
 		}
-
-		System.gc();
 	}
 
 	private static InputStream getResourceAsStream(String name) {
@@ -79,8 +88,13 @@ public class TransactionBenchmark {
 
 	@TearDown(Level.Trial)
 	public void afterClass() throws IOException {
-		repository.shutDown();
-		TestHelpers.closeClient();
+		try {
+			if (repository != null) {
+				repository.shutDown();
+			}
+		} finally {
+			TestHelpers.closeClient();
+		}
 	}
 
 	@Benchmark

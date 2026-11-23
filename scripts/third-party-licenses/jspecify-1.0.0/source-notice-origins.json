@@ -1,0 +1,69 @@
+{
+  "sourceArchive": "https://repo.maven.apache.org/maven2/org/jspecify/jspecify/1.0.0/jspecify-1.0.0-sources.jar",
+  "archiveSha256": "adf0898191d55937fb3192ba971826f4f294292c4a960740f3c27310e7b70296",
+  "blocks": [
+    {
+      "commentSha256": "db5d10f53c6fd9c12264a7c75e0d5eddca0cff814c3fdde028949098124b4494",
+      "sources": [
+        {
+          "entry": "org/jspecify/annotations/NonNull.java",
+          "sourceSha256": "8390201385dab1ee94cdfbc57832bd907dda815c999d48ca3761274af0b57aac",
+          "startByte": 0,
+          "endByteExclusive": 604,
+          "startLine": 1,
+          "endLine": 15
+        },
+        {
+          "entry": "org/jspecify/annotations/NullUnmarked.java",
+          "sourceSha256": "863266a1f0b280fbb976323d81d6411306fc54bfeaddb3ec19cce4c2147d4846",
+          "startByte": 0,
+          "endByteExclusive": 604,
+          "startLine": 1,
+          "endLine": 15
+        },
+        {
+          "entry": "org/jspecify/annotations/package-info.java",
+          "sourceSha256": "27bc5c9b3ece7f8c38b67288c59e48c93afd4b413dde116f0a9a7793e984ba0f",
+          "startByte": 0,
+          "endByteExclusive": 604,
+          "startLine": 1,
+          "endLine": 15
+        }
+      ]
+    },
+    {
+      "commentSha256": "be83a8129312eda70e3583e5a12f7e2df601a7f435c7501274d46393d2770495",
+      "sources": [
+        {
+          "entry": "org/jspecify/annotations/NullMarked.java",
+          "sourceSha256": "1e4a39f5ca51f7f9cf769e3002d08a7e01a1942bfe86e9923c4607a09ac906f8",
+          "startByte": 0,
+          "endByteExclusive": 609,
+          "startLine": 1,
+          "endLine": 15
+        },
+        {
+          "entry": "org/jspecify/annotations/Nullable.java",
+          "sourceSha256": "416c1b33b4553d97e3361b3e93710c70602ad737b700287e6a2e52ae94fe7164",
+          "startByte": 0,
+          "endByteExclusive": 609,
+          "startLine": 1,
+          "endLine": 15
+        }
+      ]
+    },
+    {
+      "commentSha256": "f59ec622d8f701174c12a25d6c09d65f36c389d030b02456d5a4c5ba6798ad3c",
+      "sources": [
+        {
+          "entry": "org/jspecify/annotations/Nullable.java",
+          "sourceSha256": "416c1b33b4553d97e3361b3e93710c70602ad737b700287e6a2e52ae94fe7164",
+          "startByte": 879,
+          "endByteExclusive": 8226,
+          "startLine": 25,
+          "endLine": 135
+        }
+      ]
+    }
+  ]
+}

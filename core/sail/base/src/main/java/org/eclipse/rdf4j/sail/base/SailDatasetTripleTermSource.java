@@ -34,7 +34,15 @@ import org.eclipse.rdf4j.model.TripleTerm;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.query.QueryEvaluationException;
+import org.eclipse.rdf4j.query.algebra.Graph;
+import org.eclipse.rdf4j.query.algebra.StatementPattern;
 import org.eclipse.rdf4j.query.algebra.evaluation.NativeTripleTermSource;
+import org.eclipse.rdf4j.query.algebra.evaluation.impl.QueryEvaluationContext;
+import org.eclipse.rdf4j.query.algebra.evaluation.impl.restrictions.RestrictionLayout;
+import org.eclipse.rdf4j.query.algebra.evaluation.impl.restrictions.StatementRestrictionSourcePlan;
+import org.eclipse.rdf4j.query.algebra.evaluation.impl.restrictions.StatementRestrictionSourceProvider;
+import org.eclipse.rdf4j.query.algebra.evaluation.impl.restrictions.StatementRestrictionSourceView;
+import org.eclipse.rdf4j.query.algebra.helpers.OriginalPathDescriptor;
 import org.eclipse.rdf4j.sail.SailException;
 import org.eclipse.rdf4j.sail.TripleSourceIterationWrapper;
 
@@ -42,7 +50,7 @@ import org.eclipse.rdf4j.sail.TripleSourceIterationWrapper;
  * Implementation of the TripleSource interface using {@link SailDataset}
  */
 @InternalUseOnly
-public class SailDatasetTripleTermSource implements NativeTripleTermSource {
+public class SailDatasetTripleTermSource implements NativeTripleTermSource, StatementRestrictionSourceProvider {
 
 	private final ValueFactory vf;
 
@@ -66,6 +74,43 @@ public class SailDatasetTripleTermSource implements NativeTripleTermSource {
 	@Experimental
 	public SailDataset getDataset() {
 		return dataset;
+	}
+
+	@Override
+	public StatementRestrictionSourcePlan prepareStatementRestriction(StatementPattern pattern,
+			QueryEvaluationContext context, RestrictionLayout scope) {
+		return stableReadPlan();
+	}
+
+	@Override
+	public StatementRestrictionSourcePlan prepareGraphRestriction(Graph graph, QueryEvaluationContext context,
+			RestrictionLayout scope) {
+		return stableReadPlan();
+	}
+
+	private StatementRestrictionSourcePlan stableReadPlan() {
+		// Subclasses may override either statement lookup or graph enumeration.
+		if (getClass() != SailDatasetTripleTermSource.class || !hasStableRelation(dataset)) {
+			return null;
+		}
+		var view = new StatementRestrictionSourceView(this, dataset);
+		return owner -> view;
+	}
+
+	@Override
+	public StatementRestrictionSourcePlan preparePathRestriction(OriginalPathDescriptor syntax,
+			QueryEvaluationContext context, RestrictionLayout scope) {
+		return stableReadPlan();
+	}
+
+	private static boolean hasStableRelation(SailDataset dataset) {
+		if (dataset instanceof StableStatementSailDataset stable) {
+			return stable.hasStableStatementRelation();
+		}
+		if (dataset instanceof UnionSailDataset union) {
+			return hasStableRelation(union.getLeftDataset()) && hasStableRelation(union.getRightDataset());
+		}
+		return dataset instanceof StatementPreservingSailDataset wrapper && hasStableRelation(wrapper.getDelegate());
 	}
 
 	/**

@@ -131,6 +131,7 @@ import org.eclipse.rdf4j.sail.base.SailSource;
 import org.eclipse.rdf4j.sail.base.SailStore;
 import org.eclipse.rdf4j.sail.base.SailStoreStatementSource;
 import org.eclipse.rdf4j.sail.base.SailWriteContinuation;
+import org.eclipse.rdf4j.sail.base.StableStatementSailDataset;
 import org.eclipse.rdf4j.sail.base.StatementInput;
 import org.eclipse.rdf4j.sail.base.StreamingWritePreflight;
 import org.eclipse.rdf4j.sail.base.TemporaryFlushingException;
@@ -6817,7 +6818,7 @@ class LmdbSailStore implements SailStore {
 			throws IOException, SailException {
 		this(dataDir, properties, config, sketchBasedJoinEstimatorEnabled,
 				LmdbStoreFormat.resolveDictionary(new File(dataDir, "values"), properties, config),
-				QueryExecutionPolicy.of(config.isExperimentalQueryOptimizations()));
+				config.getQueryExecutionPolicy());
 	}
 
 	LmdbSailStore(File dataDir, StoreProperties properties, LmdbStoreConfig config,
@@ -6871,7 +6872,7 @@ class LmdbSailStore implements SailStore {
 			throws IOException, SailException {
 		this(dataDir, properties, config, sketchBasedJoinEstimatorEnabled,
 				LmdbStoreFormat.resolveDictionary(new File(dataDir, "values"), properties, config),
-				QueryExecutionPolicy.of(config.isExperimentalQueryOptimizations()), null, null,
+				config.getQueryExecutionPolicy(), null, null,
 				valueStoreFactory, tripleStoreFactory, PersistentSetFactory::new, LmdbFilterSelectivityStats::new,
 				asyncQueueCapacity, temporaryOverflow);
 	}
@@ -6882,7 +6883,7 @@ class LmdbSailStore implements SailStore {
 			FilterSelectivityStatsFactory statsFactory) throws IOException, SailException {
 		this(dataDir, properties, config, sketchBasedJoinEstimatorEnabled,
 				LmdbStoreFormat.resolveDictionary(new File(dataDir, "values"), properties, config),
-				QueryExecutionPolicy.of(config.isExperimentalQueryOptimizations()), null, null,
+				config.getQueryExecutionPolicy(), null, null,
 				valueStoreFactory, tripleStoreFactory, setFactoryFactory, statsFactory);
 	}
 
@@ -6908,12 +6909,13 @@ class LmdbSailStore implements SailStore {
 				setFactoryFactory, statsFactory, asyncQueueCapacity, false);
 	}
 
-	private LmdbSailStore(File dataDir, StoreProperties properties, LmdbStoreConfig config,
+	private LmdbSailStore(File dataDir, StoreProperties properties, LmdbStoreConfig storeConfig,
 			boolean sketchBasedJoinEstimatorEnabled, LmdbStoreFormat format, QueryExecutionPolicy queryExecutionPolicy,
 			Runnable duringValueOverlayWarmupScanForTest, Consumer<ValueStore> afterValueStoreOpenForTest,
 			ValueStoreFactory valueStoreFactory, TripleStoreFactory tripleStoreFactory,
 			PersistentSetFactoryFactory setFactoryFactory, FilterSelectivityStatsFactory statsFactory,
 			int asyncQueueCapacity, boolean temporaryOverflow) throws IOException, SailException {
+		LmdbStoreConfig config = temporaryOverflow ? storeConfig.forTemporaryOverflow() : storeConfig;
 		this.opQueue = new CircularBuffer<>(asyncQueueCapacity);
 		this.backupBoundaryTrackingEnabled = !temporaryOverflow;
 		this.backupPublicationEnabled = !temporaryOverflow && config.getBackupJournalEnabled();
@@ -15325,7 +15327,7 @@ class LmdbSailStore implements SailStore {
 				&& expected.workspace().planeBytes() >= current.workspace().planeBytes();
 	}
 
-	final class LmdbSailDataset implements SailDataset, NativeLmdbQuerySource {
+	final class LmdbSailDataset implements SailDataset, NativeLmdbQuerySource, StableStatementSailDataset {
 
 		private final boolean explicit;
 		private final ReadView readView;
@@ -15401,6 +15403,23 @@ class LmdbSailStore implements SailStore {
 		@Override
 		public Function<Value, Value> getValuePreparer() {
 			return readView.valuePreparer;
+		}
+
+		@Override
+		public boolean hasStableStatementRelation() {
+			// Dataset admission pins the triple and value read transactions together. On invalidation, reads fail
+			// through the existing read-view guard instead of returning data from a replacement snapshot.
+			return snapshotRevision >= 0L && !closed.get();
+		}
+
+		@Override
+		public Runnable stableGraphRestrictionValidator() {
+			return hasStableStatementRelation() ? this::validateGraphRestrictionSnapshot : null;
+		}
+
+		private void validateGraphRestrictionSnapshot() {
+			assertNativeSourceOpen();
+			ensureSnapshot();
 		}
 
 		@Override

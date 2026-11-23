@@ -36,6 +36,8 @@ import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.model.vocabulary.RDF4J;
 import org.eclipse.rdf4j.query.QueryEvaluationException;
+import org.eclipse.rdf4j.query.QueryExecutionPolicy;
+import org.eclipse.rdf4j.query.QueryExecutionPolicy.GraphJoinOptimization;
 import org.eclipse.rdf4j.query.algebra.Compare;
 import org.eclipse.rdf4j.query.algebra.Or;
 import org.eclipse.rdf4j.query.algebra.ValueConstant;
@@ -145,6 +147,27 @@ class SparseJoinAggregateSemanticsTest {
 			assertEquals(2, expected.size());
 			assertTrue(expected.stream().allMatch(row -> row.contains("count=\"1\"")), expected.toString());
 			assertEquals(expected, fixture.sparse(query));
+		}
+	}
+
+	@Test
+	void distinctIncidencesRespectIndependentGraphEvaluation(@TempDir Path directory) {
+		String query = PREFIX + """
+				SELECT ?a ?b (COUNT(*) AS ?count) WHERE {
+				  { SELECT DISTINCT ?j ?a WHERE { GRAPH ?g { ?a ex:p ?j } } }
+				  { SELECT DISTINCT ?j ?b WHERE { GRAPH ?g { ?j ex:q ?b } } }
+				  FILTER(STR(?a) < STR(?b))
+				} GROUP BY ?a ?b
+				""";
+		List<String> expected;
+		try (Fixture fixture = new Fixture(directory.resolve("default"))) {
+			expected = fixture.generic(query);
+			assertFalse(expected.isEmpty());
+			assertEquals(expected, fixture.sparse(query));
+		}
+		try (Fixture fixture = new Fixture(directory.resolve("independent"), GraphJoinOptimization.FORCE_INDEPENDENT)) {
+			assertEquals(expected, fixture.automatic(query));
+			assertThrows(QueryEvaluationException.class, () -> fixture.sparse(query));
 		}
 	}
 
@@ -695,12 +718,18 @@ class SparseJoinAggregateSemanticsTest {
 		private final LmdbStore store;
 
 		Fixture(Path directory) {
+			this(directory, QueryExecutionPolicy.DEFAULT.graphJoinOptimization());
+		}
+
+		Fixture(Path directory, GraphJoinOptimization graphJoinOptimization) {
 			store = new LmdbStore(directory.toFile(), new LmdbStoreConfig()
 					.setNativeEvaluationEnabled(true)
 					.setDirectAdjacencyEnabled(true)
 					.setDirectAdjacencyMode(DirectAdjacencyMode.PREFER)
 					.setDirectAdjacencyCoverage(DirectAdjacencyCoverage.FULL)
 					.setSketchEstimatorEnabled(false));
+			store.setQueryExecutionPolicy(
+					QueryExecutionPolicy.DEFAULT.withGraphJoinOptimization(graphJoinOptimization));
 			repository = new SailRepository(store);
 			repository.init();
 			try (SailRepositoryConnection connection = repository.getConnection()) {

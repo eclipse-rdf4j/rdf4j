@@ -12,6 +12,7 @@
 package org.eclipse.rdf4j.sail.lmdb.evaluation;
 
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.IdentityHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
@@ -21,18 +22,28 @@ import java.util.function.Supplier;
 
 import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.Value;
-import org.eclipse.rdf4j.model.vocabulary.RDF4J;
-import org.eclipse.rdf4j.model.vocabulary.SESAME;
 import org.eclipse.rdf4j.query.Dataset;
+import org.eclipse.rdf4j.query.QueryExecutionPolicy.GraphJoinOptimization;
+import org.eclipse.rdf4j.query.algebra.BindingSetAssignment;
 import org.eclipse.rdf4j.query.algebra.Filter;
 import org.eclipse.rdf4j.query.algebra.Graph;
+import org.eclipse.rdf4j.query.algebra.Join;
 import org.eclipse.rdf4j.query.algebra.QueryModelNode;
 import org.eclipse.rdf4j.query.algebra.Service;
 import org.eclipse.rdf4j.query.algebra.StatementPattern;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
+import org.eclipse.rdf4j.query.algebra.Var;
+import org.eclipse.rdf4j.query.algebra.evaluation.impl.EvaluationStatistics;
+import org.eclipse.rdf4j.query.algebra.evaluation.impl.QueryEvaluationContext;
+import org.eclipse.rdf4j.query.algebra.evaluation.impl.evaluationsteps.AdaptiveFilterEvaluationStep;
+import org.eclipse.rdf4j.query.algebra.evaluation.impl.evaluationsteps.OrderedEvaluation;
+import org.eclipse.rdf4j.query.algebra.evaluation.impl.restrictions.RestrictionCompiler;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.GraphScopeOptimizer;
 import org.eclipse.rdf4j.query.algebra.helpers.AbstractQueryModelVisitor;
 import org.eclipse.rdf4j.query.algebra.helpers.FilterBindingScope;
+import org.eclipse.rdf4j.query.algebra.helpers.QueryAlgebraBindingAnalysis;
+import org.eclipse.rdf4j.query.algebra.helpers.TupleExprs;
+import org.eclipse.rdf4j.query.impl.EmptyBindingSet;
 
 /** Compilation-only physical exposure of proven positive GRAPH bodies to all existing native specialists. */
 final class NativeGraphFusion {
@@ -45,42 +56,212 @@ final class NativeGraphFusion {
 	record Prepared(TupleExpr expression, NativeValuePositionAnalysis positions, Set<String> guardedSelectors) {
 	}
 
-	static Prepared prepare(TupleExpr expression, Dataset dataset, LmdbNativeEvaluationStrategy strategy) {
-		if (SEMANTIC_BOUNDARIES.get() != null || !containsFusibleGraph(expression, dataset)) {
+	static Prepared prepare(TupleExpr expression, QueryEvaluationContext context,
+			LmdbNativeEvaluationStrategy strategy) {
+		Dataset dataset = context.getDataset();
+		GraphJoinOptimization mode = strategy.getQueryExecutionPolicy().graphJoinOptimization();
+		if (!AdaptiveFilterEvaluationStep.includesGraphRestrictionRegion(context)
+				|| SEMANTIC_BOUNDARIES.get() != null || mode == GraphJoinOptimization.FORCE_INDEPENDENT
+				|| !containsFusibleGraph(expression, dataset)) {
 			return new Prepared(expression, null, Set.of());
 		}
 		TupleExpr physical = expression.clone();
 		linkLogicalOrigins(expression, physical);
-		NativeValuePositionAnalysis positions = strategy.copyValuePositions(expression, physical);
+		var inputs = QueryAlgebraBindingAnalysis.withBindingValues(physical, EmptyBindingSet.getInstance());
 		Map<Graph, TupleExpr> replacements = new IdentityHashMap<>();
-		Set<String> guarded = new LinkedHashSet<>();
-		if (physical instanceof Graph graph && canFuse(graph, dataset)) {
-			rememberGuard(graph, dataset, guarded);
-			physical = GraphScopeOptimizer.lowerPositiveBasicGraphPattern(graph);
-			linkGraphReplacement(graph, physical);
-			replacements.put(graph, physical);
-		} else {
-			physical.visit(new AbstractQueryModelVisitor<RuntimeException>() {
-				@Override
-				public void meet(Service service) {
-					// The endpoint owns its dataset and compilation.
-				}
+		Set<Join> positiveJoins = Collections.newSetFromMap(new IdentityHashMap<>());
+		physical.visit(new AbstractQueryModelVisitor<RuntimeException>() {
+			@Override
+			public void meet(Service service) {
+				// The endpoint owns its dataset and compilation.
+			}
 
-				@Override
-				public void meet(Graph graph) {
-					super.meet(graph);
-					if (canFuse(graph, dataset)) {
-						rememberGuard(graph, dataset, guarded);
-						TupleExpr lowered = GraphScopeOptimizer.lowerPositiveBasicGraphPattern(graph);
-						linkGraphReplacement(graph, lowered);
+			@Override
+			public void meet(Join join) {
+				super.meet(join);
+				if (join.getClass() == Join.class && !join.isMergeJoin() && !OrderedEvaluation.isRequired(join)
+						&& isPositiveJoinOperand(join.getLeftArg(), positiveJoins, replacements)
+						&& isPositiveJoinOperand(join.getRightArg(), positiveJoins, replacements)) {
+					positiveJoins.add(join);
+				}
+			}
+
+			@Override
+			public void meet(Graph graph) {
+				super.meet(graph);
+				// An entry guard can inspect invocation bindings. A selector supplied later by a correlated row
+				// needs the GRAPH boundary at that row, where its value and provenance are known.
+				if (hasSafeSelectorAndDataset(graph, dataset) && hasEntrySelector(graph, inputs)) {
+					TupleExpr lowered = GraphScopeOptimizer.lowerPositiveGraphPattern(graph);
+					if (lowered != null) {
 						replacements.put(graph, lowered);
-						graph.replaceWith(lowered);
 					}
 				}
-			});
+			}
+		});
+		if (replacements.isEmpty()) {
+			return new Prepared(expression, null, Set.of());
+		}
+		NativeValuePositionAnalysis positions = strategy.copyValuePositions(expression, physical);
+		placeValuesForLoweredGraphs(physical, positiveJoins, replacements, inputs);
+		Set<String> guarded = new LinkedHashSet<>();
+		for (var entry : replacements.entrySet()) {
+			Graph graph = entry.getKey();
+			TupleExpr lowered = entry.getValue();
+			if (!graph.getGraphName().isConstant()) {
+				guarded.add(graph.getGraphName().getName());
+			}
+			linkGraphReplacement(graph, lowered);
+			if (physical == graph) {
+				physical = lowered;
+			} else {
+				graph.replaceWith(lowered);
+			}
 		}
 		return new Prepared(physical, positions == null ? null : positions.withGraphReplacements(replacements),
 				Set.copyOf(guarded));
+	}
+
+	private static boolean isPositiveJoinOperand(TupleExpr arg, Set<Join> positiveJoins,
+			Map<Graph, TupleExpr> replacements) {
+		if (TupleExprs.isVariableScopeChange(arg) || OrderedEvaluation.isRequired(arg)) {
+			return false;
+		}
+		return switch (arg) {
+		case Join join -> positiveJoins.contains(join);
+		case Graph graph -> graph.getClass() == Graph.class && replacements.containsKey(graph)
+				&& isPositiveJoinOperand(graph.getArg(), positiveJoins, replacements);
+		case StatementPattern statement -> statement.getClass() == StatementPattern.class
+				&& statement.getStatementOrder() == null;
+		case BindingSetAssignment values -> values.getClass() == BindingSetAssignment.class
+				&& values.hasRepeatableBindingSets();
+		default -> false;
+		};
+	}
+
+	/**
+	 * The logical optimizer treats GRAPH as an independent operand, so a leading GRAPH can precede the VALUES that
+	 * constrain its statements. Once lowering is proved, move those tables to their first consumer in the positive
+	 * inner-join region. A compound operand can change its input frame even if its leaves retain their relative order,
+	 * so each join in that region must consist wholly of positive operands.
+	 */
+	private static void placeValuesForLoweredGraphs(TupleExpr physical, Set<Join> positiveJoins,
+			Map<Graph, TupleExpr> replacements, QueryAlgebraBindingAnalysis inputs) {
+		physical.visit(new AbstractQueryModelVisitor<RuntimeException>() {
+			@Override
+			public void meet(Service service) {
+				// The endpoint owns its join plan.
+			}
+
+			@Override
+			public void meet(Graph graph) {
+				if (!replacements.containsKey(graph)) {
+					super.meet(graph);
+				}
+			}
+
+			@Override
+			public void meet(Join join) {
+				if (join.isMergeJoin() || OrderedEvaluation.isRequired(join)) {
+					return;
+				}
+				if (!positiveJoins.contains(join)) {
+					super.meet(join);
+					return;
+				}
+				List<JoinOperand> leaves = new ArrayList<>();
+				collectOperands(join, leaves);
+				if (leaves.stream().noneMatch(leaf -> leaf.expression() instanceof Graph)) {
+					return;
+				}
+				List<JoinOperand> order = new ArrayList<>(leaves);
+				for (int i = 1; i < order.size(); i++) {
+					TupleExpr arg = order.get(i).expression();
+					if (!(arg instanceof BindingSetAssignment)) {
+						continue;
+					}
+					Set<String> names = inputs.outputFacts(arg, inputs.rootContext()).possibleOutputs();
+					int consumer = firstConsumerForLowering(order, i, names);
+					if (consumer >= 0) {
+						Collections.rotate(order.subList(consumer, i + 1), 1);
+					}
+				}
+				for (int i = 0; i < order.size(); i++) {
+					if (leaves.get(i) != order.get(i)) {
+						leaves.get(i).replace(order.get(i).expression());
+					}
+				}
+			}
+
+			@Override
+			protected void meetNode(QueryModelNode node) {
+				if (!(node instanceof TupleExpr tuple) || !OrderedEvaluation.isRequired(tuple)) {
+					super.meetNode(node);
+				}
+			}
+		});
+	}
+
+	private static int firstConsumerForLowering(List<JoinOperand> order, int valuesIndex, Set<String> names) {
+		int first = -1;
+		boolean graphConsumer = false;
+		for (int i = valuesIndex - 1; i >= 0; i--) {
+			JoinOperand operand = order.get(i);
+			if (bindsSelector(names, operand.selector())) {
+				break;
+			}
+			if (!Collections.disjoint(names, operand.consumerNames())) {
+				first = i;
+				graphConsumer |= operand.expression() instanceof Graph;
+			}
+		}
+		return graphConsumer ? first : -1;
+	}
+
+	private static boolean bindsSelector(Set<String> names, Var selector) {
+		// The invocation guard cannot inspect an alias or a remote blank node supplied by a sibling row.
+		return selector != null && !selector.isConstant() && names.contains(selector.getName());
+	}
+
+	private static void collectOperands(Join join, List<JoinOperand> operands) {
+		collectOperand(join, join.getLeftArg(), true, operands);
+		collectOperand(join, join.getRightArg(), false, operands);
+	}
+
+	private static void collectOperand(Join parent, TupleExpr arg, boolean left, List<JoinOperand> operands) {
+		if (arg instanceof Join join) {
+			collectOperands(join, operands);
+		} else if (arg instanceof Graph graph) {
+			operands.add(new JoinOperand(parent, arg, left, graph.getArg().getBindingNames(), graph.getGraphName()));
+		} else if (arg instanceof StatementPattern statement) {
+			operands.add(new JoinOperand(parent, arg, left, statement.getBindingNames(), statement.getContextVar()));
+		} else {
+			operands.add(new JoinOperand(parent, arg, left, Set.of(), null));
+		}
+	}
+
+	private record JoinOperand(Join parent, TupleExpr expression, boolean left, Set<String> consumerNames,
+			Var selector) {
+		void replace(TupleExpr arg) {
+			if (left) {
+				parent.setLeftArg(arg);
+			} else {
+				parent.setRightArg(arg);
+			}
+		}
+	}
+
+	static boolean requiresSemanticRestrictionJoin(TupleExpr expression, Dataset dataset, GraphJoinOptimization mode,
+			EvaluationStatistics statistics) {
+		return switch (mode) {
+		case OFF -> false;
+		// Keep the existing preference for semantic probes when a graph body contains VALUES.
+		case AUTO -> GraphScopeOptimizer.hasRestrictionJoin(expression,
+				graph -> !hasSafeSelectorAndDataset(graph, dataset)
+						|| !GraphScopeOptimizer.canLowerPositiveBasicGraphPattern(graph),
+				(operand, driver) -> RestrictionCompiler.hasPotentialProfitableSeekFrom(operand, driver, statistics));
+		case FORCE_INDEPENDENT, REQUIRE_RESTRICTED -> GraphScopeOptimizer.hasRestrictionJoin(expression);
+		};
 	}
 
 	private static void linkGraphReplacement(Graph graph, TupleExpr lowered) {
@@ -150,23 +331,25 @@ final class NativeGraphFusion {
 	}
 
 	private static boolean canFuse(Graph graph, Dataset dataset) {
-		Value selector = graph.getGraphName().getValue();
-		return (selector == null || selector instanceof Resource && !isDefaultAlias(selector))
-				&& (dataset == null
-						|| dataset.getNamedGraphResources().stream().noneMatch(NativeGraphFusion::isDefaultAlias))
-				&& GraphScopeOptimizer.canLowerPositiveBasicGraphPattern(graph);
+		return hasSafeSelectorAndDataset(graph, dataset) && GraphScopeOptimizer.canLowerPositiveGraphPattern(graph);
 	}
 
-	private static void rememberGuard(Graph graph, Dataset dataset, Set<String> guarded) {
-		if (!graph.getGraphName().isConstant() && (dataset == null || !dataset.isExplicitReadDataset()
-				&& dataset.getNamedGraphResources().isEmpty() && dataset.getDefaultGraphResources().isEmpty())) {
-			// Enumeration uses physical nil-named contexts, but an invocation binding of either alias selects default.
-			guarded.add(graph.getGraphName().getName());
+	private static boolean hasEntrySelector(Graph graph, QueryAlgebraBindingAnalysis inputs) {
+		Var name = graph.getGraphName();
+		if (name.isConstant()) {
+			return true;
 		}
+		var input = inputs.contextAt(graph);
+		return input.bindingDomainKnown() && !input.maybeBoundNames().contains(name.getName());
 	}
 
-	static boolean isDefaultAlias(Value value) {
-		return RDF4J.NIL.equals(value) || SESAME.NIL.equals(value);
+	static boolean hasSafeSelectorAndDataset(Graph graph, Dataset dataset) {
+		Value selector = graph.getGraphName().getValue();
+		return (selector == null
+				|| selector instanceof Resource && !GraphScopeOptimizer.requiresSemanticSelection(selector))
+				&& (dataset == null || dataset.getNamedGraphResources()
+						.stream()
+						.noneMatch(GraphScopeOptimizer::requiresSemanticSelection));
 	}
 
 	/** A lexical compiler mode for the semantic alternative; it is restored even if compilation fails. */

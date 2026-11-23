@@ -1,0 +1,355 @@
+# Build all JNI natives and assemble a final JAR that includes every platform's shared library
+name: Build and publish for all platforms
+
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+    inputs:
+      publish:
+        description: 'Publish to Maven Central?'
+        required: false
+        default: false
+        type: boolean
+
+permissions:
+  contents: read
+
+jobs:
+  linux:
+    name: Linux natives (${{ matrix.arch }})
+    runs-on: ubuntu-latest
+    env:
+      NATIVE_BASE_CFLAGS: -O2 -fno-omit-frame-pointer -fstack-protector-strong -fstack-clash-protection -Wformat -Werror=format-security
+      NATIVE_XXHASH_EXTRA_CFLAGS: -fno-tree-vectorize
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: amd64
+            cc: gcc
+            arch_cflags: "-mno-omit-leaf-frame-pointer -fcf-protection"
+            ldflags: ""
+            apt: ""
+          - arch: i386
+            cc: gcc
+            arch_cflags: "-mno-omit-leaf-frame-pointer -fcf-protection -m32"
+            ldflags: "-m32"
+            apt: "gcc-multilib libc6-dev-i386"
+          - arch: aarch64
+            cc: aarch64-linux-gnu-gcc
+            arch_cflags: ""
+            ldflags: ""
+            apt: "gcc-aarch64-linux-gnu"
+          - arch: ppc64le
+            cc: powerpc64le-linux-gnu-gcc
+            arch_cflags: ""
+            ldflags: ""
+            apt: "gcc-powerpc64le-linux-gnu"
+          - arch: s390x
+            cc: s390x-linux-gnu-gcc
+            arch_cflags: ""
+            ldflags: ""
+            apt: "gcc-s390x-linux-gnu"
+          - arch: riscv64
+            cc: riscv64-linux-gnu-gcc
+            arch_cflags: ""
+            ldflags: ""
+            apt: "gcc-riscv64-linux-gnu"
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          submodules: true
+          fetch-depth: 0
+
+      - name: Setup Zulu JDK 7
+        uses: actions/setup-java@b6effb05e454b25005698d916606bdc6ffcbf961 # v5
+        with:
+          distribution: zulu
+          java-version: '7'
+      - name: Setup Temurin JDK 25
+        uses: actions/setup-java@b6effb05e454b25005698d916606bdc6ffcbf961 # v5
+        with:
+          distribution: temurin
+          java-version: '25'
+
+      - name: Install cross toolchain (if needed)
+        if: ${{ matrix.apt != '' }}
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y ${{ matrix.apt }}
+
+      - name: Build (mvn package)
+        run: |
+              ./mvnw -B -C -V -DskipTests \
+              -Darch.id=${{ matrix.arch }} \
+              -Dnative.cc=${{ matrix.cc }} \
+              "-Dnative.cflags=${{ env.NATIVE_BASE_CFLAGS }} ${{ matrix.arch_cflags }}" \
+              "-Dnative.xxhash.cflags=${{ env.NATIVE_BASE_CFLAGS }} ${{ matrix.arch_cflags }} ${{ env.NATIVE_XXHASH_EXTRA_CFLAGS }}" \
+              "-Dnative.ldflags=${{ matrix.ldflags }}" \
+              package
+
+      - name: Upload native library
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: natives-linux-${{ matrix.arch }}
+          path: target/classes/net/jpountz/util/linux/*/liblz4-java.so
+          if-no-files-found: error
+
+  macos:
+    name: macOS natives (${{ matrix.os }} - ${{ matrix.arch }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: macos-15-intel
+            arch: x86_64
+          - os: macos-14
+            arch: aarch64
+            # Azul Zulu 7 not available on macOS Aarch64; only the native library of this build is published
+            maven-flags: >-
+              -Dmaven.compiler.source=8
+              -Dmaven.compiler.target=8
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          submodules: true
+          fetch-depth: 0
+
+      - name: Setup Zulu JDK 7
+        uses: actions/setup-java@b6effb05e454b25005698d916606bdc6ffcbf961 # v5
+        if: matrix.os == 'macos-15-intel'
+        with:
+          distribution: zulu
+          java-version: '7'
+      - name: Setup Temurin JDK 25
+        uses: actions/setup-java@b6effb05e454b25005698d916606bdc6ffcbf961 # v5
+        with:
+          distribution: temurin
+          java-version: '25'
+
+      # See LZ4FrameIOStreamTest
+      - name: Install LZ4 CLI for tests
+        run: |
+          command -v lz4 || brew install lz4
+          lz4 -V
+
+      - name: Build (mvn verify)
+        run: |
+          ./mvnw -B -C -V \
+            -Darch.id=${{ matrix.arch }} \
+            -Dnative.cc=cc \
+            ${{ matrix.maven-flags }} \
+            verify
+
+      - name: Upload native library
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: natives-darwin-${{ matrix.arch }}
+          path: target/classes/net/jpountz/util/darwin/${{ matrix.arch }}/liblz4-java.dylib
+          if-no-files-found: error
+
+  windows:
+    name: Windows natives (windows/amd64)
+    runs-on: windows-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          submodules: true
+          fetch-depth: 0
+
+      - name: Setup Zulu JDK 7
+        uses: actions/setup-java@b6effb05e454b25005698d916606bdc6ffcbf961 # v5
+        with:
+          distribution: zulu
+          java-version: '7'
+      - name: Setup Temurin JDK 25
+        uses: actions/setup-java@b6effb05e454b25005698d916606bdc6ffcbf961 # v5
+        with:
+          distribution: temurin
+          java-version: '25'
+
+      # See LZ4FrameIOStreamTest
+      - name: Download LZ4 CLI for tests
+        shell: powershell
+        run: |
+          curl.exe --fail-with-body --no-progress-meter --output lz4_win64.zip --location https://github.com/lz4/lz4/releases/download/v1.10.0/lz4_win64_v1_10_0.zip
+          # SHA-256 of the zip above; must be updated when the lz4 version changes
+          $expected = '8cb562a53189dfc8a53ec12469b91f1b51a5075036061a86b55738183bf4ab74'
+          $actual = (Get-FileHash lz4_win64.zip -Algorithm SHA256).Hash
+          if ($actual -ne $expected) { throw "lz4_win64.zip SHA-256 mismatch: expected $expected, got $actual" }
+          mkdir lz4-cli
+          tar -x -v -f lz4_win64.zip -C lz4-cli lz4.exe
+          echo "$(Get-Location)\lz4-cli" >> "$env:GITHUB_PATH"
+          rm lz4_win64.zip
+      # Separate step because the change to PATH (through GITHUB_PATH) is not visible in the step which modified it
+      # See https://docs.github.com/en/actions/reference/workflows-and-actions/workflow-commands#adding-a-system-path
+      - name: Check LZ4 CLI
+        run: lz4 -V
+
+      - name: Build (mvn verify)
+        shell: bash
+        run: |
+          ./mvnw -B -C -V \
+            -Darch.id=amd64 \
+            -Dnative.cc=gcc \
+            verify
+
+      - name: Upload native library
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: natives-windows-amd64
+          path: target/classes/net/jpountz/util/windows/amd64/liblz4-java.dll
+          if-no-files-found: error
+
+  assemble:
+    name: Assemble and deploy final all-platforms JAR
+    runs-on: ubuntu-latest
+    needs: [ linux, macos, windows ]
+    env:
+      # Only publish to Central from v* tags. Releases on Central cannot be removed, and branch or commit builds would
+      # otherwise deploy SNAPSHOT or commit-hash versions.
+      PUBLISH: ${{ startsWith(github.ref, 'refs/tags/v') && (github.event_name == 'release' || inputs.publish) }}
+    steps:
+      - name: Check publish ref
+        if: (github.event_name == 'release' || inputs.publish) && env.PUBLISH != 'true'
+        run: |
+          echo "::error::Publishing is only allowed from v* tags, not ${GITHUB_REF}"
+          exit 1
+
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          submodules: true
+          fetch-depth: 0
+
+      - name: Setup Zulu JDK 7
+        uses: actions/setup-java@b6effb05e454b25005698d916606bdc6ffcbf961 # v5
+        with:
+          distribution: zulu
+          java-version: '7'
+
+      # with central credentials
+      - name: Setup Temurin JDK 25 (publish)
+        uses: actions/setup-java@b6effb05e454b25005698d916606bdc6ffcbf961 # v5
+        if: env.PUBLISH == 'true'
+        with:
+          distribution: temurin
+          java-version: '25'
+          gpg-private-key: ${{ secrets.GPG_KEY }}
+          gpg-passphrase: GPG_PASSWORD
+          server-id: 'central'
+          server-username: CENTRAL_TOKEN_USERNAME
+          server-password: CENTRAL_TOKEN_PASSWORD
+      # without central credentials
+      - name: Setup Temurin JDK 25
+        uses: actions/setup-java@b6effb05e454b25005698d916606bdc6ffcbf961 # v5
+        if: env.PUBLISH != 'true'
+        with:
+          distribution: temurin
+          java-version: '25'
+
+      - name: Download natives
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
+        with:
+          path: assemble/natives
+      # Note: downloads all artifacts; we will merge their folder contents
+
+      - name: Prepare target/classes with collected natives
+        shell: bash
+        run: |
+          rm -rf target/classes/net/jpountz/util || true
+          shopt -s nullglob
+          for dir in assemble/natives/*; do
+            base="$(basename "$dir")"
+            # Expect names like natives-linux-amd64, natives-darwin-aarch64, natives-windows-amd64
+            os="${base#natives-}"
+            arch="${os#*-}"; os="${os%%-*}"
+            case "$os" in
+              linux) ext=so ;;
+              darwin) ext=dylib ;;
+              windows) ext=dll ;;
+              *) echo "Unknown OS in artifact: $base" >&2; continue ;;
+            esac
+            dest="target/classes/net/jpountz/util/$os/$arch"
+            mkdir -p "$dest"
+            if [ -f "$dir/liblz4-java.$ext" ]; then
+              cp -f "$dir/liblz4-java.$ext" "$dest/"
+            else
+              found="$(find "$dir" -type f -name "liblz4-java.$ext" | head -n1)"
+              if [ -n "$found" ]; then
+                cp -f "$found" "$dest/"
+              else
+                echo "No lib found in $dir" >&2
+              fi
+            fi
+          done
+          echo "Contents of target/classes/net/jpountz/util:"
+          find target/classes/net/jpountz/util -type f -print
+
+      - name: Check native library architectures
+        shell: bash
+        run: |
+          # Expected `file -b` output (regex) for each os/arch directory
+          declare -A expected=(
+            [linux/amd64]='^ELF 64-bit LSB .*x86-64'
+            [linux/i386]='^ELF 32-bit LSB .*Intel (80386|i386)'
+            [linux/aarch64]='^ELF 64-bit LSB .*ARM aarch64'
+            [linux/ppc64le]='^ELF 64-bit LSB .*64-bit PowerPC'
+            [linux/s390x]='^ELF 64-bit MSB .*IBM S/390'
+            [linux/riscv64]='^ELF 64-bit LSB .*RISC-V'
+            [darwin/x86_64]='^Mach-O 64-bit .*x86_64'
+            [darwin/aarch64]='^Mach-O 64-bit .*arm64'
+            [windows/amd64]='^PE32\+ .*x86-64'
+          )
+          root=target/classes/net/jpountz/util
+          failed=0
+          while IFS= read -r lib; do
+            dir="${lib#"$root"/}"; dir="${dir%/*}"
+            if [ -z "${expected[$dir]+x}" ]; then
+              echo "Unexpected native library: $lib" >&2; failed=1
+            fi
+          done < <(find "$root" -type f -name 'liblz4-java.*')
+          for dir in "${!expected[@]}"; do
+            case "$dir" in
+              linux/*) lib="$root/$dir/liblz4-java.so" ;;
+              darwin/*) lib="$root/$dir/liblz4-java.dylib" ;;
+              windows/*) lib="$root/$dir/liblz4-java.dll" ;;
+            esac
+            if [ ! -f "$lib" ]; then
+              echo "Missing native library: $lib" >&2; failed=1; continue
+            fi
+            desc="$(file -b "$lib")"
+            echo "$dir: $desc"
+            if ! grep -Eq "${expected[$dir]}" <<<"$desc"; then
+              echo "Unexpected architecture for $dir" >&2; failed=1
+            fi
+          done
+          exit "$failed"
+
+      # with maven central
+      - name: Build and deploy with Maven
+        run: ./mvnw -B -C -V -Pdeploy,-native-linux deploy
+        if: env.PUBLISH == 'true'
+        env:
+          CENTRAL_TOKEN_USERNAME: ${{ secrets.CENTRAL_TOKEN_USERNAME }}
+          CENTRAL_TOKEN_PASSWORD: ${{ secrets.CENTRAL_TOKEN_PASSWORD }}
+          GPG_PASSWORD: ${{ secrets.GPG_PASSWORD }}
+
+      # without maven central
+      - name: Build with Maven
+        run: ./mvnw -B -C -V -P-native-linux verify
+        if: env.PUBLISH != 'true'
+
+      - name: Upload final JAR
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: lz4-java-all-platforms
+          path: target/lz4-java-*.jar
+          if-no-files-found: error

@@ -68,34 +68,49 @@ public class ScanBenchmark {
 
 	@Setup(Level.Trial)
 	public void setUp() throws IOException {
-		dataDir = Files.newTemporaryFolder();
-		tripleStore = new TripleStore(dataDir, new LmdbStoreConfig("spoc"), null);
-		predicateCount = ROWS / valuesPerPredicate;
-		selectedObject = OBJECT_BASE + valuesPerPredicate / 2L;
-		tripleStore.startTransaction();
-		for (int predicate = 0; predicate < predicateCount; predicate++) {
-			long predicateId = PREDICATE_BASE + predicate;
-			for (int value = 0; value < valuesPerPredicate; value++) {
-				tripleStore.storeTriple(SUBJECT, predicateId, OBJECT_BASE + value, CONTEXT, true);
+		try {
+			dataDir = Files.newTemporaryFolder();
+			tripleStore = new TripleStore(dataDir, new LmdbStoreConfig("spoc"), null);
+			predicateCount = ROWS / valuesPerPredicate;
+			selectedObject = OBJECT_BASE + valuesPerPredicate / 2L;
+			tripleStore.startTransaction();
+			for (int predicate = 0; predicate < predicateCount; predicate++) {
+				long predicateId = PREDICATE_BASE + predicate;
+				for (int value = 0; value < valuesPerPredicate; value++) {
+					tripleStore.storeTriple(SUBJECT, predicateId, OBJECT_BASE + value, CONTEXT, true);
+				}
 			}
-		}
-		tripleStore.commit();
+			tripleStore.commit();
 
-		encodedWideIds = MemoryUtil.memAlloc(ROWS * 9);
-		encodedWideIdOffsets = new int[ROWS];
-		for (int row = 0; row < ROWS; row++) {
-			encodedWideIdOffsets[row] = encodedWideIds.position();
-			Varint.writeUnsigned(encodedWideIds, OBJECT_BASE + row);
+			encodedWideIds = MemoryUtil.memAlloc(ROWS * 9);
+			encodedWideIdOffsets = new int[ROWS];
+			for (int row = 0; row < ROWS; row++) {
+				encodedWideIdOffsets[row] = encodedWideIds.position();
+				Varint.writeUnsigned(encodedWideIds, OBJECT_BASE + row);
+			}
+			encodedWideIds.flip();
+			encodedWideIdsAddress = MemoryUtil.memAddress(encodedWideIds);
+
+		} catch (Exception | Error failure) {
+			try {
+				tearDown();
+			} catch (Exception | Error cleanupFailure) {
+				failure.addSuppressed(cleanupFailure);
+			}
+			throw failure;
 		}
-		encodedWideIds.flip();
-		encodedWideIdsAddress = MemoryUtil.memAddress(encodedWideIds);
 	}
 
 	@TearDown(Level.Trial)
 	public void tearDown() throws IOException {
-		MemoryUtil.memFree(encodedWideIds);
-		tripleStore.close();
-		LmdbTestUtil.deleteDir(dataDir);
+		try (var directoryCleanup = LmdbTestUtil.onClose(() -> LmdbTestUtil.deleteDir(dataDir));
+				var storeCleanup = tripleStore) {
+			MemoryUtil.memFree(encodedWideIds);
+		} finally {
+			encodedWideIds = null;
+			tripleStore = null;
+			dataDir = null;
+		}
 	}
 
 	/** Exact-width native loads introduced by the wide-varint decoder optimization. */

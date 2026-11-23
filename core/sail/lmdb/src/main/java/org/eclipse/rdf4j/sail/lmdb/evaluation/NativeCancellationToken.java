@@ -28,8 +28,9 @@ final class NativeCancellationToken implements KernelCancellation.QueryCancellat
 
 	private static VarHandle cancellationRequestedHandle() {
 		try {
-			return MethodHandles.lookup().findVarHandle(NativeCancellationToken.class, "cancellationRequested",
-					boolean.class);
+			return MethodHandles.lookup()
+					.findVarHandle(NativeCancellationToken.class, "cancellationRequested",
+							boolean.class);
 		} catch (NoSuchFieldException | IllegalAccessException e) {
 			throw new ExceptionInInitializerError(e);
 		}

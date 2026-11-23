@@ -25,7 +25,9 @@ import java.io.InputStream;
 import java.io.OutputStream;
 import java.net.InetSocketAddress;
 import java.net.Socket;
+import java.nio.charset.StandardCharsets;
 import java.util.List;
+import java.util.Map;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
@@ -36,11 +38,17 @@ import java.util.concurrent.atomic.AtomicReference;
 import org.eclipse.rdf4j.http.client.QueryRequestContext;
 import org.eclipse.rdf4j.http.protocol.Protocol;
 import org.eclipse.rdf4j.http.server.ServerHTTPException;
+import org.eclipse.rdf4j.http.server.repository.QueryResultView;
 import org.eclipse.rdf4j.http.server.repository.resolver.RepositoryResolver;
+import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
+import org.eclipse.rdf4j.query.Query;
 import org.eclipse.rdf4j.query.QueryEvaluationException;
 import org.eclipse.rdf4j.query.QueryLanguage;
+import org.eclipse.rdf4j.query.QueryParseOptions;
 import org.eclipse.rdf4j.query.TupleQuery;
 import org.eclipse.rdf4j.query.TupleQueryResult;
+import org.eclipse.rdf4j.query.impl.IteratingTupleQueryResult;
+import org.eclipse.rdf4j.query.impl.MapBindingSet;
 import org.eclipse.rdf4j.repository.RepositoryConnection;
 import org.eclipse.rdf4j.repository.http.HTTPRepository;
 import org.junit.jupiter.api.Assumptions;
@@ -49,6 +57,7 @@ import org.springframework.mock.web.MockHttpServletRequest;
 import org.springframework.mock.web.MockHttpServletResponse;
 import org.springframework.web.bind.annotation.RequestMethod;
 import org.springframework.web.servlet.ModelAndView;
+import org.springframework.web.servlet.View;
 
 import com.sun.net.httpserver.HttpExchange;
 import com.sun.net.httpserver.HttpServer;
@@ -56,16 +65,100 @@ import com.sun.net.httpserver.HttpServer;
 import jakarta.servlet.ServletOutputStream;
 import jakarta.servlet.WriteListener;
 import jakarta.servlet.http.HttpServletRequest;
+import jakarta.servlet.http.HttpServletResponse;
 
 class QueryResponseHeartbeatHandlerTest {
 
 	private static final String QUERY = "select * where { ?s ?p ?o }";
 
 	@Test
+	void viewsThatDoNotDeclareHeartbeatSupportDoNotGetAHeartbeat() throws Exception {
+		RepositoryResolver resolver = mock(RepositoryResolver.class);
+		MockHttpServletRequest request = newQueryRequest();
+		MockHttpServletResponse response = new MockHttpServletResponse();
+		mockQueryResult(resolver, request, singleRowResult());
+		// A view written against the servlet response directly, as views written before the heartbeat existed are.
+		QueryResultView directView = new QueryResultView() {
+			@Override
+			@SuppressWarnings("rawtypes")
+			protected void renderInternal(Map model, HttpServletRequest request, HttpServletResponse response)
+					throws IOException {
+				try (TupleQueryResult result = (TupleQueryResult) model.get(QUERY_RESULT_KEY)) {
+					response.getOutputStream().write("direct".getBytes(StandardCharsets.US_ASCII));
+				}
+			}
+		};
+		DefaultQueryRequestHandler handler = new DefaultQueryRequestHandler(resolver) {
+			@Override
+			protected View getViewFor(Query query) {
+				return directView;
+			}
+		};
+
+		try {
+			ModelAndView modelAndView = handler.handleQueryRequest(request, RequestMethod.POST, response);
+
+			assertThat(modelAndView.getModel()).doesNotContainKey(QueryResultView.RESPONSE_HEARTBEAT_KEY)
+					.containsKey(QueryResultView.FACTORY_KEY);
+			render(modelAndView, request, response);
+			assertThat(response.getContentAsString()).isEqualTo("direct");
+		} finally {
+			handler.shutdown();
+		}
+	}
+
+	@Test
+	void subclassesCanTurnTheHeartbeatOffForDefaultViews() throws Exception {
+		RepositoryResolver resolver = mock(RepositoryResolver.class);
+		MockHttpServletRequest request = newQueryRequest();
+		MockHttpServletResponse response = new MockHttpServletResponse();
+		mockQueryResult(resolver, request, singleRowResult());
+		DefaultQueryRequestHandler handler = new DefaultQueryRequestHandler(resolver) {
+			@Override
+			protected boolean useResponseHeartbeat(HttpServletRequest request, Query query, View view) {
+				return false;
+			}
+		};
+
+		try {
+			ModelAndView modelAndView = handler.handleQueryRequest(request, RequestMethod.POST, response);
+
+			assertThat(modelAndView.getModel()).doesNotContainKey(QueryResultView.RESPONSE_HEARTBEAT_KEY)
+					.containsKey(QueryResultView.FACTORY_KEY);
+			render(modelAndView, request, response);
+			assertThat(response.getStatus()).isEqualTo(HttpServletResponse.SC_OK);
+			assertThat(response.getContentAsString()).startsWith("{").contains("urn:row").doesNotContain("\0");
+		} finally {
+			handler.shutdown();
+		}
+	}
+
+	@Test
+	void defaultViewsDeclareHeartbeatSupportAndStillGetAHeartbeat() throws Exception {
+		RepositoryResolver resolver = mock(RepositoryResolver.class);
+		MockHttpServletRequest request = newQueryRequest();
+		MockHttpServletResponse response = new MockHttpServletResponse();
+		mockQueryResult(resolver, request, singleRowResult());
+		DefaultQueryRequestHandler handler = new DefaultQueryRequestHandler(resolver);
+
+		try {
+			ModelAndView modelAndView = handler.handleQueryRequest(request, RequestMethod.POST, response);
+
+			assertThat(modelAndView.getModel()).containsKey(QueryResultView.RESPONSE_HEARTBEAT_KEY);
+			render(modelAndView, request, response);
+			assertThat(response.getContentAsString().stripLeading()).startsWith("{")
+					.contains("urn:row")
+					.doesNotContain("\0");
+		} finally {
+			handler.shutdown();
+		}
+	}
+
+	@Test
 	void generatedRequestIdCancelsAStalledEvaluationAfterTheClientDisconnects() throws Exception {
 		RepositoryResolver resolver = mock(RepositoryResolver.class);
 		HTTPRepository repository = mock(HTTPRepository.class);
-		RepositoryConnection connection = mock(RepositoryConnection.class);
+		RepositoryConnection connection = mockConnection();
 		TupleQuery query = mock(TupleQuery.class);
 		CountDownLatch evaluationStarted = new CountDownLatch(1);
 		CountDownLatch evaluationInterrupted = new CountDownLatch(1);
@@ -108,7 +201,7 @@ class QueryResponseHeartbeatHandlerTest {
 	@Test
 	void invalidJsonpIsRejectedBeforeEvaluationAndLeavesErrorHandlingUncommitted() throws Exception {
 		RepositoryResolver resolver = mock(RepositoryResolver.class);
-		RepositoryConnection connection = mock(RepositoryConnection.class);
+		RepositoryConnection connection = mockConnection();
 		TupleQuery query = mock(TupleQuery.class);
 		MockHttpServletRequest request = newQueryRequest();
 		request.addHeader("Accept", "application/sparql-results+json");
@@ -133,7 +226,7 @@ class QueryResponseHeartbeatHandlerTest {
 	void headRequestsDoNotCreateAHeartbeatOrEvaluateTheQuery() throws Exception {
 		RepositoryResolver resolver = mock(RepositoryResolver.class);
 		org.eclipse.rdf4j.repository.Repository repository = mock(org.eclipse.rdf4j.repository.Repository.class);
-		RepositoryConnection connection = mock(RepositoryConnection.class);
+		RepositoryConnection connection = mockConnection();
 		TupleQuery query = mock(TupleQuery.class);
 		MockHttpServletRequest request = newQueryRequest();
 		request.setMethod(RequestMethod.HEAD.name());
@@ -154,7 +247,7 @@ class QueryResponseHeartbeatHandlerTest {
 	void unsupportedResultFormatsAreRejectedBeforeEvaluation() throws Exception {
 		RepositoryResolver resolver = mock(RepositoryResolver.class);
 		org.eclipse.rdf4j.repository.Repository repository = mock(org.eclipse.rdf4j.repository.Repository.class);
-		RepositoryConnection connection = mock(RepositoryConnection.class);
+		RepositoryConnection connection = mockConnection();
 		TupleQuery query = mock(TupleQuery.class);
 		MockHttpServletRequest request = newQueryRequest();
 		request.removeHeader("Accept");
@@ -179,7 +272,7 @@ class QueryResponseHeartbeatHandlerTest {
 	void cancellationRemainsAttachedWhileTheViewPrefetchesALazyFirstItem() throws Exception {
 		RepositoryResolver resolver = mock(RepositoryResolver.class);
 		org.eclipse.rdf4j.repository.Repository repository = mock(org.eclipse.rdf4j.repository.Repository.class);
-		RepositoryConnection connection = mock(RepositoryConnection.class);
+		RepositoryConnection connection = mockConnection();
 		TupleQuery query = mock(TupleQuery.class);
 		TupleQueryResult result = mock(TupleQueryResult.class);
 		CountDownLatch lazyHasNext = new CountDownLatch(1);
@@ -242,7 +335,7 @@ class QueryResponseHeartbeatHandlerTest {
 	void evaluationErrorBeforeTheFirstHeartbeatRetainsTheOriginalServerStatus() throws Exception {
 		RepositoryResolver resolver = mock(RepositoryResolver.class);
 		org.eclipse.rdf4j.repository.Repository repository = mock(org.eclipse.rdf4j.repository.Repository.class);
-		RepositoryConnection connection = mock(RepositoryConnection.class);
+		RepositoryConnection connection = mockConnection();
 		TupleQuery query = mock(TupleQuery.class);
 		MockHttpServletRequest request = newQueryRequest();
 		MockHttpServletResponse response = new MockHttpServletResponse();
@@ -266,7 +359,7 @@ class QueryResponseHeartbeatHandlerTest {
 	void evaluationErrorAfterHeartbeatSetupStillCleansUpAndPropagatesErrors() throws Exception {
 		RepositoryResolver resolver = mock(RepositoryResolver.class);
 		org.eclipse.rdf4j.repository.Repository repository = mock(org.eclipse.rdf4j.repository.Repository.class);
-		RepositoryConnection connection = mock(RepositoryConnection.class);
+		RepositoryConnection connection = mockConnection();
 		TupleQuery query = mock(TupleQuery.class);
 		AssertionError failure = new AssertionError("fatal evaluation error");
 		MockHttpServletRequest request = newQueryRequest();
@@ -286,7 +379,7 @@ class QueryResponseHeartbeatHandlerTest {
 	void realSocketDisconnectCancelsANormalRequestWithoutASuppliedRequestId() throws Exception {
 		RepositoryResolver resolver = mock(RepositoryResolver.class);
 		HTTPRepository repository = mock(HTTPRepository.class);
-		RepositoryConnection connection = mock(RepositoryConnection.class);
+		RepositoryConnection connection = mockConnection();
 		TupleQuery query = mock(TupleQuery.class);
 		CountDownLatch evaluationStarted = new CountDownLatch(1);
 		CountDownLatch evaluationInterrupted = new CountDownLatch(1);
@@ -434,6 +527,29 @@ class QueryResponseHeartbeatHandlerTest {
 		}
 	}
 
+	private static void mockQueryResult(RepositoryResolver resolver, MockHttpServletRequest request,
+			TupleQueryResult result) throws Exception {
+		org.eclipse.rdf4j.repository.Repository repository = mock(org.eclipse.rdf4j.repository.Repository.class);
+		RepositoryConnection connection = mockConnection();
+		TupleQuery query = mock(TupleQuery.class);
+		when(resolver.getRepository(request)).thenReturn(repository);
+		when(resolver.getRepositoryID(request)).thenReturn("repository");
+		when(resolver.getRepositoryConnection(request, repository)).thenReturn(connection);
+		when(connection.prepareQuery(QueryLanguage.SPARQL, QUERY, null)).thenReturn(query);
+		when(query.evaluate()).thenReturn(result);
+	}
+
+	private static TupleQueryResult singleRowResult() {
+		MapBindingSet row = new MapBindingSet();
+		row.addBinding("s", SimpleValueFactory.getInstance().createIRI("urn:row"));
+		return new IteratingTupleQueryResult(List.of("s"), List.of(row));
+	}
+
+	private static void render(ModelAndView modelAndView, HttpServletRequest request, HttpServletResponse response)
+			throws Exception {
+		((View) modelAndView.getView()).render(modelAndView.getModel(), request, response);
+	}
+
 	private static MockHttpServletRequest newQueryRequest() {
 		MockHttpServletRequest request = new MockHttpServletRequest();
 		request.setMethod(RequestMethod.POST.name());
@@ -540,4 +656,11 @@ class QueryResponseHeartbeatHandlerTest {
 			return outputStream;
 		}
 	}
+
+	private static RepositoryConnection mockConnection() {
+		RepositoryConnection connection = mock(RepositoryConnection.class);
+		when(connection.getQueryParseOptions()).thenReturn(QueryParseOptions.DEFAULT);
+		return connection;
+	}
+
 }

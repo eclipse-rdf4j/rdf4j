@@ -81,27 +81,37 @@ public class LmdbAdjacencyBuildBenchmark {
 
 	@Setup(Level.Trial)
 	public void setup() throws IOException {
-		File store = storeDirectory();
-		File triples = new File(store, "triples");
-		File tripleData = new File(triples, "data.mdb");
-		if (!tripleData.isFile()) {
-			throw new IOException("Theme benchmark TripleStore is missing: " + tripleData.getAbsolutePath());
+		try {
+			File store = storeDirectory();
+			File triples = new File(store, "triples");
+			File tripleData = new File(triples, "data.mdb");
+			if (!tripleData.isFile()) {
+				throw new IOException("Theme benchmark TripleStore is missing: " + tripleData.getAbsolutePath());
+			}
+			Properties expected = new Properties();
+			try (FileInputStream input = new FileInputStream(new File(store, "expected-db-file-sizes.properties"))) {
+				expected.load(input);
+			}
+			String indexes = expected.getProperty("triple.indexes");
+			if (indexes == null || indexes.isBlank()) {
+				throw new IOException("Theme benchmark metadata has no triple.indexes property");
+			}
+			tripleStore = new TripleStore(triples, new LmdbStoreConfig(indexes), null);
+			resolvedBuildThreads = "auto".equals(buildThreads)
+					? Math.max(1, Runtime.getRuntime().availableProcessors() - 1)
+					: Integer.parseInt(buildThreads);
+			buildCoverage = "FULL".equals(coverage) ? LmdbAdjacencyCoverage.full() : selectedCoverage();
+			memoryAccount = new LmdbAdjacencyMemoryAccount(MEMORY_LIMIT);
+			resolvedNodePredicates = LmdbNodePredicateOptions.valueOf(nodePredicates);
+
+		} catch (Exception | Error failure) {
+			try {
+				tearDown();
+			} catch (Exception | Error cleanupFailure) {
+				failure.addSuppressed(cleanupFailure);
+			}
+			throw failure;
 		}
-		Properties expected = new Properties();
-		try (FileInputStream input = new FileInputStream(new File(store, "expected-db-file-sizes.properties"))) {
-			expected.load(input);
-		}
-		String indexes = expected.getProperty("triple.indexes");
-		if (indexes == null || indexes.isBlank()) {
-			throw new IOException("Theme benchmark metadata has no triple.indexes property");
-		}
-		tripleStore = new TripleStore(triples, new LmdbStoreConfig(indexes), null);
-		resolvedBuildThreads = "auto".equals(buildThreads)
-				? Math.max(1, Runtime.getRuntime().availableProcessors() - 1)
-				: Integer.parseInt(buildThreads);
-		buildCoverage = "FULL".equals(coverage) ? LmdbAdjacencyCoverage.full() : selectedCoverage();
-		memoryAccount = new LmdbAdjacencyMemoryAccount(MEMORY_LIMIT);
-		resolvedNodePredicates = LmdbNodePredicateOptions.valueOf(nodePredicates);
 	}
 
 	@Benchmark

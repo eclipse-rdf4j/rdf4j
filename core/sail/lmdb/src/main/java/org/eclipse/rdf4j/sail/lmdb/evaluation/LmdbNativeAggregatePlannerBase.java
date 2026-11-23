@@ -62,6 +62,7 @@ import org.eclipse.rdf4j.query.algebra.Max;
 import org.eclipse.rdf4j.query.algebra.Min;
 import org.eclipse.rdf4j.query.algebra.Projection;
 import org.eclipse.rdf4j.query.algebra.QueryModelNode;
+import org.eclipse.rdf4j.query.algebra.Service;
 import org.eclipse.rdf4j.query.algebra.StatementPattern;
 import org.eclipse.rdf4j.query.algebra.StatementPattern.Scope;
 import org.eclipse.rdf4j.query.algebra.Sum;
@@ -1358,6 +1359,10 @@ abstract class LmdbNativeAggregatePlannerBase {
 		return island(expr, null);
 	}
 
+	SlotPlan islandForServiceJoinOperand(Service service) {
+		return island(service, null, true);
+	}
+
 	/**
 	 * Island with a restricted visible-name set (M-A4 demotion): out slots are allocated only for binding names the
 	 * rest of the query observes; internal-only names stay inside the generic island and never claim slots. Dropping
@@ -1365,6 +1370,10 @@ abstract class LmdbNativeAggregatePlannerBase {
 	 * binding.
 	 */
 	SlotPlan island(TupleExpr expr, Set<String> restrictTo) {
+		return island(expr, restrictTo, false);
+	}
+
+	private SlotPlan island(TupleExpr expr, Set<String> restrictTo, boolean serviceJoinOperand) {
 		if (!islandsEnabled || islandsSuppressed) {
 			return null;
 		}
@@ -1396,7 +1405,7 @@ abstract class LmdbNativeAggregatePlannerBase {
 		varNames.addAll(names);
 		return new GenericEvalPlan(GenericSubplanDescriptor.create(expr, strategy), expr.getClass().getSimpleName(),
 				outSlots,
-				outNames, varNames, strategy, context);
+				outNames, varNames, strategy, context, serviceJoinOperand);
 	}
 
 	/** {@code compileTuple} with the island fallback at a decline (M-A1b). */

@@ -29,6 +29,8 @@ import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.QueryLanguage;
+import org.eclipse.rdf4j.query.QueryParseOptions;
+import org.eclipse.rdf4j.query.QueryParseOptions.GraphAlgebraMode;
 import org.eclipse.rdf4j.query.algebra.Bound;
 import org.eclipse.rdf4j.query.algebra.Filter;
 import org.eclipse.rdf4j.query.algebra.Join;
@@ -78,7 +80,8 @@ class QueryJoinOptimizerFilterCostTest {
 	@ParameterizedTest(name = "{0}")
 	@MethodSource("filterGroups")
 	void discountRespectsFilterReferencesAndGroupBoundaries(String label, String query, boolean discounted) {
-		TupleExpr expression = QueryParserUtil.parseTupleQuery(QueryLanguage.SPARQL, query, null).getTupleExpr();
+		TupleExpr expression = QueryParserUtil.parseTupleQuery(QueryLanguage.SPARQL, query, null,
+				QueryParseOptions.DEFAULT.withGraphAlgebraMode(GraphAlgebraMode.GRAPH)).getTupleExpr();
 		StatementPattern pattern = findPattern(expression, "urn:target");
 		PatternCostOptimizer optimizer = new PatternCostOptimizer();
 		double cardinality = optimizer.getStatistics().getCardinality(pattern);
