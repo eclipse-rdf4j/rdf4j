@@ -371,7 +371,8 @@ public class LmdbRunCountHistogramTest {
 				}
 				assertThat(workerOpens.get()).as("real parallel worker sources were acquired").isPositive();
 				assertThat(physicalFills.get()).as("a physical worker root fill was reached").isPositive();
-				assertThat(deadline.triggered).as("the attempt deadline expired during that fill").isTrue();
+				assertThat(deadline.triggeringWorker.get()).as("a physical root fill tripped the attempt deadline")
+						.isNotNull();
 				assertThat(deadline.observed).as("the physical callback observed the attempt deadline").isTrue();
 				assertThat(failure).isSameAs(LmdbNativeProbeDeadlineExceeded.INSTANCE);
 				assertThat(ledger.usedBytes()).as("all worker memory is released on deadline").isEqualTo(ledgerBefore);
@@ -4310,10 +4311,7 @@ public class LmdbRunCountHistogramTest {
 		doAnswer(call -> {
 			physicalFills.incrementAndGet();
 			assertThat(callbackInstalled).as("physical root fill is cancellation-aware").isTrue();
-			boolean trigger = deadline != null && mayTrigger && deadline.triggered.compareAndSet(false, true);
-			if (trigger) {
-				deadline.value.trip();
-			}
+			boolean trigger = deadline != null && mayTrigger && deadline.tripInCurrentWorker();
 			try {
 				Object result = call.callRealMethod();
 				if (trigger) {
@@ -4338,9 +4336,23 @@ public class LmdbRunCountHistogramTest {
 	}
 
 	private static final class WorkerProbeDeadline {
-		final LmdbNativeProbeDeadline value = LmdbNativeProbeDeadline.trippableOnly();
-		final AtomicBoolean triggered = new AtomicBoolean();
+		final LmdbNativeProbeDeadline value = spy(LmdbNativeProbeDeadline.trippableOnly());
+		final AtomicReference<Thread> triggeringWorker = new AtomicReference<>();
 		final AtomicBoolean observed = new AtomicBoolean();
+
+		WorkerProbeDeadline() {
+			// Let the physical callback observe expiration before a peer can cancel the worker group.
+			doAnswer(call -> (observed.get() || Thread.currentThread() == triggeringWorker.get())
+					&& (boolean) call.callRealMethod()).when(value).expired();
+		}
+
+		boolean tripInCurrentWorker() {
+			if (!triggeringWorker.compareAndSet(null, Thread.currentThread())) {
+				return false;
+			}
+			value.trip();
+			return true;
+		}
 	}
 
 	private static WildcardAdjacency recordingWildcardRoots(WildcardAdjacency actual, AtomicInteger rootOpens) {
