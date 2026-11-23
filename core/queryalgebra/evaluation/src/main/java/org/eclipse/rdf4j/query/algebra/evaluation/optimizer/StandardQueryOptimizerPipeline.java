@@ -17,6 +17,8 @@ import java.util.List;
 import org.eclipse.rdf4j.common.annotation.Experimental;
 import org.eclipse.rdf4j.common.annotation.InternalUseOnly;
 import org.eclipse.rdf4j.query.BindingSet;
+import org.eclipse.rdf4j.query.QueryExecutionPolicy;
+import org.eclipse.rdf4j.query.QueryExecutionPolicy.GraphJoinOptimization;
 import org.eclipse.rdf4j.query.algebra.evaluation.EvaluationStrategy;
 import org.eclipse.rdf4j.query.algebra.evaluation.EvaluationStrategyFactory;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryOptimizer;
@@ -43,7 +45,11 @@ public class StandardQueryOptimizerPipeline implements QueryOptimizerPipeline {
 	}
 
 	public static final BindingAssignerOptimizer BINDING_ASSIGNER = new BindingAssignerOptimizer();
-	public static final GraphScopeOptimizer GRAPH_SCOPE_OPTIMIZER = new GraphScopeOptimizer();
+	/** Shared constant-graph lowering for pipelines without automatic GRAPH restriction probes. */
+	public static final GraphScopeOptimizer GRAPH_SCOPE_OPTIMIZER = new GraphScopeOptimizer(
+			QueryExecutionPolicy.DEFAULT.withGraphJoinOptimization(GraphJoinOptimization.OFF));
+	private static final GraphScopeOptimizer AUTOMATIC_GRAPH_SCOPE_OPTIMIZER = new GraphScopeOptimizer(
+			QueryExecutionPolicy.DEFAULT.withGraphJoinOptimization(GraphJoinOptimization.AUTO));
 	public static final TupleFunctionMagicPropertyOptimizer TUPLE_FUNCTION_MAGIC_PROPERTY_OPTIMIZER = new TupleFunctionMagicPropertyOptimizer();
 	public static final BindingSetAssignmentInlinerOptimizer BINDING_SET_ASSIGNMENT_INLINER = new BindingSetAssignmentInlinerOptimizer();
 	public static final CompareOptimizer COMPARE_OPTIMIZER = new CompareOptimizer();
@@ -94,9 +100,15 @@ public class StandardQueryOptimizerPipeline implements QueryOptimizerPipeline {
 	 */
 	@Override
 	public Iterable<QueryOptimizer> getOptimizers() {
+		QueryExecutionPolicy policy = strategy.getQueryExecutionPolicy();
+		GraphScopeOptimizer graphScopeOptimizer = switch (policy.graphJoinOptimization()) {
+		case OFF -> GRAPH_SCOPE_OPTIMIZER;
+		case AUTO -> AUTOMATIC_GRAPH_SCOPE_OPTIMIZER;
+		default -> new GraphScopeOptimizer(policy);
+		};
 		List<QueryOptimizer> optimizers = List.of(
 				BINDING_ASSIGNER,
-				GRAPH_SCOPE_OPTIMIZER,
+				graphScopeOptimizer,
 				TUPLE_FUNCTION_MAGIC_PROPERTY_OPTIMIZER,
 				BINDING_SET_ASSIGNMENT_INLINER,
 				new ConstantOptimizer(strategy, EmptyBindingSet.getInstance()),

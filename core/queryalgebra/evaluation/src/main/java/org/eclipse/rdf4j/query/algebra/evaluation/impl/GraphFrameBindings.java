@@ -13,6 +13,7 @@ package org.eclipse.rdf4j.query.algebra.evaluation.impl;
 
 import java.io.Serializable;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.Iterator;
 import java.util.Map;
 import java.util.Set;
@@ -25,9 +26,9 @@ import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.MutableBindingSet;
 
 /**
- * Immutable provenance of private active-graph inputs supplied by enclosing evaluation frames. Names alone cannot
- * distinguish those inputs from unrelated API bindings or same-named local projections. This state is independent of
- * the solution mapping's equality, hash code and exported names.
+ * Immutable input provenance carried across evaluation frames. Names alone cannot distinguish private active-graph
+ * inputs from same-named local bindings, or a locally cleared scalar parameter from an absent binding. This state is
+ * independent of the solution mapping's equality, hash code and exported names.
  */
 @InternalUseOnly
 public final class GraphFrameBindings implements Serializable {
@@ -35,6 +36,10 @@ public final class GraphFrameBindings implements Serializable {
 	private static final long serialVersionUID = 1L;
 	public static final GraphFrameBindings EMPTY = new GraphFrameBindings(Map.of());
 	private final Map<String, Value> parameters;
+	private final Set<ClearedInput> clearedSiblingInputs;
+
+	private record ClearedInput(long scope, String name) implements Serializable {
+	}
 
 	public interface Carrier {
 		GraphFrameBindings getGraphFrameBindings();
@@ -45,7 +50,12 @@ public final class GraphFrameBindings implements Serializable {
 	}
 
 	private GraphFrameBindings(Map<String, Value> parameters) {
+		this(parameters, Set.of());
+	}
+
+	private GraphFrameBindings(Map<String, Value> parameters, Set<ClearedInput> clearedSiblingInputs) {
 		this.parameters = Map.copyOf(parameters);
+		this.clearedSiblingInputs = Set.copyOf(clearedSiblingInputs);
 	}
 
 	public static GraphFrameBindings from(BindingSet bindings) {
@@ -61,27 +71,38 @@ public final class GraphFrameBindings implements Serializable {
 	}
 
 	public GraphFrameBindings merge(GraphFrameBindings other) {
-		if (other.parameters.isEmpty() || this == other) {
+		if (other.isEmpty() || this == other) {
 			return this;
 		}
-		if (parameters.isEmpty()) {
+		if (isEmpty()) {
 			return other;
 		}
 		Map<String, Value> combined = new HashMap<>(parameters);
 		combined.putAll(other.parameters);
-		return new GraphFrameBindings(combined);
+		return new GraphFrameBindings(combined, mergeCleared(other));
 	}
 
 	public GraphFrameBindings without(String parameter) {
-		if (!parameters.containsKey(parameter)) {
+		boolean graphInput = parameters.containsKey(parameter);
+		Set<ClearedInput> cleared = clearedInputs();
+		if (!graphInput && cleared.isEmpty()) {
 			return this;
 		}
-		if (parameters.size() == 1) {
+		if (graphInput && parameters.size() == 1 && cleared.isEmpty()) {
 			return EMPTY;
 		}
-		Map<String, Value> remaining = new HashMap<>(parameters);
-		remaining.remove(parameter);
-		return new GraphFrameBindings(remaining);
+		Map<String, Value> remaining = parameters;
+		if (graphInput) {
+			remaining = new HashMap<>(parameters);
+			remaining.remove(parameter);
+		}
+		Set<ClearedInput> remainingCleared = cleared;
+		if (!cleared.isEmpty()) {
+			remainingCleared = new HashSet<>(cleared);
+			remainingCleared.removeIf(input -> parameter.equals(input.name()));
+		}
+		return remaining.isEmpty() && remainingCleared.isEmpty() ? EMPTY
+				: new GraphFrameBindings(remaining, remainingCleared);
 	}
 
 	/** Records only values supplied by evaluation; callers' arbitrary BindingSets never acquire provenance by name. */
@@ -93,7 +114,7 @@ public final class GraphFrameBindings implements Serializable {
 		}
 		Map<String, Value> combined = new HashMap<>(current.parameters);
 		combined.put(parameter, graph);
-		return attach(bindings, new GraphFrameBindings(combined));
+		return attach(bindings, new GraphFrameBindings(combined, current.clearedInputs()));
 	}
 
 	/** Preserves provenance when an internal boundary copies to a different mutable binding representation. */
@@ -101,8 +122,88 @@ public final class GraphFrameBindings implements Serializable {
 		return attach(copy, from(copy).merge(from(original)));
 	}
 
+	public static boolean isSiblingInputCleared(BindingSet bindings, long scope, String name) {
+		Set<ClearedInput> cleared = from(bindings).clearedInputs();
+		return !cleared.isEmpty() && cleared.contains(new ClearedInput(scope, name));
+	}
+
+	public static void markSiblingInputCleared(MutableBindingSet bindings, long scope, String name) {
+		MutableCarrier carrier = (MutableCarrier) bindings;
+		GraphFrameBindings frames = from(bindings);
+		Set<ClearedInput> cleared = new HashSet<>(frames.clearedInputs());
+		cleared.add(new ClearedInput(scope, name));
+		carrier.setGraphFrameBindings(new GraphFrameBindings(frames.parameters, cleared));
+	}
+
+	/** Supplies a carrier for custom mutable BindingSets while a scalar-input scope is active. */
+	public static MutableBindingSet trackClearedSiblingInputs(MutableBindingSet bindings) {
+		return bindings instanceof MutableCarrier ? bindings : new SuppliedBindings(bindings, from(bindings));
+	}
+
+	/** Exposes the representation created by the evaluation context to its accessors. */
+	public static BindingSet contextRow(BindingSet bindings) {
+		return bindings instanceof SuppliedBindings supplied ? supplied.delegate : bindings;
+	}
+
+	public static MutableBindingSet contextRow(MutableBindingSet bindings) {
+		return bindings instanceof SuppliedBindings supplied ? supplied.delegate : bindings;
+	}
+
+	/** Invalidates the assignment's old provenance while leaving typed mutation to the context. */
+	public static MutableBindingSet assignmentTarget(MutableBindingSet bindings, String name) {
+		if (bindings instanceof SuppliedBindings supplied) {
+			supplied.frames = supplied.frames.without(name);
+			return supplied.delegate;
+		}
+		return bindings;
+	}
+
+	/** An arbitrary assignment callback does not expose its output names. */
+	public static void removeClearsForBoundNames(MutableBindingSet bindings) {
+		if (bindings instanceof SuppliedBindings supplied) {
+			GraphFrameBindings frames = supplied.frames;
+			Set<ClearedInput> cleared = frames.clearedInputs();
+			if (!cleared.isEmpty()) {
+				Set<ClearedInput> remaining = new HashSet<>(cleared);
+				if (remaining.removeIf(input -> supplied.delegate.getValue(input.name()) != null)) {
+					supplied.frames = new GraphFrameBindings(frames.parameters, remaining);
+				}
+			}
+		}
+	}
+
+	/** Carries local shadowing through projection without granting private active-graph authority. */
+	public static MutableBindingSet preserveClearedSiblingInputs(BindingSet source, MutableBindingSet target) {
+		GraphFrameBindings projected = from(source);
+		if (projected.clearedInputs().isEmpty()) {
+			return target;
+		}
+		GraphFrameBindings existing = from(target);
+		return attach(target, new GraphFrameBindings(existing.parameters, existing.mergeCleared(projected)));
+	}
+
+	private boolean isEmpty() {
+		return parameters.isEmpty() && clearedInputs().isEmpty();
+	}
+
+	private Set<ClearedInput> clearedInputs() {
+		return clearedSiblingInputs == null ? Set.of() : clearedSiblingInputs;
+	}
+
+	private Set<ClearedInput> mergeCleared(GraphFrameBindings other) {
+		if (other.clearedInputs().isEmpty()) {
+			return clearedInputs();
+		}
+		if (clearedInputs().isEmpty()) {
+			return other.clearedInputs();
+		}
+		Set<ClearedInput> merged = new HashSet<>(clearedInputs());
+		merged.addAll(other.clearedInputs());
+		return merged;
+	}
+
 	private static MutableBindingSet attach(MutableBindingSet bindings, GraphFrameBindings frames) {
-		if (frames.parameters.isEmpty()) {
+		if (frames.isEmpty()) {
 			return bindings;
 		}
 		if (bindings instanceof MutableCarrier carrier) {

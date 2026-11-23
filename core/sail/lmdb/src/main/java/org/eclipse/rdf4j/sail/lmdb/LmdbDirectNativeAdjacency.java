@@ -548,9 +548,14 @@ final class LmdbDirectNativeAdjacency implements NativeLmdbQuerySource.NativeAdj
 		return copied;
 	}
 
-	long countContext(long runHandle, long rawContext, boolean existenceOnly) {
-		resolve(runHandle);
-		return LmdbAdjacencyRunCodec.countContext(contexts, runCursor, rawContext, existenceOnly);
+	long countContext(long runHandle, long rawContext, boolean existenceOnly,
+			LmdbAdjacencyRunCodec.RunCursor cancellationCursor) {
+		if (cancellationCursor == null) {
+			resolve(runHandle);
+			return LmdbAdjacencyRunCodec.countContext(contexts, runCursor, rawContext, existenceOnly);
+		}
+		LmdbAdjacencyRunCodec.resolveContextMetadata(catalogOf(runHandle), localOf(runHandle), cancellationCursor);
+		return LmdbAdjacencyRunCodec.countContext(contexts, cancellationCursor, rawContext, existenceOnly);
 	}
 
 	@Override
@@ -742,23 +747,32 @@ final class LmdbDirectNativeAdjacency implements NativeLmdbQuerySource.NativeAdj
 	}
 
 	/** Statement scans may skip context-disjoint base pages; native key-domain ordinal windows stay unchanged. */
-	RootScanCursor rootScanCursor(long rawContext) {
-		if (rawContext < 0) {
-			return rootScanCursor();
-		}
-		prepareKeyDomain();
+	RootScanCursor rootScanCursor(long rawContext, Runnable cancellationPoll) {
+		prepareKeyDomain(cancellationPoll);
 		ImmutablePagedQuadCsfIndex.KeyCursor baseCursor = baseKeys == null ? null
-				: baseKeys.contextCandidateCursor(rawContext);
-		return new RootScanCursor(baseCursor, 0L, keyCount(), domainChangeKeys.length != 0, rawContext);
+				: rawContext < 0 ? baseKeys.cursor(0, baseKeys.keyCount())
+						: baseKeys.contextCandidateCursor(rawContext);
+		return new RootScanCursor(baseCursor, 0L, keyCount(), domainChangeKeys.length != 0, rawContext,
+				cancellationPoll);
 	}
 
 	RootScanCursor rootScanCursor(long fromOrdinal, long toOrdinal) {
-		prepareKeyDomain();
+		return rootScanCursor(fromOrdinal, toOrdinal, null);
+	}
+
+	long keyCount(Runnable cancellationPoll) {
+		ensureOpen();
+		prepareKeyDomain(cancellationPoll);
+		return domainKeyCount;
+	}
+
+	RootScanCursor rootScanCursor(long fromOrdinal, long toOrdinal, Runnable cancellationPoll) {
+		prepareKeyDomain(cancellationPoll);
 		boolean merged = domainChangeKeys.length != 0;
 		long baseCount = baseKeys == null ? 0 : baseKeys.keyCount();
 		ImmutablePagedQuadCsfIndex.KeyCursor baseCursor = baseKeys == null ? null
 				: baseKeys.cursor(merged ? 0 : fromOrdinal, merged ? baseCount : toOrdinal);
-		return new RootScanCursor(baseCursor, fromOrdinal, toOrdinal, merged, -1L);
+		return new RootScanCursor(baseCursor, fromOrdinal, toOrdinal, merged, -1L, cancellationPoll);
 	}
 
 	static final class DirectPageCursor
@@ -981,17 +995,22 @@ final class LmdbDirectNativeAdjacency implements NativeLmdbQuerySource.NativeAdj
 		private long key;
 		private long run;
 		private long size = SIZE_UNKNOWN;
+		private final Runnable cancellationPoll;
 		private long contextSpanEnd;
 		private boolean directBaseRun;
 
 		private RootScanCursor(ImmutablePagedQuadCsfIndex.KeyCursor baseCursor, long fromOrdinal, long toOrdinal,
-				boolean merged, long boundContext) {
+				boolean merged, long boundContext, Runnable cancellationPoll) {
+			this.cancellationPoll = cancellationPoll;
 			this.baseCursor = baseCursor;
+			if (baseCursor != null) {
+				baseCursor.setCancellationPoll(cancellationPoll);
+			}
 			this.fromOrdinal = fromOrdinal;
 			this.toOrdinal = toOrdinal;
 			this.merged = merged;
 			this.boundContext = boundContext;
-			this.contextRun = boundContext < 0 ? null : new LmdbAdjacencyRunCodec.RunCursor();
+			this.contextRun = boundContext < 0 ? null : new LmdbAdjacencyRunCodec.RunCursor(cancellationPoll);
 			this.emittedOrdinal = merged ? 0 : fromOrdinal;
 		}
 
@@ -1056,6 +1075,9 @@ final class LmdbDirectNativeAdjacency implements NativeLmdbQuerySource.NativeAdj
 				return true;
 			}
 			while (true) {
+				if (cancellationPoll != null) {
+					cancellationPoll.run();
+				}
 				if (!baseReady && baseCursor != null) {
 					baseReady = baseCursor.advance();
 				}
@@ -1363,6 +1385,10 @@ final class LmdbDirectNativeAdjacency implements NativeLmdbQuerySource.NativeAdj
 	}
 
 	private void prepareKeyDomain() {
+		prepareKeyDomain(null);
+	}
+
+	private void prepareKeyDomain(Runnable cancellationPoll) {
 		if (domainChangeKeys != null) {
 			return;
 		}
@@ -1384,6 +1410,9 @@ final class LmdbDirectNativeAdjacency implements NativeLmdbQuerySource.NativeAdj
 			for (int generationIndex = 0; generationIndex < applicableGenerationCount; generationIndex++) {
 				LmdbAdjacencyDeltaGeneration generation = overlays.generation(generationIndex);
 				for (int row = 0; row < generation.rowCount(); row++) {
+					if (cancellationPoll != null) {
+						cancellationPoll.run();
+					}
 					if (generation.rowPlaneAt(row) == plane && generation.rowPredicateAt(row) == predicate) {
 						candidateCount = Math.incrementExact(candidateCount);
 					}
@@ -1402,6 +1431,9 @@ final class LmdbDirectNativeAdjacency implements NativeLmdbQuerySource.NativeAdj
 		if (latestSnapshot) {
 			int[] candidate = { 0 };
 			overlays.forEachLatestRow((generation, generationIndex, row) -> {
+				if (cancellationPoll != null) {
+					cancellationPoll.run();
+				}
 				if (generation.rowPlaneAt(row) == plane && generation.rowPredicateAt(row) == predicate) {
 					candidates[candidate[0]++] = generation.rowKeyAt(row);
 				}
@@ -1411,6 +1443,9 @@ final class LmdbDirectNativeAdjacency implements NativeLmdbQuerySource.NativeAdj
 			for (int generationIndex = 0; generationIndex < applicableGenerationCount; generationIndex++) {
 				LmdbAdjacencyDeltaGeneration generation = overlays.generation(generationIndex);
 				for (int row = 0; row < generation.rowCount(); row++) {
+					if (cancellationPoll != null) {
+						cancellationPoll.run();
+					}
 					if (generation.rowPlaneAt(row) == plane && generation.rowPredicateAt(row) == predicate) {
 						candidates[candidate++] = generation.rowKeyAt(row);
 					}
@@ -1428,6 +1463,9 @@ final class LmdbDirectNativeAdjacency implements NativeLmdbQuerySource.NativeAdj
 		for (int i = 0; i < candidates.length;) {
 			long key = candidates[i];
 			do {
+				if (cancellationPoll != null) {
+					cancellationPoll.run();
+				}
 				i++;
 			} while (i < candidates.length && candidates[i] == key);
 			long run = findUnmemoized(key);

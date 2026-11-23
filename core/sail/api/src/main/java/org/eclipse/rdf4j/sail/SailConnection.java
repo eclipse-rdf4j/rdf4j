@@ -31,6 +31,7 @@ import org.eclipse.rdf4j.query.Dataset;
 import org.eclipse.rdf4j.query.Query;
 import org.eclipse.rdf4j.query.QueryLanguage;
 import org.eclipse.rdf4j.query.QueryParseOptions;
+import org.eclipse.rdf4j.query.QueryParseOptions.GraphAlgebraMode;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.algebra.UpdateExpr;
 import org.eclipse.rdf4j.query.explanation.Explanation;
@@ -78,11 +79,30 @@ public interface SailConnection extends AutoCloseable {
 		return Optional.empty();
 	}
 
-	/** Providers may decline nondefault syntax policy and let the repository's core parser handle it. */
+	/**
+	 * Whether this connection, its wrappers, optimizers, and evaluation strategies support explicit GRAPH algebra.
+	 * Existing connection implementations remain on historical algebra until they explicitly opt in. This is used only
+	 * to resolve AUTO at preparation.
+	 * <p>
+	 * The declaration does not negotiate custom SERVICE resolvers or providers, or detect external consumers inspecting
+	 * a prepared query after it has been returned. Such consumers must explicitly request LEGACY if needed. An opted-in
+	 * evaluation path must remain compatible while its prepared operations are in use.
+	 *
+	 * @return whether the connection's wrapper, optimizer, and evaluation-strategy path supports GRAPH
+	 * @deprecated This compatibility hook will be removed in the next major release, when explicit Graph algebra is
+	 *             required.
+	 */
+	@Deprecated(since = "6.2.0", forRemoval = true)
+	default boolean supportsGraphAlgebra() {
+		return false;
+	}
+
+	/** Providers may decline nondefault parsing policy and let the repository's core parser handle it. */
 	default Optional<TupleExpr> prepareQuery(QueryLanguage language, Query.QueryType type, String query,
 			String baseURI, QueryParseOptions options) {
 		Objects.requireNonNull(options);
-		return options.equals(QueryParseOptions.DEFAULT) ? prepareQuery(language, type, query, baseURI)
+		return options.blankNodeReferences() && options.graphAlgebraMode() != GraphAlgebraMode.GRAPH
+				? prepareQuery(language, type, query, baseURI)
 				: Optional.empty();
 	}
 

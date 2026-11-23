@@ -143,6 +143,11 @@ final class EvaluationScopedQueryEvaluationContext implements QueryEvaluationCon
 	}
 
 	@Override
+	public Object getExecutionIdentity() {
+		return queryScope;
+	}
+
+	@Override
 	public BlankNodeAllocationScope getBlankNodeAllocationScope() {
 		return queryScope.values.getBlankNodeAllocationScope();
 	}
@@ -155,6 +160,11 @@ final class EvaluationScopedQueryEvaluationContext implements QueryEvaluationCon
 	@Override
 	public Set<String> getSubstitutionBindingNames() {
 		return structural.getSubstitutionBindingNames();
+	}
+
+	@Override
+	public Set<String> getCorrelatedPathBindingNames() {
+		return structural.getCorrelatedPathBindingNames();
 	}
 
 	@Override

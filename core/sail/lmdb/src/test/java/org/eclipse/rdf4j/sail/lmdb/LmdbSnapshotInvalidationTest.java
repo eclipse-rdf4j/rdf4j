@@ -16,8 +16,15 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import java.io.File;
+import java.time.Duration;
+import java.util.Arrays;
 import java.util.Set;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.ExecutionException;
+import java.util.concurrent.FutureTask;
+import java.util.concurrent.TimeUnit;
 
+import org.eclipse.rdf4j.common.concurrent.locks.StampedLongAdderLockManager;
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.common.iteration.IndexReportingIterator;
 import org.eclipse.rdf4j.common.order.StatementOrder;
@@ -26,10 +33,12 @@ import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Statement;
 import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
+import org.eclipse.rdf4j.query.QueryInterruptedException;
 import org.eclipse.rdf4j.sail.NotifyingSailConnection;
 import org.eclipse.rdf4j.sail.SailException;
 import org.eclipse.rdf4j.sail.base.SailDataset;
 import org.eclipse.rdf4j.sail.lmdb.TxnManager.Txn;
+import org.eclipse.rdf4j.sail.lmdb.config.DirectAdjacencyMode;
 import org.eclipse.rdf4j.sail.lmdb.config.LmdbStoreConfig;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.NativeLmdbQuerySource;
 import org.eclipse.rdf4j.sail.lmdb.model.LmdbValue;
@@ -169,6 +178,105 @@ public class LmdbSnapshotInvalidationTest {
 		} finally {
 			store.shutDown();
 		}
+	}
+
+	@ParameterizedTest
+	@ValueSource(booleans = { false, true })
+	void closingDatasetRejectsStatementCursorOpenedDuringClose(boolean ordered) throws Exception {
+		LmdbStoreConfig config = new LmdbStoreConfig("spoc,posc");
+		config.setExperimentalQueryOptimizations(true);
+		config.setDirectAdjacencyMode(DirectAdjacencyMode.DISABLED);
+		LmdbStore store = new LmdbStore(new File(dataDir, "open-during-close"), config);
+		store.init();
+		try {
+			ValueFactory vf = SimpleValueFactory.getInstance();
+			IRI predicate = vf.createIRI("urn:open-during-close:predicate");
+			try (NotifyingSailConnection connection = store.getConnection()) {
+				connection.begin();
+				connection.addStatement(vf.createIRI("urn:open-during-close:subject"), predicate, vf.createLiteral(1));
+				connection.commit();
+			}
+			LmdbSailStore backing = store.getBackingStore();
+			try (var dataset = backing.getExplicitSailSource().dataset(IsolationLevels.SNAPSHOT);
+					var admitted = dataset.getStatements(null, predicate, null)) {
+				assertThat(admitted.hasNext()).isTrue();
+				CountDownLatch opening = new CountDownLatch(1);
+				CountDownLatch resumeOpen = new CountDownLatch(1);
+				backing.nativeSourceObservationForTest = new LmdbSailStore.NativeSourceObservationForTest() {
+					@Override
+					public void state(LmdbSailStore.NativeSourceStateForTest state) {
+						opening.countDown();
+						try {
+							assertThat(resumeOpen.await(10, TimeUnit.SECONDS)).isTrue();
+						} catch (InterruptedException e) {
+							Thread.currentThread().interrupt();
+							throw new AssertionError(e);
+						}
+					}
+
+					@Override
+					public void access(boolean used, String reason, StatementOrder order, long subj, long pred,
+							long obj, long context) {
+					}
+				};
+				FutureTask<Void> open = new FutureTask<>(() -> {
+					try (var rows = ordered ? dataset.getStatements(StatementOrder.S, null, predicate, null)
+							: dataset.getStatements(null, predicate, null)) {
+						// Always release a wrongly admitted cursor so the failure can be reported.
+						return null;
+					}
+				});
+				FutureTask<Void> close = new FutureTask<>(dataset::close, null);
+				Thread closer = Thread.ofPlatform().daemon().unstarted(close);
+				Thread opener = Thread.ofPlatform().daemon().start(open);
+				try {
+					assertThat(opening.await(10, TimeUnit.SECONDS)).as("open has acquired its native-source stamp")
+							.isTrue();
+					closer.start();
+					assertThat(awaitNativeSourceWriteLock(closer)).as("dataset close drained admitted cursors")
+							.isTrue();
+					resumeOpen.countDown();
+					close.get(10, TimeUnit.SECONDS);
+					assertThatThrownBy(() -> open.get(10, TimeUnit.SECONDS))
+							.as("an opening cursor must not escape a closing dataset")
+							.isInstanceOf(ExecutionException.class)
+							.hasCauseInstanceOf(QueryInterruptedException.class);
+					assertThat(admitted.hasNext()).isFalse();
+				} finally {
+					resumeOpen.countDown();
+					backing.nativeSourceObservationForTest = null;
+					try {
+						admitted.close();
+					} finally {
+						boolean openerStopped;
+						boolean closerStopped;
+						try {
+							openerStopped = opener.join(Duration.ofSeconds(10));
+						} finally {
+							closerStopped = closer.getState() == Thread.State.NEW
+									|| closer.join(Duration.ofSeconds(10));
+						}
+						assertThat(openerStopped).as("cursor opener stopped").isTrue();
+						assertThat(closerStopped).as("dataset closer stopped").isTrue();
+					}
+				}
+			}
+		} finally {
+			store.shutDown();
+		}
+	}
+
+	private static boolean awaitNativeSourceWriteLock(Thread closer) {
+		long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(10);
+		while (closer.isAlive() && System.nanoTime() < deadline) {
+			if (Arrays.stream(closer.getStackTrace())
+					.anyMatch(frame -> frame.getClassName().equals(StampedLongAdderLockManager.class.getName())
+							&& frame.getMethodName().equals("writeLock"))) {
+				return true;
+			}
+			Thread.yield();
+		}
+		return false;
 	}
 
 	@ParameterizedTest

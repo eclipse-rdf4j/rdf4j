@@ -26,6 +26,7 @@ import org.eclipse.rdf4j.repository.Repository;
 import org.eclipse.rdf4j.repository.RepositoryConnection;
 import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.CsvSource;
 import org.junit.jupiter.params.provider.ValueSource;
 
 public class BindLeftJoinTests extends SPARQLBaseTest {
@@ -36,6 +37,59 @@ public class BindLeftJoinTests extends SPARQLBaseTest {
 		fedxRule.withConfiguration(config -> {
 			config.withEnableMonitoring(true);
 		});
+	}
+
+	@ParameterizedTest
+	@CsvSource(delimiter = '|', value = {
+			"true | ?weight > 114 | true",
+			"false | ?weight > 114 | true",
+			"true | STR(?weight) = \"not-the-weight\" | false",
+			"false | STR(?weight) = \"not-the-weight\" | false"
+	})
+	public void testOptionalFilterCondition(boolean bindLeftJoinOptimizationEnabled, String condition,
+			boolean numericWeightMatches) throws Exception {
+		prepareTest(Arrays.asList("/tests/basic/data_emptyStore.ttl", "/tests/basic/data_emptyStore.ttl"));
+		fedxRule.setConfig(config -> config.withEnableOptionalAsBindJoin(bindLeftJoinOptimizationEnabled));
+
+		var accepted = Values.iri("urn:accepted");
+		var rejected = Values.iri("urn:rejected");
+		var missing = Values.iri("urn:missing");
+		var kind = Values.iri("urn:kind");
+		var drug = Values.iri("urn:Drug");
+		var weight = Values.iri("urn:weight");
+		var numericWeight = Values.literal(200);
+
+		try (RepositoryConnection conn = getRepository(1).getConnection()) {
+			conn.add(accepted, kind, drug);
+			conn.add(rejected, kind, drug);
+			conn.add(missing, kind, drug);
+		}
+		try (RepositoryConnection conn = getRepository(2).getConnection()) {
+			conn.add(accepted, weight, numericWeight);
+			conn.add(rejected, weight, Values.literal("247.1419"));
+		}
+
+		String query = """
+				SELECT ?drug ?weight WHERE {
+				  ?drug <urn:kind> <urn:Drug> .
+				  OPTIONAL {
+				    ?drug <urn:weight> ?weight .
+				    FILTER (%s)
+				  }
+				}
+				ORDER BY ?drug
+				""".formatted(condition);
+		try (RepositoryConnection conn = fedxRule.getRepository().getConnection();
+				TupleQueryResult result = conn.prepareTupleQuery(query).evaluate()) {
+			var rows = Iterations.asList(result);
+			Assertions.assertEquals(3, rows.size());
+			Assertions.assertEquals(accepted, rows.get(0).getValue("drug"));
+			Assertions.assertEquals(numericWeightMatches ? numericWeight : null, rows.get(0).getValue("weight"));
+			Assertions.assertEquals(missing, rows.get(1).getValue("drug"));
+			Assertions.assertFalse(rows.get(1).hasBinding("weight"));
+			Assertions.assertEquals(rejected, rows.get(2).getValue("drug"));
+			Assertions.assertFalse(rows.get(2).hasBinding("weight"), () -> rows.get(2).toString());
+		}
 	}
 
 	@ParameterizedTest

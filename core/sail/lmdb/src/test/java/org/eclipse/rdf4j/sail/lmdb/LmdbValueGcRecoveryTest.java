@@ -385,6 +385,9 @@ public class LmdbValueGcRecoveryTest {
 			// Restarted spool candidates must reach retirement before the durable drain can observe them.
 			assertThat(store.getBackingStore().asyncValueCleanupCoordinator().awaitEmpty(10, TimeUnit.SECONDS))
 					.isTrue();
+			// awaitEmpty acknowledges root batches, not an idle writer's in-progress retirement transaction, which can
+			// still publish its dependency frontier after the drain observes an empty store. Own the backlog first.
+			store.getBackingStore().stopAsyncValueCleanupForShutdown();
 			LmdbGcTestMaintenance.drainRetirements(store.getBackingStore());
 			ValueStore valueStore = (ValueStore) store.getBackingStore().getValueFactory();
 			assertThat(valueStore.getId(vf.createIRI("http://example.com/v")))

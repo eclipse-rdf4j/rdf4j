@@ -15,6 +15,7 @@ import java.io.IOException;
 import java.util.NoSuchElementException;
 
 import org.eclipse.rdf4j.common.iteration.AbstractCloseableIteration;
+import org.eclipse.rdf4j.common.iteration.CooperativeCancellation;
 import org.eclipse.rdf4j.common.iteration.IndexReportingIterator;
 import org.eclipse.rdf4j.common.order.StatementOrder;
 import org.eclipse.rdf4j.model.IRI;
@@ -22,13 +23,16 @@ import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.Statement;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.sail.SailException;
+import org.eclipse.rdf4j.sail.lmdb.evaluation.NativeLmdbQuerySource;
+import org.eclipse.rdf4j.sail.lmdb.evaluation.codegen.KernelRuntime;
 import org.eclipse.rdf4j.sail.lmdb.model.LmdbValue;
 
 /**
  * A statement iterator that wraps a RecordIterator containing statement records and translates these records to
  * {@link Statement} objects.
  */
-class LmdbStatementIterator extends AbstractCloseableIteration<Statement> implements IndexReportingIterator {
+class LmdbStatementIterator extends AbstractCloseableIteration<Statement>
+		implements IndexReportingIterator, CooperativeCancellation {
 
 	/**
 	 * Number of times the same advisory minimum bound must be hinted before an actual cursor seek is issued. Short lags
@@ -43,10 +47,13 @@ class LmdbStatementIterator extends AbstractCloseableIteration<Statement> implem
 	 *-----------*/
 
 	private final RecordIterator recordIt;
+	private final long recordGeneration;
 
 	private final ValueStore valueStore;
 	private final ValueStore.ReadSnapshot readSnapshot;
 	private Statement nextElement;
+	private volatile boolean cancellationRequested;
+	private volatile boolean cancellationClosed;
 	private long cachedId1 = Long.MIN_VALUE;
 	private long cachedId2 = Long.MIN_VALUE;
 	private long cachedId3 = Long.MIN_VALUE;
@@ -135,6 +142,7 @@ class LmdbStatementIterator extends AbstractCloseableIteration<Statement> implem
 		this.matchContext = matchContext;
 		this.seekEnabled = order != null && Boolean.parseBoolean(System.getProperty(SEEK_ENABLED_PROPERTY, "true"));
 		this.recordIt = recordIt;
+		this.recordGeneration = recordIt.cancellationGeneration();
 		this.valueStore = valueStore;
 		this.readSnapshot = readSnapshot;
 		ValueStoreRevision revision = !ValueStore.canReuseNativeLeaf(subj) && !ValueStore.canReuseNativeLeaf(pred)
@@ -194,7 +202,7 @@ class LmdbStatementIterator extends AbstractCloseableIteration<Statement> implem
 	 * Methods *
 	 *---------*/
 
-	public Statement getNextElement() throws SailException {
+	private Statement getNextElement() throws SailException {
 		try {
 			long[] quad = recordIt.next();
 			if (quad == null) {
@@ -310,7 +318,30 @@ class LmdbStatementIterator extends AbstractCloseableIteration<Statement> implem
 	}
 
 	@Override
+	public boolean requestCancellation() {
+		if (cancellationClosed) {
+			return false;
+		}
+		cancellationRequested = true;
+		RecordIterator.forwardCancellation(recordIt, recordGeneration);
+		return true;
+	}
+
+	private void checkCancellation() {
+		try {
+			if (cancellationRequested) {
+				NativeLmdbQuerySource.checkpointRecordCancellation();
+			}
+		} catch (RuntimeException | Error failure) {
+			KernelRuntime.closeCursor(this, failure);
+			throw failure;
+		}
+	}
+
+	@Override
 	protected void handleClose() throws SailException {
+		cancellationClosed = true;
+		nextElement = null;
 		recordIt.close();
 	}
 
@@ -348,8 +379,15 @@ class LmdbStatementIterator extends AbstractCloseableIteration<Statement> implem
 	 * @return The next element, or null if there are no more results.
 	 */
 	private Statement lookAhead() {
+		checkCancellation();
 		if (nextElement == null) {
-			nextElement = getNextElement();
+			try {
+				nextElement = getNextElement();
+				checkCancellation();
+			} catch (RuntimeException | Error failure) {
+				KernelRuntime.closeCursor(this, failure);
+				throw failure;
+			}
 
 			if (nextElement == null) {
 				close();
@@ -368,7 +406,11 @@ class LmdbStatementIterator extends AbstractCloseableIteration<Statement> implem
 
 	@Override
 	public void seek(Value minValue, boolean minInclusive, Value maxValue, boolean maxInclusive) {
-		if (!seekEnabled || isClosed()) {
+		if (isClosed()) {
+			return;
+		}
+		checkCancellation();
+		if (!seekEnabled) {
 			return;
 		}
 
@@ -383,6 +425,7 @@ class LmdbStatementIterator extends AbstractCloseableIteration<Statement> implem
 			} catch (IOException e) {
 				// advisory hint: an unresolvable max bound is simply not applied
 			}
+			checkCancellation();
 		}
 
 		if (minValue == null || nextElement != null) {
@@ -431,8 +474,12 @@ class LmdbStatementIterator extends AbstractCloseableIteration<Statement> implem
 				lastSeekTarget = null;
 				seekCalls = 0;
 			}
+			checkCancellation();
 		} catch (IOException e) {
 			// advisory hint: never fail the query for a declined seek
+		} catch (RuntimeException | Error failure) {
+			KernelRuntime.closeCursor(this, failure);
+			throw failure;
 		}
 	}
 

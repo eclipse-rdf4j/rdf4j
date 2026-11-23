@@ -109,32 +109,36 @@ public class W3cComplianceTest {
 	private void runParsingTest(URL resourceName) throws IOException, InterruptedException {
 		ShaclSail shaclSail = new ShaclSail(new MemoryStore());
 		SailRepository sailRepository = new SailRepository(shaclSail);
+		try {
 
-		Utils.loadShapeData(sailRepository, resourceName, RDFFormat.TURTLE, RDF4J.SHACL_SHAPE_GRAPH);
+			Utils.loadShapeData(sailRepository, resourceName, RDFFormat.TURTLE, RDF4J.SHACL_SHAPE_GRAPH);
 
-		Model statements = extractShapesModel(shaclSail);
+			Model statements = extractShapesModel(shaclSail);
 
-		statements.setNamespace(RDF.NS);
-		statements.setNamespace(SHACL.NS);
+			statements.setNamespace(RDF.NS);
+			statements.setNamespace(SHACL.NS);
 
-		sailRepository.shutDown();
+			sailRepository.shutDown();
 
-		statements
-				.filter(null, RDF.REST, null)
-				.subjects()
-				.forEach(s -> {
-					int size = statements.filter(s, RDF.REST, null).objects().size();
-					if (size > 1) {
-						Rio.write(statements, System.out, RDFFormat.TURTLE,
-								new WriterConfig().set(BasicWriterSettings.PRETTY_PRINT, true));
-					}
-					assertEquals(size, 1, s + " has more than one rdf:rest");
-				});
+			statements
+					.filter(null, RDF.REST, null)
+					.subjects()
+					.forEach(s -> {
+						int size = statements.filter(s, RDF.REST, null).objects().size();
+						if (size > 1) {
+							Rio.write(statements, System.out, RDFFormat.TURTLE,
+									new WriterConfig().set(BasicWriterSettings.PRETTY_PRINT, true));
+						}
+						assertEquals(size, 1, s + " has more than one rdf:rest");
+					});
 
-//		System.out.println(AbstractShaclTest.modelToString(statements));
+			// System.out.println(AbstractShaclTest.modelToString(statements));
 
-		assert !statements.isEmpty();
+			assert !statements.isEmpty();
 
+		} finally {
+			sailRepository.shutDown();
+		}
 	}
 
 	private Model extractShapesModel(ShaclSail shaclSail) throws InterruptedException {
@@ -178,34 +182,39 @@ public class W3cComplianceTest {
 
 		public Manifest(URL filename) {
 			SailRepository sailRepository = new SailRepository(new MemoryStore());
-			try (SailRepositoryConnection connection = sailRepository.getConnection()) {
-				connection.add(filename, filename.toString(), RDFFormat.TRIG);
-			} catch (IOException e) {
-				throw new RuntimeException(e);
-			}
-
-			try (SailRepositoryConnection connection = sailRepository.getConnection()) {
-				try (Stream<Statement> stream = connection
-						.getStatements(null,
-								connection.getValueFactory()
-										.createIRI("http://www.w3.org/2001/sw/DataAccess/tests/test-manifest#include"),
-								null)
-						.stream()) {
-					include = stream
-							.map(Statement::getObject)
-							.map(Value::stringValue)
-							.map(v -> {
-								try {
-									return new URL(v);
-								} catch (MalformedURLException e) {
-
-									throw new RuntimeException(e);
-								}
-							})
-							.collect(Collectors.toList());
+			try {
+				try (SailRepositoryConnection connection = sailRepository.getConnection()) {
+					connection.add(filename, filename.toString(), RDFFormat.TRIG);
+				} catch (IOException e) {
+					throw new RuntimeException(e);
 				}
-			}
 
+				try (SailRepositoryConnection connection = sailRepository.getConnection()) {
+					try (Stream<Statement> stream = connection
+							.getStatements(null,
+									connection.getValueFactory()
+											.createIRI(
+													"http://www.w3.org/2001/sw/DataAccess/tests/test-manifest#include"),
+									null)
+							.stream()) {
+						include = stream
+								.map(Statement::getObject)
+								.map(Value::stringValue)
+								.map(v -> {
+									try {
+										return new URL(v);
+									} catch (MalformedURLException e) {
+
+										throw new RuntimeException(e);
+									}
+								})
+								.collect(Collectors.toList());
+					}
+				}
+
+			} finally {
+				sailRepository.shutDown();
+			}
 		}
 
 	}
@@ -214,26 +223,34 @@ public class W3cComplianceTest {
 		W3C_shaclTestValidate expected = new W3C_shaclTestValidate(resourceName);
 
 		SailRepository data = new SailRepository(new MemoryStore());
+		try {
 
-		try (SailRepositoryConnection connection = data.getConnection()) {
-			connection.begin();
-			connection.add(resourceName, "http://example.org/", RDFFormat.TRIG);
-			connection.commit();
+			try (SailRepositoryConnection connection = data.getConnection()) {
+				connection.begin();
+				connection.add(resourceName, "http://example.org/", RDFFormat.TRIG);
+				connection.commit();
+			}
+
+			SailRepository shapes = new SailRepository(new MemoryStore());
+			try {
+
+				try (RepositoryConnection conn = shapes.getConnection()) {
+					conn.begin(IsolationLevels.NONE, ShaclSail.TransactionSettings.ValidationApproach.Disabled);
+					conn.add(resourceName, resourceName.toString(), RDFFormat.TURTLE, RDF4J.SHACL_SHAPE_GRAPH);
+					conn.commit();
+				}
+
+				ValidationReport validate = ShaclValidator.builder()
+						.withShapes(shapes.getSail())
+						.build()
+						.validate(data.getSail());
+				assertEquals(expected.conforms, validate.conforms());
+			} finally {
+				shapes.shutDown();
+			}
+		} finally {
+			data.shutDown();
 		}
-
-		SailRepository shapes = new SailRepository(new MemoryStore());
-
-		try (RepositoryConnection conn = shapes.getConnection()) {
-			conn.begin(IsolationLevels.NONE, ShaclSail.TransactionSettings.ValidationApproach.Disabled);
-			conn.add(resourceName, resourceName.toString(), RDFFormat.TURTLE, RDF4J.SHACL_SHAPE_GRAPH);
-			conn.commit();
-		}
-
-		ValidationReport validate = ShaclValidator.builder()
-				.withShapes(shapes.getSail())
-				.build()
-				.validate(data.getSail());
-		assertEquals(expected.conforms, validate.conforms());
 	}
 
 	static class W3C_shaclTestValidate {
@@ -241,15 +258,19 @@ public class W3cComplianceTest {
 		W3C_shaclTestValidate(URL filename) {
 			this.filename = filename.getPath();
 			SailRepository sailRepository = Utils.getSailRepository(filename, RDFFormat.TURTLE);
-			try (SailRepositoryConnection connection = sailRepository.getConnection()) {
-				try (Stream<Statement> stream = connection.getStatements(null, SHACL.CONFORMS, null).stream()) {
-					conforms = stream
-							.map(Statement::getObject)
-							.map(o -> (Literal) o)
-							.map(Literal::booleanValue)
-							.findFirst()
-							.orElseThrow();
+			try {
+				try (SailRepositoryConnection connection = sailRepository.getConnection()) {
+					try (Stream<Statement> stream = connection.getStatements(null, SHACL.CONFORMS, null).stream()) {
+						conforms = stream
+								.map(Statement::getObject)
+								.map(o -> (Literal) o)
+								.map(Literal::booleanValue)
+								.findFirst()
+								.orElseThrow();
+					}
 				}
+			} finally {
+				sailRepository.shutDown();
 			}
 		}
 

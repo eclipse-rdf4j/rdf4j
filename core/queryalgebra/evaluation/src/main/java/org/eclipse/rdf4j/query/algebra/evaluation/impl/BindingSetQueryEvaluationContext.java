@@ -12,6 +12,7 @@
 package org.eclipse.rdf4j.query.algebra.evaluation.impl;
 
 import java.util.Comparator;
+import java.util.HashSet;
 import java.util.Objects;
 import java.util.Set;
 import java.util.function.Function;
@@ -36,9 +37,27 @@ import org.eclipse.rdf4j.query.impl.BlankNodeAllocationScope;
 public final class BindingSetQueryEvaluationContext implements QueryEvaluationContext {
 
 	private final QueryEvaluationContext delegate;
+	private final Set<String> pathSubstitutions;
+	private final Set<String> pathCorrelations;
+	private final boolean enclosingPathProjection;
 
 	public BindingSetQueryEvaluationContext(QueryEvaluationContext delegate) {
+		this(delegate, null, false);
+	}
+
+	/** Flexible layout for a detached path with its original projection scope and genuine term substitutions. */
+	public BindingSetQueryEvaluationContext(QueryEvaluationContext delegate, Set<String> pathSubstitutions,
+			boolean enclosingPathProjection) {
 		this.delegate = Objects.requireNonNull(delegate, "delegate");
+		this.pathSubstitutions = pathSubstitutions == null ? null : Set.copyOf(pathSubstitutions);
+		Set<String> correlations = delegate.getCorrelatedPathBindingNames();
+		if (pathSubstitutions != null && !pathSubstitutions.containsAll(correlations)) {
+			Set<String> retained = new HashSet<>(correlations);
+			retained.retainAll(pathSubstitutions);
+			correlations = Set.copyOf(retained);
+		}
+		this.pathCorrelations = correlations;
+		this.enclosingPathProjection = enclosingPathProjection;
 	}
 
 	@Override
@@ -48,12 +67,17 @@ public final class BindingSetQueryEvaluationContext implements QueryEvaluationCo
 
 	@Override
 	public Set<String> getSubstitutionBindingNames() {
-		return delegate.getSubstitutionBindingNames();
+		return pathSubstitutions == null ? delegate.getSubstitutionBindingNames() : pathSubstitutions;
+	}
+
+	@Override
+	public Set<String> getCorrelatedPathBindingNames() {
+		return pathCorrelations;
 	}
 
 	@Override
 	public boolean hasEnclosingProjection() {
-		return delegate.hasEnclosingProjection();
+		return pathSubstitutions == null ? delegate.hasEnclosingProjection() : enclosingPathProjection;
 	}
 
 	@Override
@@ -74,6 +98,11 @@ public final class BindingSetQueryEvaluationContext implements QueryEvaluationCo
 	@Override
 	public Comparator<Value> getComparator() {
 		return delegate.getComparator();
+	}
+
+	@Override
+	public Object getExecutionIdentity() {
+		return delegate.getExecutionIdentity();
 	}
 
 	@Override

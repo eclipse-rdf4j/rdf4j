@@ -14,6 +14,7 @@ package org.eclipse.rdf4j.sail.lmdb.evaluation;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.assertj.core.api.Assertions.catchThrowable;
+import static org.eclipse.rdf4j.sail.lmdb.evaluation.NativeCancellationTestAccess.mockScanSource;
 import static org.mockito.AdditionalAnswers.delegatesTo;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyBoolean;
@@ -1037,7 +1038,11 @@ class LmdbNativeScanBackedHashBuildParityTest {
 				try (LmdbNativeStrategyProposal<RowCursor> proposal = LmdbNativeKernelExecution
 						.proposeRows(step.arg, row, optimized.expression(), interpreted)) {
 					assertThat(proposal).isNotNull();
-					assertThatThrownBy(proposal::open).isInstanceOf(KernelQueryCancelledException.class);
+					assertThatThrownBy(() -> {
+						try (RowCursor ignored = proposal.open()) {
+							// Release an unexpectedly opened result before the dataset closes.
+						}
+					}).isInstanceOf(KernelQueryCancelledException.class);
 				}
 			} finally {
 				row.memoryScope.close();
@@ -1418,7 +1423,7 @@ class LmdbNativeScanBackedHashBuildParityTest {
 		CountedSource(NativeLmdbQuerySource actual) throws IOException {
 			this.actual = actual;
 			this.buildPredicate = actual.idOf(BUILD);
-			source = mock(NativeLmdbQuerySource.class, delegatesTo(actual));
+			source = mockScanSource(NativeLmdbQuerySource.class, delegatesTo(actual));
 			doAnswer(open -> {
 				NativeProbe real = actual.newProbe();
 				probeOpens++;

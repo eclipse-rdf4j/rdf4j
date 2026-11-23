@@ -34,6 +34,7 @@ import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
 import org.eclipse.rdf4j.sail.base.SailDataset;
 import org.eclipse.rdf4j.sail.lmdb.JaninoCeilingKernels;
 import org.eclipse.rdf4j.sail.lmdb.LmdbStore;
+import org.eclipse.rdf4j.sail.lmdb.LmdbTestUtil;
 import org.eclipse.rdf4j.sail.lmdb.config.LmdbStoreConfig;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.NativeLmdbQuerySource;
 import org.junit.jupiter.api.AfterAll;
@@ -133,19 +134,15 @@ public class JaninoCeilingParityTest {
 
 	@AfterAll
 	public void tearDown() throws Exception {
-		if (probe != null) {
-			probe.close();
-		}
-		if (dataset != null) {
-			dataset.close();
-		}
-		if (repository != null) {
-			repository.shutDown();
-		}
-		if (dataDir != null) {
-			FileUtils.deleteDirectory(dataDir);
-		}
-		restore(NATIVE_FLAG, previousNativeFlag);
+		LmdbTestUtil.cleanup(null, probe, dataset, () -> {
+			if (repository != null) {
+				repository.shutDown();
+			}
+		}, () -> {
+			if (dataDir != null) {
+				FileUtils.deleteDirectory(dataDir);
+			}
+		}, () -> restore(NATIVE_FLAG, previousNativeFlag));
 	}
 
 	private static void restore(String key, String previous) {

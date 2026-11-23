@@ -51,11 +51,14 @@ import org.eclipse.rdf4j.query.MutableBindingSet;
 import org.eclipse.rdf4j.query.QueryEvaluationException;
 import org.eclipse.rdf4j.query.QueryLanguage;
 import org.eclipse.rdf4j.query.QueryResults;
+import org.eclipse.rdf4j.query.algebra.ArbitraryLengthPath;
+import org.eclipse.rdf4j.query.algebra.QueryModelVisitor;
 import org.eclipse.rdf4j.query.algebra.QueryRoot;
 import org.eclipse.rdf4j.query.algebra.SingletonSet;
 import org.eclipse.rdf4j.query.algebra.StatementPattern;
 import org.eclipse.rdf4j.query.algebra.StatementPattern.Scope;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
+import org.eclipse.rdf4j.query.algebra.Union;
 import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.query.algebra.evaluation.EvaluationStrategy;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryBindingSet;
@@ -129,6 +132,35 @@ public class PathIterationTest {
 						assertThat(QueryResults.asList(rows)).containsExactlyInAnyOrderElementsOf(expected);
 					}
 				}));
+	}
+
+	@Test
+	public void preparingMorePathsDoesNotRevisitTheWholePlan() {
+		assertThat(rootVisitsWhenPreparingPaths(32)).isEqualTo(rootVisitsWhenPreparingPaths(2));
+	}
+
+	private int rootVisitsWhenPreparingPaths(int pathCount) {
+		AtomicInteger visits = new AtomicInteger();
+		TupleExpr union = new Union(pathAlternatives(pathCount / 2, 0), pathAlternatives(pathCount / 2, 1)) {
+			@Override
+			public <X extends Exception> void visitChildren(QueryModelVisitor<X> visitor) throws X {
+				visits.incrementAndGet();
+				super.visitChildren(visitor);
+			}
+		};
+		evaluator.precompile(union, new QueryEvaluationContext.Minimal(null));
+		return visits.get();
+	}
+
+	private static TupleExpr pathAlternatives(int count, long minimumLength) {
+		if (count == 1) {
+			Var start = Var.of("start");
+			Var end = Var.of("end");
+			Var predicate = Var.of("predicate", RDFS.SUBCLASSOF, true, true);
+			return new ArbitraryLengthPath(Scope.DEFAULT_CONTEXTS, start,
+					new StatementPattern(start.clone(), predicate, end.clone()), end, minimumLength);
+		}
+		return new Union(pathAlternatives(count / 2, minimumLength), pathAlternatives(count / 2, minimumLength));
 	}
 
 	@Test

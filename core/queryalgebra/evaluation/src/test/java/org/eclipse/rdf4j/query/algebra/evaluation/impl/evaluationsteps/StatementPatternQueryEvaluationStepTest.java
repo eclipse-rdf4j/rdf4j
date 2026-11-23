@@ -15,6 +15,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anySet;
+import static org.mockito.Mockito.doReturn;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
@@ -28,6 +29,7 @@ import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.function.BiConsumer;
 import java.util.function.Function;
 import java.util.function.Predicate;
 
@@ -80,6 +82,7 @@ import org.eclipse.rdf4j.query.impl.MapBindingSet;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.EnumSource;
+import org.junit.jupiter.params.provider.ValueSource;
 
 class StatementPatternQueryEvaluationStepTest {
 
@@ -593,6 +596,94 @@ class StatementPatternQueryEvaluationStepTest {
 		assertThat(context.bindingChecks.get()).isZero();
 	}
 
+	@ParameterizedTest
+	@ValueSource(booleans = { false, true })
+	void failedBoundLookupClosesCursorAndPreservesFailure(boolean failOnIndexName) {
+		var vf = SimpleValueFactory.getInstance();
+		var subject = vf.createIRI("urn:subject");
+		var predicate = vf.createIRI("urn:predicate");
+		var object = vf.createLiteral("object");
+		var statements = List.of(vf.createStatement(subject, predicate, object, vf.createIRI("urn:graph")));
+		var failure = new IllegalStateException("primary lookup failure");
+		var cleanupFailure = new IllegalStateException("closing lookup cursor");
+		var scan = new TestIndexReportingStatementIteration(statements, "spoc", 1, 1, 0) {
+			@Override
+			public String getIndexName() {
+				if (failOnIndexName) {
+					throw failure;
+				}
+				return super.getIndexName();
+			}
+
+			@Override
+			public Statement next() {
+				throw failure;
+			}
+
+			@Override
+			protected void handleClose() {
+				throw cleanupFailure;
+			}
+		};
+		var tripleSource = mock(TripleSource.class);
+		doReturn(scan).when(tripleSource).getStatements(subject, predicate, object);
+		var pattern = new StatementPattern(StatementPattern.Scope.NAMED_CONTEXTS, Var.of("s"), Var.of("p"),
+				Var.of("o"), Var.of("g"));
+		var step = new StatementPatternQueryEvaluationStep(pattern, new InstrumentedQueryEvaluationContext(),
+				tripleSource);
+		var bindings = new MapBindingSet();
+		bindings.addBinding("s", subject);
+		bindings.addBinding("p", predicate);
+		bindings.addBinding("o", object);
+
+		if (failOnIndexName) {
+			assertThatThrownBy(() -> step.evaluate(bindings)).isInstanceOf(QueryEvaluationException.class)
+					.hasCause(failure);
+		} else {
+			try (var rows = step.evaluate(bindings)) {
+				assertThatThrownBy(rows::next).isSameAs(failure);
+			}
+		}
+		assertThat(scan.isClosed()).isTrue();
+		assertThat(failure.getSuppressed()).containsExactly(cleanupFailure);
+	}
+
+	@Test
+	void directLookupClosesCursorWhenConverterSetupFails() {
+		var vf = SimpleValueFactory.getInstance();
+		var subject = vf.createIRI("urn:subject");
+		var predicate = vf.createIRI("urn:predicate");
+		var object = vf.createLiteral("object");
+		var failure = new IllegalStateException("constructing converter");
+		var cleanupFailure = new IllegalStateException("closing lookup cursor");
+		var scan = new CloseableIteratorIteration<>(List.of(vf.createStatement(subject, predicate, object))
+				.iterator()) {
+			@Override
+			protected void handleClose() {
+				throw cleanupFailure;
+			}
+		};
+		var tripleSource = mock(TripleSource.class);
+		when(tripleSource.getValueFactory()).thenReturn(vf);
+		doReturn(scan).when(tripleSource).getStatements(subject, predicate, object);
+		var context = new QueryEvaluationContext.Minimal(null) {
+			@Override
+			public BiConsumer<Value, MutableBindingSet> addBinding(String name) {
+				throw failure;
+			}
+		};
+		var pattern = new StatementPattern(Var.of("s", subject), Var.of("p"), Var.of("o"));
+		var step = new StatementPatternQueryEvaluationStep(pattern, context, tripleSource);
+		var bindings = new MapBindingSet();
+		bindings.addBinding("p", predicate);
+		bindings.addBinding("o", object);
+
+		assertThatThrownBy(() -> step.evaluate(bindings)).isInstanceOf(QueryEvaluationException.class)
+				.hasCause(failure);
+		assertThat(scan.isClosed()).isTrue();
+		assertThat(failure.getSuppressed()).containsExactly(cleanupFailure);
+	}
+
 	@Test
 	void wrappedUnionIterationPreservesIndexTelemetry() {
 		InstrumentedQueryEvaluationContext context = new InstrumentedQueryEvaluationContext();
@@ -1024,7 +1115,7 @@ class StatementPatternQueryEvaluationStepTest {
 		}
 	}
 
-	private static final class TestIndexReportingStatementIteration extends CloseableIteratorIteration<Statement>
+	private static class TestIndexReportingStatementIteration extends CloseableIteratorIteration<Statement>
 			implements IndexReportingIterator {
 
 		private final String indexName;

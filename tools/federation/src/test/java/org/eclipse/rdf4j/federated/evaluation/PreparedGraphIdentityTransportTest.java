@@ -402,7 +402,7 @@ class PreparedGraphIdentityTransportTest {
 				bindings.add(input);
 			}
 			try (var rows = joinKind.equals("left")
-					? strategy.evaluateLeftBoundJoinStatementPattern(statement, bindings)
+					? strategy.evaluateLeftBoundJoinStatementPattern(statement, bindings, null)
 					: strategy.evaluateBoundJoinStatementPattern(statement, bindings)) {
 				List<BindingSet> actual = QueryResults.asList(rows);
 				assertThat(actual).hasSize(joinKind.equals("left") ? 6 : 5);
@@ -450,7 +450,8 @@ class PreparedGraphIdentityTransportTest {
 			missing.addBinding("g", graph);
 			missing.addBinding("o", VF.createLiteral("missing"));
 			List<BindingSet> inputs = List.of(matched, new QueryBindingSet(matched), missing);
-			try (var rows = joinKind.equals("left") ? strategy.evaluateLeftBoundJoinStatementPattern(statement, inputs)
+			try (var rows = joinKind.equals("left")
+					? strategy.evaluateLeftBoundJoinStatementPattern(statement, inputs, null)
 					: strategy.evaluateBoundJoinStatementPattern(statement, inputs)) {
 				assertThat(QueryResults.asList(rows)).containsExactlyInAnyOrderElementsOf(joinKind.equals("left")
 						? List.of(matched, matched, missing)

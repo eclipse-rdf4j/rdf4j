@@ -146,6 +146,17 @@ public class GroupIterator extends AbstractCloseableIteratorIteration<BindingSet
 				arguments);
 	}
 
+	/**
+	 * Takes ownership of an already opened member cursor, including when closed before the first group is requested.
+	 */
+	@Experimental
+	public static GroupIterator withMembers(EvaluationStrategy strategy, Group group, BindingSet parentBindings,
+			QueryEvaluationContext context, CloseableIteration<BindingSet> members) {
+		GroupIterator groups = new GroupIterator(strategy, group, parentBindings, context, ignored -> members);
+		groups.argumentsIter = members;
+		return groups;
+	}
+
 	private GroupIterator(EvaluationStrategy strategy, Group group, BindingSet parentBindings,
 			long iterationCacheSyncThreshold, QueryEvaluationContext context, ValueFactory vf, CollectionFactory cf,
 			QueryEvaluationStep arguments) throws QueryEvaluationException {

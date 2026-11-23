@@ -1,3 +1,4 @@
+/// <reference path="workbenchPageModel.d.ts" />
 /// <reference path="workbenchViews.ts" />
 /// <reference path="workbenchRoutes.ts" />
 /// <reference path="workbenchRouter.ts" />
@@ -9,31 +10,6 @@
 // Browser bootstrap for structured Workbench page models. Route-changing POST
 // forms remain browser-owned; only eligible GET shells fetch page data here.
 namespace workbench {
-    export interface PageModel {
-        viewId: string;
-        vars: string[];
-        /** The current bounded window only; complete rows remain in rowStore. */
-        rows: any[][];
-        rowStart: number;
-        rowCount: number;
-        rowTopSpacer: number;
-        rowBottomSpacer: number;
-        pickerRows: any[][];
-        pickerStart: number;
-        pickerPageSize: number;
-        rowStore: any;
-        namespaceMap: { [prefix: string]: string };
-        links: string[];
-        metadata: { [key: string]: any };
-        boolean?: boolean;
-        linked?: { [key: string]: any };
-        workbench?: any;
-        /** Set when the page model ends in an error record after its view, for example repository-not-found. */
-        error?: { status: number; code: string; message: string };
-        /** The URL the page model was answered from, after redirects (M8.1). */
-        finalUrl?: string;
-    }
-
     export interface LitRuntime {
         html: (strings: TemplateStringsArray, ...values: any[]) => any;
         render: (template: any, root: Element) => void;
@@ -610,9 +586,11 @@ namespace workbench {
 
         /** Load the linked models named by the model (or the given paths) relative to currentUrl. */
         export function linkedModels(fetcher: (url: string, options: any) => Promise<any>, currentUrl: string,
-                                     model: PageModel, explicitPaths?: string[], signal?: AbortSignal): Promise<void> {
+                                     model: PageModel, explicitPaths?: string[], signal?: AbortSignal,
+                                     verifiedInfo?: PageModel): Promise<void> {
             const paths = explicitPaths || requestedLinkedModels(model);
-            return Promise.all(paths.map((path) => loadModel(fetcher, linkedUrl(currentUrl, path), signal)
+            return Promise.all(paths.map((path) => (path === 'info' && verifiedInfo ? Promise.resolve(verifiedInfo)
+                : loadModel(fetcher, linkedUrl(currentUrl, path), signal))
                 .then((linked) => {
                     if (linked.error) {
                         return linked.rowStore.dispose().then(() => { throw new Error(linked.error.message); });
@@ -627,7 +605,9 @@ namespace workbench {
                                 ? workbench.views.linkedInfoMetadata(linked) : {});
                         model.workbench = workbenchInfo;
                         model.linked.info = { metadata: linked.metadata, workbench: workbenchInfo };
-                        return linked.rowStore.dispose();
+                        if (linked !== verifiedInfo) {
+                            return linked.rowStore.dispose();
+                        }
                     });
                 }))).then(() => {
                 const info = model.linked.info;
@@ -643,7 +623,8 @@ namespace workbench {
          * is returned as it is.
          */
         export function completeModel(fetcher: (url: string, options: any) => Promise<any>, url: string,
-                                      model: PageModel, basePath: string, signal?: AbortSignal): Promise<PageModel> {
+                                      model: PageModel, basePath: string, signal?: AbortSignal,
+                                      verifiedInfo?: PageModel): Promise<PageModel> {
             if (model.error) {
                 if (model.error.code === 'repository-not-found') {
                     return linkedModels(fetcher, notFoundInfoUrl(basePath, url), model, ['info'], signal).then(() => model);
@@ -652,7 +633,7 @@ namespace workbench {
                 // it the error is shown all the same.
                 return linkedModels(fetcher, url, model, ['info'], signal).then(() => model, () => model);
             }
-            const linked = linkedModels(fetcher, url, model, undefined, signal);
+            const linked = linkedModels(fetcher, url, model, undefined, signal, verifiedInfo);
             // Connection needs no Info answer: a user whose server fails it goes there to sign in or change server.
             return (model.viewId === 'server' ? linked.then(null, (error: any) => {
                 if (isAbortError(error)) {
@@ -766,8 +747,8 @@ namespace workbench {
 
         function loadSharedRuntime(basePath: string, dependencies: any): Promise<void> {
             // Requested together: scripts inserted with async=false still run in the order they were inserted.
-            const loads = ['workbenchViews.js', 'workbenchRoutes.js', 'workbenchRouter.js', 'queryStream.js',
-                'graphAdditions.js', 'workbench-theme.js'].map((name: string) => loadClassicScript(scriptUrl(basePath, name), dependencies));
+            const loads = ['workbenchWorkspace.js', 'workbenchViews.js', 'workbenchRoutes.js', 'workbenchRouter.js',
+                'queryStream.js', 'graphAdditions.js', 'workbench-theme.js'].map((name: string) => loadClassicScript(scriptUrl(basePath, name), dependencies));
             return Promise.all(loads).then(() => {
                 if (!workbench.views || typeof workbench.views.render !== 'function') {
                     throw new Error('The Workbench route renderer is unavailable');
@@ -1298,14 +1279,24 @@ namespace workbench {
             }
         }
 
+        /** A repository deletion started on the page before: the Repositories list it leads to confirms it. */
+        function settleRepositoryDeletion(model: PageModel): void {
+            const shared: any = (workbench as any).workspace;
+            if (shared && typeof shared.deletionDone === 'function') {
+                shared.deletionDone(model).catch(() => { /* Browser storage is best effort. */ });
+            }
+        }
+
         export function bootstrap(mount: any, dependencies?: any): Promise<any> {
             const basePath = basePathFor(mount);
             scriptSource = { basePath, dependencies };
             return loadSharedRuntime(basePath, dependencies)
                 .then(() => bootstrapPage(mount, dependencies, basePath).then((result) => {
+                    settleRepositoryDeletion(result.model);
                     scheduleRowStoreCleanup();
                     return result;
                 }, (error: any) => {
+                    settleRepositoryDeletion(null);
                     scheduleRowStoreCleanup();
                     throw error;
                 }), (error: any) => {

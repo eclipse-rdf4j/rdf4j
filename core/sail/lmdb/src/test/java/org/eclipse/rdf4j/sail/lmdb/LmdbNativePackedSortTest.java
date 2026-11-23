@@ -417,6 +417,5 @@ public class LmdbNativePackedSortTest {
 		NativeSpillSort.SPILLED_ROWS.set(0L);
 		NativeSpillSort.DELETED_RUNS.set(0L);
 		NativeDistinctTracker.PRIMITIVE_ROWS.set(0L);
-		NativeDistinctTracker.OBJECT_ROWS.set(0L);
 	}
 }

@@ -72,49 +72,60 @@ public class NativeExecutionKernelBenchmark {
 
 	@Setup(Level.Trial)
 	public void setUp() {
-		dataDir = Files.newTemporaryFolder();
-		repository = new SailRepository(new LmdbStore(dataDir,
-				new LmdbStoreConfig("spoc,posc,ospc").setNativeEvaluationEnabled(true)));
-		try (SailRepositoryConnection connection = repository.getConnection()) {
-			ValueFactory vf = connection.getValueFactory();
-			IRI type = vf.createIRI(EX, "type");
-			IRI item = vf.createIRI(EX, "Item");
-			IRI score = vf.createIRI(EX, "score");
-			IRI bucket = vf.createIRI(EX, "bucket");
-			IRI category = vf.createIRI(EX, "category");
-			connection.begin();
-			for (int i = 0; i < ITEMS; i++) {
-				IRI subject = vf.createIRI(EX, "item" + i);
-				connection.add(subject, type, item);
-				connection.add(subject, score, vf.createLiteral(i % 1_000));
-				connection.add(subject, bucket, vf.createIRI(EX, "bucket" + (i % 128)));
-				connection.add(subject, category, vf.createIRI(EX, "category" + (i % 16)));
+		try {
+			dataDir = Files.newTemporaryFolder();
+			repository = new SailRepository(new LmdbStore(dataDir,
+					new LmdbStoreConfig("spoc,posc,ospc").setNativeEvaluationEnabled(true)));
+			try (SailRepositoryConnection connection = repository.getConnection()) {
+				ValueFactory vf = connection.getValueFactory();
+				IRI type = vf.createIRI(EX, "type");
+				IRI item = vf.createIRI(EX, "Item");
+				IRI score = vf.createIRI(EX, "score");
+				IRI bucket = vf.createIRI(EX, "bucket");
+				IRI category = vf.createIRI(EX, "category");
+				connection.begin();
+				for (int i = 0; i < ITEMS; i++) {
+					IRI subject = vf.createIRI(EX, "item" + i);
+					connection.add(subject, type, item);
+					connection.add(subject, score, vf.createLiteral(i % 1_000));
+					connection.add(subject, bucket, vf.createIRI(EX, "bucket" + (i % 128)));
+					connection.add(subject, category, vf.createIRI(EX, "category" + (i % 16)));
+				}
+				connection.commit();
 			}
-			connection.commit();
-		}
 
-		switch (variant) {
-		case "scanFilterProject":
-			query = select("?s ?score", "?s ex:score ?score . FILTER(?score >= 500)", "");
-			expected = ITEMS / 2L;
-			break;
-		case "primitiveHashJoin":
-		case "consumeIdsOnly":
-		case "consumeValues":
-			query = select("?s ?score", "?s ex:type ex:Item ; ex:score ?score", "");
-			expected = ITEMS;
-			break;
-		case "groupByTwoKeys":
-			query = select("?bucket ?category (COUNT(?s) AS ?count)",
-					"?s ex:bucket ?bucket ; ex:category ?category", " GROUP BY ?bucket ?category");
-			expected = ITEMS;
-			break;
-		case "sortTopK":
-			query = select("?s ?score", "?s ex:type ex:Item ; ex:score ?score", " ORDER BY DESC(?score) ?s LIMIT 100");
-			expected = 100L;
-			break;
-		default:
-			throw new IllegalArgumentException(variant);
+			switch (variant) {
+			case "scanFilterProject":
+				query = select("?s ?score", "?s ex:score ?score . FILTER(?score >= 500)", "");
+				expected = ITEMS / 2L;
+				break;
+			case "primitiveHashJoin":
+			case "consumeIdsOnly":
+			case "consumeValues":
+				query = select("?s ?score", "?s ex:type ex:Item ; ex:score ?score", "");
+				expected = ITEMS;
+				break;
+			case "groupByTwoKeys":
+				query = select("?bucket ?category (COUNT(?s) AS ?count)",
+						"?s ex:bucket ?bucket ; ex:category ?category", " GROUP BY ?bucket ?category");
+				expected = ITEMS;
+				break;
+			case "sortTopK":
+				query = select("?s ?score", "?s ex:type ex:Item ; ex:score ?score",
+						" ORDER BY DESC(?score) ?s LIMIT 100");
+				expected = 100L;
+				break;
+			default:
+				throw new IllegalArgumentException(variant);
+			}
+
+		} catch (Exception | Error failure) {
+			try {
+				tearDown();
+			} catch (Exception | Error cleanupFailure) {
+				failure.addSuppressed(cleanupFailure);
+			}
+			throw failure;
 		}
 	}
 
@@ -124,8 +135,17 @@ public class NativeExecutionKernelBenchmark {
 
 	@TearDown(Level.Trial)
 	public void tearDown() throws IOException {
-		repository.shutDown();
-		FileUtil.deleteDir(dataDir);
+		try (java.io.Closeable directoryCleanup = () -> {
+			if (dataDir != null) {
+				FileUtil.deleteDir(dataDir);
+				dataDir = null;
+			}
+		}) {
+			if (repository != null) {
+				repository.shutDown();
+				repository = null;
+			}
+		}
 	}
 
 	@Benchmark
