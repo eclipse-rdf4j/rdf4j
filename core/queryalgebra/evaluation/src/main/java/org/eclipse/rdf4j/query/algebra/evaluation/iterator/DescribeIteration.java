@@ -18,6 +18,7 @@ import java.util.List;
 import java.util.Queue;
 import java.util.Set;
 
+import org.eclipse.rdf4j.common.annotation.InternalUseOnly;
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.common.iteration.CooperativeCancellation;
 import org.eclipse.rdf4j.common.iteration.LookAheadIteration;
@@ -28,6 +29,7 @@ import org.eclipse.rdf4j.query.QueryEvaluationException;
 import org.eclipse.rdf4j.query.algebra.StatementPattern;
 import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.query.algebra.evaluation.EvaluationStrategy;
+import org.eclipse.rdf4j.query.algebra.evaluation.QueryBindingSet;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryEvaluationStep;
 
 /**
@@ -49,6 +51,9 @@ public class DescribeIteration extends LookAheadIteration<BindingSet> {
 
 	private final EvaluationStrategy strategy;
 
+	private final boolean reuseStatementPreparation;
+	private QueryEvaluationStep expansion;
+
 	private Value startValue;
 
 	private final Queue<BNode> nodeQueue = new ArrayDeque<>();
@@ -68,7 +73,15 @@ public class DescribeIteration extends LookAheadIteration<BindingSet> {
 
 	public DescribeIteration(CloseableIteration<BindingSet> sourceIter, EvaluationStrategy strategy,
 			Set<String> describeExprNames, BindingSet parentBindings) {
+		this(sourceIter, strategy, describeExprNames, parentBindings, false);
+	}
+
+	/** Reuse ordinary statement compilation only for a strategy with the built-in binding contract. */
+	@InternalUseOnly
+	public DescribeIteration(CloseableIteration<BindingSet> sourceIter, EvaluationStrategy strategy,
+			Set<String> describeExprNames, BindingSet parentBindings, boolean reuseStatementPreparation) {
 		this.strategy = strategy;
+		this.reuseStatementPreparation = reuseStatementPreparation;
 		this.sourceIter = sourceIter;
 		this.describeExprNames = new ArrayList<>(describeExprNames);
 		this.parentBindings = parentBindings;
@@ -213,12 +226,34 @@ public class DescribeIteration extends LookAheadIteration<BindingSet> {
 			return QueryEvaluationStep.EMPTY_ITERATION;
 		}
 
+		// The ordinary binding route must not turn a same-named caller binding into a constraint on a
+		// positional DESCRIBE output. Keep the existing behavior for those ambiguous input rows.
+		if (reuseStatementPreparation && (subject == null || object == null)
+				&& !parentBindings.hasBinding(VARNAME_SUBJECT) && !parentBindings.hasBinding(VARNAME_PREDICATE)
+				&& !parentBindings.hasBinding(VARNAME_OBJECT)) {
+			return evaluateExpansion(subject, object);
+		}
+
 		Var subjVar = Var.of(VARNAME_SUBJECT, subject);
 		Var predVar = Var.of(VARNAME_PREDICATE);
 		Var objVar = Var.of(VARNAME_OBJECT, object);
 
 		StatementPattern pattern = new StatementPattern(subjVar, predVar, objVar);
 		return strategy.evaluate(pattern, parentBindings);
+	}
+
+	private CloseableIteration<BindingSet> evaluateExpansion(Value subject, Value object) {
+		boolean forward = subject != null;
+		if (expansion == null) {
+			// Use the same independent DESCRIBE dataset and evaluation strategy as evaluate(pattern, ...).
+			// The step belongs to this iterator, over this query execution's statement source. Each probe
+			// supplies either the subject or the object so the ordinary evaluator picks the matching index.
+			expansion = strategy.precompile(new StatementPattern(Var.of(VARNAME_SUBJECT), Var.of(VARNAME_PREDICATE),
+					Var.of(VARNAME_OBJECT)));
+		}
+		QueryBindingSet parameters = new QueryBindingSet(parentBindings);
+		parameters.setBinding(forward ? VARNAME_SUBJECT : VARNAME_OBJECT, forward ? subject : object);
+		return expansion.evaluate(parameters);
 	}
 
 	@Override

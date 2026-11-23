@@ -1300,6 +1300,15 @@ public class DefaultEvaluationStrategy implements EvaluationStrategy, FederatedS
 		return captured == null ? bindings : captured;
 	}
 
+	/**
+	 * Allows invocation-time algebra preparation reuse for strategies with the built-in binding and preparation
+	 * contract. Unknown strategy subclasses retain their existing dispatch and preparation behavior.
+	 */
+	@InternalUseOnly
+	protected boolean usesStandardRuntimePreparation() {
+		return getClass() == DefaultEvaluationStrategy.class || getClass() == StrictEvaluationStrategy.class;
+	}
+
 	protected QueryEvaluationStep prepare(DescribeOperator node, QueryEvaluationContext context)
 			throws QueryEvaluationException {
 		QueryEvaluationStep child = precompile(node.getArg(), context);
@@ -1308,7 +1317,8 @@ public class DefaultEvaluationStrategy implements EvaluationStrategy, FederatedS
 
 			try {
 				evaluate = child.evaluate(bs);
-				return new DescribeIteration(evaluate, DefaultEvaluationStrategy.this, node.getBindingNames(), bs);
+				return new DescribeIteration(evaluate, DefaultEvaluationStrategy.this, node.getBindingNames(), bs,
+						usesStandardRuntimePreparation());
 			} catch (Throwable t) {
 				if (evaluate != null) {
 					evaluate.close();
@@ -1545,7 +1555,7 @@ public class DefaultEvaluationStrategy implements EvaluationStrategy, FederatedS
 		} else if (expr instanceof Difference) {
 			return prepare((Difference) expr, context);
 		} else if (expr instanceof Lateral) {
-			return LateralQueryEvaluationStep.supply(this, (Lateral) expr, context);
+			return LateralQueryEvaluationStep.supply(this, (Lateral) expr, context, usesStandardRuntimePreparation());
 		} else if (expr == null) {
 			throw new IllegalArgumentException("expr must not be null");
 		} else {

@@ -63,6 +63,11 @@ final class LmdbEvaluationStrategy extends DefaultEvaluationStrategy {
 	}
 
 	@Override
+	protected boolean usesStandardRuntimePreparation() {
+		return true;
+	}
+
+	@Override
 	protected QueryEvaluationStep prepare(LeftJoin node, QueryEvaluationContext context) {
 		return statementSource != null && statementSource.canReplayStatementRows()
 				? prepare(node, context,
