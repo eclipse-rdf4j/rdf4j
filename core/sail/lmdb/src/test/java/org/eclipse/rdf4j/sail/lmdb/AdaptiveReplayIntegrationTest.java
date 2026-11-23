@@ -38,6 +38,7 @@ import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.SplittableRandom;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutionException;
@@ -1154,9 +1155,17 @@ class AdaptiveReplayIntegrationTest {
 				Arrays.fill(predicates, 7);
 				Arrays.fill(objects, 11);
 				Arrays.fill(contexts, 90);
+				// Chunked indexes delta-encode sorted rows, so sequential subjects would occupy only a few pages.
+				// Distinct random subjects keep every batch large enough to raise the page high-water mark.
+				SplittableRandom random = new SplittableRandom(0x9a6e_c4a2L);
+				Set<Long> used = new HashSet<>();
 				for (int cycle = 0; cycle < 2; cycle++) {
 					for (int i = 0; i < batchSize; i++) {
-						subjects[i] = 100_000L + (long) cycle * batchSize + i;
+						long subject;
+						do {
+							subject = random.nextLong(100_000L, 1L << 55);
+						} while (!used.add(subject));
+						subjects[i] = subject;
 					}
 					stores.begin();
 					stores.triples.storeTriplesAligned(subjects, predicates, objects, contexts, batchSize, true);
@@ -1722,10 +1731,10 @@ class AdaptiveReplayIntegrationTest {
 		}
 
 		@Override
-		void sortStatementIndicesByLeadingField(int[] statementIndices, int length, TripleIndex index, long[] subjects,
+		void sortStatementIndicesByLeadingFields(int[] statementIndices, int length, TripleIndex index, long[] subjects,
 				long[] predicates, long[] objects, long[] contexts) {
 			partialAlignedSecondarySortPasses++;
-			super.sortStatementIndicesByLeadingField(statementIndices, length, index, subjects, predicates, objects,
+			super.sortStatementIndicesByLeadingFields(statementIndices, length, index, subjects, predicates, objects,
 					contexts);
 		}
 

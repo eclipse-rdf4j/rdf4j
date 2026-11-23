@@ -51,11 +51,16 @@ class LmdbBulkLoaderDefaultIndexesTest {
 		try {
 			assertThat(store.getLmdbStats().tripleDatabases().keySet())
 					.contains("spocspoc", "poscposc", "ospcospc");
-			assertThat(store.getLmdbStats().tripleDatabases().get("ospcospc").entries()).isEqualTo(3);
+			// LMDB entries are chunks of up to Chunks.MAX_CHUNK_SIZE statements, so the raw stat only proves presence.
+			assertThat(store.getLmdbStats().tripleDatabases().get("ospcospc").entries()).isPositive();
 			SimpleValueFactory vf = SimpleValueFactory.getInstance();
-			try (SailConnection connection = store.getConnection();
-					var statements = connection.getStatements(null, null, vf.createIRI("urn:o"), false)) {
-				assertThat(statements.stream().count()).isEqualTo(2);
+			try (SailConnection connection = store.getConnection()) {
+				try (var statements = connection.getStatements(null, null, vf.createIRI("urn:o"), false)) {
+					assertThat(statements.stream().count()).isEqualTo(2);
+				}
+				try (var statements = connection.getStatements(null, null, vf.createIRI("urn:other"), false)) {
+					assertThat(statements.stream().count()).isEqualTo(1);
+				}
 			}
 		} finally {
 			store.shutDown();

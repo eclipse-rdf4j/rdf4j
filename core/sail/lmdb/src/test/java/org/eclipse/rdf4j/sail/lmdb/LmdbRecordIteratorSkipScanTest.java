@@ -14,6 +14,7 @@ package org.eclipse.rdf4j.sail.lmdb;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import java.io.File;
+import java.nio.ByteBuffer;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.HashSet;
@@ -125,6 +126,54 @@ public class LmdbRecordIteratorSkipScanTest {
 					.as("fill() must leapfrog exactly like next()")
 					.isLessThan(1_500L);
 		}
+	}
+
+	@Test
+	public void skipScanPreservesMatchesAtAndAcrossChunkBoundaries() throws Exception {
+		tripleStore.startTransaction();
+		long last = 4L * Chunks.MAX_CHUNK_SIZE;
+		for (long p = 1; p <= 3; p++) {
+			for (long o = 2; o <= last; o += 2) {
+				tripleStore.storeTriple(1, p, o, ValueIds.NULL_CONTEXT, true);
+			}
+		}
+		tripleStore.commit();
+		// Ordered insertion writes two full chunks per predicate in this split-point-zero SPOC index.
+		assertThat(tripleStore.explicitIndexChunkCounts()).containsEntry("spoc", 6L);
+		long boundary = 2L * Chunks.MAX_CHUNK_SIZE;
+		try (Txn txn = tripleStore.getTxnManager().createReadTxn()) {
+			// Interior hit, current chunk's last tuple, gap, exact next anchor, next interior, beyond last.
+			for (long object : new long[] { boundary - 2, boundary, boundary + 1, boundary + 2, boundary + 4,
+					last + 1 }) {
+				List<Long> expected = (object & 1L) == 0 ? List.of(1L, 2L, 3L) : List.of();
+				List<Long> predicates = new ArrayList<>();
+				try (RecordIterator it = tripleStore.getTriples(txn, 1, -1, object, -1, true)) {
+					long[] rows = new long[4 * 2];
+					int count;
+					while ((count = it.fill(rows, 2)) != 0) {
+						for (int i = 0; i < count; i++) {
+							assertThat(rows[4 * i + TripleIndex.OBJ_IDX]).isEqualTo(object);
+							predicates.add(rows[4 * i + TripleIndex.PRED_IDX]);
+						}
+					}
+				}
+				assertThat(predicates).as("object %d", object).containsExactlyElementsOf(expected);
+			}
+
+			// Both bounds are tuple keys inside chunks. The tuple found by a local seek at the upper
+			// bound must not be returned; the same tuple at the lower bound is inclusive.
+			long interior = boundary - 2;
+			LmdbKeyRange range = new LmdbKeyRange(spocKey(1, interior), spocKey(3, interior), "spoc");
+			List<long[]> bounded = drain(tripleStore.getTriplesRange(txn, 1, -1, interior, -1, true, range));
+			assertThat(bounded).containsExactly(new long[] { 1, 1, interior, ValueIds.NULL_CONTEXT },
+					new long[] { 1, 2, interior, ValueIds.NULL_CONTEXT });
+		}
+	}
+
+	private static byte[] spocKey(long predicate, long object) {
+		ByteBuffer buffer = ByteBuffer.allocate(TripleIndex.MAX_KEY_LENGTH);
+		Varint.writeListUnsigned(buffer, new long[] { 1, predicate, object, ValueIds.NULL_CONTEXT });
+		return Arrays.copyOf(buffer.array(), buffer.position());
 	}
 
 	@Test
