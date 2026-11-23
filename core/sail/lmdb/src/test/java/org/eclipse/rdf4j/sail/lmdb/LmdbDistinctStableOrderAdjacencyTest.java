@@ -221,12 +221,12 @@ class LmdbDistinctStableOrderAdjacencyTest {
 	}
 
 	private static Evaluation evaluate(LmdbStore store, SailTupleQuery prepared) {
-		long hitsBefore = AdjacencyEngagementTestAccess.lookupHits(store);
-		long partitionsBefore = LmdbPartitionedDistinctSteps.partitionedEvaluationCount();
-		List<BindingSet> rows = QueryResults.asList(prepared.evaluate());
-		long hits = AdjacencyEngagementTestAccess.lookupHits(store) - hitsBefore;
-		long partitioned = LmdbPartitionedDistinctSteps.partitionedEvaluationCount() - partitionsBefore;
-		return new Evaluation(rows, hits, partitioned);
+		try (var partitioned = new LmdbPartitionedDistinctProbe()) {
+			long hitsBefore = AdjacencyEngagementTestAccess.lookupHits(store);
+			List<BindingSet> rows = QueryResults.asList(prepared.evaluate());
+			long hits = AdjacencyEngagementTestAccess.lookupHits(store) - hitsBefore;
+			return new Evaluation(rows, hits, partitioned.opened());
+		}
 	}
 
 	private static ExplainedPlan explain(SailTupleQuery prepared, Explanation.Level level) {
@@ -321,7 +321,7 @@ class LmdbDistinctStableOrderAdjacencyTest {
 	private record PlannedExecution(String engine, String kind) {
 	}
 
-	private record Evaluation(List<BindingSet> rows, long lookupHits, long partitionedEvaluations) {
+	private record Evaluation(List<BindingSet> rows, long lookupHits, int partitionedEvaluations) {
 	}
 
 	private record ExplainedPlan(String explanation, List<String> paths, List<PlannedExecution> plannedExecutions) {

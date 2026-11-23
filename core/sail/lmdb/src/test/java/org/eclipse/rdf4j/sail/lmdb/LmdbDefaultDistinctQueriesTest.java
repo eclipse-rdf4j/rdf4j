@@ -224,13 +224,12 @@ class LmdbDefaultDistinctQueriesTest {
 							ex:detail ?value .
 					}
 					""";
-			long before = LmdbPartitionedDistinctSteps.partitionedEvaluationCount();
-			assertThat(QueryResults.asList(connection.prepareTupleQuery(query).evaluate()))
-					.extracting(row -> row.getValue("owner"), row -> row.getValue("value"))
-					.containsExactlyInAnyOrder(tuple(first, red), tuple(first, blue), tuple(second, blue));
-			assertThat(LmdbPartitionedDistinctSteps.partitionedEvaluationCount() - before)
-					.as("default-engine partitioned DISTINCT executions")
-					.isEqualTo(1);
+			try (var partitioned = new LmdbPartitionedDistinctProbe()) {
+				assertThat(QueryResults.asList(connection.prepareTupleQuery(query).evaluate()))
+						.extracting(row -> row.getValue("owner"), row -> row.getValue("value"))
+						.containsExactlyInAnyOrder(tuple(first, red), tuple(first, blue), tuple(second, blue));
+				assertThat(partitioned.opened()).as("default-engine partitioned DISTINCT executions").isEqualTo(1);
+			}
 		}
 	}
 

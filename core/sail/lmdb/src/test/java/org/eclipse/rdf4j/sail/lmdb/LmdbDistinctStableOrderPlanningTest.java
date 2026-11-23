@@ -236,15 +236,14 @@ class LmdbDistinctStableOrderPlanningTest {
 	@Test
 	void defaultPathDistinctEvaluatesWithPartitionedIteration() {
 		Repository memory = memory();
-		Repository lmdb = lmdb("default_distinct_counter", false);
-		try {
-			long before = LmdbPartitionedDistinctSteps.partitionedEvaluationCount();
+		Repository lmdb = lmdb("default_distinct_iteration", false);
+		try (var partitioned = new LmdbPartitionedDistinctProbe()) {
 			Map<String, Integer> expected = run(memory, PLAIN_DISTINCT, null);
 			Map<String, Integer> actual = run(lmdb, PLAIN_DISTINCT, null);
 			assertThat(actual).isEqualTo(expected);
-			assertThat(LmdbPartitionedDistinctSteps.partitionedEvaluationCount())
+			assertThat(partitioned.opened())
 					.as("the DISTINCT should have been evaluated by the partitioned iteration")
-					.isGreaterThan(before);
+					.isPositive();
 		} finally {
 			memory.shutDown();
 			lmdb.shutDown();
@@ -258,18 +257,17 @@ class LmdbDistinctStableOrderPlanningTest {
 		var config = new LmdbStoreConfig(indexes).setNativeEvaluationEnabled(false);
 		config.setExperimentalQueryOptimizations(false);
 		Repository lmdb = lmdb("experimental_off", config);
-		try {
-			long before = LmdbPartitionedDistinctSteps.partitionedEvaluationCount();
+		try (var partitioned = new LmdbPartitionedDistinctProbe()) {
 			StringBuilder explain = new StringBuilder();
 			Map<String, Integer> expected = run(memory, PLAIN_DISTINCT, null);
 			Map<String, Integer> actual = run(lmdb, PLAIN_DISTINCT, explain);
 			assertThat(actual).isEqualTo(expected);
 			if (prefixCompatible) {
 				assertThat(explain.toString()).contains("statementOrder");
-				assertThat(LmdbPartitionedDistinctSteps.partitionedEvaluationCount()).isGreaterThan(before);
+				assertThat(partitioned.opened()).isPositive();
 			} else {
 				assertThat(explain.toString()).doesNotContain("statementOrder");
-				assertThat(LmdbPartitionedDistinctSteps.partitionedEvaluationCount()).isEqualTo(before);
+				assertThat(partitioned.opened()).isZero();
 			}
 		} finally {
 			memory.shutDown();
@@ -280,12 +278,11 @@ class LmdbDistinctStableOrderPlanningTest {
 	@Test
 	void pendingTransactionChangesDisablePartitionedDistinct() {
 		Repository lmdb = lmdb("pending", false);
-		try (RepositoryConnection conn = lmdb.getConnection()) {
+		try (RepositoryConnection conn = lmdb.getConnection(); var partitioned = new LmdbPartitionedDistinctProbe()) {
 			ValueFactory vf = conn.getValueFactory();
 			conn.begin();
 			conn.add(vf.createIRI("urn:a0"), vf.createIRI("urn:p"), vf.createIRI("urn:fresh"));
 			conn.add(vf.createIRI("urn:fresh"), vf.createIRI("urn:q"), vf.createIRI("urn:cfresh"));
-			long before = LmdbPartitionedDistinctSteps.partitionedEvaluationCount();
 			TupleQuery tupleQuery = conn.prepareTupleQuery(QueryLanguage.SPARQL, PLAIN_DISTINCT);
 			String explain = tupleQuery.explain(Explanation.Level.Executed).toString();
 			int rows = 0;
@@ -299,7 +296,7 @@ class LmdbDistinctStableOrderPlanningTest {
 			// 14882 committed distinct rows plus the (urn:a0, urn:cfresh) row only visible in the transaction
 			assertThat(rows).isEqualTo(14883);
 			assertThat(explain).doesNotContain("statementOrder");
-			assertThat(LmdbPartitionedDistinctSteps.partitionedEvaluationCount()).isEqualTo(before);
+			assertThat(partitioned.opened()).isZero();
 		} finally {
 			lmdb.shutDown();
 		}

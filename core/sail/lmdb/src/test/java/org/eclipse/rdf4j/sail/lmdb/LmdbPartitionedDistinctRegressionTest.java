@@ -264,11 +264,11 @@ class LmdbPartitionedDistinctRegressionTest {
 				dataset.addNamedGraph(namedDataset.defaultAlias);
 				dataset.addNamedGraph(graphs.getFirst());
 			}
-			long before = LmdbPartitionedDistinctSteps.partitionedEvaluationCount();
-			assertThat(evaluate(connection, query, dataset)).extracting(row -> row.getValue("graph"))
-					.containsExactlyInAnyOrderElementsOf(contextCanBeUnbound ? graphs : List.of(graphs.getFirst()));
-			assertThat(LmdbPartitionedDistinctSteps.partitionedEvaluationCount() - before)
-					.isEqualTo(contextCanBeUnbound ? 0L : 1L);
+			try (var partitioned = new LmdbPartitionedDistinctProbe()) {
+				assertThat(evaluate(connection, query, dataset)).extracting(row -> row.getValue("graph"))
+						.containsExactlyInAnyOrderElementsOf(contextCanBeUnbound ? graphs : List.of(graphs.getFirst()));
+				assertThat(partitioned.opened()).isEqualTo(contextCanBeUnbound ? 0 : 1);
+			}
 		} finally {
 			store.shutDown();
 		}
@@ -644,7 +644,7 @@ class LmdbPartitionedDistinctRegressionTest {
 		IRI object = VF.createIRI("urn:o");
 		IRI match = VF.createIRI("urn:s21");
 		LmdbStore store = openStore(false, indexes);
-		try (var connection = store.getConnection()) {
+		try (var connection = store.getConnection(); var partitioned = new LmdbPartitionedDistinctProbe()) {
 			connection.begin();
 			for (int i = 0; i < 64; i++) {
 				connection.addStatement(VF.createIRI("urn:s" + i), common, object);
@@ -653,7 +653,6 @@ class LmdbPartitionedDistinctRegressionTest {
 			connection.commit();
 
 			var query = parse("SELECT DISTINCT ?s WHERE { ?s <urn:rare> " + objectPattern + " }");
-			long partitionsBefore = LmdbPartitionedDistinctSteps.partitionedEvaluationCount();
 			long cursorsBefore = LmdbPrefixRunPlan.OPENED.get();
 			long keysBefore = LmdbPrefixRunPlan.ROWS_SCANNED.get();
 			assertThat(evaluate(connection, query)).extracting(row -> row.getValue("s")).containsExactly(match);
@@ -666,7 +665,7 @@ class LmdbPartitionedDistinctRegressionTest {
 				assertThat(LmdbPrefixRunPlan.ROWS_SCANNED.get()).isEqualTo(keysBefore);
 			}
 			assertThat(LmdbPrefixRunPlan.OPENED.get() - cursorsBefore).isEqualTo(indexed ? 1L : 0L);
-			assertThat(LmdbPartitionedDistinctSteps.partitionedEvaluationCount()).isEqualTo(partitionsBefore);
+			assertThat(partitioned.opened()).isZero();
 		} finally {
 			store.shutDown();
 		}
@@ -1072,11 +1071,10 @@ class LmdbPartitionedDistinctRegressionTest {
 		LmdbStore store = openStore(false, "psoc,posc");
 		try (var connection = store.getConnection()) {
 			loadAliasedValues(connection);
-			long partitionsBefore = LmdbPartitionedDistinctSteps.partitionedEvaluationCount();
 			long cursorsBefore = LmdbPrefixRunPlan.OPENED.get();
-			try (var result = connection.evaluate(parse(query), null, EmptyBindingSet.getInstance(), false)) {
-				assertThat(LmdbPartitionedDistinctSteps.partitionedEvaluationCount() - partitionsBefore)
-						.isEqualTo(indexed ? 0L : 1L);
+			try (var partitioned = new LmdbPartitionedDistinctProbe();
+					var result = connection.evaluate(parse(query), null, EmptyBindingSet.getInstance(), false)) {
+				assertThat(partitioned.opened()).isEqualTo(indexed ? 0 : 1);
 				assertThat(LmdbPrefixRunPlan.OPENED.get()).isEqualTo(cursorsBefore);
 
 				QueryCircuitBreaker breaker = QueryCircuitBreaker.getInstance();
@@ -1124,10 +1122,11 @@ class LmdbPartitionedDistinctRegressionTest {
 			try (var connection = store.getConnection()) {
 				loadAliasedValues(connection);
 				TupleExpr query = parse("SELECT REDUCED ?a ?v WHERE { ?a <urn:p> ?b . ?b <urn:q> ?v }");
-				long before = LmdbPartitionedDistinctSteps.partitionedEvaluationCount();
-				assertThat(evaluate(connection, query)).extracting(row -> row.getValue("v"))
-						.contains(VF.createIRI("urn:v1"), VF.createIRI("urn:v2"));
-				assertThat(LmdbPartitionedDistinctSteps.partitionedEvaluationCount()).isEqualTo(before);
+				try (var partitioned = new LmdbPartitionedDistinctProbe()) {
+					assertThat(evaluate(connection, query)).extracting(row -> row.getValue("v"))
+							.contains(VF.createIRI("urn:v1"), VF.createIRI("urn:v2"));
+					assertThat(partitioned.opened()).isZero();
+				}
 				assertThat(connection.explain(Explanation.Level.Optimized, query, null,
 						EmptyBindingSet.getInstance(), false, 0).toString())
 								.contains("Reduced")

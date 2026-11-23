@@ -126,10 +126,11 @@ class LmdbDistinctStableOrderStrategyTest {
 
 	@Test
 	void distinctWithFixedContextUsesContextBoundOrder(@TempDir File dataDir) {
-		long before = LmdbPartitionedDistinctSteps.partitionedEvaluationCount();
-		assertNamedContextDistinct(dataDir, false, DirectAdjacencyMode.DISABLED, constVar("urn:g2"),
-				List.of("urn:s1"));
-		assertTrue(LmdbPartitionedDistinctSteps.partitionedEvaluationCount() > before);
+		try (var partitioned = new LmdbPartitionedDistinctProbe()) {
+			assertNamedContextDistinct(dataDir, false, DirectAdjacencyMode.DISABLED, constVar("urn:g2"),
+					List.of("urn:s1"));
+			assertTrue(partitioned.opened() > 0);
+		}
 	}
 
 	private void assertNamedContextDistinct(File dataDir, boolean nativeEnabled, DirectAdjacencyMode mode,
