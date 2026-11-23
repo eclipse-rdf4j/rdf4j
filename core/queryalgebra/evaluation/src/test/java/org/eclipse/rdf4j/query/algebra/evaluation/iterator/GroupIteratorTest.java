@@ -26,18 +26,23 @@ import java.util.Collections;
 import java.util.Date;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.locks.Lock;
 import java.util.concurrent.locks.ReentrantLock;
+import java.util.function.BiConsumer;
 import java.util.function.BiFunction;
 import java.util.function.Function;
 import java.util.function.Predicate;
+import java.util.function.Supplier;
 
 import org.assertj.core.api.SoftAssertions;
+import org.eclipse.rdf4j.collection.factory.impl.DefaultCollectionFactory;
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
+import org.eclipse.rdf4j.common.iteration.CloseableIteratorIteration;
 import org.eclipse.rdf4j.common.iteration.LookAheadIteration;
 import org.eclipse.rdf4j.http.client.QueryCircuitBreaker;
 import org.eclipse.rdf4j.http.client.QueryCircuitBreakerHandle;
@@ -51,9 +56,11 @@ import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.model.base.CoreDatatype;
 import org.eclipse.rdf4j.model.datatypes.XMLDatatypeUtil;
+import org.eclipse.rdf4j.model.impl.SimpleIRI;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.model.vocabulary.XSD;
 import org.eclipse.rdf4j.query.BindingSet;
+import org.eclipse.rdf4j.query.MutableBindingSet;
 import org.eclipse.rdf4j.query.QueryEvaluationException;
 import org.eclipse.rdf4j.query.QueryInterruptedException;
 import org.eclipse.rdf4j.query.algebra.AggregateFunctionCall;
@@ -85,10 +92,12 @@ import org.eclipse.rdf4j.query.algebra.evaluation.QueryEvaluationStep;
 import org.eclipse.rdf4j.query.algebra.evaluation.ValueExprEvaluationException;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.DefaultEvaluationStrategy;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.EmptyTripleSource;
+import org.eclipse.rdf4j.query.algebra.evaluation.impl.GraphFrameBindings;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.QueryEvaluationContext;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.evaluationsteps.BatchCorrelatedJoinProvider;
 import org.eclipse.rdf4j.query.algebra.evaluation.util.MathUtil;
 import org.eclipse.rdf4j.query.impl.EmptyBindingSet;
+import org.eclipse.rdf4j.query.impl.ListBindingSet;
 import org.eclipse.rdf4j.query.parser.sparql.aggregate.AggregateCollector;
 import org.eclipse.rdf4j.query.parser.sparql.aggregate.AggregateFunction;
 import org.eclipse.rdf4j.query.parser.sparql.aggregate.AggregateFunctionFactory;
@@ -173,6 +182,123 @@ public class GroupIteratorTest {
 			assertTrue(gi.requestCancellation(), "the group operator polls cancellation itself");
 			assertThatExceptionOfType(QueryInterruptedException.class).isThrownBy(gi::hasNext);
 		}
+	}
+
+	@Test
+	void groupingOnTwoEqualTermsDoesNotCompareEveryPairOfFinalSolutions() {
+		int cardinality = 256;
+		AtomicInteger comparisons = new AtomicInteger();
+		List<BindingSet> members = new ArrayList<>();
+		for (int i = 0; i < cardinality; i++) {
+			IRI term = new SimpleIRI("urn:group:" + i) {
+				@Override
+				public boolean equals(Object other) {
+					comparisons.incrementAndGet();
+					return super.equals(other);
+				}
+			};
+			QueryBindingSet row = new QueryBindingSet();
+			row.addBinding("k", term);
+			row.addBinding("copy", term);
+			members.add(row);
+			members.add(row);
+		}
+		Group group = new Group(new SingletonSet(), List.of("k", "copy"));
+		group.addGroupElement(new GroupElem("count", new Count(null)));
+		List<String> rows = new ArrayList<>();
+		try (var it = GroupIterator.withMembers(EVALUATOR, group, EmptyBindingSet.getInstance(), CONTEXT,
+				new CloseableIteratorIteration<>(members.iterator()))) {
+			while (it.hasNext()) {
+				BindingSet row = it.next();
+				assertThat(row.getValue("copy")).isSameAs(row.getValue("k"));
+				assertThat(((Literal) row.getValue("count")).intValue()).isEqualTo(2);
+				rows.add(row.getValue("k").stringValue());
+			}
+		}
+		assertThat(rows).hasSize(cardinality).doesNotHaveDuplicates();
+		// The public binding-set XOR hash cancels the two equal values. Using it as a grouping
+		// result index puts all of these otherwise unrelated groups in the same bucket.
+		assertThat(comparisons.get()).isLessThan(16 * cardinality);
+	}
+
+	@Test
+	void twoGroupsWithTheSameFinalBindingsRemainDeduplicated() {
+		QueryBindingSet parent = new QueryBindingSet();
+		GraphFrameBindings.supply(parent, "copy", VF.createIRI("urn:copy"));
+		QueryBindingSet missing = new QueryBindingSet();
+		missing.addBinding("k", VF.createIRI("urn:key"));
+		QueryBindingSet bound = new QueryBindingSet(missing);
+		bound.addBinding("copy", parent.getValue("copy"));
+		Group group = new Group(new SingletonSet(), List.of("k", "copy"));
+		group.addGroupElement(new GroupElem("count", new Count(null)));
+		for (boolean inheritedFirst : List.of(true, false)) {
+			List<BindingSet> inputs = inheritedFirst ? List.of(missing, bound) : List.of(bound, missing);
+			try (var it = GroupIterator.withMembers(EVALUATOR, group, parent, CONTEXT,
+					new CloseableIteratorIteration<>(inputs.iterator()))) {
+				BindingSet result = it.next();
+				assertThat(result.getValue("k")).isEqualTo(missing.getValue("k"));
+				assertThat(result.getValue("copy")).isEqualTo(parent.getValue("copy"));
+				assertThat(((Literal) result.getValue("count")).intValue()).isEqualTo(1);
+				// The inherited mapping carries private provenance; the assignment clears it on
+				// the other mapping. Frame metadata is not part of RDF solution equality.
+				assertThat(GraphFrameBindings.isSupplied(result, "copy")).isEqualTo(inheritedFirst);
+				assertThat(it.hasNext()).isFalse();
+			}
+		}
+	}
+
+	@Test
+	void multipleGroupingKeysKeepTermIdentityAndUnboundDomains() {
+		var keys = List.of("number", "label");
+		var one = VF.createLiteral("1", XSD.INTEGER);
+		var padded = VF.createLiteral("01", XSD.INTEGER);
+		var en = VF.createLiteral("one", "en");
+		var no = VF.createLiteral("one", "no");
+		BindingSet repeated = new ListBindingSet(keys, one, en);
+		List<BindingSet> inputs = List.of(repeated, repeated,
+				new ListBindingSet(keys, padded, en), new ListBindingSet(keys, one, no),
+				new ListBindingSet(keys, null, en));
+		Group group = new Group(new SingletonSet(), keys);
+		group.addGroupElement(new GroupElem("count", new Count(null)));
+		List<BindingSet> output = new ArrayList<>();
+		try (var it = GroupIterator.withMembers(EVALUATOR, group, EmptyBindingSet.getInstance(), CONTEXT,
+				new CloseableIteratorIteration<>(inputs.iterator()))) {
+			while (it.hasNext()) {
+				output.add(it.next());
+			}
+		}
+		var names = List.of("number", "label", "count");
+		var oneCount = VF.createLiteral("1", XSD.INTEGER);
+		assertThat(output).containsExactlyInAnyOrder(
+				new ListBindingSet(names, one, en, VF.createLiteral("2", XSD.INTEGER)),
+				new ListBindingSet(names, padded, en, oneCount),
+				new ListBindingSet(names, one, no, oneCount),
+				new ListBindingSet(List.of("label", "count"), en, oneCount));
+	}
+
+	@Test
+	void customCollectionFactoryStillOwnsTheGroupedResultSet() {
+		AtomicInteger resultSets = new AtomicInteger();
+		var factory = new DefaultCollectionFactory() {
+			@Override
+			public Set<BindingSet> createSetOfBindingSets(Supplier<MutableBindingSet> create,
+					Function<String, Predicate<BindingSet>> has,
+					Function<String, Function<BindingSet, Value>> get,
+					Function<String, BiConsumer<Value, MutableBindingSet>> set) {
+				resultSets.incrementAndGet();
+				return super.createSetOfBindingSets(create, has, get, set);
+			}
+		};
+		Group group = new Group(NONEMPTY_ASSIGNMENT, List.of("a", "missing"));
+		int rows = 0;
+		try (var it = new GroupIterator(EVALUATOR, group, EmptyBindingSet.getInstance(), 0, CONTEXT, VF, factory)) {
+			while (it.hasNext()) {
+				it.next();
+				rows++;
+			}
+		}
+		assertThat(rows).isEqualTo(9);
+		assertThat(resultSets).hasValue(1);
 	}
 
 	@Test

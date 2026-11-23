@@ -15,6 +15,7 @@ package org.eclipse.rdf4j.query.algebra.evaluation.iterator;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Collections;
+import java.util.HashMap;
 import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
@@ -22,6 +23,7 @@ import java.util.Random;
 import java.util.Set;
 import java.util.function.BiConsumer;
 import java.util.function.BiFunction;
+import java.util.function.Consumer;
 import java.util.function.Function;
 import java.util.function.Predicate;
 import java.util.function.Supplier;
@@ -66,6 +68,7 @@ import org.eclipse.rdf4j.query.algebra.evaluation.EvaluationStrategy;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryEvaluationStep;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryValueEvaluationStep;
 import org.eclipse.rdf4j.query.algebra.evaluation.ValueExprEvaluationException;
+import org.eclipse.rdf4j.query.algebra.evaluation.impl.DistinctBindingSetKey;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.QueryEvaluationContext;
 import org.eclipse.rdf4j.query.algebra.evaluation.util.MathUtil;
 import org.eclipse.rdf4j.query.algebra.evaluation.util.ValueComparator;
@@ -210,8 +213,20 @@ public class GroupIterator extends AbstractCloseableIteratorIteration<BindingSet
 
 		BiConsumer<Entry, MutableBindingSet> bindSolution = makeBindSolution(aggregates);
 		Collection<Entry> entries = buildEntries(aggregates);
-		Set<BindingSet> bindingSets = cf.createSetOfBindingSets(context::createBindingSet, context::hasBinding,
-				context::getValue, context::setBinding);
+		Collection<BindingSet> bindingSets;
+		Consumer<BindingSet> add;
+		if (cf.getClass() == DefaultCollectionFactory.class && getValues.size() >= 2) {
+			// BindingSet's public XOR hash cancels repeated values. For example, GROUP BY ?from ?to over
+			// self-edges with equal counts would compare every pair of final mappings. Use DISTINCT's private
+			// hash but still deduplicate by the actual output, including inherited and aggregate bindings.
+			Map<DistinctBindingSetKey, BindingSet> results = new HashMap<>();
+			bindingSets = results.values();
+			add = row -> results.putIfAbsent(new DistinctBindingSetKey(row), row);
+		} else {
+			bindingSets = cf.createSetOfBindingSets(context::createBindingSet, context::hasBinding,
+					context::getValue, context::setBinding);
+			add = bindingSets::add;
+		}
 		BiConsumer<BindingSet, MutableBindingSet> setValues = makeSetValues(getValues, setBindings);
 		for (Entry entry : entries) {
 			MutableBindingSet sol = makeNewBindingSet.get();
@@ -222,7 +237,7 @@ public class GroupIterator extends AbstractCloseableIteratorIteration<BindingSet
 			}
 
 			bindSolution.accept(entry, sol);
-			bindingSets.add(sol);
+			add.accept(sol);
 		}
 
 		return bindingSets.iterator();
