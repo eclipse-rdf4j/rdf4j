@@ -16,6 +16,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import java.io.ByteArrayOutputStream;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.TimeUnit;
@@ -97,25 +98,39 @@ class GraphExplorerLabelPreferencesTest {
 					"kind", "iri", "label", "alice", "types", List.of(Map.of("id", ids.get(2), "label", "Person")))),
 					"edges", List.of(Map.of("id", "e", "source", ids.get(0), "target", ids.get(0), "predicate",
 							ids.get(1), "label", "works for")));
-			for (List<String> properties : List.of(List.of(CUSTOM, RDFS_LABEL), List.of(RDFS_LABEL, CUSTOM))) {
-				String query = nodeFixture(Map.of("action", "query", "ids", ids, "properties", properties), temporary);
+			List<List<String>> propertyOrders = List.of(List.of(CUSTOM, RDFS_LABEL), List.of(RDFS_LABEL, CUSTOM));
+			List<Map<String, ?>> queryInputs = new ArrayList<>();
+			for (List<String> properties : propertyOrders) {
+				queryInputs.add(Map.of("action", "query", "ids", ids, "properties", properties));
+			}
+			JsonNode queries = nodeFixtures(queryInputs, temporary);
+			List<Map<String, ?>> displayInputs = new ArrayList<>();
+			List<String> expectedLabels = new ArrayList<>();
+			for (int index = 0; index < propertyOrders.size(); index++) {
+				List<String> properties = propertyOrders.get(index);
+				String query = queries.get(index).asString();
 				ByteArrayOutputStream results = new ByteArrayOutputStream();
 				try (var rows = connection.prepareTupleQuery(query).evaluate()) {
 					QueryResults.report(rows, new SPARQLResultsJSONWriter(results));
 				}
 				for (String language : List.of("en", "nb")) {
-					JsonNode displayed = JSON.readTree(nodeFixture(Map.of("action", "display", "ids", ids,
+					displayInputs.add(Map.of("action", "display", "ids", ids,
 							"properties", properties, "languages", List.of(language), "graph", graph,
-							"response", JSON.readTree(results.toByteArray())), temporary));
-					String expected = (properties.get(0).equals(CUSTOM) ? "Custom " : "RDFS ")
-							+ (language.equals("nb") ? "norsk" : "English");
-					assertThat(displayed.at("/graph/nodes/0/label").asString()).isEqualTo(expected);
-					assertThat(displayed.at("/graph/nodes/0/types/0/label").asString())
-							.isEqualTo(vocabularyLabels ? expected : "Person");
-					assertThat(displayed.at("/graph/edges/0/label").asString())
-							.isEqualTo(vocabularyLabels ? expected : "works for");
-					assertThat(displayed.at("/identifiers/0").asString()).isEqualTo("alice");
+							"response", JSON.readTree(results.toByteArray())));
+					expectedLabels.add((properties.get(0).equals(CUSTOM) ? "Custom " : "RDFS ")
+							+ (language.equals("nb") ? "norsk" : "English"));
 				}
+			}
+			JsonNode displays = nodeFixtures(displayInputs, temporary);
+			for (int index = 0; index < expectedLabels.size(); index++) {
+				JsonNode displayed = displays.get(index);
+				String expected = expectedLabels.get(index);
+				assertThat(displayed.at("/graph/nodes/0/label").asString()).isEqualTo(expected);
+				assertThat(displayed.at("/graph/nodes/0/types/0/label").asString())
+						.isEqualTo(vocabularyLabels ? expected : "Person");
+				assertThat(displayed.at("/graph/edges/0/label").asString())
+						.isEqualTo(vocabularyLabels ? expected : "works for");
+				assertThat(displayed.at("/identifiers/0").asString()).isEqualTo("alice");
 			}
 		} finally {
 			repository.shutDown();
@@ -133,7 +148,14 @@ class GraphExplorerLabelPreferencesTest {
 			if (prefixes) {
 				connection.setNamespace("resource", NS);
 			}
-			JsonNode properties = JSON.readTree(nodeFixture(Map.of("action", "properties"), temporary));
+			JsonNode properties = nodeFixtures(List.of(Map.of("action", "properties")), temporary).get(0);
+			List<Map<String, ?>> queryInputs = new ArrayList<>();
+			for (int index = 0; index < properties.size(); index++) {
+				queryInputs.add(Map.of("action", "query", "ids", List.of(NS + "resource" + index),
+						"properties", List.of()));
+			}
+			JsonNode queries = nodeFixtures(queryInputs, temporary);
+			List<Map<String, ?>> displayInputs = new ArrayList<>();
 			var vf = repository.getValueFactory();
 			for (int index = 0; index < properties.size(); index++) {
 				String id = NS + "resource" + index;
@@ -144,26 +166,29 @@ class GraphExplorerLabelPreferencesTest {
 				}
 				String expected = "Vocabulary name " + index;
 				connection.add(vf.createIRI(id), vf.createIRI(property), vf.createLiteral(expected, "en"));
-				String query = nodeFixture(Map.of("action", "query", "ids", List.of(id), "properties", List.of()),
-						temporary);
+				String query = queries.get(index).asString();
 				ByteArrayOutputStream results = new ByteArrayOutputStream();
 				try (var rows = connection.prepareTupleQuery(query).evaluate()) {
 					QueryResults.report(rows, new SPARQLResultsJSONWriter(results));
 				}
-				JsonNode displayed = JSON.readTree(nodeFixture(Map.of("action", "display", "ids", List.of(id),
+				displayInputs.add(Map.of("action", "display", "ids", List.of(id),
 						"properties", List.of(), "languages", List.of("en"), "response",
 						JSON.readTree(results.toByteArray()),
 						"graph", Map.of("revision", 1, "nodes", List.of(Map.of("id", id, "kind", "iri", "label", id)),
-								"edges", List.of())),
-						temporary));
-				assertThat(displayed.at("/graph/nodes/0/label").asString()).as(property).isEqualTo(expected);
+								"edges", List.of())));
+			}
+			JsonNode displays = nodeFixtures(displayInputs, temporary);
+			for (int index = 0; index < properties.size(); index++) {
+				assertThat(displays.get(index).at("/graph/nodes/0/label").asString())
+						.as(properties.get(index).asString())
+						.isEqualTo("Vocabulary name " + index);
 			}
 		} finally {
 			repository.shutDown();
 		}
 	}
 
-	private String nodeFixture(Map<String, ?> input, Path temporary) throws Exception {
+	private JsonNode nodeFixtures(List<? extends Map<String, ?>> inputs, Path temporary) throws Exception {
 		Path output = temporary.resolve("label-fixture-output.json");
 		Path errors = temporary.resolve("label-fixture-errors.log");
 		try (TestProcess child = TestProcess.start(new ProcessBuilder(TestProcess.NODE, "--experimental-strip-types",
@@ -172,7 +197,7 @@ class GraphExplorerLabelPreferencesTest {
 						.redirectError(errors.toFile()))) {
 			Process process = child.process();
 			try (var writer = process.getOutputStream()) {
-				writer.write(JSON.writeValueAsBytes(input));
+				writer.write(JSON.writeValueAsBytes(inputs));
 			}
 			boolean finished = process.waitFor(30, TimeUnit.SECONDS);
 			if (!finished) {
@@ -181,7 +206,10 @@ class GraphExplorerLabelPreferencesTest {
 			}
 			assertThat(finished).as("the actual TypeScript label fixture completes").isTrue();
 			assertThat(process.exitValue()).as(Files.readString(errors)).isZero();
-			return Files.readString(output);
+			JsonNode results = JSON.readTree(Files.readString(output));
+			assertThat(results.isArray()).as("one result per fixture action").isTrue();
+			assertThat(results.size()).isEqualTo(inputs.size());
+			return results;
 		}
 	}
 }
