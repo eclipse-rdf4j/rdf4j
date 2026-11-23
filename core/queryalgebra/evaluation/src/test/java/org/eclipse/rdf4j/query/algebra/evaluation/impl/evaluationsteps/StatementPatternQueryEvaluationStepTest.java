@@ -612,7 +612,7 @@ class StatementPatternQueryEvaluationStepTest {
 
 	@ParameterizedTest
 	@ValueSource(booleans = { false, true })
-	void boundLookupAndCacheReopenReportOnlyWhenEnabled(boolean trackIndexName) {
+	void boundLookupScansReportIndexOnlyWhenEnabled(boolean trackIndexName) {
 		var vf = SimpleValueFactory.getInstance();
 		var subject = vf.createIRI("urn:subject");
 		var predicate = vf.createIRI("urn:predicate");
@@ -622,9 +622,9 @@ class StatementPatternQueryEvaluationStepTest {
 			statements.add(vf.createStatement(subject, predicate, object, vf.createIRI("urn:graph:" + i)));
 		}
 		var firstScan = new TestIndexReportingStatementIteration(statements, "spoc", 20, 20, 0);
-		var reopenedScan = new TestIndexReportingStatementIteration(statements, "posc", 20, 20, 0);
+		var secondScan = new TestIndexReportingStatementIteration(statements, "posc", 20, 20, 0);
 		var tripleSource = mock(TripleSource.class);
-		doReturn(firstScan, reopenedScan).when(tripleSource).getStatements(subject, predicate, object);
+		doReturn(firstScan, secondScan).when(tripleSource).getStatements(subject, predicate, object);
 		var pattern = new StatementPattern(StatementPattern.Scope.NAMED_CONTEXTS, Var.of("s"), Var.of("p"),
 				Var.of("o"), Var.of("g"));
 		var step = new StatementPatternQueryEvaluationStep(pattern, new InstrumentedQueryEvaluationContext(),
@@ -637,42 +637,41 @@ class StatementPatternQueryEvaluationStepTest {
 		try (var rows = step.evaluate(bindings)) {
 			assertThat(rows.next().getValue("g")).isEqualTo(statements.getFirst().getContext());
 		}
-
 		assertThat(firstScan.isClosed()).isTrue();
-		assertThat(reopenedScan.isClosed()).isTrue();
+		assertThat(secondScan.indexNameReads).isZero();
+		assertThat(pattern.getIndexName()).isEqualTo(trackIndexName ? "spoc" : null);
+
+		try (var rows = step.evaluate(bindings)) {
+			assertThat(rows.next().getValue("g")).isEqualTo(statements.getFirst().getContext());
+		}
+		assertThat(secondScan.isClosed()).isTrue();
 		assertThat(firstScan.indexNameReads).isEqualTo(trackIndexName ? 1 : 0);
-		assertThat(reopenedScan.indexNameReads).isEqualTo(trackIndexName ? 1 : 0);
+		assertThat(secondScan.indexNameReads).isEqualTo(trackIndexName ? 1 : 0);
 		assertThat(pattern.getIndexName()).isEqualTo(trackIndexName ? "posc" : null);
 	}
 
 	@ParameterizedTest
 	@ValueSource(booleans = { false, true })
-	void failedBoundLookupCacheReopenClosesBothCursors(boolean failOnOriginalClose) {
+	void failedBoundLookupClosesCursorAndPreservesFailure(boolean failOnIndexName) {
 		var vf = SimpleValueFactory.getInstance();
 		var subject = vf.createIRI("urn:subject");
 		var predicate = vf.createIRI("urn:predicate");
 		var object = vf.createLiteral("object");
-		List<Statement> statements = new ArrayList<>();
-		for (int i = 0; i < 9; i++) {
-			statements.add(vf.createStatement(subject, predicate, object, vf.createIRI("urn:graph:" + i)));
-		}
-		var failure = new IllegalStateException("primary setup failure");
-		var cleanupFailure = new IllegalStateException("closing replacement cursor");
-		var firstScan = new TestIndexReportingStatementIteration(statements, "spoc", 9, 9, 0) {
-			@Override
-			protected void handleClose() {
-				if (failOnOriginalClose) {
-					throw failure;
-				}
-			}
-		};
-		var reopenedScan = new TestIndexReportingStatementIteration(statements, "posc", 9, 9, 0) {
+		var statements = List.of(vf.createStatement(subject, predicate, object, vf.createIRI("urn:graph")));
+		var failure = new IllegalStateException("primary lookup failure");
+		var cleanupFailure = new IllegalStateException("closing lookup cursor");
+		var scan = new TestIndexReportingStatementIteration(statements, "spoc", 1, 1, 0) {
 			@Override
 			public String getIndexName() {
-				if (!failOnOriginalClose) {
+				if (failOnIndexName) {
 					throw failure;
 				}
 				return super.getIndexName();
+			}
+
+			@Override
+			public Statement next() {
+				throw failure;
 			}
 
 			@Override
@@ -681,7 +680,7 @@ class StatementPatternQueryEvaluationStepTest {
 			}
 		};
 		var tripleSource = mock(TripleSource.class);
-		doReturn(firstScan, reopenedScan).when(tripleSource).getStatements(subject, predicate, object);
+		doReturn(scan).when(tripleSource).getStatements(subject, predicate, object);
 		var pattern = new StatementPattern(StatementPattern.Scope.NAMED_CONTEXTS, Var.of("s"), Var.of("p"),
 				Var.of("o"), Var.of("g"));
 		var step = new StatementPatternQueryEvaluationStep(pattern, new InstrumentedQueryEvaluationContext(),
@@ -691,22 +690,27 @@ class StatementPatternQueryEvaluationStepTest {
 		bindings.addBinding("p", predicate);
 		bindings.addBinding("o", object);
 
-		assertThatThrownBy(() -> step.evaluate(bindings)).isInstanceOf(QueryEvaluationException.class)
-				.hasCause(failure);
-		assertThat(firstScan.isClosed()).as("original cursor").isTrue();
-		assertThat(reopenedScan.isClosed()).as("replacement cursor").isTrue();
+		if (failOnIndexName) {
+			assertThatThrownBy(() -> step.evaluate(bindings)).isInstanceOf(QueryEvaluationException.class)
+					.hasCause(failure);
+		} else {
+			try (var rows = step.evaluate(bindings)) {
+				assertThatThrownBy(rows::next).isSameAs(failure);
+			}
+		}
+		assertThat(scan.isClosed()).isTrue();
 		assertThat(failure.getSuppressed()).containsExactly(cleanupFailure);
 	}
 
 	@Test
-	void countCacheHitClosesReopenedCursorWhenConverterSetupFails() {
+	void directLookupClosesCursorWhenConverterSetupFails() {
 		var vf = SimpleValueFactory.getInstance();
 		var subject = vf.createIRI("urn:subject");
 		var predicate = vf.createIRI("urn:predicate");
 		var object = vf.createLiteral("object");
 		var failure = new IllegalStateException("constructing converter");
-		var cleanupFailure = new IllegalStateException("closing count-cache cursor");
-		var reopenedScan = new CloseableIteratorIteration<>(List.of(vf.createStatement(subject, predicate, object))
+		var cleanupFailure = new IllegalStateException("closing lookup cursor");
+		var scan = new CloseableIteratorIteration<>(List.of(vf.createStatement(subject, predicate, object))
 				.iterator()) {
 			@Override
 			protected void handleClose() {
@@ -715,8 +719,7 @@ class StatementPatternQueryEvaluationStepTest {
 		};
 		var tripleSource = mock(TripleSource.class);
 		when(tripleSource.getValueFactory()).thenReturn(vf);
-		when(tripleSource.getStatementCount(subject, predicate, object)).thenReturn(1L);
-		doReturn(reopenedScan).when(tripleSource).getStatements(subject, predicate, object);
+		doReturn(scan).when(tripleSource).getStatements(subject, predicate, object);
 		var context = new QueryEvaluationContext.Minimal(null) {
 			@Override
 			public BiConsumer<Value, MutableBindingSet> addBinding(String name) {
@@ -726,15 +729,12 @@ class StatementPatternQueryEvaluationStepTest {
 		var pattern = new StatementPattern(Var.of("s", subject), Var.of("p"), Var.of("o"));
 		var step = new StatementPatternQueryEvaluationStep(pattern, context, tripleSource);
 		var bindings = new MapBindingSet();
-		bindings.addBinding("s", subject);
 		bindings.addBinding("p", predicate);
 		bindings.addBinding("o", object);
-		assertThat(step.getFullyBoundStatementCount(bindings)).isOne();
-		// The captured subject still supplies the lookup, but the result now has to restore its binding.
-		bindings.removeBinding("s");
 
-		assertThatThrownBy(() -> step.evaluate(bindings)).isSameAs(failure);
-		assertThat(reopenedScan.isClosed()).isTrue();
+		assertThatThrownBy(() -> step.evaluate(bindings)).isInstanceOf(QueryEvaluationException.class)
+				.hasCause(failure);
+		assertThat(scan.isClosed()).isTrue();
 		assertThat(failure.getSuppressed()).containsExactly(cleanupFailure);
 	}
 

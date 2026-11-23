@@ -15,9 +15,13 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 import java.util.Iterator;
 import java.util.List;
+import java.util.NoSuchElementException;
+import java.util.Set;
 
 import org.eclipse.rdf4j.common.iteration.AbstractCloseableIteration;
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
+import org.eclipse.rdf4j.common.iteration.CooperativeCancellation;
+import org.eclipse.rdf4j.common.iteration.IndexReportingIterator;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.Statement;
@@ -32,9 +36,106 @@ import org.eclipse.rdf4j.query.algebra.StatementPattern;
 import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.query.algebra.evaluation.TripleSource;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.QueryEvaluationContext;
+import org.eclipse.rdf4j.query.impl.SimpleDataset;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 
 class StatementPatternQueryEvaluationStepDirectLookupCacheTest {
+
+	@Test
+	void fullyBoundLookupOnlyConsumesTheRequestedRowAcrossNamedGraphs() {
+		NamedGraphLookup lookup = new NamedGraphLookup(16);
+		TrackingFullyBoundTripleSource tripleSource = lookup.tripleSource;
+
+		try (CloseableIteration<BindingSet> iteration = lookup.evaluate()) {
+			assertThat(iteration.hasNext()).isTrue();
+			assertThat(iteration.next()).isSameAs(lookup.bindings);
+		}
+
+		assertThat(tripleSource.statementCountCalls).isZero();
+		assertThat(tripleSource.statementLookups).isOne();
+		assertThat(tripleSource.lastContexts).containsExactlyInAnyOrderElementsOf(lookup.dataset.getNamedGraphs());
+		assertThat(tripleSource.lastIteration.consumed).isOne();
+		assertThat(tripleSource.lastIteration.isClosed()).isTrue();
+	}
+
+	@Test
+	void fullyBoundLookupDrainsAllNamedGraphsWithOneCursor() {
+		NamedGraphLookup lookup = new NamedGraphLookup(16);
+
+		lookup.assertFullResult();
+
+		assertThat(lookup.tripleSource.statementCountCalls).isZero();
+		assertThat(lookup.tripleSource.statementLookups).isOne();
+		assertThat(lookup.tripleSource.lastIteration.consumed).isEqualTo(16);
+		assertThat(lookup.tripleSource.lastIteration.isClosed()).isTrue();
+	}
+
+	@Test
+	void partiallyReadFullyBoundLookupReopensAndReturnsAllRows() {
+		NamedGraphLookup lookup = new NamedGraphLookup(3);
+
+		try (CloseableIteration<BindingSet> iteration = lookup.evaluate()) {
+			assertThat(iteration.next()).isSameAs(lookup.bindings);
+		}
+		assertThat(lookup.tripleSource.lastIteration.consumed).isOne();
+		assertThat(lookup.tripleSource.lastIteration.isClosed()).isTrue();
+
+		lookup.assertFullResult();
+
+		assertThat(lookup.tripleSource.statementLookups).isEqualTo(2);
+	}
+
+	@Test
+	void drainedSmallFullyBoundLookupReusesCachedRows() {
+		NamedGraphLookup lookup = new NamedGraphLookup(3);
+
+		lookup.assertFullResult();
+		assertThat(lookup.tripleSource.lastIteration.isClosed()).isTrue();
+		lookup.assertFullResult();
+
+		assertThat(lookup.tripleSource.statementCountCalls).isZero();
+		assertThat(lookup.tripleSource.statementLookups).isOne();
+	}
+
+	@Test
+	void cancelledFullyBoundLookupReopensAndReturnsAllRows() {
+		NamedGraphLookup lookup = new NamedGraphLookup(3);
+
+		try (CloseableIteration<BindingSet> iteration = lookup.evaluate()) {
+			assertThat(iteration.next()).isSameAs(lookup.bindings);
+			assertThat(CooperativeCancellation.forward(iteration)).isTrue();
+			assertThat(lookup.tripleSource.lastIteration.cancelled).isTrue();
+			assertThat(iteration.hasNext()).isFalse();
+		}
+		assertThat(lookup.tripleSource.lastIteration.consumed).isOne();
+		assertThat(lookup.tripleSource.lastIteration.isClosed()).isTrue();
+
+		lookup.assertFullResult();
+
+		assertThat(lookup.tripleSource.statementLookups).isEqualTo(2);
+	}
+
+	@ParameterizedTest
+	@ValueSource(booleans = { false, true })
+	void fullyBoundLookupReportsLiveIndexMetrics(boolean trackIndexName) {
+		NamedGraphLookup lookup = new NamedGraphLookup(3, trackIndexName);
+
+		try (CloseableIteration<BindingSet> iteration = lookup.evaluate()) {
+			assertThat(iteration).isInstanceOf(IndexReportingIterator.class);
+			IndexReportingIterator metrics = (IndexReportingIterator) iteration;
+			assertThat(metrics.getIndexName()).isEqualTo("spoc");
+			assertThat(lookup.statementPattern.getIndexName()).isEqualTo(trackIndexName ? "spoc" : null);
+			assertThat(metrics.getSourceRowsScannedActual()).isZero();
+
+			assertThat(iteration.next()).isSameAs(lookup.bindings);
+
+			assertThat(metrics.getSourceRowsScannedActual()).isOne();
+			assertThat(metrics.getSourceRowsMatchedActual()).isOne();
+			assertThat(metrics.getSourceRowsFilteredActual()).isZero();
+		}
+	}
 
 	@Test
 	void cachedFullyBoundEvaluateClosesDrainedSourceIteration() {
@@ -85,6 +186,50 @@ class StatementPatternQueryEvaluationStepDirectLookupCacheTest {
 		}
 	}
 
+	private static final class NamedGraphLookup {
+
+		private final SimpleDataset dataset = new SimpleDataset();
+		private final TrackingFullyBoundTripleSource tripleSource;
+		private final StatementPattern statementPattern = new StatementPattern(StatementPattern.Scope.NAMED_CONTEXTS,
+				Var.of("s"), Var.of("p"), Var.of("o"));
+		private final StatementPatternQueryEvaluationStep evaluationStep;
+		private final MutableBindingSet bindings;
+
+		private NamedGraphLookup(int graphCount) {
+			this(graphCount, false);
+		}
+
+		private NamedGraphLookup(int graphCount, boolean trackIndexName) {
+			ValueFactory valueFactory = SimpleValueFactory.getInstance();
+			for (int i = 0; i < graphCount; i++) {
+				dataset.addNamedGraph(valueFactory.createIRI("urn:graph:" + i));
+			}
+			QueryEvaluationContext context = new QueryEvaluationContext.Minimal(dataset);
+			tripleSource = new TrackingFullyBoundTripleSource(dataset.getNamedGraphs());
+			evaluationStep = new StatementPatternQueryEvaluationStep(statementPattern, context, tripleSource,
+					trackIndexName, null, null);
+			bindings = context.createBindingSet();
+			bindings.addBinding("s", tripleSource.statement.getSubject());
+			bindings.addBinding("p", tripleSource.statement.getPredicate());
+			bindings.addBinding("o", tripleSource.statement.getObject());
+		}
+
+		private CloseableIteration<BindingSet> evaluate() {
+			return evaluationStep.evaluate(bindings);
+		}
+
+		private void assertFullResult() {
+			int rows = 0;
+			try (CloseableIteration<BindingSet> iteration = evaluate()) {
+				while (iteration.hasNext()) {
+					assertThat(iteration.next()).isSameAs(bindings);
+					rows++;
+				}
+			}
+			assertThat(rows).isEqualTo(dataset.getNamedGraphs().size());
+		}
+	}
+
 	private static final class TrackingFullyBoundTripleSource implements TripleSource {
 
 		private final ValueFactory valueFactory = SimpleValueFactory.getInstance();
@@ -92,13 +237,37 @@ class StatementPatternQueryEvaluationStepDirectLookupCacheTest {
 				valueFactory.createIRI("urn:subj"),
 				valueFactory.createIRI("urn:pred"),
 				valueFactory.createLiteral("obj"));
+		private final List<Statement> statements;
+		private int statementCountCalls;
+		private int statementLookups;
+		private Resource[] lastContexts;
 		private TrackingStatementIteration lastIteration;
+
+		private TrackingFullyBoundTripleSource() {
+			statements = List.of(statement);
+		}
+
+		private TrackingFullyBoundTripleSource(Set<IRI> namedGraphs) {
+			statements = namedGraphs.stream()
+					.map(graph -> valueFactory.createStatement(statement.getSubject(), statement.getPredicate(),
+							statement.getObject(), graph))
+					.toList();
+		}
 
 		@Override
 		public CloseableIteration<? extends Statement> getStatements(Resource subj, IRI pred, Value obj,
 				Resource... contexts) throws QueryEvaluationException {
-			lastIteration = new TrackingStatementIteration(List.of(statement));
+			statementLookups++;
+			lastContexts = contexts;
+			lastIteration = new TrackingStatementIteration(statements);
 			return lastIteration;
+		}
+
+		@Override
+		public long getStatementCount(Resource subj, IRI pred, Value obj, Resource... contexts)
+				throws QueryEvaluationException {
+			statementCountCalls++;
+			return TripleSource.super.getStatementCount(subj, pred, obj, contexts);
 		}
 
 		@Override
@@ -107,9 +276,12 @@ class StatementPatternQueryEvaluationStepDirectLookupCacheTest {
 		}
 	}
 
-	private static final class TrackingStatementIteration extends AbstractCloseableIteration<Statement> {
+	private static final class TrackingStatementIteration extends AbstractCloseableIteration<Statement>
+			implements CooperativeCancellation, IndexReportingIterator {
 
 		private final Iterator<Statement> iterator;
+		private int consumed;
+		private boolean cancelled;
 
 		private TrackingStatementIteration(List<Statement> statements) {
 			iterator = statements.iterator();
@@ -117,12 +289,45 @@ class StatementPatternQueryEvaluationStepDirectLookupCacheTest {
 
 		@Override
 		public boolean hasNext() {
-			return iterator.hasNext();
+			return !isClosed() && !cancelled && iterator.hasNext();
 		}
 
 		@Override
 		public Statement next() {
+			if (!hasNext()) {
+				throw new NoSuchElementException();
+			}
+			consumed++;
 			return iterator.next();
+		}
+
+		@Override
+		public boolean requestCancellation() {
+			if (isClosed()) {
+				return false;
+			}
+			cancelled = true;
+			return true;
+		}
+
+		@Override
+		public String getIndexName() {
+			return "spoc";
+		}
+
+		@Override
+		public long getSourceRowsScannedActual() {
+			return consumed;
+		}
+
+		@Override
+		public long getSourceRowsMatchedActual() {
+			return consumed;
+		}
+
+		@Override
+		public long getSourceRowsFilteredActual() {
+			return 0;
 		}
 
 		@Override

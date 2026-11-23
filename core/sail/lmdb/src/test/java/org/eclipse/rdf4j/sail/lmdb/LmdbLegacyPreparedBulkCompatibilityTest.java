@@ -120,7 +120,7 @@ class LmdbLegacyPreparedBulkCompatibilityTest {
 
 		List<Value> objects = objects();
 		Model payload = payload(objects);
-		Model expected = new LinkedHashModel(payload);
+		Set<Statement> expected = new HashSet<>(payload);
 		if (!cleared) {
 			expected.add(SEED);
 		}
@@ -305,10 +305,11 @@ class LmdbLegacyPreparedBulkCompatibilityTest {
 		return result;
 	}
 
-	private void assertRows(LmdbStore store, RepositoryConnection connection, Model expected) throws Exception {
+	private void assertRows(LmdbStore store, RepositoryConnection connection, Set<Statement> expected)
+			throws Exception {
 		assertThat(connection.size()).isEqualTo(expected.size());
 		assertThat(connection.getNamespace("legacyBulk")).isEqualTo("urn:legacy-bulk:");
-		Model actual = new LinkedHashModel();
+		Set<Statement> actual = HashSet.newHashSet(expected.size());
 		try (var rows = connection.getStatements(null, null, null, false)) {
 			while (rows.hasNext()) {
 				Statement statement = rows.next();
