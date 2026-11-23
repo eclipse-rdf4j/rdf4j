@@ -1,0 +1,312 @@
+{
+  "sourceArchive": "https://repo.maven.apache.org/maven2/io/sgr/s2-geometry-library-java/1.0.0/s2-geometry-library-java-1.0.0-sources.jar",
+  "archiveSha256": "6b557ea46083ee9caa25b6e87880acc01505c6a7b81b6c16ae06ee854f9b8932",
+  "blocks": [
+    {
+      "commentSha256": "4be35f0f4cf0ba9280f00b7b09d2faae192c9aada495b84e1490259fa64acba1",
+      "sources": [
+        {
+          "entry": "com/google/common/geometry/S2CellUnion.java",
+          "sourceSha256": "9a3520507b357ee1c3d32daa67859f6500b324ec4ce288c90fc6ebd15a1dc86c",
+          "startByte": 0,
+          "endByteExclusive": 594,
+          "startLine": 1,
+          "endLine": 15
+        },
+        {
+          "entry": "com/google/common/geometry/S2Cap.java",
+          "sourceSha256": "546f0a27b69446b12cca0a68dd9855490b971bb833f25fe1c7fd4cc70ed76966",
+          "startByte": 0,
+          "endByteExclusive": 594,
+          "startLine": 1,
+          "endLine": 15
+        },
+        {
+          "entry": "com/google/common/geometry/S2LatLngRect.java",
+          "sourceSha256": "6a7a2ac954b525690c7872f85f7ab1242488bf0c08fb6da51c89fcd2dabfa203",
+          "startByte": 0,
+          "endByteExclusive": 594,
+          "startLine": 1,
+          "endLine": 15
+        },
+        {
+          "entry": "com/google/common/geometry/S2Cell.java",
+          "sourceSha256": "e3adea05c0a3d963ec01253f127866bcaf7b588e482b3fa94cd0bde4af7b7306",
+          "startByte": 0,
+          "endByteExclusive": 594,
+          "startLine": 1,
+          "endLine": 15
+        },
+        {
+          "entry": "com/google/common/geometry/S2Region.java",
+          "sourceSha256": "d4fb674a7b66f78fc26e05e365f3d229d2a49b18678b94af8a856a9b368629e3",
+          "startByte": 0,
+          "endByteExclusive": 594,
+          "startLine": 1,
+          "endLine": 15
+        },
+        {
+          "entry": "com/google/common/geometry/MutableInteger.java",
+          "sourceSha256": "b1f798675d8f7eafa03abee6e60eef47036a0627ad0a01cac26a9e1205cf8af5",
+          "startByte": 0,
+          "endByteExclusive": 594,
+          "startLine": 1,
+          "endLine": 15
+        },
+        {
+          "entry": "com/google/common/geometry/S2CellId.java",
+          "sourceSha256": "26f8041494d51e0fc695caf81d621f591fc17dff1ce7eeccc4a4767fcf0c4966",
+          "startByte": 0,
+          "endByteExclusive": 594,
+          "startLine": 1,
+          "endLine": 15
+        },
+        {
+          "entry": "com/google/common/geometry/R2Vector.java",
+          "sourceSha256": "5decd4d52e42267f191997b0cab9863b56246c8aee238a14cbe2ca485a3282a1",
+          "startByte": 0,
+          "endByteExclusive": 594,
+          "startLine": 1,
+          "endLine": 15
+        },
+        {
+          "entry": "com/google/common/geometry/S2LatLng.java",
+          "sourceSha256": "44efc12d6c67a844b590b69ab020f5ad635083e3f6c3026bd719d6037087fc15",
+          "startByte": 0,
+          "endByteExclusive": 594,
+          "startLine": 1,
+          "endLine": 15
+        },
+        {
+          "entry": "com/google/common/geometry/S1Interval.java",
+          "sourceSha256": "235f3257351fdeed33ee9ea03f118b456cdbeccd2f8177421b8dff1fe1b63251",
+          "startByte": 0,
+          "endByteExclusive": 594,
+          "startLine": 1,
+          "endLine": 15
+        },
+        {
+          "entry": "com/google/common/geometry/R1Interval.java",
+          "sourceSha256": "0e2bc11352a1cbb00c671f27f617c355b8ee02d3f391c81b9e17e24e2e853c5b",
+          "startByte": 0,
+          "endByteExclusive": 594,
+          "startLine": 1,
+          "endLine": 15
+        },
+        {
+          "entry": "com/google/common/geometry/S2.java",
+          "sourceSha256": "5d4ef8bb3fbb1db508232ee3433a140c0fa6049e08159154bce2da93c3143a44",
+          "startByte": 0,
+          "endByteExclusive": 594,
+          "startLine": 1,
+          "endLine": 15
+        },
+        {
+          "entry": "com/google/common/geometry/S1Angle.java",
+          "sourceSha256": "261f7654b3f30a63a8fed18a226173b9480080fbc5dfee4bd7e30c82f18394aa",
+          "startByte": 0,
+          "endByteExclusive": 594,
+          "startLine": 1,
+          "endLine": 15
+        },
+        {
+          "entry": "com/google/common/geometry/S2Projections.java",
+          "sourceSha256": "7976488c2e97f85841ab908d96f7fa9750ebcfb5b016f159538ca646ea843924",
+          "startByte": 0,
+          "endByteExclusive": 594,
+          "startLine": 1,
+          "endLine": 15
+        },
+        {
+          "entry": "com/google/common/geometry/S2RegionCoverer.java",
+          "sourceSha256": "3387e95ad4cedab9a0bc71128335accc90b3e70a1e62484f9a99a394aa1916dc",
+          "startByte": 0,
+          "endByteExclusive": 594,
+          "startLine": 1,
+          "endLine": 15
+        }
+      ]
+    },
+    {
+      "commentSha256": "b88ca0cfe1dc047cf38e4b9a4c40df534f9d3ecfc8d69b571669fa89a309f1d5",
+      "sources": [
+        {
+          "entry": "com/google/common/geometry/S2CellUnion.java",
+          "sourceSha256": "9a3520507b357ee1c3d32daa67859f6500b324ec4ce288c90fc6ebd15a1dc86c",
+          "startByte": 741,
+          "endByteExclusive": 1118,
+          "startLine": 23,
+          "endLine": 30
+        }
+      ]
+    },
+    {
+      "commentSha256": "819701d4b492932ec9f2242a4a2d79e86c5a891237298a91d8c1a8f71dfad46e",
+      "sources": [
+        {
+          "entry": "com/google/common/geometry/S2EdgeIndex.java",
+          "sourceSha256": "4cf9ed51682e072914f626e25303be7ca30f2c98dbaf88a108fcd6a46d69a958",
+          "startByte": 0,
+          "endByteExclusive": 594,
+          "startLine": 1,
+          "endLine": 15
+        },
+        {
+          "entry": "com/google/common/geometry/S2EdgeUtil.java",
+          "sourceSha256": "dad4845c1921ed72c5d77aba667d94c29ae6c8f2159914c4192259a8e08743b3",
+          "startByte": 0,
+          "endByteExclusive": 594,
+          "startLine": 1,
+          "endLine": 15
+        },
+        {
+          "entry": "com/google/common/geometry/S2Polyline.java",
+          "sourceSha256": "0a15868488bd05e6c113cb0940b5992c5921e77f33392d11a0620a40e773560e",
+          "startByte": 0,
+          "endByteExclusive": 594,
+          "startLine": 1,
+          "endLine": 15
+        },
+        {
+          "entry": "com/google/common/geometry/S2PolygonBuilder.java",
+          "sourceSha256": "4d6015bdcf936471c81b210f313eb58e685fcffebd3609811a90eb8422544fb9",
+          "startByte": 0,
+          "endByteExclusive": 594,
+          "startLine": 1,
+          "endLine": 15
+        },
+        {
+          "entry": "com/google/common/geometry/S2Polygon.java",
+          "sourceSha256": "3e7fb905a87f4e3ba6a508aaa0dd9a301e37cb0440ccbd0107fda760eed16dee",
+          "startByte": 0,
+          "endByteExclusive": 594,
+          "startLine": 1,
+          "endLine": 15
+        },
+        {
+          "entry": "com/google/common/geometry/S2Loop.java",
+          "sourceSha256": "25b002db8adeb248b5819f569aff9caa4710e47441f6af07caf02948b78e5b1b",
+          "startByte": 0,
+          "endByteExclusive": 594,
+          "startLine": 1,
+          "endLine": 15
+        },
+        {
+          "entry": "com/google/common/geometry/S2Point.java",
+          "sourceSha256": "1cb6e667195608e14eec11919c1dbf60221b3750d77ca3c5cb2d60eba570698d",
+          "startByte": 0,
+          "endByteExclusive": 594,
+          "startLine": 1,
+          "endLine": 15
+        }
+      ]
+    },
+    {
+      "commentSha256": "2b9c616a9f85d8418c560a55feb5809668e28106a8980075775846dbc8ecbd5e",
+      "sources": [
+        {
+          "entry": "com/google/common/geometry/S2EdgeIndex.java",
+          "sourceSha256": "4cf9ed51682e072914f626e25303be7ca30f2c98dbaf88a108fcd6a46d69a958",
+          "startByte": 3487,
+          "endByteExclusive": 3587,
+          "startLine": 128,
+          "endLine": 129
+        }
+      ]
+    },
+    {
+      "commentSha256": "956a6096f0039e761ea4952a79235c0239796dc7d4249f8feb0d21ce77b116a6",
+      "sources": [
+        {
+          "entry": "com/google/common/geometry/S2Cell.java",
+          "sourceSha256": "e3adea05c0a3d963ec01253f127866bcaf7b588e482b3fa94cd0bde4af7b7306",
+          "startByte": 9889,
+          "endByteExclusive": 10607,
+          "startLine": 304,
+          "endLine": 314
+        }
+      ]
+    },
+    {
+      "commentSha256": "f7954512000c97f850ae16f450d3c20a8b6cb505874f85bd2822e2b9d7ce3ccf",
+      "sources": [
+        {
+          "entry": "com/google/common/geometry/S2EdgeUtil.java",
+          "sourceSha256": "dad4845c1921ed72c5d77aba667d94c29ae6c8f2159914c4192259a8e08743b3",
+          "startByte": 9816,
+          "endByteExclusive": 10316,
+          "startLine": 278,
+          "endLine": 284
+        }
+      ]
+    },
+    {
+      "commentSha256": "db19a4ea89a1cded33163ec452f43d357e84cee035dbf0b51d3ab252f80373b4",
+      "sources": [
+        {
+          "entry": "com/google/common/geometry/R2Vector.java",
+          "sourceSha256": "5decd4d52e42267f191997b0cab9863b56246c8aee238a14cbe2ca485a3282a1",
+          "startByte": 2431,
+          "endByteExclusive": 2588,
+          "startLine": 106,
+          "endLine": 109
+        },
+        {
+          "entry": "com/google/common/geometry/S2Point.java",
+          "sourceSha256": "1cb6e667195608e14eec11919c1dbf60221b3750d77ca3c5cb2d60eba570698d",
+          "startByte": 4564,
+          "endByteExclusive": 4721,
+          "startLine": 186,
+          "endLine": 189
+        }
+      ]
+    },
+    {
+      "commentSha256": "2f10c7c17f2db37421adfab8263c2ff80bd846376473dd7396a0278a5f1f8418",
+      "sources": [
+        {
+          "entry": "com/google/common/geometry/S2Edge.java",
+          "sourceSha256": "112eb408bdbf8251ff3bfed8a6becbe482d5bf6b6363b2e8769a77c0572ac686",
+          "startByte": 0,
+          "endByteExclusive": 594,
+          "startLine": 1,
+          "endLine": 15
+        },
+        {
+          "entry": "com/google/common/geometry/S2AreaCentroid.java",
+          "sourceSha256": "c0ad0595449912a3edebcf0980c74a5984b006acbd5087fb8b3af31a1b5abdc3",
+          "startByte": 0,
+          "endByteExclusive": 594,
+          "startLine": 1,
+          "endLine": 15
+        }
+      ]
+    },
+    {
+      "commentSha256": "85422ea6c65924eed18cbe185327b4a639d8adc3f7f8984c2ee953b295cb0535",
+      "sources": [
+        {
+          "entry": "com/google/common/geometry/S2LatLng.java",
+          "sourceSha256": "44efc12d6c67a844b590b69ab020f5ad635083e3f6c3026bd719d6037087fc15",
+          "startByte": 4713,
+          "endByteExclusive": 5077,
+          "startLine": 146,
+          "endLine": 156
+        }
+      ]
+    },
+    {
+      "commentSha256": "d775619b10441650e01680f5958c1251a95b776ffaa9e3ef9d0fffc1eb95b516",
+      "sources": [
+        {
+          "entry": "com/google/common/geometry/S2.java",
+          "sourceSha256": "5d4ef8bb3fbb1db508232ee3433a140c0fa6049e08159154bce2da93c3143a44",
+          "startByte": 12588,
+          "endByteExclusive": 14161,
+          "startLine": 334,
+          "endLine": 362
+        }
+      ]
+    }
+  ]
+}

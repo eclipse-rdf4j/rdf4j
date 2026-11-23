@@ -1,0 +1,242 @@
+Source entries: org/locationtech/spatial4j/SpatialPredicate.java#L3-L18, org/locationtech/spatial4j/exception/UnsupportedSpatialPredicate.java#L1-L16, org/locationtech/spatial4j/io/GeohashUtils.java#L1-L16
+/*
+ * Licensed to the Apache Software Foundation (ASF) under one or more
+ * contributor license agreements.  See the NOTICE file distributed with
+ * this work for additional information regarding copyright ownership.
+ * The ASF licenses this file to You under the Apache License, Version 2.0
+ * (the "License"); you may not use this file except in compliance with
+ * the License.  You may obtain a copy of the License at
+ *
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
+Source entries: org/locationtech/spatial4j/SpatialPredicate.java#L33-L45
+/**
+ * A predicate that compares a stored geometry to a supplied geometry. It's enum-like. For more
+ * explanation of each predicate, consider looking at the source implementation
+ * of {@link #evaluate(org.locationtech.spatial4j.shape.Shape, org.locationtech.spatial4j.shape.Shape)}. It's important
+ * to be aware that Lucene-spatial makes no distinction of shape boundaries, unlike many standardized
+ * definitions. Nor does it make dimensional distinctions (e.g. line vs polygon).
+ * You can lookup a predicate by "Covers" or "Contains", for example, and you will get the
+ * same underlying predicate implementation.
+ *
+ * @see <a href="http://en.wikipedia.org/wiki/DE-9IM">DE-9IM at Wikipedia, based on OGC specs</a>
+ * @see <a href="http://edndoc.esri.com/arcsde/9.1/general_topics/understand_spatial_relations.htm">
+ *   ESRIs docs on spatial relations</a>
+ */
+
+Source entries: org/locationtech/spatial4j/context/SpatialContext.java#L1-L7, org/locationtech/spatial4j/context/jts/JtsSpatialContext.java#L1-L7, org/locationtech/spatial4j/context/jts/JtsSpatialContextFactory.java#L1-L7, org/locationtech/spatial4j/context/package-info.java#L1-L7, org/locationtech/spatial4j/distance/CartesianDistCalc.java#L1-L7, org/locationtech/spatial4j/distance/DistanceCalculator.java#L1-L7, org/locationtech/spatial4j/distance/GeodesicSphereDistCalc.java#L1-L7, org/locationtech/spatial4j/distance/package-info.java#L1-L7, org/locationtech/spatial4j/exception/InvalidShapeException.java#L1-L7, org/locationtech/spatial4j/io/LegacyShapeReader.java#L1-L7, org/locationtech/spatial4j/io/LegacyShapeWriter.java#L1-L7, org/locationtech/spatial4j/io/jts/JtsWKTReaderShapeParser.java#L1-L7, org/locationtech/spatial4j/io/package-info.java#L1-L7, org/locationtech/spatial4j/package-info.java#L1-L7, org/locationtech/spatial4j/shape/Circle.java#L1-L7, org/locationtech/spatial4j/shape/Point.java#L1-L7, org/locationtech/spatial4j/shape/Rectangle.java#L1-L7, org/locationtech/spatial4j/shape/Shape.java#L1-L7, org/locationtech/spatial4j/shape/ShapeCollection.java#L1-L7, org/locationtech/spatial4j/shape/SpatialRelation.java#L1-L7, org/locationtech/spatial4j/shape/impl/CircleImpl.java#L1-L7, org/locationtech/spatial4j/shape/impl/GeoCircle.java#L1-L7, org/locationtech/spatial4j/shape/impl/PointImpl.java#L1-L7, org/locationtech/spatial4j/shape/impl/RectangleImpl.java#L1-L7, org/locationtech/spatial4j/shape/impl/ShapeFactoryImpl.java#L1-L7, org/locationtech/spatial4j/shape/jts/JtsGeometry.java#L1-L7, org/locationtech/spatial4j/shape/jts/JtsPoint.java#L1-L7, org/locationtech/spatial4j/shape/jts/JtsShapeFactory.java#L1-L7, org/locationtech/spatial4j/shape/package-info.java#L1-L7
+/*******************************************************************************
+ * Copyright (c) 2015 Voyager Search and MITRE
+ * All rights reserved. This program and the accompanying materials
+ * are made available under the terms of the Apache License, Version 2.0 which
+ * accompanies this distribution and is available at
+ *    http://www.apache.org/licenses/LICENSE-2.0.txt
+ ******************************************************************************/
+
+Source entries: org/locationtech/spatial4j/context/SpatialContext.java#L156-L158
+/** Is the mathematical world model based on a sphere, or is it a flat plane? The word
+   * "geodetic" or "geodesic" is sometimes used to refer to the former, and the latter is sometimes
+   * referred to as "Euclidean" or "cartesian". */
+
+Source entries: org/locationtech/spatial4j/context/SpatialContextFactory.java#L1-L7, org/locationtech/spatial4j/distance/AbstractDistanceCalculator.java#L1-L7
+/*******************************************************************************
+ * Copyright (c) 2015 MITRE and VoyagerSearch
+ * All rights reserved. This program and the accompanying materials
+ * are made available under the terms of the Apache License, Version 2.0 which
+ * accompanies this distribution and is available at
+ *    http://www.apache.org/licenses/LICENSE-2.0.txt
+ ******************************************************************************/
+
+Source entries: org/locationtech/spatial4j/context/SpatialContextFactory.java#L25-L54
+/**
+ * Factory for a {@link SpatialContext} based on configuration data.  Call
+ * {@link #makeSpatialContext(java.util.Map, ClassLoader)} to construct one via String name-value
+ * pairs. To construct one via code then create a factory instance, set the fields, then call
+ * {@link #newSpatialContext()}.
+ * <p>
+ * The following keys are looked up in the args map:
+ * <DL>
+ * <DT>spatialContextFactory</DT>
+ * <DD>org.locationtech.spatial4j.context.SpatialContext or
+ * org.locationtech.spatial4j.context.jts.JtsSpatialContext</DD>
+ * <DT>geo</DT>
+ * <DD>true (default)| false -- see {@link SpatialContext#isGeo()} </DD>
+ * <DT>shapeFactoryClass</DT>
+ * <DD>Java class of the {@link ShapeFactory}.</DD>
+ * <DT>distCalculator</DT>
+ * <DD>haversine | lawOfCosines | vincentySphere | cartesian | cartesian^2
+ * -- see {@link DistanceCalculator}</DD>
+ * <DT>worldBounds</DT>
+ * <DD>{@code ENVELOPE(xMin, xMax, yMax, yMin)} -- see {@link SpatialContext#getWorldBounds()}</DD>
+ * <DT>normWrapLongitude</DT>
+ * <DD>true | false (default) -- see {@link SpatialContext#isNormWrapLongitude()}</DD>
+ * <DT>readers</DT>
+ * <DD>Comma separated list of {@link org.locationtech.spatial4j.io.ShapeReader} class names</DD>
+ * <DT>writers</DT>
+ * <DD>Comma separated list of {@link org.locationtech.spatial4j.io.ShapeWriter} class names</DD>
+ * <DT>binaryCodecClass</DT>
+ * <DD>Java class of the {@link org.locationtech.spatial4j.io.BinaryCodec}</DD>
+ * </DL>
+ */
+
+Source entries: org/locationtech/spatial4j/context/SpatialContextFactory.java#L65-L65, org/locationtech/spatial4j/context/SpatialContextFactory.java#L66-L66
+//defaults in SpatialContext c'tor based on geo
+
+Source entries: org/locationtech/spatial4j/context/SpatialContextFactory.java#L79-L90
+/**
+   * Creates a new {@link SpatialContext} based on configuration in
+   * <code>args</code>.  See the class definition for what keys are looked up
+   * in it.
+   * The factory class is looked up via "spatialContextFactory" in args
+   * then falling back to a Java system property (with initial caps). If neither are specified
+   * then {@link SpatialContextFactory} is chosen.
+   *
+   * @param args Non-null map of name-value pairs.
+   * @param classLoader Optional, except when a class name is provided to an
+   *                    argument.
+   */
+
+Source entries: org/locationtech/spatial4j/context/jts/DatelineRule.java#L1-L7, org/locationtech/spatial4j/context/jts/ValidationRule.java#L1-L7, org/locationtech/spatial4j/io/BinaryCodec.java#L1-L7, org/locationtech/spatial4j/io/jts/JtsBinaryCodec.java#L1-L7, org/locationtech/spatial4j/shape/impl/BufferedLine.java#L1-L7, org/locationtech/spatial4j/shape/impl/BufferedLineString.java#L1-L7, org/locationtech/spatial4j/shape/impl/InfBufLine.java#L1-L7, org/locationtech/spatial4j/shape/impl/Range.java#L1-L7
+/*******************************************************************************
+ * Copyright (c) 2015 MITRE
+ * All rights reserved. This program and the accompanying materials
+ * are made available under the terms of the Apache License, Version 2.0 which
+ * accompanies this distribution and is available at
+ *    http://www.apache.org/licenses/LICENSE-2.0.txt
+ ******************************************************************************/
+
+Source entries: org/locationtech/spatial4j/distance/CartesianDistCalc.java#L16-L18
+/**
+ * Calculates based on Euclidean / Cartesian 2d plane.
+ */
+
+Source entries: org/locationtech/spatial4j/distance/DistanceCalculator.java#L16-L20
+/**
+ * Performs calculations relating to distance, such as the distance between a pair of points.  A
+ * calculator might be based on Euclidean space, or a spherical model, or theoretically something
+ * else like an ellipsoid.
+ */
+
+Source entries: org/locationtech/spatial4j/distance/DistanceUtils.java#L1-L16, org/locationtech/spatial4j/io/ParseUtils.java#L1-L16, org/locationtech/spatial4j/io/PolyshapeReader.java#L1-L16, org/locationtech/spatial4j/io/PolyshapeWriter.java#L1-L16, org/locationtech/spatial4j/io/jts/JtsPolyshapeWriter.java#L1-L16
+/*
+ * Licensed to the Apache Software Foundation (ASF) under one or more
+ * contributor license agreements.  See the NOTICE file distributed with
+ * this work for additional information regarding copyright ownership.
+ * The ASF licenses this file to You under the Apache License, Version 2.0
+ * (the "License"); you may not use this file except in compliance with
+ * the License.  You may obtain a copy of the License at
+ *
+ *    http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
+Source entries: org/locationtech/spatial4j/exception/InvalidShapeException.java#L11-L15
+/**
+ * A shape was constructed but failed because, based on the given parts, it's invalid. For example
+ * a rectangle's minimum Y was specified as greater than the maximum Y. This class is not used for
+ * parsing exceptions; that's usually {@link java.text.ParseException}.
+ */
+
+Source entries: org/locationtech/spatial4j/io/GeoJSONReader.java#L1-L7, org/locationtech/spatial4j/io/jackson/GeometryAsGeoJSONSerializer.java#L1-L7, org/locationtech/spatial4j/io/jackson/GeometryAsWKTSerializer.java#L1-L7, org/locationtech/spatial4j/io/jackson/GeometryDeserializer.java#L1-L7, org/locationtech/spatial4j/io/jackson/PackageVersion.java#L1-L7, org/locationtech/spatial4j/io/jackson/ShapeAsGeoJSONSerializer.java#L1-L7, org/locationtech/spatial4j/io/jackson/ShapeAsWKTSerializer.java#L1-L7, org/locationtech/spatial4j/io/jackson/ShapeDeserializer.java#L1-L7, org/locationtech/spatial4j/io/jackson/ShapesAsGeoJSONModule.java#L1-L7, org/locationtech/spatial4j/io/jackson/ShapesAsWKTModule.java#L1-L7, org/locationtech/spatial4j/io/jackson/package-info.java#L1-L7
+/*******************************************************************************
+ * Copyright (c) 2015 VoyagerSearch and others
+ * All rights reserved. This program and the accompanying materials
+ * are made available under the terms of the Apache License, Version 2.0 which
+ * accompanies this distribution and is available at
+ *    http://www.apache.org/licenses/LICENSE-2.0.txt
+ ******************************************************************************/
+
+Source entries: org/locationtech/spatial4j/io/GeoJSONWriter.java#L1-L7, org/locationtech/spatial4j/io/ShapeIO.java#L1-L7, org/locationtech/spatial4j/io/ShapeReader.java#L1-L7, org/locationtech/spatial4j/io/ShapeWriter.java#L1-L7, org/locationtech/spatial4j/io/SupportedFormats.java#L1-L7, org/locationtech/spatial4j/io/WKTWriter.java#L1-L7, org/locationtech/spatial4j/io/jts/JtsGeoJSONWriter.java#L1-L7, org/locationtech/spatial4j/io/jts/JtsWKTWriter.java#L1-L7, org/locationtech/spatial4j/shape/BaseShape.java#L1-L7
+/*******************************************************************************
+ * Copyright (c) 2015 VoyagerSearch
+ * All rights reserved. This program and the accompanying materials
+ * are made available under the terms of the Apache License, Version 2.0 which
+ * accompanies this distribution and is available at
+ *    http://www.apache.org/licenses/LICENSE-2.0.txt
+ ******************************************************************************/
+
+Source entries: org/locationtech/spatial4j/io/OnePointsBuilder.java#L1-L7, org/locationtech/spatial4j/shape/ShapeFactory.java#L1-L7
+/*******************************************************************************
+ * Copyright (c) 2016 David Smiley
+ * All rights reserved. This program and the accompanying materials
+ * are made available under the terms of the Apache License, Version 2.0 which
+ * accompanies this distribution and is available at
+ *    http://www.apache.org/licenses/LICENSE-2.0.txt
+ ******************************************************************************/
+
+Source entries: org/locationtech/spatial4j/io/PolyshapeReader.java#L186-L189
+/**
+   * from Apache 2.0 licensed:
+   * https://github.com/googlemaps/android-maps-utils/blob/master/library/src/com/google/maps/android/PolyUtil.java
+   */
+
+Source entries: org/locationtech/spatial4j/io/PolyshapeWriter.java#L158-L163
+/**
+   * Encodes a sequence of LatLngs into an encoded path string.
+   * 
+   * from Apache 2.0 licensed:
+   * https://github.com/googlemaps/android-maps-utils/blob/master/library/src/com/google/maps/android/PolyUtil.java
+   */
+
+Source entries: org/locationtech/spatial4j/io/WKTReader.java#L1-L7, org/locationtech/spatial4j/io/WktShapeParser.java#L1-L7
+/*******************************************************************************
+ * Copyright (c) 2015 ElasticSearch and MITRE, and others
+ * All rights reserved. This program and the accompanying materials
+ * are made available under the terms of the Apache License, Version 2.0 which
+ * accompanies this distribution and is available at
+ *    http://www.apache.org/licenses/LICENSE-2.0.txt
+ ******************************************************************************/
+
+Source entries: org/locationtech/spatial4j/shape/ShapeCollection.java#L19-L37
+/**
+ * A collection of Shape objects, analogous to an OGC GeometryCollection. The
+ * implementation demands a List (with random access) so that the order can be
+ * retained if an application requires it, although logically it's treated as an
+ * unordered Set, mostly.
+ * <p>
+ * Ideally, {@link #relate(Shape)} should return the same result no matter what
+ * the shape order is, although the default implementation can be order
+ * dependent when the shapes overlap; see {@link #relateContainsShortCircuits()}.
+ *  To improve performance slightly, the caller could order the shapes by
+ * largest first so that relate() will have a greater chance of
+ * short-circuit'ing sooner.  As the Shape contract states; it may return
+ * intersects when the best answer is actually contains or within. If any shape
+ * intersects the provided shape then that is the answer.
+ * <p>
+ * This implementation is not optimized for a large number of shapes; relate is
+ * O(N).  A more sophisticated implementation might do an R-Tree based on
+ * bbox'es, for example.
+ */
+
+Source entries: org/locationtech/spatial4j/shape/impl/BBoxCalculator.java#L1-L7
+/*******************************************************************************
+ * Copyright (c) 2015 David Smiley
+ * All rights reserved. This program and the accompanying materials
+ * are made available under the terms of the Apache License, Version 2.0 which
+ * accompanies this distribution and is available at
+ *    http://www.apache.org/licenses/LICENSE-2.0.txt
+ ******************************************************************************/
+
+Source entries: org/locationtech/spatial4j/shape/impl/CircleImpl.java#L19-L24
+/**
+ * A circle, also known as a point-radius, based on a {@link
+ * org.locationtech.spatial4j.distance.DistanceCalculator} which does all the work. This
+ * implementation should work for both cartesian 2D and geodetic sphere
+ * surfaces.
+ */
+
+Source entries: org/locationtech/spatial4j/shape/jts/JtsGeometry.java#L281-L281
+// TODO short-circuit based on the hole's bbox if it's disjoint or within the circle.
+

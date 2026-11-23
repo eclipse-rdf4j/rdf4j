@@ -210,7 +210,7 @@ class LmdbNativeCensusAggregateTest {
 					.as("the raw group compiler must preserve the generic result bag: " + query)
 					.containsExactlyInAnyOrderElementsOf(expected);
 
-			NativeGraphFusion.Prepared physical = NativeGraphFusion.prepare(group, context.getDataset(), strategy);
+			NativeGraphFusion.Prepared physical = NativeGraphFusion.prepare(group, context, strategy);
 			Group physicalGroup = group(physical.expression());
 			QueryEvaluationStep census = strategy.withValuePositions(physical.positions(),
 					() -> LmdbNativeCensusAggregate.tryCreate(physicalGroup, (NativeLmdbQuerySource) dataset, strategy,

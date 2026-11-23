@@ -35,9 +35,11 @@ import org.eclipse.rdf4j.query.algebra.HasLangDir;
 import org.eclipse.rdf4j.query.algebra.LangDir;
 import org.eclipse.rdf4j.query.algebra.Order;
 import org.eclipse.rdf4j.query.algebra.Projection;
+import org.eclipse.rdf4j.query.algebra.QueryModelNode;
 import org.eclipse.rdf4j.query.algebra.Service;
 import org.eclipse.rdf4j.query.algebra.SingletonSet;
 import org.eclipse.rdf4j.query.algebra.Slice;
+import org.eclipse.rdf4j.query.algebra.StatementPattern;
 import org.eclipse.rdf4j.query.algebra.Str;
 import org.eclipse.rdf4j.query.algebra.StrLangDir;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
@@ -46,6 +48,8 @@ import org.eclipse.rdf4j.query.algebra.ValueConstant;
 import org.eclipse.rdf4j.query.algebra.ValueExpr;
 import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.query.algebra.helpers.AbstractQueryModelVisitor;
+import org.eclipse.rdf4j.query.algebra.helpers.OriginalPathDescriptor;
+import org.eclipse.rdf4j.query.algebra.helpers.collectors.StatementPatternCollector;
 import org.eclipse.rdf4j.query.parser.sparql.ast.ASTHavingClause;
 import org.eclipse.rdf4j.query.parser.sparql.ast.ASTQueryContainer;
 import org.eclipse.rdf4j.query.parser.sparql.ast.ASTServiceGraphPattern;
@@ -68,6 +72,73 @@ public class TupleExprBuilderTest {
 	@BeforeEach
 	public void setupBuilder() {
 		builder = new TupleExprBuilder(SimpleValueFactory.getInstance());
+	}
+
+	@Test
+	public void loweredPathRetainsItsOriginalEndpointRolesAfterCloning() throws Exception {
+		ASTQueryContainer query = SyntaxTreeBuilder.parseQuery(
+				"SELECT * WHERE { ?x (<urn:p>* / <urn:q>?) ?x }");
+		TupleExpr expression = builder.visit(query, null);
+		List<TupleExpr> paths = new ArrayList<>();
+		expression.visit(new AbstractQueryModelVisitor<RuntimeException>() {
+			@Override
+			protected void meetNode(QueryModelNode node) {
+				if (node instanceof TupleExpr tuple && OriginalPathDescriptor.forRegion(tuple) != null) {
+					paths.add(tuple);
+				}
+				super.meetNode(node);
+			}
+		});
+		assertThat(paths).isNotEmpty();
+		var descriptor = OriginalPathDescriptor.forRegion(paths.getFirst());
+		assertThat(descriptor.start().name()).isEqualTo("x");
+		assertThat(descriptor.end()).isEqualTo(descriptor.start());
+		assertThat(OriginalPathDescriptor.forRegion(paths.getFirst().clone())).isSameAs(descriptor);
+
+		TupleExpr instrumented = paths.getFirst().clone();
+		StatementPattern indexed = StatementPatternCollector.process(instrumented).getFirst();
+		indexed.setIndexName("POSC");
+		assertThat(OriginalPathDescriptor.forRegion(instrumented)).isSameAs(descriptor);
+
+		TupleExpr scopeChanged = paths.getFirst().clone();
+		StatementPattern defaultPattern = StatementPatternCollector.process(scopeChanged).getFirst();
+		defaultPattern.replaceWith(new StatementPattern(StatementPattern.Scope.NAMED_CONTEXTS,
+				defaultPattern.getSubjectVar().clone(), defaultPattern.getPredicateVar().clone(),
+				defaultPattern.getObjectVar().clone()));
+		assertThat(OriginalPathDescriptor.forRegion(scopeChanged)).isNull();
+
+		TupleExpr operandChanged = paths.getFirst().clone();
+		StatementPattern statement = StatementPatternCollector.process(operandChanged).getFirst();
+		statement.getPredicateVar()
+				.replaceWith(Var.of("different", SimpleValueFactory.getInstance().createIRI("urn:r")));
+		assertThat(OriginalPathDescriptor.forRegion(operandChanged)).isNull();
+	}
+
+	@Test
+	public void groupedPathAlternativesKeepTheirWholeOccurrenceCertificate() throws Exception {
+		ASTQueryContainer query = SyntaxTreeBuilder.parseQuery("""
+				SELECT * WHERE {
+					GRAPH <urn:g> {
+						{ <urn:absent> (<urn:p>* | (<urn:p>*/<urn:q>*)) ?y }
+						UNION { ?s <urn:probe> ?o }
+					}
+				}
+				""");
+		List<OriginalPathDescriptor> paths = new ArrayList<>();
+		builder.visit(query, null).visit(new AbstractQueryModelVisitor<RuntimeException>() {
+			@Override
+			protected void meetNode(QueryModelNode node) {
+				if (node instanceof TupleExpr tuple && OriginalPathDescriptor.forRegion(tuple) != null) {
+					paths.add(OriginalPathDescriptor.forRegion(tuple));
+				}
+				super.meetNode(node);
+			}
+		});
+		assertThat(paths).singleElement().satisfies(path -> {
+			assertThat(path.syntax().operator()).isEqualTo(OriginalPathDescriptor.Operator.ALTERNATIVE);
+			assertThat(path.start().fixed().stringValue()).isEqualTo("urn:absent");
+			assertThat(path.end().name()).isEqualTo("y");
+		});
 	}
 
 	@Test

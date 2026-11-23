@@ -1,0 +1,474 @@
+/*************************************************************************
+ * Copyright (c) 2013 AT&T Intellectual Property 
+ * All rights reserved. This program and the accompanying materials
+ * are made available under the terms of the Eclipse Public License v2.0
+ * which accompanies this distribution, and is available at
+ * https://www.eclipse.org/org/documents/epl-2.0/EPL-2.0.html
+ *
+ * Contributors: Details at https://graphviz.org
+ *************************************************************************/
+
+/*************************************************************************
+ * Copyright (c) 2015 AT&T Intellectual Property 
+ * All rights reserved. This program and the accompanying materials
+ * are made available under the terms of the Eclipse Public License v2.0
+ * which accompanies this distribution, and is available at
+ * https://www.eclipse.org/org/documents/epl-2.0/EPL-2.0.html
+ *
+ * Contributors: Details at https://graphviz.org
+ *************************************************************************/
+
+/**
+ * \brief Solve an instance of the "Variable Placement with Separation
+ * Constraints" problem.
+ *
+ * Authors:
+ *   Tim Dwyer <tgdwyer@gmail.com>
+ *
+ * Copyright (C) 2005 Authors
+ * 
+ * This version is released under the CPL (Common Public License) with
+ * the Graphviz distribution.
+ * A version is also available under the LGPL as part of the Adaptagrams
+ * project: https://github.com/mjwybrow/adaptagrams.  
+ * If you make improvements or bug fixes to this code it would be much
+ * appreciated if you could also contribute those changes back to the
+ * Adaptagrams repository.
+ */
+
+/**
+ * \brief Bridge for C programs to access solve_VPSC (which is in C++)
+ *
+ * Authors:
+ *   Tim Dwyer <tgdwyer@gmail.com>
+ *
+ * Copyright (C) 2005 Authors
+ *
+ * This version is released under the CPL (Common Public License) with
+ * the Graphviz distribution.
+ * A version is also available under the LGPL as part of the Adaptagrams
+ * project: https://github.com/mjwybrow/adaptagrams.  
+ * If you make improvements or bug fixes to this code it would be much
+ * appreciated if you could also contribute those changes back to the
+ * Adaptagrams repository.
+ */
+
+/**********************************************************
+*      See the LICENSE file for copyright information.     *
+**********************************************************/
+
+/* Bison implementation for Yacc-like parsers in C
+
+   Copyright (C) 1984, 1989-1990, 2000-2015, 2018-2021 Free Software Foundation,
+   Inc.
+
+   This program is free software: you can redistribute it and/or modify
+   it under the terms of the GNU General Public License as published by
+   the Free Software Foundation, either version 3 of the License, or
+   (at your option) any later version.
+
+   This program is distributed in the hope that it will be useful,
+   but WITHOUT ANY WARRANTY; without even the implied warranty of
+   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+   GNU General Public License for more details.
+
+   You should have received a copy of the GNU General Public License
+   along with this program.  If not, see <https://www.gnu.org/licenses/>.  */
+
+/**
+ * \brief A block structure defined over the variables
+ *
+ * A block structure defined over the variables such that each block contains
+ * 1 or more variables, with the invariant that all constraints inside a block
+ * are satisfied by keeping the variables fixed relative to one another
+ *
+ * Authors:
+ *   Tim Dwyer <tgdwyer@gmail.com>
+ *
+ * Copyright (C) 2005 Authors
+ *
+ * This version is released under the CPL (Common Public License) with
+ * the Graphviz distribution.
+ * A version is also available under the LGPL as part of the Adaptagrams
+ * project: https://github.com/mjwybrow/adaptagrams.  
+ * If you make improvements or bug fixes to this code it would be much
+ * appreciated if you could also contribute those changes back to the
+ * Adaptagrams repository.
+ */
+
+/**
+ * @file
+ * @brief make directed graph acyclic, implements @ref graphviz_acyclic, used
+ * in cmd/tools/acyclic.c
+ *
+ * @ingroup cgraph_app
+ *
+ * Copyright (c) 2011 AT&T Intellectual Property
+ * All rights reserved. This program and the accompanying materials
+ * are made available under the terms of the Eclipse Public License v2.0
+ * which accompanies this distribution, and is available at
+ * https://www.eclipse.org/org/documents/epl-2.0/EPL-2.0.html
+ *
+ * Authors: Stephen North, Emden Gansner
+ * Contributors: Details at https://graphviz.org
+ */
+
+/**
+ * \file
+ * \brief Solve an instance of the "Variable Placement with Separation
+ * Constraints" problem.
+ *
+ * Authors:
+ *   Tim Dwyer <tgdwyer@gmail.com>
+ *
+ * Copyright (C) 2005 Authors
+ * 
+ * This version is released under the CPL (Common Public License) with
+ * the Graphviz distribution.
+ * A version is also available under the LGPL as part of the Adaptagrams
+ * project: https://github.com/mjwybrow/adaptagrams.  
+ * If you make improvements or bug fixes to this code it would be much
+ * appreciated if you could also contribute those changes back to the
+ * Adaptagrams repository.
+ */
+
+/*************************************************************************
+ * Copyright (c) 2012 AT&T Intellectual Property
+ * All rights reserved. This program and the accompanying materials
+ * are made available under the terms of the Eclipse Public License v2.0
+ * which accompanies this distribution, and is available at
+ * https://www.eclipse.org/org/documents/epl-2.0/EPL-2.0.html
+ *
+ * Contributors: Details at https://graphviz.org
+ *************************************************************************/
+
+/**
+ *
+ * Authors:
+ *   Tim Dwyer <tgdwyer@gmail.com>
+ *
+ * Copyright (C) 2005 Authors
+ *
+ * This version is released under the CPL (Common Public License) with
+ * the Graphviz distribution.
+ * A version is also available under the LGPL as part of the Adaptagrams
+ * project: https://github.com/mjwybrow/adaptagrams.  
+ * If you make improvements or bug fixes to this code it would be much
+ * appreciated if you could also contribute those changes back to the
+ * Adaptagrams repository.
+ */
+
+/* Bison interface for Yacc-like parsers in C
+
+   Copyright (C) 1984, 1989-1990, 2000-2015, 2018-2021 Free Software Foundation,
+   Inc.
+
+   This program is free software: you can redistribute it and/or modify
+   it under the terms of the GNU General Public License as published by
+   the Free Software Foundation, either version 3 of the License, or
+   (at your option) any later version.
+
+   This program is distributed in the hope that it will be useful,
+   but WITHOUT ANY WARRANTY; without even the implied warranty of
+   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+   GNU General Public License for more details.
+
+   You should have received a copy of the GNU General Public License
+   along with this program.  If not, see <https://www.gnu.org/licenses/>.  */
+
+/**
+ * \brief A block is a group of variables that must be moved together to improve
+ * the goal function without violating already active constraints.
+ * The variables in a block are spanned by a tree of active constraints.
+ *
+ * Authors:
+ *   Tim Dwyer <tgdwyer@gmail.com>
+ *
+ * Copyright (C) 2005 Authors
+ *
+ * This version is released under the CPL (Common Public License) with
+ * the Graphviz distribution.
+ * A version is also available under the LGPL as part of the Adaptagrams
+ * project: https://github.com/mjwybrow/adaptagrams.  
+ * If you make improvements or bug fixes to this code it would be much
+ * appreciated if you could also contribute those changes back to the
+ * Adaptagrams repository.
+ */
+
+/*************************************************************************
+ * Copyright (c) 2014 AT&T Intellectual Property 
+ * All rights reserved. This program and the accompanying materials
+ * are made available under the terms of the Eclipse Public License v2.0
+ * which accompanies this distribution, and is available at
+ * https://www.eclipse.org/org/documents/epl-2.0/EPL-2.0.html
+ *
+ * Contributors: Details at https://graphviz.org
+ *************************************************************************/
+
+/*
+ * Copyright (c) 2011 AT&T Intellectual Property
+ * All rights reserved. This program and the accompanying materials
+ * are made available under the terms of the Eclipse Public License v2.0
+ * which accompanies this distribution, and is available at
+ * https://www.eclipse.org/org/documents/epl-2.0/EPL-2.0.html
+ *
+ * Authors: Stephen North, Emden Gansner
+ * Contributors: Details at https://graphviz.org
+ */
+
+/*************************************************************************
+ * Copyright (c) 2014 AT&T Intellectual Property
+ * All rights reserved. This program and the accompanying materials
+ * are made available under the terms of the Eclipse Public License v2.0
+ * which accompanies this distribution, and is available at
+ * https://www.eclipse.org/org/documents/epl-2.0/EPL-2.0.html
+ *
+ * Contributors: Details at https://graphviz.org
+ *************************************************************************/
+
+/**
+ * Authors:
+ *   Tim Dwyer <tgdwyer@gmail.com>
+ *
+ * Copyright (C) 2005 Authors
+ *
+ * This version is released under the CPL (Common Public License) with
+ * the Graphviz distribution.
+ * A version is also available under the LGPL as part of the Adaptagrams
+ * project: http://sourceforge.net/projects/adaptagrams.  
+ * If you make improvements or bug fixes to this code it would be much
+ * appreciated if you could also contribute those changes back to the
+ * Adaptagrams repository.
+ */
+
+/*************************************************************************
+ * Copyright (c) 2011 AT&T Intellectual Property 
+ * All rights reserved. This program and the accompanying materials
+ * are made available under the terms of the Eclipse Public License v2.0
+ * which accompanies this distribution, and is available at
+ * https://www.eclipse.org/org/documents/epl-2.0/EPL-2.0.html
+ *
+ * Contributors: Details at https://graphviz.org
+ *************************************************************************/
+
+/*
+ * Copyright (c) 2003-2005, Jean-Sebastien Roy (js@jeannot.org)
+ *
+ * Permission is hereby granted, free of charge, to any person obtaining a
+ * copy of this software and associated documentation files (the
+ * "Software"), to deal in the Software without restriction, including
+ * without limitation the rights to use, copy, modify, merge, publish,
+ * distribute, sublicense, and/or sell copies of the Software, and to
+ * permit persons to whom the Software is furnished to do so, subject to
+ * the following conditions:
+ *
+ * The above copyright notice and this permission notice shall be included
+ * in all copies or substantial portions of the Software.
+ *
+ * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS
+ * OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF
+ * MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.
+ * IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY
+ * CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT,
+ * TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE
+ * SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
+ */
+
+/**********************************************************
+*      See the LICENSE file for copyright infomation.     *
+**********************************************************/
+
+/*
+ * this library is derived from an archived home directory of Antonin Guttman 
+ * that implemented the ideas described in
+ * "R-trees: a dynamic index structure for spatial searching"
+ * Antonin Guttman, University of California, Berkeley
+ * SIGMOD '84 Proceedings of the 1984 ACM SIGMOD international conference on Management of data
+ * ISBN:0-89791-128-8
+ * http://dx.doi.org/10.1145/602259.602266
+ * this copy of the code was retrieved from
+ * http://web.archive.org/web/20030210112132/http://www.es.ucsc.edu/~tonig/rtrees/
+ * we are using the quadratic node splitter only
+ * we made a few cosmetic changes to fit our needs
+ * per Antonin there is no copyright
+ */
+
+/* Copyright (c) 2003-2004, Luc Maisonobe
+ * All rights reserved.
+ *
+ * Redistribution and use in source and binary forms, with
+ * or without modification, are permitted provided that
+ * the following conditions are met:
+ *
+ *    Redistributions of source code must retain the
+ *    above copyright notice, this list of conditions and
+ *    the following disclaimer.
+ *    Redistributions in binary form must reproduce the
+ *    above copyright notice, this list of conditions and
+ *    the following disclaimer in the documentation
+ *    and/or other materials provided with the
+ *    distribution.
+ *    Neither the names of spaceroots.org, spaceroots.com
+ *    nor the names of their contributors may be used to
+ *    endorse or promote products derived from this
+ *    software without specific prior written permission.
+ *
+ * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND
+ * CONTRIBUTORS "AS IS" AND ANY EXPRESS OR IMPLIED
+ * WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED
+ * WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A
+ * PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL
+ * THE COPYRIGHT OWNER OR CONTRIBUTORS BE LIABLE FOR ANY
+ * DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR
+ * CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO,
+ * PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF
+ * USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION)
+ * HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER
+ * IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING
+ * NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE
+ * USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
+ * POSSIBILITY OF SUCH DAMAGE.
+ */
+
+/*
+ * Copyright (c) 2003-2005, Jean-Sebastien Roy (js@jeannot.org)
+ *
+ * The rk_random and rk_seed functions algorithms and the original design of
+ * the Mersenne Twister RNG:
+ *
+ *   Copyright (C) 1997 - 2002, Makoto Matsumoto and Takuji Nishimura,
+ *   All rights reserved.
+ *
+ *   Redistribution and use in source and binary forms, with or without
+ *   modification, are permitted provided that the following conditions
+ *   are met:
+ *
+ *   1. Redistributions of source code must retain the above copyright
+ *   notice, this list of conditions and the following disclaimer.
+ *
+ *   2. Redistributions in binary form must reproduce the above copyright
+ *   notice, this list of conditions and the following disclaimer in the
+ *   documentation and/or other materials provided with the distribution.
+ *
+ *   3. The names of its contributors may not be used to endorse or promote
+ *   products derived from this software without specific prior written
+ *   permission.
+ *
+ *   THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
+ *   "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
+ *   LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR
+ *   A PARTICULAR PURPOSE ARE DISCLAIMED.  IN NO EVENT SHALL THE COPYRIGHT OWNER OR
+ *   CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL,
+ *   EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO,
+ *   PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR
+ *   PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF
+ *   LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING
+ *   NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS
+ *   SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+ *
+ * Original algorithm for the implementation of rk_interval function from
+ * Richard J. Wagner's implementation of the Mersenne Twister RNG, optimised by
+ * Magnus Jonsson.
+ *
+ * Constants used in the rk_double implementation by Isaku Wada.
+ *
+ * Permission is hereby granted, free of charge, to any person obtaining a
+ * copy of this software and associated documentation files (the
+ * "Software"), to deal in the Software without restriction, including
+ * without limitation the rights to use, copy, modify, merge, publish,
+ * distribute, sublicense, and/or sell copies of the Software, and to
+ * permit persons to whom the Software is furnished to do so, subject to
+ * the following conditions:
+ *
+ * The above copyright notice and this permission notice shall be included
+ * in all copies or substantial portions of the Software.
+ *
+ * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS
+ * OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF
+ * MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.
+ * IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY
+ * CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT,
+ * TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE
+ * SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
+ */
+
+/* As a special exception, you may create a larger work that contains
+   part or all of the Bison parser skeleton and distribute that work
+   under terms of your choice, so long as that work isn't itself a
+   parser generator using the skeleton or a modified version thereof
+   as a parser skeleton.  Alternatively, if you modify or redistribute
+   the parser skeleton itself, you may (at your option) remove this
+   special exception, which will cause the skeleton and the resulting
+   Bison output files to be licensed under the GNU General Public
+   License without this special exception.
+
+   This special exception was added by the Free Software Foundation in
+   version 2.2 of Bison.  */
+
+/**
+ * \brief Functions to automatically generate constraints for the rectangular
+ * node overlap removal problem.
+ *
+ * Authors:
+ *   Tim Dwyer <tgdwyer@gmail.com>
+ *
+ * Copyright (C) 2005 Authors
+ *
+ * This version is released under the CPL (Common Public License) with
+ * the Graphviz distribution.
+ * A version is also available under the LGPL as part of the Adaptagrams
+ * project: https://github.com/mjwybrow/adaptagrams.  
+ * If you make improvements or bug fixes to this code it would be much
+ * appreciated if you could also contribute those changes back to the
+ * Adaptagrams repository.
+ */
+
+/**********************************************************
+*            Copyright (c) 2011 Andy Jeutter              *
+*            AKA HallerHarry at gmx.de                    *
+*            All rights reserved.                         *
+**********************************************************/
+
+/**
+ *
+ * Authors:
+ *   Tim Dwyer <tgdwyer@gmail.com>
+ *
+ * Copyright (C) 2005 Authors
+ *
+ * This version is released under the CPL (Common Public License) with
+ * the Graphviz distribution.
+ * A version is also available under the LGPL as part of the Adaptagrams
+ * project: http://sourceforge.net/projects/adaptagrams.  
+ * If you make improvements or bug fixes to this code it would be much
+ * appreciated if you could also contribute those changes back to the
+ * Adaptagrams repository.
+ */
+
+/**
+ * \brief A constraint determines a minimum or exact spacing required between
+ * two variables.
+ *
+ * Authors:
+ *   Tim Dwyer <tgdwyer@gmail.com>
+ *
+ * Copyright (C) 2005 Authors
+ *
+ * This version is released under the CPL (Common Public License) with
+ * the Graphviz distribution.
+ * A version is also available under the LGPL as part of the Adaptagrams
+ * project: https://github.com/mjwybrow/adaptagrams.  
+ * If you make improvements or bug fixes to this code it would be much
+ * appreciated if you could also contribute those changes back to the
+ * Adaptagrams repository.
+ */
+
+/*************************************************************************
+ * Copyright (c) 2011 AT&T Intellectual Property
+ * All rights reserved. This program and the accompanying materials
+ * are made available under the terms of the Eclipse Public License v2.0
+ * which accompanies this distribution, and is available at
+ * https://www.eclipse.org/org/documents/epl-2.0/EPL-2.0.html
+ *
+ * Contributors: Details at https://graphviz.org
+ *************************************************************************/
