@@ -97,6 +97,20 @@ class LmdbNativeGraphBoundaryTest {
 
 	@ParameterizedTest
 	@ValueSource(booleans = { false, true })
+	void siblingValuesJoinPhysicalGraphNamesWithAliasAndUndefRows(boolean experimental) {
+		reopen(experimental);
+		for (var alias : List.of(RDF4J.NIL, SESAME.NIL)) {
+			String prefix = "urn:physical-" + (RDF4J.NIL.equals(alias) ? "rdf4j" : "sesame") + "-nil";
+			String query = "SELECT ?s { VALUES (?s ?g) { (<" + prefix + "> <" + alias + ">) (<" + prefix
+					+ "> <" + alias + ">) (<urn:default> <" + alias + ">) (<urn:g1:s> UNDEF) } "
+					+ "GRAPH ?g { ?s <urn:p> ?o } }";
+			assertThat(rows(query, false, null, null)).containsExactly("s=urn:g1:s", "s=" + prefix, "s=" + prefix);
+			assertParity(query, null, null);
+		}
+	}
+
+	@ParameterizedTest
+	@ValueSource(booleans = { false, true })
 	void minusKeepsDisjointPublicDomainsInsideTheSelectedGraph(boolean experimental) {
 		reopen(experimental);
 		for (String body : List.of("?s <urn:p> ?o MINUS { ?x <urn:q> ?y }",
