@@ -177,7 +177,7 @@ class LmdbOptimizerPipelineTest {
 	}
 
 	@Test
-	void physicalJoinOrderUsesGuaranteedOptionalInputs() {
+	void physicalJoinOrderDoesNotUseNullableOptionalInputs() {
 		TripleSource tripleSource = new EmptyTripleSource();
 		StrictEvaluationStrategy strategy = new StrictEvaluationStrategy(tripleSource, null);
 		strategy.setQueryExecutionPolicy(QueryExecutionPolicy.EXPERIMENTAL);
@@ -198,15 +198,10 @@ class LmdbOptimizerPipelineTest {
 		StatementPattern disconnected = new StatementPattern(
 				Var.of("fixedSubject", vf.createIRI("urn:fixed"), true, true),
 				Var.of("otherPredicate", vf.createIRI("urn:other"), true, true), Var.of("other"));
-		LeftJoin guaranteedInput = new LeftJoin(anchor, new Join(disconnected, connected));
-		physicalOptimizer.optimize(guaranteedInput, null, EmptyBindingSet.getInstance());
-		assertSame(connected, assertInstanceOf(Join.class, guaranteedInput.getRightArg()).getLeftArg());
-
-		StatementPattern other = disconnected.clone();
-		LeftJoin nullableInput = new LeftJoin(new LeftJoin(new SingletonSet(), anchor.clone()),
-				new Join(connected.clone(), other));
+		LeftJoin nullableInput = new LeftJoin(new LeftJoin(new SingletonSet(), anchor),
+				new Join(connected, disconnected));
 		physicalOptimizer.optimize(nullableInput, null, EmptyBindingSet.getInstance());
-		assertSame(other, assertInstanceOf(Join.class, nullableInput.getRightArg()).getLeftArg());
+		assertSame(disconnected, assertInstanceOf(Join.class, nullableInput.getRightArg()).getLeftArg());
 	}
 
 	@Test

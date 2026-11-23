@@ -44,7 +44,6 @@ import org.eclipse.rdf4j.sail.lmdb.evaluation.codegen.KernelCancellation;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.codegen.KernelCancelledException;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.codegen.KernelContext;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.codegen.KernelHooks;
-import org.eclipse.rdf4j.sail.lmdb.evaluation.codegen.KernelOptionalReplay;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.codegen.KernelQuadCursor;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.codegen.KernelQueryCancelledException;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.codegen.KernelScanner;
@@ -131,7 +130,7 @@ class LmdbNativeOptionalScanReplayTest {
 						? new Aggregate(new int[0], new AggregateOutput[] { AggregateOutput.countStar() }, null,
 								OutputMods.none())
 						: new Emit(new int[] { 0, 1 }, false, OutputMods.none()))
-						.withTelemetry(Kernel.TelemetryMode.FULL);
+								.withTelemetry(Kernel.TelemetryMode.FULL);
 		assertEquals(!aggregate, ir.resumable);
 		JaninoKernel execution = compiled ? KernelCompilationTestSupport.compile(ir)
 				: aggregate ? LmdbNativeKernelInterpreter.forAggregate(ir) : LmdbNativeKernelInterpreter.forRows(ir);

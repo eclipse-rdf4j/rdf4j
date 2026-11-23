@@ -26,7 +26,6 @@ import org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbNativeKernelIr.Node;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbNativeKernelIr.Probe;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbNativeKernelIr.ProbeClose;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbNativeKernelIr.ScanQuad;
-import org.eclipse.rdf4j.sail.lmdb.evaluation.codegen.KernelOptionalReplay;
 
 /**
  * Decides which OPTIONAL arms ({@link LeftGroup}) may be served from a {@link KernelOptionalReplay}: complete right-arm

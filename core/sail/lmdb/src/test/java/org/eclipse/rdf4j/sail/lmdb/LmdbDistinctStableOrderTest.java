@@ -18,7 +18,6 @@ import java.io.File;
 import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.List;
-import java.util.Optional;
 
 import org.eclipse.rdf4j.common.transaction.IsolationLevels;
 import org.eclipse.rdf4j.model.IRI;
@@ -29,7 +28,6 @@ import org.eclipse.rdf4j.query.QueryResults;
 import org.eclipse.rdf4j.query.TupleQuery;
 import org.eclipse.rdf4j.query.TupleQueryResult;
 import org.eclipse.rdf4j.query.explanation.Explanation;
-import org.eclipse.rdf4j.query.explanation.GenericPlanNode;
 import org.eclipse.rdf4j.repository.Repository;
 import org.eclipse.rdf4j.repository.RepositoryConnection;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
@@ -115,49 +113,6 @@ class LmdbDistinctStableOrderTest {
 	}
 
 	@Test
-	void testGenericDistinctRetainsGlobalDedupWhenNaturalKeyIsNotProjected(@TempDir File dataDir) {
-		String query = "SELECT DISTINCT ?type WHERE { ?s a ?type }";
-		Repository psocOnlyRepository = new SailRepository(new LmdbStore(dataDir, new LmdbStoreConfig("psoc")));
-		psocOnlyRepository.init();
-		try (RepositoryConnection connection = psocOnlyRepository.getConnection()) {
-			IRI type1 = vf.createIRI("urn:type1");
-			IRI type2 = vf.createIRI("urn:type2");
-			connection.add(vf.createIRI("urn:s1"), RDF.TYPE, type1);
-			connection.add(vf.createIRI("urn:s2"), RDF.TYPE, type2);
-			connection.add(vf.createIRI("urn:s3"), RDF.TYPE, type1);
-			connection.add(vf.createIRI("urn:s4"), RDF.TYPE, type2);
-
-			try (var partitioned = new LmdbPartitionedDistinctProbe()) {
-				assertNull(partitionKey(connection.prepareTupleQuery(query)));
-				GenericPlanNode plan = connection.prepareTupleQuery(query).explain(Explanation.Level.Telemetry)
-						.toGenericPlanNode();
-				assertEquals(4L, actualRowsOfType(plan, "StatementPattern"));
-				assertEquals(2L, actualRowsOfType(plan, "Distinct"));
-
-				List<String> rawValues = new ArrayList<>();
-				try (TupleQueryResult rows = connection.prepareTupleQuery("SELECT ?type WHERE { ?s a ?type }").evaluate()) {
-					while (rows.hasNext()) {
-						rawValues.add(rows.next().getValue("type").stringValue());
-					}
-				}
-				assertEquals(List.of("urn:type1", "urn:type2", "urn:type1", "urn:type2"), rawValues);
-
-				List<String> values = new ArrayList<>();
-				try (TupleQueryResult rows = connection.prepareTupleQuery(query).evaluate()) {
-					while (rows.hasNext()) {
-						values.add(rows.next().getValue("type").stringValue());
-					}
-				}
-				assertEquals(2, values.size());
-				assertEquals(new HashSet<>(List.of("urn:type1", "urn:type2")), new HashSet<>(values));
-				assertEquals(0, partitioned.opened());
-			}
-		} finally {
-			psocOnlyRepository.shutDown();
-		}
-	}
-
-	@Test
 	void testGenericDistinctRetainsGlobalDedupAcrossUnionArms() {
 		String query = """
 				SELECT DISTINCT ?s WHERE {
@@ -210,16 +165,9 @@ class LmdbDistinctStableOrderTest {
 	}
 
 	private String partitionKey(TupleQuery query) {
-		var planned = query.explain(Explanation.Level.Optimized).toGenericPlanNode().getStringMetricsPlanned();
-		return Optional.ofNullable(planned).map(metrics -> metrics.get("distinctPartitionBinding")).orElse(null);
-	}
-
-	private static long actualRowsOfType(GenericPlanNode node, String type) {
-		if (node.getType().startsWith(type) && node.getResultSizeActual() != null) {
-			return node.getResultSizeActual();
-		}
-		return node.getPlans() == null ? 0
-				: node.getPlans().stream().mapToLong(child -> actualRowsOfType(child, type)).sum();
+		return query.explain(Explanation.Level.Optimized)
+				.toGenericPlanNode()
+				.getStringMetricPlanned("distinctPartitionBinding");
 	}
 
 	private List<String> readSubjects(TupleQueryResult rows) {

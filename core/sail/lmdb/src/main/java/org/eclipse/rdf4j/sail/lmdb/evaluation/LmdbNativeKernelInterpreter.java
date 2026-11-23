@@ -73,7 +73,6 @@ import org.eclipse.rdf4j.sail.lmdb.evaluation.codegen.KernelFactorCursor;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.codegen.KernelFactorPredicate;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.codegen.KernelHooks;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.codegen.KernelIdMasks;
-import org.eclipse.rdf4j.sail.lmdb.evaluation.codegen.KernelOptionalReplay;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.codegen.KernelPlan;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.codegen.KernelProjectionCursor;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.codegen.KernelQuadCursor;

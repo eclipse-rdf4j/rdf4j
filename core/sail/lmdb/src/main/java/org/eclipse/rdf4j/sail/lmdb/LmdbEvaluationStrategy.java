@@ -147,18 +147,15 @@ final class LmdbEvaluationStrategy extends DefaultEvaluationStrategy {
 		if (!preservesPartitionKey(anchor, projection, ordered.getName())) {
 			return null;
 		}
-		for (ProjectionElem element : projection.getProjectionElemList().getElements()) {
+		var elements = projection.getProjectionElemList();
+		for (ProjectionElem element : elements.getElements()) {
 			if (!element.getName().equals(ordered.getName())) {
 				continue;
 			}
 			String key = element.getProjectionAlias().orElse(element.getName());
 			if ((plannedPartitionBinding == null || plannedPartitionBinding.equals(key))
 					&& projection.getAssuredBindingNames().contains(key)
-					&& projection.getProjectionElemList()
-							.getElements()
-							.stream()
-							.noneMatch(other -> !other.getName().equals(ordered.getName())
-									&& other.getProjectionAlias().orElse(other.getName()).equals(key))) {
+					&& ordered.getName().equals(LmdbPlannedOrder.mapProjection(elements, key))) {
 				return key;
 			}
 		}

@@ -44,6 +44,7 @@ import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
+import org.eclipse.rdf4j.model.vocabulary.RDF;
 import org.eclipse.rdf4j.model.vocabulary.RDF4J;
 import org.eclipse.rdf4j.model.vocabulary.SESAME;
 import org.eclipse.rdf4j.model.vocabulary.XSD;
@@ -832,6 +833,44 @@ class LmdbPartitionedDistinctRegressionTest {
 		int exitCode = compiler.run(null, null, errors, "-classpath", System.getProperty("java.class.path"),
 				"-d", directory.toString(), source.toString());
 		assertThat(exitCode).withFailMessage(errors.toString(StandardCharsets.UTF_8)).isZero();
+	}
+
+	@Test
+	void genericDistinctDeduplicatesGloballyWhenNaturalKeyIsNotProjected() {
+		String input = "SELECT ?type WHERE { ?s a ?type }";
+		String distinct = "SELECT DISTINCT ?type WHERE { ?s a ?type }";
+		// With a fixed predicate, PSOC groups by the unprojected subject, so an object prefix scan cannot serve
+		// DISTINCT.
+		var repository = new SailRepository(new LmdbStore(directory.toFile(), new LmdbStoreConfig("psoc")));
+		repository.init();
+		try (var connection = repository.getConnection(); var partitioned = new LmdbPartitionedDistinctProbe()) {
+			IRI type1 = VF.createIRI("urn:type1");
+			IRI type2 = VF.createIRI("urn:type2");
+			connection.add(VF.createIRI("urn:s1"), RDF.TYPE, type1);
+			connection.add(VF.createIRI("urn:s2"), RDF.TYPE, type2);
+			connection.add(VF.createIRI("urn:s3"), RDF.TYPE, type1);
+			connection.add(VF.createIRI("urn:s4"), RDF.TYPE, type2);
+
+			var planned = connection.prepareTupleQuery(distinct)
+					.explain(Explanation.Level.Optimized)
+					.toGenericPlanNode();
+			assertThat(planned.getStringMetricPlanned("distinctPartitionBinding")).isNull();
+			long indexedBefore = LmdbPrefixRunPlan.OPENED.get();
+			var plan = connection.prepareTupleQuery(distinct).explain(Explanation.Level.Telemetry).toGenericPlanNode();
+			assertThat(actualRowsOfType(plan, "StatementPattern")).isEqualTo(4);
+			assertThat(actualRowsOfType(plan, "Distinct")).isEqualTo(2);
+
+			assertThat(QueryResults.asList(connection.prepareTupleQuery(input).evaluate()))
+					.extracting(row -> row.getValue("type"))
+					.containsExactly(type1, type2, type1, type2);
+			assertThat(QueryResults.asList(connection.prepareTupleQuery(distinct).evaluate()))
+					.extracting(row -> row.getValue("type"))
+					.containsExactlyInAnyOrder(type1, type2);
+			assertThat(LmdbPrefixRunPlan.OPENED.get()).isEqualTo(indexedBefore);
+			assertThat(partitioned.opened()).isZero();
+		} finally {
+			repository.shutDown();
+		}
 	}
 
 	@Test
