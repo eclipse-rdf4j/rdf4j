@@ -13,18 +13,24 @@
 package org.eclipse.rdf4j.query.algebra.evaluation.impl.evaluationsteps;
 
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Set;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.function.Function;
 
+import org.eclipse.rdf4j.common.annotation.InternalUseOnly;
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.common.iteration.CooperativeCancellation;
 import org.eclipse.rdf4j.common.iteration.LookAheadIteration;
+import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.query.BindingSet;
+import org.eclipse.rdf4j.query.QueryEvaluationException;
+import org.eclipse.rdf4j.query.QueryExecutionPolicy.GraphJoinOptimization;
 import org.eclipse.rdf4j.query.algebra.Difference;
 import org.eclipse.rdf4j.query.algebra.EmptySet;
+import org.eclipse.rdf4j.query.algebra.Graph;
 import org.eclipse.rdf4j.query.algebra.Join;
 import org.eclipse.rdf4j.query.algebra.Lateral;
 import org.eclipse.rdf4j.query.algebra.LeftJoin;
@@ -39,7 +45,15 @@ import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.query.algebra.evaluation.EvaluationStrategy;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryEvaluationStep;
 import org.eclipse.rdf4j.query.algebra.evaluation.federation.ServiceJoinIterator;
+import org.eclipse.rdf4j.query.algebra.evaluation.impl.EvaluationStatistics;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.QueryEvaluationContext;
+import org.eclipse.rdf4j.query.algebra.evaluation.impl.restrictions.InvocationOwner;
+import org.eclipse.rdf4j.query.algebra.evaluation.impl.restrictions.PreparedRestrictionPlan;
+import org.eclipse.rdf4j.query.algebra.evaluation.impl.restrictions.RestrictionBindJoinIteration;
+import org.eclipse.rdf4j.query.algebra.evaluation.impl.restrictions.RestrictionCompiler;
+import org.eclipse.rdf4j.query.algebra.evaluation.impl.restrictions.RestrictionJoinCost;
+import org.eclipse.rdf4j.query.algebra.evaluation.impl.restrictions.RestrictionPlanProvider;
+import org.eclipse.rdf4j.query.algebra.evaluation.impl.restrictions.RestrictionResultCache;
 import org.eclipse.rdf4j.query.algebra.evaluation.iterator.HashJoinIteration;
 import org.eclipse.rdf4j.query.algebra.evaluation.iterator.InnerMergeJoinIterator;
 import org.eclipse.rdf4j.query.algebra.evaluation.iterator.JoinIterator;
@@ -51,15 +65,26 @@ import org.eclipse.rdf4j.query.algebra.helpers.QueryAlgebraBindingAnalysis;
 import org.eclipse.rdf4j.query.algebra.helpers.TupleExprs;
 import org.eclipse.rdf4j.query.impl.EmptyBindingSet;
 
-public class JoinQueryEvaluationStep implements QueryEvaluationStep {
+public class JoinQueryEvaluationStep implements QueryEvaluationStep, RestrictionPlanProvider {
 
 	private static final double MAX_BOUND_STATEMENT_GUARD_LEFT_ROWS = 512.0d;
 
 	private final Function<BindingSet, CloseableIteration<BindingSet>> eval;
 	private final BoundStatementPatternGuardJoinIteration.GuardCounter guardCounter;
 	private final boolean ordinaryJoinContract;
+	private final PreparedRestrictionPlan restrictionPlan;
 
 	public JoinQueryEvaluationStep(EvaluationStrategy strategy, Join join, QueryEvaluationContext context) {
+		this(strategy, join, context, null);
+	}
+
+	public JoinQueryEvaluationStep(EvaluationStrategy strategy, Join join, QueryEvaluationContext context,
+			Function<Value, Value> capturer) {
+		this(strategy, join, context, capturer, new EvaluationStatistics());
+	}
+
+	public JoinQueryEvaluationStep(EvaluationStrategy strategy, Join join, QueryEvaluationContext context,
+			Function<Value, Value> capturer, EvaluationStatistics statistics) {
 		// efficient computation of a SERVICE join using vectored evaluation
 		// TODO maybe we can create a ServiceJoin node already in the parser?
 		boolean runtimeTelemetryTrackingActive = strategy.isTrackResultSize() || strategy.isTrackTime();
@@ -91,6 +116,21 @@ public class JoinQueryEvaluationStep implements QueryEvaluationStep {
 				join.getLeftArg());
 		GraphFrameMapping[] leftFrames = GraphFrameMapping.forSubqueries(join.getLeftArg(),
 				join.getRightArg());
+		boolean independent = isOutOfScopeForLeftArgBindings(join.getRightArg(), bindingAnalysis)
+				|| subqueryObservesInjectedBindings(join.getRightArg(), join.getLeftArg().getBindingNames());
+		boolean restrictionEnabled = RestrictionCompiler.enabled(strategy, context);
+		boolean requireRestriction = strategy.getQueryExecutionPolicy()
+				.graphJoinOptimization() == GraphJoinOptimization.REQUIRE_RESTRICTED;
+		Set<String> leftOutputNames = join.getLeftArg().getBindingNames();
+		GraphProbe candidate = null;
+		if (restrictionEnabled && rightFrames.length == 0 && leftFrames.length == 0
+				&& !(join.getRightArg() instanceof Service)) {
+			candidate = selectGraphProbe(join, leftRaw, rightRaw, independent, rightDiscardable, statistics,
+					bindingAnalysis);
+			if (candidate != null) {
+				candidate.cost().explain(join);
+			}
+		}
 		if (rightFrames.length > 0 || leftFrames.length > 0) {
 			// An inherited active graph is a lexical parameter, while every ordinary subquery variable remains
 			// independent. Evaluate the graph carrier first, including when source order puts it on the right.
@@ -115,8 +155,36 @@ public class JoinQueryEvaluationStep implements QueryEvaluationStep {
 					(Service) join.getRightArg(), bindings,
 					strategy, rightPrepared, context.getBlankNodeAllocationScope());
 			join.setAlgorithm(ServiceJoinIterator.class.getSimpleName());
-		} else if (isOutOfScopeForLeftArgBindings(join.getRightArg(), bindingAnalysis)
-				|| subqueryObservesInjectedBindings(join.getRightArg(), join.getLeftArg().getBindingNames())) {
+		} else if (candidate != null && (candidate.cost().preferProbes() || requireRestriction)) {
+			boolean reversed = candidate.reversed();
+			RestrictionJoinCost cost = candidate.cost();
+			QueryEvaluationStep outer = reversed
+					? JoinMetricsTracking.wrapLeftInput(rightRaw, join, join.getRightArg(),
+							runtimeTelemetryTrackingActive)
+					: leftPrepared;
+			TupleExpr originalGraphOperand = reversed ? join.getLeftArg() : join.getRightArg();
+			PreparedRestrictionPlan probePlan = RestrictionCompiler.decoratePlan(candidate.plan(),
+					step -> JoinMetricsTracking.wrapRightInput(step, join, originalGraphOperand,
+							runtimeTelemetryTrackingActive));
+			eval = bindings -> {
+				var invocation = probePlan.open(bindings, InvocationOwner.forExecution(context));
+				return new RestrictionBindJoinIteration(() -> outer.evaluate(bindings),
+						cost.cacheResults() ? new RestrictionResultCache(invocation, capturer, join) : invocation,
+						probePlan.layout().unrestricted(), context, capturer, reversed);
+			};
+			join.setAlgorithm(RestrictionBindJoinIteration.class.getSimpleName());
+			join.setStringMetricPlanned("graphRestrictionCertificate", probePlan.blueprint().certificate());
+			join.setStringMetricPlanned("graphRestrictionOrientation", reversed ? "graph-left" : "graph-right");
+		} else if (requireRestriction && (requestsGraphProbe(join.getLeftArg(), join.getRightArg())
+				|| requestsGraphProbe(join.getRightArg(), join.getLeftArg()))) {
+			throw new QueryEvaluationException("Required GRAPH restriction could not be certified");
+		} else if (independent) {
+			if (restrictionEnabled && join.getRightArg() instanceof Graph) {
+				join.setStringMetricActual("graphRestrictionRefusal",
+						!rightDiscardable ? "demand-barrier"
+								: candidate == null ? "source-or-operator"
+										: "independent-cost");
+			}
 			// The right side must not see left-row bindings, so both sides are evaluated independently and hashed on
 			// the names they may share; rows where a shared name is unbound still join with every compatible row.
 			String[] joinAttributes = HashJoinIteration.hashJoinAttributeNames(join);
@@ -203,6 +271,69 @@ public class JoinQueryEvaluationStep implements QueryEvaluationStep {
 			join.setAlgorithm(JoinIterator.class.getSimpleName());
 		}
 		ordinaryJoinContract = ordinary;
+		restrictionPlan = restrictionEnabled && rightFrames.length == 0 && leftFrames.length == 0
+				&& !(join.getRightArg() instanceof Service)
+				&& (independent || QueryEvaluationUtility.permitsBindingInjection(join.getRightArg(), leftOutputNames)
+						&& !(join.getRightArg() instanceof StatementPattern pattern && pattern.getContextVar() != null))
+								? RestrictionCompiler.join(join, context, leftRaw, rightRaw,
+										strategy.getCollectionFactory(),
+										capturer, RestrictionBindJoinIteration.Mode.INNER, null, join.getLeftArg(),
+										join.getRightArg())
+								: null;
+	}
+
+	@Override
+	public PreparedRestrictionPlan restrictionPlan() {
+		return restrictionPlan;
+	}
+
+	private record GraphProbe(PreparedRestrictionPlan plan, RestrictionJoinCost cost, boolean reversed) {
+	}
+
+	private static boolean requestsGraphProbe(TupleExpr operand, TupleExpr sibling) {
+		return operand instanceof Graph graph
+				&& !Collections.disjoint(sibling.getBindingNames(), RestrictionCompiler.potentialGraphSeeks(graph));
+	}
+
+	private static GraphProbe selectGraphProbe(Join join, QueryEvaluationStep leftStep,
+			QueryEvaluationStep rightStep, boolean originallyIndependent, boolean rightDiscardable,
+			EvaluationStatistics statistics, QueryAlgebraBindingAnalysis bindingAnalysis) {
+		if (!rightDiscardable) {
+			return null;
+		}
+		TupleExpr left = join.getLeftArg();
+		TupleExpr right = join.getRightArg();
+		GraphProbe direct = originallyIndependent
+				? graphProbe(left, right, rightStep, statistics, bindingAnalysis, false)
+				: null;
+		if (join.isMergeJoin() || !TupleExprs.containsGraphBoundary(left)
+				|| !QueryEvaluationUtility.canDiscardWithoutEvaluation(left)
+				|| !RestrictionCompiler.movable(right)
+				|| !originallyIndependent && (RestrictionPlanProvider.find(rightStep) == null
+						|| !QueryEvaluationUtility.permitsBindingInjection(right, left.getBindingNames()))) {
+			return direct;
+		}
+		// The original GRAPH-left operand already sees only the join-entry input. Reverse the physical loop only
+		// when its sibling also has an independent contract, or injecting GRAPH output is equivalent to compatibility.
+		GraphProbe reversed = graphProbe(right, left, leftStep, statistics, bindingAnalysis, true);
+		if (direct == null || reversed != null && reversed.cost().preferProbes()
+				&& (!direct.cost().preferProbes() || reversed.cost().fullProbeWork() < direct.cost().fullProbeWork())) {
+			return reversed;
+		}
+		return direct;
+	}
+
+	private static GraphProbe graphProbe(TupleExpr outer, TupleExpr inner, QueryEvaluationStep innerStep,
+			EvaluationStatistics statistics, QueryAlgebraBindingAnalysis bindingAnalysis, boolean reversed) {
+		if (!TupleExprs.containsGraphBoundary(inner)) {
+			return null;
+		}
+		PreparedRestrictionPlan plan = RestrictionPlanProvider.find(innerStep);
+		if (plan == null || Collections.disjoint(outer.getBindingNames(), plan.seekNames())) {
+			return null;
+		}
+		return new GraphProbe(plan, RestrictionJoinCost.estimate(outer, inner, plan, statistics, bindingAnalysis),
+				reversed);
 	}
 
 	/**
@@ -233,7 +364,8 @@ public class JoinQueryEvaluationStep implements QueryEvaluationStep {
 	private static Function<BindingSet, CloseableIteration<BindingSet>> tryBatchCorrelatedJoin(
 			EvaluationStrategy strategy, Join join, QueryEvaluationStep leftPrepared, QueryEvaluationStep rightPrepared,
 			QueryEvaluationStep rightRaw) {
-		if (QueryEvaluationUtility.usesMappingParameterizedEvaluation(join.getRightArg())
+		if (OrderedEvaluation.isRequired(join)
+				|| QueryEvaluationUtility.usesMappingParameterizedEvaluation(join.getRightArg())
 				|| !(strategy instanceof BatchCorrelatedJoinProvider.Host host)) {
 			return null;
 		}
@@ -394,12 +526,28 @@ public class JoinQueryEvaluationStep implements QueryEvaluationStep {
 				|| containsDifferenceInCurrentScope(expr);
 	}
 
+	/** Whether standard preparation can keep an ordered left driver once merge-join selection is cleared. */
+	@InternalUseOnly
+	public static boolean supportsOrderedLeft(TupleExpr left, TupleExpr right) {
+		if (right instanceof Service || TupleExprs.containsGraphBoundary(left)
+				|| GraphFrameMapping.forSubqueries(right, left).length != 0
+				|| GraphFrameMapping.forSubqueries(left, right).length != 0) {
+			return false;
+		}
+		var input = QueryAlgebraBindingAnalysis.withBindingValues(right, EmptyBindingSet.getInstance());
+		return !isOutOfScopeForLeftArgBindings(right, input)
+				&& !subqueryObservesInjectedBindings(right, left.getBindingNames());
+	}
+
 	/**
 	 * Returns a physical boundary reason, or {@code null} when the ordinary nested-loop adapter preserves this join's
 	 * selected algorithm. Guard paths remain available through the standard preparation when adaptation is declined.
 	 */
 	static String adaptiveBoundaryReason(Join join, QueryEvaluationContext context,
 			QueryAlgebraBindingAnalysis analysis) {
+		if (OrderedEvaluation.isRequired(join)) {
+			return "ordered left driver";
+		}
 		if (GraphFrameMapping.forSubqueries(join.getRightArg(), join.getLeftArg()).length > 0
 				|| GraphFrameMapping.forSubqueries(join.getLeftArg(), join.getRightArg()).length > 0) {
 			return "inherited GRAPH frame";

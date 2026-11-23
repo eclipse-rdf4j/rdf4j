@@ -2706,10 +2706,10 @@ final class LmdbNativeKernelLowering {
 		}
 
 		/**
-		 * Lower an order/effect-sensitive tree without collecting a child's filters into its parent. In particular
-		 * FILTER(left) JOIN SERVICE must reject before opening the service, whereas FILTER(left JOIN SERVICE) must not
-		 * suppress the service's observable error by moving left. Unknown leaves use the existing correlated PlanRows
-		 * SPI; their IDs are imported by the owning SlotPlan, never copied across remote dictionary authorities.
+		 * Lower an order/effect-sensitive tree without collecting a child's filters into its parent. In particular a
+		 * filter on the left completes before the service is opened for a left row. The empty-driver guard still
+		 * evaluates a fixed service if the left produces no rows. A filter scoped over the join must evaluate after the
+		 * service. Unknown leaves use the correlated PlanRows SPI and import IDs through the owning SlotPlan.
 		 */
 		private boolean lowerOrderedOperand(SlotPlan plan, RowState row) {
 			if (plan instanceof JoinPlan join) {

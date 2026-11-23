@@ -18,12 +18,17 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.stream.Collectors;
 
+import org.eclipse.rdf4j.model.BNode;
 import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.model.vocabulary.RDF4J;
 import org.eclipse.rdf4j.model.vocabulary.SESAME;
 import org.eclipse.rdf4j.query.Dataset;
+import org.eclipse.rdf4j.query.QueryExecutionPolicy;
+import org.eclipse.rdf4j.query.QueryExecutionPolicy.GraphJoinOptimization;
+import org.eclipse.rdf4j.query.impl.BlankNodeAllocationScope;
+import org.eclipse.rdf4j.query.impl.RemoteBNode;
 import org.eclipse.rdf4j.query.impl.SimpleDataset;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
 import org.eclipse.rdf4j.sail.lmdb.LmdbStore;
@@ -34,6 +39,7 @@ import org.junit.jupiter.api.io.TempDir;
 import org.junit.jupiter.api.parallel.ResourceLock;
 import org.junit.jupiter.api.parallel.Resources;
 import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.EnumSource;
 import org.junit.jupiter.params.provider.ValueSource;
 
 /** Exact result-domain controls for the native active-graph boundary and physical BGP fusion. */
@@ -91,6 +97,20 @@ class LmdbNativeGraphBoundaryTest {
 
 	@ParameterizedTest
 	@ValueSource(booleans = { false, true })
+	void siblingValuesJoinPhysicalGraphNamesWithAliasAndUndefRows(boolean experimental) {
+		reopen(experimental);
+		for (var alias : List.of(RDF4J.NIL, SESAME.NIL)) {
+			String prefix = "urn:physical-" + (RDF4J.NIL.equals(alias) ? "rdf4j" : "sesame") + "-nil";
+			String query = "SELECT ?s { VALUES (?s ?g) { (<" + prefix + "> <" + alias + ">) (<" + prefix
+					+ "> <" + alias + ">) (<urn:default> <" + alias + ">) (<urn:g1:s> UNDEF) } "
+					+ "GRAPH ?g { ?s <urn:p> ?o } }";
+			assertThat(rows(query, false, null, null)).containsExactly("s=urn:g1:s", "s=" + prefix, "s=" + prefix);
+			assertParity(query, null, null);
+		}
+	}
+
+	@ParameterizedTest
+	@ValueSource(booleans = { false, true })
 	void minusKeepsDisjointPublicDomainsInsideTheSelectedGraph(boolean experimental) {
 		reopen(experimental);
 		for (String body : List.of("?s <urn:p> ?o MINUS { ?x <urn:q> ?y }",
@@ -133,6 +153,51 @@ class LmdbNativeGraphBoundaryTest {
 	}
 
 	@ParameterizedTest
+	@EnumSource(value = GraphJoinOptimization.class, names = { "AUTO", "OFF" })
+	void remoteSelectorCannotSelectALocalBlankNodeGraphWithTheSameLabel(GraphJoinOptimization mode) {
+		reopen(QueryExecutionPolicy.DEFAULT.withGraphJoinOptimization(mode));
+		ValueFactory vf = repository.getValueFactory();
+		BNode remote = (BNode) RemoteBNode.newResponseScope(new BlankNodeAllocationScope(), vf, new Object(), false)
+				.map(vf.createBNode("response-label"));
+		BNode local = vf.createBNode(remote.getID());
+		try (var connection = repository.getConnection()) {
+			connection.add(vf.createIRI("urn:a"), vf.createIRI("urn:p"), vf.createIRI("urn:x"), local);
+		}
+		String query = "SELECT ?o { GRAPH ?g { VALUES ?s { <urn:a> <urn:a> } ?s <urn:p> ?o } }";
+		SimpleDataset named = new SimpleDataset();
+		named.addNamedGraph(local);
+		for (Dataset dataset : new Dataset[] { null, named }) {
+			assertThat(rows(query, false, dataset, remote)).isEmpty();
+			assertThat(rows(query, true, dataset, local)).containsExactly("o=urn:x", "o=urn:x");
+			assertThat(rows(query, true, dataset, remote)).isEmpty();
+			assertThat(rows("SELECT ?o { GRAPH ?g { <urn:a> <urn:p> ?o } }", true, dataset, remote)).isEmpty();
+		}
+	}
+
+	@ParameterizedTest
+	@EnumSource(value = GraphJoinOptimization.class, names = { "AUTO", "OFF" })
+	void correlatedGraphSelectorUsesTheSemanticAliasAtItsInvocation(GraphJoinOptimization mode) {
+		reopen(QueryExecutionPolicy.DEFAULT.withGraphJoinOptimization(mode));
+		for (var alias : List.of(RDF4J.NIL, SESAME.NIL)) {
+			String driver = "VALUES ?g { <urn:g1> <" + alias + "> } ";
+			for (String body : List.of("VALUES ?s { <urn:default> } ?s <urn:p> <urn:o>",
+					"<urn:default> <urn:p> <urn:o>")) {
+				String graph = "GRAPH ?g { " + body + " }";
+				String exists = "SELECT ?g { " + driver + "FILTER EXISTS { " + graph + " } }";
+				assertThat(rows(exists, false, null, null)).containsExactly("g=" + alias);
+				assertThat(rows(exists, true, null, null)).containsExactly("g=" + alias);
+				String notExists = "SELECT ?g { " + driver + "FILTER NOT EXISTS { " + graph + " } }";
+				assertThat(rows(notExists, true, null, null)).containsExactly("g=urn:g1");
+				String lateral = "SELECT ?g { " + driver + "LATERAL { " + graph + " } }";
+				assertThat(rows(lateral, true, null, null)).containsExactly("g=" + alias);
+				SimpleDataset named = new SimpleDataset();
+				named.addNamedGraph(alias);
+				assertThat(rows(exists, true, named, null)).isEmpty();
+			}
+		}
+	}
+
+	@ParameterizedTest
 	@ValueSource(booleans = { false, true })
 	void resourceAndExplicitEmptyReadDatasetsReachNativePatternsAndPaths(boolean experimental) {
 		reopen(experimental);
@@ -151,11 +216,15 @@ class LmdbNativeGraphBoundaryTest {
 	}
 
 	private void reopen(boolean experimental) {
+		reopen(QueryExecutionPolicy.of(experimental));
+	}
+
+	private void reopen(QueryExecutionPolicy policy) {
 		repository.shutDown();
 		store = new LmdbStore(directory, new LmdbStoreConfig("spoc,posc,ospc")
 				.setNativeEvaluationEnabled(true)
 				.setSketchEstimatorEnabled(false));
-		store.setExperimentalQueryOptimizations(experimental);
+		store.setQueryExecutionPolicy(policy);
 		repository = new SailRepository(store);
 		repository.init();
 	}

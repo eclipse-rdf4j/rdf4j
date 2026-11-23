@@ -125,7 +125,6 @@ import org.eclipse.rdf4j.query.algebra.Service;
 import org.eclipse.rdf4j.query.algebra.SingletonSet;
 import org.eclipse.rdf4j.query.algebra.Slice;
 import org.eclipse.rdf4j.query.algebra.StatementPattern;
-import org.eclipse.rdf4j.query.algebra.StatementPattern.Scope;
 import org.eclipse.rdf4j.query.algebra.Str;
 import org.eclipse.rdf4j.query.algebra.StrLangDir;
 import org.eclipse.rdf4j.query.algebra.TripleComponent;
@@ -188,12 +187,19 @@ import org.eclipse.rdf4j.query.algebra.evaluation.impl.evaluationsteps.values.Or
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.evaluationsteps.values.QueryValueEvaluationStepSupplier;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.evaluationsteps.values.ValueExprTripleRefEvaluationStep;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.evaluationsteps.values.ValueExprTripleTermComponentEvaluationStep;
+import org.eclipse.rdf4j.query.algebra.evaluation.impl.restrictions.PreparedRestrictionPlan;
+import org.eclipse.rdf4j.query.algebra.evaluation.impl.restrictions.RestrictionBindJoinIteration;
+import org.eclipse.rdf4j.query.algebra.evaluation.impl.restrictions.RestrictionCompiler;
+import org.eclipse.rdf4j.query.algebra.evaluation.impl.restrictions.RestrictionModifierRules;
+import org.eclipse.rdf4j.query.algebra.evaluation.impl.restrictions.RestrictionPathPlan;
+import org.eclipse.rdf4j.query.algebra.evaluation.impl.restrictions.StatementRestrictionSourceProvider;
 import org.eclipse.rdf4j.query.algebra.evaluation.iterator.DescribeIteration;
 import org.eclipse.rdf4j.query.algebra.evaluation.iterator.ExtensionIterator;
 import org.eclipse.rdf4j.query.algebra.evaluation.iterator.FilterIterator;
 import org.eclipse.rdf4j.query.algebra.evaluation.iterator.GroupIterator;
 import org.eclipse.rdf4j.query.algebra.evaluation.iterator.MultiProjectionIterator;
 import org.eclipse.rdf4j.query.algebra.evaluation.iterator.PathIteration;
+import org.eclipse.rdf4j.query.algebra.evaluation.iterator.ProjectionIterator;
 import org.eclipse.rdf4j.query.algebra.evaluation.util.ExternalValuePreparation;
 import org.eclipse.rdf4j.query.algebra.evaluation.util.ExternalValueTripleSource;
 import org.eclipse.rdf4j.query.algebra.evaluation.util.MathUtil;
@@ -204,6 +210,7 @@ import org.eclipse.rdf4j.query.algebra.evaluation.util.ValueComparator;
 import org.eclipse.rdf4j.query.algebra.evaluation.util.XMLDatatypeMathUtil;
 import org.eclipse.rdf4j.query.algebra.helpers.AbstractSimpleQueryModelVisitor;
 import org.eclipse.rdf4j.query.algebra.helpers.LocalBNodeReferences;
+import org.eclipse.rdf4j.query.algebra.helpers.OriginalPathDescriptor;
 import org.eclipse.rdf4j.query.explanation.TelemetryMetricNames;
 import org.eclipse.rdf4j.query.impl.BlankNodeAllocationScope;
 import org.eclipse.rdf4j.query.impl.EmptyBindingSet;
@@ -739,6 +746,14 @@ public class DefaultEvaluationStrategy implements EvaluationStrategy, FederatedS
 		if (prepared == null) {
 			prepared = precompileStandard(expr, context);
 		}
+		if (RestrictionCompiler.enabled(this, context) && context.getActiveGraph() != null
+				&& (getClass() == DefaultEvaluationStrategy.class || getClass() == StrictEvaluationStrategy.class)) {
+			OriginalPathDescriptor path = OriginalPathDescriptor.forRegion(expr);
+			if (path != null) {
+				prepared = RestrictionPathPlan.attach(expr, path, prepared, context, tripleSource, this::precompile,
+						getCollectionFactory());
+			}
+		}
 		return prepared;
 	}
 
@@ -772,6 +787,12 @@ public class DefaultEvaluationStrategy implements EvaluationStrategy, FederatedS
 		QueryEvaluationStep prepared = ret == null ? QueryEvaluationStep.minimal(this, expr) : ret;
 		AdaptiveFilterEvaluationStep.recordPrepared(context, expr, prepared);
 		return prepared;
+	}
+
+	/** Optional backend specialization of a certified GRAPH body after trusted child preparation. */
+	protected PreparedRestrictionPlan specializeGraphBodyRestriction(TupleExpr preparedBody,
+			QueryEvaluationContext selectedContext, PreparedRestrictionPlan genericPlan) {
+		return genericPlan;
 	}
 
 	/** Applies the ordinary instrumentation contract to evaluator-specific physical adapters. */
@@ -862,14 +883,7 @@ public class DefaultEvaluationStrategy implements EvaluationStrategy, FederatedS
 
 	protected QueryEvaluationStep prepare(ArbitraryLengthPath alp, QueryEvaluationContext context)
 			throws QueryEvaluationException {
-		final Scope scope = alp.getScope();
-		final Var subjectVar = alp.getSubjectVar();
-		final TupleExpr pathExpression = alp.getPathExpression();
-		final Var objVar = alp.getObjectVar();
-		final Var contextVar = alp.getContextVar();
-		final long minLength = alp.getMinLength();
-		return bindings -> new PathIteration(DefaultEvaluationStrategy.this, scope, subjectVar, pathExpression, objVar,
-				contextVar, minLength, bindings, context);
+		return PathIteration.prepare(this, alp, context);
 	}
 
 	protected QueryEvaluationStep prepare(ZeroLengthPath zlp, QueryEvaluationContext context)
@@ -887,13 +901,26 @@ public class DefaultEvaluationStrategy implements EvaluationStrategy, FederatedS
 
 	protected QueryEvaluationStep prepare(Difference node, QueryEvaluationContext context)
 			throws QueryEvaluationException {
-		return new MinusQueryEvaluationStep(precompile(node.getLeftArg(), context),
-				precompile(node.getRightArg(), context), node.getLeftArg(), node.getRightArg());
+		QueryEvaluationStep left = precompile(node.getLeftArg(), context);
+		QueryEvaluationStep right = precompile(node.getRightArg(), context);
+		QueryEvaluationStep standard = new MinusQueryEvaluationStep(left, right, node.getLeftArg(), node.getRightArg());
+		return RestrictionCompiler.enabled(this, context)
+				? RestrictionCompiler.attach(standard,
+						RestrictionCompiler.join(node, context, left, right, getCollectionFactory(), valueCapturer(),
+								RestrictionBindJoinIteration.Mode.MINUS, null, node.getLeftArg(), node.getRightArg()))
+				: standard;
 	}
 
 	protected QueryEvaluationStep prepare(Group node, QueryEvaluationContext context) throws QueryEvaluationException {
 		QueryEvaluationStep arguments = precompile(node.getArg(), context);
-		return bindings -> new GroupIterator(DefaultEvaluationStrategy.this, node, bindings, context, arguments);
+		QueryEvaluationStep standard = bindings -> new GroupIterator(this, node, bindings, context, arguments);
+		if (!RestrictionCompiler.enabled(this, context) || !RestrictionModifierRules.wholeGroups(node)) {
+			return standard;
+		}
+		Set<String> keys = node.getGroupBindingNames();
+		return RestrictionCompiler.attach(standard, RestrictionCompiler.unary("group/whole-members", node, context,
+				arguments, name -> keys.contains(name) ? name : null,
+				(input, members) -> GroupIterator.withMembers(this, node, input, context, members)));
 	}
 
 	protected QueryEvaluationStep prepare(Intersection node, QueryEvaluationContext context)
@@ -905,15 +932,18 @@ public class DefaultEvaluationStrategy implements EvaluationStrategy, FederatedS
 	}
 
 	protected QueryEvaluationStep prepare(Join node, QueryEvaluationContext context) throws QueryEvaluationException {
-		QueryEvaluationStep step = new JoinQueryEvaluationStep(this, node, context).attachAdaptive(context, node,
-				trackResultSize || trackTime);
+		QueryEvaluationStep step = new JoinQueryEvaluationStep(this, node, context,
+				RestrictionCompiler.enabled(this, context) ? valueCapturer() : null, evaluationStatistics)
+						.attachAdaptive(context, node,
+								trackResultSize || trackTime);
 		// Vectored SERVICE produces external rows without evaluating the ordinary prepared SERVICE child.
 		return node.getRightArg() instanceof Service ? captureResultValues(step) : step;
 	}
 
 	protected QueryEvaluationStep prepare(LeftJoin node, QueryEvaluationContext context)
 			throws QueryEvaluationException {
-		return LeftJoinQueryEvaluationStep.supply(this, node, context);
+		return LeftJoinQueryEvaluationStep.supply(this, node, context,
+				RestrictionCompiler.enabled(this, context) ? valueCapturer() : null);
 	}
 
 	protected QueryEvaluationStep prepare(MultiProjection node, QueryEvaluationContext context)
@@ -936,7 +966,14 @@ public class DefaultEvaluationStrategy implements EvaluationStrategy, FederatedS
 	protected QueryEvaluationStep prepare(Projection node, QueryEvaluationContext context)
 			throws QueryEvaluationException {
 		QueryEvaluationStep temp = precompile(node.getArg(), context);
-		return new ProjectionQueryEvaluationStep(node, temp, context);
+		ProjectionQueryEvaluationStep standard = new ProjectionQueryEvaluationStep(node, temp, context);
+		return RestrictionCompiler.enabled(this, context)
+				? RestrictionCompiler.attach(standard,
+						RestrictionCompiler.unary("projection/exported-slots", node, context, temp,
+								RestrictionCompiler.projectionSources(node)::get,
+								input -> ProjectionQueryEvaluationStep.withInheritedGraphInput(node, input, context),
+								(input, cursor) -> new ProjectionIterator(node, cursor, input, context)))
+				: standard;
 	}
 
 	protected QueryEvaluationStep prepare(QueryRoot node, QueryEvaluationContext context)
@@ -949,8 +986,11 @@ public class DefaultEvaluationStrategy implements EvaluationStrategy, FederatedS
 
 	protected QueryEvaluationStep prepare(StatementPattern node, QueryEvaluationContext context)
 			throws QueryEvaluationException {
+		var restrictionProvider = RestrictionCompiler.enabled(this, context)
+				&& tripleSource instanceof StatementRestrictionSourceProvider provider ? provider : null;
 		return new StatementPatternQueryEvaluationStep(node, context,
-				AdaptiveFilterEvaluationStep.workSource(tripleSource, context));
+				AdaptiveFilterEvaluationStep.workSource(tripleSource, context), restrictionProvider,
+				restrictionProvider == null ? null : getCollectionFactory());
 	}
 
 	protected QueryEvaluationStep prepare(Union node, QueryEvaluationContext context) throws QueryEvaluationException {
@@ -959,13 +999,27 @@ public class DefaultEvaluationStrategy implements EvaluationStrategy, FederatedS
 		QueryEvaluationStep rightQes = precompile(node.getRightArg(), context);
 		AdaptiveFilterEvaluationStep.recordPrepared(context, node.getRightArg(), rightQes);
 
-		return AdaptiveFilterEvaluationStep.binary(context, node, new UnionQueryEvaluationStep(leftQes, rightQes),
-				UnionQueryEvaluationStep::new);
+		QueryEvaluationStep standard = new UnionQueryEvaluationStep(leftQes, rightQes);
+		if (RestrictionCompiler.enabled(this, context)) {
+			standard = RestrictionCompiler.attach(standard,
+					RestrictionCompiler.union(node, context, leftQes, rightQes, getCollectionFactory(),
+							valueCapturer()));
+		}
+		return AdaptiveFilterEvaluationStep.binary(context, node, standard, UnionQueryEvaluationStep::new);
 	}
 
 	protected QueryEvaluationStep prepare(Slice node, QueryEvaluationContext context) throws QueryEvaluationException {
 		QueryEvaluationStep arg = precompile(node.getArg(), context);
-		return SliceQueryEvaluationStep.supply(node, arg);
+		QueryEvaluationStep standard = SliceQueryEvaluationStep.supply(node, arg);
+		if (standard == arg || !RestrictionCompiler.enabled(this, context)) {
+			return standard;
+		}
+		if (!RestrictionModifierRules.noOpSlice(node)) {
+			node.setStringMetricPlanned("graphRestrictionRefusal", "sequence-rank-barrier");
+			return standard;
+		}
+		return RestrictionCompiler.attach(standard, RestrictionCompiler.unary("slice/exact-maximum", node, context,
+				arg, Function.identity(), (bindings, rows) -> rows));
 	}
 
 	protected QueryEvaluationStep prepare(Extension node, QueryEvaluationContext context)
@@ -973,7 +1027,15 @@ public class DefaultEvaluationStrategy implements EvaluationStrategy, FederatedS
 		QueryEvaluationStep arg = precompile(node.getArg(), context);
 		Consumer<MutableBindingSet> consumer = ExtensionIterator.buildLambdaToEvaluateTheExpressions(node, this,
 				context);
-		return new ExtensionQueryEvaluationStep(arg, consumer, context);
+		QueryEvaluationStep standard = new ExtensionQueryEvaluationStep(arg, consumer, context);
+		if (!RestrictionCompiler.enabled(this, context)
+				|| node.getElements().stream().anyMatch(element -> !RestrictionCompiler.movable(element.getExpr()))) {
+			return standard;
+		}
+		return RestrictionCompiler.attach(standard,
+				RestrictionCompiler.unary("extend/unchanged-and-alias-slots", node, context, arg,
+						RestrictionCompiler.extensionSources(node),
+						(input, cursor) -> new ExtensionIterator(cursor, consumer, context)));
 	}
 
 	protected QueryEvaluationStep prepare(Service service, QueryEvaluationContext context)
@@ -1025,7 +1087,15 @@ public class DefaultEvaluationStrategy implements EvaluationStrategy, FederatedS
 		}
 
 		OrderComparator cmp = new OrderComparator(this, node, vcmp, context);
-		return new OrderQueryEvaluationStep(node, cmp, limit, reduced, preparedArg, iterationCacheSyncThreshold);
+		QueryEvaluationStep standard = new OrderQueryEvaluationStep(node, cmp, limit, reduced, preparedArg,
+				iterationCacheSyncThreshold);
+		if (!RestrictionCompiler.enabled(this, context) || reduced || limit != Long.MAX_VALUE
+				|| !RestrictionModifierRules.sortedBag(node)) {
+			return standard;
+		}
+		return RestrictionCompiler.attach(standard, RestrictionCompiler.unary("order/stable-keys", node, context,
+				preparedArg, Function.identity(), (input, rows) -> new OrderQueryEvaluationStep(node, cmp, limit, false,
+						ignored -> rows, iterationCacheSyncThreshold).evaluate(input)));
 	}
 
 	private QueryEvaluationStep prepareVolatileKeyOrder(Order node, QueryEvaluationContext context,
@@ -1097,7 +1167,11 @@ public class DefaultEvaluationStrategy implements EvaluationStrategy, FederatedS
 	protected QueryEvaluationStep prepare(BindingSetAssignment node, QueryEvaluationContext context)
 			throws QueryEvaluationException {
 
-		return new BindingSetAssignmentQueryEvaluationStep(node, context, valueCapturer());
+		QueryEvaluationStep standard = new BindingSetAssignmentQueryEvaluationStep(node, context, valueCapturer());
+		return RestrictionCompiler.enabled(this, context) && node.hasRepeatableBindingSets()
+				? RestrictionCompiler.attach(standard, RestrictionCompiler.rows("values/original-rows", node, context,
+						standard))
+				: standard;
 	}
 
 	private final class QueryRootQueryEvaluationStep implements QueryEvaluationStep {
@@ -1232,120 +1306,127 @@ public class DefaultEvaluationStrategy implements EvaluationStrategy, FederatedS
 
 	protected QueryEvaluationStep prepare(Distinct node, QueryEvaluationContext context)
 			throws QueryEvaluationException {
-		final QueryEvaluationStep child = precompile(node.getArg(), context);
-		return bindings -> {
-			final CollectionFactory cf = this.getCollectionFactory().get();
-			CloseableIteration<BindingSet> evaluate = null;
-			try {
-				evaluate = child.evaluate(bindings);
-				ConvertingIteration<BindingSet, DistinctBindingSetKey> keys = new ConvertingIteration<>(evaluate) {
-					@Override
-					protected DistinctBindingSetKey convert(BindingSet sourceObject) {
-						return new DistinctBindingSetKey(sourceObject);
-					}
-				};
-				DistinctIteration<DistinctBindingSetKey> distinct = new DistinctIteration<>(keys, cf.createSet());
-				final class DistinctResult extends AbstractCloseableIteration<BindingSet>
-						implements CooperativeCancellation {
-					@Override
-					public boolean hasNext() {
-						if (isClosed()) {
-							return false;
-						}
-						try {
-							boolean hasNext = distinct.hasNext();
-							if (!hasNext) {
-								close();
-							}
-							return hasNext;
-						} catch (RuntimeException | Error failure) {
-							closeOnFailure(failure);
-							throw failure;
-						}
-					}
+		QueryEvaluationStep child = precompile(node.getArg(), context);
+		QueryEvaluationStep standard = bindings -> distinct(() -> child.evaluate(bindings));
+		return RestrictionCompiler.enabled(this, context)
+				? RestrictionCompiler.attach(standard,
+						RestrictionCompiler.unary("distinct/original-domains", node, context, child,
+								Function.identity(), (input, cursor) -> distinct(() -> cursor)))
+				: standard;
+	}
 
-					@Override
-					public BindingSet next() {
-						try {
-							return distinct.next().bindings;
-						} catch (RuntimeException | Error failure) {
-							closeOnFailure(failure);
-							throw failure;
-						}
+	private CloseableIteration<BindingSet> distinct(Supplier<CloseableIteration<BindingSet>> input) {
+		final CollectionFactory cf = this.getCollectionFactory().get();
+		CloseableIteration<BindingSet> evaluate = null;
+		try {
+			evaluate = input.get();
+			ConvertingIteration<BindingSet, DistinctBindingSetKey> keys = new ConvertingIteration<>(evaluate) {
+				@Override
+				protected DistinctBindingSetKey convert(BindingSet sourceObject) {
+					return new DistinctBindingSetKey(sourceObject);
+				}
+			};
+			DistinctIteration<DistinctBindingSetKey> distinct = new DistinctIteration<>(keys, cf.createSet());
+			final class DistinctResult extends AbstractCloseableIteration<BindingSet>
+					implements CooperativeCancellation {
+				@Override
+				public boolean hasNext() {
+					if (isClosed()) {
+						return false;
 					}
-
-					@Override
-					public void remove() {
-						try {
-							distinct.remove();
-						} catch (RuntimeException | Error failure) {
-							closeOnFailure(failure);
-							throw failure;
-						}
-					}
-
-					@Override
-					protected void handleClose() {
-						Throwable failure = null;
-						try {
-							distinct.close();
-						} catch (RuntimeException | Error closeFailure) {
-							failure = closeFailure;
-						}
-						try {
-							cf.close();
-						} catch (RuntimeException | Error closeFailure) {
-							if (failure == null) {
-								failure = closeFailure;
-							} else if (failure != closeFailure) {
-								failure.addSuppressed(closeFailure);
-							}
-						}
-						if (failure instanceof RuntimeException runtimeFailure) {
-							throw runtimeFailure;
-						}
-						if (failure instanceof Error errorFailure) {
-							throw errorFailure;
-						}
-					}
-
-					private void closeOnFailure(Throwable failure) {
-						try {
+					try {
+						boolean hasNext = distinct.hasNext();
+						if (!hasNext) {
 							close();
-						} catch (RuntimeException | Error closeFailure) {
-							if (failure != closeFailure) {
-								failure.addSuppressed(closeFailure);
-							}
 						}
-					}
-
-					@Override
-					public boolean requestCancellation() {
-						return !isClosed() && CooperativeCancellation.forward(distinct);
+						return hasNext;
+					} catch (RuntimeException | Error failure) {
+						closeOnFailure(failure);
+						throw failure;
 					}
 				}
-				return new DistinctResult();
 
-			} catch (RuntimeException | Error failure) {
-				if (evaluate != null) {
+				@Override
+				public BindingSet next() {
 					try {
-						evaluate.close();
+						return distinct.next().bindings;
+					} catch (RuntimeException | Error failure) {
+						closeOnFailure(failure);
+						throw failure;
+					}
+				}
+
+				@Override
+				public void remove() {
+					try {
+						distinct.remove();
+					} catch (RuntimeException | Error failure) {
+						closeOnFailure(failure);
+						throw failure;
+					}
+				}
+
+				@Override
+				protected void handleClose() {
+					Throwable failure = null;
+					try {
+						distinct.close();
+					} catch (RuntimeException | Error closeFailure) {
+						failure = closeFailure;
+					}
+					try {
+						cf.close();
+					} catch (RuntimeException | Error closeFailure) {
+						if (failure == null) {
+							failure = closeFailure;
+						} else if (failure != closeFailure) {
+							failure.addSuppressed(closeFailure);
+						}
+					}
+					if (failure instanceof RuntimeException runtimeFailure) {
+						throw runtimeFailure;
+					}
+					if (failure instanceof Error errorFailure) {
+						throw errorFailure;
+					}
+				}
+
+				private void closeOnFailure(Throwable failure) {
+					try {
+						close();
 					} catch (RuntimeException | Error closeFailure) {
 						if (failure != closeFailure) {
 							failure.addSuppressed(closeFailure);
 						}
 					}
 				}
+
+				@Override
+				public boolean requestCancellation() {
+					return !isClosed() && CooperativeCancellation.forward(distinct);
+				}
+			}
+			return new DistinctResult();
+
+		} catch (RuntimeException | Error failure) {
+			if (evaluate != null) {
 				try {
-					cf.close();
+					evaluate.close();
 				} catch (RuntimeException | Error closeFailure) {
 					if (failure != closeFailure) {
 						failure.addSuppressed(closeFailure);
 					}
 				}
-				throw failure;
 			}
-		};
+			try {
+				cf.close();
+			} catch (RuntimeException | Error closeFailure) {
+				if (failure != closeFailure) {
+					failure.addSuppressed(closeFailure);
+				}
+			}
+			throw failure;
+		}
 	}
 
 	/**
@@ -1446,7 +1527,8 @@ public class DefaultEvaluationStrategy implements EvaluationStrategy, FederatedS
 	protected QueryEvaluationStep prepare(UnaryTupleOperator expr, QueryEvaluationContext context)
 			throws QueryEvaluationException {
 		if (expr instanceof Graph graph) {
-			return GraphQueryEvaluationStep.supply(graph, this, tripleSource, context);
+			return GraphQueryEvaluationStep.supply(graph, this, tripleSource, context,
+					this::specializeGraphBodyRestriction);
 		} else if (expr instanceof Projection) {
 			return prepare((Projection) expr, context);
 		} else if (expr instanceof MultiProjection) {
@@ -1507,13 +1589,20 @@ public class DefaultEvaluationStrategy implements EvaluationStrategy, FederatedS
 
 	protected QueryEvaluationStep prepare(SingletonSet singletonSet, QueryEvaluationContext context)
 			throws QueryEvaluationException {
-		return SingletonIteration::new;
+		QueryEvaluationStep standard = SingletonIteration::new;
+		return RestrictionCompiler.enabled(this, context)
+				? RestrictionCompiler.attach(standard,
+						RestrictionCompiler.rows("singleton/original-row", singletonSet, context, standard))
+				: standard;
 
 	}
 
 	protected QueryEvaluationStep prepare(EmptySet emptySet, QueryEvaluationContext context)
 			throws QueryEvaluationException {
-		return bindings -> QueryEvaluationStep.EMPTY_ITERATION;
+		return RestrictionCompiler.enabled(this, context)
+				? RestrictionCompiler.attach(QueryEvaluationStep.EMPTY,
+						RestrictionCompiler.rows("empty/no-rows", emptySet, context, QueryEvaluationStep.EMPTY))
+				: QueryEvaluationStep.EMPTY;
 	}
 
 	@Override
@@ -2584,7 +2673,6 @@ public class DefaultEvaluationStrategy implements EvaluationStrategy, FederatedS
 
 		CloseableIteration<BindingSet> iterator;
 		QueryModelNode queryModelNode;
-		long elapsedNanos;
 		long openedAtNanos;
 		boolean firstRowSeen;
 
@@ -2606,7 +2694,7 @@ public class DefaultEvaluationStrategy implements EvaluationStrategy, FederatedS
 				return iterator.next();
 			} finally {
 				long elapsed = System.nanoTime() - started;
-				elapsedNanos += elapsed;
+				recordPullTime(elapsed);
 				queryModelNode.setNextCallCountActual(queryModelNode.getNextCallCountActual() + 1);
 				queryModelNode.setNextTimeNanosActual(queryModelNode.getNextTimeNanosActual() + elapsed);
 				if (!firstRowSeen && telemetryActive(queryModelNode)) {
@@ -2627,7 +2715,7 @@ public class DefaultEvaluationStrategy implements EvaluationStrategy, FederatedS
 				return hasNext;
 			} finally {
 				long elapsed = System.nanoTime() - started;
-				elapsedNanos += elapsed;
+				recordPullTime(elapsed);
 				queryModelNode.setHasNextCallCountActual(queryModelNode.getHasNextCallCountActual() + 1);
 				queryModelNode.setHasNextTimeNanosActual(queryModelNode.getHasNextTimeNanosActual() + elapsed);
 				if (hasNext) {
@@ -2636,11 +2724,15 @@ public class DefaultEvaluationStrategy implements EvaluationStrategy, FederatedS
 			}
 		}
 
+		private void recordPullTime(long elapsed) {
+			// An exhausted or interrupted pull can close this wrapper before it finishes.
+			// Publish each completed pull here rather than flushing only on close.
+			queryModelNode.setTotalTimeNanosActual(queryModelNode.getTotalTimeNanosActual() + elapsed);
+		}
+
 		@Override
 		protected void handleClose() throws QueryEvaluationException {
 			try {
-				long totalTimeNanosActual = queryModelNode.getTotalTimeNanosActual();
-				queryModelNode.setTotalTimeNanosActual(totalTimeNanosActual + elapsedNanos);
 				if (telemetryActive(queryModelNode)) {
 					incrementLongMetric(queryModelNode, TelemetryMetricNames.CLOSE_COUNT_ACTUAL);
 					queryModelNode.setLongMetricActual(TelemetryMetricNames.LAST_ROW_TIME_NANOS_ACTUAL,

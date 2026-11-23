@@ -19,15 +19,19 @@ import java.util.ArrayList;
 import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.CancellationException;
 import java.util.concurrent.ConcurrentHashMap;
 
 import org.eclipse.rdf4j.common.annotation.Experimental;
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
+import org.eclipse.rdf4j.http.client.QueryExecutionContext;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.query.BindingSet;
+import org.eclipse.rdf4j.query.QueryEvaluationException;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryBindingSet;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryEvaluationStep;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.QueryEvaluationContext;
+import org.eclipse.rdf4j.sail.lmdb.evaluation.codegen.KernelQueryCancelledException;
 
 /**
  * A generic <em>island</em> (M-A1b): a {@link SlotPlan} leaf that executes an algebra subtree the native compiler does
@@ -75,10 +79,18 @@ final class GenericEvalPlan implements SlotPlan {
 	final long producedMask;
 	final LmdbNativeEvaluationStrategy strategy;
 	final QueryEvaluationContext compileContext;
+	private final boolean serviceJoinOperand;
 
 	GenericEvalPlan(GenericSubplanDescriptor descriptor, String nodeName, int[] outSlots, String[] outNames,
 			java.util.Set<String> varNames, LmdbNativeEvaluationStrategy strategy,
 			QueryEvaluationContext compileContext) {
+		this(descriptor, nodeName, outSlots, outNames, varNames, strategy, compileContext, false);
+	}
+
+	GenericEvalPlan(GenericSubplanDescriptor descriptor, String nodeName, int[] outSlots, String[] outNames,
+			java.util.Set<String> varNames, LmdbNativeEvaluationStrategy strategy,
+			QueryEvaluationContext compileContext,
+			boolean serviceJoinOperand) {
 		this.descriptor = descriptor;
 		this.nodeName = nodeName;
 		this.outSlots = outSlots;
@@ -91,6 +103,7 @@ final class GenericEvalPlan implements SlotPlan {
 		this.producedMask = mask;
 		this.strategy = strategy;
 		this.compileContext = compileContext;
+		this.serviceJoinOperand = serviceJoinOperand;
 	}
 
 	@Override
@@ -113,7 +126,11 @@ final class GenericEvalPlan implements SlotPlan {
 		if (descriptor.mappingParameterized()) {
 			// Correlated per-input evaluation IS the defined semantics of paths/SERVICE/LATERAL/TripleRef/tuple
 			// functions: never reroute through buffered replay, even when the open looks uncorrelated.
-			return new IslandCursor(this, row, prepared.evaluate(input, row.source), null);
+			try {
+				return new IslandCursor(this, row, prepared.evaluate(input, row.source), null);
+			} catch (RuntimeException failure) {
+				throw normalizeServiceFailure(failure);
+			}
 		}
 		boolean correlated = correlated(row);
 		String forced = System.getProperty(FORCE_REUSE_MODE);
@@ -137,6 +154,16 @@ final class GenericEvalPlan implements SlotPlan {
 			}
 		}
 		return new IslandCursor(this, row, prepared.evaluate(input, row.source), null);
+	}
+
+	RuntimeException normalizeServiceFailure(RuntimeException failure) {
+		// Only a direct SERVICE join operand bypasses the ordinary ServiceJoinIterator's exception conversion.
+		if (serviceJoinOperand && !(failure instanceof QueryEvaluationException)
+				&& !(failure instanceof KernelQueryCancelledException) && !(failure instanceof CancellationException)
+				&& !QueryExecutionContext.isReplaySafepointFailure(failure)) {
+			return new QueryEvaluationException(failure);
+		}
+		return failure;
 	}
 
 	/**
@@ -431,11 +458,15 @@ final class IslandCursor implements RowCursor {
 			pending = buffered.next();
 			return true;
 		}
-		if (!generic.hasNext()) {
-			return false;
+		try {
+			if (!generic.hasNext()) {
+				return false;
+			}
+			pending = generic.next();
+			return true;
+		} catch (RuntimeException failure) {
+			throw plan.normalizeServiceFailure(failure);
 		}
-		pending = generic.next();
-		return true;
 	}
 
 	private BindingSet current() {
@@ -472,20 +503,25 @@ final class IslandCursor implements RowCursor {
  * (empty-join elimination, MINUS without shared names) when {@code QueryEvaluationUtility.canDiscardWithoutEvaluation}
  * says the generic engine would have evaluated it. The guarded plan is drained — evaluated to exhaustion with its rows
  * discarded and the slot row restored — lazily: either before the delegate's first row is attempted (the discarded
- * operand precedes the delegate in generic evaluation order) or after the delegate produced its first row (the
- * discarded operand is only evaluated once the delegate is non-empty, e.g. a MINUS right side). A consumer that never
- * pulls never drains, matching generic laziness.
+ * operand precedes the delegate in generic evaluation order), after a first row, or after a first pull produces no rows
+ * (a fixed SERVICE with an empty join driver). A consumer that never pulls never drains, matching generic laziness.
  */
 @Experimental
 final class DrainGuardPlan implements SlotPlan {
+	enum Trigger {
+		BEFORE_FIRST_PULL,
+		AFTER_FIRST_ROW,
+		ON_EMPTY
+	}
+
 	final SlotPlan delegate;
 	final SlotPlan drained;
-	final boolean drainBeforeDelegate;
+	final Trigger trigger;
 
-	DrainGuardPlan(SlotPlan delegate, SlotPlan drained, boolean drainBeforeDelegate) {
+	DrainGuardPlan(SlotPlan delegate, SlotPlan drained, Trigger trigger) {
 		this.delegate = delegate;
 		this.drained = drained;
-		this.drainBeforeDelegate = drainBeforeDelegate;
+		this.trigger = trigger;
 	}
 
 	@Override
@@ -494,23 +530,47 @@ final class DrainGuardPlan implements SlotPlan {
 	}
 
 	@Override
+	public double estimateRows(RowState row, long boundMask) {
+		return delegate.estimateRows(row, boundMask);
+	}
+
+	@Override
 	public RowCursor open(RowState row) throws IOException {
+		int entryMark = row.mark();
 		RowCursor delegateCursor = delegate.open(row);
-		return new RowCursor() {
-			private boolean drainedOnce;
+		return new FactorizedRowCursor() {
+			private boolean first = true;
 
 			@Override
 			public boolean next() throws IOException {
-				if (drainBeforeDelegate && !drainedOnce) {
-					drainedOnce = true;
+				if (!first) {
+					return delegateCursor.next();
+				}
+				first = false;
+				if (row.cancellation.isCancellationRequested()) {
+					return false;
+				}
+				if (trigger == Trigger.BEFORE_FIRST_PULL) {
 					drain(row);
 				}
 				boolean result = delegateCursor.next();
-				if (result && !drainBeforeDelegate && !drainedOnce) {
-					drainedOnce = true;
+				if (trigger == Trigger.AFTER_FIRST_ROW && result) {
+					drain(row);
+				} else if (trigger == Trigger.ON_EMPTY && !result && !row.cancellation.isCancellationRequested()) {
+					row.rollback(entryMark);
 					drain(row);
 				}
 				return result;
+			}
+
+			@Override
+			public long multiplicity() {
+				return delegateCursor instanceof FactorizedRowCursor weighted ? weighted.multiplicity() : 1L;
+			}
+
+			@Override
+			public NativeExpressionDomainPolicy.Input expressionInput() {
+				return delegateCursor.expressionInput();
 			}
 
 			@Override
@@ -523,7 +583,7 @@ final class DrainGuardPlan implements SlotPlan {
 	void drain(RowState row) throws IOException {
 		int mark = row.mark();
 		try (RowCursor cursor = drained.open(row)) {
-			while (cursor.next()) {
+			while (row.advance(cursor)) {
 				// discard: only effects (query-fatal errors) matter
 			}
 		} finally {
@@ -533,6 +593,6 @@ final class DrainGuardPlan implements SlotPlan {
 
 	@Override
 	public String toString() {
-		return "DrainGuard(delegate=" + delegate + ", drained=" + drained + ")";
+		return "DrainGuard(trigger=" + trigger + ", delegate=" + delegate + ", drained=" + drained + ")";
 	}
 }

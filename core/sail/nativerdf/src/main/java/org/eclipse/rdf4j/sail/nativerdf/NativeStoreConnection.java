@@ -16,8 +16,13 @@ import org.eclipse.rdf4j.common.transaction.IsolationLevels;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.Value;
+import org.eclipse.rdf4j.query.QueryExecutionPolicy.GraphJoinOptimization;
+import org.eclipse.rdf4j.query.algebra.TupleExpr;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.GraphScopeOptimizer;
 import org.eclipse.rdf4j.sail.SailException;
 import org.eclipse.rdf4j.sail.SailReadOnlyException;
+import org.eclipse.rdf4j.sail.base.PinnedStatementSailDataset;
+import org.eclipse.rdf4j.sail.base.SailDataset;
 import org.eclipse.rdf4j.sail.base.SailSourceConnection;
 import org.eclipse.rdf4j.sail.features.ThreadSafetyAware;
 import org.eclipse.rdf4j.sail.helpers.DefaultSailChangedEvent;
@@ -54,6 +59,31 @@ public class NativeStoreConnection extends SailSourceConnection implements Threa
 		super(sail, sail.getSailStore(), sail.getEvaluationStrategyFactory());
 		this.nativeStore = sail;
 		sailChangedEvent = new DefaultSailChangedEvent(sail);
+	}
+
+	@Override
+	protected SailDataset acquireQueryDataset(TupleExpr expression, boolean includeInferred) {
+		GraphJoinOptimization mode = nativeStore.getQueryExecutionPolicy().graphJoinOptimization();
+		boolean inIsolatedTransaction = isActive() && !IsolationLevels.NONE.isCompatibleWith(getTransactionIsolation());
+		// Standalone reads on writable stores keep ordinary writer admission, including for NONE transactions.
+		if ((mode == GraphJoinOptimization.AUTO || mode == GraphJoinOptimization.REQUIRE_RESTRICTED)
+				&& (inIsolatedTransaction || !nativeStore.isWritable())
+				&& GraphScopeOptimizer.hasRestrictionJoin(expression)) {
+			Lock lease = nativeStore.tryPinIsolatedQuery();
+			if (lease != null) {
+				SailDataset dataset;
+				try {
+					dataset = super.acquireQueryDataset(expression, includeInferred);
+				} catch (RuntimeException | Error failure) {
+					lease.release();
+					throw failure;
+				}
+				// The SnapshotSailStore reader defers publication to these indexes. The additional mode lease
+				// excludes IsolationLevels.NONE writers which would otherwise bypass the snapshot branches.
+				return PinnedStatementSailDataset.own(dataset, NativeSailStore.NativeSailDataset.class, lease::release);
+			}
+		}
+		return super.acquireQueryDataset(expression, includeInferred);
 	}
 
 	/*---------*

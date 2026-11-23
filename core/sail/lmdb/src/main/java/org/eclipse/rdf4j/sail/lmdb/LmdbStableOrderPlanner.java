@@ -28,9 +28,11 @@ import org.eclipse.rdf4j.query.algebra.Filter;
 import org.eclipse.rdf4j.query.algebra.Join;
 import org.eclipse.rdf4j.query.algebra.LeftJoin;
 import org.eclipse.rdf4j.query.algebra.MultiProjection;
+import org.eclipse.rdf4j.query.algebra.Order;
 import org.eclipse.rdf4j.query.algebra.Projection;
 import org.eclipse.rdf4j.query.algebra.ProjectionElem;
 import org.eclipse.rdf4j.query.algebra.ProjectionElemList;
+import org.eclipse.rdf4j.query.algebra.QueryModelNode;
 import org.eclipse.rdf4j.query.algebra.QueryRoot;
 import org.eclipse.rdf4j.query.algebra.Reduced;
 import org.eclipse.rdf4j.query.algebra.Service;
@@ -41,6 +43,8 @@ import org.eclipse.rdf4j.query.algebra.UnaryTupleOperator;
 import org.eclipse.rdf4j.query.algebra.Union;
 import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.query.algebra.evaluation.TripleSource;
+import org.eclipse.rdf4j.query.algebra.evaluation.impl.evaluationsteps.JoinQueryEvaluationStep;
+import org.eclipse.rdf4j.query.algebra.evaluation.impl.evaluationsteps.OrderedEvaluation;
 import org.eclipse.rdf4j.query.algebra.helpers.TupleExprs;
 
 @Experimental
@@ -71,7 +75,7 @@ public final class LmdbStableOrderPlanner {
 			if (candidate == null) {
 				continue;
 			}
-			candidate = candidate.withAssured(assuredBindingNames.contains(bindingName));
+			candidate = candidate.withPlannedInput(tupleExpr, assuredBindingNames.contains(bindingName));
 			if (best == null || RESOLUTION_COMPARATOR.compare(candidate, best) < 0) {
 				best = candidate;
 			}
@@ -85,7 +89,8 @@ public final class LmdbStableOrderPlanner {
 		if (resolution == null) {
 			return Optional.empty();
 		}
-		return Optional.of(resolution.withAssured(tupleExpr.getAssuredBindingNames().contains(visibleBindingName)));
+		return Optional.of(resolution.withPlannedInput(tupleExpr,
+				tupleExpr.getAssuredBindingNames().contains(visibleBindingName)));
 	}
 
 	private Resolution resolve(TupleExpr tupleExpr, String requestedName, String visibleBindingName) {
@@ -116,7 +121,10 @@ public final class LmdbStableOrderPlanner {
 			return resolve((Join) tupleExpr, requestedName, visibleBindingName);
 		}
 		if (tupleExpr instanceof LeftJoin) {
-			return resolve(((LeftJoin) tupleExpr).getLeftArg(), requestedName, visibleBindingName);
+			TupleExpr left = ((LeftJoin) tupleExpr).getLeftArg();
+			return left.getAssuredBindingNames().contains(requestedName)
+					? resolve(left, requestedName, visibleBindingName)
+					: null;
 		}
 		if (tupleExpr instanceof StatementPattern) {
 			return resolve((StatementPattern) tupleExpr, requestedName, visibleBindingName);
@@ -129,32 +137,40 @@ public final class LmdbStableOrderPlanner {
 	}
 
 	private Resolution resolve(Join join, String requestedName, String visibleBindingName) {
-		Resolution left = resolve(join.getLeftArg(), requestedName, visibleBindingName);
-		if (left != null && canUseJoinIterator(join.getRightArg())) {
-			return left.withJoinDirective(new JoinDirective(join, join.getLeftArg(), false));
+		TupleExpr leftArg = join.getLeftArg();
+		TupleExpr rightArg = join.getRightArg();
+		Resolution left = resolve(leftArg, requestedName, visibleBindingName);
+		if (left != null && canDriveJoin(leftArg, rightArg, requestedName)) {
+			return left.withJoinDirective(new JoinDirective(join, leftArg));
 		}
 
-		Resolution right = resolve(join.getRightArg(), requestedName, visibleBindingName);
-		if (right != null && canUseJoinIterator(join.getLeftArg())) {
-			return right.withJoinDirective(new JoinDirective(join, join.getRightArg(), true));
+		Resolution right = resolve(rightArg, requestedName, visibleBindingName);
+		if (right != null && canDriveJoin(rightArg, leftArg, requestedName)) {
+			return right.withJoinDirective(new JoinDirective(join, rightArg));
 		}
 
 		return null;
 	}
 
 	private Resolution resolve(StatementPattern statementPattern, String requestedName, String visibleBindingName) {
+		Var context = statementPattern.getContextVar();
+		if (context != null && requestedName.equals(context.getName())
+				&& statementPattern.getScope() != StatementPattern.Scope.NAMED_CONTEXTS) {
+			return null;
+		}
 		for (Var supportedOrder : statementPattern.getSupportedOrders(tripleSource)) {
 			if (requestedName.equals(supportedOrder.getName())) {
 				return new Resolution(visibleBindingName, statementPattern, supportedOrder, Collections.emptyList(),
-						false);
+						statementPattern, false);
 			}
 		}
 		return null;
 	}
 
-	private boolean canUseJoinIterator(TupleExpr rightArg) {
-		return !(rightArg instanceof Service) && !TupleExprs.isVariableScopeChange(rightArg)
-				&& !TupleExprs.containsSubquery(rightArg) && !TupleExprs.containsExtension(rightArg);
+	private boolean canDriveJoin(TupleExpr ordered, TupleExpr other, String requestedName) {
+		// If the probe can supply the key on an unbound driver row, the scan's key order does not order the result.
+		return ordered.getAssuredBindingNames().contains(requestedName) && !TupleExprs.containsExtension(other)
+				&& JoinQueryEvaluationStep.supportsOrderedLeft(ordered, other);
 	}
 
 	private String mapProjection(ProjectionElemList projectionElemList, String requestedName) {
@@ -223,14 +239,16 @@ public final class LmdbStableOrderPlanner {
 		private final StatementPattern statementPattern;
 		private final Var anchorVar;
 		private final List<JoinDirective> joinDirectives;
+		private final TupleExpr plannedInput;
 		private final boolean assured;
 
 		private Resolution(String visibleBindingName, StatementPattern statementPattern, Var anchorVar,
-				List<JoinDirective> joinDirectives, boolean assured) {
+				List<JoinDirective> joinDirectives, TupleExpr plannedInput, boolean assured) {
 			this.visibleBindingName = visibleBindingName;
 			this.statementPattern = statementPattern;
 			this.anchorVar = anchorVar;
 			this.joinDirectives = joinDirectives;
+			this.plannedInput = plannedInput;
 			this.assured = assured;
 		}
 
@@ -261,19 +279,41 @@ public final class LmdbStableOrderPlanner {
 			return 2;
 		}
 
+		/** Applies the index order only through the partitioned consumer's input. */
 		@InternalUseOnly
 		public void apply() {
+			applyThrough(plannedInput);
+		}
+
+		private void applyThrough(TupleExpr input) {
 			for (JoinDirective joinDirective : joinDirectives) {
 				joinDirective.apply();
 			}
 			statementPattern.setOrder(anchorVar);
+			// A native plan spanning the anchor could select a different driver or regroup its output. Keep that
+			// pipeline on the proven standard route while keeping the ordered native scan eligible.
+			for (QueryModelNode node = statementPattern; node != input; node = node.getParentNode()) {
+				OrderedEvaluation.require((TupleExpr) node.getParentNode());
+			}
 		}
 
-		private Resolution withAssured(boolean assured) {
-			if (this.assured == assured) {
+		/** An explicit order also reaches its enclosing sequence modifiers, including OFFSET and LIMIT. */
+		void applyForOrder(Order order) {
+			TupleExpr consumer = order;
+			while (consumer.getParentNode() instanceof TupleExpr parent && (parent instanceof QueryRoot
+					|| parent instanceof Projection || parent instanceof MultiProjection || parent instanceof Extension
+					|| parent instanceof Filter || parent instanceof Slice || parent instanceof Distinct
+					|| parent instanceof Reduced)) {
+				consumer = parent;
+			}
+			applyThrough(consumer);
+		}
+
+		private Resolution withPlannedInput(TupleExpr input, boolean assured) {
+			if (plannedInput == input && this.assured == assured) {
 				return this;
 			}
-			return new Resolution(visibleBindingName, statementPattern, anchorVar, joinDirectives, assured);
+			return new Resolution(visibleBindingName, statementPattern, anchorVar, joinDirectives, input, assured);
 		}
 
 		private Resolution withJoinDirective(JoinDirective joinDirective) {
@@ -282,7 +322,7 @@ public final class LmdbStableOrderPlanner {
 			updated.add(joinDirective);
 			return new Resolution(visibleBindingName, statementPattern, anchorVar,
 					Collections.unmodifiableList(updated),
-					assured);
+					plannedInput, assured);
 		}
 
 		private boolean matches(Var candidate) {
@@ -293,16 +333,14 @@ public final class LmdbStableOrderPlanner {
 	private static final class JoinDirective {
 		private final Join join;
 		private final TupleExpr orderedArg;
-		private final boolean swap;
 
-		private JoinDirective(Join join, TupleExpr orderedArg, boolean swap) {
+		private JoinDirective(Join join, TupleExpr orderedArg) {
 			this.join = join;
 			this.orderedArg = orderedArg;
-			this.swap = swap;
 		}
 
 		private void apply() {
-			if (swap && join.getRightArg() == orderedArg) {
+			if (join.getRightArg() == orderedArg) {
 				TupleExpr oldLeft = join.getLeftArg();
 				join.setLeftArg(join.getRightArg());
 				join.setRightArg(oldLeft);

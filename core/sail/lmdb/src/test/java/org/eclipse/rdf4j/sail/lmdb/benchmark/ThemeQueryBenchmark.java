@@ -216,14 +216,21 @@ public class ThemeQueryBenchmark {
 	private final Map<String, String> previousIrProperties = new LinkedHashMap<>();
 	private final File benchmarkStoreDirectory;
 	private final DatasetLoader datasetLoader;
+	private final boolean forceGcAfterLoad;
 
 	public ThemeQueryBenchmark() {
-		this(new File(STORE_DIRECTORY, "complete"), ThemeQueryBenchmark::loadAllThemeDatasets);
+		this(new File(STORE_DIRECTORY, "complete"), ThemeQueryBenchmark::loadAllThemeDatasets, true);
 	}
 
+	/** Creates a small test fixture without forcing a full collection after every dataset rebuild. */
 	ThemeQueryBenchmark(File benchmarkStoreDirectory, DatasetLoader datasetLoader) {
+		this(benchmarkStoreDirectory, datasetLoader, false);
+	}
+
+	private ThemeQueryBenchmark(File benchmarkStoreDirectory, DatasetLoader datasetLoader, boolean forceGcAfterLoad) {
 		this.benchmarkStoreDirectory = benchmarkStoreDirectory;
 		this.datasetLoader = datasetLoader;
+		this.forceGcAfterLoad = forceGcAfterLoad;
 	}
 
 	@FunctionalInterface
@@ -558,7 +565,9 @@ public class ThemeQueryBenchmark {
 		repository = null;
 		store = null;
 
-		System.gc();
+		if (forceGcAfterLoad) {
+			System.gc();
+		}
 
 		store = new LmdbStore(storeDirectory, storeConfig);
 		store.setExperimentalQueryOptimizations(waitForSketchesEnabled());

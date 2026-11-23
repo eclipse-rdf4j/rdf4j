@@ -16,6 +16,7 @@ import static org.junit.Assert.assertEquals;
 
 import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
+import java.util.Arrays;
 import java.util.SplittableRandom;
 
 import org.junit.jupiter.api.Test;
@@ -82,9 +83,11 @@ public class VarintTest {
 
 	@Test
 	public void testVarintSequential() {
+		ByteBuffer bb = ByteBuffer.allocate(9).order(ByteOrder.nativeOrder());
 		for (long i = 0; i < 99999999; i++) {
-			ByteBuffer bb = ByteBuffer.allocate(9).order(ByteOrder.nativeOrder());
+			Arrays.fill(bb.array(), (byte) 0);
 			bb.clear();
+			bb.order(ByteOrder.nativeOrder());
 			Varint.writeUnsigned(bb, i);
 			bb.flip();
 			try {
@@ -97,8 +100,9 @@ public class VarintTest {
 
 		for (long i = 99999999; i < 999999999999999L; i += 10000000) {
 			try {
-				ByteBuffer bb = ByteBuffer.allocate(9).order(ByteOrder.nativeOrder());
+				Arrays.fill(bb.array(), (byte) 0);
 				bb.clear();
+				bb.order(ByteOrder.nativeOrder());
 				Varint.writeUnsigned(bb, i);
 				bb.flip();
 
@@ -110,8 +114,9 @@ public class VarintTest {
 		}
 
 		for (long i = Long.MAX_VALUE; i > Long.MAX_VALUE - 999999L; i -= 1) {
-			ByteBuffer bb = ByteBuffer.allocate(9).order(ByteOrder.nativeOrder());
+			Arrays.fill(bb.array(), (byte) 0);
 			bb.clear();
+			bb.order(ByteOrder.nativeOrder());
 			Varint.writeUnsigned(bb, i);
 			bb.flip();
 			try {

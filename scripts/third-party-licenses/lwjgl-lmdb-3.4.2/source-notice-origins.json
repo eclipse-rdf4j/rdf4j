@@ -1,0 +1,120 @@
+{
+  "sourceArchive": "https://repo.maven.apache.org/maven2/org/lwjgl/lwjgl-lmdb/3.4.2/lwjgl-lmdb-3.4.2-sources.jar",
+  "archiveSha256": "7a1c16a9dbf447d7e7c9cf5be94a7b5aecde4bf46beed612068f9e978e974a3f",
+  "blocks": [
+    {
+      "commentSha256": "e647707adf87b2474c6748bdc6f1268535cde1a3feb455c166536a5d9ed6b9df",
+      "sources": [
+        {
+          "entry": "META-INF/versions/11/module-info.java",
+          "sourceSha256": "dab923451420a28df06e92550a8fd36f20d1b086068e84a4d38b49a25e7f43e0",
+          "startByte": 0,
+          "endByteExclusive": 95,
+          "startLine": 1,
+          "endLine": 4
+        }
+      ]
+    },
+    {
+      "commentSha256": "3ce7cb3bbcec66f9f734d5a81e1b0f042f35bc4ed30e448aa1d1dff06f89883f",
+      "sources": [
+        {
+          "entry": "org/lwjgl/util/lmdb/LMDB.java",
+          "sourceSha256": "4e07b3ed86378408a764730685caeaf0771e553090b65232aae55abd8af5f0c3",
+          "startByte": 0,
+          "endByteExclusive": 134,
+          "startLine": 1,
+          "endLine": 5
+        },
+        {
+          "entry": "org/lwjgl/util/lmdb/LibLMDB.java",
+          "sourceSha256": "9147ee555b3c74a60f468bc56aa9f85bc518258bb94063fed5f2c2813f2773dc",
+          "startByte": 0,
+          "endByteExclusive": 134,
+          "startLine": 1,
+          "endLine": 5
+        },
+        {
+          "entry": "org/lwjgl/util/lmdb/MDBCmpFunc.java",
+          "sourceSha256": "ac7f24daff97b251ca3f74bc5549e7740d2e4613c7a74b068c8b91dcfdfa3356",
+          "startByte": 0,
+          "endByteExclusive": 134,
+          "startLine": 1,
+          "endLine": 5
+        },
+        {
+          "entry": "org/lwjgl/util/lmdb/MDBCmpFuncI.java",
+          "sourceSha256": "cda71c046de846e8b1af7cab005e88388db2aac3584862ef4cbd322bf8688168",
+          "startByte": 0,
+          "endByteExclusive": 134,
+          "startLine": 1,
+          "endLine": 5
+        },
+        {
+          "entry": "org/lwjgl/util/lmdb/MDBEnvInfo.java",
+          "sourceSha256": "b05bda61e4f1b35b2ad751f35f934f340acb79988ffa40312b8a3853179a88e3",
+          "startByte": 0,
+          "endByteExclusive": 134,
+          "startLine": 1,
+          "endLine": 5
+        },
+        {
+          "entry": "org/lwjgl/util/lmdb/MDBMsgFunc.java",
+          "sourceSha256": "b41c571dc11bd40d96e2afdd68fd5fdfb7ef735e2594f387c03dc001f76a86b5",
+          "startByte": 0,
+          "endByteExclusive": 134,
+          "startLine": 1,
+          "endLine": 5
+        },
+        {
+          "entry": "org/lwjgl/util/lmdb/MDBMsgFuncI.java",
+          "sourceSha256": "37728f528d49a41c847f5afaaa80789064733eb618d73534f2072024d7e14c28",
+          "startByte": 0,
+          "endByteExclusive": 134,
+          "startLine": 1,
+          "endLine": 5
+        },
+        {
+          "entry": "org/lwjgl/util/lmdb/MDBRelFunc.java",
+          "sourceSha256": "107858b1526450f2cdbd3f4b07d492ad9291806a28b5a6a8e7c2a12dd491e95d",
+          "startByte": 0,
+          "endByteExclusive": 134,
+          "startLine": 1,
+          "endLine": 5
+        },
+        {
+          "entry": "org/lwjgl/util/lmdb/MDBRelFuncI.java",
+          "sourceSha256": "7c17e807d9afcf59c203ae15dc33c5c4a6e243542206fc2bc699d0a3882b46fd",
+          "startByte": 0,
+          "endByteExclusive": 134,
+          "startLine": 1,
+          "endLine": 5
+        },
+        {
+          "entry": "org/lwjgl/util/lmdb/MDBStat.java",
+          "sourceSha256": "d2996d3c0d46f90dbf3ca17b890e893ad92e8ce0e3e0cc7a4d1c776388ef8e72",
+          "startByte": 0,
+          "endByteExclusive": 134,
+          "startLine": 1,
+          "endLine": 5
+        },
+        {
+          "entry": "org/lwjgl/util/lmdb/MDBVal.java",
+          "sourceSha256": "220bebb2664f35ea0a1b695f49613afbc7e4934d9f7736958b71647f09929918",
+          "startByte": 0,
+          "endByteExclusive": 134,
+          "startLine": 1,
+          "endLine": 5
+        },
+        {
+          "entry": "org/lwjgl/util/lmdb/package-info.java",
+          "sourceSha256": "60de0a15b6bee59f3bf5785467ae9d8a22972aaf8c897d7b80aa9d2fc97676ec",
+          "startByte": 0,
+          "endByteExclusive": 134,
+          "startLine": 1,
+          "endLine": 5
+        }
+      ]
+    }
+  ]
+}

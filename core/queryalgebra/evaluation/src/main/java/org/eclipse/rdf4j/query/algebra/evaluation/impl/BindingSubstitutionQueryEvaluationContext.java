@@ -45,6 +45,11 @@ final class BindingSubstitutionQueryEvaluationContext implements QueryEvaluation
 	}
 
 	@Override
+	public Set<String> getCorrelatedPathBindingNames() {
+		return substitutionBindingNames;
+	}
+
+	@Override
 	public ActiveGraph getActiveGraph() {
 		return delegate.getActiveGraph();
 	}
@@ -72,6 +77,11 @@ final class BindingSubstitutionQueryEvaluationContext implements QueryEvaluation
 	@Override
 	public Comparator<Value> getComparator() {
 		return delegate.getComparator();
+	}
+
+	@Override
+	public Object getExecutionIdentity() {
+		return delegate.getExecutionIdentity();
 	}
 
 	@Override

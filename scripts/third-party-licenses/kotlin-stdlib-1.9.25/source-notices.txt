@@ -1,0 +1,207 @@
+Source entries: jvmMain/kotlin/Annotation.kt#L1-L4, jvmMain/kotlin/Coroutines.kt#L1-L4, jvmMain/jdk8/kotlin/random/jdk8/PlatformThreadLocalRandom.kt#L1-L4, jvmMain/kotlin/collections/ArraysJVM.kt#L1-L4, jvmMain/kotlin/collections/ArraysUtilJVM.java#L1-L4, jvmMain/kotlin/collections/GroupingJVM.kt#L1-L4, jvmMain/kotlin/collections/IteratorsJVM.kt#L1-L4, jvmMain/kotlin/collections/SequencesJVM.kt#L1-L4, jvmMain/kotlin/collections/TypeAliases.kt#L1-L4, jvmMain/kotlin/concurrent/Thread.kt#L1-L4, jvmMain/kotlin/concurrent/Timer.kt#L1-L4, jvmMain/kotlin/coroutines/SafeContinuationJvm.kt#L1-L4, jvmMain/kotlin/coroutines/intrinsics/IntrinsicsJvm.kt#L1-L4, jvmMain/kotlin/coroutines/jvm/internal/ContinuationImpl.kt#L1-L4, jvmMain/kotlin/coroutines/jvm/internal/CoroutineStackFrame.kt#L1-L4, jvmMain/kotlin/coroutines/jvm/internal/DebugMetadata.kt#L1-L4, jvmMain/kotlin/coroutines/jvm/internal/DebugProbes.kt#L1-L4, jvmMain/kotlin/coroutines/jvm/internal/RunSuspend.kt#L1-L4, jvmMain/kotlin/coroutines/jvm/internal/boxing.kt#L1-L4, jvmMain/kotlin/io/Closeable.kt#L1-L4, jvmMain/kotlin/io/Console.kt#L1-L4, jvmMain/kotlin/io/Constants.kt#L1-L4, jvmMain/kotlin/io/Exceptions.kt#L1-L4, jvmMain/kotlin/io/FileReadWrite.kt#L1-L4, jvmMain/kotlin/io/IOStreams.kt#L1-L4, jvmMain/kotlin/io/ReadWrite.kt#L1-L4, jvmMain/kotlin/io/Serializable.kt#L1-L4, jvmMain/kotlin/io/files/FilePathComponents.kt#L1-L4, jvmMain/kotlin/io/files/FileTreeWalk.kt#L1-L4, jvmMain/kotlin/jvm/JvmDefault.kt#L1-L4, jvmMain/kotlin/jvm/internal/unsafe/monitor.kt#L1-L4, jvmMain/kotlin/random/PlatformRandom.kt#L1-L4, jvmMain/kotlin/reflect/KCallable.kt#L1-L4, jvmMain/kotlin/reflect/KFunction.kt#L1-L4, jvmMain/kotlin/system/Process.kt#L1-L4, jvmMain/kotlin/text/Charsets.kt#L1-L4, jvmMain/kotlin/text/StringBuilderJVM.kt#L1-L4, jvmMain/kotlin/text/StringNumberConversionsJVM.kt#L1-L4, jvmMain/kotlin/text/regex/RegexExtensionsJVM.kt#L1-L4, jvmMain/kotlin/util/AssertionsJVM.kt#L1-L4, jvmMain/kotlin/util/BigIntegers.kt#L1-L4, jvmMain/kotlin/util/LazyJVM.kt#L1-L4, jvmMain/kotlin/util/NumbersJVM.kt#L1-L4, jvmMain/kotlin/util/Synchronized.kt#L1-L4, jvmMain/kotlin/KotlinNullPointerException.kt#L1-L4, jvmMain/kotlin/Metadata.kt#L1-L4, jvmMain/kotlin/NoWhenBranchMatchedException.kt#L1-L4, jvmMain/kotlin/TypeAliases.kt#L1-L4, jvmMain/kotlin/TypeCastException.kt#L1-L4, jvmMain/kotlin/UninitializedPropertyAccessException.kt#L1-L4, jvmMain/kotlin/jvm/KotlinReflectionNotSupportedError.kt#L1-L4, jvmMain/kotlin/jvm/PurelyImplements.kt#L1-L4, jvmMain/kotlin/jvm/annotations/JvmFlagAnnotations.kt#L1-L4, jvmMain/kotlin/jvm/annotations/JvmPlatformAnnotations.kt#L1-L4, jvmMain/kotlin/jvm/functions/FunctionN.kt#L1-L4, jvmMain/kotlin/jvm/internal/ArrayIterator.kt#L1-L4, jvmMain/kotlin/jvm/internal/CallableReference.java#L1-L4, jvmMain/kotlin/jvm/internal/ClassBasedDeclarationContainer.kt#L1-L4, jvmMain/kotlin/jvm/internal/ClassReference.kt#L1-L4, jvmMain/kotlin/jvm/internal/CollectionToArray.kt#L1-L4, jvmMain/kotlin/jvm/internal/DefaultConstructorMarker.java#L1-L4, jvmMain/kotlin/jvm/internal/FunctionBase.kt#L1-L4, jvmMain/kotlin/jvm/internal/FunctionImpl.java#L1-L4, jvmMain/kotlin/jvm/internal/FunctionReference.java#L1-L4, jvmMain/kotlin/jvm/internal/FunctionReferenceImpl.java#L1-L4, jvmMain/kotlin/jvm/internal/InlineMarker.java#L1-L4, jvmMain/kotlin/jvm/internal/Intrinsics.java#L1-L4, jvmMain/kotlin/jvm/internal/Lambda.kt#L1-L4, jvmMain/kotlin/jvm/internal/MagicApiIntrinsics.java#L1-L4, jvmMain/kotlin/jvm/internal/MutablePropertyReference.java#L1-L4, jvmMain/kotlin/jvm/internal/MutablePropertyReference0.java#L1-L4, jvmMain/kotlin/jvm/internal/MutablePropertyReference0Impl.java#L1-L4, jvmMain/kotlin/jvm/internal/MutablePropertyReference1.java#L1-L4, jvmMain/kotlin/jvm/internal/MutablePropertyReference1Impl.java#L1-L4, jvmMain/kotlin/jvm/internal/MutablePropertyReference2.java#L1-L4, jvmMain/kotlin/jvm/internal/MutablePropertyReference2Impl.java#L1-L4, jvmMain/kotlin/jvm/internal/PackageReference.kt#L1-L4, jvmMain/kotlin/jvm/internal/PrimitiveCompanionObjects.kt#L1-L4, jvmMain/kotlin/jvm/internal/PrimitiveSpreadBuilders.kt#L1-L4, jvmMain/kotlin/jvm/internal/PropertyReference.java#L1-L4, jvmMain/kotlin/jvm/internal/PropertyReference0.java#L1-L4, jvmMain/kotlin/jvm/internal/PropertyReference0Impl.java#L1-L4, jvmMain/kotlin/jvm/internal/PropertyReference1.java#L1-L4, jvmMain/kotlin/jvm/internal/PropertyReference1Impl.java#L1-L4, jvmMain/kotlin/jvm/internal/PropertyReference2.java#L1-L4, jvmMain/kotlin/jvm/internal/PropertyReference2Impl.java#L1-L4, jvmMain/kotlin/jvm/internal/Ref.java#L1-L4, jvmMain/kotlin/jvm/internal/Reflection.java#L1-L4, jvmMain/kotlin/jvm/internal/ReflectionFactory.java#L1-L4, jvmMain/kotlin/jvm/internal/SpreadBuilder.java#L1-L4, jvmMain/kotlin/jvm/internal/TypeIntrinsics.java#L1-L4, jvmMain/kotlin/jvm/internal/localVariableReferences.kt#L1-L4, jvmMain/kotlin/jvm/internal/markers/KMarkers.kt#L1-L4, jvmMain/kotlin/text/TypeAliases.kt#L1-L4, commonMain/kotlin/JsAnnotationsH.kt#L1-L4, commonMain/kotlin/SequencesH.kt#L1-L4, commonMain/kotlin/ioH.kt#L1-L4, commonMain/kotlin/collections/ArrayList.kt#L1-L4, commonMain/kotlin/collections/CollectionsH.kt#L1-L4, commonMain/kotlin/collections/HashMap.kt#L1-L4, commonMain/kotlin/collections/HashSet.kt#L1-L4, commonMain/kotlin/collections/LinkedHashMap.kt#L1-L4, commonMain/kotlin/collections/LinkedHashSet.kt#L1-L4, commonMain/kotlin/annotations/Multiplatform.kt#L1-L4, commonMain/kotlin/annotations/WasExperimental.kt#L1-L4, commonMain/kotlin/collections/AbstractIterator.kt#L1-L4, commonMain/kotlin/collections/Arrays.kt#L1-L4, commonMain/kotlin/collections/Grouping.kt#L1-L4, commonMain/kotlin/collections/IndexedValue.kt#L1-L4, commonMain/kotlin/collections/Iterables.kt#L1-L4, commonMain/kotlin/collections/Iterators.kt#L1-L4, commonMain/kotlin/collections/MapWithDefault.kt#L1-L4, commonMain/kotlin/collections/Sequence.kt#L1-L4, commonMain/kotlin/collections/SequenceBuilder.kt#L1-L4, commonMain/kotlin/collections/SlidingWindow.kt#L1-L4, commonMain/kotlin/contracts/ContractBuilder.kt#L1-L4, commonMain/kotlin/contracts/Effect.kt#L1-L4, commonMain/kotlin/coroutines/ContinuationInterceptor.kt#L1-L4, commonMain/kotlin/coroutines/CoroutineContext.kt#L1-L4, commonMain/kotlin/coroutines/CoroutinesH.kt#L1-L4, commonMain/kotlin/coroutines/CoroutinesIntrinsicsH.kt#L1-L4, commonMain/kotlin/experimental/bitwiseOperations.kt#L1-L4, commonMain/kotlin/experimental/inferenceMarker.kt#L1-L4, commonMain/kotlin/internal/Annotations.kt#L1-L4, commonMain/kotlin/internal/progressionUtil.kt#L1-L4, commonMain/kotlin/properties/Delegates.kt#L1-L4, commonMain/kotlin/properties/ObservableProperty.kt#L1-L4, commonMain/kotlin/random/XorWowRandom.kt#L1-L4, commonMain/kotlin/ranges/Ranges.kt#L1-L4, commonMain/kotlin/reflect/KCallable.kt#L1-L4, commonMain/kotlin/reflect/KFunction.kt#L1-L4, commonMain/kotlin/reflect/KProperty.kt#L1-L4, commonMain/kotlin/text/Indent.kt#L1-L4, commonMain/kotlin/text/StringNumberConversions.kt#L1-L4, commonMain/kotlin/text/Typography.kt#L1-L4, commonMain/kotlin/text/regex/MatchResult.kt#L1-L4, commonMain/kotlin/text/regex/RegexExtensions.kt#L1-L4, commonMain/kotlin/util/HashCode.kt#L1-L4, commonMain/kotlin/util/Lateinit.kt#L1-L4, commonMain/kotlin/util/Lazy.kt#L1-L4, commonMain/kotlin/util/Preconditions.kt#L1-L4, commonMain/kotlin/util/Result.kt#L1-L4, commonMain/kotlin/util/Standard.kt#L1-L4, commonMain/kotlin/util/Suspend.kt#L1-L4, commonMain/kotlin/util/Tuples.kt#L1-L4, commonMain/kotlin/annotations/Unsigned.kt#L1-L4
+/*
+ * Copyright 2010-2018 JetBrains s.r.o. and Kotlin Programming Language contributors.
+ * Use of this source code is governed by the Apache 2.0 license that can be found in the license/LICENSE.txt file.
+ */
+
+Source entries: jvmMain/kotlin/Any.kt#L1-L15, jvmMain/kotlin/Boolean.kt#L1-L15, jvmMain/kotlin/CharSequence.kt#L1-L15, jvmMain/kotlin/Comparable.kt#L1-L15, jvmMain/kotlin/Iterator.kt#L1-L15, jvmMain/kotlin/Nothing.kt#L1-L15, jvmMain/kotlin/Number.kt#L1-L15, jvmMain/kotlin/Throwable.kt#L1-L15, jvmMain/kotlin/reflect/KDeclarationContainer.kt#L1-L15, jvmMain/kotlin/reflect/KParameter.kt#L1-L15, jvmMain/kotlin/Function.kt#L1-L15, jvmMain/kotlin/Unit.kt#L1-L15, jvmMain/kotlin/annotation/Annotations.kt#L1-L15
+/*
+ * Copyright 2010-2015 JetBrains s.r.o.
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ * http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
+Source entries: jvmMain/kotlin/Array.kt#L1-L4, jvmMain/kotlin/Enum.kt#L1-L4, jvmMain/kotlin/reflect/KAnnotatedElement.kt#L1-L4, jvmMain/kotlin/reflect/KClass.kt#L1-L4, jvmMain/kotlin/reflect/KClassesImpl.kt#L1-L4, jvmMain/kotlin/reflect/KProperty.kt#L1-L4, jvmMain/kotlin/reflect/KType.kt#L1-L4, jvmMain/kotlin/reflect/TypesJVM.kt#L1-L4, jvmMain/kotlin/jvm/internal/KTypeBase.kt#L1-L4, jvmMain/kotlin/jvm/internal/TypeReference.kt#L1-L4, jvmMain/kotlin/Annotations.kt#L1-L4, commonMain/kotlin/collections/ArrayDeque.kt#L1-L4, commonMain/kotlin/collections/UArraySorting.kt#L1-L4, commonMain/kotlin/ranges/Range.kt#L1-L4, commonMain/kotlin/reflect/KClasses.kt#L1-L4, commonMain/kotlin/reflect/KClassifier.kt#L1-L4, commonMain/kotlin/reflect/KTypeParameter.kt#L1-L4, commonMain/kotlin/reflect/KVariance.kt#L1-L4, commonMain/kotlin/reflect/typeOf.kt#L1-L4, commonMain/kotlin/text/Appendable.kt#L1-L4, commonMain/kotlin/text/CharacterCodingException.kt#L1-L4, commonMain/kotlin/time/ExperimentalTime.kt#L1-L4, commonMain/kotlin/util/Numbers.kt#L1-L4
+/*
+ * Copyright 2010-2019 JetBrains s.r.o. and Kotlin Programming Language contributors.
+ * Use of this source code is governed by the Apache 2.0 license that can be found in the license/LICENSE.txt file.
+ */
+
+Source entries: jvmMain/kotlin/Arrays.kt#L1-L4, jvmMain/kotlin/Primitives.kt#L1-L4, jvmMain/generated/_ArraysJvm.kt#L1-L4, jvmMain/generated/_CollectionsJvm.kt#L1-L4, jvmMain/generated/_ComparisonsJvm.kt#L1-L4, jvmMain/generated/_MapsJvm.kt#L1-L4, jvmMain/generated/_SequencesJvm.kt#L1-L4, jvmMain/generated/_StringsJvm.kt#L1-L4, jvmMain/generated/_UArraysJvm.kt#L1-L4, jvmMain/kotlin/collections/CollectionsJVM.kt#L1-L4, jvmMain/kotlin/collections/MapsJVM.kt#L1-L4, jvmMain/kotlin/collections/SetsJVM.kt#L1-L4, jvmMain/kotlin/enums/EnumEntriesJVM.kt#L1-L4, jvmMain/kotlin/internal/PlatformImplementations.kt#L1-L4, jvmMain/kotlin/io/encoding/Base64JVM.kt#L1-L4, jvmMain/kotlin/text/CharCategoryJVM.kt#L1-L4, jvmMain/kotlin/text/CharDirectionality.kt#L1-L4, jvmMain/kotlin/jvm/functions/Functions.kt#L1-L4, jvmMain/kotlin/jvm/internal/ArrayIterators.kt#L1-L4, commonMain/generated/_Arrays.kt#L1-L4, commonMain/generated/_Collections.kt#L1-L4, commonMain/generated/_Comparisons.kt#L1-L4, commonMain/generated/_Maps.kt#L1-L4, commonMain/generated/_OneToManyTitlecaseMappings.kt#L1-L4, commonMain/generated/_Ranges.kt#L1-L4, commonMain/generated/_Sequences.kt#L1-L4, commonMain/generated/_Sets.kt#L1-L4, commonMain/generated/_Strings.kt#L1-L4, commonMain/generated/_UArrays.kt#L1-L4, commonMain/generated/_UCollections.kt#L1-L4, commonMain/generated/_UComparisons.kt#L1-L4, commonMain/generated/_URanges.kt#L1-L4, commonMain/generated/_USequences.kt#L1-L4, commonMain/kotlin/collections/Collections.kt#L1-L4, commonMain/kotlin/collections/Maps.kt#L1-L4, commonMain/kotlin/collections/PrimitiveIterators.kt#L1-L4, commonMain/kotlin/collections/ReversedViews.kt#L1-L4, commonMain/kotlin/collections/Sets.kt#L1-L4, commonMain/kotlin/enums/EnumEntries.kt#L1-L4, commonMain/kotlin/io/encoding/ExperimentalEncodingApi.kt#L1-L4, commonMain/kotlin/ranges/PrimitiveRanges.kt#L1-L4, commonMain/kotlin/ranges/ProgressionIterators.kt#L1-L4, commonMain/kotlin/ranges/Progressions.kt#L1-L4, commonMain/kotlin/text/HexExtensions.kt#L1-L4, commonMain/kotlin/text/HexFormat.kt#L1-L4, commonMain/kotlin/text/UHexExtensions.kt#L1-L4, commonMain/kotlin/util/FloorDivMod.kt#L1-L4, commonMain/kotlin/UByte.kt#L1-L4, commonMain/kotlin/UByteArray.kt#L1-L4, commonMain/kotlin/UInt.kt#L1-L4, commonMain/kotlin/UIntArray.kt#L1-L4, commonMain/kotlin/UIntRange.kt#L1-L4, commonMain/kotlin/ULong.kt#L1-L4, commonMain/kotlin/ULongArray.kt#L1-L4, commonMain/kotlin/ULongRange.kt#L1-L4, commonMain/kotlin/UShort.kt#L1-L4, commonMain/kotlin/UShortArray.kt#L1-L4
+/*
+ * Copyright 2010-2023 JetBrains s.r.o. and Kotlin Programming Language contributors.
+ * Use of this source code is governed by the Apache 2.0 license that can be found in the license/LICENSE.txt file.
+ */
+
+Source entries: jvmMain/kotlin/Char.kt#L1-L4, jvmMain/jdk7/kotlin/AutoCloseableJVM.kt#L1-L4, jvmMain/jdk7/kotlin/io/path/CopyActionContext.kt#L1-L4, jvmMain/jdk7/kotlin/io/path/CopyActionResult.kt#L1-L4, jvmMain/jdk7/kotlin/io/path/FileVisitorBuilder.kt#L1-L4, jvmMain/jdk7/kotlin/io/path/OnErrorResult.kt#L1-L4, jvmMain/jdk7/kotlin/io/path/PathRecursiveFunctions.kt#L1-L4, jvmMain/jdk7/kotlin/io/path/PathWalkOption.kt#L1-L4, jvmMain/jdk8/kotlin/jvm/optionals/Optionals.kt#L1-L4, jvmMain/kotlin/concurrent/Volatile.kt#L1-L4, jvmMain/kotlin/enums/EnumEntriesSerializationProxy.kt#L1-L4, jvmMain/kotlin/io/encoding/Base64IOStream.kt#L1-L4, jvmMain/kotlin/text/regex/RegexExtensions.kt#L1-L4, jvmMain/kotlin/time/MonoTimeSource.kt#L1-L4, jvmMain/kotlin/util/MathJVM.kt#L1-L4, jvmMain/kotlin/jvm/JvmClassMapping.kt#L1-L4, jvmMain/kotlin/jvm/internal/SourceDebugExtension.kt#L1-L4, commonMain/kotlin/MathH.kt#L1-L4, commonMain/kotlin/AutoCloseable.kt#L1-L4, commonMain/kotlin/annotations/NativeConcurrentAnnotations.kt#L1-L4, commonMain/kotlin/annotations/OptIn.kt#L1-L4, commonMain/kotlin/comparisons/Comparisons.kt#L1-L4, commonMain/kotlin/concurrent/Volatile.kt#L1-L4, commonMain/kotlin/experimental/ExperimentalObjCName.kt#L1-L4, commonMain/kotlin/experimental/ExperimentalObjCRefinement.kt#L1-L4, commonMain/kotlin/io/encoding/Base64.kt#L1-L4, commonMain/kotlin/time/TimeSource.kt#L1-L4, commonMain/kotlin/time/TimeSources.kt#L1-L4, commonMain/kotlin/time/longSaturatedMath.kt#L1-L4, commonMain/kotlin/time/measureTime.kt#L1-L4
+/*
+ * Copyright 2010-2022 JetBrains s.r.o. and Kotlin Programming Language contributors.
+ * Use of this source code is governed by the Apache 2.0 license that can be found in the license/LICENSE.txt file.
+ */
+
+Source entries: jvmMain/kotlin/Collections.kt#L1-L4, jvmMain/jdk7/kotlin/internal/jdk7/JDK7PlatformImplementations.kt#L1-L4, jvmMain/jdk7/kotlin/io/path/ExperimentalPathApi.kt#L1-L4, jvmMain/kotlin/collections/AbstractMutableCollection.kt#L1-L4, jvmMain/kotlin/collections/AbstractMutableList.kt#L1-L4, jvmMain/kotlin/collections/AbstractMutableMap.kt#L1-L4, jvmMain/kotlin/collections/AbstractMutableSet.kt#L1-L4, jvmMain/kotlin/collections/MutableCollectionsJVM.kt#L1-L4, jvmMain/kotlin/concurrent/Locks.kt#L1-L4, jvmMain/kotlin/coroutines/cancellation/CancellationException.kt#L1-L4, jvmMain/kotlin/io/files/Utils.kt#L1-L4, jvmMain/kotlin/system/Timing.kt#L1-L4, jvmMain/kotlin/util/BigDecimals.kt#L1-L4, jvmMain/kotlin/util/Exceptions.kt#L1-L4, jvmMain/kotlin/Throws.kt#L1-L4, jvmMain/kotlin/jvm/internal/AdaptedFunctionReference.java#L1-L4, jvmMain/kotlin/jvm/internal/FunInterfaceConstructorReference.java#L1-L4, jvmMain/kotlin/jvm/internal/FunctionAdapter.java#L1-L4, jvmMain/kotlin/jvm/internal/TypeParameterReference.kt#L1-L4, commonMain/kotlin/Comparator.kt#L1-L4, commonMain/kotlin/ExceptionsH.kt#L1-L4, commonMain/kotlin/KotlinH.kt#L1-L4, commonMain/kotlin/collections/AbstractMutableCollection.kt#L1-L4, commonMain/kotlin/collections/AbstractMutableList.kt#L1-L4, commonMain/kotlin/collections/AbstractMutableMap.kt#L1-L4, commonMain/kotlin/collections/AbstractMutableSet.kt#L1-L4, commonMain/kotlin/annotations/Inference.kt#L1-L4, commonMain/kotlin/annotations/Throws.kt#L1-L4, commonMain/kotlin/collections/AbstractCollection.kt#L1-L4, commonMain/kotlin/collections/AbstractList.kt#L1-L4, commonMain/kotlin/collections/AbstractMap.kt#L1-L4, commonMain/kotlin/collections/AbstractSet.kt#L1-L4, commonMain/kotlin/collections/MapAccessors.kt#L1-L4, commonMain/kotlin/collections/MutableCollections.kt#L1-L4, commonMain/kotlin/collections/Sequences.kt#L1-L4, commonMain/kotlin/coroutines/Continuation.kt#L1-L4, commonMain/kotlin/coroutines/CoroutineContextImpl.kt#L1-L4, commonMain/kotlin/coroutines/cancellation/CancellationExceptionH.kt#L1-L4, commonMain/kotlin/coroutines/intrinsics/Intrinsics.kt#L1-L4, commonMain/kotlin/properties/Interfaces.kt#L1-L4, commonMain/kotlin/properties/PropertyReferenceDelegates.kt#L1-L4, commonMain/kotlin/reflect/KClass.kt#L1-L4, commonMain/kotlin/reflect/KType.kt#L1-L4, commonMain/kotlin/reflect/KTypeProjection.kt#L1-L4, commonMain/kotlin/text/CharCategory.kt#L1-L4, commonMain/kotlin/text/StringBuilder.kt#L1-L4, commonMain/kotlin/util/DeepRecursive.kt#L1-L4, commonMain/kotlin/util/KotlinVersion.kt#L1-L4
+/*
+ * Copyright 2010-2020 JetBrains s.r.o. and Kotlin Programming Language contributors.
+ * Use of this source code is governed by the Apache 2.0 license that can be found in the license/LICENSE.txt file.
+ */
+
+Source entries: jvmMain/kotlin/Library.kt#L1-L15, jvmMain/kotlin/String.kt#L1-L15, jvmMain/kotlin/reflect/KVisibility.kt#L1-L15, jvmMain/kotlin/ArrayIntrinsics.kt#L1-L15, jvmMain/kotlin/internal/InternalAnnotations.kt#L1-L15, commonMain/InternalAnnotations.kt#L1-L15
+/*
+ * Copyright 2010-2016 JetBrains s.r.o.
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ * http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
+Source entries: jvmMain/jdk7/kotlin/io/path/PathReadWrite.kt#L1-L4, jvmMain/jdk7/kotlin/io/path/PathTreeWalk.kt#L1-L4, jvmMain/jdk7/kotlin/io/path/PathUtils.kt#L1-L4, jvmMain/jdk8/kotlin/annotations/JvmRepeatable.kt#L1-L4, jvmMain/jdk8/kotlin/time/DurationConversions.kt#L1-L4, jvmMain/kotlin/CharCodeJVM.kt#L1-L4, jvmMain/kotlin/collections/builders/ListBuilder.kt#L1-L4, jvmMain/kotlin/collections/builders/MapBuilder.kt#L1-L4, jvmMain/kotlin/collections/builders/SetBuilder.kt#L1-L4, jvmMain/kotlin/text/CharJVM.kt#L1-L4, jvmMain/kotlin/text/StringsJVM.kt#L1-L4, jvmMain/kotlin/text/regex/Regex.kt#L1-L4, jvmMain/kotlin/time/DurationJvm.kt#L1-L4, jvmMain/kotlin/time/DurationUnitJvm.kt#L1-L4, jvmMain/kotlin/jvm/internal/RepeatableContainer.java#L1-L4, jvmMain/kotlin/jvm/internal/SerializedIr.kt#L1-L4, commonMain/kotlin/JvmAnnotationsH.kt#L1-L4, commonMain/kotlin/TextH.kt#L1-L4, commonMain/kotlin/CharCode.kt#L1-L4, commonMain/kotlin/annotations/NativeAnnotations.kt#L1-L4, commonMain/kotlin/comparisons/compareTo.kt#L1-L4, commonMain/kotlin/random/Random.kt#L1-L4, commonMain/kotlin/random/URandom.kt#L1-L4, commonMain/kotlin/text/Char.kt#L1-L4, commonMain/kotlin/text/Strings.kt#L1-L4, commonMain/kotlin/time/Duration.kt#L1-L4, commonMain/kotlin/time/DurationUnit.kt#L1-L4, commonMain/kotlin/UMath.kt#L1-L4, commonMain/kotlin/UNumbers.kt#L1-L4, commonMain/kotlin/UProgressionUtil.kt#L1-L4, commonMain/kotlin/UStrings.kt#L1-L4, commonMain/kotlin/UnsignedUtils.kt#L1-L4
+/*
+ * Copyright 2010-2021 JetBrains s.r.o. and Kotlin Programming Language contributors.
+ * Use of this source code is governed by the Apache 2.0 license that can be found in the license/LICENSE.txt file.
+ */
+
+Source entries: jvmMain/jdk8/kotlin/collections/Collections.kt#L1-L15, jvmMain/jdk8/kotlin/internal/jdk8/JDK8PlatformImplementations.kt#L1-L15, jvmMain/jdk8/kotlin/streams/Streams.kt#L1-L15
+/*
+ * Copyright 2010-2017 JetBrains s.r.o.
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ * http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
+Source entries: jvmMain/generated/_ArraysJvm.kt#L487-L492, jvmMain/generated/_ArraysJvm.kt#L501-L506, commonMain/generated/_Arrays.kt#L6779-L6784, commonMain/generated/_Arrays.kt#L6789-L6794
+/**
+ * Returns a hash code based on the contents of this array as if it is [List].
+ * Nested arrays are treated as lists too.
+ * 
+ * If any of arrays contains itself on any nesting level the behavior is undefined.
+ */
+
+Source entries: jvmMain/generated/_ArraysJvm.kt#L670-L672, jvmMain/generated/_ArraysJvm.kt#L679-L681, jvmMain/generated/_ArraysJvm.kt#L688-L690, jvmMain/generated/_ArraysJvm.kt#L697-L699, jvmMain/generated/_ArraysJvm.kt#L706-L708, jvmMain/generated/_ArraysJvm.kt#L715-L717, jvmMain/generated/_ArraysJvm.kt#L724-L726, jvmMain/generated/_ArraysJvm.kt#L733-L735, jvmMain/generated/_ArraysJvm.kt#L742-L744, commonMain/generated/_Arrays.kt#L6913-L6915, commonMain/generated/_Arrays.kt#L6919-L6921, commonMain/generated/_Arrays.kt#L6925-L6927, commonMain/generated/_Arrays.kt#L6931-L6933, commonMain/generated/_Arrays.kt#L6937-L6939, commonMain/generated/_Arrays.kt#L6943-L6945, commonMain/generated/_Arrays.kt#L6949-L6951, commonMain/generated/_Arrays.kt#L6955-L6957, commonMain/generated/_Arrays.kt#L6961-L6963, commonMain/generated/_UArrays.kt#L3333-L3335, commonMain/generated/_UArrays.kt#L3342-L3344, commonMain/generated/_UArrays.kt#L3351-L3353, commonMain/generated/_UArrays.kt#L3360-L3362
+/**
+ * Returns a hash code based on the contents of this array as if it is [List].
+ */
+
+Source entries: jvmMain/kotlin/collections/ArraysJVM.kt#L41-L41
+/** Internal unsafe construction of array based on reference array type */
+
+Source entries: jvmMain/kotlin/collections/MapsJVM.kt#L141-L145
+/**
+ * Calculate the initial capacity of a map, based on Guava's
+ * [com.google.common.collect.Maps.capacity](https://github.com/google/guava/blob/v28.2/guava/src/com/google/common/collect/Maps.java#L325)
+ * approach.
+ */
+
+Source entries: jvmMain/kotlin/reflect/KType.kt#L23-L30, commonMain/kotlin/reflect/KType.kt#L22-L29
+/**
+     * Type arguments passed for the parameters of the classifier in this type.
+     * For example, in the type `Array<out Number>` the only type argument is `out Number`.
+     *
+     * In case this type is based on an inner class, the returned list contains the type arguments provided for the innermost class first,
+     * then its outer class, and so on.
+     * For example, in the type `Outer<A, B>.Inner<C, D>` the returned list is `[C, D, A, B]`.
+     */
+
+Source entries: jvmMain/kotlin/util/MathJVM.kt#L157-L158
+// Inverse hyperbolic function implementations derived from boost special math functions,
+// Copyright Eric Ford & Hubert Holin 2001.
+
+Source entries: jvmMain/kotlin/jvm/internal/TypeReference.kt#L85-L86
+// This is based on KTypeProjection.toString, but uses [asString] to avoid adding the
+    // "reflection not supported" suffix to each type argument.
+
+Source entries: commonMain/kotlin/annotations/Inference.kt#L40-L64
+/**
+ * Enables overload selection based on the type of the value returned from lambda argument.
+ *
+ * When two or more function overloads have otherwise the same parameter lists that differ only in the return type
+ * of a functional parameter, this annotation enables overload selection by the type of the value returned from
+ * the lambda function passed to this functional parameter.
+ *
+ * Example:
+ * ```
+ * @OverloadResolutionByLambdaReturnType
+ * fun create(intProducer: () -> Int): Int
+ *
+ * fun create(doubleProducer: () -> Double): Double
+ *
+ * val newValue = create { 3.14 }
+ * ```
+ *
+ * The annotation being applied to one of overloads allows to resolve this ambiguity by analyzing what value is returned
+ * from the lambda function.
+ *
+ * This annotation is also used to discriminate the annotated overloads in case if overload selection still cannot
+ * choose one of them even taking in account the result of lambda parameter analysis. In that case a warning is reported.
+ *
+ * Note: this annotation is experimental, see [ExperimentalTypeInference] on how to opt-in for it.
+ */
+
+Source entries: commonMain/kotlin/collections/AbstractList.kt#L6-L9
+/*
+ * Based on GWT AbstractList
+ * Copyright 2007 Google Inc.
+*/
+
+Source entries: commonMain/kotlin/collections/AbstractMap.kt#L6-L9
+/*
+ * Based on GWT AbstractMap
+ * Copyright 2007 Google Inc.
+ */
+
+Source entries: commonMain/kotlin/collections/Sequences.kt#L644-L656
+/**
+ * Returns a sequence defined by the starting value [seed] and the function [nextFunction],
+ * which is invoked to calculate the next value based on the previous one on each iteration.
+ *
+ * The sequence produces values until it encounters first `null` value.
+ * If [seed] is `null`, an empty sequence is produced.
+ *
+ * The sequence can be iterated multiple times, each time starting with [seed].
+ *
+ * @see kotlin.sequences.sequence
+ *
+ * @sample samples.collections.Sequences.Building.generateSequenceWithSeed
+ */
+
+Source entries: commonMain/kotlin/collections/Sequences.kt#L664-L676
+/**
+ * Returns a sequence defined by the function [seedFunction], which is invoked to produce the starting value,
+ * and the [nextFunction], which is invoked to calculate the next value based on the previous one on each iteration.
+ *
+ * The sequence produces values until it encounters first `null` value.
+ * If [seedFunction] returns `null`, an empty sequence is produced.
+ *
+ * The sequence can be iterated multiple times.
+ *
+ * @see kotlin.sequences.sequence
+ *
+ * @sample samples.collections.Sequences.Building.generateSequenceWithLazySeed
+ */
+
+Source entries: commonMain/kotlin/experimental/ExperimentalNativeApi.kt#L1-L4
+/*
+ * Copyright 2010-2018 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license
+ * that can be found in the LICENSE file.
+ */
+
+Source entries: commonMain/kotlin/UnsignedUtils.kt#L18-L19
+// Division and remainder are based on Guava's UnsignedLongs implementation
+// Copyright 2011 The Guava Authors
+
