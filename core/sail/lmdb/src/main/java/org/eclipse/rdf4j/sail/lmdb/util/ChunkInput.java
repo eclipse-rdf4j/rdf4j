@@ -430,6 +430,92 @@ public final class ChunkInput {
 	}
 
 	/**
+	 * Counts the tuples of the chunk and those matching {@code pattern} without materialising any tuple. The tuple
+	 * count comes from the value footer; only the value columns that {@code pattern} binds are decoded, a constant
+	 * column is compared once, and a chunk whose shared prefix does not match decodes no column at all. Afterwards the
+	 * chunk is consumed: {@link #next()} returns {@code null} until the next
+	 * {@link #reset(ByteBuffer, ByteBuffer, int, int)}.
+	 *
+	 * @param pattern one value per element; a negative value leaves the element unbound
+	 * @return the tuple count in the high 32 bits and the matching tuple count in the low 32 bits
+	 * @throws IllegalStateException if tuples were already read since the last reset
+	 */
+	public long countMatchingRows(long[] pattern) {
+		if (!readKey || hasNext || valueTuplesIndex != -1) {
+			throw new IllegalStateException("countMatchingRows must directly follow reset");
+		}
+		if (decodeKey() == null) {
+			exhaust();
+			return 0L;
+		}
+		final long[] k = keyTuple;
+		final int sp = splitPoint;
+		boolean prefixMatches = true;
+		for (int i = 0; i < sp; i++) {
+			prefixMatches &= pattern[i] < 0 || k[i] == pattern[i];
+		}
+		boolean keyMatches = prefixMatches;
+		for (int i = sp, n = elements; i < n; i++) {
+			keyMatches &= pattern[i] < 0 || k[i] == pattern[i];
+		}
+		long rows = 1L;
+		long matching = keyMatches ? 1L : 0L;
+		if (initValues()) {
+			rows += valueTuplesCount;
+			if (prefixMatches) {
+				matching += countMatchingValueTuples(pattern);
+			}
+		}
+		exhaust();
+		return rows << 32 | matching;
+	}
+
+	/**
+	 * Counts the value tuples matching the bound suffix elements of {@code pattern}, block by block, as a bit mask per
+	 * block (bit {@code i} for tuple {@code start + i}). Decoding of the remaining columns stops once no tuple of the
+	 * last block can match; earlier blocks decode every bound column, because a column's position only advances when it
+	 * is decoded.
+	 */
+	private int countMatchingValueTuples(long[] pattern) {
+		final int sp = splitPoint;
+		final int ve = valueElements;
+		final int[] st = colState;
+		final long[] b = block;
+		final int count = valueTuplesCount;
+		int matching = 0;
+		for (int start = 0; start < count; start += BLOCK_SIZE) {
+			final int cnt = Math.min(BLOCK_SIZE, count - start);
+			final boolean lastBlock = start + cnt >= count;
+			long mask = cnt == Long.SIZE ? -1L : (1L << cnt) - 1;
+			for (int e = 0; e < ve; e++) {
+				final long target = pattern[sp + e];
+				if (target < 0) {
+					continue;
+				}
+				if (mask == 0L && lastBlock) {
+					break;
+				}
+				if (st[(e << STATE_SHIFT) + F_MODE] == MODE_CONSTANT) {
+					// every tuple repeats the key tuple's value
+					if (running[e] != target) {
+						mask = 0L;
+					}
+					continue;
+				}
+				decodeColumn(e, start, cnt);
+				final int off = e * BLOCK_SIZE;
+				long equal = 0L;
+				for (int i = 0; i < cnt; i++) {
+					equal |= (b[off + i] == target ? 1L : 0L) << i;
+				}
+				mask &= equal;
+			}
+			matching += Long.bitCount(mask);
+		}
+		return matching;
+	}
+
+	/**
 	 * Advances until the current tuple is greater than or equal to the target tuple.
 	 *
 	 * @param targetTuple tuple to search for

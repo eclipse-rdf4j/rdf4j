@@ -61,6 +61,77 @@ class ChunkInputRoundTripTest {
 		assertTrue(checked > 0);
 	}
 
+	@Test
+	void countsMatchingRowsLikeIteration() {
+		SplittableRandom random = new SplittableRandom(815);
+		ChunkInput counter = new ChunkInput();
+		int matched = 0;
+		for (int round = 0; round < 400; round++) {
+			for (int splitPoint = 0; splitPoint < ELEMENTS; splitPoint++) {
+				int size = 1 + random.nextInt(MAX_UNCACHED_TUPLES);
+				long[][] tuples = generate(random, size, splitPoint);
+				for (ByteOrder order : ORDERS) {
+					for (boolean direct : new boolean[] { false, true }) {
+						ByteBuffer[] encoded = encode(tuples, splitPoint, order, direct);
+						for (int p = 0; p < 4; p++) {
+							long[] pattern = randomPattern(random, tuples);
+							long expected = countByIteration(encoded, order, splitPoint, pattern);
+							int offset = random.nextInt(64);
+							counter.reset(embedded(encoded[0], order, offset), embedded(encoded[1], order, offset),
+									ELEMENTS, splitPoint);
+							long counted = counter.countMatchingRows(pattern);
+							int split = splitPoint;
+							assertEquals(expected, counted, () -> "split " + split + " pattern "
+									+ Arrays.toString(pattern) + " tuples " + Arrays.deepToString(tuples));
+							matched += (int) counted > 0 ? 1 : 0;
+						}
+					}
+				}
+			}
+		}
+		assertTrue(matched > 1000, "patterns must match some rows: " + matched);
+	}
+
+	/** Binds each field with probability 1/2, mostly to a value of a random tuple and sometimes to an absent one. */
+	private static long[] randomPattern(SplittableRandom random, long[][] tuples) {
+		long[] source = tuples[random.nextInt(tuples.length)];
+		long[] pattern = new long[ELEMENTS];
+		for (int e = 0; e < ELEMENTS; e++) {
+			if (random.nextBoolean()) {
+				pattern[e] = -1L;
+			} else {
+				pattern[e] = random.nextInt(8) == 0 ? randomValue(random) : source[e];
+			}
+		}
+		return pattern;
+	}
+
+	/** @return rows in the high 32 bits, matching rows in the low 32 bits */
+	private static long countByIteration(ByteBuffer[] encoded, ByteOrder order, int splitPoint, long[] pattern) {
+		ChunkInput input = new ChunkInput(encoded[0].duplicate().order(order), encoded[1].duplicate().order(order),
+				ELEMENTS, splitPoint);
+		long rows = 0;
+		long matching = 0;
+		for (long[] tuple = input.next(); tuple != null; tuple = input.next()) {
+			rows++;
+			boolean match = true;
+			for (int e = 0; e < ELEMENTS; e++) {
+				match &= pattern[e] < 0 || tuple[e] == pattern[e];
+			}
+			matching += match ? 1 : 0;
+		}
+		return rows << 32 | matching;
+	}
+
+	/** A view of {@code source} placed at {@code offset} inside a larger buffer, bounded by position and limit. */
+	private static ByteBuffer embedded(ByteBuffer source, ByteOrder order, int offset) {
+		ByteBuffer copy = source.isDirect() ? ByteBuffer.allocateDirect(offset + source.remaining() + 16)
+				: ByteBuffer.allocate(offset + source.remaining() + 16);
+		copy.order(order).position(offset);
+		copy.put(source.duplicate());
+		return copy.limit(copy.position()).position(offset);
+	}
+
 	private static void verifyIteration(ChunkInput input, long[][] tuples) {
 		for (long[] tuple : tuples) {
 			assertArrayEquals(tuple, Arrays.copyOf(input.next(), ELEMENTS));

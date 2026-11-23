@@ -139,6 +139,7 @@ import org.eclipse.rdf4j.sail.lmdb.TripleStoreIndexUpdater.PreparedSecondaryInde
 import org.eclipse.rdf4j.sail.lmdb.TxnManager.Mode;
 import org.eclipse.rdf4j.sail.lmdb.TxnManager.Txn;
 import org.eclipse.rdf4j.sail.lmdb.config.LmdbStoreConfig;
+import org.eclipse.rdf4j.sail.lmdb.estimate.ChunkRowMeasure;
 import org.eclipse.rdf4j.sail.lmdb.estimate.LmdbPageCardinalityEstimator;
 import org.eclipse.rdf4j.sail.lmdb.estimate.LmdbPageCardinalityEstimator.CardinalityEstimate;
 import org.eclipse.rdf4j.sail.lmdb.estimate.LmdbPageCardinalityEstimator.IndexShape;
@@ -4742,11 +4743,11 @@ class TripleStore implements Closeable {
 				LmdbPageCardinalityEstimator.Estimate explicit = explicitRows >= 0
 						? LmdbPageCardinalityEstimator.exactRows(explicitRows)
 						: estimateRowsFromChunkKeys(stack, txn, view, explicitDbName, true, minKey, maxKey, matcher,
-								indexShape.residualFieldCount());
+								indexShape.residualFieldCount(), index, pattern);
 				LmdbPageCardinalityEstimator.Estimate inferred = inferredRows >= 0
 						? LmdbPageCardinalityEstimator.exactRows(inferredRows)
 						: estimateRowsFromChunkKeys(stack, txn, view, inferredDbName, false, minKey, maxKey, matcher,
-								indexShape.residualFieldCount());
+								indexShape.residualFieldCount(), index, pattern);
 				return LmdbPageCardinalityEstimator.combineDatabaseEstimates(explicit, inferred);
 			}
 		});
@@ -4795,19 +4796,46 @@ class TripleStore implements Closeable {
 	}
 
 	/**
-	 * Converts the page walker's estimate of matching chunk keys into statement rows using the database's mean rows per
-	 * chunk, which the logical statement count and the physical entry count give exactly.
+	 * Estimates the statement rows of a range from the page walker, which only sees chunk keys. With a residual matcher
+	 * the walker decodes a bounded number of its sampled leaves through {@link #chunkRowMeasure} and returns rows
+	 * directly: matching only chunk keys over-represents fields that sort first within a chunk. Otherwise, or when that
+	 * correction does not apply, the matching chunk keys are scaled by the database's mean rows per chunk, which the
+	 * logical statement count and the physical entry count give exactly.
 	 */
 	private LmdbPageCardinalityEstimator.Estimate estimateRowsFromChunkKeys(MemoryStack stack, long txn,
 			LmdbPageCardinalityEstimator.ReadView view, String dbName, boolean explicit, byte[] minKey, byte[] maxKey,
-			GroupMatcher matcher, int residualFieldCount) throws IOException {
+			GroupMatcher matcher, int residualFieldCount, TripleIndex index, long[] pattern) throws IOException {
 		LmdbPageCardinalityEstimator.Estimate chunkKeys = view.estimateEntriesWithQuality(dbName, minKey,
-				minKey.length, maxKey, maxKey.length, matcher, residualFieldCount);
+				minKey.length, maxKey, maxKey.length, matcher, residualFieldCount,
+				matcher == null ? null : chunkRowMeasure(index.getIndexSplitPosition(), pattern));
+		if (chunkKeys.rowsCorrected()) {
+			return chunkKeys;
+		}
 		long physicalEntries = view.totalEntries(dbName);
 		double rowsPerEntry = physicalEntries > 0
 				? (double) readStatementCount(stack, txn, explicit) / physicalEntries
 				: 0.0d;
 		return LmdbPageCardinalityEstimator.scaleToRows(chunkKeys, rowsPerEntry, Chunks.MAX_CHUNK_SIZE);
+	}
+
+	/**
+	 * Counts the rows of one chunk and those matching {@code pattern} (index order, negative components unbound).
+	 */
+	private static ChunkRowMeasure chunkRowMeasure(int splitPosition, long[] pattern) {
+		ChunkInput chunk = new ChunkInput();
+		return new ChunkRowMeasure() {
+			@Override
+			public long measure(ByteBuffer key, ByteBuffer value) {
+				chunk.reset(key, value, 4, splitPosition);
+				// same layout as ChunkRowMeasure.pack(rows, matchingRows)
+				return chunk.countMatchingRows(pattern);
+			}
+
+			@Override
+			public int maxRowsPerRecord() {
+				return Chunks.MAX_CHUNK_SIZE;
+			}
+		};
 	}
 
 	private static byte[] encodeKey(MemoryStack stack, long[] tuple) {
