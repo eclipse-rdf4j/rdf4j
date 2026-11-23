@@ -19,6 +19,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.function.BiConsumer;
+import java.util.function.BiFunction;
 import java.util.function.Function;
 import java.util.function.Predicate;
 
@@ -52,6 +53,8 @@ import org.eclipse.rdf4j.query.algebra.evaluation.impl.QueryEvaluationContext;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.evaluationsteps.AdaptiveFilterEvaluationStep;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.evaluationsteps.BatchCorrelatedJoinProvider;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.evaluationsteps.OrderedEvaluation;
+import org.eclipse.rdf4j.query.algebra.evaluation.impl.evaluationsteps.RebindableQueryEvaluationStep;
+import org.eclipse.rdf4j.query.algebra.evaluation.impl.evaluationsteps.ScopedUnionInput;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.restrictions.RestrictionCompiler;
 import org.eclipse.rdf4j.query.algebra.evaluation.util.QueryEvaluationUtil;
 import org.eclipse.rdf4j.query.algebra.evaluation.util.QueryEvaluationUtility;
@@ -84,26 +87,28 @@ public class FilterIterator extends FilterIteration<BindingSet> implements Index
 
 		QueryEvaluationStep arg = strategy.precompile(filter.getArg(), context);
 		AdaptiveFilterEvaluationStep.recordPrepared(context, filter.getArg(), arg);
+		ConditionBindingScope bindingScope = FilterBindingScope.resolve(filter);
+		ValueExpr condition = filter.getCondition();
 		QueryValueEvaluationStep ves;
 		try {
-			ves = strategy.precompile(filter.getCondition(), context);
+			ves = strategy.precompile(condition, context);
 		} catch (QueryEvaluationException e) {
 			// If we have a failed compilation we always return false.
 			// Which means empty. so let's short circuit that.
 			return QueryEvaluationStep.EMPTY;
 		}
-		ConditionBindingScope bindingScope = FilterBindingScope.resolve(filter);
 		Function<BindingSet, BindingSet> retain = bindingScope.retainsAllBindings() ? Function.identity()
 				: retainBindings(bindingScope.bindingNames(), context);
-
-		QueryEvaluationStep standard = bs -> new FilterIterator(filter, arg.evaluate(bs), ves, strategy, retain,
-				evaluationStatistics, context.getBlankNodeAllocationScope());
+		BiFunction<BindingSet, CloseableIteration<BindingSet>, CloseableIteration<BindingSet>> filterRows = (input,
+				rows) -> new FilterIterator(filter, rows, ves, strategy,
+						ScopedUnionInput.filterInput(filter, condition, input, retain), evaluationStatistics,
+						context.getBlankNodeAllocationScope());
+		QueryEvaluationStep standard = RebindableQueryEvaluationStep.unary(filter, arg,
+				child -> input -> filterRows.apply(input, child.evaluate(ScopedUnionInput.argument(filter, input))));
 		var restriction = RestrictionCompiler.enabled(strategy, context)
-				&& RestrictionCompiler.movable(filter.getCondition())
+				&& RestrictionCompiler.movable(condition)
 						? RestrictionCompiler.unary("filter/original-condition-input", filter, context, arg,
-								Function.identity(),
-								(input, cursor) -> new FilterIterator(filter, cursor, ves, strategy, retain,
-										evaluationStatistics, context.getBlankNodeAllocationScope()))
+								Function.identity(), input -> ScopedUnionInput.argument(filter, input), filterRows)
 						: null;
 		QueryEvaluationStep generic = AdaptiveFilterEvaluationStep.filter(context,
 				RestrictionCompiler.attach(standard, restriction));
@@ -171,6 +176,9 @@ public class FilterIterator extends FilterIteration<BindingSet> implements Index
 		Set<String> guardNames = new LinkedHashSet<>(subNames);
 		guardNames.removeAll(outerNames);
 		return bs -> {
+			if (ScopedUnionInput.hasRowScope(filter)) {
+				return generic.evaluate(bs);
+			}
 			for (String name : guardNames) {
 				if (bs.hasBinding(name)) {
 					return generic.evaluate(bs);

@@ -303,6 +303,18 @@ public class TripleIndex {
 		return false;
 	}
 
+	int boundPrefixMask(int boundMask) {
+		int prefixMask = 0;
+		for (int component : indexMap) {
+			int bit = 1 << component;
+			if ((boundMask & bit) == 0) {
+				break;
+			}
+			prefixMask |= bit;
+		}
+		return prefixMask;
+	}
+
 	private boolean isFixed(int component, long subj, long pred, long obj, long context) {
 		return switch (component) {
 		case SUBJ_IDX -> subj >= 0;

@@ -773,15 +773,19 @@ class AdaptiveFilterPlacementTest {
 	}
 
 	@Test
-	void aGuardedSuffixKeepsItsPreparedCountOperator() {
+	void aBoundStatementInTheJoinSuffixRunsWithoutCountingStatements() {
 		CountingSource source = passingSource(128, 2);
-		Join guarded = new Join(type(), pattern(OBSERVATION, "item"));
-		Filter query = new Filter(new Join(type(), guarded), new Not(new Exists(pattern(CONDITION, "local"))));
-		query.setRuntimeTelemetryEnabled(true);
-		assertThat(evaluate(query, source)).hasSize(256);
-		assertThat(source.counts(TYPE)).as("the opaque suffix must preserve its bound statement count guard")
-				.isEqualTo(128);
-		assertThat(query.getLongMetricActual("adaptiveFilterCohortsActual")).isEqualTo(128);
+		Join suffix = new Join(type(), pattern(OBSERVATION, "item"));
+		Filter query = new Filter(new Join(type(), suffix), new Not(new Exists(pattern(CONDITION, "local"))));
+		Map<BindingSet, Integer> rows = evaluate(query, source);
+		assertThat(rows).hasSize(256)
+				.containsEntry(new ListBindingSet(List.of("subject", "item"), subject(0), VF.createIRI("urn:item:0")),
+						1);
+		assertThat(rows.values()).containsOnly(1);
+		assertThat(source.countLookups.sum()).isZero();
+		assertThat(source.lookups(subject(0), TYPE)).as("the suffix must look up the bound type statement")
+				.isPositive();
+		assertThat(source.lookups(CONDITION)).isPositive();
 		assertThat(source.closed.sum()).isEqualTo(source.opened.sum());
 	}
 
@@ -871,7 +875,7 @@ class AdaptiveFilterPlacementTest {
 		private final Map<IRI, LongAdder> lookups = new ConcurrentHashMap<>();
 		private final Map<AccessKey, LongAdder> lookupsBySubject = new ConcurrentHashMap<>();
 		private final Map<IRI, LongAdder> rows = new ConcurrentHashMap<>();
-		private final Map<IRI, LongAdder> counts = new ConcurrentHashMap<>();
+		private final LongAdder countLookups = new LongAdder();
 		private final LongAdder opened = new LongAdder();
 		private final LongAdder closed = new LongAdder();
 		private IRI failPredicate;
@@ -897,14 +901,9 @@ class AdaptiveFilterPlacementTest {
 			return count == null ? 0 : count.sum();
 		}
 
-		long counts(IRI predicate) {
-			LongAdder count = counts.get(predicate);
-			return count == null ? 0 : count.sum();
-		}
-
 		@Override
 		public long getStatementCount(Resource subject, IRI predicate, Value object, Resource... contexts) {
-			counts.computeIfAbsent(predicate, ignored -> new LongAdder()).increment();
+			countLookups.increment();
 			List<Statement> candidates = subject == null ? byPredicate.getOrDefault(predicate, List.of())
 					: bySubject.getOrDefault(new AccessKey(subject, predicate), List.of());
 			return candidates.stream()

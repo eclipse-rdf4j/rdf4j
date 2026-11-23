@@ -34,6 +34,9 @@ import java.util.Map;
 import java.util.NoSuchElementException;
 import java.util.Objects;
 import java.util.Optional;
+import java.util.SequencedCollection;
+import java.util.SequencedMap;
+import java.util.SequencedSet;
 import java.util.Set;
 import java.util.stream.Collectors;
 
@@ -83,6 +86,7 @@ public class DynamicModel extends AbstractSet<Statement> implements Model {
 	private Set<Resource> addedContexts = null;
 	private Set<Namespace> namespaces = null;
 	private long statementVersion;
+	private transient long retainedTermVersion;
 
 	volatile private Model model = null;
 	private transient boolean largeStatementSetRegistered;
@@ -106,6 +110,27 @@ public class DynamicModel extends AbstractSet<Statement> implements Model {
 
 	Model getUpgradedModel() {
 		return model;
+	}
+
+	long statementVersion() {
+		return statementVersion;
+	}
+
+	/** Revision of retained term references replaced by equal statements; does not invalidate structural iterators. */
+	long retainedTermVersion() {
+		return retainedTermVersion;
+	}
+
+	/** The retained statements when the current backing store preserves insertion order. */
+	SequencedCollection<? extends Statement> statementsInInsertionOrder() {
+		if (model == null && statements instanceof SequencedMap<Statement, Statement> ordered) {
+			return ordered.sequencedValues();
+		}
+		if (model instanceof LinkedHashModel indexed
+				&& indexed.statements instanceof SequencedSet<LinkedHashModel.ModelStatement> ordered) {
+			return ordered;
+		}
+		return null;
 	}
 
 	@Override
@@ -247,7 +272,7 @@ public class DynamicModel extends AbstractSet<Statement> implements Model {
 			for (Resource context : contexts) {
 				Statement statement = canonicalStatement(subj, pred, obj, context);
 				initializeAddedContextsIfNeeded().add(context);
-				added = added | statements.put(statement, statement) == null;
+				added = added | putStatement(statement);
 			}
 			markStatementsChangedIf(added);
 			return added;
@@ -413,7 +438,7 @@ public class DynamicModel extends AbstractSet<Statement> implements Model {
 		if (model == null) {
 			statement = canonicalStatement(statement);
 			initializeAddedContextsIfNeeded().add(statement.getContext());
-			boolean changed = statements.put(statement, statement) == null;
+			boolean changed = putStatement(statement);
 			markStatementsChangedIf(changed);
 			return changed;
 		}
@@ -458,7 +483,7 @@ public class DynamicModel extends AbstractSet<Statement> implements Model {
 				Objects.requireNonNull(statement);
 				statement = canonicalStatement(statement);
 				initializeAddedContextsIfNeeded().add(statement.getContext());
-				changed = changed | statements.put(statement, statement) == null;
+				changed = changed | putStatement(statement);
 			}
 			markStatementsChangedIf(changed);
 			return changed;
@@ -734,6 +759,32 @@ public class DynamicModel extends AbstractSet<Statement> implements Model {
 
 	private void markStatementsChanged() {
 		statementVersion++;
+	}
+
+	private boolean putStatement(Statement statement) {
+		Statement previous = statements.put(statement, statement);
+		if (previous == null) {
+			return true;
+		}
+		if (retainedTermIdentityChanged(previous, statement)) {
+			retainedTermVersion++;
+		}
+		return false;
+	}
+
+	private static boolean retainedTermIdentityChanged(Statement previous, Statement replacement) {
+		if (previous == replacement) {
+			return false;
+		}
+		// Arbitrary Statement implementations can compute or override their terms. Conservatively invalidate when
+		// replacing one of those values, while keeping the common factory-backed statement path to direct references.
+		if (previous.getClass() != GenericStatement.class || replacement.getClass() != GenericStatement.class) {
+			return true;
+		}
+		return previous.getSubject() != replacement.getSubject()
+				|| previous.getPredicate() != replacement.getPredicate()
+				|| previous.getObject() != replacement.getObject()
+				|| previous.getContext() != replacement.getContext();
 	}
 
 	private void markStatementsChangedIf(boolean changed) {

@@ -12,21 +12,297 @@
 package org.eclipse.rdf4j.query.algebra.evaluation.iterator;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertSame;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.List;
+import java.util.Set;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 
+import org.eclipse.rdf4j.common.iteration.CloseableIteration;
+import org.eclipse.rdf4j.common.iteration.LookAheadIteration;
+import org.eclipse.rdf4j.model.IRI;
+import org.eclipse.rdf4j.model.Resource;
+import org.eclipse.rdf4j.model.Statement;
 import org.eclipse.rdf4j.model.Value;
+import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.model.impl.BooleanLiteral;
+import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.query.BindingSet;
+import org.eclipse.rdf4j.query.QueryEvaluationException;
+import org.eclipse.rdf4j.query.QueryInterruptedException;
+import org.eclipse.rdf4j.query.QueryResults;
+import org.eclipse.rdf4j.query.algebra.BindingSetAssignment;
+import org.eclipse.rdf4j.query.algebra.Join;
+import org.eclipse.rdf4j.query.algebra.LeftJoin;
+import org.eclipse.rdf4j.query.algebra.QueryRoot;
+import org.eclipse.rdf4j.query.algebra.Slice;
+import org.eclipse.rdf4j.query.algebra.StatementPattern;
+import org.eclipse.rdf4j.query.algebra.Union;
+import org.eclipse.rdf4j.query.algebra.Var;
+import org.eclipse.rdf4j.query.algebra.ZeroLengthPath;
+import org.eclipse.rdf4j.query.algebra.evaluation.QueryBindingSet;
+import org.eclipse.rdf4j.query.algebra.evaluation.QueryEvaluationStep;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryValueEvaluationStep;
+import org.eclipse.rdf4j.query.algebra.evaluation.TripleSource;
+import org.eclipse.rdf4j.query.algebra.evaluation.impl.DefaultEvaluationStrategy;
+import org.eclipse.rdf4j.query.algebra.evaluation.impl.GraphFrameBindings;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.QueryEvaluationContext;
+import org.eclipse.rdf4j.query.algebra.evaluation.iterator.ScopedLeftJoinIterator.ParameterizedArm;
 import org.eclipse.rdf4j.query.impl.EmptyBindingSet;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 
 public class ScopedLeftJoinIteratorTest {
+
+	@ParameterizedTest
+	@ValueSource(booleans = { false, true })
+	public void limitReadsOnlyOneRowOfTheNullableGraphArm(boolean optional) {
+		var vf = SimpleValueFactory.getInstance();
+		IRI graph = vf.createIRI("urn:graph");
+		IRI predicate = vf.createIRI("urn:predicate");
+		IRI object = vf.createIRI("urn:object");
+		AtomicInteger rowsRead = new AtomicInteger();
+		AtomicBoolean rightClosed = new AtomicBoolean();
+		TripleSource source = new TripleSource() {
+			@Override
+			public CloseableIteration<? extends Statement> getStatements(Resource s, IRI p, Value o,
+					Resource... contexts) {
+				return new LookAheadIteration<Statement>() {
+					@Override
+					protected Statement getNextElement() {
+						if (rowsRead.get() == 100_000) {
+							return null;
+						}
+						IRI subject = vf.createIRI("urn:subject:" + rowsRead.getAndIncrement());
+						return vf.createStatement(subject, predicate, object, graph);
+					}
+
+					@Override
+					protected void handleClose() {
+						rightClosed.set(true);
+					}
+				};
+			}
+
+			@Override
+			public ValueFactory getValueFactory() {
+				return vf;
+			}
+		};
+		BindingSetAssignment left = new BindingSetAssignment();
+		QueryBindingSet graphBinding = new QueryBindingSet();
+		graphBinding.setBinding("g", graph);
+		left.setBindingSets(List.of(graphBinding));
+		StatementPattern nullable = new StatementPattern(StatementPattern.Scope.DEFAULT_CONTEXTS,
+				Var.of("s"), Var.of("p", predicate, true, true), Var.of("o"), Var.of("g"));
+		Union right = new Union(nullable, new ZeroLengthPath(Var.of("g"), Var.of("end")));
+		var join = optional ? new LeftJoin(left, right) : new Join(left, right);
+		var strategy = new DefaultEvaluationStrategy(source, null);
+		var query = strategy.precompile(new QueryRoot(new Slice(join, 0, 1)));
+
+		var results = QueryResults.asList(query.evaluate(EmptyBindingSet.getInstance()));
+
+		assertEquals(ScopedLeftJoinIterator.class.getSimpleName(), join.getAlgorithmName());
+		assertEquals(1, results.size());
+		assertEquals(vf.createIRI("urn:subject:0"), results.getFirst().getValue("s"));
+		assertTrue(rightClosed.get(), "LIMIT must release the partially consumed right iteration");
+		assertEquals(1, rowsRead.get());
+	}
+
+	@Test
+	public void cancellationDoesNotOpenDiscardableArms() {
+		AtomicInteger opens = new AtomicInteger();
+		List<ParameterizedArm> arms = List.of(
+				new ParameterizedArm(JoinTestSupport.step(List.of(JoinTestSupport.row("r", "first"))), Set.of(), true,
+						true),
+				new ParameterizedArm(bindings -> {
+					opens.incrementAndGet();
+					return QueryEvaluationStep.EMPTY_ITERATION;
+				}, Set.of("k"), true, true));
+		try (var iteration = withArms(arms, JoinTestSupport.row("k", "a"))) {
+			assertEquals(JoinTestSupport.row("k", "a", "r", "first"), iteration.next());
+			assertTrue(iteration.requestCancellation());
+			assertThrows(QueryInterruptedException.class, iteration::hasNext);
+		}
+		assertEquals(0, opens.get());
+	}
+
+	@Test
+	public void cancellationStopsConditionsOnRemainingCachedCandidates() {
+		AtomicInteger conditions = new AtomicInteger();
+		QueryValueEvaluationStep condition = row -> BooleanLiteral.valueOf(conditions.incrementAndGet() == 1);
+		var row = JoinTestSupport.row("k", "a");
+		var arm = new ParameterizedArm(JoinTestSupport.step(Collections.nCopies(32, row)), Set.of(), true, true);
+		try (var iteration = ScopedLeftJoinIterator.withParameters(JoinTestSupport.step(List.of(row)), List.of(arm),
+				condition, EmptyBindingSet.getInstance(), new QueryEvaluationContext.Minimal(null),
+				new String[] { "k" }, Set.of(), true)) {
+			assertEquals(row, iteration.next());
+			assertTrue(iteration.requestCancellation());
+			assertThrows(QueryInterruptedException.class, iteration::hasNext);
+		}
+		assertEquals(1, conditions.get());
+	}
+
+	@Test
+	public void aFatalArmIsCheckedBeforeExposingEarlierRows() {
+		QueryEvaluationException failure = new QueryEvaluationException("fatal arm");
+		List<ParameterizedArm> arms = List.of(
+				new ParameterizedArm(JoinTestSupport.step(List.of(JoinTestSupport.row("r", "first"))), Set.of(), true,
+						true),
+				new ParameterizedArm(bindings -> {
+					throw failure;
+				}, Set.of("k"), false, false));
+		try (var iteration = withArms(arms, JoinTestSupport.row("k", "a"))) {
+			assertSame(failure, assertThrows(QueryEvaluationException.class, iteration::hasNext));
+		}
+	}
+
+	@Test
+	public void nonrepeatableArmsAreReopenedForTheSameParameter() {
+		AtomicInteger opens = new AtomicInteger();
+		List<ParameterizedArm> arms = List.of(new ParameterizedArm(bindings -> {
+			int next = opens.incrementAndGet();
+			return JoinTestSupport.step(List.of(JoinTestSupport.row("r", Integer.toString(next))))
+					.evaluate(bindings);
+		}, Set.of("k"), false, true));
+		var row = JoinTestSupport.row("k", "a");
+		try (var iteration = withArms(arms, row, row)) {
+			assertEquals(JoinTestSupport.normalize(List.of(JoinTestSupport.row("k", "a", "r", "1"),
+					JoinTestSupport.row("k", "a", "r", "2"))), JoinTestSupport.drain(iteration));
+		}
+		assertEquals(2, opens.get());
+	}
+
+	@Test
+	public void nonrepeatableArmRetainsItsEvaluationBeforeYieldingTheFirstRow() {
+		AtomicBoolean closed = new AtomicBoolean();
+		AtomicInteger reads = new AtomicInteger();
+		var right = List.of(JoinTestSupport.row("r", "first"), JoinTestSupport.row("r", "second"));
+		var arm = new ParameterizedArm(bindings -> new JoinTestSupport.TrackingIteration(right, closed, reads),
+				Set.of("k"), false, true);
+		try (var iteration = withArms(List.of(arm), JoinTestSupport.row("k", "a"))) {
+			assertEquals(JoinTestSupport.row("k", "a", "r", "first"), iteration.next());
+			assertEquals(2, reads.get());
+			assertTrue(closed.get());
+		}
+	}
+
+	@Test
+	public void cancellingAnActiveStreamClosesItWithoutReadingAnotherRow() {
+		AtomicBoolean closed = new AtomicBoolean();
+		AtomicInteger reads = new AtomicInteger();
+		var right = List.of(JoinTestSupport.row("r", "first"), JoinTestSupport.row("r", "second"));
+		var arm = new ParameterizedArm(bindings -> new JoinTestSupport.TrackingIteration(right, closed, reads),
+				Set.of("k"), true, true);
+		try (var iteration = withArms(List.of(arm), JoinTestSupport.row("k", "a"))) {
+			assertEquals(JoinTestSupport.row("k", "a", "r", "first"), iteration.next());
+			assertTrue(iteration.requestCancellation());
+			assertThrows(QueryInterruptedException.class, iteration::hasNext);
+		}
+		assertEquals(1, reads.get());
+		assertTrue(closed.get());
+	}
+
+	@Test
+	public void completedRepeatableArmReplaysInEncounterOrder() {
+		AtomicInteger opens = new AtomicInteger();
+		var left = JoinTestSupport.row("k", "a");
+		List<BindingSet> right = List.of(
+				JoinTestSupport.row("k", "a", "r", "1"),
+				JoinTestSupport.row("r", "2"),
+				JoinTestSupport.row("k", "a", "r", "1"),
+				JoinTestSupport.row("k", "conflict", "r", "3"));
+		var arm = new ParameterizedArm(bindings -> {
+			opens.incrementAndGet();
+			return JoinTestSupport.step(right).evaluate(bindings);
+		}, Set.of("k"), true, true);
+
+		var results = QueryResults.asList(withArms(List.of(arm), left, left));
+
+		assertEquals(List.of(JoinTestSupport.literal("1"), JoinTestSupport.literal("2"),
+				JoinTestSupport.literal("1"), JoinTestSupport.literal("1"), JoinTestSupport.literal("2"),
+				JoinTestSupport.literal("1")), results.stream().map(row -> row.getValue("r")).toList());
+		assertEquals(1, opens.get());
+	}
+
+	@Test
+	public void streamingAndReplayCarryClearedScalarInputProvenance() {
+		AtomicInteger opens = new AtomicInteger();
+		var left = JoinTestSupport.row("k", "a");
+		var right = JoinTestSupport.row("r", "value");
+		GraphFrameBindings.markSiblingInputCleared(right, 31L, "scalar");
+		var arm = new ParameterizedArm(bindings -> {
+			opens.incrementAndGet();
+			return JoinTestSupport.step(List.of(right)).evaluate(bindings);
+		}, Set.of("k"), true, true);
+
+		var results = QueryResults.asList(withArms(List.of(arm), left, left));
+
+		assertEquals(2, results.size());
+		assertTrue(results.stream().allMatch(row -> GraphFrameBindings.isSiblingInputCleared(row, 31L, "scalar")));
+		assertEquals(1, opens.get());
+	}
+
+	@Test
+	public void replayProbesOnlyCompatibleKeyBuckets() {
+		AtomicInteger checks = new AtomicInteger();
+		List<BindingSet> left = new ArrayList<>();
+		List<BindingSet> right = new ArrayList<>();
+		right.add(JoinTestSupport.row("r", "unbound key"));
+		for (int i = 0; i < 200; i++) {
+			left.add(JoinTestSupport.countingRow(checks, "k", "v" + i));
+			right.add(JoinTestSupport.row("k", "v" + i, "r", Integer.toString(i)));
+		}
+		var arm = new ParameterizedArm(JoinTestSupport.step(right), Set.of(), true, true);
+
+		assertEquals(JoinTestSupport.referenceJoin(left, right, true),
+				JoinTestSupport.drain(withArms(List.of(arm), left.toArray(BindingSet[]::new))));
+		assertTrue(checks.get() < 1_000,
+				"only the first streamed pass should check incompatible keys: " + checks.get());
+	}
+
+	@Test
+	public void oversizedRepeatableFrameIsReopened() {
+		AtomicInteger opens = new AtomicInteger();
+		var left = JoinTestSupport.row("k", "a");
+		List<BindingSet> right = Collections.nCopies(10_000, JoinTestSupport.row("r", "value"));
+		var arm = new ParameterizedArm(bindings -> {
+			opens.incrementAndGet();
+			return JoinTestSupport.step(right).evaluate(bindings);
+		}, Set.of("k"), true, true);
+
+		assertEquals(20_000, QueryResults.asList(withArms(List.of(arm), left, left)).size());
+		assertEquals(2, opens.get());
+	}
+
+	@Test
+	public void replayEvictsOlderFramesEvenWhenTheyAreEmpty() {
+		AtomicInteger opens = new AtomicInteger();
+		List<BindingSet> left = new ArrayList<>();
+		for (int i = 0; i < 10_000; i++) {
+			left.add(JoinTestSupport.row("k", Integer.toString(i)));
+		}
+		left.add(left.getFirst());
+		var arm = new ParameterizedArm(bindings -> {
+			opens.incrementAndGet();
+			return QueryEvaluationStep.EMPTY_ITERATION;
+		}, Set.of("k"), true, true);
+
+		assertEquals(left, QueryResults.asList(withArms(List.of(arm), left.toArray(BindingSet[]::new))));
+		assertEquals(left.size(), opens.get());
+	}
+
+	private static ScopedLeftJoinIterator withArms(List<ParameterizedArm> arms, BindingSet... rows) {
+		return ScopedLeftJoinIterator.withParameters(JoinTestSupport.step(List.of(rows)), arms, null,
+				EmptyBindingSet.getInstance(), new QueryEvaluationContext.Minimal(null), new String[] { "k" },
+				Set.of("k"), true);
+	}
 
 	@Test
 	public void rightRowsWithoutTheKeyDoNotDisableHashing() {

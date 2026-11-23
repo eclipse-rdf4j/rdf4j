@@ -3047,6 +3047,11 @@ namespace workbench {
         }
 
         function getExplainErrorMessage(jqXHR: JQueryXHR, textStatus: string, errorThrown: string): string {
+            if (jqXHR && jqXHR.status === 403) {
+                var contentType = jqXHR.getResponseHeader ? jqXHR.getResponseHeader('Content-Type') || '' : '';
+                var response: any = (<any>jqXHR).responseJSON || jqXHR.responseText || '';
+                return workbench.forbiddenResponseMessage('generate the explanation', response, contentType);
+            }
             var message = jsonErrorMessage(jqXHR);
             if (message) {
                 return message;
@@ -3062,6 +3067,12 @@ namespace workbench {
                 return 'Explain request failed: ' + errorThrown;
             }
             return 'Explain request failed.';
+        }
+
+        function clearStaleCsrfCookieForForbiddenResponse(jqXHR: JQueryXHR): void {
+            if (jqXHR && jqXHR.status === 403) {
+                workbench.clearStaleCsrfCookieForRequest('query');
+            }
         }
 
         interface JsonNumberToken {
@@ -3756,6 +3767,7 @@ namespace workbench {
                     signature.forcedLmdbExecutionStrategy
                 ),
                 error: function(jqXHR: JQueryXHR, textStatus: string, errorThrown: string) {
+                    clearStaleCsrfCookieForForbiddenResponse(jqXHR);
                     if (activePrimaryRequestSignature && signaturesMatch(activePrimaryRequestSignature, signature)) {
                         cancelUnansweredExplanation(jqXHR, textStatus, signature);
                     }
@@ -4147,6 +4159,7 @@ namespace workbench {
                     signature.forcedLmdbExecutionStrategy
                 ),
                 error: function(jqXHR: JQueryXHR, textStatus: string, errorThrown: string) {
+                    clearStaleCsrfCookieForForbiddenResponse(jqXHR);
                     if (activeCompareRequestSignatures[signature.pane]
                             && signaturesMatch(activeCompareRequestSignatures[signature.pane], signature)) {
                         cancelUnansweredExplanation(jqXHR, textStatus, signature);
@@ -5617,7 +5630,10 @@ namespace workbench {
          * Let go of the results kept for tabs that are not shown (a running query is cancelled) and of the tabs closed
          * here: the repository's tabs were replaced (Undo of a restore), so none of them is open any more.
          */
-        export function forgetQueryTabResults(): void {
+        export function forgetQueryTabResults(scope: workbench.workspace.Scope): void {
+            if (!scope || queryTabControllersKey !== workbench.queryTabs.storageKey(scope)) {
+                return;
+            }
             disposeQueryTabResults();
             queryTabControllersKey = '';
             closedQueryTabs = [];

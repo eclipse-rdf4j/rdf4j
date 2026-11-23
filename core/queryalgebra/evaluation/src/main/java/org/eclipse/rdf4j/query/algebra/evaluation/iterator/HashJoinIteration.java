@@ -57,7 +57,7 @@ public class HashJoinIteration extends LookAheadIteration<BindingSet> {
 	private BindingSet currentScanElem;
 	private Iterator<BindingSet> hashTableValues;
 	private boolean currentMatched;
-	private PartialKeyHashLookup lookup;
+	private PartialKeyHashLookup<BindingSet> lookup;
 	private boolean noMatchesPossible;
 
 	private final IntFunction<Map<BindingSetHashKey, List<BindingSet>>> mapMaker;
@@ -113,7 +113,7 @@ public class HashJoinIteration extends LookAheadIteration<BindingSet> {
 		Map<BindingSetHashKey, List<BindingSet>> nextHashTable = hashTable;
 		if (nextHashTable == null) {
 			nextHashTable = hashTable = setupHashTable();
-			lookup = new PartialKeyHashLookup(nextHashTable);
+			lookup = new PartialKeyHashLookup<>(nextHashTable);
 		}
 		if (noMatchesPossible) {
 			return null;

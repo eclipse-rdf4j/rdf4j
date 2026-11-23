@@ -389,6 +389,40 @@ public class DynamicModelTest {
 	}
 
 	@Test
+	void equalCustomStatementReplacementKeepsContextIteratorsUsable() {
+		DynamicModel model = new DynamicModel(new LinkedHashModelFactory());
+		ValueFactory valueFactory = SimpleValueFactory.getInstance();
+		Resource subject = valueFactory.createIRI("urn:subject");
+		IRI predicate = valueFactory.createIRI("urn:predicate");
+		Resource firstContext = valueFactory.createIRI("urn:context:first");
+		Resource secondContext = valueFactory.createIRI("urn:context:second");
+		Value object = valueFactory.createLiteral("object");
+		class RetainingStatement extends GenericStatement<Resource, IRI, Value> {
+			private static final long serialVersionUID = 1L;
+
+			private RetainingStatement(Resource retainedSubject, IRI retainedPredicate, Value retainedObject,
+					Resource retainedContext) {
+				super(retainedSubject, retainedPredicate, retainedObject, retainedContext);
+			}
+		}
+		Statement first = new RetainingStatement(subject, predicate, object, firstContext);
+		Statement second = valueFactory.createStatement(subject, predicate, object, secondContext);
+		model.add(first);
+		model.add(second);
+
+		Iterator<Statement> exactContext = model.getStatements(subject, predicate, object, firstContext).iterator();
+		Iterator<Statement> multipleContexts = model.getStatements(subject, predicate, object).iterator();
+		Statement replacement = new RetainingStatement(subject, predicate, valueFactory.createLiteral("object"),
+				firstContext);
+		assertThat(model.add(replacement)).isFalse();
+
+		assertThat(exactContext.next()).isSameAs(first);
+		assertThat(multipleContexts.next()).isSameAs(first);
+		assertThat(model.iterator().next()).isSameAs(replacement);
+		assertThat(model.getUpgradedModel()).isNull();
+	}
+
+	@Test
 	void exactNullContextGetStatementsRemainsLiveWithoutUpgrade() {
 		DynamicModel model = new DynamicModel(new LinkedHashModelFactory());
 		ValueFactory valueFactory = SimpleValueFactory.getInstance();

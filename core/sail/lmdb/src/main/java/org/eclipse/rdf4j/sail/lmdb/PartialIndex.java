@@ -116,6 +116,11 @@ final class PartialIndex {
 				: fieldValue(secondField, s, p, o, c) < 0 ? 1 : 2;
 	}
 
+	int boundPrefixMask(int boundMask) {
+		int firstBit = 1 << firstField;
+		return (boundMask & firstBit) != 0 ? boundMask & (firstBit | (1 << secondField)) : 0;
+	}
+
 	boolean supportsOrder(StatementOrder order, long[] pattern) {
 		int orderedField = switch (order) {
 		case S -> TripleIndex.SUBJ_IDX;

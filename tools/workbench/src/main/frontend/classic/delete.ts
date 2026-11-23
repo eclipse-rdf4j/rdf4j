@@ -60,7 +60,8 @@ function checkIsSafeToDelete(event: JQueryEventObject, ownsPage?: () => boolean)
 							var shared: any = (workbench as any).workspace;
 							var app = document.getElementById('workbench-app');
 							if (shared && typeof shared.deletionStarted === 'function' && app) {
-								shared.deletionStarted(app.getAttribute('data-workbench-server-identity') || '', String(id));
+								shared.deletionStarted(app.getAttribute('data-workbench-server-identity') || '', String(id),
+									app.getAttribute('data-workbench-server-user') || '');
 							}
 							workbench.submitForm(form);
 						}

@@ -125,6 +125,10 @@ final class IndexResolutionPlan {
 		return iterator;
 	}
 
+	int boundPrefixMask(int boundMask) {
+		return partial == null ? full.boundPrefixMask(boundMask) : partial.boundPrefixMask(boundMask);
+	}
+
 	String indexName() {
 		return partial == null ? full.toString() : partial.fields();
 	}

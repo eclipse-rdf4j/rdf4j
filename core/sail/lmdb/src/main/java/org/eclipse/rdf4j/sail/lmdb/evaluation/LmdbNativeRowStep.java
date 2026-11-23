@@ -47,6 +47,7 @@ import org.eclipse.rdf4j.query.algebra.evaluation.util.QueryEvaluationUtility;
 import org.eclipse.rdf4j.query.explanation.QueryExplanationContext;
 import org.eclipse.rdf4j.sail.lmdb.LmdbPrefixRunCursor;
 import org.eclipse.rdf4j.sail.lmdb.LmdbPrefixRunPlan;
+import org.eclipse.rdf4j.sail.lmdb.TripleIndex;
 import org.eclipse.rdf4j.sail.lmdb.ValueIds;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.codegen.KernelQueryCancelledException;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.codegen.KernelRuntime;
@@ -2139,7 +2140,12 @@ final class NativeRowsStep implements NativeResultStep, LmdbNativePhysicalPlan {
 							: "The leading pattern has incoming bound slots");
 			return null;
 		}
-		if (LmdbNativeParallelPipelines.enabled() && LmdbNativeParallelPipelines.configuredThreads() > 0
+		// Predicate DISTINCT needs one representative per predicate. Parallel wildcard scans divide the quads,
+		// losing the opportunity to skip most rows in a dense predicate run.
+		boolean predicateDomain = sourceSlots.length == 1
+				&& prefixPattern.quadPositionOfSlot(sourceSlots[0]) == TripleIndex.PRED_IDX;
+		if (!predicateDomain && LmdbNativeParallelPipelines.enabled()
+				&& LmdbNativeParallelPipelines.configuredThreads() > 0
 				&& prefixPattern.p.hasSlot() && !prefixPattern.p.isConstant()
 				&& prefixPattern.s.lookup(row.slots) == NativeLmdbQuerySource.UNKNOWN_ID
 				&& prefixPattern.o.lookup(row.slots) == NativeLmdbQuerySource.UNKNOWN_ID

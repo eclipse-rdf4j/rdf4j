@@ -16,8 +16,10 @@ import java.io.Serializable;
 import java.util.ArrayDeque;
 import java.util.Arrays;
 import java.util.Collections;
+import java.util.HashMap;
 import java.util.Iterator;
 import java.util.LinkedHashSet;
+import java.util.Map;
 import java.util.Set;
 
 import org.eclipse.rdf4j.common.annotation.Experimental;
@@ -88,25 +90,45 @@ final class RowBindingSetView extends AbstractBindingSet implements Serializable
 	public Iterator<Binding> iterator() {
 		requireRdfTerms();
 		ArrayDeque<Binding> bindings = new ArrayDeque<>(size());
-		if (base != null) {
-			for (String name : base.getBindingNames()) {
-				Binding effective = getBinding(name);
-				if (effective != null) {
-					bindings.add(effective);
-				}
-			}
+		Set<String> baseNames = base == null ? Set.of() : base.getBindingNames();
+		if (!baseNames.isEmpty()) {
+			appendBaseBindings(bindings, baseNames);
 		}
 		String[] slotNames = layout.slotNames();
 		for (int i = 0; i < slotNames.length; i++) {
 			String name = slotNames[i];
-			if (isBoundValueId(slots[i]) && (base == null || !base.hasBinding(name))) {
-				Value value = value(i);
+			if (isBoundValueId(slots[i]) && !baseNames.contains(name)) {
+				appendSlotBinding(bindings, name, i);
+			}
+		}
+		return bindings.iterator();
+	}
+
+	private void appendBaseBindings(ArrayDeque<Binding> bindings, Set<String> baseNames) {
+		// Index the actual bindings once. A positional base might otherwise scan all its columns per name.
+		Map<String, Value> inherited = new HashMap<>();
+		for (Binding binding : base) {
+			inherited.put(binding.getName(), binding.getValue());
+		}
+		for (String name : baseNames) {
+			int slot = slot(name);
+			// Keep the base column's position even when the native slot fills UNDEF or shadows it with null.
+			if (slot >= 0 && isBoundValueId(slots[slot])) {
+				appendSlotBinding(bindings, name, slot);
+			} else {
+				Value value = inherited.get(name);
 				if (value != null) {
 					bindings.add(new SimpleBinding(name, value));
 				}
 			}
 		}
-		return bindings.iterator();
+	}
+
+	private void appendSlotBinding(ArrayDeque<Binding> bindings, String name, int slot) {
+		Value value = value(slot);
+		if (value != null) {
+			bindings.add(new SimpleBinding(name, value));
+		}
 	}
 
 	@Override
@@ -265,15 +287,46 @@ final class RowBindingSetView extends AbstractBindingSet implements Serializable
 			sizeCache = 0;
 			return 0;
 		}
-		int size = base == null ? 0 : base.size();
-		String[] slotNames = layout.slotNames();
-		for (int i = 0; i < slotNames.length; i++) {
-			if (isBoundValueId(slots[i]) && (base == null || !base.hasBinding(slotNames[i]))) {
-				size++;
+		int baseSize = base == null ? 0 : base.size();
+		int nativeSize = 0;
+		for (long id : slots) {
+			if (isBoundValueId(id)) {
+				nativeSize++;
 			}
 		}
-		sizeCache = size;
-		return size;
+		int shadowed = baseSize == 0 || nativeSize == 0 ? 0 : countShadowedBindings(baseSize);
+		sizeCache = baseSize + nativeSize - shadowed;
+		return sizeCache;
+	}
+
+	private int countShadowedBindings(int baseSize) {
+		Set<String> possibleNames = base.getBindingNames();
+		boolean exactDomain = possibleNames.size() == baseSize;
+		if (!exactDomain) {
+			// Possible columns include UNDEF. Traverse the values once rather than looking up each native name.
+			int visited = 0;
+			int shadowed = 0;
+			for (Binding binding : base) {
+				int slot = slot(binding.getName());
+				if (slot >= 0 && isBoundValueId(slots[slot])) {
+					shadowed++;
+				}
+				visited++;
+			}
+			if (visited == baseSize) {
+				return shadowed;
+			}
+			// The iterator omitted explicit nulls, so check the overlapping possible names in the actual domain.
+		}
+		int shadowed = 0;
+		String[] slotNames = layout.slotNames();
+		for (int i = 0; i < slotNames.length; i++) {
+			String name = slotNames[i];
+			if (isBoundValueId(slots[i]) && possibleNames.contains(name) && (exactDomain || base.hasBinding(name))) {
+				shadowed++;
+			}
+		}
+		return shadowed;
 	}
 
 	boolean hasNativeId(String name) {

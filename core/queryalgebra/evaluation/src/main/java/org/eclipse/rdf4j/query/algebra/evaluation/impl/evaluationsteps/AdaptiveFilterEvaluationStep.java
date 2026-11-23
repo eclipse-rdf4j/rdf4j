@@ -65,6 +65,7 @@ import org.eclipse.rdf4j.query.algebra.evaluation.impl.EvaluationStatistics;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.QueryEvaluationContext;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.restrictions.PreparedRestrictionPlan;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.restrictions.RestrictionCompiler;
+import org.eclipse.rdf4j.query.algebra.evaluation.impl.restrictions.RestrictionCompiler.AttachableStep;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.restrictions.RestrictionPlanProvider;
 import org.eclipse.rdf4j.query.algebra.evaluation.iterator.FilterCondition;
 import org.eclipse.rdf4j.query.algebra.evaluation.iterator.FilterIterator;
@@ -170,10 +171,13 @@ public final class AdaptiveFilterEvaluationStep implements QueryEvaluationStep, 
 	public static QueryEvaluationStep decorate(QueryEvaluationStep step,
 			Function<QueryEvaluationStep, QueryEvaluationStep> decorator) {
 		if (step instanceof PhysicalOperator physical) {
-			return new PhysicalOperator(physical.kind, RestrictionCompiler.decorate(physical.step, decorator),
+			return new PhysicalOperator(physical.kind, decorate(physical.step, decorator),
 					physical.rebind == null ? null
-							: (left, right) -> decorator.apply(physical.rebind.apply(left, right)),
+							: (left, right) -> decorate(physical.rebind.apply(left, right), decorator),
 					physical.untrackedRebind);
+		}
+		if (step instanceof RebindableQueryEvaluationStep rebindable) {
+			return rebindable.decorate(decorator);
 		}
 		return RestrictionCompiler.decorate(step, decorator);
 	}
@@ -189,7 +193,7 @@ public final class AdaptiveFilterEvaluationStep implements QueryEvaluationStep, 
 		FILTER
 	}
 
-	private static final class PhysicalOperator implements QueryEvaluationStep, RestrictionPlanProvider {
+	private static final class PhysicalOperator implements AttachableStep {
 		private final Kind kind;
 		private final QueryEvaluationStep step;
 		private final BiFunction<QueryEvaluationStep, QueryEvaluationStep, QueryEvaluationStep> rebind;
@@ -217,6 +221,11 @@ public final class AdaptiveFilterEvaluationStep implements QueryEvaluationStep, 
 		@Override
 		public PreparedRestrictionPlan restrictionPlan() {
 			return RestrictionPlanProvider.find(step);
+		}
+
+		@Override
+		public QueryEvaluationStep attachRestriction(PreparedRestrictionPlan plan) {
+			return new PhysicalOperator(kind, RestrictionCompiler.attach(step, plan), rebind, untrackedRebind);
 		}
 	}
 
@@ -344,6 +353,10 @@ public final class AdaptiveFilterEvaluationStep implements QueryEvaluationStep, 
 
 	@Override
 	public CloseableIteration<BindingSet> evaluate(BindingSet bindings) {
+		ScopedUnionInput scoped = ScopedUnionInput.current();
+		if (scoped != null && scoped.hasRowScopes()) {
+			return fallback.evaluate(bindings);
+		}
 		// Admit normal correlated invocations only when the complete incoming frame satisfies the compile-time
 		// proof. An extra external binding can otherwise turn an EXISTS-local name into an injected binding.
 		if (!matchesInput(bindings, expectedInput)) {

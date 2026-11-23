@@ -975,6 +975,18 @@ class TripleStorePartialIndexesTest {
 	}
 
 	@Test
+	void partialPrefixIsUsedForCostingAndOrderPreservation() throws Exception {
+		try (TripleStore store = open("spoc,op");
+				Txn txn = store.getTxnManager().createReadTxn()) {
+			int object = 1 << Component.O.ordinal();
+			assertEquals(object, store.bestIndexPrefixMask(object));
+			Set<StatementOrder> orders = store.getPrefixPreservingOrders(txn, object, object);
+			assertTrue(orders.contains(StatementOrder.P));
+			assertFalse(orders.contains(StatementOrder.S));
+		}
+	}
+
+	@Test
 	void addingPartialIndexIsDeferredToTheBackgroundBuild() throws Exception {
 		try (TripleStore store = open("spoc")) {
 			store.startTransaction();
