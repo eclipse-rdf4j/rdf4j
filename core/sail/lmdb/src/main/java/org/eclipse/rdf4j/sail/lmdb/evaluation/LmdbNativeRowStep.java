@@ -1479,9 +1479,6 @@ final class NativeRowsStep implements NativeResultStep, LmdbNativePhysicalPlan {
 				: null;
 		boolean correlatedEntry = (arg.producedMask() & row.boundMask()) != 0L;
 		int[] retainedSlots = orderSlots.length == 0 ? sourceSlots : sortLayout.liveToPlan;
-		// A forced strategy must go through the arbiter below, where it can be validated and, if unavailable,
-		// reported in detail: these two fast paths open unconditionally with no cost competition and no
-		// possibility of an alternative winning, so honoring a forced strategy requires skipping them.
 		String forcedStrategy = forcedExecutionStrategyName();
 		if (LmdbNativeFactorAlgebra.candidate(arg) && !SlotPlan.encounterOrderReplaySafe(arg)
 				&& LmdbNativeForceableStrategies.matches(forcedLeader(forcedStrategy),
@@ -1496,6 +1493,7 @@ final class NativeRowsStep implements NativeResultStep, LmdbNativePhysicalPlan {
 				return openDirectScalarFilterAttempt(row, proposal);
 			}
 		}
+		// An explicitly requested strategy takes precedence over the wildcard existence shortcut.
 		if (forcedStrategy == null && !correlatedEntry
 				&& LmdbWildcardPredicateBatch.ownsExistenceParallelRound(arg, row)) {
 			LmdbNativeStrategyProposal<NativeUnorderedInput> wildcardExists = proposeBatch(row, null, false);
@@ -1509,26 +1507,6 @@ final class NativeRowsStep implements NativeResultStep, LmdbNativePhysicalPlan {
 					}
 				} finally {
 					wildcardExists.close();
-				}
-			}
-		}
-		MultiJoinPlan wildcardJoin = multiJoin;
-		if (wildcardJoin == null && distinct && arg instanceof PatternPlan pattern) {
-			wildcardJoin = new MultiJoinPlan(new SlotPlan[] { pattern }, new MaskedFilter[0]);
-		}
-		if (forcedStrategy == null && !correlatedEntry
-				&& LmdbWildcardPredicateBatch.ownsParallelRound(wildcardJoin, row, distinct, sourceSlots, orderSlots)) {
-			LmdbNativeStrategyProposal<NativeUnorderedInput> wildcard = proposeBatch(row, wildcardJoin, false);
-			if (wildcard != null) {
-				try {
-					LmdbNativeDispatchLoop.logDirect(originalExpr, "row/join dispatch", wildcard.tag,
-							"Wildcard predicate owns the parallel round");
-					NativeUnorderedInput opened = openDirectScalarFilterAttempt(row, wildcard);
-					if (opened != null) {
-						return opened;
-					}
-				} finally {
-					wildcard.close();
 				}
 			}
 		}
@@ -1859,19 +1837,12 @@ final class NativeRowsStep implements NativeResultStep, LmdbNativePhysicalPlan {
 					orderSlots.length == 0 ? sourceSlots : sortLayout.liveToPlan, offers);
 			String directTag = null;
 			String directReason = null;
-			if (forcedExecutionStrategyName() == null && (arg.producedMask() & row.boundMask()) == 0L) {
-				MultiJoinPlan wildcardJoin = multiJoin;
-				if (wildcardJoin == null && distinct && arg instanceof PatternPlan pattern) {
-					wildcardJoin = new MultiJoinPlan(new SlotPlan[] { pattern }, new MaskedFilter[0]);
-				}
-				boolean existence = LmdbWildcardPredicateBatch.ownsExistenceParallelRound(arg, row);
-				if (existence || LmdbWildcardPredicateBatch.ownsParallelRound(wildcardJoin, row, distinct,
-						sourceSlots, orderSlots)) {
-					try (var proposal = proposeBatch(row, existence ? null : wildcardJoin, false)) {
-						if (proposal != null) {
-							directTag = proposal.tag;
-							directReason = "Wildcard predicate owns the parallel round";
-						}
+			if (forcedExecutionStrategyName() == null && (arg.producedMask() & row.boundMask()) == 0L
+					&& LmdbWildcardPredicateBatch.ownsExistenceParallelRound(arg, row)) {
+				try (var proposal = proposeBatch(row, null, false)) {
+					if (proposal != null) {
+						directTag = proposal.tag;
+						directReason = "Wildcard existence owns the parallel round";
 					}
 				}
 			}
@@ -3436,6 +3407,9 @@ final class NativeUnorderedInput implements AutoCloseable {
 			observing.endPull(started);
 			return advanced;
 		} catch (IOException | RuntimeException | Error failure) {
+			if (observing != null) {
+				observing.failed();
+			}
 			// This input owns the attempt even if its row later restores or replaces the mutable carrier pointer.
 			// Keep a trial-private failure local until its arbiter decides whether it escapes.
 			failScalarFilterAttempt(failure, false);
@@ -3454,6 +3428,9 @@ final class NativeUnorderedInput implements AutoCloseable {
 			observing.endPull(started);
 			return filled;
 		} catch (IOException | RuntimeException | Error failure) {
+			if (observing != null) {
+				observing.failed();
+			}
 			failScalarFilterAttempt(failure, false);
 			throw failure;
 		}
