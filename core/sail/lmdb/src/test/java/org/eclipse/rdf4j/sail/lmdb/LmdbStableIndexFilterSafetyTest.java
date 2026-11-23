@@ -13,6 +13,7 @@
 package org.eclipse.rdf4j.sail.lmdb;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import java.io.File;
 import java.util.ArrayList;
@@ -36,8 +37,11 @@ import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.model.vocabulary.RDF4J;
+import org.eclipse.rdf4j.model.vocabulary.SESAME;
 import org.eclipse.rdf4j.query.BindingSet;
+import org.eclipse.rdf4j.query.QueryEvaluationException;
 import org.eclipse.rdf4j.query.QueryLanguage;
+import org.eclipse.rdf4j.query.QueryParseOptions;
 import org.eclipse.rdf4j.query.QueryResults;
 import org.eclipse.rdf4j.query.TupleQuery;
 import org.eclipse.rdf4j.query.algebra.Compare;
@@ -73,8 +77,9 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.CsvSource;
+import org.junit.jupiter.params.provider.ValueSource;
 
-/** ORDER BY STABLE_INDEX must not lose rows when a filter was pushed onto the pattern it would move. */
+/** Result and ordering guarantees for ORDER BY STABLE_INDEX rewrites. */
 class LmdbStableIndexFilterSafetyTest {
 
 	private static final String P = "<urn:p>";
@@ -92,6 +97,94 @@ class LmdbStableIndexFilterSafetyTest {
 
 	@TempDir
 	File dir;
+
+	@Test
+	void stableIndexUsesSingleNamedGraphAsIndexPrefix() {
+		LmdbStoreConfig config = new LmdbStoreConfig("cspo").setNativeEvaluationEnabled(false);
+		config.setExperimentalQueryOptimizations(true);
+		SailRepository repository = new SailRepository(new LmdbStore(dir, config));
+		repository.init();
+		IRI first = VF.createIRI("urn:z");
+		IRI second = VF.createIRI("urn:a");
+		IRI predicate = VF.createIRI("urn:p");
+		IRI object = VF.createIRI("urn:o");
+		IRI graph = VF.createIRI("urn:g");
+		try (RepositoryConnection connection = repository.getConnection()) {
+			connection.setQueryParseOptions(QueryParseOptions.DEFAULT
+					.withGraphAlgebraMode(QueryParseOptions.GraphAlgebraMode.LEGACY));
+			// LMDB's subject IDs follow insertion order. This differs from SPARQL value order.
+			connection.add(first, predicate, object, graph);
+			connection.add(second, predicate, object, graph);
+			connection.add(VF.createIRI("urn:excluded"), predicate, object, VF.createIRI("urn:other"));
+
+			String query = "SELECT ?g ?s FROM NAMED <urn:g> WHERE { GRAPH ?g { ?s <urn:p> <urn:o> } } ORDER BY ";
+			assertThat(QueryResults.asList(connection.prepareTupleQuery(query + "?s").evaluate()))
+					.extracting(row -> row.getValue("s"))
+					.containsExactly(second, first);
+
+			TupleQuery stableOrder = connection.prepareTupleQuery(query + "STABLE_INDEX(?s)");
+			var rows = QueryResults.asList(stableOrder.evaluate());
+			assertThat(rows).extracting(row -> row.getValue("s")).containsExactly(first, second);
+			assertThat(rows).extracting(row -> row.getValue("g")).containsExactly(graph, graph);
+			assertThat(stableOrder.explain(Explanation.Level.Optimized).toString()).doesNotContain("OrderElem");
+		} finally {
+			repository.shutDown();
+		}
+	}
+
+	@ParameterizedTest
+	@ValueSource(strings = { "urn:g", "http://rdf4j.org/schema/rdf4j#nil", "http://www.openrdf.org/schema/sesame#nil" })
+	void stableIndexUsesSingleDefaultGraphAsIndexPrefix(String graphName) {
+		LmdbStoreConfig config = new LmdbStoreConfig("cspo").setNativeEvaluationEnabled(false);
+		config.setExperimentalQueryOptimizations(true);
+		SailRepository repository = new SailRepository(new LmdbStore(dir, config));
+		repository.init();
+		IRI first = VF.createIRI("urn:z");
+		IRI second = VF.createIRI("urn:a");
+		IRI predicate = VF.createIRI("urn:p");
+		IRI object = VF.createIRI("urn:o");
+		IRI graph = VF.createIRI(graphName);
+		Resource context = RDF4J.NIL.equals(graph) || SESAME.NIL.equals(graph) ? null : graph;
+		try (RepositoryConnection connection = repository.getConnection()) {
+			connection.add(first, predicate, object, context);
+			connection.add(second, predicate, object, context);
+			connection.add(VF.createIRI("urn:excluded"), predicate, object, VF.createIRI("urn:other"));
+
+			TupleQuery query = connection.prepareTupleQuery("""
+					SELECT ?s FROM <%s> WHERE { ?s <urn:p> <urn:o> } ORDER BY STABLE_INDEX(?s)
+					""".formatted(graphName));
+			assertThat(QueryResults.asList(query.evaluate())).extracting(row -> row.getValue("s"))
+					.containsExactly(first, second);
+			assertThat(query.explain(Explanation.Level.Optimized).toString()).doesNotContain("OrderElem");
+		} finally {
+			repository.shutDown();
+		}
+	}
+
+	@Test
+	void stableIndexRequiresGlobalOrderForUnrestrictedNamedGraphs() {
+		LmdbStoreConfig config = new LmdbStoreConfig("cspo").setNativeEvaluationEnabled(false);
+		config.setExperimentalQueryOptimizations(true);
+		SailRepository repository = new SailRepository(new LmdbStore(dir, config));
+		repository.init();
+		try (RepositoryConnection connection = repository.getConnection()) {
+			connection.setQueryParseOptions(QueryParseOptions.DEFAULT
+					.withGraphAlgebraMode(QueryParseOptions.GraphAlgebraMode.LEGACY));
+			IRI predicate = VF.createIRI("urn:p");
+			IRI object = VF.createIRI("urn:o");
+			connection.add(VF.createIRI("urn:z"), predicate, object, VF.createIRI("urn:g"));
+			connection.add(VF.createIRI("urn:a"), predicate, object, VF.createIRI("urn:other"));
+
+			TupleQuery query = connection.prepareTupleQuery("""
+					SELECT ?g ?s WHERE { GRAPH ?g { ?s <urn:p> <urn:o> } } ORDER BY STABLE_INDEX(?s)
+					""");
+			assertThatThrownBy(() -> QueryResults.asList(query.evaluate()))
+					.isInstanceOf(QueryEvaluationException.class)
+					.hasMessageContaining("STABLE_INDEX(...) could not be satisfied by backend stable index order");
+		} finally {
+			repository.shutDown();
+		}
+	}
 
 	@ParameterizedTest
 	@CsvSource({ "false,0,1", "true,0,1", "false,1,1", "true,1,1", "false,1,-1", "true,1,-1" })

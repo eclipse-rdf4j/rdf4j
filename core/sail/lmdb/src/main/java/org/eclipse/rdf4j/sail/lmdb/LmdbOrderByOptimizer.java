@@ -33,7 +33,7 @@ import org.eclipse.rdf4j.sail.base.SailDatasetTripleTermSource;
 
 class LmdbOrderByOptimizer implements QueryOptimizer {
 
-	private final LmdbStableOrderPlanner stableOrderPlanner;
+	private final TripleSource tripleSource;
 	private final boolean pendingTransactionChanges;
 
 	LmdbOrderByOptimizer(TripleSource tripleSource) {
@@ -41,7 +41,7 @@ class LmdbOrderByOptimizer implements QueryOptimizer {
 	}
 
 	LmdbOrderByOptimizer(TripleSource tripleSource, boolean pendingTransactionChanges) {
-		this.stableOrderPlanner = new LmdbStableOrderPlanner(tripleSource);
+		this.tripleSource = tripleSource;
 		this.pendingTransactionChanges = pendingTransactionChanges;
 	}
 
@@ -52,6 +52,7 @@ class LmdbOrderByOptimizer implements QueryOptimizer {
 
 	@Override
 	public void optimize(TupleExpr tupleExpr, Dataset dataset, BindingSet bindings) {
+		LmdbStableOrderPlanner stableOrderPlanner = new LmdbStableOrderPlanner(tripleSource, dataset);
 		List<Order> orders = new ArrayList<>();
 
 		tupleExpr.visit(new AbstractSimpleQueryModelVisitor<RuntimeException>() {

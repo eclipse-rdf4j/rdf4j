@@ -22,10 +22,15 @@ import java.util.Set;
 
 import org.eclipse.rdf4j.common.annotation.Experimental;
 import org.eclipse.rdf4j.common.annotation.InternalUseOnly;
+import org.eclipse.rdf4j.model.Resource;
+import org.eclipse.rdf4j.model.vocabulary.RDF4J;
+import org.eclipse.rdf4j.model.vocabulary.SESAME;
+import org.eclipse.rdf4j.query.Dataset;
 import org.eclipse.rdf4j.query.algebra.Distinct;
 import org.eclipse.rdf4j.query.algebra.Extension;
 import org.eclipse.rdf4j.query.algebra.ExtensionElem;
 import org.eclipse.rdf4j.query.algebra.Filter;
+import org.eclipse.rdf4j.query.algebra.Graph;
 import org.eclipse.rdf4j.query.algebra.Join;
 import org.eclipse.rdf4j.query.algebra.LeftJoin;
 import org.eclipse.rdf4j.query.algebra.MultiProjection;
@@ -63,10 +68,16 @@ public final class LmdbStableOrderPlanner {
 			.thenComparing(Resolution::getVisibleBindingName);
 
 	private final TripleSource tripleSource;
+	private final Dataset dataset;
 
 	@InternalUseOnly
 	public LmdbStableOrderPlanner(TripleSource tripleSource) {
+		this(tripleSource, null);
+	}
+
+	LmdbStableOrderPlanner(TripleSource tripleSource, Dataset dataset) {
 		this.tripleSource = tripleSource;
+		this.dataset = dataset;
 	}
 
 	@InternalUseOnly
@@ -180,13 +191,44 @@ public final class LmdbStableOrderPlanner {
 				&& statementPattern.getScope() != StatementPattern.Scope.NAMED_CONTEXTS) {
 			return null;
 		}
-		for (Var supportedOrder : statementPattern.getSupportedOrders(tripleSource)) {
+		for (Var supportedOrder : supportedOrders(statementPattern)) {
 			if (requestedName.equals(supportedOrder.getName())) {
 				return new Resolution(visibleBindingName, statementPattern, supportedOrder, Collections.emptyList(),
 						statementPattern, false);
 			}
 		}
 		return null;
+	}
+
+	private Set<Var> supportedOrders(StatementPattern pattern) {
+		Var context = pattern.getContextVar();
+		if (dataset == null || context != null && context.hasValue()) {
+			return pattern.getSupportedOrders(tripleSource);
+		}
+		Set<Resource> selectedGraphs = pattern.getScope() == StatementPattern.Scope.NAMED_CONTEXTS
+				? dataset.getNamedGraphResources()
+				: dataset.getDefaultGraphResources();
+		if (selectedGraphs.isEmpty() || !usesQueryDataset(pattern)) {
+			return pattern.getSupportedOrders(tripleSource);
+		}
+		Resource[] physicalContexts = new Resource[selectedGraphs.size()];
+		int index = 0;
+		for (Resource graph : selectedGraphs) {
+			// Statement evaluation maps aliases of the default graph to a physical null context.
+			physicalContexts[index++] = RDF4J.NIL.equals(graph) || SESAME.NIL.equals(graph) ? null : graph;
+		}
+		return pattern.getSupportedOrders((subject, predicate, object, contexts) -> tripleSource
+				.getSupportedOrders(subject, predicate, object, physicalContexts));
+	}
+
+	private static boolean usesQueryDataset(StatementPattern pattern) {
+		boolean defaultScope = pattern.getScope() == StatementPattern.Scope.DEFAULT_CONTEXTS;
+		for (QueryModelNode parent = pattern.getParentNode(); parent != null; parent = parent.getParentNode()) {
+			if (parent instanceof Service || defaultScope && parent instanceof Graph) {
+				return false;
+			}
+		}
+		return true;
 	}
 
 	/**
