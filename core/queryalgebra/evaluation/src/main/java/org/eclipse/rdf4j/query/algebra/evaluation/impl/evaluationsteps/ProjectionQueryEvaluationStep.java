@@ -41,7 +41,8 @@ public final class ProjectionQueryEvaluationStep implements QueryEvaluationStep 
 
 		try {
 			evaluate = qes.evaluate(withInheritedGraphInput(projection, bindings, context));
-			return new ProjectionIterator(projection, evaluate, bindings, context);
+			BindingSet parent = ScopedUnionInput.projectionParent(projection, bindings);
+			return new ProjectionIterator(projection, evaluate, parent, context);
 		} catch (Throwable t) {
 			if (evaluate != null) {
 				evaluate.close();

@@ -124,7 +124,8 @@ public class FilterOptimizer implements QueryOptimizer {
 	public void optimize(TupleExpr tupleExpr, Dataset dataset, BindingSet bindings) {
 		Objects.requireNonNull(tupleExpr, "tupleExpr must not be null");
 		QueryEvaluationUtility.withQuerySafetySnapshot(tupleExpr, () -> {
-			QueryAlgebraBindingAnalysis analysis = QueryAlgebraBindingAnalysis.withBindingValues(tupleExpr, bindings);
+			QueryAlgebraBindingAnalysis analysis = QueryAlgebraBindingAnalysis.withBindingValues(tupleExpr, bindings,
+					dataset);
 			optimizeScope(tupleExpr, analysis);
 			return null;
 		});

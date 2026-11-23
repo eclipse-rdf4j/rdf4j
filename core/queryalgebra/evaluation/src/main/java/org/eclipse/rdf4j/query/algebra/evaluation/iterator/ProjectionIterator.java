@@ -28,7 +28,9 @@ import org.eclipse.rdf4j.query.algebra.ProjectionElem;
 import org.eclipse.rdf4j.query.algebra.ProjectionElemList;
 import org.eclipse.rdf4j.query.algebra.QueryModelNode;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryBindingSet;
+import org.eclipse.rdf4j.query.algebra.evaluation.impl.GraphFrameBindings;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.QueryEvaluationContext;
+import org.eclipse.rdf4j.query.algebra.evaluation.impl.evaluationsteps.ScopedUnionInput;
 
 public class ProjectionIterator extends ConvertingIteration<BindingSet, BindingSet> {
 
@@ -37,6 +39,7 @@ public class ProjectionIterator extends ConvertingIteration<BindingSet, BindingS
 	 *-----------*/
 
 	private final BiConsumer<MutableBindingSet, BindingSet> projector;
+	private final boolean trackClearedSiblingInputs;
 
 	private final Supplier<MutableBindingSet> maker;
 
@@ -66,9 +69,12 @@ public class ProjectionIterator extends ConvertingIteration<BindingSet, BindingS
 	public ProjectionIterator(Projection projection, CloseableIteration<BindingSet> iter,
 			BindingSet parentBindings, QueryEvaluationContext context) throws QueryEvaluationException {
 		super(iter);
+		trackClearedSiblingInputs = ScopedUnionInput.tracksClearedSiblingInputs();
 		ProjectionElemList projectionElemList = projection.getProjectionElemList();
 		boolean isOuterProjection = !hasEnclosingProjection(projection, context);
 		boolean includeAllParentBindings = !isOuterProjection;
+		BindingSet accessorParent = trackClearedSiblingInputs ? GraphFrameBindings.contextRow(parentBindings)
+				: parentBindings;
 
 		BindingSetMapper[] array = projectionElemList.getElements()
 				.stream()
@@ -94,7 +100,7 @@ public class ProjectionIterator extends ConvertingIteration<BindingSet, BindingS
 				for (BindingSetMapper bindingSetMapper : array) {
 					Value targetValue = bindingSetMapper.valueWithSourceName.apply(sourceBindings);
 					if (targetValue == null) {
-						targetValue = bindingSetMapper.valueWithSourceName.apply(parentBindings);
+						targetValue = bindingSetMapper.valueWithSourceName.apply(accessorParent);
 					}
 					if (targetValue != null) {
 						bindingSetMapper.setTarget.accept(targetValue, resultBindings);
@@ -141,6 +147,10 @@ public class ProjectionIterator extends ConvertingIteration<BindingSet, BindingS
 	@Override
 	protected BindingSet convert(BindingSet sourceBindings) throws QueryEvaluationException {
 		MutableBindingSet qbs = maker.get();
+		if (trackClearedSiblingInputs) {
+			projector.accept(qbs, GraphFrameBindings.contextRow(sourceBindings));
+			return GraphFrameBindings.preserveClearedSiblingInputs(sourceBindings, qbs);
+		}
 		projector.accept(qbs, sourceBindings);
 		return qbs;
 	}
