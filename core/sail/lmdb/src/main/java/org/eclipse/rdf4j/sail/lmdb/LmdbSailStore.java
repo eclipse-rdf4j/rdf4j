@@ -17469,6 +17469,8 @@ class LmdbSailStore implements SailStore {
 				implements RecordIterator, LmdbRecordIterator.ReadCheckpoint {
 			/** Rows pulled per delegate fill(): one txn-lock cycle and one open-check per batch. */
 			private static final int BATCH_ROWS = 64;
+			/** Most index probes need only a few rows; reserve a scan-sized buffer only after this one fills. */
+			private static final int FIRST_BATCH_ROWS = 4;
 			/**
 			 * Single-row pulls before switching to batched fills, so the ubiquitous 0-2 row index-nested-loop probes
 			 * stay allocation-free and pay exactly the same cost as before; genuine scans amortize the per-row lock,
@@ -17562,6 +17564,10 @@ class LmdbSailStore implements SailStore {
 			}
 
 			private void refillBatch(int demand) {
+				if (demand * 4 > batch.length) {
+					// All prefetched rows have been consumed before a refill.
+					batch = new long[BATCH_ROWS * 4];
+				}
 				batchCount = delegate.fill(batch, demand);
 				batchPos = 0;
 				if (bufferedCancellation != null) {
@@ -17618,7 +17624,7 @@ class LmdbSailStore implements SailStore {
 						}
 						return record;
 					}
-					batch = new long[BATCH_ROWS * 4];
+					batch = new long[FIRST_BATCH_ROWS * 4];
 					scratch = new long[4];
 					return nextFromBatch();
 				} catch (RuntimeException | Error failure) {
@@ -17635,9 +17641,10 @@ class LmdbSailStore implements SailStore {
 					}
 					// a refill pulls up to BATCH_ROWS rows, so it always runs the full check first
 					fullCheck();
-					refillBatch(BATCH_ROWS);
+					int demand = batchCount == 0 ? FIRST_BATCH_ROWS : BATCH_ROWS;
+					refillBatch(demand);
 					checkBudget = CHECK_STRIDE - batchCount;
-					if (batchCount < BATCH_ROWS) {
+					if (batchCount < demand) {
 						exhausted = true;
 					}
 					if (batchCount == 0) {
