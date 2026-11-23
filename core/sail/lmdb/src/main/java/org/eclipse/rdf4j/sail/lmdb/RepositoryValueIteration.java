@@ -456,6 +456,14 @@ final class RepositoryValueIteration<T> implements CloseableIteration<T>, Cooper
 				next.add(child);
 			}
 		};
+		// A singleton is already in dictionary order and needs no revision grouping.
+		if (wave.size() == 1) {
+			LmdbValue value = wave.get(0);
+			try (SailClosable activation = activateRevision(value.getInternalIdentity().revision())) {
+				decodeValue(value, enqueue);
+			}
+			return;
+		}
 		for (int start = 0; start < wave.size(); start += WAVE_VALUES) {
 			Map<ValueStoreRevision, List<PendingValue>> groups = new LinkedHashMap<>();
 			int end = Math.min(wave.size(), start + WAVE_VALUES);
@@ -468,29 +476,36 @@ final class RepositoryValueIteration<T> implements CloseableIteration<T>, Cooper
 			for (var group : groups.entrySet()) {
 				List<PendingValue> values = group.getValue();
 				values.sort(ID_ORDER);
-				ValueStore owner = group.getKey().getValueStore();
-				ValueResolutionScope scope = owner == store && transactionScope != null && transactionScope.isOpen()
-						&& (!(group.getKey() instanceof ValueStoreRevision.Lazy lazy)
-								|| transactionScope.protects(lazy))
-										? transactionScope
-										: scopes.get(owner);
-				if (owner != null && scope == null) {
-					scope = scopeFor(owner);
-				}
-				try (SailClosable activation = scope == null ? null : scope.activateForeground()) {
+				try (SailClosable activation = activateRevision(group.getKey())) {
 					for (PendingValue pending : values) {
-						LmdbValue value = pending.value;
-						checkActive();
-						value.init();
-						if (!value.isInitialized()) {
-							throw new SailException("A repository result value could not be resolved");
-						}
-						if (mayHaveValueChildren(value)) {
-							visitChildren(value, enqueue);
-						}
+						decodeValue(pending.value, enqueue);
 					}
 				}
 			}
+		}
+	}
+
+	private SailClosable activateRevision(ValueStoreRevision revision) {
+		ValueStore owner = revision.getValueStore();
+		ValueResolutionScope scope = owner == store && transactionScope != null && transactionScope.isOpen()
+				&& (!(revision instanceof ValueStoreRevision.Lazy lazy)
+						|| transactionScope.protects(lazy))
+								? transactionScope
+								: scopes.get(owner);
+		if (owner != null && scope == null) {
+			scope = scopeFor(owner);
+		}
+		return scope == null ? null : scope.activateForeground();
+	}
+
+	private void decodeValue(LmdbValue value, Consumer<Value> enqueue) {
+		checkActive();
+		value.init();
+		if (!value.isInitialized()) {
+			throw new SailException("A repository result value could not be resolved");
+		}
+		if (mayHaveValueChildren(value)) {
+			visitChildren(value, enqueue);
 		}
 	}
 
