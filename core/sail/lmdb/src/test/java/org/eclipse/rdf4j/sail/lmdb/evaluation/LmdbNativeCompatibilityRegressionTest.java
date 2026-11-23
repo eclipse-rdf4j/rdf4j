@@ -22,13 +22,16 @@ import java.io.File;
 import java.math.BigInteger;
 import java.util.Arrays;
 import java.util.HashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 
 import org.eclipse.rdf4j.common.order.StatementOrder;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Literal;
 import org.eclipse.rdf4j.model.Model;
+import org.eclipse.rdf4j.model.Statement;
 import org.eclipse.rdf4j.model.base.CoreDatatype;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.model.vocabulary.XSD;
@@ -71,11 +74,13 @@ class LmdbNativeCompatibilityRegressionTest {
 			IRI graph = VF.createIRI(NS, "graph");
 			try (SailRepositoryConnection connection = repository.getConnection()) {
 				connection.begin();
+				Set<Statement> statements = LinkedHashSet.newLinkedHashSet(6_000);
 				for (int i = 0; i < 3000; i++) {
 					IRI subject = VF.createIRI(NS, "s" + i);
-					connection.add(subject, number, VF.createLiteral(i % 100), graph);
-					connection.add(subject, number, VF.createLiteral(i % 7));
+					statements.add(VF.createStatement(subject, number, VF.createLiteral(i % 100), graph));
+					statements.add(VF.createStatement(subject, number, VF.createLiteral(i % 7)));
 				}
+				connection.add(statements);
 				connection.commit();
 			}
 			for (String body : List.of("GRAPH c:graph { ?s c:number ?n }",
@@ -209,17 +214,20 @@ class LmdbNativeCompatibilityRegressionTest {
 			IRI graph = VF.createIRI(NS, "graph");
 			try (SailRepositoryConnection connection = repository.getConnection()) {
 				connection.begin();
+				Set<Statement> statements = LinkedHashSet.newLinkedHashSet(6_030);
 				for (int i = 0; i < 3000; i++) {
 					IRI subject = VF.createIRI(NS, "s" + i);
-					connection.add(subject, number,
-							VF.createLiteral(Integer.toString(i % 100), XSD.INTEGER), graph);
-					connection.add(subject, VF.createIRI(NS, "edge"), VF.createIRI(NS, "s" + (i + 1) % 3000),
-							graph);
+					statements.add(VF.createStatement(subject, number,
+							VF.createLiteral(Integer.toString(i % 100), XSD.INTEGER), graph));
+					statements.add(VF.createStatement(subject, VF.createIRI(NS, "edge"),
+							VF.createIRI(NS, "s" + (i + 1) % 3000),
+							graph));
 					if (i % 100 == 0) {
-						connection.add(subject, number, VF.createLiteral("999", XSD.INTEGER),
-								VF.createIRI(NS, "otherGraph"));
+						statements.add(VF.createStatement(subject, number, VF.createLiteral("999", XSD.INTEGER),
+								VF.createIRI(NS, "otherGraph")));
 					}
 				}
+				connection.add(statements);
 				connection.commit();
 			}
 			String construct = PREFIX

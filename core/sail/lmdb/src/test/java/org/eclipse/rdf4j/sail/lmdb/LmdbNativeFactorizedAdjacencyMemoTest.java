@@ -15,12 +15,14 @@ package org.eclipse.rdf4j.sail.lmdb;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import java.io.File;
+import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.stream.Collectors;
 
 import org.eclipse.rdf4j.model.IRI;
+import org.eclipse.rdf4j.model.Statement;
 import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.QueryResults;
@@ -100,17 +102,21 @@ public class LmdbNativeFactorizedAdjacencyMemoTest {
 			ValueFactory vf = conn.getValueFactory();
 			IRI p1 = vf.createIRI(EX, "p1");
 			IRI p2 = vf.createIRI(EX, "p2");
+			conn.begin();
+			List<Statement> statements = new ArrayList<>(88);
 			// 64 sources fan into 8 hubs, so the middle depth re-probes each hub key repeatedly; every hub
 			// enumerates several leaves so the branch runs in ENUM role with a value payload worth memoizing
 			for (int i = 0; i < 64; i++) {
-				conn.add(vf.createIRI(EX, "s" + i), p1, vf.createIRI(EX, "hub" + i % 8));
+				statements.add(vf.createStatement(vf.createIRI(EX, "s" + i), p1, vf.createIRI(EX, "hub" + i % 8)));
 			}
 			for (int j = 0; j < 8; j++) {
 				IRI hub = vf.createIRI(EX, "hub" + j);
 				for (int k = 0; k < 3; k++) {
-					conn.add(hub, p2, vf.createIRI(EX, "leaf" + j + "x" + k));
+					statements.add(vf.createStatement(hub, p2, vf.createIRI(EX, "leaf" + j + "x" + k)));
 				}
 			}
+			conn.add(statements);
+			conn.commit();
 		}
 		LmdbSailStore backing = sail.getBackingStore();
 		LmdbDirectAdjacencyStore direct = backing.directAdjacencyStore();

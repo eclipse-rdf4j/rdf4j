@@ -251,6 +251,8 @@ class LmdbDirectAdjacencyQueryTest {
 			try (CloseableDataset dataset = dataset()) {
 				long hitsBefore = direct.snapshotMetrics().lookupHits;
 				assertThat(dataset.source.count(-1, -1, -1, g1)).isEqualTo(1);
+				// Context-only counts use the LMDB catalog; a predicate-bound count witnesses adjacency readiness.
+				assertThat(dataset.source.count(-1, p1, -1, g1)).isEqualTo(1);
 				if (direct.snapshotMetrics().lookupHits > hitsBefore) {
 					return;
 				}
