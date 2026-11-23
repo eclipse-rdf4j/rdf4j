@@ -163,6 +163,42 @@ public class PathIterationTest {
 	}
 
 	@Test
+	void fixedLexicalEndpointsReuseAnOrdinaryPathFrontier() {
+		model.clear();
+		for (int i = 0; i < 32; i++) {
+			model.add(vf.createIRI("urn:n:" + i), RDFS.SUBCLASSOF, vf.createIRI("urn:n:" + (i + 1)));
+		}
+		model.add(vf.createIRI("urn:n:32"), RDFS.SUBCLASSOF, vf.createIRI("urn:n:0"));
+		var counting = spy(evaluator);
+		AtomicInteger statementPreparations = new AtomicInteger();
+		doAnswer(call -> {
+			if (call.getArgument(0) instanceof StatementPattern) {
+				statementPreparations.incrementAndGet();
+			}
+			return call.callRealMethod();
+		}).when(counting).precompile(any(TupleExpr.class), any(QueryEvaluationContext.class));
+
+		String predicate = "<" + RDFS.SUBCLASSOF + ">";
+		List<String> patterns = List.of(
+				"<urn:n:0> " + predicate + "+ <urn:n:32>",
+				"<urn:n:32> ^" + predicate + "* <urn:n:0>",
+				"<urn:n:0> " + predicate + "+ <urn:n:0>",
+				"<urn:n:0> " + predicate + "+ <urn:absent>",
+				"<urn:absent> " + predicate + "* <urn:absent>");
+		for (int i = 0; i < patterns.size(); i++) {
+			String pattern = patterns.get(i);
+			statementPreparations.set(0);
+			var parsed = QueryParserUtil.parseTupleQuery(QueryLanguage.SPARQL,
+					"SELECT * WHERE { " + pattern + " }", null);
+			var step = counting.precompile(new QueryRoot(parsed.getTupleExpr()));
+			try (var results = step.evaluate(EmptyBindingSet.getInstance())) {
+				assertThat(QueryResults.asList(results)).as(pattern).hasSize(i == 3 ? 0 : 1);
+			}
+			assertThat(statementPreparations.get()).as(pattern).isLessThanOrEqualTo(3);
+		}
+	}
+
+	@Test
 	void reusedFrontierBindsItsPrivateSlotInAnArrayQuery() {
 		model.clear();
 		var a = vf.createIRI("urn:a");
