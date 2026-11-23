@@ -404,17 +404,13 @@ final class RepositoryValueIteration<T> implements CloseableIteration<T>, Cooper
 	private void resolveWaves(List<Value> roots, ResolutionScratch scratch) {
 		IdentityHashMap<Value, Boolean> visited = scratch.visited;
 		List<LmdbValue> wave = scratch.wave;
-		ArrayDeque<Value> descendants = new ArrayDeque<>();
-		Consumer<Value> descend = child -> {
-			if (child != null) {
-				descendants.addLast(child);
-			}
-		};
+		Descendants descendants = null;
 		while (!roots.isEmpty()) {
 			// Reserve every visible foreign epoch before decoding. Visit the loaded graph depth first so an
 			// application getter on a later root cannot release an earlier root's foreign epoch before admission.
 			for (Value root : roots) {
-				for (Value value = root; value != null; value = descendants.pollLast()) {
+				for (Value value = root; value != null; value = descendants == null ? null
+						: descendants.stack.pollLast()) {
 					LmdbValue lmdb = value instanceof LmdbValue nativeValue ? nativeValue : null;
 					boolean cold = lmdb != null && !lmdb.isInitialized();
 					boolean expand = !cold && mayHaveValueChildren(value);
@@ -427,7 +423,10 @@ final class RepositoryValueIteration<T> implements CloseableIteration<T>, Cooper
 					if (cold) {
 						wave.add(lmdb);
 					} else if (expand) {
-						visitChildren(value, descend);
+						if (descendants == null) {
+							descendants = new Descendants();
+						}
+						visitChildren(value, descendants);
 					}
 				}
 			}
@@ -438,6 +437,18 @@ final class RepositoryValueIteration<T> implements CloseableIteration<T>, Cooper
 			decodeWave(wave, next);
 			wave.clear();
 			roots = next;
+		}
+	}
+
+	// Created for the current row only if an already-loaded value exposes its children.
+	private static final class Descendants implements Consumer<Value> {
+		final ArrayDeque<Value> stack = new ArrayDeque<>();
+
+		@Override
+		public void accept(Value child) {
+			if (child != null) {
+				stack.addLast(child);
+			}
 		}
 	}
 
