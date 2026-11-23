@@ -27,6 +27,7 @@ import java.util.function.Function;
 import java.util.function.Supplier;
 
 import org.eclipse.rdf4j.collection.factory.api.CollectionFactory;
+import org.eclipse.rdf4j.common.annotation.InternalUseOnly;
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.common.iteration.CooperativeCancellation;
 import org.eclipse.rdf4j.common.iteration.IndexReportingIterator;
@@ -90,6 +91,7 @@ public final class RestrictionCompiler {
 	}
 
 	/** A built-in step that can retain its physical rebinding contract when a restriction is attached. */
+	@InternalUseOnly
 	public interface AttachableStep extends QueryEvaluationStep, RestrictionPlanProvider {
 		QueryEvaluationStep attachRestriction(PreparedRestrictionPlan plan);
 	}

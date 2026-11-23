@@ -16,6 +16,7 @@ import java.util.function.BiFunction;
 import java.util.function.Consumer;
 import java.util.function.Function;
 
+import org.eclipse.rdf4j.common.annotation.InternalUseOnly;
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.common.iteration.ConvertingIteration;
 import org.eclipse.rdf4j.model.Value;
@@ -65,6 +66,7 @@ public class ExtensionIterator extends ConvertingIteration<BindingSet, BindingSe
 		return prepareAssignments(extension, strategy, context).apply(null);
 	}
 
+	@InternalUseOnly
 	public static Function<BindingSet, Consumer<MutableBindingSet>> prepareAssignments(Extension extension,
 			EvaluationStrategy strategy, QueryEvaluationContext context) {
 		BiConsumer<MutableBindingSet, BindingSet> consumer = null;

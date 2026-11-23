@@ -66,7 +66,7 @@ public final class LmdbStandardQueryOptimizerPipeline implements QueryOptimizerP
 	 *                            planner.
 	 */
 	@InternalUseOnly
-	public LmdbStandardQueryOptimizerPipeline(EvaluationStrategy strategy, TripleSource tripleSource,
+	LmdbStandardQueryOptimizerPipeline(EvaluationStrategy strategy, TripleSource tripleSource,
 			EvaluationStatistics evaluationStatistics, boolean nativeEngine, boolean stableOrderDistinct) {
 		if (nativeEngine && stableOrderDistinct) {
 			throw new IllegalArgumentException("The native engine keeps its own planner; stableOrderDistinct is only "

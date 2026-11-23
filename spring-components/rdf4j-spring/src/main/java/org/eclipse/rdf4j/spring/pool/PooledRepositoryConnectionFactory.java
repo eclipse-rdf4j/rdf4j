@@ -17,6 +17,7 @@ import java.lang.invoke.MethodHandles;
 import org.apache.commons.pool2.ObjectPool;
 import org.apache.commons.pool2.impl.GenericObjectPool;
 import org.apache.commons.pool2.impl.GenericObjectPoolConfig;
+import org.eclipse.rdf4j.common.annotation.InternalUseOnly;
 import org.eclipse.rdf4j.repository.RepositoryConnection;
 import org.eclipse.rdf4j.spring.support.connectionfactory.IdempotentlyDisposableConnectionFactory;
 import org.eclipse.rdf4j.spring.support.connectionfactory.RepositoryConnectionFactory;
@@ -66,6 +67,7 @@ public class PooledRepositoryConnectionFactory implements IdempotentlyDisposable
 	}
 
 	@Override
+	@InternalUseOnly
 	public synchronized boolean isDestroyed() {
 		return destroyed;
 	}

@@ -27,7 +27,7 @@ import org.eclipse.rdf4j.query.algebra.evaluation.impl.DistinctBindingSetKey;
 
 @Experimental
 @InternalUseOnly
-public final class LmdbPartitionedDistinctIteration extends FilterIteration<BindingSet> {
+final class LmdbPartitionedDistinctIteration extends FilterIteration<BindingSet> {
 
 	private final String partitionBindingName;
 	private final Supplier<CollectionFactory> collectionFactorySupplier;

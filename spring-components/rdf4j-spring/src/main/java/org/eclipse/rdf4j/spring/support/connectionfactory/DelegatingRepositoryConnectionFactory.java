@@ -17,6 +17,7 @@ import java.util.Collections;
 import java.util.Map;
 import java.util.Set;
 
+import org.eclipse.rdf4j.common.annotation.InternalUseOnly;
 import org.eclipse.rdf4j.repository.RepositoryConnection;
 import org.springframework.beans.factory.BeanFactory;
 import org.springframework.beans.factory.BeanFactoryAware;
@@ -65,11 +66,13 @@ public abstract class DelegatingRepositoryConnectionFactory
 	}
 
 	@Override
+	@InternalUseOnly
 	public void setBeanFactory(BeanFactory beanFactory) {
 		setContainingBeanFactory(beanFactory);
 	}
 
 	@Override
+	@InternalUseOnly
 	public void setApplicationContext(ApplicationContext applicationContext) {
 		for (ApplicationContext current = applicationContext; current != null; current = current.getParent()) {
 			if (current instanceof ConfigurableApplicationContext context
@@ -123,6 +126,7 @@ public abstract class DelegatingRepositoryConnectionFactory
 	}
 
 	@Override
+	@InternalUseOnly
 	public synchronized boolean isDestroyed() {
 		return destroyed;
 	}

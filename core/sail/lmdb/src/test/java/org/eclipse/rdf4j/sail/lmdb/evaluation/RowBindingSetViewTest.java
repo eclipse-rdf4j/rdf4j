@@ -76,14 +76,19 @@ class RowBindingSetViewTest {
 	void distinctKeyRoundTripSurvivesUndefSlotsAndExplicitNulls() throws IOException, ClassNotFoundException {
 		RowBindingSetView row = row(baseWithExplicitNull(), List.of("x", "w"), 14, 28);
 		DistinctBindingSetKey key = new DistinctBindingSetKey(row);
+		QueryBindingSet expectedBindings = new QueryBindingSet();
+		expectedBindings.addBinding(binding("x", 14));
+		expectedBindings.addBinding(binding("w", 28));
+		expectedBindings.addBinding(binding("z", 33));
+		expectedBindings.addBinding("y", null);
+		DistinctBindingSetKey expected = new DistinctBindingSetKey(expectedBindings);
 		ByteArrayOutputStream bytes = new ByteArrayOutputStream();
 		try (var stream = new ObjectOutputStream(bytes)) {
 			stream.writeObject(key);
 		}
 		try (var stream = new ObjectInputStream(new ByteArrayInputStream(bytes.toByteArray()))) {
 			DistinctBindingSetKey restored = (DistinctBindingSetKey) stream.readObject();
-			assertThat(restored.bindings().getBindingNames()).containsExactlyInAnyOrder("x", "w", "z", "y");
-			assertThat(restored.bindings().getValue("y")).isNull();
+			assertThat(restored).isEqualTo(expected);
 			assertThat(restored).isEqualTo(key).hasSameHashCodeAs(key);
 			assertThat(key).isEqualTo(restored);
 		}

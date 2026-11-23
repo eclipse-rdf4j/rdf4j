@@ -533,8 +533,8 @@ public class JoinQueryEvaluationStep implements QueryEvaluationStep, Restriction
 	}
 
 	/**
-	 * Whether the operator this step picks for {@code join} emits its rows in the order the left argument produced
-	 * them.
+	 * Whether the operator this step picks for {@code join} emits its rows in the order the left argument produced them
+	 * under the selected dataset.
 	 * <p>
 	 * {@link JoinIterator} re-evaluates the right argument once per left row, and {@link InnerMergeJoinIterator} emits
 	 * in the merge key both arguments were ordered on, so both inherit the left argument's order. The other two do not:
@@ -546,11 +546,7 @@ public class JoinQueryEvaluationStep implements QueryEvaluationStep, Restriction
 	 * finished plan emits has to ask the code that decides how the plan is evaluated, not re-derive it from the
 	 * algebra.
 	 */
-	public static boolean preservesLeftArgOrder(Join join) {
-		return preservesLeftArgOrder(join, null);
-	}
-
-	/** Whether the join preserves the left argument's order under the selected dataset. */
+	@InternalUseOnly
 	public static boolean preservesLeftArgOrder(Join join, Dataset dataset) {
 		TupleExpr rightArg = join.getRightArg();
 		if (rightArg instanceof Service || TupleExprs.containsGraphBoundary(join.getLeftArg())) {
@@ -569,6 +565,7 @@ public class JoinQueryEvaluationStep implements QueryEvaluationStep, Restriction
 	}
 
 	/** A shared graph name can be absent in one operand's rows and supplied by the other operand. */
+	@InternalUseOnly
 	public static boolean hasNullableGraphJoinKey(Join join, Dataset dataset) {
 		return hasNullableGraphJoinKey(join, pattern -> TupleExprs.canScanDefaultContext(pattern, dataset));
 	}

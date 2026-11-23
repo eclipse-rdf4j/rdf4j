@@ -26,6 +26,7 @@ import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.Predicate;
 import java.util.function.Supplier;
 
+import org.eclipse.rdf4j.common.annotation.InternalUseOnly;
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.common.iteration.CooperativeCancellation;
 import org.eclipse.rdf4j.common.iteration.LookAheadIteration;
@@ -108,6 +109,7 @@ public final class ScopedLeftJoinIterator extends LookAheadIteration<BindingSet>
 	}
 
 	/** One prepared UNION arm and the sibling bindings it reads as parameters. */
+	@InternalUseOnly
 	public record ParameterizedArm(QueryEvaluationStep step, Set<String> parameters, boolean repeatable,
 			boolean discardable) {
 	}
@@ -212,6 +214,7 @@ public final class ScopedLeftJoinIterator extends LookAheadIteration<BindingSet>
 	}
 
 	/** Opens each repeatable, discardable arm on demand and bounds replay across all its frames. */
+	@InternalUseOnly
 	public static ScopedLeftJoinIterator withParameters(QueryEvaluationStep left, List<ParameterizedArm> rightArms,
 			QueryValueEvaluationStep condition, BindingSet bindings, QueryEvaluationContext context,
 			String[] joinAttributes, Set<String> parameters, boolean optional) {
