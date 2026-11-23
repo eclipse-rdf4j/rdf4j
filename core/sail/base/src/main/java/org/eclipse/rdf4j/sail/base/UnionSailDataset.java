@@ -369,6 +369,10 @@ class UnionSailDataset implements SailDataset, TreeOwnedDataset {
 
 		@Override
 		public String getIndexName() {
+			if (reporters.size() == 1) {
+				String name = reporters.get(0).getIndexName();
+				return name == null ? "" : name;
+			}
 			Set<String> indexNames = new LinkedHashSet<>();
 			for (IndexReportingIterator reporter : reporters) {
 				String indexName = reporter.getIndexName();
