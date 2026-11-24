@@ -1967,9 +1967,7 @@ public final class QueryAlgebraBindingAnalysis {
 
 		static OutputFacts known(Set<String> possible, Set<String> guaranteed, Map<String, Value> fixed,
 				Map<String, Set<ValueKind>> kinds, ReadOnlyContext input, boolean canProduceRows) {
-			Set<String> retained = new HashSet<>(input.maybeBoundNames);
-			retained.removeAll(possible);
-			return known(possible, guaranteed, fixed, kinds, input, canProduceRows, retained);
+			return known(possible, guaranteed, fixed, kinds, input, canProduceRows, input.maybeBoundNames);
 		}
 
 		static OutputFacts known(Set<String> possible, Set<String> guaranteed, Map<String, Value> fixed,
