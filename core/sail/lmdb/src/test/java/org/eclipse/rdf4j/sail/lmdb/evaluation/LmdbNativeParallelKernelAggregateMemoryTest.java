@@ -134,23 +134,6 @@ class LmdbNativeParallelKernelAggregateMemoryTest {
 		for (String property : PROPERTIES) {
 			previousProperties.put(property, System.getProperty(property));
 		}
-		LmdbStoreConfig config = new LmdbStoreConfig("spoc,posc,ospc").setNativeEvaluationEnabled(true)
-				.setDirectAdjacencyEnabled(true)
-				.setDirectAdjacencyMode(DirectAdjacencyMode.PREFER)
-				.setDirectAdjacencyMaxBytes(1L << 30);
-		repository = new SailRepository(new LmdbStore(dataDir, config));
-		try (SailRepositoryConnection connection = repository.getConnection()) {
-			ValueFactory vf = connection.getValueFactory();
-			IRI predicate = vf.createIRI(EX, "p");
-			IRI numericPredicate = vf.createIRI(EX, "numeric");
-			connection.begin();
-			for (int i = 0; i < ROWS; i++) {
-				connection.add(vf.createIRI(EX, "s" + i), predicate, vf.createLiteral(longLiteral(i)));
-				connection.add(vf.createIRI(EX, "n" + i), numericPredicate,
-						vf.createLiteral(new BigDecimal(i + "." + "7".repeat(8_192))));
-			}
-			connection.commit();
-		}
 		set("rdf4j.lmdb.nativeQueryEngine.enabled", "true");
 		set("rdf4j.lmdb.janinoCodegen.enabled", "true");
 		set("rdf4j.lmdb.janinoCodegen.synchronous", "true");
@@ -170,6 +153,30 @@ class LmdbNativeParallelKernelAggregateMemoryTest {
 		set("rdf4j.lmdb.parallel.rangePartition.enabled", "false");
 		set("rdf4j.lmdb.parallel.startupWork", "0");
 		set(LmdbNativeParallelKernelAggregate.ENABLED_PROPERTY, "true");
+	}
+
+	/** Store-backed cases construct their own fixture; synthetic admission checks need no LMDB store. */
+	private void initializeRepository() {
+		if (repository != null) {
+			return;
+		}
+		LmdbStoreConfig config = new LmdbStoreConfig("spoc,posc,ospc").setNativeEvaluationEnabled(true)
+				.setDirectAdjacencyEnabled(true)
+				.setDirectAdjacencyMode(DirectAdjacencyMode.PREFER)
+				.setDirectAdjacencyMaxBytes(1L << 30);
+		repository = new SailRepository(new LmdbStore(dataDir, config));
+		try (SailRepositoryConnection connection = repository.getConnection()) {
+			ValueFactory vf = connection.getValueFactory();
+			IRI predicate = vf.createIRI(EX, "p");
+			IRI numericPredicate = vf.createIRI(EX, "numeric");
+			connection.begin();
+			for (int i = 0; i < ROWS; i++) {
+				connection.add(vf.createIRI(EX, "s" + i), predicate, vf.createLiteral(longLiteral(i)));
+				connection.add(vf.createIRI(EX, "n" + i), numericPredicate,
+						vf.createLiteral(new BigDecimal(i + "." + "7".repeat(8_192))));
+			}
+			connection.commit();
+		}
 		LmdbStore store = (LmdbStore) repository.getSail();
 		assertThat(AdjacencyEngagementTestAccess.buildNow(store))
 				.as("the committed fixture must finish direct-adjacency construction before parallel admission; state=%s",
@@ -180,17 +187,20 @@ class LmdbNativeParallelKernelAggregateMemoryTest {
 	@AfterEach
 	void tearDown() {
 		LmdbNativeHashJoin.queryMemoryOverride = null;
-		if (repository != null) {
-			repository.shutDown();
-		}
-		for (Map.Entry<String, String> entry : previousProperties.entrySet()) {
-			if (entry.getValue() == null) {
-				System.clearProperty(entry.getKey());
-			} else {
-				System.setProperty(entry.getKey(), entry.getValue());
+		try {
+			if (repository != null) {
+				repository.shutDown();
 			}
+		} finally {
+			for (Map.Entry<String, String> entry : previousProperties.entrySet()) {
+				if (entry.getValue() == null) {
+					System.clearProperty(entry.getKey());
+				} else {
+					System.setProperty(entry.getKey(), entry.getValue());
+				}
+			}
+			previousProperties.clear();
 		}
-		previousProperties.clear();
 	}
 
 	@Test
@@ -543,6 +553,7 @@ class LmdbNativeParallelKernelAggregateMemoryTest {
 	}
 
 	private void assertCount(String query, String forcedStrategy) {
+		initializeRepository();
 		try (SailRepositoryConnection connection = repository.getConnection();
 				var result = forced(connection, query, forcedStrategy).evaluate()) {
 			assertThat(result.hasNext()).isTrue();
@@ -616,6 +627,7 @@ class LmdbNativeParallelKernelAggregateMemoryTest {
 	}
 
 	private List<BindingSet> numericAggregates(String forcedStrategy) {
+		initializeRepository();
 		List<BindingSet> rows = new ArrayList<>();
 		try (SailRepositoryConnection connection = repository.getConnection();
 				var result = forced(connection, NUMERIC_QUERY, forcedStrategy).evaluate()) {
