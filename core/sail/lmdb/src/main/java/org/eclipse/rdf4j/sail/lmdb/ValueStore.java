@@ -1356,7 +1356,7 @@ public class ValueStore extends AbstractValueFactory implements BNodeIdResolver,
 			cacheOffset += bankSets * VALUE_CACHE_WAYS;
 		}
 
-		int hashCacheSize = nextPowerOfTwo(Math.max(1024, config.getValueCacheSize()));
+		int hashCacheSize = valueHashCacheEnabled ? nextPowerOfTwo(Math.max(1024, config.getValueCacheSize())) : 0;
 		valueHashCacheId = new long[hashCacheSize];
 		valueHashCacheHash = new int[hashCacheSize];
 		valueHashCacheMask = hashCacheSize - 1;
@@ -5763,6 +5763,9 @@ public class ValueStore extends AbstractValueFactory implements BNodeIdResolver,
 	}
 
 	int getStoredHash(long id) {
+		if (!valueHashCacheEnabled) {
+			return 0;
+		}
 		int hash = getCachedStoredHash(id);
 		return hash != 0 ? hash : getStoredHashUnchecked(id);
 	}
