@@ -9547,33 +9547,31 @@ class LmdbSailStore implements SailStore {
 		}
 
 		CursorCancellation cancellation = NativeLmdbQuerySource.captureCursorCancellation();
-		if (contexts.length == 0) {
-			RecordIterator records = source.statements(subjID, predID, objID, LmdbValue.UNKNOWN_ID,
+		if (contexts.length <= 1) {
+			Resource context = contexts.length == 0 ? null : contexts[0];
+			long contextID = LmdbValue.UNKNOWN_ID;
+			if (contexts.length == 1) {
+				contextID = statementContextId(source, context);
+				if (contextID == LmdbValue.UNKNOWN_ID) {
+					return IterationConstants.EMPTY_STATEMENT_ITERATION;
+				}
+			}
+			RecordIterator records = source.statements(subjID, predID, objID, contextID,
 					nativeSourceObservationForTest, cancellation);
-			return semanticStatements(source,
-					new LmdbStatementIterator(records, valueStore, source.readView.valueSnapshot()), subj, pred, obj,
-					cancellation);
+			return semanticStatements(source, statementIterator(source, records, subj, pred, obj, context),
+					subj, pred, obj, cancellation);
 		}
 
 		ArrayList<LmdbStatementIterator> perContextIterList = new ArrayList<>(contexts.length);
 		try {
 			for (Resource context : contexts) {
-				long contextID;
-				if (context == null) {
-					contextID = 0L;
-				} else if (!context.isTripleTerm()) {
-					contextID = valueStore.getStatementId(source.readView.valueSnapshot(), context,
-							ValuePosition.CONTEXT);
-					if (contextID == LmdbValue.UNKNOWN_ID) {
-						continue;
-					}
-				} else {
+				long contextID = statementContextId(source, context);
+				if (contextID == LmdbValue.UNKNOWN_ID) {
 					continue;
 				}
-
 				RecordIterator records = source.statements(subjID, predID, objID, contextID,
 						nativeSourceObservationForTest, cancellation);
-				perContextIterList.add(new LmdbStatementIterator(records, valueStore, source.readView.valueSnapshot()));
+				perContextIterList.add(statementIterator(source, records, subj, pred, obj, context));
 			}
 
 			if (perContextIterList.isEmpty()) {
@@ -9589,15 +9587,40 @@ class LmdbSailStore implements SailStore {
 		}
 	}
 
+	private long statementContextId(LmdbSailDataset source, Resource context) throws IOException {
+		if (context == null) {
+			return 0L;
+		}
+		return context.isTripleTerm() ? LmdbValue.UNKNOWN_ID
+				: valueStore.getStatementId(source.readView.valueSnapshot(), context, ValuePosition.CONTEXT);
+	}
+
+	private LmdbStatementIterator statementIterator(LmdbSailDataset source, RecordIterator records,
+			Resource subj, IRI pred, Value obj, Resource context) {
+		try {
+			return new LmdbStatementIterator(records, valueStore, source.readView.valueSnapshot(),
+					subj, pred, obj, context);
+		} catch (RuntimeException | Error failure) {
+			// Capturing a supplied native term can fail after the record iterator has acquired its resources.
+			KernelRuntime.closeCursor(records, failure);
+			throw failure;
+		}
+	}
+
 	private CloseableIteration<? extends Statement> semanticStatements(LmdbSailDataset source,
 			CloseableIteration<? extends Statement> statements, Resource subj, IRI pred, Value obj,
 			CursorCancellation cancellation) {
-		return valueStore.getFormat().isLegacy()
-				? source.semanticScopes.own(new LegacySemanticScope<Statement>(statements,
-						candidate -> LegacySemanticScope.matches(candidate, subj, pred, obj)
-								&& !hasExplicitLegacyAlias(source, candidate, cancellation),
-						LegacySemanticScope::containsLanguage, LegacySemanticScope::detached))
-				: statements;
+		try {
+			return valueStore.getFormat().isLegacy()
+					? source.semanticScopes.own(new LegacySemanticScope<Statement>(statements,
+							candidate -> LegacySemanticScope.matches(candidate, subj, pred, obj)
+									&& !hasExplicitLegacyAlias(source, candidate, cancellation),
+							LegacySemanticScope::containsLanguage, LegacySemanticScope::detached))
+					: statements;
+		} catch (RuntimeException | Error failure) {
+			closeStatementIteration(statements, failure);
+			throw failure;
+		}
 	}
 
 	/** Preserve the disjoint explicit/inferred storage contract using the candidate's own snapshot and IDs. */
@@ -15449,7 +15472,7 @@ class LmdbSailStore implements SailStore {
 		 * inconsistent reads.
 		 */
 		private void ensureSnapshot() {
-			QueryExecutionContext.checkpointReplaySafepoint();
+			nativeSourceReplay.checkpointNow();
 			readView.ensureNativeSnapshotsValid();
 		}
 
