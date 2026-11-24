@@ -1145,7 +1145,7 @@ abstract class LmdbNativeAggregatePlannerBase {
 		if (args.size() == 1 && unaryFactory.isPresent()) {
 			var factory = unaryFactory.get();
 			return AggregateSpec.custom(name,
-					new NativeCustomAggregate(factory, null, argumentEvaluators, factory::getCollector, false,
+					new NativeCustomAggregate(factory, null, argumentEvaluators, factory::getCollector, -1,
 							call.isDistinct()));
 		}
 		if (nAryFactory.isPresent()) {
@@ -1157,7 +1157,8 @@ abstract class LmdbNativeAggregatePlannerBase {
 				return null;
 			}
 			return AggregateSpec.custom(name,
-					new NativeCustomAggregate(null, factory, argumentEvaluators, factory::getCollector, true,
+					new NativeCustomAggregate(null, factory, argumentEvaluators,
+							() -> factory.getCollector(args.size()), args.size(),
 							call.isDistinct()));
 		}
 		return null;

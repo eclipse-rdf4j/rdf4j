@@ -27,7 +27,7 @@ public class PercentileContAggregateFactory extends AbstractNAryAggregateFactory
 	}
 
 	@Override
-	public ExtensionCollector getCollector() {
+	public ExtensionCollector getCollector(int arity) {
 		return new QuantileCollector(true, null);
 	}
 }

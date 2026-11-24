@@ -26,7 +26,7 @@ public class ArgMinAggregateFactory extends AbstractNAryAggregateFactory {
 	}
 
 	@Override
-	public ExtensionCollector getCollector() {
+	public ExtensionCollector getCollector(int arity) {
 		return new ArgExtremumCollector(true);
 	}
 }
