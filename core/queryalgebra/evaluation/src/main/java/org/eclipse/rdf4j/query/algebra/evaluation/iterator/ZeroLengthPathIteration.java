@@ -17,6 +17,7 @@ import java.util.Set;
 import java.util.function.BiConsumer;
 
 import org.eclipse.rdf4j.collection.factory.api.CollectionFactory;
+import org.eclipse.rdf4j.common.annotation.InternalUseOnly;
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.common.iteration.CooperativeCancellation;
 import org.eclipse.rdf4j.common.iteration.LookAheadIteration;
@@ -61,8 +62,8 @@ public class ZeroLengthPathIteration extends LookAheadIteration<BindingSet> {
 	private BindingSet currentScanBinding;
 
 	private Set<Value> reportedValues;
-	private final String internalSubject;
-	private final String internalObject;
+	private String internalSubject;
+	private String internalObject;
 
 	private Set<BindingSet> reportedGraphValues;
 
@@ -70,7 +71,7 @@ public class ZeroLengthPathIteration extends LookAheadIteration<BindingSet> {
 
 	private final EvaluationStrategy evaluationStrategy;
 
-	private final QueryEvaluationStep precompile;
+	private QueryEvaluationStep precompile;
 
 	private final QueryEvaluationContext context;
 
@@ -98,6 +99,13 @@ public class ZeroLengthPathIteration extends LookAheadIteration<BindingSet> {
 
 	public ZeroLengthPathIteration(EvaluationStrategy evaluationStrategyImpl, Var subjectVar, Var objVar, Value subj,
 			Value obj, Var contextVar, BindingSet bindings, QueryEvaluationContext context) {
+		this(evaluationStrategyImpl, subjectVar, objVar, subj, obj, contextVar, bindings, context, false);
+	}
+
+	@InternalUseOnly
+	public ZeroLengthPathIteration(EvaluationStrategy evaluationStrategyImpl, Var subjectVar, Var objVar, Value subj,
+			Value obj, Var contextVar, BindingSet bindings, QueryEvaluationContext context,
+			boolean deferEnumerationScan) {
 		this.evaluationStrategy = evaluationStrategyImpl;
 		this.context = context;
 		this.result = new QueryBindingSet(bindings);
@@ -145,6 +153,20 @@ public class ZeroLengthPathIteration extends LookAheadIteration<BindingSet> {
 		fixedGraph = contextVar == null ? null
 				: contextVar.hasValue() ? contextVar.getValue()
 						: bindings.getValue(contextVarName);
+		if (!deferEnumerationScan) {
+			prepareEnumerationScan(false);
+		}
+		setSubject = context.addBinding(subjectVarName);
+		setObject = context.addBinding(objectVarName);
+		if (contextVar != null) {
+			setContext = context.addBinding(contextVarName);
+		} else {
+			setContext = null;
+		}
+		this.cf = evaluationStrategy.getCollectionFactory().get();
+	}
+
+	private void prepareEnumerationScan(boolean useCapturedGraph) {
 		Set<String> occupied = new HashSet<>(bindings.getBindingNames());
 		occupied.add(subjectVarName);
 		occupied.add(objectVarName);
@@ -156,8 +178,10 @@ public class ZeroLengthPathIteration extends LookAheadIteration<BindingSet> {
 		Var endVar = createAnonVar(internalObject);
 
 		StatementPattern subjects;
-		if (contextVar != null) {
-			subjects = new StatementPattern(Scope.NAMED_CONTEXTS, startVar, predicate, endVar, scanGraphVar());
+		if (graphContextVar != null) {
+			// A deferred scan uses the graph value selected when this iteration was opened.
+			Var graph = useCapturedGraph ? scanGraphVar(fixedGraph) : scanGraphVar();
+			subjects = new StatementPattern(Scope.NAMED_CONTEXTS, startVar, predicate, endVar, graph);
 		} else {
 			subjects = new StatementPattern(startVar, predicate, endVar);
 		}
@@ -166,14 +190,6 @@ public class ZeroLengthPathIteration extends LookAheadIteration<BindingSet> {
 			precompile = evaluationStrategy.precompile(subjects,
 					scanContext);
 		}
-		setSubject = context.addBinding(subjectVarName);
-		setObject = context.addBinding(objectVarName);
-		if (contextVar != null) {
-			setContext = context.addBinding(contextVarName);
-		} else {
-			setContext = null;
-		}
-		this.cf = evaluationStrategy.getCollectionFactory().get();
 	}
 
 	@Override
@@ -195,6 +211,14 @@ public class ZeroLengthPathIteration extends LookAheadIteration<BindingSet> {
 	private BindingSet nextElement() {
 		if (subj == null && obj == null || contextVarName != null && fixedGraph == null) {
 			if (this.reportedValues == null) {
+				if (internalSubject == null) {
+					CancellationPoints.check(isCancellationRequested());
+					prepareEnumerationScan(true);
+					if (isClosed()) {
+						return null;
+					}
+					CancellationPoints.check(isCancellationRequested());
+				}
 				reportedValues = cf.createValueSet();
 				if (contextVarName != null) {
 					reportedGraphValues = cf.createSetOfBindingSets(PathIteration.ValuePair::new, PathIteration::getHas,
@@ -321,6 +345,10 @@ public class ZeroLengthPathIteration extends LookAheadIteration<BindingSet> {
 	private Var scanGraphVar() {
 		Value value = graphContextVar.hasValue() ? graphContextVar.getValue()
 				: bindings.getValue(graphContextVar.getName());
+		return scanGraphVar(value);
+	}
+
+	private Var scanGraphVar(Value value) {
 		Var scanContext = Var.of(SCAN_CONTEXT_VAR, value, true, graphContextVar.isConstant());
 		return graphContextVar.hasApiInputOrigin() ? scanContext.withApiInputOrigin() : scanContext;
 	}

@@ -901,8 +901,11 @@ public class DefaultEvaluationStrategy implements EvaluationStrategy, FederatedS
 		QueryValueEvaluationStep subPrep = precompile(subjectVar, context);
 		QueryValueEvaluationStep objPrep = precompile(objVar, context);
 
+		boolean deferEnumerationScan = usesStandardPathPreparation() && zlp.getClass() == ZeroLengthPath.class
+				&& subjectVar.getClass() == Var.class && objVar.getClass() == Var.class
+				&& (contextVar == null || contextVar.getClass() == Var.class);
 		return new ZeroLengthPathEvaluationStep(subjectVar, objVar, contextVar, subPrep, objPrep, this, context,
-				zlp.getScope());
+				zlp.getScope(), deferEnumerationScan);
 	}
 
 	protected QueryEvaluationStep prepare(Difference node, QueryEvaluationContext context)

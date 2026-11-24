@@ -44,8 +44,10 @@ import org.eclipse.rdf4j.model.vocabulary.RDFS;
 import org.eclipse.rdf4j.query.Binding;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.QueryEvaluationException;
+import org.eclipse.rdf4j.query.algebra.StatementPattern;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.algebra.Var;
+import org.eclipse.rdf4j.query.algebra.ZeroLengthPath;
 import org.eclipse.rdf4j.query.algebra.evaluation.EvaluationStrategy;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryEvaluationStep;
 import org.eclipse.rdf4j.query.algebra.evaluation.TripleSource;
@@ -79,7 +81,27 @@ public class ZeroLengthPathIterationTest {
 	}
 
 	private EvaluationStrategy createEvaluationStrategy(Model m, AtomicInteger closes) {
-		TripleSource ts = new TripleSource() {
+		return new StrictEvaluationStrategy(modelSource(m, closes), null);
+	}
+
+	private EvaluationStrategy countingStatementStrategy(Model model, AtomicInteger preparations,
+			AtomicInteger closes) {
+		return new StrictEvaluationStrategy(modelSource(model, closes), null) {
+			@Override
+			protected boolean usesStandardPathPreparation() {
+				return true;
+			}
+
+			@Override
+			protected QueryEvaluationStep prepare(StatementPattern node, QueryEvaluationContext context) {
+				preparations.incrementAndGet();
+				return super.prepare(node, context);
+			}
+		};
+	}
+
+	private TripleSource modelSource(Model m, AtomicInteger closes) {
+		return new TripleSource() {
 
 			@Override
 			public CloseableIteration<? extends Statement> getStatements(Resource subj,
@@ -99,7 +121,42 @@ public class ZeroLengthPathIterationTest {
 				return vf;
 			}
 		};
-		return new StrictEvaluationStrategy(ts, null);
+	}
+
+	@Test
+	void boundTermIdentitySkipsPreparingEnumerationScan() {
+		AtomicInteger preparations = new AtomicInteger();
+		EvaluationStrategy strategy = countingStatementStrategy(new LinkedHashModel(), preparations, null);
+		IRI anchor = vf.createIRI("urn:absent-anchor");
+		ZeroLengthPath path = new ZeroLengthPath(Var.of("anchor", anchor, true, true), Var.of("out"));
+		QueryEvaluationStep step = strategy.precompile(path, new QueryEvaluationContext.Minimal(null));
+		try (var rows = step.evaluate(EmptyBindingSet.getInstance())) {
+			assertTrue(rows.hasNext());
+			assertEquals(anchor, rows.next().getValue("out"));
+			assertFalse(rows.hasNext());
+		}
+		assertEquals(0, preparations.get());
+	}
+
+	@Test
+	void unpulledEnumerationDefersPreparingStatementScan() {
+		Model model = new LinkedHashModel();
+		model.add(RDF.ALT, RDF.TYPE, RDFS.CLASS);
+		AtomicInteger preparations = new AtomicInteger();
+		AtomicInteger closes = new AtomicInteger();
+		EvaluationStrategy strategy = countingStatementStrategy(model, preparations, closes);
+		ZeroLengthPath path = new ZeroLengthPath(Var.of("x"), Var.of("y"));
+		QueryEvaluationStep step = strategy.precompile(path, new QueryEvaluationContext.Minimal(null));
+		try (var unopened = step.evaluate(EmptyBindingSet.getInstance())) {
+			assertEquals(0, preparations.get());
+		}
+		assertEquals(0, closes.get());
+		try (var rows = step.evaluate(EmptyBindingSet.getInstance())) {
+			assertTrue(rows.hasNext());
+			assertEquals(1, preparations.get());
+			assertEquals(RDF.ALT, rows.next().getValue("x"));
+		}
+		assertEquals(1, closes.get());
 	}
 
 	/**
