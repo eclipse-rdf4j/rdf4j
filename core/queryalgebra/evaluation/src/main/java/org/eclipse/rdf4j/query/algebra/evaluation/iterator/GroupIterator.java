@@ -98,7 +98,8 @@ public class GroupIterator extends AbstractCloseableIteratorIteration<BindingSet
 	private static final int BUILD_CHECKPOINT_INTERVAL = 128;
 	private static final String OPERATOR_NAME = "GROUP_BY";
 	private static final Class<?> TYPED_LITERAL_CLASS = SimpleValueFactory.getInstance()
-			.createLiteral("", CoreDatatype.XSD.STRING).getClass();
+			.createLiteral("", CoreDatatype.XSD.STRING)
+			.getClass();
 
 	/*-----------*
 	 * Constants *
