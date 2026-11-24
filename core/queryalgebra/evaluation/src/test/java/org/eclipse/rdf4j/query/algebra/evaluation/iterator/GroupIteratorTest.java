@@ -774,7 +774,7 @@ public class GroupIteratorTest {
 			}
 
 			@Override
-			protected boolean usesStandardRuntimePreparation() {
+			protected boolean usesStandardPreparation() {
 				return true;
 			}
 		};
@@ -856,7 +856,7 @@ public class GroupIteratorTest {
 			}
 
 			@Override
-			protected boolean usesStandardRuntimePreparation() {
+			protected boolean usesStandardPreparation() {
 				return true;
 			}
 		};

@@ -68,11 +68,6 @@ final class LmdbEvaluationStrategy extends DefaultEvaluationStrategy {
 
 	private final LmdbSailDataset statementSource;
 
-	@Override
-	protected boolean usesStandardPathPreparation() {
-		return true;
-	}
-
 	LmdbEvaluationStrategy(TripleSource tripleSource, Dataset dataset, FederatedServiceResolver serviceResolver,
 			long iterationCacheSyncTreshold, EvaluationStatistics evaluationStatistics, boolean trackResultSize) {
 		super(tripleSource, dataset, serviceResolver, iterationCacheSyncTreshold, evaluationStatistics,
@@ -81,7 +76,7 @@ final class LmdbEvaluationStrategy extends DefaultEvaluationStrategy {
 	}
 
 	@Override
-	protected boolean usesStandardRuntimePreparation() {
+	protected boolean usesStandardPreparation() {
 		return true;
 	}
 

@@ -744,7 +744,7 @@ public class DefaultEvaluationStrategy implements EvaluationStrategy, FederatedS
 			prepared = precompileStandard(expr, context);
 		}
 		if (RestrictionCompiler.enabled(this, context) && context.getActiveGraph() != null
-				&& usesStandardPathPreparation()) {
+				&& usesStandardPreparation()) {
 			OriginalPathDescriptor path = OriginalPathDescriptor.forRegion(expr);
 			if (path != null) {
 				prepared = RestrictionPathPlan.attach(expr, path, prepared, context, tripleSource, this::precompile,
@@ -878,18 +878,9 @@ public class DefaultEvaluationStrategy implements EvaluationStrategy, FederatedS
 		return node != null && node.isRuntimeTelemetryEnabled();
 	}
 
-	/**
-	 * Opt in only when statement and path preparation preserve the built-in parameter binding contract. Unknown
-	 * strategy subclasses retain their existing per-step preparation behavior.
-	 */
-	@InternalUseOnly
-	protected boolean usesStandardPathPreparation() {
-		return getClass() == DefaultEvaluationStrategy.class || getClass() == StrictEvaluationStrategy.class;
-	}
-
 	protected QueryEvaluationStep prepare(ArbitraryLengthPath alp, QueryEvaluationContext context)
 			throws QueryEvaluationException {
-		return PathIteration.prepare(this, alp, context, usesStandardPathPreparation());
+		return PathIteration.prepare(this, alp, context, usesStandardPreparation());
 	}
 
 	protected QueryEvaluationStep prepare(ZeroLengthPath zlp, QueryEvaluationContext context)
@@ -901,7 +892,7 @@ public class DefaultEvaluationStrategy implements EvaluationStrategy, FederatedS
 		QueryValueEvaluationStep subPrep = precompile(subjectVar, context);
 		QueryValueEvaluationStep objPrep = precompile(objVar, context);
 
-		boolean deferEnumerationScan = usesStandardPathPreparation() && zlp.getClass() == ZeroLengthPath.class
+		boolean deferEnumerationScan = usesStandardPreparation() && zlp.getClass() == ZeroLengthPath.class
 				&& subjectVar.getClass() == Var.class && objVar.getClass() == Var.class
 				&& (contextVar == null || contextVar.getClass() == Var.class);
 		return new ZeroLengthPathEvaluationStep(subjectVar, objVar, contextVar, subPrep, objPrep, this, context,
@@ -936,7 +927,7 @@ public class DefaultEvaluationStrategy implements EvaluationStrategy, FederatedS
 	}
 
 	private Map<ValueExpr, Function<BindingSet, Value>> reusableAggregateArguments(Group node) {
-		if (!usesStandardRuntimePreparation() || trackTime || trackResultSize || node.isRuntimeTelemetryEnabled()
+		if (!usesStandardPreparation() || trackTime || trackResultSize || node.isRuntimeTelemetryEnabled()
 				|| node.getClass() != Group.class) {
 			return null;
 		}
@@ -1329,11 +1320,20 @@ public class DefaultEvaluationStrategy implements EvaluationStrategy, FederatedS
 	}
 
 	/**
-	 * Allows invocation-time algebra preparation reuse for strategies with the built-in binding and preparation
-	 * contract. Unknown strategy subclasses retain their existing dispatch and preparation behavior.
+	 * Certifies that this strategy keeps the built-in preparation contracts, which allows prepared steps to be reused
+	 * instead of being prepared again for every step. A strategy that returns {@code true} asserts both of the
+	 * following:
+	 * <ul>
+	 * <li>Statement and path preparation preserve the built-in parameter binding contract. This allows shared
+	 * arbitrary-length path preparation, deferred zero-length path enumeration scans and restriction path plans.</li>
+	 * <li>Algebra preparation performed at invocation time preserves the built-in binding and preparation contract.
+	 * This allows reuse of aggregate arguments, DESCRIBE statement preparation and scoped LATERAL right arguments.</li>
+	 * </ul>
+	 * Only the built-in strategies opt in by default. Unknown strategy subclasses retain their existing dispatch and
+	 * per-step preparation behavior.
 	 */
 	@InternalUseOnly
-	protected boolean usesStandardRuntimePreparation() {
+	protected boolean usesStandardPreparation() {
 		return getClass() == DefaultEvaluationStrategy.class || getClass() == StrictEvaluationStrategy.class;
 	}
 
@@ -1355,7 +1355,7 @@ public class DefaultEvaluationStrategy implements EvaluationStrategy, FederatedS
 			try {
 				evaluate = child.evaluate(bs);
 				return new DescribeIteration(evaluate, DefaultEvaluationStrategy.this, node.getBindingNames(), bs,
-						usesStandardRuntimePreparation());
+						usesStandardPreparation());
 			} catch (Throwable t) {
 				if (evaluate != null) {
 					evaluate.close();
@@ -1592,7 +1592,7 @@ public class DefaultEvaluationStrategy implements EvaluationStrategy, FederatedS
 		} else if (expr instanceof Difference) {
 			return prepare((Difference) expr, context);
 		} else if (expr instanceof Lateral) {
-			return LateralQueryEvaluationStep.supply(this, (Lateral) expr, context, usesStandardRuntimePreparation());
+			return LateralQueryEvaluationStep.supply(this, (Lateral) expr, context, usesStandardPreparation());
 		} else if (expr == null) {
 			throw new IllegalArgumentException("expr must not be null");
 		} else {
