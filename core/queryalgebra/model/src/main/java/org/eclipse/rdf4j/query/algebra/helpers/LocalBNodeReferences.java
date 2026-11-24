@@ -13,6 +13,7 @@ package org.eclipse.rdf4j.query.algebra.helpers;
 
 import java.util.ArrayDeque;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.Collections;
 import java.util.HashSet;
 import java.util.IdentityHashMap;
@@ -147,9 +148,10 @@ public final class LocalBNodeReferences {
 							} else {
 								stamp(row, null);
 								// Binding iteration order is not part of a row's identity.
-								List<String> names = new ArrayList<>(row.getBindingNames());
-								Collections.sort(names);
-								for (String name : names) {
+								Object[] names = row.getBindingNames().toArray();
+								Arrays.sort(names);
+								for (Object entry : names) {
+									String name = (String) entry;
 									stamp(row, name);
 									value(row.getValue(name));
 								}
