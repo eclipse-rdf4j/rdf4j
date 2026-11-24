@@ -51,6 +51,7 @@ import org.eclipse.rdf4j.query.algebra.ValueConstant;
 import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.query.algebra.evaluation.TripleSource;
 import org.eclipse.rdf4j.query.algebra.evaluation.iterator.GroupIterator;
+import org.eclipse.rdf4j.query.impl.BlankNodeAllocationScope;
 import org.eclipse.rdf4j.query.impl.EmptyBindingSet;
 import org.eclipse.rdf4j.query.impl.MapBindingSet;
 import org.eclipse.rdf4j.query.parser.sparql.aggregate.AggregateCollector;
@@ -326,7 +327,8 @@ class ProjectedStatementPatternTest {
 		try {
 			var row = new CountingStatement(EVENT, KEY);
 			var custom = new AggregateFunctionCall(List.of(Var.of("key")), factory.getIri(), false);
-			var group = new Group(pattern("event", "key"), List.of("key"), List.of(new GroupElem("count", custom)));
+			var group = new Group(pattern("event", "key"), List.of("key"),
+					List.of(new GroupElem("count", custom), new GroupElem("plain", new Count(Var.of("key")))));
 			var rows = evaluate(new QueryRoot(group), List.of(row), EmptyBindingSet.getInstance(), null);
 			assertThat(rows).hasSize(1);
 			assertThat(rows.getFirst().getValue("count").stringValue()).isEqualTo("1");
@@ -358,6 +360,49 @@ class ProjectedStatementPatternTest {
 		assertThat(rows.getFirst().getValue("count").stringValue()).isEqualTo("1");
 		assertThat(observations).hasValue(1);
 		assertThat(row.subjectReads).isEqualTo(1);
+	}
+
+	@Test
+	void labelledDistinctCountKeepsOccurrencesForReusedMembers() {
+		var member = new MapBindingSet();
+		member.addBinding("event", EVENT);
+		member.addBinding("key", KEY);
+		var group = new Group(pattern("event", "key"), List.of("key"),
+				List.of(new GroupElem("ordinary", new Count(Var.of("key"))),
+						new GroupElem("distinctNodes",
+								new Count(new BNodeGenerator(new ValueConstant(VF.createLiteral("label"))), true))));
+		var strategy = new DefaultEvaluationStrategy(statementSource(List.of()), null);
+		var members = new CloseableIteratorIteration<>(List.<BindingSet>of(member, member).iterator());
+		var rows = Iterations.asList(GroupIterator.withMembers(strategy, group, EmptyBindingSet.getInstance(),
+				new QueryEvaluationContext.Minimal(null), members));
+		assertThat(rows).hasSize(1);
+		assertThat(rows.getFirst().getValue("ordinary").stringValue()).isEqualTo("2");
+		assertThat(rows.getFirst().getValue("distinctNodes").stringValue()).isEqualTo("2");
+	}
+
+	@Test
+	void customAllocationScopeAccessIsPreservedThroughAnArrayContext() {
+		var accesses = new AtomicInteger();
+		var scopeContext = new QueryEvaluationContext.Minimal(null) {
+			@Override
+			public BlankNodeAllocationScope getBlankNodeAllocationScope() {
+				accesses.incrementAndGet();
+				return super.getBlankNodeAllocationScope();
+			}
+		};
+		var context = new ArrayBindingBasedQueryEvaluationContext(scopeContext,
+				new String[] { "event", "predicate", "key", "count" }, null);
+		var member = new CountingStatement(EVENT, KEY);
+		var group = new Group(pattern("event", "key"), List.of("key"),
+				List.of(new GroupElem("count", new Count(Var.of("key")))));
+		var strategy = new DefaultEvaluationStrategy(statementSource(List.of(member, member, member, member)), null);
+		var step = strategy.precompile(new QueryRoot(group), context);
+		var result = step.evaluate(EmptyBindingSet.getInstance());
+		accesses.set(0);
+		var rows = Iterations.asList(result);
+		assertThat(rows).hasSize(1);
+		assertThat(rows.getFirst().getValue("count").stringValue()).isEqualTo("4");
+		assertThat(accesses).hasValueGreaterThanOrEqualTo(4);
 	}
 
 	private static StatementPattern pattern(String subject, String object) {

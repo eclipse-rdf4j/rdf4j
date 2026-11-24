@@ -1473,6 +1473,11 @@ public final class AdaptiveFilterEvaluationStep implements QueryEvaluationStep, 
 		}
 
 		@Override
+		public boolean usesPrivateGroupMemberAccessors() {
+			return delegate.usesPrivateGroupMemberAccessors();
+		}
+
+		@Override
 		public IndexedLayout indexedBindingLayout() {
 			return delegate.indexedBindingLayout();
 		}

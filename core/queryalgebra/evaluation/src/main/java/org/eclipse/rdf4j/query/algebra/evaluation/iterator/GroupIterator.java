@@ -231,14 +231,6 @@ public class GroupIterator extends AbstractCloseableIteratorIteration<BindingSet
 				&& arguments instanceof StatementPatternQueryEvaluationStep scan ? scan : null;
 		MemberRequirements members = directScan == null ? null : new MemberRequirements();
 		List<AggregatePredicateCollectorSupplier<?, ?>> aggregates = makeAggregates(members);
-		boolean visitSolutionOccurrence = false;
-		for (AggregatePredicateCollectorSupplier<?, ?> aggregate : aggregates) {
-			if (aggregate.requiresSolutionOccurrence()) {
-				visitSolutionOccurrence = true;
-				break;
-			}
-		}
-
 		Supplier<MutableBindingSet> makeNewBindingSet;
 		if (parentBindings.isEmpty()) {
 			makeNewBindingSet = context::createBindingSet;
@@ -263,6 +255,18 @@ public class GroupIterator extends AbstractCloseableIteratorIteration<BindingSet
 		if (members != null && members.known) {
 			members.bindings.addAll(keys);
 			selectedMembers = directScan.forGroup(group, members.bindings, parentBindings);
+		}
+		boolean pureCounts = members != null && members.known && members.onlyPlainCounts
+				&& context.usesPrivateGroupMemberAccessors()
+				&& directScan.ownsPrivateGroupMembers(group, parentBindings);
+		boolean visitSolutionOccurrence = false;
+		if (!pureCounts) {
+			for (AggregatePredicateCollectorSupplier<?, ?> aggregate : aggregates) {
+				if (aggregate.requiresSolutionOccurrence()) {
+					visitSolutionOccurrence = true;
+					break;
+				}
+			}
 		}
 		Collection<Entry> entries = buildEntries(aggregates, visitSolutionOccurrence, selectedMembers,
 				selectedMembers == arguments ? null : getValues);
@@ -741,6 +745,7 @@ public class GroupIterator extends AbstractCloseableIteratorIteration<BindingSet
 	private static final class MemberRequirements {
 		private final Set<String> bindings = new LinkedHashSet<>();
 		private boolean known = true;
+		private boolean onlyPlainCounts = true;
 
 		private void observe(GroupElem element) {
 			if (!known) {
@@ -771,6 +776,8 @@ public class GroupIterator extends AbstractCloseableIteratorIteration<BindingSet
 					return;
 				}
 			}
+			// Plain non-distinct COUNT uses only a stock array getter and a constant predicate.
+			onlyPlainCounts &= operator.getClass() == Count.class && !operator.isDistinct();
 			bindings.add(((Var) argument).getName());
 		}
 	}

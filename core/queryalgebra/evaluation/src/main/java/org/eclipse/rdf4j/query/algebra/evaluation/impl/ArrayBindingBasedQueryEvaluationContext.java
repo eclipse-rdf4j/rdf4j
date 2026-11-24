@@ -183,6 +183,11 @@ public final class ArrayBindingBasedQueryEvaluationContext implements QueryEvalu
 	}
 
 	@Override
+	public boolean usesPrivateGroupMemberAccessors() {
+		return context.getClass() == QueryEvaluationContext.Minimal.class;
+	}
+
+	@Override
 	public IndexedLayout indexedBindingLayout() {
 		return indexedLayout;
 	}

@@ -141,6 +141,11 @@ final class ValueCapturingQueryEvaluationContext implements QueryEvaluationConte
 	}
 
 	@Override
+	public boolean usesPrivateGroupMemberAccessors() {
+		return delegate.usesPrivateGroupMemberAccessors();
+	}
+
+	@Override
 	public IndexedLayout indexedBindingLayout() {
 		return indexedLayout;
 	}

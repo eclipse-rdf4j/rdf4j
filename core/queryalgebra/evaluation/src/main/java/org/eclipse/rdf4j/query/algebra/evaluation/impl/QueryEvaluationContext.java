@@ -267,6 +267,15 @@ public interface QueryEvaluationContext {
 		return false;
 	}
 
+	/**
+	 * Certifies stock array-row accessors and a stock blank-node scope under a prepared, private producer. Unknown
+	 * contexts retain the normal activation for each aggregate member.
+	 */
+	@InternalUseOnly
+	default boolean usesPrivateGroupMemberAccessors() {
+		return false;
+	}
+
 	/** Opts in to bulk indexed writes that reproduce the context's ordinary binding access and write policy. */
 	@InternalUseOnly
 	default IndexedLayout indexedBindingLayout() {

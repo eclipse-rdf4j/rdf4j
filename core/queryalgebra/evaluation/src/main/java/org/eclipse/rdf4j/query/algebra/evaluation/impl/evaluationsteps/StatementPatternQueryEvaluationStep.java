@@ -604,8 +604,19 @@ public class StatementPatternQueryEvaluationStep implements QueryEvaluationStep,
 	}
 
 	private boolean canSelectFields(TupleExpr input) {
+		return hasDirectConsumer(input) && context.canOmitUnusedStatementBindings() && context.getActiveGraph() == null;
+	}
+
+	private boolean hasDirectConsumer(TupleExpr input) {
 		return getClass() == StatementPatternQueryEvaluationStep.class && input == statementPatternForMetrics
-				&& order == null && !emptyGraph && context.canOmitUnusedStatementBindings()
+				&& order == null && !emptyGraph;
+	}
+
+	/** The consumer receives private stock rows with no callbacks in the binding accessors. */
+	@InternalUseOnly
+	public boolean ownsPrivateGroupMembers(Group group, BindingSet bindings) {
+		return bindings == EmptyBindingSet.getInstance() && !ScopedUnionInput.tracksClearedSiblingInputs()
+				&& hasDirectConsumer(group.getArg()) && context.usesPrivateGroupMemberAccessors()
 				&& context.getActiveGraph() == null;
 	}
 
