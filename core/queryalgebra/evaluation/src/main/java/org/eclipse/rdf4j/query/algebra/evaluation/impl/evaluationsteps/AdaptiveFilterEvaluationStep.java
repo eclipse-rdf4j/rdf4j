@@ -163,7 +163,7 @@ public final class AdaptiveFilterEvaluationStep implements QueryEvaluationStep, 
 	/** Records the actual return after an extension's preparation or precompile interception. */
 	public static void recordPrepared(QueryEvaluationContext context, TupleExpr expression,
 			QueryEvaluationStep actual) {
-		if (context instanceof PlanningContext planning && !planning.filters.isEmpty()) {
+		if (context instanceof PlanningContext planning && planning.analysis != null) {
 			planning.physicalSteps.put(expression, actual);
 		}
 	}
@@ -250,7 +250,7 @@ public final class AdaptiveFilterEvaluationStep implements QueryEvaluationStep, 
 	public static QueryEvaluationStep prepare(TupleExpr expression, DefaultEvaluationStrategy strategy,
 			QueryEvaluationContext context, EvaluationStatistics statistics, Supplier<QueryEvaluationStep> fallback) {
 		PlanningContext planning = (PlanningContext) context;
-		if (planning.preparingStandard.contains(expression)) {
+		if (planning.analysis == null || planning.preparingStandard.contains(expression)) {
 			return null;
 		}
 		List<Envelope> envelopes = planning.regions.get(expression);
@@ -1276,15 +1276,15 @@ public final class AdaptiveFilterEvaluationStep implements QueryEvaluationStep, 
 		private final TupleExpr root;
 		private final QueryEvaluationContext delegate;
 		private final List<Filter> filters = new ArrayList<>();
-		private final Map<TupleExpr, List<Envelope>> regions = new IdentityHashMap<>();
-		private final Map<TupleExpr, QueryEvaluationStep> physicalSteps = new IdentityHashMap<>();
+		private final Map<TupleExpr, List<Envelope>> regions;
+		private final Map<TupleExpr, QueryEvaluationStep> physicalSteps;
 		private final Map<Filter, TupleExpr> islandRoots;
 		private final QueryAlgebraBindingAnalysis analysis;
 		private PathVariableScope pathVariableScope;
 		private boolean includesGraph;
 		private boolean compiledRegion;
 		private boolean physicalReady;
-		private final Set<TupleExpr> preparingStandard = Collections.newSetFromMap(new IdentityHashMap<>());
+		private final Set<TupleExpr> preparingStandard;
 
 		PlanningContext(TupleExpr root, QueryEvaluationContext delegate) {
 			this.root = root;
@@ -1303,11 +1303,21 @@ public final class AdaptiveFilterEvaluationStep implements QueryEvaluationStep, 
 					super.meet(graph);
 				}
 			});
-			islandRoots = filters.isEmpty() ? Map.of() : new IdentityHashMap<>();
 			if (filters.isEmpty()) {
+				// No adaptive region can be discovered without a logical filter.
+				regions = Collections.emptyMap();
+				physicalSteps = Collections.emptyMap();
+				islandRoots = Collections.emptyMap();
+				preparingStandard = Collections.emptySet();
+				boundaryReasons = Collections.emptyMap();
 				analysis = null;
 				return;
 			}
+			regions = new IdentityHashMap<>();
+			physicalSteps = new IdentityHashMap<>();
+			islandRoots = new IdentityHashMap<>();
+			preparingStandard = Collections.newSetFromMap(new IdentityHashMap<>());
+			boundaryReasons = new IdentityHashMap<>();
 			analysis = QueryAlgebraBindingAnalysis.withBindingValues(root, EmptyBindingSet.getInstance());
 			for (TupleExpr islandRoot : FilterPlacementAnalyzer.snapshotRoots(root)) {
 				FilterPlacementAnalyzer analyzer = new FilterPlacementAnalyzer(islandRoot, analysis);
@@ -1338,7 +1348,7 @@ public final class AdaptiveFilterEvaluationStep implements QueryEvaluationStep, 
 		}
 
 		/** Per join, since every filter region containing the join asks again; the inputs never change. */
-		private final Map<Join, Optional<String>> boundaryReasons = new IdentityHashMap<>();
+		private final Map<Join, Optional<String>> boundaryReasons;
 
 		boolean ordinary(Join join) {
 			String reason = boundaryReasons
