@@ -205,7 +205,28 @@ public class QueryEvaluationUtility {
 			org.eclipse.rdf4j.query.algebra.evaluation.function.IntegerCast.class,
 			org.eclipse.rdf4j.query.algebra.evaluation.function.StringCast.class);
 
-	private static final ThreadLocal<QuerySafetySnapshot> ACTIVE_SAFETY_SNAPSHOT = new ThreadLocal<>();
+	private static final ThreadLocal<SafetyPhase> ACTIVE_SAFETY_PHASE = new ThreadLocal<>();
+
+	/** The invocation owns preparation; each optimizer that asks for safety owns an independent snapshot. */
+	private static final class SafetyPhase {
+		private final QueryModelPreparation valuesPreparation;
+		private final QueryExecutionPolicy policy;
+		private QuerySafetySnapshot snapshot;
+
+		private SafetyPhase(QueryModelPreparation valuesPreparation, QueryExecutionPolicy policy,
+				QuerySafetySnapshot snapshot) {
+			this.valuesPreparation = valuesPreparation;
+			this.policy = policy;
+			this.snapshot = snapshot;
+		}
+
+		private QuerySafetySnapshot snapshot() {
+			if (snapshot == null) {
+				snapshot = new QuerySafetySnapshot(valuesPreparation, policy);
+			}
+			return snapshot;
+		}
+	}
 
 	/**
 	 * Outside a strategy's preparation phase no repository policy is known, so a function of unspecified determinism is
@@ -215,7 +236,7 @@ public class QueryEvaluationUtility {
 
 	/** The policy of the active preparation phase, or the conservative classification outside one. */
 	private static QueryExecutionPolicy activePolicy() {
-		QuerySafetySnapshot active = ACTIVE_SAFETY_SNAPSHOT.get();
+		SafetyPhase active = ACTIVE_SAFETY_PHASE.get();
 		return active == null ? CONSERVATIVE_POLICY : active.policy;
 	}
 
@@ -253,17 +274,18 @@ public class QueryEvaluationUtility {
 	public static <T> T withQuerySafetySnapshot(QueryModelNode root, Supplier<T> action) {
 		Objects.requireNonNull(root, "root must not be null");
 		Objects.requireNonNull(action, "action must not be null");
-		QuerySafetySnapshot previous = ACTIVE_SAFETY_SNAPSHOT.get();
+		SafetyPhase previous = ACTIVE_SAFETY_PHASE.get();
 		if (previous != null) {
-			previous.ensureNode(root);
+			previous.snapshot().ensureNode(root);
 			return action.get();
 		}
 
-		ACTIVE_SAFETY_SNAPSHOT.set(querySafetySnapshot(root));
+		QuerySafetySnapshot snapshot = querySafetySnapshot(root);
+		ACTIVE_SAFETY_PHASE.set(new SafetyPhase(null, snapshot.policy, snapshot));
 		try {
 			return action.get();
 		} finally {
-			ACTIVE_SAFETY_SNAPSHOT.remove();
+			ACTIVE_SAFETY_PHASE.remove();
 		}
 	}
 
@@ -284,20 +306,20 @@ public class QueryEvaluationUtility {
 		Objects.requireNonNull(policy, "policy must not be null");
 		Objects.requireNonNull(preparationFactory, "preparationFactory must not be null");
 		Objects.requireNonNull(action, "action must not be null");
-		QuerySafetySnapshot previous = ACTIVE_SAFETY_SNAPSHOT.get();
+		SafetyPhase previous = ACTIVE_SAFETY_PHASE.get();
 		if (previous != null && previous.valuesPreparation != null) {
-			return action.apply((TupleExpr) previous.ensureNode(root));
+			return action.apply((TupleExpr) previous.snapshot().ensureNode(root));
 		}
 		QueryModelPreparation preparation = preparationFactory.get();
 		try {
 			TupleExpr prepared = (TupleExpr) preparation.prepare(root);
-			ACTIVE_SAFETY_SNAPSHOT.set(new QuerySafetySnapshot(preparation, policy));
+			ACTIVE_SAFETY_PHASE.set(new SafetyPhase(preparation, policy, null));
 			return action.apply(prepared);
 		} finally {
 			if (previous == null) {
-				ACTIVE_SAFETY_SNAPSHOT.remove();
+				ACTIVE_SAFETY_PHASE.remove();
 			} else {
-				ACTIVE_SAFETY_SNAPSHOT.set(previous);
+				ACTIVE_SAFETY_PHASE.set(previous);
 			}
 			preparation.close();
 		}
@@ -309,18 +331,20 @@ public class QueryEvaluationUtility {
 			java.util.function.Function<TupleExpr, T> action) {
 		Objects.requireNonNull(root, "root must not be null");
 		Objects.requireNonNull(action, "action must not be null");
-		QuerySafetySnapshot previous = ACTIVE_SAFETY_SNAPSHOT.get();
+		SafetyPhase previous = ACTIVE_SAFETY_PHASE.get();
 		if (previous == null || previous.valuesPreparation == null) {
 			throw new IllegalStateException("Fresh prepared safety analysis requires an active preparation phase");
 		}
 		QueryModelPreparation preparation = previous.valuesPreparation;
 		preparation.resetTraversal();
 		TupleExpr prepared = (TupleExpr) preparation.prepare(root);
-		ACTIVE_SAFETY_SNAPSHOT.set(new QuerySafetySnapshot(preparation, previous.policy));
+		// Preparation may reenter the current phase. Begin the next one only after both callbacks return.
+		QuerySafetySnapshot outer = previous.snapshot;
+		previous.snapshot = null;
 		try {
 			return action.apply(prepared);
 		} finally {
-			ACTIVE_SAFETY_SNAPSHOT.set(previous);
+			previous.snapshot = outer;
 		}
 	}
 
@@ -348,7 +372,7 @@ public class QueryEvaluationUtility {
 	/** Reuses the preparation-owned SELECT summary during recursive generic and native compilation. */
 	@InternalUseOnly
 	public static List<Projection> firstSubqueryProjections(TupleExpr expression) {
-		QuerySafetySnapshot active = ACTIVE_SAFETY_SNAPSHOT.get();
+		SafetyPhase active = ACTIVE_SAFETY_PHASE.get();
 		return active != null && active.valuesPreparation != null
 				? active.valuesPreparation.firstSubqueryProjections(expression)
 				: findFirstSubqueryProjections(expression);
@@ -372,19 +396,20 @@ public class QueryEvaluationUtility {
 	/** Refreshes changed query-model facts in the active phase, if there is one. */
 	@Experimental
 	public static void refreshQuerySafetySnapshot(QueryModelNode changedNode) {
-		QuerySafetySnapshot active = ACTIVE_SAFETY_SNAPSHOT.get();
+		SafetyPhase active = ACTIVE_SAFETY_PHASE.get();
 		if (active != null && changedNode != null) {
-			active.refreshFrom(changedNode);
+			active.snapshot().refreshFrom(changedNode);
 		}
 	}
 
 	private static QuerySafetySnapshot snapshotFor(QueryModelNode node) {
-		QuerySafetySnapshot active = ACTIVE_SAFETY_SNAPSHOT.get();
+		SafetyPhase active = ACTIVE_SAFETY_PHASE.get();
 		if (active == null) {
 			return querySafetySnapshot(node);
 		}
-		active.ensureNode(node);
-		return active;
+		QuerySafetySnapshot snapshot = active.snapshot();
+		snapshot.ensureNode(node);
+		return snapshot;
 	}
 
 	/**
@@ -654,7 +679,7 @@ public class QueryEvaluationUtility {
 			if (valuesPreparation != null) {
 				return valuesPreparation;
 			}
-			QuerySafetySnapshot active = ACTIVE_SAFETY_SNAPSHOT.get();
+			SafetyPhase active = ACTIVE_SAFETY_PHASE.get();
 			return active == null ? null : active.valuesPreparation;
 		}
 
