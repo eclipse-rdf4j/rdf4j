@@ -52,10 +52,12 @@ import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.Dataset;
 import org.eclipse.rdf4j.query.MutableBindingSet;
 import org.eclipse.rdf4j.query.QueryEvaluationException;
+import org.eclipse.rdf4j.query.algebra.Group;
 import org.eclipse.rdf4j.query.algebra.Projection;
 import org.eclipse.rdf4j.query.algebra.ProjectionElem;
 import org.eclipse.rdf4j.query.algebra.StatementPattern;
 import org.eclipse.rdf4j.query.algebra.StatementPattern.Scope;
+import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryEvaluationStep;
 import org.eclipse.rdf4j.query.algebra.evaluation.TripleSource;
@@ -562,6 +564,17 @@ public class StatementPatternQueryEvaluationStep implements QueryEvaluationStep,
 		}
 		Set<String> sources = new LinkedHashSet<>();
 		projection.getProjectionElemList().getElements().forEach(element -> sources.add(element.getName()));
+		return selectFields(sources);
+	}
+
+	/** Prepare the immediate group's private scan with its certified member requirements. */
+	@InternalUseOnly
+	public QueryEvaluationStep forGroup(Group group, Set<String> required, BindingSet bindings) {
+		return bindings == EmptyBindingSet.getInstance() && !ScopedUnionInput.tracksClearedSiblingInputs()
+				&& canSelectFields(group.getArg()) ? selectFields(required) : this;
+	}
+
+	private QueryEvaluationStep selectFields(Set<String> sources) {
 		boolean omitSubject = canOmit(normalizedSubjectVar, sources);
 		boolean omitPredicate = canOmit(normalizedPredicateVar, sources);
 		boolean omitObject = canOmit(normalizedObjectVar, sources);
@@ -586,10 +599,14 @@ public class StatementPatternQueryEvaluationStep implements QueryEvaluationStep,
 	}
 
 	private boolean canSelectProjection(Projection projection) {
-		return getClass() == StatementPatternQueryEvaluationStep.class
-				&& projection.getArg() == statementPatternForMetrics && order == null && !emptyGraph
-				&& context.canOmitUnusedStatementBindings() && context.getActiveGraph() == null
-				&& projection.getInheritedGraphParameter() == null && projection.getProjectionContext() == null;
+		return canSelectFields(projection.getArg()) && projection.getInheritedGraphParameter() == null
+				&& projection.getProjectionContext() == null;
+	}
+
+	private boolean canSelectFields(TupleExpr input) {
+		return getClass() == StatementPatternQueryEvaluationStep.class && input == statementPatternForMetrics
+				&& order == null && !emptyGraph && context.canOmitUnusedStatementBindings()
+				&& context.getActiveGraph() == null;
 	}
 
 	/** The private empty-input scan creates a separate row containing exactly these identity bindings. */

@@ -17,6 +17,7 @@ import java.util.Collection;
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.Iterator;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Random;
@@ -76,6 +77,7 @@ import org.eclipse.rdf4j.query.algebra.evaluation.QueryValueEvaluationStep;
 import org.eclipse.rdf4j.query.algebra.evaluation.ValueExprEvaluationException;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.DistinctBindingSetKey;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.QueryEvaluationContext;
+import org.eclipse.rdf4j.query.algebra.evaluation.impl.evaluationsteps.StatementPatternQueryEvaluationStep;
 import org.eclipse.rdf4j.query.algebra.evaluation.util.MathUtil;
 import org.eclipse.rdf4j.query.algebra.evaluation.util.ValueComparator;
 import org.eclipse.rdf4j.query.explanation.TelemetryMetricNames;
@@ -224,7 +226,11 @@ public class GroupIterator extends AbstractCloseableIteratorIteration<BindingSet
 
 	@Override
 	protected Iterator<BindingSet> getIterator() throws QueryEvaluationException {
-		List<AggregatePredicateCollectorSupplier<?, ?>> aggregates = makeAggregates();
+		StatementPatternQueryEvaluationStep directScan = reusableAggregateArguments != null
+				&& !group.isRuntimeTelemetryEnabled() && cf.getClass() == DefaultCollectionFactory.class
+				&& arguments instanceof StatementPatternQueryEvaluationStep scan ? scan : null;
+		MemberRequirements members = directScan == null ? null : new MemberRequirements();
+		List<AggregatePredicateCollectorSupplier<?, ?>> aggregates = makeAggregates(members);
 		boolean visitSolutionOccurrence = false;
 		for (AggregatePredicateCollectorSupplier<?, ?> aggregate : aggregates) {
 			if (aggregate.requiresSolutionOccurrence()) {
@@ -242,7 +248,8 @@ public class GroupIterator extends AbstractCloseableIteratorIteration<BindingSet
 
 		List<Function<BindingSet, Value>> getValues = new ArrayList<>();
 		List<BiConsumer<Value, MutableBindingSet>> setBindings = new ArrayList<>();
-		for (String name : group.getGroupBindingNames()) {
+		Set<String> keys = group.getGroupBindingNames();
+		for (String name : keys) {
 			Function<BindingSet, Value> getValue = context.getValue(name);
 			BiConsumer<Value, MutableBindingSet> setBinding = context.setBinding(name);
 			if (getValue != null) {
@@ -252,7 +259,13 @@ public class GroupIterator extends AbstractCloseableIteratorIteration<BindingSet
 		}
 
 		BiConsumer<Entry, MutableBindingSet> bindSolution = makeBindSolution(aggregates);
-		Collection<Entry> entries = buildEntries(aggregates, visitSolutionOccurrence);
+		QueryEvaluationStep selectedMembers = arguments;
+		if (members != null && members.known) {
+			members.bindings.addAll(keys);
+			selectedMembers = directScan.forGroup(group, members.bindings, parentBindings);
+		}
+		Collection<Entry> entries = buildEntries(aggregates, visitSolutionOccurrence, selectedMembers,
+				selectedMembers == arguments ? null : getValues);
 		Collection<BindingSet> bindingSets;
 		Consumer<BindingSet> add;
 		if (cf.getClass() == DefaultCollectionFactory.class && !getValues.isEmpty()
@@ -352,10 +365,13 @@ public class GroupIterator extends AbstractCloseableIteratorIteration<BindingSet
 		}
 	}
 
-	private List<AggregatePredicateCollectorSupplier<?, ?>> makeAggregates() {
+	private List<AggregatePredicateCollectorSupplier<?, ?>> makeAggregates(MemberRequirements members) {
 		List<AggregatePredicateCollectorSupplier<?, ?>> aggregates = new ArrayList<>(
 				group.getGroupBindingNames().size());
 		for (GroupElem ge : group.getGroupElements()) {
+			if (members != null) {
+				members.observe(ge);
+			}
 			AggregatePredicateCollectorSupplier<?, ?> create = create(ge, vf);
 			if (create != null) {
 				aggregates.add(create);
@@ -365,13 +381,13 @@ public class GroupIterator extends AbstractCloseableIteratorIteration<BindingSet
 	}
 
 	private Collection<Entry> buildEntries(List<AggregatePredicateCollectorSupplier<?, ?>> aggregates,
-			boolean visitSolutionOccurrence)
-			throws QueryEvaluationException {
+			boolean visitSolutionOccurrence, QueryEvaluationStep selectedMembers,
+			List<Function<BindingSet, Value>> selectedKeyAccessors) throws QueryEvaluationException {
 		QueryExecutionContext.throwIfHeavyOperatorExecutionDisabled(OPERATOR_NAME);
 		QueryExecutionContext.markHeavy(OPERATOR_NAME);
 		QueryExecutionContext.checkpoint(OPERATOR_NAME + "_START");
 		// store the arguments' iterator so it can be closed while building entries
-		this.argumentsIter = arguments.evaluate(parentBindings);
+		this.argumentsIter = selectedMembers.evaluate(parentBindings);
 		try (var iter = argumentsIter) {
 			long inputRows = 0;
 			long aggregateEvalCount = 0;
@@ -381,10 +397,8 @@ public class GroupIterator extends AbstractCloseableIteratorIteration<BindingSet
 				return emptyEntries;
 			}
 
-			List<Function<BindingSet, Value>> getValues = group.getGroupBindingNames()
-					.stream()
-					.map(n -> context.getValue(n))
-					.collect(Collectors.toList());
+			List<Function<BindingSet, Value>> getValues = selectedKeyAccessors != null ? selectedKeyAccessors
+					: group.getGroupBindingNames().stream().map(context::getValue).collect(Collectors.toList());
 
 			// TODO: this is an in memory map with no backing into any disk form.
 			// Fixing this requires separating the computation of the aggregates and their
@@ -723,12 +737,51 @@ public class GroupIterator extends AbstractCloseableIteratorIteration<BindingSet
 		return new QueryStepEvaluator(strategy.precompile(ve, context));
 	}
 
-	private static boolean canReuseAggregateArgument(AggregateOperator operator, ValueExpr argument) {
-		if (argument == null || argument.getClass() != Var.class || ((Var) argument).hasValue()
-				|| argument.isRuntimeTelemetryEnabled()
-				|| operator.isRuntimeTelemetryEnabled()) {
-			return false;
+	/** Requirements of the processors actually selected when this lazy grouping starts. */
+	private static final class MemberRequirements {
+		private final Set<String> bindings = new LinkedHashSet<>();
+		private boolean known = true;
+
+		private void observe(GroupElem element) {
+			if (!known) {
+				return;
+			}
+			if (element.getClass() != GroupElem.class || element.isRuntimeTelemetryEnabled()) {
+				known = false;
+				return;
+			}
+			AggregateOperator operator = element.getOperator();
+			if (!isStandardUnaryAggregate(operator) || operator.isRuntimeTelemetryEnabled()) {
+				known = false;
+				return;
+			}
+			ValueExpr argument = ((UnaryValueOperator) operator).getArg();
+			if (operator.getClass() == Count.class && argument == null && !operator.isDistinct()) {
+				return;
+			}
+			if (!canReuseAggregateArgument(operator, argument)) {
+				known = false;
+				return;
+			}
+			if (operator instanceof GroupConcat concat && concat.getSeparator() != null) {
+				ValueExpr separator = concat.getSeparator();
+				if (separator.getClass() != ValueConstant.class || separator.isRuntimeTelemetryEnabled()
+						|| !isCanonicalStringLiteral(((ValueConstant) separator).getValue())) {
+					known = false;
+					return;
+				}
+			}
+			bindings.add(((Var) argument).getName());
 		}
+	}
+
+	private static boolean canReuseAggregateArgument(AggregateOperator operator, ValueExpr argument) {
+		return argument != null && argument.getClass() == Var.class && !((Var) argument).hasValue()
+				&& !argument.isRuntimeTelemetryEnabled() && !operator.isRuntimeTelemetryEnabled()
+				&& isStandardUnaryAggregate(operator);
+	}
+
+	private static boolean isStandardUnaryAggregate(AggregateOperator operator) {
 		Class<?> operatorClass = operator.getClass();
 		return operatorClass == Count.class || operatorClass == Min.class || operatorClass == Max.class
 				|| operatorClass == Sum.class || operatorClass == Avg.class || operatorClass == Sample.class

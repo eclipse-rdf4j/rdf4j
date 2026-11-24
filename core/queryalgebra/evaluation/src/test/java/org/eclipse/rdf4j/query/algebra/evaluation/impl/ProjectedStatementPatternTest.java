@@ -16,7 +16,12 @@ import static org.assertj.core.api.Assertions.assertThat;
 import java.util.List;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.function.BiConsumer;
+import java.util.function.Function;
+import java.util.function.Predicate;
+import java.util.function.ToIntFunction;
 
+import org.eclipse.rdf4j.collection.factory.api.BindingSetKey;
+import org.eclipse.rdf4j.collection.factory.impl.DefaultCollectionFactory;
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.common.iteration.CloseableIteratorIteration;
 import org.eclipse.rdf4j.common.iteration.Iterations;
@@ -29,16 +34,29 @@ import org.eclipse.rdf4j.model.base.AbstractStatement;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.MutableBindingSet;
+import org.eclipse.rdf4j.query.algebra.AggregateFunctionCall;
+import org.eclipse.rdf4j.query.algebra.BNodeGenerator;
+import org.eclipse.rdf4j.query.algebra.Count;
+import org.eclipse.rdf4j.query.algebra.Filter;
+import org.eclipse.rdf4j.query.algebra.Group;
+import org.eclipse.rdf4j.query.algebra.GroupElem;
 import org.eclipse.rdf4j.query.algebra.Projection;
 import org.eclipse.rdf4j.query.algebra.ProjectionElem;
 import org.eclipse.rdf4j.query.algebra.ProjectionElemList;
 import org.eclipse.rdf4j.query.algebra.QueryRoot;
+import org.eclipse.rdf4j.query.algebra.SameTerm;
 import org.eclipse.rdf4j.query.algebra.StatementPattern;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
+import org.eclipse.rdf4j.query.algebra.ValueConstant;
 import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.query.algebra.evaluation.TripleSource;
+import org.eclipse.rdf4j.query.algebra.evaluation.iterator.GroupIterator;
 import org.eclipse.rdf4j.query.impl.EmptyBindingSet;
 import org.eclipse.rdf4j.query.impl.MapBindingSet;
+import org.eclipse.rdf4j.query.parser.sparql.aggregate.AggregateCollector;
+import org.eclipse.rdf4j.query.parser.sparql.aggregate.AggregateFunction;
+import org.eclipse.rdf4j.query.parser.sparql.aggregate.AggregateFunctionFactory;
+import org.eclipse.rdf4j.query.parser.sparql.aggregate.CustomAggregateFunctionRegistry;
 import org.junit.jupiter.api.Test;
 
 class ProjectedStatementPatternTest {
@@ -164,6 +182,184 @@ class ProjectedStatementPatternTest {
 		assertThat(rows).extracting(binding -> binding.getValue("key")).containsExactly(GRAPH);
 	}
 
+	@Test
+	void keyedCountStarReadsGroupKeyWithoutReadingUnusedSubject() {
+		var other = VF.createIRI("urn:scan:other-event");
+		var first = new CountingStatement(EVENT, KEY);
+		var second = new CountingStatement(other, KEY);
+		var group = new Group(pattern("event", "key"), List.of("key"),
+				List.of(new GroupElem("count", new Count(null))));
+		var rows = evaluate(new QueryRoot(group), List.of(first, second), EmptyBindingSet.getInstance(), null);
+		assertThat(rows).hasSize(1);
+		assertThat(rows.getFirst().getBindingNames()).containsExactlyInAnyOrder("key", "count");
+		assertThat(rows.getFirst().getValue("key")).isEqualTo(KEY);
+		assertThat(rows.getFirst().getValue("count").stringValue()).isEqualTo("2");
+		assertThat(first.subjectReads + second.subjectReads).isZero();
+	}
+
+	@Test
+	void lazyGroupUsesChangedArgumentsAfterPrecompile() {
+		assertGroupUsesChangedArguments(false);
+	}
+
+	@Test
+	void lazyGroupUsesChangedArgumentsAfterEvaluate() {
+		assertGroupUsesChangedArguments(true);
+	}
+
+	private void assertGroupUsesChangedArguments(boolean evaluateBeforeChange) {
+		var first = new CountingStatement(EVENT, KEY);
+		var second = new CountingStatement(VF.createIRI("urn:scan:other-event"), KEY);
+		var element = new GroupElem("count", new Count(null));
+		var group = new Group(pattern("event", "key"), List.of("key"), List.of(element));
+		var strategy = new DefaultEvaluationStrategy(statementSource(List.of(first, second)), null);
+		var step = strategy.precompile(new QueryRoot(group));
+		var input = EmptyBindingSet.getInstance();
+		if (evaluateBeforeChange) {
+			try (var iteration = step.evaluate(input)) {
+				element.setOperator(new Count(Var.of("event")));
+				assertThat(Iterations.asList(iteration)).extracting(row -> row.getValue("count").stringValue())
+						.containsExactly("2");
+			}
+		} else {
+			element.setOperator(new Count(Var.of("event")));
+			assertThat(Iterations.asList(step.evaluate(input))).extracting(row -> row.getValue("count").stringValue())
+					.containsExactly("2");
+		}
+		assertThat(first.subjectReads + second.subjectReads).isEqualTo(2);
+	}
+
+	@Test
+	void allGroupAndAggregateBindingsArePreserved() {
+		var first = new CountingStatement(EVENT, KEY);
+		var second = new CountingStatement(EVENT, VF.createIRI("urn:scan:second-key"));
+		var group = new Group(pattern("event", "key"), List.of("event", "key"),
+				List.of(new GroupElem("count", new Count(Var.of("event"), true))));
+		var rows = evaluate(new QueryRoot(group), List.of(first, second), EmptyBindingSet.getInstance(), null);
+		assertThat(rows).hasSize(2).allSatisfy(row -> {
+			assertThat(row.getValue("event")).isEqualTo(EVENT);
+			assertThat(row.getValue("count").stringValue()).isEqualTo("1");
+		});
+		assertThat(first.subjectReads + second.subjectReads).isEqualTo(2);
+	}
+
+	@Test
+	void simpleAggregateArgumentCanOmitAnotherStatementBinding() {
+		var first = new CountingStatement(EVENT, KEY);
+		var second = new CountingStatement(VF.createIRI("urn:scan:other-event"), KEY);
+		var group = new Group(pattern("event", "key"), List.of("key"),
+				List.of(new GroupElem("count", new Count(Var.of("key"), true))));
+		var rows = evaluate(new QueryRoot(group), List.of(first, second), EmptyBindingSet.getInstance(), null);
+		assertThat(rows).hasSize(1);
+		assertThat(rows.getFirst().getValue("count").stringValue()).isEqualTo("1");
+		assertThat(first.subjectReads + second.subjectReads).isZero();
+	}
+
+	@Test
+	void distinctCountStarReadsEveryVisibleBinding() {
+		var first = new CountingStatement(EVENT, KEY);
+		var second = new CountingStatement(VF.createIRI("urn:scan:other-event"), KEY);
+		var group = new Group(pattern("event", "key"), List.of("key"),
+				List.of(new GroupElem("count", new Count(null, true))));
+		var rows = evaluate(new QueryRoot(group), List.of(first, second), EmptyBindingSet.getInstance(), null);
+		assertThat(rows).hasSize(1);
+		assertThat(rows.getFirst().getValue("count").stringValue()).isEqualTo("2");
+		assertThat(first.subjectReads + second.subjectReads).isEqualTo(2);
+	}
+
+	@Test
+	void nontrivialAggregateArgumentKeepsTheCompleteMember() {
+		var row = new CountingStatement(EVENT, KEY);
+		var group = new Group(pattern("event", "key"), List.of("key"),
+				List.of(new GroupElem("count", new Count(new BNodeGenerator()))));
+		var rows = evaluate(new QueryRoot(group), List.of(row), EmptyBindingSet.getInstance(), null);
+		assertThat(rows).hasSize(1);
+		assertThat(rows.getFirst().getValue("count").stringValue()).isEqualTo("1");
+		assertThat(row.subjectReads).isEqualTo(1);
+	}
+
+	@Test
+	void filteredAndBoundMembersRetainTheirInputRequirements() {
+		var match = new CountingStatement(EVENT, KEY);
+		var mismatch = new CountingStatement(VF.createIRI("urn:scan:other-event"), KEY);
+		var aggregate = new GroupElem("count", new Count(null));
+		var filter = new Filter(pattern("event", "key"), new SameTerm(Var.of("event"), new ValueConstant(EVENT)));
+		var groupedFilter = new QueryRoot(new Group(filter, List.of("key"), List.of(aggregate)));
+		var filtered = evaluate(groupedFilter, List.of(match, mismatch), EmptyBindingSet.getInstance(), null);
+		assertThat(filtered).hasSize(1);
+		assertThat(filtered.getFirst().getValue("count").stringValue()).isEqualTo("1");
+		assertThat(mismatch.subjectReads).isPositive();
+		var inputs = new MapBindingSet();
+		inputs.addBinding("event", EVENT);
+		var groupedScan = new QueryRoot(new Group(pattern("event", "key"), List.of("key"), List.of(aggregate.clone())));
+		var bound = evaluate(groupedScan, List.of(match, mismatch), inputs, null);
+		assertThat(bound).hasSize(1);
+		assertThat(bound.getFirst().getValue("count").stringValue()).isEqualTo("1");
+	}
+
+	@Test
+	void customAggregateCanReadBindingsOutsideItsArgument() {
+		var factory = new AggregateFunctionFactory() {
+			@Override
+			public String getIri() {
+				return "urn:scan:aggregate:inspect-member";
+			}
+
+			@Override
+			public AggregateFunction<AggregateCollector, Value> buildFunction(Function<BindingSet, Value> argument) {
+				return new AggregateFunction<>(argument) {
+					@Override
+					public void processAggregate(BindingSet member, Predicate<Value> distinct,
+							AggregateCollector collector) {
+						assertThat(member.getValue("event")).isEqualTo(EVENT);
+					}
+				};
+			}
+
+			@Override
+			public AggregateCollector getCollector() {
+				return () -> VF.createLiteral(1);
+			}
+		};
+		var registry = CustomAggregateFunctionRegistry.getInstance();
+		registry.add(factory);
+		try {
+			var row = new CountingStatement(EVENT, KEY);
+			var custom = new AggregateFunctionCall(List.of(Var.of("key")), factory.getIri(), false);
+			var group = new Group(pattern("event", "key"), List.of("key"), List.of(new GroupElem("count", custom)));
+			var rows = evaluate(new QueryRoot(group), List.of(row), EmptyBindingSet.getInstance(), null);
+			assertThat(rows).hasSize(1);
+			assertThat(rows.getFirst().getValue("count").stringValue()).isEqualTo("1");
+			assertThat(row.subjectReads).isEqualTo(1);
+		} finally {
+			registry.remove(factory);
+		}
+	}
+
+	@Test
+	void explicitCollectionFactoryCanInspectTheCompleteGroupMember() {
+		var row = new CountingStatement(EVENT, KEY);
+		var observations = new AtomicInteger();
+		var factory = new DefaultCollectionFactory() {
+			@Override
+			public BindingSetKey createBindingSetKey(BindingSet member, List<Function<BindingSet, Value>> keys,
+					ToIntFunction<BindingSet> hashMaker) {
+				assertThat(member.getValue("event")).isEqualTo(EVENT);
+				observations.incrementAndGet();
+				return super.createBindingSetKey(member, keys, hashMaker);
+			}
+		};
+		var group = new Group(pattern("event", "key"), List.of("key"),
+				List.of(new GroupElem("count", new Count(null))));
+		var strategy = new DefaultEvaluationStrategy(statementSource(List.of(row)), null);
+		var rows = Iterations.asList(new GroupIterator(strategy, group, EmptyBindingSet.getInstance(), 0,
+				new QueryEvaluationContext.Minimal(null), VF, factory));
+		assertThat(rows).hasSize(1);
+		assertThat(rows.getFirst().getValue("count").stringValue()).isEqualTo("1");
+		assertThat(observations).hasValue(1);
+		assertThat(row.subjectReads).isEqualTo(1);
+	}
+
 	private static StatementPattern pattern(String subject, String object) {
 		return new StatementPattern(Var.of(subject), Var.of("predicate", PREDICATE, true, true), Var.of(object));
 	}
@@ -184,7 +380,13 @@ class ProjectedStatementPatternTest {
 
 	private static List<BindingSet> evaluate(TupleExpr projection, List<CountingStatement> statements,
 			BindingSet input, QueryEvaluationContext context) {
-		TripleSource source = new TripleSource() {
+		var strategy = new DefaultEvaluationStrategy(statementSource(statements), null);
+		var plan = context == null ? strategy.precompile(projection) : strategy.precompile(projection, context);
+		return Iterations.asList(plan.evaluate(input));
+	}
+
+	private static TripleSource statementSource(List<CountingStatement> statements) {
+		return new TripleSource() {
 			@Override
 			public CloseableIteration<? extends Statement> getStatements(Resource s, IRI p, Value o,
 					Resource... contexts) {
@@ -198,9 +400,6 @@ class ProjectedStatementPatternTest {
 				return VF;
 			}
 		};
-		var strategy = new DefaultEvaluationStrategy(source, null);
-		var plan = context == null ? strategy.precompile(projection) : strategy.precompile(projection, context);
-		return Iterations.asList(plan.evaluate(input));
 	}
 
 	private static final class CountingStatement extends AbstractStatement {
