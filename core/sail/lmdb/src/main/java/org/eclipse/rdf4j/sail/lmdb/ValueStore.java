@@ -6917,7 +6917,8 @@ public class ValueStore extends AbstractValueFactory implements BNodeIdResolver,
 		if (value == null || env == 0) {
 			return value;
 		}
-		ArrayDeque<Value> pending = new ArrayDeque<>();
+		// Scalar values have at most one ordinary RDF child (a literal datatype).
+		ArrayDeque<Value> pending = value instanceof TripleTerm ? new ArrayDeque<>() : new ArrayDeque<>(1);
 		pending.add(value);
 		while (!pending.isEmpty()) {
 			Value next = pending.removeLast();
