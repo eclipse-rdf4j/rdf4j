@@ -4116,8 +4116,14 @@ public class LmdbStoreConnection extends SailSourceConnection implements SailRes
 			}
 		}
 
-		private void addReadViews(Iterable<LmdbSailStore.ReadViewLease> additionalViews) {
+		private void addReadViews(List<LmdbSailStore.ReadViewLease> additionalViews) {
 			synchronized (readAttemptLock) {
+				// A transaction snapshot normally reports the same single lease on each pull.
+				if (readViews.size() == 1 && additionalViews.size() == 1
+						&& readViews.getFirst() == additionalViews.getFirst()) {
+					readViews = List.copyOf(additionalViews);
+					return;
+				}
 				Set<LmdbSailStore.ReadViewLease> combined = newIdentitySet(readViews);
 				additionalViews.forEach(combined::add);
 				readViews = List.copyOf(combined);
