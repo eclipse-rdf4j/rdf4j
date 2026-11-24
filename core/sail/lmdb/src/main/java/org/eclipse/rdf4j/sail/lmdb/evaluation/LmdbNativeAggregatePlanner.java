@@ -2677,7 +2677,8 @@ final class LmdbNativeAggregatePlanner extends LmdbNativeAggregateFilterCompiler
 		return new ZeroLengthPathPlan((int) subj[0], subj[1], (int) obj[0], obj[1], enumerationContexts,
 				subject.isConstant() || object.isConstant(),
 				context.getSubstitutionBindingNames().contains(subject.getName()),
-				context.getSubstitutionBindingNames().contains(object.getName()));
+				context.getSubstitutionBindingNames().contains(object.getName()),
+				zeroLength.rejectsExplicitNullEndpoints());
 	}
 
 	/** Sentinel: an unbound graph variable declines the whole plan (never a valid context list). */

@@ -1007,8 +1007,21 @@ public class DefaultEvaluationStrategy implements EvaluationStrategy, FederatedS
 		boolean deferEnumerationScan = usesStandardPreparation() && zlp.getClass() == ZeroLengthPath.class
 				&& subjectVar.getClass() == Var.class && objVar.getClass() == Var.class
 				&& (contextVar == null || contextVar.getClass() == Var.class);
-		return new ZeroLengthPathEvaluationStep(subjectVar, objVar, contextVar, subPrep, objPrep, this, context,
+		QueryEvaluationStep identity = new ZeroLengthPathEvaluationStep(subjectVar, objVar, contextVar, subPrep,
+				objPrep, this, context,
 				zlp.getScope(), deferEnumerationScan, usesAdmittedBlankNodeInputs());
+		if (!zlp.rejectsExplicitNullEndpoints()) {
+			return identity;
+		}
+		String subject = subjectVar.getName();
+		String object = objVar.getName();
+		return bindings -> hasExplicitNull(bindings, subject) || hasExplicitNull(bindings, object)
+				? QueryEvaluationStep.EMPTY_ITERATION
+				: identity.evaluate(bindings);
+	}
+
+	private static boolean hasExplicitNull(BindingSet bindings, String name) {
+		return bindings.hasBinding(name) && bindings.getValue(name) == null;
 	}
 
 	protected QueryEvaluationStep prepare(Difference node, QueryEvaluationContext context)
