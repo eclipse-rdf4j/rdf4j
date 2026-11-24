@@ -1238,48 +1238,56 @@ public final class QueryAlgebraBindingAnalysis {
 		if (!assignment.hasRepeatableBindingSets()) {
 			return OutputFacts.unknown(input);
 		}
-		Set<String> possible = new HashSet<>();
-		Set<String> guaranteed = null;
-		Map<String, Value> fixed = new HashMap<>();
-		Map<String, ValueKind> candidateKinds = new HashMap<>();
-		Set<String> varyingValues = new HashSet<>();
-		boolean hasRows = false;
+		// Each column records its contiguous prefix of non-null rows. A gap can never become guaranteed later.
+		Map<String, AssignmentColumn> columns = new HashMap<>();
+		long rows = 0;
 		for (BindingSet row : assignment.getBindingSets()) {
-			hasRows = true;
-			Set<String> rowNames = new HashSet<>();
+			rows++;
 			for (String name : row.getBindingNames()) {
 				Value value = row.getValue(name);
 				if (value == null) {
 					continue;
 				}
-				rowNames.add(name);
-				possible.add(name);
-				Value previous = fixed.putIfAbsent(name, value);
-				if (previous != null && !previous.equals(value)) {
-					varyingValues.add(name);
+				AssignmentColumn column = columns.get(name);
+				if (column == null) {
+					column = new AssignmentColumn(value);
+					columns.put(name, column);
+				} else if (!column.firstValue.equals(value)) {
+					column.varying = true;
 				}
-				candidateKinds.putIfAbsent(name, valueKind(value));
-			}
-			if (guaranteed == null) {
-				guaranteed = new HashSet<>(rowNames);
-			} else {
-				guaranteed.retainAll(rowNames);
+				if (column.presentThrough == rows - 1) {
+					column.presentThrough = rows;
+				}
 			}
 		}
-		if (!hasRows) {
+		if (rows == 0) {
 			return OutputFacts.knownEmpty(input);
 		}
-		Set<String> guaranteedNames = guaranteed == null ? Set.of() : guaranteed;
-		fixed.keySet().retainAll(guaranteedNames);
-		fixed.keySet().removeAll(varyingValues);
+		Set<String> guaranteed = new HashSet<>();
+		Map<String, Value> fixed = new HashMap<>();
 		Map<String, Set<ValueKind>> kinds = new HashMap<>();
-		for (String name : guaranteedNames) {
-			ValueKind kind = candidateKinds.get(name);
-			if (kind != null && !varyingValues.contains(name)) {
-				kinds.put(name, Set.of(kind));
+		for (Map.Entry<String, AssignmentColumn> entry : columns.entrySet()) {
+			AssignmentColumn column = entry.getValue();
+			if (column.presentThrough == rows) {
+				String name = entry.getKey();
+				guaranteed.add(name);
+				if (!column.varying) {
+					fixed.put(name, column.firstValue);
+					kinds.put(name, Set.of(valueKind(column.firstValue)));
+				}
 			}
 		}
-		return OutputFacts.known(possible, guaranteedNames, fixed, kinds, input, true);
+		return OutputFacts.known(columns.keySet(), guaranteed, fixed, kinds, input, true);
+	}
+
+	private static final class AssignmentColumn {
+		final Value firstValue;
+		long presentThrough;
+		boolean varying;
+
+		AssignmentColumn(Value firstValue) {
+			this.firstValue = firstValue;
+		}
 	}
 
 	private OutputFacts extensionFacts(Extension extension, ReadOnlyContext input) {
