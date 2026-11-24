@@ -75,13 +75,20 @@ public class ProjectionIterator extends ConvertingIteration<BindingSet, BindingS
 
 	public ProjectionIterator(Projection projection, CloseableIteration<BindingSet> iter,
 			BindingSet parentBindings, QueryEvaluationContext context) throws QueryEvaluationException {
+		this(projection, iter, parentBindings, context, false);
+	}
+
+	@InternalUseOnly
+	public ProjectionIterator(Projection projection, CloseableIteration<BindingSet> iter,
+			BindingSet parentBindings, QueryEvaluationContext context, boolean ownsIdentityRows) {
 		super(iter);
 		trackClearedSiblingInputs = ScopedUnionInput.tracksClearedSiblingInputs();
 		ProjectionElemList projectionElemList = projection.getProjectionElemList();
 		boolean isOuterProjection = !hasEnclosingProjection(projection, context);
 		boolean includeAllParentBindings = !isOuterProjection;
 		this.indexedProjector = isOuterProjection && parentBindings == EmptyBindingSet.getInstance()
-				&& projection.getInheritedGraphParameter() == null ? indexedProjector(projectionElemList, context)
+				&& projection.getInheritedGraphParameter() == null
+						? indexedProjector(projectionElemList, context, ownsIdentityRows && !trackClearedSiblingInputs)
 						: null;
 		BindingSet accessorParent = trackClearedSiblingInputs ? GraphFrameBindings.contextRow(parentBindings)
 				: parentBindings;
@@ -134,7 +141,7 @@ public class ProjectionIterator extends ConvertingIteration<BindingSet, BindingS
 	}
 
 	private static Function<BindingSet, ArrayBindingSet> indexedProjector(ProjectionElemList projection,
-			QueryEvaluationContext context) {
+			QueryEvaluationContext context, boolean ownsIdentityRows) {
 		IndexedLayout layout = context.indexedBindingLayout();
 		if (layout == null || context.getActiveGraph() != null) {
 			return null;
@@ -153,7 +160,8 @@ public class ProjectionIterator extends ConvertingIteration<BindingSet, BindingS
 			sources[i] = source;
 			targets[i] = target;
 		}
-		return row -> layout.project(row, sources, targets);
+		return ownsIdentityRows ? row -> layout.projectOwnedIdentity(row, sources)
+				: row -> layout.project(row, sources, targets);
 	}
 
 	/**

@@ -422,11 +422,28 @@ public class ArrayBindingSet extends AbstractBindingSet implements MutableBindin
 
 		/** Maps slots in projection order to distinct target slots, or returns null for an incompatible input row. */
 		public ArrayBindingSet project(BindingSet row, int[] sources, int[] targets) {
+			return project(row, sources, targets, false);
+		}
+
+		/**
+		 * Projects a freshly produced, exclusive row with no binding slots outside the identity projection. Applying
+		 * the ordinary capture function remains necessary even when the existing container can be reused.
+		 */
+		public ArrayBindingSet projectOwnedIdentity(BindingSet row, int[] sources) {
+			return project(row, sources, sources, true);
+		}
+
+		private ArrayBindingSet project(BindingSet row, int[] sources, int[] targets, boolean ownsIdentityRow) {
 			if (!matches(row)) {
 				return null;
 			}
 			ArrayBindingSet source = (ArrayBindingSet) row;
-			ArrayBindingSet result = new ArrayBindingSet(template.bindingNames, template.sharedSortedBindingNamesCache);
+			boolean reuse = ownsIdentityRow && source.replayOwnedSlots == 0;
+			ArrayBindingSet result = reuse ? source
+					: new ArrayBindingSet(template.bindingNames, template.sharedSortedBindingNamesCache);
+			if (reuse) {
+				result.clearCache();
+			}
 			int size = 0;
 			long mask = 0;
 			for (int i = 0; i < sources.length; i++) {
@@ -444,6 +461,8 @@ public class ArrayBindingSet extends AbstractBindingSet implements MutableBindin
 						size++;
 						mask |= 1L << target;
 					}
+				} else if (reuse) {
+					result.values[sourceSlot] = null;
 				}
 			}
 			result.cachedSize = size;

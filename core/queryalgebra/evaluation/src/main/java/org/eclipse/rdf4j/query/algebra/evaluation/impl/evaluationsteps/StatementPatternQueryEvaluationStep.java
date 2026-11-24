@@ -51,6 +51,7 @@ import org.eclipse.rdf4j.query.Dataset;
 import org.eclipse.rdf4j.query.MutableBindingSet;
 import org.eclipse.rdf4j.query.QueryEvaluationException;
 import org.eclipse.rdf4j.query.algebra.Projection;
+import org.eclipse.rdf4j.query.algebra.ProjectionElem;
 import org.eclipse.rdf4j.query.algebra.StatementPattern;
 import org.eclipse.rdf4j.query.algebra.StatementPattern.Scope;
 import org.eclipse.rdf4j.query.algebra.Var;
@@ -554,10 +555,7 @@ public class StatementPatternQueryEvaluationStep implements QueryEvaluationStep,
 	/** Prepare the immediate projection's private scan without changing the standalone or restricted step. */
 	@InternalUseOnly
 	public QueryEvaluationStep forProjection(Projection projection) {
-		if (getClass() != StatementPatternQueryEvaluationStep.class || projection.getArg() != statementPatternForMetrics
-				|| order != null || emptyGraph || !context.canOmitUnusedStatementBindings()
-				|| projection.getInheritedGraphParameter() != null || projection.getProjectionContext() != null
-				|| context.getActiveGraph() != null) {
+		if (!canSelectProjection(projection)) {
 			return this;
 		}
 		Set<String> sources = new LinkedHashSet<>();
@@ -583,6 +581,38 @@ public class StatementPatternQueryEvaluationStep implements QueryEvaluationStep,
 			var iteration = getIteration(demand, projectedConverter);
 			return iteration == null ? QueryEvaluationStep.EMPTY_ITERATION : iteration;
 		};
+	}
+
+	private boolean canSelectProjection(Projection projection) {
+		return getClass() == StatementPatternQueryEvaluationStep.class
+				&& projection.getArg() == statementPatternForMetrics && order == null && !emptyGraph
+				&& context.canOmitUnusedStatementBindings() && context.getActiveGraph() == null
+				&& projection.getInheritedGraphParameter() == null && projection.getProjectionContext() == null;
+	}
+
+	/** The private empty-input scan creates a separate row containing exactly these identity bindings. */
+	@InternalUseOnly
+	public boolean emitsIdentityProjection(Projection projection) {
+		if (!canSelectProjection(projection) || context.indexedBindingLayout() == null
+				|| normalizedContextVar != null || statementPattern.getScope() != Scope.DEFAULT_CONTEXTS) {
+			return false;
+		}
+
+		Set<String> selected = new LinkedHashSet<>();
+		for (ProjectionElem element : projection.getProjectionElemList().getElements()) {
+			String source = element.getName();
+			if (!element.getProjectionAlias().orElse(source).equals(source) || !selected.add(source)) {
+				return false;
+			}
+		}
+
+		Set<String> emitted = new LinkedHashSet<>();
+		for (Var variable : new Var[] { normalizedSubjectVar, normalizedPredicateVar, normalizedObjectVar }) {
+			if (variable != null && !variable.isConstant() && !canOmit(variable, selected)) {
+				emitted.add(variable.getName());
+			}
+		}
+		return selected.equals(emitted);
 	}
 
 	private boolean canOmit(Var variable, Set<String> sources) {
