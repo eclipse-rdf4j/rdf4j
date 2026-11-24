@@ -663,6 +663,95 @@ public class GroupIteratorTest {
 	}
 
 	@Test
+	public void doesNotPrepareBuiltinLiteralGroupConcatSeparatorPerEvaluation() throws QueryEvaluationException {
+		assertLiteralGroupConcatSeparator(VF.createLiteral("|"), 0, 0);
+	}
+
+	@Test
+	public void doesNotPrepareParserTypedStringGroupConcatSeparatorPerEvaluation() throws QueryEvaluationException {
+		Literal separator = VF.createLiteral("|", CoreDatatype.XSD.STRING);
+		assertThat(separator.getClass()).isEqualTo(VF.createLiteral("", CoreDatatype.XSD.STRING).getClass());
+		assertThat(separator.getDatatype()).isSameAs(CoreDatatype.XSD.STRING.getIri());
+		assertLiteralGroupConcatSeparator(separator, 0, 0);
+	}
+
+	@Test
+	public void nonCanonicalStringDatatypeStillEvaluatesGroupConcatSeparator() throws QueryEvaluationException {
+		IRI nonCanonicalStringDatatype = VF.createIRI(CoreDatatype.XSD.STRING.getIri().stringValue());
+		Literal separator = VF.createLiteral("|", nonCanonicalStringDatatype);
+		assertThat(separator.getDatatype()).isEqualTo(CoreDatatype.XSD.STRING.getIri());
+		assertThat(separator.getDatatype()).isNotSameAs(CoreDatatype.XSD.STRING.getIri());
+		assertLiteralGroupConcatSeparator(separator, 2, 2);
+	}
+
+	private void assertLiteralGroupConcatSeparator(Literal separatorValue, int expectedPreparations,
+			int expectedCaptures) throws QueryEvaluationException {
+		ValueConstant separator = new ValueConstant(separatorValue);
+		AtomicInteger separatorPreparations = new AtomicInteger();
+		AtomicInteger separatorCaptures = new AtomicInteger();
+		EmptyTripleSource source = new EmptyTripleSource() {
+			@Override
+			public Function<Value, Value> getValueCapturer() {
+				return value -> {
+					if (value == separatorValue) {
+						separatorCaptures.incrementAndGet();
+					}
+					return value;
+				};
+			}
+		};
+		EvaluationStrategy strategy = new DefaultEvaluationStrategy(source, null) {
+			@Override
+			protected QueryValueEvaluationStep prepare(ValueConstant valueConstant, QueryEvaluationContext context)
+					throws QueryEvaluationException {
+				if (valueConstant == separator) {
+					separatorPreparations.incrementAndGet();
+				}
+				return super.prepare(valueConstant, context);
+			}
+
+			@Override
+			protected boolean usesStandardRuntimePreparation() {
+				return true;
+			}
+		};
+		QueryEvaluationStep step = strategy.precompile(groupConcatGroup(separator), CONTEXT);
+
+		assertThat(separatorPreparations).hasValue(0);
+		for (String ticket : List.of("urn:ticket:first", "urn:ticket:second")) {
+			QueryBindingSet bindings = new QueryBindingSet();
+			bindings.addBinding("ticket", VF.createIRI(ticket));
+			try (CloseableIteration<BindingSet> results = step.evaluate(bindings)) {
+				assertThat(results.hasNext()).isTrue();
+				BindingSet result = results.next();
+				assertThat(result.getValue("ticket")).isEqualTo(VF.createIRI(ticket));
+				assertThat(result.getValue("events").stringValue().split("\\|"))
+						.containsExactlyInAnyOrder("event-a", "event-b");
+				assertThat(results.hasNext()).isFalse();
+			}
+		}
+		assertThat(separatorPreparations).as("literal separator scalar preparation count")
+				.hasValue(expectedPreparations);
+		assertThat(separatorCaptures).as("literal separator capture count").hasValue(expectedCaptures);
+	}
+
+	@Test
+	public void groupConcatDynamicSeparatorObservesEachEvaluationBinding() throws QueryEvaluationException {
+		EvaluationStrategy strategy = new DefaultEvaluationStrategy(new EmptyTripleSource(), null);
+		QueryEvaluationStep step = strategy.precompile(groupConcatGroup(Var.of("separator")), CONTEXT);
+		for (String separator : List.of("|", "/")) {
+			QueryBindingSet bindings = new QueryBindingSet();
+			bindings.addBinding("separator", VF.createLiteral(separator));
+			try (CloseableIteration<BindingSet> results = step.evaluate(bindings)) {
+				assertThat(results.hasNext()).isTrue();
+				String events = results.next().getValue("events").stringValue();
+				assertThat(events).contains(separator, "event-a", "event-b");
+				assertThat(results.hasNext()).isFalse();
+			}
+		}
+	}
+
+	@Test
 	public void doesNotReuseAggregateVarForCustomEvaluationStrategy() throws QueryEvaluationException {
 		AtomicInteger valueArgumentPreparations = new AtomicInteger();
 		EvaluationStrategy strategy = new DefaultEvaluationStrategy(null, null) {
@@ -1370,6 +1459,20 @@ public class GroupIteratorTest {
 		public SumCollector getCollector() {
 			return new SumCollector();
 		}
+	}
+
+	private static Group groupConcatGroup(ValueExpr separator) {
+		QueryBindingSet first = new QueryBindingSet();
+		first.addBinding("event", VF.createLiteral("event-a"));
+		QueryBindingSet second = new QueryBindingSet();
+		second.addBinding("event", VF.createLiteral("event-b"));
+		BindingSetAssignment assignment = new BindingSetAssignment();
+		assignment.setBindingSets(List.of(first, second));
+		Group group = new Group(assignment);
+		GroupConcat concat = new GroupConcat(Var.of("event"));
+		concat.setSeparator(separator);
+		group.addGroupElement(new GroupElem("events", concat));
+		return group;
 	}
 
 	/**

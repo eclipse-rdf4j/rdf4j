@@ -45,6 +45,7 @@ import org.eclipse.rdf4j.model.Literal;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.model.base.CoreDatatype;
+import org.eclipse.rdf4j.model.impl.SimpleLiteral;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.MutableBindingSet;
@@ -64,6 +65,7 @@ import org.eclipse.rdf4j.query.algebra.NAryValueOperator;
 import org.eclipse.rdf4j.query.algebra.Sample;
 import org.eclipse.rdf4j.query.algebra.Sum;
 import org.eclipse.rdf4j.query.algebra.UnaryValueOperator;
+import org.eclipse.rdf4j.query.algebra.ValueConstant;
 import org.eclipse.rdf4j.query.algebra.ValueExpr;
 import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.query.algebra.evaluation.EvaluationStrategy;
@@ -95,6 +97,8 @@ public class GroupIterator extends AbstractCloseableIteratorIteration<BindingSet
 
 	private static final int BUILD_CHECKPOINT_INTERVAL = 128;
 	private static final String OPERATOR_NAME = "GROUP_BY";
+	private static final Class<?> TYPED_LITERAL_CLASS = SimpleValueFactory.getInstance()
+			.createLiteral("", CoreDatatype.XSD.STRING).getClass();
 
 	/*-----------*
 	 * Constants *
@@ -563,8 +567,22 @@ public class GroupIterator extends AbstractCloseableIteratorIteration<BindingSet
 			ValueExpr separatorExpr = ((GroupConcat) operator).getSeparator();
 			ConcatAggregate agg;
 			if (separatorExpr != null) {
-				Value separatorValue = strategy.evaluate(separatorExpr, parentBindings);
-				agg = new ConcatAggregate(precompileUnaryArg(operator), separatorValue.stringValue());
+				boolean canReadLiteralSeparator = reusableAggregateArguments != null
+						&& operator.getClass() == GroupConcat.class
+						&& separatorExpr.getClass() == ValueConstant.class
+						&& !separatorExpr.isRuntimeTelemetryEnabled();
+				Value separatorValue = null;
+				if (canReadLiteralSeparator) {
+					Value literal = ((ValueConstant) separatorExpr).getValue();
+					if (isCanonicalStringLiteral(literal)) {
+						separatorValue = literal;
+					}
+				}
+				if (separatorValue == null) {
+					separatorValue = strategy.evaluate(separatorExpr, parentBindings);
+				}
+				Function<BindingSet, Value> argument = precompileUnaryArg(operator);
+				agg = new ConcatAggregate(argument, separatorValue.stringValue());
 			} else {
 				agg = new ConcatAggregate(precompileUnaryArg(operator));
 			}
@@ -694,6 +712,15 @@ public class GroupIterator extends AbstractCloseableIteratorIteration<BindingSet
 		return operatorClass == Count.class || operatorClass == Min.class || operatorClass == Max.class
 				|| operatorClass == Sum.class || operatorClass == Avg.class || operatorClass == Sample.class
 				|| operatorClass == GroupConcat.class;
+	}
+
+	private static boolean isCanonicalStringLiteral(Value value) {
+		if (!(value instanceof Literal literal)) {
+			return false;
+		}
+		Class<?> literalClass = literal.getClass();
+		return (literalClass == SimpleLiteral.class || literalClass == TYPED_LITERAL_CLASS)
+				&& literal.getDatatype() == CoreDatatype.XSD.STRING.getIri();
 	}
 
 	private NAryQueryStepEvaluator precompileNAryArg(AggregateOperator operator) {
