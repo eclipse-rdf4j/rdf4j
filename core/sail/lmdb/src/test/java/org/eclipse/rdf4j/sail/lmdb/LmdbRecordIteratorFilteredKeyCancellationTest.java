@@ -19,13 +19,16 @@ import static org.junit.jupiter.api.Assertions.assertAll;
 import java.io.File;
 import java.io.IOException;
 import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
 
+import org.eclipse.rdf4j.query.QueryInterruptedException;
 import org.eclipse.rdf4j.sail.lmdb.TxnManager.Txn;
 import org.eclipse.rdf4j.sail.lmdb.config.LmdbStoreConfig;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.NativeCancellationTestAccess;
+import org.eclipse.rdf4j.sail.lmdb.evaluation.NativeLmdbQuerySource;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.codegen.KernelQueryCancelledException;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
@@ -33,6 +36,7 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.CsvSource;
+import org.junit.jupiter.params.provider.ValueSource;
 
 /** Real LMDB filtered-key cancellation and deadline boundaries for both iterator consumption paths. */
 class LmdbRecordIteratorFilteredKeyCancellationTest {
@@ -88,7 +92,7 @@ class LmdbRecordIteratorFilteredKeyCancellationTest {
 	}
 
 	@Test
-	void retainedResetStartsANewCancellationPollBudget() throws Exception {
+	void retainedResetStartsANewCancellationSelection() throws Exception {
 		index.resetFilteredKeyVisits();
 		try (Txn txn = tripleStore.getTxnManager().createReadTxn()) {
 			LmdbRecordIterator iterator = new LmdbRecordIterator(index, index.getPatternScore(1L, -1L, 1L, 1L),
@@ -96,27 +100,90 @@ class LmdbRecordIteratorFilteredKeyCancellationTest {
 			try {
 				assertThat(iterator.fill(new long[1_500 * 4], 1_500)).isEqualTo(1_500);
 				assertThat(iterator.getSourceRowsScannedActual()).isEqualTo(1_500);
+				long oldGeneration = iterator.cancellationGeneration();
 				iterator.close();
 				iterator.reset(index, index.getPatternScore(1L, -1L, 2L, -1L), 1L, -1L, 2L, -1L, true);
 				index.resetFilteredKeyVisits();
-				AtomicReference<Object> cancellationToken = new AtomicReference<>();
+				assertThat(iterator.requestCancellation(oldGeneration)).isFalse();
+				assertThat(iterator.requestCancellation()).isTrue();
+				Throwable failure = catchThrowable(iterator::next);
 
-				Throwable failure = catchThrowable(
-						() -> NativeCancellationTestAccess.withCancelledNativeToken(cancellationToken::set,
-								iterator::next));
-
-				assertAll("a retained iterator reset begins a fresh bounded polling interval",
-						() -> assertCancellationProvenance(failure, cancellationToken.get()),
+				assertAll("a retained iterator reset begins a fresh cancellable selection",
+						() -> assertThat(failure).isInstanceOf(QueryInterruptedException.class),
 						() -> assertThat(index.filteredKeyVisits())
 								.as("the already-cancelled token is checked before another key visit")
 								.isZero(),
 						() -> assertThat(iterator.getSourceRowsScannedActual())
 								.as("reset starts source-work evidence for the new probe at zero")
 								.isZero());
+				iterator.reset(index, index.getPatternScore(1L, -1L, 1L, 1L), 1L, -1L, 1L, 1L, true);
+				assertThat(iterator.next()).containsExactly(1L, 1L, 1L, 1L);
 			} finally {
 				iterator.dispose();
 			}
 		}
+	}
+
+	@ParameterizedTest(name = "a delayed cancellation of selection {0} stops at its generation")
+	@ValueSource(longs = { 1L, 2L })
+	void delayedMeasurementCancellationDoesNotReachTheNextSelection(long selectedPredicate) throws Exception {
+		try (Txn txn = tripleStore.getTxnManager().createReadTxn();
+				var requester = Executors.newSingleThreadExecutor()) {
+			var retained = tripleStore.getTriplesRetained(txn, 1L, 1L, 1L, 1L, true);
+			try {
+				if (selectedPredicate != 1L) {
+					retained.close();
+					tripleStore.resetTriples(txn, retained, 1L, selectedPredicate, 1L, 1L, true);
+				}
+				var measurement = new LmdbStatementAccessArbiter.ReusableMeasurement();
+				var delayed = new DelayedCancellation(retained);
+				RecordIterator previous = measurement.wrap(delayed, null, 0, 0L, Double.NaN);
+				var cancellation = requester.submit(() -> previous.requestCancellation());
+				long nextPredicate = selectedPredicate + 1;
+				RecordIterator successor;
+				try {
+					await(delayed.forwarding);
+					previous.close();
+					tripleStore.resetTriples(txn, retained, 1L, nextPredicate, 1L, 1L, true);
+					successor = measurement.wrap(delayed, null, 0, 0L, Double.NaN);
+				} finally {
+					delayed.resume.countDown();
+				}
+				try (successor) {
+					assertAll("the successor selection survives a delayed request",
+							() -> assertThat(cancellation.get(10, TimeUnit.SECONDS)).isFalse(),
+							() -> assertThat(successor.next()).containsExactly(1L, nextPredicate, 1L, 1L));
+				}
+			} finally {
+				retained.dispose();
+			}
+		}
+	}
+
+	@Test
+	void forwardingCancellationSupportsIteratorsWithoutGenerations() {
+		var requests = new AtomicInteger();
+		RecordIterator iterator = new RecordIterator() {
+			@Override
+			public boolean requestCancellation() {
+				requests.incrementAndGet();
+				return true;
+			}
+
+			@Override
+			public long[] next() {
+				return null;
+			}
+
+			@Override
+			public void close() {
+			}
+		};
+
+		long generation = iterator.cancellationGeneration();
+		assertThat(RecordIterator.forwardCancellation(iterator, generation + 1)).isFalse();
+		assertThat(RecordIterator.forwardCancellation(iterator, generation)).isTrue();
+		assertThat(requests.get()).isEqualTo(1);
 	}
 
 	@ParameterizedTest(name = "real LMDB {0} stops on {1} after a filtered-key signal")
@@ -125,10 +192,11 @@ class LmdbRecordIteratorFilteredKeyCancellationTest {
 			throws Exception {
 		index.resetFilteredKeyVisits();
 		try (Txn txn = tripleStore.getTxnManager().createReadTxn()) {
-			LmdbRecordIterator iterator = openMismatchIterator(txn);
-			try {
-				AtomicReference<Object> cancellationToken = new AtomicReference<>();
-				Throwable failure = invokeWithSignal(iterator, pullMode, deadlineSignal, cancellationToken);
+			AtomicReference<LmdbRecordIterator> opened = new AtomicReference<>();
+			AtomicReference<Object> cancellationToken = new AtomicReference<>();
+			Throwable failure = invokeWithSignal(txn, opened, pullMode, deadlineSignal, cancellationToken);
+			try (LmdbRecordIterator iterator = opened.get()) {
+				assertThat(iterator).as("the scan reached its owner-controlled open").isNotNull();
 				RuntimeException expected = deadlineSignal ? NativeCancellationTestAccess.probeDeadlineSignal()
 						: KernelQueryCancelledException.INSTANCE;
 				long scansAtFailure = iterator.getSourceRowsScannedActual();
@@ -162,18 +230,18 @@ class LmdbRecordIteratorFilteredKeyCancellationTest {
 						() -> assertThat(freshReaderFailure).as("a fresh LMDB reader opens after signal cleanup")
 								.isNull(),
 						() -> assertThat(freshRows.get()).isEqualTo(PHYSICAL_ROWS));
-			} finally {
-				iterator.close();
 			}
 		}
 	}
 
-	private Throwable invokeWithSignal(LmdbRecordIterator iterator, PullMode pullMode, boolean deadlineSignal,
-			AtomicReference<Object> cancellationToken) {
+	private Throwable invokeWithSignal(Txn txn, AtomicReference<LmdbRecordIterator> opened, PullMode pullMode,
+			boolean deadlineSignal, AtomicReference<Object> cancellationToken) {
 		if (deadlineSignal) {
 			AtomicReference<Runnable> trip = new AtomicReference<>();
 			index.onFirstFilteredKey = () -> trip.get().run();
 			return catchThrowable(() -> NativeCancellationTestAccess.withTrippableProbeDeadline(trip::set, () -> {
+				LmdbRecordIterator iterator = openNativeMismatchIterator(txn);
+				opened.set(iterator);
 				pull(iterator, pullMode);
 				return null;
 			}));
@@ -187,6 +255,8 @@ class LmdbRecordIteratorFilteredKeyCancellationTest {
 		};
 		return catchThrowable(() -> NativeCancellationTestAccess.cancelAfter(firstFilteredKey, continueScan,
 				cancellationToken::set, () -> {
+					LmdbRecordIterator iterator = openNativeMismatchIterator(txn);
+					opened.set(iterator);
 					pull(iterator, pullMode);
 					return null;
 				}));
@@ -216,6 +286,12 @@ class LmdbRecordIteratorFilteredKeyCancellationTest {
 		return new LmdbRecordIterator(index, index.getPatternScore(1L, -1L, 2L, -1L), 1L, -1L, 2L, -1L, true, txn);
 	}
 
+	private LmdbRecordIterator openNativeMismatchIterator(Txn txn) throws IOException {
+		return new LmdbRecordIterator(index, index.getPatternScore(1L, -1L, 2L, -1L), 1L, -1L, 2L, -1L, true, txn,
+				null, null, false,
+				NativeLmdbQuerySource.captureCursorCancellation());
+	}
+
 	private int freshReaderRowCount() throws Exception {
 		try (Txn txn = tripleStore.getTxnManager().createReadTxn();
 				RecordIterator iterator = tripleStore.getTriples(txn, 1L, -1L, 1L, 1L, true)) {
@@ -230,12 +306,54 @@ class LmdbRecordIteratorFilteredKeyCancellationTest {
 	private static void await(CountDownLatch latch) {
 		try {
 			if (!latch.await(10, TimeUnit.SECONDS)) {
-				throw new IllegalStateException(
-						"The real LMDB matcher did not resume after cancellation was requested");
+				throw new IllegalStateException("Timed out waiting for the coordinated cancellation step");
 			}
 		} catch (InterruptedException e) {
 			Thread.currentThread().interrupt();
-			throw new IllegalStateException("Interrupted while coordinating the filtered-key signal", e);
+			throw new IllegalStateException("Interrupted while coordinating cancellation", e);
+		}
+	}
+
+	/** Pauses forwarding after the measurement wrapper has checked its selection. */
+	private static final class DelayedCancellation implements RecordIterator {
+		private final RecordIterator delegate;
+		private final CountDownLatch forwarding = new CountDownLatch(1);
+		private final CountDownLatch resume = new CountDownLatch(1);
+
+		private DelayedCancellation(RecordIterator delegate) {
+			this.delegate = delegate;
+		}
+
+		@Override
+		public boolean requestCancellation() {
+			pauseForwarding();
+			return delegate.requestCancellation();
+		}
+
+		@Override
+		public boolean requestCancellation(long generation) {
+			pauseForwarding();
+			return delegate.requestCancellation(generation);
+		}
+
+		@Override
+		public long cancellationGeneration() {
+			return delegate.cancellationGeneration();
+		}
+
+		@Override
+		public long[] next() {
+			return delegate.next();
+		}
+
+		@Override
+		public void close() {
+			delegate.close();
+		}
+
+		private void pauseForwarding() {
+			forwarding.countDown();
+			await(resume);
 		}
 	}
 

@@ -16,6 +16,7 @@ import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
 import java.util.Optional;
+import java.util.Set;
 
 import org.eclipse.rdf4j.model.vocabulary.RDF4J;
 import org.eclipse.rdf4j.model.vocabulary.SESAME;
@@ -39,6 +40,9 @@ import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.algebra.UnaryTupleOperator;
 import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.evaluationsteps.JoinQueryEvaluationStep;
+import org.eclipse.rdf4j.query.algebra.evaluation.iterator.JoinIterator;
+import org.eclipse.rdf4j.query.algebra.evaluation.iterator.LeftJoinIterator;
+import org.eclipse.rdf4j.query.algebra.evaluation.util.QueryEvaluationUtility;
 import org.eclipse.rdf4j.query.algebra.helpers.QueryAlgebraBindingAnalysis;
 import org.eclipse.rdf4j.query.algebra.helpers.QueryAlgebraBindingAnalysis.OutputFacts;
 import org.eclipse.rdf4j.query.algebra.helpers.TupleExprs;
@@ -73,11 +77,22 @@ final class LmdbPlannedOrder {
 
 	private final TupleExpr arg;
 	private final Dataset dataset;
+	private final boolean naturalOrder;
 	private QueryAlgebraBindingAnalysis bindingAnalysis;
 
 	LmdbPlannedOrder(TupleExpr arg, Dataset dataset) {
+		this(arg, dataset, false);
+	}
+
+	private LmdbPlannedOrder(TupleExpr arg, Dataset dataset, boolean naturalOrder) {
 		this.arg = arg;
 		this.dataset = dataset;
+		this.naturalOrder = naturalOrder;
+	}
+
+	/** Follows an already prepared, dataset-free input whose scan may have no explicit order. */
+	static LmdbPlannedOrder forNaturalOrder(TupleExpr arg) {
+		return new LmdbPlannedOrder(arg, null, true);
 	}
 
 	/**
@@ -145,6 +160,7 @@ final class LmdbPlannedOrder {
 	private Leading walk(String requestedName) {
 		TupleExpr current = arg;
 		String name = requestedName;
+		Set<String> naturalKey = naturalOrder && name != null ? Set.of(name) : null;
 		boolean needsBoundKey = false;
 
 		while (true) {
@@ -155,6 +171,12 @@ final class LmdbPlannedOrder {
 					return null;
 				}
 				return new Leading(pattern, name);
+			}
+
+			if (naturalOrder && !(current instanceof BinaryTupleOperator)
+					&& !(current instanceof Filter filter
+							&& QueryEvaluationUtility.isRepeatable(filter.getCondition()))) {
+				return null;
 			}
 
 			// Projections can supply a caller binding when the source is absent. Only a bound source is guaranteed
@@ -180,8 +202,7 @@ final class LmdbPlannedOrder {
 				current = ((UnaryTupleOperator) current).getArg();
 			} else if (current instanceof Join || current instanceof LeftJoin) {
 				BinaryTupleOperator join = (BinaryTupleOperator) current;
-				if (join instanceof Join innerJoin
-						&& !JoinQueryEvaluationStep.preservesLeftArgOrder(innerJoin, dataset)) {
+				if (!preservesLeftGrouping(join)) {
 					// A hash join scans whichever side is the greater relation and a service join takes back whatever
 					// order the remote endpoint answers in, so neither inherits the left argument's grouping. Which of
 					// the four operators actually runs is decided by JoinQueryEvaluationStep, so the question is asked
@@ -195,7 +216,11 @@ final class LmdbPlannedOrder {
 				// arguments share an order fails on a nested-loop join with only the left side ordered.
 				if (name != null) {
 					TupleExpr right = join.getRightArg();
-					if (right.getClass() == StatementPattern.class) {
+					if (naturalOrder) {
+						if (!QueryEvaluationUtility.permitsBindingInjection(right, naturalKey)) {
+							return null;
+						}
+					} else if (right.getClass() == StatementPattern.class) {
 						// A pattern matches a bound key and can supply a missing key.
 						needsBoundKey |= right.getBindingNames().contains(name);
 					} else {
@@ -213,6 +238,16 @@ final class LmdbPlannedOrder {
 				return null;
 			}
 		}
+	}
+
+	private boolean preservesLeftGrouping(BinaryTupleOperator join) {
+		if (naturalOrder) {
+			// Use the prepared operator. The scan has supplied no explicit order to enforce during preparation.
+			String loop = join instanceof Join ? JoinIterator.class.getSimpleName()
+					: LeftJoinIterator.class.getSimpleName();
+			return loop.equals(join.getAlgorithmName());
+		}
+		return !(join instanceof Join innerJoin) || JoinQueryEvaluationStep.preservesLeftArgOrder(innerJoin, dataset);
 	}
 
 	private boolean preservesBinding(TupleExpr expression, String name) {

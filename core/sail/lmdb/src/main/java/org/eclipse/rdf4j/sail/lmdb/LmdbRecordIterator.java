@@ -13,6 +13,9 @@
 package org.eclipse.rdf4j.sail.lmdb;
 
 import static org.eclipse.rdf4j.sail.lmdb.LmdbUtil.E;
+import static org.eclipse.rdf4j.sail.lmdb.RecordCursorCancellation.ACTIVE;
+import static org.eclipse.rdf4j.sail.lmdb.RecordCursorCancellation.CANCELLED;
+import static org.eclipse.rdf4j.sail.lmdb.RecordCursorCancellation.STATE_MASK;
 import static org.lwjgl.util.lmdb.LMDB.MDB_CURRENT;
 import static org.lwjgl.util.lmdb.LMDB.MDB_FIRST;
 import static org.lwjgl.util.lmdb.LMDB.MDB_LAST;
@@ -29,13 +32,17 @@ import static org.lwjgl.util.lmdb.LMDB.mdb_cursor_put;
 import static org.lwjgl.util.lmdb.LMDB.mdb_cursor_renew;
 
 import java.io.IOException;
+import java.lang.invoke.MethodHandles;
+import java.lang.invoke.VarHandle;
 import java.nio.ByteBuffer;
 import java.util.Arrays;
 
 import org.eclipse.rdf4j.common.concurrent.locks.StampedLongAdderLockManager;
+import org.eclipse.rdf4j.query.QueryInterruptedException;
 import org.eclipse.rdf4j.sail.SailException;
 import org.eclipse.rdf4j.sail.lmdb.TxnManager.Txn;
-import org.eclipse.rdf4j.sail.lmdb.evaluation.NativeLmdbQuerySource;
+import org.eclipse.rdf4j.sail.lmdb.evaluation.NativeLmdbQuerySource.CursorCancellation;
+import org.eclipse.rdf4j.sail.lmdb.evaluation.codegen.KernelQueryCancelledException;
 import org.eclipse.rdf4j.sail.lmdb.util.ChunkInput;
 import org.eclipse.rdf4j.sail.lmdb.util.ChunkOutput;
 import org.lwjgl.system.MemoryUtil;
@@ -44,7 +51,18 @@ import org.lwjgl.util.lmdb.MDBVal;
 /**
  * A record iterator over the tuples in the split key/value chunks of a native LMDB index.
  */
-class LmdbRecordIterator implements RecordIterator, RecordIterator.Retainable<TripleIndex> {
+class LmdbRecordIterator implements RecordIterator.Retainable<TripleIndex> {
+
+	private static final VarHandle CANCELLATION_STATE;
+
+	static {
+		try {
+			CANCELLATION_STATE = MethodHandles.lookup()
+					.findVarHandle(LmdbRecordIterator.class, "cancellationState", long.class);
+		} catch (ReflectiveOperationException failure) {
+			throw new ExceptionInInitializerError(failure);
+		}
+	}
 
 	static class State {
 		private long cursor;
@@ -98,7 +116,9 @@ class LmdbRecordIterator implements RecordIterator, RecordIterator.Retainable<Tr
 	private long sourceRowsScannedActual;
 	private long sourceRowsMatchedActual;
 	private long sourceRowsFilteredActual;
-	private int cancellationPollTick;
+	private int cancellationTick;
+	private volatile long cancellationState = ACTIVE;
+	private CursorCancellation cancellation;
 
 	/**
 	 * Skip-scan (leapfrog step): after this many consecutive pattern-rejected tuples, reposition past the non-matching
@@ -123,16 +143,27 @@ class LmdbRecordIterator implements RecordIterator, RecordIterator.Retainable<Tr
 	LmdbRecordIterator(TripleIndex index, int indexScore, long subj, long pred, long obj,
 			long context, boolean explicit, Txn txnRef, LmdbKeyRange range,
 			ValueStore.ReadSnapshot readSnapshot, boolean retainOnClose) throws IOException {
+		this(index, indexScore, subj, pred, obj, context, explicit, txnRef, range, readSnapshot, retainOnClose, null);
+	}
+
+	LmdbRecordIterator(TripleIndex index, int indexScore, long subj, long pred, long obj,
+			long context, boolean explicit, Txn txnRef, LmdbKeyRange range,
+			ValueStore.ReadSnapshot readSnapshot, boolean retainOnClose, CursorCancellation cancellation)
+			throws IOException {
 		this.txnRef = txnRef;
 		this.txnLockManager = txnRef.lockManager();
 		this.readSnapshot = readSnapshot;
 		this.retainOnClose = retainOnClose;
+		this.cancellation = cancellation == null ? null : cancellation.forWorker();
 		long stamp = readLock();
 		try {
 			synchronized (txnRef) {
 				txnRef.ensureSnapshotValid();
 				if (readSnapshot != null) {
 					readSnapshot.ensureValid();
+				}
+				if (this.cancellation != null) {
+					this.cancellation.poll();
 				}
 				this.txnLease = txnRef.lease();
 				this.state = txnRef.getValuePool().getState();
@@ -217,8 +248,7 @@ class LmdbRecordIterator implements RecordIterator, RecordIterator.Retainable<Tr
 		sourceRowsScannedActual = 0L;
 		sourceRowsMatchedActual = 0L;
 		sourceRowsFilteredActual = 0L;
-		cancellationPollTick = 0;
-		closed = false;
+		cancellationTick = 0;
 	}
 
 	private void acquireCursor() throws IOException {
@@ -237,6 +267,11 @@ class LmdbRecordIterator implements RecordIterator, RecordIterator.Retainable<Tr
 		long stamp = readLock();
 		try {
 			synchronized (txnRef) {
+				if (closed) {
+					return null;
+				}
+				validateSnapshot();
+				pollCancellationAtEntry();
 				return nextUnderReadLock();
 			}
 		} catch (IOException | RuntimeException | Error failure) {
@@ -249,17 +284,47 @@ class LmdbRecordIterator implements RecordIterator, RecordIterator.Retainable<Tr
 
 	@Override
 	public int fill(long[] buffer, int maxRows) {
+		return fillAt(buffer, 0, maxRows, maxRows, null);
+	}
+
+	static int fillAt(LmdbRecordIterator iterator, long[] buffer, int rowOffset, int maxRows) {
+		return iterator.fillAt(buffer, rowOffset, maxRows, maxRows, null);
+	}
+
+	/** A read boundary that must not run user callbacks while the transaction is locked. */
+	interface ReadCheckpoint {
+		boolean mayContinueDuringRead();
+	}
+
+	static int fillWithCheckpoints(LmdbRecordIterator iterator, long[] buffer, int maxRows, int interval,
+			ReadCheckpoint checkpoint) {
+		return iterator.fillAt(buffer, 0, maxRows, interval, checkpoint);
+	}
+
+	private int fillAt(long[] buffer, int rowOffset, int maxRows, int interval, ReadCheckpoint checkpoint) {
 		long stamp = readLock();
 		try {
 			synchronized (txnRef) {
+				if (closed) {
+					return 0;
+				}
+				validateSnapshot();
+				pollCancellationAtEntry();
 				int rows = 0;
+				int nextCheckpoint = interval;
 				while (rows < maxRows) {
 					long[] quad = nextUnderReadLock();
 					if (quad == null) {
 						break;
 					}
-					System.arraycopy(quad, 0, buffer, rows * 4, 4);
+					System.arraycopy(quad, 0, buffer, (rowOffset + rows) * 4, 4);
 					rows++;
+					if (checkpoint != null && rows == nextCheckpoint && rows < maxRows) {
+						if (!checkpoint.mayContinueDuringRead()) {
+							break;
+						}
+						nextCheckpoint += Math.min(interval, maxRows - rows);
+					}
 				}
 				return rows;
 			}
@@ -274,10 +339,6 @@ class LmdbRecordIterator implements RecordIterator, RecordIterator.Retainable<Tr
 	private long[] nextUnderReadLock() throws IOException {
 		if (closed) {
 			return null;
-		}
-		validateSnapshot();
-		if (cancellationPollTick == 0) {
-			NativeLmdbQuerySource.checkpointCancellation();
 		}
 		if (state.txnRefVersion != txnRef.version()) {
 			if (state.chunkOutput != null) {
@@ -305,6 +366,9 @@ class LmdbRecordIterator implements RecordIterator, RecordIterator.Retainable<Tr
 		while (result == MDB_SUCCESS) {
 			long[] current = state.chunkInput.next();
 			if (current == null) {
+				// A seek may skip a whole chunk without emitting a candidate, so empty transitions
+				// also consume budget. position() itself makes at most four native cursor calls.
+				pollCandidate();
 				flush();
 				result = cursorGet(MDB_NEXT);
 				if (result == MDB_SUCCESS) {
@@ -312,9 +376,7 @@ class LmdbRecordIterator implements RecordIterator, RecordIterator.Retainable<Tr
 				}
 				continue;
 			}
-			if ((++cancellationPollTick & 1023) == 0) {
-				NativeLmdbQuerySource.checkpointCancellation();
-			}
+			pollCandidate();
 			sourceRowsScannedActual++;
 			if (useIndex && Chunks.compareTuples(current, state.maxTuple) > 0) {
 				sourceRowsFilteredActual++;
@@ -365,8 +427,7 @@ class LmdbRecordIterator implements RecordIterator, RecordIterator.Retainable<Tr
 			fetchNext = true;
 			return state.quad;
 		}
-		NativeLmdbQuerySource.checkpointCancellation();
-		closeUnderReadLock();
+		finish();
 		return null;
 	}
 
@@ -493,6 +554,8 @@ class LmdbRecordIterator implements RecordIterator, RecordIterator.Retainable<Tr
 					return false;
 				}
 				validateSnapshot();
+				pollCancellationAtEntry();
+				pollCandidate();
 				index.toEntry(startTuple, subj, pred, obj, context);
 				if (Chunks.compareTuples(startTuple, state.minTuple) < 0) {
 					System.arraycopy(state.minTuple, 0, startTuple, 0, 4);
@@ -500,10 +563,12 @@ class LmdbRecordIterator implements RecordIterator, RecordIterator.Retainable<Tr
 				positioned = false;
 				fetchNext = false;
 				resumeExclusive = null;
+				consecutiveFiltered = 0;
 				return true;
 			}
-		} catch (IOException e) {
-			throw new SailException(e);
+		} catch (IOException | RuntimeException | Error failure) {
+			closeAfterFailure(failure);
+			throw propagate(failure);
 		} finally {
 			txnLockManager.unlockRead(stamp);
 		}
@@ -519,6 +584,12 @@ class LmdbRecordIterator implements RecordIterator, RecordIterator.Retainable<Tr
 				if (!retainOnClose || disposed) {
 					throw new SailException("Iterator cannot be reset");
 				}
+				if (cancellation != null) {
+					cancellation = cancellation.transferToWorker();
+					cancellation.poll();
+				}
+				closed = true;
+				cancellationState &= ~STATE_MASK;
 				finishCurrent();
 				flush();
 				if (state.dbi != index.getDB(explicit)) {
@@ -530,9 +601,65 @@ class LmdbRecordIterator implements RecordIterator, RecordIterator.Retainable<Tr
 					state.txnRefVersion = txnRef.version();
 					acquireCursor();
 				}
+				cancellationState = (cancellationState & ~STATE_MASK) + STATE_MASK + 1L + ACTIVE;
+				closed = false;
 			}
 		} finally {
 			txnLockManager.unlockRead(stamp);
+		}
+	}
+
+	@Override
+	public boolean requestCancellation() {
+		return requestCancellation(cancellationGeneration());
+	}
+
+	@Override
+	public long cancellationGeneration() {
+		return cancellationState & ~STATE_MASK;
+	}
+
+	@Override
+	public boolean requestCancellation(long generation) {
+		return RecordCursorCancellation.request(this, CANCELLATION_STATE, cancellationState, generation);
+	}
+
+	private void pollCancellationAtEntry() {
+		checkLocalCancellation();
+		if (cancellation != null) {
+			cancellation = cancellation.transferToWorker();
+			if (cancellationTick == 0) {
+				cancellation.checkpointPublishedStops();
+			}
+		}
+	}
+
+	/** Charge each decoded tuple and each chunk transition, rather than every positioning retry. */
+	private void pollCandidate() {
+		if ((++cancellationTick & 63) == 0) {
+			checkLocalCancellation();
+		}
+		if (cancellation != null) {
+			cancellation.poll();
+		}
+	}
+
+	private void finish() throws IOException {
+		long observed = cancellationState;
+		if ((observed & STATE_MASK) == ACTIVE) {
+			CANCELLATION_STATE.compareAndSet(this, observed, observed & ~STATE_MASK);
+		}
+		checkLocalCancellation();
+		if (cancellation != null) {
+			cancellation.checkpointPublishedStops();
+		}
+		closeUnderReadLock();
+	}
+
+	private void checkLocalCancellation() {
+		if ((cancellationState & STATE_MASK) == CANCELLED) {
+			throw cancellation == null ? new QueryInterruptedException("LMDB record iteration cancelled")
+					: cancellation.cancelled();
 		}
 	}
 
@@ -543,6 +670,7 @@ class LmdbRecordIterator implements RecordIterator, RecordIterator.Retainable<Tr
 				flush();
 			} finally {
 				closed = true;
+				cancellationState &= ~STATE_MASK;
 				if (!retainOnClose) {
 					freeResources();
 				}
@@ -554,6 +682,14 @@ class LmdbRecordIterator implements RecordIterator, RecordIterator.Retainable<Tr
 		synchronized (txnRef) {
 			// Do not flush chunk buffers after snapshot invalidation; they may reference an unmapped generation.
 			closed = true;
+			boolean locallyCancelled = (cancellationState & STATE_MASK) == CANCELLED;
+			cancellationState &= ~STATE_MASK;
+			// A broadcast stopping a retained immutable scan leaves the cursor positioned but safe to reset.
+			if (locallyCancelled && retainOnClose && txnRef.isReadOnly()
+					&& (failure instanceof QueryInterruptedException
+							|| failure instanceof KernelQueryCancelledException)) {
+				return;
+			}
 			try {
 				freeResources();
 				disposed = true;

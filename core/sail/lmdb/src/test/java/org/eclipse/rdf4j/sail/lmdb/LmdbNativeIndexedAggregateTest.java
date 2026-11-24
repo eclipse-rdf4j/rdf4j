@@ -225,9 +225,20 @@ class LmdbNativeIndexedAggregateTest {
 				LmdbPrefixRunPlan.resetMetrics();
 				assertThrows(KernelQueryCancelledException.class,
 						() -> NativeCancellationTestAccess.withCancelledNativeToken(
-								() -> source.count(-1L, predicateId, -1L, -1L)));
+								() -> source.count(-1L, predicateId, -1L, -1L,
+										NativeLmdbQuerySource.captureCursorCancellation())));
 				assertThat(LmdbPrefixRunPlan.INDEX_EXACT_COUNTS.get())
 						.as("a cancelled exact count must not publish a partial cardinality")
+						.isZero();
+
+				NativeCancellationTestAccess.withInterruptedNativeOwner((cursor, owner) -> {
+					var signal = assertThrows(KernelQueryCancelledException.class,
+							() -> source.count(-1L, predicateId, -1L, -1L, cursor));
+					assertThat(signal.observedBy(owner)).isTrue();
+					assertThat(signal.origin()).isSameAs(owner);
+				});
+				assertThat(LmdbPrefixRunPlan.INDEX_EXACT_COUNTS.get())
+						.as("an owner interrupt cannot fall through the count's bounded page callbacks")
 						.isZero();
 
 				assertThat(source.hasStatementsInSource()).isTrue();

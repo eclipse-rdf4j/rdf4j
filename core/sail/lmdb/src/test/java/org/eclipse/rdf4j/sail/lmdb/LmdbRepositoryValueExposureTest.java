@@ -54,6 +54,7 @@ import org.eclipse.rdf4j.query.GraphQueryResult;
 import org.eclipse.rdf4j.query.QueryLanguage;
 import org.eclipse.rdf4j.query.TupleQueryResult;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
+import org.eclipse.rdf4j.query.algebra.evaluation.ArrayBindingSet;
 import org.eclipse.rdf4j.query.algebra.evaluation.TripleSource;
 import org.eclipse.rdf4j.query.algebra.evaluation.function.Function;
 import org.eclipse.rdf4j.query.algebra.evaluation.function.FunctionRegistry;
@@ -106,6 +107,7 @@ class LmdbRepositoryValueExposureTest {
 
 	private enum RowReuse {
 		BINDINGS,
+		ARRAY_BINDINGS,
 		STATEMENTS
 	}
 
@@ -253,7 +255,7 @@ class LmdbRepositoryValueExposureTest {
 		repository.init();
 		List<Long> retainedIds = new ArrayList<>();
 		try (RepositoryConnection connection = repository.getConnection()) {
-			if (reuse == RowReuse.BINDINGS) {
+			if (reuse != RowReuse.STATEMENTS) {
 				List<BindingSet> retained = new ArrayList<>();
 				try (TupleQueryResult result = connection.prepareTupleQuery(SELECT).evaluate()) {
 					while (result.hasNext()) {
@@ -263,6 +265,14 @@ class LmdbRepositoryValueExposureTest {
 					}
 				}
 				retained.forEach(row -> retainedIds.add(((LmdbValue) row.getValue("value")).getInternalID()));
+				if (reuse == RowReuse.ARRAY_BINDINGS) {
+					MapBindingSet first = assertInstanceOf(MapBindingSet.class, retained.getFirst());
+					assertEquals(List.of("constant", "value"), new ArrayList<>(first.getBindingNames()));
+					assertFalse(first.hasBinding("undef"));
+					first.getBindingNames().remove("constant");
+					assertFalse(first.hasBinding("constant"));
+					assertEquals(SUBJECT, retained.get(1).getValue("constant"));
+				}
 			} else {
 				List<Statement> retained = new ArrayList<>();
 				try (RepositoryResult<Statement> result = connection.getStatements(null, null, null, false)) {
@@ -822,6 +832,69 @@ class LmdbRepositoryValueExposureTest {
 	}
 
 	@Test
+	void registeredNativeProjectionPreparesOnlyOwnedTermsAndRetainsNestedResults(@TempDir File directory) {
+		seed(directory, 17);
+		LmdbStore store = new LmdbStore(directory, new LmdbStoreConfig("spoc,posc,ospc")
+				.setInlineLiterals(false)
+				.setDirectAdjacencyEnabled(true)
+				.setNativeEvaluationEnabled(true));
+		SailRepository repository = new SailRepository(store);
+		List<BindingSet> retained = new ArrayList<>();
+		try {
+			try (RepositoryConnection connection = repository.getConnection();
+					TupleQueryResult rows = connection
+							.prepareTupleQuery("SELECT ?s ?value WHERE { ?s <" + PREDICATE + "> ?value }")
+							.evaluate()) {
+				while (rows.hasNext()) {
+					BindingSet row = rows.next();
+					assertDeepReady(row.getValue("value"));
+					retained.add(row);
+				}
+			}
+		} finally {
+			repository.shutDown();
+		}
+		assertEquals(17, retained.size());
+		assertTrue(retained.stream()
+				.skip(1)
+				.anyMatch(row -> row.getValue("value") instanceof PreparedLmdbValue.Prepared));
+		assertEquals(17, retained.stream().map(row -> row.getValue("value")).distinct().count());
+		for (BindingSet row : retained) {
+			assertDeepReady(row.getValue("value"));
+			assertEquals(SUBJECT, row.getValue("s"));
+			TripleTerm value = assertInstanceOf(TripleTerm.class, row.getValue("value"));
+			TripleTerm inner = assertInstanceOf(TripleTerm.class, value.getObject());
+			assertEquals(DATATYPE, assertInstanceOf(Literal.class, inner.getObject()).getDatatype());
+		}
+	}
+
+	@Test
+	void nativeProjectionDoesNotReuseReboundRepositoryHandles(@TempDir File directory) throws Exception {
+		seed(directory, 17);
+		LmdbStore store = new LmdbStore(directory, new LmdbStoreConfig("spoc,posc,ospc")
+				.setInlineLiterals(false)
+				.setDirectAdjacencyEnabled(true)
+				.setNativeEvaluationEnabled(true));
+		SailRepository repository = new SailRepository(store);
+		try (RepositoryConnection connection = repository.getConnection();
+				TupleQueryResult rows = connection.prepareTupleQuery(
+						"SELECT ?s ?value WHERE { ?s <" + PREDICATE + "> ?value }").evaluate()) {
+			ValueStore values = store.getBackingStore().valueStore();
+			long subject = values.getId(SUBJECT, false);
+			long other = values.getId(PREDICATE, false);
+			rows.next();
+			LmdbValue exposed = assertInstanceOf(LmdbValue.class, rows.next().getValue("s"));
+			assertEquals(subject, exposed.getInternalID());
+			exposed.setInternalID(other, exposed.getValueStoreRevision());
+			LmdbValue next = assertInstanceOf(LmdbValue.class, rows.next().getValue("s"));
+			assertEquals(SUBJECT, next);
+			assertEquals(subject, next.getInternalID());
+		} finally {
+			repository.shutDown();
+		}
+	}
+
+	@Test
 	void exactRepositorySourceReleasesWithoutLegacyColdOwnership(@TempDir File directory) {
 		seed(directory, 1);
 		LmdbStore store = newStore(directory);
@@ -1007,6 +1080,17 @@ class LmdbRepositoryValueExposureTest {
 							protected BindingSet convert(BindingSet bindings) {
 								row.clear();
 								bindings.forEach(binding -> row.addBinding(binding.getName(), binding.getValue()));
+								return row;
+							}
+						};
+					} else if (reuse == RowReuse.ARRAY_BINDINGS) {
+						ArrayBindingSet row = new ArrayBindingSet("constant", "unset", "value", "undef");
+						row.setBinding("constant", SUBJECT);
+						row.getDirectSetBinding("undef").accept(null, row);
+						source = new ConvertingIteration<BindingSet, BindingSet>(source) {
+							@Override
+							protected BindingSet convert(BindingSet bindings) {
+								row.setBinding("value", bindings.getValue("value"));
 								return row;
 							}
 						};

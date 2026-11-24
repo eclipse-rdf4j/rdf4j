@@ -17,6 +17,7 @@ import java.util.List;
 
 import org.eclipse.rdf4j.common.order.StatementOrder;
 import org.eclipse.rdf4j.sail.lmdb.TxnManager.Txn;
+import org.eclipse.rdf4j.sail.lmdb.evaluation.NativeLmdbQuerySource.CursorCancellation;
 
 /** A lazy chain of projections followed by a full statement index. Plans depend on bindings, not their values. */
 final class IndexResolutionPlan {
@@ -98,29 +99,47 @@ final class IndexResolutionPlan {
 	}
 
 	RecordIterator iterator(Txn txn, long s, long p, long o, long c, boolean explicit) throws IOException {
-		return iterator(txn, s, p, o, c, explicit, partial == null ? full.getPatternScore(s, p, o, c) : 0);
+		return iterator(txn, s, p, o, c, explicit, (CursorCancellation) null);
 	}
 
-	RecordIterator iterator(Txn txn, long s, long p, long o, long c, boolean explicit, int fullIndexScore)
+	RecordIterator iterator(Txn txn, long s, long p, long o, long c, boolean explicit,
+			CursorCancellation cancellation) throws IOException {
+		return iterator(txn, s, p, o, c, explicit, partial == null ? full.getPatternScore(s, p, o, c) : 0,
+				cancellation);
+	}
+
+	RecordIterator iterator(Txn txn, long s, long p, long o, long c, boolean explicit, int fullIndexScore,
+			CursorCancellation cancellation)
 			throws IOException {
 		if (partial != null) {
-			return partial.iterator(txn, s, p, o, c, explicit, next);
+			return partial.iterator(txn, s, p, o, c, explicit, next, false, cancellation);
 		}
-		return new LmdbRecordIterator(full, fullIndexScore, s, p, o, c, explicit, txn);
+		return new LmdbRecordIterator(full, fullIndexScore, s, p, o, c, explicit, txn, null, null, false, cancellation);
 	}
 
 	RecordIterator iterator(Txn txn, long s, long p, long o, long c, boolean explicit, LmdbKeyRange range)
 			throws IOException {
+		return iterator(txn, s, p, o, c, explicit, range, null);
+	}
+
+	RecordIterator iterator(Txn txn, long s, long p, long o, long c, boolean explicit, LmdbKeyRange range,
+			CursorCancellation cancellation) throws IOException {
 		if (partial != null) {
-			return new LmdbKeyRangeFilteringIterator(iterator(txn, s, p, o, c, explicit), range);
+			return new LmdbKeyRangeFilteringIterator(iterator(txn, s, p, o, c, explicit, cancellation), range,
+					cancellation);
 		}
 		return new LmdbRecordIterator(full, full.getPatternScore(s, p, o, c), s, p, o, c, explicit,
-				txn, range, null, false);
+				txn, range, null, false, cancellation);
 	}
 
 	RecordIterator.Retainable<IndexResolutionPlan> retainedIterator(Txn txn, long s, long p, long o, long c,
 			boolean explicit) throws IOException {
-		RetainedIterator iterator = new RetainedIterator(txn);
+		return retainedIterator(txn, s, p, o, c, explicit, null);
+	}
+
+	RecordIterator.Retainable<IndexResolutionPlan> retainedIterator(Txn txn, long s, long p, long o, long c,
+			boolean explicit, CursorCancellation cancellation) throws IOException {
+		RetainedIterator iterator = new RetainedIterator(txn, cancellation);
 		iterator.reset(this, 0, s, p, o, c, explicit);
 		return iterator;
 	}
@@ -144,13 +163,16 @@ final class IndexResolutionPlan {
 	private static final class RetainedIterator implements RecordIterator.Retainable<IndexResolutionPlan> {
 		private final Txn txn;
 		private final long txnLease;
-		private RecordIterator current;
+		private final CursorCancellation cancellation;
+		private final RecordCursorCancellation localCancellation = new RecordCursorCancellation();
+		private volatile RecordIterator current;
 		private RecordIterator.Retainable<TripleIndex> retainedFull;
 		private RecordIterator.Retainable<IndexResolutionPlan> retainedPartial;
 		private boolean closed;
 		private boolean disposed;
 
-		private RetainedIterator(Txn txn) {
+		private RetainedIterator(Txn txn, CursorCancellation cancellation) {
+			this.cancellation = cancellation;
 			this.txn = txn;
 			this.txnLease = txn.lease();
 		}
@@ -167,34 +189,83 @@ final class IndexResolutionPlan {
 				int score = plan.full.getPatternScore(s, p, o, c);
 				if (retainedFull == null) {
 					retainedFull = new LmdbRecordIterator(plan.full, score, s, p, o, c, explicit, txn,
-							null, null, true);
+							null, null, true, cancellation);
 				} else {
 					retainedFull.reset(plan.full, score, s, p, o, c, explicit);
 				}
 				current = retainedFull;
 			} else {
 				if (retainedPartial == null) {
-					retainedPartial = plan.partial.iterator(txn, s, p, o, c, explicit, plan.next, true);
+					retainedPartial = plan.partial.iterator(txn, s, p, o, c, explicit, plan.next, true, cancellation);
 				} else {
 					retainedPartial.reset(plan, indexScore, s, p, o, c, explicit);
 				}
 				current = retainedPartial;
 			}
 			closed = false;
+			localCancellation.open();
+		}
+
+		@Override
+		public long cancellationGeneration() {
+			return localCancellation.generation();
+		}
+
+		@Override
+		public boolean requestCancellation() {
+			return requestCancellation(cancellationGeneration());
+		}
+
+		@Override
+		public boolean requestCancellation(long generation) {
+			RecordIterator delegate = current;
+			long delegateGeneration = delegate == null ? 0 : delegate.cancellationGeneration();
+			if (!localCancellation.request(generation)) {
+				return false;
+			}
+			RecordIterator.forwardCancellation(delegate, delegateGeneration);
+			return true;
 		}
 
 		@Override
 		public long[] next() {
-			return closed ? null : current.next();
+			if (closed) {
+				return null;
+			}
+			checkpointLocalCancellation();
+			long[] row = current.next();
+			if (row == null) {
+				localCancellation.sealExhaustion();
+			}
+			checkpointLocalCancellation();
+			return row;
 		}
 
 		@Override
 		public int fill(long[] buffer, int maxRows) {
-			return closed ? 0 : current.fill(buffer, maxRows);
+			if (closed || maxRows == 0) {
+				return 0;
+			}
+			checkpointLocalCancellation();
+			int rows = current.fill(buffer, maxRows);
+			if (rows < maxRows) {
+				localCancellation.sealExhaustion();
+			}
+			checkpointLocalCancellation();
+			return rows;
+		}
+
+		private void checkpointLocalCancellation() {
+			if (localCancellation.isCancelled()) {
+				localCancellation.checkpoint(cancellation);
+			}
 		}
 
 		@Override
 		public boolean seekForward(long s, long p, long o, long c) {
+			if (!closed && localCancellation.isCancelled()) {
+				localCancellation.checkpoint(cancellation);
+			}
 			return !closed && current.seekForward(s, p, o, c);
 		}
 
@@ -227,6 +298,7 @@ final class IndexResolutionPlan {
 		public void close() {
 			if (!closed) {
 				closed = true;
+				localCancellation.close();
 				if (current != null) {
 					current.close();
 				}

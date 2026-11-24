@@ -13,38 +13,56 @@
 package org.eclipse.rdf4j.sail.lmdb;
 
 import java.util.Optional;
-import java.util.function.Supplier;
 
-import org.eclipse.rdf4j.collection.factory.api.CollectionFactory;
 import org.eclipse.rdf4j.common.annotation.Experimental;
 import org.eclipse.rdf4j.common.annotation.InternalUseOnly;
+import org.eclipse.rdf4j.common.order.StatementOrder;
 import org.eclipse.rdf4j.query.Dataset;
 import org.eclipse.rdf4j.query.algebra.Distinct;
 import org.eclipse.rdf4j.query.algebra.Group;
+import org.eclipse.rdf4j.query.algebra.LeftJoin;
+import org.eclipse.rdf4j.query.algebra.Projection;
+import org.eclipse.rdf4j.query.algebra.ProjectionElem;
+import org.eclipse.rdf4j.query.algebra.QueryRoot;
+import org.eclipse.rdf4j.query.algebra.StatementPattern;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
+import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryEvaluationStep;
 import org.eclipse.rdf4j.query.algebra.evaluation.TripleSource;
 import org.eclipse.rdf4j.query.algebra.evaluation.federation.FederatedServiceResolver;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.DefaultEvaluationStrategy;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.EvaluationStatistics;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.QueryEvaluationContext;
+import org.eclipse.rdf4j.sail.base.SailDatasetTripleTermSource;
+import org.eclipse.rdf4j.sail.lmdb.LmdbSailStore.LmdbSailDataset;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbIndexedDistinct;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbIndexedDistinctCount;
 
 /**
- * The standard evaluation strategy plus partitioned {@code DISTINCT}: when the optimizer has committed the pattern that
- * leads the argument to an index order (see {@link LmdbDistinctOrderMarkingOptimizer}) and the plan guarantees that the
- * rows arrive grouped on it (see {@link LmdbPlannedOrder}), the duplicate-removal set is cleared at every group
- * boundary by {@link LmdbPartitionedDistinctIteration}. This class only reads the plan; it never changes it.
+ * The standard evaluation strategy with LMDB index access and OPTIONAL replay. A {@code DISTINCT} can clear its
+ * duplicate-removal set at each group boundary when the index order chosen by the optimizer or the natural statement
+ * scan order guarantees that rows arrive grouped. See {@link LmdbPlannedOrder} and
+ * {@link LmdbPartitionedDistinctIteration}.
  */
 @Experimental
 @InternalUseOnly
 final class LmdbEvaluationStrategy extends DefaultEvaluationStrategy {
 
+	private final LmdbSailDataset statementSource;
+
 	LmdbEvaluationStrategy(TripleSource tripleSource, Dataset dataset, FederatedServiceResolver serviceResolver,
 			long iterationCacheSyncTreshold, EvaluationStatistics evaluationStatistics, boolean trackResultSize) {
 		super(tripleSource, dataset, serviceResolver, iterationCacheSyncTreshold, evaluationStatistics,
 				trackResultSize);
+		this.statementSource = singleStatementSource(tripleSource);
+	}
+
+	@Override
+	protected QueryEvaluationStep prepare(LeftJoin node, QueryEvaluationContext context) {
+		return statementSource != null && statementSource.canReplayStatementRows()
+				? prepare(node, context,
+						statementSource::validateStatementReplaySnapshot, statementSource.statementReplayCapturer())
+				: super.prepare(node, context);
 	}
 
 	@Override
@@ -62,11 +80,14 @@ final class LmdbEvaluationStrategy extends DefaultEvaluationStrategy {
 	}
 
 	private QueryEvaluationStep preparePartitionedDistinct(Distinct node, QueryEvaluationContext context) {
-		Optional<String> partitionBindingName = partitionBindingName(node.getArg(), context.getDataset());
-		if (partitionBindingName.isPresent()) {
-			return partitioned(node.getArg(), partitionBindingName.get(), context);
+		String partitionBinding = partitionBindingName(node.getArg(), context.getDataset()).orElse(null);
+		QueryEvaluationStep child = precompile(node.getArg(), context);
+		QueryEvaluationStep natural = prepareNaturalPartitionedDistinct(node, context, child, partitionBinding);
+		if (natural != null) {
+			return natural;
 		}
-		return super.prepare(node, context);
+		return partitionBinding == null ? prepareDistinct(node, context, child, null)
+				: LmdbPartitionedDistinctSteps.partitioned(child, partitionBinding, getCollectionFactory());
 	}
 
 	private Optional<String> partitionBindingName(TupleExpr arg, Dataset dataset) {
@@ -76,10 +97,79 @@ final class LmdbEvaluationStrategy extends DefaultEvaluationStrategy {
 		return new LmdbPlannedOrder(arg, dataset).partitionBindingName();
 	}
 
-	private QueryEvaluationStep partitioned(TupleExpr arg, String partitionBindingName,
-			QueryEvaluationContext context) {
-		Supplier<CollectionFactory> collectionFactory = getCollectionFactory();
-		return LmdbPartitionedDistinctSteps.partitioned(precompile(arg, context), partitionBindingName,
-				collectionFactory);
+	private QueryEvaluationStep prepareNaturalPartitionedDistinct(Distinct node, QueryEvaluationContext context,
+			QueryEvaluationStep input, String plannedPartitionBinding) {
+		if (!(node.getParentNode() instanceof QueryRoot) || !(node.getArg() instanceof Projection projection)
+				|| projection.getInheritedGraphParameter() != null || context.getDataset() != null
+				|| context.getActiveGraph() != null) {
+			return null;
+		}
+		String key = naturalPartitionKey(projection, plannedPartitionBinding);
+		if (key == null) {
+			return null;
+		}
+		node.setStringMetricPlanned("distinctPartitionBinding", key);
+		QueryEvaluationStep partitioned = LmdbPartitionedDistinctSteps.partitioned(input, key, getCollectionFactory(),
+				statementSource.statementReplayCapturer());
+		return prepareDistinct(node, context, input, partitioned);
+	}
+
+	private String naturalPartitionKey(Projection projection, String plannedPartitionBinding) {
+		if (statementSource == null) {
+			return null;
+		}
+		LmdbPlannedOrder drivingOrder = LmdbPlannedOrder.forNaturalOrder(projection.getArg());
+		StatementPattern anchor = drivingOrder.leadingStatementPattern();
+		if (anchor == null || anchor.getScope() != StatementPattern.Scope.DEFAULT_CONTEXTS
+				|| anchor.getContextVar() != null) {
+			return null;
+		}
+		StatementOrder order = statementSource.getNaturalStatementOrder(anchor.getSubjectVar().hasValue(),
+				anchor.getPredicateVar().hasValue(), anchor.getObjectVar().hasValue());
+		// An explicit order must agree with the statement's natural order and survive the planned driving path.
+		if (order == null || order == StatementOrder.C
+				|| anchor.getStatementOrder() != (plannedPartitionBinding == null ? null : order)) {
+			return null;
+		}
+		Var ordered = switch (order) {
+		case S -> anchor.getSubjectVar();
+		case P -> anchor.getPredicateVar();
+		case O -> anchor.getObjectVar();
+		case C -> throw new IllegalStateException("A variable-free context cannot partition projected results");
+		};
+		if (!ordered.getName().equals(drivingOrder.sourceNameAt(ordered.getName()))) {
+			return null;
+		}
+		var elements = projection.getProjectionElemList();
+		for (ProjectionElem element : elements.getElements()) {
+			if (!element.getName().equals(ordered.getName())) {
+				continue;
+			}
+			String key = element.getProjectionAlias().orElse(element.getName());
+			if ((plannedPartitionBinding == null || plannedPartitionBinding.equals(key))
+					&& projection.getAssuredBindingNames().contains(key)
+					&& ordered.getName().equals(LmdbPlannedOrder.mapProjection(elements, key))) {
+				return key;
+			}
+		}
+		return null;
+	}
+
+	private static LmdbSailDataset singleStatementSource(TripleSource tripleSource) {
+		if (!(tripleSource instanceof SailDatasetTripleTermSource source) || source.hasPendingStatementChanges()) {
+			return null;
+		}
+		LmdbSailDataset selected = null;
+		for (LmdbSailDataset candidate : source.getDatasets(LmdbSailDataset.class)) {
+			if (!candidate.hasStatementsInSource()) {
+				continue;
+			}
+			if (selected != null) {
+				// An unordered union can concatenate independently grouped streams with overlapping keys.
+				return null;
+			}
+			selected = candidate;
+		}
+		return selected;
 	}
 }

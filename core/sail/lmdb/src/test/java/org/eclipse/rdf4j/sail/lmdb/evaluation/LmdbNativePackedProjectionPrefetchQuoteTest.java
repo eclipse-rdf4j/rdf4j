@@ -15,6 +15,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.within;
 import static org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbNativeFactorizedQuoteTest.edge;
 import static org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbNativeFactorizedQuoteTest.row;
+import static org.eclipse.rdf4j.sail.lmdb.evaluation.NativeCancellationTestAccess.mockScanSource;
 import static org.mockito.AdditionalAnswers.delegatesTo;
 import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.Mockito.doAnswer;
@@ -421,7 +422,7 @@ class LmdbNativePackedProjectionPrefetchQuoteTest {
 	private static ParallelSource borrowedSource(ParallelSource raw, AtomicLong reads, AtomicLong exports,
 			AtomicLong keyDirectoryReads)
 			throws IOException {
-		ParallelSource source = mock(ParallelSource.class, delegatesTo(raw));
+		ParallelSource source = mockScanSource(ParallelSource.class, delegatesTo(raw));
 		doAnswer(ignored -> {
 			NativeProbe probe = raw.newProbe();
 			return new NativeProbe() {

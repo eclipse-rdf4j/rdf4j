@@ -144,6 +144,7 @@ import org.eclipse.rdf4j.sail.lmdb.estimate.LmdbPageCardinalityEstimator;
 import org.eclipse.rdf4j.sail.lmdb.estimate.LmdbPageCardinalityEstimator.CardinalityEstimate;
 import org.eclipse.rdf4j.sail.lmdb.estimate.LmdbPageCardinalityEstimator.IndexShape;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.NativeLmdbQuerySource;
+import org.eclipse.rdf4j.sail.lmdb.evaluation.NativeLmdbQuerySource.CursorCancellation;
 import org.eclipse.rdf4j.sail.lmdb.util.ChunkInput;
 import org.eclipse.rdf4j.sail.lmdb.util.ChunkOutput;
 import org.eclipse.rdf4j.sail.lmdb.util.GroupMatcher;
@@ -497,11 +498,32 @@ class TripleStore implements Closeable {
 			Iterator<LegacyQuadAlias> candidates = legacyWriterRecords.aliases.aliases(
 					new LegacyQuadKey(subject, predicate, context, explicit, LegacySemanticScope.detached(expected)));
 			return new RecordIterator() {
-				private boolean closed;
+				private volatile boolean closed;
+				private volatile boolean cancellationRequested;
+
+				@Override
+				public boolean requestCancellation() {
+					if (closed) {
+						return false;
+					}
+					cancellationRequested = true;
+					return true;
+				}
 
 				@Override
 				public long[] next() {
-					return !closed && candidates.hasNext() ? candidates.next().quad() : null;
+					if (closed) {
+						return null;
+					}
+					if (cancellationRequested) {
+						close();
+						NativeLmdbQuerySource.checkpointRecordCancellation();
+					}
+					if (candidates.hasNext()) {
+						return candidates.next().quad();
+					}
+					close();
+					return null;
 				}
 
 				@Override
@@ -2951,20 +2973,42 @@ class TripleStore implements Closeable {
 
 	public RecordIterator getTriples(Txn txn, long subj, long pred, long obj, long context, boolean explicit)
 			throws IOException {
+		return openTriples(txn, subj, pred, obj, context, explicit, null);
+	}
+
+	RecordIterator getTriples(Txn txn, long subj, long pred, long obj, long context, boolean explicit,
+			CursorCancellation cancellation) throws IOException {
+		return cancellation == null ? getTriples(txn, subj, pred, obj, context, explicit)
+				: openTriples(txn, subj, pred, obj, context, explicit, cancellation);
+	}
+
+	private RecordIterator openTriples(Txn txn, long subj, long pred, long obj, long context, boolean explicit,
+			CursorCancellation cancellation) throws IOException {
 		return withGeneration(txn,
 				selectedGeneration -> selectedGeneration.plans[boundMask(subj, pred, obj, context)]
-						.iterator(txn, subj, pred, obj, context, explicit));
+						.iterator(txn, subj, pred, obj, context, explicit, cancellation));
 	}
 
 	RecordIterator getTriples(Txn txn, StatementOrder statementOrder, long subj, long pred, long obj,
 			long context, boolean explicit) throws IOException {
+		return openTriples(txn, statementOrder, subj, pred, obj, context, explicit, null);
+	}
+
+	RecordIterator getTriples(Txn txn, StatementOrder statementOrder, long subj, long pred, long obj,
+			long context, boolean explicit, CursorCancellation cancellation) throws IOException {
+		return cancellation == null ? getTriples(txn, statementOrder, subj, pred, obj, context, explicit)
+				: openTriples(txn, statementOrder, subj, pred, obj, context, explicit, cancellation);
+	}
+
+	private RecordIterator openTriples(Txn txn, StatementOrder statementOrder, long subj, long pred, long obj,
+			long context, boolean explicit, CursorCancellation cancellation) throws IOException {
 		return withGeneration(txn, selectedGeneration -> {
 			IndexResolutionPlan plan = selectedGeneration.orderedPlans[statementOrder.ordinal()][boundMask(subj, pred,
 					obj, context)];
 			if (plan == null) {
 				throw new UnsupportedOperationException("StatementOrder is not supported: " + statementOrder);
 			}
-			return plan.iterator(txn, subj, pred, obj, context, explicit);
+			return plan.iterator(txn, subj, pred, obj, context, explicit, cancellation);
 		});
 	}
 
@@ -3025,6 +3069,26 @@ class TripleStore implements Closeable {
 	/** Logical scan order; unlike the physical range index, this may name a partial projection. */
 	String getQueryIndexName(Txn txn, long subj, long pred, long obj, long context) {
 		return selectGeneration(txn, generation -> generation.plans[boundMask(subj, pred, obj, context)].indexName());
+	}
+
+	/** First unfixed field of the same index an unordered statement scan would open. */
+	StatementOrder getNaturalStatementOrder(Txn txn, long subj, long pred, long obj, long context) {
+		return selectGeneration(txn, generation -> {
+			String fields = generation.plans[boundMask(subj, pred, obj, context)].indexName();
+			for (int i = 0; i < fields.length(); i++) {
+				int field = statementField(fields.charAt(i));
+				if (boundValue(field, subj, pred, obj, context) < 0) {
+					return switch (field) {
+					case TripleIndex.SUBJ_IDX -> StatementOrder.S;
+					case TripleIndex.PRED_IDX -> StatementOrder.P;
+					case TripleIndex.OBJ_IDX -> StatementOrder.O;
+					case TripleIndex.CONTEXT_IDX -> StatementOrder.C;
+					default -> throw new IllegalArgumentException("Invalid statement field index: " + field);
+					};
+				}
+			}
+			return null;
+		});
 	}
 
 	String getIndexName(StatementOrder order, long subj, long pred, long obj, long context) {
@@ -3118,6 +3182,11 @@ class TripleStore implements Closeable {
 
 	LmdbPrefixRunCursor getPrefixRuns(Txn txn, LmdbPrefixRunPlan plan, long subj, long pred, long obj,
 			long context, boolean explicit, boolean countRunRows) throws IOException {
+		return getPrefixRuns(txn, plan, subj, pred, obj, context, explicit, countRunRows, null);
+	}
+
+	LmdbPrefixRunCursor getPrefixRuns(Txn txn, LmdbPrefixRunPlan plan, long subj, long pred, long obj,
+			long context, boolean explicit, boolean countRunRows, CursorCancellation cancellation) throws IOException {
 		return withGeneration(txn, selectedGeneration -> {
 			if (plan == null) {
 				throw new IllegalArgumentException("Prefix-run plan must not be null");
@@ -3128,9 +3197,11 @@ class TripleStore implements Closeable {
 			if (!selectedGeneration.indexes.contains(plan.index())) {
 				throw new SailException("Statement index generation changed; retry the prefix-run query plan");
 			}
-			LmdbPrefixRunCursor exact = exactPrefixRuns(txn, plan, subj, pred, obj, context, explicit, countRunRows);
+			LmdbPrefixRunCursor exact = exactPrefixRuns(txn, plan, subj, pred, obj, context, explicit, countRunRows,
+					cancellation);
 			return exact != null ? exact
-					: new LmdbPrefixRunIterator(plan, txn, subj, pred, obj, context, explicit, countRunRows);
+					: new LmdbPrefixRunIterator(plan, txn, subj, pred, obj, context, explicit, countRunRows,
+							cancellation);
 
 		});
 	}
@@ -3189,6 +3260,15 @@ class TripleStore implements Closeable {
 	}
 
 	long countTriples(Txn txn, long subj, long pred, long obj, long context, boolean explicit) throws IOException {
+		return countTriples(txn, subj, pred, obj, context, explicit, null);
+	}
+
+	long countTriples(Txn txn, long subj, long pred, long obj, long context, boolean explicit,
+			CursorCancellation cancellation) throws IOException {
+		CursorCancellation scanCancellation = cancellation == null ? null : cancellation.forWorker();
+		if (scanCancellation != null) {
+			scanCancellation.checkpoint();
+		}
 		return withGeneration(txn, selectedGeneration -> {
 			List<TripleIndex> indexes = selectedGeneration.indexes;
 			if (subj < 0 && pred < 0 && obj < 0 && context < 0) {
@@ -3205,9 +3285,9 @@ class TripleStore implements Closeable {
 			TripleIndex index = selectedGeneration.best[mask];
 
 			if (index.getRangePrefixLength(subj, pred, obj, context) == 4) {
-				return exactTripleExists(txn, index, subj, pred, obj, context, explicit) ? 1L : 0L;
+				return exactTripleExists(txn, index, subj, pred, obj, context, explicit, scanCancellation) ? 1L : 0L;
 			}
-			long exact = countIndexPrefix(txn, index, subj, pred, obj, context, explicit);
+			long exact = countIndexPrefix(txn, index, subj, pred, obj, context, explicit, scanCancellation);
 			if (exact >= 0L) {
 				return exact;
 			}
@@ -3215,7 +3295,7 @@ class TripleStore implements Closeable {
 			long count = 0;
 			boolean rangeSearch = selectedGeneration.range[mask];
 			try (RecordIterator records = getTriplesUsingIndex(txn, subj, pred, obj, context, explicit, index,
-					rangeSearch ? index.getPatternScore(subj, pred, obj, context) : 0)) {
+					rangeSearch ? index.getPatternScore(subj, pred, obj, context) : 0, scanCancellation)) {
 				while (records.next() != null) {
 					count++;
 				}
@@ -3227,7 +3307,7 @@ class TripleStore implements Closeable {
 
 	/** Exact row count only when every constraint belongs to one contiguous physical key prefix. */
 	private long countIndexPrefix(Txn txn, TripleIndex index, long subj, long pred, long obj, long context,
-			boolean explicit) throws IOException {
+			boolean explicit, CursorCancellation cancellation) throws IOException {
 		if (exactIndexReader == null || !txn.isReadOnly()
 				|| index.getRangePrefixLength(subj, pred, obj, context) != Integer
 						.bitCount(boundMask(subj, pred, obj, context))) {
@@ -3240,7 +3320,7 @@ class TripleStore implements Closeable {
 			long stamp = pinExactSnapshot(txn);
 			try {
 				LmdbPageCardinalityEstimator.ExactCount count = ChunkedExactIndexCounter.count(txn.get(), index,
-						explicit, lower, upper, exactIndexCancellation());
+						explicit, lower, upper, exactIndexCancellation(cancellation));
 				LmdbPrefixRunPlan.INDEX_EXACT_COUNTS.incrementAndGet();
 				LmdbPrefixRunPlan.recordExactIndexWork(count.work());
 				return count.entries();
@@ -3254,7 +3334,7 @@ class TripleStore implements Closeable {
 			}
 			LmdbPageCardinalityEstimator.ExactCount count = view.countEntriesExact(index.getName(explicit),
 					lower, LmdbExactPrefixRunCursor.length(lower), true,
-					upper, LmdbExactPrefixRunCursor.length(upper), false, exactIndexCancellation());
+					upper, LmdbExactPrefixRunCursor.length(upper), false, exactIndexCancellation(cancellation));
 			if (count == null) {
 				return -1L;
 			}
@@ -3335,14 +3415,15 @@ class TripleStore implements Closeable {
 				if (!selectedGeneration.indexes.contains(index)) {
 					return OptionalLong.empty();
 				}
-				long count = countIndexPrefix(txn, index, subj, pred, obj, context, explicit);
+				long count = countIndexPrefix(txn, index, subj, pred, obj, context, explicit,
+						NativeLmdbQuerySource.captureCursorCancellation());
 				return count < 0L ? OptionalLong.empty() : OptionalLong.of(count);
 			});
 		}
 	}
 
 	private LmdbPrefixRunCursor exactPrefixRuns(Txn txn, LmdbPrefixRunPlan plan, long subj, long pred, long obj,
-			long context, boolean explicit, boolean countRunRows) throws IOException {
+			long context, boolean explicit, boolean countRunRows, CursorCancellation cancellation) throws IOException {
 		TripleIndex index = plan.index();
 		// Distinct-only runs already successor-seek past their payload. Counting leaf headers there would replace
 		// one seek per identity with a walk over every leaf of a long run.
@@ -3356,7 +3437,7 @@ class TripleStore implements Closeable {
 			try {
 				byte[] lower = exactBoundPrefix(index, subj, pred, obj, context);
 				byte[] upper = lower == null ? null : LmdbExactPrefixRunCursor.successor(lower);
-				BooleanSupplier cancelled = exactIndexCancellation();
+				BooleanSupplier cancelled = exactIndexCancellation(cancellation);
 				int prefixLength = plan.prefixLength();
 				// The cursor re-pins the barrier for every step, so it borrows the transaction, not the lock.
 				LmdbExactPrefixRunCursor.CursorFactory cursors = (from, to) -> ChunkedExactIndexCounter
@@ -3383,7 +3464,7 @@ class TripleStore implements Closeable {
 			}
 			byte[] lower = exactBoundPrefix(index, subj, pred, obj, context);
 			byte[] upper = lower == null ? null : LmdbExactPrefixRunCursor.successor(lower);
-			BooleanSupplier cancelled = exactIndexCancellation();
+			BooleanSupplier cancelled = exactIndexCancellation(cancellation);
 			LmdbPageCardinalityEstimator.ExactPrefixCursor cursor = view.prefixRunsExact(index.getName(explicit),
 					lower, LmdbExactPrefixRunCursor.length(lower), true,
 					upper, LmdbExactPrefixRunCursor.length(upper), false, plan.prefixLength(), cancelled);
@@ -3456,10 +3537,12 @@ class TripleStore implements Closeable {
 		return stamp;
 	}
 
-	private static BooleanSupplier exactIndexCancellation() {
+	private static BooleanSupplier exactIndexCancellation(CursorCancellation cancellation) {
 		return () -> {
 			QueryExecutionContext.checkpointReplaySafepoint();
-			NativeLmdbQuerySource.checkpointCancellation();
+			if (cancellation != null) {
+				cancellation.checkpointNow();
+			}
 			if (Thread.currentThread().isInterrupted()) {
 				throw new QueryInterruptedException("Query evaluation interrupted during exact index aggregation");
 			}
@@ -3468,10 +3551,39 @@ class TripleStore implements Closeable {
 	}
 
 	boolean hasTriples(Txn txn, long subj, long pred, long obj, long context, boolean explicit) throws IOException {
-		try (RecordIterator records = getTriples(txn, subj == 0 ? -1 : subj, pred == 0 ? -1 : pred,
-				obj == 0 ? -1 : obj, context, explicit)) {
-			return records.next() != null;
+		return hasTriples(txn, subj, pred, obj, context, explicit, null);
+	}
+
+	boolean hasTriples(Txn txn, long subj, long pred, long obj, long context, boolean explicit,
+			CursorCancellation cancellation) throws IOException {
+		CursorCancellation scanCancellation = cancellation == null ? null : cancellation.forWorker();
+		if (scanCancellation != null) {
+			scanCancellation.checkpoint();
 		}
+		long s = subj == 0 ? -1 : subj;
+		long p = pred == 0 ? -1 : pred;
+		long o = obj == 0 ? -1 : obj;
+		return withGeneration(txn, selectedGeneration -> {
+			if (s < 0 && p < 0 && o < 0 && context < 0) {
+				return hasAnyTriples(txn, explicit);
+			}
+			int mask = boundMask(s, p, o, context);
+			IndexResolutionPlan plan = selectedGeneration.plans[mask];
+			TripleIndex index = selectedGeneration.best[mask];
+			if (plan.partialIndex() == null && !isChunked(index)) {
+				if (s > 0 && p > 0 && o > 0 && context >= 0) {
+					return exactUnchunkedTripleExists(txn, index, s, p, o, context, explicit);
+				}
+				if (s > 0 && p > 0 && o > 0 && "spoc".equals(index.toString())) {
+					return spoTripleExistsAnyContext(txn, index, s, p, o, explicit);
+				}
+				return tripleExistsUsingIndex(txn, s, p, o, context, explicit, index,
+						selectedGeneration.range[mask], scanCancellation);
+			}
+			try (RecordIterator records = plan.iterator(txn, s, p, o, context, explicit, scanCancellation)) {
+				return records.next() != null;
+			}
+		});
 	}
 
 	private long countAllTriples(Txn txnRef, boolean explicit) throws IOException {
@@ -3790,7 +3902,7 @@ class TripleStore implements Closeable {
 	}
 
 	private boolean tripleExistsUsingIndex(Txn txnRef, long subj, long pred, long obj, long context, boolean explicit,
-			TripleIndex index, boolean rangeSearch) throws IOException {
+			TripleIndex index, boolean rangeSearch, CursorCancellation cancellation) throws IOException {
 		long readStamp;
 		try {
 			readStamp = txnRef.lockManager().readLock();
@@ -3837,7 +3949,14 @@ class TripleStore implements Closeable {
 			long matchObj = obj > 0 ? obj : -1;
 			long matchContext = context >= 0 ? context : -1;
 			long[] quad = { subj, pred, obj, context };
+			int tick = 0;
 			while (rc == MDB_SUCCESS) {
+				if (cancellation != null) {
+					cancellation.poll();
+					if ((++tick & 1023) == 0) {
+						cancellation.checkpointProbeDeadline();
+					}
+				}
 				if (maxKey != null && mdb_cmp(txnRef.get(), dbi, keyData, maxKey) > 0) {
 					return false;
 				}
@@ -3866,10 +3985,44 @@ class TripleStore implements Closeable {
 	}
 
 	private boolean exactTripleExists(Txn txnRef, TripleIndex index, long subj, long pred, long obj, long context,
-			boolean explicit) throws IOException {
+			boolean explicit, CursorCancellation cancellation) throws IOException {
+		if (!isChunked(index)) {
+			return exactUnchunkedTripleExists(txnRef, index, subj, pred, obj, context, explicit);
+		}
 		try (RecordIterator records = getTriplesUsingIndex(txnRef, subj, pred, obj, context, explicit, index,
-				index.getPatternScore(subj, pred, obj, context))) {
+				index.getPatternScore(subj, pred, obj, context), cancellation)) {
 			return records.next() != null;
+		}
+	}
+
+	private boolean exactUnchunkedTripleExists(Txn txnRef, TripleIndex index, long subj, long pred, long obj,
+			long context,
+			boolean explicit) throws IOException {
+		long readStamp;
+		try {
+			readStamp = txnRef.lockManager().readLock();
+		} catch (InterruptedException e) {
+			Thread.currentThread().interrupt();
+			throw new IOException(e);
+		}
+		try (MemoryStack stack = stackPush()) {
+			MDBVal keyVal = MDBVal.malloc(stack);
+			MDBVal dataVal = MDBVal.calloc(stack);
+			ByteBuffer keyBuf = stack.malloc(TripleIndex.MAX_KEY_LENGTH);
+			index.toKey(keyBuf, subj, pred, obj, context);
+			keyBuf.flip();
+			LmdbUtil.setMDBValData(keyVal, keyBuf);
+			int rc = mdb_get(txnRef.get(), index.getDB(explicit), keyVal, dataVal);
+			if (rc == MDB_SUCCESS) {
+				return true;
+			}
+			if (rc == MDB_NOTFOUND) {
+				return false;
+			}
+			E(rc);
+			return false;
+		} finally {
+			txnRef.lockManager().unlockRead(readStamp);
 		}
 	}
 
@@ -3884,13 +4037,18 @@ class TripleStore implements Closeable {
 
 	RecordIterator getTriplesUsingIndex(Txn txn, long subj, long pred, long obj, long context,
 			boolean explicit, TripleIndex index, int indexScore) throws IOException {
+		return getTriplesUsingIndex(txn, subj, pred, obj, context, explicit, index, indexScore, null);
+	}
+
+	private RecordIterator getTriplesUsingIndex(Txn txn, long subj, long pred, long obj, long context,
+			boolean explicit, TripleIndex index, int indexScore, CursorCancellation cancellation) throws IOException {
 		return withGeneration(txn, selectedGeneration -> {
 			IndexResolutionPlan[] plans = selectedGeneration.physicalPlans.get(index);
 			if (plans == null) {
 				throw new IllegalArgumentException("Statement index is not available in this snapshot: " + index);
 			}
 			return plans[boundMask(subj, pred, obj, context)]
-					.iterator(txn, subj, pred, obj, context, explicit, indexScore);
+					.iterator(txn, subj, pred, obj, context, explicit, indexScore, cancellation);
 		});
 	}
 
@@ -3922,6 +4080,11 @@ class TripleStore implements Closeable {
 	 */
 	RecordIterator getTriplesRangeUsingIndex(Txn txn, long subj, long pred, long obj, long context, boolean explicit,
 			LmdbKeyRange range) throws IOException {
+		return getTriplesRangeUsingIndex(txn, subj, pred, obj, context, explicit, range, null);
+	}
+
+	RecordIterator getTriplesRangeUsingIndex(Txn txn, long subj, long pred, long obj, long context, boolean explicit,
+			LmdbKeyRange range, CursorCancellation cancellation) throws IOException {
 		return withGeneration(txn, selectedGeneration -> {
 			TripleIndex selected = null;
 			for (TripleIndex index : selectedGeneration.indexes) {
@@ -3934,7 +4097,7 @@ class TripleStore implements Closeable {
 				throw new IllegalStateException("Key range names an unconfigured index: " + range.indexFieldSeq());
 			}
 			return selectedGeneration.physicalPlans.get(selected)[boundMask(subj, pred, obj, context)]
-					.iterator(txn, subj, pred, obj, context, explicit, range);
+					.iterator(txn, subj, pred, obj, context, explicit, range, cancellation);
 		});
 	}
 
@@ -3945,9 +4108,14 @@ class TripleStore implements Closeable {
 	 */
 	RecordIterator.Retainable<IndexResolutionPlan> getTriplesRetained(Txn txn, long subj, long pred, long obj,
 			long context, boolean explicit) throws IOException {
+		return getTriplesRetained(txn, subj, pred, obj, context, explicit, null);
+	}
+
+	RecordIterator.Retainable<IndexResolutionPlan> getTriplesRetained(Txn txn, long subj, long pred, long obj,
+			long context, boolean explicit, CursorCancellation cancellation) throws IOException {
 		return withGeneration(txn,
 				selectedGeneration -> selectedGeneration.plans[boundMask(subj, pred, obj, context)]
-						.retainedIterator(txn, subj, pred, obj, context, explicit));
+						.retainedIterator(txn, subj, pred, obj, context, explicit, cancellation));
 	}
 
 	/** Re-aims a retained iterator at the next probe pattern, re-selecting the index by boundness. */

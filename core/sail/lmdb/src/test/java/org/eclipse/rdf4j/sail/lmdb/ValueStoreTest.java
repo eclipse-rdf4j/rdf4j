@@ -4613,8 +4613,11 @@ public class ValueStoreTest {
 			Value v = valueStore.getValue(values[i].getInternalID());
 			IRI datatype = ((Literal) v).getDatatype();
 			assertEquals(types[i], datatype);
-			assertNotNull(valueStore.getValue(((LmdbValue) datatype).getInternalID()));
-			datatypeIds.remove(((LmdbValue) datatype).getInternalID());
+			// A core datatype decodes to its shared constant, which carries no id; look the dictionary entry up.
+			Long datatypeId = valueStore.getId(datatype);
+			assertNotEquals(LmdbValue.UNKNOWN_ID, datatypeId.longValue());
+			assertNotNull(valueStore.getValue(datatypeId));
+			datatypeIds.remove(datatypeId);
 		}
 
 		assertTrue("Datatype IDs should not have been deleted", datatypeIds.isEmpty());

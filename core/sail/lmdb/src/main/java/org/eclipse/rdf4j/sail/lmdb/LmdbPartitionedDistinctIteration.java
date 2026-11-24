@@ -13,6 +13,7 @@ package org.eclipse.rdf4j.sail.lmdb;
 
 import java.util.Objects;
 import java.util.Set;
+import java.util.function.Function;
 import java.util.function.Supplier;
 
 import org.eclipse.rdf4j.collection.factory.api.CollectionFactory;
@@ -31,6 +32,7 @@ final class LmdbPartitionedDistinctIteration extends FilterIteration<BindingSet>
 
 	private final String partitionBindingName;
 	private final Supplier<CollectionFactory> collectionFactorySupplier;
+	private final Function<Value, Value> snapshotPartition;
 	private CollectionFactory collectionFactory;
 	private Set<DistinctBindingSetKey> seen;
 	private int peakPartitionSize;
@@ -40,12 +42,13 @@ final class LmdbPartitionedDistinctIteration extends FilterIteration<BindingSet>
 	LmdbPartitionedDistinctIteration(CloseableIteration<? extends BindingSet> iter,
 			Set<DistinctBindingSetKey> seen,
 			String partitionBindingName, CollectionFactory collectionFactory,
-			Supplier<CollectionFactory> collectionFactorySupplier) {
+			Supplier<CollectionFactory> collectionFactorySupplier, Function<Value, Value> snapshotPartition) {
 		super(iter);
 		this.seen = seen;
 		this.partitionBindingName = partitionBindingName;
 		this.collectionFactory = collectionFactory;
 		this.collectionFactorySupplier = collectionFactorySupplier;
+		this.snapshotPartition = snapshotPartition;
 	}
 
 	@Override
@@ -76,7 +79,7 @@ final class LmdbPartitionedDistinctIteration extends FilterIteration<BindingSet>
 			if (partitionInitialized) {
 				resetMembership();
 			}
-			currentPartitionValue = partitionValue;
+			currentPartitionValue = partitionValue == null ? null : snapshotPartition.apply(partitionValue);
 			partitionInitialized = true;
 		}
 		return seen.add(new DistinctBindingSetKey(bindingSet));

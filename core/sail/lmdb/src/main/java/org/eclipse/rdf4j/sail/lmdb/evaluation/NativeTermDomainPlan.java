@@ -298,7 +298,8 @@ final class NativeTermDomainPlan implements SlotPlan {
 			long subject = pattern.s.lookup(row.slots), predicate = pattern.p.lookup(row.slots);
 			long object = pattern.o.lookup(row.slots), context = pattern.c.lookup(row.slots);
 			LmdbPrefixRunPlan plan = projected.plan();
-			LmdbPrefixRunCursor cursor = row.source.prefixRuns(plan, subject, predicate, object, context, true);
+			LmdbPrefixRunCursor cursor = row.source.prefixRuns(plan, subject, predicate, object, context, true, null,
+					row.cursorCancellation());
 			if (cursor == null) {
 				return null;
 			}

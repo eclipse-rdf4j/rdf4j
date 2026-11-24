@@ -667,6 +667,19 @@ final class LmdbNativeAggregatePlanner extends LmdbNativeAggregateFilterCompiler
 			orderSlots[i] = slot(orderSourceNames[i]);
 			orderAscending[i] = orderElems.get(i).isAscending();
 		}
+		if (distinct && !reduced && projection != null && orderSlots.length == 0
+				&& SlotPlan.encounterOrderReplaySafe(arg) && QueryEvaluationUtility.isRepeatableWithinPreparation(node)
+				&& canDiscardWithoutEvaluation(node)) {
+			long retained = NativeSlotOrder.mask(sourceSlots);
+			// Prepared bindings for OPTIONAL-only slots are applied by an entry compatibility check after evaluation.
+			for (String name : optionalOnlyNames) {
+				Integer optional = slots.get(name);
+				if (optional != null) {
+					retained |= 1L << optional;
+				}
+			}
+			arg = LmdbNativeDistinctOptionalWitnesses.rewrite(arg, retained);
+		}
 		boolean strictCompare = strategy.getQueryEvaluationMode() == QueryEvaluationMode.STRICT;
 		// Row roots use the same evaluation-scoped term authority as grouped roots. This keeps DISTINCT, ORDER key
 		// identity, computed values, and generic bridges in one authoritative id space even with an empty plan catalog.
