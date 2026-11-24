@@ -26,6 +26,7 @@ import java.util.concurrent.ConcurrentHashMap;
 import java.util.function.BiFunction;
 import java.util.function.Consumer;
 import java.util.function.Function;
+import java.util.function.IntSupplier;
 import java.util.function.Predicate;
 import java.util.function.Supplier;
 import java.util.function.UnaryOperator;
@@ -34,6 +35,7 @@ import org.eclipse.rdf4j.collection.factory.api.CollectionFactory;
 import org.eclipse.rdf4j.collection.factory.impl.DefaultCollectionFactory;
 import org.eclipse.rdf4j.common.annotation.InternalUseOnly;
 import org.eclipse.rdf4j.common.iteration.AbstractCloseableIteration;
+import org.eclipse.rdf4j.common.iteration.BufferedIteration;
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.common.iteration.ConvertingIteration;
 import org.eclipse.rdf4j.common.iteration.CooperativeCancellation;
@@ -1238,7 +1240,13 @@ public class DefaultEvaluationStrategy implements EvaluationStrategy, FederatedS
 				evaluate = arg.evaluate(captureBindings(bs, valueCapturer));
 				var eval = evaluate;
 
-				final class RootIteration implements CloseableIteration<BindingSet>, CooperativeCancellation {
+				final class RootIteration implements CloseableIteration<BindingSet>, CooperativeCancellation,
+						BufferedIteration {
+
+					@Override
+					public IntSupplier bufferedRowsSource() {
+						return BufferedIteration.bufferedRowsSource(eval);
+					}
 
 					@Override
 					public boolean hasNext() throws QueryEvaluationException {

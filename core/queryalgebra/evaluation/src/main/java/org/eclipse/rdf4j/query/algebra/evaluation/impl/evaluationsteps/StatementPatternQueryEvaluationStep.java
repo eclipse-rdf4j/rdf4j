@@ -22,6 +22,7 @@ import java.util.Set;
 import java.util.function.BiConsumer;
 import java.util.function.Consumer;
 import java.util.function.Function;
+import java.util.function.IntSupplier;
 import java.util.function.Predicate;
 import java.util.function.Supplier;
 
@@ -29,6 +30,7 @@ import org.eclipse.rdf4j.collection.factory.api.CollectionFactory;
 import org.eclipse.rdf4j.common.annotation.Experimental;
 import org.eclipse.rdf4j.common.annotation.InternalUseOnly;
 import org.eclipse.rdf4j.common.iteration.AbstractCloseableIteration;
+import org.eclipse.rdf4j.common.iteration.BufferedIteration;
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.common.iteration.CloseableIteratorIteration;
 import org.eclipse.rdf4j.common.iteration.CooperativeCancellation;
@@ -1184,7 +1186,8 @@ public class StatementPatternQueryEvaluationStep implements QueryEvaluationStep,
 	 * it of course is an unneeded expense.
 	 */
 	private static final class ConvertStatementToBindingSetIterator
-			implements CloseableIteration<BindingSet>, IndexReportingIterator, CooperativeCancellation {
+			implements CloseableIteration<BindingSet>, IndexReportingIterator, CooperativeCancellation,
+			BufferedIteration {
 
 		private final BiConsumer<MutableBindingSet, Statement> converter;
 		private final QueryEvaluationContext context;
@@ -1203,6 +1206,11 @@ public class StatementPatternQueryEvaluationStep implements QueryEvaluationStep,
 			this.iteration = iteration;
 			this.converter = converter;
 			this.context = context;
+		}
+
+		@Override
+		public IntSupplier bufferedRowsSource() {
+			return BufferedIteration.bufferedRowsSource(iteration);
 		}
 
 		private BindingSet convert(Statement st) {

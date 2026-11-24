@@ -73,6 +73,7 @@ import java.util.function.BooleanSupplier;
 import java.util.function.Consumer;
 import java.util.function.Function;
 import java.util.function.IntConsumer;
+import java.util.function.IntSupplier;
 import java.util.function.Predicate;
 import java.util.function.Supplier;
 import java.util.stream.IntStream;
@@ -82,6 +83,7 @@ import org.eclipse.collections.impl.map.mutable.primitive.ObjectIntHashMap;
 import org.eclipse.rdf4j.common.annotation.InternalUseOnly;
 import org.eclipse.rdf4j.common.concurrent.locks.StampedLongAdderLockManager;
 import org.eclipse.rdf4j.common.iteration.AbstractCloseableIteration;
+import org.eclipse.rdf4j.common.iteration.BufferedIteration;
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.common.iteration.CloseableIteratorIteration;
 import org.eclipse.rdf4j.common.iteration.DualUnionIteration;
@@ -15601,7 +15603,7 @@ class LmdbSailStore implements SailStore {
 			readView.ensureNativeSnapshotsValid();
 		}
 
-		private class SnapshotIteration<T> extends IterationWrapper<T> {
+		private class SnapshotIteration<T> extends IterationWrapper<T> implements BufferedIteration {
 			private static final VarHandle CLOSE_STARTED;
 
 			static {
@@ -15619,6 +15621,11 @@ class LmdbSailStore implements SailStore {
 
 			SnapshotIteration(CloseableIteration<? extends T> rows) {
 				super(rows);
+			}
+
+			@Override
+			public IntSupplier bufferedRowsSource() {
+				return BufferedIteration.bufferedRowsSource(wrappedIter);
 			}
 
 			private void closeAfterFailure(Throwable failure) {
@@ -17809,6 +17816,11 @@ class LmdbSailStore implements SailStore {
 					KernelRuntime.closeCursor(this, failure);
 					throw failure;
 				}
+			}
+
+			@Override
+			public int bufferedRows() {
+				return closed ? 0 : batchCount - batchPos;
 			}
 
 			private long[] nextFromBatch() {

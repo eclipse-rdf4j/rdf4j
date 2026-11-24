@@ -26,12 +26,14 @@ import java.util.concurrent.Future;
 import java.util.concurrent.RejectedExecutionException;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.locks.ReentrantLock;
+import java.util.function.IntSupplier;
 import java.util.function.Supplier;
 
 import org.eclipse.rdf4j.common.annotation.Experimental;
 import org.eclipse.rdf4j.common.annotation.InternalUseOnly;
 import org.eclipse.rdf4j.common.concurrent.locks.Lock;
 import org.eclipse.rdf4j.common.iteration.AbstractCloseableIteration;
+import org.eclipse.rdf4j.common.iteration.BufferedIteration;
 import org.eclipse.rdf4j.common.iteration.CancellationSignal;
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.common.iteration.CloseableIteratorIteration;
@@ -55,6 +57,7 @@ import org.eclipse.rdf4j.query.QueryEvaluationException;
 import org.eclipse.rdf4j.query.QueryInterruptedException;
 import org.eclipse.rdf4j.query.algebra.BindingSetAssignment;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
+import org.eclipse.rdf4j.query.algebra.evaluation.EvaluationStrategy;
 import org.eclipse.rdf4j.query.algebra.evaluation.util.ExternalValuePreparation;
 import org.eclipse.rdf4j.query.algebra.helpers.AbstractQueryModelVisitor;
 import org.eclipse.rdf4j.query.explanation.Explanation;
@@ -1082,6 +1085,12 @@ public class LmdbStoreConnection extends SailSourceConnection implements SailRes
 		return lmdbStore.getBackingStore();
 	}
 
+	@Override
+	protected final boolean allowsBufferedQueryResult(EvaluationStrategy strategy) {
+		return getClass() == LmdbStoreConnection.class && strategy.getClass() == LmdbEvaluationStrategy.class
+				&& !isActive();
+	}
+
 	private CloseableIteration<? extends BindingSet> openEvaluation(TupleExpr expression, Dataset dataset,
 			BindingSet bindings, boolean includeInferred, ValueResolutionScope valueScope) throws SailException {
 		Dataset datasetCopy = copyDataset(dataset);
@@ -1092,6 +1101,7 @@ public class LmdbStoreConnection extends SailSourceConnection implements SailRes
 
 	private static final class QueryValueCaptureIteration extends IterationWrapper<BindingSet> {
 		private final ValueResolutionScope valueScope;
+		private final IntSupplier bufferedRows;
 		private final NativeProjectedBindingSet.CaptureScratch scratch = new NativeProjectedBindingSet.CaptureScratch();
 		private volatile boolean nativeProjection = true;
 
@@ -1099,6 +1109,7 @@ public class LmdbStoreConnection extends SailSourceConnection implements SailRes
 				ValueResolutionScope valueScope) {
 			super(source);
 			this.valueScope = valueScope;
+			bufferedRows = BufferedIteration.bufferedRowsSource(source);
 		}
 
 		@Override
@@ -2946,10 +2957,9 @@ public class LmdbStoreConnection extends SailSourceConnection implements SailRes
 					throwIfReadThreadCancelled();
 				}
 				T result = operation.execute();
-				throwIfCancelled(owner);
-				checkLifecycleCancellation(lifecycleCancellation);
-				for (LmdbSailStore.ReadViewLease readView : owner.readViews) {
-					readView.ensureNativeSnapshotsValid();
+				validatePull();
+				if (awaitingRow) {
+					owner.bufferObservedScan(this);
 				}
 				if (retainOnAvailable != null && Boolean.TRUE.equals(result) && canContinue()) {
 					// The exact registered repository source will immediately consume this row inside the same
@@ -2966,6 +2976,14 @@ public class LmdbStoreConnection extends SailSourceConnection implements SailRes
 				if (!retained) {
 					finish(failure);
 				}
+			}
+		}
+
+		private void validatePull() {
+			throwIfCancelled(owner);
+			checkLifecycleCancellation(lifecycleCancellation);
+			for (LmdbSailStore.ReadViewLease readView : owner.readViews) {
+				readView.ensureNativeSnapshotsValid();
 			}
 		}
 
@@ -3743,6 +3761,38 @@ public class LmdbStoreConnection extends SailSourceConnection implements SailRes
 		}
 	}
 
+	private static final int OBSERVED_SCAN_ROWS = 32;
+
+	private static boolean mustStopBufferedRead(RuntimeException failure) {
+		if (QueryExecutionContext.isReplaySafepointFailure(failure)) {
+			return true;
+		}
+		for (Throwable cause = failure; cause != null; cause = cause.getCause()) {
+			if (cause instanceof QueryInterruptedException || cause instanceof InterruptedSailException
+					|| cause instanceof InterruptedException
+					|| cause instanceof LmdbSailStore.MapResizeConflictException) {
+				return true;
+			}
+		}
+		return false;
+	}
+
+	/** Rows belong to this result. Only its pull thread mutates the buffer. Close can drop it concurrently. */
+	private static final class ObservedScanBuffer<T> {
+		private final ArrayDeque<T> rows = new ArrayDeque<>(OBSERVED_SCAN_ROWS - 1);
+		private RuntimeException failure;
+
+		private boolean hasPending() {
+			return !rows.isEmpty() || failure != null;
+		}
+
+		private void throwFailureIfDrained() {
+			if (rows.isEmpty() && failure != null) {
+				throw failure;
+			}
+		}
+	}
+
 	private final class ReplayableIteration<T> extends AbstractCloseableIteration<T>
 			implements CooperativeCancellation {
 		private final ValueResolutionScope valueScope;
@@ -3786,6 +3836,7 @@ public class LmdbStoreConnection extends SailSourceConnection implements SailRes
 		 */
 		private T prefetchedRow;
 		private volatile boolean rowPrefetched;
+		private volatile ObservedScanBuffer<T> observedScanBuffer;
 		/** The number of observed read activations of this iteration that are currently open on the calling thread. */
 		private int openObservedReads;
 
@@ -3829,6 +3880,12 @@ public class LmdbStoreConnection extends SailSourceConnection implements SailRes
 				if (rowPrefetched && canHandOverPrefetchedRow()) {
 					return true;
 				}
+				ObservedScanBuffer<T> buffered = observedScanBuffer;
+				if (buffered != null && buffered.hasPending()) {
+					validateBufferedScan();
+					buffered.throwFailureIfDrained();
+					return true;
+				}
 				SourcePull pull = repositorySourcePull();
 				boolean hasNext = trackedCall(() -> {
 					if (rowPrefetched) {
@@ -3861,6 +3918,14 @@ public class LmdbStoreConnection extends SailSourceConnection implements SailRes
 					return takePrefetchedRow();
 				}
 				SourcePull pull = repositorySourcePull();
+				ObservedScanBuffer<T> buffered = observedScanBuffer;
+				if (buffered != null && buffered.hasPending()) {
+					validateBufferedScan();
+					buffered.throwFailureIfDrained();
+					T row = buffered.rows.removeFirst();
+					protectRawRow(row);
+					return row;
+				}
 				return trackedCall(() -> rowPrefetched ? takePrefetchedRow() : pullAndProtectRow(pull), null,
 						pull == null ? null : pull.takeRead());
 			} catch (NoSuchElementException failure) {
@@ -3875,12 +3940,76 @@ public class LmdbStoreConnection extends SailSourceConnection implements SailRes
 
 		private T pullAndProtectRow(SourcePull pull) {
 			T row = pullRowForExposure(pull);
+			protectRawRow(row);
+			return row;
+		}
+
+		private void protectRawRow(T row) {
 			WeakReference<RepositoryValueIteration<?>> owner = repositoryExposure;
 			RepositoryValueIteration<?> exposure = owner == null ? null : owner.get();
 			if (rawExtractor != null && (exposure == null || !exposure.isPullingSource())) {
 				rawExtractor.extract(row, LmdbStoreConnection::protectValueTree);
 			}
-			return row;
+		}
+
+		/** Only an observed repository pull may advance into copied physical rows from the same producer. */
+		private void bufferObservedScan(ObservedRead read) {
+			QueryValueCaptureIteration capture = queryCapture;
+			if (capture == null || capture.bufferedRows == null) {
+				return;
+			}
+			int count = Math.min(capture.bufferedRows.getAsInt(), OBSERVED_SCAN_ROWS - 1);
+			if (count <= 0 || !read.canContinue()) {
+				return;
+			}
+			ObservedScanBuffer<T> buffered = observedScanBuffer;
+			if (buffered == null) {
+				synchronized (callLock) {
+					if (isClosed()) {
+						return;
+					}
+					buffered = new ObservedScanBuffer<>();
+					observedScanBuffer = buffered;
+				}
+			}
+			CloseableIteration<? extends T> cursor = currentDelegate();
+			for (int i = 0; i < count && read.canContinue(); i++) {
+				if (Thread.currentThread().isInterrupted()) {
+					return;
+				}
+				throwIfReadThreadCancelled();
+				try {
+					if (!cursor.hasNext()) {
+						return;
+					}
+					read.validatePull();
+					throwIfReadThreadCancelled();
+					T row = cursor.next();
+					read.validatePull();
+					buffered.rows.addLast(row);
+				} catch (RuntimeException failure) {
+					read.validatePull();
+					throwIfReadThreadCancelled();
+					if (mustStopBufferedRead(failure)) {
+						throw failure;
+					}
+					buffered.failure = failure;
+					return;
+				}
+			}
+		}
+
+		private void validateBufferedScan() {
+			try {
+				throwIfCancelled(this);
+				checkLifecycleCancellation(CancellationSignal.current());
+				for (LmdbSailStore.ReadViewLease readView : readViews) {
+					readView.ensureNativeSnapshotsValid();
+				}
+			} catch (QueryInterruptedException cancelled) {
+				closeResources(cancelled, this::close);
+				throw cancelled;
+			}
 		}
 
 		/**
@@ -3938,7 +4067,8 @@ public class LmdbStoreConnection extends SailSourceConnection implements SailRes
 			if (isClosed()) {
 				throw new IllegalStateException("The iteration has been closed.");
 			}
-			if (rowPrefetched) {
+			ObservedScanBuffer<T> buffered = observedScanBuffer;
+			if (rowPrefetched || buffered != null && buffered.hasPending()) {
 				// The delegate has advanced to the prefetched row, so it would remove that row and not the last one
 				// handed out.
 				throw new UnsupportedOperationException(
@@ -4119,6 +4249,9 @@ public class LmdbStoreConnection extends SailSourceConnection implements SailRes
 		@Override
 		protected void handleClose() {
 			workerAdmissionClosed = true;
+			synchronized (callLock) {
+				observedScanBuffer = null;
+			}
 			prefetchedRow = null;
 			rowPrefetched = false;
 			CloseableIteration<? extends T> current = delegate;

@@ -16,9 +16,11 @@ import java.util.List;
 import java.util.Set;
 import java.util.function.BiConsumer;
 import java.util.function.Function;
+import java.util.function.IntSupplier;
 import java.util.function.Supplier;
 
 import org.eclipse.rdf4j.common.annotation.InternalUseOnly;
+import org.eclipse.rdf4j.common.iteration.BufferedIteration;
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.common.iteration.ConvertingIteration;
 import org.eclipse.rdf4j.model.Value;
@@ -38,7 +40,7 @@ import org.eclipse.rdf4j.query.algebra.evaluation.impl.QueryEvaluationContext;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.evaluationsteps.ScopedUnionInput;
 import org.eclipse.rdf4j.query.impl.EmptyBindingSet;
 
-public class ProjectionIterator extends ConvertingIteration<BindingSet, BindingSet> {
+public class ProjectionIterator extends ConvertingIteration<BindingSet, BindingSet> implements BufferedIteration {
 
 	/*-----------*
 	 * Constants *
@@ -138,6 +140,11 @@ public class ProjectionIterator extends ConvertingIteration<BindingSet, BindingS
 			this.maker = context::createBindingSet;
 		}
 		this.projector = consumer;
+	}
+
+	@Override
+	public IntSupplier bufferedRowsSource() {
+		return getClass() == ProjectionIterator.class ? BufferedIteration.bufferedRowsSource(sourceIteration()) : null;
 	}
 
 	private static Function<BindingSet, ArrayBindingSet> indexedProjector(ProjectionElemList projection,

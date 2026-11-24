@@ -20,8 +20,10 @@ import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Set;
 import java.util.function.Function;
+import java.util.function.IntSupplier;
 import java.util.function.ToLongFunction;
 
+import org.eclipse.rdf4j.common.iteration.BufferedIteration;
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.common.iteration.DualUnionIteration;
 import org.eclipse.rdf4j.common.iteration.FilterIteration;
@@ -362,6 +364,11 @@ class UnionSailDataset implements SailDataset, TreeOwnedDataset {
 		private UnionReportingIteration(CloseableIteration<? extends T> union, List<IndexReportingIterator> reporters) {
 			super(union);
 			this.reporters = List.copyOf(reporters);
+		}
+
+		@Override
+		public IntSupplier bufferedRowsSource() {
+			return BufferedIteration.bufferedRowsSource(wrappedIter);
 		}
 
 		@Override

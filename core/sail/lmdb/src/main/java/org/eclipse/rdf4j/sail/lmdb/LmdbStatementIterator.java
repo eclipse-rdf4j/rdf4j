@@ -13,8 +13,10 @@ package org.eclipse.rdf4j.sail.lmdb;
 
 import java.io.IOException;
 import java.util.NoSuchElementException;
+import java.util.function.IntSupplier;
 
 import org.eclipse.rdf4j.common.iteration.AbstractCloseableIteration;
+import org.eclipse.rdf4j.common.iteration.BufferedIteration;
 import org.eclipse.rdf4j.common.iteration.CooperativeCancellation;
 import org.eclipse.rdf4j.common.iteration.IndexReportingIterator;
 import org.eclipse.rdf4j.common.order.StatementOrder;
@@ -34,7 +36,7 @@ import org.eclipse.rdf4j.sail.lmdb.model.LmdbValue;
  * {@link Statement} objects.
  */
 class LmdbStatementIterator extends AbstractCloseableIteration<Statement>
-		implements IndexReportingIterator, CooperativeCancellation, StatementFieldSelection {
+		implements IndexReportingIterator, CooperativeCancellation, StatementFieldSelection, BufferedIteration {
 
 	/**
 	 * Number of times the same advisory minimum bound must be hinted before an actual cursor seek is issued. Short lags
@@ -204,6 +206,15 @@ class LmdbStatementIterator extends AbstractCloseableIteration<Statement>
 	/*---------*
 	 * Methods *
 	 *---------*/
+
+	@Override
+	public IntSupplier bufferedRowsSource() {
+		if (getClass() != LmdbStatementIterator.class || order != null || readSnapshot == null
+				|| !readSnapshot.hasStableIds()) {
+			return null;
+		}
+		return recordIt::bufferedRows;
+	}
 
 	private Statement getNextElement() throws SailException {
 		try {
