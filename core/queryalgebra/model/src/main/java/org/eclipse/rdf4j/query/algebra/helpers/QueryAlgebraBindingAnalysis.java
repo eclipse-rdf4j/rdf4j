@@ -23,6 +23,7 @@ import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
 import java.util.concurrent.atomic.AtomicLong;
+import java.util.concurrent.atomic.AtomicReferenceFieldUpdater;
 import java.util.function.Predicate;
 
 import org.eclipse.rdf4j.common.annotation.InternalUseOnly;
@@ -1915,6 +1916,12 @@ public final class QueryAlgebraBindingAnalysis {
 	}
 
 	public static final class OutputFacts {
+		// The derived frame depends only on these immutable facts and their own inherited input.
+		// Owning it here also lets obsolete facts go when an analysis is invalidated.
+		private static final AtomicReferenceFieldUpdater<OutputFacts, ReadOnlyContext> OUTPUT_FRAME = AtomicReferenceFieldUpdater
+				.newUpdater(OutputFacts.class, ReadOnlyContext.class, "outputFrame");
+		private volatile ReadOnlyContext outputFrame;
+
 		private final boolean possibleOutputsKnown;
 		private final boolean guaranteedOutputsKnown;
 		private final Set<String> possibleOutputs;
@@ -2210,27 +2217,16 @@ public final class QueryAlgebraBindingAnalysis {
 					: new LateralInputFrame(frame.original, Set.copyOf(remaining), frame.conditional, previous);
 		}
 
-		/**
-		 * Frames already derived from this input, by facts identity. Planning asks for the same (input, facts) pair
-		 * from every filter and every candidate site, and building a frame copies eight collections.
-		 */
-		private final Map<OutputFacts, ReadOnlyContext> outputFrames = new IdentityHashMap<>();
-
 		public ReadOnlyContext withOutput(OutputFacts facts) {
-			synchronized (outputFrames) {
-				ReadOnlyContext cached = outputFrames.get(facts);
-				if (cached != null) {
-					return cached;
-				}
+			ReadOnlyContext known = facts.outputFrame;
+			if (known != null) {
+				return known;
 			}
 			ReadOnlyContext frame = computeWithOutput(facts);
-			synchronized (outputFrames) {
-				outputFrames.putIfAbsent(facts, frame);
-				return outputFrames.get(facts);
-			}
+			return OutputFacts.OUTPUT_FRAME.compareAndSet(facts, null, frame) ? frame : facts.outputFrame;
 		}
 
-		private ReadOnlyContext computeWithOutput(OutputFacts facts) {
+		private static ReadOnlyContext computeWithOutput(OutputFacts facts) {
 			Set<String> visible = new HashSet<>(facts.inheritedInput.visibleNames);
 			Set<String> maybe = new HashSet<>(facts.inheritedInput.maybeBoundNames);
 			Set<String> guaranteed = new HashSet<>(facts.inheritedInput.guaranteedNames);
