@@ -1254,11 +1254,12 @@ public class LmdbStoreConnection extends SailSourceConnection implements SailRes
 
 	/** Transfers cold callback ownership without reading a deferred lexical payload. */
 	static void protectValueTree(Value value) {
-		if (value == null) {
-			return;
-		}
 		if (value instanceof LmdbValue nativeValue) {
 			nativeValue.getInternalIdentity().revision().protectExternalValue(nativeValue);
+			return;
+		}
+		// A foreign leaf has neither an LMDB shell nor children that could carry one.
+		if (!(value instanceof TripleTerm) && !(value instanceof Literal)) {
 			return;
 		}
 		ArrayDeque<ValueTreeVisit> pending = new ArrayDeque<>();
