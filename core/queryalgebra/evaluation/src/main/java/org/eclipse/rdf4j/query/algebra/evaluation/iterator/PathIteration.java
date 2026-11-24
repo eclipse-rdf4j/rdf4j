@@ -324,11 +324,7 @@ public class PathIteration extends LookAheadIteration<BindingSet> {
 
 				ValuePair vp = valuePairFromStartAndEnd(nextElement);
 
-				boolean duplicate = directlyAddReportedValues ? !reportedValues.add(vp)
-						: getClass() == PathIteration.class
-								&& collectionFactory instanceof CollectionFactory.HomogeneousSetLookup lookup
-										? lookup.containsInHomogeneousSet(reportedValues, vp)
-										: reportedValues.contains(vp);
+				boolean duplicate = directlyAddReportedValues ? !reportedValues.add(vp) : reportedValues.contains(vp);
 				if (duplicate) {
 					continue;
 				}
