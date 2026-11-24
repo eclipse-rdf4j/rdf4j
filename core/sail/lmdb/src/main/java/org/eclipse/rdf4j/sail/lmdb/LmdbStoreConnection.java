@@ -3335,8 +3335,7 @@ public class LmdbStoreConnection extends SailSourceConnection implements SailRes
 		private final ReplayableIteration<?> observationOwner;
 		private final OperationReadAttempt operationAttempt;
 		private LmdbSailStore.ReadAttemptLease admissionAttempt;
-		private final Set<LmdbSailStore.ReadViewLease> readViews = Collections
-				.newSetFromMap(new IdentityHashMap<>());
+		private final Set<LmdbSailStore.ReadViewLease> readViews;
 		private volatile LmdbSailStore.MapGrowthToken growthToken;
 		private LmdbSailStore.MapResizeKind growthKind;
 		private QueryExecutionContext.Activation replaySafepoint;
@@ -3350,6 +3349,10 @@ public class LmdbStoreConnection extends SailSourceConnection implements SailRes
 		private ReadExposureScope(ReadExposureScope parent, ReplayableIteration<?> observationOwner,
 				OperationReadAttempt operationAttempt,
 				LmdbSailStore.ReadAttemptLease admissionAttempt) {
+			// Size only from the owner's currently published immutable view list. Capture it normally below.
+			boolean singleViewOwner = observationOwner != null && observationOwner.readViews.size() == 1;
+			this.readViews = Collections
+					.newSetFromMap(singleViewOwner ? new IdentityHashMap<>(1) : new IdentityHashMap<>());
 			this.parent = parent;
 			this.observationOwner = observationOwner;
 			this.operationAttempt = operationAttempt;
