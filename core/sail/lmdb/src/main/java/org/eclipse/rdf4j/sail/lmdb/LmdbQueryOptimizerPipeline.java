@@ -34,6 +34,7 @@ import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.OrderLimitOptimizer;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.ParentReferenceChecker;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.ProjectionRemovalOptimizer;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.QueryModelNormalizerOptimizer;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.ReflexiveStarPathOptimizer;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.RegexAsStringFunctionOptimizer;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.SameTermFilterOptimizer;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.StandardQueryOptimizerPipeline;
@@ -60,6 +61,7 @@ public final class LmdbQueryOptimizerPipeline implements QueryOptimizerPipeline 
 	private static final ProjectionRemovalOptimizer PROJECTION_REMOVAL_OPTIMIZER = new ProjectionRemovalOptimizer();
 	private static final IterativeEvaluationOptimizer ITERATIVE_EVALUATION_OPTIMIZER = new IterativeEvaluationOptimizer();
 	private static final OrderLimitOptimizer ORDER_LIMIT_OPTIMIZER = new OrderLimitOptimizer();
+	private static final ReflexiveStarPathOptimizer REFLEXIVE_STAR_PATH_OPTIMIZER = new ReflexiveStarPathOptimizer();
 
 	private final EvaluationStrategy strategy;
 	private final TripleSource tripleSource;
@@ -135,24 +137,23 @@ public final class LmdbQueryOptimizerPipeline implements QueryOptimizerPipeline 
 				QUERY_MODEL_NORMALIZER,
 				PROJECTION_REMOVAL_OPTIMIZER,
 				new FilterOptimizer(null, false, false),
-				ITERATIVE_EVALUATION_OPTIMIZER,
-				new LmdbFilterSimplifierOptimizer(evaluationStatistics),
-				new LmdbSketchJoinOptimizer(evaluationStatistics, strategy.isTrackResultSize()),
-				StandardQueryOptimizerPipeline.getFilterInValuesOptimizer(),
-				ORDER_LIMIT_OPTIMIZER,
-				new LmdbOrderByOptimizer(tripleSource)));
-		if (stableOrderDistinct) {
-			// after the last join reordering, before anything reads the plan
-			optimizers.add(optimizers.indexOf(optimizers.stream()
-					.filter(LmdbSketchJoinOptimizer.class::isInstance)
-					.findFirst()
-					.orElseThrow()) + 1, new LmdbDistinctOrderMarkingOptimizer(tripleSource));
-		}
+				ITERATIVE_EVALUATION_OPTIMIZER));
 		if (nativeEngine) {
 			// after FilterOptimizer has pushed filters onto their patterns, before the join optimizers
-			optimizers.add(optimizers.indexOf(ITERATIVE_EVALUATION_OPTIMIZER) + 1,
-					new LmdbSubqueryGroupPushdownOptimizer());
-		} else {
+			optimizers.add(new LmdbSubqueryGroupPushdownOptimizer());
+		}
+		optimizers.add(new LmdbFilterSimplifierOptimizer(evaluationStatistics));
+		optimizers.add(new LmdbSketchJoinOptimizer(evaluationStatistics, strategy.isTrackResultSize()));
+		// directly after the last join reordering, which must not see its rewrite, and before anything reads the plan
+		optimizers.add(REFLEXIVE_STAR_PATH_OPTIMIZER);
+		if (stableOrderDistinct) {
+			// after the last join reordering and operator rewrite, before anything reads the plan
+			optimizers.add(new LmdbDistinctOrderMarkingOptimizer(tripleSource));
+		}
+		optimizers.add(StandardQueryOptimizerPipeline.getFilterInValuesOptimizer());
+		optimizers.add(ORDER_LIMIT_OPTIMIZER);
+		optimizers.add(new LmdbOrderByOptimizer(tripleSource));
+		if (!nativeEngine) {
 			// Witnesses must see which ordered producer the join planner actually selected.
 			optimizers.add(new LmdbDistinctWitnessOptimizer());
 		}

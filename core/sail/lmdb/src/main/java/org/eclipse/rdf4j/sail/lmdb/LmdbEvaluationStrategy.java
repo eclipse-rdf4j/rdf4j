@@ -14,6 +14,8 @@ package org.eclipse.rdf4j.sail.lmdb;
 
 import java.io.IOException;
 import java.util.Optional;
+import java.util.function.BooleanSupplier;
+import java.util.function.Consumer;
 
 import org.eclipse.rdf4j.common.annotation.Experimental;
 import org.eclipse.rdf4j.common.annotation.InternalUseOnly;
@@ -25,32 +27,28 @@ import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.Dataset;
 import org.eclipse.rdf4j.query.QueryEvaluationException;
-import org.eclipse.rdf4j.query.algebra.ArbitraryLengthPath;
 import org.eclipse.rdf4j.query.algebra.Distinct;
-import org.eclipse.rdf4j.query.algebra.Filter;
 import org.eclipse.rdf4j.query.algebra.Graph;
 import org.eclipse.rdf4j.query.algebra.Group;
 import org.eclipse.rdf4j.query.algebra.LeftJoin;
 import org.eclipse.rdf4j.query.algebra.Projection;
 import org.eclipse.rdf4j.query.algebra.ProjectionElem;
+import org.eclipse.rdf4j.query.algebra.QueryModelNode;
 import org.eclipse.rdf4j.query.algebra.QueryRoot;
-import org.eclipse.rdf4j.query.algebra.SameTerm;
 import org.eclipse.rdf4j.query.algebra.StatementPattern;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.algebra.UnaryTupleOperator;
 import org.eclipse.rdf4j.query.algebra.Var;
-import org.eclipse.rdf4j.query.algebra.ZeroLengthPath;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryEvaluationStep;
 import org.eclipse.rdf4j.query.algebra.evaluation.TripleSource;
 import org.eclipse.rdf4j.query.algebra.evaluation.federation.FederatedServiceResolver;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.DefaultEvaluationStrategy;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.EvaluationStatistics;
+import org.eclipse.rdf4j.query.algebra.evaluation.impl.GraphFrameBindings;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.QueryEvaluationContext;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.restrictions.RestrictionCompiler;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.restrictions.RestrictionPlanProvider;
 import org.eclipse.rdf4j.query.algebra.evaluation.util.ExternalValuePreparation;
-import org.eclipse.rdf4j.query.algebra.helpers.FilterBindingScope;
-import org.eclipse.rdf4j.query.impl.EmptyBindingSet;
 import org.eclipse.rdf4j.sail.base.SailDatasetTripleTermSource;
 import org.eclipse.rdf4j.sail.lmdb.LmdbSailStore.LmdbSailDataset;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbIndexedDistinct;
@@ -65,6 +63,10 @@ import org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbIndexedDistinctCount;
 @Experimental
 @InternalUseOnly
 final class LmdbEvaluationStrategy extends DefaultEvaluationStrategy {
+
+	private static final String GRAPH_LOOKUP = "graphLookup";
+	private static final String NAMED_CONTEXT_SCAN = "namedContextScan";
+	private static final String CATALOG_ENUMERATION = "catalogEnumeration";
 
 	private final LmdbSailDataset statementSource;
 
@@ -94,18 +96,16 @@ final class LmdbEvaluationStrategy extends DefaultEvaluationStrategy {
 				|| !(graph.getArg() instanceof StatementPattern body) || body.getClass() != StatementPattern.class
 				|| body.getScope() != StatementPattern.Scope.DEFAULT_CONTEXTS || body.getContextVar() != null
 				|| body.getStatementOrder() != null || context.getDataset() != null || context.getActiveGraph() != null
-				|| !(graph.getParentNode() instanceof Projection projection)
-				|| projection.getClass() != Projection.class
-				|| projection.getParentNode() == null || projection.getParentNode().getClass() != QueryRoot.class
-				|| projection.getProjectionContext() != null
-				|| projection.getInheritedGraphParameter() != null || graph.isRuntimeTelemetryEnabled()
-				|| graph.isExecutionSummaryEnabled() || body.isRuntimeTelemetryEnabled()
-				|| body.isExecutionSummaryEnabled()
-				|| isTrackResultSize() || isTrackTime()) {
+				|| hasGraphAncestor(graph)) {
 			return super.prepare(expr, context);
 		}
 		Var name = graph.getGraphName();
-		if (!simpleUnboundEndpoint(name) || name.isAnonymous() || !body.getPredicateVar().isConstant()
+		if (!simpleUnboundEndpoint(name) || name.isAnonymous()) {
+			return super.prepare(expr, context);
+		}
+		// Cost gate, not semantics: a constant predicate with a constant endpoint bounds the named-context scan
+		// to one index prefix.
+		if (!body.getPredicateVar().isConstant()
 				|| !body.getSubjectVar().isConstant() && !body.getObjectVar().isConstant()) {
 			return super.prepare(expr, context);
 		}
@@ -130,24 +130,55 @@ final class LmdbEvaluationStrategy extends DefaultEvaluationStrategy {
 				body.getSubjectVar().clone(), body.getPredicateVar().clone(), body.getObjectVar().clone(),
 				name.clone());
 		QueryEvaluationStep ordinary = super.prepare(expr, context);
-		QueryEvaluationStep choose = input -> {
-			validate.run();
+		// Compiled once, on the snapshot this strategy pins, exactly like the generic step beside it. The
+		// validator only fails a stale snapshot; it never moves a prepared step onto a newer one. The lookup's
+		// row and time actuals are recorded on the visible body.
+		QueryEvaluationStep quad = trackPreparedStep(body, precompile(physical, context));
+		graph.setStringMetricPlanned(GRAPH_LOOKUP, NAMED_CONTEXT_SCAN + "IfDefaultGraphEmpty");
+		QueryEvaluationStep fast = graphPoint(validate, () -> {
 			try {
-				// Never scan the default graph to discover named matches. Consult only authoritative
-				// context counts on the same immutable snapshot; never perform a fallback count scan.
-				if (statementSource.countsContextFromMetadata(0L)
-						&& statementSource.count(-1L, -1L, -1L, 0L) == 0L) {
-					return precompile(physical.clone(), context).evaluate(input);
-				}
+				// Cost gate, not semantics: a named-context scan already drops default-graph statements, and an
+				// empty default graph means it reads none. Consult only authoritative context counts on the
+				// same immutable snapshot; never perform a fallback count scan.
+				return statementSource.countsContextFromMetadata(0L)
+						&& statementSource.count(-1L, -1L, -1L, 0L) == 0L;
 			} catch (IOException e) {
 				throw new QueryEvaluationException(e);
 			}
+		}, quad, ordinary, choice -> graph.setStringMetricActual(GRAPH_LOOKUP, choice));
+		return RestrictionCompiler.attach(fast, RestrictionPlanProvider.find(ordinary));
+	}
+
+	/**
+	 * Chooses between the prepared named-context lookup and the generic GRAPH step. Both steps are prepared by the
+	 * caller, so no evaluation compiles anything. Only a row with no bindings and no evaluation-frame provenance is
+	 * certain to leave the selector unbound and uncorrelated; any other row takes the generic step. The snapshot
+	 * validation and the default-graph answer are repeated on every evaluation.
+	 */
+	static QueryEvaluationStep graphPoint(Runnable validate, BooleanSupplier defaultGraphEmpty,
+			QueryEvaluationStep quad,
+			QueryEvaluationStep ordinary, Consumer<String> choice) {
+		QueryEvaluationStep choose = input -> {
+			validate.run();
+			if (defaultGraphEmpty.getAsBoolean()) {
+				choice.accept(NAMED_CONTEXT_SCAN);
+				return quad.evaluate(input);
+			}
+			choice.accept(CATALOG_ENUMERATION);
 			return ordinary.evaluate(input);
 		};
-		QueryEvaluationStep fast = input -> input == EmptyBindingSet.getInstance()
+		return input -> input.isEmpty() && GraphFrameBindings.from(input) == GraphFrameBindings.EMPTY
 				? demandGraphLookup(choose, input)
 				: ordinary.evaluate(input);
-		return RestrictionCompiler.attach(fast, RestrictionPlanProvider.find(ordinary));
+	}
+
+	private static boolean hasGraphAncestor(Graph graph) {
+		for (QueryModelNode ancestor = graph.getParentNode(); ancestor != null; ancestor = ancestor.getParentNode()) {
+			if (ancestor instanceof Graph) {
+				return true;
+			}
+		}
+		return false;
 	}
 
 	static CloseableIteration<BindingSet> demandGraphLookup(QueryEvaluationStep choose, BindingSet input) {
@@ -208,49 +239,6 @@ final class LmdbEvaluationStrategy extends DefaultEvaluationStrategy {
 				}
 			}
 		};
-	}
-
-	@Override
-	protected QueryEvaluationStep prepare(Filter filter, QueryEvaluationContext context) {
-		QueryEvaluationStep generic = super.prepare(filter, context);
-		if (statementSource == null || tripleSource.getClass() != SailDatasetTripleTermSource.class
-				|| filter.getClass() != Filter.class || !(filter.getCondition() instanceof SameTerm eq)
-				|| eq.getClass() != SameTerm.class || !(filter.getArg() instanceof ArbitraryLengthPath path)
-				|| path.getClass() != ArbitraryLengthPath.class || path.getMinLength() != 0
-				|| path.getScope() != StatementPattern.Scope.DEFAULT_CONTEXTS || path.getContextVar() != null
-				|| context.getActiveGraph() != null || filter.isVariableScopeChange() || path.isVariableScopeChange()
-				|| filter.isRuntimeTelemetryEnabled() || path.isRuntimeTelemetryEnabled()
-				|| filter.isExecutionSummaryEnabled() || path.isExecutionSummaryEnabled() || isTrackResultSize()
-				|| isTrackTime()
-				|| !(filter.getParentNode() instanceof Projection proj) || proj.getClass() != Projection.class
-				|| !(proj.getParentNode() instanceof QueryRoot) || proj.getProjectionContext() != null
-				|| proj.getInheritedGraphParameter() != null
-				|| !(path.getPathExpression() instanceof StatementPattern edge)
-				|| edge.getClass() != StatementPattern.class || edge.getScope() != path.getScope()
-				|| edge.getContextVar() != null || edge.isVariableScopeChange() || edge.isRuntimeTelemetryEnabled()
-				|| eq.isRuntimeTelemetryEnabled() || eq.isExecutionSummaryEnabled()
-				|| edge.isExecutionSummaryEnabled()) {
-			return generic;
-		}
-		Var s = path.getSubjectVar(), o = path.getObjectVar(), p = edge.getPredicateVar();
-		if (!simpleUnboundEndpoint(s) || !simpleUnboundEndpoint(o) || s.getName().equals(o.getName())
-				|| p.getClass() != Var.class || !p.isConstant() || p.hasApiInputOrigin()
-				|| !(p.getValue() instanceof IRI)
-				|| s.getName().equals(p.getName()) || o.getName().equals(p.getName())
-				|| !simpleUnboundEndpoint(edge.getSubjectVar()) || !simpleUnboundEndpoint(edge.getObjectVar())
-				|| !(s.equals(edge.getSubjectVar()) && o.equals(edge.getObjectVar())
-						|| o.equals(edge.getSubjectVar()) && s.equals(edge.getObjectVar()))
-				|| !(eq.getLeftArg() instanceof Var left && simpleUnboundEndpoint(left)
-						&& eq.getRightArg() instanceof Var right && simpleUnboundEndpoint(right)
-						&& (s.equals(left) && o.equals(right) || o.equals(left) && s.equals(right)))
-				|| !FilterBindingScope.allowsAllConditionBindings(filter)) {
-			return generic;
-		}
-		// sameTerm accepts only (v, v). The zero-step arm of p* already emits every such pair once.
-		// Retain the complete prepared step for caller-supplied rows and its scope semantics.
-		ZeroLengthPath zero = new ZeroLengthPath(path.getScope(), s.clone(), o.clone(), null);
-		QueryEvaluationStep identity = super.prepare(zero, context);
-		return input -> input == EmptyBindingSet.getInstance() ? identity.evaluate(input) : generic.evaluate(input);
 	}
 
 	private static boolean simpleUnboundEndpoint(Var var) {

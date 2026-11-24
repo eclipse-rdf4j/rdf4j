@@ -27,6 +27,7 @@ import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.FilterOptimizer;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.OrderLimitOptimizer;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.ParentReferenceChecker;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.QueryJoinOptimizer;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.ReflexiveStarPathOptimizer;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.StandardQueryOptimizerPipeline;
 
 @Experimental
@@ -99,7 +100,6 @@ public final class LmdbStandardQueryOptimizerPipeline implements QueryOptimizerP
 			if (experimental && optimizer instanceof QueryJoinOptimizer && stableOrderDistinct) {
 				optimizers.add(new LmdbDistinctAnchorJoinOptimizer(evaluationStatistics, strategy.isTrackResultSize(),
 						tripleSource, strategy.getQueryExecutionPolicy()));
-				optimizers.add(new LmdbDistinctOrderMarkingOptimizer(tripleSource));
 			} else if (experimental && optimizer instanceof QueryJoinOptimizer
 					&& !evaluationStatistics.supportsJoinEstimation()) {
 				optimizers.add(new LmdbIndexAwareJoinOptimizer(evaluationStatistics, strategy.isTrackResultSize(),
@@ -113,6 +113,19 @@ public final class LmdbStandardQueryOptimizerPipeline implements QueryOptimizerP
 			}
 		}
 
+		if (experimental && stableOrderDistinct) {
+			// The order is marked on the final plan: after the join optimizer and after the operator rewrite the
+			// delegate runs directly behind it (ReflexiveStarPathOptimizer), before anything else reads the plan.
+			int position = 0;
+			for (int i = 0; i < optimizers.size(); i++) {
+				QueryOptimizer optimizer = optimizers.get(i);
+				if (optimizer instanceof LmdbDistinctAnchorJoinOptimizer
+						|| optimizer instanceof ReflexiveStarPathOptimizer) {
+					position = i + 1;
+				}
+			}
+			optimizers.add(position, new LmdbDistinctOrderMarkingOptimizer(tripleSource));
+		}
 		if (experimental && !inserted) {
 			optimizers.add(new LmdbOrderByOptimizer(tripleSource));
 		}
