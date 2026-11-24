@@ -31,6 +31,7 @@ import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.algebra.evaluation.EvaluationStrategy;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryEvaluationStep;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryValueEvaluationStep;
+import org.eclipse.rdf4j.query.algebra.evaluation.impl.PreparedBlankNodeExecution;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.QueryEvaluationContext;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.evaluationsteps.values.ScopedQueryValueEvaluationStep;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.restrictions.PreparedRestrictionPlan;
@@ -199,7 +200,7 @@ public final class LeftJoinQueryEvaluationStep implements QueryEvaluationStep {
 		if (replay) {
 			QueryValueEvaluationStep scopedCondition = leftJoin.hasCondition()
 					? new ScopedQueryValueEvaluationStep(leftJoin.getBindingNames(),
-							strategy.precompile(leftJoin.getCondition(), context))
+							scopedOccurrence(strategy.precompile(leftJoin.getCondition(), context), context))
 					: null;
 			List<String> joinAttributes = List.of(HashJoinIteration.hashJoinAttributeNames(leftJoin));
 			leftJoin.setAlgorithm(MaterializedReplayJoinIterator.class.getSimpleName());
@@ -309,8 +310,13 @@ public final class LeftJoinQueryEvaluationStep implements QueryEvaluationStep {
 
 	private static QueryValueEvaluationStep scopedOccurrence(QueryValueEvaluationStep condition,
 			QueryEvaluationContext context) {
+		if (!condition.blankNodeEffects().usesSolutionOccurrence()) {
+			return condition;
+		}
+		PreparedBlankNodeExecution.requireSolutionOccurrences();
+		var allocation = context.getBlankNodeAllocationScope();
 		return row -> {
-			try (var ignored = context.getBlankNodeAllocationScope().beginSolutionOccurrence(row)) {
+			try (var ignored = allocation.beginSolutionOccurrence(row)) {
 				return condition.evaluate(row);
 			}
 		};

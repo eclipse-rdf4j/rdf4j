@@ -14,6 +14,7 @@ package org.eclipse.rdf4j.repository.sparql.federation;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotEquals;
+import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
@@ -23,12 +24,24 @@ import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
+import java.io.ByteArrayInputStream;
+import java.nio.charset.StandardCharsets;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.Set;
+import java.util.concurrent.Executors;
+import java.util.concurrent.atomic.AtomicInteger;
 
 import org.eclipse.rdf4j.common.iteration.CloseableIteratorIteration;
+import org.eclipse.rdf4j.http.client.SPARQLProtocolSession;
+import org.eclipse.rdf4j.http.client.spi.HttpHeader;
+import org.eclipse.rdf4j.http.client.spi.HttpResponse;
+import org.eclipse.rdf4j.http.client.spi.RDF4JHttpClient;
 import org.eclipse.rdf4j.model.BNode;
+import org.eclipse.rdf4j.model.IRI;
+import org.eclipse.rdf4j.model.Resource;
+import org.eclipse.rdf4j.model.TripleTerm;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.query.BindingSet;
@@ -45,6 +58,7 @@ import org.eclipse.rdf4j.query.impl.MapBindingSet;
 import org.eclipse.rdf4j.query.impl.RemoteBNode;
 import org.eclipse.rdf4j.repository.Repository;
 import org.eclipse.rdf4j.repository.RepositoryConnection;
+import org.eclipse.rdf4j.repository.sparql.SPARQLRepository;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
 
@@ -89,6 +103,76 @@ class RepositoryFederatedBlankNodeScopeTest {
 		}
 		try (var rows = fixture.service.select(service(false), Set.of("s", "o"), input, null)) {
 			assertNotEquals(first, rows.next().getValue("o"));
+		}
+	}
+
+	@Test
+	void standardWireDocumentsAdmitLabelsBeforeBuildingTripleTerms() throws Exception {
+		String contentType = "application/sparql-results+xml";
+		byte[] body = ("""
+				<?xml version="1.0"?>
+				<sparql xmlns="http://www.w3.org/2005/sparql-results#">
+				  <head><variable name="o"/></head>
+				  <results>
+				    <result><binding name="o"><triple>
+				      <subject><bnode>same</bnode></subject>
+				      <predicate><uri>urn:p</uri></predicate>
+				      <object><bnode>same</bnode></object>
+				    </triple></binding></result>
+				    <result><binding name="o"><bnode>same</bnode></binding></result>
+				  </results>
+				</sparql>
+				""").getBytes(StandardCharsets.UTF_8);
+		RDF4JHttpClient http = mock(RDF4JHttpClient.class);
+		when(http.execute(any())).thenAnswer(ignored -> {
+			HttpResponse response = mock(HttpResponse.class);
+			when(response.getStatusCode()).thenReturn(200);
+			when(response.getHeaders("Content-Type")).thenReturn(List.of(HttpHeader.of("Content-Type", contentType)));
+			when(response.getHeader("Content-Type")).thenReturn(Optional.of(contentType));
+			when(response.getBodyAsStream()).thenReturn(new ByteArrayInputStream(body));
+			return response;
+		});
+		AtomicInteger scopedTripleTerms = new AtomicInteger();
+		SimpleValueFactory decoder = new SimpleValueFactory() {
+			@Override
+			public TripleTerm createTripleTerm(Resource subject, IRI predicate, Value object) {
+				if (subject instanceof RemoteBNode && object instanceof RemoteBNode) {
+					scopedTripleTerms.incrementAndGet();
+				}
+				return super.createTripleTerm(subject, predicate, object);
+			}
+		};
+		try (var executor = Executors.newCachedThreadPool()) {
+			SPARQLRepository repository = new SPARQLRepository("http://example.invalid/sparql") {
+				@Override
+				protected SPARQLProtocolSession createSPARQLProtocolSession() {
+					return new SPARQLProtocolSession(http, executor) {
+						{
+							setQueryURL("http://example.invalid/sparql");
+							setValueFactory(decoder);
+						}
+					};
+				}
+			};
+			RepositoryFederatedService endpoint = new RepositoryFederatedService(repository, true);
+			try {
+				var input = binding("local", VF.createBNode("same"));
+				Value first;
+				try (var rows = endpoint.select(service(false), Set.of("o"), input, null)) {
+					TripleTerm triple = (TripleTerm) rows.next().getValue("o");
+					first = rows.next().getValue("o");
+					assertSame(first, triple.getSubject());
+					assertSame(first, triple.getObject());
+					assertNotEquals(input.getValue("local"), first);
+					assertFalse(rows.hasNext());
+				}
+				try (var rows = endpoint.select(service(false), Set.of("o"), input, null)) {
+					assertNotEquals(first, ((TripleTerm) rows.next().getValue("o")).getSubject());
+				}
+				assertEquals(2, scopedTripleTerms.get());
+			} finally {
+				endpoint.shutdown();
+			}
 		}
 	}
 

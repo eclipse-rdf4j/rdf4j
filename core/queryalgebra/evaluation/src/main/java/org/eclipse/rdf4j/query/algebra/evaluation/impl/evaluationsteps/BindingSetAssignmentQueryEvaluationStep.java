@@ -34,6 +34,7 @@ import org.eclipse.rdf4j.query.algebra.BindingSetAssignment;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryEvaluationStep;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.QueryEvaluationContext;
 import org.eclipse.rdf4j.query.explanation.TelemetryMetricNames;
+import org.eclipse.rdf4j.query.impl.BlankNodeAllocationScope;
 import org.eclipse.rdf4j.query.impl.EmptyBindingSet;
 import org.eclipse.rdf4j.query.impl.ListBindingSet;
 
@@ -44,6 +45,7 @@ public class BindingSetAssignmentQueryEvaluationStep implements QueryEvaluationS
 	private final Map<String, BindingNameAccess> bindingNamesByName;
 	private final Function<Value, Value> valueCapturer;
 	private final List<PreparedAssignment> preparedAssignments;
+	private final BlankNodeAllocationScope streamedAllocation;
 
 	public BindingSetAssignmentQueryEvaluationStep(BindingSetAssignment node, QueryEvaluationContext context) {
 		this(node, context, null);
@@ -53,6 +55,8 @@ public class BindingSetAssignmentQueryEvaluationStep implements QueryEvaluationS
 			Function<Value, Value> valueCapturer) {
 		this.node = node;
 		this.valueCapturer = valueCapturer;
+		boolean repeatable = node.hasRepeatableBindingSets();
+		streamedAllocation = repeatable ? null : context.getBlankNodeAllocationScope();
 		bsMaker = context::createBindingSet;
 		Set<String> names = new HashSet<>(node.getBindingNames());
 		names.addAll(node.getPossibleBindingNames());
@@ -65,7 +69,7 @@ public class BindingSetAssignmentQueryEvaluationStep implements QueryEvaluationS
 			bindingNamesByName.put(bindingName.name, bindingName);
 		}
 		this.bindingNamesByName = Map.copyOf(bindingNamesByName);
-		if (valueCapturer != null && node.hasRepeatableBindingSets()) {
+		if (valueCapturer != null && repeatable) {
 			// Capture finite query inputs without looking up values or consuming an opaque streaming source.
 			List<PreparedAssignment> assignments = new ArrayList<>();
 			for (BindingSet row : node.getBindingSets()) {
@@ -247,7 +251,7 @@ public class BindingSetAssignmentQueryEvaluationStep implements QueryEvaluationS
 			};
 		}
 		Iterator<BindingSet> assignments = node.getBindingSets().iterator();
-		if (valueCapturer == null) {
+		if (valueCapturer == null && streamedAllocation == null) {
 			return assignments;
 		}
 		return new Iterator<>() {
@@ -259,7 +263,14 @@ public class BindingSetAssignmentQueryEvaluationStep implements QueryEvaluationS
 			@Override
 			public BindingSet next() {
 				// A streaming source may recycle its row; capture only the demanded row without looking up IDs.
-				return new PreparedAssignment(assignments.next()).bindings();
+				BindingSet row = assignments.next();
+				if (valueCapturer != null) {
+					row = new PreparedAssignment(row).bindings();
+				}
+				if (streamedAllocation != null) {
+					streamedAllocation.reserve(row);
+				}
+				return row;
 			}
 		};
 	}

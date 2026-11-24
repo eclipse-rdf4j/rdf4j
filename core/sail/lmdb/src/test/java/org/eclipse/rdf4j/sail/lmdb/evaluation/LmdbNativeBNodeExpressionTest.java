@@ -24,6 +24,7 @@ import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.QueryResults;
+import org.eclipse.rdf4j.query.impl.GeneratedBNode;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
 import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
 import org.eclipse.rdf4j.sail.lmdb.LmdbStore;
@@ -78,6 +79,28 @@ class LmdbNativeBNodeExpressionTest {
 		assertIdentityInvariants(nativeRows);
 		assertThat(LmdbNativeAggregateCompiler.ISLANDS_COMPILED.get()).isEqualTo(islandsBefore);
 		assertThat(LmdbNativeAggregateCompiler.HOSTED_GENERIC.get()).isEqualTo(hostedBefore);
+	}
+
+	@Test
+	void nativeGeneratorsRetainQueryAllocationProvenance() {
+		for (BindingSet row : rows(true)) {
+			assertThat(row.getValue("fresh1")).isInstanceOf(GeneratedBNode.class);
+			assertThat(row.getValue("same1")).isInstanceOf(GeneratedBNode.class);
+		}
+	}
+
+	@Test
+	void labelledGeneratorsAcceptOnlySimpleStringLiterals() {
+		String sparql = "SELECT ?label ?b WHERE { VALUES ?label { 42 <urn:label> 'x'@en 'x' } "
+				+ "BIND(BNODE(?label) AS ?b) }";
+		for (boolean nativeEnabled : List.of(false, true)) {
+			List<BindingSet> rows = rows(sparql, nativeEnabled);
+			assertThat(rows).hasSize(4);
+			assertThat(rows).filteredOn(row -> row.hasBinding("b"))
+					.singleElement()
+					.satisfies(row -> assertThat(row.getValue("label"))
+							.isEqualTo(repository.getValueFactory().createLiteral("x")));
+		}
 	}
 
 	@Test

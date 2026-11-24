@@ -95,6 +95,7 @@ import org.eclipse.rdf4j.common.transaction.IsolationLevel;
 import org.eclipse.rdf4j.common.transaction.IsolationLevels;
 import org.eclipse.rdf4j.http.client.QueryExecutionContext;
 import org.eclipse.rdf4j.model.BNode;
+import org.eclipse.rdf4j.model.BNodeIdResolver;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Literal;
 import org.eclipse.rdf4j.model.Namespace;
@@ -15267,7 +15268,8 @@ class LmdbSailStore implements SailStore {
 		return EmptyRecordIterator.INSTANCE;
 	}
 
-	final class LmdbSailDataset implements SailDataset, NativeLmdbQuerySource, StableStatementSailDataset {
+	final class LmdbSailDataset
+			implements SailDataset, NativeLmdbQuerySource, StableStatementSailDataset, BNodeIdResolver {
 
 		private final boolean explicit;
 		private final ReadView readView;
@@ -15363,6 +15365,20 @@ class LmdbSailStore implements SailStore {
 		@Override
 		public Function<Value, Value> getValuePreparer() {
 			return readView.valuePreparer;
+		}
+
+		@Override
+		public boolean hasBNodeId(String id) {
+			if (closed.get()) {
+				return false;
+			}
+			readView.requireDictionaryTermSnapshot();
+			try {
+				return valueStore.getId(readView.valueSnapshot(),
+						SimpleValueFactory.getInstance().createBNode(id)) != LmdbValue.UNKNOWN_ID;
+			} catch (IOException e) {
+				throw new SailException(e);
+			}
 		}
 
 		@Override

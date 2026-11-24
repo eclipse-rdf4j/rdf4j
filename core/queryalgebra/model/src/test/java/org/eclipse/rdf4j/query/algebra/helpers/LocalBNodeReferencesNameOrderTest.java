@@ -25,11 +25,28 @@ import java.util.Set;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.query.algebra.BindingSetAssignment;
+import org.eclipse.rdf4j.query.algebra.ValueConstant;
 import org.eclipse.rdf4j.query.impl.BlankNodeAllocationScope.IdentityStamp;
 import org.eclipse.rdf4j.query.impl.ListBindingSet;
 import org.junit.jupiter.api.Test;
 
 class LocalBNodeReferencesNameOrderTest {
+
+	@Test
+	void preparationConsumesACustomValueAccessorOnce() {
+		var blank = SimpleValueFactory.getInstance().createBNode("fixed");
+		var constant = new ValueConstant(blank) {
+			int reads;
+
+			@Override
+			public Value getValue() {
+				reads++;
+				return super.getValue();
+			}
+		};
+		assertThat(LocalBNodeReferences.forPreparation(constant, false).ids()).containsExactly("fixed");
+		assertThat(constant.reads).isEqualTo(1);
+	}
 
 	@Test
 	void snapshotsAndSortsAllNamesBeforeAccessingAnyValue() {

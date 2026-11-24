@@ -14,10 +14,14 @@ package org.eclipse.rdf4j.query.algebra.evaluation.iterator;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.spy;
+import static org.mockito.Mockito.verify;
 
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Set;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.stream.Stream;
 
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
@@ -35,12 +39,17 @@ import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.QueryEvaluationException;
 import org.eclipse.rdf4j.query.QueryLanguage;
 import org.eclipse.rdf4j.query.algebra.ArbitraryLengthPath;
+import org.eclipse.rdf4j.query.algebra.BindingSetAssignment;
+import org.eclipse.rdf4j.query.algebra.Join;
+import org.eclipse.rdf4j.query.algebra.SingletonSet;
 import org.eclipse.rdf4j.query.algebra.StatementPattern;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.algebra.Var;
+import org.eclipse.rdf4j.query.algebra.ZeroLengthPath;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryBindingSet;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryEvaluationStep;
 import org.eclipse.rdf4j.query.algebra.evaluation.TripleSource;
+import org.eclipse.rdf4j.query.algebra.evaluation.impl.ActiveGraphQueryEvaluationContext;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.DefaultEvaluationStrategy;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.QueryEvaluationContext;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.BindingAssignerOptimizer;
@@ -99,6 +108,337 @@ class PathIterationPreparationTest {
 		assertThat(longPathPreparations)
 				.as("blank-node frontiers must reuse fixed predicate hop preparation")
 				.isLessThanOrEqualTo(shortPathPreparations);
+	}
+
+	@ParameterizedTest(name = "{0}: {1}")
+	@MethodSource("blankNodePaths")
+	void repeatedBoundInvocationsReusePathPreparation(String operator, Direction direction) {
+		TrackingSource source = new TrackingSource();
+		for (int i = 0; i < 5; i++) {
+			source.model.add(blankNode(i), PREDICATE, blankNode(i + 1));
+		}
+		CountingStrategy strategy = new CountingStrategy(source);
+		boolean includeIdentity = operator.equals("*");
+		boolean forward = direction == Direction.FORWARD;
+		QueryEvaluationStep prepared = strategy.precompile(unboundPath(includeIdentity ? 0 : 1),
+				new QueryEvaluationContext.Minimal(null));
+		for (int distance = 1; distance <= 5; distance++) {
+			int anchor = forward ? 5 - distance : distance;
+			QueryBindingSet input = new QueryBindingSet();
+			input.addBinding(forward ? "s" : "o", blankNode(anchor));
+			input.addBinding("tag", VF.createLiteral(distance));
+			List<BindingSet> expected = new ArrayList<>();
+			for (int offset = includeIdentity ? 0 : 1; offset <= distance; offset++) {
+				QueryBindingSet row = new QueryBindingSet(input);
+				row.addBinding(forward ? "o" : "s", blankNode(forward ? anchor + offset : anchor - offset));
+				expected.add(row);
+			}
+			try (var rows = prepared.evaluate(input)) {
+				assertThat(collect(rows)).containsExactlyInAnyOrderElementsOf(expected);
+			}
+		}
+		assertThat(source.closed).isEqualTo(source.opened);
+		assertThat(strategy.hopPreparations).as("the initial edge and parameterized hop are shared")
+				.isLessThanOrEqualTo(2);
+		assertThat(strategy.zeroLengthPreparations).as("the zero-length arm is shared")
+				.isLessThanOrEqualTo(includeIdentity ? 1 : 0);
+		assertThat(strategy.membershipPreparations).as("the graph-node check is shared across both positions")
+				.isLessThanOrEqualTo(includeIdentity ? 1 : 0);
+	}
+
+	@Test
+	void statementProducedPathEndpointAvoidsGraphNodeProbe() {
+		TrackingSource source = new TrackingSource();
+		IRI member = VF.createIRI(NS + "member");
+		Value marker = VF.createLiteral("member value");
+		BNode first = blankNode(0);
+		BNode last = blankNode(1);
+		source.model.add(first, PREDICATE, last);
+		source.model.add(last, member, marker);
+		AtomicInteger validations = new AtomicInteger();
+		var strategy = pinnedStrategy(source, validations::incrementAndGet);
+		StatementPattern driver = new StatementPattern(Var.of("o"), Var.of("member", member, true, true),
+				Var.of("marker"));
+		QueryEvaluationStep prepared = strategy.precompile(new Join(driver, unboundPath(0)),
+				new QueryEvaluationContext.Minimal(null));
+		try (var rows = prepared.evaluate(EmptyBindingSet.getInstance())) {
+			assertThat(collect(rows)).containsExactlyInAnyOrder(pathMemberRow(last, last, marker),
+					pathMemberRow(first, last, marker));
+		}
+		assertThat(source.closed).isEqualTo(source.opened);
+		assertThat(source.graphNodeProbes).as("the pinned statement already establishes graph-node membership")
+				.isZero();
+		assertThat(validations.get()).as("the substituted identity validates its read view on demand").isEqualTo(1);
+	}
+
+	@Test
+	void objectLiteralWitnessAllowsForwardIdentityInNestedJoin() {
+		TrackingSource source = new TrackingSource();
+		IRI member = VF.createIRI(NS + "member");
+		IRI marker = node(0);
+		Value literal = VF.createLiteral("object only");
+		source.model.add(marker, member, literal);
+		AtomicInteger validations = new AtomicInteger();
+		var strategy = pinnedStrategy(source, validations::incrementAndGet);
+		StatementPattern driver = new StatementPattern(Var.of("marker"), Var.of("member", member, true, true),
+				Var.of("s"));
+		QueryEvaluationStep prepared = strategy.precompile(
+				new Join(new SingletonSet(), new Join(driver, unboundPath(0))),
+				new QueryEvaluationContext.Minimal(null));
+		try (var rows = prepared.evaluate(EmptyBindingSet.getInstance())) {
+			assertThat(collect(rows)).containsExactly(pathMemberRow(literal, literal, marker));
+		}
+		assertThat(source.closed).isEqualTo(source.opened);
+		assertThat(source.graphNodeProbes).isZero();
+		assertThat(validations.get()).isEqualTo(1);
+	}
+
+	@ParameterizedTest
+	@ValueSource(booleans = { false, true })
+	void pathMembershipUsesOrdinaryProbeWithoutAnUnboundPinnedStatementEndpoint(boolean prebound) {
+		TrackingSource source = new TrackingSource();
+		IRI member = VF.createIRI(NS + "member");
+		Value marker = VF.createLiteral("member value");
+		source.model.add(node(0), member, marker);
+		AtomicInteger validations = new AtomicInteger();
+		var strategy = pinnedStrategy(source, prebound ? validations::incrementAndGet : null);
+		StatementPattern driver = new StatementPattern(Var.of("o"), Var.of("member", member, true, true),
+				Var.of("marker"));
+		QueryEvaluationStep prepared = strategy.precompile(new Join(driver, unboundPath(0)),
+				new QueryEvaluationContext.Minimal(null));
+		QueryBindingSet input = new QueryBindingSet();
+		if (prebound) {
+			input.addBinding("o", node(0));
+		}
+		try (var rows = prepared.evaluate(input)) {
+			assertThat(collect(rows)).containsExactly(pathMemberRow(node(0), node(0), marker));
+		}
+		assertThat(source.closed).isEqualTo(source.opened);
+		assertThat(source.graphNodeProbes).isEqualTo(1);
+		assertThat(validations.get()).isZero();
+	}
+
+	@Test
+	void predicateValueDoesNotWitnessGraphNodeMembership() {
+		TrackingSource source = new TrackingSource();
+		IRI predicateOnly = VF.createIRI(NS + "predicateOnly");
+		source.model.add(node(0), predicateOnly, VF.createLiteral("marker"));
+		AtomicInteger validations = new AtomicInteger();
+		var strategy = pinnedStrategy(source, validations::incrementAndGet);
+		StatementPattern driver = new StatementPattern(Var.of("subject"), Var.of("o"), Var.of("marker"));
+		QueryEvaluationStep prepared = strategy.precompile(new Join(driver, unboundPath(0)),
+				new QueryEvaluationContext.Minimal(null));
+		try (var rows = prepared.evaluate(EmptyBindingSet.getInstance())) {
+			assertThat(collect(rows)).isEmpty();
+		}
+		assertThat(source.closed).isEqualTo(source.opened);
+		assertThat(source.graphNodeProbes).isEqualTo(2);
+		assertThat(validations.get()).isZero();
+	}
+
+	@Test
+	void objectSlotShadowedByValuedPredicateDoesNotWitnessNodeMembership() {
+		TrackingSource source = new TrackingSource();
+		IRI predicateOnly = VF.createIRI(NS + "predicateOnly");
+		source.model.add(node(0), predicateOnly, VF.createLiteral("object"));
+		AtomicInteger validations = new AtomicInteger();
+		var strategy = pinnedStrategy(source, validations::incrementAndGet);
+		// Different Var values keep the predicate/object from becoming an equality test. The prepared statement's
+		// output uses the predicate when both occurrences have the same name.
+		StatementPattern driver = new StatementPattern(Var.of("marker"), Var.of("o", predicateOnly, false, false),
+				Var.of("o"));
+		QueryEvaluationStep prepared = strategy.precompile(new Join(driver, unboundPath(0)),
+				new QueryEvaluationContext.Minimal(null));
+		try (var rows = prepared.evaluate(EmptyBindingSet.getInstance())) {
+			assertThat(collect(rows)).isEmpty();
+		}
+		assertThat(source.closed).isEqualTo(source.opened);
+		assertThat(source.graphNodeProbes).isEqualTo(2);
+		assertThat(validations.get()).isZero();
+	}
+
+	@Test
+	void statementInOtherGraphDoesNotWitnessPathMembership() {
+		TrackingSource source = new TrackingSource();
+		IRI member = VF.createIRI(NS + "member");
+		IRI graphA = VF.createIRI(NS + "graphA");
+		IRI graphB = VF.createIRI(NS + "graphB");
+		source.model.add(node(0), member, VF.createLiteral("marker"), graphA);
+		source.model.add(node(1), member, VF.createLiteral("marker"), graphB);
+		AtomicInteger validations = new AtomicInteger();
+		var strategy = pinnedStrategy(source, validations::incrementAndGet);
+		StatementPattern driver = new StatementPattern(StatementPattern.Scope.NAMED_CONTEXTS,
+				Var.of("o"), Var.of("member", member, true, true), Var.of("marker"),
+				Var.of("graph", graphA, true, true));
+		QueryEvaluationContext context = new ActiveGraphQueryEvaluationContext(new QueryEvaluationContext.Minimal(null),
+				new QueryEvaluationContext.ActiveGraph(graphB, graphB));
+		QueryEvaluationStep prepared = strategy.precompile(new Join(driver, unboundPath(0)), context);
+		try (var rows = prepared.evaluate(EmptyBindingSet.getInstance())) {
+			assertThat(collect(rows)).isEmpty();
+		}
+		assertThat(source.closed).isEqualTo(source.opened);
+		assertThat(validations.get()).isZero();
+	}
+
+	@Test
+	void runtimeValuesDoNotWitnessAbsentOrForeignGraphNodes() {
+		TrackingSource source = chain(2);
+		AtomicInteger validations = new AtomicInteger();
+		var strategy = pinnedStrategy(source, validations::incrementAndGet);
+		Value remote = RemoteBNode.newResponseScope(new BlankNodeAllocationScope(), VF, new Object(), true)
+				.map(VF.createBNode("foreign"));
+		QueryBindingSet absent = new QueryBindingSet();
+		absent.addBinding("o", VF.createIRI(NS + "absent"));
+		QueryBindingSet foreign = new QueryBindingSet();
+		foreign.addBinding("o", remote);
+		BindingSetAssignment values = new BindingSetAssignment();
+		values.setBindingNames(Set.of("o"));
+		values.setBindingSets(List.of(absent, foreign));
+		QueryEvaluationStep prepared = strategy.precompile(new Join(values, unboundPath(0)),
+				new QueryEvaluationContext.Minimal(null));
+		try (var rows = prepared.evaluate(EmptyBindingSet.getInstance())) {
+			assertThat(collect(rows)).isEmpty();
+		}
+		assertThat(source.closed).isEqualTo(source.opened);
+		assertThat(source.graphNodeProbes).isEqualTo(4);
+		assertThat(validations.get()).isZero();
+	}
+
+	@Test
+	void witnessedIdentityValidatesOnlyOnDemandAndPropagatesFailure() {
+		TrackingSource source = new TrackingSource();
+		IRI member = VF.createIRI(NS + "member");
+		source.model.add(node(0), member, VF.createLiteral("marker"));
+		AtomicInteger validations = new AtomicInteger();
+		var strategy = pinnedStrategy(source, () -> {
+			validations.incrementAndGet();
+			throw new QueryEvaluationException("test read view invalidated");
+		});
+		StatementPattern driver = new StatementPattern(Var.of("o"), Var.of("member", member, true, true),
+				Var.of("marker"));
+		QueryEvaluationStep prepared = strategy.precompile(new Join(driver, unboundPath(0)),
+				new QueryEvaluationContext.Minimal(null));
+		try (var unused = prepared.evaluate(EmptyBindingSet.getInstance())) {
+			assertThat(validations.get()).isZero();
+		}
+		try (var rows = prepared.evaluate(EmptyBindingSet.getInstance())) {
+			assertThatThrownBy(rows::hasNext).isInstanceOf(QueryEvaluationException.class)
+					.hasMessageContaining("test read view invalidated");
+		}
+		assertThat(source.closed).isEqualTo(source.opened);
+		assertThat(source.graphNodeProbes).isZero();
+		assertThat(validations.get()).isEqualTo(1);
+	}
+
+	private static QueryBindingSet pathMemberRow(Value start, Value end, Value marker) {
+		QueryBindingSet row = new QueryBindingSet();
+		row.addBinding("s", start);
+		row.addBinding("o", end);
+		row.addBinding("marker", marker);
+		return row;
+	}
+
+	private static DefaultEvaluationStrategy pinnedStrategy(TrackingSource source, Runnable validate) {
+		return new DefaultEvaluationStrategy(source, null) {
+			@Override
+			protected boolean usesStandardPreparation() {
+				return true;
+			}
+
+			@Override
+			protected boolean usesAdmittedBlankNodeInputs() {
+				return true;
+			}
+
+			@Override
+			protected Runnable fixedGraphBodyReuseValidator() {
+				return validate;
+			}
+		};
+	}
+
+	@Test
+	void callerBindingNamedLikeTheSharedFrontierIsRetained() {
+		TrackingSource source = chain(5);
+		CountingStrategy strategy = new CountingStrategy(source);
+		QueryEvaluationStep prepared = strategy.precompile(unboundPath(1), new QueryEvaluationContext.Minimal(null));
+		try (var rows = prepared.evaluate(input(0, "warm"))) {
+			assertThat(collect(rows)).containsExactlyInAnyOrderElementsOf(expectedTaggedRows(0, 5, "warm"));
+		}
+		String privateName = strategy.preparedFrontierName;
+		assertThat(privateName).isNotNull();
+		QueryBindingSet caller = input(2, "caller");
+		Value marker = VF.createLiteral("untouched");
+		caller.addBinding(privateName, marker);
+		List<BindingSet> expected = expectedTaggedRows(2, 5, "caller");
+		for (BindingSet row : expected) {
+			((QueryBindingSet) row).addBinding(privateName, marker);
+		}
+		try (var rows = prepared.evaluate(caller)) {
+			assertThat(collect(rows)).containsExactlyInAnyOrderElementsOf(expected);
+		}
+		assertThat(source.closed).isEqualTo(source.opened);
+	}
+
+	@Test
+	void repeatedEvaluationUsesCurrentGraphForEdgesAndIdentityMembership() {
+		TrackingSource source = new TrackingSource();
+		IRI graphA = VF.createIRI(NS + "graphA");
+		IRI graphB = VF.createIRI(NS + "graphB");
+		IRI predicateOnly = VF.createIRI(NS + "predicateOnly");
+		Value objectOnly = VF.createLiteral("object only");
+		source.model.add(node(0), PREDICATE, node(1), graphA);
+		source.model.add(node(1), PREDICATE, node(2), graphA);
+		source.model.add(node(3), predicateOnly, objectOnly, graphB);
+		class SwitchingGraphContext extends QueryEvaluationContext.Minimal {
+			private ActiveGraph graph = new ActiveGraph(graphA, graphA);
+
+			SwitchingGraphContext() {
+				super(null);
+			}
+
+			@Override
+			public ActiveGraph getActiveGraph() {
+				return graph;
+			}
+		}
+		SwitchingGraphContext context = new SwitchingGraphContext();
+		CountingStrategy strategy = new CountingStrategy(source);
+		QueryEvaluationStep path = strategy.precompile(unboundPath(0), context);
+		QueryEvaluationStep identity = strategy.precompile(new ZeroLengthPath(Var.of("s"), Var.of("o")), context);
+		QueryEvaluationContext.ActiveGraph selectedA = context.graph;
+		QueryEvaluationContext.ActiveGraph selectedB = new QueryEvaluationContext.ActiveGraph(graphB, graphB);
+		try (var rows = path.evaluate(input(0, "before-first-pull"))) {
+			context.graph = selectedB;
+			assertThat(collect(rows)).isEmpty();
+		}
+		context.graph = selectedA;
+		try (var rows = path.evaluate(input(0, "graphA"))) {
+			assertThat(collect(rows)).containsExactlyInAnyOrder(taggedRow(0, 0, "graphA"),
+					taggedRow(0, 1, "graphA"), taggedRow(0, 2, "graphA"));
+		}
+		try (var rows = identity.evaluate(input(0, "graphA"))) {
+			assertThat(collect(rows)).containsExactly(taggedRow(0, 0, "graphA"));
+		}
+		context.graph = selectedB;
+		try (var rows = path.evaluate(input(0, "graphB"))) {
+			assertThat(collect(rows)).isEmpty();
+		}
+		try (var rows = identity.evaluate(input(0, "graphB"))) {
+			assertThat(collect(rows)).isEmpty();
+		}
+		QueryBindingSet fromPredicate = new QueryBindingSet();
+		fromPredicate.addBinding("s", predicateOnly);
+		try (var rows = path.evaluate(fromPredicate)) {
+			assertThat(collect(rows)).isEmpty();
+		}
+		QueryBindingSet fromObject = new QueryBindingSet();
+		fromObject.addBinding("s", objectOnly);
+		try (var rows = path.evaluate(fromObject)) {
+			assertThat(collect(rows)).singleElement()
+					.satisfies(row -> assertThat(row.getValue("o")).isEqualTo(objectOnly));
+		}
+		assertThat(source.closed).isEqualTo(source.opened);
 	}
 
 	@ParameterizedTest
@@ -217,6 +557,33 @@ class PathIterationPreparationTest {
 	}
 
 	@ParameterizedTest
+	@ValueSource(strings = { ":edge+", "(:edge|:missing)+" })
+	void admittedRemoteFrontierKeepsItsIdentityThroughPathAndGrouping(String path) {
+		var allocation = spy(new BlankNodeAllocationScope("admitted-", ignored -> false));
+		var epoch = new Object();
+		var canonical = VF.createBNode("canonical");
+		BNode middle = (BNode) RemoteBNode.newResponseScope(allocation, VF, epoch, true).map(canonical);
+		TrackingSource source = twoHopSource(middle);
+		try (var activation = allocation.activate()) {
+			var strategy = new CountingStrategy(source);
+			var prepared = strategy.precompile(parse("SELECT ?target (COUNT(*) AS ?n) WHERE { :n0 " + path
+					+ " ?target } GROUP BY ?target ORDER BY ?target"));
+			try (var result = prepared.evaluate(EmptyBindingSet.getInstance())) {
+				var rows = collect(result);
+				assertThat(rows.stream().map(row -> row.getValue("target"))).containsExactlyInAnyOrder(middle, node(2));
+				assertThat(rows.stream().map(row -> row.getValue("target")).filter(BNode.class::isInstance))
+						.singleElement()
+						.satisfies(value -> assertThat(RemoteBNode.toRemoteValue(value, epoch, true, true))
+								.isEqualTo(canonical));
+			}
+		}
+		verify(allocation, never()).reserve(middle);
+		verify(allocation, never()).reserve(middle.getID());
+		verify(allocation, never()).reserveKnownID(middle.getID());
+		assertThat(source.closed).isEqualTo(source.opened);
+	}
+
+	@ParameterizedTest
 	@ValueSource(strings = { "*", "+" })
 	void mixedIriAndBlankNodeCycleKeepsEveryReachableNode(String operator) {
 		TrackingSource source = new TrackingSource();
@@ -264,6 +631,7 @@ class PathIterationPreparationTest {
 		assertThat(firstInput.nameEnumerations).isEqualTo(secondInput.nameEnumerations);
 		assertThat(firstInput).isEqualTo(input(0, "first"));
 		assertThat(secondInput).isEqualTo(input(64, "second"));
+		assertThat(strategy.hopPreparations).isEqualTo(2);
 		assertThat(source.closed).as("all source iterations must be closed after exhaustion").isEqualTo(source.opened);
 	}
 
@@ -518,6 +886,9 @@ class PathIterationPreparationTest {
 
 	private static final class CountingStrategy extends DefaultEvaluationStrategy {
 		private int hopPreparations;
+		private int zeroLengthPreparations;
+		private int membershipPreparations;
+		private String preparedFrontierName;
 
 		private CountingStrategy(TripleSource source) {
 			super(source, null);
@@ -530,9 +901,20 @@ class PathIterationPreparationTest {
 
 		@Override
 		public QueryEvaluationStep precompile(TupleExpr expression, QueryEvaluationContext context) {
-			if (expression instanceof StatementPattern pattern
-					&& PREDICATE.equals(pattern.getPredicateVar().getValue())) {
-				hopPreparations++;
+			if (expression instanceof ZeroLengthPath) {
+				zeroLengthPreparations++;
+			} else if (expression instanceof StatementPattern pattern) {
+				if (PREDICATE.equals(pattern.getPredicateVar().getValue())) {
+					hopPreparations++;
+					for (Var variable : pattern.getVarList()) {
+						String name = variable.getName();
+						if (name.startsWith("@rdf4j/path/") && name.endsWith("/frontier")) {
+							preparedFrontierName = name;
+						}
+					}
+				} else if (ZeroLengthPathIteration.ANON_PREDICATE_VAR.equals(pattern.getPredicateVar().getName())) {
+					membershipPreparations++;
+				}
 			}
 			return super.precompile(expression, context);
 		}
@@ -558,11 +940,15 @@ class PathIterationPreparationTest {
 		private final Model model = new LinkedHashModel();
 		private int opened;
 		private int closed;
+		private int graphNodeProbes;
 
 		@Override
 		public CloseableIteration<? extends Statement> getStatements(Resource subject, IRI predicate, Value object,
 				Resource... contexts) {
 			opened++;
+			if (predicate == null && (subject != null || object != null)) {
+				graphNodeProbes++;
+			}
 			var statements = model.getStatements(subject, predicate, object, contexts).iterator();
 			return new CloseableIteratorIteration<Statement>(statements) {
 				@Override

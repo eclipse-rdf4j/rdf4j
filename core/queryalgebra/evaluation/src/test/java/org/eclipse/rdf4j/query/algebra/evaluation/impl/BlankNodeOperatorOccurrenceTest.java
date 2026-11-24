@@ -38,6 +38,7 @@ import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.query.BindingSet;
+import org.eclipse.rdf4j.query.BlankNodeEffects;
 import org.eclipse.rdf4j.query.algebra.BNodeGenerator;
 import org.eclipse.rdf4j.query.algebra.BindingSetAssignment;
 import org.eclipse.rdf4j.query.algebra.Count;
@@ -96,11 +97,11 @@ class BlankNodeOperatorOccurrenceTest {
 	void preparedVariableAggregateRetainsOccurrenceForContextValueCallbacks() {
 		var context = spy(new QueryEvaluationContext.Minimal(null));
 		List<Value> observed = new ArrayList<>();
-		Function<BindingSet, Value> valueAccessor = bindings -> {
+		Function<BindingSet, Value> valueAccessor = new LabelledAccessor(bindings -> {
 			Value value = context.getOrCreateBNode("label", bindings, VF);
 			observed.add(value);
 			return value;
-		};
+		});
 		doReturn(valueAccessor).when(context).getValue("value");
 
 		var reused = new MapBindingSet();
@@ -130,7 +131,8 @@ class BlankNodeOperatorOccurrenceTest {
 			group.addGroupElement(new GroupElem("count", new Count(generator, true)));
 			EvaluationStrategy strategy = mock(EvaluationStrategy.class);
 			when(strategy.precompile(input, context)).thenReturn(reusedInput());
-			QueryValueEvaluationStep expression = row -> context.getOrCreateBNode("label", row, VF);
+			QueryValueEvaluationStep expression = QueryValueEvaluationStep.withBlankNodeEffects(
+					row -> context.getOrCreateBNode("label", row, VF), BlankNodeEffects.LABELLED);
 			when(strategy.precompile(generator, context)).thenReturn(expression);
 			try (var rows = new GroupIterator(strategy, group, EmptyBindingSet.getInstance(), context)) {
 				assertEquals(2, ((Literal) rows.next().getValue("count")).intValue());
@@ -145,12 +147,12 @@ class BlankNodeOperatorOccurrenceTest {
 		var order = new Order(new SingletonSet(), new OrderElem(generator));
 		EvaluationStrategy strategy = mock(EvaluationStrategy.class);
 		var observed = new ArrayList<Value>();
-		QueryValueEvaluationStep expression = row -> {
+		QueryValueEvaluationStep expression = QueryValueEvaluationStep.withBlankNodeEffects(row -> {
 			Value node = context.getOrCreateBNode("label", row, VF);
 			assertEquals(node, context.getOrCreateBNode("label", row, VF));
 			observed.add(node);
 			return node;
-		};
+		}, BlankNodeEffects.LABELLED);
 		when(strategy.precompile(generator, context)).thenReturn(expression);
 		var comparator = new OrderComparator(strategy, order, new ValueComparator(), context);
 		var step = new OrderQueryEvaluationStep(order, comparator, Long.MAX_VALUE, false, reusedInput(), 0);
@@ -183,12 +185,12 @@ class BlankNodeOperatorOccurrenceTest {
 		when(strategy.precompile(same(left), same(context))).thenReturn(reusedInput());
 		when(strategy.precompile(same(right), same(context))).thenReturn(SingletonIteration::new);
 		var nodes = new ArrayList<Value>();
-		QueryValueEvaluationStep expression = row -> {
+		QueryValueEvaluationStep expression = QueryValueEvaluationStep.withBlankNodeEffects(row -> {
 			Value node = context.getOrCreateBNode("label", row, VF);
 			assertEquals(node, context.getOrCreateBNode("label", row, VF));
 			nodes.add(node);
 			return VF.createLiteral(true);
-		};
+		}, BlankNodeEffects.LABELLED);
 		when(strategy.precompile(same(condition), same(context))).thenReturn(expression);
 		var prepared = LeftJoinQueryEvaluationStep.supply(strategy, join, context);
 		BindingSet outer = new MapBindingSet();
@@ -202,6 +204,19 @@ class BlankNodeOperatorOccurrenceTest {
 			assertEquals(outerNode, context.getOrCreateBNode("label", outer, VF));
 			assertNotEquals(outerNode, nodes.get(0));
 			assertNotEquals(nodes.get(0), nodes.get(1));
+		}
+	}
+
+	private record LabelledAccessor(Function<BindingSet, Value> read)
+			implements Function<BindingSet, Value>, BlankNodeEffects.Provider {
+		@Override
+		public Value apply(BindingSet bindings) {
+			return read.apply(bindings);
+		}
+
+		@Override
+		public BlankNodeEffects blankNodeEffects() {
+			return BlankNodeEffects.LABELLED;
 		}
 	}
 

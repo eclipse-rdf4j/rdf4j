@@ -27,6 +27,7 @@ import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.Dataset;
 import org.eclipse.rdf4j.query.QueryEvaluationException;
+import org.eclipse.rdf4j.query.algebra.ArbitraryLengthPath;
 import org.eclipse.rdf4j.query.algebra.Distinct;
 import org.eclipse.rdf4j.query.algebra.Graph;
 import org.eclipse.rdf4j.query.algebra.Group;
@@ -48,7 +49,9 @@ import org.eclipse.rdf4j.query.algebra.evaluation.impl.GraphFrameBindings;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.QueryEvaluationContext;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.restrictions.RestrictionCompiler;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.restrictions.RestrictionPlanProvider;
+import org.eclipse.rdf4j.query.algebra.evaluation.iterator.PathIteration;
 import org.eclipse.rdf4j.query.algebra.evaluation.util.ExternalValuePreparation;
+import org.eclipse.rdf4j.query.impl.BlankNodeAllocationScope;
 import org.eclipse.rdf4j.sail.base.SailDatasetTripleTermSource;
 import org.eclipse.rdf4j.sail.lmdb.LmdbSailStore.LmdbSailDataset;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbIndexedDistinct;
@@ -69,12 +72,15 @@ final class LmdbEvaluationStrategy extends DefaultEvaluationStrategy {
 	private static final String CATALOG_ENUMERATION = "catalogEnumeration";
 
 	private final LmdbSailDataset statementSource;
+	private final boolean pinnedStatementSource;
 
 	LmdbEvaluationStrategy(TripleSource tripleSource, Dataset dataset, FederatedServiceResolver serviceResolver,
 			long iterationCacheSyncTreshold, EvaluationStatistics evaluationStatistics, boolean trackResultSize) {
 		super(tripleSource, dataset, serviceResolver, iterationCacheSyncTreshold, evaluationStatistics,
 				trackResultSize);
 		this.statementSource = singleStatementSource(tripleSource);
+		this.pinnedStatementSource = statementSource != null && statementSource.canReplayStatementRows()
+				&& tripleSource instanceof SailDatasetTripleTermSource source && source.hasStableStatementRelation();
 	}
 
 	@Override
@@ -84,15 +90,29 @@ final class LmdbEvaluationStrategy extends DefaultEvaluationStrategy {
 
 	@Override
 	protected Runnable fixedGraphBodyReuseValidator() {
-		return statementSource != null && statementSource.canReplayStatementRows()
-				&& tripleSource instanceof SailDatasetTripleTermSource source && source.hasStableStatementRelation()
-						? statementSource.stableGraphRestrictionValidator()
-						: null;
+		return pinnedStatementSource ? statementSource.stableGraphRestrictionValidator() : null;
+	}
+
+	@Override
+	protected boolean usesAdmittedBlankNodeInputs() {
+		return pinnedStatementSource;
+	}
+
+	@Override
+	protected void bindPinnedBlankNodeIdentities(BlankNodeAllocationScope scope) {
+		if (pinnedStatementSource) {
+			scope.bindPinnedBNodeIdResolver(statementSource);
+		}
+	}
+
+	@Override
+	protected QueryEvaluationStep prepare(ArbitraryLengthPath path, QueryEvaluationContext context) {
+		return PathIteration.prepare(this, path, context, true, pinnedStatementSource);
 	}
 
 	@Override
 	protected QueryEvaluationStep prepare(UnaryTupleOperator expr, QueryEvaluationContext context) {
-		if (!(expr instanceof Graph graph) || graph.getClass() != Graph.class
+		if (!context.allowsDirectVariableReads() || !(expr instanceof Graph graph) || graph.getClass() != Graph.class
 				|| !(graph.getArg() instanceof StatementPattern body) || body.getClass() != StatementPattern.class
 				|| body.getScope() != StatementPattern.Scope.DEFAULT_CONTEXTS || body.getContextVar() != null
 				|| body.getStatementOrder() != null || context.getDataset() != null || context.getActiveGraph() != null
@@ -133,7 +153,7 @@ final class LmdbEvaluationStrategy extends DefaultEvaluationStrategy {
 		// Compiled once, on the snapshot this strategy pins, exactly like the generic step beside it. The
 		// validator only fails a stale snapshot; it never moves a prepared step onto a newer one. The lookup's
 		// row and time actuals are recorded on the visible body.
-		QueryEvaluationStep quad = trackPreparedStep(body, precompile(physical, context));
+		QueryEvaluationStep quad = trackPreparedStep(body, precompileWithAdmittedInputs(this, physical, context));
 		graph.setStringMetricPlanned(GRAPH_LOOKUP, NAMED_CONTEXT_SCAN + "IfDefaultGraphEmpty");
 		QueryEvaluationStep fast = graphPoint(validate, () -> {
 			try {

@@ -27,6 +27,7 @@ import java.util.function.Supplier;
 
 import org.eclipse.rdf4j.collection.factory.api.CollectionFactory;
 import org.eclipse.rdf4j.common.annotation.Experimental;
+import org.eclipse.rdf4j.common.annotation.InternalUseOnly;
 import org.eclipse.rdf4j.common.iteration.AbstractCloseableIteration;
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.common.iteration.CloseableIteratorIteration;
@@ -52,6 +53,7 @@ import org.eclipse.rdf4j.query.QueryEvaluationException;
 import org.eclipse.rdf4j.query.algebra.StatementPattern;
 import org.eclipse.rdf4j.query.algebra.StatementPattern.Scope;
 import org.eclipse.rdf4j.query.algebra.Var;
+import org.eclipse.rdf4j.query.algebra.evaluation.QueryBindingSet;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryEvaluationStep;
 import org.eclipse.rdf4j.query.algebra.evaluation.TripleSource;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.QueryEvaluationContext;
@@ -246,10 +248,9 @@ public class StatementPatternQueryEvaluationStep implements QueryEvaluationStep,
 			return var.clone();
 		} else {
 			Value original = var.getValue();
-			Value prepared = valuePreparer == null ? copyValue(original, valueFactory) : valuePreparer.apply(original);
 			// Normalized lookup operands also restore inlined bindings to result rows. Their semantic copy must retain
 			// the original's transport authority, including when a backend recursively copies a triple term.
-			Var ret = Var.of(var.getName(), RemoteBNode.preserveProvenance(original, prepared), var.isAnonymous(),
+			Var ret = Var.of(var.getName(), prepareConstantOperand(original, valueFactory), var.isAnonymous(),
 					var.isConstant());
 			if (var.hasApiInputOrigin()) {
 				ret = ret.withApiInputOrigin();
@@ -257,6 +258,11 @@ public class StatementPatternQueryEvaluationStep implements QueryEvaluationStep,
 			ret.setVariableScopeChange(var.isVariableScopeChange());
 			return ret;
 		}
+	}
+
+	private Value prepareConstantOperand(Value value, ValueFactory factory) {
+		Value prepared = valuePreparer == null ? copyValue(value, factory) : valuePreparer.apply(value);
+		return RemoteBNode.preserveProvenance(value, prepared);
 	}
 
 	private static Value copyValue(Value value, ValueFactory valueFactory) {
@@ -387,6 +393,19 @@ public class StatementPatternQueryEvaluationStep implements QueryEvaluationStep,
 	@Override
 	public PreparedRestrictionPlan restrictionPlan() {
 		return restrictionPlan;
+	}
+
+	/** Whether the ordinary statement converter writes the variable from a subject or object in the active graph. */
+	@InternalUseOnly
+	public boolean producesDefaultGraphNode(String name) {
+		return statementPattern.getScope() == Scope.DEFAULT_CONTEXTS && statementPattern.getContextVar() == null
+				&& (producesNode(normalizedSubjectVar, name) || producesNode(normalizedObjectVar, name));
+	}
+
+	private static boolean producesNode(Var variable, String name) {
+		// The normalized slots, rather than syntax, reflect duplicate-name elimination and inlined values.
+		return variable != null && variable.getClass() == Var.class && !variable.hasValue() && !variable.isConstant()
+				&& !variable.isBNode() && name.equals(variable.getName());
 	}
 
 	private PreparedRestrictionPlan prepareRestrictionPlan(StatementRestrictionSourceProvider provider,
@@ -674,6 +693,17 @@ public class StatementPatternQueryEvaluationStep implements QueryEvaluationStep,
 			}
 			throw new QueryEvaluationException(t);
 		}
+	}
+
+	/** Existence check with the same normalization as a constant statement operand. */
+	@InternalUseOnly
+	public boolean hasStatementWithConstantOperand(String name, Value value) {
+		if (emptyGraph) {
+			return false;
+		}
+		QueryBindingSet parameter = new QueryBindingSet(1);
+		parameter.addBinding(name, prepareConstantOperand(value, tripleSource.getValueFactory()));
+		return hasStatement(parameter);
 	}
 
 	private DirectLookupKey getDirectLookupKey(Resource subject, IRI predicate, Value object, Resource[] contexts) {

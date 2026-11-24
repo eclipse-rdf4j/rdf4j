@@ -101,6 +101,7 @@ import org.eclipse.rdf4j.query.algebra.evaluation.impl.GraphFrameBindings;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.QueryEvaluationContext;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.evaluationsteps.BatchCorrelatedJoinProvider;
 import org.eclipse.rdf4j.query.algebra.evaluation.util.MathUtil;
+import org.eclipse.rdf4j.query.impl.BlankNodeAllocationScope;
 import org.eclipse.rdf4j.query.impl.EmptyBindingSet;
 import org.eclipse.rdf4j.query.impl.ListBindingSet;
 import org.eclipse.rdf4j.query.parser.sparql.aggregate.AggregateCollector;
@@ -177,6 +178,26 @@ public class GroupIteratorTest {
 	@AfterAll
 	public static void cleanUp() {
 		CustomAggregateFunctionRegistry.getInstance().remove(AGGREGATE_FUNCTION_FACTORY);
+	}
+
+	@Test
+	void ordinaryCountDoesNotReadAllocationScopePerMember() {
+		AtomicInteger accesses = new AtomicInteger();
+		QueryEvaluationContext context = new QueryEvaluationContext.Minimal(
+				VF.createLiteral(Date.from(Instant.now())), null, null) {
+			@Override
+			public BlankNodeAllocationScope getBlankNodeAllocationScope() {
+				accesses.incrementAndGet();
+				return super.getBlankNodeAllocationScope();
+			}
+		};
+		Group group = new Group(NONEMPTY_ASSIGNMENT);
+		group.addGroupElement(new GroupElem("count", new Count(Var.of("a"))));
+		try (var groups = GroupIterator.withMembers(EVALUATOR, group, EmptyBindingSet.getInstance(), context,
+				new CloseableIteratorIteration<>(NONEMPTY_ASSIGNMENT.getBindingSets().iterator()))) {
+			assertThat(((Literal) groups.next().getValue("count")).intValue()).isEqualTo(9);
+			assertThat(accesses.get()).isZero();
+		}
 	}
 
 	@Test

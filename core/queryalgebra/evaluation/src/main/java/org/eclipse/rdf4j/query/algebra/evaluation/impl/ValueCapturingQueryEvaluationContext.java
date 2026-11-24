@@ -29,10 +29,12 @@ import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.query.Binding;
 import org.eclipse.rdf4j.query.BindingSet;
+import org.eclipse.rdf4j.query.BlankNodeEffects;
 import org.eclipse.rdf4j.query.Dataset;
 import org.eclipse.rdf4j.query.MutableBindingSet;
 import org.eclipse.rdf4j.query.algebra.evaluation.ArrayBindingSet.IndexedLayout;
 import org.eclipse.rdf4j.query.algebra.evaluation.OwnedValueCapturer;
+import org.eclipse.rdf4j.query.algebra.evaluation.QueryValueEvaluationStep;
 import org.eclipse.rdf4j.query.impl.BlankNodeAllocationScope;
 import org.eclipse.rdf4j.query.impl.RemoteBNode;
 
@@ -120,6 +122,16 @@ final class ValueCapturingQueryEvaluationContext implements QueryEvaluationConte
 	}
 
 	@Override
+	public boolean allowsDirectVariableReads() {
+		return delegate.allowsDirectVariableReads();
+	}
+
+	@Override
+	public boolean allowsPathStepReuse() {
+		return delegate.allowsPathStepReuse();
+	}
+
+	@Override
 	public BlankNodeAllocationScope getBlankNodeAllocationScope() {
 		return delegate.getBlankNodeAllocationScope();
 	}
@@ -157,6 +169,16 @@ final class ValueCapturingQueryEvaluationContext implements QueryEvaluationConte
 	@Override
 	public Function<BindingSet, Value> getValue(String name) {
 		return delegate.getValue(name);
+	}
+
+	@Override
+	public QueryValueEvaluationStep prepareValueAccessor(String name, ValueFactory factory) {
+		return delegate.prepareValueAccessor(name, factory);
+	}
+
+	@Override
+	public ValueFactory blankNodeValueFactory(ValueFactory factory, BlankNodeEffects effects) {
+		return delegate.blankNodeValueFactory(factory, effects);
 	}
 
 	@Override

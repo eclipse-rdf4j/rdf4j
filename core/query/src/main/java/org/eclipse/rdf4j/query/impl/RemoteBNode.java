@@ -13,26 +13,29 @@
 package org.eclipse.rdf4j.query.impl;
 
 import java.io.Serializable;
-import java.lang.ref.ReferenceQueue;
-import java.lang.ref.WeakReference;
 import java.math.BigInteger;
 import java.util.ArrayDeque;
+import java.util.ArrayList;
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.IdentityHashMap;
 import java.util.Iterator;
+import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
+import java.util.function.Predicate;
 
 import org.eclipse.rdf4j.common.annotation.InternalUseOnly;
 import org.eclipse.rdf4j.model.BNode;
+import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.TripleTerm;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.model.impl.SimpleBNode;
+import org.eclipse.rdf4j.model.impl.SimpleTripleTerm;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.query.AbstractBindingSet;
 import org.eclipse.rdf4j.query.Binding;
@@ -46,21 +49,28 @@ import org.eclipse.rdf4j.query.QueryEvaluationException;
 @InternalUseOnly
 public final class RemoteBNode extends SimpleBNode {
 	private static final long serialVersionUID = 1L;
-	private final transient Registry registry;
+	private final transient Provenance provenance;
 	private final transient Object localOwner;
 
-	private RemoteBNode(String alias, Registry registry, Object localOwner, Provenance provenance) {
+	private RemoteBNode(String alias, Object localOwner, Provenance provenance) {
 		super(alias);
-		this.registry = Objects.requireNonNull(registry);
+		this.provenance = Objects.requireNonNull(provenance);
 		this.localOwner = Objects.requireNonNull(localOwner);
-		registry.register(this, provenance);
 	}
 
-	public record Provenance(Object identityScope, String remoteID, boolean canonicalResultID) {
+	public record Provenance(Object identityScope, String remoteID, boolean canonicalResultID, boolean foreignSource) {
+		public Provenance(Object identityScope, String remoteID, boolean canonicalResultID) {
+			this(identityScope, remoteID, canonicalResultID, false);
+		}
 	}
 
 	public Provenance getProvenance() {
-		return registry == null || localOwner == null ? null : registry.lookup(this);
+		return provenance;
+	}
+
+	/** Whether this alias was admitted by the current execution. */
+	public boolean isAdmittedTo(BlankNodeAllocationScope allocation) {
+		return provenance != null && localOwner == allocation.remoteIdentityOwner();
 	}
 
 	/**
@@ -81,6 +91,115 @@ public final class RemoteBNode extends SimpleBNode {
 						&& firstOrigin.remoteID().equals(secondOrigin.remoteID());
 	}
 
+	/** Whether this kind of blank node carries metadata in addition to its ordinary RDF identity. */
+	public static boolean carriesOrigin(BNode value) {
+		return value instanceof RemoteBNode || value instanceof GeneratedBNode || value instanceof RepositoryBNode;
+	}
+
+	/**
+	 * Exact payload identity is stricter than RDF equality. An unscoped node may compare equal to a wrapper without
+	 * authorizing substitution of the wrapper's origin.
+	 */
+	public static boolean sameOrigin(BNode first, BNode second) {
+		if (first instanceof RemoteBNode || second instanceof RemoteBNode) {
+			return first instanceof RemoteBNode one && second instanceof RemoteBNode two
+					&& one.localOwner == two.localOwner
+					&& (one.provenance == two.provenance
+							|| one.provenance != null && two.provenance != null
+									&& sameProvenance(one.provenance, two.provenance));
+		}
+		if (first instanceof GeneratedBNode || second instanceof GeneratedBNode) {
+			return first instanceof GeneratedBNode one && second instanceof GeneratedBNode two
+					&& one.allocationOwner() == two.allocationOwner();
+		}
+		if (first instanceof RepositoryBNode || second instanceof RepositoryBNode) {
+			return first instanceof RepositoryBNode one && second instanceof RepositoryBNode two
+					&& one.isReference() == two.isReference() && one.getRawID().equals(two.getRawID());
+		}
+		return true;
+	}
+
+	/**
+	 * Handles into one private spill's live origins. The spill carries lexical data, so memory scales with origins
+	 * rather than blank-node cardinality. An ordinary serialized BNode label carries no such handles.
+	 */
+	@InternalUseOnly
+	public static final class CompactSpillScope {
+
+		public enum Kind {
+			GENERATED,
+			REPOSITORY,
+			REMOTE
+		}
+
+		public record Origin(Kind kind, int owner, int source, String rawID, boolean canonical, boolean foreign) {
+		}
+
+		private Map<Object, Integer> handles;
+		private List<Object> origins;
+
+		public synchronized Origin capture(BNode node) {
+			if (node instanceof RemoteBNode remote) {
+				Provenance origin = requireProvenance(remote);
+				return new Origin(Kind.REMOTE, handle(remote.localOwner), handle(origin.identityScope()),
+						origin.remoteID(), origin.canonicalResultID(), origin.foreignSource());
+			}
+			if (node instanceof GeneratedBNode generated) {
+				return new Origin(Kind.GENERATED, handle(generated.allocationOwner()), 0, null, false, false);
+			}
+			if (node instanceof RepositoryBNode repository) {
+				return new Origin(Kind.REPOSITORY, 0, 0, repository.getRawID(), repository.isReference(), false);
+			}
+			throw new IllegalArgumentException("Expected an origin-bearing blank node");
+		}
+
+		public synchronized BNode restore(String alias, Origin origin) {
+			return switch (origin.kind()) {
+			case GENERATED -> new GeneratedBNode(alias, object(origin.owner()));
+			case REPOSITORY -> RepositoryBNode.fromNegotiatedResult(alias, origin.rawID(), origin.canonical());
+			case REMOTE -> {
+				Object owner = object(origin.owner());
+				Object source = object(origin.source());
+				if (owner == null || (origin.canonical() || origin.foreign()) && source == null
+						|| origin.canonical() && origin.foreign()) {
+					throw new QueryEvaluationException("Invalid blank-node spill origin");
+				}
+				yield new RemoteBNode(alias, owner,
+						new Provenance(source, origin.rawID(), origin.canonical(), origin.foreign()));
+			}
+			};
+		}
+
+		private int handle(Object origin) {
+			if (origin == null) {
+				return 0;
+			}
+			if (handles == null) {
+				handles = new IdentityHashMap<>();
+				origins = new ArrayList<>();
+			}
+			return handles.computeIfAbsent(origin, value -> {
+				origins.add(value);
+				return origins.size();
+			});
+		}
+
+		public synchronized void clear() {
+			handles = null;
+			origins = null;
+		}
+
+		private Object object(int handle) {
+			if (handle == 0) {
+				return null;
+			}
+			if (origins == null || handle < 1 || handle > origins.size()) {
+				throw new QueryEvaluationException("Unknown blank-node spill origin");
+			}
+			return origins.get(handle - 1);
+		}
+	}
+
 	/**
 	 * Trusted metadata for one private execution spill. Only actual wrappers can create entries; serialized labels
 	 * never carry identity authority, and an unrelated deserializer cannot reconstruct the provenance.
@@ -90,10 +209,13 @@ public final class RemoteBNode extends SimpleBNode {
 		private final Map<String, SpilledNode> references = new HashMap<>();
 		private final Map<BigInteger, RepositoryBNode> repositoryEntries = new HashMap<>();
 		private final Map<RepositoryKey, SpilledRepositoryNode> repositoryReferences = new HashMap<>();
-		private final Registry registry = new Registry();
+		private final CompactSpillScope generatedOrigins = new CompactSpillScope();
 		private BigInteger next = BigInteger.ZERO;
 
 		public Object replace(Object value) {
+			if (value instanceof GeneratedBNode generated && generated.allocationOwner() != null) {
+				return new SpilledGeneratedNode(generated.getID(), generatedOrigins.capture(generated).owner());
+			}
 			if (value instanceof RepositoryBNode repository) {
 				// Spills serialize the same value again and again; one entry per distinct origin keeps the scope
 				// bounded.
@@ -135,6 +257,10 @@ public final class RemoteBNode extends SimpleBNode {
 		}
 
 		public Object resolve(Object value) {
+			if (value instanceof SpilledGeneratedNode node) {
+				return generatedOrigins.restore(node.alias(), new CompactSpillScope.Origin(
+						CompactSpillScope.Kind.GENERATED, node.owner(), 0, null, false, false));
+			}
 			if (value instanceof SpilledRepositoryNode node) {
 				RepositoryBNode entry = repositoryEntries.get(node.reference());
 				if (entry == null || !entry.getID().equals(node.alias())) {
@@ -149,7 +275,7 @@ public final class RemoteBNode extends SimpleBNode {
 					throw new QueryEvaluationException(
 							"Unsupported blank-node identity: unknown execution spill reference");
 				}
-				return new RemoteBNode(entry.alias(), registry, entry.localOwner(), entry.provenance());
+				return new RemoteBNode(entry.alias(), entry.localOwner(), entry.provenance());
 			}
 			return value;
 		}
@@ -160,6 +286,7 @@ public final class RemoteBNode extends SimpleBNode {
 			references.clear();
 			repositoryEntries.clear();
 			repositoryReferences.clear();
+			generatedOrigins.clear();
 		}
 	}
 
@@ -171,10 +298,14 @@ public final class RemoteBNode extends SimpleBNode {
 
 	private static boolean sameProvenance(Provenance first, Provenance second) {
 		return first.identityScope() == second.identityScope() && first.remoteID().equals(second.remoteID())
-				&& first.canonicalResultID() == second.canonicalResultID();
+				&& first.canonicalResultID() == second.canonicalResultID()
+				&& first.foreignSource() == second.foreignSource();
 	}
 
 	private record SpilledNode(BigInteger reference, String alias) implements Serializable {
+	}
+
+	private record SpilledGeneratedNode(String alias, int owner) implements Serializable {
 	}
 
 	private record SpilledRepositoryNode(BigInteger reference, String alias) implements Serializable {
@@ -182,75 +313,216 @@ public final class RemoteBNode extends SimpleBNode {
 
 	public static ResponseScope newResponseScope(BlankNodeAllocationScope allocation, ValueFactory localFactory,
 			Object identityScope, boolean canonicalResultIDs) {
-		return new ResponseScope(allocation, localFactory, identityScope, canonicalResultIDs);
+		return new ResponseScope(allocation, localFactory, identityScope, canonicalResultIDs, false);
 	}
 
-	/** One response's label map. Canonical cross-response aliases are owned by the executing allocation scope. */
+	/**
+	 * Admits the output of an explicitly declared foreign extension. An explicit token establishes a namespace for raw
+	 * labels within the execution. With no token the extension supplies previously scoped values.
+	 */
+	public static ResponseScope foreignValues(BlankNodeAllocationScope allocation, ValueFactory localFactory,
+			Object scopeToken) {
+		return new ResponseScope(allocation, localFactory, scopeToken, false, true);
+	}
+
+	/** Values admitted at one response or declared extension boundary. */
 	public static final class ResponseScope {
 		private final BlankNodeAllocationScope allocation;
 		private final ValueFactory localFactory;
 		private final Object identityScope;
 		private final boolean canonicalIDs;
-		private final Map<String, BNode> nodes = new HashMap<>();
-		private final Map<Object, Map<String, ImportedNode>> imported = new IdentityHashMap<>();
-		private final Registry registry = new Registry();
+		private final boolean foreign;
+		private Map<String, BNode> nodes;
+		private Map<Object, Map<String, ImportedNode>> imported;
 
 		private ResponseScope(BlankNodeAllocationScope allocation, ValueFactory localFactory, Object identityScope,
-				boolean canonicalResultIDs) {
+				boolean canonicalResultIDs, boolean foreign) {
 			this.allocation = Objects.requireNonNull(allocation);
 			this.localFactory = Objects.requireNonNull(localFactory);
 			this.identityScope = identityScope;
 			canonicalIDs = canonicalResultIDs && identityScope != null;
+			this.foreign = foreign;
 		}
 
 		public void seedOriginalBindings(BindingSet bindings) {
 			allocation.reserve(bindings);
 		}
 
+		/** The parser interns this wire label once per result document. */
+		public BNode admitDecodedLabel(String label, boolean canonical) {
+			return newAlias(label, canonicalIDs && canonical);
+		}
+
+		private RemoteBNode newAlias(String label, boolean canonical) {
+			String alias;
+			if (canonical) {
+				alias = allocation.getOrCreateRemoteAlias(identityScope, label, localFactory);
+			} else if (foreign) {
+				alias = allocation.getOrCreateForeignAlias(identityScope, label, localFactory);
+			} else {
+				alias = allocation.createBNode(localFactory).getID();
+			}
+			return new RemoteBNode(alias, allocation.remoteIdentityOwner(), new Provenance(identityScope, label,
+					canonical, foreign));
+		}
+
 		public Value map(Value value) {
-			if (value instanceof RemoteBNode remote) {
-				Provenance provenance = requireProvenance(remote);
-				if (remote.localOwner == allocation.remoteIdentityOwner()) {
-					return value;
+			return mapTree(value, null);
+		}
+
+		/** Preserves admitted input identities echoed anywhere within a foreign callback result. */
+		public Value mapPreservingInputs(Value value, Iterable<? extends Value> inputs) {
+			if (!(value instanceof BNode || value instanceof TripleTerm)) {
+				return value;
+			}
+			Set<Value> originals = Collections.newSetFromMap(new IdentityHashMap<>());
+			ArrayDeque<Value> pending = new ArrayDeque<>();
+			for (Value input : inputs) {
+				if (input instanceof BNode || input instanceof TripleTerm) {
+					pending.push(input);
 				}
-				// A wrapper from another execution has trusted origin, but no local collision guarantee here.
-				// Trusted copies and private spill restoration preserve the minting owner, not the registry object.
-				Map<String, ImportedNode> origin = imported
-						.computeIfAbsent(remote.localOwner, ignored -> new HashMap<>());
-				ImportedNode previous = origin.get(remote.getID());
-				if (previous != null) {
-					if (!sameProvenance(previous.provenance(), provenance)) {
-						throw new QueryEvaluationException(
-								"Unsupported blank-node identity: conflicting response alias authority");
+				while (!pending.isEmpty()) {
+					Value current = pending.pop();
+					if (current instanceof BNode) {
+						originals.add(current);
+					} else if (current instanceof TripleTerm triple && originals.add(current)) {
+						pending.push(triple.getSubject());
+						pending.push(triple.getObject());
 					}
-					return previous.alias();
-				}
-				String alias = provenance.canonicalResultID()
-						? allocation.getOrCreateRemoteAlias(provenance.identityScope(), provenance.remoteID(),
-								localFactory)
-						: allocation.createBNode(localFactory).getID();
-				RemoteBNode mapped = new RemoteBNode(alias, registry, allocation.remoteIdentityOwner(), provenance);
-				origin.put(remote.getID(), new ImportedNode(mapped, provenance));
-				return mapped;
-			}
-			if (value instanceof BNode node) {
-				return nodes.computeIfAbsent(node.getID(), id -> {
-					String alias = canonicalIDs ? allocation.getOrCreateRemoteAlias(identityScope, id, localFactory)
-							: allocation.createBNode(localFactory).getID();
-					return new RemoteBNode(alias, registry, allocation.remoteIdentityOwner(),
-							new Provenance(identityScope, id, canonicalIDs));
-				});
-			}
-			if (value instanceof TripleTerm triple) {
-				Value subject = map(triple.getSubject());
-				Value object = map(triple.getObject());
-				if (subject != triple.getSubject() || object != triple.getObject()) {
-					return SimpleValueFactory.getInstance()
-							.createTripleTerm((Resource) subject,
-									triple.getPredicate(), object);
 				}
 			}
-			return value;
+			return mapTree(value, originals::contains);
+		}
+
+		/** Uses the caller's identity-based admission proof for echoes from a streaming callback. */
+		public Value mapPreservingInputs(Value value, Predicate<? super Value> admittedInput) {
+			return mapTree(value, admittedInput);
+		}
+
+		private Value mapTree(Value value, Predicate<? super Value> originals) {
+			if (!(value instanceof TripleTerm root) || preserved(value, originals)) {
+				return mapComponent(value, originals);
+			}
+			ArrayDeque<TripleMapping> frames = new ArrayDeque<>();
+			Map<TripleTerm, TripleTerm> mappedTerms = new IdentityHashMap<>();
+			frames.push(new TripleMapping(root));
+			mappedTerms.put(root, null);
+			while (!frames.isEmpty()) {
+				TripleMapping frame = frames.peek();
+				if (frame.nextChild == 2) {
+					mappedTerms.put(frame.triple, frame.result());
+					frames.pop();
+					continue;
+				}
+				Value child = frame.nextChild == 0 ? frame.subject : frame.object;
+				if (child instanceof TripleTerm triple && !preserved(child, originals)) {
+					TripleTerm mapped = mappedTerms.get(triple);
+					if (mapped != null) {
+						frame.accept(mapped);
+					} else {
+						if (mappedTerms.containsKey(triple)) {
+							throw new QueryEvaluationException("Cyclic RDF value cannot be admitted");
+						}
+						mappedTerms.put(triple, null);
+						frames.push(new TripleMapping(triple));
+					}
+				} else {
+					frame.accept(mapComponent(child, originals));
+				}
+			}
+			return mappedTerms.get(root);
+		}
+
+		private static boolean preserved(Value value, Predicate<? super Value> originals) {
+			return originals != null && originals.test(value);
+		}
+
+		private Value mapComponent(Value value, Predicate<? super Value> originals) {
+			if (!(value instanceof BNode node) || preserved(value, originals)) {
+				return value;
+			}
+			if (foreign) {
+				if (node instanceof GeneratedBNode generated && generated.isAdmittedTo(allocation)) {
+					return generated;
+				}
+				synchronized (this) {
+					return mapNode(node);
+				}
+			}
+			return mapNode(node);
+		}
+
+		private BNode mapNode(BNode node) {
+			if (node instanceof RemoteBNode remote) {
+				return importAlias(remote);
+			}
+			if (foreign && identityScope == null) {
+				throw new QueryEvaluationException("Unsupported blank-node identity: foreign result has no scope");
+			}
+			if (nodes == null) {
+				nodes = new HashMap<>();
+			}
+			return nodes.computeIfAbsent(node.getID(), id -> node instanceof RepositoryBNode repository
+					? newAlias(repository.isReference() ? repository.getRawID() : id,
+							canonicalIDs && repository.isReference())
+					: newAlias(id, canonicalIDs));
+		}
+
+		private RemoteBNode importAlias(RemoteBNode remote) {
+			Provenance provenance = requireProvenance(remote);
+			if (remote.isAdmittedTo(allocation)) {
+				return remote;
+			}
+			if (imported == null) {
+				imported = new IdentityHashMap<>();
+			}
+			Map<String, ImportedNode> origin = imported.computeIfAbsent(remote.localOwner, ignored -> new HashMap<>());
+			ImportedNode previous = origin.get(remote.getID());
+			if (previous != null) {
+				if (!sameProvenance(previous.provenance(), provenance)) {
+					throw new QueryEvaluationException(
+							"Unsupported blank-node identity: conflicting response alias authority");
+				}
+				return previous.alias();
+			}
+			String alias;
+			if (provenance.canonicalResultID()) {
+				alias = allocation.getOrCreateRemoteAlias(provenance.identityScope(), provenance.remoteID(),
+						localFactory);
+			} else if (provenance.foreignSource()) {
+				alias = allocation.getOrCreateForeignAlias(provenance.identityScope(), provenance.remoteID(),
+						localFactory);
+			} else if (foreign) {
+				alias = allocation.getOrCreateForeignAlias(remote.localOwner, remote.getID(), localFactory);
+			} else {
+				alias = allocation.createBNode(localFactory).getID();
+			}
+			RemoteBNode mapped = new RemoteBNode(alias, allocation.remoteIdentityOwner(), provenance);
+			origin.put(remote.getID(), new ImportedNode(mapped, provenance));
+			return mapped;
+		}
+
+		/** Ordinarily decoded rows already contain their execution-owned values. */
+		public BindingSet reconcile(BindingSet row, BindingSet originalBindings) {
+			if (!canonicalIDs || originalBindings == null) {
+				return row;
+			}
+			return BindingSetSnapshots.mapValues(row, originalBindings.getBindingNames(), (name, value) -> {
+				Value original = originalBindings.getValue(name);
+				return original != null && original != value && corresponds(original, value) ? original : value;
+			});
+		}
+
+		public boolean mayContainCanonicalEcho(BindingSet originals) {
+			if (!canonicalIDs || originals == null) {
+				return false;
+			}
+			for (Binding binding : originals) {
+				if (containsRemoteIdentity(binding.getValue())) {
+					return true;
+				}
+			}
+			return false;
 		}
 
 		public BindingSet map(BindingSet row, BindingSet originalBindings) {
@@ -279,7 +551,9 @@ public final class RemoteBNode extends SimpleBNode {
 							&& sameProvenance(provenance, rawProvenance);
 				}
 				return provenance.canonicalResultID() && provenance.identityScope() == identityScope
-						&& provenance.remoteID().equals(node.getID());
+						&& (node instanceof RepositoryBNode repository
+								? repository.isReference() && provenance.remoteID().equals(repository.getRawID())
+								: provenance.remoteID().equals(node.getID()));
 			}
 			if (original instanceof TripleTerm first && raw instanceof TripleTerm second) {
 				return first.getPredicate().equals(second.getPredicate())
@@ -292,6 +566,49 @@ public final class RemoteBNode extends SimpleBNode {
 		private boolean componentCorresponds(Value first, Value second) {
 			return first instanceof BNode || first instanceof TripleTerm ? corresponds(first, second)
 					: first.equals(second);
+		}
+	}
+
+	private static final class TripleMapping {
+		private final TripleTerm triple;
+		private final Resource subject;
+		private final Value object;
+		private Resource mappedSubject;
+		private Value mappedObject;
+		private int nextChild;
+
+		private TripleMapping(TripleTerm triple) {
+			this.triple = triple;
+			subject = triple.getSubject();
+			object = triple.getObject();
+		}
+
+		private void accept(Value mapped) {
+			if (nextChild++ == 0) {
+				mappedSubject = (Resource) mapped;
+			} else {
+				mappedObject = mapped;
+			}
+		}
+
+		private TripleTerm result() {
+			return subject == mappedSubject && object == mappedObject ? triple
+					: copyTriple(triple, mappedSubject,
+							triple.getPredicate(), mappedObject);
+		}
+	}
+
+	/** A compatibility term can also be a Resource, in which case equivalent copies retain that role. */
+	public static TripleTerm copyTriple(TripleTerm original, Resource subject, IRI predicate, Value object) {
+		return original instanceof Resource ? new ResourceTriple(subject, predicate, object)
+				: SimpleValueFactory.getInstance().createTripleTerm(subject, predicate, object);
+	}
+
+	private static final class ResourceTriple extends SimpleTripleTerm implements Resource {
+		private static final long serialVersionUID = 1L;
+
+		private ResourceTriple(Resource subject, IRI predicate, Value object) {
+			super(subject, predicate, object);
 		}
 	}
 
@@ -423,9 +740,7 @@ public final class RemoteBNode extends SimpleBNode {
 			Value subject = toRemoteValue(triple.getSubject(), receivingScope, referenceSupport, canonicalIDs);
 			Value object = toRemoteValue(triple.getObject(), receivingScope, referenceSupport, canonicalIDs);
 			if (subject != triple.getSubject() || object != triple.getObject()) {
-				return SimpleValueFactory.getInstance()
-						.createTripleTerm((Resource) subject,
-								triple.getPredicate(), object);
+				return copyTriple(triple, (Resource) subject, triple.getPredicate(), object);
 			}
 		}
 		return value;
@@ -466,11 +781,11 @@ public final class RemoteBNode extends SimpleBNode {
 			throw new QueryEvaluationException(
 					"Unsupported blank-node identity: remote provenance is no longer available");
 		}
-		if (captured == remote || captured instanceof RemoteBNode copy && copy.registry == remote.registry
-				&& copy.localOwner == remote.localOwner && copy.getProvenance() == provenance) {
+		if (captured == remote || captured instanceof RemoteBNode copy && copy.localOwner == remote.localOwner
+				&& copy.getProvenance() == provenance) {
 			return captured;
 		}
-		return new RemoteBNode(((BNode) captured).getID(), remote.registry, remote.localOwner, provenance);
+		return new RemoteBNode(((BNode) captured).getID(), remote.localOwner, provenance);
 	}
 
 	/** Preserves nested aliases without recursive calls or a second materialized copy of unchanged triples. */
@@ -556,9 +871,10 @@ public final class RemoteBNode extends SimpleBNode {
 
 			Value preserved = frame.preservedSubject != frame.capturedSubject
 					|| frame.preservedObject != frame.capturedObject
-							? SimpleValueFactory.getInstance()
-									.createTripleTerm((Resource) frame.preservedSubject,
-											capturedTriple.getPredicate(), frame.preservedObject)
+					|| originalTriple instanceof Resource && !(capturedTriple instanceof Resource)
+							? copyTriple(originalTriple, (Resource) frame.preservedSubject,
+									capturedTriple.getPredicate(),
+									frame.preservedObject)
 							: frame.captured;
 			completed.put(frame.key, preserved);
 			pending.pop();
@@ -646,44 +962,4 @@ public final class RemoteBNode extends SimpleBNode {
 		return false;
 	}
 
-	private static final class Registry {
-		private final ReferenceQueue<RemoteBNode> expired = new ReferenceQueue<>();
-		private final Map<Key, Provenance> values = new HashMap<>();
-
-		private void collect() {
-			Key key;
-			while ((key = (Key) expired.poll()) != null) {
-				values.remove(key);
-			}
-		}
-
-		synchronized void register(RemoteBNode value, Provenance provenance) {
-			collect();
-			values.put(new Key(value, expired), provenance);
-		}
-
-		synchronized Provenance lookup(RemoteBNode value) {
-			collect();
-			return values.get(new Key(value, null));
-		}
-	}
-
-	private static final class Key extends WeakReference<RemoteBNode> {
-		private final int hash;
-
-		Key(RemoteBNode value, ReferenceQueue<RemoteBNode> queue) {
-			super(value, queue);
-			hash = System.identityHashCode(value);
-		}
-
-		@Override
-		public int hashCode() {
-			return hash;
-		}
-
-		@Override
-		public boolean equals(Object other) {
-			return this == other || other instanceof Key && get() != null && get() == ((Key) other).get();
-		}
-	}
 }

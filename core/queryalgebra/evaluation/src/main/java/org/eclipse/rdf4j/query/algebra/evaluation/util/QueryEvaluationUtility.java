@@ -38,6 +38,7 @@ import org.eclipse.rdf4j.model.base.CoreDatatype;
 import org.eclipse.rdf4j.model.datatypes.XMLDatatypeUtil;
 import org.eclipse.rdf4j.model.impl.BooleanLiteral;
 import org.eclipse.rdf4j.model.util.Literals;
+import org.eclipse.rdf4j.query.BlankNodeEffects;
 import org.eclipse.rdf4j.query.QueryExecutionPolicy;
 import org.eclipse.rdf4j.query.algebra.AggregateFunctionCall;
 import org.eclipse.rdf4j.query.algebra.ArbitraryLengthPath;
@@ -212,6 +213,7 @@ public class QueryEvaluationUtility {
 		private final QueryModelPreparation valuesPreparation;
 		private final QueryExecutionPolicy policy;
 		private QuerySafetySnapshot snapshot;
+		private Map<Function, BlankNodeEffects> functionEffects;
 
 		private SafetyPhase(QueryModelPreparation valuesPreparation, QueryExecutionPolicy policy,
 				QuerySafetySnapshot snapshot) {
@@ -248,6 +250,18 @@ public class QueryEvaluationUtility {
 	@Experimental
 	public static boolean isRepeatable(QueryModelNode node) {
 		return snapshotFor(node).isRepeatable(node);
+	}
+
+	/** Whether preparing a detached evaluator still requires resolving scalar extension slots. */
+	public static boolean hasUnpinnedFunctions(QueryModelNode node) {
+		QuerySafetySnapshot snapshot = snapshotFor(node);
+		return snapshot.summaries.get(snapshot.ensureNode(node)).hasUnpinnedFunctions;
+	}
+
+	/** Whether an implementation captured for this operand needs the generic evaluator's blank-node adapters. */
+	public static boolean hasScopedExtensionFunctions(QueryModelNode node) {
+		QuerySafetySnapshot snapshot = snapshotFor(node);
+		return snapshot.summaries.get(snapshot.ensureNode(node)).hasScopedExtensionFunctions;
 	}
 
 	/**
@@ -425,18 +439,28 @@ public class QueryEvaluationUtility {
 	 * function instance (or its absence), so later registry replacement cannot invalidate optimizer decisions.
 	 */
 	@Experimental
-	@SuppressWarnings("unchecked")
 	public static <T extends QueryModelNode> T pinFunctions(T node) {
+		return pinFunctions(node, false);
+	}
+
+	/** Freezes every registry slot, including absent and volatile implementations, on an owned evaluator tree. */
+	public static <T extends QueryModelNode> T pinPreparedFunctions(T node) {
+		return pinFunctions(node, true);
+	}
+
+	@SuppressWarnings("unchecked")
+	private static <T extends QueryModelNode> T pinFunctions(T node, boolean captureAll) {
 		FunctionRegistry registry = FunctionRegistry.getInstance();
 		synchronized (registry) {
-			FunctionPinningVisitor visitor = new FunctionPinningVisitor(registry);
+			FunctionPinningVisitor visitor = new FunctionPinningVisitor(registry, captureAll);
 			if (node instanceof FunctionCall && !(node instanceof PinnedFunctionCall)) {
 				Function function = registry.get(((FunctionCall) node).getURI()).orElse(null);
-				if (function == null || !isRepeatable(function)) {
+				BlankNodeEffects effects = functionEffects(null, function);
+				if (!captureAll && (function == null || !shouldPin(function, effects))) {
 					node.visit(visitor);
 					return node;
 				}
-				PinnedFunctionCall pinned = new PinnedFunctionCall((FunctionCall) node, function);
+				PinnedFunctionCall pinned = new PinnedFunctionCall((FunctionCall) node, function, effects);
 				if (node.getParentNode() != null) {
 					node.replaceWith(pinned);
 				}
@@ -467,6 +491,28 @@ public class QueryEvaluationUtility {
 		return FunctionRegistry.getInstance().get(node.getURI());
 	}
 
+	/** The declaration and the implementation used for preparation must come from the same registry lookup. */
+	public static BlankNodeEffects functionEffects(FunctionCall call, Function function) {
+		if (call instanceof PinnedFunctionCall pinned && pinned.function == function && pinned.effects != null) {
+			return pinned.effects;
+		}
+		if (!(function instanceof BlankNodeEffects.Provider)) {
+			return BlankNodeEffects.NONE;
+		}
+		SafetyPhase phase = ACTIVE_SAFETY_PHASE.get();
+		if (phase == null) {
+			return BlankNodeEffects.of(function);
+		}
+		if (phase.functionEffects == null) {
+			phase.functionEffects = new IdentityHashMap<>();
+		}
+		return phase.functionEffects.computeIfAbsent(function, BlankNodeEffects::of);
+	}
+
+	private static boolean shouldPin(Function function, BlankNodeEffects effects) {
+		return function instanceof BlankNodeEffects.Provider || isRepeatable(function, activePolicy(), effects);
+	}
+
 	/**
 	 * Returns whether a resolved function implementation is stable within one query execution: equal argument tuples
 	 * produce equal RDF terms or equivalent errors, so the optimizer may collapse equal expressions and re-evaluate
@@ -488,7 +534,11 @@ public class QueryEvaluationUtility {
 	 */
 	@Experimental
 	public static boolean isRepeatable(Function function, QueryExecutionPolicy policy) {
-		if (function.mustReturnDifferentResult()) {
+		return isRepeatable(function, policy, functionEffects(null, function));
+	}
+
+	private static boolean isRepeatable(Function function, QueryExecutionPolicy policy, BlankNodeEffects effects) {
+		if (!effects.isEmpty() || function.mustReturnDifferentResult()) {
 			return false;
 		}
 		return isQueryStable(function) || DETERMINISTIC_FUNCTION_CLASSES.contains(function.getClass())
@@ -513,7 +563,12 @@ public class QueryEvaluationUtility {
 	 */
 	@Experimental
 	public static boolean isSafeForPlanConstantFolding(Function function, QueryExecutionPolicy policy) {
-		if (function.mustReturnDifferentResult() || isQueryStable(function)) {
+		return isSafeForPlanConstantFolding(function, policy, functionEffects(null, function));
+	}
+
+	public static boolean isSafeForPlanConstantFolding(Function function, QueryExecutionPolicy policy,
+			BlankNodeEffects effects) {
+		if (!effects.isEmpty() || function.mustReturnDifferentResult() || isQueryStable(function)) {
 			return false;
 		}
 		return DETERMINISTIC_FUNCTION_CLASSES.contains(function.getClass())
@@ -767,7 +822,7 @@ public class QueryEvaluationUtility {
 
 		private NodeSafetySummary summarize(QueryModelNode node, List<QueryModelNode> children) {
 			boolean repeatable = !(node instanceof BNodeGenerator || node instanceof AggregateFunctionCall
-					|| node instanceof Sample || node instanceof Service);
+					|| node instanceof Sample || node instanceof Service || node instanceof TupleFunctionCall);
 			boolean fatal = node instanceof Service service && !service.isSilent();
 			boolean mappingParameterized = node instanceof ZeroLengthPath || node instanceof ArbitraryLengthPath
 					|| node instanceof Service || node instanceof Lateral || node instanceof TripleRef
@@ -775,6 +830,8 @@ public class QueryEvaluationUtility {
 					|| unknownNodes.contains(node);
 			boolean containsLateral = node instanceof Lateral;
 			boolean containsExtension = node instanceof Extension;
+			boolean hasUnpinnedFunctions = node instanceof FunctionCall && !(node instanceof PinnedFunctionCall);
+			boolean hasScopedExtensionFunctions = false;
 			NodeSafetySummary[] capturedChildren = children.isEmpty() ? NO_CHILDREN
 					: new NodeSafetySummary[children.size()];
 
@@ -789,6 +846,10 @@ public class QueryEvaluationUtility {
 				mappingParameterized |= childSummary.mappingParameterized;
 				containsLateral |= childSummary.containsLateral;
 				containsExtension |= childSummary.containsExtension;
+				if (!(node instanceof Service)) {
+					hasUnpinnedFunctions |= childSummary.hasUnpinnedFunctions;
+					hasScopedExtensionFunctions |= childSummary.hasScopedExtensionFunctions;
+				}
 			}
 
 			if (node instanceof FunctionCall functionCall) {
@@ -799,7 +860,9 @@ public class QueryEvaluationUtility {
 						|| !policy.experimentalQueryOptimizations()
 								? resolveFunction(functionCall).orElse(null)
 								: null;
-				repeatable &= function != null && QueryEvaluationUtility.isRepeatable(function, policy);
+				BlankNodeEffects effects = functionEffects(functionCall, function);
+				hasScopedExtensionFunctions |= functionCall instanceof PinnedFunctionCall && !effects.isEmpty();
+				repeatable &= function != null && QueryEvaluationUtility.isRepeatable(function, policy, effects);
 			}
 			if (node instanceof TupleExpr && unknownNodes.contains(node)) {
 				repeatable = false;
@@ -807,7 +870,8 @@ public class QueryEvaluationUtility {
 			}
 
 			return new NodeSafetySummary(repeatable, fatal, mappingParameterized, containsLateral,
-					containsExtension, isBindingInjectionShape(node, capturedChildren),
+					containsExtension, hasUnpinnedFunctions, hasScopedExtensionFunctions,
+					isBindingInjectionShape(node, capturedChildren),
 					captureNameInputs(node, capturedChildren));
 		}
 
@@ -1402,17 +1466,22 @@ public class QueryEvaluationUtility {
 		private final boolean mappingParameterized;
 		private final boolean containsLateral;
 		private final boolean containsExtension;
+		private final boolean hasUnpinnedFunctions;
+		private final boolean hasScopedExtensionFunctions;
 		private final boolean injectionShapeSafe;
 		private final NameFactInputs nameInputs;
 
 		private NodeSafetySummary(boolean repeatable, boolean mayRaiseQueryFatalError,
 				boolean mappingParameterized, boolean containsLateral, boolean containsExtension,
+				boolean hasUnpinnedFunctions, boolean hasScopedExtensionFunctions,
 				boolean injectionShapeSafe, NameFactInputs nameInputs) {
 			this.repeatable = repeatable;
 			this.mayRaiseQueryFatalError = mayRaiseQueryFatalError;
 			this.mappingParameterized = mappingParameterized;
 			this.containsLateral = containsLateral;
 			this.containsExtension = containsExtension;
+			this.hasUnpinnedFunctions = hasUnpinnedFunctions;
+			this.hasScopedExtensionFunctions = hasScopedExtensionFunctions;
 			this.injectionShapeSafe = injectionShapeSafe;
 			this.nameInputs = nameInputs;
 		}
@@ -1430,6 +1499,8 @@ public class QueryEvaluationUtility {
 					&& mappingParameterized == summary.mappingParameterized
 					&& containsLateral == summary.containsLateral
 					&& containsExtension == summary.containsExtension
+					&& hasUnpinnedFunctions == summary.hasUnpinnedFunctions
+					&& hasScopedExtensionFunctions == summary.hasScopedExtensionFunctions
 					&& injectionShapeSafe == summary.injectionShapeSafe
 					&& nameInputs.sameInputs(summary.nameInputs);
 		}
@@ -1437,17 +1508,20 @@ public class QueryEvaluationUtility {
 		@Override
 		public int hashCode() {
 			return Objects.hash(repeatable, mayRaiseQueryFatalError, mappingParameterized, containsLateral,
-					containsExtension, injectionShapeSafe, nameInputs.inputHashCode());
+					containsExtension, hasUnpinnedFunctions, hasScopedExtensionFunctions, injectionShapeSafe,
+					nameInputs.inputHashCode());
 		}
 	}
 
 	private static final class FunctionPinningVisitor extends AbstractSimpleQueryModelVisitor<RuntimeException> {
 
 		private final FunctionRegistry registry;
+		private final boolean captureAll;
 
-		private FunctionPinningVisitor(FunctionRegistry registry) {
+		private FunctionPinningVisitor(FunctionRegistry registry, boolean captureAll) {
 			super(false);
 			this.registry = registry;
+			this.captureAll = captureAll;
 		}
 
 		@Override
@@ -1457,11 +1531,12 @@ public class QueryEvaluationUtility {
 				return;
 			}
 			Function function = registry.get(node.getURI()).orElse(null);
-			if (function == null || !isRepeatable(function)) {
+			BlankNodeEffects effects = functionEffects(null, function);
+			if (!captureAll && (function == null || !shouldPin(function, effects))) {
 				super.meet(node);
 				return;
 			}
-			PinnedFunctionCall pinned = new PinnedFunctionCall(node, function);
+			PinnedFunctionCall pinned = new PinnedFunctionCall(node, function, effects);
 			node.replaceWith(pinned);
 			super.meet(pinned);
 		}
@@ -1470,12 +1545,14 @@ public class QueryEvaluationUtility {
 	private static final class PinnedFunctionCall extends FunctionCall {
 
 		private transient volatile Function function;
+		private final transient BlankNodeEffects effects;
 		private final Class<?> functionClass;
 
-		private PinnedFunctionCall(FunctionCall source, Function function) {
+		private PinnedFunctionCall(FunctionCall source, Function function, BlankNodeEffects effects) {
 			super(source.getURI(), cloneArguments(source));
 			this.function = function;
-			this.functionClass = function.getClass();
+			this.effects = effects;
+			this.functionClass = function == null ? null : function.getClass();
 			setVariableScopeChange(source.isVariableScopeChange());
 		}
 

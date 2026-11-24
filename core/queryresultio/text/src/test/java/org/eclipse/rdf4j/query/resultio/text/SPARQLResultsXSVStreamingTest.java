@@ -13,6 +13,8 @@ package org.eclipse.rdf4j.query.resultio.text;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNotEquals;
+import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -28,10 +30,16 @@ import java.util.concurrent.atomic.AtomicReference;
 
 import org.eclipse.rdf4j.model.BNode;
 import org.eclipse.rdf4j.model.Literal;
+import org.eclipse.rdf4j.model.TripleTerm;
+import org.eclipse.rdf4j.model.Value;
+import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.TupleQueryResultHandlerException;
+import org.eclipse.rdf4j.query.impl.BlankNodeAllocationScope;
+import org.eclipse.rdf4j.query.impl.RemoteBNode;
 import org.eclipse.rdf4j.query.resultio.QueryResultParseException;
 import org.eclipse.rdf4j.query.resultio.TupleQueryResultParser;
+import org.eclipse.rdf4j.query.resultio.TupleResultValueFactory;
 import org.eclipse.rdf4j.query.resultio.helpers.QueryResultCollector;
 import org.eclipse.rdf4j.query.resultio.text.csv.SPARQLResultsCSVParser;
 import org.eclipse.rdf4j.query.resultio.text.tsv.SPARQLResultsTSVParser;
@@ -117,6 +125,38 @@ class SPARQLResultsXSVStreamingTest {
 	@Test
 	void tsvStreamsLargeGeneratedInputWithoutCollectingRows() throws Exception {
 		assertStreamsLargeGeneratedInput(new SPARQLResultsTSVParser(), "?x\n", "<http://example.org/row>\n");
+	}
+
+	@Test
+	void csvAdmitsWireLabelsAcrossRowsAndNestedComponents() throws Exception {
+		assertWireLabelAdmission(true);
+	}
+
+	@Test
+	void tsvAdmitsWireLabelsAcrossRowsAndNestedComponents() throws Exception {
+		assertWireLabelAdmission(false);
+	}
+
+	private static void assertWireLabelAdmission(boolean csv) throws Exception {
+		var vf = SimpleValueFactory.getInstance();
+		var allocation = new BlankNodeAllocationScope();
+		String predicate = csv ? "urn:p" : "<urn:p>";
+		String header = csv ? "x" : "?x";
+		String row = "<<( _:node " + predicate + " <<( _:node " + predicate + " _:node )>> )>>";
+		String wire = header + "\n" + row + "\n_:node\n";
+		Value first = null;
+		for (int doc = 0; doc < 2; doc++) {
+			TupleQueryResultParser parser = csv ? new SPARQLResultsCSVParser() : new SPARQLResultsTSVParser();
+			var response = RemoteBNode.newResponseScope(allocation, vf, null, false);
+			parser.setValueFactory(new TupleResultValueFactory(vf, id -> response.admitDecodedLabel(id, true), true));
+			List<BindingSet> rows = parse(parser, wire).getBindingSets();
+			var triple = (TripleTerm) rows.get(0).getValue("x");
+			Value node = rows.get(1).getValue("x");
+			assertSame(node, triple.getSubject());
+			assertSame(node, ((TripleTerm) triple.getObject()).getObject());
+			assertNotEquals(first, node);
+			first = node;
+		}
 	}
 
 	private static QueryResultCollector parse(TupleQueryResultParser parser, String input) throws Exception {

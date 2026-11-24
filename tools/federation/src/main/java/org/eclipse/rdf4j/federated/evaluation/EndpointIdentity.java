@@ -24,6 +24,7 @@ import org.eclipse.rdf4j.common.iteration.ConvertingIteration;
 import org.eclipse.rdf4j.federated.endpoint.Endpoint;
 import org.eclipse.rdf4j.federated.endpoint.EndpointConfiguration;
 import org.eclipse.rdf4j.federated.structures.QueryInfo;
+import org.eclipse.rdf4j.http.client.query.TupleResultEvaluation;
 import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.Statement;
 import org.eclipse.rdf4j.model.TripleTerm;
@@ -33,6 +34,7 @@ import org.eclipse.rdf4j.query.Binding;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.Dataset;
 import org.eclipse.rdf4j.query.QueryEvaluationException;
+import org.eclipse.rdf4j.query.TupleQuery;
 import org.eclipse.rdf4j.query.TupleQueryResultHandler;
 import org.eclipse.rdf4j.query.algebra.BindingSetAssignment;
 import org.eclipse.rdf4j.query.algebra.Service;
@@ -228,34 +230,14 @@ public final class EndpointIdentity {
 		};
 	}
 
-	public TupleQueryResultHandler handler(TupleQueryResultHandler target, BindingSet originals) {
+	public CloseableIteration<BindingSet> evaluate(TupleQuery query, BindingSet originals) {
 		response.seedOriginalBindings(originals);
-		return new TupleQueryResultHandler() {
-			@Override
-			public void startQueryResult(List<String> names) {
-				target.startQueryResult(names);
-			}
+		return TupleResultEvaluation.evaluate(query, response, originals);
+	}
 
-			@Override
-			public void endQueryResult() {
-				target.endQueryResult();
-			}
-
-			@Override
-			public void handleSolution(BindingSet row) {
-				target.handleSolution(incoming(row, originals));
-			}
-
-			@Override
-			public void handleLinks(List<String> links) {
-				target.handleLinks(links);
-			}
-
-			@Override
-			public void handleBoolean(boolean value) {
-				target.handleBoolean(value);
-			}
-		};
+	public void evaluate(TupleQuery query, TupleQueryResultHandler handler, BindingSet originals) {
+		response.seedOriginalBindings(originals);
+		TupleResultEvaluation.evaluate(query, handler, response, originals);
 	}
 
 	public CloseableIteration<Statement> statements(CloseableIteration<Statement> statements, Resource subject,
