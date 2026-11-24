@@ -17,22 +17,29 @@ import java.util.Optional;
 import org.eclipse.rdf4j.common.annotation.Experimental;
 import org.eclipse.rdf4j.common.annotation.InternalUseOnly;
 import org.eclipse.rdf4j.common.order.StatementOrder;
+import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.query.Dataset;
+import org.eclipse.rdf4j.query.algebra.ArbitraryLengthPath;
 import org.eclipse.rdf4j.query.algebra.Distinct;
+import org.eclipse.rdf4j.query.algebra.Filter;
 import org.eclipse.rdf4j.query.algebra.Group;
 import org.eclipse.rdf4j.query.algebra.LeftJoin;
 import org.eclipse.rdf4j.query.algebra.Projection;
 import org.eclipse.rdf4j.query.algebra.ProjectionElem;
 import org.eclipse.rdf4j.query.algebra.QueryRoot;
+import org.eclipse.rdf4j.query.algebra.SameTerm;
 import org.eclipse.rdf4j.query.algebra.StatementPattern;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.algebra.Var;
+import org.eclipse.rdf4j.query.algebra.ZeroLengthPath;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryEvaluationStep;
 import org.eclipse.rdf4j.query.algebra.evaluation.TripleSource;
 import org.eclipse.rdf4j.query.algebra.evaluation.federation.FederatedServiceResolver;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.DefaultEvaluationStrategy;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.EvaluationStatistics;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.QueryEvaluationContext;
+import org.eclipse.rdf4j.query.algebra.helpers.FilterBindingScope;
+import org.eclipse.rdf4j.query.impl.EmptyBindingSet;
 import org.eclipse.rdf4j.sail.base.SailDatasetTripleTermSource;
 import org.eclipse.rdf4j.sail.lmdb.LmdbSailStore.LmdbSailDataset;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbIndexedDistinct;
@@ -73,6 +80,54 @@ final class LmdbEvaluationStrategy extends DefaultEvaluationStrategy {
 				&& tripleSource instanceof SailDatasetTripleTermSource source && source.hasStableStatementRelation()
 						? statementSource.stableGraphRestrictionValidator()
 						: null;
+	}
+
+	@Override
+	protected QueryEvaluationStep prepare(Filter filter, QueryEvaluationContext context) {
+		QueryEvaluationStep generic = super.prepare(filter, context);
+		if (statementSource == null || tripleSource.getClass() != SailDatasetTripleTermSource.class
+				|| filter.getClass() != Filter.class || !(filter.getCondition() instanceof SameTerm eq)
+				|| eq.getClass() != SameTerm.class || !(filter.getArg() instanceof ArbitraryLengthPath path)
+				|| path.getClass() != ArbitraryLengthPath.class || path.getMinLength() != 0
+				|| path.getScope() != StatementPattern.Scope.DEFAULT_CONTEXTS || path.getContextVar() != null
+				|| context.getActiveGraph() != null || filter.isVariableScopeChange() || path.isVariableScopeChange()
+				|| filter.isRuntimeTelemetryEnabled() || path.isRuntimeTelemetryEnabled()
+				|| filter.isExecutionSummaryEnabled() || path.isExecutionSummaryEnabled() || isTrackResultSize()
+				|| isTrackTime()
+				|| !(filter.getParentNode() instanceof Projection proj) || proj.getClass() != Projection.class
+				|| !(proj.getParentNode() instanceof QueryRoot) || proj.getProjectionContext() != null
+				|| proj.getInheritedGraphParameter() != null
+				|| !(path.getPathExpression() instanceof StatementPattern edge)
+				|| edge.getClass() != StatementPattern.class || edge.getScope() != path.getScope()
+				|| edge.getContextVar() != null || edge.isVariableScopeChange() || edge.isRuntimeTelemetryEnabled()
+				|| eq.isRuntimeTelemetryEnabled() || eq.isExecutionSummaryEnabled()
+				|| edge.isExecutionSummaryEnabled()) {
+			return generic;
+		}
+		Var s = path.getSubjectVar(), o = path.getObjectVar(), p = edge.getPredicateVar();
+		if (!simpleUnboundEndpoint(s) || !simpleUnboundEndpoint(o) || s.getName().equals(o.getName())
+				|| p.getClass() != Var.class || !p.isConstant() || p.hasApiInputOrigin()
+				|| !(p.getValue() instanceof IRI)
+				|| s.getName().equals(p.getName()) || o.getName().equals(p.getName())
+				|| !simpleUnboundEndpoint(edge.getSubjectVar()) || !simpleUnboundEndpoint(edge.getObjectVar())
+				|| !(s.equals(edge.getSubjectVar()) && o.equals(edge.getObjectVar())
+						|| o.equals(edge.getSubjectVar()) && s.equals(edge.getObjectVar()))
+				|| !(eq.getLeftArg() instanceof Var left && simpleUnboundEndpoint(left)
+						&& eq.getRightArg() instanceof Var right && simpleUnboundEndpoint(right)
+						&& (s.equals(left) && o.equals(right) || o.equals(left) && s.equals(right)))
+				|| !FilterBindingScope.allowsAllConditionBindings(filter)) {
+			return generic;
+		}
+		// sameTerm accepts only (v, v). The zero-step arm of p* already emits every such pair once.
+		// Retain the complete prepared step for caller-supplied rows and its scope semantics.
+		ZeroLengthPath zero = new ZeroLengthPath(path.getScope(), s.clone(), o.clone(), null);
+		QueryEvaluationStep identity = super.prepare(zero, context);
+		return input -> input == EmptyBindingSet.getInstance() ? identity.evaluate(input) : generic.evaluate(input);
+	}
+
+	private static boolean simpleUnboundEndpoint(Var var) {
+		return var.getClass() == Var.class && !var.hasValue() && !var.isBNode() && !var.isConstant()
+				&& !var.isVariableScopeChange() && var.getGraphContextDepth() == 0 && var.getName() != null;
 	}
 
 	@Override
