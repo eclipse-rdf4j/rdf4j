@@ -91,11 +91,13 @@ class LmdbEvaluationStrategyTest extends EvaluationStrategyTest {
 		try (var closeStore = LmdbTestUtil.onClose(store::shutDown);
 				var dataset = store.getBackingStore().getExplicitSailSource().dataset(IsolationLevels.SNAPSHOT_READ)) {
 			var standard = new SailDatasetTripleTermSource(store.getValueFactory(), dataset);
-			var standardStrategy = new LmdbEvaluationStrategy(standard, null, null, 0, new EvaluationStatistics(), false);
+			var standardStrategy = new LmdbEvaluationStrategy(standard, null, null, 0, new EvaluationStatistics(),
+					false);
 			assertNotNull(standardStrategy.fixedGraphBodyReuseValidator());
 			var wrapped = new SailDatasetTripleTermSource(store.getValueFactory(), new DelegatingSailDataset(dataset) {
 				@Override
-				public CloseableIteration<? extends Statement> getStatements(Resource subject, IRI predicate, Value object,
+				public CloseableIteration<? extends Statement> getStatements(Resource subject, IRI predicate,
+						Value object,
 						Resource... contexts) {
 					return new EmptyIteration<>();
 				}
