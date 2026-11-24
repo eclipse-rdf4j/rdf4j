@@ -357,7 +357,12 @@ public class Var extends AbstractQueryModelNode implements ValueExpr {
 
 	@Override
 	public Var clone() {
-		Var var = Holder.PROVIDER.cloneVar(this).intrinsicCopy();
+		Provider provider = Holder.PROVIDER;
+		Var var = provider.cloneVar(this);
+		// The built-in constructor always returns a fresh occurrence. An extension may return a shared one.
+		if (provider != Holder.DEFAULT) {
+			var = var.intrinsicCopy();
+		}
 		var.setVariableScopeChange(this.isVariableScopeChange());
 		var.graphContextDepth = graphContextDepth;
 		var.legacyGraphContext = legacyGraphContext;
