@@ -2420,6 +2420,9 @@ public class LmdbStoreConnection extends SailSourceConnection implements SailRes
 					return;
 				}
 			} else {
+				if (pendingResultReplays.isEmpty()) {
+					return;
+				}
 				resultReplays = pendingResultReplays.stream()
 						.filter(iteration -> !iteration.isClosed() && !iteration.attemptFinished
 								&& iteration.growthToken != null
