@@ -522,6 +522,7 @@ public class ArrayBindingSet extends AbstractBindingSet implements MutableBindin
 	public static final class ResultSnapshotLayout {
 		private final String[] names;
 		private final MapBindingSet.CompactLayout layout;
+		private volatile Value[] previousSnapshot;
 
 		public ResultSnapshotLayout(ArrayBindingSet row) {
 			names = row.bindingNames;
@@ -543,15 +544,38 @@ public class ArrayBindingSet extends AbstractBindingSet implements MutableBindin
 			if (layout == null || !matches(row) || row.getClass() != ArrayBindingSet.class) {
 				return null;
 			}
-			Value[] copy = new Value[names.length];
+			Value[] previous = previousSnapshot;
+			int slot = 0;
 			int count = 0;
-			for (int slot = 0; slot < copy.length; slot++) {
+			if (previous != null) {
+				// The compact rows own their mutations and never write into this array. Compare references
+				// to preserve the exact values, including equal values with different native capabilities.
+				for (; slot < names.length; slot++) {
+					Value value = row.values[slot];
+					Value bound = value == NULL_VALUE ? null : value;
+					if (bound != previous[slot]) {
+						break;
+					}
+					if (bound != null) {
+						count++;
+					}
+				}
+				if (slot == names.length) {
+					return layout.snapshot(previous, count);
+				}
+			}
+			Value[] copy = new Value[names.length];
+			if (slot > 0) {
+				System.arraycopy(previous, 0, copy, 0, slot);
+			}
+			for (; slot < copy.length; slot++) {
 				Value value = row.values[slot];
 				if (isBoundValue(value)) {
 					copy[slot] = value;
 					count++;
 				}
 			}
+			previousSnapshot = copy;
 			return layout.snapshot(copy, count);
 		}
 	}

@@ -688,6 +688,7 @@ final class RepositoryValueIteration<T> implements CloseableIteration<T>, Cooper
 			drainClaimed = true;
 			retired = List.copyOf(scopes.values());
 			scopes.clear();
+			arraySnapshotLayout = null;
 			row = null;
 			rowReady = false;
 		}

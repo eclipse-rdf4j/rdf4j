@@ -15,6 +15,7 @@ import static org.assertj.core.api.Assertions.fail;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertNotSame;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -50,6 +51,40 @@ public class ArrayBindingSetTest {
 	public void setup() {
 		qbs.getDirectSetBinding("foo").accept(vf.createIRI("urn:foo"), qbs);
 		mbs.addBinding("foo", vf.createIRI("urn:foo"));
+	}
+
+	@Test
+	void resultSnapshotsKeepExactValuesAndIndependentMapViews() {
+		ArrayBindingSet source = new ArrayBindingSet("unset", "value", "undef");
+		var firstValue = vf.createIRI("urn:snapshot:value");
+		var equalValue = vf.createIRI("urn:snapshot:value");
+		assertEquals(firstValue, equalValue);
+		assertNotSame(firstValue, equalValue);
+		source.setBinding("value", firstValue);
+		source.getDirectSetBinding("undef").accept(null, source);
+
+		var layout = new ArrayBindingSet.ResultSnapshotLayout(source);
+		MapBindingSet first = layout.snapshot(source);
+		MapBindingSet repeated = layout.snapshot(source);
+		assertSame(firstValue, first.getValue("value"));
+		assertSame(firstValue, repeated.getValue("value"));
+		assertEquals(1, repeated.size());
+		assertFalse(repeated.hasBinding("undef"));
+
+		first.getBindingNames().remove("value");
+		assertEquals(0, first.size());
+		assertSame(firstValue, repeated.getValue("value"));
+
+		source.setBinding("value", equalValue);
+		MapBindingSet equal = layout.snapshot(source);
+		assertSame(equalValue, equal.getValue("value"));
+
+		source.setBinding("unset", RDF.ALT);
+		MapBindingSet changed = layout.snapshot(source);
+		assertSame(equalValue, changed.getValue("value"));
+		assertEquals(List.of("unset", "value"), List.copyOf(changed.getBindingNames()));
+		assertSame(firstValue, repeated.getValue("value"));
+		assertFalse(repeated.hasBinding("unset"));
 	}
 
 	@Test
