@@ -94,6 +94,15 @@ class LmdbReflexivePathTest {
 						nullable(IRI.class),
 						nullable(Value.class),
 						any(Resource[].class));
+		doAnswer(inv -> {
+			Object[] args = inv.getRawArguments();
+			return source.hasStatements((Resource) args[0], (IRI) args[1], (Value) args[2], (Resource[]) args[3]);
+		})
+				.when(data)
+				.hasStatements(nullable(Resource.class),
+						nullable(IRI.class),
+						nullable(Value.class),
+						any(Resource[].class));
 		return new SailDatasetTripleTermSource(source.vf, data);
 	}
 
@@ -150,9 +159,14 @@ class LmdbReflexivePathTest {
 
 	@Test
 	void inputMappingNeedsOnlyNodeMembership() {
-		var input = new MapBindingSet();
-		input.addBinding("s", source.a);
-		assertEquals(Set.of(source.a), values(step("?s :p* ?s"), input));
+		Value blank = source.vf.createBNode("object-only");
+		source.model.add(source.a, source.q, blank);
+		QueryEvaluationStep prepared = step("?s :p* ?s");
+		for (Value endpoint : List.of(source.a, blank, source.lit)) {
+			var input = new MapBindingSet();
+			input.addBinding("s", endpoint);
+			assertEquals(Set.of(endpoint), values(prepared, input));
+		}
 		assertEquals(0, source.edges);
 	}
 
