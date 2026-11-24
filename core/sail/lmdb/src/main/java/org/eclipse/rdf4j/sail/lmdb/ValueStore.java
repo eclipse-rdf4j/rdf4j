@@ -909,8 +909,7 @@ public class ValueStore extends AbstractValueFactory implements BNodeIdResolver,
 	 * RDF4J LMDB IDs. The query benchmark spends a large amount of time resolving repeated value IDs, so keeping a few
 	 * candidates per hash bucket is much more important than strict recency ordering.
 	 */
-	private final LmdbValue[] valueCache;
-	private final long[] valueCacheId;
+	private final int valueCacheSlots;
 	private final int[] valueCacheBankOffsets = new int[ValuePosition.CACHE_BANKS];
 	private final int[] valueCacheBankSets = new int[ValuePosition.CACHE_BANKS];
 
@@ -923,7 +922,6 @@ public class ValueStore extends AbstractValueFactory implements BNodeIdResolver,
 	private final int valueHashCacheMask;
 
 	private volatile ValueCacheEpoch valueCaches;
-	private final int valueCacheMask;
 	private final int snapshotLookupCacheCapacity;
 	/**
 	 * Best-effort value-to-ID memo. Immutable entries validate their model's semantic version before reuse.
@@ -1344,9 +1342,10 @@ public class ValueStore extends AbstractValueFactory implements BNodeIdResolver,
 
 		int cacheSets = nextPowerOfTwo(Math.max(1, (config.getValueCacheSize() + VALUE_CACHE_WAYS - 1)
 				/ VALUE_CACHE_WAYS));
-		valueCache = new LmdbValue[cacheSets * VALUE_CACHE_WAYS];
-		valueCacheId = new long[valueCache.length];
-		valueCacheMask = valueCache.length - 1;
+		valueCacheSlots = cacheSets * VALUE_CACHE_WAYS;
+		if (valueCacheSlots < 0) {
+			throw new NegativeArraySizeException(Integer.toString(valueCacheSlots));
+		}
 		snapshotLookupCacheCapacity = Math.max(0, config.getValueIDCacheSize());
 		int cacheOffset = 0;
 		for (int bank = 0; bank < ValuePosition.CACHE_BANKS; bank++) {
@@ -1357,7 +1356,7 @@ public class ValueStore extends AbstractValueFactory implements BNodeIdResolver,
 			cacheOffset += bankSets * VALUE_CACHE_WAYS;
 		}
 
-		int hashCacheSize = nextPowerOfTwo(Math.max(1024, config.getValueCacheSize()));
+		int hashCacheSize = valueHashCacheEnabled ? nextPowerOfTwo(Math.max(1024, config.getValueCacheSize())) : 0;
 		valueHashCacheId = new long[hashCacheSize];
 		valueHashCacheHash = new int[hashCacheSize];
 		valueHashCacheMask = hashCacheSize - 1;
@@ -4888,7 +4887,7 @@ public class ValueStore extends AbstractValueFactory implements BNodeIdResolver,
 		}
 		positionLazyRevisions = lazyRevisions;
 		if (valueCaches == null) {
-			valueCaches = new ValueCacheEpoch(revision, valueCache.length, asyncValueCleanup);
+			valueCaches = new ValueCacheEpoch(revision, valueCacheSlots, asyncValueCleanup);
 		}
 	}
 
@@ -5764,6 +5763,9 @@ public class ValueStore extends AbstractValueFactory implements BNodeIdResolver,
 	}
 
 	int getStoredHash(long id) {
+		if (!valueHashCacheEnabled) {
+			return 0;
+		}
 		int hash = getCachedStoredHash(id);
 		return hash != 0 ? hash : getStoredHashUnchecked(id);
 	}
@@ -7138,6 +7140,10 @@ public class ValueStore extends AbstractValueFactory implements BNodeIdResolver,
 		if (slot < 0) {
 			slot = idx + ((spreadValueId(id) >>> 8) & VALUE_CACHE_WAY_MASK);
 			previous = (CanonicalValueEntry) CANONICAL_CACHE_ELEMENT.getAcquire(arrays.canonical, slot);
+			if (previous != null && previous.id == id && previous.isCurrent()) {
+				// A same-ID lookup can publish into the full set after this way was scanned.
+				return previous.value;
+			}
 		}
 		CanonicalValueEntry entry = new CanonicalValueEntry(id, value, value.getSemanticVersion());
 		CanonicalValueEntry witness = (CanonicalValueEntry) CANONICAL_CACHE_ELEMENT.compareAndExchange(arrays.canonical,
@@ -10802,6 +10808,11 @@ public class ValueStore extends AbstractValueFactory implements BNodeIdResolver,
 			@Override
 			public Value apply(Value value) {
 				return captureExternal(value);
+			}
+
+			@Override
+			public boolean canOmitUnusedStatementBindings() {
+				return true;
 			}
 
 			@Override
@@ -15383,9 +15394,7 @@ public class ValueStore extends AbstractValueFactory implements BNodeIdResolver,
 	}
 
 	protected void clearCaches() {
-		valueCaches = new ValueCacheEpoch(valueIdentity.revision, valueCacheMask + 1, asyncValueCleanup);
-		Arrays.fill(valueCache, null);
-		Arrays.fill(valueCacheId, 0);
+		valueCaches = new ValueCacheEpoch(valueIdentity.revision, valueCacheSlots, asyncValueCleanup);
 		Arrays.fill(valueHashCacheId, 0);
 		Arrays.fill(valueHashCacheHash, 0);
 		valueIDCache.clear();

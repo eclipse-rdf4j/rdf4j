@@ -22,6 +22,7 @@ import java.util.Set;
 import java.util.function.BiConsumer;
 import java.util.function.Consumer;
 import java.util.function.Function;
+import java.util.function.IntSupplier;
 import java.util.function.Predicate;
 import java.util.function.Supplier;
 
@@ -29,6 +30,7 @@ import org.eclipse.rdf4j.collection.factory.api.CollectionFactory;
 import org.eclipse.rdf4j.common.annotation.Experimental;
 import org.eclipse.rdf4j.common.annotation.InternalUseOnly;
 import org.eclipse.rdf4j.common.iteration.AbstractCloseableIteration;
+import org.eclipse.rdf4j.common.iteration.BufferedIteration;
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.common.iteration.CloseableIteratorIteration;
 import org.eclipse.rdf4j.common.iteration.CooperativeCancellation;
@@ -50,8 +52,12 @@ import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.Dataset;
 import org.eclipse.rdf4j.query.MutableBindingSet;
 import org.eclipse.rdf4j.query.QueryEvaluationException;
+import org.eclipse.rdf4j.query.algebra.Group;
+import org.eclipse.rdf4j.query.algebra.Projection;
+import org.eclipse.rdf4j.query.algebra.ProjectionElem;
 import org.eclipse.rdf4j.query.algebra.StatementPattern;
 import org.eclipse.rdf4j.query.algebra.StatementPattern.Scope;
+import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryBindingSet;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryEvaluationStep;
@@ -66,6 +72,7 @@ import org.eclipse.rdf4j.query.algebra.evaluation.impl.restrictions.RestrictionP
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.restrictions.StatementRestrictionSourceProvider;
 import org.eclipse.rdf4j.query.algebra.evaluation.util.ExternalValuePreparation;
 import org.eclipse.rdf4j.query.explanation.TelemetryMetricNames;
+import org.eclipse.rdf4j.query.impl.EmptyBindingSet;
 import org.eclipse.rdf4j.query.impl.RemoteBNode;
 
 /**
@@ -516,10 +523,20 @@ public class StatementPatternQueryEvaluationStep implements QueryEvaluationStep,
 
 	private CloseableIteration<? extends Statement> openStatements(Resource subject, IRI predicate, Value object,
 			Resource[] contexts) {
+		return openStatements(subject, predicate, object, contexts, null);
+	}
+
+	private CloseableIteration<? extends Statement> openStatements(Resource subject, IRI predicate, Value object,
+			Resource[] contexts, StatementFieldSelection.Demand demand) {
 		incrementIndexLookupCount();
-		CloseableIteration<? extends Statement> statements = order == null
-				? tripleSource.getStatements(subject, predicate, object, contexts)
-				: tripleSource.getStatements(order, subject, predicate, object, contexts);
+		CloseableIteration<? extends Statement> statements;
+		if (order != null) {
+			statements = tripleSource.getStatements(order, subject, predicate, object, contexts);
+		} else if (demand != null) {
+			statements = tripleSource.getStatementsForEvaluation(demand, subject, predicate, object, contexts);
+		} else {
+			statements = tripleSource.getStatements(subject, predicate, object, contexts);
+		}
 		try {
 			if (statements instanceof IndexReportingIterator reporting) {
 				String indexName = reporting.getIndexName();
@@ -555,6 +572,98 @@ public class StatementPatternQueryEvaluationStep implements QueryEvaluationStep,
 			}
 			return iteration;
 		}
+	}
+
+	/** Prepare the immediate projection's private scan without changing the standalone or restricted step. */
+	@InternalUseOnly
+	public QueryEvaluationStep forProjection(Projection projection) {
+		if (!canSelectProjection(projection)) {
+			return this;
+		}
+		Set<String> sources = new LinkedHashSet<>();
+		projection.getProjectionElemList().getElements().forEach(element -> sources.add(element.getName()));
+		return selectFields(sources);
+	}
+
+	/** Prepare the immediate group's private scan with its certified member requirements. */
+	@InternalUseOnly
+	public QueryEvaluationStep forGroup(Group group, Set<String> required, BindingSet bindings) {
+		return bindings == EmptyBindingSet.getInstance() && !ScopedUnionInput.tracksClearedSiblingInputs()
+				&& canSelectFields(group.getArg()) ? selectFields(required) : this;
+	}
+
+	private QueryEvaluationStep selectFields(Set<String> sources) {
+		boolean omitSubject = canOmit(normalizedSubjectVar, sources);
+		boolean omitPredicate = canOmit(normalizedPredicateVar, sources);
+		boolean omitObject = canOmit(normalizedObjectVar, sources);
+		int omitted = (omitSubject ? StatementFieldSelection.SUBJECT : 0)
+				| (omitPredicate ? StatementFieldSelection.PREDICATE : 0)
+				| (omitObject ? StatementFieldSelection.OBJECT : 0);
+		if (omitted == 0) {
+			return this;
+		}
+
+		var projectedConverter = preservePreboundValues(makeConvertStatementConverter(context,
+				omitSubject ? null : normalizedSubjectVar, omitPredicate ? null : normalizedPredicateVar,
+				omitObject ? null : normalizedObjectVar, normalizedContextVar));
+		var demand = new StatementFieldSelection.Demand(omitted);
+		return bindings -> {
+			if (bindings != EmptyBindingSet.getInstance() || ScopedUnionInput.tracksClearedSiblingInputs()) {
+				return evaluate(bindings);
+			}
+			var iteration = getIteration(demand, projectedConverter);
+			return iteration == null ? QueryEvaluationStep.EMPTY_ITERATION : iteration;
+		};
+	}
+
+	private boolean canSelectProjection(Projection projection) {
+		return canSelectFields(projection.getArg()) && projection.getInheritedGraphParameter() == null
+				&& projection.getProjectionContext() == null;
+	}
+
+	private boolean canSelectFields(TupleExpr input) {
+		return getClass() == StatementPatternQueryEvaluationStep.class && input == statementPatternForMetrics
+				&& order == null && !emptyGraph && context.canOmitUnusedStatementBindings()
+				&& context.getActiveGraph() == null;
+	}
+
+	/** The private empty-input scan creates a separate row containing exactly these identity bindings. */
+	@InternalUseOnly
+	public boolean emitsIdentityProjection(Projection projection) {
+		if (!canSelectProjection(projection) || context.indexedBindingLayout() == null
+				|| normalizedContextVar != null || statementPattern.getScope() != Scope.DEFAULT_CONTEXTS) {
+			return false;
+		}
+
+		Set<String> selected = new LinkedHashSet<>();
+		for (ProjectionElem element : projection.getProjectionElemList().getElements()) {
+			String source = element.getName();
+			if (!element.getProjectionAlias().orElse(source).equals(source) || !selected.add(source)) {
+				return false;
+			}
+		}
+
+		Set<String> emitted = new LinkedHashSet<>();
+		for (Var variable : new Var[] { normalizedSubjectVar, normalizedPredicateVar, normalizedObjectVar }) {
+			if (variable != null && !variable.isConstant() && !canOmit(variable, selected)) {
+				emitted.add(variable.getName());
+			}
+		}
+		return selected.equals(emitted);
+	}
+
+	private boolean canOmit(Var variable, Set<String> sources) {
+		if (variable == null || variable.hasValue() || variable.isConstant() || sources.contains(variable.getName())) {
+			return false;
+		}
+		// Repeated variables may be read by the statement equality filter even without a projected binding.
+		int occurrences = 0;
+		for (Var operand : statementPattern.getVarList()) {
+			if (operand.getName().equals(variable.getName())) {
+				occurrences++;
+			}
+		}
+		return occurrences == 1;
 	}
 
 	/**
@@ -773,7 +882,11 @@ public class StatementPatternQueryEvaluationStep implements QueryEvaluationStep,
 	}
 
 	private ConvertStatementToBindingSetIterator getIteration() {
+		return getIteration(null, null);
+	}
 
+	private ConvertStatementToBindingSetIterator getIteration(StatementFieldSelection.Demand demand,
+			BiConsumer<MutableBindingSet, Statement> projectedConverter) {
 		Var contextVar = statementPattern.getContextVar();
 		Resource[] contexts = contextSup.apply(contextVar != null ? contextVar.getValue() : null);
 
@@ -797,7 +910,7 @@ public class StatementPatternQueryEvaluationStep implements QueryEvaluationStep,
 
 		CloseableIteration<? extends Statement> iteration = null;
 		try {
-			iteration = openStatements((Resource) subject, (IRI) predicate, object, contexts);
+			iteration = openStatements((Resource) subject, (IRI) predicate, object, contexts, demand);
 
 			if (iteration instanceof EmptyIteration) {
 				return null;
@@ -805,7 +918,8 @@ public class StatementPatternQueryEvaluationStep implements QueryEvaluationStep,
 			iteration = handleFilter(contexts, (Resource) subject, (IRI) predicate, object, iteration);
 
 			// Return an iterator that converts the statements to var bindings
-			return new ConvertStatementToBindingSetIterator(iteration, getConvertStatementConverter(), context);
+			return new ConvertStatementToBindingSetIterator(iteration,
+					projectedConverter == null ? getConvertStatementConverter() : projectedConverter, context);
 		} catch (Throwable t) {
 			ExternalValuePreparation.closeWithSuppressed(iteration, t);
 			if (t instanceof InterruptedException) {
@@ -1118,7 +1232,8 @@ public class StatementPatternQueryEvaluationStep implements QueryEvaluationStep,
 	 * it of course is an unneeded expense.
 	 */
 	private static final class ConvertStatementToBindingSetIterator
-			implements CloseableIteration<BindingSet>, IndexReportingIterator, CooperativeCancellation {
+			implements CloseableIteration<BindingSet>, IndexReportingIterator, CooperativeCancellation,
+			BufferedIteration {
 
 		private final BiConsumer<MutableBindingSet, Statement> converter;
 		private final QueryEvaluationContext context;
@@ -1137,6 +1252,11 @@ public class StatementPatternQueryEvaluationStep implements QueryEvaluationStep,
 			this.iteration = iteration;
 			this.converter = converter;
 			this.context = context;
+		}
+
+		@Override
+		public IntSupplier bufferedRowsSource() {
+			return BufferedIteration.bufferedRowsSource(iteration);
 		}
 
 		private BindingSet convert(Statement st) {

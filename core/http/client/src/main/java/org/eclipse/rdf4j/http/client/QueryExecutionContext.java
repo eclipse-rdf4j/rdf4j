@@ -17,7 +17,6 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Objects;
 import java.util.concurrent.atomic.AtomicBoolean;
-import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.Consumer;
 import java.util.function.IntSupplier;
 import java.util.function.Supplier;
@@ -115,10 +114,8 @@ public final class QueryExecutionContext {
 				workerScopeCapture);
 		state.safepoint = next;
 		return () -> {
-			if (next.active.compareAndSet(true, false)) {
-				next.checkpoint.set(null);
-				next.workerScopeCapture = null;
-			}
+			next.checkpoint = null;
+			next.workerScopeCapture = null;
 			if (state.safepoint == next) {
 				state.safepoint = previous;
 			}
@@ -202,7 +199,7 @@ public final class QueryExecutionContext {
 		List<WorkerScope> workerScopes = null;
 		for (ReplaySafepoint scope = safepoint; scope != null; scope = scope.previous) {
 			Supplier<WorkerScope> capture = scope.scopeOwner.workerScopeCapture;
-			if (capture != null && scope.active.get()) {
+			if (capture != null && scope.scopeOwner.checkpoint != null) {
 				WorkerScope captured = capture.get();
 				if (captured != null) {
 					if (workerScopes == null) {
@@ -276,8 +273,8 @@ public final class QueryExecutionContext {
 				return false;
 			}
 			for (ReplaySafepoint scope = current.safepoint; scope != null; scope = scope.previous) {
-				Runnable checkpoint = scope.checkpoint.get();
-				if (checkpoint != null && checkpoint != WORKER_ADMISSION_ONLY && scope.active.get()) {
+				Runnable checkpoint = scope.scopeOwner.checkpoint;
+				if (checkpoint != null && checkpoint != WORKER_ADMISSION_ONLY) {
 					return true;
 				}
 			}
@@ -294,18 +291,16 @@ public final class QueryExecutionContext {
 			return;
 		}
 		for (ReplaySafepoint safepoint = state.safepoint; safepoint != null; safepoint = safepoint.previous) {
-			if (safepoint.active.get()) {
-				Runnable checkpoint = safepoint.checkpoint.get();
-				if (checkpoint == null || checkpoint == WORKER_ADMISSION_ONLY) {
-					continue;
-				}
-				try {
-					checkpoint.run();
-				} catch (ReplaySafepointException failure) {
-					throw failure;
-				} catch (RuntimeException failure) {
-					throw new ReplaySafepointException(failure);
-				}
+			Runnable checkpoint = safepoint.scopeOwner.checkpoint;
+			if (checkpoint == null || checkpoint == WORKER_ADMISSION_ONLY) {
+				continue;
+			}
+			try {
+				checkpoint.run();
+			} catch (ReplaySafepointException failure) {
+				throw failure;
+			} catch (RuntimeException failure) {
+				throw new ReplaySafepointException(failure);
 			}
 		}
 	}
@@ -588,7 +583,7 @@ public final class QueryExecutionContext {
 	private static ReplaySafepoint copyActiveReplaySafepoints(ReplaySafepoint current) {
 		boolean allActive = true;
 		for (ReplaySafepoint safepoint = current; safepoint != null; safepoint = safepoint.previous) {
-			if (!safepoint.active.get() || safepoint.checkpoint.get() == null) {
+			if (safepoint.scopeOwner.checkpoint == null) {
 				allActive = false;
 				break;
 			}
@@ -599,7 +594,7 @@ public final class QueryExecutionContext {
 
 		List<ReplaySafepoint> activeScopes = new ArrayList<>();
 		for (ReplaySafepoint safepoint = current; safepoint != null; safepoint = safepoint.previous) {
-			if (safepoint.active.get() && safepoint.checkpoint.get() != null) {
+			if (safepoint.scopeOwner.checkpoint != null) {
 				activeScopes.add(safepoint);
 			}
 		}
@@ -607,7 +602,7 @@ public final class QueryExecutionContext {
 		ReplaySafepoint result = null;
 		for (int i = activeScopes.size() - 1; i >= 0; i--) {
 			ReplaySafepoint scope = activeScopes.get(i);
-			result = new ReplaySafepoint(scope.checkpoint, scope.active, result, scope.scopeOwner);
+			result = new ReplaySafepoint(result, scope.scopeOwner);
 		}
 		return result;
 	}
@@ -639,25 +634,22 @@ public final class QueryExecutionContext {
 	}
 
 	private static final class ReplaySafepoint {
-		private final AtomicReference<Runnable> checkpoint;
+		// The original scope owns the callback. Captured chain links consult that same scope so a single
+		// volatile null write both retires the callback and releases its captured values for every worker.
+		private volatile Runnable checkpoint;
 		private final ReplaySafepoint previous;
-		private final AtomicBoolean active;
 		private final ReplaySafepoint scopeOwner;
 		private volatile Supplier<WorkerScope> workerScopeCapture;
 
 		private ReplaySafepoint(Runnable checkpoint, ReplaySafepoint previous,
 				Supplier<WorkerScope> workerScopeCapture) {
-			this.checkpoint = new AtomicReference<>(checkpoint);
-			this.active = new AtomicBoolean(true);
+			this.checkpoint = checkpoint;
 			this.previous = previous;
 			this.scopeOwner = this;
 			this.workerScopeCapture = workerScopeCapture;
 		}
 
-		private ReplaySafepoint(AtomicReference<Runnable> checkpoint, AtomicBoolean active,
-				ReplaySafepoint previous, ReplaySafepoint scopeOwner) {
-			this.checkpoint = checkpoint;
-			this.active = active;
+		private ReplaySafepoint(ReplaySafepoint previous, ReplaySafepoint scopeOwner) {
 			this.previous = previous;
 			this.scopeOwner = scopeOwner;
 		}

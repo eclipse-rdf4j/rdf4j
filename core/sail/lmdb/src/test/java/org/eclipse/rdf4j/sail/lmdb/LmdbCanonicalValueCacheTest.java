@@ -32,6 +32,7 @@ import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicReference;
 
 import org.eclipse.rdf4j.common.concurrent.locks.diagnostics.ConcurrentCleaner;
 import org.eclipse.rdf4j.model.IRI;
@@ -40,6 +41,7 @@ import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.sail.SailException;
 import org.eclipse.rdf4j.sail.lmdb.config.LmdbStoreConfig;
+import org.eclipse.rdf4j.sail.lmdb.model.LmdbIRI;
 import org.eclipse.rdf4j.sail.lmdb.model.LmdbValue;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
@@ -236,6 +238,76 @@ class LmdbCanonicalValueCacheTest {
 		for (int i = 0; i < held.length; i++) {
 			assertEquals(expected[i], held[i]);
 		}
+	}
+
+	@Test
+	void simultaneousLookupsShareReplacementInFullCanonicalSet() throws Exception {
+		store.close();
+		store = new CountingValueStore(directory.resolve("concurrent-four-way-values"), 20);
+		assertEquals(4, store.valueCacheCapacity(ValuePosition.NONE));
+		IRI[] terms = new IRI[12];
+		long[] ids = new long[terms.length];
+		store.startTransaction(true);
+		for (int i = 0; i < ids.length; i++) {
+			terms[i] = VF.createIRI("urn:canonical:concurrent-replacement:" + i);
+			ids[i] = store.storeValue(terms[i]);
+		}
+		store.commit();
+		long target = collisionBeforeFourthWay(ids);
+		store.clearCaches();
+		for (int i = 0; i < 3; i++) {
+			store.getLazyValue(ids[i]);
+		}
+
+		CountDownLatch publicationReachedFourthWay = new CountDownLatch(1);
+		CountDownLatch resumePublication = new CountDownLatch(1);
+		AtomicReference<Thread> delayedLookup = new AtomicReference<>();
+		LmdbIRI fourth = new LmdbIRI(store.getRevision(), terms[3].stringValue(), ids[3]) {
+			@Override
+			public long getSemanticVersion() {
+				if (Thread.currentThread() == delayedLookup.get()) {
+					publicationReachedFourthWay.countDown();
+					try {
+						assertTrue(resumePublication.await(10, TimeUnit.SECONDS));
+					} catch (InterruptedException interrupted) {
+						Thread.currentThread().interrupt();
+						throw new AssertionError(interrupted);
+					}
+				}
+				return super.getSemanticVersion();
+			}
+		};
+		store.cacheValue(ids[3], fourth);
+		try (ExecutorService executor = Executors.newSingleThreadExecutor()) {
+			Future<LmdbValue> delayed = executor.submit(() -> {
+				delayedLookup.set(Thread.currentThread());
+				return store.getLazyValue(target);
+			});
+			try {
+				assertTrue(publicationReachedFourthWay.await(10, TimeUnit.SECONDS));
+				LmdbValue winner = store.getLazyValue(target);
+				resumePublication.countDown();
+				assertSame(winner, delayed.get(10, TimeUnit.SECONDS));
+				assertSame(winner, store.getLazyValue(target));
+			} finally {
+				resumePublication.countDown();
+			}
+		}
+	}
+
+	private long collisionBeforeFourthWay(long[] ids) throws IOException {
+		for (int candidate = 4; candidate < ids.length; candidate++) {
+			store.clearCaches();
+			for (int way = 0; way < 3; way++) {
+				store.getLazyValue(ids[way]);
+			}
+			LmdbValue fourth = store.getLazyValue(ids[3]);
+			store.getLazyValue(ids[candidate]);
+			if (fourth == store.getLazyValue(ids[3])) {
+				return ids[candidate];
+			}
+		}
+		throw new AssertionError("The fixture must contain an ID that replaces one of the first three ways");
 	}
 
 	@Test

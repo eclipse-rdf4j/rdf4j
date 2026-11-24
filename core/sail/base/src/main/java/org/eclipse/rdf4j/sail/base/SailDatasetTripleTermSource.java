@@ -38,10 +38,12 @@ import org.eclipse.rdf4j.query.algebra.Graph;
 import org.eclipse.rdf4j.query.algebra.StatementPattern;
 import org.eclipse.rdf4j.query.algebra.evaluation.NativeTripleTermSource;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.QueryEvaluationContext;
+import org.eclipse.rdf4j.query.algebra.evaluation.impl.evaluationsteps.StatementFieldSelection;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.restrictions.RestrictionLayout;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.restrictions.StatementRestrictionSourcePlan;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.restrictions.StatementRestrictionSourceProvider;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.restrictions.StatementRestrictionSourceView;
+import org.eclipse.rdf4j.query.algebra.evaluation.util.ExternalValuePreparation;
 import org.eclipse.rdf4j.query.algebra.helpers.OriginalPathDescriptor;
 import org.eclipse.rdf4j.sail.SailException;
 import org.eclipse.rdf4j.sail.TripleSourceIterationWrapper;
@@ -237,21 +239,34 @@ public class SailDatasetTripleTermSource implements NativeTripleTermSource, Stat
 	@Override
 	public CloseableIteration<? extends Statement> getStatements(Resource subj, IRI pred,
 			Value obj, Resource... contexts) throws QueryEvaluationException {
+		return readStatements(null, subj, pred, obj, contexts);
+	}
+
+	@Override
+	public CloseableIteration<? extends Statement> getStatementsForEvaluation(StatementFieldSelection.Demand demand,
+			Resource subj, IRI pred, Value obj, Resource... contexts) {
+		return demand != null && hasStableStatementRelation() ? readStatements(demand, subj, pred, obj, contexts)
+				: getStatements(subj, pred, obj, contexts);
+	}
+
+	private CloseableIteration<? extends Statement> readStatements(StatementFieldSelection.Demand demand,
+			Resource subj, IRI pred, Value obj, Resource... contexts) {
 		CloseableIteration<? extends Statement> statements = null;
 		try {
 			statements = dataset.getStatements(subj, pred, obj, contexts);
 			if (statements instanceof EmptyIteration) {
 				return statements;
 			}
+			if (demand != null) {
+				StatementFieldSelection.forward(statements, demand);
+			}
 			return new TripleSourceIterationWrapper<>(statements);
-		} catch (Throwable t) {
-			if (statements != null) {
-				statements.close();
+		} catch (Throwable failure) {
+			ExternalValuePreparation.closeWithSuppressed(statements, failure);
+			if (failure instanceof SailException) {
+				throw new QueryEvaluationException(failure);
 			}
-			if (t instanceof SailException) {
-				throw new QueryEvaluationException(t);
-			}
-			throw t;
+			throw failure;
 		}
 	}
 

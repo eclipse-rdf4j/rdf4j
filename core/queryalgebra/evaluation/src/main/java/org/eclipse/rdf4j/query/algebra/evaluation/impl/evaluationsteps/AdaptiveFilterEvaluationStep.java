@@ -1481,6 +1481,11 @@ public final class AdaptiveFilterEvaluationStep implements QueryEvaluationStep, 
 		}
 
 		@Override
+		public boolean canOmitUnusedStatementBindings() {
+			return delegate.canOmitUnusedStatementBindings();
+		}
+
+		@Override
 		public IndexedLayout indexedBindingLayout() {
 			return delegate.indexedBindingLayout();
 		}

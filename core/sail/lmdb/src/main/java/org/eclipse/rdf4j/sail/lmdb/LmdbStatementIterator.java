@@ -13,8 +13,10 @@ package org.eclipse.rdf4j.sail.lmdb;
 
 import java.io.IOException;
 import java.util.NoSuchElementException;
+import java.util.function.IntSupplier;
 
 import org.eclipse.rdf4j.common.iteration.AbstractCloseableIteration;
+import org.eclipse.rdf4j.common.iteration.BufferedIteration;
 import org.eclipse.rdf4j.common.iteration.CooperativeCancellation;
 import org.eclipse.rdf4j.common.iteration.IndexReportingIterator;
 import org.eclipse.rdf4j.common.order.StatementOrder;
@@ -22,6 +24,8 @@ import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.Statement;
 import org.eclipse.rdf4j.model.Value;
+import org.eclipse.rdf4j.model.base.AbstractStatement;
+import org.eclipse.rdf4j.query.algebra.evaluation.impl.evaluationsteps.StatementFieldSelection;
 import org.eclipse.rdf4j.sail.SailException;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.NativeLmdbQuerySource;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.codegen.KernelRuntime;
@@ -32,7 +36,7 @@ import org.eclipse.rdf4j.sail.lmdb.model.LmdbValue;
  * {@link Statement} objects.
  */
 class LmdbStatementIterator extends AbstractCloseableIteration<Statement>
-		implements IndexReportingIterator, CooperativeCancellation {
+		implements IndexReportingIterator, CooperativeCancellation, StatementFieldSelection, BufferedIteration {
 
 	/**
 	 * Number of times the same advisory minimum bound must be hinted before an actual cursor seek is issued. Short lags
@@ -51,6 +55,7 @@ class LmdbStatementIterator extends AbstractCloseableIteration<Statement>
 
 	private final ValueStore valueStore;
 	private final ValueStore.ReadSnapshot readSnapshot;
+	private int deferredStatementFields;
 	private Statement nextElement;
 	private volatile boolean cancellationRequested;
 	private volatile boolean cancellationClosed;
@@ -202,6 +207,15 @@ class LmdbStatementIterator extends AbstractCloseableIteration<Statement>
 	 * Methods *
 	 *---------*/
 
+	@Override
+	public IntSupplier bufferedRowsSource() {
+		if (getClass() != LmdbStatementIterator.class || order != null || readSnapshot == null
+				|| !readSnapshot.hasStableIds()) {
+			return null;
+		}
+		return recordIt::bufferedRows;
+	}
+
 	private Statement getNextElement() throws SailException {
 		try {
 			long[] quad = recordIt.next();
@@ -230,7 +244,12 @@ class LmdbStatementIterator extends AbstractCloseableIteration<Statement>
 				// dictionary cache, and recognised by the snapshot's value preparer as already proven statement
 				// values, so binding and join probes allocate nothing per row.
 				readSnapshot.ensureValid();
-				return lazyStatement(quad, readSnapshot.revision(), ValueResolutionScope.activeExposure(valueStore));
+				ValueStoreRevision revision = readSnapshot.revision();
+				ValueResolutionScope exposure = ValueResolutionScope.activeExposure(valueStore);
+				if (deferredStatementFields != 0 && exposure != null && exposure.isOpen()) {
+					return deferredStatement(quad, revision, exposure);
+				}
+				return lazyStatement(quad, revision, exposure);
 			}
 
 			long subjID = quad[TripleIndex.SUBJ_IDX];
@@ -270,6 +289,98 @@ class LmdbStatementIterator extends AbstractCloseableIteration<Statement>
 		Resource statementContext = contextId == 0 ? null
 				: (Resource) statementValue(contextId, contextID, context, contextVersion, revision, exposure);
 		return valueStore.createStatement(subject, predicate, object, statementContext);
+	}
+
+	@Override
+	public void deferStatementFields(StatementFieldSelection.Demand demand) {
+		deferStatementFields(demand.deferredFields());
+	}
+
+	void deferStatementFields(int fields) {
+		if (order == null) {
+			deferredStatementFields = fields;
+		}
+	}
+
+	private Statement deferredStatement(long[] quad, ValueStoreRevision revision, ValueResolutionScope exposure)
+			throws IOException {
+		long subjectId = quad[TripleIndex.SUBJ_IDX];
+		Resource subject = (deferredStatementFields & SUBJECT) != 0 ? null
+				: (Resource) statementValue(subjectId, subjID, subj, subjVersion, revision, exposure);
+		long predicateId = quad[TripleIndex.PRED_IDX];
+		IRI predicate = (deferredStatementFields & PREDICATE) != 0 ? null
+				: (IRI) statementValue(predicateId, predID, pred, predVersion, revision, exposure);
+		long objectId = quad[TripleIndex.OBJ_IDX];
+		Value object = (deferredStatementFields & OBJECT) != 0 ? null
+				: statementValue(objectId, objID, obj, objVersion, revision, exposure);
+		long contextId = quad[TripleIndex.CONTEXT_IDX];
+		Resource statementContext = contextId == 0 ? null
+				: (Resource) statementValue(contextId, contextID, context, contextVersion, revision, exposure);
+		return new DeferredStatement(subject, predicate, object, statementContext, revision, exposure, subjectId,
+				predicateId, objectId);
+	}
+
+	/** Owns the physical IDs independently of cursor advancement. The query's exposure protects their revision. */
+	private static final class DeferredStatement extends AbstractStatement {
+		private static final long serialVersionUID = 1L;
+		private final Resource subject;
+		private final IRI predicate;
+		private final Value object;
+		private final Resource context;
+		private final ValueStoreRevision revision;
+		private final ValueResolutionScope exposure;
+		private final long subjectId;
+		private final long predicateId;
+		private final long objectId;
+
+		private DeferredStatement(Resource subject, IRI predicate, Value object, Resource context,
+				ValueStoreRevision revision, ValueResolutionScope exposure, long subjectId, long predicateId,
+				long objectId) {
+			this.subject = subject;
+			this.predicate = predicate;
+			this.object = object;
+			this.context = context;
+			this.revision = revision;
+			this.exposure = exposure;
+			this.subjectId = subjectId;
+			this.predicateId = predicateId;
+			this.objectId = objectId;
+		}
+
+		@Override
+		public Resource getSubject() {
+			return subject == null ? (Resource) resolve(subjectId) : subject;
+		}
+
+		@Override
+		public IRI getPredicate() {
+			return predicate == null ? (IRI) resolve(predicateId) : predicate;
+		}
+
+		@Override
+		public Value getObject() {
+			return object == null ? resolve(objectId) : object;
+		}
+
+		@Override
+		public Resource getContext() {
+			return context;
+		}
+
+		private Value resolve(long id) {
+			if (!exposure.isOpen()) {
+				throw new SailException("The private statement read scope is closed");
+			}
+			try {
+				return revision.getValueStore().getLazyValue(id, revision, exposure, null, LmdbValue.UNKNOWN_ID);
+			} catch (IOException failure) {
+				throw new SailException(failure);
+			}
+		}
+
+		private Object writeReplace() {
+			return revision.getValueStore().createStatement(getSubject(), getPredicate(), getObject(), context);
+		}
 	}
 
 	/** A pattern value of this revision is reused as-is; any other position becomes a lazy shell. */

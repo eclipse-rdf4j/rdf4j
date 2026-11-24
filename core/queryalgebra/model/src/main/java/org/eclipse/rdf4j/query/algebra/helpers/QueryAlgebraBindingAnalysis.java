@@ -124,9 +124,10 @@ public final class QueryAlgebraBindingAnalysis {
 	private final ReadOnlyContext rootContext;
 	private final boolean bindingAssignment;
 	private final Predicate<StatementPattern> datasetCanScanDefaultContext;
-	private final Map<QueryModelNode, ReadOnlyContext> contextCache = new IdentityHashMap<>();
-	private final Map<TupleExpr, Boolean> nullableContextSubtrees = new IdentityHashMap<>();
-	private final Map<QueryModelNode, Long> scopeIdentities = new IdentityHashMap<>();
+	// Most optimizer invocations never ask for contextual facts. Reserve identity tables only on first use.
+	private Map<QueryModelNode, ReadOnlyContext> contextCache;
+	private Map<TupleExpr, Boolean> nullableContextSubtrees;
+	private Map<QueryModelNode, Long> scopeIdentities;
 	private final Map<OutputKey, OutputFacts> outputCache = new HashMap<>();
 	private final Map<OutputKey, Boolean> resultSetModifierCache = new HashMap<>();
 	private final Map<ChildInputKey, ReadOnlyContext> childInputCache = new HashMap<>();
@@ -154,9 +155,6 @@ public final class QueryAlgebraBindingAnalysis {
 			}
 		}
 		this.rootContext = ReadOnlyContext.external(values, externalNames, 0).withPossibleInputs(possibleInputNames);
-		if (root != null) {
-			contextCache.put(root, rootContext);
-		}
 	}
 
 	private QueryAlgebraBindingAnalysis(TupleExpr root, ReadOnlyContext rootContext) {
@@ -164,9 +162,6 @@ public final class QueryAlgebraBindingAnalysis {
 		this.rootContext = rootContext;
 		this.bindingAssignment = false;
 		this.datasetCanScanDefaultContext = null;
-		if (root != null) {
-			contextCache.put(root, rootContext);
-		}
 	}
 
 	public static QueryAlgebraBindingAnalysis withBindingValues(TupleExpr root, BindingSet initialBindings) {
@@ -235,26 +230,37 @@ public final class QueryAlgebraBindingAnalysis {
 	/** Returns a read-only frame at the node's actual evaluator position. */
 	public ReadOnlyContext contextAt(QueryModelNode node) {
 		Objects.requireNonNull(node, "node");
-		ReadOnlyContext cached = contextCache.get(node);
+		if (node == root) {
+			return rootContext;
+		}
+		Map<QueryModelNode, ReadOnlyContext> contexts = contextCache;
+		if (contexts == null) {
+			contexts = new IdentityHashMap<>();
+			if (root != null) {
+				contexts.put(root, rootContext);
+			}
+			contextCache = contexts;
+		}
+		ReadOnlyContext cached = contexts.get(node);
 		if (cached != null) {
 			return cached;
 		}
 		Deque<QueryModelNode> path = new ArrayDeque<>();
 		QueryModelNode current = node;
-		while (current != null && !contextCache.containsKey(current)) {
+		while (current != null && !contexts.containsKey(current)) {
 			path.push(current);
 			current = current.getParentNode();
 		}
-		ReadOnlyContext context = current == null ? rootContext : contextCache.get(current);
+		ReadOnlyContext context = current == null ? rootContext : contexts.get(current);
 		while (!path.isEmpty()) {
 			QueryModelNode child = path.pop();
 			QueryModelNode parent = child.getParentNode();
 			if (parent != null) {
 				context = childInput(parent, child, context);
 			}
-			contextCache.put(child, context);
+			contexts.put(child, context);
 		}
-		return contextCache.get(node);
+		return contexts.get(node);
 	}
 
 	/** Visits a model subtree with the child input phase used by its evaluator. */
@@ -433,16 +439,22 @@ public final class QueryAlgebraBindingAnalysis {
 	}
 
 	public void invalidate() {
-		contextCache.clear();
-		nullableContextSubtrees.clear();
-		if (root != null) {
-			contextCache.put(root, rootContext);
+		if (contextCache != null) {
+			contextCache.clear();
+			if (root != null) {
+				contextCache.put(root, rootContext);
+			}
+		}
+		if (nullableContextSubtrees != null) {
+			nullableContextSubtrees.clear();
 		}
 		outputCache.clear();
 		resultSetModifierCache.clear();
 		childInputCache.clear();
 		leftJoinInputCache.clear();
-		scopeIdentities.clear();
+		if (scopeIdentities != null) {
+			scopeIdentities.clear();
+		}
 	}
 
 	/** Creates a local mutable owner; consumers must export an immutable snapshot before sharing it. */
@@ -754,6 +766,9 @@ public final class QueryAlgebraBindingAnalysis {
 	}
 
 	private boolean containsNullableContext(TupleExpr expression) {
+		if (nullableContextSubtrees == null) {
+			nullableContextSubtrees = new IdentityHashMap<>();
+		}
 		Boolean cached = nullableContextSubtrees.get(expression);
 		if (cached != null) {
 			return cached;
@@ -1000,6 +1015,9 @@ public final class QueryAlgebraBindingAnalysis {
 	}
 
 	private long nextScopeId(QueryModelNode scope) {
+		if (scopeIdentities == null) {
+			scopeIdentities = new IdentityHashMap<>();
+		}
 		return scopeIdentities.computeIfAbsent(scope, ignored -> nextScopeIdentity.getAndIncrement());
 	}
 

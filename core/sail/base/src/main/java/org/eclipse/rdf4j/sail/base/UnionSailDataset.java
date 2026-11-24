@@ -20,8 +20,10 @@ import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Set;
 import java.util.function.Function;
+import java.util.function.IntSupplier;
 import java.util.function.ToLongFunction;
 
+import org.eclipse.rdf4j.common.iteration.BufferedIteration;
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.common.iteration.DualUnionIteration;
 import org.eclipse.rdf4j.common.iteration.FilterIteration;
@@ -33,6 +35,7 @@ import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.Statement;
 import org.eclipse.rdf4j.model.TripleTerm;
 import org.eclipse.rdf4j.model.Value;
+import org.eclipse.rdf4j.query.algebra.evaluation.impl.evaluationsteps.StatementFieldSelection;
 import org.eclipse.rdf4j.sail.SailException;
 
 /**
@@ -354,7 +357,8 @@ class UnionSailDataset implements SailDataset, TreeOwnedDataset {
 		}
 	}
 
-	private static final class UnionReportingIteration<T> extends SailClosingIteration<T> {
+	private static final class UnionReportingIteration<T> extends SailClosingIteration<T>
+			implements StatementFieldSelection {
 		private final List<IndexReportingIterator> reporters;
 
 		private UnionReportingIteration(CloseableIteration<? extends T> union, List<IndexReportingIterator> reporters) {
@@ -363,8 +367,20 @@ class UnionSailDataset implements SailDataset, TreeOwnedDataset {
 		}
 
 		@Override
+		public IntSupplier bufferedRowsSource() {
+			return BufferedIteration.bufferedRowsSource(wrappedIter);
+		}
+
+		@Override
 		protected void handleSailException(SailException e) {
 			throw e;
+		}
+
+		@Override
+		public void deferStatementFields(StatementFieldSelection.Demand demand) {
+			for (IndexReportingIterator reporter : reporters) {
+				StatementFieldSelection.forward(reporter, demand);
+			}
 		}
 
 		@Override
