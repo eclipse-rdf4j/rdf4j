@@ -225,6 +225,13 @@ public class GroupIterator extends AbstractCloseableIteratorIteration<BindingSet
 	@Override
 	protected Iterator<BindingSet> getIterator() throws QueryEvaluationException {
 		List<AggregatePredicateCollectorSupplier<?, ?>> aggregates = makeAggregates();
+		boolean visitSolutionOccurrence = false;
+		for (AggregatePredicateCollectorSupplier<?, ?> aggregate : aggregates) {
+			if (aggregate.requiresSolutionOccurrence()) {
+				visitSolutionOccurrence = true;
+				break;
+			}
+		}
 
 		Supplier<MutableBindingSet> makeNewBindingSet;
 		if (parentBindings.isEmpty()) {
@@ -245,7 +252,7 @@ public class GroupIterator extends AbstractCloseableIteratorIteration<BindingSet
 		}
 
 		BiConsumer<Entry, MutableBindingSet> bindSolution = makeBindSolution(aggregates);
-		Collection<Entry> entries = buildEntries(aggregates);
+		Collection<Entry> entries = buildEntries(aggregates, visitSolutionOccurrence);
 		Collection<BindingSet> bindingSets;
 		Consumer<BindingSet> add;
 		if (cf.getClass() == DefaultCollectionFactory.class && !getValues.isEmpty()
@@ -357,7 +364,8 @@ public class GroupIterator extends AbstractCloseableIteratorIteration<BindingSet
 		return aggregates;
 	}
 
-	private Collection<Entry> buildEntries(List<AggregatePredicateCollectorSupplier<?, ?>> aggregates)
+	private Collection<Entry> buildEntries(List<AggregatePredicateCollectorSupplier<?, ?>> aggregates,
+			boolean visitSolutionOccurrence)
 			throws QueryEvaluationException {
 		QueryExecutionContext.throwIfHeavyOperatorExecutionDisabled(OPERATOR_NAME);
 		QueryExecutionContext.markHeavy(OPERATOR_NAME);
@@ -413,8 +421,12 @@ public class GroupIterator extends AbstractCloseableIteratorIteration<BindingSet
 					entries.put(key, entry);
 				}
 
-				try (var ignored = context.getBlankNodeAllocationScope()
-						.visitSolutionOccurrence(sol, solutionBoundary)) {
+				if (visitSolutionOccurrence) {
+					try (var ignored = context.getBlankNodeAllocationScope()
+							.visitSolutionOccurrence(sol, solutionBoundary)) {
+						entry.addSolution(sol, aggregates);
+					}
+				} else {
 					entry.addSolution(sol, aggregates);
 				}
 				aggregateEvalCount += aggregates.size();
@@ -518,10 +530,16 @@ public class GroupIterator extends AbstractCloseableIteratorIteration<BindingSet
 		private void operate(BindingSet bs, Predicate<?> predicate, Object t) {
 			agg.processAggregate(bs, (Predicate<D>) predicate, (T) t);
 		}
+
+		private boolean requiresSolutionOccurrence() {
+			return !(agg instanceof WildCardCountAggregate
+					&& makePotentialDistinctTest == (Object) ALWAYS_TRUE_BINDING_SET_SUPPLIER);
+		}
 	}
 
 	private static final Predicate<BindingSet> ALWAYS_TRUE_BINDING_SET = t -> true;
 	private static final Predicate<Value> ALWAYS_TRUE_VALUE = t -> true;
+	private static final Supplier<Predicate<BindingSet>> ALWAYS_TRUE_BINDING_SET_SUPPLIER = () -> ALWAYS_TRUE_BINDING_SET;
 	private static final Supplier<Predicate<Value>> ALWAYS_TRUE_VALUE_SUPPLIER = () -> ALWAYS_TRUE_VALUE;
 	private static final Supplier<Predicate<List<Value>>> ALWAYS_TRUE_TUPLE_VALUE_SUPPLIER = () -> t -> true;
 
@@ -533,7 +551,7 @@ public class GroupIterator extends AbstractCloseableIteratorIteration<BindingSet
 			if (((Count) operator).getArg() == null) {
 				WildCardCountAggregate wildCardCountAggregate = new WildCardCountAggregate();
 				Supplier<Predicate<BindingSet>> potentialDistinctTest = operator.isDistinct() ? distinctWildcardTest()
-						: () -> ALWAYS_TRUE_BINDING_SET;
+						: ALWAYS_TRUE_BINDING_SET_SUPPLIER;
 				return new AggregatePredicateCollectorSupplier<>(wildCardCountAggregate, potentialDistinctTest,
 						() -> new CountCollector(vf), ge.getName());
 			} else {

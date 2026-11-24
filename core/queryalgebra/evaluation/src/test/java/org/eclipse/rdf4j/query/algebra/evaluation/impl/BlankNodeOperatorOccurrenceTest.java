@@ -12,14 +12,20 @@
 package org.eclipse.rdf4j.query.algebra.evaluation.impl;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.mockito.ArgumentMatchers.same;
+import static org.mockito.Mockito.doAnswer;
+import static org.mockito.Mockito.doReturn;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.spy;
 import static org.mockito.Mockito.when;
 
 import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.List;
+import java.util.concurrent.atomic.AtomicInteger;
+import java.util.function.Function;
 
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.common.iteration.CloseableIteratorIteration;
@@ -34,6 +40,7 @@ import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.algebra.BNodeGenerator;
+import org.eclipse.rdf4j.query.algebra.BindingSetAssignment;
 import org.eclipse.rdf4j.query.algebra.Count;
 import org.eclipse.rdf4j.query.algebra.Group;
 import org.eclipse.rdf4j.query.algebra.GroupElem;
@@ -43,6 +50,7 @@ import org.eclipse.rdf4j.query.algebra.OrderElem;
 import org.eclipse.rdf4j.query.algebra.SameTerm;
 import org.eclipse.rdf4j.query.algebra.SingletonSet;
 import org.eclipse.rdf4j.query.algebra.ValueConstant;
+import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.query.algebra.evaluation.EvaluationStrategy;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryEvaluationStep;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryValueEvaluationStep;
@@ -59,6 +67,82 @@ import org.junit.jupiter.api.Test;
 class BlankNodeOperatorOccurrenceTest {
 
 	private static final SimpleValueFactory VF = SimpleValueFactory.getInstance();
+
+	@Test
+	void preparedNonDistinctWildcardCountDoesNotVisitMemberSolutionOccurrences() {
+		var context = spy(new QueryEvaluationContext.Minimal(null));
+		AtomicInteger scopeLookups = new AtomicInteger();
+		doAnswer(invocation -> {
+			scopeLookups.incrementAndGet();
+			return invocation.callRealMethod();
+		}).when(context).getBlankNodeAllocationScope();
+
+		var input = new BindingSetAssignment();
+		input.setBindingSets(List.of(EmptyBindingSet.getInstance(), EmptyBindingSet.getInstance()));
+		var group = new Group(input);
+		group.addGroupElement(new GroupElem("count", new Count(null)));
+		var prepared = new DefaultEvaluationStrategy(emptyTripleSource(), null).precompile(group, context);
+		scopeLookups.set(0);
+
+		try (var rows = prepared.evaluate(EmptyBindingSet.getInstance())) {
+			assertEquals(2, ((Literal) rows.next().getValue("count")).intValue());
+			assertFalse(rows.hasNext());
+		}
+
+		assertEquals(0, scopeLookups.get());
+	}
+
+	@Test
+	void preparedWildcardAndMutatedDistinctAggregateKeepRequiredMemberOccurrences() {
+		var context = new QueryEvaluationContext.Minimal(null);
+		var reused = new MapBindingSet();
+		reused.addBinding("value", VF.createLiteral("input"));
+		var input = new BindingSetAssignment();
+		input.setBindingSets(List.of(reused, reused));
+		var wildcard = new Count(null);
+		var distinct = new Count(null);
+		var group = new Group(input);
+		group.addGroupElement(new GroupElem("wildcard", wildcard));
+		group.addGroupElement(new GroupElem("distinct", distinct));
+		var prepared = new DefaultEvaluationStrategy(emptyTripleSource(), null).precompile(group, context);
+
+		distinct.setArg(new BNodeGenerator(new ValueConstant(VF.createLiteral("label"))));
+		distinct.setDistinct(true);
+
+		try (var rows = prepared.evaluate(EmptyBindingSet.getInstance())) {
+			BindingSet result = rows.next();
+			assertEquals(2, ((Literal) result.getValue("wildcard")).intValue());
+			assertEquals(2, ((Literal) result.getValue("distinct")).intValue());
+			assertFalse(rows.hasNext());
+		}
+	}
+
+	@Test
+	void preparedVariableAggregateRetainsOccurrenceForContextValueCallbacks() {
+		var context = spy(new QueryEvaluationContext.Minimal(null));
+		List<Value> observed = new ArrayList<>();
+		Function<BindingSet, Value> valueAccessor = bindings -> {
+			Value value = context.getOrCreateBNode("label", bindings, VF);
+			observed.add(value);
+			return value;
+		};
+		doReturn(valueAccessor).when(context).getValue("value");
+
+		var reused = new MapBindingSet();
+		reused.addBinding("value", VF.createLiteral("input"));
+		var input = new BindingSetAssignment();
+		input.setBindingSets(List.of(reused, reused));
+		var group = new Group(input);
+		group.addGroupElement(new GroupElem("count", new Count(Var.of("value"))));
+		var prepared = new DefaultEvaluationStrategy(null, null).precompile(group, context);
+
+		try (var rows = prepared.evaluate(EmptyBindingSet.getInstance())) {
+			assertEquals(2, ((Literal) rows.next().getValue("count")).intValue());
+			assertFalse(rows.hasNext());
+		}
+
+		assertEquals(2, new HashSet<>(observed).size());
+	}
 
 	@Test
 	void aggregateInputsAdvanceForReusedRowsIncludingArrayContext() {
@@ -106,17 +190,7 @@ class BlankNodeOperatorOccurrenceTest {
 
 	@Test
 	void standaloneExpressionCallsAdvanceEvenWhenInputObjectIsReused() {
-		TripleSource source = new TripleSource() {
-			public ValueFactory getValueFactory() {
-				return VF;
-			}
-
-			public CloseableIteration<? extends Statement> getStatements(Resource s, IRI p, Value o,
-					Resource... contexts) {
-				return new EmptyIteration<>();
-			}
-		};
-		var strategy = new DefaultEvaluationStrategy(source, null);
+		var strategy = new DefaultEvaluationStrategy(emptyTripleSource(), null);
 		var generator = new BNodeGenerator(new ValueConstant(VF.createLiteral("label")));
 		BindingSet reusable = new MapBindingSet();
 		assertNotEquals(strategy.evaluate(generator, reusable), strategy.evaluate(generator, reusable));
@@ -159,5 +233,20 @@ class BlankNodeOperatorOccurrenceTest {
 	private static QueryEvaluationStep reusedInput() {
 		BindingSet reusable = new MapBindingSet();
 		return ignored -> new CloseableIteratorIteration<>(List.of(reusable, reusable).iterator());
+	}
+
+	private static TripleSource emptyTripleSource() {
+		return new TripleSource() {
+			@Override
+			public ValueFactory getValueFactory() {
+				return VF;
+			}
+
+			@Override
+			public CloseableIteration<? extends Statement> getStatements(Resource subject, IRI predicate, Value object,
+					Resource... contexts) {
+				return new EmptyIteration<>();
+			}
+		};
 	}
 }
