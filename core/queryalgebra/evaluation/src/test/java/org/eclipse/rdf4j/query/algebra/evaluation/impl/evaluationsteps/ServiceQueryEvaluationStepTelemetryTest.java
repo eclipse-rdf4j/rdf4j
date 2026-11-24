@@ -141,6 +141,8 @@ class ServiceQueryEvaluationStepTelemetryTest {
 
 		FederatedService federatedService = mock(FederatedService.class);
 		BindingSet responseRow = mock(BindingSet.class);
+		// An unstubbed mock returns a null iterator, which no BindingSet may do. Response mapping iterates the row.
+		when(responseRow.iterator()).thenReturn(Collections.emptyIterator());
 		when(responseRow.toString()).thenThrow(new AssertionError("response byte accounting should be disabled"));
 		when(federatedService.select(eq(service), anySet(), any(BindingSet.class),
 				eq(service.getBaseURI())))
