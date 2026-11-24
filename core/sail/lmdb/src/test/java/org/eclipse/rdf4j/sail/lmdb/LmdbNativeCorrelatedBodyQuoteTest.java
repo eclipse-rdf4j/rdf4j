@@ -15,11 +15,15 @@ package org.eclipse.rdf4j.sail.lmdb;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import java.io.File;
+import java.util.LinkedHashSet;
 import java.util.Map;
+import java.util.Set;
 import java.util.concurrent.TimeUnit;
 
 import org.eclipse.rdf4j.model.IRI;
+import org.eclipse.rdf4j.model.Statement;
 import org.eclipse.rdf4j.model.ValueFactory;
+import org.eclipse.rdf4j.model.vocabulary.RDF;
 import org.eclipse.rdf4j.query.explanation.Explanation;
 import org.eclipse.rdf4j.query.explanation.GenericPlanNode;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
@@ -68,18 +72,20 @@ public class LmdbNativeCorrelatedBodyQuoteTest {
 			IRI hasObservation = vf.createIRI(EX, "hasObservation");
 			IRI value = vf.createIRI(EX, "value");
 			conn.begin();
+			Set<Statement> statements = LinkedHashSet.newLinkedHashSet(21_000);
 			for (int i = 0; i < 3000; i++) {
 				IRI enc = vf.createIRI(EX, "enc" + i);
 				IRI cond = vf.createIRI(EX, "cond" + i);
-				conn.add(enc, org.eclipse.rdf4j.model.vocabulary.RDF.TYPE, encounter);
-				conn.add(enc, hasCondition, cond);
-				conn.add(cond, code, vf.createLiteral("DX-" + (200 + i % 3)));
+				statements.add(vf.createStatement(enc, RDF.TYPE, encounter));
+				statements.add(vf.createStatement(enc, hasCondition, cond));
+				statements.add(vf.createStatement(cond, code, vf.createLiteral("DX-" + (200 + i % 3))));
 				for (int o = 0; o < 2; o++) {
 					IRI obs = vf.createIRI(EX, "obs" + i + "_" + o);
-					conn.add(enc, hasObservation, obs);
-					conn.add(obs, value, vf.createLiteral(40 + (i + o) % 50));
+					statements.add(vf.createStatement(enc, hasObservation, obs));
+					statements.add(vf.createStatement(obs, value, vf.createLiteral(40 + (i + o) % 50)));
 				}
 			}
+			conn.add(statements);
 			conn.commit();
 		}
 		assertThat(store.awaitDirectAdjacencyReady(60, TimeUnit.SECONDS)).isTrue();

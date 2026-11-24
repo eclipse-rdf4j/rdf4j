@@ -73,6 +73,8 @@ class LmdbMapGrowthReplayLifecycleTest {
 	private static final double GROWTH_THRESHOLD = 0.10d;
 	private static final double SOFT_GROWTH_DEMAND_RATIO = GROWTH_THRESHOLD * 1.5d;
 	private static final int PARALLEL_SORT_INPUT_ROWS = 10_000;
+	// The barriers retain the active read until replay is accepted; no passive drain grace is needed.
+	private static final long REPLAY_READER_GRACE_MILLIS = 0;
 
 	@ParameterizedTest
 	@ValueSource(booleans = { false, true })
@@ -328,7 +330,7 @@ class LmdbMapGrowthReplayLifecycleTest {
 				.setTripleDBSize(INITIAL_MAP_SIZE)
 				.setValueDBSize(128L * 1024L * 1024L)
 				.setMapGrowthThreshold(GROWTH_THRESHOLD)
-				.setMapGrowthReadDrainTimeoutMillis(5_000)
+				.setMapGrowthReadDrainTimeoutMillis(REPLAY_READER_GRACE_MILLIS)
 				.setAutoGrow(true));
 		SailRepository repository = new SailRepository(store);
 		ExecutorService executor = Executors.newFixedThreadPool(2);
@@ -461,7 +463,7 @@ class LmdbMapGrowthReplayLifecycleTest {
 				.setTripleDBSize(INITIAL_MAP_SIZE)
 				.setValueDBSize(128L * 1024L * 1024L)
 				.setMapGrowthThreshold(GROWTH_THRESHOLD)
-				.setMapGrowthReadDrainTimeoutMillis(5_000)
+				.setMapGrowthReadDrainTimeoutMillis(REPLAY_READER_GRACE_MILLIS)
 				.setAutoGrow(true));
 		SailRepository repository = new SailRepository(store);
 		ExecutorService executor = Executors.newFixedThreadPool(2);

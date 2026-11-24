@@ -17,11 +17,14 @@ import static org.assertj.core.api.Assertions.assertThat;
 import java.io.File;
 import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.concurrent.TimeUnit;
 
 import org.eclipse.rdf4j.model.IRI;
+import org.eclipse.rdf4j.model.Statement;
 import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.explanation.Explanation;
@@ -171,17 +174,18 @@ class LmdbNativeIrKernelParallelTest {
 			// delta generations, degrading it into a revision gap whose quiescent rebuild never runs under the test's
 			// continuous query traffic — and then no EA-rooted kernel can ever bind (see the M10B plan Surprises).
 			conn.begin();
+			Set<Statement> statements = LinkedHashSet.newLinkedHashSet(6_150);
 			for (int i = 0; i < 600; i++) {
 				IRI s = vf.createIRI(EX, "s" + i);
-				conn.add(s, t, x);
+				statements.add(vf.createStatement(s, t, x));
 				for (int j = 0; j < 2; j++) {
 					IRI m = vf.createIRI(EX, "m" + i + "_" + j);
-					conn.add(s, p, m);
-					conn.add(m, q, vf.createLiteral(i * 7 + j));
+					statements.add(vf.createStatement(s, p, m));
+					statements.add(vf.createStatement(m, q, vf.createLiteral(i * 7 + j)));
 					// q2 equals q for j==0 and differs for j==1, so FILTER(?v != ?v2) keeps exactly the j==1 rows
-					conn.add(m, q2, vf.createLiteral(i * 7 + 2 * j));
+					statements.add(vf.createStatement(m, q2, vf.createLiteral(i * 7 + 2 * j)));
 					if ((i + j) % 3 == 0) {
-						conn.add(m, r, vf.createLiteral("tag" + i + "_" + j));
+						statements.add(vf.createStatement(m, r, vf.createLiteral("tag" + i + "_" + j)));
 					}
 				}
 			}
@@ -194,9 +198,9 @@ class LmdbNativeIrKernelParallelTest {
 				IRI ta = vf.createIRI(EX, "tri" + i + "a");
 				IRI tb = vf.createIRI(EX, "tri" + i + "b");
 				IRI tc = vf.createIRI(EX, "tri" + i + "c");
-				conn.add(ta, c, tb);
-				conn.add(tb, c, tc);
-				conn.add(tc, c, ta);
+				statements.add(vf.createStatement(ta, c, tb));
+				statements.add(vf.createStatement(tb, c, tc));
+				statements.add(vf.createStatement(tc, c, ta));
 			}
 			IRI creator = vf.createIRI(EX, "creator");
 			IRI name = vf.createIRI(EX, "name");
@@ -205,19 +209,20 @@ class LmdbNativeIrKernelParallelTest {
 			IRI[] persons = new IRI[100];
 			for (int i = 0; i < persons.length; i++) {
 				persons[i] = vf.createIRI(EX, "person" + i);
-				conn.add(persons[i], name, vf.createLiteral("person-" + i));
+				statements.add(vf.createStatement(persons[i], name, vf.createLiteral("person-" + i)));
 			}
 			for (int i = 0; i < 200; i++) {
 				IRI article = vf.createIRI(EX, "article" + i);
-				conn.add(article, t, classA);
-				conn.add(article, creator, persons[i % 75]);
+				statements.add(vf.createStatement(article, t, classA));
+				statements.add(vf.createStatement(article, creator, persons[i % 75]));
 			}
 			for (int i = 0; i < 150; i++) {
 				IRI inproc = vf.createIRI(EX, "inproc" + i);
-				conn.add(inproc, t, classB);
-				conn.add(inproc, creator, persons[i % 50]);
-				conn.add(inproc, creator, persons[75 + i % 25]);
+				statements.add(vf.createStatement(inproc, t, classB));
+				statements.add(vf.createStatement(inproc, creator, persons[i % 50]));
+				statements.add(vf.createStatement(inproc, creator, persons[75 + i % 25]));
 			}
+			conn.add(statements);
 			conn.commit();
 		}
 		assertThat(store.awaitDirectAdjacencyReady(60, TimeUnit.SECONDS))
@@ -480,8 +485,8 @@ class LmdbNativeIrKernelParallelTest {
 		assertThat(telemetry(EXISTS_DISJUNCTION_QUERY)).doesNotContain("irKernelParallel=");
 		long parallelBefore = LmdbNativeParallelKernelRows.PARALLEL_RUNS.get();
 		KernelExecutionTestAccess.resetMetrics();
-		assertThat(rows(EXISTS_DISJUNCTION_QUERY, LmdbNativeAttemptMetrics.PATH_IR_KERNEL))
-				.containsExactlyInAnyOrderElementsOf(expected);
+		assertThat(rowBag(rows(EXISTS_DISJUNCTION_QUERY, LmdbNativeAttemptMetrics.PATH_IR_KERNEL)))
+				.containsExactlyInAnyOrderEntriesOf(rowBag(expected));
 		assertThat(KernelExecutionTestAccess.opened()).isPositive();
 		assertThat(LmdbNativeParallelKernelRows.PARALLEL_RUNS.get()).isEqualTo(parallelBefore);
 	}
@@ -496,7 +501,7 @@ class LmdbNativeIrKernelParallelTest {
 		long hostedBefore = KernelExecutionTestAccess.hostedGenericCompiles();
 		long islandsBefore = KernelExecutionTestAccess.islandCompiles();
 
-		assertThat(rows(query, forcedStrategy)).containsExactlyInAnyOrderElementsOf(expected);
+		assertThat(rowBag(rows(query, forcedStrategy))).containsExactlyInAnyOrderEntriesOf(rowBag(expected));
 		assertThat(KernelExecutionTestAccess.planned()).isPositive();
 		assertThat(KernelExecutionTestAccess.opened()).isPositive();
 		assertThat(KernelExecutionTestAccess.declined()).isZero();
@@ -512,6 +517,15 @@ class LmdbNativeIrKernelParallelTest {
 		assertThat(rows(query)).containsExactlyInAnyOrderElementsOf(expected);
 		assertThat(KernelExecutionTestAccess.hostedGenericCompiles()).isEqualTo(hostedBefore);
 		assertThat(KernelExecutionTestAccess.islandCompiles()).isEqualTo(islandsBefore);
+	}
+
+	/** Counts every occurrence without changing the existing canonical row representation. */
+	private static Map<String, Integer> rowBag(List<String> rows) {
+		Map<String, Integer> counts = new HashMap<>();
+		for (String row : rows) {
+			counts.merge(row, 1, Integer::sum);
+		}
+		return counts;
 	}
 
 	private List<String> rows(String query) {

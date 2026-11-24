@@ -283,6 +283,7 @@ class LmdbNativeIrAggregateParallelTest {
 	void parallelIrAggregateMatchesGenericAndEngages() {
 		System.setProperty("rdf4j.lmdb.nativeQueryEngine.enabled", "false");
 		List<String> expected = rows(GROUPED_QUERY);
+		Map<String, Integer> expectedBag = rowBag(expected);
 		assertThat(expected).hasSize(600);
 		System.setProperty("rdf4j.lmdb.nativeQueryEngine.enabled", "true");
 		System.setProperty(LmdbNativeParallelKernelAggregate.ENABLED_PROPERTY, "true");
@@ -291,22 +292,23 @@ class LmdbNativeIrAggregateParallelTest {
 		long parallelBefore = LmdbNativeParallelKernelAggregate.PARALLEL_RUNS.get();
 		for (int round = 0; round < 300
 				&& LmdbNativeParallelKernelAggregate.PARALLEL_RUNS.get() == parallelBefore; round++) {
-			assertThat(rows(GROUPED_QUERY, LmdbNativeAttemptMetrics.PATH_IR_AGGREGATE_PARALLEL))
+			assertThat(rowBag(rows(GROUPED_QUERY, LmdbNativeAttemptMetrics.PATH_IR_AGGREGATE_PARALLEL)))
 					.as("parity on round " + round)
-					.containsExactlyInAnyOrderElementsOf(expected);
+					.containsExactlyInAnyOrderEntriesOf(expectedBag);
 		}
 		assertThat(LmdbNativeParallelKernelAggregate.PARALLEL_RUNS.get())
 				.as("the compiled aggregate must run partitioned across workers")
 				.isGreaterThan(parallelBefore);
 		// one more run with the parallel path known-active must still be exact
-		assertThat(rows(GROUPED_QUERY, LmdbNativeAttemptMetrics.PATH_IR_AGGREGATE_PARALLEL))
-				.containsExactlyInAnyOrderElementsOf(expected);
+		assertThat(rowBag(rows(GROUPED_QUERY, LmdbNativeAttemptMetrics.PATH_IR_AGGREGATE_PARALLEL)))
+				.containsExactlyInAnyOrderEntriesOf(expectedBag);
 	}
 
 	@Test
 	void multiPatternAggregateQuoteKeepsExpectedPriceSeparateFromHardWorkAndForcedIrRuns() {
 		System.setProperty("rdf4j.lmdb.nativeQueryEngine.enabled", "false");
 		List<String> expected = rows(GROUPED_QUERY);
+		Map<String, Integer> expectedBag = rowBag(expected);
 		assertThat(expected).hasSize(600);
 		System.setProperty("rdf4j.lmdb.nativeQueryEngine.enabled", "true");
 		System.setProperty("rdf4j.lmdb.janinoCodegen.enabled", "false");
@@ -314,8 +316,8 @@ class LmdbNativeIrAggregateParallelTest {
 		KernelExecutionTestAccess.resetMetrics();
 		long parallelBefore = LmdbNativeParallelKernelAggregate.PARALLEL_RUNS.get();
 		List<String> forced = rows(GROUPED_QUERY, LmdbNativeAttemptMetrics.PATH_IR_AGGREGATE_PARALLEL_INTERPRETED);
-		assertThat(forced).as("explicit IR selection must preserve the generic result bag")
-				.containsExactlyInAnyOrderElementsOf(expected);
+		assertThat(rowBag(forced)).as("explicit IR selection must preserve the generic result bag")
+				.containsExactlyInAnyOrderEntriesOf(expectedBag);
 		assertThat(LmdbNativeParallelKernelAggregate.PARALLEL_RUNS.get())
 				.as("an explicitly selected available IR candidate must execute its worker producer")
 				.isGreaterThan(parallelBefore);
@@ -467,14 +469,15 @@ class LmdbNativeIrAggregateParallelTest {
 			String query = "SELECT (COUNT(?v) AS ?count) WHERE { " + producer + " }";
 			System.setProperty("rdf4j.lmdb.nativeQueryEngine.enabled", "false");
 			List<String> expected = rows(query);
+			Map<String, Integer> expectedBag = rowBag(expected);
 			System.setProperty("rdf4j.lmdb.nativeQueryEngine.enabled", "true");
 			System.setProperty("rdf4j.lmdb.janinoCodegen.enabled", "true");
 			long parallelBefore = LmdbNativeParallelKernelAggregate.PARALLEL_RUNS.get();
-			assertThat(rows(query, LmdbNativeAttemptMetrics.PATH_IR_AGGREGATE))
-					.containsExactlyInAnyOrderElementsOf(expected);
+			assertThat(rowBag(rows(query, LmdbNativeAttemptMetrics.PATH_IR_AGGREGATE)))
+					.containsExactlyInAnyOrderEntriesOf(expectedBag);
 			System.setProperty("rdf4j.lmdb.janinoCodegen.enabled", "false");
-			assertThat(rows(query, LmdbNativeAttemptMetrics.PATH_IR_AGGREGATE_INTERPRETED))
-					.containsExactlyInAnyOrderElementsOf(expected);
+			assertThat(rowBag(rows(query, LmdbNativeAttemptMetrics.PATH_IR_AGGREGATE_INTERPRETED)))
+					.containsExactlyInAnyOrderEntriesOf(expectedBag);
 			assertThat(catchThrowable(() -> rows(query,
 					LmdbNativeAttemptMetrics.PATH_IR_AGGREGATE_PARALLEL_INTERPRETED)))
 							.as(() -> query + '\n' + explain(query))
@@ -506,6 +509,7 @@ class LmdbNativeIrAggregateParallelTest {
 	void parallelIrAggregatePartitionsDomainRoot() {
 		System.setProperty("rdf4j.lmdb.nativeQueryEngine.enabled", "false");
 		List<String> expected = rows(DOMAIN_ROOT_QUERY);
+		Map<String, Integer> expectedBag = rowBag(expected);
 		assertThat(expected).hasSize(600);
 		System.setProperty("rdf4j.lmdb.nativeQueryEngine.enabled", "true");
 		System.setProperty(LmdbNativeParallelKernelAggregate.ENABLED_PROPERTY, "true");
@@ -514,21 +518,22 @@ class LmdbNativeIrAggregateParallelTest {
 		long parallelBefore = LmdbNativeParallelKernelAggregate.PARALLEL_RUNS.get();
 		for (int round = 0; round < 300
 				&& LmdbNativeParallelKernelAggregate.PARALLEL_RUNS.get() == parallelBefore; round++) {
-			assertThat(rows(DOMAIN_ROOT_QUERY, LmdbNativeAttemptMetrics.PATH_IR_AGGREGATE_PARALLEL))
+			assertThat(rowBag(rows(DOMAIN_ROOT_QUERY, LmdbNativeAttemptMetrics.PATH_IR_AGGREGATE_PARALLEL)))
 					.as("parity on round " + round)
-					.containsExactlyInAnyOrderElementsOf(expected);
+					.containsExactlyInAnyOrderEntriesOf(expectedBag);
 		}
 		assertThat(LmdbNativeParallelKernelAggregate.PARALLEL_RUNS.get())
 				.as("a domain-rooted aggregate kernel must partition by domain slice")
 				.isGreaterThan(parallelBefore);
-		assertThat(rows(DOMAIN_ROOT_QUERY, LmdbNativeAttemptMetrics.PATH_IR_AGGREGATE_PARALLEL))
-				.containsExactlyInAnyOrderElementsOf(expected);
+		assertThat(rowBag(rows(DOMAIN_ROOT_QUERY, LmdbNativeAttemptMetrics.PATH_IR_AGGREGATE_PARALLEL)))
+				.containsExactlyInAnyOrderEntriesOf(expectedBag);
 	}
 
 	@Test
 	void parallelIrAggregateRunsForkableFilterHooks() {
 		System.setProperty("rdf4j.lmdb.nativeQueryEngine.enabled", "false");
 		List<String> expected = rows(FORKABLE_FILTER_QUERY);
+		Map<String, Integer> expectedBag = rowBag(expected);
 		assertThat(expected).hasSize(600);
 		System.setProperty("rdf4j.lmdb.nativeQueryEngine.enabled", "true");
 		System.setProperty(LmdbNativeParallelKernelAggregate.ENABLED_PROPERTY, "true");
@@ -537,22 +542,23 @@ class LmdbNativeIrAggregateParallelTest {
 		long parallelBefore = LmdbNativeParallelKernelAggregate.PARALLEL_RUNS.get();
 		for (int round = 0; round < 300
 				&& LmdbNativeParallelKernelAggregate.PARALLEL_RUNS.get() == parallelBefore; round++) {
-			assertThat(rows(FORKABLE_FILTER_QUERY, LmdbNativeAttemptMetrics.PATH_IR_AGGREGATE_PARALLEL))
+			assertThat(rowBag(rows(FORKABLE_FILTER_QUERY, LmdbNativeAttemptMetrics.PATH_IR_AGGREGATE_PARALLEL)))
 					.as("parity on round " + round)
-					.containsExactlyInAnyOrderElementsOf(expected);
+					.containsExactlyInAnyOrderEntriesOf(expectedBag);
 		}
 		assertThat(LmdbNativeParallelKernelAggregate.PARALLEL_RUNS.get())
 				.as("a forkable filter must fork per worker, not force the sequential drain")
 				.isGreaterThan(parallelBefore);
 		// one more run with the parallel path known-active must still be exact
-		assertThat(rows(FORKABLE_FILTER_QUERY, LmdbNativeAttemptMetrics.PATH_IR_AGGREGATE_PARALLEL))
-				.containsExactlyInAnyOrderElementsOf(expected);
+		assertThat(rowBag(rows(FORKABLE_FILTER_QUERY, LmdbNativeAttemptMetrics.PATH_IR_AGGREGATE_PARALLEL)))
+				.containsExactlyInAnyOrderEntriesOf(expectedBag);
 	}
 
 	@Test
 	void parallelIrAggregateRebindsContextualTermFiltersPerWorker() {
 		System.setProperty("rdf4j.lmdb.nativeQueryEngine.enabled", "false");
 		List<String> expected = rows(CONTEXTUAL_TERM_FILTER_QUERY);
+		Map<String, Integer> expectedBag = rowBag(expected);
 		assertThat(expected).hasSize(600);
 		System.setProperty("rdf4j.lmdb.nativeQueryEngine.enabled", "true");
 		System.setProperty(LmdbNativeParallelKernelAggregate.ENABLED_PROPERTY, "true");
@@ -561,21 +567,22 @@ class LmdbNativeIrAggregateParallelTest {
 		long parallelBefore = LmdbNativeParallelKernelAggregate.PARALLEL_RUNS.get();
 		for (int round = 0; round < 300
 				&& LmdbNativeParallelKernelAggregate.PARALLEL_RUNS.get() == parallelBefore; round++) {
-			assertThat(rows(CONTEXTUAL_TERM_FILTER_QUERY, LmdbNativeAttemptMetrics.PATH_IR_AGGREGATE_PARALLEL))
+			assertThat(rowBag(rows(CONTEXTUAL_TERM_FILTER_QUERY, LmdbNativeAttemptMetrics.PATH_IR_AGGREGATE_PARALLEL)))
 					.as("parity on round " + round)
-					.containsExactlyInAnyOrderElementsOf(expected);
+					.containsExactlyInAnyOrderEntriesOf(expectedBag);
 		}
 		assertThat(LmdbNativeParallelKernelAggregate.PARALLEL_RUNS.get())
 				.as("contextual scalar filters must bind against the worker source before execution")
 				.isGreaterThan(parallelBefore);
-		assertThat(rows(CONTEXTUAL_TERM_FILTER_QUERY, LmdbNativeAttemptMetrics.PATH_IR_AGGREGATE_PARALLEL))
-				.containsExactlyInAnyOrderElementsOf(expected);
+		assertThat(rowBag(rows(CONTEXTUAL_TERM_FILTER_QUERY, LmdbNativeAttemptMetrics.PATH_IR_AGGREGATE_PARALLEL)))
+				.containsExactlyInAnyOrderEntriesOf(expectedBag);
 	}
 
 	@Test
 	void pureComputedGroupAggregateRunsInParallel() {
 		System.setProperty("rdf4j.lmdb.nativeQueryEngine.enabled", "false");
 		List<String> expected = rows(COMPUTED_GROUP_QUERY);
+		Map<String, Integer> expectedBag = rowBag(expected);
 		assertThat(expected).isNotEmpty();
 		System.setProperty("rdf4j.lmdb.nativeQueryEngine.enabled", "true");
 		System.setProperty(LmdbNativeParallelKernelAggregate.ENABLED_PROPERTY, "true");
@@ -584,15 +591,15 @@ class LmdbNativeIrAggregateParallelTest {
 		long parallelBefore = LmdbNativeParallelKernelAggregate.PARALLEL_RUNS.get();
 		for (int round = 0; round < 300
 				&& LmdbNativeParallelKernelAggregate.PARALLEL_RUNS.get() == parallelBefore; round++) {
-			assertThat(rows(COMPUTED_GROUP_QUERY, LmdbNativeAttemptMetrics.PATH_IR_AGGREGATE_PARALLEL))
+			assertThat(rowBag(rows(COMPUTED_GROUP_QUERY, LmdbNativeAttemptMetrics.PATH_IR_AGGREGATE_PARALLEL)))
 					.as("parity on round " + round)
-					.containsExactlyInAnyOrderElementsOf(expected);
+					.containsExactlyInAnyOrderEntriesOf(expectedBag);
 		}
 		assertThat(LmdbNativeParallelKernelAggregate.PARALLEL_RUNS.get())
 				.as("a pure replay-safe computed aggregate must run partitioned")
 				.isGreaterThan(parallelBefore);
-		assertThat(rows(COMPUTED_GROUP_QUERY, LmdbNativeAttemptMetrics.PATH_IR_AGGREGATE_PARALLEL))
-				.containsExactlyInAnyOrderElementsOf(expected);
+		assertThat(rowBag(rows(COMPUTED_GROUP_QUERY, LmdbNativeAttemptMetrics.PATH_IR_AGGREGATE_PARALLEL)))
+				.containsExactlyInAnyOrderEntriesOf(expectedBag);
 	}
 
 	/**
@@ -610,6 +617,7 @@ class LmdbNativeIrAggregateParallelTest {
 	void distinctAggregateMergesInParallel() {
 		System.setProperty("rdf4j.lmdb.nativeQueryEngine.enabled", "false");
 		List<String> expected = rows(DISTINCT_QUERY);
+		Map<String, Integer> expectedBag = rowBag(expected);
 		System.setProperty("rdf4j.lmdb.nativeQueryEngine.enabled", "true");
 		System.setProperty(LmdbNativeParallelKernelAggregate.ENABLED_PROPERTY, "true");
 
@@ -617,21 +625,22 @@ class LmdbNativeIrAggregateParallelTest {
 		long parallelBefore = LmdbNativeParallelKernelAggregate.PARALLEL_RUNS.get();
 		for (int round = 0; round < 300
 				&& LmdbNativeParallelKernelAggregate.PARALLEL_RUNS.get() == parallelBefore; round++) {
-			assertThat(rows(DISTINCT_QUERY, LmdbNativeAttemptMetrics.PATH_IR_AGGREGATE_PARALLEL))
+			assertThat(rowBag(rows(DISTINCT_QUERY, LmdbNativeAttemptMetrics.PATH_IR_AGGREGATE_PARALLEL)))
 					.as("parity on round " + round)
-					.containsExactlyInAnyOrderElementsOf(expected);
+					.containsExactlyInAnyOrderEntriesOf(expectedBag);
 		}
 		assertThat(LmdbNativeParallelKernelAggregate.PARALLEL_RUNS.get())
 				.as("DISTINCT channels merge as a union of id sets, so the rung must partition rather than decline")
 				.isGreaterThan(parallelBefore);
-		assertThat(rows(DISTINCT_QUERY, LmdbNativeAttemptMetrics.PATH_IR_AGGREGATE_PARALLEL))
-				.containsExactlyInAnyOrderElementsOf(expected);
+		assertThat(rowBag(rows(DISTINCT_QUERY, LmdbNativeAttemptMetrics.PATH_IR_AGGREGATE_PARALLEL)))
+				.containsExactlyInAnyOrderEntriesOf(expectedBag);
 	}
 
 	@Test
 	void distinctTermExtremaTieDeclinesParallelButStaysSequentialNative() {
 		System.setProperty("rdf4j.lmdb.nativeQueryEngine.enabled", "false");
 		List<String> expected = rows(EXTREMA_TIE_QUERY);
+		Map<String, Integer> expectedBag = rowBag(expected);
 		assertThat(expected).hasSize(1);
 		System.setProperty("rdf4j.lmdb.nativeQueryEngine.enabled", "true");
 		System.setProperty(LmdbNativeParallelKernelAggregate.ENABLED_PROPERTY, "true");
@@ -642,8 +651,8 @@ class LmdbNativeIrAggregateParallelTest {
 		long hostedBefore = KernelExecutionTestAccess.hostedGenericCompiles();
 		long islandsBefore = KernelExecutionTestAccess.islandCompiles();
 		for (int round = 0; round < 50; round++) {
-			assertThat(rows(EXTREMA_TIE_QUERY)).as("parity on round " + round)
-					.containsExactlyInAnyOrderElementsOf(expected);
+			assertThat(rowBag(rows(EXTREMA_TIE_QUERY))).as("parity on round " + round)
+					.containsExactlyInAnyOrderEntriesOf(expectedBag);
 		}
 		assertThat(LmdbNativeParallelKernelAggregate.PARALLEL_RUNS.get())
 				.as("distinct terms comparing equal: the parallel winner would depend on partition and merge order; "
@@ -652,13 +661,14 @@ class LmdbNativeIrAggregateParallelTest {
 		assertThat(KernelExecutionTestAccess.semanticNativeCompiles() - compiledBefore).isPositive();
 		assertThat(KernelExecutionTestAccess.hostedGenericCompiles()).isEqualTo(hostedBefore);
 		assertThat(KernelExecutionTestAccess.islandCompiles()).isEqualTo(islandsBefore);
-		assertThat(rows(EXTREMA_TIE_QUERY)).containsExactlyInAnyOrderElementsOf(expected);
+		assertThat(rowBag(rows(EXTREMA_TIE_QUERY))).containsExactlyInAnyOrderEntriesOf(expectedBag);
 	}
 
 	@Test
 	void duplicateRdfTermExtremaIdsMergeInParallel() {
 		System.setProperty("rdf4j.lmdb.nativeQueryEngine.enabled", "false");
 		List<String> expected = rows(DUPLICATE_TERM_EXTREMA_QUERY);
+		Map<String, Integer> expectedBag = rowBag(expected);
 		assertThat(expected).hasSize(1);
 		System.setProperty("rdf4j.lmdb.nativeQueryEngine.enabled", "true");
 		System.setProperty(LmdbNativeParallelKernelAggregate.ENABLED_PROPERTY, "true");
@@ -667,21 +677,22 @@ class LmdbNativeIrAggregateParallelTest {
 		long parallelBefore = LmdbNativeParallelKernelAggregate.PARALLEL_RUNS.get();
 		for (int round = 0; round < 300
 				&& LmdbNativeParallelKernelAggregate.PARALLEL_RUNS.get() == parallelBefore; round++) {
-			assertThat(rows(DUPLICATE_TERM_EXTREMA_QUERY, LmdbNativeAttemptMetrics.PATH_IR_AGGREGATE_PARALLEL))
+			assertThat(rowBag(rows(DUPLICATE_TERM_EXTREMA_QUERY, LmdbNativeAttemptMetrics.PATH_IR_AGGREGATE_PARALLEL)))
 					.as("parity on round " + round)
-					.containsExactlyInAnyOrderElementsOf(expected);
+					.containsExactlyInAnyOrderEntriesOf(expectedBag);
 		}
 		assertThat(LmdbNativeParallelKernelAggregate.PARALLEL_RUNS.get())
 				.as("equal RDF terms with different physical ids may keep either representative during extrema merge")
 				.isGreaterThan(parallelBefore);
-		assertThat(rows(DUPLICATE_TERM_EXTREMA_QUERY, LmdbNativeAttemptMetrics.PATH_IR_AGGREGATE_PARALLEL))
-				.containsExactlyInAnyOrderElementsOf(expected);
+		assertThat(rowBag(rows(DUPLICATE_TERM_EXTREMA_QUERY, LmdbNativeAttemptMetrics.PATH_IR_AGGREGATE_PARALLEL)))
+				.containsExactlyInAnyOrderEntriesOf(expectedBag);
 	}
 
 	@Test
 	void floatingSumNeverRunsParallelAndStaysExact() {
 		System.setProperty("rdf4j.lmdb.nativeQueryEngine.enabled", "false");
 		List<String> expected = rows(FLOATING_SUM_QUERY);
+		Map<String, Integer> expectedBag = rowBag(expected);
 		assertThat(expected).hasSize(600);
 		System.setProperty("rdf4j.lmdb.nativeQueryEngine.enabled", "true");
 		System.setProperty(LmdbNativeParallelKernelAggregate.ENABLED_PROPERTY, "true");
@@ -689,8 +700,8 @@ class LmdbNativeIrAggregateParallelTest {
 		KernelExecutionTestAccess.resetMetrics();
 		long parallelBefore = LmdbNativeParallelKernelAggregate.PARALLEL_RUNS.get();
 		for (int round = 0; round < 50; round++) {
-			assertThat(rows(FLOATING_SUM_QUERY)).as("parity on round " + round)
-					.containsExactlyInAnyOrderElementsOf(expected);
+			assertThat(rowBag(rows(FLOATING_SUM_QUERY))).as("parity on round " + round)
+					.containsExactlyInAnyOrderEntriesOf(expectedBag);
 		}
 		assertThat(LmdbNativeParallelKernelAggregate.PARALLEL_RUNS.get())
 				.as("floating SUM rounding is encounter-order-sensitive; no parallel merge may ever complete")
@@ -716,6 +727,7 @@ class LmdbNativeIrAggregateParallelTest {
 	private void assertAllExecutionRungs(String query) {
 		System.setProperty("rdf4j.lmdb.nativeQueryEngine.enabled", "false");
 		List<String> expected = rows(query);
+		Map<String, Integer> expectedBag = rowBag(expected);
 		assertThat(expected).as("the generic evaluator must answer the query").isNotEmpty();
 
 		System.setProperty("rdf4j.lmdb.nativeQueryEngine.enabled", "true");
@@ -737,14 +749,14 @@ class LmdbNativeIrAggregateParallelTest {
 				LmdbNativeAttemptMetrics.PATH_IR_AGGREGATE_PARALLEL_INTERPRETED);
 		long interpretedParallelRuns = LmdbNativeParallelKernelAggregate.PARALLEL_RUNS.get();
 
-		assertThat(generated).as("forced generated IR must match the generic evaluator")
-				.containsExactlyInAnyOrderElementsOf(expected);
-		assertThat(interpreted).as("forced interpreted IR must match the generic evaluator")
-				.containsExactlyInAnyOrderElementsOf(expected);
-		assertThat(generatedParallel).as("forced generated parallel IR must match the generic evaluator")
-				.containsExactlyInAnyOrderElementsOf(expected);
-		assertThat(interpretedParallel).as("forced interpreted parallel IR must match the generic evaluator")
-				.containsExactlyInAnyOrderElementsOf(expected);
+		assertThat(rowBag(generated)).as("forced generated IR must match the generic evaluator")
+				.containsExactlyInAnyOrderEntriesOf(expectedBag);
+		assertThat(rowBag(interpreted)).as("forced interpreted IR must match the generic evaluator")
+				.containsExactlyInAnyOrderEntriesOf(expectedBag);
+		assertThat(rowBag(generatedParallel)).as("forced generated parallel IR must match the generic evaluator")
+				.containsExactlyInAnyOrderEntriesOf(expectedBag);
+		assertThat(rowBag(interpretedParallel)).as("forced interpreted parallel IR must match the generic evaluator")
+				.containsExactlyInAnyOrderEntriesOf(expectedBag);
 		assertThat(generatedParallelRuns)
 				.as(() -> "the generated route must execute through the parallel aggregate scheduler: " + query
 						+ '\n' + explain(query))
@@ -768,6 +780,15 @@ class LmdbNativeIrAggregateParallelTest {
 				return value.longValue();
 			}
 		}
+	}
+
+	/** Counts every occurrence without changing the existing canonical row representation. */
+	private static Map<String, Integer> rowBag(List<String> rows) {
+		Map<String, Integer> counts = new HashMap<>();
+		for (String row : rows) {
+			counts.merge(row, 1, Integer::sum);
+		}
+		return counts;
 	}
 
 	private List<String> rows(String query) {
