@@ -1,5 +1,5 @@
 /*******************************************************************************
- * Copyright (c) 2026 Eclipse RDF4J contributors, Aduna, and others.
+ * Copyright (c) 2026 Eclipse RDF4J contributors.
  *
  * All rights reserved. This program and the accompanying materials
  * are made available under the terms of the Eclipse Distribution License v1.0
