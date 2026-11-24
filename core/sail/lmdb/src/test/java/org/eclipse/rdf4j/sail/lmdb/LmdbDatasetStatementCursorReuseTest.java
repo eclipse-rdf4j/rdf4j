@@ -36,8 +36,11 @@ import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicReference;
+import java.util.concurrent.locks.StampedLock;
 
+import org.eclipse.rdf4j.common.concurrent.locks.StampedLongAdderLockManager;
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.common.iteration.CooperativeCancellation;
 import org.eclipse.rdf4j.common.iteration.IndexReportingIterator;
@@ -268,6 +271,34 @@ class LmdbDatasetStatementCursorReuseTest {
 	}
 
 	@Test
+	void interruptedResetRestoresCallerInterruptAndDisposesCursor(@TempDir File directory) throws Exception {
+		try (Fixture fixture = new Fixture(directory); SailDataset dataset = fixture.dataset()) {
+			try (var rows = dataset.getStatements(node(1), PREDICATE, null, GRAPH)) {
+				assertSingle(rows, node(1), node(2));
+			}
+			LmdbRecordIterator cursor = fixture.cursors.getFirst();
+			fixture.interruptReset.set(true);
+			try {
+				SailException failure = assertThrows(SailException.class, () -> {
+					try (var rows = dataset.getStatements(node(3), PREDICATE, null, GRAPH)) {
+						rows.hasNext();
+					}
+				});
+				assertTrue(failure.getCause() instanceof InterruptedException);
+				assertTrue(Thread.currentThread().isInterrupted(),
+						"Like fresh cursor construction, interrupted retained cursor reset must retain interrupt status");
+			} finally {
+				Thread.interrupted();
+			}
+			verify(cursor, times(1)).dispose();
+			try (var rows = dataset.getStatements(node(5), PREDICATE, null, GRAPH)) {
+				assertSingle(rows, node(5), node(6));
+			}
+			assertEquals(2, fixture.cursors.size());
+		}
+	}
+
+	@Test
 	void wrapperConstructionFailureDisposesItsBorrowedCursor(@TempDir File directory) throws Exception {
 		try (Fixture fixture = new Fixture(directory); SailDataset dataset = fixture.dataset()) {
 			var failure = new IllegalStateException("injected cursor generation capture failure");
@@ -362,6 +393,7 @@ class LmdbDatasetStatementCursorReuseTest {
 
 	private static final class Fixture implements AutoCloseable {
 		private final List<LmdbRecordIterator> cursors = new ArrayList<>();
+		private final AtomicBoolean interruptReset = new AtomicBoolean();
 		private final AtomicReference<RuntimeException> resetFailure = new AtomicReference<>();
 		private final AtomicReference<RuntimeException> wrapperConstructionFailure = new AtomicReference<>();
 		private final LmdbStore store;
@@ -424,6 +456,22 @@ class LmdbDatasetStatementCursorReuseTest {
 				if (method.equals("getTriplesRetained") && invocation.getArguments().length == 7) {
 					LmdbRecordIterator cursor = mock(LmdbRecordIterator.class,
 							withSettings().spiedInstance(result).defaultAnswer(cursorInvocation -> {
+								if (cursorInvocation.getMethod().getName().equals("reset")
+										&& interruptReset.getAndSet(false)) {
+									// Reproduce a writer's provisional stamp after withGeneration acquired the outer
+									// reader. Drive the real nested readLock() interruption, not a mocked reset error.
+									var field = StampedLongAdderLockManager.class.getDeclaredField("stampedLock");
+									field.setAccessible(true);
+									var lock = (StampedLock) field.get(((LmdbRecordIterator) result).transaction()
+											.lockManager());
+									long write = lock.writeLock();
+									Thread.currentThread().interrupt();
+									try {
+										return cursorInvocation.callRealMethod();
+									} finally {
+										lock.unlockWrite(write);
+									}
+								}
 								if (cursorInvocation.getMethod().getName().equals("cancellationGeneration")) {
 									RuntimeException failure = wrapperConstructionFailure.getAndSet(null);
 									if (failure != null) {
