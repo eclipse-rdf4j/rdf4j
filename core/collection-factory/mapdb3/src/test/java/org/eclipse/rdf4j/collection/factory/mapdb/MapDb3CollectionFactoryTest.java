@@ -22,10 +22,54 @@ import java.util.Iterator;
 import java.util.Map;
 import java.util.NoSuchElementException;
 import java.util.Queue;
+import java.util.Set;
+import java.util.concurrent.atomic.AtomicInteger;
 
+import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
+import org.eclipse.rdf4j.query.BindingSet;
+import org.eclipse.rdf4j.query.impl.MapBindingSet;
 import org.junit.jupiter.api.Test;
 
 public class MapDb3CollectionFactoryTest {
+
+	@Test
+	void homogeneousBindingProbeUsesBackingIndexWithoutChangingGenericMembership() {
+		AtomicInteger comparisons = new AtomicInteger();
+		// Model the internal path pair: homogeneous keys share a hash, but a generic binding set
+		// can represent the same row with a different hash and compare it by its bindings.
+		class Key extends MapBindingSet {
+			@Override
+			public int hashCode() {
+				return super.hashCode() ^ 0x12345678;
+			}
+
+			@Override
+			public boolean equals(Object other) {
+				comparisons.incrementAndGet();
+				return other instanceof Key && super.equals(other);
+			}
+		}
+		var vf = SimpleValueFactory.getInstance();
+		try (MapDb3CollectionFactory factory = new MapDb3CollectionFactory(4)) {
+			Set<BindingSet> keys = factory.createSetOfBindingSets(Key::new, n -> b -> b.hasBinding(n),
+					n -> b -> b.getValue(n), n -> (v, b) -> b.setBinding(n, v));
+			for (int i = 0; i < 64; i++) {
+				Key row = new Key();
+				row.addBinding("k", vf.createLiteral(i));
+				keys.add(row);
+			}
+			Key missing = new Key();
+			missing.addBinding("k", vf.createLiteral(-1));
+			comparisons.set(0);
+			assertFalse(factory.containsInHomogeneousSet(keys, missing));
+			assertTrue(comparisons.get() < keys.size());
+
+			MapBindingSet generic = new MapBindingSet();
+			generic.addBinding("k", vf.createLiteral(31));
+			assertTrue(keys.contains(generic));
+			assertFalse(keys.contains(null));
+		}
+	}
 
 	@Test
 	void genericMapSpillsWithoutAnotherCollectionInitializingTheDatabase() {

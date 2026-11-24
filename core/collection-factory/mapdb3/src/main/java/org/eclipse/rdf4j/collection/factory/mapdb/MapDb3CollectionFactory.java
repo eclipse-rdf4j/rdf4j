@@ -56,7 +56,7 @@ import org.mapdb.Serializer;
 import org.mapdb.serializer.SerializerJava;
 import org.mapdb.serializer.SerializerLong;
 
-public class MapDb3CollectionFactory implements CollectionFactory {
+public class MapDb3CollectionFactory implements CollectionFactory, CollectionFactory.HomogeneousSetLookup {
 	// The size 16 seems like a nice starting value but others could well
 	// be better.
 	private static final int DEFAULT_SWITCH_TO_DISK_BASED_SET_AT_SIZE = 16;
@@ -196,6 +196,16 @@ public class MapDb3CollectionFactory implements CollectionFactory {
 		} else {
 			return delegate.createSetOfBindingSets();
 		}
+	}
+
+	@Override
+	public <T> boolean containsInHomogeneousSet(Set<T> set, T key) {
+		if (getClass() == MapDb3CollectionFactory.class && delegate.getClass() == DefaultCollectionFactory.class
+				&& key != null && set instanceof SyncThresholdAwareSet<?> threshold
+				&& threshold.wrapped instanceof CommitingSet<?> committing) {
+			return committing.wrapped.contains(key);
+		}
+		return set.contains(key);
 	}
 
 	@Override

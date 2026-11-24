@@ -313,7 +313,10 @@ public class PathIteration extends LookAheadIteration<BindingSet> {
 
 				ValuePair vp = valuePairFromStartAndEnd(nextElement);
 
-				if (reportedValues.contains(vp)) {
+				if (getClass() == PathIteration.class
+						&& collectionFactory instanceof CollectionFactory.HomogeneousSetLookup lookup
+								? lookup.containsInHomogeneousSet(reportedValues, vp)
+								: reportedValues.contains(vp)) {
 					// A cycle at later depths retries through the outer cancellation checkpoint.
 					if (currentLength > 2 || !currentIter.hasNext()) {
 						continue again;

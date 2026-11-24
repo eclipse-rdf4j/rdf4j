@@ -45,6 +45,11 @@ import org.eclipse.rdf4j.query.impl.MapBindingSet;
 @InternalUseOnly
 public interface CollectionFactory extends AutoCloseable {
 
+	/** Optional indexed lookup for a private set with one stable key equality and hash-code contract. */
+	interface HomogeneousSetLookup {
+		<T> boolean containsInHomogeneousSet(Set<T> set, T key);
+	}
+
 	@Override
 	void close() throws RDF4JException;
 
