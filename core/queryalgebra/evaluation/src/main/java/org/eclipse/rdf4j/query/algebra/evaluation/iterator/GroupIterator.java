@@ -54,6 +54,7 @@ import org.eclipse.rdf4j.query.QueryExecutionPolicy;
 import org.eclipse.rdf4j.query.algebra.AggregateFunctionCall;
 import org.eclipse.rdf4j.query.algebra.AggregateOperator;
 import org.eclipse.rdf4j.query.algebra.Avg;
+import org.eclipse.rdf4j.query.algebra.BindingSetAssignment;
 import org.eclipse.rdf4j.query.algebra.Count;
 import org.eclipse.rdf4j.query.algebra.Group;
 import org.eclipse.rdf4j.query.algebra.GroupConcat;
@@ -62,6 +63,7 @@ import org.eclipse.rdf4j.query.algebra.MathExpr.MathOp;
 import org.eclipse.rdf4j.query.algebra.Max;
 import org.eclipse.rdf4j.query.algebra.Min;
 import org.eclipse.rdf4j.query.algebra.NAryValueOperator;
+import org.eclipse.rdf4j.query.algebra.Projection;
 import org.eclipse.rdf4j.query.algebra.Sample;
 import org.eclipse.rdf4j.query.algebra.Sum;
 import org.eclipse.rdf4j.query.algebra.UnaryValueOperator;
@@ -530,7 +532,7 @@ public class GroupIterator extends AbstractCloseableIteratorIteration<BindingSet
 		if (operator instanceof Count) {
 			if (((Count) operator).getArg() == null) {
 				WildCardCountAggregate wildCardCountAggregate = new WildCardCountAggregate();
-				Supplier<Predicate<BindingSet>> potentialDistinctTest = operator.isDistinct() ? DistinctBindingSets::new
+				Supplier<Predicate<BindingSet>> potentialDistinctTest = operator.isDistinct() ? distinctWildcardTest()
 						: () -> ALWAYS_TRUE_BINDING_SET;
 				return new AggregatePredicateCollectorSupplier<>(wildCardCountAggregate, potentialDistinctTest,
 						() -> new CountCollector(vf), ge.getName());
@@ -850,6 +852,68 @@ public class GroupIterator extends AbstractCloseableIteratorIteration<BindingSet
 		public boolean test(List<Value> valueTuple) {
 			return distinctTuples.add(valueTuple);
 		}
+	}
+
+	private Supplier<Predicate<BindingSet>> distinctWildcardTest() {
+		if (cf.getClass() == DefaultCollectionFactory.class && parentBindings.isEmpty()) {
+			// Only read explicit metadata; never inspect members to infer their schema.
+			Set<String> names;
+			var member = group.getArg();
+			if (member != null && member.getClass() == Projection.class) {
+				var elements = ((Projection) member).getProjectionElemList();
+				if (elements.getElements().size() != 2) {
+					return DistinctBindingSets::new;
+				}
+				names = elements.getProjectedNames();
+			} else if (member != null && member.getClass() == BindingSetAssignment.class
+					&& ((BindingSetAssignment) member).hasExplicitBindingNames()) {
+				names = ((BindingSetAssignment) member).getDeclaredBindingNames();
+			} else {
+				return DistinctBindingSets::new;
+			}
+			if (names.size() == 2) {
+				var it = names.iterator();
+				String first = it.next();
+				String second = it.next();
+				if (first == null || second == null) {
+					return DistinctBindingSets::new;
+				}
+				return () -> {
+					Set<Object> seen = cf.createSet();
+					return row -> seen.add(twoColumnSolution(row, first, second));
+				};
+			}
+		}
+		return DistinctBindingSets::new;
+	}
+
+	// RDF terms in two fixed slots are an owned snapshot, even if the member cursor reuses its BindingSet.
+	// The independent slot hashes do not cancel when both variables are bound to the same term.
+	private record TwoColumnSolution(Value first, Value second, int bound) {
+	}
+
+	private static Object twoColumnSolution(BindingSet row, String first, String second) {
+		if (row == null) {
+			return null;
+		}
+		Value a = row.getValue(first);
+		Value b = row.getValue(second);
+		int mask = (a != null || row.hasBinding(first) ? 1 : 0) | (b != null || row.hasBinding(second) ? 2 : 0);
+		if (Integer.bitCount(mask) == row.size()) {
+			return new TwoColumnSolution(a, b, mask);
+		}
+		// Bindings supplied by an outer evaluation can add names beyond the algebra's declared layout.
+		// Such a mapping never equals a compact key. Preserve its full domain, including explicit nulls.
+		Map<String, Value> values = HashMap.newHashMap(row.size());
+		row.forEach(binding -> values.put(binding.getName(), binding.getValue()));
+		if (values.size() < row.size()) {
+			for (String name : row.getBindingNames()) {
+				if (row.hasBinding(name)) {
+					values.putIfAbsent(name, null);
+				}
+			}
+		}
+		return values;
 	}
 
 	private class DistinctBindingSets implements Predicate<BindingSet> {

@@ -223,6 +223,151 @@ public class GroupIteratorTest {
 	}
 
 	@Test
+	void wildcardDistinctAcceptsOpenedMembersWithoutAlgebraLayout() {
+		Group group = new Group();
+		group.addGroupElement(new GroupElem("n", new Count(null, true)));
+		try (var it = GroupIterator.withMembers(EVALUATOR, group, EmptyBindingSet.getInstance(), CONTEXT,
+				new CloseableIteratorIteration<>(List.<BindingSet>of(EmptyBindingSet.getInstance()).iterator()))) {
+			assertThat(((Literal) it.next().getValue("n")).intValue()).isEqualTo(1);
+			assertThat(it.hasNext()).isFalse();
+		}
+	}
+
+	@Test
+	void wildcardDistinctSnapshotsReusableMemberSolutions() {
+		IRI first = VF.createIRI("urn:first");
+		IRI second = VF.createIRI("urn:second");
+		for (int recycledInputs = 0; recycledInputs < 16; recycledInputs++) {
+			int mask = recycledInputs;
+			QueryBindingSet reusable = new QueryBindingSet();
+			// Each of the four logical rows can independently be supplied in the same mutable object.
+			var members = java.util.stream.IntStream.range(0, 4).<BindingSet>mapToObj(i -> {
+				QueryBindingSet member = (mask & (1 << i)) == 0 ? new QueryBindingSet() : reusable;
+				IRI term = (i & 1) == 0 ? first : second;
+				member.setBinding("left", term);
+				member.setBinding("right", term);
+				return member;
+			}).iterator();
+			BindingSetAssignment layout = new BindingSetAssignment();
+			layout.setDeclaredBindingNames(Set.of("left", "right"));
+			Group group = new Group(layout);
+			group.addGroupElement(new GroupElem("count", new Count(null, true)));
+			try (var it = GroupIterator.withMembers(EVALUATOR, group, EmptyBindingSet.getInstance(), CONTEXT,
+					new CloseableIteratorIteration<>(members))) {
+				assertThat(((Literal) it.next().getValue("count")).intValue()).as("reused inputs %s", mask)
+						.isEqualTo(2);
+				assertThat(it.hasNext()).isFalse();
+			}
+		}
+	}
+
+	@Test
+	void wildcardDistinctIncludesUnprojectedInheritedBindingsAndExplicitNulls() {
+		IRI same = VF.createIRI("urn:shared");
+		QueryBindingSet reused = new QueryBindingSet();
+		var rows = java.util.stream.IntStream.range(0, 18).<BindingSet>mapToObj(i -> {
+			reused.removeBinding("a");
+			reused.removeBinding("b");
+			reused.removeBinding("extra");
+			int shape = i % 9;
+			if (shape == 1 || shape >= 4) {
+				reused.setBinding("a", shape == 4 ? null : same);
+			}
+			if (shape == 2 || shape >= 4) {
+				reused.setBinding("b", shape == 5 ? null : same);
+			}
+			if (shape == 3 || shape >= 7) {
+				reused.setBinding("extra", shape == 7 ? null : same);
+			}
+			return reused;
+		}).iterator();
+		BindingSetAssignment layout = new BindingSetAssignment();
+		layout.setDeclaredBindingNames(Set.of("a", "b"));
+		Group group = new Group(layout);
+		group.addGroupElement(new GroupElem("n", new Count(null, true)));
+		try (var it = GroupIterator.withMembers(EVALUATOR, group, EmptyBindingSet.getInstance(), CONTEXT,
+				new CloseableIteratorIteration<>(rows))) {
+			assertThat(((Literal) it.next().getValue("n")).intValue()).isEqualTo(9);
+		}
+	}
+
+	@Test
+	void wildcardDistinctDoesNotInspectAnUnknownMemberSourceForColumnNames() {
+		BindingSetAssignment layout = new BindingSetAssignment();
+		layout.setBindingSets(() -> {
+			throw new AssertionError("do not probe a single-use iterable");
+		});
+		Group group = new Group(layout);
+		group.addGroupElement(new GroupElem("n", new Count(null, true)));
+		try (var it = GroupIterator.withMembers(EVALUATOR, group, EmptyBindingSet.getInstance(), CONTEXT,
+				new CloseableIteratorIteration<>(List.<BindingSet>of(EmptyBindingSet.getInstance()).iterator()))) {
+			assertThat(((Literal) it.next().getValue("n")).intValue()).isEqualTo(1);
+		}
+	}
+
+	@Test
+	void wildcardDistinctUsesTheWholeBindingDomainWithoutQuadraticComparisons() {
+		AtomicInteger comparisons = new AtomicInteger();
+		List<BindingSet> members = new ArrayList<>();
+		for (int i = 0; i < 256; i++) {
+			IRI value = new SimpleIRI("urn:distinct:" + i) {
+				@Override
+				public boolean equals(Object other) {
+					comparisons.incrementAndGet();
+					return super.equals(other);
+				}
+			};
+			QueryBindingSet row = new QueryBindingSet();
+			row.addBinding("k", value);
+			row.addBinding("copy", value);
+			members.add(row);
+			members.add(new QueryBindingSet(row));
+		}
+		// All three mappings iterate no bindings, but explicit nulls still occupy different names.
+		QueryBindingSet undefinedK = new QueryBindingSet();
+		undefinedK.setBinding("k", null);
+		QueryBindingSet undefinedCopy = new QueryBindingSet();
+		undefinedCopy.setBinding("copy", null);
+		members.addAll(List.of(EmptyBindingSet.getInstance(), EmptyBindingSet.getInstance(), undefinedK,
+				new QueryBindingSet(undefinedK), undefinedCopy));
+		BindingSetAssignment layout = new BindingSetAssignment();
+		layout.setDeclaredBindingNames(Set.of("k", "copy"));
+		Group group = new Group(layout);
+		group.addGroupElement(new GroupElem("count", new Count(null, true)));
+		try (var it = GroupIterator.withMembers(EVALUATOR, group, EmptyBindingSet.getInstance(), CONTEXT,
+				new CloseableIteratorIteration<>(members.iterator()))) {
+			assertThat(((Literal) it.next().getValue("count")).intValue()).isEqualTo(259);
+			assertThat(it.hasNext()).isFalse();
+		}
+		assertThat(comparisons.get()).isLessThan(4096);
+	}
+
+	@Test
+	void wildcardDistinctPassesOriginalBindingsToCustomFactory() {
+		AtomicInteger observed = new AtomicInteger();
+		var factory = new DefaultCollectionFactory() {
+			@Override
+			public <T> Set<T> createSet() {
+				return new HashSet<>() {
+					@Override
+					public boolean add(T value) {
+						assertThat(value).isInstanceOf(BindingSet.class);
+						observed.incrementAndGet();
+						return super.add(value);
+					}
+				};
+			}
+		};
+		Group group = new Group(NONEMPTY_ASSIGNMENT);
+		group.addGroupElement(new GroupElem("count", new Count(null, true)));
+		try (var it = new GroupIterator(EVALUATOR, group, EmptyBindingSet.getInstance(), 0, CONTEXT, VF, factory)) {
+			assertThat(((Literal) it.next().getValue("count")).intValue()).isEqualTo(9);
+			assertThat(it.hasNext()).isFalse();
+		}
+		assertThat(observed.get()).isEqualTo(9);
+	}
+
+	@Test
 	void groupingOnTwoEqualTermsDoesNotCompareEveryPairOfFinalSolutions() {
 		int cardinality = 256;
 		AtomicInteger comparisons = new AtomicInteger();
