@@ -313,50 +313,41 @@ public class PathIteration extends LookAheadIteration<BindingSet> {
 
 				ValuePair vp = valuePairFromStartAndEnd(nextElement);
 
-				if (!isCyclicPath(vp)) {
-
-					if (reportedValues.contains(vp)) {
-						// new arbitrary-length path semantics: filter out
-						// duplicates
-						if (currentIter.hasNext()) {
-							continue;
-						} else {
-							// if the current iter is exhausted, we need to check
-							// that no further paths of greater length still exists.
-							continue again;
-						}
+				if (reportedValues.contains(vp)) {
+					// A cycle at later depths retries through the outer cancellation checkpoint.
+					if (currentLength > 2 || !currentIter.hasNext()) {
+						continue again;
 					}
+					continue;
+				}
 
-					if (startVarFixed && endVarFixed) {
-						Value endValue = getVarValue(endVar, endVarFixed, nextElement);
-						if (endValue.equals(vp.endValue)) {
-							if (firstWitnessEligible) {
-								// A second simple path with the same fixed endpoints cannot add a result mapping.
-								fixedPathMatch = true;
-							} else {
-								add(reportedValues, vp);
-								if (!vp.startValue.equals(vp.endValue)) {
-									addToQueue(valueQueue, vp);
-								}
-							}
-							return pathResult(nextElement, vp);
+				if (startVarFixed && endVarFixed) {
+					Value endValue = getVarValue(endVar, endVarFixed, nextElement);
+					if (endValue.equals(vp.endValue)) {
+						if (firstWitnessEligible) {
+							// A second simple path with the same fixed endpoints cannot add a result mapping.
+							fixedPathMatch = true;
 						} else {
-							if (add(unreportedValues, vp)) {
-								if (!vp.startValue.equals(vp.endValue)) {
-									addToQueue(valueQueue, vp);
-								}
+							add(reportedValues, vp);
+							if (!vp.startValue.equals(vp.endValue)) {
+								addToQueue(valueQueue, vp);
 							}
-							continue again;
-						}
-					} else {
-						add(reportedValues, vp);
-						if (!vp.startValue.equals(vp.endValue)) {
-							addToQueue(valueQueue, vp);
 						}
 						return pathResult(nextElement, vp);
+					} else {
+						if (add(unreportedValues, vp)) {
+							if (!vp.startValue.equals(vp.endValue)) {
+								addToQueue(valueQueue, vp);
+							}
+						}
+						continue again;
 					}
 				} else {
-					continue again;
+					add(reportedValues, vp);
+					if (!vp.startValue.equals(vp.endValue)) {
+						addToQueue(valueQueue, vp);
+					}
+					return pathResult(nextElement, vp);
 				}
 			}
 
@@ -462,15 +453,6 @@ public class PathIteration extends LookAheadIteration<BindingSet> {
 		}
 
 		return v;
-	}
-
-	private boolean isCyclicPath(ValuePair vp) {
-		if (currentLength <= 2) {
-			return false;
-		}
-
-		return reportedValues.contains(vp);
-
 	}
 
 	private void createIteration() throws QueryEvaluationException {

@@ -139,6 +139,30 @@ public class PathIterationTest {
 	}
 
 	@Test
+	void aNewPathPairRequiresOnlyOneReportedMembershipProbe() {
+		model.clear();
+		for (int i = 0; i < 32; i++) {
+			model.add(vf.createIRI("urn:n:" + i), RDFS.SUBCLASSOF, vf.createIRI("urn:n:" + (i + 1)));
+		}
+		AtomicInteger probes = new AtomicInteger();
+		CollectionFactory factory = spy(evaluator.getCollectionFactory().get());
+		doAnswer(call -> new HashSet<BindingSet>() {
+			@Override
+			public boolean contains(Object key) {
+				probes.incrementAndGet();
+				return super.contains(key);
+			}
+		}).when(factory).createSetOfBindingSets(any(), any(), any(), any());
+		evaluator.setCollectionFactory(() -> factory);
+		var root = new QueryRoot(QueryParserUtil.parseTupleQuery(QueryLanguage.SPARQL,
+				"SELECT ?o WHERE { <urn:n:0> <" + RDFS.SUBCLASSOF + ">+ ?o }", null).getTupleExpr());
+		try (var rows = evaluator.precompile(root).evaluate(EmptyBindingSet.getInstance())) {
+			assertThat(QueryResults.asList(rows)).hasSize(32);
+		}
+		assertThat(probes.get()).isLessThanOrEqualTo(32);
+	}
+
+	@Test
 	void repeatedSimpleFrontierLookupsReuseOneCompiledStep() {
 		for (int i = 0; i < 32; i++) {
 			var from = vf.createIRI("urn:node:" + i);
