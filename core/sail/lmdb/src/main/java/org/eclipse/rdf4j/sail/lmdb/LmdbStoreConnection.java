@@ -1948,14 +1948,7 @@ public class LmdbStoreConnection extends SailSourceConnection implements SailRes
 		if (activeReadExposureScope.get() != scope) {
 			throw new IllegalStateException("LMDB read-exposure scopes must close in nesting order");
 		}
-		Throwable failure = null;
-		try {
-			if (scope.replaySafepoint != null) {
-				scope.replaySafepoint.close();
-			}
-		} catch (RuntimeException | Error cleanup) {
-			failure = cleanup;
-		}
+		Throwable failure = closeActivation(scope.replaySafepoint, null);
 		if (scope.parent == null) {
 			activeReadExposureScope.remove();
 		} else {
@@ -1964,31 +1957,17 @@ public class LmdbStoreConnection extends SailSourceConnection implements SailRes
 		synchronized (readAttemptLock) {
 			activeReadExposureScopes.remove(scope);
 		}
-		Runnable closeReadResourceBinding = () -> {
-			if (scope.readResourceBinding != null) {
-				scope.readResourceBinding.close();
-			}
-		};
-		Runnable closeExternalValueBinding = scope.externalValueBinding::close;
-		Runnable closeValueBinding = () -> {
-			if (scope.valueBinding != null) {
-				scope.valueBinding.close();
-			}
-		};
-		if (failure == null) {
-			try {
-				closeResources(null, closeReadResourceBinding, closeExternalValueBinding, closeValueBinding);
-			} catch (RuntimeException | Error cleanup) {
-				failure = cleanup;
-			}
-		} else {
-			closeResources(failure, closeReadResourceBinding, closeExternalValueBinding, closeValueBinding);
-		}
+		failure = closeActivation(scope.readResourceBinding, failure);
+		failure = closeActivation(scope.externalValueBinding, failure);
+		failure = closeActivation(scope.valueBinding, failure);
 		if (failure instanceof RuntimeException runtime) {
 			throw runtime;
 		}
 		if (failure instanceof Error error) {
 			throw error;
+		}
+		if (failure != null) {
+			throw new SailException("Unable to close LMDB read-exposure scope", failure);
 		}
 	}
 
