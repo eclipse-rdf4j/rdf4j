@@ -202,7 +202,8 @@ final class PreparedValuesSnapshot {
 					}
 					int before = found.size();
 					super.meetNode(node);
-					subqueriesByNode.put(node, List.copyOf(found.subList(before, found.size())));
+					subqueriesByNode.put(node, before == found.size() ? List.of()
+							: List.copyOf(found.subList(before, found.size())));
 				}
 			});
 			return subqueriesByNode.getOrDefault(expression, List.copyOf(found));
