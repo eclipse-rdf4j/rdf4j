@@ -16,6 +16,7 @@ import static org.junit.jupiter.api.Assertions.assertNotSame;
 import static org.junit.jupiter.api.Assertions.assertSame;
 
 import java.util.ArrayList;
+import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.CyclicBarrier;
 import java.util.concurrent.Executors;
@@ -65,6 +66,34 @@ class OutputFrameOwnershipTest {
 		assertEquals(Set.of("after"), input.withOutput(after).guaranteedNames());
 		assertSame(oldFrame, input.withOutput(before));
 		assertEquals(Set.of("before"), oldFrame.guaranteedNames());
+	}
+
+	@Test
+	void anOutputThatRetainsNoInputDropsExternalProvenanceButKeepsItsOwnBindingDomain() {
+		var root = new SingletonSet();
+		var bindings = new MapBindingSet();
+		var external = SimpleValueFactory.getInstance().createIRI("urn:external");
+		bindings.addBinding("outside", external);
+		var input = QueryAlgebraBindingAnalysis.withBindingValues(root, bindings).rootContext();
+		var names = Set.of("required", "optional");
+		var required = Set.of("required");
+		var plain = QueryAlgebraBindingAnalysis.OutputFacts.known(names, required, Map.of(), Map.of(), input,
+				true, Set.of());
+		var frame = input.withOutput(plain);
+		assertEquals(names, frame.visibleNames());
+		assertEquals(names, frame.maybeBoundNames());
+		assertEquals(required, frame.guaranteedNames());
+		assertEquals(Map.of(), frame.externalValues());
+		assertEquals(Set.of(), frame.externalGuaranteedNames());
+		assertEquals(input.scopeIdentity(), frame.scopeIdentity());
+		assertEquals(input.bindingDomainKnown(), frame.bindingDomainKnown());
+
+		var fixed = QueryAlgebraBindingAnalysis.OutputFacts.known(names, required, Map.of("required", external),
+				Map.of("required", Set.of(QueryAlgebraBindingAnalysis.ValueKind.IRI)), input, true, Set.of("outside"));
+		var retained = input.withOutput(fixed);
+		assertSame(external, retained.externalValues().get("outside"));
+		assertSame(external, retained.fixedValues().get("required"));
+		assertEquals(Set.of(QueryAlgebraBindingAnalysis.ValueKind.IRI), retained.valueKinds().get("required"));
 	}
 
 	@Test

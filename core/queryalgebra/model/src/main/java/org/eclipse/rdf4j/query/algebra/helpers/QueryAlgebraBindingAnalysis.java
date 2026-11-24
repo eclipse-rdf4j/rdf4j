@@ -2227,6 +2227,13 @@ public final class QueryAlgebraBindingAnalysis {
 		}
 
 		private static ReadOnlyContext computeWithOutput(OutputFacts facts) {
+			// With no retained inputs or term facts, only the new binding names survive.
+			if (facts.possibleOutputsKnown && facts.canProduceRows && facts.retainedInputNames.isEmpty()
+					&& facts.fixedValues.isEmpty() && facts.valueKinds.isEmpty()) {
+				return new ReadOnlyContext(facts.possibleOutputs, facts.possibleOutputs, facts.guaranteedOutputs,
+						Map.of(), Map.of(), Map.of(), Set.of(), facts.inheritedInput.scopeIdentity,
+						facts.inheritedInput.bindingDomainKnown, facts.inheritedInput.lateralInputs);
+			}
 			Set<String> visible = new HashSet<>(facts.inheritedInput.visibleNames);
 			Set<String> maybe = new HashSet<>(facts.inheritedInput.maybeBoundNames);
 			Set<String> guaranteed = new HashSet<>(facts.inheritedInput.guaranteedNames);
