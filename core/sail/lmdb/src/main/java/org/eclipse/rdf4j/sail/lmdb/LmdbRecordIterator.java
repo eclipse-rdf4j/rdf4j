@@ -775,6 +775,7 @@ class LmdbRecordIterator implements RecordIterator {
 		try {
 			readStamp = txnLockManager.readLock();
 		} catch (InterruptedException e) {
+			Thread.currentThread().interrupt();
 			throw new SailException(e);
 		}
 		try {

@@ -116,8 +116,20 @@ public final class BindingSetQueryEvaluationContext implements QueryEvaluationCo
 	}
 
 	@Override
+	public Function<BindingSet, Value> getValue(String name) {
+		return bindings -> bindings.getValue(name);
+	}
+
+	@Override
 	public MutableBindingSet createBindingSet(BindingSet bindings) {
-		QueryBindingSet copy = new QueryBindingSet(bindings.size());
+		// The default headroom covers an extra output for widths >= 2. For width 0 or 1,
+		// avoid the first insertion's resize without rounding wide frames to a larger table.
+		int size = bindings.size();
+		QueryBindingSet copy = new QueryBindingSet(size < 2 ? size + 1 : size);
+		if (bindings.getClass() == QueryBindingSet.class) {
+			copy.addAll(bindings);
+			return copy;
+		}
 		for (String name : bindings.getBindingNames()) {
 			copy.setBinding(name, bindings.getValue(name));
 		}
