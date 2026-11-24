@@ -7137,6 +7137,10 @@ public class ValueStore extends AbstractValueFactory implements BNodeIdResolver,
 		if (slot < 0) {
 			slot = idx + ((spreadValueId(id) >>> 8) & VALUE_CACHE_WAY_MASK);
 			previous = (CanonicalValueEntry) CANONICAL_CACHE_ELEMENT.getAcquire(arrays.canonical, slot);
+			if (previous != null && previous.id == id && previous.isCurrent()) {
+				// A same-ID lookup can publish into the full set after this way was scanned.
+				return previous.value;
+			}
 		}
 		CanonicalValueEntry entry = new CanonicalValueEntry(id, value, value.getSemanticVersion());
 		CanonicalValueEntry witness = (CanonicalValueEntry) CANONICAL_CACHE_ELEMENT.compareAndExchange(arrays.canonical,
