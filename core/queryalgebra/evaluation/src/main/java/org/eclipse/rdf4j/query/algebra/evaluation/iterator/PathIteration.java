@@ -27,6 +27,7 @@ import org.eclipse.rdf4j.common.annotation.InternalUseOnly;
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.common.iteration.CooperativeCancellation;
 import org.eclipse.rdf4j.common.iteration.LookAheadIteration;
+import org.eclipse.rdf4j.model.BNode;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.query.Binding;
@@ -47,7 +48,10 @@ import org.eclipse.rdf4j.query.algebra.evaluation.QueryEvaluationStep;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.BindingSetQueryEvaluationContext;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.QueryEvaluationContext;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.evaluationsteps.AdaptiveFilterEvaluationStep;
+import org.eclipse.rdf4j.query.algebra.evaluation.impl.evaluationsteps.StatementPatternQueryEvaluationStep;
 import org.eclipse.rdf4j.query.algebra.helpers.AbstractQueryModelVisitor;
+import org.eclipse.rdf4j.query.impl.BlankNodeAllocationScope;
+import org.eclipse.rdf4j.query.impl.RemoteBNode;
 import org.eclipse.rdf4j.query.impl.SimpleBinding;
 
 public class PathIteration extends LookAheadIteration<BindingSet> {
@@ -103,6 +107,10 @@ public class PathIteration extends LookAheadIteration<BindingSet> {
 	private final String frontierParameter;
 	private final boolean firstWitnessEligible;
 	private QueryEvaluationStep simpleFrontier;
+	private MutableBindingSet frontierFrame;
+	private final boolean directlyAddReportedValues;
+	private final boolean skipZeroLength;
+	private boolean customFrontierVariables;
 	private boolean fixedPathMatch;
 
 	public PathIteration(EvaluationStrategy strategy, Scope scope, Var startVar,
@@ -170,17 +178,15 @@ public class PathIteration extends LookAheadIteration<BindingSet> {
 		this.pathExpression = pathExpression;
 		this.contextVar = contextVar;
 		boolean simplePath = reuseSimpleFrontier && this.context != null
-				&& isSimpleFrontier(pathExpression, startVar, endVar, contextVar);
+				&& isSimpleFrontier(pathExpression, startVar, endVar, contextVar, scope);
 		boolean bothEndpointsFixed = startVarFixed && endVarFixed;
-		frontierParameter = simplePath
-				&& (!bothEndpointsFixed || canReuseFixedEndpoints(startVar, endVar, contextVar, scope, this.context))
-						? variablePrefix + "frontier"
-						: null;
+		frontierParameter = simplePath ? variablePrefix + "frontier" : null;
 		// A fixed, simple default-graph path has one observable endpoint mapping, however many walks witness it.
-		// This certificate does not depend on the reusable frontier optimization: it also covers endpoints that are
-		// fixed by input bindings, while leaving graph-producing and selected-graph paths on the regular traversal.
+		// Graph-producing and selected-graph paths still need regular result admission.
 		firstWitnessEligible = simplePath && scope == Scope.DEFAULT_CONTEXTS && contextVar == null
 				&& bothEndpointsFixed && this.context.getActiveGraph() == null;
+		skipZeroLength = firstWitnessEligible && minLength == 0 && lexicalIri(startVar) && lexicalIri(endVar)
+				&& !startVar.getValue().equals(endVar.getValue());
 
 		this.currentLength = minLength;
 		this.bindings = bindings;
@@ -192,6 +198,10 @@ public class PathIteration extends LookAheadIteration<BindingSet> {
 		try {
 			this.reportedValues = collectionFactory.createSetOfBindingSets(ValuePair::new, PathIteration::getHas,
 					PathIteration::getGet, PathIteration::getSet);
+			// Only the ordinary hash set can admit a candidate without perturbing spill accounting
+			// or invoking a subclass's admission hook for duplicates.
+			this.directlyAddReportedValues = getClass() == PathIteration.class
+					&& reportedValues.getClass() == HashSet.class && !bothEndpointsFixed;
 			this.unreportedValues = collectionFactory.createSetOfBindingSets(ValuePair::new, PathIteration::getHas,
 					PathIteration::getGet, PathIteration::getSet);
 			this.valueQueue = collectionFactory.createBindingSetQueue(ValuePair::new, PathIteration::getHas,
@@ -278,7 +288,7 @@ public class PathIteration extends LookAheadIteration<BindingSet> {
 	}
 
 	private BindingSet nextElement() {
-		again: while (true) {
+		while (true) {
 			CancellationPoints.check(isCancellationRequested());
 			if (fixedPathMatch) {
 				return null;
@@ -292,7 +302,8 @@ public class PathIteration extends LookAheadIteration<BindingSet> {
 				}
 			}
 
-			while (currentIter != null && currentIter.hasNext()) {
+			// The exhaustion loop already established availability.
+			if (currentIter != null) {
 				BindingSet potentialNextElement = currentIter.next();
 				QueryBindingSet nextElement;
 				// if it is not a compatible type of BindingSet
@@ -313,14 +324,12 @@ public class PathIteration extends LookAheadIteration<BindingSet> {
 
 				ValuePair vp = valuePairFromStartAndEnd(nextElement);
 
-				if (getClass() == PathIteration.class
-						&& collectionFactory instanceof CollectionFactory.HomogeneousSetLookup lookup
-								? lookup.containsInHomogeneousSet(reportedValues, vp)
-								: reportedValues.contains(vp)) {
-					// A cycle at later depths retries through the outer cancellation checkpoint.
-					if (currentLength > 2 || !currentIter.hasNext()) {
-						continue again;
-					}
+				boolean duplicate = directlyAddReportedValues ? !reportedValues.add(vp)
+						: getClass() == PathIteration.class
+								&& collectionFactory instanceof CollectionFactory.HomogeneousSetLookup lookup
+										? lookup.containsInHomogeneousSet(reportedValues, vp)
+										: reportedValues.contains(vp);
+				if (duplicate) {
 					continue;
 				}
 
@@ -343,10 +352,12 @@ public class PathIteration extends LookAheadIteration<BindingSet> {
 								addToQueue(valueQueue, vp);
 							}
 						}
-						continue again;
+						continue;
 					}
 				} else {
-					add(reportedValues, vp);
+					if (!directlyAddReportedValues) {
+						add(reportedValues, vp);
+					}
 					if (!vp.startValue.equals(vp.endValue)) {
 						addToQueue(valueQueue, vp);
 					}
@@ -367,7 +378,12 @@ public class PathIteration extends LookAheadIteration<BindingSet> {
 		if (bindEnd && !nextElement.hasBinding(endVar.getName())) {
 			addBinding(nextElement, endVar.getName(), vp.endValue);
 		}
-		nextElement.removeAll(namedIntermediateJoins);
+		if (frontierFrame != null && namedIntermediateJoins.size() == 1
+				&& nextElement.getClass() == QueryBindingSet.class) {
+			nextElement.removeBinding(frontierParameter);
+		} else {
+			nextElement.removeAll(namedIntermediateJoins);
+		}
 		return nextElement;
 	}
 
@@ -462,8 +478,7 @@ public class PathIteration extends LookAheadIteration<BindingSet> {
 
 		// Distinct lexical endpoints cannot have a zero-length solution in this ordinary path. Leave other
 		// endpoint origins and GRAPH membership to the regular zero-length path evaluator.
-		if (currentLength == 0 && frontierParameter != null && startVarFixed && endVarFixed
-				&& !startVar.getValue().equals(endVar.getValue())) {
+		if (currentLength == 0 && skipZeroLength) {
 			currentLength = 1;
 		}
 		if (isUnbound(startVar, bindings) || isUnbound(endVar, bindings)) {
@@ -491,8 +506,7 @@ public class PathIteration extends LookAheadIteration<BindingSet> {
 			currentVp = (ValuePair) valueQueue.poll();
 
 			if (currentVp != null) {
-				if (frontierParameter != null && frontierValue() instanceof IRI iri) {
-					currentIter = evaluateSimpleFrontier(iri);
+				if (frontierParameter != null && !customFrontierVariables && trySimpleFrontier(frontierValue())) {
 					currentLength++;
 					return;
 				}
@@ -551,31 +565,41 @@ public class PathIteration extends LookAheadIteration<BindingSet> {
 		return scoped;
 	}
 
-	private static boolean canReuseFixedEndpoints(Var start, Var end, Var graph, Scope scope,
-			QueryEvaluationContext context) {
-		return graph == null && scope == Scope.DEFAULT_CONTEXTS && context.getActiveGraph() == null
-				&& lexicalIri(start) && lexicalIri(end);
-	}
-
 	private static boolean lexicalIri(Var endpoint) {
 		return endpoint.isConstant() && !endpoint.hasApiInputOrigin() && endpoint.getValue() instanceof IRI;
 	}
 
-	private static boolean isSimpleFrontier(TupleExpr expression, Var start, Var end, Var graph) {
-		if (expression.getClass() != StatementPattern.class || start.getName().equals(end.getName())) {
+	private static boolean isSimpleFrontier(TupleExpr expression, Var start, Var end, Var graph, Scope scope) {
+		if (expression.getClass() != StatementPattern.class || !ordinaryVariable(start) || !ordinaryVariable(end)
+				|| start.getName().equals(end.getName())) {
 			return false;
 		}
 		StatementPattern edge = (StatementPattern) expression;
 		Var predicate = edge.getPredicateVar();
 		Var context = edge.getContextVar();
-		if (!(predicate.getValue() instanceof IRI)
+		if (edge.getScope() != scope || !ordinaryVariable(edge.getSubjectVar())
+				|| !ordinaryVariable(edge.getObjectVar())
+				|| !ordinaryVariable(predicate) || context != null && !ordinaryVariable(context)
+				|| graph != null && !ordinaryVariable(graph) || !Objects.equals(context, graph)
+				|| !(predicate.getValue() instanceof IRI)
 				|| sameSlotOrAnonymousConstant(start, predicate) || sameSlotOrAnonymousConstant(end, predicate)
 				|| context != null && (sameSlotOrAnonymousConstant(start, context)
-						|| sameSlotOrAnonymousConstant(end, context) || !context.equals(graph))) {
+						|| sameSlotOrAnonymousConstant(end, context)
+						|| predicate.getName().equals(context.getName()))) {
 			return false;
 		}
 		return edge.getSubjectVar().equals(start) && edge.getObjectVar().equals(end)
 				|| edge.getSubjectVar().equals(end) && edge.getObjectVar().equals(start);
+	}
+
+	private static boolean standardVariables(StatementPattern edge) {
+		return edge.getClass() == StatementPattern.class && ordinaryVariable(edge.getSubjectVar())
+				&& ordinaryVariable(edge.getPredicateVar()) && ordinaryVariable(edge.getObjectVar())
+				&& (edge.getContextVar() == null || ordinaryVariable(edge.getContextVar()));
+	}
+
+	private static boolean ordinaryVariable(Var var) {
+		return var != null && var.getClass() == Var.class;
 	}
 
 	private static boolean sameSlotOrAnonymousConstant(Var endpoint, Var other) {
@@ -584,26 +608,58 @@ public class PathIteration extends LookAheadIteration<BindingSet> {
 						&& endpoint.getValue().equals(other.getValue());
 	}
 
-	private CloseableIteration<BindingSet> evaluateSimpleFrontier(IRI frontier) {
+	private boolean trySimpleFrontier(Value frontier) {
+		if (!(frontier instanceof IRI || frontier instanceof BNode)) {
+			return false;
+		}
+		Var from = endVarFixed && !startVarFixed ? endVar : startVar;
+		StatementPattern edge = null;
 		if (simpleFrontier == null) {
-			StatementPattern edge = (StatementPattern) pathExpression.clone();
-			Var from = endVarFixed && !startVarFixed ? endVar : startVar;
+			edge = (StatementPattern) pathExpression.clone();
+			if (!standardVariables(edge)) {
+				customFrontierVariables = true;
+				return false;
+			}
 			if (startVarFixed && endVarFixed) {
 				Var target = edge.getSubjectVar().equals(endVar) ? edge.getSubjectVar() : edge.getObjectVar();
 				edge.replaceChildNode(target, createAnonVar(endVarName, null, false));
 			}
 			Var slot = edge.getSubjectVar().equals(from) ? edge.getSubjectVar() : edge.getObjectVar();
-			edge.replaceChildNode(slot, createAnonVar(frontierParameter, null, true));
-			// The step is owned by this iterator's execution and graph selection, never shared between queries.
-			// Retain the regular preparation and normal lookup for the new shape; only the IRI varies per hop.
-			simpleFrontier = strategy.precompile(edge, context);
+			edge.replaceChildNode(slot, createAnonVar(frontierParameter, null, !(startVarFixed && endVarFixed)));
+			if (!standardVariables(edge)) {
+				// A Var provider may produce custom clones or private slots even for standard source Vars.
+				customFrontierVariables = true;
+				return false;
+			}
 		}
-		QueryBindingSet args = new QueryBindingSet(bindings);
+		if (frontier instanceof BNode blank) {
+			// Preserve the reservation that precompiling a valued Var would make, including remote authority.
+			BlankNodeAllocationScope scope = context.getBlankNodeAllocationScope();
+			if (from.hasApiInputOrigin()) {
+				scope.reserve(blank);
+			} else if (blank instanceof RemoteBNode) {
+				scope.reserveKnownID(blank.getID());
+			} else {
+				scope.reserve(blank.getID());
+			}
+		}
+		if (edge != null) {
+			// The step is owned by this iterator's execution and graph selection, never shared between queries.
+			// Retain the regular preparation and normal lookup for the new shape; only the frontier varies per hop.
+			simpleFrontier = strategy.precompile(edge, context);
+			if (contextVar == null && simpleFrontier.getClass() == StatementPatternQueryEvaluationStep.class) {
+				// One endpoint is always free, so this exact step copies every emitted row. No input
+				// can escape, and the previous step is closed before this iterator mutates the frame.
+				frontierFrame = context.createBindingSet(bindings);
+			}
+		}
+		MutableBindingSet args = frontierFrame != null ? frontierFrame : context.createBindingSet(bindings);
 		if (contextVar != null && currentVp.contextValue != null) {
 			args.setBinding(contextVar.getName(), currentVp.contextValue);
 		}
 		args.setBinding(frontierParameter, frontier);
-		return simpleFrontier.evaluate(args);
+		currentIter = simpleFrontier.evaluate(args);
+		return true;
 	}
 
 	private String varNameAtPathLengthOf(long atLength) {
