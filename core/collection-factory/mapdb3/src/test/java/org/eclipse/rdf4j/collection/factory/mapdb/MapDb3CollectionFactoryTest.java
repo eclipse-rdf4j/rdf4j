@@ -14,7 +14,9 @@ package org.eclipse.rdf4j.collection.factory.mapdb;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertInstanceOf;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.junit.jupiter.api.Assertions.fail;
 
@@ -29,10 +31,14 @@ import java.util.Queue;
 import java.util.Set;
 import java.util.concurrent.atomic.AtomicInteger;
 
+import org.eclipse.rdf4j.model.BNode;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.query.BindingSet;
+import org.eclipse.rdf4j.query.QueryEvaluationException;
+import org.eclipse.rdf4j.query.impl.BlankNodeAllocationScope;
 import org.eclipse.rdf4j.query.impl.MapBindingSet;
+import org.eclipse.rdf4j.query.impl.RemoteBNode;
 import org.junit.jupiter.api.Test;
 
 public class MapDb3CollectionFactoryTest {
@@ -67,6 +73,45 @@ public class MapDb3CollectionFactoryTest {
 			// Another BindingSet implementation honouring the BindingSet equality and hash contract is the same row.
 			assertTrue(keys.contains(row(new MapBindingSet(), 31)));
 			assertFalse(keys.contains(row(new MapBindingSet(), -1)));
+		}
+	}
+
+	@Test
+	void spilledIndexedSetMatchesEqualPlainNodeAndRetainsScopedAuthorityOnIteration() {
+		SimpleValueFactory vf = SimpleValueFactory.getInstance();
+		Object identityScope = new Object();
+		BlankNodeAllocationScope allocation = new BlankNodeAllocationScope();
+		RemoteBNode scoped = (RemoteBNode) RemoteBNode.newResponseScope(allocation, vf, identityScope, true)
+				.map(vf.createBNode("remote-id"));
+		BNode equalPlain = vf.createBNode(scoped.getID());
+
+		assertEquals(scoped, equalPlain, "ordinary RDF blank-node equality is by the local alias ID");
+		assertThrows(QueryEvaluationException.class,
+				() -> RemoteBNode.toRemoteValue(equalPlain, identityScope, true, true),
+				"an equal-looking plain probe must not inherit the scoped node's transport authority");
+
+		try (MapDb3CollectionFactory factory = new MapDb3CollectionFactory(4)) {
+			Set<BindingSet> keys = factory.createSetOfBindingSets(MapBindingSet::new,
+					name -> row -> row.hasBinding(name),
+					name -> row -> row.getValue(name), (name) -> (value, row) -> row.setBinding(name, value));
+			for (int key = 0; key < 64; key++) {
+				BNode value = key == 0 ? scoped : vf.createBNode("local-" + key);
+				keys.add(nodeRow(vf, key, value));
+			}
+
+			assertEquals(64, keys.size(), "64 rows force the indexed set past its in-memory spill threshold");
+			assertTrue(keys.contains(nodeRow(vf, 0, scoped)));
+			assertTrue(keys.contains(nodeRow(vf, 0, equalPlain)),
+					"lookup by an equal-ID plain node must find the scoped row");
+
+			BindingSet restoredRow = keys.stream()
+					.filter(row -> vf.createLiteral(0).equals(row.getValue("k")))
+					.findFirst()
+					.orElseThrow();
+			RemoteBNode restored = assertInstanceOf(RemoteBNode.class, restoredRow.getValue("node"));
+			assertTrue(RemoteBNode.sameTrustedIdentity(scoped, restored));
+			assertEquals(vf.createBNode("remote-id"), RemoteBNode.toRemoteValue(restored, identityScope, true, true),
+					"iteration after spilling must retain the original transport mapping");
 		}
 	}
 
@@ -149,6 +194,13 @@ public class MapDb3CollectionFactoryTest {
 
 	private static <B extends MapBindingSet> B row(B row, int key) {
 		row.addBinding("k", SimpleValueFactory.getInstance().createLiteral(key));
+		return row;
+	}
+
+	private static MapBindingSet nodeRow(SimpleValueFactory vf, int key, BNode node) {
+		MapBindingSet row = new MapBindingSet();
+		row.setBinding("k", vf.createLiteral(key));
+		row.setBinding("node", node);
 		return row;
 	}
 

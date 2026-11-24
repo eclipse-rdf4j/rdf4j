@@ -32,6 +32,7 @@ import org.eclipse.rdf4j.model.BNode;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.Value;
+import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.model.util.Values;
 import org.eclipse.rdf4j.model.vocabulary.RDF4J;
 import org.eclipse.rdf4j.query.BindingSet;
@@ -41,8 +42,10 @@ import org.eclipse.rdf4j.query.algebra.evaluation.QueryEvaluationStep;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.GraphFrameBindings;
 import org.eclipse.rdf4j.query.explanation.Explanation;
 import org.eclipse.rdf4j.query.explanation.GenericPlanNode;
+import org.eclipse.rdf4j.query.impl.BlankNodeAllocationScope;
 import org.eclipse.rdf4j.query.impl.EmptyBindingSet;
 import org.eclipse.rdf4j.query.impl.MapBindingSet;
+import org.eclipse.rdf4j.query.impl.RemoteBNode;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
 import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
 import org.eclipse.rdf4j.sail.lmdb.config.LmdbStoreConfig;
@@ -95,6 +98,41 @@ class LmdbVariableGraphPointTest {
 			assertThat(graphs(query)).containsExactlyInAnyOrder(b, b, RDF4J.NIL, RDF4J.NIL);
 			connection.commit();
 			assertThat(graphs(query)).containsExactlyInAnyOrder(b, b, RDF4J.NIL, RDF4J.NIL);
+		} finally {
+			repository.shutDown();
+		}
+	}
+
+	@Test
+	void admittedRemoteAliasEqualToLocalGraphIdDoesNotSelectThatGraph(@TempDir File directory) {
+		var repository = new SailRepository(new LmdbStore(directory,
+				new LmdbStoreConfig().setNativeEvaluationEnabled(false).setDirectAdjacencyEnabled(false)));
+		try (var connection = repository.getConnection()) {
+			var localFactory = connection.getValueFactory();
+			Object identityScope = new Object();
+			BlankNodeAllocationScope allocation = new BlankNodeAllocationScope("remote-graph-", ignored -> false);
+			var simpleFactory = SimpleValueFactory.getInstance();
+			var remote = (RemoteBNode) RemoteBNode.newResponseScope(allocation, simpleFactory, identityScope, true)
+					.map(simpleFactory.createBNode("wire-graph"));
+			var localGraph = localFactory.createBNode(remote.getID());
+
+			assertThat(remote.isAdmittedTo(allocation)).isTrue();
+			assertThat(remote).isEqualTo(localGraph);
+			assertThat(RemoteBNode.toRemoteValue(remote, identityScope, true, true))
+					.isEqualTo(simpleFactory.createBNode("wire-graph"));
+
+			var subject = localFactory.createIRI("urn:s");
+			var predicate = localFactory.createIRI("urn:p");
+			connection.begin();
+			connection.add(subject, predicate, localFactory.createLiteral("local row"), localGraph);
+			connection.commit();
+
+			var query = connection.prepareTupleQuery(POINT);
+			query.setBinding("g", remote);
+			assertThat(graphs(query)).as("a scoped remote alias must not become a local graph selector").isEmpty();
+
+			query.setBinding("g", localGraph);
+			assertThat(graphs(query)).containsExactly(localGraph);
 		} finally {
 			repository.shutDown();
 		}
