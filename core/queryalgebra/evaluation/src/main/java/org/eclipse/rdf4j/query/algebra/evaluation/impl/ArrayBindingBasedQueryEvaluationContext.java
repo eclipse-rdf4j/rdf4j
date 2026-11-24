@@ -178,6 +178,11 @@ public final class ArrayBindingBasedQueryEvaluationContext implements QueryEvalu
 	}
 
 	@Override
+	public boolean canOmitUnusedStatementBindings() {
+		return true;
+	}
+
+	@Override
 	public IndexedLayout indexedBindingLayout() {
 		return indexedLayout;
 	}

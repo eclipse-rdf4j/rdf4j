@@ -1004,7 +1004,7 @@ public class DefaultEvaluationStrategy implements EvaluationStrategy, FederatedS
 			throws QueryEvaluationException {
 		QueryEvaluationStep arg = precompile(node.getArg(), context);
 		UnaryOperator<QueryEvaluationStep> project = child -> new ProjectionQueryEvaluationStep(node,
-				child, context);
+				child instanceof StatementPatternQueryEvaluationStep scan ? scan.forProjection(node) : child, context);
 		QueryEvaluationStep standard = RebindableQueryEvaluationStep.unary(node, arg, project);
 		return RestrictionCompiler.enabled(this, context)
 				? RestrictionCompiler.attach(standard,

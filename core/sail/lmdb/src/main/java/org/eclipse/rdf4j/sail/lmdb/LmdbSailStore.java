@@ -118,6 +118,7 @@ import org.eclipse.rdf4j.query.QueryEvaluationException;
 import org.eclipse.rdf4j.query.QueryExecutionPolicy;
 import org.eclipse.rdf4j.query.QueryInterruptedException;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.EvaluationStatistics;
+import org.eclipse.rdf4j.query.algebra.evaluation.impl.evaluationsteps.StatementFieldSelection;
 import org.eclipse.rdf4j.query.algebra.evaluation.sketch.SketchBasedJoinEstimator;
 import org.eclipse.rdf4j.query.algebra.evaluation.sketch.SketchStatementSource;
 import org.eclipse.rdf4j.query.algebra.evaluation.sketch.SketchStatementSourceException;
@@ -15706,12 +15707,17 @@ class LmdbSailStore implements SailStore {
 		}
 
 		private final class IndexedSnapshotIteration<T> extends SnapshotIteration<T>
-				implements IndexReportingIterator {
+				implements IndexReportingIterator, StatementFieldSelection {
 			private final IndexReportingIterator reporting;
 
 			IndexedSnapshotIteration(CloseableIteration<? extends T> rows, IndexReportingIterator reporting) {
 				super(rows);
 				this.reporting = reporting;
+			}
+
+			@Override
+			public void deferStatementFields(StatementFieldSelection.Demand demand) {
+				StatementFieldSelection.forward(reporting, demand);
 			}
 
 			@Override

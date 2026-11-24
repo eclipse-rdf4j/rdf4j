@@ -13,6 +13,7 @@ package org.eclipse.rdf4j.sail.lmdb;
 
 import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertSame;
@@ -29,6 +30,8 @@ import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
 
 import org.eclipse.rdf4j.model.IRI;
+import org.eclipse.rdf4j.model.Statement;
+import org.eclipse.rdf4j.query.algebra.evaluation.impl.evaluationsteps.StatementFieldSelection;
 import org.eclipse.rdf4j.sail.lmdb.config.LmdbStoreConfig;
 import org.eclipse.rdf4j.sail.lmdb.model.LmdbIRI;
 import org.eclipse.rdf4j.sail.lmdb.model.LmdbLiteral;
@@ -104,6 +107,70 @@ class ValueStoreDetachedSnapshotReadTest {
 				assertThrows(IOException.class,
 						() -> values.reuseProjectedLazyValue(snapshot, id, mask, scope, leaf, version));
 				assertThrows(IOException.class, () -> values.withProjectedValueAccess(snapshot, scope, access -> true));
+			}
+		} finally {
+			values.close();
+		}
+	}
+
+	@Test
+	@Timeout(value = 15, unit = TimeUnit.SECONDS)
+	void deferredStatementFieldsSurviveCursorAdvanceAndDictionaryGrowth(@TempDir Path dataDir) throws Exception {
+		var config = new LmdbStoreConfig("spoc,posc").setValueDBSize(1024L * 1024L).setForceSync(false);
+		var values = new ValueStore(dataDir.resolve("values").toFile(), config);
+		try (var triples = new TripleStore(dataDir.resolve("triples").toFile(), config, values)) {
+			var firstSubject = values.createIRI("urn:detached-read:deferred-first");
+			var secondSubject = values.createIRI("urn:detached-read:deferred-second");
+			var predicate = values.createIRI("urn:detached-read:deferred-predicate");
+			var object = values.createLiteral("deferred-object");
+			values.startTransaction(true);
+			long first = values.storeValue(firstSubject);
+			long second = values.storeValue(secondSubject);
+			long[] quad = { first, values.storeValue(predicate), values.storeValue(object), 0L };
+			values.commit();
+			values.clearCaches();
+
+			try (var triple = triples.getTxnManager().createReadTxnPinned(triples::getDataRevision);
+					var reserved = values.reserveReadSnapshot();
+					var snapshot = reserved.start(triple);
+					var scope = values.openValueResolutionScope();
+					var activation = scope.activateForeground()) {
+				RecordIterator records = new RecordIterator() {
+					private int row;
+
+					@Override
+					public long[] next() {
+						return switch (row++) {
+						case 0 -> quad;
+						case 1 -> {
+							quad[TripleIndex.SUBJ_IDX] = second;
+							yield quad;
+						}
+						default -> null;
+						};
+					}
+
+					@Override
+					public void close() {
+					}
+				};
+				Statement firstRow;
+				Statement secondRow;
+				try (var iterator = new LmdbStatementIterator(records, values, snapshot)) {
+					iterator.deferStatementFields(StatementFieldSelection.SUBJECT | StatementFieldSelection.PREDICATE
+							| StatementFieldSelection.OBJECT);
+					firstRow = iterator.next();
+					secondRow = iterator.next();
+					assertFalse(iterator.hasNext());
+				}
+
+				try (var writer = Executors.newSingleThreadExecutor()) {
+					assertTrue(writer.submit(() -> values.growMapForEstimatedWrite(
+							Math.multiplyExact(values.mapSizeBytes(), 2L), null)).get(5, TimeUnit.SECONDS));
+				}
+				assertTrue(snapshot.dictionaryDetached());
+				assertEquals(values.createStatement(firstSubject, predicate, object), firstRow);
+				assertEquals(values.createStatement(secondSubject, predicate, object), secondRow);
 			}
 		} finally {
 			values.close();

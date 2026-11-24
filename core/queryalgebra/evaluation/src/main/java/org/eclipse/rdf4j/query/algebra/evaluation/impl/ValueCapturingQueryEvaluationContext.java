@@ -135,6 +135,12 @@ final class ValueCapturingQueryEvaluationContext implements QueryEvaluationConte
 	}
 
 	@Override
+	public boolean canOmitUnusedStatementBindings() {
+		return delegate.canOmitUnusedStatementBindings()
+				&& capturer instanceof OwnedValueCapturer owned && owned.canOmitUnusedStatementBindings();
+	}
+
+	@Override
 	public IndexedLayout indexedBindingLayout() {
 		return indexedLayout;
 	}

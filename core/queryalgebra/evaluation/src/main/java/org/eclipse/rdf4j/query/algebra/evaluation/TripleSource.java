@@ -18,6 +18,7 @@ import java.util.Set;
 import java.util.function.Function;
 
 import org.eclipse.rdf4j.common.annotation.Experimental;
+import org.eclipse.rdf4j.common.annotation.InternalUseOnly;
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.common.iteration.CooperativeCancellation;
 import org.eclipse.rdf4j.common.iteration.EmptyIteration;
@@ -30,6 +31,7 @@ import org.eclipse.rdf4j.model.Statement;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.query.QueryEvaluationException;
+import org.eclipse.rdf4j.query.algebra.evaluation.impl.evaluationsteps.StatementFieldSelection;
 
 /**
  * A triple source that can be queried for (the existence of) certain triples in certain contexts. This interface
@@ -54,6 +56,17 @@ public interface TripleSource extends AvailableStatementOrder {
 	 */
 	CloseableIteration<? extends Statement> getStatements(Resource subj, IRI pred,
 			Value obj, Resource... contexts) throws QueryEvaluationException;
+
+	/**
+	 * Opens an unordered scan for an internal consumer that finishes each statement within its active read scope. A
+	 * source may honor the demand only through transparent statement iterators that cannot expose a statement outside
+	 * that consumer.
+	 */
+	@InternalUseOnly
+	default CloseableIteration<? extends Statement> getStatementsForEvaluation(StatementFieldSelection.Demand demand,
+			Resource subj, IRI pred, Value obj, Resource... contexts) {
+		return getStatements(subj, pred, obj, contexts);
+	}
 
 	/** Returns each non-null named storage context once, from the same read view as statement retrieval. */
 	default CloseableIteration<? extends Resource> getContextIDs() throws QueryEvaluationException {

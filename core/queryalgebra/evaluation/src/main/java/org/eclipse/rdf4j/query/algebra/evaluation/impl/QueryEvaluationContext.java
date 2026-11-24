@@ -173,6 +173,11 @@ public interface QueryEvaluationContext {
 		}
 
 		@Override
+		public boolean canOmitUnusedStatementBindings() {
+			return getClass() == Minimal.class;
+		}
+
+		@Override
 		public Comparator<Value> getComparator() {
 			return comparator;
 		}
@@ -251,6 +256,15 @@ public interface QueryEvaluationContext {
 
 	default MutableBindingSet createBindingSet() {
 		return new QueryBindingSet();
+	}
+
+	/**
+	 * Certifies that omitting writes for unobserved statement bindings has no effect on the other bindings or on query
+	 * execution. Contexts with custom binding callbacks retain the complete statement conversion by default.
+	 */
+	@InternalUseOnly
+	default boolean canOmitUnusedStatementBindings() {
+		return false;
 	}
 
 	/** Opts in to bulk indexed writes that reproduce the context's ordinary binding access and write policy. */

@@ -33,6 +33,7 @@ import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.Statement;
 import org.eclipse.rdf4j.model.TripleTerm;
 import org.eclipse.rdf4j.model.Value;
+import org.eclipse.rdf4j.query.algebra.evaluation.impl.evaluationsteps.StatementFieldSelection;
 import org.eclipse.rdf4j.sail.SailException;
 
 /**
@@ -354,7 +355,8 @@ class UnionSailDataset implements SailDataset, TreeOwnedDataset {
 		}
 	}
 
-	private static final class UnionReportingIteration<T> extends SailClosingIteration<T> {
+	private static final class UnionReportingIteration<T> extends SailClosingIteration<T>
+			implements StatementFieldSelection {
 		private final List<IndexReportingIterator> reporters;
 
 		private UnionReportingIteration(CloseableIteration<? extends T> union, List<IndexReportingIterator> reporters) {
@@ -365,6 +367,13 @@ class UnionSailDataset implements SailDataset, TreeOwnedDataset {
 		@Override
 		protected void handleSailException(SailException e) {
 			throw e;
+		}
+
+		@Override
+		public void deferStatementFields(StatementFieldSelection.Demand demand) {
+			for (IndexReportingIterator reporter : reporters) {
+				StatementFieldSelection.forward(reporter, demand);
+			}
 		}
 
 		@Override

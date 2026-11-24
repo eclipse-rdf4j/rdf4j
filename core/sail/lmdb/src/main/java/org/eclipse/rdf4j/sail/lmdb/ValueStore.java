@@ -10805,6 +10805,11 @@ public class ValueStore extends AbstractValueFactory implements BNodeIdResolver,
 			}
 
 			@Override
+			public boolean canOmitUnusedStatementBindings() {
+				return true;
+			}
+
+			@Override
 			public boolean owns(Value value) {
 				ReadSnapshot current = snapshot;
 				if (current == null) {
