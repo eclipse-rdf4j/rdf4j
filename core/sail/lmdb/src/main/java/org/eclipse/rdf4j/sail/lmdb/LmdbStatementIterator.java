@@ -380,9 +380,6 @@ class LmdbStatementIterator extends AbstractCloseableIteration<Statement>
 		}
 
 		private IRI resolvePredicate() {
-			if (scan == null) {
-				return (IRI) resolve(predicateId);
-			}
 			if (!exposure.isOpen()) {
 				throw new SailException("The private statement read scope is closed");
 			}

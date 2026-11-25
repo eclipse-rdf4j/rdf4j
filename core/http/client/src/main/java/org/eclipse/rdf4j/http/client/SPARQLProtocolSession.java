@@ -793,12 +793,14 @@ public class SPARQLProtocolSession implements HttpClientDependent, AutoCloseable
 						.orElseThrow(() -> new RepositoryException(
 								"Server responded with an unsupported file format: " + mimeType));
 
+				// Check if we can pass through to the writer directly
 				boolean origins = negotiatedBNodeOrigin(method, response, TupleQueryResultFormat.BINARY.equals(format));
 				if (admission == null && !origins && handler instanceof Sink
 						&& passThrough(response, format, ((Sink) handler))) {
 					return;
 				}
 
+				// we need to parse the result and re-serialize.
 				TupleQueryResultParser parser = QueryResultIO.createTupleParser(format,
 						tupleResultFactory(origins, admission));
 				parser.setQueryResultHandler(handler);

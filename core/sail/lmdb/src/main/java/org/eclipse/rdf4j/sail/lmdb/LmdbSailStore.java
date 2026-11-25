@@ -4928,7 +4928,6 @@ class LmdbSailStore implements SailStore {
 		}
 	}
 
-	/** Scoped ownership of already-admitted read views when the active admission is intentionally unbound. */
 	/**
 	 * The read views a thread owns while it reads. A context is entered on one thread and closed on the same thread;
 	 * once closed it can be entered again, so a result that is read row by row keeps a single instance.

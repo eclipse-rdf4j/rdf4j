@@ -109,15 +109,7 @@ public class ZeroLengthPathIteration extends LookAheadIteration<BindingSet> {
 
 	public ZeroLengthPathIteration(EvaluationStrategy evaluationStrategyImpl, Var subjectVar, Var objVar, Value subj,
 			Value obj, Var contextVar, BindingSet bindings, QueryEvaluationContext context) {
-		this(evaluationStrategyImpl, subjectVar, objVar, subj, obj, contextVar, bindings, context, false);
-	}
-
-	@InternalUseOnly
-	public ZeroLengthPathIteration(EvaluationStrategy evaluationStrategyImpl, Var subjectVar, Var objVar, Value subj,
-			Value obj, Var contextVar, BindingSet bindings, QueryEvaluationContext context,
-			boolean deferEnumerationScan) {
-		this(evaluationStrategyImpl, subjectVar, objVar, subj, obj, contextVar, bindings, context, deferEnumerationScan,
-				null);
+		this(evaluationStrategyImpl, subjectVar, objVar, subj, obj, contextVar, bindings, context, false, null);
 	}
 
 	@InternalUseOnly

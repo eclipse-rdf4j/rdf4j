@@ -2978,14 +2978,20 @@ public class LmdbStoreConnection extends SailSourceConnection implements SailRes
 		private ReadThreadRegistration registration;
 		private boolean awaitingRow;
 		private boolean counted;
-		/** Whether this activation is registered as a read operation; set by {@link #begin()}, cleared by finish. */
+		/**
+		 * Whether this activation is registered as a read operation; set by {@link #begin(ReadThreadRegistration)},
+		 * cleared by finish.
+		 */
 		private boolean open;
 
 		private ObservedRead(ReplayableIteration<?> owner) {
 			this(owner, true);
 		}
 
-		/** An activation that is not opened yet; a row-by-row pull reuses one instance through {@link #begin()}. */
+		/**
+		 * An activation that is not opened yet; a row-by-row pull reuses one instance through
+		 * {@link #begin(ReadThreadRegistration)}.
+		 */
 		private ObservedRead(ReplayableIteration<?> owner, boolean begin) {
 			this.owner = owner;
 			if (begin) {
@@ -3493,14 +3499,11 @@ public class LmdbStoreConnection extends SailSourceConnection implements SailRes
 		private ReadExposureScope(ReadExposureScope parent, ReplayableIteration<?> observationOwner,
 				OperationReadAttempt operationAttempt,
 				LmdbSailStore.ReadAttemptLease admissionAttempt) {
-			// Size only from the owner's currently published immutable view list. Capture it normally below.
-			boolean singleViewOwner = observationOwner != null && observationOwner.readViews.size() == 1;
-			// A scope without an owner captures the views its own read opens, one per store it reads; the set grows
-			// for the rare scope that captures more.
+			// Size only from the owner's currently published immutable view list; capture it normally below. A scope
+			// without an owner captures the views its own read opens, one per store it reads. The set grows for the
+			// rare scope that captures more.
 			this.readViews = Collections.newSetFromMap(
-					singleViewOwner ? new IdentityHashMap<>(1)
-							: new IdentityHashMap<>(observationOwner == null ? 2
-									: observationOwner.readViews.size()));
+					new IdentityHashMap<>(observationOwner == null ? 2 : observationOwner.readViews.size()));
 			this.parent = parent;
 			this.observationOwner = observationOwner;
 			this.operationAttempt = operationAttempt;

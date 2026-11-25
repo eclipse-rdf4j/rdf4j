@@ -57,14 +57,7 @@ public final class ZeroLengthPathEvaluationStep implements QueryEvaluationStep {
 	public ZeroLengthPathEvaluationStep(Var subjectVar, Var objVar, Var contextVar, QueryValueEvaluationStep subPrep,
 			QueryValueEvaluationStep objPrep, EvaluationStrategy strategy, QueryEvaluationContext context,
 			Scope scope) {
-		this(subjectVar, objVar, contextVar, subPrep, objPrep, strategy, context, scope, false);
-	}
-
-	@InternalUseOnly
-	public ZeroLengthPathEvaluationStep(Var subjectVar, Var objVar, Var contextVar, QueryValueEvaluationStep subPrep,
-			QueryValueEvaluationStep objPrep, EvaluationStrategy strategy, QueryEvaluationContext context,
-			Scope scope, boolean deferEnumerationScan) {
-		this(subjectVar, objVar, contextVar, subPrep, objPrep, strategy, context, scope, deferEnumerationScan, false);
+		this(subjectVar, objVar, contextVar, subPrep, objPrep, strategy, context, scope, false, false);
 	}
 
 	@InternalUseOnly

@@ -94,8 +94,7 @@ public final class LmdbStandardQueryOptimizerPipeline implements QueryOptimizerP
 	@Override
 	public Iterable<QueryOptimizer> getOptimizers() {
 		boolean experimental = strategy.getQueryExecutionPolicy().experimentalQueryOptimizations();
-		// Built for every query: sized for the standard pipeline and the optimizers added below.
-		List<QueryOptimizer> optimizers = new ArrayList<>(32);
+		List<QueryOptimizer> optimizers = new ArrayList<>();
 		boolean inserted = false;
 		int afterJoinOrdering = -1;
 

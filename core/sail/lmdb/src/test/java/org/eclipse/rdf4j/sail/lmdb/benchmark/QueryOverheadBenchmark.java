@@ -46,9 +46,9 @@ import org.openjdk.jmh.runner.options.Options;
 import org.openjdk.jmh.runner.options.OptionsBuilder;
 
 /**
- * General query shapes over the data set of {@link TwoPatternJoinBenchmark}: 200,000 events, each with one of 64
- * low-cardinality keys, one of 25,000 high-cardinality keys and four distinct values (1.2 million statements, indexes
- * {@code spoc,posc}). Every shape reads and hashes all projected values of every row and checks the row count.
+ * General query shapes over one data set: 200,000 events, each with one of 64 low-cardinality keys, one of 25,000
+ * high-cardinality keys and four distinct values (1.2 million statements, indexes {@code spoc,posc}). Every shape reads
+ * and hashes all projected values of every row and checks the row count.
  * <p>
  * This source file is kept identical on RDF4J 6.1.0 and on later branches so the scores can be compared directly.
  * Evaluation features that only exist on later branches are switched off through reflection.

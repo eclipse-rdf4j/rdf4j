@@ -378,9 +378,7 @@ final class PreparedValuesSnapshot {
 			if (!subqueriesByNode.isEmpty()) {
 				subqueriesByNode.clear();
 			}
-			if (!names.isEmpty()) {
-				names.clear();
-			}
+			names.clear();
 		}
 	}
 
