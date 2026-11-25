@@ -528,6 +528,8 @@ public final class AdaptiveFilterEvaluationStep implements QueryEvaluationStep, 
 		private final Map<TupleExpr, QueryEvaluationStep> physical;
 		private final Map<TupleExpr, Boolean> members;
 		private final FilterPlan[] filters;
+		/** The anchor and the operators above it: the only places whose iterations outlive an input cohort. */
+		private final Set<TupleExpr> spine = Collections.newSetFromMap(new IdentityHashMap<>());
 
 		Compiler(DefaultEvaluationStrategy strategy, PlanningContext context, EvaluationStatistics statistics,
 				TupleExpr regionRoot, TupleExpr anchor, Map<Filter, PlacementSource> positions,
@@ -540,6 +542,12 @@ public final class AdaptiveFilterEvaluationStep implements QueryEvaluationStep, 
 			this.positions = positions;
 			physical = new IdentityHashMap<>(context.physicalSteps);
 			this.members = new IdentityHashMap<>(members);
+			for (QueryModelNode node = anchor; node instanceof TupleExpr expression; node = node.getParentNode()) {
+				spine.add(expression);
+				if (node == regionRoot) {
+					break;
+				}
+			}
 			filters = new FilterPlan[positions.size()];
 			int id = 0;
 			// Use stable algebra order rather than IdentityHashMap iteration order for overlapping filters.
@@ -640,8 +648,14 @@ public final class AdaptiveFilterEvaluationStep implements QueryEvaluationStep, 
 			}
 			Gate[] gateArray = possible.toArray(Gate[]::new);
 			Node source = raw;
+			// An operand beside the spine is opened for one row of the open cohort and drained before the anchor is
+			// asked for its next row, so the filters placed at it cannot change while it is read.
+			boolean withinCohort = !spine.contains(expression);
 			return (bindings, execution) -> {
 				CloseableIteration<BindingSet> opened = source.open(bindings, execution);
+				if (withinCohort && execution.passesUngated(expression, gateArray)) {
+					return opened;
+				}
 				return new GateIteration(opened, expression, gateArray, execution);
 			};
 		}
@@ -1004,6 +1018,14 @@ public final class AdaptiveFilterEvaluationStep implements QueryEvaluationStep, 
 			if (cohortOpen && cohortTimed) {
 				activeNanos += System.nanoTime() - segmentStarted;
 			}
+		}
+
+		/**
+		 * Whether rows opened at this site now, inside the open cohort, pass it unfiltered and uncounted for as long as
+		 * that cohort is open.
+		 */
+		boolean passesUngated(TupleExpr expression, Gate[] gates) {
+			return cohortOpen && !telemetry && activeGates(expression, gates).length == 0;
 		}
 
 		ActiveGate[] activeGates(TupleExpr expression, Gate[] gates) {
