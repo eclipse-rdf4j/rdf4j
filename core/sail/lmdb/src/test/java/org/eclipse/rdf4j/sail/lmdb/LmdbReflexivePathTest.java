@@ -58,7 +58,6 @@ import org.eclipse.rdf4j.query.algebra.evaluation.impl.EvaluationStatistics;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.StrictEvaluationStrategy;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.ParentReferenceChecker;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.QueryJoinOptimizer;
-import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.ReflexiveStarPathOptimizer;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.SameTermFilterOptimizer;
 import org.eclipse.rdf4j.query.algebra.evaluation.sketch.SketchBasedJoinEstimator;
 import org.eclipse.rdf4j.query.algebra.helpers.AbstractQueryModelVisitor;
@@ -79,8 +78,14 @@ import org.junit.jupiter.api.io.TempDir;
 
 class LmdbReflexivePathTest {
 	private final Source source = new Source();
-	private final LmdbEvaluationStrategy strategy = new LmdbEvaluationStrategy(certifiedSource(), null, null, 0,
-			new EvaluationStatistics(), false);
+	private final LmdbEvaluationStrategy strategy = fallbackStrategy(certifiedSource());
+
+	private static LmdbEvaluationStrategy fallbackStrategy(TripleSource tripleSource) {
+		var statistics = new EvaluationStatistics();
+		var strategy = new LmdbEvaluationStrategy(tripleSource, null, null, 0, statistics, false);
+		strategy.setOptimizerPipeline(new LmdbStandardQueryOptimizerPipeline(strategy, tripleSource, statistics));
+		return strategy;
+	}
 
 	private TripleSource certifiedSource() {
 		var data = mock(LmdbSailStore.LmdbSailDataset.class);
@@ -236,7 +241,7 @@ class LmdbReflexivePathTest {
 	 */
 	@Test
 	void opaqueTripleSourcesAlsoNeedOnlyTheGraphNodeScan() {
-		var opaque = new LmdbEvaluationStrategy(source, null, null, 0, new EvaluationStatistics(), false);
+		var opaque = fallbackStrategy(source);
 		assertEquals(source.nodes, values(step(opaque, "SELECT ?s", "?s :p* ?s"), EmptyBindingSet.getInstance()));
 		assertEquals(0, source.edges);
 		assertTrue(source.scans > 0);
