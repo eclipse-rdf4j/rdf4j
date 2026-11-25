@@ -2639,6 +2639,12 @@ class LmdbSailStore implements SailStore {
 	private final MapGrowthMetrics mapGrowthMetrics = new MapGrowthMetrics();
 	private final MapGrowthCoordinator mapGrowthCoordinator;
 	private final boolean autoGrow;
+
+	/** Whether a native map can be resized while the store is open, which is what invalidates pinned snapshots. */
+	boolean mapsCanGrow() {
+		return autoGrow;
+	}
+
 	private final boolean asyncValueCleanup;
 	private ValueRetirementCoordinator retirementCoordinator;
 	private AsyncValueRetirementCoordinator asyncValueCleanupCoordinator;
@@ -4262,7 +4268,16 @@ class LmdbSailStore implements SailStore {
 	// so the next set() would allocate a new one on every transaction.
 	private final ThreadLocal<PublicationContext> publicationContext = new ThreadLocal<>();
 	private final ThreadLocal<ReadView> activeReadView = new ThreadLocal<>();
-	private final ThreadLocal<ReadResourceContext> activeReadResourceContext = new ThreadLocal<>();
+
+	/**
+	 * One holder per thread, kept for the thread's lifetime; see {@link ReadResourceContext#enter(ReadResourceSlot)}.
+	 */
+	static final class ReadResourceSlot {
+		private ReadResourceContext active;
+	}
+
+	private final ThreadLocal<ReadResourceSlot> activeReadResourceContext = ThreadLocal
+			.withInitial(ReadResourceSlot::new);
 	private volatile long namespaceGeneration;
 	private final Object writerOwnerMonitor = new Object();
 	private final IdentityHashMap<WriterLease, Boolean> activeWriterLeases = new IdentityHashMap<>();
@@ -4642,6 +4657,17 @@ class LmdbSailStore implements SailStore {
 		private final AtomicInteger references = new AtomicInteger(1);
 		private final AtomicBoolean abandonUnobserved = new AtomicBoolean();
 		private volatile boolean nativeSnapshotsClosed;
+		/**
+		 * Counts the changes of the pinned statement reader and of the paired dictionary snapshot that
+		 * {@link #validateNativeSnapshots()} could notice. Both report here after they change, so a validation that
+		 * passed stays true until the count moves.
+		 */
+		private final AtomicInteger snapshotEvents = new AtomicInteger(1);
+		/**
+		 * The count that the last passing validation started from. Written without synchronization by every reader of
+		 * this view: a stale value only repeats a validation.
+		 */
+		private int validatedSnapshotEvents;
 
 		private ReadView(Txn tripleTxn, ValueStore.ReadSnapshot valueSnapshot, Map<String, String> namespaces,
 				long capturedNamespaceGeneration, long capturedPublicationVersion, ReadViewLease growthLease) {
@@ -4655,6 +4681,9 @@ class LmdbSailStore implements SailStore {
 			this.capturedNamespaceGeneration = capturedNamespaceGeneration;
 			this.capturedPublicationVersion = capturedPublicationVersion;
 			this.growthLease = growthLease;
+			Runnable event = snapshotEvents::incrementAndGet;
+			tripleTxn.setSnapshotEventListener(event);
+			valueSnapshot.setSnapshotEventListener(event);
 		}
 
 		void abandonUnobserved() {
@@ -4738,19 +4767,43 @@ class LmdbSailStore implements SailStore {
 					&& isSnapshotCurrent() && publicationVersion == currentPublicationVersion;
 		}
 
+		/**
+		 * Fails if the pinned snapshots can no longer be read as one consistent view. This runs for every row that is
+		 * handed out and around every native read, so a validation that passed is remembered: until the statement
+		 * reader, the dictionary snapshot, this view's lease or the namespace store reports a change, it costs three
+		 * field reads. What keeps native memory safe is not this check but the reader's own check under its lock.
+		 */
 		void ensureNativeSnapshotsValid() throws SailException {
+			int events = snapshotEvents.get();
+			if (events == validatedSnapshotEvents && namespacePersistenceFailure == null
+					&& growthLease.invalidatedKind == null) {
+				return;
+			}
+			validateNativeSnapshots();
+			// A snapshot that is being closed still validates for its closing thread only; that is not remembered.
+			if (valueSnapshot.hasStableIds() && !valueSnapshot.isRetiredOrClosed()) {
+				validatedSnapshotEvents = events;
+			}
+		}
+
+		private void validateNativeSnapshots() throws SailException {
+			if (!autoGrow) {
+				// No map is resized without auto-grow, so nothing can invalidate or renew the pinned readers. What is
+				// left to notice is a reader that was closed and a namespace commit whose outcome is unknown.
+				ensureNamespacePersistenceCertain();
+				tripleTxn.ensureSnapshotValid();
+				return;
+			}
 			growthLease.ensureNotInvalidated();
 			ensureNamespacePersistenceCertain();
+			// A closed reader fails this check, so it is not asked a second time whether it is closed.
 			tripleTxn.ensureSnapshotValid();
-			if (tripleTxn.isClosed()) {
-				throw new SailException("TripleStore read snapshot is closed; retry the read operation");
-			}
 			if (tripleTxn.version() != tripleTxnVersion) {
 				throw new MapResizeConflictException(MapResizeKind.TRIPLE_STORE,
 						"TripleStore map changed while the read snapshot was pinned; retry the transaction");
 			}
 			try {
-				valueSnapshot.ensureValid();
+				valueSnapshot.ensureValid(tripleTxn);
 			} catch (IOException e) {
 				throw new SailException(e.getMessage(), e);
 			}
@@ -4875,15 +4928,30 @@ class LmdbSailStore implements SailStore {
 	}
 
 	/** Scoped ownership of already-admitted read views when the active admission is intentionally unbound. */
+	/**
+	 * The read views a thread owns while it reads. A context is entered on one thread and closed on the same thread;
+	 * once closed it can be entered again, so a result that is read row by row keeps a single instance.
+	 */
 	final class ReadResourceContext implements SailClosable {
-		private final ReadResourceContext previous;
+		private ReadResourceContext previous;
+		private ReadResourceSlot slot;
 		private final Supplier<? extends Iterable<ReadViewLease>> ownedViews;
-		private boolean closed;
+		private boolean closed = true;
 
-		private ReadResourceContext(ReadResourceContext previous,
-				Supplier<? extends Iterable<ReadViewLease>> ownedViews) {
-			this.previous = previous;
+		private ReadResourceContext(Supplier<? extends Iterable<ReadViewLease>> ownedViews) {
 			this.ownedViews = ownedViews;
+		}
+
+		/** Installs this context on the thread that owns {@code holder}, above the one that thread has now. */
+		void enter(ReadResourceSlot holder) {
+			if (!closed) {
+				throw new IllegalStateException("LMDB read-resource context is already entered");
+			}
+			slot = holder;
+			previous = holder.active;
+			closed = false;
+			holder.active = this;
+			readResourceContextEntered();
 		}
 
 		private List<ReadViewLease> readViews() {
@@ -4903,25 +4971,44 @@ class LmdbSailStore implements SailStore {
 			if (closed) {
 				return;
 			}
-			if (activeReadResourceContext.get() != this) {
+			if (slot.active != this) {
 				throw new IllegalStateException("LMDB read-resource contexts must close in nesting order");
 			}
 			closed = true;
-			// A null value retains neither the store nor its views. Reuse the thread's empty entry on the next row.
-			activeReadResourceContext.set(previous);
+			// The holder then retains neither this context nor its views.
+			slot.active = previous;
+			previous = null;
+			slot = null;
+			readResourceContextLeft();
 		}
 	}
 
+	/** For tests that count read activations: the calling thread entered a read-resource context. */
+	void readResourceContextEntered() {
+	}
+
+	/** For tests that count read activations: the calling thread left the context it entered last. */
+	void readResourceContextLeft() {
+	}
+
 	SailClosable enterReadResourceContext(Supplier<? extends Iterable<ReadViewLease>> ownedViews) {
-		ReadResourceContext previous = activeReadResourceContext.get();
-		ReadResourceContext installed = new ReadResourceContext(previous,
-				Objects.requireNonNull(ownedViews, "ownedViews"));
-		activeReadResourceContext.set(installed);
+		ReadResourceContext installed = newReadResourceContext(ownedViews);
+		installed.enter(activeReadResourceContext.get());
 		return installed;
 	}
 
+	/** A context that is not entered yet; see {@link ReadResourceContext#enter(ReadResourceSlot)}. */
+	ReadResourceContext newReadResourceContext(Supplier<? extends Iterable<ReadViewLease>> ownedViews) {
+		return new ReadResourceContext(Objects.requireNonNull(ownedViews, "ownedViews"));
+	}
+
+	/** The calling thread's holder, for {@link ReadResourceContext#enter(ReadResourceSlot)}. */
+	ReadResourceSlot readResourceSlot() {
+		return activeReadResourceContext.get();
+	}
+
 	List<ReadViewLease> currentReadResourceViews() {
-		ReadResourceContext current = activeReadResourceContext.get();
+		ReadResourceContext current = activeReadResourceContext.get().active;
 		return current == null ? List.of() : current.readViews();
 	}
 
@@ -7294,7 +7381,7 @@ class LmdbSailStore implements SailStore {
 				beforeSketchRefreshReadForTest();
 			}
 			boolean borrowedReadView = activeReadView.get() != null;
-			ReadResourceContext resourceContext = activeReadResourceContext.get();
+			ReadResourceContext resourceContext = activeReadResourceContext.get().active;
 			List<ReadViewLease> resourceViews = resourceContext == null ? List.of() : resourceContext.readViews();
 			ReadViewLease borrowedResourceView = !borrowedReadView && resourceViews.size() == 1
 					? resourceViews.get(0)
@@ -15616,7 +15703,26 @@ class LmdbSailStore implements SailStore {
 		 */
 		private void ensureSnapshot() {
 			nativeSourceReplay.checkpointNow();
-			readView.ensureNativeSnapshotsValid();
+			// Only a map resize can move a pinned reader to another snapshot, and without auto-grow no map is ever
+			// resized. A closed reader is still refused by the cursor that reads from it.
+			if (autoGrow) {
+				readView.ensureNativeSnapshotsValid();
+			}
+		}
+
+		/**
+		 * The check before a row that was already read is handed out. The native read that produced it validated the
+		 * snapshot under the reader's lock; what can have happened since is a map resize, which only exists with
+		 * auto-grow, or the close of this dataset. Replay of an unobserved attempt is best-effort, so its checkpoint
+		 * runs once per stride here and exactly at every native read.
+		 */
+		private void ensureRowSnapshot() {
+			if (autoGrow) {
+				nativeSourceReplay.checkpoint();
+				readView.ensureNativeSnapshotsValid();
+			} else if (closed.get()) {
+				throw new QueryInterruptedException("Query evaluation was interrupted");
+			}
 		}
 
 		private class SnapshotIteration<T> extends IterationWrapper<T> implements BufferedIteration {
@@ -15661,12 +15767,13 @@ class LmdbSailStore implements SailStore {
 				}
 			}
 
+			/**
+			 * Availability hands out no row, so it validates nothing here: a native read below validates itself, and a
+			 * row that was read earlier is validated by {@link #next()} before it leaves.
+			 */
 			@Override
 			public boolean hasNext() {
 				try {
-					if (!isClosed()) {
-						validateSnapshot();
-					}
 					return super.hasNext();
 				} catch (RuntimeException | Error failure) {
 					closeAfterFailure(failure);
@@ -15678,7 +15785,7 @@ class LmdbSailStore implements SailStore {
 			public T next() {
 				try {
 					if (!isClosed()) {
-						validateSnapshot();
+						ensureRowSnapshot();
 					}
 					return super.next();
 				} catch (RuntimeException | Error failure) {
@@ -15779,6 +15886,10 @@ class LmdbSailStore implements SailStore {
 						guardedIterations.previous = guarded;
 					}
 					guardedIterations = guarded;
+					if (rows.getClass() == LmdbStatementIterator.class) {
+						// Every row now leaves through the guard, which validates this same paired snapshot.
+						((LmdbStatementIterator) rows).snapshotGuarded();
+					}
 					return guarded;
 				}
 			}
@@ -17767,7 +17878,7 @@ class LmdbSailStore implements SailStore {
 			private void refillBatch(int demand) {
 				if (demand * 4 > batch.length) {
 					// All prefetched rows have been consumed before a refill.
-					batch = new long[BATCH_ROWS * 4];
+					batch = nativeDelegate != null ? nativeDelegate.stagingBatch(BATCH_ROWS) : new long[BATCH_ROWS * 4];
 				}
 				batchCount = delegate.fill(batch, demand);
 				batchPos = 0;
@@ -17815,7 +17926,11 @@ class LmdbSailStore implements SailStore {
 					if (batch != null) {
 						return nextFromBatch();
 					}
-					if (seekForwardMode || singlePulls < SINGLE_PULLS_BEFORE_BATCHING) {
+					// A cursor that is being reused, as for one index probe after another, already owns its staging
+					// buffers: its rows are batched from the first one, so that one transaction-lock cycle reads the
+					// probe and nothing is allocated. The first use of a cursor keeps the single pulls.
+					if (seekForwardMode || singlePulls < SINGLE_PULLS_BEFORE_BATCHING
+							&& (nativeDelegate == null || !nativeDelegate.hasStagingBuffers())) {
 						checkpointIfBudgetSpent();
 						checkBudget--;
 						singlePulls++;
@@ -17825,8 +17940,13 @@ class LmdbSailStore implements SailStore {
 						}
 						return record;
 					}
-					batch = new long[FIRST_BATCH_ROWS * 4];
-					scratch = new long[4];
+					if (nativeDelegate != null) {
+						batch = nativeDelegate.stagingBatch(FIRST_BATCH_ROWS);
+						scratch = nativeDelegate.stagingRow();
+					} else {
+						batch = new long[FIRST_BATCH_ROWS * 4];
+						scratch = new long[4];
+					}
 					return nextFromBatch();
 				} catch (RuntimeException | Error failure) {
 					KernelRuntime.closeCursor(this, failure);

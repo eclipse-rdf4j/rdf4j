@@ -29,6 +29,7 @@ import java.util.List;
 import java.util.NoSuchElementException;
 import java.util.Set;
 
+import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.model.vocabulary.RDF;
@@ -37,6 +38,7 @@ import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.ArrayBindingBasedQueryEvaluationContext;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.QueryEvaluationContext;
 import org.eclipse.rdf4j.query.impl.MapBindingSet;
+import org.eclipse.rdf4j.query.impl.SimpleBinding;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
@@ -85,6 +87,79 @@ public class ArrayBindingSetTest {
 		assertEquals(List.of("unset", "value"), List.copyOf(changed.getBindingNames()));
 		assertSame(firstValue, repeated.getValue("value"));
 		assertFalse(repeated.hasBinding("unset"));
+	}
+
+	/**
+	 * A snapshot reads the array of the row it was taken from. Every way of writing into that row afterwards must leave
+	 * the snapshot as it was, as it does for a source that reuses one row for all of its results.
+	 */
+	@Test
+	void resultSnapshotIsUnaffectedByLaterWritesToItsRow() {
+		var first = vf.createIRI("urn:snapshot:first");
+		var second = vf.createIRI("urn:snapshot:second");
+		var third = vf.createIRI("urn:snapshot:third");
+
+		ArrayBindingSet source = new ArrayBindingSet("a", "b", "c");
+		var layout = new ArrayBindingSet.ResultSnapshotLayout(source);
+		source.getDirectSetBinding("a").accept(first, source);
+		MapBindingSet afterDirectSet = layout.snapshot(source);
+
+		source.getDirectAddBinding("b").accept(second, source);
+		MapBindingSet afterDirectAdd = layout.snapshot(source);
+
+		source.setBinding("a", second);
+		MapBindingSet afterNamedSet = layout.snapshot(source);
+
+		source.setBinding(new SimpleBinding("c", third));
+		MapBindingSet afterBindingSet = layout.snapshot(source);
+
+		ArrayBindingSet other = new ArrayBindingSet(source, "a", "b", "c");
+		other.setBinding("b", third);
+		source.addAll(other);
+		MapBindingSet afterAddAll = layout.snapshot(source);
+
+		source.setBinding("a", (Value) null);
+
+		assertEquals(1, afterDirectSet.size());
+		assertSame(first, afterDirectSet.getValue("a"));
+		assertFalse(afterDirectSet.hasBinding("b"));
+
+		assertEquals(2, afterDirectAdd.size());
+		assertSame(first, afterDirectAdd.getValue("a"));
+		assertSame(second, afterDirectAdd.getValue("b"));
+
+		assertSame(second, afterNamedSet.getValue("a"));
+		assertFalse(afterNamedSet.hasBinding("c"));
+
+		assertEquals(3, afterBindingSet.size());
+		assertSame(second, afterBindingSet.getValue("b"));
+		assertSame(third, afterBindingSet.getValue("c"));
+
+		assertSame(second, afterAddAll.getValue("a"));
+		assertSame(third, afterAddAll.getValue("b"));
+		assertEquals(List.of("a", "b", "c"), List.copyOf(afterAddAll.getBindingNames()));
+
+		assertFalse(source.hasBinding("a"));
+		assertSame(third, source.getValue("b"));
+	}
+
+	/** A snapshot equals the row it was taken from and stays a detached, mutable binding set. */
+	@Test
+	void resultSnapshotEqualsItsRowAndIsIndependentlyMutable() {
+		var value = vf.createIRI("urn:snapshot:value");
+		ArrayBindingSet source = new ArrayBindingSet("a", "b");
+		source.getDirectSetBinding("b").accept(value, source);
+		MapBindingSet snapshot = new ArrayBindingSet.ResultSnapshotLayout(source).snapshot(source);
+
+		assertEquals(source, snapshot);
+		assertEquals(snapshot, source);
+		assertEquals(source.hashCode(), snapshot.hashCode());
+
+		snapshot.addBinding("a", RDF.ALT);
+		snapshot.setBinding("b", RDF.BAG);
+		assertFalse(source.hasBinding("a"));
+		assertSame(value, source.getValue("b"));
+		assertEquals(2, snapshot.size());
 	}
 
 	@Test

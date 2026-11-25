@@ -96,6 +96,12 @@ public class StatementPatternQueryEvaluationStep implements QueryEvaluationStep,
 	private final Function<Value, Resource[]> contextSup;
 	private BiConsumer<MutableBindingSet, Statement> converter;
 	private BiConsumer<MutableBindingSet, Statement> convertStatementConverter;
+	/** Every statement field resolves on its first read, so a field no converter or filter reads is never created. */
+	private static final StatementFieldSelection.Demand ALL_FIELDS_ON_DEMAND = new StatementFieldSelection.Demand(
+			StatementFieldSelection.SUBJECT | StatementFieldSelection.PREDICATE | StatementFieldSelection.OBJECT);
+	private static final StatementFieldSelection.Demand NO_FIELDS_ON_DEMAND = new StatementFieldSelection.Demand(0);
+	// Resolved on first use; the value only depends on final state, so a racing second resolution is harmless.
+	private StatementFieldSelection.Demand privateScanDemand;
 	private final QueryEvaluationContext context;
 	private final StatementOrder order;
 	private final Function<Value, Value> valuePreparer;
@@ -716,7 +722,9 @@ public class StatementPatternQueryEvaluationStep implements QueryEvaluationStep,
 
 		CloseableIteration<? extends Statement> iteration = null;
 		try {
-			iteration = openStatements((Resource) subject, (IRI) predicate, object, contexts);
+			// A direct lookup retains its statements beyond this read, so only a consumed-at-once scan may be lazy.
+			iteration = openStatements((Resource) subject, (IRI) predicate, object, contexts,
+					directLookupKey == null ? privateScanDemand() : null);
 
 			if (iteration instanceof EmptyIteration) {
 				putCachedDirectLookup(directLookupKey, List.of());
@@ -910,7 +918,8 @@ public class StatementPatternQueryEvaluationStep implements QueryEvaluationStep,
 
 		CloseableIteration<? extends Statement> iteration = null;
 		try {
-			iteration = openStatements((Resource) subject, (IRI) predicate, object, contexts, demand);
+			iteration = openStatements((Resource) subject, (IRI) predicate, object, contexts,
+					demand == null ? privateScanDemand() : demand);
 
 			if (iteration instanceof EmptyIteration) {
 				return null;
@@ -927,6 +936,23 @@ public class StatementPatternQueryEvaluationStep implements QueryEvaluationStep,
 			}
 			throw new QueryEvaluationException(t);
 		}
+	}
+
+	/**
+	 * The demand for a scan whose statements are read once, at once, by this step's own filter and converter. Such a
+	 * scan may hand out statements that create a value only when it is read: a bound or constant position is then never
+	 * materialized.
+	 */
+	private StatementFieldSelection.Demand privateScanDemand() {
+		StatementFieldSelection.Demand demand = privateScanDemand;
+		if (demand == null) {
+			demand = getClass() == StatementPatternQueryEvaluationStep.class && order == null && !emptyGraph
+					&& context.canOmitUnusedStatementBindings() && context.getActiveGraph() == null
+							? ALL_FIELDS_ON_DEMAND
+							: NO_FIELDS_ON_DEMAND;
+			privateScanDemand = demand;
+		}
+		return demand == NO_FIELDS_ON_DEMAND ? null : demand;
 	}
 
 	private BiConsumer<MutableBindingSet, Statement> getConverter() {
@@ -1332,7 +1358,8 @@ public class StatementPatternQueryEvaluationStep implements QueryEvaluationStep,
 	}
 
 	private static final class JoinStatementWithBindingSetIterator
-			implements CloseableIteration<BindingSet>, IndexReportingIterator, CooperativeCancellation {
+			implements CloseableIteration<BindingSet>, IndexReportingIterator, CooperativeCancellation,
+			BufferedIteration {
 
 		private final BiConsumer<MutableBindingSet, Statement> converter;
 		private final QueryEvaluationContext context;
@@ -1356,6 +1383,11 @@ public class StatementPatternQueryEvaluationStep implements QueryEvaluationStep,
 			this.context = context;
 			this.bindings = bindings;
 
+		}
+
+		@Override
+		public IntSupplier bufferedRowsSource() {
+			return BufferedIteration.bufferedRowsSource(iteration);
 		}
 
 		private BindingSet convert(Statement st) {

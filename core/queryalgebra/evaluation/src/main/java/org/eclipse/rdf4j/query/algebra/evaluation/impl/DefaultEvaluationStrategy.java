@@ -677,7 +677,9 @@ public class DefaultEvaluationStrategy implements EvaluationStrategy, FederatedS
 	 * their fixed-reference and known-identity snapshots retained; implementations must reuse this exact layout.
 	 */
 	protected QueryEvaluationContext createArrayBindingContext(QueryEvaluationContext context, String[] allVariables) {
-		return new ArrayBindingBasedQueryEvaluationContext(context, allVariables, tripleSource.getComparator());
+		// The context was created a moment ago with the triple source's comparator; asking the source again walks
+		// its whole dataset chain for pending changes a second time.
+		return new ArrayBindingBasedQueryEvaluationContext(context, allVariables, context.getComparator());
 	}
 
 	private QueryEvaluationContext scalarContext() {
@@ -757,6 +759,11 @@ public class DefaultEvaluationStrategy implements EvaluationStrategy, FederatedS
 			}
 			if (--depth[0] == 0) {
 				compilationDepth.remove();
+				if (outer == null) {
+					// Reading the scalar preparation above installed an empty entry for this strategy. A strategy
+					// lives for one query, so leaving it behind fills the thread's map with dead entries.
+					scalarPreparation.remove();
+				}
 			}
 		}
 	}

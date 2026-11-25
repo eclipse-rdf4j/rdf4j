@@ -29,9 +29,17 @@ import org.eclipse.rdf4j.sail.lmdb.model.LmdbValue;
 @InternalUseOnly
 public final class ValueResolutionScope implements SailClosable {
 
-	/** Restored with set(null), not remove(), so a transaction does not allocate a new thread-local entry. */
-	private static final ThreadLocal<ValueResolutionScope> ACTIVE = new ThreadLocal<>();
-	private static final SailClosable CLEAR_FOREGROUND = () -> ACTIVE.set(null);
+	/**
+	 * The scope a thread currently works under. Every thread keeps one holder for its lifetime, so a caller that
+	 * installs a scope around many short calls on the same thread keeps the holder and writes a field instead of
+	 * looking it up each time; see {@link #enterForeground(Foreground)}.
+	 */
+	static final class Foreground {
+		private ValueResolutionScope active;
+	}
+
+	private static final ThreadLocal<Foreground> FOREGROUND = ThreadLocal.withInitial(Foreground::new);
+	private static final SailClosable CLEAR_FOREGROUND = () -> FOREGROUND.get().active = null;
 	private static final VarHandle REVISION_ELEMENT = MethodHandles
 			.arrayElementVarHandle(ValueStoreRevision.Lazy[].class);
 	private final ValueStore store;
@@ -67,7 +75,7 @@ public final class ValueResolutionScope implements SailClosable {
 
 	/** Includes a closed, still-installed exposure, which continues to delimit internal value access. */
 	static ValueResolutionScope activeExposure(ValueStore store) {
-		ValueResolutionScope current = ACTIVE.get();
+		ValueResolutionScope current = FOREGROUND.get().active;
 		return current != null && current.belongsTo(store) ? current : null;
 	}
 
@@ -136,13 +144,14 @@ public final class ValueResolutionScope implements SailClosable {
 
 	/** A query task installs its scope once and releases its worker reader when its outermost activation ends. */
 	SailClosable activate() {
-		ValueResolutionScope previous = ACTIVE.get();
+		Foreground holder = FOREGROUND.get();
+		ValueResolutionScope previous = holder.active;
 		Thread thread = Thread.currentThread();
 		ReaderLease foreground = readers.get(thread);
 		long activeGeneration = generation;
-		ACTIVE.set(this);
+		holder.active = this;
 		return () -> {
-			ACTIVE.set(previous);
+			FOREGROUND.get().active = previous;
 			if (previous != this) {
 				ReaderLease lease = readers.get(thread);
 				if (lease != null && lease != foreground && lease.admittedGeneration == activeGeneration
@@ -155,9 +164,30 @@ public final class ValueResolutionScope implements SailClosable {
 
 	/** Foreground result calls share their parked reader until the transaction or standalone iteration ends. */
 	SailClosable activateForeground() {
-		ValueResolutionScope previous = ACTIVE.get();
-		ACTIVE.set(this);
-		return previous == null ? CLEAR_FOREGROUND : () -> ACTIVE.set(previous);
+		Foreground holder = FOREGROUND.get();
+		ValueResolutionScope previous = holder.active;
+		holder.active = this;
+		return previous == null ? CLEAR_FOREGROUND : () -> FOREGROUND.get().active = previous;
+	}
+
+	/** The calling thread's holder, for {@link #enterForeground(Foreground)}. */
+	static Foreground foreground() {
+		return FOREGROUND.get();
+	}
+
+	/**
+	 * As {@link #activateForeground()} on the thread that owns {@code holder}, without a lookup or a closer object.
+	 *
+	 * @return the scope this one replaces, to hand back to {@link #exitForeground(Foreground, ValueResolutionScope)}
+	 */
+	ValueResolutionScope enterForeground(Foreground holder) {
+		ValueResolutionScope previous = holder.active;
+		holder.active = this;
+		return previous;
+	}
+
+	static void exitForeground(Foreground holder, ValueResolutionScope previous) {
+		holder.active = previous;
 	}
 
 	Boolean resolve(long id, LmdbValue value, ValueStoreRevision.Lazy revision) throws IOException {

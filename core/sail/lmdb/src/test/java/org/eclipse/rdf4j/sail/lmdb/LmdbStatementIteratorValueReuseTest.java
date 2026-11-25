@@ -99,6 +99,55 @@ class LmdbStatementIteratorValueReuseTest {
 		}
 	}
 
+	@Test
+	void predicateKeepsItsSharedModelWhileSubjectsAndObjectsChurnTheValueCache(@TempDir File directory) {
+		LmdbStoreConfig config = new LmdbStoreConfig().setNativeEvaluationEnabled(false)
+				.setDirectAdjacencyEnabled(false)
+				.setValueOverlayEnabled(false)
+				.setValueCacheSize(16);
+		LmdbStore store = new LmdbStore(directory, config);
+		store.init();
+		try {
+			IRI predicate = Values.iri("urn:predicate-cache:predicate");
+			int statements = 200;
+			try (LmdbStoreConnection connection = (LmdbStoreConnection) store.getConnection()) {
+				connection.begin();
+				for (int i = 0; i < statements; i++) {
+					connection.addStatement(Values.iri("urn:predicate-cache:subject:" + i), predicate,
+							Values.iri("urn:predicate-cache:object:" + i));
+				}
+				connection.commit();
+			}
+			try (SailDataset dataset = store.getBackingStore()
+					.getExplicitSailSource()
+					.dataset(IsolationLevels.SNAPSHOT_READ)) {
+				Value first = null;
+				int scanned = 0;
+				try (var rows = dataset.getStatements(null, null, null)) {
+					while (rows.hasNext()) {
+						Statement statement = rows.next();
+						if (first == null) {
+							first = statement.getPredicate();
+							assertEquals(predicate, first);
+						}
+						// Decoding publishes each of the 400 subjects and objects to the sixteen-entry value cache.
+						assertTrue(statement.getSubject().stringValue().startsWith("urn:predicate-cache:subject:"));
+						assertTrue(statement.getObject().stringValue().startsWith("urn:predicate-cache:object:"));
+						scanned++;
+					}
+				}
+				assertEquals(statements, scanned);
+				try (var rows = dataset.getStatements(null, null, null)) {
+					assertTrue(rows.hasNext());
+					assertSame(first, rows.next().getPredicate(),
+							"A later scan must find the predicate in the predicate cache");
+				}
+			}
+		} finally {
+			store.shutDown();
+		}
+	}
+
 	private static LmdbIRI independentNativeIri(Value value) {
 		LmdbIRI original = assertInstanceOf(LmdbIRI.class, value);
 		LmdbValue.InternalIdentity identity = original.getInternalIdentity();

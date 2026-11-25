@@ -1344,6 +1344,13 @@ final class TxnManager {
 		// Advances whenever this pooled handle changes owner, so a record iterator of a previous owner cannot pass
 		// the snapshot check on a recycled reader.
 		private volatile long lease;
+		/**
+		 * Told after every change of this reader's validity, version or ownership. The paired read view that pinned
+		 * this reader uses it to skip re-reading that state while nothing happened; see
+		 * {@code LmdbSailStore.ReadView#ensureNativeSnapshotsValid()}. The listener only counts, takes no lock and is
+		 * cleared when the handle is recycled.
+		 */
+		private volatile Runnable snapshotEventListener;
 
 		private Txn(long txn, boolean owned, boolean resetOnWrite, Semaphore readerPermit) {
 			this.txn = txn;
@@ -1455,6 +1462,18 @@ final class TxnManager {
 			return version;
 		}
 
+		void setSnapshotEventListener(Runnable listener) {
+			snapshotEventListener = listener;
+		}
+
+		/** Called after the state change it reports, so a listener that re-reads the state sees the change. */
+		private void snapshotEvent() {
+			Runnable listener = snapshotEventListener;
+			if (listener != null) {
+				listener.run();
+			}
+		}
+
 		/** The current owner lease of this pooled handle; captured by record iterators at construction. */
 		long lease() {
 			return lease;
@@ -1481,10 +1500,14 @@ final class TxnManager {
 			if (snapshotBound) {
 				throw new IllegalStateException("Cannot refresh a membership-bound dictionary reader");
 			}
-			resetNative();
-			stale = false;
-			version++;
-			activate();
+			try {
+				resetNative();
+				stale = false;
+				version++;
+				activate();
+			} finally {
+				snapshotEvent();
+			}
 		}
 
 		long snapshotRevision() {
@@ -1515,11 +1538,15 @@ final class TxnManager {
 		}
 
 		synchronized void invalidateAndReset(LmdbSailStore.MapResizeKind kind) {
-			snapshotBound = true;
-			snapshotInvalidated = true;
-			snapshotInvalidationKind = kind;
-			snapshotRevision = -1;
-			resetNative();
+			try {
+				snapshotBound = true;
+				snapshotInvalidated = true;
+				snapshotInvalidationKind = kind;
+				snapshotRevision = -1;
+				resetNative();
+			} finally {
+				snapshotEvent();
+			}
 		}
 
 		void ensureSnapshotValid() {
@@ -1568,7 +1595,11 @@ final class TxnManager {
 				dictionaryLookupScope = null;
 				idleReaderReclaimer = null;
 				snapshotRevision = -1;
-				releasePermit = release();
+				try {
+					releasePermit = release();
+				} finally {
+					snapshotEvent();
+				}
 			}
 			if (releasePermit) {
 				releaseReaderPermit(permit);
@@ -1587,13 +1618,17 @@ final class TxnManager {
 				return;
 			}
 			if (resetOnWrite || idle) {
-				if (snapshotRevision >= 0) {
-					snapshotInvalidated = true;
-				}
-				resetNative();
-				version++;
-				if (!idle) {
-					activate();
+				try {
+					if (snapshotRevision >= 0) {
+						snapshotInvalidated = true;
+					}
+					resetNative();
+					version++;
+					if (!idle) {
+						activate();
+					}
+				} finally {
+					snapshotEvent();
 				}
 			} else {
 				// untracked reader: keep the snapshot, renew lazily on next reuse
@@ -1606,22 +1641,26 @@ final class TxnManager {
 			if (closed) {
 				return;
 			}
-			if (snapshotRevision >= 0) {
-				snapshotInvalidated = true;
-			}
-			if (active) {
-				if (!idle && !snapshotInvalidated) {
-					// idle readers stay reset; they are renewed lazily in reuse()
-					activate();
-				}
-				version++;
-			} else {
-				if (snapshotBound) {
+			try {
+				if (snapshotRevision >= 0) {
 					snapshotInvalidated = true;
-					snapshotInvalidationKind = mapResizeKind;
-					snapshotRevision = -1;
 				}
-				deactivate();
+				if (active) {
+					if (!idle && !snapshotInvalidated) {
+						// idle readers stay reset; they are renewed lazily in reuse()
+						activate();
+					}
+					version++;
+				} else {
+					if (snapshotBound) {
+						snapshotInvalidated = true;
+						snapshotInvalidationKind = mapResizeKind;
+						snapshotRevision = -1;
+					}
+					deactivate();
+				}
+			} finally {
+				snapshotEvent();
 			}
 		}
 
@@ -1630,6 +1669,12 @@ final class TxnManager {
 		/** Prepares a pooled transaction for reuse. */
 		private synchronized void reuse(boolean resetOnWrite, Semaphore readerPermit, boolean currentSnapshot)
 				throws IOException {
+			// The previous owner hears that its reader is gone; the next owner installs its own listener.
+			Runnable previousListener = snapshotEventListener;
+			snapshotEventListener = null;
+			if (previousListener != null) {
+				previousListener.run();
+			}
 			if (stale || currentSnapshot) {
 				resetNative();
 				stale = false;
@@ -1719,17 +1764,21 @@ final class TxnManager {
 		}
 
 		private synchronized void abortAndMarkClosed() {
-			releaseSpares();
-			if (!closed) {
-				mdb_txn_abort(txn);
+			try {
+				releaseSpares();
+				if (!closed) {
+					mdb_txn_abort(txn);
+				}
+				active = false;
+				idle = false;
+				closed = true;
+				valueLookupScope = null;
+				dictionaryLookupScope = null;
+				lease++;
+				snapshotRevision = -1;
+			} finally {
+				snapshotEvent();
 			}
-			active = false;
-			idle = false;
-			closed = true;
-			valueLookupScope = null;
-			dictionaryLookupScope = null;
-			lease++;
-			snapshotRevision = -1;
 		}
 
 		@Override

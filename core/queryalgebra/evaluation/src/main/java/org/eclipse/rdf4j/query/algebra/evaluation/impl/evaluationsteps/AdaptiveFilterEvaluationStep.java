@@ -28,10 +28,12 @@ import java.util.function.BiConsumer;
 import java.util.function.BiFunction;
 import java.util.function.Consumer;
 import java.util.function.Function;
+import java.util.function.IntSupplier;
 import java.util.function.Predicate;
 import java.util.function.Supplier;
 
 import org.eclipse.rdf4j.common.iteration.AbstractCloseableIteration;
+import org.eclipse.rdf4j.common.iteration.BufferedIteration;
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.common.iteration.CooperativeCancellation;
 import org.eclipse.rdf4j.common.iteration.IndexReportingIterator;
@@ -94,7 +96,9 @@ public final class AdaptiveFilterEvaluationStep implements QueryEvaluationStep, 
 
 	// A scope is installed only around a query's synchronous evaluate/pull/close calls, never while its consumer is
 	// idle. This gives nested regions one learning budget without putting mutable state in a shared prepared plan.
-	private static final ThreadLocal<Execution> CURRENT = new ThreadLocal<>();
+	// The thread's slot holds the execution; installing and restoring one around every pull then costs a single
+	// thread-local lookup instead of three.
+	private static final ThreadLocal<Execution[]> CURRENT = ThreadLocal.withInitial(() -> new Execution[1]);
 	private final TupleExpr root;
 	private final Node body;
 	private final FilterPlan[] filters;
@@ -370,7 +374,7 @@ public final class AdaptiveFilterEvaluationStep implements QueryEvaluationStep, 
 			}
 			return fallback.evaluate(bindings);
 		}
-		Execution execution = CURRENT.get();
+		Execution execution = CURRENT.get()[0];
 		if (execution == null) {
 			execution = new Execution();
 		}
@@ -762,8 +766,49 @@ public final class AdaptiveFilterEvaluationStep implements QueryEvaluationStep, 
 		}
 	}
 
-	private static final class GateIteration extends LookAheadIteration<BindingSet> {
+	private static final class GateIteration extends LookAheadIteration<BindingSet> implements BufferedIteration {
 		private final CloseableIteration<BindingSet> source;
+		private IntSupplier sourceBufferedRows;
+		private boolean sourceBufferedRowsResolved;
+		private ActiveGate[] activeGates;
+		private long activeGatesGeneration;
+
+		/**
+		 * Rows the source has already fetched pass this site one for one while no filter is placed here. A placement
+		 * only changes when an input cohort completes, which pulling already fetched rows of the open cohort cannot do.
+		 * With a filter placed here nothing is certified: accepting a row runs the filter, and a rejected row would
+		 * make the next pull read on.
+		 */
+		private int bufferedRows() {
+			if (isClosed()) {
+				return 0;
+			}
+			if (!sourceBufferedRowsResolved) {
+				sourceBufferedRows = BufferedIteration.bufferedRowsSource(source);
+				sourceBufferedRowsResolved = true;
+			}
+			IntSupplier rows = sourceBufferedRows;
+			return rows == null || activeGates().length != 0 ? 0 : rows.getAsInt();
+		}
+
+		/**
+		 * The filters placed at this site. A placement only changes with the controller's generation, so the bundle is
+		 * looked up once per generation instead of once per row.
+		 */
+		private ActiveGate[] activeGates() {
+			long generation = execution.controller.generation();
+			ActiveGate[] active = activeGates;
+			if (active == null || generation != activeGatesGeneration) {
+				activeGates = active = execution.activeGates(site, gates);
+				activeGatesGeneration = generation;
+			}
+			return active;
+		}
+
+		@Override
+		public IntSupplier bufferedRowsSource() {
+			return this::bufferedRows;
+		}
 
 		@Override
 		protected boolean forwardCancellation() {
@@ -787,7 +832,7 @@ public final class AdaptiveFilterEvaluationStep implements QueryEvaluationStep, 
 			while (source.hasNext()) {
 				BindingSet row = source.next();
 				// A descendant pull may complete an old cohort and install the next cohort's placement.
-				ActiveGate[] active = execution.activeGates(site, gates);
+				ActiveGate[] active = activeGates();
 				if (execution.telemetry) {
 					execution.arrivals += gates.length;
 				}
@@ -851,7 +896,29 @@ public final class AdaptiveFilterEvaluationStep implements QueryEvaluationStep, 
 		}
 	}
 
-	private static final class RegionIteration extends LookAheadIteration<BindingSet> {
+	private static final class RegionIteration extends LookAheadIteration<BindingSet> implements BufferedIteration {
+		private IntSupplier bodyBufferedRows;
+		private CloseableIteration<BindingSet> bodyBufferedRowsOwner;
+
+		/** The region hands on each body row unchanged, so the body's already fetched rows are its own. */
+		private int bufferedRows() {
+			CloseableIteration<BindingSet> current = body;
+			if (current == null || isClosed()) {
+				return 0;
+			}
+			if (current != bodyBufferedRowsOwner) {
+				bodyBufferedRowsOwner = current;
+				bodyBufferedRows = BufferedIteration.bufferedRowsSource(current);
+			}
+			IntSupplier rows = bodyBufferedRows;
+			return rows == null ? 0 : rows.getAsInt();
+		}
+
+		@Override
+		public IntSupplier bufferedRowsSource() {
+			return this::bufferedRows;
+		}
+
 		private final AdaptiveFilterPlacementController controller;
 		private final CandidateCatalog candidates;
 		private final Execution query;
@@ -862,6 +929,8 @@ public final class AdaptiveFilterEvaluationStep implements QueryEvaluationStep, 
 		private long bundleGeneration = -1;
 		private CloseableIteration<BindingSet> body;
 		private boolean cohortOpen;
+		/** Whether the open cohort's active time is being accumulated; decided when the cohort begins. */
+		private boolean cohortTimed;
 
 		@Override
 		protected boolean forwardCancellation() {
@@ -915,8 +984,12 @@ public final class AdaptiveFilterEvaluationStep implements QueryEvaluationStep, 
 			}
 			cohortOpen = true;
 			activeNanos = 0;
+			// Reading the clock around every pull is only worth it while the controller still compares cohorts.
+			cohortTimed = controller.measuresCohort();
 			// The anchor's open/pull is common prefix work. Synchronous suffix open/pull starts here.
-			segmentStarted = System.nanoTime();
+			if (cohortTimed) {
+				segmentStarted = System.nanoTime();
+			}
 		}
 
 		void completeCohort() {
@@ -928,7 +1001,7 @@ public final class AdaptiveFilterEvaluationStep implements QueryEvaluationStep, 
 		}
 
 		private void pauseMeasurement() {
-			if (cohortOpen) {
+			if (cohortOpen && cohortTimed) {
 				activeNanos += System.nanoTime() - segmentStarted;
 			}
 		}
@@ -959,7 +1032,9 @@ public final class AdaptiveFilterEvaluationStep implements QueryEvaluationStep, 
 		protected BindingSet getNextElement() {
 			RegionIteration previous = query.region;
 			query.region = this;
-			segmentStarted = System.nanoTime();
+			if (cohortOpen && cohortTimed) {
+				segmentStarted = System.nanoTime();
+			}
 			try {
 				return body.hasNext() ? body.next() : null;
 			} catch (RuntimeException | Error failure) {
@@ -1075,8 +1150,9 @@ public final class AdaptiveFilterEvaluationStep implements QueryEvaluationStep, 
 		}
 
 		<T> T call(Supplier<T> work) {
-			Execution previous = CURRENT.get();
-			CURRENT.set(this);
+			Execution[] slot = CURRENT.get();
+			Execution previous = slot[0];
+			slot[0] = this;
 			try {
 				return work.get();
 			} finally {
@@ -1084,8 +1160,8 @@ public final class AdaptiveFilterEvaluationStep implements QueryEvaluationStep, 
 				try {
 					publishUnknownOutputs();
 				} finally {
-					// Clear the execution reference while retaining the reusable ThreadLocal entry between pulls.
-					CURRENT.set(previous);
+					// Clear the execution reference while retaining the thread's slot between pulls.
+					slot[0] = previous;
 				}
 			}
 		}
@@ -1130,9 +1206,16 @@ public final class AdaptiveFilterEvaluationStep implements QueryEvaluationStep, 
 		}
 	}
 
-	private static final class ScopedIteration extends AbstractCloseableIteration<BindingSet> {
+	private static final class ScopedIteration extends AbstractCloseableIteration<BindingSet>
+			implements BufferedIteration {
 		private final CloseableIteration<BindingSet> source;
 		private final Execution execution;
+
+		@Override
+		public IntSupplier bufferedRowsSource() {
+			// Every pull still enters the execution scope; the scope adds no rows and removes none.
+			return BufferedIteration.bufferedRowsSource(source);
+		}
 
 		ScopedIteration(CloseableIteration<BindingSet> source, Execution execution) {
 			this.source = source;
@@ -1166,7 +1249,7 @@ public final class AdaptiveFilterEvaluationStep implements QueryEvaluationStep, 
 		return new TripleSource() {
 			private CloseableIteration<? extends Statement> record(
 					Supplier<CloseableIteration<? extends Statement>> open) {
-				Execution execution = CURRENT.get();
+				Execution execution = CURRENT.get()[0];
 				RegionIteration region = execution == null ? null : execution.region;
 				if (region == null || !region.cohortOpen || !region.telemetry) {
 					return open.get();
@@ -1183,6 +1266,15 @@ public final class AdaptiveFilterEvaluationStep implements QueryEvaluationStep, 
 			}
 
 			@Override
+			public CloseableIteration<? extends Statement> getStatementsForEvaluation(
+					StatementFieldSelection.Demand demand, Resource subject, IRI predicate, Value object,
+					Resource... contexts) {
+				// The demand is the wrapped source's capability; dropping it here would make every statement of a
+				// filtered query create all of its values again.
+				return record(() -> source.getStatementsForEvaluation(demand, subject, predicate, object, contexts));
+			}
+
+			@Override
 			public CloseableIteration<? extends Statement> getStatements(StatementOrder order, Resource subject,
 					IRI predicate, Value object, Resource... contexts) {
 				return record(() -> source.getStatements(order, subject, predicate, object, contexts));
@@ -1190,7 +1282,7 @@ public final class AdaptiveFilterEvaluationStep implements QueryEvaluationStep, 
 
 			@Override
 			public long getStatementCount(Resource subject, IRI predicate, Value object, Resource... contexts) {
-				Execution execution = CURRENT.get();
+				Execution execution = CURRENT.get()[0];
 				if (execution != null && execution.region != null && execution.region.cohortOpen
 						&& execution.region.telemetry) {
 					execution.region.sourceOpens++;

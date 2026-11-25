@@ -33,15 +33,11 @@ import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.Consumer;
-import java.util.function.Supplier;
 
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.common.iteration.CooperativeCancellation;
 import org.eclipse.rdf4j.common.iteration.IterationWrapper;
 import org.eclipse.rdf4j.http.client.QueryExecutionContext;
-import org.eclipse.rdf4j.model.IRI;
-import org.eclipse.rdf4j.model.Resource;
-import org.eclipse.rdf4j.model.Statement;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.QueryEvaluationException;
@@ -53,9 +49,9 @@ import org.eclipse.rdf4j.repository.RepositoryConnection;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
 import org.eclipse.rdf4j.sail.NotifyingSailConnection;
 import org.eclipse.rdf4j.sail.SailException;
-import org.eclipse.rdf4j.sail.base.SailClosable;
 import org.eclipse.rdf4j.sail.features.SailResultValueExtractor;
 import org.eclipse.rdf4j.sail.lmdb.config.LmdbStoreConfig;
+import org.eclipse.rdf4j.sail.lmdb.model.LmdbValue;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 import org.junit.jupiter.params.ParameterizedTest;
@@ -522,17 +518,14 @@ class LmdbRepositoryObservedReadTest {
 			return new LmdbSailStore(directory, properties, config, sketchBasedJoinEstimatorEnabled,
 					valueStoreFactory(), TripleStore::new) {
 				@Override
-				SailClosable enterReadResourceContext(Supplier<? extends Iterable<ReadViewLease>> ownedViews) {
-					SailClosable activation = super.enterReadResourceContext(ownedViews);
+				void readResourceContextEntered() {
 					readActivations.incrementAndGet();
 					activeReads.incrementAndGet();
-					return () -> {
-						try {
-							activation.close();
-						} finally {
-							activeReads.decrementAndGet();
-						}
-					};
+				}
+
+				@Override
+				void readResourceContextLeft() {
+					activeReads.decrementAndGet();
 				}
 			};
 		}
@@ -554,12 +547,17 @@ class LmdbRepositoryObservedReadTest {
 		@Override
 		LmdbSailStore.ValueStoreFactory valueStoreFactory() {
 			return (directory, properties, config) -> new ValueStore(directory, properties, config) {
+				private int created;
+
+				// A private scan hands out statements whose values are created when their row is converted, so
+				// the fault is injected where the first of a statement's two projected values is created.
 				@Override
-				public Statement createStatement(Resource subject, IRI predicate, Value object, Resource context) {
-					if (Thread.currentThread() == failOnThread && ++scanned == 5) {
+				LmdbValue getLazyValue(long id, ValueStoreRevision revision, ValueResolutionScope exposure,
+						Value supplied, long semanticVersion) throws IOException {
+					if (Thread.currentThread() == failOnThread && created++ % 2 == 0 && ++scanned == 5) {
 						throw failure;
 					}
-					return super.createStatement(subject, predicate, object, context);
+					return super.getLazyValue(id, revision, exposure, supplied, semanticVersion);
 				}
 			};
 		}

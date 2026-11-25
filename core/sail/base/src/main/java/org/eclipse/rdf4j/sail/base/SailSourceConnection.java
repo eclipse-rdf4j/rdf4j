@@ -286,6 +286,7 @@ public abstract class SailSourceConnection extends AbstractNotifyingSailConnecti
 
 		SailDataset rdfDataset = null;
 		CloseableIteration<BindingSet> iteration = null;
+		SailDatasetTripleTermSource preparingSource = null;
 		try {
 			rdfDataset = acquireQueryDataset(tupleExpr, includeInferred);
 			if (rdfDataset instanceof TreeOwnedDataset owned) {
@@ -293,7 +294,9 @@ public abstract class SailSourceConnection extends AbstractNotifyingSailConnecti
 				owned.cursorsCloseBeforeDataset();
 			}
 
-			TripleSource tripleSource = new SailDatasetTripleTermSource(vf, rdfDataset);
+			SailDatasetTripleTermSource tripleSource = new SailDatasetTripleTermSource(vf, rdfDataset);
+			preparingSource = tripleSource;
+			tripleSource.beginPreparation();
 			EvaluationStrategy strategy = getEvaluationStrategy(dataset, tripleSource);
 			if (trackResultSize) {
 				strategy.setTrackResultSize(trackResultSize);
@@ -343,6 +346,10 @@ public abstract class SailSourceConnection extends AbstractNotifyingSailConnecti
 		} catch (RuntimeException | Error failure) {
 			closeFailedRead(failure, iteration, rdfDataset);
 			throw failure;
+		} finally {
+			if (preparingSource != null) {
+				preparingSource.endPreparation();
+			}
 		}
 	}
 

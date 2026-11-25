@@ -128,10 +128,11 @@ public final class QueryAlgebraBindingAnalysis {
 	private Map<QueryModelNode, ReadOnlyContext> contextCache;
 	private Map<TupleExpr, Boolean> nullableContextSubtrees;
 	private Map<QueryModelNode, Long> scopeIdentities;
-	private final Map<OutputKey, OutputFacts> outputCache = new HashMap<>();
-	private final Map<OutputKey, Boolean> resultSetModifierCache = new HashMap<>();
-	private final Map<ChildInputKey, ReadOnlyContext> childInputCache = new HashMap<>();
-	private final Map<OutputKey, ReadOnlyContext> leftJoinInputCache = new HashMap<>();
+	// An analysis is created by every optimizer of every query and most never fill these; they start out absent.
+	private Map<OutputKey, OutputFacts> outputCache;
+	private Map<OutputKey, Boolean> resultSetModifierCache;
+	private Map<ChildInputKey, ReadOnlyContext> childInputCache;
+	private Map<OutputKey, ReadOnlyContext> leftJoinInputCache;
 	private final AtomicLong nextScopeIdentity = new AtomicLong(1);
 
 	private QueryAlgebraBindingAnalysis(TupleExpr root, BindingSet initialBindings, Set<String> externalNames,
@@ -145,8 +146,17 @@ public final class QueryAlgebraBindingAnalysis {
 		this.root = root;
 		this.bindingAssignment = bindingAssignment;
 		this.datasetCanScanDefaultContext = datasetCanScanDefaultContext;
-		Map<String, Value> values = new HashMap<>();
-		if (initialBindings != null) {
+		Map<String, Value> values;
+		if (initialBindings == null || externalNames.isEmpty()) {
+			values = Map.of();
+		} else if (externalNames.size() == 1) {
+			// One API value is the common prepared-query case; immutable singletons make the context's copies free.
+			String name = externalNames.iterator().next();
+			Value value = initialBindings.getValue(name);
+			values = value == null ? Map.of() : Map.of(name, value);
+			externalNames = Set.of(name);
+		} else {
+			values = new HashMap<>();
 			for (String name : initialBindings.getBindingNames()) {
 				Value value = initialBindings.getValue(name);
 				if (value != null && externalNames.contains(name)) {
@@ -187,12 +197,14 @@ public final class QueryAlgebraBindingAnalysis {
 	private static QueryAlgebraBindingAnalysis withBindingValues(TupleExpr root, BindingSet initialBindings,
 			boolean bindingAssignment, Predicate<StatementPattern> datasetCanScanDefaultContext) {
 		BindingSet values = initialBindings == null ? EmptyBindingSet.getInstance() : initialBindings;
-		Set<String> names = new HashSet<>();
+		Set<String> bound = new HashSet<>();
 		for (String name : values.getBindingNames()) {
 			if (values.getValue(name) != null) {
-				names.add(name);
+				bound.add(name);
 			}
 		}
+		// A query without API values: the shared immutable set makes every later defensive copy free.
+		Set<String> names = bound.isEmpty() ? Set.of() : bound;
 		if (!names.isEmpty() && root != null) {
 			root.visit(new AbstractQueryModelVisitor<RuntimeException>() {
 				@Override
@@ -200,6 +212,11 @@ public final class QueryAlgebraBindingAnalysis {
 					// Private GRAPH inputs come from evaluator frames, never from same-spelled API parameters.
 					names.remove(projection.getInheritedGraphParameter());
 					super.meet(projection);
+				}
+
+				@Override
+				public void meet(StatementPattern pattern) {
+					// Only variables below; this walk runs for every optimizer of every query.
 				}
 			});
 		}
@@ -289,11 +306,14 @@ public final class QueryAlgebraBindingAnalysis {
 		Objects.requireNonNull(expression, "expression");
 		Objects.requireNonNull(input, "input");
 		OutputKey key = new OutputKey(expression, input);
-		OutputFacts cached = outputCache.get(key);
+		OutputFacts cached = outputCache == null ? null : outputCache.get(key);
 		if (cached != null) {
 			return cached;
 		}
 		OutputFacts result = transfer(expression, input);
+		if (outputCache == null) {
+			outputCache = new HashMap<>();
+		}
 		outputCache.put(key, result);
 		return result;
 	}
@@ -448,10 +468,10 @@ public final class QueryAlgebraBindingAnalysis {
 		if (nullableContextSubtrees != null) {
 			nullableContextSubtrees.clear();
 		}
-		outputCache.clear();
-		resultSetModifierCache.clear();
-		childInputCache.clear();
-		leftJoinInputCache.clear();
+		outputCache = null;
+		resultSetModifierCache = null;
+		childInputCache = null;
+		leftJoinInputCache = null;
 		if (scopeIdentities != null) {
 			scopeIdentities.clear();
 		}
@@ -553,11 +573,14 @@ public final class QueryAlgebraBindingAnalysis {
 	 */
 	public ReadOnlyContext childInput(QueryModelNode parent, QueryModelNode child, ReadOnlyContext input) {
 		ChildInputKey key = new ChildInputKey(parent, child, input);
-		ReadOnlyContext cached = childInputCache.get(key);
+		ReadOnlyContext cached = childInputCache == null ? null : childInputCache.get(key);
 		if (cached != null) {
 			return cached;
 		}
 		ReadOnlyContext result = computeChildInput(parent, child, input);
+		if (childInputCache == null) {
+			childInputCache = new HashMap<>();
+		}
 		childInputCache.put(key, result);
 		return result;
 	}
@@ -843,11 +866,14 @@ public final class QueryAlgebraBindingAnalysis {
 		// right transition asks for the left facts again: sharing this frame keeps that lookup identical to the
 		// left transition instead of doubling the entire left subtree at each nested OPTIONAL.
 		OutputKey key = new OutputKey(leftJoin, input);
-		ReadOnlyContext cached = leftJoinInputCache.get(key);
+		ReadOnlyContext cached = leftJoinInputCache == null ? null : leftJoinInputCache.get(key);
 		if (cached != null) {
 			return cached;
 		}
 		ReadOnlyContext result = computeLeftJoinInput(leftJoin, input);
+		if (leftJoinInputCache == null) {
+			leftJoinInputCache = new HashMap<>();
+		}
 		leftJoinInputCache.put(key, result);
 		return result;
 	}
@@ -962,11 +988,14 @@ public final class QueryAlgebraBindingAnalysis {
 	 */
 	private boolean containsResultSetModifier(TupleExpr expression, ReadOnlyContext input) {
 		OutputKey key = new OutputKey(expression, input);
-		Boolean cached = resultSetModifierCache.get(key);
+		Boolean cached = resultSetModifierCache == null ? null : resultSetModifierCache.get(key);
 		if (cached != null) {
 			return cached;
 		}
 		boolean result = computeContainsResultSetModifier(expression, input);
+		if (resultSetModifierCache == null) {
+			resultSetModifierCache = new HashMap<>();
+		}
 		resultSetModifierCache.put(key, result);
 		return result;
 	}
@@ -2155,9 +2184,13 @@ public final class QueryAlgebraBindingAnalysis {
 			this.maybeBoundNames = Set.copyOf(maybeBoundNames);
 			this.guaranteedNames = Set.copyOf(guaranteedNames);
 			this.fixedValues = Map.copyOf(fixedValues);
-			Map<String, Set<ValueKind>> kindsCopy = new HashMap<>();
-			valueKinds.forEach((name, kinds) -> kindsCopy.put(name, Set.copyOf(kinds)));
-			this.valueKinds = Map.copyOf(kindsCopy);
+			if (valueKinds.isEmpty()) {
+				this.valueKinds = Map.of();
+			} else {
+				Map<String, Set<ValueKind>> kindsCopy = new HashMap<>();
+				valueKinds.forEach((name, kinds) -> kindsCopy.put(name, Set.copyOf(kinds)));
+				this.valueKinds = Map.copyOf(kindsCopy);
+			}
 			this.externalValues = Map.copyOf(externalValues);
 			this.externalGuaranteedNames = Set.copyOf(externalGuaranteedNames);
 			this.scopeIdentity = scopeIdentity;
@@ -2168,12 +2201,25 @@ public final class QueryAlgebraBindingAnalysis {
 		private static ReadOnlyContext external(Map<String, Value> values, Set<String> externalNames,
 				long scopeIdentity) {
 			Set<String> names = Set.copyOf(externalNames);
-			Map<String, Set<ValueKind>> kinds = new HashMap<>();
-			values.forEach((name, value) -> kinds.put(name, Set.of(valueKindOf(value))));
-			return new ReadOnlyContext(names, names, names, values, kinds, values, names, scopeIdentity, true);
+			// The constructor copies what it is given. Handing it immutable collections makes those copies free; this
+			// context is built once per optimizer for every query.
+			Map<String, Value> fixed = Map.copyOf(values);
+			Map<String, Set<ValueKind>> kinds;
+			if (fixed.isEmpty()) {
+				kinds = Map.of();
+			} else {
+				kinds = new HashMap<>();
+				for (Map.Entry<String, Value> entry : fixed.entrySet()) {
+					kinds.put(entry.getKey(), Set.of(valueKindOf(entry.getValue())));
+				}
+			}
+			return new ReadOnlyContext(names, names, names, fixed, kinds, fixed, names, scopeIdentity, true);
 		}
 
 		private ReadOnlyContext withPossibleInputs(Set<String> names) {
+			if (names.isEmpty()) {
+				return this;
+			}
 			Set<String> visible = new HashSet<>(visibleNames);
 			Set<String> maybe = new HashSet<>(maybeBoundNames);
 			visible.addAll(names);

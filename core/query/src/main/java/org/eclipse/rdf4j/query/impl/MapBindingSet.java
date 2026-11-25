@@ -12,9 +12,6 @@
 package org.eclipse.rdf4j.query.impl;
 
 import java.io.Serial;
-import java.io.Serializable;
-import java.util.AbstractMap;
-import java.util.Collection;
 import java.util.HashMap;
 import java.util.Iterator;
 import java.util.LinkedHashMap;
@@ -36,7 +33,18 @@ public class MapBindingSet extends AbstractBindingSet implements MutableBindingS
 
 	private static final long serialVersionUID = -8857324525220429607L;
 
+	/**
+	 * The bindings of an ordinary binding set. Null for a compact snapshot made by a {@link CompactLayout}, which
+	 * answers from {@link #values} until a caller asks for a view or changes it; from then on it uses
+	 * {@link #expanded}.
+	 */
 	private final Map<String, Binding> bindings;
+	private final transient CompactLayout layout;
+	private final transient int projectedSize;
+	// Clearing this field publishes the individually owned, expanded map to other readers.
+	private transient volatile Value[] values;
+	private transient Binding[] projectedBindings;
+	private transient LinkedHashMap<String, Binding> expanded;
 
 	public MapBindingSet() {
 		this(8);
@@ -50,25 +58,41 @@ public class MapBindingSet extends AbstractBindingSet implements MutableBindingS
 	 */
 	public MapBindingSet(int capacity) {
 		// Create bindings map, compensating for HashMap's load factor
-		bindings = new LinkedHashMap<>(capacity * 2);
+		this(new LinkedHashMap<>(capacity * 2));
 	}
 
-	private MapBindingSet(CompactBindings bindings) {
+	private MapBindingSet(Map<String, Binding> bindings) {
 		this.bindings = bindings;
+		this.layout = null;
+		this.projectedSize = 0;
+	}
+
+	private MapBindingSet(CompactLayout layout, Value[] values, int size) {
+		this.bindings = null;
+		this.layout = layout;
+		this.projectedSize = size;
+		this.values = values;
 	}
 
 	/** Shared name lookup and encounter order for a sequence of snapshots with the same projection. */
 	@InternalUseOnly
 	public static final class CompactLayout {
+		/** Up to this many names are compared one by one, which is cheaper than hashing the name. */
+		private static final int LINEAR_NAMES = 8;
+
 		private final String[] names;
 		private final Map<String, Integer> indexes;
 
 		/** The names must be unique and non-null. */
 		public CompactLayout(String[] names) {
 			this.names = names.clone();
-			this.indexes = HashMap.newHashMap(names.length);
-			for (int i = 0; i < names.length; i++) {
-				indexes.put(this.names[i], i);
+			if (names.length <= LINEAR_NAMES) {
+				this.indexes = null;
+			} else {
+				this.indexes = HashMap.newHashMap(names.length);
+				for (int i = 0; i < names.length; i++) {
+					indexes.put(this.names[i], i);
+				}
 			}
 		}
 
@@ -80,12 +104,76 @@ public class MapBindingSet extends AbstractBindingSet implements MutableBindingS
 		 */
 		public MapBindingSet snapshot(Value[] values, int size) {
 			assert values.length == names.length && size >= 0 && size <= values.length;
-			return new MapBindingSet(new CompactBindings(this, values, size));
+			return new MapBindingSet(this, values, size);
 		}
 
 		private int indexOf(Object name) {
-			return indexes.getOrDefault(name, -1);
+			if (indexes != null) {
+				return indexes.getOrDefault(name, -1);
+			}
+			String[] names = this.names;
+			// A caller usually asks with the very string the query was parsed into, or one of the same length.
+			for (int i = 0; i < names.length; i++) {
+				if (names[i] == name) {
+					return i;
+				}
+			}
+			for (int i = 0; i < names.length; i++) {
+				if (names[i].equals(name)) {
+					return i;
+				}
+			}
+			return -1;
 		}
+	}
+
+	/** The map of this binding set; a compact snapshot builds its own on the first call. */
+	private Map<String, Binding> map() {
+		return bindings != null ? bindings : expanded();
+	}
+
+	private LinkedHashMap<String, Binding> expanded() {
+		if (values != null) {
+			expand();
+		}
+		return expanded;
+	}
+
+	private synchronized void expand() {
+		Value[] projected = values;
+		if (projected != null) {
+			LinkedHashMap<String, Binding> map = LinkedHashMap.newLinkedHashMap(projectedSize);
+			for (int i = 0; i < projected.length; i++) {
+				if (projected[i] != null) {
+					String name = layout.names[i];
+					Binding binding = projectedBindings == null ? null : projectedBindings[i];
+					map.put(name, binding == null ? new SimpleBinding(name, projected[i]) : binding);
+				}
+			}
+			setExpanded(map);
+		}
+	}
+
+	private void setExpanded(LinkedHashMap<String, Binding> map) {
+		expanded = map;
+		projectedBindings = null;
+		values = null;
+	}
+
+	private synchronized Binding projectedBinding(int index) {
+		Value[] projected = values;
+		if (projected == null) {
+			return expanded.get(layout.names[index]);
+		}
+		if (projectedBindings == null) {
+			projectedBindings = new Binding[projected.length];
+		}
+		Binding binding = projectedBindings[index];
+		if (binding == null) {
+			binding = new SimpleBinding(layout.names[index], projected[index]);
+			projectedBindings[index] = binding;
+		}
+		return binding;
 	}
 
 	/**
@@ -95,8 +183,9 @@ public class MapBindingSet extends AbstractBindingSet implements MutableBindingS
 	 */
 	@Override
 	public void addBinding(Binding binding) {
-		assert !bindings.containsKey(binding.getName()) : "variable already bound: " + binding.getName();
-		bindings.put(binding.getName(), binding);
+		Map<String, Binding> map = map();
+		assert !map.containsKey(binding.getName()) : "variable already bound: " + binding.getName();
+		map.put(binding.getName(), binding);
 	}
 
 	/**
@@ -106,42 +195,81 @@ public class MapBindingSet extends AbstractBindingSet implements MutableBindingS
 	 */
 	@Override
 	public void removeBinding(String name) {
-		bindings.remove(name);
+		if (bindings != null) {
+			bindings.remove(name);
+		} else if (hasBinding(name)) {
+			expanded().remove(name);
+		}
 	}
 
 	/**
 	 * Removes all bindings from the binding set.
 	 */
 	public void clear() {
-		bindings.clear();
+		if (bindings != null) {
+			bindings.clear();
+		} else {
+			clearCompact();
+		}
+	}
+
+	private synchronized void clearCompact() {
+		if (values != null) {
+			setExpanded(new LinkedHashMap<>());
+		} else {
+			expanded.clear();
+		}
 	}
 
 	@Override
 	public Iterator<Binding> iterator() {
-		return bindings.values().iterator();
+		return map().values().iterator();
 	}
 
 	@Override
 	public Set<String> getBindingNames() {
-		return bindings.keySet();
+		return map().keySet();
 	}
 
 	@Override
 	public Binding getBinding(String bindingName) {
-		return bindings.get(bindingName);
+		if (bindings != null) {
+			return bindings.get(bindingName);
+		}
+		Value[] projected = values;
+		if (projected == null) {
+			return expanded.get(bindingName);
+		}
+		int index = layout.indexOf(bindingName);
+		return index < 0 || projected[index] == null ? null : projectedBinding(index);
 	}
 
 	@Override
 	public boolean hasBinding(String bindingName) {
-		return bindings.containsKey(bindingName);
+		if (bindings != null) {
+			return bindings.containsKey(bindingName);
+		}
+		Value[] projected = values;
+		if (projected == null) {
+			return expanded.containsKey(bindingName);
+		}
+		int index = layout.indexOf(bindingName);
+		return index >= 0 && projected[index] != null;
 	}
 
 	@Override
 	public Value getValue(String bindingName) {
-		if (bindings instanceof CompactBindings compact) {
-			return compact.getValue(bindingName);
+		Binding binding;
+		if (bindings != null) {
+			binding = bindings.get(bindingName);
+		} else {
+			Value[] projected = values;
+			if (projected != null) {
+				int index = layout.indexOf(bindingName);
+				return index < 0 ? null : projected[index];
+			}
+			binding = expanded.get(bindingName);
 		}
-		Binding binding = getBinding(bindingName);
 
 		if (binding != null) {
 			return binding.getValue();
@@ -153,8 +281,8 @@ public class MapBindingSet extends AbstractBindingSet implements MutableBindingS
 	/** Visits values in binding encounter order without creating binding objects or a writable view. */
 	@InternalUseOnly
 	public void forEachValue(Consumer<? super Value> action) {
-		if (bindings instanceof CompactBindings compact) {
-			Value[] projected = compact.values;
+		if (bindings == null) {
+			Value[] projected = values;
 			if (projected != null) {
 				for (Value value : projected) {
 					if (value != null) {
@@ -164,162 +292,30 @@ public class MapBindingSet extends AbstractBindingSet implements MutableBindingS
 				return;
 			}
 		}
-		bindings.values().forEach(binding -> action.accept(binding.getValue()));
+		map().values().forEach(binding -> action.accept(binding.getValue()));
 	}
 
 	@Override
 	public int size() {
-		return bindings.size();
+		if (bindings != null) {
+			return bindings.size();
+		}
+		return values != null ? projectedSize : expanded.size();
 	}
 
 	@Override
 	public void setBinding(String name, Value value) {
-		bindings.put(name, new SimpleBinding(name, value));
+		map().put(name, new SimpleBinding(name, value));
 	}
 
 	@Override
 	public void setBinding(Binding binding) {
-		bindings.put(binding.getName(), binding);
+		map().put(binding.getName(), binding);
 	}
 
-	/**
-	 * Keeps point reads compact. Uses the regular map when the caller requests a writable view, mutation or
-	 * serialization, preserving the behavior of LinkedHashMap iterators and views.
-	 */
-	private static final class CompactBindings extends AbstractMap<String, Binding> implements Serializable {
-		@Serial
-		private static final long serialVersionUID = 1L;
-
-		private final CompactLayout layout;
-		// Clearing this field publishes the individually owned, expanded map to other readers.
-		private volatile Value[] values;
-		private final int projectedSize;
-		private Binding[] projectedBindings;
-		private LinkedHashMap<String, Binding> mutable;
-
-		CompactBindings(CompactLayout layout, Value[] values, int size) {
-			this.layout = layout;
-			this.values = values;
-			this.projectedSize = size;
-		}
-
-		@Override
-		public int size() {
-			return values != null ? projectedSize : mutable.size();
-		}
-
-		@Override
-		public boolean containsKey(Object name) {
-			Value[] projected = values;
-			return projected == null ? mutable.containsKey(name) : valueAt(projected, name) != null;
-		}
-
-		@Override
-		public Binding get(Object name) {
-			Value[] projected = values;
-			if (projected == null) {
-				return mutable.get(name);
-			}
-			int index = layout.indexOf(name);
-			return index < 0 || projected[index] == null ? null : bindingAt(index);
-		}
-
-		Value getValue(String name) {
-			Value[] projected = values;
-			if (projected != null) {
-				return valueAt(projected, name);
-			}
-			Binding binding = mutable.get(name);
-			return binding == null ? null : binding.getValue();
-		}
-
-		private Value valueAt(Value[] projected, Object name) {
-			int index = layout.indexOf(name);
-			return index < 0 ? null : projected[index];
-		}
-
-		private synchronized Binding bindingAt(int index) {
-			Value[] projected = values;
-			if (projected == null) {
-				return mutable.get(layout.names[index]);
-			}
-			if (projectedBindings == null) {
-				projectedBindings = new Binding[projected.length];
-			}
-			Binding binding = projectedBindings[index];
-			if (binding == null) {
-				binding = new SimpleBinding(layout.names[index], projected[index]);
-				projectedBindings[index] = binding;
-			}
-			return binding;
-		}
-
-		@Override
-		public Binding put(String name, Binding binding) {
-			return mutable().put(name, binding);
-		}
-
-		@Override
-		public Binding remove(Object name) {
-			return containsKey(name) ? mutable().remove(name) : null;
-		}
-
-		@Override
-		public synchronized void clear() {
-			if (values != null) {
-				setMutable(new LinkedHashMap<>());
-			} else {
-				mutable.clear();
-			}
-		}
-
-		@Override
-		public Set<String> keySet() {
-			return mutable().keySet();
-		}
-
-		@Override
-		public Collection<Binding> values() {
-			return mutable().values();
-		}
-
-		@Override
-		public Set<Entry<String, Binding>> entrySet() {
-			return mutable().entrySet();
-		}
-
-		private LinkedHashMap<String, Binding> mutable() {
-			if (values != null) {
-				materialize();
-			}
-			return mutable;
-		}
-
-		private synchronized void materialize() {
-			Value[] projected = values;
-			if (projected != null) {
-				LinkedHashMap<String, Binding> map = LinkedHashMap.newLinkedHashMap(projectedSize);
-				for (int i = 0; i < projected.length; i++) {
-					if (projected[i] != null) {
-						String name = layout.names[i];
-						Binding binding = projectedBindings == null ? null : projectedBindings[i];
-						map.put(name, binding == null ? new SimpleBinding(name, projected[i]) : binding);
-					}
-				}
-				setMutable(map);
-			}
-		}
-
-		private void setMutable(LinkedHashMap<String, Binding> map) {
-			mutable = map;
-			projectedBindings = null;
-			values = null;
-		}
-
-		/** Preserve the serialized MapBindingSet's LinkedHashMap representation. */
-		@Serial
-		private Object writeReplace() {
-			return mutable();
-		}
+	/** A compact snapshot is written as an ordinary binding set, with the map it would have expanded to. */
+	@Serial
+	private Object writeReplace() {
+		return bindings != null ? this : new MapBindingSet(expanded());
 	}
 }
