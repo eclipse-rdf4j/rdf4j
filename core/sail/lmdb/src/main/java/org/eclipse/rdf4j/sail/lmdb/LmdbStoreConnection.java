@@ -51,6 +51,7 @@ import org.eclipse.rdf4j.model.Statement;
 import org.eclipse.rdf4j.model.TripleTerm;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.impl.SimpleNamespace;
+import org.eclipse.rdf4j.query.Binding;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.Dataset;
 import org.eclipse.rdf4j.query.QueryEvaluationException;
@@ -1053,6 +1054,9 @@ public class LmdbStoreConnection extends SailSourceConnection implements SailRes
 		boolean queryIncludeInferred = includeInferred;
 		boolean repeatable = hasRepeatableQueryInputs(expression);
 		AtomicBoolean inputsConsumed = new AtomicBoolean();
+		// The copies above belong to this evaluation alone. The first attempt reads them as they are; a replay gets
+		// containers of its own, as every attempt used to.
+		AtomicBoolean firstAttempt = new AtomicBoolean(true);
 		ReplayFactory<BindingSet> factory = valueScope -> {
 			// Replays can start during consumption, after the repository restored the caller's context.
 			SlowQueryContextHolder.SlowQueryContext previous = SlowQueryContextHolder.get();
@@ -1067,8 +1071,10 @@ public class LmdbStoreConnection extends SailSourceConnection implements SailRes
 					sealReadReplay();
 				}
 				TupleExpr attemptExpression = explanationCapture == null ? expression : (TupleExpr) expression.clone();
-				CloseableIteration<? extends BindingSet> evaluation = openEvaluation(attemptExpression, queryDataset,
-						queryBindings, queryIncludeInferred, valueScope);
+				boolean first = firstAttempt.getAndSet(false);
+				CloseableIteration<? extends BindingSet> evaluation = openEvaluation(attemptExpression,
+						first ? queryDataset : copyDataset(queryDataset),
+						first ? queryBindings : copyBindings(queryBindings), queryIncludeInferred, valueScope);
 				if (explanationCapture != null) {
 					// The optimized model itself escapes through Explanation after its iteration is closed.
 					// Complete its values while this read attempt still owns its epoch and native capabilities.
@@ -1111,10 +1117,8 @@ public class LmdbStoreConnection extends SailSourceConnection implements SailRes
 
 	private CloseableIteration<? extends BindingSet> openEvaluation(TupleExpr expression, Dataset dataset,
 			BindingSet bindings, boolean includeInferred, ValueResolutionScope valueScope) throws SailException {
-		Dataset datasetCopy = copyDataset(dataset);
-		BindingSet bindingsCopy = copyBindings(bindings);
 		return new QueryValueCaptureIteration(
-				super.evaluateInternal(expression, datasetCopy, bindingsCopy, includeInferred), valueScope);
+				super.evaluateInternal(expression, dataset, bindings, includeInferred), valueScope);
 	}
 
 	private static final class QueryValueCaptureIteration extends IterationWrapper<BindingSet> {
@@ -1374,7 +1378,9 @@ public class LmdbStoreConnection extends SailSourceConnection implements SailRes
 			return null;
 		}
 		MapBindingSet copy = new MapBindingSet(bindings.size());
-		bindings.forEach(binding -> copy.addBinding(binding.getName(), detachValue(binding.getValue())));
+		for (Binding binding : bindings) {
+			copy.addBinding(binding.getName(), detachValue(binding.getValue()));
+		}
 		return copy;
 	}
 
@@ -1670,7 +1676,7 @@ public class LmdbStoreConnection extends SailSourceConnection implements SailRes
 				throw new IllegalStateException("LMDB read-creation scope released more than once");
 			}
 			endReadThread();
-			readAttemptLock.notifyAll();
+			notifyReadAttemptWaiters();
 		}
 	}
 
@@ -1782,12 +1788,20 @@ public class LmdbStoreConnection extends SailSourceConnection implements SailRes
 		if (!deferred.isEmpty()) {
 			pendingDelegateCloses.clear();
 		}
-		// This runs once per result row. Every waiter registers under this monitor before it waits, so with none
-		// registered there is nobody to wake.
+		notifyReadAttemptWaiters();
+		return deferred;
+	}
+
+	/**
+	 * Wakes the threads this connection has waiting for a change of read-attempt state. Every such waiter registers
+	 * under the monitor before it waits, so with none registered there is nobody to wake. Used where a result is set
+	 * up, torn down or pulled, which happens for every query and row; a change of replay state wakes unconditionally.
+	 */
+	private void notifyReadAttemptWaiters() {
+		assert Thread.holdsLock(readAttemptLock);
 		if (readAttemptWaiters != 0) {
 			readAttemptLock.notifyAll();
 		}
-		return deferred;
 	}
 
 	/** Waits for a change of read-attempt state; the only way this connection waits on {@code readAttemptLock}. */
@@ -1817,7 +1831,7 @@ public class LmdbStoreConnection extends SailSourceConnection implements SailRes
 					} finally {
 						synchronized (readAttemptLock) {
 							activeDelegateCloses--;
-							readAttemptLock.notifyAll();
+							notifyReadAttemptWaiters();
 						}
 					}
 				}
@@ -1986,7 +2000,7 @@ public class LmdbStoreConnection extends SailSourceConnection implements SailRes
 			attempt.closed = true;
 			operationReadAttempts.remove(attempt);
 			lease = attempt.lease;
-			readAttemptLock.notifyAll();
+			notifyReadAttemptWaiters();
 		}
 		closeResources(null, () -> {
 			if (lease != null) {
@@ -3481,8 +3495,12 @@ public class LmdbStoreConnection extends SailSourceConnection implements SailRes
 				LmdbSailStore.ReadAttemptLease admissionAttempt) {
 			// Size only from the owner's currently published immutable view list. Capture it normally below.
 			boolean singleViewOwner = observationOwner != null && observationOwner.readViews.size() == 1;
-			this.readViews = Collections
-					.newSetFromMap(singleViewOwner ? new IdentityHashMap<>(1) : new IdentityHashMap<>());
+			// A scope without an owner captures the views its own read opens, one per store it reads; the set grows
+			// for the rare scope that captures more.
+			this.readViews = Collections.newSetFromMap(
+					singleViewOwner ? new IdentityHashMap<>(1)
+							: new IdentityHashMap<>(observationOwner == null ? 2
+									: observationOwner.readViews.size()));
 			this.parent = parent;
 			this.observationOwner = observationOwner;
 			this.operationAttempt = operationAttempt;
@@ -3855,7 +3873,7 @@ public class LmdbStoreConnection extends SailSourceConnection implements SailRes
 			synchronized (readAttemptLock) {
 				openReplayPlans.remove(this);
 				pendingPlanReplays.remove(this);
-				readAttemptLock.notifyAll();
+				notifyReadAttemptWaiters();
 			}
 			try {
 				super.handleClose();
@@ -4480,7 +4498,7 @@ public class LmdbStoreConnection extends SailSourceConnection implements SailRes
 				synchronized (readAttemptLock) {
 					replayableIterations.remove(this);
 					pendingResultReplays.remove(this);
-					readAttemptLock.notifyAll();
+					notifyReadAttemptWaiters();
 				}
 			}, () -> closeOperationReadAttempt(operationAttempt));
 		}
