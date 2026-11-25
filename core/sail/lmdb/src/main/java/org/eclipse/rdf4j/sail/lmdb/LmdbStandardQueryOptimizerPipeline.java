@@ -27,12 +27,13 @@ import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.FilterOptimizer;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.OrderLimitOptimizer;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.ParentReferenceChecker;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.QueryJoinOptimizer;
-import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.ReflexiveStarPathOptimizer;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.StandardQueryOptimizerPipeline;
 
 @Experimental
 @InternalUseOnly
 public final class LmdbStandardQueryOptimizerPipeline implements QueryOptimizerPipeline {
+
+	private static final ReflexiveStarPathOptimizer REFLEXIVE_STAR_PATH_OPTIMIZER = new ReflexiveStarPathOptimizer();
 
 	private final StandardQueryOptimizerPipeline delegate;
 	private final TripleSource tripleSource;
@@ -96,6 +97,7 @@ public final class LmdbStandardQueryOptimizerPipeline implements QueryOptimizerP
 		// Built for every query: sized for the standard pipeline and the optimizers added below.
 		List<QueryOptimizer> optimizers = new ArrayList<>(32);
 		boolean inserted = false;
+		int afterJoinOrdering = -1;
 
 		for (QueryOptimizer optimizer : delegate.getOptimizers()) {
 			if (experimental && optimizer instanceof QueryJoinOptimizer && stableOrderDistinct) {
@@ -108,15 +110,27 @@ public final class LmdbStandardQueryOptimizerPipeline implements QueryOptimizerP
 			} else {
 				optimizers.add(optimizer);
 			}
+			if (optimizer instanceof QueryJoinOptimizer) {
+				afterJoinOrdering = optimizers.size();
+			}
 			if (experimental && optimizer instanceof OrderLimitOptimizer) {
 				optimizers.add(new LmdbOrderByOptimizer(tripleSource));
 				inserted = true;
 			}
 		}
 
+		if (afterJoinOrdering >= 0) {
+			boolean checkParents = afterJoinOrdering < optimizers.size()
+					&& optimizers.get(afterJoinOrdering) instanceof ParentReferenceChecker;
+			int position = checkParents ? afterJoinOrdering + 1 : afterJoinOrdering;
+			optimizers.add(position, REFLEXIVE_STAR_PATH_OPTIMIZER);
+			if (checkParents) {
+				optimizers.add(position + 1, new ParentReferenceChecker(REFLEXIVE_STAR_PATH_OPTIMIZER));
+			}
+		}
+
 		if (experimental && stableOrderDistinct) {
-			// The order is marked on the final plan: after the join optimizer and after the operator rewrite the
-			// delegate runs directly behind it (ReflexiveStarPathOptimizer), before anything else reads the plan.
+			// Mark the order after join selection and the reflexive path rewrite.
 			int position = 0;
 			for (int i = 0; i < optimizers.size(); i++) {
 				QueryOptimizer optimizer = optimizers.get(i);

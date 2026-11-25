@@ -60,8 +60,6 @@ public class StandardQueryOptimizerPipeline implements QueryOptimizerPipeline {
 	public static final UnionScopeChangeOptimizer UNION_SCOPE_CHANGE_OPTIMIZER = new UnionScopeChangeOptimizer();
 	public static final QueryModelNormalizerOptimizer QUERY_MODEL_NORMALIZER = new QueryModelNormalizerOptimizer();
 	public static final ProjectionRemovalOptimizer PROJECTION_REMOVAL_OPTIMIZER = new ProjectionRemovalOptimizer();
-	/** Runs directly after join ordering, which must not see its rewrite. See {@link ReflexiveStarPathOptimizer}. */
-	private static final ReflexiveStarPathOptimizer REFLEXIVE_STAR_PATH_OPTIMIZER = new ReflexiveStarPathOptimizer();
 	public static final IterativeEvaluationOptimizer ITERATIVE_EVALUATION_OPTIMIZER = new IterativeEvaluationOptimizer();
 	public static final FilterInValuesOptimizer FILTER_IN_VALUES_OPTIMIZER = new FilterInValuesOptimizer();
 	public static final OrderLimitOptimizer ORDER_LIMIT_OPTIMIZER = new OrderLimitOptimizer();
@@ -125,7 +123,6 @@ public class StandardQueryOptimizerPipeline implements QueryOptimizerPipeline {
 				PROJECTION_REMOVAL_OPTIMIZER, // Make sure this is after the UnionScopeChangeOptimizer
 				new QueryJoinOptimizer(evaluationStatistics, strategy.isTrackResultSize(), tripleSource,
 						strategy.getQueryExecutionPolicy()),
-				REFLEXIVE_STAR_PATH_OPTIMIZER, // directly after join ordering, which must not see its rewrite
 				ITERATIVE_EVALUATION_OPTIMIZER,
 				new FilterOptimizer(evaluationStatistics, false, true, strategy),
 				FILTER_IN_VALUES_OPTIMIZER,
