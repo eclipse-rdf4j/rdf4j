@@ -4770,8 +4770,9 @@ class LmdbSailStore implements SailStore {
 		/**
 		 * Fails if the pinned snapshots can no longer be read as one consistent view. This runs for every row that is
 		 * handed out and around every native read, so a validation that passed is remembered: until the statement
-		 * reader, the dictionary snapshot, this view's lease or the namespace store reports a change, it costs three
-		 * field reads. What keeps native memory safe is not this check but the reader's own check under its lock.
+		 * reader or the dictionary snapshot reports a change, this view's lease is invalidated or a namespace commit
+		 * fails, it costs four field reads. What keeps native memory safe is not this check but the reader's own check
+		 * under its lock.
 		 */
 		void ensureNativeSnapshotsValid() throws SailException {
 			int events = snapshotEvents.get();
@@ -15714,11 +15715,15 @@ class LmdbSailStore implements SailStore {
 		 * The check before a row that was already read is handed out. The native read that produced it validated the
 		 * snapshot under the reader's lock; what can have happened since is a map resize, which only exists with
 		 * auto-grow, or the close of this dataset. Replay of an unobserved attempt is best-effort, so its checkpoint
-		 * runs once per stride here and exactly at every native read.
+		 * runs once per stride of rows here and exactly at every native read.
+		 *
+		 * @param row whether a row is about to leave; availability alone does not count towards the replay stride
 		 */
-		private void ensureRowSnapshot() {
+		private void ensureRowSnapshot(boolean row) {
 			if (autoGrow) {
-				nativeSourceReplay.checkpoint();
+				if (row) {
+					nativeSourceReplay.checkpoint();
+				}
 				readView.ensureNativeSnapshotsValid();
 			} else if (closed.get()) {
 				throw new QueryInterruptedException("Query evaluation was interrupted");
@@ -15768,12 +15773,15 @@ class LmdbSailStore implements SailStore {
 			}
 
 			/**
-			 * Availability hands out no row, so it validates nothing here: a native read below validates itself, and a
-			 * row that was read earlier is validated by {@link #next()} before it leaves.
+			 * A caller that only asks for availability is told about an invalidated snapshot too, also when the answer
+			 * would come from rows that were read before the invalidation.
 			 */
 			@Override
 			public boolean hasNext() {
 				try {
+					if (!isClosed()) {
+						ensureRowSnapshot(false);
+					}
 					return super.hasNext();
 				} catch (RuntimeException | Error failure) {
 					closeAfterFailure(failure);
@@ -15785,7 +15793,7 @@ class LmdbSailStore implements SailStore {
 			public T next() {
 				try {
 					if (!isClosed()) {
-						ensureRowSnapshot();
+						ensureRowSnapshot(true);
 					}
 					return super.next();
 				} catch (RuntimeException | Error failure) {
