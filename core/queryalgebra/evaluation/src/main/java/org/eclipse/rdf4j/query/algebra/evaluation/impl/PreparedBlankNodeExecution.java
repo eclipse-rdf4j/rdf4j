@@ -157,7 +157,7 @@ public final class PreparedBlankNodeExecution {
 		@Override
 		public void close() {
 			if (previous == null) {
-				PREPARING.remove();
+				PREPARING.set(null);
 			} else {
 				previous.required |= required;
 				previous.inputAdmission |= inputAdmission;
@@ -199,7 +199,7 @@ public final class PreparedBlankNodeExecution {
 				return action.get();
 			} finally {
 				if (previous == null) {
-					EXECUTING.remove();
+					EXECUTING.set(null);
 				} else {
 					EXECUTING.set(previous);
 				}

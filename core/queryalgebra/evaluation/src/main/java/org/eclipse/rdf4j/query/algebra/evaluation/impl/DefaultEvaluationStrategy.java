@@ -240,7 +240,68 @@ public class DefaultEvaluationStrategy implements EvaluationStrategy, FederatedS
 
 	protected final Dataset dataset;
 	private final BlankNodeAllocationScope blankNodes;
-	private final ThreadLocal<int[]> compilationDepth = ThreadLocal.withInitial(() -> new int[1]);
+
+	/** One strategy's nested-compilation state on one thread. */
+	private static final class Compilation {
+		private DefaultEvaluationStrategy owner;
+		private int depth;
+		private ScalarPreparation scalar;
+		private boolean admittedScalar;
+		private Compilation next;
+	}
+
+	/**
+	 * The strategies that are compiling on a thread, innermost first; normally none or one. A strategy lives for one
+	 * query, so this is one holder per thread and not thread-local state per strategy, which would add entries to the
+	 * thread's map and remove them again for every query.
+	 */
+	private static final class Compilations {
+		private Compilation first;
+		private Compilation spare;
+
+		private Compilation of(DefaultEvaluationStrategy strategy) {
+			for (Compilation compilation = first; compilation != null; compilation = compilation.next) {
+				if (compilation.owner == strategy) {
+					return compilation;
+				}
+			}
+			return null;
+		}
+
+		private Compilation enter(DefaultEvaluationStrategy strategy) {
+			Compilation compilation = of(strategy);
+			if (compilation == null) {
+				compilation = spare == null ? new Compilation() : spare;
+				spare = null;
+				compilation.owner = strategy;
+				compilation.next = first;
+				first = compilation;
+			}
+			return compilation;
+		}
+
+		/** Forgets a strategy that is back at its empty state, so that nothing of a finished query stays here. */
+		private void leave(Compilation compilation) {
+			if (compilation.depth != 0 || compilation.scalar != null || compilation.admittedScalar) {
+				return;
+			}
+			if (first == compilation) {
+				first = compilation.next;
+			} else {
+				for (Compilation previous = first; previous != null; previous = previous.next) {
+					if (previous.next == compilation) {
+						previous.next = compilation.next;
+						break;
+					}
+				}
+			}
+			compilation.owner = null;
+			compilation.next = null;
+			spare = compilation;
+		}
+	}
+
+	private static final ThreadLocal<Compilations> COMPILATION = ThreadLocal.withInitial(Compilations::new);
 
 	protected FederatedServiceResolver serviceResolver;
 
@@ -723,14 +784,13 @@ public class DefaultEvaluationStrategy implements EvaluationStrategy, FederatedS
 
 	private QueryEvaluationStep precompileTupleEntry(TupleExpr expr, QueryEvaluationContext context, boolean generic,
 			boolean admitInvocationInputs) {
-		int[] depth = compilationDepth.get();
-		depth[0]++;
-		ScalarPreparation outer = scalarPreparation.get();
-		if (outer != null) {
-			scalarPreparation.remove();
-		}
+		Compilations compilations = COMPILATION.get();
+		Compilation compilation = compilations.enter(this);
+		compilation.depth++;
+		ScalarPreparation outer = compilation.scalar;
+		compilation.scalar = null;
 		try {
-			if (depth[0] != 1) {
+			if (compilation.depth != 1) {
 				return withPreparedTupleExpr(expr,
 						prepared -> precompileWithSafetySnapshot(prepared, context, generic));
 			}
@@ -754,17 +814,9 @@ public class DefaultEvaluationStrategy implements EvaluationStrategy, FederatedS
 				}));
 			}
 		} finally {
-			if (outer != null) {
-				scalarPreparation.set(outer);
-			}
-			if (--depth[0] == 0) {
-				compilationDepth.remove();
-				if (outer == null) {
-					// Reading the scalar preparation above installed an empty entry for this strategy. A strategy
-					// lives for one query, so leaving it behind fills the thread's map with dead entries.
-					scalarPreparation.remove();
-				}
-			}
+			compilation.scalar = outer;
+			compilation.depth--;
+			compilations.leave(compilation);
 		}
 	}
 
@@ -1728,13 +1780,15 @@ public class DefaultEvaluationStrategy implements EvaluationStrategy, FederatedS
 		synchronized (this) {
 			queryPreparationStarted = true;
 		}
-		int[] depth = compilationDepth.get();
-		depth[0]++;
-		ScalarPreparation outer = scalarPreparation.get();
+		Compilations compilations = COMPILATION.get();
+		Compilation compilation = compilations.enter(this);
+		compilation.depth++;
+		boolean outermost = compilation.depth == 1;
+		ScalarPreparation outer = compilation.scalar;
 		ScalarPreparation preparation = new ScalarPreparation();
-		scalarPreparation.set(preparation);
-		try (var foreign = depth[0] == 1 ? PreparedBlankNodeExecution.prepare() : null) {
-			if (depth[0] == 1 && !(expr instanceof Var variable && !variable.hasValue())) {
+		compilation.scalar = preparation;
+		try (var foreign = outermost ? PreparedBlankNodeExecution.prepare() : null) {
+			if (outermost && !(expr instanceof Var variable && !variable.hasValue())) {
 				reserveLocalValues(expr, context.getBlankNodeAllocationScope());
 			}
 			QueryValueEvaluationStep prepared = precompileValue(expr, context);
@@ -1756,37 +1810,32 @@ public class DefaultEvaluationStrategy implements EvaluationStrategy, FederatedS
 			if (foreign == null) {
 				return evaluated;
 			}
-			if (foreign.needsInputAdmission() && preparingAdmittedScalar.get() == null) {
+			if (foreign.needsInputAdmission() && !compilation.admittedScalar) {
 				evaluated = admitScalarInput(evaluated, context.getBlankNodeAllocationScope(), combined);
 			}
 			return foreign.decorate(evaluated);
 		} finally {
-			if (outer == null) {
-				scalarPreparation.remove();
-			} else {
-				scalarPreparation.set(outer);
-			}
-			if (--depth[0] == 0) {
-				compilationDepth.remove();
-			}
+			compilation.scalar = outer;
+			compilation.depth--;
+			compilations.leave(compilation);
 		}
 	}
-
-	private final ThreadLocal<ScalarPreparation> scalarPreparation = new ThreadLocal<>();
-	private final ThreadLocal<Boolean> preparingAdmittedScalar = new ThreadLocal<>();
 
 	/** Prepares an expression evaluated only against members emitted by an already prepared tuple operand. */
 	@InternalUseOnly
 	public final QueryValueEvaluationStep precompileMemberExpression(ValueExpr expression,
 			QueryEvaluationContext context) {
-		if (preparingAdmittedScalar.get() != null) {
+		Compilations compilations = COMPILATION.get();
+		Compilation compilation = compilations.enter(this);
+		if (compilation.admittedScalar) {
 			return precompile(expression, context);
 		}
-		preparingAdmittedScalar.set(Boolean.TRUE);
+		compilation.admittedScalar = true;
 		try {
 			return precompile(expression, context);
 		} finally {
-			preparingAdmittedScalar.remove();
+			compilation.admittedScalar = false;
+			compilations.leave(compilation);
 		}
 	}
 
@@ -1810,7 +1859,8 @@ public class DefaultEvaluationStrategy implements EvaluationStrategy, FederatedS
 
 	protected final QueryValueEvaluationStep prepareOperand(ValueExpr expression, QueryEvaluationContext context) {
 		QueryValueEvaluationStep operand = precompile(expression, context);
-		ScalarPreparation preparation = scalarPreparation.get();
+		Compilation compilation = COMPILATION.get().of(this);
+		ScalarPreparation preparation = compilation == null ? null : compilation.scalar;
 		if (preparation != null) {
 			BlankNodeEffects effects = operand.blankNodeEffects();
 			preparation.operands = preparation.operands.merge(effects);

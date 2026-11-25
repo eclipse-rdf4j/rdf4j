@@ -4919,7 +4919,7 @@ class LmdbSailStore implements SailStore {
 			closed = true;
 			if (activeReadView.get() == view) {
 				if (previous == null) {
-					activeReadView.remove();
+					activeReadView.set(null);
 				} else {
 					activeReadView.set(previous);
 				}
@@ -5067,7 +5067,7 @@ class LmdbSailStore implements SailStore {
 			try {
 				if (activeReadView.get() == borrowed) {
 					if (current == null) {
-						activeReadView.remove();
+						activeReadView.set(null);
 					} else {
 						activeReadView.set(current);
 					}
@@ -5158,7 +5158,7 @@ class LmdbSailStore implements SailStore {
 			}
 			if (bound != null && activeReadView.get() == bound) {
 				if (previous == null) {
-					activeReadView.remove();
+					activeReadView.set(null);
 				} else {
 					activeReadView.set(previous);
 				}
@@ -5185,7 +5185,7 @@ class LmdbSailStore implements SailStore {
 			}
 			if (installed != null && activeReadView.get() == installed) {
 				if (previous == null) {
-					activeReadView.remove();
+					activeReadView.set(null);
 				} else {
 					activeReadView.set(previous);
 				}

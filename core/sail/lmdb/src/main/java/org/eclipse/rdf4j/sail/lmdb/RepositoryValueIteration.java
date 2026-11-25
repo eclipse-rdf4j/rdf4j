@@ -27,6 +27,7 @@ import java.util.function.Consumer;
 
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.common.iteration.CooperativeCancellation;
+import org.eclipse.rdf4j.common.iteration.PreparedElementIteration;
 import org.eclipse.rdf4j.http.client.QueryExecutionContext;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Literal;
@@ -49,7 +50,8 @@ import org.eclipse.rdf4j.sail.lmdb.model.LmdbLiteral;
 import org.eclipse.rdf4j.sail.lmdb.model.LmdbValue;
 
 /** Repository-only, demand-driven materialization retaining ID capabilities through complete value waves. */
-final class RepositoryValueIteration<T> implements CloseableIteration<T>, CooperativeCancellation {
+final class RepositoryValueIteration<T>
+		implements CloseableIteration<T>, CooperativeCancellation, PreparedElementIteration {
 
 	private static final int WAVE_VALUES = 1024;
 	private static final int MAX_RETAINED_SCRATCH_VALUES = 64;
@@ -143,8 +145,8 @@ final class RepositoryValueIteration<T> implements CloseableIteration<T>, Cooper
 		// hasNext already resolved and detached this row, so handing it over touches neither the source nor a scope.
 		// A concurrent close clears the row under another lock; the local copy keeps this hand-over coherent.
 		T ready = row;
-		if (ready != null && rowReady && !closed.get() && !cancellationRequested
-				&& !Thread.currentThread().isInterrupted()) {
+		// Close and cancellation raise the attention flag before they change anything else.
+		if (ready != null && rowReady && !attention && !Thread.currentThread().isInterrupted()) {
 			row = null;
 			rowReady = false;
 			return ready;
@@ -169,6 +171,12 @@ final class RepositoryValueIteration<T> implements CloseableIteration<T>, Cooper
 		} finally {
 			endCall(failure);
 		}
+	}
+
+	/** Whether {@link #next()} only hands over the row that {@link #hasNext()} resolved and detached. */
+	@Override
+	public boolean hasPreparedElement() {
+		return rowReady && row != null && !attention;
 	}
 
 	@Override

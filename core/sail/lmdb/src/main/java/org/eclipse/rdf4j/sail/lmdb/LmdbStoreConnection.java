@@ -851,7 +851,7 @@ public class LmdbStoreConnection extends SailSourceConnection implements SailRes
 		if (evaluationPlan != null) {
 			// Consume the plan unconditionally: when evaluate() failed before registering its iteration, that
 			// iteration was closed and its plan must not attach to the next unrelated registration on this thread.
-			pendingEvaluationReplayPlan.remove();
+			pendingEvaluationReplayPlan.set(null);
 		}
 		if (evaluationPlan != null && !evaluationPlan.iteration.isClosed()) {
 			replayFactory = (ReplayFactory<T>) evaluationPlan.factory;

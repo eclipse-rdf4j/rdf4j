@@ -305,7 +305,7 @@ public class QueryEvaluationUtility {
 		try {
 			return action.get();
 		} finally {
-			ACTIVE_SAFETY_PHASE.remove();
+			ACTIVE_SAFETY_PHASE.set(null);
 		}
 	}
 
@@ -338,7 +338,7 @@ public class QueryEvaluationUtility {
 			return action.apply(prepared);
 		} finally {
 			if (previous == null) {
-				ACTIVE_SAFETY_PHASE.remove();
+				ACTIVE_SAFETY_PHASE.set(null);
 			} else {
 				ACTIVE_SAFETY_PHASE.set(previous);
 			}

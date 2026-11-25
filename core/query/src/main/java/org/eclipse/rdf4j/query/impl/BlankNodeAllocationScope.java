@@ -148,7 +148,7 @@ public final class BlankNodeAllocationScope {
 			if (!closed) {
 				closed = true;
 				if (previous == null) {
-					ACTIVE.remove();
+					ACTIVE.set(null);
 				} else {
 					ACTIVE.set(previous);
 				}
@@ -416,7 +416,7 @@ public final class BlankNodeAllocationScope {
 			ACTIVE_SOLUTIONS.set(this);
 			return () -> {
 				if (previous == null) {
-					ACTIVE_SOLUTIONS.remove();
+					ACTIVE_SOLUTIONS.set(null);
 				} else {
 					ACTIVE_SOLUTIONS.set(previous);
 				}
