@@ -67,14 +67,14 @@ class LmdbStatementIterator extends AbstractCloseableIteration<Statement>
 	private Statement nextElement;
 	private volatile boolean cancellationRequested;
 	private volatile boolean cancellationClosed;
-	private long cachedId1 = Long.MIN_VALUE;
-	private long cachedId2 = Long.MIN_VALUE;
-	private long cachedId3 = Long.MIN_VALUE;
-	private long cachedId4 = Long.MIN_VALUE;
-	private Value cachedValue1;
-	private Value cachedValue2;
-	private Value cachedValue3;
-	private Value cachedValue4;
+	// The value last produced for each position. The rows of an index scan repeat their leading positions, so the
+	// previous row answers those; a position that changes with every row costs one comparison and two stores.
+	private long lastSubjectId = Long.MIN_VALUE;
+	private long lastObjectId = Long.MIN_VALUE;
+	private long lastContextId = Long.MIN_VALUE;
+	private Value lastSubject;
+	private Value lastObject;
+	private Value lastContext;
 	private long cachedPredicateId1 = Long.MIN_VALUE;
 	private long cachedPredicateId2 = Long.MIN_VALUE;
 	private Value cachedPredicate1;
@@ -299,14 +299,13 @@ class LmdbStatementIterator extends AbstractCloseableIteration<Statement>
 	private Statement lazyStatement(long[] quad, ValueStoreRevision revision, ValueResolutionScope exposure)
 			throws IOException {
 		long subjectId = quad[TripleIndex.SUBJ_IDX];
-		Resource subject = (Resource) statementValue(subjectId, subjID, subj, subjVersion, revision, exposure);
+		Resource subject = (Resource) subjectValue(subjectId, revision, exposure);
 		long predicateId = quad[TripleIndex.PRED_IDX];
 		IRI predicate = (IRI) predicateValue(predicateId, revision, exposure);
 		long objectId = quad[TripleIndex.OBJ_IDX];
-		Value object = statementValue(objectId, objID, obj, objVersion, revision, exposure);
+		Value object = objectValue(objectId, revision, exposure);
 		long contextId = quad[TripleIndex.CONTEXT_IDX];
-		Resource statementContext = contextId == 0 ? null
-				: (Resource) statementValue(contextId, contextID, context, contextVersion, revision, exposure);
+		Resource statementContext = contextId == 0 ? null : (Resource) contextValue(contextId, revision, exposure);
 		return valueStore.createStatement(subject, predicate, object, statementContext);
 	}
 
@@ -325,16 +324,15 @@ class LmdbStatementIterator extends AbstractCloseableIteration<Statement>
 			throws IOException {
 		long subjectId = quad[TripleIndex.SUBJ_IDX];
 		Resource subject = (deferredStatementFields & SUBJECT) != 0 ? null
-				: (Resource) statementValue(subjectId, subjID, subj, subjVersion, revision, exposure);
+				: (Resource) subjectValue(subjectId, revision, exposure);
 		long predicateId = quad[TripleIndex.PRED_IDX];
 		IRI predicate = (deferredStatementFields & PREDICATE) != 0 ? null
 				: (IRI) predicateValue(predicateId, revision, exposure);
 		long objectId = quad[TripleIndex.OBJ_IDX];
 		Value object = (deferredStatementFields & OBJECT) != 0 ? null
-				: statementValue(objectId, objID, obj, objVersion, revision, exposure);
+				: objectValue(objectId, revision, exposure);
 		long contextId = quad[TripleIndex.CONTEXT_IDX];
-		Resource statementContext = contextId == 0 ? null
-				: (Resource) statementValue(contextId, contextID, context, contextVersion, revision, exposure);
+		Resource statementContext = contextId == 0 ? null : (Resource) contextValue(contextId, revision, exposure);
 		return new DeferredStatement(this, subject, predicate, object, statementContext, revision, exposure,
 				subjectId, predicateId, objectId);
 	}
@@ -416,13 +414,52 @@ class LmdbStatementIterator extends AbstractCloseableIteration<Statement>
 		}
 	}
 
-	/** A pattern value of this revision is reused as-is; any other position becomes a lazy shell. */
-	private Value statementValue(long id, long boundId, Value bound, long boundVersion, ValueStoreRevision revision,
-			ValueResolutionScope exposure) throws IOException {
-		if (id == boundId) {
-			return valueStore.getLazyValue(id, revision, exposure, bound, boundVersion);
+	/** A pattern subject of this revision is reused as-is; any other becomes a lazy shell, kept for the next row. */
+	private Value subjectValue(long id, ValueStoreRevision revision, ValueResolutionScope exposure)
+			throws IOException {
+		if (id == subjID) {
+			return valueStore.getLazyValue(id, revision, exposure, subj, subjVersion);
 		}
-		return cachedLazyValue(id, revision, exposure);
+		forgetCachedValuesOfOtherScopes(revision, exposure);
+		if (id == lastSubjectId) {
+			return lastSubject;
+		}
+		Value value = valueStore.getLazyValue(id, revision, exposure, null, LmdbValue.UNKNOWN_ID);
+		lastSubjectId = id;
+		lastSubject = value;
+		return value;
+	}
+
+	/** As {@link #subjectValue} for the object position. */
+	private Value objectValue(long id, ValueStoreRevision revision, ValueResolutionScope exposure)
+			throws IOException {
+		if (id == objID) {
+			return valueStore.getLazyValue(id, revision, exposure, obj, objVersion);
+		}
+		forgetCachedValuesOfOtherScopes(revision, exposure);
+		if (id == lastObjectId) {
+			return lastObject;
+		}
+		Value value = valueStore.getLazyValue(id, revision, exposure, null, LmdbValue.UNKNOWN_ID);
+		lastObjectId = id;
+		lastObject = value;
+		return value;
+	}
+
+	/** As {@link #subjectValue} for the context position. */
+	private Value contextValue(long id, ValueStoreRevision revision, ValueResolutionScope exposure)
+			throws IOException {
+		if (id == contextID) {
+			return valueStore.getLazyValue(id, revision, exposure, context, contextVersion);
+		}
+		forgetCachedValuesOfOtherScopes(revision, exposure);
+		if (id == lastContextId) {
+			return lastContext;
+		}
+		Value value = valueStore.getLazyValue(id, revision, exposure, null, LmdbValue.UNKNOWN_ID);
+		lastContextId = id;
+		lastContext = value;
+		return value;
 	}
 
 	/** The pattern's own predicate when it is a value of this revision, otherwise the cached shared one. */
@@ -461,39 +498,11 @@ class LmdbStatementIterator extends AbstractCloseableIteration<Statement>
 
 	private void forgetCachedValuesOfOtherScopes(ValueStoreRevision revision, ValueResolutionScope exposure) {
 		if (cachedRevision != revision || cachedExposure != exposure) {
-			cachedId1 = cachedId2 = cachedId3 = cachedId4 = Long.MIN_VALUE;
+			lastSubjectId = lastObjectId = lastContextId = Long.MIN_VALUE;
 			cachedPredicateId1 = cachedPredicateId2 = Long.MIN_VALUE;
 			cachedRevision = revision;
 			cachedExposure = exposure;
 		}
-	}
-
-	private Value cachedLazyValue(long id, ValueStoreRevision revision, ValueResolutionScope exposure)
-			throws IOException {
-		forgetCachedValuesOfOtherScopes(revision, exposure);
-		if (id == cachedId1) {
-			return cachedValue1;
-		}
-		if (id == cachedId2) {
-			return cachedValue2;
-		}
-		if (id == cachedId3) {
-			return cachedValue3;
-		}
-		if (id == cachedId4) {
-			return cachedValue4;
-		}
-
-		Value value = valueStore.getLazyValue(id, revision, exposure, null, LmdbValue.UNKNOWN_ID);
-		cachedId4 = cachedId3;
-		cachedValue4 = cachedValue3;
-		cachedId3 = cachedId2;
-		cachedValue3 = cachedValue2;
-		cachedId2 = cachedId1;
-		cachedValue2 = cachedValue1;
-		cachedId1 = id;
-		cachedValue1 = value;
-		return value;
 	}
 
 	@Override
