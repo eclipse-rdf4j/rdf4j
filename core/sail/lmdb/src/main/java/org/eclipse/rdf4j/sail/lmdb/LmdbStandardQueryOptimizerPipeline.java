@@ -33,6 +33,8 @@ import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.StandardQueryOptimiz
 @InternalUseOnly
 public final class LmdbStandardQueryOptimizerPipeline implements QueryOptimizerPipeline {
 
+	private static final ReflexiveStarPathOptimizer REFLEXIVE_STAR_PATH_OPTIMIZER = new ReflexiveStarPathOptimizer();
+
 	private final StandardQueryOptimizerPipeline delegate;
 	private final TripleSource tripleSource;
 	private final EvaluationStatistics evaluationStatistics;
@@ -94,12 +96,12 @@ public final class LmdbStandardQueryOptimizerPipeline implements QueryOptimizerP
 		boolean experimental = strategy.getQueryExecutionPolicy().experimentalQueryOptimizations();
 		List<QueryOptimizer> optimizers = new ArrayList<>();
 		boolean inserted = false;
+		int afterJoinOrdering = -1;
 
 		for (QueryOptimizer optimizer : delegate.getOptimizers()) {
 			if (experimental && optimizer instanceof QueryJoinOptimizer && stableOrderDistinct) {
 				optimizers.add(new LmdbDistinctAnchorJoinOptimizer(evaluationStatistics, strategy.isTrackResultSize(),
 						tripleSource, strategy.getQueryExecutionPolicy()));
-				optimizers.add(new LmdbDistinctOrderMarkingOptimizer(tripleSource));
 			} else if (experimental && optimizer instanceof QueryJoinOptimizer
 					&& !evaluationStatistics.supportsJoinEstimation()) {
 				optimizers.add(new LmdbIndexAwareJoinOptimizer(evaluationStatistics, strategy.isTrackResultSize(),
@@ -107,12 +109,37 @@ public final class LmdbStandardQueryOptimizerPipeline implements QueryOptimizerP
 			} else {
 				optimizers.add(optimizer);
 			}
+			if (optimizer instanceof QueryJoinOptimizer) {
+				afterJoinOrdering = optimizers.size();
+			}
 			if (experimental && optimizer instanceof OrderLimitOptimizer) {
 				optimizers.add(new LmdbOrderByOptimizer(tripleSource));
 				inserted = true;
 			}
 		}
 
+		if (afterJoinOrdering >= 0) {
+			boolean checkParents = afterJoinOrdering < optimizers.size()
+					&& optimizers.get(afterJoinOrdering) instanceof ParentReferenceChecker;
+			int position = checkParents ? afterJoinOrdering + 1 : afterJoinOrdering;
+			optimizers.add(position, REFLEXIVE_STAR_PATH_OPTIMIZER);
+			if (checkParents) {
+				optimizers.add(position + 1, new ParentReferenceChecker(REFLEXIVE_STAR_PATH_OPTIMIZER));
+			}
+		}
+
+		if (experimental && stableOrderDistinct) {
+			// Mark the order after join selection and the reflexive path rewrite.
+			int position = 0;
+			for (int i = 0; i < optimizers.size(); i++) {
+				QueryOptimizer optimizer = optimizers.get(i);
+				if (optimizer instanceof LmdbDistinctAnchorJoinOptimizer
+						|| optimizer instanceof ReflexiveStarPathOptimizer) {
+					position = i + 1;
+				}
+			}
+			optimizers.add(position, new LmdbDistinctOrderMarkingOptimizer(tripleSource));
+		}
 		if (experimental && !inserted) {
 			optimizers.add(new LmdbOrderByOptimizer(tripleSource));
 		}

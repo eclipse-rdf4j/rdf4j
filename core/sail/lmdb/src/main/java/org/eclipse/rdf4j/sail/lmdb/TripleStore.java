@@ -4423,9 +4423,46 @@ class TripleStore implements Closeable {
 		private static final int MAX_POOLED_PER_DBI = 4;
 
 		private final ConcurrentLinkedQueue<PooledCursor> parked = new ConcurrentLinkedQueue<>();
-		private final ThreadLocal<HashMap<Integer, ArrayDeque<PooledCursor>>> perThread = ThreadLocal
-				.withInitial(HashMap::new);
+		private final ThreadLocal<ThreadCursors> perThread = ThreadLocal.withInitial(ThreadCursors::new);
+		/**
+		 * The cursors of the thread that asked last. An index-nested-loop join asks twice per probe from one thread, so
+		 * the thread-local lookup is kept for the first ask and for a change of thread.
+		 */
+		private ThreadCursors last;
 		private volatile boolean closed;
+
+		/** One thread's parked cursors by dbi handle. Only the owning thread reads or writes the queues. */
+		private static final class ThreadCursors {
+			private final Thread owner = Thread.currentThread();
+			@SuppressWarnings("unchecked")
+			private ArrayDeque<PooledCursor>[] byDbi = new ArrayDeque[8];
+
+			ArrayDeque<PooledCursor> parkedFor(int dbi) {
+				return dbi >= 0 && dbi < byDbi.length ? byDbi[dbi] : null;
+			}
+
+			ArrayDeque<PooledCursor> parkingFor(int dbi) {
+				if (dbi >= byDbi.length) {
+					byDbi = Arrays.copyOf(byDbi, Math.max(dbi + 1, byDbi.length * 2));
+				}
+				ArrayDeque<PooledCursor> entries = byDbi[dbi];
+				if (entries == null) {
+					entries = new ArrayDeque<>(MAX_POOLED_PER_DBI);
+					byDbi[dbi] = entries;
+				}
+				return entries;
+			}
+		}
+
+		private ThreadCursors cursorsOfThisThread() {
+			ThreadCursors cursors = last;
+			// The owner is final, so a value another thread just stored is recognised as not ours.
+			if (cursors == null || cursors.owner != Thread.currentThread()) {
+				cursors = perThread.get();
+				last = cursors;
+			}
+			return cursors;
+		}
 
 		static final class PooledCursor {
 			long cursor;
@@ -4442,7 +4479,7 @@ class TripleStore implements Closeable {
 			if (closed) {
 				return null;
 			}
-			ArrayDeque<PooledCursor> entries = perThread.get().get(dbi);
+			ArrayDeque<PooledCursor> entries = cursorsOfThisThread().parkedFor(dbi);
 			if (entries == null) {
 				return null;
 			}
@@ -4486,8 +4523,12 @@ class TripleStore implements Closeable {
 				entry.cursor = 0;
 				return;
 			}
-			ArrayDeque<PooledCursor> entries = perThread.get()
-					.computeIfAbsent(dbi, k -> new ArrayDeque<>(MAX_POOLED_PER_DBI));
+			if (dbi < 0) {
+				mdb_cursor_close(cursor);
+				entry.cursor = 0;
+				return;
+			}
+			ArrayDeque<PooledCursor> entries = cursorsOfThisThread().parkingFor(dbi);
 			if (entries.size() >= MAX_POOLED_PER_DBI) {
 				mdb_cursor_close(cursor);
 				entry.cursor = 0;

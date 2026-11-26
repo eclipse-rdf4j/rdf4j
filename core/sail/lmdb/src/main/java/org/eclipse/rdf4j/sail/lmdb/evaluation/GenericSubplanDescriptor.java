@@ -26,8 +26,8 @@ import org.eclipse.rdf4j.query.algebra.evaluation.util.QueryEvaluationUtility;
 /**
  * A generic subtree a compiled native plan prepares per evaluation (M-A1a). The descriptor owns a pinned snapshot of
  * the algebra: a private clone taken at descriptor construction with every function reference atomically resolved via
- * {@link QueryEvaluationUtility#pinFunctions}, so later registry changes or native compile attempts mutating the
- * original tree can never change what the generic side compiles. Share-safety is classified from the same pinned
+ * {@link QueryEvaluationUtility#pinPreparedFunctions}, so later registry changes or native compile attempts mutating
+ * the original tree can never change what the generic side compiles. Share-safety is classified from the same pinned
  * snapshot: a share-safe subtree's compiled generic step is a stateless function and may be compiled once and shared
  * across evaluations forever; anything else must be prepared once per evaluation through
  * {@link NativeExecutionContext#genericStep} so each evaluation observes a fresh query scope. Share-safety is
@@ -63,7 +63,7 @@ final class GenericSubplanDescriptor {
 
 	/**
 	 * Snapshots the subtree: clone, then pin function implementations on the clone (never on the caller's tree —
-	 * {@code pinFunctions} rewrites {@code FunctionCall} nodes in place).
+	 * {@code pinPreparedFunctions} rewrites {@code FunctionCall} nodes in place).
 	 */
 	static GenericSubplanDescriptor create(QueryModelNode expr) {
 		return create(expr, null);
@@ -71,15 +71,13 @@ final class GenericSubplanDescriptor {
 
 	static GenericSubplanDescriptor create(QueryModelNode expr, LmdbNativeEvaluationStrategy strategy,
 			NativeValuePositionAnalysis valuePositions) {
-		return strategy == null ? create(expr)
-				: strategy.withValuePositions(valuePositions, () -> create(expr, strategy));
+		return prepareAtPositions(strategy, valuePositions, () -> create(expr, strategy));
 	}
 
 	static GenericSubplanDescriptor create(QueryModelNode expr, LmdbNativeEvaluationStrategy strategy) {
-		QueryModelNode pinned = expr.clone();
+		QueryModelNode pinned = QueryEvaluationUtility.pinPreparedFunctions(expr.clone());
 		NativeGraphFusion.preserveLexicalScopes(expr, pinned);
 		NativeValuePositionAnalysis positions = strategy == null ? null : strategy.copyValuePositions(expr, pinned);
-		pinned = QueryEvaluationUtility.pinFunctions(pinned);
 		if (pinned instanceof TupleExpr) {
 			NativeTupleFacts facts = NativeTupleFacts.of((TupleExpr) pinned);
 			return new GenericSubplanDescriptor(pinned, facts.shareableAcrossEvaluations(), facts.repeatable(),
@@ -91,22 +89,27 @@ final class GenericSubplanDescriptor {
 	}
 
 	<T> T prepare(Supplier<T> factory) {
-		return positionOwner == null ? factory.get() : positionOwner.withValuePositions(valuePositions, factory);
+		return prepareAtPositions(positionOwner, valuePositions, factory);
 	}
 
 	QueryEvaluationStep precompile(LmdbNativeEvaluationStrategy strategy, QueryEvaluationContext context) {
-		return strategy.withValuePositions(valuePositions,
+		return prepareAtPositions(strategy, valuePositions,
 				() -> strategy.precompile(this.<TupleExpr>pinnedExpr(), context));
 	}
 
 	QueryValueEvaluationStep precompileValue(LmdbNativeEvaluationStrategy strategy, QueryEvaluationContext context) {
-		return strategy.withValuePositions(valuePositions,
+		return prepareAtPositions(strategy, valuePositions,
 				() -> strategy.precompile(this.<ValueExpr>pinnedExpr(), context));
 	}
 
 	QueryEvaluationStep genericPrecompile(LmdbNativeEvaluationStrategy strategy, QueryEvaluationContext context) {
-		return strategy.withValuePositions(valuePositions,
+		return prepareAtPositions(strategy, valuePositions,
 				() -> strategy.genericPrecompile(this.<TupleExpr>pinnedExpr(), context));
+	}
+
+	private static <T> T prepareAtPositions(LmdbNativeEvaluationStrategy strategy,
+			NativeValuePositionAnalysis positions, Supplier<T> factory) {
+		return strategy == null || positions == null ? factory.get() : strategy.withValuePositions(positions, factory);
 	}
 
 	@SuppressWarnings("unchecked")

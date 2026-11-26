@@ -137,6 +137,42 @@ class BlankNodeEvaluationScopeTest {
 				.hasMessageContaining("allocation collision");
 	}
 
+	@Test
+	void distinctOperatorBoundariesShareLabelsButRevisitingEitherStartsAFreshOccurrence() {
+		BlankNodeAllocationScope scope = new BlankNodeAllocationScope("group-", id -> false);
+		MapBindingSet reused = new MapBindingSet();
+		// Equal but distinct objects must be separate operator boundaries.
+		Object first = new String("boundary");
+		Object second = new String("boundary");
+		Object third = new Object();
+		BlankNodeAllocationScope.SolutionSnapshot saved;
+		BNode original;
+		try (var ignored = scope.visitSolutionOccurrence(reused, first)) {
+			assertThat(scope.snapshotCurrentSolution().labels()).isEmpty();
+			original = scope.getOrCreateBNode("x", reused, VF);
+		}
+		try (var ignored = scope.visitSolutionOccurrence(reused, second)) {
+			assertThat(scope.getOrCreateBNode("x", reused, VF)).isSameAs(original);
+		}
+		try (var ignored = scope.visitSolutionOccurrence(reused, third)) {
+			saved = scope.snapshotCurrentSolution();
+			assertThat(saved.labels()).containsEntry("x", original);
+		}
+		try (var ignored = scope.visitSolutionOccurrence(reused, second)) {
+			assertThat(scope.snapshotCurrentSolution().labels()).isEmpty();
+			assertThat(scope.getOrCreateBNode("x", reused, VF)).isNotEqualTo(original);
+		}
+		scope.restoreSolution(reused, saved);
+		try (var ignored = scope.visitSolutionOccurrence(reused, first)) {
+			assertThat(scope.getOrCreateBNode("x", reused, VF)).isSameAs(original);
+			scope.getOrCreateBNode("y", reused, VF);
+			assertThat(saved.labels()).doesNotContainKey("y");
+		}
+		try (var ignored = scope.visitSolutionOccurrence(reused, first)) {
+			assertThat(scope.snapshotCurrentSolution().labels()).isEmpty();
+		}
+	}
+
 	private static final class CountingBNode extends SimpleBNode {
 		final AtomicInteger reads = new AtomicInteger();
 

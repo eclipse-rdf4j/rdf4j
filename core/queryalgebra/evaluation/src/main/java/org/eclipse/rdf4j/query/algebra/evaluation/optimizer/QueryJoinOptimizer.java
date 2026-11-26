@@ -158,10 +158,55 @@ public class QueryJoinOptimizer implements QueryOptimizer {
 	 */
 	@Override
 	public void optimize(TupleExpr tupleExpr, Dataset dataset, BindingSet bindings) {
+		if (getClass() == QueryJoinOptimizer.class && !new JoinFinder().isIn(tupleExpr)) {
+			// Nothing to order. What this optimizer still does for such a query is give every statement pattern its
+			// size estimate, and that needs neither a binding analysis nor the bound variables of each scope.
+			tupleExpr.visit(new JoinVisitor(true));
+			return;
+		}
 		JoinVisitor visitor = createJoinVisitor(dataset, bindings);
-		visitor.initialize(tupleExpr, dataset, bindings,
-				QueryEvaluationUtility.querySafetySnapshot(tupleExpr, policy));
+		// The safety classification of the tree is only consulted when a join group is reordered, so it is built on
+		// first use instead of for every query.
+		visitor.initialize(tupleExpr, dataset, bindings, null);
+		visitor.safetyRoot = tupleExpr;
 		tupleExpr.visit(visitor);
+	}
+
+	/** Finds an operator whose operands this optimizer orders or evaluates with the bindings of another operand. */
+	private static final class JoinFinder extends AbstractQueryModelVisitor<RuntimeException> {
+		private boolean found;
+
+		boolean isIn(TupleExpr tupleExpr) {
+			tupleExpr.visit(this);
+			return found;
+		}
+
+		@Override
+		public void meet(Join join) {
+			found = true;
+		}
+
+		@Override
+		public void meet(LeftJoin leftJoin) {
+			found = true;
+		}
+
+		@Override
+		public void meet(Lateral lateral) {
+			found = true;
+		}
+
+		@Override
+		public void meet(StatementPattern pattern) {
+			// Only variables below.
+		}
+
+		@Override
+		protected void meetNode(QueryModelNode node) {
+			if (!found) {
+				super.meetNode(node);
+			}
+		}
 	}
 
 	/**
@@ -232,16 +277,27 @@ public class QueryJoinOptimizer implements QueryOptimizer {
 		private Set<StatementPattern> filterDiscountedPatterns;
 		private List<TupleExpr> pendingValuesConsumers;
 		private QueryEvaluationUtility.QuerySafetySnapshot safetySnapshot;
+		/** The tree whose safety snapshot is created when it is first needed; null when a snapshot was supplied. */
+		private TupleExpr safetyRoot;
 		private final Map<TupleExpr, Set<String>> externalServiceVariableCache = new IdentityHashMap<>();
+
+		/** Set for a tree without joins: the visitor then only walks to the statement patterns. */
+		private final boolean estimateOnly;
 
 		protected JoinVisitor() {
 			this(QueryAlgebraBindingAnalysis.withBindingValues(null, EmptyBindingSet.getInstance()), null, null);
+		}
+
+		private JoinVisitor(boolean estimateOnly) {
+			super(trackResultSize);
+			this.estimateOnly = estimateOnly;
 		}
 
 		private JoinVisitor(QueryAlgebraBindingAnalysis bindingAnalysis,
 				QueryAlgebraBindingAnalysis.ReadOnlyContext initialContext,
 				QueryEvaluationUtility.QuerySafetySnapshot safetySnapshot) {
 			super(trackResultSize);
+			this.estimateOnly = false;
 			this.bindingAnalysis = bindingAnalysis;
 			this.currentContext = initialContext == null ? bindingAnalysis.rootContext() : initialContext;
 			this.boundVars = new PhysicalCostPrefix(currentContext.scopeIdentity(), currentContext.guaranteedNames());
@@ -383,6 +439,10 @@ public class QueryJoinOptimizer implements QueryOptimizer {
 		}
 
 		private void visitAt(QueryModelNode child) {
+			if (estimateOnly) {
+				child.visit(this);
+				return;
+			}
 			QueryAlgebraBindingAnalysis.ReadOnlyContext previous = currentContext;
 			PhysicalCostPrefix previousBoundVars = boundVars;
 			try {
@@ -673,7 +733,16 @@ public class QueryJoinOptimizer implements QueryOptimizer {
 			}
 		}
 
+		private QueryEvaluationUtility.QuerySafetySnapshot safetySnapshot() {
+			if (safetySnapshot == null && safetyRoot != null) {
+				safetySnapshot = QueryEvaluationUtility.querySafetySnapshot(safetyRoot, policy);
+				safetyRoot = null;
+			}
+			return safetySnapshot;
+		}
+
 		private boolean isRepeatable(QueryModelNode node) {
+			QueryEvaluationUtility.QuerySafetySnapshot safetySnapshot = safetySnapshot();
 			return safetySnapshot == null ? QueryEvaluationUtility.isRepeatable(node)
 					: safetySnapshot.isRepeatable(node);
 		}
@@ -689,6 +758,7 @@ public class QueryJoinOptimizer implements QueryOptimizer {
 		}
 
 		private boolean containsSafeExtension(TupleExpr node) {
+			QueryEvaluationUtility.QuerySafetySnapshot safetySnapshot = safetySnapshot();
 			if (safetySnapshot != null) {
 				return safetySnapshot.containsExtension(node);
 			}
@@ -962,6 +1032,7 @@ public class QueryJoinOptimizer implements QueryOptimizer {
 		}
 
 		private boolean containsLateral(TupleExpr tupleExpr) {
+			QueryEvaluationUtility.QuerySafetySnapshot safetySnapshot = safetySnapshot();
 			if (safetySnapshot != null) {
 				return safetySnapshot.containsLateral(tupleExpr);
 			}

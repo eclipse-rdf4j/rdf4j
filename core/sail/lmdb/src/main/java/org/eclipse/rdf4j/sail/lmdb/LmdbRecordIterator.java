@@ -109,6 +109,10 @@ class LmdbRecordIterator implements RecordIterator {
 	private boolean upperExclusive;
 
 	private final long[] quad;
+	// Staging buffers of the wrapper that reads this cursor. They live here because a cursor is reused for one index
+	// probe after another, while its wrapper is created for each probe.
+	private long[] stagingBatch;
+	private long[] stagingRow;
 	private long matchSubj;
 	private long matchPred;
 	private long matchObj;
@@ -447,6 +451,29 @@ class LmdbRecordIterator implements RecordIterator {
 		}
 	}
 
+	/** Whether an earlier use of this cursor left its staging buffers behind, so staging rows allocates nothing. */
+	boolean hasStagingBuffers() {
+		return stagingBatch != null;
+	}
+
+	/** A buffer for at least {@code rows} staged rows; only the wrapper that currently reads this cursor may use it. */
+	long[] stagingBatch(int rows) {
+		long[] buffer = stagingBatch;
+		if (buffer == null || buffer.length < rows * 4) {
+			stagingBatch = buffer = new long[rows * 4];
+		}
+		return buffer;
+	}
+
+	/** The row handed out from the staged batch; see {@link #stagingBatch(int)}. */
+	long[] stagingRow() {
+		long[] row = stagingRow;
+		if (row == null) {
+			stagingRow = row = new long[4];
+		}
+		return row;
+	}
+
 	@Override
 	public int fill(long[] buffer, int maxRows) {
 		return fillAt(buffer, 0, maxRows, maxRows, null);
@@ -775,6 +802,7 @@ class LmdbRecordIterator implements RecordIterator {
 		try {
 			readStamp = txnLockManager.readLock();
 		} catch (InterruptedException e) {
+			Thread.currentThread().interrupt();
 			throw new SailException(e);
 		}
 		try {
@@ -997,6 +1025,11 @@ class LmdbRecordIterator implements RecordIterator {
 
 	@Override
 	public void close() {
+		// An exhausted iterator closed itself under the read lock it already held. Closing it again has nothing to
+		// release, so an index probe that ran to its end does not take the transaction lock a second time.
+		if (closed) {
+			return;
+		}
 		closeInternal(true);
 	}
 

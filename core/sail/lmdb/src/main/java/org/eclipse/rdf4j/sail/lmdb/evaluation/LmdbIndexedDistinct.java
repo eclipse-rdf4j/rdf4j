@@ -51,7 +51,8 @@ public final class LmdbIndexedDistinct {
 	public static QueryEvaluationStep prepare(Distinct distinct, QueryEvaluationContext context,
 			TripleSource tripleSource,
 			Supplier<QueryEvaluationStep> fallback) {
-		if (distinct.getClass() != Distinct.class || !(distinct.getArg() instanceof Projection projection)
+		if (!context.allowsDirectVariableReads() || distinct.getClass() != Distinct.class
+				|| !(distinct.getArg() instanceof Projection projection)
 				|| projection.getClass() != Projection.class
 				|| !(projection.getArg() instanceof StatementPattern statement)
 				|| projection.getInheritedGraphParameter() != null || projection.getProjectionContext() != null) {

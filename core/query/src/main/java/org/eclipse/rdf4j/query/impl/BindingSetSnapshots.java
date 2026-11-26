@@ -46,8 +46,14 @@ public final class BindingSetSnapshots {
 
 	/** Replaces present RDF values without changing which names are possible or bound. */
 	public static BindingSet mapValues(BindingSet bindings, BiFunction<String, Value, Value> mapper) {
+		return mapValues(bindings, bindings.getBindingNames(), mapper);
+	}
+
+	/** Replaces present RDF values only for the specified names. */
+	public static BindingSet mapValues(BindingSet bindings, Iterable<String> names,
+			BiFunction<String, Value, Value> mapper) {
 		Map<String, Value> replacements = null;
-		for (String name : bindings.getBindingNames()) {
+		for (String name : names) {
 			Value value = bindings.getValue(name);
 			if (value != null) {
 				Value replacement = Objects.requireNonNull(mapper.apply(name, value));

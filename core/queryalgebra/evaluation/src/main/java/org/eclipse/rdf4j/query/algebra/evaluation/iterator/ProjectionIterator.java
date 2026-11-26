@@ -16,9 +16,11 @@ import java.util.List;
 import java.util.Set;
 import java.util.function.BiConsumer;
 import java.util.function.Function;
+import java.util.function.IntSupplier;
 import java.util.function.Supplier;
 
 import org.eclipse.rdf4j.common.annotation.InternalUseOnly;
+import org.eclipse.rdf4j.common.iteration.BufferedIteration;
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.common.iteration.ConvertingIteration;
 import org.eclipse.rdf4j.model.Value;
@@ -38,7 +40,7 @@ import org.eclipse.rdf4j.query.algebra.evaluation.impl.QueryEvaluationContext;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.evaluationsteps.ScopedUnionInput;
 import org.eclipse.rdf4j.query.impl.EmptyBindingSet;
 
-public class ProjectionIterator extends ConvertingIteration<BindingSet, BindingSet> {
+public class ProjectionIterator extends ConvertingIteration<BindingSet, BindingSet> implements BufferedIteration {
 
 	/*-----------*
 	 * Constants *
@@ -75,13 +77,20 @@ public class ProjectionIterator extends ConvertingIteration<BindingSet, BindingS
 
 	public ProjectionIterator(Projection projection, CloseableIteration<BindingSet> iter,
 			BindingSet parentBindings, QueryEvaluationContext context) throws QueryEvaluationException {
+		this(projection, iter, parentBindings, context, false);
+	}
+
+	@InternalUseOnly
+	public ProjectionIterator(Projection projection, CloseableIteration<BindingSet> iter,
+			BindingSet parentBindings, QueryEvaluationContext context, boolean ownsIdentityRows) {
 		super(iter);
 		trackClearedSiblingInputs = ScopedUnionInput.tracksClearedSiblingInputs();
 		ProjectionElemList projectionElemList = projection.getProjectionElemList();
 		boolean isOuterProjection = !hasEnclosingProjection(projection, context);
 		boolean includeAllParentBindings = !isOuterProjection;
 		this.indexedProjector = isOuterProjection && parentBindings == EmptyBindingSet.getInstance()
-				&& projection.getInheritedGraphParameter() == null ? indexedProjector(projectionElemList, context)
+				&& projection.getInheritedGraphParameter() == null
+						? indexedProjector(projectionElemList, context, ownsIdentityRows && !trackClearedSiblingInputs)
 						: null;
 		BindingSet accessorParent = trackClearedSiblingInputs ? GraphFrameBindings.contextRow(parentBindings)
 				: parentBindings;
@@ -133,8 +142,13 @@ public class ProjectionIterator extends ConvertingIteration<BindingSet, BindingS
 		this.projector = consumer;
 	}
 
+	@Override
+	public IntSupplier bufferedRowsSource() {
+		return getClass() == ProjectionIterator.class ? BufferedIteration.bufferedRowsSource(sourceIteration()) : null;
+	}
+
 	private static Function<BindingSet, ArrayBindingSet> indexedProjector(ProjectionElemList projection,
-			QueryEvaluationContext context) {
+			QueryEvaluationContext context, boolean ownsIdentityRows) {
 		IndexedLayout layout = context.indexedBindingLayout();
 		if (layout == null || context.getActiveGraph() != null) {
 			return null;
@@ -153,7 +167,8 @@ public class ProjectionIterator extends ConvertingIteration<BindingSet, BindingS
 			sources[i] = source;
 			targets[i] = target;
 		}
-		return row -> layout.project(row, sources, targets);
+		return ownsIdentityRows ? row -> layout.projectOwnedIdentity(row, sources)
+				: row -> layout.project(row, sources, targets);
 	}
 
 	/**

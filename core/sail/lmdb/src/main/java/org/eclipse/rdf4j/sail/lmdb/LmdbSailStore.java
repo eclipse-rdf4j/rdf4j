@@ -73,6 +73,7 @@ import java.util.function.BooleanSupplier;
 import java.util.function.Consumer;
 import java.util.function.Function;
 import java.util.function.IntConsumer;
+import java.util.function.IntSupplier;
 import java.util.function.Predicate;
 import java.util.function.Supplier;
 import java.util.stream.IntStream;
@@ -82,6 +83,7 @@ import org.eclipse.collections.impl.map.mutable.primitive.ObjectIntHashMap;
 import org.eclipse.rdf4j.common.annotation.InternalUseOnly;
 import org.eclipse.rdf4j.common.concurrent.locks.StampedLongAdderLockManager;
 import org.eclipse.rdf4j.common.iteration.AbstractCloseableIteration;
+import org.eclipse.rdf4j.common.iteration.BufferedIteration;
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.common.iteration.CloseableIteratorIteration;
 import org.eclipse.rdf4j.common.iteration.DualUnionIteration;
@@ -95,6 +97,7 @@ import org.eclipse.rdf4j.common.transaction.IsolationLevel;
 import org.eclipse.rdf4j.common.transaction.IsolationLevels;
 import org.eclipse.rdf4j.http.client.QueryExecutionContext;
 import org.eclipse.rdf4j.model.BNode;
+import org.eclipse.rdf4j.model.BNodeIdResolver;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Literal;
 import org.eclipse.rdf4j.model.Namespace;
@@ -118,6 +121,7 @@ import org.eclipse.rdf4j.query.QueryEvaluationException;
 import org.eclipse.rdf4j.query.QueryExecutionPolicy;
 import org.eclipse.rdf4j.query.QueryInterruptedException;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.EvaluationStatistics;
+import org.eclipse.rdf4j.query.algebra.evaluation.impl.evaluationsteps.StatementFieldSelection;
 import org.eclipse.rdf4j.query.algebra.evaluation.sketch.SketchBasedJoinEstimator;
 import org.eclipse.rdf4j.query.algebra.evaluation.sketch.SketchStatementSource;
 import org.eclipse.rdf4j.query.algebra.evaluation.sketch.SketchStatementSourceException;
@@ -2635,6 +2639,12 @@ class LmdbSailStore implements SailStore {
 	private final MapGrowthMetrics mapGrowthMetrics = new MapGrowthMetrics();
 	private final MapGrowthCoordinator mapGrowthCoordinator;
 	private final boolean autoGrow;
+
+	/** Whether a native map can be resized while the store is open, which is what invalidates pinned snapshots. */
+	boolean mapsCanGrow() {
+		return autoGrow;
+	}
+
 	private final boolean asyncValueCleanup;
 	private ValueRetirementCoordinator retirementCoordinator;
 	private AsyncValueRetirementCoordinator asyncValueCleanupCoordinator;
@@ -4258,7 +4268,16 @@ class LmdbSailStore implements SailStore {
 	// so the next set() would allocate a new one on every transaction.
 	private final ThreadLocal<PublicationContext> publicationContext = new ThreadLocal<>();
 	private final ThreadLocal<ReadView> activeReadView = new ThreadLocal<>();
-	private final ThreadLocal<ReadResourceContext> activeReadResourceContext = new ThreadLocal<>();
+
+	/**
+	 * One holder per thread, kept for the thread's lifetime; see {@link ReadResourceContext#enter(ReadResourceSlot)}.
+	 */
+	static final class ReadResourceSlot {
+		private ReadResourceContext active;
+	}
+
+	private final ThreadLocal<ReadResourceSlot> activeReadResourceContext = ThreadLocal
+			.withInitial(ReadResourceSlot::new);
 	private volatile long namespaceGeneration;
 	private final Object writerOwnerMonitor = new Object();
 	private final IdentityHashMap<WriterLease, Boolean> activeWriterLeases = new IdentityHashMap<>();
@@ -4638,6 +4657,17 @@ class LmdbSailStore implements SailStore {
 		private final AtomicInteger references = new AtomicInteger(1);
 		private final AtomicBoolean abandonUnobserved = new AtomicBoolean();
 		private volatile boolean nativeSnapshotsClosed;
+		/**
+		 * Counts the changes of the pinned statement reader and of the paired dictionary snapshot that
+		 * {@link #validateNativeSnapshots()} could notice. Both report here after they change, so a validation that
+		 * passed stays true until the count moves.
+		 */
+		private final AtomicInteger snapshotEvents = new AtomicInteger(1);
+		/**
+		 * The count that the last passing validation started from. Written without synchronization by every reader of
+		 * this view: a stale value only repeats a validation.
+		 */
+		private int validatedSnapshotEvents;
 
 		private ReadView(Txn tripleTxn, ValueStore.ReadSnapshot valueSnapshot, Map<String, String> namespaces,
 				long capturedNamespaceGeneration, long capturedPublicationVersion, ReadViewLease growthLease) {
@@ -4651,6 +4681,9 @@ class LmdbSailStore implements SailStore {
 			this.capturedNamespaceGeneration = capturedNamespaceGeneration;
 			this.capturedPublicationVersion = capturedPublicationVersion;
 			this.growthLease = growthLease;
+			Runnable event = snapshotEvents::incrementAndGet;
+			tripleTxn.setSnapshotEventListener(event);
+			valueSnapshot.setSnapshotEventListener(event);
 		}
 
 		void abandonUnobserved() {
@@ -4734,19 +4767,44 @@ class LmdbSailStore implements SailStore {
 					&& isSnapshotCurrent() && publicationVersion == currentPublicationVersion;
 		}
 
+		/**
+		 * Fails if the pinned snapshots can no longer be read as one consistent view. This runs for every row that is
+		 * handed out and around every native read, so a validation that passed is remembered: until the statement
+		 * reader or the dictionary snapshot reports a change, this view's lease is invalidated or a namespace commit
+		 * fails, it costs four field reads. What keeps native memory safe is not this check but the reader's own check
+		 * under its lock.
+		 */
 		void ensureNativeSnapshotsValid() throws SailException {
+			int events = snapshotEvents.get();
+			if (events == validatedSnapshotEvents && namespacePersistenceFailure == null
+					&& growthLease.invalidatedKind == null) {
+				return;
+			}
+			validateNativeSnapshots();
+			// A snapshot that is being closed still validates for its closing thread only; that is not remembered.
+			if (valueSnapshot.hasStableIds() && !valueSnapshot.isRetiredOrClosed()) {
+				validatedSnapshotEvents = events;
+			}
+		}
+
+		private void validateNativeSnapshots() throws SailException {
+			if (!autoGrow) {
+				// No map is resized without auto-grow, so nothing can invalidate or renew the pinned readers. What is
+				// left to notice is a reader that was closed and a namespace commit whose outcome is unknown.
+				ensureNamespacePersistenceCertain();
+				tripleTxn.ensureSnapshotValid();
+				return;
+			}
 			growthLease.ensureNotInvalidated();
 			ensureNamespacePersistenceCertain();
+			// A closed reader fails this check, so it is not asked a second time whether it is closed.
 			tripleTxn.ensureSnapshotValid();
-			if (tripleTxn.isClosed()) {
-				throw new SailException("TripleStore read snapshot is closed; retry the read operation");
-			}
 			if (tripleTxn.version() != tripleTxnVersion) {
 				throw new MapResizeConflictException(MapResizeKind.TRIPLE_STORE,
 						"TripleStore map changed while the read snapshot was pinned; retry the transaction");
 			}
 			try {
-				valueSnapshot.ensureValid();
+				valueSnapshot.ensureValid(tripleTxn);
 			} catch (IOException e) {
 				throw new SailException(e.getMessage(), e);
 			}
@@ -4861,7 +4919,7 @@ class LmdbSailStore implements SailStore {
 			closed = true;
 			if (activeReadView.get() == view) {
 				if (previous == null) {
-					activeReadView.remove();
+					activeReadView.set(null);
 				} else {
 					activeReadView.set(previous);
 				}
@@ -4870,16 +4928,30 @@ class LmdbSailStore implements SailStore {
 		}
 	}
 
-	/** Scoped ownership of already-admitted read views when the active admission is intentionally unbound. */
+	/**
+	 * The read views a thread owns while it reads. A context is entered on one thread and closed on the same thread;
+	 * once closed it can be entered again, so a result that is read row by row keeps a single instance.
+	 */
 	final class ReadResourceContext implements SailClosable {
-		private final ReadResourceContext previous;
+		private ReadResourceContext previous;
+		private ReadResourceSlot slot;
 		private final Supplier<? extends Iterable<ReadViewLease>> ownedViews;
-		private boolean closed;
+		private boolean closed = true;
 
-		private ReadResourceContext(ReadResourceContext previous,
-				Supplier<? extends Iterable<ReadViewLease>> ownedViews) {
-			this.previous = previous;
+		private ReadResourceContext(Supplier<? extends Iterable<ReadViewLease>> ownedViews) {
 			this.ownedViews = ownedViews;
+		}
+
+		/** Installs this context on the thread that owns {@code holder}, above the one that thread has now. */
+		void enter(ReadResourceSlot holder) {
+			if (!closed) {
+				throw new IllegalStateException("LMDB read-resource context is already entered");
+			}
+			slot = holder;
+			previous = holder.active;
+			closed = false;
+			holder.active = this;
+			readResourceContextEntered();
 		}
 
 		private List<ReadViewLease> readViews() {
@@ -4899,28 +4971,44 @@ class LmdbSailStore implements SailStore {
 			if (closed) {
 				return;
 			}
-			if (activeReadResourceContext.get() != this) {
+			if (slot.active != this) {
 				throw new IllegalStateException("LMDB read-resource contexts must close in nesting order");
 			}
 			closed = true;
-			if (previous == null) {
-				activeReadResourceContext.remove();
-			} else {
-				activeReadResourceContext.set(previous);
-			}
+			// The holder then retains neither this context nor its views.
+			slot.active = previous;
+			previous = null;
+			slot = null;
+			readResourceContextLeft();
 		}
 	}
 
+	/** For tests that count read activations: the calling thread entered a read-resource context. */
+	void readResourceContextEntered() {
+	}
+
+	/** For tests that count read activations: the calling thread left the context it entered last. */
+	void readResourceContextLeft() {
+	}
+
 	SailClosable enterReadResourceContext(Supplier<? extends Iterable<ReadViewLease>> ownedViews) {
-		ReadResourceContext previous = activeReadResourceContext.get();
-		ReadResourceContext installed = new ReadResourceContext(previous,
-				Objects.requireNonNull(ownedViews, "ownedViews"));
-		activeReadResourceContext.set(installed);
+		ReadResourceContext installed = newReadResourceContext(ownedViews);
+		installed.enter(activeReadResourceContext.get());
 		return installed;
 	}
 
+	/** A context that is not entered yet; see {@link ReadResourceContext#enter(ReadResourceSlot)}. */
+	ReadResourceContext newReadResourceContext(Supplier<? extends Iterable<ReadViewLease>> ownedViews) {
+		return new ReadResourceContext(Objects.requireNonNull(ownedViews, "ownedViews"));
+	}
+
+	/** The calling thread's holder, for {@link ReadResourceContext#enter(ReadResourceSlot)}. */
+	ReadResourceSlot readResourceSlot() {
+		return activeReadResourceContext.get();
+	}
+
 	List<ReadViewLease> currentReadResourceViews() {
-		ReadResourceContext current = activeReadResourceContext.get();
+		ReadResourceContext current = activeReadResourceContext.get().active;
 		return current == null ? List.of() : current.readViews();
 	}
 
@@ -4978,7 +5066,7 @@ class LmdbSailStore implements SailStore {
 			try {
 				if (activeReadView.get() == borrowed) {
 					if (current == null) {
-						activeReadView.remove();
+						activeReadView.set(null);
 					} else {
 						activeReadView.set(current);
 					}
@@ -5069,7 +5157,7 @@ class LmdbSailStore implements SailStore {
 			}
 			if (bound != null && activeReadView.get() == bound) {
 				if (previous == null) {
-					activeReadView.remove();
+					activeReadView.set(null);
 				} else {
 					activeReadView.set(previous);
 				}
@@ -5096,7 +5184,7 @@ class LmdbSailStore implements SailStore {
 			}
 			if (installed != null && activeReadView.get() == installed) {
 				if (previous == null) {
-					activeReadView.remove();
+					activeReadView.set(null);
 				} else {
 					activeReadView.set(previous);
 				}
@@ -7293,7 +7381,7 @@ class LmdbSailStore implements SailStore {
 				beforeSketchRefreshReadForTest();
 			}
 			boolean borrowedReadView = activeReadView.get() != null;
-			ReadResourceContext resourceContext = activeReadResourceContext.get();
+			ReadResourceContext resourceContext = activeReadResourceContext.get().active;
 			List<ReadViewLease> resourceViews = resourceContext == null ? List.of() : resourceContext.readViews();
 			ReadViewLease borrowedResourceView = !borrowedReadView && resourceViews.size() == 1
 					? resourceViews.get(0)
@@ -9550,33 +9638,31 @@ class LmdbSailStore implements SailStore {
 		}
 
 		CursorCancellation cancellation = NativeLmdbQuerySource.captureCursorCancellation();
-		if (contexts.length == 0) {
-			RecordIterator records = source.statements(subjID, predID, objID, LmdbValue.UNKNOWN_ID,
+		if (contexts.length <= 1) {
+			Resource context = contexts.length == 0 ? null : contexts[0];
+			long contextID = LmdbValue.UNKNOWN_ID;
+			if (contexts.length == 1) {
+				contextID = statementContextId(source, context);
+				if (contextID == LmdbValue.UNKNOWN_ID) {
+					return IterationConstants.EMPTY_STATEMENT_ITERATION;
+				}
+			}
+			RecordIterator records = source.statementRecords(subjID, predID, objID, contextID,
 					nativeSourceObservationForTest, cancellation);
-			return semanticStatements(source,
-					new LmdbStatementIterator(records, valueStore, source.readView.valueSnapshot()), subj, pred, obj,
-					cancellation);
+			return semanticStatements(source, statementIterator(source, records, subj, pred, obj, context),
+					subj, pred, obj, cancellation);
 		}
 
 		ArrayList<LmdbStatementIterator> perContextIterList = new ArrayList<>(contexts.length);
 		try {
 			for (Resource context : contexts) {
-				long contextID;
-				if (context == null) {
-					contextID = 0L;
-				} else if (!context.isTripleTerm()) {
-					contextID = valueStore.getStatementId(source.readView.valueSnapshot(), context,
-							ValuePosition.CONTEXT);
-					if (contextID == LmdbValue.UNKNOWN_ID) {
-						continue;
-					}
-				} else {
+				long contextID = statementContextId(source, context);
+				if (contextID == LmdbValue.UNKNOWN_ID) {
 					continue;
 				}
-
-				RecordIterator records = source.statements(subjID, predID, objID, contextID,
+				RecordIterator records = source.statementRecords(subjID, predID, objID, contextID,
 						nativeSourceObservationForTest, cancellation);
-				perContextIterList.add(new LmdbStatementIterator(records, valueStore, source.readView.valueSnapshot()));
+				perContextIterList.add(statementIterator(source, records, subj, pred, obj, context));
 			}
 
 			if (perContextIterList.isEmpty()) {
@@ -9592,15 +9678,40 @@ class LmdbSailStore implements SailStore {
 		}
 	}
 
+	private long statementContextId(LmdbSailDataset source, Resource context) throws IOException {
+		if (context == null) {
+			return 0L;
+		}
+		return context.isTripleTerm() ? LmdbValue.UNKNOWN_ID
+				: valueStore.getStatementId(source.readView.valueSnapshot(), context, ValuePosition.CONTEXT);
+	}
+
+	private LmdbStatementIterator statementIterator(LmdbSailDataset source, RecordIterator records,
+			Resource subj, IRI pred, Value obj, Resource context) {
+		try {
+			return new LmdbStatementIterator(records, valueStore, source.readView.valueSnapshot(),
+					subj, pred, obj, context);
+		} catch (RuntimeException | Error failure) {
+			// Capturing a supplied native term can fail after the record iterator has acquired its resources.
+			KernelRuntime.closeCursor(records, failure);
+			throw failure;
+		}
+	}
+
 	private CloseableIteration<? extends Statement> semanticStatements(LmdbSailDataset source,
 			CloseableIteration<? extends Statement> statements, Resource subj, IRI pred, Value obj,
 			CursorCancellation cancellation) {
-		return valueStore.getFormat().isLegacy()
-				? source.semanticScopes.own(new LegacySemanticScope<Statement>(statements,
-						candidate -> LegacySemanticScope.matches(candidate, subj, pred, obj)
-								&& !hasExplicitLegacyAlias(source, candidate, cancellation),
-						LegacySemanticScope::containsLanguage, LegacySemanticScope::detached))
-				: statements;
+		try {
+			return valueStore.getFormat().isLegacy()
+					? source.semanticScopes.own(new LegacySemanticScope<Statement>(statements,
+							candidate -> LegacySemanticScope.matches(candidate, subj, pred, obj)
+									&& !hasExplicitLegacyAlias(source, candidate, cancellation),
+							LegacySemanticScope::containsLanguage, LegacySemanticScope::detached))
+					: statements;
+		} catch (RuntimeException | Error failure) {
+			closeStatementIteration(statements, failure);
+			throw failure;
+		}
 	}
 
 	/** Preserve the disjoint explicit/inferred storage contract using the candidate's own snapshot and IDs. */
@@ -15247,7 +15358,8 @@ class LmdbSailStore implements SailStore {
 		return EmptyRecordIterator.INSTANCE;
 	}
 
-	final class LmdbSailDataset implements SailDataset, NativeLmdbQuerySource, StableStatementSailDataset {
+	final class LmdbSailDataset
+			implements SailDataset, NativeLmdbQuerySource, StableStatementSailDataset, BNodeIdResolver {
 
 		private final boolean explicit;
 		private final ReadView readView;
@@ -15288,6 +15400,21 @@ class LmdbSailStore implements SailStore {
 		 * costing.
 		 */
 		private boolean plannerStatsHitRecorded;
+		/** One completed ordinary lookup can lend its native cursor and buffers to the next eligible lookup. */
+		private volatile LmdbRecordIterator idleStatementCursor;
+		private static final VarHandle IDLE_STATEMENT_CURSOR;
+
+		static {
+			try {
+				IDLE_STATEMENT_CURSOR = MethodHandles.lookup()
+						.findVarHandle(LmdbSailDataset.class, "idleStatementCursor", LmdbRecordIterator.class);
+			} catch (ReflectiveOperationException failure) {
+				throw new ExceptionInInitializerError(failure);
+			}
+		}
+
+		/** Active and idle retained cursors; failed disposal remains owned until the dataset's final drain. */
+		private Set<LmdbRecordIterator> statementCursors;
 		/** Snapshot-local memoization: exact fan-out is immutable for this dataset's pinned adjacency view. */
 		private LongObjectHashMap<OptionalDouble> plannerFanOutBySubject;
 		private LongObjectHashMap<OptionalDouble> plannerFanOutByObject;
@@ -15331,6 +15458,20 @@ class LmdbSailStore implements SailStore {
 		}
 
 		@Override
+		public boolean hasBNodeId(String id) {
+			if (closed.get()) {
+				return false;
+			}
+			readView.requireDictionaryTermSnapshot();
+			try {
+				return valueStore.getId(readView.valueSnapshot(),
+						SimpleValueFactory.getInstance().createBNode(id)) != LmdbValue.UNKNOWN_ID;
+			} catch (IOException e) {
+				throw new SailException(e);
+			}
+		}
+
+		@Override
 		public boolean hasStableStatementRelation() {
 			// Dataset admission pins the triple and value read transactions together. On invalidation, reads fail
 			// through the existing read-view guard instead of returning data from a replacement snapshot.
@@ -15368,6 +15509,115 @@ class LmdbSailStore implements SailStore {
 		private void addSuppressedCleanupFailure(Throwable failure, Throwable cleanupFailure) {
 			if (failure != cleanupFailure) {
 				failure.addSuppressed(cleanupFailure);
+			}
+		}
+
+		private LmdbRecordIterator openStatementCursor(long subj, long pred, long obj, long context)
+				throws IOException {
+			LmdbRecordIterator cursor = (LmdbRecordIterator) IDLE_STATEMENT_CURSOR.getAndSet(this, null);
+			if (cursor != null) {
+				try {
+					tripleStore.resetTriples(cursor, subj, pred, obj, context, explicit);
+					return cursor;
+				} catch (IOException | RuntimeException | Error failure) {
+					disposeStatementCursor(cursor, failure);
+					throw failure;
+				}
+			}
+			cursor = tripleStore.getTriplesRetained(txn, subj, pred, obj, context, explicit, null);
+			try {
+				synchronized (this) {
+					if (statementCursors == null) {
+						statementCursors = Collections.newSetFromMap(new IdentityHashMap<>());
+					}
+					statementCursors.add(cursor);
+				}
+				return cursor;
+			} catch (RuntimeException | Error failure) {
+				try {
+					disposeStatementCursorUninterruptibly(cursor);
+				} catch (RuntimeException | Error cleanup) {
+					addSuppressedCleanupFailure(failure, cleanup);
+				}
+				throw failure;
+			}
+		}
+
+		private void releaseStatementCursor(LmdbRecordIterator cursor, boolean exhausted) {
+			// An early close may race statement materialization from the cursor's reusable quad. Only successful
+			// EOF proves the consumer has finished every row, so early/failing closes always dispose instead.
+			if (exhausted && !closed.get() && IDLE_STATEMENT_CURSOR.compareAndSet(this, null, cursor)) {
+				return;
+			}
+			disposeStatementCursor(cursor);
+		}
+
+		private void disposeStatementCursor(LmdbRecordIterator cursor) {
+			cursor.dispose();
+			synchronized (this) {
+				if (statementCursors != null) {
+					statementCursors.remove(cursor);
+				}
+			}
+		}
+
+		private void disposeStatementCursor(LmdbRecordIterator cursor, Throwable failure) {
+			try {
+				disposeStatementCursor(cursor);
+			} catch (RuntimeException | Error cleanup) {
+				addSuppressedCleanupFailure(failure, cleanup);
+			}
+		}
+
+		private void disposeStatementCursorUninterruptibly(LmdbRecordIterator cursor) {
+			boolean interrupted = false;
+			try {
+				while (true) {
+					try {
+						cursor.dispose();
+						return;
+					} catch (SailException failure) {
+						if (!(failure.getCause() instanceof InterruptedException)) {
+							throw failure;
+						}
+						// dispose() has not acquired the transaction barrier yet. Finish native cleanup before
+						// releasing the owning read view, then restore the caller's interruption.
+						interrupted = true;
+						Thread.interrupted();
+					}
+				}
+			} finally {
+				if (interrupted) {
+					Thread.currentThread().interrupt();
+				}
+			}
+		}
+
+		/** Called under the exclusive source stamp, after all active logical cursors have released their stamps. */
+		private void closeStatementCursors() {
+			idleStatementCursor = null;
+			if (statementCursors == null) {
+				return;
+			}
+			Throwable failure = null;
+			for (var cursors = statementCursors.iterator(); cursors.hasNext();) {
+				LmdbRecordIterator cursor = cursors.next();
+				try {
+					disposeStatementCursorUninterruptibly(cursor);
+					cursors.remove();
+				} catch (RuntimeException | Error cleanup) {
+					if (failure == null) {
+						failure = cleanup;
+					} else {
+						addSuppressedCleanupFailure(failure, cleanup);
+					}
+				}
+			}
+			if (failure instanceof RuntimeException exception) {
+				throw exception;
+			}
+			if (failure instanceof Error error) {
+				throw error;
 			}
 		}
 
@@ -15452,11 +15702,39 @@ class LmdbSailStore implements SailStore {
 		 * inconsistent reads.
 		 */
 		private void ensureSnapshot() {
-			QueryExecutionContext.checkpointReplaySafepoint();
-			readView.ensureNativeSnapshotsValid();
+			nativeSourceReplay.checkpointNow();
+			// Only a map resize can move a pinned reader to another snapshot, and without auto-grow no map is ever
+			// resized. A closed reader is still refused by the cursor that reads from it.
+			if (autoGrow) {
+				readView.ensureNativeSnapshotsValid();
+			}
 		}
 
-		private class SnapshotIteration<T> extends IterationWrapper<T> {
+		/**
+		 * The check before a row that was already read is handed out. The native read that produced it validated the
+		 * snapshot under the reader's lock; what can have happened since is a map resize, which only exists with
+		 * auto-grow, or the close of this dataset. Replay of an unobserved attempt is best-effort, so its checkpoint
+		 * runs once per stride of rows here and exactly at every native read.
+		 *
+		 * @param row whether a row is about to leave; availability alone does not count towards the replay stride
+		 */
+		private void ensureRowSnapshot(boolean row) {
+			if (autoGrow) {
+				if (row) {
+					nativeSourceReplay.checkpoint();
+				}
+				readView.ensureNativeSnapshotsValid();
+			} else {
+				if (closed.get()) {
+					throw new QueryInterruptedException("Query evaluation was interrupted");
+				}
+				// Without auto-grow nothing renews the pinned readers, but a namespace commit can still fail with an
+				// unknown outcome, and reads then fail until the store is reopened.
+				ensureNamespacePersistenceCertain();
+			}
+		}
+
+		private class SnapshotIteration<T> extends IterationWrapper<T> implements BufferedIteration {
 			private static final VarHandle CLOSE_STARTED;
 
 			static {
@@ -15476,6 +15754,11 @@ class LmdbSailStore implements SailStore {
 				super(rows);
 			}
 
+			@Override
+			public IntSupplier bufferedRowsSource() {
+				return BufferedIteration.bufferedRowsSource(wrappedIter);
+			}
+
 			private void closeAfterFailure(Throwable failure) {
 				try {
 					close();
@@ -15493,11 +15776,15 @@ class LmdbSailStore implements SailStore {
 				}
 			}
 
+			/**
+			 * A caller that only asks for availability is told about an invalidated snapshot too, also when the answer
+			 * would come from rows that were read before the invalidation.
+			 */
 			@Override
 			public boolean hasNext() {
 				try {
 					if (!isClosed()) {
-						validateSnapshot();
+						ensureRowSnapshot(false);
 					}
 					return super.hasNext();
 				} catch (RuntimeException | Error failure) {
@@ -15510,7 +15797,7 @@ class LmdbSailStore implements SailStore {
 			public T next() {
 				try {
 					if (!isClosed()) {
-						validateSnapshot();
+						ensureRowSnapshot(true);
 					}
 					return super.next();
 				} catch (RuntimeException | Error failure) {
@@ -15562,12 +15849,17 @@ class LmdbSailStore implements SailStore {
 		}
 
 		private final class IndexedSnapshotIteration<T> extends SnapshotIteration<T>
-				implements IndexReportingIterator {
+				implements IndexReportingIterator, StatementFieldSelection {
 			private final IndexReportingIterator reporting;
 
 			IndexedSnapshotIteration(CloseableIteration<? extends T> rows, IndexReportingIterator reporting) {
 				super(rows);
 				this.reporting = reporting;
+			}
+
+			@Override
+			public void deferStatementFields(StatementFieldSelection.Demand demand) {
+				StatementFieldSelection.forward(reporting, demand);
 			}
 
 			@Override
@@ -15606,6 +15898,10 @@ class LmdbSailStore implements SailStore {
 						guardedIterations.previous = guarded;
 					}
 					guardedIterations = guarded;
+					if (rows.getClass() == LmdbStatementIterator.class) {
+						// Every row now leaves through the guard, which validates this same paired snapshot.
+						((LmdbStatementIterator) rows).snapshotGuarded();
+					}
 					return guarded;
 				}
 			}
@@ -15701,6 +15997,7 @@ class LmdbSailStore implements SailStore {
 				if (adjacencyView != null) {
 					failure = closeDatasetResource(failure, adjacencyView::close);
 				}
+				failure = closeDatasetResource(failure, this::closeStatementCursors);
 				failure = closeDatasetResource(failure, readView::close);
 				if (failure instanceof RuntimeException exception) {
 					throw exception;
@@ -15911,9 +16208,22 @@ class LmdbSailStore implements SailStore {
 
 		private RecordIterator statementsArbitrated(StatementOrder order, long subj, long pred, long obj, long context,
 				AdjacencyAccessObserver observer, CursorCancellation cancellation) throws IOException {
+			return statementsArbitrated(order, subj, pred, obj, context, observer, cancellation, false);
+		}
+
+		/** Ordinary statement materialization consumes each quad before its next pull; raw native callers do not. */
+		private RecordIterator statementRecords(long subj, long pred, long obj, long context,
+				AdjacencyAccessObserver observer, CursorCancellation cancellation) throws IOException {
+			return statementsArbitrated(null, subj, pred, obj, context, observer, cancellation, true);
+		}
+
+		private RecordIterator statementsArbitrated(StatementOrder order, long subj, long pred, long obj, long context,
+				AdjacencyAccessObserver observer, CursorCancellation cancellation, boolean ordinaryStatements)
+				throws IOException {
 			long readStamp = acquireNativeSourceReadLock();
 			boolean releaseReadLock = true;
 			RecordIterator opened = null;
+			LmdbRecordIterator retained = null;
 			try {
 				assertNativeSourceOpen();
 				NativeSourceObservationForTest observation = nativeSourceObservationForTest;
@@ -16011,16 +16321,30 @@ class LmdbSailStore implements SailStore {
 					// pure in-memory iterator holding its own read-view lease: release the read stamp now
 					return opened;
 				}
-				opened = order == null
-						? tripleStore.getTriples(txn, subj, pred, obj, context, explicit, cancellation)
-						: tripleStore.getTriples(txn, order, subj, pred, obj, context, explicit, cancellation);
-				RecordIterator locked = new NativeSourceReadLockedRecordIterator(opened, readStamp, cancellation);
+				boolean retainOnExhaustion = ordinaryStatements && order == null && cancellation == null
+						&& directAdjacency == null && snapshotRevision >= 0L && txn.isReadOnly()
+						&& tripleStore.getClass() == TripleStore.class && pred > 0L && (subj > 0L ^ obj > 0L);
+				if (retainOnExhaustion) {
+					opened = retained = openStatementCursor(subj, pred, obj, context);
+				} else {
+					opened = order == null
+							? tripleStore.getTriples(txn, subj, pred, obj, context, explicit, cancellation)
+							: tripleStore.getTriples(txn, order, subj, pred, obj, context, explicit, cancellation);
+				}
+				RecordIterator locked = retainOnExhaustion
+						? new RetainedStatementRecordIterator(retained, readStamp)
+						: new NativeSourceReadLockedRecordIterator(opened, readStamp, cancellation);
 				releaseReadLock = false;
 				// The reporting helper takes ownership and closes the wrapper if reporting fails.
 				opened = null;
+				retained = null;
 				return observeLmdbStatements(locked, observer, order, subj, pred, obj, context, false);
 			} catch (IOException | RuntimeException | Error failure) {
-				KernelRuntime.closeCursor(opened, failure);
+				if (retained != null) {
+					disposeStatementCursor(retained, failure);
+				} else {
+					KernelRuntime.closeCursor(opened, failure);
+				}
 				throw failure;
 			} finally {
 				if (releaseReadLock) {
@@ -17465,10 +17789,12 @@ class LmdbSailStore implements SailStore {
 			}
 		}
 
-		private final class NativeSourceReadLockedRecordIterator
+		private class NativeSourceReadLockedRecordIterator
 				implements RecordIterator, LmdbRecordIterator.ReadCheckpoint {
 			/** Rows pulled per delegate fill(): one txn-lock cycle and one open-check per batch. */
 			private static final int BATCH_ROWS = 64;
+			/** Most index probes need only a few rows; reserve a scan-sized buffer only after this one fills. */
+			private static final int FIRST_BATCH_ROWS = 4;
 			/**
 			 * Single-row pulls before switching to batched fills, so the ubiquitous 0-2 row index-nested-loop probes
 			 * stay allocation-free and pay exactly the same cost as before; genuine scans amortize the per-row lock,
@@ -17562,6 +17888,10 @@ class LmdbSailStore implements SailStore {
 			}
 
 			private void refillBatch(int demand) {
+				if (demand * 4 > batch.length) {
+					// All prefetched rows have been consumed before a refill.
+					batch = nativeDelegate != null ? nativeDelegate.stagingBatch(BATCH_ROWS) : new long[BATCH_ROWS * 4];
+				}
 				batchCount = delegate.fill(batch, demand);
 				batchPos = 0;
 				if (bufferedCancellation != null) {
@@ -17587,7 +17917,7 @@ class LmdbSailStore implements SailStore {
 				} else {
 					fullCheck();
 				}
-				close();
+				closeExhausted();
 			}
 
 			/** Runs the full check when the work budget is spent, before more rows are pulled from the delegate. */
@@ -17608,7 +17938,11 @@ class LmdbSailStore implements SailStore {
 					if (batch != null) {
 						return nextFromBatch();
 					}
-					if (seekForwardMode || singlePulls < SINGLE_PULLS_BEFORE_BATCHING) {
+					// A cursor that is being reused, as for one index probe after another, already owns its staging
+					// buffers: its rows are batched from the first one, so that one transaction-lock cycle reads the
+					// probe and nothing is allocated. The first use of a cursor keeps the single pulls.
+					if (seekForwardMode || singlePulls < SINGLE_PULLS_BEFORE_BATCHING
+							&& (nativeDelegate == null || !nativeDelegate.hasStagingBuffers())) {
 						checkpointIfBudgetSpent();
 						checkBudget--;
 						singlePulls++;
@@ -17618,13 +17952,23 @@ class LmdbSailStore implements SailStore {
 						}
 						return record;
 					}
-					batch = new long[BATCH_ROWS * 4];
-					scratch = new long[4];
+					if (nativeDelegate != null) {
+						batch = nativeDelegate.stagingBatch(FIRST_BATCH_ROWS);
+						scratch = nativeDelegate.stagingRow();
+					} else {
+						batch = new long[FIRST_BATCH_ROWS * 4];
+						scratch = new long[4];
+					}
 					return nextFromBatch();
 				} catch (RuntimeException | Error failure) {
 					KernelRuntime.closeCursor(this, failure);
 					throw failure;
 				}
+			}
+
+			@Override
+			public int bufferedRows() {
+				return closed ? 0 : batchCount - batchPos;
 			}
 
 			private long[] nextFromBatch() {
@@ -17635,9 +17979,10 @@ class LmdbSailStore implements SailStore {
 					}
 					// a refill pulls up to BATCH_ROWS rows, so it always runs the full check first
 					fullCheck();
-					refillBatch(BATCH_ROWS);
+					int demand = batchCount == 0 ? FIRST_BATCH_ROWS : BATCH_ROWS;
+					refillBatch(demand);
 					checkBudget = CHECK_STRIDE - batchCount;
-					if (batchCount < BATCH_ROWS) {
+					if (batchCount < demand) {
 						exhausted = true;
 					}
 					if (batchCount == 0) {
@@ -17808,6 +18153,10 @@ class LmdbSailStore implements SailStore {
 				return delegate.getSourceRowsFilteredActual();
 			}
 
+			void closeExhausted() {
+				close();
+			}
+
 			@Override
 			public void close() {
 				if (!closed) {
@@ -17818,6 +18167,73 @@ class LmdbSailStore implements SailStore {
 						closed = true;
 						nativeSourceLock.unlockRead(readStamp);
 					}
+				}
+			}
+		}
+
+		/** Only eligible ordinary scans need to retain or snapshot reporting for a resettable delegate. */
+		private final class RetainedStatementRecordIterator extends NativeSourceReadLockedRecordIterator {
+			private String closedIndexName;
+			private long closedRowsScanned;
+			private long closedRowsMatched;
+			private long closedRowsFiltered;
+
+			private RetainedStatementRecordIterator(LmdbRecordIterator delegate, long readStamp) {
+				super(delegate, readStamp, null);
+			}
+
+			@Override
+			public synchronized String getIndexName() {
+				return super.closed ? closedIndexName : super.getIndexName();
+			}
+
+			@Override
+			public synchronized long getSourceRowsScannedActual() {
+				return super.closed ? closedRowsScanned : super.getSourceRowsScannedActual();
+			}
+
+			@Override
+			public synchronized long getSourceRowsMatchedActual() {
+				return super.closed ? closedRowsMatched : super.getSourceRowsMatchedActual();
+			}
+
+			@Override
+			public synchronized long getSourceRowsFilteredActual() {
+				return super.closed ? closedRowsFiltered : super.getSourceRowsFilteredActual();
+			}
+
+			@Override
+			void closeExhausted() {
+				closeRetained(true);
+			}
+
+			@Override
+			public void close() {
+				closeRetained(false);
+			}
+
+			private synchronized void closeRetained(boolean exhausted) {
+				if (super.closed) {
+					return;
+				}
+				super.request.close();
+				try {
+					try {
+						super.delegate.close();
+						closedIndexName = super.delegate.getIndexName();
+						closedRowsScanned = super.delegate.getSourceRowsScannedActual();
+						closedRowsMatched = super.delegate.getSourceRowsMatchedActual();
+						closedRowsFiltered = super.delegate.getSourceRowsFilteredActual();
+					} catch (RuntimeException | Error failure) {
+						disposeStatementCursor(super.nativeDelegate, failure);
+						throw failure;
+					}
+					// Publish this logical scan's final reporting before another lookup can reset the delegate.
+					super.closed = true;
+					releaseStatementCursor(super.nativeDelegate, exhausted);
+				} finally {
+					super.closed = true;
+					nativeSourceLock.unlockRead(super.readStamp);
 				}
 			}
 		}

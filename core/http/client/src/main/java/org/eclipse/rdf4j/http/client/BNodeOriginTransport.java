@@ -89,11 +89,10 @@ public final class BNodeOriginTransport {
 	}
 
 	public static Value decode(Value value) {
-		return map(value, BNodeOriginTransport::decodeNode);
+		return map(value, node -> decodeLabel(node.getID()));
 	}
 
-	private static BNode decodeNode(BNode node) {
-		String wire = node.getID();
+	static RepositoryBNode decodeLabel(String wire) {
 		boolean stored = wire.startsWith(STORED);
 		String payload;
 		if (stored) {

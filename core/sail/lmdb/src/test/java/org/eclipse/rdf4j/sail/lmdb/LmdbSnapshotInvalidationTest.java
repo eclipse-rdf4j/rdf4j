@@ -18,6 +18,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import java.io.File;
 import java.time.Duration;
 import java.util.Arrays;
+import java.util.NoSuchElementException;
 import java.util.Set;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutionException;
@@ -277,6 +278,114 @@ public class LmdbSnapshotInvalidationTest {
 			Thread.yield();
 		}
 		return false;
+	}
+
+	/**
+	 * A scan validates its snapshot once and then hands out rows that one native read fetched together. A resize after
+	 * that validation must still stop the rows that are already buffered.
+	 */
+	@ParameterizedTest
+	@ValueSource(booleans = { false, true })
+	public void rowsBufferedBeforeAResizeAreRefused(boolean experimental) throws Exception {
+		LmdbStoreConfig config = new LmdbStoreConfig("spoc,posc");
+		config.setExperimentalQueryOptimizations(experimental);
+		LmdbStore store = new LmdbStore(new File(dataDir, "buffered"), config);
+		store.init();
+		try {
+			seedBufferedRows(store);
+			LmdbSailStore backing = store.getBackingStore();
+			try (SailDataset dataset = backing.getExplicitSailSource().dataset(IsolationLevels.SNAPSHOT);
+					CloseableIteration<? extends Statement> rows = dataset.getStatements(null, null, null)) {
+				for (int i = 0; i < 10; i++) {
+					assertThat(rows.hasNext()).isTrue();
+					assertThat(rows.next()).isNotNull();
+				}
+				backing.getTripleStore().getTxnManager().deactivate();
+				backing.getTripleStore().getTxnManager().activate();
+				assertThatThrownBy(() -> {
+					rows.hasNext();
+					rows.next();
+				}).as("a row buffered before the resize")
+						.isInstanceOf(SailException.class)
+						.hasMessageContaining("SNAPSHOT");
+			}
+		} finally {
+			store.shutDown();
+		}
+	}
+
+	/** An ordinary commit leaves a pinned snapshot valid, so a held scan keeps delivering all of its rows. */
+	@ParameterizedTest
+	@ValueSource(booleans = { false, true })
+	public void heldScanKeepsItsRowsAcrossOrdinaryCommits(boolean autoGrow) throws Exception {
+		LmdbStoreConfig config = new LmdbStoreConfig("spoc,posc");
+		config.setAutoGrow(autoGrow);
+		LmdbStore store = new LmdbStore(new File(dataDir, "held-" + autoGrow), config);
+		store.init();
+		try {
+			seedBufferedRows(store);
+			ValueFactory vf = SimpleValueFactory.getInstance();
+			LmdbSailStore backing = store.getBackingStore();
+			try (SailDataset dataset = backing.getExplicitSailSource().dataset(IsolationLevels.SNAPSHOT);
+					CloseableIteration<? extends Statement> rows = dataset.getStatements(null, null, null)) {
+				int delivered = 0;
+				while (rows.hasNext()) {
+					assertThat(rows.next()).isNotNull();
+					if (++delivered % 50 == 0) {
+						try (NotifyingSailConnection connection = store.getConnection()) {
+							connection.begin();
+							connection.addStatement(vf.createIRI("urn:buffered:later" + delivered),
+									vf.createIRI("urn:buffered:predicate"), vf.createLiteral(delivered));
+							connection.commit();
+						}
+					}
+				}
+				assertThat(delivered).isEqualTo(BUFFERED_ROWS);
+			}
+		} finally {
+			store.shutDown();
+		}
+	}
+
+	/** Without auto-grow nothing resizes a map; a closed dataset still hands out none of the rows it had buffered. */
+	@Test
+	public void bufferedRowsEndWithTheirDatasetWithoutAutoGrow() throws Exception {
+		LmdbStoreConfig config = new LmdbStoreConfig("spoc,posc");
+		config.setAutoGrow(false);
+		LmdbStore store = new LmdbStore(new File(dataDir, "closed"), config);
+		store.init();
+		try {
+			seedBufferedRows(store);
+			LmdbSailStore backing = store.getBackingStore();
+			SailDataset dataset = backing.getExplicitSailSource().dataset(IsolationLevels.SNAPSHOT);
+			try (CloseableIteration<? extends Statement> rows = dataset.getStatements(null, null, null)) {
+				for (int i = 0; i < 10; i++) {
+					assertThat(rows.hasNext()).isTrue();
+					assertThat(rows.next()).isNotNull();
+				}
+				dataset.close();
+				assertThat(rows.hasNext()).isFalse();
+				assertThatThrownBy(rows::next).isInstanceOf(NoSuchElementException.class);
+			} finally {
+				dataset.close();
+			}
+		} finally {
+			store.shutDown();
+		}
+	}
+
+	private static final int BUFFERED_ROWS = 200;
+
+	private static void seedBufferedRows(LmdbStore store) {
+		ValueFactory vf = SimpleValueFactory.getInstance();
+		IRI predicate = vf.createIRI("urn:buffered:predicate");
+		try (NotifyingSailConnection connection = store.getConnection()) {
+			connection.begin();
+			for (int i = 0; i < BUFFERED_ROWS; i++) {
+				connection.addStatement(vf.createIRI("urn:buffered:subject" + i), predicate, vf.createLiteral(i));
+			}
+			connection.commit();
+		}
 	}
 
 	@ParameterizedTest
