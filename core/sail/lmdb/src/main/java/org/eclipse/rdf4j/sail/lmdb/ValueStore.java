@@ -898,9 +898,9 @@ public class ValueStore extends AbstractValueFactory implements BNodeIdResolver,
 	 */
 	private final StampedLock revisionLock = new StampedLock();
 	private static final int VALUE_CACHE_WAYS = 4;
-	// Two-way sets; enough for the few thousand predicates of a large vocabulary.
-	private static final int PREDICATE_CACHE_SLOTS = 8192;
-	private static final int PREDICATE_CACHE_SET_MASK = PREDICATE_CACHE_SLOTS / 2 - 1;
+	// Two-way sets; enough for the few thousand predicates of a large vocabulary. A smaller value cache gets a
+	// predicate table of at most a quarter of its own slots, so the configured size still bounds what is retained.
+	private static final int MAX_PREDICATE_CACHE_SLOTS = 8192;
 	// A cached value with its strings and entries takes roughly 256 bytes.
 	private static final long DEFAULT_VALUE_CACHE_HEAP_BYTES_PER_ENTRY = 16 * 256;
 	private static final int MIN_DEFAULT_VALUE_CACHE_SIZE = 4 * 1024;
@@ -6804,6 +6804,7 @@ public class ValueStore extends AbstractValueFactory implements BNodeIdResolver,
 					CANONICAL_CACHE_ELEMENT.compareAndSet(arrays.canonical, idx + way, entry, null);
 				}
 			}
+			evictPredicate(arrays.predicates, id, value);
 			return;
 		}
 		publishCanonicalValue(caches, idx, id, bank, value);
@@ -6811,6 +6812,21 @@ public class ValueStore extends AbstractValueFactory implements BNodeIdResolver,
 			return;
 		}
 		publishCompletedValue(arrays, idx, id, bank, value, sourceRevision);
+	}
+
+	/** The predicate table holds the same shared models as the canonical table and obeys the same size limit. */
+	private static void evictPredicate(CanonicalValueEntry[] predicates, long id, LmdbValue value) {
+		if (predicates == null) {
+			return;
+		}
+		int set = (spreadValueId(id) & (predicates.length / 2 - 1)) << 1;
+		for (int way = 0; way < 2; way++) {
+			CanonicalValueEntry entry = (CanonicalValueEntry) CANONICAL_CACHE_ELEMENT.getAcquire(predicates,
+					set + way);
+			if (entry != null && entry.id == id && entry.value == value) {
+				CANONICAL_CACHE_ELEMENT.compareAndSet(predicates, set + way, entry, null);
+			}
+		}
 	}
 
 	private void publishCompletedValue(ValueCacheArrays arrays, int idx, long id, int bank, LmdbValue value,
@@ -6887,7 +6903,8 @@ public class ValueStore extends AbstractValueFactory implements BNodeIdResolver,
 		private ValueCacheArrays(int size) {
 			completed = new ValueCacheEntry[size];
 			canonical = new CanonicalValueEntry[size];
-			predicates = size == 0 ? null : new CanonicalValueEntry[PREDICATE_CACHE_SLOTS];
+			int slots = Math.min(MAX_PREDICATE_CACHE_SLOTS, Integer.highestOneBit(Math.max(1, size / 4)));
+			predicates = slots < 2 ? null : new CanonicalValueEntry[slots];
 		}
 	}
 
@@ -6899,6 +6916,42 @@ public class ValueStore extends AbstractValueFactory implements BNodeIdResolver,
 	int valueCacheCapacity(int positionMask) {
 		ValuePosition.validateMask(positionMask);
 		return valueCacheSlots;
+	}
+
+	/** The number of slots of the predicate table, or 0 when there is none. For tests. */
+	int predicateCacheCapacity() {
+		CanonicalValueEntry[] predicates = valueCaches.arraysForPublication().predicates;
+		return predicates == null ? 0 : predicates.length;
+	}
+
+	/** The shared model the predicate table holds for an ID, in whichever position, or null. For tests. */
+	LmdbValue cachedPredicate(long id) {
+		ValueCacheArrays arrays = valueCaches.arrays;
+		CanonicalValueEntry[] predicates = arrays == null ? null : arrays.predicates;
+		if (predicates != null) {
+			for (int slot = 0; slot < predicates.length; slot++) {
+				CanonicalValueEntry entry = (CanonicalValueEntry) CANONICAL_CACHE_ELEMENT.getAcquire(predicates, slot);
+				if (entry != null && entry.id == id && entry.isCurrent()) {
+					return entry.value;
+				}
+			}
+		}
+		return null;
+	}
+
+	/** The longest key, lexical form plus datatype or language tag, that the statement ID memo holds. For tests. */
+	int statementIdMemoLongestKey() {
+		StatementIdMemoEntry[] table = statementIdMemo;
+		int longest = 0;
+		if (table != null) {
+			for (StatementIdMemoEntry entry : table) {
+				if (entry != null) {
+					longest = Math.max(longest,
+							entry.lexical.length() + (entry.qualifier == null ? 0 : entry.qualifier.length()));
+				}
+			}
+		}
+		return longest;
 	}
 
 	private int valueCacheBase(long id, int bank) {
@@ -7081,9 +7134,12 @@ public class ValueStore extends AbstractValueFactory implements BNodeIdResolver,
 			return getLazyValue(id, revision, exposure, null, LmdbValue.UNKNOWN_ID);
 		}
 		CanonicalValueEntry[] predicates = caches.arraysForPublication().predicates;
+		if (predicates == null) {
+			return getLazyValue(id, revision, exposure, null, LmdbValue.UNKNOWN_ID);
+		}
 		int bank = ValuePosition.cacheBank(revision.getPositionMask());
 		int hash = spreadValueId(id);
-		int set = (hash & PREDICATE_CACHE_SET_MASK) << 1;
+		int set = (hash & (predicates.length / 2 - 1)) << 1;
 		int free = -1;
 		for (int way = 0; way < 2; way++) {
 			CanonicalValueEntry entry = (CanonicalValueEntry) CANONICAL_CACHE_ELEMENT.getAcquire(predicates,
@@ -7098,7 +7154,9 @@ public class ValueStore extends AbstractValueFactory implements BNodeIdResolver,
 		// The ordinary lookup finds or publishes the shared model of the ID; the predicate cache then keeps it.
 		LmdbValue value = getLazyValue(id, revision, false, exposure, true);
 		long semanticVersion = value.getSemanticVersion();
-		if (semanticVersion != LmdbValue.UNKNOWN_ID) {
+		// A cold shell does not know its size yet; cacheValue removes it again if it turns out too large.
+		if (semanticVersion != LmdbValue.UNKNOWN_ID
+				&& value.retainedLexicalLength() <= MAX_SHARED_VALUE_CACHE_LEXICAL_CHARS) {
 			CANONICAL_CACHE_ELEMENT.setRelease(predicates, free >= 0 ? free : set + ((hash >>> 16) & 1),
 					new CanonicalValueEntry(id, bank, value, semanticVersion));
 		}
@@ -10370,7 +10428,9 @@ public class ValueStore extends AbstractValueFactory implements BNodeIdResolver,
 		} else {
 			return null;
 		}
-		if (lexical.length() > STATEMENT_ID_MEMO_MAX_LEXICAL_CHARS) {
+		// The memo outlives the snapshot and keeps both strings, so the datatype or language tag is bounded as well.
+		if (lexical.length() > STATEMENT_ID_MEMO_MAX_LEXICAL_CHARS
+				|| qualifier != null && qualifier.length() > STATEMENT_ID_MEMO_MAX_LEXICAL_CHARS) {
 			return null;
 		}
 		int hash = lexical.hashCode() * 31 + kind;

@@ -12,6 +12,7 @@
 package org.eclipse.rdf4j.sail.lmdb;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.io.File;
 import java.util.ArrayList;
@@ -26,6 +27,7 @@ import org.eclipse.rdf4j.query.TupleQueryResult;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
 import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
 import org.eclipse.rdf4j.sail.lmdb.config.LmdbStoreConfig;
+import org.eclipse.rdf4j.sail.lmdb.model.LmdbValue;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
@@ -111,6 +113,39 @@ class LmdbStatementIdMemoTest {
 					select(connection, "SELECT ?v WHERE { <urn:memo:subject> <urn:memo:predicate> ?v }"));
 		} finally {
 			repository.shutDown();
+		}
+	}
+
+	@Test
+	void aShortLabelDoesNotAdmitAnOversizedDatatype(@TempDir File dataDir) {
+		SailRepository repository = new SailRepository(new LmdbStore(dataDir, new LmdbStoreConfig("spoc,posc")));
+		try (SailRepositoryConnection connection = repository.getConnection()) {
+			IRI datatype = VALUES.createIRI("urn:memo:datatype:" + "d".repeat(8 * 1024));
+			Literal typed = VALUES.createLiteral("a short label with a very long datatype", datatype);
+			connection.add(SUBJECT, OTHER_PREDICATE, typed);
+			connection.add(SUBJECT, PREDICATE, OBJECT);
+
+			String query = "SELECT ?v WHERE { ?v <urn:memo:other-predicate> \"" + typed.getLabel() + "\"^^<"
+					+ datatype.stringValue() + "> }";
+			for (int repeat = 0; repeat < 3; repeat++) {
+				assertEquals(List.of(SUBJECT), select(connection, query));
+			}
+			// An ordinary constant, so the memo is known to be in use for this store.
+			assertEquals(List.of(OBJECT),
+					select(connection, "SELECT ?v WHERE { <urn:memo:subject> <urn:memo:predicate> ?v }"));
+
+			ValueStore valueStore = valueStore(connection);
+			assertTrue(valueStore.statementIdMemoLongestKey() > 0, "the memo must hold the ordinary constants");
+			assertTrue(valueStore.statementIdMemoLongestKey() < datatype.stringValue().length(),
+					"the memo outlives the snapshot and must not retain the oversized datatype");
+		} finally {
+			repository.shutDown();
+		}
+	}
+
+	private static ValueStore valueStore(SailRepositoryConnection connection) {
+		try (var statements = connection.getStatements(SUBJECT, PREDICATE, null)) {
+			return ((LmdbValue) statements.next().getSubject()).getValueStoreRevision().getValueStore();
 		}
 	}
 
