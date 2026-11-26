@@ -78,7 +78,8 @@ class WorkbenchPolicyTest {
 			"result-download-format-tuple",
 			"result-download-format-graph",
 			"result-page-previous",
-			"result-page-next");
+			"result-page-next",
+			"query-tabs");
 
 	@Test
 	void omissionAndHiddenGroupDenyCanonicalPagesEvenWhenVisibleItemLinksToOne() {
@@ -170,7 +171,7 @@ class WorkbenchPolicyTest {
 	void builtInQueryFeatureIdsAreStableImmutableAndEagerlyValidated() {
 		Set<String> expected = BUILT_IN_QUERY_FEATURE_IDS;
 		WorkbenchPolicy defaults = WorkbenchPolicy.fromProperties(new Properties(), Set.of());
-		assertThat(expected).hasSize(47);
+		assertThat(expected).hasSize(48);
 		assertThat(defaults.getQueryFeatureIds()).containsExactlyInAnyOrderElementsOf(expected);
 
 		Properties properties = new Properties();

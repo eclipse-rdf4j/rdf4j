@@ -1497,6 +1497,8 @@ class LmdbStoreFlushReproductionTest {
 			throws Exception {
 		LmdbStoreConfig config = new LmdbStoreConfig("spoc,posc").setForceSync(true)
 				.setValueDBSize(1024L * 1024L)
+				// This same-thread raw reader cannot drain while the sink writes; exercise forced retirement directly.
+				.setMapGrowthReadDrainTimeoutMillis(0L)
 				.setAutoGrow(true);
 		LmdbStore store = new LmdbStore(dataDir.toFile(), config);
 		store.init();

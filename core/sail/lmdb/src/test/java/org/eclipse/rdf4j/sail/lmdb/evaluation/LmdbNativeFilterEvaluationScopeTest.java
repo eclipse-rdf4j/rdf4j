@@ -13,6 +13,7 @@ package org.eclipse.rdf4j.sail.lmdb.evaluation;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.eclipse.rdf4j.sail.lmdb.evaluation.NativeCancellationTestAccess.mockScanSource;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.Mockito.mock;
@@ -617,7 +618,7 @@ class LmdbNativeFilterEvaluationScopeTest {
 	}
 
 	private static SyntheticValueSource compileSource(boolean match) throws Exception {
-		NativeLmdbQuerySource source = mock(NativeLmdbQuerySource.class);
+		NativeLmdbQuerySource source = mockScanSource(NativeLmdbQuerySource.class);
 		when(source.idOf(any(Value.class))).thenReturn(NativeLmdbQuerySource.UNKNOWN_ID);
 		when(source.idOf(any(Value.class), anyInt())).thenReturn(NativeLmdbQuerySource.UNKNOWN_ID);
 		when(source.nativeValueCodec()).thenReturn(new LmdbNativeValueCodec(mock(ValueStore.class)));

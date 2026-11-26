@@ -137,6 +137,7 @@ final class PatternCursor implements AutoCloseable {
 	LmdbKeyRange range;
 	NativeLmdbQuerySource.AdjacencyAccessObserver accessObserver;
 	NativeCancellationToken cancellation;
+	private NativeLmdbQuerySource.CursorCancellation cursorCancellation;
 	boolean encounterOrderRequired;
 	boolean directLmdbSweep;
 	int contextIndex;
@@ -180,6 +181,13 @@ final class PatternCursor implements AutoCloseable {
 	PatternCursor withResidualRange(LmdbKeyRange residualRange) {
 		if (this != EMPTY) {
 			this.range = residualRange;
+		}
+		return this;
+	}
+
+	PatternCursor withCursorCancellation(NativeLmdbQuerySource.CursorCancellation cancellation) {
+		if (this != EMPTY) {
+			this.cursorCancellation = cancellation;
 		}
 		return this;
 	}
@@ -264,6 +272,7 @@ final class PatternCursor implements AutoCloseable {
 		this.contextIndex = 0;
 		this.closed = false;
 		this.residualPollTick = 0;
+		this.cursorCancellation = null;
 	}
 
 	static PatternCursor empty() {
@@ -301,16 +310,16 @@ final class PatternCursor implements AutoCloseable {
 
 	RecordIterator openIterator(long context) throws IOException {
 		if (directLmdbSweep) {
-			return source.lmdbStatements(subj, pred, obj, context, accessObserver);
+			return source.lmdbStatements(subj, pred, obj, context, accessObserver, cursorCancellation);
 		}
 		if (range != null) {
-			return source.statements(subj, pred, obj, context, range, accessObserver);
+			return source.statements(subj, pred, obj, context, range, accessObserver, cursorCancellation);
 		}
 		if (encounterOrderRequired) {
-			return source.statementsInEncounterOrder(subj, pred, obj, context, accessObserver);
+			return source.statementsInEncounterOrder(subj, pred, obj, context, accessObserver, cursorCancellation);
 		}
 		return probe != null ? probe.open(subj, pred, obj, context, accessObserver)
-				: source.statements(subj, pred, obj, context, accessObserver);
+				: source.statements(subj, pred, obj, context, accessObserver, cursorCancellation);
 	}
 
 	static PatternCursor exists(boolean exists, long subj, long pred, long obj, long context) {
@@ -420,10 +429,8 @@ final class PatternCursor implements AutoCloseable {
 	}
 
 	private void pollResidualFilter() {
-		int tick = ++residualPollTick;
-		LmdbNativeProbeDeadline.poll(tick);
-		if (cancellation != null) {
-			cancellation.poll(tick);
+		if ((++residualPollTick & (NativeCancellationToken.POLL_INTERVAL - 1)) == 0) {
+			pollResidualCancellationBoundary();
 		}
 	}
 
@@ -432,18 +439,23 @@ final class PatternCursor implements AutoCloseable {
 		int untilPoll = 1_024 - (previousTick & 1_023);
 		residualPollTick = previousTick + rows;
 		if (rows >= untilPoll) {
-			int tick = previousTick + untilPoll;
-			LmdbNativeProbeDeadline.poll(tick);
-			if (cancellation != null) {
-				cancellation.poll(tick);
-			}
+			pollResidualCancellationBoundary();
 		}
 	}
 
 	private void pollResidualCancellationNow() {
-		LmdbNativeProbeDeadline.poll(0);
+		if (cursorCancellation != null) {
+			cursorCancellation = cursorCancellation.forWorker();
+			cursorCancellation.checkpoint();
+		}
+	}
+
+	private void pollResidualCancellationBoundary() {
 		if (cancellation != null) {
 			cancellation.check();
+		}
+		if (cursorCancellation != null) {
+			cursorCancellation.checkpointProbeDeadline();
 		}
 	}
 

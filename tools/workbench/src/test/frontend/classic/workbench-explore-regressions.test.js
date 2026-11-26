@@ -948,7 +948,7 @@ test('Explore requests localized scalar sections in browser language order and r
         assert.deepEqual(request.searchParams.getAll('language'), ['de-DE', 'en'], `${key} preference order`);
     }
     const markup = flatten(sectionHost.template);
-    assert.match(markup, /<h2>Katze<\/h2>/, 'the scalar label is supplied by its section response');
+    assert.match(markup, /<h2 title=http:\/\/example.org\/cat>Katze<\/h2>/, 'the scalar label is supplied by its section response');
     assert.match(markup, /class="explore-resource-card__comment workbench-prose">Eine Katze</,
         'the scalar comment is displayed with the resource card');
     assert.equal(resourceInput.value, '<http://example.org/cat>');

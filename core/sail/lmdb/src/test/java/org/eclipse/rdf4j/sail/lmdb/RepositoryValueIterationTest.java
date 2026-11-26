@@ -39,6 +39,7 @@ import org.eclipse.rdf4j.common.iteration.CloseableIteratorIteration;
 import org.eclipse.rdf4j.common.iteration.IterationWrapper;
 import org.eclipse.rdf4j.common.iteration.TimeLimitIteration;
 import org.eclipse.rdf4j.model.Value;
+import org.eclipse.rdf4j.model.impl.SimpleTripleTerm;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.query.QueryInterruptedException;
 import org.eclipse.rdf4j.sail.SailException;
@@ -224,6 +225,35 @@ class RepositoryValueIterationTest {
 	}
 
 	@Test
+	void closeAfterPartialReadDrainsWhenTheReadHasReturned(@TempDir File directory) throws Exception {
+		try (ObservedValues store = new ObservedValues(directory); var workers = Executors.newSingleThreadExecutor()) {
+			Value value = SimpleValueFactory.getInstance().createIRI("urn:ready");
+			AtomicInteger closes = new AtomicInteger();
+			AtomicInteger drains = new AtomicInteger();
+			var source = new IterationWrapper<Value>(
+					new CloseableIteratorIteration<>(List.of(value, value).iterator())) {
+				@Override
+				protected void handleClose() {
+					closes.incrementAndGet();
+					super.handleClose();
+				}
+			};
+			try (var result = new RepositoryValueIteration<>(source, SailResultValueExtractor.VALUES, store, null,
+					ignored -> drains.incrementAndGet())) {
+				assertTrue(result.hasNext());
+				assertSame(value, result.next());
+				assertEquals(0, closes.get());
+				assertEquals(0, drains.get());
+				workers.submit(result::close).get(5, TimeUnit.SECONDS);
+				assertFalse(result.hasNext());
+				result.close();
+				assertEquals(1, closes.get());
+				assertEquals(1, drains.get());
+			}
+		}
+	}
+
+	@Test
 	void sortingUsesOneCapturedIdentityRatherThanMutableIdReads(@TempDir File directory) throws Exception {
 		try (ObservedValues store = new ObservedValues(directory);
 				ValueResolutionScope creator = store.openValueResolutionScope()) {
@@ -286,6 +316,65 @@ class RepositoryValueIterationTest {
 				assertEquals(1, store.admissions.get(), "Standalone batches must amortize one native reader");
 			}
 			assertTrue(store.readers.stream().allMatch(reader -> reader.isIdle() || reader.isClosed()));
+		}
+	}
+
+	@Test
+	void capturesSortKeysAfterReadingVisibleChildren(@TempDir File directory) throws Exception {
+		try (ObservedValues store = new ObservedValues(directory);
+				ValueResolutionScope creator = store.openValueResolutionScope()) {
+			List<Value> values = seed(store, creator, 3);
+			var first = ((LmdbValue) values.get(0)).getInternalIdentity();
+			var middle = ((LmdbValue) values.get(1)).getInternalIdentity();
+			var last = ((LmdbValue) values.get(2)).getInternalIdentity();
+			LmdbBNode rebound = new LmdbBNode(first.revision(), first.id());
+			var factory = SimpleValueFactory.getInstance();
+			var predicate = factory.createIRI("urn:repository-wave:predicate");
+			var later = new SimpleTripleTerm(predicate, predicate, factory.createLiteral("ready")) {
+				@Override
+				public Value getObject() {
+					rebound.setInternalID(last.id(), last.revision());
+					return super.getObject();
+				}
+			};
+			List<Value> row = List.of(rebound, values.get(1), later);
+			try (var result = exposeRoots(store, new CloseableIteratorIteration<>(List.of(row).iterator()), null)) {
+				assertSame(row, result.next());
+				assertEquals(List.of(middle.id(), last.id()), store.decoded);
+			}
+		}
+	}
+
+	@Test
+	void reservesNestedForeignOwnerBeforeReadingLaterRoot(@TempDir File directory) throws Exception {
+		try (ObservedValues store = new ObservedValues(new File(directory, "local"));
+				ObservedValues foreign = new ObservedValues(new File(directory, "foreign"));
+				ValueResolutionScope creator = foreign.openValueResolutionScope()) {
+			LmdbValue foreignValue = (LmdbValue) seed(foreign, creator, 1).getFirst();
+			var identity = foreignValue.getInternalIdentity();
+			var epoch = assertInstanceOf(ValueStoreRevision.Lazy.class, identity.revision());
+			rotate(foreign, creator);
+			var factory = SimpleValueFactory.getInstance();
+			var subject = factory.createIRI("urn:repository-wave:subject");
+			var predicate = factory.createIRI("urn:repository-wave:predicate");
+			var nested = factory.createTripleTerm(subject, predicate,
+					factory.createTripleTerm(subject, predicate, foreignValue));
+			var later = new SimpleTripleTerm(subject, predicate, factory.createLiteral("ready")) {
+				@Override
+				public Value getObject() {
+					creator.close();
+					return super.getObject();
+				}
+			};
+			List<Value> row = List.of(nested, later, nested);
+			try (var result = exposeRoots(store, new CloseableIteratorIteration<>(List.of(row).iterator()), null)) {
+				assertSame(row, result.next());
+				assertFalse(creator.isOpen());
+				assertTrue(isEpochProtected(foreign, epoch));
+				assertTrue(foreignValue.isInitialized());
+				assertEquals(List.of(identity.id()), foreign.decoded);
+			}
+			assertFalse(isEpochProtected(foreign, epoch));
 		}
 	}
 
@@ -366,6 +455,7 @@ class RepositoryValueIterationTest {
 			List<Value> values = seed(store, creator, 3);
 			Collections.reverse(values);
 			SailException injected = new SailException("injected later row decode failure");
+			IllegalStateException drainFailure = new IllegalStateException("injected drain failure");
 			store.failureId = ((LmdbValue) values.getLast()).getInternalID();
 			store.failure = injected;
 			AtomicInteger closes = new AtomicInteger();
@@ -376,10 +466,15 @@ class RepositoryValueIterationTest {
 					super.handleClose();
 				}
 			};
-			try (var result = expose(store, source, null)) {
+			try (var result = new RepositoryValueIteration<>(source, SailResultValueExtractor.VALUES, store, null,
+					ignored -> {
+						throw drainFailure;
+					})) {
 				assertSame(values.get(0), result.next());
 				assertSame(values.get(1), result.next());
 				assertSame(injected, assertThrows(SailException.class, result::next));
+				assertEquals(1, injected.getSuppressed().length);
+				assertSame(drainFailure, injected.getSuppressed()[0]);
 				assertEquals(1, closes.get());
 			}
 		}

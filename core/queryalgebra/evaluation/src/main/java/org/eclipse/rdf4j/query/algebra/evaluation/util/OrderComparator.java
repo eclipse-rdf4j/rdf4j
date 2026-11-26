@@ -19,12 +19,13 @@ import java.util.Iterator;
 import java.util.List;
 import java.util.Objects;
 import java.util.Set;
-import java.util.function.Function;
 
 import org.eclipse.rdf4j.model.Value;
+import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.query.AbstractBindingSet;
 import org.eclipse.rdf4j.query.Binding;
 import org.eclipse.rdf4j.query.BindingSet;
+import org.eclipse.rdf4j.query.BlankNodeEffects;
 import org.eclipse.rdf4j.query.QueryEvaluationException;
 import org.eclipse.rdf4j.query.algebra.Order;
 import org.eclipse.rdf4j.query.algebra.ValueExpr;
@@ -33,6 +34,7 @@ import org.eclipse.rdf4j.query.algebra.evaluation.ArrayBindingSet;
 import org.eclipse.rdf4j.query.algebra.evaluation.EvaluationStrategy;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryValueEvaluationStep;
 import org.eclipse.rdf4j.query.algebra.evaluation.ValueExprEvaluationException;
+import org.eclipse.rdf4j.query.algebra.evaluation.impl.PreparedBlankNodeExecution;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.QueryEvaluationContext;
 import org.eclipse.rdf4j.query.impl.BlankNodeAllocationScope;
 import org.slf4j.Logger;
@@ -59,14 +61,33 @@ public class OrderComparator implements Comparator<BindingSet> {
 	private final boolean[] ascending;
 
 	private final boolean requiresKeyCapture;
+	private final BlankNodeEffects effects;
+	private final BlankNodeAllocationScope allocation;
+	private final boolean snapshotExpressionRows;
 
 	public OrderComparator(EvaluationStrategy strategy, Order order, ValueComparator cmp,
 			QueryEvaluationContext context) {
+		this(strategy, order, cmp, context, false);
+	}
+
+	public OrderComparator(EvaluationStrategy strategy, Order order, ValueComparator cmp,
+			QueryEvaluationContext context, boolean snapshotExpressionRows) {
 		this.cmp = cmp;
 		this.orderKeyEvaluators = new QueryValueEvaluationStep[order.getElements().size()];
 		this.ascending = new boolean[orderKeyEvaluators.length];
-		this.requiresKeyCapture = order.getElements().stream().anyMatch(element -> !(element.getExpr() instanceof Var));
 		this.bindingContentsComparator = precompileComparator(strategy, order, context);
+		BlankNodeEffects combined = BlankNodeEffects.NONE;
+		for (QueryValueEvaluationStep evaluator : orderKeyEvaluators) {
+			combined = combined.merge(evaluator.blankNodeEffects());
+		}
+		this.effects = combined;
+		if (effects.usesSolutionOccurrence()) {
+			PreparedBlankNodeExecution.requireSolutionOccurrences();
+		}
+		this.requiresKeyCapture = !effects.isEmpty()
+				|| order.getElements().stream().anyMatch(element -> !(element.getExpr() instanceof Var));
+		this.allocation = context.getBlankNodeAllocationScope();
+		this.snapshotExpressionRows = snapshotExpressionRows;
 	}
 
 	private QueryEvaluationContext context;
@@ -82,8 +103,8 @@ public class OrderComparator implements Comparator<BindingSet> {
 			ValueExpr expression = element.getExpr();
 			QueryValueEvaluationStep prepared;
 			if (expression instanceof Var variable && !variable.hasValue()) {
-				Function<BindingSet, Value> getValue = context.getValue(variable.getName());
-				prepared = getValue::apply;
+				var accessor = context.prepareValueAccessor(variable.getName(), SimpleValueFactory.getInstance());
+				prepared = accessor == null ? row -> null : accessor;
 			} else {
 				prepared = strategy.precompile(expression, context);
 			}
@@ -121,7 +142,7 @@ public class OrderComparator implements Comparator<BindingSet> {
 	/** Restores the same formal mapping's label state after an in-memory sort or a serialized spill. */
 	public BindingSet restoreRow(BindingSet row) {
 		if (row instanceof SortKeyBindingSet keyed) {
-			context.getBlankNodeAllocationScope().restoreSolution(keyed.row, keyed.labels);
+			restoreLabels(keyed.row, keyed.labels);
 			return keyed.row;
 		}
 		return row;
@@ -178,20 +199,44 @@ public class OrderComparator implements Comparator<BindingSet> {
 		return requiresKeyCapture;
 	}
 
+	public BlankNodeEffects blankNodeEffects() {
+		return effects;
+	}
+
 	public SortKey createSortKey(BindingSet bindings) {
-		BlankNodeAllocationScope scope = context.getBlankNodeAllocationScope();
-		try (var ignored = scope.visitSolutionOccurrence(bindings, solutionBoundary)) {
-			Value[] values = new Value[orderKeyEvaluators.length];
-			for (int i = 0; i < values.length; i++) {
-				values[i] = key(bindings, i);
-			}
-			return new SortKey(bindings, values, scope.snapshotCurrentSolution());
+		if (!effects.usesSolutionOccurrence()) {
+			Value[] values = evaluateKeys(bindings);
+			var labels = allocation.hasSolutionLabels() ? allocation.snapshotSolution(bindings, solutionBoundary)
+					: null;
+			return new SortKey(sortPayload(bindings), values, labels);
+		}
+		try (var ignored = allocation.visitSolutionOccurrence(bindings, solutionBoundary)) {
+			Value[] values = evaluateKeys(bindings);
+			return new SortKey(sortPayload(bindings), values, allocation.snapshotCurrentSolution());
 		}
 	}
 
+	private BindingSet sortPayload(BindingSet row) {
+		return snapshotExpressionRows ? context.createBindingSet(row) : row;
+	}
+
+	private Value[] evaluateKeys(BindingSet row) {
+		Value[] values = new Value[orderKeyEvaluators.length];
+		for (int i = 0; i < values.length; i++) {
+			values[i] = key(row, i);
+		}
+		return values;
+	}
+
 	public BindingSet restoreSortKey(SortKey key) {
-		context.getBlankNodeAllocationScope().restoreSolution(key.bindings, key.labels);
+		restoreLabels(key.bindings, key.labels);
 		return key.bindings;
+	}
+
+	private void restoreLabels(BindingSet row, BlankNodeAllocationScope.SolutionSnapshot labels) {
+		if (labels != null) {
+			allocation.restoreSolution(row, labels);
+		}
 	}
 
 	public int compareSortKeys(SortKey left, SortKey right) {

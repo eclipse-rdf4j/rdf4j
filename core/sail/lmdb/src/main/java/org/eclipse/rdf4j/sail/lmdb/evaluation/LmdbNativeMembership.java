@@ -501,7 +501,7 @@ final class AdjacencyIntersectionProbe implements java.io.Closeable {
 
 	private NativeLmdbQuerySource.NativeAdjacency view(RowState row, boolean bySubject) throws IOException {
 		if (probe == null) {
-			probe = row.source.newProbe();
+			probe = row.source.newProbe(row.cursorCancellation());
 			ACTIVE_PROBES.incrementAndGet();
 			if (trackProbes()) {
 				ACTIVE_TRACES.put(this, new Throwable("semijoin probe created"));

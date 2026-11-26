@@ -29,6 +29,7 @@ import org.eclipse.rdf4j.query.QueryExecutionPolicy;
 import org.eclipse.rdf4j.query.algebra.evaluation.ArrayBindingSet;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryEvaluationStep;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.QueryEvaluationContext;
+import org.eclipse.rdf4j.query.algebra.evaluation.util.ExternalValuePreparation;
 
 /**
  * @author Håvard M. Ottestad
@@ -90,13 +91,22 @@ public class InnerMergeJoinIterator implements CooperativeCancellation, Closeabl
 			return leftIter;
 		}
 
-		CloseableIteration<BindingSet> rightIter = preparedRight.evaluate(bindings);
-		if (rightIter == QueryEvaluationStep.EMPTY_ITERATION) {
-			leftIter.close();
-			return rightIter;
+		CloseableIteration<BindingSet> rightIter = null;
+		try {
+			rightIter = preparedRight.evaluate(bindings);
+			if (rightIter != QueryEvaluationStep.EMPTY_ITERATION) {
+				return new InnerMergeJoinIterator(leftIter, rightIter, cmp, value, context, policy);
+			}
+		} catch (RuntimeException | Error failure) {
+			ExternalValuePreparation.closeWithSuppressed(leftIter, failure);
+			if (rightIter != leftIter) {
+				ExternalValuePreparation.closeWithSuppressed(rightIter, failure);
+			}
+			throw failure;
 		}
 
-		return new InnerMergeJoinIterator(leftIter, rightIter, cmp, value, context, policy);
+		leftIter.close();
+		return rightIter;
 	}
 
 	private BindingSet join(BindingSet left, BindingSet right, boolean createNewBindingSet) {

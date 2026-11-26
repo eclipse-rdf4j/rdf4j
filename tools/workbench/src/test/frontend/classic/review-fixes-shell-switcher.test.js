@@ -47,8 +47,9 @@ function load(serverRepositories) {
     const workbench = {};
     installDetailDisclosureTemplateRuntime(workbench);
     const context = vm.createContext({ console, URL, URLSearchParams, Promise, window, workbench, setTimeout });
-    vm.runInContext(fs.readFileSync(path.join(scripts, 'workbenchViews.js'), 'utf8'), context,
-        { filename: 'workbenchViews.js' });
+    for (const filename of ['workbenchWorkspace.js', 'workbenchViews.js']) {
+        vm.runInContext(fs.readFileSync(path.join(scripts, filename), 'utf8'), context, { filename });
+    }
     const wb = context.workbench;
     const opens = [];
     wb.popover = { bind: (button, panel, options) => { if (options && options.onOpen) { opens.push(options.onOpen); } return () => {}; } };
@@ -56,7 +57,8 @@ function load(serverRepositories) {
     wb.app = { loadModel: () => {
         requests++;
         const rows = serverRepositories.map((id) => [{ kind: 'literal', value: id }, { kind: 'literal', value: id + ' store' }]);
-        return Promise.resolve({ vars: ['id', 'description'], rowCount: rows.length,
+        return Promise.resolve({ viewId: 'repositories', metadata: { 'server-identity': 'sha256:abc:session', 'server-user': '' },
+            vars: ['id', 'description'], rowCount: rows.length,
             rowStore: { read: () => Promise.resolve(rows), dispose() {} } });
     } };
     return { wb, opens, requests: () => requests };
@@ -91,6 +93,167 @@ test('A14: opening the switcher twice while its list loads asks the server once'
     await settle();
     assert.equal(loaded.requests(), 1);
     assert.deepEqual(shell.ids(), ['a']);
+});
+
+test('repository choices render before row-store disposal settles', async () => {
+    const loaded = load(['a']);
+    const originalLoadModel = loaded.wb.app.loadModel;
+    let finishDispose;
+    let disposeStarted = false;
+    let disposeCalls = 0;
+    const disposal = new Promise((resolve) => { finishDispose = resolve; });
+    loaded.wb.app.loadModel = (...args) => originalLoadModel(...args).then((model) => {
+        model.rowStore.dispose = () => { disposeCalls++; disposeStarted = true; return disposal; };
+        return model;
+    });
+    const shell = switcher();
+    loaded.wb.views.bindContextBar({ ownerDocument: shell.document }, { basePath: '/workbench', repositoryId: 'a',
+        workbench: {} });
+    loaded.opens[0](shell.panel);
+    const loading = shell.panel.__rdf4jRepositoriesLoading;
+
+    try {
+        await settle();
+        assert.equal(disposeStarted, true, 'the row store is cleaned up after reading');
+        assert.equal(disposeCalls, 1, 'the row store is disposed once');
+        assert.deepEqual(shell.ids(), ['a'], 'the successful repository list does not wait for disposal');
+        assert.equal(shell.panel.__rdf4jRepositoriesLoaded, true);
+    } finally {
+        finishDispose();
+    }
+    await loading;
+});
+
+test('row-store cleanup rejection does not discard valid repository results or become unhandled', async () => {
+    const unhandled = [];
+    const onUnhandled = (reason) => unhandled.push(reason);
+    process.on('unhandledRejection', onUnhandled);
+    try {
+        const listed = load(['a']);
+        const originalListedLoad = listed.wb.app.loadModel;
+        let disposeCalls = 0;
+        listed.wb.app.loadModel = (...args) => originalListedLoad(...args).then((model) => {
+            model.rowStore.dispose = () => { disposeCalls++; return Promise.reject(new Error('dispose failed')); };
+            return model;
+        });
+        const listedShell = switcher();
+        listed.wb.views.bindContextBar({ ownerDocument: listedShell.document }, { basePath: '/workbench',
+            repositoryId: 'a', workbench: {} });
+        listed.opens[0](listedShell.panel);
+        await listedShell.panel.__rdf4jRepositoriesLoading;
+        await settle();
+        assert.deepEqual(listedShell.ids(), ['a'], 'cleanup rejection does not discard valid repository rows');
+        assert.equal(disposeCalls, 1, 'the row store is disposed once');
+        assert.deepEqual(unhandled, []);
+    } finally {
+        process.removeListener('unhandledRejection', onUnhandled);
+    }
+});
+
+test('synchronous row-store cleanup failure does not discard repository results', async () => {
+    const loaded = load(['a']);
+    const originalLoadModel = loaded.wb.app.loadModel;
+    let disposeCalls = 0;
+    loaded.wb.app.loadModel = (...args) => originalLoadModel(...args).then((model) => {
+        model.rowStore.dispose = () => { disposeCalls++; throw new Error('dispose failed'); };
+        return model;
+    });
+    const shell = switcher();
+    loaded.wb.views.bindContextBar({ ownerDocument: shell.document }, { basePath: '/workbench', repositoryId: 'a',
+        workbench: {} });
+    loaded.opens[0](shell.panel);
+    await shell.panel.__rdf4jRepositoriesLoading;
+    assert.deepEqual(shell.ids(), ['a']);
+    assert.equal(disposeCalls, 1);
+});
+
+test('row-store cleanup rejection does not mask the original repository read failure', async () => {
+    const unhandled = [];
+    const onUnhandled = (reason) => unhandled.push(reason);
+    process.on('unhandledRejection', onUnhandled);
+    try {
+        const failed = load([]);
+        const readFailure = new Error('repository read failed');
+        failed.wb.workspace.readRepositoryList = () => Promise.reject(readFailure);
+        const originalFailedLoad = failed.wb.app.loadModel;
+        let disposeCalls = 0;
+        failed.wb.app.loadModel = (...args) => originalFailedLoad(...args).then((model) => {
+            model.rowStore.dispose = () => { disposeCalls++; return Promise.reject(new Error('dispose failed')); };
+            return model;
+        });
+        const failedShell = switcher();
+        failed.wb.views.bindContextBar({ ownerDocument: failedShell.document }, { basePath: '/workbench',
+            repositoryId: 'a', workbench: {} });
+        failed.opens[0](failedShell.panel);
+        await failedShell.panel.__rdf4jRepositoriesLoading;
+        await settle();
+        assert.equal(failedShell.panel.querySelector('.workbench-popover__status').textContent,
+            'Unable to load repositories: repository read failed');
+        assert.equal(disposeCalls, 1, 'the row store is disposed once after a failed read');
+        await settle();
+        assert.deepEqual(unhandled, []);
+    } finally {
+        process.removeListener('unhandledRejection', onUnhandled);
+    }
+});
+
+test('a repository list the server could not give forgets nothing this browser keeps', async () => {
+    const opened = (loaded) => {
+        const forgotten = [];
+        loaded.wb.workspace.forgetMissingRepositories = (...args) => forgotten.push(args);
+        const shell = switcher();
+        const app = node('div', { 'data-workbench-server-identity': 'sha256:abc:session' });
+        const byId = shell.document.getElementById;
+        shell.document.getElementById = (id) => id === 'workbench-app' ? app : byId(id);
+        loaded.wb.views.bindContextBar({ ownerDocument: shell.document }, { basePath: '/workbench', repositoryId: 'a',
+            workbench: {} });
+        loaded.opens[0](shell.panel);
+        return { forgotten, shell };
+    };
+    const listed = opened(load(['a']));
+    await settle();
+    assert.equal(listed.forgotten.length, 1, 'a list the server gave forgets the repositories it no longer has');
+
+    const failing = load([]);
+    failing.wb.app.loadModel = () => Promise.resolve({ error: { code: 'server-unavailable',
+        message: 'The server is unavailable' }, vars: [], rowCount: 0,
+        rowStore: { read: () => Promise.resolve([]), dispose() {} } });
+    const failed = opened(failing);
+    await settle();
+    assert.deepEqual(failed.forgotten, [], 'an error page is not an empty repository list');
+    assert.deepEqual(failed.shell.ids(), []);
+
+    for (const [viewId, vars, rows] of [
+        ['repositories', ['error-message'], [[{ kind: 'literal', value: 'Unauthorized' }]]],
+        ['repositories', ['description'], []],
+        ['summary', ['id'], [[{ kind: 'literal', value: 'a' }]]],
+        ['repositories', ['id'], [[null]]]
+    ]) {
+        const loaded = load([]);
+        let disposed = 0;
+        loaded.wb.app.loadModel = async () => ({ viewId, vars, rowCount: rows.length,
+            metadata: { 'server-identity': 'sha256:abc:session', 'server-user': '' },
+            rowStore: { read: async () => rows, dispose() { disposed++; } } });
+        const result = opened(loaded);
+        await settle();
+        assert.deepEqual(result.forgotten, [], 'preserve saved repositories for ' + viewId + '/' + vars);
+        assert.equal(disposed, 1);
+    }
+
+    const empty = opened(load([]));
+    await settle();
+    assert.equal(empty.forgotten.length, 1, 'a valid empty listing still reconciles saved repositories');
+    assert.deepEqual(Array.from(empty.forgotten[0][2]), []);
+
+    for (const metadata of [{ 'server-identity': 'sha256:other', 'server-user': '' },
+        { 'server-identity': 'sha256:abc', 'server-user': 'other' }, {}]) {
+        const changed = load([]);
+        changed.wb.app.loadModel = async () => ({ viewId: 'repositories', vars: ['id'], metadata, rowCount: 0,
+            rowStore: { read: async () => [], dispose() {} } });
+        const result = opened(changed);
+        await settle();
+        assert.deepEqual(result.forgotten, [], 'only the server and user shown can confirm missing repositories');
+    }
 });
 
 function bindingAfter(template, pattern) {

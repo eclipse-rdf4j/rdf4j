@@ -12,6 +12,7 @@
 package org.eclipse.rdf4j.sail.lmdb.evaluation;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.eclipse.rdf4j.sail.lmdb.evaluation.NativeCancellationTestAccess.mockScanSource;
 import static org.junit.jupiter.api.Assertions.assertAll;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.isNull;
@@ -109,7 +110,7 @@ class NativeCensusOutputOwnershipTest {
 		CloseableIteration<BindingSet> cooperativeFallback = new CooperativeIteration(fallbackRows,
 				cancellationRequests);
 
-		NativeLmdbQuerySource source = mock(NativeLmdbQuerySource.class);
+		NativeLmdbQuerySource source = mockScanSource(NativeLmdbQuerySource.class);
 		when(source.idSpace()).thenReturn(source);
 		NativeProbe probe = mock(NativeProbe.class);
 		when(source.newProbe()).thenReturn(probe);

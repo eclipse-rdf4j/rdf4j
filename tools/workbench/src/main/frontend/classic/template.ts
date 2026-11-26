@@ -477,6 +477,186 @@ namespace workbench {
                 cancel.focus();
             });
         }
+
+        export interface Choice {
+            value: string;
+            label: string;
+            /** What choosing it does, under its label. */
+            detail?: string;
+        }
+
+        /**
+         * A modal choice between a few answers, each a button with its label and what it does, then Cancel. Resolves
+         * the value chosen, or null for Cancel and Escape. Closing it returns focus to the control that opened it.
+         */
+        export function choose(options: { title: string; body: any; choices: Choice[] }): Promise<string> {
+            var doc = document;
+            var returnFocusTo = opener(doc);
+            var id = 'workbench-confirm-' + (++counter);
+            var dialog = <any>doc.createElement('dialog');
+            dialog.className = 'workbench-dialog workbench-dialog--choice';
+            dialog.setAttribute('aria-labelledby', id + '-title');
+            dialog.setAttribute('aria-describedby', id + '-body');
+            var title = doc.createElement('h2');
+            title.id = id + '-title';
+            title.className = 'workbench-dialog__title';
+            title.textContent = options.title;
+            var body = doc.createElement('div');
+            body.id = id + '-body';
+            body.className = 'workbench-dialog__body';
+            dialog.appendChild(title);
+            dialog.appendChild(body);
+            renderBody(body, options.body);
+            var list = doc.createElement('div');
+            list.className = 'workbench-dialog__choices';
+            dialog.appendChild(list);
+            var actions = doc.createElement('div');
+            actions.className = 'workbench-dialog__actions';
+            var cancel = button(doc, 'workbench-action workbench-action--secondary', 'Cancel');
+            actions.appendChild(cancel);
+            dialog.appendChild(actions);
+            return new Promise<string>(function(resolve) {
+                var chosen: string = null;
+                var first: HTMLButtonElement = null;
+                (options.choices || []).forEach(function(choice) {
+                    var option = button(doc, 'workbench-dialog__choice', '');
+                    option.setAttribute('data-choice', choice.value);
+                    var label = doc.createElement('span');
+                    label.className = 'workbench-dialog__choice-label';
+                    label.textContent = choice.label;
+                    option.appendChild(label);
+                    if (choice.detail) {
+                        var detail = doc.createElement('span');
+                        detail.className = 'workbench-dialog__choice-detail';
+                        detail.textContent = choice.detail;
+                        option.appendChild(detail);
+                    }
+                    option.addEventListener('click', function() {
+                        chosen = choice.value;
+                        dialog.close();
+                    });
+                    list.appendChild(option);
+                    first = first || option;
+                });
+                cancel.addEventListener('click', function() {
+                    dialog.close();
+                });
+                dialog.addEventListener('close', function() {
+                    if (dialog.parentNode) {
+                        dialog.parentNode.removeChild(dialog);
+                    }
+                    restoreFocus(returnFocusTo);
+                    resolve(chosen);
+                });
+                doc.body.appendChild(dialog);
+                dialog.showModal();
+                (first || cancel).focus();
+            });
+        }
+    }
+
+    /**
+     * A short notice at the bottom of the page that something happened, with an optional action (Undo): one at a
+     * time, announced politely, gone after a while unless the pointer or focus is on it, or when Close is pressed.
+     */
+    export namespace toast {
+        export interface ToastOptions {
+            message: string;
+            actionLabel?: string;
+            onAction?: () => void;
+            /** Milliseconds before it goes (default 10 s); 0 keeps it until it is closed. */
+            timeout?: number;
+        }
+
+        var dismissShown: () => void = null;
+
+        /** Shows the notice, replacing one shown before; returns what closes it. */
+        export function show(options: ToastOptions): () => void {
+            var doc = document;
+            if (dismissShown) {
+                dismissShown();
+            }
+            var region = doc.getElementById('workbench-toast-region');
+            if (!region) {
+                region = doc.createElement('div');
+                region.id = 'workbench-toast-region';
+                region.className = 'workbench-toast-region';
+                region.setAttribute('role', 'status');
+                region.setAttribute('aria-live', 'polite');
+                doc.body.appendChild(region);
+            }
+            var element = doc.createElement('div');
+            element.className = 'workbench-toast';
+            var text = doc.createElement('p');
+            text.className = 'workbench-toast__message';
+            text.textContent = options.message;
+            element.appendChild(text);
+            var timer: any = null;
+            var hovered = false;
+            var focused = false;
+            var closed = false;
+            var close = function() {
+                if (closed) {
+                    return;
+                }
+                closed = true;
+                if (timer !== null) {
+                    clearTimeout(timer);
+                    timer = null;
+                }
+                if (element.parentNode) {
+                    element.parentNode.removeChild(element);
+                }
+                if (dismissShown === close) {
+                    dismissShown = null;
+                }
+            };
+            var wait = typeof options.timeout === 'number' ? options.timeout : 10000;
+            var schedule = function() {
+                if (timer !== null) {
+                    clearTimeout(timer);
+                    timer = null;
+                }
+                if (wait > 0 && !hovered && !focused && !closed) {
+                    timer = setTimeout(close, wait);
+                }
+            };
+            if (options.actionLabel && options.onAction) {
+                var action = button(doc, 'workbench-toast__action', options.actionLabel);
+                action.addEventListener('click', function() {
+                    close();
+                    options.onAction();
+                });
+                element.appendChild(action);
+            }
+            var dismiss = button(doc, 'workbench-toast__close', '');
+            dismiss.setAttribute('aria-label', 'Close');
+            dismiss.title = 'Close';
+            dismiss.textContent = '\u00d7';
+            dismiss.addEventListener('click', close);
+            element.appendChild(dismiss);
+            element.addEventListener('mouseenter', function() { hovered = true; schedule(); });
+            element.addEventListener('mouseleave', function() { hovered = false; schedule(); });
+            element.addEventListener('focusin', function() { focused = true; schedule(); });
+            element.addEventListener('focusout', function() { focused = false; schedule(); });
+            element.addEventListener('keydown', function(event: KeyboardEvent) {
+                if (event.key === 'Escape') {
+                    close();
+                }
+            });
+            region.appendChild(element);
+            dismissShown = close;
+            schedule();
+            return close;
+        }
+
+        function button(doc: Document, className: string, label: string): HTMLButtonElement {
+            var element = <HTMLButtonElement>doc.createElement('button');
+            element.type = 'button';
+            element.className = className;
+            element.textContent = label;
+            return element;
+        }
     }
 
     /**
@@ -1937,6 +2117,168 @@ namespace workbench {
         }
         var target = new URL(url || document.location.href, document.location.href);
         return target.origin === document.location.origin ? { 'X-RDF4J-CSRF-Token': token } : {};
+    }
+
+    function normalizeCookiePath(value: string): string {
+        var path = String(value || '').trim();
+        if (!path) {
+            return '/';
+        }
+        if (path.charAt(0) !== '/' || /[;\s?#]/.test(path)) {
+            return '';
+        }
+        path = path.replace(/\/+$/, '');
+        return path || '/';
+    }
+
+    function cookiePathContains(path: string, parentPath: string): boolean {
+        return parentPath === '/' ? path !== '/' : path.indexOf(parentPath + '/') === 0;
+    }
+
+    function cookiePathMatchesRequest(path: string, requestPath: string): boolean {
+        return path === '/' || requestPath === path || requestPath.indexOf(path + '/') === 0;
+    }
+
+    function genericForbiddenDetail(detail: string): boolean {
+        return /^(?:http\s+)?403\s+forbidden\.?$|^forbidden\.?$/i.test(String(detail || '').trim());
+    }
+
+    function structuredForbiddenResponseDetail(value: any, depth: number = 0): string {
+        if (!value || typeof value !== 'object') {
+            return '';
+        }
+        if (depth > 2) {
+            return '';
+        }
+        var fields = [value.error, value.message, value.detail];
+        for (var index = 0; index < fields.length; index++) {
+            var field = fields[index];
+            if (typeof field === 'string' && field.trim() && !genericForbiddenDetail(field)) {
+                return field;
+            }
+            if (field && typeof field === 'object' && field !== value) {
+                var nestedDetail = structuredForbiddenResponseDetail(field, depth + 1);
+                if (nestedDetail) {
+                    return nestedDetail;
+                }
+            }
+        }
+        return '';
+    }
+
+    function parsedForbiddenResponseDetail(body: string): { parsed: boolean; detail: string } {
+        var parsed = false;
+        try {
+            var wholeBody = JSON.parse(body);
+            if (wholeBody && typeof wholeBody === 'object') {
+                parsed = true;
+                var wholeBodyDetail = structuredForbiddenResponseDetail(wholeBody);
+                if (wholeBodyDetail) {
+                    return { parsed: true, detail: wholeBodyDetail };
+                }
+            }
+        } catch (error) {
+            // A non-JSON response may contain newline-delimited JSON records.
+        }
+        var lineStart = 0;
+        for (var index = 0; index <= body.length; index++) {
+            if (index === body.length || body.charAt(index) === '\n') {
+                var line = body.substring(lineStart, index).replace(/\r$/, '').trim();
+                lineStart = index + 1;
+                if (line) {
+                    try {
+                        var parsedLine = JSON.parse(line);
+                        parsed = parsed || !!parsedLine && typeof parsedLine === 'object';
+                        var lineDetail = structuredForbiddenResponseDetail(parsedLine);
+                        if (lineDetail) {
+                            return { parsed: true, detail: lineDetail };
+                        }
+                    } catch (error) {
+                        // Continue through the body once; a plain-text line is not a structured error.
+                    }
+                }
+            }
+        }
+        return { parsed: parsed, detail: '' };
+    }
+
+    export function responseSummary(text: string, contentType: string): string {
+        var summary = String(text || '');
+        if (/html/i.test(contentType)) {
+            summary = summary.replace(/<(script|style|head)\b[\s\S]*?<\/\1\s*>/gi, ' ').replace(/<[^>]*>/g, ' ')
+                .replace(/&#(\d+);/g, (entity: string, code: string) => String.fromCharCode(Number(code)))
+                .replace(/&(lt|gt|quot|apos|nbsp|ndash|mdash|amp);/g, (entity: string, name: string) =>
+                    (<any>{ lt: '<', gt: '>', quot: '"', apos: '\'', nbsp: ' ', ndash: '–', mdash: '—', amp: '&' })[name]);
+        }
+        summary = summary.replace(/\s+/g, ' ').trim();
+        return summary.length > 300 ? summary.substring(0, 300) + '…' : summary;
+    }
+
+    function summarizeForbiddenResponse(response: any, contentType?: string): string {
+        var detail = response && typeof response === 'object'
+            ? structuredForbiddenResponseDetail(response) : '';
+        if (!detail && typeof response === 'string') {
+            var parsed = parsedForbiddenResponseDetail(response);
+            if (parsed.detail) {
+                detail = parsed.detail;
+            } else if (!parsed.parsed) {
+                detail = response;
+            }
+        }
+        if (genericForbiddenDetail(detail)) {
+            detail = '';
+        }
+        var summaryContentType = contentType || '';
+        if (!/html/i.test(summaryContentType) && /^\s*(?:<!doctype\s+html|<(?:html|head|body)\b)/i.test(detail)) {
+            summaryContentType = 'text/html';
+        }
+        return responseSummary(detail, summaryContentType);
+    }
+
+    export function forbiddenResponseMessage(action: string, response?: any, contentType?: string): string {
+        var message = 'Workbench could not ' + action + ' (HTTP 403 Forbidden). '
+            + 'Refresh this page and try again. If the error persists, clear the cookies for this Workbench site '
+            + 'in your browser settings, then refresh the page and try again.';
+        var summary = summarizeForbiddenResponse(response, contentType);
+        return summary ? message + '\n' + summary : message;
+    }
+
+    /** Expire only the more-specific CSRF cookie that can shadow this Workbench context's token after an upgrade. */
+    export function clearStaleCsrfCookieForRequest(url: string): void {
+        var mount = document.getElementById('workbench-app');
+        if (!mount) {
+            return;
+        }
+        var contextPathValue = mount.getAttribute('data-workbench-context-path');
+        var basePathValue = mount.getAttribute('data-workbench-base-path');
+        if (contextPathValue == null || basePathValue == null) {
+            return;
+        }
+        var contextPath = normalizeCookiePath(contextPathValue);
+        var basePath = normalizeCookiePath(basePathValue);
+        if (!contextPath || !basePath || !cookiePathContains(basePath, contextPath)) {
+            return;
+        }
+
+        var target: URL;
+        try {
+            target = new URL(url || document.location.href, document.location.href);
+        } catch (error) {
+            return;
+        }
+        if (target.origin !== document.location.origin || !cookiePathMatchesRequest(basePath, target.pathname)) {
+            return;
+        }
+
+        var cookie = 'rdf4j-workbench-csrf=; Path=' + basePath + '; Max-Age=0; SameSite=Strict';
+        if (document.location.protocol === 'https:') {
+            cookie += '; Secure';
+        }
+        try {
+            document.cookie = cookie;
+        } catch (error) {
+            // A sandboxed document may reject cookie access; preserve the original request error either way.
+        }
     }
 
     /** Runs before native form submission and before router FormData captures dynamically rendered forms. */

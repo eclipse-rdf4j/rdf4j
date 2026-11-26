@@ -15,7 +15,9 @@ import java.lang.reflect.UndeclaredThrowableException;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.NoSuchElementException;
+import java.util.function.IntSupplier;
 
+import org.eclipse.rdf4j.common.iteration.BufferedIteration;
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.common.iteration.IndexReportingIterator;
 import org.eclipse.rdf4j.common.iteration.IterationWrapper;
@@ -28,7 +30,8 @@ import org.eclipse.rdf4j.sail.SailException;
  *
  * @author James Leigh
  */
-abstract class SailClosingIteration<T> extends IterationWrapper<T> implements IndexReportingIterator {
+abstract class SailClosingIteration<T> extends IterationWrapper<T>
+		implements IndexReportingIterator, BufferedIteration {
 
 	/**
 	 * Creates a new {@link CloseableIteration} that automatically closes the given {@link SailClosable}s.
@@ -56,6 +59,7 @@ abstract class SailClosingIteration<T> extends IterationWrapper<T> implements In
 	 * The lock to release when the Iteration is closed.
 	 */
 	private final SailClosable[] closes;
+	private final IntSupplier bufferedRows;
 
 	/*--------------*
 	 * Constructors *
@@ -68,8 +72,18 @@ abstract class SailClosingIteration<T> extends IterationWrapper<T> implements In
 	 * @param closes The {@link SailClosable}s to {@link SailClosable#close()} when the itererator is closed.
 	 */
 	public SailClosingIteration(CloseableIteration<? extends T> iter, SailClosable... closes) {
+		this(iter, null, closes);
+	}
+
+	SailClosingIteration(CloseableIteration<? extends T> iter, IntSupplier bufferedRows, SailClosable... closes) {
 		super(iter);
 		this.closes = closes;
+		this.bufferedRows = bufferedRows;
+	}
+
+	@Override
+	public IntSupplier bufferedRowsSource() {
+		return bufferedRows;
 	}
 
 	/*---------*

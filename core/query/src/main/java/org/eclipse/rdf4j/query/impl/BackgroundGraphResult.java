@@ -51,7 +51,7 @@ public class BackgroundGraphResult extends IterationWrapper<Statement>
 	private final QueueCursor<Statement> queue;
 
 	public BackgroundGraphResult(RDFParser parser, InputStream in, Charset charset, String baseURI) {
-		this(new QueueCursor<>(10), parser, in, charset, baseURI);
+		this(new QueueCursor<>(1024), parser, in, charset, baseURI);
 	}
 
 	public BackgroundGraphResult(QueueCursor<Statement> queue, RDFParser parser, InputStream in, Charset charset,

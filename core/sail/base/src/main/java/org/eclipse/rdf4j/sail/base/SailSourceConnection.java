@@ -21,14 +21,17 @@ import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.UUID;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.locks.LockSupport;
 import java.util.function.Function;
+import java.util.function.IntSupplier;
 import java.util.function.Supplier;
 
 import org.eclipse.rdf4j.common.annotation.Experimental;
 import org.eclipse.rdf4j.common.annotation.InternalUseOnly;
+import org.eclipse.rdf4j.common.iteration.BufferedIteration;
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.common.iteration.EmptyIteration;
 import org.eclipse.rdf4j.common.order.StatementOrder;
@@ -232,6 +235,11 @@ public abstract class SailSourceConnection extends AbstractNotifyingSailConnecti
 		this.federatedServiceResolver = resolver;
 	}
 
+	/** Support declared by the active factory; concrete connections must also opt in to GRAPH algebra. */
+	protected final boolean supportsGraphAlgebraEvaluation() {
+		return evalStratFactory.supportsGraphAlgebra();
+	}
+
 	protected EvaluationStrategy getEvaluationStrategy(Dataset dataset, TripleSource tripleSource) {
 		EvaluationStrategy evalStrat = evalStratFactory.createEvaluationStrategy(dataset, tripleSource,
 				store.getEvaluationStatistics(), getSailBase().getQueryExecutionPolicy());
@@ -248,14 +256,16 @@ public abstract class SailSourceConnection extends AbstractNotifyingSailConnecti
 		logger.trace("Incoming query model:\n{}", tupleExpr);
 
 		SlowQueryContextHolder.SlowQueryContext slowQueryContext = SlowQueryContextHolder.get();
-		long slowQueryThresholdSeconds = getSailBase().getSlowQueryLogThresholdSeconds();
-		long slowQueryFirstResultThresholdSeconds = getSailBase().getSlowQueryLogFirstResultThresholdSeconds();
-		boolean slowQueryLoggingEnabled = (slowQueryThresholdSeconds > 0 || slowQueryFirstResultThresholdSeconds > 0)
-				&& slowQueryContext != null;
-		TupleExpr unoptimizedTupleExpr = tupleExpr;
+		SlowQuerySupport.Configuration slowQueryConfiguration = slowQueryContext == null ? null
+				: slowQueryContext.getLoggingConfiguration(getSailBase());
+		boolean slowQueryLoggingEnabled = slowQueryConfiguration != null
+				&& (slowQueryConfiguration.thresholdSeconds() > 0
+						|| slowQueryConfiguration.firstResultThresholdSeconds() > 0);
+		SlowQueryLogInfo.PlanSnapshot unoptimizedPlan = null;
 		long slowQueryStartMillis = 0L;
 		if (slowQueryLoggingEnabled) {
 			slowQueryStartMillis = SlowQuerySupport.getTimestampMillis(getSailBase());
+			unoptimizedPlan = SlowQueryLogInfo.capturePlan(tupleExpr);
 		}
 
 		if (cloneTupleExpression) {
@@ -276,14 +286,17 @@ public abstract class SailSourceConnection extends AbstractNotifyingSailConnecti
 
 		SailDataset rdfDataset = null;
 		CloseableIteration<BindingSet> iteration = null;
+		SailDatasetTripleTermSource preparingSource = null;
 		try {
-			rdfDataset = datasetForRead(IncludeInferred.fromBoolean(includeInferred));
+			rdfDataset = acquireQueryDataset(tupleExpr, includeInferred);
 			if (rdfDataset instanceof TreeOwnedDataset owned) {
 				// The interlock below closes the operator tree, and with it every cursor, before this dataset.
 				owned.cursorsCloseBeforeDataset();
 			}
 
-			TripleSource tripleSource = new SailDatasetTripleTermSource(vf, rdfDataset);
+			SailDatasetTripleTermSource tripleSource = new SailDatasetTripleTermSource(vf, rdfDataset);
+			preparingSource = tripleSource;
+			tripleSource.beginPreparation();
 			EvaluationStrategy strategy = getEvaluationStrategy(dataset, tripleSource);
 			if (trackResultSize) {
 				strategy.setTrackResultSize(trackResultSize);
@@ -300,24 +313,29 @@ public abstract class SailSourceConnection extends AbstractNotifyingSailConnecti
 			if (executionSummaryEnabled) {
 				setExecutionSummaryEnabled(tupleExpr, true);
 			}
+			logger.trace("Optimized query model:\n{}", tupleExpr);
+			QueryEvaluationStep qes = strategy.precompile(tupleExpr);
 			SlowQueryLogInfo slowQueryLogInfo = null;
 			if (slowQueryLoggingEnabled) {
 				slowQueryLogInfo = new SlowQueryLogInfo(getSailBase().getClass().getName(),
-						slowQueryThresholdSeconds, slowQueryFirstResultThresholdSeconds,
+						slowQueryConfiguration.thresholdSeconds(), slowQueryConfiguration.firstResultThresholdSeconds(),
 						slowQueryContext.getQueryType(),
 						slowQueryContext.getRawQueryText(),
-						unoptimizedTupleExpr, tupleExpr, dataset,
-						bindings == null ? Set.of() : bindings.getBindingNames());
+						unoptimizedPlan, tupleExpr, dataset, bindings,
+						captureSlowQueryMetadata(slowQueryContext, slowQueryConfiguration, includeInferred, tupleExpr,
+								strategy));
 			}
 
-			logger.trace("Optimized query model:\n{}", tupleExpr);
-			QueryEvaluationStep qes = strategy.precompile(tupleExpr);
 			iteration = QueryExplanationContext.isPreview() ? new EmptyIteration<>()
 					: qes.evaluate(EmptyBindingSet.getInstance());
-			iteration = interlock(iteration, rdfDataset);
+			IntSupplier bufferedRows = slowQueryLoggingEnabled || !allowsBufferedQueryResult(strategy)
+					? null
+					: BufferedIteration.bufferedRowsSource(iteration);
+			iteration = interlock(iteration, bufferedRows, rdfDataset);
 			rdfDataset = null; // The iteration now owns the dataset, including any acquired source.
 			if (slowQueryLogInfo != null) {
-				iteration = new SlowQueryLoggingIteration<>(iteration, getSailBase(), slowQueryLogInfo,
+				iteration = new SlowQueryLoggingIteration<>(iteration, getSailBase(), slowQueryConfiguration,
+						slowQueryLogInfo,
 						new SlowQueryLogFormatter(), slowQueryStartMillis);
 			}
 			return iteration;
@@ -328,7 +346,90 @@ public abstract class SailSourceConnection extends AbstractNotifyingSailConnecti
 		} catch (RuntimeException | Error failure) {
 			closeFailedRead(failure, iteration, rdfDataset);
 			throw failure;
+		} finally {
+			if (preparingSource != null) {
+				preparingSource.endPreparation();
+			}
 		}
+	}
+
+	/** Records slow consumption of a cached result without running the optimizer or evaluator again. */
+	protected final CloseableIteration<BindingSet> wrapCachedQueryLogging(CloseableIteration<BindingSet> result,
+			TupleExpr expression, Dataset dataset, BindingSet bindings, boolean includeInferred, long startMillis,
+			SlowQuerySupport.Configuration configuration) {
+		SlowQueryContextHolder.SlowQueryContext context = SlowQueryContextHolder.get();
+		if (context == null) {
+			return result;
+		}
+		if (configuration == null
+				|| configuration.thresholdSeconds() <= 0 && configuration.firstResultThresholdSeconds() <= 0) {
+			return result;
+		}
+		Map<String, String> metadata = captureSlowQueryMetadata(context, configuration, includeInferred, expression,
+				null);
+		metadata.put("resultCacheHit", "true");
+		metadata.put("evaluationStrategy", "cache");
+		metadata.put("optimizedPlanAvailability", "not-produced-cache-hit");
+		SlowQueryLogInfo info = new SlowQueryLogInfo(getSailBase().getClass().getName(),
+				configuration.thresholdSeconds(),
+				configuration.firstResultThresholdSeconds(), context.getQueryType(), context.getRawQueryText(),
+				SlowQueryLogInfo.capturePlan(expression), null, dataset, bindings, metadata);
+		return new SlowQueryLoggingIteration<>(result, getSailBase(), configuration, info, new SlowQueryLogFormatter(),
+				startMillis);
+	}
+
+	private Map<String, String> captureSlowQueryMetadata(SlowQueryContextHolder.SlowQueryContext context,
+			SlowQuerySupport.Configuration configuration, boolean includeInferred, TupleExpr expression,
+			EvaluationStrategy strategy) {
+		Map<String, String> metadata = new HashMap<>(context.getMetadata());
+		metadata.computeIfAbsent("executionId", ignored -> UUID.randomUUID().toString());
+		metadata.put("evaluationId", UUID.randomUUID().toString());
+		metadata.putIfAbsent("queryStartTimeMillis", Long.toString(System.currentTimeMillis()));
+		metadata.putIfAbsent("threadId", Long.toString(Thread.currentThread().threadId()));
+		metadata.putIfAbsent("threadName", Thread.currentThread().getName());
+		metadata.put("sailInstanceId", Integer.toHexString(System.identityHashCode(getSailBase())));
+		metadata.put("sailConnectionId", Integer.toHexString(System.identityHashCode(this)));
+		metadata.put("includeInferred", Boolean.toString(includeInferred));
+		metadata.putIfAbsent("forcedExecutionStrategy", context.getForcedExecutionStrategy() == null ? "default"
+				: context.getForcedExecutionStrategy());
+		metadata.putIfAbsent("resultCacheRequested", Boolean.toString(context.isResultCacheRequested()));
+		metadata.put("slowQueryLogFile", configuration.logFile() == null || configuration.logFile().isBlank()
+				? "logger"
+				: configuration.logFile());
+		try {
+			String dataDirectory = configuration.dataDir() == null ? "in-memory"
+					: configuration.dataDir().getAbsolutePath();
+			metadata.put("repositoryDataDir", dataDirectory);
+			metadata.putIfAbsent("repositoryId", configuration.dataDir() == null
+					? getSailBase().getClass().getName() + "@" + metadata.get("sailInstanceId")
+					: dataDirectory);
+			metadata.put("transactionActive", Boolean.toString(isActive()));
+			IsolationLevel isolationLevel = getIsolationLevel();
+			metadata.put("isolationLevel",
+					String.valueOf(isolationLevel == null ? defaultIsolationLevel : isolationLevel));
+			metadata.put("queryEvaluationMode", String.valueOf(strategy == null ? queryEvaluationMode
+					: strategy.getQueryEvaluationMode()));
+			metadata.put("evaluationStrategyFactory", evalStratFactory.getClass().getName());
+			metadata.put("querySolutionCacheThreshold",
+					Long.toString(evalStratFactory.getQuerySolutionCacheThreshold()));
+			metadata.put("optimizerPipeline", evalStratFactory.getOptimizerPipeline()
+					.map(pipeline -> pipeline.getClass().getName())
+					.orElse("default"));
+			metadata.put("experimentalQueryOptimizations", Boolean.toString((strategy == null
+					? getSailBase().getQueryExecutionPolicy()
+					: strategy.getQueryExecutionPolicy()).experimentalQueryOptimizations()));
+			metadata.put("runtimeTelemetryEnabled", Boolean.toString(expression.isRuntimeTelemetryEnabled()));
+			metadata.put("executionSummaryEnabled", Boolean.toString(expression.isExecutionSummaryEnabled()));
+			if (strategy != null) {
+				metadata.put("evaluationStrategy", strategy.getClass().getName());
+				metadata.put("trackTime", Boolean.toString(strategy.isTrackTime()));
+				metadata.put("trackResultSize", Boolean.toString(strategy.isTrackResultSize()));
+				metadata.put("resultCacheHit", "false");
+			}
+		} catch (RuntimeException | AssertionError failure) {
+			metadata.put("evaluationMetadataError", failure.toString());
+		}
+		return metadata;
 	}
 
 	@Override
@@ -678,6 +779,11 @@ public abstract class SailSourceConnection extends AbstractNotifyingSailConnecti
 	@Override
 	protected CloseableIteration<? extends Resource> getContextIDsInternal() throws SailException {
 		return readIteration(IncludeInferred.explicitOnly, SailDataset::getContextIDs);
+	}
+
+	/** Read a distinct context catalog for stores that expose separate explicit and inferred catalogs. */
+	protected final CloseableIteration<? extends Resource> getContextIDsFromBothDatasets() {
+		return readIteration(IncludeInferred.all, SailDataset::getContextIDs);
 	}
 
 	@Override
@@ -1523,6 +1629,16 @@ public abstract class SailSourceConnection extends AbstractNotifyingSailConnecti
 		}
 	}
 
+	/** Whether this connection owns the selected strategy's callback-free query producers. */
+	protected boolean allowsBufferedQueryResult(EvaluationStrategy strategy) {
+		return false;
+	}
+
+	/** Acquires the statement and catalog view held until the prepared query's result closes. */
+	protected SailDataset acquireQueryDataset(TupleExpr expression, boolean includeInferred) {
+		return datasetForRead(IncludeInferred.fromBoolean(includeInferred));
+	}
+
 	private SailDataset datasetForRead(IncludeInferred includeInferred) {
 		IsolationLevel level = getIsolationLevel();
 		return withDatasetAcquisition(level, () -> datasetForReadWithinAdmission(includeInferred, level));
@@ -1572,8 +1688,8 @@ public abstract class SailSourceConnection extends AbstractNotifyingSailConnecti
 	}
 
 	private <T> CloseableIteration<T> interlock(
-			CloseableIteration<T> iter, SailClosable... closes) {
-		return new SailClosingIteration<>(iter, closes) {
+			CloseableIteration<T> iter, IntSupplier bufferedRows, SailClosable... closes) {
+		return new SailClosingIteration<>(iter, bufferedRows, closes) {
 
 			@Override
 			protected void handleSailException(SailException e) throws QueryEvaluationException {

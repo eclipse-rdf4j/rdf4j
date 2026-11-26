@@ -17,7 +17,6 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Objects;
 import java.util.concurrent.atomic.AtomicBoolean;
-import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.Consumer;
 import java.util.function.IntSupplier;
 import java.util.function.Supplier;
@@ -41,12 +40,14 @@ public final class QueryExecutionContext {
 	private static final int REPLAY_CHECKPOINT_STRIDE = 256;
 	private static final int REPLAY_CHECKPOINT_MASK = REPLAY_CHECKPOINT_STRIDE - 1;
 	private static final ThreadLocal<State> CURRENT = new ThreadLocal<>();
-	// Both replay chains live in one per-thread holder, so a per-row checkpoint costs a single lookup.
+	// Both replay chains and the external-value initializer live in one per-thread holder, so a per-row checkpoint
+	// costs a single lookup and a caller that keeps the holder costs none; see ForegroundScope.
 	private static final ThreadLocal<ReplayState> REPLAY = ThreadLocal.withInitial(ReplayState::new);
-	private static final ThreadLocal<Consumer<Value>> EXTERNAL_VALUE_INITIALIZER = new ThreadLocal<>();
 	private static final ThreadLocal<InstalledReplayContext> INSTALLED_REPLAY_CONTEXT = new ThreadLocal<>();
 	private static volatile boolean heavyOperatorExecutionEnabled = true;
 	private static volatile int checkpointCalls;
+	private static final Runnable WORKER_ADMISSION_ONLY = () -> {
+	};
 	private static final Activation NOOP_ACTIVATION = () -> {
 	};
 
@@ -94,9 +95,31 @@ public final class QueryExecutionContext {
 		}
 	}
 
+	/**
+	 * As {@link #checkpoint(String)} for a caller that counts its own calls, starting at one: the check runs on the
+	 * first call and then once per stride of that caller, so that callers on different threads do not write one shared
+	 * counter for every row.
+	 */
+	@InternalUseOnly
+	public static void checkpoint(String operator, int calls) throws QueryInterruptedException {
+		if (!ignoreCheckpointStride && ((calls - 1) & CHECKPOINT_MASK) != 0) {
+			return;
+		}
+		State state = CURRENT.get();
+		if (state != null) {
+			QueryCircuitBreaker.getInstance().checkpoint(state.handle, operator);
+		}
+	}
+
 	/** Installs an optional cooperative map-growth checkpoint for the current query evaluation. */
 	public static Activation activateReplaySafepoint(Runnable checkpoint) {
 		return activateReplaySafepoint(checkpoint, null);
+	}
+
+	/** Installs an admission capability for dispatched work without running a callback at replay checkpoints. */
+	@InternalUseOnly
+	public static Activation activateWorkerAdmission(Supplier<WorkerScope> workerScopeCapture) {
+		return activateReplaySafepoint(WORKER_ADMISSION_ONLY, Objects.requireNonNull(workerScopeCapture));
 	}
 
 	/** Adds an opaque admission capability to work explicitly dispatched with the captured query context. */
@@ -107,10 +130,8 @@ public final class QueryExecutionContext {
 				workerScopeCapture);
 		state.safepoint = next;
 		return () -> {
-			if (next.active.compareAndSet(true, false)) {
-				next.checkpoint.set(null);
-				next.workerScopeCapture = null;
-			}
+			next.checkpoint = null;
+			next.workerScopeCapture = null;
 			if (state.safepoint == next) {
 				state.safepoint = previous;
 			}
@@ -135,25 +156,100 @@ public final class QueryExecutionContext {
 	 * requires it. This hook does not require eager resolution at an intermediate evaluation boundary.
 	 */
 	public static Activation activateExternalValueInitializer(Consumer<Value> initializer) {
-		Consumer<Value> previous = EXTERNAL_VALUE_INITIALIZER.get();
+		Consumer<Value> previous = REPLAY.get().externalValueInitializer;
 		Consumer<Value> next = Objects.requireNonNull(initializer, "Initializer was null");
 		AtomicBoolean active = new AtomicBoolean(true);
-		EXTERNAL_VALUE_INITIALIZER.set(next);
+		REPLAY.get().externalValueInitializer = next;
 		return () -> {
-			if (active.compareAndSet(true, false) && EXTERNAL_VALUE_INITIALIZER.get() == next) {
+			if (active.compareAndSet(true, false) && REPLAY.get().externalValueInitializer == next) {
 				setExternalValueInitializer(previous);
 			}
 		};
 	}
 
+	/**
+	 * An external-value initializer and a worker-admission capability that one owner installs around many short calls.
+	 * It has the effect of {@link #activateExternalValueInitializer(Consumer)} followed by
+	 * {@link #activateWorkerAdmission(Supplier)}, closed in reverse order. Entering again on the thread that entered
+	 * last needs no thread-local lookup, and nothing is allocated unless the admission was captured for a worker while
+	 * it was installed. A scope is entered and left on the same thread and is not reentrant.
+	 */
+	@InternalUseOnly
+	public static final class ForegroundScope {
+		private final Consumer<Value> initializer;
+		private final Supplier<WorkerScope> workerScopeCapture;
+		private Thread thread;
+		private ReplayState state;
+		private Consumer<Value> previousInitializer;
+		private ReplaySafepoint previousSafepoint;
+		private ReplaySafepoint safepoint;
+		private boolean entered;
+
+		public ForegroundScope(Consumer<Value> initializer, Supplier<WorkerScope> workerScopeCapture) {
+			this.initializer = Objects.requireNonNull(initializer, "Initializer was null");
+			this.workerScopeCapture = Objects.requireNonNull(workerScopeCapture, "Worker scope capture was null");
+		}
+
+		public void enter() {
+			if (entered) {
+				throw new IllegalStateException("The foreground scope is already entered");
+			}
+			Thread current = Thread.currentThread();
+			if (thread != current) {
+				thread = current;
+				state = REPLAY.get();
+			}
+			ReplayState state = this.state;
+			previousInitializer = state.externalValueInitializer;
+			state.externalValueInitializer = initializer;
+			previousSafepoint = state.safepoint;
+			ReplaySafepoint next = safepoint;
+			if (next == null) {
+				next = new ReplaySafepoint(WORKER_ADMISSION_ONLY, previousSafepoint, workerScopeCapture);
+				safepoint = next;
+			} else {
+				next.previous = previousSafepoint;
+			}
+			state.safepoint = next;
+			entered = true;
+		}
+
+		public void exit() {
+			if (!entered) {
+				return;
+			}
+			entered = false;
+			ReplayState state = this.state;
+			ReplaySafepoint next = safepoint;
+			if (state.safepoint == next && !next.shared) {
+				// Nothing else refers to the scope, so the next call installs it again.
+				state.safepoint = previousSafepoint;
+				next.previous = null;
+			} else {
+				// A captured context or an inner scope still refers to it: retire it where it is.
+				next.checkpoint = null;
+				next.workerScopeCapture = null;
+				if (state.safepoint == next) {
+					state.safepoint = previousSafepoint;
+				}
+				safepoint = null;
+			}
+			previousSafepoint = null;
+			if (state.externalValueInitializer == initializer) {
+				state.externalValueInitializer = previousInitializer;
+			}
+			previousInitializer = null;
+		}
+	}
+
 	/** Returns the optional preparation consumer to capture at an external access boundary. */
 	public static Consumer<Value> getExternalValueInitializer() {
-		return EXTERNAL_VALUE_INITIALIZER.get();
+		return REPLAY.get().externalValueInitializer;
 	}
 
 	/** Prepares an outward value while retaining its identity and the store's deferred-value policy. */
 	public static <T extends Value> T initializeExternalValue(T value) {
-		Consumer<Value> initializer = EXTERNAL_VALUE_INITIALIZER.get();
+		Consumer<Value> initializer = REPLAY.get().externalValueInitializer;
 		if (initializer != null && value != null) {
 			initializer.accept(value);
 		}
@@ -162,7 +258,7 @@ public final class QueryExecutionContext {
 
 	/** Prepares arguments only when the owning store requires external lifetime protection. */
 	public static void initializeExternalValues(Value... values) {
-		Consumer<Value> initializer = EXTERNAL_VALUE_INITIALIZER.get();
+		Consumer<Value> initializer = REPLAY.get().externalValueInitializer;
 		if (initializer != null) {
 			for (Value value : values) {
 				if (value != null) {
@@ -174,7 +270,7 @@ public final class QueryExecutionContext {
 
 	/** Prepares the values in bindings about to be handed to extension code. */
 	public static BindingSet initializeExternalBindings(BindingSet bindings) {
-		Consumer<Value> initializer = EXTERNAL_VALUE_INITIALIZER.get();
+		Consumer<Value> initializer = REPLAY.get().externalValueInitializer;
 		if (initializer != null && bindings != null) {
 			for (Binding binding : bindings) {
 				Value value = binding.getValue();
@@ -188,13 +284,17 @@ public final class QueryExecutionContext {
 
 	/** Captures the current replay checkpoint scopes for work dispatched to pre-existing worker threads. */
 	public static ReplayContext captureReplayContext() {
+		for (ReplaySafepoint scope = replay().safepoint; scope != null; scope = scope.previous) {
+			scope.shared = true;
+			scope.scopeOwner.shared = true;
+		}
 		ReplaySafepoint safepoint = copyActiveReplaySafepoints(replay().safepoint);
 		boolean deferral = replay().deferralDepth > 0;
-		Consumer<Value> initializer = EXTERNAL_VALUE_INITIALIZER.get();
+		Consumer<Value> initializer = REPLAY.get().externalValueInitializer;
 		List<WorkerScope> workerScopes = null;
 		for (ReplaySafepoint scope = safepoint; scope != null; scope = scope.previous) {
 			Supplier<WorkerScope> capture = scope.scopeOwner.workerScopeCapture;
-			if (capture != null && scope.active.get()) {
+			if (capture != null && scope.scopeOwner.checkpoint != null) {
 				WorkerScope captured = capture.get();
 				if (captured != null) {
 					if (workerScopes == null) {
@@ -251,7 +351,33 @@ public final class QueryExecutionContext {
 			if (!ignoreCheckpointStride && (calls++ & REPLAY_CHECKPOINT_MASK) != 0) {
 				return;
 			}
-			checkpointReplaySafepoint(Thread.currentThread() == thread ? state : REPLAY.get());
+			checkpointNow();
+		}
+
+		/** Checks the consuming thread's replay state at an exact boundary. */
+		@InternalUseOnly
+		public void checkpointNow() {
+			checkpointReplaySafepoint(currentState());
+		}
+
+		/** Whether a checkpoint on the consuming thread can run an application callback. */
+		@InternalUseOnly
+		public boolean hasActiveCallback() {
+			ReplayState current = currentState();
+			if (current.deferralDepth > 0) {
+				return false;
+			}
+			for (ReplaySafepoint scope = current.safepoint; scope != null; scope = scope.previous) {
+				Runnable checkpoint = scope.scopeOwner.checkpoint;
+				if (checkpoint != null && checkpoint != WORKER_ADMISSION_ONLY) {
+					return true;
+				}
+			}
+			return false;
+		}
+
+		private ReplayState currentState() {
+			return Thread.currentThread() == thread ? state : REPLAY.get();
 		}
 	}
 
@@ -260,18 +386,16 @@ public final class QueryExecutionContext {
 			return;
 		}
 		for (ReplaySafepoint safepoint = state.safepoint; safepoint != null; safepoint = safepoint.previous) {
-			if (safepoint.active.get()) {
-				Runnable checkpoint = safepoint.checkpoint.get();
-				if (checkpoint == null) {
-					continue;
-				}
-				try {
-					checkpoint.run();
-				} catch (ReplaySafepointException failure) {
-					throw failure;
-				} catch (RuntimeException failure) {
-					throw new ReplaySafepointException(failure);
-				}
+			Runnable checkpoint = safepoint.scopeOwner.checkpoint;
+			if (checkpoint == null || checkpoint == WORKER_ADMISSION_ONLY) {
+				continue;
+			}
+			try {
+				checkpoint.run();
+			} catch (ReplaySafepointException failure) {
+				throw failure;
+			} catch (RuntimeException failure) {
+				throw new ReplaySafepointException(failure);
 			}
 		}
 	}
@@ -461,7 +585,7 @@ public final class QueryExecutionContext {
 
 		private Activation install(ReplaySafepoint previousSafepoint, int previousDeferral) {
 			InstalledReplayContext previousContext = INSTALLED_REPLAY_CONTEXT.get();
-			Consumer<Value> previousInitializer = EXTERNAL_VALUE_INITIALIZER.get();
+			Consumer<Value> previousInitializer = REPLAY.get().externalValueInitializer;
 			List<Activation> activations = workerScopes.isEmpty() ? List.of() : new ArrayList<>(workerScopes.size());
 			setReplayContext(safepoint, deferral);
 			setExternalValueInitializer(initializer);
@@ -471,7 +595,7 @@ public final class QueryExecutionContext {
 				}
 				INSTALLED_REPLAY_CONTEXT
 						.set(new InstalledReplayContext(this, replay().safepoint, replay().deferralDepth > 0,
-								EXTERNAL_VALUE_INITIALIZER.get()));
+								REPLAY.get().externalValueInitializer));
 			} catch (RuntimeException | Error failure) {
 				try {
 					closeWorkerScopes(activations, failure);
@@ -523,7 +647,7 @@ public final class QueryExecutionContext {
 
 		private boolean isCurrentContext(ReplaySafepoint currentSafepoint, int currentDeferralDepth) {
 			boolean currentDeferral = currentDeferralDepth > 0;
-			Consumer<Value> currentInitializer = EXTERNAL_VALUE_INITIALIZER.get();
+			Consumer<Value> currentInitializer = REPLAY.get().externalValueInitializer;
 			if (currentSafepoint == safepoint && currentDeferral == deferral && currentInitializer == initializer
 					&& workerScopes.isEmpty()) {
 				return true;
@@ -535,11 +659,7 @@ public final class QueryExecutionContext {
 	}
 
 	private static void setExternalValueInitializer(Consumer<Value> initializer) {
-		if (initializer == null) {
-			EXTERNAL_VALUE_INITIALIZER.remove();
-		} else {
-			EXTERNAL_VALUE_INITIALIZER.set(initializer);
-		}
+		REPLAY.get().externalValueInitializer = initializer;
 	}
 
 	private static void setReplayContext(ReplaySafepoint safepoint, boolean deferral) {
@@ -557,7 +677,7 @@ public final class QueryExecutionContext {
 	private static ReplaySafepoint copyActiveReplaySafepoints(ReplaySafepoint current) {
 		boolean allActive = true;
 		for (ReplaySafepoint safepoint = current; safepoint != null; safepoint = safepoint.previous) {
-			if (!safepoint.active.get() || safepoint.checkpoint.get() == null) {
+			if (safepoint.scopeOwner.checkpoint == null) {
 				allActive = false;
 				break;
 			}
@@ -568,7 +688,7 @@ public final class QueryExecutionContext {
 
 		List<ReplaySafepoint> activeScopes = new ArrayList<>();
 		for (ReplaySafepoint safepoint = current; safepoint != null; safepoint = safepoint.previous) {
-			if (safepoint.active.get() && safepoint.checkpoint.get() != null) {
+			if (safepoint.scopeOwner.checkpoint != null) {
 				activeScopes.add(safepoint);
 			}
 		}
@@ -576,7 +696,7 @@ public final class QueryExecutionContext {
 		ReplaySafepoint result = null;
 		for (int i = activeScopes.size() - 1; i >= 0; i--) {
 			ReplaySafepoint scope = activeScopes.get(i);
-			result = new ReplaySafepoint(scope.checkpoint, scope.active, result, scope.scopeOwner);
+			result = new ReplaySafepoint(result, scope.scopeOwner);
 		}
 		return result;
 	}
@@ -601,6 +721,8 @@ public final class QueryExecutionContext {
 		ReplaySafepoint safepoint;
 		// Nesting depth of synchronous extension calls that defer cooperative replay checks.
 		int deferralDepth;
+		// Preparation for values that cross into extension code on this thread, or null.
+		Consumer<Value> externalValueInitializer;
 	}
 
 	private static ReplayState replay() {
@@ -608,25 +730,26 @@ public final class QueryExecutionContext {
 	}
 
 	private static final class ReplaySafepoint {
-		private final AtomicReference<Runnable> checkpoint;
-		private final ReplaySafepoint previous;
-		private final AtomicBoolean active;
+		// The original scope owns the callback. Captured chain links consult that same scope so a single
+		// volatile null write both retires the callback and releases its captured values for every worker.
+		private volatile Runnable checkpoint;
+		// Final for every scope but one that ForegroundScope reuses while no other thread can have seen it.
+		private ReplaySafepoint previous;
 		private final ReplaySafepoint scopeOwner;
 		private volatile Supplier<WorkerScope> workerScopeCapture;
+		// Set, by the thread that owns the chain, once a captured replay context refers to this scope. A shared
+		// scope is retired in place and never reused.
+		private boolean shared;
 
 		private ReplaySafepoint(Runnable checkpoint, ReplaySafepoint previous,
 				Supplier<WorkerScope> workerScopeCapture) {
-			this.checkpoint = new AtomicReference<>(checkpoint);
-			this.active = new AtomicBoolean(true);
+			this.checkpoint = checkpoint;
 			this.previous = previous;
 			this.scopeOwner = this;
 			this.workerScopeCapture = workerScopeCapture;
 		}
 
-		private ReplaySafepoint(AtomicReference<Runnable> checkpoint, AtomicBoolean active,
-				ReplaySafepoint previous, ReplaySafepoint scopeOwner) {
-			this.checkpoint = checkpoint;
-			this.active = active;
+		private ReplaySafepoint(ReplaySafepoint previous, ReplaySafepoint scopeOwner) {
 			this.previous = previous;
 			this.scopeOwner = scopeOwner;
 		}

@@ -14,6 +14,7 @@ package org.eclipse.rdf4j.sail.elasticsearchstore.config;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 
+import org.eclipse.rdf4j.query.QueryExecutionPolicy.GraphJoinOptimization;
 import org.eclipse.rdf4j.sail.config.SailConfigException;
 import org.eclipse.rdf4j.sail.elasticsearchstore.ElasticsearchStore;
 import org.junit.jupiter.api.BeforeEach;
@@ -59,7 +60,11 @@ public class ElasticsearchStoreFactoryTest {
 		config.setSlowQueryLogFile("elasticsearch-slow.log");
 
 		ElasticsearchStore sail = (ElasticsearchStore) subject.getSail(config);
-		assertMatchesConfig(sail, config);
+		try {
+			assertMatchesConfig(sail, config);
+		} finally {
+			sail.shutDown();
+		}
 	}
 
 	@Test
@@ -71,11 +76,34 @@ public class ElasticsearchStoreFactoryTest {
 		config.setPort(9300);
 
 		ElasticsearchStore defaultStore = (ElasticsearchStore) subject.getSail(config);
-		assertThat(defaultStore.isExperimentalQueryOptimizations()).isFalse();
+		try {
+			assertThat(defaultStore.isExperimentalQueryOptimizations()).isFalse();
+		} finally {
+			defaultStore.shutDown();
+		}
 
 		config.setExperimentalQueryOptimizations(true);
 		ElasticsearchStore optedInStore = (ElasticsearchStore) subject.getSail(config);
-		assertThat(optedInStore.isExperimentalQueryOptimizations()).isTrue();
+		try {
+			assertThat(optedInStore.isExperimentalQueryOptimizations()).isTrue();
+		} finally {
+			optedInStore.shutDown();
+		}
+	}
+
+	@Test
+	public void getSailCopiesGraphJoinOptimization() {
+		ElasticsearchStoreConfig config = new ElasticsearchStoreConfig();
+		config.setHostname("localhost");
+		config.setClusterName("elasticsearch");
+		config.setIndex("index1");
+		config.setPort(9300);
+		config.setGraphJoinOptimization(GraphJoinOptimization.OFF);
+		config.setExperimentalQueryOptimizations(true);
+
+		ElasticsearchStore store = (ElasticsearchStore) subject.getSail(config);
+		assertThat(store.getQueryExecutionPolicy().graphJoinOptimization()).isEqualTo(GraphJoinOptimization.OFF);
+		assertThat(store.getQueryExecutionPolicy().experimentalQueryOptimizations()).isTrue();
 	}
 
 	private void assertMatchesConfig(ElasticsearchStore sail, ElasticsearchStoreConfig config) {

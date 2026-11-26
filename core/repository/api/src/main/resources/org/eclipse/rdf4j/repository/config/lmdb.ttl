@@ -1,7 +1,7 @@
 #
 # Configuration template for an LmdbStore
 #
-# @workbench.template label="LMDB Store" order=180
+# @workbench.template label="LMDB Store" order=0
 @prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#>.
 @prefix config: <tag:rdf4j.org,2023:config/>.
 @prefix lmdb: <http://rdf4j.org/config/sail/lmdb#>.
@@ -73,6 +73,7 @@
          lmdb:nativeEvaluationEnabled {%Native query evaluation enabled|false|true%} ;
          lmdb:directAdjacencyEnabled {%Direct adjacency index enabled|false|true%} ;
          lmdb:valueOverlayEnabled {%Compressed value overlay enabled|false|true%} ;
+         config:sail.graphJoinOptimization "{%Graph join optimization|AUTO|OFF%}" ;
          config:sail.defaultQueryEvaluationMode "{%Query Evaluation Mode|STANDARD|STRICT%}";
       ]
    ].

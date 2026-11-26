@@ -30,6 +30,28 @@ import org.junit.jupiter.api.Test;
 class ProjectionGraphContextTest {
 
 	@Test
+	void legacyContextDepthPreservesHistoricalIdentityThroughCloning() {
+		Var ordinary = Var.of("g");
+		Var context = Var.of("g");
+		context.setGraphContextDepth(2);
+		assertNotEquals(ordinary, context);
+		context.hashCode();
+
+		context.setLegacyGraphContextDepth(2);
+		assertEquals(2, context.getGraphContextDepth());
+		assertEquals(ordinary, context);
+		assertEquals(context, ordinary);
+		assertEquals(ordinary.hashCode(), context.hashCode());
+
+		Var clone = context.clone();
+		assertEquals(2, clone.getGraphContextDepth());
+		assertEquals(ordinary, clone);
+		assertEquals(ordinary.hashCode(), clone.hashCode());
+		clone.setGraphContextDepth(2);
+		assertNotEquals(ordinary, clone);
+	}
+
+	@Test
 	void cloneOwnsCallerContextAndPreservesItsFrame() {
 		Projection projection = projection();
 		Projection clone = projection.clone();

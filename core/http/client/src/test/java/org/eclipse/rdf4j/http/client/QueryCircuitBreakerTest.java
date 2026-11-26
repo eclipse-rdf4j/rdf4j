@@ -20,6 +20,7 @@ import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.mockito.Mockito.mockStatic;
 
 import java.lang.reflect.Constructor;
 import java.lang.reflect.Field;
@@ -37,6 +38,7 @@ import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.atomic.AtomicReference;
 
 import org.junit.jupiter.api.Test;
+import org.mockito.MockedStatic;
 
 class QueryCircuitBreakerTest {
 
@@ -52,6 +54,8 @@ class QueryCircuitBreakerTest {
 				.with(QueryCircuitBreaker.WARN_FREE_MB_PROPERTY, "400")
 				.with(QueryCircuitBreaker.HIGH_FREE_MB_PROPERTY, "300")
 				.with(QueryCircuitBreaker.CRITICAL_FREE_MB_PROPERTY, "200");
+		// Include the singleton's monitor in the baseline so cleanup only stops this test's monitor.
+		QueryCircuitBreaker.getInstance();
 		Set<Long> existingThreadIds = threadIds("rdf4j-query-breaker-gc-monitor");
 		Thread monitorThread = null;
 
@@ -108,24 +112,43 @@ class QueryCircuitBreakerTest {
 	}
 
 	@Test
-	void shouldDisableHeavyOperatorExecutionOnlyWhileCritical() throws Exception {
+	void shouldDisableHeavyOperatorExecutionOnlyWhileCritical() {
 		Fixture fixture = new Fixture();
 		QueryCircuitBreaker breaker = fixture.breaker(configuration(true, 100, 200, 300, 400, 300, 200, 25, 10, 0,
 				7), 0);
 
-		assertTrue(readHeavyOperatorExecutionEnabled());
+		// Observe this fixture's publications, isolated from the live singleton monitor's JVM-wide flags.
+		try (MockedStatic<QueryExecutionContext> executionContext = mockStatic(QueryExecutionContext.class)) {
+			assertEquals("NORMAL", breaker.snapshotStatus().getState());
+			assertExecutionFlagsPublished(executionContext, true, false);
 
-		fixture.freeMemoryMb.set(150);
-		assertEquals("CRITICAL", breaker.snapshotStatus().getState());
-		assertFalse(readHeavyOperatorExecutionEnabled());
+			fixture.freeMemoryMb.set(350);
+			assertEquals("WARN", breaker.snapshotStatus().getState());
+			assertExecutionFlagsPublished(executionContext, true, false);
 
-		fixture.freeMemoryMb.set(1024);
-		assertEquals("NORMAL", breaker.snapshotStatus().getState());
-		assertTrue(readHeavyOperatorExecutionEnabled());
+			fixture.freeMemoryMb.set(250);
+			assertEquals("HIGH", breaker.snapshotStatus().getState());
+			assertExecutionFlagsPublished(executionContext, true, true);
+
+			fixture.freeMemoryMb.set(150);
+			assertEquals("CRITICAL", breaker.snapshotStatus().getState());
+			assertExecutionFlagsPublished(executionContext, false, true);
+
+			assertEquals("CRITICAL", breaker.snapshotStatus().getState());
+			assertExecutionFlagsPublished(executionContext, false, true);
+
+			fixture.freeMemoryMb.set(250);
+			assertEquals("HIGH", breaker.snapshotStatus().getState());
+			assertExecutionFlagsPublished(executionContext, true, true);
+
+			fixture.freeMemoryMb.set(1024);
+			assertEquals("NORMAL", breaker.snapshotStatus().getState());
+			assertExecutionFlagsPublished(executionContext, true, false);
+		}
 	}
 
 	@Test
-	void shouldClearCriticalKillSwitchImmediatelyWhenBreakerIsDisabled() throws Exception {
+	void shouldClearCriticalKillSwitchImmediatelyWhenBreakerIsDisabled() {
 		Fixture fixture = new Fixture();
 		AtomicReference<QueryCircuitBreaker.Configuration> configuration = new AtomicReference<>(
 				configuration(true, 100, 200, 300, 400, 300, 200, 25, 10, 1000, 7));
@@ -133,18 +156,15 @@ class QueryCircuitBreakerTest {
 				fixture.sleeps::add, () -> {
 				}, 1000, 1, false);
 
-		try {
+		try (MockedStatic<QueryExecutionContext> executionContext = mockStatic(QueryExecutionContext.class)) {
 			fixture.freeMemoryMb.set(150);
 			assertEquals("CRITICAL", breaker.snapshotStatus().getState());
-			assertFalse(readHeavyOperatorExecutionEnabled());
+			assertExecutionFlagsPublished(executionContext, false, true);
 
 			configuration.set(configuration(false, 100, 200, 300, 400, 300, 200, 25, 10, 1000, 7));
 
 			assertEquals("NORMAL", breaker.snapshotStatus().getState());
-			assertTrue(readHeavyOperatorExecutionEnabled());
-		} finally {
-			QueryExecutionContext.setHeavyOperatorExecutionEnabled(true);
-			QueryExecutionContext.setIgnoreCheckpointStride(false);
+			assertExecutionFlagsPublished(executionContext, true, false);
 		}
 	}
 
@@ -684,10 +704,13 @@ class QueryCircuitBreakerTest {
 		}
 	}
 
-	private static boolean readHeavyOperatorExecutionEnabled() throws Exception {
-		Field field = QueryExecutionContext.class.getDeclaredField("heavyOperatorExecutionEnabled");
-		field.setAccessible(true);
-		return field.getBoolean(null);
+	private static void assertExecutionFlagsPublished(MockedStatic<QueryExecutionContext> executionContext,
+			boolean heavyOperatorExecutionEnabled, boolean ignoreCheckpointStride) {
+		executionContext
+				.verify(() -> QueryExecutionContext.setHeavyOperatorExecutionEnabled(heavyOperatorExecutionEnabled));
+		executionContext.verify(() -> QueryExecutionContext.setIgnoreCheckpointStride(ignoreCheckpointStride));
+		executionContext.verifyNoMoreInteractions();
+		executionContext.clearInvocations();
 	}
 
 	private static boolean readIgnoreCheckpointStride() {

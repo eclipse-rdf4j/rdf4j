@@ -16,6 +16,7 @@ import java.lang.invoke.VarHandle;
 import java.util.Comparator;
 import java.util.Date;
 import java.util.IdentityHashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
@@ -25,6 +26,7 @@ import java.util.function.Function;
 import java.util.function.Predicate;
 
 import org.eclipse.rdf4j.common.annotation.Experimental;
+import org.eclipse.rdf4j.common.annotation.InternalUseOnly;
 import org.eclipse.rdf4j.model.BNode;
 import org.eclipse.rdf4j.model.Literal;
 import org.eclipse.rdf4j.model.Resource;
@@ -33,9 +35,12 @@ import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.query.Binding;
 import org.eclipse.rdf4j.query.BindingSet;
+import org.eclipse.rdf4j.query.BlankNodeEffects;
 import org.eclipse.rdf4j.query.Dataset;
 import org.eclipse.rdf4j.query.MutableBindingSet;
+import org.eclipse.rdf4j.query.algebra.evaluation.ArrayBindingSet.IndexedLayout;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryBindingSet;
+import org.eclipse.rdf4j.query.algebra.evaluation.QueryValueEvaluationStep;
 import org.eclipse.rdf4j.query.impl.BlankNodeAllocationScope;
 import org.eclipse.rdf4j.query.impl.RemoteBNode;
 
@@ -60,10 +65,16 @@ public interface QueryEvaluationContext {
 	}
 
 	/**
-	 * Variables substituted by the current EXISTS invocation. The immutable domain is captured at invocation entry;
-	 * bindings subsequently produced inside the body are ordinary variables rather than substituted query terms.
+	 * Variables eligible for term semantics during path evaluation. Includes certified physical path parameters and the
+	 * captures supported by legacy EXISTS evaluation.
 	 */
 	default Set<String> getSubstitutionBindingNames() {
+		return Set.of();
+	}
+
+	/** Binding names captured at the current EXISTS invocation, separate from certified path term parameters. */
+	@InternalUseOnly
+	default Set<String> getCorrelatedPathBindingNames() {
 		return Set.of();
 	}
 
@@ -83,6 +94,24 @@ public interface QueryEvaluationContext {
 	class Minimal implements QueryEvaluationContext {
 
 		private static final VarHandle NOW;
+		// Subclasses that specialize the dataset, clock or value capture still inherit direct binding reads.
+		// Inspect public SPI dispatch once per subclass, without invoking user callbacks to test their behavior.
+		private static final ClassValue<Boolean> INHERITS_DIRECT_READS = new ClassValue<>() {
+			@Override
+			protected Boolean computeValue(Class<?> type) {
+				try {
+					return type.getMethod("getValue", String.class).getDeclaringClass() == QueryEvaluationContext.class
+							&& type.getMethod("getBinding", String.class)
+									.getDeclaringClass() == QueryEvaluationContext.class
+							&& type.getMethod("hasBinding", String.class)
+									.getDeclaringClass() == QueryEvaluationContext.class
+							&& type.getMethod("prepareValueAccessor", String.class, ValueFactory.class)
+									.getDeclaringClass() == QueryEvaluationContext.class;
+				} catch (NoSuchMethodException e) {
+					throw new IllegalStateException("Missing query context binding accessor", e);
+				}
+			}
+		};
 
 		static {
 			try {
@@ -165,6 +194,11 @@ public interface QueryEvaluationContext {
 		}
 
 		@Override
+		public boolean canOmitUnusedStatementBindings() {
+			return getClass() == Minimal.class;
+		}
+
+		@Override
 		public Comparator<Value> getComparator() {
 			return comparator;
 		}
@@ -228,8 +262,38 @@ public interface QueryEvaluationContext {
 	 */
 	Dataset getDataset();
 
+	/** Identity of the prepared execution, shared by its explicit context decorators. */
+	default Object getExecutionIdentity() {
+		return this;
+	}
+
 	default BlankNodeAllocationScope getBlankNodeAllocationScope() {
 		return BlankNodeAllocationScope.forOwner(this);
+	}
+
+	/** Selects the factory to supply to a prepared extension that declares blank-node construction. */
+	default ValueFactory blankNodeValueFactory(ValueFactory factory, BlankNodeEffects effects) {
+		return effects.allocatesFresh() || effects.usesSolutionOccurrence()
+				? new ScopedBlankNodeValueFactory(factory, getBlankNodeAllocationScope(), effects)
+				: factory;
+	}
+
+	/** Binds a value accessor and its blank-node effects without changing unbound-value handling. */
+	default QueryValueEvaluationStep prepareValueAccessor(String name, ValueFactory factory) {
+		Function<BindingSet, Value> accessor = getValue(name);
+		if (accessor == null) {
+			return null;
+		}
+		BlankNodeEffects effects = BlankNodeEffects.of(accessor);
+		if (!effects.importsForeign()) {
+			return QueryValueEvaluationStep.withBlankNodeEffects(accessor::apply, effects);
+		}
+		var mapper = PreparedBlankNodeExecution.bind(getBlankNodeAllocationScope(), factory, effects.foreignScope());
+		return QueryValueEvaluationStep.withBlankNodeEffects(row -> {
+			Value original = row.getValue(name);
+			return mapper.forExecution()
+					.mapPreservingInputs(accessor.apply(row), original == null ? List.of() : List.of(original));
+		}, effects);
 	}
 
 	default BNode getOrCreateBNode(String nodeLabel, BindingSet bindings, ValueFactory valueFactory) {
@@ -240,6 +304,39 @@ public interface QueryEvaluationContext {
 		return new QueryBindingSet();
 	}
 
+	/**
+	 * Whether a backend can read binding values directly in place of executing this context's prepared variable
+	 * accessors. Contexts with custom or effectful accessors use the ordinary evaluator.
+	 */
+	default boolean allowsDirectVariableReads() {
+		return getClass() == Minimal.class || this instanceof Minimal && Minimal.INHERITS_DIRECT_READS.get(getClass());
+	}
+
+	/**
+	 * Whether the read dataset, active graph, path substitutions, and execution ownership stay fixed for prepared path
+	 * steps. The ordinary implicit dataset is stable. Contexts backed by a caller-mutable dataset or scope retain
+	 * per-invocation preparation.
+	 */
+	@InternalUseOnly
+	default boolean allowsPathStepReuse() {
+		return getClass() == Minimal.class && getDataset() == null;
+	}
+
+	/**
+	 * Certifies that omitting writes for unobserved statement bindings has no effect on the other bindings or on query
+	 * execution. Contexts with custom binding callbacks retain the complete statement conversion by default.
+	 */
+	@InternalUseOnly
+	default boolean canOmitUnusedStatementBindings() {
+		return false;
+	}
+
+	/** Opts in to bulk indexed writes that reproduce the context's ordinary binding access and write policy. */
+	@InternalUseOnly
+	default IndexedLayout indexedBindingLayout() {
+		return null;
+	}
+
 	default Predicate<BindingSet> hasBinding(String variableName) {
 		return bs -> bs.hasBinding(variableName);
 	}
@@ -248,16 +345,22 @@ public interface QueryEvaluationContext {
 		return bs -> bs.getBinding(variableName);
 	}
 
+	record DeclaredValueAccessor(Function<BindingSet, Value> callback, BlankNodeEffects blankNodeEffects)
+			implements Function<BindingSet, Value>, BlankNodeEffects.Provider {
+		@Override
+		public Value apply(BindingSet bindings) {
+			return callback.apply(bindings);
+		}
+	}
+
 	default Function<BindingSet, Value> getValue(String variableName) {
 		Function<BindingSet, Binding> getBinding = getBinding(variableName);
-		return bs -> {
+		Function<BindingSet, Value> accessor = bs -> {
 			Binding binding = getBinding.apply(bs);
-			if (binding == null) {
-				return null;
-			} else {
-				return binding.getValue();
-			}
+			return binding == null ? null : binding.getValue();
 		};
+		var effects = BlankNodeEffects.of(getBinding);
+		return effects.isEmpty() ? accessor : new DeclaredValueAccessor(accessor, effects);
 	}
 
 	default BiConsumer<Value, MutableBindingSet> setBinding(String variableName) {

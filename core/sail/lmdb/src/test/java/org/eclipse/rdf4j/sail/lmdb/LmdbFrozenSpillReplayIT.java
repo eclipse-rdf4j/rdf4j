@@ -19,6 +19,7 @@ import java.util.concurrent.TimeUnit;
 
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.Timeout;
+import org.junit.jupiter.api.io.TempDir;
 
 /** Reproducible, constrained-heap end-to-end validation of a spilled frozen LMDB replay. */
 class LmdbFrozenSpillReplayIT {
@@ -27,9 +28,10 @@ class LmdbFrozenSpillReplayIT {
 
 	@Test
 	@Timeout(value = 6, unit = TimeUnit.MINUTES)
-	void replaysThreeHundredThousandStreamedRowsFromAdoptedSpillIn128MiBChild() throws Exception {
+	void replaysThreeHundredThousandStreamedRowsFromAdoptedSpillIn128MiBChild(@TempDir Path temporaryDirectory)
+			throws Exception {
 		Path artifactRoot = Path.of(System.getProperty("rdf4j.lmdb.frozenSpill.artifacts",
-				Path.of(System.getProperty("java.io.tmpdir"), "rdf4j-lmdb-frozen-spill-heap").toString()))
+				temporaryDirectory.toString()))
 				.toAbsolutePath();
 		Files.createDirectories(artifactRoot);
 		Path runDirectory = Files.createTempDirectory(artifactRoot, "streamed-spill-");

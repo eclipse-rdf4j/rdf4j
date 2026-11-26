@@ -80,7 +80,7 @@ import org.eclipse.rdf4j.sail.config.SailConfigException;
 				"\"false\"^^<http://www.w3.org/2001/XMLSchema#boolean>" }
 )
 @ConfigProperty(
-		predicate = "http://rdf4j.org/config/sail/lmdb#valueCacheSize", description = "Value-cache target size; rounded up to a power of two with a minimum of one entry.", datatype = "http://www.w3.org/2001/XMLSchema#int", examples = {
+		predicate = "http://rdf4j.org/config/sail/lmdb#valueCacheSize", description = "Value-cache target size, shared by all statement positions; rounded up to a power of two with a minimum of one entry. Zero disables the cache.", datatype = "http://www.w3.org/2001/XMLSchema#int", examples = {
 				"\"512\"^^<http://www.w3.org/2001/XMLSchema#int>" }
 )
 @ConfigProperty(
@@ -280,7 +280,7 @@ import org.eclipse.rdf4j.sail.config.SailConfigException;
 				+ "direct adjacency is enabled and its mode is not DISABLED.", datatype = "http://www.w3.org/2001/XMLSchema#boolean", examples = {
 						"\"false\"^^<http://www.w3.org/2001/XMLSchema#boolean>" }
 )
-public class LmdbStoreConfig extends BaseSailConfig {
+public class LmdbStoreConfig extends BaseSailConfig implements Cloneable {
 	/**
 	 * The default size of the triple database.
 	 */
@@ -625,6 +625,24 @@ public class LmdbStoreConfig extends BaseSailConfig {
 		return this;
 	}
 
+	/**
+	 * Settings for a store that holds one transaction's spilled changes. That store is deleted with its transaction, so
+	 * forced syncs buy no durability and would make every buffered statement wait for the disk.
+	 */
+	@InternalUseOnly
+	public LmdbStoreConfig forTemporaryOverflow() {
+		if (!forceSync) {
+			return this;
+		}
+		try {
+			LmdbStoreConfig overflow = (LmdbStoreConfig) clone();
+			overflow.forceSync = false;
+			return overflow;
+		} catch (CloneNotSupportedException e) {
+			throw new AssertionError(e);
+		}
+	}
+
 	public LmdbStoreConfig setNoReadahead(boolean noReadahead) {
 		this.noReadahead = noReadahead;
 		return this;
@@ -632,6 +650,15 @@ public class LmdbStoreConfig extends BaseSailConfig {
 
 	public int getValueCacheSize() {
 		return valueCacheSize >= 0 ? valueCacheSize : VALUE_CACHE_SIZE;
+	}
+
+	/**
+	 * Whether no value-cache size was configured. The store then bounds the default by the heap it runs in, because one
+	 * statement position may fill the whole cache.
+	 */
+	@InternalUseOnly
+	public boolean usesDefaultValueCacheSize() {
+		return valueCacheSize < 0;
 	}
 
 	public LmdbStoreConfig setValueCacheSize(int valueCacheSize) {

@@ -25,6 +25,7 @@ import java.util.concurrent.atomic.AtomicInteger;
 import java.util.stream.Collectors;
 
 import org.eclipse.rdf4j.model.IRI;
+import org.eclipse.rdf4j.model.Statement;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.query.BindingSet;
@@ -69,9 +70,14 @@ class LmdbNativeHashJoinBatchTest {
 		try (SailRepositoryConnection connection = repository.getConnection()) {
 			ValueFactory vf = connection.getValueFactory();
 			IRI predicate = vf.createIRI(EX, "key");
+			connection.begin();
+			List<Statement> statements = new ArrayList<>(200);
 			for (int i = 0; i < 200; i++) {
-				connection.add(vf.createIRI(EX, "row" + i), predicate, vf.createIRI(EX, "key" + (i % 20)));
+				statements.add(
+						vf.createStatement(vf.createIRI(EX, "row" + i), predicate, vf.createIRI(EX, "key" + (i % 20))));
 			}
+			connection.add(statements);
+			connection.commit();
 		}
 		setProperty(NATIVE_FLAG, "true");
 		setProperty(NativeBatch.ENABLED_PROPERTY, "true");

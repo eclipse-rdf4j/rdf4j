@@ -674,6 +674,10 @@ keywordQuery.setBinding("keyword", literal(keyword));
 TupleQueryResult keywordQueryResult = keywordQuery.evaluate();
 ```
 
+#### Selecting GRAPH algebra for extension compatibility
+
+`QueryParseOptions` can select `AUTO`, `LEGACY`, or `GRAPH` algebra for subsequent query and update preparations. AUTO is resolved by the local evaluation path; standalone parsing retains legacy algebra. Use an explicit LEGACY setting when an extension cannot consume the new `Graph` node. See [GRAPH algebra compatibility](../graph-algebra-compatibility/) for policy precedence, historical limitations, and remote repository boundaries.
+
 #### Addressing a blank node by its repository ID
 
 RDF4J enables fixed blank node references in SPARQL by default. This deliberately revises the BNR-1 proposal's opt-in
@@ -792,6 +796,30 @@ try (RepositoryConnection conn = repo.getConnection()) {
 }
 ```
 
+#### Logging slow queries
+
+The built-in stores can log queries that exceed a total execution threshold or take too long to produce their first result. Configure the underlying store before creating the repository:
+
+```java
+MemoryStore store = new MemoryStore(new File("repository-data"));
+store.setSlowQueryLogThresholdSeconds(10);
+store.setSlowQueryLogFirstResultThresholdSeconds(2);
+store.setSlowQueryLogFile("slow-query.log");
+```
+
+A threshold of zero disables that event. First-result and completion events are independent; a query can produce both. The completion measurement includes the time until the result is closed, so close query results promptly with try-with-resources.
+
+The file name must be a relative path ending in `.log`, resolved inside that repository's data directory. Absolute paths, paths escaping the data directory, and symbolic links below it are rejected. Parent directories must already exist. File output requires secure directory streams, read/write permission, and file locking. The logger opens and checks the file through directory handles, serializes complete entries across store instances, and uses a nonblocking file lock. If safe file access is unavailable or the file is locked, the entry goes to the `org.eclipse.rdf4j.sail.slowquery` logging category. A null or blank file setting selects that category directly.
+
+Each query execution retains its logging thresholds and destination, query settings, and correlation identifiers. Changing the query or the store configuration after evaluation starts does not change that execution's log entries. Both events include:
+
+- The execution and evaluation IDs, query text hash, start time, originating process and thread, repository and connection identity, and repository data directory.
+- The configured query timeout, inference setting, query language and base URI when available, parser options, requested execution strategy, and result-cache setting.
+- Incoming binding values in RDF syntax, the active dataset selectors, and effective evaluation mode, isolation, optimizer, tracking settings, and result-cache hit status.
+- Raw query text, unoptimized and optimized explanations, and a best-effort rendering of the optimized query.
+
+When the execution originates from the server, available server-request, query-request, transaction, and circuit-breaker execution identifiers are included, together with the relevant HTTP query options. When OpenTelemetry tracing is active, the query's trace and span IDs are included. These identifiers are captured before executor handoffs and result consumption, so a later request cannot replace the original query's context. Embedded repositories without a server-assigned repository ID still include their class, process-local instance identifier, and data directory.
+
 #### Explaining queries
 
 SPARQL queries are translated to query plans and then run through an optimization pipeline before they get evaluated and
@@ -824,10 +852,11 @@ There are 5 explanation levels to choose between:
 | Timed       | ✓      | ✓         | ✓                  | ✓               | ✓                 |                   | ✓                  |
 
 
-Use the `Telemetry` level to inspect runtime telemetry metrics per plan node. Use `Timed` when you need
-time-per-node diagnostics. `Timed`, `Telemetry`, and `Executed` all fully evaluate the query and iterate
-over all the result sets. Seeing as how this can be very time-consuming there is a default best-effort
-timeout of 60 seconds. A different timeout can be set by changing the timeout for the query.
+Use the `Telemetry` level to inspect runtime telemetry metrics per plan node. If a counter is missing
+from the JSON explanation, its value is unknown, not zero. Use `Timed` when you need time-per-node
+diagnostics. `Timed`, `Telemetry`, and `Executed` all fully evaluate the query and iterate over all the
+result sets. Seeing as how this can be very time-consuming there is a default best-effort timeout of
+60 seconds. A different timeout can be set by changing the timeout for the query.
 
 The lower levels `Unoptimized` and `Optimized` are useful for understanding how RDF4J reorders queries in
 order to optimize them.
@@ -916,8 +945,10 @@ are cost-estimates and actual measured output and timing. You may encounter:
  - **costEstimate**: an internal value that represents the cost for executing this node and is used for ordering the nodes
  - **resultSizeEstimate**: the cardinality estimate of a node, essentially how many results this node would return if it were executed alone
  - **resultSizeActual**: the actual number of results that this node produced
- - **totalTimeActual**: the total time this node took to return all its results, including the time for its children
- - **selfTimeActual**: the time this node took all on its own to produce its results
+ - **totalTimeActual**: the elapsed time recorded for this node, including child work done within that measurement.
+   If the node was not timed, a positive sum of available child totals is shown instead. This is not end-to-end query time.
+ - **selfTimeActual**: an estimate of time spent in this node alone, calculated by subtracting available child totals
+   from its recorded time. It is omitted if the node was not timed or the child totals exceed its recorded time.
 
  In the plan above we can see that `ArbitraryLengthPath` took most of our time by using 0.189ms (~75% of the overall time).
  This node represents the `(foaf:knows | ^foaf:knows)* ?friend` part of our query.

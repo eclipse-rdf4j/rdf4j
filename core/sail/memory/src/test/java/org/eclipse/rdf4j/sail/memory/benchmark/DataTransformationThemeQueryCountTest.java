@@ -82,8 +82,7 @@ class DataTransformationThemeQueryCountTest {
 	void combinedPhysicalThemeShapeCountsMatchCatalog() {
 		Set<Integer> outgoingDegrees = new HashSet<>();
 		Set<Integer> incomingDegrees = new HashSet<>();
-		Set<DirectionPredicate> outgoingPredicateGroups = new HashSet<>();
-		Set<DirectionPredicate> incomingPredicateGroups = new HashSet<>();
+		Set<IRI> predicateGroups = new HashSet<>();
 		Set<PredicatePair> predicatePairs = new HashSet<>();
 		for (Theme theme : Theme.values()) {
 			if (theme == Theme.ANALYTICS || theme == Theme.EXPLORATION) {
@@ -91,23 +90,22 @@ class DataTransformationThemeQueryCountTest {
 			}
 
 			Map<Resource, Set<PredicateValue>> outgoing = new HashMap<>();
-			Map<IRI, Set<SubjectPredicate>> incoming = new HashMap<>();
+			Map<IRI, Integer> incoming = new HashMap<>();
 			ThemeDataSetGenerator.generate(theme, new AbstractRDFHandler() {
 				@Override
 				public void handleStatement(Statement statement) {
-					outgoingPredicateGroups.add(new DirectionPredicate("outgoing", statement.getPredicate()));
-					outgoing.computeIfAbsent(statement.getSubject(), ignored -> new HashSet<>())
+					predicateGroups.add(statement.getPredicate());
+					boolean unique = outgoing.computeIfAbsent(statement.getSubject(), ignored -> new HashSet<>())
 							.add(new PredicateValue(statement.getPredicate(), statement.getObject()));
-					incomingPredicateGroups.add(new DirectionPredicate("incoming", statement.getPredicate()));
-					if (statement.getObject() instanceof IRI iri) {
-						incoming.computeIfAbsent(iri, ignored -> new HashSet<>())
-								.add(new SubjectPredicate(statement.getSubject(), statement.getPredicate()));
+					// The outgoing set deduplicates the same triples counted by each incoming degree.
+					if (unique && statement.getObject() instanceof IRI iri) {
+						incoming.merge(iri, 1, Integer::sum);
 					}
 				}
 			});
 
 			outgoing.values().forEach(values -> outgoingDegrees.add(values.size()));
-			incoming.values().forEach(values -> incomingDegrees.add(values.size()));
+			incomingDegrees.addAll(incoming.values());
 			for (Set<PredicateValue> values : outgoing.values()) {
 				List<IRI> predicates = values.stream()
 						.map(PredicateValue::predicate)
@@ -127,7 +125,7 @@ class DataTransformationThemeQueryCountTest {
 		System.out.println("combined incoming degree groups=" + incomingDegrees.size());
 		System.out.println("combined predicate pair groups=" + predicatePairs.size());
 		assertEquals(ThemeQueryCatalog.expectedCountFor(Theme.EXPLORATION, 8),
-				outgoingPredicateGroups.size() + incomingPredicateGroups.size());
+				2L * predicateGroups.size());
 		assertEquals(ThemeQueryCatalog.expectedCountFor(Theme.EXPLORATION, 9), predicatePairs.size());
 		assertEquals(ThemeQueryCatalog.expectedCountFor(Theme.EXPLORATION, 12), degreeGroups);
 	}
@@ -135,12 +133,6 @@ class DataTransformationThemeQueryCountTest {
 	private record PredicateValue(IRI predicate, Value value) {
 	}
 
-	private record SubjectPredicate(Resource subject, IRI predicate) {
-	}
-
 	private record PredicatePair(IRI first, IRI second) {
-	}
-
-	private record DirectionPredicate(String direction, IRI predicate) {
 	}
 }

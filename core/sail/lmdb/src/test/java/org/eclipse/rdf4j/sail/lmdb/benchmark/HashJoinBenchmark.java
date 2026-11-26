@@ -116,20 +116,30 @@ public class HashJoinBenchmark {
 
 		@Setup(Level.Trial)
 		public void setUp() {
-			if (inputRows < 64 || inputRows % 64 != 0) {
-				throw new IllegalArgumentException("inputRows must be at least 64 and divisible by 64");
-			}
-			captureProperties();
-			configure(inputRows);
-			dataDir = Files.newTemporaryFolder();
-			repository = new SailRepository(new LmdbStore(dataDir,
-					new LmdbStoreConfig("spoc,posc,ospc").setNativeEvaluationEnabled(true)));
-			loadData();
-			expectedDigests = expectedDigests(inputRows);
-			executionPaths = new EnumMap<>(Workload.class);
-			for (Workload workload : Workload.values()) {
-				verifyDigest(workload, runWorkload(workload));
-				executionPaths.put(workload, executionPath(workload));
+			try {
+				if (inputRows < 64 || inputRows % 64 != 0) {
+					throw new IllegalArgumentException("inputRows must be at least 64 and divisible by 64");
+				}
+				captureProperties();
+				configure(inputRows);
+				dataDir = Files.newTemporaryFolder();
+				repository = new SailRepository(new LmdbStore(dataDir,
+						new LmdbStoreConfig("spoc,posc,ospc").setNativeEvaluationEnabled(true)));
+				loadData();
+				expectedDigests = expectedDigests(inputRows);
+				executionPaths = new EnumMap<>(Workload.class);
+				for (Workload workload : Workload.values()) {
+					verifyDigest(workload, runWorkload(workload));
+					executionPaths.put(workload, executionPath(workload));
+				}
+
+			} catch (Exception | Error failure) {
+				try {
+					tearDown();
+				} catch (Exception | Error cleanupFailure) {
+					failure.addSuppressed(cleanupFailure);
+				}
+				throw failure;
 			}
 		}
 

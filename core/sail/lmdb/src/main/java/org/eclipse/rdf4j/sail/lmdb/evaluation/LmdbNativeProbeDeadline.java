@@ -43,17 +43,20 @@ final class LmdbNativeProbeDeadline {
 	private static final ThreadLocal<AttemptStates> OWNED_ATTEMPTS = new ThreadLocal<>();
 
 	private final long deadlineNanoTime;
+	private final NativeCancellationToken.CursorWork.PerThread cursorWork = new NativeCancellationToken.CursorWork.PerThread();
+	private final boolean timed;
 	private volatile boolean tripped;
 	private volatile boolean capacityTripped;
 	private Map<Object, AutoCloseable> nativeStates;
 	private boolean statesReleased;
 
-	private LmdbNativeProbeDeadline(long deadlineNanoTime) {
+	private LmdbNativeProbeDeadline(long deadlineNanoTime, boolean timed) {
 		this.deadlineNanoTime = deadlineNanoTime;
+		this.timed = timed;
 	}
 
 	static Scope enter(long deadlineNanoTime) {
-		return enter(new LmdbNativeProbeDeadline(deadlineNanoTime));
+		return enter(new LmdbNativeProbeDeadline(deadlineNanoTime, true));
 	}
 
 	/** Enters an existing deadline (e.g. a {@link #trippableOnly()} one shared with a hedge race) on this thread. */
@@ -158,12 +161,10 @@ final class LmdbNativeProbeDeadline {
 
 	/**
 	 * A deadline that only fires via {@link #trip()}: hedge arms race under it so the winning commit can cancel the
-	 * loser without imposing a wall-clock bound of its own. The "never" instant is {@code now + (Long.MAX_VALUE >> 2)}
-	 * because {@link #expired()} computes {@code nanoTime - deadline >= 0}, which overflows for {@code Long.MAX_VALUE}
-	 * and would report an un-tripped deadline as expired.
+	 * loser without imposing a wall-clock bound of its own. Keep the far-future timestamp for diagnostics.
 	 */
 	static LmdbNativeProbeDeadline trippableOnly() {
-		return new LmdbNativeProbeDeadline(System.nanoTime() + (Long.MAX_VALUE >> 2));
+		return new LmdbNativeProbeDeadline(System.nanoTime() + (Long.MAX_VALUE >> 2), false);
 	}
 
 	/** Worker-side attach: a null parent is a no-op scope, so callers need no conditional. */
@@ -178,6 +179,10 @@ final class LmdbNativeProbeDeadline {
 
 	static LmdbNativeProbeDeadline currentOrNull() {
 		return CURRENT.get();
+	}
+
+	NativeCancellationToken.CursorWork cursorWork(Thread worker) {
+		return cursorWork.forThread(worker);
 	}
 
 	/**
@@ -216,8 +221,7 @@ final class LmdbNativeProbeDeadline {
 		}
 		BooleanSupplier probeOrWorker = workerCancellation == null ? deadline::expired
 				: () -> deadline.expired() || workerCancellation.getAsBoolean();
-		return new KernelCancellation(deadline.deadlineNanoTime, probeOrWorker, queryCancellation,
-				bufferRows(), deadline::tripCapacity);
+		return deadline.kernelCancellation(probeOrWorker, queryCancellation, null);
 	}
 
 	/**
@@ -233,8 +237,13 @@ final class LmdbNativeProbeDeadline {
 					? null
 					: KernelCancellation.forOrdinaryExecution(null, queryCancellation, peerCancellation);
 		}
-		return new KernelCancellation(deadline.deadlineNanoTime, deadline::expired, queryCancellation,
-				bufferRows(), deadline::tripCapacity, peerCancellation);
+		return deadline.kernelCancellation(deadline::expired, queryCancellation, peerCancellation);
+	}
+
+	private KernelCancellation kernelCancellation(BooleanSupplier probe, BooleanSupplier query, BooleanSupplier peer) {
+		return timed
+				? new KernelCancellation(deadlineNanoTime, probe, query, bufferRows(), this::tripCapacity, peer)
+				: KernelCancellation.forManualProbe(probe, query, bufferRows(), this::tripCapacity, peer);
 	}
 
 	/** The rows a cancellable kernel may buffer before it trips its capacity. */
@@ -258,7 +267,7 @@ final class LmdbNativeProbeDeadline {
 		if (tripped) {
 			return true;
 		}
-		if (System.nanoTime() - deadlineNanoTime >= 0L) {
+		if (timed && System.nanoTime() - deadlineNanoTime >= 0L) {
 			tripped = true;
 			return true;
 		}

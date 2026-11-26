@@ -38,9 +38,44 @@ import org.eclipse.rdf4j.sail.lmdb.model.LmdbValue;
 
 /** Query-owned semantic values. Only their dictionary proof changes when a read generation changes. */
 final class PreparedLmdbValue {
+	/** State of a built-in prepared value whose only possible child is its literal datatype. */
+	static State nonTripleState(Value value) {
+		if (value instanceof PreparedIRI iri) {
+			return iri.state;
+		}
+		if (value instanceof PreparedLiteral literal) {
+			return literal.state;
+		}
+		if (value instanceof PreparedBNode bnode) {
+			return bnode.state;
+		}
+		return null;
+	}
 
 	/** Deliberately contains no store, source, connection, reader, or model references. */
 	static final class Owner {
+		private final boolean tracksProjectionChanges;
+		private volatile long projectionEpoch;
+
+		Owner() {
+			this(false);
+		}
+
+		Owner(boolean tracksProjectionChanges) {
+			this.tracksProjectionChanges = tracksProjectionChanges;
+		}
+
+		long projectionEpoch() {
+			long epoch = projectionEpoch;
+			return (epoch & 1L) == 0 ? epoch : -1L;
+		}
+
+		private synchronized void rebindProjection(State state, Proof rebound) {
+			projectionEpoch++;
+			state.proof = rebound;
+			state.dictionaryProof = rebound;
+			projectionEpoch++;
+		}
 	}
 
 	static final class Generation {
@@ -89,8 +124,13 @@ final class PreparedLmdbValue {
 				// Numeric associations can change after GC/reinsert; they do not replace the original decode
 				// capability.
 				Proof rebound = new Proof(null, new InternalIdentity(id, revision));
-				state().proof = rebound;
-				state().dictionaryProof = rebound;
+				State current = state();
+				if (current.owner.tracksProjectionChanges) {
+					current.owner.rebindProjection(current, rebound);
+				} else {
+					current.proof = rebound;
+					current.dictionaryProof = rebound;
+				}
 			}
 		}
 
@@ -276,7 +316,9 @@ final class PreparedLmdbValue {
 			if (language.isPresent()) {
 				return factory.createLiteral(literal.getLabel(), language.get(), literal.getBaseDirection());
 			}
-			return factory.createLiteral(literal.getLabel(), (IRI) ownChild(literal.getDatatype(), owner));
+			IRI datatype = literal.getDatatype();
+			return factory.createLiteral(literal.getLabel(),
+					ValueStore.isCanonicalCoreDatatype(datatype) ? datatype : (IRI) ownChild(datatype, owner));
 		}
 		TripleTerm triple = (TripleTerm) value;
 		return factory.createTripleTerm((Resource) ownChild(triple.getSubject(), owner),
