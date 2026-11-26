@@ -123,7 +123,7 @@ public class MapBindingSetTest extends BindingSetTest<MapBindingSet> {
 	}
 
 	@Test
-	public void compactSnapshotIsSerializedAsAnOrdinaryBindingSet() throws Exception {
+	public void compactSnapshotSurvivesSerialization() throws Exception {
 		MapBindingSet snapshot = compact(new Value[] { RDF.ALT, null, RDF.FIRST });
 		ByteArrayOutputStream bytes = new ByteArrayOutputStream();
 		try (ObjectOutputStream out = new ObjectOutputStream(bytes)) {
