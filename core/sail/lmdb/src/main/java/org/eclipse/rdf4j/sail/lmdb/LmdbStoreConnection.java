@@ -866,6 +866,10 @@ public class LmdbStoreConnection extends SailSourceConnection implements SailRes
 				sourcePlan == null ? valueResolutionScope : sourcePlan.valueScope,
 				sourcePlan == null ? null : (SailResultValueExtractor<T>) sourcePlan.rawExtractor,
 				sourcePlan != null && sourcePlan.queryResult, sourcePlan == null ? null : sourcePlan.queryCapture());
+		CancellationSignal creator = CancellationSignal.current();
+		if (creator != CancellationSignal.NONE && creator != cancellationSignal()) {
+			replayable.creatorSignal = creator;
+		}
 		synchronized (readAttemptLock) {
 			if (sourcePlan != null) {
 				openReplayPlans.remove(sourcePlan);
@@ -3928,6 +3932,12 @@ public class LmdbStoreConnection extends SailSourceConnection implements SailRes
 		private final boolean queryResult;
 		private RawValueRegistration rawRegistration;
 		private volatile WeakReference<RepositoryValueIteration<?>> repositoryExposure;
+		/**
+		 * The signal of the workload that registered this result when that is more than this connection's own,
+		 * otherwise {@code null}. Written before the result is published. The registered raw result checks it on every
+		 * pull; {@link #pullRepositoryRow()} is not reached through that result and checks it itself.
+		 */
+		private CancellationSignal creatorSignal;
 		private volatile CloseableIteration<? extends T> delegate;
 		private volatile QueryValueCaptureIteration queryCapture;
 		private final ReplayFactory<T> factory;
@@ -4087,6 +4097,10 @@ public class LmdbStoreConnection extends SailSourceConnection implements SailRes
 		 */
 		@Override
 		public Object pullRepositoryRow() {
+			CancellationSignal creator = creatorSignal;
+			if (creator != null && creator.isCancelled()) {
+				throw new SailException("The workload that created this result is shutting down");
+			}
 			QueryValueCaptureIteration capture = queryCapture;
 			if (repositoryPullActive || !observed || operationAttempt == null || !operationAttempt.sealed
 					|| rowPrefetched || capture == null || capture.nativeProjection || isClosed()) {
@@ -4233,6 +4247,10 @@ public class LmdbStoreConnection extends SailSourceConnection implements SailRes
 					for (LmdbSailStore.ReadViewLease readView : readViews) {
 						readView.ensureNativeSnapshotsValid();
 					}
+				} else {
+					// Nothing renews a pinned reader without auto-grow, but a namespace commit can still fail with an
+					// unknown outcome, and a row read before that is not handed out either.
+					lmdbStore.getBackingStore().ensureNamespacePersistenceCertain();
 				}
 			} catch (QueryInterruptedException cancelled) {
 				closeResources(cancelled, this::close);

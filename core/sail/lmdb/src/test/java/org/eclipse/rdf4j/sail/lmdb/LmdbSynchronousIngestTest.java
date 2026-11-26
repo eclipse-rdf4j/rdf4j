@@ -57,6 +57,8 @@ import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.Statement;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
+import org.eclipse.rdf4j.query.QueryEvaluationException;
+import org.eclipse.rdf4j.query.TupleQueryResult;
 import org.eclipse.rdf4j.query.algebra.evaluation.sketch.SketchBasedJoinEstimator;
 import org.eclipse.rdf4j.repository.RepositoryConnection;
 import org.eclipse.rdf4j.repository.RepositoryException;
@@ -1356,6 +1358,57 @@ class LmdbSynchronousIngestTest {
 						"a row read before the failure must not be handed out once the namespace state is unknown");
 				assertTrue(uncertain.getMessage().contains("namespace commit outcome is uncertain"),
 						uncertain.getMessage());
+			}
+			fixture.store.getBackingStore().rollback();
+		} catch (Throwable failure) {
+			// An uncertain store refuses an ordinary shutdown; that must not replace the failure above.
+			try {
+				fixture.close();
+			} catch (RuntimeException | Error cleanup) {
+				failure.addSuppressed(cleanup);
+			}
+			throw failure;
+		}
+		assertThrows(RepositoryException.class, fixture.repository::shutDown,
+				"an uncertain store must still close native resources before it is reopened");
+	}
+
+	@Test
+	@Timeout(value = 10, unit = TimeUnit.SECONDS)
+	void failedNamespaceReconciliationFencesBufferedQueryRowsWithoutAutoGrow(@TempDir Path directory)
+			throws Exception {
+		LmdbStoreConfig config = config(Policy.DISABLED);
+		IOException readFailure = new IOException("injected namespace reconciliation read failure");
+		Fixture fixture = new Fixture(directory, config);
+		try {
+			write(fixture, statements("buffered-before-uncertainty", 8));
+			loadAuthoritativeNamespaces(fixture);
+			try (RepositoryConnection reader = fixture.repository.getConnection();
+					TupleQueryResult rows = reader
+							.prepareTupleQuery("SELECT * { ?s ?p ?o }")
+							.evaluate()) {
+				// Past the first pulls, so that the result holds rows its producer read before the failure.
+				for (int i = 0; i < 3; i++) {
+					assertTrue(rows.hasNext());
+					rows.next();
+				}
+
+				fixture.events.failTripleCommit.set(true);
+				NamespaceReadProbe probe = new NamespaceReadProbe(null, readFailure);
+				try (RepositoryConnection writer = fixture.repository.getConnection()) {
+					writer.begin();
+					writer.add(statements("uncertain-buffered-rows", 2));
+					writer.setNamespace("uncertain", "urn:uncertain:");
+					fixture.events.namespaceReadProbe = probe;
+					assertThrows(RepositoryException.class, writer::commit);
+					fixture.events.namespaceReadProbe = null;
+					writer.rollback();
+				}
+
+				QueryEvaluationException uncertain = assertThrows(
+						QueryEvaluationException.class, rows::hasNext,
+						"a row read before the failure must not be handed out once the namespace state is unknown");
+				assertNotNull(cause(uncertain, SailException.class), "the namespace fence is the cause");
 			}
 			fixture.store.getBackingStore().rollback();
 		} catch (Throwable failure) {
