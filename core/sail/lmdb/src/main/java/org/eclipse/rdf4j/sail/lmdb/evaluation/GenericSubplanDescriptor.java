@@ -71,7 +71,8 @@ final class GenericSubplanDescriptor {
 
 	static GenericSubplanDescriptor create(QueryModelNode expr, LmdbNativeEvaluationStrategy strategy,
 			NativeValuePositionAnalysis valuePositions) {
-		return prepareAtPositions(strategy, valuePositions, () -> create(expr, strategy));
+		return strategy == null ? create(expr)
+				: strategy.withValuePositions(valuePositions, () -> create(expr, strategy));
 	}
 
 	static GenericSubplanDescriptor create(QueryModelNode expr, LmdbNativeEvaluationStrategy strategy) {
@@ -89,27 +90,22 @@ final class GenericSubplanDescriptor {
 	}
 
 	<T> T prepare(Supplier<T> factory) {
-		return prepareAtPositions(positionOwner, valuePositions, factory);
+		return positionOwner == null ? factory.get() : positionOwner.withValuePositions(valuePositions, factory);
 	}
 
 	QueryEvaluationStep precompile(LmdbNativeEvaluationStrategy strategy, QueryEvaluationContext context) {
-		return prepareAtPositions(strategy, valuePositions,
+		return strategy.withValuePositions(valuePositions,
 				() -> strategy.precompile(this.<TupleExpr>pinnedExpr(), context));
 	}
 
 	QueryValueEvaluationStep precompileValue(LmdbNativeEvaluationStrategy strategy, QueryEvaluationContext context) {
-		return prepareAtPositions(strategy, valuePositions,
+		return strategy.withValuePositions(valuePositions,
 				() -> strategy.precompile(this.<ValueExpr>pinnedExpr(), context));
 	}
 
 	QueryEvaluationStep genericPrecompile(LmdbNativeEvaluationStrategy strategy, QueryEvaluationContext context) {
-		return prepareAtPositions(strategy, valuePositions,
+		return strategy.withValuePositions(valuePositions,
 				() -> strategy.genericPrecompile(this.<TupleExpr>pinnedExpr(), context));
-	}
-
-	private static <T> T prepareAtPositions(LmdbNativeEvaluationStrategy strategy,
-			NativeValuePositionAnalysis positions, Supplier<T> factory) {
-		return strategy == null || positions == null ? factory.get() : strategy.withValuePositions(positions, factory);
 	}
 
 	@SuppressWarnings("unchecked")
