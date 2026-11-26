@@ -1343,11 +1343,15 @@ public final class QueryAlgebraBindingAnalysis {
 			if (!left.possibleOutputsKnown || !right.possibleOutputsKnown) {
 				return OutputFacts.unknown(input);
 			}
-			Set<String> guaranteed = union(left.guaranteedOutputs, right.guaranteedOutputs);
-			Set<String> overwritten = union(left.overwrittenInputNames, right.overwrittenInputNames);
-			return OutputFacts.known(union(left.possibleOutputs, right.possibleOutputs), guaranteed,
-					joinFixedValues(left, right, guaranteed), joinKinds(left, right, guaranteed), input, true,
-					left.retainedInputNames).withOverwrittenInputs(overwritten);
+			Set<String> possible = unionOf(left.possibleOutputs, right.possibleOutputs);
+			// Operands that guarantee all they can bind share one set for both; then so does their join.
+			Set<String> guaranteed = left.guaranteedOutputs == left.possibleOutputs
+					&& right.guaranteedOutputs == right.possibleOutputs ? possible
+							: unionOf(left.guaranteedOutputs, right.guaranteedOutputs);
+			Set<String> overwritten = unionOf(left.overwrittenInputNames, right.overwrittenInputNames);
+			return OutputFacts.known(possible, guaranteed, joinFixedValues(left, right, guaranteed),
+					joinKinds(left, right, guaranteed), input, true, left.retainedInputNames)
+					.withOverwrittenInputs(overwritten);
 		}
 		if (expression instanceof Lateral lateral) {
 			OutputFacts left = outputFacts(lateral.getLeftArg(), childInput(lateral, lateral.getLeftArg(), input));
@@ -1531,12 +1535,28 @@ public final class QueryAlgebraBindingAnalysis {
 	}
 
 	private OutputFacts filterFacts(OutputFacts child, ValueExpr condition, ReadOnlyContext input) {
+		if (!mayAddFilterFacts(condition)) {
+			// The condition leaves the argument's facts as they are; its immutable collections are passed on.
+			return OutputFacts.known(child.possibleOutputs, child.guaranteedOutputs, child.fixedValues,
+					child.valueKinds, input, true, child.retainedInputNames)
+					.withOverwrittenInputs(child.overwrittenInputNames);
+		}
 		Set<String> guaranteed = new HashSet<>(child.guaranteedOutputs);
 		Map<String, Value> fixed = new HashMap<>(child.fixedValues);
 		Map<String, Set<ValueKind>> kinds = new HashMap<>(child.valueKinds);
 		applyFilterFacts(condition, child.possibleOutputs, guaranteed, fixed, kinds);
 		return OutputFacts.known(child.possibleOutputs, guaranteed, fixed, kinds, input, true,
 				child.retainedInputNames).withOverwrittenInputs(child.overwrittenInputNames);
+	}
+
+	/** Whether {@link #applyFilterFacts} can change anything for this condition: only BOUND and the type tests do. */
+	private static boolean mayAddFilterFacts(ValueExpr expression) {
+		if (expression instanceof And and) {
+			return mayAddFilterFacts(and.getLeftArg()) || mayAddFilterFacts(and.getRightArg());
+		}
+		return expression instanceof Bound || expression instanceof IsBNode || expression instanceof IsLiteral
+				|| expression instanceof IsNumeric || expression instanceof IsResource || expression instanceof IsTriple
+				|| expression instanceof IsURI;
 	}
 
 	private void applyFilterFacts(ValueExpr expression, Set<String> possible, Set<String> guaranteed,
@@ -2005,6 +2025,20 @@ public final class QueryAlgebraBindingAnalysis {
 		return result;
 	}
 
+	/** A union that is only read afterwards: an operand is returned as it is when the other adds nothing. */
+	private static Set<String> unionOf(Set<String> left, Set<String> right) {
+		if (right.isEmpty()) {
+			return left;
+		}
+		if (left.isEmpty()) {
+			return right;
+		}
+		Set<String> result = new HashSet<>((left.size() + right.size()) * 2);
+		result.addAll(left);
+		result.addAll(right);
+		return result;
+	}
+
 	private Set<String> intersection(Set<String> left, Set<String> right) {
 		Set<String> result = new HashSet<>(left);
 		result.retainAll(right);
@@ -2218,6 +2252,10 @@ public final class QueryAlgebraBindingAnalysis {
 		}
 
 		OutputFacts withOverwrittenInputs(Set<String> names) {
+			if (names.isEmpty()) {
+				// Nothing is added to the overwritten names and nothing leaves the retained ones.
+				return this;
+			}
 			Set<String> overwritten = new HashSet<>(overwrittenInputNames);
 			overwritten.addAll(names);
 			Set<String> retained = new HashSet<>(retainedInputNames);
@@ -2744,9 +2782,9 @@ public final class QueryAlgebraBindingAnalysis {
 		private final Set<String> existsLocals;
 
 		private Dependencies(Set<String> directReferences, Set<String> correlatedInputs, Set<String> existsLocals) {
-			this.directReferences = Set.copyOf(directReferences);
-			this.correlatedInputs = Set.copyOf(correlatedInputs);
-			this.existsLocals = Set.copyOf(existsLocals);
+			this.directReferences = immutableNames(directReferences);
+			this.correlatedInputs = immutableNames(correlatedInputs);
+			this.existsLocals = immutableNames(existsLocals);
 		}
 
 		public Set<String> directReferences() {
