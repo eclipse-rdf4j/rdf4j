@@ -15,6 +15,7 @@ import java.util.HashSet;
 import java.util.Set;
 
 import org.eclipse.rdf4j.common.annotation.InternalUseOnly;
+import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.query.BindingSet;
@@ -42,6 +43,10 @@ import org.eclipse.rdf4j.query.impl.RemoteBNode;
 @InternalUseOnly
 public final class FederatedServiceIdentity {
 	private FederatedServiceIdentity() {
+	}
+
+	/** An individual SELECT result whose original inputs and result identities have already been reconciled. */
+	public interface AdmittedResults extends CloseableIteration<BindingSet> {
 	}
 
 	public static void validate(Service service, BindingSet bindings, boolean referencesSupported) {

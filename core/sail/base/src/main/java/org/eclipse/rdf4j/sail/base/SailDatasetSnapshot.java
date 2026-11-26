@@ -135,7 +135,7 @@ public final class SailDatasetSnapshot implements SailClosable {
 			}
 			closed = true;
 			if (previous == null) {
-				CURRENT.remove();
+				CURRENT.set(null);
 			} else {
 				CURRENT.set(previous);
 			}

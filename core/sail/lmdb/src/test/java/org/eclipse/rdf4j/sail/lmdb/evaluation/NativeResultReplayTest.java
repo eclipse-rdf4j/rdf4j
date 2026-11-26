@@ -35,12 +35,17 @@ import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
 
 import org.eclipse.rdf4j.common.iteration.CloseableIteratorIteration;
+import org.eclipse.rdf4j.model.BNode;
+import org.eclipse.rdf4j.model.TripleTerm;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.query.BindingSet;
+import org.eclipse.rdf4j.query.impl.BlankNodeAllocationScope;
 import org.eclipse.rdf4j.query.impl.EmptyBindingSet;
 import org.eclipse.rdf4j.query.impl.GeneratedBNode;
 import org.eclipse.rdf4j.query.impl.MapBindingSet;
+import org.eclipse.rdf4j.query.impl.RemoteBNode;
+import org.eclipse.rdf4j.query.impl.RepositoryBNode;
 import org.eclipse.rdf4j.sail.lmdb.LmdbQueryMemoryManager;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.codegen.KernelQueryCancelledException;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.codegen.KernelRuntime;
@@ -80,6 +85,45 @@ class NativeResultReplayTest {
 			}
 		}
 		assertEquals(0L, memory.usedBytes(), "closing the resident owner releases all query memory");
+	}
+
+	@Test
+	void spillRestoresScopedBlankNodesInsideNestedTermsWithoutTrustingEqualLabels() {
+		var vf = SimpleValueFactory.getInstance();
+		var epoch = new Object();
+		var allocation = new BlankNodeAllocationScope();
+		BNode wire = vf.createBNode("stored-label");
+		BNode remote = (BNode) RemoteBNode.newResponseScope(allocation, vf, epoch, true).map(wire);
+		BNode generated = allocation.createBNode(vf);
+		BNode repository = RepositoryBNode.fromNegotiatedResult("repository-envelope", wire.getID(), true);
+		BNode raw = vf.createBNode(remote.getID());
+		var predicate = vf.createIRI("urn:p");
+		TripleTerm nested = vf.createTripleTerm(remote, predicate,
+				vf.createTripleTerm(generated, predicate, repository));
+		var memory = LmdbQueryMemoryManager.createForTesting(64L << 10, 64L << 10);
+		var schema = new NativeResultRow.Schema("term", "raw", "padding");
+		try (var context = new NativeExecutionContext();
+				var ledger = memory.openQuery();
+				var replay = new NativeResultReplay(schema, context, context.cancellation(), ledger, 12L << 10)) {
+			for (int i = 0; i < 64; i++) {
+				replay.append(new NativeResultRow(schema, new NativeResultCell[] { NativeResultCell.term(nested),
+						NativeResultCell.term(raw), NativeResultCell.term(vf.createLiteral("a".repeat(512))) }));
+			}
+			replay.finish();
+			assertTrue(replay.spilled());
+			try (var first = replay.cursor(); var second = replay.cursor()) {
+				for (NativeResultCursor reader : List.of(first, second)) {
+					NativeResultRow row = reader.next();
+					TripleTerm term = (TripleTerm) row.cell("term").value();
+					assertEquals(wire, RemoteBNode.toRemoteValue(term.getSubject(), epoch, true, true));
+					TripleTerm nestedTerm = (TripleTerm) term.getObject();
+					assertTrue(((GeneratedBNode) nestedTerm.getSubject()).isAdmittedTo(allocation));
+					assertTrue(((RepositoryBNode) nestedTerm.getObject()).isReference());
+					assertEquals(raw.getClass(), row.cell("raw").value().getClass());
+				}
+			}
+		}
+		assertEquals(0L, memory.usedBytes());
 	}
 
 	@Test

@@ -12,12 +12,14 @@
 package org.eclipse.rdf4j.query.algebra.evaluation.iterator;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.tuple;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.doAnswer;
 import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.spy;
@@ -26,6 +28,7 @@ import static org.mockito.Mockito.when;
 
 import java.util.Comparator;
 import java.util.HashSet;
+import java.util.Iterator;
 import java.util.List;
 import java.util.Set;
 import java.util.concurrent.atomic.AtomicInteger;
@@ -80,6 +83,7 @@ public class PathIterationTest {
 
 	private DefaultEvaluationStrategy evaluator;
 	private Model model;
+	private TripleSource tripleSource;
 	private static final ValueFactory vf = SimpleValueFactory.getInstance();
 	private static final Resource one = vf.createIRI("https://example.org/", "one");
 	private static final Resource two = vf.createIRI("https://example.org/", "two");
@@ -92,7 +96,7 @@ public class PathIterationTest {
 		m.add(one, RDFS.SUBCLASSOF, two);
 		m.add(two, RDFS.SUBCLASSOF, three);
 
-		TripleSource ts = new TripleSource() {
+		tripleSource = new TripleSource() {
 
 			@Override
 			public CloseableIteration<? extends Statement> getStatements(Resource subj,
@@ -105,7 +109,7 @@ public class PathIterationTest {
 				return vf;
 			}
 		};
-		evaluator = new DefaultEvaluationStrategy(ts, null);
+		evaluator = new DefaultEvaluationStrategy(tripleSource, null);
 	}
 
 	@TestFactory
@@ -129,6 +133,296 @@ public class PathIterationTest {
 							new QueryEvaluationContext.Minimal(null),
 							ArrayBindingBasedQueryEvaluationContext.findAllVariablesUsedInQuery(array), null);
 					try (var rows = evaluator.precompile(array, context).evaluate(EmptyBindingSet.getInstance())) {
+						assertThat(QueryResults.asList(rows)).containsExactlyInAnyOrderElementsOf(expected);
+					}
+				}));
+	}
+
+	@Test
+	void aNewPathPairRequiresOnlyOneReportedMembershipProbe() {
+		model.clear();
+		for (int i = 0; i < 32; i++) {
+			model.add(vf.createIRI("urn:n:" + i), RDFS.SUBCLASSOF, vf.createIRI("urn:n:" + (i + 1)));
+		}
+		AtomicInteger probes = new AtomicInteger();
+		CollectionFactory factory = spy(evaluator.getCollectionFactory().get());
+		doAnswer(call -> new HashSet<BindingSet>() {
+			@Override
+			public boolean contains(Object key) {
+				probes.incrementAndGet();
+				return super.contains(key);
+			}
+		}).when(factory).createSetOfBindingSets(any(), any(), any(), any());
+		evaluator.setCollectionFactory(() -> factory);
+		var root = new QueryRoot(QueryParserUtil.parseTupleQuery(QueryLanguage.SPARQL,
+				"SELECT ?o WHERE { <urn:n:0> <" + RDFS.SUBCLASSOF + ">+ ?o }", null).getTupleExpr());
+		try (var rows = evaluator.precompile(root).evaluate(EmptyBindingSet.getInstance())) {
+			assertThat(QueryResults.asList(rows)).hasSize(32);
+		}
+		assertThat(probes.get()).isLessThanOrEqualTo(32);
+	}
+
+	@Test
+	void repeatedSimpleFrontierLookupsReuseOneCompiledStep() {
+		for (int i = 0; i < 32; i++) {
+			var from = vf.createIRI("urn:node:" + i);
+			var to = vf.createIRI("urn:node:" + (i + 1));
+			model.add(from, RDFS.SUBCLASSOF, to);
+		}
+		AtomicInteger statementPreparations = new AtomicInteger();
+		var counting = spy(evaluator);
+		doAnswer(call -> {
+			if (call.getArgument(0) instanceof StatementPattern) {
+				statementPreparations.incrementAndGet();
+			}
+			return call.callRealMethod();
+		}).when(counting).precompile(any(TupleExpr.class), any(QueryEvaluationContext.class));
+		var root = new QueryRoot(QueryParserUtil.parseTupleQuery(QueryLanguage.SPARQL,
+				"SELECT ?o WHERE { <urn:node:0> <" + RDFS.SUBCLASSOF + ">* ?o }", null).getTupleExpr());
+		var step = counting.precompile(root);
+		try (var rows = step.evaluate(EmptyBindingSet.getInstance())) {
+			assertThat(QueryResults.asList(rows)).hasSize(33);
+		}
+		assertThat(statementPreparations.get()).as("statement preparation must not scale with frontier size")
+				.isLessThanOrEqualTo(3);
+	}
+
+	@Test
+	void fixedLexicalEndpointsReuseAnOrdinaryPathFrontier() {
+		model.clear();
+		for (int i = 0; i < 32; i++) {
+			model.add(vf.createIRI("urn:n:" + i), RDFS.SUBCLASSOF, vf.createIRI("urn:n:" + (i + 1)));
+		}
+		model.add(vf.createIRI("urn:n:32"), RDFS.SUBCLASSOF, vf.createIRI("urn:n:0"));
+		var counting = spy(evaluator);
+		AtomicInteger statementPreparations = new AtomicInteger();
+		doAnswer(call -> {
+			if (call.getArgument(0) instanceof StatementPattern) {
+				statementPreparations.incrementAndGet();
+			}
+			return call.callRealMethod();
+		}).when(counting).precompile(any(TupleExpr.class), any(QueryEvaluationContext.class));
+
+		String predicate = "<" + RDFS.SUBCLASSOF + ">";
+		List<String> patterns = List.of(
+				"<urn:n:0> " + predicate + "+ <urn:n:32>",
+				"<urn:n:32> ^" + predicate + "* <urn:n:0>",
+				"<urn:n:0> " + predicate + "+ <urn:n:0>",
+				"<urn:n:0> " + predicate + "+ <urn:absent>",
+				"<urn:absent> " + predicate + "* <urn:absent>");
+		for (int i = 0; i < patterns.size(); i++) {
+			String pattern = patterns.get(i);
+			statementPreparations.set(0);
+			var parsed = QueryParserUtil.parseTupleQuery(QueryLanguage.SPARQL,
+					"SELECT * WHERE { " + pattern + " }", null);
+			var step = counting.precompile(new QueryRoot(parsed.getTupleExpr()));
+			try (var results = step.evaluate(EmptyBindingSet.getInstance())) {
+				assertThat(QueryResults.asList(results)).as(pattern).hasSize(i == 3 ? 0 : 1);
+			}
+			assertThat(statementPreparations.get()).as(pattern).isLessThanOrEqualTo(3);
+		}
+	}
+
+	@Test
+	void boundSimplePathStopsAfterFirstWitnessWhenResultIsFullyDrained() {
+		Resource sibling = vf.createIRI("urn:sibling");
+		model.clear();
+		model.add(one, RDFS.SUBCLASSOF, two);
+		model.add(one, RDFS.SUBCLASSOF, sibling);
+		AtomicInteger statementsRead = new AtomicInteger();
+		AtomicInteger statementIterationsClosed = new AtomicInteger();
+		TripleSource counting = new TripleSource() {
+			@Override
+			public CloseableIteration<? extends Statement> getStatements(Resource subj, IRI pred, Value obj,
+					Resource... contexts) throws QueryEvaluationException {
+				Iterator<? extends Statement> delegate = model.getStatements(subj, pred, obj, contexts).iterator();
+				return new CloseableIteratorIteration<Statement>(new Iterator<Statement>() {
+					@Override
+					public boolean hasNext() {
+						return delegate.hasNext();
+					}
+
+					@Override
+					public Statement next() {
+						statementsRead.incrementAndGet();
+						return delegate.next();
+					}
+				}) {
+					@Override
+					protected void handleClose() {
+						statementIterationsClosed.incrementAndGet();
+					}
+				};
+			}
+
+			@Override
+			public ValueFactory getValueFactory() {
+				return vf;
+			}
+		};
+		DefaultEvaluationStrategy countingEvaluator = new DefaultEvaluationStrategy(counting, null);
+
+		for (long minimumLength : new long[] { 0, 1 }) {
+			statementsRead.set(0);
+			statementIterationsClosed.set(0);
+			Var start = Var.of("start");
+			Var end = Var.of("end");
+			Var predicate = Var.of("predicate", RDFS.SUBCLASSOF);
+			ArbitraryLengthPath path = new ArbitraryLengthPath(Scope.DEFAULT_CONTEXTS, start,
+					new StatementPattern(start.clone(), predicate, end.clone()), end, minimumLength);
+			QueryBindingSet bindings = new QueryBindingSet();
+			bindings.addBinding("start", one);
+			bindings.addBinding("end", two);
+			QueryEvaluationStep prepared = PathIteration.prepare(countingEvaluator, path,
+					new QueryEvaluationContext.Minimal(null), true);
+
+			try (var rows = prepared.evaluate(bindings)) {
+				assertThat(QueryResults.asList(rows))
+						.extracting(row -> row.getValue("start"), row -> row.getValue("end"))
+						.containsExactly(tuple(one, two));
+			}
+			assertThat(statementsRead).as("minimum length " + minimumLength)
+					.hasValue(1);
+			assertThat(statementIterationsClosed).as("minimum length " + minimumLength)
+					.hasValue(1);
+		}
+
+		statementsRead.set(0);
+		statementIterationsClosed.set(0);
+		Var start = Var.of("start");
+		Var end = Var.of("end");
+		Var predicate = Var.of("predicate", RDFS.SUBCLASSOF);
+		ArbitraryLengthPath missingPath = new ArbitraryLengthPath(Scope.DEFAULT_CONTEXTS, start,
+				new StatementPattern(start.clone(), predicate, end.clone()), end, 1);
+		QueryBindingSet missingBindings = new QueryBindingSet();
+		missingBindings.addBinding("start", one);
+		missingBindings.addBinding("end", vf.createIRI("urn:missing"));
+		try (var rows = PathIteration.prepare(countingEvaluator, missingPath,
+				new QueryEvaluationContext.Minimal(null), true).evaluate(missingBindings)) {
+			assertThat(QueryResults.asList(rows)).isEmpty();
+		}
+		assertThat(statementsRead).as("a fixed endpoint miss must exhaust its candidates")
+				.hasValue(2);
+		assertThat(statementIterationsClosed.get()).as("all path scans must close after exhaustion")
+				.isGreaterThan(0);
+	}
+
+	@Test
+	void firstWitnessCertificateHandlesInverseAndCyclePaths() {
+		model.clear();
+		model.add(one, RDFS.SUBCLASSOF, two);
+		model.add(two, RDFS.SUBCLASSOF, one);
+
+		for (long minimumLength : new long[] { 0, 1 }) {
+			Var start = Var.of("start");
+			Var end = Var.of("end");
+			Var predicate = Var.of("predicate", RDFS.SUBCLASSOF);
+			ArbitraryLengthPath cycle = new ArbitraryLengthPath(Scope.DEFAULT_CONTEXTS, start,
+					new StatementPattern(start.clone(), predicate, end.clone()), end, minimumLength);
+			QueryBindingSet cycleBindings = new QueryBindingSet();
+			cycleBindings.addBinding("start", one);
+			cycleBindings.addBinding("end", one);
+			try (var rows = PathIteration.prepare(evaluator, cycle, new QueryEvaluationContext.Minimal(null), true)
+					.evaluate(cycleBindings)) {
+				assertThat(QueryResults.asList(rows))
+						.extracting(row -> row.getValue("start"), row -> row.getValue("end"))
+						.containsExactly(tuple(one, one));
+			}
+		}
+
+		Var start = Var.of("start");
+		Var end = Var.of("end");
+		Var predicate = Var.of("predicate", RDFS.SUBCLASSOF);
+		ArbitraryLengthPath inverse = new ArbitraryLengthPath(Scope.DEFAULT_CONTEXTS, start,
+				new StatementPattern(end.clone(), predicate, start.clone()), end, 1);
+		QueryBindingSet inverseBindings = new QueryBindingSet();
+		inverseBindings.addBinding("start", two);
+		inverseBindings.addBinding("end", one);
+		try (var rows = PathIteration.prepare(evaluator, inverse, new QueryEvaluationContext.Minimal(null), true)
+				.evaluate(inverseBindings)) {
+			assertThat(QueryResults.asList(rows))
+					.extracting(row -> row.getValue("start"), row -> row.getValue("end"))
+					.containsExactly(tuple(two, one));
+		}
+	}
+
+	@Test
+	void fixedNamedGraphPathKeepsEachGraphInItsResult() {
+		Resource firstGraph = vf.createIRI("urn:graph:first");
+		Resource secondGraph = vf.createIRI("urn:graph:second");
+		model.clear();
+		model.add(one, RDFS.SUBCLASSOF, two, firstGraph);
+		model.add(one, RDFS.SUBCLASSOF, two, secondGraph);
+		Var start = Var.of("start");
+		Var end = Var.of("end");
+		Var graph = Var.of("graph");
+		Var predicate = Var.of("predicate", RDFS.SUBCLASSOF);
+		StatementPattern edge = new StatementPattern(Scope.NAMED_CONTEXTS, start.clone(), predicate, end.clone(),
+				graph);
+		ArbitraryLengthPath path = new ArbitraryLengthPath(Scope.NAMED_CONTEXTS, start, edge, end, graph.clone(), 1);
+		QueryBindingSet bindings = new QueryBindingSet();
+		bindings.addBinding("start", one);
+		bindings.addBinding("end", two);
+		try (var rows = PathIteration.prepare(evaluator, path, new QueryEvaluationContext.Minimal(null), true)
+				.evaluate(bindings)) {
+			assertThat(QueryResults.asList(rows))
+					.extracting(row -> row.getValue("graph"))
+					.containsExactlyInAnyOrder(firstGraph, secondGraph);
+		}
+	}
+
+	@Test
+	void reusedFrontierBindsItsPrivateSlotInAnArrayQuery() {
+		model.clear();
+		var a = vf.createIRI("urn:a");
+		var b = vf.createIRI("urn:b");
+		var c = vf.createIRI("urn:c");
+		var d = vf.createIRI("urn:d");
+		model.add(a, RDFS.SUBCLASSOF, b);
+		model.add(c, RDFS.SUBCLASSOF, d);
+		var root = new QueryRoot(QueryParserUtil.parseTupleQuery(QueryLanguage.SPARQL,
+				"SELECT ?s ?o WHERE { ?s <" + RDFS.SUBCLASSOF + ">+ ?o }", null).getTupleExpr());
+		var step = evaluator.precompile(root);
+		try (var rows = step.evaluate(EmptyBindingSet.getInstance())) {
+			assertThat(QueryResults.asList(rows))
+					.extracting(row -> row.getValue("s"), row -> row.getValue("o"))
+					.containsExactlyInAnyOrder(tuple(a, b), tuple(c, d));
+		}
+	}
+
+	@TestFactory
+	Stream<DynamicTest> reusedFrontierPreservesRowsAndDoesNotShareExecutionState() {
+		String p = "<" + RDFS.SUBCLASSOF + ">";
+		String a = "<" + one + ">";
+		String b = "<" + two + ">";
+		String c = "<" + three + ">";
+		return List.of(a + " " + p + "* ?o", "?s " + p + "+ " + c, "?s ^" + p + "* " + a,
+				a + " " + p + "+ " + c, "?s " + p + "* ?o", "?s " + p + "+ ?s",
+				"VALUES ?s { " + a + " " + b + " } ?s " + p + "+ ?o",
+				"?s (" + p + "|" + p + ")+ ?o", "?s (" + p + "/" + p + ")* ?o")
+				.stream()
+				.map(pattern -> DynamicTest.dynamicTest(pattern, () -> {
+					var blank = vf.createBNode();
+					model.add(three, RDFS.SUBCLASSOF, blank);
+					model.add(blank, RDFS.SUBCLASSOF, one);
+					model.add(three, RDFS.SUBCLASSOF, vf.createLiteral("non-IRI frontier"));
+					var fallback = new DefaultEvaluationStrategy(tripleSource, null) {
+					};
+					var parsed = QueryParserUtil.parseTupleQuery(QueryLanguage.SPARQL,
+							"SELECT * WHERE { " + pattern + " }", null).getTupleExpr();
+					var baseline = fallback.precompile(new QueryRoot(parsed.clone()));
+					var optimized = evaluator.precompile(new QueryRoot(parsed.clone()));
+					var bindings = EmptyBindingSet.getInstance();
+					List<BindingSet> expected;
+					try (var rows = baseline.evaluate(bindings)) {
+						expected = QueryResults.asList(rows);
+					}
+					try (var rows = optimized.evaluate(bindings)) {
+						if (rows.hasNext()) {
+							rows.next();
+						}
+					}
+					try (var rows = optimized.evaluate(bindings)) {
 						assertThat(QueryResults.asList(rows)).containsExactlyInAnyOrderElementsOf(expected);
 					}
 				}));

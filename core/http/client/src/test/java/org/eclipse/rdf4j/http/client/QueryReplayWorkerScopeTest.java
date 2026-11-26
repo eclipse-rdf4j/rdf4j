@@ -35,6 +35,26 @@ class QueryReplayWorkerScopeTest {
 	private static final ThreadLocal<String> ACTIVE_WORKER_SCOPE = new ThreadLocal<>();
 
 	@Test
+	void filteredChainSharesTheOriginalCheckpointLifetime() {
+		AtomicInteger checkpoints = new AtomicInteger();
+		Runnable mustStayClosed = () -> {
+			throw new AssertionError("Retired checkpoint ran");
+		};
+		var retired = QueryExecutionContext.activateReplaySafepoint(mustStayClosed);
+		try (var active = QueryExecutionContext.activateReplaySafepoint(checkpoints::incrementAndGet)) {
+			retired.close();
+			var captured = QueryExecutionContext.captureReplayContext();
+			captured.run(QueryExecutionContext::checkpointReplaySafepoint);
+			assertEquals(1, checkpoints.get());
+			active.close();
+			captured.run(QueryExecutionContext::checkpointReplaySafepoint);
+			assertEquals(1, checkpoints.get());
+		} finally {
+			retired.close();
+		}
+	}
+
+	@Test
 	void admissionOnlyScopeStillInstallsWorkerOwnershipWithoutAnActiveReplayCallback() throws Exception {
 		var checkpoint = QueryExecutionContext.replayCheckpoint();
 		var executor = Executors.newSingleThreadExecutor();

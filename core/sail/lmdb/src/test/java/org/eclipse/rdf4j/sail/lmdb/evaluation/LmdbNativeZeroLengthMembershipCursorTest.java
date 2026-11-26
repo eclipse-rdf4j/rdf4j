@@ -13,6 +13,7 @@ package org.eclipse.rdf4j.sail.lmdb.evaluation;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbNativeAggregateCompiler.NULL_CONTEXT_ID;
 import static org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbNativeAggregateCompiler.UNKNOWN;
 import static org.eclipse.rdf4j.sail.lmdb.evaluation.NativeCancellationTestAccess.mockScanSource;
 import static org.mockito.ArgumentMatchers.anyInt;
@@ -68,6 +69,20 @@ class LmdbNativeZeroLengthMembershipCursorTest {
 		}
 		verify(fixture.source).has(fixture.identity, UNKNOWN, UNKNOWN, UNKNOWN);
 		verify(fixture.source).has(UNKNOWN, UNKNOWN, fixture.identity, UNKNOWN);
+	}
+
+	@Test
+	void reflexiveStarRejectsOccupiedNullEndpointsEvenAtSubstitutedSlots() throws Exception {
+		Fixture fixture = new Fixture();
+		for (int slot : new int[] { 0, 1 }) {
+			fixture.row.replaceSlot(slot, NULL_CONTEXT_ID);
+			fixture.row.replaceSlot(1 - slot, UNKNOWN);
+			ZeroLengthPathPlan plan = new ZeroLengthPathPlan(0, UNKNOWN, 1, UNKNOWN, null,
+					false, slot == 0, slot == 1, true);
+			try (RowCursor cursor = plan.open(fixture.row)) {
+				assertThat(cursor.next()).as("occupied null slot %s", slot).isFalse();
+			}
+		}
 	}
 
 	private static class Fixture {

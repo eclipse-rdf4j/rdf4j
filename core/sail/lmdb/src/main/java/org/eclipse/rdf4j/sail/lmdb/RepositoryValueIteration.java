@@ -27,7 +27,9 @@ import java.util.function.Consumer;
 
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.common.iteration.CooperativeCancellation;
+import org.eclipse.rdf4j.common.iteration.PreparedElementIteration;
 import org.eclipse.rdf4j.http.client.QueryExecutionContext;
+import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Literal;
 import org.eclipse.rdf4j.model.TripleTerm;
 import org.eclipse.rdf4j.model.Value;
@@ -48,10 +50,24 @@ import org.eclipse.rdf4j.sail.lmdb.model.LmdbLiteral;
 import org.eclipse.rdf4j.sail.lmdb.model.LmdbValue;
 
 /** Repository-only, demand-driven materialization retaining ID capabilities through complete value waves. */
-final class RepositoryValueIteration<T> implements CloseableIteration<T>, CooperativeCancellation {
+final class RepositoryValueIteration<T>
+		implements CloseableIteration<T>, CooperativeCancellation, PreparedElementIteration {
 
 	private static final int WAVE_VALUES = 1024;
+	private static final int MAX_RETAINED_SCRATCH_VALUES = 64;
 	private static final ThreadLocal<SourcePull> SOURCE_PULL = new ThreadLocal<>();
+
+	/** A source that can hand one row to its bound repository iteration in a single step. */
+	interface DirectSource {
+		/**
+		 * @return the next row, {@link #PULL_ENDED} once the source is exhausted and closed, or
+		 *         {@link #PULL_UNAVAILABLE} when this pull has to go through {@code hasNext()} and {@code next()}
+		 */
+		Object pullRepositoryRow();
+	}
+
+	static final Object PULL_UNAVAILABLE = new Object();
+	static final Object PULL_ENDED = new Object();
 
 	private record PendingValue(LmdbValue value, LmdbValue.InternalIdentity identity) {
 	}
@@ -59,6 +75,7 @@ final class RepositoryValueIteration<T> implements CloseableIteration<T>, Cooper
 	private static final Comparator<PendingValue> ID_ORDER = Comparator.comparingLong(value -> value.identity.id());
 	private final CloseableIteration<? extends T> source;
 	private final SourcePull sourcePull = new SourcePull(this);
+	private DirectSource directSource;
 	private final SailResultValueExtractor<T> extractor;
 	private final Consumer<RepositoryValueIteration<?>> onClose;
 	private final ValueStore store;
@@ -68,13 +85,30 @@ final class RepositoryValueIteration<T> implements CloseableIteration<T>, Cooper
 	private final AtomicBoolean sourceClosed = new AtomicBoolean();
 	private boolean sourceEnded;
 	private final AtomicBoolean closed = new AtomicBoolean();
+	/** Nesting depth of hasNext and next calls; only read and written under this iteration's monitor. */
 	private int activeCalls;
 	private volatile boolean cancellationRequested;
-	/** The thread inside hasNext or next; calls are serialized by this iteration's monitor. */
-	private Thread activeThread;
+	/**
+	 * The thread inside hasNext or next, or null. Calls are serialized by this iteration's monitor, so only the calling
+	 * thread writes it; a thread that closes or cancels reads it under {@link #lifetime}.
+	 */
+	private volatile Thread activeThread;
+	/**
+	 * Raised, and never lowered, before anyone closes this iteration or interrupts its active call. A call publishes
+	 * {@link #activeThread} and then reads this flag; a closer or canceller raises the flag and then reads the thread.
+	 * One of the two therefore sees the other, and a call that sees nothing takes no lock.
+	 */
+	private volatile boolean attention;
 	private boolean interruptDelivered;
+	private int checkpointCalls;
+	private Thread foregroundThread;
+	private ValueResolutionScope.Foreground foreground;
 	private boolean drainClaimed;
 	private ResultSnapshotLayout arraySnapshotLayout;
+	private ResolutionScratch resolutionScratch;
+	// The revision most recently matched to its protecting scope; rows of one scan share their revisions.
+	private ValueStoreRevision flatRevision;
+	private ValueResolutionScope flatScope;
 	private T row;
 	private boolean rowReady;
 
@@ -108,12 +142,21 @@ final class RepositoryValueIteration<T> implements CloseableIteration<T>, Cooper
 
 	@Override
 	public synchronized T next() {
+		// hasNext already resolved and detached this row, so handing it over touches neither the source nor a scope.
+		// A concurrent close clears the row under another lock; the local copy keeps this hand-over coherent.
+		T ready = row;
+		// Close and cancellation raise the attention flag before they change anything else.
+		if (ready != null && rowReady && !attention && !Thread.currentThread().isInterrupted()) {
+			row = null;
+			rowReady = false;
+			return ready;
+		}
 		if (!beginCall()) {
 			throw new NoSuchElementException();
 		}
 		Throwable failure = null;
 		try {
-			if (!prepareNext()) {
+			if (!rowReady && !prepareNext()) {
 				throw new NoSuchElementException();
 			}
 			checkActive();
@@ -128,6 +171,12 @@ final class RepositoryValueIteration<T> implements CloseableIteration<T>, Cooper
 		} finally {
 			endCall(failure);
 		}
+	}
+
+	/** Whether {@link #next()} only hands over the row that {@link #hasNext()} resolved and detached. */
+	@Override
+	public boolean hasPreparedElement() {
+		return rowReady && row != null && !attention;
 	}
 
 	@Override
@@ -147,13 +196,26 @@ final class RepositoryValueIteration<T> implements CloseableIteration<T>, Cooper
 		// Availability can invoke user code. Share an observed read only across the two pulls for this row.
 		boolean available;
 		T sourceRow;
-		try (SourcePull pull = beginSourcePull()) {
-			available = source.hasNext();
-			pull.availabilityClaimed = true;
+		DirectSource direct = directSource;
+		Object pulled = direct == null || sourcePull.inUse ? PULL_UNAVAILABLE : direct.pullRepositoryRow();
+		if (pulled == PULL_UNAVAILABLE) {
+			try (SourcePull pull = beginSourcePull()) {
+				available = source.hasNext();
+				pull.availabilityClaimed = true;
+				if (closed.get()) {
+					return false;
+				}
+				sourceRow = available ? source.next() : null;
+			}
+		} else {
+			available = pulled != PULL_ENDED;
+			// The direct source is the binding-set result this iteration was bound to, so its rows are of type T.
+			@SuppressWarnings("unchecked")
+			T directRow = available ? (T) pulled : null;
+			sourceRow = directRow;
 			if (closed.get()) {
 				return false;
 			}
-			sourceRow = available ? source.next() : null;
 		}
 		if (!available) {
 			sourceEnded = true;
@@ -164,6 +226,7 @@ final class RepositoryValueIteration<T> implements CloseableIteration<T>, Cooper
 				&& sourceRow instanceof NativeProjectedBindingSet nativeRow ? nativeRow : null;
 		MapBindingSet snapshot = projected == null ? null : projected.snapshotIfFullyCaptured();
 		boolean captured = snapshot != null;
+		Value[] flatValues = null;
 		if (extractor == SailResultValueExtractor.BINDING_SETS && sourceRow != null
 				&& sourceRow.getClass() == ArrayBindingSet.class) {
 			ArrayBindingSet array = (ArrayBindingSet) sourceRow;
@@ -171,6 +234,7 @@ final class RepositoryValueIteration<T> implements CloseableIteration<T>, Cooper
 				arraySnapshotLayout = new ResultSnapshotLayout(array);
 			}
 			snapshot = arraySnapshotLayout.snapshot(array);
+			flatValues = snapshot == null ? null : arraySnapshotLayout.snapshotValues();
 		}
 		// Identity with the default binding-set extractor guarantees T accepts a BindingSet.
 		@SuppressWarnings("unchecked")
@@ -181,6 +245,8 @@ final class RepositoryValueIteration<T> implements CloseableIteration<T>, Cooper
 		List<Value> roots;
 		if (captured) {
 			roots = projected.capturedRootsRequiringPreparation(RepositoryValueIteration::isPrepared);
+		} else if (flatValues != null && resolveFlat(flatValues)) {
+			roots = null;
 		} else if (extractor == SailResultValueExtractor.BINDING_SETS && nextRow instanceof MapBindingSet bindings) {
 			roots = bindingRootsRequiringPreparation(bindings);
 		} else {
@@ -228,6 +294,7 @@ final class RepositoryValueIteration<T> implements CloseableIteration<T>, Cooper
 	void bindObservedSource(CloseableIteration<?> replayable) {
 		if (extractor == SailResultValueExtractor.BINDING_SETS) {
 			sourcePull.observedSource = replayable;
+			directSource = replayable instanceof DirectSource direct ? direct : null;
 		}
 	}
 
@@ -288,11 +355,8 @@ final class RepositoryValueIteration<T> implements CloseableIteration<T>, Cooper
 
 		@Override
 		public void close() {
-			if (previous == null) {
-				SOURCE_PULL.remove();
-			} else {
-				SOURCE_PULL.set(previous);
-			}
+			// A null marker is equivalent to no source pull; keep the ThreadLocal entry for the next row.
+			SOURCE_PULL.set(previous);
 			previous = null;
 			LmdbStoreConnection.ObservedRead read = takeRead();
 			try {
@@ -378,20 +442,203 @@ final class RepositoryValueIteration<T> implements CloseableIteration<T>, Cooper
 		return !(value instanceof Literal literal) || isPrepared(literal.getDatatype());
 	}
 
-	private void resolveWaves(List<Value> roots) {
-		IdentityHashMap<Value, Boolean> visited = new IdentityHashMap<>();
-		ArrayDeque<Value> descendants = new ArrayDeque<>();
-		Consumer<Value> descend = child -> {
-			if (child != null) {
-				descendants.addLast(child);
+	private static final int READY = 0;
+	private static final int COLD = 1;
+	private static final int GENERAL = -1;
+
+	/**
+	 * Resolves a row made only of this store's own plain IRIs, blank nodes and literals in one pass over its values,
+	 * without the containers and child waves of the general resolver. The whole row is classified before anything is
+	 * decoded. Returns false, having decoded nothing, when any value needs the general resolver: a triple term, a
+	 * foreign, prepared or custom value, or a value whose owner scope this iteration cannot name directly.
+	 */
+	private boolean resolveFlat(Value[] values) {
+		boolean cold = false;
+		for (Value value : values) {
+			if (value == null) {
+				continue;
 			}
-		};
-		List<LmdbValue> wave = new ArrayList<>();
+			int state;
+			Class<?> type = value.getClass();
+			if (type == LmdbIRI.class || type == LmdbBNode.class) {
+				state = leafState((LmdbValue) value);
+			} else if (type == LmdbLiteral.class) {
+				LmdbLiteral literal = (LmdbLiteral) value;
+				state = leafState(literal);
+				if (state == READY) {
+					state = datatypeState(literal.loadedDatatype());
+				}
+			} else {
+				state = isPrepared(value) ? READY : GENERAL;
+			}
+			if (state == GENERAL) {
+				return false;
+			}
+			cold |= state == COLD;
+		}
+		if (!cold) {
+			return true;
+		}
+		ValueResolutionScope active = null;
+		ValueResolutionScope.Foreground holder = null;
+		ValueResolutionScope previous = null;
+		boolean general = false;
+		try {
+			for (Value value : values) {
+				if (value == null) {
+					continue;
+				}
+				Class<?> type = value.getClass();
+				if (type != LmdbIRI.class && type != LmdbBNode.class && type != LmdbLiteral.class) {
+					continue;
+				}
+				LmdbValue leaf = (LmdbValue) value;
+				if (!leaf.isInitialized()) {
+					ValueResolutionScope scope = ownScope(leaf.getInternalIdentity().revision());
+					if (scope != active) {
+						if (active != null) {
+							ValueResolutionScope.exitForeground(holder, previous);
+						} else {
+							holder = foregroundHolder();
+						}
+						active = scope;
+						previous = scope.enterForeground(holder);
+					}
+					decodeLeaf(leaf);
+				}
+				if (type == LmdbLiteral.class) {
+					IRI datatype = ((LmdbLiteral) value).loadedDatatype();
+					int state = datatypeState(datatype);
+					if (state == COLD) {
+						LmdbValue child = (LmdbValue) datatype;
+						ValueResolutionScope scope = ownScope(child.getInternalIdentity().revision());
+						if (scope != active) {
+							if (active != null) {
+								ValueResolutionScope.exitForeground(holder, previous);
+							} else {
+								holder = foregroundHolder();
+							}
+							active = scope;
+							previous = scope.enterForeground(holder);
+						}
+						decodeLeaf(child);
+					} else if (state == GENERAL) {
+						general = true;
+					}
+				}
+			}
+		} finally {
+			if (active != null) {
+				ValueResolutionScope.exitForeground(holder, previous);
+			}
+		}
+		if (general) {
+			// Only a decoded literal can reveal a datatype this pass cannot classify. The general resolver accepts
+			// the already decoded row and completes whatever children remain.
+			List<Value> roots = new ArrayList<>(values.length);
+			for (Value value : values) {
+				if (value != null) {
+					roots.add(value);
+				}
+			}
+			resolveWaves(roots);
+		}
+		return true;
+	}
+
+	/** The calling thread's value-scope holder; looked up once for each thread that pulls this result. */
+	private ValueResolutionScope.Foreground foregroundHolder() {
+		Thread current = Thread.currentThread();
+		if (foregroundThread != current) {
+			foreground = ValueResolutionScope.foreground();
+			foregroundThread = current;
+		}
+		return foreground;
+	}
+
+	/** The state of one of this store's plain values; any other owner or ownership mode needs the general path. */
+	private int leafState(LmdbValue leaf) {
+		ValueStoreRevision revision = leaf.getInternalIdentity().revision();
+		if (leaf.isInitialized()) {
+			// An initialized value needs an owner reservation only when a foreign store still protects it.
+			return !(revision instanceof ValueStoreRevision.Lazy) || revision.getValueStore() == store ? READY
+					: GENERAL;
+		}
+		return !leaf.isExternallyOwned() && ownScope(revision) != null ? COLD : GENERAL;
+	}
+
+	private int datatypeState(IRI datatype) {
+		if (datatype == null) {
+			return READY;
+		}
+		if (datatype.getClass() == LmdbIRI.class) {
+			return leafState((LmdbIRI) datatype);
+		}
+		return isPrepared(datatype) ? READY : GENERAL;
+	}
+
+	/** The scope that protects a cold value of this store and therefore decodes it, or null if none is certain. */
+	private ValueResolutionScope ownScope(ValueStoreRevision revision) {
+		if (revision == flatRevision) {
+			ValueResolutionScope scope = flatScope;
+			if (scope.isOpen()) {
+				return scope;
+			}
+		}
+		if (!(revision instanceof ValueStoreRevision.Lazy lazy) || lazy.getValueStore() != store) {
+			return null;
+		}
+		ValueResolutionScope scope = transactionScope != null && transactionScope.protects(lazy) ? transactionScope
+				: scopes.get(store);
+		if (scope == null || !scope.protects(lazy)) {
+			return null;
+		}
+		flatRevision = revision;
+		flatScope = scope;
+		return scope;
+	}
+
+	private void decodeLeaf(LmdbValue value) {
+		value.init();
+		if (!value.isInitialized()) {
+			throw new SailException("A repository result value could not be resolved");
+		}
+	}
+
+	/** Reuse only small, cleared containers that are not handed to callbacks. */
+	private static final class ResolutionScratch {
+		final IdentityHashMap<Value, Boolean> visited = new IdentityHashMap<>(8);
+		final List<LmdbValue> wave = new ArrayList<>();
+	}
+
+	private void resolveWaves(List<Value> roots) {
+		ResolutionScratch scratch = resolutionScratch;
+		// A callback can reenter the iteration, so do not leave the active containers available for borrowing.
+		resolutionScratch = null;
+		if (scratch == null) {
+			scratch = new ResolutionScratch();
+		}
+		try {
+			resolveWaves(roots, scratch);
+		} finally {
+			if (resolutionScratch == null && scratch.visited.size() <= MAX_RETAINED_SCRATCH_VALUES) {
+				scratch.visited.clear();
+				scratch.wave.clear();
+				resolutionScratch = scratch;
+			}
+		}
+	}
+
+	private void resolveWaves(List<Value> roots, ResolutionScratch scratch) {
+		IdentityHashMap<Value, Boolean> visited = scratch.visited;
+		List<LmdbValue> wave = scratch.wave;
+		Descendants descendants = null;
 		while (!roots.isEmpty()) {
 			// Reserve every visible foreign epoch before decoding. Visit the loaded graph depth first so an
 			// application getter on a later root cannot release an earlier root's foreign epoch before admission.
 			for (Value root : roots) {
-				for (Value value = root; value != null; value = descendants.pollLast()) {
+				for (Value value = root; value != null; value = descendants == null ? null
+						: descendants.stack.pollLast()) {
 					LmdbValue lmdb = value instanceof LmdbValue nativeValue ? nativeValue : null;
 					boolean cold = lmdb != null && !lmdb.isInitialized();
 					boolean expand = !cold && mayHaveValueChildren(value);
@@ -404,7 +651,10 @@ final class RepositoryValueIteration<T> implements CloseableIteration<T>, Cooper
 					if (cold) {
 						wave.add(lmdb);
 					} else if (expand) {
-						visitChildren(value, descend);
+						if (descendants == null) {
+							descendants = new Descendants();
+						}
+						visitChildren(value, descendants);
 					}
 				}
 			}
@@ -415,6 +665,18 @@ final class RepositoryValueIteration<T> implements CloseableIteration<T>, Cooper
 			decodeWave(wave, next);
 			wave.clear();
 			roots = next;
+		}
+	}
+
+	// Created for the current row only if an already-loaded value exposes its children.
+	private static final class Descendants implements Consumer<Value> {
+		final ArrayDeque<Value> stack = new ArrayDeque<>();
+
+		@Override
+		public void accept(Value child) {
+			if (child != null) {
+				stack.addLast(child);
+			}
 		}
 	}
 
@@ -433,6 +695,14 @@ final class RepositoryValueIteration<T> implements CloseableIteration<T>, Cooper
 				next.add(child);
 			}
 		};
+		// A singleton is already in dictionary order and needs no revision grouping.
+		if (wave.size() == 1) {
+			LmdbValue value = wave.get(0);
+			try (SailClosable activation = activateRevision(value.getInternalIdentity().revision())) {
+				decodeValue(value, enqueue);
+			}
+			return;
+		}
 		for (int start = 0; start < wave.size(); start += WAVE_VALUES) {
 			Map<ValueStoreRevision, List<PendingValue>> groups = new LinkedHashMap<>();
 			int end = Math.min(wave.size(), start + WAVE_VALUES);
@@ -445,29 +715,36 @@ final class RepositoryValueIteration<T> implements CloseableIteration<T>, Cooper
 			for (var group : groups.entrySet()) {
 				List<PendingValue> values = group.getValue();
 				values.sort(ID_ORDER);
-				ValueStore owner = group.getKey().getValueStore();
-				ValueResolutionScope scope = owner == store && transactionScope != null && transactionScope.isOpen()
-						&& (!(group.getKey() instanceof ValueStoreRevision.Lazy lazy)
-								|| transactionScope.protects(lazy))
-										? transactionScope
-										: scopes.get(owner);
-				if (owner != null && scope == null) {
-					scope = scopeFor(owner);
-				}
-				try (SailClosable activation = scope == null ? null : scope.activateForeground()) {
+				try (SailClosable activation = activateRevision(group.getKey())) {
 					for (PendingValue pending : values) {
-						LmdbValue value = pending.value;
-						checkActive();
-						value.init();
-						if (!value.isInitialized()) {
-							throw new SailException("A repository result value could not be resolved");
-						}
-						if (mayHaveValueChildren(value)) {
-							visitChildren(value, enqueue);
-						}
+						decodeValue(pending.value, enqueue);
 					}
 				}
 			}
+		}
+	}
+
+	private SailClosable activateRevision(ValueStoreRevision revision) {
+		ValueStore owner = revision.getValueStore();
+		ValueResolutionScope scope = owner == store && transactionScope != null && transactionScope.isOpen()
+				&& (!(revision instanceof ValueStoreRevision.Lazy lazy)
+						|| transactionScope.protects(lazy))
+								? transactionScope
+								: scopes.get(owner);
+		if (owner != null && scope == null) {
+			scope = scopeFor(owner);
+		}
+		return scope == null ? null : scope.activateForeground();
+	}
+
+	private void decodeValue(LmdbValue value, Consumer<Value> enqueue) {
+		checkActive();
+		value.init();
+		if (!value.isInitialized()) {
+			throw new SailException("A repository result value could not be resolved");
+		}
+		if (mayHaveValueChildren(value)) {
+			visitChildren(value, enqueue);
 		}
 	}
 
@@ -496,7 +773,7 @@ final class RepositoryValueIteration<T> implements CloseableIteration<T>, Cooper
 		if (closed.get() || cancellationRequested || Thread.currentThread().isInterrupted()) {
 			throw new QueryInterruptedException("Query evaluation was interrupted during repository value exposure");
 		}
-		QueryExecutionContext.checkpoint("repository-value-exposure");
+		QueryExecutionContext.checkpoint("repository-value-exposure", ++checkpointCalls);
 	}
 
 	private ValueResolutionScope scopeFor(ValueStore owner) {
@@ -519,30 +796,42 @@ final class RepositoryValueIteration<T> implements CloseableIteration<T>, Cooper
 	}
 
 	private boolean beginCall() {
-		synchronized (lifetime) {
+		if (activeCalls != 0) {
+			// A callback of the active call on the same thread.
 			if (closed.get()) {
 				return false;
 			}
 			activeCalls++;
-			activeThread = Thread.currentThread();
 			return true;
 		}
+		activeThread = Thread.currentThread();
+		if (attention && closed.get()) {
+			// The closer may have seen this call as active and left the drain to it.
+			activeThread = null;
+			drainIfIdle();
+			return false;
+		}
+		activeCalls = 1;
+		return true;
 	}
 
 	private void endCall(Throwable failure) {
+		assert activeCalls > 0;
+		if (--activeCalls != 0) {
+			return;
+		}
+		activeThread = null;
+		if (!attention) {
+			// Nobody closed or interrupted: a later close sees no active call and attempts the drain itself.
+			return;
+		}
 		synchronized (lifetime) {
-			assert activeCalls > 0;
-			if (--activeCalls != 0) {
-				return;
-			}
-			activeThread = null;
 			if (interruptDelivered) {
 				// Interrupts are only delivered to the active thread under this lock, so this clears ours.
 				interruptDelivered = false;
 				Thread.interrupted();
 			}
 			if (!closed.get()) {
-				// A later close sees no active call and attempts the drain itself.
 				return;
 			}
 		}
@@ -569,6 +858,7 @@ final class RepositoryValueIteration<T> implements CloseableIteration<T>, Cooper
 			return false;
 		}
 		cancellationRequested = true;
+		attention = true;
 		CooperativeCancellation.forward(source);
 		synchronized (lifetime) {
 			Thread thread = activeThread;
@@ -578,6 +868,18 @@ final class RepositoryValueIteration<T> implements CloseableIteration<T>, Cooper
 			}
 		}
 		return true;
+	}
+
+	/** Interrupts the thread inside hasNext or next, for a source whose own cancellation was requested directly. */
+	void interruptActiveCall() {
+		attention = true;
+		synchronized (lifetime) {
+			Thread thread = activeThread;
+			if (thread != null && thread != Thread.currentThread() && !interruptDelivered) {
+				interruptDelivered = true;
+				thread.interrupt();
+			}
+		}
 	}
 
 	void retireReaders() {
@@ -610,6 +912,8 @@ final class RepositoryValueIteration<T> implements CloseableIteration<T>, Cooper
 
 	@Override
 	public void close() {
+		// Raised before the state changes, so that a call which read it as lowered is seen as active below.
+		attention = true;
 		if (!closed.compareAndSet(false, true)) {
 			return;
 		}
@@ -633,12 +937,13 @@ final class RepositoryValueIteration<T> implements CloseableIteration<T>, Cooper
 	private void drainIfIdle() {
 		List<ValueResolutionScope> retired;
 		synchronized (lifetime) {
-			if (!closed.get() || activeCalls != 0 || drainClaimed) {
+			if (!closed.get() || activeThread != null || drainClaimed) {
 				return;
 			}
 			drainClaimed = true;
 			retired = List.copyOf(scopes.values());
 			scopes.clear();
+			arraySnapshotLayout = null;
 			row = null;
 			rowReady = false;
 		}

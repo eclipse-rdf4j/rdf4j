@@ -29,10 +29,12 @@ import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.query.Binding;
 import org.eclipse.rdf4j.query.BindingSet;
+import org.eclipse.rdf4j.query.BlankNodeEffects;
 import org.eclipse.rdf4j.query.Dataset;
 import org.eclipse.rdf4j.query.MutableBindingSet;
 import org.eclipse.rdf4j.query.algebra.evaluation.ArrayBindingSet.IndexedLayout;
 import org.eclipse.rdf4j.query.algebra.evaluation.OwnedValueCapturer;
+import org.eclipse.rdf4j.query.algebra.evaluation.QueryValueEvaluationStep;
 import org.eclipse.rdf4j.query.impl.BlankNodeAllocationScope;
 import org.eclipse.rdf4j.query.impl.RemoteBNode;
 
@@ -120,6 +122,16 @@ final class ValueCapturingQueryEvaluationContext implements QueryEvaluationConte
 	}
 
 	@Override
+	public boolean allowsDirectVariableReads() {
+		return delegate.allowsDirectVariableReads();
+	}
+
+	@Override
+	public boolean allowsPathStepReuse() {
+		return delegate.allowsPathStepReuse();
+	}
+
+	@Override
 	public BlankNodeAllocationScope getBlankNodeAllocationScope() {
 		return delegate.getBlankNodeAllocationScope();
 	}
@@ -132,6 +144,12 @@ final class ValueCapturingQueryEvaluationContext implements QueryEvaluationConte
 	@Override
 	public MutableBindingSet createBindingSet() {
 		return delegate.createBindingSet();
+	}
+
+	@Override
+	public boolean canOmitUnusedStatementBindings() {
+		return delegate.canOmitUnusedStatementBindings()
+				&& capturer instanceof OwnedValueCapturer owned && owned.canOmitUnusedStatementBindings();
 	}
 
 	@Override
@@ -160,13 +178,23 @@ final class ValueCapturingQueryEvaluationContext implements QueryEvaluationConte
 	}
 
 	@Override
+	public QueryValueEvaluationStep prepareValueAccessor(String name, ValueFactory factory) {
+		return delegate.prepareValueAccessor(name, factory);
+	}
+
+	@Override
+	public ValueFactory blankNodeValueFactory(ValueFactory factory, BlankNodeEffects effects) {
+		return delegate.blankNodeValueFactory(factory, effects);
+	}
+
+	@Override
 	public BiConsumer<Value, MutableBindingSet> setBinding(String name) {
-		return capture(delegate.setBinding(name));
+		return capture(delegate.setBinding(name), name);
 	}
 
 	@Override
 	public BiConsumer<Value, MutableBindingSet> addBinding(String name) {
-		return capture(delegate.addBinding(name));
+		return capture(delegate.addBinding(name), name);
 	}
 
 	@Override
@@ -174,9 +202,24 @@ final class ValueCapturingQueryEvaluationContext implements QueryEvaluationConte
 		return delegate.removeBinding(name);
 	}
 
-	private BiConsumer<Value, MutableBindingSet> capture(BiConsumer<Value, MutableBindingSet> setter) {
+	private BiConsumer<Value, MutableBindingSet> capture(BiConsumer<Value, MutableBindingSet> setter, String name) {
 		OwnedValueCapturer owned = capturer instanceof OwnedValueCapturer ownership ? ownership : null;
-		return (value, bindings) -> setter.accept(captureValue(value, owned), bindings);
+		IndexedLayout layout = indexedLayout;
+		int slot = owned == null || layout == null ? -1 : layout.slot(name);
+		if (slot < 0 || slot >= Long.SIZE) {
+			return (value, bindings) -> setter.accept(captureValue(value, owned), bindings);
+		}
+		return (value, bindings) -> {
+			if (value != null && value != now && owned.owns(value)) {
+				// The owner has just vouched for this value. The layout writes it and records that on the row in
+				// one step, so that projecting the row does not ask the same question about the same value again.
+				if (!layout.setOwned(bindings, slot, value, owned.replayOwnershipToken())) {
+					setter.accept(value, bindings);
+				}
+			} else {
+				setter.accept(captureValue(value, owned), bindings);
+			}
+		};
 	}
 
 	private Value captureValue(Value value, OwnedValueCapturer owned) {

@@ -15,6 +15,7 @@ package org.eclipse.rdf4j.query.algebra.evaluation.impl.evaluationsteps;
 import java.util.HashSet;
 import java.util.Set;
 
+import org.eclipse.rdf4j.common.annotation.InternalUseOnly;
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.common.iteration.CooperativeCancellation;
 import org.eclipse.rdf4j.common.iteration.LookAheadIteration;
@@ -44,6 +45,8 @@ public final class ZeroLengthPathEvaluationStep implements QueryEvaluationStep {
 	private final QueryEvaluationContext context;
 	private final Scope scope;
 	private final QueryEvaluationStep namedGraphs;
+	private final boolean deferEnumerationScan;
+	private final ZeroLengthPathIteration.PreparedNodeMembership nodeMembership;
 
 	public ZeroLengthPathEvaluationStep(Var subjectVar, Var objVar, Var contextVar, QueryValueEvaluationStep subPrep,
 			QueryValueEvaluationStep objPrep, EvaluationStrategy strategy, QueryEvaluationContext context) {
@@ -54,6 +57,13 @@ public final class ZeroLengthPathEvaluationStep implements QueryEvaluationStep {
 	public ZeroLengthPathEvaluationStep(Var subjectVar, Var objVar, Var contextVar, QueryValueEvaluationStep subPrep,
 			QueryValueEvaluationStep objPrep, EvaluationStrategy strategy, QueryEvaluationContext context,
 			Scope scope) {
+		this(subjectVar, objVar, contextVar, subPrep, objPrep, strategy, context, scope, false, false);
+	}
+
+	@InternalUseOnly
+	public ZeroLengthPathEvaluationStep(Var subjectVar, Var objVar, Var contextVar, QueryValueEvaluationStep subPrep,
+			QueryValueEvaluationStep objPrep, EvaluationStrategy strategy, QueryEvaluationContext context,
+			Scope scope, boolean deferEnumerationScan, boolean pinnedDictionary) {
 		this.subjectVar = subjectVar;
 		this.objVar = objVar;
 		this.contextVar = contextVar;
@@ -62,6 +72,11 @@ public final class ZeroLengthPathEvaluationStep implements QueryEvaluationStep {
 		this.strategy = strategy;
 		this.context = context;
 		this.scope = scope;
+		this.deferEnumerationScan = deferEnumerationScan;
+		this.nodeMembership = deferEnumerationScan && scope == Scope.DEFAULT_CONTEXTS && contextVar == null
+				&& !strategy.isTrackTime() && !strategy.isTrackResultSize()
+						? ZeroLengthPathIteration.PreparedNodeMembership.prepare(strategy, context, pinnedDictionary)
+						: null;
 		if (scope == Scope.NAMED_CONTEXTS) {
 			String graphName = contextVar == null ? null : contextVar.getName();
 			Var s = Var.of(internalName("s", graphName), true);
@@ -185,6 +200,7 @@ public final class ZeroLengthPathEvaluationStep implements QueryEvaluationStep {
 
 	protected ZeroLengthPathIteration getZeroLengthPathIterator(final BindingSet bindings, final Var subjectVar,
 			final Var objVar, final Var contextVar, Value subj, Value obj, QueryEvaluationContext context) {
-		return new ZeroLengthPathIteration(strategy, subjectVar, objVar, subj, obj, contextVar, bindings, context);
+		return new ZeroLengthPathIteration(strategy, subjectVar, objVar, subj, obj, contextVar, bindings, context,
+				deferEnumerationScan, nodeMembership);
 	}
 }

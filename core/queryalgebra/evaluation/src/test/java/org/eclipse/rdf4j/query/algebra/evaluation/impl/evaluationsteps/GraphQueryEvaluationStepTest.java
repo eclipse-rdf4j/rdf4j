@@ -1034,6 +1034,118 @@ public class GraphQueryEvaluationStepTest {
 	}
 
 	@Test
+	void fixedGraphPreparesStatementBodyOnceForDistinctBindings() {
+		StatementFixture fixture = new StatementFixture();
+		Value firstValue = VF.createLiteral("one");
+		Value secondValue = VF.createLiteral("two");
+		fixture.statements = List.of(VF.createStatement(G1, fixture.predicate, firstValue, G1),
+				VF.createStatement(G2, fixture.predicate, secondValue, G1));
+		FixedGraphStrategy strategy = new FixedGraphStrategy(fixture);
+		QueryEvaluationStep step = strategy.precompile(new Graph(Var.of("g", G1, true, true), fixture.pattern()),
+				fixture.context);
+		MapBindingSet first = new MapBindingSet();
+		first.addBinding("s", G1);
+		MapBindingSet second = new MapBindingSet();
+		second.addBinding("s", G2);
+		try (var firstRows = step.evaluate(first); var secondRows = step.evaluate(second)) {
+			assertThat(firstRows.hasNext()).isTrue();
+			assertThat(QueryResults.asList(secondRows)).extracting(row -> row.getValue("o"))
+					.containsExactly(secondValue);
+			assertThat(QueryResults.asList(firstRows)).extracting(row -> row.getValue("o")).containsExactly(firstValue);
+		}
+		assertThat(strategy.preparations).hasValue(1);
+		assertThat(strategy.validations).hasValue(2);
+	}
+
+	@Test
+	void fixedGraphReusesNestedUnionUntilSnapshotInvalidation() {
+		StatementFixture fixture = new StatementFixture();
+		FixedGraphStrategy strategy = new FixedGraphStrategy(fixture);
+		Union body = new Union(fixture.pattern(), new Union(fixture.pattern(), fixture.pattern()));
+		QueryEvaluationStep step = strategy.precompile(new Graph(Var.of("g", G1, true, true), body), fixture.context);
+		MapBindingSet input = new MapBindingSet();
+		input.addBinding("s", G1);
+		input.addBinding("o", VF.createLiteral("one"));
+		for (int i = 0; i < 2; i++) {
+			try (var rows = step.evaluate(input)) {
+				assertThat(QueryResults.asList(rows)).containsExactly(input, input, input);
+			}
+		}
+		assertThat(strategy.preparations).hasValue(3);
+		assertThat(strategy.validations).hasValue(2);
+		strategy.validationFailure = new QueryEvaluationException("Snapshot invalidated");
+		try (var rows = step.evaluate(input)) {
+			assertThat(assertThrows(QueryEvaluationException.class, rows::hasNext))
+					.isSameAs(strategy.validationFailure);
+		}
+		assertThat(strategy.preparations).hasValue(3);
+		assertThat(strategy.validations).hasValue(3);
+	}
+
+	@ParameterizedTest
+	@ValueSource(booleans = { true, false })
+	void fixedGraphSelectsCatalogOnceAcrossOrdinaryInvocations(boolean present) {
+		StatementFixture fixture = new StatementFixture();
+		IRI target = VF.createIRI("urn:catalog-graph");
+		Value firstValue = VF.createLiteral("one");
+		Value secondValue = VF.createLiteral("two");
+		fixture.contextIDs = present ? List.of(G1, G2, target) : List.of(G1, G2);
+		fixture.statements = present
+				? List.of(VF.createStatement(G1, fixture.predicate, firstValue, target),
+						VF.createStatement(G2, fixture.predicate, secondValue, target))
+				: List.of();
+		FixedGraphStrategy strategy = new FixedGraphStrategy(fixture);
+		QueryEvaluationStep step = strategy.precompile(new Graph(Var.of("g", target, true, true), fixture.pattern()),
+				fixture.context);
+		try (var unopened = step.evaluate(EmptyBindingSet.getInstance())) {
+			assertThat(fixture.contextRequests).isZero();
+		}
+		assertThat(strategy.validations).hasValue(0);
+
+		MapBindingSet input = new MapBindingSet();
+		input.addBinding("s", G1);
+		try (var rows = step.evaluate(input)) {
+			assertThat(QueryResults.asList(rows)).extracting(row -> row.getValue("o"))
+					.containsExactlyElementsOf(present ? List.of(firstValue) : List.of());
+		}
+		input.setBinding("s", G2);
+		try (var rows = step.evaluate(input)) {
+			assertThat(QueryResults.asList(rows)).extracting(row -> row.getValue("o"))
+					.containsExactlyElementsOf(present ? List.of(secondValue) : List.of());
+		}
+		assertThat(fixture.contextRequests).isEqualTo(1);
+		assertThat(fixture.captured).filteredOn(value -> value == target).hasSize(present ? 1 : 0);
+		assertThat(strategy.validations).hasValue(2);
+		assertThat(strategy.preparations).hasValue(present ? 1 : 0);
+
+		strategy.validationFailure = new QueryEvaluationException("Snapshot invalidated");
+		try (var rows = step.evaluate(input)) {
+			assertThat(assertThrows(QueryEvaluationException.class, rows::hasNext))
+					.isSameAs(strategy.validationFailure);
+		}
+		assertThat(fixture.contextRequests).isEqualTo(1);
+		assertThat(strategy.validations).hasValue(3);
+	}
+
+	@Test
+	void trackedFixedGraphRetainsStatementPreparationAndCounters() {
+		StatementFixture fixture = new StatementFixture();
+		FixedGraphStrategy strategy = new FixedGraphStrategy(fixture);
+		strategy.setTrackResultSize(true);
+		StatementPattern pattern = fixture.pattern();
+		QueryEvaluationStep step = strategy.precompile(new Graph(Var.of("g", G1, true, true), pattern),
+				fixture.context);
+		for (int i = 0; i < 2; i++) {
+			try (var rows = step.evaluate(EmptyBindingSet.getInstance())) {
+				assertThat(QueryResults.asList(rows)).hasSize(1);
+			}
+		}
+		assertThat(pattern.getResultSizeActual()).isEqualTo(2);
+		assertThat(strategy.preparations).hasValue(2);
+		assertThat(strategy.validations).hasValue(0);
+	}
+
+	@Test
 	public void statementRowsRemainIndependentAcrossAdvancesGraphChangesAndClose() {
 		StatementFixture fixture = new StatementFixture();
 		BindingSet first;
@@ -1151,6 +1263,32 @@ public class GraphQueryEvaluationStepTest {
 		assertThat(pattern.getTotalTimeNanosActual()).isGreaterThan(0);
 	}
 
+	private static final class FixedGraphStrategy extends DefaultEvaluationStrategy {
+		private final AtomicInteger preparations = new AtomicInteger();
+		private final AtomicInteger validations = new AtomicInteger();
+		private QueryEvaluationException validationFailure;
+
+		private FixedGraphStrategy(TripleSource source) {
+			super(source, null);
+		}
+
+		@Override
+		protected Runnable fixedGraphBodyReuseValidator() {
+			return () -> {
+				validations.incrementAndGet();
+				if (validationFailure != null) {
+					throw validationFailure;
+				}
+			};
+		}
+
+		@Override
+		protected QueryEvaluationStep prepare(StatementPattern node, QueryEvaluationContext context) {
+			preparations.incrementAndGet();
+			return super.prepare(node, context);
+		}
+	}
+
 	private static final class StatementFixture implements TripleSource {
 		private final IRI predicate = VF.createIRI("urn:p");
 		private List<Resource> contextIDs = List.of(G1, G2);
@@ -1158,6 +1296,7 @@ public class GraphQueryEvaluationStepTest {
 				VF.createStatement(G2, predicate, VF.createLiteral("two"), G2));
 		private final List<Value> captured = new ArrayList<>();
 		private final QueryEvaluationContext context = new QueryEvaluationContext.Minimal(null);
+		private int contextRequests;
 		private RuntimeException secondGraphFailure;
 		private boolean track;
 
@@ -1179,6 +1318,7 @@ public class GraphQueryEvaluationStepTest {
 
 		@Override
 		public CloseableIteration<? extends Resource> getContextIDs() {
+			contextRequests++;
 			return new CloseableIteratorIteration<>(contextIDs.iterator());
 		}
 

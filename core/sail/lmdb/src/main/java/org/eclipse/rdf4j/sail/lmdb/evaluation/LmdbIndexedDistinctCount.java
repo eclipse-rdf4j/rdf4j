@@ -49,7 +49,8 @@ public final class LmdbIndexedDistinctCount {
 
 	public static QueryEvaluationStep prepare(Group group, QueryEvaluationContext context, TripleSource tripleSource,
 			Supplier<QueryEvaluationStep> fallback) {
-		if (group.getClass() != Group.class || group.getGroupBindingNames().size() != 1
+		if (!context.allowsDirectVariableReads() || group.getClass() != Group.class
+				|| group.getGroupBindingNames().size() != 1
 				|| group.getGroupElements().isEmpty() || !(group.getArg() instanceof StatementPattern statement)) {
 			return null;
 		}

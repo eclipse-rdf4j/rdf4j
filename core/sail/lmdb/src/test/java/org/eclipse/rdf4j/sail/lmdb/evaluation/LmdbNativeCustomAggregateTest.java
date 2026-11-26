@@ -27,6 +27,7 @@ import java.util.function.Function;
 import java.util.function.Predicate;
 
 import org.assertj.core.api.SoftAssertions;
+import org.eclipse.rdf4j.model.BNode;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.ValueFactory;
@@ -34,6 +35,7 @@ import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.model.vocabulary.XSD;
 import org.eclipse.rdf4j.query.Binding;
 import org.eclipse.rdf4j.query.BindingSet;
+import org.eclipse.rdf4j.query.BlankNodeEffects;
 import org.eclipse.rdf4j.query.Dataset;
 import org.eclipse.rdf4j.query.QueryLanguage;
 import org.eclipse.rdf4j.query.QueryResults;
@@ -45,6 +47,7 @@ import org.eclipse.rdf4j.query.algebra.evaluation.impl.EvaluationStatistics;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.QueryEvaluationContext;
 import org.eclipse.rdf4j.query.algebra.helpers.AbstractQueryModelVisitor;
 import org.eclipse.rdf4j.query.explanation.Explanation;
+import org.eclipse.rdf4j.query.impl.RemoteBNode;
 import org.eclipse.rdf4j.query.parser.QueryParserUtil;
 import org.eclipse.rdf4j.query.parser.sparql.aggregate.AggregateCollector;
 import org.eclipse.rdf4j.query.parser.sparql.aggregate.AggregateFunction;
@@ -232,6 +235,85 @@ public class LmdbNativeCustomAggregateTest {
 
 	private SailRepository repository;
 
+	@Test
+	void nativeEnabledPreparationHonorsTheCapturedVariableAccessor() {
+		var store = (LmdbStore) repository.getSail();
+		var root = QueryParserUtil.parseTupleQuery(QueryLanguage.SPARQL,
+				PREFIX + "SELECT (SAMPLE(?v) AS ?picked) WHERE { ?s ex:value ?v }", null).getTupleExpr();
+		try (var dataset = NativeQuerySourceAccess.openExplicitDataset(store)) {
+			var vf = store.getValueFactory();
+			var strategy = new LmdbNativeEvaluationStrategy(new SailDatasetTripleTermSource(vf, dataset),
+					null, null, 0L, new EvaluationStatistics(), false);
+			var context = new QueryEvaluationContext.Minimal((Dataset) null) {
+				@Override
+				public Function<BindingSet, Value> getValue(String name) {
+					if (!"v".equals(name)) {
+						return super.getValue(name);
+					}
+					class LabelAccessor implements Function<BindingSet, Value>, BlankNodeEffects.Provider {
+						@Override
+						public Value apply(BindingSet row) {
+							return row.hasBinding(name) ? getOrCreateBNode("seen", row, vf) : null;
+						}
+
+						@Override
+						public BlankNodeEffects blankNodeEffects() {
+							return BlankNodeEffects.LABELLED;
+						}
+					}
+					return new LabelAccessor();
+				}
+			};
+			assertThat(evaluate(strategy.precompile(root, context))).singleElement()
+					.satisfies(row -> assertThat(row.getValue("picked")).isInstanceOf(BNode.class));
+		}
+	}
+
+	@Test
+	void foreignCollectorUsesOneDeclaredOriginForAllGroups() {
+		final class ForeignCollectorFactory implements AggregateFunctionFactory, BlankNodeEffects.Provider {
+			@Override
+			public String getIri() {
+				return EX + "externalStop";
+			}
+
+			@Override
+			public BlankNodeEffects blankNodeEffects() {
+				return BlankNodeEffects.foreign(this);
+			}
+
+			@Override
+			public AggregateFunction<AggregateCollector, Value> buildFunction(Function<BindingSet, Value> input) {
+				return new AggregateFunction<>(input) {
+					@Override
+					public void processAggregate(BindingSet row, Predicate<Value> distinct, AggregateCollector target) {
+						evaluate(row);
+					}
+				};
+			}
+
+			@Override
+			public AggregateCollector getCollector() {
+				return () -> SimpleValueFactory.getInstance().createBNode("wire-stop");
+			}
+		}
+		var factory = new ForeignCollectorFactory();
+		var registry = CustomAggregateFunctionRegistry.getInstance();
+		registry.add(factory);
+		String query = PREFIX
+				+ "SELECT ?g (ex:externalStop(?v) AS ?stop) WHERE { ?s ex:group ?g ; ex:value ?v } GROUP BY ?g";
+		try (var conn = repository.getConnection(); var rows = conn.prepareTupleQuery(query).evaluate()) {
+			var output = QueryResults.asList(rows);
+			assertThat(output.size()).isGreaterThan(1);
+			var stop = output.getFirst().getValue("stop");
+			assertThat(stop).isInstanceOf(RemoteBNode.class);
+			assertThat(((RemoteBNode) stop).getProvenance().remoteID()).isEqualTo("wire-stop");
+			assertThat(output).allSatisfy(row -> assertThat(row.getValue("stop")).isEqualTo(stop));
+		} finally {
+			registry.remove(factory);
+		}
+	}
+
 	@BeforeEach
 	public void setUp() {
 		repository = new SailRepository(new LmdbStore(dataDir,
@@ -373,6 +455,18 @@ public class LmdbNativeCustomAggregateTest {
 			assertThat(second.getFirst().getValue("now"))
 					.as("a retained custom aggregate must get a fresh query scope per evaluation")
 					.isNotSameAs(first.getFirst().getValue("now"));
+		}
+	}
+
+	@Test
+	void customAggregateArgumentsShareLabelsOnlyWithinEachMember() {
+		String query = PREFIX + "SELECT ?s (<" + NOW_IRI + ">(BNODE('k')) AS ?one) "
+				+ "(SAMPLE(BNODE('k')) AS ?two) WHERE { ?s ex:weight ?w } GROUP BY ?s";
+		try (var conn = repository.getConnection()) {
+			var output = QueryResults.asList(conn.prepareTupleQuery(query).evaluate());
+			assertThat(output).hasSize(12)
+					.allSatisfy(row -> assertThat(row.getValue("one")).isNotNull().isEqualTo(row.getValue("two")));
+			assertThat(output).extracting(row -> row.getValue("one")).doesNotHaveDuplicates();
 		}
 	}
 

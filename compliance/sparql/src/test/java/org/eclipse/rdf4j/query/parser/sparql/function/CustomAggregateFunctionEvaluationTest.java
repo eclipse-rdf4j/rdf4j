@@ -11,6 +11,7 @@
 package org.eclipse.rdf4j.query.parser.sparql.function;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.tuple;
 import static org.junit.Assert.fail;
 
 import java.io.IOException;
@@ -109,6 +110,11 @@ public class CustomAggregateFunctionEvaluationTest {
 	@AfterAll
 	public static void cleanUp() {
 		CustomAggregateFunctionRegistry.getInstance().remove(functionFactory);
+	}
+
+	private static String lexicalValue(BindingSet row, String name) {
+		Value value = row.getValue(name);
+		return value == null ? null : value.stringValue();
 	}
 
 	@Test
@@ -210,31 +216,17 @@ public class CustomAggregateFunctionEvaluationTest {
 				+ "\t ?s ?p ?o . } group by ?s ";
 		try (RepositoryConnection conn = rep.getConnection()) {
 			try (TupleQueryResult result = conn.prepareTupleQuery(query).evaluate()) {
-				BindingSet bs = result.next();
-				assertThat(bs.getValue("m").stringValue()).isEqualTo("0.0");
-				assertThat(bs.getValue("s").stringValue()).isEqualTo("http://example/book8");
-				bs = result.next();
-				assertThat(bs.getValue("m").stringValue()).isEqualTo("0.002500019073522708");
-				assertThat(bs.getValue("s").stringValue()).isEqualTo("http://example/book1");
-				bs = result.next();
-				assertThat(bs.getValue("m")).isNull();
-				assertThat(bs.getValue("s").stringValue()).isEqualTo("http://example/book5");
-				bs = result.next();
-				assertThat(bs.getValue("m").stringValue()).isEqualTo("0.0");
-				assertThat(bs.getValue("s").stringValue()).isEqualTo("http://example/book4");
-				bs = result.next();
-				assertThat(bs.getValue("m").stringValue()).isEqualTo("0.0");
-				assertThat(bs.getValue("s").stringValue()).isEqualTo("http://example/book6");
-				bs = result.next();
-				assertThat(bs.getValue("m").stringValue()).isEqualTo("1.0572322555240015");
-				assertThat(bs.getValue("s").stringValue()).isEqualTo("http://example/book7");
-				bs = result.next();
-				assertThat(bs.getValue("m").stringValue()).isEqualTo("0.0");
-				assertThat(bs.getValue("s").stringValue()).isEqualTo("http://example/book3");
-				bs = result.next();
-				assertThat(bs.getValue("m").stringValue()).isEqualTo("0.0");
-				assertThat(bs.getValue("s").stringValue()).isEqualTo("http://example/book2");
-				assertThat(result.hasNext()).isFalse();
+				assertThat(result.stream())
+						.extracting(row -> lexicalValue(row, "s"), row -> lexicalValue(row, "m"))
+						.containsExactlyInAnyOrder(
+								tuple("http://example/book1", "0.002500019073522708"),
+								tuple("http://example/book2", "0.0"),
+								tuple("http://example/book3", "0.0"),
+								tuple("http://example/book4", "0.0"),
+								tuple("http://example/book5", null),
+								tuple("http://example/book6", "0.0"),
+								tuple("http://example/book7", "1.0572322555240015"),
+								tuple("http://example/book8", "0.0"));
 			}
 		}
 	}
@@ -246,39 +238,18 @@ public class CustomAggregateFunctionEvaluationTest {
 				+ "\t ?s ?p ?o . } group by ?s ";
 		try (RepositoryConnection conn = rep.getConnection()) {
 			try (TupleQueryResult result = conn.prepareTupleQuery(query).evaluate()) {
-				var bs = result.next();
-				assertThat(bs.getValue("m").stringValue()).isEqualTo("0.0");
-				assertThat(bs.getValue("n").stringValue()).isEqualTo("0.0");
-				assertThat(bs.getValue("s").stringValue()).isEqualTo("http://example/book3");
-				bs = result.next();
-				assertThat(bs.getValue("m").stringValue()).isEqualTo("0.0");
-				assertThat(bs.getValue("n").stringValue()).isEqualTo("0.0");
-				assertThat(bs.getValue("s").stringValue()).isEqualTo("http://example/book2");
-				bs = result.next();
-				assertThat(bs.getValue("m").stringValue()).isEqualTo("0.0");
-				assertThat(bs.getValue("n").stringValue()).isEqualTo("0.0");
-				assertThat(bs.getValue("s").stringValue()).isEqualTo("http://example/book4");
-				bs = result.next();
-				assertThat(bs.getValue("m").stringValue()).isEqualTo("0.002500019073522708");
-				assertThat(bs.getValue("n").stringValue()).isEqualTo("0.057735247160611895");
-				assertThat(bs.getValue("s").stringValue()).isEqualTo("http://example/book1");
-				bs = result.next();
-				assertThat(bs.getValue("m")).isNull();
-				assertThat(bs.getValue("n")).isNull();
-				assertThat(bs.getValue("s").stringValue()).isEqualTo("http://example/book5");
-				bs = result.next();
-				assertThat(bs.getValue("m").stringValue()).isEqualTo("0.0");
-				assertThat(bs.getValue("n").stringValue()).isEqualTo("0.0");
-				assertThat(bs.getValue("s").stringValue()).isEqualTo("http://example/book6");
-				bs = result.next();
-				assertThat(bs.getValue("m").stringValue()).isEqualTo("0.0");
-				assertThat(bs.getValue("n").stringValue()).isEqualTo("0.0");
-				assertThat(bs.getValue("s").stringValue()).isEqualTo("http://example/book8");
-				bs = result.next();
-				assertThat(bs.getValue("m").stringValue()).isEqualTo("1.0572322555240015");
-				assertThat(bs.getValue("n").stringValue()).isEqualTo("1.45411984067614");
-				assertThat(bs.getValue("s").stringValue()).isEqualTo("http://example/book7");
-				assertThat(result.hasNext()).isFalse();
+				assertThat(result.stream())
+						.extracting(row -> lexicalValue(row, "s"), row -> lexicalValue(row, "m"),
+								row -> lexicalValue(row, "n"))
+						.containsExactlyInAnyOrder(
+								tuple("http://example/book1", "0.002500019073522708", "0.057735247160611895"),
+								tuple("http://example/book2", "0.0", "0.0"),
+								tuple("http://example/book3", "0.0", "0.0"),
+								tuple("http://example/book4", "0.0", "0.0"),
+								tuple("http://example/book5", null, null),
+								tuple("http://example/book6", "0.0", "0.0"),
+								tuple("http://example/book7", "1.0572322555240015", "1.45411984067614"),
+								tuple("http://example/book8", "0.0", "0.0"));
 			}
 		}
 	}
@@ -289,31 +260,17 @@ public class CustomAggregateFunctionEvaluationTest {
 				+ "\t ?s <urn:n> ?o . } group by ?s ";
 		try (RepositoryConnection conn = rep.getConnection()) {
 			try (TupleQueryResult result = conn.prepareTupleQuery(query).evaluate()) {
-				BindingSet bs = result.next();
-				assertThat(bs.getValue("m").stringValue()).isEqualTo("12.5");
-				assertThat(bs.getValue("s").stringValue()).isEqualTo("http://example/book1");
-				bs = result.next();
-				assertThat(bs.getValue("m").stringValue()).isEqualTo("12.5");
-				assertThat(bs.getValue("s").stringValue()).isEqualTo("http://example/book3");
-				bs = result.next();
-				assertThat(bs.getValue("m").stringValue()).isEqualTo("3");
-				assertThat(bs.getValue("s").stringValue()).isEqualTo("http://example/book8");
-				bs = result.next();
-				assertThat(bs.getValue("s").stringValue()).isEqualTo("http://example/book5");
-				assertThat(bs.getValue("m")).isNull();
-				bs = result.next();
-				assertThat(bs.getValue("m").stringValue()).isEqualTo("60.543564");
-				assertThat(bs.getValue("s").stringValue()).isEqualTo("http://example/book7");
-				bs = result.next();
-				assertThat(bs.getValue("m").stringValue()).isEqualTo("0.090000200001");
-				assertThat(bs.getValue("s").stringValue()).isEqualTo("http://example/book6");
-				bs = result.next();
-				assertThat(bs.getValue("m").stringValue()).isEqualTo("6");
-				assertThat(bs.getValue("s").stringValue()).isEqualTo("http://example/book2");
-				bs = result.next();
-				assertThat(bs.getValue("m").stringValue()).isEqualTo("31.3");
-				assertThat(bs.getValue("s").stringValue()).isEqualTo("http://example/book4");
-				assertThat(result.hasNext()).isFalse();
+				assertThat(result.stream())
+						.extracting(row -> lexicalValue(row, "s"), row -> lexicalValue(row, "m"))
+						.containsExactlyInAnyOrder(
+								tuple("http://example/book1", "12.5"),
+								tuple("http://example/book2", "6"),
+								tuple("http://example/book3", "12.5"),
+								tuple("http://example/book4", "31.3"),
+								tuple("http://example/book5", null),
+								tuple("http://example/book6", "0.090000200001"),
+								tuple("http://example/book7", "60.543564"),
+								tuple("http://example/book8", "3"));
 			}
 		}
 	}
@@ -337,39 +294,18 @@ public class CustomAggregateFunctionEvaluationTest {
 				+ "\t?s ?p ?o . filter(?o > 0) } group by ?s";
 		try (RepositoryConnection conn = rep.getConnection()) {
 			try (TupleQueryResult result = conn.prepareTupleQuery(query).evaluate()) {
-				BindingSet bs = result.next();
-				assertThat(bs.getValue("m").stringValue()).isEqualTo("12.5");
-				assertThat(bs.getValue("sa").stringValue()).isEqualTo("12.5");
-				assertThat(bs.getValue("s").stringValue()).isEqualTo("http://example/book3");
-				bs = result.next();
-				assertThat(bs.getValue("m").stringValue()).isEqualTo("6");
-				assertThat(bs.getValue("sa").stringValue()).isEqualTo("6");
-				assertThat(bs.getValue("s").stringValue()).isEqualTo("http://example/book2");
-				bs = result.next();
-				assertThat(bs.getValue("m").stringValue()).isEqualTo("311");
-				assertThat(bs.getValue("sa").stringValue()).isEqualTo("311");
-				assertThat(bs.getValue("s").stringValue()).isEqualTo("http://example/book5");
-				bs = result.next();
-				assertThat(bs.getValue("m").stringValue()).isEqualTo("25.1");
-				assertThat(bs.getValue("sa").stringValue()).isEqualTo("37.6");
-				assertThat(bs.getValue("s").stringValue()).isEqualTo("http://example/book1");
-				bs = result.next();
-				assertThat(bs.getValue("m").stringValue()).isEqualTo("31.3");
-				assertThat(bs.getValue("sa").stringValue()).isEqualTo("31.3");
-				assertThat(bs.getValue("s").stringValue()).isEqualTo("http://example/book4");
-				bs = result.next();
-				assertThat(bs.getValue("m").stringValue()).isEqualTo("60.543564");
-				assertThat(bs.getValue("sa").stringValue()).isEqualTo("60.543564");
-				assertThat(bs.getValue("s").stringValue()).isEqualTo("http://example/book7");
-				bs = result.next();
-				assertThat(bs.getValue("m").stringValue()).isEqualTo("0.090000200001");
-				assertThat(bs.getValue("sa").stringValue()).isEqualTo("0.090000200001");
-				assertThat(bs.getValue("s").stringValue()).isEqualTo("http://example/book6");
-				bs = result.next();
-				assertThat(bs.getValue("m").stringValue()).isEqualTo("3");
-				assertThat(bs.getValue("sa").stringValue()).isEqualTo("3");
-				assertThat(bs.getValue("s").stringValue()).isEqualTo("http://example/book8");
-				assertThat(result.hasNext()).isFalse();
+				assertThat(result.stream())
+						.extracting(row -> lexicalValue(row, "s"), row -> lexicalValue(row, "m"),
+								row -> lexicalValue(row, "sa"))
+						.containsExactlyInAnyOrder(
+								tuple("http://example/book1", "25.1", "37.6"),
+								tuple("http://example/book2", "6", "6"),
+								tuple("http://example/book3", "12.5", "12.5"),
+								tuple("http://example/book4", "31.3", "31.3"),
+								tuple("http://example/book5", "311", "311"),
+								tuple("http://example/book6", "0.090000200001", "0.090000200001"),
+								tuple("http://example/book7", "60.543564", "60.543564"),
+								tuple("http://example/book8", "3", "3"));
 			}
 		}
 	}

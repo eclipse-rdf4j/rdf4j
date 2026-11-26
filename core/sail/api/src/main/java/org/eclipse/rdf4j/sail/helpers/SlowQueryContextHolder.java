@@ -124,7 +124,7 @@ public final class SlowQueryContextHolder {
 
 	public static void restore(SlowQueryContext previous) {
 		if (previous == null) {
-			CONTEXT.remove();
+			CONTEXT.set(null);
 		} else {
 			CONTEXT.set(previous);
 		}

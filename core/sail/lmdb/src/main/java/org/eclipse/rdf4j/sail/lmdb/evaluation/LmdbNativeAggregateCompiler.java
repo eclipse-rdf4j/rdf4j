@@ -16,6 +16,7 @@ import java.util.Collections;
 import java.util.IdentityHashMap;
 import java.util.Set;
 import java.util.concurrent.atomic.AtomicLong;
+import java.util.function.Function;
 
 import org.eclipse.rdf4j.common.annotation.Experimental;
 import org.eclipse.rdf4j.model.Literal;
@@ -37,6 +38,7 @@ import org.eclipse.rdf4j.query.algebra.evaluation.QueryValueEvaluationStep;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.QueryEvaluationContext;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.evaluationsteps.OrderedEvaluation;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.restrictions.PreparedRestrictionPlan;
+import org.eclipse.rdf4j.query.algebra.evaluation.util.QueryEvaluationUtility;
 import org.eclipse.rdf4j.sail.lmdb.ValueIds;
 
 /**
@@ -172,6 +174,13 @@ final class LmdbNativeAggregateCompiler {
 
 	static PreparedRestrictionPlan specializeGraphRestriction(TupleExpr expr, QueryEvaluationContext context,
 			LmdbNativeEvaluationStrategy strategy, NativeLmdbQuerySource source, PreparedRestrictionPlan generic) {
+		return withPreparedFunctions(expr, context, strategy, generic,
+				bound -> specializeBoundGraphRestriction(bound, context, strategy, source, generic));
+	}
+
+	private static PreparedRestrictionPlan specializeBoundGraphRestriction(TupleExpr expr,
+			QueryEvaluationContext context,
+			LmdbNativeEvaluationStrategy strategy, NativeLmdbQuerySource source, PreparedRestrictionPlan generic) {
 		Runnable validator = source.stableGraphRestrictionValidator();
 		if (validator == null) {
 			LmdbNativeExplain.setRuntimeMetric(expr, "graphRestrictionNativeRefusal", "SOURCE_CAPABILITY_MISSING");
@@ -265,6 +274,12 @@ final class LmdbNativeAggregateCompiler {
 	 */
 	static QueryValueEvaluationStep tryCompileExists(TupleExpr expr, QueryEvaluationContext context,
 			LmdbNativeEvaluationStrategy strategy, NativeLmdbQuerySource source) {
+		return withPreparedFunctions(expr, context, strategy, null,
+				bound -> compileBoundExists(bound, context, strategy, source));
+	}
+
+	private static QueryValueEvaluationStep compileBoundExists(TupleExpr expr, QueryEvaluationContext context,
+			LmdbNativeEvaluationStrategy strategy, NativeLmdbQuerySource source) {
 		if (OrderedEvaluation.isRequired(expr)) {
 			return null;
 		}
@@ -351,6 +366,39 @@ final class LmdbNativeAggregateCompiler {
 	}
 
 	private static CompileResult compile(TupleExpr expr, QueryEvaluationContext context,
+			LmdbNativeEvaluationStrategy strategy, NativeLmdbQuerySource source, boolean rootEvaluation,
+			Set<String> inheritedFrameInputNames, Set<String> inheritedLateralFrameInputNames) {
+		return withPreparedFunctions(expr, context, strategy, UNSUPPORTED,
+				bound -> compileBound(bound, context, strategy, source,
+						rootEvaluation, inheritedFrameInputNames, inheritedLateralFrameInputNames));
+	}
+
+	private static final CompileResult UNSUPPORTED = new CompileResult(null, null, false, false);
+
+	/**
+	 * Bind on an owned tree when direct preparation bypassed optimizer pinning. The generic operator supplies
+	 * execution-scoped value factories, foreign admission and solution-occurrence boundaries for declared callbacks.
+	 */
+	private static <T> T withPreparedFunctions(TupleExpr expr, QueryEvaluationContext context,
+			LmdbNativeEvaluationStrategy strategy,
+			T fallback, Function<TupleExpr, T> prepare) {
+		if (!context.allowsDirectVariableReads() || QueryEvaluationUtility.hasScopedExtensionFunctions(expr)) {
+			return fallback;
+		}
+		if (!QueryEvaluationUtility.hasUnpinnedFunctions(expr)) {
+			return prepare.apply(expr);
+		}
+		TupleExpr bound = expr.clone();
+		QueryEvaluationUtility.pinPreparedFunctions(bound);
+		if (QueryEvaluationUtility.hasScopedExtensionFunctions(bound)) {
+			return fallback;
+		}
+		NativeGraphFusion.linkLogicalOrigins(expr, bound);
+		var positions = strategy.copyValuePositions(expr, bound);
+		return strategy.withValuePositions(positions, () -> prepare.apply(bound));
+	}
+
+	private static CompileResult compileBound(TupleExpr expr, QueryEvaluationContext context,
 			LmdbNativeEvaluationStrategy strategy, NativeLmdbQuerySource source, boolean rootEvaluation,
 			Set<String> inheritedFrameInputNames, Set<String> inheritedLateralFrameInputNames) {
 		if (OrderedEvaluation.isRequired(expr)) {

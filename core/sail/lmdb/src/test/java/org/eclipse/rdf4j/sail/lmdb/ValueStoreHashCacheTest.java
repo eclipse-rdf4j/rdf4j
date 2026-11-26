@@ -35,6 +35,8 @@ import org.eclipse.rdf4j.sail.lmdb.model.LmdbIRI;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 
 class ValueStoreHashCacheTest {
 
@@ -61,6 +63,34 @@ class ValueStoreHashCacheTest {
 		assertTrue("hashCode should initialize lazy IRIs when the hash cache is disabled", isInitialized(lazyValue));
 		assertFalse(hashFile(dataDir).exists());
 		assertFalse(integrityFile(dataDir).exists());
+	}
+
+	@ParameterizedTest
+	@ValueSource(booleans = { false, true })
+	void hashLookupAcrossCacheAndStoreClear(boolean enabled, @TempDir File dataDir) throws Exception {
+		LmdbStoreConfig config = new LmdbStoreConfig().setValueHashCacheEnabled(enabled);
+		valueStore = createValueStore(dataDir, config);
+		IRI iri = Values.iri("urn:hash:clear-lookup");
+		int hash = iri.hashCode();
+		long id = storeValue(iri);
+
+		valueStore.storeHash(id, hash);
+		long revision = valueStore.getRevision().getRevisionId();
+		assertEquals(enabled ? hash : 0, valueStore.getStoredHash(id));
+		assertEquals(enabled ? hash : 0, valueStore.getStoredHash(id, revision));
+		valueStore.clearCaches();
+		assertEquals(enabled ? hash : 0, valueStore.getStoredHash(id));
+		valueStore.clearStoredHash(id);
+		assertEquals(0, valueStore.getStoredHash(id));
+		assertEquals(hash, valueStore.getLazyValue(id).hashCode());
+
+		valueStore.clear();
+		assertEquals(0, valueStore.getStoredHash(id));
+		long replacementId = storeValue(iri);
+		valueStore.close();
+		valueStore = createValueStore(dataDir, config);
+		assertEquals(hash, valueStore.getLazyValue(replacementId).hashCode());
+		assertEquals(enabled, hashFile(dataDir).exists());
 	}
 
 	@Test

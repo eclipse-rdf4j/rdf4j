@@ -21,8 +21,12 @@ import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.Mockito.CALLS_REAL_METHODS;
+import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.mockStatic;
 import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.when;
+import static org.mockito.Mockito.withSettings;
 
 import java.io.File;
 import java.io.IOException;
@@ -46,6 +50,7 @@ import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.common.iteration.InterruptingTimeLimit;
 import org.eclipse.rdf4j.common.transaction.IsolationLevels;
 import org.eclipse.rdf4j.model.BNode;
+import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Literal;
 import org.eclipse.rdf4j.model.Statement;
 import org.eclipse.rdf4j.model.TripleTerm;
@@ -433,6 +438,14 @@ class LmdbValueResolutionScopeTest {
 		} finally {
 			store.shutDown();
 		}
+	}
+
+	@Test
+	void foreignLiteralRejectsASelfReferentialDatatypeWithoutCallingItsGetterTwice() {
+		Literal literal = mock(Literal.class, withSettings().extraInterfaces(IRI.class));
+		when(literal.getDatatype()).thenReturn((IRI) literal);
+		assertThrows(IllegalArgumentException.class, () -> LmdbStoreConnection.protectValueTree(literal));
+		verify(literal).getDatatype();
 	}
 
 	@Test

@@ -17,6 +17,7 @@ import java.util.function.UnaryOperator;
 
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.query.BindingSet;
+import org.eclipse.rdf4j.query.BlankNodeEffects;
 import org.eclipse.rdf4j.query.MutableBindingSet;
 import org.eclipse.rdf4j.query.algebra.Extension;
 import org.eclipse.rdf4j.query.algebra.evaluation.EvaluationStrategy;
@@ -41,12 +42,21 @@ public final class ExtensionQueryEvaluationStep implements QueryEvaluationStep {
 	}
 
 	/** Compiles the assignments independently of the physical argument step. */
-	static UnaryOperator<QueryEvaluationStep> prepare(Extension extension, EvaluationStrategy strategy,
+	static PreparedExtension prepare(Extension extension, EvaluationStrategy strategy,
 			QueryEvaluationContext context) {
 		var consumer = ExtensionIterator.prepareAssignments(extension,
 				strategy,
 				context);
-		return arg -> new ExtensionQueryEvaluationStep(arg, extension, consumer, context);
+		return new PreparedExtension(BlankNodeEffects.of(consumer),
+				arg -> new ExtensionQueryEvaluationStep(arg, extension, consumer, context));
+	}
+
+	record PreparedExtension(BlankNodeEffects effects, UnaryOperator<QueryEvaluationStep> factory)
+			implements UnaryOperator<QueryEvaluationStep> {
+		@Override
+		public QueryEvaluationStep apply(QueryEvaluationStep arg) {
+			return factory.apply(arg);
+		}
 	}
 
 	@Override

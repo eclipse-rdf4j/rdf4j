@@ -28,9 +28,11 @@ import org.eclipse.rdf4j.query.algebra.Join;
 import org.eclipse.rdf4j.query.algebra.LeftJoin;
 import org.eclipse.rdf4j.query.algebra.Order;
 import org.eclipse.rdf4j.query.algebra.QueryModelNode;
+import org.eclipse.rdf4j.query.algebra.SubQueryValueOperator;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.algebra.Union;
 import org.eclipse.rdf4j.query.algebra.ValueExpr;
+import org.eclipse.rdf4j.query.algebra.helpers.AbstractQueryModelVisitor;
 import org.eclipse.rdf4j.query.algebra.helpers.FilterBindingScope;
 import org.eclipse.rdf4j.query.algebra.helpers.QueryAlgebraBindingAnalysis;
 import org.eclipse.rdf4j.query.algebra.helpers.TupleExprs;
@@ -55,6 +57,10 @@ final class FilterPlacementRules {
 		private final ConditionBindingScope bindingScope;
 		/** By condition frame identity: frames are memoized, so sites with the same frame share one analysis. */
 		private final Map<QueryAlgebraBindingAnalysis.ReadOnlyContext, QueryAlgebraBindingAnalysis.Dependencies> dependencies = new IdentityHashMap<>();
+		/** Set once known: a condition without a subquery reads the same variables under every frame. */
+		private Boolean subqueryFree;
+		private QueryAlgebraBindingAnalysis.Dependencies frameIndependent;
+		private DependencyNames names;
 
 		Condition(Filter filter) {
 			this.filter = Objects.requireNonNull(filter);
@@ -69,12 +75,52 @@ final class FilterPlacementRules {
 
 		QueryAlgebraBindingAnalysis.Dependencies dependencies(QueryAlgebraBindingAnalysis analysis,
 				QueryAlgebraBindingAnalysis.ReadOnlyContext frame) {
+			if (frameIndependent != null) {
+				return frameIndependent;
+			}
 			QueryAlgebraBindingAnalysis.Dependencies cached = dependencies.get(frame);
 			if (cached == null) {
 				cached = analysis.dependencies(expression, frame);
-				dependencies.put(frame, cached);
+				if (subqueryFree()) {
+					// Only names inside a subquery are classified against the frame; there are none here.
+					frameIndependent = cached;
+				} else {
+					dependencies.put(frame, cached);
+				}
 			}
 			return cached;
+		}
+
+		private boolean subqueryFree() {
+			if (subqueryFree == null) {
+				boolean[] found = { false };
+				expression.visit(new AbstractQueryModelVisitor<RuntimeException>() {
+					@Override
+					protected void meetNode(QueryModelNode node) {
+						if (node instanceof SubQueryValueOperator) {
+							found[0] = true;
+						} else if (!found[0]) {
+							super.meetNode(node);
+						}
+					}
+				});
+				subqueryFree = !found[0];
+			}
+			return subqueryFree;
+		}
+
+		/** The name sets every rule derives from the same dependencies, built once per dependencies object. */
+		DependencyNames names(QueryAlgebraBindingAnalysis.Dependencies dependencies) {
+			DependencyNames known = names;
+			if (known == null || known.source != dependencies) {
+				Set<String> referenced = new HashSet<>(dependencies.directReferences());
+				referenced.addAll(dependencies.correlatedInputs());
+				Set<String> stable = new HashSet<>(referenced);
+				stable.addAll(dependencies.existsLocals());
+				known = new DependencyNames(dependencies, Set.copyOf(referenced), Set.copyOf(stable));
+				names = known;
+			}
+			return known;
 		}
 
 		/**
@@ -92,6 +138,10 @@ final class FilterPlacementRules {
 		}
 	}
 
+	private record DependencyNames(QueryAlgebraBindingAnalysis.Dependencies source, Set<String> referenced,
+			Set<String> stable) {
+	}
+
 	private final Condition condition;
 	private final TupleExpr gateArgument;
 	private final QueryAlgebraBindingAnalysis analysis;
@@ -101,8 +151,13 @@ final class FilterPlacementRules {
 
 	/** Rules for the real filter at its current position in the analysed tree. */
 	FilterPlacementRules(Filter filter, QueryAlgebraBindingAnalysis analysis) {
-		this(new Condition(filter), filter.getArg(), conditionVisibility(filter, analysis).frame(), analysis,
-				TupleExpr::getBindingNames);
+		this(new Condition(filter), filter, analysis);
+	}
+
+	/** One condition serves the visibility frame and the rules; resolving its binding scope walks the argument. */
+	private FilterPlacementRules(Condition condition, Filter filter, QueryAlgebraBindingAnalysis analysis) {
+		this(condition, filter.getArg(), conditionVisibility(condition, filter.getArg(), analysis.contextAt(filter),
+				analysis, TupleExpr::getBindingNames).frame(), analysis, TupleExpr::getBindingNames);
 	}
 
 	/**
@@ -313,9 +368,7 @@ final class FilterPlacementRules {
 	}
 
 	private Set<String> dependencyNames() {
-		Set<String> names = new HashSet<>(dependencies.directReferences());
-		names.addAll(dependencies.correlatedInputs());
-		return names;
+		return condition.names(dependencies).referenced();
 	}
 
 	/**
@@ -323,9 +376,7 @@ final class FilterPlacementRules {
 	 * EXISTS-local names (e.g. inside a sub-SELECT), so those count too, although they need not be bound.
 	 */
 	Set<String> stableNames() {
-		Set<String> names = dependencyNames();
-		names.addAll(dependencies.existsLocals());
-		return names;
+		return condition.names(dependencies).stable();
 	}
 
 }
