@@ -158,4 +158,22 @@ public class MapBindingSetTest extends BindingSetTest<MapBindingSet> {
 		assertEquals(20, snapshot.size());
 	}
 
+	@Test
+	public void getValueAnswersThroughAnOverriddenGetBinding() {
+		Binding replaced = new SimpleBinding("x", RDF.REST);
+		MapBindingSet bindings = new MapBindingSet() {
+			private static final long serialVersionUID = 1L;
+
+			@Override
+			public Binding getBinding(String bindingName) {
+				return "x".equals(bindingName) ? replaced : super.getBinding(bindingName);
+			}
+		};
+		bindings.addBinding("x", RDF.ALT);
+		bindings.addBinding("y", RDF.BAG);
+
+		assertEquals(RDF.REST, bindings.getBinding("x").getValue());
+		assertEquals(RDF.REST, bindings.getValue("x"), "both accessors must agree for a subclass");
+		assertEquals(RDF.BAG, bindings.getValue("y"));
+	}
 }

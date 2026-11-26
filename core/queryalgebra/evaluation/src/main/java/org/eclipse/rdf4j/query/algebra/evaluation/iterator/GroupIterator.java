@@ -833,20 +833,29 @@ public class GroupIterator extends AbstractCloseableIteratorIteration<BindingSet
 			while ((stale = (IdentityReference) expired.poll()) != null) {
 				values.remove(stale);
 			}
-			Value current = value;
-			// Triple terms have a Resource subject and may nest in the object.
-			Set<Value> visited = current instanceof TripleTerm
-					? Collections.newSetFromMap(new IdentityHashMap<>())
-					: null;
-			while (current instanceof TripleTerm triple) {
-				if (!visited.add(current)) {
-					throw new QueryEvaluationException("Cyclic RDF value cannot be admitted");
-				}
-				remember(triple.getSubject());
-				current = triple.getObject();
+			if (value instanceof TripleTerm) {
+				rememberTerms(value, Collections.newSetFromMap(new IdentityHashMap<>()));
+			} else {
+				remember(value);
 			}
-			remember(current);
 			return value;
+		}
+
+		/**
+		 * A triple term can nest in the object and, for a term that is also a resource, in the subject. {@code path}
+		 * holds the terms being walked, so a term reached twice on different branches is not mistaken for a cycle.
+		 */
+		private void rememberTerms(Value value, Set<Value> path) {
+			if (!(value instanceof TripleTerm triple)) {
+				remember(value);
+				return;
+			}
+			if (!path.add(value)) {
+				throw new QueryEvaluationException("Cyclic RDF value cannot be admitted");
+			}
+			rememberTerms(triple.getSubject(), path);
+			rememberTerms(triple.getObject(), path);
+			path.remove(value);
 		}
 
 		private void remember(Value value) {
