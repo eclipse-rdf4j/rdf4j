@@ -166,8 +166,11 @@ public class OrderIterator extends DelayedIteration<BindingSet> {
 						keyComparator::restoreSortKey, SortKey[]::new, distinct ? Long.MAX_VALUE : limit, false,
 						ownership);
 			} else {
-				result = createIteration(Function.identity(), comparator, Function.identity(), BindingSet[]::new, limit,
-						distinct, ownership);
+				boolean sortDistinct = false;
+				long sortLimit = distinct && !sortDistinct ? Long.MAX_VALUE : limit;
+
+				result = createIteration(Function.identity(), comparator, Function.identity(), BindingSet[]::new,
+						sortLimit, sortDistinct, ownership);
 			}
 			// Publish before checking close, so either the creating thread or handleClose owns retirement.
 			creationResult = result;
@@ -374,10 +377,18 @@ public class OrderIterator extends DelayedIteration<BindingSet> {
 			Arrays.parallelSort(array, cancellable(comparator));
 		}
 		QueryExecutionContext.checkpointReplaySafepoint();
-		Stream<E> stream = Stream.of(array);
-		if (sortDistinct) {
-			stream = stream.distinct();
+		int effectiveSize = array.length;
+		if (sortDistinct && effectiveSize > 1) {
+			int writeIndex = 1;
+			for (int readIndex = 1; readIndex < effectiveSize; readIndex++) {
+				if (comparator.compare(array[writeIndex - 1], array[readIndex]) != 0) {
+					array[writeIndex++] = array[readIndex];
+				}
+			}
+			effectiveSize = writeIndex;
 		}
+
+		Stream<E> stream = Arrays.stream(array, 0, effectiveSize);
 		if (sortLimit < Integer.MAX_VALUE) {
 			stream = stream.limit(sortLimit);
 		}

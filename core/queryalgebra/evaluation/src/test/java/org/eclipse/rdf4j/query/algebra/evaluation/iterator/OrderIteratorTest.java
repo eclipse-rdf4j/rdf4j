@@ -128,7 +128,7 @@ public class OrderIteratorTest {
 		}
 	}
 
-	class BindingSetSize implements BindingSet {
+	static class BindingSetSize implements BindingSet {
 
 		private static final long serialVersionUID = -7968068342865378845L;
 
@@ -355,6 +355,37 @@ public class OrderIteratorTest {
 	}
 
 	@Test
+	public void distinctUsesBindingSetEqualityForGenericComparatorsAcrossSpillRuns() {
+		MapBindingSet first = new MapBindingSet();
+		first.addBinding("value", SimpleValueFactory.getInstance().createLiteral("first"));
+
+		MapBindingSet second = new MapBindingSet();
+		second.addBinding("value", SimpleValueFactory.getInstance().createLiteral("second"));
+
+		List<BindingSet> input = List.of(first, first, second, second);
+
+		for (long spillThreshold : new long[] { 0, 2 }) {
+			try (OrderIterator sorting = new OrderIterator(
+					new IterationStub(input.iterator()),
+					cmp,
+					Long.MAX_VALUE,
+					true,
+					spillThreshold)) {
+
+				List<BindingSet> actual = new ArrayList<>();
+
+				while (sorting.hasNext()) {
+					actual.add(sorting.next());
+				}
+
+				assertEquals(List.of(first, second), actual,
+						"distinct must use BindingSet equality with a generic comparator, spill="
+								+ spillThreshold);
+			}
+		}
+	}
+
+	@Test
 	@Timeout(value = 30, unit = TimeUnit.SECONDS)
 	public void sortFailureWaitsForInFlightReplayAwareComparator() throws Exception {
 		int workerCount = Math.min(8, ForkJoinPool.getCommonPoolParallelism());
@@ -490,6 +521,29 @@ public class OrderIteratorTest {
 			assertFalse(Files.exists(spill), "spill file must be deleted after stream-close failures");
 		} finally {
 			Files.deleteIfExists(spill);
+		}
+	}
+
+	@Test
+	public void distinctRemovesComparatorEquivalentRowsAcrossSpillRuns() {
+		List<BindingSet> input = new ArrayList<>();
+		for (int i = 40; i > 0; i--) {
+			input.add(new BindingSetSize(i % 3 + 1));
+		}
+
+		for (long spillThreshold : new long[] { 0, 7 }) {
+			try (OrderIterator sorting = new OrderIterator(
+					new IterationStub(input.iterator()), cmp,
+					Long.MAX_VALUE, true, spillThreshold)) {
+
+				List<BindingSet> actual = new ArrayList<>();
+				while (sorting.hasNext()) {
+					actual.add(sorting.next());
+				}
+
+				assertEquals(List.of(1, 2, 3),
+						actual.stream().map(BindingSet::size).toList());
+			}
 		}
 	}
 
