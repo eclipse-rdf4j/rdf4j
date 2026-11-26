@@ -383,9 +383,9 @@ final class PreparedValuesSnapshot {
 	}
 
 	/**
-	 * Finds out whether a tree holds anything that preparation acts on: a VALUES block, whose rows are captured, or a
-	 * SELECT subquery, whose inherited graph context may be lowered. It visits the same nodes as the preparation passes
-	 * but skips the children of nodes that can hold neither.
+	 * Finds out whether a tree holds anything that preparation acts on: a VALUES block whose rows are not captured yet,
+	 * or a SELECT subquery, whose inherited graph context may be lowered. It visits the same nodes as the preparation
+	 * passes but skips the children of nodes that can hold neither.
 	 */
 	private static final class PreparationDemand extends AbstractQueryModelVisitor<RuntimeException> {
 		private boolean needed;
@@ -405,7 +405,15 @@ final class PreparedValuesSnapshot {
 
 		@Override
 		public void meet(BindingSetAssignment assignment) {
-			needed = true;
+			// Rows that are captured already, or that their source declares stable, are left as they are by the
+			// capture pass. Only the first preparation of a query finds anything else; the twenty-odd that follow,
+			// one per optimizer, then need no pass at all.
+			Iterable<BindingSet> source = assignment.getBindingSets();
+			if (source != null && !(source instanceof PreparedRows) && !isStableRowSource(source)) {
+				needed = true;
+			} else if (passed != null) {
+				passed.add(assignment);
+			}
 		}
 
 		@Override
