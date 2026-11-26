@@ -64,6 +64,11 @@ class LmdbStatementIterator extends AbstractCloseableIteration<Statement>
 	 */
 	private boolean snapshotGuarded;
 	private int deferredStatementFields;
+	/**
+	 * Fields the consumer requires to hold the same term; rows whose IDs prove otherwise are not turned into values.
+	 */
+	private int sameTermFields;
+	private long sameTermSkippedRows;
 	private Statement nextElement;
 	private volatile boolean cancellationRequested;
 	private volatile boolean cancellationClosed;
@@ -239,6 +244,20 @@ class LmdbStatementIterator extends AbstractCloseableIteration<Statement>
 			if (quad == null) {
 				return null;
 			}
+			if (sameTermFields != 0) {
+				if (!stableIds || !readSnapshot.revision().hasCanonicalIds()) {
+					// Different IDs do not prove different terms here; the consumer's filter decides alone.
+					sameTermFields = 0;
+				} else {
+					while (!holdsSameTerm(quad, sameTermFields)) {
+						sameTermSkippedRows++;
+						quad = recordIt.next();
+						if (quad == null) {
+							return null;
+						}
+					}
+				}
+			}
 			if (order != null) {
 				// the quad array is a reused buffer, so the order component must be copied out
 				long orderId = quad[orderIdx];
@@ -312,6 +331,18 @@ class LmdbStatementIterator extends AbstractCloseableIteration<Statement>
 	@Override
 	public void deferStatementFields(StatementFieldSelection.Demand demand) {
 		deferStatementFields(demand.deferredFields());
+		if (order == null) {
+			sameTermFields = demand.sameTermFields();
+		}
+	}
+
+	private static boolean holdsSameTerm(long[] quad, int fields) {
+		long subject = quad[TripleIndex.SUBJ_IDX];
+		long predicate = quad[TripleIndex.PRED_IDX];
+		long object = quad[TripleIndex.OBJ_IDX];
+		return ((fields & (SUBJECT | PREDICATE)) != (SUBJECT | PREDICATE) || subject == predicate)
+				&& ((fields & (SUBJECT | OBJECT)) != (SUBJECT | OBJECT) || subject == object)
+				&& ((fields & (PREDICATE | OBJECT)) != (PREDICATE | OBJECT) || predicate == object);
 	}
 
 	void deferStatementFields(int fields) {
@@ -692,11 +723,13 @@ class LmdbStatementIterator extends AbstractCloseableIteration<Statement>
 
 	@Override
 	public long getSourceRowsMatchedActual() {
-		return recordIt.getSourceRowsMatchedActual();
+		long matched = recordIt.getSourceRowsMatchedActual();
+		return matched < 0 ? matched : Math.max(0L, matched - sameTermSkippedRows);
 	}
 
 	@Override
 	public long getSourceRowsFilteredActual() {
-		return recordIt.getSourceRowsFilteredActual();
+		long filtered = recordIt.getSourceRowsFilteredActual();
+		return filtered < 0 ? filtered : filtered + sameTermSkippedRows;
 	}
 }

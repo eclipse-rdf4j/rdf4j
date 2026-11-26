@@ -918,8 +918,14 @@ public class StatementPatternQueryEvaluationStep implements QueryEvaluationStep,
 
 		CloseableIteration<? extends Statement> iteration = null;
 		try {
-			iteration = openStatements((Resource) subject, (IRI) predicate, object, contexts,
-					demand == null ? privateScanDemand() : demand);
+			StatementFieldSelection.Demand scanDemand = demand == null ? privateScanDemand() : demand;
+			int sameTermFields = order == null ? sameTermFields(subject, predicate, object) : 0;
+			if (sameTermFields != 0) {
+				// A repeated variable: the source may skip statements that cannot pass the filter added below.
+				scanDemand = new StatementFieldSelection.Demand(scanDemand == null ? 0 : scanDemand.deferredFields(),
+						sameTermFields);
+			}
+			iteration = openStatements((Resource) subject, (IRI) predicate, object, contexts, scanDemand);
 
 			if (iteration instanceof EmptyIteration) {
 				return null;
@@ -1036,6 +1042,26 @@ public class StatementPatternQueryEvaluationStep implements QueryEvaluationStep,
 			filter = st -> st.getContext() != null;
 		}
 		return filterSameVariable(statementPattern, subjValue, predValue, objValue, filter);
+	}
+
+	/** The statement fields that {@link #filterSameVariable} requires to hold the same term, or 0. */
+	private int sameTermFields(Value subjValue, Value predValue, Value objValue) {
+		Var subjVar = statementPattern.getSubjectVar();
+		Var predVar = statementPattern.getPredicateVar();
+		Var objVar = statementPattern.getObjectVar();
+		int fields = 0;
+		if (subjVar != null && subjValue == null) {
+			if (subjVar.equals(predVar)) {
+				fields |= StatementFieldSelection.SUBJECT | StatementFieldSelection.PREDICATE;
+			}
+			if (subjVar.equals(objVar)) {
+				fields |= StatementFieldSelection.SUBJECT | StatementFieldSelection.OBJECT;
+			}
+		}
+		if (predVar != null && predValue == null && predVar.equals(objVar)) {
+			fields |= StatementFieldSelection.PREDICATE | StatementFieldSelection.OBJECT;
+		}
+		return fields;
 	}
 
 	/**
