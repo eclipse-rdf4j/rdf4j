@@ -49,7 +49,7 @@ import org.slf4j.LoggerFactory;
  * @author Jerven Bolleman
  */
 @InternalUseOnly
-public class ArrayBindingSet extends AbstractBindingSet implements MutableBindingSet, MutableCarrier {
+public class ArrayBindingSet extends AbstractBindingSet implements MutableBindingSet, MutableCarrier, Cloneable {
 
 	private static final long serialVersionUID = -1L;
 
@@ -200,6 +200,28 @@ public class ArrayBindingSet extends AbstractBindingSet implements MutableBindin
 					: calculateActiveBindingMask();
 		}
 		assert !this.empty || size() == 0;
+	}
+
+	/**
+	 * A copy of this row for the given layout, as
+	 * {@link #ArrayBindingSet(ArrayBindingSet, String[], SortedBindingNamesCache)} makes it. A row of the same layout,
+	 * which is what every join extends, is copied as one object with a values array of its own instead of field by
+	 * field.
+	 */
+	@InternalUseOnly
+	public ArrayBindingSet copyFor(String[] names, SortedBindingNamesCache sharedSortedBindingNamesCache) {
+		if (getClass() == ArrayBindingSet.class && bindingNames == names
+				&& this.sharedSortedBindingNamesCache == sharedSortedBindingNamesCache) {
+			try {
+				ArrayBindingSet copy = (ArrayBindingSet) super.clone();
+				copy.values = values.clone();
+				copy.valuesShared = false;
+				return copy;
+			} catch (CloneNotSupportedException e) {
+				throw new AssertionError(e);
+			}
+		}
+		return new ArrayBindingSet(this, names, sharedSortedBindingNamesCache);
 	}
 
 	/**

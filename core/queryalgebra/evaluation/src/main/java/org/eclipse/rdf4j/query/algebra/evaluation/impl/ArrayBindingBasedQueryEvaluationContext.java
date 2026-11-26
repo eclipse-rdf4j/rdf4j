@@ -454,7 +454,7 @@ public final class ArrayBindingBasedQueryEvaluationContext implements QueryEvalu
 	@Override
 	public ArrayBindingSet createBindingSet(BindingSet bindings) {
 		if (bindings instanceof ArrayBindingSet) {
-			return new ArrayBindingSet((ArrayBindingSet) bindings, allVariables, sortedBindingNamesCache);
+			return ((ArrayBindingSet) bindings).copyFor(allVariables, sortedBindingNamesCache);
 		} else if (bindings == EmptyBindingSet.getInstance()) {
 			return createBindingSet();
 		} else {
