@@ -168,9 +168,10 @@ class SailBaseIteration<T, E extends Exception> extends IterationWrapper<T> impl
 			failIfClosedByConnection();
 			return super.next();
 		}
-		if (prepared != null && prepared.hasPreparedElement()) {
+		if (prepared != null && prepared.hasPreparedElement() && !lineage.isCancelled()) {
 			// The availability check that produced this element was admitted and tracked. Handing the element over
 			// reads nothing from the connection, so there is nothing here for a close to drain or to interrupt.
+			// A result whose creating workload was cancelled in between takes the admitted path, which refuses it.
 			return super.next();
 		}
 		beginPull();

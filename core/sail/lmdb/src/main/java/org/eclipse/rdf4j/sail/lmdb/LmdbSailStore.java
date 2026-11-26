@@ -15724,8 +15724,13 @@ class LmdbSailStore implements SailStore {
 					nativeSourceReplay.checkpoint();
 				}
 				readView.ensureNativeSnapshotsValid();
-			} else if (closed.get()) {
-				throw new QueryInterruptedException("Query evaluation was interrupted");
+			} else {
+				if (closed.get()) {
+					throw new QueryInterruptedException("Query evaluation was interrupted");
+				}
+				// Without auto-grow nothing renews the pinned readers, but a namespace commit can still fail with an
+				// unknown outcome, and reads then fail until the store is reopened.
+				ensureNamespacePersistenceCertain();
 			}
 		}
 
