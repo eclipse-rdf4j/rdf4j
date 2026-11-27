@@ -24,8 +24,11 @@ import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
 import java.util.concurrent.ConcurrentLinkedQueue;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
 
 import org.eclipse.rdf4j.model.IRI;
+import org.eclipse.rdf4j.model.Literal;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.query.BindingSet;
@@ -38,6 +41,7 @@ import org.eclipse.rdf4j.query.resultio.BooleanQueryResultFormat;
 import org.eclipse.rdf4j.query.resultio.QueryResultIO;
 import org.eclipse.rdf4j.query.resultio.TupleQueryResultFormat;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
+import org.eclipse.rdf4j.repository.sparql.SPARQLRepository;
 import org.eclipse.rdf4j.repository.sparql.federation.RepositoryFederatedService;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
@@ -49,6 +53,857 @@ import com.sun.net.httpserver.HttpServer;
 class ScopedServiceValuesTest {
 
 	private static final SimpleValueFactory VF = SimpleValueFactory.getInstance();
+
+	@ParameterizedTest
+	@ValueSource(strings = {
+			"SERVICE ?endpoint { ?s <urn:label> ?label }",
+			"VALUES ?id { 1 } OPTIONAL { SERVICE $endpoint { ?s <urn:label> ?label } }",
+			"VALUES ?id { 1 } OPTIONAL { SERVICE ?endpoint { ?s <urn:absent> ?label } }",
+			"FILTER EXISTS { SERVICE ?endpoint { ?s <urn:label> ?label } }",
+			"VALUES ?id { 1 } MINUS { SERVICE ?endpoint { ?s <urn:label> ?label } }"
+	})
+	void boundServiceSelectorMatchesNativeScope(String pattern) throws IOException {
+		try (var fixture = new QueryEndpointPair();
+				var client = fixture.client.getConnection();
+				var local = fixture.queryEndpoint.getConnection()) {
+			String source = "SELECT * WHERE { " + pattern + " }";
+			var expected = local.prepareTupleQuery(source);
+			var actual = client.prepareTupleQuery(source);
+			IRI endpoint = VF.createIRI(fixture.serviceUrl);
+			expected.setBinding("endpoint", endpoint);
+			actual.setBinding("endpoint", endpoint);
+			try (var expectedRows = expected.evaluate(); var actualRows = actual.evaluate()) {
+				assertThat(actualRows.getBindingNames()).containsExactlyElementsOf(expectedRows.getBindingNames());
+				assertThat(QueryResults.asList(actualRows))
+						.containsExactlyInAnyOrderElementsOf(QueryResults.asList(expectedRows));
+			}
+		}
+	}
+
+	@Test
+	void boundSelectorJoinsWithEarlierMappings() throws IOException {
+		try (var fixture = new QueryEndpointPair(); var client = fixture.client.getConnection()) {
+			String invocation = "SERVICE ?endpoint { ?s <urn:label> ?label }";
+			String queryStart = "SELECT * WHERE { VALUES ?id { 1 2 } ";
+			var explicit = client.prepareTupleQuery(queryStart
+					+ "VALUES ?endpoint { <" + fixture.serviceUrl + "> } " + invocation + " }");
+			var actual = client.prepareTupleQuery(queryStart + invocation + " }");
+			actual.setBinding("endpoint", VF.createIRI(fixture.serviceUrl));
+			try (var expectedRows = explicit.evaluate(); var actualRows = actual.evaluate()) {
+				assertThat(actualRows.getBindingNames()).containsExactlyElementsOf(expectedRows.getBindingNames());
+				assertThat(QueryResults.asList(actualRows))
+						.containsExactlyInAnyOrderElementsOf(QueryResults.asList(expectedRows));
+			}
+		}
+	}
+
+	@ParameterizedTest
+	@ValueSource(strings = {
+			"BIND(BNODE() AS ?fresh)",
+			"?s <urn:remote-node> ?fresh",
+			"{ SELECT ?fresh WHERE { BIND(BNODE() AS ?fresh) } LIMIT 1 }",
+			"BIND(UUID() AS ?fresh)"
+	})
+	void boundSelectorPreservesInvocationLocalResults(String serviceBody) throws IOException {
+		try (var fixture = new QueryEndpointPair(); var client = fixture.client.getConnection()) {
+			try (var remote = fixture.serviceEndpoint.getConnection()) {
+				remote.add(iri("tagged"), iri("remote-node"), VF.createBNode());
+			}
+			var endpoint = VF.createIRI(fixture.serviceUrl);
+			for (String rows : List.of("1 2", "1 1")) {
+				String source = """
+						SELECT (COUNT(*) AS ?total) (COUNT(DISTINCT ?fresh) AS ?distinct) WHERE {
+						  VALUES ?row { %s }
+						  %%s
+						  SERVICE ?endpoint { %s }
+						}
+						""".formatted(rows, serviceBody);
+				var explicit = client.prepareTupleQuery(source.formatted("VALUES ?endpoint { <" + endpoint + "> }"));
+				List<BindingSet> expected;
+				try (var result = explicit.evaluate()) {
+					expected = QueryResults.asList(result);
+					assertThat(expected).singleElement().satisfies(row -> {
+						assertThat(((Literal) row.getValue("total")).intValue()).isEqualTo(2);
+						assertThat(((Literal) row.getValue("distinct")).intValue()).isEqualTo(2);
+					});
+				}
+				assertThat(fixture.serviceRequests).hasSize(2);
+				fixture.serviceRequests.clear();
+
+				var query = client.prepareTupleQuery(source.formatted(""));
+				query.setBinding("endpoint", endpoint);
+				try (var result = query.evaluate()) {
+					assertThat(QueryResults.asList(result)).containsExactlyElementsOf(expected);
+				}
+				assertThat(fixture.serviceRequests).hasSize(2);
+				fixture.serviceRequests.clear();
+			}
+		}
+	}
+
+	@ParameterizedTest
+	@ValueSource(strings = {
+			"{ %s BIND(STR(?endpoint) AS ?copy) SERVICE ?endpoint { ?s <urn:label> ?label } }",
+			"OPTIONAL { %s BIND(STR(?endpoint) AS ?copy) SERVICE ?endpoint { ?s <urn:label> ?label } }",
+			"{ %s BIND(BOUND(?endpoint) AS ?copy) SERVICE ?endpoint { ?s <urn:label> ?label } } "
+					+ "UNION { VALUES ?other { 1 } }",
+			"FILTER EXISTS { %s BIND(BOUND(?endpoint) AS ?copy) "
+					+ "SERVICE ?endpoint { ?s <urn:label> ?label } FILTER(?copy) }",
+			"OPTIONAL { %s FILTER(BOUND(?endpoint)) SERVICE ?endpoint { ?s <urn:label> ?label } }"
+	})
+	void selectorIsAvailableToExpressionsInTheInvocationScope(String pattern) throws IOException {
+		try (var fixture = new QueryEndpointPair(); var client = fixture.client.getConnection()) {
+			var endpoint = VF.createIRI(fixture.serviceUrl);
+			String query = "SELECT ?copy ?endpoint ?s ?label ?other WHERE { " + pattern + " }";
+			var explicit = client.prepareTupleQuery(query.formatted("VALUES ?endpoint { <" + endpoint + "> }"));
+			var actual = client.prepareTupleQuery(query.formatted(""));
+			actual.setBinding("endpoint", endpoint);
+			try (var expectedRows = explicit.evaluate(); var actualRows = actual.evaluate()) {
+				assertThat(actualRows.getBindingNames()).containsExactlyElementsOf(expectedRows.getBindingNames());
+				assertThat(QueryResults.asList(actualRows))
+						.containsExactlyInAnyOrderElementsOf(QueryResults.asList(expectedRows));
+			}
+		}
+	}
+
+	@Test
+	void earlyScopedSelectorDoesNotReorderWildcardColumns() throws IOException {
+		try (var fixture = new QueryEndpointPair(); var client = fixture.client.getConnection()) {
+			var query = client.prepareTupleQuery("""
+					SELECT * WHERE {
+					  { BIND(STR(?endpoint) AS ?copy) SERVICE ?endpoint { ?s <urn:label> ?label } }
+					}
+					""");
+			var endpoint = VF.createIRI(fixture.serviceUrl);
+			query.setBinding("endpoint", endpoint);
+			try (var result = query.evaluate()) {
+				assertThat(result.getBindingNames()).containsExactly("copy", "endpoint", "s", "label");
+				assertThat(QueryResults.asList(result)).extracting(row -> row.getValue("copy"))
+						.containsExactly(VF.createLiteral(endpoint.stringValue()),
+								VF.createLiteral(endpoint.stringValue()));
+			}
+		}
+	}
+
+	@Test
+	void earlierExpressionCanReadTwoSelectorsInTheSameScope() throws IOException {
+		try (var fixture = new QueryEndpointPair(); var client = fixture.client.getConnection()) {
+			var query = client.prepareTupleQuery("""
+					SELECT * WHERE {
+					  BIND("BIND" AS ?unrelated)
+					  {
+					    # BIND in a comment is not an expression
+					    BIND(CONCAT(STR(?first), STR(?second)) AS ?combined)
+					    SERVICE ?first { ?s <urn:label> "needle" }
+					    SERVICE $second { ?t <urn:label> "other" }
+					  }
+					}
+					""");
+			var endpoint = VF.createIRI(fixture.serviceUrl);
+			query.setBinding("first", endpoint);
+			query.setBinding("second", endpoint);
+			try (var result = query.evaluate()) {
+				assertThat(result.getBindingNames()).containsExactly("unrelated", "combined", "first", "s", "second",
+						"t");
+				assertThat(QueryResults.asList(result)).extracting(row -> row.getValue("combined"),
+						row -> row.getValue("s"), row -> row.getValue("t"))
+						.containsExactly(tuple(VF.createLiteral(fixture.serviceUrl + fixture.serviceUrl),
+								iri("match"), iri("other")));
+			}
+		}
+	}
+
+	@ParameterizedTest
+	@ValueSource(strings = {
+			"BIND(CONCAT(STR(?input), \" ?input\") AS ?seen)",
+			"{ BIND(STR(?input) AS ?seen) }",
+			"OPTIONAL { BIND(STR(?input) AS ?seen) }",
+			"OPTIONAL { VALUES ?seen { 1 } FILTER BOUND($input) }",
+			"OPTIONAL { VALUES ?seen { 1 } FILTER (BOUND(?input) && CONTAINS(STR($input), \"e\")) }",
+			"BIND(BOUND(?input) && !sameTerm(?input, <urn:unrelated>) AS ?seen)"
+	})
+	void earlierNestedExpressionReadsTheApiBinding(String earlierPattern) throws IOException {
+		try (var fixture = new QueryEndpointPair();
+				var client = fixture.client.getConnection();
+				var local = fixture.queryEndpoint.getConnection()) {
+			String prefix = "SELECT ?seen ?s WHERE { { " + earlierPattern + " ";
+			for (boolean selector : List.of(false, true)) {
+				var value = selector ? VF.createIRI(fixture.serviceUrl) : VF.createLiteral("needle");
+				String service = selector ? "SERVICE ?input { ?s <urn:label> ?label }"
+						: "SERVICE <" + fixture.serviceUrl + "> { ?s <urn:label> ?input }";
+				var nativeQuery = local.prepareTupleQuery(prefix + service + " } }");
+				var httpQuery = client.prepareTupleQuery(prefix + service + " } }");
+				nativeQuery.setBinding("input", value);
+				httpQuery.setBinding("input", value);
+				try (var expected = nativeQuery.evaluate(); var actual = httpQuery.evaluate()) {
+					assertThat(actual.getBindingNames()).containsExactlyElementsOf(expected.getBindingNames());
+					assertThat(QueryResults.asList(actual))
+							.containsExactlyInAnyOrderElementsOf(QueryResults.asList(expected));
+				}
+			}
+		}
+	}
+
+	@Test
+	void earlierExpressionCanReadBothSelectorAndServiceBodyInputs() throws IOException {
+		try (var fixture = new QueryEndpointPair(); var client = fixture.client.getConnection()) {
+			var query = client.prepareTupleQuery("""
+					SELECT * WHERE {
+					  {
+					    BIND(CONCAT(STR(?endpoint), " / ", STR($input)) AS ?seen)
+					    SERVICE ?endpoint { ?s <urn:label> ?input }
+					  }
+					}
+					""");
+			var endpoint = VF.createIRI(fixture.serviceUrl);
+			var input = VF.createLiteral("needle");
+			query.setBinding("endpoint", endpoint);
+			query.setBinding("input", input);
+			try (var result = query.evaluate()) {
+				assertThat(result.getBindingNames()).containsExactly("seen", "endpoint", "s", "input");
+				assertThat(QueryResults.asList(result)).extracting(row -> row.getValue("seen"),
+						row -> row.getValue("endpoint"), row -> row.getValue("s"), row -> row.getValue("input"))
+						.containsExactly(tuple(VF.createLiteral(fixture.serviceUrl + " / needle"), endpoint,
+								iri("match"), input));
+			}
+		}
+	}
+
+	@Test
+	void earlierOptionalReadDoesNotMaterializeAnUnmatchedServiceOutput() throws IOException {
+		try (var fixture = new QueryEndpointPair(); var client = fixture.client.getConnection()) {
+			var query = client.prepareTupleQuery("""
+					SELECT * WHERE {
+					  OPTIONAL { BIND(STR(?input) AS ?seen) }
+					  OPTIONAL { SERVICE <%s> { ?s <urn:absent> ?input } }
+					}
+					""".formatted(fixture.serviceUrl));
+			query.setBinding("input", VF.createLiteral("needle"));
+			try (var result = query.evaluate()) {
+				assertThat(result.getBindingNames()).containsExactly("seen", "s", "input");
+				assertThat(QueryResults.asList(result)).extracting(row -> row.getValue("seen"),
+						row -> row.getValue("s"), row -> row.getValue("input"))
+						.containsExactly(tuple(VF.createLiteral("needle"), null, null));
+			}
+		}
+	}
+
+	@Test
+	void selectorAndBodyBindingsComposeAcrossRepeatedEvaluation() throws IOException {
+		try (var fixture = new QueryEndpointPair(); var client = fixture.client.getConnection()) {
+			var query = client.prepareTupleQuery("""
+					SELECT * WHERE { SERVICE SILENT ?endpoint { ?s <urn:label> ?label } }
+					""");
+			var endpoint = VF.createIRI(fixture.serviceUrl);
+			var failing = VF.createIRI(fixture.base + "/failure");
+			query.setBinding("label", VF.createLiteral("needle"));
+
+			query.setBinding("endpoint", endpoint);
+			try (var result = query.evaluate()) {
+				assertThat(result.getBindingNames()).containsExactly("endpoint", "s", "label");
+				assertThat(QueryResults.asList(result)).extracting(row -> row.getValue("endpoint"),
+						row -> row.getValue("s"), row -> row.getValue("label"))
+						.containsExactly(tuple(endpoint, iri("match"), VF.createLiteral("needle")));
+			}
+
+			query.setBinding("endpoint", failing);
+			try (var result = query.evaluate()) {
+				assertThat(result.getBindingNames()).containsExactly("endpoint", "s", "label");
+				assertThat(QueryResults.asList(result)).extracting(row -> row.getValue("endpoint"),
+						row -> row.getValue("s"), row -> row.getValue("label"))
+						.containsExactly(tuple(failing, null, null));
+			}
+
+			query.removeBinding("endpoint");
+			assertThatThrownBy(query::evaluate).isInstanceOf(UnsupportedOperationException.class);
+		}
+	}
+
+	@Test
+	void boundEndpointIsAlsoConstrainedWhenUsedAsARemoteTerm() throws IOException {
+		try (var fixture = new QueryEndpointPair(); var client = fixture.client.getConnection()) {
+			var endpoint = VF.createIRI(fixture.serviceUrl);
+			try (var remote = fixture.serviceEndpoint.getConnection()) {
+				remote.add(iri("matching-endpoint"), iri("location"), endpoint);
+				remote.add(iri("other-endpoint"), iri("location"), iri("different"));
+			}
+			var query = client.prepareTupleQuery("""
+					SELECT * WHERE { SERVICE ?endpoint { ?s <urn:location> ?endpoint } }
+					""");
+			query.setBinding("endpoint", endpoint);
+			try (var result = query.evaluate()) {
+				assertThat(result.getBindingNames()).containsExactly("endpoint", "s");
+				assertThat(QueryResults.asList(result)).extracting(row -> row.getValue("endpoint"),
+						row -> row.getValue("s")).containsExactly(tuple(endpoint, iri("matching-endpoint")));
+			}
+		}
+	}
+
+	@Test
+	void nestedServiceGetsItsOwnBoundSelector() throws IOException {
+		try (var fixture = new QueryEndpointPair(); var client = fixture.client.getConnection()) {
+			var query = client.prepareTupleQuery("""
+					SELECT * WHERE {
+					  SERVICE <%s> { SERVICE ?endpoint { ?s <urn:label> ?label } }
+					}
+					""".formatted(fixture.serviceUrl));
+			var endpoint = VF.createIRI(fixture.serviceUrl);
+			query.setBinding("endpoint", endpoint);
+			try (var result = query.evaluate()) {
+				assertThat(result.getBindingNames()).containsExactly("endpoint", "s", "label");
+				assertThat(QueryResults.asList(result)).extracting(row -> row.getValue("endpoint"),
+						row -> row.getValue("s"))
+						.containsExactlyInAnyOrder(tuple(endpoint, iri("match")),
+								tuple(endpoint, iri("other")));
+			}
+		}
+	}
+
+	@Test
+	void silentInvocationKeepsTheSelectorAvailableToOuterExpressions() throws IOException {
+		try (var fixture = new QueryEndpointPair(); var client = fixture.client.getConnection()) {
+			var query = client.prepareTupleQuery("""
+					SELECT (STR(?endpoint) AS ?selected) WHERE {SERVICE SILENT ?endpoint {
+					  ?s <urn:label> ?label
+					} }
+					""");
+			var endpoint = VF.createIRI(fixture.base + "/failure");
+			query.setBinding("endpoint", endpoint);
+			try (var result = query.evaluate()) {
+				assertThat(QueryResults.asList(result)).extracting(row -> row.getValue("selected"))
+						.containsExactly(VF.createLiteral(endpoint.stringValue()));
+			}
+		}
+	}
+
+	@Test
+	void unsupportedSelectorTermsDoNotSendAnHttpRequest() throws IOException {
+		try (var fixture = new QueryEndpointPair(); var client = fixture.client.getConnection()) {
+			var query = client.prepareTupleQuery("""
+					SELECT * WHERE { SERVICE ?endpoint { ?s <urn:label> ?label } }
+					""");
+			for (Value endpoint : List.of(VF.createLiteral(fixture.serviceUrl), iri("opaque"),
+					VF.createIRI("http:opaque"))) {
+				query.setBinding("endpoint", endpoint);
+				assertThatThrownBy(query::evaluate).isInstanceOf(UnsupportedOperationException.class);
+			}
+			assertThat(fixture.queryRequests).isEmpty();
+		}
+	}
+
+	@Test
+	void queryApiBindingReachesServiceAndRetainsProjection() throws IOException {
+		try (var fixture = new QueryEndpointPair(); var connection = fixture.client.getConnection()) {
+			var query = connection.prepareTupleQuery("""
+					SELECT * WHERE {
+					  SERVICE <%s> { ?s <urn:label> ?label }
+					}
+					""".formatted(fixture.serviceUrl));
+			query.setBinding("label", VF.createLiteral("needle"));
+			try (var result = query.evaluate()) {
+				assertThat(result.getBindingNames()).containsExactly("s", "label");
+				assertThat(QueryResults.asList(result)).extracting(row -> row.getValue("s"),
+						row -> row.getValue("label")).containsExactly(tuple(iri("match"), VF.createLiteral("needle")));
+			}
+			assertThat(fixture.serviceRequests).singleElement().asString().contains("VALUES", "needle");
+		}
+	}
+
+	@ParameterizedTest
+	@ValueSource(strings = { "\n", "\r", "\r\n" })
+	void serviceHeaderCommentAndLineEndingsKeepTheRealBody(String newline) throws IOException {
+		try (var fixture = new QueryEndpointPair(); var connection = fixture.client.getConnection()) {
+			String source = """
+					SELECT * WHERE {
+					  SERVICE <%s> # { this brace is a comment
+					  { ?s <urn:label> ?label }
+					}
+					""".formatted(fixture.serviceUrl).replace("\n", newline);
+			var query = connection.prepareTupleQuery(source);
+			query.setBinding("label", VF.createLiteral("needle"));
+			try (var result = query.evaluate()) {
+				assertThat(result.getBindingNames()).containsExactly("s", "label");
+				assertThat(QueryResults.asList(result)).extracting(row -> row.getValue("s"))
+						.containsExactly(iri("match"));
+			}
+		}
+	}
+
+	@ParameterizedTest
+	@ValueSource(strings = { "<urn:label>*", "<urn:label>?", "(<urn:label>?|<urn:other>)+" })
+	void nullablePathBindingsMatchNativeVariableEndpointSemantics(String path) throws IOException {
+		try (var fixture = new QueryEndpointPair();
+				var connection = fixture.client.getConnection();
+				var receiving = fixture.serviceEndpoint.getConnection()) {
+			String body = "?start " + path + " ?end";
+			var query = connection.prepareTupleQuery("SELECT * WHERE { SERVICE <" + fixture.serviceUrl + "> { "
+					+ body + " } }");
+			var nativeQuery = receiving.prepareTupleQuery("SELECT * WHERE { " + body + " }");
+			for (Value term : List.of(iri("absent"), iri("match"))) {
+				for (List<String> endpoints : List.of(List.of("start"), List.of("end"), List.of("start", "end"))) {
+					query.clearBindings();
+					nativeQuery.clearBindings();
+					endpoints.forEach(endpoint -> {
+						query.setBinding(endpoint, term);
+						nativeQuery.setBinding(endpoint, term);
+					});
+					try (var result = query.evaluate(); var expected = nativeQuery.evaluate()) {
+						assertThat(result.getBindingNames()).containsExactlyElementsOf(expected.getBindingNames());
+						assertThat(QueryResults.asList(result)).as("bound endpoints %s to %s", endpoints, term)
+								.containsExactlyInAnyOrderElementsOf(QueryResults.asList(expected));
+					}
+				}
+			}
+		}
+	}
+
+	@Test
+	void expandedWildcardKeepsMinusLocalsPrivate() throws IOException {
+		try (var fixture = new QueryEndpointPair(); var connection = fixture.client.getConnection()) {
+			var query = connection.prepareTupleQuery("""
+					SELECT * WHERE {
+					  ?local <urn:label> ?label .
+					  MINUS { ?local <urn:blocked> ?hidden }
+					  SERVICE <%s> { ?s <urn:label> ?label }
+					}
+					""".formatted(fixture.serviceUrl));
+			query.setBinding("label", VF.createLiteral("needle"));
+			try (var result = query.evaluate()) {
+				assertThat(result.getBindingNames()).containsExactly("local", "label", "s");
+				assertThat(QueryResults.asList(result)).extracting(row -> row.getValue("s"))
+						.containsExactly(iri("match"));
+			}
+		}
+	}
+
+	@ParameterizedTest
+	@ValueSource(strings = { "FILTER EXISTS", "VALUES ?outer { <urn:outside> } MINUS" })
+	void explicitlyProjectedServiceLocalStaysUnbound(String enclosingPattern) throws IOException {
+		try (var fixture = new QueryEndpointPair(); var connection = fixture.client.getConnection()) {
+			var query = connection.prepareTupleQuery("""
+					SELECT ?label WHERE {
+					  %s { SERVICE <%s> { ?s <urn:label> ?label } }
+					}
+					""".formatted(enclosingPattern, fixture.serviceUrl));
+			query.setBinding("label", VF.createLiteral("needle"));
+			try (var result = query.evaluate()) {
+				assertThat(result.getBindingNames()).containsExactly("label");
+				assertThat(QueryResults.asList(result)).singleElement().satisfies(row -> assertThat(row).isEmpty());
+			}
+		}
+	}
+
+	@ParameterizedTest
+	@ValueSource(strings = {
+			"BIND(STR(?input) AS ?echo)",
+			"BIND(STR(?input) AS ?echo) ?s <urn:label> ?label FILTER(?echo = ?label)",
+			"{ BIND(STR(?input) AS ?echo) } UNION { BIND(\"other\" AS ?echo) }",
+			"VALUES ?id { 1 } OPTIONAL { BIND(STR(?input) AS ?echo) FILTER(BOUND(?input)) }"
+	})
+	void remoteBindReadsApiInputWithoutProjectingIt(String body) throws IOException {
+		try (var fixture = new QueryEndpointPair(); var client = fixture.client.getConnection()) {
+			String query = "SELECT * WHERE { SERVICE <" + fixture.serviceUrl + "> { %s } }";
+			String literalBody = body.replace("BOUND(?input)", "(true)").replace("?input", "\"needle\"");
+			var expected = client.prepareTupleQuery(query.formatted(literalBody));
+			var actual = client.prepareTupleQuery(query.formatted(body));
+			actual.setBinding("input", VF.createLiteral("needle"));
+			try (var expectedRows = expected.evaluate(); var actualRows = actual.evaluate()) {
+				assertThat(actualRows.getBindingNames()).containsExactlyElementsOf(expectedRows.getBindingNames())
+						.doesNotContain("input");
+				assertThat(QueryResults.asList(actualRows))
+						.containsExactlyInAnyOrderElementsOf(QueryResults.asList(expectedRows));
+			}
+		}
+	}
+
+	@Test
+	void filterOnlyServiceUsesApiInputWithoutAnOutputProjection() throws IOException {
+		try (var fixture = new QueryEndpointPair(); var client = fixture.client.getConnection()) {
+			var query = client.prepareBooleanQuery("""
+					ASK { SERVICE <%s> {
+					  FILTER (BOUND(?input) && ?input = "needle")
+					} }
+					""".formatted(fixture.serviceUrl));
+			query.setBinding("input", VF.createLiteral("needle"));
+			assertThat(query.evaluate()).isTrue();
+			query.setBinding("input", VF.createLiteral("other"));
+			assertThat(query.evaluate()).isFalse();
+			assertThat(fixture.serviceRequests).hasSize(2);
+		}
+	}
+
+	@Test
+	void remoteExpressionInputComposesWithABoundResultVariable() throws IOException {
+		try (var fixture = new QueryEndpointPair(); var client = fixture.client.getConnection()) {
+			var query = client.prepareTupleQuery("""
+					SELECT * WHERE { SERVICE <%s> {
+					  BIND(UCASE(STR(?input)) AS ?echo)
+					  ?s <urn:label> ?label
+					} }
+					""".formatted(fixture.serviceUrl));
+			query.setBinding("input", VF.createLiteral("private"));
+			query.setBinding("label", VF.createLiteral("needle"));
+			try (var result = query.evaluate()) {
+				assertThat(result.getBindingNames()).containsExactly("echo", "s", "label");
+				assertThat(QueryResults.asList(result)).extracting(row -> row.getValue("echo"),
+						row -> row.getValue("s"), row -> row.getValue("label"))
+						.containsExactly(tuple(VF.createLiteral("PRIVATE"), iri("match"), VF.createLiteral("needle")));
+			}
+		}
+	}
+
+	@Test
+	void remoteScalarExpressionErrorsPreserveRowsAndUnboundOutput() throws IOException {
+		try (var fixture = new QueryEndpointPair(); var client = fixture.client.getConnection()) {
+			var query = client.prepareTupleQuery("""
+					SELECT * WHERE { SERVICE <%s> {
+					  VALUES ?row { 1 1 }
+					  BIND(IF(?input = "emit", STR(?input), STR(1 / 0)) AS ?echo)
+					} }
+					""".formatted(fixture.serviceUrl));
+			for (String input : List.of("emit", "fail")) {
+				query.setBinding("input", VF.createLiteral(input));
+				try (var result = query.evaluate()) {
+					assertThat(result.getBindingNames()).containsExactly("row", "echo");
+					var expected = tuple(1, input.equals("emit") ? VF.createLiteral(input) : null);
+					assertThat(QueryResults.asList(result))
+							.extracting(row -> ((Literal) row.getValue("row")).intValue(),
+									row -> row.getValue("echo"))
+							.containsExactly(expected, expected);
+				}
+			}
+		}
+	}
+
+	@Test
+	void remoteScalarInputPreservesVariableServiceInvocations() throws IOException {
+		try (var fixture = new QueryEndpointPair(); var client = fixture.client.getConnection()) {
+			var query = client.prepareTupleQuery("""
+					SELECT (COUNT(DISTINCT ?fresh) AS ?count) WHERE {
+					  VALUES ?row { 1 1 }
+					  SERVICE ?endpoint { BIND(CONCAT(STR(?input), STR(UUID())) AS ?fresh) }
+					}
+					""");
+			query.setBinding("endpoint", VF.createIRI(fixture.serviceUrl));
+			query.setBinding("input", VF.createLiteral("prefix"));
+			try (var result = query.evaluate()) {
+				assertThat(QueryResults.asList(result)).singleElement()
+						.satisfies(row -> assertThat(((Literal) row.getValue("count")).intValue()).isEqualTo(2));
+			}
+			assertThat(fixture.serviceRequests).hasSize(2);
+		}
+	}
+
+	@Test
+	void privateFilterBindingIsScopedAndUsesTheCurrentValueOnEveryEvaluation() throws IOException {
+		try (var fixture = new QueryEndpointPair(); var connection = fixture.client.getConnection()) {
+			String escaped = "quotes \" and backslash \\ and line break\n";
+			try (var remote = fixture.serviceEndpoint.getConnection()) {
+				remote.add(iri("escaped"), iri("label"), VF.createLiteral(escaped));
+			}
+			var query = connection.prepareTupleQuery("""
+					SELECT * WHERE {
+					  SERVICE <%s> # comment with a brace }
+					  {
+					    ?s <urn:label> ?label .
+					    FILTER(BOUND($needle) && CONTAINS(?label, ?needle))
+					  }
+					}
+					""".formatted(fixture.serviceUrl).replace("\n", "\r\n"));
+			for (String needle : List.of("needle", "other", escaped)) {
+				query.setBinding("needle", VF.createLiteral(needle));
+				try (var result = query.evaluate()) {
+					assertThat(result.getBindingNames()).containsExactly("s", "label");
+					assertThat(QueryResults.asList(result)).extracting(row -> row.getValue("label"))
+							.containsExactly(VF.createLiteral(needle));
+				}
+			}
+			query.removeBinding("needle");
+			try (var result = query.evaluate()) {
+				assertThat(result.getBindingNames()).containsExactly("s", "label");
+				assertThat(QueryResults.asList(result)).isEmpty();
+			}
+		}
+	}
+
+	@Test
+	void privateInputIsNotSilentlyTreatedAsAnExportedProjection() throws IOException {
+		try (var fixture = new QueryEndpointPair(); var connection = fixture.client.getConnection()) {
+			var query = connection.prepareTupleQuery("""
+					SELECT ?needle WHERE {
+					  SERVICE <%s> { ?s <urn:label> ?label FILTER(CONTAINS(?label, ?needle)) }
+					}
+					""".formatted(fixture.serviceUrl));
+			query.setBinding("needle", VF.createLiteral("needle"));
+			assertThatThrownBy(query::evaluate).isInstanceOf(UnsupportedOperationException.class);
+			assertThat(fixture.queryRequests).isEmpty();
+		}
+	}
+
+	@ParameterizedTest
+	@ValueSource(strings = {
+			"""
+					VALUES ?s { <urn:match> <urn:match> <urn:other> <urn:absent> }
+					OPTIONAL { ?s <urn:label> ?label . %1$s }
+					""",
+			"""
+					VALUES ?s { <urn:match> <urn:other> <urn:absent> }
+					OPTIONAL {
+					  ?s <urn:label> ?original .
+					  OPTIONAL { ?s <urn:label> ?label FILTER(sameTerm(?label, ?original)) %1$s }
+					}
+					""",
+			"""
+					{
+					  VALUES ?s { <urn:match> <urn:other> }
+					  OPTIONAL { ?s <urn:label> ?label . %1$s }
+					} UNION { VALUES ?s { <urn:outside> } }
+					""",
+			"""
+					VALUES ?s { <urn:match> <urn:other> }
+					OPTIONAL { ?s <urn:label> ?label . %1$s }
+					OPTIONAL { ?s <urn:label> ?label . BIND(?s AS ?source) %1$s }
+					"""
+	})
+	void boundRemoteOptionalOutputRetainsUnmatchedRows(String body) throws IOException {
+		try (var fixture = new QueryEndpointPair(); var client = fixture.client.getConnection()) {
+			String source = "SELECT * WHERE { SERVICE <" + fixture.serviceUrl + "> { %s } }";
+			String explicitValues = "VALUES ?label { \"needle\" }";
+			var reference = client.prepareTupleQuery(source.formatted(body.formatted(explicitValues)));
+			var actual = client.prepareTupleQuery(source.formatted(body.formatted("")));
+			actual.setBinding("label", VF.createLiteral("needle"));
+			try (var expected = reference.evaluate(); var result = actual.evaluate()) {
+				assertThat(result.getBindingNames()).containsExactlyElementsOf(expected.getBindingNames());
+				var rows = QueryResults.asList(result);
+				assertThat(rows).containsExactlyInAnyOrderElementsOf(QueryResults.asList(expected))
+						.anyMatch(row -> VF.createLiteral("needle").equals(row.getValue("label")))
+						.anyMatch(row -> !row.hasBinding("label"));
+			}
+		}
+	}
+
+	@Test
+	void explicitOptionalOutputUsesCurrentBindingWithVariableService() throws IOException {
+		try (var fixture = new QueryEndpointPair(); var client = fixture.client.getConnection()) {
+			String source = """
+					SELECT ?s ?label WHERE {
+					  SERVICE ?endpoint {
+					    VALUES ?s { <urn:match> <urn:other> }
+					    OPTIONAL # } is comment text
+					    {
+					      ?s <urn:label> ?label .
+					      FILTER(STRLEN("{") = 1) # OPTIONAL { is comment text
+					    }
+					  }
+					} ORDER BY ?s
+					""".replace("\n", "\r\n");
+			var query = client.prepareTupleQuery(source);
+			query.setBinding("endpoint", VF.createIRI(fixture.serviceUrl));
+			query.setBinding("label", VF.createLiteral("needle"));
+			try (var result = query.evaluate()) {
+				assertThat(result.getBindingNames()).containsExactly("s", "label");
+				assertThat(QueryResults.asList(result))
+						.extracting(row -> row.getValue("s"), row -> row.getValue("label"))
+						.containsExactly(tuple(iri("match"), VF.createLiteral("needle")), tuple(iri("other"), null));
+			}
+			query.setBinding("label", VF.createLiteral("other"));
+			try (var result = query.evaluate()) {
+				assertThat(QueryResults.asList(result))
+						.extracting(row -> row.getValue("s"), row -> row.getValue("label"))
+						.containsExactly(tuple(iri("match"), null), tuple(iri("other"), VF.createLiteral("other")));
+			}
+		}
+	}
+
+	@Test
+	void optionalServiceDoesNotBindUnmatchedRows() throws IOException {
+		try (var fixture = new QueryEndpointPair(); var connection = fixture.client.getConnection()) {
+			var query = connection.prepareTupleQuery("""
+					SELECT ?s ?label WHERE {
+					  VALUES ?s { <urn:match> <urn:other> }
+					  OPTIONAL { SERVICE <%s> { ?s <urn:label> ?label } }
+					} ORDER BY ?s
+					""".formatted(fixture.serviceUrl));
+			query.setBinding("label", VF.createLiteral("needle"));
+			try (var result = query.evaluate()) {
+				assertThat(QueryResults.asList(result)).extracting(row -> row.getValue("s"),
+						row -> row.getValue("label"))
+						.containsExactly(tuple(iri("match"), VF.createLiteral("needle")), tuple(iri("other"), null));
+			}
+		}
+	}
+
+	@Test
+	void unionInsideServiceRetainsDuplicateRows() throws IOException {
+		try (var fixture = new QueryEndpointPair(); var connection = fixture.client.getConnection()) {
+			var query = connection.prepareTupleQuery("""
+					SELECT ?s ?label WHERE {
+					  SERVICE <%s> {
+					    { ?s <urn:label> ?label } UNION { ?s <urn:label> ?label }
+					  }
+					}
+					""".formatted(fixture.serviceUrl));
+			query.setBinding("label", VF.createLiteral("needle"));
+			try (var result = query.evaluate()) {
+				var expected = tuple(iri("match"), VF.createLiteral("needle"));
+				assertThat(QueryResults.asList(result)).extracting(row -> row.getValue("s"),
+						row -> row.getValue("label")).containsExactly(expected, expected);
+			}
+		}
+	}
+
+	@Test
+	void serviceOutputMatchesNativeBindingEvaluation() throws IOException {
+		try (var fixture = new QueryEndpointPair();
+				var client = fixture.client.getConnection();
+				var nativeConnection = fixture.queryEndpoint.getConnection()) {
+			String source = "SELECT * WHERE { SERVICE <" + fixture.serviceUrl + "> { ?s <urn:label> ?label } }";
+			var nativeQuery = nativeConnection.prepareTupleQuery(source);
+			nativeQuery.setBinding("label", VF.createLiteral("needle"));
+			var remoteQuery = client.prepareTupleQuery(source);
+			remoteQuery.setBinding("label", VF.createLiteral("needle"));
+			try (var expected = nativeQuery.evaluate(); var actual = remoteQuery.evaluate()) {
+				assertThat(actual.getBindingNames()).containsExactlyElementsOf(expected.getBindingNames());
+				assertThat(QueryResults.asList(actual))
+						.containsExactlyInAnyOrderElementsOf(QueryResults.asList(expected));
+			}
+		}
+	}
+
+	@Test
+	void unionRetainsDifferentBindingDomainsForDistinctCount() throws IOException {
+		try (var fixture = new QueryEndpointPair(); var connection = fixture.client.getConnection()) {
+			var query = connection.prepareTupleQuery("""
+					SELECT (COUNT(DISTINCT *) AS ?total) WHERE {
+					  { SERVICE <%s> { ?s <urn:label> ?label } }
+					  UNION { VALUES ?s { <urn:match> } }
+					}
+					""".formatted(fixture.serviceUrl));
+			query.setBinding("label", VF.createLiteral("needle"));
+			try (var result = query.evaluate()) {
+				assertThat(QueryResults.asList(result)).singleElement()
+						.satisfies(row -> assertThat(((Literal) row.getValue("total")).intValue()).isEqualTo(2));
+			}
+		}
+	}
+
+	@ParameterizedTest
+	@ValueSource(strings = {
+			"MINUS { VALUES ?label { \"needle\" } }",
+			"FILTER NOT EXISTS { VALUES ?other { \"needle\" } FILTER(?other = ?label) }"
+	})
+	void nestedNegativePatternStillSeesServiceOutput(String negative) throws IOException {
+		try (var fixture = new QueryEndpointPair(); var connection = fixture.client.getConnection()) {
+			var query = connection.prepareTupleQuery("""
+					SELECT ?s WHERE {
+					  { SERVICE <%s> { ?s <urn:label> ?label } %s }
+					}
+					""".formatted(fixture.serviceUrl, negative));
+			query.setBinding("label", VF.createLiteral("needle"));
+			try (var result = query.evaluate()) {
+				assertThat(QueryResults.asList(result)).isEmpty();
+			}
+		}
+	}
+
+	@Test
+	void sharedBindingRetainsTheOriginalWildcardOrder() throws IOException {
+		try (var fixture = new QueryEndpointPair(); var connection = fixture.client.getConnection()) {
+			var query = connection.prepareTupleQuery("""
+					SELECT DISTINCT * WHERE {
+					  ?local <urn:label> ?label .
+					  SERVICE <%s> { ?s <urn:label> ?label }
+					}
+					""".formatted(fixture.serviceUrl));
+			query.setBinding("label", VF.createLiteral("needle"));
+			try (var result = query.evaluate()) {
+				assertThat(result.getBindingNames()).containsExactly("local", "label", "s");
+				assertThat(QueryResults.asList(result)).extracting(row -> row.getValue("local"),
+						row -> row.getValue("label"), row -> row.getValue("s"))
+						.containsExactly(tuple(iri("local"), VF.createLiteral("needle"), iri("match")));
+			}
+		}
+	}
+
+	@Test
+	void nestedServiceBindingReachesTheInnermostEndpoint() throws IOException {
+		try (var fixture = new QueryEndpointPair(); var connection = fixture.client.getConnection()) {
+			var query = connection.prepareTupleQuery("""
+					PREFIX endpoint: <%s/>
+					SELECT ?s ?label WHERE {
+					  SERVICE endpoint:service { SERVICE endpoint:service { ?s <urn:label> ?label } }
+					}
+					""".formatted(fixture.base));
+			query.setBinding("label", VF.createLiteral("needle"));
+			try (var result = query.evaluate()) {
+				assertThat(QueryResults.asList(result)).extracting(row -> row.getValue("s"),
+						row -> row.getValue("label")).containsExactly(tuple(iri("match"), VF.createLiteral("needle")));
+			}
+			assertThat(fixture.serviceRequests).hasSize(2);
+		}
+	}
+
+	@Test
+	void failedSilentServiceDoesNotSynthesizeItsOutput() throws IOException {
+		try (var fixture = new QueryEndpointPair(); var connection = fixture.client.getConnection()) {
+			var query = connection.prepareTupleQuery("""
+					SELECT ?label WHERE { SERVICE SILENT <%s/failure> { ?s <urn:label> ?label } }
+					""".formatted(fixture.base));
+			query.setBinding("label", VF.createLiteral("needle"));
+			try (var result = query.evaluate()) {
+				assertThat(result.getBindingNames()).containsExactly("label");
+				assertThat(QueryResults.asList(result)).singleElement().satisfies(row -> assertThat(row).isEmpty());
+			}
+		}
+	}
+
+	@ParameterizedTest
+	@ValueSource(strings = {
+			"{ SELECT ?s WHERE { ?s <urn:label> ?label } ORDER BY ?s LIMIT 1 }",
+			"VALUES ?label { UNDEF \"other\" } ?s <urn:label> ?label"
+	})
+	void independentSubqueryAndConflictingValuesFailBeforeSending(String serviceBody) throws IOException {
+		try (var fixture = new QueryEndpointPair(); var connection = fixture.client.getConnection()) {
+			var query = connection.prepareTupleQuery("SELECT ?s WHERE { SERVICE <" + fixture.serviceUrl + "> { "
+					+ serviceBody + " } }");
+			query.setBinding("label", VF.createLiteral("needle"));
+			assertThatThrownBy(query::evaluate).isInstanceOf(UnsupportedOperationException.class);
+			assertThat(fixture.queryRequests).isEmpty();
+		}
+	}
+
+	@Test
+	void unrelatedBindingLeavesTheServiceRequestTextIntact() throws IOException {
+		try (var fixture = new QueryEndpointPair(); var connection = fixture.client.getConnection()) {
+			String source = """
+					SELECT ?s WHERE {
+					  ?local <urn:label> ?localLabel .
+					  SERVICE <%s> { ?s <urn:label> ?remoteLabel }
+					}
+					""".formatted(fixture.serviceUrl);
+			var query = connection.prepareTupleQuery(source);
+			query.setBinding("localLabel", VF.createLiteral("needle"));
+			try (var result = query.evaluate()) {
+				assertThat(QueryResults.asList(result)).extracting(row -> row.getValue("s"))
+						.containsExactlyInAnyOrder(iri("match"), iri("other"));
+			}
+			assertThat(fixture.queryRequests).containsExactly("SELECT "
+					+ source.replace("?localLabel", "\"needle\"^^<http://www.w3.org/2001/XMLSchema#string>"));
+		}
+	}
+
+	@Test
+	void askUsesTheSameScopedBinding() throws IOException {
+		try (var fixture = new QueryEndpointPair(); var connection = fixture.client.getConnection()) {
+			var query = connection.prepareBooleanQuery("""
+					ASK { SERVICE <%s> { ?s <urn:label> ?label } }
+					""".formatted(fixture.serviceUrl));
+			query.setBinding("label", VF.createLiteral("needle"));
+			assertThat(query.evaluate()).isTrue();
+			query.setBinding("label", VF.createLiteral("missing"));
+			assertThat(query.evaluate()).isFalse();
+		}
+	}
 
 	@Test
 	void nullableGraphOptionalPassesValuesOnlyBindingsToService() throws IOException {
@@ -206,6 +1061,51 @@ class ScopedServiceValuesTest {
 
 	private static IRI iri(String localName) {
 		return VF.createIRI("urn:" + localName);
+	}
+
+	private static final class QueryEndpointPair implements AutoCloseable {
+
+		private final SailRepository queryEndpoint = new SailRepository(new MemoryStore());
+		private final SailRepository serviceEndpoint = new SailRepository(new MemoryStore());
+		private final ConcurrentLinkedQueue<String> serviceRequests = new ConcurrentLinkedQueue<>();
+		private final ConcurrentLinkedQueue<String> queryRequests = new ConcurrentLinkedQueue<>();
+		private final HttpServer server;
+		private final ExecutorService executor = Executors.newVirtualThreadPerTaskExecutor();
+		private final SPARQLRepository client;
+		private final String base;
+		private final String serviceUrl;
+
+		private QueryEndpointPair() throws IOException {
+			try (var connection = serviceEndpoint.getConnection()) {
+				connection.add(iri("match"), iri("label"), VF.createLiteral("needle"));
+				connection.add(iri("other"), iri("label"), VF.createLiteral("other"));
+			}
+			try (var connection = queryEndpoint.getConnection()) {
+				connection.add(iri("local"), iri("label"), VF.createLiteral("needle"));
+			}
+			server = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
+			base = "http://127.0.0.1:" + server.getAddress().getPort();
+			serviceUrl = base + "/service";
+			client = new SPARQLRepository(base + "/query");
+			server.createContext("/query", exchange -> respond(exchange, queryEndpoint, queryRequests));
+			server.createContext("/service", exchange -> respond(exchange, serviceEndpoint, serviceRequests));
+			server.createContext("/failure", exchange -> {
+				try (exchange) {
+					exchange.sendResponseHeaders(400, -1);
+				}
+			});
+			server.setExecutor(executor);
+			server.start();
+		}
+
+		@Override
+		public void close() {
+			client.shutDown();
+			server.stop(0);
+			executor.close();
+			queryEndpoint.shutDown();
+			serviceEndpoint.shutDown();
+		}
 	}
 
 	record Evaluation(List<BindingSet> rows, List<String> requests) {

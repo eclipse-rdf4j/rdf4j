@@ -20,6 +20,7 @@ import org.eclipse.rdf4j.query.parser.sparql.ast.ASTConstraint;
 import org.eclipse.rdf4j.query.parser.sparql.ast.ASTDescribe;
 import org.eclipse.rdf4j.query.parser.sparql.ast.ASTDescribeQuery;
 import org.eclipse.rdf4j.query.parser.sparql.ast.ASTLabeledTripleTerm;
+import org.eclipse.rdf4j.query.parser.sparql.ast.ASTMinusGraphPattern;
 import org.eclipse.rdf4j.query.parser.sparql.ast.ASTOperation;
 import org.eclipse.rdf4j.query.parser.sparql.ast.ASTOperationContainer;
 import org.eclipse.rdf4j.query.parser.sparql.ast.ASTProjectionElem;
@@ -110,27 +111,23 @@ public class WildcardProjectionProcessor extends AbstractASTVisitor {
 	}
 
 	private static void addQueryVars(ASTWhereClause queryBody, Node wildcardNode) throws MalformedQueryException {
-		QueryVariableCollector visitor = new QueryVariableCollector();
+		for (String varName : visibleVariables(queryBody, false)) {
+			ASTVar varNode = new ASTVar(SyntaxTreeBuilderTreeConstants.JJTVAR);
+			ASTProjectionElem projectionElemNode = new ASTProjectionElem(
+					SyntaxTreeBuilderTreeConstants.JJTPROJECTIONELEM);
+			varNode.setName(varName);
+			projectionElemNode.jjtAppendChild(varNode);
+			varNode.jjtSetParent(projectionElemNode);
+			wildcardNode.jjtAppendChild(projectionElemNode);
+			projectionElemNode.jjtSetParent(wildcardNode);
+		}
+	}
 
+	static Set<String> visibleVariables(Node body, boolean standardScopes) {
+		QueryVariableCollector visitor = new QueryVariableCollector(standardScopes);
 		try {
-			// Collect variable names from query
-			queryBody.jjtAccept(visitor, null);
-
-			// Adds ASTVar nodes to the ASTProjectionElem nodes and to the parent
-			for (String varName : visitor.getVariableNames()) {
-				ASTVar varNode = new ASTVar(SyntaxTreeBuilderTreeConstants.JJTVAR);
-				ASTProjectionElem projectionElemNode = new ASTProjectionElem(
-						SyntaxTreeBuilderTreeConstants.JJTPROJECTIONELEM);
-
-				varNode.setName(varName);
-				projectionElemNode.jjtAppendChild(varNode);
-				varNode.jjtSetParent(projectionElemNode);
-
-				wildcardNode.jjtAppendChild(projectionElemNode);
-				projectionElemNode.jjtSetParent(wildcardNode);
-
-			}
-
+			body.jjtAccept(visitor, null);
+			return visitor.getVariableNames();
 		} catch (VisitorException e) {
 			throw new MalformedQueryException(e);
 		}
@@ -143,6 +140,11 @@ public class WildcardProjectionProcessor extends AbstractASTVisitor {
 	private static class QueryVariableCollector extends AbstractASTVisitor {
 
 		private final Set<String> variableNames = new LinkedHashSet<>();
+		private final boolean standardScopes;
+
+		private QueryVariableCollector(boolean standardScopes) {
+			this.standardScopes = standardScopes;
+		}
 
 		public Set<String> getVariableNames() {
 			return variableNames;
@@ -152,6 +154,9 @@ public class WildcardProjectionProcessor extends AbstractASTVisitor {
 		public Object visit(ASTSelectQuery node, Object data) throws VisitorException {
 			// stop visitor from processing body of sub-select, only add variables
 			// from the projection
+			if (standardScopes && node.getSelect().isWildcard()) {
+				return node.getWhereClause().jjtAccept(this, data);
+			}
 			return visit(node.getSelect(), data);
 		}
 
@@ -187,6 +192,11 @@ public class WildcardProjectionProcessor extends AbstractASTVisitor {
 			} else {
 				return super.visit(node, data);
 			}
+		}
+
+		@Override
+		public Object visit(ASTMinusGraphPattern node, Object data) throws VisitorException {
+			return standardScopes ? null : super.visit(node, data);
 		}
 
 		@Override

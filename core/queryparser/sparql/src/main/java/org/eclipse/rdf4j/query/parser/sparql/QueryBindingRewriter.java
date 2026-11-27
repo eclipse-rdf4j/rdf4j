@@ -101,13 +101,11 @@ final class QueryBindingRewriter {
 					remaining.addBinding(binding);
 				}
 			}
-			if (mentioned.stream().anyMatch(remaining::hasBinding) && containsDistinctWildcardCount(syntax)
-					&& (root.getBindingsClause() != null || !fixedBindingDomain(root.getWhereClause()))) {
-				throw new UnsupportedOperationException(
-						"Unsupported query-binding transport: COUNT(DISTINCT *) observes solution mapping domains");
-			}
+			boolean observesMappingDomains = mentioned.stream().anyMatch(remaining::hasBinding)
+					&& containsDistinctWildcardCount(syntax)
+					&& (root.getBindingsClause() != null || !fixedBindingDomain(root.getWhereClause()));
 			String rewritten = SPARQLVariableSubstitution.substitute(source, substitutions);
-			return SPARQLQueries.withInitialBindings(rewritten, remaining);
+			return SPARQLQueries.withInitialBindings(rewritten, remaining, true, observesMappingDomains);
 		} catch (ParseException | TokenMgrError | VisitorException failure) {
 			throw new MalformedQueryException(failure.getMessage(), failure);
 		}
