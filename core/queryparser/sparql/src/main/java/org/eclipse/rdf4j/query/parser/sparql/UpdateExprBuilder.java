@@ -15,6 +15,7 @@ import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.function.Supplier;
 
 import org.eclipse.rdf4j.common.annotation.InternalUseOnly;
 import org.eclipse.rdf4j.model.ValueFactory;
@@ -87,6 +88,11 @@ public class UpdateExprBuilder extends TupleExprBuilder {
 
 	public UpdateExprBuilder(ValueFactory valueFactory, QueryParseOptions options) {
 		super(valueFactory, options);
+	}
+
+	UpdateExprBuilder(ValueFactory valueFactory, QueryParseOptions options,
+			Supplier<ServiceQuerySource> sharedServiceQuerySource) {
+		super(valueFactory, options, sharedServiceQuerySource);
 	}
 
 	@Override

@@ -88,6 +88,9 @@ import org.eclipse.rdf4j.query.parser.sparql.aggregate.AggregateNAryFunction;
 import org.eclipse.rdf4j.query.parser.sparql.aggregate.AggregateNAryFunctionFactory;
 import org.eclipse.rdf4j.query.parser.sparql.aggregate.CustomAggregateFunctionRegistry;
 import org.eclipse.rdf4j.query.parser.sparql.aggregate.CustomAggregateNAryFunctionRegistry;
+import org.eclipse.rdf4j.query.parser.sparql.ast.ASTUpdateContainer;
+import org.eclipse.rdf4j.query.parser.sparql.ast.ParseException;
+import org.eclipse.rdf4j.query.parser.sparql.ast.SyntaxTreeBuilder;
 import org.eclipse.rdf4j.rio.RDFFormat;
 import org.eclipse.rdf4j.rio.Rio;
 import org.eclipse.rdf4j.rio.helpers.StatementCollector;
@@ -198,6 +201,18 @@ public class SPARQLParserTest {
 		ParsedQuery q = parser.parseQuery(simpleSparqlQuery, null);
 
 		assertThat(q.getSourceString()).isEqualTo(simpleSparqlQuery);
+	}
+
+	@Test
+	void updateContainersRetainTheOriginalRequest() throws ParseException {
+		String update = """
+				DROP ALL;
+				INSERT { ?s <urn:copy> ?o } WHERE { SERVICE <urn:service> { ?s <urn:p> ?o } };
+				CLEAR DEFAULT
+				""";
+		assertThat(SyntaxTreeBuilder.parseUpdateSequence(update).getUpdateContainers())
+				.extracting(ASTUpdateContainer::getSourceString)
+				.containsExactly(update, update, update);
 	}
 
 	@Test

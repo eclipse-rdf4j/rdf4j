@@ -94,7 +94,7 @@ public final class SPARQLVariableSubstitution {
 		return new Result(result.toString(), Set.copyOf(headBindings));
 	}
 
-	private static int[] lineStarts(String source) {
+	static int[] lineStarts(String source) {
 		int lines = 1;
 		for (int i = 0; i < source.length(); i++) {
 			char c = source.charAt(i);
@@ -123,7 +123,7 @@ public final class SPARQLVariableSubstitution {
 		return starts;
 	}
 
-	private static int rawOffset(int[] lineStarts, int line, int column) {
+	static int rawOffset(int[] lineStarts, int line, int column) {
 		if (line < 1 || line > lineStarts.length || column < 1) {
 			throw new IllegalArgumentException("SPARQL variable token is outside the original request text");
 		}

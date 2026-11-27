@@ -17,8 +17,10 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.math.BigInteger;
+import java.util.Arrays;
 import java.util.HashMap;
 import java.util.HashSet;
+import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.TreeMap;
@@ -94,6 +96,121 @@ class MemoryQueryBindingRewriteTest {
 				"SELECT ?type WHERE { VALUES ?type { <http://xmlns.com/foaf/0.1/Person> <http://xmlns.com/foaf/0.1/Person> } }",
 				"PREFIX f: <http://xmlns.com/foaf/0.1/> SELECT ?type WHERE { VALUES ?type { f:Person f:Person } }",
 				"SELECT ?instance WHERE { ?instance a ?type } VALUES ?type { <http://xmlns.com/foaf/0.1/Person> }");
+	}
+
+	@Test
+	void selectDistinctWildcardProjectsTrailingValuesColumnsInOrder() {
+		String query = """
+				SELECT DISTINCT * WHERE { ?instance <urn:p> ?object }
+				VALUES (?tag ?object ?extra ?missing) {
+					(1 <urn:one> "one" UNDEF)
+					(1 <urn:one> "one" UNDEF)
+					(2 UNDEF UNDEF UNDEF)
+					(UNDEF <urn:two> "two" UNDEF)
+				}
+				""";
+		Map<List<Value>, Integer> expected = new HashMap<>();
+		expected.put(Arrays.asList(VF.createIRI("urn:alice"), VF.createIRI("urn:one"), VF.createLiteral(BigInteger.ONE),
+				VF.createLiteral("one"), null), 1);
+		expected.put(Arrays.asList(VF.createIRI("urn:alice"), VF.createIRI("urn:one"), VF.createLiteral(BigInteger.TWO),
+				null, null), 1);
+		expected.put(Arrays.asList(VF.createIRI("urn:alice"), VF.createIRI("urn:two"), VF.createLiteral(BigInteger.TWO),
+				null, null), 1);
+		expected.put(Arrays.asList(VF.createIRI("urn:alice"), VF.createIRI("urn:two"), null,
+				VF.createLiteral("two"), null), 1);
+
+		try (RepositoryConnection connection = repository.getConnection();
+				var result = connection.prepareTupleQuery(query).evaluate()) {
+			assertEquals(List.of("instance", "object", "tag", "extra", "missing"), result.getBindingNames());
+			Map<List<Value>, Integer> actual = new HashMap<>();
+			result.forEachRemaining(row -> actual.merge(
+					Arrays.asList(row.getValue("instance"), row.getValue("object"), row.getValue("tag"),
+							row.getValue("extra"), row.getValue("missing")),
+					1, Integer::sum));
+			assertEquals(expected, actual);
+		}
+	}
+
+	@Test
+	void nestedWildcardProjectsTrailingValuesButExplicitSubqueryHidesThem() {
+		String nestedWildcard = """
+				SELECT * WHERE {
+					{ SELECT DISTINCT * WHERE { ?instance <urn:p> ?object } VALUES ?tag { 1 2 } }
+				}
+				""";
+		try (RepositoryConnection connection = repository.getConnection();
+				var result = connection.prepareTupleQuery(nestedWildcard).evaluate()) {
+			assertEquals(List.of("instance", "object", "tag"), result.getBindingNames());
+			Map<List<Value>, Integer> actual = new HashMap<>();
+			result.forEachRemaining(row -> actual.merge(
+					Arrays.asList(row.getValue("instance"), row.getValue("object"), row.getValue("tag")), 1,
+					Integer::sum));
+			Map<List<Value>, Integer> expected = new HashMap<>();
+			for (Value object : List.of(VF.createIRI("urn:one"), VF.createIRI("urn:two"))) {
+				for (Value tag : List.of(VF.createLiteral(BigInteger.ONE), VF.createLiteral(BigInteger.TWO))) {
+					expected.put(Arrays.asList(VF.createIRI("urn:alice"), object, tag), 1);
+				}
+			}
+			assertEquals(expected, actual);
+		}
+
+		String explicitSubquery = """
+				SELECT * WHERE {
+					{ SELECT (?object AS ?alias) WHERE { ?instance <urn:p> ?object } VALUES ?tag { 1 2 } }
+				}
+				""";
+		try (RepositoryConnection connection = repository.getConnection();
+				var result = connection.prepareTupleQuery(explicitSubquery).evaluate()) {
+			assertEquals(List.of("alias"), result.getBindingNames());
+			Map<Value, Integer> actual = new HashMap<>();
+			result.forEachRemaining(row -> actual.merge(row.getValue("alias"), 1, Integer::sum));
+			assertEquals(Map.of(VF.createIRI("urn:one"), 2, VF.createIRI("urn:two"), 2), actual);
+		}
+	}
+
+	@Test
+	void wildcardProjectionExcludesMinusOnlyVariablesWithTrailingValues() {
+		String query = """
+				SELECT DISTINCT * WHERE {
+					?instance <urn:p> ?object
+					FILTER EXISTS { ?instance <urn:p> ?filterLocal }
+					MINUS { ?instance <urn:blocked> ?hidden }
+				}
+				VALUES ?tag { 1 2 }
+				""";
+		try (RepositoryConnection connection = repository.getConnection();
+				var result = connection.prepareTupleQuery(query).evaluate()) {
+			assertEquals(List.of("instance", "object", "tag"), result.getBindingNames());
+			Map<List<Value>, Integer> actual = new HashMap<>();
+			result.forEachRemaining(row -> actual.merge(
+					Arrays.asList(row.getValue("instance"), row.getValue("object"), row.getValue("tag")), 1,
+					Integer::sum));
+			Map<List<Value>, Integer> expected = new HashMap<>();
+			for (Value object : List.of(VF.createIRI("urn:one"), VF.createIRI("urn:two"))) {
+				for (Value tag : List.of(VF.createLiteral(BigInteger.ONE), VF.createLiteral(BigInteger.TWO))) {
+					expected.put(Arrays.asList(VF.createIRI("urn:alice"), object, tag), 1);
+				}
+			}
+			assertEquals(expected, actual);
+		}
+	}
+
+	@Test
+	void expandsWildcardSubselectInsideProjectedExists() {
+		String query = """
+				SELECT (EXISTS {
+					{ SELECT * WHERE { } VALUES ?tag { 1 } }
+					FILTER(BOUND(?tag))
+				} AS ?hasTag)
+				WHERE { }
+				""";
+		try (RepositoryConnection connection = repository.getConnection();
+				var result = connection.prepareTupleQuery(query).evaluate()) {
+			assertEquals(List.of("hasTag"), result.getBindingNames());
+			assertTrue(result.hasNext());
+			assertEquals(VF.createLiteral(true), result.next().getValue("hasTag"));
+			assertFalse(result.hasNext());
+		}
 	}
 
 	@Test

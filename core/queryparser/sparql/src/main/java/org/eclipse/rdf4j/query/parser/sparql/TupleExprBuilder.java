@@ -31,6 +31,7 @@ import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.function.Predicate;
+import java.util.function.Supplier;
 
 import org.eclipse.rdf4j.common.annotation.InternalUseOnly;
 import org.eclipse.rdf4j.model.BNode;
@@ -218,6 +219,7 @@ import org.eclipse.rdf4j.query.parser.sparql.ast.ASTNumericLiteral;
 import org.eclipse.rdf4j.query.parser.sparql.ast.ASTObjectFunc;
 import org.eclipse.rdf4j.query.parser.sparql.ast.ASTObjectList;
 import org.eclipse.rdf4j.query.parser.sparql.ast.ASTOffset;
+import org.eclipse.rdf4j.query.parser.sparql.ast.ASTOperationContainer;
 import org.eclipse.rdf4j.query.parser.sparql.ast.ASTOptionalGraphPattern;
 import org.eclipse.rdf4j.query.parser.sparql.ast.ASTOr;
 import org.eclipse.rdf4j.query.parser.sparql.ast.ASTOrderClause;
@@ -289,6 +291,8 @@ import org.jetbrains.annotations.NotNull;
  */
 @InternalUseOnly
 public class TupleExprBuilder extends AbstractASTVisitor {
+	private final Supplier<ServiceQuerySource> sharedServiceQuerySource;
+	private ServiceQuerySource serviceQuerySource;
 	private final Map<String, ValueExpr> tripleConstructorExpressions = new HashMap<>();
 
 	// static UUID as prefix together with a thread safe incrementing long ensures a unique identifier.
@@ -362,7 +366,13 @@ public class TupleExprBuilder extends AbstractASTVisitor {
 	}
 
 	public TupleExprBuilder(ValueFactory valueFactory, QueryParseOptions options) {
+		this(valueFactory, options, null);
+	}
+
+	TupleExprBuilder(ValueFactory valueFactory, QueryParseOptions options,
+			Supplier<ServiceQuerySource> sharedServiceQuerySource) {
 		this.valueFactory = valueFactory;
+		this.sharedServiceQuerySource = sharedServiceQuerySource;
 		useGraphAlgebra = options.resolveGraphAlgebraMode(GraphAlgebraMode.LEGACY)
 				.graphAlgebraMode() == GraphAlgebraMode.GRAPH;
 	}
@@ -1886,6 +1896,22 @@ public class TupleExprBuilder extends AbstractASTVisitor {
 		return te;
 	}
 
+	private String servicePattern(ASTServiceGraphPattern service) {
+		if (sharedServiceQuerySource != null) {
+			return sharedServiceQuerySource.get().pattern(service);
+		}
+
+		Node ancestor = service.jjtGetParent();
+		while (!(ancestor instanceof ASTOperationContainer)) {
+			ancestor = ancestor.jjtGetParent();
+		}
+		String source = ((ASTOperationContainer) ancestor).getSourceString();
+		if (serviceQuerySource == null || serviceQuerySource.source() != source) {
+			serviceQuerySource = new ServiceQuerySource(source);
+		}
+		return serviceQuerySource.pattern(service);
+	}
+
 	@Override
 	public Object visit(ASTServiceGraphPattern node, Object data) throws VisitorException {
 		GraphPattern parentGP = graphPattern;
@@ -1904,7 +1930,7 @@ public class TupleExprBuilder extends AbstractASTVisitor {
 			if (serviceExpr instanceof SingletonSet) {
 				return null;
 			}
-			Service service = new Service(serviceVar, serviceExpr, node.getPatternString(),
+			Service service = new Service(serviceVar, serviceExpr, servicePattern(node),
 					node.getPrefixDeclarations(), node.getBaseURI(), node.isSilent());
 			Set<String> remoteIDs = BNodeReferenceProcessor.ownedIDs(node);
 			Set<String> remoteNames = new HashSet<>();

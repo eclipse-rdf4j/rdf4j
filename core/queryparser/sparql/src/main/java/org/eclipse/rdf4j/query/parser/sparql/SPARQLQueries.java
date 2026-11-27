@@ -168,6 +168,11 @@ public class SPARQLQueries {
 	 * @throws MalformedQueryException       if the input is not a SPARQL query
 	 */
 	public static String withInitialBindings(String query, BindingSet bindings) {
+		return withInitialBindings(query, bindings, false, false);
+	}
+
+	static String withInitialBindings(String query, BindingSet bindings, boolean queryApi,
+			boolean observesMappingDomains) {
 		Objects.requireNonNull(query);
 		Objects.requireNonNull(bindings);
 		if (bindings.isEmpty()) {
@@ -182,23 +187,33 @@ public class SPARQLQueries {
 			}
 			ASTQuery root = container.getQuery();
 			Map<Node, Set<String>> assurance = new IdentityHashMap<>();
-			Set<String> assured = new LinkedHashSet<>(assuredBindings(root.getWhereClause(), assurance));
-			assured.addAll(assuredBindings(root.getBindingsClause(), assurance));
 			List<SourceEdit> edits = new ArrayList<>();
-			collectGraphBindingEdits(root, bindings, names, assurance, edits);
-			checkBindingScope(root, root, names, assured, assurance, 0, false);
-			ASTWhereClause where = root.getWhereClause();
-			if (where == null || where.getGroupStartOffset() < 0) {
-				throw unsupportedBindings("query without an outer WHERE group");
+			Set<ASTVar> resolvedReads = Set.of();
+			if (queryApi && containsType(root, ASTServiceGraphPattern.class)) {
+				resolvedReads = Collections.newSetFromMap(new IdentityHashMap<>());
+				names = ServiceBindingRewriter.plan(query, container, bindings, names, assurance, edits, resolvedReads);
 			}
-			int insertion = where.getGroupStartOffset() + 1;
-			edits.add(new SourceEdit(insertion, insertion, initialMapping(names, bindings)));
-			if (root instanceof ASTConstructQuery construct && construct.getConstruct().isWildcard()) {
-				// A VALUES clause is not part of a shorthand CONSTRUCT template. Preserve the original basic
-				// pattern as an explicit template before adding the initial mapping to its WHERE group.
-				int templateInsertion = construct.getConstruct().getTemplateInsertionOffset();
-				String template = query.substring(where.getGroupStartOffset(), where.getGroupEndOffset() + 1);
-				edits.add(new SourceEdit(templateInsertion, templateInsertion, " " + template + " "));
+			if (!names.isEmpty()) {
+				if (observesMappingDomains) {
+					throw new UnsupportedOperationException(
+							"Unsupported query-binding transport: COUNT(DISTINCT *) observes solution mapping domains");
+				}
+				Set<String> assured = new LinkedHashSet<>(assuredBindings(root.getWhereClause(), assurance));
+				assured.addAll(assuredBindings(root.getBindingsClause(), assurance));
+				collectGraphBindingEdits(root, bindings, names, assurance, edits, queryApi, resolvedReads);
+				checkBindingScope(root, root, names, assured, assurance, 0, false, queryApi, resolvedReads);
+				ASTWhereClause where = root.getWhereClause();
+				if (where == null || where.getGroupStartOffset() < 0) {
+					throw unsupportedBindings("query without an outer WHERE group");
+				}
+				int insertion = where.getGroupStartOffset() + 1;
+				edits.add(new SourceEdit(insertion, insertion, initialMapping(names, bindings)));
+				if (root instanceof ASTConstructQuery construct && construct.getConstruct().isWildcard()) {
+					// Preserve the original basic pattern as an explicit template when adding VALUES to WHERE.
+					int templateInsertion = construct.getConstruct().getTemplateInsertionOffset();
+					String template = query.substring(where.getGroupStartOffset(), where.getGroupEndOffset() + 1);
+					edits.add(new SourceEdit(templateInsertion, templateInsertion, " " + template + " "));
+				}
 			}
 			edits.sort(Comparator.comparingInt(SourceEdit::start).reversed());
 			StringBuilder serialized = new StringBuilder(query);
@@ -211,10 +226,10 @@ public class SPARQLQueries {
 		}
 	}
 
-	private record SourceEdit(int start, int end, String text) {
+	record SourceEdit(int start, int end, String text) {
 	}
 
-	private static String initialMapping(Set<String> names, BindingSet bindings) {
+	static String initialMapping(Set<String> names, BindingSet bindings) {
 		StringBuilder values = new StringBuilder(" VALUES (");
 		for (String name : names) {
 			values.append('?').append(name).append(' ');
@@ -228,11 +243,15 @@ public class SPARQLQueries {
 	}
 
 	private static void collectGraphBindingEdits(Node node, BindingSet bindings, Set<String> names,
-			Map<Node, Set<String>> assurance, List<SourceEdit> edits) {
+			Map<Node, Set<String>> assurance, List<SourceEdit> edits, boolean servicesPlanned,
+			Set<ASTVar> resolvedReads) {
+		if (servicesPlanned && node instanceof ASTServiceGraphPattern) {
+			return;
+		}
 		if (node instanceof ASTGraphGraphPattern graph) {
 			Node body = graph.jjtGetChild(1);
 			Set<String> bodyNames = new LinkedHashSet<>();
-			collectBoundNames(body, bindings, bodyNames);
+			collectBoundNames(body, names, bodyNames, resolvedReads);
 			// GRAPH invokes its body independently. An outer VALUES join cannot supply expression-only or
 			// optional inputs to it, and inserting a mapping there would change those solution domains.
 			if (!assuredBindings(body, assurance).containsAll(bodyNames)) {
@@ -254,7 +273,8 @@ public class SPARQLQueries {
 			}
 		}
 		for (int i = 0; i < node.jjtGetNumChildren(); i++) {
-			collectGraphBindingEdits(node.jjtGetChild(i), bindings, names, assurance, edits);
+			collectGraphBindingEdits(node.jjtGetChild(i), bindings, names, assurance, edits, servicesPlanned,
+					resolvedReads);
 		}
 	}
 
@@ -272,12 +292,18 @@ public class SPARQLQueries {
 		}
 	}
 
-	private static void collectBoundNames(Node node, Set<String> candidateNames, Set<String> names) {
-		if (node instanceof ASTVar variable && candidateNames.contains(variable.getName())) {
+	static void collectBoundNames(Node node, Set<String> candidateNames, Set<String> names) {
+		collectBoundNames(node, candidateNames, names, Set.of());
+	}
+
+	private static void collectBoundNames(Node node, Set<String> candidateNames, Set<String> names,
+			Set<ASTVar> resolvedReads) {
+		if (node instanceof ASTVar variable && candidateNames.contains(variable.getName())
+				&& !resolvedReads.contains(variable)) {
 			names.add(variable.getName());
 		}
 		for (int i = 0; i < node.jjtGetNumChildren(); i++) {
-			collectBoundNames(node.jjtGetChild(i), candidateNames, names);
+			collectBoundNames(node.jjtGetChild(i), candidateNames, names, resolvedReads);
 		}
 	}
 
@@ -290,13 +316,17 @@ public class SPARQLQueries {
 		}
 	}
 
-	private static void checkBindingScope(Node node, ASTQuery root, Set<String> names, Set<String> groupBindings,
-			Map<Node, Set<String>> assurance, int groupDepth, boolean correlated) {
+	static void checkBindingScope(Node node, ASTQuery root, Set<String> names, Set<String> groupBindings,
+			Map<Node, Set<String>> assurance, int groupDepth, boolean correlated, boolean servicesPlanned,
+			Set<ASTVar> resolvedReads) {
+		if (servicesPlanned && node instanceof ASTServiceGraphPattern) {
+			return;
+		}
 		if ((node instanceof ASTQuery && node != root || node instanceof ASTServiceGraphPattern)
-				&& containsName(node, names)) {
+				&& containsName(node, names, resolvedReads)) {
 			throw unsupportedBindings("nested query or SERVICE scope");
 		}
-		if (node instanceof ASTLateralGraphPattern && containsName(node, names)) {
+		if (node instanceof ASTLateralGraphPattern && containsName(node, names, resolvedReads)) {
 			throw unsupportedBindings("LATERAL input scope");
 		}
 		if (node instanceof ASTExistsFunc || node instanceof ASTNotExistsFunc) {
@@ -308,24 +338,25 @@ public class SPARQLQueries {
 			for (int i = 0; i < node.jjtGetNumChildren(); i++) {
 				Node child = node.jjtGetChild(i);
 				if (child instanceof ASTMinusGraphPattern
-						&& hasUnassuredName(child, names, preceding)) {
+						&& hasUnassuredName(child, names, preceding, resolvedReads)) {
 					throw unsupportedBindings("MINUS right-hand input changes solution domains");
 				}
-				checkBindingScope(child, root, names, localBindings, assurance, groupDepth + 1, correlated);
+				checkBindingScope(child, root, names, localBindings, assurance, groupDepth + 1, correlated,
+						servicesPlanned, resolvedReads);
 				preceding.addAll(assuredBindings(child, assurance));
 			}
 			return;
 		}
 		if (!correlated && groupDepth > 1 && (node instanceof ASTConstraint || node instanceof ASTBind)
-				&& hasUnassuredName(node, names, groupBindings)) {
+				&& hasUnassuredName(node, names, groupBindings, resolvedReads)) {
 			throw unsupportedBindings("nested FILTER or BIND input scope");
 		}
-		if (node instanceof ASTGroupCondition && hasUnassuredName(node, names, groupBindings)) {
+		if (node instanceof ASTGroupCondition && hasUnassuredName(node, names, groupBindings, resolvedReads)) {
 			throw unsupportedBindings("GROUP BY binding without an assured query value");
 		}
 		if (node instanceof ASTSelectQuery select && select == root) {
 			if (select.getGroupClause() != null
-					&& hasUnassuredName(select.getGroupClause(), names, groupBindings)) {
+					&& hasUnassuredName(select.getGroupClause(), names, groupBindings, resolvedReads)) {
 				throw unsupportedBindings("GROUP BY binding without an assured query value");
 			}
 			if (select.getSelect().isWildcard() && !groupBindings.containsAll(names)) {
@@ -334,7 +365,7 @@ public class SPARQLQueries {
 			for (int i = 0; i < select.getSelect().jjtGetNumChildren(); i++) {
 				Node projection = select.getSelect().jjtGetChild(i);
 				if (projection instanceof ASTProjectionElem element && !element.hasAlias()
-						&& hasUnassuredName(element, names, groupBindings)) {
+						&& hasUnassuredName(element, names, groupBindings, resolvedReads)) {
 					throw unsupportedBindings(
 							"OPTIONAL or unbound projection would expose an additional input binding");
 				}
@@ -350,17 +381,19 @@ public class SPARQLQueries {
 			}
 		}
 		for (int i = 0; i < node.jjtGetNumChildren(); i++) {
-			checkBindingScope(node.jjtGetChild(i), root, names, groupBindings, assurance, groupDepth, correlated);
+			checkBindingScope(node.jjtGetChild(i), root, names, groupBindings, assurance, groupDepth, correlated,
+					servicesPlanned, resolvedReads);
 		}
 	}
 
-	private static boolean hasUnassuredName(Node node, Set<String> names, Set<String> assured) {
+	private static boolean hasUnassuredName(Node node, Set<String> names, Set<String> assured,
+			Set<ASTVar> resolvedReads) {
 		if (node instanceof ASTVar variable && names.contains(variable.getName())
-				&& !assured.contains(variable.getName())) {
+				&& !assured.contains(variable.getName()) && !resolvedReads.contains(variable)) {
 			return true;
 		}
 		for (int i = 0; i < node.jjtGetNumChildren(); i++) {
-			if (hasUnassuredName(node.jjtGetChild(i), names, assured)) {
+			if (hasUnassuredName(node.jjtGetChild(i), names, assured, resolvedReads)) {
 				return true;
 			}
 		}
@@ -368,7 +401,7 @@ public class SPARQLQueries {
 	}
 
 	/** Names produced by every successful mapping, excluding optional, negative and expression-only domains. */
-	private static Set<String> assuredBindings(Node node, Map<Node, Set<String>> assurance) {
+	static Set<String> assuredBindings(Node node, Map<Node, Set<String>> assurance) {
 		if (node != null && assurance.containsKey(node)) {
 			return assurance.get(node);
 		}
@@ -411,7 +444,7 @@ public class SPARQLQueries {
 		return names;
 	}
 
-	private static void collectNames(Node node, Set<String> names) {
+	static void collectNames(Node node, Set<String> names) {
 		if (node instanceof ASTVar variable) {
 			names.add(variable.getName());
 		}
@@ -420,7 +453,7 @@ public class SPARQLQueries {
 		}
 	}
 
-	private static boolean containsType(Node node, Class<? extends Node> type) {
+	static boolean containsType(Node node, Class<? extends Node> type) {
 		if (type.isInstance(node)) {
 			return true;
 		}
@@ -444,19 +477,15 @@ public class SPARQLQueries {
 		return false;
 	}
 
-	private static boolean containsName(Node node, Set<String> names) {
-		if (node instanceof ASTVar variable && names.contains(variable.getName())) {
-			return true;
-		}
-		for (int i = 0; i < node.jjtGetNumChildren(); i++) {
-			if (containsName(node.jjtGetChild(i), names)) {
-				return true;
-			}
-		}
-		return false;
+	static boolean containsName(Node node, Set<String> names) {
+		return containsName(node, names, Set.of());
 	}
 
-	private static UnsupportedOperationException unsupportedBindings(String shape) {
+	static boolean containsName(Node node, Set<String> names, Set<ASTVar> resolvedReads) {
+		return hasUnassuredName(node, names, Set.of(), resolvedReads);
+	}
+
+	static UnsupportedOperationException unsupportedBindings(String shape) {
 		return new UnsupportedOperationException("Unsupported initial-binding transport: " + shape);
 	}
 
