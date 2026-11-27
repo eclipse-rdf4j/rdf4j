@@ -59,31 +59,41 @@ class RangeIterator implements RecordIterator, NodeListener {
 
 	@Override
 	public byte[] next() throws IOException {
+		// Lock order: the tree lock first, then the monitor of this iterator, as in close(). close() may run on another
+		// thread (a query timeout) while this thread is in next(); both only hold the shared read lock, so the monitor
+		// is
+		// what keeps them off the stacks below.
 		tree.btreeLock.readLock().lock();
 		try {
-			if (!started) {
-				started = true;
-				findMinimum();
-			}
-
-			byte[] value = findNext(revisitValue.getAndSet(false));
-			while (value != null) {
-				if (maxValue != null && tree.comparator.compareBTreeValues(maxValue, value, 0, value.length) < 0) {
-					// Reached maximum value, stop iterating
-					close();
-					value = null;
-					break;
-				} else if (searchKey != null && !ByteArrayUtil.matchesPattern(value, searchMask, searchKey)) {
-					// Value doesn't match search key/mask
-					value = findNext(false);
-					continue;
-				} else {
-					// Matching value found
-					break;
+			synchronized (this) {
+				if (closed) {
+					return null;
 				}
-			}
 
-			return value;
+				if (!started) {
+					started = true;
+					findMinimum();
+				}
+
+				byte[] value = findNext(revisitValue.getAndSet(false));
+				while (value != null) {
+					if (maxValue != null && tree.comparator.compareBTreeValues(maxValue, value, 0, value.length) < 0) {
+						// Reached maximum value, stop iterating
+						close();
+						value = null;
+						break;
+					} else if (searchKey != null && !ByteArrayUtil.matchesPattern(value, searchMask, searchKey)) {
+						// Value doesn't match search key/mask
+						value = findNext(false);
+						continue;
+					} else {
+						// Matching value found
+						break;
+					}
+				}
+
+				return value;
+			}
 		} finally {
 			tree.btreeLock.readLock().unlock();
 		}
@@ -168,20 +178,25 @@ class RangeIterator implements RecordIterator, NodeListener {
 	@Override
 	public void close() throws IOException {
 		if (!closed) {
-			synchronized (this) {
-				if (!closed) {
-					closed = true;
-					tree.btreeLock.readLock().lock();
-					try {
+			// Lock order: the tree lock first, then the monitor, as in next(). Taking the monitor first and then
+			// waiting
+			// for the read lock behind a queued writer, while next() holds the read lock and waits for the monitor,
+			// would
+			// deadlock.
+			tree.btreeLock.readLock().lock();
+			try {
+				synchronized (this) {
+					if (!closed) {
+						closed = true;
 						while (popStacks()) {
 						}
 
 						assert parentNodeStack.isEmpty();
 						assert parentIndexStack.isEmpty();
-					} finally {
-						tree.btreeLock.readLock().unlock();
 					}
 				}
+			} finally {
+				tree.btreeLock.readLock().unlock();
 			}
 		}
 	}
