@@ -17,6 +17,7 @@ import static org.assertj.core.groups.Tuple.tuple;
 
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
+import java.math.BigInteger;
 import java.net.InetSocketAddress;
 import java.net.URLDecoder;
 import java.nio.charset.StandardCharsets;
@@ -45,6 +46,7 @@ import org.eclipse.rdf4j.repository.sparql.SPARQLRepository;
 import org.eclipse.rdf4j.repository.sparql.federation.RepositoryFederatedService;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.CsvSource;
 import org.junit.jupiter.params.provider.ValueSource;
 
 import com.sun.net.httpserver.HttpExchange;
@@ -476,6 +478,68 @@ class ScopedServiceValuesTest {
 		}
 	}
 
+	@Test
+	void expandedDistinctWildcardProjectsTrailingValuesColumnsInOrder() throws IOException {
+		try (var fixture = new QueryEndpointPair(); var connection = fixture.client.getConnection()) {
+			var query = connection.prepareTupleQuery("""
+					SELECT DISTINCT * WHERE {
+					  ?local <urn:label> ?label .
+					  FILTER EXISTS { ?local <urn:label> ?filterLocal }
+					  MINUS { ?local <urn:blocked> ?hidden }
+					  SERVICE <%s> { ?s <urn:label> ?label }
+					}
+					VALUES (?tag ?local ?missing) {
+					  (1 <urn:local> UNDEF)
+					  (1 <urn:local> UNDEF)
+					  (2 UNDEF UNDEF)
+					  (UNDEF <urn:local> UNDEF)
+					}
+					""".formatted(fixture.serviceUrl));
+			query.setBinding("label", VF.createLiteral("needle"));
+			try (var result = query.evaluate()) {
+				assertThat(result.getBindingNames()).containsExactly("local", "label", "s", "tag", "missing");
+				assertThat(QueryResults.asList(result))
+						.extracting(row -> row.getValue("local"), row -> row.getValue("label"),
+								row -> row.getValue("s"),
+								row -> row.getValue("tag"), row -> row.getValue("missing"))
+						.containsExactlyInAnyOrder(
+								tuple(iri("local"), VF.createLiteral("needle"), iri("match"),
+										VF.createLiteral(BigInteger.ONE), null),
+								tuple(iri("local"), VF.createLiteral("needle"), iri("match"),
+										VF.createLiteral(BigInteger.TWO), null),
+								tuple(iri("local"), VF.createLiteral("needle"), iri("match"), null, null));
+			}
+		}
+	}
+
+	@Test
+	void expandedOuterWildcardIncludesNestedWildcardTrailingValues() throws IOException {
+		try (var fixture = new QueryEndpointPair(); var connection = fixture.client.getConnection()) {
+			var query = connection.prepareTupleQuery("""
+					SELECT DISTINCT * WHERE {
+					  ?local <urn:label> ?label .
+					  FILTER EXISTS { ?local <urn:label> ?filterLocal }
+					  MINUS { ?local <urn:blocked> ?hidden }
+					  { SELECT * WHERE { } VALUES ?nested { "inner" } }
+					  SERVICE <%s> { ?s <urn:label> ?label }
+					}
+					VALUES ?tag { 1 2 }
+					""".formatted(fixture.serviceUrl));
+			query.setBinding("label", VF.createLiteral("needle"));
+			try (var result = query.evaluate()) {
+				assertThat(result.getBindingNames()).containsExactly("local", "label", "nested", "s", "tag");
+				assertThat(QueryResults.asList(result))
+						.extracting(row -> row.getValue("local"), row -> row.getValue("label"),
+								row -> row.getValue("nested"), row -> row.getValue("s"), row -> row.getValue("tag"))
+						.containsExactlyInAnyOrder(
+								tuple(iri("local"), VF.createLiteral("needle"), VF.createLiteral("inner"), iri("match"),
+										VF.createLiteral(BigInteger.ONE)),
+								tuple(iri("local"), VF.createLiteral("needle"), VF.createLiteral("inner"), iri("match"),
+										VF.createLiteral(BigInteger.TWO)));
+			}
+		}
+	}
+
 	@ParameterizedTest
 	@ValueSource(strings = { "FILTER EXISTS", "VALUES ?outer { <urn:outside> } MINUS" })
 	void explicitlyProjectedServiceLocalStaysUnbound(String enclosingPattern) throws IOException {
@@ -729,6 +793,137 @@ class ScopedServiceValuesTest {
 				assertThat(QueryResults.asList(result)).extracting(row -> row.getValue("s"),
 						row -> row.getValue("label"))
 						.containsExactly(tuple(iri("match"), VF.createLiteral("needle")), tuple(iri("other"), null));
+			}
+		}
+	}
+
+	@Test
+	void existsServiceFilterObservesAbsentOptionalOutput() throws IOException {
+		try (var fixture = new QueryEndpointPair(); var client = fixture.client.getConnection()) {
+			String source = """
+					ASK { FILTER EXISTS { SERVICE <%s> {
+					  VALUES ?id { 1 }
+					  OPTIONAL { ?s <urn:absent> ?label %s }
+					  FILTER(BOUND(?label))
+					} } }
+					""";
+			var expected = client
+					.prepareBooleanQuery(source.formatted(fixture.serviceUrl, "VALUES ?label { \"needle\" }"));
+			var actual = client.prepareBooleanQuery(source.formatted(fixture.serviceUrl, ""));
+			actual.setBinding("label", VF.createLiteral("needle"));
+			assertThat(expected.evaluate()).isFalse();
+			assertThat(actual.evaluate()).isFalse();
+		}
+	}
+
+	@Test
+	void serviceOutputDoesNotReachTheOtherUnionArm() throws IOException {
+		try (var fixture = new QueryEndpointPair(); var client = fixture.client.getConnection()) {
+			var query = client.prepareTupleQuery("""
+					SELECT ?s ?label ?seen WHERE {
+					  { SERVICE <%s> { ?s <urn:label> ?label } }
+					  UNION { BIND(BOUND(?label) AS ?seen) }
+					}
+					""".formatted(fixture.serviceUrl));
+			query.setBinding("label", VF.createLiteral("needle"));
+			try (var result = query.evaluate()) {
+				assertThat(QueryResults.asList(result))
+						.extracting(row -> row.getValue("s"), row -> row.getValue("label"), row -> row.getValue("seen"))
+						.containsExactlyInAnyOrder(tuple(iri("match"), VF.createLiteral("needle"), null),
+								tuple(null, null, VF.createLiteral(true)));
+			}
+		}
+	}
+
+	@ParameterizedTest
+	@CsvSource({ "label, needle, false, true", "label, missing, true, false", "absent, needle, true, false",
+			"label, needle, true, true" })
+	void projectedExistenceObservesTheOptionalBinding(String predicate, String value, boolean filterFirst,
+			boolean exists) throws IOException {
+		try (var fixture = new QueryEndpointPair(); var client = fixture.client.getConnection()) {
+			String optional = "OPTIONAL { ?s <urn:" + predicate + "> ?label %s }";
+			String filter = "FILTER(BOUND(?label))";
+			String group = filterFirst ? filter + " " + optional : optional + " " + filter;
+			String service = "SERVICE <" + fixture.serviceUrl + "> { VALUES ?id { 1 } " + group + " }";
+			String scope = "{ " + service + " }";
+			String source = "SELECT (EXISTS " + scope + " AS ?exists) (NOT EXISTS " + scope
+					+ " AS ?notExists) WHERE {}";
+			String mapping = "VALUES ?label { \"" + value + "\" }";
+			var expected = client.prepareTupleQuery(source.formatted(mapping, mapping));
+			var actual = client.prepareTupleQuery(source.formatted("", ""));
+			actual.setBinding("label", VF.createLiteral(value));
+			try (var expectedRows = expected.evaluate(); var actualRows = actual.evaluate()) {
+				var reference = QueryResults.asList(expectedRows);
+				assertThat(reference).extracting(row -> row.getValue("exists"), row -> row.getValue("notExists"))
+						.containsExactly(tuple(VF.createLiteral(exists), VF.createLiteral(!exists)));
+				assertThat(actualRows.getBindingNames()).containsExactly("exists", "notExists");
+				assertThat(QueryResults.asList(actualRows)).containsExactlyElementsOf(reference);
+			}
+		}
+	}
+
+	@ParameterizedTest
+	@CsvSource({ "false, false", "false, true", "true, false", "true, true" })
+	void unionArmReadsApiBindingInEitherOrder(boolean serviceFirst, boolean bind) throws IOException {
+		try (var fixture = new QueryEndpointPair(); var client = fixture.client.getConnection()) {
+			String service = "{ SERVICE <" + fixture.serviceUrl + "> { ?s <urn:label> ?label } }";
+			String expression = bind ? "{ VALUES ?id { 1 1 } BIND(BOUND(?label) AS ?seen) }"
+					: "{ VALUES ?seen { true true } FILTER(BOUND(?label)) }";
+			String union = serviceFirst ? service + " UNION " + expression : expression + " UNION " + service;
+			var query = client.prepareTupleQuery("SELECT ?s ?label ?seen WHERE { " + union + " }");
+			query.setBinding("label", VF.createLiteral("needle"));
+			try (var result = query.evaluate()) {
+				assertThat(result.getBindingNames()).containsExactly("s", "label", "seen");
+				var read = tuple(null, null, VF.createLiteral(true));
+				assertThat(QueryResults.asList(result))
+						.extracting(row -> row.getValue("s"), row -> row.getValue("label"), row -> row.getValue("seen"))
+						.containsExactlyInAnyOrder(tuple(iri("match"), VF.createLiteral("needle"), null), read, read);
+			}
+		}
+	}
+
+	@Test
+	void bindReadsOutsideAnExistsGroupWithTheSameVariableName() throws IOException {
+		try (var fixture = new QueryEndpointPair(); var client = fixture.client.getConnection()) {
+			var query = client.prepareTupleQuery("""
+					SELECT ?seen WHERE {
+					  BIND(BOUND(?label) && EXISTS {
+					    SERVICE <%s> {
+					      VALUES ?id { 1 }
+					      OPTIONAL { ?s <urn:absent> ?label }
+					      FILTER(!BOUND(?label))
+					    }
+					  } AS ?seen)
+					}
+					""".formatted(fixture.serviceUrl));
+			query.setBinding("label", VF.createLiteral("needle"));
+			try (var result = query.evaluate()) {
+				assertThat(QueryResults.asList(result)).extracting(row -> row.getValue("seen"))
+						.containsExactly(VF.createLiteral(true));
+			}
+		}
+	}
+
+	@Test
+	void bindsBeforeAndAfterServiceReadTheBindingInOrder() throws IOException {
+		try (var fixture = new QueryEndpointPair(); var client = fixture.client.getConnection()) {
+			var query = client.prepareTupleQuery("""
+					SELECT ?s ?label ?before ?after WHERE {
+					  {
+					    FILTER(sameTerm(?label, "needle"))
+					    BIND(STR(?label) AS ?before)
+					    SERVICE <%s> { ?s <urn:label> ?label }
+					    BIND(STR(?label) AS ?after)
+					  }
+					}
+					""".formatted(fixture.serviceUrl));
+			Literal value = VF.createLiteral("needle");
+			query.setBinding("label", value);
+			try (var result = query.evaluate()) {
+				assertThat(QueryResults.asList(result))
+						.extracting(row -> row.getValue("s"), row -> row.getValue("label"),
+								row -> row.getValue("before"), row -> row.getValue("after"))
+						.containsExactly(tuple(iri("match"), value, value, value));
 			}
 		}
 	}

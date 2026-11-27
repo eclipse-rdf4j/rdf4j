@@ -321,6 +321,8 @@ public class Service extends UnaryTupleOperator {
 
 	private static final Pattern subselectPattern = Pattern.compile("SELECT.*",
 			Pattern.CASE_INSENSITIVE | Pattern.DOTALL);
+	private static final Pattern serviceExpressionPattern = Pattern.compile("service(?=[\\s#<?$])",
+			Pattern.CASE_INSENSITIVE);
 
 	private void ensurePreparedQueryString() {
 		if (preparedAskQueryString == null || !Objects.equals(preparedPrefixes, prefixDeclarations)) {
@@ -384,7 +386,7 @@ public class Service extends UnaryTupleOperator {
 	 */
 	private String parseServiceExpression(String serviceExpression) {
 
-		if (serviceExpression.toLowerCase().startsWith("service")) {
+		if (serviceExpressionPattern.matcher(serviceExpression).lookingAt()) {
 			return serviceExpression.substring(serviceExpression.indexOf('{') + 1, serviceExpression.lastIndexOf('}'))
 					.trim();
 		}

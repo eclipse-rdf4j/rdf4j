@@ -35,6 +35,7 @@ final class ServiceQuerySource {
 	private final List<Integer> bindOffsets = new ArrayList<>();
 	private final List<Integer> filterOffsets = new ArrayList<>();
 	private List<Token> expressionTokens;
+	private Map<Integer, Integer> groupEnds;
 	private final Map<Integer, Integer> expressionKeywords = new HashMap<>();
 	private int wildcard = -1;
 
@@ -68,23 +69,11 @@ final class ServiceQuerySource {
 	List<Integer> optionalEnds() {
 		locateExpressionTokens();
 		List<Integer> ends = new ArrayList<>();
-		var groups = new ArrayDeque<Integer>();
-		int previous = SyntaxTreeBuilderConstants.EOF;
-		for (Token token : expressionTokens) {
-			if (token.kind == SyntaxTreeBuilderConstants.LBRACE) {
-				if (previous == SyntaxTreeBuilderConstants.OPTIONAL) {
-					groups.push(ends.size());
-					ends.add(-1);
-				} else {
-					groups.push(-1);
-				}
-			} else if (token.kind == SyntaxTreeBuilderConstants.RBRACE) {
-				int optional = groups.pop();
-				if (optional >= 0) {
-					ends.set(optional, start(token));
-				}
+		for (int i = 1; i < expressionTokens.size(); i++) {
+			if (expressionTokens.get(i).kind == SyntaxTreeBuilderConstants.LBRACE
+					&& expressionTokens.get(i - 1).kind == SyntaxTreeBuilderConstants.OPTIONAL) {
+				ends.add(start(expressionTokens.get(groupEnds.get(i))));
 			}
-			previous = token.kind;
 		}
 		return ends;
 	}
@@ -100,7 +89,10 @@ final class ServiceQuerySource {
 		Set<String> specialized = new HashSet<>();
 		for (int i = keyword + 1; i < end; i++) {
 			Token token = expressionTokens.get(i);
-			if (token.kind == SyntaxTreeBuilderConstants.BOUND) {
+			if (token.kind == SyntaxTreeBuilderConstants.LBRACE) {
+				// Each nested EXISTS graph pattern has its own expression placements.
+				i = groupEnds.get(i);
+			} else if (token.kind == SyntaxTreeBuilderConstants.BOUND) {
 				// BOUND accepts a variable, so specialize the whole test instead of changing its argument.
 				Token variable = expressionTokens.get(i + 2);
 				String name = variableName(variable);
@@ -135,6 +127,9 @@ final class ServiceQuerySource {
 		int depth = 1;
 		for (int i = opening + 1; i < expressionTokens.size(); i++) {
 			switch (expressionTokens.get(i).kind) {
+			case SyntaxTreeBuilderConstants.LBRACE:
+				i = groupEnds.get(i);
+				break;
 			case SyntaxTreeBuilderConstants.LPAREN:
 				depth++;
 				break;
@@ -160,11 +155,18 @@ final class ServiceQuerySource {
 			return;
 		}
 		expressionTokens = new ArrayList<>();
+		groupEnds = new HashMap<>();
+		var openGroups = new ArrayDeque<Integer>();
 		var lexer = new SyntaxTreeBuilderTokenManager(new UnicodeEscapeStream(source, 1));
 		for (Token token = lexer.getNextToken(); token.kind != SyntaxTreeBuilderConstants.EOF; token = lexer
 				.getNextToken()) {
 			if (token.kind == SyntaxTreeBuilderConstants.BIND || token.kind == SyntaxTreeBuilderConstants.FILTER) {
 				expressionKeywords.put(start(token), expressionTokens.size());
+			}
+			if (token.kind == SyntaxTreeBuilderConstants.LBRACE) {
+				openGroups.push(expressionTokens.size());
+			} else if (token.kind == SyntaxTreeBuilderConstants.RBRACE) {
+				groupEnds.put(openGroups.pop(), expressionTokens.size());
 			}
 			expressionTokens.add(token);
 		}

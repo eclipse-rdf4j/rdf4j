@@ -20,6 +20,7 @@ import static org.junit.jupiter.api.Assertions.fail;
 import java.util.ArrayList;
 import java.util.IdentityHashMap;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
@@ -61,10 +62,12 @@ import org.eclipse.rdf4j.query.parser.sparql.ast.VisitorException;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.Timeout;
+import org.junit.jupiter.api.parallel.Isolated;
 
 /**
  * @author jeen
  */
+@Isolated
 public class TupleExprBuilderTest {
 
 	private TupleExprBuilder builder;
@@ -612,6 +615,58 @@ public class TupleExprBuilderTest {
 		service.setExpressionString("SERVICE <a> {?s ?p ?o}");
 		assertEquals("?s ?p ?o", service.getServiceExpressionString());
 
+	}
+
+	@Test
+	public void testServiceKeywordRecognitionIsLocaleIndependent() {
+		Locale originalLocale = Locale.getDefault();
+		Locale originalDisplayLocale = Locale.getDefault(Locale.Category.DISPLAY);
+		Locale originalFormatLocale = Locale.getDefault(Locale.Category.FORMAT);
+		try {
+			Locale turkishLocale = Locale.forLanguageTag("tr-TR");
+			Locale.setDefault(turkishLocale);
+			Locale.setDefault(Locale.Category.DISPLAY, turkishLocale);
+			Locale.setDefault(Locale.Category.FORMAT, turkishLocale);
+
+			Service service = new Service(Var.of(null, null, false, false), new SingletonSet(), "", null, null, false);
+			for (String keyword : List.of("SERVICE", "service", "sErVICe")) {
+				service.setExpressionString(keyword + " <urn:endpoint> { ?s <urn:p> ?o }");
+				assertEquals("?s <urn:p> ?o", service.getServiceExpressionString(), keyword);
+			}
+			service.setExpressionString("SERVICE<urn:endpoint> { ?s <urn:p> ?o }");
+			assertEquals("?s <urn:p> ?o", service.getServiceExpressionString());
+
+			var parsed = new SPARQLParser().parseQuery(
+					"SELECT * WHERE { service <urn:endpoint> { ?s <urn:p> ?o } }", null);
+			List<Service> parsedServices = new ArrayList<>();
+			parsed.getTupleExpr().visit(new AbstractQueryModelVisitor<RuntimeException>() {
+				@Override
+				public void meet(Service parsedService) {
+					parsedServices.add(parsedService);
+					super.meet(parsedService);
+				}
+			});
+			assertThat(parsedServices).singleElement()
+					.extracting(Service::getServiceExpressionString)
+					.isEqualTo("?s <urn:p> ?o");
+		} finally {
+			Locale.setDefault(originalLocale);
+			Locale.setDefault(Locale.Category.DISPLAY, originalDisplayLocale);
+			Locale.setDefault(Locale.Category.FORMAT, originalFormatLocale);
+		}
+	}
+
+	@Test
+	public void testServiceBodyStartingWithQNamePrefixIsNotStripped() {
+		Service service = new Service(Var.of(null, null, false, false), new SingletonSet(), "", null, null, false);
+		for (String expression : List.of(
+				"SERVİCE:subject <urn:p> <urn:o>",
+				"SERVıCE:subject <urn:p> <urn:o>",
+				"service:subject <urn:p> <urn:o>",
+				"serviceData:subject <urn:p> <urn:o>")) {
+			service.setExpressionString(expression);
+			assertEquals(expression, service.getServiceExpressionString(), expression);
+		}
 	}
 
 	@Test
