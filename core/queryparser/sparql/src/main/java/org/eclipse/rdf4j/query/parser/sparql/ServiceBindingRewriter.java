@@ -40,6 +40,8 @@ import org.eclipse.rdf4j.query.parser.sparql.ast.ASTBasicGraphPattern;
 import org.eclipse.rdf4j.query.parser.sparql.ast.ASTBind;
 import org.eclipse.rdf4j.query.parser.sparql.ast.ASTBindingsClause;
 import org.eclipse.rdf4j.query.parser.sparql.ast.ASTConstraint;
+import org.eclipse.rdf4j.query.parser.sparql.ast.ASTConstructQuery;
+import org.eclipse.rdf4j.query.parser.sparql.ast.ASTDescribeQuery;
 import org.eclipse.rdf4j.query.parser.sparql.ast.ASTExistsFunc;
 import org.eclipse.rdf4j.query.parser.sparql.ast.ASTGraphGraphPattern;
 import org.eclipse.rdf4j.query.parser.sparql.ast.ASTGraphPatternGroup;
@@ -71,10 +73,10 @@ final class ServiceBindingRewriter {
 	private final List<SourceEdit> edits;
 	private final Set<String> serviceNames = new LinkedHashSet<>();
 	private final Set<String> serviceOutputs = new LinkedHashSet<>();
-	private final Set<String> movedSelectors = new LinkedHashSet<>();
 	private final Map<Node, Set<String>> scopedSelectors = new IdentityHashMap<>();
+	private final Map<ASTBind, Set<String>> tripleBindSelectors = new IdentityHashMap<>();
 	private final Set<ASTVar> resolvedReads;
-	private final Map<Node, Set<String>> possibleOutputs = new IdentityHashMap<>();
+	private final Map<Node, RowBindings> possibleOutputs = new IdentityHashMap<>();
 	private final Map<Node, Integer> expressionOffsets = new IdentityHashMap<>();
 	private final String source;
 	private ServiceQuerySource serviceSource;
@@ -114,14 +116,10 @@ final class ServiceBindingRewriter {
 	}
 
 	private void preserveWildcard(ASTQuery root, Set<String> outside) {
-		if (!(root instanceof ASTSelectQuery select) || !select.getSelect().isWildcard()
-				|| outside.isEmpty() && movedSelectors.isEmpty()) {
+		if (!(root instanceof ASTSelectQuery select) || !select.getSelect().isWildcard() || outside.isEmpty()) {
 			return;
 		}
 		Set<String> visible = WildcardProjectionProcessor.visibleVariables(select, true);
-		if (outside.isEmpty() && movedSelectors.stream().noneMatch(visible::contains)) {
-			return;
-		}
 		int wildcard = serviceSource().wildcard();
 		if (wildcard < 0 || !visible.containsAll(outside)) {
 			throw unsupportedBindings("SELECT * would expose an additional input binding");
@@ -155,7 +153,7 @@ final class ServiceBindingRewriter {
 
 			Node body = service.jjtGetChild(1);
 			visit(body);
-			planGroupReads(body, Set.of(), Set.of(), true);
+			planGroupReads(body, RowBindings.EMPTY, RowBindings.EMPTY, true);
 			Set<String> local = new LinkedHashSet<>();
 			collectLocalNames(body, local, false);
 			if (!local.isEmpty()) {
@@ -192,37 +190,41 @@ final class ServiceBindingRewriter {
 		}
 
 		int start = serviceSource().invocationStart(service);
-		int insertion = selectorInsertion(scope, name, start);
 		// Keep the variable selector. A fixed SERVICE can share a remote response across input rows,
 		// changing request count and the identity of blank nodes scoped to each response.
-		edits.add(new SourceEdit(insertion, insertion, initialMapping(Set.of(name), bindings)));
-		if (insertion != start) {
-			movedSelectors.add(name);
-		}
+		edits.add(new SourceEdit(start, start, initialMapping(Set.of(name), bindings)));
+		planTripleBindSelectors(scope, service, name);
 	}
 
-	private int selectorInsertion(Node scope, String name, int call) {
-		int insertion = call;
-		Set<String> selector = Set.of(name);
+	private void planTripleBindSelectors(Node scope, ASTServiceGraphPattern service, String name) {
+		List<ASTBind> candidates = new ArrayList<>();
+		boolean reachedInvocation = false;
 		for (int i = 0; i < scope.jjtGetNumChildren(); i++) {
-			if (!(scope.jjtGetChild(i) instanceof ASTBasicGraphPattern basic)) {
-				continue;
-			}
-			for (int j = 0; j < basic.jjtGetNumChildren(); j++) {
-				Node child = basic.jjtGetChild(j);
-				Node expression = child instanceof ASTBind ? child.jjtGetChild(0) : child;
-				if (child instanceof ASTBind || child instanceof ASTConstraint) {
-					List<ASTVar> reads = new ArrayList<>();
-					collectScalarReads(expression, selector, reads);
-					resolvedReads.addAll(reads);
-					if (!reads.isEmpty() && child instanceof ASTBind bind) {
-						// Unlike a group FILTER, BIND evaluates against the preceding patterns.
-						insertion = Math.min(insertion, offsetOf(bind));
+			Node pattern = scope.jjtGetChild(i);
+			if (pattern == service) {
+				reachedInvocation = true;
+			} else if (!reachedInvocation && (pattern instanceof ASTMinusGraphPattern
+					|| endsPatternAfter(scope, pattern))) {
+				candidates.clear();
+			} else if (pattern instanceof ASTBasicGraphPattern basic) {
+				for (int j = 0; j < basic.jjtGetNumChildren(); j++) {
+					if (basic.jjtGetChild(j) instanceof ASTBind bind
+							&& bind.jjtGetChild(0) instanceof ASTLabeledTripleTerm) {
+						candidates.add(bind);
 					}
 				}
 			}
 		}
-		return insertion;
+		for (ASTBind bind : candidates) {
+			List<ASTVar> components = new ArrayList<>();
+			collectScalarReads(bind.jjtGetChild(0), Set.of(name), components);
+			if (!components.isEmpty()) {
+				// A direct triple-term BIND can produce component bindings. The selector's VALUES
+				// constrains that component in the same graph pattern without replacing it by a term.
+				resolvedReads.addAll(components);
+				tripleBindSelectors.computeIfAbsent(bind, ignored -> new LinkedHashSet<>()).add(name);
+			}
+		}
 	}
 
 	private int offsetOf(Node expression) {
@@ -262,12 +264,32 @@ final class ServiceBindingRewriter {
 
 	private void planCallerReads(ASTQuery root) {
 		Node where = root.getWhereClause();
-		if (where != null) {
-			planGroupReads(where.jjtGetChild(0), Set.of(), Set.of(), false);
+		Node pattern = where == null ? null : where.jjtGetChild(0);
+		if (pattern != null) {
+			planGroupReads(pattern, RowBindings.EMPTY, RowBindings.EMPTY, false);
 		}
-		Set<String> outputs = new LinkedHashSet<>(possibleOutputs(where));
+
+		RowBindings outputs = possibleOutputs(pattern).copy();
+		if (root.getGroupClause() != null) {
+			for (var condition : root.getGroupClause().getGroupConditions()) {
+				markSelectorReads(condition.jjtGetChild(0), outputs);
+			}
+			outputs.addAll(possibleOutputs(root.getGroupClause()));
+		}
+		markSelectorReads(root.getHavingClause(), outputs);
 		outputs.addAll(possibleOutputs(root.getBindingsClause()));
-		outputs.addAll(possibleOutputs(root.getGroupClause()));
+		markSelectorReads(root.getOrderClause(), outputs);
+		if (root instanceof ASTSelectQuery select) {
+			for (var projection : select.getSelect().getProjectionElemList()) {
+				if (projection.hasAlias()) {
+					markSelectorReads(projection.jjtGetChild(0), outputs);
+				}
+			}
+		} else if (root instanceof ASTConstructQuery construct) {
+			markSelectorReads(construct.getConstruct(), outputs);
+		} else if (root instanceof ASTDescribeQuery describe) {
+			markSelectorReads(describe.getDescribe(), outputs);
+		}
 		for (int i = 0; i < root.jjtGetNumChildren(); i++) {
 			Node child = root.jjtGetChild(i);
 			if (child != where) {
@@ -276,50 +298,78 @@ final class ServiceBindingRewriter {
 		}
 	}
 
-	private void planGroupReads(Node scope, Set<String> entry, Set<String> correlated, boolean remoteBody) {
-		Set<String> prefix = new LinkedHashSet<>(entry);
-		Set<String> group = new LinkedHashSet<>(entry);
-		group.addAll(possibleOutputs(scope));
-		for (int i = 0; i < scope.jjtGetNumChildren(); i++) {
-			planPatternReads(scope.jjtGetChild(i), prefix, group, correlated, remoteBody);
+	private void markSelectorReads(Node expression, RowBindings producers) {
+		if (expression != null && !producers.selectors().isEmpty()) {
+			List<ASTVar> reads = new ArrayList<>();
+			collectScalarReads(expression, producers.selectors(), reads);
+			resolvedReads.addAll(reads);
 		}
 	}
 
-	private void planPatternReads(Node pattern, Set<String> prefix, Set<String> group, Set<String> correlated,
-			boolean remoteBody) {
+	private void planGroupReads(Node scope, RowBindings entry, RowBindings inherited, boolean remoteBody) {
+		RowBindings prefix = entry.copy();
+		List<Node> filters = new ArrayList<>();
+		for (int i = 0; i < scope.jjtGetNumChildren(); i++) {
+			Node pattern = scope.jjtGetChild(i);
+			// MINUS completes the preceding graph pattern. A group also completes its pattern after OPTIONAL.
+			if (pattern instanceof ASTMinusGraphPattern) {
+				planFilters(filters, prefix, remoteBody);
+			}
+			planPatternReads(pattern, prefix, inherited, remoteBody, filters);
+			if (endsPatternAfter(scope, pattern)) {
+				planFilters(filters, prefix, remoteBody);
+			}
+		}
+		planFilters(filters, prefix, remoteBody);
+	}
+
+	private static boolean endsPatternAfter(Node scope, Node pattern) {
+		return scope instanceof ASTGraphPatternGroup && pattern instanceof ASTOptionalGraphPattern;
+	}
+
+	private void planFilters(List<Node> filters, RowBindings bindings, boolean remoteBody) {
+		for (Node filter : filters) {
+			specializeScalarInputs(filter, filter, bindings, false, remoteBody);
+			planExistsReads(filter, bindings, remoteBody);
+		}
+		filters.clear();
+	}
+
+	private void planPatternReads(Node pattern, RowBindings prefix, RowBindings inherited, boolean remoteBody,
+			List<Node> filters) {
 		if (pattern instanceof ASTBasicGraphPattern) {
 			for (int i = 0; i < pattern.jjtGetNumChildren(); i++) {
-				planPatternReads(pattern.jjtGetChild(i), prefix, group, correlated, remoteBody);
+				planPatternReads(pattern.jjtGetChild(i), prefix, inherited, remoteBody, filters);
 			}
 			return;
 		}
-		if (pattern instanceof ASTBind || isFilter(pattern)) {
-			boolean bind = pattern instanceof ASTBind;
-			Node expression = bind ? pattern.jjtGetChild(0) : pattern;
-			Set<String> producers = bind ? prefix : group;
-			specializeScalarInputs(pattern, expression, producers, bind, remoteBody);
-			planExistsReads(expression, producers, remoteBody);
+		if (pattern instanceof ASTBind) {
+			Node expression = pattern.jjtGetChild(0);
+			specializeScalarInputs(pattern, expression, prefix, true, remoteBody);
+			planExistsReads(expression, prefix, remoteBody);
+		} else if (isFilter(pattern)) {
+			filters.add(pattern);
 		} else if (pattern instanceof ASTOptionalGraphPattern) {
-			// An OPTIONAL condition can see its left input and the matched right mapping.
-			planGroupReads(pattern, prefix, correlated, remoteBody);
+			// The left mapping becomes the possible input to its right operand and any UNION arms inside it.
+			planGroupReads(pattern, prefix, prefix, remoteBody);
 		} else if (pattern instanceof ASTGraphPatternGroup nested) {
-			planGroupReads(nested, nested.isScopeChange() ? correlated : prefix, correlated, remoteBody);
+			planGroupReads(nested, nested.isScopeChange() ? inherited : prefix, inherited, remoteBody);
 		} else if (pattern instanceof ASTUnionGraphPattern) {
 			for (int i = 0; i < pattern.jjtGetNumChildren(); i++) {
-				planPatternReads(pattern.jjtGetChild(i), new LinkedHashSet<>(correlated), correlated, correlated,
-						remoteBody);
+				planPatternReads(pattern.jjtGetChild(i), inherited.copy(), inherited, remoteBody, filters);
 			}
 		} else if (pattern instanceof ASTMinusGraphPattern) {
-			planGroupReads(pattern.jjtGetChild(0), correlated, correlated, remoteBody);
+			// Each operand starts from the invocation input. The right cannot read outputs from MINUS's left.
+			planGroupReads(pattern.jjtGetChild(0), inherited, inherited, remoteBody);
 		} else if (pattern instanceof ASTGraphGraphPattern) {
-			Set<String> graphEntry = new LinkedHashSet<>(correlated);
+			RowBindings graphEntry = inherited.copy();
 			graphEntry.addAll(possibleOutputs(pattern.jjtGetChild(0)));
-			planGroupReads(pattern.jjtGetChild(1), graphEntry, correlated, remoteBody);
+			planGroupReads(pattern.jjtGetChild(1), graphEntry, inherited, remoteBody);
 		}
 		prefix.addAll(possibleOutputs(pattern));
 	}
 
-	private void planExistsReads(Node node, Set<String> entry, boolean remoteBody) {
+	private void planExistsReads(Node node, RowBindings entry, boolean remoteBody) {
 		if (node instanceof ASTExistsFunc || node instanceof ASTNotExistsFunc) {
 			planGroupReads(node.jjtGetChild(0), entry, entry, remoteBody);
 		} else if (!(node instanceof ASTQuery)) {
@@ -329,55 +379,84 @@ final class ServiceBindingRewriter {
 		}
 	}
 
-	private Set<String> possibleOutputs(Node pattern) {
+	private RowBindings possibleOutputs(Node pattern) {
 		if (pattern == null || pattern instanceof ASTConstraint || pattern instanceof ASTMinusGraphPattern) {
-			return Set.of();
+			return RowBindings.EMPTY;
 		}
-		Set<String> outputs = possibleOutputs.get(pattern);
+		RowBindings outputs = possibleOutputs.get(pattern);
 		if (outputs == null) {
 			if (pattern instanceof ASTGraphPatternGroup || pattern instanceof ASTBasicGraphPattern
 					|| pattern instanceof ASTOptionalGraphPattern || pattern instanceof ASTUnionGraphPattern
 					|| pattern instanceof ASTServiceGraphPattern || pattern instanceof ASTGraphGraphPattern) {
-				outputs = new LinkedHashSet<>();
+				outputs = RowBindings.EMPTY.copy();
 				for (int i = 0; i < pattern.jjtGetNumChildren(); i++) {
 					outputs.addAll(possibleOutputs(pattern.jjtGetChild(i)));
 				}
+				if (pattern instanceof ASTServiceGraphPattern && pattern.jjtGetChild(0) instanceof ASTVar selector
+						&& outputs.names().contains(selector.getName())) {
+					outputs.selectors().add(selector.getName());
+				}
 			} else {
-				outputs = WildcardProjectionProcessor.visibleVariables(pattern, true);
-				outputs.retainAll(names);
+				Set<String> visible = WildcardProjectionProcessor.visibleVariables(pattern, true);
+				visible.retainAll(names);
+				outputs = new RowBindings(visible, tripleBindSelectors.getOrDefault(pattern, Set.of()));
 			}
 			possibleOutputs.put(pattern, outputs);
 		}
 		return outputs;
 	}
 
-	private void specializeScalarInputs(Node node, Node expression, Set<String> producers, boolean bind,
+	private void specializeScalarInputs(Node node, Node expression, RowBindings producers, boolean bind,
 			boolean remoteBody) {
-		if (containsType(expression, ASTTripleTerm.class) || containsType(expression, ASTLabeledTripleTerm.class)) {
+		if (bind && (expression instanceof ASTLabeledTripleTerm || expression instanceof ASTTripleTerm)) {
+			// A direct triple-term BIND can introduce bindings while matching a graph pattern.
 			return;
 		}
 		List<ASTVar> reads = new ArrayList<>();
 		collectScalarReads(expression, remoteBody ? names : serviceNames, reads);
+		if (reads.isEmpty()) {
+			return;
+		}
+		Set<String> tripleComponents = new LinkedHashSet<>();
+		for (ASTVar read : reads) {
+			if (isTripleTermComponent(read, expression)) {
+				tripleComponents.add(read.getName());
+			}
+		}
 		Map<String, String> terms = new LinkedHashMap<>();
 		for (ASTVar read : reads) {
 			String name = read.getName();
 			if (resolvedReads.contains(read)) {
 				continue;
 			}
-			if (producers.contains(name)) {
-				if (remoteBody) {
-					// A possible output, including one from OPTIONAL, must be read from the actual row.
+			if (producers.names().contains(name)) {
+				if (remoteBody || producers.selectors().contains(name)) {
+					// A possible output or transported selector must be read from the actual row.
 					resolvedReads.add(read);
 				}
-			} else if (bindings.getValue(name) instanceof IRI || bindings.getValue(name) instanceof Literal) {
-				terms.computeIfAbsent(name, ignored -> bindingTerm(name));
-				resolvedReads.add(read);
+			} else {
+				Value value = bindings.getValue(name);
+				// An IRI is valid in every triple component position. A literal can only be an object.
+				if (value instanceof IRI || value instanceof Literal && !tripleComponents.contains(name)) {
+					terms.computeIfAbsent(name, ignored -> bindingTerm(name));
+					resolvedReads.add(read);
+				}
 			}
 		}
 		if (!terms.isEmpty()) {
 			// An API-only input is read without adding a column to any solution mapping.
-			serviceSource().specializeExpression(offsetOf(node), bind, terms, edits);
+			serviceSource().specializeExpression(offsetOf(node), bind, terms, tripleComponents, edits);
 		}
+	}
+
+	private static boolean isTripleTermComponent(ASTVar read, Node expression) {
+		Node parent = expression.jjtGetParent();
+		for (Node node = read.jjtGetParent(); node != parent; node = node.jjtGetParent()) {
+			if (node instanceof ASTTripleTerm || node instanceof ASTLabeledTripleTerm) {
+				return true;
+			}
+		}
+		return false;
 	}
 
 	private String bindingTerm(String name) {
@@ -642,5 +721,23 @@ final class ServiceBindingRewriter {
 
 	private static String projection(Set<String> names) {
 		return "?" + String.join(" ?", names);
+	}
+
+	/**
+	 * Names are possible row outputs, including bindings that can be absent after OPTIONAL. Selectors are the subset
+	 * tied to a transported SERVICE endpoint.
+	 */
+	private record RowBindings(Set<String> names, Set<String> selectors) {
+
+		private static final RowBindings EMPTY = new RowBindings(Set.of(), Set.of());
+
+		private RowBindings copy() {
+			return new RowBindings(new LinkedHashSet<>(names), new LinkedHashSet<>(selectors));
+		}
+
+		private void addAll(RowBindings other) {
+			names.addAll(other.names);
+			selectors.addAll(other.selectors);
+		}
 	}
 }

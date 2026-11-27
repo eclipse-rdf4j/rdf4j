@@ -31,6 +31,7 @@ import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.function.Predicate;
+import java.util.function.Supplier;
 
 import org.eclipse.rdf4j.common.annotation.InternalUseOnly;
 import org.eclipse.rdf4j.model.BNode;
@@ -290,6 +291,7 @@ import org.jetbrains.annotations.NotNull;
  */
 @InternalUseOnly
 public class TupleExprBuilder extends AbstractASTVisitor {
+	private final Supplier<ServiceQuerySource> sharedServiceQuerySource;
 	private ServiceQuerySource serviceQuerySource;
 	private final Map<String, ValueExpr> tripleConstructorExpressions = new HashMap<>();
 
@@ -364,7 +366,13 @@ public class TupleExprBuilder extends AbstractASTVisitor {
 	}
 
 	public TupleExprBuilder(ValueFactory valueFactory, QueryParseOptions options) {
+		this(valueFactory, options, null);
+	}
+
+	TupleExprBuilder(ValueFactory valueFactory, QueryParseOptions options,
+			Supplier<ServiceQuerySource> sharedServiceQuerySource) {
 		this.valueFactory = valueFactory;
+		this.sharedServiceQuerySource = sharedServiceQuerySource;
 		useGraphAlgebra = options.resolveGraphAlgebraMode(GraphAlgebraMode.LEGACY)
 				.graphAlgebraMode() == GraphAlgebraMode.GRAPH;
 	}
@@ -1889,6 +1897,10 @@ public class TupleExprBuilder extends AbstractASTVisitor {
 	}
 
 	private String servicePattern(ASTServiceGraphPattern service) {
+		if (sharedServiceQuerySource != null) {
+			return sharedServiceQuerySource.get().pattern(service);
+		}
+
 		Node ancestor = service.jjtGetParent();
 		while (!(ancestor instanceof ASTOperationContainer)) {
 			ancestor = ancestor.jjtGetParent();

@@ -16,8 +16,8 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import java.util.ArrayList;
 import java.util.List;
 
+import org.eclipse.rdf4j.query.algebra.QueryModelNode;
 import org.eclipse.rdf4j.query.algebra.Service;
-import org.eclipse.rdf4j.query.algebra.UpdateExpr;
 import org.eclipse.rdf4j.query.algebra.helpers.AbstractQueryModelVisitor;
 import org.eclipse.rdf4j.query.parser.ParsedUpdate;
 import org.junit.jupiter.api.Test;
@@ -42,9 +42,75 @@ public class TestServiceUpdateExprBuilder {
 				"WHERE { SERVICE <repository:three> { ?s <urn:source:three> ?o } }";
 		ParsedUpdate parsed = parser.parseUpdate(updateStr, null);
 
+		assertEquals(4, parsed.getUpdateExprs().size());
+		assertEquals(List.of(
+				"family:Alice family:knows family:Bob",
+				"?s <urn:source:two> ?o",
+				"?s <urn:source:three> ?o"), serviceBodies(parsed.getUpdateExprs()));
+	}
+
+	@Test
+	public void testBuildsServiceSourceIndexOncePerUpdateRequest() {
+		List<String> indexedSources = new ArrayList<>();
+		SPARQLParser parser = new SPARQLParser() {
+			@Override
+			ServiceQuerySource createServiceQuerySource(String source) {
+				indexedSources.add(source);
+				return super.createServiceQuerySource(source);
+			}
+		};
+		String first = """
+				INSERT { ?s ?p ?o } WHERE { SERVICE <urn:service:one> { ?s ?p ?o } };
+				INSERT { ?s ?p ?o } WHERE { SERVICE <urn:service:two> { ?s ?p ?o } }
+				""";
+		String second = "INSERT { ?s ?p ?o } WHERE { SERVICE <urn:service:three> { ?s ?p ?o } }";
+
+		parser.parseUpdate("DROP ALL; INSERT { ?s ?p ?o } WHERE { ?s ?p ?o }", null);
+		assertEquals(List.of(), indexedSources);
+
+		assertEquals(2, parser.parseUpdate(first, null).getUpdateExprs().size());
+		assertEquals(List.of(first), indexedSources);
+
+		parser.parseUpdate(first, null);
+		assertEquals(List.of(first, first), indexedSources);
+
+		parser.parseUpdate(second, null);
+		assertEquals(List.of(first, first, second), indexedSources);
+	}
+
+	@Test
+	public void testServiceBodiesAcrossRequests() {
+		SPARQLParser parser = new SPARQLParser();
+		String inner = "?s <urn:nested> ?o";
+		String outer = """
+				?s <urn:outer> ?o .
+				SERVICE SILENT <urn:service:inner> # a brace in a header comment {
+				{ %s }
+				""".formatted(inner).trim();
+		String update = """
+				INSERT { ?s <urn:target:one> ?o } WHERE { SERVICE <urn:service:one> # ignore {
+				{ %s } };
+				INSERT { ?s <urn:target:two> ?o } WHERE { SERVICE <urn:service:two> { ?s <urn:second> ?o } }
+				""".formatted(outer);
+		for (String newline : List.of("\n", "\r\n", "\r")) {
+			ParsedUpdate parsed = parser.parseUpdate(update.replace("\n", newline), null);
+			assertEquals(List.of(outer.replace("\n", newline), inner, "?s <urn:second> ?o"),
+					serviceBodies(parsed.getUpdateExprs()));
+		}
+
+		String nextUpdate = "INSERT { ?s ?p ?o } WHERE { SERVICE <urn:service:three> { ?s <urn:third> ?o } }";
+		assertEquals(List.of("?s <urn:third> ?o"),
+				serviceBodies(parser.parseUpdate(nextUpdate, null).getUpdateExprs()));
+
+		String query = "SELECT * WHERE { SERVICE <urn:service:query> { ?s <urn:query> ?o } }";
+		assertEquals(List.of("?s <urn:query> ?o"),
+				serviceBodies(List.of(parser.parseQuery(query, null).getTupleExpr())));
+	}
+
+	private static List<String> serviceBodies(List<? extends QueryModelNode> roots) {
 		List<Service> services = new ArrayList<>();
-		for (UpdateExpr updateExpr : parsed.getUpdateExprs()) {
-			updateExpr.visit(new AbstractQueryModelVisitor<RuntimeException>() {
+		for (QueryModelNode root : roots) {
+			root.visit(new AbstractQueryModelVisitor<RuntimeException>() {
 				@Override
 				public void meet(Service service) {
 					services.add(service);
@@ -52,12 +118,6 @@ public class TestServiceUpdateExprBuilder {
 				}
 			});
 		}
-
-		assertEquals(4, parsed.getUpdateExprs().size());
-		assertEquals(List.of(
-				"family:Alice family:knows family:Bob",
-				"?s <urn:source:two> ?o",
-				"?s <urn:source:three> ?o"),
-				services.stream().map(Service::getServiceExpressionString).toList());
+		return services.stream().map(Service::getServiceExpressionString).toList();
 	}
 }

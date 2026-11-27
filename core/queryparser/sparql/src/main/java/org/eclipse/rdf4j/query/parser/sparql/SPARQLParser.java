@@ -22,6 +22,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
+import java.util.function.Supplier;
 
 import org.eclipse.rdf4j.model.Namespace;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
@@ -120,6 +121,7 @@ public class SPARQLParser implements QueryParser {
 			ASTUpdateSequence updateSequence = SyntaxTreeBuilder.parseUpdateSequence(updateStr);
 
 			List<ASTUpdateContainer> updateOperations = updateSequence.getUpdateContainers();
+			UpdateServiceQuerySource serviceQuerySource = new UpdateServiceQuerySource(updateStr);
 
 			List<ASTPrefixDecl> sharedPrefixDeclarations = null;
 
@@ -164,7 +166,8 @@ public class SPARQLParser implements QueryParser {
 				PrefixDeclProcessor.process(uc, customPrefixes);
 				BlankNodeVarProcessor.process(uc);
 
-				UpdateExprBuilder updateExprBuilder = new UpdateExprBuilder(SimpleValueFactory.getInstance(), options);
+				UpdateExprBuilder updateExprBuilder = new UpdateExprBuilder(SimpleValueFactory.getInstance(), options,
+						serviceQuerySource);
 				updateExprBuilder.reserveVariableNames(uc);
 
 				ASTUpdate updateNode = uc.getUpdate();
@@ -218,6 +221,28 @@ public class SPARQLParser implements QueryParser {
 			throw new MalformedQueryException(e.getMessage(), e);
 		}
 
+	}
+
+	ServiceQuerySource createServiceQuerySource(String source) {
+		return new ServiceQuerySource(source);
+	}
+
+	/** Provides the original source index to each builder in this update request. */
+	private final class UpdateServiceQuerySource implements Supplier<ServiceQuerySource> {
+		private final String source;
+		private ServiceQuerySource index;
+
+		private UpdateServiceQuerySource(String source) {
+			this.source = source;
+		}
+
+		@Override
+		public ServiceQuerySource get() {
+			if (index == null) {
+				index = createServiceQuerySource(source);
+			}
+			return index;
+		}
 	}
 
 	@Override

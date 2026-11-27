@@ -78,7 +78,8 @@ final class ServiceQuerySource {
 		return ends;
 	}
 
-	void specializeExpression(int offset, boolean bind, Map<String, String> terms, List<SourceEdit> edits) {
+	void specializeExpression(int offset, boolean bind, Map<String, String> terms, Set<String> bareTerms,
+			List<SourceEdit> edits) {
 		locateExpressionTokens();
 		int keyword = expressionKeywords.getOrDefault(offset, -1);
 		int kind = bind ? SyntaxTreeBuilderConstants.BIND : SyntaxTreeBuilderConstants.FILTER;
@@ -106,7 +107,10 @@ final class ServiceQuerySource {
 				String name = variableName(token);
 				String term = terms.get(name);
 				if (term != null) {
-					edits.add(new SourceEdit(start(token), end(token), "(" + term + ")"));
+					// A variable used as a triple component requires a bare term. Keep the token boundaries
+					// when the same IRI is also substituted into a surrounding expression.
+					String replacement = bareTerms.contains(name) ? " " + term + " " : "(" + term + ")";
+					edits.add(new SourceEdit(start(token), end(token), replacement));
 					specialized.add(name);
 				}
 			}
