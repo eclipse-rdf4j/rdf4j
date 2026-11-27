@@ -184,7 +184,7 @@ final class NativeScalarPlan {
 		Objects.requireNonNull(expression, "expression");
 		Objects.requireNonNull(resultKind, "resultKind");
 		Objects.requireNonNull(slots, "slots");
-		ValueExpr ownedExpression = QueryEvaluationUtility.pinFunctions(expression.clone());
+		ValueExpr ownedExpression = QueryEvaluationUtility.pinPreparedFunctions(expression.clone());
 		Set<String> names = requiredNames(ownedExpression);
 		TreeMap<String, Integer> mapping = new TreeMap<>();
 		long dependencyMask = 0L;

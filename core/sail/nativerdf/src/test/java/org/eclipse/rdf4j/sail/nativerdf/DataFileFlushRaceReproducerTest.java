@@ -76,7 +76,9 @@ public class DataFileFlushRaceReproducerTest {
 
 		ExecutorService pool = Executors.newFixedThreadPool(writerThreads + 1);
 		CountDownLatch start = new CountDownLatch(1);
+		CountDownLatch flusherStarted = new CountDownLatch(1);
 		CountDownLatch writersFinished = new CountDownLatch(writerThreads);
+		CountDownLatch firstRead = new CountDownLatch(1);
 
 		// reflectively access the underlying DataStore so we can force getData(id) to
 		// call DataFile.flush() on every iteration (ValueStore caches may avoid reads otherwise)
@@ -84,86 +86,81 @@ public class DataFileFlushRaceReproducerTest {
 
 		List<Future<?>> futures = new ArrayList<>();
 
-		// Writers
-		for (int i = 0; i < writerThreads; i++) {
-			final int seed = 4242 + i;
-			futures.add(pool.submit(() -> {
-				Random rnd = new Random(seed);
-				try {
-					start.await();
-					for (int j = 0; j < valuesPerWriter; j++) {
-						if (Thread.currentThread().isInterrupted()) {
-							throw new InterruptedException("Value writer was interrupted");
-						}
-						// keep values small to stay on buffered write path
-						String ns = "http://ex/" + rnd.nextInt(64) + "/";
-						String local = "l" + rnd.nextInt(20_000);
-						valueStore.storeValue(valueStore.createIRI(ns + local));
+		Throwable failure = null;
+		try {
+			// Writers retain the complete workload; only the flusher's idle tail is removed.
+			for (int i = 0; i < writerThreads; i++) {
+				final int seed = 4242 + i;
+				futures.add(pool.submit(() -> {
+					Random rnd = new Random(seed);
+					try {
+						start.await();
+						for (int j = 0; j < valuesPerWriter; j++) {
+							if (Thread.currentThread().isInterrupted()) {
+								throw new InterruptedException("Writer was cancelled");
+							}
+							// keep values small to stay on buffered write path
+							String ns = "http://ex/" + rnd.nextInt(64) + "/";
+							String local = "l" + rnd.nextInt(20_000);
+							valueStore.storeValue(valueStore.createIRI(ns + local));
 
-						switch (rnd.nextInt(3)) {
-						case 0:
-							valueStore.storeValue(valueStore.createLiteral("v" + rnd.nextInt(10_000)));
-							break;
-						case 1:
-							valueStore.storeValue(valueStore.createLiteral("v" + rnd.nextInt(10_000), "en"));
-							break;
-						default:
-							valueStore.storeValue(valueStore
-									.createLiteral("v" + rnd.nextInt(10_000),
-											valueStore.createIRI("http://dt/" + rnd.nextInt(128))));
-							break;
+							switch (rnd.nextInt(3)) {
+							case 0:
+								valueStore.storeValue(valueStore.createLiteral("v" + rnd.nextInt(10_000)));
+								break;
+							case 1:
+								valueStore.storeValue(valueStore.createLiteral("v" + rnd.nextInt(10_000), "en"));
+								break;
+							default:
+								valueStore.storeValue(valueStore
+										.createLiteral("v" + rnd.nextInt(10_000),
+												valueStore.createIRI("http://dt/" + rnd.nextInt(128))));
+								break;
+							}
+							if (j == 0) {
+								// Ensure the flusher participates before writers can finish, even on a busy runner.
+								firstRead.await();
+							}
 						}
+						return null;
+					} finally {
+						writersFinished.countDown();
 					}
-				} catch (InterruptedException e) {
-					Thread.currentThread().interrupt();
-					throw new RuntimeException(e);
-				} catch (IOException e) {
-					throw new RuntimeException(e);
-				} finally {
-					writersFinished.countDown();
-				}
-				return null;
-			}));
-		}
-
-		// Flusher: repeatedly read an early id to force DataFile.getData(...)->flush()
-		futures.add(pool.submit(() -> {
-			try {
-				start.await();
-			} catch (InterruptedException e) {
-				Thread.currentThread().interrupt();
-				throw new RuntimeException(e);
+				}));
 			}
-			// Keep flushing for the complete writer workload, without spinning after the last writer finishes.
-			while (writersFinished.getCount() > 0 && !Thread.currentThread().isInterrupted()) {
-				try {
+
+			// Flusher: cover the full writer lifetime, including writers that take longer than 25 seconds.
+			// Observe flusher failures before waiting for writers blocked on the first read.
+			futures.add(0, pool.submit(() -> {
+				flusherStarted.countDown();
+				start.await();
+				while (writersFinished.getCount() != 0) {
+					if (Thread.currentThread().isInterrupted()) {
+						throw new InterruptedException("Flusher was cancelled");
+					}
 					int max = ds.getMaxID();
 					if (max >= 1) {
 						// focus on a small id to avoid cache churn and ensure frequent flushes
 						ds.getData(1);
+						firstRead.countDown();
 					}
-				} catch (IOException e) {
-					// propagate to fail the test
-					throw new RuntimeException(e);
+					Thread.onSpinWait();
 				}
-				// minimal pause to yield
-				Thread.onSpinWait();
-			}
-			return null;
-		}));
+				return null;
+			}));
 
-		// go!
-		start.countDown();
-
-		Throwable failure = null;
-		try {
+			assertTrue(flusherStarted.await(10, TimeUnit.SECONDS), "Flusher must start before releasing the writers");
+			start.countDown();
 			for (Future<?> f : futures) {
-				f.get();
+				f.get(2, TimeUnit.MINUTES);
 			}
 		} catch (Exception | Error e) {
 			failure = e;
 			throw e;
 		} finally {
+			for (Future<?> future : futures) {
+				future.cancel(true);
+			}
 			pool.shutdownNow();
 			try {
 				assertTrue(pool.awaitTermination(30, TimeUnit.SECONDS),

@@ -214,23 +214,20 @@ public class ThemeQueryBenchmark {
 	private long expected;
 	private String forcedExecutionStrategy;
 	private final Map<String, String> previousIrProperties = new LinkedHashMap<>();
-	private final File benchmarkStoreDirectory;
-	private final DatasetLoader datasetLoader;
-	private final boolean forceGcAfterLoad;
+	private File benchmarkStoreDirectory = new File(STORE_DIRECTORY, "complete");
+	private DatasetLoader datasetLoader = ThemeQueryBenchmark::loadAllThemeDatasets;
+	private boolean forceGcAfterLoad = true;
 
-	public ThemeQueryBenchmark() {
-		this(new File(STORE_DIRECTORY, "complete"), ThemeQueryBenchmark::loadAllThemeDatasets, true);
-	}
-
-	/** Creates a small test fixture without forcing a full collection after every dataset rebuild. */
-	ThemeQueryBenchmark(File benchmarkStoreDirectory, DatasetLoader datasetLoader) {
-		this(benchmarkStoreDirectory, datasetLoader, false);
-	}
-
-	private ThemeQueryBenchmark(File benchmarkStoreDirectory, DatasetLoader datasetLoader, boolean forceGcAfterLoad) {
-		this.benchmarkStoreDirectory = benchmarkStoreDirectory;
-		this.datasetLoader = datasetLoader;
-		this.forceGcAfterLoad = forceGcAfterLoad;
+	/**
+	 * A benchmark over a fixture store. This is a factory rather than a second constructor because JUnit refuses to
+	 * discover a test class that declares more than one. Small fixture rebuilds do not need to force a full collection.
+	 */
+	static ThemeQueryBenchmark forStore(File benchmarkStoreDirectory, DatasetLoader datasetLoader) {
+		ThemeQueryBenchmark benchmark = new ThemeQueryBenchmark();
+		benchmark.benchmarkStoreDirectory = benchmarkStoreDirectory;
+		benchmark.datasetLoader = datasetLoader;
+		benchmark.forceGcAfterLoad = false;
+		return benchmark;
 	}
 
 	@FunctionalInterface

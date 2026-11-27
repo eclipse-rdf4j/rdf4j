@@ -302,9 +302,18 @@ public class LmdbNativeDifferentialFuzzTest {
 				System.setProperty(NATIVE_FLAG, previous);
 			}
 		}
-		assertThat(actual)
+		assertThat(rowBag(actual))
 				.as("native vs generic evaluation for query (seed %d):%n%s", SEED, query)
-				.containsExactlyInAnyOrderElementsOf(expected);
+				.containsExactlyInAnyOrderEntriesOf(rowBag(expected));
+	}
+
+	/** Counts every occurrence so projected-away join legs still contribute to result multiplicity. */
+	private static Map<String, Integer> rowBag(List<String> rows) {
+		Map<String, Integer> counts = new HashMap<>();
+		for (String row : rows) {
+			counts.merge(row, 1, Integer::sum);
+		}
+		return counts;
 	}
 
 	private String pattern(Random random, String[] vars) {
@@ -861,9 +870,9 @@ public class LmdbNativeDifferentialFuzzTest {
 				System.setProperty(NATIVE_FLAG, previous);
 			}
 		}
-		assertThat(canonicalize(nativeRows))
+		assertThat(rowBag(canonicalize(nativeRows)))
 				.as("native vs generic ordered multiset for query (seed %d):%n%s", SEED, query)
-				.containsExactlyInAnyOrderElementsOf(canonicalize(genericRows));
+				.containsExactlyInAnyOrderEntriesOf(rowBag(canonicalize(genericRows)));
 		assertSortedRows("native", nativeRows, comparator, query, keyNames);
 		assertSortedRows("generic", genericRows, comparator, query, keyNames);
 	}

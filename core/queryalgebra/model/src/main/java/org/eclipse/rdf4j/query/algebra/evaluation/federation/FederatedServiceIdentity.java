@@ -15,6 +15,7 @@ import java.util.HashSet;
 import java.util.Set;
 
 import org.eclipse.rdf4j.common.annotation.InternalUseOnly;
+import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.query.BindingSet;
@@ -29,6 +30,7 @@ import org.eclipse.rdf4j.query.algebra.ProjectionElem;
 import org.eclipse.rdf4j.query.algebra.QueryModelNode;
 import org.eclipse.rdf4j.query.algebra.Service;
 import org.eclipse.rdf4j.query.algebra.SubQueryValueOperator;
+import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.algebra.TupleFunctionCall;
 import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.query.algebra.helpers.AbstractSimpleQueryModelVisitor;
@@ -41,6 +43,10 @@ import org.eclipse.rdf4j.query.impl.RemoteBNode;
 @InternalUseOnly
 public final class FederatedServiceIdentity {
 	private FederatedServiceIdentity() {
+	}
+
+	/** An individual SELECT result whose original inputs and result identities have already been reconciled. */
+	public interface AdmittedResults extends CloseableIteration<BindingSet> {
 	}
 
 	public static void validate(Service service, BindingSet bindings, boolean referencesSupported) {
@@ -196,8 +202,49 @@ public final class FederatedServiceIdentity {
 		return variable.hasValue() && !variable.isAnonymous() && !variable.isConstant();
 	}
 
+	/** VALUES columns in the part of the request that can receive an outer invocation binding. */
+	public static Set<String> invocationValuesBindingNames(Service service) {
+		return invocationValuesBindingNames(service.getServiceExpr());
+	}
+
+	private static Set<String> invocationValuesBindingNames(TupleExpr argument) {
+		Set<String> names = new HashSet<>();
+		argument.visit(new AbstractSimpleQueryModelVisitor<RuntimeException>(true) {
+			@Override
+			public void meet(BindingSetAssignment assignment) {
+				names.addAll(assignment.getDeclaredBindingNames());
+			}
+
+			@Override
+			public void meet(Projection projection) {
+				if (projection.isSubquery()) {
+					Set<String> local = invocationValuesBindingNames(projection.getArg());
+					for (ProjectionElem element : projection.getProjectionElemList().getElements()) {
+						if (local.contains(element.getName())) {
+							names.add(element.getProjectionAlias().orElse(element.getName()));
+						}
+					}
+				} else {
+					super.meet(projection);
+				}
+			}
+
+			@Override
+			public void meet(Difference difference) {
+				difference.getLeftArg().visit(this);
+			}
+
+			@Override
+			public void meet(Service nested) {
+				// The nested request owns its input scope.
+			}
+		});
+		return names;
+	}
+
 	public static Set<String> relevantBindingNames(Service service) {
 		Set<String> names = new HashSet<>(service.getServiceVars());
+		names.addAll(invocationValuesBindingNames(service));
 		service.getServiceExpr().visit(new AbstractSimpleQueryModelVisitor<RuntimeException>(true) {
 			@Override
 			public void meet(Service nested) {

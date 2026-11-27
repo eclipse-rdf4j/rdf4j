@@ -26,10 +26,14 @@ import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Statement;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.ValueFactory;
+import org.eclipse.rdf4j.model.vocabulary.FN;
 import org.eclipse.rdf4j.query.BindingSet;
+import org.eclipse.rdf4j.query.BlankNodeEffects;
 import org.eclipse.rdf4j.query.QueryLanguage;
 import org.eclipse.rdf4j.query.QueryResults;
+import org.eclipse.rdf4j.query.algebra.BNodeGenerator;
 import org.eclipse.rdf4j.query.algebra.BindingSetAssignment;
+import org.eclipse.rdf4j.query.algebra.Lateral;
 import org.eclipse.rdf4j.query.algebra.MathExpr;
 import org.eclipse.rdf4j.query.algebra.MultiProjection;
 import org.eclipse.rdf4j.query.algebra.Order;
@@ -38,6 +42,7 @@ import org.eclipse.rdf4j.query.algebra.ProjectionElem;
 import org.eclipse.rdf4j.query.algebra.ProjectionElemList;
 import org.eclipse.rdf4j.query.algebra.QueryRoot;
 import org.eclipse.rdf4j.query.algebra.Slice;
+import org.eclipse.rdf4j.query.algebra.StatementPattern;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.algebra.TupleFunctionCall;
 import org.eclipse.rdf4j.query.algebra.ValueConstant;
@@ -50,6 +55,7 @@ import org.eclipse.rdf4j.query.algebra.evaluation.impl.TupleFunctionEvaluationSt
 import org.eclipse.rdf4j.query.explanation.Explanation;
 import org.eclipse.rdf4j.query.impl.EmptyBindingSet;
 import org.eclipse.rdf4j.query.impl.MapBindingSet;
+import org.eclipse.rdf4j.query.impl.RemoteBNode;
 import org.eclipse.rdf4j.query.impl.SimpleDataset;
 import org.eclipse.rdf4j.query.parser.QueryParserUtil;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
@@ -61,6 +67,7 @@ import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
+import org.junit.jupiter.api.parallel.Isolated;
 
 /**
  * The ordered root stage pipeline (M-A2): wrapper stacks the flat row-root parser cannot represent — notably
@@ -68,6 +75,7 @@ import org.junit.jupiter.api.io.TempDir;
  * compile as generic modifier stages in exact algebra order over a native inner root, instead of declining the whole
  * root to the generic host.
  */
+@Isolated("Temporarily replaces a built-in function in the shared registry")
 public class LmdbNativeRootPipelineTest {
 
 	private static final String EX = "http://example.com/";
@@ -75,6 +83,46 @@ public class LmdbNativeRootPipelineTest {
 	private static final CountingFunction COUNTING_FUNCTION = new CountingFunction();
 	private static final CountingTupleFunction COUNTING_TUPLE_FUNCTION = new CountingTupleFunction();
 	private static final ContractTupleFunction CONTRACT_TUPLE_FUNCTION = new ContractTupleFunction();
+
+	@Test
+	void foreignFunctionOverrideKeepsItsOriginThroughNativeEnabledGroup() {
+		final class ExternalStop implements Function, BlankNodeEffects.Provider {
+			private final Object document = new Object();
+
+			@Override
+			public String getURI() {
+				return FN.STRING_LENGTH.stringValue();
+			}
+
+			@Override
+			public BlankNodeEffects blankNodeEffects() {
+				return BlankNodeEffects.foreign(document);
+			}
+
+			@Override
+			public Value evaluate(ValueFactory factory, Value... args) {
+				return factory.createBNode("wire-stop");
+			}
+		}
+		var registry = FunctionRegistry.getInstance();
+		var original = registry.get(FN.STRING_LENGTH.stringValue()).orElseThrow();
+		var function = new ExternalStop();
+		try (var conn = repository.getConnection()) {
+			registry.add(function);
+			String query = "SELECT ?stop (COUNT(?s) AS ?count) WHERE { ?s <" + EX
+					+ "p> ?value . BIND(STRLEN(?value) AS ?stop) } GROUP BY ?stop";
+			try (var rows = conn.prepareTupleQuery(query).evaluate()) {
+				assertThat(rows.hasNext()).isTrue();
+				BindingSet row = rows.next();
+				assertThat(row.getValue("count").stringValue()).isEqualTo("4");
+				assertThat(row.getValue("stop")).isInstanceOf(RemoteBNode.class);
+				assertThat(((RemoteBNode) row.getValue("stop")).getProvenance().remoteID()).isEqualTo("wire-stop");
+				assertThat(rows.hasNext()).isFalse();
+			}
+		} finally {
+			registry.add(original);
+		}
+	}
 
 	@TempDir
 	File dataDir;
@@ -527,6 +575,77 @@ public class LmdbNativeRootPipelineTest {
 			assertThat(LmdbNativeAggregateCompiler.HOSTED_GENERIC.get()).isEqualTo(hostedBefore);
 		} finally {
 			TupleFunctionRegistry.getInstance().remove(COUNTING_TUPLE_FUNCTION);
+		}
+	}
+
+	@Test
+	void tupleArgumentsShareTheirLabelOnlyWithinOneInvocation() {
+		var function = new TupleFunction() {
+			@Override
+			public String getURI() {
+				return "urn:test:tuple-labelled-arguments";
+			}
+
+			@Override
+			public CloseableIteration<? extends List<? extends Value>> evaluate(ValueFactory factory, Value... args) {
+				assertThat(args[0]).isEqualTo(args[1]);
+				return new CloseableIteratorIteration<>(List.of(List.of(args[0])).iterator());
+			}
+		};
+		var registry = TupleFunctionRegistry.getInstance();
+		var vf = repository.getValueFactory();
+		var call = new TupleFunctionCall();
+		call.setURI(function.getURI());
+		call.addArg(new BNodeGenerator(new ValueConstant(vf.createLiteral("shared"))));
+		call.addArg(new BNodeGenerator(new ValueConstant(vf.createLiteral("shared"))));
+		call.addResultVar(new Var("blank"));
+		var pattern = new StatementPattern(new Var("s"), new Var("p", vf.createIRI(EX, "p")), new Var("o"));
+		registry.add(function);
+		try {
+			assertThat(evaluate(new QueryRoot(new Lateral(pattern, call)), "blank")).hasSize(4).doesNotHaveDuplicates();
+		} finally {
+			registry.remove(function);
+		}
+	}
+
+	@Test
+	void lazyForeignTupleUsesThePreparedResultScope() {
+		final class ExternalRows implements TupleFunction, BlankNodeEffects.Provider {
+			private final Object document = new Object();
+
+			@Override
+			public String getURI() {
+				return "urn:test:foreign-tuple";
+			}
+
+			@Override
+			public BlankNodeEffects blankNodeEffects() {
+				return BlankNodeEffects.foreign(document);
+			}
+
+			@Override
+			public CloseableIteration<? extends List<? extends Value>> evaluate(ValueFactory factory, Value... args) {
+				return new CloseableIteratorIteration<>(List.of(List.of(factory.createBNode("wire")),
+						List.of(factory.createBNode("wire"))).iterator());
+			}
+		}
+		var function = new ExternalRows();
+		var registry = TupleFunctionRegistry.getInstance();
+		var call = new TupleFunctionCall();
+		call.setURI(function.getURI());
+		call.addResultVar(new Var("stop"));
+		registry.add(function);
+		try (var conn = repository.getConnection();
+				var rows = conn.getSailConnection()
+						.evaluate(projectedTupleFunction(call, "stop"), null,
+								EmptyBindingSet.getInstance(), true)) {
+			var first = rows.next().getValue("stop");
+			var second = rows.next().getValue("stop");
+			assertThat(first).isInstanceOf(RemoteBNode.class).isEqualTo(second);
+			assertThat(first.stringValue()).isNotEqualTo("wire");
+			assertThat(rows.hasNext()).isFalse();
+		} finally {
+			registry.remove(function);
 		}
 	}
 

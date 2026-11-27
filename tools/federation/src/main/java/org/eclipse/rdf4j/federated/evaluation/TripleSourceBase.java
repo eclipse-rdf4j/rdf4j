@@ -53,7 +53,6 @@ import org.eclipse.rdf4j.query.QueryEvaluationException;
 import org.eclipse.rdf4j.query.QueryLanguage;
 import org.eclipse.rdf4j.query.QueryResult;
 import org.eclipse.rdf4j.query.TupleQuery;
-import org.eclipse.rdf4j.query.TupleQueryResult;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryBindingSet;
 import org.eclipse.rdf4j.query.impl.EmptyBindingSet;
 import org.eclipse.rdf4j.query.impl.MapBindingSet;
@@ -101,11 +100,10 @@ public abstract class TripleSourceBase implements TripleSource {
 					tQuery.setDataset(dataset);
 					if (queryInfo.getResultHandler().isPresent()) {
 						// pass through result to configured handler, and return an empty iteration as marker result
-						tQuery.evaluate(identity.handler(queryInfo.getResultHandler().get(), queryBindings));
+						identity.evaluate(tQuery, queryInfo.getResultHandler().get(), queryBindings);
 						resultHolder.set(new EmptyIteration<>());
 					} else {
-						evaluate = tQuery.evaluate();
-						resultHolder.set(identity.incoming(((TupleQueryResult) evaluate), queryBindings));
+						resultHolder.set(identity.evaluate(tQuery, queryBindings));
 					}
 					return;
 				case CONSTRUCT:
@@ -263,12 +261,9 @@ public abstract class TripleSourceBase implements TripleSource {
 			if (snapshot == null) {
 				applyBindings(query, nativeBindings);
 				monitorRemoteRequest();
-				res = query.evaluate();
+				res = identity.evaluate(query, bindings);
 			} else {
 				res = snapshot.evaluate(text, query, nativeBindings, federationContext.getFederatedServiceResolver());
-			}
-			if (snapshot == null) {
-				res = identity.incoming(res, bindings);
 			}
 			if (!nativeBindings.isEmpty()) {
 				res = withoutParameters(res, nativeBindings);

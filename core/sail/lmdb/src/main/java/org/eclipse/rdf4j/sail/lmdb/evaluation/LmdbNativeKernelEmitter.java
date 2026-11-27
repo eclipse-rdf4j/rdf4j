@@ -324,6 +324,8 @@ final class LmdbNativeKernelEmitter {
 		private int nextLeftGroupId;
 		/** Inherited columns saved by each emitted OPTIONAL container. */
 		private final List<int[]> leftGroupRestoreColumns = new ArrayList<>();
+		/** Replay proof of each emitted OPTIONAL container, or null when its arm cannot be cached. */
+		private final List<LmdbNativeOptionalReplay.Plan> leftGroupReplayPlans = new ArrayList<>();
 		/**
 		 * Lexical frames discovered while emitting, used to declare their saved-value and existence fields.
 		 */
@@ -457,9 +459,125 @@ final class LmdbNativeKernelEmitter {
 		}
 
 		private int registerLeftGroup(int[] restoreColumns) {
+			return registerLeftGroup(restoreColumns, null);
+		}
+
+		private int registerLeftGroup(int[] restoreColumns, LmdbNativeOptionalReplay.Plan replayPlan) {
 			int id = nextLeftGroupId++;
 			leftGroupRestoreColumns.add(restoreColumns.clone());
+			leftGroupReplayPlans.add(replayPlan);
 			return id;
+		}
+
+		private static String intArray(int[] values) {
+			StringBuilder array = new StringBuilder("new int[] {");
+			for (int i = 0; i < values.length; i++) {
+				array.append(i == 0 ? "" : ", ").append(values[i]);
+			}
+			return array.append('}').toString();
+		}
+
+		/**
+		 * Terminal statement of an OPTIONAL arm: set the match flag, record the arm's output cells for the site's
+		 * replay cache (when one is bound), then continue.
+		 */
+		private String armTerminal(int groupId, String nextTemplate, boolean rerunnable) {
+			LmdbNativeOptionalReplay.Plan plan = leftGroupReplayPlans.get(groupId);
+			StringBuilder terminal = new StringBuilder("lg").append(groupId).append(" = true;\n");
+			if (plan != null) {
+				// A resumable arm whose continuation holds state is re-entered on resume and re-runs this terminal for
+				// the row it had already emitted (the stateful callee then resumes inside it). Recording that row twice
+				// would corrupt the entry, so a flag keeps the record idempotent until the continuation has finished.
+				terminal.append("%I%if (lgrep").append(groupId).append(" != null");
+				if (rerunnable) {
+					terminal.append(" && !lgd").append(groupId);
+				}
+				terminal.append(") {\n");
+				for (int column : plan.outputs()) {
+					terminal.append("%I%    lgrow")
+							.append(groupId)
+							.append('[')
+							.append(column)
+							.append("] = v")
+							.append(column)
+							.append(";\n");
+				}
+				terminal.append("%I%    lgrep").append(groupId).append(".record(lgrow").append(groupId).append(");\n");
+				if (rerunnable) {
+					terminal.append("%I%    lgd").append(groupId).append(" = true;\n");
+				}
+				terminal.append("%I%}\n");
+			}
+			terminal.append("%I%").append(nextTemplate);
+			if (plan != null && rerunnable) {
+				terminal.append("\n%I%if (!full) lgd").append(groupId).append(" = false;");
+			}
+			return terminal.toString();
+		}
+
+		/**
+		 * Statements that probe the site's cache for the current row. After them {@code lgrrN} is the replay or null
+		 * (the arm must run); {@code lgrpN} is the replay offset.
+		 */
+		private void emitReplayOpen(StringBuilder body, String indent, int groupId) {
+			LmdbNativeOptionalReplay.Plan plan = leftGroupReplayPlans.get(groupId);
+			body.append(indent).append("lgrr").append(groupId).append(" = null;\n");
+			body.append(indent).append("lgrp").append(groupId).append(" = 0;\n");
+			body.append(indent).append("if (lgrep").append(groupId).append(" != null) {\n");
+			for (int column : plan.inputs()) {
+				body.append(indent)
+						.append("    lgrow")
+						.append(groupId)
+						.append('[')
+						.append(column)
+						.append("] = v")
+						.append(column)
+						.append(";\n");
+			}
+			body.append(indent)
+					.append("    lgrr")
+					.append(groupId)
+					.append(" = lgrep")
+					.append(groupId)
+					.append(".open(lgrow")
+					.append(groupId)
+					.append(");\n");
+			if (telemetryEnabled()) {
+				body.append(indent)
+						.append("    if (lgrr")
+						.append(groupId)
+						.append(" != null) workCounters.recordOptionalArmReplay(); else {\n")
+						.append(indent)
+						.append("        workCounters.recordOptionalArmOpen();\n")
+						.append(indent)
+						.append("        if (lgrep")
+						.append(groupId)
+						.append(".lastOpenBypassed()) workCounters.recordOptionalCacheBypass();\n")
+						.append(indent)
+						.append("    }\n");
+			}
+			body.append(indent).append("}");
+			if (telemetryEnabled()) {
+				body.append(" else workCounters.recordOptionalArmOpen();");
+			}
+			body.append('\n');
+		}
+
+		/** Polls cancellation and copies the next cached row of the site into the output columns. */
+		private void emitReplayRow(StringBuilder body, String indent, int groupId) {
+			LmdbNativeOptionalReplay.Plan plan = leftGroupReplayPlans.get(groupId);
+			body.append(indent).append("if ((++pollTick & 1023) == 0) { KernelRuntime.checkCancelled(cancel); }\n");
+			body.append(indent).append("long[] lgv = lgrr").append(groupId).append(".values();\n");
+			for (int i = 0; i < plan.outputs().length; i++) {
+				body.append(indent)
+						.append('v')
+						.append(plan.outputs()[i])
+						.append(" = lgv[lgrp")
+						.append(groupId)
+						.append(" + ")
+						.append(i)
+						.append("];\n");
+			}
 		}
 
 		Emission(Kernel kernel) {
@@ -542,6 +660,9 @@ final class LmdbNativeKernelEmitter {
 					.append("import org.eclipse.rdf4j.sail.lmdb.evaluation.codegen.KernelScanner;\n")
 					.append("import org.eclipse.rdf4j.sail.lmdb.evaluation.codegen.KernelRuntime;\n")
 					.append("import org.eclipse.rdf4j.sail.lmdb.evaluation.codegen.KernelWorkCounters;\n")
+					.append("import ")
+					.append(KernelOptionalReplay.class.getName())
+					.append(";\n")
 					.append("import org.eclipse.rdf4j.sail.lmdb.evaluation.codegen.KernelProjectionCursor;\n")
 					.append("import org.eclipse.rdf4j.sail.lmdb.evaluation.codegen.KernelAdjacencyCursor;\n\n")
 					.append("import org.eclipse.rdf4j.sail.lmdb.evaluation.codegen.KernelTermKindProof;\n\n")
@@ -1239,6 +1360,25 @@ final class LmdbNativeKernelEmitter {
 			// Emitted after the pipeline has been rendered, so the count is final by the time this runs.
 			for (int i = 0; i < nextLeftGroupId; i++) {
 				source.append("    private boolean lg").append(i).append(";\n");
+				if (leftGroupReplayPlans.get(i) != null) {
+					source.append("    private KernelOptionalReplay lgrep")
+							.append(i)
+							.append(";\n")
+							.append("    private KernelOptionalReplay.Rows lgrr")
+							.append(i)
+							.append(";\n")
+							.append("    private int lgrp")
+							.append(i)
+							.append(";\n")
+							.append("    private boolean lgd")
+							.append(i)
+							.append(";\n")
+							.append("    private final long[] lgrow")
+							.append(i)
+							.append(" = new long[")
+							.append(Math.max(1, kernel.columnCount))
+							.append("];\n");
+				}
 				int[] restoreColumns = leftGroupRestoreColumns.get(i);
 				if (restoreColumns.length > 0) {
 					source.append("    private final long[] lgs")
@@ -1628,6 +1768,30 @@ final class LmdbNativeKernelEmitter {
 					"        aggregateMemory = KernelRuntime.AggregateMemory.forLedger(context.groupMemoryLedger());\n")
 					.append("        aggregateArrayBytes = 0L;\n")
 					.append("        ran = false;\n");
+			if (leftGroupReplayPlans.stream().anyMatch(plan -> plan != null)) {
+				source.append(
+						"        KernelOptionalReplay.Budget replayBudget = KernelOptionalReplay.budgetFor(context, aggregateMemory);\n");
+				for (int i = 0; i < leftGroupReplayPlans.size(); i++) {
+					LmdbNativeOptionalReplay.Plan plan = leftGroupReplayPlans.get(i);
+					if (plan != null) {
+						source.append("        lgrep")
+								.append(i)
+								.append(" = KernelOptionalReplay.create(replayBudget, ")
+								.append(intArray(plan.inputs()))
+								.append(", ")
+								.append(intArray(plan.outputs()))
+								.append(", ")
+								.append(plan.scanBacked())
+								.append(");\n")
+								.append("        lgrr")
+								.append(i)
+								.append(" = null;\n")
+								.append("        lgd")
+								.append(i)
+								.append(" = false;\n");
+					}
+				}
+			}
 			if (flatRootExistsShape == null) {
 				source.append("        outCount = 0;\n")
 						.append("        outPos = 0;\n");
@@ -2217,6 +2381,22 @@ final class LmdbNativeKernelEmitter {
 			if (!(kernel.terminal instanceof Aggregate && flatRootExistsShape == null && !streamingGroups())) {
 				source.append("        closeFailure = KernelRuntime.closeResource(aggregateMemory, closeFailure);\n")
 						.append("        aggregateMemory = null;\n");
+			}
+			// A closed kernel may stay referenced (result cursor, pool); it must not pin the cached OPTIONAL rows.
+			// Their
+			// ledger bytes were returned with aggregateMemory above.
+			for (int i = 0; i < leftGroupReplayPlans.size(); i++) {
+				if (leftGroupReplayPlans.get(i) != null) {
+					source.append("        lgrep")
+							.append(i)
+							.append(" = null;\n")
+							.append("        lgrr")
+							.append(i)
+							.append(" = null;\n")
+							.append("        lgd")
+							.append(i)
+							.append(" = false;\n");
+				}
 			}
 			for (int i = 0; i < kernel.requirements.scans; i++) {
 				emitCloseResource(source, "sc" + i);
@@ -6960,9 +7140,10 @@ final class LmdbNativeKernelEmitter {
 			if (node instanceof LmdbNativeKernelIr.LeftGroup) {
 				LmdbNativeKernelIr.LeftGroup group = (LmdbNativeKernelIr.LeftGroup) node;
 				int[] restoreColumns = group.restoreColumns();
-				int groupId = registerLeftGroup(restoreColumns);
+				LmdbNativeOptionalReplay.Plan replayPlan = LmdbNativeOptionalReplay.plan(group, kernel);
+				int groupId = registerLeftGroup(restoreColumns, replayPlan);
 				String matched = "lg" + groupId;
-				String armFirst = emitPipeline(group.arm, matched + " = true;\n%I%" + nextTemplate, false,
+				String armFirst = emitPipeline(group.arm, armTerminal(groupId, nextTemplate, !tailmost), false,
 						!tailmost);
 				body.append(indent).append("if (").append(a).append(" < 0) {\n");
 				for (int i = 0; i < restoreColumns.length; i++) {
@@ -6977,12 +7158,65 @@ final class LmdbNativeKernelEmitter {
 				}
 				body.append(indent).append("    ").append(a).append(" = 0;\n");
 				body.append(indent).append("    ").append(matched).append(" = false;\n");
+				if (replayPlan != null) {
+					emitReplayOpen(body, indent + "    ", groupId);
+				}
 				body.append(indent).append("}\n");
 				body.append(indent).append("if (").append(a).append(" == 0) {\n");
-				body.append(indent).append("    ").append(armFirst).append("();\n");
-				body.append(indent).append("    if (full) {\n");
-				body.append(indent).append("        return;\n");
-				body.append(indent).append("    }\n");
+				if (replayPlan != null) {
+					String rows = "lgrr" + groupId;
+					String position = "lgrp" + groupId;
+					body.append(indent).append("    if (").append(rows).append(" != null) {\n");
+					body.append(indent)
+							.append("        while (")
+							.append(position)
+							.append(" < ")
+							.append(rows)
+							.append(".length()) {\n");
+					// A stateful continuation resumes inside the same replayed row, so the offset only moves once it
+					// finished; a stateless one has handed the row to the sink and must not see it again.
+					int cells = replayPlan.outputs().length;
+					emitReplayRow(body, indent + "            ", groupId);
+					body.append(indent).append("            ").append(matched).append(" = true;\n");
+					if (tailmost) {
+						body.append(indent)
+								.append("            ")
+								.append(position)
+								.append(" += ")
+								.append(cells)
+								.append(";\n");
+					}
+					body.append(next(nextTemplate, indent + "            "));
+					body.append(indent).append("            if (full) {\n");
+					body.append(indent).append("                return;\n");
+					body.append(indent).append("            }\n");
+					if (!tailmost) {
+						body.append(indent)
+								.append("            ")
+								.append(position)
+								.append(" += ")
+								.append(cells)
+								.append(";\n");
+					}
+					body.append(indent).append("        }\n");
+					body.append(indent).append("    } else {\n");
+					body.append(indent).append("        ").append(armFirst).append("();\n");
+					body.append(indent).append("        if (full) {\n");
+					body.append(indent).append("            return;\n");
+					body.append(indent).append("        }\n");
+					body.append(indent)
+							.append("        if (lgrep")
+							.append(groupId)
+							.append(" != null) lgrep")
+							.append(groupId)
+							.append(".complete();\n");
+					body.append(indent).append("    }\n");
+				} else {
+					body.append(indent).append("    ").append(armFirst).append("();\n");
+					body.append(indent).append("    if (full) {\n");
+					body.append(indent).append("        return;\n");
+					body.append(indent).append("    }\n");
+				}
 				body.append(indent).append("    ").append(a).append(" = 1;\n");
 				body.append(indent).append("}\n");
 				body.append(indent).append("if (").append(a).append(" == 1 && !").append(matched).append(") {\n");
@@ -7179,6 +7413,9 @@ final class LmdbNativeKernelEmitter {
 				String cursor = "sc" + scan.scan;
 				String buffer = "qb" + scan.scan;
 				body.append(indent).append("if (").append(cursor).append(" == null) {\n");
+				if (telemetryEnabled()) {
+					body.append(indent).append("    workCounters.recordScanOpen();\n");
+				}
 				body.append(indent)
 						.append("    ")
 						.append(cursor)
@@ -9419,6 +9656,9 @@ final class LmdbNativeKernelEmitter {
 			if (node instanceof ScanQuad) {
 				ScanQuad scan = (ScanQuad) node;
 				String buffer = "qb" + scan.scan;
+				if (telemetryEnabled()) {
+					body.append(indent).append("workCounters.recordScanOpen();\n");
+				}
 				body.append(indent)
 						.append("KernelQuadCursor cur = scanner.open(")
 						.append(scan.scan)
@@ -10144,9 +10384,10 @@ final class LmdbNativeKernelEmitter {
 				// which set the flag from inside their own frames. One field per left group, reset on entry, so nesting
 				// and repetition inside a loop each get their own answer.
 				int[] restoreColumns = group.restoreColumns();
-				int groupId = registerLeftGroup(restoreColumns);
+				LmdbNativeOptionalReplay.Plan replayPlan = LmdbNativeOptionalReplay.plan(group, kernel);
+				int groupId = registerLeftGroup(restoreColumns, replayPlan);
 				String flag = "lg" + groupId;
-				String armFirst = emitPipeline(group.arm, flag + " = true;\n%I%" + nextTemplate, booleanMode);
+				String armFirst = emitPipeline(group.arm, armTerminal(groupId, nextTemplate, false), booleanMode);
 				for (int i = 0; i < restoreColumns.length; i++) {
 					body.append(indent)
 							.append("lgs")
@@ -10157,27 +10398,51 @@ final class LmdbNativeKernelEmitter {
 							.append(restoreColumns[i])
 							.append(";\n");
 				}
-				body.append(indent)
-						.append(flag)
-						.append(" = false;\n")
-						.append(indent);
+				body.append(indent).append(flag).append(" = false;\n");
+				String armRun;
 				if (booleanMode) {
 					// A right match suppresses null extension even when the downstream continuation rejects every
 					// matching row. The field records that fact independently from the helper's boolean success result.
-					body.append("if (")
-							.append(armFirst)
-							.append("()) {\n")
-							.append(indent)
-							.append("    return true;\n")
-							.append(indent)
-							.append("}\n")
-							.append(indent);
+					armRun = "if (" + armFirst + "()) {\n" + indent + "    return true;\n" + indent + "}\n";
 				} else {
-					body.append(armFirst).append("();\n").append(indent);
+					armRun = armFirst + "();\n";
 				}
-				body.append("if (!")
-						.append(flag)
-						.append(") {\n");
+				if (replayPlan != null) {
+					String rows = "lgrr" + groupId;
+					String position = "lgrp" + groupId;
+					emitReplayOpen(body, indent, groupId);
+					body.append(indent).append("if (").append(rows).append(" != null) {\n");
+					body.append(indent)
+							.append("    while (")
+							.append(position)
+							.append(" < ")
+							.append(rows)
+							.append(".length()) {\n");
+					emitReplayRow(body, indent + "        ", groupId);
+					body.append(indent).append("        ").append(flag).append(" = true;\n");
+					body.append(indent)
+							.append("        ")
+							.append(position)
+							.append(" += ")
+							.append(replayPlan.outputs().length)
+							.append(";\n");
+					body.append(next(nextTemplate, indent + "        "));
+					body.append(indent).append("    }\n");
+					body.append(indent).append("} else {\n");
+					body.append(indent)
+							.append("    ")
+							.append(armRun.replace("\n" + indent, "\n" + indent + "    "))
+							.append(indent)
+							.append("    if (lgrep")
+							.append(groupId)
+							.append(" != null) lgrep")
+							.append(groupId)
+							.append(".complete();\n");
+					body.append(indent).append("}\n");
+				} else {
+					body.append(indent).append(armRun);
+				}
+				body.append(indent).append("if (!").append(flag).append(") {\n");
 				for (int i = 0; i < restoreColumns.length; i++) {
 					body.append(indent)
 							.append("    v")

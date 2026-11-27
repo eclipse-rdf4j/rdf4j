@@ -276,7 +276,10 @@ final class NativeLazyResultReplay implements AutoCloseable, CooperativeCancella
 				}
 			}
 		}, failure);
-		writerCodec = null;
+		if (writerCodec != null) {
+			writerCodec.clearBlankNodeOrigins();
+			writerCodec = null;
+		}
 		failure = KernelRuntime.closeResource(dictionary, failure);
 		dictionary = null;
 		resident = null;
@@ -370,8 +373,7 @@ final class NativeLazyResultReplay implements AutoCloseable, CooperativeCancella
 				output.flush();
 			}
 			if (readerCodec == null) {
-				readerCodec = new NativeSpillValueCodec(localCancellation,
-						context == null ? null : context::authoritativeQueryScopedValue, null, dictionary);
+				readerCodec = writerCodec.reader(localCancellation);
 			}
 			if (input == null) {
 				FileInputStream file = new FileInputStream(path.toFile());

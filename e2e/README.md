@@ -30,6 +30,23 @@ Run against the Docker/Tomcat image:
 
 The default runtime is `spring-boot`, so `./run.sh` keeps the original local behavior.
 
+CI sets `E2E_SHARDS=2` to run two Playwright processes within each existing browser/runtime job. Each spec stays on one
+worker, preserving its shared repository and setup/teardown lifecycle. Linux Firefox and WebKit processes get separate
+Xvfb displays so focus, scrolling and clipboard state cannot leak between them. Both processes finish even if one fails.
+An isolated phase then runs tests tagged `@performance` with their existing timing budgets, plus the complete
+`workbench-round3-server`, `workbench-destructive-actions`, `workbench-live-route-parity`, and
+`workbench-visual-refinement-operation-states` specs. These specs submit live delete-safety checks, which scan every
+repository configuration and must not overlap another spec's repository teardown. The phase uses one worker after both
+functional shards finish, also preventing competing browser work from distorting performance assertions.
+All results are merged into `playwright-report/` and a JSON summary
+beside the raw blob reports. Any test or report-merge failure fails the job, as does an entirely empty test selection.
+Explicit `--grep` or `--grep-invert` selections passed to `run-playwright.js` use one process so those filters retain
+their original meaning.
+
+To use the same concurrency locally, run `E2E_SHARDS=2 ./run.sh spring-boot`. The default remains one process. Raw reports
+are saved under `blob-report/`, with separate test output under `test-results/shard-1/`, `test-results/shard-2/`, and
+`test-results/isolated/`.
+
 If Playwright browsers are already installed locally, set `E2E_SKIP_PLAYWRIGHT_INSTALL=true` to skip the browser installer.
 
 Some specs serve an endpoint of their own to the server, such as a SPARQL endpoint that never answers. They give the server the address in `RDF4J_E2E_HOST_FROM_SERVER` (default `127.0.0.1`). For `docker-tomcat`, `run.sh` sets it to `host.docker.internal`, which `docker-compose.e2e.yml` maps to this host also on Linux; set it yourself when the server runs in a container you started.

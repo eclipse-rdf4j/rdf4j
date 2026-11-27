@@ -3179,7 +3179,7 @@ public class LmdbDatatypeHistogramTest {
 						return call.callRealMethod();
 					}).when(source)
 							.prefixRuns(any(LmdbPrefixRunPlan.class), anyLong(), anyLong(), anyLong(), anyLong(),
-									anyBoolean());
+									anyBoolean(), any(), any());
 					doAnswer(call -> {
 						ParallelSource[] workers = (ParallelSource[]) call.callRealMethod();
 						if (workers == null) {
@@ -3220,7 +3220,7 @@ public class LmdbDatatypeHistogramTest {
 								return cursor;
 							}).when(worker)
 									.prefixRuns(any(LmdbPrefixRunPlan.class), anyLong(), anyLong(), anyLong(),
-											anyLong(), anyBoolean());
+											anyLong(), anyBoolean(), any(), any());
 							doAnswer(close -> {
 								Object result = close.callRealMethod();
 								workersClosed.incrementAndGet();
@@ -3334,7 +3334,7 @@ public class LmdbDatatypeHistogramTest {
 					return cursor;
 				}).when(source)
 						.prefixRuns(any(LmdbPrefixRunPlan.class), anyLong(), anyLong(), anyLong(), anyLong(),
-								anyBoolean());
+								anyBoolean(), any(), any());
 				long runsBefore = LmdbNativeDatatypeHistogram.RUNS.get();
 				long parallelBefore = LmdbNativeDatatypeHistogram.PARALLEL_RUNS.get();
 				long ledgerBefore = ledger.usedBytes();
@@ -3851,7 +3851,7 @@ public class LmdbDatatypeHistogramTest {
 			CachedDatatypeSummaryReceipt receipt = state.currentReceipt.get();
 			return receipt != null && receipt.bySubject() == call.getArgument(0, Boolean.class) ? receipt : null;
 		}).when(source).cachedDatatypeSummaryReceipt(anyBoolean());
-		doAnswer(call -> {
+		org.mockito.stubbing.Answer<NativeProbe> probeAnswer = call -> {
 			state.probesOpened.incrementAndGet();
 			NativeProbe probe = spy((NativeProbe) call.callRealMethod());
 			doAnswer(probeCall -> {
@@ -3896,7 +3896,8 @@ public class LmdbDatatypeHistogramTest {
 				return result;
 			}).when(probe).close();
 			return probe;
-		}).when(source).newProbe();
+		};
+		doAnswer(probeAnswer).when(source).newProbe(any());
 		doAnswer(call -> {
 			state.prefixRunCalls.incrementAndGet();
 			return call.callRealMethod();
@@ -4285,10 +4286,11 @@ public class LmdbDatatypeHistogramTest {
 	private static SyntheticValueSource recordingPageProducerSource(NativeLmdbQuerySource delegate,
 			PageProducerEvidence evidence) throws IOException {
 		SyntheticValueSource source = spy(SyntheticValueSource.forEvaluation(delegate));
-		doAnswer(sourceCall -> {
+		org.mockito.stubbing.Answer<NativeProbe> probeAnswer = sourceCall -> {
 			evidence.probesOpened.incrementAndGet();
 			return recordingPageProducerProbe((NativeProbe) sourceCall.callRealMethod(), evidence);
-		}).when(source).newProbe();
+		};
+		doAnswer(probeAnswer).when(source).newProbe(any());
 		doAnswer(call -> {
 			evidence.workspaceLookups.incrementAndGet();
 			if (evidence.workspaceUnavailable) {
@@ -4318,7 +4320,7 @@ public class LmdbDatatypeHistogramTest {
 			return call.callRealMethod();
 		}).when(source)
 				.prefixRuns(any(LmdbPrefixRunPlan.class), anyLong(), anyLong(), anyLong(), anyLong(),
-						anyBoolean());
+						anyBoolean(), any(), any());
 		return source;
 	}
 

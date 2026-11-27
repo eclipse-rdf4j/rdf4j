@@ -12,6 +12,7 @@
 package org.eclipse.rdf4j.sail.lmdb.evaluation;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.eclipse.rdf4j.sail.lmdb.evaluation.NativeCancellationTestAccess.mockScanSource;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyBoolean;
 import static org.mockito.ArgumentMatchers.anyInt;
@@ -460,7 +461,7 @@ class LmdbNativeCensusCancellationTest {
 		private static CensusReceiptFixture create(boolean canonical, boolean executionProjections,
 				boolean changedCoverage, int countStarChannels, Scenario scenario,
 				boolean prepareDuringFixtureCreation) throws Exception {
-			var dictionary = mock(NativeLmdbQuerySource.class);
+			var dictionary = mockScanSource(NativeLmdbQuerySource.class);
 			when(dictionary.idSpace()).thenReturn(dictionary);
 			AtomicBoolean authorityUnavailable = new AtomicBoolean();
 			AtomicInteger unavailableAuthorityResponses = new AtomicInteger();
@@ -799,7 +800,7 @@ class LmdbNativeCensusCancellationTest {
 	void groupedAlternativeRetainsItsActiveGroupCancellationOwner() throws Exception {
 		var entered = new CountDownLatch(1);
 		var release = new CountDownLatch(1);
-		var dictionary = mock(NativeLmdbQuerySource.class);
+		var dictionary = mockScanSource(NativeLmdbQuerySource.class);
 		var strategy = mock(LmdbNativeEvaluationStrategy.class);
 		var quoteProbe = mock(NativeProbe.class);
 		var probe = mock(NativeProbe.class);
@@ -923,7 +924,7 @@ class LmdbNativeCensusCancellationTest {
 	@Test
 	void structuralCensusAttributesItsActualPageTraversalWithoutPatternCursors(@TempDir Path directory)
 			throws Exception {
-		var source = mock(NativeLmdbQuerySource.class);
+		var source = mockScanSource(NativeLmdbQuerySource.class);
 		var strategy = mock(LmdbNativeEvaluationStrategy.class);
 		var probe = mock(NativeProbe.class);
 		var wildcard = mock(WildcardAdjacency.class);
@@ -977,7 +978,7 @@ class LmdbNativeCensusCancellationTest {
 	void cancellationUnwindsPageTraversalAndClosesResourcesBeforeEmission() throws Exception {
 		var entered = new CountDownLatch(1);
 		var release = new CountDownLatch(1);
-		var source = mock(NativeLmdbQuerySource.class);
+		var source = mockScanSource(NativeLmdbQuerySource.class);
 		var strategy = mock(LmdbNativeEvaluationStrategy.class);
 		var probe = mock(NativeProbe.class);
 		var wildcard = mock(WildcardAdjacency.class);

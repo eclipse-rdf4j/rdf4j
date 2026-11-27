@@ -4246,7 +4246,7 @@ public class LmdbRunCountHistogramTest {
 			for (int i = 0; i < workers.length; i++) {
 				ParallelSource worker = spy(workers[i]);
 				AtomicInteger probeOpens = new AtomicInteger();
-				doAnswer(probeCall -> {
+				org.mockito.stubbing.Answer<NativeProbe> probeAnswer = probeCall -> {
 					NativeProbe probe = spy((NativeProbe) probeCall.callRealMethod());
 					boolean denseProbe = probeOpens.getAndIncrement() == 0;
 					doAnswer(planeCall -> recordingWorkerPlane((NativeAdjacency) planeCall.callRealMethod(),
@@ -4254,7 +4254,9 @@ public class LmdbRunCountHistogramTest {
 									.when(probe)
 									.adjacency(anyLong(), anyBoolean());
 					return probe;
-				}).when(worker).newProbe();
+				};
+				doAnswer(probeAnswer).when(worker).newProbe();
+				doAnswer(probeAnswer).when(worker).newProbe(any());
 				workers[i] = worker;
 			}
 			return workers;

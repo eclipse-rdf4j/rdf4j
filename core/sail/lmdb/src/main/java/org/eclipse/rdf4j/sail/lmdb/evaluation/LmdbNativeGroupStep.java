@@ -2638,7 +2638,7 @@ final class NativeGroupIteration implements CloseableIteration<BindingSet>, Coop
 				: row.runtimePlan.adjacencyAccessAt(LmdbNativeExplain.describe(prefixPattern, row.layout));
 		try (NativeReplayBindingList.Builder results = collectResults()) {
 			try (LmdbPrefixRunCursor cursor = source.prefixRuns(prefixRunPlan, subj, pred, obj, context,
-					prefixCountRunRows, observer)) {
+					prefixCountRunRows, observer, row.cursorCancellation())) {
 				if (cursor == null) {
 					return null;
 				}
@@ -2777,7 +2777,7 @@ final class NativeGroupIteration implements CloseableIteration<BindingSet>, Coop
 		}
 		try (NativeReplayBindingList.Builder results = collectResults()) {
 			boolean synopsisHandled = false;
-			try (NativeLmdbQuerySource.NativeProbe probe = source.newProbe()) {
+			try (NativeLmdbQuerySource.NativeProbe probe = source.newProbe(row.cursorCancellation())) {
 				NativeLmdbQuerySource.NodeDomainSynopsis synopsis = probe.nodeDomainSynopsis(bySubject);
 				if (synopsis != null) {
 					AggContext orderedContext = new AggContext(source, strictCompare, true);

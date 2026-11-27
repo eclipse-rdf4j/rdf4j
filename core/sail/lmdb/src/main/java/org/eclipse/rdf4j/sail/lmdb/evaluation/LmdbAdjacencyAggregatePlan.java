@@ -369,7 +369,7 @@ final class LmdbAdjacencyAggregatePlan implements NativeAggregatePhysicalPlan.Pr
 					|| groupField == TripleIndex.SUBJ_IDX || groupField == TripleIndex.OBJ_IDX) {
 				return null;
 			}
-			try (NativeLmdbQuerySource.NativeProbe probe = row.source.newProbe();
+			try (NativeLmdbQuerySource.NativeProbe probe = row.source.newProbe(row.cursorCancellation());
 					NativeLmdbQuerySource.WildcardAdjacency planes = probe.wildcardAdjacency(true)) {
 				if (planes == null) {
 					return null;
@@ -1314,12 +1314,14 @@ final class LmdbAdjacencyAggregatePlan implements NativeAggregatePhysicalPlan.Pr
 		int size;
 		private final LmdbQueryMemoryManager.QueryLedger ledger;
 		private final LmdbQueryMemoryManager.Reservation reservation;
+		private final NativeLmdbQuerySource.CursorCancellation cancellation;
 		private boolean closed;
 
 		private PredicateCatalog(LmdbQueryMemoryManager.QueryLedger ledger,
-				LmdbQueryMemoryManager.Reservation reservation) {
+				LmdbQueryMemoryManager.Reservation reservation, NativeLmdbQuerySource.CursorCancellation cancellation) {
 			this.ledger = ledger;
 			this.reservation = reservation;
+			this.cancellation = cancellation;
 		}
 
 		static PredicateCatalog open(NativeGroupIteration owner) throws IOException {
@@ -1336,14 +1338,16 @@ final class LmdbAdjacencyAggregatePlan implements NativeAggregatePhysicalPlan.Pr
 			}
 			PredicateCatalog catalog;
 			try {
-				catalog = new PredicateCatalog(ledger, reservation);
+				catalog = new PredicateCatalog(ledger, reservation,
+						NativeLmdbQuerySource.captureCursorCancellation(owner.cancellation));
 			} catch (RuntimeException | Error failure) {
 				reservation.close();
 				throw failure;
 			}
 			boolean complete = false;
 			try {
-				try (LmdbPrefixRunCursor cursor = source.prefixRuns(plan, UNKNOWN, UNKNOWN, UNKNOWN, UNKNOWN, true)) {
+				try (LmdbPrefixRunCursor cursor = source.prefixRuns(plan, UNKNOWN, UNKNOWN, UNKNOWN, UNKNOWN, true,
+						null, catalog.cancellation)) {
 					if (cursor == null) {
 						return null;
 					}
@@ -1469,7 +1473,8 @@ final class LmdbAdjacencyAggregatePlan implements NativeAggregatePhysicalPlan.Pr
 					if (acceptedContexts != null || namedContextsOnly) {
 						plan = plan.withContextFilter(acceptedContexts, namedContextsOnly);
 					}
-					LmdbPrefixRunCursor cursor = source.prefixRuns(plan, UNKNOWN, predicate, UNKNOWN, UNKNOWN, true);
+					LmdbPrefixRunCursor cursor = source.prefixRuns(plan, UNKNOWN, predicate, UNKNOWN, UNKNOWN, true,
+							null, catalog.cancellation);
 					if (cursor == null) {
 						merge.close();
 						return null;

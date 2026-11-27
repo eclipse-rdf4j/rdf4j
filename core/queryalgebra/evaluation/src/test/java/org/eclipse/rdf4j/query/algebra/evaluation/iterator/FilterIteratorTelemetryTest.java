@@ -30,6 +30,7 @@ import org.eclipse.rdf4j.model.impl.BooleanLiteral;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.model.vocabulary.XSD;
 import org.eclipse.rdf4j.query.BindingSet;
+import org.eclipse.rdf4j.query.BlankNodeEffects;
 import org.eclipse.rdf4j.query.algebra.BindingSetAssignment;
 import org.eclipse.rdf4j.query.algebra.Compare;
 import org.eclipse.rdf4j.query.algebra.Compare.CompareOp;
@@ -57,6 +58,7 @@ class FilterIteratorTelemetryTest {
 		filter.setRuntimeTelemetryEnabled(false);
 
 		QueryValueEvaluationStep condition = mock(QueryValueEvaluationStep.class);
+		when(condition.blankNodeEffects()).thenReturn(BlankNodeEffects.NONE);
 		EvaluationStrategy strategy = mock(EvaluationStrategy.class);
 		when(strategy.isTrue(eq(condition), any(BindingSet.class))).thenReturn(true);
 
@@ -84,6 +86,7 @@ class FilterIteratorTelemetryTest {
 				new ValueConstant(SimpleValueFactory.getInstance().createLiteral("1")), CompareOp.EQ));
 
 		QueryValueEvaluationStep condition = mock(QueryValueEvaluationStep.class);
+		when(condition.blankNodeEffects()).thenReturn(BlankNodeEffects.NONE);
 		AtomicReference<BindingSet> conditionBindings = new AtomicReference<>();
 		EvaluationStrategy strategy = mock(EvaluationStrategy.class);
 		when(strategy.isTrue(eq(condition), any(BindingSet.class))).thenAnswer(invocation -> {

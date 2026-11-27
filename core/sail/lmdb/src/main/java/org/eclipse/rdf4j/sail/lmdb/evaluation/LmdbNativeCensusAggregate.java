@@ -1428,7 +1428,8 @@ final class LmdbNativeCensusAggregate implements NativeAggregateAlternative {
 		try {
 			if (metadataCountOnly()) {
 				long count = acceptsContext(constants[C])
-						? source.count(UNKNOWN, UNKNOWN, UNKNOWN, constants[C])
+						? source.count(UNKNOWN, UNKNOWN, UNKNOWN, constants[C],
+								NativeLmdbQuerySource.captureCursorCancellation())
 						: 0L;
 				if (telemetry != null) {
 					telemetry.planeMetadataRead();

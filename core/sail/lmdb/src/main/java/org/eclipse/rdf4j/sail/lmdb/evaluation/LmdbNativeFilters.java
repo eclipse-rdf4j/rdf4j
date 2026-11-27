@@ -675,7 +675,7 @@ final class StatementPatternExistsFilter implements NativeBooleanFilter {
 			if (state.constantResult != 0) {
 				return state.constantResult == 1;
 			}
-			boolean result = evaluate(row.source, subj, pred, obj, context);
+			boolean result = evaluate(row, subj, pred, obj, context);
 			state.constantResult = result ? (byte) 1 : (byte) 2;
 			return result;
 		}
@@ -684,7 +684,7 @@ final class StatementPatternExistsFilter implements NativeBooleanFilter {
 		if (cached != null) {
 			return cached;
 		}
-		boolean result = evaluate(row.source, subj, pred, obj, context);
+		boolean result = evaluate(row, subj, pred, obj, context);
 		if (state.membershipProbe != null) {
 			state.membershipProbe.recordDirectResult(result);
 		}
@@ -716,7 +716,7 @@ final class StatementPatternExistsFilter implements NativeBooleanFilter {
 				return state.constantResult == 1;
 			}
 			int served = state.adjacencyProbe.test(row, -1L);
-			boolean result = served >= 0 ? served == 1 : evaluate(row.source, subj, pred, obj, context);
+			boolean result = served >= 0 ? served == 1 : evaluate(row, subj, pred, obj, context);
 			state.constantResult = result ? (byte) 1 : (byte) 2;
 			return result;
 		}
@@ -726,7 +726,7 @@ final class StatementPatternExistsFilter implements NativeBooleanFilter {
 			return cached;
 		}
 		int served = state.adjacencyProbe.test(row, -1L);
-		boolean result = served >= 0 ? served == 1 : evaluate(row.source, subj, pred, obj, context);
+		boolean result = served >= 0 ? served == 1 : evaluate(row, subj, pred, obj, context);
 		if (state.membershipProbe != null) {
 			state.membershipProbe.recordDirectResult(result);
 		}
@@ -820,7 +820,7 @@ final class StatementPatternExistsFilter implements NativeBooleanFilter {
 		if (cached != null) {
 			return cached;
 		}
-		boolean result = evaluate(row.source, subj, pred, obj, context);
+		boolean result = evaluate(row, subj, pred, obj, context);
 		if (state.membershipProbe != null) {
 			state.membershipProbe.recordDirectResult(result);
 		}
@@ -841,7 +841,7 @@ final class StatementPatternExistsFilter implements NativeBooleanFilter {
 		if (cached != null) {
 			return cached;
 		}
-		boolean result = evaluate(row.source, lookupForExists(s, row.slots), lookupForExists(p, row.slots),
+		boolean result = evaluate(row, lookupForExists(s, row.slots), lookupForExists(p, row.slots),
 				lookupForExists(o, row.slots), lookupForExists(c, row.slots));
 		memo.memoPut(row.slots, varyingSlots, result);
 		return result;
@@ -855,7 +855,7 @@ final class StatementPatternExistsFilter implements NativeBooleanFilter {
 		if (cached != null) {
 			return cached;
 		}
-		boolean result = evaluate(row.source, lookupForExists(s, row.slots), lookupForExists(p, row.slots),
+		boolean result = evaluate(row, lookupForExists(s, row.slots), lookupForExists(p, row.slots),
 				lookupForExists(o, row.slots), lookupForExists(c, row.slots));
 		memo.memoPutPrepared(row.slots, varyingSlots, preparedIndex, result);
 		return result;
@@ -909,7 +909,7 @@ final class StatementPatternExistsFilter implements NativeBooleanFilter {
 			return cached;
 		}
 		int served = state.adjacencyProbe.test(row, -1L);
-		boolean result = served >= 0 ? served == 1 : evaluate(row.source, subj, pred, obj, context);
+		boolean result = served >= 0 ? served == 1 : evaluate(row, subj, pred, obj, context);
 		if (state.membershipProbe != null) {
 			state.membershipProbe.recordDirectResult(result);
 		}
@@ -917,21 +917,23 @@ final class StatementPatternExistsFilter implements NativeBooleanFilter {
 		return result;
 	}
 
-	boolean evaluate(NativeLmdbQuerySource source, long subj, long pred, long obj, long context) {
+	boolean evaluate(RowState row, long subj, long pred, long obj, long context) {
+		NativeLmdbQuerySource source = row.source;
+		var cancellation = row.cursorCancellation();
 		try {
 			if (contexts.isFixed()) {
 				if (context != UNKNOWN) {
-					return contexts.contains(context) && source.has(subj, pred, obj, context);
+					return contexts.contains(context) && source.has(subj, pred, obj, context, null, cancellation);
 				}
 				for (long contextId : contexts.ids) {
-					if (source.has(subj, pred, obj, contextId)) {
+					if (source.has(subj, pred, obj, contextId, null, cancellation)) {
 						return true;
 					}
 				}
 				return false;
 			}
 			if (namedContextScope && context == UNKNOWN) {
-				try (RecordIterator records = source.statements(subj, pred, obj, context)) {
+				try (RecordIterator records = source.statements(subj, pred, obj, context, null, cancellation)) {
 					long[] quad;
 					int probePollTick = 0;
 					while ((quad = records.next()) != null) {
@@ -945,7 +947,7 @@ final class StatementPatternExistsFilter implements NativeBooleanFilter {
 					return false;
 				}
 			}
-			return source.has(subj, pred, obj, context);
+			return source.has(subj, pred, obj, context, null, cancellation);
 		} catch (IOException e) {
 			throw new SailException(e);
 		}

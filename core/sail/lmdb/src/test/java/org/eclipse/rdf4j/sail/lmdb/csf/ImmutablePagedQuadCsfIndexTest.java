@@ -22,6 +22,7 @@ import java.util.Random;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicLong;
+import java.util.function.Consumer;
 
 import org.eclipse.rdf4j.sail.lmdb.ValueIds;
 import org.junit.jupiter.api.Test;
@@ -1673,6 +1674,110 @@ class ImmutablePagedQuadCsfIndexTest {
 	}
 
 	@Test
+	void pageShardRoutingChargesDenseDirectories() {
+		// One modeled reference in the outer directory and three ints in the trimmed bucket, including
+		// the aligned header of each array.
+		assertPageShardLayout(24 + 32, 1, 1, 1);
+	}
+
+	@Test
+	void pageShardRoutingUsesHintsAndTrimsOnlyTheDenseTail() {
+		assertPageShardLayout(0, 1);
+		assertPageShardLayout(0, 2, 2);
+		// Pages 0..1023 cover two shards. The boundary at 1024 starts in the next bucket.
+		// The third shard spans two full buckets and the first page of the four-page dense tail.
+		assertPageShardLayout(48 + 32, 1, 1023, 2049, 1, 1, 1);
+	}
+
+	@Test
+	void pageShardRoutingKeepsRowBindCountsAcrossBucketBoundary() {
+		int[] firstFragmentPages = new int[1024];
+		Arrays.fill(firstFragmentPages, 1);
+		long row = id(1, 1);
+		TrackingBudget mergeBudget = new TrackingBudget();
+		try (ImmutablePagedQuadCsfIndex index = CsfFragmentTestSupport.buildFragments(1026,
+				List.of(builder -> feedPageShardLayout(builder, firstFragmentPages), builder -> {
+					builder.beginContinuationRow(1023, 0, row);
+					builder.pair(id(1, 1025), 0);
+					builder.endRow();
+					feed(builder, 1024, 0, List.of(new Row(row, new long[] { id(1, 1026) }, new long[] { 0 })));
+					feed(builder, 1025, 0, List.of(new Row(row, new long[] { id(1, 1027) }, new long[] { 0 })));
+				}), mergeBudget)) {
+			assertThat(mergeBudget.liveBytes).hasValue(index.modeledJavaBytes());
+			assertThat(index.pageCount()).isEqualTo(1027);
+			assertThat(index.shardCount()).isEqualTo(index.pageCount());
+			int[] partitionShardCounts = new int[1026 * ImmutablePagedQuadCsfIndex.PLANE_COUNT];
+			for (int predicate = 0; predicate < 1026; predicate++) {
+				partitionShardCounts[predicate * ImmutablePagedQuadCsfIndex.PLANE_COUNT] = predicate == 1023 ? 2 : 1;
+			}
+			long existingRoutingBytes = ImmutablePagedQuadCsfIndex.rootRoutingDirectoryBytesForTest(1026,
+					partitionShardCounts);
+			assertThat(index.routingDirectoryBytesForTest()).isEqualTo(existingRoutingBytes + 32 + 4112 + 32);
+			for (int page = 0; page < index.pageCount(); page++) {
+				assertThat(index.shardForPage(page)).as("owning shard of page %s", page).isEqualTo(page);
+			}
+
+			// The head at 1023 uses the same row coordinate in another partition, so it must not be
+			// mistaken for a continuation of the preceding one-page row.
+			assertSinglePageRow(index, index.findLocalReference(1022, 0, row), id(1, 1023));
+			assertSinglePageRow(index, index.findLocalReference(1025, 0, row), id(1, 1027));
+
+			long reference = index.findLocalReference(1023, 0, row);
+			ImmutablePagedQuadCsfIndex.RowCursor resolved = new ImmutablePagedQuadCsfIndex.RowCursor();
+			long before = CompactCsfPageReader.DECODES.sum();
+			index.resolve(reference, resolved);
+			assertThat(resolved.edgeCount()).isEqualTo(2);
+			assertThat(resolved.singlePageRow()).isFalse();
+			assertThat(CompactCsfPageReader.DECODES.sum() - before).isEqualTo(2);
+
+			ImmutablePagedQuadCsfIndex.RowCursor slice = new ImmutablePagedQuadCsfIndex.RowCursor();
+			before = CompactCsfPageReader.DECODES.sum();
+			index.resolveContextSlice(reference, slice, 0);
+			assertThat(slice.edgeCount()).isEqualTo(2);
+			assertThat(slice.contextSpanEnd(0)).isEqualTo(1);
+			assertThat(CompactCsfPageReader.DECODES.sum() - before).isZero();
+			assertThat(slice.neighborAt(0)).isEqualTo(id(1, 1024));
+			assertThat(slice.neighborAt(1)).isEqualTo(id(1, 1025));
+			assertThat(CompactCsfPageReader.DECODES.sum() - before).isEqualTo(2);
+		}
+		assertThat(mergeBudget.liveBytes).hasValue(0);
+	}
+
+	@Test
+	void pageShardRoutingReservesTheRewrittenLayout() {
+		TrackingBudget originalBudget = new TrackingBudget();
+		TrackingBudget rewriteBudget = new TrackingBudget();
+		AtomicLong rewriteRootBytes = new AtomicLong();
+		long row = id(1, 1);
+		try (ImmutablePagedQuadCsfIndex original = buildPageShardLayout(originalBudget, 1, 1)) {
+			Updates updates = new Updates(new int[] { 0, 8 }, new long[] { row, row },
+					new boolean[] { false, false }, new long[][] { { id(1, 50) }, { id(1, 60) } },
+					new long[][] { { 0 }, { 0 } });
+			ImmutablePagedQuadCsfIndex.RewriteResult rewrite = original.rewrite(3, updates,
+					(nativeBytes, javaBytes) -> {
+						if (nativeBytes == 0) {
+							rewriteRootBytes.set(javaBytes);
+						}
+						return rewriteBudget.reserve(nativeBytes, javaBytes);
+					});
+			try (ImmutablePagedQuadCsfIndex index = rewrite.index()) {
+				assertThat(rewrite.sharedShardCount()).isEqualTo(1);
+				assertThat(rewrite.allocatedShardCount()).isEqualTo(2);
+				assertThat(index.pageCount()).isEqualTo(3);
+				for (int page = 0; page < index.pageCount(); page++) {
+					assertThat(index.shardForPage(page)).isEqualTo(page);
+				}
+				assertThat(rewriteRootBytes).hasValue(index.modeledJavaBytes());
+				assertSinglePageRow(index, index.findLocalReference(0, 0, row), id(1, 50));
+				assertSinglePageRow(index, index.findLocalReference(1, 0, row), id(1, 2));
+				assertSinglePageRow(index, index.findLocalReference(2, 0, row), id(1, 60));
+			}
+			assertThat(rewriteBudget.liveBytes).hasValue(0);
+		}
+		assertThat(originalBudget.liveBytes).hasValue(0);
+	}
+
+	@Test
 	void resolvesRowsAcrossManySmallShardsAndHintBoundaries() {
 		int predicates = 1100;
 		long root = id(1, 7);
@@ -1974,6 +2079,81 @@ class ImmutablePagedQuadCsfIndexTest {
 		}
 	}
 
+	private static ImmutablePagedQuadCsfIndex buildPageShardLayout(TrackingBudget budget, int... pagesByShard) {
+		String previous = System.getProperty(SHARD_TARGET_PAGES_PROPERTY);
+		System.setProperty(SHARD_TARGET_PAGES_PROPERTY, Integer.toString(CsfShard.MAX_PAGES));
+		try {
+			ImmutablePagedQuadCsfIndex.BuildPlan plan;
+			try (ImmutablePagedQuadCsfIndex.Builder sizing = ImmutablePagedQuadCsfIndex
+					.sizingBuilder(pagesByShard.length)) {
+				feedPageShardLayout(sizing, pagesByShard);
+				plan = sizing.finishPlan();
+			}
+			assertThat(plan.shardCount()).isEqualTo(pagesByShard.length);
+			for (int shard = 0; shard < pagesByShard.length; shard++) {
+				assertThat(plan.pages(shard, 0)).isEqualTo(pagesByShard[shard]);
+			}
+			try (ImmutablePagedQuadCsfIndex.Builder materializing = ImmutablePagedQuadCsfIndex
+					.materializingBuilder(plan, budget)) {
+				feedPageShardLayout(materializing, pagesByShard);
+				return materializing.finishIndex();
+			}
+		} finally {
+			if (previous == null) {
+				System.clearProperty(SHARD_TARGET_PAGES_PROPERTY);
+			} else {
+				System.setProperty(SHARD_TARGET_PAGES_PROPERTY, previous);
+			}
+		}
+	}
+
+	private static void assertPageShardLayout(long denseDirectoryBytes, int... pagesByShard) {
+		TrackingBudget budget = new TrackingBudget();
+		int[] partitionShardCounts = new int[pagesByShard.length * ImmutablePagedQuadCsfIndex.PLANE_COUNT];
+		long nativeRoutingBytes = 0;
+		try (ImmutablePagedQuadCsfIndex index = buildPageShardLayout(budget, pagesByShard)) {
+			int page = 0;
+			for (int shard = 0; shard < pagesByShard.length; shard++) {
+				partitionShardCounts[shard * ImmutablePagedQuadCsfIndex.PLANE_COUNT] = 1;
+				nativeRoutingBytes += CsfShard.routingLayoutBytesFor(pagesByShard[shard]);
+				for (int localPage = 0; localPage < pagesByShard[shard]; localPage++, page++) {
+					assertThat(index.shardForPage(page)).as("owning shard of page %s", page).isEqualTo(shard);
+				}
+			}
+			assertThat(index.pageCount()).isEqualTo(page);
+			assertThatThrownBy(() -> index.shardForPage(-1)).isInstanceOf(IllegalArgumentException.class);
+			assertThatThrownBy(() -> index.shardForPage(index.pageCount()))
+					.isInstanceOf(IllegalArgumentException.class);
+			long existingRoutingBytes = ImmutablePagedQuadCsfIndex.rootRoutingDirectoryBytesForTest(
+					pagesByShard.length, partitionShardCounts) + nativeRoutingBytes;
+			assertThat(index.routingDirectoryBytesForTest()).isEqualTo(existingRoutingBytes + denseDirectoryBytes);
+			assertThat(budget.liveBytes).hasValue(index.modeledJavaBytes() + index.nativeBytes()
+					+ (long) pagesByShard.length * CsfShard.MODELED_JAVA_BYTES);
+		}
+		assertThat(budget.liveBytes).hasValue(0);
+	}
+
+	private static void assertSinglePageRow(ImmutablePagedQuadCsfIndex index, long reference, long neighbor) {
+		ImmutablePagedQuadCsfIndex.RowCursor cursor = new ImmutablePagedQuadCsfIndex.RowCursor();
+		long before = CompactCsfPageReader.DECODES.sum();
+		index.resolve(reference, cursor);
+		assertThat(cursor.edgeCount()).isEqualTo(1);
+		assertThat(cursor.singlePageRow()).isTrue();
+		assertThat(cursor.neighborAt(0)).isEqualTo(neighbor);
+		assertThat(CompactCsfPageReader.DECODES.sum() - before).isEqualTo(1);
+	}
+
+	private static void feedPageShardLayout(ImmutablePagedQuadCsfIndex.Builder builder, int[] pagesByShard) {
+		for (int shard = 0; shard < pagesByShard.length; shard++) {
+			int rows = (pagesByShard[shard] - 1) * CompactCsfPageFormat.MAX_ROWS_PER_PAGE + 1;
+			for (int row = 0; row < rows; row++) {
+				builder.beginRow(shard, 0, id(1, row + 1L));
+				builder.pair(id(1, shard + 1L), 0);
+				builder.endRow();
+			}
+		}
+	}
+
 	private static List<Row> irregularRows(int count) {
 		List<Row> rows = new ArrayList<>(count);
 		long payload = 100;
@@ -2001,31 +2181,14 @@ class ImmutablePagedQuadCsfIndexTest {
 
 	private static ImmutablePagedQuadCsfIndex buildFragments(int predicate, int plane, List<List<Row>> fragments,
 			boolean[] continuations) {
-		ImmutablePagedQuadCsfIndex.BuildPlan[] plans = new ImmutablePagedQuadCsfIndex.BuildPlan[fragments.size()];
-		ImmutablePagedQuadCsfIndex[] indexes = new ImmutablePagedQuadCsfIndex[fragments.size()];
-		try {
-			for (int fragment = 0; fragment < fragments.size(); fragment++) {
-				try (ImmutablePagedQuadCsfIndex.Builder sizing = ImmutablePagedQuadCsfIndex
-						.sizingBuilder(predicate + 1)) {
-					feedFragment(sizing, predicate, plane, fragments.get(fragment), continuations[fragment]);
-					plans[fragment] = sizing.finishPlan();
-				}
-				try (ImmutablePagedQuadCsfIndex.Builder materializing = ImmutablePagedQuadCsfIndex
-						.materializingBuilder(plans[fragment])) {
-					feedFragment(materializing, predicate, plane, fragments.get(fragment), continuations[fragment]);
-					indexes[fragment] = materializing.finishIndex();
-				}
-			}
-			return ImmutablePagedQuadCsfIndex.mergeMaterializedFragments(
-					ImmutablePagedQuadCsfIndex.mergeBuildPlans(plans), indexes, (nativeBytes, javaBytes) -> () -> {
-					});
-		} finally {
-			for (ImmutablePagedQuadCsfIndex index : indexes) {
-				if (index != null) {
-					index.close();
-				}
-			}
+		List<Consumer<ImmutablePagedQuadCsfIndex.Builder>> feeders = new ArrayList<>(fragments.size());
+		for (int fragment = 0; fragment < fragments.size(); fragment++) {
+			List<Row> rows = fragments.get(fragment);
+			boolean continuation = continuations[fragment];
+			feeders.add(builder -> feedFragment(builder, predicate, plane, rows, continuation));
 		}
+		return CsfFragmentTestSupport.buildFragments(predicate + 1, feeders, (nativeBytes, javaBytes) -> () -> {
+		});
 	}
 
 	private static void feedFragment(ImmutablePagedQuadCsfIndex.Builder builder, long predicate, int plane,

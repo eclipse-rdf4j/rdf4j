@@ -65,6 +65,8 @@ final class NativeWorkerTripleSource implements TripleSource {
 		}
 		var contextIds = requested.iterator();
 		NativeCancellationToken cancellation = NativeCancellationToken.forSource(source);
+		NativeLmdbQuerySource.CursorCancellation cursorCancellation = NativeLmdbQuerySource
+				.captureCursorCancellation(cancellation);
 		return new LookAheadIteration<Statement>() {
 			private RecordIterator records;
 
@@ -77,7 +79,8 @@ final class NativeWorkerTripleSource implements TripleSource {
 							if (!contextIds.hasNext()) {
 								return null;
 							}
-							records = source.statements(subjectId, predicateId, objectId, contextIds.next());
+							records = source.statements(subjectId, predicateId, objectId, contextIds.next(), null,
+									cursorCancellation);
 						}
 						long[] record = records.next();
 						if (record != null) {

@@ -47,6 +47,7 @@ import org.eclipse.rdf4j.query.algebra.evaluation.util.QueryEvaluationUtility;
 import org.eclipse.rdf4j.query.explanation.QueryExplanationContext;
 import org.eclipse.rdf4j.sail.lmdb.LmdbPrefixRunCursor;
 import org.eclipse.rdf4j.sail.lmdb.LmdbPrefixRunPlan;
+import org.eclipse.rdf4j.sail.lmdb.TripleIndex;
 import org.eclipse.rdf4j.sail.lmdb.ValueIds;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.codegen.KernelQueryCancelledException;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.codegen.KernelRuntime;
@@ -1333,6 +1334,7 @@ final class NativeRowsStep implements NativeResultStep, LmdbNativePhysicalPlan {
 	private List<BindingSet> expandSortedFlatRows(NativeSortBuffer sortBuffer, int[] sortedOrder,
 			int[][] enumValueSlots, LmdbNativeLongArena arena, TopKPayloadStore topKPayloads, int slotCount,
 			long emitCap, AggContext values, int[] projectionSlots) {
+		NativeProjectedBindingSet.ProjectionLayout activeProjection = projectionLayoutFor(projectionSlots);
 		int enums = enumValueSlots.length;
 		ArrayList<BindingSet> results = new ArrayList<>();
 		long[] snapshot = new long[sortBuffer.slotCount];
@@ -1353,7 +1355,7 @@ final class NativeRowsStep implements NativeResultStep, LmdbNativePhysicalPlan {
 					}
 				}
 				for (long m = 0; m < multiplicity; m++) {
-					results.add(project(snapshot, values, projectionSlots));
+					results.add(project(snapshot, values, activeProjection));
 					if (results.size() >= emitCap) {
 						return slice(results);
 					}
@@ -1378,6 +1380,7 @@ final class NativeRowsStep implements NativeResultStep, LmdbNativePhysicalPlan {
 	List<BindingSet> projectSortedRows(NativeSortedRows sortedRows, NativeSortLayout activeLayout, long emitCap,
 			AggContext values, boolean distinctAlreadyApplied, NativeCancellationToken cancellation)
 			throws IOException {
+		NativeProjectedBindingSet.ProjectionLayout activeProjection = projectionLayoutFor(activeLayout.sourceSlots);
 		ArrayList<BindingSet> results = new ArrayList<>();
 		NativeDistinctTracker distinctRows = distinct && !distinctAlreadyApplied
 				? new NativeDistinctTracker(activeLayout.sourceSlots,
@@ -1395,7 +1398,7 @@ final class NativeRowsStep implements NativeResultStep, LmdbNativePhysicalPlan {
 				if (cancellation.isCancellationRequested()) {
 					break;
 				}
-				BindingSet projected = project(snapshot, values, activeLayout.sourceSlots);
+				BindingSet projected = project(snapshot, values, activeProjection);
 				if (cancellation.isCancellationRequested()) {
 					break;
 				}
@@ -1457,7 +1460,8 @@ final class NativeRowsStep implements NativeResultStep, LmdbNativePhysicalPlan {
 		long context = prefixPattern.c.lookup(row.slots);
 		NativeLmdbQuerySource.AdjacencyAccessObserver observer = row.runtimePlan == null ? null
 				: row.runtimePlan.adjacencyAccessAt(LmdbNativeExplain.describe(prefixPattern, row.layout));
-		LmdbPrefixRunCursor cursor = row.source.prefixRuns(prefixRunPlan, subj, pred, obj, context, false, observer);
+		LmdbPrefixRunCursor cursor = row.source.prefixRuns(prefixRunPlan, subj, pred, obj, context, false, observer,
+				row.cursorCancellation());
 		if (cursor == null) {
 			return null;
 		}
@@ -2146,7 +2150,12 @@ final class NativeRowsStep implements NativeResultStep, LmdbNativePhysicalPlan {
 							: "The leading pattern has incoming bound slots");
 			return null;
 		}
-		if (LmdbNativeParallelPipelines.enabled() && LmdbNativeParallelPipelines.configuredThreads() > 0
+		// Predicate DISTINCT needs one representative per predicate. Parallel wildcard scans divide the quads,
+		// losing the opportunity to skip most rows in a dense predicate run.
+		boolean predicateDomain = sourceSlots.length == 1
+				&& prefixPattern.quadPositionOfSlot(sourceSlots[0]) == TripleIndex.PRED_IDX;
+		if (!predicateDomain && LmdbNativeParallelPipelines.enabled()
+				&& LmdbNativeParallelPipelines.configuredThreads() > 0
 				&& prefixPattern.p.hasSlot() && !prefixPattern.p.isConstant()
 				&& prefixPattern.s.lookup(row.slots) == NativeLmdbQuerySource.UNKNOWN_ID
 				&& prefixPattern.o.lookup(row.slots) == NativeLmdbQuerySource.UNKNOWN_ID
@@ -2498,14 +2507,13 @@ final class NativeRowsStep implements NativeResultStep, LmdbNativePhysicalPlan {
 		return project(slots, values, projectionLayout);
 	}
 
-	BindingSet project(long[] slots, AggContext values, int[] projectionSlots) {
-		NativeProjectedBindingSet.ProjectionLayout activeProjection = projectionSlots == sourceSlots
+	private NativeProjectedBindingSet.ProjectionLayout projectionLayoutFor(int[] projectionSlots) {
+		return projectionSlots == sourceSlots
 				? projectionLayout
 				: projectionSlots == sortLayout.sourceSlots
 						? sortProjectionLayout
 						: NativeProjectedBindingSet.ProjectionLayout.create(targetNames, projectionSlots,
 								layout.positionMasks(sourceSlots));
-		return project(slots, values, activeProjection);
 	}
 
 	private BindingSet project(long[] slots, AggContext values,
@@ -3335,11 +3343,11 @@ final class NativeUnorderedInput implements AutoCloseable {
 	private LmdbNativeCostObservation observation;
 
 	/**
-	 * Who owes the DISTINCT dedup for this input. {@code HASH}: the caller runs its global hash tracker (any ordinary
-	 * winner). {@code HANDLED}: the cursor already emits distinct rows (distinct-sinking kernel, prefix-run).
-	 * {@code ORDERED}: the winner is the ordered-distinct plan cursor, whose enumeration order the caller's ordered
-	 * tracker may rely on — an ordered tracker over any other winner would silently emit duplicates, which is exactly
-	 * why the mode travels with the selected input instead of being assumed from the plan.
+	 * Who owes the DISTINCT dedup for this input. {@code HASH}: the caller owns the tracker and uses a partition only
+	 * if the opened cursor certifies one. {@code HANDLED}: the cursor already emits distinct rows. {@code ORDERED}: the
+	 * winner is the ordered-distinct plan cursor, whose enumeration order the caller's ordered tracker may rely on — an
+	 * ordered tracker over any other winner would silently emit duplicates, which is exactly why the mode travels with
+	 * the selected input instead of being assumed from the plan.
 	 */
 	enum DedupMode {
 		HASH,
@@ -3832,6 +3840,7 @@ final class NativeRowsIteration implements CloseableIteration<BindingSet>, Coope
 			LmdbNativeExplain.recordExecutionPath(step.originalExpr, LmdbNativeAttemptMetrics.PATH_EMPTY_SEED);
 			return false;
 		}
+		row.terminalKernelOutput = step.rootEvaluationScoped;
 		values = new AggContext(source, step.strictCompare);
 		distinctPlan = step.distinct
 				? LmdbNativeOrderPlanner.tuple(step.arg, step.sourceSlots, row)
@@ -3860,16 +3869,16 @@ final class NativeRowsIteration implements CloseableIteration<BindingSet>, Coope
 					"global-hash");
 		}
 		// Every row strategy — prefix-run, ordered-distinct, the distinct-sinking kernel included — meets in the
-		// arbiter; nothing captures the query by ladder position any more. The winner reports who owes the DISTINCT
-		// dedup, and the tracker is built AFTER selection: an ordered tracker may only serve the ordered-distinct
-		// plan cursor itself, every other winner dedups through the global hash tracker.
+		// arbiter. The selected cursor determines whether it already handles DISTINCT or can certify a contiguous
+		// partition key. A proof from another candidate cannot authorize eviction on this cursor.
 		unorderedInput = step.openUnorderedInput(row, step.distinct ? distinctPlan : null);
 		distinctHandledByCursor = unorderedInput.dedupMode == NativeUnorderedInput.DedupMode.HANDLED;
-		if (step.distinct) {
-			distinctRows = unorderedInput.dedupMode == NativeUnorderedInput.DedupMode.ORDERED
-					? new NativeOrderedDistinctTracker(distinctPlan, row.keyAuthority())
-					: new NativeOrderedDistinctTracker(
-							NativeTupleDistinctPlan.global(step.arg, step.sourceSlots), row.keyAuthority());
+		if (step.distinct && !distinctHandledByCursor) {
+			NativeTupleDistinctPlan selectedPlan = unorderedInput.dedupMode == NativeUnorderedInput.DedupMode.ORDERED
+					? distinctPlan
+					: NativeTupleDistinctPlan.forContiguousSlot(step.arg, step.sourceSlots,
+							LmdbNativeKernelExecution.openedDistinctPartitionSlot(unorderedInput.cursor));
+			distinctRows = new NativeOrderedDistinctTracker(selectedPlan, row.keyAuthority(), row.runtimePlan != null);
 		}
 		cursor = unorderedInput.cursor;
 		batchCursor = unorderedInput.batchCursor;
@@ -3955,6 +3964,17 @@ final class NativeRowsIteration implements CloseableIteration<BindingSet>, Coope
 		if (distinctRows != null) {
 			try {
 				distinctRows.commitMetrics();
+				if (distinctRows.observe) {
+					int[] partitions = distinctRows.plan.partitionSlots;
+					LmdbNativeExplain.setRuntimeMetric(step.originalExpr, "nativeDistinctPartitionWidth",
+							partitions.length);
+					LmdbNativeExplain.setRuntimeMetric(step.originalExpr, "nativeDistinctPartitionSlots",
+							LmdbNativeExplain.describeSlots(partitions, step.layout));
+					LmdbNativeExplain.setRuntimeMetric(step.originalExpr, "nativeDistinctInputRows",
+							distinctRows.inputRows);
+					LmdbNativeExplain.setRuntimeMetric(step.originalExpr, "nativeDistinctPeakKeys",
+							distinctRows.peakKeys());
+				}
 			} catch (RuntimeException | Error problem) {
 				failure = KernelRuntime.closeResource(() -> {
 					throw problem;

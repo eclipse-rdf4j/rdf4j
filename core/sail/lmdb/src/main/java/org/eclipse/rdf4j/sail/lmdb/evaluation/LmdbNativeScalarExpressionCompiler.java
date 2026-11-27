@@ -203,7 +203,7 @@ final class LmdbNativeScalarExpressionCompiler {
 			return value(0L, row -> {
 				SyntheticValueSource scope = row.evaluationScope();
 				return scope == null ? LmdbNativeValueCodec.DecodedValue.ERROR
-						: LmdbNativeValueCodec.fromValue(scope.executionContext().createBNode());
+						: LmdbNativeValueCodec.fromValue(scope.executionContext().createBNode(compileContext));
 			});
 		}
 		if (labelExpression instanceof ValueConstant
@@ -217,11 +217,12 @@ final class LmdbNativeScalarExpressionCompiler {
 		return value(label.requiredMask, row -> {
 			LmdbNativeValueCodec.DecodedValue decoded = label.evaluator.eval(row);
 			SyntheticValueSource scope = row.evaluationScope();
-			if (decoded.error() || scope == null || row.logicalSolutionIdentity() == 0L) {
+			if (!decoded.literal() || decoded.coreDatatype() != CoreDatatype.XSD.STRING
+					|| scope == null || row.logicalSolutionIdentity() == 0L) {
 				return LmdbNativeValueCodec.DecodedValue.ERROR;
 			}
 			return LmdbNativeValueCodec.fromValue(scope.executionContext()
-					.getOrCreateBNode(row.logicalSolutionIdentity(), decoded.stringValue()));
+					.getOrCreateBNode(row.logicalSolutionIdentity(), decoded.stringValue(), compileContext));
 		});
 	}
 

@@ -14,6 +14,7 @@ package org.eclipse.rdf4j.sail.lmdb.evaluation;
 
 import java.lang.invoke.MethodHandles;
 import java.lang.invoke.VarHandle;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicLong;
 
 import org.eclipse.rdf4j.http.client.QueryExecutionContext;
@@ -22,6 +23,7 @@ import org.eclipse.rdf4j.sail.lmdb.evaluation.codegen.KernelQueryCancelledExcept
 
 /** Evaluation-scoped cancellation state. Cancellation is an outcome signal; the outer timeout owns its exception. */
 final class NativeCancellationToken implements KernelCancellation.QueryCancellation {
+	static final int POLL_INTERVAL = 1_024;
 	private static final AtomicLong NEXT_EVALUATION_ID = new AtomicLong();
 	private static final ThreadLocal<NativeCancellationToken> CURRENT = new ThreadLocal<>();
 	private static final VarHandle CANCELLATION_REQUESTED_HANDLE = cancellationRequestedHandle();
@@ -45,6 +47,7 @@ final class NativeCancellationToken implements KernelCancellation.QueryCancellat
 	 */
 	private final Thread evaluationThread;
 	private final NativeCancellationToken evaluationOwner;
+	private final CursorWork.PerThread cursorWork;
 	private boolean cancellationRequested;
 	private volatile boolean explicitlyRequested;
 	/** Immutable after the cancellation flag is release-published; null means an unattributed thread interruption. */
@@ -67,6 +70,7 @@ final class NativeCancellationToken implements KernelCancellation.QueryCancellat
 		this.parent = parent;
 		this.evaluationThread = parent == null ? Thread.currentThread() : parent.evaluationThread;
 		this.evaluationOwner = parent == null ? this : parent.evaluationOwner;
+		this.cursorWork = parent == null ? new CursorWork.PerThread() : null;
 		this.evaluationId = parent == null ? NEXT_EVALUATION_ID.incrementAndGet() : parent.evaluationId;
 		this.ownerThreadId = parent == null ? evaluationThread.threadId() : parent.ownerThreadId;
 	}
@@ -77,7 +81,7 @@ final class NativeCancellationToken implements KernelCancellation.QueryCancellat
 				? synthetic.executionContext()
 				: null;
 		NativeCancellationToken parent = context == null ? null : context.cancellation();
-		NativeCancellationToken scoped = CURRENT.get();
+		NativeCancellationToken scoped = current();
 		if (scoped != null && parent != null && scoped.evaluationId == parent.evaluationId) {
 			parent = scoped;
 		}
@@ -92,6 +96,60 @@ final class NativeCancellationToken implements KernelCancellation.QueryCancellat
 		}
 		CURRENT.set(this);
 		return new Scope(previous, true);
+	}
+
+	CursorWork cursorWork(Thread worker) {
+		return evaluationOwner.cursorWork.forThread(worker);
+	}
+
+	/** Counts physical cursor work from all handles for one owner on one thread. */
+	static final class CursorWork {
+		private static final int STRIDE = 64;
+		private int remaining = 1;
+		private NativeCancellationToken lastOwner;
+
+		boolean pollDue(NativeCancellationToken owner) {
+			boolean due = pollDue();
+			if (lastOwner != owner) {
+				// A sibling must not consume the next check for an operator's own local stop.
+				lastOwner = owner;
+				return true;
+			}
+			return due;
+		}
+
+		boolean pollDue() {
+			if (--remaining != 0) {
+				return false;
+			}
+			remaining = STRIDE;
+			return true;
+		}
+
+		/** The creating thread needs no lookup. Each other worker mutates only its own counter. */
+		static final class PerThread {
+			private final long ownerId = Thread.currentThread().threadId();
+			private final CursorWork ownerWork = new CursorWork();
+			private volatile ConcurrentHashMap<Long, CursorWork> workers;
+
+			CursorWork forThread(Thread worker) {
+				long workerId = worker.threadId();
+				if (workerId == ownerId) {
+					return ownerWork;
+				}
+				var work = workers;
+				if (work == null) {
+					synchronized (this) {
+						work = workers;
+						if (work == null) {
+							work = new ConcurrentHashMap<>();
+							workers = work;
+						}
+					}
+				}
+				return work.computeIfAbsent(workerId, ignored -> new CursorWork());
+			}
+		}
 	}
 
 	static final class Scope implements AutoCloseable {
@@ -249,7 +307,7 @@ final class NativeCancellationToken implements KernelCancellation.QueryCancellat
 	}
 
 	static void checkCurrent() {
-		NativeCancellationToken current = CURRENT.get();
+		NativeCancellationToken current = current();
 		if (current != null) {
 			current.check();
 		}
@@ -279,7 +337,7 @@ final class NativeCancellationToken implements KernelCancellation.QueryCancellat
 
 	/** Data-proportional loops poll at entry and at most every 1024 operations. */
 	void poll(int tick) {
-		if ((tick & 1023) == 0) {
+		if ((tick & (POLL_INTERVAL - 1)) == 0) {
 			check();
 		}
 	}

@@ -117,7 +117,7 @@ public final class LmdbNativeExpressionCompiler {
 		if (!enabled()) {
 			return null;
 		}
-		ValueExpr ownedExpression = QueryEvaluationUtility.pinFunctions(expr.clone());
+		ValueExpr ownedExpression = QueryEvaluationUtility.pinPreparedFunctions(expr.clone());
 		NativeScalarPlan scalarPlan = NativeScalarPlan.create(ownedExpression, slots,
 				NativeScalarPlan.ResultKind.BOOLEAN,
 				strictCompare, assuredMask, false, false);
@@ -140,7 +140,7 @@ public final class LmdbNativeExpressionCompiler {
 		if (!enabled()) {
 			return null;
 		}
-		ValueExpr ownedExpression = QueryEvaluationUtility.pinFunctions(expr.clone());
+		ValueExpr ownedExpression = QueryEvaluationUtility.pinPreparedFunctions(expr.clone());
 		NativeScalarPlan scalarPlan = NativeScalarPlan.create(ownedExpression, slots,
 				NativeScalarPlan.ResultKind.INLINE_ID, strictCompare, 0L, false, false);
 		LmdbNativeValueCodec codec = source.nativeValueCodec();
@@ -187,7 +187,7 @@ public final class LmdbNativeExpressionCompiler {
 		if (!enabled()) {
 			return null;
 		}
-		ValueExpr ownedExpression = QueryEvaluationUtility.pinFunctions(expr.clone());
+		ValueExpr ownedExpression = QueryEvaluationUtility.pinPreparedFunctions(expr.clone());
 		NativeScalarPlan scalarPlan = NativeScalarPlan.create(ownedExpression, slots, NativeScalarPlan.ResultKind.VALUE,
 				strictCompare, 0L, true, true);
 		LmdbNativeValueCodec codec = source.nativeValueCodec();

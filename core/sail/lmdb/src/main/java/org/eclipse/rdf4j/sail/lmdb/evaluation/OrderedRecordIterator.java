@@ -15,10 +15,14 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.PriorityQueue;
 
+import org.eclipse.rdf4j.common.iteration.CooperativeCancellation;
 import org.eclipse.rdf4j.common.order.StatementOrder;
 import org.eclipse.rdf4j.sail.lmdb.EmptyRecordIterator;
+import org.eclipse.rdf4j.sail.lmdb.RecordCursorCancellation;
 import org.eclipse.rdf4j.sail.lmdb.RecordIterator;
 import org.eclipse.rdf4j.sail.lmdb.TripleIndex;
+import org.eclipse.rdf4j.sail.lmdb.evaluation.NativeLmdbQuerySource.CursorCancellation;
+import org.eclipse.rdf4j.sail.lmdb.evaluation.codegen.KernelRuntime;
 
 /** Merges already ordered native LMDB cursors without materializing their rows. */
 final class OrderedRecordIterator implements RecordIterator {
@@ -27,16 +31,21 @@ final class OrderedRecordIterator implements RecordIterator {
 	private final PriorityQueue<Head> heads;
 	private final int[] components;
 	private final String indexName;
+	private CursorCancellation cancellation;
 	private Head pendingAdvance;
-	private boolean closed;
+	private volatile boolean closed;
+	private final RecordCursorCancellation request = RecordCursorCancellation.active();
 
-	private OrderedRecordIterator(List<RecordIterator> iterators, MergeOrder order) {
+	private OrderedRecordIterator(List<RecordIterator> iterators, MergeOrder order,
+			CursorCancellation cancellation) {
+		this.cancellation = cancellation == null ? null : cancellation.forWorker();
 		this.iterators = iterators;
 		this.components = order.components;
 		this.indexName = order.indexName;
 		this.heads = new PriorityQueue<>((left, right) -> compare(left, right, components));
 		try {
 			for (int i = 0; i < iterators.size(); i++) {
+				checkpointCancellation();
 				long[] row = iterators.get(i).next();
 				if (row != null) {
 					heads.add(new Head(i, row));
@@ -49,6 +58,11 @@ final class OrderedRecordIterator implements RecordIterator {
 	}
 
 	static RecordIterator merge(List<RecordIterator> iterators, StatementOrder order) {
+		return merge(iterators, order, null);
+	}
+
+	static RecordIterator merge(List<RecordIterator> iterators, StatementOrder order,
+			CursorCancellation cancellation) {
 		if (iterators.isEmpty()) {
 			return EmptyRecordIterator.INSTANCE;
 		}
@@ -60,10 +74,10 @@ final class OrderedRecordIterator implements RecordIterator {
 		try {
 			mergeOrder = mergeOrder(owned, order);
 		} catch (RuntimeException | Error e) {
-			closeIterators(owned, e);
+			KernelRuntime.rethrowCloseFailureIfNotPrimary(closeIterators(owned, e), e);
 			throw e;
 		}
-		return new OrderedRecordIterator(owned, mergeOrder);
+		return new OrderedRecordIterator(owned, mergeOrder, cancellation);
 	}
 
 	private static int compare(Head left, Head right, int[] components) {
@@ -138,11 +152,23 @@ final class OrderedRecordIterator implements RecordIterator {
 	}
 
 	@Override
+	public boolean requestCancellation() {
+		if (!request.request()) {
+			return false;
+		}
+		for (RecordIterator iterator : iterators) {
+			CooperativeCancellation.forward(iterator);
+		}
+		return true;
+	}
+
+	@Override
 	public long[] next() {
 		if (closed) {
 			return null;
 		}
 		try {
+			enterCancellation();
 			if (pendingAdvance != null) {
 				pendingAdvance.row = iterators.get(pendingAdvance.ordinal).next();
 				if (pendingAdvance.row != null) {
@@ -151,9 +177,12 @@ final class OrderedRecordIterator implements RecordIterator {
 				pendingAdvance = null;
 			}
 			if (heads.isEmpty()) {
+				request.sealExhaustion();
+				checkpointCancellation();
 				close();
 				return null;
 			}
+			checkpointCancellation();
 			Head head = heads.remove();
 			pendingAdvance = head;
 			return head.row;
@@ -174,6 +203,7 @@ final class OrderedRecordIterator implements RecordIterator {
 			return false;
 		}
 		try {
+			enterCancellation();
 			if (pendingAdvance != null) {
 				Head pending = pendingAdvance;
 				pendingAdvance = null;
@@ -189,9 +219,12 @@ final class OrderedRecordIterator implements RecordIterator {
 				seekAndRefill(stale, subj, pred, obj, context);
 			}
 			if (heads.isEmpty()) {
+				request.sealExhaustion();
+				checkpointCancellation();
 				close();
 				return false;
 			}
+			checkpointCancellation();
 			return true;
 		} catch (RuntimeException | Error e) {
 			closePreserving(e);
@@ -207,12 +240,27 @@ final class OrderedRecordIterator implements RecordIterator {
 
 	private void refill(Head head, long subj, long pred, long obj, long context) {
 		RecordIterator iterator = iterators.get(head.ordinal);
+		int ticks = 0;
 		do {
+			if ((ticks++ & 1023) == 0) {
+				checkpointCancellation();
+			}
 			head.row = iterator.next();
 		} while (head.row != null && compare(head.row, subj, pred, obj, context) < 0);
 		if (head.row != null) {
 			heads.add(head);
 		}
+	}
+
+	private void enterCancellation() {
+		if (cancellation != null) {
+			cancellation = cancellation.forWorker();
+		}
+		checkpointCancellation();
+	}
+
+	private void checkpointCancellation() {
+		request.checkpoint(cancellation);
 	}
 
 	private int compare(long[] row, long subj, long pred, long obj, long context) {
@@ -244,13 +292,14 @@ final class OrderedRecordIterator implements RecordIterator {
 	}
 
 	private void closePreserving(Throwable primary) {
-		closeOwned(primary);
+		KernelRuntime.rethrowCloseFailureIfNotPrimary(closeOwned(primary), primary);
 	}
 
 	private Throwable closeOwned(Throwable primary) {
 		if (closed) {
 			return primary;
 		}
+		request.close();
 		closed = true;
 		Throwable failure = closeIterators(iterators, primary);
 		pendingAdvance = null;
@@ -261,15 +310,7 @@ final class OrderedRecordIterator implements RecordIterator {
 	private static Throwable closeIterators(List<RecordIterator> iterators, Throwable primary) {
 		Throwable failure = primary;
 		for (RecordIterator iterator : iterators) {
-			try {
-				iterator.close();
-			} catch (RuntimeException | Error closeFailure) {
-				if (failure == null) {
-					failure = closeFailure;
-				} else if (failure != closeFailure) {
-					failure.addSuppressed(closeFailure);
-				}
-			}
+			failure = KernelRuntime.closeResource(iterator, failure);
 		}
 		return failure;
 	}

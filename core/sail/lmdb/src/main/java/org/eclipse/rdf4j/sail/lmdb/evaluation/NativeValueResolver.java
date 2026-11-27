@@ -15,6 +15,8 @@ import static org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbNativeAggregateCompiler
 
 import java.util.concurrent.atomic.AtomicReferenceArray;
 
+import org.eclipse.rdf4j.model.BNode;
+import org.eclipse.rdf4j.model.TripleTerm;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.sail.lmdb.ValuePosition;
 import org.eclipse.rdf4j.sail.lmdb.model.LmdbValue;
@@ -125,6 +127,11 @@ final class NativeValueResolver implements AutoCloseable {
 		}
 		if (mode == 1 || found.lookupId != UNKNOWN) {
 			return found.lookupId;
+		}
+		// Dictionary lookup keys describe RDF terms. Runtime payload IDs also preserve their origin, and a plain
+		// label or composite can compare equal to a scoped wrapper without carrying its proof.
+		if (value instanceof BNode || value instanceof TripleTerm) {
+			return context.internValue(value, found.key);
 		}
 		long id = found.runtimeId;
 		if (id == UNKNOWN) {

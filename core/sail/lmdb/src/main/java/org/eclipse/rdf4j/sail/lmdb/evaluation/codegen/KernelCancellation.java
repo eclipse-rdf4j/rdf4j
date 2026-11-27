@@ -132,6 +132,14 @@ public final class KernelCancellation {
 		this.capacityNotifier = capacityNotifier;
 	}
 
+	/** A manually tripped probe still enforces its private row limit and reports capacity exhaustion. */
+	@InternalUseOnly
+	public static KernelCancellation forManualProbe(BooleanSupplier probe, BooleanSupplier queryCancellation,
+			int materializationRowLimit, Runnable capacityNotifier, BooleanSupplier peerCancellation) {
+		return new KernelCancellation(0L, probe, queryCancellation, materializationRowLimit, capacityNotifier,
+				peerCancellation, null, false);
+	}
+
 	/**
 	 * Creates the cancellation token used by ordinary execution when no probe deadline is scoped. It retains the same
 	 * supplier ordering and terminal latching behavior as a deadline-bounded token without polling elapsed time.

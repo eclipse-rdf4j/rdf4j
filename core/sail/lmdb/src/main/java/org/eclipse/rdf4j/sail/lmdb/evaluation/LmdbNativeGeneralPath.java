@@ -237,7 +237,8 @@ final class GraphVariablePathEvaluation {
 			return Arrays.stream(plan.ctxIds).filter(id -> id != NULL_CONTEXT_ID && id != UNKNOWN).distinct().toArray();
 		}
 		LongHashSet contexts = new LongHashSet(8);
-		try (RecordIterator statements = row.source.statements(UNKNOWN, UNKNOWN, UNKNOWN, UNKNOWN)) {
+		try (RecordIterator statements = row.source.statements(UNKNOWN, UNKNOWN, UNKNOWN, UNKNOWN, null,
+				row.cursorCancellation())) {
 			long[] quad;
 			while ((quad = statements.next()) != null) {
 				long context = quad[TripleIndex.CONTEXT_IDX];
@@ -320,7 +321,7 @@ final class GeneralPathEvaluation {
 		long[] identityContexts = identityContexts();
 		if (plan.minLength == 0L && (identityContexts == null || identityContexts.length > 0)) {
 			// zero-length identities: every distinct node occurring as subject or object of a scoped statement
-			try (NativeLmdbQuerySource.NativeProbe probe = row.source.newProbe()) {
+			try (NativeLmdbQuerySource.NativeProbe probe = row.source.newProbe(row.cursorCancellation())) {
 				int scopes = identityContexts == null ? 1 : identityContexts.length;
 				for (int scope = 0; scope < scopes; scope++) {
 					long ctx = identityContexts == null ? UNKNOWN : identityContexts[scope];

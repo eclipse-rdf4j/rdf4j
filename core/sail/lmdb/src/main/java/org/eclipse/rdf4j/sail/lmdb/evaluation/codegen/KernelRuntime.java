@@ -650,14 +650,13 @@ public final class KernelRuntime {
 		return checkedAdd(16L, checkedMultiply(elements, elementBytes, memory), memory);
 	}
 
-	private static int checkedArrayLength(long elements, MemoryAccount memory) {
+	private static void checkArrayLength(long elements, MemoryAccount memory) {
 		if (elements < 0L || elements > Integer.MAX_VALUE) {
 			if (memory != null) {
 				throw new AllocationDeniedException();
 			}
 			throw new ArithmeticException("array length overflow");
 		}
-		return (int) elements;
 	}
 
 	/**
@@ -1660,9 +1659,173 @@ public final class KernelRuntime {
 		}
 	}
 
+	/** Fixed-stride storage addressed by row ordinal. A row occupies one block and never spans two. */
+	@InternalUseOnly
+	public static final class PackedRowBlocks {
+		private static final int BLOCK_LONGS = 1 << 15;
+		private static final long OBJECT_BYTES = 64L;
+		private final int width;
+		private final int blockShift;
+		private final int blockMask;
+		private final int blockLength;
+		private final MemoryAccount memory;
+		private final Runnable cancellationPoll;
+		private long[][] blocks;
+		private long accountedBytes;
+
+		/** Allocates row blocks on demand, starting with up to four rows. */
+		public PackedRowBlocks(int width) {
+			this(width, 0, null, null, 0L);
+		}
+
+		/** The caller has already reserved {@code initialBytes} when an account is present. */
+		private PackedRowBlocks(int width, int initialRows, MemoryAccount memory, Runnable cancellationPoll,
+				long initialBytes) {
+			if (width < 1) {
+				throw new IllegalArgumentException("width must be positive: " + width);
+			}
+			this.width = width;
+			int rowsPerBlock = rowsPerBlock(width);
+			this.blockShift = Integer.numberOfTrailingZeros(rowsPerBlock);
+			this.blockMask = rowsPerBlock - 1;
+			this.blockLength = rowsPerBlock * width;
+			this.memory = memory;
+			this.cancellationPoll = cancellationPoll;
+			this.accountedBytes = initialBytes;
+			int blockCount = blockCount(initialRows, blockShift);
+			blocks = new long[Math.max(1, blockCount)][];
+			for (int i = 0, remaining = initialRows; i < blockCount; i++) {
+				if (i != 0) {
+					checkCancellation(cancellationPoll);
+				}
+				int blockRows = Math.min(remaining, rowsPerBlock);
+				blocks[i] = new long[blockRows * width];
+				remaining -= blockRows;
+			}
+		}
+
+		private static long initialBytes(int width, int initialRows, MemoryAccount memory) {
+			int blockCount = blockCount(initialRows, Integer.numberOfTrailingZeros(rowsPerBlock(width)));
+			long elements = checkedMultiply((long) initialRows, width, memory);
+			checkArrayLength(elements, memory);
+			long rowBytes = checkedAdd(checkedMultiply(blockCount, 16L, memory),
+					checkedMultiply(elements, Long.BYTES, memory), memory);
+			return checkedAdd(OBJECT_BYTES + checkedArrayBytes(Math.max(1, blockCount), Long.BYTES, memory), rowBytes,
+					memory);
+		}
+
+		private static int rowsPerBlock(int width) {
+			return Integer.highestOneBit(Math.max(1, BLOCK_LONGS / width));
+		}
+
+		private static int blockCount(int rows, int shift) {
+			return rows == 0 ? 0 : ((rows - 1) >>> shift) + 1;
+		}
+
+		/** Copies an input row into the next sequential slot, starting at zero after a reset. */
+		public void append(int ordinal, long[] input, int inputOffset) {
+			int blockIndex = ordinal >>> blockShift;
+			int offset = offset(ordinal);
+			long[] block = blockIndex < blocks.length ? blocks[blockIndex] : null;
+			if (block == null || offset == block.length) {
+				block = grow(blockIndex, block);
+			}
+			System.arraycopy(input, inputOffset, block, offset, width);
+		}
+
+		/** Compares the row to a normalized key without allocating or consulting RDF term semantics. */
+		public boolean matches(int ordinal, long[] key) {
+			int start = offset(ordinal);
+			return Arrays.equals(block(ordinal), start, start + width, key, 0, width);
+		}
+
+		private long[] block(int ordinal) {
+			return blocks[ordinal >>> blockShift];
+		}
+
+		private int offset(int ordinal) {
+			return (ordinal & blockMask) * width;
+		}
+
+		/** Drops blocks after a DISTINCT partition, retaining the first block and, where small enough, one spare. */
+		public void releasePartitionBlocks(int rows) {
+			assert memory == null;
+			int usedBlocks = blockCount(rows, blockShift);
+			if (usedBlocks > 1) {
+				int firstReleasedBlock = blockLength <= BLOCK_LONGS ? 2 : 1;
+				Arrays.fill(blocks, firstReleasedBlock, usedBlocks, null);
+			} else if (blocks.length > 1) {
+				blocks[1] = null;
+			}
+		}
+
+		private long[] grow(int blockIndex, long[] previous) {
+			checkCancellation(cancellationPoll);
+			long[][] directory = blocks;
+			boolean growDirectory = blockIndex == directory.length;
+			int capacity = growDirectory ? checkedDoubleCapacity(directory.length) : directory.length;
+			int length;
+			if (previous != null) {
+				length = (int) Math.min(blockLength, 2L * previous.length);
+			} else {
+				length = blockIndex == 0 ? (int) Math.min(4L * width, blockLength) : blockLength;
+			}
+			long reserved = 0L;
+			long released = 0L;
+			long retained = accountedBytes;
+			if (memory != null) {
+				reserved = checkedArrayBytes(length, Long.BYTES, memory);
+				released = previous == null ? 0L : checkedArrayBytes(previous.length, Long.BYTES, memory);
+				if (growDirectory) {
+					reserved += checkedArrayBytes(capacity, Long.BYTES, memory);
+					released += checkedArrayBytes(directory.length, Long.BYTES, memory);
+				}
+				retained = checkedAdd(accountedBytes, reserved - released, memory);
+				memory.reserve(reserved);
+			}
+			long[] replacement;
+			try {
+				replacement = new long[length];
+				if (previous != null) {
+					copyForGrowth(previous, replacement, previous.length);
+				}
+				if (growDirectory) {
+					directory = new long[capacity][];
+					copyForGrowth(blocks, directory, blocks.length);
+				}
+				checkCancellation(cancellationPoll);
+			} catch (RuntimeException | Error problem) {
+				if (memory != null) {
+					memory.release(reserved);
+				}
+				throw problem;
+			}
+			directory[blockIndex] = replacement;
+			blocks = directory;
+			accountedBytes = retained;
+			if (memory != null && released > 0L) {
+				memory.release(released);
+			}
+			return replacement;
+		}
+
+		private void copyForGrowth(Object source, Object destination, int length) {
+			if (cancellationPoll == null) {
+				System.arraycopy(source, 0, destination, 0, length);
+				return;
+			}
+			for (int from = 0; from < length;) {
+				checkCancellation(cancellationPoll);
+				int count = Math.min(1_024, length - from);
+				System.arraycopy(source, from, destination, from, count);
+				from += count;
+			}
+		}
+	}
+
 	/**
-	 * Interns fixed-stride packed rows (used for DISTINCT and for multi-column group keys). Rows are stored
-	 * contiguously in insertion order; an open-addressing index maps row content to its ordinal.
+	 * Interns fixed-stride packed rows for DISTINCT and multi-column group keys. An open-addressing index maps row
+	 * content to its ordinal in insertion order.
 	 */
 	@Experimental
 	public static final class RowSet implements AutoCloseable {
@@ -1672,13 +1835,11 @@ public final class KernelRuntime {
 		private KernelHooks semantics;
 		private MemoryAccount memory;
 		private final Runnable cancellationPoll;
-		private long[] rows;
+		private PackedRowBlocks rows;
 		private int count;
 		private int[] table;
 		private int mask;
 		private int threshold;
-		private long accountedBytes;
-		private long rowBytes;
 		private long tableBytes;
 		private boolean closed;
 
@@ -1718,16 +1879,14 @@ public final class KernelRuntime {
 			this.cancellationPoll = cancellationPoll;
 			int capacity = tableSizeFor(Math.max(expectedRows, 2));
 			int rowCapacity = Math.max(expectedRows, 4);
-			long rowElements = checkedMultiply((long) rowCapacity, stride, memory);
-			int rowLength = checkedArrayLength(rowElements, memory);
-			long newRowBytes = checkedArrayBytes(rowElements, Long.BYTES, memory);
+			long newRowBytes = PackedRowBlocks.initialBytes(stride, rowCapacity, memory);
 			long newTableBytes = checkedArrayBytes(capacity, Integer.BYTES, memory);
 			long bytes = checkedAdd(ROW_SET_OBJECT_BYTES, checkedAdd(newRowBytes, newTableBytes, memory), memory);
 			if (memory != null) {
 				memory.reserve(bytes);
 			}
 			try {
-				rows = new long[rowLength];
+				rows = new PackedRowBlocks(stride, rowCapacity, memory, cancellationPoll, newRowBytes);
 				table = new int[capacity];
 			} catch (RuntimeException | Error problem) {
 				if (memory != null) {
@@ -1735,11 +1894,9 @@ public final class KernelRuntime {
 				}
 				throw problem;
 			}
-			java.util.Arrays.fill(table, -1);
+			Arrays.fill(table, -1);
 			mask = capacity - 1;
 			threshold = capacity - (capacity >> 2);
-			accountedBytes = bytes;
-			rowBytes = newRowBytes;
 			tableBytes = newTableBytes;
 		}
 
@@ -1753,9 +1910,8 @@ public final class KernelRuntime {
 				pollCancellation(cancellationPoll, ++ticks);
 				int ordinal = table[slot];
 				if (ordinal < 0) {
-					// Stage replacements before publishing the new row or table entry. A refused growth therefore
-					// leaves
-					// this set without a half-inserted grouping key.
+					// Stage replacements before publishing the row or index entry so refusal leaves existing keys
+					// valid.
 					if ((long) count + 1L >= threshold) {
 						growTable();
 						slot = hash(buf, offset) & mask;
@@ -1764,10 +1920,8 @@ public final class KernelRuntime {
 							slot = slot + 1 & mask;
 						}
 					}
-					if ((long) count + 1L > rows.length / stride) {
-						growRows();
-					}
-					int fresh = append(buf, offset);
+					rows.append(count, buf, offset);
+					int fresh = count++;
 					table[slot] = fresh;
 					return fresh;
 				}
@@ -1801,19 +1955,15 @@ public final class KernelRuntime {
 
 		public long value(int ordinal, int column) {
 			checkOpen();
-			return rows[ordinal * stride + column];
-		}
-
-		private int append(long[] buf, int offset) {
-			System.arraycopy(buf, offset, rows, count * stride, stride);
-			return count++;
+			return rows.block(ordinal)[rows.offset(ordinal) + column];
 		}
 
 		private boolean rowEquals(int ordinal, long[] buf, int offset) {
-			int base = ordinal * stride;
+			long[] block = rows.block(ordinal);
+			int base = rows.offset(ordinal);
 			for (int i = 0; i < stride; i++) {
 				pollCancellation(cancellationPoll, i);
-				long stored = rows[base + i];
+				long stored = block[base + i];
 				long candidate = buf[offset + i];
 				if (stored != candidate && (semantics == null || !semantics.sameRdfTerm(stored, candidate))) {
 					return false;
@@ -1847,7 +1997,7 @@ public final class KernelRuntime {
 				int ticks = 0;
 				for (int ordinal = 0; ordinal < count; ordinal++) {
 					pollCancellation(cancellationPoll, ++ticks);
-					int slot = hash(rows, ordinal * stride) & replacementMask;
+					int slot = hash(rows.block(ordinal), rows.offset(ordinal)) & replacementMask;
 					while (replacement[slot] >= 0) {
 						pollCancellation(cancellationPoll, ++ticks);
 						slot = slot + 1 & replacementMask;
@@ -1867,39 +2017,7 @@ public final class KernelRuntime {
 			if (memory != null) {
 				memory.release(tableBytes);
 			}
-			accountedBytes = checkedAdd(accountedBytes, replacementBytes - tableBytes, memory);
 			tableBytes = replacementBytes;
-		}
-
-		private void growRows() {
-			checkCancellation(cancellationPoll);
-			int capacity = checkedDoubleCapacity(rows.length);
-			long replacementBytes = checkedArrayBytes(capacity, Long.BYTES, memory);
-			if (memory != null) {
-				memory.reserve(replacementBytes);
-			}
-			long[] replacement;
-			try {
-				replacement = new long[capacity];
-				for (int from = 0; from < rows.length;) {
-					checkCancellation(cancellationPoll);
-					int length = Math.min(1_024, rows.length - from);
-					System.arraycopy(rows, from, replacement, from, length);
-					from += length;
-				}
-				checkCancellation(cancellationPoll);
-			} catch (RuntimeException | Error problem) {
-				if (memory != null) {
-					memory.release(replacementBytes);
-				}
-				throw problem;
-			}
-			rows = replacement;
-			if (memory != null) {
-				memory.release(rowBytes);
-			}
-			accountedBytes = checkedAdd(accountedBytes, replacementBytes - rowBytes, memory);
-			rowBytes = replacementBytes;
 		}
 
 		private void fillEmpty(int[] destination) {
@@ -1918,13 +2036,11 @@ public final class KernelRuntime {
 			}
 			closed = true;
 			MemoryAccount owner = memory;
-			long bytes = accountedBytes;
+			long bytes = owner == null ? 0L : checkedAdd(ROW_SET_OBJECT_BYTES + tableBytes, rows.accountedBytes, owner);
 			rows = null;
 			table = null;
 			semantics = null;
 			memory = null;
-			accountedBytes = 0L;
-			rowBytes = 0L;
 			tableBytes = 0L;
 			if (owner != null && bytes > 0L) {
 				owner.release(bytes);

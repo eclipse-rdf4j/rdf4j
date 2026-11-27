@@ -14,6 +14,7 @@ package org.eclipse.rdf4j.sail.lmdb.evaluation;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyInt;
+import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
@@ -36,6 +37,8 @@ import org.eclipse.rdf4j.query.algebra.evaluation.QueryBindingSet;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryEvaluationStep;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.GraphFrameBindings;
 import org.eclipse.rdf4j.query.impl.EmptyBindingSet;
+import org.eclipse.rdf4j.sail.lmdb.RecordIterator;
+import org.eclipse.rdf4j.sail.lmdb.evaluation.NativeLmdbQuerySource.CursorCancellation;
 import org.junit.jupiter.api.Test;
 
 class NativeSubqueryWorkerScopeTest {
@@ -52,6 +55,40 @@ class NativeSubqueryWorkerScopeTest {
 		NativeLmdbQuerySource workerSource = mock(NativeLmdbQuerySource.class);
 		NativeSubqueryPlan worker = original.forWorker(new NativeScalarPlan.WorkerContext(workerSource, null, null));
 		assertThat(worker.incidence()).as("a worker cannot reuse source-bound coordinator IDs").isNull();
+	}
+
+	@Test
+	void workerStatementSourceUsesTheCurrentSiblingOwner() throws Exception {
+		var values = SimpleValueFactory.getInstance();
+		var statement = values.createStatement(values.createIRI("urn:worker:subject"),
+				values.createIRI("urn:worker:predicate"), values.createLiteral("value"));
+		NativeLmdbQuerySource store = mock(NativeLmdbQuerySource.class);
+		when(store.lazyValue(1L, 0)).thenReturn(statement.getSubject());
+		when(store.lazyValue(2L, 0)).thenReturn(statement.getPredicate());
+		when(store.lazyValue(3L, 0)).thenReturn(statement.getObject());
+		when(store.statements(anyLong(), anyLong(), anyLong(), anyLong(), any(), any(CursorCancellation.class)))
+				.thenAnswer(call -> {
+					RecordIterator records = mock(RecordIterator.class);
+					when(records.next()).thenReturn(new long[] { 1L, 2L, 3L, 0L });
+					return records;
+				});
+		SyntheticValueSource source = SyntheticValueSource.forEvaluation(store);
+		try {
+			NativeWorkerTripleSource worker = new NativeWorkerTripleSource(source, values);
+			NativeCancellationToken owner = source.executionContext().cancellation();
+			NativeCancellationToken first = new NativeCancellationToken(owner);
+			try (var scope = first.enter(); var statements = worker.getStatements(null, null, null)) {
+				assertThat(statements.next()).isEqualTo(statement);
+			}
+			first.requestCancellation();
+			NativeCancellationToken sibling = new NativeCancellationToken(owner);
+			try (var scope = sibling.enter(); var statements = worker.getStatements(null, null, null)) {
+				assertThat(statements.next()).as("the reused source belongs to the current sibling")
+						.isEqualTo(statement);
+			}
+		} finally {
+			source.executionContext().close();
+		}
 	}
 
 	@Test

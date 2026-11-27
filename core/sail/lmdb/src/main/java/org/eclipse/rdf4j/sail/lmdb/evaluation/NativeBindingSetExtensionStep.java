@@ -468,7 +468,7 @@ final class NativeBindingSetValueCompiler {
 		if (!descriptor.shareableAcrossEvaluations()) {
 			return new EvaluationScopedValueEvaluator(descriptor, strategy, context);
 		}
-		QueryValueEvaluationStep valueStep = strategy.precompile(expression, context);
+		QueryValueEvaluationStep valueStep = descriptor.precompileValue(strategy, context);
 		return new NativeBindingSetValueEvaluator() {
 			@Override
 			public NativeValueOutcome evaluate(BindingSet bindings) {

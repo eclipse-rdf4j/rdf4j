@@ -470,16 +470,32 @@ final class LmdbAdjacencyRootDomainCursor implements AutoCloseable {
 		return open(source, bySubject, hasLowerBound, lowerBound, hasUpperBound, upperBound, null, null, cancellation);
 	}
 
+	static LmdbAdjacencyRootDomainCursor open(NativeLmdbQuerySource source, boolean bySubject, boolean hasLowerBound,
+			long lowerBound, boolean hasUpperBound, long upperBound, NativeCancellationToken cancellation,
+			NativeLmdbQuerySource.CursorCancellation cursorCancellation) throws IOException {
+		return open(source, bySubject, hasLowerBound, lowerBound, hasUpperBound, upperBound, null, null, cancellation,
+				cursorCancellation);
+	}
+
 	private static LmdbAdjacencyRootDomainCursor open(NativeLmdbQuerySource source, boolean bySubject,
 			boolean hasLowerBound, long lowerBound, boolean hasUpperBound, long upperBound,
 			LmdbNativeTermKindFilter rootKindFilter, LmdbAdjacencyOptimizationTelemetry telemetry,
 			NativeCancellationToken cancellation) throws IOException {
+		return open(source, bySubject, hasLowerBound, lowerBound, hasUpperBound, upperBound, rootKindFilter, telemetry,
+				cancellation, NativeLmdbQuerySource.captureCursorCancellation(cancellation));
+	}
+
+	private static LmdbAdjacencyRootDomainCursor open(NativeLmdbQuerySource source, boolean bySubject,
+			boolean hasLowerBound, long lowerBound, boolean hasUpperBound, long upperBound,
+			LmdbNativeTermKindFilter rootKindFilter, LmdbAdjacencyOptimizationTelemetry telemetry,
+			NativeCancellationToken cancellation, NativeLmdbQuerySource.CursorCancellation cursorCancellation)
+			throws IOException {
 		cancellation.check();
-		long[] predicates = predicateCatalog(source, cancellation);
+		long[] predicates = predicateCatalog(source, cancellation, cursorCancellation);
 		if (predicates == null) {
 			return null;
 		}
-		NativeLmdbQuerySource.NativeProbe probe = source.newProbe();
+		NativeLmdbQuerySource.NativeProbe probe = source.newProbe(cursorCancellation);
 		Plane[] opened = new Plane[predicates.length];
 		int count = 0;
 		try {
@@ -552,6 +568,11 @@ final class LmdbAdjacencyRootDomainCursor implements AutoCloseable {
 
 	static long[] predicateCatalog(NativeLmdbQuerySource source, NativeCancellationToken cancellation)
 			throws IOException {
+		return predicateCatalog(source, cancellation, NativeLmdbQuerySource.captureCursorCancellation(cancellation));
+	}
+
+	private static long[] predicateCatalog(NativeLmdbQuerySource source, NativeCancellationToken cancellation,
+			NativeLmdbQuerySource.CursorCancellation cursorCancellation) throws IOException {
 		cancellation.check();
 		LmdbPrefixRunPlan plan = source.prefixRunPlan(new int[] { TripleIndex.PRED_IDX }, UNKNOWN, UNKNOWN, UNKNOWN,
 				UNKNOWN);
@@ -560,7 +581,8 @@ final class LmdbAdjacencyRootDomainCursor implements AutoCloseable {
 		}
 		long[] predicates = new long[32];
 		int size = 0;
-		try (LmdbPrefixRunCursor cursor = source.prefixRuns(plan, UNKNOWN, UNKNOWN, UNKNOWN, UNKNOWN, false)) {
+		try (LmdbPrefixRunCursor cursor = source.prefixRuns(plan, UNKNOWN, UNKNOWN, UNKNOWN, UNKNOWN, false, null,
+				cursorCancellation)) {
 			if (cursor == null) {
 				return null;
 			}

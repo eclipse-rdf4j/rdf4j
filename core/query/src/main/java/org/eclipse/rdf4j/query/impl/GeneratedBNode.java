@@ -22,8 +22,20 @@ import org.eclipse.rdf4j.model.impl.SimpleBNode;
 public final class GeneratedBNode extends SimpleBNode {
 	private static final long serialVersionUID = 1L;
 
-	GeneratedBNode(String id) {
+	private final transient Object owner;
+
+	GeneratedBNode(String id, Object owner) {
 		super(id);
+		this.owner = owner;
+	}
+
+	Object allocationOwner() {
+		return owner;
+	}
+
+	/** True for a value produced by the same live allocation scope. */
+	public boolean isAdmittedTo(BlankNodeAllocationScope allocation) {
+		return owner == allocation.remoteIdentityOwner();
 	}
 
 	/**
@@ -31,6 +43,6 @@ public final class GeneratedBNode extends SimpleBNode {
 	 * never a stored reference.
 	 */
 	public static GeneratedBNode restore(String id) {
-		return new GeneratedBNode(id);
+		return new GeneratedBNode(id, null);
 	}
 }

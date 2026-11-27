@@ -300,7 +300,8 @@ public class ConstantOptimizer implements QueryOptimizer {
 
 			if (QueryEvaluationUtility.resolveFunction(functionCall)
 					.filter(function -> !QueryEvaluationUtility.isSafeForPlanConstantFolding(function,
-							strategy.getQueryExecutionPolicy()))
+							strategy.getQueryExecutionPolicy(),
+							QueryEvaluationUtility.functionEffects(functionCall, function)))
 					.isPresent()) {
 				return;
 			}

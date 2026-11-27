@@ -41,6 +41,7 @@ final class LmdbInMemoryAdjacencyIndex implements AutoCloseable {
 	static final long NOT_COVERED = -2L;
 	/** Retained lock, synchronizer and the reference in this base, with aligned object headers. */
 	static final long SYNOPSIS_BUILD_LOCK_BYTES = 128L;
+	static final long SINGLE_PAGE_CONTEXT_MISS = -3L;
 
 	private final long baseRevision;
 	private final LmdbAdjacencyArenaCatalog arenaCatalog;
@@ -449,7 +450,33 @@ final class LmdbInMemoryAdjacencyIndex implements AutoCloseable {
 
 	long findRun(long rawKey, int plane, long rawPredicateId, LmdbAdjacencyLookupContext searchContext,
 			long rawContext) {
-		return findRunByOrdinal(rawKey, plane, bindPredicate(rawPredicateId, searchContext), searchContext, rawContext);
+		return findRun(rawKey, plane, rawPredicateId, searchContext, rawContext, null);
+	}
+
+	long findRun(long rawKey, int plane, long rawPredicateId, LmdbAdjacencyLookupContext searchContext,
+			long rawContext, Runnable cancellationPoll) {
+		return findRunByOrdinal(rawKey, plane, bindPredicate(rawPredicateId, searchContext), searchContext, rawContext,
+				cancellationPoll);
+	}
+
+	/** A one-shot lookup that distinguishes a page-proved graph miss from a regular absent row. */
+	long findRunWithContextMissProof(long rawKey, int plane, long rawPredicateId, long rawContext, Runnable poll) {
+		long predicateOrdinal = bindPredicate(rawPredicateId);
+		if (predicateOrdinal < 0) {
+			return predicateOrdinal;
+		}
+		var cursor = new ImmutablePagedQuadCsfIndex.LookupCursor(true);
+		long reference = csfBase.findLocalReference(predicateOrdinal, plane, rawKey, cursor, rawContext, poll);
+		if (reference != 0L) {
+			return arenaCatalog.packCsfHandle(reference);
+		}
+		// A compacted base may retain context extensions. Restrict this proof to a bounded catalog lookup.
+		if (cursor.singlePageContextMiss()
+				&& (rawContext == 0L || contextCatalog.segmentCount() == 1
+						&& contextCatalog.ordinalForRaw(rawContext) >= 0L)) {
+			return SINGLE_PAGE_CONTEXT_MISS;
+		}
+		return NOT_FOUND;
 	}
 
 	/**
@@ -504,12 +531,17 @@ final class LmdbInMemoryAdjacencyIndex implements AutoCloseable {
 
 	long findRunByOrdinal(long rawKey, int plane, long predicateOrdinal,
 			LmdbAdjacencyLookupContext searchContext, long rawContext) {
+		return findRunByOrdinal(rawKey, plane, predicateOrdinal, searchContext, rawContext, null);
+	}
+
+	long findRunByOrdinal(long rawKey, int plane, long predicateOrdinal,
+			LmdbAdjacencyLookupContext searchContext, long rawContext, Runnable cancellationPoll) {
 		if (predicateOrdinal < 0) {
 			return predicateOrdinal;
 		}
 		long localReference = csfBase.findLocalReference(predicateOrdinal, plane, rawKey,
 				searchContext == null ? new ImmutablePagedQuadCsfIndex.LookupCursor() : searchContext.csfCursor(),
-				rawContext);
+				rawContext, cancellationPoll);
 		return localReference == 0 ? NOT_FOUND : arenaCatalog.packCsfHandle(localReference);
 	}
 

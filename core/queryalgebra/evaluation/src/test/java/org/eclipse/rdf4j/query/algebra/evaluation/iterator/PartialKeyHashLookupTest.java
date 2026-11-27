@@ -49,7 +49,7 @@ public class PartialKeyHashLookupTest {
 		List<BindingSet> rows = List.of(JoinTestSupport.row("a", "x", "b", "y", "r", "1"),
 				JoinTestSupport.row("a", "x", "r", "2"), JoinTestSupport.row("b", "y", "r", "3"),
 				JoinTestSupport.row("r", "4"), JoinTestSupport.row("a", "z", "b", "y", "r", "5"));
-		PartialKeyHashLookup lookup = new PartialKeyHashLookup(table(rows));
+		PartialKeyHashLookup<BindingSet> lookup = new PartialKeyHashLookup<>(table(rows));
 
 		assertEquals(Set.of("1", "2", "3", "4"), payloads(lookup.candidates(key("a", "x", "b", "y"))));
 		assertEquals(Set.of("1", "2", "3", "4"), payloads(lookup.candidates(key("a", "x"))));
@@ -70,7 +70,7 @@ public class PartialKeyHashLookupTest {
 			}
 		};
 		table.putAll(table(List.of(JoinTestSupport.row("a", "x", "b", "y"), JoinTestSupport.row("a", "x", "b", "z"))));
-		PartialKeyHashLookup lookup = new PartialKeyHashLookup(table);
+		PartialKeyHashLookup<BindingSet> lookup = new PartialKeyHashLookup<>(table);
 
 		assertEquals(1, count(lookup.candidates(key("a", "x", "b", "y"))));
 		assertEquals(1, lookups.get());

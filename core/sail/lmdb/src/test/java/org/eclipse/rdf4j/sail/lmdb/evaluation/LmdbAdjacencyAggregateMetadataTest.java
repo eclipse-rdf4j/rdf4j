@@ -15,6 +15,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbNativeCostVector.Feature.GROUP_UPDATE;
 import static org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbNativeCostVector.Feature.MEMBERSHIP_TEST;
 import static org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbNativeCostVector.Feature.OUTPUT_MATERIALIZATION;
+import static org.eclipse.rdf4j.sail.lmdb.evaluation.NativeCancellationTestAccess.mockScanSource;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyBoolean;
 import static org.mockito.ArgumentMatchers.anyInt;
@@ -300,7 +301,7 @@ class LmdbAdjacencyAggregateMetadataTest {
 		final List<long[]> quads = new ArrayList<>(List.of(new long[] { 101L, 9L, 201L, 1L },
 				new long[] { 102L, 9L, 201L, 1L }, new long[] { 101L, 10L, 202L, 1L },
 				new long[] { 103L, 10L, 201L, 1L }));
-		final NativeLmdbQuerySource source = mock(NativeLmdbQuerySource.class);
+		final NativeLmdbQuerySource source = mockScanSource(NativeLmdbQuerySource.class);
 		final NativeSlotLayout layout = new NativeSlotLayout(Map.of("s", 0, "p", 1, "o", 2), null);
 		final AggregateSpec[] aggregates = { AggregateSpec.slot("subjects", 0, true, AggKind.COUNT),
 				AggregateSpec.slot("objects", 2, true, AggKind.COUNT) };

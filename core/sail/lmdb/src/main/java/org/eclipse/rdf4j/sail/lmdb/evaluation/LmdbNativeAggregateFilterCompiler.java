@@ -676,7 +676,8 @@ abstract class LmdbNativeAggregateFilterCompiler extends LmdbNativeAggregateValu
 		}
 		// Preserve both the slot-aware reads and the evaluation source when semantic expressions re-enter native
 		// EXISTS.
-		return new NativeValueOutcomeBooleanFilter(compileSemanticValue(strategy, expr, slotAwareContext()),
+		return new NativeValueOutcomeBooleanFilter(descriptor.prepare(
+				() -> compileSemanticValue(strategy, descriptor.pinnedExpr(), slotAwareContext())),
 				genericReadMask(expr));
 	}
 

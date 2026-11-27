@@ -1972,7 +1972,7 @@ class SparseJoinAggregateAdapterTest {
 	}
 
 	private static final class Fixture implements AutoCloseable {
-		final NativeLmdbQuerySource source = mock(NativeLmdbQuerySource.class);
+		final NativeLmdbQuerySource source = NativeCancellationTestAccess.mockScanSource(NativeLmdbQuerySource.class);
 		final NativeLmdbQuerySource.NativeProbe probe = mock(NativeLmdbQuerySource.NativeProbe.class);
 		final NativeAdjacency left = mock(NativeAdjacency.class);
 		final NativeAdjacency right = mock(NativeAdjacency.class);

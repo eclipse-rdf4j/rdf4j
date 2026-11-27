@@ -12,6 +12,7 @@
 package org.eclipse.rdf4j.sail.lmdb.evaluation;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.eclipse.rdf4j.sail.lmdb.evaluation.NativeCancellationTestAccess.mockScanSource;
 import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyBoolean;
@@ -355,7 +356,7 @@ class LmdbNativeAggregateExplanationRouteTest {
 	@Test
 	void adjacencyQuotesUseActualMetadataLookupsAndChargeEveryGroupedRoot() throws Exception {
 		set("rdf4j.lmdb.directAdjacency.scanAggregates.enabled", "true");
-		NativeLmdbQuerySource source = mock(NativeLmdbQuerySource.class);
+		NativeLmdbQuerySource source = mockScanSource(NativeLmdbQuerySource.class);
 		when(source.adjacencyKeyDomainCardinality(9L, true)).thenReturn(OptionalLong.of(1000L));
 		when(source.lazyValue(anyLong(), anyInt())).thenAnswer(call -> SimpleValueFactory.getInstance()
 				.createIRI(EX, "root" + (long) call.getArgument(0)));
@@ -403,7 +404,7 @@ class LmdbNativeAggregateExplanationRouteTest {
 		set("rdf4j.lmdb.directAdjacency.scanAggregates.enabled", "true");
 		NativeSlotLayout layout = new NativeSlotLayout(Map.of("s", 0, "o", 1), null);
 		layout.freeze(List.of("s", "o"));
-		RowState row = new RowState(mock(NativeLmdbQuerySource.class), layout, EmptyBindingSet.getInstance());
+		RowState row = new RowState(mockScanSource(NativeLmdbQuerySource.class), layout, EmptyBindingSet.getInstance());
 		assertThat(LmdbNativeAggregateCompiler.initializeRow(row, row.base, row.source, layout)).isTrue();
 		PatternPlan pattern = new PatternPlan(Term.slot(0), Term.constant(9L), Term.slot(1), Term.unbound(),
 				ContextConstraint.UNRESTRICTED, false, 1_000_000D);
