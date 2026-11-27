@@ -13,10 +13,13 @@
 package org.eclipse.rdf4j.sail.lmdb;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertSame;
 
+import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.EnumSet;
@@ -25,9 +28,11 @@ import java.util.Set;
 
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.common.iteration.CloseableIteratorIteration;
+import org.eclipse.rdf4j.common.iteration.EmptyIteration;
 import org.eclipse.rdf4j.common.iteration.Iterations;
 import org.eclipse.rdf4j.common.iteration.ReducedIteration;
 import org.eclipse.rdf4j.common.order.StatementOrder;
+import org.eclipse.rdf4j.common.transaction.IsolationLevels;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.Statement;
@@ -52,11 +57,14 @@ import org.eclipse.rdf4j.query.algebra.evaluation.impl.EvaluationStatistics;
 import org.eclipse.rdf4j.query.algebra.helpers.AbstractQueryModelVisitor;
 import org.eclipse.rdf4j.query.impl.EmptyBindingSet;
 import org.eclipse.rdf4j.query.parser.QueryParserUtil;
+import org.eclipse.rdf4j.sail.base.DelegatingSailDataset;
+import org.eclipse.rdf4j.sail.base.SailDatasetTripleTermSource;
 import org.eclipse.rdf4j.sail.base.config.BaseSailConfig;
 import org.eclipse.rdf4j.sail.lmdb.config.LmdbStoreConfig;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbNativeEvaluationStrategyFactory;
 import org.eclipse.rdf4j.testsuite.sail.EvaluationStrategyTest;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.io.TempDir;
 
 class LmdbEvaluationStrategyTest extends EvaluationStrategyTest {
 
@@ -72,6 +80,34 @@ class LmdbEvaluationStrategyTest extends EvaluationStrategyTest {
 	@Override
 	protected boolean deleteDataDirAfterShutdown() {
 		return true;
+	}
+
+	@Test
+	void fixedGraphBodyReuseRequiresStableDatasetWrapper(@TempDir Path directory) {
+		LmdbStoreConfig config = new LmdbStoreConfig().setNativeEvaluationEnabled(false)
+				.setDirectAdjacencyEnabled(false);
+		LmdbStore store = new LmdbStore(directory.toFile(), config);
+		store.init();
+		try (var closeStore = LmdbTestUtil.onClose(store::shutDown);
+				var dataset = store.getBackingStore().getExplicitSailSource().dataset(IsolationLevels.SNAPSHOT_READ)) {
+			var standard = new SailDatasetTripleTermSource(store.getValueFactory(), dataset);
+			var standardStrategy = new LmdbEvaluationStrategy(standard, null, null, 0, new EvaluationStatistics(),
+					false);
+			assertNotNull(standardStrategy.fixedGraphBodyReuseValidator());
+			var wrapped = new SailDatasetTripleTermSource(store.getValueFactory(), new DelegatingSailDataset(dataset) {
+				@Override
+				public CloseableIteration<? extends Statement> getStatements(Resource subject, IRI predicate,
+						Value object,
+						Resource... contexts) {
+					return new EmptyIteration<>();
+				}
+			});
+			var wrappedStrategy = new LmdbEvaluationStrategy(wrapped, null, null, 0, new EvaluationStatistics(), false);
+			assertNull(wrappedStrategy.fixedGraphBodyReuseValidator());
+			try (var rows = wrapped.getStatements(null, RDF.TYPE, null)) {
+				assertFalse(rows.hasNext());
+			}
+		}
 	}
 
 	@Test

@@ -30,6 +30,11 @@ public interface OwnedValueCapturer extends Function<Value, Value> {
 	 */
 	boolean owns(Value value);
 
+	/** Whether capturing an unused statement binding can be skipped without changing the remaining bindings. */
+	default boolean canOmitUnusedStatementBindings() {
+		return false;
+	}
+
 	/**
 	 * Identity of an active capture owner, or null when no replay ownership can be shared. Values the replay provider
 	 * certified with the same token must still satisfy {@link #owns(Value)}. The token may outlive the query on a row

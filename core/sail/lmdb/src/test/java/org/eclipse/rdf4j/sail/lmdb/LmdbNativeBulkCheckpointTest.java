@@ -63,6 +63,7 @@ class LmdbNativeBulkCheckpointTest {
 	private boolean wrapDelegate;
 	private int largestDelegateFill;
 	private int delegateFills;
+	private int delegateScalarPulls;
 
 	@BeforeEach
 	void initialize() {
@@ -184,9 +185,48 @@ class LmdbNativeBulkCheckpointTest {
 			}
 			assertEquals(192, writtenRows(buffer));
 			if (external) {
+				assertEquals(0, delegateScalarPulls, "Keep virtual bulk dispatch for external cursors");
 				assertEquals(3, delegateFills);
 				assertEquals(64, largestDelegateFill);
 			}
+		}
+	}
+
+	@Test
+	void firstScalarPrefetchIsSmallButLongScansStillReachFullBatches() throws Exception {
+		wrapDelegate = true;
+		try (var dataset = NativeQuerySourceAccess.openExplicitDataset(store);
+				var cursor = openCursor(dataset, false)) {
+			assertNotNull(cursor.next());
+			assertNotNull(cursor.next());
+			assertEquals(0, delegateFills);
+			assertEquals(2, delegateScalarPulls);
+			assertNotNull(cursor.next());
+			assertEquals(1, delegateFills);
+			assertTrue(largestDelegateFill > 0 && largestDelegateFill <= 8,
+					"A short index probe must not reserve a full scan batch");
+			for (int i = 3; i < FIXTURE_ROWS; i++) {
+				assertNotNull(cursor.next());
+			}
+			assertNull(cursor.next());
+			assertEquals(64, largestDelegateFill);
+		}
+	}
+
+	@ParameterizedTest
+	@ValueSource(ints = { 3, 12 })
+	void seekAfterScalarPrefetchResumesAtTheTarget(int consumed) throws Exception {
+		try (var dataset = NativeQuerySourceAccess.openExplicitDataset(store);
+				var cursor = openCursor(dataset, false);
+				var expected = openCursor(dataset, false)) {
+			for (int i = 0; i < consumed; i++) {
+				assertArrayEquals(expected.next(), cursor.next());
+			}
+			assertNotNull(expected.next());
+			long[] target = expected.next().clone();
+			assertTrue(cursor.seekForward(target[0], target[1], target[2], target[3]));
+			assertArrayEquals(target, cursor.next());
+			assertArrayEquals(expected.next(), cursor.next());
 		}
 	}
 
@@ -274,7 +314,8 @@ class LmdbNativeBulkCheckpointTest {
 
 		@Override
 		public long[] next() {
-			throw new AssertionError("Keep virtual bulk dispatch for external cursors");
+			delegateScalarPulls++;
+			return delegate.next();
 		}
 
 		@Override

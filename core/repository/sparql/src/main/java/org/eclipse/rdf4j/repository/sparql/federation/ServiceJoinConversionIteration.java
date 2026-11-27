@@ -46,7 +46,7 @@ public class ServiceJoinConversionIteration extends ConvertingIteration<BindingS
 		super(new FilterIteration<BindingSet>(iter) {
 			@Override
 			protected boolean accept(BindingSet remote) {
-				BindingSet input = bindings.get(getRowIndex(remote, rowIndexVar));
+				BindingSet input = getInputRow(remote, bindings, rowIndexVar);
 				// The control column is not a binding returned by the SERVICE expression.
 				if (input.hasBinding(rowIndexVar)) {
 					input = BindingSetSnapshots.without(input, Set.of(rowIndexVar));
@@ -65,8 +65,16 @@ public class ServiceJoinConversionIteration extends ConvertingIteration<BindingS
 	@Override
 	protected BindingSet convert(BindingSet bIn) throws QueryEvaluationException {
 
-		BindingSet input = bindings.get(getRowIndex(bIn, rowIndexVar));
+		BindingSet input = getInputRow(bIn, bindings, rowIndexVar);
 		return BindingSetSnapshots.mergeWithPrecedence(input, bIn, rowIndexVar);
+	}
+
+	static BindingSet getInputRow(BindingSet result, List<BindingSet> originals, String rowIndexVar) {
+		int index = getRowIndex(result, rowIndexVar);
+		if (index < 0 || index >= originals.size()) {
+			throw new QueryEvaluationException("Invalid SERVICE input row index: " + index);
+		}
+		return originals.get(index);
 	}
 
 	static int getRowIndex(BindingSet result, String rowIndexVar) {

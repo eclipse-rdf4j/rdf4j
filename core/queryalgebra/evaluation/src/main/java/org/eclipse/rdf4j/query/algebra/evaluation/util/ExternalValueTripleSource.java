@@ -34,10 +34,12 @@ public class ExternalValueTripleSource implements TripleSource {
 
 	private final TripleSource delegate;
 	private final Consumer<Value> initializer;
+	private final ValueFactory valueFactory;
 
-	private ExternalValueTripleSource(TripleSource delegate, Consumer<Value> initializer) {
+	private ExternalValueTripleSource(TripleSource delegate, Consumer<Value> initializer, ValueFactory valueFactory) {
 		this.delegate = Objects.requireNonNull(delegate, "Triple source was null");
 		this.initializer = initializer;
+		this.valueFactory = valueFactory;
 	}
 
 	/**
@@ -46,24 +48,31 @@ public class ExternalValueTripleSource implements TripleSource {
 	 * payloads without resolving them. A null consumer leaves the internal source untouched.
 	 */
 	public static TripleSource wrap(TripleSource source, Consumer<Value> initializer) {
-		if (initializer == null) {
+		return wrap(source, initializer, null);
+	}
+
+	/** Also supplies a prepared callback's value factory when it declares blank-node allocation. */
+	public static TripleSource wrap(TripleSource source, Consumer<Value> initializer, ValueFactory valueFactory) {
+		if (initializer == null && valueFactory == null) {
 			return source;
 		}
 		return source instanceof NativeTripleTermSource nativeSource
-				? new Native(nativeSource, initializer)
-				: new ExternalValueTripleSource(source, initializer);
+				? new Native(nativeSource, initializer, valueFactory)
+				: new ExternalValueTripleSource(source, initializer, valueFactory);
 	}
 
 	@Override
 	public CloseableIteration<? extends Statement> getStatements(Resource subj, IRI pred, Value obj,
 			Resource... contexts) {
-		return initialize(delegate.getStatements(subj, pred, obj, contexts), this::initializeStatement);
+		var result = delegate.getStatements(subj, pred, obj, contexts);
+		return initializer == null ? result : initialize(result, this::initializeStatement);
 	}
 
 	@Override
 	public CloseableIteration<? extends Statement> getStatements(StatementOrder order, Resource subj, IRI pred,
 			Value obj, Resource... contexts) {
-		return initialize(delegate.getStatements(order, subj, pred, obj, contexts), this::initializeStatement);
+		var result = delegate.getStatements(order, subj, pred, obj, contexts);
+		return initializer == null ? result : initialize(result, this::initializeStatement);
 	}
 
 	@Override
@@ -73,7 +82,8 @@ public class ExternalValueTripleSource implements TripleSource {
 
 	@Override
 	public CloseableIteration<? extends Resource> getContextIDs() {
-		return initialize(delegate.getContextIDs(), initializer);
+		var result = delegate.getContextIDs();
+		return initializer == null ? result : initialize(result, initializer);
 	}
 
 	@Override
@@ -88,7 +98,7 @@ public class ExternalValueTripleSource implements TripleSource {
 
 	@Override
 	public ValueFactory getValueFactory() {
-		return delegate.getValueFactory();
+		return valueFactory == null ? delegate.getValueFactory() : valueFactory;
 	}
 
 	@Override
@@ -137,15 +147,16 @@ public class ExternalValueTripleSource implements TripleSource {
 		private final NativeTripleTermSource nativeDelegate;
 		private final Consumer<Value> initializer;
 
-		private Native(NativeTripleTermSource delegate, Consumer<Value> initializer) {
-			super(delegate, initializer);
+		private Native(NativeTripleTermSource delegate, Consumer<Value> initializer, ValueFactory valueFactory) {
+			super(delegate, initializer, valueFactory);
 			this.nativeDelegate = delegate;
 			this.initializer = initializer;
 		}
 
 		@Override
 		public CloseableIteration<? extends TripleTerm> getTripleTerms(Resource subj, IRI pred, Value obj) {
-			return initialize(nativeDelegate.getTripleTerms(subj, pred, obj), initializer);
+			var result = nativeDelegate.getTripleTerms(subj, pred, obj);
+			return initializer == null ? result : initialize(result, initializer);
 		}
 	}
 }

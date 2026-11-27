@@ -80,7 +80,7 @@ import org.eclipse.rdf4j.sail.config.SailConfigException;
 				"\"false\"^^<http://www.w3.org/2001/XMLSchema#boolean>" }
 )
 @ConfigProperty(
-		predicate = "http://rdf4j.org/config/sail/lmdb#valueCacheSize", description = "Value-cache target size; rounded up to a power of two with a minimum of one entry.", datatype = "http://www.w3.org/2001/XMLSchema#int", examples = {
+		predicate = "http://rdf4j.org/config/sail/lmdb#valueCacheSize", description = "Value-cache target size, shared by all statement positions; rounded up to a power of two with a minimum of one entry. Zero disables the cache.", datatype = "http://www.w3.org/2001/XMLSchema#int", examples = {
 				"\"512\"^^<http://www.w3.org/2001/XMLSchema#int>" }
 )
 @ConfigProperty(
@@ -663,6 +663,15 @@ public class LmdbStoreConfig extends BaseSailConfig implements Cloneable {
 
 	public int getValueCacheSize() {
 		return valueCacheSize >= 0 ? valueCacheSize : VALUE_CACHE_SIZE;
+	}
+
+	/**
+	 * Whether no value-cache size was configured. The store then bounds the default by the heap it runs in, because one
+	 * statement position may fill the whole cache.
+	 */
+	@InternalUseOnly
+	public boolean usesDefaultValueCacheSize() {
+		return valueCacheSize < 0;
 	}
 
 	public LmdbStoreConfig setValueCacheSize(int valueCacheSize) {

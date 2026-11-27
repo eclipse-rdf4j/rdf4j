@@ -87,6 +87,11 @@ public interface RecordIterator extends Closeable, CooperativeCancellation {
 	 */
 	long[] next();
 
+	/** Number of copied records available without visiting the physical cursor or observing its exhaustion. */
+	default int bufferedRows() {
+		return 0;
+	}
+
 	/**
 	 * Fills the buffer with up to {@code maxRows} records of four longs each and returns the number of records written.
 	 * A return value smaller than {@code maxRows} means the iterator is exhausted. Implementations may amortize

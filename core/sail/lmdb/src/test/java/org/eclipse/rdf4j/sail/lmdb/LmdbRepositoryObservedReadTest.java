@@ -23,6 +23,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.io.File;
 import java.io.IOException;
+import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.Set;
 import java.util.concurrent.CountDownLatch;
@@ -32,12 +33,12 @@ import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.Consumer;
-import java.util.function.Supplier;
 
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.common.iteration.CooperativeCancellation;
 import org.eclipse.rdf4j.common.iteration.IterationWrapper;
 import org.eclipse.rdf4j.http.client.QueryExecutionContext;
+import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.QueryEvaluationException;
 import org.eclipse.rdf4j.query.QueryInterruptedException;
@@ -48,9 +49,9 @@ import org.eclipse.rdf4j.repository.RepositoryConnection;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
 import org.eclipse.rdf4j.sail.NotifyingSailConnection;
 import org.eclipse.rdf4j.sail.SailException;
-import org.eclipse.rdf4j.sail.base.SailClosable;
 import org.eclipse.rdf4j.sail.features.SailResultValueExtractor;
 import org.eclipse.rdf4j.sail.lmdb.config.LmdbStoreConfig;
+import org.eclipse.rdf4j.sail.lmdb.model.LmdbValue;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 import org.junit.jupiter.params.ParameterizedTest;
@@ -91,6 +92,166 @@ class LmdbRepositoryObservedReadTest {
 				assertEquals(0, store.activeReads.get());
 			}
 			assertEquals(Set.of(0, 1, 2, 3), delivered);
+		} finally {
+			repository.shutDown();
+		}
+	}
+
+	@Test
+	void ordinaryScanSharesObservedReadsAcrossBufferedRows(@TempDir File directory) {
+		var store = new ObservedStore(directory, false);
+		var repository = new SailRepository(store);
+		try (var connection = repository.getConnection()) {
+			int rows = 131;
+			seed(connection, rows);
+			var stored = new ArrayList<BindingSet>();
+			try (var result = connection.prepareTupleQuery(QUERY).evaluate()) {
+				int before = store.readActivations.get();
+				assertTrue(result.hasNext());
+				assertEquals(before + 2, store.readActivations.get(), "First row keeps its replay barrier");
+				while (result.hasNext()) {
+					assertEquals(0, store.activeReads.get(), "Availability returns without active read scopes");
+					stored.add(result.next());
+					assertEquals(0, store.activeReads.get(), "Consumption returns without active read scopes");
+				}
+				assertTrue(store.readActivations.get() - before < rows / 2,
+						"Expected a bounded number of observed reads for " + rows + " rows, actual "
+								+ (store.readActivations.get() - before));
+			}
+			assertEquals(rows, stored.size());
+			var subjects = new HashSet<String>();
+			for (BindingSet row : stored) {
+				int value = Integer.parseInt(row.getValue("value").stringValue());
+				var subject = row.getValue("s").stringValue();
+				assertEquals("urn:observed-read:s" + value, subject);
+				assertTrue(subjects.add(subject));
+			}
+		} finally {
+			repository.shutDown();
+		}
+	}
+
+	@ParameterizedTest
+	@ValueSource(booleans = { false, true })
+	void earlyCloseOrCancellationDiscardsBufferedRows(boolean cancel, @TempDir File directory) {
+		var store = new ObservedStore(directory, false);
+		var repository = new SailRepository(store);
+		try (var connection = repository.getConnection()) {
+			seed(connection, 65);
+			var query = connection.prepareTupleQuery(QUERY);
+			try (var result = query.evaluate()) {
+				result.next();
+				result.next();
+				result.next();
+				int before = store.readActivations.get();
+				assertTrue(result.hasNext());
+				assertEquals(before, store.readActivations.get(), "The next row was already buffered");
+				assertEquals(0, store.activeReads.get());
+				if (cancel) {
+					assertTrue(CooperativeCancellation.forward(result));
+					assertThrows(QueryInterruptedException.class, result::next);
+				} else {
+					result.close();
+				}
+				assertFalse(result.hasNext());
+				assertNull(QueryExecutionContext.getExternalValueInitializer());
+			}
+			try (var next = query.evaluate()) {
+				assertEquals(65, next.stream().count());
+			}
+		} finally {
+			repository.shutDown();
+		}
+	}
+
+	@Test
+	void limitAndRawSailKeepOneObservedActivationPerRow(@TempDir File directory) {
+		var store = new ObservedStore(directory, false);
+		var repository = new SailRepository(store);
+		try (var connection = repository.getConnection()) {
+			seed(connection, 65);
+			try (var limited = connection.prepareTupleQuery(QUERY + " LIMIT 8").evaluate()) {
+				limited.next();
+				int before = store.readActivations.get();
+				for (int i = 1; i < 8; i++) {
+					limited.next();
+				}
+				assertEquals(before + 7, store.readActivations.get());
+				assertFalse(limited.hasNext());
+			}
+			var sail = (LmdbStoreConnection) connection.getSailConnection();
+			var parsed = QueryParserUtil.parseTupleQuery(QueryLanguage.SPARQL, QUERY, null);
+			try (var raw = sail.evaluate(parsed.getTupleExpr(), null, EmptyBindingSet.getInstance(), false)) {
+				assertTrue(raw.hasNext());
+				raw.next();
+				int before = store.readActivations.get();
+				for (int i = 0; i < 8; i++) {
+					assertTrue(raw.hasNext());
+					raw.next();
+				}
+				assertEquals(before + 8, store.readActivations.get());
+			}
+			assertEquals(0, store.activeReads.get());
+		} finally {
+			repository.shutDown();
+		}
+	}
+
+	@ParameterizedTest
+	@ValueSource(booleans = { false, true })
+	void nonIdentityProjectionKeepsValuesAndTracking(boolean trackSize, @TempDir File directory) {
+		var store = new ObservedStore(directory, false);
+		store.setTrackResultSize(trackSize);
+		var repository = new SailRepository(store);
+		try (var connection = repository.getConnection()) {
+			seed(connection, 65);
+			Set<Integer> values = new HashSet<>();
+			try (var result = connection.prepareTupleQuery("""
+					SELECT ?value WHERE { ?s <urn:observed-read:p> ?value }
+					""").evaluate()) {
+				int before = store.readActivations.get();
+				while (result.hasNext()) {
+					var row = result.next();
+					assertEquals(Set.of("value"), row.getBindingNames());
+					assertTrue(values.add(Integer.parseInt(row.getValue("value").stringValue())));
+				}
+				int activations = store.readActivations.get() - before;
+				if (trackSize) {
+					assertEquals(67, activations, "Tracked query keeps every instrumented pull");
+				} else {
+					assertTrue(activations < 65 / 2, "Projection forwards the proved buffered scan");
+				}
+			}
+			assertEquals(65, values.size());
+		} finally {
+			repository.shutDown();
+		}
+	}
+
+	@Test
+	void futureStatementFailureIsDeliveredAfterBufferedPrefix(@TempDir File directory) {
+		var store = new FailingBufferedStore(directory);
+		var repository = new SailRepository(store);
+		try (var connection = repository.getConnection()) {
+			seed(connection, 65);
+			try (var result = connection.prepareTupleQuery(QUERY).evaluate()) {
+				store.failOnThread = Thread.currentThread();
+				try {
+					var prefix = new ArrayList<BindingSet>();
+					for (int i = 0; i < 3; i++) {
+						prefix.add(result.next());
+					}
+					assertEquals(5, store.scanned, "The fault was already encountered while filling copied rows");
+					assertTrue(result.hasNext());
+					prefix.add(result.next());
+					assertSame(store.failure, assertThrows(QueryEvaluationException.class, result::hasNext).getCause());
+					assertFalse(result.hasNext());
+					assertEquals(0, store.activeReads.get());
+					assertEquals(4, prefix.stream().map(row -> row.getValue("s").stringValue()).distinct().count());
+				} finally {
+					store.failOnThread = null;
+				}
+			}
 		} finally {
 			repository.shutDown();
 		}
@@ -272,10 +433,14 @@ class LmdbRepositoryObservedReadTest {
 	}
 
 	private static void seed(RepositoryConnection connection) {
+		seed(connection, 4);
+	}
+
+	private static void seed(RepositoryConnection connection, int rows) {
 		var values = connection.getValueFactory();
 		var predicate = values.createIRI("urn:observed-read:p");
 		connection.begin();
-		for (int i = 0; i < 4; i++) {
+		for (int i = 0; i < rows; i++) {
 			connection.add(values.createIRI("urn:observed-read:s" + i), predicate, values.createLiteral(i));
 		}
 		connection.commit();
@@ -339,25 +504,60 @@ class LmdbRepositoryObservedReadTest {
 		final AtomicInteger activeReads = new AtomicInteger();
 
 		private ObservedStore(File directory) {
-			super(directory, new LmdbStoreConfig("spoc,posc,ospc").setNativeEvaluationEnabled(true));
+			this(directory, true);
+		}
+
+		private ObservedStore(File directory, boolean nativeEvaluation) {
+			super(directory, new LmdbStoreConfig("spoc,posc,ospc").setNativeEvaluationEnabled(nativeEvaluation)
+					.setDirectAdjacencyEnabled(false));
 		}
 
 		@Override
 		LmdbSailStore createBackingStore(File directory, StoreProperties properties, LmdbStoreConfig config,
 				boolean sketchBasedJoinEstimatorEnabled) throws IOException {
-			return new LmdbSailStore(directory, properties, config, sketchBasedJoinEstimatorEnabled) {
+			return new LmdbSailStore(directory, properties, config, sketchBasedJoinEstimatorEnabled,
+					valueStoreFactory(), TripleStore::new) {
 				@Override
-				SailClosable enterReadResourceContext(Supplier<? extends Iterable<ReadViewLease>> ownedViews) {
-					SailClosable activation = super.enterReadResourceContext(ownedViews);
+				void readResourceContextEntered() {
 					readActivations.incrementAndGet();
 					activeReads.incrementAndGet();
-					return () -> {
-						try {
-							activation.close();
-						} finally {
-							activeReads.decrementAndGet();
-						}
-					};
+				}
+
+				@Override
+				void readResourceContextLeft() {
+					activeReads.decrementAndGet();
+				}
+			};
+		}
+
+		LmdbSailStore.ValueStoreFactory valueStoreFactory() {
+			return null;
+		}
+	}
+
+	private static final class FailingBufferedStore extends ObservedStore {
+		private final SailException failure = new SailException("Unable to decode the fifth scanned statement");
+		private Thread failOnThread;
+		private int scanned;
+
+		private FailingBufferedStore(File directory) {
+			super(directory, false);
+		}
+
+		@Override
+		LmdbSailStore.ValueStoreFactory valueStoreFactory() {
+			return (directory, properties, config) -> new ValueStore(directory, properties, config) {
+				private int created;
+
+				// A private scan hands out statements whose values are created when their row is converted, so
+				// the fault is injected where the first of a statement's two projected values is created.
+				@Override
+				LmdbValue getLazyValue(long id, ValueStoreRevision revision, ValueResolutionScope exposure,
+						Value supplied, long semanticVersion) throws IOException {
+					if (Thread.currentThread() == failOnThread && created++ % 2 == 0 && ++scanned == 5) {
+						throw failure;
+					}
+					return super.getLazyValue(id, revision, exposure, supplied, semanticVersion);
 				}
 			};
 		}

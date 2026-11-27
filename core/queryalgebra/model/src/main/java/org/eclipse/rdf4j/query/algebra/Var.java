@@ -49,6 +49,12 @@ public class Var extends AbstractQueryModelNode implements ValueExpr {
 	 */
 	public static final String PROVIDER_PROPERTY = "org.eclipse.rdf4j.query.algebra.Var.provider";
 
+	/** Whether creating and cloning variables uses only the built-in implementation. */
+	@InternalUseOnly
+	public static boolean usesBuiltInProvider() {
+		return Holder.PROVIDER == Holder.DEFAULT;
+	}
+
 	private final String name;
 
 	private final Value value;
@@ -357,7 +363,12 @@ public class Var extends AbstractQueryModelNode implements ValueExpr {
 
 	@Override
 	public Var clone() {
-		Var var = Holder.PROVIDER.cloneVar(this).intrinsicCopy();
+		Provider provider = Holder.PROVIDER;
+		Var var = provider.cloneVar(this);
+		// The built-in constructor always returns a fresh occurrence. An extension may return a shared one.
+		if (provider != Holder.DEFAULT) {
+			var = var.intrinsicCopy();
+		}
 		var.setVariableScopeChange(this.isVariableScopeChange());
 		var.graphContextDepth = graphContextDepth;
 		var.legacyGraphContext = legacyGraphContext;

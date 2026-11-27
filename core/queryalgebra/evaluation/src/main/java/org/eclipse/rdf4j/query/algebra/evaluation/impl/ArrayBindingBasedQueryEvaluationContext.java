@@ -35,6 +35,7 @@ import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.query.Binding;
 import org.eclipse.rdf4j.query.BindingSet;
+import org.eclipse.rdf4j.query.BlankNodeEffects;
 import org.eclipse.rdf4j.query.Dataset;
 import org.eclipse.rdf4j.query.MutableBindingSet;
 import org.eclipse.rdf4j.query.QueryEvaluationException;
@@ -53,6 +54,7 @@ import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.query.algebra.ZeroLengthPath;
 import org.eclipse.rdf4j.query.algebra.evaluation.ArrayBindingSet;
 import org.eclipse.rdf4j.query.algebra.evaluation.ArrayBindingSet.IndexedLayout;
+import org.eclipse.rdf4j.query.algebra.evaluation.QueryValueEvaluationStep;
 import org.eclipse.rdf4j.query.algebra.evaluation.iterator.ZeroLengthPathIteration;
 import org.eclipse.rdf4j.query.algebra.helpers.AbstractSimpleQueryModelVisitor;
 import org.eclipse.rdf4j.query.impl.BlankNodeAllocationScope;
@@ -143,6 +145,16 @@ public final class ArrayBindingBasedQueryEvaluationContext implements QueryEvalu
 	}
 
 	@Override
+	public boolean allowsDirectVariableReads() {
+		return context.allowsDirectVariableReads();
+	}
+
+	@Override
+	public boolean allowsPathStepReuse() {
+		return context.allowsPathStepReuse();
+	}
+
+	@Override
 	public BlankNodeAllocationScope getBlankNodeAllocationScope() {
 		return context.getBlankNodeAllocationScope();
 	}
@@ -175,6 +187,11 @@ public final class ArrayBindingBasedQueryEvaluationContext implements QueryEvalu
 	@Override
 	public ArrayBindingSet createBindingSet() {
 		return new ArrayBindingSet(allVariables, sortedBindingNamesCache);
+	}
+
+	@Override
+	public boolean canOmitUnusedStatementBindings() {
+		return true;
 	}
 
 	@Override
@@ -302,6 +319,17 @@ public final class ArrayBindingBasedQueryEvaluationContext implements QueryEvalu
 
 	}
 
+	@Override
+	public QueryValueEvaluationStep prepareValueAccessor(String name, ValueFactory factory) {
+		return context.allowsDirectVariableReads() ? QueryEvaluationContext.super.prepareValueAccessor(name, factory)
+				: context.prepareValueAccessor(name, factory);
+	}
+
+	@Override
+	public ValueFactory blankNodeValueFactory(ValueFactory factory, BlankNodeEffects effects) {
+		return context.blankNodeValueFactory(factory, effects);
+	}
+
 	private static class ValueGetter implements Function<BindingSet, Value> {
 
 		private final String variableName;
@@ -426,7 +454,7 @@ public final class ArrayBindingBasedQueryEvaluationContext implements QueryEvalu
 	@Override
 	public ArrayBindingSet createBindingSet(BindingSet bindings) {
 		if (bindings instanceof ArrayBindingSet) {
-			return new ArrayBindingSet((ArrayBindingSet) bindings, allVariables, sortedBindingNamesCache);
+			return ((ArrayBindingSet) bindings).copyFor(allVariables, sortedBindingNamesCache);
 		} else if (bindings == EmptyBindingSet.getInstance()) {
 			return createBindingSet();
 		} else {

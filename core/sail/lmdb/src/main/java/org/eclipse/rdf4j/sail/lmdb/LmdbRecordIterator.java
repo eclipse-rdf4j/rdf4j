@@ -103,6 +103,9 @@ class LmdbRecordIterator implements RecordIterator.Retainable<TripleIndex> {
 	private final StampedLongAdderLockManager txnLockManager;
 	private final long txnLease;
 	private final ValueStore.ReadSnapshot readSnapshot;
+	// Reused by the ordinary statement wrapper when staging a retained cursor.
+	private long[] stagingBatch;
+	private long[] stagingRow;
 	private final boolean retainOnClose;
 	private volatile boolean closed;
 	private boolean disposed;
@@ -280,6 +283,29 @@ class LmdbRecordIterator implements RecordIterator.Retainable<TripleIndex> {
 		} finally {
 			txnLockManager.unlockRead(stamp);
 		}
+	}
+
+	/** Whether an earlier use of this cursor left its staging buffers behind, so staging rows allocates nothing. */
+	boolean hasStagingBuffers() {
+		return stagingBatch != null;
+	}
+
+	/** A buffer for at least {@code rows} staged rows; only the wrapper that currently reads this cursor may use it. */
+	long[] stagingBatch(int rows) {
+		long[] buffer = stagingBatch;
+		if (buffer == null || buffer.length < rows * 4) {
+			stagingBatch = buffer = new long[rows * 4];
+		}
+		return buffer;
+	}
+
+	/** The row handed out from the staged batch; see {@link #stagingBatch(int)}. */
+	long[] stagingRow() {
+		long[] row = stagingRow;
+		if (row == null) {
+			stagingRow = row = new long[4];
+		}
+		return row;
 	}
 
 	@Override

@@ -144,6 +144,12 @@ final class IndexResolutionPlan {
 		return iterator;
 	}
 
+	// Ordinary statement staging can borrow the physical cursor's arrays only for a single full index.
+	// Do not bypass a selected partial-index plan to make it eligible for that optimization.
+	TripleIndex directStatementIndex() {
+		return full;
+	}
+
 	int boundPrefixMask(int boundMask) {
 		return partial == null ? full.boundPrefixMask(boundMask) : partial.boundPrefixMask(boundMask);
 	}

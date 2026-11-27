@@ -19,13 +19,14 @@ import org.eclipse.rdf4j.common.annotation.Experimental;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.base.CoreDatatype;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
-import org.eclipse.rdf4j.model.vocabulary.FN;
+import org.eclipse.rdf4j.query.algebra.FunctionCall;
 import org.eclipse.rdf4j.query.algebra.evaluation.ValueExprEvaluationException;
 import org.eclipse.rdf4j.query.algebra.evaluation.function.Function;
 import org.eclipse.rdf4j.query.algebra.evaluation.function.datetime.Day;
 import org.eclipse.rdf4j.query.algebra.evaluation.function.datetime.Hours;
 import org.eclipse.rdf4j.query.algebra.evaluation.function.datetime.Minutes;
 import org.eclipse.rdf4j.query.algebra.evaluation.function.datetime.Month;
+import org.eclipse.rdf4j.query.algebra.evaluation.function.datetime.Now;
 import org.eclipse.rdf4j.query.algebra.evaluation.function.datetime.Seconds;
 import org.eclipse.rdf4j.query.algebra.evaluation.function.datetime.Timezone;
 import org.eclipse.rdf4j.query.algebra.evaluation.function.datetime.Tz;
@@ -35,17 +36,27 @@ import org.eclipse.rdf4j.query.algebra.evaluation.function.hash.SHA1;
 import org.eclipse.rdf4j.query.algebra.evaluation.function.hash.SHA256;
 import org.eclipse.rdf4j.query.algebra.evaluation.function.hash.SHA384;
 import org.eclipse.rdf4j.query.algebra.evaluation.function.hash.SHA512;
+import org.eclipse.rdf4j.query.algebra.evaluation.function.numeric.Abs;
+import org.eclipse.rdf4j.query.algebra.evaluation.function.numeric.Ceil;
+import org.eclipse.rdf4j.query.algebra.evaluation.function.numeric.Floor;
 import org.eclipse.rdf4j.query.algebra.evaluation.function.numeric.Rand;
+import org.eclipse.rdf4j.query.algebra.evaluation.function.numeric.Round;
 import org.eclipse.rdf4j.query.algebra.evaluation.function.rdfterm.STRUUID;
 import org.eclipse.rdf4j.query.algebra.evaluation.function.rdfterm.StrDt;
 import org.eclipse.rdf4j.query.algebra.evaluation.function.rdfterm.StrLang;
 import org.eclipse.rdf4j.query.algebra.evaluation.function.rdfterm.UUID;
 import org.eclipse.rdf4j.query.algebra.evaluation.function.string.Concat;
+import org.eclipse.rdf4j.query.algebra.evaluation.function.string.Contains;
 import org.eclipse.rdf4j.query.algebra.evaluation.function.string.EncodeForUri;
+import org.eclipse.rdf4j.query.algebra.evaluation.function.string.LowerCase;
 import org.eclipse.rdf4j.query.algebra.evaluation.function.string.Replace;
 import org.eclipse.rdf4j.query.algebra.evaluation.function.string.StrAfter;
 import org.eclipse.rdf4j.query.algebra.evaluation.function.string.StrBefore;
+import org.eclipse.rdf4j.query.algebra.evaluation.function.string.StrEnds;
+import org.eclipse.rdf4j.query.algebra.evaluation.function.string.StrLen;
+import org.eclipse.rdf4j.query.algebra.evaluation.function.string.StrStarts;
 import org.eclipse.rdf4j.query.algebra.evaluation.function.string.Substring;
+import org.eclipse.rdf4j.query.algebra.evaluation.function.string.UpperCase;
 import org.eclipse.rdf4j.query.algebra.evaluation.function.xsd.BooleanCast;
 import org.eclipse.rdf4j.query.algebra.evaluation.function.xsd.ByteCast;
 import org.eclipse.rdf4j.query.algebra.evaluation.function.xsd.DateCast;
@@ -66,6 +77,7 @@ import org.eclipse.rdf4j.query.algebra.evaluation.function.xsd.UnsignedByteCast;
 import org.eclipse.rdf4j.query.algebra.evaluation.function.xsd.UnsignedIntCast;
 import org.eclipse.rdf4j.query.algebra.evaluation.function.xsd.UnsignedLongCast;
 import org.eclipse.rdf4j.query.algebra.evaluation.function.xsd.UnsignedShortCast;
+import org.eclipse.rdf4j.query.algebra.evaluation.util.QueryEvaluationUtility;
 import org.eclipse.rdf4j.sail.lmdb.ValueIds;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.fragment.EffectClass;
 import org.eclipse.rdf4j.sail.lmdb.inlined.Dates;
@@ -112,6 +124,7 @@ final class LmdbNativeFunctionLibrary {
 
 	static final class Entry {
 		final String uri;
+		final Class<? extends Function> implementationClass;
 		final int minArity;
 		final int maxArity;
 		final EffectClass effect;
@@ -134,10 +147,12 @@ final class LmdbNativeFunctionLibrary {
 		/** Optional raw-inline-id fast path (date parts), consulted before the evaluator for bare-Var arguments. */
 		final InlineFastPath inlineFastPath;
 
-		private Entry(String uri, int minArity, int maxArity, EffectClass effect, boolean guaranteedInlineResult,
+		private Entry(String uri, Class<? extends Function> implementationClass, int minArity, int maxArity,
+				EffectClass effect, boolean guaranteedInlineResult,
 				boolean comparableResult, boolean needsEvaluationScope, FunctionEvaluator evaluator,
 				InlineFastPath inlineFastPath) {
 			this.uri = uri;
+			this.implementationClass = implementationClass;
 			this.minArity = minArity;
 			this.maxArity = maxArity;
 			this.effect = effect;
@@ -152,7 +167,7 @@ final class LmdbNativeFunctionLibrary {
 	private static final Map<String, Entry> ENTRIES = new HashMap<>();
 
 	/** The generic NOW function registers under this bare (non-IRI) URI in the SPARQL function registry. */
-	static final String NOW_URI = new org.eclipse.rdf4j.query.algebra.evaluation.function.datetime.Now().getURI();
+	static final String NOW_URI = new Now().getURI();
 
 	static final String MASTER_PROPERTY = "rdf4j.lmdb.nativeFunctions.enabled";
 	private static final String STRINGS_PROPERTY = "rdf4j.lmdb.nativeFunctions.strings.enabled";
@@ -168,18 +183,18 @@ final class LmdbNativeFunctionLibrary {
 
 	static {
 		// numeric-channel functions: semantics live in LmdbNativeScalarExpressionCompiler's numeric channel
-		register(FN.STRING_LENGTH.stringValue(), 1, 1, EffectClass.PURE, true, true, null, null);
-		register(FN.NUMERIC_ABS.stringValue(), 1, 1, EffectClass.PURE, false, true, null, null);
-		register(FN.NUMERIC_CEIL.stringValue(), 1, 1, EffectClass.PURE, false, true, null, null);
-		register(FN.NUMERIC_FLOOR.stringValue(), 1, 1, EffectClass.PURE, false, true, null, null);
-		register(FN.NUMERIC_ROUND.stringValue(), 1, 1, EffectClass.PURE, false, true, null, null);
+		register(new StrLen(), 1, 1, EffectClass.PURE, true, true, null, null);
+		register(new Abs(), 1, 1, EffectClass.PURE, false, true, null, null);
+		register(new Ceil(), 1, 1, EffectClass.PURE, false, true, null, null);
+		register(new Floor(), 1, 1, EffectClass.PURE, false, true, null, null);
+		register(new Round(), 1, 1, EffectClass.PURE, false, true, null, null);
 		// truth-channel functions: semantics live in LmdbNativeExpressionCompiler.compileFunctionTruth
-		register(FN.STARTS_WITH.stringValue(), 2, 2, EffectClass.PURE, true, false, null, null);
-		register(FN.ENDS_WITH.stringValue(), 2, 2, EffectClass.PURE, true, false, null, null);
-		register(FN.CONTAINS.stringValue(), 2, 2, EffectClass.PURE, true, false, null, null);
+		register(new StrStarts(), 2, 2, EffectClass.PURE, true, false, null, null);
+		register(new StrEnds(), 2, 2, EffectClass.PURE, true, false, null, null);
+		register(new Contains(), 2, 2, EffectClass.PURE, true, false, null, null);
 		// value-channel functions with hand-written mirrors
-		register(FN.LOWER_CASE.stringValue(), 1, 1, EffectClass.PURE, false, true, caseFold(true), null);
-		register(FN.UPPER_CASE.stringValue(), 1, 1, EffectClass.PURE, false, true, caseFold(false), null);
+		register(new LowerCase(), 1, 1, EffectClass.PURE, false, true, caseFold(true), null);
+		register(new UpperCase(), 1, 1, EffectClass.PURE, false, true, caseFold(false), null);
 
 		// M2 — string family: exact-parity delegation to the generic implementations
 		registerDelegating(new Substring(), 2, 3, EffectClass.PURE, false, true, STRINGS_PROPERTY, null);
@@ -214,7 +229,7 @@ final class LmdbNativeFunctionLibrary {
 		// NOW is query-stable: one instant per evaluation, shared with generic islands through the evaluation
 		// scope. The evaluator is installed by the expression compiler (it needs the compile-time context); the
 		// entry records the facts.
-		register(NOW_URI, 0, 0, EffectClass.QUERY_STABLE, false, false, true, null, null, DATE_PARTS_PROPERTY);
+		register(new Now(), 0, 0, EffectClass.QUERY_STABLE, false, false, true, null, null, DATE_PARTS_PROPERTY);
 
 		// M4 — hashes
 		registerDelegating(new MD5(), 1, 1, EffectClass.PURE, false, true, HASHES_PROPERTY, null);
@@ -428,24 +443,28 @@ final class LmdbNativeFunctionLibrary {
 				java.math.BigDecimal.valueOf(value), CoreDatatype.XSD.INTEGER);
 	}
 
-	static void register(String uri, int minArity, int maxArity, EffectClass effect, boolean guaranteedInlineResult,
+	private static void register(Function function, int minArity, int maxArity, EffectClass effect,
+			boolean guaranteedInlineResult,
 			boolean comparableResult, FunctionEvaluator evaluator, InlineFastPath inlineFastPath) {
-		register(uri, minArity, maxArity, effect, guaranteedInlineResult, comparableResult, false, evaluator,
+		register(function, minArity, maxArity, effect, guaranteedInlineResult, comparableResult, false, evaluator,
 				inlineFastPath, null);
 	}
 
 	private static void registerDelegating(Function function, int minArity, int maxArity, EffectClass effect,
 			boolean guaranteedInlineResult, boolean comparableResult, String familyProperty,
 			InlineFastPath inlineFastPath) {
-		register(function.getURI(), minArity, maxArity, effect, guaranteedInlineResult, comparableResult, false,
+		register(function, minArity, maxArity, effect, guaranteedInlineResult, comparableResult, false,
 				delegating(function), inlineFastPath, familyProperty);
 	}
 
-	private static void register(String uri, int minArity, int maxArity, EffectClass effect,
+	private static void register(Function function, int minArity, int maxArity, EffectClass effect,
 			boolean guaranteedInlineResult, boolean comparableResult, boolean needsEvaluationScope,
 			FunctionEvaluator evaluator, InlineFastPath inlineFastPath, String familyProperty) {
-		ENTRIES.put(uri, new Entry(uri, minArity, maxArity, effect, guaranteedInlineResult, comparableResult,
-				needsEvaluationScope, evaluator, inlineFastPath));
+		String uri = function.getURI();
+		ENTRIES.put(uri,
+				new Entry(uri, function.getClass(), minArity, maxArity, effect, guaranteedInlineResult,
+						comparableResult,
+						needsEvaluationScope, evaluator, inlineFastPath));
 		if (familyProperty != null) {
 			FAMILY.put(uri, familyProperty);
 		}
@@ -472,6 +491,16 @@ final class LmdbNativeFunctionLibrary {
 			}
 		}
 		return entry;
+	}
+
+	/** Returns native semantics only for the actual registered or query-pinned built-in implementation. */
+	static Entry entry(FunctionCall call) {
+		Entry entry = entry(call.getURI());
+		if (entry == null) {
+			return null;
+		}
+		Function resolved = QueryEvaluationUtility.resolveFunction(call).orElse(null);
+		return resolved != null && resolved.getClass() == entry.implementationClass ? entry : null;
 	}
 
 	/** Whether {@code TIMEZONE()} should use the inline-id bit fast path (kill switch, default on). */

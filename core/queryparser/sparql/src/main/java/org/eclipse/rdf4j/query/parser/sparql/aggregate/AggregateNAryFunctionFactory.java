@@ -15,10 +15,15 @@ import java.util.function.BiFunction;
 
 import org.eclipse.rdf4j.common.annotation.Experimental;
 import org.eclipse.rdf4j.model.Value;
+import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.query.BindingSet;
+import org.eclipse.rdf4j.query.BlankNodeEffects;
 
 /**
  * Factory for a registered {@link AggregateNAryFunction} that is evaluated over multiple arguments.
+ * <p>
+ * A factory whose processor or collector has blank-node effects declares their combined requirements through
+ * {@link BlankNodeEffects.Provider}.
  *
  * @author Nik Kozlov
  */
@@ -56,8 +61,19 @@ public interface AggregateNAryFunctionFactory {
 	 */
 	AggregateNAryFunction buildFunction(BiFunction<Integer, BindingSet, Value> evaluationStepByIndex);
 
+	/** Builds a query-bound evaluator with the value factory selected for its declared blank-node effects. */
+	default AggregateNAryFunction buildFunction(BiFunction<Integer, BindingSet, Value> evaluationStep,
+			ValueFactory valueFactory) {
+		return buildFunction(evaluationStep);
+	}
+
 	/**
 	 * @return result collector associated with given function type
 	 */
 	AggregateCollector getCollector();
+
+	/** Creates a collector with the value factory selected for its declared blank-node effects. */
+	default AggregateCollector getCollector(ValueFactory valueFactory) {
+		return getCollector();
+	}
 }

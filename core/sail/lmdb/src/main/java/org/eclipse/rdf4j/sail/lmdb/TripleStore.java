@@ -4118,6 +4118,28 @@ class TripleStore implements Closeable {
 						.retainedIterator(txn, subj, pred, obj, context, explicit, cancellation));
 	}
 
+	LmdbRecordIterator getStatementTriplesRetained(Txn txn, long subj, long pred, long obj, long context,
+			boolean explicit, CursorCancellation cancellation) throws IOException {
+		return withGeneration(txn, selectedGeneration -> {
+			TripleIndex index = selectedGeneration.plans[boundMask(subj, pred, obj, context)].directStatementIndex();
+			return index == null ? null
+					: new LmdbRecordIterator(index, index.getPatternScore(subj, pred, obj, context), subj, pred, obj,
+							context, explicit, txn, null, null, true, cancellation);
+		});
+	}
+
+	boolean resetStatementTriples(LmdbRecordIterator iterator, long subj, long pred, long obj, long context,
+			boolean explicit) throws IOException {
+		return withGeneration(iterator.transaction(), selectedGeneration -> {
+			TripleIndex index = selectedGeneration.plans[boundMask(subj, pred, obj, context)].directStatementIndex();
+			if (index == null) {
+				return false;
+			}
+			iterator.reset(index, index.getPatternScore(subj, pred, obj, context), subj, pred, obj, context, explicit);
+			return true;
+		});
+	}
+
 	/** Re-aims a retained iterator at the next probe pattern, re-selecting the index by boundness. */
 	void resetTriples(Txn txn, RecordIterator.Retainable<IndexResolutionPlan> iterator, long subj, long pred, long obj,
 			long context, boolean explicit) throws IOException {

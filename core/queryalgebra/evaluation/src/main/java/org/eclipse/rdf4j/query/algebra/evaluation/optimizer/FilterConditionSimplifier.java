@@ -364,7 +364,8 @@ final class FilterConditionSimplifier {
 				public void meet(FunctionCall call) {
 					Function function = QueryEvaluationUtility.resolveFunction(call).orElse(null);
 					safe[0] &= function != null
-							&& QueryEvaluationUtility.isSafeForPlanConstantFolding(function, policy);
+							&& QueryEvaluationUtility.isSafeForPlanConstantFolding(function, policy,
+									QueryEvaluationUtility.functionEffects(call, function));
 					super.meet(call);
 				}
 			});
