@@ -13,18 +13,19 @@ package org.eclipse.rdf4j.query.algebra.evaluation.impl.evaluationsteps;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+import java.util.Arrays;
 import java.util.List;
 import java.util.concurrent.atomic.AtomicInteger;
 
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.common.iteration.CloseableIteratorIteration;
+import org.eclipse.rdf4j.common.iteration.Iterations;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.Statement;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
-import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.Dataset;
 import org.eclipse.rdf4j.query.MutableBindingSet;
 import org.eclipse.rdf4j.query.QueryEvaluationException;
@@ -54,15 +55,16 @@ class StatementPatternHasStatementTest {
 
 		assertThat(evaluationStep.hasStatement(bindings)).isTrue();
 		assertThat(tripleSource.hasStatementLookups.get()).isOne();
+		assertThat(tripleSource.statementCountLookups.get()).isZero();
 		assertThat(tripleSource.materializingLookups.get()).isZero();
 	}
 
 	@Test
-	void fullyBoundMultiContextPatternKeepsExistenceAndCountProbes() {
+	void fullyBoundMultiContextPatternUsesExistenceProbeAndReturnsOneRowPerMatchingGraph() {
 		ExistsProbeTripleSource tripleSource = new ExistsProbeTripleSource();
 		SimpleDataset dataset = new SimpleDataset();
 		dataset.addDefaultGraph((IRI) tripleSource.statement.getContext());
-		dataset.addDefaultGraph(tripleSource.valueFactory.createIRI("urn:graph:two"));
+		dataset.addDefaultGraph(tripleSource.secondGraph);
 		QueryEvaluationContext context = new QueryEvaluationContext.Minimal(dataset);
 		StatementPatternQueryEvaluationStep evaluationStep = new StatementPatternQueryEvaluationStep(
 				new StatementPattern(Var.of("s"), Var.of("p"), Var.of("o")),
@@ -75,13 +77,17 @@ class StatementPatternHasStatementTest {
 		bindings.addBinding("o", tripleSource.statement.getObject());
 
 		assertThat(evaluationStep.hasStatement(bindings)).isTrue();
-		assertThat(evaluationStep.getFullyBoundStatementCount(bindings)).isOne();
 		assertThat(tripleSource.hasStatementLookups.get()).isOne();
-		assertThat(tripleSource.statementCountLookups.get()).isOne();
 		assertThat(tripleSource.materializingLookups.get()).isZero();
-		assertThat(tripleSource.lastContexts)
-				.containsExactly(tripleSource.statement.getContext(),
-						tripleSource.valueFactory.createIRI("urn:graph:two"));
+		assertThat(tripleSource.lastContexts).containsExactly(tripleSource.statement.getContext(),
+				tripleSource.secondGraph);
+
+		assertThat(Iterations.asList(evaluationStep.evaluate(bindings))).containsExactly(bindings, bindings);
+		assertThat(tripleSource.hasStatementLookups.get()).isOne();
+		assertThat(tripleSource.statementCountLookups.get()).isZero();
+		assertThat(tripleSource.materializingLookups.get()).isOne();
+		assertThat(tripleSource.lastContexts).containsExactly(tripleSource.statement.getContext(),
+				tripleSource.secondGraph);
 	}
 
 	private static final class ExistsProbeTripleSource implements TripleSource {
@@ -90,11 +96,17 @@ class StatementPatternHasStatementTest {
 		private final AtomicInteger hasStatementLookups = new AtomicInteger();
 		private final AtomicInteger statementCountLookups = new AtomicInteger();
 		private final AtomicInteger materializingLookups = new AtomicInteger();
+		private final IRI secondGraph = valueFactory.createIRI("urn:graph:two");
 		private final Statement statement = valueFactory.createStatement(
 				valueFactory.createIRI("urn:s"),
 				valueFactory.createIRI("urn:p"),
 				valueFactory.createLiteral("o"),
 				valueFactory.createIRI("urn:graph:one"));
+		private final List<Statement> statements = List.of(statement,
+				valueFactory.createStatement(statement.getSubject(), statement.getPredicate(), statement.getObject(),
+						secondGraph),
+				valueFactory.createStatement(statement.getSubject(), statement.getPredicate(), statement.getObject(),
+						valueFactory.createIRI("urn:graph:excluded")));
 		private Resource[] lastContexts;
 
 		@Override
@@ -102,9 +114,7 @@ class StatementPatternHasStatementTest {
 				throws QueryEvaluationException {
 			hasStatementLookups.incrementAndGet();
 			lastContexts = contexts;
-			return statement.getSubject().equals(subj)
-					&& statement.getPredicate().equals(pred)
-					&& statement.getObject().equals(obj);
+			return !matchingStatements(subj, pred, obj, contexts).isEmpty();
 		}
 
 		@Override
@@ -112,14 +122,15 @@ class StatementPatternHasStatementTest {
 				throws QueryEvaluationException {
 			statementCountLookups.incrementAndGet();
 			lastContexts = contexts;
-			return hasMatch(subj, pred, obj) ? 1L : 0L;
+			return matchingStatements(subj, pred, obj, contexts).size();
 		}
 
 		@Override
 		public CloseableIteration<? extends Statement> getStatements(Resource subj, IRI pred, Value obj,
 				Resource... contexts) throws QueryEvaluationException {
 			materializingLookups.incrementAndGet();
-			return new CloseableIteratorIteration<>(List.of(statement).iterator());
+			lastContexts = contexts;
+			return new CloseableIteratorIteration<>(matchingStatements(subj, pred, obj, contexts).iterator());
 		}
 
 		@Override
@@ -127,10 +138,13 @@ class StatementPatternHasStatementTest {
 			return valueFactory;
 		}
 
-		private boolean hasMatch(Resource subj, IRI pred, Value obj) {
-			return statement.getSubject().equals(subj)
-					&& statement.getPredicate().equals(pred)
-					&& statement.getObject().equals(obj);
+		private List<Statement> matchingStatements(Resource subj, IRI pred, Value obj, Resource[] contexts) {
+			return statements.stream()
+					.filter(candidate -> (subj == null || subj.equals(candidate.getSubject()))
+							&& (pred == null || pred.equals(candidate.getPredicate()))
+							&& (obj == null || obj.equals(candidate.getObject()))
+							&& (contexts.length == 0 || Arrays.asList(contexts).contains(candidate.getContext())))
+					.toList();
 		}
 	}
 }

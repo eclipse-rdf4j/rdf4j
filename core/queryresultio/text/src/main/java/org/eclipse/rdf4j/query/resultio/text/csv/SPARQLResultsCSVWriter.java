@@ -25,6 +25,7 @@ import org.eclipse.rdf4j.model.Literal;
 import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.TripleTerm;
 import org.eclipse.rdf4j.model.Value;
+import org.eclipse.rdf4j.model.base.CoreDatatype;
 import org.eclipse.rdf4j.model.datatypes.XMLDatatypeUtil;
 import org.eclipse.rdf4j.model.vocabulary.XSD;
 import org.eclipse.rdf4j.query.BindingSet;
@@ -199,19 +200,22 @@ public class SPARQLResultsCSVWriter extends AbstractQueryResultWriter implements
 
 	private void writeLiteral(Literal literal) throws IOException {
 		String label = literal.getLabel();
-		IRI datatype = literal.getDatatype();
+		CoreDatatype coreDatatype = literal.getCoreDatatype();
 
 		boolean quoted = false;
 
-		if (XMLDatatypeUtil.isIntegerDatatype(datatype) || XMLDatatypeUtil.isDecimalDatatype(datatype)
-				|| XSD.DOUBLE.equals(datatype)) {
-			try {
-				String normalized = XMLDatatypeUtil.normalize(label, datatype);
-				writer.write(normalized);
-				return; // done
-			} catch (IllegalArgumentException e) {
-				// not a valid numeric datatyped literal. ignore error and write as
-				// (optionally quoted) string instead.
+		if (coreDatatype.isXSDDatatype()) {
+			CoreDatatype.XSD xsdDatatypeOrNull = coreDatatype.asXSDDatatypeOrNull();
+			if (xsdDatatypeOrNull.isIntegerDatatype() || xsdDatatypeOrNull.isDecimalDatatype()
+					|| xsdDatatypeOrNull == CoreDatatype.XSD.DOUBLE) {
+				try {
+					String normalized = XMLDatatypeUtil.normalize(label, xsdDatatypeOrNull);
+					writer.write(normalized);
+					return; // done
+				} catch (IllegalArgumentException e) {
+					// not a valid numeric datatyped literal. ignore error and write as
+					// (optionally quoted) string instead.
+				}
 			}
 		}
 

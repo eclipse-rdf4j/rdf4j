@@ -765,7 +765,7 @@ final class LmdbNativeLeapfrogJoin {
 		private NativeLmdbQuerySource.NativeProbe probe(int patternIndex) {
 			NativeLmdbQuerySource.NativeProbe probe = probes[patternIndex];
 			if (probe == null) {
-				probe = row.source.newProbe();
+				probe = row.source.newProbe(row.cursorCancellation());
 				probes[patternIndex] = probe;
 			}
 			return probe;

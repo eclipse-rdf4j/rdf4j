@@ -17,12 +17,14 @@ import java.util.Arrays;
 import java.util.Objects;
 import java.util.OptionalDouble;
 import java.util.OptionalLong;
+import java.util.function.Predicate;
 
 import org.eclipse.rdf4j.common.annotation.Experimental;
 import org.eclipse.rdf4j.common.annotation.InternalUseOnly;
 import org.eclipse.rdf4j.common.order.StatementOrder;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.query.QueryEvaluationException;
+import org.eclipse.rdf4j.query.QueryInterruptedException;
 import org.eclipse.rdf4j.sail.lmdb.LmdbKeyRange;
 import org.eclipse.rdf4j.sail.lmdb.LmdbPrefixRunCursor;
 import org.eclipse.rdf4j.sail.lmdb.LmdbPrefixRunPlan;
@@ -30,7 +32,9 @@ import org.eclipse.rdf4j.sail.lmdb.LmdbRootScanPartition;
 import org.eclipse.rdf4j.sail.lmdb.RecordIterator;
 import org.eclipse.rdf4j.sail.lmdb.ValueIds;
 import org.eclipse.rdf4j.sail.lmdb.ValuePosition;
+import org.eclipse.rdf4j.sail.lmdb.ValueResolutionScope;
 import org.eclipse.rdf4j.sail.lmdb.ValueStore;
+import org.eclipse.rdf4j.sail.lmdb.evaluation.codegen.KernelQueryCancelledException;
 import org.eclipse.rdf4j.sail.lmdb.factor.BorrowedFactorBatch;
 
 /**
@@ -50,7 +54,151 @@ public interface NativeLmdbQuerySource {
 		LmdbNativeProbeDeadline.poll(0);
 	}
 
+	/** Capture the active owner once when entering a native scan session. */
+	static CursorCancellation captureCursorCancellation() {
+		return captureCursorCancellation(NativeCancellationToken.current());
+	}
+
+	static CursorCancellation captureCursorCancellation(NativeCancellationToken token) {
+		LmdbNativeProbeDeadline deadline = LmdbNativeProbeDeadline.currentOrNull();
+		return token == null && deadline == null ? null : new CursorCancellation(token, deadline);
+	}
+
+	/** Delivers a wrapper's already-published local stop on the consuming thread. */
+	static void checkpointRecordCancellation() {
+		throw recordCancellation(null);
+	}
+
+	static void checkpointRecordCancellation(CursorCancellation cancellation) {
+		throw cancellation == null ? recordCancellation(null) : cancellation.cancelled();
+	}
+
+	private static RuntimeException recordCancellation(NativeCancellationToken token) {
+		if (token == null) {
+			return new QueryInterruptedException("LMDB record iteration cancelled");
+		}
+		token.check();
+		return new KernelQueryCancelledException(token, token);
+	}
+
+	/** The terminal owner and optional probe attempt, both sharing their worker's work across cursors. */
+	final class CursorCancellation {
+		private final NativeCancellationToken token;
+		private final Thread workThread;
+		private final NativeCancellationToken.CursorWork work;
+		private final LmdbNativeProbeDeadline deadline;
+		private final NativeCancellationToken.CursorWork deadlineWork;
+		private volatile Runnable graphContinuationPoll;
+
+		private CursorCancellation(NativeCancellationToken token, LmdbNativeProbeDeadline deadline) {
+			this.token = token;
+			this.workThread = Thread.currentThread();
+			this.work = token == null ? null : token.cursorWork(workThread);
+			this.deadline = deadline;
+			this.deadlineWork = deadline == null ? null : deadline.cursorWork(workThread);
+		}
+
+		public void checkpoint() {
+			poll(true);
+		}
+
+		/** Checks both owning signals at a boundary that already bounds the amount of work between calls. */
+		public void checkpointNow() {
+			if (token != null) {
+				token.check();
+			}
+			checkpointProbeDeadline();
+		}
+
+		/** Observe an already-published terminal stop before handing out prefetched rows. */
+		public void checkpointPublishedCancellation() {
+			if (token != null && token.cancellationPublished()) {
+				token.check();
+			}
+		}
+
+		/** Observes published stops without reading the deadline clock. */
+		public void checkpointPublishedStops() {
+			checkpointPublishedCancellation();
+			if (deadline != null && deadline.tripped()) {
+				checkpointProbeDeadline();
+			}
+		}
+
+		/** Charges one internal work unit before it executes. */
+		public void poll() {
+			poll(false);
+		}
+
+		private void poll(boolean exactDeadline) {
+			if (work != null && (work.pollDue(token) || (exactDeadline && token.cancellationPublished()))) {
+				token.check();
+			}
+			// An unrelated attempt must never use up this deadline's opportunity to be checked.
+			if (deadlineWork != null && (deadlineWork.pollDue() || exactDeadline)) {
+				checkpointProbeDeadline();
+			}
+		}
+
+		/** Reusable callback for synchronous graph proofs over CSF continuations. */
+		public Runnable graphContinuationPoll() {
+			Runnable poll = graphContinuationPoll;
+			if (poll == null) {
+				poll = this::pollGraphContinuation;
+				graphContinuationPoll = poll;
+			}
+			return poll;
+		}
+
+		private void pollGraphContinuation() {
+			if (workThread != Thread.currentThread()) {
+				// A borrowed owner can check both signals without changing its owning thread's work budget.
+				checkpointNow();
+				return;
+			}
+			poll();
+		}
+
+		/** The same signals, with a work budget belonging to the worker that opens this scan. */
+		public CursorCancellation forWorker() {
+			return workThread == Thread.currentThread() ? this : new CursorCancellation(token, deadline);
+		}
+
+		/** Checks both signals on transfer of an already-open cursor, preserving both workers' countdowns. */
+		public CursorCancellation transferToWorker() {
+			CursorCancellation worker = forWorker();
+			if (worker != this) {
+				worker.checkpointNow();
+			}
+			return worker;
+		}
+
+		/** Reads the owning signals without delivering either under the native transaction lease. */
+		public boolean checkpointSignalled() {
+			return (token != null && token.cancellationPublished()) || (deadline != null && deadline.expired());
+		}
+
+		public void checkpointProbeDeadline() {
+			if (deadline != null && deadline.expired()) {
+				// A terminal cancellation wins over speculative replay, including an unpublished interrupt.
+				if (token != null) {
+					token.check();
+				}
+				throw LmdbNativeProbeDeadlineExceeded.INSTANCE;
+			}
+		}
+
+		public RuntimeException cancelled() {
+			return recordCancellation(token);
+		}
+	}
+
 	long idOf(Value value) throws QueryEvaluationException;
+
+	/** Non-null only when this source preserves one statement and context relation across physical probes. */
+	default Runnable stableGraphRestrictionValidator() {
+		return null;
+	}
 
 	/** Resolves a spelling with its destination role; the mask affects cache retention, never RDF identity. */
 	default long idOf(Value value, int positionMask) throws QueryEvaluationException {
@@ -81,6 +229,49 @@ public interface NativeLmdbQuerySource {
 	/** Materializes a value using the complete static position mask of its lexical binding. */
 	default Value lazyValue(long id, int positionMask) throws QueryEvaluationException {
 		return lazyValue(id);
+	}
+
+	/** Materializes a projected id with its read owner's value scope, which may be absent. */
+	default Value lazyValue(long id, int positionMask, ValueResolutionScope valueScope)
+			throws QueryEvaluationException {
+		return lazyValue(id, positionMask);
+	}
+
+	/** Exact backing snapshot for projected handle reuse, or {@code null} if this source cannot certify one. */
+	default Object projectedValueSnapshot() {
+		return null;
+	}
+
+	/** Revalidates a previous handle for this snapshot and read owner, or returns {@code null} to request lookup. */
+	default Value reuseProjectedValue(Object snapshot, long id, int positionMask, ValueResolutionScope valueScope,
+			Value supplied, long semanticVersion) {
+		return null;
+	}
+
+	/** Borrows the paired store snapshot for internal lazy-handle lookup only. The access must not escape the call. */
+	default boolean withProjectedValueAccess(ValueResolutionScope scope, Predicate<ProjectedValueAccess> capture) {
+		return false;
+	}
+
+	interface ProjectedValueAccess {
+		Object snapshot();
+
+		/**
+		 * A null result declines the remaining row so its original source can resolve it outside the borrowed scope.
+		 */
+		Value lookup(long id, int positionMask, ValueResolutionScope scope);
+
+		Value reuse(long id, int positionMask, ValueResolutionScope scope, Value supplied, long semanticVersion);
+
+		/** Stable reuse epoch for independently owned RDF payloads, or negative when reuse is unavailable. */
+		default long detachedProjectionEpoch() {
+			return -1L;
+		}
+
+		/** Captures a term without borrowing mutable semantic state from the dictionary cache. */
+		default Value lookupDetached(long id, int positionMask, ValueResolutionScope scope) {
+			return null;
+		}
 	}
 
 	/**
@@ -172,6 +363,62 @@ public interface NativeLmdbQuerySource {
 	 */
 	static void releaseCostModel(Object identity) {
 		LmdbNativeAdvisoryLearner.release(identity);
+	}
+
+	default long count(long subj, long pred, long obj, long context, CursorCancellation cancellation)
+			throws IOException {
+		return count(subj, pred, obj, context);
+	}
+
+	default boolean has(long subj, long pred, long obj, long context, AdjacencyAccessObserver observer,
+			CursorCancellation cancellation) throws IOException {
+		return has(subj, pred, obj, context, observer);
+	}
+
+	/** Open against an operator's captured scan owner. Sources without owned storage may use their ordinary route. */
+	default RecordIterator statements(long subj, long pred, long obj, long context,
+			AdjacencyAccessObserver observer, CursorCancellation cancellation) throws IOException {
+		return statements(subj, pred, obj, context, observer);
+	}
+
+	default RecordIterator statementsInEncounterOrder(long subj, long pred, long obj, long context,
+			AdjacencyAccessObserver observer, CursorCancellation cancellation) throws IOException {
+		return statementsInEncounterOrder(subj, pred, obj, context, observer);
+	}
+
+	default RecordIterator lmdbStatements(long subj, long pred, long obj, long context,
+			AdjacencyAccessObserver observer, CursorCancellation cancellation) throws IOException {
+		return lmdbStatements(subj, pred, obj, context, observer);
+	}
+
+	default RecordIterator statements(long subj, long pred, long obj, long context, LmdbKeyRange range,
+			AdjacencyAccessObserver observer, CursorCancellation cancellation) throws IOException {
+		return statements(subj, pred, obj, context, range, observer);
+	}
+
+	default RecordIterator statements(StatementOrder order, long subj, long pred, long obj, long context,
+			AdjacencyAccessObserver observer, CursorCancellation cancellation) throws IOException {
+		return statements(order, subj, pred, obj, context, observer);
+	}
+
+	default RecordIterator lmdbStatements(StatementOrder order, long subj, long pred, long obj, long context,
+			AdjacencyAccessObserver observer, CursorCancellation cancellation) throws IOException {
+		return lmdbStatements(order, subj, pred, obj, context, observer);
+	}
+
+	default RecordIterator partitionStatements(long subj, long pred, long obj, long context,
+			LmdbRootScanPartition partition,
+			CursorCancellation cancellation) throws IOException {
+		return statements(subj, pred, obj, context, partition);
+	}
+
+	default RecordIterator tripleTerms(long subj, long pred, long obj, CursorCancellation cancellation)
+			throws IOException {
+		return tripleTerms(subj, pred, obj);
+	}
+
+	default NativeProbe newProbe(CursorCancellation cancellation) {
+		return newProbe();
 	}
 
 	RecordIterator statements(long subj, long pred, long obj, long context) throws IOException;
@@ -332,6 +579,12 @@ public interface NativeLmdbQuerySource {
 
 	default LmdbPrefixRunPlan prefixRunPlan(int[] prefixFields, long subj, long pred, long obj, long context) {
 		return null;
+	}
+
+	default LmdbPrefixRunCursor prefixRuns(LmdbPrefixRunPlan plan, long subj, long pred, long obj, long context,
+			boolean countRunRows, AdjacencyAccessObserver observer, CursorCancellation cancellation)
+			throws IOException {
+		return prefixRuns(plan, subj, pred, obj, context, countRunRows, observer);
 	}
 
 	default LmdbPrefixRunCursor prefixRuns(LmdbPrefixRunPlan plan, long subj, long pred, long obj, long context,

@@ -19,6 +19,8 @@ import java.util.List;
 import org.eclipse.rdf4j.model.BNode;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
+import org.eclipse.rdf4j.query.QueryParseOptions;
+import org.eclipse.rdf4j.query.QueryParseOptions.GraphAlgebraMode;
 import org.eclipse.rdf4j.query.algebra.Graph;
 import org.eclipse.rdf4j.query.algebra.Service;
 import org.eclipse.rdf4j.query.algebra.StatementPattern;
@@ -146,7 +148,8 @@ class ServiceGraphScopeParserTest {
 	}
 
 	private static ParsedQuery parse(String whereClause) {
-		return new SPARQLParser().parseQuery("SELECT * WHERE { " + whereClause + " }", null);
+		return new SPARQLParser().parseQuery("SELECT * WHERE { " + whereClause + " }", null,
+				QueryParseOptions.DEFAULT.withGraphAlgebraMode(GraphAlgebraMode.GRAPH));
 	}
 
 	private static List<Service> services(TupleExpr expression) {

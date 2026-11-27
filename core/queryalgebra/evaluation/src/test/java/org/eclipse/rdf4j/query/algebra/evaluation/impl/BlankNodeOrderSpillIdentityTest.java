@@ -28,6 +28,7 @@ import org.eclipse.rdf4j.common.iteration.CloseableIteratorIteration;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.query.BindingSet;
+import org.eclipse.rdf4j.query.BlankNodeEffects;
 import org.eclipse.rdf4j.query.algebra.Order;
 import org.eclipse.rdf4j.query.algebra.OrderElem;
 import org.eclipse.rdf4j.query.algebra.SingletonSet;
@@ -92,7 +93,8 @@ class BlankNodeOrderSpillIdentityTest {
 		BindingSet reused = EmptyBindingSet.getInstance();
 		var input = new CloseableIteratorIteration<>(List.of(reused, reused, reused).iterator());
 		var extension = new ExtensionIterator(input,
-				row -> row.setBinding("node", context.getOrCreateBNode("label", row, VF)), context);
+				row -> row.setBinding("node", context.getOrCreateBNode("label", row, VF)), context,
+				BlankNodeEffects.LABELLED);
 		var nodes = new ArrayList<Value>();
 		try (var rows = new OrderIterator(extension, comparator(context, "node"), Long.MAX_VALUE, false, 1)) {
 			while (rows.hasNext()) {

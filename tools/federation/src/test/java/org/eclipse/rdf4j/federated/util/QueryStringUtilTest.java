@@ -28,6 +28,8 @@ import org.eclipse.rdf4j.model.Literal;
 import org.eclipse.rdf4j.model.util.Values;
 import org.eclipse.rdf4j.model.vocabulary.RDF4J;
 import org.eclipse.rdf4j.query.QueryLanguage;
+import org.eclipse.rdf4j.query.QueryParseOptions;
+import org.eclipse.rdf4j.query.QueryParseOptions.GraphAlgebraMode;
 import org.eclipse.rdf4j.query.algebra.Graph;
 import org.eclipse.rdf4j.query.algebra.StatementPattern;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
@@ -144,7 +146,9 @@ public class QueryStringUtilTest {
 	}
 
 	private TupleExpr parse(String query) {
-		return QueryParserUtil.parseTupleQuery(QueryLanguage.SPARQL, query, null).getTupleExpr();
+		// These assertions inspect Graph nodes, not the standalone parser's legacy default.
+		return QueryParserUtil.parseTupleQuery(QueryLanguage.SPARQL, query, null,
+				QueryParseOptions.DEFAULT.withGraphAlgebraMode(GraphAlgebraMode.GRAPH)).getTupleExpr();
 	}
 
 	private List<Graph> graphs(TupleExpr expression) {

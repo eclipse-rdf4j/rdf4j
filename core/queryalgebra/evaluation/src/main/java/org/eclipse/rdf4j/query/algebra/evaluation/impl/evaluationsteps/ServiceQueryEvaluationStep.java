@@ -156,18 +156,21 @@ public final class ServiceQueryEvaluationStep implements QueryEvaluationStep {
 					results = fs.select(service, freeVars, bindings, baseUri);
 				}
 				QueryExecutionContext.checkpointReplaySafepoint();
+				boolean admitted = results instanceof FederatedServiceIdentity.AdmittedResults;
 				if (runtimeTelemetryEnabled) {
 					results = trackResponseBytes(service, results);
 				}
-				RemoteBNode.ResponseScope response = RemoteBNode.newResponseScope(allocation, localFactory,
-						receivingScope, canonicalIDs);
-				response.seedOriginalBindings(invocationBindings);
-				results = new ConvertingIteration<BindingSet, BindingSet>(results) {
-					@Override
-					protected BindingSet convert(BindingSet row) {
-						return response.map(row, invocationBindings);
-					}
-				};
+				if (!admitted) {
+					RemoteBNode.ResponseScope response = RemoteBNode.newResponseScope(allocation, localFactory,
+							receivingScope, canonicalIDs);
+					response.seedOriginalBindings(invocationBindings);
+					results = new ConvertingIteration<BindingSet, BindingSet>(results) {
+						@Override
+						protected BindingSet convert(BindingSet row) {
+							return response.map(row, invocationBindings);
+						}
+					};
+				}
 				CloseableIteration<BindingSet> checked = ExternalValuePreparation.checkReplayAfterCalls(results);
 				if (service.isSilent()) {
 					results = null;

@@ -17,6 +17,8 @@ import java.util.HashSet;
 import java.util.Set;
 import java.util.function.Supplier;
 
+import org.eclipse.rdf4j.common.annotation.InternalUseOnly;
+
 /**
  * An Iteration that filters any duplicate elements from an underlying iterator.
  */
@@ -81,14 +83,20 @@ public class DistinctIteration<E> extends FilterIteration<E> {
 	@Override
 	protected boolean accept(E object) {
 		try {
-			QueryExecutionContextBridge.throwIfHeavyOperatorExecutionDisabled(OPERATOR_NAME);
-			QueryExecutionContextBridge.markHeavy(OPERATOR_NAME);
-			QueryExecutionContextBridge.checkpoint(OPERATOR_NAME);
+			checkExecution();
 		} catch (Throwable t) {
 			excludeSet = null;
 			throw t;
 		}
 		return add(object);
+	}
+
+	/** Performs the shared DISTINCT circuit-breaker admission and checkpoint for each input row. */
+	@InternalUseOnly
+	public static void checkExecution() {
+		QueryExecutionContextBridge.throwIfHeavyOperatorExecutionDisabled(OPERATOR_NAME);
+		QueryExecutionContextBridge.markHeavy(OPERATOR_NAME);
+		QueryExecutionContextBridge.checkpoint(OPERATOR_NAME);
 	}
 
 	@Override

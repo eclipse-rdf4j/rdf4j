@@ -80,272 +80,317 @@ public class LoadingBenchmark {
 	public void loadSynthetic() {
 
 		MemoryStore memoryStore = new MemoryStore();
-		memoryStore.init();
+		try {
+			memoryStore.init();
 
-		try (NotifyingSailConnection connection = memoryStore.getConnection()) {
-			connection.begin(IsolationLevels.valueOf(isolationLevel));
-			statementList.forEach(getStatementConsumer(connection));
+			try (NotifyingSailConnection connection = memoryStore.getConnection()) {
+				connection.begin(IsolationLevels.valueOf(isolationLevel));
+				statementList.forEach(getStatementConsumer(connection));
 
-			connection.commit();
+				connection.commit();
+			}
+
+		} finally {
+			memoryStore.shutDown();
 		}
-
 	}
 
 	@Benchmark
 	public void loadSyntheticOneStatementPerTransaction() {
 
 		MemoryStore memoryStore = new MemoryStore();
-		memoryStore.init();
+		try {
+			memoryStore.init();
 
-		try (NotifyingSailConnection connection = memoryStore.getConnection()) {
+			try (NotifyingSailConnection connection = memoryStore.getConnection()) {
 
-			for (Statement statement : statementList) {
-				connection.begin(IsolationLevels.valueOf(isolationLevel));
-				getStatementConsumer(connection).accept(statement);
-				connection.commit();
+				for (Statement statement : statementList) {
+					connection.begin(IsolationLevels.valueOf(isolationLevel));
+					getStatementConsumer(connection).accept(statement);
+					connection.commit();
+				}
+
 			}
 
+		} finally {
+			memoryStore.shutDown();
 		}
-
 	}
 
 	@Benchmark
 	public void loadSyntheticOneStatementPerTransactionClearPrevious() {
 
 		MemoryStore memoryStore = new MemoryStore();
-		memoryStore.init();
+		try {
+			memoryStore.init();
 
-		try (NotifyingSailConnection connection = memoryStore.getConnection()) {
+			try (NotifyingSailConnection connection = memoryStore.getConnection()) {
 
-			for (Statement statement : statementList) {
-				connection.begin(IsolationLevels.valueOf(isolationLevel));
-				connection.clear();
-				getStatementConsumer(connection).accept(statement);
-				connection.commit();
+				for (Statement statement : statementList) {
+					connection.begin(IsolationLevels.valueOf(isolationLevel));
+					connection.clear();
+					getStatementConsumer(connection).accept(statement);
+					connection.commit();
+				}
+
 			}
 
+		} finally {
+			memoryStore.shutDown();
 		}
-
 	}
 
 	@Benchmark
 	public void loadRealData() {
 
 		MemoryStore memoryStore = new MemoryStore();
-		memoryStore.init();
+		try {
+			memoryStore.init();
 
-		try (NotifyingSailConnection connection = memoryStore.getConnection()) {
-			connection.begin(IsolationLevels.valueOf(isolationLevel));
-			realData.forEach(getStatementConsumer(connection));
+			try (NotifyingSailConnection connection = memoryStore.getConnection()) {
+				connection.begin(IsolationLevels.valueOf(isolationLevel));
+				realData.forEach(getStatementConsumer(connection));
 
-			connection.commit();
+				connection.commit();
+			}
+
+		} finally {
+			memoryStore.shutDown();
 		}
-
 	}
 
 	@Benchmark
 	public long loadSyntheticAndSize() {
 
 		MemoryStore memoryStore = new MemoryStore();
-		memoryStore.init();
+		try {
+			memoryStore.init();
 
-		try (NotifyingSailConnection connection = memoryStore.getConnection()) {
-			connection.begin(IsolationLevels.valueOf(isolationLevel));
-			statementList.forEach(getStatementConsumer(connection));
+			try (NotifyingSailConnection connection = memoryStore.getConnection()) {
+				connection.begin(IsolationLevels.valueOf(isolationLevel));
+				statementList.forEach(getStatementConsumer(connection));
 
-			connection.commit();
+				connection.commit();
 
-			return connection.size();
+				return connection.size();
+			}
+
+		} finally {
+			memoryStore.shutDown();
 		}
-
 	}
 
 	@Benchmark
 	public long loadSyntheticWithDuplicates() {
 
 		MemoryStore memoryStore = new MemoryStore();
-		memoryStore.init();
+		try {
+			memoryStore.init();
 
-		try (NotifyingSailConnection connection = memoryStore.getConnection()) {
-			connection.begin(IsolationLevels.valueOf(isolationLevel));
+			try (NotifyingSailConnection connection = memoryStore.getConnection()) {
+				connection.begin(IsolationLevels.valueOf(isolationLevel));
 
-			statementList.forEach(getStatementConsumer(connection));
+				statementList.forEach(getStatementConsumer(connection));
 
-			connection.commit();
+				connection.commit();
 
-			connection.begin(IsolationLevels.valueOf(isolationLevel));
+				connection.begin(IsolationLevels.valueOf(isolationLevel));
 
-			statementList.forEach(getStatementConsumer(connection));
+				statementList.forEach(getStatementConsumer(connection));
 
-			long count = 0;
-			for (int i = 0; i < 10; i++) {
-				count += getCount(connection);
+				long count = 0;
+				for (int i = 0; i < 10; i++) {
+					count += getCount(connection);
+				}
+
+				connection.commit();
+
+				return count;
 			}
 
-			connection.commit();
-
-			return count;
+		} finally {
+			memoryStore.shutDown();
 		}
-
 	}
 
 	@Benchmark
 	public long loadSyntheticWithDuplicatesFlush() {
 
 		MemoryStore memoryStore = new MemoryStore();
-		memoryStore.init();
+		try {
+			memoryStore.init();
 
-		try (NotifyingSailConnection connection = memoryStore.getConnection()) {
-			connection.begin(IsolationLevels.valueOf(isolationLevel));
+			try (NotifyingSailConnection connection = memoryStore.getConnection()) {
+				connection.begin(IsolationLevels.valueOf(isolationLevel));
 
-			statementList.forEach(getStatementConsumer(connection));
+				statementList.forEach(getStatementConsumer(connection));
 
-			connection.commit();
+				connection.commit();
 
-			connection.begin(IsolationLevels.valueOf(isolationLevel));
+				connection.begin(IsolationLevels.valueOf(isolationLevel));
 
-			statementList.forEach(getStatementConsumer(connection));
+				statementList.forEach(getStatementConsumer(connection));
 
-			connection.flush();
+				connection.flush();
 
-			long count = 0;
-			for (int i = 0; i < 10; i++) {
-				count += getCount(connection);
+				long count = 0;
+				for (int i = 0; i < 10; i++) {
+					count += getCount(connection);
+				}
+
+				connection.commit();
+
+				return count;
 			}
 
-			connection.commit();
-
-			return count;
+		} finally {
+			memoryStore.shutDown();
 		}
-
 	}
 
 	@Benchmark
 	public long loadSyntheticWithDuplicatesAndNewStatements() {
 
 		MemoryStore memoryStore = new MemoryStore();
-		memoryStore.init();
+		try {
+			memoryStore.init();
 
-		try (NotifyingSailConnection connection = memoryStore.getConnection()) {
-			connection.begin(IsolationLevels.valueOf(isolationLevel));
+			try (NotifyingSailConnection connection = memoryStore.getConnection()) {
+				connection.begin(IsolationLevels.valueOf(isolationLevel));
 
-			statementList.forEach(getStatementConsumer(connection));
+				statementList.forEach(getStatementConsumer(connection));
 
-			connection.commit();
+				connection.commit();
 
-			connection.begin(IsolationLevels.valueOf(isolationLevel));
+				connection.begin(IsolationLevels.valueOf(isolationLevel));
 
-			statementList.forEach(getStatementConsumer(connection));
+				statementList.forEach(getStatementConsumer(connection));
 
-			ValueFactory vf = memoryStore.getValueFactory();
-			connection.addStatement(vf.createBNode(), RDFS.LABEL, vf.createLiteral("label"));
+				ValueFactory vf = memoryStore.getValueFactory();
+				connection.addStatement(vf.createBNode(), RDFS.LABEL, vf.createLiteral("label"));
 
-			long count = 0;
-			for (int i = 0; i < 10; i++) {
-				count += getCount(connection);
+				long count = 0;
+				for (int i = 0; i < 10; i++) {
+					count += getCount(connection);
+				}
+
+				connection.commit();
+
+				return count;
 			}
 
-			connection.commit();
-
-			return count;
+		} finally {
+			memoryStore.shutDown();
 		}
-
 	}
 
 	@Benchmark
 	public long loadSyntheticWithDuplicatesAndNewStatementsGetFirst() {
 
 		MemoryStore memoryStore = new MemoryStore();
-		memoryStore.init();
+		try {
+			memoryStore.init();
 
-		try (NotifyingSailConnection connection = memoryStore.getConnection()) {
-			connection.begin(IsolationLevels.valueOf(isolationLevel));
+			try (NotifyingSailConnection connection = memoryStore.getConnection()) {
+				connection.begin(IsolationLevels.valueOf(isolationLevel));
 
-			statementList.forEach(getStatementConsumer(connection));
+				statementList.forEach(getStatementConsumer(connection));
 
-			connection.commit();
+				connection.commit();
 
-			connection.begin(IsolationLevels.valueOf(isolationLevel));
+				connection.begin(IsolationLevels.valueOf(isolationLevel));
 
-			statementList.forEach(getStatementConsumer(connection));
+				statementList.forEach(getStatementConsumer(connection));
 
-			ValueFactory vf = memoryStore.getValueFactory();
-			connection.addStatement(vf.createBNode(), RDFS.LABEL, vf.createLiteral("label"));
+				ValueFactory vf = memoryStore.getValueFactory();
+				connection.addStatement(vf.createBNode(), RDFS.LABEL, vf.createLiteral("label"));
 
-			long counter = 0;
-			for (int i = 0; i < 10; i++) {
-				try (CloseableIteration<? extends Statement> statements = connection.getStatements(null,
-						null, null, false)) {
-					counter += statements.next().toString().length();
+				long counter = 0;
+				for (int i = 0; i < 10; i++) {
+					try (CloseableIteration<? extends Statement> statements = connection.getStatements(null,
+							null, null, false)) {
+						counter += statements.next().toString().length();
+					}
 				}
+
+				connection.commit();
+
+				return counter;
 			}
 
-			connection.commit();
-
-			return counter;
+		} finally {
+			memoryStore.shutDown();
 		}
-
 	}
 
 	@Benchmark
 	public long loadSyntheticSingleTransactionGetFirstStatement() {
 
 		MemoryStore memoryStore = new MemoryStore();
-		memoryStore.init();
+		try {
+			memoryStore.init();
 
-		try (NotifyingSailConnection connection = memoryStore.getConnection()) {
-			connection.begin(IsolationLevels.valueOf(isolationLevel));
+			try (NotifyingSailConnection connection = memoryStore.getConnection()) {
+				connection.begin(IsolationLevels.valueOf(isolationLevel));
 
-			statementList.forEach(getStatementConsumer(connection));
+				statementList.forEach(getStatementConsumer(connection));
 
-			long count = 0;
-			for (int i = 0; i < 10; i++) {
-				try (CloseableIteration<? extends Statement> statements = connection.getStatements(null,
-						null, null, false)) {
-					count += statements.next().toString().length();
+				long count = 0;
+				for (int i = 0; i < 10; i++) {
+					try (CloseableIteration<? extends Statement> statements = connection.getStatements(null,
+							null, null, false)) {
+						count += statements.next().toString().length();
+					}
 				}
+
+				connection.commit();
+
+				return count;
 			}
 
-			connection.commit();
-
-			return count;
+		} finally {
+			memoryStore.shutDown();
 		}
-
 	}
 
 	@Benchmark
 	public long loadSyntheticWithDuplicatesAndNewStatementsIteratorMatchesNothing() {
 
 		MemoryStore memoryStore = new MemoryStore();
-		memoryStore.init();
+		try {
+			memoryStore.init();
 
-		try (NotifyingSailConnection connection = memoryStore.getConnection()) {
-			connection.begin(IsolationLevels.valueOf(isolationLevel));
+			try (NotifyingSailConnection connection = memoryStore.getConnection()) {
+				connection.begin(IsolationLevels.valueOf(isolationLevel));
 
-			statementList.forEach(getStatementConsumer(connection));
+				statementList.forEach(getStatementConsumer(connection));
 
-			connection.commit();
+				connection.commit();
 
-			connection.begin(IsolationLevels.valueOf(isolationLevel));
+				connection.begin(IsolationLevels.valueOf(isolationLevel));
 
-			statementList.forEach(getStatementConsumer(connection));
+				statementList.forEach(getStatementConsumer(connection));
 
-			ValueFactory vf = memoryStore.getValueFactory();
-			connection.addStatement(vf.createBNode(), RDFS.LABEL, vf.createLiteral("label"));
+				ValueFactory vf = memoryStore.getValueFactory();
+				connection.addStatement(vf.createBNode(), RDFS.LABEL, vf.createLiteral("label"));
 
-			long count = 0;
-			for (int i = 0; i < 10; i++) {
-				try (Stream<? extends Statement> stream = connection.getStatements(vf.createBNode(), null, null, false)
-						.stream()) {
-					count += stream.count();
+				long count = 0;
+				for (int i = 0; i < 10; i++) {
+					try (Stream<? extends Statement> stream = connection
+							.getStatements(vf.createBNode(), null, null, false)
+							.stream()) {
+						count += stream.count();
+					}
 				}
+
+				connection.commit();
+
+				return count;
 			}
 
-			connection.commit();
-
-			return count;
+		} finally {
+			memoryStore.shutDown();
 		}
-
 	}
 
 	private long getCount(NotifyingSailConnection connection) {

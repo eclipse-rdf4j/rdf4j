@@ -42,7 +42,7 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
 @SuppressWarnings("ConstantConditions")
-class SketchBasedJoinEstimatorConfigTest {
+class SketchBasedJoinEstimatorConfigTest extends AbstractSketchBasedJoinEstimatorTest {
 
 	private static final ValueFactory VF = SimpleValueFactory.getInstance();
 	private static final String PROPERTY_PREFIX = "org.eclipse.rdf4j.query.algebra.evaluation.sketch.SketchBasedJoinEstimator.";
@@ -87,7 +87,7 @@ class SketchBasedJoinEstimatorConfigTest {
 				.withThrottleMillis(0)
 				.withDefaultContext("urn:mine");
 
-		SketchBasedJoinEstimator est = new SketchBasedJoinEstimator(store, cfg);
+		SketchBasedJoinEstimator est = createEstimator(store, cfg);
 
 		// One triple with null context
 		store.add(st(s1, p1, o1));
@@ -111,7 +111,7 @@ class SketchBasedJoinEstimatorConfigTest {
 				.withChurnSamplePercent(0.0)
 				.withChurnSampleMax(0);
 
-		SketchBasedJoinEstimator est = new SketchBasedJoinEstimator(store, cfg);
+		SketchBasedJoinEstimator est = createEstimator(store, cfg);
 
 		// Load one statement and publish snapshot (no churn events after rebuild)
 		store.addAll(List.of(st(s1, p1, o1)));
@@ -126,7 +126,7 @@ class SketchBasedJoinEstimatorConfigTest {
 
 	@Test
 	void estimateCountInvalidatesPatternCacheAfterSketchMutation() throws Exception {
-		SketchBasedJoinEstimator estimator = new SketchBasedJoinEstimator(store,
+		SketchBasedJoinEstimator estimator = createEstimator(store,
 				SketchBasedJoinEstimator.Config.defaults()
 						.withNominalEntries(64)
 						.withThrottleEveryN(1)
@@ -153,7 +153,7 @@ class SketchBasedJoinEstimatorConfigTest {
 
 	@Test
 	void nominalEntriesControlsSketchNominalEntries() throws Exception {
-		SketchBasedJoinEstimator est = new SketchBasedJoinEstimator(store, SketchBasedJoinEstimator.Config.defaults()
+		SketchBasedJoinEstimator est = createEstimator(store, SketchBasedJoinEstimator.Config.defaults()
 				.withNominalEntries(256));
 
 		assertEquals(256, sketchNominalEntries(est));
@@ -161,7 +161,7 @@ class SketchBasedJoinEstimatorConfigTest {
 
 	@Test
 	void defaultsPreserveHistoricalBucketAndSketchDefaults() throws Exception {
-		SketchBasedJoinEstimator est = new SketchBasedJoinEstimator(store, SketchBasedJoinEstimator.Config.defaults());
+		SketchBasedJoinEstimator est = createEstimator(store, SketchBasedJoinEstimator.Config.defaults());
 
 		var bucketsField = est.getClass().getDeclaredField("maxBucketCount");
 		bucketsField.setAccessible(true);
@@ -202,7 +202,7 @@ class SketchBasedJoinEstimatorConfigTest {
 		SketchBasedJoinEstimator.Config cfg = SketchBasedJoinEstimator.Config.defaults()
 				.withNominalEntries(256);
 
-		SketchBasedJoinEstimator estimator = new SketchBasedJoinEstimator(store, cfg);
+		SketchBasedJoinEstimator estimator = createEstimator(store, cfg);
 		int defaultBucketCount = staticIntField(SketchBasedJoinEstimator.class, "DEFAULT_BUCKET_COUNT");
 
 		assertAll(
@@ -232,7 +232,7 @@ class SketchBasedJoinEstimatorConfigTest {
 		invokeConfig(cfg, "withObjectBucketCount", int.class, 32);
 		invokeConfig(cfg, "withContextBucketCount", int.class, 8);
 
-		SketchBasedJoinEstimator estimator = new SketchBasedJoinEstimator(store, cfg);
+		SketchBasedJoinEstimator estimator = createEstimator(store, cfg);
 		Object state = objectField(estimator, "bufA");
 		Object singleTriples = objectField(state, "singleTriples");
 		Object singles = objectField(state, "singles");
@@ -266,7 +266,7 @@ class SketchBasedJoinEstimatorConfigTest {
 		store.add(VF.createStatement(s1, p1, o1, c1));
 		store.add(VF.createStatement(s2, p2, o2, c2));
 
-		SketchBasedJoinEstimator estimator = new SketchBasedJoinEstimator(store, cfg);
+		SketchBasedJoinEstimator estimator = createEstimator(store, cfg);
 		estimator.rebuild();
 
 		assertEquals(1.0, estimator.cardinalitySingle(SketchBasedJoinEstimator.Component.S, s1.stringValue()), 0.0);
@@ -289,7 +289,7 @@ class SketchBasedJoinEstimatorConfigTest {
 		assertSame(cfg, invokeNoArgConfig(cfg, "withoutContextPairSketches"));
 
 		store.add(VF.createStatement(s1, p1, o1, c1));
-		SketchBasedJoinEstimator estimator = new SketchBasedJoinEstimator(store, cfg);
+		SketchBasedJoinEstimator estimator = createEstimator(store, cfg);
 		estimator.rebuild();
 
 		assertEquals(1.0, estimator.cardinalitySingle(SketchBasedJoinEstimator.Component.C, c1.stringValue()), 0.0);
@@ -318,7 +318,7 @@ class SketchBasedJoinEstimatorConfigTest {
 
 			Resource c1 = VF.createIRI("urn:c1");
 			store.add(VF.createStatement(s1, p1, o1, c1));
-			SketchBasedJoinEstimator estimator = new SketchBasedJoinEstimator(store,
+			SketchBasedJoinEstimator estimator = createEstimator(store,
 					SketchBasedJoinEstimator.Config.defaults()
 							.withNominalEntries(128)
 							.withThrottleEveryN(1)
@@ -373,7 +373,7 @@ class SketchBasedJoinEstimatorConfigTest {
 			System.setProperty(OBJECT_BUCKET_COUNT_PROPERTY, "256");
 			System.setProperty(CONTEXT_BUCKET_COUNT_PROPERTY, "8");
 
-			SketchBasedJoinEstimator estimator = new SketchBasedJoinEstimator(store,
+			SketchBasedJoinEstimator estimator = createEstimator(store,
 					SketchBasedJoinEstimator.Config.defaults());
 
 			assertEquals(1024, sketchNominalEntries(estimator));
@@ -415,7 +415,7 @@ class SketchBasedJoinEstimatorConfigTest {
 			System.setProperty(ROW_BUDGET_PROPERTY, "321");
 			System.setProperty(SAMPLE_SIZE_PROPERTY, "13");
 
-			SketchBasedJoinEstimator estimator = new SketchBasedJoinEstimator(store,
+			SketchBasedJoinEstimator estimator = createEstimator(store,
 					SketchBasedJoinEstimator.Config.defaults()
 							.withZeroIntersectionExactDistinctLimit(3)
 							.withZeroIntersectionSkewRatio(4.0d)
@@ -465,7 +465,7 @@ class SketchBasedJoinEstimatorConfigTest {
 		}
 	}
 
-	private static RareOverlapFixture buildRareOverlapFixture(SketchBasedJoinEstimator.Config config) throws Exception {
+	private RareOverlapFixture buildRareOverlapFixture(SketchBasedJoinEstimator.Config config) throws Exception {
 		IRI locatedAt = VF.createIRI("urn:locatedAt");
 		IRI hasName = VF.createIRI("urn:hasName");
 		int overlapBranches = 64;
@@ -476,7 +476,7 @@ class SketchBasedJoinEstimatorConfigTest {
 			populateRareOverlapData(rareOverlapStore, locatedAt, hasName, overlapBranches, copiesPerBranch,
 					noiseSubjects);
 
-			SketchBasedJoinEstimator estimator = new SketchBasedJoinEstimator(rareOverlapStore, config);
+			SketchBasedJoinEstimator estimator = createEstimator(rareOverlapStore, config);
 			estimator.rebuild();
 
 			return new RareOverlapFixture(estimator, rareOverlapJoin(locatedAt, hasName),

@@ -31,7 +31,9 @@ import java.net.URL;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.ArrayList;
 import java.util.HashSet;
+import java.util.List;
 import java.util.Set;
 import java.util.concurrent.CountDownLatch;
 
@@ -52,11 +54,26 @@ import org.eclipse.rdf4j.sail.SailException;
 import org.eclipse.rdf4j.sail.helpers.AbstractSail;
 import org.eclipse.rdf4j.sail.memory.MemoryStore;
 import org.eclipse.rdf4j.sail.shacl.results.ValidationReport;
+import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.Timeout;
+import org.junit.jupiter.api.function.Executable;
 import org.junit.jupiter.api.io.TempDir;
 
 class ShaclValidatorFluentApiTest {
+
+	private final List<SailRepository> repositories = new ArrayList<>();
+
+	private SailRepository repository(Sail sail) {
+		SailRepository repository = new SailRepository(sail);
+		repositories.add(repository);
+		return repository;
+	}
+
+	@AfterEach
+	void shutDownRepositories() {
+		assertAll(repositories.stream().<Executable>map(repository -> repository::shutDown));
+	}
 
 	@Test
 	void builderExposesShaclSailConfigurationMethods() {
@@ -720,13 +737,13 @@ class ShaclValidatorFluentApiTest {
 	@Test
 	void validatorUsesDefensiveCopyOfShapesGraphsSet() throws Exception {
 
-		SailRepository shapesRepo = new SailRepository(new MemoryStore());
+		SailRepository shapesRepo = repository(new MemoryStore());
 		IRI graph1 = iri("http://example.com/graph1");
 		IRI graph2 = iri("http://example.com/graph2");
 		addShape(shapesRepo, graph1, "http://example.com/ns#p1");
 		addShape(shapesRepo, graph2, "http://example.com/ns#p2");
 
-		SailRepository dataRepo = new SailRepository(new MemoryStore());
+		SailRepository dataRepo = repository(new MemoryStore());
 		addData(dataRepo, "http://example.com/ns#a", "http://example.com/ns#p1");
 
 		Set<IRI> shapesGraphs = new HashSet<>();
@@ -745,7 +762,7 @@ class ShaclValidatorFluentApiTest {
 
 	@Test
 	void setShapesGraphsTreatsRdf4jNilAsDefaultGraphForMappings() throws Exception {
-		SailRepository shapesRepo = new SailRepository(new MemoryStore());
+		SailRepository shapesRepo = repository(new MemoryStore());
 		IRI shapesGraph = iri("http://example.com/ns#shapesGraph");
 
 		String shapesTtl = "@prefix sh: <http://www.w3.org/ns/shacl#> .\n" +
@@ -763,7 +780,7 @@ class ShaclValidatorFluentApiTest {
 			conn.add(new StringReader(shapesTtl), "", RDFFormat.TURTLE, shapesGraph);
 		}
 
-		SailRepository dataRepo = new SailRepository(new MemoryStore());
+		SailRepository dataRepo = repository(new MemoryStore());
 		try (SailRepositoryConnection conn = dataRepo.getConnection()) {
 			conn.add(iri("http://example.com/ns#alice"), RDF.TYPE, iri("http://example.com/ns#Person"));
 		}
@@ -780,7 +797,7 @@ class ShaclValidatorFluentApiTest {
 		IRI[] contexts = { null, RDF4J.SHACL_SHAPE_GRAPH, RDF4J.NIL, iri("http://example.com/otherGraph") };
 
 		for (IRI context : contexts) {
-			SailRepository shapesRepo = new SailRepository(new MemoryStore());
+			SailRepository shapesRepo = repository(new MemoryStore());
 
 			String shapesTtl = "@prefix sh: <http://www.w3.org/ns/shacl#> .\n" +
 					"@prefix ex: <http://example.com/ns#> .\n" +
@@ -800,7 +817,7 @@ class ShaclValidatorFluentApiTest {
 				}
 			}
 
-			SailRepository dataRepo = new SailRepository(new MemoryStore());
+			SailRepository dataRepo = repository(new MemoryStore());
 			try (SailRepositoryConnection conn = dataRepo.getConnection()) {
 				conn.add(iri("http://example.com/ns#alice"), RDF.TYPE, iri("http://example.com/ns#Person"));
 			}
@@ -815,13 +832,13 @@ class ShaclValidatorFluentApiTest {
 
 	@Test
 	void validatorUsesDefensiveCopyOfShapeContextsArray() throws Exception {
-		SailRepository shapesRepo = new SailRepository(new MemoryStore());
+		SailRepository shapesRepo = repository(new MemoryStore());
 		IRI graph1 = iri("http://example.com/graph1");
 		IRI graph2 = iri("http://example.com/graph2");
 		addShape(shapesRepo, graph1, "http://example.com/ns#p1");
 		addShape(shapesRepo, graph2, "http://example.com/ns#p2");
 
-		SailRepository dataRepo = new SailRepository(new MemoryStore());
+		SailRepository dataRepo = repository(new MemoryStore());
 		addData(dataRepo, "http://example.com/ns#a", "http://example.com/ns#p1");
 
 		IRI[] contexts = new IRI[] { graph1 };
@@ -837,10 +854,10 @@ class ShaclValidatorFluentApiTest {
 
 	@Test
 	void validatorDefaultsToReadingAllShapeContexts() throws Exception {
-		SailRepository shapesRepo = new SailRepository(new MemoryStore());
+		SailRepository shapesRepo = repository(new MemoryStore());
 		addManyViolationsShape(shapesRepo, RDF4J.SHACL_SHAPE_GRAPH);
 
-		SailRepository dataRepo = new SailRepository(new MemoryStore());
+		SailRepository dataRepo = repository(new MemoryStore());
 		addManyViolationsData(dataRepo, 1);
 
 		ValidationReport report = ShaclValidator.builder()
@@ -865,7 +882,7 @@ class ShaclValidatorFluentApiTest {
 				"  ] .\n";
 
 		for (IRI context : contexts) {
-			SailRepository shapesRepo = new SailRepository(new MemoryStore());
+			SailRepository shapesRepo = repository(new MemoryStore());
 
 			try (SailRepositoryConnection conn = shapesRepo.getConnection()) {
 				if (context == null) {
@@ -875,7 +892,7 @@ class ShaclValidatorFluentApiTest {
 				}
 			}
 
-			SailRepository dataRepo = new SailRepository(new MemoryStore());
+			SailRepository dataRepo = repository(new MemoryStore());
 			addManyViolationsData(dataRepo, 1);
 
 			ValidationReport report = ShaclValidator.builder()
@@ -891,13 +908,13 @@ class ShaclValidatorFluentApiTest {
 
 	@Test
 	void settingsAreCopiedFromBuilderToBuilderWithShapesToValidatorWithShapes() throws Exception {
-		SailRepository shapesRepo = new SailRepository(new MemoryStore());
+		SailRepository shapesRepo = repository(new MemoryStore());
 		IRI graph1 = iri("http://example.com/graph1");
 		IRI graph2 = iri("http://example.com/graph2");
 		addShape(shapesRepo, graph1, "http://example.com/ns#p1");
 		addShape(shapesRepo, graph2, "http://example.com/ns#p2");
 
-		SailRepository dataRepo = new SailRepository(new MemoryStore());
+		SailRepository dataRepo = repository(new MemoryStore());
 		addData(dataRepo, "http://example.com/ns#a", "http://example.com/ns#p1");
 
 		ShaclValidator.Builder builder = ShaclValidator.builder();
@@ -920,10 +937,10 @@ class ShaclValidatorFluentApiTest {
 		shaclSail.setValidationResultsLimitTotal(1);
 
 		ShaclValidator.Builder builder = ShaclValidator.Builder.settingsFrom(shaclSail);
-		SailRepository shapesRepo = new SailRepository(new MemoryStore());
+		SailRepository shapesRepo = repository(new MemoryStore());
 		addManyViolationsShape(shapesRepo, graph);
 
-		SailRepository dataRepo = new SailRepository(new MemoryStore());
+		SailRepository dataRepo = repository(new MemoryStore());
 		addManyViolationsData(dataRepo, 3);
 
 		ValidationReport report = builder.build().validate(dataRepo.getSail(), shapesRepo.getSail());
@@ -934,11 +951,11 @@ class ShaclValidatorFluentApiTest {
 
 	@Test
 	void rdfsSubClassReasoningSettingAffectsTargetClass() throws Exception {
-		SailRepository shapesRepo = new SailRepository(new MemoryStore());
+		SailRepository shapesRepo = repository(new MemoryStore());
 		IRI shapesGraph = RDF4J.SHACL_SHAPE_GRAPH;
 		addTargetClassShape(shapesRepo, shapesGraph);
 
-		SailRepository dataRepo = new SailRepository(new MemoryStore());
+		SailRepository dataRepo = repository(new MemoryStore());
 		addSubClassData(dataRepo);
 
 		ShaclValidator.Builder builder = ShaclValidator.builder();
@@ -955,11 +972,11 @@ class ShaclValidatorFluentApiTest {
 
 	@Test
 	void validationResultsLimitsAreApplied() throws Exception {
-		SailRepository shapesRepo = new SailRepository(new MemoryStore());
+		SailRepository shapesRepo = repository(new MemoryStore());
 		IRI shapesGraph = RDF4J.SHACL_SHAPE_GRAPH;
 		addManyViolationsShape(shapesRepo, shapesGraph);
 
-		SailRepository dataRepo = new SailRepository(new MemoryStore());
+		SailRepository dataRepo = repository(new MemoryStore());
 		addManyViolationsData(dataRepo, 3);
 
 		ShaclValidator.Builder builder = ShaclValidator.builder();
@@ -978,11 +995,11 @@ class ShaclValidatorFluentApiTest {
 		ShaclSail shaclSail = new ShaclSail(new MemoryStore());
 		shaclSail.setValidationResultsLimitTotal(1);
 
-		SailRepository shaclRepository = new SailRepository(shaclSail);
+		SailRepository shaclRepository = repository(shaclSail);
 		try {
 			addManyViolationsShape(shaclRepository, RDF4J.SHACL_SHAPE_GRAPH);
 
-			SailRepository dataRepo = new SailRepository(new MemoryStore());
+			SailRepository dataRepo = repository(new MemoryStore());
 			addManyViolationsData(dataRepo, 3);
 
 			ValidationReport report = ShaclValidator.from(shaclSail)
@@ -1078,7 +1095,7 @@ class ShaclValidatorFluentApiTest {
 	@Test
 	void allSettingsAreCopiedFromBuilderToBuilderWithShapesToValidatorWithShapesAndUnaffectedByLaterMutations()
 			throws Exception {
-		SailRepository shapesRepo = new SailRepository(new MemoryStore());
+		SailRepository shapesRepo = repository(new MemoryStore());
 		Sail shapesSail = shapesRepo.getSail();
 
 		IRI graph1 = iri("http://example.com/graph1");
@@ -1247,28 +1264,28 @@ class ShaclValidatorFluentApiTest {
 		return dataFile;
 	}
 
-	private static SailRepository createDataRepoForBaseUri(String baseUri) throws Exception {
-		SailRepository dataRepo = new SailRepository(new MemoryStore());
+	private SailRepository createDataRepoForBaseUri(String baseUri) throws Exception {
+		SailRepository dataRepo = repository(new MemoryStore());
 		try (SailRepositoryConnection conn = dataRepo.getConnection()) {
 			conn.add(iri(baseUri + "#alice"), RDF.TYPE, iri(baseUri + "#Person"));
 		}
 		return dataRepo;
 	}
 
-	private static SailRepository createDataRepoForAbsoluteShapes() throws Exception {
+	private SailRepository createDataRepoForAbsoluteShapes() throws Exception {
 		return createDataRepoForBaseUri("http://example.com/ns");
 	}
 
-	private static SailRepository createShapesRepoForBaseUri(String baseUri) throws Exception {
-		SailRepository shapesRepo = new SailRepository(new MemoryStore());
+	private SailRepository createShapesRepoForBaseUri(String baseUri) throws Exception {
+		SailRepository shapesRepo = repository(new MemoryStore());
 		try (SailRepositoryConnection conn = shapesRepo.getConnection()) {
 			conn.add(new StringReader(relativeShapesTtl()), baseUri, RDFFormat.TURTLE);
 		}
 		return shapesRepo;
 	}
 
-	private static SailRepository createShapesRepoForAbsoluteShapes() throws Exception {
-		SailRepository shapesRepo = new SailRepository(new MemoryStore());
+	private SailRepository createShapesRepoForAbsoluteShapes() throws Exception {
+		SailRepository shapesRepo = repository(new MemoryStore());
 		try (SailRepositoryConnection conn = shapesRepo.getConnection()) {
 			conn.add(new StringReader(absoluteShapesTtl()), "", RDFFormat.TURTLE);
 		}

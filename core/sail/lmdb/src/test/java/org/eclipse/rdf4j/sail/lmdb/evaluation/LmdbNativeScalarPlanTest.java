@@ -20,6 +20,8 @@ import java.io.File;
 import java.util.List;
 import java.util.Map;
 
+import org.eclipse.rdf4j.model.BNode;
+import org.eclipse.rdf4j.model.TripleTerm;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.base.CoreDatatype;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
@@ -47,8 +49,13 @@ import org.eclipse.rdf4j.query.algebra.ValueConstant;
 import org.eclipse.rdf4j.query.algebra.ValueExpr;
 import org.eclipse.rdf4j.query.algebra.ValueExprTripleRef;
 import org.eclipse.rdf4j.query.algebra.Var;
+import org.eclipse.rdf4j.query.algebra.evaluation.function.Function;
+import org.eclipse.rdf4j.query.algebra.evaluation.function.FunctionRegistry;
 import org.eclipse.rdf4j.query.algebra.evaluation.function.datetime.Year;
 import org.eclipse.rdf4j.query.algebra.evaluation.function.numeric.Rand;
+import org.eclipse.rdf4j.query.impl.BlankNodeAllocationScope;
+import org.eclipse.rdf4j.query.impl.RemoteBNode;
+import org.eclipse.rdf4j.query.impl.RepositoryBNode;
 import org.eclipse.rdf4j.sail.lmdb.ValueIds;
 import org.eclipse.rdf4j.sail.lmdb.ValuePosition;
 import org.eclipse.rdf4j.sail.lmdb.ValueStore;
@@ -57,8 +64,83 @@ import org.eclipse.rdf4j.sail.lmdb.evaluation.codegen.KernelTermKindProof;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.fragment.EffectClass;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
+import org.junit.jupiter.api.parallel.Isolated;
 
+@Isolated("Temporarily replaces a built-in function in the shared registry")
 class LmdbNativeScalarPlanTest {
+
+	@Test
+	void preparedRecipesRetainTheirResolvedFunctionAcrossRegistryChanges() {
+		String uri = FN.STRING_LENGTH.stringValue();
+		var registry = FunctionRegistry.getInstance();
+		Function original = registry.get(uri).orElseThrow();
+		Function replacement = mock(Function.class);
+		when(replacement.getURI()).thenReturn(uri);
+		var expression = new FunctionCall(uri, Var.of("value"));
+		var worker = new NativeScalarPlan.WorkerContext(mock(NativeLmdbQuerySource.class),
+				mock(LmdbNativeValueCodec.class), null);
+		var builtinPlan = NativeScalarPlan.value(expression, name -> 0, false, 1L, false, false);
+		try {
+			registry.add(replacement);
+			var replaced = NativeScalarPlan.value(expression, name -> 0, false, 1L, false, false);
+			assertThat(replaced.effect()).isEqualTo(EffectClass.SIDE_EFFECTING_OR_UNSUPPORTED);
+			assertThat(replaced.bindValue(worker)).isNull();
+			assertThat(builtinPlan.bindValue(worker)).isNotNull();
+			registry.remove(replacement);
+			var absent = NativeScalarPlan.value(expression, name -> 0, false, 1L, false, false);
+			assertThat(absent.bindValue(worker)).isNull();
+			registry.add(original);
+			assertThat(replaced.bindValue(worker)).isNull();
+			assertThat(absent.bindValue(worker)).isNull();
+		} finally {
+			registry.add(original);
+		}
+	}
+
+	@Test
+	void nativeTripleComponentPreservesAdmittedBlankNodeAuthority() {
+		var vf = SimpleValueFactory.getInstance();
+		var p = vf.createIRI("urn:p");
+		var epoch = new Object();
+		var allocation = new BlankNodeAllocationScope();
+		BNode raw = vf.createBNode("endpoint-id");
+		BNode remote = (BNode) RemoteBNode.newResponseScope(allocation, vf, epoch, true).map(raw);
+		BNode generated = allocation.createBNode(vf);
+		BNode repository = RepositoryBNode.fromNegotiatedResult("envelope", raw.getID(), true);
+		NativeTermAuthority authority = mock(NativeTermAuthority.class);
+		when(authority.kind(42L)).thenReturn(NativeIdKind.RUNTIME);
+		var reader = new LmdbNativeSlotReader() {
+			@Override
+			public long id(int slot) {
+				return 42L;
+			}
+
+			@Override
+			public NativeTermAuthority termAuthority() {
+				return authority;
+			}
+		};
+		var worker = new NativeScalarPlan.WorkerContext(mock(NativeLmdbQuerySource.class),
+				mock(LmdbNativeValueCodec.class), null);
+		var nested = new TripleComponent(Var.of("value"), TripleComponent.Role.OBJECT);
+		var subject = planOf(new TripleComponent(nested, TripleComponent.Role.SUBJECT)).bindValue(worker);
+		assertThat(subject).isNotNull();
+		for (BNode admitted : List.of(remote, generated, repository)) {
+			when(authority.valueOf(42L)).thenReturn(vf.createTripleTerm(vf.createIRI("urn:s"), p,
+					vf.createTripleTerm(admitted, p, vf.createLiteral("inner"))));
+			Value result = LmdbNativeValueCodec.toValue(subject.value(reader));
+			assertThat(result).isSameAs(admitted);
+			if (admitted == remote) {
+				assertThat(RemoteBNode.toRemoteValue(result, epoch, true, true)).isEqualTo(raw);
+			}
+		}
+		when(authority.valueOf(42L)).thenReturn(remote);
+		var construct = planOf(new ValueExprTripleRef("term", Var.of("value"), new ValueConstant(p),
+				new ValueConstant(vf.createLiteral("inner")))).bindValue(worker);
+		assertThat(construct).isNotNull();
+		TripleTerm term = (TripleTerm) LmdbNativeValueCodec.toValue(construct.value(reader));
+		assertThat(term.getSubject()).isSameAs(remote);
+	}
 
 	@Test
 	void nestedScalarConversionsBindCompositionalWorkerRecipes() {

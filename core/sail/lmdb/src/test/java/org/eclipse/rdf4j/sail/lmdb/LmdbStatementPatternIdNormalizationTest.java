@@ -43,6 +43,8 @@ import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.base.CoreDatatype;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.query.BindingSet;
+import org.eclipse.rdf4j.query.QueryExecutionPolicy;
+import org.eclipse.rdf4j.query.QueryExecutionPolicy.GraphJoinOptimization;
 import org.eclipse.rdf4j.query.TupleQuery;
 import org.eclipse.rdf4j.query.TupleQueryResult;
 import org.eclipse.rdf4j.query.impl.SimpleDataset;
@@ -179,18 +181,31 @@ class LmdbStatementPatternIdNormalizationTest {
 
 	@Test
 	void computedSiblingValueStaysOutsideGraphUnionInputs(@TempDir File directory) {
-		try (Fixture fixture = new Fixture(directory, LiteralShape.CUSTOM.value())) {
-			String computed = "BIND(STRDT(CONCAT(\"native\", \" payload\"), <" + DATATYPE + ">) AS ?computed) ";
-			String unused = "BIND(STRDT(CONCAT(\"un\", \"used\"), <" + DATATYPE + ">) AS ?unused) ";
-			String branch = "{ ?target <" + PREDICATE + "> ?computed }";
-			String query = "SELECT ?s WHERE { " + computed + unused + "GRAPH <" + GRAPH + "> { ?s <"
-					+ LINK + "> ?target . " + branch + " UNION " + branch + " } }";
-			assertUnionRows(fixture.evaluateBindings(query, null, null));
+		try (Fixture fixture = new Fixture(directory, LiteralShape.CUSTOM.value(), GraphJoinOptimization.OFF)) {
+			assertUnionRows(fixture.evaluateBindings(computedSiblingUnionQuery(), null, null));
 			fixture.assertBoundNativeInputs();
 			fixture.assertObjectInputs(null);
 			fixture.assertPayloadLookupCount("native payload", 0);
 			fixture.assertPayloadLookupCount("unused", 0);
 		}
+	}
+
+	@Test
+	void computedSiblingValueRestrictsGraphUnionInputsWhenAuto(@TempDir File directory) {
+		try (Fixture fixture = new Fixture(directory, LiteralShape.CUSTOM.value())) {
+			assertUnionRows(fixture.evaluateBindings(computedSiblingUnionQuery(), null, null));
+			fixture.assertBoundNativeInputs();
+			fixture.assertObjectInputs(LiteralShape.CUSTOM.value());
+			fixture.assertPayloadLookupCount("unused", 0);
+		}
+	}
+
+	private static String computedSiblingUnionQuery() {
+		String computed = "BIND(STRDT(CONCAT(\"native\", \" payload\"), <" + DATATYPE + ">) AS ?computed) ";
+		String unused = "BIND(STRDT(CONCAT(\"un\", \"used\"), <" + DATATYPE + ">) AS ?unused) ";
+		String branch = "{ ?target <" + PREDICATE + "> ?computed }";
+		return "SELECT ?s WHERE { " + computed + unused + "GRAPH <" + GRAPH + "> { ?s <"
+				+ LINK + "> ?target . " + branch + " UNION " + branch + " } }";
 	}
 
 	@Test
@@ -258,17 +273,32 @@ class LmdbStatementPatternIdNormalizationTest {
 		private final List<PatternInputs> statementInputs = new ArrayList<>();
 
 		private Fixture(File directory, Value object) {
+			this(directory, object, GraphJoinOptimization.AUTO);
+		}
+
+		private Fixture(File directory, Value object, GraphJoinOptimization graphJoinOptimization) {
 			store = new ProbeStore(directory, inputs, statementInputs);
+			store.setQueryExecutionPolicy(
+					QueryExecutionPolicy.DEFAULT.withGraphJoinOptimization(graphJoinOptimization));
 			repository = new SailRepository(store);
-			repository.init();
-			connection = repository.getConnection();
-			connection.begin(IsolationLevels.SNAPSHOT);
-			connection.add(FIRST, PREDICATE, object, GRAPH);
-			connection.add(SECOND, PREDICATE, object, GRAPH);
-			connection.add(FIRST, LINK, SECOND, GRAPH);
-			connection.add(SECOND, LINK, FIRST, GRAPH);
-			connection.commit();
-			connection.begin(IsolationLevels.SNAPSHOT_READ);
+			RepositoryConnection openedConnection = null;
+			try {
+				repository.init();
+				openedConnection = repository.getConnection();
+				openedConnection.begin(IsolationLevels.SNAPSHOT);
+				openedConnection.add(FIRST, PREDICATE, object, GRAPH);
+				openedConnection.add(SECOND, PREDICATE, object, GRAPH);
+				openedConnection.add(FIRST, LINK, SECOND, GRAPH);
+				openedConnection.add(SECOND, LINK, FIRST, GRAPH);
+				openedConnection.commit();
+				openedConnection.begin(IsolationLevels.SNAPSHOT_READ);
+				connection = openedConnection;
+			} catch (RuntimeException | Error failure) {
+				try (var repositoryCleanup = LmdbTestUtil.onClose(repository::shutDown);
+						var connectionCleanup = openedConnection) {
+					throw failure;
+				}
+			}
 		}
 
 		private int evaluate(String text, Value bound, SimpleDataset dataset) {

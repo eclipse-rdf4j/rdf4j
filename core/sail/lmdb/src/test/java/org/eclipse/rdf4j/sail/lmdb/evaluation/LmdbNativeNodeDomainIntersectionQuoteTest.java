@@ -15,6 +15,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbNativeAggregateCompiler.UNKNOWN;
 import static org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbNativeFactorizedQuoteTest.coveringProfile;
 import static org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbNativeFactorizedQuoteTest.row;
+import static org.eclipse.rdf4j.sail.lmdb.evaluation.NativeCancellationTestAccess.mockScanSource;
 import static org.mockito.AdditionalAnswers.delegatesTo;
 import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.Mockito.doAnswer;
@@ -142,7 +143,7 @@ class LmdbNativeNodeDomainIntersectionQuoteTest {
 			set("rdf4j.lmdb.parallel.enabled", "false");
 			set(LmdbNativeKernelLowering.SCAN_SOURCES_PROPERTY, "true");
 			set(LmdbNativeKernelLowering.ROW_EXISTS_PROPERTY, "true");
-			source = mock(NativeLmdbQuerySource.class, delegatesTo(new StatsSource(STATEMENTS)));
+			source = mockScanSource(NativeLmdbQuerySource.class, delegatesTo(new StatsSource(STATEMENTS)));
 			doReturn((double) STATEMENTS).when(source).estimate(anyLong(), anyLong(), anyLong(), anyLong());
 			doAnswer(ignored -> {
 				nativeMemberships.incrementAndGet();

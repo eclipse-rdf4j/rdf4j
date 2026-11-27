@@ -15,6 +15,7 @@ import java.util.function.Function;
 import java.util.function.Predicate;
 
 import org.eclipse.rdf4j.common.net.ParsedIRI;
+import org.eclipse.rdf4j.model.BNode;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Literal;
 import org.eclipse.rdf4j.model.TripleTerm;
@@ -284,12 +285,22 @@ public class QueryValueEvaluationStepSupplier {
 
 	public static QueryValueEvaluationStep bnode(QueryValueEvaluationStep nodeVes, ValueFactory vf,
 			QueryEvaluationContext context) {
+		return bnode(nodeVes, vf, context::getOrCreateBNode);
+	}
+
+	@FunctionalInterface
+	public interface LabelledBlankNode {
+		BNode getOrCreate(String label, BindingSet row, ValueFactory factory);
+	}
+
+	public static QueryValueEvaluationStep bnode(QueryValueEvaluationStep nodeVes, ValueFactory vf,
+			LabelledBlankNode labelled) {
 		return new QueryValueEvaluationStep.ApplyFunctionForEachBinding(bs -> {
 			Value value = nodeVes.evaluate(bs);
 			if (!QueryEvaluationUtility.isSimpleLiteral(value)) {
 				throw new ValueExprEvaluationException("BNODE function argument must be a simple string literal");
 			}
-			return context.getOrCreateBNode(((Literal) value).getLabel(), bs, vf);
+			return labelled.getOrCreate(((Literal) value).getLabel(), bs, vf);
 		});
 	}
 

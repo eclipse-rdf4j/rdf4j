@@ -15,6 +15,7 @@ import java.util.Objects;
 
 import org.eclipse.rdf4j.query.MalformedQueryException;
 import org.eclipse.rdf4j.query.QueryParseOptions;
+import org.eclipse.rdf4j.query.QueryParseOptions.GraphAlgebraMode;
 
 /**
  * An RDF query parser translate query strings in some query language to OpenRDF query models.
@@ -27,17 +28,25 @@ public interface QueryParser {
 
 	default ParsedUpdate parseUpdate(String update, String baseURI, QueryParseOptions options) {
 		Objects.requireNonNull(options);
-		if (!options.equals(QueryParseOptions.DEFAULT)) {
-			throw new UnsupportedOperationException("This parser does not support the requested syntax policy");
+		if (!options.blankNodeReferences() || options.graphAlgebraMode() == GraphAlgebraMode.GRAPH) {
+			throw new UnsupportedOperationException("This parser does not support the requested parsing policy");
 		}
-		return parseUpdate(update, baseURI);
+		ParsedUpdate parsed = parseUpdate(update, baseURI);
+		if (parsed != null) {
+			parsed.setParseOptions(options.resolveGraphAlgebraMode(GraphAlgebraMode.LEGACY));
+		}
+		return parsed;
 	}
 
 	default ParsedQuery parseQuery(String query, String baseURI, QueryParseOptions options) {
 		Objects.requireNonNull(options);
-		if (!options.equals(QueryParseOptions.DEFAULT)) {
-			throw new UnsupportedOperationException("This parser does not support the requested syntax policy");
+		if (!options.blankNodeReferences() || options.graphAlgebraMode() == GraphAlgebraMode.GRAPH) {
+			throw new UnsupportedOperationException("This parser does not support the requested parsing policy");
 		}
-		return parseQuery(query, baseURI);
+		ParsedQuery parsed = parseQuery(query, baseURI);
+		if (parsed != null) {
+			parsed.setParseOptions(options.resolveGraphAlgebraMode(GraphAlgebraMode.LEGACY));
+		}
+		return parsed;
 	}
 }

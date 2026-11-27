@@ -12,6 +12,7 @@
 package org.eclipse.rdf4j.query.algebra.evaluation.impl;
 
 import java.util.Comparator;
+import java.util.HashSet;
 import java.util.Objects;
 import java.util.Set;
 import java.util.function.Function;
@@ -22,9 +23,11 @@ import org.eclipse.rdf4j.model.Literal;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.query.BindingSet;
+import org.eclipse.rdf4j.query.BlankNodeEffects;
 import org.eclipse.rdf4j.query.Dataset;
 import org.eclipse.rdf4j.query.MutableBindingSet;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryBindingSet;
+import org.eclipse.rdf4j.query.algebra.evaluation.QueryValueEvaluationStep;
 import org.eclipse.rdf4j.query.impl.BlankNodeAllocationScope;
 
 /**
@@ -36,9 +39,27 @@ import org.eclipse.rdf4j.query.impl.BlankNodeAllocationScope;
 public final class BindingSetQueryEvaluationContext implements QueryEvaluationContext {
 
 	private final QueryEvaluationContext delegate;
+	private final Set<String> pathSubstitutions;
+	private final Set<String> pathCorrelations;
+	private final boolean enclosingPathProjection;
 
 	public BindingSetQueryEvaluationContext(QueryEvaluationContext delegate) {
+		this(delegate, null, false);
+	}
+
+	/** Flexible layout for a detached path with its original projection scope and genuine term substitutions. */
+	public BindingSetQueryEvaluationContext(QueryEvaluationContext delegate, Set<String> pathSubstitutions,
+			boolean enclosingPathProjection) {
 		this.delegate = Objects.requireNonNull(delegate, "delegate");
+		this.pathSubstitutions = pathSubstitutions == null ? null : Set.copyOf(pathSubstitutions);
+		Set<String> correlations = delegate.getCorrelatedPathBindingNames();
+		if (pathSubstitutions != null && !pathSubstitutions.containsAll(correlations)) {
+			Set<String> retained = new HashSet<>(correlations);
+			retained.retainAll(pathSubstitutions);
+			correlations = Set.copyOf(retained);
+		}
+		this.pathCorrelations = correlations;
+		this.enclosingPathProjection = enclosingPathProjection;
 	}
 
 	@Override
@@ -48,12 +69,17 @@ public final class BindingSetQueryEvaluationContext implements QueryEvaluationCo
 
 	@Override
 	public Set<String> getSubstitutionBindingNames() {
-		return delegate.getSubstitutionBindingNames();
+		return pathSubstitutions == null ? delegate.getSubstitutionBindingNames() : pathSubstitutions;
+	}
+
+	@Override
+	public Set<String> getCorrelatedPathBindingNames() {
+		return pathCorrelations;
 	}
 
 	@Override
 	public boolean hasEnclosingProjection() {
-		return delegate.hasEnclosingProjection();
+		return pathSubstitutions == null ? delegate.hasEnclosingProjection() : enclosingPathProjection;
 	}
 
 	@Override
@@ -77,6 +103,21 @@ public final class BindingSetQueryEvaluationContext implements QueryEvaluationCo
 	}
 
 	@Override
+	public Object getExecutionIdentity() {
+		return delegate.getExecutionIdentity();
+	}
+
+	@Override
+	public boolean allowsDirectVariableReads() {
+		return delegate.allowsDirectVariableReads();
+	}
+
+	@Override
+	public boolean allowsPathStepReuse() {
+		return delegate.allowsPathStepReuse();
+	}
+
+	@Override
 	public BlankNodeAllocationScope getBlankNodeAllocationScope() {
 		return delegate.getBlankNodeAllocationScope();
 	}
@@ -87,8 +128,31 @@ public final class BindingSetQueryEvaluationContext implements QueryEvaluationCo
 	}
 
 	@Override
+	public Function<BindingSet, Value> getValue(String name) {
+		return bindings -> bindings.getValue(name);
+	}
+
+	@Override
+	public QueryValueEvaluationStep prepareValueAccessor(String name, ValueFactory factory) {
+		return delegate.allowsDirectVariableReads() ? QueryEvaluationContext.super.prepareValueAccessor(name, factory)
+				: delegate.prepareValueAccessor(name, factory);
+	}
+
+	@Override
+	public ValueFactory blankNodeValueFactory(ValueFactory factory, BlankNodeEffects effects) {
+		return delegate.blankNodeValueFactory(factory, effects);
+	}
+
+	@Override
 	public MutableBindingSet createBindingSet(BindingSet bindings) {
-		QueryBindingSet copy = new QueryBindingSet(bindings.size());
+		// The default headroom covers an extra output for widths >= 2. For width 0 or 1,
+		// avoid the first insertion's resize without rounding wide frames to a larger table.
+		int size = bindings.size();
+		QueryBindingSet copy = new QueryBindingSet(size < 2 ? size + 1 : size);
+		if (bindings.getClass() == QueryBindingSet.class) {
+			copy.addAll(bindings);
+			return copy;
+		}
 		for (String name : bindings.getBindingNames()) {
 			copy.setBinding(name, bindings.getValue(name));
 		}

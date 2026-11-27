@@ -40,6 +40,7 @@ import org.eclipse.rdf4j.query.algebra.ProjectionElem;
 import org.eclipse.rdf4j.query.algebra.ProjectionElemList;
 import org.eclipse.rdf4j.query.algebra.QueryModelNode;
 import org.eclipse.rdf4j.query.algebra.QueryModelVisitor;
+import org.eclipse.rdf4j.query.algebra.QueryRoot;
 import org.eclipse.rdf4j.query.algebra.Slice;
 import org.eclipse.rdf4j.query.algebra.StatementPattern;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
@@ -54,6 +55,36 @@ import org.eclipse.rdf4j.query.impl.MapBindingSet;
 import org.junit.jupiter.api.Test;
 
 public class QueryModelTreeToGenericPlanNodeTest {
+
+	@Test
+	public void timedExplanationDoesNotAttributeQueryRootTimeToAnOperator() {
+		StatementPattern pattern = new StatementPattern(Var.of("s"), Var.of("p"), Var.of("o"));
+		QueryRoot root = new QueryRoot(pattern);
+		root.setTotalTimeNanosActual(3_500_000);
+
+		GenericPlanNode plan = convert(root, Explanation.Level.Timed);
+		assertThat(plan.getType()).startsWith("StatementPattern");
+		assertThat(plan.getDoubleMetricActual("queryPullTimeActual")).isNull();
+		assertThat(plan.getTotalTimeActual()).isNull();
+		assertThat(plan.getSelfTimeActual()).isNull();
+
+		pattern.setTotalTimeNanosActual(1_000_000);
+		plan = convert(root, Explanation.Level.Timed);
+		assertThat(plan.getTotalTimeActual()).isEqualTo(1.0);
+		assertThat(plan.getSelfTimeActual()).isEqualTo(1.0);
+	}
+
+	@Test
+	public void telemetryPreservesUnavailableCountersInsteadOfReportingMeasuredZero() {
+		StatementPattern pattern = new StatementPattern(Var.of("s"), Var.of("p"), Var.of("o"));
+		GenericPlanNode plan = convert(pattern, Explanation.Level.Telemetry);
+		assertThat(plan.getSourceRowsScannedActual()).isNull();
+		assertThat(plan.getHasNextCallCountActual()).isNull();
+		assertThat(plan.getJoinRightIteratorsCreatedActual()).isNull();
+
+		pattern.setSourceRowsScannedActual(0);
+		assertThat(convert(pattern, Explanation.Level.Telemetry).getSourceRowsScannedActual()).isZero();
+	}
 
 	@Test
 	public void includesRuntimeTelemetryForAllPlanNodes() {

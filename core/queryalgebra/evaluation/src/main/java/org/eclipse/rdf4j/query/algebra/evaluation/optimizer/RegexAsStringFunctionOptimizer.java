@@ -23,6 +23,12 @@ import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.algebra.ValueConstant;
 import org.eclipse.rdf4j.query.algebra.ValueExpr;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryOptimizer;
+import org.eclipse.rdf4j.query.algebra.evaluation.function.Function;
+import org.eclipse.rdf4j.query.algebra.evaluation.function.FunctionRegistry;
+import org.eclipse.rdf4j.query.algebra.evaluation.function.string.Contains;
+import org.eclipse.rdf4j.query.algebra.evaluation.function.string.StrEnds;
+import org.eclipse.rdf4j.query.algebra.evaluation.function.string.StrStarts;
+import org.eclipse.rdf4j.query.algebra.evaluation.util.QueryEvaluationUtility;
 import org.eclipse.rdf4j.query.algebra.helpers.AbstractSimpleQueryModelVisitor;
 
 /**
@@ -80,8 +86,7 @@ public class RegexAsStringFunctionOptimizer implements QueryOptimizer {
 
 		private void containsCandidate(Regex node, String potential) {
 			if (plain(potential)) {
-				node.replaceWith(new FunctionCall(FN.CONTAINS.stringValue(), node.getArg().clone(),
-						node.getPatternArg().clone()));
+				replaceWithBuiltin(node, FN.CONTAINS.stringValue(), Contains.class, node.getPatternArg().clone());
 			}
 		}
 
@@ -101,7 +106,7 @@ public class RegexAsStringFunctionOptimizer implements QueryOptimizer {
 			final String potential = regex.substring(0, regex.length() - 1);
 			if (plain(potential)) {
 				ValueConstant vc = new ValueConstant(vf.createLiteral(potential));
-				node.replaceWith(new FunctionCall(FN.ENDS_WITH.stringValue(), node.getArg().clone(), vc));
+				replaceWithBuiltin(node, FN.ENDS_WITH.stringValue(), StrEnds.class, vc);
 			}
 		}
 
@@ -109,7 +114,20 @@ public class RegexAsStringFunctionOptimizer implements QueryOptimizer {
 			final String potential = regex.substring(1);
 			if (plain(potential)) {
 				ValueConstant vc = new ValueConstant(vf.createLiteral(potential));
-				node.replaceWith(new FunctionCall(FN.STARTS_WITH.stringValue(), node.getArg().clone(), vc));
+				replaceWithBuiltin(node, FN.STARTS_WITH.stringValue(), StrStarts.class, vc);
+			}
+		}
+
+		private void replaceWithBuiltin(Regex node, String uri, Class<? extends Function> expected,
+				ValueExpr pattern) {
+			FunctionRegistry registry = FunctionRegistry.getInstance();
+			synchronized (registry) {
+				Function function = registry.get(uri).orElse(null);
+				if (function == null || function.getClass() != expected) {
+					return;
+				}
+				FunctionCall call = new FunctionCall(uri, node.getArg().clone(), pattern);
+				node.replaceWith(QueryEvaluationUtility.pinFunctions(call));
 			}
 		}
 

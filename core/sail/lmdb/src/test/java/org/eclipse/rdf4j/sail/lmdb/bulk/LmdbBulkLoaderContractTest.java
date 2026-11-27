@@ -510,12 +510,15 @@ class LmdbBulkLoaderContractTest {
 		Path fastTarget = temporaryDirectory.resolve("fast-store");
 		Path rioTarget = temporaryDirectory.resolve("rio-store");
 
+		// Parser parity uses the full fixture with fewer empty dictionary partitions.
 		LmdbBulkLoader.builder(fastTarget, new LmdbStoreConfig("spoc,psoc"))
+				.partitionCount(4)
 				.parserMode(LmdbBulkLoader.ParserMode.FAST)
 				.build()
 				.load(new ByteArrayInputStream(input.getBytes(StandardCharsets.UTF_8)), "urn:bulk-test:",
 						RDFFormat.NQUADS);
 		LmdbBulkLoader.builder(rioTarget, new LmdbStoreConfig("spoc,psoc"))
+				.partitionCount(4)
 				.parserMode(LmdbBulkLoader.ParserMode.RIO)
 				.build()
 				.load(new ByteArrayInputStream(input.getBytes(StandardCharsets.UTF_8)), "urn:bulk-test:",

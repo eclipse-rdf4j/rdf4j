@@ -28,16 +28,13 @@ import java.util.Map;
 import org.eclipse.rdf4j.common.annotation.Experimental;
 
 @Experimental
-final class RightMemoProbe {
+final class RightMemoProbe extends NativeOptionalReplayCache<long[][]> {
 	static final int MAX_MEMO_ROWS = 1 << 14;
 	static final int MAX_SWEEP_KEY_SLOTS = 4;
-	static final long[][] TOO_LARGE = new long[0][];
+	private static final long[][] TOO_LARGE = new long[0][];
 
 	final SlotPlan right;
-	final int[] keySlots;
 	final int[] replaySlots;
-	final HashMap<GroupKey, long[][]> rowsByKey = new HashMap<>();
-	final GroupKey probeKey;
 	/**
 	 * Plan-09 work item 5.3: when the left-side row estimate makes per-key fragment runs cost at least one key-unbound
 	 * sweep of the fragment, the fragment is executed ONCE with the correlated slots unbound and every probe (hit or
@@ -49,10 +46,9 @@ final class RightMemoProbe {
 	boolean sweepPending;
 
 	RightMemoProbe(SlotPlan right, int[] keySlots, int[] replaySlots) {
+		super(keySlots, TOO_LARGE);
 		this.right = right;
-		this.keySlots = keySlots;
 		this.replaySlots = replaySlots;
-		this.probeKey = new GroupKey(new long[keySlots.length]);
 	}
 
 	static RightMemoProbe tryCreate(SlotPlan right, long leftProducedMask, long readMask, RowState row,
@@ -176,16 +172,15 @@ final class RightMemoProbe {
 			long[][] cached = sweptRows.get(sweepProbeKey.refill(row.slots, sweepKeySlots));
 			return cached == null ? EmptyCursor.INSTANCE : new MemoReplayCursor(row, replaySlots, cached);
 		}
-		probeKey.refill(row.slots, keySlots);
-		long[][] cached = rowsByKey.get(probeKey);
-		if (cached == TOO_LARGE) {
+		long[][] cached = lookupRows(row.slots);
+		if (isRejected(cached)) {
 			return null;
 		}
 		if (cached != null) {
 			return cached.length == 0 ? EmptyCursor.INSTANCE : new MemoReplayCursor(row, replaySlots, cached);
 		}
-		GroupKey storedKey = probeKey.storedCopy();
-		return new MemoRecordingCursor(right.open(row), row, replaySlots, rowsByKey, storedKey);
+		GroupKey storedKey = copyLookupKey();
+		return new MemoRecordingCursor(right.open(row), row, replaySlots, this, storedKey);
 	}
 
 	/**
@@ -300,7 +295,7 @@ final class RightMemoProbe {
 	}
 
 	void close() {
-		rowsByKey.clear();
+		clearEntries();
 		if (sweptRows != null) {
 			sweptRows.clear();
 		}
@@ -312,17 +307,17 @@ final class MemoRecordingCursor implements RowCursor {
 	final RowCursor delegate;
 	final RowState row;
 	final int[] replaySlots;
-	final HashMap<GroupKey, long[][]> rowsByKey;
+	final NativeOptionalReplayCache<long[][]> cache;
 	final GroupKey key;
 	ArrayList<long[]> rows = new ArrayList<>();
 	boolean finished;
 
 	MemoRecordingCursor(RowCursor delegate, RowState row, int[] replaySlots,
-			HashMap<GroupKey, long[][]> rowsByKey, GroupKey key) {
+			NativeOptionalReplayCache<long[][]> cache, GroupKey key) {
 		this.delegate = delegate;
 		this.row = row;
 		this.replaySlots = replaySlots;
-		this.rowsByKey = rowsByKey;
+		this.cache = cache;
 		this.key = key;
 	}
 
@@ -342,7 +337,7 @@ final class MemoRecordingCursor implements RowCursor {
 		}
 		if (rows.size() >= RightMemoProbe.MAX_MEMO_ROWS) {
 			rows = null;
-			rowsByKey.put(key, RightMemoProbe.TOO_LARGE);
+			cache.reject(key);
 			return;
 		}
 		long[] values = new long[replaySlots.length];
@@ -358,7 +353,7 @@ final class MemoRecordingCursor implements RowCursor {
 		}
 		finished = true;
 		if (rows != null) {
-			rowsByKey.put(key, rows.toArray(new long[rows.size()][]));
+			cache.publish(key, rows.toArray(new long[rows.size()][]));
 			LEFTJOIN_MEMO_MATERIALIZATIONS.incrementAndGet();
 		}
 	}

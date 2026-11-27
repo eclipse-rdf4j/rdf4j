@@ -46,6 +46,60 @@ import org.junit.jupiter.api.Test;
 class ServiceJoinIteratorTelemetryTest {
 
 	@Test
+	void closesLeftWhenEagerServiceExecutionThrowsAnError() {
+		String endpoint = "http://example.com/service";
+		Service service = new Service(Var.of("serviceRef", SimpleValueFactory.getInstance().createIRI(endpoint)),
+				new SingletonSet(), "{ VALUES ?x { 1 } }", Collections.emptyMap(), null, false);
+		EvaluationStrategy strategy = mock(EvaluationStrategy.class);
+		AssertionError failure = new AssertionError("Could not open the SERVICE endpoint");
+		QueryEvaluationException closeFailure = new QueryEvaluationException("Could not close the left cursor");
+		when(strategy.getService(endpoint)).thenThrow(failure);
+		AtomicInteger leftCloses = new AtomicInteger();
+		var left = new CloseableIteratorIteration<BindingSet>(List.<BindingSet>of(EmptyBindingSet.getInstance())
+				.iterator()) {
+			@Override
+			protected void handleClose() {
+				leftCloses.incrementAndGet();
+				throw closeFailure;
+			}
+		};
+
+		assertThatThrownBy(() -> new ServiceJoinIterator(left, service, EmptyBindingSet.getInstance(), strategy))
+				.isSameAs(failure)
+				.satisfies(thrown -> assertThat(thrown.getSuppressed()).containsExactly(closeFailure));
+		assertThat(leftCloses).hasValue(1);
+	}
+
+	@Test
+	void closesRemoteResultWhenEagerLatencyRecordingFails() {
+		String endpoint = "http://example.com/service";
+		AssertionError failure = new AssertionError("Could not record SERVICE latency");
+		Service service = new Service(Var.of("serviceRef", SimpleValueFactory.getInstance().createIRI(endpoint)),
+				new SingletonSet(), "{ VALUES ?x { 1 } }", Collections.emptyMap(), null, false) {
+			@Override
+			public void setLongMetricActual(String metricName, long metricValue) {
+				if (TelemetryMetricNames.REMOTE_LATENCY_TOTAL_NANOS_ACTUAL.equals(metricName)) {
+					throw failure;
+				}
+				super.setLongMetricActual(metricName, metricValue);
+			}
+		};
+		service.setRuntimeTelemetryEnabled(true);
+		ClosingIteration result = new ClosingIteration();
+		FederatedService federatedService = mock(FederatedService.class);
+		when(federatedService.preservesBNodeResultProvenance()).thenReturn(true);
+		when(federatedService.evaluate(eq(service), any(), eq(service.getBaseURI()))).thenReturn(result);
+		EvaluationStrategy strategy = mock(EvaluationStrategy.class);
+		when(strategy.getService(endpoint)).thenReturn(federatedService);
+		var left = new CloseableIteratorIteration<>(List.<BindingSet>of(EmptyBindingSet.getInstance()).iterator());
+
+		assertThatThrownBy(() -> new ServiceJoinIterator(left, service, EmptyBindingSet.getInstance(), strategy))
+				.isSameAs(failure);
+		assertThat(left.isClosed()).isTrue();
+		assertThat(result.closed.get()).isTrue();
+	}
+
+	@Test
 	void recordsLatencyQuantilesForFallbackRequests() throws Exception {
 		Service service = new Service(
 				Var.of("serviceRef"),

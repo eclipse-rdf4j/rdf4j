@@ -19,6 +19,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.function.BiConsumer;
+import java.util.function.BiFunction;
 import java.util.function.Function;
 import java.util.function.Predicate;
 
@@ -48,9 +49,14 @@ import org.eclipse.rdf4j.query.algebra.evaluation.QueryBindingSet;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryEvaluationStep;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryValueEvaluationStep;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.EvaluationStatistics;
+import org.eclipse.rdf4j.query.algebra.evaluation.impl.PreparedBlankNodeExecution;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.QueryEvaluationContext;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.evaluationsteps.AdaptiveFilterEvaluationStep;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.evaluationsteps.BatchCorrelatedJoinProvider;
+import org.eclipse.rdf4j.query.algebra.evaluation.impl.evaluationsteps.OrderedEvaluation;
+import org.eclipse.rdf4j.query.algebra.evaluation.impl.evaluationsteps.RebindableQueryEvaluationStep;
+import org.eclipse.rdf4j.query.algebra.evaluation.impl.evaluationsteps.ScopedUnionInput;
+import org.eclipse.rdf4j.query.algebra.evaluation.impl.restrictions.RestrictionCompiler;
 import org.eclipse.rdf4j.query.algebra.evaluation.util.QueryEvaluationUtil;
 import org.eclipse.rdf4j.query.algebra.evaluation.util.QueryEvaluationUtility;
 import org.eclipse.rdf4j.query.algebra.helpers.AbstractSimpleQueryModelVisitor;
@@ -82,21 +88,38 @@ public class FilterIterator extends FilterIteration<BindingSet> implements Index
 
 		QueryEvaluationStep arg = strategy.precompile(filter.getArg(), context);
 		AdaptiveFilterEvaluationStep.recordPrepared(context, filter.getArg(), arg);
+		ConditionBindingScope bindingScope = FilterBindingScope.resolve(filter);
+		ValueExpr condition = filter.getCondition();
 		QueryValueEvaluationStep ves;
 		try {
-			ves = strategy.precompile(filter.getCondition(), context);
+			ves = strategy.precompile(condition, context);
 		} catch (QueryEvaluationException e) {
 			// If we have a failed compilation we always return false.
 			// Which means empty. so let's short circuit that.
 			return QueryEvaluationStep.EMPTY;
 		}
-		ConditionBindingScope bindingScope = FilterBindingScope.resolve(filter);
 		Function<BindingSet, BindingSet> retain = bindingScope.retainsAllBindings() ? Function.identity()
 				: retainBindings(bindingScope.bindingNames(), context);
-
+		var effects = ves.blankNodeEffects();
+		if (effects.usesSolutionOccurrence()) {
+			PreparedBlankNodeExecution.requireSolutionOccurrences();
+		}
+		BlankNodeAllocationScope allocation = effects.usesSolutionOccurrence()
+				? context.getBlankNodeAllocationScope()
+				: null;
+		BiFunction<BindingSet, CloseableIteration<BindingSet>, CloseableIteration<BindingSet>> filterRows = (input,
+				rows) -> new FilterIterator(filter, rows, ves, strategy,
+						ScopedUnionInput.filterInput(filter, condition, input, retain), evaluationStatistics,
+						allocation);
+		QueryEvaluationStep standard = RebindableQueryEvaluationStep.unary(filter, arg,
+				child -> input -> filterRows.apply(input, child.evaluate(ScopedUnionInput.argument(filter, input))));
+		var restriction = effects.isEmpty() && RestrictionCompiler.enabled(strategy, context)
+				&& RestrictionCompiler.movable(condition)
+						? RestrictionCompiler.unary("filter/original-condition-input", filter, context, arg,
+								Function.identity(), input -> ScopedUnionInput.argument(filter, input), filterRows)
+						: null;
 		QueryEvaluationStep generic = AdaptiveFilterEvaluationStep.filter(context,
-				(bs) -> new FilterIterator(filter, arg.evaluate(bs), ves, strategy, retain, evaluationStatistics,
-						context.getBlankNodeAllocationScope()));
+				RestrictionCompiler.attach(standard, restriction));
 		QueryEvaluationStep batched = supplyBatchExistsFilter(filter, strategy, context, arg, generic, bindingScope);
 		return batched != null ? batched : generic;
 	}
@@ -113,7 +136,8 @@ public class FilterIterator extends FilterIteration<BindingSet> implements Index
 	private static QueryEvaluationStep supplyBatchExistsFilter(Filter filter, EvaluationStrategy strategy,
 			QueryEvaluationContext context, QueryEvaluationStep arg, QueryEvaluationStep generic,
 			ConditionBindingScope bindingScope) {
-		if (filter.isRuntimeTelemetryEnabled() || strategy.isTrackResultSize() || strategy.isTrackTime()
+		if (OrderedEvaluation.isRequired(filter)
+				|| filter.isRuntimeTelemetryEnabled() || strategy.isTrackResultSize() || strategy.isTrackTime()
 				|| !(strategy instanceof BatchCorrelatedJoinProvider.Host host)) {
 			return null;
 		}
@@ -160,6 +184,9 @@ public class FilterIterator extends FilterIteration<BindingSet> implements Index
 		Set<String> guardNames = new LinkedHashSet<>(subNames);
 		guardNames.removeAll(outerNames);
 		return bs -> {
+			if (ScopedUnionInput.hasRowScope(filter)) {
+				return generic.evaluate(bs);
+			}
 			for (String name : guardNames) {
 				if (bs.hasBinding(name)) {
 					return generic.evaluate(bs);
@@ -202,19 +229,26 @@ public class FilterIterator extends FilterIteration<BindingSet> implements Index
 		} catch (QueryEvaluationException e) {
 			return QueryEvaluationStep.EMPTY;
 		}
-		FilteredBindingSetAssignmentJoinIteration.DirectCondition directCondition = directCondition(
+		var effects = condition.blankNodeEffects();
+		FilteredBindingSetAssignmentJoinIteration.DirectCondition directCondition = effects.isEmpty() ? directCondition(
 				filter.getCondition(),
 				context,
-				strategy.getQueryEvaluationMode() == QueryEvaluationMode.STRICT);
+				strategy.getQueryEvaluationMode() == QueryEvaluationMode.STRICT) : null;
 
 		List<BindingSet> assignmentRows = bindingRows(assignment);
-		QueryValueEvaluationStep preparedCondition = condition;
-		Object boundary = new Object();
-		QueryValueEvaluationStep scopedCondition = row -> {
-			try (var ignored = context.getBlankNodeAllocationScope().visitSolutionOccurrence(row, boundary)) {
-				return preparedCondition.evaluate(row);
-			}
-		};
+		QueryValueEvaluationStep scopedCondition;
+		if (effects.usesSolutionOccurrence()) {
+			PreparedBlankNodeExecution.requireSolutionOccurrences();
+			var allocation = context.getBlankNodeAllocationScope();
+			Object boundary = new Object();
+			scopedCondition = row -> {
+				try (var ignored = allocation.visitSolutionOccurrence(row, boundary)) {
+					return condition.evaluate(row);
+				}
+			};
+		} else {
+			scopedCondition = condition;
+		}
 		QueryEvaluationStep leftPrepared = strategy.precompile(join.getLeftArg(), context);
 		AdaptiveFilterEvaluationStep.recordPrepared(context, join.getLeftArg(), leftPrepared);
 		Map<String, FilteredBindingSetAssignmentJoinIteration.BindingNameAccess> bindingNamesByName = bindingNameAccess(
@@ -318,7 +352,9 @@ public class FilterIterator extends FilterIteration<BindingSet> implements Index
 			EvaluationStrategy strategy, EvaluationStatistics evaluationStatistics) throws QueryEvaluationException {
 		super(iter);
 		this.outcomes = new FilterCondition(filter, evaluationStatistics);
-		this.allocation = BlankNodeAllocationScope.currentOrNew();
+		this.allocation = condition.blankNodeEffects().usesSolutionOccurrence()
+				? BlankNodeAllocationScope.currentOrNew()
+				: null;
 		this.condition = condition;
 		this.strategy = strategy;
 		ConditionBindingScope bindingScope = FilterBindingScope.resolve(filter);
@@ -394,6 +430,9 @@ public class FilterIterator extends FilterIteration<BindingSet> implements Index
 
 	@Override
 	protected boolean accept(BindingSet bindings) throws QueryEvaluationException {
+		if (allocation == null) {
+			return outcomes.evaluate(condition, strategy, retain, bindings);
+		}
 		try (var ignored = allocation.visitSolutionOccurrence(bindings, solutionBoundary)) {
 			return outcomes.evaluate(condition, strategy, retain, bindings);
 		}

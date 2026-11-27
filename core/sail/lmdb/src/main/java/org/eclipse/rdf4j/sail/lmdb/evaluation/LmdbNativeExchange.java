@@ -278,7 +278,8 @@ final class LmdbNativeExchange {
 						done = true;
 						return false;
 					}
-					scan = row.source.statements(subj, pred, obj, context, partition);
+					scan = row.source.partitionStatements(subj, pred, obj, context, partition,
+							row.cursorCancellation());
 					currentPartitionMatched = false;
 				}
 				rows = scan.fill(quads, MORSEL_ROWS);

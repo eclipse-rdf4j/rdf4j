@@ -14,6 +14,7 @@ import java.util.Queue;
 import java.util.concurrent.ArrayBlockingQueue;
 import java.util.concurrent.BlockingQueue;
 import java.util.concurrent.ConcurrentLinkedQueue;
+import java.util.concurrent.LinkedBlockingQueue;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 
@@ -39,7 +40,8 @@ public abstract class QueueIteration<E, T extends RuntimeException> extends Look
 	 * @param capacity the capacity of this queue
 	 */
 	protected QueueIteration(int capacity) {
-		this(capacity, false);
+		super();
+		this.queue = new ArrayBlockingQueue<>(capacity);
 	}
 
 	/**
@@ -57,7 +59,7 @@ public abstract class QueueIteration<E, T extends RuntimeException> extends Look
 	/**
 	 * Creates an <var>QueueIteration</var> with the given {@link BlockingQueue} as its backing queue.<br>
 	 * It may not be threadsafe to modify or access the given {@link BlockingQueue} from other locations. This method
-	 * only enables the default {@link ArrayBlockingQueue} to be overridden.
+	 * only enables the default {@link LinkedBlockingQueue} to be overridden.
 	 *
 	 * @param queue A BlockingQueue that is not used in other locations, but will be used as the backing Queue
 	 *              implementation for this cursor.
