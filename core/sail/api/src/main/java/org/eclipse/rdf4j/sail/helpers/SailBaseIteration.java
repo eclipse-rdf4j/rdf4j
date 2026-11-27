@@ -18,6 +18,7 @@ import org.eclipse.rdf4j.common.iteration.CancellationSignal;
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.common.iteration.IndexReportingIterator;
 import org.eclipse.rdf4j.common.iteration.IterationWrapper;
+import org.eclipse.rdf4j.common.iteration.PreparedElementIteration;
 import org.eclipse.rdf4j.sail.SailException;
 
 /**
@@ -44,6 +45,8 @@ class SailBaseIteration<T, E extends Exception> extends IterationWrapper<T> impl
 	private int pullDepth;
 	/** Whether pulls publish their thread for the close drain and shutdown interrupt; fixed by the Sail. */
 	private final boolean tracked;
+	/** The wrapped iteration when it can say that its next element is already complete, otherwise null. */
+	private final PreparedElementIteration prepared;
 	/**
 	 * Why the connection closed this result before its consumer finished it, or {@code null}. A pull of a result closed
 	 * this way fails instead of reporting exhaustion: the rows it would still have produced were never read.
@@ -61,6 +64,7 @@ class SailBaseIteration<T, E extends Exception> extends IterationWrapper<T> impl
 		this.connection = connection;
 		this.lineage = connection.resultLineage();
 		this.tracked = connection.tracksResultPulls;
+		this.prepared = iter instanceof PreparedElementIteration ready ? ready : null;
 	}
 
 	/**
@@ -162,6 +166,12 @@ class SailBaseIteration<T, E extends Exception> extends IterationWrapper<T> impl
 	public T next() {
 		if (isClosed()) {
 			failIfClosedByConnection();
+			return super.next();
+		}
+		if (prepared != null && prepared.hasPreparedElement() && !lineage.isCancelled()) {
+			// The availability check that produced this element was admitted and tracked. Handing the element over
+			// reads nothing from the connection, so there is nothing here for a close to drain or to interrupt.
+			// A result whose creating workload was cancelled in between takes the admitted path, which refuses it.
 			return super.next();
 		}
 		beginPull();

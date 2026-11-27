@@ -61,11 +61,15 @@ public class DefaultEvaluationStrategyFactory extends AbstractEvaluationStrategy
 	@Override
 	public EvaluationStrategy createEvaluationStrategy(Dataset dataset, TripleSource tripleSource,
 			EvaluationStatistics evaluationStatistics) {
-		DefaultEvaluationStrategy strategy = new DefaultEvaluationStrategy(tripleSource, dataset, serviceResolver,
-				getQuerySolutionCacheThreshold(), evaluationStatistics, isTrackResultSize());
+		DefaultEvaluationStrategy strategy = createStrategy(dataset, tripleSource, evaluationStatistics);
 		getOptimizerPipeline().ifPresent(strategy::setOptimizerPipeline);
 		strategy.setCollectionFactory(collectionFactorySupplier);
 		return strategy;
 	}
 
+	protected DefaultEvaluationStrategy createStrategy(Dataset dataset, TripleSource tripleSource,
+			EvaluationStatistics evaluationStatistics) {
+		return new DefaultEvaluationStrategy(tripleSource, dataset, serviceResolver,
+				getQuerySolutionCacheThreshold(), evaluationStatistics, isTrackResultSize());
+	}
 }

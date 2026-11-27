@@ -13,6 +13,7 @@ package org.eclipse.rdf4j.sail.lmdb.evaluation;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.catchThrowable;
+import static org.eclipse.rdf4j.sail.lmdb.evaluation.NativeCancellationTestAccess.mockScanSource;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyInt;
@@ -81,8 +82,9 @@ class NativeStructuralAggregateCancellationTest {
 			assertThat(release.await(5, TimeUnit.SECONDS)).isTrue();
 			return true;
 		}).thenReturn(false);
-		when(fixture.source.prefixRuns(eq(fixture.plan), anyLong(), anyLong(), anyLong(), anyLong(), eq(false), any()))
-				.thenReturn(baseline, blocked);
+		when(fixture.source.prefixRuns(eq(fixture.plan), anyLong(), anyLong(), anyLong(), anyLong(), eq(false), any(),
+				any()))
+						.thenReturn(baseline, blocked);
 		SyntheticValueSource evaluation = SyntheticValueSource.forEvaluation(fixture.source);
 		try {
 			assertThat(LmdbAdjacencyRootDomainCursor.predicateCatalog(evaluation))
@@ -111,8 +113,9 @@ class NativeStructuralAggregateCancellationTest {
 		LmdbPrefixRunCursor baselineCatalog = fixture.cursor(), cancelledCatalog = fixture.cursor();
 		when(baselineCatalog.next()).thenReturn(true, false);
 		when(cancelledCatalog.next()).thenReturn(true, false);
-		when(fixture.source.prefixRuns(eq(fixture.plan), anyLong(), anyLong(), anyLong(), anyLong(), eq(false), any()))
-				.thenReturn(baselineCatalog, cancelledCatalog);
+		when(fixture.source.prefixRuns(eq(fixture.plan), anyLong(), anyLong(), anyLong(), anyLong(), eq(false), any(),
+				any()))
+						.thenReturn(baselineCatalog, cancelledCatalog);
 		var baselineProbe = mock(NativeLmdbQuerySource.NativeProbe.class);
 		var cancelledProbe = mock(NativeLmdbQuerySource.NativeProbe.class);
 		when(fixture.source.newProbe()).thenReturn(baselineProbe, cancelledProbe);
@@ -360,8 +363,8 @@ class NativeStructuralAggregateCancellationTest {
 					Fixture fixture = new Fixture();
 					NativeAggregateAlternative step = fixture.step(datatype);
 					var sources = new NativeLmdbQuerySource.ParallelSource[] {
-							mock(NativeLmdbQuerySource.ParallelSource.class),
-							mock(NativeLmdbQuerySource.ParallelSource.class) };
+							mockScanSource(NativeLmdbQuerySource.ParallelSource.class),
+							mockScanSource(NativeLmdbQuerySource.ParallelSource.class) };
 					when(fixture.source.openParallelSources(2)).thenReturn(sources);
 					when(fixture.source.prefixRunSplitValues(eq(fixture.plan), anyLong(), anyLong(), anyLong(),
 							anyLong(), anyInt(), anyInt())).thenReturn(new long[][] { { 1L }, { 2L } });
@@ -433,7 +436,7 @@ class NativeStructuralAggregateCancellationTest {
 		NativeCancellationToken workers = new NativeCancellationToken();
 		workers.requestCancellation();
 		KernelQueryCancelledException peer = assertThrows(KernelQueryCancelledException.class, workers::check);
-		NativeLmdbQuerySource.ParallelSource source = mock(NativeLmdbQuerySource.ParallelSource.class);
+		NativeLmdbQuerySource.ParallelSource source = mockScanSource(NativeLmdbQuerySource.ParallelSource.class);
 		IllegalStateException cleanup = new IllegalStateException("source cleanup failed");
 		doThrow(cleanup).when(source).close();
 		Throwable retained = NativeStructuralWorkers.drain(
@@ -464,8 +467,8 @@ class NativeStructuralAggregateCancellationTest {
 			Fixture fixture = new Fixture();
 			NativeAggregateAlternative step = fixture.step(datatype);
 			var sources = new NativeLmdbQuerySource.ParallelSource[] {
-					mock(NativeLmdbQuerySource.ParallelSource.class),
-					mock(NativeLmdbQuerySource.ParallelSource.class) };
+					mockScanSource(NativeLmdbQuerySource.ParallelSource.class),
+					mockScanSource(NativeLmdbQuerySource.ParallelSource.class) };
 			when(fixture.source.openParallelSources(2)).thenReturn(sources);
 			when(fixture.source.prefixRunSplitValues(eq(fixture.plan), anyLong(), anyLong(), anyLong(), anyLong(),
 					anyInt(), anyInt())).thenReturn(new long[][] { { 1L }, { 2L } });
@@ -573,7 +576,7 @@ class NativeStructuralAggregateCancellationTest {
 	}
 
 	private static final class Fixture {
-		final NativeLmdbQuerySource source = mock(NativeLmdbQuerySource.class);
+		final NativeLmdbQuerySource source = mockScanSource(NativeLmdbQuerySource.class);
 		final LmdbPrefixRunPlan plan = mock(LmdbPrefixRunPlan.class);
 		final LmdbNativeEvaluationStrategy strategy = mock(LmdbNativeEvaluationStrategy.class);
 
@@ -620,7 +623,7 @@ class NativeStructuralAggregateCancellationTest {
 
 		void prefix(NativeLmdbQuerySource target, LmdbPrefixRunCursor first, LmdbPrefixRunCursor... others)
 				throws IOException {
-			when(target.prefixRuns(eq(plan), anyLong(), anyLong(), anyLong(), anyLong(), eq(true)))
+			when(target.prefixRuns(eq(plan), anyLong(), anyLong(), anyLong(), anyLong(), eq(true), any(), any()))
 					.thenReturn(first, others);
 		}
 	}

@@ -22,11 +22,16 @@ import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Iterator;
 import java.util.List;
+import java.util.Map;
+import java.util.Set;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.function.BiConsumer;
+import java.util.function.Consumer;
 import java.util.function.Function;
 
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.common.iteration.CloseableIteratorIteration;
+import org.eclipse.rdf4j.common.iteration.LookAheadIteration;
 import org.eclipse.rdf4j.common.iteration.SingletonIteration;
 import org.eclipse.rdf4j.model.BNode;
 import org.eclipse.rdf4j.model.IRI;
@@ -38,21 +43,48 @@ import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.model.vocabulary.RDF4J;
 import org.eclipse.rdf4j.model.vocabulary.SESAME;
 import org.eclipse.rdf4j.query.BindingSet;
+import org.eclipse.rdf4j.query.MutableBindingSet;
 import org.eclipse.rdf4j.query.QueryEvaluationException;
 import org.eclipse.rdf4j.query.QueryResults;
+import org.eclipse.rdf4j.query.algebra.BindingSetAssignment;
+import org.eclipse.rdf4j.query.algebra.Bound;
+import org.eclipse.rdf4j.query.algebra.EmptySet;
+import org.eclipse.rdf4j.query.algebra.Exists;
+import org.eclipse.rdf4j.query.algebra.Extension;
+import org.eclipse.rdf4j.query.algebra.ExtensionElem;
+import org.eclipse.rdf4j.query.algebra.Filter;
 import org.eclipse.rdf4j.query.algebra.Graph;
+import org.eclipse.rdf4j.query.algebra.If;
+import org.eclipse.rdf4j.query.algebra.Join;
+import org.eclipse.rdf4j.query.algebra.LeftJoin;
+import org.eclipse.rdf4j.query.algebra.Not;
+import org.eclipse.rdf4j.query.algebra.Or;
+import org.eclipse.rdf4j.query.algebra.Projection;
+import org.eclipse.rdf4j.query.algebra.ProjectionElem;
+import org.eclipse.rdf4j.query.algebra.ProjectionElemList;
+import org.eclipse.rdf4j.query.algebra.QueryRoot;
+import org.eclipse.rdf4j.query.algebra.Service;
 import org.eclipse.rdf4j.query.algebra.SingletonSet;
 import org.eclipse.rdf4j.query.algebra.StatementPattern;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
+import org.eclipse.rdf4j.query.algebra.Union;
+import org.eclipse.rdf4j.query.algebra.ValueConstant;
 import org.eclipse.rdf4j.query.algebra.Var;
+import org.eclipse.rdf4j.query.algebra.ZeroLengthPath;
 import org.eclipse.rdf4j.query.algebra.evaluation.EvaluationStrategy;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryBindingSet;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryEvaluationStep;
 import org.eclipse.rdf4j.query.algebra.evaluation.TripleSource;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.DefaultEvaluationStrategy;
+import org.eclipse.rdf4j.query.algebra.evaluation.impl.GraphFrameBindings;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.QueryEvaluationContext;
+import org.eclipse.rdf4j.query.algebra.evaluation.impl.restrictions.InvocationOwner;
+import org.eclipse.rdf4j.query.algebra.evaluation.impl.restrictions.RestrictionCompiler;
+import org.eclipse.rdf4j.query.algebra.evaluation.impl.restrictions.RestrictionPlanProvider;
+import org.eclipse.rdf4j.query.algebra.evaluation.iterator.ExtensionIterator;
 import org.eclipse.rdf4j.query.impl.BlankNodeAllocationScope;
 import org.eclipse.rdf4j.query.impl.EmptyBindingSet;
+import org.eclipse.rdf4j.query.impl.MapBindingSet;
 import org.eclipse.rdf4j.query.impl.RemoteBNode;
 import org.eclipse.rdf4j.query.impl.SimpleDataset;
 import org.junit.jupiter.api.Test;
@@ -64,6 +96,605 @@ public class GraphQueryEvaluationStepTest {
 	private static final ValueFactory VF = SimpleValueFactory.getInstance();
 	private static final IRI G1 = VF.createIRI("urn:g1");
 	private static final IRI G2 = VF.createIRI("urn:g2");
+
+	@Test
+	void restrictionAndInstrumentationPreserveUnionRebinding() {
+		var union = new Union(new SingletonSet(), new SingletonSet());
+		var root = new Filter(union, new ValueConstant(VF.createLiteral(true)));
+		var context = AdaptiveFilterEvaluationStep.planningContext(root, new QueryEvaluationContext.Minimal(null));
+		var first = new MapBindingSet();
+		first.addBinding("g", G1);
+		var second = new MapBindingSet();
+		second.addBinding("g", G2);
+		QueryEvaluationStep left = input -> new SingletonIteration<>(first);
+		QueryEvaluationStep right = input -> new SingletonIteration<>(second);
+		QueryEvaluationStep ordinary = RebindableQueryEvaluationStep.union(union, left, right);
+		QueryEvaluationStep adaptive = AdaptiveFilterEvaluationStep.binary(context, union, ordinary,
+				(a, b) -> RebindableQueryEvaluationStep.union(union, a, b));
+		var plan = RestrictionCompiler.rows("test/original-union", union, context, ordinary);
+		var calls = new AtomicInteger();
+		QueryEvaluationStep prepared = AdaptiveFilterEvaluationStep.decorate(RestrictionCompiler.attach(adaptive, plan),
+				step -> input -> {
+					calls.incrementAndGet();
+					return step.evaluate(input);
+				});
+
+		var certificate = RestrictionPlanProvider.find(prepared);
+		assertThat(certificate).isNotNull();
+		try (var invocation = certificate.open(EmptyBindingSet.getInstance(), InvocationOwner.forExecution(context));
+				var rows = invocation.probe(certificate.layout().unrestricted())) {
+			assertThat(QueryResults.asList(rows)).containsExactly(first, second);
+		}
+		var rebindable = RebindableQueryEvaluationStep.from(union, prepared);
+		assertThat(rebindable).isNotNull();
+		QueryEvaluationStep singleArm = rebindable.withArgument(left);
+		assertThat(RestrictionPlanProvider.find(singleArm)).isNull();
+		try (var rows = singleArm.evaluate(EmptyBindingSet.getInstance())) {
+			assertThat(QueryResults.asList(rows)).containsExactly(first);
+		}
+		assertThat(calls).hasValue(2);
+	}
+
+	@ParameterizedTest
+	@ValueSource(strings = { "extension", "filter", "projection", "union" })
+	void nullableGraphUnionKeepsCustomPreparedOwner(String operator) {
+		StatementFixture fixture = new StatementFixture();
+		fixture.statements = List.of(VF.createStatement(G1, fixture.predicate, G2));
+		var union = new Union(nullableLookup(fixture), new ZeroLengthPath(Var.of("g"), Var.of("end")));
+		TupleExpr custom = switch (operator) {
+		case "extension" -> new Extension(union, new ExtensionElem(new ValueConstant(G2), "inner"));
+		case "filter" -> new Filter(union, new ValueConstant(VF.createLiteral(true)));
+		case "projection" -> {
+			var projection = new Projection(union, new ProjectionElemList(new ProjectionElem("g"),
+					new ProjectionElem("s"), new ProjectionElem("end")));
+			projection.setSubquery(false);
+			yield projection;
+		}
+		default -> union;
+		};
+		var invocations = new AtomicInteger();
+		QueryEvaluationStep empty = bindings -> {
+			invocations.incrementAndGet();
+			return QueryEvaluationStep.EMPTY_ITERATION;
+		};
+		DefaultEvaluationStrategy strategy = new DefaultEvaluationStrategy(fixture, null) {
+			@Override
+			protected QueryEvaluationStep prepare(Extension extension, QueryEvaluationContext context) {
+				return extension == custom ? empty : super.prepare(extension, context);
+			}
+
+			@Override
+			public QueryEvaluationStep precompile(TupleExpr expression, QueryEvaluationContext context) {
+				QueryEvaluationStep ordinary = super.precompile(expression, context);
+				return expression == custom && !(custom instanceof Extension) ? empty : ordinary;
+			}
+		};
+		var right = new Extension(custom, new ExtensionElem(new ValueConstant(G2), "outer"));
+		var query = new QueryRoot(new Join(graphJoinInput(null), right));
+		try (var rows = strategy.precompile(query).evaluate(EmptyBindingSet.getInstance())) {
+			assertThat(rows.hasNext()).isFalse();
+		}
+		assertThat(invocations.get()).isEqualTo(1);
+	}
+
+	@ParameterizedTest
+	@CsvSource({ "false,false,false", "false,true,false", "true,false,false", "true,true,false",
+			"false,false,true", "false,true,true", "true,false,true", "true,true,true" })
+	void nullableGraphUnionKeepsArmScopesThroughACustomDelegate(boolean optional, boolean project,
+			boolean copyInput) {
+		StatementFixture fixture = new StatementFixture();
+		fixture.statements = List.of(VF.createStatement(G1, fixture.predicate, G2));
+		var invocations = new AtomicInteger();
+		DefaultEvaluationStrategy strategy = new DefaultEvaluationStrategy(fixture, null) {
+			@Override
+			protected QueryEvaluationStep prepare(Union union, QueryEvaluationContext context) {
+				QueryEvaluationStep ordinary = super.prepare(union, context);
+				return bindings -> {
+					invocations.incrementAndGet();
+					return ordinary.evaluate(copyInput ? new QueryBindingSet(bindings) : bindings);
+				};
+			}
+		};
+		TupleExpr right = new Union(nullableLookup(fixture), new ZeroLengthPath(Var.of("g"), Var.of("end")));
+		if (project) {
+			var projection = new Projection(right, new ProjectionElemList(new ProjectionElem("g"),
+					new ProjectionElem("s"), new ProjectionElem("end")));
+			projection.setSubquery(false);
+			right = new Filter(projection, new Or(new Not(new Bound(Var.of("g"))), new Bound(Var.of("end"))));
+		}
+		right = new Extension(right, new ExtensionElem(new ValueConstant(G2), "constant"));
+		var left = graphJoinInput(null);
+		var query = new QueryRoot(optional ? new LeftJoin(left, right) : new Join(left, right));
+		try (var rows = strategy.precompile(query).evaluate(EmptyBindingSet.getInstance())) {
+			assertThat(QueryResults.asList(rows)).extracting(row -> row.getValue("s"), row -> row.getValue("end"),
+					row -> row.getValue("constant"))
+					.containsExactlyInAnyOrder(tuple(G1, null, G2), tuple(null, G1, G2));
+		}
+		assertThat(invocations.get()).isEqualTo(1);
+	}
+
+	@ParameterizedTest
+	@ValueSource(booleans = { false, true })
+	void nullableGraphUnionHonorsAChangedInputFromTheCustomDelegate(boolean optional) {
+		StatementFixture fixture = new StatementFixture();
+		fixture.statements = List.of(VF.createStatement(G1, fixture.predicate, G2));
+		IRI forced = VF.createIRI("urn:forced-missing");
+		DefaultEvaluationStrategy strategy = new DefaultEvaluationStrategy(fixture, null) {
+			@Override
+			protected QueryEvaluationStep prepare(Union union, QueryEvaluationContext context) {
+				QueryEvaluationStep ordinary = super.prepare(union, context);
+				return bindings -> {
+					var changed = new QueryBindingSet(bindings);
+					changed.setBinding("g", forced);
+					return ordinary.evaluate(changed);
+				};
+			}
+		};
+		var union = new Union(nullableLookup(fixture), new ZeroLengthPath(Var.of("g"), Var.of("end")));
+		var left = graphJoinInput(null);
+		var query = new QueryRoot(optional ? new LeftJoin(left, union) : new Join(left, union));
+		try (var rows = strategy.precompile(query).evaluate(EmptyBindingSet.getInstance())) {
+			assertThat(QueryResults.asList(rows))
+					.containsExactlyElementsOf(optional ? left.getBindingSets() : List.of());
+		}
+	}
+
+	@ParameterizedTest
+	@ValueSource(booleans = { false, true })
+	void nullableGraphUnionProjectionUsesOnlyRealEntryFallbackAfterAFailedBind(boolean optional) {
+		StatementFixture fixture = new StatementFixture();
+		fixture.statements = List.of(VF.createStatement(G1, fixture.predicate, G2));
+		var union = new Union(nullableLookup(fixture), new ZeroLengthPath(Var.of("g"), Var.of("end")));
+		var bind = new Extension(union, new ExtensionElem(Var.of("missing"), "g"));
+		var projection = new Projection(bind, new ProjectionElemList(new ProjectionElem("g", "alias"),
+				new ProjectionElem("s"), new ProjectionElem("end")));
+		projection.setSubquery(false);
+		var left = graphJoinInput(null);
+		var query = new QueryRoot(optional ? new LeftJoin(left, projection) : new Join(left, projection));
+		QueryEvaluationStep plan = new DefaultEvaluationStrategy(fixture, null).precompile(query);
+		var explicit = new QueryBindingSet();
+		explicit.setBinding("g", G1);
+		try (var rows = plan.evaluate(explicit)) {
+			assertThat(QueryResults.asList(rows)).extracting(row -> row.getValue("s"), row -> row.getValue("end"),
+					row -> row.getValue("alias")).containsExactly(tuple(null, G1, G1));
+		}
+		try (var rows = plan.evaluate(EmptyBindingSet.getInstance())) {
+			assertThat(QueryResults.asList(rows)).extracting(row -> row.getValue("s"), row -> row.getValue("end"),
+					row -> row.getValue("alias"))
+					.containsExactlyInAnyOrder(tuple(G1, null, null), tuple(null, G1, null));
+		}
+	}
+
+	@Test
+	void nullableGraphUnionRestoresLazyDelegateScopesBetweenInvocations() {
+		StatementFixture fixture = new StatementFixture();
+		fixture.statements = List.of(VF.createStatement(G1, fixture.predicate, G2));
+		DefaultEvaluationStrategy strategy = new DefaultEvaluationStrategy(fixture, null) {
+			@Override
+			protected QueryEvaluationStep prepare(Union union, QueryEvaluationContext context) {
+				QueryEvaluationStep ordinary = super.prepare(union, context);
+				return bindings -> new LookAheadIteration<>() {
+					private CloseableIteration<BindingSet> delegate;
+
+					@Override
+					protected BindingSet getNextElement() {
+						if (delegate == null) {
+							delegate = ordinary.evaluate(new QueryBindingSet(bindings));
+						}
+						return delegate.hasNext() ? delegate.next() : null;
+					}
+
+					@Override
+					protected void handleClose() {
+						if (delegate != null) {
+							delegate.close();
+						}
+					}
+				};
+			}
+		};
+		var union = new Union(nullableLookup(fixture), new ZeroLengthPath(Var.of("g"), Var.of("end")));
+		var query = new QueryRoot(new Join(graphJoinInput(null), union));
+		QueryEvaluationStep step = strategy.precompile(query);
+		var entry = new QueryBindingSet();
+		entry.setBinding("g", G1);
+		try (var unseeded = step.evaluate(EmptyBindingSet.getInstance()); var seeded = step.evaluate(entry)) {
+			assertThat(unseeded.hasNext()).isTrue();
+			assertThat(QueryResults.asList(seeded)).extracting(row -> row.getValue("s"), row -> row.getValue("end"))
+					.containsExactly(tuple(null, G1));
+			assertThat(QueryResults.asList(unseeded)).extracting(row -> row.getValue("s"), row -> row.getValue("end"))
+					.containsExactlyInAnyOrder(tuple(G1, null), tuple(null, G1));
+		}
+	}
+
+	@Test
+	void nullableGraphUnionKeepsTheEndpointOfNestedScopedServiceUnderBind() {
+		StatementFixture fixture = new StatementFixture();
+		fixture.statements = List.of(VF.createStatement(G1, fixture.predicate, G2));
+		var endpoint = VF.createIRI("urn:endpoint");
+		DefaultEvaluationStrategy strategy = new DefaultEvaluationStrategy(fixture, null) {
+			@Override
+			protected QueryEvaluationStep prepare(Service service, QueryEvaluationContext context) {
+				return bindings -> {
+					if (!endpoint.equals(bindings.getValue("endpoint"))) {
+						throw new QueryEvaluationException("Missing SERVICE endpoint");
+					}
+					var result = new QueryBindingSet(bindings);
+					result.setBinding("serviceResult", G2);
+					return new SingletonIteration<>(result);
+				};
+			}
+		};
+		var serviceBody = new BindingSetAssignment();
+		serviceBody.setBindingNames(Set.of("serviceResult"));
+		var service = new Service(Var.of("endpoint"), serviceBody, "{ VALUES ?serviceResult { <urn:g2> } }",
+				Map.of(), null, false);
+		var scopedUnion = new Union(service, new EmptySet());
+		scopedUnion.setVariableScopeChange(true);
+		var union = new Union(nullableLookup(fixture), scopedUnion);
+		var right = new Extension(union, new ExtensionElem(new ValueConstant(G1), "constant"));
+		var query = new QueryRoot(new Join(graphJoinInput(endpoint), right));
+		try (var rows = strategy.precompile(query).evaluate(EmptyBindingSet.getInstance())) {
+			assertThat(QueryResults.asList(rows)).extracting(row -> row.getValue("s"),
+					row -> row.getValue("endpoint"), row -> row.getValue("serviceResult"),
+					row -> row.getValue("constant"))
+					.containsExactlyInAnyOrder(tuple(G1, endpoint, null, G1), tuple(null, endpoint, G2, G1));
+		}
+	}
+
+	@ParameterizedTest
+	@ValueSource(booleans = { false, true })
+	void nullableGraphUnionKeepsMappingParametersReadInsideRowExpressions(boolean filter) {
+		StatementFixture fixture = new StatementFixture();
+		fixture.statements = List.of(VF.createStatement(G1, fixture.predicate, G2));
+		var endpoint = VF.createIRI("urn:endpoint");
+		DefaultEvaluationStrategy strategy = new DefaultEvaluationStrategy(fixture, null) {
+			@Override
+			protected QueryEvaluationStep prepare(Service service, QueryEvaluationContext context) {
+				return bindings -> {
+					if (!endpoint.equals(bindings.getValue("endpoint"))) {
+						throw new QueryEvaluationException("Missing SERVICE endpoint");
+					}
+					assertThat(bindings.hasBinding("unrelated")).isFalse();
+					return new SingletonIteration<>(bindings);
+				};
+			}
+		};
+		var service = new Service(Var.of("endpoint"), new SingletonSet(), "{ }", Map.of(), null, false);
+		var exists = new Exists(service);
+		var union = new Union(nullableLookup(fixture), new ZeroLengthPath(Var.of("g"), Var.of("end")));
+		TupleExpr right = filter ? new Filter(union, exists)
+				: new Extension(union, new ExtensionElem(exists, "check"));
+		right = new Extension(right, new ExtensionElem(Var.of("unrelated"), "alias"));
+		var query = new QueryRoot(new Join(graphJoinInput(endpoint), right));
+		try (var rows = strategy.precompile(query).evaluate(EmptyBindingSet.getInstance())) {
+			Value check = filter ? null : VF.createLiteral(true);
+			assertThat(QueryResults.asList(rows)).extracting(row -> row.getValue("s"), row -> row.getValue("end"),
+					row -> row.getValue("check"), row -> row.getValue("alias"))
+					.containsExactlyInAnyOrder(tuple(G1, null, check, null), tuple(null, G1, check, null));
+		}
+	}
+
+	@ParameterizedTest
+	@ValueSource(booleans = { false, true })
+	void nullableGraphUnionKeepsArmScopesAfterAdaptiveFilterPreparation(boolean optional) {
+		StatementFixture fixture = new StatementFixture();
+		fixture.statements = List.of(VF.createStatement(G1, fixture.predicate, G2));
+		var lookup = new StatementPattern(Var.of("s"), Var.of("p", fixture.predicate, true, true), Var.of("q"));
+		var arm = new Filter(new Join(nullableLookup(fixture), lookup), new Bound(Var.of("s")));
+		var right = new Union(arm, new ZeroLengthPath(Var.of("g"), Var.of("end")));
+		var left = graphJoinInput(null);
+		var query = new QueryRoot(optional ? new LeftJoin(left, right) : new Join(left, right));
+		try (var rows = new DefaultEvaluationStrategy(fixture, null).precompile(query)
+				.evaluate(EmptyBindingSet.getInstance())) {
+			assertThat(QueryResults.asList(rows)).extracting(row -> row.getValue("g"), row -> row.getValue("s"),
+					row -> row.getValue("q"), row -> row.getValue("end"))
+					.containsExactlyInAnyOrder(tuple(G1, G1, G2, null), tuple(G1, null, null, G1));
+		}
+	}
+
+	@ParameterizedTest
+	@CsvSource({ "false,false,false", "true,false,false", "false,true,false", "true,true,false",
+			"false,false,true", "true,false,true", "false,true,true", "true,true,true" })
+	void nullableGraphUnionSuppliesSharedParametersOnlyToTheScalar(boolean optional, boolean filter,
+			boolean delegate) {
+		StatementFixture fixture = new StatementFixture();
+		fixture.statements = List.of(VF.createStatement(G1, fixture.predicate, G2));
+		var union = new Union(nullableLookup(fixture), new ZeroLengthPath(Var.of("g"), Var.of("end")));
+		var exists = new Exists(new ZeroLengthPath(Var.of("g"), Var.of("fixed", G2, true, true)));
+		TupleExpr scalarOwner = filter ? new Filter(union, new Not(exists))
+				: new Extension(union, new ExtensionElem(exists, "check"));
+		var right = new Extension(scalarOwner, new ExtensionElem(Var.of("g"), "visible"));
+		var left = graphJoinInput(null);
+		var query = new QueryRoot(optional ? new LeftJoin(left, right) : new Join(left, right));
+		var calls = new AtomicInteger();
+		DefaultEvaluationStrategy strategy = new DefaultEvaluationStrategy(fixture, null) {
+			@Override
+			public QueryEvaluationStep precompile(TupleExpr expression, QueryEvaluationContext context) {
+				QueryEvaluationStep ordinary = super.precompile(expression, context);
+				return delegate && expression == scalarOwner ? bindings -> {
+					calls.incrementAndGet();
+					return ordinary.evaluate(new QueryBindingSet(bindings));
+				} : ordinary;
+			}
+		};
+		try (var rows = strategy.precompile(query).evaluate(EmptyBindingSet.getInstance())) {
+			Value check = filter ? null : VF.createLiteral(false);
+			assertThat(QueryResults.asList(rows)).extracting(row -> row.getValue("s"), row -> row.getValue("end"),
+					row -> row.getValue("check"), row -> row.getValue("visible"))
+					.containsExactlyInAnyOrder(tuple(G1, null, check, null), tuple(null, G1, check, G1));
+		}
+		assertThat(calls).hasValue(delegate ? 1 : 0);
+	}
+
+	@ParameterizedTest
+	@ValueSource(booleans = { false, true })
+	void nullableGraphUnionDoesNotRestoreAParameterHiddenByAnEarlierBind(boolean sameExtension) {
+		StatementFixture fixture = new StatementFixture();
+		fixture.statements = List.of(VF.createStatement(G1, fixture.predicate, G2));
+		var clear = new ExtensionElem(Var.of("missing"), "g");
+		TupleExpr lookup = nullableLookup(fixture);
+		if (!sameExtension) {
+			lookup = new Extension(lookup, clear);
+		}
+		var union = new Union(lookup, new ZeroLengthPath(Var.of("g"), Var.of("end")));
+		var check = new ExtensionElem(new Exists(new ZeroLengthPath(Var.of("g"), Var.of("fixed", G2, true, true))),
+				"check");
+		var right = sameExtension ? new Extension(union, clear, check) : new Extension(union, check);
+		var query = new QueryRoot(new Join(graphJoinInput(null), right));
+		try (var rows = new DefaultEvaluationStrategy(fixture, null).precompile(query)
+				.evaluate(EmptyBindingSet.getInstance())) {
+			assertThat(QueryResults.asList(rows)).extracting(row -> row.getValue("s"), row -> row.getValue("end"),
+					row -> row.getValue("check"))
+					.containsExactlyInAnyOrder(tuple(G1, null, VF.createLiteral(true)),
+							tuple(null, G1, VF.createLiteral(sameExtension)));
+		}
+	}
+
+	@Test
+	void nullableGraphUnionBindUsesTheContextOwnedMutableRow() {
+		StatementFixture fixture = new StatementFixture();
+		fixture.statements = List.of(VF.createStatement(G1, fixture.predicate, G2));
+		var union = new Union(nullableLookup(fixture), new ZeroLengthPath(Var.of("g"), Var.of("end")));
+		var check = new Exists(new ZeroLengthPath(Var.of("g"), Var.of("fixed", G1, true, true)));
+		var right = new Extension(union, new ExtensionElem(check, "check"));
+		var query = new QueryRoot(new LeftJoin(graphJoinInput(null), right));
+		try (var rows = new DefaultEvaluationStrategy(fixture, null).precompile(query, typedRowContext())
+				.evaluate(EmptyBindingSet.getInstance())) {
+			var yes = VF.createLiteral(true);
+			assertThat(QueryResults.asList(rows)).extracting(row -> row.getValue("s"), row -> row.getValue("end"),
+					row -> row.getValue("check"))
+					.containsExactlyInAnyOrder(tuple(G1, null, yes), tuple(null, G1, yes));
+		}
+	}
+
+	@ParameterizedTest
+	@CsvSource({ "false,false", "true,false", "true,true" })
+	void typedBindClearsASiblingInputAcrossNestedProjectionAndFeedsLaterAssignments(boolean project,
+			boolean projectsGraph) {
+		StatementFixture fixture = new StatementFixture();
+		fixture.statements = List.of(VF.createStatement(G1, fixture.predicate, G2));
+		TupleExpr path = new Extension(new ZeroLengthPath(Var.of("g"), Var.of("end")),
+				new ExtensionElem(new ValueConstant(G2), "check"),
+				new ExtensionElem(Var.of("missing"), "g"));
+		if (project) {
+			var projection = new Projection(path,
+					new ProjectionElemList(new ProjectionElem("end"), new ProjectionElem("check")));
+			if (projectsGraph) {
+				projection.getProjectionElemList().addElement(new ProjectionElem("g"));
+			}
+			projection.setSubquery(false);
+			path = projection;
+		}
+		var union = new Union(nullableLookup(fixture), path);
+		var exists = new Exists(new ZeroLengthPath(Var.of("g"), Var.of("fixed", G2, true, true)));
+		var right = new Extension(union, new ExtensionElem(exists, "check"),
+				new ExtensionElem(Var.of("check"), "copied"),
+				new ExtensionElem(new If(Var.of("check"), exists.clone(), new ValueConstant(VF.createLiteral(false))),
+						"composite"),
+				new ExtensionElem(new ValueConstant(G1), "g"),
+				new ExtensionElem(exists.clone(), "afterRestore"));
+		var query = new QueryRoot(new LeftJoin(graphJoinInput(null), right));
+		var stock = new DefaultEvaluationStrategy(fixture, null).precompile(query.clone());
+		var typed = new DefaultEvaluationStrategy(fixture, null).precompile(query, typedRowContext());
+		try (var stockRows = stock.evaluate(EmptyBindingSet.getInstance());
+				var typedRows = typed.evaluate(EmptyBindingSet.getInstance())) {
+			var yes = VF.createLiteral(true);
+			var no = VF.createLiteral(false);
+			var afterProjection = projectsGraph ? no : yes;
+			List<BindingSet> expected = QueryResults.asList(stockRows);
+			List<BindingSet> actual = QueryResults.asList(typedRows);
+			assertThat(actual).containsExactlyInAnyOrderElementsOf(expected);
+			assertThat(actual).extracting(row -> row.getValue("s"), row -> row.getValue("end"),
+					row -> row.getValue("check"), row -> row.getValue("copied"), row -> row.getValue("composite"),
+					row -> row.getValue("afterRestore"))
+					.containsExactlyInAnyOrder(tuple(G1, null, no, no, no, no),
+							tuple(null, G1, afterProjection, afterProjection, afterProjection, no));
+		}
+	}
+
+	@Test
+	void publicExtensionCallbackReceivesTheContextOwnedRowInsideARowScope() {
+		StatementFixture fixture = new StatementFixture();
+		fixture.statements = List.of(VF.createStatement(G1, fixture.predicate, G2));
+		var custom = new Extension(new ZeroLengthPath(Var.of("g"), Var.of("end")),
+				new ExtensionElem(new ValueConstant(G2), "custom"));
+		var union = new Union(nullableLookup(fixture), custom);
+		var check = new Exists(new ZeroLengthPath(Var.of("g"), Var.of("fixed", G1, true, true)));
+		var query = new QueryRoot(new LeftJoin(graphJoinInput(null),
+				new Extension(union, new ExtensionElem(check, "check"))));
+		var strategy = new DefaultEvaluationStrategy(fixture, null) {
+			@Override
+			protected QueryEvaluationStep prepare(Extension extension, QueryEvaluationContext context) {
+				if (extension == custom) {
+					var child = precompile(extension.getArg(), context);
+					return input -> new ExtensionIterator(child.evaluate(input),
+							row -> ((ContextRow) row).setBinding("custom", G2), context);
+				}
+				return super.prepare(extension, context);
+			}
+		};
+		try (var rows = strategy.precompile(query, typedRowContext()).evaluate(EmptyBindingSet.getInstance())) {
+			assertThat(QueryResults.asList(rows)).extracting(row -> row.getValue("s"), row -> row.getValue("end"),
+					row -> row.getValue("custom"))
+					.containsExactlyInAnyOrder(tuple(G1, null, null), tuple(null, G1, G2));
+		}
+	}
+
+	@Test
+	void typedScalarReadsUseTheOwnedRowAndNestedTupleKeepsGraphAuthority() {
+		StatementFixture fixture = new StatementFixture();
+		fixture.statements = List.of(VF.createStatement(G2, fixture.predicate, G1, G2));
+		var pattern = new StatementPattern(StatementPattern.Scope.NAMED_CONTEXTS, Var.of("s"),
+				Var.of("p", fixture.predicate, true, true), Var.of("o"), Var.of("privateGraph"));
+		var nested = new Projection(pattern, new ProjectionElemList(new ProjectionElem("s")));
+		nested.setProjectionContext(Var.of("callerGraph"));
+		nested.setInheritedGraphParameter("privateGraph");
+		var scalar = new If(Var.of("check"), new Exists(nested), new ValueConstant(VF.createLiteral(true)));
+		var plan = new DefaultEvaluationStrategy(fixture, null).precompile(scalar, typedRowContext());
+		for (IRI graph : List.of(G1, G2)) {
+			var nativeRow = new ContextRow();
+			nativeRow.setBinding("check", VF.createLiteral(true));
+			var framed = GraphFrameBindings.supply(nativeRow, "privateGraph", graph);
+			assertThat(plan.evaluate(framed)).isEqualTo(VF.createLiteral(graph.equals(G2)));
+		}
+	}
+
+	private static QueryEvaluationContext typedRowContext() {
+		return new QueryEvaluationContext.Minimal(null) {
+			@Override
+			public MutableBindingSet createBindingSet() {
+				return new ContextRow();
+			}
+
+			@Override
+			public MutableBindingSet createBindingSet(BindingSet bindings) {
+				var copy = new ContextRow();
+				bindings.forEach(copy::addBinding);
+				return copy;
+			}
+
+			@Override
+			public BiConsumer<Value, MutableBindingSet> setBinding(String name) {
+				return (value, row) -> ((ContextRow) row).setBinding(name, value);
+			}
+
+			@Override
+			public BiConsumer<Value, MutableBindingSet> addBinding(String name) {
+				return (value, row) -> {
+					if (value != null) {
+						row.addBinding(name, value);
+					}
+				};
+			}
+
+			@Override
+			public Consumer<MutableBindingSet> removeBinding(String name) {
+				return row -> ((ContextRow) row).removeBinding(name);
+			}
+
+			@Override
+			public Function<BindingSet, Value> getValue(String name) {
+				if ("check".equals(name)) {
+					return row -> row.hasBinding(name) ? ((ContextRow) row).getValue(name) : null;
+				}
+				return super.getValue(name);
+			}
+		};
+	}
+
+	private static final class ContextRow extends MapBindingSet {
+		private static final long serialVersionUID = 1L;
+	}
+
+	@ParameterizedTest
+	@ValueSource(booleans = { false, true })
+	void nullableGraphUnionRetainsArmLocalShadowsThroughACustomDelegate(boolean optional) {
+		StatementFixture fixture = new StatementFixture();
+		fixture.statements = List.of(VF.createStatement(G1, fixture.predicate, G2));
+		var path = new Extension(new ZeroLengthPath(Var.of("g"), Var.of("end")),
+				new ExtensionElem(Var.of("missing"), "g"));
+		var union = new Union(nullableLookup(fixture), path);
+		var right = new Extension(union,
+				new ExtensionElem(new Exists(new ZeroLengthPath(Var.of("g"), Var.of("fixed", G2, true, true))),
+						"check"));
+		var left = graphJoinInput(null);
+		var query = new QueryRoot(optional ? new LeftJoin(left, right) : new Join(left, right));
+		var calls = new AtomicInteger();
+		DefaultEvaluationStrategy strategy = new DefaultEvaluationStrategy(fixture, null) {
+			@Override
+			protected QueryEvaluationStep prepare(Extension node, QueryEvaluationContext context) {
+				QueryEvaluationStep ordinary = super.prepare(node, context);
+				return node == right ? bindings -> {
+					calls.incrementAndGet();
+					return ordinary.evaluate(new QueryBindingSet(bindings));
+				} : ordinary;
+			}
+		};
+		try (var rows = strategy.precompile(query).evaluate(EmptyBindingSet.getInstance())) {
+			assertThat(QueryResults.asList(rows)).extracting(row -> row.getValue("s"), row -> row.getValue("end"),
+					row -> row.getValue("check"))
+					.containsExactlyInAnyOrder(tuple(G1, null, VF.createLiteral(false)),
+							tuple(null, G1, VF.createLiteral(true)));
+		}
+		assertThat(calls).hasValue(1);
+	}
+
+	@ParameterizedTest
+	@CsvSource({ "false,false", "true,false", "false,true", "true,true" })
+	void nullableGraphScalarHonorsInputRewrittenByACustomDelegate(boolean optional, boolean replace) {
+		StatementFixture fixture = new StatementFixture();
+		fixture.statements = List.of(VF.createStatement(G1, fixture.predicate, G2));
+		var union = new Union(nullableLookup(fixture), new ZeroLengthPath(Var.of("g"), Var.of("end")));
+		var right = new Extension(union,
+				new ExtensionElem(new Exists(new ZeroLengthPath(Var.of("g"), Var.of("fixed", G2, true, true))),
+						"check"));
+		var left = graphJoinInput(null);
+		var query = new QueryRoot(optional ? new LeftJoin(left, right) : new Join(left, right));
+		DefaultEvaluationStrategy strategy = new DefaultEvaluationStrategy(fixture, null) {
+			@Override
+			protected QueryEvaluationStep prepare(Extension node, QueryEvaluationContext context) {
+				QueryEvaluationStep ordinary = super.prepare(node, context);
+				return node == right ? bindings -> {
+					var rewritten = new QueryBindingSet(bindings);
+					if (replace) {
+						rewritten.setBinding("g", G2);
+					} else {
+						rewritten.removeBinding("g");
+					}
+					return ordinary.evaluate(rewritten);
+				} : ordinary;
+			}
+		};
+		try (var rows = strategy.precompile(query).evaluate(EmptyBindingSet.getInstance())) {
+			List<BindingSet> result = QueryResults.asList(rows);
+			if (replace) {
+				assertThat(result).containsExactlyElementsOf(optional ? left.getBindingSets() : List.of());
+			} else {
+				assertThat(result).extracting(row -> row.getValue("s"), row -> row.getValue("end"),
+						row -> row.getValue("check"))
+						.containsExactlyInAnyOrder(tuple(G1, null, VF.createLiteral(true)),
+								tuple(null, G1, VF.createLiteral(false)));
+			}
+		}
+	}
+
+	private static StatementPattern nullableLookup(StatementFixture fixture) {
+		return new StatementPattern(StatementPattern.Scope.DEFAULT_CONTEXTS, Var.of("s"),
+				Var.of("p", fixture.predicate, true, true), Var.of("o"), Var.of("g"));
+	}
+
+	private static BindingSetAssignment graphJoinInput(IRI endpoint) {
+		var input = new QueryBindingSet();
+		input.setBinding("g", G1);
+		if (endpoint != null) {
+			input.setBinding("endpoint", endpoint);
+			input.setBinding("unrelated", G2);
+		}
+		var assignment = new BindingSetAssignment();
+		assignment.setBindingSets(List.of(input));
+		return assignment;
+	}
 
 	@Test
 	public void candidatesAndChildrenAreLazyAndEarlyCloseReleasesBoth() {
@@ -403,6 +1034,118 @@ public class GraphQueryEvaluationStepTest {
 	}
 
 	@Test
+	void fixedGraphPreparesStatementBodyOnceForDistinctBindings() {
+		StatementFixture fixture = new StatementFixture();
+		Value firstValue = VF.createLiteral("one");
+		Value secondValue = VF.createLiteral("two");
+		fixture.statements = List.of(VF.createStatement(G1, fixture.predicate, firstValue, G1),
+				VF.createStatement(G2, fixture.predicate, secondValue, G1));
+		FixedGraphStrategy strategy = new FixedGraphStrategy(fixture);
+		QueryEvaluationStep step = strategy.precompile(new Graph(Var.of("g", G1, true, true), fixture.pattern()),
+				fixture.context);
+		MapBindingSet first = new MapBindingSet();
+		first.addBinding("s", G1);
+		MapBindingSet second = new MapBindingSet();
+		second.addBinding("s", G2);
+		try (var firstRows = step.evaluate(first); var secondRows = step.evaluate(second)) {
+			assertThat(firstRows.hasNext()).isTrue();
+			assertThat(QueryResults.asList(secondRows)).extracting(row -> row.getValue("o"))
+					.containsExactly(secondValue);
+			assertThat(QueryResults.asList(firstRows)).extracting(row -> row.getValue("o")).containsExactly(firstValue);
+		}
+		assertThat(strategy.preparations).hasValue(1);
+		assertThat(strategy.validations).hasValue(2);
+	}
+
+	@Test
+	void fixedGraphReusesNestedUnionUntilSnapshotInvalidation() {
+		StatementFixture fixture = new StatementFixture();
+		FixedGraphStrategy strategy = new FixedGraphStrategy(fixture);
+		Union body = new Union(fixture.pattern(), new Union(fixture.pattern(), fixture.pattern()));
+		QueryEvaluationStep step = strategy.precompile(new Graph(Var.of("g", G1, true, true), body), fixture.context);
+		MapBindingSet input = new MapBindingSet();
+		input.addBinding("s", G1);
+		input.addBinding("o", VF.createLiteral("one"));
+		for (int i = 0; i < 2; i++) {
+			try (var rows = step.evaluate(input)) {
+				assertThat(QueryResults.asList(rows)).containsExactly(input, input, input);
+			}
+		}
+		assertThat(strategy.preparations).hasValue(3);
+		assertThat(strategy.validations).hasValue(2);
+		strategy.validationFailure = new QueryEvaluationException("Snapshot invalidated");
+		try (var rows = step.evaluate(input)) {
+			assertThat(assertThrows(QueryEvaluationException.class, rows::hasNext))
+					.isSameAs(strategy.validationFailure);
+		}
+		assertThat(strategy.preparations).hasValue(3);
+		assertThat(strategy.validations).hasValue(3);
+	}
+
+	@ParameterizedTest
+	@ValueSource(booleans = { true, false })
+	void fixedGraphSelectsCatalogOnceAcrossOrdinaryInvocations(boolean present) {
+		StatementFixture fixture = new StatementFixture();
+		IRI target = VF.createIRI("urn:catalog-graph");
+		Value firstValue = VF.createLiteral("one");
+		Value secondValue = VF.createLiteral("two");
+		fixture.contextIDs = present ? List.of(G1, G2, target) : List.of(G1, G2);
+		fixture.statements = present
+				? List.of(VF.createStatement(G1, fixture.predicate, firstValue, target),
+						VF.createStatement(G2, fixture.predicate, secondValue, target))
+				: List.of();
+		FixedGraphStrategy strategy = new FixedGraphStrategy(fixture);
+		QueryEvaluationStep step = strategy.precompile(new Graph(Var.of("g", target, true, true), fixture.pattern()),
+				fixture.context);
+		try (var unopened = step.evaluate(EmptyBindingSet.getInstance())) {
+			assertThat(fixture.contextRequests).isZero();
+		}
+		assertThat(strategy.validations).hasValue(0);
+
+		MapBindingSet input = new MapBindingSet();
+		input.addBinding("s", G1);
+		try (var rows = step.evaluate(input)) {
+			assertThat(QueryResults.asList(rows)).extracting(row -> row.getValue("o"))
+					.containsExactlyElementsOf(present ? List.of(firstValue) : List.of());
+		}
+		input.setBinding("s", G2);
+		try (var rows = step.evaluate(input)) {
+			assertThat(QueryResults.asList(rows)).extracting(row -> row.getValue("o"))
+					.containsExactlyElementsOf(present ? List.of(secondValue) : List.of());
+		}
+		assertThat(fixture.contextRequests).isEqualTo(1);
+		assertThat(fixture.captured).filteredOn(value -> value == target).hasSize(present ? 1 : 0);
+		assertThat(strategy.validations).hasValue(2);
+		assertThat(strategy.preparations).hasValue(present ? 1 : 0);
+
+		strategy.validationFailure = new QueryEvaluationException("Snapshot invalidated");
+		try (var rows = step.evaluate(input)) {
+			assertThat(assertThrows(QueryEvaluationException.class, rows::hasNext))
+					.isSameAs(strategy.validationFailure);
+		}
+		assertThat(fixture.contextRequests).isEqualTo(1);
+		assertThat(strategy.validations).hasValue(3);
+	}
+
+	@Test
+	void trackedFixedGraphRetainsStatementPreparationAndCounters() {
+		StatementFixture fixture = new StatementFixture();
+		FixedGraphStrategy strategy = new FixedGraphStrategy(fixture);
+		strategy.setTrackResultSize(true);
+		StatementPattern pattern = fixture.pattern();
+		QueryEvaluationStep step = strategy.precompile(new Graph(Var.of("g", G1, true, true), pattern),
+				fixture.context);
+		for (int i = 0; i < 2; i++) {
+			try (var rows = step.evaluate(EmptyBindingSet.getInstance())) {
+				assertThat(QueryResults.asList(rows)).hasSize(1);
+			}
+		}
+		assertThat(pattern.getResultSizeActual()).isEqualTo(2);
+		assertThat(strategy.preparations).hasValue(2);
+		assertThat(strategy.validations).hasValue(0);
+	}
+
+	@Test
 	public void statementRowsRemainIndependentAcrossAdvancesGraphChangesAndClose() {
 		StatementFixture fixture = new StatementFixture();
 		BindingSet first;
@@ -520,6 +1263,32 @@ public class GraphQueryEvaluationStepTest {
 		assertThat(pattern.getTotalTimeNanosActual()).isGreaterThan(0);
 	}
 
+	private static final class FixedGraphStrategy extends DefaultEvaluationStrategy {
+		private final AtomicInteger preparations = new AtomicInteger();
+		private final AtomicInteger validations = new AtomicInteger();
+		private QueryEvaluationException validationFailure;
+
+		private FixedGraphStrategy(TripleSource source) {
+			super(source, null);
+		}
+
+		@Override
+		protected Runnable fixedGraphBodyReuseValidator() {
+			return () -> {
+				validations.incrementAndGet();
+				if (validationFailure != null) {
+					throw validationFailure;
+				}
+			};
+		}
+
+		@Override
+		protected QueryEvaluationStep prepare(StatementPattern node, QueryEvaluationContext context) {
+			preparations.incrementAndGet();
+			return super.prepare(node, context);
+		}
+	}
+
 	private static final class StatementFixture implements TripleSource {
 		private final IRI predicate = VF.createIRI("urn:p");
 		private List<Resource> contextIDs = List.of(G1, G2);
@@ -527,6 +1296,7 @@ public class GraphQueryEvaluationStepTest {
 				VF.createStatement(G2, predicate, VF.createLiteral("two"), G2));
 		private final List<Value> captured = new ArrayList<>();
 		private final QueryEvaluationContext context = new QueryEvaluationContext.Minimal(null);
+		private int contextRequests;
 		private RuntimeException secondGraphFailure;
 		private boolean track;
 
@@ -548,6 +1318,7 @@ public class GraphQueryEvaluationStepTest {
 
 		@Override
 		public CloseableIteration<? extends Resource> getContextIDs() {
+			contextRequests++;
 			return new CloseableIteratorIteration<>(contextIDs.iterator());
 		}
 

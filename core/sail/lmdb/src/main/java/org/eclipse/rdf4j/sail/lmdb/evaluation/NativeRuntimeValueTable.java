@@ -28,11 +28,15 @@ import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.function.UnaryOperator;
 
+import org.eclipse.rdf4j.model.BNode;
+import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Literal;
+import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.TripleTerm;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.query.QueryEvaluationException;
+import org.eclipse.rdf4j.query.impl.RemoteBNode;
 import org.eclipse.rdf4j.sail.lmdb.LmdbQueryMemoryManager;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.codegen.KernelRuntime;
 import org.eclipse.rdf4j.sail.lmdb.model.LmdbValue;
@@ -281,7 +285,7 @@ final class NativeRuntimeValueTable implements AutoCloseable {
 				}
 			}
 			if (!preserveRepresentative && hasLmdbPayload(value)) {
-				value = (spelling != null ? spelling : RdfTermKey.of(value)).toValue();
+				value = detach(value, spelling);
 			}
 			long payloadBytes = retainedValueBytes(value, 0);
 			reserve(payloadBytes);
@@ -402,6 +406,19 @@ final class NativeRuntimeValueTable implements AutoCloseable {
 		}
 		return value instanceof TripleTerm triple && (hasLmdbPayload(triple.getSubject())
 				|| hasLmdbPayload(triple.getPredicate()) || hasLmdbPayload(triple.getObject()));
+	}
+
+	private static Value detach(Value value, RdfTermKey spelling) {
+		if (value instanceof BNode node && RemoteBNode.carriesOrigin(node)) {
+			return node;
+		}
+		if (value instanceof TripleTerm triple) {
+			return RemoteBNode.copyTriple(triple,
+					(Resource) detach(triple.getSubject(), spelling == null ? null : spelling.subject()),
+					(IRI) detach(triple.getPredicate(), spelling == null ? null : spelling.predicate()),
+					detach(triple.getObject(), spelling == null ? null : spelling.object()));
+		}
+		return (spelling != null ? spelling : RdfTermKey.of(value)).toValue();
 	}
 
 	/** Caller owns the stripe. Stored full hashes make ordinary growth payload-free. */
@@ -706,6 +723,9 @@ final class NativeRuntimeValueTable implements AutoCloseable {
 					&& Objects.equals(literal.getLanguage().orElse(null), other.getLanguage().orElse(null))
 					&& literal.getBaseDirection() == other.getBaseDirection()
 					&& literal.getDatatype().equals(other.getDatatype());
+		}
+		if (left instanceof BNode first && right instanceof BNode second) {
+			return first.equals(second) && RemoteBNode.sameOrigin(first, second);
 		}
 		if (left instanceof TripleTerm triple && right instanceof TripleTerm other) {
 			return sameSpelling(triple.getSubject(), other.getSubject())

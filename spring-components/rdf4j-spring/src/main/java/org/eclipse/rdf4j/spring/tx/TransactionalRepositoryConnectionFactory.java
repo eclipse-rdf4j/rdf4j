@@ -19,6 +19,7 @@ import java.lang.invoke.MethodHandles;
 
 import org.eclipse.rdf4j.repository.RepositoryConnection;
 import org.eclipse.rdf4j.sail.shacl.ShaclSailValidationReportHelper;
+import org.eclipse.rdf4j.spring.support.connectionfactory.DelegatingRepositoryConnectionFactory;
 import org.eclipse.rdf4j.spring.support.connectionfactory.RepositoryConnectionFactory;
 import org.eclipse.rdf4j.spring.tx.exception.CommitException;
 import org.eclipse.rdf4j.spring.tx.exception.ConnectionClosedException;
@@ -27,36 +28,27 @@ import org.eclipse.rdf4j.spring.tx.exception.RDF4JTransactionException;
 import org.eclipse.rdf4j.spring.tx.exception.RollbackException;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import org.springframework.beans.factory.DisposableBean;
 
 /**
  * @author ameingast@gmail.com
  * @author Florian Kleedorfer
  * @since 4.0.0
  */
-public class TransactionalRepositoryConnectionFactory implements RepositoryConnectionFactory, DisposableBean {
+public class TransactionalRepositoryConnectionFactory extends DelegatingRepositoryConnectionFactory {
 
 	private static final Logger logger = LoggerFactory.getLogger(MethodHandles.lookup().lookupClass());
-
-	private final RepositoryConnectionFactory delegateFactory;
 
 	private final ThreadLocal<TransactionObject> transactionData = new ThreadLocal<>();
 
 	public TransactionalRepositoryConnectionFactory(RepositoryConnectionFactory delegateFactory) {
-		this.delegateFactory = delegateFactory;
-	}
-
-	@Override
-	public void destroy() throws Exception {
-		if (delegateFactory instanceof DisposableBean disposable) {
-			disposable.destroy();
-		}
+		super(delegateFactory);
 	}
 
 	public TransactionObject getTransactionData() {
 		return transactionData.get();
 	}
 
+	@Override
 	public RepositoryConnection getConnection() {
 		logger.debug("Trying to obtain connection");
 		TransactionObject data = getTransactionData();
@@ -127,7 +119,7 @@ public class TransactionalRepositoryConnectionFactory implements RepositoryConne
 
 	public TransactionObject createTransaction() {
 		logger.debug("Trying to create new transaction");
-		RepositoryConnection delegate = delegateFactory.getConnection();
+		RepositoryConnection delegate = super.getConnection();
 		RepositoryConnection wrappedCon = wrapOnce(
 				delegate,
 				con -> new TransactionalRepositoryConnection(con.getRepository(), con),

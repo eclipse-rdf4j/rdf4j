@@ -17,6 +17,7 @@ import static org.assertj.core.api.Assertions.tuple;
 import java.io.File;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Objects;
 import java.util.Set;
 
 import org.eclipse.rdf4j.model.Resource;
@@ -53,6 +54,89 @@ class LmdbNativeGraphRestrictionJoinTest {
 
 	@TempDir
 	File directory;
+
+	@ParameterizedTest
+	@ValueSource(strings = { "+", "*" })
+	void fallbackPushesOuterBindingsIntoSelectedGraphPath(String operator) {
+		LmdbStore store = new LmdbStore(directory, new LmdbStoreConfig("spoc,posc,ospc")
+				.setNativeEvaluationEnabled(false)
+				.setDirectAdjacencyEnabled(false));
+		SailRepository repository = new SailRepository(store);
+		try (var connection = repository.getConnection()) {
+			var vf = connection.getValueFactory();
+			var anchor = vf.createIRI("urn:anchor");
+			var b = vf.createIRI("urn:b");
+			var c = vf.createIRI("urn:c");
+			var predicate = vf.createIRI("urn:edge");
+			var graph = vf.createIRI("urn:g");
+			connection.begin();
+			connection.add(anchor, predicate, b, graph);
+			connection.add(b, predicate, c, graph);
+			for (int i = 0; i < 16; i++) {
+				connection.add(vf.createIRI("urn:unrelated:" + i), predicate, c, graph);
+			}
+			connection.commit();
+
+			var query = connection.prepareTupleQuery("""
+					SELECT ?v FROM NAMED <urn:g> WHERE {
+					  VALUES ?s { <urn:anchor> }
+					  GRAPH ?g { ?s <urn:edge>%s ?v }
+					}
+					""".formatted(operator));
+			var expected = operator.equals("*") ? List.of(anchor, b, c) : List.of(b, c);
+			assertThat(rows(query)).extracting(row -> row.getValue("v"))
+					.containsExactlyInAnyOrderElementsOf(expected);
+			GenericPlanNode plan = query.explain(Explanation.Level.Timed).toGenericPlanNode();
+			assertThat(pathRows(plan)).as("inner path rows before the GRAPH applies residual filtering")
+					.isEqualTo((long) expected.size());
+		} finally {
+			repository.shutDown();
+		}
+	}
+
+	@Test
+	void fallbackGraphPathDoesNotTurnAbsentCorrelationsIntoZeroLengthTerms() {
+		LmdbStore store = new LmdbStore(directory, new LmdbStoreConfig("spoc,posc,ospc")
+				.setNativeEvaluationEnabled(false)
+				.setDirectAdjacencyEnabled(false));
+		SailRepository repository = new SailRepository(store);
+		try (var connection = repository.getConnection()) {
+			var vf = connection.getValueFactory();
+			var a = vf.createIRI("urn:a");
+			var b = vf.createIRI("urn:b");
+			var g = vf.createIRI("urn:g");
+			var h = vf.createIRI("urn:h");
+			var p = vf.createIRI("urn:edge");
+			connection.add(a, p, b, g);
+			// The anchor is absent from h, although h itself exists and has an edge.
+			connection.add(b, p, vf.createIRI("urn:c"), h);
+			TupleQuery query = connection.prepareTupleQuery("""
+					SELECT ?g ?v FROM NAMED <urn:g> FROM NAMED <urn:h> WHERE {
+					  VALUES ?s { <urn:a> <urn:absent> }
+					  GRAPH ?g { ?s <urn:edge>* ?v }
+					}
+					""");
+			assertThat(rows(query)).extracting(row -> row.getValue("g"), row -> row.getValue("v"))
+					.containsExactlyInAnyOrder(tuple(g, a), tuple(g, b));
+		} finally {
+			repository.shutDown();
+		}
+	}
+
+	private static Long pathRows(GenericPlanNode node) {
+		if (node.getType().startsWith("ArbitraryLengthPath")) {
+			return node.getResultSizeActual();
+		}
+		if (node.getPlans() == null) {
+			return null;
+		}
+		return node.getPlans()
+				.stream()
+				.map(LmdbNativeGraphRestrictionJoinTest::pathRows)
+				.filter(Objects::nonNull)
+				.findFirst()
+				.orElse(null);
+	}
 
 	@Test
 	void distinctAcrossGraphValuesJoinDeduplicatesAllPartitions() {

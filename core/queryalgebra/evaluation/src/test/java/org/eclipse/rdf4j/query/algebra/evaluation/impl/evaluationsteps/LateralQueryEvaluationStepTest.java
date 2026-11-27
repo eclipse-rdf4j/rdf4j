@@ -12,6 +12,7 @@
 package org.eclipse.rdf4j.query.algebra.evaluation.impl.evaluationsteps;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
@@ -27,9 +28,13 @@ import org.eclipse.rdf4j.common.iteration.CloseableIteratorIteration;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.query.BindingSet;
+import org.eclipse.rdf4j.query.QueryEvaluationException;
 import org.eclipse.rdf4j.query.algebra.BindingSetAssignment;
 import org.eclipse.rdf4j.query.algebra.Bound;
+import org.eclipse.rdf4j.query.algebra.Extension;
+import org.eclipse.rdf4j.query.algebra.ExtensionElem;
 import org.eclipse.rdf4j.query.algebra.Filter;
+import org.eclipse.rdf4j.query.algebra.FunctionCall;
 import org.eclipse.rdf4j.query.algebra.Join;
 import org.eclipse.rdf4j.query.algebra.Lateral;
 import org.eclipse.rdf4j.query.algebra.Projection;
@@ -107,6 +112,142 @@ class LateralQueryEvaluationStepTest {
 				.asString()
 				.startsWith("-lateral-hidden-")
 				.endsWith("-lateral");
+	}
+
+	@Test
+	void reusedScopedRightDistinguishesInputDomainsWithoutCapturingTheirValues() {
+		var factory = SimpleValueFactory.getInstance();
+		Value leftA = factory.createIRI("urn:left:a");
+		Value leftB = factory.createIRI("urn:left:b");
+		TupleExpr rightArg = new Join(new Projection(statementUsing("a"),
+				new ProjectionElemList(new ProjectionElem("visible"))), new SingletonSet());
+		Lateral lateral = new Lateral(new SingletonSet(), rightArg, Set.of("a", "b"));
+
+		EvaluationStrategy strategy = mock(EvaluationStrategy.class);
+		var context = new QueryEvaluationContext.Minimal(null);
+		List<TupleExpr> compiled = new ArrayList<>();
+		when(strategy.precompile(any(TupleExpr.class), any(QueryEvaluationContext.class))).thenAnswer(call -> {
+			TupleExpr expression = call.getArgument(0);
+			compiled.add(expression);
+			if (expression == lateral.getLeftArg()) {
+				return (QueryEvaluationStep) bindings -> {
+					QueryBindingSet leftRow = new QueryBindingSet(bindings);
+					if (!leftRow.hasBinding("a")) {
+						leftRow.addBinding("a", leftA);
+					}
+					if (!leftRow.hasBinding("b")) {
+						leftRow.addBinding("b", leftB);
+					}
+					return iteration(leftRow);
+				};
+			}
+			return (QueryEvaluationStep) bindings -> iteration(new QueryBindingSet(bindings));
+		});
+		QueryEvaluationStep step = LateralQueryEvaluationStep.supply(strategy, lateral, context, true);
+
+		// Keep two invocations with different domains open simultaneously and drain in reverse order.
+		QueryBindingSet originalA = new QueryBindingSet();
+		Value first = factory.createIRI("urn:original:first");
+		originalA.addBinding("a", first);
+		QueryBindingSet originalB = new QueryBindingSet();
+		Value second = factory.createIRI("urn:original:second");
+		originalB.addBinding("b", second);
+		try (var firstResult = step.evaluate(originalA); var secondResult = step.evaluate(originalB)) {
+			assertThat(results(secondResult)).singleElement().satisfies(row -> {
+				assertThat(row.getValue("a")).isEqualTo(leftA);
+				assertThat(row.getValue("b")).isEqualTo(second);
+			});
+			assertThat(results(firstResult)).singleElement().satisfies(row -> {
+				assertThat(row.getValue("a")).isEqualTo(first);
+				assertThat(row.getValue("b")).isEqualTo(leftB);
+			});
+		}
+		assertThat(compiled).hasSize(4);
+		QueryBindingSet otherA = new QueryBindingSet();
+		Value third = factory.createIRI("urn:original:third");
+		otherA.addBinding("a", third);
+		otherA.addBinding("unrelated", first);
+		assertThat(results(step.evaluate(otherA))).singleElement().satisfies(row -> {
+			assertThat(row.getValue("a")).isEqualTo(third);
+			assertThat(row.getValue("b")).isEqualTo(leftB);
+		});
+		assertThat(compiled).as("only names that can be introduced by LATERAL select the variant").hasSize(4);
+	}
+
+	@Test
+	void retainsOnlyBoundedNumberOfScopedVariants() {
+		Lateral lateral = new Lateral(new SingletonSet(), new Join(new SingletonSet(), new SingletonSet()),
+				Set.of("a", "b", "c", "d"));
+		var context = new QueryEvaluationContext.Minimal(null);
+		EvaluationStrategy strategy = mock(EvaluationStrategy.class);
+		AtomicInteger prepared = new AtomicInteger();
+		when(strategy.precompile(any(TupleExpr.class), any(QueryEvaluationContext.class))).thenAnswer(call -> {
+			prepared.incrementAndGet();
+			return QueryEvaluationStep.EMPTY;
+		});
+		QueryEvaluationStep step = LateralQueryEvaluationStep.supply(strategy, lateral, context, true);
+		for (int round = 0; round < 2; round++) {
+			for (int mask = 0; mask < 12; mask++) {
+				QueryBindingSet bindings = new QueryBindingSet();
+				for (int i = 0; i < 4; i++) {
+					if ((mask & (1 << i)) != 0) {
+						bindings.addBinding(String.valueOf((char) ('a' + i)),
+								SimpleValueFactory.getInstance().createLiteral(i));
+					}
+				}
+				step.evaluate(bindings).close();
+			}
+		}
+		assertThat(prepared).hasValue(2 + 12 + (12 - 8));
+	}
+
+	@Test
+	void doesNotReusePreparationContainingOpaqueScalarFunctions() {
+		var extension = new Extension(statementUsing("s"));
+		extension.addElement(new ExtensionElem(new FunctionCall("urn:example:custom"), "derived"));
+		Lateral lateral = new Lateral(new SingletonSet(), extension, Set.of("s"));
+		var context = new QueryEvaluationContext.Minimal(null);
+		EvaluationStrategy strategy = mock(EvaluationStrategy.class);
+		AtomicInteger prepared = new AtomicInteger();
+		when(strategy.precompile(any(TupleExpr.class), any(QueryEvaluationContext.class))).thenAnswer(call -> {
+			prepared.incrementAndGet();
+			return QueryEvaluationStep.EMPTY;
+		});
+		QueryEvaluationStep step = LateralQueryEvaluationStep.supply(strategy, lateral, context, true);
+		step.evaluate(EmptyBindingSet.getInstance()).close();
+		step.evaluate(EmptyBindingSet.getInstance()).close();
+		assertThat(prepared).as("a custom function's preparation remains invocation local").hasValue(4);
+	}
+
+	@Test
+	void closesLeftWhenBindingSpecificRightPreparationFails() {
+		Projection hidingProjection = new Projection(statementUsing("lateral"),
+				new ProjectionElemList(new ProjectionElem("visible")));
+		Lateral lateral = new Lateral(new SingletonSet(), new Join(hidingProjection, new SingletonSet()),
+				Set.of("lateral"));
+		EvaluationStrategy strategy = mock(EvaluationStrategy.class);
+		QueryEvaluationContext context = mock(QueryEvaluationContext.class);
+		QueryEvaluationException failure = new QueryEvaluationException("Could not prepare the bound right side");
+		QueryEvaluationException closeFailure = new QueryEvaluationException("Could not close the left cursor");
+		AtomicInteger leftCloses = new AtomicInteger();
+		QueryEvaluationStep left = bindings -> new CloseableIteratorIteration<BindingSet>(
+				List.of(bindings).iterator()) {
+			@Override
+			protected void handleClose() {
+				leftCloses.incrementAndGet();
+				throw closeFailure;
+			}
+		};
+		QueryEvaluationStep emptyRight = bindings -> QueryEvaluationStep.EMPTY_ITERATION;
+		when(strategy.precompile(any(TupleExpr.class), any(QueryEvaluationContext.class)))
+				.thenReturn(left, emptyRight)
+				.thenThrow(failure);
+
+		QueryEvaluationStep step = LateralQueryEvaluationStep.supply(strategy, lateral, context);
+		assertThatThrownBy(() -> step.evaluate(EmptyBindingSet.getInstance()))
+				.isSameAs(failure)
+				.satisfies(thrown -> assertThat(thrown.getSuppressed()).containsExactly(closeFailure));
+		assertThat(leftCloses).hasValue(1);
 	}
 
 	@Test

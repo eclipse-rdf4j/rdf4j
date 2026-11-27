@@ -25,6 +25,7 @@ import java.util.stream.Collectors;
 import org.eclipse.rdf4j.common.transaction.QueryEvaluationMode;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Literal;
+import org.eclipse.rdf4j.model.Statement;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.model.vocabulary.XSD;
@@ -87,12 +88,16 @@ public class LmdbNativePackedSortTest {
 			IRI item = vf.createIRI(EX, "Item");
 			IRI score = vf.createIRI(EX, "score");
 			IRI bucket = vf.createIRI(EX, "bucket");
+			connection.begin();
+			List<Statement> statements = new ArrayList<>(1_500);
 			for (int i = 0; i < 500; i++) {
 				IRI subject = vf.createIRI(EX, "s" + i);
-				connection.add(subject, type, item);
-				connection.add(subject, score, vf.createLiteral((i * 37) % 20));
-				connection.add(subject, bucket, vf.createLiteral("bucket-value-" + (i % 7)));
+				statements.add(vf.createStatement(subject, type, item));
+				statements.add(vf.createStatement(subject, score, vf.createLiteral((i * 37) % 20)));
+				statements.add(vf.createStatement(subject, bucket, vf.createLiteral("bucket-value-" + (i % 7))));
 			}
+			connection.add(statements);
+			connection.commit();
 		}
 		resetCounters();
 	}
@@ -417,6 +422,5 @@ public class LmdbNativePackedSortTest {
 		NativeSpillSort.SPILLED_ROWS.set(0L);
 		NativeSpillSort.DELETED_RUNS.set(0L);
 		NativeDistinctTracker.PRIMITIVE_ROWS.set(0L);
-		NativeDistinctTracker.OBJECT_ROWS.set(0L);
 	}
 }

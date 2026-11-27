@@ -10,6 +10,10 @@
 		<artifactId>rdf4j-tools</artifactId>
 		<version>6.2.0-SNAPSHOT</version>
 	</parent>
+	<properties>
+		<rdf4j.federation.native.test.forkCount>2</rdf4j.federation.native.test.forkCount>
+		<rdf4j.federation.native.test.maxHeap>2G</rdf4j.federation.native.test.maxHeap>
+	</properties>
 	<build>
 		<plugins>
 			<plugin>
@@ -33,6 +37,10 @@
 							<goal>test</goal>
 						</goals>
 						<configuration>
+							<!-- Native stores use per-class temporary directories. Separate JVMs isolate shared test state. -->
+							<forkCount>${rdf4j.federation.native.test.forkCount}</forkCount>
+							<reuseForks>true</reuseForks>
+							<argLine>@{argLine} ${mockito.javaagent} -Xmx${rdf4j.federation.native.test.maxHeap} -Djava.awt.headless=true</argLine>
 							<systemPropertyVariables>
 								<repositoryType>NATIVE</repositoryType>
 							</systemPropertyVariables>

@@ -139,7 +139,9 @@ class LmdbPreparedBulkStoreTest {
 					.append(index)
 					.append("\" .\n");
 		}
-		load(target, config, input.toString());
+		// Leave room for the compressed input/output buffers as well as the value sorters. The small-fixture
+		// 2 MiB budget forces these 10,000 rows through one-record spills before the capacity assertions can run.
+		load(target, config, input.toString(), 16L * 1024 * 1024);
 		List<Long> capacities = mapSizes(target);
 		LmdbStore store = new LmdbStore(target.toFile(), config);
 		SailRepository repository = new SailRepository(store);
@@ -482,8 +484,11 @@ class LmdbPreparedBulkStoreTest {
 	@ValueSource(strings = { "values", "triples", "native-values", "native-triples" })
 	void unrepresentableConfiguredCapacityFailsCleanly(String environment) throws Exception {
 		Path output = directory.resolve(environment + "-capacity-child.log");
+		String ciDiagnostics = System.getenv("RDF4J_JVM_DIAGNOSTICS_DIR");
+		Path diagnosticsDirectory = ciDiagnostics == null || ciDiagnostics.isBlank() ? directory
+				: Path.of(ciDiagnostics);
 		Process child = new ProcessBuilder(Path.of(System.getProperty("java.home"), "bin", "java").toString(),
-				"-XX:ErrorFile=" + directory.resolve(environment + "-hs_err_pid%p.log"),
+				"-XX:ErrorFile=" + diagnosticsDirectory.resolve(environment + "-hs_err_pid%p.log"),
 				"-cp", System.getProperty("java.class.path"), CapacityConfigurationProbe.class.getName(),
 				directory.resolve(environment + "-unrepresentable").toString(), environment)
 						.redirectErrorStream(true)
@@ -1078,10 +1083,15 @@ class LmdbPreparedBulkStoreTest {
 	}
 
 	private static void load(Path target, LmdbStoreConfig config, String input) throws IOException {
+		load(target, config, input, 2L * 1024 * 1024);
+	}
+
+	private static void load(Path target, LmdbStoreConfig config, String input, long memoryBudgetBytes)
+			throws IOException {
 		LmdbBulkLoader.builder(target, config)
 				.partitionCount(4)
 				.workers(1)
-				.memoryBudgetBytes(2L * 1024 * 1024)
+				.memoryBudgetBytes(memoryBudgetBytes)
 				.maxOpenFiles(16)
 				.build()
 				.load(new ByteArrayInputStream(input.getBytes(StandardCharsets.UTF_8)), "urn:test:", RDFFormat.NQUADS);

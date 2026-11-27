@@ -13,9 +13,14 @@ package org.eclipse.rdf4j.sail.lmdb.evaluation;
 
 import static org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbNativeAggregateCompiler.UNKNOWN;
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyInt;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.when;
 
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.Executors;
@@ -24,11 +29,16 @@ import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
 
+import org.eclipse.rdf4j.model.BNode;
 import org.eclipse.rdf4j.model.Literal;
 import org.eclipse.rdf4j.model.TripleTerm;
+import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.impl.SimpleLiteral;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
+import org.eclipse.rdf4j.query.impl.BlankNodeAllocationScope;
+import org.eclipse.rdf4j.query.impl.RemoteBNode;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.codegen.KernelQueryCancelledException;
+import org.eclipse.rdf4j.sail.lmdb.model.LmdbTripleTerm;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.parallel.ResourceLock;
 import org.junit.jupiter.api.parallel.Resources;
@@ -61,6 +71,75 @@ class NativeRuntimeValueSpillTest {
 					"spilling must restore authoritative query-scoped representatives inside nested RDF terms");
 		} finally {
 			restoreBudget(previous);
+		}
+	}
+
+	@Test
+	void equalBlankNodeLabelsRetainSeparateExactAuthoritiesBeforeAndAfterSpill() {
+		String previous = setBudget();
+		var factory = SimpleValueFactory.getInstance();
+		var epoch = new Object();
+		var allocation = new BlankNodeAllocationScope();
+		BNode wire = factory.createBNode("trusted-wire-id");
+		BNode alias = (BNode) RemoteBNode.newResponseScope(allocation, factory, epoch, true).map(wire);
+		BNode raw = factory.createBNode(alias.getID());
+		try (NativeExecutionContext context = new NativeExecutionContext()) {
+			long plain = context.internGeneratedKey(raw);
+			long trusted = context.internGeneratedKey(alias);
+			assertNotEquals(plain, trusted, "exact payload identity must retain the actual wrapper");
+			assertEquals(context.runtimeValueTable().key(plain), context.runtimeValueTable().key(trusted),
+					"the two values still denote the same RDF term");
+			long filesBefore = NativeRuntimeValueSpill.CREATED.get();
+			context.internGeneratedKey(factory.createLiteral("x".repeat(50_000)));
+			assertTrue(NativeRuntimeValueSpill.CREATED.get() > filesBefore);
+			assertEquals(raw.getClass(), context.valueOf(plain).getClass());
+			assertEquals(wire, RemoteBNode.toRemoteValue(context.valueOf(trusted), epoch, true, true));
+			assertEquals(trusted, context.internGeneratedKey(alias));
+		} finally {
+			restoreBudget(previous);
+		}
+	}
+
+	@Test
+	void computedResolutionCacheKeepsExactRuntimeAuthorityOutsideTheRdfLookupKey() {
+		var factory = SimpleValueFactory.getInstance();
+		var epoch = new Object();
+		BNode wire = factory.createBNode("remote-source");
+		BNode alias = (BNode) RemoteBNode.newResponseScope(new BlankNodeAllocationScope(), factory, epoch, true)
+				.map(wire);
+		BNode raw = factory.createBNode(alias.getID());
+		var predicate = factory.createIRI("urn:p");
+		var store = mock(NativeLmdbQuerySource.class);
+		when(store.valueLookupScope()).thenReturn(new Object());
+		when(store.idOf(any(Value.class), anyInt())).thenReturn(UNKNOWN);
+		try (var context = new NativeExecutionContext();
+				var resolver = new NativeValueResolver(store, PlanValueCatalog.EMPTY, context)) {
+			long plain = resolver.intern(factory.createTripleTerm(raw, predicate, raw));
+			long trusted = resolver.intern(factory.createTripleTerm(alias, predicate, alias));
+			assertNotEquals(plain, trusted);
+			assertEquals(context.runtimeValueTable().key(plain), context.runtimeValueTable().key(trusted));
+			assertEquals(wire,
+					RemoteBNode.toRemoteValue(((TripleTerm) context.valueOf(trusted)).getSubject(), epoch, true, true));
+		}
+	}
+
+	@Test
+	void detachingMixedLmdbTriplePayloadKeepsAuthorityInNestedForeignComponents() {
+		var factory = SimpleValueFactory.getInstance();
+		var epoch = new Object();
+		BNode wire = factory.createBNode("trusted-wire-id");
+		BNode alias = (BNode) RemoteBNode.newResponseScope(new BlankNodeAllocationScope(), factory, epoch, true)
+				.map(wire);
+		var predicate = factory.createIRI("urn:p");
+		TripleTerm nested = factory.createTripleTerm(alias, predicate, factory.createLiteral("inside"));
+		TripleTerm mixed = new LmdbTripleTerm(null, factory.createIRI("urn:s"), predicate, nested);
+		try (NativeExecutionContext context = new NativeExecutionContext()) {
+			long id = context.internGeneratedKey(mixed);
+			TripleTerm detached = (TripleTerm) context.valueOf(id);
+			assertEquals(mixed, detached);
+			assertNotEquals(mixed.getClass(), detached.getClass());
+			assertEquals(wire,
+					RemoteBNode.toRemoteValue(((TripleTerm) detached.getObject()).getSubject(), epoch, true, true));
 		}
 	}
 

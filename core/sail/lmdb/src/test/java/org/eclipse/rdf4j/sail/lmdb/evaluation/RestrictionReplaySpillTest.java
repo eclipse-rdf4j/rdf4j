@@ -47,6 +47,7 @@ import org.eclipse.rdf4j.query.algebra.evaluation.impl.QueryEvaluationContext;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.restrictions.InvocationOwner;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.restrictions.RestrictionCompiler;
 import org.eclipse.rdf4j.query.impl.EmptyBindingSet;
+import org.eclipse.rdf4j.query.impl.GeneratedBNode;
 import org.eclipse.rdf4j.query.impl.RemoteBNode;
 import org.eclipse.rdf4j.query.impl.RepositoryBNode;
 import org.junit.jupiter.api.Test;
@@ -67,17 +68,19 @@ class RestrictionReplaySpillTest {
 		var nested = VF.createTripleTerm(subject, predicate, remote);
 		var expectedNested = VF.createTripleTerm(subject, predicate, VF.createBNode("canonical"));
 		var repository = RepositoryBNode.fromNegotiatedResult("wire", "display", true);
+		var generated = context.getBlankNodeAllocationScope().createBNode(VF);
 		List<BindingSet> originals = new ArrayList<>();
 		for (int key : List.of(1, 2, 3, 4)) {
 			var row = new QueryBindingSet();
 			row.setBinding("key", VF.createLiteral(key));
 			row.setBinding("nested", nested);
 			row.setBinding("repository", repository);
+			row.setBinding("generated", generated);
 			originals.add(GraphFrameBindings.supply(row, "graphParameter", remote));
 		}
 		QueryEvaluationStep producer = input -> new CloseableIteratorIteration<>(originals.iterator());
 		var assignment = new BindingSetAssignment();
-		assignment.setBindingNames(Set.of("key", "nested", "repository", "graphParameter"));
+		assignment.setBindingNames(Set.of("key", "nested", "repository", "generated", "graphParameter"));
 		assignment.setBindingSets(List.of());
 		assignment.setRuntimeTelemetryEnabled(true);
 		var factory = new ObservedMapDbFactory();
@@ -98,6 +101,8 @@ class RestrictionReplaySpillTest {
 				assertTrue(RemoteBNode.sameTrustedIdentity(remote, (RemoteBNode) graph));
 				assertEquals(expectedNested, RemoteBNode.toRemoteValue(row.getValue("nested"), authority, true, true));
 				assertTrue(((RepositoryBNode) row.getValue("repository")).isReference());
+				assertTrue(((GeneratedBNode) row.getValue("generated"))
+						.isAdmittedTo(context.getBlankNodeAllocationScope()));
 			}
 			fileBytesBeforeClose = factory.observedFileBytes();
 		}

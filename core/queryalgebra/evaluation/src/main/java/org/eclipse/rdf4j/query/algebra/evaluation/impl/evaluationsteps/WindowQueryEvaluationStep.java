@@ -44,9 +44,12 @@ import org.eclipse.rdf4j.query.algebra.evaluation.EvaluationStrategy;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryEvaluationStep;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryValueEvaluationStep;
 import org.eclipse.rdf4j.query.algebra.evaluation.ValueExprEvaluationException;
+import org.eclipse.rdf4j.query.algebra.evaluation.impl.PreparedBlankNodeExecution;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.QueryEvaluationContext;
 import org.eclipse.rdf4j.query.algebra.evaluation.util.MathUtil;
+import org.eclipse.rdf4j.query.algebra.evaluation.util.QueryEvaluationUtility;
 import org.eclipse.rdf4j.query.algebra.evaluation.util.ValueComparator;
+import org.eclipse.rdf4j.query.impl.BlankNodeAllocationScope;
 import org.eclipse.rdf4j.query.impl.EmptyBindingSet;
 
 /**
@@ -79,6 +82,8 @@ public final class WindowQueryEvaluationStep implements QueryEvaluationStep {
 
 	private final QueryEvaluationStep arg;
 	private final QueryEvaluationContext context;
+	private final BlankNodeAllocationScope allocation;
+	private final Object solutionBoundary = new Object();
 	private final ValueFactory vf;
 	private final Comparator<Value> valueComparator;
 	private final List<Spec> specs = new ArrayList<>();
@@ -89,14 +94,16 @@ public final class WindowQueryEvaluationStep implements QueryEvaluationStep {
 		final QueryValueEvaluationStep[] partitionSteps;
 		final QueryValueEvaluationStep[] orderSteps;
 		final boolean[] ascending;
+		final boolean repeatable;
 		final List<Computation> computations = new ArrayList<>();
 
 		Spec(WindowFunctionCall prototype, QueryValueEvaluationStep[] partitionSteps,
-				QueryValueEvaluationStep[] orderSteps, boolean[] ascending) {
+				QueryValueEvaluationStep[] orderSteps, boolean[] ascending, boolean repeatable) {
 			this.prototype = prototype;
 			this.partitionSteps = partitionSteps;
 			this.orderSteps = orderSteps;
 			this.ascending = ascending;
+			this.repeatable = repeatable;
 		}
 	}
 
@@ -119,6 +126,7 @@ public final class WindowQueryEvaluationStep implements QueryEvaluationStep {
 			QueryEvaluationContext context, ValueFactory vf) {
 		this.arg = arg;
 		this.context = context;
+		this.allocation = context.getBlankNodeAllocationScope();
 		this.vf = vf;
 		Comparator<Value> comparator = context.getComparator();
 		this.valueComparator = comparator != null ? comparator : new ValueComparator();
@@ -126,26 +134,32 @@ public final class WindowQueryEvaluationStep implements QueryEvaluationStep {
 			WindowFunctionCall call = element.getOperator();
 			Kind kind = kind(call.getURI());
 			Spec spec = null;
+			boolean repeatable = call.getPartitionBy().stream().allMatch(QueryEvaluationUtility::isRepeatable)
+					&& call.getOrderBy()
+							.stream()
+							.allMatch(order -> QueryEvaluationUtility.isRepeatable(order.getExpr()));
 			for (Spec candidate : specs) {
-				if (candidate.prototype.sameWindowSpecification(call)) {
+				if (repeatable && candidate.repeatable && candidate.prototype.sameWindowSpecification(call)) {
 					spec = candidate;
 					break;
 				}
 			}
 			if (spec == null) {
-				QueryValueEvaluationStep[] partitionSteps = precompile(call.getPartitionBy(), strategy, context);
+				QueryValueEvaluationStep[] partitionSteps = precompile(call.getPartitionBy(), strategy);
 				QueryValueEvaluationStep[] orderSteps = new QueryValueEvaluationStep[call.getOrderBy().size()];
 				boolean[] ascending = new boolean[orderSteps.length];
 				for (int i = 0; i < orderSteps.length; i++) {
 					OrderElem elem = call.getOrderBy().get(i);
-					orderSteps[i] = strategy.precompile(elem.getExpr(), context);
+					orderSteps[i] = prepareExpression(elem.getExpr(), strategy);
 					ascending[i] = elem.isAscending();
 				}
-				spec = new Spec(call, partitionSteps, orderSteps, ascending);
+				spec = new Spec(call, partitionSteps, orderSteps, ascending, repeatable
+						&& Arrays.stream(partitionSteps).allMatch(step -> step.blankNodeEffects().isEmpty())
+						&& Arrays.stream(orderSteps).allMatch(step -> step.blankNodeEffects().isEmpty()));
 				specs.add(spec);
 			}
 			validate(kind, call);
-			Computation computation = new Computation(kind, call, precompile(call.getArgs(), strategy, context),
+			Computation computation = new Computation(kind, call, precompile(call.getArgs(), strategy),
 					context.setBinding(element.getName()));
 			switch (kind) {
 			case NTILE:
@@ -198,11 +212,10 @@ public final class WindowQueryEvaluationStep implements QueryEvaluationStep {
 		}
 	}
 
-	private static QueryValueEvaluationStep[] precompile(List<ValueExpr> exprs, EvaluationStrategy strategy,
-			QueryEvaluationContext context) {
+	private QueryValueEvaluationStep[] precompile(List<ValueExpr> exprs, EvaluationStrategy strategy) {
 		QueryValueEvaluationStep[] steps = new QueryValueEvaluationStep[exprs.size()];
 		for (int i = 0; i < steps.length; i++) {
-			steps[i] = strategy.precompile(exprs.get(i), context);
+			steps[i] = prepareExpression(exprs.get(i), strategy);
 		}
 		return steps;
 	}
@@ -292,12 +305,34 @@ public final class WindowQueryEvaluationStep implements QueryEvaluationStep {
 		}
 	}
 
+	private QueryValueEvaluationStep prepareExpression(ValueExpr expression, EvaluationStrategy strategy) {
+		var step = strategy.precompile(expression, context);
+		var effects = step.blankNodeEffects();
+		if (!effects.usesSolutionOccurrence()) {
+			return step;
+		}
+		PreparedBlankNodeExecution.requireSolutionOccurrences();
+		return QueryValueEvaluationStep.withBlankNodeEffects(row -> {
+			try (var ignored = allocation.activateMaterializedSolution(row)) {
+				return step.evaluate(row);
+			}
+		}, effects);
+	}
+
 	@Override
 	public CloseableIteration<BindingSet> evaluate(BindingSet bindings) {
 		List<MutableBindingSet> rows = new ArrayList<>();
 		try (CloseableIteration<BindingSet> input = arg.evaluate(bindings)) {
 			while (input.hasNext()) {
-				rows.add(context.createBindingSet(input.next()));
+				BindingSet source = input.next();
+				var materialized = context.createBindingSet(source);
+				if (allocation.hasSolutionLabels()) {
+					var labels = allocation.snapshotSolution(source, solutionBoundary);
+					if (labels != null) {
+						allocation.restoreSolution(materialized, labels);
+					}
+				}
+				rows.add(materialized);
 			}
 		}
 		int n = rows.size();

@@ -205,6 +205,36 @@ public Function.Determinism getDeterminism() {
 }
 ```
 
+## Declaring blank-node effects
+
+By default a custom function preserves the RDF identities it receives. A function can return an existing store value,
+pass through a blank node received from SERVICE, or build a triple term using those values. Return the original blank
+node, including its provenance. Reconstructing a node from its printable ID can lose the authority needed to send it
+back to its originating service.
+
+Implement `org.eclipse.rdf4j.query.BlankNodeEffects.Provider` when the function introduces an identity or depends on
+labelled solution state. For example, a fresh-node function can return the following declaration and call
+`tripleSource.getValueFactory().createBNode()` in its evaluator.
+
+```java
+@Override
+public BlankNodeEffects blankNodeEffects() {
+    return BlankNodeEffects.FRESH;
+}
+```
+
+Use `BlankNodeEffects.LABELLED` when `createBNode(label)` must agree for the same label in a solution occurrence.
+Declare the effect even when the final return value is a literal. Use `BlankNodeEffects.FOREIGN` for values with
+established origin information, or `BlankNodeEffects.foreign(token)` when returning raw labels from one external
+result scope. Use the same token object for calls that share that scope. Independent documents that reuse a label
+represent independent identities unless the producer supplies trusted correspondence. A producer handling several
+origins during one prepared step should return values carrying their origins. Declarations can be combined with
+`merge`. Keep the declaration stable for the lifetime of its implementation.
+
+RDF4J reads the declaration when it prepares the resolved implementation. Determinism still describes whether equal
+inputs produce repeatable results. A random-number function can declare volatility and use the default blank-node
+contract. Tuple functions, custom aggregate factories and prepared value accessors can use the same provider interface.
+
 ## Further reading
 
 * [Introduction to the Service Provider Interface](http://docs.oracle.com/javase/tutorial/sound/SPI-intro.html) - Oracle Java documentation.

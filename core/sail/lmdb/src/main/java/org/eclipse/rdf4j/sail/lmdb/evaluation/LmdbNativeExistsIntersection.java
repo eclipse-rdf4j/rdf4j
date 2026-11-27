@@ -27,6 +27,8 @@ import org.eclipse.rdf4j.query.QueryEvaluationException;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryBindingSet;
 import org.eclipse.rdf4j.sail.lmdb.LmdbPrefixRunCursor;
 import org.eclipse.rdf4j.sail.lmdb.LmdbPrefixRunPlan;
+import org.eclipse.rdf4j.sail.lmdb.TripleIndex;
+import org.eclipse.rdf4j.sail.lmdb.evaluation.NativeLmdbQuerySource.CursorCancellation;
 
 /**
  * Physical plan for {@code COUNT(DISTINCT ?x)} over a single statement pattern filtered by a single-pattern
@@ -124,7 +126,8 @@ final class LmdbNativeExistsIntersection {
 		}
 		boolean outerBySubject = outerField == org.eclipse.rdf4j.sail.lmdb.TripleIndex.SUBJ_IDX;
 		boolean existsBySubject = existsField == org.eclipse.rdf4j.sail.lmdb.TripleIndex.SUBJ_IDX;
-		try (NativeLmdbQuerySource.NativeProbe probe = source.newProbe()) {
+		try (NativeLmdbQuerySource.NativeProbe probe = source
+				.newProbe(NativeLmdbQuerySource.captureCursorCancellation(row.cancellation))) {
 			if (outerBySubject == existsBySubject) {
 				probe.nodeDomainSynopsis(outerBySubject);
 			} else {
@@ -154,7 +157,8 @@ final class LmdbNativeExistsIntersection {
 		}
 		boolean outerBySubject = outerField == org.eclipse.rdf4j.sail.lmdb.TripleIndex.SUBJ_IDX;
 		boolean existsBySubject = existsField == org.eclipse.rdf4j.sail.lmdb.TripleIndex.SUBJ_IDX;
-		try (NativeLmdbQuerySource.NativeProbe probe = source.newProbe()) {
+		try (NativeLmdbQuerySource.NativeProbe probe = source
+				.newProbe(NativeLmdbQuerySource.captureCursorCancellation(row.cancellation))) {
 			NativeLmdbQuerySource.NodeDomainIntersection intersection = probe
 					.nodeDomainIntersection(outerBySubject, existsBySubject);
 			return intersection == null ? LmdbNativeWork.UNKNOWN
@@ -176,13 +180,15 @@ final class LmdbNativeExistsIntersection {
 		long outerPred = outerPattern.p.lookup(row.slots);
 		long outerObj = outerPattern.o.lookup(row.slots);
 		long outerContext = outerPattern.c.lookup(row.slots);
-		if (nodeDomainIrCanServe(source, outerSubj, outerPred, outerObj, outerContext)) {
+		CursorCancellation cursorCancellation = row.cursorCancellation();
+		if (nodeDomainIrCanServe(source, outerSubj, outerPred, outerObj, outerContext, cursorCancellation)) {
 			// The structural IR proposal owns complete immutable node-domain views. This specialist is the exact
 			// fallback for overlays, incomplete/disabled adjacency, refused synopsis memory, or disabled IR tiers.
 			return null;
 		}
 		long synopsisStarted = System.nanoTime();
-		RootIntersectionResult synopsis = tryDomainSynopsisCount(source, outerSubj, outerPred, outerObj, outerContext);
+		RootIntersectionResult synopsis = tryDomainSynopsisCount(source, outerSubj, outerPred, outerObj, outerContext,
+				cursorCancellation);
 		DOMAIN_SYNOPSIS_EVALUATION_NANOS.addAndGet(System.nanoTime() - synopsisStarted);
 		Long count = null;
 		if (synopsis != null) {
@@ -192,11 +198,11 @@ final class LmdbNativeExistsIntersection {
 			count = synopsis.count;
 		}
 		if (count == null) {
-			count = tryParallelCount(source, outerSubj, outerPred, outerObj, outerContext);
+			count = tryParallelCount(source, outerSubj, outerPred, outerObj, outerContext, row.cancellation);
 		}
 		if (count == null) {
 			RootIntersectionResult adjacency = tryAdjacencyCount(source, outerSubj, outerPred, outerObj,
-					outerContext);
+					outerContext, row.cancellation, cursorCancellation);
 			if (adjacency != null) {
 				OPENED.incrementAndGet();
 				ADJACENCY_ROOT_INTERSECTIONS.incrementAndGet();
@@ -206,9 +212,9 @@ final class LmdbNativeExistsIntersection {
 		}
 		if (count == null) {
 			try (LmdbPrefixRunCursor outer = source.prefixRuns(outerPlan, outerSubj, outerPred, outerObj,
-					outerContext, false);
+					outerContext, false, null, cursorCancellation);
 					LmdbPrefixRunCursor exists = source.prefixRuns(existsPlan, existsSubj, existsPred, existsObj,
-							existsContext, false)) {
+							existsContext, false, null, cursorCancellation)) {
 				if (outer == null || exists == null) {
 					return null;
 				}
@@ -225,14 +231,14 @@ final class LmdbNativeExistsIntersection {
 	}
 
 	private boolean nodeDomainIrCanServe(NativeLmdbQuerySource source, long outerSubj, long outerPred, long outerObj,
-			long outerContext) {
+			long outerContext, CursorCancellation cursorCancellation) {
 		if ((!LmdbNativeJaninoCodegen.enabled() && !LmdbNativeKernelInterpreter.enabled())
 				|| !rootDomainsEligible(outerSubj, outerPred, outerObj, outerContext)) {
 			return false;
 		}
 		boolean outerBySubject = outerField == org.eclipse.rdf4j.sail.lmdb.TripleIndex.SUBJ_IDX;
 		boolean existsBySubject = existsField == org.eclipse.rdf4j.sail.lmdb.TripleIndex.SUBJ_IDX;
-		try (NativeLmdbQuerySource.NativeProbe probe = source.newProbe()) {
+		try (NativeLmdbQuerySource.NativeProbe probe = source.newProbe(cursorCancellation)) {
 			return probe.nodeDomainIntersection(outerBySubject, existsBySubject) != null;
 		} catch (IOException e) {
 			throw new QueryEvaluationException(e);
@@ -240,13 +246,13 @@ final class LmdbNativeExistsIntersection {
 	}
 
 	private RootIntersectionResult tryDomainSynopsisCount(NativeLmdbQuerySource source, long outerSubj,
-			long outerPred, long outerObj, long outerContext) {
+			long outerPred, long outerObj, long outerContext, CursorCancellation cursorCancellation) {
 		if (!rootDomainsEligible(outerSubj, outerPred, outerObj, outerContext)) {
 			return null;
 		}
 		boolean outerBySubject = outerField == org.eclipse.rdf4j.sail.lmdb.TripleIndex.SUBJ_IDX;
 		boolean existsBySubject = existsField == org.eclipse.rdf4j.sail.lmdb.TripleIndex.SUBJ_IDX;
-		try (NativeLmdbQuerySource.NativeProbe probe = source.newProbe()) {
+		try (NativeLmdbQuerySource.NativeProbe probe = source.newProbe(cursorCancellation)) {
 			if (outerBySubject == existsBySubject) {
 				NativeLmdbQuerySource.NodeDomainSynopsis domain = probe.nodeDomainSynopsis(outerBySubject);
 				return domain == null ? null : new RootIntersectionResult(domain.cardinality(), 0L);
@@ -270,14 +276,15 @@ final class LmdbNativeExistsIntersection {
 	}
 
 	private RootIntersectionResult tryAdjacencyCount(NativeLmdbQuerySource source, long outerSubj, long outerPred,
-			long outerObj, long outerContext) {
+			long outerObj, long outerContext, NativeCancellationToken cancellation,
+			CursorCancellation cursorCancellation) {
 		if (!rootDomainsEligible(outerSubj, outerPred, outerObj, outerContext)) {
 			return null;
 		}
-		try (LmdbAdjacencyRootDomainCursor outer = LmdbAdjacencyRootDomainCursor.open(source,
-				outerField == org.eclipse.rdf4j.sail.lmdb.TripleIndex.SUBJ_IDX);
-				LmdbAdjacencyRootDomainCursor exists = LmdbAdjacencyRootDomainCursor.open(source,
-						existsField == org.eclipse.rdf4j.sail.lmdb.TripleIndex.SUBJ_IDX)) {
+		try (LmdbAdjacencyRootDomainCursor outer = openDomain(source, outerField, 0L, Long.MAX_VALUE, cancellation,
+				cursorCancellation);
+				LmdbAdjacencyRootDomainCursor exists = openDomain(source, existsField, 0L, Long.MAX_VALUE, cancellation,
+						cursorCancellation)) {
 			if (outer == null || exists == null) {
 				return null;
 			}
@@ -321,7 +328,7 @@ final class LmdbNativeExistsIntersection {
 	 * keys, no task budget, unsupported source) — the caller then merges sequentially.
 	 */
 	private Long tryParallelCount(NativeLmdbQuerySource source, long outerSubj, long outerPred, long outerObj,
-			long outerContext) {
+			long outerContext, NativeCancellationToken cancellation) {
 		boolean adjacency = false;
 		if (rootDomainsEligible(outerSubj, outerPred, outerObj, outerContext)) {
 			adjacency = adjacencyAvailable(source);
@@ -364,6 +371,8 @@ final class LmdbNativeExistsIntersection {
 			}
 			try {
 				int ranges = splits.length + 1;
+				NativeCancellationToken workerCancellation = new NativeCancellationToken(cancellation);
+				CursorCancellation workerOwner = NativeLmdbQuerySource.captureCursorCancellation(workerCancellation);
 				List<Future<RootIntersectionResult>> futures = new ArrayList<>(ranges);
 				for (int i = 0; i < ranges; i++) {
 					long lo = i == 0 ? 0L : splits[i - 1];
@@ -374,12 +383,14 @@ final class LmdbNativeExistsIntersection {
 					futures.add(LmdbNativeParallelPipelines.pool()
 							.submit(() -> {
 								try (var replayScope = replayContext.activate()) {
+									CursorCancellation scanCancellation = workerOwner.forWorker();
 									return adjacencyWorker
-											? mergeAdjacencyRange(workerSource, lo, hi)
+											? mergeAdjacencyRange(workerSource, lo, hi, workerCancellation,
+													scanCancellation)
 											: new RootIntersectionResult(
 													mergeRange(workerSource, outerSubj, outerPred, outerObj,
 															outerContext, lo,
-															hi),
+															hi, scanCancellation),
 													0L);
 								}
 							}));
@@ -419,21 +430,25 @@ final class LmdbNativeExistsIntersection {
 	}
 
 	private RootIntersectionResult mergeAdjacencyRange(NativeLmdbQuerySource workerSource, long lo,
-			long hiExclusive) throws IOException {
-		boolean hasLowerBound = lo != 0L;
-		boolean hasUpperBound = hiExclusive != Long.MAX_VALUE;
-		try (LmdbAdjacencyRootDomainCursor outer = LmdbAdjacencyRootDomainCursor.open(workerSource,
-				outerField == org.eclipse.rdf4j.sail.lmdb.TripleIndex.SUBJ_IDX, hasLowerBound, lo, hasUpperBound,
-				hiExclusive);
-				LmdbAdjacencyRootDomainCursor exists = LmdbAdjacencyRootDomainCursor.open(workerSource,
-						existsField == org.eclipse.rdf4j.sail.lmdb.TripleIndex.SUBJ_IDX, hasLowerBound, lo,
-						hasUpperBound, hiExclusive)) {
+			long hiExclusive, NativeCancellationToken cancellation, CursorCancellation cursorCancellation)
+			throws IOException {
+		try (LmdbAdjacencyRootDomainCursor outer = openDomain(workerSource, outerField, lo, hiExclusive, cancellation,
+				cursorCancellation);
+				LmdbAdjacencyRootDomainCursor exists = openDomain(workerSource, existsField, lo, hiExclusive,
+						cancellation,
+						cursorCancellation)) {
 			if (outer == null || exists == null) {
 				throw new QueryEvaluationException(
 						"parallel exists-intersection worker could not open adjacency root domains");
 			}
 			return merge(outer, exists);
 		}
+	}
+
+	private static LmdbAdjacencyRootDomainCursor openDomain(NativeLmdbQuerySource source, int field, long lo, long hi,
+			NativeCancellationToken cancellation, CursorCancellation cursorCancellation) throws IOException {
+		return LmdbAdjacencyRootDomainCursor.open(source, field == TripleIndex.SUBJ_IDX,
+				lo != 0L, lo, hi != Long.MAX_VALUE, hi, cancellation, cursorCancellation);
 	}
 
 	private static RootIntersectionResult merge(LmdbAdjacencyRootDomainCursor outer,
@@ -489,11 +504,11 @@ final class LmdbNativeExistsIntersection {
 
 	/** One worker's merge over streamed values in {@code [lo, hiExclusive)} using its own snapshot-sibling source. */
 	private long mergeRange(NativeLmdbQuerySource workerSource, long outerSubj, long outerPred, long outerObj,
-			long outerContext, long lo, long hiExclusive) throws IOException {
+			long outerContext, long lo, long hiExclusive, CursorCancellation cursorCancellation) throws IOException {
 		try (LmdbPrefixRunCursor outer = workerSource.prefixRuns(outerPlan, outerSubj, outerPred, outerObj,
-				outerContext, false);
+				outerContext, false, null, cursorCancellation);
 				LmdbPrefixRunCursor exists = workerSource.prefixRuns(existsPlan, existsSubj, existsPred, existsObj,
-						existsContext, false)) {
+						existsContext, false, null, cursorCancellation)) {
 			if (outer == null || exists == null) {
 				throw new QueryEvaluationException(
 						"parallel exists-intersection worker could not open prefix-run cursors");

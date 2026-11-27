@@ -22,6 +22,7 @@ import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.IdentityHashMap;
 
+import org.eclipse.rdf4j.model.BNode;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.TripleTerm;
@@ -31,7 +32,6 @@ import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.QueryEvaluationException;
 import org.eclipse.rdf4j.query.impl.RemoteBNode;
-import org.eclipse.rdf4j.query.impl.RepositoryBNode;
 
 /** Keeps replay rows as owned mappings until their collection serializes them to a private spill. */
 final class RestrictionReplaySpill implements AutoCloseable {
@@ -76,7 +76,7 @@ final class RestrictionReplaySpill implements AutoCloseable {
 				if (value instanceof TripleTerm triple) {
 					return FlatTriple.from(triple);
 				}
-				if (value instanceof RemoteBNode || value instanceof RepositoryBNode) {
+				if (value instanceof BNode node && RemoteBNode.carriesOrigin(node)) {
 					if (provenance == null) {
 						provenance = new RemoteBNode.SpillScope();
 					}

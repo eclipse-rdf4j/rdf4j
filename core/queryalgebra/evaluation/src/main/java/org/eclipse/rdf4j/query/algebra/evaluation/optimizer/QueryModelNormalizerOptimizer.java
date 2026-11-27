@@ -70,7 +70,7 @@ public class QueryModelNormalizerOptimizer extends AbstractSimpleQueryModelVisit
 			tupleExpr.visit(this);
 		} finally {
 			if (previous == null) {
-				CURRENT_ANALYSIS.remove();
+				CURRENT_ANALYSIS.set(null);
 			} else {
 				CURRENT_ANALYSIS.set(previous);
 			}

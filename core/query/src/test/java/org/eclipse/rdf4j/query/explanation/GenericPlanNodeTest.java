@@ -504,7 +504,7 @@ class GenericPlanNodeTest {
 	}
 
 	@Test
-	void totalTimeActualPreservesRecordedSelfTimeWhenChildTotalsAreLarger() {
+	void totalTimeActualPreservesObservedParentWhenChildTotalsAreLarger() {
 		GenericPlanNode parent = new GenericPlanNode("Join");
 		parent.setTotalTimeActual(8.0);
 
@@ -514,10 +514,10 @@ class GenericPlanNodeTest {
 		right.setTotalTimeActual(40.0);
 		parent.addPlans(left, right);
 
-		assertEquals(72.0, parent.getTotalTimeActual());
-		assertEquals(8.0, parent.getSelfTimeActual());
+		assertEquals(8.0, parent.getTotalTimeActual());
+		assertNull(parent.getSelfTimeActual());
 		String actual = parent.toString();
-		assertTrue(actual.contains("Join (totalTimeActual=72.0ms, selfTimeActual=8.0ms)"), actual);
+		assertTrue(actual.contains("Join (totalTimeActual=8.0ms)"), actual);
 	}
 
 	@Test
@@ -574,6 +574,40 @@ class GenericPlanNodeTest {
 
 		assertTrue(telemetry.contains("nativeAdjacencyNeighborIdsDecodedActual=0"), telemetry);
 		assertFalse(telemetry.contains("nativeAdjacencyContextIdsDecodedActual="), telemetry);
+	}
+
+	@Test
+	void timeoutWarningComesBeforePhysicalPlan() {
+		String line = System.lineSeparator();
+		GenericPlanNode node = new GenericPlanNode("Projection");
+		node.setPhysicalPlanPrelude("Physical plan");
+		Explanation explanation = new ExplanationImpl(node, true, null);
+
+		String warning = "Timed out while retrieving explanation! Explanation may be incomplete!";
+		String text = explanation.toString();
+		assertTrue(text.startsWith(warning + line), text);
+		assertTrue(text.contains("Physical plan" + line + line + "Query explanation" + line
+				+ "Projection"), text);
+		assertEquals(text.indexOf(warning), text.lastIndexOf(warning));
+		var json = JsonMapper.builder().build().readTree(explanation.toJson());
+		assertTrue(json.path("timedOut").asBoolean());
+	}
+
+	@Test
+	void dotTimeoutLabelIsNotInheritedByNestedScopes() {
+		GenericPlanNode root = new GenericPlanNode("Projection");
+		root.setNewScope(true);
+		GenericPlanNode child = new GenericPlanNode("Join");
+		child.setNewScope(true);
+		root.addPlans(child);
+		root.setTimedOut(true);
+
+		String dot = root.toDot();
+		int endOfScopes = dot.lastIndexOf('}');
+		assertTrue(endOfScopes >= 0, dot);
+		String label = "label=\"Timed out while retrieving explanation! Explanation may be incomplete!\";";
+		assertTrue(dot.indexOf(label) > endOfScopes, dot);
+		assertTrue(dot.substring(endOfScopes + 1).contains("labelloc=t;"), dot);
 	}
 
 	@Test

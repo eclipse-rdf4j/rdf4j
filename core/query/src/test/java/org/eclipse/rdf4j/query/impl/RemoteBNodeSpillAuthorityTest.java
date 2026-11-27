@@ -14,14 +14,142 @@ package org.eclipse.rdf4j.query.impl;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
+import java.io.ByteArrayInputStream;
+import java.io.ByteArrayOutputStream;
+import java.io.IOException;
+import java.io.ObjectInputStream;
+import java.io.ObjectOutputStream;
+import java.util.List;
+
 import org.eclipse.rdf4j.model.BNode;
+import org.eclipse.rdf4j.model.IRI;
+import org.eclipse.rdf4j.model.Resource;
+import org.eclipse.rdf4j.model.TripleTerm;
 import org.eclipse.rdf4j.model.Value;
+import org.eclipse.rdf4j.model.impl.SimpleTripleTerm;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.query.QueryEvaluationException;
 import org.junit.jupiter.api.Test;
 
 class RemoteBNodeSpillAuthorityTest {
 	private static final SimpleValueFactory VF = SimpleValueFactory.getInstance();
+
+	@Test
+	void privateJavaSpillRestoresGeneratedOwnersInsideTripleTerms() throws Exception {
+		var allocation = new BlankNodeAllocationScope();
+		var generated = (GeneratedBNode) allocation.createBNode(VF);
+		var p = VF.createIRI("urn:p");
+		var nested = VF.createTripleTerm(generated, p, VF.createTripleTerm(generated, p, generated));
+		try (var scope = new RemoteBNode.SpillScope()) {
+			TripleTerm restored = (TripleTerm) javaSpillRoundTrip(nested, scope);
+			var subject = (GeneratedBNode) restored.getSubject();
+			var object = (GeneratedBNode) ((TripleTerm) restored.getObject()).getObject();
+			assertThat(subject.isAdmittedTo(allocation)).isTrue();
+			assertThat(object.isAdmittedTo(allocation)).isTrue();
+			assertThat(subject).isEqualTo(generated);
+		}
+		var serialized = (GeneratedBNode) javaSpillRoundTrip(generated, null);
+		assertThat(serialized).isEqualTo(generated);
+		assertThat(serialized.isAdmittedTo(allocation)).isFalse();
+	}
+
+	private static Value javaSpillRoundTrip(Value value, RemoteBNode.SpillScope scope)
+			throws IOException, ClassNotFoundException {
+		var bytes = new ByteArrayOutputStream();
+		try (var output = new ObjectOutputStream(bytes) {
+			{
+				enableReplaceObject(scope != null);
+			}
+
+			@Override
+			protected Object replaceObject(Object original) {
+				return scope.replace(original);
+			}
+		}) {
+			output.writeObject(value);
+		}
+		try (var input = new ObjectInputStream(new ByteArrayInputStream(bytes.toByteArray())) {
+			{
+				enableResolveObject(scope != null);
+			}
+
+			@Override
+			protected Object resolveObject(Object original) {
+				return scope.resolve(original);
+			}
+		}) {
+			return (Value) input.readObject();
+		}
+	}
+
+	@Test
+	void foreignCallbackScopesKeepSharedLabelsApartFromEchoedInputs() {
+		Object token = new Object();
+		var allocation = new BlankNodeAllocationScope();
+		var scoped = RemoteBNode.foreignValues(allocation, VF, token);
+		var otherCallback = RemoteBNode.foreignValues(allocation, VF, token);
+		var otherScope = RemoteBNode.foreignValues(allocation, VF, new Object());
+		var originRequired = RemoteBNode.foreignValues(allocation, VF, null);
+		BNode input = VF.createBNode("same");
+		BNode foreign = VF.createBNode("same");
+		allocation.reserve(input);
+		var p = VF.createIRI("urn:p");
+		TripleTerm result = VF.createTripleTerm(input, p, VF.createTripleTerm(foreign, p, input));
+
+		TripleTerm mapped = (TripleTerm) scoped.mapPreservingInputs(result, List.of(input));
+		TripleTerm inner = (TripleTerm) mapped.getObject();
+		assertThat(mapped.getSubject()).isSameAs(input);
+		assertThat(inner.getObject()).isSameAs(input);
+		assertThat(inner.getSubject()).isNotEqualTo(input)
+				.isEqualTo(otherCallback.map(foreign))
+				.isNotEqualTo(otherScope.map(foreign));
+		assertThat(originRequired.map(inner.getSubject())).isSameAs(inner.getSubject());
+		BNode generated = allocation.createBNode(VF);
+		assertThat(originRequired.map(generated)).isSameAs(generated);
+		assertThatThrownBy(() -> originRequired.map(foreign)).isInstanceOf(QueryEvaluationException.class);
+		assertThatThrownBy(() -> RemoteBNode.toRemoteValue(inner.getSubject(), token, true, true))
+				.isInstanceOf(QueryEvaluationException.class);
+	}
+
+	@Test
+	void foreignAdmissionMapsResourceTripleSubjectsAndPreservesEchoesInsideThem() {
+		var vf = SimpleValueFactory.getInstance();
+		var allocation = new BlankNodeAllocationScope();
+		var scope = RemoteBNode.foreignValues(allocation, vf, new Object());
+		BNode first = vf.createBNode("label");
+		BNode unscoped = vf.createBNode("label");
+		allocation.reserve(first);
+		IRI predicate = vf.createIRI("urn:p");
+		var input = new ResourceTerm(first, predicate, vf.createLiteral("input"));
+		var outputSubject = new ResourceTerm(unscoped, predicate, first);
+		TripleTerm output = vf.createTripleTerm(outputSubject, predicate, unscoped);
+
+		TripleTerm result = (TripleTerm) scope.mapPreservingInputs(output, List.of(input));
+		assertThat(result.getSubject()).isInstanceOf(TripleTerm.class).isInstanceOf(Resource.class);
+		TripleTerm subject = (TripleTerm) result.getSubject();
+		assertThat(subject.getSubject()).isInstanceOf(RemoteBNode.class).isSameAs(result.getObject());
+		assertThat(subject.getObject()).isSameAs(first);
+	}
+
+	private static final class ResourceTerm extends SimpleTripleTerm implements Resource {
+		private ResourceTerm(Resource subject, IRI predicate, Value object) {
+			super(subject, predicate, object);
+		}
+	}
+
+	@Test
+	void anImportedScopedValueAndRawExplicitLabelAgreeInTheNewExecution() {
+		Object token = new Object();
+		BNode raw = VF.createBNode("shared-label");
+		BlankNodeAllocationScope first = new BlankNodeAllocationScope();
+		Value captured = RemoteBNode.foreignValues(first, VF, token).map(raw);
+		BlankNodeAllocationScope second = first.newEvaluationScope();
+		Value imported = RemoteBNode.foreignValues(second, VF, null).map(captured);
+		Value decoded = RemoteBNode.foreignValues(second, VF, token).map(raw);
+
+		assertThat(imported).isNotEqualTo(captured).isEqualTo(decoded);
+		assertThat(imported.hashCode()).isEqualTo(decoded.hashCode());
+	}
 
 	@Test
 	void alreadyAuthoritativeCopiesAreReusedDirectlyAndRecursively() {

@@ -137,10 +137,11 @@ class WorkbenchDeploymentDescriptorTest {
 	/**
 	 * Scripts and stylesheets keep their names across releases (the explorer's entry also loads hashed chunks): they
 	 * are revalidated, so after an upgrade a browser never runs the previous release's scripts against the new server,
-	 * nor pairs a cached entry with chunks the new WAR no longer has.
+	 * nor pairs a cached entry with chunks the new WAR no longer has. Legal notices also use stable paths and must
+	 * describe the current WAR.
 	 */
 	@Test
-	void scriptsAndStylesheetsAreRevalidatedAfterTheLongCache() throws Exception {
+	void scriptsStylesheetsAndLegalNoticesAreRevalidatedAfterTheLongCache() throws Exception {
 		Document descriptor = descriptor();
 		Map<String, String> filterClasses = new HashMap<>();
 		Map<String, Map<String, String>> filterParams = new HashMap<>();
@@ -173,7 +174,8 @@ class WorkbenchDeploymentDescriptorTest {
 
 		assertThat(filterClasses).containsEntry("RevalidatedAssetFilter", CacheFilter.class.getName());
 		assertThat(filterParams.get("RevalidatedAssetFilter")).containsEntry("Cache-Control", "0");
-		assertThat(patterns.get("RevalidatedAssetFilter")).containsExactlyInAnyOrder("/scripts/*", "/styles/*");
+		assertThat(patterns.get("RevalidatedAssetFilter")).containsExactlyInAnyOrder("/scripts/*", "/styles/*",
+				"/legal/*");
 		assertThat(patterns.get("CacheFilter")).containsExactly("*");
 		assertThat(mappingOrder.indexOf("RevalidatedAssetFilter"))
 				.as("the revalidation header must be set after the long cache header it replaces")
@@ -193,12 +195,12 @@ class WorkbenchDeploymentDescriptorTest {
 	}
 
 	@Test
-	void theFiltersInMappingOrderRevalidateScriptsAndStylesAndCacheEverythingElse() throws Exception {
+	void theFiltersInMappingOrderRevalidateScriptsStylesheetsAndLegalNotices() throws Exception {
 		CacheFilter longCache = cacheFilter("600");
 		CacheFilter revalidate = cacheFilter("0");
 
 		for (String path : List.of(ENTRY, QUERY_RENDERER_ENTRY, STYLESHEET, "/scripts/workbenchApp.js",
-				"/styles/workbench-refresh.css")) {
+				"/styles/workbench-refresh.css", "/legal/NOTICE.md", "/legal/third-party-notices.html")) {
 			MockHttpServletResponse response = new MockHttpServletResponse();
 			longCache.doFilter(new MockHttpServletRequest("GET", path), response,
 					(request, target) -> revalidate.doFilter(request, target, (ignored, done) -> {

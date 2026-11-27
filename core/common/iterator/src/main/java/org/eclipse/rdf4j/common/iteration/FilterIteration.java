@@ -120,7 +120,7 @@ public abstract class FilterIteration<E> implements CooperativeCancellation, Clo
 
 					result = wrappedIter.next();
 				} catch (NoSuchElementException e) {
-					close();
+					closeWithSuppressed(e);
 					throw e;
 				}
 				E candidate = result;
@@ -165,7 +165,7 @@ public abstract class FilterIteration<E> implements CooperativeCancellation, Clo
 		try {
 			wrappedIter.remove();
 		} catch (IllegalStateException e) {
-			close();
+			closeWithSuppressed(e);
 			throw e;
 		}
 	}
@@ -184,14 +184,45 @@ public abstract class FilterIteration<E> implements CooperativeCancellation, Clo
 	 */
 	@Override
 	public final void close() {
-		if (!closed) {
-			closed = true;
-			try {
-				wrappedIter.close();
-			} finally {
-				handleClose();
-			}
+		closeWithSuppressed(null);
+	}
+
+	/**
+	 * Closes the filter and retains cleanup failures on the supplied failure. With no supplied failure, throws the
+	 * first cleanup failure with later failures suppressed.
+	 */
+	protected final void closeWithSuppressed(Throwable primary) {
+		if (closed) {
+			return;
 		}
+		closed = true;
+		Throwable failure = primary;
+		try {
+			wrappedIter.close();
+		} catch (RuntimeException | Error closeFailure) {
+			failure = retainCloseFailure(failure, closeFailure);
+		}
+		try {
+			handleClose();
+		} catch (RuntimeException | Error closeFailure) {
+			failure = retainCloseFailure(failure, closeFailure);
+		}
+		if (primary == null && failure != null) {
+			if (failure instanceof RuntimeException runtimeFailure) {
+				throw runtimeFailure;
+			}
+			throw (Error) failure;
+		}
+	}
+
+	private static Throwable retainCloseFailure(Throwable failure, Throwable closeFailure) {
+		if (failure == null) {
+			return closeFailure;
+		}
+		if (failure != closeFailure) {
+			failure.addSuppressed(closeFailure);
+		}
+		return failure;
 	}
 
 	@Experimental

@@ -12,6 +12,7 @@
 package org.eclipse.rdf4j.sail.lmdb.evaluation;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.eclipse.rdf4j.sail.lmdb.evaluation.NativeCancellationTestAccess.mockScanSource;
 import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.Mockito.mock;
@@ -287,7 +288,7 @@ class LmdbNativeZeroLengthNodeIdsReadinessTest {
 	private static void assertOpenedPolicy(boolean enabled) throws IOException {
 		long a = ValueIds.createId(ValueIds.T_URI, 1L);
 		long b = ValueIds.createId(ValueIds.T_URI, 2L);
-		NativeLmdbQuerySource source = mock(NativeLmdbQuerySource.class);
+		NativeLmdbQuerySource source = mockScanSource(NativeLmdbQuerySource.class);
 		NativeLmdbQuerySource.NativeProbe probe = mock(NativeLmdbQuerySource.NativeProbe.class);
 		when(source.hasCanonicalIds()).thenReturn(true);
 		when(source.newProbe()).thenReturn(probe);

@@ -35,6 +35,7 @@ import org.eclipse.rdf4j.model.Literal;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.vocabulary.FN;
 import org.eclipse.rdf4j.query.BindingSet;
+import org.eclipse.rdf4j.query.BlankNodeEffects;
 import org.eclipse.rdf4j.query.QueryEvaluationException;
 import org.eclipse.rdf4j.query.algebra.ArbitraryLengthPath;
 import org.eclipse.rdf4j.query.algebra.BindingSetAssignment;
@@ -237,7 +238,7 @@ final class LmdbNativeAggregatePlanner extends LmdbNativeAggregateFilterCompiler
 						bindings -> new FilteringIteration(arg.step.evaluate(bindings), evaluator));
 				return new AggregateRootStack(step, arg.group);
 			}
-			Predicate<BindingSet> predicate = strategy.precompile(filter.getCondition(), context).asPredicate();
+			Predicate<BindingSet> predicate = descriptor.precompileValue(strategy, context).asPredicate();
 			QueryEvaluationStep step = new NativeHavingStep(arg.step,
 					bindings -> new FilteringIteration(arg.step.evaluate(bindings), predicate));
 			return new AggregateRootStack(step, arg.group);
@@ -666,6 +667,19 @@ final class LmdbNativeAggregatePlanner extends LmdbNativeAggregateFilterCompiler
 		for (int i = 0; i < orderElems.size(); i++) {
 			orderSlots[i] = slot(orderSourceNames[i]);
 			orderAscending[i] = orderElems.get(i).isAscending();
+		}
+		if (distinct && !reduced && projection != null && orderSlots.length == 0
+				&& SlotPlan.encounterOrderReplaySafe(arg) && QueryEvaluationUtility.isRepeatableWithinPreparation(node)
+				&& canDiscardWithoutEvaluation(node)) {
+			long retained = NativeSlotOrder.mask(sourceSlots);
+			// Prepared bindings for OPTIONAL-only slots are applied by an entry compatibility check after evaluation.
+			for (String name : optionalOnlyNames) {
+				Integer optional = slots.get(name);
+				if (optional != null) {
+					retained |= 1L << optional;
+				}
+			}
+			arg = LmdbNativeDistinctOptionalWitnesses.rewrite(arg, retained);
 		}
 		boolean strictCompare = strategy.getQueryEvaluationMode() == QueryEvaluationMode.STRICT;
 		// Row roots use the same evaluation-scoped term authority as grouped roots. This keeps DISTINCT, ORDER key
@@ -1190,7 +1204,8 @@ final class LmdbNativeAggregatePlanner extends LmdbNativeAggregateFilterCompiler
 			return false;
 		}
 		FunctionCall call = (FunctionCall) expression;
-		if (!FN.REPLACE.stringValue().equals(call.getURI()) || call.getArgs().size() != 3
+		if (LmdbNativeFunctionLibrary.entry(call) == null || !FN.REPLACE.stringValue().equals(call.getURI())
+				|| call.getArgs().size() != 3
 				|| !(call.getArgs().get(0) instanceof Str)
 				|| !(((Str) call.getArgs().get(0)).getArg() instanceof Var)
 				|| !((Var) ((Str) call.getArgs().get(0)).getArg()).getName().equals(predicateName)) {
@@ -2608,9 +2623,16 @@ final class LmdbNativeAggregatePlanner extends LmdbNativeAggregateFilterCompiler
 		TupleFunction function = TupleFunctionRegistry.getInstance()
 				.get(call.getURI())
 				.orElseThrow(() -> new QueryEvaluationException("Unknown tuple function '" + call.getURI() + "'"));
+		if (!BlankNodeEffects.of(function).isEmpty()) {
+			return null;
+		}
 		QueryValueEvaluationStep[] arguments = new QueryValueEvaluationStep[call.getArgs().size()];
 		for (int i = 0; i < arguments.length; i++) {
 			arguments[i] = strategy.precompile(call.getArgs().get(i), slotAwareContext());
+			if (arguments[i].blankNodeEffects().usesSolutionOccurrence()) {
+				// The generic tuple evaluator opens one occurrence for all arguments before invoking the callback.
+				return null;
+			}
 		}
 		int[] resultSlots = new int[call.getResultVars().size()];
 		Value[] resultConstants = new Value[resultSlots.length];
@@ -2655,7 +2677,8 @@ final class LmdbNativeAggregatePlanner extends LmdbNativeAggregateFilterCompiler
 		return new ZeroLengthPathPlan((int) subj[0], subj[1], (int) obj[0], obj[1], enumerationContexts,
 				subject.isConstant() || object.isConstant(),
 				context.getSubstitutionBindingNames().contains(subject.getName()),
-				context.getSubstitutionBindingNames().contains(object.getName()));
+				context.getSubstitutionBindingNames().contains(object.getName()),
+				zeroLength.rejectsExplicitNullEndpoints());
 	}
 
 	/** Sentinel: an unbound graph variable declines the whole plan (never a valid context list). */

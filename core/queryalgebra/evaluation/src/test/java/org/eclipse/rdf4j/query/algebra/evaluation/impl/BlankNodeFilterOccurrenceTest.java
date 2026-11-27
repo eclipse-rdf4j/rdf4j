@@ -23,6 +23,7 @@ import org.eclipse.rdf4j.common.iteration.CloseableIteratorIteration;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.query.BindingSet;
+import org.eclipse.rdf4j.query.BlankNodeEffects;
 import org.eclipse.rdf4j.query.algebra.BindingSetAssignment;
 import org.eclipse.rdf4j.query.algebra.Filter;
 import org.eclipse.rdf4j.query.algebra.ValueConstant;
@@ -48,12 +49,12 @@ class BlankNodeFilterOccurrenceTest {
 		QueryEvaluationStep source = ignored -> new CloseableIteratorIteration<>(
 				List.of(reusable, reusable).iterator());
 		var nodes = new ArrayList<Value>();
-		QueryValueEvaluationStep expression = row -> {
+		QueryValueEvaluationStep expression = QueryValueEvaluationStep.withBlankNodeEffects(row -> {
 			Value first = context.getOrCreateBNode("label", row, vf);
 			assertEquals(first, context.getOrCreateBNode("label", row, vf));
 			nodes.add(first);
 			return vf.createLiteral(true);
-		};
+		}, BlankNodeEffects.LABELLED);
 		when(strategy.precompile(input, context)).thenReturn(source);
 		when(strategy.precompile(condition, context)).thenReturn(expression);
 		when(strategy.isTrue(expression, reusable)).thenAnswer(ignored -> {
