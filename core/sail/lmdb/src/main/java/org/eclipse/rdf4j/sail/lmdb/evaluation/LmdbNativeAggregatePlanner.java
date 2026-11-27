@@ -36,6 +36,7 @@ import org.eclipse.rdf4j.model.Literal;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.vocabulary.FN;
 import org.eclipse.rdf4j.query.BindingSet;
+import org.eclipse.rdf4j.query.BlankNodeEffects;
 import org.eclipse.rdf4j.query.QueryEvaluationException;
 import org.eclipse.rdf4j.query.algebra.ArbitraryLengthPath;
 import org.eclipse.rdf4j.query.algebra.BindingSetAssignment;
@@ -67,6 +68,7 @@ import org.eclipse.rdf4j.query.algebra.ProjectionElem;
 import org.eclipse.rdf4j.query.algebra.QueryModelNode;
 import org.eclipse.rdf4j.query.algebra.QueryRoot;
 import org.eclipse.rdf4j.query.algebra.Reduced;
+import org.eclipse.rdf4j.query.algebra.Service;
 import org.eclipse.rdf4j.query.algebra.SingletonSet;
 import org.eclipse.rdf4j.query.algebra.Slice;
 import org.eclipse.rdf4j.query.algebra.StatementPattern;
@@ -86,6 +88,7 @@ import org.eclipse.rdf4j.query.algebra.evaluation.impl.BindingSetQueryEvaluation
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.QueryEvaluationContext;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.evaluationsteps.LateralQueryEvaluationStep;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.evaluationsteps.MinusQueryEvaluationStep;
+import org.eclipse.rdf4j.query.algebra.evaluation.impl.evaluationsteps.OrderedEvaluation;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.evaluationsteps.TupleFunctionGroupQueryEvaluationStep;
 import org.eclipse.rdf4j.query.algebra.evaluation.iterator.ScopedLeftJoinIterator.GraphFrameMapping;
 import org.eclipse.rdf4j.query.algebra.evaluation.util.QueryEvaluationUtility;
@@ -237,7 +240,7 @@ final class LmdbNativeAggregatePlanner extends LmdbNativeAggregateFilterCompiler
 						bindings -> new FilteringIteration(arg.step.evaluate(bindings), evaluator));
 				return new AggregateRootStack(step, arg.group);
 			}
-			Predicate<BindingSet> predicate = strategy.precompile(filter.getCondition(), context).asPredicate();
+			Predicate<BindingSet> predicate = descriptor.precompileValue(strategy, context).asPredicate();
 			QueryEvaluationStep step = new NativeHavingStep(arg.step,
 					bindings -> new FilteringIteration(arg.step.evaluate(bindings), predicate));
 			return new AggregateRootStack(step, arg.group);
@@ -671,6 +674,19 @@ final class LmdbNativeAggregatePlanner extends LmdbNativeAggregateFilterCompiler
 		for (int i = 0; i < orderElems.size(); i++) {
 			orderSlots[i] = slot(orderSourceNames[i]);
 			orderAscending[i] = orderElems.get(i).isAscending();
+		}
+		if (distinct && !reduced && projection != null && orderSlots.length == 0
+				&& SlotPlan.encounterOrderReplaySafe(arg) && QueryEvaluationUtility.isRepeatableWithinPreparation(node)
+				&& canDiscardWithoutEvaluation(node)) {
+			long retained = NativeSlotOrder.mask(sourceSlots);
+			// Prepared bindings for OPTIONAL-only slots are applied by an entry compatibility check after evaluation.
+			for (String name : optionalOnlyNames) {
+				Integer optional = slots.get(name);
+				if (optional != null) {
+					retained |= 1L << optional;
+				}
+			}
+			arg = LmdbNativeDistinctOptionalWitnesses.rewrite(arg, retained);
 		}
 		boolean strictCompare = strategy.getQueryEvaluationMode() == QueryEvaluationMode.STRICT;
 		// Row roots use the same evaluation-scoped term authority as grouped roots. This keeps DISTINCT, ORDER key
@@ -1195,7 +1211,8 @@ final class LmdbNativeAggregatePlanner extends LmdbNativeAggregateFilterCompiler
 			return false;
 		}
 		FunctionCall call = (FunctionCall) expression;
-		if (!FN.REPLACE.stringValue().equals(call.getURI()) || call.getArgs().size() != 3
+		if (LmdbNativeFunctionLibrary.entry(call) == null || !FN.REPLACE.stringValue().equals(call.getURI())
+				|| call.getArgs().size() != 3
 				|| !(call.getArgs().get(0) instanceof Str)
 				|| !(((Str) call.getArgs().get(0)).getArg() instanceof Var)
 				|| !((Var) ((Str) call.getArgs().get(0)).getArg()).getName().equals(predicateName)) {
@@ -1735,6 +1752,28 @@ final class LmdbNativeAggregatePlanner extends LmdbNativeAggregateFilterCompiler
 		return SlotPlan.join(left, right);
 	}
 
+	private static boolean hasUnresolvedServiceEndpoint(TupleExpr operand) {
+		class Finder extends AbstractQueryModelVisitor<RuntimeException> {
+			boolean found;
+
+			@Override
+			public void meet(Service service) {
+				found |= !service.isSilent() && !service.getServiceRef().hasValue();
+				// The SERVICE body is evaluated by the remote endpoint.
+			}
+
+			@Override
+			protected void meetNode(QueryModelNode node) {
+				if (!found) {
+					super.meetNode(node);
+				}
+			}
+		}
+		Finder finder = new Finder();
+		operand.visit(finder);
+		return finder.found;
+	}
+
 	/** Whether the island's facts prove hoisting past operands binding the given slots is unobservable. */
 	private boolean hoistableAcross(GenericEvalPlan island, long surroundingMask) {
 		NativeTupleFacts facts = island.descriptor.facts();
@@ -1879,6 +1918,9 @@ final class LmdbNativeAggregatePlanner extends LmdbNativeAggregateFilterCompiler
 	}
 
 	SlotPlan compileTuple(TupleExpr expr, boolean duplicateInsensitive) {
+		if (OrderedEvaluation.isRequired(expr)) {
+			return null;
+		}
 		Set<String> demotedVisible = demotedIslands.get(expr);
 		if (demotedVisible != null) {
 			// M-A4 wide-query demotion: this subtree's internal-only variables must not claim slots
@@ -1942,12 +1984,27 @@ final class LmdbNativeAggregatePlanner extends LmdbNativeAggregateFilterCompiler
 			TupleExpr rightArg = join.getRightArg();
 			boolean rightUsesGraph = GraphFrameMapping.forSubqueries(rightArg, leftArg).length > 0;
 			boolean leftUsesGraph = GraphFrameMapping.forSubqueries(leftArg, rightArg).length > 0;
-			boolean independentSubqueryRight = !rightUsesGraph && !leftUsesGraph
+			boolean lexicalGraphFrame = rightUsesGraph || leftUsesGraph;
+			boolean independentSubqueryRight = !lexicalGraphFrame
 					&& TupleExprs.subqueryObservesInjectedBindings(rightArg, leftArg.getBindingNames());
+			if (leftUsesGraph && !rightUsesGraph) {
+				// Compile the graph carrier before its lexical dependent, independent of textual operand order.
+				leftArg = join.getRightArg();
+				rightArg = join.getLeftArg();
+			}
+			boolean rightDiscardable = canDiscardWithoutEvaluation(rightArg);
+			Service directService = !lexicalGraphFrame && rightArg instanceof Service service ? service : null;
+			if (!rightDiscardable && directService == null
+					&& (lexicalGraphFrame || hasUnresolvedServiceEndpoint(rightArg))) {
+				// The ordinary join owns reachability for a compound right operand, including variable SERVICE
+				// endpoints and the input frame used when no left row supplies one.
+				return null;
+			}
 			if (independentSubqueryRight && forceInteriorIslands) {
 				return island(join);
 			}
-			if (!rightUsesGraph && !leftUsesGraph && !independentSubqueryRight) {
+			if (!lexicalGraphFrame && !independentSubqueryRight && rightDiscardable
+					&& canDiscardWithoutEvaluation(leftArg)) {
 				SlotPlan optimizerExactValues = compileJoinWithOptimizerExactValues(join, duplicateInsensitive);
 				if (optimizerExactValues != null) {
 					return optimizerExactValues;
@@ -1960,10 +2017,6 @@ final class LmdbNativeAggregatePlanner extends LmdbNativeAggregateFilterCompiler
 				if (observedBelow != null) {
 					return observedBelow;
 				}
-			} else if (leftUsesGraph && !rightUsesGraph) {
-				// Compile the graph carrier before its lexical dependent, independent of textual operand order.
-				leftArg = join.getRightArg();
-				rightArg = join.getLeftArg();
 			}
 			Set<String> shared = observedAcrossNames(leftArg, rightArg);
 			Set<String> previousRequired = requiredAggregateNames;
@@ -1973,7 +2026,9 @@ final class LmdbNativeAggregatePlanner extends LmdbNativeAggregateFilterCompiler
 				requiredAggregateNames = withRequired(previousRequired, shared);
 				left = compileTupleOrIsland(leftArg, duplicateInsensitive);
 				requiredAggregateNames = withRequired(previousRequired, shared);
-				if (independentSubqueryRight) {
+				if (directService != null) {
+					right = islandForServiceJoinOperand(directService);
+				} else if (independentSubqueryRight) {
 					// The complete right operand receives the join-entry frame, exactly as the generic hash join.
 					// Its bounded lexical replay then joins output mappings without exposing the mutable left row.
 					right = compileNativeSubquery(rightArg);
@@ -1991,10 +2046,19 @@ final class LmdbNativeAggregatePlanner extends LmdbNativeAggregateFilterCompiler
 					&& !canDiscardWithoutEvaluation(leftArg)) {
 				// Empty-join elimination would discard an operand the generic engine evaluates before probing the
 				// empty side; its query-fatal effects (e.g. a non-silent SERVICE) must still surface.
-				return new DrainGuardPlan(SlotPlan.empty(), left, true);
+				return new DrainGuardPlan(SlotPlan.empty(), left, DrainGuardPlan.Trigger.BEFORE_FIRST_PULL);
 			}
-			SlotPlan keyed = compileKeyedSubqueryJoin(join, leftArg, rightArg, left, right,
-					rightUsesGraph || leftUsesGraph);
+			if (!rightDiscardable && (directService == null || directService.getServiceRef().hasValue())) {
+				// These operands can evaluate with the join-entry bindings even when the driver supplies no row.
+				// A direct variable SERVICE uses the ordinary per-row native join.
+				if (left == EmptyPlan.INSTANCE) {
+					return null;
+				}
+				if (left != SingletonPlan.INSTANCE) {
+					return new JoinPlan(new DrainGuardPlan(left, right, DrainGuardPlan.Trigger.ON_EMPTY), right);
+				}
+			}
+			SlotPlan keyed = compileKeyedSubqueryJoin(join, leftArg, rightArg, left, right, lexicalGraphFrame);
 			if (keyed != null) {
 				return keyed;
 			}
@@ -2566,9 +2630,16 @@ final class LmdbNativeAggregatePlanner extends LmdbNativeAggregateFilterCompiler
 		TupleFunction function = TupleFunctionRegistry.getInstance()
 				.get(call.getURI())
 				.orElseThrow(() -> new QueryEvaluationException("Unknown tuple function '" + call.getURI() + "'"));
+		if (!BlankNodeEffects.of(function).isEmpty()) {
+			return null;
+		}
 		QueryValueEvaluationStep[] arguments = new QueryValueEvaluationStep[call.getArgs().size()];
 		for (int i = 0; i < arguments.length; i++) {
 			arguments[i] = strategy.precompile(call.getArgs().get(i), slotAwareContext());
+			if (arguments[i].blankNodeEffects().usesSolutionOccurrence()) {
+				// The generic tuple evaluator opens one occurrence for all arguments before invoking the callback.
+				return null;
+			}
 		}
 		int[] resultSlots = new int[call.getResultVars().size()];
 		Value[] resultConstants = new Value[resultSlots.length];
@@ -2613,7 +2684,8 @@ final class LmdbNativeAggregatePlanner extends LmdbNativeAggregateFilterCompiler
 		return new ZeroLengthPathPlan((int) subj[0], subj[1], (int) obj[0], obj[1], enumerationContexts,
 				subject.isConstant() || object.isConstant(),
 				context.getSubstitutionBindingNames().contains(subject.getName()),
-				context.getSubstitutionBindingNames().contains(object.getName()));
+				context.getSubstitutionBindingNames().contains(object.getName()),
+				zeroLength.rejectsExplicitNullEndpoints());
 	}
 
 	/** Sentinel: an unbound graph variable declines the whole plan (never a valid context list). */

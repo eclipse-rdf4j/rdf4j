@@ -43,35 +43,41 @@ import org.eclipse.rdf4j.query.QueryEvaluationException;
 @InternalUseOnly
 public final class BlankNodeAllocationScope {
 	private static final ThreadLocal<BlankNodeAllocationScope> ACTIVE = new ThreadLocal<>();
+	private static final ThreadLocal<SolutionExecution> ACTIVE_SOLUTIONS = new ThreadLocal<>();
 	private static final ReferenceQueue<Object> OWNERS = new ReferenceQueue<>();
 	private static final Map<OwnerReference, BlankNodeAllocationScope> SCOPES = new HashMap<>();
 
 	private final Set<String> unavailable = new HashSet<>();
-	private final Set<BNode> pendingBNodeReservations = Collections.newSetFromMap(new IdentityHashMap<>());
-	private final Set<TripleTerm> pendingTripleTermReservations = Collections
-			.newSetFromMap(new IdentityHashMap<>());
-	private final Map<Object, Map<String, String>> remoteAliases = new IdentityHashMap<>();
+	private Set<BNode> pendingBNodeReservations;
+	private Set<TripleTerm> pendingTripleTermReservations;
+	private Map<Object, Map<String, String>> remoteAliases;
+	private Map<OwnerReference, Map<String, String>> foreignAliases;
+	private ReferenceQueue<Object> foreignAliasQueue;
 	private final Object remoteIdentityOwner = new Object();
-	private final ReferenceQueue<Object> solutionQueue = new ReferenceQueue<>();
-	private final Map<OwnerReference, SolutionOccurrence> solutions = new HashMap<>();
+	private volatile SolutionTable standaloneSolutions;
 	private final ReferenceQueue<Object> algebraQueue = new ReferenceQueue<>();
 	private final Map<OwnerReference, ReferenceSnapshot> algebraReferences = new HashMap<>();
-	private final ThreadLocal<SolutionOccurrence> currentSolution = new ThreadLocal<>();
+	private volatile boolean hasAnySolutionLabels;
 	private static final Object NULL_BINDINGS = new Object();
-	private final String namespace;
+	private String namespace;
 	private final Predicate<String> alreadyKnown;
 	private BNodeIdResolver localIdentityResolver;
+	private BNodeIdResolver pinnedIdentityResolver;
 	private BigInteger next = BigInteger.ZERO;
 	private boolean fixedReferences;
 
 	public BlankNodeAllocationScope() {
-		this("rdf4j-" + UUID.randomUUID() + "-", null);
+		this(null);
+	}
+
+	private BlankNodeAllocationScope(Predicate<String> alreadyKnown) {
+		this.alreadyKnown = alreadyKnown;
 	}
 
 	/** The namespace identifies this execution; the counter advances without wraparound. */
 	public BlankNodeAllocationScope(String namespace, Predicate<String> alreadyKnown) {
+		this(alreadyKnown);
 		this.namespace = Objects.requireNonNull(namespace);
-		this.alreadyKnown = alreadyKnown;
 	}
 
 	/**
@@ -81,14 +87,23 @@ public final class BlankNodeAllocationScope {
 	 * snapshots remain with the preparing strategy: copying occupied IDs must never grant new lexical reference roles.
 	 */
 	public synchronized BlankNodeAllocationScope newEvaluationScope() {
-		BlankNodeAllocationScope evaluation = new BlankNodeAllocationScope("rdf4j-" + UUID.randomUUID() + "-",
-				alreadyKnown);
+		BlankNodeAllocationScope evaluation = new BlankNodeAllocationScope(alreadyKnown);
 		evaluation.unavailable.addAll(unavailable);
-		evaluation.pendingBNodeReservations.addAll(pendingBNodeReservations);
-		evaluation.pendingTripleTermReservations.addAll(pendingTripleTermReservations);
+		evaluation.pendingBNodeReservations = copyPendingReservations(pendingBNodeReservations);
+		evaluation.pendingTripleTermReservations = copyPendingReservations(pendingTripleTermReservations);
 		evaluation.fixedReferences = fixedReferences;
 		evaluation.localIdentityResolver = localIdentityResolver;
+		evaluation.pinnedIdentityResolver = pinnedIdentityResolver;
 		return evaluation;
+	}
+
+	private static <T> Set<T> copyPendingReservations(Set<T> pending) {
+		if (pending == null || pending.isEmpty()) {
+			return null;
+		}
+		Set<T> copy = Collections.newSetFromMap(new IdentityHashMap<>());
+		copy.addAll(pending);
+		return copy;
 	}
 
 	/** Captures the executing local backend's read-only membership lookup before deferred or remote work begins. */
@@ -99,6 +114,12 @@ public final class BlankNodeAllocationScope {
 			}
 			localIdentityResolver = resolver;
 		}
+	}
+
+	/** Retains the dictionary authority of this execution's admitted statement reader. */
+	@InternalUseOnly
+	public synchronized void bindPinnedBNodeIdResolver(BNodeIdResolver resolver) {
+		pinnedIdentityResolver = Objects.requireNonNull(resolver);
 	}
 
 	/** Captures the enclosing request's allocation state, or creates independent query state. */
@@ -127,7 +148,7 @@ public final class BlankNodeAllocationScope {
 			if (!closed) {
 				closed = true;
 				if (previous == null) {
-					ACTIVE.remove();
+					ACTIVE.set(null);
 				} else {
 					ACTIVE.set(previous);
 				}
@@ -186,6 +207,11 @@ public final class BlankNodeAllocationScope {
 	}
 
 	/** Unmarked, expired or mutated roots must be analyzed conservatively as local fixed references. */
+	public synchronized boolean hasReferenceSnapshot(Object root) {
+		return !algebraReferences.isEmpty() && algebraReferences.containsKey(new OwnerReference(root, null));
+	}
+
+	/** Returns the original reference roles when the tree still matches its recorded structure. */
 	public synchronized Set<String> getReferenceSnapshot(Object root, List<IdentityStamp> structure) {
 		ReferenceSnapshot snapshot = matchingReferenceSnapshot(root, structure);
 		return snapshot == null ? null : snapshot.ids();
@@ -238,16 +264,22 @@ public final class BlankNodeAllocationScope {
 		if (value == null) {
 			return;
 		}
-		if (value instanceof BNode) {
-			pendingBNodeReservations.add((BNode) value);
-		} else if (value instanceof TripleTerm) {
+		if (value instanceof BNode node) {
+			if (pendingBNodeReservations == null) {
+				pendingBNodeReservations = Collections.newSetFromMap(new IdentityHashMap<>());
+			}
+			pendingBNodeReservations.add(node);
+		} else if (value instanceof TripleTerm triple) {
 			// Reserving query inputs must not decode a foreign composite before the query needs an allocation.
-			pendingTripleTermReservations.add((TripleTerm) value);
+			if (pendingTripleTermReservations == null) {
+				pendingTripleTermReservations = Collections.newSetFromMap(new IdentityHashMap<>());
+			}
+			pendingTripleTermReservations.add(triple);
 		}
 	}
 
 	private void reservePendingTripleTerms() {
-		if (pendingTripleTermReservations.isEmpty()) {
+		if (pendingTripleTermReservations == null || pendingTripleTermReservations.isEmpty()) {
 			return;
 		}
 		Set<TripleTerm> roots = Collections.newSetFromMap(new IdentityHashMap<>());
@@ -271,6 +303,9 @@ public final class BlankNodeAllocationScope {
 	}
 
 	private void reservePendingBNodes() {
+		if (pendingBNodeReservations == null) {
+			return;
+		}
 		for (BNode bnode : pendingBNodeReservations) {
 			unavailable.add(bnode.getID());
 		}
@@ -314,17 +349,21 @@ public final class BlankNodeAllocationScope {
 		if (known == null && factory instanceof BNodeIdResolver) {
 			known = ((BNodeIdResolver) factory)::hasBNodeId;
 		}
-		if (known == null && fixedReferences) {
+		boolean canCheckIdentity = known != null || pinnedIdentityResolver != null;
+		if (!canCheckIdentity && fixedReferences) {
 			throw new QueryEvaluationException("Unsupported blank-node identity: backend cannot check stored IDs");
 		}
 		// Keep existing third-party factory allocation behavior when the request has no fixed references.
-		if (known == null && label == null) {
+		if (!canCheckIdentity && label == null) {
 			BNode fresh = factory.createBNode();
 			if (unavailable.add(fresh.getID())) {
-				return new GeneratedBNode(fresh.getID());
+				return new GeneratedBNode(fresh.getID(), remoteIdentityOwner);
 			}
 			throw new QueryEvaluationException(
 					"Unsupported blank-node freshness: backend cannot check stored IDs after an allocation collision");
+		}
+		if (namespace == null) {
+			namespace = "rdf4j-" + UUID.randomUUID() + "-";
 		}
 		String prefix = label == null ? namespace : label + "_" + namespace;
 		while (true) {
@@ -332,13 +371,14 @@ public final class BlankNodeAllocationScope {
 			next = next.add(BigInteger.ONE);
 			// Check before materialization: MemoryStore's factory registers created values immediately.
 			if (unavailable.contains(candidate)) {
-				if (known == null) {
+				if (!canCheckIdentity) {
 					throw new QueryEvaluationException(
 							"Unsupported blank-node freshness: backend cannot check stored IDs after an allocation collision");
 				}
 				continue;
 			}
-			if (known != null && known.test(candidate)) {
+			if (known != null && known.test(candidate)
+					|| pinnedIdentityResolver != null && pinnedIdentityResolver.hasBNodeId(candidate)) {
 				continue;
 			}
 			BNode fresh;
@@ -351,8 +391,68 @@ public final class BlankNodeAllocationScope {
 				throw new QueryEvaluationException("Unsupported blank-node identity: factory changed a candidate ID");
 			}
 			unavailable.add(candidate);
-			return new GeneratedBNode(fresh.getID());
+			return new GeneratedBNode(fresh.getID(), remoteIdentityOwner);
 		}
+	}
+
+	/** Owns labelled solution occurrences for one evaluation of a reusable plan. */
+	public static final class SolutionExecution {
+		private Map<BlankNodeAllocationScope, SolutionTable> tables;
+
+		private synchronized SolutionTable table(BlankNodeAllocationScope allocation) {
+			if (tables == null) {
+				tables = new IdentityHashMap<>();
+			}
+			return tables.computeIfAbsent(allocation, ignored -> new SolutionTable());
+		}
+
+		private synchronized boolean hasLabels(BlankNodeAllocationScope allocation) {
+			SolutionTable table = tables == null ? null : tables.get(allocation);
+			return table != null && table.hasLabels;
+		}
+
+		public SolutionExecutionActivation activate() {
+			SolutionExecution previous = ACTIVE_SOLUTIONS.get();
+			ACTIVE_SOLUTIONS.set(this);
+			return () -> {
+				if (previous == null) {
+					ACTIVE_SOLUTIONS.set(null);
+				} else {
+					ACTIVE_SOLUTIONS.set(previous);
+				}
+			};
+		}
+	}
+
+	@FunctionalInterface
+	public interface SolutionExecutionActivation extends AutoCloseable {
+		@Override
+		void close();
+	}
+
+	private static final class SolutionTable {
+		private final ReferenceQueue<Object> expired = new ReferenceQueue<>();
+		private final Map<OwnerReference, SolutionOccurrence> occurrences = new HashMap<>();
+		private final ThreadLocal<SolutionOccurrence> current = new ThreadLocal<>();
+		private volatile boolean hasLabels;
+
+		private void collectFinished() {
+			OwnerReference reference;
+			while ((reference = (OwnerReference) expired.poll()) != null) {
+				occurrences.remove(reference);
+			}
+		}
+	}
+
+	private SolutionTable solutionTable() {
+		var execution = ACTIVE_SOLUTIONS.get();
+		if (execution != null) {
+			return execution.table(this);
+		}
+		if (standaloneSolutions == null) {
+			standaloneSolutions = new SolutionTable();
+		}
+		return standaloneSolutions;
 	}
 
 	/**
@@ -360,14 +460,13 @@ public final class BlankNodeAllocationScope {
 	 * an existing BindingSet object. All calls within this stage share the scope until activation closes.
 	 */
 	public synchronized SolutionActivation beginSolutionOccurrence(BindingSet target) {
-		collectFinishedSolutions();
+		SolutionTable table = solutionTable();
+		table.collectFinished();
 		SolutionOccurrence occurrence = new SolutionOccurrence();
 		if (target != null) {
-			solutions.put(new OwnerReference(target, solutionQueue), occurrence);
+			table.occurrences.put(new OwnerReference(target, table.expired), occurrence);
 		}
-		SolutionOccurrence previous = currentSolution.get();
-		currentSolution.set(occurrence);
-		return new SolutionActivation(previous);
+		return activateSolution(table, occurrence);
 	}
 
 	/**
@@ -376,26 +475,49 @@ public final class BlankNodeAllocationScope {
 	 * Mapping identities are weakly held, so completed result rows are not retained by the execution.
 	 */
 	public synchronized SolutionActivation visitSolutionOccurrence(BindingSet mapping, Object boundary) {
-		collectFinishedSolutions();
+		SolutionTable table = solutionTable();
+		table.collectFinished();
 		Object identity = mapping == null ? NULL_BINDINGS : mapping;
-		OwnerReference key = new OwnerReference(identity, solutionQueue);
-		SolutionOccurrence occurrence = solutions.get(key);
-		if (occurrence == null || occurrence.visited.containsKey(boundary)) {
+		OwnerReference key = new OwnerReference(identity, table.expired);
+		SolutionOccurrence occurrence = table.occurrences.get(key);
+		Objects.requireNonNull(boundary);
+		if (occurrence == null || !occurrence.visit(boundary)) {
 			occurrence = new SolutionOccurrence();
-			solutions.put(key, occurrence);
+			occurrence.firstBoundary = boundary;
+			table.occurrences.put(key, occurrence);
 		}
-		occurrence.visited.put(Objects.requireNonNull(boundary), Boolean.TRUE);
-		SolutionOccurrence previous = currentSolution.get();
-		currentSolution.set(occurrence);
-		return new SolutionActivation(previous);
+		return activateSolution(table, occurrence);
+	}
+
+	private SolutionActivation activateSolution(SolutionTable table, SolutionOccurrence occurrence) {
+		SolutionOccurrence previous = table.current.get();
+		table.current.set(occurrence);
+		return new SolutionActivation(table, previous, occurrence);
+	}
+
+	/** Activates the stable mapping of a materialized occurrence for a repeated callback. */
+	public synchronized SolutionActivation activateMaterializedSolution(BindingSet mapping) {
+		SolutionTable table = solutionTable();
+		table.collectFinished();
+		var key = new OwnerReference(Objects.requireNonNull(mapping), table.expired);
+		return activateSolution(table, table.occurrences.computeIfAbsent(key, ignored -> new SolutionOccurrence()));
 	}
 
 	public final class SolutionActivation implements AutoCloseable {
+		private final SolutionTable table;
 		private final SolutionOccurrence previous;
+		private final SolutionOccurrence occurrence;
 		private boolean closed;
 
-		private SolutionActivation(SolutionOccurrence previous) {
+		private SolutionActivation(SolutionTable table, SolutionOccurrence previous, SolutionOccurrence occurrence) {
+			this.table = table;
 			this.previous = previous;
+			this.occurrence = occurrence;
+		}
+
+		/** Resumes this occurrence while a lazy callback is being advanced or closed. */
+		public SolutionActivation resume() {
+			return activateSolution(table, occurrence);
 		}
 
 		@Override
@@ -403,18 +525,11 @@ public final class BlankNodeAllocationScope {
 			if (!closed) {
 				closed = true;
 				if (previous == null) {
-					currentSolution.remove();
+					table.current.remove();
 				} else {
-					currentSolution.set(previous);
+					table.current.set(previous);
 				}
 			}
-		}
-	}
-
-	private void collectFinishedSolutions() {
-		OwnerReference expired;
-		while ((expired = (OwnerReference) solutionQueue.poll()) != null) {
-			solutions.remove(expired);
 		}
 	}
 
@@ -425,19 +540,53 @@ public final class BlankNodeAllocationScope {
 	 */
 	public synchronized BNode getOrCreateBNode(String label, BindingSet bindings, ValueFactory factory) {
 		reserve(bindings);
-		collectFinishedSolutions();
-		SolutionOccurrence occurrence = currentSolution.get();
+		return getOrCreateBNodeForAdmittedRow(label, bindings, factory);
+	}
+
+	/** Resolves a labelled occurrence whose mapping values were admitted by their producing sources. */
+	@InternalUseOnly
+	public synchronized BNode getOrCreateBNodeForAdmittedRow(String label, BindingSet bindings, ValueFactory factory) {
+		SolutionTable table = solutionTable();
+		table.collectFinished();
+		SolutionOccurrence occurrence = table.current.get();
 		if (occurrence == null) {
 			Object identity = bindings == null ? NULL_BINDINGS : bindings;
-			occurrence = solutions.computeIfAbsent(new OwnerReference(identity, solutionQueue),
+			occurrence = table.occurrences.computeIfAbsent(new OwnerReference(identity, table.expired),
 					ignored -> new SolutionOccurrence());
 		}
-		return occurrence.labels.computeIfAbsent(Objects.requireNonNull(label), ignored -> createBNode(factory, label));
+		BNode value = occurrence.mutableLabels()
+				.computeIfAbsent(Objects.requireNonNull(label), ignored -> createBNode(factory, label));
+		table.hasLabels = true;
+		hasAnySolutionLabels = true;
+		return value;
 	}
 
 	private static final class SolutionOccurrence {
-		private final Map<String, BNode> labels = new HashMap<>();
-		private final Map<Object, Boolean> visited = new IdentityHashMap<>();
+		// Most rows pass only one of these boundaries and never evaluate a labelled BNODE.
+		private Object firstBoundary;
+		private IdentityHashMap<Object, Boolean> otherBoundaries;
+		private Map<String, BNode> labels;
+
+		boolean visit(Object boundary) {
+			if (firstBoundary == null) {
+				firstBoundary = boundary;
+				return true;
+			}
+			if (boundary == firstBoundary) {
+				return false;
+			}
+			if (otherBoundaries == null) {
+				otherBoundaries = new IdentityHashMap<>(2);
+			}
+			return otherBoundaries.put(boundary, Boolean.TRUE) == null;
+		}
+
+		Map<String, BNode> mutableLabels() {
+			if (labels == null) {
+				labels = new HashMap<>();
+			}
+			return labels;
+		}
 	}
 
 	/** Label state travelling with an unchanged mapping through a materializing or spilling operator. */
@@ -448,20 +597,69 @@ public final class BlankNodeAllocationScope {
 	}
 
 	public synchronized SolutionSnapshot snapshotCurrentSolution() {
-		SolutionOccurrence occurrence = currentSolution.get();
-		return new SolutionSnapshot(occurrence == null ? Map.of() : occurrence.labels);
+		SolutionOccurrence occurrence = solutionTable().current.get();
+		return new SolutionSnapshot(occurrence == null || occurrence.labels == null ? Map.of() : occurrence.labels);
+	}
+
+	/** Whether this scope has any label state a materializing operator might need to carry forward. */
+	public boolean hasSolutionLabels() {
+		if (!hasAnySolutionLabels) {
+			return false;
+		}
+		var execution = ACTIVE_SOLUTIONS.get();
+		return execution == null ? standaloneSolutions != null && standaloneSolutions.hasLabels
+				: execution.hasLabels(this);
+	}
+
+	/** Captures a materializing operator's unchanged input without opening a labelled callback scope. */
+	public synchronized SolutionSnapshot snapshotSolution(BindingSet mapping, Object boundary) {
+		SolutionTable table = solutionTable();
+		table.collectFinished();
+		Object identity = mapping == null ? NULL_BINDINGS : mapping;
+		var key = new OwnerReference(identity, null);
+		SolutionOccurrence occurrence = table.occurrences.get(key);
+		if (occurrence == null || occurrence.labels == null) {
+			return null;
+		}
+		if (!occurrence.visit(boundary)) {
+			table.occurrences.remove(key);
+			return new SolutionSnapshot(Map.of());
+		}
+		return new SolutionSnapshot(occurrence.labels);
 	}
 
 	public synchronized void restoreSolution(BindingSet mapping, SolutionSnapshot snapshot) {
-		collectFinishedSolutions();
+		SolutionTable table = solutionTable();
+		table.collectFinished();
 		SolutionOccurrence occurrence = new SolutionOccurrence();
-		occurrence.labels.putAll(snapshot.labels());
-		solutions.put(new OwnerReference(mapping, solutionQueue), occurrence);
+		if (!snapshot.labels().isEmpty()) {
+			occurrence.labels = new HashMap<>(snapshot.labels());
+			table.hasLabels = true;
+			hasAnySolutionLabels = true;
+		}
+		table.occurrences.put(new OwnerReference(mapping, table.expired), occurrence);
 	}
 
 	synchronized String getOrCreateRemoteAlias(Object identityScope, String remoteID, ValueFactory factory) {
+		if (remoteAliases == null) {
+			remoteAliases = new IdentityHashMap<>();
+		}
 		return remoteAliases.computeIfAbsent(identityScope, ignored -> new HashMap<>())
 				.computeIfAbsent(remoteID, ignored -> createBNode(factory).getID());
+	}
+
+	synchronized String getOrCreateForeignAlias(Object origin, String label, ValueFactory factory) {
+		if (foreignAliases == null) {
+			foreignAliases = new HashMap<>();
+			foreignAliasQueue = new ReferenceQueue<>();
+		}
+		OwnerReference expired;
+		while ((expired = (OwnerReference) foreignAliasQueue.poll()) != null) {
+			foreignAliases.remove(expired);
+		}
+		return foreignAliases.computeIfAbsent(new OwnerReference(Objects.requireNonNull(origin), foreignAliasQueue),
+				ignored -> new HashMap<>())
+				.computeIfAbsent(label, ignored -> createBNode(factory).getID());
 	}
 
 	/** A detached proof token; remote wrappers cannot keep the executing allocation scope alive. */

@@ -1476,7 +1476,7 @@ final class JoinCursor implements FactorizedRowCursor {
 		if (pathTargetDecision != null && pathTargetDecision.appliesTo(right)) {
 			if (right == pathTargetDecision.path && pathTargetDecision.targets != null) {
 				if (rightProbe == null) {
-					rightProbe = row.source.newProbe();
+					rightProbe = row.source.newProbe(row.cursorCancellation());
 				}
 				return pathTargetDecision.path.open(row, rightProbe, null, pathTargetDecision.targets);
 			}
@@ -1486,7 +1486,7 @@ final class JoinCursor implements FactorizedRowCursor {
 		}
 		if (patternRight != null || right instanceof PathPlan) {
 			if (rightProbe == null) {
-				rightProbe = row.source.newProbe();
+				rightProbe = row.source.newProbe(row.cursorCancellation());
 			}
 			if (patternRight != null) {
 				if (patternCursor == null) {

@@ -19,38 +19,84 @@ import org.junit.jupiter.api.Test;
 
 class LmdbNativeCostObservationTest {
 
+	private static final LmdbNativeAdvisoryLearner.Key KEY = new LmdbNativeAdvisoryLearner.Key(
+			"irKernel", "", 1L, LmdbNativeAccessFacts.Source.LMDB, 1, 2);
+
 	@Test
 	void failedCursorCleanupDoesNotTeachTheLearner() {
 		LmdbNativeAdvisoryLearner learner = new LmdbNativeAdvisoryLearner(null);
-		var key = new LmdbNativeAdvisoryLearner.Key("irKernel", "", 1L, LmdbNativeAccessFacts.Source.LMDB, 1, 2);
 		for (int run = 0; run < LmdbNativeAdvisoryLearner.MINIMUM_SAMPLES; run++) {
-			LmdbNativeCostObservation observation = new LmdbNativeCostObservation(learner, key, 200D);
-			observation.opened(600L);
-			NativeResultCursor observed = observation.observed(new NativeResultCursor() {
-				@Override
-				public NativeResultRow next() {
-					return null;
-				}
+			NativeResultCursor cursor = observed(learner, false, true);
+			assertThat(cursor.next()).isNull();
+			assertThatThrownBy(cursor::close).hasMessage("cleanup failed");
+		}
+		assertThat(narrowed(learner)).isEqualTo(200D);
+	}
 
-				@Override
-				public NativeCancellationToken cancellation() {
-					return null;
-				}
+	@Test
+	void failedPullDoesNotTeachTheLearnerEvenIfFollowedByCleanExhaustion() {
+		LmdbNativeAdvisoryLearner learner = new LmdbNativeAdvisoryLearner(null);
+		for (int run = 0; run < LmdbNativeAdvisoryLearner.MINIMUM_SAMPLES; run++) {
+			NativeResultCursor cursor = observed(learner, true, false);
+			assertThatThrownBy(cursor::next).hasMessage("pull failed");
+			assertThat(cursor.next()).isNull();
+			cursor.close();
+		}
+		assertThat(narrowed(learner)).isEqualTo(200D);
+	}
 
-				@Override
-				public NativeExecutionContext executionContext() {
-					return null;
-				}
+	@Test
+	void cleanCursorTeachesOnlyAfterClose() {
+		LmdbNativeAdvisoryLearner learner = new LmdbNativeAdvisoryLearner(null);
+		for (int run = 1; run < LmdbNativeAdvisoryLearner.MINIMUM_SAMPLES; run++) {
+			NativeResultCursor cursor = observed(learner, false, false);
+			assertThat(cursor.next()).isNull();
+			cursor.close();
+		}
+		NativeResultCursor last = observed(learner, false, false);
+		assertThat(last.next()).isNull();
+		assertThat(narrowed(learner)).isEqualTo(200D);
+		last.close();
+		assertThat(narrowed(learner)).isGreaterThan(200D);
+	}
 
-				@Override
-				public void close() {
+	private static double narrowed(LmdbNativeAdvisoryLearner learner) {
+		return learner.narrow(KEY, LmdbNativeWork.between(100D, 1000D), 200D).expectedNanos();
+	}
+
+	private static NativeResultCursor observed(LmdbNativeAdvisoryLearner learner, boolean failFirstPull,
+			boolean failClose) {
+		LmdbNativeCostObservation observation = new LmdbNativeCostObservation(learner, KEY, 200D);
+		observation.opened(600L);
+		return observation.observed(new NativeResultCursor() {
+			private boolean first = true;
+
+			@Override
+			public NativeResultRow next() {
+				if (first && failFirstPull) {
+					first = false;
+					throw new IllegalStateException("pull failed");
+				}
+				return null;
+			}
+
+			@Override
+			public NativeCancellationToken cancellation() {
+				return null;
+			}
+
+			@Override
+			public NativeExecutionContext executionContext() {
+				return null;
+			}
+
+			@Override
+			public void close() {
+				if (failClose) {
 					throw new IllegalStateException("cleanup failed");
 				}
-			});
-			assertThat(observed.next()).isNull();
-			assertThatThrownBy(observed::close).isInstanceOf(IllegalStateException.class);
-		}
-		assertThat(learner.narrow(key, LmdbNativeWork.between(100D, 1000D), 200D).expectedNanos()).isEqualTo(200D);
+			}
+		});
 	}
 
 	private static final long REFILL_NANOS = 1_000_000L;

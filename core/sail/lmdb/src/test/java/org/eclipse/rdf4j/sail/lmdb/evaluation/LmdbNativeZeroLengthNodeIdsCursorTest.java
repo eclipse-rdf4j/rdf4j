@@ -13,6 +13,7 @@ package org.eclipse.rdf4j.sail.lmdb.evaluation;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.eclipse.rdf4j.sail.lmdb.evaluation.NativeCancellationTestAccess.mockScanSource;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.anyLong;
@@ -193,7 +194,7 @@ class LmdbNativeZeroLengthNodeIdsCursorTest {
 	}
 
 	private static final class Fixture {
-		final NativeLmdbQuerySource source = mock(NativeLmdbQuerySource.class);
+		final NativeLmdbQuerySource source = mockScanSource(NativeLmdbQuerySource.class);
 		final NativeLmdbQuerySource.NativeProbe probe = mock(NativeLmdbQuerySource.NativeProbe.class);
 		final RowState row;
 		final ZeroLengthPathPlan plan = new ZeroLengthPathPlan(0, UNKNOWN, 1, UNKNOWN, null);

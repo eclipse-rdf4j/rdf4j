@@ -730,7 +730,7 @@ final class LmdbNativeParallelKernelRows {
 					: null;
 			forkedResiduals = bindings.residualFilters.isEmpty() ? null
 					: LmdbNativeKernelPartitions.forkResidualFilters(bindings.residualFilters, workerContext);
-			probe = source.newProbe();
+			probe = source.newProbe(workerRow.cursorCancellation());
 			views = bindings.requestAdjacencies(probe);
 			if (views == null) {
 				throw new LmdbNativeKernelPartitions.ParallelKernelDecline("worker-adjacency-unavailable");

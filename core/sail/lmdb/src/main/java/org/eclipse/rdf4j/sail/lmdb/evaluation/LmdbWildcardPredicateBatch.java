@@ -108,8 +108,7 @@ final class LmdbWildcardPredicateBatch {
 
 	/** Each wildcard stage fills its own buffer before the next stage or continuation consumes it. */
 	private record ShapeCost(ShapeCost prefix, LmdbNativeCostVector edgeWork, double edgeRows,
-			LmdbNativeCostVector suffixWork,
-			double outputRows) {
+			LmdbNativeCostVector suffixWork, double outputRows, LmdbNativeWork.RowBounds continuationBounds) {
 		LmdbNativeCostVector vector() {
 			LmdbNativeCostVector work = prefix == null ? edgeWork : prefix.vector().plus(edgeWork);
 			return suffixWork == null ? work : work.plus(suffixWork);
@@ -159,12 +158,13 @@ final class LmdbWildcardPredicateBatch {
 				return null;
 			}
 			double edges = LmdbNativeWork.rowsOut(shape.wildcard, row, boundMask);
-			return Double.isFinite(edges) ? priceContinuation(shape, row, null,
-					LmdbNativePlanExecutionProfile.profile(shape.wildcard, row, boundMask,
-							LmdbNativePlanExecutionProfile.Mode.BATCH)
-							.plus(estimateFilterWork(shape, edges,
-									LmdbNativeCostVectors.rowBounds(shape.wildcard, row, boundMask))),
-					edges) : null;
+			if (!Double.isFinite(edges)) {
+				return null;
+			}
+			LmdbNativeWork.RowBounds edgeBounds = LmdbNativeCostVectors.rowBounds(shape.wildcard, row, boundMask);
+			return priceContinuation(shape, row, null, LmdbNativePlanExecutionProfile
+					.profile(shape.wildcard, row, boundMask, LmdbNativePlanExecutionProfile.Mode.BATCH)
+					.plus(estimateFilterWork(shape, edges, edgeBounds)), edges, edgeBounds);
 		}
 		ShapeCost batchedPrefix = shapeCost(matchPrefix(shape.prefix, row), row);
 		double prefixRows = batchedPrefix == null ? LmdbNativeWork.rowsOut(shape.prefix, row, boundMask)
@@ -224,8 +224,8 @@ final class LmdbWildcardPredicateBatch {
 					LmdbNativeCostVector.Feature.MEMBERSHIP_TEST, candidates,
 					new LmdbNativeWork.RowBounds(0D, Double.POSITIVE_INFINITY)));
 		}
-		return shape.suffix == null ? new ShapeCost(batchedPrefix, streaming, outputRows, null, outputRows)
-				: priceContinuation(shape, row, batchedPrefix, streaming, delivered);
+		return shape.suffix == null ? new ShapeCost(batchedPrefix, streaming, outputRows, null, outputRows, null)
+				: priceContinuation(shape, row, batchedPrefix, streaming, delivered, deliveredBounds);
 	}
 
 	private static OptionalDouble payloadFanOut(Shape shape, RowState row, long inputMask, boolean predicateBound) {
@@ -272,19 +272,28 @@ final class LmdbWildcardPredicateBatch {
 	}
 
 	private static ShapeCost priceContinuation(Shape shape, RowState row, ShapeCost prefix,
-			LmdbNativeCostVector edgeWork,
-			double edges) {
+			LmdbNativeCostVector edgeWork, double edges, LmdbNativeWork.RowBounds edgeBounds) {
 		if (!Double.isFinite(edges)) {
 			return null;
 		}
 		long edgeMask = row.boundMask() | shape.edgeMask();
 		double outputRows = edges * LmdbNativeWork.rowsOut(shape.suffix, row, edgeMask);
+		LmdbNativeWork.RowBounds outputBounds = LmdbNativeCostVectors.productBounds(edgeBounds,
+				LmdbNativeCostVectors.rowBounds(shape.suffix, row, edgeMask));
 		LmdbNativeCostVector probes = LmdbNativePlanExecutionProfile.profile(shape.suffix, row, edgeMask,
 				LmdbNativePlanExecutionProfile.Mode.SEQUENTIAL);
 		LmdbNativeCostVector suffixWork = LmdbNativeCostVectors.repeated(probes, edges,
 				new LmdbNativeWork.RowBounds(0D, Double.POSITIVE_INFINITY))
-				.plus(LmdbNativeCostVectors.perRow(LmdbNativeCostVector.Feature.BATCH_ROW, outputRows, row));
-		return new ShapeCost(prefix, edgeWork, edges, suffixWork, outputRows);
+				.plus(outputWork(LmdbNativeCostVector.Feature.BATCH_ROW, outputRows, outputBounds, row));
+		return new ShapeCost(prefix, edgeWork, edges, suffixWork, outputRows, outputBounds);
+	}
+
+	/** A continuation's sampled fan-out gives its expected work; even a nonempty edge batch can join to nothing. */
+	private static LmdbNativeCostVector outputWork(LmdbNativeCostVector.Feature feature, double rows,
+			LmdbNativeWork.RowBounds continuationBounds, RowState row) {
+		return continuationBounds != null && Double.isFinite(rows)
+				? LmdbNativeCostVectors.boundedRows(feature, rows, continuationBounds)
+				: LmdbNativeCostVectors.perRow(feature, rows, row);
 	}
 
 	private static LmdbNativeWork estimatePhysicalWork(Shape shape, RowState row, boolean planning, ShapeCost cost) {
@@ -602,8 +611,8 @@ final class LmdbWildcardPredicateBatch {
 		ShapeCost cost = shapeCost(weightedAggregateShape(plan, row, groupSlots, aggregates), row);
 		return cost == null ? null
 				: cost.vector()
-						.plus(LmdbNativeCostVectors.perRow(LmdbNativeCostVector.Feature.GROUP_UPDATE, cost.outputRows(),
-								row));
+						.plus(outputWork(LmdbNativeCostVector.Feature.GROUP_UPDATE, cost.outputRows(),
+								cost.continuationBounds(), row));
 	}
 
 	private static Shape weightedAggregateShape(SlotPlan plan, RowState row, int[] groupSlots,
@@ -1354,7 +1363,7 @@ final class LmdbWildcardPredicateBatch {
 		private boolean ensureAdjacency(boolean requestedDirection) {
 			try {
 				if (probe == null) {
-					probe = row.source.newProbe();
+					probe = row.source.newProbe(row.cursorCancellation());
 				}
 				if (!directionBound || bySubject != requestedDirection) {
 					if (parallel != null) {
@@ -1819,7 +1828,7 @@ final class LmdbWildcardPredicateBatch {
 			try {
 				long[] rootKey = new long[1];
 				long[] handle = new long[1];
-				NativeLmdbQuerySource.NativeProbe probe = row.source.newProbe();
+				NativeLmdbQuerySource.NativeProbe probe = row.source.newProbe(row.cursorCancellation());
 				NativeLmdbQuerySource.WildcardAdjacency outgoing = null;
 				NativeLmdbQuerySource.WildcardAdjacency incoming = null;
 				try {
@@ -2264,7 +2273,7 @@ final class LmdbWildcardPredicateBatch {
 					decline(DECLINE_SNAPSHOT_UNAVAILABLE, true);
 					return false;
 				}
-				coordinatorProbe = row.source.newProbe();
+				coordinatorProbe = row.source.newProbe(row.cursorCancellation());
 				coordinatorAdjacency = coordinatorProbe.wildcardAdjacency(shape.bySubject);
 				if (coordinatorAdjacency == null || coordinatorAdjacency.predicateCount() != predicateCount) {
 					decline(DECLINE_SNAPSHOT_UNAVAILABLE, true);
@@ -2663,7 +2672,7 @@ final class LmdbWildcardPredicateBatch {
 		}
 
 		static PredicateDomainCursor open(Shape shape, RowState row) throws IOException {
-			NativeLmdbQuerySource.NativeProbe probe = row.source.newProbe();
+			NativeLmdbQuerySource.NativeProbe probe = row.source.newProbe(row.cursorCancellation());
 			try {
 				NativeLmdbQuerySource.WildcardAdjacency adjacency = probe.wildcardAdjacency(true);
 				if (adjacency == null) {
@@ -2779,7 +2788,7 @@ final class LmdbWildcardPredicateBatch {
 		}
 
 		static PredicateMajorPresenceCursor open(Shape shape, RowState row, int capacity) throws IOException {
-			NativeLmdbQuerySource.NativeProbe probe = row.source.newProbe();
+			NativeLmdbQuerySource.NativeProbe probe = row.source.newProbe(row.cursorCancellation());
 			NativeLmdbQuerySource.WildcardAdjacency adjacency = null;
 			LmdbFusedSipFactorizedRuntime.Session memory = LmdbFusedSipFactorizedRuntime.current();
 			long claimedBytes = rootBatchScratchBytes(capacity);
@@ -2971,7 +2980,7 @@ final class LmdbWildcardPredicateBatch {
 		}
 
 		static PredicateMajorPayloadCursor open(Shape shape, RowState row, int capacity) throws IOException {
-			NativeLmdbQuerySource.NativeProbe probe = row.source.newProbe();
+			NativeLmdbQuerySource.NativeProbe probe = row.source.newProbe(row.cursorCancellation());
 			LmdbFusedSipFactorizedRuntime.Session memory = LmdbFusedSipFactorizedRuntime.current();
 			long claimedBytes = Math.addExact(Math.multiplyExact(2L, arrayBytes(capacity, Long.BYTES)),
 					arrayBytes(capacity, Byte.BYTES));
@@ -3199,7 +3208,7 @@ final class LmdbWildcardPredicateBatch {
 		}
 
 		static PredicateMajorMultiplicityCursor open(Shape shape, RowState row, int capacity) throws IOException {
-			NativeLmdbQuerySource.NativeProbe probe = row.source.newProbe();
+			NativeLmdbQuerySource.NativeProbe probe = row.source.newProbe(row.cursorCancellation());
 			LmdbFusedSipFactorizedRuntime.Session memory = LmdbFusedSipFactorizedRuntime.current();
 			long claimedBytes;
 			try {
@@ -3414,7 +3423,7 @@ final class LmdbWildcardPredicateBatch {
 		}
 
 		static NodeAnyCursor open(Shape shape, RowState row, int capacity) throws IOException {
-			NativeLmdbQuerySource.NativeProbe probe = row.source.newProbe();
+			NativeLmdbQuerySource.NativeProbe probe = row.source.newProbe(row.cursorCancellation());
 			NativeLmdbQuerySource.WildcardAdjacency adjacency = null;
 			BatchCursor prefix = null;
 			LmdbFusedSipFactorizedRuntime.Session memory = LmdbFusedSipFactorizedRuntime.current();
@@ -3697,7 +3706,7 @@ final class LmdbWildcardPredicateBatch {
 		}
 
 		static PairPresenceCursor open(Shape shape, RowState row, int capacity) throws IOException {
-			NativeLmdbQuerySource.NativeProbe probe = row.source.newProbe();
+			NativeLmdbQuerySource.NativeProbe probe = row.source.newProbe(row.cursorCancellation());
 			NativeLmdbQuerySource.WildcardAdjacency adjacency = null;
 			BatchCursor prefix = null;
 			LmdbFusedSipFactorizedRuntime.Session memory = LmdbFusedSipFactorizedRuntime.current();
@@ -4051,7 +4060,7 @@ final class LmdbWildcardPredicateBatch {
 		}
 
 		static PairMultiplicityCursor open(Shape shape, RowState row, int capacity) throws IOException {
-			NativeLmdbQuerySource.NativeProbe probe = row.source.newProbe();
+			NativeLmdbQuerySource.NativeProbe probe = row.source.newProbe(row.cursorCancellation());
 			NativeLmdbQuerySource.WildcardAdjacency adjacency = null;
 			BatchCursor prefix = null;
 			LmdbFusedSipFactorizedRuntime.Session memory = LmdbFusedSipFactorizedRuntime.current();
@@ -4491,7 +4500,7 @@ final class LmdbWildcardPredicateBatch {
 		}
 
 		static PredicateAnyCursor open(Shape shape, RowState row, int capacity) throws IOException {
-			NativeLmdbQuerySource.NativeProbe probe = row.source.newProbe();
+			NativeLmdbQuerySource.NativeProbe probe = row.source.newProbe(row.cursorCancellation());
 			NativeLmdbQuerySource.WildcardAdjacency adjacency = null;
 			BatchCursor seedCursor = null;
 			LmdbFusedSipFactorizedRuntime.Session memory = LmdbFusedSipFactorizedRuntime.current();
@@ -4814,7 +4823,7 @@ final class LmdbWildcardPredicateBatch {
 		}
 
 		static PayloadCursor open(Shape shape, RowState row, int capacity) throws IOException {
-			NativeLmdbQuerySource.NativeProbe probe = row.source.newProbe();
+			NativeLmdbQuerySource.NativeProbe probe = row.source.newProbe(row.cursorCancellation());
 			NativeLmdbQuerySource.WildcardAdjacency adjacency = null;
 			BatchCursor prefixCursor = null;
 			LmdbFusedSipFactorizedRuntime.Session memory = LmdbFusedSipFactorizedRuntime.current();
@@ -5677,7 +5686,7 @@ final class LmdbWildcardPredicateBatch {
 			boolean multiplicityOnly = payloadLive == 0L && !right.namedContextScope && !right.contexts.isFixed()
 					&& !right.hasRepeatedSlot() && !Shape.available(opposite, possibleBindings)
 					&& !Shape.available(right.c, possibleBindings);
-			NativeLmdbQuerySource.NativeProbe probe = row.source.newProbe();
+			NativeLmdbQuerySource.NativeProbe probe = row.source.newProbe(row.cursorCancellation());
 			NativeLmdbQuerySource.WildcardAdjacency adjacency = null;
 			LmdbFusedSipFactorizedRuntime.Session memory = LmdbFusedSipFactorizedRuntime.current();
 			long claimedBytes = 0L;
@@ -6188,7 +6197,7 @@ final class LmdbWildcardPredicateBatch {
 				return null;
 			}
 			boolean bySubject = subjectAvailable;
-			NativeLmdbQuerySource.NativeProbe probe = row.source.newProbe();
+			NativeLmdbQuerySource.NativeProbe probe = row.source.newProbe(row.cursorCancellation());
 			NativeLmdbQuerySource.NativeAdjacency adjacency = null;
 			LmdbFusedSipFactorizedRuntime.Session memory = LmdbFusedSipFactorizedRuntime.current();
 			long claimedBytes = 0L;
@@ -6395,6 +6404,7 @@ final class LmdbWildcardPredicateBatch {
 		private final int tileWidth;
 		private final boolean payloadPages;
 		private final LmdbFusedSipFactorizedRuntime.Session parentSession;
+		private final LmdbNativeProbeDeadline probeDeadline;
 		private final LmdbFusedSipFactorizedRuntime.Session memory;
 		private final long claimedBytes;
 		private final LmdbNativeParallelPipelines.TaskReservation reservation;
@@ -6425,6 +6435,7 @@ final class LmdbWildcardPredicateBatch {
 			this.tileWidth = tileWidth;
 			this.payloadPages = payloadPages;
 			this.parentSession = LmdbFusedSipFactorizedRuntime.currentOrNull();
+			this.probeDeadline = LmdbNativeProbeDeadline.currentOrNull();
 			this.memory = memory;
 			this.claimedBytes = claimedBytes;
 			this.reservation = reservation;
@@ -7118,14 +7129,14 @@ final class LmdbWildcardPredicateBatch {
 			@Override
 			public void run() {
 				boolean readySignalled = false;
-				try (LmdbFusedSipFactorizedRuntime.Scope ignored = LmdbFusedSipFactorizedRuntime
-						.inherit(parentSession)) {
+				try (LmdbFusedSipFactorizedRuntime.Scope ignored = LmdbFusedSipFactorizedRuntime.inherit(parentSession);
+						LmdbNativeProbeDeadline.Scope attempt = LmdbNativeProbeDeadline.inherit(probeDeadline)) {
 					try (var replayScope = replayContext.activate()) {
 						workerRow = new RowState(source, parentRow.layout, parentRow.base, parentRow.exactValuesMetrics,
 								parentRow.cancellation);
 						workerRow.memoryScope = parentRow.memoryScope;
 						workerRow.runtimePlan = parentRow.runtimePlan;
-						probe = source.newProbe();
+						probe = source.newProbe(workerRow.cursorCancellation());
 						adjacency = probe.wildcardAdjacency(bySubject);
 						if (adjacency == null || adjacency.predicateCount() != expectedPredicateCount) {
 							throw new ParallelPredicateDecline("wildcard predicate snapshot unavailable");

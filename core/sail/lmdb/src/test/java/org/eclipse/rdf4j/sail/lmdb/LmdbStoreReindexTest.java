@@ -15,17 +15,17 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.io.File;
+import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Set;
 import java.util.concurrent.TimeUnit;
 
 import org.eclipse.rdf4j.common.iteration.Iterations;
 import org.eclipse.rdf4j.model.IRI;
-import org.eclipse.rdf4j.model.Model;
 import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.Statement;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.ValueFactory;
-import org.eclipse.rdf4j.model.impl.LinkedHashModel;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.repository.Repository;
 import org.eclipse.rdf4j.repository.RepositoryConnection;
@@ -108,7 +108,7 @@ public class LmdbStoreReindexTest {
 		// update index usage
 		LmdbStore spocStore = new LmdbStore(dataDir, new LmdbStoreConfig("spoc"));
 		Repository spocRepository = new SailRepository(spocStore);
-		Model spocStatements;
+		Set<Statement> spocStatements;
 		try (var cleanup = LmdbTestUtil.onClose(spocRepository::shutDown)) {
 			spocRepository.init();
 			LmdbGcTestMaintenance.awaitPostReady(spocStore);
@@ -116,7 +116,7 @@ public class LmdbStoreReindexTest {
 
 			try (RepositoryConnection conn = spocRepository.getConnection()) {
 				logger.info("Repository size with SPOC index only: " + conn.size());
-				spocStatements = Iterations.addAll(conn.getStatements(null, null, null, false), new LinkedHashModel());
+				spocStatements = Iterations.addAll(conn.getStatements(null, null, null, false), new LinkedHashSet<>());
 			}
 		}
 
@@ -124,7 +124,7 @@ public class LmdbStoreReindexTest {
 		// update index usage
 		LmdbStore psocStore = new LmdbStore(dataDir, new LmdbStoreConfig("psoc"));
 		Repository psocRepository = new SailRepository(psocStore);
-		Model psocStatements;
+		Set<Statement> psocStatements;
 		try (var cleanup = LmdbTestUtil.onClose(psocRepository::shutDown)) {
 			psocRepository.init();
 			LmdbGcTestMaintenance.awaitPostReady(psocStore);
@@ -132,16 +132,16 @@ public class LmdbStoreReindexTest {
 
 			try (RepositoryConnection conn = psocRepository.getConnection()) {
 				logger.info("Repository size with PSOC index only: " + conn.size());
-				psocStatements = Iterations.addAll(conn.getStatements(null, null, null, false), new LinkedHashModel());
+				psocStatements = Iterations.addAll(conn.getStatements(null, null, null, false), new LinkedHashSet<>());
 			}
 		}
 
 		// Step 6: computing the differences of the contents of the indices
 		logger.info("Computing differences of sets...");
 
-		Model differenceA = new LinkedHashModel(spocStatements);
+		Set<Statement> differenceA = new LinkedHashSet<>(spocStatements);
 		differenceA.removeAll(psocStatements);
-		Model differenceB = new LinkedHashModel(psocStatements);
+		Set<Statement> differenceB = new LinkedHashSet<>(psocStatements);
 		differenceB.removeAll(spocStatements);
 
 		logger.info("Difference SPOC MINUS PSOC: " + differenceA.size());

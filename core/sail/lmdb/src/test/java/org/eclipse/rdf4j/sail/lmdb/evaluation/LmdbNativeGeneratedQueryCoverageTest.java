@@ -22,6 +22,7 @@ import java.nio.file.Path;
 import java.security.MessageDigest;
 import java.util.ArrayList;
 import java.util.Collections;
+import java.util.HashMap;
 import java.util.HexFormat;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
@@ -45,6 +46,8 @@ import org.eclipse.rdf4j.model.vocabulary.RDF;
 import org.eclipse.rdf4j.model.vocabulary.RDF4J;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.QueryEvaluationException;
+import org.eclipse.rdf4j.query.QueryExecutionPolicy;
+import org.eclipse.rdf4j.query.QueryExecutionPolicy.GraphJoinOptimization;
 import org.eclipse.rdf4j.query.QueryLanguage;
 import org.eclipse.rdf4j.query.TupleQueryResult;
 import org.eclipse.rdf4j.query.algebra.Graph;
@@ -301,6 +304,8 @@ class LmdbNativeGeneratedQueryCoverageTest {
 			""";
 
 	private final Map<String, String> savedProperties = new TreeMap<>();
+	// Both corpus gates need the same syntax facts; keep no parsed algebra or evaluator result in this cache.
+	private final Map<String, ParsedQueryShape> parsedCorpusShapes = new HashMap<>();
 
 	@TempDir
 	File dataDir;
@@ -321,6 +326,9 @@ class LmdbNativeGeneratedQueryCoverageTest {
 		store = new LmdbStore(dataDir, new LmdbStoreConfig("spoc,ospc,psoc,posc").setNativeEvaluationEnabled(true)
 				.setDirectAdjacencyEnabled(true)
 				.setDirectAdjacencyBuildOnStart(false));
+		// This class measures kernel eligibility; keep GRAPH join routing from replacing that candidate.
+		store.setQueryExecutionPolicy(
+				QueryExecutionPolicy.DEFAULT.withGraphJoinOptimization(GraphJoinOptimization.OFF));
 		repository = new SailRepository(store);
 		try (SailRepositoryConnection connection = repository.getConnection()) {
 			connection.begin();
@@ -444,7 +452,7 @@ class LmdbNativeGeneratedQueryCoverageTest {
 				total++;
 				counts.merge(query.category(), 1, Integer::sum);
 				try {
-					QueryParserUtil.parseQuery(QueryLanguage.SPARQL, query.sparql(), null);
+					parsedQueryShape(query.sparql());
 				} catch (RuntimeException problem) {
 					failures.add(query.category() + ": " + problem.getMessage() + "\n" + query.sparql());
 				}
@@ -479,12 +487,12 @@ class LmdbNativeGeneratedQueryCoverageTest {
 				total++;
 				CoverageCounts counts = coverage.computeIfAbsent(query.category(), ignored -> new CoverageCounts());
 				counts.total++;
-				ParsedQuery parsed = QueryParserUtil.parseQuery(QueryLanguage.SPARQL, query.sparql(), null);
-				if (!(parsed instanceof ParsedTupleQuery)) {
+				ParsedQueryShape shape = parsedQueryShape(query.sparql());
+				if (!shape.tuple()) {
 					counts.nonTuple++;
 					continue;
 				}
-				if (containsService(parsed.getTupleExpr())) {
+				if (shape.externalService()) {
 					counts.externalService++;
 					continue;
 				}
@@ -1712,6 +1720,15 @@ class LmdbNativeGeneratedQueryCoverageTest {
 		return selected;
 	}
 
+	/** Parse each corpus input once for classification; evaluation still prepares every query independently. */
+	private ParsedQueryShape parsedQueryShape(String query) {
+		return parsedCorpusShapes.computeIfAbsent(query, sparql -> {
+			ParsedQuery parsed = QueryParserUtil.parseQuery(QueryLanguage.SPARQL, sparql, null);
+			boolean tuple = parsed instanceof ParsedTupleQuery;
+			return new ParsedQueryShape(tuple, tuple && containsService(parsed.getTupleExpr()));
+		});
+	}
+
 	private static boolean containsService(TupleExpr expression) {
 		boolean[] found = { false };
 		expression.visit(new AbstractQueryModelVisitor<RuntimeException>() {
@@ -1781,6 +1798,9 @@ class LmdbNativeGeneratedQueryCoverageTest {
 	private void save(String key, String value) {
 		savedProperties.putIfAbsent(key, System.getProperty(key));
 		System.setProperty(key, value);
+	}
+
+	private record ParsedQueryShape(boolean tuple, boolean externalService) {
 	}
 
 	private static final class CoverageCounts {

@@ -1592,14 +1592,18 @@ namespace workbench {
             return result;
         }
 
+        function timeoutHeading(): FormattedLine[] {
+            return [textLine('Timed out while retrieving explanation! Explanation may be incomplete!'),
+                textLine('You can change the timeout by setting .setMaxExecutionTime(...) on your query.'),
+                textLine('')];
+        }
+
         function formatLines(node: QueryPlanNode, depth: number, ordered: boolean,
                              level: ExplainLevel, lineSeparator: string,
                              hiddenProperties: string[], structured: boolean): FormattedLine[] {
             var result: FormattedLine[] = [];
-            if (node.timedOut) {
-                result.push(textLine('Timed out while retrieving explanation! Explanation may be incomplete!', 'annotation'));
-                result.push(textLine('You can change the timeout by setting .setMaxExecutionTime(...) on your query.'));
-                result.push(textLine(''));
+            if (depth > 0 && node.timedOut) {
+                result = timeoutHeading();
             }
             result = result.concat(splitPhysicalLines(nodeLine(node, level, hiddenProperties, structured), lineSeparator));
             var strategyDecisions = node.strategyDecisions || [];
@@ -2457,7 +2461,7 @@ namespace workbench {
                 lines = preludeLines.concat(includeProfile
                     ? [textLine('')] : [textLine(''), textLine('Query explanation', 'node-type')], lines);
             }
-            return lines;
+            return plan.timedOut ? timeoutHeading().concat(lines) : lines;
         }
 
         export function getProperties(plan: QueryPlanNode, level?: ExplainLevel): string[] {

@@ -23,6 +23,8 @@ import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
 import java.util.concurrent.atomic.AtomicLong;
+import java.util.concurrent.atomic.AtomicReferenceFieldUpdater;
+import java.util.function.Predicate;
 
 import org.eclipse.rdf4j.common.annotation.InternalUseOnly;
 import org.eclipse.rdf4j.model.BNode;
@@ -30,8 +32,13 @@ import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Literal;
 import org.eclipse.rdf4j.model.TripleTerm;
 import org.eclipse.rdf4j.model.Value;
+import org.eclipse.rdf4j.model.base.CoreDatatype;
+import org.eclipse.rdf4j.model.datatypes.XMLDatatypeUtil;
 import org.eclipse.rdf4j.model.impl.BooleanLiteral;
+import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
+import org.eclipse.rdf4j.model.vocabulary.FN;
 import org.eclipse.rdf4j.query.BindingSet;
+import org.eclipse.rdf4j.query.Dataset;
 import org.eclipse.rdf4j.query.algebra.AggregateOperator;
 import org.eclipse.rdf4j.query.algebra.And;
 import org.eclipse.rdf4j.query.algebra.ArbitraryLengthPath;
@@ -46,6 +53,7 @@ import org.eclipse.rdf4j.query.algebra.Extension;
 import org.eclipse.rdf4j.query.algebra.ExtensionElem;
 import org.eclipse.rdf4j.query.algebra.Filter;
 import org.eclipse.rdf4j.query.algebra.Filter.ConditionBindingScope;
+import org.eclipse.rdf4j.query.algebra.FunctionCall;
 import org.eclipse.rdf4j.query.algebra.Graph;
 import org.eclipse.rdf4j.query.algebra.Group;
 import org.eclipse.rdf4j.query.algebra.GroupElem;
@@ -115,25 +123,45 @@ public final class QueryAlgebraBindingAnalysis {
 	private final TupleExpr root;
 	private final ReadOnlyContext rootContext;
 	private final boolean bindingAssignment;
-	private final Map<QueryModelNode, ReadOnlyContext> contextCache = new IdentityHashMap<>();
-	private final Map<QueryModelNode, Long> scopeIdentities = new IdentityHashMap<>();
-	private final Map<OutputKey, OutputFacts> outputCache = new HashMap<>();
-	private final Map<OutputKey, Boolean> resultSetModifierCache = new HashMap<>();
-	private final Map<ChildInputKey, ReadOnlyContext> childInputCache = new HashMap<>();
-	private final Map<OutputKey, ReadOnlyContext> leftJoinInputCache = new HashMap<>();
+	private final Predicate<StatementPattern> datasetCanScanDefaultContext;
+	// Most optimizer invocations never ask for contextual facts. Reserve identity tables only on first use.
+	private Map<QueryModelNode, ReadOnlyContext> contextCache;
+	private Map<TupleExpr, Boolean> nullableContextSubtrees;
+	// Structural subtree answers asked again by every enclosing join; the tree only changes before invalidate().
+	private Map<TupleExpr, Boolean> graphBoundarySubtrees;
+	private Map<TupleExpr, Boolean> differenceScopeSubtrees;
+	private Map<TupleExpr, Boolean> modifierSubtrees;
+	private Map<TupleExpr, Boolean> subqueryProjectionSubtrees;
+	private Map<QueryModelNode, Long> scopeIdentities;
+	// An analysis is created by every optimizer of every query and most never fill these; they start out absent.
+	private Map<OutputKey, OutputFacts> outputCache;
+	private Map<OutputKey, Boolean> resultSetModifierCache;
+	private Map<ChildInputKey, ReadOnlyContext> childInputCache;
+	private Map<OutputKey, ReadOnlyContext> leftJoinInputCache;
 	private final AtomicLong nextScopeIdentity = new AtomicLong(1);
 
 	private QueryAlgebraBindingAnalysis(TupleExpr root, BindingSet initialBindings, Set<String> externalNames,
 			Set<String> possibleInputNames) {
-		this(root, initialBindings, externalNames, possibleInputNames, false);
+		this(root, initialBindings, externalNames, possibleInputNames, false, null);
 	}
 
 	private QueryAlgebraBindingAnalysis(TupleExpr root, BindingSet initialBindings, Set<String> externalNames,
-			Set<String> possibleInputNames, boolean bindingAssignment) {
+			Set<String> possibleInputNames, boolean bindingAssignment,
+			Predicate<StatementPattern> datasetCanScanDefaultContext) {
 		this.root = root;
 		this.bindingAssignment = bindingAssignment;
-		Map<String, Value> values = new HashMap<>();
-		if (initialBindings != null) {
+		this.datasetCanScanDefaultContext = datasetCanScanDefaultContext;
+		Map<String, Value> values;
+		if (initialBindings == null || externalNames.isEmpty()) {
+			values = Map.of();
+		} else if (externalNames.size() == 1) {
+			// One API value is the common prepared-query case; immutable singletons make the context's copies free.
+			String name = externalNames.iterator().next();
+			Value value = initialBindings.getValue(name);
+			values = value == null ? Map.of() : Map.of(name, value);
+			externalNames = Set.of(name);
+		} else {
+			values = new HashMap<>();
 			for (String name : initialBindings.getBindingNames()) {
 				Value value = initialBindings.getValue(name);
 				if (value != null && externalNames.contains(name)) {
@@ -142,22 +170,24 @@ public final class QueryAlgebraBindingAnalysis {
 			}
 		}
 		this.rootContext = ReadOnlyContext.external(values, externalNames, 0).withPossibleInputs(possibleInputNames);
-		if (root != null) {
-			contextCache.put(root, rootContext);
-		}
 	}
 
 	private QueryAlgebraBindingAnalysis(TupleExpr root, ReadOnlyContext rootContext) {
 		this.root = root;
 		this.rootContext = rootContext;
 		this.bindingAssignment = false;
-		if (root != null) {
-			contextCache.put(root, rootContext);
-		}
+		this.datasetCanScanDefaultContext = null;
 	}
 
 	public static QueryAlgebraBindingAnalysis withBindingValues(TupleExpr root, BindingSet initialBindings) {
-		return withBindingValues(root, initialBindings, false);
+		return withBindingValues(root, initialBindings, false, null);
+	}
+
+	/** Uses the actual dataset selection, including the store defaults when {@code dataset} is {@code null}. */
+	public static QueryAlgebraBindingAnalysis withBindingValues(TupleExpr root, BindingSet initialBindings,
+			Dataset dataset) {
+		return withBindingValues(root, initialBindings, false,
+				statement -> TupleExprs.canScanDefaultContext(statement, dataset));
 	}
 
 	/**
@@ -166,18 +196,20 @@ public final class QueryAlgebraBindingAnalysis {
 	 * Compatible relational outputs constrain an API value rather than assigning a new value to its name.
 	 */
 	public static QueryAlgebraBindingAnalysis forBindingAssignment(TupleExpr root, BindingSet initialBindings) {
-		return withBindingValues(root, initialBindings, true);
+		return withBindingValues(root, initialBindings, true, null);
 	}
 
 	private static QueryAlgebraBindingAnalysis withBindingValues(TupleExpr root, BindingSet initialBindings,
-			boolean bindingAssignment) {
+			boolean bindingAssignment, Predicate<StatementPattern> datasetCanScanDefaultContext) {
 		BindingSet values = initialBindings == null ? EmptyBindingSet.getInstance() : initialBindings;
-		Set<String> names = new HashSet<>();
+		Set<String> bound = new HashSet<>();
 		for (String name : values.getBindingNames()) {
 			if (values.getValue(name) != null) {
-				names.add(name);
+				bound.add(name);
 			}
 		}
+		// A query without API values: the shared immutable set makes every later defensive copy free.
+		Set<String> names = bound.isEmpty() ? Set.of() : bound;
 		if (!names.isEmpty() && root != null) {
 			root.visit(new AbstractQueryModelVisitor<RuntimeException>() {
 				@Override
@@ -186,9 +218,15 @@ public final class QueryAlgebraBindingAnalysis {
 					names.remove(projection.getInheritedGraphParameter());
 					super.meet(projection);
 				}
+
+				@Override
+				public void meet(StatementPattern pattern) {
+					// Only variables below; this walk runs for every optimizer of every query.
+				}
 			});
 		}
-		return new QueryAlgebraBindingAnalysis(root, values, names, Set.of(), bindingAssignment);
+		return new QueryAlgebraBindingAnalysis(root, values, names, Set.of(), bindingAssignment,
+				datasetCanScanDefaultContext);
 	}
 
 	/**
@@ -214,26 +252,37 @@ public final class QueryAlgebraBindingAnalysis {
 	/** Returns a read-only frame at the node's actual evaluator position. */
 	public ReadOnlyContext contextAt(QueryModelNode node) {
 		Objects.requireNonNull(node, "node");
-		ReadOnlyContext cached = contextCache.get(node);
+		if (node == root) {
+			return rootContext;
+		}
+		Map<QueryModelNode, ReadOnlyContext> contexts = contextCache;
+		if (contexts == null) {
+			contexts = new IdentityHashMap<>();
+			if (root != null) {
+				contexts.put(root, rootContext);
+			}
+			contextCache = contexts;
+		}
+		ReadOnlyContext cached = contexts.get(node);
 		if (cached != null) {
 			return cached;
 		}
 		Deque<QueryModelNode> path = new ArrayDeque<>();
 		QueryModelNode current = node;
-		while (current != null && !contextCache.containsKey(current)) {
+		while (current != null && !contexts.containsKey(current)) {
 			path.push(current);
 			current = current.getParentNode();
 		}
-		ReadOnlyContext context = current == null ? rootContext : contextCache.get(current);
+		ReadOnlyContext context = current == null ? rootContext : contexts.get(current);
 		while (!path.isEmpty()) {
 			QueryModelNode child = path.pop();
 			QueryModelNode parent = child.getParentNode();
 			if (parent != null) {
 				context = childInput(parent, child, context);
 			}
-			contextCache.put(child, context);
+			contexts.put(child, context);
 		}
-		return contextCache.get(node);
+		return contexts.get(node);
 	}
 
 	/** Visits a model subtree with the child input phase used by its evaluator. */
@@ -262,11 +311,14 @@ public final class QueryAlgebraBindingAnalysis {
 		Objects.requireNonNull(expression, "expression");
 		Objects.requireNonNull(input, "input");
 		OutputKey key = new OutputKey(expression, input);
-		OutputFacts cached = outputCache.get(key);
+		OutputFacts cached = outputCache == null ? null : outputCache.get(key);
 		if (cached != null) {
 			return cached;
 		}
 		OutputFacts result = transfer(expression, input);
+		if (outputCache == null) {
+			outputCache = new HashMap<>();
+		}
 		outputCache.put(key, result);
 		return result;
 	}
@@ -398,7 +450,7 @@ public final class QueryAlgebraBindingAnalysis {
 
 		ReadOnlyContext parentInput = contextAt(parent);
 		if (parent instanceof Join join && replacedNode == join.getRightArg()) {
-			return withOutput(parentInput, outputFacts(join.getLeftArg(), parentInput));
+			return siblingInput(join.getLeftArg(), join.getRightArg(), parentInput, true);
 		}
 		return childInput(parent, replacedNode, parentInput);
 	}
@@ -412,15 +464,26 @@ public final class QueryAlgebraBindingAnalysis {
 	}
 
 	public void invalidate() {
-		contextCache.clear();
-		if (root != null) {
-			contextCache.put(root, rootContext);
+		if (contextCache != null) {
+			contextCache.clear();
+			if (root != null) {
+				contextCache.put(root, rootContext);
+			}
 		}
-		outputCache.clear();
-		resultSetModifierCache.clear();
-		childInputCache.clear();
-		leftJoinInputCache.clear();
-		scopeIdentities.clear();
+		if (nullableContextSubtrees != null) {
+			nullableContextSubtrees.clear();
+		}
+		graphBoundarySubtrees = null;
+		differenceScopeSubtrees = null;
+		modifierSubtrees = null;
+		subqueryProjectionSubtrees = null;
+		outputCache = null;
+		resultSetModifierCache = null;
+		childInputCache = null;
+		leftJoinInputCache = null;
+		if (scopeIdentities != null) {
+			scopeIdentities.clear();
+		}
 	}
 
 	/** Creates a local mutable owner; consumers must export an immutable snapshot before sharing it. */
@@ -518,14 +581,33 @@ public final class QueryAlgebraBindingAnalysis {
 	 * expand already analyzed operands. Distinct input owners remain distinct without hashing or comparing RDF values.
 	 */
 	public ReadOnlyContext childInput(QueryModelNode parent, QueryModelNode child, ReadOnlyContext input) {
+		if (passesInputThrough(parent, child)) {
+			// The transition below would return the input itself; remembering that costs more than the answer.
+			return input;
+		}
 		ChildInputKey key = new ChildInputKey(parent, child, input);
-		ReadOnlyContext cached = childInputCache.get(key);
+		ReadOnlyContext cached = childInputCache == null ? null : childInputCache.get(key);
 		if (cached != null) {
 			return cached;
 		}
 		ReadOnlyContext result = computeChildInput(parent, child, input);
+		if (childInputCache == null) {
+			childInputCache = new HashMap<>();
+		}
 		childInputCache.put(key, result);
 		return result;
+	}
+
+	/** The edges for which {@link #computeChildInput} returns its input unchanged without looking at the frame. */
+	private static boolean passesInputThrough(QueryModelNode parent, QueryModelNode child) {
+		if (parent instanceof ValueExpr) {
+			// Only a subquery operand of a value expression gets a frame of its own.
+			return !(parent instanceof TupleExpr) && !(child instanceof TupleExpr);
+		}
+		if (parent.getClass() == Filter.class) {
+			return child != ((Filter) parent).getCondition();
+		}
+		return parent.getClass() == Join.class && child != ((Join) parent).getRightArg();
 	}
 
 	private ReadOnlyContext computeChildInput(QueryModelNode parent, QueryModelNode child, ReadOnlyContext input) {
@@ -561,16 +643,15 @@ public final class QueryAlgebraBindingAnalysis {
 			ReadOnlyContext leftJoinInput = leftJoinInput(leftJoin, input);
 			if (child == leftJoin.getRightArg()) {
 				if (TupleExprs.containsSubquery(leftJoin.getRightArg())
-						|| TupleExprs.subqueryObservesInjectedBindings(leftJoin.getRightArg(),
-								leftJoin.getLeftArg().getBindingNames())) {
+						|| subqueryObservesBindingsOf(leftJoin.getRightArg(), leftJoin.getLeftArg())) {
 					// ScopedLeftJoinIterator withholds the left row, but forwards the OPTIONAL's entry input.
 					return input.withScopeIdentity(nextScopeId(leftJoin.getRightArg()));
 				}
-				if (TupleExprs.requiresIndependentEvaluation(leftJoin.getRightArg())
+				if (requiresIndependentEvaluation(leftJoin.getRightArg())
 						|| containsResultSetModifier(leftJoin.getRightArg(), input)) {
 					return input;
 				}
-				return withOutput(leftJoinInput, outputFacts(leftJoin.getLeftArg(), leftJoinInput));
+				return siblingInput(leftJoin.getLeftArg(), leftJoin.getRightArg(), leftJoinInput, false);
 			}
 			if (child == leftJoin.getLeftArg()) {
 				return leftJoinInput;
@@ -691,10 +772,13 @@ public final class QueryAlgebraBindingAnalysis {
 			// Classify from the frame before this join's left side is evaluated. Modifier analysis roots itself at the
 			// right subtree, so its inherited input is preserved while parent links outside that subtree are ignored.
 			if (!isOutOfScopeForLeftBindings(right, input)
-					&& !TupleExprs.subqueryObservesInjectedBindings(right, join.getLeftArg().getBindingNames())) {
-				return withOutput(input, outputFacts(join.getLeftArg(), input));
+					&& !subqueryObservesBindingsOf(right, join.getLeftArg())) {
+				return siblingInput(join.getLeftArg(), right, input, true);
 			}
 			return input;
+		}
+		if ("ScopedLeftJoinIterator".equals(algorithm) && maySelectSiblingInputs(join.getLeftArg(), right, true)) {
+			return possibleSiblingInput(input, outputFacts(join.getLeftArg(), input));
 		}
 		// Preparation may have selected another contract after the optimizer marked a merge candidate.
 		if (INPUT_ONLY_JOIN_ALGORITHMS.contains(algorithm)) {
@@ -704,6 +788,73 @@ public final class QueryAlgebraBindingAnalysis {
 			return withOutput(input, outputFacts(join.getLeftArg(), input));
 		}
 		return input.withUnknownDomain();
+	}
+
+	private ReadOnlyContext siblingInput(TupleExpr left, TupleExpr right, ReadOnlyContext input, boolean innerJoin) {
+		OutputFacts leftOutput = outputFacts(left, input);
+		return maySelectSiblingInputs(left, right, innerJoin) ? possibleSiblingInput(input, leftOutput)
+				: withOutput(input, leftOutput);
+	}
+
+	private ReadOnlyContext possibleSiblingInput(ReadOnlyContext input, OutputFacts leftOutput) {
+		// Nullable-context joins may evaluate different arms with different subsets of the sibling row. Only
+		// invocation bindings retained by the sibling are guaranteed at a site shared by those arms.
+		ReadOnlyContext retained = input.without(leftOutput.overwrittenInputNames);
+		return leftOutput.possibleOutputsKnown ? retained.withPossibleInputs(leftOutput.possibleOutputs)
+				: retained.withUnknownDomain();
+	}
+
+	private boolean maySelectSiblingInputs(TupleExpr left, TupleExpr right, boolean innerJoin) {
+		return overlapsNullableContexts(right, left) || innerJoin && overlapsNullableContexts(left, right);
+	}
+
+	private boolean overlapsNullableContexts(TupleExpr expression, TupleExpr sibling) {
+		return containsNullableContext(expression) && observesNullableContext(expression, sibling.getBindingNames());
+	}
+
+	private boolean containsNullableContext(TupleExpr expression) {
+		if (nullableContextSubtrees == null) {
+			nullableContextSubtrees = new IdentityHashMap<>();
+		}
+		Boolean cached = nullableContextSubtrees.get(expression);
+		if (cached != null) {
+			return cached;
+		}
+		boolean contains = false;
+		if (expression instanceof StatementPattern statement) {
+			contains = nullableContextBinding(statement) != null;
+		} else if (!(expression instanceof Service)) {
+			for (TupleExpr child : TupleExprs.getChildren(expression)) {
+				if (containsNullableContext(child)) {
+					contains = true;
+					break;
+				}
+			}
+		}
+		nullableContextSubtrees.put(expression, contains);
+		return contains;
+	}
+
+	private boolean observesNullableContext(TupleExpr expression, Set<String> names) {
+		if (names.isEmpty() || !containsNullableContext(expression)) {
+			return false;
+		}
+		if (expression instanceof StatementPattern statement) {
+			return names.contains(nullableContextBinding(statement));
+		}
+		for (TupleExpr child : TupleExprs.getChildren(expression)) {
+			if (observesNullableContext(child, names)) {
+				return true;
+			}
+		}
+		return false;
+	}
+
+	private String nullableContextBinding(StatementPattern statement) {
+		String name = TupleExprs.contextOnlyBindingName(statement);
+		return name != null && (datasetCanScanDefaultContext == null || datasetCanScanDefaultContext.test(statement))
+				? name
+				: null;
 	}
 
 	private ReadOnlyContext unknownChildInput(QueryModelNode parent, ReadOnlyContext input) {
@@ -739,19 +890,21 @@ public final class QueryAlgebraBindingAnalysis {
 		// right transition asks for the left facts again: sharing this frame keeps that lookup identical to the
 		// left transition instead of doubling the entire left subtree at each nested OPTIONAL.
 		OutputKey key = new OutputKey(leftJoin, input);
-		ReadOnlyContext cached = leftJoinInputCache.get(key);
+		ReadOnlyContext cached = leftJoinInputCache == null ? null : leftJoinInputCache.get(key);
 		if (cached != null) {
 			return cached;
 		}
 		ReadOnlyContext result = computeLeftJoinInput(leftJoin, input);
+		if (leftJoinInputCache == null) {
+			leftJoinInputCache = new HashMap<>();
+		}
 		leftJoinInputCache.put(key, result);
 		return result;
 	}
 
 	private ReadOnlyContext computeLeftJoinInput(LeftJoin leftJoin, ReadOnlyContext input) {
-		if (TupleExprs.requiresIndependentEvaluation(leftJoin.getRightArg())
-				|| TupleExprs.subqueryObservesInjectedBindings(leftJoin.getRightArg(),
-						leftJoin.getLeftArg().getBindingNames())) {
+		if (requiresIndependentEvaluation(leftJoin.getRightArg())
+				|| subqueryObservesBindingsOf(leftJoin.getRightArg(), leftJoin.getLeftArg())) {
 			return input;
 		}
 		Set<String> optionalInputNames = new HashSet<>(VarNameCollector.process(leftJoin.getRightArg()));
@@ -846,7 +999,7 @@ public final class QueryAlgebraBindingAnalysis {
 	}
 
 	private boolean isOutOfScopeForLeftBindings(TupleExpr expression, ReadOnlyContext input) {
-		return TupleExprs.requiresIndependentEvaluation(expression)
+		return requiresIndependentEvaluation(expression)
 				|| containsResultSetModifier(expression, input)
 				|| containsDifferenceInScope(expression);
 	}
@@ -857,12 +1010,19 @@ public final class QueryAlgebraBindingAnalysis {
 	 * (which made the cost exponential in the join depth).
 	 */
 	private boolean containsResultSetModifier(TupleExpr expression, ReadOnlyContext input) {
+		if (!containsModifierOperator(expression)) {
+			// Most operands hold no SLICE, DISTINCT or REDUCED at all; no input can make them a modifier.
+			return false;
+		}
 		OutputKey key = new OutputKey(expression, input);
-		Boolean cached = resultSetModifierCache.get(key);
+		Boolean cached = resultSetModifierCache == null ? null : resultSetModifierCache.get(key);
 		if (cached != null) {
 			return cached;
 		}
 		boolean result = computeContainsResultSetModifier(expression, input);
+		if (resultSetModifierCache == null) {
+			resultSetModifierCache = new HashMap<>();
+		}
 		resultSetModifierCache.put(key, result);
 		return result;
 	}
@@ -895,6 +1055,65 @@ public final class QueryAlgebraBindingAnalysis {
 		return false;
 	}
 
+	/**
+	 * Same answer as {@link TupleExprs#subqueryObservesInjectedBindings(TupleExpr, Set)} for the sibling's binding
+	 * names. Those names are collected from the sibling's whole subtree, so they are asked for only when the operand
+	 * holds a nested SELECT at all.
+	 */
+	private boolean subqueryObservesBindingsOf(TupleExpr subtree, TupleExpr sibling) {
+		return containsSubqueryProjection(subtree)
+				&& TupleExprs.subqueryObservesInjectedBindings(subtree, sibling.getBindingNames());
+	}
+
+	private boolean containsSubqueryProjection(TupleExpr subtree) {
+		if (subqueryProjectionSubtrees == null) {
+			subqueryProjectionSubtrees = new IdentityHashMap<>();
+		}
+		Boolean cached = subqueryProjectionSubtrees.get(subtree);
+		if (cached != null) {
+			return cached;
+		}
+		boolean[] found = { false };
+		subtree.visit(new AbstractSimpleQueryModelVisitor<RuntimeException>(false) {
+			@Override
+			public void meet(Projection projection) {
+				if (projection.isSubquery()) {
+					found[0] = true;
+				} else if (!found[0]) {
+					super.meet(projection);
+				}
+			}
+		});
+		subqueryProjectionSubtrees.put(subtree, found[0]);
+		return found[0];
+	}
+
+	/** Whether the result-set modifier classification can meet an operator it may answer true for at all. */
+	private boolean containsModifierOperator(TupleExpr expression) {
+		if (expression instanceof Service) {
+			return false;
+		}
+		if (expression instanceof Slice || expression instanceof Distinct || expression instanceof Reduced) {
+			return true;
+		}
+		if (modifierSubtrees == null) {
+			modifierSubtrees = new IdentityHashMap<>();
+		}
+		Boolean cached = modifierSubtrees.get(expression);
+		if (cached != null) {
+			return cached;
+		}
+		boolean contains = false;
+		for (TupleExpr child : TupleExprs.getChildren(expression)) {
+			if (containsModifierOperator(child)) {
+				contains = true;
+				break;
+			}
+		}
+		modifierSubtrees.put(expression, contains);
+		return contains;
+	}
+
 	private boolean containsDifferenceInScope(TupleExpr expression) {
 		if (expression instanceof Difference) {
 			return true;
@@ -902,15 +1121,62 @@ public final class QueryAlgebraBindingAnalysis {
 		if (expression instanceof Service || expression instanceof Lateral) {
 			return false;
 		}
+		if (differenceScopeSubtrees == null) {
+			differenceScopeSubtrees = new IdentityHashMap<>();
+		}
+		Boolean cached = differenceScopeSubtrees.get(expression);
+		if (cached != null) {
+			return cached;
+		}
+		boolean contains = false;
 		for (TupleExpr child : TupleExprs.getChildren(expression)) {
 			if (containsDifferenceInScope(child)) {
-				return true;
+				contains = true;
+				break;
 			}
 		}
-		return false;
+		differenceScopeSubtrees.put(expression, contains);
+		return contains;
+	}
+
+	/**
+	 * Same answer as {@link TupleExprs#requiresIndependentEvaluation(TupleExpr)}. Every enclosing join asks about its
+	 * whole right operand, so the graph-boundary walk is remembered per node instead of repeated per join.
+	 */
+	private boolean requiresIndependentEvaluation(TupleExpr expression) {
+		return !(expression instanceof Service) && (TupleExprs.isVariableScopeChange(expression)
+				|| TupleExprs.containsSubquery(expression) || containsGraphBoundary(expression));
+	}
+
+	private boolean containsGraphBoundary(TupleExpr expression) {
+		if (expression instanceof Graph) {
+			return true;
+		}
+		if (expression instanceof Service) {
+			return false;
+		}
+		if (graphBoundarySubtrees == null) {
+			graphBoundarySubtrees = new IdentityHashMap<>();
+		}
+		Boolean cached = graphBoundarySubtrees.get(expression);
+		if (cached != null) {
+			return cached;
+		}
+		boolean contains = false;
+		for (TupleExpr child : TupleExprs.getChildren(expression)) {
+			if (containsGraphBoundary(child)) {
+				contains = true;
+				break;
+			}
+		}
+		graphBoundarySubtrees.put(expression, contains);
+		return contains;
 	}
 
 	private long nextScopeId(QueryModelNode scope) {
+		if (scopeIdentities == null) {
+			scopeIdentities = new IdentityHashMap<>();
+		}
 		return scopeIdentities.computeIfAbsent(scope, ignored -> nextScopeIdentity.getAndIncrement());
 	}
 
@@ -946,7 +1212,13 @@ public final class QueryAlgebraBindingAnalysis {
 		if (expression instanceof StatementPattern statement) {
 			Set<String> names = variableNames(statement.getVarList());
 			Map<String, Value> fixed = fixedFromVars(statement.getVarList(), input);
-			return OutputFacts.known(names, names, fixed, kindsFromValues(fixed), input, true);
+			String nullableContext = nullableContextBinding(statement);
+			Set<String> guaranteed = names;
+			if (nullableContext != null && !input.guaranteedNames.contains(nullableContext)) {
+				guaranteed = new HashSet<>(names);
+				guaranteed.remove(nullableContext);
+			}
+			return OutputFacts.known(names, guaranteed, fixed, kindsFromValues(fixed), input, true);
 		}
 		if (expression instanceof ZeroLengthPath path) {
 			Set<String> names = variableNames(path.getVarList());
@@ -1071,11 +1343,15 @@ public final class QueryAlgebraBindingAnalysis {
 			if (!left.possibleOutputsKnown || !right.possibleOutputsKnown) {
 				return OutputFacts.unknown(input);
 			}
-			Set<String> guaranteed = union(left.guaranteedOutputs, right.guaranteedOutputs);
-			Set<String> overwritten = union(left.overwrittenInputNames, right.overwrittenInputNames);
-			return OutputFacts.known(union(left.possibleOutputs, right.possibleOutputs), guaranteed,
-					joinFixedValues(left, right, guaranteed), joinKinds(left, right, guaranteed), input, true,
-					left.retainedInputNames).withOverwrittenInputs(overwritten);
+			Set<String> possible = unionOf(left.possibleOutputs, right.possibleOutputs);
+			// Operands that guarantee all they can bind share one set for both; then so does their join.
+			Set<String> guaranteed = left.guaranteedOutputs == left.possibleOutputs
+					&& right.guaranteedOutputs == right.possibleOutputs ? possible
+							: unionOf(left.guaranteedOutputs, right.guaranteedOutputs);
+			Set<String> overwritten = unionOf(left.overwrittenInputNames, right.overwrittenInputNames);
+			return OutputFacts.known(possible, guaranteed, joinFixedValues(left, right, guaranteed),
+					joinKinds(left, right, guaranteed), input, true, left.retainedInputNames)
+					.withOverwrittenInputs(overwritten);
 		}
 		if (expression instanceof Lateral lateral) {
 			OutputFacts left = outputFacts(lateral.getLeftArg(), childInput(lateral, lateral.getLeftArg(), input));
@@ -1143,48 +1419,56 @@ public final class QueryAlgebraBindingAnalysis {
 		if (!assignment.hasRepeatableBindingSets()) {
 			return OutputFacts.unknown(input);
 		}
-		Set<String> possible = new HashSet<>();
-		Set<String> guaranteed = null;
-		Map<String, Value> fixed = new HashMap<>();
-		Map<String, ValueKind> candidateKinds = new HashMap<>();
-		Set<String> varyingValues = new HashSet<>();
-		boolean hasRows = false;
+		// Each column records its contiguous prefix of non-null rows. A gap can never become guaranteed later.
+		Map<String, AssignmentColumn> columns = new HashMap<>();
+		long rows = 0;
 		for (BindingSet row : assignment.getBindingSets()) {
-			hasRows = true;
-			Set<String> rowNames = new HashSet<>();
+			rows++;
 			for (String name : row.getBindingNames()) {
 				Value value = row.getValue(name);
 				if (value == null) {
 					continue;
 				}
-				rowNames.add(name);
-				possible.add(name);
-				Value previous = fixed.putIfAbsent(name, value);
-				if (previous != null && !previous.equals(value)) {
-					varyingValues.add(name);
+				AssignmentColumn column = columns.get(name);
+				if (column == null) {
+					column = new AssignmentColumn(value);
+					columns.put(name, column);
+				} else if (!column.firstValue.equals(value)) {
+					column.varying = true;
 				}
-				candidateKinds.putIfAbsent(name, valueKind(value));
-			}
-			if (guaranteed == null) {
-				guaranteed = new HashSet<>(rowNames);
-			} else {
-				guaranteed.retainAll(rowNames);
+				if (column.presentThrough == rows - 1) {
+					column.presentThrough = rows;
+				}
 			}
 		}
-		if (!hasRows) {
+		if (rows == 0) {
 			return OutputFacts.knownEmpty(input);
 		}
-		Set<String> guaranteedNames = guaranteed == null ? Set.of() : guaranteed;
-		fixed.keySet().retainAll(guaranteedNames);
-		fixed.keySet().removeAll(varyingValues);
+		Set<String> guaranteed = new HashSet<>();
+		Map<String, Value> fixed = new HashMap<>();
 		Map<String, Set<ValueKind>> kinds = new HashMap<>();
-		for (String name : guaranteedNames) {
-			ValueKind kind = candidateKinds.get(name);
-			if (kind != null && !varyingValues.contains(name)) {
-				kinds.put(name, Set.of(kind));
+		for (Map.Entry<String, AssignmentColumn> entry : columns.entrySet()) {
+			AssignmentColumn column = entry.getValue();
+			if (column.presentThrough == rows) {
+				String name = entry.getKey();
+				guaranteed.add(name);
+				if (!column.varying) {
+					fixed.put(name, column.firstValue);
+					kinds.put(name, Set.of(valueKind(column.firstValue)));
+				}
 			}
 		}
-		return OutputFacts.known(possible, guaranteedNames, fixed, kinds, input, true);
+		return OutputFacts.known(columns.keySet(), guaranteed, fixed, kinds, input, true);
+	}
+
+	private static final class AssignmentColumn {
+		final Value firstValue;
+		long presentThrough;
+		boolean varying;
+
+		AssignmentColumn(Value firstValue) {
+			this.firstValue = firstValue;
+		}
 	}
 
 	private OutputFacts extensionFacts(Extension extension, ReadOnlyContext input) {
@@ -1251,12 +1535,28 @@ public final class QueryAlgebraBindingAnalysis {
 	}
 
 	private OutputFacts filterFacts(OutputFacts child, ValueExpr condition, ReadOnlyContext input) {
+		if (!mayAddFilterFacts(condition)) {
+			// The condition leaves the argument's facts as they are; its immutable collections are passed on.
+			return OutputFacts.known(child.possibleOutputs, child.guaranteedOutputs, child.fixedValues,
+					child.valueKinds, input, true, child.retainedInputNames)
+					.withOverwrittenInputs(child.overwrittenInputNames);
+		}
 		Set<String> guaranteed = new HashSet<>(child.guaranteedOutputs);
 		Map<String, Value> fixed = new HashMap<>(child.fixedValues);
 		Map<String, Set<ValueKind>> kinds = new HashMap<>(child.valueKinds);
 		applyFilterFacts(condition, child.possibleOutputs, guaranteed, fixed, kinds);
 		return OutputFacts.known(child.possibleOutputs, guaranteed, fixed, kinds, input, true,
 				child.retainedInputNames).withOverwrittenInputs(child.overwrittenInputNames);
+	}
+
+	/** Whether {@link #applyFilterFacts} can change anything for this condition: only BOUND and the type tests do. */
+	private static boolean mayAddFilterFacts(ValueExpr expression) {
+		if (expression instanceof And and) {
+			return mayAddFilterFacts(and.getLeftArg()) || mayAddFilterFacts(and.getRightArg());
+		}
+		return expression instanceof Bound || expression instanceof IsBNode || expression instanceof IsLiteral
+				|| expression instanceof IsNumeric || expression instanceof IsResource || expression instanceof IsTriple
+				|| expression instanceof IsURI;
 	}
 
 	private void applyFilterFacts(ValueExpr expression, Set<String> possible, Set<String> guaranteed,
@@ -1324,6 +1624,32 @@ public final class QueryAlgebraBindingAnalysis {
 			if (argument.guaranteed && !argument.kinds.isEmpty()
 					&& argument.kinds.stream().allMatch(this::strAccepts)) {
 				return new ValueExprFacts(true, null, Set.of(ValueKind.LITERAL));
+			}
+		}
+		if (expression instanceof FunctionCall call) {
+			if (FN.CONCAT.toString().equals(call.getURI())) {
+				StringBuilder label = new StringBuilder();
+				for (ValueExpr argument : call.getArgs()) {
+					Value fixed = expressionFacts(argument, input).fixedValue;
+					if (!(fixed instanceof Literal literal)
+							|| literal.getCoreDatatype() != CoreDatatype.XSD.STRING) {
+						return ValueExprFacts.unknown();
+					}
+					label.append(literal.getLabel());
+				}
+				return new ValueExprFacts(true, SimpleValueFactory.getInstance().createLiteral(label.toString()),
+						Set.of(ValueKind.LITERAL));
+			}
+			if ("STRDT".equals(call.getURI()) && call.getArgs().size() == 2) {
+				Value lexical = expressionFacts(call.getArgs().get(0), input).fixedValue;
+				Value datatype = expressionFacts(call.getArgs().get(1), input).fixedValue;
+				if (lexical instanceof Literal literal && literal.getCoreDatatype() == CoreDatatype.XSD.STRING
+						&& datatype instanceof IRI iri
+						&& !CoreDatatype.RDF.LANGSTRING.getIri().equals(iri)
+						&& !CoreDatatype.RDF.DIRLANGSTRING.getIri().equals(iri)
+						&& XMLDatatypeUtil.isValidValue(literal.getLabel(), iri)) {
+					return new ValueExprFacts(true, null, Set.of(ValueKind.LITERAL));
+				}
 			}
 		}
 		if (expression instanceof AggregateOperator) {
@@ -1699,6 +2025,20 @@ public final class QueryAlgebraBindingAnalysis {
 		return result;
 	}
 
+	/** A union that is only read afterwards: an operand is returned as it is when the other adds nothing. */
+	private static Set<String> unionOf(Set<String> left, Set<String> right) {
+		if (right.isEmpty()) {
+			return left;
+		}
+		if (left.isEmpty()) {
+			return right;
+		}
+		Set<String> result = new HashSet<>((left.size() + right.size()) * 2);
+		result.addAll(left);
+		result.addAll(right);
+		return result;
+	}
+
 	private Set<String> intersection(Set<String> left, Set<String> right) {
 		Set<String> result = new HashSet<>(left);
 		result.retainAll(right);
@@ -1741,6 +2081,42 @@ public final class QueryAlgebraBindingAnalysis {
 			return ValueKind.TRIPLE;
 		}
 		return ValueKind.UNKNOWN;
+	}
+
+	private static final String[] NO_NAMES = new String[0];
+
+	/** Same set as {@code Set.copyOf}, without its intermediate copy for the hash sets this analysis builds. */
+	private static Set<String> immutableNames(Set<String> names) {
+		if (names.isEmpty()) {
+			return Set.of();
+		}
+		if (names.getClass() == HashSet.class) {
+			return Set.of(names.toArray(NO_NAMES));
+		}
+		// An immutable set comes back as it is.
+		return Set.copyOf(names);
+	}
+
+	/** Immutable map of immutable kind sets; a map that already is one, such as another frame's, is kept. */
+	private static Map<String, Set<ValueKind>> immutableKinds(Map<String, Set<ValueKind>> valueKinds) {
+		if (valueKinds.isEmpty()) {
+			return Map.of();
+		}
+		if (!(valueKinds instanceof HashMap)) {
+			boolean immutableSets = true;
+			for (Set<ValueKind> kinds : valueKinds.values()) {
+				if (Set.copyOf(kinds) != kinds) {
+					immutableSets = false;
+					break;
+				}
+			}
+			if (immutableSets) {
+				return Map.copyOf(valueKinds);
+			}
+		}
+		Map<String, Set<ValueKind>> kindsCopy = new HashMap<>();
+		valueKinds.forEach((name, kinds) -> kindsCopy.put(name, Set.copyOf(kinds)));
+		return Map.copyOf(kindsCopy);
 	}
 
 	private record OutputKey(TupleExpr expression, ReadOnlyContext input) {
@@ -1795,6 +2171,12 @@ public final class QueryAlgebraBindingAnalysis {
 	}
 
 	public static final class OutputFacts {
+		// The derived frame depends only on these immutable facts and their own inherited input.
+		// Owning it here also lets obsolete facts go when an analysis is invalidated.
+		private static final AtomicReferenceFieldUpdater<OutputFacts, ReadOnlyContext> OUTPUT_FRAME = AtomicReferenceFieldUpdater
+				.newUpdater(OutputFacts.class, ReadOnlyContext.class, "outputFrame");
+		private volatile ReadOnlyContext outputFrame;
+
 		private final boolean possibleOutputsKnown;
 		private final boolean guaranteedOutputsKnown;
 		private final Set<String> possibleOutputs;
@@ -1815,16 +2197,15 @@ public final class QueryAlgebraBindingAnalysis {
 				Set<String> retainedInputNames, Set<String> overwrittenInputNames, boolean canProduceRows) {
 			this.possibleOutputsKnown = possibleOutputsKnown;
 			this.guaranteedOutputsKnown = guaranteedOutputsKnown;
-			this.possibleOutputs = Set.copyOf(possibleOutputs);
-			this.guaranteedOutputs = Set.copyOf(guaranteedOutputs);
+			this.possibleOutputs = immutableNames(possibleOutputs);
+			this.guaranteedOutputs = guaranteedOutputs == possibleOutputs ? this.possibleOutputs
+					: immutableNames(guaranteedOutputs);
 			this.fixedValues = Map.copyOf(fixedValues);
-			Map<String, Set<ValueKind>> kindsCopy = new HashMap<>();
-			valueKinds.forEach((name, kinds) -> kindsCopy.put(name, Set.copyOf(kinds)));
-			this.valueKinds = Map.copyOf(kindsCopy);
+			this.valueKinds = immutableKinds(valueKinds);
 			this.inheritedInput = inheritedInput;
 			this.inheritedInputNames = inheritedInput.guaranteedNames;
-			this.retainedInputNames = Set.copyOf(retainedInputNames);
-			this.overwrittenInputNames = Set.copyOf(overwrittenInputNames);
+			this.retainedInputNames = immutableNames(retainedInputNames);
+			this.overwrittenInputNames = immutableNames(overwrittenInputNames);
 			this.canProduceRows = canProduceRows;
 		}
 
@@ -1840,17 +2221,23 @@ public final class QueryAlgebraBindingAnalysis {
 
 		static OutputFacts known(Set<String> possible, Set<String> guaranteed, Map<String, Value> fixed,
 				Map<String, Set<ValueKind>> kinds, ReadOnlyContext input, boolean canProduceRows) {
-			Set<String> retained = new HashSet<>(input.maybeBoundNames);
-			retained.removeAll(possible);
-			return known(possible, guaranteed, fixed, kinds, input, canProduceRows, retained);
+			return known(possible, guaranteed, fixed, kinds, input, canProduceRows, input.maybeBoundNames);
 		}
 
 		static OutputFacts known(Set<String> possible, Set<String> guaranteed, Map<String, Value> fixed,
 				Map<String, Set<ValueKind>> kinds, ReadOnlyContext input, boolean canProduceRows,
 				Set<String> retainedInputNames) {
-			Set<String> retained = new HashSet<>(retainedInputNames);
-			retained.retainAll(input.maybeBoundNames);
-			retained.removeAll(possible);
+			Set<String> retained;
+			if (retainedInputNames.isEmpty() || input.maybeBoundNames.isEmpty()) {
+				retained = Set.of();
+			} else {
+				retained = new HashSet<>();
+				for (String name : retainedInputNames) {
+					if (input.maybeBoundNames.contains(name) && !possible.contains(name)) {
+						retained.add(name);
+					}
+				}
+			}
 			return new OutputFacts(true, true, possible, guaranteed, fixed, kinds, input, retained, Set.of(),
 					canProduceRows);
 		}
@@ -1865,6 +2252,10 @@ public final class QueryAlgebraBindingAnalysis {
 		}
 
 		OutputFacts withOverwrittenInputs(Set<String> names) {
+			if (names.isEmpty()) {
+				// Nothing is added to the overwritten names and nothing leaves the retained ones.
+				return this;
+			}
 			Set<String> overwritten = new HashSet<>(overwrittenInputNames);
 			overwritten.addAll(names);
 			Set<String> retained = new HashSet<>(retainedInputNames);
@@ -2000,15 +2391,16 @@ public final class QueryAlgebraBindingAnalysis {
 				Map<String, Value> fixedValues, Map<String, Set<ValueKind>> valueKinds,
 				Map<String, Value> externalValues, Set<String> externalGuaranteedNames, long scopeIdentity,
 				boolean bindingDomainKnown, LateralInputFrame lateralInputs) {
-			this.visibleNames = Set.copyOf(visibleNames);
-			this.maybeBoundNames = Set.copyOf(maybeBoundNames);
-			this.guaranteedNames = Set.copyOf(guaranteedNames);
+			this.visibleNames = immutableNames(visibleNames);
+			// The visible and the possibly bound names are the same set in most frames; one copy then serves both.
+			this.maybeBoundNames = maybeBoundNames == visibleNames ? this.visibleNames
+					: immutableNames(maybeBoundNames);
+			this.guaranteedNames = guaranteedNames == maybeBoundNames ? this.maybeBoundNames
+					: immutableNames(guaranteedNames);
 			this.fixedValues = Map.copyOf(fixedValues);
-			Map<String, Set<ValueKind>> kindsCopy = new HashMap<>();
-			valueKinds.forEach((name, kinds) -> kindsCopy.put(name, Set.copyOf(kinds)));
-			this.valueKinds = Map.copyOf(kindsCopy);
+			this.valueKinds = immutableKinds(valueKinds);
 			this.externalValues = Map.copyOf(externalValues);
-			this.externalGuaranteedNames = Set.copyOf(externalGuaranteedNames);
+			this.externalGuaranteedNames = immutableNames(externalGuaranteedNames);
 			this.scopeIdentity = scopeIdentity;
 			this.bindingDomainKnown = bindingDomainKnown;
 			this.lateralInputs = lateralInputs;
@@ -2017,12 +2409,25 @@ public final class QueryAlgebraBindingAnalysis {
 		private static ReadOnlyContext external(Map<String, Value> values, Set<String> externalNames,
 				long scopeIdentity) {
 			Set<String> names = Set.copyOf(externalNames);
-			Map<String, Set<ValueKind>> kinds = new HashMap<>();
-			values.forEach((name, value) -> kinds.put(name, Set.of(valueKindOf(value))));
-			return new ReadOnlyContext(names, names, names, values, kinds, values, names, scopeIdentity, true);
+			// The constructor copies what it is given. Handing it immutable collections makes those copies free; this
+			// context is built once per optimizer for every query.
+			Map<String, Value> fixed = Map.copyOf(values);
+			Map<String, Set<ValueKind>> kinds;
+			if (fixed.isEmpty()) {
+				kinds = Map.of();
+			} else {
+				kinds = new HashMap<>();
+				for (Map.Entry<String, Value> entry : fixed.entrySet()) {
+					kinds.put(entry.getKey(), Set.of(valueKindOf(entry.getValue())));
+				}
+			}
+			return new ReadOnlyContext(names, names, names, fixed, kinds, fixed, names, scopeIdentity, true);
 		}
 
 		private ReadOnlyContext withPossibleInputs(Set<String> names) {
+			if (names.isEmpty()) {
+				return this;
+			}
 			Set<String> visible = new HashSet<>(visibleNames);
 			Set<String> maybe = new HashSet<>(maybeBoundNames);
 			visible.addAll(names);
@@ -2090,67 +2495,57 @@ public final class QueryAlgebraBindingAnalysis {
 					: new LateralInputFrame(frame.original, Set.copyOf(remaining), frame.conditional, previous);
 		}
 
-		/**
-		 * Frames already derived from this input, by facts identity. Planning asks for the same (input, facts) pair
-		 * from every filter and every candidate site, and building a frame copies eight collections.
-		 */
-		private final Map<OutputFacts, ReadOnlyContext> outputFrames = new IdentityHashMap<>();
-
 		public ReadOnlyContext withOutput(OutputFacts facts) {
-			synchronized (outputFrames) {
-				ReadOnlyContext cached = outputFrames.get(facts);
-				if (cached != null) {
-					return cached;
-				}
+			ReadOnlyContext known = facts.outputFrame;
+			if (known != null) {
+				return known;
 			}
 			ReadOnlyContext frame = computeWithOutput(facts);
-			synchronized (outputFrames) {
-				outputFrames.putIfAbsent(facts, frame);
-				return outputFrames.get(facts);
-			}
+			return OutputFacts.OUTPUT_FRAME.compareAndSet(facts, null, frame) ? frame : facts.outputFrame;
 		}
 
-		private ReadOnlyContext computeWithOutput(OutputFacts facts) {
-			Set<String> visible = new HashSet<>(facts.inheritedInput.visibleNames);
-			Set<String> maybe = new HashSet<>(facts.inheritedInput.maybeBoundNames);
-			Set<String> guaranteed = new HashSet<>(facts.inheritedInput.guaranteedNames);
-			Map<String, Value> values = new HashMap<>(facts.inheritedInput.fixedValues);
-			Map<String, Set<ValueKind>> kinds = new HashMap<>(facts.inheritedInput.valueKinds);
-			Map<String, Value> external = new HashMap<>(facts.inheritedInput.externalValues);
-			Set<String> externalNames = new HashSet<>(facts.inheritedInput.externalGuaranteedNames);
-			Set<String> retained = new HashSet<>(facts.retainedInputNames);
-			retained.removeAll(facts.overwrittenInputNames);
-			visible.retainAll(retained);
-			maybe.retainAll(retained);
-			guaranteed.retainAll(retained);
-			values.keySet().retainAll(retained);
-			kinds.keySet().retainAll(retained);
-			external.keySet().retainAll(retained);
-			externalNames.retainAll(retained);
-			for (String name : facts.overwrittenInputNames) {
-				visible.remove(name);
-				maybe.remove(name);
-				guaranteed.remove(name);
-				values.remove(name);
-				kinds.remove(name);
-				external.remove(name);
-				externalNames.remove(name);
+		private static ReadOnlyContext computeWithOutput(OutputFacts facts) {
+			// With no retained inputs or term facts, only the new binding names survive.
+			if (facts.possibleOutputsKnown && facts.canProduceRows && facts.retainedInputNames.isEmpty()
+					&& facts.fixedValues.isEmpty() && facts.valueKinds.isEmpty()) {
+				return new ReadOnlyContext(facts.possibleOutputs, facts.possibleOutputs, facts.guaranteedOutputs,
+						Map.of(), Map.of(), Map.of(), Set.of(), facts.inheritedInput.scopeIdentity,
+						facts.inheritedInput.bindingDomainKnown, facts.inheritedInput.lateralInputs);
 			}
 			if (!facts.possibleOutputsKnown || !facts.canProduceRows) {
 				return new ReadOnlyContext(Set.of(), Set.of(), Set.of(), Map.of(), Map.of(), Map.of(), Set.of(),
 						facts.inheritedInput.scopeIdentity, facts.possibleOutputsKnown,
 						facts.inheritedInput.lateralInputs);
 			}
-			for (String name : facts.possibleOutputs) {
-				visible.add(name);
-				maybe.add(name);
-				values.remove(name);
-				kinds.remove(name);
-				external.remove(name);
-				externalNames.remove(name);
+			ReadOnlyContext inherited = facts.inheritedInput;
+			// What survives of the inherited frame is what the operator retains and does not overwrite.
+			Set<String> retained = facts.retainedInputNames;
+			if (!facts.overwrittenInputNames.isEmpty() && !retained.isEmpty()) {
+				retained = new HashSet<>(retained);
+				retained.removeAll(facts.overwrittenInputNames);
 			}
+			Set<String> visible = retainedNames(inherited.visibleNames, retained);
 			visible.addAll(facts.possibleOutputs);
-			maybe.addAll(facts.possibleOutputs);
+			Set<String> maybe;
+			if (inherited.maybeBoundNames == inherited.visibleNames) {
+				maybe = visible;
+			} else {
+				maybe = retainedNames(inherited.maybeBoundNames, retained);
+				maybe.addAll(facts.possibleOutputs);
+			}
+			Set<String> guaranteed = retainedNames(inherited.guaranteedNames, retained);
+			Map<String, Value> values = retainedEntries(inherited.fixedValues, retained);
+			Map<String, Set<ValueKind>> kinds = retainedEntries(inherited.valueKinds, retained);
+			Map<String, Value> external = retainedEntries(inherited.externalValues, retained);
+			Set<String> externalNames = retainedNames(inherited.externalGuaranteedNames, retained);
+			if (!values.isEmpty() || !kinds.isEmpty() || !external.isEmpty() || !externalNames.isEmpty()) {
+				for (String name : facts.possibleOutputs) {
+					values.remove(name);
+					kinds.remove(name);
+					external.remove(name);
+					externalNames.remove(name);
+				}
+			}
 			for (String name : facts.guaranteedOutputs) {
 				guaranteed.add(name);
 				Value value = facts.fixedValues.get(name);
@@ -2170,6 +2565,30 @@ public final class QueryAlgebraBindingAnalysis {
 					facts.inheritedInput.scopeIdentity,
 					facts.possibleOutputsKnown && facts.inheritedInput.bindingDomainKnown,
 					facts.inheritedInput.lateralInputs);
+		}
+
+		private static Set<String> retainedNames(Set<String> names, Set<String> retained) {
+			Set<String> result = new HashSet<>();
+			if (!names.isEmpty() && !retained.isEmpty()) {
+				for (String name : names) {
+					if (retained.contains(name)) {
+						result.add(name);
+					}
+				}
+			}
+			return result;
+		}
+
+		private static <V> Map<String, V> retainedEntries(Map<String, V> entries, Set<String> retained) {
+			Map<String, V> result = new HashMap<>();
+			if (!entries.isEmpty() && !retained.isEmpty()) {
+				for (Map.Entry<String, V> entry : entries.entrySet()) {
+					if (retained.contains(entry.getKey())) {
+						result.put(entry.getKey(), entry.getValue());
+					}
+				}
+			}
+			return result;
 		}
 
 		ReadOnlyContext without(Set<String> names) {
@@ -2363,9 +2782,9 @@ public final class QueryAlgebraBindingAnalysis {
 		private final Set<String> existsLocals;
 
 		private Dependencies(Set<String> directReferences, Set<String> correlatedInputs, Set<String> existsLocals) {
-			this.directReferences = Set.copyOf(directReferences);
-			this.correlatedInputs = Set.copyOf(correlatedInputs);
-			this.existsLocals = Set.copyOf(existsLocals);
+			this.directReferences = immutableNames(directReferences);
+			this.correlatedInputs = immutableNames(correlatedInputs);
+			this.existsLocals = immutableNames(existsLocals);
 		}
 
 		public Set<String> directReferences() {

@@ -13,8 +13,8 @@ const webkitHeadless = process.platform !== 'linux';
  */
 module.exports = defineConfig({
   testDir: './tests',
-  /* Run tests in files in parallel */
-  fullyParallel: true,
+  /* Keep each spec's shared repository and beforeAll/afterAll lifecycle on one worker. */
+  fullyParallel: false,
   /* Fail the build on CI if you accidentally left test.only in the source code. */
   forbidOnly: !!process.env.CI,
   /* Retry on CI only */

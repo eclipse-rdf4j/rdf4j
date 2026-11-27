@@ -970,7 +970,8 @@ final class PathFrontierSweep implements AutoCloseable {
 		this.context = context;
 	}
 
-	static PathFrontierSweep tryOpen(PathPlan plan, NativeLmdbQuerySource source, PathStep step, boolean backward)
+	static PathFrontierSweep tryOpen(PathPlan plan, NativeLmdbQuerySource source, PathStep step, boolean backward,
+			NativeLmdbQuerySource.CursorCancellation cancellation)
 			throws IOException {
 		int nearPos = step.nearPos(backward);
 		int farPos = step.farPos(backward);
@@ -978,7 +979,7 @@ final class PathFrontierSweep implements AutoCloseable {
 		StatementOrder order = nearPos == TripleIndex.SUBJ_IDX ? StatementOrder.S : StatementOrder.O;
 		long context = plan.ctx.isConstant() ? plan.ctx.constant : UNKNOWN;
 		try {
-			RecordIterator cursor = source.statements(order, UNKNOWN, predicate, UNKNOWN, context);
+			RecordIterator cursor = source.statements(order, UNKNOWN, predicate, UNKNOWN, context, null, cancellation);
 			return new PathFrontierSweep(plan, cursor, nearPos, farPos, predicate, context);
 		} catch (UnsupportedOperationException unsupported) {
 			return null;
@@ -1058,7 +1059,8 @@ final class PathParallelExpansion implements AutoCloseable {
 
 	private PathParallelExpansion(PathPlan plan, boolean backward, LmdbNativeRuntimePlan.Invocation runtimePlan,
 			NativeLmdbQuerySource.ParallelSource[] sources,
-			LmdbNativeParallelPipelines.TaskReservation reservation) {
+			LmdbNativeParallelPipelines.TaskReservation reservation,
+			NativeLmdbQuerySource.CursorCancellation cancellation) {
 		this.plan = plan;
 		this.backward = backward;
 		this.runtimePlan = runtimePlan;
@@ -1067,12 +1069,13 @@ final class PathParallelExpansion implements AutoCloseable {
 		this.futures = new Future<?>[sources.length];
 		this.ready = new CountDownLatch(sources.length);
 		for (int i = 0; i < sources.length; i++) {
-			workers[i] = new PathWorker(i, sources[i]);
+			workers[i] = new PathWorker(i, sources[i], cancellation);
 		}
 	}
 
 	static PathParallelExpansion tryOpen(PathPlan plan, NativeLmdbQuerySource source, boolean backward,
-			int frontierWidth, LmdbNativeRuntimePlan.Invocation runtimePlan) throws IOException {
+			int frontierWidth, LmdbNativeRuntimePlan.Invocation runtimePlan,
+			NativeLmdbQuerySource.CursorCancellation cancellation) throws IOException {
 		if (!LmdbNativeParallelPipelines.enabled()) {
 			return null;
 		}
@@ -1097,7 +1100,7 @@ final class PathParallelExpansion implements AutoCloseable {
 				throwFailure(cleanup);
 				return null;
 			}
-			expansion = new PathParallelExpansion(plan, backward, runtimePlan, sources, reservation);
+			expansion = new PathParallelExpansion(plan, backward, runtimePlan, sources, reservation, cancellation);
 			expansion.start();
 			return expansion;
 		} catch (IOException | RuntimeException | Error failure) {
@@ -1394,15 +1397,18 @@ final class PathParallelExpansion implements AutoCloseable {
 		NativeExecutionContext.WorkerContext replayContext;
 		final int index;
 		final NativeLmdbQuerySource.ParallelSource source;
+		private NativeLmdbQuerySource.CursorCancellation cursorCancellation;
 		final ArrayBlockingQueue<PathLevelTask> input = new ArrayBlockingQueue<>(1);
 		final long[] buffer = new long[4 * PathPlan.BATCH_ROWS];
 		NativeLmdbQuerySource.NativeProbe probe;
 		final NativeLmdbQuerySource.NativeAdjacency[] adjacencies = new NativeLmdbQuerySource.NativeAdjacency[plan.steps.length];
 		final boolean[] adjacencyChecked = new boolean[plan.steps.length];
 
-		PathWorker(int index, NativeLmdbQuerySource.ParallelSource source) {
+		PathWorker(int index, NativeLmdbQuerySource.ParallelSource source,
+				NativeLmdbQuerySource.CursorCancellation cancellation) {
 			this.index = index;
 			this.source = source;
+			this.cursorCancellation = cancellation;
 		}
 
 		@Override
@@ -1410,7 +1416,8 @@ final class PathParallelExpansion implements AutoCloseable {
 			boolean readySignalled = false;
 			try {
 				try (var replayScope = replayContext.activate()) {
-					probe = source.newProbe();
+					cursorCancellation = cursorCancellation.forWorker();
+					probe = source.newProbe(cursorCancellation);
 				}
 				ready.countDown();
 				readySignalled = true;
@@ -1486,7 +1493,8 @@ final class PathParallelExpansion implements AutoCloseable {
 				NativeLmdbQuerySource.NativeAdjacency cached = adjacency(stepIndex);
 				if (cached == null) {
 					allCsr = false;
-					try (PathFrontierSweep sweep = PathFrontierSweep.tryOpen(plan, source, step, backward)) {
+					try (PathFrontierSweep sweep = PathFrontierSweep.tryOpen(plan, source, step, backward,
+							cursorCancellation)) {
 						if (sweep != null) {
 							long[] swept = sweep.expand(task.frontier, from, to, task.discovered);
 							if (swept != null) {
@@ -2313,7 +2321,7 @@ final class PathCursor implements RowCursor {
 
 	void openEnumeration(PathStep step, long predicate) throws IOException {
 		closeEnumeration();
-		enumerationProbe = row.source.newProbe();
+		enumerationProbe = row.source.newProbe(row.cursorCancellation());
 		enumerationCursor = plan.openStep(row.source, enumerationProbe, UNKNOWN, step.subjPos, predicate);
 	}
 
@@ -2431,7 +2439,8 @@ final class PathCursor implements RowCursor {
 	void expandProbeLevel(long[] currentLevel, PathStep step) throws IOException {
 		int nearPos = step.nearPos(backward);
 		int farPos = step.farPos(backward);
-		try (PathFrontierSweep sweep = PathFrontierSweep.tryOpen(plan, row.source, step, backward)) {
+		try (PathFrontierSweep sweep = PathFrontierSweep.tryOpen(plan, row.source, step, backward,
+				row.cursorCancellation())) {
 			if (sweep != null) {
 				long[] swept = sweep.expand(currentLevel, 0, currentLevel.length, discovered);
 				if (swept != null) {
@@ -2529,7 +2538,7 @@ final class PathCursor implements RowCursor {
 
 	NativeLmdbQuerySource.NativeProbe probe() {
 		if (probe == null) {
-			probe = row.source.newProbe();
+			probe = row.source.newProbe(row.cursorCancellation());
 		}
 		return probe;
 	}
@@ -2587,7 +2596,7 @@ final class PathCursor implements RowCursor {
 		}
 		if (parallelExpansion == null) {
 			parallelExpansion = PathParallelExpansion.tryOpen(plan, row.source, backward, frontierWidth,
-					row.runtimePlan);
+					row.runtimePlan, row.cursorCancellation());
 		}
 		return parallelExpansion;
 	}

@@ -43,6 +43,7 @@ import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.QueryExecutionPolicy;
 import org.eclipse.rdf4j.query.algebra.Filter.ConditionBindingScope;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.QueryEvaluationContext;
+import org.eclipse.rdf4j.query.impl.BlankNodeAllocationScope;
 import org.eclipse.rdf4j.sail.lmdb.LmdbQueryMemoryManager;
 import org.eclipse.rdf4j.sail.lmdb.LmdbQueryTelemetry;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.codegen.KernelRuntime;
@@ -387,8 +388,8 @@ final class NativeExecutionContext implements AutoCloseable {
 	private Function<Value, Value> valueCapturer;
 	private final AtomicLong nextId = new AtomicLong(RUNTIME_INTERN_BASE);
 	private final AtomicLong nextSolutionId = new AtomicLong(1L);
-	private final AtomicLong nextBNodeId = new AtomicLong();
-	private final ConcurrentHashMap<BNodeKey, BNode> labeledBNodes = new ConcurrentHashMap<>();
+	private BlankNodeAllocationScope blankNodes;
+	private Map<BNodeKey, BNode> labeledBNodes;
 	/** Per-evaluation generic-step cache: one prepared step per descriptor per evaluation, keyed by identity. */
 	private final ConcurrentHashMap<GenericSubplanDescriptor, Object> genericSteps = new ConcurrentHashMap<>();
 	/** Per-evaluation semantic-native operator state, keyed by the compiled plan object's identity. */
@@ -825,7 +826,7 @@ final class NativeExecutionContext implements AutoCloseable {
 		if (!queryScopeOwner.queryScopedValues.isEmpty()) {
 			RdfTermKey key = spelling != null ? spelling : RdfTermKey.of(value);
 			Value representative = queryScopeOwner.queryScopedValues.get(key);
-			if (representative != null) {
+			if (representative != null && NativeRuntimeValueTable.sameSpelling(value, representative)) {
 				value = representative;
 				preserveRepresentative = true;
 			}
@@ -910,6 +911,10 @@ final class NativeExecutionContext implements AutoCloseable {
 				&& queryScopeOwner.queryScopedStoreValuesById.containsKey(id));
 	}
 
+	boolean mayShadowProjectedStoreValues() {
+		return termOwner.runtimeValues != null || queryScopeOwner.hasQueryScopedStoreValues;
+	}
+
 	/** Metadata-only diagnostics; no scan or materialization of retained terms. */
 	long runtimeValueAccountedBytes() {
 		if (termOwner != this) {
@@ -953,7 +958,8 @@ final class NativeExecutionContext implements AutoCloseable {
 			return value;
 		}
 		Value representative = queryScopeOwner.queryScopedValues.get(RdfTermKey.of(value));
-		return representative != null ? representative : value;
+		return representative != null && NativeRuntimeValueTable.sameSpelling(value, representative) ? representative
+				: value;
 	}
 
 	long nextLogicalSolutionIdentity() {
@@ -966,30 +972,34 @@ final class NativeExecutionContext implements AutoCloseable {
 		return nextSolutionId.getAndIncrement();
 	}
 
-	BNode getOrCreateBNode(long solutionIdentity, String label) {
-		if (queryScopeOwner != this) {
-			return queryScopeOwner.getOrCreateBNode(solutionIdentity, label);
-		}
+	BNode getOrCreateBNode(long solutionIdentity, String label, QueryEvaluationContext structural) {
+		return queryScopeOwner.labelledBNode(new BNodeKey(solutionIdentity, label), structural);
+	}
+
+	private synchronized BNode labelledBNode(BNodeKey key, QueryEvaluationContext structural) {
 		if (closed) {
 			throw new IllegalStateException("execution context is closed");
 		}
-		BNodeKey key = new BNodeKey(solutionIdentity, label);
-		return labeledBNodes.computeIfAbsent(key, ignored -> newBNode(label));
+		if (labeledBNodes == null) {
+			labeledBNodes = new HashMap<>();
+		}
+		return labeledBNodes.computeIfAbsent(key, ignored -> allocateBNode(structural));
 	}
 
-	BNode createBNode() {
-		if (queryScopeOwner != this) {
-			return queryScopeOwner.createBNode();
-		}
+	BNode createBNode(QueryEvaluationContext structural) {
+		return queryScopeOwner.allocateBNode(structural);
+	}
+
+	private synchronized BNode allocateBNode(QueryEvaluationContext structural) {
 		if (closed) {
 			throw new IllegalStateException("execution context is closed");
 		}
-		return newBNode("native");
-	}
-
-	private BNode newBNode(String prefix) {
-		return SimpleValueFactory.getInstance()
-				.createBNode(prefix + "_" + executionId + "_" + nextBNodeId.getAndIncrement());
+		if (blankNodes == null) {
+			blankNodes = genericContext(() -> new EvaluationScopedQueryEvaluationContext(structural))
+					.getBlankNodeAllocationScope();
+			blankNodes.reserve(queryBase);
+		}
+		return blankNodes.createBNode(SimpleValueFactory.getInstance());
 	}
 
 	int internedCount() {
@@ -1203,7 +1213,8 @@ final class NativeExecutionContext implements AutoCloseable {
 			if (genericContext instanceof EvaluationScopedQueryEvaluationContext scoped) {
 				scoped.clearQueryScopedValueRegistrar();
 			}
-			labeledBNodes.clear();
+			labeledBNodes = null;
+			blankNodes = null;
 		}
 		if (queryFrameOwner == this) {
 			genericSteps.clear();

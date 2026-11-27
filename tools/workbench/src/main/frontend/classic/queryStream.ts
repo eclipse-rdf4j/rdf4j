@@ -1439,6 +1439,10 @@ namespace workbench {
             }
 
             return fetcher(url, init).then(function(response: any): Promise<QueryStreamOutcome> {
+                if (response && response.status === 403) {
+                    workbench.clearStaleCsrfCookieForRequest(url);
+                    return unexpectedResponse(response, responseContentType(response));
+                }
                 if (callbacks.serverIdentity && response.ok !== false
                         && response.headers?.get('X-Workbench-Server-Identity') !== callbacks.serverIdentity) {
                     throw new Error('The RDF4J server connection changed. Reload this page to reconnect.');
@@ -1456,19 +1460,6 @@ namespace workbench {
             return headers && typeof headers.get === 'function' ? String(headers.get('Content-Type') || '') : '';
         }
 
-        /** The readable text of an answer that is not a query stream: an HTML page loses its markup. */
-        function responseSummary(text: string, contentType: string): string {
-            var summary = String(text || '');
-            if (/html/i.test(contentType)) {
-                summary = summary.replace(/<(script|style|head)\b[\s\S]*?<\/\1\s*>/gi, ' ').replace(/<[^>]*>/g, ' ')
-                    .replace(/&#(\d+);/g, (entity: string, code: string) => String.fromCharCode(Number(code)))
-                    .replace(/&(lt|gt|quot|apos|nbsp|ndash|mdash|amp);/g, (entity: string, name: string) =>
-                        (<any>{ lt: '<', gt: '>', quot: '"', apos: '\'', nbsp: ' ', ndash: '–', mdash: '—', amp: '&' })[name]);
-            }
-            summary = summary.replace(/\s+/g, ' ').trim();
-            return summary.length > 300 ? summary.substring(0, 300) + '…' : summary;
-        }
-
         /**
          * A query answered with something other than a query stream (an error page of the server or of a proxy, a
          * sign-in page): report its HTTP status and text instead of failing on its first line as invalid JSON.
@@ -1479,11 +1470,14 @@ namespace workbench {
             return text.then((body: string) => {
                 var status = typeof response.status === 'number' ? response.status : 0;
                 var label = 'HTTP ' + status + (response.statusText ? ' ' + response.statusText : '');
-                var summary = responseSummary(body, contentType);
-                var error: any = new Error((response.ok === false
-                    ? 'The server refused the query (' + label + ')'
-                    : 'The server did not answer with query results (' + label + ', ' + contentType + ')')
-                    + (summary ? ': ' + summary : '.'));
+                var forbidden = status === 403;
+                var summary = forbidden ? '' : workbench.responseSummary(body, contentType);
+                var message = forbidden ? workbench.forbiddenResponseMessage('execute the query', body, contentType)
+                    : (response.ok === false
+                        ? 'The server refused the query (' + label + ')'
+                        : 'The server did not answer with query results (' + label + ', ' + contentType + ')')
+                        + (summary ? ': ' + summary : '.');
+                var error: any = new Error(message);
                 error.status = status;
                 throw error;
             });
@@ -6649,7 +6643,7 @@ namespace workbench {
             private renderError(): void {
                 var error = this.state.error;
                 var message = this.errorMessageForDisplay();
-                var classified = this.appendFailure || !error
+                var classified = this.appendFailure || !error || error.status === 403
                     || ['timeout', 'cancelled', 'circuit-breaker', 'incomplete', 'empty-query', 'saved-result-busy',
                         'saved-result-gone'].indexOf(error.code) >= 0
                     || message !== error.message;
@@ -6787,7 +6781,13 @@ namespace workbench {
                     return '';
                 }
                 if (this.appendFailure) {
+                    if (error.status === 403) {
+                        return 'Load more failed. ' + error.message + ' The previous results are retained.';
+                    }
                     return 'Load more failed. ' + error.message + ' The previous results are retained; retry Load more.';
+                }
+                if (error.status === 403) {
+                    return error.message;
                 }
                 if (error.code === 'timeout' || error.code === 'cancelled' || error.code === 'circuit-breaker') {
                     return error.message;
@@ -10808,8 +10808,10 @@ namespace workbench {
                 }
             }
 
-            function repositoryScope(repositoryId: string, serverIdentity?: string, basePath?: string): string {
-                return JSON.stringify([String(basePath || '').replace(/\/+$/, ''), serverIdentity || null, repositoryId]);
+            function repositoryScope(repositoryId: string, serverIdentity?: string, basePath?: string,
+                                     serverUser?: string): string {
+                return JSON.stringify([String(basePath || '').replace(/\/+$/, ''), serverIdentity || null,
+                    serverUser || '', repositoryId]);
             }
 
             /** Results nobody sees: the waiting ones and a kept-alive Query page's own. */
@@ -10851,8 +10853,9 @@ namespace workbench {
             }
 
             /** What the menu's Query item says about a repository's query: 'running', 'ready' or ''. */
-            export function activity(repositoryId: string, serverIdentity?: string, basePath?: string): string {
-                var scope = repositoryScope(repositoryId, serverIdentity, basePath);
+            export function activity(repositoryId: string, serverIdentity?: string, basePath?: string,
+                                     serverUser?: string): string {
+                var scope = repositoryScope(repositoryId, serverIdentity, basePath, serverUser);
                 var results = backgroundResults().filter(entry => entry.scope === scope);
                 if (results.some(entry => entry.controller.hasActiveRequest())) {
                     return 'running';
@@ -10961,7 +10964,7 @@ namespace workbench {
                 mountedSwitchHoldMs = Number.isSafeInteger(holdMs) && holdMs >= 0 ? holdMs : SWITCH_HOLD_MS;
                 var repositoryId = shellContext && shellContext.repositoryId || '';
                 var scope = repositoryScope(repositoryId, shellContext && shellContext.serverIdentity,
-                    shellContext && shellContext.basePath);
+                    shellContext && shellContext.basePath, shellContext && shellContext.serverUser);
                 mountedRepositoryId = repositoryId;
                 mountedScope = scope;
                 mountedSuspended = false;
@@ -11144,8 +11147,9 @@ namespace workbench {
              * Drop the result waiting for a repository's next Query page (its tabs were replaced, or the repository
              * was deleted): that page starts without it.
              */
-            export function forgetShelved(repositoryId: string, serverIdentity?: string, basePath?: string): void {
-                var waiting = takeShelved(repositoryScope(repositoryId, serverIdentity, basePath));
+            export function forgetShelved(repositoryId: string, serverIdentity?: string, basePath?: string,
+                                          serverUser?: string): void {
+                var waiting = takeShelved(repositoryScope(repositoryId, serverIdentity, basePath, serverUser));
                 if (waiting) {
                     waiting.dispose();
                     activityChanged();
@@ -11227,8 +11231,9 @@ namespace workbench {
         }
 
         /** 'running' or 'ready' when a repository's query runs or ended while no Query page shows it (M13.5). */
-        export function activity(repositoryId: string, serverIdentity?: string, basePath?: string): string {
-            return queryStream.queryPage.activity(repositoryId, serverIdentity, basePath);
+        export function activity(repositoryId: string, serverIdentity?: string, basePath?: string,
+                                 serverUser?: string): string {
+            return queryStream.queryPage.activity(repositoryId, serverIdentity, basePath, serverUser);
         }
 
         export function isMounted(): boolean {
@@ -11286,8 +11291,9 @@ namespace workbench {
         }
 
         /** Drop the result waiting for a repository's next Query page. */
-        export function forgetShelved(repositoryId: string, serverIdentity?: string, basePath?: string): void {
-            queryStream.queryPage.forgetShelved(repositoryId, serverIdentity, basePath);
+        export function forgetShelved(repositoryId: string, serverIdentity?: string, basePath?: string,
+                                      serverUser?: string): void {
+            queryStream.queryPage.forgetShelved(repositoryId, serverIdentity, basePath, serverUser);
         }
 
         /** Query tabs: show a kept result in the page (null shows nothing). */

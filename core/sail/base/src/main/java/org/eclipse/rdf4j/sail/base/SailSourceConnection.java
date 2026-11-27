@@ -30,10 +30,12 @@ import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.locks.LockSupport;
 import java.util.function.Function;
+import java.util.function.IntSupplier;
 import java.util.function.Supplier;
 
 import org.eclipse.rdf4j.common.annotation.Experimental;
 import org.eclipse.rdf4j.common.annotation.InternalUseOnly;
+import org.eclipse.rdf4j.common.iteration.BufferedIteration;
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.common.iteration.EmptyIteration;
 import org.eclipse.rdf4j.common.iteration.IterationWrapper;
@@ -301,11 +303,12 @@ public abstract class SailSourceConnection extends AbstractNotifyingSailConnecti
 
 		SailDataset rdfDataset = null;
 		CloseableIteration<BindingSet> iteration = null;
+		SailDatasetTripleTermSource preparingSource = null;
 		Collector telemetry = QueryExplanationContext.telemetry();
 		try {
 			long phaseStarted = startTelemetryPhase(telemetry);
 			try {
-				rdfDataset = datasetForRead(IncludeInferred.fromBoolean(includeInferred));
+				rdfDataset = acquireQueryDataset(tupleExpr, includeInferred);
 			} finally {
 				finishTelemetryPhase(telemetry, "sourceAcquisition", phaseStarted);
 			}
@@ -314,7 +317,9 @@ public abstract class SailSourceConnection extends AbstractNotifyingSailConnecti
 				owned.cursorsCloseBeforeDataset();
 			}
 
-			TripleSource tripleSource = new SailDatasetTripleTermSource(vf, rdfDataset);
+			SailDatasetTripleTermSource tripleSource = new SailDatasetTripleTermSource(vf, rdfDataset);
+			preparingSource = tripleSource;
+			tripleSource.beginPreparation();
 			EvaluationStrategy strategy = getEvaluationStrategy(dataset, tripleSource);
 			if (trackResultSize) {
 				strategy.setTrackResultSize(trackResultSize);
@@ -362,7 +367,10 @@ public abstract class SailSourceConnection extends AbstractNotifyingSailConnecti
 			} finally {
 				finishTelemetryPhase(telemetry, "open", phaseStarted);
 			}
-			iteration = interlock(iteration, rdfDataset);
+			IntSupplier bufferedRows = slowQueryLoggingEnabled || !allowsBufferedQueryResult(strategy)
+					? null
+					: BufferedIteration.bufferedRowsSource(iteration);
+			iteration = interlock(iteration, bufferedRows, rdfDataset);
 			rdfDataset = null; // The iteration now owns the dataset, including any acquired source.
 			if (slowQueryLogInfo != null) {
 				iteration = new SlowQueryLoggingIteration<>(iteration, getSailBase(), slowQueryConfiguration,
@@ -377,6 +385,10 @@ public abstract class SailSourceConnection extends AbstractNotifyingSailConnecti
 		} catch (RuntimeException | Error failure) {
 			closeFailedRead(failure, iteration, rdfDataset);
 			throw failure;
+		} finally {
+			if (preparingSource != null) {
+				preparingSource.endPreparation();
+			}
 		}
 	}
 
@@ -693,7 +705,7 @@ public abstract class SailSourceConnection extends AbstractNotifyingSailConnecti
 				if (e instanceof InterruptedException) {
 					Thread.currentThread().interrupt();
 				}
-				if (!timedOut.get() || !isCancellation(e)) {
+				if (!timedOut.get() || (telemetry != null && !isCancellation(e))) {
 					throw e;
 				}
 			}
@@ -1972,6 +1984,16 @@ public abstract class SailSourceConnection extends AbstractNotifyingSailConnecti
 		}
 	}
 
+	/** Whether this connection owns the selected strategy's callback-free query producers. */
+	protected boolean allowsBufferedQueryResult(EvaluationStrategy strategy) {
+		return false;
+	}
+
+	/** Acquires the statement and catalog view held until the prepared query's result closes. */
+	protected SailDataset acquireQueryDataset(TupleExpr expression, boolean includeInferred) {
+		return datasetForRead(IncludeInferred.fromBoolean(includeInferred));
+	}
+
 	private SailDataset datasetForRead(IncludeInferred includeInferred) {
 		IsolationLevel level = getIsolationLevel();
 		return withDatasetAcquisition(level, () -> datasetForReadWithinAdmission(includeInferred, level));
@@ -2021,8 +2043,8 @@ public abstract class SailSourceConnection extends AbstractNotifyingSailConnecti
 	}
 
 	private <T> CloseableIteration<T> interlock(
-			CloseableIteration<T> iter, SailClosable... closes) {
-		return new SailClosingIteration<>(iter, closes) {
+			CloseableIteration<T> iter, IntSupplier bufferedRows, SailClosable... closes) {
+		return new SailClosingIteration<>(iter, bufferedRows, closes) {
 
 			@Override
 			protected void handleSailException(SailException e) throws QueryEvaluationException {

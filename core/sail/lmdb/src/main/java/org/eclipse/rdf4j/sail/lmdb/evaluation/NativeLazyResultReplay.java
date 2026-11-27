@@ -265,6 +265,7 @@ final class NativeLazyResultReplay implements AutoCloseable, CooperativeCancella
 			}
 		}, failure);
 		resident = null;
+		codec.clearBlankNodeOrigins();
 		return KernelRuntime.closeResource(memory, failure);
 	}
 
@@ -280,8 +281,7 @@ final class NativeLazyResultReplay implements AutoCloseable, CooperativeCancella
 		private Cursor(NativeCancellationToken parent, NativeExecutionContext.Lease lease) {
 			this.localCancellation = new NativeCancellationToken(parent);
 			this.lease = lease;
-			this.readerCodec = new NativeSpillValueCodec(localCancellation,
-					context == null ? null : context::authoritativeQueryScopedValue);
+			this.readerCodec = codec.reader(localCancellation);
 		}
 
 		@Override

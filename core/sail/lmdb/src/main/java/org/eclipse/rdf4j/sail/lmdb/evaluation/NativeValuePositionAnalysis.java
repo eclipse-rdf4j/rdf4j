@@ -137,8 +137,8 @@ final class NativeValuePositionAnalysis {
 
 	/**
 	 * Transfers logical roles onto the final physical nodes after positive GRAPH lowering. Such replacements contain
-	 * only statement patterns and joins, so every new node belongs to the replaced graph's lexical scope. Reanalyzing a
-	 * detached replacement would lose uses and aliases outside its compile root.
+	 * only statement patterns, joins and graph-independent VALUES, so every node belongs to the replaced graph's
+	 * lexical scope. Reanalyzing a detached replacement would lose uses and aliases outside its compile root.
 	 */
 	NativeValuePositionAnalysis withGraphReplacements(Map<Graph, TupleExpr> replacements) {
 		IdentityHashMap<QueryModelNode, Map<String, Integer>> copiedScopes = new IdentityHashMap<>(scopes);

@@ -18,9 +18,10 @@ import java.util.function.Supplier;
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryEvaluationStep;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.GraphScopeOptimizer;
 import org.eclipse.rdf4j.query.explanation.PhysicalPlan.Operator;
 
-/** Keeps fused physical plans available while routing invocation-bound default aliases through semantic GRAPH. */
+/** Routes selectors needing alias resolution or blank-node provenance checks through semantic GRAPH. */
 final class NativeGraphAliasGuardStep implements QueryEvaluationStep, LmdbNativePhysicalPlan {
 
 	private final QueryEvaluationStep fused;
@@ -38,7 +39,7 @@ final class NativeGraphAliasGuardStep implements QueryEvaluationStep, LmdbNative
 	@Override
 	public CloseableIteration<BindingSet> evaluate(BindingSet bindings) {
 		for (String selector : selectors) {
-			if (NativeGraphFusion.isDefaultAlias(bindings.getValue(selector))) {
+			if (GraphScopeOptimizer.requiresSemanticSelection(bindings.getValue(selector))) {
 				return semantic().evaluate(bindings);
 			}
 		}

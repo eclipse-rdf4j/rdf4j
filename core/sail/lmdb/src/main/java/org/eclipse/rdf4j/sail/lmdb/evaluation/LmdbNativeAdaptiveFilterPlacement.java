@@ -1200,7 +1200,7 @@ final class AdaptiveJoinCursor implements RowCursor {
 	RowCursor openRight() throws IOException {
 		if (patternRight != null) {
 			if (rightProbe == null) {
-				rightProbe = row.source.newProbe();
+				rightProbe = row.source.newProbe(row.cursorCancellation());
 			}
 			if (patternCursor == null) {
 				patternCursor = new PatternCursor();

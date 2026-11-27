@@ -34,6 +34,7 @@ import org.eclipse.rdf4j.benchmark.common.ThemeQueryCatalog;
 import org.eclipse.rdf4j.benchmark.rio.util.ThemeDataSetGenerator;
 import org.eclipse.rdf4j.benchmark.rio.util.ThemeDataSetGenerator.Theme;
 import org.eclipse.rdf4j.common.transaction.IsolationLevels;
+import org.eclipse.rdf4j.query.TupleQuery;
 import org.eclipse.rdf4j.query.explanation.Explanation;
 import org.eclipse.rdf4j.query.explanation.GenericPlanNode;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
@@ -69,9 +70,6 @@ public class LmdbNativeKernelDeclineCensusTest {
 	private static final Pattern KERNEL_DECLINE = Pattern
 			.compile("(irKernelInterpreted|irKernel|irAggregateInterpreted|irAggregate):([^ ,)|]+)");
 
-	/** Matches the winning-strategy metric, whose value is a pipe-separated list of tags per plan node. */
-	private static final Pattern EXECUTION_PATH = Pattern.compile("nativeExecutionPath=([^,)]+)");
-
 	/**
 	 * Declines that mean something other than "cannot do this", and so are not capability gaps.
 	 * <p>
@@ -104,9 +102,12 @@ public class LmdbNativeKernelDeclineCensusTest {
 	private static SailRepository repository;
 	private static String previousThreshold;
 	private static String previousSynchronous;
+	/** Share the first observation by catalog pair, including pairs whose query text happens to be identical. */
+	private static final Map<String, Set<String>> censusDeclines = new LinkedHashMap<>();
 
 	@BeforeAll
 	static void setUp() {
+		censusDeclines.clear();
 		previousThreshold = System.getProperty("rdf4j.lmdb.janinoCodegen.thresholdRows");
 		previousSynchronous = System.getProperty(SYNCHRONOUS_CODEGEN_PROPERTY);
 		System.setProperty("rdf4j.lmdb.janinoCodegen.thresholdRows", "0");
@@ -205,7 +206,7 @@ public class LmdbNativeKernelDeclineCensusTest {
 				Set<String> reasons;
 				long started = System.nanoTime();
 				try {
-					reasons = declineReasons(query);
+					reasons = censusDeclines.computeIfAbsent(pair, key -> declineReasons(query));
 				} catch (RuntimeException problem) {
 					failures.add(pair + ": " + problem);
 					System.out.println(String.format("%-28s FAILED  %s", pair, problem));
@@ -280,19 +281,24 @@ public class LmdbNativeKernelDeclineCensusTest {
 	}
 
 	@Test
-	void declineParserReadsOnlyTheNamedMetricAcrossThePlanTree() {
+	void censusParsersReadOnlyTheirNamedMetricsAcrossThePlanTree() {
 		GenericPlanNode root = new GenericPlanNode("root");
 		root.setStringMetricActual("nativeDecisionOutcome",
-				"irKernel:0:kind=PROBE_COMPLETED;source=STRATEGY_FAMILY");
+				"irKernel:0:kind=PROBE_COMPLETED;source=STRATEGY_FAMILY;nativeExecutionPath=unrelated");
+		root.setStringMetricActual("nativeExecutionPath", " irKernel | factorizedRows(flatPrefix=1, joins=2) | ");
 		GenericPlanNode child = new GenericPlanNode("child");
 		child.setStringMetricActual("nativeStrategyDeclines",
 				"irKernel:child:EmptyPlan | irAggregate:probe-trial-lost");
+		child.setStringMetricActual("nativeExecutionPath", "irKernel | irAggregate");
 		root.setPlans(List.of(child));
 
 		Set<String> reasons = new LinkedHashSet<>();
 		collectDeclineReasons(root, reasons);
+		Set<String> paths = new LinkedHashSet<>();
+		collectExecutionPaths(root, paths);
 
 		assertThat(reasons).containsExactly("irKernel:child:EmptyPlan", "irAggregate:probe-trial-lost");
+		assertThat(paths).containsExactly("irKernel", "factorizedRows(flatPrefix=1, joins=2)", "irAggregate");
 	}
 
 	/**
@@ -316,7 +322,7 @@ public class LmdbNativeKernelDeclineCensusTest {
 			List<String> queries = ThemeQueryCatalog.queriesFor(theme);
 			for (int index = 0; index < queries.size(); index++) {
 				String pair = theme + " q" + index;
-				for (String path : executionPaths(queries.get(index))) {
+				for (String path : executionPaths(queries.get(index), pair)) {
 					// Parameterized labels such as `factorizedRows(flatPrefix=1, ...)` collapse to their base tag.
 					int paren = path.indexOf('(');
 					winners.computeIfAbsent(paren > 0 ? path.substring(0, paren) : path,
@@ -342,28 +348,53 @@ public class LmdbNativeKernelDeclineCensusTest {
 
 	/** Distinct {@code nativeExecutionPath} tags a query records, across the whole explain tree. */
 	private static Set<String> executionPaths(String query) {
+		return executionPaths(query, null);
+	}
+
+	private static Set<String> executionPaths(String query, String censusPair) {
 		Set<String> paths = new LinkedHashSet<>();
 		// Synchronous code generation removes the compiler warmup window, but it does not remove the adaptive
 		// dispatch model's observation window. Keep the production calibration repetitions for this reachability gate;
 		// otherwise the census describes only cold-start winners and can falsely declare a shipped strategy dead.
-		for (int run = 0; run < WARMUP_RUNS; run++) {
-			paths.clear();
+		// The decline census's first execution also contributes to those six observations. Either census can run
+		// first or alone; focused regression tests pass no pair and retain all their independent executions.
+		int firstRun = censusPair != null && censusDeclines.containsKey(censusPair) ? 1 : 0;
+		for (int run = firstRun; run < WARMUP_RUNS; run++) {
 			try (SailRepositoryConnection connection = repository.getConnection()) {
-				org.eclipse.rdf4j.query.TupleQuery prepared = connection.prepareTupleQuery(query);
+				TupleQuery prepared = connection.prepareTupleQuery(query);
 				prepared.setMaxExecutionTime(QUERY_TIMEOUT_SECONDS);
-				Matcher matcher = EXECUTION_PATH
-						.matcher(prepared.explain(Explanation.Level.Telemetry).toString());
-				while (matcher.find()) {
-					for (String tag : matcher.group(1).split("\\|")) {
-						String trimmed = tag.trim();
-						if (!trimmed.isEmpty()) {
-							paths.add(trimmed);
-						}
-					}
+				GenericPlanNode plan = prepared.explain(Explanation.Level.Telemetry).toGenericPlanNode();
+				if (run == 0 && censusPair != null) {
+					Set<String> reasons = new LinkedHashSet<>();
+					collectDeclineReasons(plan, reasons);
+					censusDeclines.put(censusPair, reasons);
+				}
+				if (run == WARMUP_RUNS - 1) {
+					collectExecutionPaths(plan, paths);
 				}
 			}
 		}
 		return paths;
+	}
+
+	private static void collectExecutionPaths(GenericPlanNode node, Set<String> paths) {
+		if (node == null) {
+			return;
+		}
+		String executionPath = node.getStringMetricActual("nativeExecutionPath");
+		if (executionPath != null) {
+			for (String tag : executionPath.split("\\|")) {
+				String trimmed = tag.trim();
+				if (!trimmed.isEmpty()) {
+					paths.add(trimmed);
+				}
+			}
+		}
+		if (node.getPlans() != null) {
+			for (GenericPlanNode child : node.getPlans()) {
+				collectExecutionPaths(child, paths);
+			}
+		}
 	}
 
 	/**
@@ -379,7 +410,7 @@ public class LmdbNativeKernelDeclineCensusTest {
 		for (int run = 0; run < warmupRuns(); run++) {
 			reasons.clear();
 			try (SailRepositoryConnection connection = repository.getConnection()) {
-				org.eclipse.rdf4j.query.TupleQuery prepared = connection.prepareTupleQuery(query);
+				TupleQuery prepared = connection.prepareTupleQuery(query);
 				prepared.setMaxExecutionTime(QUERY_TIMEOUT_SECONDS);
 				collectDeclineReasons(prepared.explain(Explanation.Level.Telemetry).toGenericPlanNode(), reasons);
 			}

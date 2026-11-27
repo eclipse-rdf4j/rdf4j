@@ -21,6 +21,7 @@ import org.eclipse.rdf4j.common.iteration.CloseableIteratorIteration;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.query.BindingSet;
+import org.eclipse.rdf4j.query.BlankNodeEffects;
 import org.eclipse.rdf4j.query.QueryLanguage;
 import org.eclipse.rdf4j.query.algebra.evaluation.iterator.ExtensionIterator;
 import org.eclipse.rdf4j.query.impl.EmptyBindingSet;
@@ -42,9 +43,10 @@ class BlankNodeSolutionOccurrenceTest {
 					Value repeated = context.getOrCreateBNode("label", target, vf);
 					assertEquals(first, repeated, "calls in one extension stage share the label");
 					target.setBinding("first", first);
-				}, context);
+				}, context, BlankNodeEffects.LABELLED);
 		try (var secondBind = new ExtensionIterator(firstBind,
-				target -> target.setBinding("second", context.getOrCreateBNode("label", target, vf)), context)) {
+				target -> target.setBinding("second", context.getOrCreateBNode("label", target, vf)), context,
+				BlankNodeEffects.LABELLED)) {
 			BindingSet first = secondBind.next();
 			BindingSet second = secondBind.next();
 			assertNotEquals(first.getValue("first"), first.getValue("second"),
@@ -83,7 +85,7 @@ class BlankNodeSolutionOccurrenceTest {
 					Value second = context.getOrCreateBNode("label", target, vf);
 					assertEquals(first, second);
 					target.setBinding("node", first);
-				}, context)) {
+				}, context, BlankNodeEffects.LABELLED)) {
 			extension.next();
 			assertFalse(extension.hasNext());
 		}

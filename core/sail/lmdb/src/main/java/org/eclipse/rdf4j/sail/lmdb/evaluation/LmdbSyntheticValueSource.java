@@ -17,6 +17,7 @@ import static org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbNativeAggregateCompiler
 import java.io.IOException;
 import java.util.OptionalDouble;
 import java.util.OptionalLong;
+import java.util.function.Predicate;
 
 import org.eclipse.rdf4j.common.annotation.Experimental;
 import org.eclipse.rdf4j.common.order.StatementOrder;
@@ -27,11 +28,13 @@ import org.eclipse.rdf4j.query.QueryEvaluationException;
 import org.eclipse.rdf4j.query.QueryExecutionPolicy;
 import org.eclipse.rdf4j.query.algebra.Filter.ConditionBindingScope;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryBindingSet;
+import org.eclipse.rdf4j.sail.lmdb.EmptyRecordIterator;
 import org.eclipse.rdf4j.sail.lmdb.LmdbKeyRange;
 import org.eclipse.rdf4j.sail.lmdb.LmdbPrefixRunCursor;
 import org.eclipse.rdf4j.sail.lmdb.LmdbPrefixRunPlan;
 import org.eclipse.rdf4j.sail.lmdb.LmdbRootScanPartition;
 import org.eclipse.rdf4j.sail.lmdb.RecordIterator;
+import org.eclipse.rdf4j.sail.lmdb.ValueResolutionScope;
 
 /**
  * Query source over a compiled plan's synthetic id spaces. Two lifetimes share this class:
@@ -53,16 +56,7 @@ import org.eclipse.rdf4j.sail.lmdb.RecordIterator;
 @Experimental
 class SyntheticValueSource implements NativeLmdbQuerySource {
 	private static final ThreadLocal<SyntheticValueSource> ACTIVE_EVALUATION = new ThreadLocal<>();
-	static final RecordIterator EMPTY = new RecordIterator() {
-		@Override
-		public long[] next() {
-			return null;
-		}
-
-		@Override
-		public void close() {
-		}
-	};
+	static final RecordIterator EMPTY = EmptyRecordIterator.INSTANCE;
 
 	final NativeLmdbQuerySource delegate;
 	final PlanValueCatalog catalog;
@@ -433,6 +427,73 @@ class SyntheticValueSource implements NativeLmdbQuerySource {
 
 	@Override
 	public Value lazyValue(long id, int positionMask) throws QueryEvaluationException {
+		return lazyValue(id, positionMask, null, false);
+	}
+
+	@Override
+	public Value lazyValue(long id, int positionMask, ValueResolutionScope valueScope) throws QueryEvaluationException {
+		return lazyValue(id, positionMask, valueScope, true);
+	}
+
+	@Override
+	public Object projectedValueSnapshot() {
+		return delegate.projectedValueSnapshot();
+	}
+
+	@Override
+	public Value reuseProjectedValue(Object snapshot, long id, int positionMask, ValueResolutionScope valueScope,
+			Value supplied, long semanticVersion) {
+		// Runtime and query-scoped representatives can shadow the backing dictionary, as can plan constants.
+		if ((context != null && (context.isClosed() || context.contains(id))) || catalog.contains(id)) {
+			return null;
+		}
+		return delegate.reuseProjectedValue(snapshot, id, positionMask, valueScope, supplied, semanticVersion);
+	}
+
+	@Override
+	public boolean withProjectedValueAccess(ValueResolutionScope scope, Predicate<ProjectedValueAccess> capture) {
+		if (!catalog.isEmpty() || context != null && (context.isClosed() || context.mayShadowProjectedStoreValues())) {
+			return false;
+		}
+		return context == null ? delegate.withProjectedValueAccess(scope, capture)
+				: delegate.withProjectedValueAccess(scope,
+						access -> capture.test(new UnshadowedProjectedAccess(access, context)));
+	}
+
+	private record UnshadowedProjectedAccess(ProjectedValueAccess backing, NativeExecutionContext context)
+			implements ProjectedValueAccess {
+		@Override
+		public Object snapshot() {
+			return backing.snapshot();
+		}
+
+		@Override
+		public Value lookup(long id, int positionMask, ValueResolutionScope scope) {
+			return context.isClosed() || context.mayShadowProjectedStoreValues() ? null
+					: backing.lookup(id, positionMask, scope);
+		}
+
+		@Override
+		public Value reuse(long id, int positionMask, ValueResolutionScope scope, Value supplied,
+				long semanticVersion) {
+			return context.isClosed() || context.mayShadowProjectedStoreValues() ? null
+					: backing.reuse(id, positionMask, scope, supplied, semanticVersion);
+		}
+
+		@Override
+		public long detachedProjectionEpoch() {
+			return context.isClosed() || context.mayShadowProjectedStoreValues() ? -1L
+					: backing.detachedProjectionEpoch();
+		}
+
+		@Override
+		public Value lookupDetached(long id, int positionMask, ValueResolutionScope scope) {
+			return context.isClosed() || context.mayShadowProjectedStoreValues() ? null
+					: backing.lookupDetached(id, positionMask, scope);
+		}
+	}
+
+	private Value lazyValue(long id, int positionMask, ValueResolutionScope valueScope, boolean explicitScope) {
 		if (context != null) {
 			Value interned = context.valueOf(id);
 			if (interned != null) {
@@ -445,7 +506,7 @@ class SyntheticValueSource implements NativeLmdbQuerySource {
 			LmdbNativeExpressionCompiler.LAZY_VALUE_CALLS.incrementAndGet();
 			return planConstant;
 		}
-		return delegate.lazyValue(id, positionMask);
+		return explicitScope ? delegate.lazyValue(id, positionMask, valueScope) : delegate.lazyValue(id, positionMask);
 	}
 
 	@Override
@@ -493,13 +554,19 @@ class SyntheticValueSource implements NativeLmdbQuerySource {
 
 	@Override
 	public RecordIterator tripleTerms(long subj, long pred, long obj) throws IOException {
+		return tripleTerms(subj, pred, obj, null);
+	}
+
+	@Override
+	public RecordIterator tripleTerms(long subj, long pred, long obj, CursorCancellation cancellation)
+			throws IOException {
 		requireResolvedProbeTerm(subj);
 		requireResolvedProbeTerm(pred);
 		requireResolvedProbeTerm(obj);
 		if (synthetic(subj) || synthetic(pred) || synthetic(obj)) {
 			return EMPTY;
 		}
-		return delegate.tripleTerms(subj, pred, obj);
+		return delegate.tripleTerms(subj, pred, obj, cancellation);
 	}
 
 	@Override
@@ -510,28 +577,46 @@ class SyntheticValueSource implements NativeLmdbQuerySource {
 	@Override
 	public RecordIterator statements(long subj, long pred, long obj, long context,
 			AdjacencyAccessObserver observer) throws IOException {
+		return statements(subj, pred, obj, context, observer, null);
+	}
+
+	@Override
+	public RecordIterator statements(long subj, long pred, long obj, long context,
+			AdjacencyAccessObserver observer, CursorCancellation cancellation) throws IOException {
 		if (anySynthetic(subj, pred, obj, context)) {
 			return EMPTY;
 		}
-		return delegate.statements(subj, pred, obj, context, observer);
+		return delegate.statements(subj, pred, obj, context, observer, cancellation);
 	}
 
 	@Override
 	public RecordIterator statementsInEncounterOrder(long subj, long pred, long obj, long context,
 			AdjacencyAccessObserver observer) throws IOException {
+		return statementsInEncounterOrder(subj, pred, obj, context, observer, null);
+	}
+
+	@Override
+	public RecordIterator statementsInEncounterOrder(long subj, long pred, long obj, long context,
+			AdjacencyAccessObserver observer, CursorCancellation cancellation) throws IOException {
 		if (anySynthetic(subj, pred, obj, context)) {
 			return EMPTY;
 		}
-		return delegate.statementsInEncounterOrder(subj, pred, obj, context, observer);
+		return delegate.statementsInEncounterOrder(subj, pred, obj, context, observer, cancellation);
 	}
 
 	@Override
 	public RecordIterator lmdbStatements(long subj, long pred, long obj, long context,
 			AdjacencyAccessObserver observer) throws IOException {
+		return lmdbStatements(subj, pred, obj, context, observer, null);
+	}
+
+	@Override
+	public RecordIterator lmdbStatements(long subj, long pred, long obj, long context,
+			AdjacencyAccessObserver observer, CursorCancellation cancellation) throws IOException {
 		if (anySynthetic(subj, pred, obj, context)) {
 			return EMPTY;
 		}
-		return delegate.lmdbStatements(subj, pred, obj, context, observer);
+		return delegate.lmdbStatements(subj, pred, obj, context, observer, cancellation);
 	}
 
 	@Override
@@ -543,10 +628,16 @@ class SyntheticValueSource implements NativeLmdbQuerySource {
 	@Override
 	public RecordIterator statements(long subj, long pred, long obj, long context, LmdbKeyRange range,
 			AdjacencyAccessObserver observer) throws IOException {
+		return statements(subj, pred, obj, context, range, observer, null);
+	}
+
+	@Override
+	public RecordIterator statements(long subj, long pred, long obj, long context, LmdbKeyRange range,
+			AdjacencyAccessObserver observer, CursorCancellation cancellation) throws IOException {
 		if (anySynthetic(subj, pred, obj, context)) {
 			return EMPTY;
 		}
-		return delegate.statements(subj, pred, obj, context, range, observer);
+		return delegate.statements(subj, pred, obj, context, range, observer, cancellation);
 	}
 
 	@Override
@@ -558,19 +649,31 @@ class SyntheticValueSource implements NativeLmdbQuerySource {
 	@Override
 	public RecordIterator statements(StatementOrder order, long subj, long pred, long obj, long context,
 			AdjacencyAccessObserver observer) throws IOException {
+		return statements(order, subj, pred, obj, context, observer, null);
+	}
+
+	@Override
+	public RecordIterator statements(StatementOrder order, long subj, long pred, long obj, long context,
+			AdjacencyAccessObserver observer, CursorCancellation cancellation) throws IOException {
 		if (anySynthetic(subj, pred, obj, context)) {
 			return EMPTY;
 		}
-		return delegate.statements(order, subj, pred, obj, context, observer);
+		return delegate.statements(order, subj, pred, obj, context, observer, cancellation);
 	}
 
 	@Override
 	public RecordIterator lmdbStatements(StatementOrder order, long subj, long pred, long obj, long context,
 			AdjacencyAccessObserver observer) throws IOException {
+		return lmdbStatements(order, subj, pred, obj, context, observer, null);
+	}
+
+	@Override
+	public RecordIterator lmdbStatements(StatementOrder order, long subj, long pred, long obj, long context,
+			AdjacencyAccessObserver observer, CursorCancellation cancellation) throws IOException {
 		if (anySynthetic(subj, pred, obj, context)) {
 			return EMPTY;
 		}
-		return delegate.lmdbStatements(order, subj, pred, obj, context, observer);
+		return delegate.lmdbStatements(order, subj, pred, obj, context, observer, cancellation);
 	}
 
 	@Override
@@ -610,10 +713,18 @@ class SyntheticValueSource implements NativeLmdbQuerySource {
 	@Override
 	public LmdbPrefixRunCursor prefixRuns(LmdbPrefixRunPlan plan, long subj, long pred, long obj, long context,
 			boolean countRunRows, AdjacencyAccessObserver observer) throws IOException {
+		return prefixRuns(plan, subj, pred, obj, context, countRunRows, observer,
+				NativeLmdbQuerySource.captureCursorCancellation());
+	}
+
+	@Override
+	public LmdbPrefixRunCursor prefixRuns(LmdbPrefixRunPlan plan, long subj, long pred, long obj, long context,
+			boolean countRunRows, AdjacencyAccessObserver observer, CursorCancellation cancellation)
+			throws IOException {
 		if (anySynthetic(subj, pred, obj, context)) {
 			return LmdbPrefixRunCursor.EMPTY;
 		}
-		return delegate.prefixRuns(plan, subj, pred, obj, context, countRunRows, observer);
+		return delegate.prefixRuns(plan, subj, pred, obj, context, countRunRows, observer, cancellation);
 	}
 
 	@Override
@@ -627,7 +738,12 @@ class SyntheticValueSource implements NativeLmdbQuerySource {
 
 	@Override
 	public NativeProbe newProbe() {
-		NativeProbe inner = delegate.newProbe();
+		return newProbe(NativeLmdbQuerySource.captureCursorCancellation());
+	}
+
+	@Override
+	public NativeProbe newProbe(CursorCancellation cancellation) {
+		NativeProbe inner = delegate.newProbe(cancellation);
 		return new NativeProbe() {
 			@Override
 			public RecordIterator open(long subj, long pred, long obj, long context) throws IOException {
@@ -718,10 +834,16 @@ class SyntheticValueSource implements NativeLmdbQuerySource {
 
 	@Override
 	public long count(long subj, long pred, long obj, long context) throws IOException {
+		return count(subj, pred, obj, context, null);
+	}
+
+	@Override
+	public long count(long subj, long pred, long obj, long context, CursorCancellation cancellation)
+			throws IOException {
 		if (anySynthetic(subj, pred, obj, context)) {
 			return 0L;
 		}
-		return delegate.count(subj, pred, obj, context);
+		return delegate.count(subj, pred, obj, context, cancellation);
 	}
 
 	@Override
@@ -737,11 +859,16 @@ class SyntheticValueSource implements NativeLmdbQuerySource {
 	@Override
 	public boolean has(long subj, long pred, long obj, long context, AdjacencyAccessObserver observer)
 			throws IOException {
+		return has(subj, pred, obj, context, observer, null);
+	}
+
+	@Override
+	public boolean has(long subj, long pred, long obj, long context, AdjacencyAccessObserver observer,
+			CursorCancellation cancellation) throws IOException {
 		if (anySynthetic(subj, pred, obj, context)) {
 			return false;
 		}
-		return observer == null ? delegate.has(subj, pred, obj, context)
-				: delegate.has(subj, pred, obj, context, observer);
+		return delegate.has(subj, pred, obj, context, observer, cancellation);
 	}
 
 	@Override
@@ -836,10 +963,16 @@ class SyntheticValueSource implements NativeLmdbQuerySource {
 	@Override
 	public RecordIterator statements(long subj, long pred, long obj, long context,
 			LmdbRootScanPartition partition) throws IOException {
+		return partitionStatements(subj, pred, obj, context, partition, null);
+	}
+
+	@Override
+	public RecordIterator partitionStatements(long subj, long pred, long obj, long context,
+			LmdbRootScanPartition partition, CursorCancellation cancellation) throws IOException {
 		if (anySynthetic(subj, pred, obj, context)) {
 			return EMPTY;
 		}
-		return delegate.statements(subj, pred, obj, context, partition);
+		return delegate.partitionStatements(subj, pred, obj, context, partition, cancellation);
 	}
 
 	@Override

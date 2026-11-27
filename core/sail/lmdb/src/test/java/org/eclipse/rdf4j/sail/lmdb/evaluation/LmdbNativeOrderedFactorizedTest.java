@@ -35,7 +35,6 @@ import org.eclipse.rdf4j.repository.sail.SailTupleQuery;
 import org.eclipse.rdf4j.sail.lmdb.LmdbStore;
 import org.eclipse.rdf4j.sail.lmdb.config.LmdbStoreConfig;
 import org.junit.jupiter.api.AfterEach;
-import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
@@ -55,8 +54,15 @@ public class LmdbNativeOrderedFactorizedTest {
 
 	private SailRepository repository;
 
-	@BeforeEach
-	public void setUp() {
+	/** Each test gets its own store, created only when it uses the default query fixture. */
+	private SailRepository repository() {
+		if (repository == null) {
+			initializeRepository();
+		}
+		return repository;
+	}
+
+	private void initializeRepository() {
 		repository = new SailRepository(new LmdbStore(dataDir,
 				new LmdbStoreConfig("spoc,posc,ospc").setNativeEvaluationEnabled(true)));
 		try (SailRepositoryConnection conn = repository.getConnection()) {
@@ -88,7 +94,9 @@ public class LmdbNativeOrderedFactorizedTest {
 
 	@AfterEach
 	public void tearDown() {
-		repository.shutDown();
+		if (repository != null) {
+			repository.shutDown();
+		}
 	}
 
 	@Test
@@ -532,7 +540,7 @@ public class LmdbNativeOrderedFactorizedTest {
 		long candidatesBefore = NativeSortBuffer.TOP_K_CANDIDATES.get();
 		long topKBefore = NativeRowsStep.ORDERED_FACTORIZED_TOPK.get();
 
-		assertThat(bindingSets(repository, query)).isEmpty();
+		assertThat(bindingSets(repository(), query)).isEmpty();
 
 		assertThat(NativeSortBuffer.TOP_K_CANDIDATES.get())
 				.as("LIMIT 0 must return before the ordered factorized cursor offers any candidate")
@@ -544,10 +552,10 @@ public class LmdbNativeOrderedFactorizedTest {
 	public void offsetPlusMaxLimitSaturatesWithoutSelectingZeroCapacityTopK() {
 		String ordered = "PREFIX ex: <" + EX + ">\n"
 				+ "SELECT ?s ?y ?w WHERE { ?s ex:p1 ?x . ?x ex:p2 ?y . ?y ex:p5 ?w } ORDER BY ?y ?s";
-		List<String> expected = rows(repository, ordered + " OFFSET 1");
+		List<String> expected = rows(repository(), ordered + " OFFSET 1");
 		long topKBefore = NativeRowsStep.ORDERED_FACTORIZED_TOPK.get();
 
-		List<String> actual = rows(repository,
+		List<String> actual = rows(repository(),
 				ordered + " OFFSET 1 LIMIT " + Long.MAX_VALUE);
 
 		assertThat(actual)
@@ -648,7 +656,7 @@ public class LmdbNativeOrderedFactorizedTest {
 
 	@Test
 	public void lexicalGraphTailPreservesNamedVisibilityAndOuterSelectors() {
-		try (SailRepositoryConnection connection = repository.getConnection()) {
+		try (SailRepositoryConnection connection = repository().getConnection()) {
 			ValueFactory vf = connection.getValueFactory();
 			IRI tail = vf.createIRI(EX, "lexical-tail");
 			IRI first = vf.createIRI(EX, "lexical-g1");
@@ -670,7 +678,7 @@ public class LmdbNativeOrderedFactorizedTest {
 			if (variant == 3) {
 				// FROM NAMED makes the default dataset empty; give the outer p1 selector its own default graph only
 				// after the implicit-dataset variants have completed, so their graph-variable counts stay unchanged.
-				try (SailRepositoryConnection connection = repository.getConnection()) {
+				try (SailRepositoryConnection connection = repository().getConnection()) {
 					ValueFactory vf = connection.getValueFactory();
 					IRI p1 = vf.createIRI(EX, "p1");
 					IRI lexicalDefault = vf.createIRI(EX, "lexical-default");
@@ -684,10 +692,10 @@ public class LmdbNativeOrderedFactorizedTest {
 					+ "WHERE { ?s ex:p1 ?x . " + tails[variant] + " } ORDER BY ?s LIMIT 256";
 			List<String> expected = genericRows(query);
 			assertThat(expected).as(query).hasSize(counts[variant]);
-			assertThat(rows(repository, query)).as("AUTO parity: %s", query)
+			assertThat(rows(repository(), query)).as("AUTO parity: %s", query)
 					.containsExactlyInAnyOrderElementsOf(expected);
 			long before = NativeRowsStep.ORDERED_FACTORIZED_TOPK.get();
-			try (SailRepositoryConnection connection = repository.getConnection()) {
+			try (SailRepositoryConnection connection = repository().getConnection()) {
 				SailTupleQuery forced = (SailTupleQuery) connection.prepareTupleQuery(query);
 				forced.setForcedLmdbExecutionStrategy(LmdbNativeAttemptMetrics.PATH_ORDERED_FACTORIZED_TOP_K);
 				assertThat(canonicalize(QueryResults.asList(forced.evaluate()))).as(query)
@@ -701,6 +709,7 @@ public class LmdbNativeOrderedFactorizedTest {
 
 	@Test
 	public void classicSortPreservesHiddenTailOrderKeyAndMultiplicityNatively() {
+		repository(); // Preserve fixture initialization before changing evaluation properties.
 		Map<String, String> previous = setProperties(Map.of(
 				"rdf4j.lmdb.orderedFactorizedRows.enabled", "false",
 				NativeBatch.ENABLED_PROPERTY, "false",
@@ -718,7 +727,7 @@ public class LmdbNativeOrderedFactorizedTest {
 			long orderedSortsBefore = NativeRowsStep.ORDERED_FACTORIZED_SORTS.get();
 			long orderedTopKBefore = NativeRowsStep.ORDERED_FACTORIZED_TOPK.get();
 
-			List<String> actual = rows(repository, query);
+			List<String> actual = rows(repository(), query);
 
 			assertThat(actual)
 					.as("ordinary factorization must retain an unprojected tail key for descending full sort")
@@ -736,6 +745,7 @@ public class LmdbNativeOrderedFactorizedTest {
 
 	@Test
 	public void topKPreservesHiddenTailOrderKeyNatively() {
+		repository(); // Preserve fixture initialization before changing evaluation properties.
 		// Codegen has to be pinned off alongside the other rival paths: this shape's kernel is compiled in the
 		// background, so from whichever execution the compile happens to land on, the kernel serves the query and
 		// the interpreted factorized path under test stops running. That makes the assertion below a function of
@@ -757,7 +767,7 @@ public class LmdbNativeOrderedFactorizedTest {
 			long orderedSortsBefore = NativeRowsStep.ORDERED_FACTORIZED_SORTS.get();
 			long orderedTopKBefore = NativeRowsStep.ORDERED_FACTORIZED_TOPK.get();
 
-			List<String> actual = rows(repository, query);
+			List<String> actual = rows(repository(), query);
 
 			assertThat(actual)
 					.as("ordinary factorization must retain an unprojected tail key before applying LIMIT")
@@ -803,6 +813,7 @@ public class LmdbNativeOrderedFactorizedTest {
 
 	@Test
 	public void flagOffFallsBackToClassicSort() {
+		repository(); // Preserve fixture initialization before changing evaluation properties.
 		String query = "PREFIX ex: <" + EX + ">\n"
 				+ "SELECT ?s ?y ?z WHERE { ?s ex:p1 ?x . ?x ex:p2 ?y . ?y ex:p3 ?z } ORDER BY ?y";
 		String previous = System.getProperty("rdf4j.lmdb.orderedFactorizedRows.enabled");
@@ -822,7 +833,7 @@ public class LmdbNativeOrderedFactorizedTest {
 
 	/** Exact list comparison — only sound when the order keys totally order the rows (or ties are identical). */
 	private void assertSameOrderAsGeneric(String query) {
-		List<String> nativeRows = rows(repository, query);
+		List<String> nativeRows = rows(repository(), query);
 		List<String> genericRows = genericRows(query);
 		assertThat(nativeRows)
 				.as("native vs generic (ordered) for:\n" + query)
@@ -834,7 +845,7 @@ public class LmdbNativeOrderedFactorizedTest {
 	 * fixture's IRI local names are fixed-width, so lexicographic string order equals SPARQL IRI order).
 	 */
 	private void assertSameRowsAndSortedBy(String query, String... keyNames) {
-		List<BindingSet> nativeRows = bindingSets(repository, query);
+		List<BindingSet> nativeRows = bindingSets(repository(), query);
 		List<String> nativeCanonical = canonicalize(nativeRows);
 		List<String> genericRows = genericRows(query);
 		assertThat(nativeCanonical)
@@ -856,7 +867,7 @@ public class LmdbNativeOrderedFactorizedTest {
 	}
 
 	private List<String> genericRows(String query) {
-		return genericRows(repository, query);
+		return genericRows(repository(), query);
 	}
 
 	private static List<String> genericRows(SailRepository target, String query) {

@@ -328,6 +328,19 @@ test('displays typed execution summary fields at Executed and Timed without chan
     }
 });
 
+test('puts the timeout warning before the physical plan', () => {
+    const { highlighter } = createHighlighterHarness();
+    const warning = 'Timed out while retrieving explanation! Explanation may be incomplete!';
+    const result = highlighter.format({
+        timedOut: true,
+        type: 'Projection',
+        physicalPlanPrelude: 'Native plan'
+    }, 'Timed');
+    assert.equal(result.text, warning + '\n'
+        + 'You can change the timeout by setting .setMaxExecutionTime(...) on your query.\n\n'
+        + 'Native plan\n\nQuery explanation\nProjection\n');
+});
+
 test('discovers and filters individual plan properties without changing the tree', () => {
     const { harness, highlighter } = createHighlighterHarness();
     const plan = {

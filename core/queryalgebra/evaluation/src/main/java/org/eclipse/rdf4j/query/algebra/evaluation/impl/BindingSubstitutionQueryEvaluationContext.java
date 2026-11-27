@@ -24,8 +24,10 @@ import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.query.Binding;
 import org.eclipse.rdf4j.query.BindingSet;
+import org.eclipse.rdf4j.query.BlankNodeEffects;
 import org.eclipse.rdf4j.query.Dataset;
 import org.eclipse.rdf4j.query.MutableBindingSet;
+import org.eclipse.rdf4j.query.algebra.evaluation.QueryValueEvaluationStep;
 import org.eclipse.rdf4j.query.impl.BlankNodeAllocationScope;
 
 /** An immutable EXISTS substitution domain, retaining the delegate's binding layout and shared query state. */
@@ -41,6 +43,11 @@ final class BindingSubstitutionQueryEvaluationContext implements QueryEvaluation
 
 	@Override
 	public Set<String> getSubstitutionBindingNames() {
+		return substitutionBindingNames;
+	}
+
+	@Override
+	public Set<String> getCorrelatedPathBindingNames() {
 		return substitutionBindingNames;
 	}
 
@@ -72,6 +79,21 @@ final class BindingSubstitutionQueryEvaluationContext implements QueryEvaluation
 	@Override
 	public Comparator<Value> getComparator() {
 		return delegate.getComparator();
+	}
+
+	@Override
+	public Object getExecutionIdentity() {
+		return delegate.getExecutionIdentity();
+	}
+
+	@Override
+	public boolean allowsDirectVariableReads() {
+		return delegate.allowsDirectVariableReads();
+	}
+
+	@Override
+	public boolean allowsPathStepReuse() {
+		return delegate.allowsPathStepReuse();
 	}
 
 	@Override
@@ -107,6 +129,16 @@ final class BindingSubstitutionQueryEvaluationContext implements QueryEvaluation
 	@Override
 	public Function<BindingSet, Value> getValue(String name) {
 		return delegate.getValue(name);
+	}
+
+	@Override
+	public QueryValueEvaluationStep prepareValueAccessor(String name, ValueFactory factory) {
+		return delegate.prepareValueAccessor(name, factory);
+	}
+
+	@Override
+	public ValueFactory blankNodeValueFactory(ValueFactory factory, BlankNodeEffects effects) {
+		return delegate.blankNodeValueFactory(factory, effects);
 	}
 
 	@Override

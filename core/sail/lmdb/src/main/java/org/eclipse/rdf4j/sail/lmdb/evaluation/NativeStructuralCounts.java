@@ -74,7 +74,8 @@ final class NativeStructuralCounts implements AutoCloseable {
 		try {
 			workspace.memory.reserve(1024L);
 			int planes;
-			try (NativeLmdbQuerySource.NativeProbe probe = source.newProbe()) {
+			try (NativeLmdbQuerySource.NativeProbe probe = source
+					.newProbe(NativeLmdbQuerySource.captureCursorCancellation(cancellation))) {
 				NativeLmdbQuerySource.WildcardAdjacency selected = probe.wildcardAdjacency(true);
 				if (selected == null) {
 					selected = probe.wildcardAdjacency(false);

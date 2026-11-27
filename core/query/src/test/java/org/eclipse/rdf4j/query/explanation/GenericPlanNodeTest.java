@@ -661,6 +661,40 @@ class GenericPlanNodeTest {
 	}
 
 	@Test
+	void timeoutWarningComesBeforePhysicalPlan() {
+		String line = System.lineSeparator();
+		GenericPlanNode node = new GenericPlanNode("Projection");
+		node.setPhysicalPlanPrelude("Physical plan");
+		Explanation explanation = new ExplanationImpl(node, true, null);
+
+		String warning = "Timed out while retrieving explanation! Explanation may be incomplete!";
+		String text = explanation.toString();
+		assertTrue(text.startsWith(warning + line), text);
+		assertTrue(text.contains("Physical plan" + line + line + "Query explanation" + line
+				+ "Projection"), text);
+		assertEquals(text.indexOf(warning), text.lastIndexOf(warning));
+		var json = JsonMapper.builder().build().readTree(explanation.toJson());
+		assertTrue(json.path("timedOut").asBoolean());
+	}
+
+	@Test
+	void dotTimeoutLabelIsNotInheritedByNestedScopes() {
+		GenericPlanNode root = new GenericPlanNode("Projection");
+		root.setNewScope(true);
+		GenericPlanNode child = new GenericPlanNode("Join");
+		child.setNewScope(true);
+		root.addPlans(child);
+		root.setTimedOut(true);
+
+		String dot = root.toDot();
+		int endOfScopes = dot.lastIndexOf('}');
+		assertTrue(endOfScopes >= 0, dot);
+		String label = "label=\"Timed out while retrieving explanation! Explanation may be incomplete!\";";
+		assertTrue(dot.indexOf(label) > endOfScopes, dot);
+		assertTrue(dot.substring(endOfScopes + 1).contains("labelloc=t;"), dot);
+	}
+
+	@Test
 	void toJsonRoundTripsPhysicalPlanPreludeForWorkbenchTextReconstruction() {
 		String prelude = "LMDB native physical plan (executed)" + System.lineSeparator()
 				+ "  invocation[0]:" + System.lineSeparator()

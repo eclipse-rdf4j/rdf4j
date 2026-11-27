@@ -874,7 +874,7 @@ final class LmdbNativeParallelKernelAggregate {
 		NativeTermAuthority keyAuthority = workerRow.keyAuthority();
 		LmdbNativeKernelBindings.TypeMatrixRequest request = lowered.bindings.typeMatrixRequests[terminal.view];
 		HashMap<LongsKey, long[]> merged = new HashMap<>();
-		NativeLmdbQuerySource.NativeProbe probe = source.newProbe();
+		NativeLmdbQuerySource.NativeProbe probe = source.newProbe(workerRow.cursorCancellation());
 		Throwable primaryFailure = null;
 		try {
 			NativeLmdbQuerySource.NativeAdjacency sourceTypes = probe.adjacency(request.subjectTypePredicate(), true);
@@ -1602,7 +1602,7 @@ final class LmdbNativeParallelKernelAggregate {
 			forkedBinds = bindings.bindHooks.length > 0
 					? LmdbNativeKernelPartitions.forkBindHooks(bindings.bindHooks, workerContext)
 					: null;
-			probe = source.newProbe();
+			probe = source.newProbe(workerRow.cursorCancellation());
 			views = bindings.requestAdjacencies(probe);
 			if (views == null) {
 				throw new LmdbNativeKernelPartitions.ParallelKernelDecline("worker-adjacency-unavailable");
@@ -2245,7 +2245,8 @@ final class LmdbNativeParallelKernelAggregate {
 				probe = causeOf(problem, KernelCancelledException.class);
 			}
 			if (probe != null) {
-				if (probeCancellation == null) {
+				// The ambient deadline owns a kernel probe signal regardless of worker completion order.
+				if (probeCancellation == null || probe instanceof LmdbNativeProbeDeadlineExceeded) {
 					probeCancellation = probe;
 				}
 				return;

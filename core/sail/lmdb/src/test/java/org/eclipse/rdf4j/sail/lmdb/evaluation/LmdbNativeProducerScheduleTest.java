@@ -12,8 +12,10 @@
 package org.eclipse.rdf4j.sail.lmdb.evaluation;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -50,6 +52,8 @@ import org.eclipse.rdf4j.query.impl.EmptyBindingSet;
 import org.eclipse.rdf4j.sail.lmdb.LmdbQueryMemoryManager;
 import org.eclipse.rdf4j.sail.lmdb.RecordIterator;
 import org.eclipse.rdf4j.sail.lmdb.ValueIds;
+import org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbNativeKernelInterpreter.PullRestoreSite;
+import org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbNativeKernelInterpreter.PullRestoreTestMode;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbNativeKernelIr.Aggregate;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbNativeKernelIr.AggregateOutput;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbNativeKernelIr.BindAlias;
@@ -77,6 +81,7 @@ import org.eclipse.rdf4j.sail.lmdb.evaluation.fragment.EffectClass;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.CsvSource;
+import org.junit.jupiter.params.provider.EnumSource;
 import org.junit.jupiter.params.provider.ValueSource;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -345,6 +350,25 @@ class LmdbNativeProducerScheduleTest {
 		assertEquals(4, rows.size());
 		assertEquals(Set.of("[7, 10, 10]", "[7, 20, 20]", "[9, 10, 10]", "[9, 30, 30]"), new HashSet<>(rows));
 		assertEquals(4, hooks.calls[0]);
+	}
+
+	@Test
+	void compressedWildcardRowsUseTheNonresumableInterpreter() {
+		Kernel ir = new Kernel(3, List.of(new EnumerateWildcard(0, true,
+				LmdbWildcardPhysicalDemand.Demand.PAIR_PRESENCE, 1, 0, 2, -1, null, false)), emit(0, 1));
+		LmdbNativeKernelInterpreter execution = LmdbNativeKernelInterpreter.forRows(ir, PullRestoreTestMode.VERIFY);
+		assertNotNull(execution);
+		assertFalse(ir.resumable);
+		try {
+			execution.bind(new KernelContext(null, new long[0], new long[0], new long[0][], null, null, null,
+					16, null, null, new WildcardAdjacency[] { wildcardFixture() }));
+			assertEquals(List.of(), execution.pullRestoreSites());
+			List<String> rows = fillRows(execution, ir.stride());
+			assertEquals(4, rows.size());
+			assertEquals(Set.of("[7, 10]", "[7, 20]", "[9, 10]", "[9, 30]"), new HashSet<>(rows));
+		} finally {
+			execution.close();
+		}
 	}
 
 	@ParameterizedTest(name = "compiled={0}, demand={1}")
@@ -637,6 +661,69 @@ class LmdbNativeProducerScheduleTest {
 			} finally {
 				execution.close();
 			}
+		}
+	}
+
+	@ParameterizedTest
+	@EnumSource(PullRestoreTestMode.class)
+	void projectedAndOrdinaryResumptionAgreeAcrossMemoryAdmission(PullRestoreTestMode mode) {
+		Probe producer = new Probe(0, Operand.col(0), 2, 40, Operand.constant(0), true);
+		BindAlias inputAlias = new BindAlias(Operand.constant(2), 7);
+		Kernel ir = new Kernel(64, List.of(new EnumerateDomain(0, 0), new BindAlias(Operand.constant(3), 6),
+				producer, inputAlias,
+				new BindAlias(Operand.col(2), 63), new FilterCompareId(true, Operand.col(63), Operand.constant(1)),
+				new LeftGroup(List.of(new BindAlias(Operand.col(0), 2), new BindAlias(Operand.col(40), 0)))),
+				emit(0, 2, 6, 7, 40, 63));
+		LmdbNativeProducerSchedule schedule = ir.producerSchedules.forNode(producer);
+		assertNotNull(schedule, "the probe must have a projection program");
+		assertTrue(schedule.programs.get(LmdbNativeProducerSchedule.INPUT).contains(inputAlias));
+		for (boolean admitted : new boolean[] { true, false }) {
+			LmdbQueryMemoryManager manager = LmdbQueryMemoryManager.createForTesting(1_000_000L, 1_000_000L);
+			Adjacency source = new Adjacency(new long[] { 10, 20 },
+					new long[][] { { 100, 100, 100, 101 }, { 200, 201 } },
+					new long[][] { { 7, 7, 0, 7 }, { 7, 0 } });
+			LmdbNativeKernelInterpreter execution = LmdbNativeKernelInterpreter.forRows(ir, mode);
+			assertNotNull(execution);
+			try (LmdbQueryMemoryManager.QueryLedger ledger = manager.openQuery();
+					LmdbQueryMemoryManager.Reservation blocker = admitted ? null
+							: ledger.reserve(manager.maxBytes() - 1L, null)) {
+				if (!admitted) {
+					assertNotNull(blocker);
+				}
+				long before = ledger.usedBytes();
+				try {
+					execution.bind(new KernelContext(new NativeAdjacency[] { source }, new long[] { 7, 101, 17, 19 },
+							new long[0], new long[][] { { 10, 20 } }, new CountingHooks()).withMemoryLedger(ledger));
+					PullRestoreSite projection = execution.pullRestoreSites()
+							.stream()
+							.filter(site -> site.node() == producer)
+							.findFirst()
+							.orElseThrow();
+					assertTrue(projection.scheduled());
+					if (mode == PullRestoreTestMode.VERIFY) {
+						assertFalse(execution.pullRestoreSites().getFirst().restoresAfterOpen(),
+								"opening a domain iterator leaves its frame intact");
+						assertTrue(projection.restoresAfterOpen(),
+								"projection activation conservatively restores its frame before advancing");
+						int[] affectedColumns = { 0, 2, 7, 40, 63 };
+						assertArrayEquals(affectedColumns, projection.restoredColumns(),
+								"restore the overwritten input and INPUT alias but leave the unchanged input in place");
+						assertArrayEquals(affectedColumns,
+								projection.children().getFirst().getFirst().restoredColumns());
+					}
+					long[] row = new long[ir.stride()];
+					assertEquals(1, execution.fill(row, 1));
+					assertEquals("[7, 10, 19, 17, 7, 100]", Arrays.toString(row));
+					assertEquals(admitted, ledger.usedBytes() > before,
+							"projection must follow the actual memory budget");
+					assertEquals(List.of("[7, 10, 19, 17, 7, 100]", "[7, 20, 19, 17, 7, 200]"),
+							fillRows(execution, ir.stride()));
+				} finally {
+					execution.close();
+				}
+				assertEquals(before, ledger.usedBytes());
+			}
+			assertEquals(0L, manager.usedBytes());
 		}
 	}
 

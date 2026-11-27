@@ -18,6 +18,7 @@ import java.io.ObjectOutputStream;
 import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
+import java.util.OptionalLong;
 import java.util.Queue;
 import java.util.Set;
 import java.util.function.BiConsumer;
@@ -46,6 +47,15 @@ public interface CollectionFactory extends AutoCloseable {
 
 	@Override
 	void close() throws RDF4JException;
+
+	/**
+	 * Observes the sum of the current byte lengths of the temporary spill files owned by this factory, before it is
+	 * closed. This measures the physical file length, including preallocation and metadata. Return zero if the provider
+	 * can confirm it owns no spill files, and an empty value when the observation is unavailable.
+	 */
+	default OptionalLong getSpillFileBytes() {
+		return OptionalLong.empty();
+	}
 
 	/**
 	 * @param <T> of the list

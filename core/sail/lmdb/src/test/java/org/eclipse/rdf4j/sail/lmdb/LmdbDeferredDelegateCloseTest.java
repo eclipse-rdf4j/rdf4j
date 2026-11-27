@@ -454,6 +454,7 @@ class LmdbDeferredDelegateCloseTest {
 				Object growthOwner = new Object();
 				var growth = growthExecutor.submit(() -> {
 					try {
+						LmdbSailStore.MapGrowthToken growthToken;
 						try (LmdbSailStore.ReadAttemptLease writer = backing.registerReadAttempt(growthOwner,
 								(kind, token, deadlineNanos, attempts, views) -> false)) {
 							try {
@@ -462,6 +463,7 @@ class LmdbDeferredDelegateCloseTest {
 										.beginMapGrowthWarning(growthOwner);
 										LmdbSailStore.MapGrowthAttempt attempt = backing
 												.beginMapGrowthAttempt(growthOwner)) {
+									growthToken = attempt.token();
 									attempt.requestQuiescence(LmdbSailStore.MapResizeKind.TRIPLE_STORE);
 									assertThat(triples.growMapForEstimatedWrite(mapSize * 2L, attempt)).isTrue();
 								}
@@ -469,7 +471,8 @@ class LmdbDeferredDelegateCloseTest {
 								writer.completeTransaction();
 							}
 						}
-						return null;
+						backing.awaitGrowthEnd(growthToken);
+						return growthToken;
 					} catch (Throwable failure) {
 						System.out.println("REPLAY_GROWTH_FAILURE " + failure);
 						failure.printStackTrace(System.out);
@@ -502,9 +505,10 @@ class LmdbDeferredDelegateCloseTest {
 					assertThat(exposed).hasValue(0);
 					assertThat(callbacks).hasValue(1);
 					reader.rollback();
-					growth.get(5, TimeUnit.SECONDS);
+					var completedGrowth = growth.get(5, TimeUnit.SECONDS);
 					assertThat(triples.mapSizeBytes()).isGreaterThan(mapSize);
-					assertThat(backing.growthAdmissionClosed()).isFalse();
+					assertThat(backing.isGrowthActive(completedGrowth)).as("the replay growth episode has finished")
+							.isFalse();
 				} finally {
 					releaseCallback.countDown();
 					query.get(5, TimeUnit.SECONDS);

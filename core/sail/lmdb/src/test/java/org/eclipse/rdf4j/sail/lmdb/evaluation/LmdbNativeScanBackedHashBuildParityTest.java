@@ -14,18 +14,17 @@ package org.eclipse.rdf4j.sail.lmdb.evaluation;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.assertj.core.api.Assertions.catchThrowable;
-import static org.mockito.AdditionalAnswers.delegatesTo;
-import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyBoolean;
-import static org.mockito.ArgumentMatchers.anyLong;
-import static org.mockito.Mockito.doAnswer;
 import static org.mockito.Mockito.doReturn;
-import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.mockStatic;
 import static org.mockito.Mockito.spy;
 
 import java.io.File;
 import java.io.IOException;
+import java.lang.reflect.InvocationHandler;
+import java.lang.reflect.InvocationTargetException;
+import java.lang.reflect.Method;
+import java.lang.reflect.Proxy;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -35,6 +34,7 @@ import java.util.concurrent.atomic.AtomicInteger;
 
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Resource;
+import org.eclipse.rdf4j.model.Statement;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.query.BindingSet;
@@ -54,6 +54,8 @@ import org.eclipse.rdf4j.sail.lmdb.LmdbStore;
 import org.eclipse.rdf4j.sail.lmdb.NativeQuerySourceAccess;
 import org.eclipse.rdf4j.sail.lmdb.RecordIterator;
 import org.eclipse.rdf4j.sail.lmdb.config.LmdbStoreConfig;
+import org.eclipse.rdf4j.sail.lmdb.evaluation.NativeLmdbQuerySource.AdjacencyAccessObserver;
+import org.eclipse.rdf4j.sail.lmdb.evaluation.NativeLmdbQuerySource.CursorCancellation;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.NativeLmdbQuerySource.NativeProbe;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.codegen.KernelQueryCancelledException;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.codegen.KernelRuntime;
@@ -135,39 +137,48 @@ class LmdbNativeScanBackedHashBuildParityTest {
 				.setDirectAdjacencyBuildOnStart(false));
 		repository = new SailRepository(store);
 		memoryRepository = new SailRepository(new MemoryStore());
+		List<Statement> statements = fixtureStatements();
 		for (SailRepository target : List.of(repository, memoryRepository)) {
 			target.init();
 			try (SailRepositoryConnection connection = target.getConnection()) {
 				connection.begin();
-				for (int i = 0; i < PROBE_ROWS; i++) {
-					var key = SimpleValueFactory.getInstance().createLiteral(i);
-					connection.add(iri("probe/" + i), PROBE, key);
-					if (i < BUILD_ROWS) {
-						IRI buildSubject = iri("build/" + i);
-						connection.add(buildSubject, BUILD, key);
-						// The identical SPO in separate contexts must retain its bag multiplicity through a scan.
-						connection.add(buildSubject, BUILD, key, iri("graph-a"));
-						connection.add(buildSubject, BUILD, key, iri("graph-b"));
-						if (i == 0) {
-							// Distinct subjects with one key ensure repeated hash keys preserve their output
-							// multiplicity.
-							connection.add(iri("build/duplicate-0"), BUILD, key);
-						}
-					}
-					if (i < BUILD_ROWS) {
-						connection.add(SUBJECT_BUILD_SUBJECT, SUBJECT_BUILD,
-								SimpleValueFactory.getInstance().createLiteral(i));
-						IRI objectBuild = iri("object-build/" + i);
-						connection.add(objectBuild, OBJECT_BUILD, OBJECT_BUILD_VALUE);
-						connection.add(iri("object-probe/" + (i * 2)), OBJECT_PROBE, objectBuild);
-						connection.add(iri("object-probe/" + (i * 2 + 1)), OBJECT_PROBE, objectBuild);
-					}
-				}
-				connection.add(iri("probe/self"), PROBE, iri("same"));
-				connection.add(iri("same"), BUILD, iri("same"));
+				connection.add(statements);
 				connection.commit();
 			}
 		}
+	}
+
+	/** One ordered fixture feeds both independent stores without regenerating its immutable RDF terms. */
+	private static List<Statement> fixtureStatements() {
+		SimpleValueFactory vf = SimpleValueFactory.getInstance();
+		List<Statement> statements = new ArrayList<>(PROBE_ROWS + 7 * BUILD_ROWS + 3);
+		for (int i = 0; i < PROBE_ROWS; i++) {
+			var key = vf.createLiteral(i);
+			statements.add(vf.createStatement(iri("probe/" + i), PROBE, key));
+			if (i < BUILD_ROWS) {
+				IRI buildSubject = iri("build/" + i);
+				statements.add(vf.createStatement(buildSubject, BUILD, key));
+				// The identical SPO in separate contexts must retain its bag multiplicity through a scan.
+				statements.add(vf.createStatement(buildSubject, BUILD, key, iri("graph-a")));
+				statements.add(vf.createStatement(buildSubject, BUILD, key, iri("graph-b")));
+				if (i == 0) {
+					// Distinct subjects with one key ensure repeated hash keys preserve their output
+					// multiplicity.
+					statements.add(vf.createStatement(iri("build/duplicate-0"), BUILD, key));
+				}
+			}
+			if (i < BUILD_ROWS) {
+				statements.add(vf.createStatement(SUBJECT_BUILD_SUBJECT, SUBJECT_BUILD,
+						vf.createLiteral(i)));
+				IRI objectBuild = iri("object-build/" + i);
+				statements.add(vf.createStatement(objectBuild, OBJECT_BUILD, OBJECT_BUILD_VALUE));
+				statements.add(vf.createStatement(iri("object-probe/" + (i * 2)), OBJECT_PROBE, objectBuild));
+				statements.add(vf.createStatement(iri("object-probe/" + (i * 2 + 1)), OBJECT_PROBE, objectBuild));
+			}
+		}
+		statements.add(vf.createStatement(iri("probe/self"), PROBE, iri("same")));
+		statements.add(vf.createStatement(iri("same"), BUILD, iri("same")));
+		return statements;
 	}
 
 	private void replaceBuildRows(int rowCount) {
@@ -1037,7 +1048,11 @@ class LmdbNativeScanBackedHashBuildParityTest {
 				try (LmdbNativeStrategyProposal<RowCursor> proposal = LmdbNativeKernelExecution
 						.proposeRows(step.arg, row, optimized.expression(), interpreted)) {
 					assertThat(proposal).isNotNull();
-					assertThatThrownBy(proposal::open).isInstanceOf(KernelQueryCancelledException.class);
+					assertThatThrownBy(() -> {
+						try (RowCursor ignored = proposal.open()) {
+							// Release an unexpectedly opened result before the dataset closes.
+						}
+					}).isInstanceOf(KernelQueryCancelledException.class);
 				}
 			} finally {
 				row.memoryScope.close();
@@ -1400,6 +1415,10 @@ class LmdbNativeScanBackedHashBuildParityTest {
 	private record Optimized(TupleExpr expression, Map<List<Value>, Integer> bag) {
 	}
 
+	// A non-public interface keeps the generated proxy beside the source API's package-private value codec.
+	private interface CountingQuerySource extends NativeLmdbQuerySource {
+	}
+
 	/** Counts actual kernel scan opens and closes while all storage operations remain delegated to LMDB. */
 	private static final class CountedSource {
 		final NativeLmdbQuerySource source;
@@ -1418,42 +1437,73 @@ class LmdbNativeScanBackedHashBuildParityTest {
 		CountedSource(NativeLmdbQuerySource actual) throws IOException {
 			this.actual = actual;
 			this.buildPredicate = actual.idOf(BUILD);
-			source = mock(NativeLmdbQuerySource.class, delegatesTo(actual));
-			doAnswer(open -> {
-				NativeProbe real = actual.newProbe();
-				probeOpens++;
-				NativeProbe probe = mock(NativeProbe.class, delegatesTo(real));
-				RecordIterator[] issued = new RecordIterator[1];
-				doAnswer(request -> {
-					RecordIterator previous = issued[0];
-					issued[0] = null;
-					if (previous != null) {
-						previous.close();
-					}
-					RecordIterator cursor = real.open(request.getArgument(0), request.getArgument(1),
-							request.getArgument(2), request.getArgument(3), request.getArgument(4));
-					scanOpens++;
-					boolean buildScan = request.getArgument(1).equals(buildPredicate);
-					if (buildScan) {
-						buildScanOpens++;
-					}
-					return issued[0] = tracked(cursor, buildScan);
-				}).when(probe).open(anyLong(), anyLong(), anyLong(), anyLong(), any());
-				doAnswer(close -> {
-					try {
-						RecordIterator current = issued[0];
-						issued[0] = null;
-						if (current != null) {
-							current.close();
+			source = (NativeLmdbQuerySource) Proxy.newProxyInstance(CountingQuerySource.class.getClassLoader(),
+					new Class<?>[] { CountingQuerySource.class }, (proxy, method, arguments) -> {
+						Class<?>[] parameters = method.getParameterTypes();
+						if (method.isDefault() && parameters.length != 0
+								&& parameters[parameters.length - 1] == CursorCancellation.class) {
+							// Preserve the cancellation-aware compatibility bridge on the observing wrapper.
+							return InvocationHandler.invokeDefault(proxy, method, arguments);
 						}
-					} finally {
-						real.close();
-						probeCloses++;
-					}
-					return null;
-				}).when(probe).close();
-				return probe;
-			}).when(source).newProbe();
+						if (method.getName().equals("newProbe") && parameters.length == 0) {
+							return countedProbe(actual.newProbe());
+						}
+						return invokeDelegate(proxy, method, actual, arguments);
+					});
+		}
+
+		private NativeProbe countedProbe(NativeProbe real) {
+			probeOpens++;
+			RecordIterator[] issued = new RecordIterator[1];
+			return (NativeProbe) Proxy.newProxyInstance(NativeProbe.class.getClassLoader(),
+					new Class<?>[] { NativeProbe.class }, (proxy, method, arguments) -> {
+						if (method.getName().equals("open") && method.getParameterCount() == 5) {
+							RecordIterator previous = issued[0];
+							issued[0] = null;
+							if (previous != null) {
+								previous.close();
+							}
+							RecordIterator cursor = real.open((long) arguments[0], (long) arguments[1],
+									(long) arguments[2], (long) arguments[3], (AdjacencyAccessObserver) arguments[4]);
+							scanOpens++;
+							boolean buildScan = (long) arguments[1] == buildPredicate;
+							if (buildScan) {
+								buildScanOpens++;
+							}
+							return issued[0] = tracked(cursor, buildScan);
+						}
+						if (method.getName().equals("close") && method.getParameterCount() == 0) {
+							try {
+								RecordIterator current = issued[0];
+								issued[0] = null;
+								if (current != null) {
+									current.close();
+								}
+							} finally {
+								real.close();
+								probeCloses++;
+							}
+							return null;
+						}
+						return invokeDelegate(proxy, method, real, arguments);
+					});
+		}
+
+		private static Object invokeDelegate(Object proxy, Method method, Object delegate, Object[] arguments)
+				throws Throwable {
+			if (method.getDeclaringClass() == Object.class) {
+				if (method.getName().equals("equals")) {
+					return proxy == arguments[0];
+				}
+				if (method.getName().equals("hashCode")) {
+					return System.identityHashCode(proxy);
+				}
+			}
+			try {
+				return method.invoke(delegate, arguments);
+			} catch (InvocationTargetException failure) {
+				throw failure.getCause();
+			}
 		}
 
 		void trackPreferredBuild(NativeRowsStep step, RowState row) {

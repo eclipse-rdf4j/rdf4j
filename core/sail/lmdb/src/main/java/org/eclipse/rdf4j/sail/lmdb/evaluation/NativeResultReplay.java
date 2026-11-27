@@ -22,6 +22,7 @@ import java.util.ArrayList;
 import java.util.List;
 
 import org.eclipse.rdf4j.query.QueryEvaluationException;
+import org.eclipse.rdf4j.query.impl.RemoteBNode.CompactSpillScope;
 import org.eclipse.rdf4j.sail.lmdb.LmdbQueryMemoryManager;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.codegen.KernelRuntime;
 
@@ -46,6 +47,7 @@ final class NativeResultReplay implements AutoCloseable {
 	private final KernelRuntime.AggregateMemory memory;
 	private final long maxBytes;
 	private NativeSpillValueCodec writerCodec;
+	private CompactSpillScope blankNodeOrigins;
 	/** Dictionary authority for spilling store-backed terms as IDs; null keeps the exact lexical codec only. */
 	private NativeLmdbQuerySource termSource;
 	private List<NativeResultRow> resident = new ArrayList<>();
@@ -208,8 +210,10 @@ final class NativeResultReplay implements AutoCloseable {
 			throw new QueryEvaluationException("Result replay spill workspace refused by query memory ledger");
 		}
 		try (NativeExecutionPhaseEvent.Span phase = NativeExecutionPhaseEvent.start("spill", cancellation)) {
+			blankNodeOrigins = new CompactSpillScope();
 			writerCodec = new NativeSpillValueCodec(cancellation,
-					context == null ? null : context::authoritativeQueryScopedValue, null, termSource);
+					context == null ? null : context::authoritativeQueryScopedValue, null, termSource,
+					blankNodeOrigins);
 			path = Files.createTempFile("rdf4j-lmdb-result-", ".spill");
 			output = new DataOutputStream(
 					new BufferedOutputStream(Files.newOutputStream(path), NativeSpillValueCodec.BUFFER_BYTES));
@@ -290,6 +294,10 @@ final class NativeResultReplay implements AutoCloseable {
 		Throwable failure = KernelRuntime.closeResource(output, null);
 		output = null;
 		writerCodec = null;
+		if (blankNodeOrigins != null) {
+			blankNodeOrigins.clear();
+			blankNodeOrigins = null;
+		}
 		failure = KernelRuntime.closeResource(() -> {
 			if (path != null) {
 				Files.deleteIfExists(path);
@@ -318,7 +326,8 @@ final class NativeResultReplay implements AutoCloseable {
 			this.reservedBytes = reservedBytes;
 			this.codec = input == null ? null
 					: new NativeSpillValueCodec(localCancellation,
-							context == null ? null : context::authoritativeQueryScopedValue, null, termSource);
+							context == null ? null : context::authoritativeQueryScopedValue, null, termSource,
+							blankNodeOrigins);
 		}
 
 		@Override

@@ -28,6 +28,9 @@ import org.eclipse.rdf4j.model.Literal;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.base.CoreDatatype;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
+import org.eclipse.rdf4j.query.impl.GeneratedBNode;
+import org.eclipse.rdf4j.query.impl.RemoteBNode;
+import org.eclipse.rdf4j.query.impl.RepositoryBNode;
 import org.eclipse.rdf4j.sail.SailException;
 import org.eclipse.rdf4j.sail.lmdb.LmdbQueryTelemetry;
 import org.eclipse.rdf4j.sail.lmdb.LmdbStoreFormat;
@@ -211,8 +214,8 @@ final class LmdbNativeValueCodec {
 		if (decoded == null || decoded.error()) {
 			return null;
 		}
-		if (decoded.triple()) {
-			return decoded.tripleValue();
+		if (decoded.termValue != null) {
+			return decoded.termValue;
 		}
 		SimpleValueFactory vf = SimpleValueFactory.getInstance();
 		if (decoded.iri()) {
@@ -262,8 +265,10 @@ final class LmdbNativeValueCodec {
 		if (value instanceof IRI) {
 			return DecodedValue.iri(value.stringValue());
 		}
-		if (value instanceof BNode) {
-			return DecodedValue.bnode(value.stringValue());
+		if (value instanceof BNode node) {
+			return node instanceof RemoteBNode || node instanceof GeneratedBNode || node instanceof RepositoryBNode
+					? DecodedValue.scopedBNode(node)
+					: DecodedValue.bnode(node.getID());
 		}
 		return DecodedValue.ERROR;
 	}
@@ -723,8 +728,8 @@ final class LmdbNativeValueCodec {
 		private final BigDecimal decimalValue;
 		private final Double floatingValue;
 		private final Literal.BaseDirection baseDirection;
-		/** The materialized (usually lazy store-backed) triple term; non-null exactly for {@link Kind#TRIPLE}. */
-		private final Value tripleValue;
+		/** Carries a lazy triple term or a blank node whose admitted authority must survive a scalar operation. */
+		private final Value termValue;
 
 		private DecodedValue(Kind kind, String label, String language, String datatypeIri, CoreDatatype coreDatatype,
 				BigDecimal decimalValue, Double floatingValue, Literal.BaseDirection baseDirection) {
@@ -733,7 +738,7 @@ final class LmdbNativeValueCodec {
 
 		private DecodedValue(Kind kind, String label, String language, String datatypeIri, CoreDatatype coreDatatype,
 				BigDecimal decimalValue, Double floatingValue, Literal.BaseDirection baseDirection,
-				Value tripleValue) {
+				Value termValue) {
 			this.kind = kind;
 			this.label = label;
 			this.language = language;
@@ -742,7 +747,7 @@ final class LmdbNativeValueCodec {
 			this.decimalValue = decimalValue;
 			this.floatingValue = floatingValue;
 			this.baseDirection = baseDirection == null ? Literal.BaseDirection.NONE : baseDirection;
-			this.tripleValue = tripleValue;
+			this.termValue = termValue;
 		}
 
 		/** A SPARQL 1.2 triple term (RDF-star). The carried value is typically a lazy store-backed TripleTerm. */
@@ -756,7 +761,7 @@ final class LmdbNativeValueCodec {
 		}
 
 		Value tripleValue() {
-			return tripleValue;
+			return termValue;
 		}
 
 		static DecodedValue literal(String label, String language, String datatypeIri, CoreDatatype datatype) {
@@ -791,21 +796,25 @@ final class LmdbNativeValueCodec {
 					Literal.BaseDirection.NONE);
 		}
 
+		static DecodedValue scopedBNode(BNode node) {
+			return new DecodedValue(Kind.BNODE, node.getID(), null, null, CoreDatatype.NONE, null, null,
+					Literal.BaseDirection.NONE, node);
+		}
+
 		boolean error() {
 			return kind == Kind.ERROR;
 		}
 
 		/**
 		 * Conservative owned heap footprint of this immutable decoded value. The estimate is intentionally computed
-		 * from scalar fields and string lengths only, so accounting never walks an object graph. A triple term can
-		 * retain an arbitrary lazy store-backed graph and therefore reports unknown ownership until a bounded
-		 * representation exists.
+		 * from scalar fields and string lengths only. A retained triple or scoped blank node can carry external
+		 * authority and therefore reports unknown ownership instead of walking that object graph.
 		 */
 		long ownedBytes() {
 			if (error()) {
 				return 0L;
 			}
-			if (triple()) {
+			if (termValue != null) {
 				return UNKNOWN_OWNERSHIP;
 			}
 			long bytes = OBJECT_BYTES;

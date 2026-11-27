@@ -17,6 +17,7 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.fail;
 
 import java.io.IOException;
+import java.io.StringWriter;
 import java.util.function.Function;
 
 import org.eclipse.rdf4j.model.Literal;
@@ -56,6 +57,22 @@ public class NTriplesUtilTest {
 		Literal l = f.createLiteral("\bbc");
 		NTriplesUtil.append(l, appendable, true, true);
 		assertThat(appendable.toString()).isEqualTo("\"\\bbc\"");
+	}
+
+	@Test
+	public void preservesNumericAndShortLiteralEscapesForBothAppendablePaths() throws IOException {
+		String input = "\0plain\u0007\u000B\u001F\u007F\uFFFE\uFFFFtail\n\"\\\t\b\f\r";
+		String suffix = "tail\\n\\\"\\\\\\t\\b\\f\\r";
+		for (boolean escapeUnicode : new boolean[] { true, false }) {
+			String expected = (escapeUnicode ? "\\u0000plain\\u0007\\u000B\\u001F\\u007F\\uFFFE\\uFFFF"
+					: "\0plain\u0007\u000B\u001F\u007F\uFFFE\uFFFF") + suffix;
+			StringBuilder builder = new StringBuilder();
+			StringWriter writer = new StringWriter();
+			NTriplesUtil.escapeString(input, builder, escapeUnicode);
+			NTriplesUtil.escapeString(input, writer, escapeUnicode);
+			assertEquals(expected, builder.toString());
+			assertEquals(expected, writer.toString());
+		}
 	}
 
 	@Test

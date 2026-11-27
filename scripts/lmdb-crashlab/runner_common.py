@@ -254,7 +254,20 @@ def create_seed_iso(iso_tool: Path, qemu_root: Path, name: str, boot_script: str
     seed_dir.mkdir()
     template = (Path(__file__).resolve().parent / "guest/bootstrap-user-data.yaml.in")
     user_data = template.read_text(encoding="utf-8").replace("@BOOT_SCRIPT@", boot_script)
-    if "@BOOT_SCRIPT@" in user_data:
+    # Never forward host paths/options into the guest. The marker enables only diagnostics;
+    # the writable 9p share survives guest termination and is collected separately by CI.
+    diagnostics = ""
+    if os.environ.get("RDF4J_CI_JVM_DIAGNOSTIC_OPTIONS"):
+        diagnostics = (
+            '      mkdir -p /mnt/run-results/jvm-diagnostics\n'
+            '      diagnostics_dir="$(mktemp -d /mnt/run-results/jvm-diagnostics/boot-XXXXXXXXXX)"\n'
+            '      export JAVA_TOOL_OPTIONS="${JAVA_TOOL_OPTIONS:+$JAVA_TOOL_OPTIONS }'
+            '-XX:+HeapDumpOnOutOfMemoryError -XX:HeapDumpGzipLevel=1 '
+            '-XX:HeapDumpPath=$diagnostics_dir/java_pid%p.hprof.gz '
+            '-XX:ErrorFile=$diagnostics_dir/hs_err_pid%p.log"\n'
+        )
+    user_data = user_data.replace("@JVM_DIAGNOSTICS@", diagnostics)
+    if "@BOOT_SCRIPT@" in user_data or "@JVM_DIAGNOSTICS@" in user_data:
         raise ValueError("cloud-init template was not fully rendered")
     write_text_exclusive(seed_dir / "user-data", user_data)
     instance_id = f"rdf4j-crashlab-{name}-{uuid.uuid4()}"

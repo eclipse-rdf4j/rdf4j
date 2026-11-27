@@ -26,11 +26,14 @@ import java.util.Arrays;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.OptionalLong;
 
 import org.eclipse.rdf4j.query.impl.EmptyBindingSet;
+import org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbNativeCostVector.Feature;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.NativeLmdbQuerySource.NativeProbe;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.NativeLmdbQuerySource.NodePredicates;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.NativeLmdbQuerySource.WildcardAdjacency;
+import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.CsvSource;
 import org.junit.jupiter.params.provider.ValueSource;
@@ -164,6 +167,43 @@ class LmdbWildcardPredicateBoundScheduleTest {
 			}
 			assertThat(weights).containsExactlyInAnyOrderEntriesOf(Map.of(FIRST_PREDICATE, 6L, SECOND_PREDICATE, 6L));
 		}
+	}
+
+	@Test
+	void rejectedContinuationDoesNotProveBatchRows() throws IOException {
+		RowState row = new Fixture().row();
+		when(row.source.predicateDomainCardinality()).thenReturn(OptionalLong.of(2L));
+		// Four edges across two predicates. Neither neighbor (10 or 11) satisfies the suffix.
+		PatternPlan edge = new PatternPlan(Term.constant(1L), Term.slot(1), Term.slot(2), Term.unbound(),
+				ContextConstraint.UNRESTRICTED, false, 4D);
+		SlotPlan suffix = SlotPlan.values(new ValuesRow[] { new ValuesRow(new int[] { 2 }, new long[] { 99L }) });
+		MultiJoinPlan join = new MultiJoinPlan(new SlotPlan[] { edge, suffix }, new MaskedFilter[0]);
+		try (var proposal = LmdbWildcardPredicateBatch.propose(join, row, 8, false, new int[] { 1, 2 }, new int[0]);
+				BatchCursor cursor = proposal.open()) {
+			assertThat(collect(cursor)).isEmpty();
+			LmdbNativeCostVector suffixWork = proposal.costQuote().chunked().independent().vector();
+			assertThat(suffixWork.expected(Feature.BATCH_ROW)).isEqualTo(4D);
+			assertThat(suffixWork.low(Feature.BATCH_ROW)).isZero();
+			assertThat(suffixWork.high(Feature.BATCH_ROW)).isGreaterThan(4D);
+		}
+	}
+
+	@Test
+	void wildcardScanContinuationDoesNotProveGroupUpdates() throws IOException {
+		RowState row = new Fixture().row();
+		when(row.source.predicateDomainCardinality()).thenReturn(OptionalLong.of(2L));
+		PatternPlan scan = new PatternPlan(Term.slot(0), Term.slot(1), Term.slot(2), Term.unbound(),
+				ContextConstraint.UNRESTRICTED, false, 4D);
+		// No endpoint is bound, and this predicate is absent from the fixture's two planes.
+		SlotPlan suffix = SlotPlan.values(
+				new ValuesRow[] { new ValuesRow(new int[] { 1 }, new long[] { ABSENT_PREDICATE }) });
+		MultiJoinPlan join = new MultiJoinPlan(new SlotPlan[] { scan, suffix }, new MaskedFilter[0]);
+		AggregateSpec count = new AggregateSpec("count", -1, UNKNOWN, false, AggKind.COUNT);
+		LmdbNativeCostVector work = LmdbWildcardPredicateBatch.weightedAggregateVector(join, row, new int[0],
+				new AggregateSpec[] { count });
+		assertThat(work.expected(Feature.GROUP_UPDATE)).isEqualTo(4D);
+		assertThat(work.low(Feature.GROUP_UPDATE)).isZero();
+		assertThat(work.high(Feature.GROUP_UPDATE)).isGreaterThan(4D);
 	}
 
 	private static PatternPlan pattern(Term root) {

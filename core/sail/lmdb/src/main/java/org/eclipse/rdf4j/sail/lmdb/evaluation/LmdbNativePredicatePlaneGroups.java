@@ -210,7 +210,8 @@ final class LmdbNativePredicatePlaneGroups implements NativeAggregateAlternative
 		try {
 			try (KernelRuntime.AggregateMemory workspace = KernelRuntime.AggregateMemory.forLedger(groups.ledger(),
 					"predicate-plane-groups");
-					LmdbPrefixRunCursor cursor = source.prefixRuns(plan, UNKNOWN, UNKNOWN, UNKNOWN, UNKNOWN, true)) {
+					LmdbPrefixRunCursor cursor = source.prefixRuns(plan, UNKNOWN, UNKNOWN, UNKNOWN, UNKNOWN, true, null,
+							NativeLmdbQuerySource.captureCursorCancellation(cancellation))) {
 				if (cursor == null) {
 					return null;
 				}

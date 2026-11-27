@@ -126,11 +126,13 @@ final class LmdbNativeParallelPrefixRuns {
 				}
 				List<Future<?>> futures = new ArrayList<>(workers);
 				AtomicReference<Throwable> failure = new AtomicReference<>();
+				var cursorOwner = row.cursorCancellation();
 				for (int w = 0; w < workers; w++) {
 					NativeLmdbQuerySource workerSource = sources[w];
 					var replayContext = NativeExecutionContext.captureWorkerContext();
 					futures.add(LmdbNativeParallelPipelines.pool().submit(() -> {
 						try (var replayScope = replayContext.activate()) {
+							var cancellation = cursorOwner.forWorker();
 							Integer range;
 							// abort check: once any worker failed (or the query thread was interrupted while
 							// draining), remaining ranges are abandoned instead of scanned to completion
@@ -138,7 +140,7 @@ final class LmdbNativeParallelPrefixRuns {
 								long[] lo = range == 0 ? null : splits[range - 1];
 								long[] hi = range == splits.length ? null : splits[range];
 								rangeResults[range] = collectRange(it, workerSource, subj, pred, obj, context, lo,
-										hi, row.runtimePlan);
+										hi, row.runtimePlan, cancellation);
 							}
 							return null;
 						} catch (Throwable t) {
@@ -233,7 +235,8 @@ final class LmdbNativeParallelPrefixRuns {
 	 */
 	private static List<long[]> collectRange(NativeGroupIteration it, NativeLmdbQuerySource workerSource, long subj,
 			long pred, long obj, long context, long[] lo, long[] hi,
-			LmdbNativeRuntimePlan.Invocation runtimePlan) throws IOException {
+			LmdbNativeRuntimePlan.Invocation runtimePlan, NativeLmdbQuerySource.CursorCancellation cancellation)
+			throws IOException {
 		int groupFieldCount = it.groupSlots.length;
 		int[] groupPositions = new int[groupFieldCount];
 		for (int i = 0; i < groupFieldCount; i++) {
@@ -243,7 +246,7 @@ final class LmdbNativeParallelPrefixRuns {
 		NativeLmdbQuerySource.AdjacencyAccessObserver observer = runtimePlan == null ? null
 				: runtimePlan.adjacencyAccessAt(workerSource, it.prefixPattern);
 		try (LmdbPrefixRunCursor cursor = workerSource.prefixRuns(it.prefixRunPlan, subj, pred, obj, context,
-				it.prefixCountRunRows, observer)) {
+				it.prefixCountRunRows, observer, cancellation)) {
 			if (cursor == null) {
 				throw new QueryEvaluationException("parallel prefix-run worker could not open its cursor");
 			}

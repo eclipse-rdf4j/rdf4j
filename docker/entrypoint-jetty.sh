@@ -1,6 +1,12 @@
 #!/bin/sh
 set -e
 
+# CI retains each JVM launch separately, including a container restarted with the same PID.
+if [ -n "${RDF4J_CONTAINER_JVM_DIAGNOSTICS_ROOT:-}" ]; then
+	diagnostics_directory="$(mktemp -d "$RDF4J_CONTAINER_JVM_DIAGNOSTICS_ROOT/jvm-XXXXXXXXXX")"
+	export JAVA_TOOL_OPTIONS="${JAVA_TOOL_OPTIONS:+$JAVA_TOOL_OPTIONS }-XX:+HeapDumpOnOutOfMemoryError -XX:HeapDumpGzipLevel=1 -XX:HeapDumpPath=$diagnostics_directory/java_pid%p.hprof.gz -XX:ErrorFile=$diagnostics_directory/hs_err_pid%p.log"
+fi
+
 # Activate OpenTelemetry tracing when an OTLP endpoint is configured: the presence of
 # the OTEL_EXPORTER_OTLP_ENDPOINT environment variable switches tracing on for this container.
 #

@@ -15,6 +15,7 @@ package org.eclipse.rdf4j.sail.lmdb.evaluation;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import java.io.File;
+import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -26,6 +27,8 @@ import org.eclipse.rdf4j.common.transaction.IsolationLevels;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.model.util.Values;
+import org.eclipse.rdf4j.query.QueryExecutionPolicy;
+import org.eclipse.rdf4j.query.QueryExecutionPolicy.GraphJoinOptimization;
 import org.eclipse.rdf4j.query.QueryResults;
 import org.eclipse.rdf4j.query.TupleQuery;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
@@ -37,7 +40,6 @@ import org.eclipse.rdf4j.sail.lmdb.config.DirectAdjacencyCoverage;
 import org.eclipse.rdf4j.sail.lmdb.config.DirectAdjacencyMode;
 import org.eclipse.rdf4j.sail.lmdb.config.LmdbStoreConfig;
 import org.junit.jupiter.api.AfterEach;
-import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 import org.junit.jupiter.api.parallel.ResourceLock;
@@ -82,9 +84,16 @@ public class LmdbNativeChunkPipelineTest {
 
 	private SailRepository repository;
 
-	@BeforeEach
-	public void setUp() {
-		repository = new SailRepository(new LmdbStore(dataDir, chunkPipelineConfig()));
+	/** Each test gets its own store, created only when it uses the default query fixture. */
+	private SailRepository repository() {
+		if (repository == null) {
+			initializeRepository();
+		}
+		return repository;
+	}
+
+	private void initializeRepository() {
+		repository = new SailRepository(chunkPipelineStore(dataDir));
 		try (SailRepositoryConnection conn = repository.getConnection()) {
 			ValueFactory vf = conn.getValueFactory();
 			IRI p1 = vf.createIRI(EX, "p1");
@@ -117,12 +126,22 @@ public class LmdbNativeChunkPipelineTest {
 
 	@AfterEach
 	public void tearDown() {
-		repository.shutDown();
+		if (repository != null) {
+			repository.shutDown();
+		}
 	}
 
 	private static LmdbStoreConfig chunkPipelineConfig() {
 		return new LmdbStoreConfig("spoc,posc,ospc").setNativeEvaluationEnabled(true)
 				.setDirectAdjacencyMode(DirectAdjacencyMode.DISABLED);
+	}
+
+	private static LmdbStore chunkPipelineStore(File directory) {
+		LmdbStore store = new LmdbStore(directory, chunkPipelineConfig());
+		// These tests assert the chunk pipeline's physical route, so isolate it from GRAPH restriction routing.
+		store.setQueryExecutionPolicy(
+				QueryExecutionPolicy.DEFAULT.withGraphJoinOptimization(GraphJoinOptimization.OFF));
+		return store;
 	}
 
 	@Test
@@ -149,7 +168,7 @@ public class LmdbNativeChunkPipelineTest {
 		assertSameAsGeneric("PREFIX ex: <" + EX + ">\n"
 				+ "SELECT DISTINCT ?y WHERE { ?s ex:p1 ?x . ?x ex:p2 ?y . ?y ex:p3 ?z }");
 		// LIMIT without ORDER BY is not row-deterministic across engines: check the count only
-		try (SailRepositoryConnection conn = repository.getConnection()) {
+		try (SailRepositoryConnection conn = repository().getConnection()) {
 			List<?> rows = QueryResults.asList(conn.prepareTupleQuery("PREFIX ex: <" + EX + ">\n"
 					+ "SELECT ?s ?y WHERE { ?s ex:p1 ?x . ?x ex:p2 ?y . ?y ex:p3 ?z } LIMIT 17").evaluate());
 			assertThat(rows).hasSize(17);
@@ -217,7 +236,7 @@ public class LmdbNativeChunkPipelineTest {
 		// every live probe key is separated by a run of dead keys longer than the sequential threshold:
 		// the walk must seek (MDB_SET_RANGE) across the dead runs instead of scanning them
 		File seekDir = new File(dataDir, "merge-seek");
-		SailRepository sparse = new SailRepository(new LmdbStore(seekDir, chunkPipelineConfig()));
+		SailRepository sparse = new SailRepository(chunkPipelineStore(seekDir));
 		try {
 			try (SailRepositoryConnection conn = sparse.getConnection()) {
 				ValueFactory vf = conn.getValueFactory();
@@ -260,7 +279,7 @@ public class LmdbNativeChunkPipelineTest {
 					System.setProperty("rdf4j.lmdb.nativeQueryEngine.enabled", previous);
 				}
 			}
-			assertThat(nativeRows).containsExactlyInAnyOrderElementsOf(genericRows);
+			assertThat(rowBag(nativeRows)).containsExactlyInAnyOrderEntriesOf(rowBag(genericRows));
 			assertThat(LmdbNativeChunkPipeline.MERGE_WALKS.get())
 					.as("the order-aligned depth-1 stage should run as a merge walk")
 					.isGreaterThan(walksBefore);
@@ -280,7 +299,7 @@ public class LmdbNativeChunkPipelineTest {
 		String previousParallel = System.getProperty("rdf4j.lmdb.parallel.enabled");
 		System.setProperty("rdf4j.lmdb.parallel.enabled", "false");
 		File sipDir = new File(dataDir, "sip-filter");
-		SailRepository star = new SailRepository(new LmdbStore(sipDir, chunkPipelineConfig()));
+		SailRepository star = new SailRepository(chunkPipelineStore(sipDir));
 		try {
 			try (SailRepositoryConnection conn = star.getConnection()) {
 				ValueFactory vf = conn.getValueFactory();
@@ -325,7 +344,7 @@ public class LmdbNativeChunkPipelineTest {
 					System.setProperty("rdf4j.lmdb.nativeQueryEngine.enabled", previous);
 				}
 			}
-			assertThat(nativeRows).containsExactlyInAnyOrderElementsOf(genericRows);
+			assertThat(rowBag(nativeRows)).containsExactlyInAnyOrderEntriesOf(rowBag(genericRows));
 			assertThat(LmdbNativeChunkPipeline.ENGAGED.get())
 					.as("the chunk pipeline should have driven the star's flat prefix")
 					.isGreaterThan(engagedBefore);
@@ -357,7 +376,7 @@ public class LmdbNativeChunkPipelineTest {
 		String previousParallel = System.getProperty("rdf4j.lmdb.parallel.enabled");
 		System.setProperty("rdf4j.lmdb.parallel.enabled", "false");
 		File multiDir = new File(dataDir, "sip-multikey");
-		SailRepository multi = new SailRepository(new LmdbStore(multiDir, chunkPipelineConfig()));
+		SailRepository multi = new SailRepository(chunkPipelineStore(multiDir));
 		try {
 			try (SailRepositoryConnection conn = multi.getConnection()) {
 				ValueFactory vf = conn.getValueFactory();
@@ -402,7 +421,7 @@ public class LmdbNativeChunkPipelineTest {
 					System.setProperty("rdf4j.lmdb.nativeQueryEngine.enabled", previous);
 				}
 			}
-			assertThat(nativeRows).containsExactlyInAnyOrderElementsOf(genericRows);
+			assertThat(rowBag(nativeRows)).containsExactlyInAnyOrderEntriesOf(rowBag(genericRows));
 			assertThat(LmdbNativeChunkPipeline.ENGAGED.get())
 					.as("the chunk pipeline should have driven the flat prefix")
 					.isGreaterThan(engagedBefore);
@@ -434,7 +453,7 @@ public class LmdbNativeChunkPipelineTest {
 		String previousParallel = System.getProperty("rdf4j.lmdb.parallel.enabled");
 		System.setProperty("rdf4j.lmdb.parallel.enabled", "false");
 		File sipDir = new File(dataDir, "sip-seek");
-		SailRepository sparse = new SailRepository(new LmdbStore(sipDir, chunkPipelineConfig()));
+		SailRepository sparse = new SailRepository(chunkPipelineStore(sipDir));
 		try {
 			try (SailRepositoryConnection conn = sparse.getConnection()) {
 				ValueFactory vf = conn.getValueFactory();
@@ -479,7 +498,7 @@ public class LmdbNativeChunkPipelineTest {
 					System.setProperty("rdf4j.lmdb.nativeQueryEngine.enabled", previous);
 				}
 			}
-			assertThat(nativeRows).containsExactlyInAnyOrderElementsOf(genericRows);
+			assertThat(rowBag(nativeRows)).containsExactlyInAnyOrderEntriesOf(rowBag(genericRows));
 			assertThat(LmdbNativeChunkPipeline.SIP_MASKS.get())
 					.as("the completed hash build should publish its key set to the root scan")
 					.isGreaterThan(masksBefore);
@@ -512,7 +531,7 @@ public class LmdbNativeChunkPipelineTest {
 		String previousParallel = System.getProperty("rdf4j.lmdb.parallel.enabled");
 		System.setProperty("rdf4j.lmdb.parallel.enabled", "false");
 		File hashDir = new File(dataDir, "hash-build");
-		SailRepository flood = new SailRepository(new LmdbStore(hashDir, chunkPipelineConfig()));
+		SailRepository flood = new SailRepository(chunkPipelineStore(hashDir));
 		try {
 			try (SailRepositoryConnection conn = flood.getConnection()) {
 				ValueFactory vf = conn.getValueFactory();
@@ -557,7 +576,7 @@ public class LmdbNativeChunkPipelineTest {
 					System.setProperty("rdf4j.lmdb.nativeQueryEngine.enabled", previous);
 				}
 			}
-			assertThat(nativeRows).containsExactlyInAnyOrderElementsOf(genericRows);
+			assertThat(rowBag(nativeRows)).containsExactlyInAnyOrderEntriesOf(rowBag(genericRows));
 			assertThat(LmdbNativeChunkPipeline.HASH_BUILDS.get())
 					.as("a distinct-key flood over a small pattern range should flip to a hash build")
 					.isGreaterThan(buildsBefore);
@@ -671,7 +690,7 @@ public class LmdbNativeChunkPipelineTest {
 			List<String> enabledRows = snapshotRows(selective, "factorizedRows", query);
 			String enabledTelemetry = telemetry(selective, "factorizedRows", query);
 
-			assertThat(enabledRows).containsExactlyInAnyOrderElementsOf(disabledRows);
+			assertThat(rowBag(enabledRows)).containsExactlyInAnyOrderEntriesOf(rowBag(disabledRows));
 			assertThat(LmdbNativeChunkPipeline.ENGAGED.get()).isGreaterThan(engagedAfterDisabled);
 			assertThat(LmdbNativeChunkPipeline.SIP_MASKS.get())
 					.as("the selective probe's exact adjacency key domain should mask the root scan%n%s",
@@ -714,12 +733,12 @@ public class LmdbNativeChunkPipelineTest {
 	}
 
 	private void assertSameAsGeneric(String query) {
-		List<String> nativeRows = rows(repository, query);
+		List<String> nativeRows = rows(repository(), query);
 		String previous = System.getProperty("rdf4j.lmdb.nativeQueryEngine.enabled");
 		List<String> genericRows;
 		try {
 			System.setProperty("rdf4j.lmdb.nativeQueryEngine.enabled", "false");
-			genericRows = rows(repository, query);
+			genericRows = rows(repository(), query);
 		} finally {
 			if (previous == null) {
 				System.clearProperty("rdf4j.lmdb.nativeQueryEngine.enabled");
@@ -727,9 +746,18 @@ public class LmdbNativeChunkPipelineTest {
 				System.setProperty("rdf4j.lmdb.nativeQueryEngine.enabled", previous);
 			}
 		}
-		assertThat(nativeRows)
+		assertThat(rowBag(nativeRows))
 				.as("native vs generic for:\n" + query)
-				.containsExactlyInAnyOrderElementsOf(genericRows);
+				.containsExactlyInAnyOrderEntriesOf(rowBag(genericRows));
+	}
+
+	/** Counts every occurrence without changing the existing canonical row representation. */
+	private static Map<String, Integer> rowBag(List<String> rows) {
+		Map<String, Integer> counts = new HashMap<>();
+		for (String row : rows) {
+			counts.merge(row, 1, Integer::sum);
+		}
+		return counts;
 	}
 
 	private static void restoreProperty(String property, String previous) {

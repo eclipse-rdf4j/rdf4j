@@ -12,6 +12,7 @@
 package org.eclipse.rdf4j.sail.lmdb.evaluation;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.eclipse.rdf4j.sail.lmdb.evaluation.NativeCancellationTestAccess.mockScanSource;
 import static org.mockito.AdditionalAnswers.delegatesTo;
 import static org.mockito.ArgumentMatchers.anyBoolean;
 import static org.mockito.ArgumentMatchers.anyInt;
@@ -397,8 +398,8 @@ class LmdbNativeDomainRootHashQuoteTest {
 
 		private NativeLmdbQuerySource wrap(NativeLmdbQuerySource actual, boolean worker) throws IOException {
 			NativeLmdbQuerySource wrapped = worker
-					? mock(ParallelSource.class, delegatesTo(actual))
-					: mock(NativeLmdbQuerySource.class, delegatesTo(actual));
+					? mockScanSource(ParallelSource.class, delegatesTo(actual))
+					: mockScanSource(NativeLmdbQuerySource.class, delegatesTo(actual));
 			if (worker) {
 				doAnswer(close -> {
 					((ParallelSource) actual).close();

@@ -40,6 +40,7 @@ import org.eclipse.rdf4j.sail.lmdb.evaluation.codegen.KernelScanner;
 final class LmdbNativeKernelScanner implements KernelScanner, Closeable {
 
 	private final NativeLmdbQuerySource source;
+	private final NativeLmdbQuerySource.CursorCancellation cancellation;
 	private final LmdbNativeRuntimePlan.Invocation runtimePlan;
 	private final NativeLmdbQuerySource.NativeProbe[] probes;
 	private final RecordIterator[] orderedIterators;
@@ -51,28 +52,29 @@ final class LmdbNativeKernelScanner implements KernelScanner, Closeable {
 	private LmdbRootScanPartition rootPartition;
 
 	LmdbNativeKernelScanner(NativeLmdbQuerySource source, int scanCount) {
-		this(source, null, scanSites(new StatementOrder[scanCount]));
+		this(source, null, null, scanSites(new StatementOrder[scanCount]));
 	}
 
 	LmdbNativeKernelScanner(NativeLmdbQuerySource source, StatementOrder[] scanOrders) {
-		this(source, null, scanSites(scanOrders));
+		this(source, null, null, scanSites(scanOrders));
 	}
 
 	LmdbNativeKernelScanner(NativeLmdbQuerySource source, LmdbNativeKernelBindings.ScanSite[] scanSites) {
-		this(source, null, scanSites);
+		this(source, null, null, scanSites);
 	}
 
 	LmdbNativeKernelScanner(RowState row, StatementOrder[] scanOrders) {
-		this(row.source, row.runtimePlan, scanSites(scanOrders));
+		this(row.source, row.runtimePlan, row.cursorCancellation(), scanSites(scanOrders));
 	}
 
 	LmdbNativeKernelScanner(RowState row, LmdbNativeKernelBindings.ScanSite[] scanSites) {
-		this(row.source, row.runtimePlan, scanSites);
+		this(row.source, row.runtimePlan, row.cursorCancellation(), scanSites);
 	}
 
 	private LmdbNativeKernelScanner(NativeLmdbQuerySource source, LmdbNativeRuntimePlan.Invocation runtimePlan,
-			LmdbNativeKernelBindings.ScanSite[] scanSites) {
+			NativeLmdbQuerySource.CursorCancellation cancellation, LmdbNativeKernelBindings.ScanSite[] scanSites) {
 		this.source = source;
+		this.cancellation = cancellation;
 		this.runtimePlan = runtimePlan;
 		this.scanSites = scanSites.clone();
 		this.scanOrders = new StatementOrder[scanSites.length];
@@ -135,7 +137,8 @@ final class LmdbNativeKernelScanner implements KernelScanner, Closeable {
 				if (previous != null) {
 					previous.close();
 				}
-				RecordIterator current = source.statements(subj, pred, obj, context, rootPartition);
+				RecordIterator current = source.partitionStatements(subj, pred, obj, context, rootPartition,
+						cancellation);
 				orderedIterators[scanId] = current;
 				cursor.reset(current);
 				return cursor;
@@ -147,7 +150,7 @@ final class LmdbNativeKernelScanner implements KernelScanner, Closeable {
 				if (previous != null) {
 					previous.close();
 				}
-				RecordIterator current = source.lmdbStatements(subj, pred, obj, context, observer);
+				RecordIterator current = source.lmdbStatements(subj, pred, obj, context, observer, cancellation);
 				orderedIterators[scanId] = current;
 				cursor.reset(current);
 			} else if (range != null) {
@@ -156,13 +159,13 @@ final class LmdbNativeKernelScanner implements KernelScanner, Closeable {
 				if (previous != null) {
 					previous.close();
 				}
-				RecordIterator current = source.statements(subj, pred, obj, context, range, observer);
+				RecordIterator current = source.statements(subj, pred, obj, context, range, observer, cancellation);
 				orderedIterators[scanId] = current;
 				cursor.reset(current);
 			} else if (site.order() == null) {
 				NativeLmdbQuerySource.NativeProbe probe = probes[scanId];
 				if (probe == null) {
-					probe = source.newProbe();
+					probe = source.newProbe(cancellation);
 					probes[scanId] = probe;
 				}
 				cursor.reset(probe.open(subj, pred, obj, context, observer));
@@ -171,7 +174,8 @@ final class LmdbNativeKernelScanner implements KernelScanner, Closeable {
 				if (previous != null) {
 					previous.close();
 				}
-				RecordIterator current = source.statements(site.order(), subj, pred, obj, context, observer);
+				RecordIterator current = source.statements(site.order(), subj, pred, obj, context, observer,
+						cancellation);
 				orderedIterators[scanId] = current;
 				cursor.reset(current);
 			}

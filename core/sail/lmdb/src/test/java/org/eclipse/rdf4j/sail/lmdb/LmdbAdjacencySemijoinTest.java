@@ -15,10 +15,12 @@ package org.eclipse.rdf4j.sail.lmdb;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import java.io.File;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.stream.Collectors;
 
 import org.eclipse.rdf4j.model.IRI;
+import org.eclipse.rdf4j.model.Statement;
 import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.QueryResults;
@@ -82,21 +84,25 @@ public class LmdbAdjacencySemijoinTest {
 			IRI basedNear = vf.createIRI(EX, "based_near");
 			IRI oslo = vf.createIRI(EX, "oslo");
 			IRI g1 = vf.createIRI(EX, "g1");
+			conn.begin();
+			List<Statement> statements = new ArrayList<>(140);
 			for (int i = 0; i < PERSONS; i++) {
 				IRI person = vf.createIRI(EX, "person" + i);
-				conn.add(person, knows, vf.createIRI(EX, "person" + (i + 1) % PERSONS));
+				statements.add(vf.createStatement(person, knows, vf.createIRI(EX, "person" + (i + 1) % PERSONS)));
 				if (i % 7 == 0) {
-					conn.add(person, knows, vf.createIRI(EX, "person0"));
+					statements.add(vf.createStatement(person, knows, vf.createIRI(EX, "person0")));
 				}
 				if (i % 3 == 0) {
-					conn.add(person, nick, vf.createLiteral("nick-" + i));
+					statements.add(vf.createStatement(person, nick, vf.createLiteral("nick-" + i)));
 				}
 				if (i % 4 == 0) {
-					conn.add(person, basedNear, oslo);
+					statements.add(vf.createStatement(person, basedNear, oslo));
 				}
 			}
 			// a named-graph-only edge: context handling must stay correct in every mode
-			conn.add(vf.createIRI(EX, "person1"), knows, vf.createIRI(EX, "person3"), g1);
+			statements.add(vf.createStatement(vf.createIRI(EX, "person1"), knows, vf.createIRI(EX, "person3"), g1));
+			conn.add(statements);
+			conn.commit();
 		}
 		LmdbSailStore backing = sail.getBackingStore();
 		LmdbDirectAdjacencyStore direct = backing.directAdjacencyStore();

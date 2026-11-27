@@ -126,7 +126,11 @@ final class LmdbNativeCostObservation {
 		}
 	}
 
-	/** {@code cursor} with its pulls timed; its end completes this observation. */
+	void failed() {
+		failed = true;
+	}
+
+	/** Times cursor pulls; only successful exhaustion and closing trains the learner. */
 	NativeResultCursor observed(NativeResultCursor cursor) {
 		return new NativeResultCursor() {
 			private boolean exhausted;

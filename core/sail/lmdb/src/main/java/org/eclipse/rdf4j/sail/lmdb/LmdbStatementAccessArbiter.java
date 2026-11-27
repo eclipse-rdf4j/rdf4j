@@ -15,6 +15,7 @@ import java.io.IOException;
 
 import org.eclipse.rdf4j.common.order.StatementOrder;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.NativeLmdbQuerySource.AdjacencyAccessObserver;
+import org.eclipse.rdf4j.sail.lmdb.evaluation.codegen.KernelRuntime;
 
 /** Fixed-size, two-arm statement-access arbitration with adjacency as the structural preference. */
 final class LmdbStatementAccessArbiter {
@@ -282,7 +283,9 @@ final class LmdbStatementAccessArbiter {
 	}
 
 	private static final class MeasuredRecordIterator implements RecordIterator {
-		private RecordIterator delegate;
+		private volatile RecordIterator delegate;
+		private long delegateGeneration;
+		private final RecordCursorCancellation selection = new RecordCursorCancellation();
 		private RuntimeEvidence evidence;
 		private long regime;
 		private int variantKey;
@@ -306,7 +309,6 @@ final class LmdbStatementAccessArbiter {
 			if (this.delegate != null) {
 				throw new IllegalStateException("measurement iterator is still open");
 			}
-			this.delegate = delegate;
 			this.evidence = evidence;
 			this.regime = regime;
 			this.variantKey = variantKey;
@@ -316,6 +318,26 @@ final class LmdbStatementAccessArbiter {
 			this.exhausted = false;
 			this.observer = observer;
 			this.adjacency = adjacency;
+			this.delegateGeneration = delegate.cancellationGeneration();
+			this.delegate = delegate;
+			selection.open();
+		}
+
+		@Override
+		public boolean requestCancellation() {
+			return requestCancellation(selection.generation());
+		}
+
+		@Override
+		public long cancellationGeneration() {
+			return selection.generation();
+		}
+
+		@Override
+		public boolean requestCancellation(long generation) {
+			RecordIterator current = delegate;
+			long childSelection = delegateGeneration;
+			return selection.isActive(generation) && RecordIterator.forwardCancellation(current, childSelection);
 		}
 
 		@Override
@@ -323,7 +345,7 @@ final class LmdbStatementAccessArbiter {
 			if (delegate == null) {
 				return null;
 			}
-			long started = System.nanoTime();
+			long started = startTiming();
 			try {
 				long[] row = delegate.next();
 				if (row == null) {
@@ -331,9 +353,12 @@ final class LmdbStatementAccessArbiter {
 				} else {
 					rows++;
 				}
+				finishTiming(started);
 				return row;
-			} finally {
-				activeNanos += System.nanoTime() - started;
+			} catch (RuntimeException | Error failure) {
+				finishTiming(started);
+				KernelRuntime.closeCursor(this, failure);
+				throw failure;
 			}
 		}
 
@@ -342,16 +367,19 @@ final class LmdbStatementAccessArbiter {
 			if (delegate == null) {
 				return 0;
 			}
-			long started = System.nanoTime();
+			long started = startTiming();
 			try {
 				int filled = delegate.fill(buffer, maxRows);
 				rows += filled;
 				if (filled < maxRows) {
 					exhausted = true;
 				}
+				finishTiming(started);
 				return filled;
-			} finally {
-				activeNanos += System.nanoTime() - started;
+			} catch (RuntimeException | Error failure) {
+				finishTiming(started);
+				KernelRuntime.closeCursor(this, failure);
+				throw failure;
 			}
 		}
 
@@ -360,10 +388,24 @@ final class LmdbStatementAccessArbiter {
 			if (delegate == null) {
 				return false;
 			}
-			long started = System.nanoTime();
+			long started = startTiming();
 			try {
-				return delegate.seekForward(subj, pred, obj, context);
-			} finally {
+				boolean positioned = delegate.seekForward(subj, pred, obj, context);
+				finishTiming(started);
+				return positioned;
+			} catch (RuntimeException | Error failure) {
+				finishTiming(started);
+				KernelRuntime.closeCursor(this, failure);
+				throw failure;
+			}
+		}
+
+		private long startTiming() {
+			return evidence == null ? 0L : System.nanoTime();
+		}
+
+		private void finishTiming(long started) {
+			if (evidence != null) {
 				activeNanos += System.nanoTime() - started;
 			}
 		}
@@ -390,40 +432,61 @@ final class LmdbStatementAccessArbiter {
 
 		@Override
 		public void close() {
+			selection.close();
 			RecordIterator owned = delegate;
 			delegate = null;
 			if (owned == null) {
 				return;
 			}
-			long scanned = owned.getSourceRowsScannedActual();
-			long matched = owned.getSourceRowsMatchedActual();
-			long filtered = owned.getSourceRowsFilteredActual();
-			String actualIndex = observer == null ? "" : owned.getIndexName();
-			long started = System.nanoTime();
+			AdjacencyAccessObserver completedObserver = observer;
+			observer = null;
+			long scanned;
+			long matched;
+			long filtered;
+			String actualIndex;
+			try {
+				scanned = owned.getSourceRowsScannedActual();
+				matched = owned.getSourceRowsMatchedActual();
+				filtered = owned.getSourceRowsFilteredActual();
+				actualIndex = completedObserver == null ? "" : owned.getIndexName();
+			} catch (RuntimeException | Error failure) {
+				KernelRuntime.closeCursor(owned, failure);
+				throw failure;
+			}
+
+			long started = startTiming();
 			try {
 				owned.close();
-			} finally {
-				activeNanos += System.nanoTime() - started;
-				long actualScanned = scanned >= 0L ? scanned : rows;
-				long actualMatched = matched >= 0L ? matched : rows;
-				long actualFiltered = filtered >= 0L ? filtered : Math.max(0L, actualScanned - actualMatched);
-				if (evidence != null && exhausted) {
-					// Calibrate the same work units used by choose(). Actual scan counts remain telemetry: using
-					// them here would penalize a selective index whenever the shared cardinality estimate is high,
-					// while an iterator without scan telemetry would be calibrated against the estimate instead.
-					double calibrationWork = Double.isFinite(estimatedWork) && estimatedWork > 0D
-							? Math.max(1D, estimatedWork)
-							: Math.max(1L, actualScanned);
-					evidence.completed(regime, variantKey, activeNanos, calibrationWork);
-				} else if (evidence != null) {
-					evidence.censored(regime, variantKey);
-				}
-				AdjacencyAccessObserver completedObserver = observer;
-				observer = null;
-				if (completedObserver != null) {
-					completedObserver.measurement(adjacency, actualScanned, actualMatched, actualFiltered, !exhausted,
-							scanned >= 0L, activeNanos, actualIndex);
-				}
+			} catch (RuntimeException | Error failure) {
+				finishTiming(started);
+				KernelRuntime.closeCursor(
+						() -> reportMeasurement(completedObserver, scanned, matched, filtered, actualIndex),
+						failure);
+				throw failure;
+			}
+			finishTiming(started);
+			reportMeasurement(completedObserver, scanned, matched, filtered, actualIndex);
+		}
+
+		private void reportMeasurement(AdjacencyAccessObserver completedObserver, long scanned, long matched,
+				long filtered, String actualIndex) {
+			long actualScanned = scanned >= 0L ? scanned : rows;
+			long actualMatched = matched >= 0L ? matched : rows;
+			long actualFiltered = filtered >= 0L ? filtered : Math.max(0L, actualScanned - actualMatched);
+			if (evidence != null && exhausted) {
+				// Calibrate the same work units used by choose(). Actual scan counts remain telemetry: using
+				// them here would penalize a selective index whenever the shared cardinality estimate is high,
+				// while an iterator without scan telemetry would be calibrated against the estimate instead.
+				double calibrationWork = Double.isFinite(estimatedWork) && estimatedWork > 0D
+						? Math.max(1D, estimatedWork)
+						: Math.max(1L, actualScanned);
+				evidence.completed(regime, variantKey, activeNanos, calibrationWork);
+			} else if (evidence != null) {
+				evidence.censored(regime, variantKey);
+			}
+			if (completedObserver != null) {
+				completedObserver.measurement(adjacency, actualScanned, actualMatched, actualFiltered, !exhausted,
+						scanned >= 0L, activeNanos, actualIndex);
 			}
 		}
 	}

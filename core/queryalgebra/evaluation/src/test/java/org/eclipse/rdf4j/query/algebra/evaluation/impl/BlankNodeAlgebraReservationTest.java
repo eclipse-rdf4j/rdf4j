@@ -14,24 +14,33 @@ package org.eclipse.rdf4j.query.algebra.evaluation.impl;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotEquals;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.spy;
+import static org.mockito.Mockito.verify;
 
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.concurrent.atomic.AtomicInteger;
+import java.util.stream.Stream;
 
 import org.eclipse.rdf4j.model.Literal;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
+import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.algebra.BNodeGenerator;
 import org.eclipse.rdf4j.query.algebra.BindingSetAssignment;
 import org.eclipse.rdf4j.query.algebra.Extension;
 import org.eclipse.rdf4j.query.algebra.ExtensionElem;
 import org.eclipse.rdf4j.query.algebra.Join;
+import org.eclipse.rdf4j.query.algebra.QueryRoot;
 import org.eclipse.rdf4j.query.algebra.SameTerm;
 import org.eclipse.rdf4j.query.algebra.Service;
 import org.eclipse.rdf4j.query.algebra.SingletonSet;
 import org.eclipse.rdf4j.query.algebra.StatementPattern;
 import org.eclipse.rdf4j.query.algebra.ValueConstant;
 import org.eclipse.rdf4j.query.algebra.Var;
+import org.eclipse.rdf4j.query.algebra.evaluation.impl.evaluationsteps.BindingSetAssignmentQueryEvaluationStep;
 import org.eclipse.rdf4j.query.impl.BlankNodeAllocationScope;
 import org.eclipse.rdf4j.query.impl.EmptyBindingSet;
 import org.eclipse.rdf4j.query.impl.MapBindingSet;
@@ -40,6 +49,22 @@ import org.junit.jupiter.api.Test;
 class BlankNodeAlgebraReservationTest {
 
 	private static final SimpleValueFactory VF = SimpleValueFactory.getInstance();
+
+	@Test
+	void ordinaryStatementPreparationDoesNotRecordBlankNodeReferenceSnapshots() {
+		var scope = spy(new BlankNodeAllocationScope());
+		try (var ignored = scope.activate()) {
+			var strategy = new DefaultEvaluationStrategy(new EmptyTripleSource(), null);
+			var root = new QueryRoot(new StatementPattern(new Var("s"), new Var("p", VF.createIRI("urn:depot")),
+					new Var("depot")));
+			var prepared = strategy
+					.precompile(strategy.optimize(root, new EvaluationStatistics(), EmptyBindingSet.getInstance()));
+			try (var rows = prepared.evaluate(EmptyBindingSet.getInstance())) {
+				assertFalse(rows.hasNext());
+			}
+			verify(scope, never()).rememberReferenceSnapshot(any(), any(), any(), any());
+		}
+	}
 
 	@Test
 	void fixedNestedConstantIsReservedBeforeEarlierExtensionAllocates() {
@@ -75,6 +100,33 @@ class BlankNodeAlgebraReservationTest {
 				var result = rows.next();
 				assertNotEquals(fixed, result.getValue("fresh"));
 				assertEquals(fixed, result.getValue("fixed"));
+			}
+		}
+	}
+
+	@Test
+	void streamedValuesAreReservedOnlyWhenDemanded() {
+		var fixed = VF.createBNode("stream-0");
+		var nested = VF.createTripleTerm(fixed, VF.createIRI("urn:p"), fixed);
+		var row = new MapBindingSet();
+		row.addBinding("fixed", nested);
+		var delivered = new AtomicInteger();
+		var values = new BindingSetAssignment();
+		values.setBindingNames(Set.of("fixed"));
+		values.setBindingSets(() -> Stream.<BindingSet>of(row)
+				.peek(ignored -> delivered.incrementAndGet())
+				.iterator());
+		var allocation = new BlankNodeAllocationScope("stream-", id -> false);
+		try (var ignored = allocation.activate()) {
+			var prepared = new BindingSetAssignmentQueryEvaluationStep(values,
+					new QueryEvaluationContext.Minimal(null));
+			assertEquals(0, delivered.get());
+			try (var results = prepared.evaluate(EmptyBindingSet.getInstance())) {
+				assertEquals(0, delivered.get());
+				assertEquals(nested, results.next().getValue("fixed"));
+				assertEquals(1, delivered.get());
+				assertNotEquals(fixed, allocation.createBNode(VF));
+				assertFalse(results.hasNext());
 			}
 		}
 	}

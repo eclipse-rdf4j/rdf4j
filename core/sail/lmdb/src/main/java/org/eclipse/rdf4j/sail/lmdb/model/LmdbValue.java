@@ -34,8 +34,11 @@ public interface LmdbValue extends Value {
 		boolean resolve(long id, LmdbValue value);
 	}
 
-	/** One immutable association between a native dictionary ID and the revision that owns it. */
-	record InternalIdentity(long id, ValueStoreRevision revision) {
+	/** A native ID and revision, with provenance for a completed dictionary decode when available. */
+	record InternalIdentity(long id, ValueStoreRevision revision, boolean decodedFromDictionary) {
+		public InternalIdentity(long id, ValueStoreRevision revision) {
+			this(id, revision, false);
+		}
 	}
 
 	/**
@@ -126,6 +129,12 @@ public interface LmdbValue extends Value {
 	 * Sets the ID that is used for this value in a specific revision of the value store.
 	 */
 	void setInternalID(long id, ValueStoreRevision revision);
+
+	/** Publishes the completed decode without restoring a lazy revision to the value. */
+	@InternalUseOnly
+	default void setInternalIdentity(InternalIdentity identity) {
+		setInternalID(identity.id(), identity.revision());
+	}
 
 	/**
 	 * Gets the ID that is used in the lmdb store for this Value.

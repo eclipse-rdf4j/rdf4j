@@ -108,6 +108,7 @@ final class CanonicalTermCodec {
 		return encoded;
 	}
 
+	/** Encodes UTF-8 slices and folds a validated ASCII language tag directly into the final canonical key. */
 	static byte[] encodeLiteral(byte[] label, int labelOffset, int labelLength, byte[] datatype, int datatypeOffset,
 			int datatypeLength, byte[] language, int languageOffset, int languageLength, int direction) {
 		if (direction < 0 || direction > 2) {
@@ -124,7 +125,12 @@ final class CanonicalTermCodec {
 		if (language == null) {
 			cursor = putInt(encoded, cursor, -1);
 		} else {
-			cursor = putBytes(encoded, cursor, language, languageOffset, languageLength);
+			Objects.checkFromIndexSize(languageOffset, languageLength, language.length);
+			cursor = putInt(encoded, cursor, languageLength);
+			for (int i = languageOffset; i < languageOffset + languageLength; i++) {
+				byte value = language[i];
+				encoded[cursor++] = value >= 'A' && value <= 'Z' ? (byte) (value + ('a' - 'A')) : value;
+			}
 		}
 		encoded[cursor] = (byte) direction;
 		return encoded;

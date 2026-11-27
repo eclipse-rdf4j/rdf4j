@@ -29,9 +29,12 @@ import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.query.Binding;
 import org.eclipse.rdf4j.query.BindingSet;
+import org.eclipse.rdf4j.query.BlankNodeEffects;
 import org.eclipse.rdf4j.query.Dataset;
 import org.eclipse.rdf4j.query.MutableBindingSet;
+import org.eclipse.rdf4j.query.algebra.evaluation.ArrayBindingSet.IndexedLayout;
 import org.eclipse.rdf4j.query.algebra.evaluation.OwnedValueCapturer;
+import org.eclipse.rdf4j.query.algebra.evaluation.QueryValueEvaluationStep;
 import org.eclipse.rdf4j.query.impl.BlankNodeAllocationScope;
 import org.eclipse.rdf4j.query.impl.RemoteBNode;
 
@@ -40,6 +43,7 @@ final class ValueCapturingQueryEvaluationContext implements QueryEvaluationConte
 
 	private final QueryEvaluationContext delegate;
 	private final Function<Value, Value> capturer;
+	private final IndexedLayout indexedLayout;
 	private final Map<Function<Value, Value>, Map<Value, Value>> constants = new IdentityHashMap<>();
 	// Owned constants are added under this context's monitor and probed without locking by per-row setters.
 	private final OwnedConstants ownedConstants = new OwnedConstants();
@@ -48,6 +52,11 @@ final class ValueCapturingQueryEvaluationContext implements QueryEvaluationConte
 	ValueCapturingQueryEvaluationContext(QueryEvaluationContext delegate, Function<Value, Value> capturer) {
 		this.delegate = delegate;
 		this.capturer = capturer;
+		IndexedLayout layout = delegate.indexedBindingLayout();
+		OwnedValueCapturer owned = capturer instanceof OwnedValueCapturer ownership ? ownership : null;
+		this.indexedLayout = layout == null ? null
+				: layout.withCapture(value -> captureValue(value, owned),
+						owned == null ? null : owned::replayOwnershipToken);
 	}
 
 	@Override
@@ -93,6 +102,11 @@ final class ValueCapturingQueryEvaluationContext implements QueryEvaluationConte
 	}
 
 	@Override
+	public Set<String> getCorrelatedPathBindingNames() {
+		return delegate.getCorrelatedPathBindingNames();
+	}
+
+	@Override
 	public boolean hasEnclosingProjection() {
 		return delegate.hasEnclosingProjection();
 	}
@@ -100,6 +114,21 @@ final class ValueCapturingQueryEvaluationContext implements QueryEvaluationConte
 	@Override
 	public Comparator<Value> getComparator() {
 		return delegate.getComparator();
+	}
+
+	@Override
+	public Object getExecutionIdentity() {
+		return delegate.getExecutionIdentity();
+	}
+
+	@Override
+	public boolean allowsDirectVariableReads() {
+		return delegate.allowsDirectVariableReads();
+	}
+
+	@Override
+	public boolean allowsPathStepReuse() {
+		return delegate.allowsPathStepReuse();
 	}
 
 	@Override
@@ -115,6 +144,17 @@ final class ValueCapturingQueryEvaluationContext implements QueryEvaluationConte
 	@Override
 	public MutableBindingSet createBindingSet() {
 		return delegate.createBindingSet();
+	}
+
+	@Override
+	public boolean canOmitUnusedStatementBindings() {
+		return delegate.canOmitUnusedStatementBindings()
+				&& capturer instanceof OwnedValueCapturer owned && owned.canOmitUnusedStatementBindings();
+	}
+
+	@Override
+	public IndexedLayout indexedBindingLayout() {
+		return indexedLayout;
 	}
 
 	@Override
@@ -138,13 +178,23 @@ final class ValueCapturingQueryEvaluationContext implements QueryEvaluationConte
 	}
 
 	@Override
+	public QueryValueEvaluationStep prepareValueAccessor(String name, ValueFactory factory) {
+		return delegate.prepareValueAccessor(name, factory);
+	}
+
+	@Override
+	public ValueFactory blankNodeValueFactory(ValueFactory factory, BlankNodeEffects effects) {
+		return delegate.blankNodeValueFactory(factory, effects);
+	}
+
+	@Override
 	public BiConsumer<Value, MutableBindingSet> setBinding(String name) {
-		return capture(delegate.setBinding(name));
+		return capture(delegate.setBinding(name), name);
 	}
 
 	@Override
 	public BiConsumer<Value, MutableBindingSet> addBinding(String name) {
-		return capture(delegate.addBinding(name));
+		return capture(delegate.addBinding(name), name);
 	}
 
 	@Override
@@ -152,25 +202,31 @@ final class ValueCapturingQueryEvaluationContext implements QueryEvaluationConte
 		return delegate.removeBinding(name);
 	}
 
-	private BiConsumer<Value, MutableBindingSet> capture(BiConsumer<Value, MutableBindingSet> setter) {
-		if (capturer instanceof OwnedValueCapturer owned) {
-			// Values the capturer already owns (its constants and the values it produced) need no probe at all.
-			return (value, bindings) -> {
-				Value captured = value;
-				if (value != null && value != now && !owned.owns(value) && !ownedConstants.contains(value)) {
-					captured = RemoteBNode.preserveProvenance(value, capturer.apply(value));
-				}
-				setter.accept(captured, bindings);
-			};
+	private BiConsumer<Value, MutableBindingSet> capture(BiConsumer<Value, MutableBindingSet> setter, String name) {
+		OwnedValueCapturer owned = capturer instanceof OwnedValueCapturer ownership ? ownership : null;
+		IndexedLayout layout = indexedLayout;
+		int slot = owned == null || layout == null ? -1 : layout.slot(name);
+		if (slot < 0 || slot >= Long.SIZE) {
+			return (value, bindings) -> setter.accept(captureValue(value, owned), bindings);
 		}
 		return (value, bindings) -> {
-			// Only constant outputs are shared; the original caller values must still be recaptured.
-			Value captured = value;
-			if (value != null && value != now && !ownedConstants.contains(value)) {
-				captured = RemoteBNode.preserveProvenance(value, capturer.apply(value));
+			if (value != null && value != now && owned.owns(value)) {
+				// The owner has just vouched for this value. The layout writes it and records that on the row in
+				// one step, so that projecting the row does not ask the same question about the same value again.
+				if (!layout.setOwned(bindings, slot, value, owned.replayOwnershipToken())) {
+					setter.accept(value, bindings);
+				}
+			} else {
+				setter.accept(captureValue(value, owned), bindings);
 			}
-			setter.accept(captured, bindings);
 		};
+	}
+
+	private Value captureValue(Value value, OwnedValueCapturer owned) {
+		if (value != null && value != now && (owned == null || !owned.owns(value)) && !ownedConstants.contains(value)) {
+			return RemoteBNode.preserveProvenance(value, capturer.apply(value));
+		}
+		return value;
 	}
 
 	/**

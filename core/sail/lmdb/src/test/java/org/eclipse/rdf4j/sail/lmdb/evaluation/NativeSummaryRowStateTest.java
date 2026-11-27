@@ -32,6 +32,7 @@ import org.eclipse.rdf4j.model.vocabulary.FN;
 import org.eclipse.rdf4j.query.algebra.FunctionCall;
 import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryBindingSet;
+import org.eclipse.rdf4j.query.algebra.evaluation.impl.QueryEvaluationContext;
 import org.eclipse.rdf4j.query.impl.EmptyBindingSet;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.NativeLmdbQuerySource.ParallelSource;
 import org.junit.jupiter.api.Test;
@@ -173,8 +174,9 @@ class NativeSummaryRowStateTest {
 			assertThat(selected.lazyValue(termId)).isEqualTo(term);
 			assertThat(frame.memoryScope()).isSameAs(owner.memoryScope());
 			assertThat(frame.cancellation().ownerThreadId()).isEqualTo(owner.cancellation().ownerThreadId());
-			assertThat(frame.getOrCreateBNode(1L, "shared"))
-					.isSameAs(owner.getOrCreateBNode(1L, "shared"));
+			var structural = new QueryEvaluationContext.Minimal(null);
+			assertThat(frame.getOrCreateBNode(1L, "shared", structural))
+					.isSameAs(owner.getOrCreateBNode(1L, "shared", structural));
 			assertThat(((SyntheticValueSource) parent.projectConditionInput(retained).source).executionContext())
 					.as("the same immutable entry owner and retained domain may reuse its frame")
 					.isSameAs(frame);

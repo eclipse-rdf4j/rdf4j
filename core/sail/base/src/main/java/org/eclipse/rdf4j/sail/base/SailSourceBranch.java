@@ -989,7 +989,7 @@ class SailSourceBranch implements SailSource, FrozenFlush {
 			throws SailException {
 		// The caller owns the base until the entire reader graph has been constructed successfully.
 		AtomicBoolean adoptedBase = new AtomicBoolean();
-		SailDataset derivedFrom = new DelegatingSailDataset(base) {
+		SailDataset derivedFrom = new StatementPreservingSailDataset(base) {
 			@Override
 			public void close() {
 				if (adoptedBase.get() && lease == null) {
@@ -1004,7 +1004,7 @@ class SailSourceBranch implements SailSource, FrozenFlush {
 				}
 			}
 		};
-		class SnapshotObserver extends DelegatingSailDataset {
+		class SnapshotObserver extends StatementPreservingSailDataset {
 			private boolean borrowed;
 
 			SnapshotObserver(SailDataset derivedFrom) {
@@ -2907,29 +2907,38 @@ class SailSourceBranch implements SailSource, FrozenFlush {
 		if (start >= chain.length - 1) {
 			return false;
 		}
+		Changeset target = chain[start];
+		// An accumulator may also alias a non-adjacent generation. Detect that before any write,
+		// rather than discovering the alias after an earlier fold has already changed its contents.
+		for (Changeset other : chain) {
+			if (other != target && target.sharesModelWith(other)) {
+				return false;
+			}
+		}
 		for (int i = chain.length - 1; i > start; i--) {
 			changes.removeLast();
 		}
-		Changeset target = chain[start];
+		int remaining = start + 1;
 		boolean merged = false;
-		for (int i = start + 1; i < chain.length; i++) {
-			Changeset next = chain[i];
-			if (next.sharesModelWith(target)) {
-				restore(chain, i);
-				return merged;
-			}
-			try {
+		try {
+			while (remaining < chain.length) {
+				Changeset next = chain[remaining];
+				if (!canMergeInto(target, next)) {
+					return merged;
+				}
 				prepare(next, target);
 				flush(next, target);
-			} catch (RuntimeException | Error failure) {
-				restore(chain, i);
-				throw failure;
+				// Successful application consumes this source, even if retiring or closing it fails.
+				remaining++;
+				StreamingWritePreflight.removed(next);
+				next.close();
+				merged = true;
 			}
-			StreamingWritePreflight.removed(next);
-			next.close();
-			merged = true;
+			return merged;
+		} finally {
+			// Keep every source whose application did not complete in its original order.
+			restore(chain, remaining);
 		}
-		return merged;
 	}
 
 	private static boolean canMergeInto(Changeset older, Changeset newer) {

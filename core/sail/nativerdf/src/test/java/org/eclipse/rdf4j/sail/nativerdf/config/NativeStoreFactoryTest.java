@@ -20,6 +20,7 @@ import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.query.BindingSet;
+import org.eclipse.rdf4j.query.QueryExecutionPolicy.GraphJoinOptimization;
 import org.eclipse.rdf4j.query.algebra.BindingSetAssignment;
 import org.eclipse.rdf4j.query.algebra.Filter;
 import org.eclipse.rdf4j.query.algebra.FunctionCall;
@@ -66,6 +67,20 @@ class NativeStoreFactoryTest {
 		config.setExperimentalQueryOptimizations(false);
 		NativeStore optedOutStore = (NativeStore) factory.getSail(config);
 		assertThat(optedOutStore.isExperimentalQueryOptimizations()).isFalse();
+	}
+
+	@Test
+	void appliesGraphJoinOptimizationIndependentlyOfExperimentalOptimizations() {
+		NativeStoreConfig config = new NativeStoreConfig();
+		assertThat(((NativeStore) new NativeStoreFactory().getSail(config)).getQueryExecutionPolicy()
+				.graphJoinOptimization()).isEqualTo(GraphJoinOptimization.AUTO);
+		config.setGraphJoinOptimization(GraphJoinOptimization.OFF);
+		for (boolean experimental : new boolean[] { false, true }) {
+			config.setExperimentalQueryOptimizations(experimental);
+			var policy = ((NativeStore) new NativeStoreFactory().getSail(config)).getQueryExecutionPolicy();
+			assertThat(policy.graphJoinOptimization()).isEqualTo(GraphJoinOptimization.OFF);
+			assertThat(policy.experimentalQueryOptimizations()).isEqualTo(experimental);
+		}
 	}
 
 	@Test

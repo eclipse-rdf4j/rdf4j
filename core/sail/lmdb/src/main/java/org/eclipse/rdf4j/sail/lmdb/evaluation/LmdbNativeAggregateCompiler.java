@@ -16,6 +16,7 @@ import java.util.Collections;
 import java.util.IdentityHashMap;
 import java.util.Set;
 import java.util.concurrent.atomic.AtomicLong;
+import java.util.function.Function;
 
 import org.eclipse.rdf4j.common.annotation.Experimental;
 import org.eclipse.rdf4j.model.Literal;
@@ -26,12 +27,18 @@ import org.eclipse.rdf4j.model.vocabulary.SESAME;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.algebra.Filter;
 import org.eclipse.rdf4j.query.algebra.Group;
+import org.eclipse.rdf4j.query.algebra.Join;
 import org.eclipse.rdf4j.query.algebra.QueryRoot;
+import org.eclipse.rdf4j.query.algebra.StatementPattern;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.algebra.UnaryTupleOperator;
+import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryEvaluationStep;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryValueEvaluationStep;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.QueryEvaluationContext;
+import org.eclipse.rdf4j.query.algebra.evaluation.impl.evaluationsteps.OrderedEvaluation;
+import org.eclipse.rdf4j.query.algebra.evaluation.impl.restrictions.PreparedRestrictionPlan;
+import org.eclipse.rdf4j.query.algebra.evaluation.util.QueryEvaluationUtility;
 import org.eclipse.rdf4j.sail.lmdb.ValueIds;
 
 /**
@@ -132,7 +139,25 @@ final class LmdbNativeAggregateCompiler {
 
 	static QueryEvaluationStep tryCompile(TupleExpr expr, QueryEvaluationContext context,
 			LmdbNativeEvaluationStrategy strategy, NativeLmdbQuerySource source) {
+		return recordCompiledFragment(expr, compile(expr, context, strategy, source, false));
+	}
+
+	static QueryEvaluationStep tryCompileSelectedGraphPath(TupleExpr expr, QueryEvaluationContext context,
+			LmdbNativeEvaluationStrategy strategy, NativeLmdbQuerySource source) {
 		CompileResult result = compile(expr, context, strategy, source, false);
+		SlotPlan plan = switch (result.step) {
+		case NativeRowsStep rows -> rows.arg;
+		case NativeBareRowsStep bare -> bare.arg;
+		case null, default -> null;
+		};
+		// The general path publishes just its logical endpoints. The simple path's native layout can also
+		// expose a syntactic constant, which would change a GRAPH body's mapping domain.
+		return plan instanceof GeneralPathPlan path && path.usesOnlyStatementEdges()
+				? recordCompiledFragment(expr, result)
+				: null;
+	}
+
+	private static QueryEvaluationStep recordCompiledFragment(TupleExpr expr, CompileResult result) {
 		if (result.step != null) {
 			LmdbNativeStrategyPreview.inspect(result.step);
 			if (LmdbNativeExplain.recordsExecutionPaths(expr)) {
@@ -145,6 +170,48 @@ final class LmdbNativeAggregateCompiler {
 			}
 		}
 		return result.step;
+	}
+
+	static PreparedRestrictionPlan specializeGraphRestriction(TupleExpr expr, QueryEvaluationContext context,
+			LmdbNativeEvaluationStrategy strategy, NativeLmdbQuerySource source, PreparedRestrictionPlan generic) {
+		return withPreparedFunctions(expr, context, strategy, generic,
+				bound -> specializeBoundGraphRestriction(bound, context, strategy, source, generic));
+	}
+
+	private static PreparedRestrictionPlan specializeBoundGraphRestriction(TupleExpr expr,
+			QueryEvaluationContext context,
+			LmdbNativeEvaluationStrategy strategy, NativeLmdbQuerySource source, PreparedRestrictionPlan generic) {
+		Runnable validator = source.stableGraphRestrictionValidator();
+		if (validator == null) {
+			LmdbNativeExplain.setRuntimeMetric(expr, "graphRestrictionNativeRefusal", "SOURCE_CAPABILITY_MISSING");
+			return generic;
+		}
+		var planner = new LmdbNativeAggregatePlanner(context, strategy, source);
+		if (!storesOriginalOutputCells(expr)
+				|| !(planner.compileBareRoot(expr) instanceof NativeBareRowsStep nativeBody)) {
+			LmdbNativeExplain.setRuntimeMetric(expr, "graphRestrictionNativeRefusal",
+					"NATIVE_REPRESENTATION_UNSUPPORTED");
+			return generic;
+		}
+		return NativeGraphRestrictionBody.specialize(nativeBody, context, generic, validator);
+	}
+
+	/**
+	 * The native scalar output lane carries source cells and the original entry mapping. The generic statement
+	 * converter additionally restores prevalued variables, even anonymous ones, with their original value authority.
+	 * Keep those converted outputs with its certified generic adapter.
+	 */
+	private static boolean storesOriginalOutputCells(TupleExpr expression) {
+		if (expression.getClass() == StatementPattern.class) {
+			for (Var variable : ((StatementPattern) expression).getVarList()) {
+				if (variable.hasValue() && !variable.isConstant()) {
+					return false;
+				}
+			}
+			return true;
+		}
+		return expression.getClass() == Join.class && storesOriginalOutputCells(((Join) expression).getLeftArg())
+				&& storesOriginalOutputCells(((Join) expression).getRightArg());
 	}
 
 	static boolean tryAnnotateForExplain(TupleExpr expr, QueryEvaluationContext context,
@@ -207,6 +274,15 @@ final class LmdbNativeAggregateCompiler {
 	 */
 	static QueryValueEvaluationStep tryCompileExists(TupleExpr expr, QueryEvaluationContext context,
 			LmdbNativeEvaluationStrategy strategy, NativeLmdbQuerySource source) {
+		return withPreparedFunctions(expr, context, strategy, null,
+				bound -> compileBoundExists(bound, context, strategy, source));
+	}
+
+	private static QueryValueEvaluationStep compileBoundExists(TupleExpr expr, QueryEvaluationContext context,
+			LmdbNativeEvaluationStrategy strategy, NativeLmdbQuerySource source) {
+		if (OrderedEvaluation.isRequired(expr)) {
+			return null;
+		}
 		LmdbNativeAggregatePlanner planner = new LmdbNativeAggregatePlanner(context, strategy, source);
 		QueryEvaluationStep rows = planner.compileBareExists(expr);
 		if (!(rows instanceof NativeBareRowsStep)) {
@@ -292,7 +368,43 @@ final class LmdbNativeAggregateCompiler {
 	private static CompileResult compile(TupleExpr expr, QueryEvaluationContext context,
 			LmdbNativeEvaluationStrategy strategy, NativeLmdbQuerySource source, boolean rootEvaluation,
 			Set<String> inheritedFrameInputNames, Set<String> inheritedLateralFrameInputNames) {
-		NativeGraphFusion.Prepared physical = NativeGraphFusion.prepare(expr, context.getDataset(), strategy);
+		return withPreparedFunctions(expr, context, strategy, UNSUPPORTED,
+				bound -> compileBound(bound, context, strategy, source,
+						rootEvaluation, inheritedFrameInputNames, inheritedLateralFrameInputNames));
+	}
+
+	private static final CompileResult UNSUPPORTED = new CompileResult(null, null, false, false);
+
+	/**
+	 * Bind on an owned tree when direct preparation bypassed optimizer pinning. The generic operator supplies
+	 * execution-scoped value factories, foreign admission and solution-occurrence boundaries for declared callbacks.
+	 */
+	private static <T> T withPreparedFunctions(TupleExpr expr, QueryEvaluationContext context,
+			LmdbNativeEvaluationStrategy strategy,
+			T fallback, Function<TupleExpr, T> prepare) {
+		if (!context.allowsDirectVariableReads() || QueryEvaluationUtility.hasScopedExtensionFunctions(expr)) {
+			return fallback;
+		}
+		if (!QueryEvaluationUtility.hasUnpinnedFunctions(expr)) {
+			return prepare.apply(expr);
+		}
+		TupleExpr bound = expr.clone();
+		QueryEvaluationUtility.pinPreparedFunctions(bound);
+		if (QueryEvaluationUtility.hasScopedExtensionFunctions(bound)) {
+			return fallback;
+		}
+		NativeGraphFusion.linkLogicalOrigins(expr, bound);
+		var positions = strategy.copyValuePositions(expr, bound);
+		return strategy.withValuePositions(positions, () -> prepare.apply(bound));
+	}
+
+	private static CompileResult compileBound(TupleExpr expr, QueryEvaluationContext context,
+			LmdbNativeEvaluationStrategy strategy, NativeLmdbQuerySource source, boolean rootEvaluation,
+			Set<String> inheritedFrameInputNames, Set<String> inheritedLateralFrameInputNames) {
+		if (OrderedEvaluation.isRequired(expr)) {
+			return new CompileResult(null, null, false, false);
+		}
+		NativeGraphFusion.Prepared physical = NativeGraphFusion.prepare(expr, context, strategy);
 		CompileResult result = strategy.withValuePositions(physical.positions(),
 				() -> compilePhysical(physical.expression(), context, strategy, source, rootEvaluation,
 						inheritedFrameInputNames, inheritedLateralFrameInputNames));

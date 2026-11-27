@@ -103,11 +103,14 @@ public final class LmdbDataFileHeaderBufferTest {
 
 	private static Process startProbe(Path output) throws IOException {
 		String javaBinary = Path.of(System.getProperty("java.home"), "bin", "java").toString();
+		String ciDiagnostics = System.getenv("RDF4J_JVM_DIAGNOSTICS_DIR");
+		Path diagnosticsDirectory = ciDiagnostics == null || ciDiagnostics.isBlank() ? output.getParent()
+				: Path.of(ciDiagnostics);
 		List<String> command = new ArrayList<>();
 		command.add(javaBinary);
 		command.add("-ea");
 		command.add("-XX:-CreateCoredumpOnCrash");
-		command.add("-XX:ErrorFile=" + output.getParent().resolve("hs_err_pid%p.log"));
+		command.add("-XX:ErrorFile=" + diagnosticsDirectory.resolve("hs_err_pid%p.log"));
 		command.add("--enable-native-access=ALL-UNNAMED");
 		command.add("-D" + PROBE_PROPERTY + "=true");
 		command.add("-cp");

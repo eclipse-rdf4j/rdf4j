@@ -128,6 +128,27 @@ class CiArtifactPackageTests(unittest.TestCase):
             self.assertFalse((output / "campaigns/namespace/qemu/seed.qcow2").exists())
             self.assertFalse((output / "guest/images/ubuntu-base.img").exists())
 
+    def test_diagnostics_are_preserved_in_place_for_separate_upload(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary) / "crashlab"
+            output = Path(temporary) / "upload"
+            results = root / "campaigns/namespace/results"
+            diagnostics = results / "jvm-diagnostics/boot-unique"
+            diagnostics.mkdir(parents=True)
+            dump = diagnostics / "java_pid42.hprof.gz"
+            dump.write_bytes(b"heap evidence")
+            (results / "oracle.log").write_text("oracle evidence")
+            local_output = Path(temporary) / "local-upload"
+            local_manifest = package_ci_evidence(root, local_output)
+            self.assertEqual((local_output / dump.relative_to(root)).read_bytes(), b"heap evidence")
+            self.assertEqual(local_manifest["separately_uploaded_diagnostics"], [])
+            manifest = package_ci_evidence(root, output, separate_diagnostics=True)
+            self.assertEqual(dump.read_bytes(), b"heap evidence")
+            self.assertFalse((output / dump.relative_to(root)).exists())
+            self.assertEqual((output / "campaigns/namespace/results/oracle.log").read_text(), "oracle evidence")
+            self.assertEqual(manifest["separately_uploaded_diagnostics"],
+                             ["campaigns/namespace/results/jvm-diagnostics"])
+
     def test_package_refuses_preexisting_destination(self):
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary) / "crashlab"

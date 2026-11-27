@@ -44,14 +44,22 @@ namespace workbench {
             /** Set by navigate: the page state a repository switch brings back once the page is ready. */
             workspaceRestore?: WorkspaceRestore;
             /** Run once the page left is gone and before the next one mounts (Undo of a restore). */
-            prepare?: () => void;
+            prepare?: (model: PageModel, url: URL) => void;
         }
 
         /** A repository switch that opens the repository on the page it was left on. */
         interface WorkspaceRestore {
-            page: any;
-            to: { repositoryId: string; scope: any };
-            from: { repositoryId: string; viewId: string; scope: any };
+            page: workbench.workspace.PageState;
+            to: { repositoryId: string; scope: workbench.workspace.Scope };
+            from: { repositoryId: string; viewId: string; scope: workbench.workspace.Scope };
+        }
+
+        /** A saved address can replace the switcher's original address only while this scope is confirmed. */
+        interface WorkspaceNavigation {
+            originalUrl: string;
+            info?: PageModel;
+            infoUrl?: string;
+            scope?: workbench.workspace.Scope;
         }
 
         /**
@@ -280,11 +288,10 @@ namespace workbench {
             }
         }
 
-        function exploreAgain(target: URL): void {
+        function exploreAgain(target: URL, serverIdentity = currentRoute?.context?.serverIdentity): void {
             if (viewIdOf(target) !== 'explore' || target.searchParams.has('resource')) {
                 return;
             }
-            const serverIdentity = currentRoute && currentRoute.context ? currentRoute.context.serverIdentity : '';
             let explored = '';
             try {
                 explored = window.sessionStorage.getItem(exploredKey(serverIdentity, repositoryIdOf(target))) || '';
@@ -301,10 +308,28 @@ namespace workbench {
             return shared && typeof shared.rememberPage === 'function' ? shared : null;
         }
 
-        function scopeOfRoute(route: ShownRoute, repositoryId?: string): any {
+        function scopeOfRoute(route: ShownRoute): workbench.workspace.Scope {
             const shared = workspace();
             return shared && route && route.context ? shared.scopeOf(route.context.serverIdentity || '',
-                route.context.serverUser || '', repositoryId === undefined ? route.repositoryId : repositoryId) : null;
+                route.context.serverUser || '', route.repositoryId) : null;
+        }
+
+        /** The owner reported by this response, independent of the credentials of the page being left. */
+        function scopeOfResponse(model: PageModel, url: URL): workbench.workspace.Scope {
+            const shared = workspace();
+            const identity = model.metadata?.['server-identity'];
+            const user = model.metadata?.['server-user'];
+            return shared && !model.error && typeof identity === 'string' && typeof user === 'string'
+                ? shared.scopeOf(identity, user, repositoryIdOf(url)) : null;
+        }
+
+        function sameWorkspaceOwner(first: workbench.workspace.Scope, second: workbench.workspace.Scope): boolean {
+            return !!first && !!second && first.digest === second.digest && first.user === second.user;
+        }
+
+        function matchesWorkspaceResponse(model: PageModel, url: URL, expected: workbench.workspace.Scope): boolean {
+            const actual = scopeOfResponse(model, url);
+            return sameWorkspaceOwner(actual, expected) && actual.repositoryId === expected.repositoryId;
         }
 
         /**
@@ -339,14 +364,13 @@ namespace workbench {
         }
 
         /** The page a switch to the target's repository brings back, when it was left in this browser. */
-        function workspaceRestoreFor(target: URL): WorkspaceRestore {
+        function workspaceRestoreFor(target: URL, scope: workbench.workspace.Scope): WorkspaceRestore {
             const shared = workspace();
-            const repositoryId = repositoryIdOf(target);
-            if (!shared || !currentRoute || !repositoryId || repositoryId === currentRoute.repositoryId) {
+            if (!scope || !currentRoute || scope.repositoryId === currentRoute.repositoryId) {
                 return null;
             }
-            const scope = scopeOfRoute(currentRoute, repositoryId);
-            const saved = scope ? shared.readWorkspace(scope) : null;
+            const repositoryId = scope.repositoryId;
+            const saved = shared.readWorkspace(scope);
             const page = saved ? saved.pages[saved.lastView] : null;
             if (!page) {
                 return null;
@@ -361,9 +385,10 @@ namespace workbench {
             if (url.origin !== target.origin || url.pathname.indexOf(prefix) !== 0 || !routes.isRouterReady(viewIdOf(url))) {
                 return null;
             }
+            const previous = scopeOfRoute(currentRoute);
             return { page: Object.assign({}, page, { url: url.href }), to: { repositoryId, scope },
                 from: { repositoryId: currentRoute.repositoryId, viewId: currentRoute.viewId,
-                    scope: scopeOfRoute(currentRoute) } };
+                    scope: sameWorkspaceOwner(previous, scope) ? previous : null } };
         }
 
         /** Bring the page's typed values, own state and scroll position back, then say so with Undo. */
@@ -379,7 +404,12 @@ namespace workbench {
                     console.error('The Workbench could not restore the state of ' + page.url + '.', error);
                 }
             }
-            afterTwoFrames(() => restoreScroll(page.scrollY || 0));
+            const restored = currentRoute;
+            afterTwoFrames(() => {
+                if (currentRoute === restored) {
+                    restoreScroll(page.scrollY || 0);
+                }
+            });
             announceRestore(restore);
         }
 
@@ -407,7 +437,10 @@ namespace workbench {
         function undoRestore(restore: WorkspaceRestore): void {
             const shared = workspace();
             const dialog: any = (workbench as any).confirmDialog;
-            if (!shared || !dialog || typeof dialog.choose !== 'function') {
+            const current = scopeOfRoute(currentRoute);
+            if (!shared || !dialog || typeof dialog.choose !== 'function'
+                    || !sameWorkspaceOwner(current, restore.to.scope)
+                    || current.repositoryId !== restore.to.repositoryId) {
                 return;
             }
             const fromTabs = shared.queryTabsState(restore.from.scope);
@@ -430,22 +463,26 @@ namespace workbench {
                 }
                 const target = views().repositorySwitchTarget(session.basePath, restore.from.viewId,
                     restore.to.repositoryId);
-                navigate(target, { history: 'replace', prepare: () => {
-                    if (kept && kept.route.repositoryId === restore.to.repositoryId) {
+                navigate(target, { history: 'replace', prepare: (model, url) => {
+                    if (!matchesWorkspaceResponse(model, url, restore.to.scope)) {
+                        return;
+                    }
+                    const parked = kept && scopeOfRoute(kept.route);
+                    if (sameWorkspaceOwner(parked, restore.to.scope) && parked.repositoryId === restore.to.repositoryId) {
                         // A kept-alive Query page of the repository holds the tabs replaced: it goes before they are.
                         disposeKept('navigate');
                     }
                     // The Query page lets go of the results kept for the tabs replaced, and of the tabs closed there.
                     const query: any = (workbench as any).query;
                     if (query && typeof query.forgetQueryTabResults === 'function') {
-                        query.forgetQueryTabResults();
+                        query.forgetQueryTabResults(restore.to.scope);
                     }
                     shared.replaceQueryTabs(restore.to.scope, choice === 'copy' ? fromTabs : null);
                     shared.forgetWorkspace(restore.to.scope);
                     const page: any = (workbench as any).queryPage;
                     if (page && typeof page.forgetShelved === 'function') {
                         const context = currentRoute && currentRoute.context || {};
-                        page.forgetShelved(restore.to.repositoryId, context.serverIdentity, context.basePath);
+                        page.forgetShelved(restore.to.repositoryId, context.serverIdentity, context.basePath, context.serverUser);
                     }
                 } });
             });
@@ -455,13 +492,13 @@ namespace workbench {
          * A deleted repository leaves nothing behind in this browser: once a deletion started here reaches the
          * Repositories list, or a page says the repository is not found, its tabs, saved results and pages go.
          */
-        function forgetDeletedRepository(viewId: string, model: any, context: any): void {
+        function forgetDeletedRepository(model: PageModel, context: any): void {
             const shared: any = (workbench as any).workspace;
             if (!shared || typeof shared.forgetRepository !== 'function') {
                 return;
             }
             try {
-                shared.deletionDone(viewId || 'repositories', !!model.error);
+                shared.deletionDone(model).catch(() => { /* Browser storage is best effort. */ });
                 if (context && context.missingRepositoryId && context.serverIdentity) {
                     // For the user the server told so: another user of this browser may still see the repository.
                     shared.forgetRepository(shared.serverDigest(context.serverIdentity), context.missingRepositoryId,
@@ -1006,16 +1043,21 @@ namespace workbench {
             parked.route.instance.dispose(reason);
         }
 
+        function sameConnection(first: any, second: any): boolean {
+            return first?.serverIdentity === second?.serverIdentity
+                && (first?.serverUser || '') === (second?.serverUser || '');
+        }
+
         /**
          * Leave the route that is shown for a page of view nextViewId: a keep-alive route (Query) is suspended and
          * its outlet taken out of the shell, to be parked once the next page is rendered; any other route, and a
          * keep-alive route followed by another page of its own kind, is disposed (one Query page at a time).
          */
-        function leaveCurrent(nextViewId: string, serverIdentity?: string | null): any {
+        function leaveCurrent(nextViewId: string, context: any): any {
             const definition = routes.get(currentRoute.viewId);
             const instance = currentRoute.instance;
             if (!definition || !definition.keepAlive || typeof instance.suspend !== 'function'
-                    || nextViewId === currentRoute.viewId || currentRoute.context?.serverIdentity !== serverIdentity) {
+                    || nextViewId === currentRoute.viewId || !sameConnection(currentRoute.context, context)) {
                 instance.dispose('navigate');
                 return null;
             }
@@ -1053,6 +1095,7 @@ namespace workbench {
             clearBusyMark(restored.outlet);
             views().attachOutlet(session.mount, restored.outlet);
             const entry = enterHistory(url, options);
+            setRouteAttributes(url, restored.route.context);
             app().configureNamespaces(restored.route.model);
             refreshKeptNamespaces(restored.route, generation);
             views().renderShell(session.mount, { viewId: restored.route.viewId, context: restored.route.context },
@@ -1158,22 +1201,20 @@ namespace workbench {
          * or an abort replaced it, and 'fallback' when the browser loads the URL instead.
          */
         export function navigate(url: string, options: NavigateOptions): Promise<Outcome> {
+            return openRoute(url, options);
+        }
+
+        function openRoute(url: string, options: NavigateOptions, workspaceNavigation?: WorkspaceNavigation): Promise<Outcome> {
             const windowObject: any = window;
             if (uploading && !options.leaveUpload) {
                 return confirmLeavingUpload().then((leave): Outcome | Promise<Outcome> => leave
-                    ? navigate(url, Object.assign({}, options, { leaveUpload: true })) : 'abandoned');
+                    ? openRoute(url, Object.assign({}, options, { leaveUpload: true }), workspaceNavigation) : 'abandoned');
             }
-            let target = new URL(url, windowObject.location.href);
-            // Back and Forward show their entry as it was.
-            if (!options.body && options.history !== 'none') {
+            const target = new URL(url, windowObject.location.href);
+            // Back and Forward show their entry as it was. Repository switches first ask for the plain destination.
+            if (!options.body && options.history !== 'none' && !options.repositorySwitch && !options.workspaceRestore
+                    && !workspaceNavigation && !options.prepare) {
                 exploreAgain(target);
-            }
-            // The repository switcher opens a repository on the page it was left on in this browser.
-            const restoring = options.repositorySwitch && !options.body && !options.workspaceRestore
-                ? workspaceRestoreFor(target) : null;
-            if (restoring) {
-                target = new URL(restoring.page.url);
-                options = Object.assign({}, options, { workspaceRestore: restoring });
             }
             const viewId = viewIdOf(target);
             const definition = routes.get(viewId);
@@ -1181,7 +1222,8 @@ namespace workbench {
                 windowObject.location.assign(target.href);
                 return Promise.resolve<Outcome>('fallback');
             }
-            if (kept && !options.body && !kept.route.context?.serverIdentity
+            if (kept && !options.body && !options.repositorySwitch && !options.workspaceRestore && !options.prepare
+                    && !kept.route.context?.serverIdentity
                     && target.href.split('#')[0] === kept.route.url.split('#')[0]) {
                 return Promise.resolve(keptRestored(target, options));
             }
@@ -1218,6 +1260,48 @@ namespace workbench {
             }
             // The hash only matters to the page once it is shown (M8.2); the page model is the same without it.
             const request = target.href.split('#')[0];
+            const originalUrl = workspaceNavigation?.originalUrl || target.href;
+            const originalRequest = originalUrl.split('#')[0];
+            // A fetch of the saved address can also reach the requested page by following a redirect.
+            const needsOriginalRequest = () => request !== originalRequest
+                && model?.finalUrl?.split('#')[0] !== originalRequest;
+            const openRequestedRepository = (): Promise<Outcome> => {
+                model?.rowStore.dispose();
+                model = null;
+                return openRoute(originalUrl, Object.assign({}, options, { workspaceRestore: null }), { originalUrl });
+            };
+            if (!options.body && options.repositorySwitch && !workspaceNavigation && workspace()
+                    && repositoryIdOf(target)) {
+                // Resolve the destination's owner without running the view's listing or query. The metadata-only
+                // Info endpoint establishes the scope before we read any saved address for this repository.
+                const infoUrl = new URL('info', target).href;
+                return app().loadModel(fetcher, infoUrl, signal).then(async (info: PageModel): Promise<Outcome> => {
+                    try {
+                        if (stale()) {
+                            return 'abandoned';
+                        }
+                        const scope = info.viewId === 'info' && info.vars.indexOf('id') >= 0
+                            && (info.finalUrl || infoUrl) === infoUrl ? scopeOfResponse(info, target) : null;
+                        if (!scope) {
+                            return openRequestedRepository();
+                        }
+                        const restore = workspaceRestoreFor(target, scope);
+                        const selected = new URL(restore ? restore.page.url : target.href);
+                        const identity = info.metadata['server-identity'];
+                        const user = info.metadata['server-user'];
+                        if (!restore && sameWorkspaceOwner(scopeOfRoute(currentRoute), scope)
+                                && sameConnection(currentRoute.context, { serverIdentity: identity, serverUser: user })) {
+                            exploreAgain(selected, identity);
+                        }
+                        return await openRoute(selected.href, Object.assign({}, options, { workspaceRestore: restore }), {
+                            originalUrl: target.href, info, infoUrl,
+                            scope: restore || selected.href !== target.href ? scope : undefined
+                        });
+                    } finally {
+                        info.rowStore.dispose();
+                    }
+                }, (): Outcome | Promise<Outcome> => stale() ? 'abandoned' : openRequestedRepository());
+            }
             let answer: Promise<any>;
             /** The HTTP status of a form POST's answer, and the answer itself. */
             let answerStatus = 0;
@@ -1259,7 +1343,17 @@ namespace workbench {
                         throw new Error('The answer is a page the router does not show: ' + model.viewId);
                     }
                 }
-                return app().completeModel(fetcher, model.finalUrl || request, model, session.basePath, signal)
+                const finalUrl = model.finalUrl || request;
+                const info = workspaceNavigation?.info;
+                const responseUrl = new URL(finalUrl);
+                // Explicit preferences can update the cookies read by InfoServlet when the page is served.
+                const verifiedInfo = info && !model.error && finalUrl === request
+                    && !['limit', 'queryLn', 'infer', 'query-timeout', 'Accept', 'Content-Type']
+                        .some(name => responseUrl.searchParams.has(name))
+                    && new URL('info', responseUrl).href === workspaceNavigation.infoUrl
+                    && model.metadata?.['server-identity'] === info.metadata['server-identity']
+                    && model.metadata?.['server-user'] === info.metadata['server-user'] ? info : undefined;
+                return app().completeModel(fetcher, finalUrl, model, session.basePath, signal, verifiedInfo)
                     .then(() => {
                         if (stale()) {
                             throw abandoned();
@@ -1284,11 +1378,31 @@ namespace workbench {
                         throw abandoned();
                     }
                     if (!options.body) {
-                        // The cookie is shared with other tabs. A kept Query may resume only after a fresh page
-                        // model confirms its manager; retain its live rows/editor only for that same server.
-                        const identity = model.metadata && model.metadata['server-identity'];
-                        if (kept && identity && identity === kept.route.context?.serverIdentity
-                                && target.href.split('#')[0] === kept.route.url.split('#')[0]) {
+                        const finalUrl = new URL(model.finalUrl || request);
+                        const finalRequest = finalUrl.href.split('#')[0];
+                        if (workspaceNavigation?.scope && (finalRequest !== request || model.viewId !== viewId
+                                || !matchesWorkspaceResponse(model, finalUrl, workspaceNavigation.scope))) {
+                            if (needsOriginalRequest()) {
+                                return openRequestedRepository();
+                            }
+                            // This is already the requested page's response. Discard the saved state and fragment.
+                            options = Object.assign({}, options, { workspaceRestore: null });
+                            target.hash = new URL(originalUrl).hash;
+                            if (finalRequest !== request) {
+                                if (!routable(finalUrl)) {
+                                    throw new Error('The answer redirected outside the Workbench router.');
+                                }
+                                shownDefinition = routes.get(viewIdOf(finalUrl));
+                            }
+                        }
+                        const identity = model.metadata?.['server-identity'];
+                        const user = model.metadata?.['server-user'];
+                        // A kept Query is private to the connection and route it was mounted with.
+                        if (kept && !options.prepare && !model.error && typeof identity === 'string' && identity
+                                && typeof user === 'string'
+                                && sameConnection(kept.route.context, { serverIdentity: identity, serverUser: user })
+                                && model.viewId === kept.route.viewId
+                                && request === finalRequest && finalRequest === kept.route.url.split('#')[0]) {
                             model.rowStore.dispose();
                             model = null;
                             return keptRestored(target, options);
@@ -1314,7 +1428,7 @@ namespace workbench {
                         return show();
                     });
                 })
-                .then(null, (error: any): Outcome => {
+                .then(null, (error: any): Outcome | Promise<Outcome> => {
                     endUpload(mine);
                     if (model) {
                         model.rowStore.dispose();
@@ -1326,6 +1440,10 @@ namespace workbench {
                     setBusy(false);
                     if (error && error.name === 'AbortError') {
                         return 'abandoned';
+                    }
+                    if (needsOriginalRequest()) {
+                        model = null;
+                        return openRequestedRepository();
                     }
                     const redirected = !!model && !!model.finalUrl && model.finalUrl !== request;
                     if (options.body && !(redirected && !(error && error.sendFailure))) {
@@ -1346,7 +1464,7 @@ namespace workbench {
                     // Showing a page in place should not fail, so say why the browser loads it instead (M12.1).
                     console.error('The Workbench could not show ' + target.href + ' in place; loading it instead.', error);
                     // A form's answer cannot be posted again; the browser loads the page it led to instead.
-                    windowObject.location.assign(model && model.finalUrl || target.href);
+                    windowObject.location.assign(model && model.finalUrl || originalUrl);
                     return 'fallback';
                 });
         }
@@ -1358,6 +1476,18 @@ namespace workbench {
                 announceRestore(options.workspaceRestore);
             }
             return outcome;
+        }
+
+        /** The application element describes the page shown, as it did in the server's shell. */
+        function setRouteAttributes(url: URL, context: any): void {
+            session.mount.setAttribute('data-workbench-view', viewIdOf(url));
+            session.mount.setAttribute('data-workbench-repository-id', repositoryIdOf(url));
+            if (context.serverIdentity) {
+                session.mount.setAttribute('data-workbench-server-identity', context.serverIdentity);
+            } else {
+                session.mount.removeAttribute('data-workbench-server-identity');
+            }
+            session.mount.setAttribute('data-workbench-server-user', context.serverUser || '');
         }
 
         /** The visible swap, in one synchronous step; the new route then mounts (possibly asynchronously). */
@@ -1374,10 +1504,10 @@ namespace workbench {
             }
             pendingRoute = null;
             const context = app().viewContext(session.mount, model, url.href, session.runtime);
-            if (kept && kept.route.context?.serverIdentity !== context.serverIdentity) {
+            if (kept && !sameConnection(kept.route.context, context)) {
                 disposeKept('navigate');
             }
-            const parked = leaveCurrent(viewIdOf(url), context.serverIdentity);
+            const parked = leaveCurrent(viewIdOf(url), context);
             if (kept && kept.route.viewId === viewIdOf(url)) {
                 // Another page of the kept kind (a different Query URL) starts afresh.
                 disposeKept('navigate');
@@ -1388,16 +1518,7 @@ namespace workbench {
             if (!model.error) {
                 app().configureNamespaces(model);
             }
-            // The application element describes the page that is shown, as the server's shell does.
-            session.mount.setAttribute('data-workbench-view', viewIdOf(url));
-            session.mount.setAttribute('data-workbench-repository-id', repositoryIdOf(url));
-            if (context.serverIdentity) {
-                session.mount.setAttribute('data-workbench-server-identity', context.serverIdentity);
-            } else {
-                session.mount.removeAttribute('data-workbench-server-identity');
-            }
-            // The signed-in user of the page shown: what the Workbench keeps in this browser is kept per user.
-            session.mount.setAttribute('data-workbench-server-user', context.serverUser || '');
+            setRouteAttributes(url, context);
             views().render(session.mount, model, context, session.runtime);
             adoptBusy();
             if (parked) {
@@ -1412,13 +1533,13 @@ namespace workbench {
             const viewId = viewIdOf(url);
             currentRoute = { url: url.href, viewId, repositoryId: repositoryIdOf(url), key,
                 instance: { dispose() {} }, model, context };
-            forgetDeletedRepository(viewId, model, context);
+            forgetDeletedRepository(model, context);
             if (!model.error) {
                 rememberExplored(url, context.serverIdentity);
             }
             markRoute(viewId, false);
             if (options.prepare) {
-                options.prepare();
+                options.prepare(model, url);
             }
             // An error page holds nothing but its row store; any other route mounts (possibly asynchronously).
             const showsOwnError = views().showsOwnError;

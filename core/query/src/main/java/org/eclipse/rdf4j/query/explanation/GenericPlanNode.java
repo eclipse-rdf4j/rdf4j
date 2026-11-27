@@ -310,22 +310,18 @@ public class GenericPlanNode {
 	}
 
 	/**
-	 * The total time in milliseconds that this node-tree (all children and so on) used while the query was executed.
+	 * The elapsed time recorded for this node, including child work done during its measurement. If this node has no
+	 * recorded time, the sum of available child totals is used when positive.
 	 *
-	 * @return time in milliseconds that was used to execute the query
+	 * @return time in milliseconds, or {@code null} if unavailable
 	 */
 	public Double getTotalTimeActual() {
-		double childTime = getChildTimeActual();
-		if (totalTimeActual == null) {
-			// Not all nodes have their own totalTimeActual, but it can easily be calculated by looking that the child
-			// plans (recursively)
-			if (childTime > 0) {
-				return childTime;
-			}
-			return null;
+		if (totalTimeActual != null) {
+			// Child timers can overlap or include work outside this timer. Preserve observed elapsed time.
+			return totalTimeActual;
 		}
-		// Child timers can overlap (parallelism, shared/fused execution). They must never inflate the observed parent.
-		return totalTimeActual;
+		double childTime = getChildTimeActual();
+		return childTime > 0 ? childTime : null;
 	}
 
 	public void setTotalTimeActual(Double totalTimeActual) {
@@ -667,7 +663,10 @@ public class GenericPlanNode {
 	}
 
 	/**
-	 * The time that this node used by itself (eg. totalTimeActual - sum of plans[0..n].totalTimeActual)
+	 * Estimates this node's own time by subtracting the sum of available child totals from its recorded time.
+	 *
+	 * @return estimated time in milliseconds, or {@code null} if this node has no recorded time or the child totals
+	 *         exceed it
 	 */
 	public Double getSelfTimeActual() {
 
@@ -679,7 +678,7 @@ public class GenericPlanNode {
 		if (childTime > totalTimeActual) {
 			return null;
 		}
-		return getTotalTimeActual() - childTime;
+		return totalTimeActual - childTime;
 
 	}
 
@@ -733,6 +732,9 @@ public class GenericPlanNode {
 
 	private static final int prettyBoxDrawingType = 0;
 
+	private static final String TIMEOUT_WARNING = "Timed out while retrieving explanation! Explanation may be incomplete!";
+	private static final String TIMEOUT_HELP = "You can change the timeout by setting .setMaxExecutionTime(...) on your query.";
+
 	/**
 	 * Human readable string. Do not attempt to parse this.
 	 *
@@ -741,16 +743,20 @@ public class GenericPlanNode {
 	@Override
 	public String toString() {
 		String logical = getHumanReadable(0, isProjectionElemListNode());
-		if (getExecutionProfile() != null) {
+		boolean hasProfile = getExecutionProfile() != null;
+		if (hasProfile) {
 			String profile = getExecutionProfile().toText().replace("\n", newLine);
 			logical = profile + newLine + newLine + "Query explanation" + newLine + logical;
-			return physicalPlanPrelude == null || physicalPlanPrelude.isEmpty() ? logical
-					: physicalPlanPrelude + newLine + newLine + logical;
 		}
-		if (physicalPlanPrelude == null || physicalPlanPrelude.isEmpty()) {
-			return logical;
+		if (physicalPlanPrelude != null && !physicalPlanPrelude.isEmpty()) {
+			logical = physicalPlanPrelude + newLine + newLine
+					+ (hasProfile ? "" : "Query explanation" + newLine) + logical;
 		}
-		return physicalPlanPrelude + newLine + newLine + "Query explanation" + newLine + logical;
+		return Boolean.TRUE.equals(timedOut) ? timeoutHeading() + logical : logical;
+	}
+
+	private static String timeoutHeading() {
+		return TIMEOUT_WARNING + newLine + TIMEOUT_HELP + newLine + newLine;
 	}
 
 	public String getPhysicalPlanPrelude() {
@@ -771,11 +777,8 @@ public class GenericPlanNode {
 		StringBuilder sb = new StringBuilder();
 		List<GenericPlanNode> displayPlans = ordered ? orderedPlansForDisplay() : plans;
 
-		if (timedOut != null && timedOut) {
-			sb.append("Timed out while retrieving explanation! Explanation may be incomplete!").append(newLine);
-			sb.append("You can change the timeout by setting .setMaxExecutionTime(...) on your query.")
-					.append(newLine)
-					.append(newLine);
+		if (prettyBoxDrawingType > 0 && Boolean.TRUE.equals(timedOut)) {
+			sb.append(timeoutHeading());
 		}
 
 		sb.append(type);
@@ -1612,9 +1615,12 @@ public class GenericPlanNode {
 	}
 
 	public String toDot() {
-
-		return toDotInternal(getMaxResultSizeActual(this), getMaxTotalTime(this), getMaxSelfTime(this));
-
+		String nodes = toDotInternal(getMaxResultSizeActual(this), getMaxTotalTime(this), getMaxSelfTime(this));
+		if (Boolean.TRUE.equals(timedOut)) {
+			// DOT subgraphs inherit graph attributes at declaration; label the graph after its scope clusters.
+			return nodes + "   label=\"" + TIMEOUT_WARNING + "\";" + newLine + "   labelloc=t;" + newLine;
+		}
+		return nodes;
 	}
 
 	private static double getMaxTotalTime(GenericPlanNode genericPlanNode) {
