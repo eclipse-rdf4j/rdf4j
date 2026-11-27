@@ -583,6 +583,8 @@ class LmdbBackupServiceTest {
 				conn.add(third);
 			}
 
+			// Retention can prune only durably acknowledged journal records. Establish that boundary explicitly.
+			awaitBackupAcknowledgement(store, store.getBackingStore().getCurrentCommittedTxnId());
 			BackupResult full2 = backupService.createBackup(BackupRequest.builder(backupDir, BackupType.FULL)
 					.compression(BackupCompression.ZIP)
 					.retentionCount(1)
@@ -598,11 +600,10 @@ class LmdbBackupServiceTest {
 			assertFalse(Files.exists(incremental.getArtifactPath().getParent()));
 			assertFalse(Files.exists(full1.getArtifactPath().getParent()));
 
-			Path txLogDir = backupDir.resolve("txlog");
-			assertTrue(Files.isDirectory(txLogDir));
-			try (var stream = Files.list(txLogDir)) {
-				assertFalse(stream.anyMatch(Files::isRegularFile));
-			}
+			assertTrue(((LmdbBackupServiceImpl) backupService)
+					.publishedTransactionIds(backupDir, 0, Long.MAX_VALUE)
+					.isEmpty(),
+					"The retained full snapshot must replace every acknowledged journal record");
 		} finally {
 			repo.shutDown();
 		}
@@ -662,6 +663,16 @@ class LmdbBackupServiceTest {
 		} finally {
 			repo.shutDown();
 		}
+	}
+
+	private static void awaitBackupAcknowledgement(LmdbStore store, long transaction) {
+		PostCommitBackupPublisher publisher = store.getBackingStore().backupPublisher();
+		long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(10);
+		while (publisher.acknowledgedTransactionId() < transaction && System.nanoTime() < deadline) {
+			Thread.yield();
+		}
+		assertTrue(publisher.acknowledgedTransactionId() >= transaction,
+				"The publisher must durably acknowledge the committed transaction");
 	}
 
 	private static BackupServiceStatus awaitFailureStage(SailBackupService service, String stage) {

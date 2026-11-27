@@ -17,6 +17,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.io.IOException;
@@ -109,72 +110,107 @@ class Pr5951ReviewProbeTest {
 	}
 
 	@Test
-	void missingCommitJournalIsRejectedByIncrementalOrRestore(@TempDir Path tempDir) throws Exception {
+	void nativeJournalPublicationFailureRecoversFromTheDurableOutboxOnReopen(@TempDir Path tempDir)
+			throws Exception {
 		Path storeDir = tempDir.resolve("store");
 		Path backupDir = tempDir.resolve("backup");
-		Path restoreDir = tempDir.resolve("restore");
-		Path hiddenLog = tempDir.resolve("hidden-transaction-log");
+		Path blockedJournalRoot = backupDir.resolve("txlog/journal");
+		Statement commitA = statement("gap-a");
+		Statement commitB = statement("gap-b");
 		LmdbStore store = new LmdbStore(storeDir.toFile(), config);
 		SailRepository repo = new SailRepository(store);
 		repo.init();
+		BackupResult full;
+		long transactionA;
+		long transactionB;
 		try {
-			Statement seed = statement("gap-seed");
-			Statement commitA = statement("gap-a");
-			Statement commitB = statement("gap-b");
-			try (RepositoryConnection connection = repo.getConnection()) {
-				connection.add(seed);
-			}
-
-			SailBackupService backupService = store.getBackupService();
-			BackupResult full = fullBackup(backupService, backupDir);
-			long missingTransactionId = store.getBackingStore().getCurrentCommittedTxnId() + 1;
-			Path logA = backupDir.resolve("txlog").resolve(transactionLogName(missingTransactionId));
-			Files.createDirectories(logA.getParent());
-			Files.createDirectory(logA);
+			SailBackupService service = store.getBackupService();
+			full = fullBackup(service, backupDir);
+			Files.createDirectories(blockedJournalRoot.getParent());
+			Files.createFile(blockedJournalRoot);
 			try (RepositoryConnection connection = repo.getConnection()) {
 				connection.add(commitA);
 			}
-			long transactionA = store.getBackingStore().getCurrentCommittedTxnId();
-			assertEquals(missingTransactionId, transactionA);
-			awaitCommitPublicationFailure(backupService);
-			assertEquals("commit-delta", backupService.getStatus().getLastFailureStage().orElseThrow());
-			assertTrue(Files.isDirectory(logA), "The obstructing path should have prevented raw journal publication");
-			Files.move(logA, hiddenLog);
+			transactionA = store.getBackingStore().getCurrentCommittedTxnId();
+			awaitCommitPublicationFailure(service);
+			assertEquals("commit-delta", service.getStatus().getLastFailureStage().orElseThrow());
+			assertTrue(Files.isRegularFile(blockedJournalRoot));
+
 			try (RepositoryConnection connection = repo.getConnection()) {
 				connection.add(commitB);
 			}
-			long transactionB = store.getBackingStore().getCurrentCommittedTxnId();
+			transactionB = store.getBackingStore().getCurrentCommittedTxnId();
 			assertTrue(transactionB > transactionA);
+			TripleStore triples = store.getBackingStore().getTripleStore();
+			assertNotNull(triples.readBackupStageHeader(transactionA));
+			assertNotNull(triples.readBackupStageHeader(transactionB));
+			SailException rejected = assertThrows(SailException.class,
+					() -> incrementalBackup(service, backupDir, full.getEndTransactionId()));
+			assertTrue(rejected.getMessage().contains("Missing committed transaction journal"), rejected.getMessage());
+		} finally {
+			repo.shutDown();
+		}
 
-			SailException rejection = null;
-			try {
-				BackupResult incremental = incrementalBackup(backupService, backupDir, full.getEndTransactionId());
-				try {
-					backupService.restore(new PointInTimeRestoreRequest(backupDir, restoreDir,
-							incremental.getEndTransactionId(), true));
-				} catch (SailException e) {
-					rejection = e;
-				}
-			} catch (SailException e) {
-				rejection = e;
-			}
-			if (rejection != null) {
-				String message = rejection.getMessage().toLowerCase();
-				assertTrue(message.contains("missing") || message.contains("gap"), rejection.getMessage());
-				return;
-			}
-
-			SailRepository restoredRepo = new SailRepository(new LmdbStore(restoreDir.toFile(), config));
+		Files.delete(blockedJournalRoot);
+		LmdbStore reopenedStore = new LmdbStore(storeDir.toFile(), config);
+		SailRepository reopened = new SailRepository(reopenedStore);
+		reopened.init();
+		try {
+			SailBackupService service = reopenedStore.getBackupService();
+			BackupResult incremental = incrementalBackup(service, backupDir, full.getEndTransactionId());
+			assertEquals(transactionB, incremental.getEndTransactionId());
+			Path restored = service.restore(
+					new PointInTimeRestoreRequest(backupDir, tempDir.resolve("restored"), transactionB, true));
+			SailRepository restoredRepo = new SailRepository(new LmdbStore(restored.toFile(), config));
 			restoredRepo.init();
 			try (RepositoryConnection connection = restoredRepo.getConnection()) {
-				assertTrue(connection.hasStatement(commitA, false),
-						"Restore returned successfully after the interior transaction log was removed");
+				assertTrue(connection.hasStatement(commitA, false));
 				assertTrue(connection.hasStatement(commitB, false));
 			} finally {
 				restoredRepo.shutDown();
 			}
 		} finally {
+			reopened.shutDown();
+		}
+	}
+
+	@Test
+	void restoreRejectsMissingNativeJournalWithoutAnIncrementalArtifact(@TempDir Path tempDir) throws Exception {
+		Path backupDir = tempDir.resolve("backup");
+		Path restoreDir = tempDir.resolve("restore");
+		LmdbStore store = new LmdbStore(tempDir.resolve("source").toFile(), config);
+		SailRepository repo = new SailRepository(store);
+		repo.init();
+		long target;
+		try {
+			var service = (LmdbBackupServiceImpl) store.getBackupService();
+			BackupResult full = fullBackup(service, backupDir);
+			CountDownLatch published = new CountDownLatch(1);
+			store.getBackingStore().backupPublisher().setBeforeAcknowledgement(published::countDown);
+			try (RepositoryConnection connection = repo.getConnection()) {
+				connection.add(statement("missing-journal-delta"));
+			}
+			target = store.getBackingStore().getCurrentCommittedTxnId();
+			assertTrue(published.await(10, TimeUnit.SECONDS), "The native journal was not published");
+			assertEquals(List.of(target),
+					service.publishedTransactionIds(backupDir, full.getEndTransactionId(), target));
+			assertFalse(Files.exists(backupDir.resolve("incremental")));
+		} finally {
 			repo.shutDown();
+		}
+		Files.move(backupDir.resolve("txlog/journal"), tempDir.resolve("hidden-native-journal"));
+
+		LmdbStore restoreServiceStore = new LmdbStore(tempDir.resolve("restore-service").toFile(), config);
+		SailRepository restoreServiceRepo = new SailRepository(restoreServiceStore);
+		restoreServiceRepo.init();
+		try {
+			SailException rejected = assertThrows(SailException.class,
+					() -> restoreServiceStore.getBackupService()
+							.restore(new PointInTimeRestoreRequest(backupDir, restoreDir, target, true)));
+			assertTrue(rejected.getMessage().contains("missing transaction logs"), rejected.getMessage());
+			assertFalse(Files.exists(restoreDir));
+		} finally {
+			restoreServiceRepo.shutDown();
 		}
 	}
 
@@ -244,33 +280,33 @@ class Pr5951ReviewProbeTest {
 		SailRepository repo = new SailRepository(store);
 		repo.init();
 		try {
-			try (RepositoryConnection connection = repo.getConnection()) {
-				connection.add(statement("journal-seed"));
-			}
-			SailBackupService backupService = store.getBackupService();
+			var backupService = (LmdbBackupServiceImpl) store.getBackupService();
 			BackupResult full = fullBackup(backupService, backupDir);
 			Statement commitA = statement("journal-a");
 			long expectedTarget = store.getBackingStore().getCurrentCommittedTxnId() + 1;
-			Path expectedJournal = backupDir.resolve("txlog").resolve(transactionLogName(expectedTarget));
 			CountDownLatch journalPublished = new CountDownLatch(1);
-			store.getBackingStore().backupPublisher().setBeforeAcknowledgement(() -> {
-				if (Files.isRegularFile(expectedJournal)) {
-					journalPublished.countDown();
-				}
-			});
+			store.getBackingStore().backupPublisher().setBeforeAcknowledgement(journalPublished::countDown);
 			try (RepositoryConnection connection = repo.getConnection()) {
 				connection.add(commitA);
 			}
 			long target = store.getBackingStore().getCurrentCommittedTxnId();
 			assertEquals(expectedTarget, target);
 			assertTrue(journalPublished.await(10, TimeUnit.SECONDS),
-					"The raw journal must finish publication before comparing source backup files");
+					"The native journal must finish publication before comparing source backup files");
+			assertEquals(List.of(target),
+					backupService.publishedTransactionIds(backupDir, full.getEndTransactionId(), target));
 			assertFalse(Files.exists(backupDir.resolve("incremental")));
 			Map<String, String> sourceBeforeRestore = sha256Files(backupDir);
 
 			Path restored = backupService.restore(new PointInTimeRestoreRequest(backupDir, restoreDir, target, true));
 			Map<String, String> sourceAfterReplay = sha256Files(backupDir);
-			String originalJournal = Path.of("txlog").resolve(transactionLogName(target)).toString();
+			List<String> nativeJournals = sourceBeforeRestore.keySet()
+					.stream()
+					.filter(name -> Path.of(name).startsWith(Path.of("txlog/journal"))
+							&& Path.of(name).getFileName().toString().equals("data.mdb"))
+					.toList();
+			assertEquals(1, nativeJournals.size());
+			String originalJournal = nativeJournals.getFirst();
 			String originalJournalHashBefore = sourceBeforeRestore.get(originalJournal);
 			boolean originalJournalBytesUnchanged = sourceBeforeRestore.get(originalJournal) != null
 					&& sourceBeforeRestore.get(originalJournal).equals(sourceAfterReplay.get(originalJournal));
@@ -597,10 +633,6 @@ class Pr5951ReviewProbeTest {
 				.build());
 	}
 
-	private static String transactionLogName(long transactionId) {
-		return String.format("txn-%020d.delta.gz", transactionId);
-	}
-
 	private static List<String> transactionLogNames(Path transactionLogDir) throws IOException {
 		if (!Files.isDirectory(transactionLogDir)) {
 			return List.of();
@@ -614,7 +646,10 @@ class Pr5951ReviewProbeTest {
 		Map<String, String> hashes = new TreeMap<>();
 		MessageDigest digest = MessageDigest.getInstance("SHA-256");
 		try (Stream<Path> paths = Files.walk(root)) {
-			for (Path file : paths.filter(Files::isRegularFile).toList()) {
+			// LMDB readers update the process lock table; it is not part of the durable backup content.
+			for (Path file : paths.filter(Files::isRegularFile)
+					.filter(path -> !path.getFileName().toString().equals("lock.mdb"))
+					.toList()) {
 				digest.reset();
 				hashes.put(root.relativize(file).toString(),
 						HexFormat.of().formatHex(digest.digest(Files.readAllBytes(file))));

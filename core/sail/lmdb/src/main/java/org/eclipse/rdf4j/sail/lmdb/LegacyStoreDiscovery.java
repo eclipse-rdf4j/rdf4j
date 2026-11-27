@@ -69,7 +69,7 @@ import org.lwjgl.util.lmdb.MDBVal;
 
 /** Read-only preflight for existing LMDB generations and recovery of absent legacy index descriptors. */
 final class LegacyStoreDiscovery {
-	private static final int MAX_DBS = 64;
+	private static final int MAX_DBS = 64 + LmdbBackupOutbox.BUCKET_COUNT + 2;
 	private static final byte DATABASE_NAME_MIN = 0x20;
 	private static final int DATABASE_NAME_LIMIT = 0x7f;
 	private static final byte URI_VALUE = 0;
@@ -136,6 +136,7 @@ final class LegacyStoreDiscovery {
 						exhaustive);
 				Map<String, Integer> triplesDatabases = readDatabaseCatalog(stack, triplesTxn, triplesMain, true,
 						exhaustive);
+				validateCatalogBackupSource(stack, triplesTxn, triplesMain, triplesDatabases);
 				LegacyRetirementQueue retirementQueue = validateLegacyRetirementQueue(stack, valuesTxn,
 						valuesDatabases, properties, legacy, exhaustive);
 				Set<String> physicalStatementIndexes = classifyStatementIndexes(triplesDatabases);
@@ -211,6 +212,13 @@ final class LegacyStoreDiscovery {
 		openKnownDatabase(stack, valuesTxn, ValueStore.TERM_INDEX_MANIFEST_DATABASE, valueDatabases, true);
 		openKnownDatabase(stack, triplesTxn, "contexts", tripleDatabases, true);
 		openKnownDatabase(stack, triplesTxn, TripleStore.NAMESPACE_DATABASE_NAME, tripleDatabases, true);
+		openKnownDatabase(stack, triplesTxn, LmdbBackupOutbox.DATABASE_NAME, tripleDatabases, false);
+		for (int bucket = 0; bucket < LmdbBackupOutbox.BUCKET_COUNT; bucket++) {
+			openKnownDatabase(stack, triplesTxn, LmdbBackupOutbox.bucketDatabaseName(bucket), tripleDatabases, false);
+		}
+		openKnownDatabase(stack, triplesTxn, LmdbBackupOutbox.HOT_DATABASE_NAME, tripleDatabases, false);
+		openKnownDatabase(stack, triplesTxn, LmdbBackupOutbox.PACK_DATABASE_NAME, tripleDatabases, false);
+		boolean catalogBackupSource = validateCatalogBackupSource(stack, triplesTxn, triplesMain, tripleDatabases);
 		// Every legal permutation is probed, including absent indexes, so incomplete pairs and staged term indexes
 		// force ordinary recovery. This fixed work is independent of the number of dictionary or statement entries.
 		for (String spec : INDEX_SPECS) {
@@ -219,7 +227,8 @@ final class LegacyStoreDiscovery {
 			openKnownDatabase(stack, valuesTxn, TripleIndex.nativeDatabaseName("term-" + spec, true), valueDatabases,
 					false);
 		}
-		if (databaseEntries(stack, triplesTxn, triplesMain) != tripleDatabases.size()) {
+		if (databaseEntries(stack, triplesTxn, triplesMain) != tripleDatabases.size()
+				+ (catalogBackupSource ? 1L : 0L)) {
 			throw new IOException("Unrecognized entry in current LMDB triple database catalog");
 		}
 		Set<String> statementIndexes = classifyStatementIndexes(tripleDatabases);
@@ -302,6 +311,19 @@ final class LegacyStoreDiscovery {
 					throw new IOException("Malformed LMDB backup outbox head");
 				}
 				TripleStore.validateBackupOutboxHead(copy(value.mv_data()));
+				namespaceEntries++;
+			}
+		}
+		try (MemoryStack lookup = MemoryStack.stackPush()) {
+			MDBVal key = MDBVal.calloc(lookup).mv_data(lookup.bytes(TripleStore.BACKUP_ACKNOWLEDGEMENT_KEY));
+			MDBVal value = MDBVal.calloc(lookup);
+			int result = mdb_get(triplesTxn, namespaces, key, value);
+			if (result != MDB_NOTFOUND) {
+				E(result);
+				if (value.mv_size() != TripleStore.BACKUP_ACKNOWLEDGEMENT_BYTES) {
+					throw new IOException("Malformed native LMDB backup acknowledgement");
+				}
+				TripleStore.decodeBackupAcknowledgement(copy(value.mv_data()));
 				namespaceEntries++;
 			}
 		}
@@ -512,21 +534,26 @@ final class LegacyStoreDiscovery {
 					throw new IOException("Native database catalog exceeds the supported schema limit");
 				}
 				byte[] rawName = copy(key.mv_data());
-				Integer database = tryOpenCatalogEntry(stack, transaction, rawName);
-				if (database != null) {
-					String name = decodeDatabaseName(rawName);
-					IntBuffer flags = stack.mallocInt(1);
-					E(mdb_dbi_flags(transaction, database, flags));
-					if (flags.get(0) != 0) {
-						throw new IOException("Unexpected flags on native database " + name);
+				if (requireOnlyNamedEntries && LmdbBackupOutbox.isCatalogKey(rawName)) {
+					// This exact binary key is ordinary source data, never a named-database descriptor.
+					LmdbBackupOutbox.validateCatalogValue(value.mv_data());
+				} else {
+					Integer database = tryOpenCatalogEntry(stack, transaction, rawName);
+					if (database != null) {
+						String name = decodeDatabaseName(rawName);
+						IntBuffer flags = stack.mallocInt(1);
+						E(mdb_dbi_flags(transaction, database, flags));
+						if (flags.get(0) != 0) {
+							throw new IOException("Unexpected flags on native database " + name);
+						}
+						databases.put(name, database);
+					} else if (requireOnlyNamedEntries || !exhaustive) {
+						// Every normal dictionary key begins below this interval. An observed in-range ordinary
+						// record cannot be a dictionary row or a native named-database descriptor.
+						throw new IOException("Unrecognized entry in LMDB "
+								+ (requireOnlyNamedEntries ? "triple" : "values") + " database catalog: "
+								+ printablePrefix(rawName));
 					}
-					databases.put(name, database);
-				} else if (requireOnlyNamedEntries || !exhaustive) {
-					// Every normal dictionary key begins below this interval. An observed in-range ordinary
-					// record cannot be a dictionary row or a native named-database descriptor.
-					throw new IOException("Unrecognized entry in LMDB "
-							+ (requireOnlyNamedEntries ? "triple" : "values") + " database catalog: "
-							+ printablePrefix(rawName));
 				}
 				rc = mdb_cursor_get(cursor, key, value, MDB_NEXT);
 			}
@@ -597,10 +624,52 @@ final class LegacyStoreDiscovery {
 		return indexes;
 	}
 
+	private static void validateBackupPackDatabases(Map<String, Integer> databases) throws IOException {
+		if (databases.containsKey(LmdbBackupOutbox.HOT_DATABASE_NAME) != databases
+				.containsKey(LmdbBackupOutbox.PACK_DATABASE_NAME)) {
+			throw new IOException("Incomplete LMDB backup pack database pair");
+		}
+	}
+
+	private static boolean validateCatalogBackupSource(MemoryStack stack, long transaction, int mainDatabase,
+			Map<String, Integer> databases) throws IOException {
+		// Preserve the existing incomplete-pair rejection before checking the optional ordinary record.
+		validateBackupPackDatabases(databases);
+		MDBVal key = MDBVal.calloc(stack).mv_data(LmdbBackupOutbox.catalogKey(stack));
+		MDBVal value = MDBVal.calloc(stack);
+		int result = mdb_get(transaction, mainDatabase, key, value);
+		if (result == MDB_NOTFOUND) {
+			return false;
+		}
+		E(result);
+		boolean catalogNonempty = LmdbBackupOutbox.validateCatalogValue(value.mv_data());
+		if (!databases.containsKey(LmdbBackupOutbox.HOT_DATABASE_NAME)
+				|| !databases.containsKey(LmdbBackupOutbox.PACK_DATABASE_NAME)) {
+			throw new IOException("Catalog backup source exists without its native pack databases");
+		}
+		LmdbBackupOutbox.validateLegacyHotPack(stack, transaction,
+				databases.get(LmdbBackupOutbox.HOT_DATABASE_NAME), catalogNonempty);
+		return true;
+	}
+
 	private static void validateKnownDatabases(Map<String, Integer> valueDatabases,
 			Map<String, Integer> tripleDatabases, Set<String> statementIndexes, Set<String> termIndexes,
 			StoreProperties properties, boolean legacy, LegacyRetirementQueue retirementQueue) throws IOException {
 		Set<String> expectedTriples = new LinkedHashSet<>();
+		validateBackupPackDatabases(tripleDatabases);
+		if (tripleDatabases.containsKey(LmdbBackupOutbox.HOT_DATABASE_NAME)) {
+			expectedTriples.add(LmdbBackupOutbox.HOT_DATABASE_NAME);
+			expectedTriples.add(LmdbBackupOutbox.PACK_DATABASE_NAME);
+		}
+		if (tripleDatabases.containsKey(LmdbBackupOutbox.DATABASE_NAME)) {
+			expectedTriples.add(LmdbBackupOutbox.DATABASE_NAME);
+		}
+		for (int bucket = 0; bucket < LmdbBackupOutbox.BUCKET_COUNT; bucket++) {
+			String name = LmdbBackupOutbox.bucketDatabaseName(bucket);
+			if (tripleDatabases.containsKey(name)) {
+				expectedTriples.add(name);
+			}
+		}
 		expectedTriples.add("contexts");
 		if (tripleDatabases.containsKey(TripleStore.NAMESPACE_DATABASE_NAME)) {
 			expectedTriples.add(TripleStore.NAMESPACE_DATABASE_NAME);
@@ -697,6 +766,11 @@ final class LegacyStoreDiscovery {
 		if (outboxHead != null) {
 			TripleStore.validateBackupOutboxHead(outboxHead);
 		}
+		byte[] acknowledgement = getOptionalBoundedValue(transaction, database,
+				TripleStore.BACKUP_ACKNOWLEDGEMENT_KEY, TripleStore.BACKUP_ACKNOWLEDGEMENT_BYTES);
+		if (acknowledgement != null) {
+			TripleStore.decodeBackupAcknowledgement(acknowledgement);
+		}
 		PointerBuffer handle = stack.mallocPointer(1);
 		E(mdb_cursor_open(transaction, database, handle));
 		long cursor = handle.get(0);
@@ -706,7 +780,7 @@ final class LegacyStoreDiscovery {
 			int result = mdb_cursor_get(cursor, key, value, MDB_FIRST);
 			int entries = 0;
 			while (result == MDB_SUCCESS) {
-				if (++entries > 8) {
+				if (++entries > 9) {
 					throw new IOException("Namespace database exceeds its supported metadata schema");
 				}
 				byte[] bytes = copy(key.mv_data());
@@ -717,7 +791,8 @@ final class LegacyStoreDiscovery {
 						&& !Arrays.equals(bytes, PreparedBulkStore.GENERATION_KEY)
 						&& !Arrays.equals(bytes, STATEMENT_BUILD_KEY)
 						&& !Arrays.equals(bytes, TripleStore.BACKUP_BOUNDARY_KEY)
-						&& !Arrays.equals(bytes, TripleStore.BACKUP_OUTBOX_HEAD_KEY)) {
+						&& !Arrays.equals(bytes, TripleStore.BACKUP_OUTBOX_HEAD_KEY)
+						&& !Arrays.equals(bytes, TripleStore.BACKUP_ACKNOWLEDGEMENT_KEY)) {
 					throw new IOException("Unrecognized namespace database metadata key: " + printablePrefix(bytes));
 				}
 				result = mdb_cursor_get(cursor, key, value, MDB_NEXT);

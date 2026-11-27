@@ -473,7 +473,8 @@ class LmdbBackupJournalOptInTest {
 			add(store, "base");
 			BackupResult full = full(store, backup);
 			add(store, "delta");
-			long target = incremental(store, backup, full.getEndTransactionId()).getEndTransactionId();
+			BackupResult delta = incremental(store, backup, full.getEndTransactionId());
+			long target = delta.getEndTransactionId();
 			// Model an existing legacy metadata/journal pair without altering the native snapshot or its checksum.
 			Path metadata = full.getArtifactPath().getParent().resolve("metadata.properties");
 			Properties properties = readProperties(metadata);
@@ -484,7 +485,14 @@ class LmdbBackupJournalOptInTest {
 					.restore(
 							new PointInTimeRestoreRequest(backup, directory.resolve("wrong-generation"), target,
 									false)));
+			Path exports = directory.resolve("exported-legacy-fixture");
+			((LmdbBackupServiceImpl) store.getBackupService()).exportTransactionLogs(backup,
+					full.getEndTransactionId(), target, exports);
+			Files.move(backup.resolve("txlog"), directory.resolve("hidden-native-journal"));
+			Files.createDirectory(backup.resolve("txlog"));
 			Path log = backup.resolve("txlog").resolve(String.format("txn-%020d.delta.gz", target));
+			Files.move(exports.resolve(log.getFileName()), log);
+			deleteTree(delta.getArtifactPath().getParent());
 			LmdbBackupDeltaCodec.Journal journal;
 			try (InputStream input = new GZIPInputStream(Files.newInputStream(log))) {
 				journal = LmdbBackupDeltaCodec.readJournal(input);
@@ -563,6 +571,7 @@ class LmdbBackupJournalOptInTest {
 		BackupResult baseline;
 		try {
 			baseline = full(store, backup);
+			Files.deleteIfExists(backup.resolve("txlog"));
 			Files.writeString(backup.resolve("txlog"), "Publication unavailable");
 			add(store, "durable-pending");
 			LmdbStore active = store;

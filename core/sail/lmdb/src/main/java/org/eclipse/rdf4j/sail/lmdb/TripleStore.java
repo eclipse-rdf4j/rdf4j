@@ -68,9 +68,12 @@ import static org.lwjgl.util.lmdb.LMDB.mdb_txn_begin;
 import static org.lwjgl.util.lmdb.LMDB.mdb_txn_commit;
 import static org.lwjgl.util.lmdb.LMDB.mdb_txn_id;
 
+import java.io.ByteArrayInputStream;
 import java.io.Closeable;
+import java.io.DataInputStream;
 import java.io.File;
 import java.io.IOException;
+import java.io.InputStream;
 import java.io.InterruptedIOException;
 import java.io.Serializable;
 import java.nio.ByteBuffer;
@@ -133,6 +136,7 @@ import org.eclipse.rdf4j.query.QueryInterruptedException;
 import org.eclipse.rdf4j.query.algebra.evaluation.sketch.SketchBasedJoinEstimator.Component;
 import org.eclipse.rdf4j.sail.SailException;
 import org.eclipse.rdf4j.sail.base.SailSource;
+import org.eclipse.rdf4j.sail.lmdb.PostCommitBackupPublisher.Acknowledgement;
 import org.eclipse.rdf4j.sail.lmdb.TripleIndex.StatementFieldValueAccessor;
 import org.eclipse.rdf4j.sail.lmdb.TxnManager.Mode;
 import org.eclipse.rdf4j.sail.lmdb.TxnManager.Txn;
@@ -217,8 +221,21 @@ class TripleStore implements Closeable {
 	static final int INDEX_DATABASE_VERSION = 1;
 	static final byte[] BACKUP_BOUNDARY_KEY = "backup-logical-boundary".getBytes(StandardCharsets.US_ASCII);
 	static final byte[] BACKUP_OUTBOX_HEAD_KEY = "backup-outbox-head".getBytes(StandardCharsets.US_ASCII);
+	static final byte[] BACKUP_ACKNOWLEDGEMENT_KEY = "backup-published-acknowledgement"
+			.getBytes(StandardCharsets.US_ASCII);
+	private static final int BACKUP_ACKNOWLEDGEMENT_MAGIC = 0x52344131;
+	static final int BACKUP_ACKNOWLEDGEMENT_BYTES = Integer.BYTES + 3 * Long.BYTES;
 	private volatile UUID backupOutboxHead = PostCommitBackupPublisher.EMPTY;
 	private volatile UUID pendingBackupOutboxHead;
+	private final Object backupAcknowledgementLock = new Object();
+	/** A coherent archive-durable tuple; it becomes a recovery proof only with the enclosing native commit. */
+	private volatile Acknowledgement publishedBackupAcknowledgement;
+	private volatile Acknowledgement nativeBackupAcknowledgement;
+	private volatile Acknowledgement fileBackupAcknowledgement;
+	private Acknowledgement pendingNativeBackupAcknowledgement;
+	private LmdbBackupOutbox backupOutbox;
+	private PostCommitBackupPublisher.Stage pendingBackupStage;
+	private List<LmdbBackupDeltaCodec.Record> pendingBackupStageRecords;
 	private static final int MAX_INDEX_INITIALIZATION_ATTEMPTS = 4;
 	private static final Pattern MUTATION_JOURNAL_NAME = Pattern.compile(
 			"txn-replay-[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\\.bin");
@@ -658,7 +675,9 @@ class TripleStore implements Closeable {
 		}
 	}
 
-	private record DatabaseHandles(int mainDbi, int contextsDbi, int namespacesDbi, long ownedTransactionId) {
+	private record DatabaseHandles(int mainDbi, int contextsDbi, int namespacesDbi, int backupOutboxDbi,
+			int[] backupBucketDbis, int backupHotDbi, int backupPackDbi, int pageSize,
+			long ownedTransactionId, boolean backupStorageCreated) {
 	}
 
 	private record PageAndMapState(int pageSize, boolean empty) {
@@ -674,6 +693,11 @@ class TripleStore implements Closeable {
 	}
 
 	TripleStore(File dir, StoreProperties properties, LmdbStoreConfig config, ValueStore valueStore,
+			boolean backupJournalEnabled) throws IOException, SailException {
+		this(dir, properties, config, valueStore, null, DEFAULT_ENVIRONMENT_LIFECYCLE, backupJournalEnabled);
+	}
+
+	TripleStore(File dir, StoreProperties properties, LmdbStoreConfig config, ValueStore valueStore,
 			EnvironmentLifecycle environmentLifecycle) throws IOException, SailException {
 		this(dir, properties, config, valueStore, null, environmentLifecycle);
 	}
@@ -686,13 +710,20 @@ class TripleStore implements Closeable {
 	private TripleStore(File dir, StoreProperties properties, LmdbStoreConfig config, ValueStore valueStore,
 			Supplier<? extends CollectionFactory> legacyCollections, EnvironmentLifecycle environmentLifecycle)
 			throws IOException, SailException {
+		this(dir, properties, config, valueStore, legacyCollections, environmentLifecycle,
+				config.getBackupJournalEnabled());
+	}
+
+	private TripleStore(File dir, StoreProperties properties, LmdbStoreConfig config, ValueStore valueStore,
+			Supplier<? extends CollectionFactory> legacyCollections, EnvironmentLifecycle environmentLifecycle,
+			boolean backupJournalEnabled) throws IOException, SailException {
 		this.legacyCollections = legacyCollections;
 		this.dir = dir;
 		this.dataMdbFile = new File(dir, "data.mdb");
 		this.properties = properties;
 		expectedNativeTransactionId = properties.verifiedTripleTransactionId;
 		this.environmentLifecycle = Objects.requireNonNull(environmentLifecycle);
-		boolean forceSync = config.getForceSync();
+		boolean forceSync = config.getForceSync() || backupJournalEnabled;
 		boolean noReadahead = config.getNoReadahead();
 		this.autoGrow = config.getAutoGrow();
 		this.growthPolicy = new MapGrowthPolicy(config.getMapGrowthThreshold());
@@ -701,6 +732,7 @@ class TripleStore implements Closeable {
 		this.valueStore = valueStore;
 		// create directory if it not exists
 		this.dir.mkdirs();
+		boolean backupSetupCommitted;
 
 		try {
 			try (MemoryStack stack = stackPush()) {
@@ -709,8 +741,8 @@ class TripleStore implements Closeable {
 				env = pp.get(0);
 			}
 
-			// 1 for contexts, 48 for all possible triple indexes (24 explicit + 24 inferred), 1 for namespaces.
-			E(mdb_env_set_maxdbs(env, 1 + 96 + 1));
+			// Contexts, active/staged triple indexes, namespaces, legacy/bucketed outboxes, and two small-stage packs.
+			E(mdb_env_set_maxdbs(env, 1 + 96 + 1 + 1 + LmdbBackupOutbox.BUCKET_COUNT + 2));
 			E(mdb_env_set_maxreaders(env, MAX_READERS));
 
 			// Open environment
@@ -733,6 +765,7 @@ class TripleStore implements Closeable {
 				String name = "contexts";
 				IntBuffer ip = stack.mallocInt(1);
 				boolean created = false;
+				boolean backupStorageCreated = false;
 				int contextResult = mdb_dbi_open(txn, name, 0, ip);
 				if (contextResult == MDB_NOTFOUND) {
 					E(mdb_dbi_open(txn, name, MDB_CREATE, ip));
@@ -748,15 +781,71 @@ class TripleStore implements Closeable {
 				} else {
 					E(namespaceResult);
 				}
-				return new DatabaseHandles(mainDbi, contextsDbi, ip.get(0),
-						created ? mdb_txn_id(txn) : expectedNativeTransactionId);
+				int namespacesDbi = ip.get(0);
+				int outboxDbi = -1;
+				int outboxResult = mdb_dbi_open(txn, LmdbBackupOutbox.DATABASE_NAME, 0, ip);
+				if (outboxResult == MDB_SUCCESS) {
+					outboxDbi = ip.get(0);
+				} else if (outboxResult != MDB_NOTFOUND) {
+					E(outboxResult);
+				}
+				int[] backupBucketDbis = new int[LmdbBackupOutbox.BUCKET_COUNT];
+				for (int bucket = 0; bucket < backupBucketDbis.length; bucket++) {
+					backupBucketDbis[bucket] = -1;
+					String bucketName = LmdbBackupOutbox.bucketDatabaseName(bucket);
+					int result = mdb_dbi_open(txn, bucketName, 0, ip);
+					if (result == MDB_SUCCESS) {
+						backupBucketDbis[bucket] = ip.get(0);
+					} else if (result == MDB_NOTFOUND && backupJournalEnabled) {
+						E(mdb_dbi_open(txn, bucketName, MDB_CREATE, ip));
+						backupBucketDbis[bucket] = ip.get(0);
+						created = true;
+						backupStorageCreated = true;
+					} else if (result != MDB_NOTFOUND) {
+						E(result);
+					}
+				}
+				int hotDbi = -1;
+				int hotResult = mdb_dbi_open(txn, LmdbBackupOutbox.HOT_DATABASE_NAME, 0, ip);
+				if (hotResult == MDB_SUCCESS) {
+					hotDbi = ip.get(0);
+				} else if (hotResult != MDB_NOTFOUND) {
+					E(hotResult);
+				}
+				int packDbi = -1;
+				int packResult = mdb_dbi_open(txn, LmdbBackupOutbox.PACK_DATABASE_NAME, 0, ip);
+				if (packResult == MDB_SUCCESS) {
+					packDbi = ip.get(0);
+				} else if (packResult != MDB_NOTFOUND) {
+					E(packResult);
+				}
+				if ((hotDbi < 0) != (packDbi < 0)) {
+					throw new IOException("Incomplete LMDB backup pack database pair");
+				}
+				if (hotDbi < 0 && backupJournalEnabled) {
+					E(mdb_dbi_open(txn, LmdbBackupOutbox.HOT_DATABASE_NAME, MDB_CREATE, ip));
+					hotDbi = ip.get(0);
+					E(mdb_dbi_open(txn, LmdbBackupOutbox.PACK_DATABASE_NAME, MDB_CREATE, ip));
+					packDbi = ip.get(0);
+					created = true;
+					backupStorageCreated = true;
+				}
+				MDBStat stats = MDBStat.malloc(stack);
+				E(mdb_stat(txn, mainDbi, stats));
+				return new DatabaseHandles(mainDbi, contextsDbi, namespacesDbi, outboxDbi, backupBucketDbis,
+						hotDbi, packDbi, stats.ms_psize(),
+						created ? mdb_txn_id(txn) : expectedNativeTransactionId, backupStorageCreated);
 			});
+			backupSetupCommitted = databaseHandles.backupStorageCreated();
 			if (expectedNativeTransactionId >= 0L) {
 				expectedNativeTransactionId = databaseHandles.ownedTransactionId();
 			}
 			mainDbi = databaseHandles.mainDbi();
 			contextsDbi = databaseHandles.contextsDbi();
 			namespacesDbi = databaseHandles.namespacesDbi();
+			backupOutbox = new LmdbBackupOutbox(databaseHandles.backupOutboxDbi(), databaseHandles.backupBucketDbis(),
+					databaseHandles.backupHotDbi(), databaseHandles.backupPackDbi(), databaseHandles.pageSize(),
+					mainDbi);
 
 			txnManager = new TxnManager(env, Mode.RESET, LmdbSailStore.MapResizeKind.TRIPLE_STORE);
 			txnManager.setReaderRetirementListener(this::signalIndexRebuild);
@@ -800,12 +889,23 @@ class TripleStore implements Closeable {
 					if (!nativeIndexManifest) {
 						writeIndexSpecs(effectiveIndexSpecs);
 					}
+					// Reserve only after every initial index descriptor exists. The outbox uses a child transaction
+					// to retain this fixed inline record only when it fits the existing single catalog leaf.
+					boolean catalogChanged = backupJournalEnabled && backupOutbox.initializeCatalog(env, writeTxn);
+					if (catalogChanged) {
+						nativeMutation = true;
+						unjournaledMutation = true;
+						setupCommitWithoutNativeWrites = false;
+					}
 					initializeBackupBoundary();
 					endTransaction(true);
+					backupSetupCommitted |= catalogChanged;
 					break;
 				} catch (MapFullException mapFull) {
-					// The failed commit consumed the transaction and LMDB closed the DBI handles it had opened, so the
-					// index creation and manifest must be redone in a fresh transaction after growing the map.
+					// A reservation child can exhaust the map before the enclosing commit consumes its writer.
+					// Retire that parent before resizing, then recreate its index handles and manifest in a fresh
+					// writer.
+					endTransaction(false);
 					indexes.clear();
 					if (!autoGrow || ++initializationAttempts >= MAX_INDEX_INITIALIZATION_ATTEMPTS) {
 						throw new IOException("LMDB map is full while initializing the triple indexes", mapFull);
@@ -841,6 +941,14 @@ class TripleStore implements Closeable {
 			// Bulk metrics begin after opening/configuring the environment, as in the loader-only driver.
 			bulkMapGrowthCount = 0L;
 			recoverBackupBoundary();
+			if (backupSetupCommitted && properties.preparedBulkStore != null) {
+				// The setup writers checked the admitted predecessor and retained their own IDs before committing.
+				// Advance only this in-memory constructor fence; the persisted CLEAN binding is unchanged until close.
+				long ownedTransaction = trustedClosedTransactionId();
+				if (ownedTransaction >= 0L) {
+					properties.verifiedTripleTransactionId = ownedTransaction;
+				}
+			}
 		} catch (IOException e) {
 			cleanupAfterInitializationFailure(e);
 			throw e;
@@ -852,28 +960,69 @@ class TripleStore implements Closeable {
 
 	private void recoverBackupBoundary() throws IOException {
 		lastCommittedTxnId = getCurrentCommittedTransactionId();
-		long[] backupBoundary = txnManager.doWith((stack, txn) -> {
+		txnManager.doWith((stack, txn) -> {
 			byte[] encoded = readNamespaceDatabaseValue(stack, txn, BACKUP_BOUNDARY_KEY);
-			if (encoded == null) {
-				return new long[] { lastCommittedTxnId, -1L };
+			long current = lastCommittedTxnId;
+			long previous = -1L;
+			if (encoded != null) {
+				validateBackupBoundary(encoded);
+				ByteBuffer buffer = ByteBuffer.wrap(encoded);
+				current = buffer.getLong();
+				previous = buffer.getLong();
 			}
-			validateBackupBoundary(encoded);
-			ByteBuffer buffer = ByteBuffer.wrap(encoded);
-			long current = buffer.getLong();
-			long previous = buffer.getLong();
-			return new long[] { current, previous };
-		});
-		requiredBackupTxnId = backupBoundary[0];
-		previousRequiredBackupTxnId = backupBoundary[1];
-		backupOutboxHead = txnManager.doWith((stack, txn) -> {
 			byte[] head = readNamespaceDatabaseValue(stack, txn, BACKUP_OUTBOX_HEAD_KEY);
-			if (head == null) {
-				return PostCommitBackupPublisher.EMPTY;
+			UUID identity = PostCommitBackupPublisher.EMPTY;
+			if (head != null) {
+				validateBackupOutboxHead(head);
+				ByteBuffer bytes = ByteBuffer.wrap(head);
+				identity = new UUID(bytes.getLong(), bytes.getLong());
 			}
-			validateBackupOutboxHead(head);
-			ByteBuffer encoded = ByteBuffer.wrap(head);
-			return new UUID(encoded.getLong(), encoded.getLong());
+			// A native LMDB ID is only a legacy default, not a persisted logical boundary. Maintenance may
+			// advance it past the newest stage, whose tuple remains authoritative until a real fallback exists.
+			PostCommitBackupPublisher.Stage nativeHead = backupOutbox.latestStage(stack, txn,
+					encoded == null ? -1L : current);
+			if (nativeHead != null) {
+				current = nativeHead.transaction;
+				previous = nativeHead.previousTransaction;
+				identity = nativeHead.id;
+			}
+			requiredBackupTxnId = current;
+			previousRequiredBackupTxnId = previous;
+			backupOutboxHead = identity;
+			byte[] acknowledgement = readNamespaceDatabaseValue(stack, txn, BACKUP_ACKNOWLEDGEMENT_KEY);
+			if (acknowledgement != null) {
+				Acknowledgement proof = decodeBackupAcknowledgement(acknowledgement);
+				validateBackupAcknowledgementBoundary(proof, current, identity);
+				nativeBackupAcknowledgement = proof;
+				publishedBackupAcknowledgement = proof;
+				backupOutbox.acknowledge(proof.transaction());
+			}
+			return null;
 		});
+	}
+
+	static Acknowledgement decodeBackupAcknowledgement(byte[] encoded) throws IOException {
+		if (encoded.length != BACKUP_ACKNOWLEDGEMENT_BYTES) {
+			throw new IOException("Malformed native LMDB backup acknowledgement");
+		}
+		ByteBuffer bytes = ByteBuffer.wrap(encoded);
+		if (bytes.getInt() != BACKUP_ACKNOWLEDGEMENT_MAGIC) {
+			throw new IOException("Unsupported native LMDB backup acknowledgement");
+		}
+		UUID identity = new UUID(bytes.getLong(), bytes.getLong());
+		long transaction = bytes.getLong();
+		if (transaction < 0) {
+			throw new IOException("Negative native LMDB backup acknowledgement boundary");
+		}
+		return new Acknowledgement(identity, transaction);
+	}
+
+	private static void validateBackupAcknowledgementBoundary(Acknowledgement acknowledgement, long boundary,
+			UUID identity) throws IOException {
+		if (acknowledgement.transaction() > boundary
+				|| (acknowledgement.transaction() == boundary && !acknowledgement.identity().equals(identity))) {
+			throw new IOException("Native LMDB backup acknowledgement disagrees with the committed boundary");
+		}
 	}
 
 	static void validateBackupOutboxHead(byte[] head) throws IOException {
@@ -892,6 +1041,118 @@ class TripleStore implements Closeable {
 
 	void setPendingBackupOutboxHead(UUID head) {
 		pendingBackupOutboxHead = head;
+	}
+
+	void setPendingBackupStage(PostCommitBackupPublisher.Stage stage, List<LmdbBackupDeltaCodec.Record> records) {
+		pendingBackupStage = Objects.requireNonNull(stage);
+		pendingBackupStageRecords = Objects.requireNonNull(records);
+		pendingBackupOutboxHead = stage.id;
+	}
+
+	byte[] readBackupStageHeader(long transaction) throws IOException {
+		return backupOutbox.readChunk(txnManager, transaction, 0);
+	}
+
+	InputStream openBackupStage(long transaction) {
+		return backupOutbox.open(txnManager, transaction);
+	}
+
+	List<Long> listBackupStageTransactions(long fromExclusive, long toInclusive) throws IOException {
+		return backupOutbox.listTransactions(txnManager, fromExclusive, toInclusive);
+	}
+
+	Acknowledgement getNativeBackupAcknowledgement() {
+		return nativeBackupAcknowledgement;
+	}
+
+	/** Records a separately forced ACK file; this must never be called before its durable rename completes. */
+	void checkpointBackupAcknowledgement(long transaction, UUID identity) {
+		Acknowledgement proof = new Acknowledgement(Objects.requireNonNull(identity), transaction);
+		if (transaction < 0 || transaction > requiredBackupTxnId) {
+			throw new IllegalArgumentException("Checkpointed backup exceeds the committed logical boundary");
+		}
+		synchronized (backupAcknowledgementLock) {
+			Acknowledgement previous = fileBackupAcknowledgement;
+			if (previous == null || transaction > previous.transaction()) {
+				fileBackupAcknowledgement = proof;
+			} else if (transaction == previous.transaction() && !identity.equals(previous.identity())) {
+				throw new IllegalArgumentException("Conflicting checkpointed backup identity");
+			}
+		}
+	}
+
+	void acknowledgeBackupStages(long transaction, UUID identity) {
+		recordPublishedBackupAcknowledgement(new Acknowledgement(Objects.requireNonNull(identity), transaction));
+		// Preserve the existing package seam and its publication-complete callbacks. The normal two-argument
+		// path has already supplied the identity, so the numeric method performs no native lookup.
+		acknowledgeBackupStages(transaction);
+	}
+
+	void acknowledgeBackupStages(long transaction) {
+		Acknowledgement published = publishedBackupAcknowledgement;
+		if (transaction > 0 && (published == null || published.transaction() < transaction)) {
+			try {
+				recordPublishedBackupAcknowledgement(resolveBackupAcknowledgement(transaction));
+			} catch (IOException failure) {
+				throw new SailException("Unable to identify acknowledged native backup stage", failure);
+			}
+		}
+		backupOutbox.acknowledge(transaction);
+	}
+
+	private void recordPublishedBackupAcknowledgement(Acknowledgement acknowledgement) {
+		if (acknowledgement.transaction() < 0 || acknowledgement.transaction() > requiredBackupTxnId) {
+			throw new IllegalArgumentException("Acknowledged backup exceeds the committed logical boundary");
+		}
+		synchronized (backupAcknowledgementLock) {
+			Acknowledgement previous = publishedBackupAcknowledgement;
+			if (previous == null || acknowledgement.transaction() > previous.transaction()) {
+				publishedBackupAcknowledgement = acknowledgement;
+			} else if (acknowledgement.transaction() == previous.transaction()
+					&& !acknowledgement.identity().equals(previous.identity())) {
+				throw new IllegalArgumentException("Conflicting acknowledged backup identity");
+			}
+		}
+	}
+
+	/** Cold compatibility path for numeric-only package callers, never used by ordinary archive publication. */
+	private Acknowledgement resolveBackupAcknowledgement(long transaction) throws IOException {
+		byte[] header = readBackupStageHeader(transaction);
+		if (header != null) {
+			PostCommitBackupPublisher.Stage stage = PostCommitBackupPublisher.readStage(
+					new DataInputStream(new ByteArrayInputStream(header)), null);
+			if (stage.transaction != transaction) {
+				throw new IOException("Acknowledged backup stage key and boundary disagree");
+			}
+			return new Acknowledgement(stage.id, transaction);
+		}
+		// Baselines and historical external stages can have no native chunk. Read their authority from one
+		// native snapshot rather than combining the independently published boundary and UUID cache fields.
+		return txnManager.doWith((stack, txn) -> {
+			byte[] encoded = readNamespaceDatabaseValue(stack, txn, BACKUP_BOUNDARY_KEY);
+			long boundary = mdb_txn_id(txn);
+			if (encoded != null) {
+				validateBackupBoundary(encoded);
+				boundary = ByteBuffer.wrap(encoded).getLong();
+			}
+			byte[] head = readNamespaceDatabaseValue(stack, txn, BACKUP_OUTBOX_HEAD_KEY);
+			UUID identity = PostCommitBackupPublisher.EMPTY;
+			if (head != null) {
+				validateBackupOutboxHead(head);
+				ByteBuffer bytes = ByteBuffer.wrap(head);
+				identity = new UUID(bytes.getLong(), bytes.getLong());
+			}
+			PostCommitBackupPublisher.Stage nativeHead = backupOutbox.latestStage(stack, txn,
+					encoded == null ? -1L : boundary);
+			if (nativeHead != null) {
+				boundary = nativeHead.transaction;
+				identity = nativeHead.id;
+			}
+			if (boundary != transaction) {
+				throw new IOException("Missing identity for acknowledged native backup boundary");
+			}
+			return new Acknowledgement(identity, transaction);
+		});
 	}
 
 	static void validateBackupBoundary(byte[] encoded) throws IOException {
@@ -2537,22 +2798,83 @@ class TripleStore implements Closeable {
 		backupPublicationRequired = true;
 	}
 
-	private void writeBackupBoundary() throws IOException {
-		if (backupPublicationRequired) {
+	private long writeBackupAcknowledgement(Acknowledgement acknowledged) throws IOException {
+		if (acknowledged == null) {
+			return 0L;
+		}
+		validateBackupAcknowledgementBoundary(acknowledged, requiredBackupTxnId, backupOutboxHead);
+		Acknowledgement durable = nativeBackupAcknowledgement;
+		Acknowledgement file = fileBackupAcknowledgement;
+		if (file != null) {
+			if (durable == null || file.transaction() > durable.transaction()) {
+				durable = file;
+			} else if (file.transaction() == durable.transaction() && !file.identity().equals(durable.identity())) {
+				throw new IOException("Native and file backup acknowledgement identities disagree");
+			}
+		}
+		if (durable != null && acknowledged.transaction() == durable.transaction()
+				&& !acknowledged.identity().equals(durable.identity())) {
+			throw new IOException("Conflicting native LMDB backup acknowledgement identity");
+		}
+		if (durable == null || acknowledged.transaction() > durable.transaction()) {
 			try (MemoryStack stack = stackPush()) {
-				writeNamespaceDatabaseValue(stack, writeTxn, BACKUP_BOUNDARY_KEY,
-						ByteBuffer.allocate(2 * Long.BYTES)
-								.putLong(Math.incrementExact(requiredBackupTxnId))
-								.putLong(requiredBackupTxnId)
+				writeNamespaceDatabaseValue(stack, writeTxn, BACKUP_ACKNOWLEDGEMENT_KEY,
+						ByteBuffer.allocate(BACKUP_ACKNOWLEDGEMENT_BYTES)
+								.putInt(BACKUP_ACKNOWLEDGEMENT_MAGIC)
+								.putLong(acknowledged.identity().getMostSignificantBits())
+								.putLong(acknowledged.identity().getLeastSignificantBits())
+								.putLong(acknowledged.transaction())
 								.array());
-				UUID head = pendingBackupOutboxHead;
-				if (head != null) {
-					writeNamespaceDatabaseValue(stack, writeTxn, BACKUP_OUTBOX_HEAD_KEY,
-							ByteBuffer.allocate(2 * Long.BYTES)
-									.putLong(head.getMostSignificantBits())
-									.putLong(head.getLeastSignificantBits())
-									.array());
-				}
+			}
+			pendingNativeBackupAcknowledgement = acknowledged;
+		}
+		return acknowledged.transaction();
+	}
+
+	private void writeBackupBoundary() throws IOException {
+		// Capture one coherent archive-durable tuple. A concurrently published batch must not enlarge the
+		// reclaim horizon after this transaction has written an older proof. MAP_FULL retries capture anew.
+		Acknowledgement acknowledged = publishedBackupAcknowledgement;
+		pendingNativeBackupAcknowledgement = null;
+		boolean staged = backupPublicationRequired && pendingBackupStage != null;
+		if (staged) {
+			long next = Math.incrementExact(requiredBackupTxnId);
+			if (pendingBackupStage.transaction != next
+					|| pendingBackupStage.previousTransaction != requiredBackupTxnId
+					|| !pendingBackupStage.id.equals(pendingBackupOutboxHead)
+					|| pendingBackupStage.count != pendingBackupStageRecords.size()) {
+				throw new IOException("LMDB native backup stage does not match its committing boundary");
+			}
+			// Keep the bucket's leaf while appending. Deleting its final entry first makes LMDB retire
+			// the dirty root and allocate another leaf, even though both changes share one transaction.
+			long firstHot = backupOutbox.write(writeTxn, pendingBackupStage, pendingBackupStageRecords);
+			long provenThrough = writeBackupAcknowledgement(acknowledged);
+			// Replacement and reclamation are atomic. The previous boundary excludes the new stage even
+			// if publication advances concurrently. Proof and deletion become durable in this same commit.
+			// Only ACK namespace metadata intervenes: reuse the validated hot boundary from this native attempt.
+			backupOutbox.reclaim(writeTxn, Math.min(requiredBackupTxnId, provenThrough),
+					pendingBackupStage.transaction, firstHot);
+			return;
+		}
+		// A maintenance-only commit has no replacement and must retain the authoritative current head.
+		long provenThrough = writeBackupAcknowledgement(acknowledged);
+		backupOutbox.reclaim(writeTxn, Math.min(Math.max(0L, requiredBackupTxnId - 1), provenThrough), 0L);
+		if (!backupPublicationRequired) {
+			return;
+		}
+		long next = Math.incrementExact(requiredBackupTxnId);
+		// Disabled journaling still tracks snapshot boundaries, and historical external stages publish
+		// a namespace head. Persist the complete effective fallback when no native stage replaces it.
+		try (MemoryStack stack = stackPush()) {
+			writeNamespaceDatabaseValue(stack, writeTxn, BACKUP_BOUNDARY_KEY,
+					ByteBuffer.allocate(2 * Long.BYTES).putLong(next).putLong(requiredBackupTxnId).array());
+			UUID head = pendingBackupOutboxHead != null ? pendingBackupOutboxHead : backupOutboxHead;
+			if (!head.equals(PostCommitBackupPublisher.EMPTY)) {
+				writeNamespaceDatabaseValue(stack, writeTxn, BACKUP_OUTBOX_HEAD_KEY,
+						ByteBuffer.allocate(2 * Long.BYTES)
+								.putLong(head.getMostSignificantBits())
+								.putLong(head.getLeastSignificantBits())
+								.array());
 			}
 		}
 	}
@@ -3494,6 +3816,13 @@ class TripleStore implements Closeable {
 					logger.warn("Failed to close file for {} index", new String(index.getFieldSeq()));
 					failure = appendCloseFailure(failure, closeFailure);
 				}
+			}
+			try {
+				if (backupOutbox != null) {
+					backupOutbox.close();
+				}
+			} catch (Throwable closeFailure) {
+				failure = appendCloseFailure(failure, closeFailure);
 			}
 			try {
 				environmentLifecycle.close(environment);
@@ -8398,6 +8727,10 @@ class TripleStore implements Closeable {
 								if (result == MDB_SUCCESS) {
 									nativeCommitGeneration.incrementAndGet();
 									lastCommittedTxnId = committedTxnId;
+									if (pendingNativeBackupAcknowledgement != null) {
+										nativeBackupAcknowledgement = pendingNativeBackupAcknowledgement;
+									}
+									backupOutbox.committed();
 									if (backupPublicationRequired) {
 										previousRequiredBackupTxnId = requiredBackupTxnId;
 										requiredBackupTxnId = Math.incrementExact(requiredBackupTxnId);
@@ -8482,6 +8815,12 @@ class TripleStore implements Closeable {
 				unjournaledMutation = false;
 				backupPublicationRequired = false;
 				pendingBackupOutboxHead = null;
+				pendingNativeBackupAcknowledgement = null;
+				if (!committed && pendingBackupStage != null) {
+					pendingBackupStage.discardPublicationPayload();
+				}
+				pendingBackupStage = null;
+				pendingBackupStageRecords = null;
 				if (!commit || committed || !(failure instanceof LmdbTransactionRetryException)) {
 					if (valueStore != null) {
 						valueStore.clearReplayDecision(replayDecision, transaction);
