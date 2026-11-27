@@ -349,7 +349,7 @@ jobs:
 
 
   e2e:
-    # Each browser runs on its own runner: the suite stays serial within a job, and the jobs run at the same time.
+    # Keep the browser/runtime matrix; each runner executes two isolated, whole-file shards.
     name: e2e (${{ matrix.runtime.label }}, ${{ matrix.browser }})
     needs: formatting-and-quick-compile
     runs-on: ubuntu-latest
@@ -387,6 +387,7 @@ jobs:
         working-directory: ./e2e
         env:
           E2E_BROWSER: ${{ matrix.browser }}
+          E2E_SHARDS: 2
         run: exec ./run.sh ${{ matrix.runtime.argument }}
       - name: Upload Playwright failure diagnostics (${{ matrix.runtime.label }}, ${{ matrix.browser }})
         if: ${{ (failure() && steps.e2e.outcome == 'failure') || hashFiles('e2e/test-results/**/trace.zip') != '' }}
@@ -396,6 +397,7 @@ jobs:
           path: |
             e2e/test-results/
             e2e/playwright-report/
+            e2e/blob-report/
           if-no-files-found: warn
           retention-days: 7
       - name: Upload JVM crash diagnostics

@@ -44,10 +44,21 @@ import org.eclipse.rdf4j.query.QueryLanguage;
 import org.eclipse.rdf4j.query.QueryParseOptions;
 import org.eclipse.rdf4j.query.QueryParseOptions.GraphAlgebraMode;
 import org.eclipse.rdf4j.query.QueryResults;
+import org.eclipse.rdf4j.query.algebra.BindingSetAssignment;
+import org.eclipse.rdf4j.query.algebra.Exists;
+import org.eclipse.rdf4j.query.algebra.Extension;
+import org.eclipse.rdf4j.query.algebra.ExtensionElem;
+import org.eclipse.rdf4j.query.algebra.Filter;
 import org.eclipse.rdf4j.query.algebra.Graph;
 import org.eclipse.rdf4j.query.algebra.Join;
+import org.eclipse.rdf4j.query.algebra.LeftJoin;
+import org.eclipse.rdf4j.query.algebra.QueryRoot;
+import org.eclipse.rdf4j.query.algebra.SameTerm;
 import org.eclipse.rdf4j.query.algebra.StatementPattern;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
+import org.eclipse.rdf4j.query.algebra.ValueConstant;
+import org.eclipse.rdf4j.query.algebra.Var;
+import org.eclipse.rdf4j.query.algebra.ZeroLengthPath;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.DefaultEvaluationStrategy;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.EmptyTripleSource;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.EvaluationStatistics;
@@ -92,6 +103,39 @@ class GraphRestrictionJoinTest {
 		assertThat(evaluate(source, expression)).containsExactly(row(subject, object));
 		assertThat(source.accesses).containsExactly(new Access(subject, PREDICATE, null, List.of(GRAPH)));
 		assertThat(source.statementRows).isEqualTo(1L);
+	}
+
+	@Test
+	void restrictedGraphKeepsNullableGraphParametersInsideOptionalBind() {
+		IRI subject = iri("selected");
+		IRI object = iri("object");
+		IRI marker = iri("marker");
+		IRI parameter = iri("parameter");
+		RecordingTripleSource source = new RecordingTripleSource(List.of(), List.of(
+				VF.createStatement(subject, PREDICATE, object),
+				VF.createStatement(subject, marker, object)));
+		SimpleDataset dataset = new SimpleDataset();
+		dataset.addNamedGraph(RDF4J.NIL);
+
+		var selector = new BindingSetAssignment();
+		selector.setBindingSets(List.of(row(Map.of("graph", RDF4J.NIL))));
+		var sibling = new BindingSetAssignment();
+		sibling.setBindingSets(List.of(row(Map.of("g", parameter))));
+		var anchor = new StatementPattern(Var.of("anchor"), Var.of("marker", marker, true, true), Var.of("value"));
+		var nullable = new StatementPattern(StatementPattern.Scope.DEFAULT_CONTEXTS, Var.of("s"),
+				Var.of("predicate", PREDICATE, true, true), Var.of("o"), Var.of("g"));
+		var exists = new Exists(new Filter(new ZeroLengthPath(Var.of("g"), Var.of("end")),
+				new SameTerm(Var.of("g"), new ValueConstant(parameter))));
+		var optional = new LeftJoin(new Join(sibling, anchor),
+				new Extension(nullable, new ExtensionElem(exists, "check")));
+		var query = new QueryRoot(new Join(selector, new Graph(Var.of("graph"), optional)));
+		BindingSet expected = row(Map.of("graph", RDF4J.NIL, "g", parameter, "anchor", subject, "value", object,
+				"s", subject, "o", object, "check", VF.createLiteral(true)));
+
+		assertThat(evaluate(source, query.clone(), dataset, EmptyBindingSet.getInstance(),
+				GraphJoinOptimization.FORCE_INDEPENDENT)).containsExactly(expected);
+		assertThat(evaluate(source, query, dataset, EmptyBindingSet.getInstance(),
+				GraphJoinOptimization.REQUIRE_RESTRICTED)).containsExactly(expected);
 	}
 
 	@Test

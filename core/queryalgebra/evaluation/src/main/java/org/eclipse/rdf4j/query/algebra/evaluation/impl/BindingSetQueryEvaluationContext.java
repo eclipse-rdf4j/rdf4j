@@ -23,9 +23,11 @@ import org.eclipse.rdf4j.model.Literal;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.query.BindingSet;
+import org.eclipse.rdf4j.query.BlankNodeEffects;
 import org.eclipse.rdf4j.query.Dataset;
 import org.eclipse.rdf4j.query.MutableBindingSet;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryBindingSet;
+import org.eclipse.rdf4j.query.algebra.evaluation.QueryValueEvaluationStep;
 import org.eclipse.rdf4j.query.impl.BlankNodeAllocationScope;
 
 /**
@@ -106,6 +108,16 @@ public final class BindingSetQueryEvaluationContext implements QueryEvaluationCo
 	}
 
 	@Override
+	public boolean allowsDirectVariableReads() {
+		return delegate.allowsDirectVariableReads();
+	}
+
+	@Override
+	public boolean allowsPathStepReuse() {
+		return delegate.allowsPathStepReuse();
+	}
+
+	@Override
 	public BlankNodeAllocationScope getBlankNodeAllocationScope() {
 		return delegate.getBlankNodeAllocationScope();
 	}
@@ -116,8 +128,31 @@ public final class BindingSetQueryEvaluationContext implements QueryEvaluationCo
 	}
 
 	@Override
+	public Function<BindingSet, Value> getValue(String name) {
+		return bindings -> bindings.getValue(name);
+	}
+
+	@Override
+	public QueryValueEvaluationStep prepareValueAccessor(String name, ValueFactory factory) {
+		return delegate.allowsDirectVariableReads() ? QueryEvaluationContext.super.prepareValueAccessor(name, factory)
+				: delegate.prepareValueAccessor(name, factory);
+	}
+
+	@Override
+	public ValueFactory blankNodeValueFactory(ValueFactory factory, BlankNodeEffects effects) {
+		return delegate.blankNodeValueFactory(factory, effects);
+	}
+
+	@Override
 	public MutableBindingSet createBindingSet(BindingSet bindings) {
-		QueryBindingSet copy = new QueryBindingSet(bindings.size());
+		// The default headroom covers an extra output for widths >= 2. For width 0 or 1,
+		// avoid the first insertion's resize without rounding wide frames to a larger table.
+		int size = bindings.size();
+		QueryBindingSet copy = new QueryBindingSet(size < 2 ? size + 1 : size);
+		if (bindings.getClass() == QueryBindingSet.class) {
+			copy.addAll(bindings);
+			return copy;
+		}
 		for (String name : bindings.getBindingNames()) {
 			copy.setBinding(name, bindings.getValue(name));
 		}

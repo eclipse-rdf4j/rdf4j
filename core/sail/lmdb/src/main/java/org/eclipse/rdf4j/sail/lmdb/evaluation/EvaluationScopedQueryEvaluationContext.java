@@ -28,6 +28,7 @@ import org.eclipse.rdf4j.query.Binding;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.Dataset;
 import org.eclipse.rdf4j.query.MutableBindingSet;
+import org.eclipse.rdf4j.query.algebra.evaluation.QueryValueEvaluationStep;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.QueryEvaluationContext;
 import org.eclipse.rdf4j.query.impl.BlankNodeAllocationScope;
 
@@ -148,6 +149,11 @@ final class EvaluationScopedQueryEvaluationContext implements QueryEvaluationCon
 	}
 
 	@Override
+	public boolean allowsDirectVariableReads() {
+		return structural.allowsDirectVariableReads();
+	}
+
+	@Override
 	public BlankNodeAllocationScope getBlankNodeAllocationScope() {
 		return queryScope.values.getBlankNodeAllocationScope();
 	}
@@ -205,6 +211,13 @@ final class EvaluationScopedQueryEvaluationContext implements QueryEvaluationCon
 	@Override
 	public Function<BindingSet, Binding> getBinding(String variableName) {
 		return structural.getBinding(variableName);
+	}
+
+	@Override
+	public QueryValueEvaluationStep prepareValueAccessor(String name, ValueFactory factory) {
+		return structural.allowsDirectVariableReads()
+				? QueryEvaluationContext.super.prepareValueAccessor(name, factory)
+				: structural.prepareValueAccessor(name, factory);
 	}
 
 	@Override

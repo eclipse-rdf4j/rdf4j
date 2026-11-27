@@ -514,7 +514,7 @@ final class LmdbNativeFactorizedRows {
 		 */
 		RowCursor open(RowState row) throws IOException {
 			long predicate = pattern.p.lookup(row.slots);
-			NativeLmdbQuerySource.NativeProbe probe = row.source.newProbe();
+			NativeLmdbQuerySource.NativeProbe probe = row.source.newProbe(row.cursorCancellation());
 			boolean transferred = false;
 			try {
 				NativeLmdbQuerySource.NativeAdjacency view = probe.adjacency(predicate, bySubject);
@@ -1416,7 +1416,7 @@ final class LmdbNativeFactorizedRows {
 				return TailResult.REFUSED;
 			}
 			if (probe == null) {
-				probe = row.source.newProbe();
+				probe = row.source.newProbe(row.cursorCancellation());
 			}
 			long count = 0L;
 			try (PatternCursor cursor = pattern.openRaw(row, probe)) {
@@ -1644,7 +1644,7 @@ final class LmdbNativeFactorizedRows {
 				return collectLexical(row);
 			}
 			if (probe == null) {
-				probe = row.source.newProbe();
+				probe = row.source.newProbe(row.cursorCancellation());
 			}
 			try (PatternCursor cursor = pattern.openRaw(row, probe)) {
 				boolean existsOnly = role == ROLE_EXISTS;
@@ -2062,7 +2062,7 @@ final class LmdbNativeFactorizedRows {
 
 		void openCursor(int d, PrefixDepth pd) throws IOException {
 			if (pd.probe == null) {
-				pd.probe = row.source.newProbe();
+				pd.probe = row.source.newProbe(row.cursorCancellation());
 			}
 			cursors[d] = pd.pattern.openRaw(row, pd.probe);
 		}

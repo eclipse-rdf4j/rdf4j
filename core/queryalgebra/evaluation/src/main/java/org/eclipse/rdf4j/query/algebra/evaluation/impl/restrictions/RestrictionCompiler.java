@@ -27,6 +27,7 @@ import java.util.function.Function;
 import java.util.function.Supplier;
 
 import org.eclipse.rdf4j.collection.factory.api.CollectionFactory;
+import org.eclipse.rdf4j.common.annotation.InternalUseOnly;
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.common.iteration.CooperativeCancellation;
 import org.eclipse.rdf4j.common.iteration.IndexReportingIterator;
@@ -89,8 +90,18 @@ public final class RestrictionCompiler {
 		return enabled(strategy) && AdaptiveFilterEvaluationStep.includesGraphRestrictionRegion(context);
 	}
 
+	/** A built-in step that can retain its physical rebinding contract when a restriction is attached. */
+	@InternalUseOnly
+	public interface AttachableStep extends QueryEvaluationStep, RestrictionPlanProvider {
+		QueryEvaluationStep attachRestriction(PreparedRestrictionPlan plan);
+	}
+
 	public static QueryEvaluationStep attach(QueryEvaluationStep standard, PreparedRestrictionPlan plan) {
-		return plan == null ? standard : new PreparedStep(standard, plan);
+		if (plan == null) {
+			return standard;
+		}
+		return standard instanceof AttachableStep attachable ? attachable.attachRestriction(plan)
+				: new PreparedStep(standard, plan);
 	}
 
 	/** Known transparent instrumentation observes both ordinary evaluations and physical probes. */

@@ -37,8 +37,11 @@ import java.util.Arrays;
 import java.util.List;
 
 import org.eclipse.rdf4j.common.order.StatementOrder;
+import org.eclipse.rdf4j.query.QueryInterruptedException;
 import org.eclipse.rdf4j.sail.SailException;
 import org.eclipse.rdf4j.sail.lmdb.TxnManager.Txn;
+import org.eclipse.rdf4j.sail.lmdb.evaluation.NativeLmdbQuerySource.CursorCancellation;
+import org.eclipse.rdf4j.sail.lmdb.evaluation.codegen.KernelQueryCancelledException;
 import org.eclipse.rdf4j.sail.lmdb.util.ChunkInput;
 import org.lwjgl.PointerBuffer;
 import org.lwjgl.system.MemoryStack;
@@ -114,6 +117,11 @@ final class PartialIndex {
 	int score(long s, long p, long o, long c) {
 		return fieldValue(firstField, s, p, o, c) < 0 ? 0
 				: fieldValue(secondField, s, p, o, c) < 0 ? 1 : 2;
+	}
+
+	int boundPrefixMask(int boundMask) {
+		int firstBit = 1 << firstField;
+		return (boundMask & firstBit) != 0 ? boundMask & (firstBit | (1 << secondField)) : 0;
 	}
 
 	boolean supportsOrder(StatementOrder order, long[] pattern) {
@@ -259,7 +267,12 @@ final class PartialIndex {
 
 	RecordIterator.Retainable<IndexResolutionPlan> iterator(Txn txn, long s, long p, long o, long c,
 			boolean explicit, IndexResolutionPlan resolution, boolean retainOnClose) {
-		return new ResolvingIterator(this, txn, s, p, o, c, explicit, resolution, retainOnClose);
+		return iterator(txn, s, p, o, c, explicit, resolution, retainOnClose, null);
+	}
+
+	RecordIterator.Retainable<IndexResolutionPlan> iterator(Txn txn, long s, long p, long o, long c,
+			boolean explicit, IndexResolutionPlan resolution, boolean retainOnClose, CursorCancellation cancellation) {
+		return new ResolvingIterator(this, txn, s, p, o, c, explicit, resolution, retainOnClose, cancellation);
 	}
 
 	void close() {
@@ -336,7 +349,7 @@ final class PartialIndex {
 		private int pairBufferCount;
 		private long lastFirst = -1;
 		private long lastSecond = -1;
-		private RecordIterator child;
+		private volatile RecordIterator child;
 		private RecordIterator.Retainable<IndexResolutionPlan> retainedChild;
 		private long[] childBuffer;
 		private boolean closed;
@@ -344,8 +357,13 @@ final class PartialIndex {
 		private long scanned, matched, filtered;
 		private long rejected;
 
+		private CursorCancellation cancellation;
+		private int candidateTick;
+		private final RecordCursorCancellation localCancellation = new RecordCursorCancellation();
+
 		ResolvingIterator(PartialIndex index, Txn txn, long s, long p, long o, long c, boolean explicit,
-				IndexResolutionPlan resolution, boolean retainOnClose) {
+				IndexResolutionPlan resolution, boolean retainOnClose, CursorCancellation cancellation) {
+			this.cancellation = cancellation == null ? null : cancellation.forWorker();
 			this.txn = txn;
 			this.txnLease = txn.lease();
 			this.retainOnClose = retainOnClose;
@@ -371,7 +389,9 @@ final class PartialIndex {
 			matched = 0;
 			filtered = 0;
 			rejected = 0;
+			candidateTick = 0;
 			closed = false;
+			localCancellation.open();
 		}
 
 		@Override
@@ -389,14 +409,40 @@ final class PartialIndex {
 		}
 
 		@Override
+		public long cancellationGeneration() {
+			return localCancellation.generation();
+		}
+
+		@Override
+		public boolean requestCancellation() {
+			return requestCancellation(cancellationGeneration());
+		}
+
+		@Override
+		public boolean requestCancellation(long generation) {
+			RecordIterator delegate = child;
+			long delegateGeneration = delegate == null ? 0 : delegate.cancellationGeneration();
+			if (!localCancellation.request(generation)) {
+				return false;
+			}
+			RecordIterator.forwardCancellation(delegate, delegateGeneration);
+			return true;
+		}
+
+		@Override
 		public long[] next() {
 			try {
 				if (!closed) {
 					txn.ensureSnapshotValid(txnLease);
+					checkPullEntry();
 				}
 				while (!closed) {
+					pollCandidate();
 					if (child != null) {
 						long[] quad = child.next();
+						if (localCancellation.isCancelled()) {
+							localCancellation.checkpoint(cancellation);
+						}
 						if (quad != null) {
 							// The pair is only a candidate. Enforce every original constraint on the resolved quad,
 							// in particular context 0, which is a value rather than a wildcard.
@@ -414,9 +460,12 @@ final class PartialIndex {
 					}
 				}
 				return null;
-			} catch (IOException | RuntimeException e) {
+			} catch (IOException e) {
 				dispose();
 				throw new SailException(e);
+			} catch (RuntimeException | Error e) {
+				closeAfterFailure(e);
+				throw e;
 			}
 		}
 
@@ -425,9 +474,11 @@ final class PartialIndex {
 			try {
 				if (!closed) {
 					txn.ensureSnapshotValid(txnLease);
+					checkPullEntry();
 				}
 				int rows = 0;
 				while (!closed && rows < maxRows) {
+					pollCandidate();
 					if (child == null && !openNextChild()) {
 						break;
 					}
@@ -450,10 +501,32 @@ final class PartialIndex {
 						closeChild();
 					}
 				}
+				if (localCancellation.isCancelled()) {
+					localCancellation.checkpoint(cancellation);
+				}
 				return rows;
-			} catch (IOException | RuntimeException e) {
+			} catch (IOException e) {
 				dispose();
 				throw new SailException(e);
+			} catch (RuntimeException | Error e) {
+				closeAfterFailure(e);
+				throw e;
+			}
+		}
+
+		private void closeAfterFailure(Throwable failure) {
+			try {
+				if (retainOnClose && localCancellation.isCancelled()
+						&& (failure instanceof QueryInterruptedException
+								|| failure instanceof KernelQueryCancelledException)) {
+					close();
+				} else {
+					dispose();
+				}
+			} catch (RuntimeException | Error cleanupFailure) {
+				if (failure != cleanupFailure) {
+					failure.addSuppressed(cleanupFailure);
+				}
 			}
 		}
 
@@ -463,7 +536,12 @@ final class PartialIndex {
 		}
 
 		private boolean openNextChild() throws IOException {
+			pollCandidate();
 			if (!nextPair()) {
+				localCancellation.sealExhaustion();
+				if (localCancellation.isCancelled()) {
+					localCancellation.checkpoint(cancellation);
+				}
 				close();
 				return false;
 			}
@@ -472,11 +550,14 @@ final class PartialIndex {
 			pattern[index.secondField] = lastSecond;
 			if (retainedChild == null) {
 				retainedChild = resolution.retainedIterator(txn, pattern[0], pattern[1], pattern[2], pattern[3],
-						explicit);
+						explicit, cancellation);
 			} else {
 				retainedChild.reset(resolution, 0, pattern[0], pattern[1], pattern[2], pattern[3], explicit);
 			}
 			child = retainedChild;
+			if (localCancellation.isCancelled()) {
+				localCancellation.checkpoint(cancellation);
+			}
 			return true;
 		}
 
@@ -491,6 +572,30 @@ final class PartialIndex {
 			lastFirst = pairBuffer[pairBufferIndex++];
 			lastSecond = pairBuffer[pairBufferIndex++];
 			return true;
+		}
+
+		private void checkPullEntry() {
+			if (localCancellation.isCancelled()) {
+				localCancellation.checkpoint(cancellation);
+			}
+			if (cancellation != null) {
+				cancellation = cancellation.transferToWorker();
+				cancellation.checkpointPublishedStops();
+			}
+		}
+
+		private void pollCandidate() {
+			if ((++candidateTick & 63) == 0 && localCancellation.isCancelled()) {
+				localCancellation.checkpoint(cancellation);
+			}
+			if (cancellation != null) {
+				cancellation.poll();
+			}
+		}
+
+		private int readPairChunk(long cursor, MDBVal key, MDBVal data, int operation) throws IOException {
+			pollCandidate();
+			return E(mdb_cursor_get(cursor, key, data, operation));
 		}
 
 		private int preloadPairs() throws IOException {
@@ -514,21 +619,22 @@ final class PartialIndex {
 					long[] min = { lowerFirst, lowerSecond };
 					MDBVal key = key(stack, lowerFirst, lowerSecond);
 					MDBVal data = MDBVal.malloc(stack);
-					int rc = E(mdb_cursor_get(cursor, key, data, MDB_SET_RANGE));
+					int rc = readPairChunk(cursor, key, data, MDB_SET_RANGE);
 					// The lower bound may be inside the preceding chunk rather than at an anchor.
 					if (rc == MDB_SUCCESS) {
-						rc = E(mdb_cursor_get(cursor, key, data, MDB_PREV));
+						rc = readPairChunk(cursor, key, data, MDB_PREV);
 						if (rc != MDB_SUCCESS) {
-							rc = E(mdb_cursor_get(cursor, key, data, MDB_FIRST));
+							rc = readPairChunk(cursor, key, data, MDB_FIRST);
 						}
 					} else {
-						rc = E(mdb_cursor_get(cursor, key, data, MDB_LAST));
+						rc = readPairChunk(cursor, key, data, MDB_LAST);
 					}
 					while (rc == MDB_SUCCESS) {
 						chunkInput.reset(key.mv_data(), data.mv_data(), PAIR_LENGTH, SPLIT_POINT);
 						chunkInput.seek(min);
 						long[] pair;
 						while ((pair = chunkInput.next()) != null) {
+							pollCandidate();
 							if (first >= 0 && (pair[0] != first || (second >= 0 && second != pair[1]))) {
 								return count;
 							}
@@ -541,7 +647,7 @@ final class PartialIndex {
 								}
 							}
 						}
-						rc = E(mdb_cursor_get(cursor, key, data, MDB_NEXT));
+						rc = readPairChunk(cursor, key, data, MDB_NEXT);
 					}
 					return count;
 				} finally {
@@ -586,6 +692,7 @@ final class PartialIndex {
 		public void close() {
 			if (retainOnClose) {
 				closed = true;
+				localCancellation.close();
 				closeChild();
 			} else {
 				dispose();
@@ -597,6 +704,7 @@ final class PartialIndex {
 			if (!disposed) {
 				disposed = true;
 				closed = true;
+				localCancellation.close();
 				try {
 					closeChild();
 				} finally {

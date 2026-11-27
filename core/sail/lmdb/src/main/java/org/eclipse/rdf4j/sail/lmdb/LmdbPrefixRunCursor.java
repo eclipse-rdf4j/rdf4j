@@ -19,6 +19,7 @@ import java.util.Arrays;
 import org.eclipse.rdf4j.common.annotation.Experimental;
 import org.eclipse.rdf4j.common.annotation.InternalUseOnly;
 import org.eclipse.rdf4j.sail.lmdb.TxnManager.Txn;
+import org.eclipse.rdf4j.sail.lmdb.evaluation.NativeLmdbQuerySource.CursorCancellation;
 
 /**
  * Cursor that emits one representative statement for each matching prefix run.
@@ -184,7 +185,7 @@ final class LmdbPrefixRunIterator implements LmdbPrefixRunCursor {
 	private long[] stopPrefix;
 
 	LmdbPrefixRunIterator(LmdbPrefixRunPlan plan, Txn txnRef, long subj, long pred, long obj, long context,
-			boolean explicit, boolean countRunRows) throws IOException {
+			boolean explicit, boolean countRunRows, CursorCancellation cancellation) throws IOException {
 		this.plan = plan;
 		this.index = plan.index();
 		this.txnRef = txnRef;
@@ -195,7 +196,7 @@ final class LmdbPrefixRunIterator implements LmdbPrefixRunCursor {
 		this.matchContext = context >= 0 ? context : -1;
 		this.countRunRows = countRunRows;
 		this.delegate = new LmdbRecordIterator(index, index.getPatternScore(subj, pred, obj, context), subj, pred, obj,
-				context, explicit, txnRef);
+				context, explicit, txnRef, null, null, false, cancellation);
 		LmdbPrefixRunPlan.OPENED.incrementAndGet();
 	}
 

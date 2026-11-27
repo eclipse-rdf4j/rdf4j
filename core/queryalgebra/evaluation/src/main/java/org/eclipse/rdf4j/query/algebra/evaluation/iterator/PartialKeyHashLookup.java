@@ -14,6 +14,7 @@ package org.eclipse.rdf4j.query.algebra.evaluation.iterator;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collections;
+import java.util.Comparator;
 import java.util.HashMap;
 import java.util.Iterator;
 import java.util.LinkedHashMap;
@@ -21,7 +22,8 @@ import java.util.List;
 import java.util.Map;
 
 import org.eclipse.rdf4j.common.iterator.UnionIterator;
-import org.eclipse.rdf4j.query.BindingSet;
+
+import com.google.common.collect.Iterators;
 
 /**
  * Finds the build rows of a hash join that can be compatible with a probe row when join keys may be unbound.
@@ -34,7 +36,7 @@ import org.eclipse.rdf4j.query.BindingSet;
  * row belongs to exactly one group, so no row is returned twice. Callers must still check full compatibility, since
  * names outside the key are not compared here.
  */
-final class PartialKeyHashLookup {
+final class PartialKeyHashLookup<T> {
 
 	/** Key positions are tracked in a {@code long} mask. */
 	static final int MAX_KEY_NAMES = Long.SIZE;
@@ -45,14 +47,14 @@ final class PartialKeyHashLookup {
 	/** Secondary index entries allowed per build key before groups are scanned instead. */
 	static int maxIndexEntriesPerBuildKey = 2;
 
-	private final Map<BindingSetHashKey, List<BindingSet>> table;
+	private final Map<BindingSetHashKey, List<T>> table;
 	private final long[] masks;
 	private final List<List<BindingSetHashKey>> keysByMask;
 	private final List<Map<Long, Map<BindingSetHashKey, List<BindingSetHashKey>>>> indexesByMask;
 	private final int minGroupSize;
 	private int remainingIndexBudget;
 
-	PartialKeyHashLookup(Map<BindingSetHashKey, List<BindingSet>> table) {
+	PartialKeyHashLookup(Map<BindingSetHashKey, List<T>> table) {
 		this.table = table;
 		Map<Long, List<BindingSetHashKey>> groups = new LinkedHashMap<>();
 		for (BindingSetHashKey key : table.keySet()) {
@@ -81,14 +83,19 @@ final class PartialKeyHashLookup {
 	/**
 	 * @return the build rows whose key values agree with the probe key on every position bound in both
 	 */
-	Iterator<BindingSet> candidates(BindingSetHashKey probeKey) {
+	Iterator<T> candidates(BindingSetHashKey probeKey) {
+		return candidates(probeKey, null);
+	}
+
+	/** Merges compatible buckets in encounter order when each bucket was itself stored in that order. */
+	Iterator<T> candidates(BindingSetHashKey probeKey, Comparator<? super T> order) {
 		long probeMask = probeKey.boundMask();
 		if (masks.length == 1 && (masks[0] & ~probeMask) == 0L) {
 			// Common case: every build key is covered by the probe key.
 			return iterator(table.get(probeKey.project(masks[0])));
 		}
 
-		List<List<BindingSet>> lists = new ArrayList<>();
+		List<List<T>> lists = new ArrayList<>();
 		for (int group = 0; group < masks.length; group++) {
 			long buildMask = masks[group];
 			long sharedMask = buildMask & probeMask;
@@ -109,10 +116,11 @@ final class PartialKeyHashLookup {
 		if (lists.size() == 1) {
 			return lists.get(0).iterator();
 		}
-		return new UnionIterator<>(lists);
+		return order == null ? new UnionIterator<>(lists)
+				: Iterators.mergeSorted(lists.stream().map(List::iterator).toList(), order);
 	}
 
-	private void addMatchingOnSharedPositions(List<List<BindingSet>> lists, int group, long sharedMask,
+	private void addMatchingOnSharedPositions(List<List<T>> lists, int group, long sharedMask,
 			BindingSetHashKey projectedProbe) {
 		Map<BindingSetHashKey, List<BindingSetHashKey>> index = secondaryIndex(group, sharedMask);
 		if (index != null) {
@@ -158,13 +166,13 @@ final class PartialKeyHashLookup {
 		return index;
 	}
 
-	private static void add(List<List<BindingSet>> lists, List<BindingSet> rows) {
+	private static <T> void add(List<List<T>> lists, List<T> rows) {
 		if (rows != null && !rows.isEmpty()) {
 			lists.add(rows);
 		}
 	}
 
-	private static Iterator<BindingSet> iterator(List<BindingSet> rows) {
+	private static <T> Iterator<T> iterator(List<T> rows) {
 		return rows == null ? Collections.emptyIterator() : rows.iterator();
 	}
 }

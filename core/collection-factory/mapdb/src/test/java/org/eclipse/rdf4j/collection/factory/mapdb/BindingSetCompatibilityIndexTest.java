@@ -47,6 +47,25 @@ class BindingSetCompatibilityIndexTest {
 		}
 	}
 
+	@Test
+	void compactRowsSurviveConfiguredMapDbStorage() throws Exception {
+		MapBindingSet.CompactLayout layout = new MapBindingSet.CompactLayout(new String[] { "value", "label" });
+		try (MapDbCollectionFactory factory = new MapDbCollectionFactory(1);
+				BindingSetCompatibilityIndex index = factory.createBindingSetCompatibilityIndex(List.of("value"))) {
+			List<Value> values = values();
+			for (int i = 0; i < values.size(); i++) {
+				index.add(layout.snapshot(new Value[] { values.get(i), VF.createLiteral("row-" + i) }, 2));
+			}
+
+			for (int i = 0; i < values.size(); i++) {
+				List<BindingSet> matches = collect(index.candidateRows(probe(values.get(i))));
+				assertEquals(1, matches.size());
+				assertEquals(values.get(i), matches.get(0).getValue("value"));
+				assertEquals(VF.createLiteral("row-" + i), matches.get(0).getValue("label"));
+			}
+		}
+	}
+
 	private static List<Value> values() {
 		Value iri = VF.createIRI("urn:test:index:iri");
 		Value literal = VF.createLiteral("literal", "en");

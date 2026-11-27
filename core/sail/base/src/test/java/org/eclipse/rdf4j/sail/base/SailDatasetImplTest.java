@@ -265,6 +265,18 @@ class SailDatasetImplTest {
 	}
 
 	@Test
+	void singleReportingBranchSuppliesItsIndexName() {
+		for (String name : new String[] { null, "", "spoc" }) {
+			SailDataset reporter = new IndexReportingDataset(new LinkedHashModel(), List.of(), name, 0, 0, 0);
+			SailDataset unknown = new ModelDataset(new LinkedHashModel());
+			try (SailDataset union = UnionSailDataset.getInstance(reporter, unknown);
+					var rows = union.getStatements(null, null, null)) {
+				assertEquals(name == null ? "" : name, ((IndexReportingIterator) rows).getIndexName());
+			}
+		}
+	}
+
+	@Test
 	void nestedStatementUnionAggregatesKnownReportersAndIgnoresUnknownBranch() throws SailException {
 		Statement first = vf.createStatement(vf.createIRI("urn:subject:first"), vf.createIRI("urn:predicate"),
 				vf.createLiteral("first"));

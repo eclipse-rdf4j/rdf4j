@@ -48,6 +48,7 @@ import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
 
 import org.eclipse.rdf4j.common.order.StatementOrder;
+import org.eclipse.rdf4j.query.QueryInterruptedException;
 import org.eclipse.rdf4j.query.algebra.evaluation.sketch.SketchBasedJoinEstimator.Component;
 import org.eclipse.rdf4j.sail.SailException;
 import org.eclipse.rdf4j.sail.lmdb.TxnManager.Txn;
@@ -217,6 +218,39 @@ class TripleStorePartialIndexesTest {
 						explicit, new LmdbKeyRange(null, null, "spoc")));
 				assertThrows(IllegalStateException.class, () -> store.getTriplesRangeUsingIndex(txn, 11, -1, -1, -1,
 						explicit, new LmdbKeyRange(null, null, "spoc")));
+			}
+		}
+	}
+
+	@ParameterizedTest
+	@ValueSource(booleans = { false, true })
+	void partialCancellationDoesNotReopenOrReachANewRetainedSelection(boolean batched) throws Exception {
+		try (TripleStore store = open("cs,sp,psoc")) {
+			store.startTransaction();
+			store.storeTriple(11, 22, 33, 0, true);
+			store.storeTriple(44, 55, 66, 0, true);
+			store.commit();
+			try (Txn txn = store.getTxnManager().createReadTxn()) {
+				var retained = store.getTriplesRetained(txn, -1, -1, -1, 0, true);
+				try {
+					assertEquals("cs", retained.getIndexName());
+					assertEquals(0, retained.fill(new long[4], 0));
+					assertNotNull(retained.next());
+					long generation = retained.cancellationGeneration();
+					assertTrue(retained.requestCancellation(generation));
+					if (batched) {
+						assertThrows(QueryInterruptedException.class, () -> retained.fill(new long[4], 1));
+					} else {
+						assertThrows(QueryInterruptedException.class, retained::next);
+					}
+
+					store.resetTriples(txn, retained, -1, -1, -1, 0, true);
+					assertFalse(retained.requestCancellation(generation));
+					assertEquals(Set.of("[11, 22, 33, 0]", "[44, 55, 66, 0]"), collectRows(retained, batched));
+					assertFalse(retained.requestCancellation());
+				} finally {
+					retained.dispose();
+				}
 			}
 		}
 	}
@@ -971,6 +1005,18 @@ class TripleStorePartialIndexesTest {
 			assertFalse(store.indexAccessPaths(1 << Component.P.ordinal())
 					.stream()
 					.anyMatch(path -> path.indexFieldSequence().length() == 2));
+		}
+	}
+
+	@Test
+	void partialPrefixIsUsedForCostingAndOrderPreservation() throws Exception {
+		try (TripleStore store = open("spoc,op");
+				Txn txn = store.getTxnManager().createReadTxn()) {
+			int object = 1 << Component.O.ordinal();
+			assertEquals(object, store.bestIndexPrefixMask(object));
+			Set<StatementOrder> orders = store.getPrefixPreservingOrders(txn, object, object);
+			assertTrue(orders.contains(StatementOrder.P));
+			assertFalse(orders.contains(StatementOrder.S));
 		}
 	}
 

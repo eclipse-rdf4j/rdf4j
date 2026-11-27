@@ -14,10 +14,12 @@ package org.eclipse.rdf4j.sail.lmdb.evaluation;
 
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.BitSet;
 import java.util.IdentityHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.function.IntUnaryOperator;
+import java.util.function.Supplier;
 
 import org.eclipse.rdf4j.common.annotation.Experimental;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbNativeKernelIr.Aggregate;
@@ -149,6 +151,10 @@ final class LmdbNativeKernelInterpreter implements JaninoKernel {
 	 * existing materialized implementation.
 	 */
 	static JaninoKernel forRows(Kernel kernel) {
+		return forRows(kernel, null);
+	}
+
+	static LmdbNativeKernelInterpreter forRows(Kernel kernel, PullRestoreTestMode pullRestoreTestMode) {
 		if (kernel == null || !(kernel.terminal instanceof LmdbNativeKernelIr.Emit)) {
 			return null;
 		}
@@ -161,7 +167,7 @@ final class LmdbNativeKernelInterpreter implements JaninoKernel {
 		if (kernel.resumable && !pullSupported(kernel.pipeline)) {
 			return null;
 		}
-		return new LmdbNativeKernelInterpreter(kernel);
+		return new LmdbNativeKernelInterpreter(kernel, pullRestoreTestMode);
 	}
 
 	private static boolean supported(List<Node> pipeline) {
@@ -219,6 +225,7 @@ final class LmdbNativeKernelInterpreter implements JaninoKernel {
 	}
 
 	private final Kernel kernel;
+	private int contiguousDistinctColumn = -1;
 	private final boolean factorCountFold;
 	/** Aggregate terminal, or null for a row (Emit) kernel. */
 	private final Aggregate aggregate;
@@ -226,6 +233,7 @@ final class LmdbNativeKernelInterpreter implements JaninoKernel {
 	private final LmdbNativeKernelIr.Emit emit;
 	private final int stride;
 	private final boolean telemetry;
+	private final PullRestoreTestMode pullRestoreTestMode;
 
 	private KernelContext context;
 	private KernelHooks hooks;
@@ -288,6 +296,7 @@ final class LmdbNativeKernelInterpreter implements JaninoKernel {
 	private double[][] agM;
 	private boolean[] agO;
 	private KernelRuntime.AggregateMemory aggregateMemory;
+	private KernelOptionalReplay.Budget optionalReplayBudget;
 	private boolean chargeAggregateOutput;
 	/** Bytes retained by primitive aggregate arrays (map/set state owns its own reservation). */
 	private long aggregateArrayBytes;
@@ -332,7 +341,12 @@ final class LmdbNativeKernelInterpreter implements JaninoKernel {
 	private boolean closed;
 
 	private LmdbNativeKernelInterpreter(Kernel kernel) {
+		this(kernel, null);
+	}
+
+	private LmdbNativeKernelInterpreter(Kernel kernel, PullRestoreTestMode pullRestoreTestMode) {
 		this.kernel = kernel;
+		this.pullRestoreTestMode = pullRestoreTestMode;
 		this.factorCountFold = LmdbNativeKernelIr.foldFactorCounts(kernel);
 		this.aggregate = kernel.terminal instanceof Aggregate ? (Aggregate) kernel.terminal : null;
 		this.emit = kernel.terminal instanceof LmdbNativeKernelIr.Emit ? (LmdbNativeKernelIr.Emit) kernel.terminal
@@ -383,6 +397,7 @@ final class LmdbNativeKernelInterpreter implements JaninoKernel {
 		this.factorRejected = 0L;
 		this.pullAccepted = 0L;
 		this.pullDone = false;
+		this.contiguousDistinctColumn = -1;
 		this.hooks = context.hooks;
 		this.keyHooks = hooks == null ? null : hooks.keySemantics();
 		this.cancel = context.cancellation;
@@ -431,8 +446,13 @@ final class LmdbNativeKernelInterpreter implements JaninoKernel {
 
 		// Build the op chain. Site lists and cursors are collected as a side effect, in the same DFS order the
 		// emitter numbers its methods and sites.
+		optionalReplayBudget = KernelOptionalReplay.budgetFor(context, aggregateMemory);
 		if (demandDriven) {
-			this.pullRows = new PullPipeline(kernel.pipeline);
+			this.pullRows = pullPipeline(kernel.pipeline);
+			if (!emit.distinct) {
+				contiguousDistinctColumn = pullRows.contiguousDistinctColumn();
+			}
+			pullRows.installRestores();
 		} else {
 			this.root = kernel.aggregateProjections != null
 					&& (!kernel.aggregateProjections.weightedNumeric || hooks.supportsWeightedNumericAggregates())
@@ -595,6 +615,7 @@ final class LmdbNativeKernelInterpreter implements JaninoKernel {
 		aggregateArrayBytes = 0L;
 		failure = KernelRuntime.closeResource(aggregateMemory, failure);
 		aggregateMemory = null;
+		optionalReplayBudget = null;
 		chargeAggregateOutput = false;
 		context = null;
 		hooks = null;
@@ -745,19 +766,374 @@ final class LmdbNativeKernelInterpreter implements JaninoKernel {
 		return count;
 	}
 
+	/** Exact register copy selected once at bind time. */
+	static abstract class PullRestore {
+		private static final PullRestore EMPTY = new RangePullRestore(0, 0);
+
+		final int count;
+
+		private PullRestore(int count) {
+			this.count = count;
+		}
+
+		private static PullRestore wholeRow(int width) {
+			return new RangePullRestore(0, width);
+		}
+
+		static PullRestore of(BitSet columns, int width) {
+			int count = columns.cardinality();
+			if (count == 0) {
+				return EMPTY;
+			}
+			if (count == width || columns.length() > width) {
+				return wholeRow(width);
+			}
+			int first = columns.nextSetBit(0);
+			if (columns.length() - first == count) {
+				return new RangePullRestore(first, count);
+			}
+			int runs = 0;
+			for (int start = first; start >= 0; start = columns.nextSetBit(columns.nextClearBit(start))) {
+				runs++;
+			}
+			if (runs == count) {
+				return new ScatteredPullRestore(columns.stream().toArray());
+			}
+			int[] spans = new int[runs * 2];
+			int offset = 0;
+			for (int start = first; start >= 0;) {
+				int end = columns.nextClearBit(start);
+				spans[offset++] = start;
+				spans[offset++] = end - start;
+				start = columns.nextSetBit(end);
+			}
+			return new GroupedPullRestore(count, spans);
+		}
+
+		abstract void restore(long[] saved, long[] row);
+
+		abstract int[] columns();
+	}
+
+	private static final class RangePullRestore extends PullRestore {
+		private final int first;
+
+		private RangePullRestore(int first, int count) {
+			super(count);
+			this.first = first;
+		}
+
+		@Override
+		void restore(long[] saved, long[] row) {
+			if (count == 1) {
+				row[first] = saved[first];
+			} else if (count != 0) {
+				System.arraycopy(saved, first, row, first, count);
+			}
+		}
+
+		@Override
+		int[] columns() {
+			int[] columns = new int[count];
+			for (int i = 0; i < count; i++) {
+				columns[i] = first + i;
+			}
+			return columns;
+		}
+	}
+
+	private static final class ScatteredPullRestore extends PullRestore {
+		private final int[] columns;
+
+		private ScatteredPullRestore(int[] columns) {
+			super(columns.length);
+			this.columns = columns;
+		}
+
+		@Override
+		void restore(long[] saved, long[] row) {
+			if (count == 2) {
+				int first = columns[0], second = columns[1];
+				row[first] = saved[first];
+				row[second] = saved[second];
+			} else {
+				for (int column : columns) {
+					row[column] = saved[column];
+				}
+			}
+		}
+
+		@Override
+		int[] columns() {
+			return columns.clone();
+		}
+	}
+
+	private static final class GroupedPullRestore extends PullRestore {
+		/** Start and length for each consecutive group of columns. */
+		private final int[] spans;
+
+		private GroupedPullRestore(int count, int[] spans) {
+			super(count);
+			this.spans = spans;
+		}
+
+		@Override
+		void restore(long[] saved, long[] row) {
+			for (int i = 0; i < spans.length; i += 2) {
+				int start = spans[i], length = spans[i + 1];
+				if (length == 1) {
+					row[start] = saved[start];
+				} else {
+					System.arraycopy(saved, start, row, start, length);
+				}
+			}
+		}
+
+		@Override
+		int[] columns() {
+			int[] columns = new int[count];
+			int offset = 0;
+			for (int i = 0; i < spans.length; i += 2) {
+				int start = spans[i], length = spans[i + 1];
+				for (int column = start; column < start + length; column++) {
+					columns[offset++] = column;
+				}
+			}
+			return columns;
+		}
+	}
+
+	enum PullRestoreTestMode {
+		WHOLE_ROW,
+		VERIFY
+	}
+
+	record PullRestoreSite(Node node, boolean scheduled, int[] restoredColumns, List<List<PullRestoreSite>> children,
+			boolean restoresAfterOpen, long restoreApplications) {
+	}
+
+	List<PullRestoreSite> pullRestoreSites() {
+		return pullRows == null ? List.of() : pullRows.restoreSites();
+	}
+
+	/** Physical column grouped by the bound pull program, or -1 when no such column is proven. */
+	int contiguousDistinctColumn() {
+		return closed ? -1 : contiguousDistinctColumn;
+	}
+
+	int contiguousDistinctOutput() {
+		int column = contiguousDistinctColumn();
+		if (column >= 0) {
+			for (int i = 0; i < emit.cols.length; i++) {
+				if (emit.cols[i] == column) {
+					return i;
+				}
+			}
+		}
+		return -1;
+	}
+
+	private static final class VerifiedPullRestore extends PullRestore {
+		private final PullRestore delegate;
+		private final Node node;
+		private long applications;
+
+		private VerifiedPullRestore(PullRestore restore, Node node) {
+			super(restore.count);
+			this.delegate = restore;
+			this.node = node;
+		}
+
+		@Override
+		void restore(long[] saved, long[] row) {
+			applications++;
+			delegate.restore(saved, row);
+			verify(node, saved, row);
+		}
+
+		@Override
+		int[] columns() {
+			return delegate.columns();
+		}
+
+		static void verify(Node node, long[] saved, long[] row) {
+			int mismatch = Arrays.mismatch(saved, row);
+			if (mismatch >= 0) {
+				throw new AssertionError("Pull restore for " + node.getClass().getSimpleName() + " missed column "
+						+ mismatch + " (expected " + saved[mismatch] + ", got " + row[mismatch] + ")");
+			}
+		}
+	}
+
+	private static void addColumns(BitSet writes, int... columns) {
+		for (int column : columns) {
+			if (column >= 0) {
+				writes.set(column);
+			}
+		}
+	}
+
+	private void addProjectionWrites(LmdbNativeProducerSchedule schedule, BitSet writes) {
+		var layout = schedule.layout;
+		addColumns(writes, layout.predicateCol(), layout.rootCol(), layout.neighborCol(), layout.contextCol());
+		for (int level = 0; level < schedule.savedColumns.length; level++) {
+			// open() captures INPUT from the activation row before any advancement, and enter(INPUT) can only
+			// replace it with values already covered by the layout, later-grain saves, or program writes below.
+			// A retained input therefore cannot change a column outside the enclosing and local write effects.
+			if (level != LmdbNativeProducerSchedule.INPUT) {
+				addColumns(writes, schedule.savedColumns[level]);
+			}
+			addFusedWrites(schedule.programs.get(level), writes);
+		}
+	}
+
+	private void addFusedWrites(List<Node> nodes, BitSet writes) {
+		for (Node node : nodes) {
+			// The ordinary program can execute when projection admission is refused.
+			addNodeWrites(node, writes);
+			LmdbNativeProducerSchedule schedule = kernel.producerSchedules.get(nodes, node);
+			if (schedule != null) {
+				addProjectionWrites(schedule, writes);
+			}
+		}
+	}
+
+	/** Register effects of audited native operations, including fused programs that share the pull register row. */
+	private void addNodeWrites(Node node, BitSet writes) {
+		switch (node) {
+		case PlanRows plan -> {
+			// produced() excludes correlated columns and, for PlanFactors, non-scalar outputs.
+			addColumns(writes, plan.outCols);
+		}
+		case Exists exists -> addFusedWrites(exists.pipeline, writes);
+		case HashBuild hash -> addFusedWrites(hash.pipeline, writes);
+		case Union union -> {
+			addColumns(writes, union.resetColumns());
+			for (List<Node> branch : union.branches) {
+				addFusedWrites(branch, writes);
+			}
+		}
+		case LeftGroup left -> {
+			addColumns(writes, left.resetColumns());
+			addColumns(writes, left.restoreColumns());
+			addFusedWrites(left.arm, writes);
+		}
+		case LexicalFrameLeftJoin lexical -> {
+			addColumns(writes, lexical.problemCols);
+			addColumns(writes, lexical.resetColumns());
+			addFusedWrites(lexical.left, writes);
+			addFusedWrites(lexical.right, writes);
+		}
+		// Even some non-payload fused wildcard operations install a context register.
+		case EnumeratePredicates enumerate -> addWildcardWrites(enumerate, enumerate.ctxCol, writes);
+		case EnumerateWildcard enumerate -> addWildcardWrites(enumerate, enumerate.ctxCol, writes);
+		case SipDomainWildcard probe -> addWildcardWrites(probe, probe.ctxCol, writes);
+		case SipKeyWildcard probe -> addWildcardWrites(probe, probe.ctxCol, writes);
+		case EnumerateAdjKeys _,EnumerateDomain _,EnumerateNodeDomainIntersection _,EnumerateTerms _,SipDomainProbe _,SipKeyProbe _,Probe _,ProbeVariable _,ScanQuad _,Intersect _,LeftProbe _,PathExpand _,HashProbe _,BindAlias _,BindHook _ ->
+			node.produced(writes);
+		case EnumerateEntry _,ProbeClose _,FilterEntryCompatible _ -> {
+			// These guards and entry producers leave the row untouched.
+		}
+		default -> {
+			if (!LmdbNativeKernelIr.isFilter(node)) {
+				writes.set(0, kernel.columnCount);
+			}
+		}
+		}
+	}
+
+	private static void addWildcardWrites(Node node, int contextColumn, BitSet writes) {
+		node.produced(writes);
+		addColumns(writes, contextColumn);
+	}
+
+	private enum PullReset {
+		PRESERVES_ROW,
+		MAY_WRITE_ROW
+	}
+
 	/** One frame per IR site, reused across correlated activations; no thread, replay, or generated-code fallback. */
 	private abstract class PullStage {
 		final long[] saved = new long[kernel.columnCount];
+		final Node node;
+		final boolean scheduled;
+		final List<PullPipeline> nested;
+		final boolean restoresAfterOpen;
+		BitSet writes = new BitSet(kernel.columnCount);
+		/** Null restores the entire row using the original bulk copy directly. */
+		PullRestore restore;
 		boolean active;
+		/** After yielding a row, the stage can prove that another advance has no work or results. */
+		boolean exhausted;
+
+		PullStage(Node node, PullReset reset) {
+			this(node, false, List.of(), reset);
+			addNodeWrites(node, writes);
+		}
+
+		/** Conservative default for a replay stage that materializes entire rows while resetting. */
+		PullStage(Node node) {
+			this(node, false, List.of(), PullReset.MAY_WRITE_ROW);
+			writes.set(0, kernel.columnCount);
+		}
+
+		PullStage(Node node, List<PullPipeline> children, PullReset reset, int[]... frameWrites) {
+			this(node, false, children, reset);
+			for (int[] columns : frameWrites) {
+				addColumns(writes, columns);
+			}
+		}
+
+		PullStage(LmdbNativeProducerSchedule schedule, PullPipeline fallback) {
+			// Opening the physical projection can run a page callback that writes its registers.
+			this(schedule.producer, true, List.of(fallback), PullReset.MAY_WRITE_ROW);
+			addProjectionWrites(schedule, writes);
+		}
+
+		private PullStage(Node node, boolean scheduled, List<PullPipeline> nested, PullReset reset) {
+			this.node = node;
+			this.scheduled = scheduled;
+			this.nested = nested;
+			this.restoresAfterOpen = reset == PullReset.MAY_WRITE_ROW
+					|| pullRestoreTestMode == PullRestoreTestMode.WHOLE_ROW;
+			for (PullPipeline child : nested) {
+				writes.or(child.writes);
+			}
+		}
+
+		final void installRestore(PullRestore descriptor) {
+			restore = switch (pullRestoreTestMode) {
+			case null -> descriptor.count == kernel.columnCount ? null : descriptor;
+			case WHOLE_ROW -> null;
+			case VERIFY -> new VerifiedPullRestore(descriptor, node);
+			};
+			writes = null;
+			// The parent's descriptor already includes every descendant's effects. A suspended child has to account
+			// for the parent's own restore and sibling arms, so its union would contain exactly these columns.
+			for (PullPipeline child : nested) {
+				child.installEnclosingRestore(descriptor);
+			}
+		}
 
 		final void open() {
 			System.arraycopy(v, 0, saved, 0, v.length);
 			active = true; // publish ownership before activation, so failures are swept as well
+			exhausted = false;
 			reset();
 		}
 
 		final boolean next() {
-			System.arraycopy(saved, 0, v, 0, v.length);
+			PullRestore descriptor = restore;
+			if (descriptor == null) {
+				System.arraycopy(saved, 0, v, 0, v.length);
+			} else {
+				descriptor.restore(saved, v);
+			}
+			return advancePolled();
+		}
+
+		final boolean advancePolled() {
 			poll();
 			return advance();
 		}
@@ -782,8 +1158,14 @@ final class LmdbNativeKernelInterpreter implements JaninoKernel {
 		}
 	}
 
-	private final class PullPipeline implements AutoCloseable {
+	private PullPipeline pullPipeline(List<Node> nodes) {
+		return pullRestoreTestMode == PullRestoreTestMode.VERIFY ? new VerifiedPullPipeline(nodes)
+				: new PullPipeline(nodes);
+	}
+
+	private class PullPipeline implements AutoCloseable {
 		final PullStage[] stages;
+		BitSet writes = new BitSet(kernel.columnCount);
 		int depth;
 		boolean output, done;
 
@@ -799,6 +1181,107 @@ final class LmdbNativeKernelInterpreter implements JaninoKernel {
 				}
 			}
 			stages = compiled.toArray(PullStage[]::new);
+			for (PullStage stage : stages) {
+				writes.or(stage.writes);
+			}
+		}
+
+		int contiguousDistinctColumn() {
+			for (int i = 0; i < stages.length; i++) {
+				PullStage stage = stages[i];
+				Node node = stage.node;
+				if (LmdbNativeKernelIr.isStatelessRowNode(node) || LmdbNativeKernelIr.isSingleActivationNode(node)
+						|| node instanceof ProbeClose close && !close.multiplicity) {
+					continue;
+				}
+				int column = distinctRootColumn(stage);
+				if (column < 0) {
+					return -1;
+				}
+				for (int suffix = i + 1; suffix < stages.length; suffix++) {
+					if (stages[suffix].writes.get(column)) {
+						return -1;
+					}
+				}
+				return column;
+			}
+			return -1;
+		}
+
+		private int distinctRootColumn(PullStage stage) {
+			if (stage.scheduled) {
+				// The projection can traverse physical page fragments. Its key-run fallback alone cannot certify
+				// that every root's fragments stay together in the selected projection.
+				return -1;
+			}
+			if (stage.node instanceof EnumerateAdjKeys keys && !keys.wildcard
+					&& separateRootColumn(keys.keyCol, keys.valueCol, keys.ctxCol)
+					&& enumeratesDistinctKeys(keys.adjacency)) {
+				return keys.keyCol;
+			}
+			if (stage.node instanceof SipKeyProbe probe
+					&& separateRootColumn(probe.keyCol, probe.valueCol, probe.ctxCol)
+					&& enumeratesDistinctKeys(probe.domainAdjacency)) {
+				return probe.keyCol;
+			}
+			if (stage.node instanceof LexicalFrameLeftJoin lexical) {
+				PullPipeline left = stage.nested.get(0);
+				PullPipeline right = stage.nested.get(1);
+				int column = left.contiguousDistinctColumn();
+				// The right pipeline and empty-right case finish before the next left row is pulled. They must
+				// preserve the left root, including when the container restores the incoming lexical bindings.
+				if (column >= 0 && !right.writes.get(column)
+						&& Arrays.stream(lexical.problemCols).noneMatch(problem -> problem == column)) {
+					return column;
+				}
+			}
+			return -1;
+		}
+
+		private static boolean separateRootColumn(int key, int value, int context) {
+			return key != value && (context < 0 || (context != key && context != value));
+		}
+
+		private boolean enumeratesDistinctKeys(int adjacency) {
+			var view = context.adjacencies[adjacency];
+			return view != null && view.supportsKeyEnumeration();
+		}
+
+		void installRestores() {
+			BitSet suffix = new BitSet(kernel.columnCount);
+			int count = 0;
+			PullRestore descriptor = PullRestore.EMPTY;
+			for (int i = stages.length - 1; i >= 0; i--) {
+				PullStage stage = stages[i];
+				suffix.or(stage.writes);
+				int enlarged = suffix.cardinality();
+				if (enlarged != count) {
+					descriptor = PullRestore.of(suffix, kernel.columnCount);
+					count = enlarged;
+				}
+				stage.installRestore(descriptor);
+			}
+			writes = null;
+		}
+
+		void installEnclosingRestore(PullRestore descriptor) {
+			for (PullStage stage : stages) {
+				stage.installRestore(descriptor);
+			}
+			writes = null;
+		}
+
+		List<PullRestoreSite> restoreSites() {
+			List<PullRestoreSite> sites = new ArrayList<>(stages.length);
+			for (PullStage stage : stages) {
+				List<List<PullRestoreSite>> children = stage.nested.stream().map(PullPipeline::restoreSites).toList();
+				PullRestore descriptor = stage.restore == null ? PullRestore.wholeRow(kernel.columnCount)
+						: stage.restore;
+				sites.add(new PullRestoreSite(stage.node, stage.scheduled, descriptor.columns(), children,
+						stage.restoresAfterOpen,
+						descriptor instanceof VerifiedPullRestore verified ? verified.applications : -1));
+			}
+			return List.copyOf(sites);
 		}
 
 		void reset() {
@@ -820,9 +1303,19 @@ final class LmdbNativeKernelInterpreter implements JaninoKernel {
 					return true;
 				}
 				PullStage stage = stages[depth];
-				if (!stage.active)
+				boolean hasRow;
+				if (stage.active) {
+					hasRow = !stage.exhausted && stage.next();
+				} else {
 					stage.open();
-				if (stage.next())
+					if (stage.restoresAfterOpen) {
+						hasRow = stage.next();
+					} else {
+						checkElidedRestore(stage);
+						hasRow = stage.advancePolled();
+					}
+				}
+				if (hasRow)
 					depth++;
 				else {
 					stage.close();
@@ -833,8 +1326,41 @@ final class LmdbNativeKernelInterpreter implements JaninoKernel {
 			return false;
 		}
 
+		/** Whether every stage supports setting its exhaustion flag when returning a row. */
+		boolean canProveExhaustion() {
+			for (PullStage stage : stages) {
+				Node node = stage.node;
+				if (stage.scheduled || !(node instanceof ProbeVariable || node instanceof LeftProbe
+						|| node instanceof EnumerateDomain || node instanceof Probe || node instanceof LeftGroup
+						|| node instanceof ProbeClose || node instanceof EnumerateEntry || node instanceof BindAlias
+						|| node instanceof BindHook || node instanceof FilterResidual
+						|| LmdbNativeKernelIr.isFilter(node)
+						|| node instanceof FilterEntryCompatible || node instanceof Exists
+						|| node instanceof HashBuild)) {
+					return false;
+				}
+			}
+			return true;
+		}
+
+		boolean exhaustedAfterOutput() {
+			for (PullStage stage : stages) {
+				if (!stage.exhausted) {
+					return false;
+				}
+			}
+			return true;
+		}
+
+		void checkElidedRestore(PullStage stage) {
+			// The production pipeline does not inspect registers after a preserving reset.
+		}
+
 		@Override
 		public void close() {
+			if (done) {
+				return;
+			}
 			done = true;
 			Throwable failure = null;
 			for (int i = stages.length - 1; i >= 0; i--) {
@@ -851,10 +1377,21 @@ final class LmdbNativeKernelInterpreter implements JaninoKernel {
 		}
 	}
 
+	private final class VerifiedPullPipeline extends PullPipeline {
+		VerifiedPullPipeline(List<Node> nodes) {
+			super(nodes);
+		}
+
+		@Override
+		void checkElidedRestore(PullStage stage) {
+			VerifiedPullRestore.verify(stage.node, stage.saved, v);
+		}
+	}
+
 	private PullStage pullProjection(LmdbNativeProducerSchedule schedule, List<Node> ordinary) {
 		ProjectionProgram program = new ProjectionProgram(schedule);
-		PullPipeline fallback = new PullPipeline(ordinary);
-		return new PullStage() {
+		PullPipeline fallback = pullPipeline(ordinary);
+		return new PullStage(schedule, fallback) {
 			boolean ordinaryActive;
 
 			@Override
@@ -1133,7 +1670,7 @@ final class LmdbNativeKernelInterpreter implements JaninoKernel {
 
 	private PullStage pullStage(Node node) {
 		if (node instanceof PlanRows plan) {
-			return new PullStage() {
+			return new PullStage(node, PullReset.PRESERVES_ROW) {
 				final long[] values = new long[Math.max(1, plan.outCols.length)];
 				KernelPlan.Cursor cursor;
 
@@ -1168,15 +1705,15 @@ final class LmdbNativeKernelInterpreter implements JaninoKernel {
 			};
 		}
 		if (node instanceof EnumerateNodeDomainIntersection domain) {
-			return expansionStage(() -> new KernelExpansionCursors.Domains(
+			return expansionStage(node, () -> new KernelExpansionCursors.Domains(
 					context.nodeDomainIntersections[domain.view], cancel), domain.col);
 		}
 		if (node instanceof EnumerateTerms terms) {
-			return expansionStage(() -> new KernelExpansionCursors.Terms(
+			return expansionStage(node, () -> new KernelExpansionCursors.Terms(
 					context.scanner, terms.scan, cancel), terms.col);
 		}
 		if (node instanceof PathExpand path) {
-			return expansionStage(() -> {
+			return expansionStage(node, () -> {
 				long[] contexts = new long[path.contexts.length];
 				for (int i = 0; i < contexts.length; i++)
 					contexts[i] = read(path.contexts[i]);
@@ -1185,7 +1722,7 @@ final class LmdbNativeKernelInterpreter implements JaninoKernel {
 			}, path.dstCol);
 		}
 		if (node instanceof Intersect intersect) {
-			return expansionStage(() -> {
+			return expansionStage(node, () -> {
 				NativeLmdbQuerySource.NativeAdjacency[] views = new NativeLmdbQuerySource.NativeAdjacency[intersect.adjacencies.length];
 				long[] keys = new long[views.length];
 				for (int i = 0; i < views.length; i++) {
@@ -1197,7 +1734,7 @@ final class LmdbNativeKernelInterpreter implements JaninoKernel {
 		}
 		if (node instanceof ProbeVariable probe) {
 			var view = context.dynamicAdjacencies[probe.view];
-			return new PullStage() {
+			return new PullStage(node, PullReset.PRESERVES_ROW) {
 				long handle, position, end;
 
 				@Override
@@ -1232,6 +1769,7 @@ final class LmdbNativeKernelInterpreter implements JaninoKernel {
 						}
 						v[probe.valueCol] = (probe.ctxActive() ? view.neighborInContextSpan(handle, at)
 								: view.neighborAt(handle, at));
+						exhausted = position == end;
 						return true;
 					}
 					return false;
@@ -1241,14 +1779,12 @@ final class LmdbNativeKernelInterpreter implements JaninoKernel {
 		if (node instanceof LeftProbe probe) {
 			var cursor = context.adjacencies[probe.adjacency].openBoundRunCursor();
 			boundCursors.add(cursor);
-			return new PullStage() {
+			return new PullStage(node, PullReset.PRESERVES_ROW) {
 				long position, end;
-				boolean nullSent;
 
 				@Override
 				void reset() {
 					position = 0;
-					nullSent = false;
 					long key = read(probe.key);
 					end = key == -1L ? 0 : cursor.bind(key);
 				}
@@ -1257,11 +1793,12 @@ final class LmdbNativeKernelInterpreter implements JaninoKernel {
 				boolean advance() {
 					if (position < end) {
 						v[probe.valueCol] = cursor.neighborAt(position++);
+						exhausted = position == end;
 						return true;
 					}
-					if (end <= 0 && !nullSent) {
-						nullSent = true;
+					if (end <= 0) {
 						v[probe.valueCol] = -1L;
+						exhausted = true;
 						return true;
 					}
 					return false;
@@ -1271,7 +1808,7 @@ final class LmdbNativeKernelInterpreter implements JaninoKernel {
 
 		if (node instanceof EnumerateDomain domain) {
 			int site = telemetry && domain.sipDriven ? registerSipDriven(domain) : -1;
-			return new PullStage() {
+			return new PullStage(node, PullReset.PRESERVES_ROW) {
 				int position;
 
 				@Override
@@ -1281,10 +1818,12 @@ final class LmdbNativeKernelInterpreter implements JaninoKernel {
 
 				@Override
 				boolean advance() {
-					if (position >= context.keyDomainLengths[domain.domain])
+					int length = context.keyDomainLengths[domain.domain];
+					if (position >= length)
 						return false;
 					v[domain.col] = context.keyDomains[domain.domain][context.keyDomainOffsets[domain.domain]
 							+ position++];
+					exhausted = position == length;
 					if (site >= 0)
 						sipDriven[site]++;
 					return true;
@@ -1296,7 +1835,7 @@ final class LmdbNativeKernelInterpreter implements JaninoKernel {
 					.openBoundRunCursor();
 			boundCursors.add(cursor);
 			boundCursorSites.put(probe, cursor);
-			return new PullStage() {
+			return new PullStage(node, PullReset.PRESERVES_ROW) {
 				long position, end;
 
 				@Override
@@ -1324,6 +1863,7 @@ final class LmdbNativeKernelInterpreter implements JaninoKernel {
 						}
 						v[probe.valueCol] = (probe.ctxActive() ? cursor.neighborInContextSpan(at)
 								: cursor.neighborAt(at));
+						exhausted = position == end;
 						return true;
 					}
 					return false;
@@ -1332,7 +1872,7 @@ final class LmdbNativeKernelInterpreter implements JaninoKernel {
 		}
 		if (node instanceof EnumerateAdjKeys keys) {
 			int site = telemetry && keys.sipDriven ? registerImplicitSipDriven(keys) : -1;
-			return new PullStage() {
+			return new PullStage(node, PullReset.PRESERVES_ROW) {
 				NativeLmdbQuerySource.NativeAdjacency.KeyRunCursor cursor;
 				long key, position, end;
 
@@ -1404,12 +1944,15 @@ final class LmdbNativeKernelInterpreter implements JaninoKernel {
 			};
 		}
 		if (node instanceof ScanQuad scan) {
-			return new PullStage() {
+			return new PullStage(node, PullReset.PRESERVES_ROW) {
 				final long[] values = new long[4];
 				KernelQuadCursor cursor;
 
 				@Override
 				void reset() {
+					if (telemetry) {
+						workCounters.recordScanOpen();
+					}
 					cursor = context.scanner.open(scan.scan,
 							scan.terms[0] == null ? -1L : read(scan.terms[0]),
 							scan.terms[1] == null ? -1L : read(scan.terms[1]),
@@ -1442,8 +1985,9 @@ final class LmdbNativeKernelInterpreter implements JaninoKernel {
 		if (node instanceof Union union) {
 			PullPipeline[] branches = new PullPipeline[union.branches.size()];
 			for (int i = 0; i < branches.length; i++)
-				branches[i] = new PullPipeline(union.branches.get(i));
-			return new PullStage() {
+				branches[i] = pullPipeline(union.branches.get(i));
+			int[] resetColumns = union.resetColumns();
+			return new PullStage(node, List.of(branches), PullReset.PRESERVES_ROW, resetColumns) {
 				int branch;
 				boolean opened;
 
@@ -1457,7 +2001,7 @@ final class LmdbNativeKernelInterpreter implements JaninoKernel {
 				boolean advance() {
 					while (branch < branches.length) {
 						if (!opened) {
-							for (int col : union.resetColumns())
+							for (int col : resetColumns)
 								v[col] = -1L;
 							branches[branch].reset();
 							opened = true;
@@ -1480,27 +2024,61 @@ final class LmdbNativeKernelInterpreter implements JaninoKernel {
 			};
 		}
 		if (node instanceof LeftGroup left) {
-			PullPipeline arm = new PullPipeline(left.arm);
-			return new PullStage() {
-				boolean matched, nullSent;
+			PullPipeline arm = pullPipeline(left.arm);
+			boolean canProveExhaustion = arm.canProveExhaustion();
+			int[] resetColumns = left.resetColumns();
+			KernelOptionalReplay memo = LmdbNativeOptionalReplay.create(left, kernel, optionalReplayBudget);
+			return new PullStage(node, List.of(arm), PullReset.PRESERVES_ROW, resetColumns) {
+				boolean matched;
+				KernelOptionalReplay.Rows replay;
+				int replayOffset;
 
 				@Override
 				void reset() {
-					matched = nullSent = false;
-					arm.reset();
+					matched = false;
+					replayOffset = 0;
+					replay = memo == null ? null : memo.open(v);
+					if (replay == null) {
+						arm.reset();
+						if (telemetry) {
+							workCounters.recordOptionalArmOpen();
+							if (memo != null && memo.lastOpenBypassed()) {
+								workCounters.recordOptionalCacheBypass();
+							}
+						}
+					} else if (telemetry) {
+						workCounters.recordOptionalArmReplay();
+					}
 				}
 
 				@Override
 				boolean advance() {
-					if (arm.next()) {
+					if (replay != null) {
+						if (replayOffset < replay.length()) {
+							replayOffset = memo.replay(replay, replayOffset, v);
+							matched = true;
+							exhausted = replayOffset == replay.length();
+							return true;
+						}
+					} else if (arm.next()) {
 						matched = true;
+						// Leave the arm suspended until normal backtracking or close. An exhausted arm has
+						// no remaining advances, but its active frames still own their saved registers.
+						exhausted = canProveExhaustion && arm.exhaustedAfterOutput();
+						if (memo != null) {
+							memo.record(v);
+							if (exhausted) {
+								memo.complete();
+							}
+						}
 						return true;
+					} else if (memo != null) {
+						memo.complete();
 					}
-					arm.close();
-					if (!matched && !nullSent) {
-						nullSent = true;
+					if (!matched) {
+						exhausted = true;
 						System.arraycopy(saved, 0, v, 0, v.length);
-						for (int col : left.resetColumns())
+						for (int col : resetColumns)
 							v[col] = -1L;
 						return true;
 					}
@@ -1509,14 +2087,22 @@ final class LmdbNativeKernelInterpreter implements JaninoKernel {
 
 				@Override
 				void release() {
-					arm.close();
+					if (memo != null) {
+						memo.abandon();
+					}
+					if (replay == null) {
+						arm.close();
+					}
+					replay = null;
 				}
 			};
 		}
 		if (node instanceof LexicalFrameLeftJoin lexical) {
-			PullPipeline left = new PullPipeline(lexical.left);
-			PullPipeline right = new PullPipeline(lexical.right);
-			return new PullStage() {
+			PullPipeline left = pullPipeline(lexical.left);
+			PullPipeline right = pullPipeline(lexical.right);
+			int[] resetColumns = lexical.resetColumns();
+			return new PullStage(node, List.of(left, right), PullReset.MAY_WRITE_ROW, resetColumns,
+					lexical.problemCols) {
 				final long[] leftRow = new long[kernel.columnCount];
 				boolean rightActive, rightExists;
 
@@ -1551,7 +2137,7 @@ final class LmdbNativeKernelInterpreter implements JaninoKernel {
 							rightActive = false;
 							if (!rightExists) {
 								System.arraycopy(leftRow, 0, v, 0, v.length);
-								for (int col : lexical.resetColumns())
+								for (int col : resetColumns)
 									v[col] = -1L;
 								for (int col : lexical.problemCols)
 									v[col] = saved[col];
@@ -1591,7 +2177,7 @@ final class LmdbNativeKernelInterpreter implements JaninoKernel {
 		}
 
 		if (node instanceof HashProbe probe) {
-			return new PullStage() {
+			return new PullStage(node, PullReset.PRESERVES_ROW) {
 				KernelRuntime.LongRowMap table;
 				int match;
 
@@ -1644,19 +2230,10 @@ final class LmdbNativeKernelInterpreter implements JaninoKernel {
 				|| node instanceof FilterResidual || LmdbNativeKernelIr.isFilter(node)
 				|| node instanceof FilterEntryCompatible || node instanceof Exists || node instanceof HashBuild) {
 			Op scalar = buildNode(node, () -> true, false);
-			return new PullStage() {
-				boolean done;
-
-				@Override
-				void reset() {
-					done = false;
-				}
-
+			return new PullStage(node, PullReset.PRESERVES_ROW) {
 				@Override
 				boolean advance() {
-					if (done)
-						return false;
-					done = true;
+					exhausted = true;
 					return scalar.run();
 				}
 			};
@@ -1664,7 +2241,7 @@ final class LmdbNativeKernelInterpreter implements JaninoKernel {
 		// Pure native producers not yet equipped with a pull cursor retain their existing implementation.
 		// Materialize THIS node, never its downstream delegated continuation. Hash builds are already blocking.
 		// Unsafe lexical operators from slot lowering arrive as one PlanRows node, retaining evaluator semantics.
-		return new PullStage() {
+		return new PullStage(node) {
 			final List<long[]> rows = new ArrayList<>();
 			final Op collect = buildNode(node, () -> {
 				rows.add(v.clone());
@@ -1697,7 +2274,7 @@ final class LmdbNativeKernelInterpreter implements JaninoKernel {
 	private PullStage pullProbeClose(ProbeClose close) {
 		NativeLmdbQuerySource.RunView view = close.dynamic ? context.dynamicAdjacencies[close.adjacency]
 				: context.adjacencies[close.adjacency];
-		return new PullStage() {
+		return new PullStage(close, PullReset.PRESERVES_ROW) {
 			long remaining;
 
 			@Override
@@ -1752,6 +2329,7 @@ final class LmdbNativeKernelInterpreter implements JaninoKernel {
 				}
 				poll();
 				remaining--;
+				exhausted = remaining == 0L;
 				return true;
 			}
 		};
@@ -1762,7 +2340,7 @@ final class LmdbNativeKernelInterpreter implements JaninoKernel {
 			return pullEnumerateWildcardPredicates(enumerate);
 		}
 		NativeLmdbQuerySource.NodePredicates predicates = context.nodePredicates[enumerate.view];
-		return new PullStage() {
+		return new PullStage(enumerate, PullReset.PRESERVES_ROW) {
 			NativeLmdbQuerySource.NodePredicates.PredicateRowCursor cursor;
 			long run;
 			long predicate;
@@ -1827,7 +2405,7 @@ final class LmdbNativeKernelInterpreter implements JaninoKernel {
 		NativeLmdbQuerySource.WildcardAdjacency wildcard = context.wildcardAdjacencies[enumerate.view];
 		long[] keys = new long[1];
 		long[] runs = new long[1];
-		return new PullStage() {
+		return new PullStage(enumerate, PullReset.PRESERVES_ROW) {
 			int predicateOrdinal;
 			long key;
 			long target;
@@ -1899,7 +2477,7 @@ final class LmdbNativeKernelInterpreter implements JaninoKernel {
 
 	private PullStage pullEnumerateWildcard(EnumerateWildcard enumerate) {
 		NativeLmdbQuerySource.WildcardAdjacency wildcard = context.wildcardAdjacencies[enumerate.view];
-		return new PullStage() {
+		return new PullStage(enumerate, PullReset.PRESERVES_ROW) {
 			int predicateOrdinal;
 			NativeLmdbQuerySource.NativeAdjacency.KeyRunCursor cursor;
 			long key;
@@ -1983,7 +2561,7 @@ final class LmdbNativeKernelInterpreter implements JaninoKernel {
 		int domainLength = context.keyDomainLengths[probe.domain];
 		long[] handles = new long[KEY_CHUNK];
 		int site = registerSipBatchProbe(probe);
-		return new PullStage() {
+		return new PullStage(probe, PullReset.PRESERVES_ROW) {
 			int domainPosition;
 			int batchBase;
 			int batchCount;
@@ -2056,7 +2634,7 @@ final class LmdbNativeKernelInterpreter implements JaninoKernel {
 		long[] keys = new long[KEY_CHUNK];
 		long[] handles = new long[KEY_CHUNK];
 		int site = registerSipBatchProbe(probe);
-		return new PullStage() {
+		return new PullStage(probe, PullReset.PRESERVES_ROW) {
 			NativeLmdbQuerySource.NativeAdjacency.KeyRunCursor cursor;
 			int batchCount;
 			int lane;
@@ -2138,7 +2716,7 @@ final class LmdbNativeKernelInterpreter implements JaninoKernel {
 		int domainOffset = context.keyDomainOffsets[probe.domain];
 		int domainLength = context.keyDomainLengths[probe.domain];
 		long[] handles = new long[KEY_CHUNK];
-		return new PullStage() {
+		return new PullStage(probe, PullReset.PRESERVES_ROW) {
 			int predicateOrdinal;
 			int domainPosition;
 			int batchBase;
@@ -2226,7 +2804,7 @@ final class LmdbNativeKernelInterpreter implements JaninoKernel {
 		NativeLmdbQuerySource.NativeAdjacency.KeyRunCursor[] slot = keyCursorSlot();
 		long[] keys = new long[KEY_CHUNK];
 		long[] handles = new long[KEY_CHUNK];
-		return new PullStage() {
+		return new PullStage(probe, PullReset.PRESERVES_ROW) {
 			NativeLmdbQuerySource.NativeAdjacency.KeyRunCursor cursor;
 			int predicateOrdinal;
 			int batchCount;
@@ -2316,8 +2894,9 @@ final class LmdbNativeKernelInterpreter implements JaninoKernel {
 		};
 	}
 
-	private PullStage expansionStage(java.util.function.Supplier<KernelExpansionCursors.Values> factory, int column) {
-		return new PullStage() {
+	private PullStage expansionStage(Node node, Supplier<KernelExpansionCursors.Values> factory,
+			int column) {
+		return new PullStage(node, PullReset.PRESERVES_ROW) {
 			KernelExpansionCursors.Values cursor;
 
 			@Override
@@ -4081,10 +4660,14 @@ final class LmdbNativeKernelInterpreter implements JaninoKernel {
 		int[] resetColumns = group.resetColumns();
 		int[] restoreColumns = group.restoreColumns();
 		long[] saved = new long[restoreColumns.length];
+		KernelOptionalReplay memo = LmdbNativeOptionalReplay.create(group, kernel, optionalReplayBudget);
 		// The arm's terminal sets the flag BEFORE running the shared continuation: a right match suppresses the
 		// null arm even when the continuation later rejects every matching row.
 		Op arm = build(group.arm, 0, () -> {
 			leftGroupFlags[flagId] = true;
+			if (memo != null) {
+				memo.record(v);
+			}
 			return next.run();
 		}, booleanMode);
 		return () -> {
@@ -4092,8 +4675,35 @@ final class LmdbNativeKernelInterpreter implements JaninoKernel {
 				saved[i] = v[restoreColumns[i]];
 			}
 			leftGroupFlags[flagId] = false;
-			if (arm.run()) {
-				return true;
+			KernelOptionalReplay.Rows replay = memo == null ? null : memo.open(v);
+			if (replay != null) {
+				if (telemetry) {
+					workCounters.recordOptionalArmReplay();
+				}
+				for (int offset = 0; offset < replay.length();) {
+					poll();
+					offset = memo.replay(replay, offset, v);
+					leftGroupFlags[flagId] = true;
+					if (next.run()) {
+						return true;
+					}
+				}
+			} else {
+				if (telemetry) {
+					workCounters.recordOptionalArmOpen();
+					if (memo != null && memo.lastOpenBypassed()) {
+						workCounters.recordOptionalCacheBypass();
+					}
+				}
+				if (arm.run()) {
+					if (memo != null) {
+						memo.abandon();
+					}
+					return true;
+				}
+				if (memo != null) {
+					memo.complete();
+				}
 			}
 			if (!leftGroupFlags[flagId]) {
 				for (int i = 0; i < restoreColumns.length; i++) {

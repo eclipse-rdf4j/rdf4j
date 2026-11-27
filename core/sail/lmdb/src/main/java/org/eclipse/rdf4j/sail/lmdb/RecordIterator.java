@@ -18,13 +18,39 @@ import java.io.IOException;
 
 import org.eclipse.rdf4j.common.annotation.Experimental;
 import org.eclipse.rdf4j.common.annotation.InternalUseOnly;
+import org.eclipse.rdf4j.common.iteration.CooperativeCancellation;
 
 /**
  * An iterator that iterates over records, for example those in a key-value database.
  */
 @Experimental
 @InternalUseOnly
-public interface RecordIterator extends Closeable {
+public interface RecordIterator extends Closeable, CooperativeCancellation {
+
+	/** Unsupported iterators do not accept a cooperative cancellation request. */
+	@Override
+	default boolean requestCancellation() {
+		return false;
+	}
+
+	/**
+	 * Identifies the current selection for iterators that can be reopened in place. Forwarders can use this to avoid
+	 * delivering a delayed request to a later selection on a reused iterator.
+	 */
+	default long cancellationGeneration() {
+		return 0;
+	}
+
+	/** Requests cancellation only if the identified selection is still current. */
+	default boolean requestCancellation(long generation) {
+		return generation == 0 && requestCancellation();
+	}
+
+	/** Forwards a request to the selection captured when the delegate was adopted. */
+	static boolean forwardCancellation(RecordIterator delegate, long generation) {
+		return delegate != null && delegate.requestCancellation(generation);
+	}
+
 	/**
 	 * An iterator that can be reset to a new position and reused. This is useful for iterators that are expensive to
 	 * create, such as those that hold a database cursor. Retained instances keep their reusable resources on
@@ -60,6 +86,11 @@ public interface RecordIterator extends Closeable {
 	 * @return A record that or <tt>null</tt> if all records have been returned.
 	 */
 	long[] next();
+
+	/** Number of copied records available without visiting the physical cursor or observing its exhaustion. */
+	default int bufferedRows() {
+		return 0;
+	}
 
 	/**
 	 * Fills the buffer with up to {@code maxRows} records of four longs each and returns the number of records written.

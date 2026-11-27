@@ -131,27 +131,27 @@ class LmdbEvaluationStatistics
 	}
 
 	int fallbackAccessPrefixLength(StatementPattern statementPattern, Set<String> boundVars) {
+		return Integer.bitCount(fallbackAccessPrefixMask(statementPattern, boundVars));
+	}
+
+	int fallbackAccessPrefixMask(StatementPattern statementPattern, Set<String> boundVars) {
 		if (statementPattern == null) {
 			return 0;
 		}
 		int boundComponentMask = 0;
 		if (isFixedOrBound(statementPattern.getSubjectVar(), boundVars)) {
-			boundComponentMask |= 1 << Component.S.ordinal();
+			boundComponentMask |= componentBit(Component.S);
 		}
 		if (isFixedOrBound(statementPattern.getPredicateVar(), boundVars)) {
-			boundComponentMask |= 1 << Component.P.ordinal();
+			boundComponentMask |= componentBit(Component.P);
 		}
 		if (isFixedOrBound(statementPattern.getObjectVar(), boundVars)) {
-			boundComponentMask |= 1 << Component.O.ordinal();
+			boundComponentMask |= componentBit(Component.O);
 		}
 		if (isFixedOrBound(statementPattern.getContextVar(), boundVars)) {
-			boundComponentMask |= 1 << Component.C.ordinal();
+			boundComponentMask |= componentBit(Component.C);
 		}
-		return tripleStore.indexAccessPaths(boundComponentMask)
-				.stream()
-				.mapToInt(TripleStore.IndexAccessPath::prefixLength)
-				.max()
-				.orElse(0);
+		return tripleStore.bestIndexPrefixMask(boundComponentMask);
 	}
 
 	private static boolean isFixedOrBound(Var var, Set<String> boundVars) {

@@ -22,11 +22,15 @@ import java.util.Set;
 import java.util.function.BiConsumer;
 import java.util.function.Consumer;
 import java.util.function.Function;
+import java.util.function.IntSupplier;
 import java.util.function.Predicate;
 import java.util.function.Supplier;
 
 import org.eclipse.rdf4j.collection.factory.api.CollectionFactory;
 import org.eclipse.rdf4j.common.annotation.Experimental;
+import org.eclipse.rdf4j.common.annotation.InternalUseOnly;
+import org.eclipse.rdf4j.common.iteration.AbstractCloseableIteration;
+import org.eclipse.rdf4j.common.iteration.BufferedIteration;
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.common.iteration.CloseableIteratorIteration;
 import org.eclipse.rdf4j.common.iteration.CooperativeCancellation;
@@ -48,9 +52,14 @@ import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.Dataset;
 import org.eclipse.rdf4j.query.MutableBindingSet;
 import org.eclipse.rdf4j.query.QueryEvaluationException;
+import org.eclipse.rdf4j.query.algebra.Group;
+import org.eclipse.rdf4j.query.algebra.Projection;
+import org.eclipse.rdf4j.query.algebra.ProjectionElem;
 import org.eclipse.rdf4j.query.algebra.StatementPattern;
 import org.eclipse.rdf4j.query.algebra.StatementPattern.Scope;
+import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.algebra.Var;
+import org.eclipse.rdf4j.query.algebra.evaluation.QueryBindingSet;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryEvaluationStep;
 import org.eclipse.rdf4j.query.algebra.evaluation.TripleSource;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.QueryEvaluationContext;
@@ -63,6 +72,7 @@ import org.eclipse.rdf4j.query.algebra.evaluation.impl.restrictions.RestrictionP
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.restrictions.StatementRestrictionSourceProvider;
 import org.eclipse.rdf4j.query.algebra.evaluation.util.ExternalValuePreparation;
 import org.eclipse.rdf4j.query.explanation.TelemetryMetricNames;
+import org.eclipse.rdf4j.query.impl.EmptyBindingSet;
 import org.eclipse.rdf4j.query.impl.RemoteBNode;
 
 /**
@@ -86,6 +96,12 @@ public class StatementPatternQueryEvaluationStep implements QueryEvaluationStep,
 	private final Function<Value, Resource[]> contextSup;
 	private BiConsumer<MutableBindingSet, Statement> converter;
 	private BiConsumer<MutableBindingSet, Statement> convertStatementConverter;
+	/** Every statement field resolves on its first read, so a field no converter or filter reads is never created. */
+	private static final StatementFieldSelection.Demand ALL_FIELDS_ON_DEMAND = new StatementFieldSelection.Demand(
+			StatementFieldSelection.SUBJECT | StatementFieldSelection.PREDICATE | StatementFieldSelection.OBJECT);
+	private static final StatementFieldSelection.Demand NO_FIELDS_ON_DEMAND = new StatementFieldSelection.Demand(0);
+	// Resolved on first use; the value only depends on final state, so a racing second resolution is harmless.
+	private StatementFieldSelection.Demand privateScanDemand;
 	private final QueryEvaluationContext context;
 	private final StatementOrder order;
 	private final Function<Value, Value> valuePreparer;
@@ -103,7 +119,7 @@ public class StatementPatternQueryEvaluationStep implements QueryEvaluationStep,
 	private final Var normalizedObjectVar;
 	private final Var normalizedContextVar;
 
-	private volatile Map<DirectLookupKey, DirectLookupCacheEntry> directLookupCache;
+	private volatile Map<DirectLookupKey, List<Statement>> directLookupCache;
 	private final PreparedRestrictionPlan restrictionPlan;
 
 	// We try to do as much work as possible in the constructor.
@@ -245,10 +261,9 @@ public class StatementPatternQueryEvaluationStep implements QueryEvaluationStep,
 			return var.clone();
 		} else {
 			Value original = var.getValue();
-			Value prepared = valuePreparer == null ? copyValue(original, valueFactory) : valuePreparer.apply(original);
 			// Normalized lookup operands also restore inlined bindings to result rows. Their semantic copy must retain
 			// the original's transport authority, including when a backend recursively copies a triple term.
-			Var ret = Var.of(var.getName(), RemoteBNode.preserveProvenance(original, prepared), var.isAnonymous(),
+			Var ret = Var.of(var.getName(), prepareConstantOperand(original, valueFactory), var.isAnonymous(),
 					var.isConstant());
 			if (var.hasApiInputOrigin()) {
 				ret = ret.withApiInputOrigin();
@@ -256,6 +271,11 @@ public class StatementPatternQueryEvaluationStep implements QueryEvaluationStep,
 			ret.setVariableScopeChange(var.isVariableScopeChange());
 			return ret;
 		}
+	}
+
+	private Value prepareConstantOperand(Value value, ValueFactory factory) {
+		Value prepared = valuePreparer == null ? copyValue(value, factory) : valuePreparer.apply(value);
+		return RemoteBNode.preserveProvenance(value, prepared);
 	}
 
 	private static Value copyValue(Value value, ValueFactory valueFactory) {
@@ -297,7 +317,7 @@ public class StatementPatternQueryEvaluationStep implements QueryEvaluationStep,
 	}
 
 	/** Returns an owned copy only when a statement input requires a store-native replacement. */
-	BindingSet prepareBindings(BindingSet bindings) {
+	private BindingSet prepareBindings(BindingSet bindings) {
 		if (preparedBindingAccess == null || bindings.isEmpty() || unboundTest.test(bindings)) {
 			return bindings;
 		}
@@ -386,6 +406,19 @@ public class StatementPatternQueryEvaluationStep implements QueryEvaluationStep,
 	@Override
 	public PreparedRestrictionPlan restrictionPlan() {
 		return restrictionPlan;
+	}
+
+	/** Whether the ordinary statement converter writes the variable from a subject or object in the active graph. */
+	@InternalUseOnly
+	public boolean producesDefaultGraphNode(String name) {
+		return statementPattern.getScope() == Scope.DEFAULT_CONTEXTS && statementPattern.getContextVar() == null
+				&& (producesNode(normalizedSubjectVar, name) || producesNode(normalizedObjectVar, name));
+	}
+
+	private static boolean producesNode(Var variable, String name) {
+		// The normalized slots, rather than syntax, reflect duplicate-name elimination and inlined values.
+		return variable != null && variable.getClass() == Var.class && !variable.hasValue() && !variable.isConstant()
+				&& !variable.isBNode() && name.equals(variable.getName());
 	}
 
 	private PreparedRestrictionPlan prepareRestrictionPlan(StatementRestrictionSourceProvider provider,
@@ -496,10 +529,20 @@ public class StatementPatternQueryEvaluationStep implements QueryEvaluationStep,
 
 	private CloseableIteration<? extends Statement> openStatements(Resource subject, IRI predicate, Value object,
 			Resource[] contexts) {
+		return openStatements(subject, predicate, object, contexts, null);
+	}
+
+	private CloseableIteration<? extends Statement> openStatements(Resource subject, IRI predicate, Value object,
+			Resource[] contexts, StatementFieldSelection.Demand demand) {
 		incrementIndexLookupCount();
-		CloseableIteration<? extends Statement> statements = order == null
-				? tripleSource.getStatements(subject, predicate, object, contexts)
-				: tripleSource.getStatements(order, subject, predicate, object, contexts);
+		CloseableIteration<? extends Statement> statements;
+		if (order != null) {
+			statements = tripleSource.getStatements(order, subject, predicate, object, contexts);
+		} else if (demand != null) {
+			statements = tripleSource.getStatementsForEvaluation(demand, subject, predicate, object, contexts);
+		} else {
+			statements = tripleSource.getStatements(subject, predicate, object, contexts);
+		}
 		try {
 			if (statements instanceof IndexReportingIterator reporting) {
 				String indexName = reporting.getIndexName();
@@ -507,7 +550,7 @@ public class StatementPatternQueryEvaluationStep implements QueryEvaluationStep,
 				statementPatternForMetrics.setIndexName(indexName);
 			}
 			return statements;
-		} catch (RuntimeException | Error failure) {
+		} catch (Throwable failure) {
 			ExternalValuePreparation.closeWithSuppressed(statements, failure);
 			throw failure;
 		}
@@ -537,14 +580,106 @@ public class StatementPatternQueryEvaluationStep implements QueryEvaluationStep,
 		}
 	}
 
+	/** Prepare the immediate projection's private scan without changing the standalone or restricted step. */
+	@InternalUseOnly
+	public QueryEvaluationStep forProjection(Projection projection) {
+		if (!canSelectProjection(projection)) {
+			return this;
+		}
+		Set<String> sources = new LinkedHashSet<>();
+		projection.getProjectionElemList().getElements().forEach(element -> sources.add(element.getName()));
+		return selectFields(sources);
+	}
+
+	/** Prepare the immediate group's private scan with its certified member requirements. */
+	@InternalUseOnly
+	public QueryEvaluationStep forGroup(Group group, Set<String> required, BindingSet bindings) {
+		return bindings == EmptyBindingSet.getInstance() && !ScopedUnionInput.tracksClearedSiblingInputs()
+				&& canSelectFields(group.getArg()) ? selectFields(required) : this;
+	}
+
+	private QueryEvaluationStep selectFields(Set<String> sources) {
+		boolean omitSubject = canOmit(normalizedSubjectVar, sources);
+		boolean omitPredicate = canOmit(normalizedPredicateVar, sources);
+		boolean omitObject = canOmit(normalizedObjectVar, sources);
+		int omitted = (omitSubject ? StatementFieldSelection.SUBJECT : 0)
+				| (omitPredicate ? StatementFieldSelection.PREDICATE : 0)
+				| (omitObject ? StatementFieldSelection.OBJECT : 0);
+		if (omitted == 0) {
+			return this;
+		}
+
+		var projectedConverter = preservePreboundValues(makeConvertStatementConverter(context,
+				omitSubject ? null : normalizedSubjectVar, omitPredicate ? null : normalizedPredicateVar,
+				omitObject ? null : normalizedObjectVar, normalizedContextVar));
+		var demand = new StatementFieldSelection.Demand(omitted);
+		return bindings -> {
+			if (bindings != EmptyBindingSet.getInstance() || ScopedUnionInput.tracksClearedSiblingInputs()) {
+				return evaluate(bindings);
+			}
+			var iteration = getIteration(demand, projectedConverter);
+			return iteration == null ? QueryEvaluationStep.EMPTY_ITERATION : iteration;
+		};
+	}
+
+	private boolean canSelectProjection(Projection projection) {
+		return canSelectFields(projection.getArg()) && projection.getInheritedGraphParameter() == null
+				&& projection.getProjectionContext() == null;
+	}
+
+	private boolean canSelectFields(TupleExpr input) {
+		return getClass() == StatementPatternQueryEvaluationStep.class && input == statementPatternForMetrics
+				&& order == null && !emptyGraph && context.canOmitUnusedStatementBindings()
+				&& context.getActiveGraph() == null;
+	}
+
+	/** The private empty-input scan creates a separate row containing exactly these identity bindings. */
+	@InternalUseOnly
+	public boolean emitsIdentityProjection(Projection projection) {
+		if (!canSelectProjection(projection) || context.indexedBindingLayout() == null
+				|| normalizedContextVar != null || statementPattern.getScope() != Scope.DEFAULT_CONTEXTS) {
+			return false;
+		}
+
+		Set<String> selected = new LinkedHashSet<>();
+		for (ProjectionElem element : projection.getProjectionElemList().getElements()) {
+			String source = element.getName();
+			if (!element.getProjectionAlias().orElse(source).equals(source) || !selected.add(source)) {
+				return false;
+			}
+		}
+
+		Set<String> emitted = new LinkedHashSet<>();
+		for (Var variable : new Var[] { normalizedSubjectVar, normalizedPredicateVar, normalizedObjectVar }) {
+			if (variable != null && !variable.isConstant() && !canOmit(variable, selected)) {
+				emitted.add(variable.getName());
+			}
+		}
+		return selected.equals(emitted);
+	}
+
+	private boolean canOmit(Var variable, Set<String> sources) {
+		if (variable == null || variable.hasValue() || variable.isConstant() || sources.contains(variable.getName())) {
+			return false;
+		}
+		// Repeated variables may be read by the statement equality filter even without a projected binding.
+		int occurrences = 0;
+		for (Var operand : statementPattern.getVarList()) {
+			if (operand.getName().equals(variable.getName())) {
+				occurrences++;
+			}
+		}
+		return occurrences == 1;
+	}
+
 	/**
-	 * These final conversion iterators create a fresh mutable result for every statement. A caller may therefore extend
-	 * the returned row without copying it. In particular, the fully bound lookup iterator is excluded because it
-	 * returns the caller's input bindings, and wrappers must retain their own ownership contract.
+	 * Conversion creates a fresh mutable result for every statement, so callers may extend the result in place. A
+	 * direct lookup can return the caller's input bindings when conversion is unnecessary.
 	 */
 	static boolean ownsBindingSets(CloseableIteration<BindingSet> iteration) {
 		return iteration instanceof ConvertStatementToBindingSetIterator
-				|| iteration instanceof JoinStatementWithBindingSetIterator;
+				|| iteration instanceof JoinStatementWithBindingSetIterator
+				|| iteration instanceof DirectLookupBindingSetIteration directLookup && directLookup.converter != null;
 	}
 
 	private CloseableIteration<BindingSet> getIteration(BindingSet bindings) {
@@ -570,71 +705,41 @@ public class StatementPatternQueryEvaluationStep implements QueryEvaluationStep,
 
 		Value object = getObjectVar != null ? getObjectVar.apply(bindings) : null;
 		DirectLookupKey directLookupKey = getDirectLookupKey((Resource) subject, (IRI) predicate, object, contexts);
-		DirectLookupCacheEntry cachedDirectLookup = getCachedDirectLookup(directLookupKey);
+		boolean reuseBindings = directLookupKey != null
+				&& canReuseBindingsWithoutConversion(bindings, contextValue, subject, predicate, object);
+		List<Statement> cachedDirectLookup = getCachedDirectLookup(directLookupKey);
 		if (cachedDirectLookup != null) {
-			if (cachedDirectLookup.statementCount == 0) {
+			if (cachedDirectLookup.isEmpty()) {
 				return null;
 			}
-			if (canReuseBindingsWithoutConversion(bindings, contextValue, subject, predicate, object)) {
-				return new RepeatedBindingSetIteration(cachedDirectLookup.statementCount, bindings);
-			}
-			if (cachedDirectLookup.statements == null) {
-				return new JoinStatementWithBindingSetIterator(
-						reopenUncachedIteration((Resource) subject, (IRI) predicate, object, contexts),
-						getConverter(), bindings, context);
+			if (reuseBindings) {
+				return new RepeatedBindingSetIteration(cachedDirectLookup.size(), bindings);
 			}
 			return new JoinStatementWithBindingSetIterator(
-					new CloseableIteratorIteration<>(cachedDirectLookup.statements.iterator()),
+					new CloseableIteratorIteration<>(cachedDirectLookup.iterator()),
 					getConverter(), bindings, context);
-		}
-
-		if (directLookupKey != null
-				&& canReuseBindingsWithoutConversion(bindings, contextValue, subject, predicate, object)
-				&& filterContextOrEqualVariables(statementPattern, (Resource) subject, (IRI) predicate, object,
-						contexts) == null) {
-			try {
-				incrementIndexLookupCount();
-				long statementCount = tripleSource.getStatementCount((Resource) subject, (IRI) predicate, object,
-						contexts);
-				putCachedDirectLookup(directLookupKey, DirectLookupCacheEntry.count(statementCount));
-				return statementCount == 0 ? null : new RepeatedBindingSetIteration(statementCount, bindings);
-			} catch (Throwable t) {
-				if (t instanceof InterruptedException) {
-					Thread.currentThread().interrupt();
-				}
-				throw new QueryEvaluationException(t);
-			}
 		}
 
 		CloseableIteration<? extends Statement> iteration = null;
 		try {
-			iteration = openStatements((Resource) subject, (IRI) predicate, object, contexts);
+			// A direct lookup retains its statements beyond this read, so only a consumed-at-once scan may be lazy.
+			iteration = openStatements((Resource) subject, (IRI) predicate, object, contexts,
+					directLookupKey == null ? privateScanDemand() : null);
 
 			if (iteration instanceof EmptyIteration) {
-				putCachedDirectLookup(directLookupKey, DirectLookupCacheEntry.statements(List.of()));
+				putCachedDirectLookup(directLookupKey, List.of());
 				return null;
 			}
 
 			iteration = handleFilter(contexts, (Resource) subject, (IRI) predicate, object, iteration);
 			if (directLookupKey != null) {
-				DirectLookupResult directLookupResult = cacheDirectLookupIfSmall(directLookupKey, (Resource) subject,
-						(IRI) predicate, object, contexts, iteration);
-				if (directLookupResult.cachedStatementCount >= 0
-						&& canReuseBindingsWithoutConversion(bindings, contextValue, subject, predicate, object)) {
-					if (directLookupResult.cachedStatementCount == 0) {
-						return null;
-					}
-					return new RepeatedBindingSetIteration(directLookupResult.cachedStatementCount, bindings);
-				}
-				iteration = directLookupResult.iteration;
+				return new DirectLookupBindingSetIteration(directLookupKey, iteration, bindings,
+						reuseBindings ? null : getConverter());
 			}
 
-			// Return an iterator that converts the statements to var bindings
 			return new JoinStatementWithBindingSetIterator(iteration, getConverter(), bindings, context);
 		} catch (Throwable t) {
-			if (iteration != null) {
-				iteration.close();
-			}
+			ExternalValuePreparation.closeWithSuppressed(iteration, t);
 			if (t instanceof InterruptedException) {
 				Thread.currentThread().interrupt();
 			}
@@ -671,9 +776,9 @@ public class StatementPatternQueryEvaluationStep implements QueryEvaluationStep,
 
 		Value object = getObjectVar != null ? getObjectVar.apply(bindings) : null;
 		DirectLookupKey directLookupKey = getDirectLookupKey((Resource) subject, (IRI) predicate, object, contexts);
-		DirectLookupCacheEntry cachedDirectLookup = getCachedDirectLookup(directLookupKey);
+		List<Statement> cachedDirectLookup = getCachedDirectLookup(directLookupKey);
 		if (cachedDirectLookup != null) {
-			return cachedDirectLookup.statementCount > 0;
+			return !cachedDirectLookup.isEmpty();
 		}
 
 		try {
@@ -684,7 +789,7 @@ public class StatementPatternQueryEvaluationStep implements QueryEvaluationStep,
 				boolean hasStatement = tripleSource.hasStatements((Resource) subject, (IRI) predicate, object,
 						contexts);
 				if (!hasStatement) {
-					putCachedDirectLookup(directLookupKey, DirectLookupCacheEntry.count(0));
+					putCachedDirectLookup(directLookupKey, List.of());
 				}
 				return hasStatement;
 			}
@@ -707,64 +812,15 @@ public class StatementPatternQueryEvaluationStep implements QueryEvaluationStep,
 		}
 	}
 
-	long getFullyBoundStatementCount(BindingSet bindings) {
+	/** Existence check with the same normalization as a constant statement operand. */
+	@InternalUseOnly
+	public boolean hasStatementWithConstantOperand(String name, Value value) {
 		if (emptyGraph) {
-			return 0;
+			return false;
 		}
-		if (bindings.isEmpty()) {
-			return -1;
-		}
-		if (unboundTest.test(bindings)) {
-			// the variable must remain unbound for this solution see
-			// https://www.w3.org/TR/sparql11-query/#assignment
-			return 0;
-		}
-		bindings = prepareBindings(bindings);
-
-		final Value contextValue = getContextVar != null ? getContextVar.apply(bindings) : null;
-		Resource[] contexts = contextSup.apply(contextValue);
-		if (contexts == null) {
-			return 0;
-		}
-
-		Value subject = getSubjectVar != null ? getSubjectVar.apply(bindings) : null;
-		if (subject != null && !subject.isResource()) {
-			return 0;
-		}
-
-		Value predicate = getPredicateVar != null ? getPredicateVar.apply(bindings) : null;
-		if (predicate != null && !predicate.isIRI()) {
-			return 0;
-		}
-
-		Value object = getObjectVar != null ? getObjectVar.apply(bindings) : null;
-		if (!canReuseBindingsWithoutConversion(bindings, contextValue, subject, predicate, object)) {
-			return -1;
-		}
-		if (filterContextOrEqualVariables(statementPattern, subject, predicate, object, contexts) != null) {
-			return -1;
-		}
-
-		DirectLookupKey directLookupKey = getDirectLookupKey((Resource) subject, (IRI) predicate, object, contexts);
-		if (directLookupKey == null) {
-			return -1;
-		}
-		DirectLookupCacheEntry cachedDirectLookup = getCachedDirectLookup(directLookupKey);
-		if (cachedDirectLookup != null) {
-			return cachedDirectLookup.statementCount;
-		}
-
-		try {
-			incrementIndexLookupCount();
-			long statementCount = tripleSource.getStatementCount((Resource) subject, (IRI) predicate, object, contexts);
-			putCachedDirectLookup(directLookupKey, DirectLookupCacheEntry.count(statementCount));
-			return statementCount;
-		} catch (Throwable t) {
-			if (t instanceof InterruptedException) {
-				Thread.currentThread().interrupt();
-			}
-			throw new QueryEvaluationException(t);
-		}
+		QueryBindingSet parameter = new QueryBindingSet(1);
+		parameter.addBinding(name, prepareConstantOperand(value, tripleSource.getValueFactory()));
+		return hasStatement(parameter);
 	}
 
 	private DirectLookupKey getDirectLookupKey(Resource subject, IRI predicate, Value object, Resource[] contexts) {
@@ -786,14 +842,15 @@ public class StatementPatternQueryEvaluationStep implements QueryEvaluationStep,
 		if (var == null || var.isConstant()) {
 			return true;
 		}
-		return value != null && bindings.hasBinding(var.getName());
+		return value != null && (var.hasValue() ? bindings.getValue(var.getName()) == value
+				: bindings.hasBinding(var.getName()));
 	}
 
-	private DirectLookupCacheEntry getCachedDirectLookup(DirectLookupKey directLookupKey) {
+	private List<Statement> getCachedDirectLookup(DirectLookupKey directLookupKey) {
 		if (directLookupKey == null) {
 			return null;
 		}
-		Map<DirectLookupKey, DirectLookupCacheEntry> cache = directLookupCache;
+		Map<DirectLookupKey, List<Statement>> cache = directLookupCache;
 		if (cache == null) {
 			return null;
 		}
@@ -802,18 +859,18 @@ public class StatementPatternQueryEvaluationStep implements QueryEvaluationStep,
 		}
 	}
 
-	private void putCachedDirectLookup(DirectLookupKey directLookupKey, DirectLookupCacheEntry entry) {
+	private void putCachedDirectLookup(DirectLookupKey directLookupKey, List<Statement> statements) {
 		if (directLookupKey == null) {
 			return;
 		}
-		Map<DirectLookupKey, DirectLookupCacheEntry> cache = getDirectLookupCache();
+		Map<DirectLookupKey, List<Statement>> cache = getDirectLookupCache();
 		synchronized (cache) {
-			cache.put(directLookupKey, entry);
+			cache.put(directLookupKey, statements);
 		}
 	}
 
-	private Map<DirectLookupKey, DirectLookupCacheEntry> getDirectLookupCache() {
-		Map<DirectLookupKey, DirectLookupCacheEntry> cache = directLookupCache;
+	private Map<DirectLookupKey, List<Statement>> getDirectLookupCache() {
+		Map<DirectLookupKey, List<Statement>> cache = directLookupCache;
 		if (cache == null) {
 			synchronized (this) {
 				cache = directLookupCache;
@@ -821,7 +878,7 @@ public class StatementPatternQueryEvaluationStep implements QueryEvaluationStep,
 					cache = new LinkedHashMap<>(DIRECT_LOOKUP_CACHE_MAX_ENTRIES + 1, 0.75f, true) {
 
 						@Override
-						protected boolean removeEldestEntry(Map.Entry<DirectLookupKey, DirectLookupCacheEntry> eldest) {
+						protected boolean removeEldestEntry(Map.Entry<DirectLookupKey, List<Statement>> eldest) {
 							return size() > DIRECT_LOOKUP_CACHE_MAX_ENTRIES;
 						}
 					};
@@ -832,44 +889,12 @@ public class StatementPatternQueryEvaluationStep implements QueryEvaluationStep,
 		return cache;
 	}
 
-	private DirectLookupResult cacheDirectLookupIfSmall(DirectLookupKey directLookupKey,
-			Resource subject, IRI predicate, Value object, Resource[] contexts,
-			CloseableIteration<? extends Statement> iteration) {
-		if (directLookupKey == null) {
-			return new DirectLookupResult(iteration, -1);
-		}
-
-		try (iteration) {
-			List<Statement> statements = new ArrayList<>(DIRECT_LOOKUP_CACHE_MAX_STATEMENTS);
-			while (iteration.hasNext()) {
-				if (statements.size() == DIRECT_LOOKUP_CACHE_MAX_STATEMENTS) {
-					return new DirectLookupResult(reopenUncachedIteration(subject, predicate, object, contexts), -1);
-				}
-				statements.add(iteration.next());
-			}
-
-			statements = List.copyOf(statements);
-
-			putCachedDirectLookup(directLookupKey, DirectLookupCacheEntry.statements(statements));
-			return new DirectLookupResult(new CloseableIteratorIteration<>(statements.iterator()), statements.size());
-		}
-	}
-
-	private CloseableIteration<? extends Statement> reopenUncachedIteration(Resource subject, IRI predicate,
-			Value object, Resource[] contexts) {
-		incrementIndexLookupCount();
-		CloseableIteration<? extends Statement> iteration = tripleSource.getStatements(subject, predicate, object,
-				contexts);
-		if (iteration instanceof IndexReportingIterator) {
-			String indexName = ((IndexReportingIterator) iteration).getIndexName();
-			statementPattern.setIndexName(indexName);
-			statementPatternForMetrics.setIndexName(indexName);
-		}
-		return handleFilter(contexts, subject, predicate, object, iteration);
-	}
-
 	private ConvertStatementToBindingSetIterator getIteration() {
+		return getIteration(null, null);
+	}
 
+	private ConvertStatementToBindingSetIterator getIteration(StatementFieldSelection.Demand demand,
+			BiConsumer<MutableBindingSet, Statement> projectedConverter) {
 		Var contextVar = statementPattern.getContextVar();
 		Resource[] contexts = contextSup.apply(contextVar != null ? contextVar.getValue() : null);
 
@@ -893,17 +918,14 @@ public class StatementPatternQueryEvaluationStep implements QueryEvaluationStep,
 
 		CloseableIteration<? extends Statement> iteration = null;
 		try {
-			incrementIndexLookupCount();
-			if (order != null) {
-				iteration = tripleSource.getStatements(order, (Resource) subject, (IRI) predicate, object, contexts);
-			} else {
-				iteration = tripleSource.getStatements((Resource) subject, (IRI) predicate, object, contexts);
+			StatementFieldSelection.Demand scanDemand = demand == null ? privateScanDemand() : demand;
+			int sameTermFields = order == null ? sameTermFields(subject, predicate, object) : 0;
+			if (sameTermFields != 0) {
+				// A repeated variable: the source may skip statements that cannot pass the filter added below.
+				scanDemand = new StatementFieldSelection.Demand(scanDemand == null ? 0 : scanDemand.deferredFields(),
+						sameTermFields);
 			}
-			if (iteration instanceof IndexReportingIterator) {
-				String indexName = ((IndexReportingIterator) iteration).getIndexName();
-				statementPattern.setIndexName(indexName);
-				statementPatternForMetrics.setIndexName(indexName);
-			}
+			iteration = openStatements((Resource) subject, (IRI) predicate, object, contexts, scanDemand);
 
 			if (iteration instanceof EmptyIteration) {
 				return null;
@@ -911,16 +933,32 @@ public class StatementPatternQueryEvaluationStep implements QueryEvaluationStep,
 			iteration = handleFilter(contexts, (Resource) subject, (IRI) predicate, object, iteration);
 
 			// Return an iterator that converts the statements to var bindings
-			return new ConvertStatementToBindingSetIterator(iteration, getConvertStatementConverter(), context);
+			return new ConvertStatementToBindingSetIterator(iteration,
+					projectedConverter == null ? getConvertStatementConverter() : projectedConverter, context);
 		} catch (Throwable t) {
-			if (iteration != null) {
-				iteration.close();
-			}
+			ExternalValuePreparation.closeWithSuppressed(iteration, t);
 			if (t instanceof InterruptedException) {
 				Thread.currentThread().interrupt();
 			}
 			throw new QueryEvaluationException(t);
 		}
+	}
+
+	/**
+	 * The demand for a scan whose statements are read once, at once, by this step's own filter and converter. Such a
+	 * scan may hand out statements that create a value only when it is read: a bound or constant position is then never
+	 * materialized.
+	 */
+	private StatementFieldSelection.Demand privateScanDemand() {
+		StatementFieldSelection.Demand demand = privateScanDemand;
+		if (demand == null) {
+			demand = getClass() == StatementPatternQueryEvaluationStep.class && order == null && !emptyGraph
+					&& context.canOmitUnusedStatementBindings() && context.getActiveGraph() == null
+							? ALL_FIELDS_ON_DEMAND
+							: NO_FIELDS_ON_DEMAND;
+			privateScanDemand = demand;
+		}
+		return demand == NO_FIELDS_ON_DEMAND ? null : demand;
 	}
 
 	private BiConsumer<MutableBindingSet, Statement> getConverter() {
@@ -1004,6 +1042,26 @@ public class StatementPatternQueryEvaluationStep implements QueryEvaluationStep,
 			filter = st -> st.getContext() != null;
 		}
 		return filterSameVariable(statementPattern, subjValue, predValue, objValue, filter);
+	}
+
+	/** The statement fields that {@link #filterSameVariable} requires to hold the same term, or 0. */
+	private int sameTermFields(Value subjValue, Value predValue, Value objValue) {
+		Var subjVar = statementPattern.getSubjectVar();
+		Var predVar = statementPattern.getPredicateVar();
+		Var objVar = statementPattern.getObjectVar();
+		int fields = 0;
+		if (subjVar != null && subjValue == null) {
+			if (subjVar.equals(predVar)) {
+				fields |= StatementFieldSelection.SUBJECT | StatementFieldSelection.PREDICATE;
+			}
+			if (subjVar.equals(objVar)) {
+				fields |= StatementFieldSelection.SUBJECT | StatementFieldSelection.OBJECT;
+			}
+		}
+		if (predVar != null && predValue == null && predVar.equals(objVar)) {
+			fields |= StatementFieldSelection.PREDICATE | StatementFieldSelection.OBJECT;
+		}
+		return fields;
 	}
 
 	/**
@@ -1218,36 +1276,6 @@ public class StatementPatternQueryEvaluationStep implements QueryEvaluationStep,
 		}
 	}
 
-	private static final class DirectLookupCacheEntry {
-
-		private final List<Statement> statements;
-		private final long statementCount;
-
-		private DirectLookupCacheEntry(List<Statement> statements, long statementCount) {
-			this.statements = statements;
-			this.statementCount = statementCount;
-		}
-
-		private static DirectLookupCacheEntry statements(List<Statement> statements) {
-			return new DirectLookupCacheEntry(statements, statements.size());
-		}
-
-		private static DirectLookupCacheEntry count(long statementCount) {
-			return new DirectLookupCacheEntry(null, statementCount);
-		}
-	}
-
-	private static final class DirectLookupResult {
-
-		private final CloseableIteration<? extends Statement> iteration;
-		private final long cachedStatementCount;
-
-		private DirectLookupResult(CloseableIteration<? extends Statement> iteration, long cachedStatementCount) {
-			this.iteration = iteration;
-			this.cachedStatementCount = cachedStatementCount;
-		}
-	}
-
 	/**
 	 * Converts statements into the required bindingsets. A lot of work is done in the constructor and then uses
 	 * invokedynamic code with lambdas for the actual conversion.
@@ -1256,7 +1284,8 @@ public class StatementPatternQueryEvaluationStep implements QueryEvaluationStep,
 	 * it of course is an unneeded expense.
 	 */
 	private static final class ConvertStatementToBindingSetIterator
-			implements CloseableIteration<BindingSet>, IndexReportingIterator, CooperativeCancellation {
+			implements CloseableIteration<BindingSet>, IndexReportingIterator, CooperativeCancellation,
+			BufferedIteration {
 
 		private final BiConsumer<MutableBindingSet, Statement> converter;
 		private final QueryEvaluationContext context;
@@ -1275,6 +1304,11 @@ public class StatementPatternQueryEvaluationStep implements QueryEvaluationStep,
 			this.iteration = iteration;
 			this.converter = converter;
 			this.context = context;
+		}
+
+		@Override
+		public IntSupplier bufferedRowsSource() {
+			return BufferedIteration.bufferedRowsSource(iteration);
 		}
 
 		private BindingSet convert(Statement st) {
@@ -1350,7 +1384,8 @@ public class StatementPatternQueryEvaluationStep implements QueryEvaluationStep,
 	}
 
 	private static final class JoinStatementWithBindingSetIterator
-			implements CloseableIteration<BindingSet>, IndexReportingIterator, CooperativeCancellation {
+			implements CloseableIteration<BindingSet>, IndexReportingIterator, CooperativeCancellation,
+			BufferedIteration {
 
 		private final BiConsumer<MutableBindingSet, Statement> converter;
 		private final QueryEvaluationContext context;
@@ -1374,6 +1409,11 @@ public class StatementPatternQueryEvaluationStep implements QueryEvaluationStep,
 			this.context = context;
 			this.bindings = bindings;
 
+		}
+
+		@Override
+		public IntSupplier bufferedRowsSource() {
+			return BufferedIteration.bufferedRowsSource(iteration);
 		}
 
 		private BindingSet convert(Statement st) {
@@ -1445,6 +1485,111 @@ public class StatementPatternQueryEvaluationStep implements QueryEvaluationStep,
 
 		private IndexReportingIterator indexReporter() {
 			return iteration instanceof IndexReportingIterator ? (IndexReportingIterator) iteration : null;
+		}
+	}
+
+	private final class DirectLookupBindingSetIteration extends AbstractCloseableIteration<BindingSet>
+			implements IndexReportingIterator, CooperativeCancellation {
+
+		private final DirectLookupKey key;
+		private final CloseableIteration<? extends Statement> source;
+		private final IndexReportingIterator indexReporter;
+		private final BindingSet bindings;
+		private final BiConsumer<MutableBindingSet, Statement> converter;
+		private List<Statement> cacheCandidate = List.of();
+		private volatile boolean cancellationRequested;
+
+		private DirectLookupBindingSetIteration(DirectLookupKey key, CloseableIteration<? extends Statement> source,
+				BindingSet bindings, BiConsumer<MutableBindingSet, Statement> converter) {
+			this.key = key;
+			this.source = source;
+			indexReporter = source instanceof IndexReportingIterator reporter ? reporter : null;
+			this.bindings = bindings;
+			this.converter = converter;
+		}
+
+		@Override
+		public boolean hasNext() {
+			if (isClosed()) {
+				return false;
+			}
+			try {
+				if (source.hasNext()) {
+					return true;
+				}
+				// Some sources signal interruption by returning false.
+				List<Statement> completed = Thread.currentThread().isInterrupted() ? null : cacheCandidate;
+				close();
+				if (completed != null && !cancellationRequested) {
+					putCachedDirectLookup(key, List.copyOf(completed));
+				}
+				return false;
+			} catch (RuntimeException | Error failure) {
+				ExternalValuePreparation.closeWithSuppressed(this, failure);
+				throw failure;
+			}
+		}
+
+		@Override
+		public BindingSet next() {
+			if (isClosed()) {
+				throw new NoSuchElementException();
+			}
+			try {
+				Statement statement = source.next();
+				BindingSet result = bindings;
+				if (converter != null) {
+					MutableBindingSet converted = context.createBindingSet(bindings);
+					converter.accept(converted, statement);
+					result = converted;
+				}
+				if (cacheCandidate != null) {
+					if (cacheCandidate.size() == DIRECT_LOOKUP_CACHE_MAX_STATEMENTS) {
+						cacheCandidate = null;
+					} else {
+						if (cacheCandidate.isEmpty()) {
+							cacheCandidate = new ArrayList<>(DIRECT_LOOKUP_CACHE_MAX_STATEMENTS);
+						}
+						cacheCandidate.add(statement);
+					}
+				}
+				return result;
+			} catch (RuntimeException | Error failure) {
+				ExternalValuePreparation.closeWithSuppressed(this, failure);
+				throw failure;
+			}
+		}
+
+		@Override
+		protected void handleClose() {
+			cacheCandidate = null;
+			source.close();
+		}
+
+		@Override
+		public boolean requestCancellation() {
+			cancellationRequested = true;
+			return !isClosed() && CooperativeCancellation.forward(source);
+		}
+
+		@Override
+		public String getIndexName() {
+			return indexReporter == null ? "" : indexReporter.getIndexName();
+		}
+
+		@Override
+		public long getSourceRowsScannedActual() {
+			return indexReporter == null ? -1 : indexReporter.getSourceRowsScannedActual();
+		}
+
+		@Override
+		public long getSourceRowsMatchedActual() {
+			return indexReporter == null ? -1 : indexReporter.getSourceRowsMatchedActual();
+		}
+
+		@Override
+		public long getSourceRowsFilteredActual() {
+			return indexReporter == null ? -1 : indexReporter.getSourceRowsFilteredActual();
 		}
 	}
 

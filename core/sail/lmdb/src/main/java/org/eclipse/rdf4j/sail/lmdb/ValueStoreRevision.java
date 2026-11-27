@@ -25,6 +25,10 @@ import org.eclipse.rdf4j.common.annotation.Experimental;
 import org.eclipse.rdf4j.common.annotation.InternalUseOnly;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.sail.SailException;
+import org.eclipse.rdf4j.sail.lmdb.model.LmdbBNode;
+import org.eclipse.rdf4j.sail.lmdb.model.LmdbIRI;
+import org.eclipse.rdf4j.sail.lmdb.model.LmdbLiteral;
+import org.eclipse.rdf4j.sail.lmdb.model.LmdbTripleTerm;
 import org.eclipse.rdf4j.sail.lmdb.model.LmdbValue;
 
 /**
@@ -244,11 +248,21 @@ public interface ValueStoreRevision {
 		public boolean resolveValue(long id, LmdbValue value) {
 			if (valueStore != null && valueStore.resolveValue(id, value, this)) {
 				valueStore.protectDecodedExternalValue(value);
-				// set unwrapped version of revision
-				value.setInternalID(id, revision);
+				setDecodedIdentity(id, value);
 				return true;
 			}
 			return false;
+		}
+
+		void setDecodedIdentity(long id, LmdbValue value) {
+			Class<?> type = value.getClass();
+			if (association != null && association.isCommitted() && idEpoch() != null
+					&& (type == LmdbIRI.class || type == LmdbBNode.class || type == LmdbLiteral.class
+							|| type == LmdbTripleTerm.class)) {
+				value.setInternalIdentity(new LmdbValue.InternalIdentity(id, revision, true));
+			} else {
+				value.setInternalID(id, revision);
+			}
 		}
 
 		@Override

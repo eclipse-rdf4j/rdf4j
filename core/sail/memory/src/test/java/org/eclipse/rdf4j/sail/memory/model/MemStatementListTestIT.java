@@ -20,10 +20,10 @@ import static org.junit.jupiter.api.Assertions.fail;
 import java.io.IOException;
 import java.io.InputStream;
 import java.util.Arrays;
-import java.util.Comparator;
 import java.util.HashSet;
 import java.util.LinkedList;
 import java.util.List;
+import java.util.Map;
 import java.util.Objects;
 import java.util.Random;
 import java.util.Set;
@@ -69,7 +69,9 @@ public class MemStatementListTestIT {
 					Model parse = Rio.parse(resourceAsStream, RDFFormat.TURTLE);
 
 					parse.stream()
-							.sorted(Comparator.comparing(Object::toString))
+							.map(statement -> Map.entry(statement.toString(), statement))
+							.sorted(Map.Entry.comparingByKey())
+							.map(Map.Entry::getValue)
 							.forEach(statement -> {
 								connection.addStatement(statement.getSubject(), statement.getPredicate(),
 										statement.getObject(), statement.getContext());
@@ -81,7 +83,9 @@ public class MemStatementListTestIT {
 				try (Stream<? extends Statement> stream = connection.getStatements(null, null, null, false).stream()) {
 					statements = stream
 							.map(s -> ((MemStatement) s))
-							.sorted(Comparator.comparing(Object::toString))
+							.map(statement -> Map.entry(statement.toString(), statement))
+							.sorted(Map.Entry.comparingByKey())
+							.map(Map.Entry::getValue)
 							.limit(10000)
 							.collect(Collectors.toList());
 				}
