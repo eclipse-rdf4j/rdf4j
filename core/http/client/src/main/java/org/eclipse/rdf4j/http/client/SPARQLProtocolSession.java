@@ -72,6 +72,8 @@ import org.eclipse.rdf4j.query.TupleQueryResultHandlerException;
 import org.eclipse.rdf4j.query.UnsupportedQueryLanguageException;
 import org.eclipse.rdf4j.query.impl.BackgroundGraphResult;
 import org.eclipse.rdf4j.query.impl.DatasetUtils;
+import org.eclipse.rdf4j.query.impl.RemoteBNode;
+import org.eclipse.rdf4j.query.impl.RepositoryBNode;
 import org.eclipse.rdf4j.query.resultio.BooleanQueryResultFormat;
 import org.eclipse.rdf4j.query.resultio.BooleanQueryResultParser;
 import org.eclipse.rdf4j.query.resultio.BooleanQueryResultParserRegistry;
@@ -81,6 +83,7 @@ import org.eclipse.rdf4j.query.resultio.QueryResultParseException;
 import org.eclipse.rdf4j.query.resultio.TupleQueryResultFormat;
 import org.eclipse.rdf4j.query.resultio.TupleQueryResultParser;
 import org.eclipse.rdf4j.query.resultio.TupleQueryResultParserRegistry;
+import org.eclipse.rdf4j.query.resultio.TupleResultValueFactory;
 import org.eclipse.rdf4j.query.resultio.helpers.BackgroundTupleResult;
 import org.eclipse.rdf4j.query.resultio.helpers.QueryResultCollector;
 import org.eclipse.rdf4j.repository.RepositoryException;
@@ -172,6 +175,75 @@ public class SPARQLProtocolSession implements HttpClientDependent, AutoCloseable
 		if (bNodeOriginEnabled) {
 			method.addHeader(BNodeOriginTransport.HEADER, BNodeOriginTransport.VERSION);
 		}
+	}
+
+	private static final ThreadLocal<TupleResponseAdmission> TUPLE_RESPONSE_ADMISSION = new ThreadLocal<>();
+
+	/** Scopes decoding to the HTTP request made by an existing tuple-query entry point. */
+	@InternalUseOnly
+	public TupleResponseAdmission admitTupleResponse(RemoteBNode.ResponseScope response) {
+		TupleResponseAdmission previous = TUPLE_RESPONSE_ADMISSION.get();
+		TupleResponseAdmission admission = new TupleResponseAdmission(this, response, previous);
+		TUPLE_RESPONSE_ADMISSION.set(admission);
+		return admission;
+	}
+
+	@InternalUseOnly
+	public static final class TupleResponseAdmission implements AutoCloseable {
+		private final SPARQLProtocolSession session;
+		private final RemoteBNode.ResponseScope scope;
+		private final TupleResponseAdmission previous;
+		private TupleQueryResult result;
+		private TupleQueryResultHandler handler;
+		private boolean used;
+
+		private TupleResponseAdmission(SPARQLProtocolSession session, RemoteBNode.ResponseScope scope,
+				TupleResponseAdmission previous) {
+			this.session = session;
+			this.scope = scope;
+			this.previous = previous;
+		}
+
+		public boolean admitted(TupleQueryResult rows) {
+			return result != null && result == rows;
+		}
+
+		public boolean admitted(TupleQueryResultHandler target) {
+			return handler != null && handler == target;
+		}
+
+		@Override
+		public void close() {
+			if (previous == null) {
+				TUPLE_RESPONSE_ADMISSION.remove();
+			} else {
+				TUPLE_RESPONSE_ADMISSION.set(previous);
+			}
+		}
+	}
+
+	private TupleResponseAdmission takeTupleResponseAdmission() {
+		TupleResponseAdmission admission = TUPLE_RESPONSE_ADMISSION.get();
+		if (admission == null || admission.session != this || admission.used) {
+			return null;
+		}
+		admission.used = true;
+		return admission;
+	}
+
+	private ValueFactory tupleResultFactory(boolean origins, TupleResponseAdmission admission) {
+		ValueFactory factory = getValueFactory();
+		if (admission == null) {
+			return origins ? new TupleResultValueFactory(factory, BNodeOriginTransport::decodeLabel, false) : factory;
+		}
+		RemoteBNode.ResponseScope scope = admission.scope;
+		return new TupleResultValueFactory(factory, label -> {
+			if (!origins) {
+				return scope.admitDecodedLabel(label, true);
+			}
+			RepositoryBNode node = BNodeOriginTransport.decodeLabel(label);
+			return scope.admitDecodedLabel(node.isReference() ? node.getRawID() : label, node.isReference());
+		}, true);
 	}
 
 	private TupleQueryResultFormat preferredTQRFormat = TupleQueryResultFormat.SPARQL;
@@ -662,6 +734,7 @@ public class SPARQLProtocolSession implements HttpClientDependent, AutoCloseable
 	protected TupleQueryResult getBackgroundTupleQueryResult(HttpRequest method, WeakReference<?> callerRef)
 			throws RepositoryException, QueryInterruptedException, MalformedQueryException, IOException {
 
+		TupleResponseAdmission admission = takeTupleResponseAdmission();
 		boolean submitted = false;
 
 		// Specify which formats we support
@@ -680,10 +753,12 @@ public class SPARQLProtocolSession implements HttpClientDependent, AutoCloseable
 			QueryResultFormat format = TupleQueryResultFormat.matchMIMEType(mimeType, tqrFormats)
 					.orElseThrow(() -> new RepositoryException(
 							"Server responded with an unsupported file format: " + mimeType));
-			TupleQueryResultParser parser = QueryResultIO.createTupleParser(format, getValueFactory());
+			boolean origins = negotiatedBNodeOrigin(method, response, TupleQueryResultFormat.BINARY.equals(format));
+			TupleQueryResultParser parser = QueryResultIO.createTupleParser(format,
+					tupleResultFactory(origins, admission));
 			tRes = background.parse(parser, responseClosingStream(response), callerRef);
-			if (negotiatedBNodeOrigin(method, response, TupleQueryResultFormat.BINARY.equals(format))) {
-				tRes = BNodeOriginTransport.map(tRes, BNodeOriginTransport::decode);
+			if (admission != null) {
+				admission.result = tRes;
 			}
 			submitted = true;
 			return tRes;
@@ -701,6 +776,7 @@ public class SPARQLProtocolSession implements HttpClientDependent, AutoCloseable
 	protected void getTupleQueryResult(HttpRequest method, TupleQueryResultHandler handler)
 			throws IOException, TupleQueryResultHandlerException, RepositoryException, MalformedQueryException,
 			UnauthorizedException, QueryInterruptedException {
+		TupleResponseAdmission admission = takeTupleResponseAdmission();
 		// Specify which formats we support
 		Set<QueryResultFormat> tqrFormats = TupleQueryResultParserRegistry.getInstance().getKeys();
 		if (tqrFormats.isEmpty()) {
@@ -719,14 +795,18 @@ public class SPARQLProtocolSession implements HttpClientDependent, AutoCloseable
 
 				// Check if we can pass through to the writer directly
 				boolean origins = negotiatedBNodeOrigin(method, response, TupleQueryResultFormat.BINARY.equals(format));
-				if (!origins && handler instanceof Sink && passThrough(response, format, ((Sink) handler))) {
+				if (admission == null && !origins && handler instanceof Sink
+						&& passThrough(response, format, ((Sink) handler))) {
 					return;
 				}
 
 				// we need to parse the result and re-serialize.
-				TupleQueryResultParser parser = QueryResultIO.createTupleParser(format, getValueFactory());
-				parser.setQueryResultHandler(
-						origins ? BNodeOriginTransport.map(handler, BNodeOriginTransport::decode) : handler);
+				TupleQueryResultParser parser = QueryResultIO.createTupleParser(format,
+						tupleResultFactory(origins, admission));
+				parser.setQueryResultHandler(handler);
+				if (admission != null) {
+					admission.handler = handler;
+				}
 				parser.parseQueryResult(response.getBodyAsStream());
 			} catch (QueryResultParseException e) {
 				throw new RepositoryException("Malformed query result from server", e);

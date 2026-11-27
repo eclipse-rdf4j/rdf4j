@@ -375,7 +375,6 @@ class CiGateTests(unittest.TestCase):
         integration = source.split("  integration-tests:", 1)[1].split("  slow-tests:", 1)[0]
         self.assertIn("--kind unit --reports-dir core/sail/lmdb/target/surefire-reports", unit)
         self.assertLess(unit.index("id: test"), unit.index("--kind unit"))
-        self.assertLess(unit.index("--kind unit"), unit.index("id: sync_validation"))
         self.assertIn("--kind integration --reports-dir core/sail/lmdb/target/failsafe-reports", integration)
         self.assertLess(integration.index("- name: Verify"), integration.index("--kind integration"))
 

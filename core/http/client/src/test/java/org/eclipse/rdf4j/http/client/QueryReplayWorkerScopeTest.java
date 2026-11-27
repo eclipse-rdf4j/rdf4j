@@ -35,6 +35,60 @@ class QueryReplayWorkerScopeTest {
 	private static final ThreadLocal<String> ACTIVE_WORKER_SCOPE = new ThreadLocal<>();
 
 	@Test
+	void filteredChainSharesTheOriginalCheckpointLifetime() {
+		AtomicInteger checkpoints = new AtomicInteger();
+		Runnable mustStayClosed = () -> {
+			throw new AssertionError("Retired checkpoint ran");
+		};
+		var retired = QueryExecutionContext.activateReplaySafepoint(mustStayClosed);
+		try (var active = QueryExecutionContext.activateReplaySafepoint(checkpoints::incrementAndGet)) {
+			retired.close();
+			var captured = QueryExecutionContext.captureReplayContext();
+			captured.run(QueryExecutionContext::checkpointReplaySafepoint);
+			assertEquals(1, checkpoints.get());
+			active.close();
+			captured.run(QueryExecutionContext::checkpointReplaySafepoint);
+			assertEquals(1, checkpoints.get());
+		} finally {
+			retired.close();
+		}
+	}
+
+	@Test
+	void admissionOnlyScopeStillInstallsWorkerOwnershipWithoutAnActiveReplayCallback() throws Exception {
+		var checkpoint = QueryExecutionContext.replayCheckpoint();
+		var executor = Executors.newSingleThreadExecutor();
+		var owner = new Object();
+		var scope = ownerScope(owner, new AtomicReference<>());
+		try (var admission = QueryExecutionContext.activateWorkerAdmission(() -> scope)) {
+			assertFalse(checkpoint.hasActiveCallback());
+			var context = QueryExecutionContext.captureReplayContext();
+			assertTrue(context.hasReplayScopes());
+			assertTrue(context.ownsCancellation(owner));
+			var calls = new AtomicInteger();
+			try (var replay = QueryExecutionContext.activateReplaySafepoint(calls::incrementAndGet)) {
+				assertTrue(checkpoint.hasActiveCallback());
+				try (var deferred = QueryExecutionContext.deferReplaySafepoints()) {
+					assertFalse(checkpoint.hasActiveCallback());
+					checkpoint.checkpointNow();
+				}
+				assertEquals(0, calls.get());
+				checkpoint.checkpointNow();
+				assertEquals(1, calls.get());
+				executor.submit(() -> context.run(() -> {
+					assertTrue(QueryExecutionContext.currentOwnsCancellation(owner));
+					assertFalse(checkpoint.hasActiveCallback());
+					checkpoint.checkpointNow();
+				})).get(5, TimeUnit.SECONDS);
+				assertEquals(1, calls.get());
+			}
+		} finally {
+			executor.shutdownNow();
+			assertTrue(executor.awaitTermination(5, TimeUnit.SECONDS));
+		}
+	}
+
+	@Test
 	void capturedWorkerScopeRemainsUsableAfterSourceScopesClose() throws Exception {
 		ExecutorService executor = Executors.newSingleThreadExecutor();
 		AtomicBoolean sourceScopeOpen = new AtomicBoolean(true);

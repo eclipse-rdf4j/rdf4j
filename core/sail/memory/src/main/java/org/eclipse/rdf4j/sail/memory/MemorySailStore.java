@@ -58,6 +58,7 @@ import org.eclipse.rdf4j.sail.base.SailDataset;
 import org.eclipse.rdf4j.sail.base.SailSink;
 import org.eclipse.rdf4j.sail.base.SailSource;
 import org.eclipse.rdf4j.sail.base.SailStore;
+import org.eclipse.rdf4j.sail.base.StableStatementSailDataset;
 import org.eclipse.rdf4j.sail.memory.model.MemBNode;
 import org.eclipse.rdf4j.sail.memory.model.MemIRI;
 import org.eclipse.rdf4j.sail.memory.model.MemResource;
@@ -1417,7 +1418,12 @@ class MemorySailStore implements SailStore {
 	/**
 	 * @author James Leigh
 	 */
-	private final class MemorySailDataset implements SailDataset {
+	private final class MemorySailDataset implements SailDataset, StableStatementSailDataset {
+
+		@Override
+		public boolean hasStableStatementRelation() {
+			return snapshot >= 0;
+		}
 
 		private final boolean explicit;
 
@@ -1559,7 +1565,7 @@ class MemorySailStore implements SailStore {
 			// Filter more thoroughly by considering snapshot and read-mode
 			// parameters
 			try (MemStatementIterator iter = new MemStatementIterator(contextStatements, null, null,
-					null, null, snapshot, null)) {
+					null, explicit, snapshot, null)) {
 				return iter.hasNext();
 			}
 		}

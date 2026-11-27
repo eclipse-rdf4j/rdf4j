@@ -205,19 +205,7 @@ run_playwright() {
     export FONTCONFIG_FILE="${E2E_DIR}/fontconfig/fonts.conf"
   fi
 
-  if [ -n "$E2E_BROWSER" ]; then
-    if [ "$NEEDS_XVFB" = "true" ]; then
-      xvfb-run -a -s "-screen 0 1280x1024x24 -nolisten tcp" npx playwright test --project="$E2E_BROWSER"
-    else
-      npx playwright test --project="$E2E_BROWSER"
-    fi
-  else
-    if [ "$NEEDS_XVFB" = "true" ]; then
-      xvfb-run -a -s "-screen 0 1280x1024x24 -nolisten tcp" npx playwright test
-    else
-      npx playwright test
-    fi
-  fi
+  E2E_BROWSER="$E2E_BROWSER" E2E_NEEDS_XVFB="$NEEDS_XVFB" node ./run-playwright.js
 }
 
 trap 'cleanup $?' EXIT

@@ -105,25 +105,29 @@ public abstract class SPARQLSyntaxComplianceTest extends SPARQLComplianceTest {
 								dataBlockUpdate = true;
 
 								MemoryStore store = new MemoryStore();
-								store.init();
-								NotifyingSailConnection conn = store.getConnection();
 								try {
-									conn.begin();
-									SailUpdateExecutor exec = new SailUpdateExecutor(conn, store.getValueFactory(),
-											null);
-									exec.executeUpdate(updateExpr, null, null, true, -1);
-									conn.rollback();
-									fail("Negative test case should have failed to parse");
-								} catch (SailException e) {
-									if (!(e.getCause() instanceof RDFParseException)) {
-										logger.error("unexpected error in negative test case", e);
-										fail("unexpected error in negative test case");
+									store.init();
+									NotifyingSailConnection conn = store.getConnection();
+									try {
+										conn.begin();
+										SailUpdateExecutor exec = new SailUpdateExecutor(conn, store.getValueFactory(),
+												null);
+										exec.executeUpdate(updateExpr, null, null, true, -1);
+										conn.rollback();
+										fail("Negative test case should have failed to parse");
+									} catch (SailException e) {
+										if (!(e.getCause() instanceof RDFParseException)) {
+											logger.error("unexpected error in negative test case", e);
+											fail("unexpected error in negative test case");
+										}
+										// fall through - a parse exception is expected for a
+										// negative test case
+										conn.rollback();
+									} finally {
+										conn.close();
 									}
-									// fall through - a parse exception is expected for a
-									// negative test case
-									conn.rollback();
 								} finally {
-									conn.close();
+									store.shutDown();
 								}
 							}
 						}
@@ -182,11 +186,6 @@ public abstract class SPARQLSyntaxComplianceTest extends SPARQLComplianceTest {
 			SailRepository sailRepository = new SailRepository(new MemoryStore());
 			try (SailRepositoryConnection connection = sailRepository.getConnection()) {
 				connection.add(new URL(filename), filename, RDFFormat.TURTLE);
-			} catch (IOException e) {
-				throw new RuntimeException(e);
-			}
-
-			try (SailRepositoryConnection connection = sailRepository.getConnection()) {
 
 				String manifestQuery = " PREFIX qt: <http://www.w3.org/2001/sw/DataAccess/tests/test-query#> "
 						+ "PREFIX mf: <http://www.w3.org/2001/sw/DataAccess/tests/test-manifest#> "
@@ -253,6 +252,11 @@ public abstract class SPARQLSyntaxComplianceTest extends SPARQLComplianceTest {
 						}
 					}
 				}
+
+			} catch (IOException e) {
+				throw new RuntimeException(e);
+			} finally {
+				sailRepository.shutDown();
 
 			}
 

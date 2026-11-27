@@ -115,9 +115,11 @@ class LmdbBulkLoadTest {
 		ByteArrayOutputStream standardOutput = new ByteArrayOutputStream();
 		ByteArrayOutputStream standardError = new ByteArrayOutputStream();
 
+		// Four partitions avoid creating and forcing hundreds of empty dictionary indexes for tiny option fixtures.
 		int exitCode = LmdbBulkLoad.run(new String[] {
 				"--store", store.toString(),
 				"--input", input.toString(),
+				"--partitions", "4",
 				"--value-capacity", "min:64MiB",
 				"--triple-capacity", "factor:2",
 				"--progress", "none"
@@ -151,6 +153,7 @@ class LmdbBulkLoadTest {
 
 			int exitCode = LmdbBulkLoad.run(new String[] {
 					"--store", store.toString(), "--input", input.toString(),
+					"--partitions", "4",
 					"--value-capacity", "factor:1.5", "--triple-capacity", "min:1", "--progress", "none"
 			}, new ByteArrayInputStream(new byte[0]), new PrintStream(standardOutput), new PrintStream(standardError));
 
@@ -306,6 +309,7 @@ class LmdbBulkLoadTest {
 		int exitCode = LmdbBulkLoad.run(new String[] {
 				"--store", store.toString(),
 				"--input", input.toString(),
+				"--partitions", "4",
 				"--statement-indexes", "ospc,spoc,posc",
 				"--triple-term-indexes", "posc",
 				"--inline-literals", "false",
@@ -743,6 +747,7 @@ class LmdbBulkLoadTest {
 		int exitCode = LmdbBulkLoad.run(new String[] {
 				"--store", store.toString(),
 				"--input", input.toString(),
+				"--partitions", "4",
 				"--triple-term-indexes", "none",
 				"--progress", "none"
 		}, new ByteArrayInputStream(new byte[0]), new PrintStream(standardOutput), new PrintStream(standardError));
@@ -1085,6 +1090,7 @@ class LmdbBulkLoadTest {
 				"--store", temporaryDirectory.resolve("store").toString(),
 				"--input", inputDirectory.toString(),
 				"--input", third.toString(),
+				"--partitions", "4",
 				"--workers", "2",
 				"--queue-batches", "2",
 				"--progress", "plain"
@@ -1116,6 +1122,7 @@ class LmdbBulkLoadTest {
 		int exitCode = LmdbBulkLoad.run(new String[] {
 				"--store", temporaryDirectory.resolve("indexed-progress-store").toString(),
 				"--input", input.toString(),
+				"--partitions", "4",
 				"--statement-indexes", "spoc,posc",
 				"--triple-term-indexes", "none",
 				"--progress", "plain"
@@ -1142,6 +1149,7 @@ class LmdbBulkLoadTest {
 		int exitCode = LmdbBulkLoad.run(new String[] {
 				"--store", temporaryDirectory.resolve("json-indexed-progress-store").toString(),
 				"--input", input.toString(),
+				"--partitions", "4",
 				"--parser", "fast",
 				"--statement-indexes", "spoc,posc",
 				"--triple-term-indexes", "spoc,cspo",
@@ -1195,6 +1203,7 @@ class LmdbBulkLoadTest {
 		int exitCode = LmdbBulkLoad.run(new String[] {
 				"--store", temporaryDirectory.resolve("empty-index-progress-store").toString(),
 				"--input", input.toString(),
+				"--partitions", "4",
 				"--statement-indexes", "spoc,posc",
 				"--triple-term-indexes", "none",
 				"--progress", "plain"
@@ -1221,6 +1230,7 @@ class LmdbBulkLoadTest {
 		int exitCode = LmdbBulkLoad.run(new String[] {
 				"--store", temporaryDirectory.resolve("store").toString(),
 				"--input", input.toString(),
+				"--partitions", "4",
 				"--compression", "7",
 				"--progress", "none"
 		}, new ByteArrayInputStream(new byte[0]), new PrintStream(standardOutput), new PrintStream(standardError));
@@ -1244,6 +1254,7 @@ class LmdbBulkLoadTest {
 		int exitCode = LmdbBulkLoad.run(new String[] {
 				"--store", temporaryDirectory.resolve("store").toString(),
 				"--input", input.toString(),
+				"--partitions", "4",
 				"--compression", "none",
 				"--progress", "none"
 		}, new ByteArrayInputStream(new byte[0]), new PrintStream(standardOutput), new PrintStream(standardError));
@@ -1266,6 +1277,7 @@ class LmdbBulkLoadTest {
 		int exitCode = LmdbBulkLoad.run(new String[] {
 				"--store", temporaryDirectory.resolve("store").toString(),
 				"--input", input.toString(),
+				"--partitions", "4",
 				"--progress", "none"
 		}, new ByteArrayInputStream(new byte[0]), new PrintStream(standardOutput), new PrintStream(standardError));
 
@@ -1285,6 +1297,7 @@ class LmdbBulkLoadTest {
 		int exitCode = LmdbBulkLoad.run(new String[] {
 				"--store", temporaryDirectory.resolve("turtle-store").toString(),
 				"--input", input.toString(),
+				"--partitions", "4",
 				"--progress", "none"
 		}, new ByteArrayInputStream(new byte[0]), new PrintStream(standardOutput), new PrintStream(standardError));
 
@@ -1308,6 +1321,7 @@ class LmdbBulkLoadTest {
 		int exitCode = LmdbBulkLoad.run(new String[] {
 				"--store", temporaryDirectory.resolve("store").toString(),
 				"--input", input.toString(),
+				"--partitions", "4",
 				"--compression-runs", "fast",
 				"--compression-staged", "17",
 				"--progress", "none"
@@ -1336,6 +1350,7 @@ class LmdbBulkLoadTest {
 		int exitCode = LmdbBulkLoad.run(new String[] {
 				"--store", temporaryDirectory.resolve("store").toString(),
 				"--input", input.toString(),
+				"--partitions", "4",
 				"--compression", "12",
 				"--compression-runs", "fast",
 				"--progress", "none"
@@ -1363,6 +1378,7 @@ class LmdbBulkLoadTest {
 		int exitCode = LmdbBulkLoad.run(new String[] {
 				"--store", temporaryDirectory.resolve("store").toString(),
 				"--input", input.toString(),
+				"--partitions", "4",
 				"--compression", "fastest",
 				"--compression-artifact", "id-quads=none",
 				"--compression-artifact", "staged-statements=17",
@@ -1391,6 +1407,7 @@ class LmdbBulkLoadTest {
 		int exitCode = LmdbBulkLoad.run(new String[] {
 				"--store", temporaryDirectory.resolve("store").toString(),
 				"--input", input.toString(),
+				"--partitions", "4",
 				"--compression-artifact", "sorters=none",
 				"--progress", "none"
 		}, new ByteArrayInputStream(new byte[0]), new PrintStream(standardOutput), new PrintStream(standardError));
@@ -1444,6 +1461,7 @@ class LmdbBulkLoadTest {
 			int exitCode = LmdbBulkLoad.run(new String[] {
 					"--store", temporaryDirectory.resolve("store-" + level).toString(),
 					"--input", input.toString(),
+					"--partitions", "4",
 					"--compression-runs", "none",
 					"--compression-staged", Integer.toString(level),
 					"--progress", "none"
@@ -1724,6 +1742,7 @@ class LmdbBulkLoadTest {
 		int exitCode = LmdbBulkLoad.run(new String[] {
 				"--store", store.toString(),
 				"--input", input.toString(),
+				"--partitions", "4",
 				"--temporary-directory", spill.toString()
 		}, new ByteArrayInputStream(new byte[0]), new PrintStream(new ByteArrayOutputStream()),
 				new PrintStream(standardError), temporaryDirectory, monitor);

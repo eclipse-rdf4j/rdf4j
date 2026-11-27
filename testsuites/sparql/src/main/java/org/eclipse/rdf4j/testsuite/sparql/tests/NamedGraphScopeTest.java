@@ -663,6 +663,99 @@ public class NamedGraphScopeTest extends AbstractComplianceTest {
 				"positive graph BGP inside a subquery");
 	}
 
+	private void ordinaryJoinWithPartialAndDuplicateKeys(RepositoryConnection conn) {
+		IRI g1 = iri(conn, "g1");
+		IRI g2 = iri(conn, "g2");
+		IRI a = iri(conn, "a");
+		IRI b = iri(conn, "b");
+		IRI p = iri(conn, "p");
+		IRI q = iri(conn, "q");
+		IRI first = iri(conn, "first");
+		IRI second = iri(conn, "second");
+		IRI third = iri(conn, "third");
+		conn.add(a, p, first, g1);
+		conn.add(a, q, iri(conn, "one"), g1);
+		conn.add(a, q, iri(conn, "two"), g1);
+		conn.add(a, p, second, g2);
+		conn.add(a, q, iri(conn, "three"), g2);
+		conn.add(b, p, third, g2);
+		conn.add(b, q, iri(conn, "four"), g2);
+		conn.add(a, p, iri(conn, "default"), (Resource) null);
+		conn.add(a, q, iri(conn, "default"), (Resource) null);
+
+		String query = """
+				SELECT ?g ?s ?o WHERE {
+					VALUES (?g ?s) { (:g1 :a) (:g1 :a) (UNDEF :a) (:g2 UNDEF) (:missing UNDEF) }
+					GRAPH ?g { ?s :p ?o . ?s :q ?w }
+				}
+				""";
+		Map<String, Value> inFirstGraph = bindingRow("g", g1, "s", a, "o", first);
+		Map<String, Value> inSecondGraph = bindingRow("g", g2, "s", a, "o", second);
+		List<Map<String, Value>> expected = new ArrayList<>();
+		for (int i = 0; i < 6; i++) {
+			expected.add(inFirstGraph);
+		}
+		expected.add(inSecondGraph);
+		expected.add(inSecondGraph);
+		expected.add(bindingRow("g", g2, "s", b, "o", third));
+		assertExactRows(conn, query, Set.of("g", "s", "o"), expected,
+				"ordinary graph join with duplicate keys, partial keys and overlapping graph selections");
+	}
+
+	private void ordinaryJoinUsesTermIdentity(RepositoryConnection conn) {
+		IRI graph = iri(conn, "g1");
+		IRI predicate = iri(conn, "p");
+		IRI lexicalMatch = iri(conn, "lexical-match");
+		Value lexicalOne = conn.getValueFactory().createLiteral("01", XSD.INTEGER);
+		conn.add(lexicalMatch, predicate, lexicalOne, graph);
+		conn.add(iri(conn, "numeric-only"), predicate, conn.getValueFactory().createLiteral("1", XSD.INTEGER), graph);
+
+		assertExactRows(conn,
+				"SELECT ?s ?o { VALUES ?o { \"01\"^^<http://www.w3.org/2001/XMLSchema#integer> } "
+						+ "GRAPH :g1 { ?s :p ?o } }",
+				Set.of("s", "o"), List.of(bindingRow("s", lexicalMatch, "o", lexicalOne)),
+				"ordinary graph join uses exact lexical RDF-term identity");
+	}
+
+	private void ordinaryJoinAcrossQueryEvaluations(RepositoryConnection conn) {
+		IRI g1 = iri(conn, "g1");
+		IRI g2 = iri(conn, "g2");
+		IRI a = iri(conn, "a");
+		IRI b = iri(conn, "b");
+		IRI p = iri(conn, "p");
+		IRI first = iri(conn, "old");
+		IRI second = iri(conn, "new");
+		conn.add(a, p, first, g1);
+		conn.add(b, p, second, g2);
+
+		TupleQuery query = conn.prepareTupleQuery(PREFIX
+				+ "SELECT ?g ?s ?o { VALUES ?s { :a :b } GRAPH ?g { ?s :p ?o } }");
+		Set<String> columns = Set.of("g", "s", "o");
+		Map<String, Value> firstRow = bindingRow("g", g1, "s", a, "o", first);
+		Map<String, Value> secondRow = bindingRow("g", g2, "s", b, "o", second);
+
+		query.setBinding("g", g1);
+		assertExactRows(query, columns, List.of(firstRow), "first API graph binding");
+		query.setBinding("g", g2);
+		SimpleDataset empty = new SimpleDataset();
+		empty.setExplicitReadDataset(true);
+		query.setDataset(empty);
+		assertExactRows(query, columns, List.of(), "changed API graph binding excluded by dataset");
+
+		query.removeBinding("g");
+		query.setDataset(null);
+		assertExactRows(query, columns, List.of(firstRow, secondRow), "restore graph enumeration");
+		conn.begin();
+		conn.remove(b, p, second, g2);
+		Value updated = iri(conn, "updated");
+		conn.add(b, p, updated, g2);
+		query.setBinding("g", g2);
+		assertExactRows(query, columns, List.of(bindingRow("g", g2, "s", b, "o", updated)),
+				"new transaction view includes its own writes");
+		conn.rollback();
+		assertExactRows(query, columns, List.of(secondRow), "rolled back transaction restores the original row");
+	}
+
 	public Stream<DynamicTest> tests() {
 		Stream<DynamicTest> graphTests = Stream.of(makeTest("emptyBody", this::emptyBody),
 				makeTest("absentGraph", this::absentGraph),
@@ -680,7 +773,10 @@ public class NamedGraphScopeTest extends AbstractComplianceTest {
 				makeTest("defaultAliases", this::defaultAliases), makeTest("duplicates", this::duplicates),
 				makeTest("variableGraphAliasesAndDatasets", this::variableGraphAliasesAndDatasets),
 				makeTest("variableGraphBodyBindingsAndJoinBags", this::variableGraphBodyBindingsAndJoinBags),
-				makeTest("variableGraphPositivePatternComposition", this::variableGraphPositivePatternComposition));
+				makeTest("variableGraphPositivePatternComposition", this::variableGraphPositivePatternComposition),
+				makeTest("ordinaryJoinWithPartialAndDuplicateKeys", this::ordinaryJoinWithPartialAndDuplicateKeys),
+				makeTest("ordinaryJoinUsesTermIdentity", this::ordinaryJoinUsesTermIdentity),
+				makeTest("ordinaryJoinAcrossQueryEvaluations", this::ordinaryJoinAcrossQueryEvaluations));
 		Stream<DynamicTest> membershipTests = Stream.of(":p?", ":p*", "^:p?", "(:p?/:p?)")
 				.map(path -> makeTest("zeroLengthMembership " + path, conn -> zeroLengthMembership(conn, path)));
 		Stream<DynamicTest> isolationTests = Stream.of(":p?", ":p*", "^:p*")

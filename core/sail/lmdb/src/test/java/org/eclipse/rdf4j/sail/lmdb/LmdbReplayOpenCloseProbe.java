@@ -103,6 +103,7 @@ final class LmdbReplayOpenCloseProbe {
 			phase.accept("starting native map growth");
 			var growth = growthExecutor.submit(() -> {
 				phase.accept("map growth worker running");
+				LmdbSailStore.MapGrowthToken growthToken;
 				try (LmdbSailStore.ReadAttemptLease writer = backing.registerReadAttempt(owner,
 						(kind, token, nanos, attempts, views) -> false)) {
 					try {
@@ -110,6 +111,7 @@ final class LmdbReplayOpenCloseProbe {
 						try (LmdbSailStore.MapGrowthAttempt warning = backing.beginMapGrowthWarning(owner);
 								LmdbSailStore.MapGrowthAttempt attempt = backing.beginMapGrowthAttempt(owner)) {
 							phase.accept("map growth requesting quiescence");
+							growthToken = attempt.token();
 							attempt.requestQuiescence(LmdbSailStore.MapResizeKind.TRIPLE_STORE);
 							assertThat(triples.growMapForEstimatedWrite(mapSize * 2L, attempt)).isTrue();
 							phase.accept("native map growth returned");
@@ -118,8 +120,11 @@ final class LmdbReplayOpenCloseProbe {
 						writer.completeTransaction();
 					}
 				}
+				// The native resize can finish before the managed growth driver releases admission.
+				phase.accept("waiting for managed map growth completion");
+				backing.awaitGrowthEnd(growthToken);
 				phase.accept("map growth worker completed");
-				return null;
+				return growthToken;
 			});
 			try {
 				phase.accept("waiting for growth replay admission");
@@ -155,9 +160,10 @@ final class LmdbReplayOpenCloseProbe {
 					assertThat(observedNamespaces.get()).isNull();
 				}
 				phase.accept("waiting for native growth completion");
-				growth.get(5, TimeUnit.SECONDS);
+				var completedGrowth = growth.get(5, TimeUnit.SECONDS);
 				assertThat(triples.mapSizeBytes()).isGreaterThan(mapSize);
-				assertThat(backing.growthAdmissionClosed()).isFalse();
+				assertThat(backing.isGrowthActive(completedGrowth)).as("the replay growth episode has finished")
+						.isFalse();
 			} finally {
 				phase.accept("releasing namespace opener during cleanup");
 				gate.release.countDown();

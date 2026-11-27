@@ -30,7 +30,7 @@ public class QueueCursor<E> extends QueueIteration<E, QueryEvaluationException> 
 	 * @param capacity the capacity of this queue
 	 */
 	public QueueCursor(int capacity) {
-		super(capacity, false);
+		super(capacity);
 	}
 
 	/**

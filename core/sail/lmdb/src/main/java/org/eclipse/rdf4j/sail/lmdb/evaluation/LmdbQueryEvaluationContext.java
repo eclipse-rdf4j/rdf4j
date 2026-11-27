@@ -28,6 +28,7 @@ import org.eclipse.rdf4j.query.Binding;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.Dataset;
 import org.eclipse.rdf4j.query.MutableBindingSet;
+import org.eclipse.rdf4j.query.algebra.evaluation.QueryValueEvaluationStep;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.QueryEvaluationContext;
 import org.eclipse.rdf4j.query.impl.BlankNodeAllocationScope;
 
@@ -75,6 +76,11 @@ final class LmdbQueryEvaluationContext implements QueryEvaluationContext {
 	}
 
 	@Override
+	public boolean allowsDirectVariableReads() {
+		return delegate.allowsDirectVariableReads();
+	}
+
+	@Override
 	public BlankNodeAllocationScope getBlankNodeAllocationScope() {
 		return delegate.getBlankNodeAllocationScope();
 	}
@@ -85,8 +91,18 @@ final class LmdbQueryEvaluationContext implements QueryEvaluationContext {
 	}
 
 	@Override
+	public Object getExecutionIdentity() {
+		return delegate.getExecutionIdentity();
+	}
+
+	@Override
 	public Set<String> getSubstitutionBindingNames() {
 		return delegate.getSubstitutionBindingNames();
+	}
+
+	@Override
+	public Set<String> getCorrelatedPathBindingNames() {
+		return delegate.getCorrelatedPathBindingNames();
 	}
 
 	@Override
@@ -161,7 +177,17 @@ final class LmdbQueryEvaluationContext implements QueryEvaluationContext {
 	}
 
 	@Override
+	public QueryValueEvaluationStep prepareValueAccessor(String name, ValueFactory factory) {
+		return delegate.allowsDirectVariableReads()
+				? QueryEvaluationContext.super.prepareValueAccessor(name, factory)
+				: delegate.prepareValueAccessor(name, factory);
+	}
+
+	@Override
 	public Function<BindingSet, Value> getValue(String variableName) {
+		if (!delegate.allowsDirectVariableReads()) {
+			return delegate.getValue(variableName);
+		}
 		int queryIndex = layout.indexOf(variableName);
 		if (queryIndex < 0) {
 			return delegate.getValue(variableName);

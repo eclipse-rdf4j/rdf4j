@@ -108,6 +108,38 @@ final class GeneralPathPlan implements SlotPlan {
 		this.producedMask = mask;
 	}
 
+	/** Proves that this traversal and every nested step need edges, never a zero-length membership test. */
+	boolean usesOnlyStatementEdges() {
+		return minLength > 0 && usesOnlyStatementEdges(step);
+	}
+
+	private static boolean usesOnlyStatementEdges(SlotPlan plan) {
+		if (plan instanceof PatternPlan || plan == EmptyPlan.INSTANCE) {
+			return true;
+		}
+		if (plan instanceof GeneralPathPlan path) {
+			return path.usesOnlyStatementEdges();
+		}
+		if (plan instanceof PathPlan path) {
+			return !path.zeroLength;
+		}
+		if (plan instanceof MultiJoinPlan join) {
+			for (SlotPlan child : join.children) {
+				if (!usesOnlyStatementEdges(child)) {
+					return false;
+				}
+			}
+			return true;
+		}
+		if (plan instanceof JoinPlan join) {
+			return usesOnlyStatementEdges(join.left) && usesOnlyStatementEdges(join.right);
+		}
+		if (plan instanceof UnionPlan union) {
+			return usesOnlyStatementEdges(union.left) && usesOnlyStatementEdges(union.right);
+		}
+		return plan instanceof FilterPlan filter && usesOnlyStatementEdges(filter.arg);
+	}
+
 	@Override
 	public RowCursor open(RowState row) throws IOException {
 		ENGAGED.incrementAndGet();
@@ -205,7 +237,8 @@ final class GraphVariablePathEvaluation {
 			return Arrays.stream(plan.ctxIds).filter(id -> id != NULL_CONTEXT_ID && id != UNKNOWN).distinct().toArray();
 		}
 		LongHashSet contexts = new LongHashSet(8);
-		try (RecordIterator statements = row.source.statements(UNKNOWN, UNKNOWN, UNKNOWN, UNKNOWN)) {
+		try (RecordIterator statements = row.source.statements(UNKNOWN, UNKNOWN, UNKNOWN, UNKNOWN, null,
+				row.cursorCancellation())) {
 			long[] quad;
 			while ((quad = statements.next()) != null) {
 				long context = quad[TripleIndex.CONTEXT_IDX];
@@ -288,7 +321,7 @@ final class GeneralPathEvaluation {
 		long[] identityContexts = identityContexts();
 		if (plan.minLength == 0L && (identityContexts == null || identityContexts.length > 0)) {
 			// zero-length identities: every distinct node occurring as subject or object of a scoped statement
-			try (NativeLmdbQuerySource.NativeProbe probe = row.source.newProbe()) {
+			try (NativeLmdbQuerySource.NativeProbe probe = row.source.newProbe(row.cursorCancellation())) {
 				int scopes = identityContexts == null ? 1 : identityContexts.length;
 				for (int scope = 0; scope < scopes; scope++) {
 					long ctx = identityContexts == null ? UNKNOWN : identityContexts[scope];

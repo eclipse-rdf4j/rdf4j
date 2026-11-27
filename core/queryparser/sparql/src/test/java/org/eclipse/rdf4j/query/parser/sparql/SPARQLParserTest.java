@@ -51,6 +51,7 @@ import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.MalformedQueryException;
 import org.eclipse.rdf4j.query.algebra.AggregateFunctionCall;
 import org.eclipse.rdf4j.query.algebra.ArbitraryLengthPath;
+import org.eclipse.rdf4j.query.algebra.BindingSetAssignment;
 import org.eclipse.rdf4j.query.algebra.DeleteData;
 import org.eclipse.rdf4j.query.algebra.Extension;
 import org.eclipse.rdf4j.query.algebra.Filter;
@@ -147,6 +148,7 @@ public class SPARQLParserTest {
 				"SELECT ?key (COUNT(DISTINCT ?item) AS ?count) " + body + "GROUP BY ?key HAVING(COUNT(?item) > 1)",
 				"SELECT ?key (SUM(?item) AS ?total) " + body + "GROUP BY ?key HAVING(COUNT(*) > 1) ORDER BY ?total",
 				"SELECT (COUNT(?item) AS ?count) " + body + "HAVING(COUNT(?item) > 1)",
+				"SELECT (COUNT(?item) + 1 AS ?count) " + body,
 				"SELECT ?key (COUNT(?item) AS ?count) " + body + "GROUP BY ?key ORDER BY (COUNT(?item))",
 				"SELECT ?key (SUM(?item) + COUNT(?item) AS ?combined) " + body + "GROUP BY ?key HAVING(COUNT(*) > 1)",
 				"SELECT ?key WHERE { { SELECT ?key (COUNT(?item) AS ?count) " + body
@@ -166,6 +168,23 @@ public class SPARQLParserTest {
 				}
 			});
 		}
+	}
+
+	@Test
+	public void describeJoinsTrailingValuesClause() {
+		TupleExpr tupleExpr = parser
+				.parseQuery("DESCRIBE ?s WHERE { ?s a <urn:T> } VALUES ?s { <urn:a> }", null)
+				.getTupleExpr();
+
+		List<BindingSetAssignment> values = new ArrayList<>();
+		tupleExpr.visit(new AbstractQueryModelVisitor<RuntimeException>() {
+			@Override
+			public void meet(BindingSetAssignment node) {
+				values.add(node);
+			}
+		});
+
+		assertThat(values).hasSize(1);
 	}
 
 	/**

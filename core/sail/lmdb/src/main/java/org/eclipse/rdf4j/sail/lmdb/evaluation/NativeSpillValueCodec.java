@@ -16,6 +16,7 @@ import java.io.DataOutput;
 import java.io.IOException;
 import java.util.function.UnaryOperator;
 
+import org.eclipse.rdf4j.model.BNode;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Literal;
 import org.eclipse.rdf4j.model.Resource;
@@ -23,12 +24,16 @@ import org.eclipse.rdf4j.model.TripleTerm;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.base.CoreDatatype;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
+import org.eclipse.rdf4j.query.impl.RemoteBNode;
+import org.eclipse.rdf4j.query.impl.RemoteBNode.CompactSpillScope;
 import org.eclipse.rdf4j.sail.lmdb.ValueStoreRevision;
 import org.eclipse.rdf4j.sail.lmdb.model.LmdbValue;
 
 /** Exact RDF spelling codec shared by payload spilling and physical result replay. One bounded I/O scratch buffer. */
 final class NativeSpillValueCodec {
 	static final int BUFFER_BYTES = 1024;
+	private static final int TAG_SCOPED_BNODE = 0x7C;
+	private static final CompactSpillScope.Kind[] ORIGIN_KINDS = CompactSpillScope.Kind.values();
 	/** A term of the codec's dictionary source: one long ID that replays as that source's lazy term. */
 	static final int TAG_STORE_TERM = 0x7D;
 	/** An xsd:integer literal whose canonical label fits a long: one primitive, replayed with the same label. */
@@ -39,6 +44,7 @@ final class NativeSpillValueCodec {
 	private final UnaryOperator<Value> representative;
 	private final Runnable cooperativePoll;
 	private final NativeLmdbQuerySource termSource;
+	private final CompactSpillScope blankNodeOrigins;
 	/** Revision id of the dictionary generation the source resolves; learned from one probe, then compared. */
 	private long acceptedRevisionId = NO_REVISION;
 	private boolean revisionProbed;
@@ -55,10 +61,26 @@ final class NativeSpillValueCodec {
 	/** {@code termSource} (nullable) lets terms of its dictionary spill as IDs and replay as its lazy terms. */
 	NativeSpillValueCodec(NativeCancellationToken cancellation, UnaryOperator<Value> representative,
 			Runnable cooperativePoll, NativeLmdbQuerySource termSource) {
+		this(cancellation, representative, cooperativePoll, termSource, new CompactSpillScope());
+	}
+
+	NativeSpillValueCodec(NativeCancellationToken cancellation, UnaryOperator<Value> representative,
+			Runnable cooperativePoll, NativeLmdbQuerySource termSource, CompactSpillScope blankNodeOrigins) {
+		this.blankNodeOrigins = blankNodeOrigins;
 		this.cancellation = cancellation;
 		this.representative = representative;
 		this.cooperativePoll = cooperativePoll;
 		this.termSource = termSource;
+	}
+
+	/** Readers own their I/O buffers and borrow only the writer's shared blank-node authority. */
+	NativeSpillValueCodec reader(NativeCancellationToken readerCancellation) {
+		return new NativeSpillValueCodec(readerCancellation, representative, cooperativePoll, termSource,
+				blankNodeOrigins);
+	}
+
+	void clearBlankNodeOrigins() {
+		blankNodeOrigins.clear();
 	}
 
 	void write(DataOutput output, Value value) throws IOException {
@@ -79,6 +101,10 @@ final class NativeSpillValueCodec {
 				output.writeLong(integer);
 				return;
 			}
+		}
+		if (value instanceof BNode node && RemoteBNode.carriesOrigin(node)) {
+			writeScopedBlankNode(output, node);
+			return;
 		}
 		output.writeByte(value.getType().ordinal());
 		if (value instanceof Literal literal) {
@@ -113,6 +139,9 @@ final class NativeSpillValueCodec {
 		checkDepth(depth);
 		SimpleValueFactory factory = SimpleValueFactory.getInstance();
 		int type = input.readUnsignedByte();
+		if (type == TAG_SCOPED_BNODE) {
+			return readScopedBlankNode(input);
+		}
 		if (type == TAG_STORE_TERM) {
 			if (termSource == null) {
 				throw new IOException("Spilled dictionary term without a term source");
@@ -154,6 +183,43 @@ final class NativeSpillValueCodec {
 			return factory.createTripleTerm(resource, iri, object);
 		}
 		throw new IOException("Invalid spilled RDF term type: " + type);
+	}
+
+	private void writeScopedBlankNode(DataOutput output, BNode node) throws IOException {
+		var origin = blankNodeOrigins.capture(node);
+		output.writeByte(TAG_SCOPED_BNODE);
+		output.writeByte(origin.kind().ordinal());
+		writeString(output, node.getID());
+		switch (origin.kind()) {
+		case GENERATED -> output.writeInt(origin.owner());
+		case REPOSITORY -> {
+			writeString(output, origin.rawID());
+			output.writeBoolean(origin.canonical());
+		}
+		case REMOTE -> {
+			output.writeInt(origin.owner());
+			output.writeInt(origin.source());
+			writeString(output, origin.rawID());
+			output.writeBoolean(origin.canonical());
+			output.writeBoolean(origin.foreign());
+		}
+		}
+	}
+
+	private BNode readScopedBlankNode(DataInput input) throws IOException {
+		int encodedKind = input.readUnsignedByte();
+		if (encodedKind >= ORIGIN_KINDS.length) {
+			throw new IOException("Invalid spilled blank-node kind");
+		}
+		var kind = ORIGIN_KINDS[encodedKind];
+		String alias = readString(input);
+		var origin = switch (kind) {
+		case GENERATED -> new CompactSpillScope.Origin(kind, input.readInt(), 0, null, false, false);
+		case REPOSITORY -> new CompactSpillScope.Origin(kind, 0, 0, readString(input), input.readBoolean(), false);
+		case REMOTE -> new CompactSpillScope.Origin(kind, input.readInt(), input.readInt(), readString(input),
+				input.readBoolean(), input.readBoolean());
+		};
+		return blankNodeOrigins.restore(alias, origin);
 	}
 
 	/**

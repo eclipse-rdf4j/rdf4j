@@ -19,6 +19,7 @@ import java.util.ArrayList;
 import java.util.List;
 
 import org.eclipse.rdf4j.model.IRI;
+import org.eclipse.rdf4j.model.Statement;
 import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
@@ -67,29 +68,33 @@ class LmdbNativeLeftJoinSweepTest {
 			IRI seed = vf.createIRI(EX, "seed");
 			IRI inner = vf.createIRI(EX, "inner");
 			IRI payload = vf.createIRI(EX, "payload");
+			conn.begin();
+			List<Statement> statements = new ArrayList<>(1_281);
 			for (int i = 0; i < 200; i++) {
 				IRI outer = vf.createIRI(EX, "outer" + i);
 				IRI seedNode = vf.createIRI(EX, "seedNode" + i);
-				conn.add(outer, seed, seedNode);
+				statements.add(vf.createStatement(outer, seed, seedNode));
 				// Outers 0..179 have fragment rows (fan-out 2); 180..199 have none (bare LEFT rows).
 				if (i < 180) {
 					for (int f = 0; f < 2; f++) {
 						IRI leaf = vf.createIRI(EX, "leaf" + i + "_" + f);
-						conn.add(seedNode, inner, leaf);
-						conn.add(leaf, payload, vf.createLiteral(i * 10 + f));
+						statements.add(vf.createStatement(seedNode, inner, leaf));
+						statements.add(vf.createStatement(leaf, payload, vf.createLiteral(i * 10 + f)));
 					}
 				}
 			}
 			// Duplicate outer edge: outer0 carries a second seed binding to seedNode1 — bag multiplicity.
-			conn.add(vf.createIRI(EX, "outer0"), seed, vf.createIRI(EX, "seedNode1"));
+			statements.add(vf.createStatement(vf.createIRI(EX, "outer0"), seed, vf.createIRI(EX, "seedNode1")));
 			// Direct payloads on the seed nodes: the single-pattern OPTIONAL shape for the payload-probe floor.
 			IRI direct = vf.createIRI(EX, "direct");
 			for (int i = 0; i < 180; i++) {
 				IRI seedNode = vf.createIRI(EX, "seedNode" + i);
 				for (int f = 0; f < 2; f++) {
-					conn.add(seedNode, direct, vf.createLiteral(i * 100 + f));
+					statements.add(vf.createStatement(seedNode, direct, vf.createLiteral(i * 100 + f)));
 				}
 			}
+			conn.add(statements);
+			conn.commit();
 		}
 		System.setProperty(NATIVE_FLAG, "true");
 		previousPackedAlgebra = System.setProperty(PACKED_ALGEBRA_FLAG, "false");

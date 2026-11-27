@@ -35,6 +35,107 @@ import org.junit.jupiter.api.Test;
 class PreparedSafetyAnalysisTest {
 
 	@Test
+	void preparationCallbacksRemainInTheOuterPhaseEvenWhenAFreshCallbackThrows() {
+		QueryRoot root = new QueryRoot(new SingletonSet());
+		AtomicInteger callbacks = new AtomicInteger();
+		class ReenteringPreparation implements QueryModelPreparation {
+			private boolean inReset;
+
+			@Override
+			public QueryModelNode prepare(QueryModelNode node) {
+				return node;
+			}
+
+			@Override
+			public void resetTraversal() {
+				if (!inReset) {
+					inReset = true;
+					try {
+						assertThat(QueryEvaluationUtility.isRepeatable(root))
+								.as("reset must still observe the already classified outer phase")
+								.isTrue();
+						callbacks.incrementAndGet();
+					} finally {
+						inReset = false;
+					}
+				}
+			}
+
+			@Override
+			public void invalidate(QueryModelNode node) {
+			}
+
+			@Override
+			public void close() {
+			}
+		}
+		QueryEvaluationUtility.withPreparedQuerySafetySnapshot(root, ReenteringPreparation::new, prepared -> {
+			assertThat(QueryEvaluationUtility.isRepeatable(root)).isTrue();
+			root.setArg(service());
+			assertThatThrownBy(() -> QueryEvaluationUtility.withFreshPreparedQuerySafetySnapshot(prepared, fresh -> {
+				assertThat(QueryEvaluationUtility.isRepeatable(fresh)).isFalse();
+				throw new IllegalArgumentException("abandon child");
+			})).isInstanceOf(IllegalArgumentException.class).hasMessage("abandon child");
+			assertThat(QueryEvaluationUtility.isRepeatable(root)).isTrue();
+			return prepared;
+		});
+		assertThat(callbacks).hasValue(1);
+	}
+
+	@Test
+	void visitorCapturedBeforeAClassificationFailsCannotSeedASiblingPhase() {
+		QueryRoot root = new QueryRoot(new SingletonSet());
+		class CapturingTuple extends SingletonSet {
+			private QueryModelVisitor<?> captured;
+
+			@Override
+			public <X extends Exception> void visit(QueryModelVisitor<X> visitor) throws X {
+				captured = visitor;
+				throw new IllegalStateException("stop after retaining the visitor");
+			}
+
+			@SuppressWarnings("unchecked")
+			void replay(QueryModelNode node) {
+				node.visit((QueryModelVisitor<RuntimeException>) captured);
+			}
+		}
+
+		CapturingTuple capturing = new CapturingTuple();
+		QueryEvaluationUtility.withPreparedQuerySafetySnapshot(root, IdentityPreparation::new, prepared -> {
+			QueryEvaluationUtility.withFreshPreparedQuerySafetySnapshot(root, phase -> {
+				assertThatThrownBy(() -> QueryEvaluationUtility.isRepeatable(capturing))
+						.isInstanceOf(IllegalStateException.class)
+						.hasMessage("stop after retaining the visitor");
+				return phase;
+			});
+			return QueryEvaluationUtility.withFreshPreparedQuerySafetySnapshot(prepared, phase -> {
+				root.setArg(service());
+				capturing.replay(root);
+				root.setArg(new SingletonSet());
+				assertThat(QueryEvaluationUtility.isRepeatable(root)).isTrue();
+				assertThat(QueryEvaluationUtility.mayRaiseQueryFatalError(root)).isFalse();
+				return phase;
+			});
+		});
+	}
+
+	@Test
+	void publicSnapshotFromAnUnusedPhaseCannotSeedOrBeChangedByASibling() {
+		QueryRoot root = new QueryRoot(new SingletonSet());
+		QueryEvaluationUtility.withPreparedQuerySafetySnapshot(root, IdentityPreparation::new, prepared -> {
+			QueryEvaluationUtility.QuerySafetySnapshot saved = QueryEvaluationUtility
+					.withFreshPreparedQuerySafetySnapshot(
+							root, QueryEvaluationUtility::querySafetySnapshot);
+			root.setArg(service());
+			return QueryEvaluationUtility.withFreshPreparedQuerySafetySnapshot(prepared, phase -> {
+				assertThat(saved.isRepeatable(root)).isTrue();
+				assertThat(QueryEvaluationUtility.isRepeatable(root)).isFalse();
+				return phase;
+			});
+		});
+	}
+
+	@Test
 	void preparedPhasesOnlyAnalyzeSafetyWhenRequested() {
 		CountingSingletonSet root = new CountingSingletonSet();
 

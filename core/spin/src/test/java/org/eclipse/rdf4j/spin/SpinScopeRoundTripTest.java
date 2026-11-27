@@ -30,6 +30,8 @@ import org.eclipse.rdf4j.model.vocabulary.RDF4J;
 import org.eclipse.rdf4j.model.vocabulary.SP;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.QueryLanguage;
+import org.eclipse.rdf4j.query.QueryParseOptions;
+import org.eclipse.rdf4j.query.QueryParseOptions.GraphAlgebraMode;
 import org.eclipse.rdf4j.query.algebra.Projection;
 import org.eclipse.rdf4j.query.algebra.QueryModelNode;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
@@ -48,6 +50,9 @@ import org.junit.jupiter.params.provider.MethodSource;
 import org.junit.jupiter.params.provider.ValueSource;
 
 class SpinScopeRoundTripTest {
+
+	private static final QueryParseOptions GRAPH = QueryParseOptions.DEFAULT
+			.withGraphAlgebraMode(GraphAlgebraMode.GRAPH);
 
 	@ParameterizedTest
 	@ValueSource(strings = {
@@ -73,7 +78,7 @@ class SpinScopeRoundTripTest {
 			"SELECT ?s WHERE { { SELECT ?s WHERE { { SELECT ?s WHERE { ?s <urn:p> ?o } } } } }"
 	})
 	void rdfOnlyRoundTripPreservesScopeMetadata(String text) throws Exception {
-		ParsedTupleQuery original = QueryParserUtil.parseTupleQuery(QueryLanguage.SPARQL, text, null);
+		ParsedTupleQuery original = QueryParserUtil.parseTupleQuery(QueryLanguage.SPARQL, text, null, GRAPH);
 		ParsedTupleQuery restored = roundTrip(original);
 		assertThat(scopeMetadata(restored.getTupleExpr())).as(text)
 				.isEqualTo(scopeMetadata(original.getTupleExpr()));
@@ -129,7 +134,7 @@ class SpinScopeRoundTripTest {
 	@ValueSource(strings = { "(<urn:p>/<urn:q>)+", "(<urn:p>|<urn:q>)*", "(<urn:p>+)+" })
 	void unsupportedCompoundPathsFailExplicitly(String path) {
 		ParsedTupleQuery original = QueryParserUtil.parseTupleQuery(QueryLanguage.SPARQL,
-				"SELECT ?s WHERE { ?s " + path + " ?o }", null);
+				"SELECT ?s WHERE { ?s " + path + " ?o }", null, GRAPH);
 		assertThatThrownBy(() -> roundTrip(original)).isInstanceOf(UnsupportedOperationException.class)
 				.hasMessageContaining("SPIN path");
 	}
@@ -142,7 +147,7 @@ class SpinScopeRoundTripTest {
 	@MethodSource("semanticCases")
 	void rdfOnlyExecutionPreservesExpectedBags(String text, String boundVariable, List<String> expected)
 			throws Exception {
-		ParsedTupleQuery original = QueryParserUtil.parseTupleQuery(QueryLanguage.SPARQL, text, null);
+		ParsedTupleQuery original = QueryParserUtil.parseTupleQuery(QueryLanguage.SPARQL, text, null, GRAPH);
 		MapBindingSet bindings = new MapBindingSet();
 		if (!boundVariable.isEmpty()) {
 			bindings.addBinding(boundVariable, iri(boundVariable.equals("g") ? "urn:g1" : "urn:s2"));
@@ -168,7 +173,7 @@ class SpinScopeRoundTripTest {
 				.filter(candidate -> !model.contains(null, SP.QUERY_PROPERTY, candidate))
 				.findFirst()
 				.orElseThrow();
-		return new SpinParser(SpinParser.Input.RDF_ONLY).parseSelectQuery(query, new ModelTripleSource(model));
+		return new SpinParser(SpinParser.Input.RDF_ONLY, GRAPH).parseSelectQuery(query, new ModelTripleSource(model));
 	}
 
 	private static List<String> scopeMetadata(TupleExpr expression) {
@@ -197,34 +202,36 @@ class SpinScopeRoundTripTest {
 			throws Exception {
 		MemoryStore store = new MemoryStore();
 		store.setDefaultQueryEvaluationMode(mode);
-		store.init();
-		try (var connection = store.getConnection()) {
-			connection.begin();
-			connection.addStatement(iri("urn:s1"), iri("urn:p"), iri("urn:a"));
-			connection.addStatement(iri("urn:s2"), iri("urn:p"), iri("urn:b"));
-			connection.addStatement(iri("urn:s3"), iri("urn:p"), iri("urn:a"));
-			connection.addStatement(iri("urn:s1"), iri("urn:q"), iri("urn:x"));
-			connection.addStatement(iri("urn:s1"), iri("urn:p"), iri("urn:a"), iri("urn:g1"));
-			connection.addStatement(iri("urn:s2"), iri("urn:p"), iri("urn:b"), iri("urn:g1"));
-			connection.addStatement(iri("urn:s1"), iri("urn:q"), iri("urn:x"), iri("urn:g1"));
-			connection.addStatement(iri("urn:s3"), iri("urn:p"), iri("urn:c"), iri("urn:g2"));
-			connection.commit();
-			List<String> rows = new ArrayList<>();
-			SimpleDataset dataset = new SimpleDataset();
-			dataset.addDefaultGraph(RDF4J.NIL);
-			dataset.addNamedGraph(iri("urn:g1"));
-			dataset.addNamedGraph(iri("urn:g2"));
-			try (var result = connection.evaluate(query.getTupleExpr().clone(), dataset, bindings, false)) {
-				while (result.hasNext()) {
-					BindingSet row = result.next();
-					rows.add(row.getBindingNames()
-							.stream()
-							.sorted()
-							.map(name -> name + "=" + row.getValue(name).stringValue())
-							.collect(Collectors.joining(";")));
+		try {
+			store.init();
+			try (var connection = store.getConnection()) {
+				connection.begin();
+				connection.addStatement(iri("urn:s1"), iri("urn:p"), iri("urn:a"));
+				connection.addStatement(iri("urn:s2"), iri("urn:p"), iri("urn:b"));
+				connection.addStatement(iri("urn:s3"), iri("urn:p"), iri("urn:a"));
+				connection.addStatement(iri("urn:s1"), iri("urn:q"), iri("urn:x"));
+				connection.addStatement(iri("urn:s1"), iri("urn:p"), iri("urn:a"), iri("urn:g1"));
+				connection.addStatement(iri("urn:s2"), iri("urn:p"), iri("urn:b"), iri("urn:g1"));
+				connection.addStatement(iri("urn:s1"), iri("urn:q"), iri("urn:x"), iri("urn:g1"));
+				connection.addStatement(iri("urn:s3"), iri("urn:p"), iri("urn:c"), iri("urn:g2"));
+				connection.commit();
+				List<String> rows = new ArrayList<>();
+				SimpleDataset dataset = new SimpleDataset();
+				dataset.addDefaultGraph(RDF4J.NIL);
+				dataset.addNamedGraph(iri("urn:g1"));
+				dataset.addNamedGraph(iri("urn:g2"));
+				try (var result = connection.evaluate(query.getTupleExpr().clone(), dataset, bindings, false)) {
+					while (result.hasNext()) {
+						BindingSet row = result.next();
+						rows.add(row.getBindingNames()
+								.stream()
+								.sorted()
+								.map(name -> name + "=" + row.getValue(name).stringValue())
+								.collect(Collectors.joining(";")));
+					}
 				}
+				return rows;
 			}
-			return rows;
 		} finally {
 			store.shutDown();
 		}

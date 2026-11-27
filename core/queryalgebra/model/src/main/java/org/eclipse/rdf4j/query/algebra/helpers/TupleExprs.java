@@ -22,7 +22,11 @@ import org.eclipse.rdf4j.common.annotation.InternalUseOnly;
 import org.eclipse.rdf4j.model.BNode;
 import org.eclipse.rdf4j.model.Literal;
 import org.eclipse.rdf4j.model.Value;
+import org.eclipse.rdf4j.model.vocabulary.RDF4J;
+import org.eclipse.rdf4j.model.vocabulary.SESAME;
+import org.eclipse.rdf4j.query.Dataset;
 import org.eclipse.rdf4j.query.algebra.AggregateOperator;
+import org.eclipse.rdf4j.query.algebra.Difference;
 import org.eclipse.rdf4j.query.algebra.Distinct;
 import org.eclipse.rdf4j.query.algebra.Exists;
 import org.eclipse.rdf4j.query.algebra.Extension;
@@ -30,14 +34,18 @@ import org.eclipse.rdf4j.query.algebra.ExtensionElem;
 import org.eclipse.rdf4j.query.algebra.Filter;
 import org.eclipse.rdf4j.query.algebra.Graph;
 import org.eclipse.rdf4j.query.algebra.Join;
+import org.eclipse.rdf4j.query.algebra.MultiProjection;
 import org.eclipse.rdf4j.query.algebra.Not;
 import org.eclipse.rdf4j.query.algebra.Order;
 import org.eclipse.rdf4j.query.algebra.Projection;
+import org.eclipse.rdf4j.query.algebra.ProjectionElem;
 import org.eclipse.rdf4j.query.algebra.ProjectionElemList;
 import org.eclipse.rdf4j.query.algebra.QueryModelNode;
 import org.eclipse.rdf4j.query.algebra.Reduced;
 import org.eclipse.rdf4j.query.algebra.Service;
 import org.eclipse.rdf4j.query.algebra.Slice;
+import org.eclipse.rdf4j.query.algebra.StatementPattern;
+import org.eclipse.rdf4j.query.algebra.SubQueryValueOperator;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.algebra.UnaryTupleOperator;
 import org.eclipse.rdf4j.query.algebra.Var;
@@ -50,6 +58,81 @@ import org.eclipse.rdf4j.query.algebra.helpers.collectors.VarNameCollector;
  * @author Jeen Broekstra
  */
 public class TupleExprs {
+
+	/** The unfixed context variable, when no other statement position binds the same name. */
+	@InternalUseOnly
+	public static String contextOnlyBindingName(StatementPattern pattern) {
+		Var context = pattern.getContextVar();
+		if (context == null || context.isConstant() || context.hasValue() || context.getName() == null) {
+			return null;
+		}
+		String name = context.getName();
+		return name.equals(pattern.getSubjectVar().getName()) || name.equals(pattern.getPredicateVar().getName())
+				|| name.equals(pattern.getObjectVar().getName()) ? null : name;
+	}
+
+	/** Whether a context lookup in this dataset and lexical graph scope can match a contextless statement. */
+	@InternalUseOnly
+	public static boolean canScanDefaultContext(StatementPattern pattern, Dataset dataset) {
+		boolean defaultScope = pattern.getScope() == StatementPattern.Scope.DEFAULT_CONTEXTS;
+		for (QueryModelNode parent = pattern.getParentNode(); parent != null; parent = parent.getParentNode()) {
+			if (parent instanceof Service) {
+				return true;
+			}
+			if (defaultScope && parent instanceof Graph graph) {
+				Value selector = graph.getGraphName().getValue();
+				return selector == null || isDefaultGraphAlias(selector);
+			}
+		}
+		if (dataset == null) {
+			return defaultScope;
+		}
+		var graphs = defaultScope ? dataset.getDefaultGraphResources() : dataset.getNamedGraphResources();
+		if (graphs.isEmpty()) {
+			return defaultScope && !dataset.isExplicitReadDataset() && dataset.getNamedGraphResources().isEmpty();
+		}
+		return graphs.stream().anyMatch(graph -> graph == null || isDefaultGraphAlias(graph));
+	}
+
+	private static boolean isDefaultGraphAlias(Value graph) {
+		return RDF4J.NIL.equals(graph) || SESAME.NIL.equals(graph);
+	}
+
+	/**
+	 * Returns the nearest projection that exports a scalar expression's input in the same result scope.
+	 */
+	@InternalUseOnly
+	public static UnaryTupleOperator projectingExpressionScope(Var variable) {
+		UnaryTupleOperator projection = null;
+		QueryModelNode child = variable;
+		for (QueryModelNode parent = child.getParentNode(); parent != null; parent = child.getParentNode()) {
+			if (parent instanceof ExtensionElem element && !isEvaluatedExtensionElement(element)) {
+				return null;
+			}
+			if (parent instanceof SubQueryValueOperator subquery && child == subquery.getSubQuery()
+					|| parent instanceof Difference difference && child == difference.getRightArg()) {
+				return null;
+			}
+			if (projection == null && (parent instanceof Projection || parent instanceof MultiProjection)) {
+				projection = (UnaryTupleOperator) parent;
+			}
+			child = parent;
+		}
+		if (projection == null) {
+			return null;
+		}
+		List<ProjectionElemList> lists = projection instanceof Projection single
+				? List.of(single.getProjectionElemList())
+				: ((MultiProjection) projection).getProjections();
+		for (ProjectionElemList list : lists) {
+			for (ProjectionElem element : list.getElements()) {
+				if (variable.getName().equals(element.getName())) {
+					return projection;
+				}
+			}
+		}
+		return null;
+	}
 
 	/** The direct-SELECT exemption used when preparing an RDF4J LATERAL caller scope. */
 	public static boolean preservesDirectSubSelectBindings(TupleExpr rightArg, Set<String> newInputNames) {

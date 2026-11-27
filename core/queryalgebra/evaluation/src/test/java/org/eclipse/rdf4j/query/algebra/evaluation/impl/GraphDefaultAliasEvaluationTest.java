@@ -30,6 +30,8 @@ import org.eclipse.rdf4j.model.vocabulary.RDF4J;
 import org.eclipse.rdf4j.model.vocabulary.SESAME;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.QueryLanguage;
+import org.eclipse.rdf4j.query.QueryParseOptions;
+import org.eclipse.rdf4j.query.QueryParseOptions.GraphAlgebraMode;
 import org.eclipse.rdf4j.query.algebra.QueryRoot;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.algebra.evaluation.TripleSource;
@@ -83,7 +85,8 @@ class GraphDefaultAliasEvaluationTest {
 	}
 
 	private static TupleExpr parse(String query) {
-		return new QueryRoot(QueryParserUtil.parseTupleQuery(QueryLanguage.SPARQL, query, null).getTupleExpr());
+		return new QueryRoot(QueryParserUtil.parseTupleQuery(QueryLanguage.SPARQL, query, null,
+				QueryParseOptions.DEFAULT.withGraphAlgebraMode(GraphAlgebraMode.GRAPH)).getTupleExpr());
 	}
 
 	private static final class DefaultAliasTripleSource implements TripleSource {

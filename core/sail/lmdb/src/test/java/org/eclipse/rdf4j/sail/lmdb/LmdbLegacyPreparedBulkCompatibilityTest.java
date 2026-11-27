@@ -34,6 +34,7 @@ import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.HashSet;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Properties;
@@ -46,11 +47,9 @@ import org.eclipse.rdf4j.common.transaction.IsolationLevels;
 import org.eclipse.rdf4j.model.BNode;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Literal;
-import org.eclipse.rdf4j.model.Model;
 import org.eclipse.rdf4j.model.Statement;
 import org.eclipse.rdf4j.model.TripleTerm;
 import org.eclipse.rdf4j.model.Value;
-import org.eclipse.rdf4j.model.impl.LinkedHashModel;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.model.vocabulary.XSD;
 import org.eclipse.rdf4j.repository.RepositoryConnection;
@@ -119,8 +118,8 @@ class LmdbLegacyPreparedBulkCompatibilityTest {
 		}
 
 		List<Value> objects = objects();
-		Model payload = payload(objects);
-		Model expected = new LinkedHashModel(payload);
+		Set<Statement> payload = payload(objects);
+		Set<Statement> expected = new HashSet<>(payload);
 		if (!cleared) {
 			expected.add(SEED);
 		}
@@ -296,19 +295,21 @@ class LmdbLegacyPreparedBulkCompatibilityTest {
 		return result;
 	}
 
-	private Model payload(List<Value> objects) {
-		Model result = new LinkedHashModel();
+	private Set<Statement> payload(List<Value> objects) {
+		Set<Statement> result = LinkedHashSet.newLinkedHashSet(ROW_COUNT);
+		BNode context = VF.createBNode("legacy-bulk-context");
 		for (int i = 0; i < ROW_COUNT; i++) {
-			result.add(VF.createIRI("urn:legacy-bulk:row:" + i), PREDICATE, objects.get(i % objects.size()),
-					i % 2 == 0 ? VF.createBNode("legacy-bulk-context") : null);
+			result.add(VF.createStatement(VF.createIRI("urn:legacy-bulk:row:" + i), PREDICATE,
+					objects.get(i % objects.size()), i % 2 == 0 ? context : null));
 		}
 		return result;
 	}
 
-	private void assertRows(LmdbStore store, RepositoryConnection connection, Model expected) throws Exception {
+	private void assertRows(LmdbStore store, RepositoryConnection connection, Set<Statement> expected)
+			throws Exception {
 		assertThat(connection.size()).isEqualTo(expected.size());
 		assertThat(connection.getNamespace("legacyBulk")).isEqualTo("urn:legacy-bulk:");
-		Model actual = new LinkedHashModel();
+		Set<Statement> actual = HashSet.newHashSet(expected.size());
 		try (var rows = connection.getStatements(null, null, null, false)) {
 			while (rows.hasNext()) {
 				Statement statement = rows.next();

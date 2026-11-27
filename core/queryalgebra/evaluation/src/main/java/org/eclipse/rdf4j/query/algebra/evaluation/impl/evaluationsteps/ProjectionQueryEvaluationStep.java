@@ -22,17 +22,26 @@ import org.eclipse.rdf4j.query.algebra.evaluation.QueryEvaluationStep;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.GraphFrameBindings;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.QueryEvaluationContext;
 import org.eclipse.rdf4j.query.algebra.evaluation.iterator.ProjectionIterator;
+import org.eclipse.rdf4j.query.impl.EmptyBindingSet;
 
 public final class ProjectionQueryEvaluationStep implements QueryEvaluationStep {
 	private final Projection projection;
 	private final QueryEvaluationStep qes;
 	private final QueryEvaluationContext context;
+	private final boolean ownsIdentityRows;
 
 	public ProjectionQueryEvaluationStep(Projection projection, QueryEvaluationStep qes,
 			QueryEvaluationContext context) {
+		this(projection, qes, context, false);
+	}
+
+	@InternalUseOnly
+	public ProjectionQueryEvaluationStep(Projection projection, QueryEvaluationStep qes,
+			QueryEvaluationContext context, boolean ownsIdentityRows) {
 		this.projection = projection;
 		this.qes = qes;
 		this.context = context;
+		this.ownsIdentityRows = ownsIdentityRows;
 	}
 
 	@Override
@@ -41,7 +50,9 @@ public final class ProjectionQueryEvaluationStep implements QueryEvaluationStep 
 
 		try {
 			evaluate = qes.evaluate(withInheritedGraphInput(projection, bindings, context));
-			return new ProjectionIterator(projection, evaluate, bindings, context);
+			BindingSet parent = ScopedUnionInput.projectionParent(projection, bindings);
+			return new ProjectionIterator(projection, evaluate, parent, context,
+					ownsIdentityRows && bindings == EmptyBindingSet.getInstance());
 		} catch (Throwable t) {
 			if (evaluate != null) {
 				evaluate.close();

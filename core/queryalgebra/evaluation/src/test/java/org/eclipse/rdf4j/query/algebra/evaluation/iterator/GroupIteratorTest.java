@@ -24,20 +24,26 @@ import java.time.Instant;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.Date;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.locks.Lock;
 import java.util.concurrent.locks.ReentrantLock;
+import java.util.function.BiConsumer;
 import java.util.function.BiFunction;
 import java.util.function.Function;
 import java.util.function.Predicate;
+import java.util.function.Supplier;
 
 import org.assertj.core.api.SoftAssertions;
+import org.eclipse.rdf4j.collection.factory.impl.DefaultCollectionFactory;
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
+import org.eclipse.rdf4j.common.iteration.CloseableIteratorIteration;
 import org.eclipse.rdf4j.common.iteration.LookAheadIteration;
 import org.eclipse.rdf4j.http.client.QueryCircuitBreaker;
 import org.eclipse.rdf4j.http.client.QueryCircuitBreakerHandle;
@@ -51,9 +57,11 @@ import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.model.base.CoreDatatype;
 import org.eclipse.rdf4j.model.datatypes.XMLDatatypeUtil;
+import org.eclipse.rdf4j.model.impl.SimpleIRI;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.model.vocabulary.XSD;
 import org.eclipse.rdf4j.query.BindingSet;
+import org.eclipse.rdf4j.query.MutableBindingSet;
 import org.eclipse.rdf4j.query.QueryEvaluationException;
 import org.eclipse.rdf4j.query.QueryInterruptedException;
 import org.eclipse.rdf4j.query.algebra.AggregateFunctionCall;
@@ -64,6 +72,7 @@ import org.eclipse.rdf4j.query.algebra.Count;
 import org.eclipse.rdf4j.query.algebra.EmptySet;
 import org.eclipse.rdf4j.query.algebra.Extension;
 import org.eclipse.rdf4j.query.algebra.ExtensionElem;
+import org.eclipse.rdf4j.query.algebra.FunctionCall;
 import org.eclipse.rdf4j.query.algebra.Group;
 import org.eclipse.rdf4j.query.algebra.GroupConcat;
 import org.eclipse.rdf4j.query.algebra.GroupElem;
@@ -78,17 +87,23 @@ import org.eclipse.rdf4j.query.algebra.SingletonSet;
 import org.eclipse.rdf4j.query.algebra.StatementPattern;
 import org.eclipse.rdf4j.query.algebra.Sum;
 import org.eclipse.rdf4j.query.algebra.ValueConstant;
+import org.eclipse.rdf4j.query.algebra.ValueExpr;
 import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.query.algebra.evaluation.EvaluationStrategy;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryBindingSet;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryEvaluationStep;
+import org.eclipse.rdf4j.query.algebra.evaluation.QueryValueEvaluationStep;
 import org.eclipse.rdf4j.query.algebra.evaluation.ValueExprEvaluationException;
+import org.eclipse.rdf4j.query.algebra.evaluation.function.FunctionRegistry;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.DefaultEvaluationStrategy;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.EmptyTripleSource;
+import org.eclipse.rdf4j.query.algebra.evaluation.impl.GraphFrameBindings;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.QueryEvaluationContext;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.evaluationsteps.BatchCorrelatedJoinProvider;
 import org.eclipse.rdf4j.query.algebra.evaluation.util.MathUtil;
+import org.eclipse.rdf4j.query.impl.BlankNodeAllocationScope;
 import org.eclipse.rdf4j.query.impl.EmptyBindingSet;
+import org.eclipse.rdf4j.query.impl.ListBindingSet;
 import org.eclipse.rdf4j.query.parser.sparql.aggregate.AggregateCollector;
 import org.eclipse.rdf4j.query.parser.sparql.aggregate.AggregateFunction;
 import org.eclipse.rdf4j.query.parser.sparql.aggregate.AggregateFunctionFactory;
@@ -166,6 +181,26 @@ public class GroupIteratorTest {
 	}
 
 	@Test
+	void ordinaryCountDoesNotReadAllocationScopePerMember() {
+		AtomicInteger accesses = new AtomicInteger();
+		QueryEvaluationContext context = new QueryEvaluationContext.Minimal(
+				VF.createLiteral(Date.from(Instant.now())), null, null) {
+			@Override
+			public BlankNodeAllocationScope getBlankNodeAllocationScope() {
+				accesses.incrementAndGet();
+				return super.getBlankNodeAllocationScope();
+			}
+		};
+		Group group = new Group(NONEMPTY_ASSIGNMENT);
+		group.addGroupElement(new GroupElem("count", new Count(Var.of("a"))));
+		try (var groups = GroupIterator.withMembers(EVALUATOR, group, EmptyBindingSet.getInstance(), context,
+				new CloseableIteratorIteration<>(NONEMPTY_ASSIGNMENT.getBindingSets().iterator()))) {
+			assertThat(((Literal) groups.next().getValue("count")).intValue()).isEqualTo(9);
+			assertThat(accesses.get()).isZero();
+		}
+	}
+
+	@Test
 	public void cooperativeCancellationStopsBuildingTheGroups() {
 		Group group = new Group(NONEMPTY_ASSIGNMENT);
 		group.addGroupElement(new GroupElem("count", new Count(Var.of("a"))));
@@ -173,6 +208,301 @@ public class GroupIteratorTest {
 			assertTrue(gi.requestCancellation(), "the group operator polls cancellation itself");
 			assertThatExceptionOfType(QueryInterruptedException.class).isThrownBy(gi::hasNext);
 		}
+	}
+
+	@Test
+	void oneGroupKeyAndItsSampleDoNotCompareEveryPairOfFinalSolutions() {
+		AtomicInteger comparisons = new AtomicInteger();
+		List<BindingSet> members = new ArrayList<>();
+		for (int i = 0; i < 256; i++) {
+			IRI value = new SimpleIRI("urn:aggregate:" + i) {
+				@Override
+				public boolean equals(Object other) {
+					comparisons.incrementAndGet();
+					return super.equals(other);
+				}
+			};
+			QueryBindingSet row = new QueryBindingSet();
+			row.addBinding("k", value);
+			row.addBinding("copy", value);
+			members.add(row);
+			members.add(new QueryBindingSet(row));
+		}
+		Group group = new Group(new SingletonSet(), List.of("k"));
+		group.addGroupElement(new GroupElem("sample", new Sample(Var.of("k"))));
+		Set<String> results = new HashSet<>();
+		try (var it = GroupIterator.withMembers(EVALUATOR, group, EmptyBindingSet.getInstance(), CONTEXT,
+				new CloseableIteratorIteration<>(members.iterator()))) {
+			while (it.hasNext()) {
+				BindingSet row = it.next();
+				assertThat(row.getValue("sample")).isSameAs(row.getValue("k"));
+				assertThat(results.add(row.getValue("k").stringValue())).isTrue();
+			}
+		}
+		assertThat(results).hasSize(256);
+		assertThat(comparisons.get()).isLessThan(4096);
+	}
+
+	@Test
+	void wildcardDistinctAcceptsOpenedMembersWithoutAlgebraLayout() {
+		Group group = new Group();
+		group.addGroupElement(new GroupElem("n", new Count(null, true)));
+		try (var it = GroupIterator.withMembers(EVALUATOR, group, EmptyBindingSet.getInstance(), CONTEXT,
+				new CloseableIteratorIteration<>(List.<BindingSet>of(EmptyBindingSet.getInstance()).iterator()))) {
+			assertThat(((Literal) it.next().getValue("n")).intValue()).isEqualTo(1);
+			assertThat(it.hasNext()).isFalse();
+		}
+	}
+
+	@Test
+	void wildcardDistinctSnapshotsReusableMemberSolutions() {
+		IRI first = VF.createIRI("urn:first");
+		IRI second = VF.createIRI("urn:second");
+		for (int recycledInputs = 0; recycledInputs < 16; recycledInputs++) {
+			int mask = recycledInputs;
+			QueryBindingSet reusable = new QueryBindingSet();
+			// Each of the four logical rows can independently be supplied in the same mutable object.
+			var members = java.util.stream.IntStream.range(0, 4).<BindingSet>mapToObj(i -> {
+				QueryBindingSet member = (mask & (1 << i)) == 0 ? new QueryBindingSet() : reusable;
+				IRI term = (i & 1) == 0 ? first : second;
+				member.setBinding("left", term);
+				member.setBinding("right", term);
+				return member;
+			}).iterator();
+			BindingSetAssignment layout = new BindingSetAssignment();
+			layout.setDeclaredBindingNames(Set.of("left", "right"));
+			Group group = new Group(layout);
+			group.addGroupElement(new GroupElem("count", new Count(null, true)));
+			try (var it = GroupIterator.withMembers(EVALUATOR, group, EmptyBindingSet.getInstance(), CONTEXT,
+					new CloseableIteratorIteration<>(members))) {
+				assertThat(((Literal) it.next().getValue("count")).intValue()).as("reused inputs %s", mask)
+						.isEqualTo(2);
+				assertThat(it.hasNext()).isFalse();
+			}
+		}
+	}
+
+	@Test
+	void wildcardDistinctIncludesUnprojectedInheritedBindingsAndExplicitNulls() {
+		IRI same = VF.createIRI("urn:shared");
+		QueryBindingSet reused = new QueryBindingSet();
+		var rows = java.util.stream.IntStream.range(0, 18).<BindingSet>mapToObj(i -> {
+			reused.removeBinding("a");
+			reused.removeBinding("b");
+			reused.removeBinding("extra");
+			int shape = i % 9;
+			if (shape == 1 || shape >= 4) {
+				reused.setBinding("a", shape == 4 ? null : same);
+			}
+			if (shape == 2 || shape >= 4) {
+				reused.setBinding("b", shape == 5 ? null : same);
+			}
+			if (shape == 3 || shape >= 7) {
+				reused.setBinding("extra", shape == 7 ? null : same);
+			}
+			return reused;
+		}).iterator();
+		BindingSetAssignment layout = new BindingSetAssignment();
+		layout.setDeclaredBindingNames(Set.of("a", "b"));
+		Group group = new Group(layout);
+		group.addGroupElement(new GroupElem("n", new Count(null, true)));
+		try (var it = GroupIterator.withMembers(EVALUATOR, group, EmptyBindingSet.getInstance(), CONTEXT,
+				new CloseableIteratorIteration<>(rows))) {
+			assertThat(((Literal) it.next().getValue("n")).intValue()).isEqualTo(9);
+		}
+	}
+
+	@Test
+	void wildcardDistinctDoesNotInspectAnUnknownMemberSourceForColumnNames() {
+		BindingSetAssignment layout = new BindingSetAssignment();
+		layout.setBindingSets(() -> {
+			throw new AssertionError("do not probe a single-use iterable");
+		});
+		Group group = new Group(layout);
+		group.addGroupElement(new GroupElem("n", new Count(null, true)));
+		try (var it = GroupIterator.withMembers(EVALUATOR, group, EmptyBindingSet.getInstance(), CONTEXT,
+				new CloseableIteratorIteration<>(List.<BindingSet>of(EmptyBindingSet.getInstance()).iterator()))) {
+			assertThat(((Literal) it.next().getValue("n")).intValue()).isEqualTo(1);
+		}
+	}
+
+	@Test
+	void wildcardDistinctUsesTheWholeBindingDomainWithoutQuadraticComparisons() {
+		AtomicInteger comparisons = new AtomicInteger();
+		List<BindingSet> members = new ArrayList<>();
+		for (int i = 0; i < 256; i++) {
+			IRI value = new SimpleIRI("urn:distinct:" + i) {
+				@Override
+				public boolean equals(Object other) {
+					comparisons.incrementAndGet();
+					return super.equals(other);
+				}
+			};
+			QueryBindingSet row = new QueryBindingSet();
+			row.addBinding("k", value);
+			row.addBinding("copy", value);
+			members.add(row);
+			members.add(new QueryBindingSet(row));
+		}
+		// All three mappings iterate no bindings, but explicit nulls still occupy different names.
+		QueryBindingSet undefinedK = new QueryBindingSet();
+		undefinedK.setBinding("k", null);
+		QueryBindingSet undefinedCopy = new QueryBindingSet();
+		undefinedCopy.setBinding("copy", null);
+		members.addAll(List.of(EmptyBindingSet.getInstance(), EmptyBindingSet.getInstance(), undefinedK,
+				new QueryBindingSet(undefinedK), undefinedCopy));
+		BindingSetAssignment layout = new BindingSetAssignment();
+		layout.setDeclaredBindingNames(Set.of("k", "copy"));
+		Group group = new Group(layout);
+		group.addGroupElement(new GroupElem("count", new Count(null, true)));
+		try (var it = GroupIterator.withMembers(EVALUATOR, group, EmptyBindingSet.getInstance(), CONTEXT,
+				new CloseableIteratorIteration<>(members.iterator()))) {
+			assertThat(((Literal) it.next().getValue("count")).intValue()).isEqualTo(259);
+			assertThat(it.hasNext()).isFalse();
+		}
+		assertThat(comparisons.get()).isLessThan(4096);
+	}
+
+	@Test
+	void wildcardDistinctPassesOriginalBindingsToCustomFactory() {
+		AtomicInteger observed = new AtomicInteger();
+		var factory = new DefaultCollectionFactory() {
+			@Override
+			public <T> Set<T> createSet() {
+				return new HashSet<>() {
+					@Override
+					public boolean add(T value) {
+						assertThat(value).isInstanceOf(BindingSet.class);
+						observed.incrementAndGet();
+						return super.add(value);
+					}
+				};
+			}
+		};
+		Group group = new Group(NONEMPTY_ASSIGNMENT);
+		group.addGroupElement(new GroupElem("count", new Count(null, true)));
+		try (var it = new GroupIterator(EVALUATOR, group, EmptyBindingSet.getInstance(), 0, CONTEXT, VF, factory)) {
+			assertThat(((Literal) it.next().getValue("count")).intValue()).isEqualTo(9);
+			assertThat(it.hasNext()).isFalse();
+		}
+		assertThat(observed.get()).isEqualTo(9);
+	}
+
+	@Test
+	void groupingOnTwoEqualTermsDoesNotCompareEveryPairOfFinalSolutions() {
+		int cardinality = 256;
+		AtomicInteger comparisons = new AtomicInteger();
+		List<BindingSet> members = new ArrayList<>();
+		for (int i = 0; i < cardinality; i++) {
+			IRI term = new SimpleIRI("urn:group:" + i) {
+				@Override
+				public boolean equals(Object other) {
+					comparisons.incrementAndGet();
+					return super.equals(other);
+				}
+			};
+			QueryBindingSet row = new QueryBindingSet();
+			row.addBinding("k", term);
+			row.addBinding("copy", term);
+			members.add(row);
+			members.add(row);
+		}
+		Group group = new Group(new SingletonSet(), List.of("k", "copy"));
+		group.addGroupElement(new GroupElem("count", new Count(null)));
+		List<String> rows = new ArrayList<>();
+		try (var it = GroupIterator.withMembers(EVALUATOR, group, EmptyBindingSet.getInstance(), CONTEXT,
+				new CloseableIteratorIteration<>(members.iterator()))) {
+			while (it.hasNext()) {
+				BindingSet row = it.next();
+				assertThat(row.getValue("copy")).isSameAs(row.getValue("k"));
+				assertThat(((Literal) row.getValue("count")).intValue()).isEqualTo(2);
+				rows.add(row.getValue("k").stringValue());
+			}
+		}
+		assertThat(rows).hasSize(cardinality).doesNotHaveDuplicates();
+		// The public binding-set XOR hash cancels the two equal values. Using it as a grouping
+		// result index puts all of these otherwise unrelated groups in the same bucket.
+		assertThat(comparisons.get()).isLessThan(16 * cardinality);
+	}
+
+	@Test
+	void twoGroupsWithTheSameFinalBindingsRemainDeduplicated() {
+		QueryBindingSet parent = new QueryBindingSet();
+		GraphFrameBindings.supply(parent, "copy", VF.createIRI("urn:copy"));
+		QueryBindingSet missing = new QueryBindingSet();
+		missing.addBinding("k", VF.createIRI("urn:key"));
+		QueryBindingSet bound = new QueryBindingSet(missing);
+		bound.addBinding("copy", parent.getValue("copy"));
+		Group group = new Group(new SingletonSet(), List.of("k", "copy"));
+		group.addGroupElement(new GroupElem("count", new Count(null)));
+		for (boolean inheritedFirst : List.of(true, false)) {
+			List<BindingSet> inputs = inheritedFirst ? List.of(missing, bound) : List.of(bound, missing);
+			try (var it = GroupIterator.withMembers(EVALUATOR, group, parent, CONTEXT,
+					new CloseableIteratorIteration<>(inputs.iterator()))) {
+				BindingSet result = it.next();
+				assertThat(result.getValue("k")).isEqualTo(missing.getValue("k"));
+				assertThat(result.getValue("copy")).isEqualTo(parent.getValue("copy"));
+				assertThat(((Literal) result.getValue("count")).intValue()).isEqualTo(1);
+				// The inherited mapping carries private provenance; the assignment clears it on
+				// the other mapping. Frame metadata is not part of RDF solution equality.
+				assertThat(GraphFrameBindings.isSupplied(result, "copy")).isEqualTo(inheritedFirst);
+				assertThat(it.hasNext()).isFalse();
+			}
+		}
+	}
+
+	@Test
+	void multipleGroupingKeysKeepTermIdentityAndUnboundDomains() {
+		var keys = List.of("number", "label");
+		var one = VF.createLiteral("1", XSD.INTEGER);
+		var padded = VF.createLiteral("01", XSD.INTEGER);
+		var en = VF.createLiteral("one", "en");
+		var no = VF.createLiteral("one", "no");
+		BindingSet repeated = new ListBindingSet(keys, one, en);
+		List<BindingSet> inputs = List.of(repeated, repeated,
+				new ListBindingSet(keys, padded, en), new ListBindingSet(keys, one, no),
+				new ListBindingSet(keys, null, en));
+		Group group = new Group(new SingletonSet(), keys);
+		group.addGroupElement(new GroupElem("count", new Count(null)));
+		List<BindingSet> output = new ArrayList<>();
+		try (var it = GroupIterator.withMembers(EVALUATOR, group, EmptyBindingSet.getInstance(), CONTEXT,
+				new CloseableIteratorIteration<>(inputs.iterator()))) {
+			while (it.hasNext()) {
+				output.add(it.next());
+			}
+		}
+		var names = List.of("number", "label", "count");
+		var oneCount = VF.createLiteral("1", XSD.INTEGER);
+		assertThat(output).containsExactlyInAnyOrder(
+				new ListBindingSet(names, one, en, VF.createLiteral("2", XSD.INTEGER)),
+				new ListBindingSet(names, padded, en, oneCount),
+				new ListBindingSet(names, one, no, oneCount),
+				new ListBindingSet(List.of("label", "count"), en, oneCount));
+	}
+
+	@Test
+	void customCollectionFactoryStillOwnsTheGroupedResultSet() {
+		AtomicInteger resultSets = new AtomicInteger();
+		var factory = new DefaultCollectionFactory() {
+			@Override
+			public Set<BindingSet> createSetOfBindingSets(Supplier<MutableBindingSet> create,
+					Function<String, Predicate<BindingSet>> has,
+					Function<String, Function<BindingSet, Value>> get,
+					Function<String, BiConsumer<Value, MutableBindingSet>> set) {
+				resultSets.incrementAndGet();
+				return super.createSetOfBindingSets(create, has, get, set);
+			}
+		};
+		Group group = new Group(NONEMPTY_ASSIGNMENT, List.of("a", "missing"));
+		int rows = 0;
+		try (var it = new GroupIterator(EVALUATOR, group, EmptyBindingSet.getInstance(), 0, CONTEXT, VF, factory)) {
+			while (it.hasNext()) {
+				it.next();
+				rows++;
+			}
+		}
+		assertThat(rows).isEqualTo(9);
+		assertThat(resultSets).hasValue(1);
 	}
 
 	@Test
@@ -449,6 +779,224 @@ public class GroupIteratorTest {
 		assertThat(outerJoin.getAlgorithmName()).isNotBlank();
 		assertThat(nestedJoin.getAlgorithmName()).isNotBlank();
 		assertThat(sourceCalls.get()).isZero();
+	}
+
+	@Test
+	public void lazilyPreparesBuiltinAggregateVarOnceAcrossGroupEvaluations() throws QueryEvaluationException {
+		AtomicInteger valueArgumentPreparations = new AtomicInteger();
+		EvaluationStrategy strategy = new DefaultEvaluationStrategy(null, null) {
+			@Override
+			public QueryValueEvaluationStep precompile(ValueExpr expression, QueryEvaluationContext context)
+					throws QueryEvaluationException {
+				if (expression instanceof Var variable && "v".equals(variable.getName())) {
+					valueArgumentPreparations.incrementAndGet();
+				}
+				return super.precompile(expression, context);
+			}
+
+			@Override
+			protected boolean usesStandardPreparation() {
+				return true;
+			}
+		};
+		Group group = new Group(new SingletonSet());
+		group.addGroupElement(new GroupElem("sum", new Sum(Var.of("v"))));
+		QueryEvaluationStep step = strategy.precompile(group, CONTEXT);
+
+		assertThat(valueArgumentPreparations).hasValue(0);
+		try (CloseableIteration<BindingSet> unopened = step.evaluate(EmptyBindingSet.getInstance())) {
+			// Closing without consuming the Group must not prepare its aggregate argument.
+		}
+		assertThat(valueArgumentPreparations).hasValue(0);
+
+		QueryBindingSet firstBindings = new QueryBindingSet();
+		firstBindings.addBinding("v", VF.createLiteral(1));
+		try (CloseableIteration<BindingSet> results = step.evaluate(firstBindings)) {
+			assertThat(results.hasNext()).isTrue();
+			assertThat(results.next().getValue("sum")).isEqualTo(VF.createLiteral("1", XSD.INTEGER));
+			assertThat(results.hasNext()).isFalse();
+		}
+		assertThat(valueArgumentPreparations).hasValue(1);
+
+		QueryBindingSet secondBindings = new QueryBindingSet();
+		secondBindings.addBinding("v", VF.createLiteral(2));
+		try (CloseableIteration<BindingSet> results = step.evaluate(secondBindings)) {
+			assertThat(results.hasNext()).isTrue();
+			assertThat(results.next().getValue("sum")).isEqualTo(VF.createLiteral("2", XSD.INTEGER));
+			assertThat(results.hasNext()).isFalse();
+		}
+		assertThat(valueArgumentPreparations).hasValue(1);
+	}
+
+	@Test
+	public void doesNotPrepareBuiltinLiteralGroupConcatSeparatorPerEvaluation() throws QueryEvaluationException {
+		assertLiteralGroupConcatSeparator(VF.createLiteral("|"), 0, 0);
+	}
+
+	@Test
+	public void doesNotPrepareParserTypedStringGroupConcatSeparatorPerEvaluation() throws QueryEvaluationException {
+		Literal separator = VF.createLiteral("|", CoreDatatype.XSD.STRING);
+		assertThat(separator.getClass()).isEqualTo(VF.createLiteral("", CoreDatatype.XSD.STRING).getClass());
+		assertThat(separator.getDatatype()).isSameAs(CoreDatatype.XSD.STRING.getIri());
+		assertLiteralGroupConcatSeparator(separator, 0, 0);
+	}
+
+	@Test
+	public void nonCanonicalStringDatatypeStillEvaluatesGroupConcatSeparator() throws QueryEvaluationException {
+		IRI nonCanonicalStringDatatype = VF.createIRI(CoreDatatype.XSD.STRING.getIri().stringValue());
+		Literal separator = VF.createLiteral("|", nonCanonicalStringDatatype);
+		assertThat(separator.getDatatype()).isEqualTo(CoreDatatype.XSD.STRING.getIri());
+		assertThat(separator.getDatatype()).isNotSameAs(CoreDatatype.XSD.STRING.getIri());
+		assertLiteralGroupConcatSeparator(separator, 2, 2);
+	}
+
+	private void assertLiteralGroupConcatSeparator(Literal separatorValue, int expectedPreparations,
+			int expectedCaptures) throws QueryEvaluationException {
+		ValueConstant separator = new ValueConstant(separatorValue);
+		AtomicInteger separatorPreparations = new AtomicInteger();
+		AtomicInteger separatorCaptures = new AtomicInteger();
+		EmptyTripleSource source = new EmptyTripleSource() {
+			@Override
+			public Function<Value, Value> getValueCapturer() {
+				return value -> {
+					if (value == separatorValue) {
+						separatorCaptures.incrementAndGet();
+					}
+					return value;
+				};
+			}
+		};
+		EvaluationStrategy strategy = new DefaultEvaluationStrategy(source, null) {
+			@Override
+			protected QueryValueEvaluationStep prepare(ValueConstant valueConstant, QueryEvaluationContext context)
+					throws QueryEvaluationException {
+				if (valueConstant == separator) {
+					separatorPreparations.incrementAndGet();
+				}
+				return super.prepare(valueConstant, context);
+			}
+
+			@Override
+			protected boolean usesStandardPreparation() {
+				return true;
+			}
+		};
+		QueryEvaluationStep step = strategy.precompile(groupConcatGroup(separator), CONTEXT);
+
+		assertThat(separatorPreparations).hasValue(0);
+		for (String ticket : List.of("urn:ticket:first", "urn:ticket:second")) {
+			QueryBindingSet bindings = new QueryBindingSet();
+			bindings.addBinding("ticket", VF.createIRI(ticket));
+			try (CloseableIteration<BindingSet> results = step.evaluate(bindings)) {
+				assertThat(results.hasNext()).isTrue();
+				BindingSet result = results.next();
+				assertThat(result.getValue("ticket")).isEqualTo(VF.createIRI(ticket));
+				assertThat(result.getValue("events").stringValue().split("\\|"))
+						.containsExactlyInAnyOrder("event-a", "event-b");
+				assertThat(results.hasNext()).isFalse();
+			}
+		}
+		assertThat(separatorPreparations).as("literal separator scalar preparation count")
+				.hasValue(expectedPreparations);
+		assertThat(separatorCaptures).as("literal separator capture count").hasValue(expectedCaptures);
+	}
+
+	@Test
+	public void groupConcatDynamicSeparatorObservesEachEvaluationBinding() throws QueryEvaluationException {
+		EvaluationStrategy strategy = new DefaultEvaluationStrategy(new EmptyTripleSource(), null);
+		QueryEvaluationStep step = strategy.precompile(groupConcatGroup(Var.of("separator")), CONTEXT);
+		for (String separator : List.of("|", "/")) {
+			QueryBindingSet bindings = new QueryBindingSet();
+			bindings.addBinding("separator", VF.createLiteral(separator));
+			try (CloseableIteration<BindingSet> results = step.evaluate(bindings)) {
+				assertThat(results.hasNext()).isTrue();
+				String events = results.next().getValue("events").stringValue();
+				assertThat(events).contains(separator, "event-a", "event-b");
+				assertThat(results.hasNext()).isFalse();
+			}
+		}
+	}
+
+	@Test
+	public void doesNotReuseAggregateVarForCustomEvaluationStrategy() throws QueryEvaluationException {
+		AtomicInteger valueArgumentPreparations = new AtomicInteger();
+		EvaluationStrategy strategy = new DefaultEvaluationStrategy(null, null) {
+			@Override
+			public QueryValueEvaluationStep precompile(ValueExpr expression, QueryEvaluationContext context)
+					throws QueryEvaluationException {
+				if (expression instanceof Var variable && "v".equals(variable.getName())) {
+					valueArgumentPreparations.incrementAndGet();
+				}
+				return super.precompile(expression, context);
+			}
+		};
+		Group group = new Group(new SingletonSet());
+		group.addGroupElement(new GroupElem("sum", new Sum(Var.of("v"))));
+		QueryEvaluationStep step = strategy.precompile(group, CONTEXT);
+
+		for (int value : List.of(1, 2)) {
+			QueryBindingSet bindings = new QueryBindingSet();
+			bindings.addBinding("v", VF.createLiteral(value));
+			try (CloseableIteration<BindingSet> results = step.evaluate(bindings)) {
+				assertThat(results.hasNext()).isTrue();
+				assertThat(results.next().getValue("sum"))
+						.isEqualTo(VF.createLiteral(Integer.toString(value), XSD.INTEGER));
+			}
+		}
+
+		assertThat(valueArgumentPreparations).hasValue(2);
+	}
+
+	@Test
+	public void customAggregateArgumentObservesFunctionRegistryReplacement() throws QueryEvaluationException {
+		String uri = "urn:rdf4j:test:group-aggregate-argument";
+		org.eclipse.rdf4j.query.algebra.evaluation.function.Function initial = aggregateArgumentFunction(uri, 5);
+		org.eclipse.rdf4j.query.algebra.evaluation.function.Function replacement = aggregateArgumentFunction(uri, 7);
+		FunctionRegistry registry = FunctionRegistry.getInstance();
+		org.eclipse.rdf4j.query.algebra.evaluation.function.Function previous = registry.add(initial).orElse(null);
+		try {
+			Group group = new Group(new SingletonSet());
+			group.addGroupElement(new GroupElem("sum",
+					new Sum(new FunctionCall(uri, Var.of("v")))));
+			QueryEvaluationStep step = new DefaultEvaluationStrategy(new EmptyTripleSource(), null)
+					.precompile(group, CONTEXT);
+			QueryBindingSet bindings = new QueryBindingSet();
+			bindings.addBinding("v", VF.createLiteral(1));
+
+			assertAggregateValue(step, bindings, 5);
+			registry.add(replacement);
+			assertAggregateValue(step, bindings, 7);
+		} finally {
+			registry.remove(initial);
+			if (previous != null) {
+				registry.add(previous);
+			}
+		}
+	}
+
+	private static org.eclipse.rdf4j.query.algebra.evaluation.function.Function aggregateArgumentFunction(String uri,
+			int result) {
+		return new org.eclipse.rdf4j.query.algebra.evaluation.function.Function() {
+			@Override
+			public String getURI() {
+				return uri;
+			}
+
+			@Override
+			public Value evaluate(ValueFactory valueFactory, Value... args) {
+				return valueFactory.createLiteral(result);
+			}
+		};
+	}
+
+	private static void assertAggregateValue(QueryEvaluationStep step, BindingSet bindings, int expected)
+			throws QueryEvaluationException {
+		try (CloseableIteration<BindingSet> results = step.evaluate(bindings)) {
+			assertThat(results.hasNext()).isTrue();
+			assertThat(results.next().getValue("sum"))
+					.isEqualTo(VF.createLiteral(Integer.toString(expected), XSD.INTEGER));
+			assertThat(results.hasNext()).isFalse();
+		}
 	}
 
 	@Test
@@ -1077,6 +1625,20 @@ public class GroupIteratorTest {
 		public SumCollector getCollector() {
 			return new SumCollector();
 		}
+	}
+
+	private static Group groupConcatGroup(ValueExpr separator) {
+		QueryBindingSet first = new QueryBindingSet();
+		first.addBinding("event", VF.createLiteral("event-a"));
+		QueryBindingSet second = new QueryBindingSet();
+		second.addBinding("event", VF.createLiteral("event-b"));
+		BindingSetAssignment assignment = new BindingSetAssignment();
+		assignment.setBindingSets(List.of(first, second));
+		Group group = new Group(assignment);
+		GroupConcat concat = new GroupConcat(Var.of("event"));
+		concat.setSeparator(separator);
+		group.addGroupElement(new GroupElem("events", concat));
+		return group;
 	}
 
 	/**

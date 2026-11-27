@@ -25,12 +25,12 @@ import org.eclipse.rdf4j.common.annotation.Experimental;
 import org.eclipse.rdf4j.common.iteration.AbstractCloseableIteration;
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.common.iteration.CloseableIteratorIteration;
-import org.eclipse.rdf4j.common.iteration.ConvertingIteration;
 import org.eclipse.rdf4j.common.iteration.EmptyIteration;
 import org.eclipse.rdf4j.common.iteration.Iterations;
 import org.eclipse.rdf4j.common.iteration.LookAheadIteration;
 import org.eclipse.rdf4j.common.iteration.SingletonIteration;
 import org.eclipse.rdf4j.http.client.QueryExecutionContext;
+import org.eclipse.rdf4j.http.client.query.TupleResultEvaluation;
 import org.eclipse.rdf4j.model.BNode;
 import org.eclipse.rdf4j.model.TripleTerm;
 import org.eclipse.rdf4j.model.Value;
@@ -41,6 +41,7 @@ import org.eclipse.rdf4j.query.BooleanQuery;
 import org.eclipse.rdf4j.query.MalformedQueryException;
 import org.eclipse.rdf4j.query.QueryEvaluationException;
 import org.eclipse.rdf4j.query.QueryLanguage;
+import org.eclipse.rdf4j.query.QueryResults;
 import org.eclipse.rdf4j.query.TupleQuery;
 import org.eclipse.rdf4j.query.algebra.BindingSetAssignment;
 import org.eclipse.rdf4j.query.algebra.ProjectionElem;
@@ -49,6 +50,7 @@ import org.eclipse.rdf4j.query.algebra.evaluation.federation.FederatedService;
 import org.eclipse.rdf4j.query.algebra.evaluation.federation.FederatedServiceIdentity;
 import org.eclipse.rdf4j.query.algebra.helpers.AbstractQueryModelVisitor;
 import org.eclipse.rdf4j.query.algebra.helpers.TupleExprs;
+import org.eclipse.rdf4j.query.impl.BindingSetSnapshots;
 import org.eclipse.rdf4j.query.impl.BlankNodeAllocationScope;
 import org.eclipse.rdf4j.query.impl.BlankNodeReferences;
 import org.eclipse.rdf4j.query.impl.EmptyBindingSet;
@@ -61,7 +63,6 @@ import org.eclipse.rdf4j.repository.RepositoryException;
 import org.eclipse.rdf4j.repository.sparql.SPARQLConnection;
 import org.eclipse.rdf4j.repository.sparql.query.InsertBindingSetCursor;
 import org.eclipse.rdf4j.repository.sparql.query.QueryStringUtil;
-import org.eclipse.rdf4j.repository.sparql.query.SPARQLQueryBindingSet;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -153,7 +154,8 @@ public class RepositoryFederatedService implements FederatedService {
 	 *
 	 * @author Andreas Schwarte
 	 */
-	private static class CloseConnectionIteration extends AbstractCloseableIteration<BindingSet> {
+	private static class CloseConnectionIteration extends AbstractCloseableIteration<BindingSet>
+			implements FederatedServiceIdentity.AdmittedResults {
 
 		private final CloseableIteration<BindingSet> delegate;
 		private final RepositoryConnection connection;
@@ -270,7 +272,7 @@ public class RepositoryFederatedService implements FederatedService {
 	@Override
 	public CloseableIteration<BindingSet> select(Service service, Set<String> projectionVars,
 			BindingSet bindings, String baseUri) throws QueryEvaluationException {
-		BindingSet original = RemoteBNode.originalBindings(bindings);
+		BindingSet original = BindingSetSnapshots.copyOf(RemoteBNode.originalBindings(bindings));
 		BlankNodeAllocationScope allocation = BlankNodeAllocationScope.currentOrNew();
 		allocation.reserve(original);
 		RepositoryConnection conn = null;
@@ -294,9 +296,8 @@ public class RepositoryFederatedService implements FederatedService {
 			}
 			RemoteBNode.ResponseScope response = RemoteBNode.newResponseScope(allocation,
 					SimpleValueFactory.getInstance(), bnodeIdentityScope, canonicalBNodeIDsSupported);
-			response.seedOriginalBindings(original);
-			result = mapResponse(query.evaluate(), response, resultBindings);
-			result = new InsertBindingSetCursor(result, resultBindings);
+			result = TupleResultEvaluation.evaluate(query, response, resultBindings);
+			result = new AdmittedSelectResult(result, resultBindings);
 			if (useFreshConnection) {
 				result = new CloseConnectionIteration(result, conn);
 				conn = null;
@@ -361,19 +362,23 @@ public class RepositoryFederatedService implements FederatedService {
 		return relevant;
 	}
 
-	private static CloseableIteration<BindingSet> mapResponse(CloseableIteration<BindingSet> raw,
-			RemoteBNode.ResponseScope response, BindingSet originals) {
-		return new ConvertingIteration<BindingSet, BindingSet>(raw) {
-			@Override
-			protected BindingSet convert(BindingSet row) {
-				return response.map(row, originals);
-			}
-		};
+	private static final class AdmittedSelectResult extends InsertBindingSetCursor
+			implements FederatedServiceIdentity.AdmittedResults {
+		private AdmittedSelectResult(CloseableIteration<BindingSet> rows, BindingSet originals) {
+			super(rows, originals);
+		}
+	}
+
+	private static final class BufferedServiceResult extends CloseableIteratorIteration<BindingSet>
+			implements FederatedServiceIdentity.AdmittedResults {
+		private BufferedServiceResult(CloseableIteration<BindingSet> rows) {
+			super(Iterations.asList(rows).iterator());
+		}
 	}
 
 	private static CloseableIteration<BindingSet> finishSilentResponse(Service service,
 			CloseableIteration<BindingSet> result) {
-		return service.isSilent() ? new CloseableIteratorIteration<>(Iterations.asList(result).iterator()) : result;
+		return service.isSilent() ? new BufferedServiceResult(result) : result;
 	}
 
 	private static void closeFailedResponse(CloseableIteration<BindingSet> result, RepositoryConnection connection,
@@ -420,10 +425,7 @@ public class RepositoryFederatedService implements FederatedService {
 		List<BindingSet> originals = new ArrayList<>();
 		try (bindings) {
 			while (bindings.hasNext()) {
-				MapBindingSet snapshot = new MapBindingSet();
-				for (Binding binding : RemoteBNode.originalBindings(bindings.next())) {
-					snapshot.addBinding(binding);
-				}
+				BindingSet snapshot = BindingSetSnapshots.copyOf(RemoteBNode.originalBindings(bindings.next()));
 				originals.add(snapshot);
 				allocation.reserve(snapshot);
 			}
@@ -475,20 +477,14 @@ public class RepositoryFederatedService implements FederatedService {
 			query.setMaxExecutionTime(60);
 			RemoteBNode.ResponseScope response = RemoteBNode.newResponseScope(allocation,
 					SimpleValueFactory.getInstance(), bnodeIdentityScope, canonicalBNodeIDsSupported);
-			CloseableIteration<BindingSet> raw = query.evaluate();
 			if (relevantNames.isEmpty()) {
-				result = new SPARQLCrossProductIteration(mapResponse(raw, response, null), originals);
+				result = new SPARQLCrossProductIteration(
+						TupleResultEvaluation.evaluate(query, response, EmptyBindingSet.getInstance()), originals);
 			} else {
-				CloseableIteration<BindingSet> mapped = new ConvertingIteration<BindingSet, BindingSet>(raw) {
-					@Override
-					protected BindingSet convert(BindingSet row) {
-						int index = ServiceJoinConversionIteration.getRowIndex(row, rowIndexVar);
-						if (index < 0 || index >= originals.size()) {
-							throw new QueryEvaluationException("Invalid SERVICE input row index: " + index);
-						}
-						return response.map(row, originals.get(index));
-					}
-				};
+				boolean echoes = canonicalBNodeIDsSupported && bnodeIdentityScope != null
+						&& originals.stream().anyMatch(response::mayContainCanonicalEcho);
+				CloseableIteration<BindingSet> mapped = TupleResultEvaluation.evaluate(query, response,
+						row -> ServiceJoinConversionIteration.getInputRow(row, originals, rowIndexVar), echoes);
 				result = new ServiceJoinConversionIteration(mapped, originals, rowIndexVar);
 			}
 			if (useFreshConnection) {
@@ -555,6 +551,7 @@ public class RepositoryFederatedService implements FederatedService {
 		private final CloseableIteration<BindingSet> remote;
 		private final List<BindingSet> inputBindings;
 		private final RemoteBNode.ResponseScope response;
+		private final boolean admitted;
 		private BindingSet currentRemote;
 		private Iterator<BindingSet> inputIterator;
 
@@ -563,6 +560,7 @@ public class RepositoryFederatedService implements FederatedService {
 			this.remote = remote;
 			this.inputBindings = inputBindings;
 			this.response = response;
+			this.admitted = remote instanceof FederatedServiceIdentity.AdmittedResults;
 		}
 
 		@Override
@@ -577,28 +575,15 @@ public class RepositoryFederatedService implements FederatedService {
 				}
 				while (inputIterator.hasNext()) {
 					BindingSet input = inputIterator.next();
-					BindingSet merged = merge(input, response.map(currentRemote, input));
-					if (merged != null) {
-						return merged;
+					BindingSet result = admitted ? response.reconcile(currentRemote, input)
+							: response.map(currentRemote, input);
+					if (QueryResults.bindingSetsCompatible(input, result)) {
+						return BindingSetSnapshots.mergeWithPrecedence(input, result);
 					}
 				}
 				currentRemote = null;
 				inputIterator = null;
 			}
-		}
-
-		private static BindingSet merge(BindingSet input, BindingSet remoteSolution) {
-			SPARQLQueryBindingSet merged = new SPARQLQueryBindingSet(input.size() + remoteSolution.size());
-			merged.addAll(input);
-			for (Binding binding : remoteSolution) {
-				Value existing = merged.getValue(binding.getName());
-				if (existing == null) {
-					merged.addBinding(binding);
-				} else if (!existing.equals(binding.getValue())) {
-					return null;
-				}
-			}
-			return merged;
 		}
 
 		@Override

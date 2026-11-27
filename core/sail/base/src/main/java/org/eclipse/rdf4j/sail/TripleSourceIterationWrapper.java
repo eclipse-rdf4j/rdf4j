@@ -15,9 +15,11 @@ package org.eclipse.rdf4j.sail;
 
 import java.util.NoSuchElementException;
 import java.util.Objects;
+import java.util.function.IntSupplier;
 
 import org.eclipse.rdf4j.common.annotation.Experimental;
 import org.eclipse.rdf4j.common.annotation.InternalUseOnly;
+import org.eclipse.rdf4j.common.iteration.BufferedIteration;
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.common.iteration.CooperativeCancellation;
 import org.eclipse.rdf4j.common.iteration.IndexReportingIterator;
@@ -26,13 +28,18 @@ import org.eclipse.rdf4j.query.QueryEvaluationException;
 
 @InternalUseOnly
 public class TripleSourceIterationWrapper<T>
-		implements CooperativeCancellation, CloseableIteration<T>, IndexReportingIterator {
+		implements CooperativeCancellation, CloseableIteration<T>, IndexReportingIterator, BufferedIteration {
 
 	private final CloseableIteration<? extends T> delegate;
 	private boolean closed = false;
 
 	public TripleSourceIterationWrapper(CloseableIteration<? extends T> delegate) {
 		this.delegate = Objects.requireNonNull(delegate, "The iterator was null");
+	}
+
+	@Override
+	public IntSupplier bufferedRowsSource() {
+		return getClass() == TripleSourceIterationWrapper.class ? BufferedIteration.bufferedRowsSource(delegate) : null;
 	}
 
 	/**

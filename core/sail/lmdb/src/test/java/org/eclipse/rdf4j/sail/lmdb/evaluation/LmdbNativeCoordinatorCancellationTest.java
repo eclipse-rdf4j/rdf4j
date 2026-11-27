@@ -22,6 +22,7 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
+import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
@@ -134,7 +135,7 @@ class LmdbNativeCoordinatorCancellationTest {
 						assertThat(failure).isNull();
 						assertOrderedResult(fixture, result.get());
 					} else {
-						assertThat(fixture.signalled)
+						assertThat(fixture.stopClaimed)
 								.as("the actual ordered %s boundary must request its control", boundary)
 								.isTrue();
 						if (stop == NativeCoordinatorCompletionContractTest.Stop.QUERY) {
@@ -308,8 +309,9 @@ class LmdbNativeCoordinatorCancellationTest {
 						.isPositive();
 				fixture.assertResult(result.get());
 			} else {
-				assertThat(fixture.signalled).as("a hash inside the actual worker merge requests termination").isTrue();
-				assertThat(fixture.workerMergeReadsAfterSignal.get())
+				assertThat(fixture.stopClaimed).as("a hash inside the actual worker merge requests termination")
+						.isTrue();
+				assertThat(fixture.workerHashesAfterPublication.get())
 						.as("two workers must poll within a bounded DISTINCT copy, independently of set size")
 						.isLessThanOrEqualTo(2 * POLL_BOUND);
 				if (stop == NativeCoordinatorCompletionContractTest.Stop.QUERY) {
@@ -333,6 +335,10 @@ class LmdbNativeCoordinatorCancellationTest {
 		for (boolean interrupt : new boolean[] { false, stop != NativeCoordinatorCompletionContractTest.Stop.NONE }) {
 			try (Fixture fixture = Fixture.forWorkerGrowth(interrupt,
 					stop == NativeCoordinatorCompletionContractTest.Stop.PROBE)) {
+				if (interrupt) {
+					// Reproduce preemption of the winning worker before its request is visible to the other one.
+					fixture.peerHashesBeforePublication = new CountDownLatch(2 * POLL_BOUND + 1);
+				}
 				AtomicReference<List<BindingSet>> result = new AtomicReference<>();
 				Throwable failure = catchThrowable(() -> result.set(fixture.run()));
 				assertThat(fixture.boundKernels.get()).isPositive();
@@ -346,8 +352,8 @@ class LmdbNativeCoordinatorCancellationTest {
 							.isPositive();
 					fixture.assertResult(result.get());
 				} else {
-					assertThat(fixture.signalled).isTrue();
-					assertThat(fixture.workerMergeReadsAfterSignal.get()).isLessThanOrEqualTo(2 * POLL_BOUND);
+					assertThat(fixture.stopClaimed).isTrue();
+					assertThat(fixture.workerHashesAfterPublication.get()).isLessThanOrEqualTo(2 * POLL_BOUND);
 					if (stop == NativeCoordinatorCompletionContractTest.Stop.QUERY) {
 						assertOwnedQueryCancellation(failure, fixture.emitter.cancellation);
 					} else {
@@ -510,7 +516,7 @@ class LmdbNativeCoordinatorCancellationTest {
 				// separately owned replay below is a later render stage and must not inflate coordinator spans.
 				NativeExecutionPhaseEvent.mark("fixture-materializer-finished", fixture.emitter.cancellation, "FENCED");
 				if (interrupt) {
-					assertThat(fixture.signalled).isTrue();
+					assertThat(fixture.stopClaimed).isTrue();
 					if (probe) {
 						assertThat(failure).isSameAs(LmdbNativeProbeDeadlineExceeded.INSTANCE);
 					} else {
@@ -665,7 +671,7 @@ class LmdbNativeCoordinatorCancellationTest {
 			Throwable failure = catchThrowable(() -> result.set(cancelled.run()));
 			assertThat(cancelled.boundKernels.get()).as("the cancelled attempt must execute actual workers")
 					.isPositive();
-			assertThat(cancelled.signalled).as("the targeted coordinator callback must be reached").isTrue();
+			assertThat(cancelled.stopClaimed).as("the targeted coordinator callback must be reached").isTrue();
 			assertThat(cancelled.closedSources).as("every accepted source closes exactly once after worker drainage")
 					.hasValue(2);
 			assertThat(cancelled.closedWithActiveKernel).isFalse();
@@ -698,17 +704,18 @@ class LmdbNativeCoordinatorCancellationTest {
 		private final Boundary boundary;
 		private final boolean interrupt, probe;
 		private final Thread coordinator = Thread.currentThread();
-		private final AtomicBoolean signalled = new AtomicBoolean(), closedWithActiveKernel = new AtomicBoolean();
+		private final AtomicBoolean stopClaimed = new AtomicBoolean(), closedWithActiveKernel = new AtomicBoolean();
 		private final AtomicInteger coordinatorReads = new AtomicInteger(), readsAfterSignal = new AtomicInteger();
 		private final AtomicInteger boundKernels = new AtomicInteger(), activeKernels = new AtomicInteger();
 		private final AtomicInteger orderedEmitBinds = new AtomicInteger();
 		private final AtomicInteger workerMergeReads = new AtomicInteger(),
-				workerMergeReadsAfterSignal = new AtomicInteger();
+				workerHashesAfterPublication = new AtomicInteger();
 		private final ThreadLocal<Boolean> workerMergeActive = ThreadLocal.withInitial(() -> false);
 		private final ThreadLocal<Boolean> workerFillActive = ThreadLocal.withInitial(() -> false);
 		private final ThreadLocal<Set<Integer>> workerHashed = ThreadLocal.withInitial(HashSet::new);
 		private final ThreadLocal<Integer> workerGreatestKey = ThreadLocal.withInitial(() -> 0);
 		private final AtomicBoolean workerGrowthReached = new AtomicBoolean();
+		private CountDownLatch peerHashesBeforePublication;
 		private boolean workerMerge;
 		private final AtomicInteger closedSources = new AtomicInteger();
 		private final LmdbQueryMemoryManager manager = LmdbQueryMemoryManager.createForTesting(64L << 20, 64L << 20);
@@ -738,9 +745,7 @@ class LmdbNativeCoordinatorCancellationTest {
 							if (fixture.interrupt) {
 								fixture.signal();
 							}
-							if (fixture.signalled.get()) {
-								fixture.workerMergeReadsAfterSignal.incrementAndGet();
-							}
+							fixture.observeWorkerHash();
 						}
 						return super.hashCode();
 					}
@@ -767,9 +772,7 @@ class LmdbNativeCoordinatorCancellationTest {
 								}
 							}
 							fixture.workerGreatestKey.set(Math.max(key, fixture.workerGreatestKey.get()));
-							if (fixture.signalled.get()) {
-								fixture.workerMergeReadsAfterSignal.incrementAndGet();
-							}
+							fixture.observeWorkerHash();
 						}
 						return super.hashCode();
 					}
@@ -904,8 +907,31 @@ class LmdbNativeCoordinatorCancellationTest {
 			}
 		}
 
+		private void observeWorkerHash() {
+			if (stopPublished()) {
+				workerHashesAfterPublication.incrementAndGet();
+			} else if (peerHashesBeforePublication != null && stopClaimed.get()) {
+				peerHashesBeforePublication.countDown();
+			}
+		}
+
+		private boolean stopPublished() {
+			// Electing a requester does not make the owner's stop visible to polling workers.
+			return probe ? deadline.tripped() : emitter.cancellation.cancellationPublished();
+		}
+
 		private void signal() {
-			if (signalled.compareAndSet(false, true)) {
+			if (stopClaimed.compareAndSet(false, true)) {
+				if (peerHashesBeforePublication != null) {
+					try {
+						assertThat(peerHashesBeforePublication.await(10, TimeUnit.SECONDS))
+								.as("the peer must hash more than the bound while publication is paused")
+								.isTrue();
+					} catch (InterruptedException interrupted) {
+						Thread.currentThread().interrupt();
+						throw new AssertionError(interrupted);
+					}
+				}
 				if (probe) {
 					deadline.trip();
 				} else {
@@ -1108,7 +1134,7 @@ class LmdbNativeCoordinatorCancellationTest {
 						&& fixture.boundary != Boundary.EMPTY_PUBLICATION) {
 					fixture.signal();
 				}
-				if (fixture.signalled.get()) {
+				if (fixture.stopPublished()) {
 					fixture.readsAfterSignal.incrementAndGet();
 				}
 			}

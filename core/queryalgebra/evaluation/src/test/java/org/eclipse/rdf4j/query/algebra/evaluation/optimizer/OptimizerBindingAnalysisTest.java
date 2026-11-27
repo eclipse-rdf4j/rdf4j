@@ -20,7 +20,11 @@ import java.util.Set;
 import org.eclipse.rdf4j.model.Literal;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
+import org.eclipse.rdf4j.model.vocabulary.FN;
+import org.eclipse.rdf4j.model.vocabulary.RDF;
+import org.eclipse.rdf4j.model.vocabulary.XSD;
 import org.eclipse.rdf4j.query.BindingSet;
+import org.eclipse.rdf4j.query.QueryResults;
 import org.eclipse.rdf4j.query.algebra.AbstractQueryModelNode;
 import org.eclipse.rdf4j.query.algebra.ArbitraryLengthPath;
 import org.eclipse.rdf4j.query.algebra.BindingSetAssignment;
@@ -34,6 +38,7 @@ import org.eclipse.rdf4j.query.algebra.Exists;
 import org.eclipse.rdf4j.query.algebra.Extension;
 import org.eclipse.rdf4j.query.algebra.ExtensionElem;
 import org.eclipse.rdf4j.query.algebra.Filter;
+import org.eclipse.rdf4j.query.algebra.FunctionCall;
 import org.eclipse.rdf4j.query.algebra.Group;
 import org.eclipse.rdf4j.query.algebra.GroupElem;
 import org.eclipse.rdf4j.query.algebra.Join;
@@ -61,6 +66,7 @@ import org.eclipse.rdf4j.query.algebra.VariableScopeChange;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryBindingSet;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.DefaultEvaluationStrategy;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.EmptyTripleSource;
+import org.eclipse.rdf4j.query.algebra.evaluation.impl.EvaluationStatistics;
 import org.eclipse.rdf4j.query.algebra.helpers.QueryAlgebraBindingAnalysis;
 import org.eclipse.rdf4j.query.algebra.helpers.TupleExprs;
 import org.eclipse.rdf4j.query.impl.EmptyBindingSet;
@@ -72,6 +78,99 @@ import org.junit.jupiter.api.Test;
 class OptimizerBindingAnalysisTest {
 
 	private static final SimpleValueFactory VF = SimpleValueFactory.getInstance();
+
+	@Test
+	void projectionKeepsParameterReadByFilterOnlyOptional() {
+		MapBindingSet input = new MapBindingSet();
+		input.addBinding("x", VF.createLiteral(true));
+		MapBindingSet expected = new MapBindingSet();
+		expected.addBinding("x", VF.createLiteral(true));
+		expected.addBinding("left", VF.createLiteral("left"));
+		assertOptionalProjection("""
+				SELECT ?x ?left WHERE {
+					VALUES ?left { "left" }
+					OPTIONAL { FILTER(?x) }
+				}
+				""", input, expected);
+	}
+
+	@Test
+	void projectionKeepsParameterReadByOptionalCondition() {
+		assertProjectedOptionalParameter("""
+				SELECT ?x ?left ?right WHERE {
+					VALUES ?left { "left" }
+					OPTIONAL { VALUES ?right { "right" } FILTER(%s) }
+				}
+				""");
+	}
+
+	@Test
+	void nestedOptionalConditionKeepsParameterInItsProjection() {
+		assertProjectedOptionalParameter("""
+				SELECT ?x ?left ?right WHERE {
+					VALUES ?left { "left" }
+					OPTIONAL {
+						OPTIONAL { VALUES ?right { "right" } FILTER(%s) }
+					}
+				}
+				""");
+	}
+
+	@Test
+	void bareOptionalConditionSurvivesAnUnrelatedSubqueryReadOfTheSameName() {
+		assertProjectedOptionalParameter("""
+				SELECT ?x ?left ?right WHERE {
+					VALUES ?left { "left" }
+					OPTIONAL { VALUES ?right { "right" } FILTER(%s) }
+					{ SELECT ?y WHERE { BIND(2 AS ?x) BIND(?x AS ?y) } }
+				}
+				""", List.of("?x"));
+	}
+
+	@Test
+	void optionalConditionDoesNotExportAnUnprojectedSubqueryParameter() {
+		String query = """
+				SELECT ?x ?right WHERE {
+					{ SELECT ?right WHERE { OPTIONAL { VALUES ?right { "right" } FILTER(?x) } } }
+				}
+				""";
+		MapBindingSet input = new MapBindingSet();
+		input.addBinding("x", VF.createLiteral(true));
+		MapBindingSet expected = new MapBindingSet();
+		expected.addBinding("right", VF.createLiteral("right"));
+
+		assertOptionalProjection(query, input, expected);
+	}
+
+	private static void assertOptionalProjection(String query, BindingSet input, BindingSet expected) {
+		TupleExpr expression = new SPARQLParser().parseQuery(query, null).getTupleExpr();
+		var strategy = new DefaultEvaluationStrategy(new EmptyTripleSource(), null);
+		TupleExpr optimized = strategy.optimize(expression, new EvaluationStatistics(), input);
+		try (var rows = strategy.precompile(optimized).evaluate(EmptyBindingSet.getInstance())) {
+			assertThat(QueryResults.asList(rows)).as("%s with %s", query, input).containsExactly(expected);
+		}
+	}
+
+	private static void assertProjectedOptionalParameter(String query) {
+		assertProjectedOptionalParameter(query, List.of("?x && true", "?x"));
+	}
+
+	private static void assertProjectedOptionalParameter(String query, List<String> conditions) {
+		for (String condition : conditions) {
+			for (boolean match : List.of(true, false)) {
+				MapBindingSet input = new MapBindingSet();
+				input.addBinding("x", VF.createLiteral(match));
+				MapBindingSet expected = new MapBindingSet();
+				expected.addBinding("x", VF.createLiteral(match));
+				expected.addBinding("left", VF.createLiteral("left"));
+				if (match) {
+					expected.addBinding("right", VF.createLiteral("right"));
+				}
+
+				assertOptionalProjection(query.formatted(condition), input, expected);
+			}
+		}
+	}
 
 	@Test
 	void apiSubstitutionPhaseKeepsParametersHiddenByRuntimeFilterProjection() {
@@ -236,6 +335,33 @@ class OptimizerBindingAnalysisTest {
 		input.addBinding("x", VF.createLiteral(1));
 		QueryAlgebraBindingAnalysis analysis = QueryAlgebraBindingAnalysis.forBindingAssignment(extension, input);
 		assertThat(analysis.contextAt(reference).externalValues()).doesNotContainKey("x");
+	}
+
+	@Test
+	void constantStringFunctionsGuaranteeBindingsButInvalidOrUnknownFunctionsDoNot() {
+		ValueConstant first = new ValueConstant(VF.createLiteral("native"));
+		ValueConstant second = new ValueConstant(VF.createLiteral(" payload"));
+		FunctionCall concat = new FunctionCall(FN.CONCAT.toString(), first, second);
+		FunctionCall strdt = new FunctionCall("STRDT", concat,
+				new ValueConstant(VF.createIRI("urn:pattern-id:datatype")));
+		Extension extension = new Extension(new SingletonSet(),
+				new ExtensionElem(strdt, "computed"),
+				new ExtensionElem(new FunctionCall(FN.CONCAT.toString(),
+						new ValueConstant(VF.createLiteral("invalid", VF.createIRI("urn:custom")))), "invalidConcat"),
+				new ExtensionElem(new FunctionCall("STRDT", new ValueConstant(VF.createLiteral("text")),
+						Var.of("unknownDatatype")), "unknownDatatypeResult"),
+				new ExtensionElem(new FunctionCall("STRDT", new ValueConstant(VF.createLiteral("text")),
+						new ValueConstant(RDF.LANGSTRING)), "reservedDatatypeResult"),
+				new ExtensionElem(new FunctionCall("STRDT", new ValueConstant(VF.createLiteral("text")),
+						new ValueConstant(RDF.DIRLANGSTRING)), "reservedDirectionDatatypeResult"),
+				new ExtensionElem(new FunctionCall("STRDT", new ValueConstant(VF.createLiteral("text")),
+						new ValueConstant(XSD.INTEGER)), "invalidLexicalResult"),
+				new ExtensionElem(new FunctionCall("urn:custom-function"), "unknownFunction"));
+		QueryAlgebraBindingAnalysis analysis = QueryAlgebraBindingAnalysis.withGuaranteedInputNames(extension,
+				Set.of());
+		assertThat(analysis.outputFacts(extension).guaranteedOutputs()).contains("computed")
+				.doesNotContain("invalidConcat", "unknownDatatypeResult", "reservedDatatypeResult",
+						"reservedDirectionDatatypeResult", "invalidLexicalResult", "unknownFunction");
 	}
 
 	@Test

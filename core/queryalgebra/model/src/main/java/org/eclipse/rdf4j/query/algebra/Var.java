@@ -40,12 +40,20 @@ import com.google.common.annotations.VisibleForTesting;
  */
 public class Var extends AbstractQueryModelNode implements ValueExpr {
 
+	private static final long serialVersionUID = 3530254272235103934L;
+
 	/**
 	 * System property that, when set to a fully qualified class name implementing {@link Var.Provider}, selects that
 	 * provider. If absent, the first provider discovered by {@link ServiceLoader} is used; if none are found, a default
 	 * provider that constructs {@code Var} directly is used.
 	 */
 	public static final String PROVIDER_PROPERTY = "org.eclipse.rdf4j.query.algebra.Var.provider";
+
+	/** Whether creating and cloning variables uses only the built-in implementation. */
+	@InternalUseOnly
+	public static boolean usesBuiltInProvider() {
+		return Holder.PROVIDER == Holder.DEFAULT;
+	}
 
 	private final String name;
 
@@ -60,6 +68,7 @@ public class Var extends AbstractQueryModelNode implements ValueExpr {
 	private int cachedHashCode = 0;
 
 	private int graphContextDepth;
+	private boolean legacyGraphContext;
 
 	/** True when this valued occurrence was supplied by the caller rather than written as a query constant. */
 	private boolean apiInputOrigin;
@@ -73,11 +82,26 @@ public class Var extends AbstractQueryModelNode implements ValueExpr {
 	/** Applies only to graph-context occurrences, never to ordinary variables with the same name. */
 	@InternalUseOnly
 	public void setGraphContextDepth(int graphContextDepth) {
+		setGraphContextDepth(graphContextDepth, false);
+	}
+
+	/** Preserve scope provenance on a LEGACY context without changing the equality seen by historical consumers. */
+	@InternalUseOnly
+	public void setLegacyGraphContextDepth(int graphContextDepth) {
+		setGraphContextDepth(graphContextDepth, true);
+	}
+
+	private void setGraphContextDepth(int graphContextDepth, boolean legacy) {
 		if (graphContextDepth < 0) {
 			throw new IllegalArgumentException("graphContextDepth must be nonnegative");
 		}
 		this.graphContextDepth = graphContextDepth;
+		legacyGraphContext = legacy;
 		cachedHashCode = 0;
+	}
+
+	private int identityGraphContextDepth() {
+		return legacyGraphContext ? 0 : graphContextDepth;
 	}
 
 	/** Returns whether this valued occurrence carries caller-input provenance. */
@@ -326,22 +350,29 @@ public class Var extends AbstractQueryModelNode implements ValueExpr {
 			return false;
 		}
 
-		return graphContextDepth == var.graphContextDepth && spiEquals(var) && var.spiEquals(this);
+		return identityGraphContextDepth() == var.identityGraphContextDepth() && spiEquals(var) && var.spiEquals(this);
 	}
 
 	@Override
 	public int hashCode() {
 		if (cachedHashCode == 0) {
-			cachedHashCode = 31 * spiHashCode() + graphContextDepth;
+			cachedHashCode = 31 * spiHashCode() + identityGraphContextDepth();
 		}
 		return cachedHashCode;
 	}
 
 	@Override
 	public Var clone() {
-		Var var = Holder.PROVIDER.cloneVar(this).intrinsicCopy();
+		Provider provider = Holder.PROVIDER;
+		Var var = provider.cloneVar(this);
+		// The built-in constructor always returns a fresh occurrence. An extension may return a shared one.
+		if (provider != Holder.DEFAULT) {
+			var = var.intrinsicCopy();
+		}
 		var.setVariableScopeChange(this.isVariableScopeChange());
-		var.setGraphContextDepth(graphContextDepth);
+		var.graphContextDepth = graphContextDepth;
+		var.legacyGraphContext = legacyGraphContext;
+		var.cachedHashCode = 0;
 		var.apiInputOrigin = apiInputOrigin;
 		return var;
 	}

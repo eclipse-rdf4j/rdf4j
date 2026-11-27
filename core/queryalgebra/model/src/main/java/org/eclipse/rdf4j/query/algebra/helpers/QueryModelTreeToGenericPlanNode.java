@@ -192,7 +192,7 @@ public class QueryModelTreeToGenericPlanNode extends AbstractQueryModelVisitor<R
 
 	private long runtimeTelemetryMetric(long value) {
 		if (level.includesRuntimeTelemetry()) {
-			return Math.max(0, value);
+			return value;
 		}
 		return -1;
 	}

@@ -13,12 +13,79 @@ package org.eclipse.rdf4j.query.parser;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 
+import org.eclipse.rdf4j.query.QueryLanguage;
 import org.eclipse.rdf4j.query.QueryParseOptions;
+import org.eclipse.rdf4j.query.QueryParseOptions.GraphAlgebraMode;
+import org.eclipse.rdf4j.query.algebra.SingletonSet;
 import org.junit.jupiter.api.Test;
 
 class QueryParserOptionsCompatibilityTest {
+
+	@Test
+	void explicitChoicesDoNotRequireParserCapabilityDiscovery() {
+		QueryLanguage unregistered = new QueryLanguage("UNREGISTERED-GRAPH-POLICY-TEST");
+		for (GraphAlgebraMode mode : new GraphAlgebraMode[] { GraphAlgebraMode.LEGACY, GraphAlgebraMode.GRAPH }) {
+			QueryParseOptions options = QueryParseOptions.STRICT.withGraphAlgebraMode(mode);
+			assertSame(options, QueryParserUtil.resolveQueryParseOptions(unregistered, options, false));
+			assertSame(options, QueryParserUtil.resolveQueryParseOptions(unregistered, options, true));
+		}
+	}
+
+	@Test
+	void unresolvedAutoWithoutACapableParserRetainsItsSyntaxPolicy() {
+		QueryLanguage unregistered = new QueryLanguage("UNREGISTERED-GRAPH-POLICY-TEST");
+		QueryParseOptions expected = QueryParseOptions.STRICT.withGraphAlgebraMode(GraphAlgebraMode.LEGACY);
+		assertEquals(expected, QueryParserUtil.resolveQueryParseOptions(unregistered, QueryParseOptions.STRICT, true));
+		assertEquals(expected, QueryParserUtil.resolveQueryParseOptions(unregistered, QueryParseOptions.STRICT, false));
+	}
+
+	@Test
+	void legacyAdapterCapturesTheResolvedModeOnReturnedOperations() {
+		QueryParser parser = new QueryParser() {
+			@Override
+			public ParsedQuery parseQuery(String query, String baseURI) {
+				return new ParsedTupleQuery(new SingletonSet());
+			}
+
+			@Override
+			public ParsedUpdate parseUpdate(String update, String baseURI) {
+				return new ParsedUpdate();
+			}
+		};
+		for (QueryParseOptions requested : new QueryParseOptions[] { QueryParseOptions.DEFAULT,
+				QueryParseOptions.DEFAULT.withGraphAlgebraMode(GraphAlgebraMode.LEGACY) }) {
+			assertEquals(GraphAlgebraMode.LEGACY,
+					parser.parseQuery("SELECT * WHERE {}", null, requested).getParseOptions().graphAlgebraMode());
+			assertEquals(GraphAlgebraMode.LEGACY,
+					parser.parseUpdate("INSERT DATA {}", null, requested).getParseOptions().graphAlgebraMode());
+		}
+	}
+
+	@Test
+	void legacyParserAcceptsAnExplicitLegacyRepresentationWithDefaultSyntax() {
+		LegacyParser parser = new LegacyParser();
+		QueryParseOptions legacy = QueryParseOptions.DEFAULT.withGraphAlgebraMode(GraphAlgebraMode.LEGACY);
+		assertNull(parser.parseQuery("SELECT * WHERE {}", null, legacy));
+		assertNull(parser.parseUpdate("INSERT DATA {}", null, legacy));
+		assertEquals(1, parser.queryCalls);
+		assertEquals(1, parser.updateCalls);
+	}
+
+	@Test
+	void legacyParserDeclinesGraphAndStrictOverridesBeforeInvokingOldMethods() {
+		LegacyParser parser = new LegacyParser();
+		assertThrows(UnsupportedOperationException.class, () -> parser.parseQuery("SELECT * WHERE {}", null,
+				QueryParseOptions.DEFAULT.withGraphAlgebraMode(GraphAlgebraMode.GRAPH)));
+		assertThrows(UnsupportedOperationException.class, () -> parser.parseUpdate("INSERT DATA {}", null,
+				QueryParseOptions.DEFAULT.withGraphAlgebraMode(GraphAlgebraMode.GRAPH)));
+		assertThrows(UnsupportedOperationException.class, () -> parser.parseQuery("SELECT * WHERE {}", null,
+				QueryParseOptions.STRICT.withGraphAlgebraMode(GraphAlgebraMode.LEGACY)));
+		assertEquals(0, parser.queryCalls);
+		assertEquals(0, parser.updateCalls);
+	}
 
 	@Test
 	void legacyParserUsesOldMethodsForDefaultAndRejectsUnsupportedPolicies() {

@@ -48,18 +48,23 @@ import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.base.AbstractIRI;
 import org.eclipse.rdf4j.model.base.AbstractTripleTerm;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
+import org.eclipse.rdf4j.model.vocabulary.RDF;
+import org.eclipse.rdf4j.model.vocabulary.XSD;
 import org.eclipse.rdf4j.query.algebra.evaluation.OwnedValueCapturer;
 import org.eclipse.rdf4j.sail.SailConnection;
 import org.eclipse.rdf4j.sail.SailException;
 import org.eclipse.rdf4j.sail.base.SailDataset;
 import org.eclipse.rdf4j.sail.lmdb.TxnManager.Txn;
 import org.eclipse.rdf4j.sail.lmdb.config.LmdbStoreConfig;
+import org.eclipse.rdf4j.sail.lmdb.model.LmdbIRI;
+import org.eclipse.rdf4j.sail.lmdb.model.LmdbLiteral;
 import org.eclipse.rdf4j.sail.lmdb.model.LmdbValue;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.Timeout;
 import org.junit.jupiter.api.io.TempDir;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.EnumSource;
+import org.junit.jupiter.params.provider.ValueSource;
 
 /** Optional positive lookup reuse must preserve native lifetime and caller callback boundaries. */
 @Timeout(30)
@@ -116,6 +121,40 @@ class SnapshotPositiveLookupLifecycleTest {
 	}
 
 	@Test
+	void captureReusesCanonicalCoreDatatypeIris(@TempDir Path directory) throws Exception {
+		try (Fixture fixture = new Fixture(directory, 3); DirectView view = new DirectView(fixture.values)) {
+			var capturer = fixture.values.valueCapturer(view.snapshot);
+			Literal string = VF.createLiteral("procurement notice", XSD.STRING);
+			Literal json = VF.createLiteral("{\"status\":\"awarded\"}", RDF.JSON);
+			assertSame(XSD.STRING, string.getDatatype());
+			assertSame(RDF.JSON, json.getDatatype());
+
+			Literal capturedString = assertInstanceOf(Literal.class, capturer.apply(string));
+			Literal capturedJson = assertInstanceOf(Literal.class, capturer.apply(json));
+			assertSame(XSD.STRING, capturedString.getDatatype());
+			assertSame(RDF.JSON, capturedJson.getDatatype());
+			assertEquals(string, capturedString);
+			assertEquals(json, capturedJson);
+		}
+	}
+
+	@Test
+	void captureSnapshotsMutableCustomDatatype(@TempDir Path directory) throws Exception {
+		try (Fixture fixture = new Fixture(directory, 3); DirectView view = new DirectView(fixture.values)) {
+			MutableCaptureIRI datatype = new MutableCaptureIRI("before");
+			Literal input = VF.createLiteral("payload", datatype);
+			Literal captured = assertInstanceOf(Literal.class,
+					fixture.values.valueCapturer(view.snapshot).apply(input));
+			assertNotSame(datatype, captured.getDatatype());
+
+			datatype.changeLocalName("after");
+			assertEquals("urn:mutable-capture:after", input.getDatatype().stringValue());
+			assertEquals("urn:mutable-capture:before", captured.getDatatype().stringValue());
+			assertEquals(input.getLabel(), captured.getLabel());
+		}
+	}
+
+	@Test
 	void captureRejectsCycleBeforeCreatingPreparedPayload(@TempDir Path directory) throws Exception {
 		try (Fixture fixture = new Fixture(directory, 3); DirectView view = new DirectView(fixture.values)) {
 			TripleTerm cycle = new AbstractTripleTerm() {
@@ -158,6 +197,146 @@ class SnapshotPositiveLookupLifecycleTest {
 				assertSame(captured.getSubject(), captured.getPredicate());
 			}
 		}
+	}
+
+	@Test
+	void pairedStatementValueRemainsOwnedAfterDecode(@TempDir Path directory) throws Exception {
+		InspectingStore store = new InspectingStore(directory.toFile());
+		store.init();
+		try {
+			IRI datatype = VF.createIRI("urn:snapshot-lookup-lifecycle:datatype");
+			Literal expected = VF.createLiteral("paired statement payload", datatype);
+			commitColdStatement(store, expected);
+			try (SailDataset reader = store.getBackingStore()
+					.getExplicitSailSource()
+					.dataset(IsolationLevels.SNAPSHOT_READ);
+					ValueResolutionScope scope = store.values.openValueResolutionScope();
+					var exposure = scope.activate()) {
+				ValueStore.ReadSnapshot snapshot = store.values.lastPairedSnapshot;
+				assertNotNull(snapshot);
+				assertTrue(snapshot.hasStableIds());
+				LmdbValue actual = assertInstanceOf(LmdbValue.class, onlyStatement(reader, SUBJECT, null).getObject());
+				OwnedValueCapturer capturer = (OwnedValueCapturer) store.values.valueCapturer(snapshot);
+				var preparer = store.values.valuePreparer(snapshot);
+				assertFalse(actual.isInitialized(), "The statement should first return a lazy value");
+				assertTrue(capturer.owns(actual));
+				assertSame(actual, capturer.apply(actual));
+				assertSame(actual, preparer.apply(actual));
+
+				actual.init();
+				assertTrue(actual.isInitialized());
+				assertTrue(capturer.owns(actual), "Decoding must preserve the paired statement value's ownership");
+				assertSame(actual, capturer.apply(actual));
+				assertSame(actual, preparer.apply(actual));
+				assertEquals(expected, actual);
+
+				Value reread = onlyStatement(reader, SUBJECT, null).getObject();
+				assertSame(actual, reread, "The same view should reuse the warmed statement value");
+				assertTrue(capturer.owns(reread));
+
+				LmdbValue.InternalIdentity identity = actual.getInternalIdentity();
+				LmdbLiteral caller = new LmdbLiteral(identity.revision(), expected.getLabel(), datatype, identity.id());
+				assertFalse(capturer.owns(caller),
+						"A caller's ready value must not acquire ownership by copying an ID");
+				Value captured = capturer.apply(caller);
+				assertNotSame(caller, captured);
+				assertNotSame(caller, preparer.apply(caller));
+				caller.setLabel("changed caller payload");
+				assertEquals(expected, captured);
+			}
+		} finally {
+			store.shutDown();
+		}
+	}
+
+	@Test
+	void captureOfReadyNativeLiteralLeavesItsCustomDatatypeCold(@TempDir Path directory) throws Exception {
+		InspectingStore store = new InspectingStore(directory.toFile());
+		IRI datatype = VF.createIRI("urn:snapshot-lookup-lifecycle:cold-type");
+		Literal expected = VF.createLiteral("ready payload", datatype);
+		store.init();
+		try {
+			commitColdStatement(store, expected);
+			try (SailDataset reader = store.getBackingStore()
+					.getExplicitSailSource()
+					.dataset(IsolationLevels.SNAPSHOT_READ)) {
+				ValueStore.ReadSnapshot snapshot = store.values.lastPairedSnapshot;
+				assertNotNull(snapshot);
+				assertTrue(snapshot.hasStableIds());
+				LmdbValue stored = assertInstanceOf(LmdbValue.class, onlyStatement(reader, SUBJECT, null).getObject());
+				long datatypeId = store.values.getId(snapshot, datatype);
+				assertNotEquals(LmdbValue.UNKNOWN_ID, datatypeId);
+				LmdbIRI child = assertInstanceOf(LmdbIRI.class, store.values.getLazyValue(snapshot, datatypeId));
+				LmdbLiteral ready = new LmdbLiteral(snapshot.completedRevision(), expected.getLabel(), child,
+						stored.getInternalID());
+				assertFalse(child.isInitialized());
+
+				Value captured = store.values.valueCapturer(snapshot).apply(ready);
+				Value prepared = store.values.valuePreparer(snapshot).apply(ready);
+				assertNotSame(ready, captured);
+				assertNotSame(ready, prepared);
+				assertFalse(child.isInitialized(), "Capturing a ready literal must leave its deferred datatype cold");
+				assertEquals(expected, captured);
+				assertEquals(expected, prepared);
+			}
+		} finally {
+			store.shutDown();
+		}
+	}
+
+	@ParameterizedTest
+	@ValueSource(booleans = { false, true })
+	void decodedPairedTripleTermKeepsColdChildReadableAfterEscape(boolean escapeBeforeDecode, @TempDir Path directory)
+			throws Exception {
+		InspectingStore store = new InspectingStore(directory.toFile());
+		IRI datatype = VF.createIRI("urn:snapshot-lookup-lifecycle:nested-type");
+		TripleTerm expectedChild = VF.createTripleTerm(SUBJECT, PREDICATE,
+				VF.createLiteral("nested payload", datatype));
+		TripleTerm expected = VF.createTripleTerm(SUBJECT, PREDICATE, expectedChild);
+		TripleTerm escaped;
+		Value escapedChild;
+		store.init();
+		try {
+			commitColdStatement(store, expected);
+			try (SailDataset reader = store.getBackingStore()
+					.getExplicitSailSource()
+					.dataset(IsolationLevels.SNAPSHOT_READ);
+					ValueResolutionScope scope = store.values.openValueResolutionScope()) {
+				ValueStore.ReadSnapshot snapshot = store.values.lastPairedSnapshot;
+				assertNotNull(snapshot);
+				assertTrue(snapshot.hasStableIds());
+				OwnedValueCapturer capturer = (OwnedValueCapturer) store.values.valueCapturer(snapshot);
+				var preparer = store.values.valuePreparer(snapshot);
+				LmdbValue actual;
+				try (var exposure = escapeBeforeDecode ? null : scope.activate()) {
+					actual = assertInstanceOf(LmdbValue.class, onlyStatement(reader, SUBJECT, null).getObject());
+					assertEquals(escapeBeforeDecode, actual.isExternallyOwned());
+					assertFalse(actual.isInitialized());
+					actual.init();
+					if (!escapeBeforeDecode) {
+						assertTrue(capturer.owns(actual));
+						assertSame(actual, capturer.apply(actual));
+						assertSame(actual, preparer.apply(actual));
+					}
+				}
+
+				escaped = assertInstanceOf(TripleTerm.class, onlyStatement(reader, SUBJECT, null).getObject());
+				assertSame(actual, escaped);
+				assertTrue(actual.isExternallyOwned());
+				assertFalse(capturer.owns(escaped), "An application can mutate an exposed ready value");
+				assertNotSame(escaped, capturer.apply(escaped));
+				assertNotSame(escaped, preparer.apply(escaped));
+				List<Value> children = new ArrayList<>();
+				actual.visitValueChildren(children::add);
+				escapedChild = children.getLast();
+				assertFalse(assertInstanceOf(LmdbValue.class, escapedChild).isInitialized(),
+						"Preparing the decoded parent must leave the nested term cold");
+			}
+		} finally {
+			store.shutDown();
+		}
+		assertEquals(expectedChild, escapedChild);
+		assertEquals(expected, escaped);
 	}
 
 	@Test
@@ -520,6 +699,12 @@ class SnapshotPositiveLookupLifecycleTest {
 			writer.addStatement(subject, PREDICATE, object);
 			writer.commit();
 		}
+	}
+
+	private static void commitColdStatement(LmdbStore store, Value object) {
+		commitStatement(store, SUBJECT, object);
+		store.shutDown();
+		store.init();
 	}
 
 	private static void removeStatement(LmdbStore store) {

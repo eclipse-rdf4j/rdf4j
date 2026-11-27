@@ -39,6 +39,7 @@ import org.eclipse.rdf4j.model.vocabulary.RDF4J;
 import org.eclipse.rdf4j.model.vocabulary.SESAME;
 import org.eclipse.rdf4j.query.Binding;
 import org.eclipse.rdf4j.query.BindingSet;
+import org.eclipse.rdf4j.query.BlankNodeEffects;
 import org.eclipse.rdf4j.query.Dataset;
 import org.eclipse.rdf4j.query.QueryExecutionPolicy;
 import org.eclipse.rdf4j.query.algebra.AbstractAggregateOperator;
@@ -46,6 +47,7 @@ import org.eclipse.rdf4j.query.algebra.AggregateFunctionCall;
 import org.eclipse.rdf4j.query.algebra.AggregateOperator;
 import org.eclipse.rdf4j.query.algebra.And;
 import org.eclipse.rdf4j.query.algebra.Avg;
+import org.eclipse.rdf4j.query.algebra.BNodeGenerator;
 import org.eclipse.rdf4j.query.algebra.BindingSetAssignment;
 import org.eclipse.rdf4j.query.algebra.Compare;
 import org.eclipse.rdf4j.query.algebra.Count;
@@ -62,6 +64,7 @@ import org.eclipse.rdf4j.query.algebra.Max;
 import org.eclipse.rdf4j.query.algebra.Min;
 import org.eclipse.rdf4j.query.algebra.Projection;
 import org.eclipse.rdf4j.query.algebra.QueryModelNode;
+import org.eclipse.rdf4j.query.algebra.Service;
 import org.eclipse.rdf4j.query.algebra.StatementPattern;
 import org.eclipse.rdf4j.query.algebra.StatementPattern.Scope;
 import org.eclipse.rdf4j.query.algebra.Sum;
@@ -1132,6 +1135,11 @@ abstract class LmdbNativeAggregatePlannerBase {
 		var nAryFactory = org.eclipse.rdf4j.query.parser.sparql.aggregate.CustomAggregateNAryFunctionRegistry
 				.getInstance()
 				.get(call.getIRI());
+		Object selectedFactory = args.size() == 1 && unaryFactory.isPresent() ? unaryFactory.get()
+				: nAryFactory.orElse(null);
+		if (!BlankNodeEffects.of(selectedFactory).isEmpty() || args.stream().anyMatch(this::containsLabelledBNode)) {
+			return null;
+		}
 		NativeBindingSetValueEvaluator[] argumentEvaluators = new NativeBindingSetValueEvaluator[args.size()];
 		try {
 			for (int i = 0; i < args.size(); i++) {
@@ -1160,6 +1168,22 @@ abstract class LmdbNativeAggregatePlannerBase {
 							call.isDistinct()));
 		}
 		return null;
+	}
+
+	// Custom processors evaluate their arguments through the generic binding-set interface. GROUP owns the
+	// member occurrence shared with sibling aggregators. Native scalar slots use a different row identity.
+	private boolean containsLabelledBNode(ValueExpr argument) {
+		class Labels extends AbstractQueryModelVisitor<RuntimeException> {
+			boolean found;
+
+			@Override
+			public void meet(BNodeGenerator generator) {
+				found |= generator.getNodeIdExpr() != null;
+			}
+		}
+		Labels labels = new Labels();
+		argument.visit(labels);
+		return labels.found;
 	}
 
 	static AggKind aggKindOf(AggregateOperator op) {
@@ -1355,6 +1379,10 @@ abstract class LmdbNativeAggregatePlannerBase {
 		return island(expr, null);
 	}
 
+	SlotPlan islandForServiceJoinOperand(Service service) {
+		return island(service, null, true);
+	}
+
 	/**
 	 * Island with a restricted visible-name set (M-A4 demotion): out slots are allocated only for binding names the
 	 * rest of the query observes; internal-only names stay inside the generic island and never claim slots. Dropping
@@ -1362,6 +1390,10 @@ abstract class LmdbNativeAggregatePlannerBase {
 	 * binding.
 	 */
 	SlotPlan island(TupleExpr expr, Set<String> restrictTo) {
+		return island(expr, restrictTo, false);
+	}
+
+	private SlotPlan island(TupleExpr expr, Set<String> restrictTo, boolean serviceJoinOperand) {
 		if (!islandsEnabled || islandsSuppressed) {
 			return null;
 		}
@@ -1393,7 +1425,7 @@ abstract class LmdbNativeAggregatePlannerBase {
 		varNames.addAll(names);
 		return new GenericEvalPlan(GenericSubplanDescriptor.create(expr, strategy), expr.getClass().getSimpleName(),
 				outSlots,
-				outNames, varNames, strategy, context);
+				outNames, varNames, strategy, context, serviceJoinOperand);
 	}
 
 	/** {@code compileTuple} with the island fallback at a decline (M-A1b). */

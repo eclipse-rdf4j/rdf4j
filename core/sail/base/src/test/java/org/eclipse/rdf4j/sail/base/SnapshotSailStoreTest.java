@@ -20,6 +20,7 @@ import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.doCallRealMethod;
 import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
@@ -42,6 +43,7 @@ import java.util.stream.Collectors;
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.common.iteration.CloseableIteratorIteration;
 import org.eclipse.rdf4j.common.iteration.EmptyIteration;
+import org.eclipse.rdf4j.common.iteration.IterationWrapper;
 import org.eclipse.rdf4j.common.order.StatementOrder;
 import org.eclipse.rdf4j.common.transaction.DataImportMetrics;
 import org.eclipse.rdf4j.common.transaction.IsolationLevel;
@@ -61,14 +63,17 @@ import org.eclipse.rdf4j.model.vocabulary.RDFS;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.Dataset;
 import org.eclipse.rdf4j.query.QueryEvaluationException;
+import org.eclipse.rdf4j.query.QueryInterruptedException;
 import org.eclipse.rdf4j.query.algebra.Exists;
 import org.eclipse.rdf4j.query.algebra.Filter;
 import org.eclipse.rdf4j.query.algebra.InsertData;
 import org.eclipse.rdf4j.query.algebra.Join;
+import org.eclipse.rdf4j.query.algebra.QueryRoot;
 import org.eclipse.rdf4j.query.algebra.StatementPattern;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.query.algebra.evaluation.EvaluationStrategy;
+import org.eclipse.rdf4j.query.algebra.evaluation.QueryEvaluationStep;
 import org.eclipse.rdf4j.query.algebra.evaluation.TripleSource;
 import org.eclipse.rdf4j.query.algebra.evaluation.federation.FederatedServiceResolver;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.EvaluationStatistics;
@@ -76,6 +81,7 @@ import org.eclipse.rdf4j.query.explanation.Explanation;
 import org.eclipse.rdf4j.query.impl.EmptyBindingSet;
 import org.eclipse.rdf4j.repository.RepositoryConnection;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
+import org.eclipse.rdf4j.sail.InterruptedSailException;
 import org.eclipse.rdf4j.sail.NotifyingSailConnection;
 import org.eclipse.rdf4j.sail.Sail;
 import org.eclipse.rdf4j.sail.SailConflictException;
@@ -544,9 +550,126 @@ public class SnapshotSailStoreTest {
 	}
 
 	@Test
+	public void directReadClosesDatasetsWithoutClosingOrForkingBackingSource() {
+		SailDataset namespaces = mock(SailDataset.class);
+		SailDataset statements = mock(SailDataset.class);
+		when(namespaces.getNamespace("prefix")).thenReturn("urn:direct:");
+		when(statements.getStatementCount(null, null, null)).thenReturn(3L);
+		List<SailDataset> datasets = List.of(namespaces, statements);
+		AtomicInteger acquisitions = new AtomicInteger();
+		AtomicInteger sourceCloses = new AtomicInteger();
+		SailSource direct = directReadSource(level -> {
+			assertEquals(IsolationLevels.READ_COMMITTED, level);
+			return datasets.get(acquisitions.getAndIncrement());
+		}, sourceCloses);
+		Sail sail = createSailWithSelectedSource(direct);
+		try (SailConnection reader = sail.getConnection()) {
+			assertEquals("urn:direct:", reader.getNamespace("prefix"));
+			assertEquals(3, reader.size());
+			assertEquals(2, acquisitions.get());
+			verify(namespaces).close();
+			verify(statements).close();
+			assertFalse(reader.isActive());
+		} finally {
+			sail.shutDown();
+		}
+		assertEquals(0, sourceCloses.get(), "A read owns its dataset, not the shared backing source");
+	}
+
+	@Test
+	public void directReadAcquisitionFailureKeepsBackingSourceOpen() {
+		SailException failure = new SailException("direct dataset acquisition failed");
+		AtomicInteger sourceCloses = new AtomicInteger();
+		SailSource direct = directReadSource(level -> {
+			throw failure;
+		}, sourceCloses);
+		Sail sail = createSailWithSelectedSource(direct);
+		try (SailConnection reader = sail.getConnection()) {
+			assertSame(failure, assertThrows(SailException.class, () -> reader.getNamespace("prefix")));
+		} finally {
+			sail.shutDown();
+		}
+		assertEquals(0, sourceCloses.get());
+	}
+
+	@Test
+	public void directReadFailureClosesDatasetAndPreservesPrimaryException() {
+		SailException failure = new SailException("direct statement iteration failed");
+		SailException cleanup = new SailException("direct dataset cleanup failed");
+		SailDataset dataset = mock(SailDataset.class);
+		when(dataset.getStatements(RDF.TYPE, RDFS.LABEL, null)).thenThrow(failure);
+		doThrow(cleanup).when(dataset).close();
+		AtomicInteger sourceCloses = new AtomicInteger();
+		Sail sail = createSailWithSelectedSource(directReadSource(level -> dataset, sourceCloses));
+		try (SailConnection reader = sail.getConnection()) {
+			assertSame(failure, assertThrows(SailException.class,
+					() -> reader.getStatements(RDF.TYPE, RDFS.LABEL, null, false)));
+			assertEquals(List.of(cleanup), List.of(failure.getSuppressed()));
+			verify(dataset).close();
+		} finally {
+			sail.shutDown();
+		}
+		assertEquals(0, sourceCloses.get());
+	}
+
+	@Test
+	public void inferredDirectReadClosesFirstDatasetWhenSecondAcquisitionFails() {
+		SailException failure = new SailException("explicit dataset acquisition failed");
+		SailException cleanup = new SailException("inferred dataset cleanup failed");
+		SailDataset inferredDataset = mock(SailDataset.class);
+		doThrow(cleanup).when(inferredDataset).close();
+		AtomicInteger sourceCloses = new AtomicInteger();
+		SailSource inferred = directReadSource(level -> inferredDataset, sourceCloses);
+		SailSource explicit = directReadSource(level -> {
+			throw failure;
+		}, sourceCloses);
+		Sail sail = createSailWithSelectedSources(explicit, inferred);
+		try (SailConnection reader = sail.getConnection()) {
+			assertSame(failure, assertThrows(SailException.class,
+					() -> reader.getStatements(RDF.TYPE, RDFS.LABEL, null, true)));
+			assertEquals(List.of(cleanup), List.of(failure.getSuppressed()));
+			verify(inferredDataset).close();
+		} finally {
+			sail.shutDown();
+		}
+		assertEquals(0, sourceCloses.get());
+	}
+
+	@Test
+	public void decoratedDirectReadKeepsOverriddenForkAndDataset() {
+		AtomicInteger sourceCloses = new AtomicInteger();
+		SailSource direct = directReadSource(level -> {
+			throw new AssertionError("The decorated source must not be bypassed");
+		}, sourceCloses);
+		SailSource fork = mock(SailSource.class);
+		SailDataset dataset = mock(SailDataset.class);
+		when(fork.dataset(IsolationLevels.READ_COMMITTED)).thenReturn(dataset);
+		when(dataset.getNamespace("prefix")).thenReturn("urn:decorated:");
+		AtomicInteger forks = new AtomicInteger();
+		SailSource decorated = new DelegatingSailSource(direct, false) {
+			@Override
+			public SailSource fork() {
+				forks.incrementAndGet();
+				return fork;
+			}
+		};
+		Sail sail = createSailWithSelectedSource(decorated);
+		try (SailConnection reader = sail.getConnection()) {
+			assertEquals("urn:decorated:", reader.getNamespace("prefix"));
+			assertEquals(1, forks.get());
+			verify(fork).dataset(IsolationLevels.READ_COMMITTED);
+			verify(dataset).close();
+			verify(fork).close();
+		} finally {
+			sail.shutDown();
+		}
+		assertEquals(0, sourceCloses.get());
+	}
+
+	@Test
 	public void implicitReadClosesOwnedForkWhenDatasetAcquisitionFails() {
 		SailException failure = new SailException("dataset acquisition failed");
-		SailSource selected = mock(SailSource.class);
+		SailSource selected = mockBranchingSource();
 		SailSource fork = mock(SailSource.class);
 		when(selected.fork()).thenReturn(fork);
 		when(fork.dataset(any())).thenThrow(failure);
@@ -563,7 +686,7 @@ public class SnapshotSailStoreTest {
 	@Test
 	public void implicitReadClosesDatasetAndForkWhenStatementIteratorCreationFails() {
 		SailException failure = new SailException("statement iterator creation failed");
-		SailSource selected = mock(SailSource.class);
+		SailSource selected = mockBranchingSource();
 		SailSource fork = mock(SailSource.class);
 		SailDataset dataset = mock(SailDataset.class);
 		when(selected.fork()).thenReturn(fork);
@@ -612,10 +735,10 @@ public class SnapshotSailStoreTest {
 	public void inferredReadClosesFirstDatasetAndBothForksWhenSecondAcquisitionFails() {
 		SailException failure = new SailException("explicit acquisition failed");
 		SailException cleanup = new SailException("inferred cleanup failed");
-		SailSource inferred = mock(SailSource.class);
+		SailSource inferred = mockBranchingSource();
 		SailSource inferredFork = mock(SailSource.class);
 		SailDataset inferredDataset = mock(SailDataset.class);
-		SailSource explicit = mock(SailSource.class);
+		SailSource explicit = mockBranchingSource();
 		SailSource explicitFork = mock(SailSource.class);
 		when(inferred.fork()).thenReturn(inferredFork);
 		when(inferredFork.dataset(any())).thenReturn(inferredDataset);
@@ -644,7 +767,7 @@ public class SnapshotSailStoreTest {
 				SailException failure = new SailException(operation + " failed");
 				SailException datasetCleanup = new SailException("dataset cleanup");
 				SailException sourceCleanup = new SailException("source cleanup");
-				SailSource selected = mock(SailSource.class);
+				SailSource selected = mockBranchingSource();
 				SailSource fork = mock(SailSource.class);
 				SailDataset dataset = mock(SailDataset.class);
 				when(selected.fork()).thenReturn(fork);
@@ -719,7 +842,7 @@ public class SnapshotSailStoreTest {
 
 	@Test
 	public void iterationOwnershipTransferFailureClosesDatasetAndSource() {
-		SailSource selected = mock(SailSource.class);
+		SailSource selected = mockBranchingSource();
 		SailSource fork = mock(SailSource.class);
 		SailDataset dataset = mock(SailDataset.class);
 		when(selected.fork()).thenReturn(fork);
@@ -799,6 +922,41 @@ public class SnapshotSailStoreTest {
 
 	private Sail createSailWithSelectedSource(SailSource selectedSource) {
 		return createSailWithSelectedSources(selectedSource, selectedSource);
+	}
+
+	private SailSource mockBranchingSource() {
+		SailSource source = mock(SailSource.class);
+		doCallRealMethod().when(source).datasetForRead(any());
+		return source;
+	}
+
+	private SailSource directReadSource(Function<IsolationLevel, SailDataset> datasets, AtomicInteger sourceCloses) {
+		return new BackingSailSource() {
+			@Override
+			public SailSource fork() {
+				throw new UnsupportedOperationException("This source does not support writable branches");
+			}
+
+			@Override
+			public SailDataset datasetForRead(IsolationLevel level) {
+				return dataset(level);
+			}
+
+			@Override
+			public SailDataset dataset(IsolationLevel level) {
+				return datasets.apply(level);
+			}
+
+			@Override
+			public SailSink sink(IsolationLevel level) {
+				return new TestSailSink();
+			}
+
+			@Override
+			public void close() {
+				sourceCloses.incrementAndGet();
+			}
+		};
 	}
 
 	private Sail createSailWithSelectedSources(SailSource explicit, SailSource inferred) {
@@ -1230,6 +1388,148 @@ public class SnapshotSailStoreTest {
 			assertSame(failure, assertThrows(IllegalStateException.class,
 					() -> connection.explain(Explanation.Level.Telemetry, tupleExpr, null,
 							EmptyBindingSet.getInstance(), false, 10)));
+		} finally {
+			sail.shutDown();
+		}
+	}
+
+	@Test
+	public void testExplainRecognizesIterationWrapperInterruptionDuringNext() {
+		for (Explanation.Level level : List.of(Explanation.Level.Executed, Explanation.Level.Timed)) {
+			AtomicInteger closes = new AtomicInteger();
+			AtomicBoolean nextEntered = new AtomicBoolean();
+			EvaluationStrategy strategy = mock(EvaluationStrategy.class);
+			when(strategy.precompile(any()))
+					.thenReturn(bindings -> interruptedNextIteration(closes, nextEntered));
+			Sail sail = createExplainTestSail(strategy);
+			try (SailConnection connection = sail.getConnection()) {
+				TupleExpr expression = new StatementPattern(new Var("s"), new Var("p"), new Var("o"));
+				Explanation explanation = connection.explain(level, expression, null,
+						EmptyBindingSet.getInstance(), false, 1);
+				assertThat(explanation.toGenericPlanNode().getTimedOut()).isTrue();
+				assertThat(explanation.toString()).startsWith("Timed out while retrieving explanation!");
+				assertThat(nextEntered).isTrue();
+				assertThat(closes).hasValue(1);
+				assertThat(Thread.currentThread().isInterrupted()).isFalse();
+			} finally {
+				sail.shutDown();
+			}
+		}
+	}
+
+	private CloseableIteration<BindingSet> interruptedNextIteration(AtomicInteger closes, AtomicBoolean nextEntered) {
+		IterationWrapper<BindingSet> wrapped = new IterationWrapper<>(
+				new CloseableIteratorIteration<>(List.<BindingSet>of(EmptyBindingSet.getInstance()).iterator())) {
+		};
+		return new CloseableIteration<>() {
+			@Override
+			public boolean hasNext() {
+				return true;
+			}
+
+			@Override
+			public BindingSet next() {
+				nextEntered.set(true);
+				try {
+					new CountDownLatch(1).await(10, TimeUnit.SECONDS);
+					throw new AssertionError("explanation timeout did not interrupt next()");
+				} catch (InterruptedException interrupted) {
+					Thread.currentThread().interrupt();
+				}
+				return wrapped.next();
+			}
+
+			@Override
+			public void close() {
+				closes.incrementAndGet();
+				wrapped.close();
+			}
+		};
+	}
+
+	@Test
+	public void testExplainTimeoutReturnsPartialPlanForLegacyIteratorInterruption() {
+		assertExplainTimeoutPreservesPartialPlan(
+				interrupted -> new NoSuchElementException("The iteration has been interrupted."));
+	}
+
+	@Test
+	public void testExplainTimeoutRecognizesCauseLessSailInterruption() {
+		assertExplainTimeoutPreservesPartialPlan(interrupted -> new InterruptedSailException("Sail interrupted"));
+	}
+
+	@Test
+	public void testExplainTimeoutRecognizesSharedCancellationCause() {
+		assertExplainTimeoutPreservesPartialPlan(interrupted -> {
+			var cancellation = new QueryInterruptedException("reading interrupted", interrupted);
+			cancellation.addSuppressed(new QueryInterruptedException("closing interrupted", interrupted));
+			return cancellation;
+		});
+	}
+
+	@Test
+	public void testExplainDoesNotHideInterruptionBeforeItsOwnDeadline() {
+		EvaluationStrategy strategy = mock(EvaluationStrategy.class);
+		QueryInterruptedException foreign = new QueryInterruptedException("cancelled by another owner");
+		when(strategy.precompile(any())).thenThrow(foreign);
+		Sail sail = createExplainTestSail(strategy);
+		try (SailConnection connection = sail.getConnection()) {
+			TupleExpr expression = new StatementPattern(new Var("s"), new Var("p"), new Var("o"));
+			assertSame(foreign, assertThrows(SailException.class,
+					() -> connection.explain(Explanation.Level.Executed, expression, null,
+							EmptyBindingSet.getInstance(), false, 10)).getCause());
+		} finally {
+			sail.shutDown();
+		}
+	}
+
+	private void assertExplainTimeoutPreservesPartialPlan(Function<InterruptedException, RuntimeException> interrupt) {
+		EvaluationStrategy strategy = mock(EvaluationStrategy.class);
+		AtomicInteger rows = new AtomicInteger();
+		AtomicInteger closes = new AtomicInteger();
+		when(strategy.precompile(any())).thenAnswer(call -> {
+			TupleExpr node = call.getArgument(0);
+			TupleExpr visibleNode = node instanceof QueryRoot root ? root.getArg() : node;
+			QueryEvaluationStep step = bindings -> new CloseableIteration<BindingSet>() {
+				@Override
+				public boolean hasNext() {
+					if (rows.get() == 0) {
+						return true;
+					}
+					try {
+						new CountDownLatch(1).await(10, TimeUnit.SECONDS);
+						throw new AssertionError("explanation timeout did not interrupt evaluation");
+					} catch (InterruptedException interrupted) {
+						Thread.currentThread().interrupt();
+						throw interrupt.apply(interrupted);
+					}
+				}
+
+				@Override
+				public BindingSet next() {
+					visibleNode.setResultSizeActual(rows.incrementAndGet());
+					return EmptyBindingSet.getInstance();
+				}
+
+				@Override
+				public void close() {
+					closes.incrementAndGet();
+				}
+			};
+			return step;
+		});
+		Sail sail = createExplainTestSail(strategy);
+		try (SailConnection connection = sail.getConnection()) {
+			TupleExpr expression = new StatementPattern(new Var("s"), new Var("p"), new Var("o"));
+			Explanation explanation = connection.explain(Explanation.Level.Executed, expression, null,
+					EmptyBindingSet.getInstance(), false, 1);
+			assertThat(explanation.toGenericPlanNode().getTimedOut()).isTrue();
+			assertThat(explanation.toGenericPlanNode().getType()).isEqualTo("StatementPattern");
+			assertThat(explanation.toGenericPlanNode().getResultSizeActual()).isEqualTo(1);
+			assertThat(explanation.toString()).startsWith("Timed out while retrieving explanation!");
+			assertThat(rows).hasValue(1);
+			assertThat(closes).hasValue(1);
+			assertThat(Thread.currentThread().isInterrupted()).isFalse();
 		} finally {
 			sail.shutDown();
 		}

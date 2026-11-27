@@ -46,6 +46,7 @@ import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.model.base.AbstractStatement;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.io.TempDir;
 
 public class DynamicModelTest {
 
@@ -384,6 +385,40 @@ public class DynamicModelTest {
 
 		assertThatThrownBy(iterator::remove).isInstanceOf(ConcurrentModificationException.class);
 		assertThat(model.contains(statement)).isTrue();
+		assertThat(model.getUpgradedModel()).isNull();
+	}
+
+	@Test
+	void equalCustomStatementReplacementKeepsContextIteratorsUsable() {
+		DynamicModel model = new DynamicModel(new LinkedHashModelFactory());
+		ValueFactory valueFactory = SimpleValueFactory.getInstance();
+		Resource subject = valueFactory.createIRI("urn:subject");
+		IRI predicate = valueFactory.createIRI("urn:predicate");
+		Resource firstContext = valueFactory.createIRI("urn:context:first");
+		Resource secondContext = valueFactory.createIRI("urn:context:second");
+		Value object = valueFactory.createLiteral("object");
+		class RetainingStatement extends GenericStatement<Resource, IRI, Value> {
+			private static final long serialVersionUID = 1L;
+
+			private RetainingStatement(Resource retainedSubject, IRI retainedPredicate, Value retainedObject,
+					Resource retainedContext) {
+				super(retainedSubject, retainedPredicate, retainedObject, retainedContext);
+			}
+		}
+		Statement first = new RetainingStatement(subject, predicate, object, firstContext);
+		Statement second = valueFactory.createStatement(subject, predicate, object, secondContext);
+		model.add(first);
+		model.add(second);
+
+		Iterator<Statement> exactContext = model.getStatements(subject, predicate, object, firstContext).iterator();
+		Iterator<Statement> multipleContexts = model.getStatements(subject, predicate, object).iterator();
+		Statement replacement = new RetainingStatement(subject, predicate, valueFactory.createLiteral("object"),
+				firstContext);
+		assertThat(model.add(replacement)).isFalse();
+
+		assertThat(exactContext.next()).isSameAs(first);
+		assertThat(multipleContexts.next()).isSameAs(first);
+		assertThat(model.iterator().next()).isSameAs(replacement);
 		assertThat(model.getUpgradedModel()).isNull();
 	}
 
@@ -909,13 +944,13 @@ public class DynamicModelTest {
 	}
 
 	@Test
-	void deserializingOlderDynamicModelInitializesAddedContexts() throws Exception {
+	void deserializingOlderDynamicModelInitializesAddedContexts(@TempDir Path tempDir) throws Exception {
 		ValueFactory valueFactory = SimpleValueFactory.getInstance();
 		Statement statement = valueFactory.createStatement(valueFactory.createIRI("urn:subject"),
 				valueFactory.createIRI("urn:predicate"), valueFactory.createLiteral("object"),
 				valueFactory.createIRI("urn:context"));
 
-		byte[] serialized = serializeLegacyDynamicModel(statement);
+		byte[] serialized = serializeLegacyDynamicModel(statement, tempDir);
 
 		DynamicModel deserialized;
 		try (ObjectInputStream objectInputStream = new ObjectInputStream(new ByteArrayInputStream(serialized))) {
@@ -946,8 +981,7 @@ public class DynamicModelTest {
 		assertThat(model.getUpgradedModel()).isNull();
 	}
 
-	private static byte[] serializeLegacyDynamicModel(Statement statement) throws Exception {
-		Path tempDir = Files.createTempDirectory("dynamic-model-legacy");
+	private static byte[] serializeLegacyDynamicModel(Statement statement, Path tempDir) throws Exception {
 		Path packageDir = Files.createDirectories(tempDir.resolve("org/eclipse/rdf4j/model/impl"));
 		Path sourceFile = packageDir.resolve("DynamicModel.java");
 		Files.writeString(sourceFile, legacyDynamicModelSource(), StandardCharsets.UTF_8);

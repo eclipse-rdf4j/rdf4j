@@ -53,8 +53,15 @@ class ExploreServletTest {
 
 	@AfterEach
 	void tearDown() {
-		connection.close();
-		repository.shutDown();
+		try {
+			if (connection != null) {
+				connection.close();
+			}
+		} finally {
+			if (repository != null) {
+				repository.shutDown();
+			}
+		}
 	}
 
 	@ParameterizedTest

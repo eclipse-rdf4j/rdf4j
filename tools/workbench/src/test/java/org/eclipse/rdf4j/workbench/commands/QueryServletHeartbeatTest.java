@@ -182,8 +182,22 @@ class QueryServletHeartbeatTest {
 		Repository repository = mock(Repository.class);
 		RepositoryConnection connection = mockedConnection();
 		TupleQuery tupleQuery = mock(TupleQuery.class);
-		TupleQueryResult result = mock(TupleQueryResult.class);
 		AtomicInteger consumedRows = new AtomicInteger();
+		TupleQueryResult result = new IteratingTupleQueryResult(List.of("s"), new CloseableIteration<>() {
+			@Override
+			public boolean hasNext() {
+				return consumedRows.get() < totalRows;
+			}
+
+			@Override
+			public BindingSet next() {
+				return binding("urn:s" + consumedRows.incrementAndGet());
+			}
+
+			@Override
+			public void close() {
+			}
+		});
 		ProgressProbeServletOutputStream output = new ProgressProbeServletOutputStream("identity");
 		CancellableOperationCoordinator coordinator = new CancellableOperationCoordinator();
 		FastHeartbeatQueryServlet servlet = servlet(repository, coordinator, Duration.ofHours(1));
@@ -191,9 +205,6 @@ class QueryServletHeartbeatTest {
 		when(connection.prepareQuery(QueryLanguage.SPARQL, QUERY)).thenReturn(tupleQuery);
 		when(connection.getNamespaces()).thenReturn(emptyNamespaces());
 		when(tupleQuery.evaluate()).thenReturn(result);
-		when(result.getBindingNames()).thenReturn(List.of("s"));
-		when(result.hasNext()).thenAnswer(invocation -> consumedRows.get() < totalRows);
-		when(result.next()).thenAnswer(invocation -> binding("urn:s" + consumedRows.incrementAndGet()));
 
 		WorkbenchRequest request = pageDataRequest(QUERY);
 		when(request.getParameterValues("batch-size")).thenReturn(new String[] { "2" });
@@ -230,10 +241,34 @@ class QueryServletHeartbeatTest {
 		Repository repository = mock(Repository.class);
 		RepositoryConnection connection = mockedConnection();
 		TupleQuery tupleQuery = mock(TupleQuery.class);
-		TupleQueryResult result = mock(TupleQueryResult.class);
 		AtomicInteger consumedRows = new AtomicInteger();
 		CountDownLatch pausedAtTimedProgressCount = new CountDownLatch(1);
 		CountDownLatch releaseRows = new CountDownLatch(1);
+		TupleQueryResult result = new IteratingTupleQueryResult(List.of("s"), new CloseableIteration<>() {
+			@Override
+			public boolean hasNext() {
+				if (consumedRows.get() == timedProgressCount) {
+					pausedAtTimedProgressCount.countDown();
+					try {
+						assertThat(releaseRows.await(15, TimeUnit.SECONDS)).isTrue();
+					} catch (InterruptedException e) {
+						Thread.currentThread().interrupt();
+						throw new IllegalStateException("Interrupted while waiting to release remaining rows", e);
+					}
+				}
+				return consumedRows.get() < countMilestone;
+			}
+
+			@Override
+			public BindingSet next() {
+				consumedRows.incrementAndGet();
+				return binding("urn:s");
+			}
+
+			@Override
+			public void close() {
+			}
+		});
 		ProgressProbeServletOutputStream output = new ProgressProbeServletOutputStream("identity",
 				timedProgressCount);
 		CancellableOperationCoordinator coordinator = new CancellableOperationCoordinator();
@@ -242,18 +277,6 @@ class QueryServletHeartbeatTest {
 		when(connection.prepareQuery(QueryLanguage.SPARQL, QUERY)).thenReturn(tupleQuery);
 		when(connection.getNamespaces()).thenReturn(emptyNamespaces());
 		when(tupleQuery.evaluate()).thenReturn(result);
-		when(result.getBindingNames()).thenReturn(List.of("s"));
-		when(result.hasNext()).thenAnswer(invocation -> {
-			if (consumedRows.get() == timedProgressCount) {
-				pausedAtTimedProgressCount.countDown();
-				assertThat(releaseRows.await(15, TimeUnit.SECONDS)).isTrue();
-			}
-			return consumedRows.get() < countMilestone;
-		});
-		when(result.next()).thenAnswer(invocation -> {
-			consumedRows.incrementAndGet();
-			return binding("urn:s");
-		});
 
 		WorkbenchRequest request = pageDataRequest(QUERY);
 		when(request.getHeader("Accept")).thenReturn("application/vnd.rdf4j.workbench-query-v2+ndjson");

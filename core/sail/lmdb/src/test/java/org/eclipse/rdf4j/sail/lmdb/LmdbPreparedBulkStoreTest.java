@@ -139,7 +139,9 @@ class LmdbPreparedBulkStoreTest {
 					.append(index)
 					.append("\" .\n");
 		}
-		load(target, config, input.toString());
+		// Leave room for the compressed input/output buffers as well as the value sorters. The small-fixture
+		// 2 MiB budget forces these 10,000 rows through one-record spills before the capacity assertions can run.
+		load(target, config, input.toString(), 16L * 1024 * 1024);
 		List<Long> capacities = mapSizes(target);
 		LmdbStore store = new LmdbStore(target.toFile(), config);
 		SailRepository repository = new SailRepository(store);
@@ -1081,10 +1083,15 @@ class LmdbPreparedBulkStoreTest {
 	}
 
 	private static void load(Path target, LmdbStoreConfig config, String input) throws IOException {
+		load(target, config, input, 2L * 1024 * 1024);
+	}
+
+	private static void load(Path target, LmdbStoreConfig config, String input, long memoryBudgetBytes)
+			throws IOException {
 		LmdbBulkLoader.builder(target, config)
 				.partitionCount(4)
 				.workers(1)
-				.memoryBudgetBytes(2L * 1024 * 1024)
+				.memoryBudgetBytes(memoryBudgetBytes)
 				.maxOpenFiles(16)
 				.build()
 				.load(new ByteArrayInputStream(input.getBytes(StandardCharsets.UTF_8)), "urn:test:", RDFFormat.NQUADS);

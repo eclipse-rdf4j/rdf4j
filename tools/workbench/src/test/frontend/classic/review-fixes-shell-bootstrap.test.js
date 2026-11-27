@@ -14,7 +14,7 @@ function loadWorkbench(sandboxExtras = {}) {
     installDetailDisclosureTemplateRuntime(workbench);
     const context = vm.createContext(Object.assign({ console, URL, Promise, window, workbench, setTimeout },
         sandboxExtras));
-    for (const filename of ['workbenchViews.js', 'workbenchRoutes.js', 'queryStream.js', 'workbenchApp.js']) {
+    for (const filename of ['workbenchWorkspace.js', 'workbenchViews.js', 'workbenchRoutes.js', 'queryStream.js', 'workbenchApp.js']) {
         vm.runInContext(fs.readFileSync(path.join(scripts, filename), 'utf8'), context, { filename });
     }
     window.workbench = context.workbench;
@@ -68,6 +68,36 @@ const contexts = { ok: true, records: [
     { type: 'head', version: 1 }, { type: 'view', id: 'contexts' }, { type: 'vars', values: ['context'] },
     { type: 'rows', values: [[{ kind: 'iri', value: 'urn:g' }]] }, { type: 'end' }
 ] };
+
+test('a full-page repository listing only confirms a deletion when the repository is absent', async () => {
+    const same = { 'server-identity': 'sha256:abc:session-2', 'server-user': '' };
+    for (const [column, value, metadata, deleted] of [['error-message', 'Unauthorized', same, false],
+        ['id', 'gone', same, false], ['id', 'other', { ...same, 'server-identity': 'sha256:other' }, false],
+        ['id', 'other', { ...same, 'server-user': 'other' }, false], ['id', 'other', same, true]]) {
+        const workbench = loadWorkbench();
+        const mount = page(workbench, 'repositories');
+        installStream(workbench, () => {});
+        const storage = () => {
+            const values = new Map();
+            return { get length() { return values.size; }, key: (i) => Array.from(values.keys())[i],
+                getItem: (key) => values.get(key) || null, setItem: (key, item) => values.set(key, item),
+                removeItem: (key) => values.delete(key) };
+        };
+        const local = workbench.__testWindow.localStorage = storage();
+        workbench.__testWindow.sessionStorage = storage();
+        const key = workbench.workspace.QUERY_TABS_PREFIX + JSON.stringify(['sha256:abc', '', 'gone']);
+        local.setItem(key, 'saved query');
+        workbench.workspace.deletionStarted('sha256:abc:session', 'gone');
+        const records = [{ type: 'head', version: 1 }, { type: 'view', id: 'repositories' },
+            { type: 'metadata', values: metadata },
+            { type: 'vars', values: [column] }, { type: 'rows', values: [[{ kind: 'literal', value }]] }, { type: 'end' }];
+        const result = await workbench.app.bootstrap(mount, {
+            fetch: async () => ({ ok: true, records }), runtime: runtime(), skipScripts: true
+        });
+        assert.equal(result.model.viewId, 'repositories');
+        assert.equal(local.getItem(key), deleted ? null : 'saved query', JSON.stringify([column, value, metadata]));
+    }
+});
 
 test('A23: the page starts when stored query results cannot be cleaned up (for example without IndexedDB)', async () => {
     const workbench = loadWorkbench();

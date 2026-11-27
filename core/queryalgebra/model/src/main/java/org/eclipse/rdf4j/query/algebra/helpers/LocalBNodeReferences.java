@@ -13,11 +13,13 @@ package org.eclipse.rdf4j.query.algebra.helpers;
 
 import java.util.ArrayDeque;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.Collections;
 import java.util.HashSet;
 import java.util.IdentityHashMap;
 import java.util.List;
 import java.util.Set;
+import java.util.function.Predicate;
 
 import org.eclipse.rdf4j.common.annotation.InternalUseOnly;
 import org.eclipse.rdf4j.model.BNode;
@@ -36,6 +38,8 @@ import org.eclipse.rdf4j.query.impl.RemoteBNode;
 /** Fixed local identities before an optimizer can inline external bindings. */
 @InternalUseOnly
 public final class LocalBNodeReferences {
+	private static final Analysis NO_REFERENCES = new Analysis(Set.of(), List.of(), List.of());
+
 	private LocalBNodeReferences() {
 	}
 
@@ -56,9 +60,17 @@ public final class LocalBNodeReferences {
 
 		/** All occupied blank-node IDs, independently of whether they denote fixed local references. */
 		public Set<String> knownIds() {
+			return knownIds(ignored -> true);
+		}
+
+		/** Returns fixed references and the occupied identities selected by the caller. */
+		public Set<String> knownIds(Predicate<BNode> include) {
+			if (this == NO_REFERENCES) {
+				return Set.of();
+			}
 			Set<String> known = new HashSet<>(ids);
 			for (IdentityStamp stamp : structure) {
-				if (stamp.identity() instanceof BNode && stamp.state() != null) {
+				if (stamp.identity() instanceof BNode blank && stamp.state() != null && include.test(blank)) {
 					known.add(stamp.state());
 				}
 			}
@@ -71,6 +83,43 @@ public final class LocalBNodeReferences {
 		List<IdentityStamp> structure = new ArrayList<>();
 		List<Value> runtimeValues = new ArrayList<>();
 		return new Analysis(scan(expression, structure, runtimeValues), structure, runtimeValues);
+	}
+
+	/** Builds a mutation fingerprint only where a local identity or an inherited reference role needs one. */
+	public static Analysis forPreparation(QueryModelNode expression, boolean inheritedRoles) {
+		if (inheritedRoles) {
+			return analyze(expression);
+		}
+		if (expression == null) {
+			return NO_REFERENCES;
+		}
+		var pending = new ArrayDeque<QueryModelNode>();
+		var children = new AbstractQueryModelVisitor<RuntimeException>() {
+			@Override
+			protected void meetNode(QueryModelNode child) {
+				pending.addLast(child);
+			}
+		};
+		pending.addLast(expression);
+		while (!pending.isEmpty()) {
+			var node = pending.removeLast();
+			if (node instanceof Service) {
+				continue;
+			}
+			// A provider may override value access or row iteration. Only inspect built-in getters in the
+			// preliminary pass so the full analysis invokes each custom accessor in its original order.
+			if (node instanceof BindingSetAssignment || node instanceof Var && node.getClass() != Var.class
+					|| node instanceof ValueConstant && node.getClass() != ValueConstant.class) {
+				return analyze(expression);
+			}
+			Value value = node instanceof Var variable ? variable.getValue()
+					: node instanceof ValueConstant constant ? constant.getValue() : null;
+			if (value instanceof BNode || value instanceof TripleTerm) {
+				return analyze(expression);
+			}
+			node.visitChildren(children);
+		}
+		return NO_REFERENCES;
 	}
 
 	private static Set<String> scan(QueryModelNode expression, List<IdentityStamp> structure,
@@ -147,9 +196,10 @@ public final class LocalBNodeReferences {
 							} else {
 								stamp(row, null);
 								// Binding iteration order is not part of a row's identity.
-								List<String> names = new ArrayList<>(row.getBindingNames());
-								Collections.sort(names);
-								for (String name : names) {
+								Object[] names = row.getBindingNames().toArray();
+								Arrays.sort(names);
+								for (Object entry : names) {
+									String name = (String) entry;
 									stamp(row, name);
 									value(row.getValue(name));
 								}

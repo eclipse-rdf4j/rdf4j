@@ -43,7 +43,9 @@ import org.eclipse.rdf4j.repository.RepositoryConnection;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
 import org.eclipse.rdf4j.sail.memory.MemoryStore;
 import org.eclipse.rdf4j.workbench.support.TestProcess;
+import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.TestInstance;
 import org.junit.jupiter.api.io.TempDir;
 
 import tools.jackson.databind.JsonNode;
@@ -51,12 +53,32 @@ import tools.jackson.databind.ObjectMapper;
 import tools.jackson.databind.node.ObjectNode;
 
 /** Runs the actual browser query generators against a real repository, including arbitrary raw blank IDs. */
+@TestInstance(TestInstance.Lifecycle.PER_CLASS)
 class GraphExplorerBlankNodeTest {
 
 	private static final ObjectMapper JSON = new ObjectMapper();
 
-	@TempDir
 	Path temporary;
+	private final Map<List<String>, JsonNode> initialQueries = new LinkedHashMap<>();
+
+	@BeforeAll
+	void generateInitialQueries(@TempDir Path directory) throws Exception {
+		temporary = directory;
+		List<Map<String, Object>> requests = new ArrayList<>();
+		for (String raw : List.of("alice", "", "_:alice", "a b>\\u0041", "a🙂日本\t\n\r\"{}|^`",
+				"only-outgoing", "iri:urn:anchor")) {
+			for (String scope : List.of("default", "all", "urn:named", "<_:graph>")) {
+				requests.add(
+						Map.of("raw", raw, "scope", scope, "graph", Map.of("nodes", List.of(), "edges", List.of())));
+			}
+		}
+		JsonNode generated = generateRequests(requests);
+		for (int index = 0; index < requests.size(); index++) {
+			Map<String, Object> request = requests.get(index);
+			initialQueries.put(List.of((String) request.get("raw"), (String) request.get("scope")),
+					generated.get(index));
+		}
+	}
 
 	@Test
 	void generatedResourceQueriesSupportStoredBlankIdentifiers() throws Exception {
@@ -109,7 +131,13 @@ class GraphExplorerBlankNodeTest {
 	}
 
 	private JsonNode generated(String raw, String scope) throws Exception {
-		return generated(raw, scope, List.of());
+		List<String> key = List.of(raw, scope);
+		JsonNode queries = initialQueries.get(key);
+		if (queries == null) {
+			queries = generated(raw, scope, List.of());
+			initialQueries.put(key, queries);
+		}
+		return queries;
 	}
 
 	@Test
@@ -314,17 +342,26 @@ class GraphExplorerBlankNodeTest {
 		if (answer != null) {
 			graph.put("answer", answer);
 		}
+		return generateRequests(List.of(Map.of("raw", raw, "scope", scope, "graph", graph))).get(0);
+	}
+
+	private JsonNode generateRequests(List<Map<String, Object>> requests) throws Exception {
+		Path input = Files.createTempFile(temporary, "query-requests-", ".json");
+		Files.writeString(input, JSON.writeValueAsString(requests), StandardCharsets.UTF_8);
 		Path errors = Files.createTempFile(temporary, "query-generator-", ".log");
 		Path output = Files.createTempFile(temporary, "query-generator-", ".json");
 		try (TestProcess child = TestProcess.start(new ProcessBuilder(TestProcess.NODE, "--experimental-strip-types",
-				"src/test/frontend/graph-explorer/fixed-blank-node-query-fixture.mjs", raw, scope,
-				JSON.writeValueAsString(graph))
+				"src/test/frontend/graph-explorer/fixed-blank-node-query-fixture.mjs", "--request-file",
+				input.toString())
 						.redirectError(errors.toFile())
 						.redirectOutput(output.toFile()))) {
 			Process process = child.process();
 			assertThat(process.waitFor(30, TimeUnit.SECONDS)).as("query generator finished").isTrue();
 			assertThat(process.exitValue()).as(Files.readString(errors, StandardCharsets.UTF_8)).isZero();
-			return JSON.readTree(Files.readString(output, StandardCharsets.UTF_8));
+			JsonNode results = JSON.readTree(Files.readString(output, StandardCharsets.UTF_8));
+			assertThat(results.isArray()).as("one query object per blank-node request").isTrue();
+			assertThat(results.size()).isEqualTo(requests.size());
+			return results;
 		}
 	}
 
