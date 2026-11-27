@@ -14,6 +14,7 @@ package org.eclipse.rdf4j.sail.lmdb.evaluation;
 
 import java.io.IOException;
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -140,11 +141,14 @@ final class LmdbNativeDispatchLoop<C, T> {
 
 	/** Starts this run's observation, reporting at once when opening was the whole run. */
 	private LmdbNativeCostObservation observation(LmdbNativeCandidate<T> chosen, double quotedExpected,
-			long openStarted) {
-		if (advice == null) {
+			long openStarted, LmdbNativeDiagnosticLedger.Attempt diagnostic) {
+		if (advice == null && diagnostic == null) {
 			return null;
 		}
-		LmdbNativeCostObservation observation = advice.observation(chosen.id(), chosen.quote(), quotedExpected);
+		LmdbNativeCostObservation observation = advice == null
+				? new LmdbNativeCostObservation(null, null, quotedExpected)
+				: advice.observation(chosen.id(), chosen.quote(), quotedExpected);
+		observation.diagnostic(diagnostic);
 		observation.opened(System.nanoTime() - openStarted);
 		if (eager) {
 			observation.completed();
@@ -390,6 +394,7 @@ final class LmdbNativeDispatchLoop<C, T> {
 			admitted.admit(context);
 			recordProposalCosts(admitted);
 			if (!admitted.applyForcing()) {
+				recordNoCandidate(admitted, "forced");
 				if (point.forcedMandatory()) {
 					throw forcedUnavailable(forcedDecline(admitted), false);
 				}
@@ -414,12 +419,10 @@ final class LmdbNativeDispatchLoop<C, T> {
 				LmdbNativeDecisionRecord record = admitted.record(ranking, retry ? "retry " + mode : mode);
 				rankingRound++;
 				observe(record, label);
-				if (LmdbNativeExplain.recordsExecutionPaths(explainTarget)) {
-					decisionSlot = LmdbNativeExplain.recordDecision(explainTarget, point, decisionSlot,
-							record.metric());
-					LmdbNativeExplain.recordDecisionOutcome(explainTarget, "winner=" + chosen.id() + ";reason="
-							+ ranking.reason() + ";kind=" + (retry ? "RETRY" : "NORMAL") + ";expectedNanos="
-							+ String.format(java.util.Locale.ROOT, "%.0f", ranking.expectedNanos()[ranking.winner()]));
+				if (LmdbNativeExplain.runtimeTelemetryEnabled(explainTarget)) {
+					decisionSlot = LmdbNativeExplain.recordDecision(explainTarget, point, decisionSlot, record);
+					LmdbNativeExplain.recordDecisionOutcome(explainTarget, chosen.id(), ranking.reason(),
+							retry ? "RETRY" : "NORMAL", ranking.expectedNanos()[ranking.winner()]);
 				}
 				if (NativeStrategyDecisionEvent.enabled()) {
 					NativeStrategyDecisionEvent.commit(decisionId, rankingRound, label, record, advice);
@@ -428,12 +431,17 @@ final class LmdbNativeDispatchLoop<C, T> {
 						ranking.reason());
 				retry = true;
 				startAttemptOnSharedRow();
-				long openStarted = advice == null ? 0L : System.nanoTime();
+				LmdbNativeDiagnosticLedger diagnosticLedger = LmdbNativeExplain.diagnostics(explainTarget);
+				LmdbNativeDiagnosticLedger.Attempt diagnostic = diagnosticLedger == null ? null
+						: diagnosticLedger.begin(point, record, sharedRow == null ? 0L : sharedRow.boundMask(),
+								chosen.quote().outputRows());
+				long openStarted = advice == null && diagnostic == null ? 0L : System.nanoTime();
 				T value;
 				try {
 					value = forcedTag == null || !admitted.forcingApplies ? chosen.opener().open()
 							: openCapturingDeclines(chosen, admitted);
 				} catch (KernelRuntime.AllocationDeniedException refused) {
+					finishDiagnostic(diagnostic, "BUDGET_REFUSED", BUDGET_DECLINE, openStarted);
 					if (!handlesBudgetRefusals) {
 						throw refused;
 					}
@@ -444,6 +452,9 @@ final class LmdbNativeDispatchLoop<C, T> {
 					budgetRefusal = refused;
 					value = null;
 					recordBudgetDecline(chosen.id(), admitted);
+				} catch (IOException | RuntimeException | Error failure) {
+					finishDiagnostic(diagnostic, "FAILED", failure.getClass().getSimpleName(), openStarted);
+					throw failure;
 				}
 				if (value != null) {
 					int winner = ranking.winner();
@@ -456,8 +467,9 @@ final class LmdbNativeDispatchLoop<C, T> {
 							listener.selected(explainTarget, label, chosen.id(), record);
 						}
 						return new Selection<>(value, chosen.id(), ranking.expectedNanos()[winner], record,
-								observation(chosen, ranking.quotedExpectedNanos()[winner], openStarted));
+								observation(chosen, ranking.quotedExpectedNanos()[winner], openStarted, diagnostic));
 					} catch (RuntimeException | Error failure) {
+						finishDiagnostic(diagnostic, "FAILED", failure.getClass().getSimpleName(), openStarted);
 						// The result has not been handed to the caller if cleanup or observation fails.
 						if (value instanceof AutoCloseable resource) {
 							KernelRuntime.rethrowCloseFailureIfNotPrimary(
@@ -466,6 +478,8 @@ final class LmdbNativeDispatchLoop<C, T> {
 						throw failure;
 					}
 				}
+				finishDiagnostic(diagnostic, "DECLINED", admitted.declines.getOrDefault(chosen.id(),
+						"opener returned no executable"), openStarted);
 				if (forcedTag != null && forcedTagMatches(chosen.id())) {
 					forcedReturnedNull = true;
 				}
@@ -478,6 +492,9 @@ final class LmdbNativeDispatchLoop<C, T> {
 				}
 			}
 			restoreSharedRow();
+			if (rankingRound == 0) {
+				recordNoCandidate(admitted, mode);
+			}
 			if (forcedTag != null && admitted.forcingApplies && point.forcedMandatory()) {
 				throw forcedUnavailable(forcedDecline(admitted), forcedReturnedNull);
 			}
@@ -489,6 +506,22 @@ final class LmdbNativeDispatchLoop<C, T> {
 		} catch (IOException | RuntimeException | Error failure) {
 			admitted.releaseAll(failure);
 			throw failure;
+		}
+	}
+
+	private static void finishDiagnostic(LmdbNativeDiagnosticLedger.Attempt diagnostic, String status, String reason,
+			long openStarted) {
+		if (diagnostic != null) {
+			long elapsed = Math.max(0L, System.nanoTime() - openStarted);
+			diagnostic.opened(elapsed);
+			diagnostic.finish(status, reason, elapsed, 0L, -1L, false);
+		}
+	}
+
+	private void recordNoCandidate(Admitted admitted, String mode) {
+		LmdbNativeDiagnosticLedger ledger = LmdbNativeExplain.diagnostics(explainTarget);
+		if (ledger != null) {
+			ledger.rejected(admitted.record(rank(admitted.candidates), mode));
 		}
 	}
 
@@ -614,26 +647,33 @@ final class LmdbNativeDispatchLoop<C, T> {
 
 	/** The explain metric listing every admitted candidate with its expected price, as telemetry consumers read it. */
 	private void recordProposalCosts(Admitted admitted) {
-		if (admitted.candidates.size() < 2 || !LmdbNativeExplain.recordsExecutionPaths(explainTarget)) {
+		if (admitted.candidates.size() < 2 || !LmdbNativeExplain.runtimeTelemetryEnabled(explainTarget)) {
 			return;
 		}
 		StringBuilder rendered = new StringBuilder();
 		StringBuilder features = new StringBuilder();
+		Map<String, Object> prices = new LinkedHashMap<>();
+		Map<String, Object> vectors = new LinkedHashMap<>();
 		for (LmdbNativeCandidate<T> candidate : admitted.candidates) {
 			if (rendered.length() > 0) {
 				rendered.append(',');
 				features.append(',');
 			}
 			LmdbNativeCostVector vector = consumedQuote(candidate);
+			double price = prior.expected(vector) + LmdbNativeStaticPrior.fixedNanos(candidate.id());
+			prices.put(candidate.id(), price);
+			Map<String, Object> counts = new LinkedHashMap<>();
+			vectors.put(candidate.id(), Collections.unmodifiableMap(counts));
 			rendered.append(candidate.id())
 					.append('=')
 					.append(String.format(java.util.Locale.ROOT, "%.0f",
-							prior.expected(vector) + LmdbNativeStaticPrior.fixedNanos(candidate.id())));
+							price));
 			features.append(candidate.id()).append('=');
 			boolean first = true;
 			for (LmdbNativeCostVector.Feature feature : LmdbNativeCostVector.Feature.values()) {
 				double expected = vector.expected(feature);
 				if (expected > 0D) {
+					counts.put(feature.name(), expected);
 					features.append(first ? "" : "|")
 							.append(feature)
 							.append(':')
@@ -642,8 +682,10 @@ final class LmdbNativeDispatchLoop<C, T> {
 				}
 			}
 		}
-		LmdbNativeExplain.recordStrategyProposalCosts(explainTarget, rendered.toString());
-		LmdbNativeExplain.recordStrategyProposalFeatures(explainTarget, features.toString());
+		LmdbNativeExplain.recordStrategyProposalCosts(explainTarget, rendered.toString(),
+				Collections.unmodifiableMap(prices));
+		LmdbNativeExplain.recordStrategyProposalFeatures(explainTarget, features.toString(),
+				Collections.unmodifiableMap(vectors));
 	}
 
 	private QueryEvaluationException forcedUnavailable(String declineReason, boolean returnedNull) {

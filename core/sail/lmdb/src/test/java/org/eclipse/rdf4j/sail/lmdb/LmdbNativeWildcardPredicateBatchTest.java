@@ -17,6 +17,7 @@ import java.io.File;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
+import java.util.regex.Pattern;
 
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.ValueFactory;
@@ -625,6 +626,19 @@ class LmdbNativeWildcardPredicateBatchTest {
 		openCatalog(dataDir);
 		String query = CATALOG_QUERY + slice;
 		assertCatalogRows(query, slice, "wildcardPredicateBatch");
+		try (RepositoryConnection connection = repository.getConnection()) {
+			Explanation telemetry = wildcardQuery(connection, query).explain(Explanation.Level.Telemetry);
+			Pattern selectedFormat = Pattern.compile("(?m)^ +outcome: SELECTED\\R +reason: .*\\R +where: .*\\R"
+					+ " +requestedOrder: .*\\R +subject: (.*)\\R +predicate: BOUND\\["
+					+ Pattern.quote("<" + DCTERMS.FORMAT.stringValue() + ">"));
+			List<String> subjects = selectedFormat.matcher(telemetry.toString())
+					.results()
+					.map(match -> match.group(1))
+					.toList();
+			assertThat(subjects).as("subjects of selected format accesses on the wildcard path")
+					.isNotEmpty()
+					.allSatisfy(subject -> assertThat(subject).startsWith("BOUND["));
+		}
 	}
 
 	@ParameterizedTest

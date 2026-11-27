@@ -244,7 +244,7 @@ final class LmdbNativeParallelPrefixRuns {
 		}
 		ArrayList<long[]> entries = new ArrayList<>();
 		NativeLmdbQuerySource.AdjacencyAccessObserver observer = runtimePlan == null ? null
-				: runtimePlan.adjacencyAccessAt(LmdbNativeExplain.describe(it.prefixPattern, it.layout));
+				: runtimePlan.adjacencyAccessAt(workerSource, it.prefixPattern);
 		try (LmdbPrefixRunCursor cursor = workerSource.prefixRuns(it.prefixRunPlan, subj, pred, obj, context,
 				it.prefixCountRunRows, observer, cancellation)) {
 			if (cursor == null) {

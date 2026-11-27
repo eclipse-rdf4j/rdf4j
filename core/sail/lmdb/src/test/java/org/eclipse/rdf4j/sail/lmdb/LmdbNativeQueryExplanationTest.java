@@ -24,6 +24,7 @@ import java.util.concurrent.atomic.AtomicInteger;
 import java.util.stream.Stream;
 
 import org.eclipse.rdf4j.model.IRI;
+import org.eclipse.rdf4j.model.Literal;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.model.vocabulary.RDF;
@@ -36,19 +37,24 @@ import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.query.algebra.evaluation.function.Function;
 import org.eclipse.rdf4j.query.algebra.evaluation.function.FunctionRegistry;
 import org.eclipse.rdf4j.query.explanation.Explanation;
+import org.eclipse.rdf4j.query.explanation.ExplanationOptions;
 import org.eclipse.rdf4j.query.explanation.GenericPlanNode;
 import org.eclipse.rdf4j.query.impl.EmptyBindingSet;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
 import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
 import org.eclipse.rdf4j.repository.sail.SailTupleQuery;
+import org.eclipse.rdf4j.rio.helpers.NTriplesUtil;
 import org.eclipse.rdf4j.sail.SailConnection;
 import org.eclipse.rdf4j.sail.lmdb.config.LmdbStoreConfig;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.JaninoPipelineTestAccess;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.KernelExecutionTestAccess;
+import org.eclipse.rdf4j.sail.lmdb.inlined.Values;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.EnumSource;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 
@@ -382,6 +388,68 @@ public class LmdbNativeQueryExplanationTest {
 	}
 
 	@Test
+	public void nativePhysicalJsonRetainsOperatorsTermsAndAccessBindings() throws Exception {
+		String query = "SELECT ?s ?price WHERE { ?s <" + EX + "price> ?price }";
+		var mapper = new ObjectMapper();
+		var optimized = mapper.readTree(explain(Explanation.Level.Optimized, query).toJson());
+		var physical = optimized.path("physicalPlans").path(0);
+		assertThat(physical.path("state").asText()).isEqualTo("planned");
+		assertThat(physical.path("engine").asText()).isEqualTo("lmdb-native");
+		var pattern = physical.path("plan").findParent("p");
+		assertThat(pattern).isNotNull();
+		assertThat(pattern.path("p").path("id").isTextual()).isTrue();
+		assertThat(pattern.at("/p/term/kind").asText()).isEqualTo("iri");
+		assertThat(pattern.at("/p/term/value").asText()).isEqualTo(EX + "price");
+		assertThat(pattern.path("s").path("name").asText()).isEqualTo("s");
+		assertThat(optimized.findValue("plannedPhysicalPlan")).isEqualTo(physical);
+		assertThat(store.awaitDirectAdjacencyReady(60, TimeUnit.SECONDS)).isTrue();
+		var telemetry = mapper.readTree(explain(Explanation.Level.Telemetry, query).toJson());
+		var executed = telemetry.path("physicalPlans").path(0);
+		assertThat(executed.path("state").asText()).isEqualTo("executed");
+		var invocation = executed.path("invocations").path(0);
+		assertThat(invocation.path("entryPlan").isObject()).isTrue();
+		assertThat(invocation.path("actualOrder").path(0).path("name").asText()).isEqualTo("Pattern");
+		var attempts = invocation.path("adjacencyAccess").path("attempts");
+		assertThat(attempts.isArray()).isTrue();
+		assertThat(attempts.findValuesAsText("outcome")).contains("SELECTED", "OUTRANKED");
+		for (var attempt : attempts) {
+			var bindings = attempt.path("bindings");
+			assertThat(bindings.path("subject").path("bound").booleanValue()).isFalse();
+			assertThat(bindings.path("predicate").path("bound").booleanValue()).isTrue();
+			assertThat(bindings.at("/predicate/term/value").asText()).isEqualTo(EX + "price");
+		}
+		assertThat(telemetry.path("executionProfile").findValues("attributes"))
+				.anyMatch(attributes -> attributes.path("actualOrder").equals(invocation.path("actualOrder")));
+	}
+
+	@Test
+	public void nativeRuntimeDecisionAttributesPreserveCostsFeaturesAndDeclines() throws Exception {
+		var json = new ObjectMapper().readTree(explain(Explanation.Level.Telemetry, rowQuery()).toJson());
+		var actual = json.findValues("actualAttributes");
+		assertThat(actual).anySatisfy(fields -> {
+			var outcome = fields.path("nativeDecisionOutcome");
+			assertThat(outcome.path("winner").asText()).isNotEmpty();
+			assertThat(outcome.path("expectedNanos").isNumber()).isTrue();
+			assertThat(fields.path("nativeStrategyProposalCosts").isObject()).isTrue();
+			assertThat(fields.path("nativeStrategyProposalFeatures").isObject()).isTrue();
+			assertThat(fields.path("nativeStrategyDeclines").path("declines").isArray()).isTrue();
+			assertThat(fields.path("nativeExecutionPath").path("paths").isArray()).isTrue();
+			assertThat(fields.path("nativeInitialBoundMask").path("slots").isArray()).isTrue();
+			assertThat(fields.path("nativeAttemptLedger").path("attempts").get(0).path("activeNanos").isNumber())
+					.isTrue();
+			var decisions = fields.properties().stream().filter(e -> e.getKey().startsWith("nativeDecision.")).toList();
+			assertThat(decisions).anySatisfy(entry -> {
+				var decision = entry.getValue();
+				assertThat(decision.path("entries").findValuesAsText("strategy"))
+						.contains(decision.path("winner").asText());
+			});
+		});
+		assertThat(json.path("executionProfile").findValues("lastDecision"))
+				.anySatisfy(decision -> assertThat(decision.path("entries").findValuesAsText("strategy"))
+						.contains(decision.path("winner").asText()));
+	}
+
+	@Test
 	public void optimizedExplanationNamesNativePhysicalPlanSlotsWithoutRuntimeDetails() {
 		Explanation explanation = explain(Explanation.Level.Optimized, rowQuery());
 		String rendered = explanation.toString();
@@ -506,6 +574,58 @@ public class LmdbNativeQueryExplanationTest {
 				.contains("requestedOrder: <default>\n")
 				.contains("predicate: BOUND[")
 				.doesNotContain("outcome: INELIGIBLE");
+	}
+
+	@ParameterizedTest
+	@EnumSource(ExplanationOptions.Consumption.class)
+	void telemetryNativePlanShowsRdfTermsInEveryConsumptionMode(ExplanationOptions.Consumption consumption)
+			throws Exception {
+		assertThat(store.awaitDirectAdjacencyReady(60, TimeUnit.SECONDS)).isTrue();
+		ExplanationOptions options = consumption == ExplanationOptions.Consumption.SERIALIZED
+				? ExplanationOptions.serialized("application/sparql-results+xml")
+				: new ExplanationOptions(consumption, null);
+		GenericPlanNode plan;
+		try (var connection = repository.getConnection()) {
+			SailTupleQuery query = (SailTupleQuery) connection.prepareTupleQuery(rowQuery());
+			query.setForcedLmdbExecutionStrategy("nestedLoop");
+			plan = query.explain(Explanation.Level.Telemetry, options).toGenericPlanNode();
+		}
+
+		String actualOrder = planSection(plan.getPhysicalPlanPrelude(), "    actualOrder:\n", "    janino:\n");
+		assertThat(actualOrder).contains("<" + RDF.TYPE + ">", "<" + EX + "Item>", "<" + EX + "price>");
+		String accesses = planSection(plan.getPhysicalPlanPrelude(), "    adjacencyAccess:\n", "    adjacencySIP:\n");
+		assertThat(accesses).contains("predicate: BOUND[<" + RDF.TYPE + ">", "object: BOUND[<" + EX + "Item>");
+		assertThat(plan.getExecutionProfile().stages()).anySatisfy(stage -> {
+			assertThat(stage.operator()).isEqualTo("Native invocation");
+			assertThat(stage.properties().get("actualOrder")).contains("<" + RDF.TYPE + ">", "<" + EX + "Item>");
+		});
+		assertThat(plannedMetrics(plan, "nativePhysicalPlan"))
+				.anySatisfy(metric -> assertThat(metric).contains("<" + RDF.TYPE + ">", "<" + EX + "Item>"));
+	}
+
+	@Test
+	void telemetryShowsInlineLiteralAndItsId() throws Exception {
+		ValueFactory vf = repository.getValueFactory();
+		Literal literal = vf.createLiteral(2.0d);
+		long id = Values.packLiteral(literal);
+		assertThat(ValueIds.isInlined(id)).isTrue();
+		try (var connection = repository.getConnection()) {
+			connection.add(vf.createIRI(EX, "doubleItem"), vf.createIRI(EX, "price"), literal);
+		}
+		assertThat(store.awaitDirectAdjacencyReady(60, TimeUnit.SECONDS)).isTrue();
+
+		String term = NTriplesUtil.toNTriplesString(literal);
+		String query = "SELECT ?s WHERE { ?s <" + EX + "price> " + term + " }";
+		var explanation = explain(Explanation.Level.Telemetry, query, "nestedLoop");
+		var json = new ObjectMapper().readTree(explanation.toJson());
+		var objectBinding = json.at("/physicalPlans/0/invocations/0/actualOrder/0/arguments/o");
+		assertThat(objectBinding.path("id").asText()).isEqualTo(Long.toString(id));
+		assertThat(objectBinding.at("/term/value").asText()).isEqualTo(literal.getLabel());
+		assertThat(objectBinding.at("/term/datatype").asText()).isEqualTo(literal.getDatatype().stringValue());
+		String rendered = explanation.toGenericPlanNode().getPhysicalPlanPrelude();
+		assertThat(planSection(rendered, "    actualOrder:\n", "    janino:\n")).contains(term + " (id=" + id + ")");
+		assertThat(planSection(rendered, "    adjacencyAccess:\n", "    adjacencySIP:\n"))
+				.contains("object: BOUND[" + term + " (id=" + id + ")]");
 	}
 
 	@Test
@@ -722,13 +842,18 @@ public class LmdbNativeQueryExplanationTest {
 			JaninoPipelineTestAccess.resetMetrics();
 			String query = "PREFIX ex: <" + EX + ">\n"
 					+ "SELECT ?s ?price WHERE { ?s ex:price ?price . ?s a ex:Item }";
+			Explanation explanation = null;
 			String rendered = "";
 			// prefer the compiled kernel; while its compilation is pending the nested loop runs and the loop retries
 			for (int attempt = 0; attempt < 100 && !rendered.contains("nativeExecutionPath=irKernel"); attempt++) {
-				rendered = explain(Explanation.Level.Telemetry, query, "irKernel,nestedLoop").toString();
+				explanation = explain(Explanation.Level.Telemetry, query, "irKernel,nestedLoop");
+				rendered = explanation.toString();
 			}
 
 			assertThat(JaninoPipelineTestAccess.opened()).isPositive();
+			var invocation = new ObjectMapper().readTree(explanation.toJson()).at("/physicalPlans/0/invocations/0");
+			assertThat(invocation.path("actualOrder").isArray()).isTrue();
+			assertThat(invocation.at("/janino/generatedOrder")).isEqualTo(invocation.path("actualOrder"));
 			assertThat(rendered)
 					.contains("nativeExecutionPath=irKernel")
 					.contains("    janino:\n      used: true\n      reason: ACTIVATED")
@@ -740,7 +865,8 @@ public class LmdbNativeQueryExplanationTest {
 					.contains("    actualOrder:\n      0: Pattern(");
 			assertThat(planSection(rendered, "    actualOrder:\n", "    janino:\n"))
 					.as("the physical plan must show the exact order embedded in the generated kernel")
-					.isEqualTo(planSection(rendered, "      generatedOrder:\n", "    adjacencyAccess:\n"));
+					.isEqualTo(planSection(rendered, "      generatedOrder:\n", "    adjacencyAccess:\n"))
+					.contains("<" + RDF.TYPE + ">", "<" + EX + "Item>", "<" + EX + "price>");
 		} finally {
 			restoreProperty(previousEnabled, "rdf4j.lmdb.janinoCodegen.enabled");
 			restoreProperty(previousThreshold, "rdf4j.lmdb.janinoCodegen.thresholdRows");
@@ -1066,6 +1192,13 @@ public class LmdbNativeQueryExplanationTest {
 		int end = rendered.indexOf(endMarker, start);
 		assertThat(end).as("missing end marker %s in:%n%s", endMarker, rendered).isGreaterThan(start);
 		return rendered.substring(start, end).replace("  ", "").strip();
+	}
+
+	private static Stream<String> plannedMetrics(GenericPlanNode node, String metricName) {
+		return Stream.concat(Stream.ofNullable(node.getStringMetricPlanned(metricName)),
+				Stream.ofNullable(node.getPlans())
+						.flatMap(List::stream)
+						.flatMap(child -> plannedMetrics(child, metricName)));
 	}
 
 	private static void restoreProperty(String previous) {

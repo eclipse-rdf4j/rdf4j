@@ -50,6 +50,7 @@ import org.eclipse.rdf4j.query.QueryLanguage;
 import org.eclipse.rdf4j.query.TupleQuery;
 import org.eclipse.rdf4j.query.TupleQueryResult;
 import org.eclipse.rdf4j.query.explanation.Explanation;
+import org.eclipse.rdf4j.query.explanation.ExplanationOptions;
 import org.eclipse.rdf4j.query.explanation.GenericPlanNode;
 import org.eclipse.rdf4j.query.explanation.StrategyDecision;
 import org.eclipse.rdf4j.query.impl.IteratingTupleQueryResult;
@@ -66,6 +67,8 @@ import org.eclipse.rdf4j.repository.sail.SailRepository;
 import org.eclipse.rdf4j.repository.sail.SailTupleQuery;
 import org.eclipse.rdf4j.sail.memory.MemoryStore;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.CsvSource;
 
 import com.sun.net.httpserver.HttpExchange;
 import com.sun.net.httpserver.HttpServer;
@@ -135,6 +138,56 @@ class QueryEvaluatorTest {
 		verify(builder).link(List.of("info", "_internal/namespaces"));
 		verify(builder).result("optimized plan", "text", "Optimized", "[]");
 		verify(builder).end();
+	}
+
+	@Test
+	void telemetryPageDataDoesNotIncludeConsumptionSettings() throws Exception {
+		String text = "SELECT * WHERE {?s ?p ?o}";
+		RepositoryConnection connection = mock(RepositoryConnection.class);
+		TupleQuery query = mock(TupleQuery.class);
+		Explanation explanation = mock(Explanation.class);
+		TupleResultBuilder builder = mock(TupleResultBuilder.class);
+		when(connection.prepareQuery(QueryLanguage.SPARQL, text)).thenReturn(query);
+		when(query.explain(Explanation.Level.Telemetry)).thenAnswer(invocation -> {
+			assertThat(ExplanationOptions.current()).isEqualTo(ExplanationOptions.values());
+			return explanation;
+		});
+		when(explanation.toString()).thenReturn("profile");
+		WorkbenchRequest request = mock(WorkbenchRequest.class);
+		when(request.getParameter("queryLn")).thenReturn("SPARQL");
+		when(request.isParameterPresent("explain")).thenReturn(true);
+		when(request.getParameter("explain")).thenReturn("Telemetry");
+		when(request.getParameter("explain-format")).thenReturn("text");
+		QueryEvaluator.INSTANCE.extractQueryAndEvaluate(builder, mock(HttpServletResponse.class),
+				new ByteArrayOutputStream(), connection, text, request, mock(CookieHandler.class), null);
+		verify(builder).start("explanation", "explanation-format", "explanation-level", "strategy-decisions");
+		verify(builder).result("profile", "text", "Telemetry", "[]");
+	}
+
+	@ParameterizedTest
+	@CsvSource({ ",", "rows,", "values,", "serialized,application/x-binary-rdf-results-table", "invalid,invalid" })
+	void telemetryAlwaysResolvesValuesAndScopesItsConsumption(String legacyConsumption, String legacyMimeType)
+			throws Exception {
+		String text = "SELECT * WHERE {?s ?p ?o}";
+		RepositoryConnection connection = mock(RepositoryConnection.class);
+		TupleQuery query = mock(TupleQuery.class);
+		Explanation explanation = mock(Explanation.class);
+		when(connection.prepareQuery(QueryLanguage.SPARQL, text)).thenReturn(query);
+		when(explanation.toString()).thenReturn("profile");
+		when(query.explain(Explanation.Level.Telemetry)).thenAnswer(invocation -> {
+			assertThat(ExplanationOptions.current()).isEqualTo(ExplanationOptions.values());
+			return explanation;
+		});
+		WorkbenchRequest request = mock(WorkbenchRequest.class);
+		when(request.getParameter("queryLn")).thenReturn("SPARQL");
+		when(request.getParameter("explain")).thenReturn("Telemetry");
+		when(request.getParameter("explain-format")).thenReturn("text");
+		when(request.getParameter("explain-consumption")).thenReturn(legacyConsumption);
+		when(request.getParameter("explain-result-mime")).thenReturn(legacyMimeType);
+		QueryEvaluator.ExplainRequest prepared = QueryEvaluator.INSTANCE.extractExplainRequest(request);
+		QueryEvaluator.INSTANCE.explain(connection, text, prepared);
+		assertThat(ExplanationOptions.current()).isEqualTo(ExplanationOptions.rows());
+		verify(query, never()).evaluate();
 	}
 
 	@Test

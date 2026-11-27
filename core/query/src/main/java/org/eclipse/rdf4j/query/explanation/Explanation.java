@@ -33,7 +33,7 @@ public interface Explanation {
 		Unoptimized, // simple parsed
 		Optimized, // parsed and optimized, which includes cost estimated
 		Executed, // plan as it was executed, which includes resultSizeActual
-		Telemetry, // plan as it was executed with runtime telemetry metrics (without node timing)
+		Telemetry, // executed plan, query phases, scoped physical timings, counters, and diagnostic evidence
 		Timed; // plan as it was executed, including resultSizeActual and where each node has been timed
 
 		public boolean includesEvaluationAnnotations() {

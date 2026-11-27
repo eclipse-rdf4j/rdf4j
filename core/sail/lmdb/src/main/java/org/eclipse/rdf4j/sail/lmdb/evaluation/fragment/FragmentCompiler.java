@@ -16,6 +16,7 @@ import java.util.LinkedHashMap;
 import java.util.Map;
 
 import org.eclipse.rdf4j.common.annotation.Experimental;
+import org.eclipse.rdf4j.sail.lmdb.LmdbQueryTelemetry;
 import org.eclipse.rdf4j.sail.lmdb.ValueIds;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.fragment.FragmentNode.Argument;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.fragment.FragmentNode.BooleanAnd;
@@ -56,13 +57,19 @@ public final class FragmentCompiler {
 		if (ir.resultKind() != FragmentResultKind.PREDICATE) {
 			throw new IllegalArgumentException("not a predicate fragment: " + ir);
 		}
+		LmdbQueryTelemetry telemetry = LmdbQueryTelemetry.current();
 		synchronized (CACHE) {
 			LongPredicateFragment cached = CACHE.get(ir.shapeKey());
 			if (cached != null) {
+				if (telemetry != null)
+					telemetry.fragmentCompiled(true, 0);
 				return cached;
 			}
 		}
+		long started = telemetry == null ? 0 : System.nanoTime();
 		LongPredicateFragment compiled = compile(ir);
+		if (telemetry != null)
+			telemetry.fragmentCompiled(false, System.nanoTime() - started);
 		synchronized (CACHE) {
 			CACHE.putIfAbsent(ir.shapeKey(), compiled);
 		}

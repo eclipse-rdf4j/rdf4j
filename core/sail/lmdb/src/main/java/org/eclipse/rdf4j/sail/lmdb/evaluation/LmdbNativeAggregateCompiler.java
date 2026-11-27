@@ -161,7 +161,7 @@ final class LmdbNativeAggregateCompiler {
 		if (result.step != null) {
 			LmdbNativeStrategyPreview.inspect(result.step);
 			if (LmdbNativeExplain.recordsExecutionPaths(expr)) {
-				LmdbNativeExplain.mark(expr, result.kind, physicalPlan(result.step));
+				LmdbNativeExplain.mark(expr, result.kind, result.step);
 			}
 			// bare BGP fragments (the generic evaluator recursing into native-accelerated pieces) do not
 			// count as "the native compiler claimed this query" — tests use COMPILED to pin fallbacks
@@ -220,7 +220,7 @@ final class LmdbNativeAggregateCompiler {
 		if (result.step == null) {
 			return false;
 		}
-		LmdbNativeExplain.mark(expr, result.kind, physicalPlan(result.step));
+		LmdbNativeExplain.mark(expr, result.kind, result.step);
 		return true;
 	}
 
@@ -293,7 +293,7 @@ final class LmdbNativeAggregateCompiler {
 			nativeExists.explainStrategies();
 		}
 		if (existsStep != null && LmdbNativeExplain.recordsExecutionPaths(expr)) {
-			LmdbNativeExplain.mark(expr, LmdbNativeExplain.KIND_BGP, physicalPlan(rows));
+			LmdbNativeExplain.mark(expr, LmdbNativeExplain.KIND_BGP, rows);
 		}
 		return existsStep;
 	}
@@ -314,7 +314,7 @@ final class LmdbNativeAggregateCompiler {
 			return CompileOutcome.unsupported("root-shape");
 		}
 		if (LmdbNativeExplain.recordsExecutionPaths(expr)) {
-			LmdbNativeExplain.mark(expr, result.kind, physicalPlan(result.step));
+			LmdbNativeExplain.mark(expr, result.kind, result.step);
 		}
 		if (!LmdbNativeExplain.KIND_BGP.equals(result.kind)) {
 			COMPILED.incrementAndGet();
@@ -504,13 +504,6 @@ final class LmdbNativeAggregateCompiler {
 	/** Native claim for projection-less BGP fragments (the deleted legacy compiler's shapes). */
 	static boolean bareFragmentsEnabled() {
 		return !"false".equals(System.getProperty("rdf4j.lmdb.bareFragments.enabled"));
-	}
-
-	private static String physicalPlan(QueryEvaluationStep step) {
-		if (step instanceof LmdbNativePhysicalPlan) {
-			return ((LmdbNativePhysicalPlan) step).nativePhysicalPlan();
-		}
-		return null;
 	}
 
 	private record CompileResult(QueryEvaluationStep step, String kind, boolean capacityExceeded, boolean sawIsland) {

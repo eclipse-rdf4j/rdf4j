@@ -45,6 +45,7 @@ import org.eclipse.rdf4j.query.algebra.Filter.ConditionBindingScope;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.QueryEvaluationContext;
 import org.eclipse.rdf4j.query.impl.BlankNodeAllocationScope;
 import org.eclipse.rdf4j.sail.lmdb.LmdbQueryMemoryManager;
+import org.eclipse.rdf4j.sail.lmdb.LmdbQueryTelemetry;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.codegen.KernelRuntime;
 import org.eclipse.rdf4j.sail.lmdb.model.RdfTermKey;
 
@@ -65,7 +66,7 @@ import org.eclipse.rdf4j.sail.lmdb.model.RdfTermKey;
 @Experimental
 final class NativeExecutionContext implements AutoCloseable {
 	private static final ThreadLocal<NativeExecutionContext[]> BORROWED_PRODUCER_OWNERS = new ThreadLocal<>();
-	private static final WorkerContext NO_WORKER_CONTEXT = new WorkerContext(null, null);
+	private static final WorkerContext NO_WORKER_CONTEXT = new WorkerContext(null, null, null);
 	private static final QueryExecutionContext.Activation NO_WORKER_ACTIVATION = () -> {
 	};
 
@@ -73,22 +74,26 @@ final class NativeExecutionContext implements AutoCloseable {
 	static WorkerContext captureWorkerContext() {
 		QueryExecutionContext.ReplayContext context = QueryExecutionContext.captureReplayContext();
 		NativeExecutionContext[] borrowed = BORROWED_PRODUCER_OWNERS.get();
-		if (context == null && borrowed == null) {
+		LmdbQueryTelemetry telemetry = LmdbQueryTelemetry.current();
+		if (context == null && borrowed == null && telemetry == null) {
 			return NO_WORKER_CONTEXT;
 		}
 		if (context != null) {
 			context.checkActive();
 		}
-		return new WorkerContext(context, borrowed);
+		return new WorkerContext(context, borrowed, telemetry);
 	}
 
 	static final class WorkerContext {
 		private final QueryExecutionContext.ReplayContext context;
 		private final NativeExecutionContext[] borrowed;
+		private final LmdbQueryTelemetry telemetry;
 
-		private WorkerContext(QueryExecutionContext.ReplayContext context, NativeExecutionContext[] borrowed) {
+		private WorkerContext(QueryExecutionContext.ReplayContext context, NativeExecutionContext[] borrowed,
+				LmdbQueryTelemetry telemetry) {
 			this.context = context;
 			this.borrowed = borrowed;
+			this.telemetry = telemetry;
 		}
 
 		boolean ownsCancellation(Object owner) {
@@ -98,21 +103,24 @@ final class NativeExecutionContext implements AutoCloseable {
 		/** Called inside the worker's existing failure and source-cleanup guards. */
 		QueryExecutionContext.Activation activate() {
 			ProducerScope producer = ProducerScope.enter(borrowed);
+			LmdbQueryTelemetry.Scope telemetryScope = telemetry == null ? null : LmdbQueryTelemetry.enter(telemetry);
 			try {
 				QueryExecutionContext.Activation activation = context == null ? NO_WORKER_ACTIVATION
 						: context.activate();
-				if (producer == null) {
+				if (producer == null && telemetryScope == null) {
 					return activation;
 				}
 				return () -> {
 					Throwable failure = KernelRuntime.closeResource(activation, null);
 					failure = KernelRuntime.closeResource(producer, failure);
+					failure = KernelRuntime.closeResource(telemetryScope, failure);
 					if (failure != null) {
 						NativeContextClosingIteration.throwFailure(failure);
 					}
 				};
 			} catch (RuntimeException | Error failure) {
 				KernelRuntime.closeResource(producer, failure);
+				KernelRuntime.closeResource(telemetryScope, failure);
 				throw failure;
 			}
 		}

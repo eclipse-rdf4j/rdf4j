@@ -318,7 +318,7 @@ final class LmdbNativeParallelKernelRows {
 					: hashBytesPerWorker * threads;
 			hashLedger = row.memoryScope
 					.ledger(LmdbNativeHashJoin.queryMemory())
-					.reserve(hashBytes, null);
+					.reserve(hashBytes, null, "parallel-hash-build");
 			if (hashLedger == null) {
 				LmdbNativeParallelPipelines.closeSources(sources, null);
 				reservation.close();

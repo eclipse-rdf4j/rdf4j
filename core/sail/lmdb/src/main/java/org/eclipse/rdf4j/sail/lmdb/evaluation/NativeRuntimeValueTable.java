@@ -829,7 +829,7 @@ final class NativeRuntimeValueTable implements AutoCloseable {
 				throw new IllegalArgumentException(MAX_BYTES_PROPERTY + " must be positive");
 			}
 			this.limit = limit;
-			this.memory = ledger == null ? null : KernelRuntime.AggregateMemory.forLedger(ledger);
+			this.memory = ledger == null ? null : KernelRuntime.AggregateMemory.forLedger(ledger, "runtime-values");
 		}
 
 		static Budget configured() {

@@ -12,6 +12,7 @@
 package org.eclipse.rdf4j.sail.lmdb.evaluation;
 
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -43,6 +44,7 @@ import org.eclipse.rdf4j.query.algebra.evaluation.ValueExprEvaluationException;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.QueryEvaluationContext;
 import org.eclipse.rdf4j.query.algebra.evaluation.util.MathUtil;
 import org.eclipse.rdf4j.query.algebra.evaluation.util.QueryEvaluationUtility;
+import org.eclipse.rdf4j.query.explanation.PhysicalPlan.Operator;
 import org.eclipse.rdf4j.query.impl.MapBindingSet;
 
 /** Semantic native Extension over BindingSets after a Group has materialized authoritative RDF values. */
@@ -244,8 +246,15 @@ final class NativeBindingSetExtensionStep implements NativeResultStep, LmdbNativ
 	}
 
 	@Override
-	public String nativePhysicalPlan() {
-		String inner = arg instanceof LmdbNativePhysicalPlan physical ? physical.nativePhysicalPlan()
+	public Operator physicalOperator(boolean resolveRdfTerms) {
+		return new Operator("NativeBindingSetExtension",
+				Map.of("assignments", Arrays.stream(assignments).map(Assignment::name).toList(), "arg",
+						LmdbPhysicalPlanDescription.step(arg, resolveRdfTerms)));
+	}
+
+	@Override
+	public String nativePhysicalPlan(boolean resolveRdfTerms) {
+		String inner = arg instanceof LmdbNativePhysicalPlan physical ? physical.nativePhysicalPlan(resolveRdfTerms)
 				: arg.getClass().getSimpleName();
 		return "NativeBindingSetExtension(assignments=" + assignments.length + ", arg=" + inner + ")";
 	}

@@ -164,7 +164,7 @@ test('query testing helpers cover serialization, explanation parsing, diff rende
     assert.equal(testing.createStableExplanationFromResponse(createSignature({ format: 'json' }), { content: '{bad', format: 'json', error: '' }, 'json').view, 'jsonRawFallback');
     assert.equal(testing.createStableExplanationFromResponse(createSignature(), { content: 'digraph{}', format: 'dot', error: '' }, 'dot').view, 'dotRendering');
     const crlfExplanation = testing.createStableExplanationFromResponse(createSignature(), {
-        content: JSON.stringify({ type: 'StatementPattern' }),
+        content: { type: 'StatementPattern' },
         format: 'json',
         error: '',
         lineSeparator: '\r\n'
@@ -175,7 +175,9 @@ test('query testing helpers cover serialization, explanation parsing, diff rende
     const largeLongExplanation = testing.createStableExplanationFromResponse(
         createSignature({ level: 'Telemetry' }),
         {
-            content: '{"type":"Join","resultSizeActual":9007199254799999,"longMetricsActual":{"customRows":9007199254799999}}',
+            content: testing.parsePlanJson(
+                '{"type":"Join","resultSizeActual":9007199254799999,"longMetricsActual":{"customRows":9007199254799999}}'
+            ),
             format: 'json',
             error: ''
         },
@@ -189,7 +191,9 @@ test('query testing helpers cover serialization, explanation parsing, diff rende
     const derivedLongExplanation = testing.createStableExplanationFromResponse(
         createSignature({ level: 'Telemetry' }),
         {
-            content: '{"type":"Distinct","resultSizeActual":9007199254799998,"plans":[{"type":"StatementPattern","resultSizeActual":9007199254799999}]}',
+            content: testing.parsePlanJson(
+                '{"type":"Distinct","resultSizeActual":9007199254799998,"plans":[{"type":"StatementPattern","resultSizeActual":9007199254799999}]}'
+            ),
             format: 'json',
             error: ''
         },
@@ -355,7 +359,7 @@ test('query testing helpers cover serialization, explanation parsing, diff rende
     assert.equal(testing.createJsonScalarElement('value').textContent, '"value"');
     assert.equal(testing.createJsonTreeNode({ type: 'Plan', totalTimeActual: 5 }, 'plan', 0, 50).children.length > 0, true);
     assert.equal(testing.renderJsonExplanationTree({ plans: [{ totalTimeActual: 10 }] }).children.length > 0, true);
-    testing.renderJsonView('primary', '{"plans":[{"totalTimeActual":10}]}', 'json');
+    testing.renderJsonView('primary', '{"plans":[{"totalTimeActual":10}]}', 'json', { plans: [{ totalTimeActual: 10 }] });
     assert.equal(harness.document.getElementById('query-explanation-json-view').children.length > 0, true);
 
     testing.setInternalState({

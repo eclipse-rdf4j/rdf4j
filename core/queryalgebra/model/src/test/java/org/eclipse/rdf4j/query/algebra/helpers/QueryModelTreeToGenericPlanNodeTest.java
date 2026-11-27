@@ -567,8 +567,8 @@ public class QueryModelTreeToGenericPlanNodeTest {
 		assertThat(telemetry.getSourceRowsScannedActual()).isEqualTo(13L);
 		assertThat(rightSubjectVar(telemetry).getStringMetricsActual())
 				.containsEntry(TelemetryMetricNames.BINDING_STATE, "bound");
-		assertThat(telemetry.toString()).contains("sampleCountActual=");
-		assertThat(telemetry.toString()).contains("varianceActual=");
+		assertThat(telemetry.toString()).doesNotContain("sampleCountActual=");
+		assertThat(telemetry.toString()).doesNotContain("varianceActual=");
 	}
 
 	@Test

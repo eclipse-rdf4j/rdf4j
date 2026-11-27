@@ -1,0 +1,9 @@
+PREFIX dcat: <http://www.w3.org/ns/dcat#>
+
+SELECT ?dataset ?p ?left ?right
+WHERE {
+  ?dataset a dcat:Dataset ;
+    ?p ?left, ?right .
+  FILTER(!sameTerm(?left, ?right))
+}
+LIMIT 10

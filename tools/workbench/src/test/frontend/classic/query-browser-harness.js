@@ -380,7 +380,7 @@ function createQueryBrowserHarness(options = {}) {
     const queryExplanationTiming = registerElement('div', { id: 'query-explanation-timing', attributes: { role: 'timer' } });
     const queryExplanationOverlay = registerElement('div', { id: 'query-explanation-overlay' });
     const copyExplanation = registerElement('button', { id: 'copy-explanation', type: 'button' });
-    const queryExplanation = registerElement('pre', {
+    const queryExplanation = registerElement('div', {
         id: 'query-explanation',
         textContent: options.initialExplanation || '',
         attributes: { 'data-format': options.initialExplanationFormat || 'text',
@@ -486,7 +486,7 @@ function createQueryBrowserHarness(options = {}) {
         attributes: { role: 'timer' } });
     const queryExplanationOverlayCompare = registerElement('div', { id: 'query-explanation-overlay-compare' });
     const copyExplanationCompare = registerElement('button', { id: 'copy-explanation-compare', type: 'button' });
-    const queryExplanationCompare = registerElement('pre', { id: 'query-explanation-compare' });
+    const queryExplanationCompare = registerElement('div', { id: 'query-explanation-compare' });
     const queryExplanationDotViewCompare = registerElement('div', { id: 'query-explanation-dot-view-compare' });
     const comparisonStrategyTables = registerElement('div', { id: 'query-explanation-compare-strategies' });
     const queryExplanationJsonViewCompare = registerElement('div', { id: 'query-explanation-json-view-compare' });
@@ -581,6 +581,9 @@ function createQueryBrowserHarness(options = {}) {
     }
     const injectedQueryPage = options.workbench && options.workbench.queryPage
         ? Object.assign({}, options.workbench.queryPage) : null;
+    const yasqeUiStubs = Object.assign({}, context.workbench.yasqeHelper);
+    harness.runScript('scripts/yasqeHelper.js');
+    Object.assign(context.workbench.yasqeHelper, yasqeUiStubs);
     harness.runScript('scripts/template.js');
     harness.runScript('scripts/queryStream.js');
     if (injectedQueryPage) {

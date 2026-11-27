@@ -31,6 +31,7 @@ import org.eclipse.rdf4j.query.algebra.SameTerm;
 import org.eclipse.rdf4j.query.algebra.ValueConstant;
 import org.eclipse.rdf4j.query.algebra.ValueExpr;
 import org.eclipse.rdf4j.query.algebra.Var;
+import org.eclipse.rdf4j.sail.lmdb.LmdbQueryTelemetry;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.codegen.KernelTermKindProof;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.fragment.FragmentBinding;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.fragment.FragmentCompareOp;
@@ -84,6 +85,9 @@ final class LmdbNativeFragmentTranslator {
 		FragmentNode root = builder.truth(expr);
 		if (root == null) {
 			DECLINED.incrementAndGet();
+			LmdbQueryTelemetry telemetry = LmdbQueryTelemetry.current();
+			if (telemetry != null)
+				telemetry.fragmentRecognized(false);
 			return null;
 		}
 		long[] constants = new long[builder.constants.size()];
@@ -91,6 +95,9 @@ final class LmdbNativeFragmentTranslator {
 			constants[i] = builder.constants.get(i);
 		}
 		TRANSLATED.incrementAndGet();
+		LmdbQueryTelemetry telemetry = LmdbQueryTelemetry.current();
+		if (telemetry != null)
+			telemetry.fragmentRecognized(true);
 		return new Translation(FragmentIR.predicate(root), builder.arguments, constants);
 	}
 
@@ -274,6 +281,7 @@ final class FragmentTruthFilter implements NativeBooleanFilter {
 		long a1 = argSlots.length > 1 ? row.slots[argSlots[1]] : UNKNOWN;
 		long a2 = argSlots.length > 2 ? row.slots[argSlots[2]] : UNKNOWN;
 		PredicateStatus status = FragmentInterpreter.testPredicate(ir, a0, a1, a2, binding);
+		binding.recordDecision(status);
 		if (status == PredicateStatus.ESCAPE) {
 			return exact.accept(row);
 		}

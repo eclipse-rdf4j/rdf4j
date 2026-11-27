@@ -244,7 +244,8 @@ final class NativeTermDomainPlan implements SlotPlan {
 			NativeExecutionContext owner = row.source instanceof SyntheticValueSource synthetic
 					? synthetic.executionContext()
 					: null;
-			memory = KernelRuntime.AggregateMemory.forLedger(owner == null ? null : owner.memoryLedger());
+			memory = KernelRuntime.AggregateMemory.forLedger(owner == null ? null : owner.memoryLedger(),
+					"term-domain");
 			long runBytes = Math.max(4096L, NativeCountGroupStore.configuredMaxBytes() / 2L);
 			long workspace = Math.addExact(WORKSPACE_BYTES + 8L * (width + keyWidth + 2L * slots + 2L),
 					Math.multiplyExact(2L, runBytes));

@@ -1141,7 +1141,8 @@ final class LmdbAdjacencyAggregatePlan implements NativeAggregatePhysicalPlan.Pr
 				return null;
 			}
 			LmdbQueryMemoryManager.QueryLedger ledger = owner.resultLedger();
-			LmdbQueryMemoryManager.Reservation reservation = ledger.reserve(catalogBytes(16), null);
+			LmdbQueryMemoryManager.Reservation reservation = ledger.reserve(catalogBytes(16), null,
+					"adjacency-group-catalog");
 			if (reservation == null) {
 				return null;
 			}
@@ -1257,7 +1258,8 @@ final class LmdbAdjacencyAggregatePlan implements NativeAggregatePhysicalPlan.Pr
 				long fixedNeighbor) throws IOException {
 			// Five primitive long heads, one int heap and one cursor-reference array, including container headers.
 			long bytes = Math.addExact(384L, Math.multiplyExact(56L, catalog.size));
-			LmdbQueryMemoryManager.Reservation reservation = catalog.ledger.reserve(bytes, null);
+			LmdbQueryMemoryManager.Reservation reservation = catalog.ledger.reserve(bytes, null,
+					"adjacency-group-state");
 			if (reservation == null) {
 				return null;
 			}

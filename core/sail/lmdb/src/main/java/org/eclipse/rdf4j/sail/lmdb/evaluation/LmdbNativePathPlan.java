@@ -1600,7 +1600,7 @@ final class PathParallelExpansion implements AutoCloseable {
 				PathStep step = plan.steps[stepIndex];
 				boolean bySubject = step.nearPos(backward) == TripleIndex.SUBJ_IDX;
 				NativeLmdbQuerySource.AdjacencyAccessObserver observer = runtimePlan == null ? null
-						: runtimePlan.adjacencyAccessAt("Path.frontier.worker[step=" + stepIndex + "]");
+						: runtimePlan.adjacencyAccessAt(source, "Path.frontier.worker[step=" + stepIndex + "]");
 				adjacencies[stepIndex] = probe.adjacency(step.predicate, bySubject,
 						pathAdjacencyObserver(observer, "PATH_FRONTIER_ADJACENCY", stepIndex, bySubject));
 			}
@@ -2045,7 +2045,7 @@ final class PathCursor implements RowCursor {
 			return;
 		}
 		PathStep step = plan.steps[0];
-		row.runtimePlan.adjacencyAccessAt("Path.bidirectional")
+		row.runtimePlan.adjacencyAccessAt(row.source, "Path.bidirectional")
 				.access(false, reason, null, UNKNOWN, step.predicate, UNKNOWN, UNKNOWN);
 	}
 
@@ -2056,7 +2056,7 @@ final class PathCursor implements RowCursor {
 		PathStep step = plan.steps[stepIndex];
 		boolean bySubject = step.nearPos(searchBackward) == TripleIndex.SUBJ_IDX;
 		String side = searchBackward ? "backward" : "forward";
-		row.runtimePlan.adjacencyAccessAt("Path.bidirectional." + side + "[step=" + stepIndex + "]")
+		row.runtimePlan.adjacencyAccessAt(row.source, "Path.bidirectional." + side + "[step=" + stepIndex + "]")
 				.access(used, reason, bySubject ? StatementOrder.S : StatementOrder.O,
 						UNKNOWN, step.predicate, UNKNOWN, UNKNOWN);
 	}
@@ -2280,7 +2280,7 @@ final class PathCursor implements RowCursor {
 			return;
 		}
 		PathStep step = plan.steps[0];
-		row.runtimePlan.adjacencyAccessAt("Path.seed")
+		row.runtimePlan.adjacencyAccessAt(row.source, "Path.seed")
 				.access(false,
 						"FEATURE_DISABLED[" + PathPlan.ADJACENCY_SEEDS_ENABLED_PROPERTY + "=false]",
 						null, UNKNOWN, step.predicate, UNKNOWN, UNKNOWN);
@@ -2585,7 +2585,7 @@ final class PathCursor implements RowCursor {
 		}
 		PathStep step = plan.steps[stepIndex];
 		boolean bySubject = step.nearPos(backward) == TripleIndex.SUBJ_IDX;
-		row.runtimePlan.adjacencyAccessAt(where)
+		row.runtimePlan.adjacencyAccessAt(row.source, where)
 				.access(used, reason, bySubject ? StatementOrder.S : StatementOrder.O,
 						UNKNOWN, step.predicate, UNKNOWN, UNKNOWN);
 	}

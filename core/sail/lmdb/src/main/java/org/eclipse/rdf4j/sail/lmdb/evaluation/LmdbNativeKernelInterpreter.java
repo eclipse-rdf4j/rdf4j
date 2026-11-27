@@ -264,7 +264,7 @@ final class LmdbNativeKernelInterpreter implements JaninoKernel {
 	/** Key-run cursors held during an activation (EnumerateAdjKeys / SipKeyProbe); swept by close(). */
 	private final List<NativeLmdbQuerySource.NativeAdjacency.KeyRunCursor[]> activeKeyCursors = new ArrayList<>();
 	private final List<ProjectionProgram> projectionPrograms = new ArrayList<>();
-	private final KernelWorkCounters workCounters = new KernelWorkCounters();
+	private final KernelWorkCounters workCounters;
 	private ProjectionProgram activeProjection;
 
 	/** One live cursor slot per plan site; the plan itself is also closed by close() (EM:1289-1307). */
@@ -353,6 +353,7 @@ final class LmdbNativeKernelInterpreter implements JaninoKernel {
 				: null;
 		this.stride = kernel.stride();
 		this.telemetry = kernel.telemetryMode == Kernel.TelemetryMode.FULL;
+		this.workCounters = new KernelWorkCounters(telemetry);
 	}
 
 	private void poll() {
@@ -1421,6 +1422,8 @@ final class LmdbNativeKernelInterpreter implements JaninoKernel {
 	/** Worker-local scalar programs and retained columns for one physical producer. */
 	private final class ProjectionProgram implements KernelProjectionCursor.Program {
 		final LmdbNativeProducerSchedule schedule;
+		final int telemetrySite;
+		final String telemetryShape;
 		final Op[] entry = new Op[LmdbNativeProducerSchedule.GRAINS];
 		final long[][] saved = new long[LmdbNativeProducerSchedule.GRAINS][];
 		final Map<FilterValue, IntUnaryOperator> pageReaders = new IdentityHashMap<>();
@@ -1441,6 +1444,14 @@ final class LmdbNativeKernelInterpreter implements JaninoKernel {
 						idReaders.put(filter, argument -> idArgumentMask(filter.args[argument]));
 					}
 				}
+			}
+			telemetrySite = projectionPrograms.size();
+			if (telemetry) {
+				StringBuilder shape = new StringBuilder();
+				schedule.producer.key(shape);
+				telemetryShape = shape.toString();
+			} else {
+				telemetryShape = null;
 			}
 			projectionPrograms.add(this);
 		}
@@ -1487,7 +1498,12 @@ final class LmdbNativeKernelInterpreter implements JaninoKernel {
 				try {
 					owned.closeActivation();
 				} finally {
-					workCounters.addProjection(owned);
+					if (telemetry) {
+						workCounters.addProjection(telemetrySite, schedule.producer.getClass().getSimpleName(),
+								telemetryShape, owned);
+					} else {
+						workCounters.addProjection(owned);
+					}
 				}
 			}
 		}
@@ -3109,7 +3125,7 @@ final class LmdbNativeKernelInterpreter implements JaninoKernel {
 					for (int i = 0; i < bind.args.length; i++) {
 						hooks.setBindInput(bind.bindId, i, read(bind.args[i]));
 					}
-					workCounters.recordBind();
+					workCounters.recordBind(bind.bindId);
 					v[bind.dstCol] = hooks.computeBindRow(bind.bindId);
 					return next.run();
 				};
@@ -3119,7 +3135,7 @@ final class LmdbNativeKernelInterpreter implements JaninoKernel {
 				long a1 = bind.args.length > 1 ? read(bind.args[1]) : -1L;
 				// A CopyBinding hook turns an error into its occupied-null marker when required; raw hooks may
 				// return -1 to leave the target absent while keeping the row.
-				workCounters.recordBind();
+				workCounters.recordBind(bind.bindId);
 				v[bind.dstCol] = hooks.computeBind(bind.bindId, a0, a1);
 				return next.run();
 			};
@@ -4970,7 +4986,7 @@ final class LmdbNativeKernelInterpreter implements JaninoKernel {
 		long a0 = filter.args.length > 0 ? read(filter.args[0]) : -1L;
 		long a1 = filter.args.length > 1 ? read(filter.args[1]) : -1L;
 		long a2 = filter.args.length > 2 ? read(filter.args[2]) : -1L;
-		workCounters.recordValueFilter();
+		workCounters.recordValueFilter(filter.filterId);
 		return hooks.testFilter(filter.filterId, a0, a1, a2);
 	}
 

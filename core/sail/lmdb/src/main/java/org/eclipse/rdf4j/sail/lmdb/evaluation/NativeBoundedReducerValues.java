@@ -45,7 +45,7 @@ final class NativeBoundedReducerValues implements AutoCloseable {
 	NativeBoundedReducerValues(int slots, AggContext context, NativeCancellationToken cancellation,
 			LmdbQueryMemoryManager.QueryLedger ledger) {
 		this.cancellation = cancellation;
-		memory = KernelRuntime.AggregateMemory.forLedger(ledger);
+		memory = KernelRuntime.AggregateMemory.forLedger(ledger, "reducer-values");
 		long fixed = WORKSPACE + 64L * slots;
 		residentLimit = Math.max(0L, NativeCountGroupStore.configuredMaxBytes() - fixed);
 		try {

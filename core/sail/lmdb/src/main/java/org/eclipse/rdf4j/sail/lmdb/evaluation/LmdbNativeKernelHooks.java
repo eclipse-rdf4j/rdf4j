@@ -333,6 +333,7 @@ final class LmdbNativeKernelHooks implements KernelHooks {
 			LongPredicateFragment fragment = fragmentFastPaths[filterId];
 			if (fragment != null) {
 				PredicateStatus status = fragment.test(a0, a1, a2, fragmentFastBindings[filterId]);
+				fragmentFastBindings[filterId].recordDecision(status);
 				if (status != PredicateStatus.ESCAPE) {
 					FragmentTelemetry.FAST_PATH_DECISIONS.increment();
 					if (status != PredicateStatus.TRUE) {
@@ -1070,7 +1071,7 @@ final class LmdbNativeKernelHooks implements KernelHooks {
 				return false;
 			}
 			if (reservation == null) {
-				reservation = ledger.reserve(bytes, null);
+				reservation = ledger.reserve(bytes, null, "kernel-expression-hooks");
 				return reservation != null;
 			}
 			return reservation.tryGrow(bytes);

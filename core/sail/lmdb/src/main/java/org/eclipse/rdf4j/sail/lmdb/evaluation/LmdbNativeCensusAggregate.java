@@ -1294,7 +1294,8 @@ final class LmdbNativeCensusAggregate implements NativeAggregateAlternative {
 			this.exactDistinct = exactDistinct;
 			this.evaluation = evaluation;
 			this.cancellation = cancellation;
-			metadata = KernelRuntime.AggregateMemory.forLedger(evaluation.executionContext().memoryLedger());
+			metadata = KernelRuntime.AggregateMemory.forLedger(evaluation.executionContext().memoryLedger(),
+					"census-group-metadata");
 			try {
 				// Specs, selectors, finite-domain cache references, row slots, schema and aliases are query-owned.
 				long bytes = Math.addExact(1024L, Math.addExact(Math.multiplyExact(256L, channels.length),

@@ -35,6 +35,7 @@ import org.eclipse.rdf4j.query.algebra.evaluation.QueryEvaluationStep;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.GraphFrameBindings;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.QueryEvaluationContext;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.evaluationsteps.ProjectionQueryEvaluationStep;
+import org.eclipse.rdf4j.query.explanation.PhysicalPlan.Operator;
 import org.eclipse.rdf4j.query.explanation.QueryExplanationContext;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.codegen.KernelRuntime;
 
@@ -281,8 +282,13 @@ final class NativeSubqueryPlan implements SlotPlan {
 		return mask;
 	}
 
-	String describe() {
-		String nested = step instanceof LmdbNativePhysicalPlan physical ? physical.nativePhysicalPlan()
+	Operator physicalOperator(boolean resolveRdfTerms) {
+		return new Operator("NativeSubquery", Map.of("frameInputs", List.of(frameInputNames),
+				"step", LmdbPhysicalPlanDescription.step(step, resolveRdfTerms)));
+	}
+
+	String describe(boolean resolveRdfTerms) {
+		String nested = step instanceof LmdbNativePhysicalPlan physical ? physical.nativePhysicalPlan(resolveRdfTerms)
 				: step.getClass().getSimpleName();
 		return "NativeSubquery(frameInputs=" + Arrays.toString(frameInputNames) + ", step=" + nested + ")";
 	}

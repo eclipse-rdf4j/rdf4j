@@ -22,6 +22,7 @@ namespace workbench {
          * JSON value provided by the rendered query page.
          */
         declare var sparqlNamespaces: any;
+        var explanationFallbackNamespaces: { [prefix: string]: string };
         declare var Diff: any;
         declare var Viz: any;
         declare var svgPanZoom: any;
@@ -1166,6 +1167,53 @@ namespace workbench {
             return result;
         }
 
+        /** Read the source prologue of an explanation, including relative namespaces under BASE. */
+        function queryPrefixNamespaces(query: string): { [prefix: string]: string } {
+            var namespaces: { [prefix: string]: string } = Object.create(null);
+            // Consume entire comments so a failed declaration match cannot backtrack into one.
+            var trivia = '(?:[\\t\\r\\n ]|#[^\\r\\n]*(?=[\\r\\n]|$))';
+            var iriReference = /<((?:[^<>"{}|^`\\\x00-\x20]|\\u[0-9A-Fa-f]{4}|\\U[0-9A-Fa-f]{8})*)>/;
+            var declaration = new RegExp('^' + trivia + '*(?:BASE|PREFIX' + trivia + '+([^:\\s<>]*):)'
+                + trivia + '*' + iriReference.source, 'i');
+            var versionLiteral = /(?:"(?:[^"\\\r\n]|\\[^\r\n])*"|'(?:[^'\\\r\n]|\\[^\r\n])*')/;
+            var version = new RegExp('^' + trivia + '*VERSION' + trivia + '*' + versionLiteral.source, 'i');
+            var base = '';
+            var match = declaration.exec(query) || version.exec(query);
+            while (match) {
+                if (typeof match[1] === 'string') {
+                    namespaces[match[1]] = queryExplanationHighlighter.decodeIriReference(match[2]);
+                } else if (typeof match[2] === 'string') {
+                    base = queryExplanationHighlighter.decodeIriReference(match[2]);
+                }
+                query = query.substring(match[0].length);
+                match = declaration.exec(query) || version.exec(query);
+            }
+            Object.keys(namespaces).forEach(function(prefix) {
+                var namespace = namespaces[prefix];
+                if (!/^[A-Za-z][A-Za-z0-9+.-]*:/.test(namespace)) {
+                    try {
+                        namespaces[prefix] = base ? new URL(namespace, base).href : '';
+                    } catch (error) {
+                        namespaces[prefix] = '';
+                    }
+                }
+            });
+            return namespaces;
+        }
+
+        function explanationNamespaces(explanation: StableExplanation): queryExplanationHighlighter.ExplanationNamespaces {
+            return {
+                namespaces: typeof sparqlNamespaces === 'object' ? sparqlNamespaces : undefined,
+                queryNamespaces: explanation ? queryPrefixNamespaces(explanation.queryHash || '') : undefined,
+                fallbackNamespaces: explanationFallbackNamespaces
+            };
+        }
+
+        export function refreshExplanationNamespaces(): void {
+            lastRenderedExplanationKeys = {};
+            renderQueryPageState();
+        }
+
         /**
          * Insert a PREFIX line for every repository namespace that the query does not declare yet, at the
          * top of the editor. The edit goes through the editor, so Cmd/Ctrl+Z undoes it; no confirmation.
@@ -1253,7 +1301,8 @@ namespace workbench {
         }
 
         interface AjaxExplainResponse {
-            content: string;
+            content: string | queryExplanationHighlighter.QueryPlanNode;
+            rawContent?: string;
             format: string;
             error: string;
             strategyDecisions?: StrategyDecision[];
@@ -2187,17 +2236,34 @@ namespace workbench {
             return percentage.toFixed(1) + '%';
         }
 
-        function createJsonScalarElement(value: any): HTMLElement {
+        interface JsonScalarSource {
+            type: 'string' | 'number';
+            text: string;
+        }
+
+        // Keep the wire scalar type for the JSON tree when plan arithmetic needs a different representation.
+        var jsonScalarSources = new WeakMap<object, Map<string, JsonScalarSource>>();
+
+        function createJsonScalarElement(value: any, compactTerms?: (value: string) => string,
+                                         source?: JsonScalarSource): HTMLElement {
             var valueElement = document.createElement('span');
             valueElement.className = 'query-json-node__value';
+            var type = source ? source.type : typeof value;
+            if (source) {
+                value = source.text;
+            }
 
             if (value === null) {
                 valueElement.className += ' query-json-node__value--null';
                 valueElement.textContent = 'null';
-            } else if (typeof value === 'string') {
+            } else if (type === 'string') {
                 valueElement.className += ' query-json-node__value--string';
-                valueElement.textContent = '"' + value + '"';
-            } else if (typeof value === 'number') {
+                var displayed = compactTerms ? compactTerms(value) : value;
+                valueElement.textContent = '"' + displayed + '"';
+                if (displayed !== value) {
+                    valueElement.setAttribute('title', value);
+                }
+            } else if (type === 'number') {
                 valueElement.className += ' query-json-node__value--number';
                 valueElement.textContent = value.toString();
             } else if (typeof value === 'boolean') {
@@ -2211,7 +2277,8 @@ namespace workbench {
             return valueElement;
         }
 
-        function createJsonTreeNode(value: any, key: string, depth: number, percentageOfPlansTotal?: number): HTMLElement {
+        function createJsonTreeNode(value: any, key: string, depth: number, percentageOfPlansTotal?: number,
+                                    compactTerms?: (value: string) => string, source?: JsonScalarSource): HTMLElement {
             var node = document.createElement('div');
             node.className = 'query-json-node';
 
@@ -2262,6 +2329,7 @@ namespace workbench {
                 var childrenElement = document.createElement('div');
                 childrenElement.className = 'query-json-node__children';
                 node.appendChild(childrenElement);
+                var scalarSources = jsonScalarSources.get(value);
 
                 var expandedByDefault = depth <= 1;
                 if (!expandedByDefault) {
@@ -2280,14 +2348,17 @@ namespace workbench {
                             value[index],
                             formatJsonArrayEntryKey(index, value[index]),
                             depth + 1,
-                            arrayEntryPercentages[index]
+                            arrayEntryPercentages[index],
+                            compactTerms,
+                            scalarSources && scalarSources.get(String(index))
                         ));
                     }
                 } else {
                     var objectKeys = Object.keys(value);
                     for (var i = 0; i < objectKeys.length; i++) {
                         var childKey = objectKeys[i];
-                        childrenElement.appendChild(createJsonTreeNode(value[childKey], childKey, depth + 1));
+                        childrenElement.appendChild(createJsonTreeNode(value[childKey], childKey, depth + 1,
+                            undefined, compactTerms, scalarSources && scalarSources.get(childKey)));
                     }
                 }
 
@@ -2298,20 +2369,21 @@ namespace workbench {
                     toggle.textContent = expanded ? '▾' : '▸';
                 });
             } else {
-                line.appendChild(createJsonScalarElement(value));
+                line.appendChild(createJsonScalarElement(value, compactTerms, source));
             }
 
             return node;
         }
 
-        function renderJsonExplanationTree(explanationJson: any): HTMLElement {
+        function renderJsonExplanationTree(explanationJson: any, compactTerms?: (value: string) => string): HTMLElement {
             var treeElement = document.createElement('div');
             treeElement.className = 'query-json-tree';
-            treeElement.appendChild(createJsonTreeNode(explanationJson, '', 0));
+            treeElement.appendChild(createJsonTreeNode(explanationJson, '', 0, undefined, compactTerms));
             return treeElement;
         }
 
-        function renderJsonView(paneKey: string, explanationText: string, format: string) {
+        function renderJsonView(paneKey: string, explanationText: string, format: string,
+                                plan?: queryExplanationHighlighter.QueryPlanNode) {
             var paneState = getPaneState(paneKey);
             var jsonView = $('#' + paneState.jsonViewId);
             if (format !== 'json') {
@@ -2328,8 +2400,12 @@ namespace workbench {
             }
 
             try {
-                var explanationJson = JSON.parse(explanationText);
-                jsonView.append(renderJsonExplanationTree(explanationJson));
+                if (!plan) {
+                    throw new Error('JSON explanation does not contain a plan object.');
+                }
+                var explanation = getPaneDisplayExplanation(getPaneMachineState(<PaneKey>paneKey));
+                var compactTerms = queryExplanationHighlighter.createNativeTermCompactor(explanationNamespaces(explanation));
+                jsonView.append(renderJsonExplanationTree(plan, compactTerms));
             } catch (parseError) {
                 jsonView.append($('<div class="error">Unable to parse JSON explanation. Showing raw content.</div>'));
                 jsonView.append($('<pre class="query-json-view__raw"></pre>').text(explanationText));
@@ -2643,23 +2719,30 @@ namespace workbench {
 
         function renderHighlightedText(paneKey: string, explanation: StableExplanation,
                                        sharedMaximum: queryExplanationHighlighter.JsonLong) {
-            var paneState = getPaneState(paneKey);
-            var explanationElement = <HTMLElement>document.getElementById(paneState.explanationId);
+            var namespaces = explanationNamespaces(explanation);
             var rendered = queryExplanationHighlighter.render(explanation.plan, {
                 level: explanation.level,
                 mode: explanationHighlightMode,
                 sharedMaximum: sharedMaximum,
                 lineSeparator: explanation.lineSeparator,
                 hiddenProperties: explanationHiddenProperties,
-                namespaces: sparqlNamespaces
+                namespaces: namespaces.namespaces,
+                queryNamespaces: namespaces.queryNamespaces,
+                fallbackNamespaces: namespaces.fallbackNamespaces
             });
+            showHighlightedText(paneKey, rendered.fragment, rendered.text);
+        }
+
+        function showHighlightedText(paneKey: string, fragment: DocumentFragment, text: string): void {
+            var paneState = getPaneState(paneKey);
+            var explanationElement = document.getElementById(paneState.explanationId);
             $('#' + paneState.explanationId)
                 .empty()
                 .addClass('query-explanation--highlighted')
                 .attr('data-format', 'text');
-            explanationElement.appendChild(rendered.fragment);
+            explanationElement.appendChild(fragment);
             setExplanationDisplayMode(paneKey, 'text');
-            paneState.latestExplanation = rendered.text;
+            paneState.latestExplanation = text;
             paneState.latestExplanationFormat = 'text';
             if (paneKey !== 'compare') {
                 updateDownloadButtonState();
@@ -2669,7 +2752,8 @@ namespace workbench {
             clearExplanationDimensionLock(paneKey);
         }
 
-        function renderExplanation(paneKey: string, explanationText: string, format: string) {
+        function renderExplanation(paneKey: string, explanationText: string, format: string,
+                                   plan?: queryExplanationHighlighter.QueryPlanNode) {
             var paneState = getPaneState(paneKey);
             var normalizedFormat = (format || 'text').toLowerCase();
             if (normalizedFormat === 'dot' || normalizedFormat === 'json') {
@@ -2691,7 +2775,7 @@ namespace workbench {
                 syncPrimaryExplanationControls();
             }
             renderDotView(paneKey, explanationText, normalizedFormat);
-            renderJsonView(paneKey, explanationText, normalizedFormat);
+            renderJsonView(paneKey, explanationText, normalizedFormat, plan);
             if (normalizedFormat === 'text') {
                 restoreExplainButtonViewportTopIfNeeded(paneKey);
             }
@@ -2706,14 +2790,20 @@ namespace workbench {
                         renderHighlightedText(paneKey, explanation, sharedMaximum);
                         return;
                     } catch (renderError) {
-                        renderExplanation(paneKey, getExplanationDisplayContent(explanation), 'text');
-                        return;
+                        // Keep the plan visible when highlighting cannot render it.
                     }
                 }
-                renderExplanation(paneKey, getExplanationDisplayContent(explanation), 'text');
+                var text = getExplanationDisplayContent(explanation);
+                var namespaces = explanationNamespaces(explanation);
+                try {
+                    showHighlightedText(paneKey, queryExplanationHighlighter.renderText(text, namespaces), text);
+                } catch (renderError) {
+                    var compactTerms = queryExplanationHighlighter.createNativeTermCompactor(namespaces);
+                    renderExplanation(paneKey, compactTerms(text), 'text');
+                }
                 return;
             }
-            renderExplanation(paneKey, explanation.rawContent, explanation.requestedFormat);
+            renderExplanation(paneKey, explanation.rawContent, explanation.requestedFormat, explanation.plan);
         }
 
         function renderPanePresentation(paneKey: PaneKey) {
@@ -3020,8 +3110,15 @@ namespace workbench {
                         getExplanationDisplayContent(queryPageState.comparePane.explanation),
                         diffNotReadyLabel
                     );
+                    var leftProfile = queryPageState.primaryPane.explanation.plan
+                        && queryPageState.primaryPane.explanation.plan.executionProfile;
+                    var rightProfile = queryPageState.comparePane.explanation.plan
+                        && queryPageState.comparePane.explanation.plan.executionProfile;
+                    var profileChanges = queryExplanationHighlighter.compareExecutionProfiles(leftProfile, rightProfile);
+                    $('#query-diff-profile').text(profileChanges).prop('hidden', !profileChanges);
                 } else {
                     $('#query-diff-explanation').text(diffNotReadyLabel);
+                    $('#query-diff-profile').text('').prop('hidden', true);
                 }
             }
         }
@@ -3220,6 +3317,33 @@ namespace workbench {
         }
 
         function childPlanJsonKind(kind: string, key: string): string {
+            if (kind === 'response') {
+                return key === 'content' ? 'node' : null;
+            }
+            if (kind === 'structured' || ((kind === 'profileRecord' || kind === 'profile') && key === 'attributes')) {
+                return 'structured';
+            }
+            if (kind === 'profile') {
+                if (key === 'elapsedNanos' || key === 'droppedEvents') {
+                    return 'long';
+                }
+                if (key === 'phases' || key === 'stages' || key === 'attempts' || key === 'workers') {
+                    return 'profileRecord';
+                }
+                return key === 'inputPlan' ? 'node' : null;
+            }
+            if (kind === 'profileRecord') {
+                if (key === 'elapsedNanos' || key === 'busyNanos' || key === 'waitNanos' || key === 'rows') {
+                    return 'long';
+                }
+                return key === 'metrics' ? 'profileMetrics' : null;
+            }
+            if (kind === 'profileMetrics') {
+                return 'profileMetric';
+            }
+            if (kind === 'profileMetric') {
+                return key === 'count' ? 'long' : null;
+            }
             if (kind === 'longMap') {
                 return 'long';
             }
@@ -3231,6 +3355,12 @@ namespace workbench {
             }
             if (kind !== 'node') {
                 return null;
+            }
+            if (key === 'arguments' || key === 'physicalPlans' || key === 'plannedPhysicalPlan' || key === 'actualAttributes') {
+                return 'structured';
+            }
+            if (key === 'executionProfile') {
+                return 'profile';
             }
             if (LONG_EXPLANATION_FIELDS[key]) {
                 return 'long';
@@ -3266,9 +3396,24 @@ namespace workbench {
             }
         }
 
+        function hydratePlanJsonProperty(target: any, key: string, originalValue: any, kind: string): void {
+            var sourceValue = target[key];
+            var value = hydratePlanJsonValue(sourceValue, originalValue, kind);
+            var originalType = typeof originalValue;
+            if (originalType !== typeof value && (originalType === 'number' || originalType === 'string')) {
+                var sources = jsonScalarSources.get(target);
+                if (!sources) {
+                    sources = new Map<string, JsonScalarSource>();
+                    jsonScalarSources.set(target, sources);
+                }
+                sources.set(key, { type: originalType, text: sourceValue });
+            }
+            setHydratedPlanJsonProperty(target, key, value);
+        }
+
         function hydratePlanJsonValue(value: any, originalValue: any, kind?: string): any {
             if (typeof originalValue === 'number' && typeof value === 'string') {
-                if (kind === 'long') {
+                if (kind === 'long' || kind === 'structured') {
                     return jsonLongFromNumberToken(value);
                 }
                 return Number(value);
@@ -3283,7 +3428,7 @@ namespace workbench {
             if (Array.isArray(value)) {
                 var originalArray = Array.isArray(originalValue) ? originalValue : [];
                 for (var i = 0; i < value.length; i++) {
-                    value[i] = hydratePlanJsonValue(value[i], originalArray[i], kind);
+                    hydratePlanJsonProperty(value, String(i), originalArray[i], kind);
                 }
                 return value;
             }
@@ -3295,19 +3440,54 @@ namespace workbench {
             for (var keyIndex = 0; keyIndex < keys.length; keyIndex++) {
                 var key = keys[keyIndex];
                 var childKind = childPlanJsonKind(kind || 'node', key);
-                setHydratedPlanJsonProperty(value, key,
-                    hydratePlanJsonValue(value[key], originalObject[key], childKind));
+                hydratePlanJsonProperty(value, key, originalObject[key], childKind);
             }
             return value;
         }
 
-        function parsePlanJson(explanationText: string): any {
-            var parsed = JSON.parse(explanationText);
-            var tokens = scanJsonNumberTokens(explanationText);
+        function parsePlanJson(text: string, kind: string = 'node'): any {
+            var parsed = JSON.parse(text);
+            var tokens = scanJsonNumberTokens(text);
             // Parse two trees: the native tree validates JSON and preserves original string-vs-number types, while
             // the quoted-number tree preserves unsafe numeric lexemes for context-aware hydration.
-            var tokenized = JSON.parse(quoteJsonNumberTokens(explanationText, tokens));
-            return hydratePlanJsonValue(tokenized, parsed, 'node');
+            var tokenized = JSON.parse(quoteJsonNumberTokens(text, tokens));
+            return hydratePlanJsonValue(tokenized, parsed, kind);
+        }
+
+        /** Use the source plan for copy and download, preserving JSON number tokens exactly. */
+        function extractExplainJsonContent(text: string): string {
+            var tokens = /"[^"\\]*(?:\\.[^"\\]*)*"|[[\]{}]/g;
+            var objectValue = /^\s*:\s*(?=\{)/;
+            var depth = 0;
+            var start = -1;
+            var content: string;
+            for (var match = tokens.exec(text); match; match = tokens.exec(text)) {
+                var current = match[0];
+                if (current === '{' || current === '[') {
+                    depth++;
+                } else if (current === '}' || current === ']') {
+                    depth--;
+                    if (depth === 1 && start >= 0) {
+                        content = text.substring(start, tokens.lastIndex);
+                        start = -1;
+                    }
+                } else if (depth === 1) {
+                    var separator = objectValue.exec(text.substring(tokens.lastIndex));
+                    if (separator && (current === '"content"'
+                            || (current.indexOf('\\') >= 0 && JSON.parse(current) === 'content'))) {
+                        start = tokens.lastIndex + separator[0].length;
+                    }
+                }
+            }
+            return content;
+        }
+
+        function parseExplainResponse(text: string): AjaxExplainResponse {
+            var response: AjaxExplainResponse = parsePlanJson(text, 'response');
+            if (response && response.content && typeof response.content === 'object' && !Array.isArray(response.content)) {
+                response.rawContent = extractExplainJsonContent(text);
+            }
+            return response;
         }
 
         /** Config's explanation timeout is offered only where the server takes a query timeout at all. */
@@ -3686,21 +3866,17 @@ namespace workbench {
             fallbackFormat: string
         ): StableExplanation {
             var responseFormat = getNormalizedExplainFormat(response.format || fallbackFormat || 'text');
-            var explanationText = response.content || '';
+            var parsedPlan = responseFormat === 'json' && response.content && typeof response.content === 'object'
+                    && !Array.isArray(response.content) ? response.content : null;
+            var explanationText = response.rawContent
+                || (typeof response.content === 'string' ? response.content : parsedPlan ? JSON.stringify(parsedPlan) : '');
             var explanationView: ExplanationView = 'text';
             var displayContent = explanationText;
-            var parsedPlan: queryExplanationHighlighter.QueryPlanNode = null;
             var lineSeparator = typeof response.lineSeparator === 'string' && response.lineSeparator.length > 0
                 ? response.lineSeparator : '\n';
             if (signature.format === 'text' && responseFormat === 'json') {
-                if (explanationText) {
+                if (parsedPlan && (typeof parsedPlan.type === 'string' || typeof parsedPlan.operator === 'string')) {
                     try {
-                        var parsedResponse = parsePlanJson(explanationText);
-                        if (!parsedResponse || typeof parsedResponse !== 'object'
-                                || Array.isArray(parsedResponse) || typeof parsedResponse.type !== 'string') {
-                            throw new Error('JSON explanation does not contain a plan root.');
-                        }
-                        parsedPlan = <queryExplanationHighlighter.QueryPlanNode>parsedResponse;
                         displayContent = queryExplanationHighlighter.format(
                             parsedPlan, signature.level, lineSeparator
                         ).text;
@@ -3710,14 +3886,7 @@ namespace workbench {
                     }
                 }
             } else if (signature.format === 'json' && responseFormat === 'json') {
-                explanationView = 'jsonTree';
-                if (explanationText) {
-                    try {
-                        JSON.parse(explanationText);
-                    } catch (parseError) {
-                        explanationView = 'jsonRawFallback';
-                    }
-                }
+                explanationView = parsedPlan ? 'jsonTree' : 'jsonRawFallback';
             } else if (responseFormat === 'dot') {
                 explanationView = 'dotRendering';
             }
@@ -3759,6 +3928,7 @@ namespace workbench {
                 url: 'query',
                 type: 'POST',
                 dataType: 'json',
+                converters: { 'text json': parseExplainResponse },
                 data: serializeExplainFormData(
                     getPaneRawQueryValue('primary'),
                     signature.level,
@@ -4151,6 +4321,7 @@ namespace workbench {
                 url: 'query',
                 type: 'POST',
                 dataType: 'json',
+                converters: { 'text json': parseExplainResponse },
                 data: serializeExplainFormData(
                     getPaneRawQueryValue(signature.pane),
                     signature.level,
@@ -4573,19 +4744,29 @@ namespace workbench {
             var initialFormat = getNormalizedExplainFormat(
                 <string>$('#query-explanation').attr('data-format') || <string>$('#explain-format').val() || 'text'
             );
+            var initialLevel = getNormalizedExplainLevel(<string>$('#explain-level').val());
             var hydratedExplanation: StableExplanation = null;
             if (initialExplanation) {
+                var initialContent: AjaxExplainResponse['content'] = initialExplanation;
+                if (initialFormat === 'json') {
+                    try {
+                        initialContent = parsePlanJson(initialExplanation);
+                    } catch (parseError) {
+                        // A server-rendered page can retain raw content when hydration cannot decode it.
+                    }
+                }
                 hydratedExplanation = createStableExplanationFromResponse({
                     requestId: 0,
                     serverRequestId: 'initial-primary-explanation',
                     pane: 'primary',
                     source: 'primary-explain',
                     queryHash: buildQueryHash(getPaneRawQueryValue('primary')),
-                    level: getNormalizedExplainLevel(<string>$('#explain-level').val()),
+                    level: initialLevel,
                     format: initialFormat,
                     forcedLmdbExecutionStrategy: $('#lmdb-forced-strategy').prop('disabled') ? '' : <string>$('#lmdb-forced-strategy').val() || ''
                 }, {
-                    content: initialExplanation,
+                    content: initialContent,
+                    rawContent: initialExplanation,
                     strategyDecisions: initialStrategies,
                     format: initialFormat,
                     error: ''
@@ -5650,6 +5831,8 @@ namespace workbench {
             var bound: JQuery[] = [];
             var timers: number[] = [];
             var queryLoadGeneration = 0;
+            var disposed = false;
+            var namespaceRefreshPending = false;
             var observedShareFragment = queryFragment();
 
             function queryFragment(): string {
@@ -5879,6 +6062,17 @@ namespace workbench {
                 initializeQueryTabs(outlet, openedWith);
             }
             initializeExplanationView();
+            workbench.yasqeHelper.loadFallbackNamespaces().then(function(namespaces) {
+                if (disposed || explanationFallbackNamespaces === namespaces || !Object.keys(namespaces).length) {
+                    return;
+                }
+                explanationFallbackNamespaces = namespaces;
+                if (queryPageSuspended) {
+                    namespaceRefreshPending = true;
+                    return;
+                }
+                refreshExplanationNamespaces();
+            });
             initializeCompareUi();
             if (sharedQuery !== null) {
                 // Hydrate the page-model explanation against its original query before changing the editor.
@@ -6003,6 +6197,7 @@ namespace workbench {
 
             var suspended = false;
             var cleanup: any = function(reason?: 'navigate' | 'pagehide') {
+                disposed = true;
                 ++queryLoadGeneration;
                 unlisten();
                 bound.forEach(function(element) {
@@ -6039,6 +6234,10 @@ namespace workbench {
                     queryPageSuspended = false;
                     listen();
                     consumeSharedQuery();
+                    if (namespaceRefreshPending) {
+                        namespaceRefreshPending = false;
+                        refreshExplanationNamespaces();
+                    }
                     syncCompareSidebarState();
                     // Background queries may have ended while the page was out of sight.
                     onQueryTabActivity();

@@ -15,6 +15,7 @@ package org.eclipse.rdf4j.sail.lmdb.evaluation.fragment;
 import java.util.Objects;
 
 import org.eclipse.rdf4j.common.annotation.Experimental;
+import org.eclipse.rdf4j.sail.lmdb.LmdbQueryTelemetry;
 
 /**
  * Everything query-, store-, or snapshot-specific a compiled fragment needs, delivered at bind time. The compiled
@@ -27,16 +28,23 @@ import org.eclipse.rdf4j.common.annotation.Experimental;
 public final class FragmentBinding {
 
 	/** Shared empty binding for fragments with no constants, no fallback, and no state. */
-	public static final FragmentBinding EMPTY = new FragmentBinding(new long[0], null, null);
+	public static final FragmentBinding EMPTY = new FragmentBinding(new long[0], null, null, null);
 
 	public final long[] constants;
 	public final ExactFragmentFallback fallback;
 	public Object state;
+	private final LmdbQueryTelemetry telemetry;
 
 	public FragmentBinding(long[] constants, ExactFragmentFallback fallback, Object state) {
+		this(constants, fallback, state, LmdbQueryTelemetry.current());
+	}
+
+	private FragmentBinding(long[] constants, ExactFragmentFallback fallback, Object state,
+			LmdbQueryTelemetry telemetry) {
 		this.constants = Objects.requireNonNull(constants, "constants");
 		this.fallback = fallback;
 		this.state = state;
+		this.telemetry = telemetry;
 	}
 
 	public static FragmentBinding of(long... constants) {
@@ -44,7 +52,14 @@ public final class FragmentBinding {
 	}
 
 	public FragmentBinding withFallback(ExactFragmentFallback fallback) {
-		return new FragmentBinding(constants, fallback, state);
+		return new FragmentBinding(constants, fallback, state, telemetry);
+	}
+
+	/** Records one outer decision, never the interpreter's recursively visited expression nodes. */
+	public void recordDecision(PredicateStatus status) {
+		if (telemetry != null)
+			telemetry.fragmentDecision(status == PredicateStatus.ESCAPE,
+					status != PredicateStatus.ESCAPE && status != PredicateStatus.TRUE);
 	}
 
 	/**
@@ -52,6 +67,8 @@ public final class FragmentBinding {
 	 * reject — callers wiring fragments into production must always bind one.
 	 */
 	public boolean escapeToExact(long a0, long a1, long a2) {
+		if (telemetry != null)
+			telemetry.fragmentDecision(true, false);
 		return fallback != null && fallback.testExact(a0, a1, a2);
 	}
 
@@ -61,7 +78,7 @@ public final class FragmentBinding {
 	 */
 	public FragmentBinding forkForParallelWorker() {
 		Object forkedState = state instanceof ForkableFragmentState forkable ? forkable.forkForParallelWorker() : null;
-		return new FragmentBinding(constants, fallback, forkedState);
+		return new FragmentBinding(constants, fallback, forkedState, telemetry);
 	}
 
 	/** Mutable fragment state that knows how to create an independent copy for one parallel worker. */

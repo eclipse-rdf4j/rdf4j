@@ -54,6 +54,7 @@ import org.eclipse.rdf4j.query.TupleQuery;
 import org.eclipse.rdf4j.query.TupleQueryResult;
 import org.eclipse.rdf4j.query.Update;
 import org.eclipse.rdf4j.query.explanation.Explanation;
+import org.eclipse.rdf4j.query.explanation.ExplanationOptions;
 import org.eclipse.rdf4j.repository.Repository;
 import org.eclipse.rdf4j.repository.RepositoryConnection;
 import org.eclipse.rdf4j.repository.RepositoryException;
@@ -297,14 +298,27 @@ class Transaction implements AutoCloseable {
 	}
 
 	Explanation explain(Query query, Explanation.Level level) throws InterruptedException, ExecutionException {
-		Future<Explanation> result = submitQuery(() -> query.explain(level));
+		ExplanationOptions options = ExplanationOptions.current();
+		Future<Explanation> result = submitQuery(() -> explainWithOptions(query, level, options));
 		return getFromFuture(result);
 	}
 
 	Explanation explain(QueryCircuitBreakerHandle handle, Query query, Explanation.Level level)
 			throws InterruptedException, ExecutionException {
-		Future<Explanation> result = submitQuery(() -> executeWithBreaker(handle, () -> query.explain(level)));
+		return explain(handle, query, level, ExplanationOptions.current());
+	}
+
+	Explanation explain(QueryCircuitBreakerHandle handle, Query query, Explanation.Level level,
+			ExplanationOptions options) throws InterruptedException, ExecutionException {
+		Future<Explanation> result = submitQuery(() -> executeWithBreaker(handle,
+				() -> explainWithOptions(query, level, options)));
 		return getFromFuture(result);
+	}
+
+	private Explanation explainWithOptions(Query query, Explanation.Level level, ExplanationOptions options) {
+		try (ExplanationOptions.Activation ignored = options.activate()) {
+			return query.explain(level);
+		}
 	}
 
 	/**

@@ -14024,6 +14024,7 @@ class LmdbSailStore implements SailStore {
 	}
 
 	private final class ParallelSnapshotSource implements NativeLmdbQuerySource.ParallelSource {
+		private final LmdbQueryTelemetry queryTelemetry = LmdbQueryTelemetry.current();
 
 		private final Txn txn;
 		private final boolean explicit;
@@ -14066,6 +14067,10 @@ class LmdbSailStore implements SailStore {
 					if (!adjacencyViewResolved) {
 						if (adjacencyEligible && directAdjacency != null) {
 							adjacencyView = directAdjacency.acquire(adjacencyRevision, adjacencyLifetimeId);
+						}
+						if (queryTelemetry != null) {
+							queryTelemetry.adjacency(adjacencyView, adjacencyRevision, adjacencyEligible, explicit,
+									directAdjacency != null, "parallel");
 						}
 						adjacencyViewResolved = true;
 					}
@@ -14265,6 +14270,12 @@ class LmdbSailStore implements SailStore {
 		@Override
 		public boolean withProjectedValueAccess(ValueResolutionScope scope, Predicate<ProjectedValueAccess> capture) {
 			return withNativeProjectedValueAccess(lease.readView, scope, capture);
+		}
+
+		@Override
+		public Value diagnosticValue(long id) throws IOException {
+			return id == 0L || id == LmdbValue.UNKNOWN_ID ? null
+					: valueStore.getValue(lease.readView.valueSnapshot(), id);
 		}
 
 		@Override
@@ -15432,6 +15443,11 @@ class LmdbSailStore implements SailStore {
 						? directAdjacency.acquire(snapshotRevision)
 						: null;
 				this.adjacencyView = acquiredView;
+				LmdbQueryTelemetry telemetry = LmdbQueryTelemetry.current();
+				if (telemetry != null) {
+					telemetry.adjacency(acquiredView, snapshotRevision, adjacencyEligible, explicit,
+							directAdjacency != null, "dataset");
+				}
 				this.adjacencyOpenSnapshot = directAdjacency != null && logger.isInfoEnabled()
 						? directAdjacency.snapshotMetrics()
 						: null;
@@ -16157,6 +16173,11 @@ class LmdbSailStore implements SailStore {
 		@Override
 		public boolean withProjectedValueAccess(ValueResolutionScope scope, Predicate<ProjectedValueAccess> capture) {
 			return withNativeProjectedValueAccess(readView, scope, capture);
+		}
+
+		@Override
+		public Value diagnosticValue(long id) throws IOException {
+			return id == 0L || id == LmdbValue.UNKNOWN_ID ? null : valueStore.getValue(readView.valueSnapshot(), id);
 		}
 
 		@Override

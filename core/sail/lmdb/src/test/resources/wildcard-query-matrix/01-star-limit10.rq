@@ -1,0 +1,10 @@
+PREFIX dcat: <http://www.w3.org/ns/dcat#>
+PREFIX dct: <http://purl.org/dc/terms/>
+
+SELECT ?dataset ?title ?p ?value
+WHERE {
+  ?dataset a dcat:Dataset ;
+    dct:title ?title ;
+    ?p ?value .
+}
+LIMIT 10

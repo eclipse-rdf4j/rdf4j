@@ -1,0 +1,6 @@
+PREFIX dataset: <http://data.gov.be/dataset/biodiv/>
+
+SELECT ?p
+WHERE {
+  <http://data.gov.be/catalog> ?p dataset:230363a1-8221-4f53-b1fc-e8475ac247aa .
+}

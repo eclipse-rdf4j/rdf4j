@@ -383,7 +383,7 @@ final class PatternPlan implements SlotPlan {
 
 	private NativeLmdbQuerySource.AdjacencyAccessObserver adjacencyAccessObserver(RowState row) {
 		NativeLmdbQuerySource.AdjacencyAccessObserver telemetry = row.runtimePlan == null ? null
-				: row.runtimePlan.adjacencyAccessAt(LmdbNativeExplain.describe(this, row.layout));
+				: row.runtimePlan.adjacencyAccessAt(row.source, this);
 		return combineAccessObservers(telemetry, row.probeWorkObserver);
 	}
 
@@ -436,6 +436,15 @@ final class PatternPlan implements SlotPlan {
 					boolean physicalScanCount) {
 				first.measurement(adjacency, scanned, matched, filtered, censored, physicalScanCount);
 				second.measurement(adjacency, scanned, matched, filtered, censored, physicalScanCount);
+			}
+
+			@Override
+			public void measurement(boolean adjacency, long scanned, long matched, long filtered, boolean censored,
+					boolean physicalScanCount, long activeNanos, String indexName) {
+				first.measurement(adjacency, scanned, matched, filtered, censored, physicalScanCount, activeNanos,
+						indexName);
+				second.measurement(adjacency, scanned, matched, filtered, censored, physicalScanCount, activeNanos,
+						indexName);
 			}
 		};
 	}

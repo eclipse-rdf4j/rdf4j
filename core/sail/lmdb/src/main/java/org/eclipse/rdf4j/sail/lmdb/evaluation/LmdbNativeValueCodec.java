@@ -32,6 +32,7 @@ import org.eclipse.rdf4j.query.impl.GeneratedBNode;
 import org.eclipse.rdf4j.query.impl.RemoteBNode;
 import org.eclipse.rdf4j.query.impl.RepositoryBNode;
 import org.eclipse.rdf4j.sail.SailException;
+import org.eclipse.rdf4j.sail.lmdb.LmdbQueryTelemetry;
 import org.eclipse.rdf4j.sail.lmdb.LmdbStoreFormat;
 import org.eclipse.rdf4j.sail.lmdb.ValueIds;
 import org.eclipse.rdf4j.sail.lmdb.ValuePosition;
@@ -63,6 +64,7 @@ final class LmdbNativeValueCodec {
 	static final AtomicLong CACHE_HITS = new AtomicLong();
 
 	private final ValueStore valueStore;
+	private final LmdbQueryTelemetry telemetry;
 	/**
 	 * Direct-mapped decode cache. Each slot holds ONE immutable (id, value) pair behind a single atomic reference: the
 	 * codec is shared by every parallel kernel worker of a query, so readers and writers race freely, and a
@@ -111,6 +113,7 @@ final class LmdbNativeValueCodec {
 			throw new IllegalArgumentException("negative decode cache budget");
 		}
 		this.valueStore = valueStore;
+		this.telemetry = LmdbQueryTelemetry.current();
 		cache = (AtomicReferenceArray<CachedDecode>[]) new AtomicReferenceArray<?>[5];
 		for (int bank = 0; bank < cache.length; bank++) {
 			cache[bank] = new AtomicReferenceArray<>(totalBudget / cache.length
@@ -151,6 +154,8 @@ final class LmdbNativeValueCodec {
 	}
 
 	private DecodedValue decodeKnown(long id, int positionMask) {
+		if (telemetry != null)
+			telemetry.decodeRequest();
 		AtomicReferenceArray<CachedDecode> bank = cache[ValuePosition.cacheBank(positionMask)];
 		if (bank.length() == 0) {
 			return decodeUncached(id, positionMask);
@@ -159,6 +164,8 @@ final class LmdbNativeValueCodec {
 		CachedDecode cached = bank.get(cacheIndex);
 		if (cached != null && cached.id == id) {
 			CACHE_HITS.incrementAndGet();
+			if (telemetry != null)
+				telemetry.decodeCacheHit();
 			return cached.value;
 		}
 		DecodedValue decoded = decodeUncached(id, positionMask);
@@ -169,6 +176,8 @@ final class LmdbNativeValueCodec {
 	private DecodedValue decodeUncached(long id, int positionMask) {
 		try {
 			if (ValueIds.isInlined(id)) {
+				if (telemetry != null)
+					telemetry.inlineDecode();
 				return decodeInlined(id);
 			}
 			if (ValueIds.getIdType(id) == ValueIds.T_TRIPLE) {
@@ -496,6 +505,8 @@ final class LmdbNativeValueCodec {
 		int slot = metaIndex(datatypeId);
 		CachedText cached = datatypeIris.get(slot);
 		if (cached != null && cached.id == datatypeId) {
+			if (telemetry != null)
+				telemetry.datatypeHit();
 			return cached.text;
 		}
 		StoredPayload data = readStoredPayload(datatypeId);
@@ -511,6 +522,8 @@ final class LmdbNativeValueCodec {
 		int slot = metaIndex(namespaceId);
 		CachedText cached = namespaces.get(slot);
 		if (cached != null && cached.id == namespaceId) {
+			if (telemetry != null)
+				telemetry.namespaceHit();
 			return cached.text;
 		}
 		StoredPayload data = readStoredPayload(namespaceId);
@@ -565,10 +578,10 @@ final class LmdbNativeValueCodec {
 			}
 			default -> null;
 			};
-		}, LmdbNativeValueCodec::readOverlayPayload);
+		}, this::readOverlayPayload);
 	}
 
-	private static StoredPayload readOverlayPayload(ValueStoreRecordVisitor.Record record) {
+	private StoredPayload readOverlayPayload(ValueStoreRecordVisitor.Record record) {
 		byte type = switch (record.kind()) {
 		case IRI -> URI_VALUE;
 		case LITERAL -> LITERAL_VALUE;
@@ -577,6 +590,8 @@ final class LmdbNativeValueCodec {
 		};
 		int lexicalLength = record.lexicalByteLength();
 		int languageLength = record.languageByteLength();
+		if (telemetry != null)
+			telemetry.utf8Bytes((long) lexicalLength + languageLength);
 		byte[] scratch = utf8Scratch(Math.max(lexicalLength, languageLength));
 		record.copyLexical(0, scratch, 0, lexicalLength);
 		// Complete construction before reusing the staging bytes. Neither copying nor the JDK UTF-8
@@ -608,17 +623,24 @@ final class LmdbNativeValueCodec {
 		return bytes;
 	}
 
-	private static String decodeUtf8(ByteBuffer buffer, int offset, int length) {
+	private String decodeUtf8(ByteBuffer buffer, int offset, int length) {
 		// Share the overlay decoder's bounded staging bytes. The String constructor specializes
 		// ASCII/Latin-1 and malformed UTF-8 without allocating a CharsetDecoder and CharBuffer.
 		// Absolute bulk get preserves the caller's position/limit/mark and checks the full range.
 		java.util.Objects.checkFromIndexSize(offset, length, buffer.limit());
+		if (telemetry != null)
+			telemetry.utf8Bytes(length);
 		if (buffer.hasArray()) {
 			return new String(buffer.array(), buffer.arrayOffset() + offset, length, StandardCharsets.UTF_8);
 		}
 		byte[] scratch = utf8Scratch(length);
 		buffer.get(offset, scratch, 0, length);
 		return new String(scratch, 0, length, StandardCharsets.UTF_8);
+	}
+
+	void recordRowMemoHit() {
+		if (telemetry != null)
+			telemetry.rowDecodeMemoHit();
 	}
 
 	private static int cacheIndex(long id, int capacity) {

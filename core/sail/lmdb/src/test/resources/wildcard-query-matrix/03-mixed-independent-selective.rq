@@ -1,0 +1,11 @@
+PREFIX dcat: <http://www.w3.org/ns/dcat#>
+PREFIX dataset: <http://data.gov.be/dataset/biodiv/>
+
+SELECT ?catalog ?p ?q ?distribution ?r ?value
+WHERE {
+  ?catalog ?p dataset:230363a1-8221-4f53-b1fc-e8475ac247aa .
+  dataset:230363a1-8221-4f53-b1fc-e8475ac247aa ?q ?distribution ;
+    ?r ?value .
+  ?distribution a dcat:Distribution .
+  FILTER(!sameTerm(?q, ?r) && isIRI(?value))
+}

@@ -15,10 +15,19 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 import java.util.List;
 import java.util.Map;
+import java.util.function.Supplier;
 
 import org.eclipse.rdf4j.query.algebra.SingletonSet;
+import org.eclipse.rdf4j.query.explanation.ExplanationImpl;
+import org.eclipse.rdf4j.query.explanation.GenericPlanNode;
+import org.eclipse.rdf4j.query.explanation.PhysicalPlan;
 import org.eclipse.rdf4j.query.explanation.TelemetryMetricNames;
+import org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbNativeCostVector.Feature;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
+
+import com.fasterxml.jackson.databind.ObjectMapper;
 
 class LmdbNativeExplainTest {
 
@@ -62,6 +71,120 @@ class LmdbNativeExplainTest {
 				.contains("    strategy: bareExists")
 				.contains("    status: COMPLETED")
 				.doesNotContain("invocation[1]:");
+	}
+
+	@Test
+	void runtimeShapesPreserveDistinctOperatorsThatShareALegacyLabel() {
+		SingletonSet target = new SingletonSet();
+		target.setRuntimeTelemetryEnabled(true);
+		NativeSlotLayout layout = layout();
+		LmdbNativeExplain.recordRuntimeEntryPlan(target, new RowDistinctPlan(SingletonPlan.INSTANCE, new int[] { 0 }),
+				layout, 0);
+		LmdbNativeExplain.recordRuntimeEntryPlan(target, new RowDistinctPlan(SingletonPlan.INSTANCE, new int[] { 1 }),
+				layout, 0);
+
+		assertThat(target.getStringMetricActual(TelemetryMetricNames.RUNTIME_PHYSICAL_PLAN))
+				.contains("invocation[0]", "invocation[1]");
+	}
+
+	@Test
+	void statementAccessSitesPreserveDistinctGraphRestrictionsWithTheSameLabel() {
+		SingletonSet target = new SingletonSet();
+		target.setRuntimeTelemetryEnabled(true);
+		var invocation = LmdbNativeExplain.recordRuntimeEntryPlan(target, SingletonPlan.INSTANCE, layout(), 0);
+		for (long graph : new long[] { 101, 202 }) {
+			var pattern = new PatternPlan(Term.slot(0), Term.constant(17), Term.slot(1), Term.unbound(),
+					new ContextConstraint(new long[] { graph }), true, 0D);
+			invocation.adjacencyAccessAt(null, pattern).selected(false, "TEST", null, 1L, 17L, 2L, graph);
+		}
+		var supplier = (Supplier<?>) target.getQueryModelMetadata(PhysicalPlan.RUNTIME_METADATA_KEY);
+		var plan = (PhysicalPlan) supplier.get();
+		var attempts = new ObjectMapper().valueToTree(plan.invocations().getFirst())
+				.path("adjacencyAccess")
+				.path("attempts");
+		assertThat(attempts).hasSize(2);
+		assertThat(attempts.findValues("contexts")).extracting(context -> context.at("/values/0/id").asText())
+				.containsExactly("101", "202");
+	}
+
+	@ParameterizedTest
+	@ValueSource(booleans = { false, true })
+	void runtimeJsonPreservesFactorizationAndFilterPlacementSummaries(boolean used) {
+		SingletonSet target = new SingletonSet();
+		target.setRuntimeTelemetryEnabled(true);
+		var invocation = LmdbNativeExplain.recordRuntimeEntryPlan(target, SingletonPlan.INSTANCE, layout(), 0L);
+		try (var feedback = LmdbFusedSipFactorizedRuntime.enter(17L)) {
+			if (used) {
+				feedback.session().markFactorizationMode("NESTED_KERNEL");
+				feedback.session().recordFactorizedLevel(3, 3, 24, 6, 18, 1, 24, 2);
+				feedback.session().observeFilter(7, "?date >= cutoff", 3, 1, 10L, 2L, 100L, 40L);
+			}
+			invocation.fusedTelemetry(feedback.session().telemetry());
+		}
+		invocation.complete();
+
+		var supplier = (Supplier<?>) target.getQueryModelMetadata(PhysicalPlan.RUNTIME_METADATA_KEY);
+		var plan = (PhysicalPlan) supplier.get();
+		var json = new ObjectMapper().valueToTree(plan.invocations().getFirst());
+		var factorization = json.path("factorization");
+		assertThat(factorization.path("used").isBoolean()).isTrue();
+		assertThat(factorization.path("used").booleanValue()).isEqualTo(used);
+		assertThat(factorization.path("scope").asText()).isEqualTo("native/generated");
+		assertThat(factorization.path("storedLanes").longValue()).isEqualTo(used ? 6L : 0L);
+		assertThat(factorization.path("compressionRatio").doubleValue()).isEqualTo(used ? 4D : 1D);
+		var filterPlacement = json.path("runtimeFilterPlacement");
+		assertThat(filterPlacement.path("used").isBoolean()).isTrue();
+		assertThat(filterPlacement.path("used").booleanValue()).isEqualTo(used);
+		assertThat(filterPlacement.path("scope").asText()).isEqualTo("generated/factorized");
+		String reason = used ? "ACTIVATED" : "NOT_ATTEMPTED[no generated/factorized filter placement observed]";
+		assertThat(filterPlacement.path("reason").asText()).isEqualTo(reason);
+		assertThat(filterPlacement.path("filters")).hasSize(used ? 1 : 0);
+		assertThat(target.getStringMetricActual(TelemetryMetricNames.RUNTIME_PHYSICAL_PLAN))
+				.contains("factorization:\n      used: " + used + "\n      scope: native/generated")
+				.contains("runtimeFilterPlacement:\n      used: " + used
+						+ "\n      scope: generated/factorized\n      reason: " + reason);
+	}
+
+	@Test
+	void optimizedCandidatesExposeTheSelectorPriceIntervalsAndFeatureCounts() throws Exception {
+		var record = new LmdbNativeDecisionRecord(LmdbNativeDecisionPoint.ROW, "normal", List.of(
+				new LmdbNativeDecisionRecord.Entry("admitted", true, null, LmdbNativeWork.between(10D, 90D), 40D,
+						null, LmdbNativeCostVector.bounds(Feature.SCANNED_ROW, 2D, 4D, 9D), 50D,
+						LmdbNativeWork.between(20D, 70D)),
+				new LmdbNativeDecisionRecord.Entry("unbounded", true, null, LmdbNativeWork.atLeast(50D), Double.NaN,
+						"unmeasured",
+						LmdbNativeCostVector.bounds(Feature.SCANNED_ROW, 3D, 6D, Double.POSITIVE_INFINITY),
+						Double.NaN, null),
+				new LmdbNativeDecisionRecord.Entry("unpriced", true, null, null, Double.NaN, null, null,
+						Double.NaN, null),
+				LmdbNativeDecisionRecord.Entry.declined("declined", "cursor unavailable")), 0, "Lowest expected price");
+		var plan = new GenericPlanNode("Join");
+		plan.setStrategyDecisions(List.of(record.toStrategyDecision("row/join dispatch")));
+		var explanation = new ExplanationImpl(plan, false, null);
+		var mapper = new ObjectMapper();
+		String json = explanation.toJson();
+		var candidates = mapper.readTree(json).at("/strategyDecisions/0/candidates");
+		var finite = candidates.at("/0/pricing");
+		assertThat(finite.at("/proven/low").asDouble()).isEqualTo(10D);
+		assertThat(finite.at("/proven/high").asDouble()).isEqualTo(90D);
+		assertThat(finite.at("/estimated/high").asDouble()).isEqualTo(70D);
+		assertThat(finite.path("expectedNanos").asDouble()).isEqualTo(40D);
+		assertThat(finite.path("quotedExpectedNanos").asDouble()).isEqualTo(50D);
+		assertThat(finite.path("provenance").asText()).isEqualTo("advised");
+		assertThat(finite.at("/features/SCANNED_ROW/expected").asDouble()).isEqualTo(4D);
+
+		var unbounded = candidates.at("/1/pricing");
+		assertThat(unbounded.at("/proven/low").asDouble()).isEqualTo(50D);
+		assertThat(unbounded.at("/proven/high").isMissingNode()).isTrue();
+		assertThat(unbounded.path("expectedNanos").isMissingNode()).isTrue();
+		assertThat(unbounded.at("/features/SCANNED_ROW/high").isMissingNode()).isTrue();
+		assertThat(candidates.at("/2/pricing").isMissingNode()).isTrue();
+		assertThat(candidates.at("/3/pricing").isMissingNode()).isTrue();
+		assertThat(candidates.at("/3/declineReason").asText()).isEqualTo("cursor unavailable");
+
+		var restored = mapper.readValue(json, GenericPlanNode.class);
+		assertThat(restored.getStrategyDecisions()).isEqualTo(plan.getStrategyDecisions());
+		assertThat(explanation.toString()).contains("Would select now", "Priced unpriced", "cursor unavailable");
 	}
 
 	@Test

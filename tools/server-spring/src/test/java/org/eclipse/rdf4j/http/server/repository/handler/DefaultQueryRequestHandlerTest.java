@@ -25,6 +25,7 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 import java.util.List;
+import java.util.Map;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
@@ -38,6 +39,7 @@ import org.eclipse.rdf4j.http.client.QueryCircuitBreaker;
 import org.eclipse.rdf4j.http.client.QueryCircuitBreakerHandle;
 import org.eclipse.rdf4j.http.client.QueryExecutionContext;
 import org.eclipse.rdf4j.http.client.QueryExplanationRequestContext;
+import org.eclipse.rdf4j.http.client.QueryLoggingContext;
 import org.eclipse.rdf4j.http.client.QueryRequestContext;
 import org.eclipse.rdf4j.http.protocol.Protocol;
 import org.eclipse.rdf4j.http.server.repository.ExplainQueryResultView;
@@ -49,6 +51,7 @@ import org.eclipse.rdf4j.query.QueryParseOptions;
 import org.eclipse.rdf4j.query.TupleQuery;
 import org.eclipse.rdf4j.query.TupleQueryResult;
 import org.eclipse.rdf4j.query.explanation.Explanation;
+import org.eclipse.rdf4j.query.explanation.ExplanationOptions;
 import org.eclipse.rdf4j.repository.Repository;
 import org.eclipse.rdf4j.repository.RepositoryConnection;
 import org.eclipse.rdf4j.repository.RepositoryException;
@@ -532,6 +535,57 @@ class DefaultQueryRequestHandlerTest {
 		assertThat(result.getView()).isInstanceOf(ExplainQueryResultView.class);
 		assertThat(request.isAsyncStarted()).isFalse();
 		verify(connection).close();
+	}
+
+	@Test
+	void telemetryConsumptionAndLoggingContextReachRegisteredExplainAndAreRestored() throws Exception {
+		RepositoryResolver resolver = mock(RepositoryResolver.class);
+		Repository repository = mock(Repository.class);
+		RepositoryConnection connection = mock(RepositoryConnection.class);
+		when(connection.getQueryParseOptions()).thenReturn(QueryParseOptions.DEFAULT);
+		TupleQuery query = mock(TupleQuery.class);
+		Explanation explanation = mock(Explanation.class);
+		DefaultQueryRequestHandler handler = new DefaultQueryRequestHandler(resolver);
+		MockHttpServletRequest request = newAsyncExplainRequest("telemetry-consumption");
+		request.setRequestURI("/repositories/test-repo");
+		request.setAttribute(QueryLoggingContext.SERVER_REQUEST_ID, "telemetry-request");
+		request.setParameter(Protocol.EXPLAIN_PARAM_NAME, Explanation.Level.Telemetry.name());
+		request.setParameter("explain-consumption", "serialized");
+		request.setParameter("explain-result-mime", "application/sparql-results+json");
+		when(resolver.getRepository(request)).thenReturn(repository);
+		when(resolver.getRepositoryID(request)).thenReturn("test-repo");
+		when(resolver.getRepositoryConnection(request, repository)).thenReturn(connection);
+		when(connection.prepareQuery(QueryLanguage.SPARQL, SELECT_ALL_QUERY, null)).thenReturn(query);
+		AtomicReference<ExplanationOptions> observed = new AtomicReference<>();
+		AtomicReference<Map<String, String>> observedLogging = new AtomicReference<>();
+		when(query.explain(Explanation.Level.Telemetry)).thenAnswer(invocation -> {
+			observed.set(ExplanationOptions.current());
+			observedLogging.set(QueryLoggingContext.capture());
+			return explanation;
+		});
+		Map<String, String> originalLogging = QueryLoggingContext.captureMdc();
+		ExplanationOptions originalOptions = ExplanationOptions.current();
+		try (var logging = QueryLoggingContext
+				.activateMdc(Map.of(QueryLoggingContext.SERVER_REQUEST_ID, "outer-request",
+						QueryLoggingContext.REPOSITORY_ID, "outer-repo", QueryLoggingContext.TRACE_ID, "trace-one"));
+				var options = ExplanationOptions.values().activate()) {
+			Map<String, String> before = QueryLoggingContext.captureMdc();
+			handler.handleQueryRequest(request, RequestMethod.POST, new MockHttpServletResponse());
+			assertThat(observed).hasValue(ExplanationOptions.serialized("application/sparql-results+json"));
+			assertThat(observedLogging.get()).containsEntry("serverRequestId", "telemetry-request")
+					.containsEntry("repositoryId", "test-repo")
+					.containsEntry("httpMethod", "POST")
+					.containsEntry("httpRequestPath", "/repositories/test-repo")
+					.containsEntry("explainRequestId", "telemetry-consumption")
+					.containsEntry("traceId", "trace-one");
+			assertThat(ExplanationOptions.current()).isEqualTo(ExplanationOptions.values());
+			assertThat(QueryLoggingContext.captureMdc()).isEqualTo(before);
+			verify(connection).close();
+		} finally {
+			handler.shutdown();
+		}
+		assertThat(QueryLoggingContext.captureMdc()).isEqualTo(originalLogging);
+		assertThat(ExplanationOptions.current()).isEqualTo(originalOptions);
 	}
 
 	@Test

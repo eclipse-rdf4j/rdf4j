@@ -102,7 +102,8 @@ test('Executed explanation hides telemetry stability stats for LMDB queries', as
 
     const explanation = await page.locator('#query-explanation').textContent();
 
-    await expect(explanation).toContain('StatementPattern [index: spoc]');
+    expect(explanation).toContain('StatementPattern (scope=DEFAULT_CONTEXTS, indexName=spoc)');
+    expect(explanation).toContain('resultSizeActual=');
     await expect(explanation).not.toContain('sampleCountActual=');
     await expect(explanation).not.toContain('varianceActual=');
     await expect(explanation).not.toContain('stddevActual=');
@@ -136,7 +137,7 @@ test('Executed explanation shows the LMDB native physical plan when native evalu
     await expect(explanation).not.toContain('confidenceScoreActual=');
 });
 
-test('Text explanation highlighting preserves server plaintext and toggles without refetching', async ({ page }) => {
+test('Rich explanation toggles without refetching and downloads exact server plaintext', async ({ page }) => {
     const explainRequests = [];
     const consoleErrors = [];
     page.on('console', message => {
@@ -150,7 +151,7 @@ test('Text explanation highlighting preserves server plaintext and toggles witho
         }
         const params = new URLSearchParams(request.postData() || '');
         if (params.get('action') === 'explain') {
-            explainRequests.push(params.get('explain-format'));
+            explainRequests.push(params);
         }
     });
 
@@ -161,11 +162,16 @@ test('Text explanation highlighting preserves server plaintext and toggles witho
     await page.locator('#query-explanation .query-explanation-token--node-type').first().waitFor();
 
     await expect.poll(() => explainRequests.length).toBe(1);
-    expect(explainRequests[0]).toBe('json');
+    expect(explainRequests[0].get('explain-format')).toBe('json');
     const highlightedText = await page.locator('#query-explanation').textContent();
     await expect(page.locator('#query-explanation .query-explanation-token--node-type').first()).toBeVisible();
 
-    const plainResponse = await page.evaluate(async query => {
+    // The rich DOM includes typed metadata; the download must still match the server's plaintext.
+    expect(highlightedText).toContain('StatementPattern (scope=DEFAULT_CONTEXTS)');
+    const plainParams = new URLSearchParams(explainRequests[0]);
+    plainParams.set('explain-format', 'text');
+    plainParams.set('explain-request-id', `plaintext-contract-${Date.now()}`);
+    const plainResponse = await page.evaluate(async body => {
         const response = await fetch('query', {
             method: 'POST',
             headers: {
@@ -173,20 +179,24 @@ test('Text explanation highlighting preserves server plaintext and toggles witho
                 'X-Requested-With': 'XMLHttpRequest',
                 ...window.workbench.csrfHeaders('query')
             },
-            body: new URLSearchParams({
-                action: 'explain',
-                explain: 'Optimized',
-                'explain-format': 'text',
-                'explain-request-id': `plaintext-contract-${Date.now()}`,
-                infer: 'false',
-                queryLn: 'SPARQL',
-                ref: 'text',
-                query
-            }).toString()
+            body
         });
+        if (!response.ok) {
+            throw new Error(`Plaintext explanation request failed with HTTP ${response.status}`);
+        }
         return response.json();
-    }, JOIN_QUERY);
-    expect(highlightedText).toBe(plainResponse.content);
+    }, plainParams.toString());
+    const [download] = await Promise.all([
+        page.waitForEvent('download'),
+        page.locator('#download-explanation').click()
+    ]);
+    expect(download.suggestedFilename()).toBe('query-explanation-optimized.txt');
+    const chunks = [];
+    for await (const chunk of await download.createReadStream()) {
+        chunks.push(chunk);
+    }
+    expect(Buffer.concat(chunks)).toEqual(Buffer.from(plainResponse.content, 'utf8'));
+    expect(explainRequests).toHaveLength(2);
 
     const requestCountBeforeToggle = explainRequests.length;
     const settingsPanel = page.locator('#explanation-settings-panel');
@@ -601,7 +611,7 @@ test('Query editor and Explain match develop light theme and preserve dark color
     const explainSubjectColor = tokenColor(lightTextExplanation.inspectedTokens,
         'subject', 'query-explanation-token--variable');
     const explainIriColor = tokenColor(lightTextExplanation.inspectedTokens,
-        'urn:name', 'query-explanation-token--value');
+        '<urn:name>', 'query-explanation-token--value-iri');
     const explainLiteralColor = tokenColor(lightTextExplanation.inspectedTokens,
         '"Example"', 'query-explanation-token--value');
     expect.soft(querySubjectColor).toBeDefined();

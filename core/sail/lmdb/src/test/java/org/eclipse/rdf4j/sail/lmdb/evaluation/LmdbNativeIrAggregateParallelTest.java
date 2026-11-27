@@ -280,6 +280,16 @@ class LmdbNativeIrAggregateParallelTest {
 	}
 
 	@Test
+	void telemetryReportsWorkerCriticalPathAndOccupancy() {
+		System.setProperty(LmdbNativeParallelKernelAggregate.ENABLED_PROPERTY, "true");
+		GenericPlanNode plan = explainPlan(GROUPED_QUERY,
+				LmdbNativeAttemptMetrics.PATH_IR_AGGREGATE_PARALLEL_INTERPRETED);
+		assertThat(plan.toString()).contains("nativeIrParallelWallNanosActual",
+				"nativeIrParallelWorkerActiveNanosActual", "nativeIrParallelEffectiveConcurrencyActual",
+				"nativeIrParallelTailNanosActual", "nativeIrParallelWorkerDurationsActual");
+	}
+
+	@Test
 	void parallelIrAggregateMatchesGenericAndEngages() {
 		System.setProperty("rdf4j.lmdb.nativeQueryEngine.enabled", "false");
 		List<String> expected = rows(GROUPED_QUERY);

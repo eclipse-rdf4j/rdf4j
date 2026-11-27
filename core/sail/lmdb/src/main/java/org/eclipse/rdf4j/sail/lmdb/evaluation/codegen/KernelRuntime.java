@@ -101,15 +101,21 @@ public final class KernelRuntime {
 	@Experimental
 	public static final class AggregateMemory implements MemoryAccount, AutoCloseable {
 		private final LmdbQueryMemoryManager.QueryLedger ledger;
+		private final String ownerLabel;
 		private LmdbQueryMemoryManager.Reservation reservation;
 		private boolean closed;
 
-		private AggregateMemory(LmdbQueryMemoryManager.QueryLedger ledger) {
+		private AggregateMemory(LmdbQueryMemoryManager.QueryLedger ledger, String ownerLabel) {
 			this.ledger = ledger;
+			this.ownerLabel = ownerLabel;
 		}
 
 		public static AggregateMemory forLedger(LmdbQueryMemoryManager.QueryLedger ledger) {
-			return new AggregateMemory(ledger);
+			return forLedger(ledger, "kernel-aggregate");
+		}
+
+		public static AggregateMemory forLedger(LmdbQueryMemoryManager.QueryLedger ledger, String ownerLabel) {
+			return new AggregateMemory(ledger, ownerLabel);
 		}
 
 		@Override
@@ -130,7 +136,7 @@ public final class KernelRuntime {
 				reservation = null;
 			}
 			if (reservation == null) {
-				reservation = ledger.reserve(bytes, null);
+				reservation = ledger.reserve(bytes, null, ownerLabel);
 				return reservation != null;
 			}
 			return reservation.tryGrow(bytes);

@@ -32,6 +32,7 @@ import org.eclipse.rdf4j.http.protocol.UnauthorizedException;
 import org.eclipse.rdf4j.query.QueryInterruptedException;
 import org.eclipse.rdf4j.query.QueryLanguage;
 import org.eclipse.rdf4j.query.explanation.Explanation;
+import org.eclipse.rdf4j.query.explanation.ExplanationOptions;
 import org.eclipse.rdf4j.query.resultio.TupleQueryResultFormat;
 import org.eclipse.rdf4j.repository.RepositoryException;
 import org.eclipse.rdf4j.repository.config.RepositoryConfig;
@@ -433,6 +434,29 @@ public class RDF4JProtocolSessionTest extends SPARQLProtocolSessionTest {
 						.withHeader(testHeader, testValue)
 						.withHeader("Accept", "application/json")
 		);
+	}
+
+	@ParameterizedTest(name = "[{0}]")
+	@MethodSource("httpClientFactories")
+	public void testSendTelemetryExplanationIncludesConsumptionOptions(String factoryName, MockServerClient client)
+			throws Exception {
+		this.factoryName = factoryName;
+		this.sparqlSession = createProtocolSession();
+		client.when(request().withMethod("POST").withPath("/rdf4j-server/repositories/test"), Times.once())
+				.respond(response().withBody("{\"type\":\"Projection\"}")
+						.withContentType(MediaType.APPLICATION_JSON));
+		try (ExplanationOptions.Activation ignored = ExplanationOptions
+				.serialized("application/sparql-results+json")
+				.activate()) {
+			getRDF4JSession().sendQueryExplanation(QueryLanguage.SPARQL, "SELECT * WHERE { ?s ?p ?o }",
+					null, null, true, 0, Explanation.Level.Telemetry);
+		}
+		client.verify(request().withMethod("POST")
+				.withPath("/rdf4j-server/repositories/test")
+				.withQueryStringParameter("explain", "Telemetry")
+				.withQueryStringParameter("explain-consumption", "serialized")
+				.withQueryStringParameter("explain-result-mime", "application/sparql-results+json"));
+		assertThat(ExplanationOptions.current()).isEqualTo(ExplanationOptions.rows());
 	}
 
 	@ParameterizedTest(name = "[{0}]")

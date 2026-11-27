@@ -85,8 +85,14 @@ import jakarta.servlet.ServletConfig;
 import jakarta.servlet.ServletException;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
+import tools.jackson.core.JacksonException;
+import tools.jackson.core.JsonParser;
+import tools.jackson.core.JsonToken;
+import tools.jackson.core.StreamReadConstraints;
+import tools.jackson.core.json.JsonFactory;
 import tools.jackson.databind.ObjectMapper;
 import tools.jackson.databind.node.ObjectNode;
+import tools.jackson.databind.util.RawValue;
 
 public class QueryServlet extends TransformationServlet {
 
@@ -151,6 +157,11 @@ public class QueryServlet extends TransformationServlet {
 	private static final QueryEvaluator EVAL = QueryEvaluator.INSTANCE;
 
 	private static final ObjectMapper mapper = new ObjectMapper();
+	// Explanation serialization already limits its own depth to the depth of the plan. Validate the result without
+	// imposing a shallower bound when it is embedded in the response envelope.
+	private static final JsonFactory EXPLAIN_JSON_FACTORY = JsonFactory.builder()
+			.streamReadConstraints(StreamReadConstraints.builder().maxNestingDepth(Integer.MAX_VALUE).build())
+			.build();
 
 	private QueryStorage storage;
 	private QueryStorage.Lease storageLease;
@@ -863,11 +874,34 @@ public class QueryServlet extends TransformationServlet {
 			QueryEvaluator.ExplainQueryResult explainQueryResult) throws IOException {
 		ObjectNode jsonObject = mapper.createObjectNode();
 		jsonObject.put("format", explainQueryResult.getFormat());
-		jsonObject.put("content", explainQueryResult.getContent());
+		String content = explainQueryResult.getContent();
+		if ("json".equals(explainQueryResult.getFormat())) {
+			if (!isExplainJsonObject(content)) {
+				writeExplainErrorResponse(resp, HttpServletResponse.SC_INTERNAL_SERVER_ERROR,
+						"The query explanation could not be returned as a JSON object.");
+				return;
+			}
+			// Embed the validated serializer output to preserve deep plans and exact numeric tokens.
+			jsonObject.putRawValue("content", new RawValue(content));
+		} else {
+			jsonObject.put("content", content);
+		}
 		jsonObject.set("strategyDecisions", mapper.valueToTree(explainQueryResult.getStrategyDecisions()));
 		jsonObject.put("lineSeparator", System.lineSeparator());
 		jsonObject.put("timedOut", explainQueryResult.isTimedOut());
 		writeExplainJsonResponse(resp, HttpServletResponse.SC_OK, jsonObject);
+	}
+
+	private static boolean isExplainJsonObject(String content) {
+		if (content == null) {
+			return false;
+		}
+		try (JsonParser parser = EXPLAIN_JSON_FACTORY.createParser(content)) {
+			return parser.nextToken() == JsonToken.START_OBJECT && parser.skipChildren().nextToken() == null;
+		} catch (JacksonException e) {
+			LOGGER.debug("Invalid JSON returned by the explanation serializer", e);
+			return false;
+		}
 	}
 
 	private void writeExplainErrorResponse(final HttpServletResponse resp, int statusCode, String message)

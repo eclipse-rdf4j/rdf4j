@@ -620,6 +620,8 @@ final class LmdbNativeParallelKernelAggregate {
 			return debugDecline(explainTarget, "task-budget");
 		}
 		int workers = reservation.grantedWorkers();
+		ParallelTelemetry telemetry = new ParallelTelemetry(workers, tasks.size(), "TypeMatrixAggregate",
+				explainTarget);
 		NativeLmdbQuerySource.ParallelSource[] sources = null;
 		PartialMemory[] workerMemory = null;
 		PartialMemory mergeMemory = null;
@@ -654,7 +656,6 @@ final class LmdbNativeParallelKernelAggregate {
 			workerMemory = openWorkerMemories(row.memoryScope, workers, terminal.stride(),
 					emitter.layout.slotNames().length);
 			PartialMemory[] workerMemories = workerMemory;
-			ParallelTelemetry telemetry = new ParallelTelemetry(workers, tasks.size(), "TypeMatrixAggregate");
 			AtomicReference<Throwable> failure = new AtomicReference<>();
 			AtomicBoolean peerStop = new AtomicBoolean();
 			ArrayList<Future<HashMap<LongsKey, long[]>>> futures = new ArrayList<>(workers);
@@ -742,7 +743,7 @@ final class LmdbNativeParallelKernelAggregate {
 				return recoverOrRethrow(firstProblem);
 			}
 			telemetry.beginMerge();
-			mergeMemory = PartialMemory.open(row.memoryScope, 0, 0);
+			mergeMemory = PartialMemory.open(row.memoryScope, 0, 0, "parallel-aggregate-merge");
 			HashMap<LongsKey, long[]> merged = new HashMap<>();
 			Runnable cancellationPoll = () -> checkCoordinator(row, emitter);
 			int coordinatorTicks = 0;
@@ -815,6 +816,7 @@ final class LmdbNativeParallelKernelAggregate {
 			Throwable cleanupFailure = null;
 			try (NativeExecutionPhaseEvent.Span phase = NativeExecutionPhaseEvent.start("coordinator-cleanup",
 					emitter.cancellation)) {
+				telemetry.record();
 				if (mergeMemory != null) {
 					try {
 						mergeMemory.close();
@@ -1127,7 +1129,8 @@ final class LmdbNativeParallelKernelAggregate {
 			}
 		}
 		ParallelTelemetry telemetry = new ParallelTelemetry(threads, partitionCount,
-				rootOperator(rootAdjacency, rootDomain, rootWildcard, rootNodeDomainIntersection, rootScan));
+				rootOperator(rootAdjacency, rootDomain, rootWildcard, rootNodeDomainIntersection, rootScan),
+				emitter.explainTarget);
 		AtomicReference<Throwable> failure = new AtomicReference<>();
 		AtomicBoolean peerStop = new AtomicBoolean();
 		LmdbFusedSipFactorizedRuntime.Session fusedParent = LmdbFusedSipFactorizedRuntime.currentOrNull();
@@ -1245,7 +1248,7 @@ final class LmdbNativeParallelKernelAggregate {
 				telemetry.publish(emitter.explainTarget);
 				return results;
 			}
-			mergeMemory = PartialMemory.open(row.memoryScope, 0, 0);
+			mergeMemory = PartialMemory.open(row.memoryScope, 0, 0, "parallel-aggregate-merge");
 			LmdbNativeKernelBindings bindings = lowered.bindings;
 			Aggregate aggregate = (Aggregate) lowered.kernel.terminal;
 			KernelGroupLayout layout = bindings.groupLayout;
@@ -1442,6 +1445,7 @@ final class LmdbNativeParallelKernelAggregate {
 			throw problem;
 		} finally {
 			Throwable cleanupFailure = null;
+			telemetry.record();
 			cleanupFailure = KernelRuntime.closeResource(orderedCollector, cleanupFailure);
 			if (mergeHooks != null) {
 				try {
@@ -2659,7 +2663,7 @@ final class LmdbNativeParallelKernelAggregate {
 		T run() throws IOException;
 	}
 
-	/** Query-local worker-overlap and ownership evidence, published only after an exact successful merge. */
+	/** Worker-local counters reduce after futures join; partial attempts survive through the structured profile. */
 	private static final class ParallelTelemetry {
 		private final int workers;
 		private final int partitions;
@@ -2677,12 +2681,20 @@ final class LmdbNativeParallelKernelAggregate {
 		private final KernelWorkCounters[] workerCounters;
 		private final long[] workerStartNanos;
 		private final long[] workerEndNanos;
+		private final long[] workerBarrierNanos;
+		private final boolean[] workerComplete;
+		private final LmdbNativeParallelTelemetry diagnostics;
+		private final TupleExpr target;
+		private boolean successful;
+		private boolean recorded;
 		private volatile long mergeStartNanos;
 
-		private ParallelTelemetry(int workers, int partitions, String operator) {
+		private ParallelTelemetry(int workers, int partitions, String operator, TupleExpr target) {
 			this.workers = workers;
 			this.partitions = partitions;
 			this.operator = operator;
+			this.target = target;
+			this.diagnostics = LmdbNativeParallelTelemetry.capture();
 			ready = new CountDownLatch(workers);
 			startupReported = new boolean[workers];
 			morsels = new long[workers];
@@ -2691,6 +2703,8 @@ final class LmdbNativeParallelKernelAggregate {
 			workerCounters = new KernelWorkCounters[workers];
 			workerStartNanos = new long[workers];
 			workerEndNanos = new long[workers];
+			workerBarrierNanos = diagnostics == null ? null : new long[workers];
+			workerComplete = diagnostics == null ? null : new boolean[workers];
 		}
 
 		private void workerReady(int worker) throws InterruptedException {
@@ -2699,7 +2713,16 @@ final class LmdbNativeParallelKernelAggregate {
 			}
 			workersStarted.incrementAndGet();
 			finishStartup(worker);
-			start.await();
+			if (diagnostics == null) {
+				start.await();
+			} else {
+				long before = System.nanoTime();
+				try {
+					start.await();
+				} finally {
+					workerBarrierNanos[worker] = Math.max(0, System.nanoTime() - before);
+				}
+			}
 		}
 
 		/** Each slot is worker-confined; an activation failure must arrive without reporting runnable work. */
@@ -2716,7 +2739,10 @@ final class LmdbNativeParallelKernelAggregate {
 			int now = active.incrementAndGet();
 			peakActive.accumulateAndGet(now, Math::max);
 			try {
-				return task.run();
+				T result = task.run();
+				if (workerComplete != null)
+					workerComplete[worker] = true;
+				return result;
 			} finally {
 				workerEndNanos[worker] = System.nanoTime();
 				active.decrementAndGet();
@@ -2777,6 +2803,7 @@ final class LmdbNativeParallelKernelAggregate {
 		}
 
 		private void publish(TupleExpr target) {
+			successful = true;
 			LmdbNativeExplain.setRuntimeMetric(target, SELECTED_OPERATOR_METRIC, operator);
 			LmdbNativeExplain.setRuntimeMetric(target, PARTITION_COUNT_METRIC, partitions);
 			LmdbNativeExplain.setRuntimeMetric(target, WORKERS_STARTED_METRIC, workersStarted.get());
@@ -2810,6 +2837,47 @@ final class LmdbNativeParallelKernelAggregate {
 			LmdbNativeExplain.setRuntimeMetric(target, WORKER_OVERLAP_NANOS_METRIC, workerOverlapNanos());
 			long mergeNanos = mergeStartNanos == 0L ? 0L : Math.max(0L, System.nanoTime() - mergeStartNanos);
 			LmdbNativeExplain.setRuntimeMetric(target, MERGE_NANOS_METRIC, mergeNanos);
+			if (diagnostics != null) {
+				LmdbNativeParallelTelemetry.Timing timing = LmdbNativeParallelTelemetry.timing(workerStartNanos,
+						workerEndNanos);
+				LmdbNativeExplain.setRuntimeMetric(target, "nativeIrParallelWallNanosActual", timing.wallNanos());
+				LmdbNativeExplain.setRuntimeMetric(target, "nativeIrParallelWorkerActiveNanosActual",
+						timing.activeNanos());
+				LmdbNativeExplain.setRuntimeMetric(target, "nativeIrParallelEffectiveConcurrencyActual",
+						timing.effectiveConcurrency());
+				LmdbNativeExplain.setRuntimeMetric(target, "nativeIrParallelTailNanosActual", timing.tailNanos());
+				LmdbNativeExplain.setRuntimeMetric(target, "nativeIrParallelWorkerMinNanosActual", timing.minNanos());
+				LmdbNativeExplain.setRuntimeMetric(target, "nativeIrParallelWorkerMedianNanosActual",
+						timing.medianNanos());
+				LmdbNativeExplain.setRuntimeMetric(target, "nativeIrParallelWorkerMaxNanosActual", timing.maxNanos());
+				long[] durations = new long[workers];
+				for (int worker = 0; worker < workers; worker++) {
+					durations[worker] = workerStartNanos[worker] == 0 ? 0
+							: Math.max(0, workerEndNanos[worker] - workerStartNanos[worker]);
+				}
+				LmdbNativeExplain.setRuntimeMetric(target, "nativeIrParallelWorkerDurationsActual", render(durations));
+				LmdbNativeExplain.setRuntimeMetric(target, "nativeIrParallelWorkerBarrierWaitNanosActual",
+						render(workerBarrierNanos));
+				LmdbNativeExplain.setRuntimeMetric(target, "nativeIrParallelActiveTimeMeaning",
+						"elapsed worker occupancy, not CPU time");
+			}
+			LmdbNativeKernelExecution.publishKernelStages(target, total);
+		}
+
+		private void record() {
+			if (recorded || diagnostics == null)
+				return;
+			recorded = true;
+			long coordinatorNanos = mergeStartNanos == 0 ? 0 : Math.max(0, System.nanoTime() - mergeStartNanos);
+			diagnostics.record(target, operator, partitions, workerStartNanos, workerEndNanos, workerBarrierNanos,
+					rows, morsels, workerComplete, coordinatorNanos, successful);
+			if (!successful) {
+				KernelWorkCounters total = new KernelWorkCounters();
+				for (KernelWorkCounters counters : workerCounters)
+					if (counters != null)
+						total.add(counters);
+				LmdbNativeKernelExecution.publishKernelStages(target, total);
+			}
 		}
 
 		/** Returns the sum of pairwise overlaps between worker work intervals, after all workers have joined. */
@@ -2954,6 +3022,11 @@ final class LmdbNativeParallelKernelAggregate {
 		}
 
 		static PartialMemory open(LmdbNativeQueryMemoryScope memoryScope, int stride, int slotCount) {
+			return open(memoryScope, stride, slotCount, "parallel-aggregate-worker");
+		}
+
+		private static PartialMemory open(LmdbNativeQueryMemoryScope memoryScope, int stride, int slotCount,
+				String ownerLabel) {
 			if (memoryScope == null) {
 				throw new LmdbNativeKernelPartitions.ParallelKernelDecline("aggregate-memory-scope-unavailable");
 			}
@@ -2961,7 +3034,7 @@ final class LmdbNativeParallelKernelAggregate {
 			long bufferElements = bufferLength(stride);
 			long fixed = add(MAP_OBJECT_BYTES, add(OWNER_OBJECT_BYTES, DISTINCT_REGISTRY_OBJECT_BYTES));
 			fixed = add(fixed, add(arrayBytes(bufferElements, Long.BYTES), arrayBytes(slotCount, 32L)));
-			LmdbQueryMemoryManager.Reservation reservation = ledger.reserve(fixed, null);
+			LmdbQueryMemoryManager.Reservation reservation = ledger.reserve(fixed, null, ownerLabel);
 			if (reservation == null) {
 				throw new LmdbNativeKernelPartitions.ParallelKernelDecline("aggregate-memory-budget");
 			}

@@ -17,10 +17,14 @@ import java.util.ArrayList;
 import java.util.Collections;
 import java.util.Comparator;
 import java.util.HashMap;
+import java.util.IdentityHashMap;
 import java.util.Iterator;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.ServiceLoader;
 import java.util.Set;
+import java.util.TreeMap;
 import java.util.UUID;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
@@ -34,12 +38,14 @@ import org.eclipse.rdf4j.common.annotation.InternalUseOnly;
 import org.eclipse.rdf4j.common.iteration.BufferedIteration;
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.common.iteration.EmptyIteration;
+import org.eclipse.rdf4j.common.iteration.IterationWrapper;
 import org.eclipse.rdf4j.common.order.StatementOrder;
 import org.eclipse.rdf4j.common.transaction.IsolationLevel;
 import org.eclipse.rdf4j.common.transaction.IsolationLevels;
 import org.eclipse.rdf4j.common.transaction.QueryEvaluationMode;
 import org.eclipse.rdf4j.common.transaction.TransactionSetting;
 import org.eclipse.rdf4j.model.IRI;
+import org.eclipse.rdf4j.model.Literal;
 import org.eclipse.rdf4j.model.Namespace;
 import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.Statement;
@@ -48,6 +54,7 @@ import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.Dataset;
 import org.eclipse.rdf4j.query.QueryEvaluationException;
+import org.eclipse.rdf4j.query.QueryInterruptedException;
 import org.eclipse.rdf4j.query.algebra.QueryModelNode;
 import org.eclipse.rdf4j.query.algebra.QueryRoot;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
@@ -62,10 +69,20 @@ import org.eclipse.rdf4j.query.algebra.evaluation.impl.DefaultEvaluationStrategy
 import org.eclipse.rdf4j.query.algebra.helpers.AbstractQueryModelVisitor;
 import org.eclipse.rdf4j.query.algebra.helpers.QueryModelTreeToGenericPlanNode;
 import org.eclipse.rdf4j.query.explanation.Explanation;
+import org.eclipse.rdf4j.query.explanation.ExplanationExecutionException;
 import org.eclipse.rdf4j.query.explanation.ExplanationImpl;
+import org.eclipse.rdf4j.query.explanation.ExplanationOptions;
+import org.eclipse.rdf4j.query.explanation.ExplanationResultConsumerFactory;
+import org.eclipse.rdf4j.query.explanation.ExplanationResultConsumerFactory.ResultConsumer;
+import org.eclipse.rdf4j.query.explanation.ExplanationTerm;
+import org.eclipse.rdf4j.query.explanation.PhysicalPlan;
+import org.eclipse.rdf4j.query.explanation.QueryExecutionProfile.Collector;
+import org.eclipse.rdf4j.query.explanation.QueryExecutionProfile.Metric;
+import org.eclipse.rdf4j.query.explanation.QueryExecutionProfile.Stage;
 import org.eclipse.rdf4j.query.explanation.QueryExplanationContext;
 import org.eclipse.rdf4j.query.explanation.StrategyDecision;
 import org.eclipse.rdf4j.query.impl.EmptyBindingSet;
+import org.eclipse.rdf4j.rio.helpers.NTriplesUtil;
 import org.eclipse.rdf4j.sail.SailConflictException;
 import org.eclipse.rdf4j.sail.SailConnection;
 import org.eclipse.rdf4j.sail.SailException;
@@ -287,8 +304,14 @@ public abstract class SailSourceConnection extends AbstractNotifyingSailConnecti
 		SailDataset rdfDataset = null;
 		CloseableIteration<BindingSet> iteration = null;
 		SailDatasetTripleTermSource preparingSource = null;
+		Collector telemetry = QueryExplanationContext.telemetry();
 		try {
-			rdfDataset = acquireQueryDataset(tupleExpr, includeInferred);
+			long phaseStarted = startTelemetryPhase(telemetry);
+			try {
+				rdfDataset = acquireQueryDataset(tupleExpr, includeInferred);
+			} finally {
+				finishTelemetryPhase(telemetry, "sourceAcquisition", phaseStarted);
+			}
 			if (rdfDataset instanceof TreeOwnedDataset owned) {
 				// The interlock below closes the operator tree, and with it every cursor, before this dataset.
 				owned.cursorsCloseBeforeDataset();
@@ -306,7 +329,12 @@ public abstract class SailSourceConnection extends AbstractNotifyingSailConnecti
 				strategy.setTrackTime(trackTime);
 			}
 
-			tupleExpr = strategy.optimize(tupleExpr, store.getEvaluationStatistics(), bindings);
+			phaseStarted = startTelemetryPhase(telemetry);
+			try {
+				tupleExpr = strategy.optimize(tupleExpr, store.getEvaluationStatistics(), bindings);
+			} finally {
+				finishTelemetryPhase(telemetry, "optimization", phaseStarted);
+			}
 			if (runtimeTelemetryEnabled) {
 				setRuntimeTelemetryEnabled(tupleExpr, true);
 			}
@@ -314,7 +342,13 @@ public abstract class SailSourceConnection extends AbstractNotifyingSailConnecti
 				setExecutionSummaryEnabled(tupleExpr, true);
 			}
 			logger.trace("Optimized query model:\n{}", tupleExpr);
-			QueryEvaluationStep qes = strategy.precompile(tupleExpr);
+			QueryEvaluationStep qes;
+			phaseStarted = startTelemetryPhase(telemetry);
+			try {
+				qes = strategy.precompile(tupleExpr);
+			} finally {
+				finishTelemetryPhase(telemetry, "compilation", phaseStarted);
+			}
 			SlowQueryLogInfo slowQueryLogInfo = null;
 			if (slowQueryLoggingEnabled) {
 				slowQueryLogInfo = new SlowQueryLogInfo(getSailBase().getClass().getName(),
@@ -326,8 +360,13 @@ public abstract class SailSourceConnection extends AbstractNotifyingSailConnecti
 								strategy));
 			}
 
-			iteration = QueryExplanationContext.isPreview() ? new EmptyIteration<>()
-					: qes.evaluate(EmptyBindingSet.getInstance());
+			phaseStarted = startTelemetryPhase(telemetry);
+			try {
+				iteration = QueryExplanationContext.isPreview() ? new EmptyIteration<>()
+						: qes.evaluate(EmptyBindingSet.getInstance());
+			} finally {
+				finishTelemetryPhase(telemetry, "open", phaseStarted);
+			}
 			IntSupplier bufferedRows = slowQueryLoggingEnabled || !allowsBufferedQueryResult(strategy)
 					? null
 					: BufferedIteration.bufferedRowsSource(iteration);
@@ -435,13 +474,37 @@ public abstract class SailSourceConnection extends AbstractNotifyingSailConnecti
 	@Override
 	public Explanation explain(Explanation.Level level, TupleExpr tupleExpr, Dataset dataset,
 			BindingSet bindings, boolean includeInferred, int timeoutSeconds) {
+		ExplanationOptions.current().validate(level);
 		boolean queryTimedOut = false;
 		clearMetricsActual(tupleExpr);
 		TupleExpr explainedTupleExpr = tupleExpr;
 		setRuntimeTelemetryEnabled(tupleExpr, false);
 		setExecutionSummaryEnabled(tupleExpr, false);
 
+		Collector telemetry = null;
 		try (var explanationContext = QueryExplanationContext.enter(level, bindings)) {
+			telemetry = QueryExplanationContext.telemetry();
+			if (telemetry != null) {
+				telemetry.property("sail", getSailBase().getClass().getName());
+				telemetry.property("javaRuntime", System.getProperty("java.runtime.version"));
+				telemetry.property("consumptionMode", ExplanationOptions.current().consumption().wireValue());
+				telemetry.property("resultMimeType", ExplanationOptions.current().resultMimeType());
+				telemetry.property("includeInferred", Boolean.toString(includeInferred));
+				telemetry.property("queryEvaluationMode", String.valueOf(queryEvaluationMode));
+				telemetry.property("bindings", bindings == null ? "[]" : bindings.toString());
+				telemetry.property("dataset", describeTelemetryDataset(dataset));
+				telemetry.property("inputAlgebra", tupleExpr.toString());
+				telemetry.inputPlan(
+						new QueryModelTreeToGenericPlanNode(tupleExpr, Collections.emptySet(),
+								Explanation.Level.Unoptimized).getGenericPlanNode());
+				telemetry.attribute("includeInferred", includeInferred);
+				telemetry.attribute("bindings", telemetryBindings(bindings));
+				telemetry.attribute("dataset", telemetryDataset(dataset));
+				telemetry.property("timingContract",
+						"Phase durations are query-thread elapsed time. Execution includes result consumption and any deferred setup; overlapping durations must not be added.");
+				String version = getClass().getPackage().getImplementationVersion();
+				telemetry.property("rdf4jVersion", version == null ? "development" : version);
+			}
 
 			switch (level) {
 			case Telemetry:
@@ -502,6 +565,18 @@ public abstract class SailSourceConnection extends AbstractNotifyingSailConnecti
 
 			return new ExplanationImpl(converter.getGenericPlanNode(), queryTimedOut, explainedTupleExpr);
 
+		} catch (RuntimeException failure) {
+			if (telemetry != null) {
+				telemetry.finish(isCancellation(failure) ? "CANCELLED" : "FAILED",
+						failure.getClass().getSimpleName() + ": " + failure.getMessage());
+				try {
+					failure.addSuppressed(new ExplanationExecutionException(telemetry.snapshot()));
+				} catch (RuntimeException diagnosticFailure) {
+					// Diagnostic failure must never replace the evaluation exception being explained.
+					failure.addSuppressed(diagnosticFailure);
+				}
+			}
+			throw failure;
 		} finally {
 			TupleExpr reportTarget = tupleExpr instanceof QueryRoot root ? root.getArg() : tupleExpr;
 			reportTarget.setQueryModelMetadata(StrategyDecision.METADATA_KEY, null);
@@ -529,6 +604,9 @@ public abstract class SailSourceConnection extends AbstractNotifyingSailConnecti
 			protected void meetNode(QueryModelNode node) {
 				node.clearMetricsActual();
 				node.setQueryModelMetadata(StrategyDecision.METADATA_KEY, null);
+				node.removeQueryModelMetadata(PhysicalPlan.RUNTIME_METADATA_KEY);
+				node.removeQueryModelMetadata(PhysicalPlan.PLANNED_METADATA_KEY);
+				node.removeQueryModelMetadata(PhysicalPlan.ACTUAL_ATTRIBUTES_METADATA_KEY);
 				super.meetNode(node);
 			}
 		});
@@ -542,10 +620,37 @@ public abstract class SailSourceConnection extends AbstractNotifyingSailConnecti
 		return tupleExpr;
 	}
 
+	private static boolean isCancellation(Throwable failure) {
+		return isCancellation(failure, Collections.newSetFromMap(new IdentityHashMap<>()));
+	}
+
+	private static boolean isCancellation(Throwable failure, Set<Throwable> visited) {
+		boolean cancellation = false;
+		for (; failure != null; failure = failure.getCause()) {
+			// Be conservative for an unexpectedly large or cyclic exception graph: never hide an unclassified failure.
+			if (visited.size() >= 64 || !visited.add(failure)) {
+				return false;
+			}
+			if (failure instanceof QueryInterruptedException || failure instanceof InterruptedException
+					|| failure instanceof java.util.concurrent.CancellationException) {
+				cancellation = true;
+			}
+			// A genuine close failure can be suppressed on the cancellation thrown while reading the iteration.
+			for (Throwable suppressed : failure.getSuppressed()) {
+				if (!isCancellation(suppressed, visited)) {
+					return false;
+				}
+			}
+		}
+		return cancellation;
+	}
+
 	private boolean runQueryForExplain(TupleExpr tupleExpr, Dataset dataset, BindingSet bindings,
 			boolean includeInferred, int timeoutSeconds) {
 
 		AtomicBoolean timedOut = new AtomicBoolean(false);
+		Collector telemetry = QueryExplanationContext.telemetry();
+		boolean cancelled = false;
 
 		Thread currentThread = Thread.currentThread();
 
@@ -565,23 +670,50 @@ public abstract class SailSourceConnection extends AbstractNotifyingSailConnecti
 		try {
 			selfInterruptOnTimeoutThread.start();
 
-			try (CloseableIteration<? extends BindingSet> evaluate = evaluate(tupleExpr,
-					dataset, bindings, includeInferred)) {
-				while (evaluate.hasNext()) {
-					if (Thread.interrupted()) {
-						break;
+			try (CloseableIteration<? extends BindingSet> evaluate = timeExplainCleanup(
+					evaluate(tupleExpr, dataset, bindings, includeInferred), telemetry)) {
+				if (telemetry == null) {
+					while (evaluate.hasNext()) {
+						if (Thread.interrupted()) {
+							break;
+						}
+						evaluate.next();
 					}
-					evaluate.next();
+				} else {
+					try (TelemetryConsumption consumption = new TelemetryConsumption(telemetry,
+							ExplanationOptions.current(), getTupleExprForExplanation(tupleExpr))) {
+						long iterationStarted = System.nanoTime();
+						try {
+							while (evaluate.hasNext()) {
+								if (Thread.interrupted()) {
+									cancelled = true;
+									break;
+								}
+								consumption.accept(evaluate.next());
+							}
+							// An interrupted delegate can end hasNext() without entering the loop body.
+							cancelled |= currentThread.isInterrupted();
+							if (!cancelled && !timedOut.get()) {
+								consumption.finish();
+							}
+						} finally {
+							finishTelemetryPhase(telemetry, "execution", iterationStarted);
+						}
+					}
 				}
 			} catch (Exception e) {
 				if (e instanceof InterruptedException) {
 					Thread.currentThread().interrupt();
 				}
-				if (!timedOut.get()) {
+				if (!timedOut.get() || (telemetry != null && !isCancellation(e))) {
 					throw e;
 				}
 			}
 
+			if (telemetry != null) {
+				telemetry.finish(timedOut.get() ? "TIMED_OUT" : cancelled ? "CANCELLED" : "COMPLETE",
+						timedOut.get() ? "Explanation execution timeout" : cancelled ? "Consumer interrupted" : null);
+			}
 			return timedOut.get();
 
 		} finally {
@@ -596,6 +728,229 @@ public abstract class SailSourceConnection extends AbstractNotifyingSailConnecti
 			Thread.interrupted();
 		}
 
+	}
+
+	private static Map<String, ExplanationTerm> telemetryBindings(BindingSet bindings) {
+		if (bindings == null || bindings.isEmpty()) {
+			return Collections.emptyMap();
+		}
+		Map<String, ExplanationTerm> terms = new TreeMap<>();
+		for (var binding : bindings) {
+			if (binding.getValue() != null) {
+				terms.put(binding.getName(), ExplanationTerm.fromValue(binding.getValue()));
+			}
+		}
+		return Collections.unmodifiableMap(terms);
+	}
+
+	private static Map<String, Object> telemetryDataset(Dataset dataset) {
+		if (dataset == null) {
+			return Map.of("repositoryDefault", true);
+		}
+		Map<String, Object> attributes = new LinkedHashMap<>();
+		attributes.put("repositoryDefault", false);
+		attributes.put("explicitReadDataset", dataset.isExplicitReadDataset());
+		putGraphTerms(attributes, "defaultGraphs", dataset.getDefaultGraphResources());
+		putGraphTerms(attributes, "namedGraphs", dataset.getNamedGraphResources());
+		putGraphTerms(attributes, "defaultRemoveGraphs", dataset.getDefaultRemoveGraphResources());
+		Resource defaultInsertGraph = dataset.getDefaultInsertGraphResource();
+		if (defaultInsertGraph != null) {
+			attributes.put("defaultInsertGraph", ExplanationTerm.fromValue(defaultInsertGraph));
+		}
+		return Collections.unmodifiableMap(attributes);
+	}
+
+	private static void putGraphTerms(Map<String, Object> attributes, String name, Set<Resource> graphs) {
+		if (graphs != null) {
+			attributes.put(name, graphs.stream()
+					.sorted(Comparator.nullsFirst(Comparator.comparing(Resource::stringValue)))
+					.map(ExplanationTerm::fromValue)
+					.toList());
+		}
+	}
+
+	private static String describeTelemetryDataset(Dataset dataset) {
+		if (dataset == null) {
+			return "repository default";
+		}
+		return "explicitReadDataset=" + dataset.isExplicitReadDataset()
+				+ ";defaultGraphs=" + describeTelemetryGraphs(dataset.getDefaultGraphResources())
+				+ ";namedGraphs=" + describeTelemetryGraphs(dataset.getNamedGraphResources())
+				+ ";defaultRemoveGraphs=" + describeTelemetryGraphs(dataset.getDefaultRemoveGraphResources())
+				+ ";defaultInsertGraph=" + describeTelemetryGraph(dataset.getDefaultInsertGraphResource());
+	}
+
+	private static String describeTelemetryGraphs(Set<Resource> graphs) {
+		if (graphs == null) {
+			return "unspecified";
+		}
+		List<String> names = new ArrayList<>(graphs.size());
+		for (Resource graph : graphs) {
+			names.add(describeTelemetryGraph(graph));
+		}
+		Collections.sort(names);
+		return names.toString();
+	}
+
+	private static String describeTelemetryGraph(Resource graph) {
+		return graph == null ? "DEFAULT" : NTriplesUtil.toNTriplesString(graph);
+	}
+
+	private static long startTelemetryPhase(Collector telemetry) {
+		return telemetry == null ? 0L : System.nanoTime();
+	}
+
+	private static void finishTelemetryPhase(Collector telemetry, String name, long started) {
+		if (telemetry != null) {
+			telemetry.phase(name, Math.max(0L, System.nanoTime() - started), "query-thread elapsed; inclusive");
+		}
+	}
+
+	private static CloseableIteration<? extends BindingSet> timeExplainCleanup(
+			CloseableIteration<? extends BindingSet> iteration, Collector telemetry) {
+		if (telemetry == null) {
+			return iteration;
+		}
+		return new IterationWrapper<BindingSet>(iteration) {
+			@Override
+			protected void handleClose() {
+				long started = System.nanoTime();
+				try {
+					super.handleClose();
+				} finally {
+					finishTelemetryPhase(telemetry, "cleanup", started);
+				}
+			}
+		};
+	}
+
+	/** One explicit consumer per explanation, keeping lazy row-only execution free of per-row clock reads. */
+	private static final class TelemetryConsumption implements AutoCloseable {
+		private final Collector telemetry;
+		private final ExplanationOptions options;
+		private final ResultConsumer writer;
+		private long rows;
+		private long values;
+		private long consumptionNanos;
+		private boolean completed;
+
+		private TelemetryConsumption(Collector telemetry, ExplanationOptions options, TupleExpr expression) {
+			this.telemetry = telemetry;
+			this.options = options;
+			long started = System.nanoTime();
+			try {
+				this.writer = options.consumption() == ExplanationOptions.Consumption.SERIALIZED
+						? createWriter(options.resultMimeType(), List.copyOf(expression.getBindingNames()))
+						: null;
+			} finally {
+				consumptionNanos = Math.max(0L, System.nanoTime() - started);
+			}
+		}
+
+		private static ResultConsumer createWriter(String mimeType, List<String> names) {
+			for (ExplanationResultConsumerFactory factory : ServiceLoader
+					.load(ExplanationResultConsumerFactory.class)) {
+				ResultConsumer consumer = factory.create(mimeType, names);
+				if (consumer != null) {
+					return consumer;
+				}
+			}
+			throw new QueryEvaluationException(
+					"No tuple result writer is available for telemetry MIME type " + mimeType);
+		}
+
+		private void accept(BindingSet row) {
+			rows++;
+			if (options.consumption() == ExplanationOptions.Consumption.ROWS) {
+				return;
+			}
+			long started = System.nanoTime();
+			try {
+				if (writer != null) {
+					writer.accept(row);
+				} else {
+					for (var binding : row) {
+						Value value = binding.getValue();
+						value.stringValue();
+						if (value instanceof Literal literal) {
+							literal.getDatatype().stringValue();
+							literal.getLanguage();
+						}
+						values++;
+					}
+				}
+			} finally {
+				consumptionNanos += Math.max(0L, System.nanoTime() - started);
+			}
+		}
+
+		private void finish() {
+			if (writer != null) {
+				long started = System.nanoTime();
+				try {
+					writer.finish();
+				} finally {
+					consumptionNanos += Math.max(0L, System.nanoTime() - started);
+				}
+			}
+			completed = true;
+		}
+
+		@Override
+		public void close() {
+			Throwable closeFailure = null;
+			long started = writer == null ? 0L : System.nanoTime();
+			try {
+				if (writer != null) {
+					writer.close();
+				}
+			} catch (RuntimeException | Error failure) {
+				completed = false;
+				closeFailure = failure;
+				throw failure;
+			} finally {
+				if (writer != null) {
+					consumptionNanos += Math.max(0L, System.nanoTime() - started);
+				}
+				try {
+					publish();
+				} catch (RuntimeException | Error diagnosticFailure) {
+					if (closeFailure == null) {
+						throw diagnosticFailure;
+					}
+					if (closeFailure != diagnosticFailure) {
+						closeFailure.addSuppressed(diagnosticFailure);
+					}
+				}
+			}
+		}
+
+		private void publish() {
+			String state = completed ? "complete" : "partial";
+			Map<String, Metric> metrics = new HashMap<>();
+			metrics.put("rowsConsumed", new Metric(rows, null, "rows", "measured", state, "self"));
+			if (options.consumption() != ExplanationOptions.Consumption.ROWS) {
+				metrics.put("activeNanos",
+						new Metric(consumptionNanos, null, "ns", "measured", state, "query-thread active"));
+				telemetry.phase("resultConsumption", consumptionNanos,
+						"query-thread active; included in execution except writer initialization and close");
+			}
+			if (options.consumption() == ExplanationOptions.Consumption.VALUES) {
+				metrics.put("valuesRead", new Metric(values, null, "values", "measured", state, "self"));
+			}
+			if (writer != null) {
+				metrics.put("serializedBytes",
+						new Metric(writer.bytesWritten(), null, "bytes", "measured", state, "self"));
+			}
+			Map<String, String> properties = new HashMap<>();
+			properties.put("consumptionMode", options.consumption().wireValue());
+			properties.put("networkDelivery", "not measured");
+			if (options.resultMimeType() != null) {
+				properties.put("resultMimeType", options.resultMimeType());
+			}
+			telemetry.stage(new Stage("query/resultConsumption", null, "0", "ResultConsumption", "sail",
+					options.consumption().wireValue(), completed ? "COMPLETE" : "PARTIAL", metrics, properties));
+		}
 	}
 
 	private static void setRuntimeTelemetryEnabled(TupleExpr tupleExpr, boolean enabled) {

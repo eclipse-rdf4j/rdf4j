@@ -48,6 +48,7 @@ import org.eclipse.rdf4j.query.algebra.evaluation.function.OrderByHint;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.QueryEvaluationContext;
 import org.eclipse.rdf4j.query.algebra.evaluation.util.QueryEvaluationUtility;
 import org.eclipse.rdf4j.query.algebra.evaluation.util.ValueComparator;
+import org.eclipse.rdf4j.query.explanation.PhysicalPlan.Operator;
 
 /**
  * Semantic native solution-modifier pipeline for wrapper stacks that cannot be flattened into one slot-row root. Stages
@@ -156,9 +157,7 @@ final class NativeRootPipeline {
 		if (topK) {
 			LmdbNativeAggregateCompiler.TOP_K_ROOTS.incrementAndGet();
 		}
-		String innerPlan = step instanceof LmdbNativePhysicalPlan physical ? physical.nativePhysicalPlan()
-				: step.getClass().getSimpleName();
-		return new PipelineStep(step, "RootPipeline(stages=[" + stages + "], plan=" + innerPlan + ")");
+		return new PipelineStep(step, stages.toString());
 	}
 
 	private static boolean boundedTopK(Slice slice) {
@@ -196,11 +195,11 @@ final class NativeRootPipeline {
 
 	static final class PipelineStep implements QueryEvaluationStep, LmdbNativePhysicalPlan {
 		private final QueryEvaluationStep staged;
-		private final String physicalPlan;
+		private final String stages;
 
-		private PipelineStep(QueryEvaluationStep staged, String physicalPlan) {
+		private PipelineStep(QueryEvaluationStep staged, String stages) {
 			this.staged = staged;
-			this.physicalPlan = physicalPlan;
+			this.stages = stages;
 		}
 
 		@Override
@@ -214,8 +213,17 @@ final class NativeRootPipeline {
 		}
 
 		@Override
-		public String nativePhysicalPlan() {
-			return physicalPlan;
+		public Operator physicalOperator(boolean resolveRdfTerms) {
+			return new Operator("RootPipeline",
+					Map.of("plan", LmdbPhysicalPlanDescription.step(staged, resolveRdfTerms)));
+		}
+
+		@Override
+		public String nativePhysicalPlan(boolean resolveRdfTerms) {
+			String innerPlan = staged instanceof LmdbNativePhysicalPlan physical
+					? physical.nativePhysicalPlan(resolveRdfTerms)
+					: staged.getClass().getSimpleName();
+			return "RootPipeline(stages=[" + stages + "], plan=" + innerPlan + ")";
 		}
 	}
 
@@ -257,7 +265,13 @@ final class NativeRootPipeline {
 		}
 
 		@Override
-		public String nativePhysicalPlan() {
+		public Operator physicalOperator(boolean resolveRdfTerms) {
+			return new Operator("NativeTopK", Map.of("offset", offset, "limit", limit, "keys", keys.length, "arg",
+					LmdbPhysicalPlanDescription.step(arg, resolveRdfTerms)));
+		}
+
+		@Override
+		public String nativePhysicalPlan(boolean resolveRdfTerms) {
 			return "NativeTopK(offset=" + offset + ", limit=" + limit + ", keys=" + keys.length + ")";
 		}
 	}
@@ -463,7 +477,13 @@ final class NativeRootPipeline {
 		}
 
 		@Override
-		public String nativePhysicalPlan() {
+		public Operator physicalOperator(boolean resolveRdfTerms) {
+			return new Operator("NativeSlice", Map.of("offset", offset, "limit", limit, "arg",
+					LmdbPhysicalPlanDescription.step(arg, resolveRdfTerms)));
+		}
+
+		@Override
+		public String nativePhysicalPlan(boolean resolveRdfTerms) {
 			return "NativeSlice(offset=" + offset + ", limit=" + limit + ")";
 		}
 	}
@@ -587,7 +607,13 @@ final class NativeRootPipeline {
 		}
 
 		@Override
-		public String nativePhysicalPlan() {
+		public Operator physicalOperator(boolean resolveRdfTerms) {
+			return new Operator("NativeDistinct",
+					Map.of("arg", LmdbPhysicalPlanDescription.step(arg, resolveRdfTerms)));
+		}
+
+		@Override
+		public String nativePhysicalPlan(boolean resolveRdfTerms) {
 			return "NativeDistinct";
 		}
 	}
@@ -702,7 +728,13 @@ final class NativeRootPipeline {
 		}
 
 		@Override
-		public String nativePhysicalPlan() {
+		public Operator physicalOperator(boolean resolveRdfTerms) {
+			return new Operator("NativeOrder",
+					Map.of("keys", keys.length, "arg", LmdbPhysicalPlanDescription.step(arg, resolveRdfTerms)));
+		}
+
+		@Override
+		public String nativePhysicalPlan(boolean resolveRdfTerms) {
 			return "NativeOrder(keys=" + keys.length + ")";
 		}
 	}

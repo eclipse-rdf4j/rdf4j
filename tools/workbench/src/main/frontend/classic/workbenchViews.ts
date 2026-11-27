@@ -4587,10 +4587,10 @@ namespace workbench {
                 <div id=${'query-explanation-status' + suffix} class="query-explanation-status" aria-live="polite"></div>
                 <div class="query-explanation-surface"><div id=${'query-explanation-overlay' + suffix}
                     class="query-explanation-overlay" aria-hidden="true"></div>
-                    ${compare ? h`<pre id="query-explanation-compare" data-format=${selectedFormat}
-                        ?hidden=${!queryFeatureEnabled(context, 'explain-view-text')}>${explanation}</pre>`
-                        : h`<pre id="query-explanation" data-format=${selectedFormat}
-                            ?hidden=${!queryFeatureEnabled(context, 'explain-view-text')}>${explanation}</pre>`}
+                    ${compare ? h`<div id="query-explanation-compare" data-format=${selectedFormat}
+                        ?hidden=${!queryFeatureEnabled(context, 'explain-view-text')}>${explanation}</div>`
+                        : h`<div id="query-explanation" data-format=${selectedFormat}
+                            ?hidden=${!queryFeatureEnabled(context, 'explain-view-text')}>${explanation}</div>`}
                     ${compare ? h`<div id="query-explanation-dot-view-compare"
                         ?hidden=${!queryFeatureEnabled(context, 'explain-view-dot')}></div>`
                         : h`<div id="query-explanation-dot-view"
@@ -4979,7 +4979,7 @@ namespace workbench {
                                 @click=${() => invoke('workbench.query.closeDiffModal')}>Close</button></div>
                         <div class="query-diff-modal__body">
                             <section class="query-diff-section query-diff-section--query"><div class="query-diff-section__title">Query</div><div id="query-diff-query" class="query-diff-view"></div></section>
-                            <section class="query-diff-section query-diff-section--explanation"><div class="query-diff-section__title">Explanation</div><div id="query-diff-explanation" class="query-diff-view">Comparison is not ready.</div></section>
+                            <section class="query-diff-section query-diff-section--explanation"><div class="query-diff-section__title">Explanation</div><pre id="query-diff-profile" class="query-profile-comparison" hidden></pre><div id="query-diff-explanation" class="query-diff-view">Comparison is not ready.</div></section>
                         </div>
                     </div>
                 </div>

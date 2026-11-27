@@ -12,26 +12,32 @@
 package org.eclipse.rdf4j.http.server.repository.transaction;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
 import java.util.HashMap;
 import java.util.Map;
+import java.util.concurrent.ExecutionException;
 import java.util.concurrent.atomic.AtomicReference;
 
+import org.eclipse.rdf4j.http.client.QueryLoggingContext;
 import org.eclipse.rdf4j.query.BooleanQuery;
 import org.eclipse.rdf4j.query.GraphQuery;
 import org.eclipse.rdf4j.query.GraphQueryResult;
 import org.eclipse.rdf4j.query.Query;
+import org.eclipse.rdf4j.query.QueryEvaluationException;
 import org.eclipse.rdf4j.query.TupleQuery;
 import org.eclipse.rdf4j.query.TupleQueryResult;
 import org.eclipse.rdf4j.query.explanation.Explanation;
+import org.eclipse.rdf4j.query.explanation.ExplanationOptions;
 import org.eclipse.rdf4j.repository.Repository;
 import org.eclipse.rdf4j.repository.RepositoryConnection;
 import org.eclipse.rdf4j.rio.ParserConfig;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.EnumSource;
+import org.junit.jupiter.params.provider.ValueSource;
 import org.slf4j.MDC;
 
 class TransactionQueryLoggingContextTest {
@@ -44,6 +50,74 @@ class TransactionQueryLoggingContextTest {
 			MDC.clear();
 		} else {
 			MDC.setContextMap(originalMdc);
+		}
+	}
+
+	@ParameterizedTest
+	@ValueSource(booleans = { false, true })
+	void telemetryOptionsAndLoggingContextAreRestoredOnReusableWorker(boolean fail) throws Exception {
+		Repository repository = mock(Repository.class);
+		RepositoryConnection connection = mock(RepositoryConnection.class);
+		TupleQuery query = mock(TupleQuery.class);
+		Explanation explanation = mock(Explanation.class);
+		QueryEvaluationException failure = new QueryEvaluationException("expected explain failure");
+		when(repository.getConnection()).thenReturn(connection);
+		when(connection.getParserConfig()).thenReturn(new ParserConfig());
+		AtomicReference<Map<String, String>> observedLogging = new AtomicReference<>();
+		AtomicReference<ExplanationOptions> observedOptions = new AtomicReference<>();
+		AtomicReference<Thread> evaluationThread = new AtomicReference<>();
+		when(query.explain(Explanation.Level.Telemetry)).thenAnswer(invocation -> {
+			observedLogging.set(QueryLoggingContext.capture());
+			observedOptions.set(ExplanationOptions.current());
+			evaluationThread.set(Thread.currentThread());
+			if (fail) {
+				throw failure;
+			}
+			return explanation;
+		});
+		AtomicReference<Map<String, String>> workerLogging = new AtomicReference<>();
+		AtomicReference<ExplanationOptions> workerOptions = new AtomicReference<>();
+		AtomicReference<Thread> probeThread = new AtomicReference<>();
+		when(connection.getNamespace("probe")).thenAnswer(invocation -> {
+			workerLogging.set(QueryLoggingContext.captureMdc());
+			workerOptions.set(ExplanationOptions.current());
+			probeThread.set(Thread.currentThread());
+			return null;
+		});
+		try (Transaction transaction = new Transaction(repository)) {
+			transaction.getNamespace("probe");
+			Map<String, String> workerLoggingBefore = workerLogging.get();
+			ExplanationOptions workerOptionsBefore = workerOptions.get();
+			Thread ownerThread = probeThread.get();
+			ExplanationOptions requested = ExplanationOptions.serialized("application/sparql-results+json");
+			try (var logging = QueryLoggingContext.activateMdc(Map.of(QueryLoggingContext.SERVER_REQUEST_ID,
+					"telemetry-request", QueryLoggingContext.REPOSITORY_ID, "test-repo",
+					QueryLoggingContext.TRACE_ID, "trace-one")); var options = ExplanationOptions.values().activate()) {
+				Map<String, String> callerLoggingBefore = QueryLoggingContext.captureMdc();
+				if (fail) {
+					assertThatThrownBy(() -> transaction.explain(null, query, Explanation.Level.Telemetry, requested))
+							.isInstanceOf(ExecutionException.class)
+							.hasCause(failure);
+				} else {
+					assertThat(transaction.explain(null, query, Explanation.Level.Telemetry, requested))
+							.isSameAs(explanation);
+				}
+				assertThat(observedOptions).hasValue(requested);
+				assertThat(observedLogging.get()).containsEntry("serverRequestId", "telemetry-request")
+						.containsEntry("repositoryId", "test-repo")
+						.containsEntry("transactionId", transaction.getID().toString())
+						.containsEntry("traceId", "trace-one");
+				assertThat(evaluationThread).hasValue(ownerThread);
+				assertThat(ownerThread).isNotSameAs(Thread.currentThread());
+				assertThat(ExplanationOptions.current()).isEqualTo(ExplanationOptions.values());
+				assertThat(QueryLoggingContext.captureMdc()).isEqualTo(callerLoggingBefore);
+
+				// Probe the same worker without query scopes to expose state leaked after either outcome.
+				transaction.getNamespace("probe");
+				assertThat(probeThread).hasValue(ownerThread);
+				assertThat(workerOptions).hasValue(workerOptionsBefore);
+				assertThat(workerLogging).hasValue(workerLoggingBefore);
+			}
 		}
 	}
 

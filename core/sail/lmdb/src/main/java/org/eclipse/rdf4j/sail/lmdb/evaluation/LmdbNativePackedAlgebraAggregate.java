@@ -82,7 +82,7 @@ final class LmdbNativePackedAlgebraAggregate {
 		String tag = allowParallel ? LmdbNativeAttemptMetrics.PATH_PACKED_FTREE_AGGREGATE
 				: LmdbNativePackedFtree.AGGREGATE_SERIAL;
 		if (row.runtimePlan != null)
-			row.runtimePlan.activate(tag, new SlotPlan[] { plan });
+			row.runtimePlan.activate(row.source, tag, new SlotPlan[] { plan });
 		LmdbNativeExplain.recordExecutionPath(explainTarget, tag);
 		return results;
 	}

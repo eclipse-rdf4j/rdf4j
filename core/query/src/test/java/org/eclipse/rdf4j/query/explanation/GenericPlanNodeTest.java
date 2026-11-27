@@ -37,6 +37,50 @@ import tools.jackson.databind.json.JsonMapper;
 
 class GenericPlanNodeTest {
 
+	@Test
+	void overlappingChildTimesNeverInventParentElapsedTime() {
+		GenericPlanNode parent = new GenericPlanNode("Join");
+		parent.setTotalTimeActual(8D);
+		GenericPlanNode child = new GenericPlanNode("StatementPattern");
+		child.setTotalTimeActual(24D);
+		parent.addPlans(child);
+		assertEquals(8D, parent.getTotalTimeActual());
+		assertNull(parent.getSelfTimeActual());
+	}
+
+	@Test
+	void telemetryDoesNotInventConfidenceOrCompareMillisecondsWithAbstractCost() {
+		GenericPlanNode node = new GenericPlanNode("Join");
+		node.setCostEstimate(10D);
+		node.setTotalTimeActual(100D);
+		GenericPlanNode child = new GenericPlanNode("StatementPattern");
+		child.setResultSizeEstimate(10D);
+		child.setResultSizeActual(100L);
+		node.addPlans(child);
+		node.applyExplanationLevel(Explanation.Level.Telemetry);
+
+		String text = node.toString();
+		assertFalse(text.contains("confidenceScoreActual="), text);
+		assertFalse(text.contains("sampleCountActual="), text);
+		assertFalse(text.contains("costErrorRatio="), text);
+	}
+
+	@Test
+	void telemetryHasARequestScopedStructuredProfile() throws ReflectiveOperationException {
+		var method = QueryExplanationContext.class.getMethod("telemetry");
+		assertNull(method.invoke(null));
+		try (var context = QueryExplanationContext.enter(Explanation.Level.Telemetry)) {
+			Object collector = method.invoke(null);
+			assertNotNull(collector);
+			try (var nested = QueryExplanationContext.enter(Explanation.Level.Executed)) {
+				assertNull(method.invoke(null));
+			}
+			assertTrue(collector == method.invoke(null));
+		}
+		assertNull(method.invoke(null));
+		assertNotNull(GenericPlanNode.class.getMethod("getExecutionProfile"));
+	}
+
 	private Locale defaultLocale;
 
 	@BeforeEach
@@ -172,7 +216,7 @@ class GenericPlanNodeTest {
 	}
 
 	@Test
-	void toStringDerivesEstimateStabilityStatsFromChildPlans() {
+	void childEstimateErrorsAreNotReportedAsStatisticalConfidence() {
 		GenericPlanNode node = new GenericPlanNode("Join");
 		node.setCostEstimate(1.0);
 
@@ -188,10 +232,10 @@ class GenericPlanNodeTest {
 
 		String actual = node.toString();
 
-		assertTrue(actual.contains("sampleCountActual=2"), actual);
-		assertTrue(actual.contains("varianceActual="), actual);
-		assertTrue(actual.contains("stddevActual="), actual);
-		assertTrue(actual.contains("confidenceScoreActual="), actual);
+		assertFalse(actual.contains("sampleCountActual="), actual);
+		assertFalse(actual.contains("varianceActual="), actual);
+		assertFalse(actual.contains("stddevActual="), actual);
+		assertFalse(actual.contains("confidenceScoreActual="), actual);
 	}
 
 	@Test
@@ -561,7 +605,7 @@ class GenericPlanNodeTest {
 		assertTrue(left.getSourceRowsScannedActual() > 0);
 		String telemetry = parent.toString();
 		assertTrue(telemetry.contains("sampleCountActual="), telemetry);
-		assertTrue(telemetry.contains("varianceActual="), telemetry);
+		assertFalse(telemetry.contains("varianceActual="), telemetry);
 	}
 
 	@Test
@@ -574,6 +618,46 @@ class GenericPlanNodeTest {
 
 		assertTrue(telemetry.contains("nativeAdjacencyNeighborIdsDecodedActual=0"), telemetry);
 		assertFalse(telemetry.contains("nativeAdjacencyContextIdsDecodedActual="), telemetry);
+	}
+
+	@Test
+	void structuredFieldsRoundTripAlongsideCompatibilityText() {
+		ObjectMapper mapper = JsonMapper.builder().build();
+		GenericPlanNode plan = mapper.readValue("""
+				{
+				  "type": "Slice (limit=100)",
+				  "operator": "Slice",
+				  "arguments": {"limit": 100},
+				  "actualAttributes": {"nativeDecisionOutcome": {"winner": "irKernel", "expectedNanos": 123}},
+				  "physicalPlanPrelude": "legacy plan",
+				  "plannedPhysicalPlan": {"engine": "lmdb-native", "state": "planned", "kind": "row",
+				    "plan": {"name": "NativeRows", "arguments": {"limit": 100}}},
+				  "physicalPlans": [{"engine": "lmdb-native", "state": "executed", "invocations": [
+				    {"opens": 1, "actualOrder": [{"name": "Pattern", "arguments": {"s": {"kind": "slot", "slot": 0}}}]}
+				  ]}],
+				  "executionProfile": {"schemaVersion": 1, "status": "COMPLETE", "elapsedNanos": 42,
+				    "inputPlan": {"type": "Var (name=s)", "operator": "Var", "arguments": {"name": "s"}},
+				    "stages": [{"id": "root", "operator": "Native invocation", "status": "COMPLETE",
+				      "attributes": {"used": true, "rowOrder": ["s", "p", "o"]}}]}
+				}
+				""", GenericPlanNode.class);
+		JsonNode json = mapper.readTree(new ExplanationImpl(plan, false, null).toJson());
+		assertEquals("Slice", json.path("operator").asText());
+		assertEquals(100, json.path("arguments").path("limit").asInt());
+		assertEquals(123, json.path("actualAttributes").path("nativeDecisionOutcome").path("expectedNanos").asInt());
+		assertEquals("NativeRows", json.path("plannedPhysicalPlan").path("plan").path("name").asText());
+		assertEquals("operator", json.path("plannedPhysicalPlan").path("plan").path("kind").asText());
+		assertEquals("Pattern", json.path("physicalPlans")
+				.path(0)
+				.path("invocations")
+				.path(0)
+				.path("actualOrder")
+				.path(0)
+				.path("name")
+				.asText());
+		assertEquals("Var", json.path("executionProfile").path("inputPlan").path("operator").asText());
+		assertTrue(json.path("executionProfile").path("stages").path(0).path("attributes").path("used").asBoolean());
+		assertTrue(plan.toString().startsWith("legacy plan"));
 	}
 
 	@Test
@@ -808,6 +892,46 @@ class GenericPlanNodeTest {
 		IllegalArgumentException error = assertThrows(IllegalArgumentException.class,
 				() -> new ExplanationImpl(root, false, null).toJson());
 		assertTrue(error.getMessage().toLowerCase(Locale.ROOT).contains("cycle"), error.getMessage());
+	}
+
+	@Test
+	void toJsonAccountsForDeepPhysicalAndInputPlans() {
+		GenericPlanNode root = new GenericPlanNode("root");
+		GenericPlanNode input = new GenericPlanNode("leaf");
+		PhysicalPlan.Operator physical = new PhysicalPlan.Operator("Pattern", null);
+		for (int i = 0; i < 260; i++) {
+			GenericPlanNode parent = new GenericPlanNode("input");
+			parent.addPlans(input);
+			input = parent;
+			physical = new PhysicalPlan.Operator("Filter", Map.of("arg", physical));
+		}
+		root.setPhysicalPlans(List.of(new PhysicalPlan("example", "planned", "row", physical, null)));
+		QueryExecutionProfile.Collector collector = new QueryExecutionProfile.Collector();
+		collector.inputPlan(input);
+		root.setExecutionProfile(collector.snapshot());
+
+		ObjectMapper reader = JsonMapper.builder(JsonFactory.builder()
+				.streamReadConstraints(StreamReadConstraints.builder().maxNestingDepth(600).build())
+				.build()).build();
+		JsonNode json = reader.readTree(new ExplanationImpl(root, false, null).toJson());
+		JsonNode inputNode = json.path("executionProfile").path("inputPlan");
+		JsonNode physicalNode = json.path("physicalPlans").path(0).path("plan");
+		for (int i = 0; i < 260; i++) {
+			inputNode = inputNode.path("plans").path(0);
+			physicalNode = physicalNode.path("arguments").path("arg");
+		}
+		assertEquals("leaf", inputNode.path("type").asText());
+		assertEquals("Pattern", physicalNode.path("name").asText());
+	}
+
+	@Test
+	void toJsonRejectsCyclesThroughProfileInput() {
+		GenericPlanNode root = new GenericPlanNode("root");
+		QueryExecutionProfile.Collector collector = new QueryExecutionProfile.Collector();
+		collector.inputPlan(root);
+		root.setExecutionProfile(collector.snapshot());
+
+		assertThrows(IllegalArgumentException.class, () -> new ExplanationImpl(root, false, null).toJson());
 	}
 
 	public static final class PlanWithNestedMetadata extends GenericPlanNode {

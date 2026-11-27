@@ -91,6 +91,7 @@ import org.eclipse.rdf4j.query.TupleQuery;
 import org.eclipse.rdf4j.query.UnsupportedQueryLanguageException;
 import org.eclipse.rdf4j.query.UpdateExecutionException;
 import org.eclipse.rdf4j.query.explanation.Explanation;
+import org.eclipse.rdf4j.query.explanation.ExplanationOptions;
 import org.eclipse.rdf4j.query.impl.IteratingTupleQueryResult;
 import org.eclipse.rdf4j.query.impl.ListBindingSet;
 import org.eclipse.rdf4j.query.impl.SimpleDataset;
@@ -546,7 +547,21 @@ public class TransactionController extends AbstractController implements Disposa
 							"Tracked query explanations are only supported through the workbench UI.");
 				}
 				try {
-					Explanation explanation = txn.explain(breakerHandle, query, explainLevel.get());
+					ExplanationOptions options;
+					try {
+						options = ExplanationOptions.fromParameters(
+								request.getParameter(Protocol.EXPLAIN_CONSUMPTION_PARAM_NAME),
+								request.getParameter(Protocol.EXPLAIN_RESULT_MIME_PARAM_NAME));
+						options.validate(explainLevel.get());
+						if (options.consumption() == ExplanationOptions.Consumption.SERIALIZED
+								&& !(query instanceof TupleQuery)) {
+							throw new IllegalArgumentException(
+									"Serialized Telemetry consumption requires a tuple query.");
+						}
+					} catch (IllegalArgumentException e) {
+						throw new ClientHTTPException(SC_BAD_REQUEST, e.getMessage(), e);
+					}
+					Explanation explanation = txn.explain(breakerHandle, query, explainLevel.get(), options);
 					queryCircuitBreaker.complete(breakerHandle);
 					breakerHandle = null;
 					return explanation == null ? null : getExplainQueryResponse(explanation);

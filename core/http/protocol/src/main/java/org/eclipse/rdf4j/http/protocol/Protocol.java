@@ -238,6 +238,12 @@ public abstract class Protocol {
 
 	public static final String EXPLAIN_PARAM_NAME = "explain";
 
+	/** Explicit Telemetry workload: rows (default), values, or serialized. */
+	public static final String EXPLAIN_CONSUMPTION_PARAM_NAME = "explain-consumption";
+
+	/** Tuple result writer MIME type used by serialized Telemetry consumption. */
+	public static final String EXPLAIN_RESULT_MIME_PARAM_NAME = "explain-result-mime";
+
 	public static final String EXPLAIN_REQUEST_ID_PARAM_NAME = "explain-request-id";
 
 	public static final String CANCEL_EXPLAIN_PARAM_NAME = "cancel-explain";

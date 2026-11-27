@@ -41,7 +41,7 @@ final class NativeBoundedDistinct implements AutoCloseable {
 		this.context = context;
 		this.cancellation = cancellation;
 		this.ledger = ledger;
-		this.memory = KernelRuntime.AggregateMemory.forLedger(ledger);
+		this.memory = KernelRuntime.AggregateMemory.forLedger(ledger, "bounded-distinct");
 		int width = rowSlots == null ? 1 : rowSlots.length;
 		NativeExpressionDomain.Membership acquired = null;
 		try {

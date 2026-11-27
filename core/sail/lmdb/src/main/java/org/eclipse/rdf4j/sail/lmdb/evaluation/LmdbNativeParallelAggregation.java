@@ -32,6 +32,7 @@ import org.eclipse.rdf4j.sail.lmdb.LmdbRootScanPartition;
 import org.eclipse.rdf4j.sail.lmdb.RecordIterator;
 import org.eclipse.rdf4j.sail.lmdb.TripleIndex;
 import org.eclipse.rdf4j.sail.lmdb.ValueIds;
+import org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbNativeParallelPipelines.ParallelStrategy;
 
 /**
  * Intra-query morsel parallelism for native COUNT-style aggregation. The root scan of the ordered physical plan is
@@ -282,12 +283,12 @@ final class LmdbNativeParallelAggregation {
 			LmdbNativeParallelPipelines.RANGE_PARTITIONS_PLANNED.addAndGet(partitions.length);
 			LmdbNativeParallelPipelines.LAST_RANGE_REJECTION.set(null);
 			if (LmdbNativeExplain.recordsExecutionPaths(it.explainTarget)) {
-				LAST_STRATEGY_LABEL.set(LmdbNativeParallelPipelines.parallelStrategyLabel(
+				LAST_STRATEGY_LABEL.set(new ParallelStrategy(
 						LmdbNativeAttemptMetrics.PATH_PARALLEL_AGGREGATION, threads, partitions.length));
 			}
 		} else if (LmdbNativeExplain.recordsExecutionPaths(it.explainTarget)) {
-			LAST_STRATEGY_LABEL.set(LmdbNativeParallelPipelines
-					.parallelStrategyLabel(LmdbNativeAttemptMetrics.PATH_PARALLEL_AGGREGATION, threads, 0));
+			LAST_STRATEGY_LABEL
+					.set(new ParallelStrategy(LmdbNativeAttemptMetrics.PATH_PARALLEL_AGGREGATION, threads, 0));
 		}
 		return results;
 	}
@@ -335,12 +336,12 @@ final class LmdbNativeParallelAggregation {
 	 * Explain label of the most recent successful {@link #tryEvaluate} on this thread, consumed by the caller right
 	 * after the call returns. Thread-confined: tryEvaluate runs synchronously on the query thread.
 	 */
-	private static final ThreadLocal<String> LAST_STRATEGY_LABEL = new ThreadLocal<>();
+	private static final ThreadLocal<ParallelStrategy> LAST_STRATEGY_LABEL = new ThreadLocal<>();
 
-	static String consumeLastStrategyLabel() {
-		String label = LAST_STRATEGY_LABEL.get();
+	static ParallelStrategy consumeLastStrategy() {
+		ParallelStrategy label = LAST_STRATEGY_LABEL.get();
 		LAST_STRATEGY_LABEL.remove();
-		return label != null ? label : LmdbNativeAttemptMetrics.PATH_PARALLEL_AGGREGATION;
+		return label;
 	}
 
 	/**

@@ -1,0 +1,10 @@
+PREFIX dcat: <http://www.w3.org/ns/dcat#>
+PREFIX dct: <http://purl.org/dc/terms/>
+PREFIX filetype: <http://publications.europa.eu/resource/authority/file-type/>
+
+SELECT ?dataset ?p ?distribution
+WHERE {
+  ?dataset a dcat:Dataset ;
+    ?p ?distribution .
+  ?distribution dct:format filetype:CSV .
+}

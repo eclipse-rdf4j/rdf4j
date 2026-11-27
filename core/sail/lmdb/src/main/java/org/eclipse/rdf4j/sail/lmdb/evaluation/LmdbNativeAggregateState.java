@@ -456,7 +456,8 @@ final class AggContext {
 		this.deferDistinctValueAggregates = deferDistinctValueAggregates;
 		this.ownedMemory = memory == null && source instanceof SyntheticValueSource synthetic
 				&& synthetic.executionContext() != null
-						? KernelRuntime.AggregateMemory.forLedger(synthetic.executionContext().memoryLedger())
+						? KernelRuntime.AggregateMemory.forLedger(synthetic.executionContext().memoryLedger(),
+								"aggregate-value-cache")
 						: null;
 		this.memory = memory != null ? memory : ownedMemory;
 		this.comparator.setStrict(strictCompare);

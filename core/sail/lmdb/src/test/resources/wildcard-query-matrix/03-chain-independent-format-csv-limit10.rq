@@ -1,0 +1,11 @@
+PREFIX dcat: <http://www.w3.org/ns/dcat#>
+PREFIX filetype: <http://publications.europa.eu/resource/authority/file-type/>
+
+SELECT ?p ?dataset ?q ?distribution ?r
+WHERE {
+  <http://data.gov.be/catalog> ?p ?dataset .
+  ?dataset a dcat:Dataset ;
+    ?q ?distribution .
+  ?distribution ?r filetype:CSV .
+}
+LIMIT 10

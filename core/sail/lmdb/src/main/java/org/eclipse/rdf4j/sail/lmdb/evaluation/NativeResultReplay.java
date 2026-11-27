@@ -82,7 +82,7 @@ final class NativeResultReplay implements AutoCloseable {
 		this.cancellation = cancellation;
 		this.maxBytes = maxBytes;
 		this.lease = context == null || !retainContext ? null : context.retainLease();
-		this.memory = KernelRuntime.AggregateMemory.forLedger(ledger);
+		this.memory = KernelRuntime.AggregateMemory.forLedger(ledger, "result-replay");
 		if (!memory.tryReserve(OWNER_BYTES)) {
 			if (lease != null) {
 				lease.close();

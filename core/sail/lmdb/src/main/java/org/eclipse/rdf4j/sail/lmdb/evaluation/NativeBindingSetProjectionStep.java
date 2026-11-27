@@ -13,6 +13,7 @@ package org.eclipse.rdf4j.sail.lmdb.evaluation;
 
 import java.util.Arrays;
 import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.NoSuchElementException;
 
@@ -27,6 +28,7 @@ import org.eclipse.rdf4j.query.algebra.Projection;
 import org.eclipse.rdf4j.query.algebra.ProjectionElem;
 import org.eclipse.rdf4j.query.algebra.QueryModelNode;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryEvaluationStep;
+import org.eclipse.rdf4j.query.explanation.PhysicalPlan.Operator;
 import org.eclipse.rdf4j.query.impl.MapBindingSet;
 
 /** Semantic native projection over an already-native BindingSet producer. */
@@ -168,8 +170,14 @@ final class NativeBindingSetProjectionStep implements NativeResultStep, LmdbNati
 	}
 
 	@Override
-	public String nativePhysicalPlan() {
-		String inner = arg instanceof LmdbNativePhysicalPlan physical ? physical.nativePhysicalPlan()
+	public Operator physicalOperator(boolean resolveRdfTerms) {
+		return new Operator("NativeProjection", Map.of("arg", LmdbPhysicalPlanDescription.step(arg, resolveRdfTerms),
+				"sourceNames", List.of(sourceNames), "targetNames", List.of(targetNames)));
+	}
+
+	@Override
+	public String nativePhysicalPlan(boolean resolveRdfTerms) {
+		String inner = arg instanceof LmdbNativePhysicalPlan physical ? physical.nativePhysicalPlan(resolveRdfTerms)
 				: arg.getClass().getSimpleName();
 		return "NativeProjection(arg=" + inner + ")";
 	}

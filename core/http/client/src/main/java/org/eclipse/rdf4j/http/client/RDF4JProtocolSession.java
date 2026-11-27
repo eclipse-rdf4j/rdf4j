@@ -73,6 +73,7 @@ import org.eclipse.rdf4j.query.TupleQueryResultHandler;
 import org.eclipse.rdf4j.query.TupleQueryResultHandlerException;
 import org.eclipse.rdf4j.query.explanation.Explanation;
 import org.eclipse.rdf4j.query.explanation.ExplanationImpl;
+import org.eclipse.rdf4j.query.explanation.ExplanationOptions;
 import org.eclipse.rdf4j.query.explanation.GenericPlanNode;
 import org.eclipse.rdf4j.query.impl.DatasetUtils;
 import org.eclipse.rdf4j.query.impl.TupleQueryResultBuilder;
@@ -1049,8 +1050,18 @@ public class RDF4JProtocolSession extends SPARQLProtocolSession {
 			throws IOException, RepositoryException, MalformedQueryException, UnauthorizedException,
 			QueryInterruptedException {
 		Objects.requireNonNull(level, "Explanation level may not be null");
+		ExplanationOptions options = ExplanationOptions.current();
+		options.validate(level);
 		HttpRequest queryMethod = getQueryMethod(ql, query, baseURI, dataset, includeInferred, maxQueryTime, bindings);
 		HttpRequest explainMethod = withQueryParam(queryMethod, Protocol.EXPLAIN_PARAM_NAME, level.name());
+		if (options.consumption() != ExplanationOptions.Consumption.ROWS) {
+			explainMethod = withQueryParam(explainMethod, Protocol.EXPLAIN_CONSUMPTION_PARAM_NAME,
+					options.consumption().wireValue());
+			if (options.resultMimeType() != null) {
+				explainMethod = withQueryParam(explainMethod, Protocol.EXPLAIN_RESULT_MIME_PARAM_NAME,
+						options.resultMimeType());
+			}
+		}
 		if (maxQueryTime > 0) {
 			explainMethod = HttpRequest.copyOf(explainMethod, explainMethod.getUri())
 					.responseTimeout(Duration.ofSeconds(maxQueryTime).plus(EXPLANATION_RESPONSE_GRACE))

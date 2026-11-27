@@ -18,6 +18,7 @@ import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.List;
+import java.util.Map;
 import java.util.Queue;
 import java.util.Set;
 
@@ -36,6 +37,7 @@ import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryBindingSet;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryEvaluationStep;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.QueryEvaluationContext;
+import org.eclipse.rdf4j.query.explanation.PhysicalPlan.Operator;
 import org.eclipse.rdf4j.sail.lmdb.RecordIterator;
 import org.eclipse.rdf4j.sail.lmdb.TripleIndex;
 import org.eclipse.rdf4j.sail.lmdb.ValuePosition;
@@ -101,8 +103,15 @@ final class NativeDescribeStep implements QueryEvaluationStep, LmdbNativePhysica
 	}
 
 	@Override
-	public String nativePhysicalPlan() {
-		String childPlan = child instanceof LmdbNativePhysicalPlan physical ? physical.nativePhysicalPlan()
+	public Operator physicalOperator(boolean resolveRdfTerms) {
+		return new Operator("NativeDescribeStep",
+				Map.of("child", LmdbPhysicalPlanDescription.step(child, resolveRdfTerms)));
+	}
+
+	@Override
+	public String nativePhysicalPlan(boolean resolveRdfTerms) {
+		String childPlan = child instanceof LmdbNativePhysicalPlan physical
+				? physical.nativePhysicalPlan(resolveRdfTerms)
 				: child.getClass().getSimpleName();
 		return "NativeDescribeStep(child=" + childPlan + ")";
 	}

@@ -1,0 +1,10 @@
+PREFIX dcat: <http://www.w3.org/ns/dcat#>
+
+SELECT ?dataset ?p ?left ?right ?q ?other
+WHERE {
+  ?dataset a dcat:Dataset ;
+    ?p ?left, ?right ;
+    ?q ?other .
+  FILTER(!sameTerm(?left, ?right) && !sameTerm(?p, ?q) && isIRI(?other))
+}
+LIMIT 10

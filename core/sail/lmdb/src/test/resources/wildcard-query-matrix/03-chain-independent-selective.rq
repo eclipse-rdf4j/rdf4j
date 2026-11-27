@@ -1,0 +1,10 @@
+PREFIX dataset: <http://data.gov.be/dataset/biodiv/>
+PREFIX filetype: <http://publications.europa.eu/resource/authority/file-type/>
+
+SELECT ?p ?dataset ?q ?distribution ?r
+WHERE {
+  VALUES ?dataset { dataset:230363a1-8221-4f53-b1fc-e8475ac247aa dataset:fcb34db4-7681-4a9a-9cc0-b80147e95e81 }
+  <http://data.gov.be/catalog> ?p ?dataset .
+  ?dataset ?q ?distribution .
+  ?distribution ?r filetype:CSV .
+}

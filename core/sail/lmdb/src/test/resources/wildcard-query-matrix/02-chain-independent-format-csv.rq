@@ -1,0 +1,9 @@
+PREFIX dcat: <http://www.w3.org/ns/dcat#>
+PREFIX filetype: <http://publications.europa.eu/resource/authority/file-type/>
+
+SELECT ?dataset ?p ?distribution ?q
+WHERE {
+  ?dataset a dcat:Dataset ;
+    ?p ?distribution .
+  ?distribution ?q filetype:CSV .
+}

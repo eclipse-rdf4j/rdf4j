@@ -68,7 +68,8 @@ final class NativeLazyResultReplay implements AutoCloseable, CooperativeCancella
 		this.maxBytes = Math.max(WORKSPACE_BYTES, NativeCountGroupStore.configuredMaxBytes());
 		this.codec = new NativeSpillValueCodec(this.cancellation,
 				context == null ? null : context::authoritativeQueryScopedValue);
-		this.memory = KernelRuntime.AggregateMemory.forLedger(context == null ? null : context.memoryLedger());
+		this.memory = KernelRuntime.AggregateMemory.forLedger(context == null ? null : context.memoryLedger(),
+				"lazy-result-replay");
 		NativeExecutionContext.Lease activeLease = null;
 		Throwable failure = null;
 		try {

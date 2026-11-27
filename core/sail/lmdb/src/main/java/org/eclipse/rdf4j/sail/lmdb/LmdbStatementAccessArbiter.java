@@ -443,10 +443,12 @@ final class LmdbStatementAccessArbiter {
 			long scanned;
 			long matched;
 			long filtered;
+			String actualIndex;
 			try {
 				scanned = owned.getSourceRowsScannedActual();
 				matched = owned.getSourceRowsMatchedActual();
 				filtered = owned.getSourceRowsFilteredActual();
+				actualIndex = completedObserver == null ? "" : owned.getIndexName();
 			} catch (RuntimeException | Error failure) {
 				KernelRuntime.closeCursor(owned, failure);
 				throw failure;
@@ -457,16 +459,17 @@ final class LmdbStatementAccessArbiter {
 				owned.close();
 			} catch (RuntimeException | Error failure) {
 				finishTiming(started);
-				KernelRuntime.closeCursor(() -> reportMeasurement(completedObserver, scanned, matched, filtered),
+				KernelRuntime.closeCursor(
+						() -> reportMeasurement(completedObserver, scanned, matched, filtered, actualIndex),
 						failure);
 				throw failure;
 			}
 			finishTiming(started);
-			reportMeasurement(completedObserver, scanned, matched, filtered);
+			reportMeasurement(completedObserver, scanned, matched, filtered, actualIndex);
 		}
 
 		private void reportMeasurement(AdjacencyAccessObserver completedObserver, long scanned, long matched,
-				long filtered) {
+				long filtered, String actualIndex) {
 			long actualScanned = scanned >= 0L ? scanned : rows;
 			long actualMatched = matched >= 0L ? matched : rows;
 			long actualFiltered = filtered >= 0L ? filtered : Math.max(0L, actualScanned - actualMatched);
@@ -483,7 +486,7 @@ final class LmdbStatementAccessArbiter {
 			}
 			if (completedObserver != null) {
 				completedObserver.measurement(adjacency, actualScanned, actualMatched, actualFiltered, !exhausted,
-						scanned >= 0L);
+						scanned >= 0L, activeNanos, actualIndex);
 			}
 		}
 	}

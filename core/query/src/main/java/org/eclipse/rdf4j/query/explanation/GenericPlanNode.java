@@ -102,6 +102,7 @@ public class GenericPlanNode {
 	private static final Set<String> ACCESS_ONLY_METRICS = Set.of(
 			TelemetryMetricNames.INDEX_LOOKUP_COUNT_ACTUAL,
 			TelemetryMetricNames.INDEX_HIT_RATE_ACTUAL,
+			TelemetryMetricNames.SOURCE_MATCH_FRACTION_ACTUAL,
 			TelemetryMetricNames.INDEX_NAME,
 			TelemetryMetricNames.INDEX_NAMES);
 
@@ -149,8 +150,74 @@ public class GenericPlanNode {
 	private Map<String, Long> longMetricsPlanned = new LinkedHashMap<>();
 	private Map<String, Double> doubleMetricsPlanned = new LinkedHashMap<>();
 	private Map<String, String> stringMetricsPlanned = new LinkedHashMap<>();
+	private String operator;
+	private Map<String, Object> arguments;
+	private Map<String, Object> actualAttributes;
+	private PhysicalPlan plannedPhysicalPlan;
+	private List<PhysicalPlan> physicalPlans;
 	private String physicalPlanPrelude;
 	private List<StrategyDecision> strategyDecisions;
+	private QueryExecutionProfile executionProfile;
+	private String logicalPath;
+
+	public String getLogicalPath() {
+		return runtimeTelemetryEnabled ? logicalPath : null;
+	}
+
+	public void setLogicalPath(String logicalPath) {
+		this.logicalPath = logicalPath;
+	}
+
+	public QueryExecutionProfile getExecutionProfile() {
+		return runtimeTelemetryEnabled ? executionProfile : null;
+	}
+
+	public void setExecutionProfile(QueryExecutionProfile executionProfile) {
+		this.executionProfile = executionProfile;
+	}
+
+	public String getOperator() {
+		return operator;
+	}
+
+	public void setOperator(String operator) {
+		this.operator = operator;
+	}
+
+	public Map<String, Object> getArguments() {
+		return arguments;
+	}
+
+	public void setArguments(Map<String, Object> arguments) {
+		this.arguments = PhysicalPlan.copyFields(arguments);
+	}
+
+	public Map<String, Object> getActualAttributes() {
+		if (!executionSummaryEnabled) {
+			return null;
+		}
+		return runtimeTelemetryEnabled ? actualAttributes : visibleSummaryMetrics(actualAttributes);
+	}
+
+	public void setActualAttributes(Map<String, Object> actualAttributes) {
+		this.actualAttributes = PhysicalPlan.copyFields(actualAttributes);
+	}
+
+	public PhysicalPlan getPlannedPhysicalPlan() {
+		return plannedPhysicalPlan;
+	}
+
+	public void setPlannedPhysicalPlan(PhysicalPlan plannedPhysicalPlan) {
+		this.plannedPhysicalPlan = plannedPhysicalPlan;
+	}
+
+	public List<PhysicalPlan> getPhysicalPlans() {
+		return physicalPlans;
+	}
+
+	public void setPhysicalPlans(List<PhysicalPlan> physicalPlans) {
+		this.physicalPlans = physicalPlans == null || physicalPlans.isEmpty() ? null : List.copyOf(physicalPlans);
+	}
 
 	public List<StrategyDecision> getStrategyDecisions() {
 		return strategyDecisions;
@@ -676,8 +743,14 @@ public class GenericPlanNode {
 	@Override
 	public String toString() {
 		String logical = getHumanReadable(0, isProjectionElemListNode());
+		boolean hasProfile = getExecutionProfile() != null;
+		if (hasProfile) {
+			String profile = getExecutionProfile().toText().replace("\n", newLine);
+			logical = profile + newLine + newLine + "Query explanation" + newLine + logical;
+		}
 		if (physicalPlanPrelude != null && !physicalPlanPrelude.isEmpty()) {
-			logical = physicalPlanPrelude + newLine + newLine + "Query explanation" + newLine + logical;
+			logical = physicalPlanPrelude + newLine + newLine
+					+ (hasProfile ? "" : "Query explanation" + newLine) + logical;
 		}
 		return Boolean.TRUE.equals(timedOut) ? timeoutHeading() + logical : logical;
 	}
@@ -1307,40 +1380,8 @@ public class GenericPlanNode {
 					toHumanReadableNumber(throughput));
 		}
 
-		List<Double> childQErrors = new ArrayList<>();
-		for (GenericPlanNode child : plans) {
-			if (child.getResultSizeEstimate() == null || child.getResultSizeEstimate() <= 0
-					|| child.getResultSizeActual() == null || child.getResultSizeActual() <= 0) {
-				continue;
-			}
-			double estimate = child.getResultSizeEstimate();
-			double actual = child.getResultSizeActual().doubleValue();
-			childQErrors.add(Math.max(estimate / actual, actual / estimate));
-		}
-		if (estimateStabilityMetricsEnabled && !childQErrors.isEmpty()) {
-			long sampleCount = childQErrors.size();
-			double mean = childQErrors.stream().mapToDouble(Double::doubleValue).average().orElse(0D);
-			double variance = childQErrors.stream()
-					.mapToDouble(value -> {
-						double delta = value - mean;
-						return delta * delta;
-					})
-					.average()
-					.orElse(0D);
-			double stddev = Math.sqrt(variance);
-			double confidence = Math.min(1D, sampleCount / (sampleCount + stddev + 1D));
-			putIfKnownIfAbsent(metrics, TelemetryMetricNames.SAMPLE_COUNT_ACTUAL, toHumanReadableNumber(sampleCount));
-			putIfKnownIfAbsent(metrics, TelemetryMetricNames.VARIANCE_ACTUAL, toHumanReadableNumber(variance));
-			putIfKnownIfAbsent(metrics, TelemetryMetricNames.STDDEV_ACTUAL, toHumanReadableNumber(stddev));
-			putIfKnownIfAbsent(metrics, TelemetryMetricNames.CONFIDENCE_SCORE_ACTUAL,
-					toHumanReadableNumber(confidence));
-		}
-
-		if (getCostEstimate() != null && getCostEstimate() > 0 && getTotalTimeActual() != null
-				&& getTotalTimeActual() > 0) {
-			putIfKnownIfAbsent(metrics, TelemetryMetricNames.COST_ERROR_RATIO,
-					toHumanReadableNumber(getTotalTimeActual() / getCostEstimate()));
-		}
+		// Child q-error dispersion is not statistical confidence, and abstract optimizer cost is not milliseconds.
+		// Keep explicitly supplied legacy metrics readable, but never synthesize those misleading ratios here.
 
 		if (getHasNextCallCountActual() != null && getHasNextTrueCountActual() != null) {
 			putIfKnownIfAbsent(metrics, TelemetryMetricNames.HAS_NEXT_FALSE_COUNT_ACTUAL,
@@ -1473,7 +1514,7 @@ public class GenericPlanNode {
 		}
 
 		if (isAccessNode() && sourceRowsScanned != null && sourceRowsScanned > 0 && sourceRowsMatched != null) {
-			putIfKnownIfAbsent(metrics, TelemetryMetricNames.INDEX_HIT_RATE_ACTUAL,
+			putIfKnownIfAbsent(metrics, TelemetryMetricNames.SOURCE_MATCH_FRACTION_ACTUAL,
 					toHumanReadableNumber(sourceRowsMatched.doubleValue() / sourceRowsScanned));
 		}
 	}
