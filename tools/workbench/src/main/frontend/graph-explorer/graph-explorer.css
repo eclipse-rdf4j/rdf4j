@@ -2951,6 +2951,7 @@ html[data-theme="dark"] .graph-explorer #graph-explorer-app .map-shell iframe {
   opacity: 0.08;
 }
 
+.graph-explorer .graph-canvas.webgl-active .edge.collection-membership path,
 .graph-explorer .graph-canvas.webgl-active .edge.is-self-loop path,
 .graph-explorer .graph-canvas.webgl-active.has-active .edge.touches-active path,
 .graph-explorer .graph-canvas.webgl-active.has-selection .edge.touches-selection path,

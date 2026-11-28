@@ -268,3 +268,41 @@ test('shared tails remain identifiable and neither incoming list silently absorb
     await expect(details).toContainText(/shared|referenc/i);
     expect(pageErrors).toEqual([]);
 });
+
+test('selecting a collection member leaves ordinary edges on WebGL in a medium graph', async ({ page }) => {
+    const count = 296;
+    const medium = complete.map((row) => row.target.value === 'second' ? { ...row, target: uri(`${EX}project`) } : row);
+    for (let index = 0; index < count; index++) {
+        for (const jump of [1, 7, 13, 37]) {
+            medium.push(binding(uri(`${EX}n${index}`), `${EX}rel${jump}`, uri(`${EX}n${(index + jump) % count}`)));
+        }
+    }
+    medium.push(binding(uri(`${EX}alice`), `${EX}attach`, uri(`${EX}n0`)));
+
+    const { pageErrors } = await openGraph(page, medium);
+    test.skip(!await page.evaluate(() => {
+        const context = document.createElement('canvas').getContext('webgl');
+        context?.getExtension('WEBGL_lose_context')?.loseContext();
+        return Boolean(context);
+    }), 'requires WebGL');
+    const canvas = page.locator('.graph-canvas');
+    await expect(canvas).toHaveClass(/\bwebgl-active\b/);
+    await expect(canvas.locator('.graph-node')).toHaveCount(300);
+
+    const details = await inspect(page, '<_:members-1>');
+    await details.getByRole('button', { name: /^Select member 1:/ }).click();
+    await expect(details).toContainText(`${EX}alice`);
+
+    const membership = canvas.locator('.edge.collection-membership');
+    await expect(membership).toHaveCount(2);
+    await expect(canvas).toHaveClass(/\bwebgl-active\b/);
+    await expect(canvas.locator('.graph-node')).toHaveCount(300);
+    expect(await canvas.locator('.edge').count()).toBeLessThan(25);
+    const stroke = await membership.first().locator('path').evaluate((path) => {
+        const style = getComputedStyle(path);
+        return { dash: style.strokeDasharray, opacity: style.opacity };
+    });
+    expect(stroke.dash).not.toBe('none');
+    expect(stroke.opacity).toBe('1');
+    expect(pageErrors).toEqual([]);
+});

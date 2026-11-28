@@ -1261,9 +1261,7 @@ export function GraphExplorerApp({ basePath, repositoryId, serverIdentity, serve
   const useWebglRenderer =
     !largeGraph && webglAvailable &&
     viewMode === "graph" &&
-    drawnGraph.nodes.length >= WEBGL_NODE_THRESHOLD &&
-    // Membership connections are dashed view aids; the SVG layer preserves that distinction.
-    !drawnGraph.edges.some((edge) => Boolean(edge.collection));
+    drawnGraph.nodes.length >= WEBGL_NODE_THRESHOLD;
   const namedGroupBounds = useMemo(
     () =>
       namedGroups.flatMap((group) => {
@@ -4887,8 +4885,8 @@ ${connectionQuery(iriIds.slice(0,32),graphScope)}`;
                   const labelPlacement =
                     edgeLabelPlacements.get(edge.id) ??
                     (edgeSelected ? { point: curveMidpoint(curve), anchor: curveMidpoint(curve) } : undefined);
-                  // With WebGL the layer below draws every edge; SVG keeps only the ones that stand out.
-                  if (useWebglRenderer && !touchesActive && !touchesSelection && !onPath && !labelPlacement && edge.source !== edge.target) return null;
+                  // WebGL draws ordinary edges; SVG keeps membership connections dashed and draws emphasized edges.
+                  if (useWebglRenderer && !edge.collection && !touchesActive && !touchesSelection && !onPath && !labelPlacement && edge.source !== edge.target) return null;
                   return (
                     <EdgeView
                       key={edge.id}
