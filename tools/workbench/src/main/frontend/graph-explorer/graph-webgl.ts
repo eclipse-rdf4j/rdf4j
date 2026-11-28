@@ -26,6 +26,7 @@ export function createGraphVertexCache() {
     const points = new Float32Array(graph.nodes.length * 2);
     let lineOffset = 0, pointOffset = 0;
     for (const edge of graph.edges) {
+      if (edge.collection || edge.sourceRow || edge.targetRow) continue; // SVG draws the membership dashes and solid row arrows.
       const source = nodes.get(edge.source), target = nodes.get(edge.target);
       if (source?.x === undefined || source.y === undefined || target?.x === undefined || target.y === undefined) continue;
       const curve = curves?.get(edge.id);

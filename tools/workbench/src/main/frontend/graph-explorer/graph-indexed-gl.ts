@@ -65,15 +65,15 @@ export class IndexedGraphGl {
   upload(scene: GraphScene, origins: Float32Array = scene.positions) {
     const gl = this.gl;
     this.count = scene.graph.nodes.length;
-    this.edgeCount = scene.edges.length;
+    this.edgeCount = scene.solidEdges.length;
     let elements: Uint16Array | Uint32Array;
     if (this.count <= 65535) {
-      elements = new Uint16Array(scene.edges);
+      elements = new Uint16Array(scene.solidEdges);
       this.elementType = gl.UNSIGNED_SHORT;
     } else {
       if (!gl.getExtension("OES_element_index_uint"))
         throw new Error("Large element indices unavailable");
-      elements = scene.edges;
+      elements = scene.solidEdges;
       this.elementType = gl.UNSIGNED_INT;
     }
     for (const [buffer, data] of [

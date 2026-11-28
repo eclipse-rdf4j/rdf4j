@@ -2951,6 +2951,8 @@ html[data-theme="dark"] .graph-explorer #graph-explorer-app .map-shell iframe {
   opacity: 0.08;
 }
 
+.graph-explorer .graph-canvas.webgl-active .edge.collection-membership path,
+.graph-explorer .graph-canvas.webgl-active .edge.collection-row-edge path,
 .graph-explorer .graph-canvas.webgl-active .edge.is-self-loop path,
 .graph-explorer .graph-canvas.webgl-active.has-active .edge.touches-active path,
 .graph-explorer .graph-canvas.webgl-active.has-selection .edge.touches-selection path,
@@ -3149,6 +3151,63 @@ html[data-theme="dark"] .graph-explorer #graph-explorer-app .map-shell iframe {
 
 .graph-explorer .graph-node .node-more:hover text {
   fill: var(--on-accent);
+}
+
+.graph-explorer .graph-node .collection-divider {
+  stroke: var(--node-color, var(--line));
+  opacity: 0.3;
+  pointer-events: none;
+}
+
+.graph-explorer .graph-node .collection-member {
+  outline: none;
+}
+
+.graph-explorer .graph-node .collection-member .collection-member-hit {
+  fill: transparent;
+  stroke: none;
+  filter: none;
+  animation: none;
+}
+
+.graph-explorer .graph-node .collection-member:hover .collection-member-hit,
+.graph-explorer .graph-node .collection-member[aria-pressed="true"] .collection-member-hit,
+.graph-explorer .graph-node .collection-member:focus-visible .collection-member-hit {
+  fill: color-mix(in srgb, var(--accent) 13%, transparent);
+}
+
+.graph-explorer .graph-node .collection-member:focus-visible .collection-member-hit {
+  stroke: var(--workbench-focus);
+  stroke-width: 1px;
+}
+
+.graph-explorer .graph-node .collection-index {
+  font-size: 11px;
+  font-weight: 500;
+  opacity: 0.65;
+}
+
+.graph-explorer .graph-node .collection-value {
+  font-size: 12px;
+  font-weight: 400;
+}
+
+.graph-explorer .collection-port {
+  fill: var(--panel-strong);
+  stroke: var(--graph-explorer-edge);
+  stroke-width: 1.4px;
+  pointer-events: none;
+}
+
+.graph-explorer .graph-node .collection-footer {
+  font-size: 10.5px;
+  font-weight: 400;
+  opacity: 0.7;
+}
+
+.graph-explorer .graph-canvas .edge.collection-membership path {
+  stroke-dasharray: 4 3;
+  marker-end: none;
 }
 
 .graph-explorer .named-group-hull rect {

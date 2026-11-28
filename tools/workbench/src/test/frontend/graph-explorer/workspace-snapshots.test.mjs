@@ -56,6 +56,10 @@ test("full saves reject unsupported content instead of dropping any part", () =>
   original.graph.nodes[0].label="A";
   original.view.version=2;
   assert.throws(()=>prepareWorkspaceSnapshot(original),/view|invalid|cannot/i);
+  original.view.version=1;
+  for(const choices of [{expandedCollectionIds:[42]},{connectedCollectionIds:"urn:head"}]){
+    assert.throws(()=>prepareWorkspaceSnapshot({...original,view:{...original.view,...choices}}),/view|invalid|cannot/i);
+  }
   assert.throws(()=>parseWorkspaceSnapshot('{"format":"rdf4j-graph-workspace","version":9000}'),/version/i);
   assert.throws(()=>parseWorkspaceSnapshot(JSON.stringify({version:999,graph:payload().graph})),/version/i);
   const mismatched=JSON.parse(encodeWorkspaceSnapshot("Mismatch",source,payload()));
@@ -78,6 +82,8 @@ test("explicit saves leave out references to nodes the graph no longer holds", (
   const original=payload();
   original.selectedNodeIds=["urn:a","urn:gone"];
   original.focusedNodeId="urn:gone";
+  original.view.expandedCollectionIds=["urn:a","urn:gone"];
+  original.view.connectedCollectionIds=["urn:gone"];
   original.namedGroups=[{id:"kept",name:"Kept",color:"red",nodeIds:["urn:a","urn:gone"]},
     {id:"gone",name:"Gone",color:"blue",nodeIds:["urn:gone"]},{id:"empty",name:"Empty",color:"green",nodeIds:[]}];
   original.graph.statementLinks=[{id:"l",source:"urn:gone",predicate:"urn:p",label:"p",subject:"urn:a",
@@ -87,7 +93,30 @@ test("explicit saves leave out references to nodes the graph no longer holds", (
   assert.equal(restored.focusedNodeId,null);
   assert.deepEqual(restored.namedGroups.map(group=>[group.id,group.nodeIds]),[["kept",["urn:a"]],["empty",[]]]);
   assert.deepEqual(restored.graph.statementLinks,[]);
+  assert.deepEqual(restored.view.expandedCollectionIds,["urn:a"]);
+  assert.deepEqual(restored.view.connectedCollectionIds,[]);
   assert.deepEqual(original.selectedNodeIds,["urn:a","urn:gone"],"the capture itself is left as it is");
+});
+
+test("foreign and local collection imports rebase presentation choices with certified blank heads", () => {
+  const head="<_:collection-head>", nil="http://www.w3.org/1999/02/22-rdf-syntax-ns#nil";
+  const original=payload();
+  original.graph.nodes.push({id:head,label:"Collection",kind:"blank"},{id:nil,label:"rdf:nil",kind:"iri"});
+  original.graph.edges=[
+    {id:"first",source:head,predicate:"http://www.w3.org/1999/02/22-rdf-syntax-ns#first",target:"urn:a",label:"first"},
+    {id:"rest",source:head,predicate:"http://www.w3.org/1999/02/22-rdf-syntax-ns#rest",target:nil,label:"rest"},
+  ];
+  original.view.expandedCollectionIds=[head];
+  original.view.connectedCollectionIds=[head];
+  const portable=encodeWorkspaceSnapshot("Collection",source,original);
+  assert.deepEqual(parseWorkspaceSnapshot(portable,source).payload.view.expandedCollectionIds,[head]);
+  for(const raw of [portable,JSON.stringify(original),encodeWorkspace(original)]){
+    const imported=parseWorkspaceSnapshot(raw,otherSource).payload;
+    const importedHead=imported.graph.nodes.find(node=>node.kind==="blank").id;
+    assert.notEqual(importedHead,head);
+    assert.deepEqual(imported.view.expandedCollectionIds,[importedHead]);
+    assert.deepEqual(imported.view.connectedCollectionIds,[importedHead]);
+  }
 });
 
 test("an unusable server identity disables named saves instead of failing", () => {

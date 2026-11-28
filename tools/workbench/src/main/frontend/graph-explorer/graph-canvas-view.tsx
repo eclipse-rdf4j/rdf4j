@@ -17,14 +17,15 @@ import {
   type MouseEvent,
   type PointerEvent,
 } from "react";
-import { NODE_TEXT_LEFT } from "./graph-config.ts";
+import { NODE_TEXT_LEFT, NODE_TEXT_RIGHT } from "./graph-config.ts";
+import { COLLECTION_MEMBER_LEFT, COLLECTION_ROW_HEIGHT, collectionMemberTitle } from "./collection-presentation.ts";
 import { edgeLabelSize, graphNodePresentation, nodeCornerRadius } from "./graph-geometry.ts";
 import { edgeTooltip, nodeTooltip } from "./graph-terms.ts";
 import type { EdgeCurve, EdgeLabelPlacement, GraphEdge, GraphNode } from "./graph-types.ts";
 import { nodeVisual, UNTYPED_IRI_TYPE } from "./graph-visuals.ts";
 import { moreLinksPhrase } from "./link-counts.ts";
 import { isApplePlatform } from "./graph-viewport.ts";
-import { selectionKeys } from "./graph-selection.ts";
+import { selectionKeys, selectionModifier } from "./graph-selection.ts";
 
 const SELECTION_KEYS = selectionKeys(isApplePlatform());
 
@@ -45,6 +46,7 @@ export type NodeHandlers = {
   focus(nodeId: string): void;
   /** The "+N" badge: load the node's next links. */
   more(nodeId: string): void;
+  collectionMember(headId: string, memberId: string, additive: boolean): void;
 };
 
 export type NodeViewProps = {
@@ -57,6 +59,8 @@ export type NodeViewProps = {
   onPath: boolean;
   /** Selected or focused, for assistive technology. */
   pressed: boolean;
+  focusedMember?: string | null;
+  selectedMembers?: ReadonlySet<string>;
   dragging: boolean;
   expanding: boolean;
   /** Links in the repository that are not loaded yet ("+12", "920+"), or null. */
@@ -85,6 +89,8 @@ export const NodeView = memo(function NodeView({
   selected,
   onPath,
   pressed,
+  focusedMember,
+  selectedMembers,
   dragging,
   expanding,
   more,
@@ -92,11 +98,11 @@ export const NodeView = memo(function NodeView({
   handlers,
 }: NodeViewProps) {
   if (node.x === undefined || node.y === undefined) return null;
-  const { width, height, label } = graphNodePresentation(node);
+  const { width, height, label, collection } = graphNodePresentation(node);
   const visual = nodeVisual(node);
   const typeLabels = typeLabelsOf(node);
   const className =
-    `graph-node ${node.kind}${active ? " is-focused" : ""}${related ? " is-related" : ""}${selected ? " is-selected" : ""}` +
+    `graph-node ${node.kind}${collection ? " collection" : ""}${active ? " is-focused" : ""}${related ? " is-related" : ""}${selected ? " is-selected" : ""}` +
     `${onPath ? " is-on-path" : ""}${node.pinned ? " is-pinned" : ""}${dragging ? " is-dragging" : ""}${expanding ? " is-expanding" : ""}`;
   return (
     <g
@@ -105,9 +111,10 @@ export const NodeView = memo(function NodeView({
       style={{ "--node-color": visual.stroke, "--node-fill": visual.fill } as CSSProperties}
       tabIndex={tabbable ? 0 : -1}
       data-node-id={node.id}
-      role="button"
-      aria-pressed={pressed}
-      aria-label={`${node.label}. ${typeLabels}.${more ? ` ${moreLinksPhrase(more)}.` : ""}${selected ? " Selected; dragging it moves the whole selection." : ""} Select to show its details; double-click to load its neighbours, or double-click and keep dragging to move it with its leaf neighbours. ${SELECTION_KEYS}click to add or remove it from the selection. Right-click or long-press for more actions. Arrow keys move to the next node in that direction; Delete hides it.`}
+      data-collection-head={collection ? node.id : undefined}
+      role={collection ? "group" : "button"}
+      aria-pressed={collection ? undefined : pressed}
+      aria-label={`${collection ? `${label}. ` : ""}${node.label}. ${typeLabels}.${more ? ` ${moreLinksPhrase(more)}.` : ""}${selected ? " Selected; dragging it moves the whole selection." : ""} Select to show its details; double-click to load its neighbours, or double-click and keep dragging to move it with its leaf neighbours. ${SELECTION_KEYS}click to add or remove it from the selection. Right-click or long-press for more actions. Arrow keys move to the next node in that direction; Delete hides it.`}
       onClick={(event) => handlers.click(node.id, event)}
       onDoubleClick={(event) => handlers.doubleClick(node.id, event)}
       onMouseEnter={() => handlers.hover(node.id, true)}
@@ -129,10 +136,62 @@ export const NodeView = memo(function NodeView({
     >
       <title>{nodeTooltip(node, typeLabels)}</title>
       <rect width={width} height={height} rx={nodeCornerRadius(node)} filter="url(#node-shadow)" />
-      <circle cx="17" cy={height / 2} r="4" />
-      <text x={NODE_TEXT_LEFT} y={height / 2 + 4}>
+      <circle cx="17" cy={collection ? 21 : height / 2} r="4" />
+      <text x={NODE_TEXT_LEFT} y={collection ? 25 : height / 2 + 4}>
         {label}
       </text>
+      {collection ? (
+        <>
+          {collection.rows.map((row) => (
+            <g
+              className="collection-member"
+              key={row.cellId}
+              transform={`translate(0 ${row.y})`}
+              data-collection-index={row.position}
+              data-member-id={row.memberId}
+              data-cell-id={row.cellId}
+              role="button"
+              aria-pressed={row.memberId === focusedMember || Boolean(selectedMembers?.has(row.memberId))}
+              tabIndex={tabbable ? 0 : -1}
+              aria-label={`Item ${row.position}: ${collectionMemberTitle(row)}. Select member.`}
+              onPointerDown={(event) => event.stopPropagation()}
+              onMouseEnter={() => handlers.hover(row.memberId, true)}
+              onMouseLeave={() => handlers.hover(row.memberId, false)}
+              onFocus={(event) => {
+                event.stopPropagation();
+                handlers.focus(node.id);
+                handlers.hover(row.memberId, true);
+              }}
+              onBlur={() => handlers.hover(row.memberId, false)}
+              onDoubleClick={(event) => handlers.doubleClick(row.memberId, event)}
+              onContextMenu={(event) => handlers.contextMenu(row.memberId, event)}
+              onClick={(event) => {
+                event.stopPropagation();
+                handlers.collectionMember(node.id, row.memberId, selectionModifier(event, isApplePlatform()));
+              }}
+              onKeyDown={(event) => {
+                if (event.key !== "Enter" && event.key !== " ") return;
+                event.preventDefault();
+                event.stopPropagation();
+                handlers.collectionMember(node.id, row.memberId, selectionModifier(event, isApplePlatform()));
+              }}
+            >
+              <title>{collectionMemberTitle(row)}</title>
+              <rect className="collection-member-hit" x="1" y="1" width={width - 2} height={COLLECTION_ROW_HEIGHT - 2} />
+              <line className="collection-divider" x1="0" x2={width} y1="0" y2="0" />
+              <text className="collection-index" x="28" y={COLLECTION_ROW_HEIGHT / 2 + 4} textAnchor="end">{row.position}</text>
+              <text
+                className="collection-value"
+                x={row.direction === "rtl" ? width - NODE_TEXT_RIGHT : COLLECTION_MEMBER_LEFT}
+                y={COLLECTION_ROW_HEIGHT / 2 + 4}
+                direction={row.direction ?? "ltr"}
+                unicodeBidi="plaintext"
+              >{row.text}</text>
+            </g>
+          ))}
+          {collection.footer ? <text className="collection-footer" x={NODE_TEXT_LEFT} y={collection.footerY}>{collection.footer}</text> : null}
+        </>
+      ) : null}
       {more ? (
         <g
           className="node-more"
@@ -185,12 +244,16 @@ export const EdgeView = memo(function EdgeView({
   const className =
     `edge${edge.source === edge.target ? " is-self-loop" : ""}${touchesActive ? " touches-active" : ""}` +
     `${touchesSelection ? " touches-selection" : ""}${onPath ? " is-on-path" : ""}${labelPlacement ? " show-label" : ""}` +
-    `${selected ? " is-selected" : ""}`;
+    `${selected ? " is-selected" : ""}${edge.collection ? " collection-membership" : ""}${edge.sourceRow || edge.targetRow ? " collection-row-edge" : ""}`;
   return (
     // The canvas picks edges on pointer-up (it captures the pointer, so a click here would land on the canvas).
     <g className={className} data-edge-id={edge.id} data-hover-node-id={hoverNodeId}>
-      <title>{edgeTooltip(sourceLabel, edge, targetLabel)}</title>
-      <path d={curve.path} markerEnd="url(#arrow)" />
+      <title>{edge.collection ? `${targetLabel}: list ${edge.collection.positions.length === 1 ? "position" : "positions"} ${edge.collection.positions.join(", ")}` : edgeTooltip(sourceLabel, edge, targetLabel)}</title>
+      <path
+        d={curve.path}
+        markerEnd={edge.collection ? undefined : "url(#arrow)"}
+        style={edge.collection ? { markerEnd: "none" } : undefined}
+      />
       {labelPlacement && (
         <>
           <line
