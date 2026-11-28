@@ -2952,6 +2952,7 @@ html[data-theme="dark"] .graph-explorer #graph-explorer-app .map-shell iframe {
 }
 
 .graph-explorer .graph-canvas.webgl-active .edge.collection-membership path,
+.graph-explorer .graph-canvas.webgl-active .edge.collection-row-edge path,
 .graph-explorer .graph-canvas.webgl-active .edge.is-self-loop path,
 .graph-explorer .graph-canvas.webgl-active.has-active .edge.touches-active path,
 .graph-explorer .graph-canvas.webgl-active.has-selection .edge.touches-selection path,
@@ -3170,6 +3171,7 @@ html[data-theme="dark"] .graph-explorer #graph-explorer-app .map-shell iframe {
 }
 
 .graph-explorer .graph-node .collection-member:hover .collection-member-hit,
+.graph-explorer .graph-node .collection-member[aria-pressed="true"] .collection-member-hit,
 .graph-explorer .graph-node .collection-member:focus-visible .collection-member-hit {
   fill: color-mix(in srgb, var(--accent) 13%, transparent);
 }
@@ -3180,14 +3182,21 @@ html[data-theme="dark"] .graph-explorer #graph-explorer-app .map-shell iframe {
 }
 
 .graph-explorer .graph-node .collection-index {
-  font-size: 10px;
+  font-size: 11px;
   font-weight: 500;
   opacity: 0.65;
 }
 
 .graph-explorer .graph-node .collection-value {
-  font-size: 11.5px;
+  font-size: 12px;
   font-weight: 400;
+}
+
+.graph-explorer .collection-port {
+  fill: var(--panel-strong);
+  stroke: var(--graph-explorer-edge);
+  stroke-width: 1.4px;
+  pointer-events: none;
 }
 
 .graph-explorer .graph-node .collection-footer {

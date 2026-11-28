@@ -18,10 +18,11 @@ export function canToggleCollectionView(analysis: CollectionAnalysis, headId: st
 }
 
 /** Shared by the SVG card, large-graph labels and exported images. */
-export function collectionSummary(collection: Pick<CollectionCard, "count" | "loadedCount">) {
+export function collectionSummary(collection: Pick<CollectionCard, "count" | "loadedCount" | "title">) {
   if (collection.count === 0) return "Empty list";
   if (collection.count !== null) {
-    return `List · ${collection.count.toLocaleString()} ${collection.count === 1 ? "item" : "items"}`;
+    const title = collection.title?.replace(/^./u, letter => letter.toLocaleUpperCase()) || "List";
+    return `${title} · ${collection.count.toLocaleString()} ${collection.count === 1 ? "item" : "items"}`;
   }
   return `List · ${collection.loadedCount.toLocaleString()} loaded`;
 }
@@ -30,7 +31,7 @@ export function collectionFooter(collection: CollectionCard): string | null {
   if (collection.status === "cycle") return "Cycle in list structure";
   if (collection.status === "ambiguous") return "Ambiguous list structure";
   if (collection.status === "partial") return "Continuation not loaded";
-  return collection.hiddenCount > 0 ? `${collection.hiddenCount.toLocaleString()} more in details` : null;
+  return collection.hiddenCount > 0 ? `${collection.hiddenCount.toLocaleString()}${collection.preview.length ? " more" : ""} in details` : null;
 }
 
 /** Literal quotes distinguish values from resource labels without adding separate graph nodes. */
@@ -45,8 +46,8 @@ export function collectionMemberTitle(member: CollectionPreviewItem) {
   return member.datatype ? `${label}^^${member.datatype}` : label;
 }
 
-export const COLLECTION_HEADER_HEIGHT = 36;
-export const COLLECTION_ROW_HEIGHT = 24;
+export const COLLECTION_HEADER_HEIGHT = 40;
+export const COLLECTION_ROW_HEIGHT = 52;
 export const COLLECTION_MEMBER_LEFT = 43;
 export const COLLECTION_FOOTER_HEIGHT = 24;
 

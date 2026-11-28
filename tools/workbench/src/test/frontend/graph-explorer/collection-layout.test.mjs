@@ -12,10 +12,33 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { viewLayoutChange } from "../../../main/frontend/graph-explorer/graph-model.ts";
+import { computeGraphLayout } from "../../../main/frontend/graph-explorer/graph-layout-engine.ts";
+import { graphNodePresentation } from "../../../main/frontend/graph-explorer/graph-geometry.ts";
+import { COLLECTION_ROW_HEIGHT } from "../../../main/frontend/graph-explorer/collection-presentation.ts";
 import { projectCollections, RDF_FIRST, RDF_REST, RDF_NIL } from "../../../main/frontend/graph-explorer/graph-collections.ts";
 
 const node = (id, kind = "iri") => ({ id, label: id, kind, x: 0, y: 0 });
 const edge = (id, source, predicate, target) => ({ id, source, predicate, target, label: predicate });
+
+test("a list with leaf relationships lays out its owner and neighbours across from their ports", async () => {
+  const raw = {
+    nodes: [node("owner"), node("head", "blank"), node("tail", "blank"), node("a"), node("b"),
+      node("writer-a"), node("writer-b"), node(RDF_NIL)],
+    edges: [edge("owner-head", "owner", "reading order", "head"), edge("first-a", "head", RDF_FIRST, "a"),
+      edge("rest-tail", "head", RDF_REST, "tail"), edge("first-b", "tail", RDF_FIRST, "b"),
+      edge("rest-nil", "tail", RDF_REST, RDF_NIL), edge("writer-b", "b", "author", "writer-b"),
+      edge("writer-a", "a", "author", "writer-a")], revision: 1,
+  };
+  const { graph } = projectCollections(raw);
+  const { positions } = await computeGraphLayout(graph);
+  const head = positions.get("head");
+  const card = graphNodePresentation(graph.nodes.find(n => n.id === "head"));
+  assert.ok(positions.get("owner").x < head.x);
+  for (const [i, id] of ["writer-a", "writer-b"].entries()) {
+    assert.ok(positions.get(id).x > head.x);
+    assert.equal(positions.get(id).y, head.y - card.height / 2 + card.collection.rows[i].y + COLLECTION_ROW_HEIGHT / 2);
+  }
+});
 
 test("edge-only list completion repairs the layout of the newly folded view", () => {
   const before = {

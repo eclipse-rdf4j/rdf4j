@@ -38,7 +38,7 @@ export function withCollapsedClassLinks(graph: Graph): CollapsedClassLinks {
   const collapsed: GraphEdge[] = [];
   const edges = hubs.size
     ? graph.edges.filter((edge) => {
-        const hide = edge.predicate === RDF_TYPE && hubs.has(edge.target);
+        const hide = edge.predicate === RDF_TYPE && hubs.has(edge.target) && !edge.sourceRow && !edge.targetRow;
         if (hide) collapsed.push(edge);
         return !hide;
       })

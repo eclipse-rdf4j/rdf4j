@@ -19,7 +19,7 @@ export function collectionSelectionInView(ids: Iterable<string>, projection: Col
     const id = pending[i];
     if (visited.has(id)) continue;
     visited.add(id);
-    if (visible.has(id)) {
+    if (visible.has(id) || projection.memberRows.has(id)) {
       selected.add(id);
       continue;
     }

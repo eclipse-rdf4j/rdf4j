@@ -25,7 +25,7 @@ import type { EdgeCurve, EdgeLabelPlacement, GraphEdge, GraphNode } from "./grap
 import { nodeVisual, UNTYPED_IRI_TYPE } from "./graph-visuals.ts";
 import { moreLinksPhrase } from "./link-counts.ts";
 import { isApplePlatform } from "./graph-viewport.ts";
-import { selectionKeys } from "./graph-selection.ts";
+import { selectionKeys, selectionModifier } from "./graph-selection.ts";
 
 const SELECTION_KEYS = selectionKeys(isApplePlatform());
 
@@ -46,8 +46,7 @@ export type NodeHandlers = {
   focus(nodeId: string): void;
   /** The "+N" badge: load the node's next links. */
   more(nodeId: string): void;
-  /** Select a member resource/value, retaining the occurrence's cell for inspection. */
-  collectionMember(headId: string, memberId: string, cellId: string): void;
+  collectionMember(headId: string, memberId: string, additive: boolean): void;
 };
 
 export type NodeViewProps = {
@@ -60,6 +59,8 @@ export type NodeViewProps = {
   onPath: boolean;
   /** Selected or focused, for assistive technology. */
   pressed: boolean;
+  focusedMember?: string | null;
+  selectedMembers?: ReadonlySet<string>;
   dragging: boolean;
   expanding: boolean;
   /** Links in the repository that are not loaded yet ("+12", "920+"), or null. */
@@ -88,6 +89,8 @@ export const NodeView = memo(function NodeView({
   selected,
   onPath,
   pressed,
+  focusedMember,
+  selectedMembers,
   dragging,
   expanding,
   more,
@@ -139,7 +142,6 @@ export const NodeView = memo(function NodeView({
       </text>
       {collection ? (
         <>
-          {collection.rows.length ? <line className="collection-divider" x1="12" x2={width - 12} y1="34" y2="34" /> : null}
           {collection.rows.map((row) => (
             <g
               className="collection-member"
@@ -149,28 +151,39 @@ export const NodeView = memo(function NodeView({
               data-member-id={row.memberId}
               data-cell-id={row.cellId}
               role="button"
+              aria-pressed={row.memberId === focusedMember || Boolean(selectedMembers?.has(row.memberId))}
               tabIndex={tabbable ? 0 : -1}
               aria-label={`Item ${row.position}: ${collectionMemberTitle(row)}. Select member.`}
               onPointerDown={(event) => event.stopPropagation()}
-              onDoubleClick={(event) => event.stopPropagation()}
+              onMouseEnter={() => handlers.hover(row.memberId, true)}
+              onMouseLeave={() => handlers.hover(row.memberId, false)}
+              onFocus={(event) => {
+                event.stopPropagation();
+                handlers.focus(node.id);
+                handlers.hover(row.memberId, true);
+              }}
+              onBlur={() => handlers.hover(row.memberId, false)}
+              onDoubleClick={(event) => handlers.doubleClick(row.memberId, event)}
+              onContextMenu={(event) => handlers.contextMenu(row.memberId, event)}
               onClick={(event) => {
                 event.stopPropagation();
-                handlers.collectionMember(node.id, row.memberId, row.cellId);
+                handlers.collectionMember(node.id, row.memberId, selectionModifier(event, isApplePlatform()));
               }}
               onKeyDown={(event) => {
                 if (event.key !== "Enter" && event.key !== " ") return;
                 event.preventDefault();
                 event.stopPropagation();
-                handlers.collectionMember(node.id, row.memberId, row.cellId);
+                handlers.collectionMember(node.id, row.memberId, selectionModifier(event, isApplePlatform()));
               }}
             >
               <title>{collectionMemberTitle(row)}</title>
-              <rect className="collection-member-hit" x="6" y="1" width={width - 12} height={COLLECTION_ROW_HEIGHT - 2} rx="3" />
-              <text className="collection-index" x="28" y="16" textAnchor="end">{row.position}</text>
+              <rect className="collection-member-hit" x="1" y="1" width={width - 2} height={COLLECTION_ROW_HEIGHT - 2} />
+              <line className="collection-divider" x1="0" x2={width} y1="0" y2="0" />
+              <text className="collection-index" x="28" y={COLLECTION_ROW_HEIGHT / 2 + 4} textAnchor="end">{row.position}</text>
               <text
                 className="collection-value"
                 x={row.direction === "rtl" ? width - NODE_TEXT_RIGHT : COLLECTION_MEMBER_LEFT}
-                y="16"
+                y={COLLECTION_ROW_HEIGHT / 2 + 4}
                 direction={row.direction ?? "ltr"}
                 unicodeBidi="plaintext"
               >{row.text}</text>
@@ -231,7 +244,7 @@ export const EdgeView = memo(function EdgeView({
   const className =
     `edge${edge.source === edge.target ? " is-self-loop" : ""}${touchesActive ? " touches-active" : ""}` +
     `${touchesSelection ? " touches-selection" : ""}${onPath ? " is-on-path" : ""}${labelPlacement ? " show-label" : ""}` +
-    `${selected ? " is-selected" : ""}${edge.collection ? " collection-membership" : ""}`;
+    `${selected ? " is-selected" : ""}${edge.collection ? " collection-membership" : ""}${edge.sourceRow || edge.targetRow ? " collection-row-edge" : ""}`;
   return (
     // The canvas picks edges on pointer-up (it captures the pointer, so a click here would land on the canvas).
     <g className={className} data-edge-id={edge.id} data-hover-node-id={hoverNodeId}>

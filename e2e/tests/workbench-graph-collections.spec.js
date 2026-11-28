@@ -19,11 +19,18 @@ const { uniqueRepositoryId } = require('./workbench-test-helpers.js');
 // Serve the real built explorer with a GraphServlet stand-in; no Java server is needed.
 const FRONTEND = path.resolve(__dirname, '..', '..', 'tools', 'workbench', 'target', 'frontend');
 const BUNDLE = path.join(FRONTEND, 'scripts', 'graph-explorer', 'graph-explorer.mjs');
+const STATIC = path.resolve(__dirname, '../../tools/workbench/src/main/frontend/static');
 const MOUNT_PAGE = `<!doctype html>
-<html lang="en"><head><meta charset="utf-8"><title>Graph collections</title>
+<html lang="en"><head><meta charset="utf-8"><title>Graph Explorer</title>
+<link rel="stylesheet" href="/rdf4j-workbench/styles/workbench-refresh.css">
+<link rel="stylesheet" href="/rdf4j-workbench/styles/query.css">
 <link rel="stylesheet" href="/rdf4j-workbench/styles/graph-explorer.css">
 </head><body class="workbench-body">
-<div id="workbench-outlet"><div data-graph-explorer-mount></div></div>
+<div id="workbench-app" data-workbench-view="graph"><main id="content" class="workbench-main" style="grid-column:1/-1;width:100%;margin-inline:0;padding-inline:16px;box-sizing:border-box">
+<div id="workbench-outlet" class="workbench-outlet">
+<header class="workbench-page-header"><div class="workbench-page-header__text"><h1 id="title_heading">Graph Explorer</h1></div></header>
+<div id="workbench-page-surface" class="workbench-page-surface workbench-page-surface--full-bleed">
+<div class="graph-explorer-mount" data-graph-explorer-mount></div></div></div></main></div>
 <script type="module">
   import "/rdf4j-workbench/scripts/graph-explorer/graph-explorer.mjs";
   window.workbench.graphExplorer.mount(document.getElementById("workbench-outlet"), {
@@ -33,6 +40,7 @@ const MOUNT_PAGE = `<!doctype html>
 const CONTENT_TYPES = { '.mjs': 'text/javascript', '.js': 'text/javascript', '.css': 'text/css',
     '.map': 'application/json', '.wasm': 'application/wasm' };
 const REPOSITORY_ID = uniqueRepositoryId('graph-collections');
+const GRAPH_PATH = `/rdf4j-workbench/repositories/${encodeURIComponent(REPOSITORY_ID)}/graph`;
 const SERVER_IDENTITY = 'sha256:graph-collections-browser-fixture';
 const RDF = 'http://www.w3.org/1999/02/22-rdf-syntax-ns#';
 const RDFS_LABEL = 'http://www.w3.org/2000/01/rdf-schema#label';
@@ -94,12 +102,14 @@ test.beforeAll(async () => {
     if (baseUrl || !fs.existsSync(BUNDLE)) return;
     server = http.createServer((request, response) => {
         const url = new URL(request.url || '/', 'http://localhost');
-        if (url.pathname === '/collections.html') {
+        if (url.pathname === GRAPH_PATH && request.method === 'GET') {
             response.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' }).end(MOUNT_PAGE);
             return;
         }
-        const file = path.normalize(path.join(FRONTEND, url.pathname.replace(/^\/rdf4j-workbench\//, '')));
-        if (!url.pathname.startsWith('/rdf4j-workbench/') || !file.startsWith(FRONTEND + path.sep)
+        // Maven packages these shell styles unchanged. An npm-only build has just the island's CSS.
+        const root = /^\/rdf4j-workbench\/styles\/(workbench-refresh|query|query-compare|query-explanation)\.css$/.test(url.pathname) ? STATIC : FRONTEND;
+        const file = path.normalize(path.join(root, url.pathname.replace(/^\/rdf4j-workbench\//, '')));
+        if (!url.pathname.startsWith('/rdf4j-workbench/') || !file.startsWith(root + path.sep)
                 || !fs.existsSync(file) || !fs.statSync(file).isFile()) {
             response.writeHead(404).end();
             return;
@@ -108,7 +118,7 @@ test.beforeAll(async () => {
         fs.createReadStream(file).pipe(response);
     });
     await new Promise((resolve) => server.listen(0, '127.0.0.1', () => resolve(undefined)));
-    baseUrl = `http://127.0.0.1:${server.address().port}/collections.html`;
+    baseUrl = `http://127.0.0.1:${server.address().port}${GRAPH_PATH}`;
 });
 
 test.afterAll(async () => {
@@ -121,12 +131,12 @@ async function openGraph(page, bindings = complete) {
     const pageErrors = [];
     page.on('pageerror', (error) => pageErrors.push(error.message));
     const origin = new URL(baseUrl).origin;
-    const graphPath = `/rdf4j-workbench/repositories/${encodeURIComponent(REPOSITORY_ID)}/graph`;
     await page.route((url) => url.origin === origin && url.pathname.startsWith('/rdf4j-workbench/repositories/'), async (route) => {
         const request = route.request();
+        if (request.isNavigationRequest()) return route.continue();
         const headers = { 'X-Workbench-Server-Identity': SERVER_IDENTITY, 'Cache-Control': 'no-store' };
         let body = results([], []);
-        if (request.method() === 'POST' && new URL(request.url()).pathname === graphPath) {
+        if (request.method() === 'POST' && new URL(request.url()).pathname === GRAPH_PATH) {
             const query = request.postData() || '';
             queries.push(query);
             if (query === DEFAULT_QUERY) {
@@ -135,7 +145,7 @@ async function openGraph(page, bindings = complete) {
                     && query.includes('<_:pending-tail>')) {
                 body = results(['source', 'predicate', 'target'], continuation);
             } else if (query.includes('SELECT DISTINCT ?resource ?labelProperty ?label')) {
-                body = results(['resource', 'labelProperty', 'label'], labels.map((row) => ({
+                body = results(['resource', 'labelProperty', 'label'], bindings.filter(row => row.predicate.value === RDFS_LABEL).map((row) => ({
                     resource: row.source, labelProperty: row.predicate, label: row.target
                 })));
             }
@@ -145,12 +155,55 @@ async function openGraph(page, bindings = complete) {
     await page.setViewportSize({ width: 1440, height: 900 });
     await page.goto(`${baseUrl}?repository=${encodeURIComponent(REPOSITORY_ID)}`);
     await page.getByRole('button', { name: 'Load 100 statements', exact: true }).click();
-    await expect(page.locator('.graph-node').first()).toBeAttached({ timeout: 30000 });
+    await page.mouse.move(1, 1);
+    await expect(page.locator('.graph-node, .large-graph-interactive').first()).toBeAttached({ timeout: 30000 });
     return { queries, pageErrors };
 }
 
 const node = (page, id) => page.locator(`.graph-node[data-node-id="${id}"]`);
 const card = (page) => node(page, '<_:members-1>');
+const row = (list, position) => list.locator(`.collection-member[data-collection-index="${position}"]`);
+const relation = (page, source, predicate, target) => page.locator(`.edge[data-edge-id=${JSON.stringify(JSON.stringify([source, predicate, target]))}]`);
+
+function readingOrder(books) {
+    const bindings = [
+        binding(uri(EX + 'course'), RDFS_LABEL, literal('Knowledge Graphs 101')),
+        binding(uri(EX + 'course'), EX + 'readingOrder', blank('reading-1')),
+    ];
+    books.forEach(([id, title, author], index) => {
+        const cell = blank('reading-' + (index + 1));
+        bindings.push(binding(cell, RDF + 'first', uri(EX + id)),
+            binding(cell, RDF + 'rest', index + 1 < books.length ? blank('reading-' + (index + 2)) : uri(RDF + 'nil')),
+            binding(uri(EX + id), RDFS_LABEL, literal(title)));
+        if (author) bindings.push(binding(uri(EX + id), EX + 'writtenBy', uri(EX + id + '-author')),
+            binding(uri(EX + id + '-author'), RDFS_LABEL, literal(author)));
+    });
+    return bindings;
+}
+
+async function assertAtRow(edge, member, end) {
+    const point = await edge.locator('path').evaluate((path, atEnd) => {
+        const point = path.getPointAtLength(atEnd ? path.getTotalLength() : 0).matrixTransform(path.getScreenCTM());
+        return { x: point.x, y: point.y };
+    }, end);
+    const rowBox = await member.boundingBox();
+    expect(Math.abs(point.y - rowBox.y - rowBox.height / 2)).toBeLessThan(2);
+    expect(Math.min(Math.abs(point.x - rowBox.x), Math.abs(point.x - rowBox.x - rowBox.width))).toBeLessThan(2);
+}
+
+async function clickLine(page, edge) {
+    const point = await edge.locator('path').evaluate(path => {
+        const point = path.getPointAtLength(path.getTotalLength() * 0.5).matrixTransform(path.getScreenCTM());
+        return { x: point.x, y: point.y };
+    });
+    await page.mouse.click(point.x, point.y);
+}
+
+async function attachScreenshot(page, testInfo, name) {
+    const file = testInfo.outputPath(name + '.png');
+    await page.screenshot({ path: file, animations: 'disabled' });
+    await testInfo.attach(name, { path: file, contentType: 'image/png' });
+}
 async function inspect(page, id) {
     await node(page, id).focus();
     await node(page, id).press('Enter');
@@ -192,7 +245,9 @@ test('selecting a repeated member opens the existing resource rather than the li
     await expect(details).toBeVisible();
     await expect(details).toContainText('Alice');
     await expect(details).toContainText(`${EX}alice`);
-    await expect(node(page, `${EX}alice`)).toHaveCount(1);
+    await expect(node(page, `${EX}alice`)).toHaveCount(0);
+    await expect(row(card(page), 1)).toHaveAttribute('aria-pressed', 'true');
+    await expect(row(card(page), 3)).toHaveAttribute('aria-pressed', 'true');
     await expect(card(page)).toHaveClass(/\bcollection\b/);
     expect(pageErrors).toEqual([]);
 });
@@ -231,17 +286,144 @@ test('showing one list spine leaves a second list compact', async ({ page }) => 
     await expect(otherList).toContainText('1 item');
 });
 
-test('member connections aggregate duplicate positions without duplicating resource nodes', async ({ page }) => {
+test('an explicitly pinned list item keeps its own position in RDF structure until it is unpinned', async ({ page }) => {
+    const { pageErrors } = await openGraph(page, complete);
+    const headId = '<_:members-1>';
+    const details = await inspect(page, headId);
+    await details.getByRole('button', { name: 'Show RDF structure' }).click();
+    const alice = EX + 'alice';
+    await inspect(page, alice);
+    await details.getByRole('button', { name: 'Pin in place' }).click();
+    await inspect(page, headId);
+    await expect(details).toContainText('item 1 is pinned');
+    await expect(card(page)).not.toHaveClass(/\bcollection\b/);
+    await expect(node(page, alice)).toHaveCount(1);
+    await inspect(page, alice);
+    await details.getByRole('button', { name: 'Unpin' }).click();
+    await inspect(page, headId);
+    await details.getByRole('button', { name: 'Show collection' }).click();
+    await expect(row(card(page), 1)).toContainText('Alice');
+    await expect(node(page, alice)).toHaveCount(0);
+    expect(pageErrors).toEqual([]);
+});
+
+test('reading order connects the course to the card and the books to their authors', async ({ page }, testInfo) => {
+    const books = [['intro', 'RDF Fundamentals', 'Maya Chen'], ['queries', 'Querying Linked Data', 'Jon Bell'],
+        ['shapes', 'Validate with SHACL', 'Aisha Malik']];
+    const { pageErrors } = await openGraph(page, readingOrder(books));
+    const list = node(page, '<_:reading-1>');
+    await expect(list).toContainText('Reading order · 3 items');
+    await expect(page.locator('.graph-node')).toHaveCount(5);
+    await expect(page.locator('.edge.collection-membership')).toHaveCount(0);
+    await expect(page.locator('.collection-port')).toHaveCount(3);
+    await expect(page.locator('.edge.show-label')).toHaveCount(4);
+    await expect(relation(page, EX + 'course', EX + 'readingOrder', '<_:reading-1>')).not.toHaveClass(/collection-row-edge/);
+    for (const [index, [id, title, author]] of books.entries()) {
+        await expect(row(list, index + 1).locator('.collection-value')).toHaveText(title);
+        const edge = relation(page, EX + id, EX + 'writtenBy', EX + id + '-author');
+        await expect(edge.locator('title')).toContainText(title + ' — written by → ' + author);
+        await expect(edge.locator('path')).toHaveAttribute('marker-end', 'url(#arrow)');
+        await assertAtRow(edge, row(list, index + 1), false);
+    }
+    await attachScreenshot(page, testInfo, 'reading-order-default');
+    await row(list, 2).click();
+    const details = page.locator('.node-details');
+    await expect(details).toContainText(EX + 'queries');
+    await expect(details).toContainText('Jon Bell');
+    await expect(row(list, 2)).toHaveAttribute('aria-pressed', 'true');
+    await expect(page.locator('.edge.touches-active.show-label')).toHaveCount(1);
+    await expect(page.locator('.graph-node')).toHaveCount(5);
+    await attachScreenshot(page, testInfo, 'reading-order-selected');
+    expect(pageErrors).toEqual([]);
+});
+
+test('shared occurrences use a stable port for each real statement and keep both directions inspectable', async ({ page }) => {
+    const review = EX + 'review', alice = EX + 'alice', project = EX + 'project';
+    await openGraph(page, [...complete,
+        binding(uri(review), EX + 'about', uri(alice)),
+        binding(uri(EX + 'owner'), EX + 'other', blank('other-list')),
+        binding(blank('other-list'), RDF + 'first', uri(alice)), binding(blank('other-list'), RDF + 'rest', uri(RDF + 'nil'))]);
+    const list = card(page), other = node(page, '<_:other-list>');
+    const out = relation(page, alice, EX + 'worksOn', project), into = relation(page, review, EX + 'about', alice);
+    await expect(page.locator('.edge.collection-row-edge.show-label')).toHaveCount(2);
+    await assertAtRow(out, row(list, 1), false);
+    await assertAtRow(into, row(list, 1), true);
+    await row(other, 1).focus();
+    await row(other, 1).press('Enter');
+    await expect(page.locator('.node-details')).toContainText(alice);
+    await expect(row(list, 1)).toHaveAttribute('aria-pressed', 'true');
+    await expect(row(list, 3)).toHaveAttribute('aria-pressed', 'true');
+    await expect(node(page, alice)).toHaveCount(0);
+    await page.getByRole('button', { name: 'Close details', exact: true }).click();
+    for (const [edge, subject, object] of [[out, 'Alice', 'Project'], [into, 'review', 'Alice']]) {
+        await clickLine(page, edge);
+        await expect(page.locator('.statement-details-triple button').first()).toContainText(subject);
+        await expect(page.locator('.statement-details-triple button').last()).toContainText(object);
+        await expect(list).toHaveClass(/\bcollection\b/);
+        await page.getByRole('button', { name: 'Close details', exact: true }).click();
+    }
+    const turtle = await download(page, 'Download Turtle');
+    const aliceBlock = turtle.split('\n\n').find(block => block.startsWith('<' + alice + '>'));
+    expect(aliceBlock).toContain('<' + EX + 'worksOn> <' + project + '>');
+    expect(turtle).toContain('<' + review + '> <' + EX + 'about> <' + alice + '>');
+    expect(turtle.match(/rdf:first/g)).toHaveLength(4);
+});
+
+test('long lists bound the card and the optional overlay, and keep off-card RDF edges on their resources', async ({ page }) => {
+    const books = Array.from({ length: 24 }, (_, i) => ['book' + i, 'Book ' + (i + 1), i === 23 ? 'Last author' : '']);
+    await openGraph(page, readingOrder(books));
+    const list = node(page, '<_:reading-1>');
+    await expect(list.locator('.collection-member')).toHaveCount(4);
+    await expect(list).toContainText('20 more in details');
+    await expect(node(page, EX + 'book23')).toHaveCount(1);
+    await expect(relation(page, EX + 'book23', EX + 'writtenBy', EX + 'book23-author')).not.toHaveClass(/collection-row-edge/);
+    const details = await inspect(page, '<_:reading-1>');
+    await details.getByRole('button', { name: 'Show connections to items 5–8' }).click();
+    await expect(page.locator('.edge.collection-membership')).toHaveCount(4);
+    await details.getByRole('button', { name: 'Hide connections to items 5–8' }).click();
+    await expect(page.locator('.edge.collection-membership')).toHaveCount(0);
+    await details.locator('[data-member-position="1"]').press('End');
+    await details.locator('[data-member-position="24"]').press('Enter');
+    await expect(details).toContainText(EX + 'book23');
+    await expect(page.locator('.graph-node')).toHaveCount(4);
+});
+
+test('paths use RDF endpoints for both a row relationship and a path through the hidden spine', async ({ page }) => {
     await openGraph(page);
-    const details = await inspect(page, '<_:members-1>');
-    await details.getByRole('button', { name: 'Show member connections', exact: true }).click();
-    const connections = page.locator('.edge.collection-membership');
-    await expect(connections).toHaveCount(2);
-    await expect(connections.locator('title').filter({ hasText: /positions 1, 3/ })).toHaveCount(1);
-    await expect(node(page, `${EX}alice`)).toHaveCount(1);
-    await details.getByRole('button', { name: 'Hide member connections', exact: true }).click();
-    await expect(connections).toHaveCount(0);
+    await row(card(page), 3).click();
+    await node(page, EX + 'project').click({ modifiers: ['Shift'] });
+    await page.locator('summary[aria-label="Open workspace tools"]').click();
+    await page.getByRole('button', { name: /Paths and groups/ }).click();
+    await page.getByRole('button', { name: 'Find shortest path' }).click();
+    await expect(relation(page, EX + 'alice', EX + 'worksOn', EX + 'project')).toHaveClass(/is-on-path/);
+    await expect(page.locator('.edge.is-on-path')).toHaveCount(1);
     await expect(card(page)).toHaveClass(/\bcollection\b/);
+
+    await page.getByRole('button', { name: /Clear the selection of 2 nodes/ }).click();
+    await node(page, EX + 'owner').click();
+    await node(page, EX + 'project').click({ modifiers: ['Shift'] });
+    await page.getByRole('button', { name: 'Find shortest path' }).click();
+    await expect(card(page)).not.toHaveClass(/\bcollection\b/);
+    await expect(relation(page, '<_:members-1>', RDF + 'first', EX + 'alice')).toHaveClass(/is-on-path/);
+    await expect(page.locator('.edge.is-on-path')).toHaveCount(3);
+});
+
+test('the large canvas keeps linked members as resources and opens ordered rows in details', async ({ page }) => {
+    const head = uri(EX + 'roster');
+    const large = complete.map(row => ({ ...row, source: row.source.value === 'members-1' ? head : row.source,
+        target: row.target.value === 'members-1' ? head : row.target }));
+    large.push(binding(head, RDFS_LABEL, literal('Large roster')));
+    for (let i = 0; i < 500; i++) large.push(binding(uri(EX + 'n' + i), EX + 'next', uri(EX + 'n' + ((i + 1) % 500))));
+    await openGraph(page, large);
+    await expect(page.locator('.large-graph-interactive')).toBeVisible();
+    const find = page.getByRole('combobox', { name: /Find a node/ });
+    await find.fill('Large roster');
+    await page.getByRole('option').filter({ hasText: 'Large roster' }).click();
+    const details = page.locator('.node-details');
+    await expect(details).toContainText('In this overview');
+    await details.getByRole('button', { name: /^Select member 3: Alice/ }).click();
+    await expect(details).toContainText(EX + 'alice');
+    await expect(details).toContainText('Project');
 });
 
 test('partial lists load continuation by certified tail identity before acquiring an exact count', async ({ page }) => {
@@ -270,8 +452,20 @@ test('shared tails remain identifiable and neither incoming list silently absorb
 });
 
 test('selecting a collection member leaves ordinary edges on WebGL in a medium graph', async ({ page }) => {
+    await page.addInitScript(() => {
+        const draw = WebGLRenderingContext.prototype.drawArrays;
+        WebGLRenderingContext.prototype.drawArrays = function(mode, first, count) {
+            if (mode === this.LINES && this.canvas instanceof HTMLCanvasElement && this.canvas.classList.contains('webgl-layer')) {
+                this.canvas.dataset.drawnLineVertices = String(count);
+            }
+            return draw.call(this, mode, first, count);
+        };
+    });
     const count = 296;
-    const medium = complete.map((row) => row.target.value === 'second' ? { ...row, target: uri(`${EX}project`) } : row);
+    const medium = complete.map((row) => ({ ...row, target: row.target.value === 'second' ? uri(`${EX}project`) : row.target }));
+    medium.find(row => row.source.value === 'members-3' && row.predicate.value === RDF + 'rest').target = blank('members-4');
+    medium.push(binding(blank('members-4'), RDF + 'first', uri(EX + 'project')), binding(blank('members-4'), RDF + 'rest', blank('members-5')),
+        binding(blank('members-5'), RDF + 'first', literal('off-card')), binding(blank('members-5'), RDF + 'rest', uri(RDF + 'nil')));
     for (let index = 0; index < count; index++) {
         for (const jump of [1, 7, 13, 37]) {
             medium.push(binding(uri(`${EX}n${index}`), `${EX}rel${jump}`, uri(`${EX}n${(index + jump) % count}`)));
@@ -287,22 +481,30 @@ test('selecting a collection member leaves ordinary edges on WebGL in a medium g
     }), 'requires WebGL');
     const canvas = page.locator('.graph-canvas');
     await expect(canvas).toHaveClass(/\bwebgl-active\b/);
-    await expect(canvas.locator('.graph-node')).toHaveCount(300);
+    await expect(canvas.locator('.graph-node')).toHaveCount(298);
 
     const details = await inspect(page, '<_:members-1>');
+    await details.getByRole('button', { name: /Show connections to item/ }).click();
+    const fallback = canvas.locator('.edge.collection-membership path');
+    await expect(fallback).toHaveCount(1);
+    expect(await fallback.evaluate(path => getComputedStyle(path).strokeDasharray)).not.toBe('none');
+    await expect(fallback).toHaveCSS('opacity', '1');
+    await expect(canvas).toHaveClass(/\bwebgl-active\b/);
+    await details.getByRole('button', { name: /Hide connections to item/ }).click();
     await details.getByRole('button', { name: /^Select member 1:/ }).click();
     await expect(details).toContainText(`${EX}alice`);
 
     const membership = canvas.locator('.edge.collection-membership');
-    await expect(membership).toHaveCount(2);
+    await expect(membership).toHaveCount(0);
     await expect(canvas).toHaveClass(/\bwebgl-active\b/);
-    await expect(canvas.locator('.graph-node')).toHaveCount(300);
+    await expect(canvas.locator('.graph-node')).toHaveCount(298);
+    await expect.poll(async () => Number(await page.locator('.webgl-layer').getAttribute('data-drawn-line-vertices'))).toBeGreaterThan(2000);
     expect(await canvas.locator('.edge').count()).toBeLessThan(25);
-    const stroke = await membership.first().locator('path').evaluate((path) => {
+    const stroke = await canvas.locator('.edge.collection-row-edge').first().locator('path').evaluate((path) => {
         const style = getComputedStyle(path);
         return { dash: style.strokeDasharray, opacity: style.opacity };
     });
-    expect(stroke.dash).not.toBe('none');
+    expect(stroke.dash).toBe('none');
     expect(stroke.opacity).toBe('1');
     expect(pageErrors).toEqual([]);
 });

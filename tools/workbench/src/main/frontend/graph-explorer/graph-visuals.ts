@@ -65,6 +65,7 @@ export function primaryNodeType(node: GraphNode) {
 }
 
 export function nodeVisual(node: GraphNode) {
+  if (node.collection) return BLANK_VISUAL;
   if (node.kind === "literal") return LITERAL_VISUAL;
   if (node.kind === "blank") return BLANK_VISUAL;
   const primaryType = primaryNodeType(node);

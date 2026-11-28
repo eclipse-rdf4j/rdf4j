@@ -44,6 +44,24 @@ test("graphs without collection vocabulary reuse the ordinary canvas projection"
   assert.equal(projectCollections(raw, analysis).graph, canvasGraph(raw, false));
 });
 
+test("ordinary relationships use one visible row for a repeated resource and keep their RDF identity", () => {
+  const book = { ...iri("urn:book"), termValue: "urn:book", label: "RDF Fundamentals" };
+  const raw = list([book, iri("urn:other-book"), book]);
+  raw.nodes.push(iri("urn:author"), iri("urn:review"));
+  const outgoing = edge(book.id, "urn:writtenBy", "urn:author");
+  const incoming = edge("urn:review", "urn:about", book.id);
+  raw.edges.push(outgoing, incoming);
+  const before = structuredClone(raw);
+  const { graph } = projectCollections(raw);
+  assert.deepEqual(graph.nodes.filter(node => node.id === book.id), []);
+  const rows = graph.nodes.find(node => node.id === "cell0").collection.preview;
+  assert.deepEqual(rows.map(row => row.label), ["RDF Fundamentals", "urn:other-book", "RDF Fundamentals"]);
+  const port = { headId: "cell0", memberId: book.id, position: 1 };
+  assert.deepEqual(graph.edges, [raw.edges[0],
+    { ...outgoing, source: "cell0", sourceRow: port }, { ...incoming, target: "cell0", targetRow: port }]);
+  assert.deepEqual(raw, before);
+});
+
 test("complete lists retain order and duplicate occurrences while projection preserves the raw graph", () => {
   const raw = list();
   const before = structuredClone(raw);
@@ -65,17 +83,59 @@ test("complete lists retain order and duplicate occurrences while projection pre
   assert.deepEqual(raw, before);
 });
 
-test("literal collection contents survive Values off and numbered connections keep member identity", () => {
-  const raw = list([literal("v1", "one"), literal("v2", "two"), literal("v1", "one")]);
+test("a shared member's statement keeps one deterministic row when independently loaded lists change order", () => {
+  const book = iri("urn:book"), author = iri("urn:author");
+  const alpha = list([iri("urn:other"), book, book], "alpha"), zulu = list([book], "zulu");
+  const statement = edge(book.id, "urn:writtenBy", author.id);
+  for (const [first, second] of [[alpha, zulu], [zulu, alpha]]) {
+    const raw = { nodes: [...new Map([...first.nodes, author, ...second.nodes].map(node => [node.id, node])).values()],
+      edges: [...first.edges, statement, ...second.edges], revision: 1 };
+    const analysis = analyzeCollections(raw);
+    for (const [expandedHeads, headId, position] of [[new Set(), "alpha0", 2], [new Set(["alpha0"]), "zulu0", 1]]) {
+      const { graph } = projectCollections(raw, analysis, { expandedHeads });
+      const drawn = graph.edges.filter(edge => edge.id === statement.id);
+      assert.equal(drawn.length, 1);
+      assert.deepEqual(drawn[0].sourceRow, { headId, position, memberId: book.id });
+      assert.ok(!graph.nodes.some(node => node.id === book.id));
+    }
+  }
+});
+
+test("a resource that needs its own position is never drawn both independently and inside a row", () => {
+  const pinned = list();
+  pinned.nodes.find(node => node.id === "urn:b").pinned = true;
+  const annotated = list();
+  const statement = edge("urn:a", "urn:describes", "urn:owner");
+  annotated.edges.push(statement);
+  annotated.statementLinks = [{ id: "claim", source: "urn:b", predicate: "urn:mentions", label: "mentions",
+    subject: statement.source, statementPredicate: statement.predicate, object: statement.target, statementEdgeId: statement.id }];
+  for (const [raw, reason] of [[pinned, /item 2 is pinned/i], [annotated, /item 2 links to a statement/i]]) {
+    const analysis = analyzeCollections(raw);
+    assert.match(analysis.collections.get("cell0").reason ?? "", reason);
+    assert.equal(analysis.collections.get("cell0").status, "complete");
+    const { graph } = projectCollections(raw, analysis);
+    assert.equal(graph.nodes.find(node => node.id === "cell0").collection, undefined);
+    assert.ok(graph.nodes.some(node => node.id === "urn:b"));
+    assert.deepEqual(graph.edges, raw.edges);
+  }
+  const raw = list();
+  const retained = projectCollections(raw, analyzeCollections(raw), { retainNodeIds: new Set(["urn:b"]) });
+  assert.equal(retained.graph.nodes.find(node => node.id === "cell0").collection, undefined);
+});
+
+test("literal rows survive Values off and optional off-card connections preserve repeated positions", () => {
+  const raw = list([literal("v1", "one"), literal("v2", "two"), literal("v1", "one"), literal("v4", "four"),
+    literal("v5", "five"), literal("v1", "one"), literal("v5", "five")]);
   const analysis = analyzeCollections(raw);
   const compact = projectCollections(raw, analysis);
   assert.deepEqual(compact.graph.nodes.find((node) => node.id === "cell0").collection.preview
-    .map((item) => item.label), ["one", "two", "one"]);
+    .map((item) => item.label), ["one", "two", "one", "four"]);
   const connected = projectCollections(raw, analysis, { connectedHeads: new Set(["cell0"]) });
   const links = connected.graph.edges.filter((item) => item.collection);
-  assert.equal(links.length, 2);
-  assert.deepEqual(links.find((item) => item.target === "v1").collection.positions, [1, 3]);
-  assert.equal(connected.graph.nodes.filter((node) => node.id === "v1").length, 1);
+  assert.equal(links.length, 1);
+  assert.deepEqual(links[0].collection.positions, [5, 7]);
+  assert.equal(connected.graph.nodes.filter((node) => node.id === "v5").length, 1);
+  assert.equal(connected.graph.nodes.filter((node) => node.id === "v1").length, 0);
 });
 
 test("a missing continuation is partial and remains structurally visible", () => {
@@ -120,7 +180,7 @@ test("a named head with several owners and extra metadata keeps its identity and
   const head = projection.graph.nodes.find((node) => node.id === "cell0");
   assert.equal(head.kind, "iri");
   assert.equal(head.collection.count, 3);
-  assert.equal(projection.graph.edges.filter((item) => item.target === "cell0").length, 2);
+  assert.equal(projection.graph.edges.filter((item) => item.target === "cell0" && !item.targetRow).length, 2);
   assert.ok(projection.graph.edges.some((item) => item.predicate === "urn:about"));
 });
 
@@ -281,7 +341,7 @@ test("removing a folded list cleans up its terminator only after the last struct
   const connected = projectCollections(emptyMember, analyzeCollections(emptyMember), {
     connectedHeads: new Set(["cell0"]),
   });
-  assert.ok(connected.graph.nodes.some((node) => node.id === `${RDF}nil`));
+  assert.ok(connected.memberRows.has(`${RDF}nil`));
   assert.equal(projectCollections(removeGraphNodes(emptyMember,
     collectionRemovalIds(connected, new Set(["cell0"])))).graph.nodes
     .some((node) => node.id === `${RDF}nil`), false);
@@ -328,4 +388,7 @@ test("a long list has bounded previews, iterative analysis, and stable suffix co
   assert.equal(card.preview.length, 4);
   assert.equal(card.hiddenCount, 19_996);
   assert.equal(projection.hiddenCells.size, 19_999);
+  const overlay = projectCollections(raw, analysis, { connectedHeads: new Set(["cell0"]) });
+  assert.equal(overlay.graph.edges.filter(edge => edge.collection).length, 4);
+  assert.equal(overlay.graph.nodes.length, 6);
 });

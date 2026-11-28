@@ -46,7 +46,8 @@ test("collection cards reserve bounded space for ordered preview rows", () => {
   assert.ok(presentation.height > ordinary.height, "collection rows need their own height");
   assert.equal(presentation.label, "List · 3 items");
   const long = graphNodePresentation(collectionNode(["A", "B", "C", "D"], 50_000));
-  assert.ok(long.height < 200, "total length must not determine canvas card height");
+  assert.ok(long.height < 300, "total length must not determine canvas card height");
+  assert.equal(long.height, graphNodePresentation(collectionNode(["A", "B", "C", "D"], 5)).height);
   assert.ok(long.height > presentation.height, "remaining members need a visible footer");
 });
 
@@ -78,6 +79,25 @@ test("SVG collection membership connections are visibly distinct from asserted p
   assert.ok(path, "the membership connector is drawn");
   assert.match(path, /stroke-dasharray=/);
   assert.doesNotMatch(path, /marker-end=/, "membership summaries are not asserted RDF arrows");
+});
+
+test("SVG export uses the row port when no routed curve is supplied and Turtle keeps the member", () => {
+  const card = collectionNode(["First", "Book"]);
+  const author = { id: "urn:author", label: "Author", kind: "iri", x: 550, y: 130 };
+  const row = { headId: card.id, memberId: "urn:member:Book", position: 2 };
+  const writtenBy = { id: "writtenBy", source: card.id, target: author.id, sourceRow: row, predicate: "urn:writtenBy", label: "written by" };
+  const reviews = { id: "reviews", source: author.id, target: card.id, targetRow: row, predicate: "urn:reviews", label: "reviews" };
+  const svg = exportSvg([card, author], [writtenBy, reviews]);
+  const { width, height, collection } = graphNodePresentation(card);
+  const x = card.x + width / 2;
+  const y = card.y - height / 2 + collection.rows[1].y + collectionPresentation.COLLECTION_ROW_HEIGHT / 2;
+  assert.equal((svg.match(/r="3\.2"/g) ?? []).length, 1, "both arrows share one socket");
+  assert.ok(svg.includes(`<circle cx="${x}" cy="${y}" r="3.2"`));
+  assert.ok(svg.includes(`<path d="M ${x} ${y} `), "the outbound path starts at the socket");
+  assert.ok(svg.includes(`L ${x} ${y}" fill="none"`), "the inbound path ends at the socket");
+  const turtle = graphTurtle({ nodes: [card, author], edges: [writtenBy, reviews] });
+  assert.match(turtle, /<urn:member:Book> <urn:writtenBy> <urn:author>/);
+  assert.match(turtle, /<urn:author> <urn:reviews> <urn:member:Book>/);
 });
 
 test("large graph hover identifies the collection while keeping its original head identity", () => {

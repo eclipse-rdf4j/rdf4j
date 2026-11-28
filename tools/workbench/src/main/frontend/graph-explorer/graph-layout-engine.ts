@@ -26,6 +26,8 @@ import {layoutSubset} from './graph-layout-selection.ts';
 import type { EdgeRoute, Graph, PointerPosition } from './graph-types.ts';
 import {computeOrganicLayout} from './graph-layout-organic.ts';
 import {routeEdges as routeArrows} from './graph-edge-router.ts';
+import {edgeLabelSize, graphNodePresentation, graphNodeSize} from './graph-geometry.ts';
+import {COLLECTION_ROW_HEIGHT} from './collection-presentation.ts';
 
 export type LayoutOptions = {
   incremental?: boolean;
@@ -135,6 +137,47 @@ function organizeComponent(graph: Graph, options: LayoutOptions): LayoutResult {
   return best!;
 }
 
+/** In an isolated list with leaf neighbours, read incoming links from the left and outgoing links to the right
+ * in list order. More connected networks use the ordinary layout and their ports follow their neighbours. */
+function collectionLeafPositions(graph: Graph) {
+  if (graph.edges.length !== graph.nodes.length - 1) return null;
+  const first = graph.edges.find(edge => edge.sourceRow || edge.targetRow);
+  if (!first) return null;
+  const headId = (first.sourceRow ?? first.targetRow)!.headId;
+  const nodes = new Map(graph.nodes.map(node => [node.id, node]));
+  const head = nodes.get(headId)!;
+  const card = graphNodePresentation(head);
+  if (!card.collection) return null;
+  type Leaf = { id: string; width: number; height: number; y: number };
+  const left: Leaf[] = [], right: Leaf[] = [];
+  const seen = new Set([headId]);
+  let gap = 108;
+  for (const edge of graph.edges) {
+    const incoming = edge.target === headId;
+    if (!incoming && edge.source !== headId) return null;
+    const id = incoming ? edge.source : edge.target;
+    const node = nodes.get(id);
+    if (!node || seen.has(id) || node.collection) return null;
+    seen.add(id);
+    const port = incoming ? edge.targetRow : edge.sourceRow;
+    const y = port ? card.collection.rows[port.position - 1].y + COLLECTION_ROW_HEIGHT / 2 - card.height / 2 : 0;
+    (incoming ? left : right).push({ id, ...graphNodeSize(node), y });
+    gap = Math.max(gap, edgeLabelSize(edge).width + 34);
+  }
+  const positions = new Map<string, PointerPosition>([[headId, { x: 0, y: 0 }]]);
+  const column = (leaves: Leaf[], side: number) => {
+    let bottom = -Infinity;
+    for (const leaf of leaves.sort((a, b) => a.y - b.y || a.id.localeCompare(b.id))) {
+      const y = Math.max(leaf.y, bottom + 6 + leaf.height / 2);
+      positions.set(leaf.id, { x: side * (card.width / 2 + gap + leaf.width / 2), y });
+      bottom = y + leaf.height / 2;
+    }
+  };
+  column(left, -1);
+  column(right, 1);
+  return positions;
+}
+
 export async function computeGraphLayout(graph: Graph, options: LayoutOptions = {}): Promise<LayoutResult> {
   if (!graph.nodes.length) return {positions: new Map(), bends: new Map()};
   const checked = (result: LayoutResult) => {
@@ -178,6 +221,10 @@ export async function computeGraphLayout(graph: Graph, options: LayoutOptions = 
     return Object.assign(result, routeEdges(graph, result.positions, options.includeRoutes));
   }
   if (organic) {
+    if (!options.incremental && !options.nodeSizes && !graph.nodes.some(node => node.pinned)) {
+      const positions = collectionLeafPositions(graph);
+      if (positions) return { positions, ...routeEdges(graph, positions, options.includeRoutes) };
+    }
     const result = computeOrganicLayout(graph, options);
     if (!options.incremental && !graph.nodes.some(node => node.pinned)) keepPreviousOrientation(graph, result.positions);
     checked(result);

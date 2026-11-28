@@ -16,17 +16,19 @@ import { collectionSelectionInView } from "../../../main/frontend/graph-explorer
 test("selection follows nested hidden cells and shared members to visible collection heads", () => {
   const projection = {
     graph: { nodes: [{ id: "head" }, { id: "other-head" }, { id: "visible-member" }] },
+    memberRows: new Map([["row", { memberId: "row", headId: "head", position: 1 }]]),
     hiddenCells: new Map([["tail", "nested"], ["second-tail", "head"]]),
     hiddenMembers: new Map([["nested", ["head"]], ["member", ["head", "other-head"]]]),
     structuralTermOwners: new Map(),
   };
-  assert.deepEqual(collectionSelectionInView(["tail", "second-tail", "member", "visible-member", "missing"], projection),
-    new Set(["head", "other-head", "visible-member"]));
+  assert.deepEqual(collectionSelectionInView(["tail", "second-tail", "member", "visible-member", "row", "missing"], projection),
+    new Set(["head", "other-head", "visible-member", "row"]));
 });
 
 test("cyclic hidden membership cannot loop during selection remapping", () => {
   const projection = {
     graph: { nodes: [] },
+    memberRows: new Map(),
     hiddenCells: new Map(),
     hiddenMembers: new Map([["a", ["b"]], ["b", ["a"]]]),
     structuralTermOwners: new Map(),
@@ -37,6 +39,7 @@ test("cyclic hidden membership cannot loop during selection remapping", () => {
 test("selection of removed list infrastructure follows every visible owning collection", () => {
   const projection = {
     graph: { nodes: [{ id: "head" }, { id: "other" }] },
+    memberRows: new Map(),
     hiddenCells: new Map(),
     hiddenMembers: new Map(),
     structuralTermOwners: new Map([["rdf:nil", ["head", "other"]]]),
