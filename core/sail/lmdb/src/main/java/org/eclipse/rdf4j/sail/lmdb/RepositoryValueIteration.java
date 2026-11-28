@@ -236,6 +236,10 @@ final class RepositoryValueIteration<T>
 			}
 			snapshot = arraySnapshotLayout.snapshot(array);
 			flatValues = snapshot == null ? null : arraySnapshotLayout.snapshotValues();
+		} else if (!captured && extractor == SailResultValueExtractor.BINDING_SETS && sourceRow != null
+				&& sourceRow.getClass() == MapBindingSet.class) {
+			// A row that is still a compact projection is copied by sharing the projection it never writes.
+			snapshot = ((MapBindingSet) sourceRow).compactSnapshot();
 		}
 		// Identity with the default binding-set extractor guarantees T accepts a BindingSet.
 		@SuppressWarnings("unchecked")

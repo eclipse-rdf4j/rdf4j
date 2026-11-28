@@ -65,6 +65,35 @@ public class MapBindingSetTest extends BindingSetTest<MapBindingSet> {
 	}
 
 	@Test
+	public void compactSnapshotOfACompactBindingSetIsIndependentOfIt() {
+		MapBindingSet source = compact(new Value[] { RDF.ALT, null, RDF.FIRST });
+
+		MapBindingSet copy = source.compactSnapshot();
+		MapBindingSet untouched = source.compactSnapshot();
+
+		assertEquals(plain(), copy);
+		assertEquals(List.of("x", "z"), List.copyOf(copy.getBindingNames()));
+		// Neither binding set sees a change made to the other.
+		copy.setBinding("y", RDF.BAG);
+		copy.removeBinding("x");
+		assertEquals(plain(), source);
+		source.clear();
+		assertEquals(0, source.size());
+		assertSame(RDF.BAG, copy.getValue("y"));
+		assertNull(copy.getValue("x"));
+		assertEquals(plain(), untouched);
+	}
+
+	@Test
+	public void onlyAnUnchangedCompactBindingSetHasACompactSnapshot() {
+		assertNull(plain().compactSnapshot());
+
+		MapBindingSet expanded = compact(new Value[] { RDF.ALT, null, RDF.FIRST });
+		expanded.setBinding("y", RDF.BAG);
+		assertNull(expanded.compactSnapshot());
+	}
+
+	@Test
 	public void compactSnapshotAnswersLikeAnOrdinaryBindingSet() {
 		MapBindingSet snapshot = compact(new Value[] { RDF.ALT, null, RDF.FIRST });
 
