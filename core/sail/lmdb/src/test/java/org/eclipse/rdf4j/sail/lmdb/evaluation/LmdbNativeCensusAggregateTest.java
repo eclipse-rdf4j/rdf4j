@@ -20,6 +20,7 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyBoolean;
 import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.anyLong;
+import static org.mockito.ArgumentMatchers.nullable;
 import static org.mockito.Mockito.doAnswer;
 import static org.mockito.Mockito.doReturn;
 import static org.mockito.Mockito.mock;
@@ -87,6 +88,7 @@ import org.eclipse.rdf4j.sail.lmdb.NativeQuerySourceAccess;
 import org.eclipse.rdf4j.sail.lmdb.config.DirectAdjacencyCoverage;
 import org.eclipse.rdf4j.sail.lmdb.config.DirectAdjacencyMode;
 import org.eclipse.rdf4j.sail.lmdb.config.LmdbStoreConfig;
+import org.eclipse.rdf4j.sail.lmdb.evaluation.NativeLmdbQuerySource.CursorCancellation;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.NativeLmdbQuerySource.NativeAdjacency;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.NativeLmdbQuerySource.NativeAdjacency.AdjacencyPageCursor;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.NativeLmdbQuerySource.NativeProbe;
@@ -997,7 +999,7 @@ class LmdbNativeCensusAggregateTest {
 			NativeLmdbQuerySource backing = (NativeLmdbQuerySource) dataset;
 			NativeLmdbQuerySource source = mock(NativeLmdbQuerySource.class, delegatesTo(backing));
 			doAnswer(sourceCall -> {
-				NativeProbe realProbe = backing.newProbe();
+				NativeProbe realProbe = backing.newProbe(sourceCall.getArgument(0));
 				NativeProbe wrappedProbe = mock(NativeProbe.class, delegatesTo(realProbe));
 				doAnswer(censusCall -> {
 					NativeLmdbQuerySource.CensusPageSweepReceipt receipt = censusCall.getArgument(0);
@@ -1044,7 +1046,7 @@ class LmdbNativeCensusAggregateTest {
 						.censusPageSweep(
 								any(NativeLmdbQuerySource.CensusPageSweepReceipt.class), any(Runnable.class));
 				return wrappedProbe;
-			}).when(source).newProbe();
+			}).when(source).newProbe(nullable(CursorCancellation.class));
 
 			SyntheticValueSource scopedSource = SyntheticValueSource.forEvaluation(source);
 			QueryEvaluationStep candidate = censusCandidate(scopedSource, dataset, CENSUS);
@@ -1103,7 +1105,7 @@ class LmdbNativeCensusAggregateTest {
 			NativeLmdbQuerySource backing = (NativeLmdbQuerySource) dataset;
 			NativeLmdbQuerySource source = mock(NativeLmdbQuerySource.class, delegatesTo(backing));
 			doAnswer(sourceCall -> {
-				NativeProbe realProbe = backing.newProbe();
+				NativeProbe realProbe = backing.newProbe(sourceCall.getArgument(0));
 				NativeProbe wrappedProbe = mock(NativeProbe.class, delegatesTo(realProbe));
 				doAnswer(adjacencyCall -> {
 					long predicate = adjacencyCall.getArgument(0);
@@ -1166,7 +1168,7 @@ class LmdbNativeCensusAggregateTest {
 					return wrappedAdjacency;
 				}).when(wrappedProbe).censusAdjacency(anyLong(), anyBoolean(), any(Runnable.class));
 				return wrappedProbe;
-			}).when(source).newProbe();
+			}).when(source).newProbe(nullable(CursorCancellation.class));
 
 			SyntheticValueSource scopedSource = SyntheticValueSource.forEvaluation(source);
 			QueryEvaluationStep candidate = censusCandidate(scopedSource, dataset, CENSUS);
@@ -1234,7 +1236,7 @@ class LmdbNativeCensusAggregateTest {
 			NativeLmdbQuerySource source = mock(NativeLmdbQuerySource.class, delegatesTo(backing));
 			doAnswer(sourceCall -> {
 				int probeNumber = probesOpened.incrementAndGet();
-				NativeProbe realProbe = backing.newProbe();
+				NativeProbe realProbe = backing.newProbe(sourceCall.getArgument(0));
 				NativeProbe wrappedProbe = mock(NativeProbe.class, delegatesTo(realProbe));
 				doAnswer(adjacencyCall -> {
 					long predicate = adjacencyCall.getArgument(0);
@@ -1269,7 +1271,7 @@ class LmdbNativeCensusAggregateTest {
 					return wrappedAdjacency;
 				}).when(wrappedProbe).censusAdjacency(anyLong(), anyBoolean(), any(Runnable.class));
 				return wrappedProbe;
-			}).when(source).newProbe();
+			}).when(source).newProbe(nullable(CursorCancellation.class));
 
 			SyntheticValueSource scopedSource = SyntheticValueSource.forEvaluation(source);
 			QueryEvaluationStep candidate = censusCandidate(scopedSource, dataset, CENSUS);
@@ -1341,7 +1343,7 @@ class LmdbNativeCensusAggregateTest {
 			NativeLmdbQuerySource source = mock(NativeLmdbQuerySource.class, delegatesTo(backing));
 			doAnswer(sourceCall -> {
 				probesOpened.incrementAndGet();
-				NativeProbe realProbe = backing.newProbe();
+				NativeProbe realProbe = backing.newProbe(sourceCall.getArgument(0));
 				NativeProbe wrappedProbe = mock(NativeProbe.class, delegatesTo(realProbe));
 				doAnswer(adjacencyCall -> {
 					long predicate = adjacencyCall.getArgument(0);
@@ -1359,7 +1361,7 @@ class LmdbNativeCensusAggregateTest {
 							reductionEofTripped, deadline);
 				}).when(wrappedProbe).censusAdjacency(anyLong(), anyBoolean(), any(Runnable.class));
 				return wrappedProbe;
-			}).when(source).newProbe();
+			}).when(source).newProbe(nullable(CursorCancellation.class));
 
 			SyntheticValueSource scopedSource = SyntheticValueSource.forEvaluation(source);
 			CensusCandidateWithTarget captured = censusCandidateWithTarget(scopedSource, dataset, globalQuery);
@@ -1523,7 +1525,7 @@ class LmdbNativeCensusAggregateTest {
 		NativeLmdbQuerySource source = mock(NativeLmdbQuerySource.class, delegatesTo(backing));
 		doAnswer(call -> {
 			int probeNumber = probesOpened.incrementAndGet();
-			NativeProbe realProbe = backing.newProbe();
+			NativeProbe realProbe = backing.newProbe(call.getArgument(0));
 			NativeProbe wrappedProbe = mock(NativeProbe.class, delegatesTo(realProbe));
 			doAnswer(censusCall -> {
 				NativeLmdbQuerySource.CensusPageSweepReceipt receipt = censusCall.getArgument(0);
@@ -1545,7 +1547,7 @@ class LmdbNativeCensusAggregateTest {
 				return null;
 			}).when(wrappedProbe).close();
 			return wrappedProbe;
-		}).when(source).newProbe();
+		}).when(source).newProbe(nullable(CursorCancellation.class));
 		return source;
 	}
 
