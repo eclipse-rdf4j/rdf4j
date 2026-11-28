@@ -17,15 +17,19 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertInstanceOf;
 import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
+import java.util.concurrent.locks.Condition;
 
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.Timeout;
@@ -207,6 +211,86 @@ class SailModelCleanupTest {
 		}
 		retained.close();
 		assertEquals(1, resource.closes.get());
+	}
+
+	@Test
+	void optimisticReadValidatesOnlyWhileTheLockStaysFree() {
+		SailModelCleanup.Lock lock = new SailModelCleanup.Lock();
+		long stamp = lock.tryOptimisticRead();
+		assertTrue(stamp >= 0L, "a free lock admits an optimistic read");
+		assertTrue(lock.validate(stamp));
+
+		lock.lock();
+		try {
+			assertFalse(lock.validate(stamp), "nothing validates while the lock is held");
+			assertTrue(lock.tryOptimisticRead() < 0L, "a held lock admits no optimistic read");
+			lock.lock();
+			lock.unlock();
+			assertTrue(lock.tryOptimisticRead() < 0L, "an inner unlock does not release the lock");
+		} finally {
+			lock.unlock();
+		}
+		assertFalse(lock.validate(stamp), "a hold that came and went invalidates the earlier stamp");
+		assertFalse(lock.validate(-1L));
+		long later = lock.tryOptimisticRead();
+		assertTrue(lock.validate(later));
+		assertFalse(lock.isLocked());
+	}
+
+	/**
+	 * A holder that waits on a condition releases the lock without unlocking it, and holds it again when it wakes. A
+	 * reader must not take the lock's being free before and after such a round for nobody having held it in between.
+	 */
+	@Test
+	@Timeout(value = 30, unit = TimeUnit.SECONDS)
+	void aConditionWaitInvalidatesOptimisticReadsLikeAnUnlock() throws Exception {
+		SailModelCleanup.Lock lock = new SailModelCleanup.Lock();
+		Condition waited = lock.newCondition();
+		CountDownLatch waiting = new CountDownLatch(1);
+		AtomicInteger rounds = new AtomicInteger();
+		AtomicBoolean stop = new AtomicBoolean();
+		AtomicReference<Throwable> failure = new AtomicReference<>();
+		Thread waiter = new Thread(() -> {
+			lock.lock();
+			try {
+				while (!stop.get()) {
+					waiting.countDown();
+					waited.awaitNanos(TimeUnit.MILLISECONDS.toNanos(5));
+					// The waiter holds the lock again here: guarded state would change at this point.
+					rounds.incrementAndGet();
+				}
+			} catch (InterruptedException interrupted) {
+				failure.set(interrupted);
+			} finally {
+				lock.unlock();
+			}
+		});
+		waiter.start();
+		try {
+			assertTrue(waiting.await(10, TimeUnit.SECONDS));
+			long stamp;
+			int roundsAtStamp;
+			do {
+				roundsAtStamp = rounds.get();
+				stamp = lock.tryOptimisticRead();
+			} while (stamp < 0L || rounds.get() != roundsAtStamp);
+
+			while (rounds.get() < roundsAtStamp + 2) {
+				Thread.onSpinWait();
+			}
+			boolean validated = false;
+			long deadline = System.nanoTime() + TimeUnit.MILLISECONDS.toNanos(200);
+			while (!validated && System.nanoTime() < deadline) {
+				validated = lock.validate(stamp);
+			}
+			assertFalse(validated, "a stamp taken before the waiter held the lock again must not validate");
+		} finally {
+			stop.set(true);
+			waiter.join(TimeUnit.SECONDS.toMillis(10));
+		}
+		assertFalse(waiter.isAlive());
+		assertSame(null, failure.get());
+		assertFalse(lock.isLocked());
 	}
 
 	private static Thread releaserThread(ExecutorService executor) throws Exception {

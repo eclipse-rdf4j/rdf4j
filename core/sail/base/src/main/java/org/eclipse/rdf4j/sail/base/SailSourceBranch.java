@@ -1271,6 +1271,16 @@ class SailSourceBranch implements SailSource, FrozenFlush {
 	}
 
 	/**
+	 * Whether a reader that takes no observations would get exactly the backing source's dataset from this branch: the
+	 * branch is open, holds no committed changes that are not flushed yet, and caches no snapshot. The fields are
+	 * guarded by the branch lock; a caller that does not hold it reads them inside an optimistic read of that lock and
+	 * discards the answer when the read does not validate.
+	 */
+	boolean addsNothingToBacking() {
+		return !closed && snapshot == null && changes.isEmpty();
+	}
+
+	/**
 	 * Preserves this branch's backing snapshot and changeset overlays while bypassing its own observation layer.
 	 * Observing datasets already retained by a backing source are left intact.
 	 */

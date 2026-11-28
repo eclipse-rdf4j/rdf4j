@@ -628,7 +628,8 @@ class LmdbSailStore implements SailStore {
 
 	private final class MapGrowthCoordinator {
 		private final long readDrainTimeoutNanos;
-		private final ReentrantLock lock = new ReentrantLock();
+		// Every read registers and releases its attempt and view here, holding the lock for a few map operations.
+		private final ReentrantLock lock = new SpinningReentrantLock();
 		private final Condition changed = lock.newCondition();
 		private final IdentityHashMap<ReadAttemptLease, Boolean> attempts = new IdentityHashMap<>();
 		private final IdentityHashMap<ReadViewLease, Boolean> views = new IdentityHashMap<>();
@@ -4262,6 +4263,15 @@ class LmdbSailStore implements SailStore {
 	private boolean publicationCommitRequested;
 	private boolean publicationFailed;
 	private volatile long publicationVersion;
+	/**
+	 * Moves, under the publication gate, whenever a publication begins or is finalized and whenever a pending
+	 * dictionary checkpoint is cleared; never moves back. A reader that started its two native snapshots without the
+	 * gate knows from an unchanged sequence that none of those happened in between. The version cannot tell: a
+	 * publication that changed nothing returns it to its previous value.
+	 */
+	private volatile long publicationSequence;
+	/** Pairs a reader may lose to publications before it excludes them with the publication gate. */
+	private static final int OPTIMISTIC_PAIRING_ATTEMPTS = 3;
 	private volatile long pendingDictionaryCheckpointGeneration;
 	private volatile Thread pendingDictionaryCheckpointThread;
 	// Per-transaction thread locals are cleared with set(null), not remove(): remove() drops the thread's map entry,
@@ -4599,6 +4609,7 @@ class LmdbSailStore implements SailStore {
 						} else {
 							publicationVersion--;
 						}
+						publicationSequence++;
 						publicationChanged = false;
 						publicationCommitRequested = false;
 						publicationFailed = false;
@@ -6409,6 +6420,7 @@ class LmdbSailStore implements SailStore {
 								"LMDB publication version must be even before publication begins");
 					}
 					publicationVersion++;
+					publicationSequence++;
 					publicationChanged = false;
 				}
 				activePublications++;
@@ -6463,6 +6475,7 @@ class LmdbSailStore implements SailStore {
 								"LMDB publication version must be even before publication begins");
 					}
 					publicationVersion++;
+					publicationSequence++;
 					publicationChanged = false;
 				}
 				activePublications++;
@@ -6645,6 +6658,7 @@ class LmdbSailStore implements SailStore {
 		publicationGate.lock();
 		try {
 			if (pendingDictionaryCheckpointGeneration == transactionGeneration) {
+				publicationSequence++;
 				pendingDictionaryCheckpointGeneration = 0L;
 				pendingDictionaryCheckpointThread = null;
 				publicationCompleted.signalAll();
@@ -6753,19 +6767,28 @@ class LmdbSailStore implements SailStore {
 		ReadViewLease growthLease = mapGrowthCoordinator.registerView(observer, readAttempt, currentWriterOwner());
 		boolean handedOff = false;
 		try {
+			int straddled = 0;
 			while (true) {
 				long expectedPublicationVersion = awaitStablePublication();
+				// Both native snapshots must belong to one publication. Normally the reader proves that afterwards:
+				// it starts them without the gate and keeps them only if the publication sequence did not move
+				// meanwhile. A reader that keeps losing to publications falls back to excluding them with the gate.
+				boolean gated = straddled >= OPTIMISTIC_PAIRING_ATTEMPTS;
 				try (TxnManager.ReaderReservation tripleReservation = tripleStore.getTxnManager().reserveReadTxn(false);
 						ValueStore.ReadSnapshotReservation valueReservation = valueStore.reserveReadSnapshot()) {
-					publicationGate.lock();
+					if (gated) {
+						publicationGate.lock();
+					}
 					try {
+						long sequence = publicationSequence;
 						if (pendingDictionaryCheckpointGeneration != 0L) {
 							if (isCurrentThreadCheckpointOwner()) {
 								throw retryDictionaryCheckpointAdmission();
 							}
 							continue;
 						}
-						if (activePublications != 0 || publicationFinalizing
+						// The version is odd from the first publication's beginning until the last one is finalized.
+						if (gated && (activePublications != 0 || publicationFinalizing)
 								|| publicationVersion != expectedPublicationVersion
 								|| (publicationVersion & 1L) != 0) {
 							continue;
@@ -6774,19 +6797,29 @@ class LmdbSailStore implements SailStore {
 						ValueStore.ReadSnapshot valueSnapshot = null;
 						try {
 							tripleTxn = tripleReservation.startPinned(tripleStore::getDataRevision);
+							Runnable betweenStarts = betweenPairedReaderStartsForTest;
+							if (betweenStarts != null) {
+								betweenStarts.run();
+							}
 							valueSnapshot = valueReservation.tryStart(tripleTxn);
-							if (pendingDictionaryCheckpointGeneration != 0L) {
+							Map<String, String> namespaces = publishedNamespaces;
+							long capturedNamespaceGeneration = namespaceGeneration;
+							boolean checkpointPending = pendingDictionaryCheckpointGeneration != 0L;
+							if (checkpointPending || !gated && publicationSequence != sequence) {
 								valueSnapshot.close();
 								valueSnapshot = null;
 								tripleTxn.close();
 								tripleTxn = null;
-								if (isCurrentThreadCheckpointOwner()) {
+								if (checkpointPending && isCurrentThreadCheckpointOwner()) {
 									throw retryDictionaryCheckpointAdmission();
+								}
+								if (!checkpointPending) {
+									straddled++;
 								}
 								continue;
 							}
-							ReadView readView = new ReadView(tripleTxn, valueSnapshot, publishedNamespaces,
-									namespaceGeneration, expectedPublicationVersion, growthLease);
+							ReadView readView = new ReadView(tripleTxn, valueSnapshot, namespaces,
+									capturedNamespaceGeneration, expectedPublicationVersion, growthLease);
 							growthLease.attach(readView);
 							growthLease.markReady();
 							handedOff = true;
@@ -6801,7 +6834,9 @@ class LmdbSailStore implements SailStore {
 							throw failure;
 						}
 					} finally {
-						publicationGate.unlock();
+						if (gated) {
+							publicationGate.unlock();
+						}
 					}
 				} catch (ValueStore.ValueReadAdmissionException notAdmitted) {
 					throw notAdmitted;
@@ -6867,6 +6902,8 @@ class LmdbSailStore implements SailStore {
 	volatile Runnable afterAsyncTransactionForTest;
 	/** Test-only worker hook: runs after an asynchronous failure has been published and the worker has stopped. */
 	volatile Consumer<Throwable> afterAsyncFailureForTest;
+	/** Test-only reader hook: runs after the statement snapshot has started and before the dictionary snapshot. */
+	volatile Runnable betweenPairedReaderStartsForTest;
 
 	/**
 	 * Creates a new {@link LmdbSailStore}.
@@ -10311,6 +10348,12 @@ class LmdbSailStore implements SailStore {
 				return new NoneMutationDataset(explicit, writerOwner);
 			}
 			return datasetForReadView(explicit, level);
+		}
+
+		/** Every dataset but a NONE writer's own reads through a pinned pair of native snapshots. */
+		@Override
+		public boolean datasetsRetainOwnSnapshot(IsolationLevel level) {
+			return level != IsolationLevels.NONE;
 		}
 
 		@Override

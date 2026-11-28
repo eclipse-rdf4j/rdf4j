@@ -104,7 +104,6 @@ import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.atomic.LongAdder;
 import java.util.concurrent.locks.LockSupport;
 import java.util.concurrent.locks.ReadWriteLock;
-import java.util.concurrent.locks.ReentrantLock;
 import java.util.concurrent.locks.ReentrantReadWriteLock;
 import java.util.concurrent.locks.StampedLock;
 import java.util.function.BooleanSupplier;
@@ -1202,7 +1201,13 @@ public class ValueStore extends AbstractValueFactory implements BNodeIdResolver,
 	private volatile ValueIdentity valueIdentity;
 	private NativeValueAssociation nativeValueAssociation;
 	private PendingValueAssociation pendingValueAssociation;
-	private final ReentrantLock associationGate = new SpinningReentrantLock();
+	/**
+	 * Makes capturing the dictionary identity, and starting a native reader bound to it, atomic with respect to a
+	 * writer that commits and settles a new association. Readers share the gate: they never change what it guards.
+	 * Writers, the owning writer's borrowed reads, cleanup identity reservations and close hold it exclusively. A
+	 * thread that holds it shared must not reach an exclusive section.
+	 */
+	private final ReentrantReadWriteLock associationGate = new ReentrantReadWriteLock();
 	private long writerFirstAppendedId;
 	private final Set<Long> writerReusedIds = new HashSet<>();
 	private volatile ValueStoreRevision.Lazy lazyRevision;
@@ -4949,7 +4954,7 @@ public class ValueStore extends AbstractValueFactory implements BNodeIdResolver,
 	/** Called only by the owning writer, before reclaiming records or exposing an unresolved writer-assigned ID. */
 	private void ensurePendingValueAssociation() {
 		if (pendingValueAssociation == null) {
-			associationGate.lock();
+			associationGate.writeLock().lock();
 			try {
 				ValueStoreRevision.Lazy predecessor = valueIdentity.lazy;
 				NativeValueAssociation pending = new NativeValueAssociation(mdb_txn_id(writeTxn), environmentGeneration,
@@ -4964,7 +4969,7 @@ public class ValueStore extends AbstractValueFactory implements BNodeIdResolver,
 				lazyRevisions.retireCurrentEpoch();
 				setNewRevision();
 			} finally {
-				associationGate.unlock();
+				associationGate.writeLock().unlock();
 			}
 			clearCaches();
 		}
@@ -5070,41 +5075,53 @@ public class ValueStore extends AbstractValueFactory implements BNodeIdResolver,
 			}
 		}
 		try {
+			// A closing store sets shuttingDown and then takes the association gate exclusively before it closes the
+			// registered scopes. A reader inside the gate that finds the store open therefore registers its scope
+			// before the closer looks for it, and a reader that enters after the closer sees the store closing. Only
+			// that second reader, and a writer that holds no gate, need the answer writer admission serializes.
+			if (!admittedWriter && !shuttingDown && env != 0) {
+				return captureResolutionScope(oldestProtected, borrowedRevision);
+			}
 			// Writer publication uses this same gate-before-admission order.
 			synchronized (writerAdmission) {
 				if (shuttingDown || env == 0) {
 					throw new SailException("Cannot open a value resolution scope while the store is closing");
 				}
-				while (true) {
-					if (Thread.currentThread().isInterrupted()) {
-						throw new SailException("Interrupted while capturing dictionary identity");
-					}
-					ValueStoreRevision.Lazy anchor = currentReadRevision(LmdbValue.UNKNOWN_ID);
-					EpochReservation reservation = oldestProtected ? lazyRevisions.reserveOldestProtected()
-							: lazyRevisions.reserve(anchor);
-					if (reservation != null) {
-						try {
-							ValueResolutionScope scope = new ValueResolutionScope(this, reservation.epoch, reservation);
-							valueResolutionScopes.add(scope);
-							return scope;
-						} catch (RuntimeException | Error failure) {
-							reservation.close();
-							throw failure;
-						}
-					}
-					if (borrowedRevision) {
-						throw new SailException(
-								"Cannot open value resolution scope: borrowed dictionary revision is no longer protected");
-					}
-					// A writer may publish an epoch under revisionLock after retiring the previous one.
-					// Retry the identity capture; an eligible old epoch can never be resurrected.
-					Thread.onSpinWait();
-				}
+				return captureResolutionScope(oldestProtected, borrowedRevision);
 			}
 		} finally {
 			if (!admittedWriter) {
-				associationGate.unlock();
+				associationGate.readLock().unlock();
 			}
+		}
+	}
+
+	/** Reserves the dictionary epoch a new scope resolves against and registers the scope for close. */
+	private ValueResolutionScope captureResolutionScope(boolean oldestProtected, boolean borrowedRevision) {
+		while (true) {
+			if (Thread.currentThread().isInterrupted()) {
+				throw new SailException("Interrupted while capturing dictionary identity");
+			}
+			ValueStoreRevision.Lazy anchor = currentReadRevision(LmdbValue.UNKNOWN_ID);
+			EpochReservation reservation = oldestProtected ? lazyRevisions.reserveOldestProtected()
+					: lazyRevisions.reserve(anchor);
+			if (reservation != null) {
+				try {
+					ValueResolutionScope scope = new ValueResolutionScope(this, reservation.epoch, reservation);
+					valueResolutionScopes.add(scope);
+					return scope;
+				} catch (RuntimeException | Error failure) {
+					reservation.close();
+					throw failure;
+				}
+			}
+			if (borrowedRevision) {
+				throw new SailException(
+						"Cannot open value resolution scope: borrowed dictionary revision is no longer protected");
+			}
+			// A writer may publish an epoch under revisionLock after retiring the previous one.
+			// Retry the identity capture; an eligible old epoch can never be resurrected.
+			Thread.onSpinWait();
 		}
 	}
 
@@ -5132,8 +5149,8 @@ public class ValueStore extends AbstractValueFactory implements BNodeIdResolver,
 	/** A caller already observing a snapshot must fail admission instead of waiting for dictionary publication. */
 	CleanupReservation reserveCleanupIdentity(boolean mayWait) throws IOException {
 		if (mayWait) {
-			acquireAssociationGate();
-		} else if (!associationGate.tryLock()) {
+			acquireExclusiveAssociationGate();
+		} else if (!associationGate.writeLock().tryLock()) {
 			throw new IOException("Cannot reserve cleanup identity while dictionary publication is active");
 		}
 		try {
@@ -5146,19 +5163,19 @@ public class ValueStore extends AbstractValueFactory implements BNodeIdResolver,
 				return reservation;
 			}
 		} finally {
-			associationGate.unlock();
+			associationGate.writeLock().unlock();
 		}
 	}
 
 	/** Returns no guard on publication contention; no numeric candidate may be captured until writer activation. */
 	CleanupReservation tryReserveCleanupIdentity() throws IOException {
-		if (!associationGate.tryLock()) {
+		if (!associationGate.writeLock().tryLock()) {
 			return null;
 		}
 		try {
 			return reserveCleanupIdentity(false);
 		} finally {
-			associationGate.unlock();
+			associationGate.writeLock().unlock();
 		}
 	}
 
@@ -5277,9 +5294,22 @@ public class ValueStore extends AbstractValueFactory implements BNodeIdResolver,
 	}
 
 	/** A query time limit or cancellation ends the wait by interrupting it. */
+	private void acquireExclusiveAssociationGate() throws IOException {
+		try {
+			associationGate.writeLock().lockInterruptibly();
+		} catch (InterruptedException failure) {
+			Thread.currentThread().interrupt();
+			throw new IOException("Interrupted while capturing dictionary identity", failure);
+		}
+	}
+
+	/**
+	 * Admits a reader that captures the dictionary identity or starts a native reader bound to it. Readers do not
+	 * exclude each other; a query time limit or cancellation ends the wait for a writer by interrupting it.
+	 */
 	private void acquireAssociationGate() throws IOException {
 		try {
-			associationGate.lockInterruptibly();
+			associationGate.readLock().lockInterruptibly();
 		} catch (InterruptedException failure) {
 			Thread.currentThread().interrupt();
 			throw new IOException("Interrupted while capturing dictionary identity", failure);
@@ -5309,13 +5339,13 @@ public class ValueStore extends AbstractValueFactory implements BNodeIdResolver,
 				}
 			}
 		} finally {
-			associationGate.unlock();
+			associationGate.readLock().unlock();
 		}
 	}
 
 	private boolean tryAcquireAssociationGate() throws IOException {
 		try {
-			return associationGate.tryLock(0L, TimeUnit.NANOSECONDS);
+			return associationGate.readLock().tryLock(0L, TimeUnit.NANOSECONDS);
 		} catch (InterruptedException failure) {
 			Thread.currentThread().interrupt();
 			throw new IOException("Interrupted while capturing dictionary identity", failure);
@@ -5461,7 +5491,7 @@ public class ValueStore extends AbstractValueFactory implements BNodeIdResolver,
 							reservation.close();
 						}
 					} finally {
-						associationGate.unlock();
+						associationGate.readLock().unlock();
 					}
 				}
 			}
@@ -5472,7 +5502,7 @@ public class ValueStore extends AbstractValueFactory implements BNodeIdResolver,
 			// Native start releases only the association gate. The caller owns the epoch through decode.
 			if (gateHeld) {
 				gateHeld = false;
-				associationGate.unlock();
+				associationGate.readLock().unlock();
 			}
 		}
 
@@ -5499,7 +5529,7 @@ public class ValueStore extends AbstractValueFactory implements BNodeIdResolver,
 		if (isWriteTransactionOwner()) {
 			// The native writer can be consumed by commit, rollback, clear or close on another thread. Keep its
 			// association ownership through the complete borrowed read, and recheck after acquiring that ownership.
-			acquireAssociationGate();
+			acquireExclusiveAssociationGate();
 			try {
 				synchronized (writerAdmission) {
 					if (shuttingDown) {
@@ -5514,7 +5544,7 @@ public class ValueStore extends AbstractValueFactory implements BNodeIdResolver,
 							transaction);
 				}
 			} finally {
-				associationGate.unlock();
+				associationGate.writeLock().unlock();
 			}
 		}
 		long borrowed = readContext.get().borrowedTxn;
@@ -5583,7 +5613,11 @@ public class ValueStore extends AbstractValueFactory implements BNodeIdResolver,
 		private final long sequence;
 		private final long revisionId;
 		private final LazyRevisionTracker tracker;
-		private int reservations;
+		/**
+		 * The number of reservations that pin this epoch, or negative once the reclamation horizon has passed it. The
+		 * horizon passes an epoch only while it holds no reservation, and never returns.
+		 */
+		private final AtomicLong reservations = new AtomicLong();
 		private boolean legacy;
 		private volatile boolean protectedIds = true;
 
@@ -5595,6 +5629,28 @@ public class ValueStore extends AbstractValueFactory implements BNodeIdResolver,
 
 		long sequence() {
 			return sequence;
+		}
+
+		/** Pins this epoch unless the horizon has passed it. */
+		private boolean tryReserve() {
+			while (true) {
+				long held = reservations.get();
+				if (held < 0L) {
+					return false;
+				}
+				if (reservations.compareAndSet(held, held + 1L)) {
+					return true;
+				}
+			}
+		}
+
+		/** Lets the horizon pass this epoch, which fails while a reservation pins it. */
+		private boolean tryRetire() {
+			return reservations.compareAndSet(0L, Long.MIN_VALUE);
+		}
+
+		private long reserved() {
+			return Math.max(0L, reservations.get());
 		}
 
 		@Override
@@ -5632,10 +5688,14 @@ public class ValueStore extends AbstractValueFactory implements BNodeIdResolver,
 		private final Map<Long, ValueEpoch> epochs = new LinkedHashMap<>();
 		private final ArrayDeque<ValueEpoch> retiredEpochs = new ArrayDeque<>();
 		private long nextEpoch;
-		private ValueEpoch currentEpoch;
-		private long protectedReservations;
+		/** The newest epoch. Written under the monitor; read without it by a release deciding whether it matters. */
+		private volatile ValueEpoch currentEpoch;
+		/** The first of {@link #epochs}: every registered epoch is protected, so this is the oldest protected one. */
+		private volatile ValueEpoch oldestEpoch;
 		private long legacyEpochs;
 		private volatile long nextValueEvictionTime;
+		/** Set when revisions are queued for eviction; cleared when scheduling finds none left. */
+		private volatile boolean unusedRevisionsQueued;
 
 		private LazyRevisionTracker(Set<Long> unusedRevisionIds, long evictionInterval,
 				boolean collectEvictionCohorts) {
@@ -5654,25 +5714,24 @@ public class ValueStore extends AbstractValueFactory implements BNodeIdResolver,
 			}
 		}
 
+		/**
+		 * Pins the revision's epoch. A registered epoch admits reservations until the horizon passes it, and both are
+		 * decided on the epoch's own count, so readers that pin an epoch do not wait for each other or for the horizon.
+		 */
 		EpochReservation reserve(ValueStoreRevision.Lazy revision) {
 			ValueEpoch epoch = revision.idEpoch();
-			synchronized (unusedRevisionIds) {
-				if (epoch == null || !epoch.protectedIds || epochs.get(epoch.sequence) != epoch) {
-					return null;
-				}
-				epoch.reservations++;
-				protectedReservations++;
-				return new EpochReservation(epoch);
-			}
+			return epoch != null && epoch.tracker == this && epoch.tryReserve() ? new EpochReservation(epoch) : null;
 		}
 
 		EpochReservation reserveOldestProtected() {
+			ValueEpoch oldest = oldestEpoch;
+			if (oldest != null && oldest.tryReserve()) {
+				return new EpochReservation(oldest);
+			}
 			synchronized (unusedRevisionIds) {
-				// Prefix retirement and admission share this monitor; a released epoch cannot be resurrected.
+				// Prefix retirement and this search share the monitor; a released epoch cannot be resurrected.
 				for (ValueEpoch epoch : epochs.values()) {
-					if (epoch.protectedIds) {
-						epoch.reservations++;
-						protectedReservations++;
+					if (epoch.tryReserve()) {
 						return new EpochReservation(epoch);
 					}
 				}
@@ -5713,11 +5772,15 @@ public class ValueStore extends AbstractValueFactory implements BNodeIdResolver,
 		}
 
 		private void release(ValueEpoch epoch) {
-			synchronized (unusedRevisionIds) {
-				assert epoch.reservations > 0;
-				epoch.reservations--;
-				protectedReservations--;
-				updateHorizon();
+			long remaining = epoch.reservations.decrementAndGet();
+			assert remaining >= 0L;
+			// The horizon stops at the oldest pinned epoch and never passes the newest one. Letting go of the newest
+			// epoch therefore changes nothing, and neither does a release that leaves its epoch pinned. A writer that
+			// registers a newer epoch meanwhile looks at this count after it has published that epoch.
+			if (remaining == 0L && epoch != currentEpoch || unusedRevisionsQueued && nextValueEvictionTime < 0) {
+				synchronized (unusedRevisionIds) {
+					updateHorizon();
+				}
 			}
 		}
 
@@ -5731,21 +5794,35 @@ public class ValueStore extends AbstractValueFactory implements BNodeIdResolver,
 
 		boolean hasProtectedValues() {
 			synchronized (unusedRevisionIds) {
-				return protectedReservations != 0L || legacyEpochs != 0L;
+				return protectedReservations() != 0L || legacyEpochs != 0L;
 			}
 		}
 
 		ValueProtectionSnapshot protectionSnapshotForTest() {
 			synchronized (unusedRevisionIds) {
-				return new ValueProtectionSnapshot(protectedReservations, legacyEpochs);
+				return new ValueProtectionSnapshot(protectedReservations(), legacyEpochs);
 			}
 		}
 
-		private void updateHorizon() {
-			long oldest = currentEpoch == null ? Long.MAX_VALUE : currentEpoch.sequence;
+		/** Called under the monitor: an epoch the horizon has passed holds no reservation and is not registered. */
+		private long protectedReservations() {
+			long reservations = 0L;
 			for (ValueEpoch epoch : epochs.values()) {
-				if (epoch.legacy || epoch.reservations != 0) {
-					oldest = Math.min(oldest, epoch.sequence);
+				reservations += epoch.reserved();
+			}
+			return reservations;
+		}
+
+		private void updateHorizon() {
+			ValueEpoch current = currentEpoch;
+			long oldest = current == null ? Long.MAX_VALUE : current.sequence;
+			for (ValueEpoch epoch : epochs.values()) {
+				if (epoch.sequence >= oldest) {
+					break;
+				}
+				// Retiring closes the epoch to reservations in the same step that finds it unpinned.
+				if (epoch.legacy || !epoch.tryRetire()) {
+					oldest = epoch.sequence;
 					break;
 				}
 			}
@@ -5761,12 +5838,16 @@ public class ValueStore extends AbstractValueFactory implements BNodeIdResolver,
 				epoch.protectedIds = false;
 				iterator.remove();
 			}
+			var remaining = epochs.values().iterator();
+			oldestEpoch = remaining.hasNext() ? remaining.next() : null;
 			schedulePendingEviction();
 		}
 
 		void schedulePendingEviction() {
 			synchronized (unusedRevisionIds) {
-				if (!unusedRevisionIds.isEmpty() && nextValueEvictionTime < 0) {
+				boolean queued = !unusedRevisionIds.isEmpty();
+				unusedRevisionsQueued = queued;
+				if (queued && nextValueEvictionTime < 0) {
 					nextValueEvictionTime = System.currentTimeMillis() + evictionInterval;
 				}
 			}
@@ -5787,7 +5868,7 @@ public class ValueStore extends AbstractValueFactory implements BNodeIdResolver,
 
 	/** Optional hash lookup never waits while a value monitor is held and validates the association at access. */
 	int getStoredHash(long id, long revisionId) {
-		if (!associationGate.tryLock()) {
+		if (!associationGate.readLock().tryLock()) {
 			return 0;
 		}
 		try {
@@ -5795,7 +5876,7 @@ public class ValueStore extends AbstractValueFactory implements BNodeIdResolver,
 					? getStoredHashUnchecked(id)
 					: 0;
 		} finally {
-			associationGate.unlock();
+			associationGate.readLock().unlock();
 		}
 	}
 
@@ -5834,7 +5915,7 @@ public class ValueStore extends AbstractValueFactory implements BNodeIdResolver,
 
 	/** A stale or contended optional hash update is omitted; lexical hashing remains authoritative. */
 	void storeHash(long id, int hash, long revisionId) {
-		if (!associationGate.tryLock()) {
+		if (!associationGate.readLock().tryLock()) {
 			return;
 		}
 		try {
@@ -5842,7 +5923,7 @@ public class ValueStore extends AbstractValueFactory implements BNodeIdResolver,
 				storeHashUnchecked(id, hash);
 			}
 		} finally {
-			associationGate.unlock();
+			associationGate.readLock().unlock();
 		}
 	}
 
@@ -6999,14 +7080,14 @@ public class ValueStore extends AbstractValueFactory implements BNodeIdResolver,
 		if (!naked) {
 			valueRevision = currentReadRevision(id);
 		} else {
-			associationGate.lock();
+			associationGate.writeLock().lock();
 			try {
 				do {
 					valueRevision = currentReadRevision(id);
 				} while (!lazyRevisions.retainLegacy(valueRevision, cleaner));
 				ensureAssociationReadable(valueRevision);
 			} finally {
-				associationGate.unlock();
+				associationGate.writeLock().unlock();
 			}
 		}
 		LmdbValue value;
@@ -8437,7 +8518,7 @@ public class ValueStore extends AbstractValueFactory implements BNodeIdResolver,
 	}
 
 	private long retryProjectedBytes(WriterTransaction transaction, long requiredSize) {
-		associationGate.lock();
+		associationGate.writeLock().lock();
 		try {
 			WriterPublication publication = writerPublication;
 			if (publication != null && publication.transaction == transaction && writeTxn != 0L
@@ -8448,7 +8529,7 @@ public class ValueStore extends AbstractValueFactory implements BNodeIdResolver,
 			// neither a later writer's pointer nor a smaller committed footprint describes the failed transaction.
 			return saturatedEstimateAdd(mapSize, requiredSize);
 		} finally {
-			associationGate.unlock();
+			associationGate.writeLock().unlock();
 		}
 	}
 
@@ -14837,11 +14918,11 @@ public class ValueStore extends AbstractValueFactory implements BNodeIdResolver,
 				if (writeTxn != 0) {
 					// Preparation failed before native consumption. The owning writer can still roll back or
 					// retry growth; shutdown must not wait for a consumer that has already unwound.
-					associationGate.lock();
+					associationGate.writeLock().lock();
 					try {
 						publication.consumer = null;
 					} finally {
-						associationGate.unlock();
+						associationGate.writeLock().unlock();
 					}
 				} else {
 					try {
@@ -14889,7 +14970,7 @@ public class ValueStore extends AbstractValueFactory implements BNodeIdResolver,
 
 	private boolean endWriterTransaction(WriterPublication publication, boolean commit, boolean autoGrow)
 			throws IOException {
-		associationGate.lock();
+		associationGate.writeLock().lock();
 		try {
 			if (writerPublication != publication || writeTxn == 0 || publication.consumer != null) {
 				if (commit) {
@@ -14901,7 +14982,7 @@ public class ValueStore extends AbstractValueFactory implements BNodeIdResolver,
 			// drain the winning consumer's complete publication, including native high-water refresh.
 			publication.consumer = Thread.currentThread();
 		} finally {
-			associationGate.unlock();
+			associationGate.writeLock().unlock();
 		}
 		if (writeTxn != 0) {
 			if (commit && publication.transaction.skipsUnchanged() && writerChangedNothing()) {
@@ -14945,7 +15026,7 @@ public class ValueStore extends AbstractValueFactory implements BNodeIdResolver,
 				boolean invalidatesCaches = !writerChangedNothing();
 				refCountsTxCache.clear();
 				Throwable rollbackFailure = null;
-				associationGate.lock();
+				associationGate.writeLock().lock();
 				try {
 					long transaction = nativeWriteTransaction(publication);
 					abortWriteTransaction(transaction);
@@ -14956,7 +15037,7 @@ public class ValueStore extends AbstractValueFactory implements BNodeIdResolver,
 						settleValueAssociation(false);
 					} finally {
 						releaseNativeWriteTransactionOwnership(publication);
-						associationGate.unlock();
+						associationGate.writeLock().unlock();
 					}
 					releaseWriteTransactionState();
 					droppedTermIndexDbis.clear();
@@ -15015,19 +15096,19 @@ public class ValueStore extends AbstractValueFactory implements BNodeIdResolver,
 	private void abortUnchangedWriter(WriterPublication publication) throws IOException {
 		lastNativeCommitSucceeded = true;
 		publication.transaction.commitSkipped();
-		associationGate.lock();
+		associationGate.writeLock().lock();
 		try {
 			abortWriteTransaction(nativeWriteTransaction(publication));
 		} finally {
 			releaseNativeWriteTransactionOwnership(publication);
-			associationGate.unlock();
+			associationGate.writeLock().unlock();
 		}
 		discardCompressedValueMutation();
 		releaseWriteTransactionState();
 	}
 
 	private long nativeWriteTransaction(WriterPublication publication) throws IOException {
-		assert associationGate.isHeldByCurrentThread();
+		assert associationGate.isWriteLockedByCurrentThread();
 		if (writerPublication != publication || publication.consumer != Thread.currentThread() || writeTxn == 0) {
 			throw new IOException("ValueStore write transaction was already consumed");
 		}
@@ -15035,7 +15116,7 @@ public class ValueStore extends AbstractValueFactory implements BNodeIdResolver,
 	}
 
 	private void releaseNativeWriteTransactionOwnership(WriterPublication publication) {
-		assert associationGate.isHeldByCurrentThread();
+		assert associationGate.isWriteLockedByCurrentThread();
 		synchronized (writerAdmission) {
 			if (writerPublication == publication) {
 				writeTxn = 0;
@@ -15097,7 +15178,7 @@ public class ValueStore extends AbstractValueFactory implements BNodeIdResolver,
 		long priorNativeId = lastTransactionId();
 		try {
 			int result;
-			associationGate.lock();
+			associationGate.writeLock().lock();
 			try {
 				long transaction = nativeWriteTransaction(publication);
 				try {
@@ -15111,7 +15192,7 @@ public class ValueStore extends AbstractValueFactory implements BNodeIdResolver,
 					releaseNativeWriteTransactionOwnership(publication);
 				}
 			} finally {
-				associationGate.unlock();
+				associationGate.writeLock().unlock();
 			}
 			if (result == MDB_SUCCESS) {
 				lastNativeCommitSucceeded = true;
@@ -15966,8 +16047,8 @@ public class ValueStore extends AbstractValueFactory implements BNodeIdResolver,
 		}
 		// A borrowed writer can need the native exclusive barrier to resize. Drain its association ownership
 		// before taking either that barrier or the store monitor, which its checkpoint may also need.
-		associationGate.lock();
-		associationGate.unlock();
+		associationGate.writeLock().lock();
+		associationGate.writeLock().unlock();
 	}
 
 	/** Rechecks after taking the store monitor, since another clear may have reopened writer admission. */
@@ -16015,7 +16096,7 @@ public class ValueStore extends AbstractValueFactory implements BNodeIdResolver,
 			try (TxnManager.CloseBarrier ignored = txnManager.acquireCloseBarrier()) {
 				nativeQuiesced = true;
 				if (env != 0) {
-					if (!associationGate.tryLock()) {
+					if (!associationGate.writeLock().tryLock()) {
 						// Release the exclusive barrier and monitor before waiting for a borrowed writer to finish.
 						return false;
 					}
@@ -16032,7 +16113,7 @@ public class ValueStore extends AbstractValueFactory implements BNodeIdResolver,
 							return false;
 						}
 					} finally {
-						associationGate.unlock();
+						associationGate.writeLock().unlock();
 					}
 					try {
 						sharedLazyValues.freezeForMaterialization();

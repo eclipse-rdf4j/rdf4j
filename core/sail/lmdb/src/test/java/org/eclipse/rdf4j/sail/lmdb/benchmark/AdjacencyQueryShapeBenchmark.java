@@ -239,6 +239,11 @@ public class AdjacencyQueryShapeBenchmark {
 		}
 	}
 
+	/** The populated repository, for benchmarks that reuse this fixture. */
+	SailRepository repository() {
+		return repository;
+	}
+
 	private void releaseResourcesAfterFailure(Throwable failure) {
 		try {
 			releaseResources();
