@@ -17,6 +17,7 @@ import static org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbNativeAggregateCompiler
 import java.io.IOException;
 import java.util.OptionalDouble;
 import java.util.OptionalLong;
+import java.util.function.LongSupplier;
 import java.util.function.Predicate;
 
 import org.eclipse.rdf4j.common.annotation.Experimental;
@@ -475,6 +476,12 @@ class SyntheticValueSource implements NativeLmdbQuerySource {
 		public long detachedProjectionEpoch() {
 			return context.isClosed() || context.mayShadowProjectedStoreValues() ? -1L
 					: backing.detachedProjectionEpoch();
+		}
+
+		@Override
+		public LongSupplier detachedProjectionEpochSource() {
+			return context.isClosed() || context.mayShadowProjectedStoreValues() ? null
+					: backing.detachedProjectionEpochSource();
 		}
 
 		@Override

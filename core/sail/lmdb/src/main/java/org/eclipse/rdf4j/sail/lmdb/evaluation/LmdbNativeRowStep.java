@@ -25,9 +25,11 @@ import java.util.NoSuchElementException;
 import java.util.OptionalLong;
 import java.util.Set;
 import java.util.concurrent.atomic.AtomicLong;
+import java.util.function.IntSupplier;
 import java.util.function.Predicate;
 
 import org.eclipse.rdf4j.common.annotation.Experimental;
+import org.eclipse.rdf4j.common.iteration.BufferedIteration;
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.common.iteration.CloseableIteratorIteration;
 import org.eclipse.rdf4j.common.iteration.CooperativeCancellation;
@@ -3613,7 +3615,8 @@ final class MaterializedUnorderedRowCursor implements RowCursor {
 }
 
 @Experimental
-final class NativeRowsIteration implements CloseableIteration<BindingSet>, CooperativeCancellation {
+final class NativeRowsIteration
+		implements CloseableIteration<BindingSet>, CooperativeCancellation, BufferedIteration {
 	NativeRowsStep step;
 	BindingSet base;
 	NativeOrderedDistinctTracker distinctRows;
@@ -3649,6 +3652,32 @@ final class NativeRowsIteration implements CloseableIteration<BindingSet>, Coope
 		this.inputPhases = NativeExecutionPhaseEvent.inputOwner(cancellation);
 		this.remainingOffset = Math.max(0L, step.offset);
 		this.remainingLimit = step.limit < 0 ? Long.MAX_VALUE : step.limit;
+	}
+
+	@Override
+	public IntSupplier bufferedRowsSource() {
+		return this::readyRows;
+	}
+
+	/**
+	 * Rows this iteration hands out without asking its producer for more: the row already taken and the selected rows
+	 * left in the current batch. A pending offset skips rows and can therefore reach the producer, so no batch row is
+	 * promised while one remains. A row cursor holds one row at a time; the repeats of a row with duplicate solutions
+	 * are too few to be worth reading ahead, so it promises none.
+	 * <p>
+	 * The count is asked for by the thread that pulls this iteration, between its pulls. A concurrent close can only
+	 * make it too high, and the pull that follows then finds the iteration closed.
+	 */
+	private int readyRows() {
+		NativeBatch current = batch;
+		if (closed || batchCursor == null || current == null || remainingOffset != 0) {
+			return 0;
+		}
+		long ready = Math.min(Math.max(0, current.selectedCount - batchIndex), remainingLimit);
+		if (next != null) {
+			ready++;
+		}
+		return (int) Math.min(ready, Integer.MAX_VALUE);
 	}
 
 	@Override

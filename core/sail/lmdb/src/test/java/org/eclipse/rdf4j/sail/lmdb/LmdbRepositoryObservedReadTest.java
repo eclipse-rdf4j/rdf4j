@@ -75,6 +75,7 @@ class LmdbRepositoryObservedReadTest {
 						"The first row still crosses the observation barrier");
 				assertEquals(0, store.activeReads.get());
 				delivered.add(Integer.parseInt(rows.next().getValue("value").stringValue()));
+				int afterFirst = store.readActivations.get();
 				for (int i = 1; i < 4; i++) {
 					before = store.readActivations.get();
 					if (i != 2) {
@@ -82,10 +83,15 @@ class LmdbRepositoryObservedReadTest {
 						assertTrue(rows.hasNext());
 					}
 					delivered.add(Integer.parseInt(rows.next().getValue("value").stringValue()));
-					assertEquals(before + 1, store.readActivations.get(),
-							"Availability and value capture for this row must share one observed read activation");
+					// A row that an earlier pull read ahead was captured under that pull's activation.
+					int activations = store.readActivations.get() - before;
+					assertTrue(activations == 0 || activations == 1,
+							"Availability and value capture for this row must share one observed read activation, "
+									+ "or the one of the pull that read it ahead; actual " + activations);
 					assertEquals(0, store.activeReads.get(), "The activation must be released before the row escapes");
 				}
+				assertTrue(store.readActivations.get() - afterFirst >= 1,
+						"The rows after the first need at least the activation of the pull that read them");
 				before = store.readActivations.get();
 				assertFalse(rows.hasNext());
 				assertEquals(before + 1, store.readActivations.get());

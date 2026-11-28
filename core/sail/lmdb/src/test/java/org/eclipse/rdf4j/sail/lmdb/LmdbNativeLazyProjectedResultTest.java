@@ -23,6 +23,7 @@ import java.io.ObjectInputStream;
 import java.io.ObjectOutputStream;
 import java.util.ArrayList;
 import java.util.ConcurrentModificationException;
+import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -33,6 +34,7 @@ import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.LongFunction;
+import java.util.function.LongSupplier;
 import java.util.function.Predicate;
 
 import org.eclipse.rdf4j.model.IRI;
@@ -68,6 +70,9 @@ import org.junit.jupiter.params.provider.ValueSource;
 public class LmdbNativeLazyProjectedResultTest {
 
 	private static final String EX = "http://example.com/";
+	/** The rows a repository pull takes ahead of the one it hands out: at first, and at most. */
+	private static final int FIRST_READ_AHEAD = NativeProjectedBindingSet.CaptureScratch.FIRST_READ_AHEAD;
+	private static final int MAX_READ_AHEAD = NativeProjectedBindingSet.CaptureScratch.MAX_READ_AHEAD;
 
 	@TempDir
 	File dataDir;
@@ -128,6 +133,33 @@ public class LmdbNativeLazyProjectedResultTest {
 	}
 
 	@Test
+	public void repositoryPullReadsNativeRowsAheadWithinItsWindow() {
+		Set<Value> subjects = new HashSet<>();
+		try (SailRepositoryConnection connection = repository.getConnection();
+				TupleQueryResult rows = connection.prepareTupleQuery(
+						"SELECT ?s ?value WHERE { ?s <" + EX + "value> ?value }").evaluate()) {
+			subjects.add(rows.next().getValue("s"));
+			// The first row of a result is pulled on its own, before its read attempt is sealed.
+			assertThat(NativeProjectedBindingSet.CREATED.get()).isEqualTo(1);
+			assertThat(rows.hasNext()).isTrue();
+			// The rows its producer already holds are taken with the second one, up to the first window.
+			assertThat(NativeProjectedBindingSet.CREATED.get()).isBetween(3L, 2L + FIRST_READ_AHEAD);
+			int handedOut = 1;
+			while (rows.hasNext()) {
+				BindingSet row = rows.next();
+				handedOut++;
+				assertThat(row.getValue("value").stringValue()).startsWith("stored literal payload ");
+				subjects.add(row.getValue("s"));
+				assertThat(NativeProjectedBindingSet.CREATED.get()).as("rows created after %s were handed out",
+						handedOut).isBetween((long) handedOut, (long) handedOut + MAX_READ_AHEAD);
+			}
+		}
+		assertThat(subjects).hasSize(64);
+		assertThat(NativeProjectedBindingSet.CREATED.get()).isEqualTo(64);
+		assertThat(NativeProjectedBindingSet.MATERIALIZED_VALUES.get()).isEqualTo(128);
+	}
+
+	@Test
 	public void repositoryProjectedSnapshotsRetainMapBehaviorAfterShutdown() throws Exception {
 		MapBindingSet first;
 		MapBindingSet second;
@@ -138,7 +170,8 @@ public class LmdbNativeLazyProjectedResultTest {
 			assertThat(rows.hasNext()).isTrue();
 			second = (MapBindingSet) rows.next();
 		}
-		assertThat(NativeProjectedBindingSet.CREATED.get()).isEqualTo(2);
+		// Two rows were handed out; a repository pull may have taken no more than its first window beyond them.
+		assertThat(NativeProjectedBindingSet.CREATED.get()).isBetween(2L, 2L + FIRST_READ_AHEAD);
 		repository.shutDown();
 
 		Value firstSubject = first.getValue("s");
@@ -618,14 +651,150 @@ public class LmdbNativeLazyProjectedResultTest {
 		assertThat(NativeProjectedBindingSet.MATERIALIZED_VALUES.get()).isEqualTo(3L);
 	}
 
+	@Test
+	public void rowsTakenAheadAreCapturedUnderOneAccessAndShareTheirTerms() {
+		var source = new DetachedStubSource();
+		var scratch = new NativeProjectedBindingSet.CaptureScratch();
+		Object[] rows = aheadRows(source, 42L, 7L, 8L, 9L, 10L);
+		scratch.beginReadAhead();
+
+		assertThat(NativeProjectedBindingSet.captureRepositoryBatch(rows, 0, rows.length, null, scratch))
+				.isEqualTo(4);
+
+		assertThat(source.accesses).isEqualTo(1);
+		assertThat(source.detachedLookups).as("one subject and four leaves").isEqualTo(5);
+		assertThat(NativeProjectedBindingSet.MATERIALIZED_VALUES.get()).isEqualTo(5L);
+		Value subject = ((BindingSet) rows[0]).getValue("s");
+		for (Object row : rows) {
+			var captured = (NativeProjectedBindingSet) row;
+			assertThat(captured.source).isNull();
+			assertThat(captured.snapshotIfFullyCaptured()).isNotNull();
+			assertThat(captured.getValue("s")).isSameAs(subject);
+		}
+		assertThat(scratch.capturedAheadIsStale()).isFalse();
+	}
+
+	@Test
+	public void rowsCapturedAheadAreCapturedAgainOnceATermWasRebound() {
+		var source = new DetachedStubSource();
+		var scratch = new NativeProjectedBindingSet.CaptureScratch();
+		Object[] rows = aheadRows(source, 42L, 7L, 8L, 9L, 10L);
+		scratch.beginReadAhead();
+		assertThat(NativeProjectedBindingSet.captureRepositoryBatch(rows, 0, rows.length, null, scratch))
+				.isEqualTo(4);
+		MapBindingSet handedOut = ((NativeProjectedBindingSet) rows[0]).snapshotIfFullyCaptured();
+		Value subject = handedOut.getValue("s");
+		Value secondLeaf = ((BindingSet) rows[1]).getValue("leaf");
+
+		// A caller rebinds a term of the row it was handed, which the waiting rows share.
+		source.epoch += 2;
+
+		assertThat(scratch.capturedAheadIsStale()).isTrue();
+		scratch.reattachCapturedAhead(rows, 1, rows.length);
+		assertThat(((NativeProjectedBindingSet) rows[1]).source).isSameAs(source);
+		assertThat(((NativeProjectedBindingSet) rows[0]).source).as("a row that left is not captured again").isNull();
+		scratch.beginReadAhead();
+		assertThat(NativeProjectedBindingSet.captureRepositoryBatch(rows, 1, rows.length, null, scratch))
+				.isEqualTo(3);
+
+		Value fresh = ((BindingSet) rows[1]).getValue("s");
+		assertThat(fresh).isNotSameAs(subject);
+		assertThat(((BindingSet) rows[1]).getValue("leaf")).isNotSameAs(secondLeaf);
+		assertThat(((BindingSet) rows[2]).getValue("s")).isSameAs(fresh);
+		assertThat(((BindingSet) rows[3]).getValue("s")).isSameAs(fresh);
+		assertThat(handedOut.getValue("s")).as("the row handed out keeps the terms it was given").isSameAs(subject);
+		assertThat(scratch.capturedAheadIsStale()).isFalse();
+	}
+
+	@Test
+	public void captureAheadStopsAtARowItCannotCaptureAndLeavesItAsProduced() {
+		var source = new DetachedStubSource();
+		var other = new DetachedStubSource();
+		var scratch = new NativeProjectedBindingSet.CaptureScratch();
+		Object[] rows = aheadRows(source, 42L, 7L, 8L, 9L, 10L);
+		rows[2] = aheadRows(other, 42L, 9L)[0];
+		scratch.beginReadAhead();
+
+		assertThat(NativeProjectedBindingSet.captureRepositoryBatch(rows, 0, rows.length, null, scratch))
+				.isEqualTo(2);
+
+		assertThat(((NativeProjectedBindingSet) rows[1]).source).isNull();
+		assertThat(((NativeProjectedBindingSet) rows[2]).source).isSameAs(other);
+		assertThat(((NativeProjectedBindingSet) rows[3]).source).isSameAs(source);
+		assertThat(other.accesses).isZero();
+		// The rows that wait were captured from one source; a row of another source does not join them.
+		assertThat(NativeProjectedBindingSet.captureRepositoryBatch(rows, 2, rows.length, null, scratch)).isZero();
+		assertThat(((NativeProjectedBindingSet) rows[2]).source).isSameAs(other);
+	}
+
+	@Test
+	public void captureAheadDeclinesWhileATermIsBeingRebound() {
+		var source = new DetachedStubSource();
+		var scratch = new NativeProjectedBindingSet.CaptureScratch();
+		Object[] rows = aheadRows(source, 42L, 7L, 8L);
+		source.epoch = -1L;
+		scratch.beginReadAhead();
+
+		assertThat(NativeProjectedBindingSet.captureRepositoryBatch(rows, 0, rows.length, null, scratch)).isZero();
+
+		assertThat(((NativeProjectedBindingSet) rows[0]).source).isSameAs(source);
+		assertThat(source.detachedLookups).isZero();
+	}
+
+	@Test
+	public void aRowRepeatedByItsProducerIsCapturedOnceAhead() {
+		var source = new DetachedStubSource();
+		var scratch = new NativeProjectedBindingSet.CaptureScratch();
+		Object[] distinct = aheadRows(source, 42L, 7L, 8L);
+		Object[] rows = { distinct[0], distinct[0], distinct[1], distinct[1] };
+		scratch.beginReadAhead();
+
+		assertThat(NativeProjectedBindingSet.captureRepositoryBatch(rows, 0, rows.length, null, scratch))
+				.isEqualTo(4);
+
+		assertThat(source.detachedLookups).isEqualTo(3);
+		// The repeat that still waits is captured again with the row it repeats.
+		source.epoch += 2;
+		scratch.reattachCapturedAhead(rows, 1, rows.length);
+		scratch.beginReadAhead();
+		assertThat(NativeProjectedBindingSet.captureRepositoryBatch(rows, 1, rows.length, null, scratch))
+				.isEqualTo(3);
+		assertThat(((BindingSet) rows[1]).getValue("leaf").stringValue()).isEqualTo("term 7");
+		assertThat(((BindingSet) rows[3]).getValue("leaf").stringValue()).isEqualTo("term 8");
+	}
+
+	@Test
+	public void readAheadWindowStartsSmallAndDoublesUpToItsLimit() {
+		var scratch = new NativeProjectedBindingSet.CaptureScratch();
+		List<Integer> windows = new ArrayList<>();
+		for (int pull = 0; pull < 7; pull++) {
+			windows.add(scratch.nextReadAhead());
+		}
+		assertThat(windows).containsExactly(8, 16, 32, 64, 127, 127, 127);
+	}
+
+	private static Object[] aheadRows(NativeLmdbQuerySource source, long subject, long... leaves) {
+		String[] names = { "s", "leaf" };
+		int[] slots = { 0, 1 };
+		Object[] rows = new Object[leaves.length];
+		for (int i = 0; i < leaves.length; i++) {
+			rows[i] = new NativeProjectedBindingSet(source, names, slots, new long[] { subject, leaves[i] });
+		}
+		return rows;
+	}
+
 	/** A source whose terms a repository pull can capture as detached values. */
 	private static final class DetachedStubSource implements NativeLmdbQuerySource {
 		private final Object snapshot = new Object();
 		private int detachedLookups;
+		private int accesses;
+		/** The projection epoch; a caller that rebinds a term advances it by two. */
+		private long epoch;
 
 		@Override
 		public boolean withProjectedValueAccess(ValueResolutionScope scope,
 				Predicate<ProjectedValueAccess> capture) {
+			accesses++;
 			return capture.test(new ProjectedValueAccess() {
 				@Override
 				public Object snapshot() {
@@ -645,7 +814,12 @@ public class LmdbNativeLazyProjectedResultTest {
 
 				@Override
 				public long detachedProjectionEpoch() {
-					return 0L;
+					return epoch;
+				}
+
+				@Override
+				public LongSupplier detachedProjectionEpochSource() {
+					return () -> epoch;
 				}
 
 				@Override

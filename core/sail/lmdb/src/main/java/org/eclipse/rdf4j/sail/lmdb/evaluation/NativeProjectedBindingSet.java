@@ -28,6 +28,7 @@ import java.util.NoSuchElementException;
 import java.util.Set;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.Consumer;
+import java.util.function.LongSupplier;
 import java.util.function.Predicate;
 
 import org.eclipse.rdf4j.common.annotation.Experimental;
@@ -65,7 +66,8 @@ public final class NativeProjectedBindingSet extends AbstractBindingSet {
 	NativeLmdbQuerySource source;
 	final String[] names;
 	final long[] ids;
-	private final Value[] values;
+	/** Replaced, never cleared, once a snapshot may own it; see {@link #reattach}. */
+	private Value[] values;
 	private final int[] positionMasks;
 	private transient MapBindingSet.CompactLayout snapshotLayout;
 	final int size;
@@ -73,6 +75,11 @@ public final class NativeProjectedBindingSet extends AbstractBindingSet {
 	private transient boolean fullyCaptured;
 	private transient boolean hasCapturedValue;
 	private transient boolean detachedProjection;
+	/**
+	 * The source a repository pull captured this row from ahead of handing it out, or null; see
+	 * {@link #captureRepositoryBatch}. Such a row is never handed out itself, only its snapshot is.
+	 */
+	private transient NativeLmdbQuerySource capturedAheadFrom;
 	private transient List<Value> newProjectionRoots;
 	private transient int[] captureIndex;
 	private transient int captureIndexMask;
@@ -354,6 +361,107 @@ public final class NativeProjectedBindingSet extends AbstractBindingSet {
 			}
 		}
 		captureAndDetach(valueScope, scratch);
+	}
+
+	/**
+	 * {@link #captureRepositoryAndDetach} for native rows that a repository pull took ahead of handing them out,
+	 * {@code rows[from]} to {@code rows[to - 1]}, in order and under a single access to their source's dictionary view.
+	 * It stops at the first row that cannot be captured this way and leaves that row, and the rows after it, as their
+	 * producer made them.
+	 * <p>
+	 * Rows captured here share their terms with each other and with the rows captured before them. That holds only
+	 * until a caller rebinds one of those terms, which it can do as soon as a row has been handed out. The pull
+	 * therefore asks {@link CaptureScratch#capturedAheadIsStale()} before each of these rows leaves, and captures the
+	 * ones that still wait again when it is.
+	 *
+	 * @return the number of rows captured, counted from {@code from}
+	 */
+	public static int captureRepositoryBatch(Object[] rows, int from, int to, ValueResolutionScope valueScope,
+			CaptureScratch scratch) {
+		CaptureState state = scratch.batchCapture ? scratch.acquire() : null;
+		if (state == null) {
+			return 0;
+		}
+		int[] done = { from };
+		try {
+			while (done[0] < to && ((NativeProjectedBindingSet) rows[done[0]]).repeatsDetachedRow(state)) {
+				done[0]++;
+			}
+			NativeLmdbQuerySource current = done[0] < to ? ((NativeProjectedBindingSet) rows[done[0]]).source : null;
+			if (current != null) {
+				current.withProjectedValueAccess(valueScope, access -> {
+					long epoch = access.detachedProjectionEpoch();
+					LongSupplier epochSource = access.detachedProjectionEpochSource();
+					if (epoch < 0 || epochSource == null || !scratch.admitsAhead(current, epochSource, epoch)) {
+						return false;
+					}
+					boolean captured = false;
+					for (int index = done[0]; index < to; index++) {
+						NativeProjectedBindingSet row = (NativeProjectedBindingSet) rows[index];
+						if (row.source == null) {
+							if (!row.repeatsDetachedRow(state)) {
+								break;
+							}
+						} else if (row.source != current || row.hasCapturedValue
+								|| !row.captureAhead(current, access, valueScope, state, epoch)) {
+							break;
+						} else {
+							captured = true;
+						}
+						done[0] = index + 1;
+					}
+					if (captured) {
+						scratch.recordAhead(current, epochSource, epoch);
+					}
+					return true;
+				});
+			}
+		} finally {
+			state.flushLookups();
+			scratch.release(state);
+		}
+		return done[0] - from;
+	}
+
+	/** Whether this is the row that the detached projection captured last, handed out again by its producer. */
+	private boolean repeatsDetachedRow(CaptureState state) {
+		DetachedProjection detached = state.detached;
+		return source == null && detachedProjection && detached != null && detached.previous == this;
+	}
+
+	private boolean captureAhead(NativeLmdbQuerySource current, ProjectedValueAccess access,
+			ValueResolutionScope scope, CaptureState state, long epoch) {
+		boolean captured = false;
+		try {
+			captured = captureDetached(current, access, scope, state, epoch);
+		} finally {
+			if (!captured) {
+				// Nothing owns this row's array yet: it has not been handed out.
+				state.discardDetached();
+				Arrays.fill(values, null);
+				newProjectionRoots = null;
+			}
+		}
+		if (captured) {
+			detachedProjection = true;
+			fullyCaptured = true;
+			capturedAheadFrom = current;
+			source = null;
+		}
+		return captured;
+	}
+
+	/**
+	 * Returns a row that was captured ahead to the state its producer made it in, for another capture. A snapshot
+	 * handed out for an earlier occurrence of this row keeps the array it was given.
+	 */
+	private void reattach() {
+		values = new Value[ids.length];
+		newProjectionRoots = null;
+		detachedProjection = false;
+		fullyCaptured = false;
+		source = capturedAheadFrom;
+		capturedAheadFrom = null;
 	}
 
 	private boolean captureDetached(NativeLmdbQuerySource current, ProjectedValueAccess access,
@@ -670,6 +778,75 @@ public final class NativeProjectedBindingSet extends AbstractBindingSet {
 		/** Whether any capture has borrowed the state; until one has, there is nothing to discard. */
 		private volatile boolean used;
 
+		/** The rows a repository pull takes ahead of the one it hands out: at first, and at most. */
+		static final int FIRST_READ_AHEAD = 8;
+		static final int MAX_READ_AHEAD = 127;
+		private int readAhead = FIRST_READ_AHEAD;
+		/**
+		 * The source and the projection epoch of the rows that were captured ahead and may still wait to be handed out,
+		 * or a null epoch source when there are none. Read and written by the thread that pulls the result.
+		 */
+		private NativeLmdbQuerySource aheadSource;
+		private LongSupplier aheadEpochSource;
+		private long aheadEpoch;
+
+		/**
+		 * The number of rows the next repository pull may take ahead. It starts small, so that a caller who reads a few
+		 * rows of a large result pays for few, and doubles with every pull that reads ahead.
+		 */
+		public int nextReadAhead() {
+			int rows = readAhead;
+			if (rows < MAX_READ_AHEAD) {
+				readAhead = Math.min(MAX_READ_AHEAD, rows << 1);
+			}
+			return rows;
+		}
+
+		/** Declares that no row captured ahead waits to be handed out any more. */
+		public void beginReadAhead() {
+			aheadSource = null;
+			aheadEpochSource = null;
+		}
+
+		/**
+		 * Whether a caller rebound a term since the waiting rows were captured ahead. Those rows share their terms with
+		 * rows that were handed out before them, so they have to be captured again before they leave.
+		 */
+		public boolean capturedAheadIsStale() {
+			LongSupplier epochSource = aheadEpochSource;
+			return epochSource != null && epochSource.getAsLong() != aheadEpoch;
+		}
+
+		/**
+		 * Returns the rows among {@code rows[from]} to {@code rows[to - 1]} that were captured ahead to the state their
+		 * producer made them in, and drops the terms they shared.
+		 */
+		public void reattachCapturedAhead(Object[] rows, int from, int to) {
+			for (int index = from; index < to; index++) {
+				if (rows[index] instanceof NativeProjectedBindingSet row && row.capturedAheadFrom != null) {
+					row.reattach();
+				}
+			}
+			beginReadAhead();
+			CaptureState state = acquire();
+			if (state != null) {
+				state.discardDetached();
+				release(state);
+			}
+		}
+
+		/** Rows that wait together were captured from one source under one epoch, so one check covers them all. */
+		private boolean admitsAhead(NativeLmdbQuerySource source, LongSupplier epochSource, long epoch) {
+			return aheadEpochSource == null
+					|| aheadSource == source && aheadEpochSource == epochSource && aheadEpoch == epoch;
+		}
+
+		private void recordAhead(NativeLmdbQuerySource source, LongSupplier epochSource, long epoch) {
+			aheadSource = source;
+			aheadEpochSource = epochSource;
+			aheadEpoch = epoch;
+		}
+
 		private CaptureState acquire() {
 			CaptureState state = available.get();
 			if (state != null && state != CLOSED && available.compareAndSet(state, null)) {
@@ -691,8 +868,7 @@ public final class NativeProjectedBindingSet extends AbstractBindingSet {
 			if (state == null) {
 				return false;
 			}
-			DetachedProjection detached = state.detached;
-			boolean repeats = detached != null && detached.previous == row;
+			boolean repeats = row.repeatsDetachedRow(state);
 			release(state);
 			return repeats;
 		}

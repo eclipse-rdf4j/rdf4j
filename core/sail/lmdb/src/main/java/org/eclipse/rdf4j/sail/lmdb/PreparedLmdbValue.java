@@ -16,6 +16,7 @@ import java.io.ObjectStreamException;
 import java.util.Optional;
 import java.util.function.Consumer;
 import java.util.function.Function;
+import java.util.function.LongSupplier;
 
 import org.eclipse.rdf4j.model.BNode;
 import org.eclipse.rdf4j.model.IRI;
@@ -54,7 +55,7 @@ final class PreparedLmdbValue {
 	}
 
 	/** Deliberately contains no store, source, connection, reader, or model references. */
-	static final class Owner {
+	static final class Owner implements LongSupplier {
 		private final boolean tracksProjectionChanges;
 		private volatile long projectionEpoch;
 
@@ -69,6 +70,12 @@ final class PreparedLmdbValue {
 		long projectionEpoch() {
 			long epoch = projectionEpoch;
 			return (epoch & 1L) == 0 ? epoch : -1L;
+		}
+
+		/** {@link #projectionEpoch()} for a reader that holds no lock; see {@link #rebindProjection}. */
+		@Override
+		public long getAsLong() {
+			return projectionEpoch();
 		}
 
 		private synchronized void rebindProjection(State state, Proof rebound) {

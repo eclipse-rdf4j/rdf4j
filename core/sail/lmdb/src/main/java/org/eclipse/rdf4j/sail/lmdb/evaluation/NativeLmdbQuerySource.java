@@ -17,6 +17,7 @@ import java.util.Arrays;
 import java.util.Objects;
 import java.util.OptionalDouble;
 import java.util.OptionalLong;
+import java.util.function.LongSupplier;
 import java.util.function.Predicate;
 
 import org.eclipse.rdf4j.common.annotation.Experimental;
@@ -266,6 +267,15 @@ public interface NativeLmdbQuerySource {
 		/** Stable reuse epoch for independently owned RDF payloads, or negative when reuse is unavailable. */
 		default long detachedProjectionEpoch() {
 			return -1L;
+		}
+
+		/**
+		 * The current {@link #detachedProjectionEpoch()}, readable after this access has ended and without its lock, or
+		 * null when the epoch cannot be followed that way. A pull that captures rows ahead of handing them out asks it
+		 * again before each of them leaves.
+		 */
+		default LongSupplier detachedProjectionEpochSource() {
+			return null;
 		}
 
 		/** Captures a term without borrowing mutable semantic state from the dictionary cache. */

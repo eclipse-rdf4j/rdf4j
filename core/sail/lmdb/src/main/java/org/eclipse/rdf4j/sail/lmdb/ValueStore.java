@@ -111,6 +111,7 @@ import java.util.function.BooleanSupplier;
 import java.util.function.Consumer;
 import java.util.function.Function;
 import java.util.function.LongConsumer;
+import java.util.function.LongSupplier;
 import java.util.function.Predicate;
 import java.util.function.Supplier;
 import java.util.function.ToLongFunction;
@@ -11920,6 +11921,11 @@ public class ValueStore extends AbstractValueFactory implements BNodeIdResolver,
 		@Override
 		public long detachedProjectionEpoch() {
 			return repositoryProjectionOwner().projectionEpoch();
+		}
+
+		@Override
+		public LongSupplier detachedProjectionEpochSource() {
+			return repositoryProjectionOwner();
 		}
 
 		private PreparedLmdbValue.Owner repositoryProjectionOwner() {
