@@ -81,6 +81,7 @@ import org.eclipse.rdf4j.sail.helpers.DefaultSailChangedEvent;
 import org.eclipse.rdf4j.sail.helpers.SlowQueryContextHolder;
 import org.eclipse.rdf4j.sail.helpers.SlowQuerySupport;
 import org.eclipse.rdf4j.sail.lmdb.RepositoryValueIteration.SourcePull;
+import org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbNativeEvaluationStrategy;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.NativeProjectedBindingSet;
 import org.eclipse.rdf4j.sail.lmdb.model.LmdbValue;
 
@@ -1115,8 +1116,8 @@ public class LmdbStoreConnection extends SailSourceConnection implements SailRes
 
 	@Override
 	protected final boolean allowsBufferedQueryResult(EvaluationStrategy strategy) {
-		return getClass() == LmdbStoreConnection.class && strategy.getClass() == LmdbEvaluationStrategy.class
-				&& !isActive();
+		return getClass() == LmdbStoreConnection.class && (strategy.getClass() == LmdbEvaluationStrategy.class
+				|| strategy.getClass() == LmdbNativeEvaluationStrategy.class) && !isActive();
 	}
 
 	private CloseableIteration<? extends BindingSet> openEvaluation(TupleExpr expression, Dataset dataset,
@@ -1130,6 +1131,17 @@ public class LmdbStoreConnection extends SailSourceConnection implements SailRes
 		private final IntSupplier bufferedRows;
 		private final NativeProjectedBindingSet.CaptureScratch scratch = new NativeProjectedBindingSet.CaptureScratch();
 		private volatile boolean nativeProjection = true;
+		/**
+		 * The repository iteration that is pulling the current row in one read activation, or null. Only the pulling
+		 * thread writes and reads it; see {@link ReplayableIteration#pullRepositoryRow()}.
+		 */
+		private RepositoryValueIteration<?> directPull;
+		/**
+		 * While set, {@link #next()} hands out a native row as its producer made it, and the repository pull that set
+		 * it captures the rows it took together through {@link #captureAhead}. Only the pulling thread writes and reads
+		 * it.
+		 */
+		private boolean deferCapture;
 
 		private QueryValueCaptureIteration(CloseableIteration<? extends BindingSet> source,
 				ValueResolutionScope valueScope) {
@@ -1142,7 +1154,12 @@ public class LmdbStoreConnection extends SailSourceConnection implements SailRes
 		public BindingSet next() {
 			BindingSet row = super.next();
 			if (row instanceof NativeProjectedBindingSet nativeRow) {
-				if (RepositoryValueIteration.capturesRepositoryProjection(this)) {
+				if (deferCapture) {
+					return row;
+				}
+				RepositoryValueIteration<?> direct = directPull;
+				if (direct != null && !direct.isClosed()
+						|| RepositoryValueIteration.capturesRepositoryProjection(this)) {
 					nativeRow.captureRepositoryAndDetach(valueScope, scratch);
 				} else {
 					nativeProjection = true;
@@ -1153,6 +1170,39 @@ public class LmdbStoreConnection extends SailSourceConnection implements SailRes
 				scratch.discardPrevious();
 			}
 			return row;
+		}
+
+		/**
+		 * Captures rows that a repository pull took ahead, {@code rows[from]} to {@code rows[to - 1]}, in the order
+		 * they are handed out: consecutive native rows together, as {@link #next()} would have captured each of them
+		 * for that pull. The row at {@code from} is always captured, on its own when it cannot be captured with others;
+		 * a later row that cannot be is left, with the rows after it, for the pull that hands it out.
+		 *
+		 * @return the number of rows, counted from {@code from}, that are ready to be handed out
+		 */
+		private int captureAhead(Object[] rows, int from, int to) {
+			int index = from;
+			while (index < to) {
+				if (!(rows[index] instanceof NativeProjectedBindingSet nativeRow)) {
+					nativeProjection = false;
+					scratch.discardPrevious();
+					index++;
+					continue;
+				}
+				int end = index + 1;
+				while (end < to && rows[end] instanceof NativeProjectedBindingSet) {
+					end++;
+				}
+				index += NativeProjectedBindingSet.captureRepositoryBatch(rows, index, end, valueScope, scratch);
+				if (index < end) {
+					if (index == from) {
+						nativeRow.captureRepositoryAndDetach(valueScope, scratch);
+						index++;
+					}
+					break;
+				}
+			}
+			return index - from;
 		}
 
 		@Override
@@ -3913,6 +3963,13 @@ public class LmdbStoreConnection extends SailSourceConnection implements SailRes
 	private static final class ObservedScanBuffer<T> {
 		private final ArrayDeque<T> rows = new ArrayDeque<>(OBSERVED_SCAN_ROWS - 1);
 		private RuntimeException failure;
+		/**
+		 * The capture whose native rows were taken into this buffer ahead of their capture, or null when every row was
+		 * captured as it was taken.
+		 */
+		private QueryValueCaptureIteration ahead;
+		/** With {@link #ahead}: the number of rows at the head that are captured and may be handed out. */
+		private int ready;
 
 		private boolean hasPending() {
 			return !rows.isEmpty() || failure != null;
@@ -4072,7 +4129,13 @@ public class LmdbStoreConnection extends SailSourceConnection implements SailRes
 						validateBufferedScan();
 					}
 					buffered.throwFailureIfDrained();
-					T row = buffered.rows.removeFirst();
+					if (headNeedsCapture(buffered)) {
+						trackedCall(() -> {
+							captureBufferedHead(buffered);
+							return null;
+						}, null, pull == null ? null : pull.takeRead());
+					}
+					T row = takeBufferedRow(buffered);
 					protectRawRow(row);
 					return row;
 				}
@@ -4092,8 +4155,9 @@ public class LmdbStoreConnection extends SailSourceConnection implements SailRes
 		 * One row for the repository iteration bound to this result, in one observed read activation and one call:
 		 * availability, the row, and the rows its producer has already fetched. This is what {@link #hasNext()}
 		 * followed by {@link #next()} do for a repository pull, without handing the activation from one call to the
-		 * other through the pulling thread's state. A result that is not observed and sealed yet, one that projects
-		 * native rows, and a pull nested in another read of this connection use those two calls.
+		 * other through the pulling thread's state. A result that is not observed and sealed yet and a pull nested in
+		 * another read of this connection use those two calls. A result that projects native rows names the pulling
+		 * repository iteration to its capture for the one row it takes, as the two calls do through the source pull.
 		 */
 		@Override
 		public Object pullRepositoryRow() {
@@ -4103,8 +4167,16 @@ public class LmdbStoreConnection extends SailSourceConnection implements SailRes
 			}
 			QueryValueCaptureIteration capture = queryCapture;
 			if (repositoryPullActive || !observed || operationAttempt == null || !operationAttempt.sealed
-					|| rowPrefetched || capture == null || capture.nativeProjection || isClosed()) {
+					|| rowPrefetched || capture == null || isClosed()) {
 				return RepositoryValueIteration.PULL_UNAVAILABLE;
+			}
+			RepositoryValueIteration<?> projectionOwner = null;
+			if (capture.nativeProjection) {
+				WeakReference<RepositoryValueIteration<?>> exposure = repositoryExposure;
+				projectionOwner = exposure == null ? null : exposure.get();
+				if (projectionOwner == null) {
+					return RepositoryValueIteration.PULL_UNAVAILABLE;
+				}
 			}
 			ReadThreadRegistration thread = repositoryPullThread;
 			if (thread == null || thread.owner != Thread.currentThread()) {
@@ -4116,15 +4188,34 @@ public class LmdbStoreConnection extends SailSourceConnection implements SailRes
 			}
 			try {
 				ObservedScanBuffer<T> buffered = observedScanBuffer;
-				if (buffered != null && buffered.hasPending()) {
-					validateBufferedScan();
-					buffered.throwFailureIfDrained();
-					return buffered.rows.removeFirst();
-				}
 				ObservedRead read = repositoryRead;
 				if (read == null) {
 					read = new ObservedRead(this, false);
 					repositoryRead = read;
+				}
+				if (buffered != null && buffered.hasPending()) {
+					validateBufferedScan();
+					buffered.throwFailureIfDrained();
+					if (headNeedsCapture(buffered)) {
+						repositoryPullActive = true;
+						try {
+							read.begin(thread);
+							Throwable failure = null;
+							try {
+								read.throwIfThreadCancelled();
+								captureBufferedHead(buffered);
+								read.validatePull();
+							} catch (RuntimeException | Error captureFailure) {
+								failure = captureFailure;
+								throw captureFailure;
+							} finally {
+								read.finish(failure);
+							}
+						} finally {
+							repositoryPullActive = false;
+						}
+					}
+					return takeBufferedRow(buffered);
 				}
 				T row = null;
 				boolean available;
@@ -4143,7 +4234,18 @@ public class LmdbStoreConnection extends SailSourceConnection implements SailRes
 								read.begin(thread);
 							}
 							read.throwIfThreadCancelled();
-							row = currentDelegate().next();
+							if (projectionOwner == null) {
+								row = currentDelegate().next();
+							} else {
+								// This row is captured on its own. The native rows buffered below are captured
+								// together for the same repository iteration, and checked again as they leave.
+								capture.directPull = projectionOwner;
+								try {
+									row = currentDelegate().next();
+								} finally {
+									capture.directPull = null;
+								}
+							}
 							read.validatePull();
 							bufferObservedScan(read);
 						}
@@ -4188,14 +4290,18 @@ public class LmdbStoreConnection extends SailSourceConnection implements SailRes
 			}
 		}
 
-		/** Only an observed repository pull may advance into copied physical rows from the same producer. */
+		/**
+		 * Only an observed repository pull may advance into copied physical rows from the same producer. A native row
+		 * taken here is not captured as it is taken: the native rows of one scan are captured together, and a row among
+		 * them that cannot be is captured when it is handed out, as it would have been without this buffer.
+		 */
 		private void bufferObservedScan(ObservedRead read) {
 			QueryValueCaptureIteration capture = queryCapture;
 			if (capture == null || capture.bufferedRows == null) {
 				return;
 			}
-			int count = Math.min(capture.bufferedRows.getAsInt(), OBSERVED_SCAN_ROWS - 1);
-			if (count <= 0 || !read.canContinueOnThisThread()) {
+			int available = capture.bufferedRows.getAsInt();
+			if (available <= 0 || !read.canContinueOnThisThread()) {
 				return;
 			}
 			ObservedScanBuffer<T> buffered = observedScanBuffer;
@@ -4207,33 +4313,103 @@ public class LmdbStoreConnection extends SailSourceConnection implements SailRes
 					buffered = new ObservedScanBuffer<>();
 					observedScanBuffer = buffered;
 				}
+			} else if (buffered.hasPending()) {
+				return;
 			}
+			int count = Math.min(available,
+					capture.nativeProjection ? capture.scratch.nextReadAhead() : OBSERVED_SCAN_ROWS - 1);
+			buffered.ahead = null;
+			buffered.ready = 0;
 			CloseableIteration<? extends T> cursor = currentDelegate();
-			for (int i = 0; i < count && read.canContinueOnThisThread(); i++) {
-				if (Thread.currentThread().isInterrupted()) {
-					return;
+			boolean producerStopped = false;
+			capture.deferCapture = true;
+			try {
+				for (int i = 0; i < count && read.canContinueOnThisThread(); i++) {
+					if (Thread.currentThread().isInterrupted()) {
+						break;
+					}
+					read.throwIfThreadCancelled();
+					try {
+						if (!cursor.hasNext()) {
+							producerStopped = true;
+							break;
+						}
+						read.throwIfThreadCancelled();
+						T row = cursor.next();
+						// Nothing leaves this loop between the two pulls, so one validation after both covers every
+						// native read that produced the row.
+						read.validatePull();
+						buffered.rows.addLast(row);
+						if (row instanceof NativeProjectedBindingSet) {
+							buffered.ahead = capture;
+						} else if (buffered.ahead == null) {
+							buffered.ready++;
+						} else {
+							// A row of another kind ends the native rows that are captured together.
+							break;
+						}
+					} catch (RuntimeException failure) {
+						read.validatePull();
+						read.throwIfThreadCancelled();
+						if (mustStopBufferedRead(failure)) {
+							throw failure;
+						}
+						buffered.failure = failure;
+						producerStopped = true;
+						break;
+					}
 				}
-				read.throwIfThreadCancelled();
-				try {
-					if (!cursor.hasNext()) {
+			} finally {
+				capture.deferCapture = false;
+			}
+			if (buffered.ahead != null) {
+				if (producerStopped && buffered.failure == null) {
+					// Only cancellation or a close ends a producer among the rows it had ready. That is reported
+					// before anything is captured from a producer that has let go of its sources.
+					read.validatePull();
+					read.throwIfThreadCancelled();
+					if (isClosed()) {
 						return;
 					}
-					read.throwIfThreadCancelled();
-					T row = cursor.next();
-					// Nothing leaves this loop between the two pulls, so one validation after both covers every
-					// native read that produced the row.
-					read.validatePull();
-					buffered.rows.addLast(row);
-				} catch (RuntimeException failure) {
-					read.validatePull();
-					read.throwIfThreadCancelled();
-					if (mustStopBufferedRead(failure)) {
-						throw failure;
-					}
-					buffered.failure = failure;
-					return;
 				}
+				Object[] rows = buffered.rows.toArray();
+				capture.scratch.beginReadAhead();
+				buffered.ready += capture.captureAhead(rows, buffered.ready, rows.length);
+				// A producer that has stopped may have released what a later capture would read.
+				while (producerStopped && buffered.ready < rows.length) {
+					buffered.ready += capture.captureAhead(rows, buffered.ready, rows.length);
+				}
+				// The rows were copied before; this covers the dictionary reads that captured them.
+				read.validatePull();
 			}
+		}
+
+		/** Whether the buffered row at the head has to be captured, or captured again, before it is handed out. */
+		private boolean headNeedsCapture(ObservedScanBuffer<T> buffered) {
+			QueryValueCaptureIteration capture = buffered.ahead;
+			return capture != null && (buffered.ready == 0 || capture.scratch.capturedAheadIsStale());
+		}
+
+		/**
+		 * Captures the buffered rows from the head, inside a read of this result. Rows that were captured ahead and
+		 * share a term a caller has rebound since are first returned to the state their producer made them in.
+		 */
+		private void captureBufferedHead(ObservedScanBuffer<T> buffered) {
+			QueryValueCaptureIteration capture = buffered.ahead;
+			Object[] rows = buffered.rows.toArray();
+			if (buffered.ready > 0) {
+				capture.scratch.reattachCapturedAhead(rows, 0, buffered.ready);
+				buffered.ready = 0;
+			}
+			capture.scratch.beginReadAhead();
+			buffered.ready = capture.captureAhead(rows, 0, rows.length);
+		}
+
+		private T takeBufferedRow(ObservedScanBuffer<T> buffered) {
+			if (buffered.ahead != null) {
+				buffered.ready--;
+			}
+			return buffered.rows.removeFirst();
 		}
 
 		/** Whether the availability check of the pending buffered row validated it; see {@link #next()}. */

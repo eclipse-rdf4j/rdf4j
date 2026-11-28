@@ -31,10 +31,12 @@ import java.util.NoSuchElementException;
 import java.util.Objects;
 import java.util.Set;
 import java.util.concurrent.atomic.AtomicLong;
+import java.util.function.IntSupplier;
 import java.util.function.Predicate;
 import java.util.function.Supplier;
 
 import org.eclipse.rdf4j.common.annotation.Experimental;
+import org.eclipse.rdf4j.common.iteration.BufferedIteration;
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.common.iteration.CooperativeCancellation;
 import org.eclipse.rdf4j.common.order.StatementOrder;
@@ -680,7 +682,7 @@ final class NativeGroupStep implements NativeResultStep, LmdbNativePhysicalPlan 
 }
 
 @Experimental
-final class NativeGroupIteration implements CloseableIteration<BindingSet>, CooperativeCancellation {
+final class NativeGroupIteration implements CloseableIteration<BindingSet>, CooperativeCancellation, BufferedIteration {
 	final long diagnosticBoundaryId = NativeAggregateExecutionEvent.nextBoundaryId();
 	private LmdbNativeQueryMemoryScope resultMemoryScope;
 	private static final Logger logger = LoggerFactory.getLogger(NativeGroupIteration.class);
@@ -732,6 +734,8 @@ final class NativeGroupIteration implements CloseableIteration<BindingSet>, Coop
 	/** Runtime-only query scope supplied to worker-bound scalar compilers; never retained in the lowered plan. */
 	final QueryEvaluationContext evaluationContext;
 	Iterator<BindingSet> resultIterator;
+	/** Rows of the computed result list that {@link #resultIterator} has not handed out yet. */
+	private int remainingResults;
 	BindingSet next;
 	private NativeResultRow.Schema physicalSchema;
 	private List<AutoCloseable> resultResources;
@@ -862,16 +866,28 @@ final class NativeGroupIteration implements CloseableIteration<BindingSet>, Coop
 		}
 		if (resultIterator == null) {
 			try {
-				resultIterator = evaluateAll().iterator();
+				List<BindingSet> results = evaluateAll();
+				resultIterator = results.iterator();
+				remainingResults = results.size();
 			} catch (KernelQueryCancelledException cancelled) {
 				return finishCancellation(cancelled);
 			}
 		}
 		if (resultIterator.hasNext()) {
 			next = resultIterator.next();
+			remainingResults--;
 			return true;
 		}
 		return false;
+	}
+
+	/**
+	 * Every group is computed before the first one is handed out, so the row already taken and the rows left in the
+	 * result list are all available without another read of the store.
+	 */
+	@Override
+	public IntSupplier bufferedRowsSource() {
+		return () -> closed ? 0 : (next != null ? 1 : 0) + Math.max(0, remainingResults);
 	}
 
 	private boolean finishCancellation(KernelQueryCancelledException cancelled) {

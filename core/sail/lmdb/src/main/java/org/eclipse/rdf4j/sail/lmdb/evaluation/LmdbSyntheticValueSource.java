@@ -17,6 +17,7 @@ import static org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbNativeAggregateCompiler
 import java.io.IOException;
 import java.util.OptionalDouble;
 import java.util.OptionalLong;
+import java.util.function.LongSupplier;
 import java.util.function.Predicate;
 
 import org.eclipse.rdf4j.common.annotation.Experimental;
@@ -478,6 +479,12 @@ class SyntheticValueSource implements NativeLmdbQuerySource {
 		}
 
 		@Override
+		public LongSupplier detachedProjectionEpochSource() {
+			return context.isClosed() || context.mayShadowProjectedStoreValues() ? null
+					: backing.detachedProjectionEpochSource();
+		}
+
+		@Override
 		public Value lookupDetached(long id, int positionMask, ValueResolutionScope scope) {
 			return context.isClosed() || context.mayShadowProjectedStoreValues() ? null
 					: backing.lookupDetached(id, positionMask, scope);
@@ -488,13 +495,13 @@ class SyntheticValueSource implements NativeLmdbQuerySource {
 		if (context != null) {
 			Value interned = context.valueOf(id);
 			if (interned != null) {
-				LmdbNativeExpressionCompiler.LAZY_VALUE_CALLS.incrementAndGet();
+				LmdbNativeExpressionCompiler.LAZY_VALUE_CALLS.increment();
 				return interned;
 			}
 		}
 		Value planConstant = catalog.valueOf(id);
 		if (planConstant != null) {
-			LmdbNativeExpressionCompiler.LAZY_VALUE_CALLS.incrementAndGet();
+			LmdbNativeExpressionCompiler.LAZY_VALUE_CALLS.increment();
 			return planConstant;
 		}
 		return explicitScope ? delegate.lazyValue(id, positionMask, valueScope) : delegate.lazyValue(id, positionMask);

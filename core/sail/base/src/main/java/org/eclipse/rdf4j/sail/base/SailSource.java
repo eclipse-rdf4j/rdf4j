@@ -581,6 +581,20 @@ public interface SailSource extends SailClosable {
 	}
 
 	/**
+	 * Whether a dataset of this source at the given level reads from a snapshot of its own, which changes flushed to
+	 * this source afterwards neither alter nor invalidate. A store that derives its root branches from such a source
+	 * does not have to hold back flushing while one of these datasets is open, and may hand them to readers that take
+	 * no observations without registering them.
+	 *
+	 * @param level the isolation level a dataset would be requested at
+	 * @return {@code true} if datasets at that level keep their own snapshot; {@code false} by default
+	 */
+	@InternalUseOnly
+	default boolean datasetsRetainOwnSnapshot(IsolationLevel level) {
+		return false;
+	}
+
+	/**
 	 * Check the consistency of this branch and throws a {@link SailConflictException} if {@link #flush()}ing this
 	 * branch would cause the backing {@link SailSource} to be inconsistent, if applicable. If this is the final backing
 	 * {@link SailSource} calling this method has no effect.

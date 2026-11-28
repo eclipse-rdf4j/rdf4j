@@ -25,9 +25,11 @@ import java.util.NoSuchElementException;
 import java.util.OptionalLong;
 import java.util.Set;
 import java.util.concurrent.atomic.AtomicLong;
+import java.util.function.IntSupplier;
 import java.util.function.Predicate;
 
 import org.eclipse.rdf4j.common.annotation.Experimental;
+import org.eclipse.rdf4j.common.iteration.BufferedIteration;
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.common.iteration.CloseableIteratorIteration;
 import org.eclipse.rdf4j.common.iteration.CooperativeCancellation;
@@ -3355,6 +3357,11 @@ final class NativeUnorderedInput implements AutoCloseable {
 		this.scalarFilterAcceptanceGuard = row.scalarFilterAcceptanceGuard;
 	}
 
+	/** Rows a demand-sized batch starts with; see {@link #batch(RowState, BatchCursor, int)}. */
+	static final int INITIAL_BATCH_ROWS = 64;
+	/** The row capacity the batch reader was opened with; {@link #batch} never grows beyond it. */
+	int batchCapacity;
+
 	static NativeUnorderedInput rows(RowState row, RowCursor cursor) {
 		NativeUnorderedInput input = new NativeUnorderedInput(row);
 		input.cursor = cursor;
@@ -3364,7 +3371,13 @@ final class NativeUnorderedInput implements AutoCloseable {
 	static NativeUnorderedInput batch(RowState row, BatchCursor cursor, int capacity) {
 		NativeUnorderedInput input = new NativeUnorderedInput(row);
 		input.batchCursor = cursor;
-		input.batch = new NativeBatch(row.slots.length, capacity);
+		input.batchCapacity = capacity;
+		// A plain pattern reader bounds every fill by the batch it is handed, so its batch can start small and
+		// grow with the rows the pattern turns out to have. Other readers size buffers of their own from the
+		// capacity they were opened with and keep a batch of that capacity.
+		boolean growsWithDemand = cursor instanceof PatternBatchCursor || cursor instanceof EmptyBatchCursor;
+		input.batch = new NativeBatch(row.slots.length,
+				growsWithDemand ? Math.min(capacity, INITIAL_BATCH_ROWS) : capacity);
 		return input;
 	}
 
@@ -3425,9 +3438,19 @@ final class NativeUnorderedInput implements AutoCloseable {
 		}
 	}
 
+	/**
+	 * Fills {@link #batch}, which is replaced by a larger one once the reader has filled it completely. A caller reads
+	 * the field again after every fill.
+	 */
 	int fill() throws IOException {
 		LmdbNativeCostObservation observing = observation;
 		try {
+			NativeBatch batch = this.batch;
+			if (batch != null && batch.capacity < batchCapacity && batch.rowCount == batch.capacity) {
+				// The rows of the previous fill have all been handed on; nothing reads the old batch again.
+				batch = new NativeBatch(batch.slotCount, (int) Math.min(batchCapacity, batch.capacity * 8L));
+				this.batch = batch;
+			}
 			if (observing == null) {
 				return row.fill(batchCursor, batch);
 			}
@@ -3592,7 +3615,8 @@ final class MaterializedUnorderedRowCursor implements RowCursor {
 }
 
 @Experimental
-final class NativeRowsIteration implements CloseableIteration<BindingSet>, CooperativeCancellation {
+final class NativeRowsIteration
+		implements CloseableIteration<BindingSet>, CooperativeCancellation, BufferedIteration {
 	NativeRowsStep step;
 	BindingSet base;
 	NativeOrderedDistinctTracker distinctRows;
@@ -3628,6 +3652,32 @@ final class NativeRowsIteration implements CloseableIteration<BindingSet>, Coope
 		this.inputPhases = NativeExecutionPhaseEvent.inputOwner(cancellation);
 		this.remainingOffset = Math.max(0L, step.offset);
 		this.remainingLimit = step.limit < 0 ? Long.MAX_VALUE : step.limit;
+	}
+
+	@Override
+	public IntSupplier bufferedRowsSource() {
+		return this::readyRows;
+	}
+
+	/**
+	 * Rows this iteration hands out without asking its producer for more: the row already taken and the selected rows
+	 * left in the current batch. A pending offset skips rows and can therefore reach the producer, so no batch row is
+	 * promised while one remains. A row cursor holds one row at a time; the repeats of a row with duplicate solutions
+	 * are too few to be worth reading ahead, so it promises none.
+	 * <p>
+	 * The count is asked for by the thread that pulls this iteration, between its pulls. A concurrent close can only
+	 * make it too high, and the pull that follows then finds the iteration closed.
+	 */
+	private int readyRows() {
+		NativeBatch current = batch;
+		if (closed || batchCursor == null || current == null || remainingOffset != 0) {
+			return 0;
+		}
+		long ready = Math.min(Math.max(0, current.selectedCount - batchIndex), remainingLimit);
+		if (next != null) {
+			ready++;
+		}
+		return (int) Math.min(ready, Integer.MAX_VALUE);
 	}
 
 	@Override
@@ -3787,6 +3837,7 @@ final class NativeRowsIteration implements CloseableIteration<BindingSet>, Coope
 			cancellation.check();
 			if (batchIndex >= batch.selectedCount) {
 				int filled = unorderedInput.fill();
+				batch = unorderedInput.batch;
 				cancellation.check();
 				if (filled == 0) {
 					cancellation.check();

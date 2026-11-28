@@ -42,9 +42,11 @@ import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
 import java.util.concurrent.Semaphore;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.TimeoutException;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
-import java.util.concurrent.locks.ReentrantLock;
+import java.util.concurrent.locks.ReentrantReadWriteLock;
 
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.common.iteration.InterruptingTimeLimit;
@@ -373,7 +375,7 @@ class LmdbValueResolutionScopeTest {
 			});
 			Field field = ValueStore.class.getDeclaredField("associationGate");
 			field.setAccessible(true);
-			ReentrantLock gate = (ReentrantLock) field.get(store);
+			ReentrantReadWriteLock gate = (ReentrantReadWriteLock) field.get(store);
 			long limit = System.nanoTime() + TimeUnit.SECONDS.toNanos(10);
 			try {
 				while ((openingThread.get() == null || !gate.hasQueuedThread(openingThread.get()))
@@ -387,6 +389,124 @@ class LmdbValueResolutionScopeTest {
 			}
 			writer.get(10, TimeUnit.SECONDS);
 			opener.get(10, TimeUnit.SECONDS);
+		}
+	}
+
+	/**
+	 * Every query opens resolution scopes. Opening one registers it with a store that is found open inside the
+	 * association gate, which a closing store drains before it closes the registered scopes; that needs no turn on the
+	 * monitor that serializes writer admission.
+	 */
+	@Test
+	void scopeAdmissionOnAnOpenStoreDoesNotWaitForWriterAdmission(@TempDir File dataDir) throws Exception {
+		try (HookValueStore store = new HookValueStore(dataDir);
+				ExecutorService workers = Executors.newSingleThreadExecutor()) {
+			commitValue(store, SimpleValueFactory.getInstance().createBNode("open-store"));
+			Field field = ValueStore.class.getDeclaredField("writerAdmission");
+			field.setAccessible(true);
+			Object writerAdmission = field.get(store);
+			Future<Boolean> opener;
+			boolean openedWhileAdmissionBusy;
+			synchronized (writerAdmission) {
+				opener = workers.submit(() -> {
+					try (ValueResolutionScope scope = store.openValueResolutionScope();
+							ValueResolutionScope result = store.openResultValueResolutionScope()) {
+						return scope.isOpen() && result.isOpen();
+					}
+				});
+				try {
+					opener.get(3, TimeUnit.SECONDS);
+					openedWhileAdmissionBusy = true;
+				} catch (TimeoutException stillWaiting) {
+					openedWhileAdmissionBusy = false;
+				}
+			}
+			assertTrue(opener.get(10, TimeUnit.SECONDS));
+			assertTrue(openedWhileAdmissionBusy,
+					"opening a resolution scope on an open store must not queue behind writer admission");
+		}
+	}
+
+	/**
+	 * A scope pins the dictionary epoch it resolves against, and lets go of it when it closes. While that epoch is the
+	 * newest one neither step can move the reclamation horizon, so neither needs the monitor that serializes it.
+	 */
+	@Test
+	void pinningTheNewestEpochDoesNotWaitForTheReclamationHorizon(@TempDir File dataDir) throws Exception {
+		try (HookValueStore store = new HookValueStore(dataDir);
+				ExecutorService workers = Executors.newSingleThreadExecutor()) {
+			commitValue(store, SimpleValueFactory.getInstance().createBNode("newest-epoch"));
+			Future<Boolean> opener;
+			boolean pinnedWhileHorizonBusy;
+			synchronized (store.unusedRevisionIds) {
+				opener = workers.submit(() -> {
+					boolean open;
+					try (ValueResolutionScope scope = store.openValueResolutionScope();
+							ValueResolutionScope result = store.openResultValueResolutionScope()) {
+						open = scope.isOpen() && result.isOpen();
+					}
+					return open;
+				});
+				try {
+					opener.get(3, TimeUnit.SECONDS);
+					pinnedWhileHorizonBusy = true;
+				} catch (TimeoutException stillWaiting) {
+					pinnedWhileHorizonBusy = false;
+				}
+			}
+			assertTrue(opener.get(10, TimeUnit.SECONDS));
+			assertTrue(pinnedWhileHorizonBusy,
+					"pinning and releasing the newest dictionary epoch must not queue behind horizon maintenance");
+			assertFalse(store.hasCleanupValueProtection(), "both scopes released their epoch");
+		}
+	}
+
+	/**
+	 * Readers pin epochs on the epoch's own count while a writer keeps publishing newer ones. When everything has been
+	 * released, nothing may still be pinned and the horizon must have passed every epoch but the newest.
+	 */
+	@Test
+	void epochsAreReleasedCompletelyWhileWritersPublishNewerOnes(@TempDir File dataDir) throws Exception {
+		int readers = 6;
+		int publications = 200;
+		try (HookValueStore store = new HookValueStore(dataDir);
+				ExecutorService workers = Executors.newFixedThreadPool(readers + 1)) {
+			commitValue(store, SimpleValueFactory.getInstance().createBNode("first-epoch"));
+			AtomicBoolean writerDone = new AtomicBoolean();
+			List<Future<Integer>> pinning = new ArrayList<>();
+			for (int reader = 0; reader < readers; reader++) {
+				pinning.add(workers.submit(() -> {
+					int rounds = 0;
+					boolean finalRound = false;
+					while (!finalRound) {
+						finalRound = writerDone.get();
+						try (ValueResolutionScope scope = store.openValueResolutionScope();
+								ValueResolutionScope result = store.openResultValueResolutionScope()) {
+							if (!scope.isOpen() || !result.isOpen()) {
+								throw new AssertionError("a scope must be open after it was admitted");
+							}
+						}
+						rounds++;
+					}
+					return rounds;
+				}));
+			}
+			Future<?> writer = workers.submit(() -> {
+				try {
+					for (int publication = 0; publication < publications; publication++) {
+						commitValue(store, SimpleValueFactory.getInstance().createBNode("epoch-" + publication));
+					}
+				} finally {
+					writerDone.set(true);
+				}
+				return null;
+			});
+			writer.get(60, TimeUnit.SECONDS);
+			for (Future<Integer> reader : pinning) {
+				assertTrue(reader.get(30, TimeUnit.SECONDS) > 0);
+			}
+			assertFalse(store.hasCleanupValueProtection(), "every scope released the epoch it pinned");
+			assertEquals(1, store.cleanupEpochCountForTest(), "only the newest epoch is still registered");
 		}
 	}
 

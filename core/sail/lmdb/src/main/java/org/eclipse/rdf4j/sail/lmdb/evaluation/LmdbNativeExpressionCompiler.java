@@ -77,7 +77,7 @@ public final class LmdbNativeExpressionCompiler {
 	static final String ENABLED_PROPERTY = "rdf4j.lmdb.nativeExpressions.enabled";
 	static final AtomicLong COMPILED_FILTERS = new AtomicLong();
 	@InternalUseOnly
-	public static final AtomicLong LAZY_VALUE_CALLS = new AtomicLong();
+	public static final NativeTelemetryCounter LAZY_VALUE_CALLS = new NativeTelemetryCounter();
 
 	private static final LmdbNativeTruth TRUE = LmdbNativeTruth.TRUE;
 	private static final LmdbNativeTruth FALSE = LmdbNativeTruth.FALSE;

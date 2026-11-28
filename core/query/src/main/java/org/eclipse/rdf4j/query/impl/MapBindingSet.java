@@ -134,6 +134,20 @@ public class MapBindingSet extends AbstractBindingSet implements MutableBindingS
 		}
 	}
 
+	/**
+	 * An independent binding set with the bindings of this one that shares its unexpanded projection, or null when this
+	 * binding set is not, or is no longer, a compact snapshot. Neither binding set sees a later change to the other:
+	 * the projection is never written, and each of them leaves it for a map of its own on its first change.
+	 */
+	@InternalUseOnly
+	public MapBindingSet compactSnapshot() {
+		if (layout == null) {
+			return null;
+		}
+		Value[] projected = values;
+		return projected == null ? null : new MapBindingSet(layout, projected, projectedSize);
+	}
+
 	/** The map of this binding set; a compact snapshot builds its own on the first call. */
 	private Map<String, Binding> map() {
 		return bindings != null ? bindings : expanded();
